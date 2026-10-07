@@ -1,8 +1,19 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  AlertTriangle, Camera, CheckCircle2, CloudOff, Eraser, Home, Loader2, Map, MapPin,
+  AlertTriangle, Camera, CheckCircle2, CloudOff, Eraser, Home, Loader2, Map as MapIcon, MapPin,
   Navigation, Phone, RefreshCw, Truck, Wallet, WifiOff, X,
 } from "lucide-react";
+// PRA-ADA (bug ditemukan saat QA browser nyata Checklist Persiapan
+// Perjalanan, 7 Okt 2026) — ikon diimpor sebagai `Map` BERSAMA `new Map()`
+// (groupRoutes di bawah) di modul YANG SAMA: import lokal SELALU menimpa
+// identifier global dalam satu modul, jadi `new Map()` memanggil komponen
+// ikon (bukan constructor), melempar "Map is not a constructor" dan
+// MENGHANCURKAN SELURUH halaman FocusedJobList setiap kali driver punya
+// job aktif (groupRoutes dipanggil tanpa syarat). Tidak pernah tertangkap
+// sebelumnya karena tidak ada tes yang BENAR-BENAR me-render file ini di
+// browser — `vite build`/babel cuma memastikan sintaks valid, bukan
+// perilaku runtime. Diganti jadi alias `MapIcon` di sini; `new Map()` di
+// bawah sekarang aman memanggil Map bawaan JS.
 import { compressImage } from "../utils/compressImage.js";
 import { formatRupiah, waLinkFromPhone } from "../utils/format.js";
 import { getQueue, removeAction } from "../utils/offlineQueue.js";
@@ -644,7 +655,7 @@ function RouteStartBanner({ route, assignedCount, sampleJobId, onChanged }) {
         className="mt-2 flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-accent/40
                    text-xs font-semibold text-accent disabled:opacity-50"
       >
-        {mapBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Map className="h-3.5 w-3.5" />}
+        {mapBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MapIcon className="h-3.5 w-3.5" />}
         Buka Rute di Google Maps
       </button>
 

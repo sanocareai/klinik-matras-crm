@@ -290,3 +290,82 @@ test("checklist lingkup STOP terikat satu order/stop; harus job milik rute yang 
   const salahJob = await tambahItem(f.dispatcherApi, f.route.id, { title: "Job luar rute", scope: "STOP", jobId: bukanRuteIni.id, required: true });
   assert.equal(salahJob.status, 400, JSON.stringify(salahJob.body));
 });
+
+// ── Audit keamanan bukti foto (review gate, 7 Okt 2026) ─────────────────────
+// Akses lintas driver untuk BACA (GET), bukan cuma kirim bukti (sudah dites
+// di atas), dan "peminjaman bukti" (evidence borrowing) — mencoba memakai
+// item/bukti milik rute LAIN lewat URL rute ini.
+
+test("akses baca (GET) lintas driver: driver bukan pemilik rute ditolak 403, tidak bocor judul/bukti item", async () => {
+  const f = await fixtureRoute();
+  await tambahItem(f.dispatcherApi, f.route.id, { title: "Rahasia Rute A", required: true });
+  const r = await f.otherDriverApi.get(CHK(f.route.id));
+  assert.equal(r.status, 403, JSON.stringify(r.body));
+  assert.doesNotMatch(JSON.stringify(r.body), /Rahasia Rute A/);
+});
+
+test("peminjaman bukti: item milik rute LAIN tidak bisa dipakai lewat URL rute ini walau driver sama-sama crew di keduanya", async () => {
+  const fA = await fixtureRoute();
+  // Driver fA juga ditugaskan ke rute KEDUA (B) sebagai driver — skenario
+  // nyata: satu driver dapat beberapa rute di hari/waktu berbeda.
+  const routeB = await testPrisma.route.create({
+    data: { code: `CHK-RTE-${++seq}`, date: new Date("2026-10-08T00:00:00.000Z"), status: "PUBLISHED", publishedAt: new Date(), driverId: fA.driver.user.id },
+  });
+  const itemA = await tambahItem(fA.dispatcherApi, fA.route.id, { title: "Item milik Rute A", required: true, photoRequired: true });
+  const itemIdA = itemA.body.item.id;
+
+  // Kirim bukti utk item A lewat URL RUTE B (bukan rute pemilik item itu) —
+  // ownership rute B lolos (driver fA adalah driver-nya), TAPI item itu
+  // tidak pernah ada di checklist rute B -> harus 404, bukan tercipta.
+  const pinjam = await kirimBukti(fA.driver.token, routeB.id, itemIdA, { idemKey: idem("borrow") });
+  assert.equal(pinjam.status, 404, JSON.stringify(pinjam.body));
+
+  const proofCount = await testPrisma.routePrepChecklistProof.count({ where: { itemId: itemIdA } });
+  assert.equal(proofCount, 0, "tidak boleh ada baris proof tercipta dari peminjaman item lintas rute");
+});
+
+test("retry idempoten TIDAK BOLEH lolos lintas rute: Idempotency-Key+itemId+user sama tapi dipanggil via URL rute LAIN ditolak (bukan di-replay)", async () => {
+  const fA = await fixtureRoute();
+  const routeB = await testPrisma.route.create({
+    data: { code: `CHK-RTE-${++seq}`, date: new Date("2026-10-08T00:00:00.000Z"), status: "PUBLISHED", publishedAt: new Date(), driverId: fA.driver.user.id },
+  });
+  const itemA = await tambahItem(fA.dispatcherApi, fA.route.id, { title: "Item Rute A utk uji idempoten", required: true, photoRequired: true });
+  const itemIdA = itemA.body.item.id;
+  const key = idem("cross-route-replay");
+
+  const asli = await kirimBukti(fA.driver.token, fA.route.id, itemIdA, { idemKey: key });
+  assert.equal(asli.status, 201, JSON.stringify(asli.body));
+
+  // Key SAMA, item SAMA, user SAMA — tapi URL rute BEDA (B, bukan A tempat
+  // item itu sebenarnya berada). Sebelum perbaikan, early-return replay
+  // tidak memeriksa routeId dan akan mengembalikan proof lama sebagai
+  // "berhasil" tanpa pernah memvalidasi item ini milik rute B.
+  const diputarUlangLintasRute = await kirimBukti(fA.driver.token, routeB.id, itemIdA, { idemKey: key });
+  assert.equal(diputarUlangLintasRute.status, 409, JSON.stringify(diputarUlangLintasRute.body));
+  assert.match(diputarUlangLintasRute.body.error, /Idempotency-Key sudah dipakai/);
+
+  const proofCount = await testPrisma.routePrepChecklistProof.count({ where: { itemId: itemIdA } });
+  assert.equal(proofCount, 1, "tetap hanya satu baris proof (yang asli di rute A)");
+});
+
+test("URL/path foto arbitrer: endpoint proof TIDAK PERNAH menerima photoUrl dari body — hanya file yang diupload di request yang sama", async () => {
+  const f = await fixtureRoute();
+  const item = await tambahItem(f.dispatcherApi, f.route.id, { title: "Item anti-injeksi URL", required: true, photoRequired: true });
+  const itemId = item.body.item.id;
+
+  // Kirim multipart TANPA file "photo", tapi SELIPKAN field "photoUrl" yang
+  // menunjuk ke path sembarang — endpoint tidak boleh pernah membacanya.
+  const fd = new FormData();
+  fd.append("photoUrl", "/media/job-photos/foto-milik-orang-lain.jpg");
+  fd.append("note", "mencoba menyelipkan URL foto arbitrer");
+  const res = await fetch(`${server.baseUrl}${CHK(f.route.id)}/items/${itemId}/proof`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${f.driver.token}`, "Idempotency-Key": idem("inject") },
+    body: fd,
+  });
+  const body = await res.json().catch(() => null);
+  // photoRequired=true dan tidak ada file -> ditolak (bukan diam-diam
+  // menerima photoUrl dari body sebagai pengganti upload nyata).
+  assert.equal(res.status, 400, JSON.stringify(body));
+  assert.doesNotMatch(body.error || "", /foto-milik-orang-lain/);
+});

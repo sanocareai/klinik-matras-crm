@@ -5080,9 +5080,18 @@ armadaRouter.post(
           throw Object.assign(new ArmadaError("Rute sudah berangkat — checklist keberangkatan sudah dibekukan", 409), { code: "CHECKLIST_DIBEKUKAN" });
         }
 
+        // routeId IKUT dicocokkan (bukan cuma itemId+uploadedById) — pola SAMA
+        // dengan findExecutionReplay (deliveryExecution.js). Tanpa ini, replay
+        // idempotency key yang sama dari URL rute LAIN (mis. driver yang sama
+        // pernah ditugaskan ke dua rute berbeda) bisa lolos melewati
+        // pengecekan `item.routeId !== route.id` di bawah, karena early-return
+        // ini terjadi SEBELUM item dimuat. itemId sendiri sudah cukup mengikat
+        // satu rute (item.routeId tetap, tidak pernah berubah), tapi memeriksa
+        // routeId eksplisit di sini membuat niat "bukti ini milik rute ini"
+        // tidak bergantung pada asumsi tersembunyi itu.
         const existing = await tx.routePrepChecklistProof.findUnique({ where: { idempotencyKey } });
         if (existing) {
-          if (existing.itemId !== req.params.itemId || existing.uploadedById !== req.user.id) {
+          if (existing.itemId !== req.params.itemId || existing.uploadedById !== req.user.id || existing.routeId !== route.id) {
             throw new ArmadaError("Idempotency-Key sudah dipakai untuk aksi lain", 409);
           }
           return { proof: existing, replayed: true };
