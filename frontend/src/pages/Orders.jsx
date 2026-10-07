@@ -982,13 +982,31 @@ export default function Orders() {
       })
     );
 
-    exportToExcelMultiSheet(
-      [
-        { name: "Order", data: sheetOrder },
-        { name: "Rincian Layanan", data: sheetLayanan },
-      ],
-      "order-" + new Date().toISOString().slice(0, 10)
-    );
+    // Export berwarna + filter (7 Okt 2026, permintaan owner). meta = penanda per baris untuk pewarnaan
+    // (kategori, pembayaran, komplain, Menunggu/Dibatalkan) — dihitung dari data mentah, bukan dari teks sel.
+    const meta = semuaOrder.map((o) => ({
+      komplain: punyaKomplainAktif(o),
+      kategori: o.category,
+      bayar: o.paymentStatus,
+      menunggu: o.status === "PENDING",
+      dibatalkan: o.status === "CANCELLED",
+    }));
+    const info = [
+      `Periode (tanggal order dibuat): ${range?.from && range?.to ? `${range.from} s/d ${range.to}` : "semua"}`,
+      `Filter status: ${fStatus ? (fStatus === "PROCESSING" ? "Diproses" + (sertakanKomplain ? " + komplain/revisi aktif" : "") : ORDER_STATUS_LABELS[fStatus] || fStatus) : "semua"}`,
+      `Jumlah order: ${semuaOrder.length}`,
+    ];
+    try {
+      const { exportOrdersStyled } = await import("../utils/exportOrdersStyled.js");
+      await exportOrdersStyled({ rows: sheetOrder, meta, layanan: sheetLayanan, info, filename: "order-" + new Date().toISOString().slice(0, 10) });
+    } catch (e) {
+      // Cadangan: kalau pembuat file berwarna gagal, tetap serahkan file polos supaya admin produksi tidak buntu.
+      console.error("Export berwarna gagal, pakai export polos:", e);
+      exportToExcelMultiSheet(
+        [{ name: "Order", data: sheetOrder }, { name: "Rincian Layanan", data: sheetLayanan }],
+        "order-" + new Date().toISOString().slice(0, 10)
+      );
+    }
   }
 
   return (
