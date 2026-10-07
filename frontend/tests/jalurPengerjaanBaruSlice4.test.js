@@ -81,3 +81,9 @@ test("keputusan Corner terkunci setelah gerbang: Unit 360 menyembunyikan form da
   assert.match(p, /data-testid="corner-locked"/);
   assert.match(p, /canPlan && !corner\.locked/);
 });
+
+test("berat penguji bawaan (berat customer) yang TAMPIL ikut masuk isian — ditemukan QA klik UI nyata", () => {
+  const f = src("features", "production", "components", "StepForm.jsx");
+  assert.match(f, /\(stepNo === 4 \|\| stepNo === 8\) && weight && form\.testerWeightKg === undefined/);
+  assert.match(f, /testerWeightKg: String\(weight\)/);
+});

@@ -100,6 +100,8 @@ export function StepForm({ stepNo, form, setForm, card, next }) {
   const speech = useSpeech((text) => setForm((prev) => ({ ...prev, diagnosis: `${prev.diagnosis ? `${prev.diagnosis.trim()} ` : ""}${text}`, inputMethod: "VOICE" })));
   const weight = card?.customer?.weightKg;
   const issued = card?.issuedMaterials || [];
+  // Berat penguji yang TAMPIL (bawaan = berat customer) harus ikut tersimpan di isian: tanpa ini kolom terlihat terisi tetapi validasi/pengiriman menganggapnya kosong.
+  useEffect(() => { if ((stepNo === 4 || stepNo === 8) && weight && form.testerWeightKg === undefined) setForm((prev) => (prev.testerWeightKg === undefined ? { ...prev, testerWeightKg: String(weight) } : prev)); }, [stepNo, weight, form.testerWeightKg, setForm]);
 
   switch (stepNo) {
     case 1:
