@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Rilis MANUAL KODE-SAJA "sentById Galeri Produk + skrip bersihkan pesan galeri ganda" (backend saja; web tidak berubah, aplikasi lewat OTA terpisah) — workflow RELEASE-DIRECTORY di atas release aktif (BASE_SHA).
-# Diturunkan dari grep -v "rgal|release-galeri-sentby.sh. TANPA migrasi. Hanya routes/conversations.js (send-product/send-documentation) + helper + skrip pembersihan (TIDAK dijalankan oleh rilis ini).
+# Diturunkan dari release-invoice-dp.sh. TANPA migrasi. Hanya routes/conversations.js (send-product/send-documentation) + helper + skrip pembersihan (TIDAK dijalankan oleh rilis ini).
 # Aset ber-hash dari dist release aktif dibawa ke dist baru (tab terbuka saat deploy tetap bisa memuat chunk lama).
 #
-#   cat scripts/grep -v "rgal|release-galeri-sentby.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/rgal.sh && bash /tmp/rgal.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'
+#   cat scripts/release-galeri-sentby.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/rgal.sh && bash /tmp/rgal.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'
 #   ssh ubuntu@43.133.152.6 'bash /tmp/rgal.sh <DEPLOY_SHA_40> <BASE_SHA_40>'
 #
 set -Eeuo pipefail
@@ -18,7 +18,7 @@ declare -A MIGRASI_TERAUDIT=()
 NEW_MIGRATION=""   # rilis KODE SAJA: tidak ada migrasi
 # Berkas yang BOLEH berbeda dari baseline: hanya area Finance + skrip/tes-nya. Apa pun di luar ini (Production, Delivery, Inbox, schema, migration,
 # package-lock) = berhenti — supaya pekerjaan workspace lain yang sudah live tidak pernah tertimpa.
-ALLOWED_RE='^(backend/(scripts/bersihkan-pesan-galeri-ganda.js|src/(routes/conversations.js|utils/(simpanPesanGaleri|pasangPesanGaleriGanda).js)|tests/((simpanPesanGaleri|pasangPesanGaleriGanda).test.js|integration/bersihkanPesanGaleriGanda.integration.test.js))|mobile/(src/(components/(CustomerProfileContent|CustomerSheet|OrderCard).js|components/order/OrderInvoiceTab.js|lib/(lapisanMelayang|navigationRef).js|push.js|screens/CustomerDetailScreen.js)|__tests__/(identifierTakDikenal|lapisanMelayang).test.mjs)|scripts/grep -v "rgal|release-galeri-sentby.sh)$'  # EKSPLISIT; mobile/ hanya tercatat di repo (OTA terpisah, sudah terbit)
+ALLOWED_RE='^(backend/(scripts/bersihkan-pesan-galeri-ganda\.js|src/(routes/conversations\.js|utils/(simpanPesanGaleri|pasangPesanGaleriGanda)\.js)|tests/((simpanPesanGaleri|pasangPesanGaleriGanda)\.test\.js|integration/bersihkanPesanGaleriGanda\.integration\.test\.js))|mobile/(src/(components/(CustomerProfileContent|CustomerSheet|OrderCard)\.js|components/order/OrderInvoiceTab\.js|lib/(lapisanMelayang|navigationRef)\.js|push\.js|screens/CustomerDetailScreen\.js)|__tests__/(identifierTakDikenal|lapisanMelayang)\.test\.mjs)|scripts/release-galeri-sentby\.sh)$'  # EKSPLISIT; mobile/ hanya tercatat di repo (OTA terpisah, sudah terbit)
 PUBLIC_URL="https://app.sanomatrassehat.com"
 INTERNAL_URL="http://127.0.0.1:4000"
 REPO_URL="https://github.com/sanocareai/klinik-matras-crm.git"
