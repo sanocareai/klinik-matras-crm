@@ -91,6 +91,15 @@ export default function OrderInvoiceTab({ orderId }) {
     }
   }
 
+  function startEdit() {
+    const inv = view.invoice;
+    setNama(inv.namaTujuan || view.customer?.nama || "");
+    setAlamat(inv.alamatTujuan || view.order?.deliveryAddress || "");
+    setJatuhTempo(inv.dueDate ? String(inv.dueDate).slice(0, 10) : "");
+    setCatatan(inv.notes || "");
+    setEdit(true);
+  }
+
   async function save() {
     if (jatuhTempo && !/^\d{4}-\d{2}-\d{2}$/.test(jatuhTempo)) {
       Alert.alert("Jatuh tempo", "Tulis tanggal dengan format TTTT-BB-HH, mis. 2026-10-05");
