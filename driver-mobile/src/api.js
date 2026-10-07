@@ -275,7 +275,8 @@ export const api = {
   arriveArmadaJob: (jobId, data = {}, idempotencyKey, meta = {}) => request(`/armada/jobs/${jobId}/arrive`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(executionMeta(data, meta)) }),
   completeArmadaJob: (jobId, data, idempotencyKey, meta = {}) => request(`/armada/jobs/${jobId}/complete`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(executionMeta(data, meta)) }),
   failArmadaJob: (jobId, data, idempotencyKey, meta = {}) => request(`/armada/jobs/${jobId}/fail`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(executionMeta(data, meta)) }),
-  recordJobPayment: (jobId, data) => request(`/armada/jobs/${jobId}/payment`, { method: "POST", body: JSON.stringify(data) }),
+  // recordJobPayment DIHAPUS (6 Okt 2026) — Catat Pembayaran tidak lagi
+  // tersedia di app driver, lihat catatan di components/JobCard.js.
   // Lapor revisi di lokasi (18 September 2026) — port dari frontend/src/api.js,
   // lihat catatan panjang di backend routes/armada.js POST /jobs/:id/report-revision.
   reportRevision: (jobId, data) => request(`/armada/jobs/${jobId}/report-revision`, { method: "POST", body: JSON.stringify(data) }),

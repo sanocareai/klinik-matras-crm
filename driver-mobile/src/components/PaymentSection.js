@@ -1,15 +1,16 @@
-// Catat pembayaran COD/pelunasan — port dari PaymentSection di web
-// DriverJobs.jsx (D-011). HANYA untuk job DELIVERY yang sudah COMPLETED.
-// Customer kadang bayar cash langsung ke driver saat kasur diantar; ini
-// satu-satunya jejak audit kas yang ada — dibuat semudah mungkin: jumlah +
-// metode, foto WAJIB kalau tunai (bukti serah terima uang), opsional utk
-// transfer/QRIS. Gap yang dilaporkan owner (10 Sep 2026): fitur ini sudah
-// ada di backend+web sejak lama, tapi belum pernah ada di app RN.
-import React, { useMemo, useState } from "react";
-import { View, Text, Pressable, TextInput, StyleSheet } from "react-native";
-import { Wallet, BadgeCheck, Loader2 } from "lucide-react-native";
-import PhotoCapture from "./PhotoCapture";
-import { api } from "../api";
+// Pembayaran pada job pengiriman — DRIVER TIDAK LAGI MENCATAT PEMBAYARAN
+// (keputusan Owner 7 Okt 2026). Sebelumnya (D-011, 10 Sep 2026) driver boleh
+// mencatat uang tunai dari customer; kasus nyata 6 Okt: driver mengetik "1"
+// untuk order Rp1.200.000 dan langsung masuk Uang Kas. Pembayaran/DP sekarang
+// dicatat Sales (atau Finance). Komponen ini HANYA MENAMPILKAN pembayaran
+// yang sudah tercatat pada job ini + pengingat — port 1:1 dari
+// frontend/src/pages/DriverJobs.jsx#PaymentSection (web), supaya app dan web
+// konsisten. Server juga menolak (POST /armada/jobs/:id/payment → 403
+// PEMBAYARAN_BUKAN_UNTUK_DRIVER, lihat backend/routes/armada.js), jadi APK
+// lama yang belum menerima OTA ini pun tidak bisa mencatat apa pun lagi.
+import React, { useMemo } from "react";
+import { View, Text, StyleSheet } from "react-native";
+import { Wallet } from "lucide-react-native";
 import { formatRupiah } from "../lib/jobHelpers";
 import { useTheme } from "../hooks/useTheme";
 
@@ -19,45 +20,14 @@ const PAYMENT_METHODS = [
   { value: "QRIS", label: "QRIS" },
 ];
 
-export default function PaymentSection({ job, onChanged }) {
+export default function PaymentSection({ job }) {
   const theme = useTheme();
   const styles = useMemo(() => makeStyles(theme), [theme]);
-  const [open, setOpen] = useState(false);
-  const [amount, setAmount] = useState("");
-  const [method, setMethod] = useState("CASH");
-  const [photos, setPhotos] = useState([]);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-
-  async function simpan() {
-    const amountInt = parseInt(amount, 10);
-    if (!amountInt || amountInt <= 0) { setErr("Jumlah wajib diisi"); return; }
-    if (method === "CASH" && photos.length === 0) { setErr("Foto bukti wajib untuk pembayaran tunai"); return; }
-    setBusy(true);
-    setErr("");
-    try {
-      let proofPhotoUrl = null;
-      if (photos.length > 0) {
-        const { urls } = await api.uploadJobPhotos(job.id, [photos[0]]);
-        proofPhotoUrl = urls[0] || null;
-      }
-      await api.recordJobPayment(job.id, { amount: amountInt, method, proofPhotoUrl });
-      setOpen(false);
-      setAmount("");
-      setMethod("CASH");
-      setPhotos([]);
-      onChanged();
-    } catch (e) {
-      setErr(e.message || "Gagal menyimpan pembayaran");
-    } finally {
-      setBusy(false);
-    }
-  }
 
   return (
     <View style={styles.wrap}>
       {job.payments?.length > 0 && (
-        <View style={{ gap: 6, marginBottom: open ? 10 : 0 }}>
+        <View style={{ gap: 6, marginBottom: 10 }}>
           {job.payments.map((p) => (
             <View key={p.id} style={styles.row}>
               <Text style={styles.amount}>{formatRupiah(p.amount)}</Text>
@@ -65,7 +35,6 @@ export default function PaymentSection({ job, onChanged }) {
                 <Text style={styles.method}>{PAYMENT_METHODS.find((m) => m.value === p.method)?.label || p.method}</Text>
                 {p.verifications?.length > 0 && (
                   <View style={styles.verifiedBadge}>
-                    <BadgeCheck size={11} color={theme.GREEN} />
                     <Text style={styles.verifiedText}>Terverifikasi</Text>
                   </View>
                 )}
@@ -74,56 +43,12 @@ export default function PaymentSection({ job, onChanged }) {
           ))}
         </View>
       )}
-
-      {!open && (
-        <Pressable style={styles.openBtn} onPress={() => setOpen(true)}>
-          <Wallet size={14} color={theme.ACCENT} />
-          <Text style={styles.openBtnText}>Catat Pembayaran</Text>
-        </Pressable>
-      )}
-
-      {open && (
-        <View style={{ gap: 8 }}>
-          <TextInput
-            style={styles.input}
-            placeholder="Jumlah diterima (Rp)"
-            placeholderTextColor={theme.INK3}
-            value={amount}
-            onChangeText={setAmount}
-            keyboardType="numeric"
-            editable={!busy}
-          />
-          <View style={styles.methodRow}>
-            {PAYMENT_METHODS.map((m) => (
-              <Pressable
-                key={m.value}
-                style={[styles.methodChip, method === m.value && styles.methodChipActive]}
-                onPress={() => setMethod(m.value)}
-              >
-                <Text style={[styles.methodChipText, method === m.value && styles.methodChipTextActive]}>{m.label}</Text>
-              </Pressable>
-            ))}
-          </View>
-          <PhotoCapture
-            photos={photos}
-            onChange={setPhotos}
-            label={method === "CASH" ? "Foto bukti (wajib untuk tunai)" : "Foto bukti (opsional)"}
-          />
-          {err ? <Text style={styles.err}>{err}</Text> : null}
-          <View style={styles.btnRow}>
-            <Pressable
-              style={[styles.secondaryBtn, { flex: 1 }]}
-              disabled={busy}
-              onPress={() => { setOpen(false); setErr(""); }}
-            >
-              <Text style={styles.secondaryBtnText}>Batal</Text>
-            </Pressable>
-            <Pressable style={[styles.primaryBtn, { flex: 1.4 }, busy && styles.disabled]} disabled={busy} onPress={simpan}>
-              {busy ? <Loader2 size={14} color="#FFFFFF" /> : <Text style={styles.primaryBtnText}>Simpan</Text>}
-            </Pressable>
-          </View>
-        </View>
-      )}
+      <View style={styles.reminder} testID="driver-tanpa-catat-bayar">
+        <Wallet size={14} color={theme.INK2} style={{ marginTop: 1 }} />
+        <Text style={styles.reminderText}>
+          Pembayaran dicatat oleh Sales. Bila customer membayar tunai kepadamu, segera laporkan ke Sales order ini — jangan dicatat sendiri di aplikasi.
+        </Text>
+      </View>
     </View>
   );
 }
@@ -137,34 +62,12 @@ function makeStyles(t) {
     },
     amount: { color: t.INK, fontWeight: "700", fontSize: 12.5 },
     method: { color: t.INK2, fontSize: 11 },
-    verifiedBadge: { flexDirection: "row", alignItems: "center", gap: 3 },
+    verifiedBadge: { backgroundColor: t.GREEN + "26", borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2 },
     verifiedText: { color: t.GREEN, fontSize: 10.5, fontWeight: "600" },
-    openBtn: {
-      flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
-      height: 40, borderRadius: 10, borderWidth: 1, borderColor: t.BORDER,
+    reminder: {
+      flexDirection: "row", alignItems: "flex-start", gap: 7,
+      backgroundColor: t.FIELD_BG, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 9,
     },
-    openBtnText: { color: t.ACCENT, fontWeight: "600", fontSize: 12.5 },
-    input: {
-      backgroundColor: t.FIELD_BG, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10,
-      color: t.INK, fontSize: 14,
-    },
-    methodRow: { flexDirection: "row", gap: 6 },
-    methodChip: {
-      flex: 1, alignItems: "center", paddingVertical: 9, borderRadius: 10, borderWidth: 1.5,
-      borderColor: t.BORDER,
-    },
-    methodChipActive: { borderColor: t.ACCENT, backgroundColor: t.ACCENT_BG },
-    methodChipText: { color: t.INK2, fontSize: 11.5, fontWeight: "600" },
-    methodChipTextActive: { color: t.ACCENT },
-    err: { color: t.RED, fontSize: 11.5 },
-    btnRow: { flexDirection: "row", gap: 8 },
-    secondaryBtn: {
-      alignItems: "center", justifyContent: "center", paddingVertical: 10, borderRadius: 10,
-      borderWidth: 1, borderColor: t.BORDER,
-    },
-    secondaryBtnText: { color: t.INK2, fontWeight: "600", fontSize: 12.5 },
-    primaryBtn: { backgroundColor: t.ACCENT, borderRadius: 10, paddingVertical: 10, alignItems: "center", justifyContent: "center" },
-    primaryBtnText: { color: "#FFFFFF", fontWeight: "700", fontSize: 12.5 },
-    disabled: { opacity: 0.5 },
+    reminderText: { flex: 1, color: t.INK2, fontSize: 11.5, lineHeight: 16 },
   });
 }

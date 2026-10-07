@@ -370,7 +370,7 @@ export default function JobCard({ job, onChanged }) {
       )}
 
       {mode === "idle" && job.status === "COMPLETED" && job.type === "DELIVERY" && (
-        <PaymentSection job={job} onChanged={onChanged} />
+        <PaymentSection job={job} />
       )}
 
       {/* Lapor Revisi (18 September 2026, laporan owner: "customer komplain
