@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Rilis MANUAL KODE-SAJA "gema pesan keluar berid LID tidak lagi tersimpan kembar (webhooks.js) + skrip bersihkan pesan kembar & resync percakapan" (backend; aplikasi lewat OTA terpisah) — workflow RELEASE-DIRECTORY di atas release aktif (BASE_SHA).
+# Rilis MANUAL KODE-SAJA "gema pesan keluar berid LID tidak lagi tersimpan kembar (webhooks.js) + pratinjau tidak lagi membelah emoji (messagePreview.js) + skrip bersihkan pesan kembar & resync percakapan" (backend; aplikasi lewat OTA terpisah) — workflow RELEASE-DIRECTORY di atas release aktif (BASE_SHA).
 # Diturunkan dari release-pesan-kembar.sh. TANPA migrasi. Skrip pembersihan TIDAK dijalankan oleh rilis ini (dijalankan terpisah: dry-run, backup, apply).
 # Aset ber-hash dari dist release aktif dibawa ke dist baru (tab terbuka saat deploy tetap bisa memuat chunk lama).
 #
@@ -18,7 +18,7 @@ declare -A MIGRASI_TERAUDIT=()
 NEW_MIGRATION=""   # rilis KODE SAJA: tidak ada migrasi
 # Berkas yang BOLEH berbeda dari baseline: hanya area Finance + skrip/tes-nya. Apa pun di luar ini (Production, Delivery, Inbox, schema, migration,
 # package-lock) = berhenti — supaya pekerjaan workspace lain yang sudah live tidak pernah tertimpa.
-ALLOWED_RE='^(backend/(scripts/(bersihkan-pesan-kembar|resync-percakapan-basi)\.js|src/(routes/webhooks\.js|utils/(cariPesanSudahAda|rencanaPesanKembar)\.js)|tests/((cariPesanSudahAda|rencanaPesanKembar)\.test\.js|integration/bersihkanPesanKembar\.integration\.test\.js))|mobile/(src/(hooks/useSocketEvents\.js|lib/pemulihanDaftar\.js|store/conversationStore\.js)|__tests__/(identifierTakDikenal|pemulihanDaftar)\.test\.mjs)|scripts/release-pesan-kembar\.sh)$'  # EKSPLISIT; mobile/ hanya tercatat di repo (OTA terpisah)
+ALLOWED_RE='^(backend/(scripts/(bersihkan-pesan-kembar|resync-percakapan-basi)\.js|src/(routes/webhooks\.js|utils/(cariPesanSudahAda|rencanaPesanKembar|messagePreview)\.js)|tests/((cariPesanSudahAda|rencanaPesanKembar|messagePreviewEmoji)\.test\.js|integration/bersihkanPesanKembar\.integration\.test\.js))|mobile/(src/(hooks/useSocketEvents\.js|lib/pemulihanDaftar\.js|store/conversationStore\.js)|__tests__/(identifierTakDikenal|pemulihanDaftar)\.test\.mjs)|scripts/release-pesan-kembar\.sh)$'  # EKSPLISIT; mobile/ hanya tercatat di repo (OTA terpisah)
 PUBLIC_URL="https://app.sanomatrassehat.com"
 INTERNAL_URL="http://127.0.0.1:4000"
 REPO_URL="https://github.com/sanocareai/klinik-matras-crm.git"

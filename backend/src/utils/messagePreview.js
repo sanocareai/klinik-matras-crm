@@ -15,10 +15,21 @@ const LABEL_TERSTRUKTUR = {
   poll:     "[Polling]",
 };
 
+// Potong string TANPA membelah pasangan surrogate (emoji = 2 unit UTF-16). Bug 7 Okt 2026: text.slice(0, 80) yang jatuh di tengah emoji menghasilkan
+// karakter yatim → Prisma menolak ("unexpected end of hex escape") → conversation.update GAGAL setelah pesan sudah terkirim & tersimpan, sehingga
+// lastMessageAt/preview percakapan tertinggal (Inbox tampak belum dibalas) dan rute mengembalikan 500.
+export function potongAman(text, start, end) {
+  let a = start;
+  let b = end;
+  if (a > 0 && a < text.length && (text.charCodeAt(a) & 0xfc00) === 0xdc00) a += 1; // mulai di tengah pasangan → buang separuhnya
+  if (b < text.length && b > 0 && (text.charCodeAt(b - 1) & 0xfc00) === 0xd800) b -= 1; // berakhir di separuh pertama → buang
+  return text.slice(a, Math.max(a, b));
+}
+
 export function buildMessagePreview(content, mediaType) {
   if (LABEL_TERSTRUKTUR[mediaType]) return LABEL_TERSTRUKTUR[mediaType];
   const text = (content || "").trim();
-  if (text) return text.length > MAX_LEN ? text.slice(0, MAX_LEN) + "…" : text;
+  if (text) return text.length > MAX_LEN ? potongAman(text, 0, MAX_LEN) + "…" : text;
   switch (mediaType) {
     case "image":    return "[Foto]";
     case "video":    return "[Video]";
@@ -45,7 +56,7 @@ export function buildSearchSnippet(content, mediaType, query) {
   if (idx === -1) return buildMessagePreview(content, mediaType); // cocok lewat nama/nomor/nama grup, bukan pesan ini
   const start = Math.max(0, idx - SNIPPET_RADIUS);
   const end   = Math.min(text.length, idx + query.length + SNIPPET_RADIUS);
-  let snippet = text.slice(start, end);
+  let snippet = potongAman(text, start, end);
   if (start > 0) snippet = "…" + snippet;
   if (end < text.length) snippet = snippet + "…";
   return snippet;
