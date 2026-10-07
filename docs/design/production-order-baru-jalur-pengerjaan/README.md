@@ -131,3 +131,53 @@ Dua temuan UX diperbaiki dari QA: copy "Jahitan selesai" pada Finish tanpa Corne
 - Unggah media oleh PIC pada **video** (uji tekstur kasur, tahap 8) tidak diuji lewat klik UI (hanya foto); tahap 8 diuji lewat API.
 - Field "Corner diperlukan?" belum ada di modal Jadwalkan (konfirmasi lewat Unit 360).
 - SEWA tetap perilaku lama (belum ditentukan).
+
+---
+
+# Slice 4 — finalisasi sebelum deploy (Corner di modal Jadwalkan, landing PIC Meja, produk ambigu, video, rehearsal gabungan)
+
+Cabang `fix/order-baru-jalur-pengerjaan`. Belum deploy; tidak ada pendaftaran operator, pemberian role, perubahan setting/cohort, atau pekerjaan production. Jalur LAYANAN tidak diubah; flow QC sebelum bongkar yang baru **tidak** dimasukkan.
+
+## "Corner diperlukan?" di modal Jadwalkan
+- Kontrak server sama dengan Unit 360: `POST /production-v2/plans` menerima `cornerRequired` (boolean) + `cornerReason` (≥ 3 karakter bila tidak diperlukan). Divalidasi **sebelum menyentuh DB**, lalu ditulis **atomik** di transaksi yang sama
+  dengan pembukaan Run + rencana + jadwal (`confirmBuildCornerInTx`); kunci idempotensi sama + payload Corner berbeda → 409; replay tidak menggandakan Run. Unit non-BARU/SEWA tidak ditanya.
+- UI: pilihan **tanpa nilai bawaan** (harus dipilih manusia); "Tidak diperlukan" memunculkan alasan wajib. Produk ambigu menampilkan kebutuhan konfirmasi jenis produk, tetapi jadwal tetap bisa disimpan.
+- Terkunci setelah gerbang yang sudah ditentukan (unit melewati QC / masuk Jahit Corner / Finish): server menolak ubah (kontrak Unit 360), kartu membawa `corner.locked`, panel Unit 360 menyembunyikan form dan menjelaskan.
+
+## Landing PIC Meja + pilihan mode
+- Sumber landing: login → `/` → Portal; portal tunggal dilompati ke `portals[0].path` (`/bengkel` → Status Produksi desktop). Kini `lib/landing.js`: **hanya** pengguna yang peran produksinya `PRODUCTION_WORKER` saja (tanpa ADMIN/OWNER/
+  PRODUCTION_LEAD/QC_LEAD/PRODUCTION_DOCUMENTER) mendarat di Aplikasi Meja; mode terakhir yang dipakai (Meja/Corner/PIC Bahan, disimpan per perangkat) dihormati selama masih diizinkan peran. ADMIN/OWNER/Lead tidak pernah dialihkan.
+- Pilihan mode (chip di tab Kerja) tampil bila peran mengizinkan >1 mode; hanya mode yang diizinkan peran (PIC Meja: tanpa Dokumentasi; ADMIN: lengkap). Akses tetap ditegakkan server per permission.
+
+## Produk ambigu (UNCONFIRMED): catatan & dokumentasi umum tetap boleh
+- Tahap 6 pada UNCONFIRMED kini `EVIDENCE` **umum** (`general: true`, `hold: PRODUCT_TYPE_UNCONFIRMED`): foto/video + penjelasan tersimpan (bukti ditandai `general`), **racikan tidak disimpan**, tahap **tidak ditutup**, tidak ada tahap 8/QC.
+  Setelah Sales memperbaiki order menjadi kasur, **racikan tetap wajib** (bukti umum tidak dihitung) sebelum uji tekstur. Dokumentasi Aplikasi Dokumentasi dan catatan komponen tidak diblokir (diuji integrasi).
+- Ditahan hanya: racikan khusus jenis produk, uji tekstur/berat badan kasur, putusan QC khusus kasur. Order Sales tidak diubah.
+
+## Bug nyata yang ditemukan QA klik UI (diperbaiki)
+Kolom "Berat penguji" (tahap 4/8) **menampilkan** berat customer sebagai nilai bawaan tetapi isian form tetap kosong → pengguna yang menerima nilai tampil kena "Isi berat penguji", dan yang mengetik tanpa menimpa mengirim angka gabungan
+(75 + 70 = 7570). Kini nilai tampil ikut tersimpan di isian (regresi di `jalurPengerjaanBaruSlice4.test.js`).
+
+## Migration branch vs baseline live terbaru
+Baseline live terakhir yang diketahui: `86cb882f` (juga `86d9162d`, `f28e232d`; **semuanya leluhur HEAD**). Pembacaan production diblokir pengaman sesi ini, jadi baseline **tidak diverifikasi ulang terhadap production** — pastikan sebelum deploy.
+Migration yang ditambahkan branch dibanding baseline itu: **tepat 2** — `20261018100000_production_build_stage` (stage routing `custom_build`) dan `20261019100000_production_build_plan_settings` (2 tabel aditif). Dibanding `origin/main` (1a783034) selisihnya 4:
+`20261016100000_production_adaptation_slice2` dan `20261017100000_production_component_notes_slice3` (sudah live, belum di main) + 2 di atas. Branch rilis Finance lain tidak membawa migration di luar himpunan HEAD.
+
+## Rehearsal gabungan dari baseline (bukan hanya 219→220)
+Titik awal: dump staging baseline (`pre-bt.dump`, 218 migrasi sampai `20261017100000`, 191 tabel) → restore ke DB scratch baru → verifier riwayat OK (218 applied, pending = 2) → `prisma migrate deploy` dengan **image kandidat bersih**:
+218 → **220** dalam satu langkah, replay "No pending migrations", verifier pasca OK. Sidik jari (jumlah baris + md5 isi) 191 tabel sebelum/sesudah (`rehearsal-combined-fingerprint-*.txt`): berbeda **hanya** `_prisma_migrations` (+2),
+`routing_stages` (+1 = `custom_build`), dan 2 tabel baru kosong (`production_run_build_settings_v2`, `production_build_material_records_v2`); 188 tabel lain identik. `prisma migrate diff` menyisakan satu drift lama yang bukan
+dari branch (`vehicle_services.id` default DB `gen_random_uuid()`). Catatan jujur: data uji adalah data staging, bukan salinan production.
+
+## QA browser (image kandidat bersih `96782b00`, login formulir sungguhan, klik UI nyata + pemeriksaan silang DB)
+`qa-ui-result-slice4.json` + `screenshots-slice4/` (390/1440 × terang/gelap). **43 skenario — 43 lulus**, error konsol 0, HTTP ≥ 400 = 0. Cakupan: landing PIC Meja/ADMIN/OWNER/Lead + mode terakhir; modal Corner (validasi UI tanpa request, simpan atomik,
+reload, produk ambigu, divan tanpa Corner); **tahap 8 kasur unggah video** (gagal unggah → Coba lagi tanpa duplikasi; kirim gagal jaringan → Coba Lagi dengan Idempotency-Key sama → tepat 1 evidence; reload; video dari kartu server diputar:
+durasi 3 dtk, 320×240, readyState 4, waktu berjalan); catatan umum produk ambigu; Konfirmasi Selesai tanpa Corner.
+Asersi QA yang salah diperbaiki: (a) P5.7 slice 3 mencari teks "Kirim ke Corner" di seluruh halaman (muncul sebagai label tahap "tidak berlaku") — kini memeriksa **tombol**; (b) pengecekan boolean psql `t`/`true`; (c) tabel `"Order"`.
+Skenario terdampak diulang pada image yang dibangun ulang dari arsip commit bersih.
+
+## Batas yang diketahui
+- Baseline live tidak dapat dibaca ulang dari production (diblokir); rehearsal memakai dump staging baseline 218.
+- Video diuji lewat Chrome headless dengan berkas mp4 H.264 nyata; belum diuji perangkat fisik/kamera S25.
+- Febri/Ucok/Ferdy belum terdaftar sebagai operator produksi; "Risdy" vs Risdi belum diverifikasi (production tidak terbaca); aktivasi pilot (RECEIVING + adaptasi ON + unit RES-02102026-014-U1) menunggu izin Owner.
+- SEWA tetap perilaku lama; LAYANAN tidak diubah (flow QC sebelum bongkar/pengukuran fondasi/before–after = slice berikutnya).
