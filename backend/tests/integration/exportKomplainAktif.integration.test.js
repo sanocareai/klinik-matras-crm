@@ -54,3 +54,27 @@ test("includeActiveComplaint: order Terkirim dgn komplain aktif ikut, tanpa flag
   assert.equal(k.status, "DELIVERED"); // status TIDAK berubah
   assert.equal(k.complaintCases[0].description, "Kasur kempis lagi");
 });
+
+test("Job pickup/kirim KOMPLAIN tidak menggantikan jadwal order asli (pickupJob/deliveryJob tetap yang asli, komplain terpisah)", async () => {
+  const u = await createLoginUser({ roles: ["ADMIN"] });
+  const login = await raw("POST", "/api/auth/login", { body: { email: u.email, password: u.password } });
+  const token = login.body.token;
+  const c = await testPrisma.customer.create({ data: { phone: "6281200002002", name: "Jadwal Komplain" } });
+  const o = await order(c.id, "DELIVERED");
+  const kasus = await testPrisma.complaintCase.create({ data: { caseNumber: `CMP-J-${Date.now()}`, orderId: o.id, category: "LAINNYA", description: "Pegal lagi", status: "DIJADWALKAN" } });
+  const hari = (n) => new Date(Date.UTC(2026, 8, n));
+  // Job ASLI dibuat lebih dulu; job KOMPLAIN lebih baru (dulu job terbaru ini yang menimpa tampilan).
+  await testPrisma.job.create({ data: { type: "PICKUP", orderId: o.id, scheduledDate: hari(10), createdAt: new Date(Date.now() - 5 * 86_400_000) } });
+  await testPrisma.job.create({ data: { type: "DELIVERY", orderId: o.id, scheduledDate: hari(12), createdAt: new Date(Date.now() - 4 * 86_400_000) } });
+  await testPrisma.job.create({ data: { type: "PICKUP", orderId: o.id, scheduledDate: hari(25), complaintCaseId: kasus.id } });
+  await testPrisma.job.create({ data: { type: "DELIVERY", orderId: o.id, scheduledDate: hari(27), complaintCaseId: kasus.id } });
+
+  const hariIni = new Date().toISOString().slice(0, 10);
+  const r = await raw("GET", `/api/orders?from=${hariIni}&to=${hariIni}&limit=50`, { token });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const item = r.body.items.find((x) => x.id === o.id);
+  assert.equal(item.pickupJob.scheduledDate.slice(0, 10), "2026-09-10");
+  assert.equal(item.deliveryJob.scheduledDate.slice(0, 10), "2026-09-12");
+  assert.equal(item.complaintPickupJob.scheduledDate.slice(0, 10), "2026-09-25");
+  assert.equal(item.complaintDeliveryJob.scheduledDate.slice(0, 10), "2026-09-27");
+});

@@ -381,9 +381,14 @@ function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageC
           job PICKUP dan DELIVERY beda tahap, jadi ditampilkan terpisah
           kalau dua-duanya ada (order LAYANAN yang sudah selesai diambil
           DAN sudah masuk antrean kirim, misalnya). */}
-      {(order.pickupJob || order.deliveryJob) && (
+      {(order.pickupJob || order.deliveryJob || order.complaintPickupJob || order.complaintDeliveryJob) && (
         <div className="mt-1 flex flex-col gap-0.5">
-          {[order.pickupJob && { ...order.pickupJob, label: "Ambil" }, order.deliveryJob && { ...order.deliveryJob, label: "Kirim" }]
+          {[
+            order.pickupJob && { ...order.pickupJob, label: "Ambil" },
+            order.deliveryJob && { ...order.deliveryJob, label: "Kirim" },
+            order.complaintPickupJob && { ...order.complaintPickupJob, label: "Ambil (Komplain)" },
+            order.complaintDeliveryJob && { ...order.complaintDeliveryJob, label: "Kirim (Komplain)" },
+          ]
             .filter(Boolean)
             .map((j, i) => (
               <p key={i} className="flex items-center gap-1 truncate text-[11px] text-ink3">
@@ -881,7 +886,9 @@ export default function Orders() {
         // BARU vs KOMPLAIN/REVISI tanpa mengubah status order.
         "Jenis Pekerjaan": punyaKomplainAktif(o) ? "KOMPLAIN / REVISI" : "Order Baru",
         "No Komplain": (o.complaintCases || []).map((c) => c.caseNumber).join(", "),
-        "Keluhan": (o.complaintCases || []).map((c) => c.description).join(" | ") || o.activeRevision?.complaint || (o.hasComplaint ? o.complaintDetail || "" : ""),
+        // Nama kolom "Keluhan Komplain" (7 Okt 2026): beda dari "Keluhan/Catatan" di bawah (keluhan awal
+        // saat order). Komplain terjadi SETELAH kasur dikirim dan customer merasakannya.
+        "Keluhan Komplain": (o.complaintCases || []).map((c) => c.description).join(" | ") || o.activeRevision?.complaint || (o.hasComplaint ? o.complaintDetail || "" : ""),
         "Hari di Status": o.daysInStatus ?? "",
         // Perkiraan? (29 Agustus 2026) — sebelumnya TIDAK di-export sama
         // sekali. "Ya" = order ini belum punya riwayat perpindahan status
@@ -930,6 +937,9 @@ export default function Orders() {
         "Tanggal Pick Up Pasti": o.pickupConfirmedDate ? o.pickupConfirmedDate.slice(0, 10) : "",
         "Estimasi Kirim": o.deliveryEstimate || "",
         "Tanggal Kirim Pasti": o.deliveryConfirmedDate ? o.deliveryConfirmedDate.slice(0, 10) : "",
+        // Jadwal job komplain/revisi — kolom TERPISAH, tidak menimpa tanggal order asli di atas.
+        "Tgl Pickup Komplain": o.complaintPickupJob?.scheduledDate ? o.complaintPickupJob.scheduledDate.slice(0, 10) : "",
+        "Tgl Kirim Komplain": o.complaintDeliveryJob?.scheduledDate ? o.complaintDeliveryJob.scheduledDate.slice(0, 10) : "",
         "Link Lokasi": o.locationUrl || "",
         Dibuat: o.createdAt ? new Date(o.createdAt).toISOString().slice(0, 10) : "",
       };
