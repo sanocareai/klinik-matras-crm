@@ -332,3 +332,105 @@ test("kebijakan gerbang QC dipin per Run: Run baru terpin QC_GATE_V1; Run lama (
   const sres = await w.lead.api.post(`${V2}/runs/${sr.id}/qc-gate`, { expectedRevision: (await card(w, sr.id)).revision, reason: "uji" }, key("g6"));
   assert.equal(sres.status, 409); assert.equal(sres.body.code, "QC_GATE_NOT_APPLICABLE");
 });
+
+// ---------------------------------------------------------------------------------------------------------------------------------------------------
+// Fase 3 LAYANAN — analisis & racikan: PLAN_RACIKAN (rencana) vs AFTER (aktual), total tinggi, atribut katalog, versi/koreksi/konflik/replay, izin, tanpa efek stok/BOM.
+// ---------------------------------------------------------------------------------------------------------------------------------------------------
+test("Fase 3: racikan rencana (fondasi + lapisan atas->bawah, ketebalan, total) dicatat PIC Meja/QC dengan aktor; rencana vs aktual dibedakan; katalog/manual/tidak diketahui; versi, koreksi, konflik, replay; tanpa stok/BOM", async () => {
+  const w = await world();
+  const { unit } = await layananUnit(w);
+  const busa = await testPrisma.material.create({ data: { code: `FOAM-F3-${++seq}`, name: "Busa HR D44 5cm", unit: "PCS", category: "RAW_MATERIAL", vendor: "CV Busa Jaya", itemGroup: "HR FOAM", active: true } });
+  const polos = await testPrisma.material.create({ data: { code: `PLN-F3-${++seq}`, name: "Bahan tanpa data", unit: "PCS", category: "RAW_MATERIAL", active: true } });
+  const URL_ = `${CN}/units/${unit.id}/sections`;
+  const post = (who, section, body, k) => who.api.post(`${URL_}/${section}`, body, key(k));
+  const counts0 = await sideEffectCounts(unit.id);
+
+  // Konteks analisis dibaca PIC Meja & PIC QC dari SATU endpoint: keluhan/request/berat customer (rujukan), komponen lama, QC awal, uji fondasi.
+  await PT.qcWhole(server, w.qc, (await testPrisma.productionRun.findFirstOrThrow({ where: { unitId: unit.id } })).id);
+  const layers = await post(w.nadya, "LAYERS_BEFORE", { expectedVersion: 0, data: { layers: [
+    { material: { kind: "MANUAL", text: "Busa lama kuning" }, thicknessCm: 6, condition: "AUS" }, { material: { kind: "UNKNOWN" }, thicknessCm: 4, condition: "KEMPES" }] } }, "lyr");
+  assert.equal(layers.status, 201, JSON.stringify(layers.body));
+  for (const who of [w.nadya, w.qc]) {
+    const n = await notes(who, unit.id);
+    assert.deepEqual([n.salesContext.complaintLabels, n.salesContext.request, n.salesContext.customerWeightKg], [["Sakit pinggang"], "Minta tekstur firm", 82], "keluhan/request/berat customer terbaca");
+    assert.equal(n.sections.WHOLE_TEST_BEFORE.version, 1); assert.equal(n.sections.LAYERS_BEFORE.version, 1); assert.equal(n.sections.PLAN_RACIKAN, null, "belum dicatat = null");
+  }
+
+  // Rencana ditulis PIC Meja; katalog + manual + tidak diketahui; urutan atas -> bawah; KEEP mewarisi ketebalan catatan awal (dibaca, tidak disalin).
+  const plan1 = { foundation: { action: "REPAIR", system: "BONNELL", material: { kind: "MANUAL", text: "Per cadangan" }, note: "Per tengah diganti sebagian" },
+    layers: [
+      { action: "REPLACE", material: { kind: "CATALOG", materialId: busa.id }, thicknessCm: 7, note: "Lapisan atas baru" },
+      { action: "KEEP", fromOrder: 2 },
+      { action: "REPLACE", material: { kind: "UNKNOWN" } },
+    ], note: "Pegas tengah lemah" };
+  const bad = await post(w.nadya, "PLAN_RACIKAN", { expectedVersion: 0, data: { layers: [], foundation: null } }, "empty"); assert.equal(bad.status, 422); assert.equal(bad.body.code, "COMPONENT_PLAN_EMPTY");
+  const noMat = await post(w.nadya, "PLAN_RACIKAN", { expectedVersion: 0, data: { layers: [{ action: "REPLACE", thicknessCm: 3 }] } }, "nomat"); assert.equal(noMat.status, 422); assert.equal(noMat.body.code, "COMPONENT_MATERIAL_REQUIRED");
+  assert.equal((await post(w.reader, "PLAN_RACIKAN", { expectedVersion: 0, data: plan1 }, "sales")).status, 403, "Sales tidak menulis racikan");
+  assert.equal(await testPrisma.unitComponentEntry.count({ where: { unitId: unit.id, section: "PLAN_RACIKAN" } }), 0);
+  const saved = await post(w.nadya, "PLAN_RACIKAN", { expectedVersion: 0, data: plan1 }, "plan1"); assert.equal(saved.status, 201, JSON.stringify(saved.body));
+  const n1 = await notes(w.qc, unit.id);
+  const e1 = n1.sections.PLAN_RACIKAN;
+  assert.equal(e1.version, 1); assert.equal(e1.actor.id, w.nadya.user.id, "penentu racikan tercatat aktornya");
+  assert.deepEqual(e1.data.layers.map((l) => l.action), ["REPLACE", "KEEP", "REPLACE"], "urutan atas -> bawah");
+  assert.equal(e1.data.layers[0].material.supplier, "CV Busa Jaya"); assert.equal(e1.data.layers[0].material.itemGroup, "HR FOAM"); assert.equal(e1.data.layers[0].material.code, busa.code);
+  assert.equal(e1.summary.totalThicknessCm, 11, "7 (baru) + 4 (KEEP dari catatan awal)"); assert.equal(e1.summary.totalComplete, false, "lapisan ke-3 tanpa ketebalan = belum lengkap");
+  assert.match(e1.summary.label, /belum lengkap/);
+  assert.deepEqual(n1.comparison.plan.layers.map((l) => [l.thicknessCm, l.thicknessSource]), [[7, "DICATAT"], [4, "DARI_CATATAN_AWAL"], [null, null]]);
+  assert.equal(n1.comparison.planVsActual.available, false); assert.match(n1.comparison.planVsActual.reason, /aktual belum dicatat/i);
+
+  // Bahan katalog tanpa data supplier/kelompok = tidak dikarang.
+  const lone = await post(w.qc, "PLAN_RACIKAN", { expectedVersion: 1, reason: "Tambah bahan polos", data: { ...plan1, layers: [...plan1.layers.slice(0, 2), { action: "REPLACE", material: { kind: "CATALOG", materialId: polos.id }, thicknessCm: 2 }] } }, "plan2");
+  assert.equal(lone.status, 201, JSON.stringify(lone.body));
+  const n2 = await notes(w.qc, unit.id); const l3 = n2.sections.PLAN_RACIKAN.data.layers[2].material;
+  assert.equal(n2.sections.PLAN_RACIKAN.version, 2); assert.equal(n2.sections.PLAN_RACIKAN.actor.id, w.qc.user.id); assert.equal(n2.sections.PLAN_RACIKAN.correctionReason, "Tambah bahan polos");
+  assert.equal("supplier" in l3, false); assert.equal("itemGroup" in l3, false); assert.equal(n2.sections.PLAN_RACIKAN.summary.totalThicknessCm, 13); assert.equal(n2.sections.PLAN_RACIKAN.summary.totalComplete, true);
+
+  // Koreksi wajib alasan; konflik versi; replay idempoten; tanpa perubahan = tanpa versi baru.
+  const noReason = await post(w.nadya, "PLAN_RACIKAN", { expectedVersion: 2, data: plan1 }, "nr"); assert.equal(noReason.status, 400); assert.equal(noReason.body.code, "COMPONENT_REASON_REQUIRED");
+  const stale = await post(w.nadya, "PLAN_RACIKAN", { expectedVersion: 1, reason: "basi", data: plan1 }, "stale"); assert.equal(stale.status, 409); assert.equal(stale.body.code, "COMPONENT_VERSION_CONFLICT");
+  const same = await post(w.nadya, "PLAN_RACIKAN", { expectedVersion: 2, reason: "sama saja", data: n2.sections.PLAN_RACIKAN.data }, "same");
+  assert.equal(same.status, 200); assert.equal(same.body.unchanged, true); assert.equal(await testPrisma.unitComponentEntry.count({ where: { unitId: unit.id, section: "PLAN_RACIKAN" } }), 2);
+  const rk = key("replay"); const body = { expectedVersion: 2, reason: "Ganti lapisan bawah", data: { ...plan1, layers: [plan1.layers[0], plan1.layers[1], { action: "REPLACE", material: { kind: "MANUAL", text: "Busa bekas" }, thicknessCm: 3 }] } };
+  const r1 = await w.nadya.api.post(`${URL_}/PLAN_RACIKAN`, body, rk); const r2 = await w.nadya.api.post(`${URL_}/PLAN_RACIKAN`, body, rk);
+  assert.deepEqual([r1.status, r2.status, r2.body.version, r2.body.replayed], [201, 200, 3, true], JSON.stringify(r2.body)); assert.equal(await testPrisma.unitComponentEntry.count({ where: { unitId: unit.id, section: "PLAN_RACIKAN" } }), 3, "replay tidak menggandakan");
+
+  // Entri lama (tanpa atribut snapshot baru) disimpan ulang tanpa perubahan = TIDAK memicu versi baru hanya karena snapshot diperkaya.
+  const lyrCat = await post(w.nadya, "FOUNDATION_BEFORE", { expectedVersion: 0, data: { system: "BONNELL", material: { kind: "CATALOG", materialId: busa.id }, condition: "AUS" } }, "fb");
+  assert.equal(lyrCat.status, 201, JSON.stringify(lyrCat.body));
+  const row = await testPrisma.unitComponentEntry.findFirstOrThrow({ where: { unitId: unit.id, section: "FOUNDATION_BEFORE" } });
+  const legacy = { ...row.payload, material: { kind: "CATALOG", materialId: row.payload.material.materialId, code: row.payload.material.code, name: row.payload.material.name, unit: row.payload.material.unit } };
+  await testPrisma.$executeRaw`UPDATE unit_component_entries_v2 SET payload = ${JSON.stringify(legacy)}::jsonb WHERE id = ${row.id}::uuid`;
+  const resave = await post(w.nadya, "FOUNDATION_BEFORE", { expectedVersion: 1, reason: "cek ulang", data: { system: "BONNELL", material: { kind: "CATALOG", materialId: busa.id }, condition: "AUS" } }, "fb2");
+  assert.equal(resave.body.unchanged, true, "entri lama tanpa supplier tidak membuat versi baru");
+
+  // Hasil AKTUAL (AFTER) terpisah dari rencana; perbandingan rencana vs aktual + total tinggi; selisih ditampilkan, tidak dikarang.
+  const after = await post(w.nadya, "AFTER", { expectedVersion: 0, data: { foundation: { action: "REPLACE", system: "BONNELL", note: "ganti penuh" }, layers: [
+    { action: "REPLACE", material: { kind: "CATALOG", materialId: busa.id }, thicknessCm: 6 }, { action: "KEEP", fromOrder: 2 }, { action: "REPLACE", material: { kind: "MANUAL", text: "Busa bekas" }, thicknessCm: 3 }] } }, "after");
+  assert.equal(after.status, 201, JSON.stringify(after.body));
+  const n3 = await notes(w.qc, unit.id); const pva = n3.comparison.planVsActual;
+  assert.equal(pva.available, true);
+  assert.deepEqual(pva.layers.map((l) => [l.status, l.diffs.join("+")]), [["BERBEDA", "KETEBALAN"], ["SAMA", ""], ["SAMA", ""]]);
+  assert.equal(pva.foundation.status, "BERBEDA"); assert.deepEqual(pva.foundation.diffs, ["TINDAKAN", "BAHAN"]);
+  assert.deepEqual([pva.total.planCm, pva.total.actualCm, pva.total.differenceCm], [14, 13, -1]);
+  assert.equal(n3.sections.PLAN_RACIKAN.version, 3, "rencana tetap; hasil aktual bukan menimpa rencana"); assert.equal(n3.sections.AFTER.version, 1);
+  // laporan membaca keduanya dari sumber yang sama
+  assert.ok(n3.comparison.plan && n3.comparison.actual);
+
+  // Katalog untuk formulir: atribut yang tersedia saja.
+  const cat = ok(await w.nadya.api.get(`${CN}/materials?q=${encodeURIComponent(busa.code)}`)); const hit = cat.items.find((m) => m.materialId === busa.id);
+  assert.deepEqual([hit.code, hit.name, hit.unit, hit.supplier, hit.itemGroup], [busa.code, busa.name, "PCS", "CV Busa Jaya", "HR FOAM"]);
+  const hit2 = ok(await w.nadya.api.get(`${CN}/materials?q=${encodeURIComponent(polos.code)}`)).items.find((m) => m.materialId === polos.id); assert.deepEqual([hit2.supplier, hit2.itemGroup], [null, null]);
+  assert.equal("density" in hit, false, "Material master belum punya densitas — tidak dikarang");
+
+  // Rencana & aktual TIDAK menyentuh stok, BOM, reservasi, issue, retur.
+  assert.deepEqual(await sideEffectCounts(unit.id), counts0, "tanpa efek stok/BOM/reservasi/issue/retur");
+});
+
+test("Fase 3: NEW/custom dan adaptasi tidak berubah — Run baru pin gerbang QC; jalur BARU tidak menunggu PIC Bahan/QC; racikan rencana hanyalah informasi", async () => {
+  const w = await world();
+  const baru = await mkOrder({ category: "BARU" }); const br = await scheduleUnit(w, baru.unit, "TABLE_3");
+  const bc = await card(w, br.id); assert.equal(bc.track, "BUILD"); assert.equal(bc.materialPic, null); assert.notEqual(bc.next.wait, "USAGE_NOT_RECORDED");
+  const res = await w.nadya.api.post(`${CN}/units/${baru.unit.id}/sections/PLAN_RACIKAN`, { expectedVersion: 0, data: { layers: [{ action: "REPLACE", material: { kind: "MANUAL", text: "Latex 5cm" }, thicknessCm: 5 }] } }, key("baru"));
+  assert.equal(res.status, 201, JSON.stringify(res.body));
+  assert.equal((await card(w, br.id)).revision, bc.revision, "catatan informasi tidak mengubah revisi Run");
+});
