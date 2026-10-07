@@ -1,0 +1,288 @@
+// Fase 2 Produksi LAYANAN — QC sebelum bongkar, catatan lapisan awal, dokumentasi bongkar, uji fondasi awal. HTTP + DB sungguhan.
+// Satu sumber data = Catatan Komponen (versi, koreksi beralasan, idempotensi, konflik); gerbang tahap di engine 12-tahap yang sama (tanpa stage engine paralel); adaptasi/NEW/SEWA tidak berubah.
+import "./setup/env.js";
+import "./setup/productionEvidenceTmpEnv.js";
+import test from "node:test";
+import assert from "node:assert/strict";
+import { testPrisma, truncateAll } from "./setup/testDb.js";
+import { createTestUser } from "./setup/fixtures.js";
+import { buildTestApp, startTestServer } from "./setup/testApp.js";
+import { makeClient } from "./setup/httpClient.js";
+import * as PT from "./setup/preTeardown.js";
+import { V2_FLAGS } from "../../src/services/v2FeatureFlags.js";
+import { setAdaptationDefault } from "../../src/services/productionSettingsService.js";
+
+let server; let seq = 0;
+test.before(async () => { await truncateAll(); server = await startTestServer(buildTestApp()); });
+test.after(async () => { await truncateAll(); await server.close(); await testPrisma.$disconnect(); });
+test.afterEach(async () => { await truncateAll(); });
+
+const key = (v) => ({ "Idempotency-Key": `pt2-${v}-${++seq}-kunci-0001` });
+const V2 = "/api/production-v2";
+const CN = `${V2}/component-notes`;
+const DATE = "2026-10-20";
+
+async function setFlag(flagKey, unitIds) {
+  const data = { enabled: unitIds !== null, scope: "GLOBAL", config: unitIds ? { unitIds } : {}, reason: "pre-teardown test" };
+  await testPrisma.v2FeatureFlag.upsert({ where: { key: flagKey }, create: { key: flagKey, ...data }, update: data });
+}
+async function addCohort(...unitIds) {
+  const row = await testPrisma.v2FeatureFlag.findUnique({ where: { key: V2_FLAGS.PRODUCTION_WRITER } });
+  const merged = [...new Set([...(row?.enabled ? row.config?.unitIds ?? [] : []), ...unitIds])];
+  for (const k of [V2_FLAGS.PRODUCTION_WRITER, V2_FLAGS.PRODUCTION_READER]) await setFlag(k, merged);
+}
+async function world() {
+  const mk = (roles) => createTestUser({ roles });
+  const [lead, nadya, qc, doc, reader, admin, driver] = await Promise.all([mk(["PRODUCTION_LEAD"]), mk(["WAREHOUSE", "PRODUCTION_WORKER"]), mk(["QC_LEAD"]), mk(["PRODUCTION_DOCUMENTER"]), mk(["SALES"]), mk(["ADMIN"]), mk(["DRIVER"])]);
+  const workCenter = await testPrisma.workCenter.create({ data: { code: `WC-PT-${++seq}`, name: "Workshop Utama" } });
+  const warehouse = await testPrisma.warehouse.create({ data: { code: `WH-PT-${++seq}`, name: "Gudang PT" } });
+  const rcv = await testPrisma.storageLocation.create({ data: { warehouseId: warehouse.id, zone: "RCV", locationType: "RECEIVING_AREA", code: `RCV-PT-${++seq}` } });
+  const nadyaOp = await testPrisma.productionOperator.create({ data: { userId: nadya.user.id, primaryWorkCenterId: workCenter.id } });
+  const c = (u) => ({ ...u, api: makeClient(server.baseUrl, u.token) });
+  return { lead: c(lead), nadya: c(nadya), qc: c(qc), doc: c(doc), reader: c(reader), admin: c(admin), driver: c(driver), rcv, wc: workCenter.id, nadyaOp };
+}
+async function mkOrder({ category = "LAYANAN", productLine = "KASUR" } = {}) {
+  const customer = await testPrisma.customer.create({ data: { name: `Bu Layanan ${++seq}` } });
+  const order = await testPrisma.order.create({
+    data: { customerId: customer.id, orderNumber: `PT2-${++seq}`, value: 2_000_000, category, status: "PROCESSING", productLine, beratBadan: 82, complaintCategory: ["SAKIT_PINGGANG"], notes: "Minta tekstur firm" },
+  });
+  const unit = await testPrisma.unit.create({ data: { unitCode: `PT2-${seq}-U1`, orderId: order.id, seq: 1, status: "RECEIVED", merk: "King Koil", ukuran: "180x200" } });
+  return { order, unit };
+}
+// Unit LAYANAN lewat pickup nyata (driver) + custody INBOUND diterima Gudang; Run lahir PENDING-free (RECEIVED) lalu dijadwalkan lewat runId.
+async function layananUnit(w, station = "TABLE_1") {
+  const customer = await testPrisma.customer.create({ data: { name: `Bu Layanan ${++seq}` } });
+  const order = await testPrisma.order.create({ data: { customerId: customer.id, orderNumber: `PT2-${++seq}`, value: 2_000_000, category: "LAYANAN", status: "PROCESSING", productLine: "KASUR", beratBadan: 82, complaintCategory: ["SAKIT_PINGGANG"], notes: "Minta tekstur firm" } });
+  const unit = await testPrisma.unit.create({ data: { unitCode: `PT2-${seq}-U1`, orderId: order.id, seq: 1, status: "AWAITING_PICKUP", merk: "King Koil", ukuran: "180x200" } });
+  const route = await testPrisma.route.create({ data: { code: `PT2-RTE-${++seq}`, date: new Date("2026-10-19T00:00:00.000Z"), status: "PUBLISHED", publishedAt: new Date(), driverId: w.driver.user.id } });
+  const job = await testPrisma.job.create({ data: { type: "PICKUP", orderId: order.id, routeId: route.id, driverId: w.driver.user.id, status: "ASSIGNED", sequence: 1, scheduledDate: new Date("2026-10-19T00:00:00.000Z") } });
+  await testPrisma.jobUnit.create({ data: { jobId: job.id, unitId: unit.id } });
+  await addCohort(unit.id);
+  const tag = `acc${++seq}`;
+  await w.driver.api.post(`/api/armada/jobs/${job.id}/start`, {}, key(`${tag}s`));
+  await w.driver.api.post(`/api/armada/jobs/${job.id}/arrive`, { location: null }, key(`${tag}a`));
+  const done = await w.driver.api.post(`/api/armada/jobs/${job.id}/complete`, { proofPhotoUrls: ["/media/job-photos/pod.jpg"], recipientName: "Penjaga", note: "ok", location: null }, key(`${tag}c`));
+  assert.equal(done.status, 200, JSON.stringify(done.body));
+  const handoff = await testPrisma.unitCustodyHandoff.findFirstOrThrow({ where: { unitId: unit.id, direction: "INBOUND" } });
+  const acc = await w.nadya.api.post(`/api/inventory/unit-custody/${handoff.id}/accept`, { locationId: w.rcv.id, expectedRevision: 1 }, key(`${tag}x`));
+  assert.equal(acc.status, 200, JSON.stringify(acc.body));
+  const run = await testPrisma.productionRun.findFirstOrThrow({ where: { unitId: unit.id } });
+  const plan = await w.lead.api.post(`${V2}/plans`, { runId: run.id, productionDate: DATE, stationCode: station, priority: 0, workCenterId: w.wc, operatorId: w.nadyaOp.id }, key("plan"));
+  assert.equal(plan.status, 201, JSON.stringify(plan.body));
+  return { order, unit, run };
+}
+async function scheduleUnit(w, unit, station = "TABLE_1") {
+  await addCohort(unit.id);
+  const res = await w.lead.api.post(`${V2}/plans`, { unitId: unit.id, productionDate: DATE, stationCode: station, priority: 0, workCenterId: w.wc, operatorId: w.nadyaOp.id }, key("sch"));
+  assert.equal(res.status, 201, JSON.stringify(res.body));
+  return testPrisma.productionRun.findFirstOrThrow({ where: { unitId: unit.id } });
+}
+let fileSeq = 0;
+async function media(who, runId, ...kinds) {
+  const fd = new FormData(); fd.append("runId", runId);
+  for (const k of kinds) { const v = k === "v"; fd.append("files", new Blob([Buffer.from(`${v ? "vid" : "img"}-${++fileSeq}-${Math.random()}`)], { type: v ? "video/mp4" : "image/jpeg" }), v ? "a.mp4" : "a.jpg"); }
+  const res = await fetch(`${server.baseUrl}${V2}/evidence/upload`, { method: "POST", headers: { Authorization: `Bearer ${who.token}` }, body: fd });
+  const body = await res.json(); assert.equal(res.status, 201, JSON.stringify(body)); return body.items.map((i) => i.url);
+}
+const card = async (w, runId) => { const r = await w.lead.api.get(`${V2}/runs/${runId}/card`); assert.equal(r.status, 200, JSON.stringify(r.body)); return r.body; };
+async function step(w, who, runId, n, { payload = {}, media: m = [] } = {}) {
+  const expectedRevision = (await card(w, runId)).revision;
+  return who.api.post(`${V2}/runs/${runId}/steps/${n}`, { expectedRevision, workCenterId: w.wc, payload, media: m }, key(`st-${n}`));
+}
+const ok = (res) => { assert.equal(res.status, 200, JSON.stringify(res.body)); return res.body; };
+const notes = async (who, unitId) => { const r = await who.api.get(`${CN}/units/${unitId}`); assert.equal(r.status, 200, JSON.stringify(r.body)); return r.body; };
+const sideEffectCounts = async (unitId) => ({
+  stock: await testPrisma.stockMovement.count({ where: { unitId } }), issues: await testPrisma.materialIssue.count({}), reservations: await testPrisma.materialReservation.count({}),
+  returns: await testPrisma.productionMaterialReturn.count({}), bom: await testPrisma.plannedBOMLine.count({}),
+});
+
+test("gerbang QC sebelum bongkar: tahap 2 menunggu PIC QC; Meja tidak bisa menulis uji; PIC QC melihat konteks Sales dan antrean; berat penguji tidak pernah otomatis", async () => {
+  const w = await world();
+  const { unit, run } = await layananUnit(w);
+  ok(await step(w, w.nadya, run.id, 1, { payload: { conditionConfirmed: true }, media: await media(w.nadya, run.id, "i") }));
+  const c = await card(w, run.id);
+  assert.deepEqual([c.next.action, c.next.wait, c.next.actor, c.next.stepNo], ["WAIT", "QC_BEFORE_PENDING", "QC", 2]);
+  const blocked = await step(w, w.nadya, run.id, 2, { payload: { feelNote: "Tengah terasa amblas" }, media: await media(w.nadya, run.id, "v") });
+  assert.equal(blocked.status, 409); assert.equal(blocked.body.code, "STEP_WAITING_QC_BEFORE_PENDING");
+
+  // otorisasi: penugasan Meja TIDAK cukup untuk menulis pengujian; dokumentasi/pembaca juga tidak
+  const body = { expectedVersion: 0, data: PT.WHOLE, media: await PT.uploadVideo(server, w.nadya, unit.id) };
+  const asMeja = await w.nadya.api.post(`${CN}/units/${unit.id}/sections/WHOLE_TEST_BEFORE`, body, key("meja"));
+  assert.equal(asMeja.status, 403); assert.equal(asMeja.body.code, "COMPONENT_QC_ONLY");
+  assert.equal((await w.doc.api.post(`${CN}/units/${unit.id}/sections/WHOLE_TEST_BEFORE`, body, key("doc"))).status, 403);
+  assert.equal((await w.reader.api.post(`${CN}/units/${unit.id}/sections/WHOLE_TEST_BEFORE`, body, key("rd"))).status, 403);
+  assert.equal(await testPrisma.unitComponentEntry.count({ where: { unitId: unit.id } }), 0, "tidak ada baris tertulis oleh yang tak berizin");
+
+  // PIC QC: antrean + konteks Sales (keluhan, request, berat customer) — rujukan saja
+  const queue = ok(await w.qc.api.get(`${CN}/qc-queue`));
+  assert.deepEqual(queue.items.map((i) => [i.unitCode, i.section]), [[unit.unitCode, "WHOLE_TEST_BEFORE"]]);
+  assert.equal((await w.nadya.api.get(`${CN}/qc-queue`)).status, 403, "antrean hanya untuk PIC QC");
+  const n0 = await notes(w.qc, unit.id);
+  assert.equal(n0.canWriteQc, true); assert.equal((await notes(w.nadya, unit.id)).canWriteQc, false);
+  assert.deepEqual([n0.salesContext.complaintLabels, n0.salesContext.request, n0.salesContext.customerWeightKg], [["Sakit pinggang"], "Minta tekstur firm", 82]);
+  assert.equal(n0.sections.WHOLE_TEST_BEFORE, null, "belum dicatat = null (bukan 0)"); assert.equal(n0.measurements.recorded.whole, false);
+
+  // validasi server: berat penguji tidak terisi otomatis dari berat customer (82) bila dikosongkan
+  const post = (data, media = body.media, expectedVersion = 0, extra = {}) => w.qc.api.post(`${CN}/units/${unit.id}/sections/WHOLE_TEST_BEFORE`, { expectedVersion, data, media, ...extra }, key("qc"));
+  const noWeight = await post({ ...PT.WHOLE, testerWeightKg: undefined }); assert.equal(noWeight.status, 422); assert.equal(noWeight.body.code, "COMPONENT_TESTER_WEIGHT_REQUIRED");
+  const noMedia = await post(PT.WHOLE, []); assert.equal(noMedia.status, 422); assert.equal(noMedia.body.code, "COMPONENT_MEDIA_REQUIRED");
+  assert.equal((await post({ ...PT.WHOLE, qcInFrame: false })).body.code, "COMPONENT_QC_IN_FRAME_REQUIRED");
+  assert.equal((await post({ ...PT.WHOLE, complaintMatch: "ENTAH" })).body.code, "COMPONENT_COMPLAINT_MATCH_REQUIRED");
+  assert.equal(await testPrisma.unitComponentEntry.count({ where: { unitId: unit.id } }), 0);
+
+  const before = await sideEffectCounts(unit.id);
+  const saved = await post(PT.WHOLE); assert.equal(saved.status, 201, JSON.stringify(saved.body)); assert.equal(saved.body.version, 1);
+  assert.deepEqual(await sideEffectCounts(unit.id), before, "tidak menyentuh stok/BOM/reservasi/issue/retur");
+  const n1 = await notes(w.qc, unit.id);
+  assert.deepEqual([n1.measurements.whole.testerWeightKg, n1.measurements.whole.wholeDropCm, n1.measurements.whole.complaintMatchLabel], [75, 4, "Sebagian sesuai"]);
+  assert.equal(n1.sections.WHOLE_TEST_BEFORE.media[0].kind, "video"); assert.equal(n1.sections.WHOLE_TEST_BEFORE.actor.id, w.qc.user.id);
+  // video dapat dibuka lewat tautan bertanda tangan setelah reload
+  const play = await fetch(`${server.baseUrl}${n1.sections.WHOLE_TEST_BEFORE.media[0].previewUrl}`); assert.equal(play.status, 200); assert.equal(play.headers.get("content-type"), "video/mp4");
+  assert.equal((await w.qc.api.get(`${CN}/qc-queue`)).body.items.length, 0, "keluar dari antrean setelah tercatat");
+
+  // PIC Meja kini cukup 'Lanjutkan' (bukti hanya menaut versi catatan QC; tidak menyalin angka)
+  const c2 = await card(w, run.id);
+  assert.deepEqual([c2.next.action, c2.next.continueOnly, c2.next.qcRecorded], ["COMPLETE", true, true]);
+  ok(await step(w, w.nadya, run.id, 2, {}));
+  const ev = await testPrisma.productionStepEvidence.findFirstOrThrow({ where: { runId: run.id, stepNo: 2, stepCode: "S02_FEEL_TEST" } });
+  assert.deepEqual(ev.payload, { qcRef: { section: "WHOLE_TEST_BEFORE", version: 1 } });
+});
+
+test("versi, koreksi beralasan, idempotensi, konflik, tanpa perubahan = tidak ada versi baru; riwayat tidak menimpa", async () => {
+  const w = await world();
+  const { unit, run } = await layananUnit(w);
+  ok(await step(w, w.nadya, run.id, 1, { payload: { conditionConfirmed: true }, media: await media(w.nadya, run.id, "i") }));
+  const media1 = await PT.uploadVideo(server, w.qc, unit.id);
+  const url = (kk) => `${CN}/units/${unit.id}/sections/WHOLE_TEST_BEFORE`;
+  const k1 = key("v1");
+  const v1 = await w.qc.api.post(url(), { expectedVersion: 0, data: PT.WHOLE, media: media1 }, k1); assert.equal(v1.status, 201);
+  const replay = await w.qc.api.post(url(), { expectedVersion: 0, data: PT.WHOLE, media: media1 }, k1);
+  assert.equal(replay.status, 200); assert.equal(replay.body.replayed, true); assert.equal(await testPrisma.unitComponentEntry.count({ where: { unitId: unit.id } }), 1, "replay tidak menggandakan");
+  assert.equal((await w.qc.api.post(url(), { expectedVersion: 0, data: { ...PT.WHOLE, wholeDropCm: 9 }, media: media1 }, k1)).status, 409, "kunci sama + isi beda ditolak");
+  // konflik: klien basi (expectedVersion 0 padahal sudah v1) -> 409, data tidak tertimpa
+  const stale = await w.qc.api.post(url(), { expectedVersion: 0, data: { ...PT.WHOLE, wholeDropCm: 9 }, media: media1 }, key("stale"));
+  assert.equal(stale.status, 409); assert.equal(stale.body.code, "COMPONENT_VERSION_CONFLICT");
+  // koreksi wajib alasan
+  const noReason = await w.qc.api.post(url(), { expectedVersion: 1, data: { ...PT.WHOLE, wholeDropCm: 5 }, media: media1 }, key("nr"));
+  assert.equal(noReason.status, 400); assert.equal(noReason.body.code, "COMPONENT_REASON_REQUIRED");
+  // tanpa perubahan bermakna -> tidak membuat versi baru
+  const same = await w.qc.api.post(url(), { expectedVersion: 1, data: PT.WHOLE, media: media1, reason: "cek ulang angka" }, key("same"));
+  assert.equal(same.status, 200); assert.equal(same.body.unchanged, true); assert.equal(await testPrisma.unitComponentEntry.count({ where: { unitId: unit.id } }), 1);
+  const fix = await w.qc.api.post(url(), { expectedVersion: 1, data: { ...PT.WHOLE, wholeDropCm: 5, testerWeightKg: 78 }, media: media1, reason: "Angka penurunan salah catat" }, key("fix"));
+  assert.equal(fix.status, 201); assert.equal(fix.body.version, 2); assert.equal(fix.body.corrected, true);
+  const n = await notes(w.qc, unit.id);
+  assert.deepEqual([n.measurements.whole.version, n.measurements.whole.wholeDropCm, n.measurements.whole.testerWeightKg], [2, 5, 78]);
+  const hist = n.history.filter((h) => h.section === "WHOLE_TEST_BEFORE");
+  assert.deepEqual(hist.map((h) => [h.version, h.superseded, h.reason]), [[1, true, null], [2, false, "Angka penurunan salah catat"]]);
+  assert.equal(hist[0].data.wholeDropCm, 4, "versi lama TIDAK ditimpa"); assert.ok(hist[1].actor?.name && hist[1].at, "actor + waktu tercatat");
+  // koreksi setelah tahap dilanjutkan tidak memutar balik evidence lama (menaut versi saat itu)
+  ok(await step(w, w.nadya, run.id, 2, {}));
+  assert.equal((await testPrisma.productionStepEvidence.findFirstOrThrow({ where: { runId: run.id, stepNo: 2, stepCode: "S02_FEEL_TEST" } })).payload.qcRef.version, 2);
+});
+
+test("lapisan awal & dokumentasi bongkar: atas ke bawah, per layer foto/video, total dari yang diketahui (belum lengkap bila ada kosong), tahap 3 menuntut lapisan + media", async () => {
+  const w = await world();
+  const { unit, run } = await layananUnit(w);
+  ok(await step(w, w.nadya, run.id, 1, { payload: { conditionConfirmed: true }, media: await media(w.nadya, run.id, "i") }));
+  await PT.qcWhole(server, w.qc, run.id);
+  ok(await step(w, w.nadya, run.id, 2, {}));
+  const c = await card(w, run.id);
+  assert.deepEqual([c.next.action, c.next.stepNo, c.next.gated, c.next.layersRequired], ["COMPLETE", 3, true, true]);
+  const unmet = await step(w, w.nadya, run.id, 3, { payload: {}, media: await media(w.nadya, run.id, "i") });
+  assert.equal(unmet.status, 409); assert.equal(unmet.body.code, "STEP_LAYERS_REQUIRED");
+
+  const layers = { layers: [
+    { material: { kind: "MANUAL", text: "Memory foam" }, thicknessCm: 6, condition: "AUS", note: "kuning" },
+    { material: { kind: "MANUAL", text: "Soft foam" }, thicknessCm: 4, condition: "KEMPES", note: null },
+  ], note: "Ditemukan dua busa" };
+  const vids = await PT.uploadVideo(server, w.nadya, unit.id); const vid2 = await PT.uploadVideo(server, w.nadya, unit.id);
+  const body = { expectedVersion: 0, data: layers, media: [{ ...vids[0], layerOrder: 1 }, { ...vid2[0], layerOrder: 2 }, { url: (await media(w.nadya, run.id, "i"))[0] }] };
+  assert.equal((await w.nadya.api.post(`${CN}/units/${unit.id}/sections/LAYERS_BEFORE`, { ...body, media: [{ ...vids[0], layerOrder: 3 }] }, key("l-bad"))).status, 422, "tautan ke lapisan yang tidak ada ditolak");
+  const saved = await w.nadya.api.post(`${CN}/units/${unit.id}/sections/LAYERS_BEFORE`, body, key("l")); assert.equal(saved.status, 201, JSON.stringify(saved.body));
+  const n = await notes(w.nadya, unit.id);
+  assert.deepEqual(n.sections.LAYERS_BEFORE.data.layers.map((l) => l.material.text), ["Memory foam", "Soft foam"], "urutan atas ke bawah terjaga");
+  assert.deepEqual([n.sections.LAYERS_BEFORE.summary.totalThicknessCm, n.sections.LAYERS_BEFORE.summary.totalComplete], [10, true]); assert.match(n.measurements.layers.label, /Total tinggi lapisan 10 cm \(2 lapisan\)/);
+  assert.deepEqual(n.sections.LAYERS_BEFORE.media.map((m) => [m.kind, m.layerOrder]), [["video", 1], ["video", 2], ["image", null]]);
+  assert.equal((await fetch(`${server.baseUrl}${n.sections.LAYERS_BEFORE.media[1].previewUrl}`)).status, 200, "video lapisan dapat dibuka setelah reload");
+
+  // koreksi: satu lapisan tanpa ketebalan -> total "belum lengkap" (bukan 0)
+  const partial = { layers: [layers.layers[0], { ...layers.layers[1], thicknessCm: null }] };
+  const fix = await w.nadya.api.post(`${CN}/units/${unit.id}/sections/LAYERS_BEFORE`, { expectedVersion: 1, data: partial, media: body.media, reason: "Ketebalan soft foam belum terukur" }, key("l2")); assert.equal(fix.status, 201);
+  const n2 = await notes(w.nadya, unit.id);
+  assert.deepEqual([n2.measurements.layers.totalThicknessCm, n2.measurements.layers.totalComplete, n2.measurements.layers.unknownThicknessCount], [6, false, 1]); assert.match(n2.measurements.layers.label, /belum lengkap/);
+
+  // tahap 3: dokumentasi bongkar (media wajib) + tanpa centang material lama
+  const noMedia = await step(w, w.nadya, run.id, 3, { payload: {}, media: [] }); assert.equal(noMedia.status, 400);
+  ok(await step(w, w.nadya, run.id, 3, { payload: { note: "Isi kasur terlihat" }, media: await media(w.nadya, run.id, "i", "v") }));
+  const ev = await testPrisma.productionStepEvidence.findFirstOrThrow({ where: { runId: run.id, stepNo: 3 } });
+  assert.deepEqual(ev.payload.layersRef, { section: "LAYERS_BEFORE", version: 2, layersUnknown: false }); assert.equal(ev.media.length, 2);
+  // "lapisan tidak diketahui" juga dihitung (eksplisit), total tetap Belum dicatat
+  const w2 = await world(); const { unit: u2, run: r2 } = await layananUnit(w2, "TABLE_2");
+  ok(await step(w2, w2.nadya, r2.id, 1, { payload: { conditionConfirmed: true }, media: await media(w2.nadya, r2.id, "i") })); await PT.qcWhole(server, w2.qc, r2.id); ok(await step(w2, w2.nadya, r2.id, 2, {}));
+  assert.equal((await w2.nadya.api.post(`${CN}/units/${u2.id}/sections/LAYERS_BEFORE`, { expectedVersion: 0, data: { layersUnknown: true, layers: [] }, media: [] }, key("lu"))).status, 201);
+  const nu = await notes(w2.nadya, u2.id); assert.equal(nu.measurements.layers.totalThicknessCm, null); assert.match(nu.measurements.layers.label, /belum dicatat/);
+});
+
+test("uji fondasi awal: penurunan dihitung server (25→15 = 10 cm), dibebani > tanpa beban ditolak, terpisah dari uji kasur utuh (tidak dijumlahkan, tanpa kategori), tahap 4 hanya melanjutkan", async () => {
+  const w = await world();
+  const { unit, run } = await layananUnit(w);
+  ok(await step(w, w.nadya, run.id, 1, { payload: { conditionConfirmed: true }, media: await media(w.nadya, run.id, "i") }));
+  await PT.qcWhole(server, w.qc, run.id); ok(await step(w, w.nadya, run.id, 2, {}));
+  await PT.layersBefore(server, w.nadya, run.id); ok(await step(w, w.nadya, run.id, 3, { payload: {}, media: await media(w.nadya, run.id, "i") }));
+  const c = await card(w, run.id);
+  assert.deepEqual([c.next.action, c.next.wait, c.next.actor, c.next.stepNo], ["WAIT", "FOUNDATION_TEST_PENDING", "QC", 4]);
+  assert.equal((await step(w, w.nadya, run.id, 4, { payload: { heightBeforeCm: 25, heightCompressedCm: 15, testerWeightKg: 75 }, media: await media(w.nadya, run.id, "v") })).status, 409, "angka dari Meja tidak menggantikan uji PIC QC");
+  assert.equal((await w.qc.api.get(`${CN}/qc-queue`)).body.items[0].section, "FOUNDATION_TEST_BEFORE");
+
+  const url = `${CN}/units/${unit.id}/sections/FOUNDATION_TEST_BEFORE`;
+  const vid = await PT.uploadVideo(server, w.qc, unit.id);
+  const taller = await w.qc.api.post(url, { expectedVersion: 0, data: { ...PT.FOUNDATION, loadedHeightCm: 26 }, media: vid }, key("ft-bad")); assert.equal(taller.body.code, "COMPONENT_LOADED_TALLER");
+  assert.equal((await w.qc.api.post(url, { expectedVersion: 0, data: { ...PT.FOUNDATION, testerWeightKg: undefined }, media: vid }, key("ft-w"))).body.code, "COMPONENT_TESTER_WEIGHT_REQUIRED");
+  assert.equal((await w.qc.api.post(url, { expectedVersion: 0, data: PT.FOUNDATION, media: [] }, key("ft-m"))).body.code, "COMPONENT_MEDIA_REQUIRED");
+  assert.equal((await w.nadya.api.post(url, { expectedVersion: 0, data: PT.FOUNDATION, media: vid }, key("ft-meja"))).status, 403);
+  const saved = await w.qc.api.post(url, { expectedVersion: 0, data: { ...PT.FOUNDATION, dropCm: 99, category: "AMBLAS" }, media: vid }, key("ft")); assert.equal(saved.status, 201, JSON.stringify(saved.body));
+  const stored = (await testPrisma.unitComponentEntry.findFirstOrThrow({ where: { unitId: unit.id, section: "FOUNDATION_TEST_BEFORE" } })).payload;
+  assert.equal(stored.dropCm, 10, "dihitung server, bukan dari klien"); assert.equal("category" in stored, false);
+  const n = await notes(w.qc, unit.id); const m = n.measurements;
+  assert.deepEqual([m.whole.wholeDropCm, m.foundation.dropCm, m.foundation.unloadedHeightCm, m.foundation.loadedHeightCm, m.foundation.testerWeightKg], [4, 10, 25, 15, 75]);
+  assert.equal(m.combinedEstimate, null); assert.match(m.separationNote, /TIDAK dijumlahkan/); assert.doesNotMatch(JSON.stringify(m), /"(total(Drop|Penurunan)|sum|category|kategori|amblas)"s*:/i, "tidak ada kunci total/kategori otomatis");
+  // tahap 4: Lanjutkan (menaut versi uji fondasi) — PIC Meja tidak menimpa angka
+  ok(await step(w, w.nadya, run.id, 4, {}));
+  const ev = await testPrisma.productionStepEvidence.findFirstOrThrow({ where: { runId: run.id, stepNo: 4 } });
+  assert.deepEqual(ev.payload.qcRef, { section: "FOUNDATION_TEST_BEFORE", version: 1 }); assert.equal("dropCm" in ev.payload, false, "angka tidak disalin ke bukti (satu sumber)");
+  assert.deepEqual([(await card(w, run.id)).next.stepNo], [5], "lanjut ke Diagnosa — engine 12 tahap sama");
+});
+
+test("laporan: pengujian awal tampil terpisah di laporan & pesan Sales (tanpa 'amblas' otomatis, tanpa penjumlahan); belum dicatat disebut jelas", async () => {
+  const w = await world();
+  const { run } = await layananUnit(w);
+  ok(await step(w, w.nadya, run.id, 1, { payload: { conditionConfirmed: true }, media: await media(w.nadya, run.id, "i") }));
+  await PT.qcWhole(server, w.qc, run.id);
+  const rep = await w.lead.api.get(`${V2}/runs/${run.id}/report`);
+  if (rep.status === 200) {
+    assert.equal(rep.body.components.measurements.whole.wholeDropCm, 4); assert.equal(rep.body.components.measurements.foundation, null);
+    assert.match(rep.body.message, /PENGUJIAN AWAL/); assert.match(rep.body.message, /Uji Fondasi\s+: Belum dicatat/); assert.doesNotMatch(rep.body.message, /amblas \d/i);
+  } else assert.fail(`laporan tidak terbaca: ${rep.status} ${JSON.stringify(rep.body)}`);
+});
+
+test("adaptasi, SEWA, dan jalur NEW/custom TIDAK terkena gerbang; tahap boleh dilewati dengan alasan (tanpa hasil uji/bukti palsu)", async () => {
+  const w = await world();
+  // SEWA: perilaku lama (tahap 2 langsung bisa dikirim dengan bukti PIC)
+  const sewa = await mkOrder({ category: "SEWA" }); const sr = await scheduleUnit(w, sewa.unit, "TABLE_2");
+  ok(await step(w, w.nadya, sr.id, 1, { payload: { conditionConfirmed: true }, media: await media(w.nadya, sr.id, "i") }));
+  assert.deepEqual([(await card(w, sr.id)).next.action, (await card(w, sr.id)).next.stepNo], ["COMPLETE", 2]);
+  ok(await step(w, w.nadya, sr.id, 2, { payload: { feelNote: "Tengah terasa amblas" }, media: await media(w.nadya, sr.id, "v") }));
+  // NEW/custom (BARU): tidak ada tahap bongkar; kartu langsung tahap 6 tanpa gerbang QC
+  const baru = await mkOrder({ category: "BARU" }); const br = await scheduleUnit(w, baru.unit, "TABLE_3");
+  const bc = await card(w, br.id); assert.equal(bc.track, "BUILD"); assert.notEqual(bc.next.wait, "QC_BEFORE_PENDING"); assert.equal(bc.next.stepNo, 6);
+  // Adaptasi AKTIF: LAYANAN boleh dilewati dengan alasan; tidak ada uji/bukti palsu
+  await setAdaptationDefault(testPrisma, { enabled: true, actorId: null });
+  const { unit: layUnit, run: lr } = await layananUnit(w, "TABLE_4"); const lay = { unit: layUnit };
+  const lc = await card(w, lr.id); assert.ok(lc.adaptation, "mode adaptasi aktif"); assert.equal(lc.next.stepNo, 1);
+  const skip = await w.nadya.api.post(`${V2}/runs/${lr.id}/steps/1/skip`, { expectedRevision: lc.revision, workCenterId: w.wc, note: "Unit sudah dibongkar sebelumnya" }, key("skip"));
+  assert.equal(skip.status, 200, JSON.stringify(skip.body));
+  const skipped = await testPrisma.productionStepEvidence.findMany({ where: { runId: lr.id, stepNo: { in: [1, 2] } } });
+  assert.ok(skipped.length >= 1 && skipped.every((e) => e.payload.outcome === "SKIPPED" && e.media.length === 0), "dilewati = SKIPPED tanpa media/hasil");
+  assert.equal(await testPrisma.unitComponentEntry.count({ where: { unitId: lay.unit.id } }), 0, "tidak ada catatan uji palsu");
+  assert.notEqual((await card(w, lr.id)).next.wait, "QC_BEFORE_PENDING");
+});

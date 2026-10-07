@@ -4,7 +4,16 @@ export const SECTIONS = Object.freeze([
   { key: "LAYERS_BEFORE", label: "Lapisan sebelum dibongkar", short: "Lapisan sebelum", phase: "BEFORE" },
   { key: "FOUNDATION_BEFORE", label: "Fondasi sebelum dibongkar", short: "Fondasi sebelum", phase: "BEFORE" },
   { key: "AFTER", label: "Sesudah pengerjaan", short: "Sesudah", phase: "AFTER" },
+  // Fase 2 (LAYANAN): pengujian awal ditulis PIC QC (qc: true) — penurunan fondasi dihitung server.
+  { key: "WHOLE_TEST_BEFORE", label: "QC sebelum bongkar (uji kasur utuh)", short: "QC sebelum bongkar", phase: "BEFORE", qc: true },
+  { key: "FOUNDATION_TEST_BEFORE", label: "Uji fondasi awal", short: "Uji fondasi awal", phase: "BEFORE", qc: true },
 ]);
+export const COMPLAINT_MATCHES = Object.freeze([
+  { key: "SESUAI", label: "Sesuai keluhan" }, { key: "SEBAGIAN", label: "Sebagian sesuai" }, { key: "TIDAK_SESUAI", label: "Tidak sesuai keluhan" }, { key: "TIDAK_DAPAT_DINILAI", label: "Tidak dapat dinilai" },
+]);
+export const MAX_MEDIA_QC = 12; export const MAX_MEDIA_LAYERS = 24;
+export const maxMediaFor = (section) => (section === "LAYERS_BEFORE" ? MAX_MEDIA_LAYERS : SECTION_BY_KEY[section]?.qc ? MAX_MEDIA_QC : MAX_MEDIA);
+export const minMediaFor = (section) => (SECTION_BY_KEY[section]?.qc ? 1 : 0);
 export const SECTION_BY_KEY = Object.fromEntries(SECTIONS.map((s) => [s.key, s]));
 export const CONDITIONS = Object.freeze([
   { key: "BAIK", label: "Baik" }, { key: "CUKUP", label: "Cukup / masih layak" }, { key: "AUS", label: "Aus / menipis" }, { key: "KEMPES", label: "Kempes / amblas" },
@@ -54,17 +63,22 @@ export const rowId = () => `r${Date.now().toString(36)}${++seq}`;
 const toText = (v) => (v == null ? "" : String(v));
 export const emptyLayerBefore = () => ({ id: rowId(), material: null, thickness: "", condition: "", note: "" });
 export const emptyLayerAfter = () => ({ id: rowId(), action: "", fromOrder: "", material: null, thickness: "", note: "" });
-const mediaItems = (media) => (media || []).map((m, i) => ({ id: `srv-${i}-${rowId()}`, kind: "image", status: "done", progress: 100, url: m.url, previewUrl: m.previewUrl || m.url, caption: m.caption || "" }));
+const mediaItems = (media, layers = null) => (media || []).map((m, i) => ({ id: `srv-${i}-${rowId()}`, kind: m.kind || "image", status: "done", progress: 100, url: m.url, previewUrl: m.previewUrl || m.url, caption: m.caption || "", layerRowId: m.layerOrder && layers ? layers[m.layerOrder - 1]?.id ?? null : null }));
 const stripRef = (r) => (r ? (r.kind === "CATALOG" ? { kind: "CATALOG", materialId: r.materialId, code: r.code, name: r.name, unit: r.unit } : r.kind === "MANUAL" ? { kind: "MANUAL", text: r.text } : { kind: "UNKNOWN" }) : null);
 
 /** Draf formulir dari entri server (atau kosong). */
 export function draftFromEntry(section, entry, suggestions = null) {
   const d = entry?.data;
   if (section === "LAYERS_BEFORE") {
-    return {
-      layersUnknown: !!d?.layersUnknown, note: toText(d?.note), media: mediaItems(entry?.media), reason: "",
-      layers: (d?.layers || []).map((l) => ({ id: rowId(), material: stripRef(l.material), thickness: toText(l.thicknessCm), condition: l.condition || "", note: toText(l.note) })),
-    };
+    const layers = (d?.layers || []).map((l) => ({ id: rowId(), material: stripRef(l.material), thickness: toText(l.thicknessCm), condition: l.condition || "", note: toText(l.note) }));
+    return { layersUnknown: !!d?.layersUnknown, note: toText(d?.note), media: mediaItems(entry?.media, layers), reason: "", layers };
+  }
+  if (section === "WHOLE_TEST_BEFORE") {
+    // Berat penguji AKTUAL: tidak pernah diisi otomatis dari berat customer (Sales) — kosong sampai petugas mengetik.
+    return { complaintMatch: d?.complaintMatch || "", complaintNote: toText(d?.complaintNote), feelNote: toText(d?.feelNote), testerWeight: toText(d?.testerWeightKg), testMethod: toText(d?.testMethod), wholeDrop: toText(d?.wholeDropCm), qcInFrame: !!d?.qcInFrame, note: toText(d?.note), media: mediaItems(entry?.media), reason: "" };
+  }
+  if (section === "FOUNDATION_TEST_BEFORE") {
+    return { system: d?.system || "", material: stripRef(d?.material), unloadedHeight: toText(d?.unloadedHeightCm), loadedHeight: toText(d?.loadedHeightCm), testerWeight: toText(d?.testerWeightKg), testMethod: toText(d?.testMethod), note: toText(d?.note), media: mediaItems(entry?.media), reason: "" };
   }
   if (section === "FOUNDATION_BEFORE") {
     return { system: d?.system || "", material: stripRef(d?.material), condition: d?.condition || "", note: toText(d?.note), media: mediaItems(entry?.media), reason: "" };
@@ -89,13 +103,36 @@ export function payloadFromDraft(section, draft) {
     };
   }
   if (section === "FOUNDATION_BEFORE") return { system: draft.system, material: draft.material || null, condition: draft.condition, note };
+  if (section === "WHOLE_TEST_BEFORE") {
+    return { complaintMatch: draft.complaintMatch, complaintNote: draft.complaintNote?.trim() || null, feelNote: draft.feelNote?.trim() || "", testerWeightKg: num(draft.testerWeight), testMethod: draft.testMethod?.trim() || "", wholeDropCm: num(draft.wholeDrop), qcInFrame: !!draft.qcInFrame, note };
+  }
+  if (section === "FOUNDATION_TEST_BEFORE") {
+    // dropCm TIDAK dikirim: penurunan dihitung server (tinggi tanpa beban − dibebani).
+    return { system: draft.system, material: draft.material || null, unloadedHeightCm: num(draft.unloadedHeight), loadedHeightCm: num(draft.loadedHeight), testerWeightKg: num(draft.testerWeight), testMethod: draft.testMethod?.trim() || "", note };
+  }
   return {
     foundation: draft.foundationOn ? { action: draft.foundation.action, system: draft.foundation.system || null, material: draft.foundation.material || null, note: draft.foundation.note?.trim() || null } : null,
     layers: draft.layers.map((l) => ({ action: l.action, fromOrder: l.fromOrder === "" ? null : Number(l.fromOrder), material: l.material || null, thicknessCm: num(l.thickness), note: l.note?.trim() || null })),
     note,
   };
 }
-export const mediaPayload = (draft) => (draft.media || []).filter((m) => m.status === "done").map((m) => ({ url: m.url, caption: m.caption?.trim() || null }));
+export const mediaPayload = (draft, section = null) => (draft.media || []).filter((m) => m.status === "done").map((m) => {
+  const out = { url: m.url, caption: m.caption?.trim() || null };
+  if (section === "LAYERS_BEFORE" && m.layerRowId) { const idx = (draft.layers || []).findIndex((l) => l.id === m.layerRowId); if (idx >= 0) out.layerOrder = idx + 1; }
+  return out;
+});
+
+/** Ringkasan total tinggi lapisan (pratinjau; server menghitung ulang): hanya ketebalan yang DIKETAHUI dijumlahkan; ada yang kosong = "belum lengkap". Kosong = Belum dicatat, bukan 0. */
+export function summarizeLayersDraft(draft) {
+  if (draft.layersUnknown) return { total: null, complete: false, text: "Lapisan tidak diketahui — total tinggi belum dicatat" };
+  const rows = draft.layers || [];
+  const known = rows.map((l) => num(l.thickness)).filter((n) => n != null && Number.isFinite(n) && n > 0);
+  if (!rows.length) return { total: null, complete: false, text: "Belum ada lapisan" };
+  if (!known.length) return { total: null, complete: false, text: "Total tinggi lapisan belum dicatat" };
+  const total = Math.round(known.reduce((a, b) => a + b, 0) * 100) / 100;
+  const complete = known.length === rows.length;
+  return { total, complete, text: complete ? `Total tinggi lapisan ${total} cm (${rows.length} lapisan)` : `Total tinggi lapisan belum lengkap — ${total} cm dari ${known.length} lapisan; ${rows.length - known.length} lapisan belum diukur` };
+}
 export const hasPendingUploads = (draft) => (draft.media || []).some((m) => m.status === "uploading");
 
 const materialOk = (m) => !!m && (m.kind === "UNKNOWN" || (m.kind === "MANUAL" && (m.text || "").trim().length >= 2) || (m.kind === "CATALOG" && !!m.materialId));
@@ -112,6 +149,31 @@ export function validateDraft(section, draft, { correcting = false } = {}) {
       if (!l.condition) return `Lapisan ${i + 1}: pilih kondisi (boleh “${UNKNOWN_LABEL}”).`;
       if (!thicknessOk(l.thickness)) return `Lapisan ${i + 1}: ketebalan harus angka 0–100 cm atau dikosongkan.`;
     }
+    return null;
+  }
+  if (section === "WHOLE_TEST_BEFORE") {
+    if (!draft.complaintMatch) return "Pilih kesesuaian dengan keluhan customer (atau “Tidak dapat dinilai”).";
+    if ((draft.feelNote || "").trim().length < 3) return "Tulis feel awal (minimal 3 huruf).";
+    const w = num(draft.testerWeight);
+    if (w === null || !(w > 0) || w > 300) return "Isi berat penguji aktual (kg) — tidak terisi otomatis dari berat customer.";
+    if ((draft.testMethod || "").trim().length < 3) return "Isi titik/metode pengujian (minimal 3 huruf).";
+    const d = num(draft.wholeDrop);
+    if (d === null || !Number.isFinite(d) || d < 0 || d > 100) return "Isi penurunan kasur utuh (cm), 0–100.";
+    if (!draft.qcInFrame) return "Konfirmasi bahwa foto/video memperlihatkan PIC QC sedang menguji kasur.";
+    if (!(draft.media || []).some((m) => m.status === "done")) return "Lampirkan minimal 1 foto/video kondisi sebelum bongkar.";
+    return null;
+  }
+  if (section === "FOUNDATION_TEST_BEFORE") {
+    if (!draft.system) return `Pilih jenis/sistem fondasi (boleh “${UNKNOWN_LABEL}”).`;
+    const a = num(draft.unloadedHeight); const b = num(draft.loadedHeight);
+    if (a === null || !(a > 0) || a > 100) return "Isi tinggi tanpa beban (cm).";
+    if (b === null || !(b > 0) || b > 100) return "Isi tinggi saat dibebani (cm).";
+    if (b > a) return "Tinggi saat dibebani tidak boleh lebih besar dari tinggi tanpa beban.";
+    const w = num(draft.testerWeight);
+    if (w === null || !(w > 0) || w > 300) return "Isi berat penguji aktual (kg).";
+    if ((draft.testMethod || "").trim().length < 3) return "Isi titik/metode pengujian (minimal 3 huruf).";
+    if (draft.material && !materialOk(draft.material)) return "Lengkapi bahan fondasi atau kosongkan.";
+    if (!(draft.media || []).some((m) => m.status === "done")) return "Lampirkan minimal 1 foto/video yang memperlihatkan pengukuran fondasi dengan beban.";
     return null;
   }
   if (section === "FOUNDATION_BEFORE") {

@@ -110,7 +110,7 @@ export function actionLabel(next, { stageLabel, track } = {}) {
     case "START_WITH_EVIDENCE": return "Mulai: Foto Sebelum Bongkar";
     case "START": return `Mulai ${stageLabel || step?.label || "Tahap"}`;
     case "RESUME": return "Lanjutkan Pekerjaan";
-    case "COMPLETE": return next.stepNo === 5 && !next.serviceMissing && next.continueOnly ? "Lanjutkan" : `Kirim ${step?.label || "Tahap"}`;
+    case "COMPLETE": return !next.serviceMissing && next.continueOnly ? "Lanjutkan" : `Kirim ${step?.label || "Tahap"}`;
     case "EVIDENCE": return next.general ? "Kirim Catatan & Dokumentasi Umum" : next.rework ? `Ulangi ${step?.label || "Lapisan"} (Rework)` : `Kirim Bukti ${step?.label || ""}`.trim();
     case "TEST": return "Kirim Uji Tekstur Akhir";
     case "HANDOFF": return "Kirim ke Corner";
@@ -122,7 +122,8 @@ export function actionLabel(next, { stageLabel, track } = {}) {
 
 // Aksi yang TIDAK butuh form (langsung kirim).
 export function isQuickAction(next) {
-  return next?.action === "START" || next?.action === "RESUME" || (next?.action === "COMPLETE" && next.stepNo === 5 && next.continueOnly);
+  // continueOnly = bukti sudah ada di sumbernya (diagnosa tahap 5; catatan PIC QC tahap 2/4) -> satu ketuk "Lanjutkan" tanpa formulir.
+  return next?.action === "START" || next?.action === "RESUME" || (next?.action === "COMPLETE" && !!next.continueOnly);
 }
 
 export function waitCopy(next) {
@@ -133,6 +134,8 @@ export function waitCopy(next) {
     // kartu Planner diklik (server menegakkan ulang, bukan cuma UI).
     case "PENDING_ARRIVAL": return { title: "Menunggu konfirmasi kedatangan", text: "Unit sudah masuk produksi (pickup berhasil) tapi belum dikonfirmasi tiba di workshop. Konfirmasi kedatangan dulu di Rencana Produksi sebelum tahap ini bisa dimulai." };
     case "AWAITING_QC": return { title: "Menunggu QC", text: "Petugas QC akan menguji unit ini. Anda bisa lanjut ke unit lain." };
+    case "QC_BEFORE_PENDING": return { title: "Menunggu QC sebelum bongkar", text: "PIC QC perlu mencatat uji kasur sebelum bongkar (kesesuaian keluhan, feel awal, berat penguji, penurunan kasur utuh). Setelah tercatat, tombol Lanjutkan muncul di sini." };
+    case "FOUNDATION_TEST_PENDING": return { title: "Menunggu uji fondasi awal", text: "PIC QC perlu mencatat uji fondasi awal (tinggi tanpa beban dan dibebani, berat penguji, metode). Setelah tercatat, tombol Lanjutkan muncul di sini." };
     case "PRODUCT_TYPE_UNCONFIRMED": return { title: "Jenis produk perlu dikonfirmasi", text: `${next.problem || "Jenis produk pada order belum jelas."} Minta Sales memperbaiki jenis produk pada order — produksi tidak mengubah order. Catatan dan dokumentasi umum tetap bisa disimpan; racikan dan pengujian khusus kasur ditahan sampai jelas.` };
     case "CORNER_NOT_CONFIRMED": return { title: "Kebutuhan Corner belum dikonfirmasi", text: "Production Lead perlu mengonfirmasi apakah pekerjaan ini butuh Corner (kain/jahit) di Unit 360 › Proses. QC dan tahap berikutnya menunggu." };
     case "RACIKAN_NOT_RECORDED": return { title: "Menunggu PIC Bahan", text: "Racikan fondasi/lapisan belum dicatat PIC Bahan. Pengerjaan boleh berjalan; bukti dikirim setelah racikan tercatat." };
@@ -177,7 +180,7 @@ export function friendlyError(error) {
 }
 
 // Validasi awal form tahap (cermin kontrak server). Mengembalikan pesan galat atau null.
-export function validateStepForm(stepNo, form, { mediaItems = [], track, flow = "KASUR", byPic = false } = {}) {
+export function validateStepForm(stepNo, form, { mediaItems = [], track, flow = "KASUR", byPic = false, gated = false, layersRequired = false } = {}) {
   const rule = mediaRuleFor(stepNo, track);
   const done = mediaItems.filter((m) => m.status === "done");
   if (mediaItems.some((m) => m.status === "uploading")) return "Tunggu unggahan selesai.";
@@ -189,7 +192,10 @@ export function validateStepForm(stepNo, form, { mediaItems = [], track, flow = 
   switch (stepNo) {
     case 1: return f.conditionConfirmed ? null : "Centang konfirmasi ukuran & kondisi kain luar.";
     case 2: return (f.feelNote || "").trim().length >= 3 ? null : "Tulis catatan rasa awal.";
-    case 3: return (f.oldMaterials || []).length ? null : "Centang minimal satu material lama.";
+    case 3:
+      // Fase 2 (LAYANAN): lapisan awal dicatat di Catatan Komponen (wajib); centang jenis material lama menjadi opsional.
+      if (gated && layersRequired) return "Catat susunan lapisan awal (atas ke bawah) di bagian Catatan Komponen dulu.";
+      return gated || (f.oldMaterials || []).length ? null : "Centang minimal satu material lama.";
     case 4: {
       const a = num(f.heightBeforeCm); const b = num(f.heightCompressedCm); const w = num(f.testerWeightKg);
       if (!(a > 0) || !(b > 0)) return "Isi tinggi awal dan tinggi saat ditekan (cm).";

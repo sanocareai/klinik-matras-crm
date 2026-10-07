@@ -819,6 +819,7 @@ export const api = {
     request(`/production-v2/documentation/runs/${runId}/correct`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   // Slice 3 — Catatan Komponen kanonis per unit (Sebelum -> Sesudah): satu data untuk Meja, Corner, Dokumentasi, Unit 360, laporan. Informasi saja (tanpa stok/BOM/lifecycle).
   getComponentNotes: (unitId) => request(`/production-v2/component-notes/units/${unitId}`),
+  getComponentQcQueue: () => request("/production-v2/component-notes/qc-queue"), // fase 2: antrean pengujian awal (hanya PIC QC; 403 untuk lainnya)
   searchComponentMaterials: (q = "") => request(`/production-v2/component-notes/materials?q=${encodeURIComponent(q)}`),
   uploadComponentNoteMedia: (unitId, files, onProgress) => {
     const fd = new FormData();

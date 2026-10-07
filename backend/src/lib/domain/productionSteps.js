@@ -136,12 +136,21 @@ const label = `Tahap ${stepNo} (${stepLabelFor(stepNo, step.label, ctx.buildTrac
       if (p.conditionConfirmed !== true) throw invalid(`${label}: konfirmasi ukuran & kondisi kain luar wajib dicentang`);
       return { media, payload: { conditionConfirmed: true, conditionNote: optionalText(p.conditionNote, "Catatan kondisi") } };
     case 2:
+      // Fase 2 (LAYANAN, bukan adaptasi): hasil uji kasur utuh DITULIS PIC QC lewat Catatan Komponen (WHOLE_TEST_BEFORE, satu sumber data). PIC Meja hanya melanjutkan tahap — bukti ini
+      // hanya menautkan versi catatan QC yang dipakai (tanpa menyalin angka). Adaptasi/jalur lama tetap memakai bukti PIC (video + catatan rasa awal).
+      if (ctx.preTeardownGate) {
+        if (!ctx.gateRefs?.wholeTest) throw stepError("QC sebelum bongkar belum dicatat PIC QC", 409, "STEP_WAITING_QC_BEFORE_PENDING");
+        return { media: normalizeMedia(ctx.gateRefs.wholeTest.mediaUrls), payload: { qcRef: { section: "WHOLE_TEST_BEFORE", version: ctx.gateRefs.wholeTest.version } } };
+      }
       requireMedia(media, { label, video: true });
       return { media, payload: { feelNote: text(p.feelNote, 3, "Catatan rasa awal") } };
     case 3: {
       requireMedia(media, { label });
       const items = Array.isArray(p.oldMaterials) ? p.oldMaterials : [];
-      if (items.length === 0) throw invalid(`${label}: centang minimal satu material lama yang ditemukan`);
+      // Fase 2 (LAYANAN, bukan adaptasi): lapisan awal (atas ke bawah, per lapis + ketebalan + foto/video) wajib tercatat di Catatan Komponen (LAYERS_BEFORE) sebelum bongkar ditutup;
+      // centang jenis material lama menjadi opsional (histori lama tetap terbaca apa adanya).
+      if (ctx.preTeardownGate && !ctx.gateRefs?.layers) throw stepError("Catat susunan lapisan awal (atas ke bawah) dulu sebelum menyelesaikan bongkar", 409, "STEP_LAYERS_REQUIRED");
+      if (items.length === 0 && !ctx.preTeardownGate) throw invalid(`${label}: centang minimal satu material lama yang ditemukan`);
       const seen = new Set();
       const oldMaterials = items.map((item) => {
         const type = typeof item === "string" ? item : item?.type;
@@ -150,9 +159,14 @@ const label = `Tahap ${stepNo} (${stepLabelFor(stepNo, step.label, ctx.buildTrac
         seen.add(type);
         return { type, note: optionalText(typeof item === "string" ? null : item?.note, "Catatan material", 300) };
       });
-      return { media, payload: { oldMaterials, note: optionalText(p.note, "Catatan") } };
+      return { media, payload: { oldMaterials, note: optionalText(p.note, "Catatan"), ...(ctx.preTeardownGate ? { layersRef: { section: "LAYERS_BEFORE", version: ctx.gateRefs.layers.version, layersUnknown: !!ctx.gateRefs.layers.layersUnknown } } : {}) } };
     }
     case 4: {
+      // Fase 2 (LAYANAN, bukan adaptasi): uji fondasi awal DITULIS PIC QC (FOUNDATION_TEST_BEFORE); penurunan dihitung server dari tinggi tanpa beban − dibebani. Di sini hanya melanjutkan tahap.
+      if (ctx.preTeardownGate) {
+        if (!ctx.gateRefs?.foundationTest) throw stepError("Uji fondasi awal belum dicatat PIC QC", 409, "STEP_WAITING_FOUNDATION_TEST_PENDING");
+        return { media: normalizeMedia(ctx.gateRefs.foundationTest.mediaUrls), payload: { qcRef: { section: "FOUNDATION_TEST_BEFORE", version: ctx.gateRefs.foundationTest.version }, foundationIssues: Array.isArray(p.foundationIssues) ? p.foundationIssues.map((s) => text(s, 2, "Masalah fondasi", 200)) : [] } };
+      }
       requireMedia(media, { label, video: true });
       const heightBeforeCm = positiveNumber(p.heightBeforeCm, "Tinggi awal (cm)", { max: 100 });
       const heightCompressedCm = positiveNumber(p.heightCompressedCm, "Tinggi saat ditekan (cm)", { max: 100 });
@@ -331,6 +345,12 @@ export function deriveNextAction(state) {
       if (state.productFlow === PRODUCT_FLOW.NON_KASUR) return { actor, stepNo, action: "COMPLETE" };
       // Kasur dengan PIC Bahan: racikan dicatat PIC Bahan lebih dulu (PIC Meja menutup pengerjaan setelahnya).
       if (state.materialOperatorId && !state.racikanRecorded) return wait("MATERIAL_PIC", "RACIKAN_NOT_RECORDED", { stepNo });
+    }
+    // Fase 2 (LAYANAN, bukan adaptasi): tahap bongkar menunggu catatan PIC QC / lapisan awal. Adaptasi dan jalur pengerjaan (NEW/custom) TIDAK melewati blok ini.
+    if (state.preTeardownGate && op.stagePhase === "INTAKE") {
+      if (op.stageCode === "pre_teardown_test") return state.qcBeforeRecorded ? { actor, stepNo, action: "COMPLETE", continueOnly: true, qcRecorded: true } : wait("QC", "QC_BEFORE_PENDING", { stepNo });
+      if (op.stageCode === "foundation_test") return state.foundationTestRecorded ? { actor, stepNo, action: "COMPLETE", continueOnly: true, qcRecorded: true } : wait("QC", "FOUNDATION_TEST_PENDING", { stepNo });
+      if (op.stageCode === "teardown") return { actor, stepNo, action: "COMPLETE", gated: true, ...(state.layersBeforeRecorded ? {} : { layersRequired: true }) };
     }
     if (op.isLastPreQc && op.stagePhase === "MODULE") {
       // Bukti diurutkan kronologis (`order`). Hasil uji TERLALU KERAS/EMPUK setelah bukti modul terakhir = rework: bukti modul wajib diulang.

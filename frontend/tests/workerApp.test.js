@@ -193,7 +193,7 @@ test("komponen: setiap aksi tulis lewat command server yang ada; tidak ada statu
   assert.match(detail, /setNotice\("Tersimpan\."\); await afterChange\(\)/, "pesan sukses SETELAH server menerima");
   const sheets = strip(read("workerSheets.jsx"));
   assert.match(sheets, /submitState\(\{ online, busy \}\)/); assert.match(sheets, /disabled=\{gate\.disabled\}/); assert.match(sheets, /data-testid="offline-submit-note"/);
-  assert.match(sheets, /validateStepForm\(stepNo, form, \{ mediaItems: media, track: card\.track, flow, byPic \}\)/, "foto wajib divalidasi sebelum kirim");
+  assert.match(sheets, /validateStepForm\(stepNo, form, \{ mediaItems: media, track: card\.track, flow, byPic, gated: !!next\.gated, layersRequired: !!next\.layersRequired \}\)/, "foto wajib divalidasi sebelum kirim");
   const v1 = strip(read("V1Panels.jsx"));
   for (const call of ["api.startUnitStage", "api.resumeProductionWork", "api.completeUnitStage", "api.pauseUnitStage", "api.failUnitStage", "api.addUnitMaterial"]) assert.ok(v1.includes(call), call);
   assert.doesNotMatch(v1, /skipUnitStage|changeUnitRoute|recordQcFitTest|resolveBlocker|assignUnitStage/, "aksi berisiko/QC/penugasan TIDAK ada di aplikasi lantai");

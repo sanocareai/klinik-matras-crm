@@ -35,6 +35,7 @@ import { isDocumentationRow, DOC_STEP_CODE_PREFIX } from "../lib/domain/producti
 import { computeRunLeftovers, createLeftoverReturnsInTx } from "./productionMaterialReturnService.js";
 import { allManualMaterialsMapped, diagnosisBomValid } from "./productionDiagnosisCommandService.js";
 import { buildApplicableSteps, classifyProduct, pathHasBuildStage } from "../lib/domain/productionBuildTrack.js";
+import { loadPreTeardownFacts } from "./productionComponentNoteService.js";
 
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
@@ -133,6 +134,13 @@ export async function loadStepContext(client, run) {
     : [null, null];
   const cornerLocked = buildTrack ? await cornerDecisionLocked(client, run) : false;
   const buildView = buildTrack ? await toBuildView(client, buildSetting, buildRecord, { cornerLocked }) : null;
+  // Fase 2 (LAYANAN): gerbang QC sebelum bongkar / lapisan awal / uji fondasi awal. Hanya jalur restorasi non-adaptasi; fakta dibaca hanya saat Run berada di tahap bongkar (hemat query papan).
+  // Hanya kategori LAYANAN (restorasi): SEWA dan jalur pengerjaan (BARU/custom) TIDAK berubah.
+  const inIntake = ["pre_teardown_test", "teardown", "foundation_test"].includes(op?.stageCode);
+  const isLayanan = !buildTrack && !isAdaptationRun(run) && inIntake
+    ? (await client.order.findUnique({ where: { id: run.unit.orderId }, select: { category: true } }))?.category === "LAYANAN" : false;
+  const preTeardownGate = isLayanan;
+  const gateRefs = preTeardownGate ? await loadPreTeardownFacts(client, { unitId: run.unitId, runId: run.id }) : null;
   const lastStep6 = evidence.filter((e) => e.stepNo === 6 && !isSkippedEvidence(e)).at(-1);
   const hasRacikan = (r) => !!r && ((String(r.fondasi || "").trim().length >= 3) || (String(r.lapisan || "").trim().length >= 3));
   const racikanRecorded = buildTrack && (evidence.some((e) => e.stepNo === 6 && !isSkippedEvidence(e) && hasRacikan(e.payload?.racikan)) || hasRacikan(buildRecord?.racikan));
@@ -159,6 +167,8 @@ export async function loadStepContext(client, run) {
     materialReady: material.ready,
     diagnosisManualMapped, diagnosisBomHasLines,
     adaptation: isAdaptationRun(run), // slice 2: QC tidak wajib -> tahap kerja tuntas = siap "Selesaikan Produksi"
+    preTeardownGate, gateRefs,
+    qcBeforeRecorded: !!gateRefs?.wholeTest, layersBeforeRecorded: !!gateRefs?.layers, foundationTestRecorded: !!gateRefs?.foundationTest,
   };
   return { path, split, pathError, evidence: ordered, documentation, openShortage, latestInspection, material, state, buildSetting, buildRecord, buildView, next: deriveNextAction(state) };
 }
@@ -259,6 +269,8 @@ function waitMessage(next) {
     case "AWAITING_WAREHOUSE": return "Barang jadi menunggu diterima Gudang.";
     case "HANDOFF_REJECTED": return "Barang jadi ditolak Gudang — tindak lanjut lewat Production Lead.";
     case "EXCEPTION_OPEN": return "Ada konflik data yang harus diselesaikan Production Lead lebih dulu.";
+    case "QC_BEFORE_PENDING": return "Menunggu PIC QC mencatat uji kasur sebelum bongkar (QC sebelum bongkar).";
+    case "FOUNDATION_TEST_PENDING": return "Menunggu PIC QC mencatat uji fondasi awal.";
     case "COMPLETED": return "Produksi unit ini sudah selesai.";
     default: return "Tahap ini belum bisa dikerjakan sekarang.";
   }
@@ -296,7 +308,7 @@ export async function recordProductionStep(prisma, { runId, stepNo, actorId, ide
 
     const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "RECORD_PRODUCTION_STEP", aggregateId: runId, requestHash, expectedRevision: revisionExpected });
     const now = new Date();
-    const evidenceCtx = { issuedQtyByMaterial: [6, 7, 10].includes(requestedStep) ? await issuedQtyByMaterial(tx, run.plan?.id) : new Map(), buildTrack: ctx.state.buildTrack, productFlow: ctx.state.productFlow, racikanRecorded: ctx.state.racikanRecorded, materialsByPic: !!(ctx.state.materialOperatorId || ctx.buildRecord) };
+    const evidenceCtx = { preTeardownGate: ctx.state.preTeardownGate, gateRefs: ctx.state.gateRefs, issuedQtyByMaterial: [6, 7, 10].includes(requestedStep) ? await issuedQtyByMaterial(tx, run.plan?.id) : new Map(), buildTrack: ctx.state.buildTrack, productFlow: ctx.state.productFlow, racikanRecorded: ctx.state.racikanRecorded, materialsByPic: !!(ctx.state.materialOperatorId || ctx.buildRecord) };
     let evidence = null;
     let transition = null;
     let autoStarted = null;

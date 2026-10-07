@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { friendlyError } from "@/features/production/experience.js";
 import { BeforeAfterSummary } from "@/features/production/componentNotes/BeforeAfterSummary.jsx";
+import { PreTestBlock } from "@/features/production/componentNotes/PreTestBlock.jsx";
 
 // Paket Laporan Produksi V2 (P8E) — before · proses · after untuk Sales. Media bertanda tangan (akses aman, kedaluwarsa 60 menit).
 // Status broadcast dibaca dari outbox: selama pengirim otomatis belum aktif, status jujur "Menunggu pengirim" (PENDING) — tidak pernah
@@ -78,7 +79,8 @@ export default function ProductionReportV2() {
         <Card className="space-y-2 p-4 text-[13px]">
           <p className="font-bold text-ink">Ringkasan diagnosa</p>
           {report.order.complaints.length > 0 && <p className="text-ink2"><b>Keluhan:</b> {report.order.complaints.join(", ")}</p>}
-          {report.measurement && <p className="text-ink2"><b>Uji fondasi lama:</b> beban {report.measurement.testerWeightKg} kg, {report.measurement.heightBeforeCm} → {report.measurement.heightCompressedCm} cm (amblas {report.measurement.dropCm} cm)</p>}
+          {report.measurement && report.measurement.heightBeforeCm != null && !report.components?.measurements?.recorded?.foundation && <p className="text-ink2"><b>Uji fondasi lama:</b> beban {report.measurement.testerWeightKg} kg, {report.measurement.heightBeforeCm} → {report.measurement.heightCompressedCm} cm (penurunan {report.measurement.dropCm} cm)</p>}
+          <PreTestBlock measurements={report.components?.measurements} />
           {report.diagnosis && <p className="text-ink2"><b>Diagnosa:</b> {report.diagnosis}</p>}
           <p className="text-ink2"><b>Fondasi baru:</b> {report.materials.foundation.map((m) => `${m.name} (${m.qty})`).join(", ") || "—"}</p>
           <p className="text-ink2"><b>Lapisan baru:</b> {report.materials.layer.map((m) => `${m.name} (${m.qty})`).join(", ") || "—"}</p>

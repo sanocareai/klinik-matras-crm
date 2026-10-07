@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestMaterial, createTestUser, seedBalance } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
+import * as PT from "./setup/preTeardown.js";
 import { makeClient } from "./setup/httpClient.js";
 import { V2_FLAGS } from "../../src/services/v2FeatureFlags.js";
 
@@ -129,8 +130,11 @@ const pick = async (w, issueId) => ok(await w.nadya.api.post(`${P}/material-requ
 // Tahap 1–4 (intake) sampai operasi diagnosa berjalan.
 async function throughIntake(w, runId) {
   ok(await step(w, w.nadya, runId, 1, { payload: { conditionConfirmed: true, conditionNote: "kain luar kusam" }, media: await media(w.nadya, runId, "i") }));
+  await PT.qcWhole(server, w.qc, runId); // fase 2: catatan PIC QC / lapisan awal (gerbang tahap 2)
   ok(await step(w, w.nadya, runId, 2, { payload: { feelNote: "Tengah terasa amblas" }, media: await media(w.nadya, runId, "v") }));
+  await PT.layersBefore(server, w.nadya, runId); // fase 2: catatan PIC QC / lapisan awal (gerbang tahap 3)
   ok(await step(w, w.nadya, runId, 3, { payload: { oldMaterials: ["PER", { type: "BUSA", note: "kuning kempes" }] }, media: await media(w.nadya, runId, "i", "i") }));
+  await PT.foundationTest(server, w.qc, runId); // fase 2: catatan PIC QC / lapisan awal (gerbang tahap 4)
   ok(await step(w, w.nadya, runId, 4, { payload: { heightBeforeCm: 24, heightCompressedCm: 17, testerWeightKg: 85, foundationIssues: ["Per tengah lemah"] }, media: await media(w.nadya, runId, "v") }));
 }
 
@@ -246,9 +250,9 @@ test("lifecycle 12 tahap penuh: custody -> papan -> intake -> diagnosa (menunggu
   const report = ok(await w.lead.api.get(`${V2}/runs/${run.id}/report`));
   assert.equal(report.broadcast.status, "PENDING"); assert.equal(report.broadcast.consumerAvailable, false);
   assert.ok(report.media.before.length >= 3 && report.media.process.length >= 3 && report.media.after.length >= 3);
-  assert.equal(report.measurement.dropCm, 7); assert.equal(report.finalTest.verdict, "PAS"); assert.equal(report.textureTests.length, 2);
+  assert.equal(report.measurement.dropCm, 10, "turunan dari uji fondasi awal PIC QC (25→15 cm)"); assert.equal(report.measurement.source, "QC_FONDASI_AWAL"); assert.equal(report.finalTest.verdict, "PAS"); assert.equal(report.textureTests.length, 2);
   assert.equal(report.materials.foundation[0].qty, 1); assert.equal(report.materials.layer.length, 1, "versi terakhir per operasi, bukan dobel");
-  assert.match(report.message, /amblas 7 cm/); assert.match(report.message, /menunggu diterima Gudang/);
+  assert.match(report.message, /penurunan fondasi 10 cm/); assert.match(report.message, /tidak dijumlahkan/); assert.match(report.message, /menunggu diterima Gudang/);
   assert.ok(report.media.before.every((m) => /\?exp=\d+&sig=[a-f0-9]+$/.test(m.url)), "media laporan bertanda tangan");
 
   // Gudang menerima barang jadi -> run COMPLETED, unit READY_FOR_DELIVERY, semua fase terminal, 12/12 tahap.
@@ -284,16 +288,21 @@ test("replay & revisi: Idempotency-Key sama = respons sama tanpa data ganda; isi
   const conflict = await w.nadya.api.post(`${V2}/runs/${run.id}/steps/1`, { ...body, payload: { conditionConfirmed: true, conditionNote: "beda" } }, key("replay-1"));
   assert.equal(conflict.status, 409); assert.equal(conflict.body.code, "IDEMPOTENCY_CONFLICT");
 
+  await PT.qcWhole(server, w.qc, run.id); // fase 2: catatan PIC QC (gerbang tahap 2) — ditulis SEBELUM snapshot: yang diuji di sini hanya percobaan tahap basi/ghost/tanpa video
   const before = { ev: await evidenceCount(run.id), ops: await testPrisma.productionOperationRun.count(), cmds: await testPrisma.v2Command.count() };
   const stale = await w.nadya.api.post(`${V2}/runs/${run.id}/steps/2`, { expectedRevision: rev, workCenterId: w.wc, payload: { feelNote: "empuk" }, media: await media(w.nadya, run.id, "v") }, key("stale-2"));
   assert.equal(stale.status, 409); assert.equal(stale.body.code, "STEP_REVISION_CONFLICT"); assert.match(stale.body.error, /Muat ulang/);
   assert.deepEqual({ ev: await evidenceCount(run.id), ops: await testPrisma.productionOperationRun.count(), cmds: await testPrisma.v2Command.count() }, before);
 
-  const ghost = await step(w, w.nadya, run.id, 2, { payload: { feelNote: "empuk" }, media: [`/media/production-evidence/${"d".repeat(40)}.mp4`] });
+  // Fase 2: tahap 2 memakai media catatan PIC QC (bukan unggahan Meja). Validasi media Meja yang sama kini diuji di tahap 3 (dokumentasi bongkar).
+  ok(await step(w, w.nadya, run.id, 2, {}));
+  await PT.layersBefore(server, w.nadya, run.id);
+  const evBefore = await evidenceCount(run.id);
+  const ghost = await step(w, w.nadya, run.id, 3, { payload: {}, media: [`/media/production-evidence/${"d".repeat(40)}.jpg`] });
   assert.equal(ghost.status, 422); assert.equal(ghost.body.code, "STEP_MEDIA_NOT_FOUND");
-  const missingVideo = await step(w, w.nadya, run.id, 2, { payload: { feelNote: "empuk" }, media: await media(w.nadya, run.id, "i") });
-  assert.equal(missingVideo.status, 400); assert.equal(missingVideo.body.code, "STEP_EVIDENCE_INVALID");
-  assert.equal(await evidenceCount(run.id), 1, "bukti tidak lengkap tidak menulis apa pun");
+  const noMedia = await step(w, w.nadya, run.id, 3, { payload: {}, media: [] });
+  assert.equal(noMedia.status, 400); assert.equal(noMedia.body.code, "STEP_EVIDENCE_INVALID");
+  assert.equal(await evidenceCount(run.id), evBefore, "bukti tidak lengkap tidak menulis apa pun");
 });
 
 test("Menunggu Bahan Baku: operasi dijeda sah (PROCESS_DELAY), muncul di antrean Gudang & Andon, lanjut hanya setelah Gudang menyelesaikan", async () => {

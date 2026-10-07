@@ -103,7 +103,7 @@ function StepFormSheet({ card, next, stepNo, onClose, onSubmitted }) {
   }, [form, media, card.runId, stepNo]);
 
   async function submit() {
-    const invalid = validateStepForm(stepNo, form, { mediaItems: media, track: card.track, flow, byPic });
+    const invalid = validateStepForm(stepNo, form, { mediaItems: media, track: card.track, flow, byPic, gated: !!next.gated, layersRequired: !!next.layersRequired });
     if (invalid) { setError(invalid); return; }
     setBusy(true); setError(""); setCanRetry(false);
     const key = intentKeys.keyFor(card.runId, stepNo, card.revision);

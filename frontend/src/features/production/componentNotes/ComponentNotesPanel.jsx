@@ -4,6 +4,7 @@ import { api } from "@/api.js";
 import { isDemoActive } from "@/features/production/demo/demoGate.js";
 import { BeforeAfterSummary } from "./BeforeAfterSummary.jsx";
 import { ComponentNoteSheet } from "./ComponentNoteSheet.jsx";
+import { PreTestBlock } from "./PreTestBlock.jsx";
 import { NOT_RECORDED, SECTIONS, focusCopy, focusFor, fmtStamp, sectionStatusText } from "./componentNotesModel.js";
 
 // Panel Catatan Komponen — SATU komponen yang sama dipakai Aplikasi Meja, Corner, Dokumentasi, dan Unit 360 (membaca endpoint yang sama; tidak ada input ulang per aplikasi).
@@ -63,17 +64,20 @@ export function ComponentNotesPanel({ unitId, unitCode = null, stepNo = null, sh
                   <p className="m-0 text-[13.5px] font-bold text-ink">{s.label}</p>
                   <p className="m-0 text-[12px] text-ink3" data-testid="section-status">{e ? `${sectionStatusText(e)} · ${fmtStamp(e.at)}` : NOT_RECORDED}</p>
                 </div>
-                {canWrite && <button type="button" data-testid={`open-section-${s.key}`} data-mutates onClick={() => setSheet(s.key)} className="flex min-h-[44px] shrink-0 items-center gap-1 rounded-btn bg-surface px-3 text-[13px] font-semibold text-accent">{e ? <><Pencil size={14} aria-hidden /> Koreksi</> : <><Plus size={14} aria-hidden /> Isi</>}</button>}
+                {(s.qc ? !!data.canWriteQc : canWrite) && <button type="button" data-testid={`open-section-${s.key}`} data-mutates onClick={() => setSheet(s.key)} className="flex min-h-[44px] shrink-0 items-center gap-1 rounded-btn bg-surface px-3 text-[13px] font-semibold text-accent">{e ? <><Pencil size={14} aria-hidden /> Koreksi</> : <><Plus size={14} aria-hidden /> Isi</>}</button>}
               </div>
               {e?.media?.length > 0 && (
                 <ul className="m-0 mt-2 grid list-none grid-cols-4 gap-1.5 p-0" data-testid="section-photos">
-                  {e.media.map((m) => <li key={m.url}><img src={m.previewUrl} alt={m.caption || s.label} loading="lazy" className="aspect-square w-full rounded-btn bg-surface object-cover" /></li>)}
+                  {e.media.map((m) => <li key={m.url}>{m.kind === "video"
+                    ? <video src={m.previewUrl} controls preload="metadata" aria-label={m.caption || s.label} data-testid="section-video" className="aspect-square w-full rounded-btn bg-black object-contain" />
+                    : <img src={m.previewUrl} alt={m.caption || s.label} loading="lazy" className="aspect-square w-full rounded-btn bg-surface object-cover" />}{m.layerOrder ? <span className="block text-[10.5px] text-ink3" data-testid="media-layer-tag">Lapisan {m.layerOrder}</span> : null}</li>)}
                 </ul>
               )}
             </li>
           );
         })}
       </ul>
+      <PreTestBlock measurements={data.measurements} />
       <BeforeAfterSummary comparison={data.comparison} />
       {showHistory && data.history.length > 1 && (
         <details className="text-[12px]" data-testid="component-history">
@@ -88,7 +92,7 @@ export function ComponentNotesPanel({ unitId, unitCode = null, stepNo = null, sh
           </ul>
         </details>
       )}
-      {sheet && <ComponentNoteSheet unitId={unitId} unitCode={unitCode || data.unitCode} section={sheet} entry={data.sections[sheet]} suggestions={data.suggestions} beforeCount={beforeCount}
+      {sheet && <ComponentNoteSheet unitId={unitId} unitCode={unitCode || data.unitCode} section={sheet} entry={data.sections[sheet]} suggestions={data.suggestions} beforeCount={beforeCount} salesContext={data.salesContext}
         onClose={() => setSheet(null)} onSaved={done} onReload={async () => { setSheet(null); await load(); }} />}
     </div>
   );

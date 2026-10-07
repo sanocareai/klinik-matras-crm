@@ -85,7 +85,7 @@ test("saran dari bahan terpakai mengisi formulir Sesudah saja (belum tersimpan, 
 test("UI: satu panel yang sama dipasang di Meja/Corner, Dokumentasi, Unit 360; laporan memakai ringkasan yang sama; membaca SATU endpoint", () => {
   const detail = strip(src("features", "production", "workerApp", "JobDetail.jsx")); const doc = strip(src("features", "production", "docApp", "DocDetail.jsx"));
   const drawer = strip(src("features", "production", "UnitOverviewDrawer.jsx")); const report = strip(src("pages", "bengkel", "ProductionReportV2.jsx"));
-  assert.match(detail, /<ComponentNotesPanel unitId=\{card\.unit\.id\} unitCode=\{card\.unit\.unitCode\} stepNo=\{next\?\.stepNo \?\? null\} \/>/);
+  assert.match(detail, /<ComponentNotesPanel unitId=\{card\.unit\.id\} unitCode=\{card\.unit\.unitCode\} stepNo=\{next\?\.stepNo \?\? null\} onChanged=\{loadCard\} \/>/);
   assert.match(doc, /<ComponentNotesPanel unitId=\{detail\.unit\.id\}/); assert.match(drawer, /<ComponentNotesPanel unitId=\{d\.identity\.unitId\}/);
   assert.match(report, /<BeforeAfterSummary comparison=\{report\.components\.comparison\} \/>/); assert.match(report, /data-testid="report-components"/);
   const panel = strip(src("features", "production", "componentNotes", "ComponentNotesPanel.jsx"));
@@ -95,7 +95,7 @@ test("UI: satu panel yang sama dipasang di Meja/Corner, Dokumentasi, Unit 360; l
 
 test("Formulir: simpan = command server dengan expectedVersion + Idempotency-Key; koreksi wajib alasan; konflik -> muat versi terbaru; data-mutates (Mode Latihan); 'Bahan manual'/'Tidak diketahui'; tanpa klaim stok", () => {
   const s = strip(src("features", "production", "componentNotes", "ComponentNoteSheet.jsx")); const picker = strip(src("features", "production", "componentNotes", "MaterialPicker.jsx"));
-  assert.match(s, /api\.saveComponentNote\(unitId, section, \{ expectedVersion: entry\?\.version \?\? 0, data: payloadFromDraft\(section, draft\), media: mediaPayload\(draft\), reason: correcting \? draft\.reason\.trim\(\) : undefined \}, keyRef\.current\)/);
+  assert.match(s, /api\.saveComponentNote\(unitId, section, \{ expectedVersion: entry\?\.version \?\? 0, data: payloadFromDraft\(section, draft\), media: mediaPayload\(draft, section\), reason: correcting \? draft\.reason\.trim\(\) : undefined \}, keyRef\.current\)/);
   assert.match(s, /data-mutates data-testid="component-save"/); assert.match(s, /COMPONENT_VERSION_CONFLICT/); assert.match(s, /data-testid="component-reload"/); assert.match(s, /Alasan koreksi \*/);
   assert.match(s, /tidak memotong stok dan bukan daftar bahan\/pemakaian/); assert.match(s, /api\.uploadComponentNoteMedia\(unitId, \[file\], onProgress\)/);
   assert.match(picker, /MANUAL_LABEL/); assert.match(picker, /UNKNOWN_LABEL/); assert.match(picker, /api\.searchComponentMaterials/); assert.doesNotMatch(picker + s, /stok:|qty|harga|price/i, "formulir tidak menyentuh stok/harga/qty");

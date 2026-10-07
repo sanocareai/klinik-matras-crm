@@ -2,7 +2,7 @@
 // BACA-SAJA. Semua keadaan tahap diturunkan dari data P1–P6 + bukti P8 lewat loadStepContext (sumber yang sama dengan command) —
 // tidak ada status UI yang disimpan terpisah. Pemanggil (routes) wajib memfilter unitIds dari reader cohort; unit di luar cohort tidak pernah
 // dimuat. Data customer seperlunya: nama, berat badan, keluhan, request — tanpa telepon/alamat.
-import { componentMessageLines, getComponentReportBlock } from "./productionComponentNoteService.js";
+import { componentMessageLines, getComponentReportBlock, measurementMessageLines } from "./productionComponentNoteService.js";
 import {
   ANDON_BUCKETS, COMMAND_CENTER_COLUMNS, STEP_BY_NO, STEPS, andonBucketOf, commandCenterColumn, isSkippedEvidence, stepNoForStage,
 } from "../lib/domain/productionSteps.js";
@@ -627,7 +627,10 @@ export function buildReportMessage(report) {
   if (report.track === "BUILD") return buildTrackReportMessage(report, lines);
   lines.push("🔍 RINGKASAN DIAGNOSA & TEMUAN BONGKAR:");
   if (report.order.complaints.length) lines.push(`• Keluhan Customer : ${report.order.complaints.join(", ")}`);
-  if (report.measurement) lines.push(`• Uji Fondasi Lama : Diuji beban ${report.measurement.testerWeightKg} kg, turun dari ${report.measurement.heightBeforeCm} cm ke ${report.measurement.heightCompressedCm} cm (amblas ${report.measurement.dropCm} cm).`);
+  const preTest = measurementMessageLines(report.components?.measurements);
+  // Pengujian awal fase 2 (catatan PIC QC) menggantikan baris uji fondasi dari bukti lama; histori lama tanpa catatan tetap memakai bukti tahap 4 (tanpa kategori otomatis).
+  if (preTest.length) lines.push(...preTest);
+  else if (report.measurement && report.measurement.heightBeforeCm != null) lines.push(`• Uji Fondasi Lama : Diuji beban ${report.measurement.testerWeightKg} kg, turun dari ${report.measurement.heightBeforeCm} cm ke ${report.measurement.heightCompressedCm} cm (penurunan ${report.measurement.dropCm} cm).`);
   if (report.diagnosis) lines.push(`• Diagnosa Teknis  : ${report.diagnosis}`);
   lines.push("");
   lines.push("🛠️ TINDAKAN RESTORASI & KOMPONEN BARU (TERCATAT DI WAREHOUSE):");
@@ -702,7 +705,10 @@ export async function getProductionReport(prisma, runId, { unitIds } = {}) {
     },
     beforeFeel: latestOf(evidence, 2)?.payload?.feelNote ?? null,
     oldMaterials: latestOf(evidence, 3)?.payload?.oldMaterials ?? [],
-    measurement,
+    // Bentuk laporan lama dipertahankan: bukti tahap 4 lama membawa angka sendiri; sejak fase 2 (LAYANAN) angkanya berasal dari uji fondasi awal PIC QC (satu sumber, tidak disalin ke bukti).
+    measurement: measurement?.heightBeforeCm != null ? measurement : (components?.measurements?.foundation
+      ? { heightBeforeCm: components.measurements.foundation.unloadedHeightCm, heightCompressedCm: components.measurements.foundation.loadedHeightCm, dropCm: components.measurements.foundation.dropCm, testerWeightKg: components.measurements.foundation.testerWeightKg, source: "QC_FONDASI_AWAL" }
+      : measurement),
     diagnosis: latestOf(evidence, 5)?.payload?.diagnosis ?? null,
     materials: { foundation: [...linesOf(6), ...(ctx.buildView?.record?.materials || []).map((m) => ({ materialId: m.materialId, qty: m.qty, code: m.code ?? "—", name: m.name ?? "—", uom: m.uom ?? null }))], layer: linesOf(7), finishing: linesOf(10) },
     textureTests: finalTests.map((e) => ({ version: e.version, verdict: e.payload?.verdict, testerWeightKg: e.payload?.testerWeightKg, at: e.createdAt })),

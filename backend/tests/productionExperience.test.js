@@ -232,7 +232,7 @@ test("pesan laporan Sales mengikuti format blueprint dan jujur soal status Gudan
     finishing: { mattressStyle: "PILLOWTOP", fabricSpec: "Knitting putih", borderColor: "Abu tua" }, mediaCount: 10, reportPath: "/bengkel/production-v2/laporan/r1", handoffStatus: "OFFERED",
   });
   assert.match(message, /LAPORAN PRODUKSI SELESAI/);
-  assert.match(message, /turun dari 24 cm ke 17 cm \(amblas 7 cm\)/);
+  assert.match(message, /turun dari 24 cm ke 17 cm \(penurunan 7 cm\)/); // fase 2: istilah netral "penurunan" — kategori "amblas" tidak ditetapkan otomatis dari angka
   assert.match(message, /Model Pillowtop/);
   assert.match(message, /menunggu diterima Gudang/, "belum READY FOR DELIVERY sebelum Gudang menerima");
 });

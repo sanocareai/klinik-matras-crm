@@ -123,7 +123,14 @@ export function StepForm({ stepNo, form, setForm, card, next }) {
       const selected = form.oldMaterials || [];
       return (
         <div className="space-y-2">
-          <p className={labelCls}>Material lama yang ditemukan</p>
+          {next?.gated && (
+            <p data-testid="layers-gate-note" className={`m-0 rounded-btn px-3 py-2 text-[13px] ${next.layersRequired ? "bg-orangebg text-orange" : "bg-greenbg text-green"}`}>
+              {next.layersRequired
+                ? "Catat susunan lapisan awal (atas ke bawah, per lapis: bahan, ketebalan, kondisi) di bagian Catatan Komponen sebelum menyelesaikan bongkar. Foto/video di bawah menjadi dokumentasi isi kasur untuk customer."
+                : "Lapisan awal sudah tercatat di Catatan Komponen. Lampirkan foto/video isi kasur yang ditemukan."}
+            </p>
+          )}
+          <p className={labelCls}>{next?.gated ? "Material lama yang ditemukan (opsional)" : "Material lama yang ditemukan"}</p>
           <div className="grid grid-cols-2 gap-2">
             {OLD_MATERIALS.map((m) => (
               <Toggle key={m.value} checked={selected.includes(m.value)} onChange={(v) => set({ oldMaterials: v ? [...selected, m.value] : selected.filter((x) => x !== m.value) })}>{m.label}</Toggle>
