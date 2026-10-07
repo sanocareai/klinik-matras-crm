@@ -37,6 +37,7 @@ const LAYAR = [
   "../src/components/CatatPembayaranDariChat.js",
   "../src/lib/invoiceDp.js",
   "../src/lib/klaimLunas.js",
+  "../src/push.js",
 ];
 
 for (const f of LAYAR) {
