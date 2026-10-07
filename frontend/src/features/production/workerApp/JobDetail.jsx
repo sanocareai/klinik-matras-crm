@@ -48,8 +48,9 @@ function Identity({ job, extra = null }) {
   );
 }
 
-function StepList({ steps, lane }) {
-  const mine = steps.filter((s) => (lane === "CORNER" ? s.no >= 9 : lane === "MATERIAL" ? true : s.no <= 9));
+function StepList({ steps, lane, noCorner = false }) {
+  // Jalur pengerjaan TANPA Corner (dikonfirmasi pada rencana): Finish (tahap 12) dikerjakan PIC Meja, jadi tampil di daftar Meja.
+  const mine = steps.filter((s) => (lane === "CORNER" ? s.no >= 9 : lane === "MATERIAL" ? true : s.no <= 9 || (noCorner && s.no === 12)));
   return (
     <ol className="m-0 list-none space-y-1 p-0" aria-label="Tahap">
       {mine.map((s) => (
@@ -180,7 +181,7 @@ function V2Detail({ job, lane, onBack, onChanged }) {
             <>
               <Section title="Progres" testid="section-progres" aside={card.timer?.elapsedMinutes ? <span className="flex items-center gap-1 text-[12.5px] text-ink3"><Clock size={13} aria-hidden /> {formatMinutes(card.timer.elapsedMinutes)}</span> : null}>
                 <div className="mb-3"><ProgressLine job={view} /></div>
-                <StepList steps={card.steps} lane={lane} />
+                <StepList steps={card.steps} lane={lane} noCorner={card.track === "BUILD" && card.build?.corner?.required === false} />
               </Section>
               {card.track === "BUILD" && <BuildInfo card={card} />}
               <Section title="Catatan Komponen" testid="section-komponen"><ComponentNotesPanel unitId={card.unit.id} unitCode={card.unit.unitCode} stepNo={next?.stepNo ?? null} /></Section>
