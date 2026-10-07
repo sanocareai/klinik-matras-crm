@@ -194,62 +194,11 @@ const PAYMENT_METHODS = [
   { value: "QRIS", label: "QRIS" },
 ];
 
-// ── Catat Pembayaran (D-011) — HANYA untuk job DELIVERY yang sudah selesai.
-// Customer kadang bayar cash langsung ke driver saat kasur diantar; ini
-// satu-satunya jejak audit kas yang ada sekarang, jadi dibuat semudah
-// mungkin — jumlah + metode, foto opsional (WAJIB kalau tunai, supaya ada
-// bukti serah terima uang, sama semangatnya dengan foto bukti job).
-function PaymentSection({ job, onChanged, onQueued }) {
-  const [open, setOpen] = useState(false);
-  const [amount, setAmount] = useState("");
-  const [method, setMethod] = useState("CASH");
-  const [photo, setPhoto] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const [justQueued, setJustQueued] = useState(false);
-  const [err, setErr] = useState("");
-
-  function handlePhoto(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    compressImage(file).then(setPhoto);
-    e.target.value = "";
-  }
-
-  async function handleSave() {
-    const amountInt = parseInt(amount, 10);
-    if (!amountInt || amountInt <= 0) { setErr("Jumlah wajib diisi"); return; }
-    if (method === "CASH" && !photo) { setErr("Foto bukti wajib untuk pembayaran tunai"); return; }
-    setBusy(true);
-    setErr("");
-    try {
-      const kirim = (konfirmasiNominalKecil) => submitOrQueue(job.id, "payment", { amount: amountInt, method, ...(konfirmasiNominalKecil && { konfirmasiNominalKecil: true }) }, photo ? [photo] : []);
-      let hasil;
-      try {
-        hasil = await kirim(false);
-      } catch (e1) {
-        // Server menahan nominal yang sangat kecil (mis. salah ketik "1" untuk Rp1.200.000): tanya dulu, kirim ulang hanya bila driver menegaskan.
-        if (e1?.code !== "NOMINAL_KECIL_PERLU_KONFIRMASI") throw e1;
-        if (!window.confirm(`${e1.message}
-
-Tekan OK bila memang segitu, Batal untuk memperbaiki angkanya.`)) { setBusy(false); return; }
-        hasil = await kirim(true);
-      }
-      const { queued } = hasil;
-      setOpen(false);
-      setAmount(""); setMethod("CASH"); setPhoto(null);
-      if (queued) {
-        setJustQueued(true);
-        onQueued();
-      } else {
-        onChanged();
-      }
-    } catch (e2) {
-      setErr(e2.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
+// ── Pembayaran pada job pengiriman — DRIVER TIDAK LAGI MENCATAT PEMBAYARAN (keputusan Owner 7 Okt 2026).
+// Sebelumnya (D-011) driver boleh mencatat uang tunai dari customer; kasus nyata 6 Okt: driver mengetik "1" untuk order Rp1.200.000 dan langsung masuk Uang Kas.
+// Pembayaran/DP dicatat Sales (atau Finance). Layar ini hanya MENAMPILKAN pembayaran yang sudah tercatat pada order ini + pengingat. Server juga menolak
+// (POST /armada/jobs/:id/payment → 403 PEMBAYARAN_BUKAN_UNTUK_DRIVER), jadi aplikasi lama yang masih menampilkan tombolnya tidak bisa mencatat apa pun.
+function PaymentSection({ job }) {
   return (
     <div className="mt-3 border-t border-border pt-3">
       {job.payments?.length > 0 && (
@@ -265,53 +214,10 @@ Tekan OK bila memang segitu, Batal untuk memperbaiki angkanya.`)) { setBusy(fals
           ))}
         </div>
       )}
-
-      {justQueued && (
-        <div className="mb-2 flex items-center gap-1.5 rounded-lg bg-orangebg px-3 py-2 text-xs text-orange">
-          <CloudOff className="h-3.5 w-3.5 shrink-0" /> Tersimpan offline — akan terkirim otomatis
-        </div>
-      )}
-
-      {!open && (
-        <Button variant="neutral" className="h-10 w-full text-xs" onClick={() => { setOpen(true); setJustQueued(false); }}>
-          <Wallet className="h-3.5 w-3.5" /> Catat Pembayaran
-        </Button>
-      )}
-
-      {open && (
-        <div className="space-y-2">
-          <input
-            type="number" inputMode="numeric" placeholder="Jumlah diterima (Rp)"
-            value={amount} onChange={(e) => setAmount(e.target.value)}
-            className="h-10 w-full rounded-lg border border-border px-3 text-sm outline-none focus:border-accent"
-          />
-          <div className="grid grid-cols-3 gap-1.5">
-            {PAYMENT_METHODS.map((m) => (
-              <button
-                key={m.value} type="button" onClick={() => setMethod(m.value)}
-                className={`h-9 rounded-lg border-2 text-xs font-medium ${
-                  method === m.value ? "border-accent bg-accentbg text-accent" : "border-border text-ink2"
-                }`}
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
-          <label className="flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed
-                            border-border text-xs font-medium text-ink2 hover:border-accent hover:text-accent">
-            <Camera className="h-3.5 w-3.5" />
-            {photo ? "Foto siap" : "Foto Bukti (opsional untuk non-tunai)"}
-            <input type="file" accept="image/*" hidden onChange={handlePhoto} />
-          </label>
-          {err && <p className="text-[11px] text-red">{err}</p>}
-          <div className="flex gap-2">
-            <Button variant="neutral" className="h-10 flex-1 text-xs" onClick={() => { setOpen(false); setErr(""); }}>Batal</Button>
-            <Button className="h-10 flex-1 text-xs" disabled={busy} onClick={handleSave}>
-              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Simpan"}
-            </Button>
-          </div>
-        </div>
-      )}
+      <p className="flex items-start gap-1.5 rounded-lg bg-inset px-3 py-2 text-[11.5px] leading-snug text-ink2" data-testid="driver-tanpa-catat-bayar">
+        <Wallet className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        Pembayaran dicatat oleh Sales. Bila customer membayar tunai kepadamu, segera laporkan ke Sales order ini — jangan dicatat sendiri di aplikasi.
+      </p>
     </div>
   );
 }

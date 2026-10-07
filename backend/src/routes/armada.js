@@ -22,7 +22,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import multer from "multer";
 import { requireAuth } from "../middleware/auth.js";
-import { requirePermission, requireAnyPermission, hasPermission, rolesOf, PERMISSIONS as P } from "../middleware/authorize.js";
+import { requirePermission, requireAnyPermission, hasPermission, hasAnyPermission, rolesOf, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
 import { startOfDayWIB, endOfDayExclusiveWIB, WIB_TZ } from "../utils/wib.js";
 import { computeIncentiveSummary } from "../services/incentiveEngine.js";
@@ -203,7 +203,7 @@ class ArmadaError extends Error {
   constructor(message, statusCode = 400) { super(message); this.statusCode = statusCode; }
 }
 function handleErr(err, res) {
-  if (err instanceof ArmadaError) return res.status(err.statusCode).json({ error: err.message });
+  if (err instanceof ArmadaError) return res.status(err.statusCode).json({ error: err.message, ...(typeof err.code === "string" && { code: err.code }) });
   // `code` ikut dikirim bila galat membawanya (mis. NominalPembayaranError) supaya klien bisa meminta konfirmasi, bukan sekadar menampilkan pesan.
   if (Number.isInteger(err?.statusCode)) return res.status(err.statusCode).json({ error: err.message, ...(err.code && typeof err.code === "string" && { code: err.code }) });
   if (adalahGalatInfraDb(err)) return kirimGalatInfraDb(res, err, "[armada]");
@@ -5433,6 +5433,11 @@ const paymentInclude = {
 // bayar cash ke driver [saat kirim]", bukan saat ambil.
 armadaRouter.post("/jobs/:id/payment", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_WRITE), async (req, res) => {
   try {
+    // DRIVER/HELPER TIDAK BOLEH mencatat pembayaran (keputusan Owner 7 Okt 2026; kasus Rp1 tunai 6 Okt). Hanya akun berwenang uang (Sales/Admin: ORDER_PRICE_READ, Finance: PAYMENT_WRITE).
+    // Izin job (JOB_OWN_WRITE/JOB_WRITE) sengaja TIDAK cukup — leader driver & kru produksi juga memegang JOB_WRITE/ORDER_WRITE tetapi bukan pencatat uang.
+    if (!hasAnyPermission(req.user, [P.PAYMENT_WRITE, P.ORDER_PRICE_READ])) {
+      throw Object.assign(new ArmadaError("Pembayaran tidak dicatat oleh driver. Laporkan pembayaran dari customer ke Sales order ini supaya dicatat dan diverifikasi Finance.", 403), { code: "PEMBAYARAN_BUKAN_UNTUK_DRIVER" });
+    }
     const job = await loadOwnedJob(req);
     if (job.type !== "DELIVERY") {
       throw new ArmadaError("Pembayaran hanya dicatat di job pengiriman");
