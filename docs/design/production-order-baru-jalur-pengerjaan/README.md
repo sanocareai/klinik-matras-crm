@@ -82,3 +82,52 @@ Screenshot 390 & 1440 × terang/gelap di `screenshots/` (48 berkas, termasuk Mej
 - Pengisian racikan di lembar bukti diuji lewat UI (tampil + validasi); pengiriman bukti dengan unggah media diuji lewat API (unggah kamera tidak diotomasi).
 - Verifikasi akun "Risdy" = PIC QC Risdi **tidak dilakukan** (pembacaan production ditolak oleh pengaman sesi). Tidak ada akun/role yang dibuat.
 - Satu error konsol 403 (satu request) selama QA tidak teridentifikasi sumbernya; tidak memblokir alur.
+
+---
+
+# Slice 3 — finalisasi (jenis produk, PIC Bahan, Corner, 403, klik UI nyata)
+
+Cabang `fix/order-baru-jalur-pengerjaan`. Belum deploy; tidak ada perubahan role/config/cohort/data production.
+
+## 403 pada QA — akar masalah
+- **Request**: `GET /api/morning-priority-requests?status=APPROVED` → 403.
+- **Aktor**: PIC Meja (PRODUCTION_WORKER, mis. akun worker1) — tepat **setelah login**.
+- **Penyebab**: PRODUCTION_WORKER mendarat di `/bengkel` → `/bengkel/production-v2` (Status Produksi), halaman yang selalu memasang panel Usulan Prioritas Pagi; endpoint itu hanya untuk
+  pemegang `JOB_WRITE`/`UNIT_ROUTING_WRITE` (dispatcher/Lead/Admin). Panel menangkap 403 dan menyembunyikan diri, jadi error hanya terlihat di konsol.
+- **Perbaikan**: panel hanya dipasang untuk ADMIN/OWNER/PRODUCTION_LEAD (`canRoute`) — request yang pasti ditolak tidak lagi dibuat. Bukan menekan konsol. Verifikasi: daftar HTTP≥400 seluruh QA = kosong.
+- Catatan: landing PIC Meja di Status Produksi (bukan Aplikasi Meja) adalah perilaku lama; tidak diubah di slice ini.
+
+## Jenis produk: tanpa fallback "ambigu = kasur"
+`classifyProduct` → `flow`: KASUR | NON_KASUR | **UNCONFIRMED**. Konflik lini↔jenis, jenis tak dikenal, lini kosong, dan **lini KASUR tanpa jenis** (nilai bawaan skema, bukan bukti) = UNCONFIRMED.
+UNCONFIRMED: pekerjaan fisik boleh dimulai, tetapi bukti pengerjaan/racikan, uji tekstur, dan putusan QC khusus kasur ditahan (server 409 `STEP_WAITING_PRODUCT_TYPE_UNCONFIRMED` / `QC_PRODUCT_TYPE_UNCONFIRMED`; UI
+menjelaskan dan meminta Sales memperbaiki jenis produk **pada order** — produksi tidak mengubah order). Setelah Sales memperbaiki, klasifikasi dibaca ulang. WAIVED oleh pihak berwenang bukan "pengujian".
+
+## PIC Bahan per pekerjaan (bukan peran/akun baru)
+- Tabel `production_run_build_settings_v2` (PIC Bahan + Corner per Run) dan `production_build_material_records_v2` (racikan + pemakaian, append-only). Penulis tunggal: `productionBuildCommandService` (audit di tes).
+- Command: `POST /runs/:id/build/material-operator` (izin penjadwalan: Lead/Admin/Owner; operator harus **terdaftar & aktif** — tidak dibuat otomatis), `POST /runs/:id/build/materials` (PIC Bahan yang ditugaskan, atau
+  ADMIN/OWNER lewat `PRODUCTION_EXECUTE_ANY`; jejak atas nama pelaku). Idempotency-Key + expectedRevision, writer cohort fail-closed.
+- Pemakaian **hanya dari bahan yang SAH diserahkan Gudang** (`STEP_MATERIAL_NOT_ISSUED` / `OVER_ISSUED`). **Tidak menulis stok**: stok keluar tepat sekali saat Gudang menyerahkan (diverifikasi: `ISSUE` tetap sama setelah
+  pencatatan); sisa = diserahkan − dipakai → retur (aturan lama: Gudang tidak bisa menerima barang jadi sebelum retur diterima). Terkunci setelah retur dibuat.
+- Satu sumber pemakaian: bila PIC Bahan ditugaskan/ada catatan, PIC Meja tidak mengirim bahan di bukti (409) dan racikan cukup dari catatan PIC Bahan; penugasan ditolak bila pemakaian sudah ada di bukti PIC Meja.
+- UI: antrean + lembar "Catat Racikan & Bahan" di `/produksi/bahan`; PIC Meja melihat "Menunggu PIC Bahan" sampai racikan tercatat. **Febri/Ucok/Ferdy belum terdaftar sebagai operator produksi** — penugasan baru bisa
+  dilakukan setelah Owner mendaftarkan mereka (tidak dilakukan di sini).
+
+## Corner mengikuti kebutuhan yang dikonfirmasi pada rencana
+- `POST /runs/:id/build/corner` { required, reason }: Lead/Admin/Owner. Belum dikonfirmasi → `CORNER_NOT_CONFIRMED` menahan QC lulus/waive (gagal/rework tetap boleh). **Tidak dianggap dari jenis produk**: divan/sofa bisa butuh Corner.
+- Diperlukan → jalur penuh (Kirim ke Corner → Jahit → Finish). **Tidak diperlukan (alasan wajib)** → jalur tanpa tahap Jahit Corner: tahap 9–11 berstatus **NA "tidak berlaku" + alasan** (bukan selesai/dilewati palsu), tidak ada
+  operasi Corner, Finish dikerjakan PIC Meja (tetap di antrean Meja). Adaptasi + tanpa Corner → Selesaikan Produksi (QC "tidak dilakukan"). Dikunci setelah unit melewati gerbang QC.
+- Konfirmasi dilakukan di Unit 360 › Pekerjaan › "Rencana Pengerjaan Pesanan" (belum ada field di modal Jadwalkan).
+
+## Rehearsal migrasi #2 (staging, DB berisi data; image dari arsip commit `85fb45ad`)
+Titik pulih: dump `pg_dump -Fc` (219 migrasi, 13 stage, 6 Run, 14 bukti, 23 order) — restore-verified ke DB scratch. `migrate deploy`: 219 → **220**; `routing_stages` 13 (md5 identik); Run/bukti/order tidak berubah; dua tabel baru kosong
+dengan trigger append-only.
+
+## QA browser (image kandidat bersih; **klik UI nyata sampai tersimpan**, pemeriksaan silang DB)
+`qa-ui-result-slice3.json` + `screenshots-slice3/` (390 & 1440 × terang/gelap). Hasil: **35 skenario — 34 lulus, 1 gagal karena asersi skrip yang salah** (P5.7 mencari teks "Kirim ke Corner" di seluruh halaman, padahal daftar tahap memuatnya sebagai "tidak berlaku"; diverifikasi ulang terpisah pada divan baru: tombol "Konfirmasi Selesai" ada, tahap 9 NA, tahap 12 CURRENT, tanpa tombol Corner — lulus, tangkapan `p57-d4-tanpa-corner-390-light.png`). Termasuk klik UI → tersimpan di DB untuk: konfirmasi Corner, penetapan PIC Bahan, catat racikan+bahan (PIC Bahan), kirim bukti
+pengerjaan **dengan unggah foto lewat input file** (kasur & divan), putusan QC generik "Simpan — Lulus", dan Konfirmasi Selesai tanpa Corner. Daftar HTTP≥400 kosong; error konsol 0.
+Dua temuan UX diperbaiki dari QA: copy "Jahitan selesai" pada Finish tanpa Corner, dan tahap 12 belum tampil di daftar Meja pada jalur tanpa Corner.
+
+## Batas yang diketahui
+- Unggah media oleh PIC pada **video** (uji tekstur kasur, tahap 8) tidak diuji lewat klik UI (hanya foto); tahap 8 diuji lewat API.
+- Field "Corner diperlukan?" belum ada di modal Jadwalkan (konfirmasi lewat Unit 360).
+- SEWA tetap perilaku lama (belum ditentukan).
