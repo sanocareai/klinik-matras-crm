@@ -3209,7 +3209,6 @@ armadaRouter.post("/issues/:jobId/reschedule", requirePermission(P.JOB_WRITE), a
     if (job.cancellationV2) {
       throw new ArmadaError("Job dibatalkan bersama order dan tidak dapat dijadwalkan ulang", 409);
     }
-    if (job.status !== "FAILED") throw new ArmadaError("Hanya job berstatus Gagal yang bisa dijadwalkan ulang lewat sini");
 
     const { scheduledDate, timeWindow, driverId, helperId, vehicleId, reason, customerConfirmed } = req.body;
     if (!scheduledDate) throw new ArmadaError("Tanggal baru wajib diisi");
@@ -3217,8 +3216,27 @@ armadaRouter.post("/issues/:jobId/reschedule", requirePermission(P.JOB_WRITE), a
 
     const nextDate = toDateOnly(scheduledDate);
     const nextDriverId = driverId || null;
+    // Idempotency (rekonsiliasi gate review, 7 Okt 2026) — endpoint ini
+    // SEBELUMNYA memakai `job-rescheduled:${issueLog.id}` sebagai
+    // idempotencyKey: issueLog itu baris BARU yang baru dibuat DI DALAM
+    // request yang sama, jadi key-nya TIDAK PERNAH sama dua kali — retry/
+    // double-tap menggandakan JobIssueLog, RescheduleCase, DAN
+    // DeliveryExecutionEvent (dikonfirmasi lewat tes integrasi, bukan
+    // dugaan). Diganti jadi key STABIL dari klien (requireIdempotencyKey,
+    // pola SAMA PERSIS dengan JOB_STARTED/ROUTE_STARTED/TIME_CORRECTED di
+    // file ini), dicek via findExecutionReplay SEBELUM mutasi apa pun —
+    // BUKAN sesudah cek status job (retry yang sah datang SETELAH job
+    // sudah tidak FAILED lagi, cek status duluan salah menolaknya).
+    const idempotencyKey = requireIdempotencyKey(req);
 
     const projectRescheduleV1 = async (tx) => {
+      const replay = await findExecutionReplay(tx, idempotencyKey, req.user.id, EXEC_ACTIONS.JOB_RESCHEDULED, { jobId: job.id });
+      if (replay) {
+        const j = await tx.job.findUniqueOrThrow({ where: { id: job.id }, include: jobInclude });
+        const k = await tx.rescheduleCase.findFirst({ where: { jobId: job.id }, orderBy: { createdAt: "desc" } });
+        return { job: j, kase: k, replayed: true };
+      }
+      if (job.status !== "FAILED") throw new ArmadaError("Hanya job berstatus Gagal yang bisa dijadwalkan ulang lewat sini");
       const j = await tx.job.update({
         where: { id: job.id },
         data: {
@@ -3260,7 +3278,7 @@ armadaRouter.post("/issues/:jobId/reschedule", requirePermission(P.JOB_WRITE), a
       });
       // Histori waktu: event reschedule di ledger eksekusi yang sama, satu transaksi dengan pelepasan job dari rute (routeId lama dipertahankan di event).
       await createExecutionEvent(tx, {
-        idempotencyKey: `job-rescheduled:${issueLog.id}`, action: EXEC_ACTIONS.JOB_RESCHEDULED, actorId: req.user.id, jobId: job.id, routeId: job.routeId,
+        idempotencyKey, action: EXEC_ACTIONS.JOB_RESCHEDULED, actorId: req.user.id, jobId: job.id, routeId: job.routeId,
         payload: { cause: "AFTER_FAILURE", previousScheduledDate: job.scheduledDate, newScheduledDate: nextDate, reason: reason.trim() }, time: readTimeMeta(req),
       });
       // Kasus reschedule tersatukan (D-160) — lihat catatan panjang di
@@ -3270,7 +3288,7 @@ armadaRouter.post("/issues/:jobId/reschedule", requirePermission(P.JOB_WRITE), a
         previousScheduledDate: job.scheduledDate, newScheduledDate: nextDate,
         customerConfirmed, userId: req.user.id,
       });
-      return { job: j, kase: k };
+      return { job: j, kase: k, replayed: false };
     };
     const commandResult = await executeDeliveryPlanningJobMutation(req, job, {
       commandType: "RESCHEDULE_FAILED_JOB",
@@ -3281,10 +3299,11 @@ armadaRouter.post("/issues/:jobId/reschedule", requirePermission(P.JOB_WRITE), a
     const projected = commandResult.projectionResult || commandResult;
     const updated = await prisma.job.findUniqueOrThrow({ where: { id: job.id }, include: jobInclude });
     const kase = projected.kase || await prisma.rescheduleCase.findFirst({ where: { jobId: job.id }, orderBy: { createdAt: "desc" } });
-    if (!commandResult.replayed) notifySalesJobRescheduled(updated, kase).catch((err) =>
+    const sudahReplay = Boolean(projected.replayed ?? commandResult.replayed);
+    if (!sudahReplay) notifySalesJobRescheduled(updated, kase).catch((err) =>
       console.error("[POST /issues/:jobId/reschedule] Gagal kirim push ke sales:", err.message)
     );
-    res.json({ ...updated, issueStatus: deriveIssueStatus(updated), rescheduleCase: kase });
+    res.set("Idempotency-Replayed", sudahReplay ? "true" : "false").json({ ...updated, issueStatus: deriveIssueStatus(updated), rescheduleCase: kase });
   } catch (err) {
     handleErr(err, res);
   }

@@ -135,6 +135,38 @@ test("klien lama tanpa header: sumber KLIEN_LAMA, waktu server; gagal + reschedu
   } else assert.fail(`reschedule gagal: ${re.status} ${JSON.stringify(re.body)}`);
 });
 
+test("reschedule: retry (Idempotency-Key sama) TIDAK menggandakan JobIssueLog/RescheduleCase/event; replay walau status job sudah berubah (rekonsiliasi gate review, 7 Okt 2026)", async () => {
+  // Temuan audit: idempotencyKey event SEBELUMNYA diturunkan dari issueLog.id
+  // yang baru dibuat DI DALAM request itu sendiri — tidak pernah sama dua
+  // kali, jadi retry membuat baris baru lagi. Diperbaiki: key stabil dari
+  // klien, dicek lewat findExecutionReplay SEBELUM mutasi (bukan sesudah
+  // cek status — job sudah tidak FAILED lagi persis setelah sukses pertama).
+  const f = await fixture({ jobs: 1 });
+  await routeStart(f, "tl-rs-resch-retry");
+  await jobPost(f, 0, "start", {}, "tl-js-resch-retry");
+  await jobPost(f, 0, "fail", { failureReason: "Alamat tidak ditemukan", failurePhotoUrls: ["/media/job-photos/g.jpg"], location: null }, "tl-jf-resch-retry");
+  assert.equal((await testPrisma.job.findUnique({ where: { id: f.jobs[0].id } })).status, "FAILED");
+
+  const next = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+  const body = { scheduledDate: next, reason: "Dijadwalkan ulang oleh dispatcher", customerConfirmed: true };
+  const rescheduleKey = keyed("tl-resch-retry");
+
+  const pertama = await f.dispatcher.api.post(`/api/armada/issues/${f.jobs[0].id}/reschedule`, body, rescheduleKey);
+  assert.equal(pertama.status, 200, JSON.stringify(pertama.body));
+  assert.notEqual((await testPrisma.job.findUnique({ where: { id: f.jobs[0].id } })).status, "FAILED", "job sudah tidak FAILED setelah sukses pertama (tanpa driverId -> deriveStatus SCHEDULED, bukan ASSIGNED)");
+
+  // Retry PERSIS sama (Idempotency-Key sama) — job SEKARANG sudah bukan
+  // FAILED lagi. Sebelum perbaikan, guard status (dicek sebelum replay)
+  // salah menolak ini dengan "Hanya job berstatus Gagal...".
+  const kedua = await f.dispatcher.api.post(`/api/armada/issues/${f.jobs[0].id}/reschedule`, body, rescheduleKey);
+  assert.equal(kedua.status, 200, JSON.stringify(kedua.body));
+  assert.equal(kedua.headers.get("idempotency-replayed"), "true");
+
+  assert.equal(await testPrisma.jobIssueLog.count({ where: { jobId: f.jobs[0].id, type: "RESCHEDULED" } }), 1, "retry tidak boleh menggandakan JobIssueLog");
+  assert.equal(await testPrisma.rescheduleCase.count({ where: { jobId: f.jobs[0].id } }), 1, "retry tidak boleh menggandakan RescheduleCase");
+  assert.equal(await testPrisma.deliveryExecutionEvent.count({ where: { jobId: f.jobs[0].id, action: "JOB_RESCHEDULED" } }), 1, "retry tidak boleh menggandakan event di ledger");
+});
+
 test("histori lama tanpa event: 'Tidak tersedia', tanpa durasi, tanpa mengarang waktu (tidak ada backfill)", async () => {
   const f = await fixture({ jobs: 1 });
   await testPrisma.job.update({ where: { id: f.jobs[0].id }, data: { status: "COMPLETED" } }); // status terlanjur selesai, tanpa jejak waktu sama sekali
