@@ -44,9 +44,28 @@ import { buildMessagePreview } from "../utils/messagePreview.js";
 import { emitNewMessage, emitConversationUpdate } from "../socket.js";
 import { maskAccountNumber } from "../utils/maskAccount.js";
 import { assertOrderUnitsNotV2Owned } from "../services/productionRunGuards.js";
+import { buatBukuOrder, OrderExcelError } from "../services/orderExcel.js";
 
 export const orderRouter = express.Router();
 orderRouter.use(requireAuth);
+
+// POST /api/orders/export-xlsx — render Excel Order BERWARNA dari spesifikasi yang disusun frontend (features/orders/exportExcelSpec.js).
+// Tidak membaca database: hanya memformat data yang dikirim pemanggil (yang sudah mengambilnya lewat GET /orders dengan izin yang sama), jadi tidak
+// membuka data baru. Ditaruh SEBELUM rute "/:id" supaya tidak tertangkap sebagai id.
+orderRouter.post("/export-xlsx", async (req, res) => {
+  try {
+    const spec = { ...req.body, pengekspor: req.user?.name || "" };
+    const buf = await buatBukuOrder(spec);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="order-${new Date().toISOString().slice(0, 10)}.xlsx"`);
+    res.setHeader("Cache-Control", "no-store");
+    res.send(buf);
+  } catch (err) {
+    if (err instanceof OrderExcelError) return res.status(err.statusCode).json({ error: err.message });
+    console.error("[orders/export-xlsx]", err);
+    res.status(500).json({ error: "Gagal membuat file Excel" });
+  }
+});
 
 // Upload bukti pembayaran DP (D-023) — dir terpisah dari job-photos armada.js
 // karena DP dicatat SEBELUM job pickup/delivery mana pun ada, jadi tidak

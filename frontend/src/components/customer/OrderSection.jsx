@@ -21,7 +21,7 @@ import DatePicker from "@/components/ui/date-picker.jsx";
 import {
   formatRupiah, ORDER_STATUS_LABELS, ORDER_STATUSES, orderStatusesForCategory,
   ORDER_STATUS_BUCKET_LABELS, orderStatusBucket,
-  PAYMENT_STATUS_LABELS, PAYMENT_STATUS_BADGE, PAYMENT_STATUSES, KOTA_LIST,
+  PAYMENT_STATUS_LABELS, PAYMENT_STATUS_BADGE, CATEGORY_BADGE, ORDER_STATUS_BADGE, PAYMENT_STATUSES, KOTA_LIST,
   HEALTH_COMPLAINT_LABELS, HEALTH_COMPLAINT_OPTIONS,
   parseOrderNotes, buildOrderNotes, promoLabel,
   PRODUCT_LINE_LABELS, PRODUCT_LINE_ICONS, PRODUCT_TYPES_BY_LINE, PRODUCT_TYPE_LABELS, PRICE_ITEM_KIND_LABELS,
@@ -89,11 +89,6 @@ const CATEGORY_OPTIONS = [
 ];
 
 const CATEGORY_LABELS = { LAYANAN: "Service/Upgrade", BARU: "Baru", SEWA: "Sewa" };
-const CATEGORY_BADGE  = {
-  LAYANAN: { bg: "#ede9fe", color: "#5b21b6" },
-  BARU:    { bg: "#dcfce7", color: "#166534" },
-  SEWA:    { bg: "#dbeafe", color: "#1e40af" },
-};
 
 // Lini Produk (29 Agustus 2026) — step BARU antara "pilih kategori layanan"
 // dan "isi info produk". Semua kombinasi Kategori x Lini Produk valid
@@ -156,17 +151,6 @@ function newWeightEntry() {
   return { key: Date.now() + Math.random(), label: "", beratKg: "" };
 }
 
-const ORDER_STATUS_BADGE = {
-  PENDING:    { bg: "#fef3c7", color: "#92400e" },
-  PICKUP:     { bg: "#dbeafe", color: "#1e40af" },
-  PROCESSING: { bg: "#ede9fe", color: "#5b21b6" },
-  READY:      { bg: "#ccfbf1", color: "#065f46" },
-  SHIPPING:   { bg: "#dbeafe", color: "#1e40af" }, // sama biru dengan PICKUP — "sedang di jalan" (arah keluar)
-  DELIVERED:  { bg: "#dcfce7", color: "#166534" },
-  CANCELLED:  { bg: "#fee2e2", color: "#991b1b" },
-  SEWA_DIKIRIM: { bg: "#dbeafe", color: "#1e40af" },
-  SEWA_DIAMBIL: { bg: "#dcfce7", color: "#166534" },
-};
 
 // Label status TAMPILAN ringkas (4 Sep 2026) — bucket utk LAYANAN/BARU
 // (Diproses/Siap Kirim/Terkirim/Dibatalkan), label asli utk SEWA (yang

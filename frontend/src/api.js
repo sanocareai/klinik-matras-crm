@@ -1129,6 +1129,17 @@ export const api = {
   // PDF = FILE, bukan JSON — sama alasan dengan exportCustomersVCard di atas:
   // di-fetch manual dengan header Bearer, <a href> polos tidak bisa membawa
   // otorisasi (endpoint ini dijaga requireAuth di backend).
+  // Excel Order berwarna (Okt 2026) — spesifikasi disusun features/orders/exportExcelSpec.js, dirender backend (services/orderExcel.js).
+  exportOrdersXlsx: async (spec) => {
+    const res = await fetch(BASE + "/orders/export-xlsx", { method: "POST", headers: { ...authHeaders(), "Content-Type": "application/json" }, body: JSON.stringify(spec) });
+    if (res.status === 401) { handleUnauthorized(); throw new Error("Sesi berakhir, silakan login kembali"); }
+    if (!res.ok) {
+      let msg = res.status === 413 ? "data terlalu besar" : "server menolak (" + res.status + ")";
+      try { msg = (await res.json()).error || msg; } catch {}
+      throw new Error(msg);
+    }
+    return { blob: await res.blob() };
+  },
   getOrderInvoicePdf: async (orderId, jenis) => {
     const res = await fetch(BASE + `/orders/${orderId}/invoice/pdf${jenis ? `?jenis=${jenis}` : ""}`, { headers: authHeaders() });
     if (res.status === 401) { handleUnauthorized(); throw new Error("Sesi berakhir, silakan login kembali"); }

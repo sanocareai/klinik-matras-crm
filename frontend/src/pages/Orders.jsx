@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/card.jsx";
 import {
   formatRupiah, formatRupiahShort,
   ORDER_STATUS_LABELS, ORDER_STATUS_BUCKET_LABELS, orderStatusBucket, orderStatusesForCategory, PAYMENT_STATUS_LABELS, PAYMENT_STATUSES,
+  PAYMENT_STATUS_BADGE, CATEGORY_BADGE, ORDER_STATUS_BADGE,
   PIPELINE_STAGES, STAGE_LABELS, stageVariant,
   HEALTH_LABELS, HEALTH_COMPLAINT_LABELS, parseOrderNotes,
   PRODUCT_LINE_LABELS, PRODUCT_TYPE_LABELS, PRICE_ITEM_KIND_LABELS,
@@ -46,6 +47,7 @@ function currentUser() {
 }
 import DateRangePicker from "../components/DateRangePicker.jsx";
 import { makeRange, toApiParams } from "../lib/dateRange.js";
+import { buatSpecExcelOrder, benderaOrder, paletteDari } from "../features/orders/exportExcelSpec.js";
 import PageErrorBoundary from "../components/PageErrorBoundary.jsx";
 
 // ═══ HALAMAN ORDER ════════════════════════════════════════════════════════
@@ -982,13 +984,56 @@ export default function Orders() {
       })
     );
 
+    const namaFile = "order-" + new Date().toISOString().slice(0, 10);
+
+    // Excel BERWARNA (Okt 2026): kategori/status/pembayaran berwarna sama dengan layar, order komplain merah, mandek kuning, filter di tiap
+    // kolom, header & kolom ID dibekukan, total ikut filter, plus sheet Ringkasan. Dirender backend (exceljs) — SheetJS di browser tidak bisa
+    // mewarnai sel. Kalau server gagal/menolak (mis. data terlalu besar), export polos lama tetap jalan: export TIDAK PERNAH sampai gagal total.
+    if (sheetOrder.length > 0) {
+      try {
+        const bendera = semuaOrder.map((o) => benderaOrder(o, { punyaKomplainAktif, isMandek }));
+        const benderaLayanan = semuaOrder.flatMap((o, i) => (o.items || []).map(() => bendera[i]));
+        const spec = buatSpecExcelOrder({
+          sheetOrder, sheetLayanan, bendera, benderaLayanan,
+          palettes: {
+            kategori: paletteDari(KATEGORI_LABELS, CATEGORY_BADGE),
+            status: paletteDari(ORDER_STATUS_LABELS, ORDER_STATUS_BADGE),
+            pembayaran: paletteDari(PAYMENT_STATUS_LABELS, PAYMENT_STATUS_BADGE),
+          },
+          filterLabel: labelFilterExport(),
+          pengekspor: currentUser()?.name || "",
+        });
+        const { blob } = await api.exportOrdersXlsx(spec);
+        const { saveAs } = await import("file-saver");
+        saveAs(blob, namaFile + ".xlsx");
+        return;
+      } catch (e) {
+        console.warn("[export order] versi berwarna gagal, memakai export polos:", e.message);
+        alert("Export berwarna tidak bisa dibuat (" + e.message + ").\nFile polos tanpa warna didownload sebagai gantinya.");
+      }
+    }
     exportToExcelMultiSheet(
       [
         { name: "Order", data: sheetOrder },
         { name: "Rincian Layanan", data: sheetLayanan },
       ],
-      "order-" + new Date().toISOString().slice(0, 10)
+      namaFile
     );
+  }
+
+  // Teks filter aktif untuk kepala file Excel — supaya orang yang membuka file tahu data ini hasil filter apa.
+  function labelFilterExport() {
+    const bagian = [];
+    if (range?.from || range?.to) bagian.push(`Tanggal ${range.from || "…"} s/d ${range.to || "…"}`);
+    if (fStatus) bagian.push(`Status ${ORDER_STATUS_BUCKET_LABELS?.[fStatus] || ORDER_STATUS_LABELS[fStatus] || fStatus}`);
+    if (fKategori) bagian.push(`Kategori ${KATEGORI_LABELS[fKategori] || fKategori}`);
+    if (fBayar) bagian.push(`Pembayaran ${PAYMENT_STATUS_LABELS[fBayar] || fBayar}`);
+    if (fSales) bagian.push(`Sales ${salesUsers.find((u) => u.id === fSales)?.name || fSales}`);
+    if (fPromo) bagian.push("Promo tertentu");
+    if (fPipeline) bagian.push(`Pipeline ${fPipeline}`);
+    if (fPenjual) bagian.push(fPenjual === "KARYAWAN" ? "Penjualan Karyawan" : "Tim Sales");
+    if (debounced) bagian.push(`Cari "${debounced}"`);
+    return bagian.length ? bagian.join(" · ") : "Semua order";
   }
 
   return (
