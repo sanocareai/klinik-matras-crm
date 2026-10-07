@@ -1,5 +1,4 @@
 import React, { useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { ArrowDown, ArrowUp, Loader2, Plus, Trash2, WifiOff, X } from "lucide-react";
 import { api } from "@/api.js";
 import { useOnline } from "@/components/StandaloneShell.jsx";
@@ -15,9 +14,11 @@ import {
 const FIELD = "block w-full min-h-[44px] rounded-btn border border-line bg-surface px-3 py-2.5 text-[15px] text-ink outline-none focus:border-accent";
 const newKey = (tag) => `${tag}-${globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`}`;
 
-// Portal ke <body>: induk bergaya kaca (backdrop-filter pada .rounded-card) menjadikan elemen `fixed` relatif ke induk itu (lembar terpotong) — QA klik nyata di Hub QC menemukannya.
+// Lembar `fixed` harus dipasang di induk TANPA backdrop-filter: wildcard kaca `[class*="rounded-card"]` memberi induk bergaya kaca backdrop-filter sehingga `fixed` menjadi relatif
+// terhadap induk (lembar terpotong) — QA klik nyata di Hub QC menemukannya. Induk yang memuat panel ini memakai `kpi-glass-guard` / bukan `rounded-card`. TIDAK di-portal: drawer Unit 360
+// (Radix Dialog) menganggap portal sebagai "klik di luar" dan menutup dirinya.
 function Sheet({ title, subtitle, onClose, children, footer }) {
-  const node = (
+  return (
     <div role="dialog" aria-modal="true" aria-label={title} data-testid="component-sheet" className="fixed inset-0 z-[230] flex flex-col bg-base">
       <div className="flex items-center gap-2 border-b border-line bg-surface px-3 py-2" style={{ paddingTop: "calc(0.5rem + env(safe-area-inset-top))" }}>
         <button type="button" onClick={onClose} aria-label="Tutup" className="flex h-11 w-11 items-center justify-center rounded-btn text-ink2 hover:bg-hovertint"><X size={20} aria-hidden /></button>
@@ -27,7 +28,6 @@ function Sheet({ title, subtitle, onClose, children, footer }) {
       <div className="space-y-2 border-t border-line bg-surface px-3 pt-3" style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}><div className="mx-auto w-full max-w-[720px] space-y-2">{footer}</div></div>
     </div>
   );
-  return typeof document === "undefined" ? node : createPortal(node, document.body);
 }
 const Field = ({ label, children, hint }) => <label className="block space-y-1 text-[13px] font-semibold text-ink2"><span>{label}</span>{children}{hint && <span className="block text-[11.5px] font-normal text-ink3">{hint}</span>}</label>;
 const Select = ({ value, onChange, options, placeholder, testid, label }) => (

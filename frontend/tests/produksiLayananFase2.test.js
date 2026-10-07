@@ -83,3 +83,9 @@ test("kontrak komponen: PIC QC saja yang melihat tombol uji; antrean PIC QC di H
   assert.match(sheet, /data-testid="sales-context"/); assert.match(sheet, /rujukan saja/); assert.doesNotMatch(sheet, /testerWeight: .*customerWeight|customerWeightKg \?\? /, "berat customer tidak mengisi berat penguji");
   assert.match(sheet, /dihitung sistem/); assert.match(src("api.js"), /getComponentQcQueue/);
 });
+
+test("lembar komponen TIDAK di-portal (drawer Unit 360 menutup bila fokus/klik di luar); induk panel tidak bergaya kaca agar `fixed` tidak terpotong", () => {
+  assert.doesNotMatch(src("features", "production", "componentNotes", "ComponentNoteSheet.jsx"), /createPortal/);
+  assert.doesNotMatch(src("features", "production", "componentNotes", "PreTestQueue.jsx"), /rounded-card/, "antrean di Hub QC: wildcard kaca memberi backdrop-filter pada rounded-card");
+  assert.match(src("features", "production", "UnitOverviewDrawer.jsx"), /kpi-glass-guard[^"]*"[^>]*data-testid="unit360-component-notes"/);
+});

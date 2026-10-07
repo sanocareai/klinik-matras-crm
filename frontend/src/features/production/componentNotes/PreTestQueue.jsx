@@ -24,7 +24,7 @@ export default function PreTestQueue() {
   const salesOf = (item) => (detail?.salesContext || { complaintLabels: item.customer.complaints, request: item.customer.request, customerWeightKg: item.customer.weightKg, orderNumber: item.customer.orderNumber });
 
   return (
-    <section aria-label="Pengujian awal menunggu PIC QC" data-testid="pretest-queue" className="mb-4 space-y-2 rounded-card border border-line bg-surface p-3">
+    <section aria-label="Pengujian awal menunggu PIC QC" data-testid="pretest-queue" className="mb-4 space-y-2 rounded-[14px] border border-line bg-surface p-3">
       <div className="flex items-center gap-2"><ClipboardCheck size={16} className="text-accent" aria-hidden /><h2 className="m-0 text-[14px] font-bold text-ink">Pengujian awal menunggu PIC QC</h2></div>
       {notice && <p role="status" data-testid="pretest-notice" className="m-0 rounded-btn bg-greenbg px-3 py-2 text-[13px] font-semibold text-green">{notice}</p>}
       {error && <p role="alert" className="m-0 text-[13px] text-red">{error} <button type="button" onClick={load} className="font-bold underline">Coba lagi</button></p>}

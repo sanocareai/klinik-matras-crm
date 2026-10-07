@@ -374,7 +374,7 @@ function Dokumentasi({ d }) {
   return (
     <div className="space-y-4">
       <MatriksDokumentasi matrix={d.documentation} />
-      <div className="space-y-2 rounded-card border border-line p-3" data-testid="unit360-component-notes"><p className="m-0 text-[12.5px] font-bold text-ink">Catatan Komponen — Sebelum → Sesudah</p><ComponentNotesPanel unitId={d.identity.unitId} unitCode={d.identity.unitCode} /></div>
+      <div className="kpi-glass-guard space-y-2 rounded-card border border-line p-3" data-testid="unit360-component-notes"><p className="m-0 text-[12.5px] font-bold text-ink">Catatan Komponen — Sebelum → Sesudah</p><ComponentNotesPanel unitId={d.identity.unitId} unitCode={d.identity.unitCode} /></div>
       <div><p className="mb-1.5 text-[12.5px] font-bold text-ink">Before</p><MediaGrid items={d.evidence.before} empty="Belum ada dokumentasi before." /></div>
       <div><p className="mb-1.5 text-[12.5px] font-bold text-ink">Proses</p><MediaGrid items={d.evidence.process} empty="Belum ada dokumentasi proses." /></div>
       <div><p className="mb-1.5 text-[12.5px] font-bold text-ink">After</p><MediaGrid items={d.evidence.after} empty="Belum ada dokumentasi after." /></div>
