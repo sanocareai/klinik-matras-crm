@@ -13,6 +13,7 @@ import { usePushSubscription } from "../hooks/usePushSubscription.js";
 import { useMyJobs } from "@/features/armada/hooks/useMyJobs.js";
 import { mapsUrl } from "@/features/armada/jobStatus.js";
 import { SalesBadge, ProductBadge } from "@/features/armada/components/JobBadges.jsx";
+import RoutePrepChecklistDriverPanel from "@/features/armada/components/RoutePrepChecklistDriverPanel.jsx";
 import { ISSUE_STATUS } from "@/features/armada/issueStatus.js";
 import { api } from "@/api.js";
 import { Card } from "@/components/ui/card.jsx";
@@ -591,6 +592,12 @@ function RouteStartBanner({ route, assignedCount, sampleJobId, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [mapBusy, setMapBusy] = useState(false);
+  // Checklist Persiapan Perjalanan (7 Okt 2026) — UX saja: nonaktifkan tombol
+  // lebih awal kalau item wajib belum lengkap. Gerbang SEBENARNYA tetap di
+  // backend (POST /routes/:id/start menolak 409 CHECKLIST_BELUM_LENGKAP
+  // terlepas dari state ini) — default true supaya rute TANPA checklist
+  // tidak pernah tertahan menunggu panel ini selesai memuat.
+  const [checklistReady, setChecklistReady] = useState(true);
 
   async function openMaps() {
     setMapBusy(true);
@@ -641,9 +648,12 @@ function RouteStartBanner({ route, assignedCount, sampleJobId, onChanged }) {
         Buka Rute di Google Maps
       </button>
 
+      {assignedCount > 0 && <RoutePrepChecklistDriverPanel routeId={route.id} onReadyChange={setChecklistReady} />}
+
       {assignedCount > 0 && mode === "idle" && (
-        <Button className="mt-2 h-11 w-full text-xs" onClick={() => setMode("starting")}>
-          <Navigation className="mr-1.5 h-3.5 w-3.5" /> Mulai Perjalanan ({assignedCount} stop)
+        <Button className="mt-2 h-11 w-full text-xs" disabled={!checklistReady} onClick={() => setMode("starting")}>
+          <Navigation className="mr-1.5 h-3.5 w-3.5" />
+          {checklistReady ? `Mulai Perjalanan (${assignedCount} stop)` : "Lengkapi Checklist Dulu"}
         </Button>
       )}
 

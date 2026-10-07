@@ -19,6 +19,7 @@ import JobListScreen from "./src/screens/JobListScreen";
 import AdminHomeScreen from "./src/screens/AdminHomeScreen";
 import AccountScreen from "./src/screens/AccountScreen";
 import PerformaScreen from "./src/screens/PerformaScreen";
+import PersiapanPerjalananScreen from "./src/screens/PersiapanPerjalananScreen";
 import ErrorBoundary from "./src/components/ErrorBoundary";
 import { queryClient } from "./src/lib/queryClient";
 import { checkForUpdateOnLaunch } from "./src/lib/autoUpdate";
@@ -71,6 +72,7 @@ function Root() {
               <Stack.Screen name="JobList" component={JobListScreen} />
               <Stack.Screen name="Account" component={AccountScreen} />
               <Stack.Screen name="Performa" component={PerformaScreen} />
+              <Stack.Screen name="PersiapanPerjalanan" component={PersiapanPerjalananScreen} />
             </>
           )
         ) : (

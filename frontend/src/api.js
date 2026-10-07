@@ -135,7 +135,7 @@ function uploadWithProgress(path, formData, onProgress) {
   });
 }
 
-async function requestFormData(path, formData, method = "POST") {
+async function requestFormData(path, formData, method = "POST", extraHeaders = {}) {
   const demo = demoBlock("Unggah berkas"); if (demo) return demo;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -144,7 +144,7 @@ async function requestFormData(path, formData, method = "POST") {
     const res = await fetch(`${BASE}${path}`, {
       method,
       signal: controller.signal,
-      headers: authHeaders(),
+      headers: { ...authHeaders(), ...extraHeaders },
       body: formData,
     });
     adoptRefreshedToken(res);
@@ -329,6 +329,23 @@ export const api = {
   // rute jadi EN_ROUTE (POST /armada/routes/:id/start).
   startRoute: (id, data = {}, idempotencyKey = mutationKey("route")) => request(`/armada/routes/${id}/start`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   cancelRoute: (id) => request(`/armada/routes/${id}/cancel`, { method: "PATCH" }),
+
+  // Checklist Persiapan Perjalanan (7 Okt 2026) — susun/edit (admin/dispatcher,
+  // ROUTE_WRITE), progres+bukti (baca, JOB_WRITE/JOB_OWN_WRITE), gerbang
+  // sebenarnya ada di startRoute di atas (409 CHECKLIST_BELUM_LENGKAP kalau
+  // item wajib belum terpenuhi). `revision` (dari GET) WAJIB dikirim balik
+  // sebagai expectedRevision di tiap tambah/edit item — konkurensi
+  // optimistik, lihat catatan panjang services/routePrepChecklist.js.
+  getRoutePrepChecklist: (routeId) => request(`/armada/routes/${routeId}/prep-checklist`),
+  addRoutePrepChecklistItem: (routeId, data) =>
+    request(`/armada/routes/${routeId}/prep-checklist/items`, { method: "POST", body: JSON.stringify(data) }),
+  updateRoutePrepChecklistItem: (routeId, itemId, data) =>
+    request(`/armada/routes/${routeId}/prep-checklist/items/${itemId}`, { method: "PATCH", body: JSON.stringify(data) }),
+  // Bukti per item (driver) — multipart field "photo" (opsional kalau item
+  // photoRequired=false) + "note" opsional. Idempotency-Key WAJIB (retry
+  // double-tap tidak boleh membuat baris bukti dobel).
+  submitRoutePrepChecklistProof: (routeId, itemId, formData, idempotencyKey = mutationKey("checklist-proof")) =>
+    requestFormData(`/armada/routes/${routeId}/prep-checklist/items/${itemId}/proof`, formData, "POST", { "Idempotency-Key": idempotencyKey }),
   // Hapus permanen — untuk rute DRAFT atau CANCELLED (D-059, diperluas
   // D-061). Beda dari cancelRoute (soft, riwayatnya tetap ada) — ini
   // benar-benar menghapus baris Route-nya. PUBLISHED/COMPLETED ditolak

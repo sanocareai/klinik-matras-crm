@@ -250,6 +250,36 @@ export const api = {
   // multi-stop) — sama presedennya dengan broadcast WA.
   getRouteMap: (routeId) => request(`/armada/routes/${routeId}/map`),
 
+  // Checklist Persiapan Perjalanan (7 Okt 2026) — halaman "Persiapan
+  // Perjalanan" sebelum RouteStartCard mengizinkan "Mulai Perjalanan".
+  // `idempotencyKey` sebagai FORM FIELD (bukan header) — backend membaca
+  // keduanya (lihat requireIdempotencyKey), dan uploadFile() di sini belum
+  // mendukung header kustom per-panggilan (headers-nya tetap hardcode
+  // Authorization/X-Device-Id, lihat definisinya di atas).
+  getRoutePrepChecklist: (routeId) => request(`/armada/routes/${routeId}/prep-checklist`),
+  submitRoutePrepChecklistProof: (routeId, itemId, file, { note, idempotencyKey } = {}) =>
+    uploadFile(`/armada/routes/${routeId}/prep-checklist/items/${itemId}/proof`, file, { ...(note && { note }), idempotencyKey }, "photo"),
+  // Item TANPA foto wajib ("cek kondisi kasur" dkk) — tidak ada file untuk
+  // dikirim lewat File.upload() (expo-file-system), jadi fetch+FormData
+  // text-only biasa (bukan masalah "unsupported FormData part" — itu
+  // khusus PART BERISI FILE {uri,name,type}, field teks biasa aman di New
+  // Architecture). TIDAK lewat request() di atas — Content-Type di sana
+  // di-hardcode "application/json" dan akan merusak boundary multipart.
+  confirmRoutePrepChecklistItemDone: async (routeId, itemId, { note, idempotencyKey } = {}) => {
+    const fd = new FormData();
+    if (note) fd.append("note", note);
+    fd.append("idempotencyKey", idempotencyKey);
+    const res = await fetch(`${serverUrl}/api/armada/routes/${routeId}/prep-checklist/items/${itemId}/proof`, {
+      method: "POST",
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: fd,
+    });
+    const text = await res.text();
+    let parsed; try { parsed = JSON.parse(text); } catch {}
+    if (!res.ok) throw Object.assign(new Error(parsed?.error || `Error ${res.status}`), { status: res.status, code: parsed?.code });
+    return parsed;
+  },
+
   // Tampilan admin/owner (10 Sep 2026) — dipakai AdminHomeScreen. SEMUA
   // endpoint SUDAH ADA & dipakai dispatcher di web (ArmadaDashboard/
   // ArmadaTracking/Route Planner "Masalah"), nol perubahan kontrak API —

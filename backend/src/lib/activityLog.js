@@ -89,6 +89,8 @@ export const ENTITY_TYPES = Object.freeze({
   INCENTIVE_SNAPSHOT: "incentive_snapshot",
   // Pembayaran Insentif (24 September 2026) — entityId = id IncentivePayout.
   INCENTIVE_PAYOUT: "incentive_payout",
+  // Checklist Persiapan Perjalanan (7 Okt 2026) — entityId = Route.id.
+  ROUTE_PREP_CHECKLIST: "route_prep_checklist",
 });
 
 export const EVENT_TYPES = Object.freeze({
@@ -283,6 +285,16 @@ export const EVENT_TYPES = Object.freeze({
   // sisaSesudah, reason (khusus VOID) }.
   INCENTIVE_PAYOUT_CREATED: "INCENTIVE_PAYOUT_CREATED",
   INCENTIVE_PAYOUT_VOIDED: "INCENTIVE_PAYOUT_VOIDED",
+
+  // Checklist Persiapan Perjalanan (7 Okt 2026) — satu event generik per
+  // titik keputusan (pola sama dengan DOCUMENT_APPROVED/dst), detail di
+  // metadata. CHECKLIST_GATE_OVERRIDDEN dicatat HANYA saat dispatcher/admin
+  // memaksa berangkat walau ada item wajib belum terpenuhi (lihat POST
+  // /routes/:id/start) — alasan WAJIB ada di metadata.reason.
+  CHECKLIST_ITEM_ADDED: "CHECKLIST_ITEM_ADDED",
+  CHECKLIST_ITEM_UPDATED: "CHECKLIST_ITEM_UPDATED",
+  CHECKLIST_ITEM_ARCHIVED: "CHECKLIST_ITEM_ARCHIVED",
+  CHECKLIST_GATE_OVERRIDDEN: "CHECKLIST_GATE_OVERRIDDEN",
 });
 
 /**
@@ -623,6 +635,18 @@ export function formatActivitySentence(event) {
       return `Pembayaran insentif Rp${(metadata.amount ?? 0).toLocaleString("id-ID")} dicatat (${metadata.method || "?"}${metadata.referenceNumber ? `, ref ${metadata.referenceNumber}` : ""}) — sisa Rp${(metadata.sisaSesudah ?? 0).toLocaleString("id-ID")}`;
     case EVENT_TYPES.INCENTIVE_PAYOUT_VOIDED:
       return `Pembayaran insentif Rp${(metadata.amount ?? 0).toLocaleString("id-ID")} dibatalkan (void) — ${metadata.reason || "tanpa keterangan"} (sisa jadi Rp${(metadata.sisaSesudah ?? 0).toLocaleString("id-ID")})`;
+    case EVENT_TYPES.CHECKLIST_ITEM_ADDED:
+      return `Item checklist "${metadata.title || "—"}" ditambahkan${metadata.required ? " (wajib sebelum berangkat)" : ""}`;
+    case EVENT_TYPES.CHECKLIST_ITEM_UPDATED: {
+      const fields = Object.keys(metadata.changes || {});
+      return fields.length
+        ? `Item checklist "${metadata.title || "—"}" diubah: ${fields.join(", ")}`
+        : `Item checklist "${metadata.title || "—"}" diubah`;
+    }
+    case EVENT_TYPES.CHECKLIST_ITEM_ARCHIVED:
+      return `Item checklist "${metadata.title || "—"}" dihapus dari daftar aktif`;
+    case EVENT_TYPES.CHECKLIST_GATE_OVERRIDDEN:
+      return `Checklist persiapan DILEWATI — rute tetap diberangkatkan walau ${metadata.missingCount ?? 0} item wajib belum terpenuhi (${(metadata.missingTitles || []).join(", ") || "—"}) — ${metadata.reason || "tanpa alasan"}`;
     default:
       // eventType yang belum dikenali modul ini (mis. ditambahkan slice
       // berikutnya) — tampilkan apa adanya alih-alih melempar error, supaya
