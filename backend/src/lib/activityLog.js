@@ -51,6 +51,7 @@ export const ENTITY_TYPES = Object.freeze({
   // Pembayaran pelanggan (Finance Mobile S5): verifikasi & penolakan Payment.
   PAYMENT: "payment",
   FIN_SUPPLIER_BILL: "fin_supplier_bill",
+  FIN_SUPPLIER: "fin_supplier", // master supplier: perubahan data (nama/kontak/rekening/termin/status) — 7 Okt 2026
   FIN_REFUND: "fin_refund",
   FIN_PERIOD: "fin_period",
   FIN_ACCOUNT: "fin_account",
@@ -588,6 +589,10 @@ export function formatActivitySentence(event) {
       return `Dokumen ${nomor} dikoreksi (jurnal lama dibalik, jurnal baru diposting) — ${metadata.reason || "tanpa keterangan"}`;
     }
     case EVENT_TYPES.DOCUMENT_EDITED: {
+      if (metadata.supplierCode) {
+        const f = Object.keys(metadata.changes || {});
+        return `Supplier ${metadata.supplierCode} diubah: ${f.join(", ") || "—"}${metadata.rekeningBerubah ? " (REKENING BERUBAH)" : ""}`;
+      }
       const nomor = metadata.expenseNumber || metadata.transferNumber || metadata.incomeNumber
         || metadata.billNumber || metadata.refundNumber || "—";
       const fields = Object.keys(metadata.changes || {});

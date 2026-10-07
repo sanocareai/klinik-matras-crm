@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
 import { specOtomatis } from "@/features/finance/detailSpecs.js";
-import { Plus, Building2, FileText, Banknote, Pencil, History, Ban } from "lucide-react";
+import { Plus, Building2, FileText, Banknote, Pencil, History, Ban, CheckCircle2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -29,6 +29,7 @@ import { RowActions, AKSI_COL_WIDTH, AKSI_COL_WIDTH_MENU_ONLY } from "@/features
 import { RiwayatVersiDialog, KoreksiDialog, InfoDialog } from "@/features/finance/KoreksiAman.jsx";
 import { aksiTagihan as matriksTagihan, aksiPembayaranSupplier } from "@/features/finance/matriksAksi.js";
 import { bentukItemMenu, adminSaatIni } from "@/features/finance/aksiMenu.jsx";
+import { formDariSupplier, payloadPerubahan, galatForm, rekeningBerubah, supplierBisaDipilih } from "@/features/finance/supplierEditLogic.js";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
 import PilihJenisTagihan, { bodyJenis, jenisLengkap } from "@/features/finance/JenisTagihan.jsx";
 
@@ -126,6 +127,7 @@ export default function FinanceSuppliers() {
   const [error, setError] = useState(null);
   const [pesan, setPesan] = useState(null);
   const [modal, setModal] = useState(null);
+  const [editSupplier, setEditSupplier] = useState(null); // baris supplier yang sedang diedit (modal Edit Supplier)
   // Pencarian & filter per tab (sisi-klien) — state tiap tab terpisah.
   const [qB, setQB] = useState("");
   const [fSupB, setFSupB] = useState("");
@@ -144,7 +146,7 @@ export default function FinanceSuppliers() {
     setError(null);
     try {
       const [s, b, p, ag, ub, k, r, kb, mi] = await Promise.all([
-        api.getFinanceSuppliers(),
+        api.getFinanceSuppliers({ includeInactive: "1" }), // nonaktif ikut dimuat supaya bisa difilter & diaktifkan lagi; pilihan tagihan/bayar hanya yang aktif
         api.getFinanceBills(),
         api.getFinanceSupplierPayments(),
         api.getFinancePayables(),
@@ -176,10 +178,22 @@ export default function FinanceSuppliers() {
     try {
       await fn();
       setModal(null);
+      setEditSupplier(null);
       await muat();
     } catch (e) {
       setPesan(e.message);
     }
+  }
+  const suppliersAktif = useMemo(() => supplierBisaDipilih(suppliers), [suppliers]);
+  // Edit supplier: galat server DITAMPILKAN di dalam dialog (dialog tidak boleh tertutup/terkunci saat gagal) → fungsi ini melempar ulang ke dialog.
+  async function simpanEditSupplier(awal, perubahan) {
+    if (Object.keys(perubahan).length === 0) { setEditSupplier(null); return; }
+    await api.updateFinanceSupplier(awal.id, perubahan);
+    setEditSupplier(null);
+    await muat();
+  }
+  async function ubahStatusSupplier(s) {
+    try { await api.updateFinanceSupplier(s.id, { active: !s.active }); await muat(); } catch (e) { setPesan(e.message); }
   }
 
   const menunggu = bills.filter((b) => b.status === "MENUNGGU_APPROVAL");
@@ -512,6 +526,7 @@ export default function FinanceSuppliers() {
                     <TH>Rekening</TH>
                     <TH numeric width={140}>Sisa Utang</TH>
                     <TH width={100}>Status</TH>
+                    <TH width={AKSI_COL_WIDTH_MENU_ONLY}>Aksi</TH>
                   </TR>
                 </THead>
                 <TBody>
@@ -526,6 +541,14 @@ export default function FinanceSuppliers() {
                       </TD>
                       <TD numeric><Uang value={s.sisaUtang} nolSebagaiStrip /></TD>
                       <TD>{s.active ? <Badge variant="green">Aktif</Badge> : <Badge variant="neutral">Nonaktif</Badge>}</TD>
+                      <TD>
+                        <RowActions primary={null} items={[
+                          { label: "Edit data supplier", icon: Pencil, onClick: () => setEditSupplier(s) },
+                          s.active
+                            ? { label: "Nonaktifkan", icon: Ban, destructive: true, confirmText: `Nonaktifkan ${s.name}? Supplier tidak bisa menerima tagihan baru, tetapi utang yang ada tetap bisa dibayar.`, onClick: () => ubahStatusSupplier(s) }
+                            : { label: "Aktifkan kembali", icon: CheckCircle2, onClick: () => ubahStatusSupplier(s) },
+                        ]} />
+                      </TD>
                     </TR>
                   ))}
                 </TBody>
@@ -537,14 +560,19 @@ export default function FinanceSuppliers() {
       )}
 
       <ModalSupplier open={modal === "supplier"} onClose={() => setModal(null)} onSubmit={(d) => aksi(() => api.createFinanceSupplier(d))} />
+      <ModalSupplier
+        key={editSupplier?.id ?? "edit-kosong"}
+        open={!!editSupplier} supplier={editSupplier} onClose={() => setEditSupplier(null)}
+        onSubmit={(perubahan) => simpanEditSupplier(editSupplier, perubahan)}
+      />
       <ModalTagihan
         open={modal === "tagihan"} onClose={() => setModal(null)}
-        suppliers={suppliers} unbilled={unbilled} kategori={kategori} kategoriBeli={kategoriBeli} metodeInfo={metodeInfo}
+        suppliers={suppliersAktif} unbilled={unbilled} kategori={kategori} kategoriBeli={kategoriBeli} metodeInfo={metodeInfo}
         onSubmit={(d) => aksi(() => api.createFinanceBill(d))}
       />
       {editUntuk && (
         <ModalEditTagihan
-          bill={editUntuk} suppliers={suppliers} kategori={kategori} kategoriBeli={kategoriBeli} metodeInfo={metodeInfo} unbilled={unbilled} onClose={() => setEditUntuk(null)}
+          bill={editUntuk} suppliers={supplierBisaDipilih(suppliers, { tetapSertakanId: editUntuk.supplierId })} kategori={kategori} kategoriBeli={kategoriBeli} metodeInfo={metodeInfo} unbilled={unbilled} onClose={() => setEditUntuk(null)}
           onSubmit={(d) => aksi(async () => { await api.editFinanceBill(editUntuk.id, d); setEditUntuk(null); })}
         />
       )}
@@ -581,7 +609,7 @@ export default function FinanceSuppliers() {
       {versiUntuk && <RiwayatVersiDialog jenis="bills" id={versiUntuk.id} nomor={versiUntuk.billNumber} onClose={() => setVersiUntuk(null)} />}
       <ModalBayarSupplier
         open={modal === "bayar"} onClose={() => setModal(null)}
-        suppliers={suppliers} bills={bills} rekening={rekening}
+        suppliers={suppliersAktif} bills={bills} rekening={rekening}
         onSubmit={(d) => aksi(() => api.createFinanceSupplierPayment(d))}
       />
       <PanelDetail spec={panelRincian} onClose={() => setPanelRincian(null)} />
@@ -589,18 +617,48 @@ export default function FinanceSuppliers() {
   );
 }
 
-function ModalSupplier({ open, onClose, onSubmit }) {
-  const [f, setF] = useState({ code: "", name: "", phone: "", email: "", address: "", paymentTermDays: "", bankName: "", bankAccount: "", bankHolder: "" });
+// Dua mode: BARU (supplier kosong → onSubmit(seluruh isian)) dan EDIT (supplier terisi → onSubmit(hanya bidang yang berubah); kode tidak bisa diubah).
+// Mode edit: galat server tampil di dalam dialog dan tombol dilepas lagi (dialog tidak boleh terkunci).
+function ModalSupplier({ open, onClose, onSubmit, supplier = null }) {
+  const edit = !!supplier;
+  const [f, setF] = useState(() => (edit ? formDariSupplier(supplier) : { code: "", name: "", phone: "", email: "", address: "", paymentTermDays: "", bankName: "", bankAccount: "", bankHolder: "", notes: "" }));
+  const [sibuk, setSibuk] = useState(false);
+  const [galat, setGalat] = useState(null);
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  const galatLokal = edit ? galatForm(f) : (f.name.trim() ? null : "Nama supplier wajib diisi");
+  const perubahan = edit ? payloadPerubahan(supplier, f) : null;
+  const adaPerubahan = !edit || Object.keys(perubahan).length > 0;
+  const rekeningGanti = edit && rekeningBerubah(supplier, f);
+
+  async function kirim() {
+    setSibuk(true); setGalat(null);
+    try { await onSubmit(edit ? perubahan : f); }
+    catch (e) { setGalat(e?.message || "Gagal menyimpan supplier"); setSibuk(false); }
+  }
   return (
     <Modal
-      open={open} onOpenChange={(v) => !v && onClose()}
-      title="Supplier Baru"
-      footer={<><Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button><TombolAksi onClick={() => onSubmit(f)} disabled={!f.name.trim()}>Simpan</TombolAksi></>}
+      open={open} onOpenChange={(v) => { if (!v && !sibuk) onClose(); }}
+      title={edit ? `Edit Supplier ${supplier.code}` : "Supplier Baru"}
+      description={edit ? "Mengubah data master saja — tidak ada jurnal, dan sisa utang tidak berubah. Setiap perubahan tercatat di riwayat aktivitas." : undefined}
+      footer={(
+        <div className="flex w-full flex-col gap-2">
+          {rekeningGanti && (
+            <p role="alert" data-testid="peringatan-rekening" className="rounded-lg bg-orangebg px-3 py-2 text-[12.5px] leading-snug text-orange">
+              Data rekening bank berubah. Pastikan sudah dikonfirmasi langsung ke supplier (telepon/kontak resmi) sebelum menyimpan — rekening palsu adalah modus penipuan pembayaran yang umum. Perubahan ini ditandai khusus di riwayat.
+            </p>
+          )}
+          {galatLokal && edit && <p className="text-[12px] text-red" data-testid="galat-lokal-supplier">{galatLokal}</p>}
+          {galat && <p role="alert" data-testid="galat-server-supplier" className="rounded-lg bg-redbg px-3 py-2 text-[12.5px] leading-snug text-red">{galat}</p>}
+          <div className="flex justify-end gap-2">
+            <Button variant="neutral" onClick={onClose} disabled={sibuk} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
+            <TombolAksi onClick={kirim} disabled={!!galatLokal || !adaPerubahan || sibuk}>{edit ? "Simpan Perubahan" : "Simpan"}</TombolAksi>
+          </div>
+        </div>
+      )}
     >
       <div className="space-y-3">
         <Field label="Nama supplier" required><Input value={f.name} onChange={(e) => set("name", e.target.value)} /></Field>
-        <Field label="Kode" hint="Kosongkan untuk dibuatkan otomatis"><Input value={f.code} onChange={(e) => set("code", e.target.value)} placeholder="SUP-004" /></Field>
+        <Field label="Kode" hint={edit ? "Kode tidak bisa diubah" : "Kosongkan untuk dibuatkan otomatis"}><Input value={f.code} onChange={(e) => set("code", e.target.value)} placeholder="SUP-004" disabled={edit} /></Field>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Telepon"><Input value={f.phone} onChange={(e) => set("phone", e.target.value)} /></Field>
           <Field label="Email"><Input value={f.email} onChange={(e) => set("email", e.target.value)} /></Field>
@@ -614,6 +672,7 @@ function ModalSupplier({ open, onClose, onSubmit }) {
           <Field label="No. rekening"><Input value={f.bankAccount} onChange={(e) => set("bankAccount", e.target.value)} /></Field>
         </div>
         <Field label="Atas nama"><Input value={f.bankHolder} onChange={(e) => set("bankHolder", e.target.value)} /></Field>
+        <Field label="Catatan"><Input value={f.notes} onChange={(e) => set("notes", e.target.value)} /></Field>
       </div>
     </Modal>
   );
