@@ -9,7 +9,7 @@ import { prisma } from "../db.js";
 import { createProductionPlan, reorderStationPlans, scheduleProductionPlan } from "../services/productionPlanningCommandService.js";
 import { cohortStatesOf, getPlanningRefs, listRencanaEligibility, planAndScheduleUnit } from "../services/productionRencanaService.js";
 import {
-  applyAdaptationPolicy, delayProductionWork, finishProduction, previewFinishProduction, recordProductionStep, reportMaterialShortage, resolveMaterialShortage, skipProductionStep,
+  applyAdaptationPolicy, applyQcGatePolicy, delayProductionWork, finishProduction, previewFinishProduction, recordProductionStep, reportMaterialShortage, resolveMaterialShortage, skipProductionStep,
 } from "../services/productionStepCommandService.js";
 import { resumeWork } from "../services/productionResumeService.js";
 import { confirmBuildCorner, recordBuildMaterials, setBuildMaterialOperator } from "../services/productionBuildCommandService.js";
@@ -319,6 +319,13 @@ productionExperienceRouter.post("/runs/:runId/finish", requirePermission(P.UNIT_
 productionExperienceRouter.post("/runs/:runId/adaptation", requireAnyPermission(P.UNIT_ROUTING_WRITE, P.PRODUCTION_SETTINGS_WRITE), async (req, res) => {
   try {
     res.json(await applyAdaptationPolicy(prisma, { runId: req.params.runId, actorId: req.user.id, idempotencyKey: idem(req), expectedRevision: req.body?.expectedRevision, reason: req.body?.reason }));
+  } catch (err) { handleErr(err, res); }
+});
+
+// POST /api/production-v2/runs/:runId/qc-gate { expectedRevision, reason } — terapkan gerbang QC sebelum bongkar (Fase 2) pada SATU run LAYANAN yang sudah berjalan. EKSPLISIT + tercatat; run lama tidak berubah otomatis.
+productionExperienceRouter.post("/runs/:runId/qc-gate", requireAnyPermission(P.UNIT_ROUTING_WRITE, P.PRODUCTION_SETTINGS_WRITE), async (req, res) => {
+  try {
+    res.json(await applyQcGatePolicy(prisma, { runId: req.params.runId, actorId: req.user.id, idempotencyKey: idem(req), expectedRevision: req.body?.expectedRevision, reason: req.body?.reason }));
   } catch (err) { handleErr(err, res); }
 });
 

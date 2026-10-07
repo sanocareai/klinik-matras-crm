@@ -12,6 +12,8 @@ export const SETTING_KEYS = Object.freeze({
   ADAPTATION_DEFAULT: "adaptation_default_policy",
 });
 export const ADAPTATION_POLICY = "ADAPTATION_V1";
+// Versi kebijakan gerbang QC sebelum bongkar (Fase 2 LAYANAN). Dipin pada Run BARU; run yang sudah berjalan tidak pernah diubah otomatis.
+export const QC_GATE_POLICY = "QC_GATE_V1";
 export const ARRIVAL_LOCATION_TYPES = Object.freeze(["RECEIVING_AREA", "WIP_AREA"]);
 
 function settingsError(message, statusCode, code, details) {

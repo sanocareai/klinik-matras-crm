@@ -188,6 +188,7 @@ export function toRunView(run, ctx, { now = new Date(), photoUrl = null, complai
       return { done: worked, skipped, remaining: applicable.length - worked - skipped, total: applicable.length };
     })(),
     adaptation: run.adaptationPolicy ? { policy: run.adaptationPolicy } : null,
+    qcGatePolicy: run.qcGatePolicyVersion || null, // Fase 2: NULL = run lama (gerbang QC sebelum bongkar tidak berlaku)
     steps,
     activeOp: op ? { stageLabel: op.stageLabel, status: op.status, startedAt: op.startedAt, delayKind: op.delayKind ?? null, delayNote: op.delayNote ?? null } : null,
     timer: {

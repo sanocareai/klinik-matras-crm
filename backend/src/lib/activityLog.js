@@ -210,6 +210,7 @@ export const EVENT_TYPES = Object.freeze({
   PRODUCTION_QC_NOT_PERFORMED: "PRODUCTION_QC_NOT_PERFORMED",
   PRODUCTION_FINISHED_ADAPTATION: "PRODUCTION_FINISHED_ADAPTATION",
   PRODUCTION_ADAPTATION_APPLIED: "PRODUCTION_ADAPTATION_APPLIED",
+  PRODUCTION_QC_GATE_APPLIED: "PRODUCTION_QC_GATE_APPLIED",
   PRODUCTION_WORK_DELAYED: "PRODUCTION_WORK_DELAYED",
   PRODUCTION_WORK_RESUMED: "PRODUCTION_WORK_RESUMED",
   PRODUCTION_SETTING_CHANGED: "PRODUCTION_SETTING_CHANGED",
@@ -481,6 +482,8 @@ export function formatActivitySentence(event) {
       return `Produksi unit ${metadata.unitCode || "—"} diselesaikan (mode adaptasi): ${metadata.skippedCount ?? 0} tahap dilewati, QC tidak dilakukan, unit Siap Kirim tanpa penerimaan barang jadi Gudang`;
     case EVENT_TYPES.PRODUCTION_ADAPTATION_APPLIED:
       return `Mode adaptasi diterapkan pada Production Run unit ${metadata.unitCode || "—"}${metadata.reason ? ` — ${metadata.reason}` : ""}`;
+    case EVENT_TYPES.PRODUCTION_QC_GATE_APPLIED:
+      return `Gerbang QC sebelum bongkar (${metadata.policy || "QC_GATE_V1"}) diterapkan pada Production Run unit ${metadata.unitCode || "—"}${metadata.reason ? ` — ${metadata.reason}` : ""}`;
     case EVENT_TYPES.PRODUCTION_WORK_DELAYED:
       return `Pekerjaan unit ${metadata.unitCode || "—"} ditunda: ${metadata.reasonLabel || "—"}${metadata.note ? ` — ${metadata.note}` : ""}`;
     case EVENT_TYPES.PRODUCTION_WORK_RESUMED:

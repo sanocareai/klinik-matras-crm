@@ -286,3 +286,49 @@ test("adaptasi, SEWA, dan jalur NEW/custom TIDAK terkena gerbang; tahap boleh di
   assert.equal(await testPrisma.unitComponentEntry.count({ where: { unitId: lay.unit.id } }), 0, "tidak ada catatan uji palsu");
   assert.notEqual((await card(w, lr.id)).next.wait, "QC_BEFORE_PENDING");
 });
+
+test("kebijakan gerbang QC dipin per Run: Run baru terpin QC_GATE_V1; Run lama (NULL) TIDAK otomatis terkena; penerapan eksplisit, beralasan, bergerbang izin/revisi, idempoten, tercatat", async () => {
+  const w = await world();
+  // Run baru -> terpin
+  const { unit, run } = await layananUnit(w);
+  assert.equal((await testPrisma.productionRun.findUniqueOrThrow({ where: { id: run.id } })).qcGatePolicyVersion, "QC_GATE_V1", "Run baru dipin saat dibuat");
+  assert.equal((await card(w, run.id)).qcGatePolicy, "QC_GATE_V1");
+
+  // Simulasi Run yang sudah berjalan sebelum rilis (kolom NULL): perilaku LAMA, tidak ada gerbang
+  await testPrisma.productionRun.update({ where: { id: run.id }, data: { qcGatePolicyVersion: null } });
+  ok(await step(w, w.nadya, run.id, 1, { payload: { conditionConfirmed: true }, media: await media(w.nadya, run.id, "i") }));
+  const old = await card(w, run.id);
+  assert.equal(old.qcGatePolicy, null);
+  assert.deepEqual([old.next.action, old.next.stepNo, old.next.wait ?? null], ["COMPLETE", 2, null], "Run lama: tahap 2 tetap tahap kerja Meja, bukan menunggu QC");
+  assert.equal((await w.qc.api.get(`${CN}/qc-queue`)).body.items.length, 0, "Run lama tidak masuk antrean PIC QC");
+  assert.equal((await testPrisma.productionRun.findUniqueOrThrow({ where: { id: run.id } })).revision, old.revision, "tidak ada perubahan otomatis");
+
+  // Penerapan eksplisit: izin, alasan, revisi
+  const url = `${V2}/runs/${run.id}/qc-gate`;
+  assert.equal((await w.nadya.api.post(url, { expectedRevision: old.revision, reason: "uji" }, key("g1"))).status, 403, "penugasan Meja tidak boleh menerapkan kebijakan");
+  assert.equal((await w.qc.api.post(url, { expectedRevision: old.revision, reason: "uji" }, key("g1b"))).status, 403, "PIC QC tidak boleh menerapkan kebijakan run");
+  const noReason = await w.lead.api.post(url, { expectedRevision: old.revision }, key("g2")); assert.equal(noReason.status, 400); assert.equal(noReason.body.code, "QC_GATE_REASON_REQUIRED");
+  const stale = await w.lead.api.post(url, { expectedRevision: old.revision - 1, reason: "uji" }, key("g3")); assert.equal(stale.status, 409);
+  assert.equal((await testPrisma.productionRun.findUniqueOrThrow({ where: { id: run.id } })).qcGatePolicyVersion, null, "ditolak = tidak berubah");
+
+  const gk = key("g4");
+  const applied = ok(await w.lead.api.post(url, { expectedRevision: old.revision, reason: "Run baru mulai hari ini, ikut gerbang QC" }, gk));
+  assert.deepEqual([applied.policy, applied.changed, applied.revision], ["QC_GATE_V1", true, old.revision + 1]);
+  const replay = ok(await w.lead.api.post(url, { expectedRevision: old.revision, reason: "Run baru mulai hari ini, ikut gerbang QC" }, gk));
+  assert.equal(replay.revision, applied.revision, "replay idempoten (kunci sama)");
+  const logs = await testPrisma.activityEvent.findMany({ where: { entityId: unit.id, eventType: "PRODUCTION_QC_GATE_APPLIED" } });
+  assert.equal(logs.length, 1, "tercatat tepat sekali");
+  assert.equal(logs[0].actorId, w.lead.user.id); assert.equal(logs[0].metadata.reason, "Run baru mulai hari ini, ikut gerbang QC"); assert.equal(logs[0].metadata.previousPolicy, null);
+  const again = ok(await w.lead.api.post(url, { expectedRevision: applied.revision, reason: "ulang" }, key("g5")));
+  assert.equal(again.changed, false, "sudah terpin = tanpa perubahan"); assert.equal(await testPrisma.activityEvent.count({ where: { entityId: unit.id, eventType: "PRODUCTION_QC_GATE_APPLIED" } }), 1);
+
+  // Setelah diterapkan, gerbang berlaku: tahap 2 menunggu PIC QC
+  const gated = await card(w, run.id);
+  assert.deepEqual([gated.qcGatePolicy, gated.next.action, gated.next.wait], ["QC_GATE_V1", "WAIT", "QC_BEFORE_PENDING"]);
+  assert.equal((await w.qc.api.get(`${CN}/qc-queue`)).body.items.length, 1);
+
+  // Tidak berlaku untuk adaptasi/BARU/SEWA
+  const sewa = await mkOrder({ category: "SEWA" }); const sr = await scheduleUnit(w, sewa.unit, "TABLE_2");
+  const sres = await w.lead.api.post(`${V2}/runs/${sr.id}/qc-gate`, { expectedRevision: (await card(w, sr.id)).revision, reason: "uji" }, key("g6"));
+  assert.equal(sres.status, 409); assert.equal(sres.body.code, "QC_GATE_NOT_APPLICABLE");
+});

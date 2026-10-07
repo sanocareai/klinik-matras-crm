@@ -22,11 +22,11 @@ import {
 } from "../lib/domain/productionSteps.js";
 import { assertNoOpenRunException } from "./productionRunGuards.js";
 import {
-  RUN_INCLUDE, activeOperation, applyAdaptationFinishInTx, applyAdaptationPolicyInTx, applyCompleteInTx, applyDelayInTx, applyPauseInTx, applyResumeInTx, applySkipStageInTx, applyStartInTx,
-  applyQcNotPerformedInTx, assertAdaptationRun, authorizeOperator, bumpRunRevisionInTx, finishBlockersOf, isAdaptationRun, isPostQcStage, loadMaterialFacts, loadRunForWrite, materialReadiness, peekStartIsPostQc,
+  RUN_INCLUDE, activeOperation, applyAdaptationFinishInTx, applyAdaptationPolicyInTx, applyQcGatePolicyInTx, applyCompleteInTx, applyDelayInTx, applyPauseInTx, applyResumeInTx, applySkipStageInTx, applyStartInTx,
+  applyQcNotPerformedInTx, assertAdaptationRun, authorizeOperator, bumpRunRevisionInTx, finishBlockersOf, hasQcGatePolicy, isAdaptationRun, isPostQcStage, loadMaterialFacts, loadRunForWrite, materialReadiness, peekStartIsPostQc,
   prepareSkipInTx, prepareStartInTx, workshopPathOf,
 } from "./productionWorkshopExecutionCommandService.js";
-import { ADAPTATION_POLICY } from "./productionSettingsService.js";
+import { ADAPTATION_POLICY, QC_GATE_POLICY } from "./productionSettingsService.js";
 import { pathForUnit, resolveCurrentTarget } from "./unitStageEngine.js";
 import { lockRowForUpdate } from "./inventoryLedger.js";
 import { evidenceFileExists } from "../lib/productionEvidenceStore.js";
@@ -137,7 +137,7 @@ export async function loadStepContext(client, run) {
   // Fase 2 (LAYANAN): gerbang QC sebelum bongkar / lapisan awal / uji fondasi awal. Hanya jalur restorasi non-adaptasi; fakta dibaca hanya saat Run berada di tahap bongkar (hemat query papan).
   // Hanya kategori LAYANAN (restorasi): SEWA dan jalur pengerjaan (BARU/custom) TIDAK berubah.
   const inIntake = ["pre_teardown_test", "teardown", "foundation_test"].includes(op?.stageCode);
-  const isLayanan = !buildTrack && !isAdaptationRun(run) && inIntake
+  const isLayanan = !buildTrack && !isAdaptationRun(run) && hasQcGatePolicy(run) && inIntake
     ? (await client.order.findUnique({ where: { id: run.unit.orderId }, select: { category: true } }))?.category === "LAYANAN" : false;
   const preTeardownGate = isLayanan;
   const gateRefs = preTeardownGate ? await loadPreTeardownFacts(client, { unitId: run.unitId, runId: run.id }) : null;
@@ -166,6 +166,7 @@ export async function loadStepContext(client, run) {
     materialOperatorId: buildSetting?.materialOperatorId ?? null, racikanRecorded, lastStep6Version: lastStep6?.version ?? null,
     materialReady: material.ready,
     diagnosisManualMapped, diagnosisBomHasLines,
+    qcGatePolicy: run.qcGatePolicyVersion || null, // Fase 2: NULL = run lama, gerbang QC sebelum bongkar tidak berlaku
     adaptation: isAdaptationRun(run), // slice 2: QC tidak wajib -> tahap kerja tuntas = siap "Selesaikan Produksi"
     preTeardownGate, gateRefs,
     qcBeforeRecorded: !!gateRefs?.wholeTest, layersBeforeRecorded: !!gateRefs?.layers, foundationTestRecorded: !!gateRefs?.foundationTest,
@@ -748,6 +749,39 @@ export async function finishProduction(prisma, { runId, actorId, idempotencyKey,
     await finishCommand(tx, command, result.revision, response);
     return { replayed: false, ...response };
   }, { timeout: 30_000 });
+}
+
+// Terapkan gerbang QC sebelum bongkar pada run yang sudah berjalan (aksi EKSPLISIT, tercatat; run lama tidak pernah diubah otomatis). Hanya jalur LAYANAN; tidak mengubah tahap/bukti/catatan/stok.
+export async function applyQcGatePolicy(prisma, { runId, actorId, idempotencyKey, expectedRevision, reason = null }) {
+  if (!runId) throw stepError("runId wajib diisi", 400, "STEP_RUN_REQUIRED");
+  assertIdempotencyKey(idempotencyKey);
+  const revisionExpected = assertExpectedRevision(expectedRevision);
+  const cleanReason = typeof reason === "string" ? reason.trim().slice(0, 300) || null : null;
+  if (!cleanReason) throw stepError("Alasan penerapan gerbang QC wajib diisi", 400, "QC_GATE_REASON_REQUIRED");
+  const actor = actorId || "SYSTEM";
+  const requestHash = hash({ commandType: "APPLY_QC_GATE_POLICY", runId, expectedRevision: revisionExpected, reason: cleanReason });
+  return prisma.$transaction(async (tx) => {
+    const replay = await findReplay(tx, actor, idempotencyKey, requestHash);
+    if (replay) return replay;
+    const run = await loadRunForWrite(tx, runId);
+    await assertWriterEnabledForUnit(tx, run.unitId);
+    assertRunRevision(run, revisionExpected);
+    await assertNoOpenRunException(tx, run.id);
+    if (isAdaptationRun(run)) throw stepError("Run mode adaptasi tidak memakai gerbang QC sebelum bongkar", 409, "QC_GATE_NOT_APPLICABLE");
+    const ctxOrder = await tx.order.findUnique({ where: { id: run.unit.orderId }, select: { category: true } });
+    if (ctxOrder?.category !== "LAYANAN") throw stepError("Gerbang QC sebelum bongkar hanya untuk pesanan LAYANAN", 409, "QC_GATE_NOT_APPLICABLE");
+    const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "APPLY_QC_GATE_POLICY", aggregateId: runId, requestHash, expectedRevision: revisionExpected });
+    const applied = await applyQcGatePolicyInTx(tx, { run });
+    if (applied.changed) {
+      await recordActivity(tx, {
+        entityType: "unit", entityId: run.unitId, eventType: EVENT_TYPES.PRODUCTION_QC_GATE_APPLIED, actorId: actorId || null,
+        metadata: { unitCode: run.unit.unitCode, runId: run.id, reason: cleanReason, policy: QC_GATE_POLICY, previousPolicy: run.qcGatePolicyVersion || null },
+      });
+    }
+    const response = { runId, revision: applied.revision, policy: QC_GATE_POLICY, changed: applied.changed };
+    await finishCommand(tx, command, applied.revision, response);
+    return { replayed: false, ...response };
+  });
 }
 
 // Terapkan kebijakan adaptasi pada run yang sudah berjalan (aksi EKSPLISIT Admin/Lead; run lama tidak pernah diubah otomatis). Tidak mengubah tahap/bukti/stok.
