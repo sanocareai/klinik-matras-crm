@@ -10,6 +10,7 @@ import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/tabl
 import { api } from "@/api.js";
 import { KartuPinFinance } from "@/features/finance/KoreksiAman.jsx";
 import { BIAYA_BAWAAN, JENIS_BIAYA_TRANSFER, presetRekening } from "@/features/finance/biayaTransfer.js";
+import { resetSaatBuka } from "@/features/finance/resetSaatBuka.jsx";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
   StatusBadge, Pilihan, InputUang, tanggalPendek, tanggalJam, LABEL_DIVISI,
@@ -534,7 +535,7 @@ function KartuGerbangKlaimLunas({ data, onUbah }) {
   );
 }
 
-function ModalKategori({ open, onClose, akun, onSubmit }) {
+function ModalKategoriIsi({ open, onClose, akun, onSubmit }) {
   const [f, setF] = useState({ code: "", name: "", accountId: "", division: "UMUM" });
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   return (
@@ -607,3 +608,6 @@ function BarisPresetBiaya({ rekening, onSimpan }) {
     </div>
   );
 }
+
+// Formulir dikosongkan setiap dibuka (lihat features/finance/resetSaatBuka.jsx).
+const ModalKategori = resetSaatBuka(ModalKategoriIsi);

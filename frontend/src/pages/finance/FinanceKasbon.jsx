@@ -30,6 +30,7 @@ import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
 import { specKasbon } from "@/features/finance/detailSpecs.js";
 import { aksiKasbon as matriksKasbon } from "@/features/finance/matriksAksi.js";
 import { bentukItemMenu, adminSaatIni } from "@/features/finance/aksiMenu.jsx";
+import { resetSaatBuka } from "@/features/finance/resetSaatBuka.jsx";
 
 // Aksi PALING RELEVAN jadi tombol utama; sisanya masuk menu titik-tiga —
 // sama seperti FinanceExpenses.jsx (lihat komentar di sana).
@@ -366,7 +367,7 @@ export default function FinanceKasbon() {
   );
 }
 
-function ModalKasbonBaru({ open, onClose, rekening, perKaryawan, batas, onSubmit, aksi }) {
+function ModalKasbonBaruIsi({ open, onClose, rekening, perKaryawan, batas, onSubmit, aksi }) {
   const [f, setF] = useState({ employeeName: "", date: "", amount: "", urgency: "", cashAccountId: "", notes: "", receiptUrl: "", ...BIAYA_KOSONG });
   const [nama, setNama] = useState([]);
   const [namaGalat, setNamaGalat] = useState(null);
@@ -581,3 +582,6 @@ function ModalEdit({ kasbon, onClose, onSubmit }) {
     </Modal>
   );
 }
+
+// Formulir dikosongkan setiap dibuka (lihat features/finance/resetSaatBuka.jsx).
+const ModalKasbonBaru = resetSaatBuka(ModalKasbonBaruIsi);

@@ -28,6 +28,7 @@ import { RiwayatVersiDialog } from "@/features/finance/KoreksiAman.jsx";
 import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
 import { aksiUangMuka as matriksUangMuka } from "@/features/finance/matriksAksi.js";
 import { bentukItemMenu, adminSaatIni } from "@/features/finance/aksiMenu.jsx";
+import { resetSaatBuka } from "@/features/finance/resetSaatBuka.jsx";
 
 // UANG MUKA OPERASIONAL — kas yang DIBERIKAN ke pemegang (driver/PIC) untuk biaya operasional.
 //
@@ -428,7 +429,7 @@ export default function FinanceUangMuka() {
   );
 }
 
-function ModalBerikan({ open, onClose, rekening, karyawan, onSubmit }) {
+function ModalBerikanIsi({ open, onClose, rekening, karyawan, onSubmit }) {
   const awal = () => ({
     holderId: "", division: "DELIVERY", purpose: "", date: hariIniISO(), dueDate: hariIniISO(7), amount: "",
     cashAccountId: "", receiptUrl: "", notes: "", ...BIAYA_KOSONG,
@@ -609,3 +610,6 @@ function ModalEditUangMuka({ uangMuka, onClose, onSubmit }) {
     </Modal>
   );
 }
+
+// Formulir dikosongkan setiap dibuka (lihat features/finance/resetSaatBuka.jsx).
+const ModalBerikan = resetSaatBuka(ModalBerikanIsi);

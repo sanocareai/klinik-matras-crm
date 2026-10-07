@@ -17,6 +17,7 @@ import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
 import { specPengecualianLunas } from "@/features/finance/detailSpecs.js";
 import { adminSaatIni } from "@/features/finance/aksiMenu.jsx";
 import { alasanCukup } from "@/features/finance/pengecualianLunasLogic.js";
+import { resetSaatBuka } from "@/features/finance/resetSaatBuka.jsx";
 
 // PENGECUALIAN TANGGAL LUNAS — keputusan Owner, ber-riwayat. Order.paidAt normalnya mengikuti tanggal pembayaran yang diverifikasi Finance; order yang DIKUNCI di sini tetap
 // dihitung lunas pada tanggal yang diputuskan Owner (mis. target Sales September), walau Finance memverifikasinya bulan berikutnya. Tidak mengubah Payment, jurnal, saldo, atau status bayar.
@@ -140,7 +141,7 @@ export default function FinancePengecualianLunas() {
   );
 }
 
-function ModalBaru({ open, onClose, onSubmit }) {
+function ModalBaruIsi({ open, onClose, onSubmit }) {
   const [f, setF] = useState({ orderNumber: "", alasan: "", paidAtDikunci: "" });
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   useEffect(() => { if (open) setF({ orderNumber: "", alasan: "", paidAtDikunci: "" }); }, [open]);
@@ -182,3 +183,6 @@ function ModalCabut({ target, onClose, onSubmit }) {
     </Modal>
   );
 }
+
+// Formulir dikosongkan setiap dibuka (lihat features/finance/resetSaatBuka.jsx).
+const ModalBaru = resetSaatBuka(ModalBaruIsi);
