@@ -38,6 +38,12 @@ const LAYAR = [
   "../src/lib/invoiceDp.js",
   "../src/lib/klaimLunas.js",
   "../src/push.js",
+  "../src/lib/lapisanMelayang.js",
+  "../src/lib/navigationRef.js",
+  "../src/components/CustomerSheet.js",
+  "../src/components/OrderCard.js",
+  "../src/components/CustomerProfileContent.js",
+  "../src/screens/CustomerDetailScreen.js",
 ];
 
 for (const f of LAYAR) {

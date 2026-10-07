@@ -20,6 +20,7 @@ import Avatar from "./Avatar";
 import CustomerProfileContent from "./CustomerProfileContent";
 import GaleriMediaModal from "./GaleriMediaModal";
 import { useMessagesForConv } from "../store/messageStore";
+import { daftarkanPenutupLapisan } from "../lib/lapisanMelayang";
 
 function Section({ title, children }) {
   const tokens = useTokens();
@@ -63,6 +64,9 @@ const CustomerSheet = forwardRef(function CustomerSheet({ conversation }, ref) {
     open: () => { setReloadKey((k) => k + 1); sheetRef.current?.present(); },
     close: () => sheetRef.current?.dismiss(),
   }), []);
+
+  // Tutup panel ini saat ada navigasi ke layar lain (Rincian Pesanan dari kartu order) — kalau tidak, layar baru tertutup panel.
+  useEffect(() => daftarkanPenutupLapisan(() => sheetRef.current?.dismiss()), []);
 
   useEffect(() => {
     if (!isGroup || !conversation?.id) return;

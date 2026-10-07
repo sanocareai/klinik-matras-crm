@@ -1,14 +1,17 @@
 // navigationRef terpisah dari App.js supaya modul lain (push.js,
 // InAppBanner.js) bisa navigate tanpa import App.js balik (circular import).
 import { createNavigationContainerRef } from "@react-navigation/native";
+import { tutupLapisanMelayang } from "./lapisanMelayang";
 
 export const navigationRef = createNavigationContainerRef();
+
 
 // Buka ChatScreen dari mana saja (tap notifikasi OS, tap in-app banner, dst)
 // — dipakai bersama supaya logconnya SATU tempat, bukan diduplikasi di
 // App.js/push.js/InAppBanner.js secara terpisah.
 export function navigateToChat({ conversationId, name, isGroup = false, customerId }) {
   if (!conversationId || !navigationRef.isReady()) return;
+  tutupLapisanMelayang(); // banner/notifikasi bisa diketuk saat panel Info Pelanggan terbuka — chat baru jangan tertutup panel
   navigationRef.navigate("ChatRoom", { conversationId, name, isGroup, customerId });
 }
 
@@ -21,5 +24,6 @@ export function navigateToChat({ conversationId, name, isGroup = false, customer
 // `tab` (opsional: "pembayaran" | "dokumentasi" | ...) membuka tab itu langsung; `bukaKlaim` membuka sheet "Ajukan Klaim Lunas" otomatis (jalan pintas Catat Pembayaran).
 export function navigateToOrderTimeline({ orderId, orderNumber, customerName, tab, bukaKlaim }) {
   if (!orderId || !navigationRef.isReady()) return;
+  tutupLapisanMelayang();
   navigationRef.navigate("OrderTimeline", { orderId, orderNumber, customerName, ...(tab && { tab }), ...(bukaKlaim && { bukaKlaim: true }) });
 }
