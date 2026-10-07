@@ -266,6 +266,15 @@ export const api = {
   getRoutePrepChecklist: (routeId) => request(`/armada/routes/${routeId}/prep-checklist`),
   submitRoutePrepChecklistProof: (routeId, itemId, file, { note, idempotencyKey } = {}) =>
     uploadFile(`/armada/routes/${routeId}/prep-checklist/items/${itemId}/proof`, file, { ...(note && { note }), idempotencyKey }, "photo"),
+  // Bukti Kelengkapan Standar (7 Okt 2026) — TERPISAH dari item di atas:
+  // SELALU wajib (tidak perlu admin menyusun apa pun), lihat
+  // routePrepChecklist.js. Backend menerima sampai 2 foto field "photos",
+  // tapi File.upload() di sini hanya mengirim SATU file per panggilan (lihat
+  // uploadFile di atas) — cukup, karena syarat gerbang hanya "minimal 1
+  // foto". Submit ulang MENIMPA (web mendukung 2 foto lewat fetch+FormData
+  // biasa, lihat frontend/src/api.js — platform beda, kontrak server sama).
+  submitRouteKelengkapan: (routeId, file, { note } = {}) =>
+    uploadFile(`/armada/routes/${routeId}/kelengkapan`, file, { ...(note && { note }) }, "photos"),
   // Item TANPA foto wajib ("cek kondisi kasur" dkk) — tidak ada file untuk
   // dikirim lewat File.upload() (expo-file-system), jadi fetch+FormData
   // text-only biasa (bukan masalah "unsupported FormData part" — itu

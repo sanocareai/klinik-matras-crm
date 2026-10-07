@@ -33,7 +33,20 @@ async function fixture({ jobs: jobCount = 2 } = {}) {
   const c = (u) => ({ ...u, api: makeClient(server.baseUrl, u.token) });
   return { driver: c(driver), otherDriver: c(otherDriver), dispatcher: c(dispatcher), route, jobs };
 }
-const routeStart = (f, k, headers = {}) => f.driver.api.post(`/api/armada/routes/${f.route.id}/start`, { proofPhotoUrls: ["/media/job-photos/load.jpg"] }, keyed(k, headers));
+// Bukti Kelengkapan Standar (7 Okt 2026) — SELALU wajib minimal 1 foto
+// sebelum start bisa sukses (lihat routePrepChecklist.js); tes di file ini
+// soal histori waktu, bukan soal checklist — kirim 1 foto seadanya tiap
+// kali SEBELUM start supaya gerbang itu tidak mengganggu apa yang diuji.
+async function kirimKelengkapan(token, routeId) {
+  const fd = new FormData();
+  fd.append("photos", new Blob([await sharp({ create: { width: 4, height: 4, channels: 3, background: { r: 1, g: 2, b: 3 } } }).jpeg().toBuffer()], { type: "image/jpeg" }), "k.jpg");
+  const res = await fetch(`${server.baseUrl}/api/armada/routes/${routeId}/kelengkapan`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: fd });
+  if (res.status !== 201) throw new Error(`gagal kirim kelengkapan fixture rute ${routeId}: ${res.status} ${await res.text()}`);
+}
+const routeStart = async (f, k, headers = {}) => {
+  await kirimKelengkapan(f.driver.token, f.route.id);
+  return f.driver.api.post(`/api/armada/routes/${f.route.id}/start`, { proofPhotoUrls: ["/media/job-photos/load.jpg"] }, keyed(k, headers));
+};
 const jobPost = (f, i, action, body, k, headers = {}) => f.driver.api.post(`/api/armada/jobs/${f.jobs[i].id}/${action}`, body, keyed(k, headers));
 const pod = { proofPhotoUrls: ["/media/job-photos/pod.jpg"], recipientName: "Budi Penerima", location: null };
 const events = (routeId) => testPrisma.deliveryExecutionEvent.findMany({ where: { routeId }, orderBy: { createdAt: "asc" } });

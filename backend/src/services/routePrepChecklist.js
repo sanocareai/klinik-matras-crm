@@ -64,40 +64,70 @@ export function assertScopeJobConsistency({ scope, jobId }) {
   if (scope === "ROUTE" && jobId) throw buatGalat("Item lingkup seluruh rute tidak boleh terikat satu stop");
 }
 
-// Gerbang POST /routes/:id/start — item AKTIF (belum diarsipkan) & WAJIB
-// ("required sebelum berangkat") harus punya bukti TERKINI (proof termuda
-// yang itemRevision-nya cocok dengan revision item SEKARANG — proof dari
-// revision lama otomatis tidak dihitung, lihat catatan schema.prisma).
-// Item photoRequired tanpa foto di bukti terkininya juga dianggap belum
-// terpenuhi walau sudah ada baris proof (mis. submit tanpa foto pada item
-// yang sebenarnya minta foto).
-export async function evaluateChecklistGate(tx, routeId) {
-  const items = await tx.routePrepChecklistItem.findMany({
-    where: { routeId, archivedAt: null, required: true },
-    orderBy: { sortOrder: "asc" },
-  });
-  if (items.length === 0) return { ok: true, missing: [] };
+// Marker itemId untuk entri "missing" virtual Bukti Kelengkapan (BUKAN baris
+// RoutePrepChecklistItem sungguhan) — dipakai frontend/driver-mobile untuk
+// membedakan dari item checklist admin biasa tanpa menambah field baru di
+// payload gate. Diekspor supaya satu sumber kebenaran (bukan string ganda).
+export const KELENGKAPAN_ITEM_ID = "__KELENGKAPAN__";
+export const MAX_COMPLETENESS_PHOTOS = 2;
+export const MAX_COMPLETENESS_NOTE_LEN = 500;
 
-  const proofs = await tx.routePrepChecklistProof.findMany({
-    where: { itemId: { in: items.map((i) => i.id) } },
-    orderBy: { createdAt: "desc" },
-  });
-  const latestByItem = new Map();
-  for (const p of proofs) {
-    if (!latestByItem.has(p.itemId)) latestByItem.set(p.itemId, p);
+// Gerbang POST /routes/:id/start — DUA bagian independen, keduanya masuk ke
+// `missing` yang sama (satu gerbang, satu mekanisme override):
+//   1. Bukti Kelengkapan Standar (routes.completeness_photo_urls) — SELALU
+//      wajib minimal 1 foto, TIDAK bergantung konfigurasi admin (permintaan
+//      owner: "jangan sampai lupa plastik/tali/kaki kasur", tanpa perlu
+//      dispatcher menyusun apa pun). Rute tanpa item checklist admin SAMA
+//      SEKALI tetap kena gerbang ini.
+//   2. Item checklist admin AKTIF & WAJIB — harus punya bukti TERKINI (proof
+//      termuda yang itemRevision-nya cocok dengan revision item SEKARANG —
+//      proof dari revision lama otomatis tidak dihitung, lihat catatan
+//      schema.prisma). Item photoRequired tanpa foto di bukti terkininya
+//      juga dianggap belum terpenuhi walau sudah ada baris proof.
+// `route` = baris Route yang SUDAH dikunci pemanggil (lockRoute) — dipakai
+// langsung (tanpa query ulang) supaya evaluasi konsisten dengan baris yang
+// sama yang nanti diupdate dalam transaksi yang sama.
+export async function evaluateChecklistGate(tx, route) {
+  const missing = [];
+  if (!Array.isArray(route.completenessPhotoUrls) || route.completenessPhotoUrls.length === 0) {
+    missing.push({ itemId: KELENGKAPAN_ITEM_ID, title: "Bukti Kelengkapan (foto plastik/tali/tools, dll)", reason: "Foto belum diunggah" });
   }
 
-  const missing = [];
-  for (const item of items) {
-    const latest = latestByItem.get(item.id);
-    const current = latest && latest.itemRevision === item.revision ? latest : null;
-    if (!current) {
-      missing.push({ itemId: item.id, title: item.title, reason: "Belum ada bukti terbaru" });
-    } else if (item.photoRequired && !current.photoUrl) {
-      missing.push({ itemId: item.id, title: item.title, reason: "Foto belum diunggah" });
+  const items = await tx.routePrepChecklistItem.findMany({
+    where: { routeId: route.id, archivedAt: null, required: true },
+    orderBy: { sortOrder: "asc" },
+  });
+  if (items.length > 0) {
+    const proofs = await tx.routePrepChecklistProof.findMany({
+      where: { itemId: { in: items.map((i) => i.id) } },
+      orderBy: { createdAt: "desc" },
+    });
+    const latestByItem = new Map();
+    for (const p of proofs) {
+      if (!latestByItem.has(p.itemId)) latestByItem.set(p.itemId, p);
+    }
+    for (const item of items) {
+      const latest = latestByItem.get(item.id);
+      const current = latest && latest.itemRevision === item.revision ? latest : null;
+      if (!current) {
+        missing.push({ itemId: item.id, title: item.title, reason: "Belum ada bukti terbaru" });
+      } else if (item.photoRequired && !current.photoUrl) {
+        missing.push({ itemId: item.id, title: item.title, reason: "Foto belum diunggah" });
+      }
     }
   }
   return { ok: missing.length === 0, missing };
+}
+
+// Validasi submit Bukti Kelengkapan (dipanggil dari route handler, SEBELUM
+// file benar-benar disimpan oleh multer — lihat armada.js). files = array
+// req.files (multer.array), note = string|undefined dari body.
+export function assertCompletenessSubmission({ fileCount, note }) {
+  if (!Number.isInteger(fileCount) || fileCount < 1) throw buatGalat("Foto Bukti Kelengkapan wajib diisi (minimal 1)");
+  if (fileCount > MAX_COMPLETENESS_PHOTOS) throw buatGalat(`Foto Bukti Kelengkapan maksimal ${MAX_COMPLETENESS_PHOTOS}`);
+  if (note !== undefined && note !== null && String(note).length > MAX_COMPLETENESS_NOTE_LEN) {
+    throw buatGalat(`Catatan maksimal ${MAX_COMPLETENESS_NOTE_LEN} karakter`);
+  }
 }
 
 export { buatGalat as checklistError };

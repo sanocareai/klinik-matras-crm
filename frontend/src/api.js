@@ -355,6 +355,11 @@ export const api = {
   // double-tap tidak boleh membuat baris bukti dobel).
   submitRoutePrepChecklistProof: (routeId, itemId, formData, idempotencyKey = mutationKey("checklist-proof")) =>
     requestFormData(`/armada/routes/${routeId}/prep-checklist/items/${itemId}/proof`, formData, "POST", { "Idempotency-Key": idempotencyKey }),
+  // Bukti Kelengkapan Standar (7 Okt 2026) — TERPISAH dari item di atas: SELALU
+  // wajib (tidak perlu admin menyusun apa pun), 1-2 foto ("photos") + catatan
+  // bebas opsional ("note"). Submit ulang MENIMPA seluruh set (bukan menambah).
+  submitRouteKelengkapan: (routeId, formData) =>
+    requestFormData(`/armada/routes/${routeId}/kelengkapan`, formData, "POST"),
   // Hapus permanen — untuk rute DRAFT atau CANCELLED (D-059, diperluas
   // D-061). Beda dari cancelRoute (soft, riwayatnya tetap ada) — ini
   // benar-benar menghapus baris Route-nya. PUBLISHED/COMPLETED ditolak

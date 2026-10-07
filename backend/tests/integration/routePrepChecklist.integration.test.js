@@ -74,9 +74,32 @@ function startRoute(api, routeId, { idemKey = idem("start"), ...body } = {}) {
   return api.post(`/api/armada/routes/${routeId}/start`, { proofPhotoUrls: ["/media/job-photos/muatan.jpg"], ...body }, { "Idempotency-Key": idemKey });
 }
 
-test("rute tanpa checklist tetap kompatibel — start langsung jalan tanpa item sama sekali", async () => {
+// Bukti Kelengkapan Standar (7 Okt 2026) — TERPISAH dari item admin di atas,
+// SELALU wajib minimal 1 foto (lihat evaluateChecklistGate). Helper ini
+// dipakai SEBELUM startRoute di seluruh test yang mengharapkan start sukses
+// (termasuk tes rute TANPA checklist admin sama sekali).
+async function kirimKelengkapan(token, routeId, { note, photoCount = 1 } = {}) {
+  const fd = new FormData();
+  for (let i = 0; i < photoCount; i++) fd.append("photos", new Blob([await gambar(i + 1)], { type: "image/jpeg" }), `k${i}.jpg`);
+  if (note) fd.append("note", note);
+  const res = await fetch(`${server.baseUrl}/api/armada/routes/${routeId}/kelengkapan`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: fd,
+  });
+  const body = await res.json().catch(() => null);
+  return { status: res.status, body };
+}
+
+async function startRouteSiap(api, token, routeId, opts) {
+  const k = await kirimKelengkapan(token, routeId);
+  if (k.status !== 201) throw new Error(`gagal kirim kelengkapan fixture: ${JSON.stringify(k.body)}`);
+  return startRoute(api, routeId, opts);
+}
+
+test("rute tanpa checklist tetap kompatibel — start langsung jalan tanpa item sama sekali (Bukti Kelengkapan tetap wajib)", async () => {
   const f = await fixtureRoute();
-  const r = await startRoute(f.driverApi, f.route.id);
+  const r = await startRouteSiap(f.driverApi, f.driver.token, f.route.id);
   assert.equal(r.status, 200, JSON.stringify(r.body));
   assert.equal(r.body.started, 1);
 });
@@ -97,6 +120,7 @@ test("gerbang: item wajib tanpa bukti menahan start; setelah bukti foto terkirim
   assert.ok(bukti.body.photoUrl.startsWith("/media/route-prep-proofs/"), "bukti disimpan di direktori terlindungi, bukan job-photos statis publik");
   assert.match(bukti.body.photoUrl, /\?exp=\d+&sig=[0-9a-f]+$/, "URL yang dikembalikan sudah bertanda-tangan");
 
+  await kirimKelengkapan(f.driver.token, f.route.id);
   const sekarang = await startRoute(f.driverApi, f.route.id);
   assert.equal(sekarang.status, 200, JSON.stringify(sekarang.body));
 
@@ -111,7 +135,7 @@ test("gerbang: item wajib photoRequired=false cukup ditandai selesai TANPA foto"
   const bukti = await kirimBukti(f.driver.token, f.route.id, itemId, { withPhoto: false, note: "Sudah dicek, kondisi baik" });
   assert.equal(bukti.status, 201, JSON.stringify(bukti.body));
   assert.equal(bukti.body.photoUrl, null);
-  const r = await startRoute(f.driverApi, f.route.id);
+  const r = await startRouteSiap(f.driverApi, f.driver.token, f.route.id);
   assert.equal(r.status, 200, JSON.stringify(r.body));
 });
 
@@ -120,6 +144,86 @@ test("item photoRequired=true ditolak kalau submit tanpa foto", async () => {
   const buat = await tambahItem(f.dispatcherApi, f.route.id, { title: "Plastik pembungkus", required: true, photoRequired: true });
   const bukti = await kirimBukti(f.driver.token, f.route.id, buat.body.item.id, { withPhoto: false });
   assert.equal(bukti.status, 400, JSON.stringify(bukti.body));
+});
+
+// ── Bukti Kelengkapan Standar (7 Okt 2026, permintaan owner) ────────────────
+// TERPISAH dari item checklist admin di atas: SELALU wajib minimal 1 foto,
+// tidak bergantung konfigurasi admin apa pun (rute tanpa satu pun item
+// checklist tetap kena gerbang ini).
+
+test("Bukti Kelengkapan: rute TANPA item checklist admin tetap menahan start sampai foto dikirim", async () => {
+  const f = await fixtureRoute();
+  const ditahan = await startRoute(f.driverApi, f.route.id);
+  assert.equal(ditahan.status, 409, JSON.stringify(ditahan.body));
+  assert.equal(ditahan.body.code, "CHECKLIST_BELUM_LENGKAP");
+  assert.match(ditahan.body.error, /Bukti Kelengkapan/);
+
+  const kirim = await kirimKelengkapan(f.driver.token, f.route.id, { note: "Bawa plastik 2 gulung, tali rafia, kunci L" });
+  assert.equal(kirim.status, 201, JSON.stringify(kirim.body));
+  assert.equal(kirim.body.photoUrls.length, 1);
+  assert.ok(kirim.body.photoUrls[0].startsWith("/media/route-prep-proofs/"));
+  assert.match(kirim.body.photoUrls[0], /\?exp=\d+&sig=[0-9a-f]+$/);
+  assert.equal(kirim.body.note, "Bawa plastik 2 gulung, tali rafia, kunci L");
+
+  const sekarang = await startRoute(f.driverApi, f.route.id);
+  assert.equal(sekarang.status, 200, JSON.stringify(sekarang.body));
+});
+
+test("Bukti Kelengkapan: boleh 2 foto sekaligus, catatan opsional (boleh kosong), ditolak lebih dari 2 atau tanpa foto sama sekali", async () => {
+  const f = await fixtureRoute();
+  const dua = await kirimKelengkapan(f.driver.token, f.route.id, { photoCount: 2 });
+  assert.equal(dua.status, 201, JSON.stringify(dua.body));
+  assert.equal(dua.body.photoUrls.length, 2);
+  assert.equal(dua.body.note, null);
+
+  const tiga = await kirimKelengkapan(f.driver.token, f.route.id, { photoCount: 3 });
+  assert.equal(tiga.status, 400, JSON.stringify(tiga.body));
+
+  const nol = await kirimKelengkapan(f.driver.token, f.route.id, { photoCount: 0 });
+  assert.equal(nol.status, 400, JSON.stringify(nol.body));
+});
+
+test("Bukti Kelengkapan: submit ulang MENIMPA seluruh set foto+catatan (bukan menambah)", async () => {
+  const f = await fixtureRoute();
+  const pertama = await kirimKelengkapan(f.driver.token, f.route.id, { photoCount: 2, note: "catatan pertama" });
+  assert.equal(pertama.status, 201);
+  const kedua = await kirimKelengkapan(f.driver.token, f.route.id, { photoCount: 1, note: "catatan kedua" });
+  assert.equal(kedua.status, 201);
+  assert.equal(kedua.body.photoUrls.length, 1);
+  assert.equal(kedua.body.note, "catatan kedua");
+
+  const route = await testPrisma.route.findUnique({ where: { id: f.route.id } });
+  assert.equal(route.completenessPhotoUrls.length, 1, "set lama ditimpa, bukan ditambah (bukan 3)");
+});
+
+test("Bukti Kelengkapan: driver lain (bukan pemilik rute) ditolak 403; terkunci setelah rute berangkat", async () => {
+  const f = await fixtureRoute();
+  const ditolak = await kirimKelengkapan(f.otherDriver.token, f.route.id);
+  assert.equal(ditolak.status, 403, JSON.stringify(ditolak.body));
+
+  await startRouteSiap(f.driverApi, f.driver.token, f.route.id);
+  const setelahBerangkat = await kirimKelengkapan(f.driver.token, f.route.id);
+  assert.equal(setelahBerangkat.status, 409, JSON.stringify(setelahBerangkat.body));
+  assert.equal(setelahBerangkat.body.code, "CHECKLIST_DIBEKUKAN");
+});
+
+test("Bukti Kelengkapan: override admin/dispatcher dengan alasan tetap mencakup Bukti Kelengkapan yang belum lengkap", async () => {
+  const f = await fixtureRoute();
+  const r = await startRoute(f.dispatcherApi, f.route.id, { overrideChecklist: true, overrideChecklistReason: "HP driver rusak, tidak bisa foto — diizinkan berangkat" });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const events = await testPrisma.activityEvent.findMany({ where: { entityType: "route_prep_checklist", entityId: f.route.id, eventType: "CHECKLIST_GATE_OVERRIDDEN" } });
+  assert.equal(events.length, 1);
+  assert.ok(events[0].metadata.missingTitles.some((t) => t.includes("Bukti Kelengkapan")));
+});
+
+test("Bukti Kelengkapan: GET prep-checklist menyertakan photoUrls (bertanda-tangan), catatan, dan waktu kirim", async () => {
+  const f = await fixtureRoute();
+  await kirimKelengkapan(f.driver.token, f.route.id, { note: "plastik+tali" });
+  const r = await f.driverApi.get(CHK(f.route.id));
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.kelengkapan.photoUrls.length, 1);
+  assert.equal(r.body.kelengkapan.note, "plastik+tali");
+  assert.ok(r.body.kelengkapan.submittedAt);
 });
 
 test("unauthorized: driver lain (bukan pemilik rute) ditolak kirim bukti maupun memulai rute", async () => {
@@ -182,6 +286,7 @@ test("race edit-vs-start: edit menambah item wajib baru bersamaan dengan driver 
   // Item wajib AWAL sudah dipenuhi driver, rute SIAP berangkat normal.
   const awal = await tambahItem(f.dispatcherApi, f.route.id, { title: "Tali", required: true, photoRequired: true });
   await kirimBukti(f.driver.token, f.route.id, awal.body.item.id);
+  await kirimKelengkapan(f.driver.token, f.route.id);
 
   const [hasilStart, hasilEdit] = await Promise.all([
     startRoute(f.driverApi, f.route.id),
@@ -244,6 +349,7 @@ test("retry idempoten: kirim bukti dua kali dengan Idempotency-Key sama hanya me
 
 test("retry idempoten pada POST start: dua panggilan dengan Idempotency-Key sama tidak dobel memulai rute", async () => {
   const f = await fixtureRoute();
+  await kirimKelengkapan(f.driver.token, f.route.id);
   const key = idem("startretry");
   const pertama = await startRoute(f.driverApi, f.route.id, { idemKey: key });
   assert.equal(pertama.status, 200, JSON.stringify(pertama.body));

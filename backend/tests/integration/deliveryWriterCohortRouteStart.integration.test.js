@@ -1,12 +1,24 @@
 import "./setup/env.js";
 import test from "node:test";
 import assert from "node:assert/strict";
+import sharp from "sharp";
 import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestUser } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
 import { applyPlan, buildExceptions, loadSource, unitPlan } from "../../scripts/production-delivery-v2/backfill-core.js";
 import { V2_FLAGS } from "../../src/services/v2FeatureFlags.js";
+
+// Bukti Kelengkapan Standar (7 Okt 2026) — SELALU wajib minimal 1 foto
+// sebelum POST /routes/:id/start bisa sukses (lihat routePrepChecklist.js);
+// tes di file ini soal cohort writer V2, tidak soal checklist — kirim 1 foto
+// seadanya supaya gerbang itu tidak mengganggu apa yang sebenarnya diuji.
+async function kirimKelengkapan(token, routeId) {
+  const fd = new FormData();
+  fd.append("photos", new Blob([await sharp({ create: { width: 4, height: 4, channels: 3, background: { r: 1, g: 2, b: 3 } } }).jpeg().toBuffer()], { type: "image/jpeg" }), "k.jpg");
+  const res = await fetch(`${server.baseUrl}/api/armada/routes/${routeId}/kelengkapan`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: fd });
+  if (res.status !== 201) throw new Error(`gagal kirim kelengkapan fixture rute ${routeId}: ${res.status} ${await res.text()}`);
+}
 
 const HARI_INI = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10);
 const DATE = new Date(`${HARI_INI}T00:00:00.000Z`);
@@ -77,6 +89,7 @@ test("publish lalu mulai route cohort lewat endpoint nyata: V2 tepat satu; non-c
   assert.deepEqual(diff(beforePublishOther, await snapshot()), { commands: 0, outbox: 0, feed: 0, publications: 0, assignments: 0 }, "publish non-cohort: V1-only");
 
   // Mulai route cohort: payload klien menyelundupkan routeId non-cohort; yang dipakai harus req.params.id.
+  await kirimKelengkapan(w.driver.token, w.canary.id);
   const beforeStart = await snapshot();
   const start = await driver.post(`/api/armada/routes/${w.canary.id}/start`, { routeId: w.other.id, proofPhotoUrls: ["/media/job-photos/load.jpg"] }, { "Idempotency-Key": "canary-route-start" });
   assert.equal(start.status, 200, JSON.stringify(start.body));
@@ -103,6 +116,7 @@ test("publish lalu mulai route cohort lewat endpoint nyata: V2 tepat satu; non-c
   assert.deepEqual(await snapshot(), afterStart);
 
   // Route non-cohort: V1 berjalan, tanpa command/outbox/feed V2.
+  await kirimKelengkapan(w.driver.token, w.other.id);
   const otherStart = await driver.post(`/api/armada/routes/${w.other.id}/start`, { proofPhotoUrls: ["/media/job-photos/load.jpg"] }, { "Idempotency-Key": "other-route-start" });
   assert.equal(otherStart.status, 200, JSON.stringify(otherStart.body));
   assert.equal((await testPrisma.route.findUnique({ where: { id: w.other.id } })).status, "IN_PROGRESS");
@@ -141,11 +155,13 @@ test("payload routeId/aggregateId/routeIds/jobId yang BERLAWANAN diabaikan di pu
   assert.deepEqual(diff(b1, await snapshot()), NOL, "publish non-cohort dengan payload cohort: tetap V1-only");
 
   // start rute: sama, kedua arah.
+  await kirimKelengkapan(w.driver.token, w.other.id);
   const b2 = await snapshot();
   const so = await driver.post(`/api/armada/routes/${w.other.id}/start`, rancu(w.canary.id, jobCanary.id), { "Idempotency-Key": "auth-start-other" });
   assert.equal(so.status, 200, JSON.stringify(so.body));
   assert.deepEqual(diff(b2, await snapshot()), NOL, "start non-cohort dengan payload cohort: V1-only");
   assert.equal((await testPrisma.route.findUnique({ where: { id: w.canary.id } })).status, "PUBLISHED", "route cohort tidak ikut dimulai");
+  await kirimKelengkapan(w.driver.token, w.canary.id);
   const b3 = await snapshot();
   const sc = await driver.post(`/api/armada/routes/${w.canary.id}/start`, rancu(w.other.id, jobOther.id), { "Idempotency-Key": "auth-start-canary" });
   assert.equal(sc.status, 200, JSON.stringify(sc.body));
@@ -190,6 +206,7 @@ test("setelah writer flag OFF: aksi berikutnya kembali V1-only dan tidak menamba
 
   await cohortOff(); // rollback writer: kembali V1-only
 
+  await kirimKelengkapan(w.driver.token, w.canary.id);
   const sebelum = await snapshot();
   const start = await driver.post(`/api/armada/routes/${w.canary.id}/start`, { proofPhotoUrls: FOTO }, { "Idempotency-Key": "off-start-canary" });
   assert.equal(start.status, 200, JSON.stringify(start.body));

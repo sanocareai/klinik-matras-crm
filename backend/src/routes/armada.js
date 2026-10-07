@@ -39,7 +39,7 @@ import {
 import { notifySalesJobCompleted, notifySalesUnpaidAfterDelivery } from "../services/deliveryCompletionNotify.js";
 import { traceRoute } from "../services/routeTracking.js";
 import { recordRouteCompleted, readTimeMeta, EXEC_ACTIONS, buildRouteTimeline, validateCorrectionInput, isCorrectableAction, isSuspectQuality, TIME_QUALITY } from "../services/deliveryTimeline.js";
-import { prepProofUpload, signPrepProofUrl, PREP_PROOF_PREFIX } from "./routePrepProofMedia.js";
+import { prepProofUpload, prepProofUploadMulti, signPrepProofUrl, PREP_PROOF_PREFIX } from "./routePrepProofMedia.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { bukukanPembayaran } from "../services/finance/hooks.js";
 import { kunciKanonis } from "../services/finance/urutanKunci.js";
@@ -73,6 +73,9 @@ import {
   normalizeChecklistItemFields,
   assertScopeJobConsistency,
   evaluateChecklistGate,
+  assertCompletenessSubmission,
+  MAX_COMPLETENESS_PHOTOS,
+  MAX_COMPLETENESS_NOTE_LEN,
 } from "../services/routePrepChecklist.js";
 
 export const armadaRouter = express.Router();
@@ -4971,11 +4974,70 @@ armadaRouter.get("/routes/:id/prep-checklist", requireAnyPermission(P.JOB_WRITE,
       revision: route.prepChecklistRevision,
       lockedAt: route.prepChecklistLockedAt,
       items: hasil,
+      kelengkapan: {
+        photoUrls: (route.completenessPhotoUrls || []).map((u) => signPrepProofUrl(u)),
+        note: route.completenessNote,
+        submittedAt: route.completenessSubmittedAt,
+      },
     });
   } catch (err) {
     handleErr(err, res);
   }
 });
+
+// POST /api/armada/routes/:id/kelengkapan — driver kirim Bukti Kelengkapan
+// Standar (1-2 foto + catatan bebas apa yang dibawa: plastik/tali/tools/
+// dll). TERPISAH dari item checklist admin (lihat evaluateChecklistGate) —
+// SELALU wajib, tidak perlu admin menyusun apa pun. Submit ulang MENIMPA
+// seluruh set foto+catatan (kolom datar, bukan ledger proof beririsan
+// revision — tidak ada "revision basi" di sini karena admin tidak bisa
+// mengedit field ini).
+armadaRouter.post(
+  "/routes/:id/kelengkapan",
+  requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_WRITE),
+  // multer sendiri memanggil next(err) (bukan melempar sinkron) saat lebih
+  // dari MAX_COMPLETENESS_PHOTOS file dikirim — dibungkus manual supaya
+  // responsnya 400 JSON konsisten (bukan jatuh ke error middleware global
+  // yang membalas 500), pola sama dengan ArmadaError di handleErr di bawah.
+  (req, res, next) => {
+    prepProofUploadMulti(MAX_COMPLETENESS_PHOTOS).array("photos", MAX_COMPLETENESS_PHOTOS)(req, res, (err) => {
+      if (!err) return next();
+      const pesan = err.code === "LIMIT_UNEXPECTED_FILE" || err.code === "LIMIT_FILE_COUNT"
+        ? `Foto Bukti Kelengkapan maksimal ${MAX_COMPLETENESS_PHOTOS}`
+        : (err.message || "Gagal mengunggah foto");
+      res.status(400).json({ error: pesan });
+    });
+  },
+  async (req, res) => {
+    try {
+      assertCompletenessSubmission({ fileCount: (req.files || []).length, note: req.body.note });
+      const note = req.body.note ? String(req.body.note).trim().slice(0, MAX_COMPLETENESS_NOTE_LEN) : null;
+      const photoUrls = (req.files || []).map((f) => `${PREP_PROOF_PREFIX}${f.filename}`);
+      const result = await prisma.$transaction(async (tx) => {
+        const route = await lockRoute(tx, req.params.id);
+        if (!route) throw new ArmadaError("Rute tidak ditemukan", 404);
+        const bolehSemua = hasPermission(req.user, P.JOB_WRITE);
+        const milikCrew = route.driverId === req.user.id || route.helperId === req.user.id;
+        if (!bolehSemua && !milikCrew) throw new ArmadaError("Bukan rute Anda", 403);
+        if (route.prepChecklistLockedAt) {
+          throw Object.assign(new ArmadaError("Rute sudah berangkat — checklist keberangkatan sudah dibekukan", 409), { code: "CHECKLIST_DIBEKUKAN" });
+        }
+        const updated = await tx.route.update({
+          where: { id: route.id },
+          data: { completenessPhotoUrls: photoUrls, completenessNote: note, completenessSubmittedAt: new Date(), completenessSubmittedById: req.user.id },
+        });
+        return updated;
+      });
+      res.status(201).json({
+        photoUrls: result.completenessPhotoUrls.map((u) => signPrepProofUrl(u)),
+        note: result.completenessNote,
+        submittedAt: result.completenessSubmittedAt,
+      });
+    } catch (err) {
+      handleErr(err, res);
+    }
+  }
+);
 
 // POST /api/armada/routes/:id/prep-checklist/items — tambah item (admin).
 armadaRouter.post("/routes/:id/prep-checklist/items", requirePermission(P.ROUTE_WRITE), async (req, res) => {
@@ -5265,7 +5327,7 @@ armadaRouter.post("/routes/:id/start", requireAnyPermission(P.JOB_WRITE, P.JOB_O
       // menunggu giliran (NOWAIT -> 409 "sedang diproses", klien retry).
       // Rute TANPA checklist (gate.missing selalu []) tetap kompatibel —
       // item di bawah hanya terisi kalau dispatcher memang menyusunnya.
-      const gate = await evaluateChecklistGate(tx, route.id);
+      const gate = await evaluateChecklistGate(tx, route);
       if (!gate.ok) {
         const overrideReason = String(req.body.overrideChecklistReason || "").trim();
         const wantsOverride = req.body.overrideChecklist === true;

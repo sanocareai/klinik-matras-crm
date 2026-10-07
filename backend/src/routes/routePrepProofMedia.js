@@ -28,18 +28,25 @@ const MIME_EXT = Object.freeze({ "image/jpeg": "jpg", "image/png": "png", "image
 const EXT_MIME = Object.freeze({ jpg: "image/jpeg", png: "image/png", webp: "image/webp" });
 if (!fs.existsSync(PREP_PROOF_DIR)) fs.mkdirSync(PREP_PROOF_DIR, { recursive: true });
 
-// Unggahan bukti checklist: nama berkas = UUID acak + ekstensi dari MIME (bukan nama asli klien).
-export const prepProofUpload = multer({
-  storage: multer.diskStorage({
-    destination: PREP_PROOF_DIR,
-    filename: (_req, file, cb) => cb(null, `${crypto.randomUUID()}.${MIME_EXT[file.mimetype] || "jpg"}`),
-  }),
-  limits: { fileSize: 8 * 1024 * 1024, files: 1 },
-  fileFilter: (_req, file, cb) => {
-    if (!MIME_EXT[file.mimetype]) return cb(new Error("Hanya foto JPG/PNG/WEBP yang diperbolehkan"));
-    cb(null, true);
-  },
+// Penyimpanan+filter BERSAMA (direktori & pola nama berkas yang sama untuk
+// SEMUA bukti Persiapan Perjalanan) — tiap endpoint bikin instance multer
+// SENDIRI dari sini dengan limits.files sesuai kebutuhannya. `limits` multer
+// berlaku per-INSTANCE (bukan per-pemanggilan .single()/.array()), jadi satu
+// instance tidak bisa dipakai bersama oleh endpoint 1-foto dan endpoint
+// multi-foto — memakai ulang instance files:1 untuk .array("photos", 2)
+// diam-diam MEMBATASI ke 1 foto walau argumen .array() bilang 2.
+const prepProofStorage = multer.diskStorage({
+  destination: PREP_PROOF_DIR,
+  filename: (_req, file, cb) => cb(null, `${crypto.randomUUID()}.${MIME_EXT[file.mimetype] || "jpg"}`),
 });
+const prepProofFileFilter = (_req, file, cb) => {
+  if (!MIME_EXT[file.mimetype]) return cb(new Error("Hanya foto JPG/PNG/WEBP yang diperbolehkan"));
+  cb(null, true);
+};
+// Unggahan bukti checklist PER-ITEM (satu foto): nama berkas = UUID acak + ekstensi dari MIME (bukan nama asli klien).
+export const prepProofUpload = multer({ storage: prepProofStorage, limits: { fileSize: 8 * 1024 * 1024, files: 1 }, fileFilter: prepProofFileFilter });
+// Unggahan Bukti Kelengkapan Standar (1-2 foto sekaligus) — lihat routes/armada.js POST /routes/:id/kelengkapan.
+export const prepProofUploadMulti = (maxFiles) => multer({ storage: prepProofStorage, limits: { fileSize: 8 * 1024 * 1024, files: maxFiles }, fileFilter: prepProofFileFilter });
 
 // Hanya URL internal bukti checklist yang ditandatangani; URL lama (/media/job-photos/…) dikembalikan apa adanya.
 export function signPrepProofUrl(url, { now = Date.now() } = {}) {
@@ -52,16 +59,23 @@ export function signPrepProofUrl(url, { now = Date.now() } = {}) {
 }
 
 // Pemegang bukti = rute yang memuat bukti itu. JOB_READ (admin/dispatcher) atau crew rute (driver/helper) — driver lain tidak.
+// Dua sumber bukti berbagi direktori+pola nama berkas yang SAMA (lihat prepProofUpload): baris RoutePrepChecklistProof (item checklist admin)
+// ATAU array routes.completeness_photo_urls (Bukti Kelengkapan Standar, bukan baris proof — lihat routePrepChecklist.js).
 async function bolehLihat(user, file) {
   if (!user) return false;
+  const url = `${PREP_PROOF_PREFIX}${file}`;
   const proof = await prisma.routePrepChecklistProof.findFirst({
-    where: { photoUrl: `${PREP_PROOF_PREFIX}${file}` },
+    where: { photoUrl: url },
     select: { route: { select: { driverId: true, helperId: true } } },
   });
-  if (!proof) return false;
+  const route = proof?.route || (await prisma.route.findFirst({
+    where: { completenessPhotoUrls: { has: url } },
+    select: { driverId: true, helperId: true },
+  }));
+  if (!route) return false;
   if (hasPermission(user, P.JOB_READ)) return true;
   const own = hasPermission(user, P.JOB_OWN_READ) || hasPermission(user, P.JOB_OWN_WRITE);
-  return own && (proof.route.driverId === user.id || proof.route.helperId === user.id);
+  return own && (route.driverId === user.id || route.helperId === user.id);
 }
 
 async function kirim(req, res) {

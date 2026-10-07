@@ -48,7 +48,7 @@ export default function RouteStartCard({ route, assignedCount, sampleJobId, onCh
     setChecklistBusy(true);
     try {
       const cek = await api.getRoutePrepChecklist(route.id);
-      if (!checklistSiapBerangkat(cek.items)) {
+      if (!checklistSiapBerangkat(cek.items, (cek.kelengkapan?.photoUrls?.length || 0) > 0)) {
         bukaPersiapanPerjalanan();
         return;
       }

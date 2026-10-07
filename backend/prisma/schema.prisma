@@ -512,6 +512,7 @@ model User {
   prepChecklistItemsCreated  RoutePrepChecklistItem[] @relation("RoutePrepChecklistItemCreator")
   prepChecklistItemsUpdated  RoutePrepChecklistItem[] @relation("RoutePrepChecklistItemUpdater")
   prepChecklistProofsUploaded RoutePrepChecklistProof[] @relation("RoutePrepChecklistProofUploader")
+  routeCompletenessSubmitted  Route[]                   @relation("RouteCompletenessSubmitter")
   scopeRevisionsMade         ScopeRevision[]          @relation("ScopeRevisionProposer")
   scopeRevisionsDecided      ScopeRevision[]          @relation("ScopeRevisionDecider")
   productsCreated            Product[]                @relation("ProductCreator")
@@ -4001,6 +4002,21 @@ model Route {
 
   prepChecklistItems  RoutePrepChecklistItem[]
   prepChecklistProofs RoutePrepChecklistProof[]
+
+  // Bukti Kelengkapan Standar (7 Okt 2026, permintaan owner) — TERPISAH dari
+  // daftar item checklist yang disusun admin: section ini SELALU wajib dan
+  // tidak perlu admin mengatur apa pun (rute tanpa satu pun item checklist
+  // admin tetap punya gerbang ini). "Plastik/tali/tools" dkk cukup disebut
+  // di catatan bebas, bukan dicentang satu-satu. Maksimal 2 foto (divalidasi
+  // di aplikasi, bukan skema) disimpan di direktori terlindungi yang sama
+  // dengan bukti checklist (lihat routes/routePrepProofMedia.js). Submit
+  // ulang MENIMPA seluruh set (foto+catatan) — kolom datar seperti
+  // Job.startPhotoUrls, bukan ledger proof beririsan revision.
+  completenessPhotoUrls      String[]  @default([]) @map("completeness_photo_urls")
+  completenessNote           String?   @map("completeness_note")
+  completenessSubmittedAt    DateTime? @map("completeness_submitted_at")
+  completenessSubmittedById  String?   @map("completeness_submitted_by")
+  completenessSubmittedBy    User?     @relation("RouteCompletenessSubmitter", fields: [completenessSubmittedById], references: [id], onDelete: SetNull)
 
   @@index([date, status]) // papan Route Planner per tanggal
   @@index([driverId, date])

@@ -8,7 +8,7 @@
 // mengantre offline" tidak pernah dianggap terpenuhi (lihat catatan
 // panjang di prepChecklistStatus.js & requirement "belum memenuhi gate").
 import React, { useCallback, useState } from "react";
-import { View, Text, Pressable, StyleSheet, ScrollView, ActivityIndicator, Alert } from "react-native";
+import { View, Text, TextInput, Pressable, StyleSheet, ScrollView, ActivityIndicator, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect } from "@react-navigation/native";
 import { ArrowLeft, Camera, CheckCircle2, Circle, RefreshCw } from "lucide-react-native";
@@ -37,6 +37,68 @@ async function ambilDanKompresFoto() {
     { compress: 0.8, format: ImageManipulator.SaveFormat.JPEG }
   );
   return { uri: out.uri, type: "image/jpeg", name: `checklist-${Date.now()}.jpg` };
+}
+
+// Bukti Kelengkapan Standar (7 Okt 2026, permintaan owner) — TERPISAH dari
+// item admin di bawah: SELALU wajib minimal 1 foto, tidak bergantung
+// konfigurasi admin apa pun (lihat evaluateChecklistGate di backend).
+// Driver-mobile kirim SATU foto (cukup untuk syarat minimal — lihat catatan
+// submitRouteKelengkapan di api.js); catatan bebas opsional.
+function KelengkapanCard({ routeId, kelengkapan, locked, onSubmitted }) {
+  const theme = useTheme();
+  const styles = useMemoStyles(theme);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [note, setNote] = useState("");
+
+  const sudahKirim = (kelengkapan?.photoUrls?.length || 0) > 0;
+
+  async function kirim() {
+    setBusy(true); setErr("");
+    try {
+      const file = await ambilDanKompresFoto();
+      if (!file) return;
+      await api.submitRouteKelengkapan(routeId, file, { note: note.trim() || undefined });
+      setNote("");
+      onSubmitted();
+    } catch (e) {
+      setErr(e.message || "Gagal mengirim bukti kelengkapan");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <View style={[styles.card, sudahKirim && styles.cardDone]}>
+      <View style={styles.row}>
+        {sudahKirim ? <CheckCircle2 size={16} color={theme.GREEN} /> : <Circle size={16} color={theme.INK3} />}
+        <View style={{ flex: 1, marginLeft: 8 }}>
+          <Text style={styles.title}>Bukti Kelengkapan<Text style={styles.wajib}> · WAJIB</Text></Text>
+          <Text style={styles.detail}>Foto plastik/tali/tools/dll yang dibawa + catatan apa saja yang dibawa.</Text>
+          {sudahKirim && kelengkapan.note ? <Text style={styles.meta}>Catatan: {kelengkapan.note}</Text> : null}
+        </View>
+      </View>
+
+      {!locked && (
+        <View style={{ marginTop: 10, gap: 8 }}>
+          <TextInput
+            style={styles.noteInput}
+            value={note}
+            onChangeText={setNote}
+            placeholder="Catatan (opsional) — mis. bawa plastik 2 gulung, tali rafia, kunci L"
+            placeholderTextColor={theme.INK3}
+            multiline
+            editable={!busy}
+          />
+          <Pressable style={styles.actionBtn} onPress={kirim} disabled={busy}>
+            {busy ? <ActivityIndicator size="small" color={theme.ACCENT} /> : <Camera size={14} color={theme.ACCENT} />}
+            <Text style={styles.actionBtnText}>{sudahKirim ? "Kirim Ulang Foto" : "Ambil / Pilih Foto"}</Text>
+          </Pressable>
+        </View>
+      )}
+      {err ? <Text style={styles.err}>{err}</Text> : null}
+    </View>
+  );
 }
 
 function ItemCard({ item, routeId, onUploaded }) {
@@ -127,8 +189,9 @@ export default function PersiapanPerjalananScreen({ route, navigation }) {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const siap = data ? checklistSiapBerangkat(data.items) : false;
-  const belum = data ? hitungItemBelum(data.items) : 0;
+  const kelengkapanSiap = data ? (data.kelengkapan?.photoUrls?.length || 0) > 0 : false;
+  const siap = data ? checklistSiapBerangkat(data.items, kelengkapanSiap) : false;
+  const belum = data ? hitungItemBelum(data.items, kelengkapanSiap) : 0;
 
   return (
     <SafeAreaView style={styles.root}>
@@ -149,15 +212,12 @@ export default function PersiapanPerjalananScreen({ route, navigation }) {
         <View style={styles.center}><Text style={styles.err}>{err}</Text></View>
       ) : (
         <ScrollView contentContainerStyle={styles.list}>
-          {data.items.length === 0 ? (
-            <Text style={styles.meta}>Tidak ada checklist untuk rute ini — langsung bisa berangkat.</Text>
-          ) : (
-            data.items.map((item) => <ItemCard key={item.id} item={item} routeId={routeId} onUploaded={load} />)
-          )}
+          <KelengkapanCard routeId={routeId} kelengkapan={data.kelengkapan} locked={Boolean(data.lockedAt)} onSubmitted={load} />
+          {data.items.map((item) => <ItemCard key={item.id} item={item} routeId={routeId} onUploaded={load} />)}
         </ScrollView>
       )}
 
-      {data && data.items.length > 0 && (
+      {data && (
         <View style={styles.footer}>
           {siap ? (
             <Text style={styles.siapText}>Semua item wajib sudah lengkap — kembali untuk Mulai Perjalanan.</Text>
@@ -187,6 +247,7 @@ function useMemoStyles(theme) {
     detail: { fontSize: 12, color: theme.INK2, marginTop: 2 },
     meta: { fontSize: 11, color: theme.INK3, marginTop: 2 },
     warn: { fontSize: 11, color: theme.ORANGE, marginTop: 4, fontWeight: "600" },
+    noteInput: { minHeight: 38, borderRadius: 10, borderWidth: 1, borderColor: theme.BORDER, paddingHorizontal: 10, paddingVertical: 8, fontSize: 12.5, color: theme.INK, textAlignVertical: "top" },
     actionBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, height: 38, borderRadius: 10, borderWidth: 1, borderColor: theme.ACCENT + "66" },
     actionBtnText: { color: theme.ACCENT, fontWeight: "700", fontSize: 12.5 },
     err: { color: theme.RED, fontSize: 11.5, marginTop: 6 },
