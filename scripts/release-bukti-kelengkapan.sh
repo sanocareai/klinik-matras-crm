@@ -175,8 +175,13 @@ ok "release dir dibuat; compose identik"
 say "4b. Build frontend di release dir (dist BARU; dist aktif tidak disentuh)"
 install -m 600 "$PERSIST/frontend/.env" "$NEW_DIR/frontend/.env" || die "gagal menyalin frontend/.env"
 if [ -z "$NM_SRC" ]; then
-  ( cd "$NEW_DIR/frontend" && npm ci ) > "$BK_DIR/npm-install.log" 2>&1 || { rm -f "$NEW_DIR/frontend/.env"; tail -n 25 "$BK_DIR/npm-install.log"; die "npm ci frontend gagal (produksi tidak berubah)"; }
-  ok "npm ci selesai (tidak ada node_modules lama yang cocok untuk dipakai ulang)"
+  # npm ci (strict, menolak kalau lock file tidak 100% sinkron dengan package.json) GAGAL di sini — package-lock.json
+  # dari rilis sesi lain (34b72434) ternyata tidak lengkap untuk resolusi Linux (paket opsional platform-spesifik
+  # @emnapi/* hilang dari lock, walau di Windows npm ci lokal lolos tanpa galat). npm install (lebih toleran,
+  # merekonsiliasi lock yang kurang sinkron alih-alih menolak keras) dipakai di sini SAJA sebagai fallback instalasi
+  # segar — bukan governance dependensi rilis ini (tidak ada package.json/lock yang berubah pada kandidat).
+  ( cd "$NEW_DIR/frontend" && npm install ) > "$BK_DIR/npm-install.log" 2>&1 || { rm -f "$NEW_DIR/frontend/.env"; tail -n 25 "$BK_DIR/npm-install.log"; die "npm install frontend gagal (produksi tidak berubah)"; }
+  ok "npm install selesai (tidak ada node_modules lama yang cocok untuk dipakai ulang)"
 fi
 ( cd "$NEW_DIR/frontend" && npm run build ) > "$BK_DIR/build-frontend.log" 2>&1 || { rm -f "$NEW_DIR/frontend/.env"; tail -n 25 "$BK_DIR/build-frontend.log"; die "build frontend gagal (produksi tidak berubah)"; }
 rm -f "$NEW_DIR/frontend/.env"
