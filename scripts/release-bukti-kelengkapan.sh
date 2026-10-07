@@ -136,9 +136,12 @@ for d in "$PREV_DIR" "$RELEASES"/*/; do
   d="${d%/}"
   if [ -d "$d/frontend/node_modules" ] && [ -f "$d/frontend/package-lock.json" ] && cmp -s <(tr -d '\r' < "$d/frontend/package-lock.json") <(tr -d '\r' < "$LOCK_NEW"); then NM_SRC="$d/frontend/node_modules"; break; fi
 done
-[ -n "$NM_SRC" ] || die "tidak ada release dengan frontend/node_modules dan package-lock identik"
-ok "node_modules build dari ${NM_SRC}"
-DB_BYTES="$(psql_live -At -c "select pg_database_size('${DB_NAME}')")"; NM_KB="$(du -sk "$NM_SRC" | cut -f1)"; AVAIL_KB="$(df -Pk "$HOME" | awk 'NR==2{print $4}')"
+if [ -n "$NM_SRC" ]; then
+  ok "node_modules build dari ${NM_SRC}"
+else
+  ok "tidak ada release dengan node_modules+package-lock identik (release aktif 34b72434 tidak menyimpan node_modules) — npm install segar di release dir baru"
+fi
+DB_BYTES="$(psql_live -At -c "select pg_database_size('${DB_NAME}')")"; NM_KB="${NM_SRC:+$(du -sk "$NM_SRC" | cut -f1)}"; NM_KB="${NM_KB:-400000}"; AVAIL_KB="$(df -Pk "$HOME" | awk 'NR==2{print $4}')"
 [ "$AVAIL_KB" -ge $(( NM_KB * 2 + DB_BYTES / 1024 * 3 + 3 * 1024 * 1024 )) ] || die "ruang disk kurang"
 ok "ruang disk cukup"
 if [ "$PREFLIGHT_ONLY" = "1" ]; then say "Preflight selesai (--preflight-only): produksi TIDAK diubah"; trap - EXIT; exit 0; fi
@@ -158,7 +161,9 @@ PHASE="4-release-dir"; say "4. Release dir ${NEW_DIR} (git archive; release akti
 [ "$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$CID_OLD")" = "$PREV_DIR" ] || die "release aktif berubah selama backup"
 mkdir "$NEW_DIR" || die "gagal membuat ${NEW_DIR}"
 sg archive "$DEPLOY_SHA" | tar -x -C "$NEW_DIR" --exclude='frontend/dist' || die "git archive gagal"
-cp -a "$NM_SRC" "$NEW_DIR/frontend/node_modules" || die "gagal menyalin node_modules frontend"
+if [ -n "$NM_SRC" ]; then
+  cp -a "$NM_SRC" "$NEW_DIR/frontend/node_modules" || die "gagal menyalin node_modules frontend"
+fi
 for f in docker-compose.yml docker-compose.release.yml backend/Dockerfile backend/package.json frontend/package.json; do [ -f "$NEW_DIR/$f" ] || die "release dir tidak lengkap: $f"; done
 [ ! -e "$NEW_DIR/backend/.env" ] || die "backend/.env tidak boleh ada di arsip"
 printf '%s\n' "$DEPLOY_SHORT" > "$NEW_DIR/.release-commit"
@@ -169,6 +174,10 @@ ok "release dir dibuat; compose identik"
 
 say "4b. Build frontend di release dir (dist BARU; dist aktif tidak disentuh)"
 install -m 600 "$PERSIST/frontend/.env" "$NEW_DIR/frontend/.env" || die "gagal menyalin frontend/.env"
+if [ -z "$NM_SRC" ]; then
+  ( cd "$NEW_DIR/frontend" && npm ci ) > "$BK_DIR/npm-install.log" 2>&1 || { rm -f "$NEW_DIR/frontend/.env"; tail -n 25 "$BK_DIR/npm-install.log"; die "npm ci frontend gagal (produksi tidak berubah)"; }
+  ok "npm ci selesai (tidak ada node_modules lama yang cocok untuk dipakai ulang)"
+fi
 ( cd "$NEW_DIR/frontend" && npm run build ) > "$BK_DIR/build-frontend.log" 2>&1 || { rm -f "$NEW_DIR/frontend/.env"; tail -n 25 "$BK_DIR/build-frontend.log"; die "build frontend gagal (produksi tidak berubah)"; }
 rm -f "$NEW_DIR/frontend/.env"
 NEW_INDEX="$(grep -o 'index-[A-Za-z0-9_-]*\.js' "$NEW_DIR/frontend/dist/index.html" | sed -n 1p)"
