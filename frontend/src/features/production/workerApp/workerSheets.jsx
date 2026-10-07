@@ -6,7 +6,7 @@ import EvidenceCapture from "@/features/production/components/EvidenceCapture.js
 import StepForm from "@/features/production/components/StepForm.jsx";
 import { DiagnosisWizard } from "@/features/production/DiagnosisWizard.jsx";
 import {
-  BUILD_STEP_KASUR_HINT, materialsByPic, mediaRuleFor, productFlowOf, stepOf, actionLabel, buildStepPayload, clearDraft, createIntentKeys, friendlyError, isRetryableError, loadDraft, saveDraft, validateStepForm,
+  BUILD_STEP_KASUR_HINT, stepMaterialsByPic, mediaRuleFor, productFlowOf, stepOf, actionLabel, buildStepPayload, clearDraft, createIntentKeys, friendlyError, isRetryableError, loadDraft, saveDraft, validateStepForm,
 } from "@/features/production/experience.js";
 import { submitState } from "./workerAppModel.js";
 import { DELAY_ACTION_LABEL, DELAY_QUESTION, DELAY_REASONS, delayStatusText } from "@/features/production/productionLabels.js";
@@ -86,7 +86,7 @@ function StepFormSheet({ card, next, stepNo, onClose, onSubmitted }) {
   const online = useOnline();
   const step = stepOf(stepNo, card.track);
   const flow = productFlowOf(card) || "KASUR";
-  const byPic = stepNo === 6 && materialsByPic(card);
+  const byPic = stepMaterialsByPic(card, stepNo);
   const rule = mediaRuleFor(stepNo, card.track);
   const stepHint = card.track === "BUILD" && stepNo === 6 && flow === "KASUR" && !byPic ? BUILD_STEP_KASUR_HINT : step?.hint;
   const draft = useMemo(() => loadDraft(storage, card.runId, stepNo), [card.runId, stepNo]);

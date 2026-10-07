@@ -24,7 +24,7 @@ test("paritas: konstanta frontend = domain backend (seksi, kondisi, sistem fonda
 });
 
 test("fokus per tahap: bongkar/uji/diagnosis -> catat SEBELUM; pengerjaan pengganti dst -> SESUDAH; tidak pernah syarat", () => {
-  assert.deepEqual(M.focusFor(3), ["LAYERS_BEFORE", "FOUNDATION_BEFORE"]); assert.deepEqual(M.focusFor(5), ["LAYERS_BEFORE", "FOUNDATION_BEFORE"]);
+  assert.deepEqual(M.focusFor(3), ["LAYERS_BEFORE", "FOUNDATION_BEFORE"]); assert.deepEqual(M.focusFor(4), ["LAYERS_BEFORE", "FOUNDATION_BEFORE"]); assert.deepEqual(M.focusFor(5), ["LAYERS_BEFORE", "FOUNDATION_BEFORE", "PLAN_RACIKAN"], "diagnosa: sekaligus racikan rencana (Fase 3)");
   assert.deepEqual(M.focusFor(6), ["AFTER"]); assert.deepEqual(M.focusFor(7), ["AFTER"]); assert.deepEqual(M.focusFor(12), ["AFTER"]);
   assert.deepEqual(M.focusFor(null), []); assert.deepEqual(M.focusFor(0), []);
   assert.match(M.focusCopy(3).title, /sebelum dibongkar/); assert.match(M.focusCopy(6).title, /hasil pengerjaan/); assert.equal(M.focusCopy(null), null);
@@ -85,7 +85,7 @@ test("saran dari bahan terpakai mengisi formulir Sesudah saja (belum tersimpan, 
 test("UI: satu panel yang sama dipasang di Meja/Corner, Dokumentasi, Unit 360; laporan memakai ringkasan yang sama; membaca SATU endpoint", () => {
   const detail = strip(src("features", "production", "workerApp", "JobDetail.jsx")); const doc = strip(src("features", "production", "docApp", "DocDetail.jsx"));
   const drawer = strip(src("features", "production", "UnitOverviewDrawer.jsx")); const report = strip(src("pages", "bengkel", "ProductionReportV2.jsx"));
-  assert.match(detail, /<ComponentNotesPanel unitId=\{card\.unit\.id\} unitCode=\{card\.unit\.unitCode\} stepNo=\{next\?\.stepNo \?\? null\} onChanged=\{loadCard\} \/>/);
+  assert.match(detail, /<ComponentNotesPanel unitId=\{card\.unit\.id\} unitCode=\{card\.unit\.unitCode\} stepNo=\{next\?\.stepNo \?\? null\} onChanged=\{loadCard\} showAnalysis=\{card\.track !== "BUILD"\} \/>/);
   assert.match(doc, /<ComponentNotesPanel unitId=\{detail\.unit\.id\}/); assert.match(drawer, /<ComponentNotesPanel unitId=\{d\.identity\.unitId\}/);
   assert.match(report, /<BeforeAfterSummary comparison=\{report\.components\.comparison\} \/>/); assert.match(report, /data-testid="report-components"/);
   const panel = strip(src("features", "production", "componentNotes", "ComponentNotesPanel.jsx"));

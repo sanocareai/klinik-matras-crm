@@ -2,14 +2,15 @@ import React, { useCallback, useEffect, useState } from "react";
 import { History, Pencil, Plus } from "lucide-react";
 import { api } from "@/api.js";
 import { isDemoActive } from "@/features/production/demo/demoGate.js";
+import { AnalysisContext } from "./AnalysisContext.jsx";
 import { BeforeAfterSummary } from "./BeforeAfterSummary.jsx";
 import { ComponentNoteSheet } from "./ComponentNoteSheet.jsx";
 import { PreTestBlock } from "./PreTestBlock.jsx";
-import { NOT_RECORDED, SECTIONS, focusCopy, focusFor, fmtStamp, sectionStatusText } from "./componentNotesModel.js";
+import { DISPLAY_ORDER, NOT_RECORDED, SECTIONS, focusCopy, focusFor, fmtStamp, sectionStatusText } from "./componentNotesModel.js";
 
 // Panel Catatan Komponen — SATU komponen yang sama dipakai Aplikasi Meja, Corner, Dokumentasi, dan Unit 360 (membaca endpoint yang sama; tidak ada input ulang per aplikasi).
 // `stepNo` (opsional) menandai seksi yang relevan dengan tahap berjalan; tidak pernah menjadi syarat tahap. Izin tulis diputuskan SERVER (canWrite).
-export function ComponentNotesPanel({ unitId, unitCode = null, stepNo = null, showHistory = true, onChanged = null }) {
+export function ComponentNotesPanel({ unitId, unitCode = null, stepNo = null, showHistory = true, onChanged = null, showAnalysis = false }) {
   const [data, setData] = useState(null); const [error, setError] = useState(""); const [unavailable, setUnavailable] = useState(null); // null | "DEMO" | "OUT_OF_COHORT"
   const [sheet, setSheet] = useState(null); const [notice, setNotice] = useState("");
   const load = useCallback(async () => {
@@ -39,12 +40,14 @@ export function ComponentNotesPanel({ unitId, unitCode = null, stepNo = null, sh
   const canWrite = !!data.canWrite;
   const focus = focusFor(stepNo).filter((k) => !data.sections[k]);
   const copy = focusCopy(stepNo);
-  const beforeCount = data.sections.LAYERS_BEFORE?.data?.layers?.length || 0;
+  const beforeLayers = data.sections.LAYERS_BEFORE?.data?.layers || [];
+  const beforeCount = beforeLayers.length;
   const done = async () => { setSheet(null); setNotice("Catatan komponen tersimpan."); await load(); onChanged?.(); };
 
   return (
     <div className="space-y-3" data-testid="component-panel" data-unit-id={unitId}>
       {notice && <p role="status" data-testid="component-notice" className="m-0 rounded-btn bg-greenbg px-3 py-2 text-[13px] font-semibold text-green">{notice}</p>}
+      {showAnalysis && <AnalysisContext data={data} />}
       {canWrite && copy && focus.length > 0 && (
         <div className="rounded-btn border border-orange/40 bg-orangebg px-3 py-3" data-testid="component-focus">
           <p className="m-0 text-[14px] font-bold text-orange">{copy.title}</p>
@@ -55,7 +58,7 @@ export function ComponentNotesPanel({ unitId, unitCode = null, stepNo = null, sh
         </div>
       )}
       <ul className="m-0 list-none space-y-2 p-0">
-        {SECTIONS.map((s) => {
+        {[...SECTIONS].sort((a, b) => DISPLAY_ORDER.indexOf(a.key) - DISPLAY_ORDER.indexOf(b.key)).map((s) => {
           const e = data.sections[s.key];
           return (
             <li key={s.key} data-testid="component-section" data-section={s.key} data-recorded={e ? "1" : "0"} className="rounded-btn bg-inset p-3">
@@ -92,7 +95,7 @@ export function ComponentNotesPanel({ unitId, unitCode = null, stepNo = null, sh
           </ul>
         </details>
       )}
-      {sheet && <ComponentNoteSheet unitId={unitId} unitCode={unitCode || data.unitCode} section={sheet} entry={data.sections[sheet]} suggestions={data.suggestions} beforeCount={beforeCount} salesContext={data.salesContext}
+      {sheet && <ComponentNoteSheet unitId={unitId} unitCode={unitCode || data.unitCode} section={sheet} entry={data.sections[sheet]} suggestions={data.suggestions} beforeCount={beforeCount} beforeLayers={beforeLayers} salesContext={data.salesContext} analysis={sheet === "PLAN_RACIKAN" ? data : null}
         onClose={() => setSheet(null)} onSaved={done} onReload={async () => { setSheet(null); await load(); }} />}
     </div>
   );

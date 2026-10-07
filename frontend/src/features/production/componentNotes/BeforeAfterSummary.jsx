@@ -1,6 +1,7 @@
 import React from "react";
 import { ArrowRight, Info } from "lucide-react";
 import { Badge } from "@/components/ui/badge.jsx";
+import { PlanVsActual } from "./PlanVsActual.jsx";
 import { NOT_RECORDED, OUTCOME_LABEL } from "./componentNotesModel.js";
 
 // Ringkasan “Sebelum → Sesudah” dari perbandingan SERVER (satu sumber untuk Meja, Corner, Dokumentasi, Unit 360, laporan). Data yang belum dicatat tampil “Belum dicatat”
@@ -62,6 +63,7 @@ export function BeforeAfterSummary({ comparison }) {
       {kept.length > 0 && (
         <p className="m-0 rounded-btn bg-greenbg px-3 py-2 text-[12.5px] text-green" data-testid="ba-kept"><b>Tetap digunakan:</b> {kept.join("; ")}</p>
       )}
+      <PlanVsActual comparison={comparison} />
     </div>
   );
 }

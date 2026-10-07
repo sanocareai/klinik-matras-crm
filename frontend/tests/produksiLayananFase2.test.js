@@ -80,7 +80,7 @@ test("kontrak komponen: PIC QC saja yang melihat tombol uji; antrean PIC QC di H
   const block = src("features", "production", "componentNotes", "PreTestBlock.jsx");
   assert.match(block, /data-testid="pretest-separation"/); assert.match(block, /NOT_RECORDED/); assert.doesNotMatch(block, /amblas/i, "tidak ada kategori amblas otomatis");
   const sheet = src("features", "production", "componentNotes", "ComponentNoteSheet.jsx");
-  assert.match(sheet, /data-testid="sales-context"/); assert.match(sheet, /rujukan saja/); assert.doesNotMatch(sheet, /testerWeight: .*customerWeight|customerWeightKg \?\? /, "berat customer tidak mengisi berat penguji");
+  assert.match(src("features", "production", "componentNotes", "SalesContextBox.jsx"), /data-testid="sales-context"/); assert.match(sheet, /SalesContextBox/); assert.match(src("features", "production", "componentNotes", "SalesContextBox.jsx"), /rujukan saja/); assert.doesNotMatch(sheet, /testerWeight: .*customerWeight|customerWeightKg \?\? /, "berat customer tidak mengisi berat penguji");
   assert.match(sheet, /dihitung sistem/); assert.match(src("api.js"), /getComponentQcQueue/);
 });
 

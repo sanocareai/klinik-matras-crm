@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Check, Mic, MicOff } from "lucide-react";
-import { CORNER_CHECKLIST, MATTRESS_STYLES, OLD_MATERIALS, TEXTURE_VERDICTS , materialsByPic, productFlowOf } from "@/features/production/experience.js";
+import { CORNER_CHECKLIST, MATTRESS_STYLES, OLD_MATERIALS, TEXTURE_VERDICTS , productFlowOf, stepMaterialsByPic } from "@/features/production/experience.js";
 
 // Isian per tahap (mobile-first, target sentuh >= 44px). `form` dikelola induk supaya ikut draft lokal.
 const field = "block w-full rounded-btn border border-line bg-surface px-3 py-3 text-[15px] text-ink placeholder:text-ink3 focus:outline-none focus:ring-2 focus:ring-accent/40";
@@ -180,15 +180,15 @@ export function StepForm({ stepNo, form, setForm, card, next }) {
       );
     case 6:
     case 7: {
-      const byPic = stepNo === 6 && materialsByPic(card);
+      const byPic = stepMaterialsByPic(card, stepNo);
       const flow6 = stepNo === 6 && card?.track === "BUILD" ? productFlowOf(card) : null;
       return (
         <div className="space-y-3">
           {byPic ? (
             <div data-testid="by-pic-note" className="space-y-1 rounded-btn bg-inset px-3 py-2 text-[13px] text-ink2">
-              <p className="m-0 font-bold text-ink">Racikan &amp; pemakaian bahan dicatat PIC Bahan{card.build?.materialOperator?.name ? `: ${card.build.materialOperator.name}` : ""}</p>
-              {card.racikan ? <p className="m-0">{[card.racikan.fondasi && `Fondasi — ${card.racikan.fondasi}`, card.racikan.lapisan && `Lapisan — ${card.racikan.lapisan}`].filter(Boolean).join(" · ")}</p> : <p className="m-0 text-orange">Racikan belum dicatat PIC Bahan.</p>}
-              {card.build?.record?.materials?.length > 0 && <p className="m-0">Bahan dipakai: {card.build.record.materials.map((m) => `${m.name || m.code} ${m.qty}`).join(", ")}</p>}
+              <p className="m-0 font-bold text-ink">{card.track === "BUILD" ? "Racikan & pemakaian bahan" : "Pemakaian bahan"} dicatat PIC Bahan{(card.build?.materialOperator?.name || card.materialPic?.materialOperator?.name) ? `: ${card.build?.materialOperator?.name || card.materialPic?.materialOperator?.name}` : ""}</p>
+              {card.track === "BUILD" ? (card.racikan ? <p className="m-0">{[card.racikan.fondasi && `Fondasi — ${card.racikan.fondasi}`, card.racikan.lapisan && `Lapisan — ${card.racikan.lapisan}`].filter(Boolean).join(" · ")}</p> : <p className="m-0 text-orange">Racikan belum dicatat PIC Bahan.</p>) : <p className="m-0" data-testid="by-pic-racikan-note">Racikan fondasi/lapisan ada di Catatan Komponen (Racikan rencana) — ditentukan PIC Meja/PIC QC.</p>}
+              {(card.build ?? card.materialPic)?.record?.materials?.length > 0 && <p className="m-0" data-testid="by-pic-usage">Bahan dipakai: {(card.build ?? card.materialPic).record.materials.map((m) => `${m.name || m.code} ${m.qty}`).join(", ")}</p>}
             </div>
           ) : (
             <>

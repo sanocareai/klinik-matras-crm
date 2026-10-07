@@ -4,6 +4,8 @@ export const SECTIONS = Object.freeze([
   { key: "LAYERS_BEFORE", label: "Lapisan sebelum dibongkar", short: "Lapisan sebelum", phase: "BEFORE" },
   { key: "FOUNDATION_BEFORE", label: "Fondasi sebelum dibongkar", short: "Fondasi sebelum", phase: "BEFORE" },
   { key: "AFTER", label: "Sesudah pengerjaan", short: "Sesudah", phase: "AFTER" },
+  // Fase 3 (LAYANAN): racikan RENCANA ditentukan PIC Meja/PIC QC (aktor tercatat); AFTER = hasil AKTUAL. Bentuk data sama, dua catatan terpisah. (Urutan array = paritas backend; tampilan: DISPLAY_ORDER.)
+  { key: "PLAN_RACIKAN", label: "Racikan rencana", short: "Racikan rencana", phase: "PLAN" },
   // Fase 2 (LAYANAN): pengujian awal ditulis PIC QC (qc: true) — penurunan fondasi dihitung server.
   { key: "WHOLE_TEST_BEFORE", label: "QC sebelum bongkar (uji kasur utuh)", short: "QC sebelum bongkar", phase: "BEFORE", qc: true },
   { key: "FOUNDATION_TEST_BEFORE", label: "Uji fondasi awal", short: "Uji fondasi awal", phase: "BEFORE", qc: true },
@@ -14,6 +16,8 @@ export const COMPLAINT_MATCHES = Object.freeze([
 export const MAX_MEDIA_QC = 12; export const MAX_MEDIA_LAYERS = 24;
 export const maxMediaFor = (section) => (section === "LAYERS_BEFORE" ? MAX_MEDIA_LAYERS : SECTION_BY_KEY[section]?.qc ? MAX_MEDIA_QC : MAX_MEDIA);
 export const minMediaFor = (section) => (SECTION_BY_KEY[section]?.qc ? 1 : 0);
+// Urutan TAMPIL di panel: kondisi lama -> racikan rencana -> hasil aktual -> pengujian awal.
+export const DISPLAY_ORDER = Object.freeze(["LAYERS_BEFORE", "FOUNDATION_BEFORE", "PLAN_RACIKAN", "AFTER", "WHOLE_TEST_BEFORE", "FOUNDATION_TEST_BEFORE"]);
 export const SECTION_BY_KEY = Object.fromEntries(SECTIONS.map((s) => [s.key, s]));
 export const CONDITIONS = Object.freeze([
   { key: "BAIK", label: "Baik" }, { key: "CUKUP", label: "Cukup / masih layak" }, { key: "AUS", label: "Aus / menipis" }, { key: "KEMPES", label: "Kempes / amblas" },
@@ -43,16 +47,30 @@ export function materialText(ref) {
   return UNKNOWN_LABEL;
 }
 
+/** Atribut bahan yang BENAR-BENAR ada (snapshot katalog saat dicatat). Kosong tidak ditampilkan/dikarang; densitas & ketebalan katalog hanya muncul bila ada datanya (master belum punya). Paritas dengan backend materialAttributes. */
+export function materialAttributes(ref) {
+  if (!ref) return [];
+  const has = (v) => v !== null && v !== undefined && String(v).trim() !== "";
+  if (ref.kind === "CATALOG") {
+    return [["code", "Kode", ref.code], ["name", "Nama", ref.name], ["unit", "Satuan", ref.unit], ["supplier", "Supplier", ref.supplier], ["itemGroup", "Kelompok", ref.itemGroup],
+      ["density", "Densitas", ref.density], ["thicknessCm", "Ketebalan katalog (cm)", ref.thicknessCm]].filter(([, , v]) => has(v)).map(([key, label, value]) => ({ key, label, value: String(value) }));
+  }
+  if (ref.kind === "MANUAL") return [{ key: "manual", label: MANUAL_LABEL, value: ref.text }, { key: "catalog", label: "Katalog", value: "Belum terhubung katalog" }];
+  return [{ key: "unknown", label: "Bahan", value: UNKNOWN_LABEL }];
+}
+
 // Fokus per tahap (nomor tahap blueprint 1–12): bongkar/uji/diagnosis -> catat SEBELUM; pengerjaan pengganti & seterusnya -> catat SESUDAH. Tidak pernah menjadi syarat tahap.
 export function focusFor(stepNo) {
   const n = Number(stepNo);
   if (!Number.isInteger(n) || n < 1) return [];
-  if (n <= 5) return ["LAYERS_BEFORE", "FOUNDATION_BEFORE"];
+  if (n === 5) return ["LAYERS_BEFORE", "FOUNDATION_BEFORE", "PLAN_RACIKAN"]; // diagnosa: sekaligus tentukan racikan rencana (Fase 3 LAYANAN; tidak wajib)
+  if (n <= 4) return ["LAYERS_BEFORE", "FOUNDATION_BEFORE"];
   return ["AFTER"];
 }
 export function focusCopy(stepNo) {
   const f = focusFor(stepNo);
   if (!f.length) return null;
+  if (f.includes("PLAN_RACIKAN")) return { title: "Catat kondisi lama dan racikan rencana", text: "Pastikan lapisan/fondasi lama tercatat, lalu tentukan racikan rencana (dipertahankan / diperbaiki / diganti, lapisan atas ke bawah, ketebalan)." };
   return f[0] === "AFTER"
     ? { title: "Catat hasil pengerjaan", text: "Setelah lapisan/fondasi pengganti dikerjakan, catat apa yang dipertahankan, diperbaiki, atau diganti." }
     : { title: "Catat kondisi sebelum dibongkar", text: "Saat membongkar, catat lapisan dan fondasi lama (jenis, urutan, kondisi). Boleh “Tidak diketahui”." };
@@ -64,7 +82,7 @@ const toText = (v) => (v == null ? "" : String(v));
 export const emptyLayerBefore = () => ({ id: rowId(), material: null, thickness: "", condition: "", note: "" });
 export const emptyLayerAfter = () => ({ id: rowId(), action: "", fromOrder: "", material: null, thickness: "", note: "" });
 const mediaItems = (media, layers = null) => (media || []).map((m, i) => ({ id: `srv-${i}-${rowId()}`, kind: m.kind || "image", status: "done", progress: 100, url: m.url, previewUrl: m.previewUrl || m.url, caption: m.caption || "", layerRowId: m.layerOrder && layers ? layers[m.layerOrder - 1]?.id ?? null : null }));
-const stripRef = (r) => (r ? (r.kind === "CATALOG" ? { kind: "CATALOG", materialId: r.materialId, code: r.code, name: r.name, unit: r.unit } : r.kind === "MANUAL" ? { kind: "MANUAL", text: r.text } : { kind: "UNKNOWN" }) : null);
+const stripRef = (r) => (r ? (r.kind === "CATALOG" ? { kind: "CATALOG", materialId: r.materialId, code: r.code, name: r.name, unit: r.unit, ...(r.supplier ? { supplier: r.supplier } : {}), ...(r.itemGroup ? { itemGroup: r.itemGroup } : {}) } : r.kind === "MANUAL" ? { kind: "MANUAL", text: r.text } : { kind: "UNKNOWN" }) : null);
 
 /** Draf formulir dari entri server (atau kosong). */
 export function draftFromEntry(section, entry, suggestions = null) {
@@ -133,6 +151,22 @@ export function summarizeLayersDraft(draft) {
   const complete = known.length === rows.length;
   return { total, complete, text: complete ? `Total tinggi lapisan ${total} cm (${rows.length} lapisan)` : `Total tinggi lapisan belum lengkap — ${total} cm dari ${known.length} lapisan; ${rows.length - known.length} lapisan belum diukur` };
 }
+/** Pratinjau total tinggi untuk draf RACIKAN rencana / hasil aktual (server menghitung ulang): KEEP/REPAIR tanpa ketebalan mewarisi catatan lapisan awal; kosong = belum lengkap, bukan 0. */
+export function summarizeResultDraft(draft, beforeLayers = []) {
+  const rows = draft.layers || [];
+  if (!rows.length) return { total: null, complete: false, text: "Belum ada lapisan" };
+  const eff = rows.map((l, i) => {
+    const own = num(l.thickness);
+    if (own != null && Number.isFinite(own) && own > 0) return own;
+    if (l.action === "KEEP" || l.action === "REPAIR") { const b = beforeLayers[(l.fromOrder !== "" && l.fromOrder != null ? Number(l.fromOrder) : i + 1) - 1]; return typeof b?.thicknessCm === "number" ? b.thicknessCm : null; }
+    return null;
+  });
+  const known = eff.filter((n) => n != null);
+  if (!known.length) return { total: null, complete: false, text: "Total tinggi lapisan belum dicatat" };
+  const total = Math.round(known.reduce((a, b) => a + b, 0) * 100) / 100;
+  const complete = known.length === rows.length;
+  return { total, complete, text: complete ? `Total tinggi lapisan ${total} cm (${rows.length} lapisan)` : `Total tinggi lapisan belum lengkap — ${total} cm dari ${known.length} lapisan; ${rows.length - known.length} lapisan belum diukur` };
+}
 export const hasPendingUploads = (draft) => (draft.media || []).some((m) => m.status === "uploading");
 
 const materialOk = (m) => !!m && (m.kind === "UNKNOWN" || (m.kind === "MANUAL" && (m.text || "").trim().length >= 2) || (m.kind === "CATALOG" && !!m.materialId));
@@ -182,7 +216,7 @@ export function validateDraft(section, draft, { correcting = false } = {}) {
     if (draft.material && !materialOk(draft.material)) return "Lengkapi bahan fondasi atau kosongkan.";
     return null;
   }
-  if (!draft.foundationOn && !draft.layers.length) return "Isi fondasi atau minimal satu lapisan hasil akhir.";
+  if (!draft.foundationOn && !draft.layers.length) return section === "PLAN_RACIKAN" ? "Isi fondasi atau minimal satu lapisan pada racikan rencana." : "Isi fondasi atau minimal satu lapisan hasil akhir.";
   if (draft.foundationOn) {
     if (!draft.foundation.action) return "Fondasi: pilih dipertahankan / diperbaiki / diganti.";
     if (draft.foundation.action === "REPLACE" && !draft.foundation.system) return `Fondasi diganti: pilih jenis fondasi baru (boleh “${UNKNOWN_LABEL}”).`;

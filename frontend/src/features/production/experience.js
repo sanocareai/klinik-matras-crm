@@ -30,7 +30,11 @@ export const stepOf = (no, track) => (track === BUILD_TRACK && no === 6 ? BUILD_
 export const productFlowOf = (card) => (card?.track === BUILD_TRACK ? card?.product?.flow || "UNCONFIRMED" : null);
 export const isUnconfirmed = (card) => productFlowOf(card) === "UNCONFIRMED";
 /** Pemakaian/racikan dicatat PIC Bahan (ditugaskan atau sudah ada catatan): PIC Meja tidak mengisi ulang (satu sumber). */
-export const materialsByPic = (card) => card?.track === BUILD_TRACK && !!(card?.build?.materialOperator || card?.build?.record);
+export const materialsByPic = (card) => (card?.track === BUILD_TRACK ? !!(card?.build?.materialOperator || card?.build?.record) : !!(card?.materialPic?.materialOperator || card?.materialPic?.record)); // Fase 3: LAYANAN juga (PIC Bahan per pekerjaan)
+/** Fase 3: pekerjaan LAYANAN (restorasi) yang punya PIC Bahan ditugaskan/tercatat. */
+export const isPicRestoration = (card) => card?.track !== BUILD_TRACK && !!card?.materialPic;
+/** Pemakaian bahan tahap ini dicatat PIC Bahan (bukan Meja): tahap 6 (semua jalur) dan tahap 7 (LAYANAN). */
+export const stepMaterialsByPic = (card, stepNo) => (stepNo === 6 || (stepNo === 7 && isPicRestoration(card))) && materialsByPic(card);
 export const isNonKasur = (card) => productFlowOf(card) === "NON_KASUR";
 /** Aturan media per tahap menurut jalur: tahap 6 jalur pengerjaan = foto ATAU video (video wajib hanya pada jalur restorasi). */
 export const mediaRuleFor = (stepNo, track) => (track === BUILD_TRACK && stepNo === 6 ? { min: 1, video: false } : MEDIA_RULES[stepNo] || { min: 0, video: false });
@@ -138,6 +142,7 @@ export function waitCopy(next) {
     case "FOUNDATION_TEST_PENDING": return { title: "Menunggu uji fondasi awal", text: "PIC QC perlu mencatat uji fondasi awal (tinggi tanpa beban dan dibebani, berat penguji, metode). Setelah tercatat, tombol Lanjutkan muncul di sini." };
     case "PRODUCT_TYPE_UNCONFIRMED": return { title: "Jenis produk perlu dikonfirmasi", text: `${next.problem || "Jenis produk pada order belum jelas."} Minta Sales memperbaiki jenis produk pada order — produksi tidak mengubah order. Catatan dan dokumentasi umum tetap bisa disimpan; racikan dan pengujian khusus kasur ditahan sampai jelas.` };
     case "CORNER_NOT_CONFIRMED": return { title: "Kebutuhan Corner belum dikonfirmasi", text: "Production Lead perlu mengonfirmasi apakah pekerjaan ini butuh Corner (kain/jahit) di Unit 360 › Proses. QC dan tahap berikutnya menunggu." };
+    case "USAGE_NOT_RECORDED": return { title: "Menunggu PIC Bahan", text: "Pemakaian bahan pekerjaan ini dicatat PIC Bahan lebih dulu (satu sumber pemakaian aktual). Setelah tercatat, PIC Meja bisa menutup tahap ini tanpa mengisi bahan lagi." };
     case "RACIKAN_NOT_RECORDED": return { title: "Menunggu PIC Bahan", text: "Racikan fondasi/lapisan belum dicatat PIC Bahan. Pengerjaan boleh berjalan; bukti dikirim setelah racikan tercatat." };
     case "MATERIAL_NOT_READY": return { title: "Bahan belum turun", text: "Gudang belum menyerahkan bahan untuk tahap berikutnya. Tekan “Tunda Pekerjaan” (Menunggu bahan) bila bahan dibutuhkan sekarang." };
     case "READY_TO_FINISH": return { title: "Siap diselesaikan", text: "Semua tahap kerja tuntas. Tekan Selesaikan Produksi — QC tidak diwajibkan pada mode adaptasi (dicatat tidak dilakukan, bukan lulus)." };
@@ -210,9 +215,9 @@ export function validateStepForm(stepNo, form, { mediaItems = [], track, flow = 
         if (flow === "KASUR" && !byPic && (f.racikanFondasi || "").trim().length < 3 && (f.racikanLapisan || "").trim().length < 3) return "Isi racikan fondasi dan/atau lapisan.";
         return (f.note || "").trim().length >= 3 ? null : "Jelaskan pengerjaan pesanan.";
       }
-      if (!(f.materials || []).some((m) => num(m.qty) > 0)) return "Pilih bahan Gudang yang dipakai.";
+      if (!byPic && !(f.materials || []).some((m) => num(m.qty) > 0)) return "Pilih bahan Gudang yang dipakai.";
       return (f.note || "").trim().length >= 3 ? null : "Jelaskan isi fondasi baru.";
-    case 7: return (f.materials || []).some((m) => num(m.qty) > 0) ? null : "Pilih bahan Gudang yang dipakai.";
+    case 7: return byPic || (f.materials || []).some((m) => num(m.qty) > 0) ? null : "Pilih bahan Gudang yang dipakai.";
     case 8: {
       if (!f.verdict) return "Pilih hasil uji: PAS, Terlalu Keras, atau Terlalu Empuk.";
       return num(f.testerWeightKg) > 0 ? null : "Isi berat penguji (kg).";
@@ -243,7 +248,7 @@ export function buildStepPayload(stepNo, form, { track, flow = "KASUR", byPic = 
       if (track === BUILD_TRACK && flow === "KASUR" && !byPic) base.racikan = { fondasi: (f.racikanFondasi || "").trim() || undefined, lapisan: (f.racikanLapisan || "").trim() || undefined };
       return base;
     }
-    case 7: return { materials: lines(f.materials), note: f.note?.trim() || undefined };
+    case 7: return { materials: byPic ? [] : lines(f.materials), note: f.note?.trim() || undefined };
     case 8: return { verdict: f.verdict, testerWeightKg: num(f.testerWeightKg), note: f.note?.trim() || undefined };
     case 9: return { note: f.note?.trim() || undefined };
     case 10: return { mattressStyle: f.mattressStyle, fabricSpec: (f.fabricSpec || "").trim(), borderColor: (f.borderColor || "").trim(), materials: lines(f.materials), note: f.note?.trim() || undefined };
@@ -337,6 +342,16 @@ export function wibDate(offsetDays = 0, now = new Date()) {
 // ---- PIC Bahan (jalur pengerjaan): racikan + pemakaian aktual. Validasi mencerminkan server (server tetap pemutus); bahan hanya dari yang diserahkan Gudang.
 export function validateMaterialRecord(form, { flow = "KASUR", issued = [] } = {}) {
   const f = form || {};
+  if (flow === "RESTORATION") { // LAYANAN: hanya pemakaian aktual; racikan dicatat PIC Meja/QC di Catatan Komponen
+    const used = (f.materials || []).filter((m) => Number(String(m.qty ?? "").replace(",", ".")) > 0);
+    if (!used.length) return "Isi pemakaian bahan.";
+    for (const l of used) {
+      const item = issued.find((m) => m.materialId === l.materialId);
+      if (!item) return "Bahan yang dipakai harus dari bahan yang diserahkan Gudang.";
+      if (Number(String(l.qty).replace(",", ".")) > Number(item.qty) + 1e-9) return `Jumlah ${item.name} melebihi yang diserahkan Gudang (${item.qty}).`;
+    }
+    return null;
+  }
   const num = (v) => Number(String(v ?? "").replace(",", "."));
   const lines = (f.materials || []).filter((m) => num(m.qty) > 0);
   const hasRacikan = (f.racikanFondasi || "").trim().length >= 3 || (f.racikanLapisan || "").trim().length >= 3;

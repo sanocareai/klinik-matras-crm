@@ -101,6 +101,21 @@ function BuildInfo({ card }) {
   );
 }
 
+// Fase 3 (LAYANAN): PIC Bahan per pekerjaan + pemakaian aktual (command & tabel yang sama dengan jalur pengerjaan). Racikan ditentukan PIC Meja/PIC QC di Catatan Komponen.
+function PicBahanInfo({ card }) {
+  const p = card.materialPic; if (!p) return null;
+  return (
+    <Section title="PIC Bahan" testid="section-pic-bahan">
+      <dl className="m-0 space-y-2 text-[13.5px]">
+        <div className="rounded-btn bg-inset px-3 py-2"><dt className="m-0 text-ink3">PIC Bahan</dt><dd className="m-0 font-semibold text-ink" data-testid="pic-bahan-name">{p.materialOperator?.name || "Belum ditugaskan"}</dd></div>
+        <div className="rounded-btn bg-inset px-3 py-2"><dt className="m-0 text-ink3">Pemakaian aktual{p.record ? ` (versi ${p.record.version})` : ""}</dt>
+          <dd className="m-0 font-semibold text-ink" data-testid="pic-bahan-usage">{p.record?.materials?.length ? p.record.materials.map((m) => `${m.name || m.code} ${m.qty}`).join(", ") : "Belum dicatat"}</dd></div>
+        <p className="m-0 text-[12px] text-ink3">Racikan fondasi/lapisan ditentukan PIC Meja/PIC QC di Catatan Komponen. Mencatat pemakaian tidak mengeluarkan stok — stok keluar hanya saat Gudang menyerahkan bahan.</p>
+      </dl>
+    </Section>
+  );
+}
+
 // ================= V2 =================
 function V2Detail({ job, lane, onBack, onChanged }) {
   const online = useOnline();
@@ -184,7 +199,8 @@ function V2Detail({ job, lane, onBack, onChanged }) {
                 <StepList steps={card.steps} lane={lane} noCorner={card.track === "BUILD" && card.build?.corner?.required === false} />
               </Section>
               {card.track === "BUILD" && <BuildInfo card={card} />}
-              <Section title="Catatan Komponen" testid="section-komponen"><ComponentNotesPanel unitId={card.unit.id} unitCode={card.unit.unitCode} stepNo={next?.stepNo ?? null} onChanged={loadCard} /></Section>
+              {card.materialPic && <PicBahanInfo card={card} />}
+              <Section title="Catatan Komponen" testid="section-komponen"><ComponentNotesPanel unitId={card.unit.id} unitCode={card.unit.unitCode} stepNo={next?.stepNo ?? null} onChanged={loadCard} showAnalysis={card.track !== "BUILD"} /></Section>
               <Section title="Bahan" testid="section-bahan" aside={card.shortage ? <Badge variant="red">Bahan kurang</Badge> : mat ? <span className={`rounded-full px-2.5 py-1 text-[12px] font-semibold ${TONE[mat.tone] || TONE.neutral}`}>{mat.label}</span> : null}>
                 {card.shortage && <div className="mb-3 rounded-btn bg-redbg px-3 py-2 text-[13px] text-red"><p className="m-0 font-bold" data-testid="delay-status">{delayStatusText("MATERIAL_SHORTAGE")}</p><p className="m-0 mt-0.5 text-[12.5px]" data-testid="resume-who">{resumeInfo({ source: "SHORTAGE", reason: "MATERIAL_SHORTAGE", canResume: false }).text}</p><ul className="m-0 mt-1 list-disc pl-5">{card.shortage.items.map((i) => <li key={i.materialId}>{i.name}{i.qty ? ` — ${i.qty}` : ""}</li>)}</ul></div>}
                 {card.bom?.length ? <ul className="m-0 list-none space-y-1.5 p-0" data-testid="bom-list">{card.bom.map((b) => <li key={b.id} className="flex items-center justify-between gap-2 rounded-btn bg-inset px-3 py-2 text-[14px]"><span className="min-w-0 truncate font-semibold text-ink">{b.name}{b.supplemental ? " (tambahan)" : ""}</span><span className="shrink-0 tabular-nums text-ink2">{b.qty} {b.uom}</span></li>)}</ul> : <p className="m-0 text-[13.5px] text-ink3">{card.materialStatus?.label || "Rencana bahan belum dibuat"} — rencana bahan muncul setelah diagnosis.</p>}
@@ -202,7 +218,7 @@ function V2Detail({ job, lane, onBack, onChanged }) {
         <div className="wa-actionbar" data-testid="v2-actionbar"><div className="wa-actionbar-inner">
           {!online && <OfflineNote />}
           {materialLane ? (
-            <button type="button" className="wa-primary" data-testid="open-material-record" data-mutates onClick={() => setSheet("material")}>Catat Racikan &amp; Bahan</button>
+            <button type="button" className="wa-primary" data-testid="open-material-record" data-mutates onClick={() => setSheet("material")}>{card.track === "BUILD" ? "Catat Racikan & Bahan" : "Catat Bahan Dipakai"}</button>
           ) : mineNow ? (
             <>
               {next.rework && <p className="m-0 rounded-btn bg-orangebg px-3 py-2 text-[13px] text-orange">Uji tekstur {String(next.lastVerdict || "").replace("_", " ").toLowerCase()} — sesuaikan lapisan lalu kirim ulang bukti.</p>}
