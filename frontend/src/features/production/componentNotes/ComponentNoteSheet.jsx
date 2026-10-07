@@ -182,7 +182,8 @@ export function ComponentNoteSheet({ unitId, unitCode, section, entry, suggestio
   const keyRef = useRef(newKey("s3-comp"));
   const [draft, setDraftState] = useState(() => (section === "AFTER" ? draftFromEntry(section, entry, suggestions) : draftFromEntry(section, entry)));
   const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const [conflict, setConflict] = useState(false);
-  const set = (patch) => { setDraftState((d) => ({ ...d, ...patch })); keyRef.current = newKey("s3-comp"); };
+  // Galat validasi lama dibersihkan begitu isian berubah (QA klik nyata: pesan "Pilih kesesuaian…" bertahan walau sudah dipilih); banner konflik versi tetap sampai dimuat ulang.
+  const set = (patch) => { setDraftState((d) => ({ ...d, ...patch })); keyRef.current = newKey("s3-comp"); if (!conflict) setError(""); };
   const correcting = !!entry;
   const uploading = hasPendingUploads(draft);
   const problem = validateDraft(section, draft, { correcting });
