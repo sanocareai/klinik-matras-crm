@@ -95,8 +95,23 @@ function ItemRow({ item, routeId, onUploaded }) {
 // gulung, tali rafia, kunci L"). Submit ulang MENIMPA seluruh set.
 const MAX_KELENGKAPAN_FOTO = 2;
 
+// Object URL dibuat lewat efek (bukan langsung di JSX, yang bikin blob baru
+// tiap render tanpa pernah dilepas — lihat tests/architecture.test.js
+// "cleanup: tiap file yang membuat object URL juga melepasnya") dan dilepas
+// saat `files` berubah atau komponen unmount.
+function useObjectUrls(files) {
+  const [urls, setUrls] = useState([]);
+  useEffect(() => {
+    const next = files.map((f) => URL.createObjectURL(f));
+    setUrls(next);
+    return () => next.forEach((u) => URL.revokeObjectURL(u));
+  }, [files]);
+  return urls;
+}
+
 function KelengkapanSection({ routeId, kelengkapan, locked, onSubmitted }) {
   const [files, setFiles] = useState([]);
+  const previewUrls = useObjectUrls(files);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -153,7 +168,7 @@ function KelengkapanSection({ routeId, kelengkapan, locked, onSubmitted }) {
             <div className="flex gap-1.5">
               {files.map((f, i) => (
                 <div key={i} className="relative h-12 w-12 overflow-hidden rounded border border-border">
-                  <img src={URL.createObjectURL(f)} className="h-full w-full object-cover" alt="" />
+                  <img src={previewUrls[i]} className="h-full w-full object-cover" alt="" />
                   <button type="button" onClick={() => removeFile(i)} className="absolute right-0 top-0 rounded-bl bg-black/60 px-1 text-[10px] leading-4 text-white">×</button>
                 </div>
               ))}
