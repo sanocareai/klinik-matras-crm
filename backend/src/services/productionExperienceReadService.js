@@ -163,6 +163,8 @@ export function toRunView(run, ctx, { now = new Date(), photoUrl = null, complai
     racikan: ctx.state?.buildTrack ? (ctx.evidence.filter((e) => e.stepNo === 6 && !isSkippedEvidence(e)).at(-1)?.payload?.racikan ?? ctx.buildRecord?.racikan ?? null) : null,
     // Pengaturan jalur pengerjaan: PIC Bahan per pekerjaan, kebutuhan Corner yang dikonfirmasi pada rencana, catatan racikan/pemakaian terbaru.
     build: ctx.buildView ?? null,
+    // Fase 3 (LAYANAN): PIC Bahan per pekerjaan + pemakaian aktual yang dicatat PIC Bahan (tabel yang sama dengan jalur BUILD). null untuk BUILD/SEWA.
+    materialPic: ctx.materialPicView ? { ...ctx.materialPicView, usageRecorded: (ctx.materialPicView.record?.materials || []).length > 0 } : null,
     // Tiga sumbu terpisah (simplifikasi slice 1): status order, keberadaan fisik, tahap (next/bucket). service (teknis) tetap ada di payload sebagai data historis; UI hanya menampilkan Layanan Sales.
     orderStatus: displayStatusOfOrder(run.unit.order?.status) || null,
     unitStatus: displayStatusOfUnit(run.unit.status) || null,
@@ -490,7 +492,7 @@ export async function listMaterialQueue(prisma, { unitIds, userId, all = false, 
     unitId: { in: unitIds }, status: { notIn: TERMINAL_RUN },
     buildSetting: { is: all ? { materialOperatorId: { not: null } } : { materialOperatorId: operator.id } },
   });
-  const views = (await viewsOf(prisma, runs, { now })).filter((v) => !isFinishedUnitStatus(v.unit.status) && v.track === "BUILD");
+  const views = (await viewsOf(prisma, runs, { now })).filter((v) => !isFinishedUnitStatus(v.unit.status));
   const items = views.sort((a, b) => String(a.plan?.productionDate || "9999").localeCompare(String(b.plan?.productionDate || "9999")) || String(a.plan?.stationCode || "").localeCompare(String(b.plan?.stationCode || "")));
   return { operator: all ? { id: null, all: true } : { id: operator.id }, items };
 }
@@ -711,7 +713,7 @@ export async function getProductionReport(prisma, runId, { unitIds } = {}) {
       ? { heightBeforeCm: components.measurements.foundation.unloadedHeightCm, heightCompressedCm: components.measurements.foundation.loadedHeightCm, dropCm: components.measurements.foundation.dropCm, testerWeightKg: components.measurements.foundation.testerWeightKg, source: "QC_FONDASI_AWAL" }
       : measurement),
     diagnosis: latestOf(evidence, 5)?.payload?.diagnosis ?? null,
-    materials: { foundation: [...linesOf(6), ...(ctx.buildView?.record?.materials || []).map((m) => ({ materialId: m.materialId, qty: m.qty, code: m.code ?? "—", name: m.name ?? "—", uom: m.uom ?? null }))], layer: linesOf(7), finishing: linesOf(10) },
+    materials: { foundation: [...linesOf(6), ...((ctx.buildView ?? ctx.materialPicView)?.record?.materials || []).map((m) => ({ materialId: m.materialId, qty: m.qty, code: m.code ?? "—", name: m.name ?? "—", uom: m.uom ?? null }))], layer: linesOf(7), finishing: linesOf(10) },
     textureTests: finalTests.map((e) => ({ version: e.version, verdict: e.payload?.verdict, testerWeightKg: e.payload?.testerWeightKg, at: e.createdAt })),
     finalTest: finalPass ? finalPass.payload : null,
     qc: ctx.latestInspection ? { result: ctx.latestInspection.result, version: ctx.latestInspection.version, at: ctx.latestInspection.inspectedAt } : null,

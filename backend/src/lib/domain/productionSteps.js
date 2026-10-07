@@ -190,11 +190,13 @@ const label = `Tahap ${stepNo} (${stepLabelFor(stepNo, step.label, ctx.buildTrac
       requireMedia(media, { label, video: !ctx.buildTrack });
       // PIC Bahan per pekerjaan (jalur pengerjaan): pemakaian & racikan dicatat PIC Bahan lewat command resminya — satu sumber, tidak ada hitung ganda di bukti PIC Meja.
       const p6Materials = Array.isArray(p.materials) ? p.materials : [];
-      if (ctx.buildTrack && ctx.materialsByPic && p6Materials.length) {
+      // Fase 3: LAYANAN dengan PIC Bahan ditugaskan -> aturan satu sumber yang sama (pemakaian dicatat PIC Bahan, bukan di bukti Meja).
+      const picOwns = !!ctx.materialsByPic && (!!ctx.buildTrack || !!ctx.picRestoration);
+      if (picOwns && p6Materials.length) {
         throw stepError("Pemakaian bahan pekerjaan ini dicatat PIC Bahan — kosongkan daftar bahan pada bukti pengerjaan", 409, "STEP_MATERIAL_BY_MATERIAL_PIC");
       }
       // Bahan dari Gudang BOLEH kosong pada jalur pengerjaan (pemakaian dicatat sesuai pekerjaan nyata); jalur restorasi tetap wajib.
-      const base = { materials: normalizeMaterialLines(p.materials, { ...ctx, required: !ctx.buildTrack, label }), note: text(p.note, 3, ctx.buildTrack ? "Penjelasan pengerjaan" : "Penjelasan isi fondasi") };
+      const base = { materials: normalizeMaterialLines(p.materials, { ...ctx, required: !ctx.buildTrack && !picOwns, label }), note: text(p.note, 3, ctx.buildTrack ? "Penjelasan pengerjaan" : "Penjelasan isi fondasi") };
       // Jenis produk belum jelas (UNCONFIRMED): catatan + dokumentasi UMUM pengerjaan tetap boleh disimpan (foto/video + penjelasan). Yang menunggu koreksi Sales HANYA racikan dan pengujian khusus jenis
       // produk — racikan yang terkirim diabaikan (tidak disimpan); tahap tidak ditutup; tanda `general` membedakannya dari bukti penutup.
       if (ctx.buildTrack && ctx.productFlow === PRODUCT_FLOW.UNCONFIRMED) return { media, payload: { ...base, general: true } };
@@ -208,15 +210,19 @@ const label = `Tahap ${stepNo} (${stepLabelFor(stepNo, step.label, ctx.buildTrac
       }
       return { media, payload: base };
     }
-    case 7:
+    case 7: {
       requireMedia(media, { label });
+      const p7Materials = Array.isArray(p.materials) ? p.materials : [];
+      const picOwns7 = !!ctx.materialsByPic && !!ctx.picRestoration;
+      if (picOwns7 && p7Materials.length) throw stepError("Pemakaian bahan pekerjaan ini dicatat PIC Bahan — kosongkan daftar bahan pada bukti lapisan", 409, "STEP_MATERIAL_BY_MATERIAL_PIC");
       return {
         media,
         payload: {
-          materials: normalizeMaterialLines(p.materials, { ...ctx, required: true, label }),
+          materials: normalizeMaterialLines(p.materials, { ...ctx, required: !picOwns7, label }),
           note: optionalText(p.note, "Catatan lapisan"),
         },
       };
+    }
     case 8: {
       requireMedia(media, { label, video: true });
       if (!TEXTURE_VERDICTS.includes(p.verdict)) throw invalid(`${label}: pilih hasil PAS, TERLALU KERAS, atau TERLALU EMPUK`);
@@ -378,6 +384,8 @@ export function deriveNextAction(state) {
     // satu ketuk (payload kosong -> recordProductionStep memakai ulang diagnosa yang sudah ada). Sebelumnya flag ini tidak pernah
     // dikirim server sehingga PIC dipaksa mengisi ulang wizard dari kosong.
     if (op.stageCode === "diagnosis" && (state.opEvidence || []).some((e) => e.stepNo === 5)) return { actor, stepNo, action: "COMPLETE", continueOnly: true };
+    // Fase 3 (LAYANAN dengan PIC Bahan): pemakaian bahan fondasi dicatat PIC Bahan lewat command resminya — Meja menutup tahap 6 setelah itu (hindari pemakaian tak tercatat -> retur penuh palsu).
+    if (state.materialPicRestoration && state.materialOperatorId && stepNo === 6 && !state.usageRecorded) return wait("MATERIAL_PIC", "USAGE_NOT_RECORDED", { stepNo });
     return { actor, stepNo, action: "COMPLETE" };
   }
 

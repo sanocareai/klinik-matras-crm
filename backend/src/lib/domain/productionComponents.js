@@ -4,11 +4,15 @@
 // Fase 2 Produksi LAYANAN (QC sebelum bongkar): dua seksi PENGUJIAN ditambahkan — hasil uji TERPISAH dari catatan komponen:
 //   WHOLE_TEST_BEFORE      = uji KASUR UTUH sebelum bongkar (PIC QC): kesesuaian keluhan, feel awal, berat penguji aktual, titik/metode, penurunan kasur utuh (cm)
 //   FOUNDATION_TEST_BEFORE = uji FONDASI awal (PIC QC): sistem fondasi, tinggi tanpa beban/dibebani, berat penguji aktual, titik/metode; penurunan dihitung SERVER
+// Fase 3 Produksi LAYANAN (analisis & racikan): seksi RENCANA ditambahkan —
+//   PLAN_RACIKAN = racikan fondasi + lapisan hasil yang DIRENCANAKAN PIC Meja / PIC QC (dipertahankan / diperbaiki / diganti; lapisan ATAS -> BAWAH; ketebalan tiap lapisan + total tinggi).
+//   Bentuknya sama dengan AFTER (hasil AKTUAL) sehingga rencana vs aktual dapat dibandingkan tanpa salinan paralel; rencana TIDAK memotong stok, tidak membuat BOM, tidak menggantikan pemakaian aktual.
 // Tiga pengukuran (kasur utuh / lapisan / fondasi) tidak pernah dijumlahkan (menghitung dua kali) dan tidak otomatis menetapkan kategori "amblas".
 export const COMPONENT_SECTIONS = Object.freeze({
   LAYERS_BEFORE: { key: "LAYERS_BEFORE", label: "Lapisan sebelum dibongkar", phase: "BEFORE" },
   FOUNDATION_BEFORE: { key: "FOUNDATION_BEFORE", label: "Fondasi sebelum dibongkar", phase: "BEFORE" },
   AFTER: { key: "AFTER", label: "Sesudah pengerjaan", phase: "AFTER" },
+  PLAN_RACIKAN: { key: "PLAN_RACIKAN", label: "Racikan rencana", phase: "PLAN" },
   WHOLE_TEST_BEFORE: { key: "WHOLE_TEST_BEFORE", label: "QC sebelum bongkar (uji kasur utuh)", phase: "BEFORE", qc: true, minMedia: 1 },
   FOUNDATION_TEST_BEFORE: { key: "FOUNDATION_TEST_BEFORE", label: "Uji fondasi awal", phase: "BEFORE", qc: true, minMedia: 1 },
 });
@@ -91,6 +95,19 @@ export function materialLabel(ref) {
   return UNKNOWN_LABEL;
 }
 
+// Atribut bahan yang BENAR-BENAR tersedia (snapshot katalog saat dicatat). Nilai kosong tidak ditampilkan dan tidak dikarang; Material master belum punya kolom densitas/ketebalan,
+// jadi keduanya hanya muncul bila suatu saat ada di snapshot. Bahan manual / tidak diketahui tetap sah dan ditandai apa adanya.
+export function materialAttributes(ref) {
+  if (!ref) return [];
+  const has = (v) => v !== null && v !== undefined && String(v).trim() !== "";
+  if (ref.kind === MATERIAL_KINDS.CATALOG) {
+    return [["code", "Kode", ref.code], ["name", "Nama", ref.name], ["unit", "Satuan", ref.unit], ["supplier", "Supplier", ref.supplier], ["itemGroup", "Kelompok", ref.itemGroup],
+      ["density", "Densitas", ref.density], ["thicknessCm", "Ketebalan katalog (cm)", ref.thicknessCm]].filter(([, , v]) => has(v)).map(([key, label, value]) => ({ key, label, value: String(value) }));
+  }
+  if (ref.kind === MATERIAL_KINDS.MANUAL) return [{ key: "manual", label: MANUAL_MATERIAL_LABEL, value: ref.text }, { key: "catalog", label: "Katalog", value: "Belum terhubung katalog" }];
+  return [{ key: "unknown", label: "Bahan", value: UNKNOWN_LABEL }];
+}
+
 function normalizeThickness(v, field) {
   if (v == null || v === "") return null;
   const n = typeof v === "string" ? Number(v.replace(",", ".")) : v;
@@ -145,11 +162,16 @@ export function normalizeSectionData(section, data) {
   }
   if (section === "WHOLE_TEST_BEFORE") return normalizeWholeTest(data, note);
   if (section === "FOUNDATION_TEST_BEFORE") return normalizeFoundationTest(data, note);
-  // AFTER
+  // AFTER (hasil aktual) dan PLAN_RACIKAN (rencana) berbentuk sama — satu normalizer, tanpa salinan paralel.
+  return normalizeResultShape(data, note, { planned: section === "PLAN_RACIKAN" });
+}
+
+function normalizeResultShape(data, note, { planned }) {
+  const word = planned ? "rencana" : "sesudah";
   const f = data.foundation;
   let foundation = null;
   if (f != null) {
-    if (typeof f !== "object" || Array.isArray(f)) throw bad("Fondasi sesudah tidak valid");
+    if (typeof f !== "object" || Array.isArray(f)) throw bad(`Fondasi ${word} tidak valid`);
     const action = normalizeAction(f.action, "Fondasi");
     foundation = {
       action, system: normalizeSystem(f.system, "Fondasi", { required: action === "REPLACE" }),
@@ -159,7 +181,7 @@ export function normalizeSectionData(section, data) {
   const rows = data.layers == null ? [] : data.layers;
   if (!Array.isArray(rows)) throw bad("Daftar lapisan tidak valid");
   if (rows.length > LIMITS.MAX_LAYERS) throw bad(`Maksimal ${LIMITS.MAX_LAYERS} lapisan`, "COMPONENT_TOO_MANY_LAYERS");
-  if (!foundation && rows.length === 0) throw bad("Isi minimal fondasi atau satu lapisan hasil akhir", "COMPONENT_AFTER_EMPTY");
+  if (!foundation && rows.length === 0) throw bad(planned ? "Isi minimal fondasi atau satu lapisan pada racikan rencana" : "Isi minimal fondasi atau satu lapisan hasil akhir", planned ? "COMPONENT_PLAN_EMPTY" : "COMPONENT_AFTER_EMPTY");
   const layers = rows.map((r, i) => {
     const fld = `Lapisan ${i + 1}`;
     if (r == null || typeof r !== "object") throw bad(`${fld}: tidak valid`);
@@ -207,9 +229,83 @@ export function normalizeMediaItems(items, { kindOf, section = null, layerCount 
 // ---- perbandingan Sebelum -> Sesudah ----------------------------------------------------------------------------------------
 const layerView = (l) => (l ? { material: materialLabel(l.material), thicknessCm: l.thicknessCm ?? null, condition: l.condition, conditionLabel: conditionLabel(l.condition), note: l.note ?? null } : null);
 
-/** @param {{layersBefore?:object|null, foundationBefore?:object|null, after?:object|null}} entries  entri = { data, version, media } atau null (belum dicatat) */
-export function buildComparison({ layersBefore = null, foundationBefore = null, after = null } = {}) {
-  const status = { layersBefore: !!layersBefore, foundationBefore: !!foundationBefore, after: !!after };
+// Komponen hasil akhir satu lapisan (KEEP/REPAIR mewarisi ketebalan catatan awal bila tidak diisi — dibaca dari SATU sumber, tidak disalin).
+function layerFinal(a, b) {
+  if (a.action === "KEEP") return { label: b ? materialLabel(b.material) : "Dipertahankan (bahan lama belum dicatat)", thicknessCm: a.thicknessCm ?? b?.thicknessCm ?? null, source: "KEPT" };
+  if (a.action === "REPAIR") return { label: a.material ? materialLabel(a.material) : (b ? `${materialLabel(b.material)} (diperbaiki)` : "Diperbaiki (bahan belum dicatat)"), thicknessCm: a.thicknessCm ?? b?.thicknessCm ?? null, source: "REPAIRED" };
+  return { label: materialLabel(a.material), thicknessCm: a.thicknessCm ?? null, source: "NEW" };
+}
+const thicknessSource = (a, b, fin) => (typeof a.thicknessCm === "number" ? "DICATAT" : fin.thicknessCm != null && b && typeof b.thicknessCm === "number" ? "DARI_CATATAN_AWAL" : null);
+
+/** Ringkasan lapisan RENCANA / AKTUAL (atas -> bawah): ketebalan efektif per lapisan + total tinggi. Total hanya dari yang diketahui; ada yang kosong -> "belum lengkap" (bukan 0). Dibaca, tidak disimpan. */
+export function summarizeResultLayers(data, beforeData = null) {
+  if (!data) return null;
+  const layers = Array.isArray(data.layers) ? data.layers : [];
+  const bLayers = Array.isArray(beforeData?.layers) ? beforeData.layers : [];
+  const perLayer = layers.map((a, i) => {
+    const b = bLayers[(a.fromOrder ?? i + 1) - 1] ?? null;
+    const fin = layerFinal(a, b);
+    return { order: i + 1, thicknessCm: typeof fin.thicknessCm === "number" && fin.thicknessCm > 0 ? fin.thicknessCm : null, source: thicknessSource(a, b, fin) };
+  });
+  const known = perLayer.filter((l) => l.thicknessCm != null);
+  const unknownCount = perLayer.length - known.length;
+  const total = known.length ? round(known.reduce((s, l) => s + l.thicknessCm, 0)) : null;
+  const totalComplete = perLayer.length > 0 && unknownCount === 0;
+  const label = !perLayer.length ? "Tidak ada lapisan dicatat"
+    : total == null ? "Total tinggi lapisan belum dicatat"
+      : totalComplete ? `Total tinggi lapisan ${total} cm (${perLayer.length} lapisan)` : `Total tinggi lapisan belum lengkap — ${total} cm dari ${known.length} lapisan yang diketahui; ${unknownCount} lapisan belum diukur`;
+  return { count: perLayer.length, knownCount: known.length, unknownThicknessCount: unknownCount, totalThicknessCm: total, totalComplete, perLayer, label };
+}
+
+// Tampilan satu seksi hasil (rencana / aktual) + ringkasan total tinggi.
+function resultView(entry, layersBefore, foundationBefore) {
+  if (!entry) return null;
+  const d = entry.data ?? {}; const bLayers = layersBefore?.data?.layers ?? []; const fb = foundationBefore?.data ?? null;
+  const summary = summarizeResultLayers(d, layersBefore?.data ?? null);
+  const layers = (d.layers ?? []).map((a, i) => {
+    const b = bLayers[(a.fromOrder ?? i + 1) - 1] ?? null; const fin = layerFinal(a, b);
+    return { order: i + 1, action: a.action, actionLabel: actionLabel(a.action), label: fin.label, thicknessCm: summary.perLayer[i].thicknessCm, thicknessSource: summary.perLayer[i].source, note: a.note ?? null, fromOrder: a.fromOrder ?? null };
+  });
+  let foundation = null;
+  if (d.foundation) {
+    const fa = d.foundation; const sysTxt = fa.system && fa.system !== "TIDAK_DIKETAHUI" ? systemLabel(fa.system) : null;
+    const baseBefore = fb ? [fb.system === "TIDAK_DIKETAHUI" ? null : systemLabel(fb.system), materialLabel(fb.material)].filter(Boolean).join(" · ") || systemLabel(fb.system) : null;
+    const label = fa.action === "KEEP" ? (baseBefore || "Dipertahankan (fondasi lama belum dicatat)")
+      : [sysTxt, materialLabel(fa.material)].filter(Boolean).join(" · ") || (fa.action === "REPAIR" ? (baseBefore ? `${baseBefore} (diperbaiki)` : "Diperbaiki (belum dicatat)") : UNKNOWN_LABEL);
+    foundation = { action: fa.action, actionLabel: actionLabel(fa.action), label, note: fa.note ?? null };
+  }
+  return { version: entry.version ?? null, foundation, layers, summary, note: d.note ?? null };
+}
+
+// Rencana vs aktual per lapisan (indeks yang sama, atas -> bawah). Hanya membandingkan bila KEDUANYA tercatat; yang satu tercatat saja = disebut apa adanya.
+function planVsActualOf(plan, actual) {
+  if (!plan || !actual) return { available: false, reason: !plan && !actual ? "Rencana dan hasil aktual belum dicatat" : !plan ? "Racikan rencana belum dicatat" : "Hasil aktual belum dicatat", layers: [], foundation: null, total: null };
+  const n = Math.max(plan.layers.length, actual.layers.length);
+  const layers = [];
+  for (let i = 0; i < n; i++) {
+    const p = plan.layers[i] ?? null; const a = actual.layers[i] ?? null;
+    if (p && !a) { layers.push({ order: i + 1, status: "HANYA_RENCANA", plan: p, actual: null, diffs: [] }); continue; }
+    if (!p && a) { layers.push({ order: i + 1, status: "HANYA_AKTUAL", plan: null, actual: a, diffs: [] }); continue; }
+    const diffs = [];
+    if (p.action !== a.action) diffs.push("TINDAKAN");
+    if (p.label !== a.label) diffs.push("BAHAN");
+    if (p.thicknessCm != null && a.thicknessCm != null && p.thicknessCm !== a.thicknessCm) diffs.push("KETEBALAN");
+    layers.push({ order: i + 1, status: diffs.length ? "BERBEDA" : "SAMA", plan: p, actual: a, diffs });
+  }
+  let foundation = null;
+  if (plan.foundation || actual.foundation) {
+    const p = plan.foundation; const a = actual.foundation;
+    foundation = !p ? { status: "HANYA_AKTUAL", plan: null, actual: a, diffs: [] } : !a ? { status: "HANYA_RENCANA", plan: p, actual: null, diffs: [] }
+      : { status: p.action === a.action && p.label === a.label ? "SAMA" : "BERBEDA", plan: p, actual: a, diffs: [p.action !== a.action ? "TINDAKAN" : null, p.label !== a.label ? "BAHAN" : null].filter(Boolean) };
+  }
+  const pt = plan.summary?.totalThicknessCm ?? null; const at = actual.summary?.totalThicknessCm ?? null;
+  const total = { planCm: pt, actualCm: at, planComplete: !!plan.summary?.totalComplete, actualComplete: !!actual.summary?.totalComplete, differenceCm: pt != null && at != null ? round(at - pt) : null };
+  return { available: true, reason: null, layers, foundation, total };
+}
+
+/** @param {{layersBefore?:object|null, foundationBefore?:object|null, after?:object|null, plan?:object|null}} entries  entri = { data, version, media } atau null (belum dicatat) */
+export function buildComparison({ layersBefore = null, foundationBefore = null, after = null, plan = null } = {}) {
+  const status = { layersBefore: !!layersBefore, foundationBefore: !!foundationBefore, after: !!after, plan: !!plan };
   const gaps = [];
   if (!layersBefore) gaps.push({ section: "LAYERS_BEFORE", text: `${COMPONENT_SECTIONS.LAYERS_BEFORE.label} ${NOT_RECORDED_LABEL.toLowerCase()}` });
   if (!foundationBefore) gaps.push({ section: "FOUNDATION_BEFORE", text: `${COMPONENT_SECTIONS.FOUNDATION_BEFORE.label} ${NOT_RECORDED_LABEL.toLowerCase()}` });
@@ -221,12 +317,7 @@ export function buildComparison({ layersBefore = null, foundationBefore = null, 
   const kept = [];
   const used = new Set();
   const finalLayers = [];
-  const finalOf = (a, b) => {
-    // komponen hasil akhir satu lapisan
-    if (a.action === "KEEP") return { label: b ? materialLabel(b.material) : "Dipertahankan (bahan lama belum dicatat)", thicknessCm: a.thicknessCm ?? b?.thicknessCm ?? null, source: "KEPT" };
-    if (a.action === "REPAIR") return { label: a.material ? materialLabel(a.material) : (b ? `${materialLabel(b.material)} (diperbaiki)` : "Diperbaiki (bahan belum dicatat)"), thicknessCm: a.thicknessCm ?? b?.thicknessCm ?? null, source: "REPAIRED" };
-    return { label: materialLabel(a.material), thicknessCm: a.thicknessCm ?? null, source: "NEW" };
-  };
+  const finalOf = layerFinal;
   if (after) {
     aLayers.forEach((a, i) => {
       const order = i + 1; const bi = (a.fromOrder ?? order) - 1; const b = bLayers[bi] ?? null;
@@ -262,7 +353,13 @@ export function buildComparison({ layersBefore = null, foundationBefore = null, 
     foundation = { before: beforeView, beforeRecorded: !!foundationBefore, action: fa?.action ?? null, actionLabel: fa ? actionLabel(fa.action) : null, afterNote: fa?.note ?? null, final, outcome };
   }
   const recordedAny = status.layersBefore || status.foundationBefore || status.after;
-  return { status, recordedAny, complete: status.layersBefore && status.foundationBefore && status.after, gaps, foundation, layers, kept, final: { foundation: foundation?.final?.label ?? null, layers: finalLayers } };
+  // Fase 3: rencana (PLAN_RACIKAN) dan hasil aktual (AFTER) sebagai tampilan terpisah + perbandingan; `gaps`/`complete` lama TIDAK berubah (rencana belum dicatat bukan celah laporan lama).
+  const planView = resultView(plan, layersBefore, foundationBefore);
+  const actualView = resultView(after, layersBefore, foundationBefore);
+  return {
+    status, recordedAny, complete: status.layersBefore && status.foundationBefore && status.after, gaps, foundation, layers, kept, final: { foundation: foundation?.final?.label ?? null, layers: finalLayers },
+    plan: planView, actual: actualView, planVsActual: planVsActualOf(planView, actualView),
+  };
 }
 
 // ---- Fase 2: uji kasur utuh + uji fondasi awal + ringkasan lapisan ---------------------------------------------------------------------------

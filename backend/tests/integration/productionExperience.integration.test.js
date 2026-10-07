@@ -463,3 +463,85 @@ test("ROLLBACK writer OFF -> aksi V1 -> writer ON: V2 mendeteksi drift (409 PROD
   assert.equal((await w.lead.api.patch(`/api/units/${unit.id}/production`, { priority: "NORMAL" })).status, 200);
   assert.equal(await markers(), 3, "Run terminal: aksi V1 tidak lagi menandai drift");
 });
+
+// ---------------------------------------------------------------------------------------------------------------------------------------------------
+// Fase 3 LAYANAN — PIC Bahan per pekerjaan memakai command & tabel yang SAMA dengan jalur pengerjaan; pemakaian aktual satu sumber; tanpa stok ganda.
+// ---------------------------------------------------------------------------------------------------------------------------------------------------
+test("Fase 3 LAYANAN: PIC Bahan ditugaskan per pekerjaan; pemakaian aktual hanya dari bahan yang diserahkan; tidak ganda dengan bukti Meja; stok tidak bergerak; SEWA ditolak", async () => {
+  const w = await world();
+  const febriU = await createTestUser({ roles: ["PRODUCTION_WORKER"] });
+  const febri = { ...febriU, api: makeClient(server.baseUrl, febriU.token) };
+  const febriOp = await testPrisma.productionOperator.create({ data: { userId: febri.user.id, primaryWorkCenterId: w.wc } });
+  const { unit, run } = await acceptedUnit(w);
+  const planned = await planOnBoard(w, run.id, { station: "TABLE_1", corner: false });
+  await throughIntake(w, run.id);
+  ok(await step(w, w.nadya, run.id, 5, { payload: DIAG }));
+  const diagPhoto = (await media(w.nadya, run.id, "i"))[0];
+  const diag = await w.nadya.api.post(`${V2}/diagnosis/${run.id}/submit`, {
+    expectedRevision: 0, workCenterId: w.wc, photoUrls: [diagPhoto], recommendedServiceId: w.service.id,
+    findings: { general: { condition: "Kasur kempes", mainDamage: "Fondasi keropos", damageLevel: "SEDANG", teardownNote: "Per karatan" }, foundation: { oldCondition: "Per karatan", action: "REPLACE", size: "180x200", qty: "1" }, layers: [{ oldCondition: "Busa tipis", action: "REPLACE", material: "Busa HD", thickness: "5cm", qty: "2" }], components: { spring: "Ganti per baru" }, serviceNote: "Restorasi penuh fondasi dan lapisan atas sesuai keluhan sakit pinggang" },
+    materials: [{ materialId: w.fondasi.id, qty: 1 }, { materialId: w.lapisan.id, qty: 2 }],
+  }, key(`diag-${++seq}`));
+  assert.equal(diag.status, 201, JSON.stringify(diag.body));
+  const issueId = await setBomAndIssue(w, planned.planId);
+  ok(await step(w, w.nadya, run.id, 5, {})); // lanjutkan diagnosa; modul fondasi menunggu bahan
+  await pick(w, issueId);
+  const movesAtIssue = await testPrisma.stockMovement.count({ where: { unitId: unit.id, type: "ISSUE" } });
+  ok(await step(w, w.nadya, run.id, 6, {})); // mulai modul fondasi
+
+  // Penugasan: hanya izin penjadwalan; operator harus sah. Unit LAYANAN sebelum punya PIC Bahan = perilaku lama (tidak ada blok).
+  let c = await card(w, run.id);
+  assert.equal(c.materialPic, null, "belum ada PIC Bahan"); assert.equal(c.track, "RESTORATION");
+  assert.equal((await w.nadya.api.post(`${V2}/runs/${run.id}/build/material-operator`, { operatorId: febriOp.id, expectedRevision: c.revision }, key("as-nadya"))).status, 403);
+  const assigned = ok(await w.lead.api.post(`${V2}/runs/${run.id}/build/material-operator`, { operatorId: febriOp.id, expectedRevision: c.revision }, key("as-febri")));
+  assert.equal(assigned.changed, true); assert.equal(assigned.materialOperator.id, febriOp.id);
+  c = await card(w, run.id);
+  assert.equal(c.materialPic.materialOperator.id, febriOp.id); assert.equal(c.materialPic.usageRecorded, false);
+  assert.deepEqual([c.next.action, c.next.wait, c.next.actor], ["WAIT", "USAGE_NOT_RECORDED", "MATERIAL_PIC"], "Meja menunggu pemakaian bahan dicatat PIC Bahan");
+  const blocked = await step(w, w.nadya, run.id, 6, { payload: { note: "isi fondasi", materials: [{ materialId: w.fondasi.id, qty: 1 }] }, media: await media(w.nadya, run.id, "v") });
+  assert.equal(blocked.status, 409); assert.equal(blocked.body.code, "STEP_WAITING_USAGE_NOT_RECORDED");
+
+  // Antrean PIC Bahan memuat pekerjaan LAYANAN ini hanya untuk Febri.
+  const q = ok(await febri.api.get(`${V2}/worker/material`));
+  assert.deepEqual(q.items.map((i) => i.runId), [run.id]); assert.equal(q.items[0].track, "RESTORATION");
+  assert.deepEqual(ok(await w.corner.api.get(`${V2}/worker/material`)).items, [], "bukan PIC Bahan pekerjaan ini");
+
+  // Pemakaian aktual: otorisasi PIC; racikan teks ditolak (racikan LAYANAN ada di Catatan Komponen); tidak boleh melebihi yang diserahkan; stok tidak bergerak.
+  const rec = (who, rev, b, k = key("rec")) => who.api.post(`${V2}/runs/${run.id}/build/materials`, { expectedRevision: rev, ...b }, k);
+  const rev = (await card(w, run.id)).revision;
+  assert.equal((await rec(w.nadya, rev, { materials: [{ materialId: w.fondasi.id, qty: 1 }] })).status, 403, "bukan PIC Bahan");
+  const rac = await rec(febri, rev, { racikan: { fondasi: "pocket spring baru", lapisan: "latex" } }); assert.equal(rac.status, 422); assert.equal(rac.body.code, "BUILD_RACIKAN_NOT_APPLICABLE_LAYANAN");
+  const over = await rec(febri, rev, { materials: [{ materialId: w.fondasi.id, qty: 5 }] }); assert.equal(over.status, 422);
+  const good = ok(await rec(febri, rev, { materials: [{ materialId: w.fondasi.id, qty: 1 }], note: "dipakai untuk fondasi" }));
+  assert.equal(good.changed, true);
+  assert.equal(await testPrisma.stockMovement.count({ where: { unitId: unit.id, type: "ISSUE" } }), movesAtIssue, "mencatat pemakaian TIDAK menulis stok keluar (hanya Gudang saat menyerahkan)");
+  c = await card(w, run.id);
+  assert.equal(c.materialPic.usageRecorded, true); assert.equal(c.materialPic.record.materials[0].qty, 1);
+  assert.equal(c.next.action, "COMPLETE", "Meja boleh menutup tahap 6 setelah PIC Bahan mencatat");
+
+  // Tidak ganda: bukti Meja tidak boleh memuat bahan lagi (satu sumber); tahap 6/7 tanpa bahan sah.
+  const dup = await step(w, w.nadya, run.id, 6, { payload: { note: "isi fondasi", materials: [{ materialId: w.fondasi.id, qty: 1 }] }, media: await media(w.nadya, run.id, "v") });
+  assert.equal(dup.status, 409); assert.equal(dup.body.code, "STEP_MATERIAL_BY_MATERIAL_PIC");
+  const s6 = ok(await step(w, w.nadya, run.id, 6, { payload: { note: "Pocket spring baru dipasang" }, media: await media(w.nadya, run.id, "v") }));
+  assert.equal(s6.next.stepNo, 7);
+  const dup7 = await step(w, w.nadya, run.id, 7, { payload: { materials: [{ materialId: w.lapisan.id, qty: 1 }] }, media: await media(w.nadya, run.id, "i") });
+  assert.equal(dup7.status, 409); assert.equal(dup7.body.code, "STEP_MATERIAL_BY_MATERIAL_PIC");
+  ok(await step(w, w.nadya, run.id, 7, { payload: {}, media: await media(w.nadya, run.id, "i") }));
+  assert.equal(await testPrisma.stockMovement.count({ where: { unitId: unit.id, type: "ISSUE" } }), movesAtIssue, "stok keluar tidak ganda");
+
+  // Sisa = diserahkan - pemakaian PIC (tidak dihitung dua kali): fondasi 1 diserahkan, 1 dipakai -> tanpa sisa; lapisan 2 diserahkan, 0 tercatat -> sisa 2.
+  const { computeRunLeftovers } = await import("../../src/services/productionMaterialReturnService.js");
+  const left = await computeRunLeftovers(testPrisma, await testPrisma.productionRun.findUniqueOrThrow({ where: { id: run.id } }));
+  const leftOf = (id) => Number((left || []).find((l) => l.materialId === id)?.leftoverQty ?? (left || []).find((l) => l.materialId === id)?.qty ?? 0);
+  assert.equal(leftOf(w.fondasi.id), 0, "pemakaian fondasi hanya dihitung sekali"); assert.equal(leftOf(w.lapisan.id), 2);
+
+  // SEWA tidak termasuk.
+  const sewaOrder = await testPrisma.order.create({ data: { customerId: (await testPrisma.customer.create({ data: { name: "Sewa 1" } })).id, orderNumber: `SW-${++seq}`, value: 1, category: "SEWA", status: "PROCESSING" } });
+  const sewaUnit = await testPrisma.unit.create({ data: { unitCode: `SW-${seq}-U1`, orderId: sewaOrder.id, seq: 1, status: "RECEIVED" } });
+  await addCohort(sewaUnit.id);
+  const sp = await w.lead.api.post(`${V2}/plans`, { unitId: sewaUnit.id, productionDate: DATE, stationCode: "TABLE_2", priority: 0, workCenterId: w.wc, operatorId: w.nadyaOp.id }, key("sewa"));
+  assert.equal(sp.status, 201, JSON.stringify(sp.body));
+  const sRun = await testPrisma.productionRun.findFirstOrThrow({ where: { unitId: sewaUnit.id } });
+  const sAssign = await w.lead.api.post(`${V2}/runs/${sRun.id}/build/material-operator`, { operatorId: febriOp.id, expectedRevision: (await card(w, sRun.id)).revision }, key("sewa-as"));
+  assert.equal(sAssign.status, 409); assert.equal(sAssign.body.code, "BUILD_NOT_APPLICABLE");
+});

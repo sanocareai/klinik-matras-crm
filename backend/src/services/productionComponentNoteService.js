@@ -12,7 +12,7 @@ import { evidenceFileExists } from "../lib/productionEvidenceStore.js";
 import { mediaKindOf } from "../lib/domain/productionSteps.js";
 import { signEvidenceUrl } from "../routes/productionEvidenceMedia.js";
 import {
-  COMPONENT_SECTIONS, COMPONENT_SECTION_KEYS, LIMITS, MATERIAL_KINDS, buildComparison, buildMeasurements, componentError, normalizeMediaItems, normalizeSectionData, materialLabel, summarizeLayers,
+  COMPONENT_SECTIONS, COMPONENT_SECTION_KEYS, LIMITS, MATERIAL_KINDS, buildComparison, buildMeasurements, componentError, normalizeMediaItems, normalizeSectionData, materialLabel, summarizeLayers, summarizeResultLayers,
 } from "../lib/domain/productionComponents.js";
 
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
@@ -92,10 +92,12 @@ export async function getComponentNotes(client, unitId, { includeSuggestions = t
   const { current, history, actors } = await loadComponentEntries(client, unitId);
   const sections = Object.fromEntries(COMPONENT_SECTION_KEYS.map((k) => [k, current[k] ? entryView(current[k], actors) : null]));
   if (sections.LAYERS_BEFORE) sections.LAYERS_BEFORE.summary = summarizeLayers(sections.LAYERS_BEFORE.data); // total dihitung dari ketebalan yang diketahui; kosong = belum lengkap
+  for (const k of ["PLAN_RACIKAN", "AFTER"]) if (sections[k]) sections[k].summary = summarizeResultLayers(sections[k].data, sections.LAYERS_BEFORE?.data ?? null); // rencana / aktual: total tinggi atas->bawah
   const comparison = buildComparison({
     layersBefore: sections.LAYERS_BEFORE ? { data: sections.LAYERS_BEFORE.data, version: sections.LAYERS_BEFORE.version } : null,
     foundationBefore: sections.FOUNDATION_BEFORE ? { data: sections.FOUNDATION_BEFORE.data, version: sections.FOUNDATION_BEFORE.version } : null,
     after: sections.AFTER ? { data: sections.AFTER.data, version: sections.AFTER.version } : null,
+    plan: sections.PLAN_RACIKAN ? { data: sections.PLAN_RACIKAN.data, version: sections.PLAN_RACIKAN.version } : null,
   });
   const measurements = buildMeasurements({
     wholeTest: sections.WHOLE_TEST_BEFORE ? { data: sections.WHOLE_TEST_BEFORE.data, version: sections.WHOLE_TEST_BEFORE.version } : null,
@@ -184,6 +186,14 @@ async function otherUnitUsesFile(tx, unitId, url) {
   return b.length > 0;
 }
 
+// Atribut snapshot yang ditambahkan Fase 3 (supplier, kelompok) tidak dihitung saat menilai "isi sama dengan versi terkini" — entri lama tanpa atribut itu tidak memicu versi baru hanya karena snapshot diperkaya.
+const SNAPSHOT_EXTRAS = new Set(["supplier", "itemGroup"]);
+function stripSnapshotExtras(v) {
+  if (Array.isArray(v)) return v.map(stripSnapshotExtras);
+  if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).filter(([k]) => !SNAPSHOT_EXTRAS.has(k)).map(([k, x]) => [k, stripSnapshotExtras(x)]));
+  return v;
+}
+
 // Ganti ref katalog dengan snapshot server (kode/nama/satuan); bahan harus ada & aktif. Tidak ada klien yang bisa memalsukan nama katalog.
 async function resolveMaterialRefs(tx, data) {
   const refs = [];
@@ -193,12 +203,12 @@ async function resolveMaterialRefs(tx, data) {
   visit(data.foundation, "material");
   if (!refs.length) return data;
   const ids = [...new Set(refs.map(([h, k]) => h[k].materialId))];
-  const mats = await tx.material.findMany({ where: { id: { in: ids }, active: true }, select: { id: true, code: true, name: true, unit: true } });
+  const mats = await tx.material.findMany({ where: { id: { in: ids }, active: true }, select: { id: true, code: true, name: true, unit: true, vendor: true, itemGroup: true } });
   const byId = new Map(mats.map((m) => [m.id, m]));
   for (const [h, k] of refs) {
     const m = byId.get(h[k].materialId);
     if (!m) throw componentError("Bahan katalog tidak ditemukan atau tidak aktif — pilih bahan lain atau “Bahan manual”", 422, "COMPONENT_MATERIAL_NOT_FOUND");
-    h[k] = { kind: MATERIAL_KINDS.CATALOG, materialId: m.id, code: m.code, name: m.name, unit: m.unit };
+    h[k] = { kind: MATERIAL_KINDS.CATALOG, materialId: m.id, code: m.code, name: m.name, unit: m.unit, ...(m.vendor ? { supplier: m.vendor } : {}), ...(m.itemGroup ? { itemGroup: m.itemGroup } : {}) };
   }
   return data;
 }
@@ -251,7 +261,7 @@ export async function recordComponentSection(prisma, { unitId, section, actor, i
     });
 
     // Tanpa perubahan bermakna -> tidak ada versi baru (jangan menggandakan histori dengan salinan identik).
-    if (latest && canon(latest.payload) === canon(resolved) && canon(latest.media) === canon(mediaJson)) {
+    if (latest && canon(stripSnapshotExtras(latest.payload)) === canon(stripSnapshotExtras(resolved)) && canon(latest.media) === canon(mediaJson)) {
       const response = { unitId, section, version: latest.version, unchanged: true };
       await tx.v2Command.update({ where: { id: command.id }, data: { status: "APPLIED", appliedRevision: latest.version, response, completedAt: new Date() } });
       return { replayed: false, ...response };
@@ -271,12 +281,12 @@ export async function recordComponentSection(prisma, { unitId, section, actor, i
   });
 }
 
-/** Pencarian katalog bahan untuk formulir (tanpa harga/stok): hanya id, kode, nama, satuan. */
+/** Pencarian katalog bahan untuk formulir (tanpa harga/stok): id, kode, nama, satuan + supplier & kelompok bila ada di master (tidak dikarang). */
 export async function searchComponentMaterials(client, q) {
   const needle = String(q || "").trim().slice(0, 60);
   const where = { active: true, ...(needle ? { OR: [{ code: { contains: needle, mode: "insensitive" } }, { name: { contains: needle, mode: "insensitive" } }] } : {}) };
-  const rows = await client.material.findMany({ where, orderBy: [{ name: "asc" }], take: 25, select: { id: true, code: true, name: true, unit: true } });
-  return rows.map((m) => ({ kind: MATERIAL_KINDS.CATALOG, materialId: m.id, code: m.code, name: m.name, unit: m.unit, label: materialLabel({ kind: MATERIAL_KINDS.CATALOG, code: m.code, name: m.name }) }));
+  const rows = await client.material.findMany({ where, orderBy: [{ name: "asc" }], take: 25, select: { id: true, code: true, name: true, unit: true, vendor: true, itemGroup: true } });
+  return rows.map((m) => ({ kind: MATERIAL_KINDS.CATALOG, materialId: m.id, code: m.code, name: m.name, unit: m.unit, supplier: m.vendor || null, itemGroup: m.itemGroup || null, label: materialLabel({ kind: MATERIAL_KINDS.CATALOG, code: m.code, name: m.name }) }));
 }
 
 // Cohort baca: pemanggil memastikan unit ada di reader cohort sebelum membaca.

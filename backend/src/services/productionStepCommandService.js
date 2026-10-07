@@ -126,7 +126,10 @@ export async function loadStepContext(client, run) {
   const product = buildTrack
     ? classifyProduct((await client.order.findUnique({ where: { id: run.unit.orderId }, select: { productLine: true, productType: true } })) || {})
     : null;
-  const [buildSetting, buildRecord] = buildTrack
+  // Fase 3 (LAYANAN): PIC Bahan per pekerjaan juga berlaku untuk restorasi (kategori LAYANAN) — pengaturan & catatan pemakaian dibaca dari tabel yang SAMA (tanpa salinan paralel).
+  // SEWA dan jalur lain tidak ikut. Jalur BUILD tidak berubah.
+  const materialPicRestoration = !buildTrack && run.unit?.order?.category === "LAYANAN";
+  const [buildSetting, buildRecord] = buildTrack || materialPicRestoration
     ? await Promise.all([
       client.productionRunBuildSetting.findUnique({ where: { runId: run.id }, include: { materialOperator: { select: { id: true, userId: true, active: true, user: { select: { name: true } } } } } }),
       client.productionBuildMaterialRecord.findFirst({ where: { runId: run.id }, orderBy: { version: "desc" } }),
@@ -134,6 +137,7 @@ export async function loadStepContext(client, run) {
     : [null, null];
   const cornerLocked = buildTrack ? await cornerDecisionLocked(client, run) : false;
   const buildView = buildTrack ? await toBuildView(client, buildSetting, buildRecord, { cornerLocked }) : null;
+  const materialPicView = materialPicRestoration && (buildSetting || buildRecord) ? await toBuildView(client, buildSetting, buildRecord) : null;
   // Fase 2 (LAYANAN): gerbang QC sebelum bongkar / lapisan awal / uji fondasi awal. Hanya jalur restorasi non-adaptasi; fakta dibaca hanya saat Run berada di tahap bongkar (hemat query papan).
   // Hanya kategori LAYANAN (restorasi): SEWA dan jalur pengerjaan (BARU/custom) TIDAK berubah.
   const inIntake = ["pre_teardown_test", "teardown", "foundation_test"].includes(op?.stageCode);
@@ -164,6 +168,7 @@ export async function loadStepContext(client, run) {
     productFlow: product?.flow ?? null, productClass: product?.productClass ?? null, productProblem: product?.problem ?? null,
     cornerRequired: buildTrack ? (buildSetting?.cornerRequired ?? null) : null, cornerReason: buildSetting?.cornerReason ?? null,
     materialOperatorId: buildSetting?.materialOperatorId ?? null, racikanRecorded, lastStep6Version: lastStep6?.version ?? null,
+    materialPicRestoration, usageRecorded: (buildRecord?.materials || []).length > 0, // Fase 3: LAYANAN dengan PIC Bahan — pemakaian aktual dicatat PIC Bahan (satu sumber)
     materialReady: material.ready,
     diagnosisManualMapped, diagnosisBomHasLines,
     qcGatePolicy: run.qcGatePolicyVersion || null, // Fase 2: NULL = run lama, gerbang QC sebelum bongkar tidak berlaku
@@ -171,7 +176,7 @@ export async function loadStepContext(client, run) {
     preTeardownGate, gateRefs,
     qcBeforeRecorded: !!gateRefs?.wholeTest, layersBeforeRecorded: !!gateRefs?.layers, foundationTestRecorded: !!gateRefs?.foundationTest,
   };
-  return { path, split, pathError, evidence: ordered, documentation, openShortage, latestInspection, material, state, buildSetting, buildRecord, buildView, next: deriveNextAction(state) };
+  return { path, split, pathError, evidence: ordered, documentation, openShortage, latestInspection, material, state, buildSetting, buildRecord, buildView, materialPicView, next: deriveNextAction(state) };
 }
 
 // Nomor tahap yang berlaku untuk jalur unit (untuk "x dari 12"): tahap 6/7 hanya bila jalurnya punya modul terkait.
@@ -272,6 +277,7 @@ function waitMessage(next) {
     case "EXCEPTION_OPEN": return "Ada konflik data yang harus diselesaikan Production Lead lebih dulu.";
     case "QC_BEFORE_PENDING": return "Menunggu PIC QC mencatat uji kasur sebelum bongkar (QC sebelum bongkar).";
     case "FOUNDATION_TEST_PENDING": return "Menunggu PIC QC mencatat uji fondasi awal.";
+    case "USAGE_NOT_RECORDED": return "Menunggu PIC Bahan mencatat pemakaian bahan pekerjaan ini (satu sumber pemakaian aktual).";
     case "COMPLETED": return "Produksi unit ini sudah selesai.";
     default: return "Tahap ini belum bisa dikerjakan sekarang.";
   }
@@ -309,7 +315,7 @@ export async function recordProductionStep(prisma, { runId, stepNo, actorId, ide
 
     const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "RECORD_PRODUCTION_STEP", aggregateId: runId, requestHash, expectedRevision: revisionExpected });
     const now = new Date();
-    const evidenceCtx = { preTeardownGate: ctx.state.preTeardownGate, gateRefs: ctx.state.gateRefs, issuedQtyByMaterial: [6, 7, 10].includes(requestedStep) ? await issuedQtyByMaterial(tx, run.plan?.id) : new Map(), buildTrack: ctx.state.buildTrack, productFlow: ctx.state.productFlow, racikanRecorded: ctx.state.racikanRecorded, materialsByPic: !!(ctx.state.materialOperatorId || ctx.buildRecord) };
+    const evidenceCtx = { preTeardownGate: ctx.state.preTeardownGate, gateRefs: ctx.state.gateRefs, issuedQtyByMaterial: [6, 7, 10].includes(requestedStep) ? await issuedQtyByMaterial(tx, run.plan?.id) : new Map(), buildTrack: ctx.state.buildTrack, productFlow: ctx.state.productFlow, racikanRecorded: ctx.state.racikanRecorded, materialsByPic: !!(ctx.state.materialOperatorId || ctx.buildRecord), picRestoration: !!ctx.state.materialPicRestoration };
     let evidence = null;
     let transition = null;
     let autoStarted = null;

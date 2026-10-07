@@ -46,7 +46,7 @@ const outbox = (tx, { eventType, aggregateId, revision, dedupeKey, payload }) =>
 });
 
 // Pra-syarat bersama (di dalam transaksi): kunci unit -> run, writer cohort, tanpa konflik terbuka, revisi cocok, jalur pengerjaan.
-async function loadBuildRun(tx, { runId, expectedRevision, forMaterials = false }) {
+async function loadBuildRun(tx, { runId, expectedRevision, forMaterials = false, allowRestoration = false }) {
   const run = await loadRunForWrite(tx, runId);
   const state = resolveProductionWriterState(await loadV2Flags(tx));
   if (!isProductionWriterEnabledFor(state, run.unitId)) throw buildError("Produksi V2 tidak aktif untuk unit ini; gunakan alur lama", 503, "BUILD_WRITER_OFF");
@@ -54,7 +54,8 @@ async function loadBuildRun(tx, { runId, expectedRevision, forMaterials = false 
   if (expectedRevision != null && run.revision !== expectedRevision) throw buildError(`Data unit sudah berubah (revisi ${run.revision}, Anda memakai ${expectedRevision}). Muat ulang kartu lalu ulangi.`, 409, "STEP_REVISION_CONFLICT", { revision: run.revision });
   if (!["RECEIVED", "IN_PRODUCTION"].includes(run.unit.status)) throw buildError(`Unit berstatus ${run.unit.status}; bukan pekerjaan workshop`, 409, "BUILD_UNIT_NOT_IN_PRODUCTION", { unitStatus: run.unit.status });
   const ctx = await loadStepContext(tx, run);
-  if (!ctx.state.buildTrack) throw buildError("Hanya untuk pesanan BARU/custom pada jalur Pengerjaan Pesanan", 409, "BUILD_NOT_APPLICABLE");
+  // Fase 3: PIC Bahan per pekerjaan + pemakaian aktual juga untuk LAYANAN (restorasi) — command & tabel yang SAMA; racikan LAYANAN tetap di Catatan Komponen (bukan salinan teks di sini).
+  if (!ctx.state.buildTrack && !(allowRestoration && ctx.state.materialPicRestoration)) throw buildError("Hanya untuk pesanan BARU/custom (Pengerjaan Pesanan) atau LAYANAN (PIC Bahan per pekerjaan)", 409, "BUILD_NOT_APPLICABLE");
   void forMaterials;
   return { run, ctx };
 }
@@ -65,7 +66,7 @@ async function upsertSetting(tx, run, data, actorId) {
   return tx.productionRunBuildSetting.update({ where: { id: existing.id }, data: { ...data, revision: existing.revision + 1, updatedById: actorId || null, updatedAt: new Date() } });
 }
 
-const hasStep6Materials = (ctx) => ctx.evidence.some((e) => e.stepNo === 6 && (e.payload?.materials || []).length > 0);
+const hasStep6Materials = (ctx) => ctx.evidence.some((e) => (ctx.state.buildTrack ? e.stepNo === 6 : [6, 7].includes(e.stepNo)) && (e.payload?.materials || []).length > 0);
 
 // ---------------------------------------------------------------------------
 // 1. PIC Bahan per pekerjaan.
@@ -80,7 +81,7 @@ export async function setBuildMaterialOperator(prisma, { runId, operatorId = nul
   return prisma.$transaction(async (tx) => {
     const replay = await findReplay(tx, actor, idempotencyKey, requestHash);
     if (replay) return replay;
-    const { run, ctx } = await loadBuildRun(tx, { runId, expectedRevision: revisionExpected });
+    const { run, ctx } = await loadBuildRun(tx, { runId, expectedRevision: revisionExpected, allowRestoration: true });
     let operator = null;
     if (operatorId) {
       operator = await tx.productionOperator.findUnique({ where: { id: operatorId }, include: { user: { select: { name: true } } } });
@@ -178,7 +179,8 @@ export async function recordBuildMaterials(prisma, { runId, actorId, canExecuteA
   return prisma.$transaction(async (tx) => {
     const replay = await findReplay(tx, actor, idempotencyKey, requestHash);
     if (replay) return replay;
-    const { run, ctx } = await loadBuildRun(tx, { runId, expectedRevision: revisionExpected, forMaterials: true });
+    const { run, ctx } = await loadBuildRun(tx, { runId, expectedRevision: revisionExpected, forMaterials: true, allowRestoration: true });
+    if (!ctx.state.buildTrack && cleanRacikan) throw buildError("Racikan pekerjaan LAYANAN dicatat PIC Meja/PIC QC di Catatan Komponen (Racikan rencana); PIC Bahan hanya mencatat pemakaian aktual", 422, "BUILD_RACIKAN_NOT_APPLICABLE_LAYANAN");
     // Otorisasi: PIC Bahan yang DITUGASKAN pada pekerjaan ini (operator aktif) atau pemegang PRODUCTION_EXECUTE_ANY (ADMIN/OWNER). Tidak ada izin/peran baru.
     if (!canExecuteAny) {
       const operator = actorId ? await tx.productionOperator.findUnique({ where: { userId: actorId }, select: { id: true, active: true } }) : null;
@@ -190,7 +192,7 @@ export async function recordBuildMaterials(prisma, { runId, actorId, canExecuteA
     const returned = await tx.productionMaterialReturn.count({ where: { runId: run.id } });
     if (run.currentPhase === "HANDOFF" || returned > 0) throw buildError("Pemakaian bahan sudah dikunci (produksi selesai / retur sisa sudah dibuat)", 409, "BUILD_MATERIALS_LOCKED");
     const flow = ctx.state.productFlow;
-    if (cleanRacikan) {
+    if (cleanRacikan && ctx.state.buildTrack) {
       if (flow === PRODUCT_FLOW.UNCONFIRMED) throw buildError("Jenis produk belum jelas — racikan kasur ditahan sampai Sales mengonfirmasi jenis produk pada order", 409, "PRODUCT_TYPE_UNCONFIRMED");
       if (flow === PRODUCT_FLOW.NON_KASUR) throw buildError("Produk non-kasur (divan/sofa) tidak memakai racikan kasur", 422, "BUILD_RACIKAN_NOT_APPLICABLE");
     }
