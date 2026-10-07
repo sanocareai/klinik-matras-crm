@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import { PRIORITIES, friendlyError, stationCapacity } from "@/features/production/experience.js";
 import { priorityOf, rankOfView } from "@/features/production/productionLabels.js";
+import { cornerBodyOf, needsCornerChoice } from "@/features/production/unitCardModel.js";
 
 // P9 UX Realignment — modal jadwal & konfirmasi kedatangan dipindah dari ProductionPlannerV2.jsx supaya dipakai BERSAMA
 // Status Produksi (jalan pintas dari Unit 360) dan Rencana Produksi (fallback tombol Jadwalkan/Pindahkan untuk drag-drop).
@@ -104,6 +105,10 @@ export function ScheduleModal({ target, board, date, refs, onClose, onDone, onRe
     operatorId: plan?.operator?.id || "",
     cornerOperatorId: plan?.cornerOperator?.id || "",
   }));
+  // Jalur Pengerjaan Pesanan (onboarding): keputusan Corner dikirim BERSAMA jadwal (atomik di server) — tanpa pilihan bawaan, supaya benar-benar dipilih manusia.
+  const askCorner = needsCornerChoice(target);
+  const [cornerChoice, setCornerChoice] = useState("");
+  const [cornerReason, setCornerReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
@@ -112,10 +117,12 @@ export function ScheduleModal({ target, board, date, refs, onClose, onDone, onRe
 
   async function submit(unschedule = false) {
     if (!unschedule && (!form.workCenterId || !form.operatorId)) { setError("Pilih workshop dan PIC meja."); return; }
+    const corner = askCorner && !unschedule ? cornerBodyOf(cornerChoice, cornerReason) : { body: {} };
+    if (corner.error) { setError(corner.error); return; }
     setBusy(true); setError("");
     const body = unschedule
       ? { productionDate: null, stationCode: null, priority: form.priority }
-      : { ...form, priority: Number(form.priority), cornerOperatorId: form.cornerOperatorId || undefined };
+      : { ...form, priority: Number(form.priority), cornerOperatorId: form.cornerOperatorId || undefined, ...corner.body };
     try {
       let result;
       if (plan) result = await api.scheduleProductionV2Plan(plan.id, { ...body, expectedRevision: plan.revision });
@@ -173,6 +180,18 @@ export function ScheduleModal({ target, board, date, refs, onClose, onDone, onRe
             <option value="">Sama dengan PIC meja</option>{refs.operators.map((o) => <option key={o.id} value={o.id}>{o.name || o.user?.name || o.employeeCode}</option>)}
           </select>
         </label>
+        {askCorner && (
+          <fieldset data-testid="schedule-corner" className="m-0 space-y-1.5 border-0 p-0 sm:col-span-2">
+            <legend className="text-[12.5px] font-semibold text-ink2">Corner diperlukan? (kain/jahit)</legend>
+            <div role="radiogroup" aria-label="Corner diperlukan" className="flex gap-4 text-[13px] text-ink">
+              <label className="flex items-center gap-1.5"><input type="radio" name="schedule-corner" checked={cornerChoice === "YES"} onChange={() => setCornerChoice("YES")} data-testid="schedule-corner-yes" /> Ya, diperlukan</label>
+              <label className="flex items-center gap-1.5"><input type="radio" name="schedule-corner" checked={cornerChoice === "NO"} onChange={() => setCornerChoice("NO")} data-testid="schedule-corner-no" /> Tidak diperlukan</label>
+            </div>
+            {cornerChoice === "NO" && <input aria-label="Alasan Corner tidak diperlukan" data-testid="schedule-corner-reason" className={field} placeholder="Alasan — mis. tidak ada pekerjaan kain/jahit" value={cornerReason} onChange={(e) => setCornerReason(e.target.value)} />}
+            <p className="m-0 text-[11.5px] text-ink3">Keputusan ini tersimpan bersama jadwal dan terkunci setelah pekerjaan melewati gerbang penentuannya; sebelum itu dapat diubah di Unit 360.</p>
+            {target.build?.product?.problem && <p role="note" data-testid="schedule-product-unclear" className="m-0 rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-orange"><b>Jenis produk perlu dikonfirmasi.</b> {target.build.product.problem}. Jadwal tetap bisa disimpan; racikan dan pengujian khusus kasur menunggu Sales memperbaiki jenis produk pada order.</p>}
+          </fieldset>
+        )}
         {refsLoading && <p data-testid="refs-loading" className="sm:col-span-2 text-[12.5px] text-ink3">Memuat daftar workshop dan PIC…</p>}
         {!refsLoading && refs.problems ? <RefsProblems refs={refs} workCenterId={form.workCenterId} onRegistered={onRefsChanged} setError={setError} />
           : (refs.operators.length === 0 && <p className="sm:col-span-2 rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-orange">Belum ada operator aktif. Tambahkan di Pengaturan Produksi → Operator.</p>)}

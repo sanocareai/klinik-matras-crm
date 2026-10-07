@@ -14,7 +14,7 @@ import { normalizeMaterialLines } from "../lib/domain/productionSteps.js";
 import { PRODUCT_FLOW } from "../lib/domain/productionBuildTrack.js";
 import { assertNoOpenRunException } from "./productionRunGuards.js";
 import { bumpRunRevisionInTx, loadRunForWrite, mayExecuteAnyUnit } from "./productionWorkshopExecutionCommandService.js";
-import { assertExpectedRevision, assertIdempotencyKey, issuedQtyByMaterial, loadStepContext } from "./productionStepCommandService.js";
+import { assertExpectedRevision, assertIdempotencyKey, cornerDecisionLocked, issuedQtyByMaterial, loadStepContext } from "./productionStepCommandService.js";
 import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState } from "./v2FeatureFlags.js";
 
 const hash = (value) => createHash("sha256").update(JSON.stringify(value ?? null)).digest("hex");
@@ -51,7 +51,7 @@ async function loadBuildRun(tx, { runId, expectedRevision, forMaterials = false 
   const state = resolveProductionWriterState(await loadV2Flags(tx));
   if (!isProductionWriterEnabledFor(state, run.unitId)) throw buildError("Produksi V2 tidak aktif untuk unit ini; gunakan alur lama", 503, "BUILD_WRITER_OFF");
   await assertNoOpenRunException(tx, run.id);
-  if (run.revision !== expectedRevision) throw buildError(`Data unit sudah berubah (revisi ${run.revision}, Anda memakai ${expectedRevision}). Muat ulang kartu lalu ulangi.`, 409, "STEP_REVISION_CONFLICT", { revision: run.revision });
+  if (expectedRevision != null && run.revision !== expectedRevision) throw buildError(`Data unit sudah berubah (revisi ${run.revision}, Anda memakai ${expectedRevision}). Muat ulang kartu lalu ulangi.`, 409, "STEP_REVISION_CONFLICT", { revision: run.revision });
   if (!["RECEIVED", "IN_PRODUCTION"].includes(run.unit.status)) throw buildError(`Unit berstatus ${run.unit.status}; bukan pekerjaan workshop`, 409, "BUILD_UNIT_NOT_IN_PRODUCTION", { unitStatus: run.unit.status });
   const ctx = await loadStepContext(tx, run);
   if (!ctx.state.buildTrack) throw buildError("Hanya untuk pesanan BARU/custom pada jalur Pengerjaan Pesanan", 409, "BUILD_NOT_APPLICABLE");
@@ -107,30 +107,40 @@ export async function setBuildMaterialOperator(prisma, { runId, operatorId = nul
 // ---------------------------------------------------------------------------
 // 2. Kebutuhan Corner yang dikonfirmasi pada rencana.
 // ---------------------------------------------------------------------------
+// Validasi + normalisasi pilihan Corner (murni; dipakai command Unit 360 DAN modal Jadwalkan — kontrak server yang sama). Mengembalikan { required, reason }.
+export function normalizeCornerInput({ required, reason = null } = {}) {
+  if (typeof required !== "boolean") throw buildError("Kebutuhan Corner wajib dipilih (diperlukan / tidak diperlukan)", 400, "BUILD_CORNER_REQUIRED_CHOICE");
+  const cleanReason = text(reason, "Alasan", { min: 3, max: 300 });
+  if (required === false && !cleanReason) throw buildError("Corner tidak diperlukan wajib beralasan (minimal 3 karakter) — mis. tidak ada pekerjaan kain/jahit", 400, "BUILD_CORNER_REASON_REQUIRED");
+  return { required, reason: required ? null : cleanReason };
+}
+
 export async function confirmBuildCorner(prisma, { runId, required, reason = null, actorId, idempotencyKey, expectedRevision }) {
   if (!runId) throw buildError("runId wajib diisi", 400, "BUILD_RUN_REQUIRED");
   assertIdempotencyKey(idempotencyKey);
   const revisionExpected = assertExpectedRevision(expectedRevision);
-  if (typeof required !== "boolean") throw buildError("Kebutuhan Corner wajib dipilih (diperlukan / tidak diperlukan)", 400, "BUILD_CORNER_REQUIRED_CHOICE");
-  const cleanReason = text(reason, "Alasan", { min: 3, max: 300 });
-  if (required === false && !cleanReason) throw buildError("Corner tidak diperlukan wajib beralasan (minimal 3 karakter) — mis. tidak ada pekerjaan kain/jahit", 400, "BUILD_CORNER_REASON_REQUIRED");
+  const choice = normalizeCornerInput({ required, reason });
   const actor = actorId || "SYSTEM";
-  const requestHash = hash({ commandType: "CONFIRM_BUILD_CORNER", runId, required, reason: required ? null : cleanReason, expectedRevision: revisionExpected });
+  const requestHash = hash({ commandType: "CONFIRM_BUILD_CORNER", runId, required: choice.required, reason: choice.reason, expectedRevision: revisionExpected });
   return prisma.$transaction(async (tx) => {
     const replay = await findReplay(tx, actor, idempotencyKey, requestHash);
     if (replay) return replay;
-    const { run, ctx } = await loadBuildRun(tx, { runId, expectedRevision: revisionExpected });
-    // Jalur Corner ditentukan sebelum gerbang QC dilewati: setelah unit berada di/ melewati tahap Jahit Corner atau Finish, keputusan dikunci.
-    const lateStages = await tx.routingStage.findMany({ where: { code: { in: ["corner_sewing", "finished"] } }, select: { id: true } });
-    const lateIds = lateStages.map((st) => st.id);
-    const unit = await tx.unit.findUniqueOrThrow({ where: { id: run.unitId }, select: { currentStageId: true } });
-    const touched = lateIds.length ? await tx.unitStageLog.count({ where: { unitId: run.unitId, stageId: { in: lateIds }, createdAt: { gte: run.createdAt } } }) : 0;
-    if (run.currentPhase === "HANDOFF" || (unit.currentStageId && lateIds.includes(unit.currentStageId)) || touched > 0) {
-      throw buildError("Kebutuhan Corner tidak dapat diubah lagi: unit sudah melewati gerbang QC / masuk tahap setelahnya", 409, "BUILD_CORNER_LOCKED");
-    }
+    return confirmBuildCornerInTx(tx, { runId, choice, actorId, idempotencyKey, requestHash, expectedRevision: revisionExpected });
+  });
+}
+
+// Inti perintah Corner di dalam transaksi pemanggil (Unit 360: command sendiri; modal Jadwalkan: dalam transaksi onboarding+jadwal — atomik). expectedRevision=null = Run baru dibuka transaksi yang sama.
+export async function confirmBuildCornerInTx(tx, { runId, choice, actorId, idempotencyKey, requestHash = null, expectedRevision = null }) {
+  const actor = actorId || "SYSTEM";
+  const required = choice.required; const cleanReason = choice.reason;
+  const hashValue = requestHash || hash({ commandType: "CONFIRM_BUILD_CORNER", runId, required, reason: cleanReason, expectedRevision });
+  {
+    const { run, ctx } = await loadBuildRun(tx, { runId, expectedRevision });
+    // Jalur Corner ditentukan sebelum gerbang QC dilewati: setelah unit melewati gerbang / masuk tahap Jahit Corner atau Finish, keputusan dikunci (satu sumber: cornerDecisionLocked).
+    if (await cornerDecisionLocked(tx, run)) throw buildError("Kebutuhan Corner tidak dapat diubah lagi: unit sudah melewati gerbang QC / masuk tahap setelahnya", 409, "BUILD_CORNER_LOCKED");
     const same = ctx.buildSetting && ctx.buildSetting.cornerRequired === required && (required || (ctx.buildSetting.cornerReason || null) === cleanReason);
-    if (same) return { replayed: false, runId, revision: run.revision, changed: false, corner: { required, reason: required ? null : cleanReason } };
-    const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "CONFIRM_BUILD_CORNER", aggregateId: runId, requestHash, expectedRevision: revisionExpected });
+    if (same) return { replayed: false, runId, revision: run.revision, changed: false, corner: { required, reason: cleanReason } };
+    const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "CONFIRM_BUILD_CORNER", aggregateId: runId, requestHash: hashValue, expectedRevision });
     const now = new Date();
     await upsertSetting(tx, run, { cornerRequired: required, cornerReason: required ? null : cleanReason }, actorId);
     const revision = await bumpRunRevisionInTx(tx, run);
@@ -142,7 +152,7 @@ export async function confirmBuildCorner(prisma, { runId, required, reason = nul
     const response = { runId, revision, changed: true, corner: { required, reason: required ? null : cleanReason } };
     await finishCommand(tx, command, revision, response);
     return { replayed: false, ...response };
-  });
+  }
 }
 
 // ---------------------------------------------------------------------------

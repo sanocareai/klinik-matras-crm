@@ -77,6 +77,7 @@ export function viewOfOnboardCard(item) {
     unit: { id: c.unit.id, unitCode: c.unit.unitCode, merk: c.unit.merk ?? null, ukuran: c.unit.ukuran ?? null, photoUrl: c.unit.photoUrl ?? null },
     customer: { name: c.customer?.name ?? null, orderNumber: c.customer?.orderNumber ?? null, salesServices: c.customer?.salesServices || [] },
     priority: c.priority, unitStatus: c.unitStatus, orderStatus: c.orderStatus, presence: c.presence, bucket: null, next: null, progress: null,
+    build: item.rencana?.build ?? null, // jalur Pengerjaan Pesanan: modal Jadwalkan menanyakan "Corner diperlukan?" (null = bukan jalur ini)
   };
 }
 
@@ -140,4 +141,16 @@ export function humanizeRequest(text) {
       .map(([k, v]) => `${REQUEST_KEYS[k] || k}: ${v}`);
     return parts.length ? parts.join(" · ") : text;
   } catch { return text; }
+}
+
+// "Corner diperlukan?" di modal Jadwalkan (jalur Pengerjaan Pesanan) — kontrak SAMA dengan Unit 360: pilihan wajib, alasan >= 3 karakter bila tidak diperlukan.
+// Hanya untuk onboarding unit (belum ada Run/rencana) yang membawa `build`; selain itu tidak ada field Corner (null).
+export const CORNER_REASON_MIN = 3;
+export const needsCornerChoice = (target) => !!target?.build && !!target?.onboardUnitId && !target?.plan;
+export function cornerBodyOf(choice, reason) {
+  if (choice !== "YES" && choice !== "NO") return { error: "Pilih: Corner diperlukan atau tidak diperlukan." };
+  if (choice === "YES") return { body: { cornerRequired: true } };
+  const r = String(reason || "").trim();
+  if (r.length < CORNER_REASON_MIN) return { error: "Corner tidak diperlukan wajib beralasan (minimal 3 karakter)." };
+  return { body: { cornerRequired: false, cornerReason: r } };
 }

@@ -47,7 +47,8 @@ export default function BuildPlanPanel({ d, canPlan = false, onChanged }) {
 
       <div className="space-y-1.5" data-testid="build-corner-block">
         <p className="m-0 text-[12.5px] font-semibold text-ink2">Corner (kain/jahit): {corner.confirmed ? (corner.required ? "diperlukan" : `tidak diperlukan — ${corner.reason}`) : <span className="text-orange" data-testid="corner-unconfirmed">belum dikonfirmasi — QC menunggu</span>}</p>
-        {canPlan ? (
+        {corner.locked ? <p className="m-0 text-[12px] text-ink3" data-testid="corner-locked">Keputusan Corner terkunci — pekerjaan sudah melewati gerbang penentuannya.</p> : null}
+        {canPlan && !corner.locked ? (
           <div className="space-y-1.5">
             <div role="radiogroup" aria-label="Kebutuhan Corner" className="flex gap-3 text-[13px] text-ink">
               <label className="flex items-center gap-1.5"><input type="radio" name="corner" checked={cornerChoice === "YES"} onChange={() => setCornerChoice("YES")} data-testid="corner-yes" /> Diperlukan</label>

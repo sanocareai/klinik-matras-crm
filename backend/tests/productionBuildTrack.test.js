@@ -80,7 +80,7 @@ test("derivasi: unit build langsung bisa DIKERJAKAN (START tahap 6) tanpa bahan,
 
 test("derivasi KASUR: setelah mulai -> bukti tahap 6 -> uji tekstur (8) -> QC -> Kirim ke Corner -> Corner -> Finish (Corner dikonfirmasi diperlukan)", () => {
   const op = { stageCode: BUILD_STAGE_CODE, stagePhase: "MODULE", stageSequence: 10, status: "ACTIVE", isLastPreQc: true };
-  const k = (over = {}) => base({ productFlow: "KASUR", cornerRequired: true, ...over });
+  const k = (over = {}) => base({ productFlow: "KASUR", cornerRequired: true, racikanRecorded: true, ...over });
   assert.deepEqual(deriveNextAction(k({ activeOp: op })), { actor: "TABLE", stepNo: 6, action: "EVIDENCE", rework: false, lastVerdict: null });
   const ev6 = { stepNo: 6, order: 1, payload: {} };
   assert.deepEqual(deriveNextAction(k({ activeOp: op, opEvidence: [ev6] })), { actor: "TABLE", stepNo: 8, action: "TEST" });
@@ -160,14 +160,23 @@ test("derivasi NON-kasur: tanpa uji tekstur — satu kiriman bukti menutup Penge
   assert.equal(deriveNextAction(base({ productFlow: "NON_KASUR", cornerRequired: true, adaptation: true, target: { code: "fit_test", phase: "FINISH", requiresQc: true } })).qcNotPerformed, true, "adaptasi: QC boleh tidak dilakukan");
 });
 
-test("jenis produk belum jelas (UNCONFIRMED): pengerjaan boleh mulai, tetapi bukti/uji khusus kasur DITAHAN dengan kebutuhan konfirmasi; tanpa fallback ke kasur", () => {
+test("jenis produk belum jelas (UNCONFIRMED): catatan/dokumentasi UMUM tetap bisa disimpan; racikan + uji khusus kasur (8, QC) ditahan; tanpa fallback ke kasur", () => {
   const op = { stageCode: BUILD_STAGE_CODE, stagePhase: "MODULE", stageSequence: 10, status: "ACTIVE", isLastPreQc: true };
-  assert.deepEqual(deriveNextAction(base({ productFlow: "UNCONFIRMED", target: { code: BUILD_STAGE_CODE, phase: "MODULE", sequence: 10 } })), { actor: "TABLE", stepNo: 6, action: "START" });
+  assert.deepEqual(deriveNextAction(base({ productFlow: "UNCONFIRMED", target: { code: BUILD_STAGE_CODE, phase: "MODULE", sequence: 10 } })), { actor: "TABLE", stepNo: 6, action: "START" }, "pekerjaan fisik boleh dimulai");
   const w = deriveNextAction(base({ productFlow: "UNCONFIRMED", productProblem: "Jenis kasur belum diisi", activeOp: op }));
-  assert.deepEqual([w.action, w.wait, w.actor, w.stepNo, w.problem], ["WAIT", "PRODUCT_TYPE_UNCONFIRMED", "SALES", 6, "Jenis kasur belum diisi"]);
+  assert.deepEqual([w.action, w.general, w.hold, w.actor, w.stepNo, w.problem], ["EVIDENCE", true, "PRODUCT_TYPE_UNCONFIRMED", "TABLE", 6, "Jenis kasur belum diisi"], "catatan umum boleh; alasan penahanan dijelaskan");
+  // setelah catatan umum tersimpan: tetap EVIDENCE umum (tidak pernah TEST/COMPLETE selama belum jelas)
+  assert.equal(deriveNextAction(base({ productFlow: "UNCONFIRMED", activeOp: op, opEvidence: [{ stepNo: 6, order: 1, payload: { general: true } }] })).action, "EVIDENCE");
   const ctx = { issuedQtyByMaterial: new Map(), buildTrack: true, productFlow: "UNCONFIRMED" };
-  assert.throws(() => validateStepEvidence(6, { media: [IMG], payload: { note: "Pengerjaan", racikan: { fondasi: "Pocket spring" } } }, ctx), (e) => e.statusCode === 409 && e.code === "STEP_WAITING_PRODUCT_TYPE_UNCONFIRMED");
+  const saved = validateStepEvidence(6, { media: [IMG], payload: { note: "Rangka sudah dirakit", racikan: { fondasi: "Pocket spring" } } }, ctx);
+  assert.equal(saved.payload.general, true); assert.equal("racikan" in saved.payload, false, "racikan khusus jenis produk TIDAK disimpan");
+  assert.throws(() => validateStepEvidence(6, { media: [], payload: { note: "Rangka sudah dirakit" } }, ctx), (e) => e.code === "STEP_EVIDENCE_INVALID", "dokumentasi (foto/video) tetap wajib");
+  assert.throws(() => validateStepEvidence(6, { media: [IMG], payload: { note: "" } }, ctx), (e) => e.code === "STEP_EVIDENCE_INVALID", "penjelasan tetap wajib");
   assert.deepEqual(buildApplicableSteps("UNCONFIRMED"), [6, 8, 9, 10, 11, 12], "tahap 8 tetap tercatat berlaku-belum-jelas (ditahan), bukan dihapus");
+  // setelah Sales memperbaiki ke KASUR: bukti umum TIDAK cukup — racikan tetap wajib sebelum uji tekstur
+  const afterFix = deriveNextAction(base({ productFlow: "KASUR", cornerRequired: true, racikanRecorded: false, activeOp: op, opEvidence: [{ stepNo: 6, order: 1, payload: { general: true } }] }));
+  assert.deepEqual([afterFix.action, afterFix.stepNo], ["EVIDENCE", 6], "racikan wajib dulu");
+  assert.deepEqual(deriveNextAction(base({ productFlow: "KASUR", cornerRequired: true, racikanRecorded: true, activeOp: op, opEvidence: [{ stepNo: 6, order: 1, payload: { racikan: { fondasi: "PS" } } }] })), { actor: "TABLE", stepNo: 8, action: "TEST" });
 });
 
 test("PIC Bahan per pekerjaan: racikan dicatat PIC Bahan lebih dulu (PIC Meja menunggu); pemakaian bahan tidak ganda di bukti PIC Meja", () => {

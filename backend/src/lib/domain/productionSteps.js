@@ -174,9 +174,6 @@ const label = `Tahap ${stepNo} (${stepLabelFor(stepNo, step.label, ctx.buildTrac
     case 6: {
       // Jalur pengerjaan (pesanan BARU/custom): foto ATAU video hasil pengerjaan (video tidak wajib — itu khas uji fondasi restorasi); jalur restorasi tetap wajib video.
       requireMedia(media, { label, video: !ctx.buildTrack });
-      if (ctx.buildTrack && ctx.productFlow === PRODUCT_FLOW.UNCONFIRMED) {
-        throw stepError("Jenis produk belum jelas pada order — konfirmasi jenis produk dulu (Sales memperbaiki order) sebelum bukti pengerjaan dikirim", 409, PRODUCT_UNCONFIRMED_WAIT_CODE);
-      }
       // PIC Bahan per pekerjaan (jalur pengerjaan): pemakaian & racikan dicatat PIC Bahan lewat command resminya — satu sumber, tidak ada hitung ganda di bukti PIC Meja.
       const p6Materials = Array.isArray(p.materials) ? p.materials : [];
       if (ctx.buildTrack && ctx.materialsByPic && p6Materials.length) {
@@ -184,6 +181,9 @@ const label = `Tahap ${stepNo} (${stepLabelFor(stepNo, step.label, ctx.buildTrac
       }
       // Bahan dari Gudang BOLEH kosong pada jalur pengerjaan (pemakaian dicatat sesuai pekerjaan nyata); jalur restorasi tetap wajib.
       const base = { materials: normalizeMaterialLines(p.materials, { ...ctx, required: !ctx.buildTrack, label }), note: text(p.note, 3, ctx.buildTrack ? "Penjelasan pengerjaan" : "Penjelasan isi fondasi") };
+      // Jenis produk belum jelas (UNCONFIRMED): catatan + dokumentasi UMUM pengerjaan tetap boleh disimpan (foto/video + penjelasan). Yang menunggu koreksi Sales HANYA racikan dan pengujian khusus jenis
+      // produk — racikan yang terkirim diabaikan (tidak disimpan); tahap tidak ditutup; tanda `general` membedakannya dari bukti penutup.
+      if (ctx.buildTrack && ctx.productFlow === PRODUCT_FLOW.UNCONFIRMED) return { media, payload: { ...base, general: true } };
       // Kasur custom: racikan fondasi/lapisan (ditentukan PIC Meja bersama PIC QC) wajib tercatat — dari bukti ini ATAU dari catatan PIC Bahan. Non-kasur (divan/sofa) tidak memakai racikan kasur.
       if (ctx.buildTrack && ctx.productFlow === PRODUCT_FLOW.KASUR) {
         const r = p.racikan && typeof p.racikan === "object" && !Array.isArray(p.racikan) ? p.racikan : {};
@@ -325,7 +325,8 @@ export function deriveNextAction(state) {
     }
     if (state.buildTrack && op.stagePhase === "MODULE") {
       // Jenis produk kanonis belum jelas: bukti pengerjaan/uji khusus kasur DITAHAN (pekerjaan fisik boleh berjalan) sampai Sales mengonfirmasi jenis pada order.
-      if (state.productFlow === PRODUCT_FLOW.UNCONFIRMED) return wait("SALES", PRODUCT_UNCONFIRMED_WAIT, { stepNo, problem: state.productProblem ?? null });
+      // Catatan/dokumentasi umum tetap bisa disimpan (EVIDENCE general); tahap TIDAK ditutup dan uji khusus kasur (8)/QC tidak muncul sebelum jenis jelas. `hold` memberi tahu UI alasan penahanan.
+      if (state.productFlow === PRODUCT_FLOW.UNCONFIRMED) return { actor, stepNo, action: "EVIDENCE", general: true, hold: PRODUCT_UNCONFIRMED_WAIT, problem: state.productProblem ?? null };
       // Produk NON-kasur (divan/sofa): tanpa uji tekstur PIC (tahap 8) — satu kiriman bukti menutup tahap lalu menunggu pemeriksaan hasil PIC QC.
       if (state.productFlow === PRODUCT_FLOW.NON_KASUR) return { actor, stepNo, action: "COMPLETE" };
       // Kasur dengan PIC Bahan: racikan dicatat PIC Bahan lebih dulu (PIC Meja menutup pengerjaan setelahnya).
@@ -337,7 +338,9 @@ export function deriveNextAction(state) {
       const moduleEvidence = (state.opEvidence || []).filter((e) => e.stepNo === stepNo);
       const lastModule = moduleEvidence[moduleEvidence.length - 1];
       const reworkPending = !!verdict && verdict.payload?.verdict !== "PAS" && (!lastModule || verdict.order > lastModule.order);
-      if (!lastModule || reworkPending) return { actor, stepNo, action: "EVIDENCE", rework: reworkPending, lastVerdict: verdict?.payload?.verdict ?? null };
+      // Jalur pengerjaan kasur: racikan harus tercatat (bukti ber-racikan atau catatan PIC Bahan) sebelum uji tekstur — mis. bukti umum yang disimpan saat jenis produk belum jelas tidak cukup.
+      const racikanMissing = !!state.buildTrack && !state.racikanRecorded;
+      if (!lastModule || reworkPending || racikanMissing) return { actor, stepNo, action: "EVIDENCE", rework: reworkPending, lastVerdict: verdict?.payload?.verdict ?? null };
       return { actor, stepNo: 8, action: "TEST" };
     }
     // P9D: selain layanan/jalur modul (P8, lama), tahap 5 juga menunggu Diagnosis Produksi selesai — bahan

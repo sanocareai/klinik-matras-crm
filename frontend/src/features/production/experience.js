@@ -111,7 +111,7 @@ export function actionLabel(next, { stageLabel, track } = {}) {
     case "START": return `Mulai ${stageLabel || step?.label || "Tahap"}`;
     case "RESUME": return "Lanjutkan Pekerjaan";
     case "COMPLETE": return next.stepNo === 5 && !next.serviceMissing && next.continueOnly ? "Lanjutkan" : `Kirim ${step?.label || "Tahap"}`;
-    case "EVIDENCE": return next.rework ? `Ulangi ${step?.label || "Lapisan"} (Rework)` : `Kirim Bukti ${step?.label || ""}`.trim();
+    case "EVIDENCE": return next.general ? "Kirim Catatan & Dokumentasi Umum" : next.rework ? `Ulangi ${step?.label || "Lapisan"} (Rework)` : `Kirim Bukti ${step?.label || ""}`.trim();
     case "TEST": return "Kirim Uji Tekstur Akhir";
     case "HANDOFF": return "Kirim ke Corner";
     case "START_CORNER": return "Mulai Jahit";
@@ -133,7 +133,7 @@ export function waitCopy(next) {
     // kartu Planner diklik (server menegakkan ulang, bukan cuma UI).
     case "PENDING_ARRIVAL": return { title: "Menunggu konfirmasi kedatangan", text: "Unit sudah masuk produksi (pickup berhasil) tapi belum dikonfirmasi tiba di workshop. Konfirmasi kedatangan dulu di Rencana Produksi sebelum tahap ini bisa dimulai." };
     case "AWAITING_QC": return { title: "Menunggu QC", text: "Petugas QC akan menguji unit ini. Anda bisa lanjut ke unit lain." };
-    case "PRODUCT_TYPE_UNCONFIRMED": return { title: "Jenis produk perlu dikonfirmasi", text: `${next.problem || "Jenis produk pada order belum jelas."} Minta Sales memperbaiki jenis produk pada order — produksi tidak mengubah order. Racikan dan pengujian khusus kasur ditahan sampai jelas.` };
+    case "PRODUCT_TYPE_UNCONFIRMED": return { title: "Jenis produk perlu dikonfirmasi", text: `${next.problem || "Jenis produk pada order belum jelas."} Minta Sales memperbaiki jenis produk pada order — produksi tidak mengubah order. Catatan dan dokumentasi umum tetap bisa disimpan; racikan dan pengujian khusus kasur ditahan sampai jelas.` };
     case "CORNER_NOT_CONFIRMED": return { title: "Kebutuhan Corner belum dikonfirmasi", text: "Production Lead perlu mengonfirmasi apakah pekerjaan ini butuh Corner (kain/jahit) di Unit 360 › Proses. QC dan tahap berikutnya menunggu." };
     case "RACIKAN_NOT_RECORDED": return { title: "Menunggu PIC Bahan", text: "Racikan fondasi/lapisan belum dicatat PIC Bahan. Pengerjaan boleh berjalan; bukti dikirim setelah racikan tercatat." };
     case "MATERIAL_NOT_READY": return { title: "Bahan belum turun", text: "Gudang belum menyerahkan bahan untuk tahap berikutnya. Tekan “Tunda Pekerjaan” (Menunggu bahan) bila bahan dibutuhkan sekarang." };
@@ -200,7 +200,7 @@ export function validateStepForm(stepNo, form, { mediaItems = [], track, flow = 
     case 5: return (f.diagnosis || "").trim().length >= 10 ? null : "Tulis penjelasan diagnosa (minimal 10 karakter).";
     case 6:
       if (track === BUILD_TRACK) { // bahan opsional pada jalur pengerjaan; kasur custom wajib mencatat racikan fondasi dan/atau lapisan (kecuali dicatat PIC Bahan)
-        if (flow === "UNCONFIRMED") return "Jenis produk belum jelas — minta Sales mengonfirmasi jenis produk pada order.";
+        // Jenis produk belum jelas: catatan + dokumentasi UMUM tetap boleh disimpan (tanpa racikan); hanya racikan/uji khusus jenis produk yang menunggu Sales.
         if (flow === "KASUR" && !byPic && (f.racikanFondasi || "").trim().length < 3 && (f.racikanLapisan || "").trim().length < 3) return "Isi racikan fondasi dan/atau lapisan.";
         return (f.note || "").trim().length >= 3 ? null : "Jelaskan pengerjaan pesanan.";
       }

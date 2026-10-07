@@ -131,7 +131,8 @@ export async function loadStepContext(client, run) {
       client.productionBuildMaterialRecord.findFirst({ where: { runId: run.id }, orderBy: { version: "desc" } }),
     ])
     : [null, null];
-  const buildView = buildTrack ? await toBuildView(client, buildSetting, buildRecord) : null;
+  const cornerLocked = buildTrack ? await cornerDecisionLocked(client, run) : false;
+  const buildView = buildTrack ? await toBuildView(client, buildSetting, buildRecord, { cornerLocked }) : null;
   const lastStep6 = evidence.filter((e) => e.stepNo === 6 && !isSkippedEvidence(e)).at(-1);
   const hasRacikan = (r) => !!r && ((String(r.fondasi || "").trim().length >= 3) || (String(r.lapisan || "").trim().length >= 3));
   const racikanRecorded = buildTrack && (evidence.some((e) => e.stepNo === 6 && !isSkippedEvidence(e) && hasRacikan(e.payload?.racikan)) || hasRacikan(buildRecord?.racikan));
@@ -176,14 +177,24 @@ export function applicableStepsFor(split, productFlow = "KASUR") {
   return [...steps].sort((a, b) => a - b);
 }
 
+// Keputusan Corner terkunci setelah unit melewati gerbang QC / masuk tahap Jahit Corner atau Finish (jalur sesudah gerbang sudah ditentukan). Satu sumber: command Corner + tampilan.
+let LATE_STAGE_IDS = null;
+export async function cornerDecisionLocked(client, run) {
+  if (run.currentPhase === "HANDOFF" || ["COMPLETED", "CANCELLED"].includes(run.status)) return true;
+  LATE_STAGE_IDS ||= (await client.routingStage.findMany({ where: { code: { in: ["corner_sewing", "finished"] } }, select: { id: true } })).map((st) => st.id);
+  const currentStageId = run.unit?.currentStageId ?? (await client.unit.findUnique({ where: { id: run.unitId }, select: { currentStageId: true } }))?.currentStageId ?? null;
+  if (currentStageId && LATE_STAGE_IDS.includes(currentStageId)) return true;
+  return LATE_STAGE_IDS.length ? (await client.unitStageLog.count({ where: { unitId: run.unitId, stageId: { in: LATE_STAGE_IDS }, createdAt: { gte: run.createdAt } } })) > 0 : false;
+}
+
 // Tampilan pengaturan Run + catatan racikan/pemakaian terbaru (jalur pengerjaan) — nama bahan dilengkapi sekali jalan.
-async function toBuildView(client, setting, record) {
+async function toBuildView(client, setting, record, { cornerLocked = false } = {}) {
   const lines = Array.isArray(record?.materials) ? record.materials : [];
   const mats = lines.length ? await client.material.findMany({ where: { id: { in: lines.map((l) => l.materialId) } }, select: { id: true, code: true, name: true, unit: true } }) : [];
   const byId = new Map(mats.map((m) => [m.id, m]));
   return {
     materialOperator: setting?.materialOperator ? { id: setting.materialOperator.id, userId: setting.materialOperator.userId, name: setting.materialOperator.user?.name ?? null, active: setting.materialOperator.active } : null,
-    corner: { required: setting?.cornerRequired ?? null, reason: setting?.cornerReason ?? null, confirmed: setting?.cornerRequired != null },
+    corner: { required: setting?.cornerRequired ?? null, reason: setting?.cornerReason ?? null, confirmed: setting?.cornerRequired != null, locked: cornerLocked },
     record: record ? {
       version: record.version, racikan: record.racikan ?? null, note: record.note ?? null, at: record.createdAt, by: record.actorId ?? null,
       materials: lines.map((l) => ({ materialId: l.materialId, qty: Number(l.qty), code: byId.get(l.materialId)?.code ?? null, name: byId.get(l.materialId)?.name ?? null, uom: byId.get(l.materialId)?.unit ?? null })),

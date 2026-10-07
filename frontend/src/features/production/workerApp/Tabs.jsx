@@ -7,9 +7,27 @@ import { DemoBarSlot } from "@/features/production/demo/DemoControls.jsx";
 import { friendlyError } from "@/features/production/experience.js";
 import { emptyFilters, reportQuery } from "@/features/production/reporting.js";
 import { lastActiveTabPath } from "@/lib/openTabs.js";
+import { rolesOf } from "@/lib/roles.js";
+import { rememberWorkerMode } from "@/lib/landing.js";
 import { makeRange, toApiParams } from "@/lib/dateRange.js";
 import JobCard, { JobPhoto } from "./JobCard.jsx";
 import { allowedModes, initialsOf, materialRows, picSummary, safeText, splitJobs } from "./workerAppModel.js";
+
+// Pilihan mode untuk pengguna dengan beberapa tugas (Meja / Corner / PIC Bahan / Dokumentasi): hanya mode yang diizinkan perannya (server tetap penegak).
+// Satu mode saja -> tidak ditampilkan. Pilihan terakhir diingat per perangkat (landing PIC Meja memakainya, lib/landing.js).
+function ModePicker({ user, lane }) {
+  const modes = allowedModes(rolesOf(user));
+  if (modes.length < 2) return null;
+  return (
+    <nav aria-label="Mode aplikasi" data-testid="mode-picker" className="mb-4 flex flex-wrap gap-2">
+      {modes.map((m) => {
+        const current = m.lane ? m.lane === lane : false;
+        return <Link key={m.key} to={m.to} data-testid={`mode-pick-${m.key}`} aria-current={current ? "page" : undefined} onClick={() => rememberWorkerMode(m.key)}
+          className={`inline-flex min-h-[44px] items-center rounded-full px-4 text-[13.5px] font-bold no-underline ${current ? "bg-accent text-white" : "bg-inset text-ink2"}`}>{m.label}</Link>;
+      })}
+    </nav>
+  );
+}
 
 // ---------------------------------------------------------------- Kerja ("Pekerjaan Saya")
 export function KerjaTab({ jobs, lane, loading, error, readerMode, operator, v1Status, onRetryV1, onOpen, onReload, user }) {
@@ -30,6 +48,7 @@ export function KerjaTab({ jobs, lane, loading, error, readerMode, operator, v1S
         </div>
       </div>
 
+      <ModePicker user={user} lane={lane} />
       {jobs.length > 0 && (
         <p className="m-0 mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-[13px] font-semibold text-ink2" data-testid="jobs-summary">
           <span>{jobs.length} pekerjaan</span>

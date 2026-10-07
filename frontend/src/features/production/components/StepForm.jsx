@@ -187,7 +187,7 @@ export function StepForm({ stepNo, form, setForm, card, next }) {
               <MaterialLines issued={issued} value={form.materials} onChange={(materials) => set({ materials })} emptyText="Belum ada bahan yang diserahkan Gudang untuk unit ini." />
             </>
           )}
-          {flow6 === "UNCONFIRMED" && <p data-testid="unconfirmed-note" className="m-0 rounded-btn bg-orangebg px-3 py-2 text-[13px] text-orange">Jenis produk belum jelas pada order — racikan dan pengujian khusus kasur ditahan sampai Sales mengonfirmasi.</p>}
+          {flow6 === "UNCONFIRMED" && <p data-testid="unconfirmed-note" className="m-0 rounded-btn bg-orangebg px-3 py-2 text-[13px] text-orange">Jenis produk belum jelas pada order — catatan dan dokumentasi umum tetap bisa disimpan. Racikan dan pengujian khusus kasur menunggu Sales mengonfirmasi jenis produk.</p>}
           {!byPic && flow6 === "KASUR" && (
             <div className="space-y-2" data-testid="racikan-fields">
               <p className={labelCls}>Racikan kasur (fondasi &amp; lapisan)</p>

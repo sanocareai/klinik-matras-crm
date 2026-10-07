@@ -95,13 +95,17 @@ test("lembar bukti & detail pekerja memakai label per jalur (card.track)", () =>
   assert.match(src("pages", "bengkel", "ProductionQc.jsx"), /run\.qcProfile === "GENERIC" \? "Pemeriksaan Hasil"/, "gerbang QC divan/sofa tidak bernama Uji Berat Badan");
 });
 
-test("jenis belum jelas (UNCONFIRMED): tanpa fallback kasur — bukti tahap 6 ditolak di UI, kebutuhan konfirmasi dijelaskan", () => {
+test("jenis belum jelas (UNCONFIRMED): tanpa fallback kasur — catatan/dokumentasi UMUM boleh dikirim (tanpa racikan), kebutuhan konfirmasi dijelaskan", () => {
   const IMGM = { status: "done", kind: "image", url: "/media/x.jpg" };
   assert.equal(isUnconfirmed({ track: "BUILD", product: { flow: "UNCONFIRMED" } }), true);
   assert.equal(isUnconfirmed({ track: "BUILD" }), true, "klasifikasi belum ada = belum jelas");
-  assert.match(validateStepForm(6, { note: "Selesai", racikanFondasi: "Pocket spring" }, { mediaItems: [IMGM], track: "BUILD", flow: "UNCONFIRMED" }), /Jenis produk belum jelas/);
+  assert.equal(validateStepForm(6, { note: "Rangka dirakit" }, { mediaItems: [IMGM], track: "BUILD", flow: "UNCONFIRMED" }), null, "catatan umum + foto cukup");
+  assert.match(validateStepForm(6, { note: "" }, { mediaItems: [IMGM], track: "BUILD", flow: "UNCONFIRMED" }), /Jelaskan pengerjaan/, "penjelasan tetap wajib");
+  assert.match(validateStepForm(6, { note: "Rangka dirakit" }, { mediaItems: [], track: "BUILD", flow: "UNCONFIRMED" }), /minimal 1 foto/, "dokumentasi tetap wajib");
+  assert.deepEqual(buildStepPayload(6, { note: "Rangka dirakit", racikanFondasi: "Pocket spring" }, { track: "BUILD", flow: "UNCONFIRMED" }), { materials: [], note: "Rangka dirakit" }, "racikan khusus jenis produk TIDAK dikirim");
+  assert.equal(actionLabel({ action: "EVIDENCE", stepNo: 6, general: true, hold: "PRODUCT_TYPE_UNCONFIRMED" }, { track: "BUILD" }), "Kirim Catatan & Dokumentasi Umum");
   const w = waitCopy({ wait: "PRODUCT_TYPE_UNCONFIRMED", problem: "Lini produk (KASUR) tidak sesuai jenis produk (SOFA_L)" });
-  assert.match(w.title, /perlu dikonfirmasi/); assert.match(w.text, /tidak sesuai jenis produk/); assert.match(w.text, /tidak mengubah order/);
+  assert.match(w.title, /perlu dikonfirmasi/); assert.match(w.text, /tidak sesuai jenis produk/); assert.match(w.text, /tidak mengubah order/); assert.match(w.text, /dokumentasi umum tetap bisa disimpan/);
   assert.match(waitCopy({ wait: "CORNER_NOT_CONFIRMED" }).title, /Corner belum dikonfirmasi/);
   assert.match(waitCopy({ wait: "RACIKAN_NOT_RECORDED" }).title, /PIC Bahan/);
 });

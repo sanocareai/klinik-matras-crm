@@ -479,12 +479,20 @@ test("jenis produk belum jelas = UNCONFIRMED (tanpa fallback kasur): kebutuhan k
     assert.ok(c.warnings.some((x) => x.code === "JENIS_PRODUK" && /Jenis produk/.test(x.text)), "kebutuhan konfirmasi ditampilkan sebagai peringatan");
     assert.deepEqual([c.next.stepNo, c.next.action], [6, "START"], "pekerjaan fisik boleh dimulai");
     ok(await step(w, w.nadya, run.id, 6, {}));
+    // catatan + dokumentasi UMUM tetap boleh disimpan; hanya racikan/uji khusus jenis produk yang menunggu koreksi Sales
     const waiting = await card(w, run.id);
-    assert.deepEqual([waiting.next.action, waiting.next.wait, waiting.next.actor], ["WAIT", "PRODUCT_TYPE_UNCONFIRMED", "SALES"]);
+    assert.deepEqual([waiting.next.action, waiting.next.general, waiting.next.hold, waiting.next.actor], ["EVIDENCE", true, "PRODUCT_TYPE_UNCONFIRMED", "TABLE"]);
     assert.match(waiting.next.problem, re);
-    const blocked = await step(w, w.nadya, run.id, 6, { payload: { note: "Pengerjaan selesai", racikan: RACIKAN }, media: await media(w.nadya, run.id, "i") });
-    assert.equal(blocked.status, 409); assert.equal(blocked.body.code, "STEP_WAITING_PRODUCT_TYPE_UNCONFIRMED");
-    assert.equal(await testPrisma.productionStepEvidence.count({ where: { runId: run.id } }), 0, "tidak ada bukti yang tersimpan");
+    const saved = await step(w, w.nadya, run.id, 6, { payload: { note: "Rangka dirakit, foto proses", racikan: RACIKAN }, media: await media(w.nadya, run.id, "i") });
+    assert.equal(saved.status, 200, JSON.stringify(saved.body));
+    const rows = await testPrisma.productionStepEvidence.findMany({ where: { runId: run.id } });
+    assert.equal(rows.length, 1, "catatan umum tersimpan");
+    assert.equal(rows[0].payload.general, true); assert.equal("racikan" in rows[0].payload, false, "racikan khusus jenis produk TIDAK disimpan");
+    const after = await card(w, run.id);
+    assert.deepEqual([after.next.action, after.next.general], ["EVIDENCE", true], "tahap tidak ditutup; tidak ada uji tekstur/QC sebelum jenis jelas");
+    const test8 = await step(w, w.nadya, run.id, 8, { payload: { verdict: "PAS", testerWeightKg: 70 }, media: await media(w.nadya, run.id, "v") });
+    assert.ok(test8.status >= 400, "uji tekstur kasur ditahan");
+    assert.equal(await testPrisma.productionStepEvidence.count({ where: { runId: run.id } }), 1, "uji khusus kasur tidak tersimpan");
     const ov = ok(await w.lead.api.get(`${V2}/units/${o.unit.id}/overview`));
     assert.equal(ov.production.product.flow, "UNCONFIRMED"); assert.match(ov.production.product.problem, re);
   }
@@ -496,8 +504,9 @@ test("jenis produk belum jelas = UNCONFIRMED (tanpa fallback kasur): kebutuhan k
   const runB = await testPrisma.productionRun.findFirstOrThrow({ where: { unitId: bawaan.unit.id } });
   const fixed = await card(w, runB.id);
   assert.deepEqual([fixed.product.class, fixed.product.flow, fixed.product.problem], ["KASUR", "KASUR", null]);
-  assert.deepEqual([fixed.next.stepNo, fixed.next.action], [6, "EVIDENCE"]);
+  assert.deepEqual([fixed.next.stepNo, fixed.next.action, fixed.next.general ?? false], [6, "EVIDENCE", false], "racikan wajib (catatan umum sebelumnya tidak cukup)");
   ok(await step(w, w.nadya, runB.id, 6, { payload: { note: "Pengerjaan selesai", racikan: RACIKAN }, media: await media(w.nadya, runB.id, "i") }));
+  assert.deepEqual([(await card(w, runB.id)).next.stepNo, (await card(w, runB.id)).next.action], [8, "TEST"], "setelah racikan tercatat, uji tekstur terbuka");
 });
 
 test("QC kasur ditahan bila jenis produk menjadi tidak jelas (order diubah Sales sesudah pengerjaan); WAIVED oleh pihak berwenang tidak termasuk 'pengujian'", async () => {
@@ -663,7 +672,7 @@ test("Corner mengikuti kebutuhan yang dikonfirmasi pada rencana: belum dikonfirm
   // (a) belum dikonfirmasi -> QC ditahan; konfirmasi diperlukan -> lanjut; setelah QC dikunci
   const a = await mkOrder({ category: "BARU", productLine: "KASUR", productType: "KASUR_SPRING" });
   const ra = await scheduleOrder(w, a.unit, {}, { corner: null });
-  assert.deepEqual((await card(w, ra.run.id)).build.corner, { required: null, reason: null, confirmed: false });
+  assert.deepEqual((await card(w, ra.run.id)).build.corner, { required: null, reason: null, confirmed: false, locked: false });
   ok(await step(w, w.nadya, ra.run.id, 6, {}));
   ok(await step(w, w.nadya, ra.run.id, 6, { payload: { note: "Selesai", racikan: RACIKAN }, media: await media(w.nadya, ra.run.id, "i") }));
   ok(await step(w, w.nadya, ra.run.id, 8, { payload: { verdict: "PAS", testerWeightKg: 70 }, media: await media(w.nadya, ra.run.id, "v") }));
@@ -694,7 +703,7 @@ test("Corner mengikuti kebutuhan yang dikonfirmasi pada rencana: belum dikonfirm
   assert.deepEqual(c.progress, { done: 0, skipped: 0, remaining: 2, total: 2 }, "hanya Pengerjaan Pesanan + Finish");
   for (const n of [8, 9, 10, 11]) { const st = c.steps.find((x) => x.no === n); assert.equal(st.status, "NA", "tahap " + n); }
   assert.match(c.steps.find((x) => x.no === 9).naReason, /Corner tidak diperlukan — Divan polos, tidak ada kain\/jahit/);
-  assert.deepEqual(c.build.corner, { required: false, reason: "Divan polos, tidak ada kain/jahit", confirmed: true });
+  assert.deepEqual(c.build.corner, { required: false, reason: "Divan polos, tidak ada kain/jahit", confirmed: true, locked: false });
   ok(await step(w, w.nadya, rb.run.id, 6, {}));
   ok(await step(w, w.nadya, rb.run.id, 6, { payload: { note: "Divan polos selesai dirakit" }, media: await media(w.nadya, rb.run.id, "i") }));
   const qb = (await w.qc.api.get(`${P}/qc/runs/${rb.run.id}`)).body;
@@ -735,4 +744,66 @@ test("Corner mengikuti kebutuhan yang dikonfirmasi pada rencana: belum dikonfirm
   c = await card(w, rd.run.id);
   assert.equal(c.indicators.qc, "TIDAK_DILAKUKAN"); assert.deepEqual(c.steps.filter((x) => x.status === "NA").map((x) => x.no), [1, 2, 3, 4, 5, 7, 8, 9, 10, 11], "Corner = tidak berlaku, bukan selesai/dilewati");
   assert.equal(await testPrisma.unitCustodyHandoff.count({ where: { unitId: d.unit.id, direction: "FINISHED_GOODS" } }), 0);
+});
+
+// JPEG minimal valid (magic bytes) untuk unggahan Aplikasi Dokumentasi yang memverifikasi isi berkas.
+const jpeg = (n) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from(`doc-${n}-${Math.random()}`)]);
+async function docUpload(who, runId, count) {
+  const fd = new FormData(); fd.append("runId", runId);
+  for (let i = 0; i < count; i++) fd.append("files", new Blob([jpeg(++fileSeq)], { type: "image/jpeg" }), "d.jpg");
+  const res = await fetch(`${server.baseUrl}${V2}/documentation/upload`, { method: "POST", headers: { Authorization: `Bearer ${who.token}` }, body: fd });
+  const body = await res.json(); assert.equal(res.status, 201, JSON.stringify(body)); return body.items;
+}
+
+test("produk ambigu: dokumentasi umum (Aplikasi Dokumentasi) tetap tersimpan; order Sales tidak diubah", async () => {
+  const w = await world();
+  const doc = await createTestUser({ roles: ["PRODUCTION_DOCUMENTER"] }); doc.api = makeClient(server.baseUrl, doc.token);
+  const o = await mkOrder({ category: "BARU", productLine: "KASUR", productType: null });
+  const { run } = await scheduleOrder(w, o.unit);
+  assert.equal((await card(w, run.id)).product.flow, "UNCONFIRMED");
+  const items = await docUpload(doc, run.id, 2);
+  const res = await doc.api.post(`${V2}/documentation/runs/${run.id}/submit`, { category: "PROCESS", items: items.map((i, n) => ({ url: i.url, caption: "Proses", order: n + 1 })), note: "Dokumentasi umum" }, key("doc-unconf"));
+  assert.equal(res.status, 201, JSON.stringify(res.body));
+  assert.equal((await testPrisma.order.findUniqueOrThrow({ where: { id: o.order.id }, select: { productType: true } })).productType, null);
+});
+
+test("Corner di modal Jadwalkan: satu command atomik (POST /plans) — validasi sebelum DB, replay idempoten, dikunci setelah gerbang", async () => {
+  const w = await world();
+  const base = (unit, over = {}) => ({ unitId: unit.id, productionDate: DATE, stationCode: "TABLE_1", priority: 0, workCenterId: w.wc, operatorId: w.nadyaOp.id, ...over });
+  // 1) pilihan tidak valid ditolak SEBELUM menyentuh DB (tidak ada Run/rencana)
+  const a = await mkOrder({ category: "BARU" }); await addCohort(a.unit.id);
+  for (const [over, code] of [[{ cornerRequired: false }, "BUILD_CORNER_REASON_REQUIRED"], [{ cornerRequired: false, cornerReason: "ab" }, "BUILD_INPUT_INVALID"], [{ cornerRequired: "ya" }, "BUILD_CORNER_REQUIRED_CHOICE"]]) {
+    const res = await w.lead.api.post(`${V2}/plans`, base(a.unit, over), key("bad"));
+    assert.equal(res.status, 400, JSON.stringify(res.body)); assert.equal(res.body.code, code);
+  }
+  assert.equal(await testPrisma.productionRun.count({ where: { unitId: a.unit.id } }), 0, "tidak ada Run setengah jadi");
+  // 2) tidak diperlukan + alasan: Run + jadwal + keputusan Corner dalam SATU permintaan; replay (kunci sama) tanpa duplikasi
+  const k = key("atomic");
+  const r1 = await w.lead.api.post(`${V2}/plans`, base(a.unit, { cornerRequired: false, cornerReason: "Tidak ada pekerjaan kain/jahit" }), k);
+  assert.equal(r1.status, 201, JSON.stringify(r1.body));
+  const run = await testPrisma.productionRun.findFirstOrThrow({ where: { unitId: a.unit.id } });
+  const c = await card(w, run.id);
+  assert.deepEqual([c.build.corner.required, c.build.corner.confirmed, c.build.corner.reason], [false, true, "Tidak ada pekerjaan kain/jahit"]);
+  const r2 = await w.lead.api.post(`${V2}/plans`, base(a.unit, { cornerRequired: false, cornerReason: "Tidak ada pekerjaan kain/jahit" }), k);
+  assert.equal(r2.status, 201); assert.equal(await testPrisma.productionRun.count({ where: { unitId: a.unit.id } }), 1);
+  const reuse = await w.lead.api.post(`${V2}/plans`, base(a.unit, { cornerRequired: true }), k);
+  assert.equal(reuse.status, 409, "kunci sama + payload Corner berbeda ditolak");
+  // 3) diperlukan
+  const b = await mkOrder({ category: "BARU" }); await addCohort(b.unit.id);
+  const r3 = await w.lead.api.post(`${V2}/plans`, base(b.unit, { stationCode: "TABLE_2", cornerRequired: true }), key("yes"));
+  assert.equal(r3.status, 201, JSON.stringify(r3.body)); assert.equal(r3.body.corner?.required, true);
+  // 4) tanpa field Corner: perilaku lama (keputusan menyusul lewat Unit 360)
+  const d = await mkOrder({ category: "BARU" }); await addCohort(d.unit.id);
+  const r5 = await w.lead.api.post(`${V2}/plans`, base(d.unit, { stationCode: "TABLE_4" }), key("none"));
+  assert.equal(r5.status, 201); const runD = await testPrisma.productionRun.findFirstOrThrow({ where: { unitId: d.unit.id } });
+  assert.equal((await card(w, runD.id)).build.corner.confirmed, false);
+  // 5) terkunci setelah gerbang (kontrak Unit 360 yang sama)
+  ok(await step(w, w.nadya, run.id, 6, {}));
+  ok(await step(w, w.nadya, run.id, 6, { payload: { note: "Selesai", racikan: RACIKAN }, media: await media(w.nadya, run.id, "i") }));
+  ok(await step(w, w.nadya, run.id, 8, { payload: { verdict: "PAS", testerWeightKg: 70 }, media: await media(w.nadya, run.id, "v") }));
+  assert.equal((await card(w, run.id)).build.corner.locked, false, "sebelum gerbang QC masih bisa diubah lewat Unit 360");
+  const qcRun = (await w.qc.api.get(`${P}/qc/runs/${run.id}`)).body;
+  ok(await w.qc.api.post(`${P}/qc/runs/${run.id}/inspect`, { expectedRevision: qcRun.revision, result: "PASS", photoUrls: ["/media/job-photos/qc.jpg"], referenceWeightKg: 70, fitVerdict: "PAS" }, key("qc-lock")));
+  const locked = await confirmCorner(w, run.id, true);
+  assert.ok(locked.status >= 400, "keputusan Corner terkunci setelah gerbang QC"); assert.equal((await card(w, run.id)).build.corner.locked, true);
 });
