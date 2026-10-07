@@ -1248,6 +1248,10 @@ orderRouter.get("/", async (req, res) => {
           where: { status: { not: "FAILED" } },
           select: {
             id: true, type: true, status: true, scheduledDate: true,
+            // Penanda job KOMPLAIN/REVISI (7 Okt 2026): job pickup/kirim milik kasus komplain atau klaim
+            // garansi TIDAK boleh menggantikan jadwal order aslinya (lihat pickupJob/complaintPickupJob di bawah).
+            complaintCaseId: true,
+            revisionJobLink: { select: { id: true } },
             driver: { select: { name: true } },
             vehicle: { select: { plateNumber: true } },
             // rescheduleCase (D-160, 13 September 2026) — badge "Dijadwal
@@ -1318,8 +1322,14 @@ orderRouter.get("/", async (req, res) => {
       // terbaru. Order normal cuma punya 1 job aktif per tipe di satu
       // waktu (PRD §5.2), tapi kalau toh ada sisa lebih dari satu (reschedule
       // lama, dst), yang terbaru itu paling relevan ditampilkan ke sales.
-      const pickupJob   = jobs.find((j) => j.type === "PICKUP") || null;
-      const deliveryJob = jobs.find((j) => j.type === "DELIVERY") || null;
+      // 7 Okt 2026 (laporan owner): jobs diurutkan terbaru-dulu, jadi find() dulu mengambil job
+      // pickup/kirim KOMPLAIN yang lebih baru dan MENGGANTIKAN jadwal order asli di daftar &
+      // export. Sekarang job order asli dan job komplain/revisi dipisah; keduanya tampil sendiri-sendiri.
+      const jobKomplain = (j) => !!j.complaintCaseId || !!j.revisionJobLink;
+      const pickupJob   = jobs.find((j) => j.type === "PICKUP" && !jobKomplain(j)) || null;
+      const deliveryJob = jobs.find((j) => j.type === "DELIVERY" && !jobKomplain(j)) || null;
+      const complaintPickupJob   = jobs.find((j) => j.type === "PICKUP" && jobKomplain(j)) || null;
+      const complaintDeliveryJob = jobs.find((j) => j.type === "DELIVERY" && jobKomplain(j)) || null;
       const ringkasJob = (j) => j && {
         status: j.status, scheduledDate: j.scheduledDate,
         driverName: j.driver?.name || null, vehiclePlate: j.vehicle?.plateNumber || null,
@@ -1388,6 +1398,8 @@ orderRouter.get("/", async (req, res) => {
         daysInStatusPerkiraan: !trans,
         pickupJob: ringkasJob(pickupJob),
         deliveryJob: ringkasJob(deliveryJob),
+        complaintPickupJob: ringkasJob(complaintPickupJob),
+        complaintDeliveryJob: ringkasJob(complaintDeliveryJob),
       };
     });
 
