@@ -68,7 +68,7 @@ for lf in /tmp/release-*.lock; do
   ( exec 8>"$lf"; flock -n 8 ) || die "deploy lain sedang berjalan (kunci ${lf} dipegang)"
 done
 exec 9>/tmp/release-galeri-sentby.lock; flock -n 9 || die "rilis ini sudah berjalan"
-OTHER="$(pgrep -af 'release-[a-z0-9-]+.sh|docker compose .*(up|build)|docker build|prisma migrate' | grep -v "rgal|release-galeri-sentby|pgrep|node src/index.js" || true)"
+OTHER="$(pgrep -af 'release-[a-z0-9-]+\.sh|docker compose .*(up|build)|docker build|prisma migrate' | grep -v "rgal\|release-galeri-sentby\|pgrep\|node src/index.js" || true)"
 [ -z "$OTHER" ] || { printf '%s\n' "$OTHER" | sed 's/^/        /'; die "ada proses deploy/build/migrasi lain yang berjalan"; }
 ok "tidak ada deploy lain"
 mkdir -p "$BK_DIR" "$HOME/release-src" "$HOME/backups"
