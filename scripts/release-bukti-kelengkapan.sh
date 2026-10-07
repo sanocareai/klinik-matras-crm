@@ -100,7 +100,9 @@ MIG_SHA="$(printf '%s\n' "$MIGSQL" | sha256sum | cut -d' ' -f1)"
 [ "${MIGRASI_TERAUDIT[$NEW_MIGRATION]}" = "$MIG_SHA" ] || die "isi migrasi ${NEW_MIGRATION} BERBEDA dari yang diaudit (sha256 ${MIG_SHA}) — audit ulang lalu perbarui pin"
 SCAN="$(printf '%s\n' "$ISI" | sed -E 's/ON (DELETE|UPDATE) (CASCADE|RESTRICT|SET NULL|NO ACTION)//g')"
 printf '%s\n' "$SCAN" | grep -Eiqw 'DROP|DELETE|UPDATE|INSERT|TRUNCATE|RENAME|SET[[:space:]]+NOT[[:space:]]+NULL|COPY|GRANT|REVOKE|CREATE[[:space:]]+(OR[[:space:]]+REPLACE|FUNCTION|TRIGGER|EXTENSION|ROLE|USER|SCHEMA|DATABASE|TABLE|TYPE|INDEX)' && die "migrasi terpin mengandung perintah non-aditif"
-STMT_ASING="$(printf '%s\n' "$SCAN" | grep -E '^(ALTER|CREATE) ' | grep -Ev '^ALTER TABLE "routes" ADD COLUMN|^ALTER TABLE "routes" ADD CONSTRAINT "routes_completeness_submitted_by_fkey"' || true)"
+# Migrasi Prisma menaruh "ALTER TABLE "routes"" di baris sendiri lalu ADD COLUMN menyusul di baris berikutnya (indented,
+# tidak diawali ALTER/CREATE jadi tidak ikut tersaring grep di atas) — exclude bentuk bare SATU baris itu juga.
+STMT_ASING="$(printf '%s\n' "$SCAN" | grep -E '^(ALTER|CREATE) ' | grep -Ev '^ALTER TABLE "routes"$|^ALTER TABLE "routes" ADD CONSTRAINT "routes_completeness_submitted_by_fkey"' || true)"
 [ -z "$STMT_ASING" ] || { printf '%s\n' "$STMT_ASING" | sed 's/^/        /'; die "migrasi terpin memuat pernyataan di luar daftar aditif yang diaudit"; }
 ok "migrasi ${NEW_MIGRATION}: sha256 cocok pin (${MIG_SHA:0:12}); hanya ADD COLUMN nullable/default + FK pada routes"
 ok "kandidat ${DEPLOY_SHORT} turunan baseline ${BASE_SHA:0:8}; $(printf '%s\n' "$CHANGED" | wc -l) berkas dalam allowlist eksplisit + SATU migrasi (${NEW_MIGRATION})"
