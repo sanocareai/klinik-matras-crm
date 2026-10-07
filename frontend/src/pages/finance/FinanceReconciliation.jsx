@@ -21,6 +21,7 @@ import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
 import PanelCutoff, { PerluDitinjau } from "@/features/finance/RekonCutoff.jsx";
 import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
 import { rolesOf } from "@/lib/roles.js";
+import { resetSaatBuka } from "@/features/finance/resetSaatBuka.jsx";
 
 // FINANCE_ADMIN (snapshot, tandai tinjau) dipegang ADMIN/OWNER — server tetap sumber kebenaran (403 bila tidak berhak).
 function bolehFinanceAdmin() {
@@ -485,7 +486,7 @@ export default function FinanceReconciliation() {
   );
 }
 
-function ModalPeriodeBaru({ open, onClose, rekening, onSubmit }) {
+function ModalPeriodeBaruIsi({ open, onClose, rekening, onSubmit }) {
   const [f, setF] = useState({ cashAccountId: "", periodStart: "", periodEnd: "", openingBalance: "", closingBalance: "", note: "" });
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const valid = f.cashAccountId && f.periodStart && f.periodEnd;
@@ -514,7 +515,7 @@ function ModalPeriodeBaru({ open, onClose, rekening, onSubmit }) {
   );
 }
 
-function ModalBarisBaru({ open, onClose, onSubmit }) {
+function ModalBarisBaruIsi({ open, onClose, onSubmit }) {
   const [f, setF] = useState({ date: "", description: "", reference: "", amount: "" });
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   return (
@@ -657,3 +658,9 @@ function SyaratSelesai({ p, status }) {
     </Card>
   );
 }
+
+// Formulir dikosongkan setiap dibuka (lihat features/finance/resetSaatBuka.jsx).
+const ModalPeriodeBaru = resetSaatBuka(ModalPeriodeBaruIsi);
+
+// Formulir dikosongkan setiap dibuka (lihat features/finance/resetSaatBuka.jsx).
+const ModalBarisBaru = resetSaatBuka(ModalBarisBaruIsi);

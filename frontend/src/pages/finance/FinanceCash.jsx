@@ -23,6 +23,7 @@ import { RowActions, AKSI_COL_WIDTH_MENU_ONLY } from "@/features/finance/RowActi
 import { KoreksiDialog, RiwayatVersiDialog } from "@/features/finance/KoreksiAman.jsx";
 import { aksiTransferAtauPemasukan } from "@/features/finance/matriksAksi.js";
 import { bentukItemMenu, adminSaatIni } from "@/features/finance/aksiMenu.jsx";
+import { resetSaatBuka } from "@/features/finance/resetSaatBuka.jsx";
 
 // Nominal dicari sebagai angka polos maupun berformat titik ("1500000" / "1.500.000").
 const angka = (x) => `${Math.round(Number(x) || 0)} ${(Number(x) || 0).toLocaleString("id-ID")}`;
@@ -489,7 +490,7 @@ export default function FinanceCash() {
 
 const REKENING_KOSONG = { name: "", kind: "BANK", bankName: "", accountNumber: "", accountHolder: "", notes: "", active: true };
 
-function ModalRekening({ open, onClose, initial, onSubmit }) {
+function ModalRekeningIsi({ open, onClose, initial, onSubmit }) {
   const editMode = Boolean(initial);
   const [f, setF] = useState(REKENING_KOSONG);
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
@@ -566,7 +567,7 @@ function ModalRekening({ open, onClose, initial, onSubmit }) {
   );
 }
 
-function ModalTransfer({ open, onClose, rekening, onSubmit }) {
+function ModalTransferIsi({ open, onClose, rekening, onSubmit }) {
   const [f, setF] = useState({ date: "", fromAccountId: "", toAccountId: "", amount: "", feeAmount: "", reference: "", notes: "" });
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const valid = f.fromAccountId && f.toAccountId && f.fromAccountId !== f.toAccountId && Number(f.amount) > 0;
@@ -619,7 +620,7 @@ function ModalTransfer({ open, onClose, rekening, onSubmit }) {
   );
 }
 
-function ModalPemasukan({ open, onClose, rekening, akunPendapatan, onSubmit }) {
+function ModalPemasukanIsi({ open, onClose, rekening, akunPendapatan, onSubmit }) {
   const [f, setF] = useState({ date: "", amount: "", description: "", accountId: "", cashAccountId: "", notes: "" });
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const valid = f.description.trim() && f.accountId && f.cashAccountId && Number(f.amount) > 0;
@@ -658,3 +659,12 @@ function ModalPemasukan({ open, onClose, rekening, akunPendapatan, onSubmit }) {
     </Modal>
   );
 }
+
+// Formulir dikosongkan setiap dibuka (lihat features/finance/resetSaatBuka.jsx).
+const ModalRekening = resetSaatBuka(ModalRekeningIsi);
+
+// Formulir dikosongkan setiap dibuka (lihat features/finance/resetSaatBuka.jsx).
+const ModalTransfer = resetSaatBuka(ModalTransferIsi);
+
+// Formulir dikosongkan setiap dibuka (lihat features/finance/resetSaatBuka.jsx).
+const ModalPemasukan = resetSaatBuka(ModalPemasukanIsi);

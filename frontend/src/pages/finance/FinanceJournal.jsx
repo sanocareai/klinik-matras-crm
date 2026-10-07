@@ -17,6 +17,7 @@ import {
 } from "@/features/finance/shared.jsx";
 import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
 import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
+import { resetSaatBuka } from "@/features/finance/resetSaatBuka.jsx";
 
 // JURNAL UMUM — seluruh pencatatan buku besar, dari mana pun asalnya.
 //
@@ -298,7 +299,7 @@ function DetailJurnal({ entryId, onClose, onReversed, onError }) {
   );
 }
 
-function ModalJurnalManual({ open, onClose, akun, onSubmit }) {
+function ModalJurnalManualIsi({ open, onClose, akun, onSubmit }) {
   const [f, setF] = useState({ date: "", description: "", saldoAwal: false });
   const [baris, setBaris] = useState([
     { accountId: "", cashAccountId: "", debit: "", credit: "", description: "" },
@@ -428,3 +429,6 @@ function ModalJurnalManual({ open, onClose, akun, onSubmit }) {
     </Modal>
   );
 }
+
+// Formulir dikosongkan setiap dibuka (lihat features/finance/resetSaatBuka.jsx).
+const ModalJurnalManual = resetSaatBuka(ModalJurnalManualIsi);

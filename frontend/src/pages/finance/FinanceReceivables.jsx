@@ -30,6 +30,7 @@ import DiagnosisPiutang from "@/features/finance/DiagnosisPiutang.jsx";
 import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
 import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
+import { resetSaatBuka } from "@/features/finance/resetSaatBuka.jsx";
 
 // Refund: belum disetujui = Edit bebas (belum ada jurnal); sudah disetujui = jurnal sudah ada, JANGAN diubah —
 // pilihannya Batalkan (jurnal dibalik resmi, status bayar order dihitung ulang) lalu ajukan ulang dengan data yang benar.
@@ -438,7 +439,7 @@ export default function FinanceReceivables() {
   );
 }
 
-function ModalRefund({ open, onClose, rekening, piutang, onSubmit }) {
+function ModalRefundIsi({ open, onClose, rekening, piutang, onSubmit }) {
   const [f, setF] = useState({ orderId: "", date: "", amount: "", reason: "", cashAccountId: "", ...BIAYA_KOSONG });
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const rek = rekening.find((r) => r.id === f.cashAccountId);
@@ -557,3 +558,6 @@ function ModalEditRefund({ refund, rekening, onClose, onSubmit }) {
     </Modal>
   );
 }
+
+// Formulir dikosongkan setiap dibuka (lihat features/finance/resetSaatBuka.jsx).
+const ModalRefund = resetSaatBuka(ModalRefundIsi);

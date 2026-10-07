@@ -30,7 +30,15 @@ export const STATUS_URUT = ["DRAFT", "MENUNGGU_APPROVAL", "DISETUJUI", "DIBAYAR"
 export const jumlah = (rows, key) => rows.reduce((a, r) => a + (Number(r[key]) || 0), 0);
 
 /** Nama pihak yang menerima uang: supplier terdaftar, atau nama bebas (toko/tukang). */
-export const pihakPenerima = (d) => d.supplier?.name || d.payeeName || "";
+// Supplier terdaftar didahulukan; "Dibeli dari" (payeeName) ikut disebut bila BERBEDA dari supplier — sebelumnya hilang dari berkas (PUR-07102026-009: YULIUS vs EKA TUNGGAL).
+const normNama = (s) => String(s ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+export const pihakPenerima = (d) => {
+  const sup = d.supplier?.name || "";
+  const payee = (d.payeeName ?? "").trim();
+  if (!sup) return payee;
+  const a = normNama(sup); const b = normNama(payee);
+  return payee && !a.includes(b) && !b.includes(a) ? `${sup} (dibeli dari: ${payee})` : sup;
+};
 
 export function statusBukti(d) {
   if (!d.receiptUrl) return "Tanpa bukti";

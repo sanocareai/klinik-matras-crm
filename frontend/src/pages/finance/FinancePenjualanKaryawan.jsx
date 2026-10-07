@@ -23,6 +23,7 @@ import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
 import { specPenjualanKaryawan } from "@/features/finance/detailSpecs.js";
 import { adminSaatIni } from "@/features/finance/aksiMenu.jsx";
 import { totalItems, normalisasiJumlah, metodeButuhRekening, LABEL_METODE_PJK } from "@/features/finance/penjualanKaryawanLogic.js";
+import { resetSaatBuka } from "@/features/finance/resetSaatBuka.jsx";
 
 // PENJUALAN KARYAWAN — input MANUAL di luar Order. Karyawan non-Sales menjual ke kerabat; tidak membuat Order/Customer, tidak masuk produksi atau delivery.
 // Pendapatan diakui saat dicatat dan tagihannya jadi Piutang Karyawan milik karyawan penjual; pelunasan = tunai/transfer ke rekening atau potong gaji.
@@ -323,7 +324,7 @@ function BarisBayar({ b, onChange, rek, st, muat, onHapus, cutoff }) {
   );
 }
 
-function ModalPenjualanBaru({ open, onClose, aksi, cutoff }) {
+function ModalPenjualanBaruIsi({ open, onClose, aksi, cutoff }) {
   const kosong = () => ({ date: hariIniISO(), sellerId: "", buyerName: "", notes: "", items: [{ name: "", quantity: 1, unitPrice: "" }], pembayaran: [] });
   const [f, setF] = useState(kosong);
   const [karyawan, setKaryawan] = useState([]);
@@ -479,3 +480,6 @@ function ModalRiwayat({ penjualan, onClose, onBatal, admin }) {
     </Modal>
   );
 }
+
+// Formulir dikosongkan setiap dibuka (lihat features/finance/resetSaatBuka.jsx).
+const ModalPenjualanBaru = resetSaatBuka(ModalPenjualanBaruIsi);

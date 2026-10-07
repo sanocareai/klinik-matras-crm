@@ -32,6 +32,7 @@ import { bentukItemMenu, adminSaatIni } from "@/features/finance/aksiMenu.jsx";
 import { formDariSupplier, payloadPerubahan, galatForm, rekeningBerubah, supplierBisaDipilih } from "@/features/finance/supplierEditLogic.js";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
 import PilihJenisTagihan, { bodyJenis, jenisLengkap } from "@/features/finance/JenisTagihan.jsx";
+import { resetSaatBuka } from "@/features/finance/resetSaatBuka.jsx";
 
 // Tagihan: belum disetujui = Edit bebas (belum ada jurnal). Sudah disetujui = jurnal sudah ada, JANGAN diubah —
 // Batalkan (jurnal dibalik; diblokir server kalau sudah ada pembayaran aktif) lalu catat ulang.
@@ -619,7 +620,7 @@ export default function FinanceSuppliers() {
 
 // Dua mode: BARU (supplier kosong → onSubmit(seluruh isian)) dan EDIT (supplier terisi → onSubmit(hanya bidang yang berubah); kode tidak bisa diubah).
 // Mode edit: galat server tampil di dalam dialog dan tombol dilepas lagi (dialog tidak boleh terkunci).
-function ModalSupplier({ open, onClose, onSubmit, supplier = null }) {
+function ModalSupplierIsi({ open, onClose, onSubmit, supplier = null }) {
   const edit = !!supplier;
   const [f, setF] = useState(() => (edit ? formDariSupplier(supplier) : { code: "", name: "", phone: "", email: "", address: "", paymentTermDays: "", bankName: "", bankAccount: "", bankHolder: "", notes: "" }));
   const [sibuk, setSibuk] = useState(false);
@@ -678,7 +679,7 @@ function ModalSupplier({ open, onClose, onSubmit, supplier = null }) {
   );
 }
 
-function ModalTagihan({ open, onClose, suppliers, unbilled, kategori, kategoriBeli, metodeInfo, onSubmit }) {
+function ModalTagihanIsi({ open, onClose, suppliers, unbilled, kategori, kategoriBeli, metodeInfo, onSubmit }) {
   const [f, setF] = useState({
     supplierId: "", supplierRef: "", billDate: "", dueDate: "", amount: "",
     description: "", billType: "", goodsReceiptId: "", expenseCategoryId: "", purchaseCategoryId: "",
@@ -728,7 +729,7 @@ function ModalTagihan({ open, onClose, suppliers, unbilled, kategori, kategoriBe
   );
 }
 
-function ModalBayarSupplier({ open, onClose, suppliers, bills, rekening, onSubmit }) {
+function ModalBayarSupplierIsi({ open, onClose, suppliers, bills, rekening, onSubmit }) {
   const [f, setF] = useState({ supplierId: "", date: "", cashAccountId: "", reference: "", notes: "", ...BIAYA_KOSONG });
   const [alokasi, setAlokasi] = useState({});
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
@@ -887,3 +888,12 @@ function ModalEditTagihan({ bill, suppliers, kategori, kategoriBeli, metodeInfo 
     </Modal>
   );
 }
+
+// Formulir dikosongkan setiap dibuka (lihat features/finance/resetSaatBuka.jsx).
+const ModalSupplier = resetSaatBuka(ModalSupplierIsi);
+
+// Formulir dikosongkan setiap dibuka (lihat features/finance/resetSaatBuka.jsx).
+const ModalTagihan = resetSaatBuka(ModalTagihanIsi);
+
+// Formulir dikosongkan setiap dibuka (lihat features/finance/resetSaatBuka.jsx).
+const ModalBayarSupplier = resetSaatBuka(ModalBayarSupplierIsi);
