@@ -92,8 +92,10 @@ export async function findExecutionReplay(tx, idempotencyKey, actorId, action, {
   return event;
 }
 
-export function createExecutionEvent(tx, { idempotencyKey, action, actorId, jobId = null, routeId = null, payload = null }) {
+// `time` = { occurredAt, source, timeQuality } dari readTimeMeta(req) (services/deliveryTimeline.js): waktu KEJADIAN perangkat + sumber aksi, ditulis di transaksi
+// yang sama dengan transisi status. Waktu diterima server = createdAt (kolom bawaan). Tanpa `time` (pemanggil lama) kolom-kolom itu NULL dan pembaca menandainya.
+export function createExecutionEvent(tx, { idempotencyKey, action, actorId, jobId = null, routeId = null, payload = null, time = null }) {
   return tx.deliveryExecutionEvent.create({
-    data: { idempotencyKey, action, actorId, jobId, routeId, payload },
+    data: { idempotencyKey, action, actorId, jobId, routeId, payload, ...(time ? { occurredAt: time.occurredAt, source: time.source, timeQuality: time.timeQuality } : {}) },
   });
 }

@@ -4127,7 +4127,19 @@ model DeliveryExecutionEvent {
   routeId        String?  @map("route_id") @db.Uuid
   route          Route?   @relation(fields: [routeId], references: [id], onDelete: SetNull)
   payload        Json?
+  // createdAt = WAKTU DITERIMA SERVER (selalu terisi, tidak pernah dari klien).
   createdAt      DateTime @default(now()) @map("created_at")
+
+  // Histori waktu rute/stop (fase 2 Checklist Persiapan Perjalanan, 7 Okt 2026) — SATU-SATUNYA ledger waktu eksekusi (tidak ada tabel baru):
+  //   occurredAt  = WAKTU KEJADIAN menurut perangkat (antrean offline mempertahankannya); NULL pada event lama (sebelum kolom ini) — pembaca
+  //                 memakai createdAt sebagai "waktu server" dan menandainya, TIDAK mengarang waktu kejadian.
+  //   source      = sumber aksi: DRIVER_APP | DRIVER_WEB | ADMIN_WEB | SYSTEM | KLIEN_LAMA (tanpa header sumber); NULL pada event lama.
+  //   timeQuality = LANGSUNG | SINKRON_TERLAMBAT | JAM_PERANGKAT_MASA_DEPAN | JAM_PERANGKAT_USANG | JAM_PERANGKAT_TIDAK_VALID | WAKTU_SERVER;
+  //                 dihitung SAAT event ditulis (server-now vs waktu perangkat), bukan saat dibaca.
+  // Koreksi waktu = event baru (action TIME_CORRECTED, payload merujuk event target + alasan); event asli tidak pernah diubah/dihapus.
+  occurredAt     DateTime? @map("occurred_at")
+  source         String?
+  timeQuality    String?   @map("time_quality")
 
   @@index([jobId, createdAt])
   @@index([routeId, createdAt])

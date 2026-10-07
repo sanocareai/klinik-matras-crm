@@ -25,6 +25,7 @@ import { useMyJobs } from "@/features/armada/hooks/useMyJobs.js";
 import { mapsUrl } from "@/features/armada/jobStatus.js";
 import { SalesBadge, ProductBadge } from "@/features/armada/components/JobBadges.jsx";
 import RoutePrepChecklistDriverPanel from "@/features/armada/components/RoutePrepChecklistDriverPanel.jsx";
+import RouteTimelinePanel from "@/features/armada/components/RouteTimelinePanel.jsx";
 import { ISSUE_STATUS } from "@/features/armada/issueStatus.js";
 import { api } from "@/api.js";
 import { Card } from "@/components/ui/card.jsx";
@@ -632,7 +633,7 @@ function RouteStartBanner({ route, assignedCount, sampleJobId, onChanged }) {
     setErr("");
     try {
       const urls = await uploadBlobs(sampleJobId, photos);
-      await api.startRoute(route.id, { proofPhotoUrls: urls });
+      await api.startRoute(route.id, { proofPhotoUrls: urls }, undefined, { source: "DRIVER_WEB" });
       setMode("idle");
       setPhotos([]);
       onChanged();
@@ -660,6 +661,12 @@ function RouteStartBanner({ route, assignedCount, sampleJobId, onChanged }) {
       </button>
 
       {assignedCount > 0 && <RoutePrepChecklistDriverPanel routeId={route.id} onReadyChange={setChecklistReady} />}
+
+      {/* Histori Waktu (fase 2) — dibuka atas permintaan driver; isi disusun server (WIB, Indonesia). */}
+      <details className="mt-2" data-testid="driver-route-timeline">
+        <summary className="cursor-pointer text-xs font-semibold text-ink2">Histori Waktu rute &amp; stop</summary>
+        <RouteTimelinePanel routeId={route.id} className="mt-2" />
+      </details>
 
       {assignedCount > 0 && mode === "idle" && (
         <Button className="mt-2 h-11 w-full text-xs" disabled={!checklistReady} onClick={() => setMode("starting")}>

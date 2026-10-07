@@ -192,6 +192,11 @@ function buildQuery(params) {
   return q ? "?" + q : "";
 }
 
+// Histori waktu rute/stop (fase 2): sumber aksi + WAKTU KEJADIAN (saat driver menekan tombol; antrean offline mempertahankannya). Waktu diterima = catatan server.
+function execHeaders(idempotencyKey, meta = {}) {
+  return { "Idempotency-Key": idempotencyKey, "X-Action-Source": "DRIVER_APP", ...(meta.occurredAt ? { "X-Event-Occurred-At": meta.occurredAt } : {}) };
+}
+
 function executionMeta(data, meta = {}) {
   return {
     ...data,
@@ -245,7 +250,9 @@ export const api = {
   // Mulai SATU rute sekaligus — foto muatan sekali, semua job ASSIGNED di
   // rute jadi EN_ROUTE (lihat POST /armada/routes/:id/start).
   startRoute: (routeId, data = {}, idempotencyKey, meta = {}) =>
-    request(`/armada/routes/${routeId}/start`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(executionMeta(data, meta)) }),
+    request(`/armada/routes/${routeId}/start`, { method: "POST", headers: execHeaders(idempotencyKey, meta), body: JSON.stringify(executionMeta(data, meta)) }),
+  // Histori waktu rute & stop (Indonesia + WIB, disusun server).
+  getRouteTimeline: (routeId) => request(`/armada/routes/${routeId}/timeline`),
   // Link Google Maps rute (sumber = manualMapsUrl admin, fallback auto
   // multi-stop) — sama presedennya dengan broadcast WA.
   getRouteMap: (routeId) => request(`/armada/routes/${routeId}/map`),
@@ -301,10 +308,10 @@ export const api = {
   getRoutePath: (points) =>
     request(`/armada/route-path${buildQuery({ points: points.map(([lat, lng]) => `${lat},${lng}`).join(";") })}`),
   getArmadaIssues: (params = {}) => request(`/armada/issues${buildQuery(params)}`),
-  startArmadaJob: (jobId, data = {}, idempotencyKey, meta = {}) => request(`/armada/jobs/${jobId}/start`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(executionMeta(data, meta)) }),
-  arriveArmadaJob: (jobId, data = {}, idempotencyKey, meta = {}) => request(`/armada/jobs/${jobId}/arrive`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(executionMeta(data, meta)) }),
-  completeArmadaJob: (jobId, data, idempotencyKey, meta = {}) => request(`/armada/jobs/${jobId}/complete`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(executionMeta(data, meta)) }),
-  failArmadaJob: (jobId, data, idempotencyKey, meta = {}) => request(`/armada/jobs/${jobId}/fail`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(executionMeta(data, meta)) }),
+  startArmadaJob: (jobId, data = {}, idempotencyKey, meta = {}) => request(`/armada/jobs/${jobId}/start`, { method: "POST", headers: execHeaders(idempotencyKey, meta), body: JSON.stringify(executionMeta(data, meta)) }),
+  arriveArmadaJob: (jobId, data = {}, idempotencyKey, meta = {}) => request(`/armada/jobs/${jobId}/arrive`, { method: "POST", headers: execHeaders(idempotencyKey, meta), body: JSON.stringify(executionMeta(data, meta)) }),
+  completeArmadaJob: (jobId, data, idempotencyKey, meta = {}) => request(`/armada/jobs/${jobId}/complete`, { method: "POST", headers: execHeaders(idempotencyKey, meta), body: JSON.stringify(executionMeta(data, meta)) }),
+  failArmadaJob: (jobId, data, idempotencyKey, meta = {}) => request(`/armada/jobs/${jobId}/fail`, { method: "POST", headers: execHeaders(idempotencyKey, meta), body: JSON.stringify(executionMeta(data, meta)) }),
   recordJobPayment: (jobId, data) => request(`/armada/jobs/${jobId}/payment`, { method: "POST", body: JSON.stringify(data) }),
   // Lapor revisi di lokasi (18 September 2026) — port dari frontend/src/api.js,
   // lihat catatan panjang di backend routes/armada.js POST /jobs/:id/report-revision.

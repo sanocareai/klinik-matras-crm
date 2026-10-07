@@ -14,6 +14,8 @@ import { formatTanggal } from "@/utils/formatDate.js";
 import QuickChatModal from "./QuickChatModal.jsx";
 import { isAdminUser } from "@/lib/roles.js";
 import RoutePrepChecklistAdminModal from "./RoutePrepChecklistAdminModal.jsx";
+import RouteTimelinePanel from "./RouteTimelinePanel.jsx";
+import { Modal as TimelineModal } from "@/components/ui/modal.jsx";
 
 // Pesan konfirmasi default (8 September 2026) — dipakai mengisi kotak
 // teks QuickChatModal begitu ikon chat diklik, supaya admin delivery
@@ -70,6 +72,7 @@ export default function RouteCard({
   const [draggingStopId, setDraggingStopId] = useState(null);
   const [busy, setBusy] = useState(false);
   const [checklistOpen, setChecklistOpen] = useState(false);
+  const [timelineOpen, setTimelineOpen] = useState(false);
   // Edit rute setelah diterbitkan (redesain Route Planner, Sep 2026) — null
   // = terkunci seperti biasa. String = SEDANG diedit darurat, isinya alasan
   // yang diminta sekali di awal (window.prompt, pola sama dengan confirm()
@@ -455,6 +458,22 @@ export default function RouteCard({
         </button>
         {checklistOpen && (
           <RoutePrepChecklistAdminModal route={route} open={checklistOpen} onOpenChange={setChecklistOpen} />
+        )}
+        {/* Histori Waktu (fase 2, 7 Okt 2026) — berangkat/menuju/tiba/selesai/gagal/reschedule per stop + rute, WIB. Hanya rute yang sudah/ pernah berjalan punya isi. */}
+        {["IN_PROGRESS", "COMPLETED", "PUBLISHED"].includes(route.status) && (
+          <button
+            type="button"
+            onClick={() => setTimelineOpen(true)}
+            data-testid="route-timeline-open"
+            className="mb-2 flex h-8 w-full items-center justify-center gap-1.5 rounded-chip border border-border text-[11px] font-semibold text-ink2 transition-colors hover:border-accent hover:text-accent"
+          >
+            <Clock size={13} /> Histori Waktu
+          </button>
+        )}
+        {timelineOpen && (
+          <TimelineModal open={timelineOpen} onOpenChange={setTimelineOpen} title={`Histori Waktu — Rute ${route.code}`} description="Waktu dalam WIB. Durasi hanya ditampilkan bila waktunya tercatat.">
+            <RouteTimelinePanel routeId={route.id} className="px-1 pb-2" />
+          </TimelineModal>
         )}
 
         {isEditable ? (

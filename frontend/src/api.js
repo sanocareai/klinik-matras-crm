@@ -9,6 +9,12 @@ function mutationKey(prefix = "web") {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
+// Histori waktu rute/stop (fase 2): setiap aksi eksekusi membawa SUMBER aksi + WAKTU KEJADIAN perangkat (antrean offline mempertahankan waktu aslinya).
+// Waktu diterima server selalu dicatat server sendiri. Sumber bawaan = ADMIN_WEB (input dari web admin); Driver Web mengirim DRIVER_WEB.
+function execHeaders(idempotencyKey, { occurredAt = null, source = "ADMIN_WEB" } = {}) {
+  return { "Idempotency-Key": idempotencyKey, "X-Action-Source": source, "X-Event-Occurred-At": occurredAt || new Date().toISOString() };
+}
+
 function authHeaders() {
   const token = localStorage.getItem("token");
   return token ? { Authorization: `Bearer ${token}` } : {};
@@ -327,7 +333,10 @@ export const api = {
   getRouteMap: (id) => request(`/armada/routes/${id}/map`),
   // Mulai SATU rute sekaligus — foto muatan sekali, semua job ASSIGNED di
   // rute jadi EN_ROUTE (POST /armada/routes/:id/start).
-  startRoute: (id, data = {}, idempotencyKey = mutationKey("route")) => request(`/armada/routes/${id}/start`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  startRoute: (id, data = {}, idempotencyKey = mutationKey("route"), opts = {}) => request(`/armada/routes/${id}/start`, { method: "POST", headers: execHeaders(idempotencyKey, opts), body: JSON.stringify(data) }),
+  // Histori waktu rute & stop (Indonesia + WIB, disusun server) + koreksi append-only (alasan wajib; hanya ROUTE_WRITE).
+  getRouteTimeline: (routeId) => request(`/armada/routes/${routeId}/timeline`),
+  correctRouteTime: (routeId, data, idempotencyKey = mutationKey("timeline-fix")) => request(`/armada/routes/${routeId}/timeline/corrections`, { method: "POST", headers: execHeaders(idempotencyKey), body: JSON.stringify(data) }),
   cancelRoute: (id) => request(`/armada/routes/${id}/cancel`, { method: "PATCH" }),
 
   // Checklist Persiapan Perjalanan (7 Okt 2026) — susun/edit (admin/dispatcher,
@@ -470,7 +479,7 @@ export const api = {
   // proofPhotoUrls WAJIB sejak 8 September 2026 (dokumentasi tiap tahap) —
   // data opsional untuk kompatibilitas pemanggil lama, backend yang
   // menegakkan validasi wajibnya.
-  startArmadaJob: (jobId, data = {}, idempotencyKey = mutationKey("start")) => request(`/armada/jobs/${jobId}/start`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  startArmadaJob: (jobId, data = {}, idempotencyKey = mutationKey("start"), opts = {}) => request(`/armada/jobs/${jobId}/start`, { method: "POST", headers: execHeaders(idempotencyKey, opts), body: JSON.stringify(data) }),
   // D-034 — ping GPS driver (Live Tracking nyata). pings: array {lat,lng,
   // accuracy,recordedAt} — lihat utils/positionQueue.js untuk pengelompokan
   // per job sebelum dikirim.
@@ -489,8 +498,8 @@ export const api = {
   // — lihat services/routeTracking.js. SEMUA angka di sini ESTIMASI, bukan
   // tagihan pasti — label UI WAJIB menyebutnya begitu.
   getRouteTrace: (routeId) => request(`/armada/routes/${routeId}/route-trace`),
-  arriveArmadaJob: (jobId, data = {}, idempotencyKey = mutationKey("arrive")) => request(`/armada/jobs/${jobId}/arrive`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
-  completeArmadaJob: (jobId, data, idempotencyKey = mutationKey("complete")) => request(`/armada/jobs/${jobId}/complete`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  arriveArmadaJob: (jobId, data = {}, idempotencyKey = mutationKey("arrive"), opts = {}) => request(`/armada/jobs/${jobId}/arrive`, { method: "POST", headers: execHeaders(idempotencyKey, opts), body: JSON.stringify(data) }),
+  completeArmadaJob: (jobId, data, idempotencyKey = mutationKey("complete"), opts = {}) => request(`/armada/jobs/${jobId}/complete`, { method: "POST", headers: execHeaders(idempotencyKey, opts), body: JSON.stringify(data) }),
   // Tambah bukti SETELAH job sudah Selesai (8 September 2026) — lihat
   // catatan panjang di routes/armada.js PATCH /jobs/:id/proof-photos.
   addJobProofPhotos: (jobId, data) => request(`/armada/jobs/${jobId}/proof-photos`, { method: "PATCH", body: JSON.stringify(data) }),
@@ -725,7 +734,7 @@ export const api = {
     return request(`/inventory/reports/summary${qs ? `?${qs}` : ""}`);
   },
   getUnitByCode: (code) => request(`/units/by-code/${encodeURIComponent(code)}`),
-  failArmadaJob: (jobId, data, idempotencyKey = mutationKey("fail")) => request(`/armada/jobs/${jobId}/fail`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  failArmadaJob: (jobId, data, idempotencyKey = mutationKey("fail"), opts = {}) => request(`/armada/jobs/${jobId}/fail`, { method: "POST", headers: execHeaders(idempotencyKey, opts), body: JSON.stringify(data) }),
 
   // Unit — detail & aksi tahap (Production Tahap 2)
   getUnitStatus: (unitId) => request(`/units/${unitId}`),

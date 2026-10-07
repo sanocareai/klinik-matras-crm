@@ -38,6 +38,8 @@ import {
 } from "../services/rescheduleCase.js";
 import { notifySalesJobCompleted, notifySalesUnpaidAfterDelivery } from "../services/deliveryCompletionNotify.js";
 import { traceRoute } from "../services/routeTracking.js";
+import { recordRouteCompleted, readTimeMeta, EXEC_ACTIONS, buildRouteTimeline, validateCorrectionInput, isCorrectableAction, isSuspectQuality, TIME_QUALITY } from "../services/deliveryTimeline.js";
+import { prepProofUpload, signPrepProofUrl, PREP_PROOF_PREFIX } from "./routePrepProofMedia.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
 import { bukukanPembayaran } from "../services/finance/hooks.js";
 import { kunciKanonis } from "../services/finance/urutanKunci.js";
@@ -3248,13 +3250,18 @@ armadaRouter.post("/issues/:jobId/reschedule", requirePermission(P.JOB_WRITE), a
       // model JobIssueLog. previousScheduledDate diambil dari job SEBELUM
       // update (biasanya null — job gagal biasanya masih memegang tanggal
       // lama sampai titik ini, tapi diambil dari data asli, bukan diasumsikan).
-      await tx.jobIssueLog.create({
+      const issueLog = await tx.jobIssueLog.create({
         data: {
           jobId: job.id, type: "RESCHEDULED", cause: "AFTER_FAILURE",
           previousScheduledDate: job.scheduledDate, newScheduledDate: nextDate,
           rescheduleReason: reason.trim(), customerConfirmed: !!customerConfirmed,
           createdById: req.user.id,
         },
+      });
+      // Histori waktu: event reschedule di ledger eksekusi yang sama, satu transaksi dengan pelepasan job dari rute (routeId lama dipertahankan di event).
+      await createExecutionEvent(tx, {
+        idempotencyKey: `job-rescheduled:${issueLog.id}`, action: EXEC_ACTIONS.JOB_RESCHEDULED, actorId: req.user.id, jobId: job.id, routeId: job.routeId,
+        payload: { cause: "AFTER_FAILURE", previousScheduledDate: job.scheduledDate, newScheduledDate: nextDate, reason: reason.trim() }, time: readTimeMeta(req),
       });
       // Kasus reschedule tersatukan (D-160) — lihat catatan panjang di
       // services/rescheduleCase.js.
@@ -4293,13 +4300,17 @@ armadaRouter.patch("/jobs/:id", requirePermission(P.JOB_WRITE), async (req, res)
     const projectJobEditV1 = async (tx) => {
       const j = await tx.job.update({ where: { id: req.params.id }, data, include: jobInclude });
       if (isReschedule) {
-        await tx.jobIssueLog.create({
+        const issueLog = await tx.jobIssueLog.create({
           data: {
             jobId: j.id, type: "RESCHEDULED", cause: "PROACTIVE",
             previousScheduledDate: existing.scheduledDate, newScheduledDate: nextDate,
             rescheduleReason: rescheduleReason.trim(), customerConfirmed: !!customerConfirmed,
             createdById: req.user.id,
           },
+        });
+        await createExecutionEvent(tx, {
+          idempotencyKey: `job-rescheduled:${issueLog.id}`, action: EXEC_ACTIONS.JOB_RESCHEDULED, actorId: req.user.id, jobId: j.id, routeId: existing.routeId,
+          payload: { cause: "PROACTIVE", previousScheduledDate: existing.scheduledDate, newScheduledDate: nextDate, reason: rescheduleReason.trim() }, time: readTimeMeta(req),
         });
         kase = await openOrAdvanceCase(tx, {
           job: existing, cause: "PROACTIVE", reason: rescheduleReason.trim(),
@@ -4854,7 +4865,7 @@ armadaRouter.post("/jobs/:id/start", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN
       }
       await createExecutionEvent(tx, {
         idempotencyKey, action: "JOB_STARTED", actorId: req.user.id, jobId: job.id, routeId: job.routeId,
-        payload: { status: "EN_ROUTE" },
+        payload: { status: "EN_ROUTE" }, time: readTimeMeta(req),
       });
       return { replayed: false, job };
     };
@@ -4931,7 +4942,7 @@ armadaRouter.get("/routes/:id/prep-checklist", requireAnyPermission(P.JOB_WRITE,
         required: item.required, photoRequired: item.photoRequired, sortOrder: item.sortOrder,
         revision: item.revision,
         terpenuhi,
-        bukti: current ? { id: current.id, photoUrl: current.photoUrl, note: current.note, uploadedByName: current.uploadedBy?.name || null, createdAt: current.createdAt } : null,
+        bukti: current ? { id: current.id, photoUrl: signPrepProofUrl(current.photoUrl), note: current.note, uploadedByName: current.uploadedBy?.name || null, createdAt: current.createdAt } : null,
         buktiBasi: Boolean(latest) && !current, // ada bukti tapi dari revision lama (instruksi berubah setelah dikirim)
       };
     });
@@ -5066,7 +5077,7 @@ armadaRouter.patch("/routes/:id/prep-checklist/items/:itemId", requirePermission
 armadaRouter.post(
   "/routes/:id/prep-checklist/items/:itemId/proof",
   requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_WRITE),
-  upload.single("photo"),
+  prepProofUpload.single("photo"), // direktori TERLINDUNGI (bukan /media/job-photos statis publik) — lihat routes/routePrepProofMedia.js
   async (req, res) => {
     try {
       const idempotencyKey = requireIdempotencyKey(req);
@@ -5102,7 +5113,7 @@ armadaRouter.post(
         if (item.archivedAt) throw new ArmadaError("Item checklist ini sudah dihapus admin", 409);
         if (item.photoRequired && !req.file) throw new ArmadaError("Foto wajib untuk item ini");
 
-        const photoUrl = req.file ? `/media/job-photos/${req.file.filename}` : null;
+        const photoUrl = req.file ? `${PREP_PROOF_PREFIX}${req.file.filename}` : null;
         const note = req.body.note ? String(req.body.note).trim().slice(0, 500) : null;
         const proof = await tx.routePrepChecklistProof.create({
           data: {
@@ -5112,12 +5123,76 @@ armadaRouter.post(
         });
         return { proof, replayed: false };
       });
-      res.set("Idempotency-Replayed", result.replayed ? "true" : "false").status(201).json(result.proof);
+      res.set("Idempotency-Replayed", result.replayed ? "true" : "false").status(201).json({ ...result.proof, photoUrl: signPrepProofUrl(result.proof.photoUrl) });
     } catch (err) {
       handleErr(err, res);
     }
   }
 );
+
+// ── Histori waktu rute & stop (fase 2, 7 Okt 2026) ───────────────────────
+// Sumber = ledger eksekusi yang sudah ada (delivery_execution_events); lihat services/deliveryTimeline.js. Bahasa Indonesia + WIB disusun di server supaya
+// web admin, Driver Web, dan Driver App menampilkan hal yang SAMA. Durasi hanya bila timestamp tersedia; histori lama tanpa bukti = "Tidak tersedia".
+armadaRouter.get("/routes/:id/timeline", requireAnyPermission(P.JOB_READ, P.JOB_OWN_READ, P.JOB_OWN_WRITE), async (req, res) => {
+  try {
+    const route = await prisma.route.findUnique({ where: { id: req.params.id }, select: { id: true, code: true, status: true, startedAt: true, completedAt: true, driverId: true, helperId: true } });
+    if (!route) throw new ArmadaError("Rute tidak ditemukan", 404);
+    const bolehSemua = hasPermission(req.user, P.JOB_READ);
+    const milikCrew = route.driverId === req.user.id || route.helperId === req.user.id;
+    if (!bolehSemua && !milikCrew) throw new ArmadaError("Bukan rute Anda", 403);
+    const jobSelect = {
+      id: true, type: true, status: true, sequence: true, arrivedAt: true, completedAt: true,
+      units: { take: 1, select: { unit: { select: { order: { select: { orderNumber: true, customer: { select: { name: true } } } } } } } },
+    };
+    const toJob = (j) => ({ ...j, orderNumber: j.units?.[0]?.unit?.order?.orderNumber ?? null, customerName: j.units?.[0]?.unit?.order?.customer?.name ?? null });
+    const routeJobs = await prisma.job.findMany({ where: { routeId: route.id }, select: jobSelect, orderBy: { sequence: "asc" } });
+    const events = await prisma.deliveryExecutionEvent.findMany({
+      where: { OR: [{ routeId: route.id }, { jobId: { in: routeJobs.map((j) => j.id) } }] },
+      orderBy: { createdAt: "asc" }, include: { actor: { select: { id: true, name: true } } },
+    });
+    // job yang pernah di rute ini tetapi dilepas (mis. reschedule) tetap punya riwayatnya
+    const extraIds = [...new Set(events.map((e) => e.jobId).filter((id) => id && !routeJobs.some((j) => j.id === id)))];
+    const extraJobs = extraIds.length ? await prisma.job.findMany({ where: { id: { in: extraIds } }, select: jobSelect }) : [];
+    const allJobs = [...routeJobs, ...extraJobs].map(toJob);
+    const logs = allJobs.length ? await prisma.jobIssueLog.findMany({ where: { jobId: { in: allJobs.map((j) => j.id) }, type: "RESCHEDULED" }, orderBy: { createdAt: "asc" }, include: { createdBy: { select: { name: true } } } }) : [];
+    const timeline = buildRouteTimeline({ route, jobs: allJobs, events, issueLogs: logs.map((l) => ({ id: l.id, jobId: l.jobId, createdAt: l.createdAt, createdByName: l.createdBy?.name ?? null, rescheduleReason: l.rescheduleReason })) });
+    res.json({ ...timeline, canCorrect: hasPermission(req.user, P.ROUTE_WRITE) });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// POST /api/armada/routes/:id/timeline/corrections { eventId, correctedOccurredAt, reason } — koreksi APPEND-ONLY (event TIME_CORRECTED baru dgn alasan + actor;
+// event asli tak diubah/dihapus). Hanya untuk tonggak yang SUDAH punya event di rute ini — tidak untuk mengisi histori yang tak punya bukti waktu.
+armadaRouter.post("/routes/:id/timeline/corrections", requirePermission(P.ROUTE_WRITE), async (req, res) => {
+  try {
+    const idempotencyKey = requireIdempotencyKey(req);
+    const input = validateCorrectionInput(req.body);
+    const meta = readTimeMeta(req);
+    const result = await prisma.$transaction(async (tx) => {
+      const route = await lockRoute(tx, req.params.id);
+      if (!route) throw new ArmadaError("Rute tidak ditemukan", 404);
+      const replay = await findExecutionReplay(tx, idempotencyKey, req.user.id, EXEC_ACTIONS.TIME_CORRECTED, { routeId: route.id });
+      if (replay) return { event: replay, replayed: true };
+      const target = await tx.deliveryExecutionEvent.findUnique({ where: { id: input.eventId } });
+      if (!target || target.routeId !== route.id || !isCorrectableAction(target.action)) throw new ArmadaError("Tonggak waktu tidak ditemukan pada rute ini", 404);
+      const prev = await tx.deliveryExecutionEvent.findFirst({
+        where: { action: EXEC_ACTIONS.TIME_CORRECTED, routeId: route.id, payload: { path: ["targetEventId"], equals: target.id } }, orderBy: { createdAt: "desc" },
+      });
+      const previousEffectiveAt = prev?.payload?.correctedOccurredAt
+        ?? ((target.occurredAt && !isSuspectQuality(target.timeQuality) ? target.occurredAt : target.createdAt).toISOString());
+      const event = await createExecutionEvent(tx, {
+        idempotencyKey, action: EXEC_ACTIONS.TIME_CORRECTED, actorId: req.user.id, jobId: target.jobId, routeId: route.id,
+        payload: { targetEventId: target.id, targetAction: target.action, previousEffectiveAt, correctedOccurredAt: input.correctedOccurredAt.toISOString(), reason: input.reason },
+        time: { ...meta, timeQuality: TIME_QUALITY.LIVE },
+      });
+      return { event, replayed: false };
+    });
+    res.set("Idempotency-Replayed", result.replayed ? "true" : "false").status(201).json({ id: result.event.id, action: result.event.action, payload: result.event.payload });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
 
 // POST /api/armada/routes/:id/start — MULAI SATU RUTE SEKALIGUS (10 Sep
 // 2026, laporan owner: "misal ada 7 jalur di 1 mobil yang sama, apakah
@@ -5218,7 +5293,7 @@ armadaRouter.post("/routes/:id/start", requireAnyPermission(P.JOB_WRITE, P.JOB_O
       });
       await createExecutionEvent(tx, {
         idempotencyKey, action: "ROUTE_STARTED", actorId: req.user.id, routeId: route.id,
-        payload: { preparedJobs: target.map((j) => j.id), status: "IN_PROGRESS" },
+        payload: { preparedJobs: target.map((j) => j.id), status: "IN_PROGRESS" }, time: readTimeMeta(req),
       });
       const targetIds = target.map((j) => j.id);
       return { routeId: route.id, replayed: false, targetIds, commandResponse: { targetIds } };
@@ -5276,7 +5351,7 @@ armadaRouter.post("/jobs/:id/arrive", requireAnyPermission(P.JOB_WRITE, P.JOB_OW
       await tx.job.update({ where: { id: job.id }, data: { status: "ARRIVED", arrivedAt: new Date(), arrivalPhotoUrls } });
       await createExecutionEvent(tx, {
         idempotencyKey, action: "JOB_ARRIVED", actorId: req.user.id, jobId: job.id, routeId: job.routeId,
-        payload: { status: "ARRIVED", location: normalizeProofLocation(req.body.location) },
+        payload: { status: "ARRIVED", location: normalizeProofLocation(req.body.location) }, time: readTimeMeta(req),
       });
       return { replayed: false };
     };
@@ -5341,6 +5416,7 @@ armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_
     // Eksekusi lapangan selalu memakai waktu server; koreksi historis admin
     // tetap tersedia melalui endpoint edit POD yang terpisah dan teraudit.
     const waktuSelesai = new Date();
+    const timeMeta = readTimeMeta(req);
 
     const projectJobCompleteV1 = async (tx, locked = {}) => {
       if (owned.routeId) await lockRoute(tx, owned.routeId);
@@ -5377,7 +5453,7 @@ armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_
         await offerUnitCustody(tx, { direction: "INBOUND", unitIds: jobUnits.map((ju) => ju.unitId), jobId: job.id, actorId: req.user.id });
       }
       await syncOrderStatusForUnits(tx, jobUnits.map((ju) => ju.unitId));
-      await syncRouteCompletionStatus(tx, job.routeId);
+      const routeJustCompleted = await syncRouteCompletionStatus(tx, job.routeId, { deferEvent: true });
       // Tutup kasus reschedule (D-160, 13 September 2026) — job yang PERNAH
       // direschedule dan AKHIRNYA benar-benar Selesai menutup kasusnya
       // sendiri di sini, pola sama dengan auto-advance UnitRevision/
@@ -5447,7 +5523,9 @@ armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_
           status: "COMPLETED", recipientName: pod.recipientName, note: pod.note,
           location: pod.location, proofPhotoUrls,
         },
+        time: timeMeta,
       });
+      if (routeJustCompleted) await recordRouteCompleted(tx, job.routeId, timeMeta, { actorId: req.user.id, triggerJobId: job.id }); // SESUDAH event job pemicunya
 
       return { replayed: false, job: j, advancedRevisions: job.type === "PICKUP" ? revisiUntukDiajukan : [], advancedComplaintCaseId };
     };
@@ -5579,6 +5657,7 @@ armadaRouter.post("/jobs/:id/fail", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_
     const idempotencyKey = requireIdempotencyKey(req);
     const failure = validateFailureInput(req.body);
     const { failureReason, failurePhotoUrls } = failure;
+    const timeMeta = readTimeMeta(req);
 
     const projectJobFailV1 = async (tx, locked = {}) => {
       if (owned.routeId) await lockRoute(tx, owned.routeId);
@@ -5611,7 +5690,7 @@ armadaRouter.post("/jobs/:id/fail", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_
         await offerUnitCustody(tx, { direction: "RETURN", unitIds: unitsDibawa.map((unit) => unit.id), jobId: job.id, actorId: req.user.id });
         await syncOrderStatusForUnits(tx, jobUnits.map((ju) => ju.unitId));
       }
-      await syncRouteCompletionStatus(tx, job.routeId);
+      const routeJustCompleted = await syncRouteCompletionStatus(tx, job.routeId, { deferEvent: true });
       // Riwayat lengkap (9 September 2026, D-110) — lihat komentar panjang
       // di schema.prisma model JobIssueLog. Job.failureReason/
       // failurePhotoUrls di atas cuma menyimpan kegagalan TERAKHIR; baris
@@ -5655,7 +5734,9 @@ armadaRouter.post("/jobs/:id/fail", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_
           location: failure.location, failurePhotoUrls,
           rescheduleRequested: failureReason.trim() === "Customer minta reschedule",
         },
+        time: timeMeta,
       });
+      if (routeJustCompleted) await recordRouteCompleted(tx, job.routeId, timeMeta, { actorId: req.user.id, triggerJobId: job.id });
       return { replayed: false, job: j };
     };
     const commandResult = await (await deliveryWriterMode(V2_FLAGS.DELIVERY_EXECUTION_WRITER, { jobId: owned.id })

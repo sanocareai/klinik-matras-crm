@@ -11,7 +11,7 @@
 import React, { useMemo, useState } from "react";
 import { View, Text, Pressable, StyleSheet, Linking, Alert, ActivityIndicator } from "react-native";
 import { useNavigation } from "@react-navigation/native";
-import { ClipboardList, Map, Navigation } from "lucide-react-native";
+import { ClipboardList, Clock, Map, Navigation } from "lucide-react-native";
 import PhotoCapture from "./PhotoCapture";
 import { api } from "../api";
 import { useTheme } from "../hooks/useTheme";
@@ -118,6 +118,11 @@ export default function RouteStartCard({ route, assignedCount, sampleJobId, onCh
       <Pressable style={styles.mapsBtn} onPress={bukaMaps} disabled={mapBusy}>
         {mapBusy ? <ActivityIndicator size="small" color={theme.ACCENT} /> : <Map size={15} color={theme.ACCENT} />}
         <Text style={styles.mapsBtnText}>Buka Rute di Google Maps</Text>
+      </Pressable>
+
+      <Pressable style={[styles.mapsBtn, { marginTop: 8 }]} onPress={() => navigation.navigate("HistoriWaktu", { routeId: route.id, routeCode: route.code })} accessibilityLabel="Histori Waktu rute dan stop">
+        <Clock size={15} color={theme.ACCENT} />
+        <Text style={styles.mapsBtnText}>Histori Waktu</Text>
       </Pressable>
 
       {route.status === "PUBLISHED" && assignedCount > 0 && (

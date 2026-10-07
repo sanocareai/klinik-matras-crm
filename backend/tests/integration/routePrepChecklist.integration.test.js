@@ -94,7 +94,8 @@ test("gerbang: item wajib tanpa bukti menahan start; setelah bukti foto terkirim
 
   const bukti = await kirimBukti(f.driver.token, f.route.id, itemId);
   assert.equal(bukti.status, 201, JSON.stringify(bukti.body));
-  assert.ok(bukti.body.photoUrl.startsWith("/media/job-photos/"));
+  assert.ok(bukti.body.photoUrl.startsWith("/media/route-prep-proofs/"), "bukti disimpan di direktori terlindungi, bukan job-photos statis publik");
+  assert.match(bukti.body.photoUrl, /\?exp=\d+&sig=[0-9a-f]+$/, "URL yang dikembalikan sudah bertanda-tangan");
 
   const sekarang = await startRoute(f.driverApi, f.route.id);
   assert.equal(sekarang.status, 200, JSON.stringify(sekarang.body));
@@ -195,7 +196,10 @@ test("race edit-vs-start: edit menambah item wajib baru bersamaan dengan driver 
   // wajib baru itu sudah lebih dulu tercatat sebelum gerbang dievaluasi.
   const LOCK_BUSY = "Aksi sedang diproses di perangkat lain. Muat ulang status lalu coba lagi.";
   assert.ok(
-    hasilEdit.status === 201 || (hasilEdit.status === 409 && hasilEdit.body.error === LOCK_BUSY),
+    hasilEdit.status === 201
+    || (hasilEdit.status === 409 && (hasilEdit.body.error === LOCK_BUSY
+      // Start menang kunci lebih dulu lalu membekukan checklist -> edit yang menyusul ditolak (hasil sah ketiga).
+      || (hasilEdit.body.code === "CHECKLIST_DIBEKUKAN" && hasilStart.status === 200))),
     `hasilEdit tak terduga: ${hasilEdit.status} ${JSON.stringify(hasilEdit.body)}`,
   );
   assert.ok(

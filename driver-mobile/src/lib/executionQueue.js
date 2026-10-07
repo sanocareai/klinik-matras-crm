@@ -163,6 +163,7 @@ export function createExecutionQueue({ storage, fs, api: client }) {
       deviceId: item.deviceId,
       baseRevision: item.baseRevision,
       baseRouteRevision: item.baseRouteRevision,
+      occurredAt: item.createdAt, // waktu KEJADIAN = saat driver menekan tombol (bukan saat antrean terkirim)
     };
     if (item.action === "route-start") {
       return client.startRoute(item.routeId, { proofPhotoUrls: item.uploadedUrls }, item.idempotencyKey, meta);
