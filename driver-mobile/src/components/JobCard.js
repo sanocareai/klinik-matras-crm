@@ -9,7 +9,6 @@ import React, { useMemo, useState } from "react";
 import { View, Text, Pressable, TextInput, StyleSheet, Linking } from "react-native";
 import { MapPin, Phone, Loader2, Home, AlertTriangle } from "lucide-react-native";
 import PhotoCapture from "./PhotoCapture";
-import PaymentSection from "./PaymentSection";
 import JobProgressStepper from "./JobProgressStepper";
 import { performSubmit } from "../lib/submitJobAction";
 import { customerOf, customerPhoneOf, orderNumberOf, jobLabelOf, mapsUrl, waLinkFromPhone, estJamUntukTampilan, JOB_STATUS_REAL, COMPLAINT_CATEGORY_LABEL, produkLabelOf, salesPersonOf } from "../lib/jobHelpers";
@@ -369,9 +368,10 @@ export default function JobCard({ job, onChanged }) {
         </View>
       )}
 
-      {mode === "idle" && job.status === "COMPLETED" && job.type === "DELIVERY" && (
-        <PaymentSection job={job} onChanged={onChanged} />
-      )}
+      {/* Catat Pembayaran DIHAPUS dari app driver (6 Okt 2026, keputusan
+          owner) — driver konfirmasi pembayaran cash lewat WA ke Natasha,
+          admin yang mencatat lewat recordOrderPayment di order. Lihat
+          catatan panjang di backend routes/armada.js POST /jobs/:id/payment. */}
 
       {/* Lapor Revisi (18 September 2026, laporan owner: "customer komplain
           kain tidak sesuai, minta revisi — otomatis driver di menit yang

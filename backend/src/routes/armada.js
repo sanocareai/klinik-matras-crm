@@ -5431,7 +5431,20 @@ const paymentInclude = {
 // POST /api/armada/jobs/:id/payment { amount, method, proofPhotoUrl? }
 // Sengaja HANYA untuk job DELIVERY — D-011 lahir dari kasus nyata "customer
 // bayar cash ke driver [saat kirim]", bukan saat ambil.
-armadaRouter.post("/jobs/:id/payment", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_WRITE), async (req, res) => {
+//
+// JOB_OWN_WRITE DICABUT dari endpoint ini (6 Okt 2026, keputusan owner:
+// "menghilangkan akses driver mencatat pembayarannya... admin aja yang
+// mencatat, driver konfirmasi lewat WA"). Driver/helper HANYA punya
+// JOB_OWN_WRITE (bukan JOB_WRITE, lihat ROLE_PERMISSIONS di
+// constants/permissions.js) — mencabutnya di sini SENGAJA TIDAK menyentuh
+// endpoint job lain (start/arrive/complete/fail/photos/positions dst, yang
+// semuanya tetap requireAnyPermission(JOB_WRITE, JOB_OWN_WRITE) seperti
+// biasa) — driver tetap mengerjakan jobnya sendiri, cuma TIDAK BISA lagi
+// mencatat pembayaran. ADMIN/DISPATCHER/LEADER_DRIVER (pemegang JOB_WRITE)
+// tetap bisa — jalur resminya recordOrderPayment di order (D-023, lihat
+// routes/orders.js), endpoint job ini dibiarkan ada untuk kompatibilitas
+// data lama (Payment.jobId) tapi bukan lagi jalur utama pencatatan.
+armadaRouter.post("/jobs/:id/payment", requirePermission(P.JOB_WRITE), async (req, res) => {
   try {
     const job = await loadOwnedJob(req);
     if (job.type !== "DELIVERY") {

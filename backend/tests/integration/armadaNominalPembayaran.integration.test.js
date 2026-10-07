@@ -1,6 +1,12 @@
-// PENGAMAN NOMINAL pembayaran yang dicatat driver (POST /api/armada/jobs/:id/payment). Kasus nyata 6 Okt 2026: driver mengetik "1" untuk pembayaran tunai order Rp1.200.000
+// PENGAMAN NOMINAL pembayaran (POST /api/armada/jobs/:id/payment). Kasus nyata 6 Okt 2026: driver mengetik "1" untuk pembayaran tunai order Rp1.200.000
 // dan langsung masuk Uang Kas. Dikunci: nominal sangat kecil wajib konfirmasi eksplisit; nominal > sisa tagihan (termasuk Payment yang BELUM diverifikasi) ditolak; order Rp0 tidak
 // dibatasi atasnya; tidak ada Payment yang tercipta saat ditolak.
+//
+// CALLER DIUBAH ke ADMIN (6 Okt 2026, keputusan owner — lihat catatan panjang
+// di routes/armada.js endpoint ini) — JOB_OWN_WRITE dicabut dari endpoint ini,
+// driver tidak lagi bisa mencatat pembayaran sendiri. Job TETAP milik driver
+// (driverId terisi) — yang berubah cuma SIAPA yang boleh memanggil endpoint
+// ini, aturan nominal di bawah ini sendiri tidak berubah sama sekali.
 import "./setup/env.js";
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -17,11 +23,12 @@ test.afterEach(async () => { await truncateAll(); });
 
 async function fixture({ value = 1_200_000, ongkir = 0 } = {}) {
   const driver = await createTestUser({ roles: ["DRIVER"] });
+  const admin = await createTestUser({ roles: ["ADMIN"] });
   const customer = await testPrisma.customer.create({ data: { name: "Pelanggan Nominal", city: "Jakarta" } });
   const route = await testPrisma.route.create({ data: { code: `NOM-RTE-${++seq}`, date: new Date("2026-10-06T00:00:00.000Z"), status: "PUBLISHED", publishedAt: new Date(), driverId: driver.user.id } });
   const order = await testPrisma.order.create({ data: { customerId: customer.id, orderNumber: `NOM-ORD-${++seq}`, value, ongkir, category: "LAYANAN", status: "DELIVERED" } });
   const job = await testPrisma.job.create({ data: { type: "DELIVERY", orderId: order.id, routeId: route.id, driverId: driver.user.id, status: "COMPLETED", sequence: 1 } });
-  return { order, job, api: makeClient(server.baseUrl, driver.token) };
+  return { order, job, driver, api: makeClient(server.baseUrl, admin.token), driverApi: makeClient(server.baseUrl, driver.token) };
 }
 const bayar = (f, body) => f.api.post(`/api/armada/jobs/${f.job.id}/payment`, { method: "CASH", ...body });
 const jumlahPayment = (f) => testPrisma.payment.count({ where: { orderId: f.order.id } });
@@ -67,6 +74,18 @@ test("ongkir ikut tagihan; order bertagihan Rp0 tidak dibatasi atas tetapi nomin
   const kecil = await bayar(g, { amount: 5_000 });
   assert.equal(kecil.status, 422);
   assert.equal(kecil.body.code, "NOMINAL_KECIL_PERLU_KONFIRMASI");
+});
+
+test("REGRESI 6 Okt 2026: driver (JOB_OWN_WRITE) ditolak 403 mencatat pembayaran — hanya pemegang JOB_WRITE (admin/dispatcher) yang boleh", async () => {
+  const f = await fixture();
+  const r = await f.driverApi.post(`/api/armada/jobs/${f.job.id}/payment`, { amount: 500_000, method: "CASH" });
+  assert.equal(r.status, 403, JSON.stringify(r.body));
+  assert.equal(await jumlahPayment(f), 0, "tidak ada Payment tercipta dari percobaan driver yang ditolak");
+
+  // Driver TETAP bisa mengerjakan job-nya sendiri lewat endpoint lain (JOB_OWN_WRITE
+  // tidak dicabut dari situ) — cuma endpoint pembayaran ini yang berubah.
+  const posisi = await f.driverApi.post(`/api/armada/jobs/${f.job.id}/positions`, { lat: -6.2, lng: 106.8, recordedAt: new Date().toISOString() });
+  assert.equal(posisi.status, 201, "JOB_OWN_WRITE driver di endpoint LAIN tidak boleh ikut tercabut");
 });
 
 test("periksaNominal (murni): sisa kecil yang sah tidak dianggap salah ketik; batas atas memakai sisa", () => {
