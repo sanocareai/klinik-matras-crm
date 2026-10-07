@@ -26,7 +26,15 @@ export const APP_MODES = Object.freeze([
   // PIC Bahan per pekerjaan (jalur Pengerjaan Pesanan): hanya pekerjaan yang ditugaskan kepadanya oleh Lead; otorisasi ditegakkan server per pekerjaan (bukan peran baru).
   Object.freeze({ key: "bahan", label: "PIC Bahan", to: "/produksi/bahan", lane: "MATERIAL", roles: FLOOR_ROLES }),
   Object.freeze({ key: "dokumentasi", label: "Dokumentasi", to: "/produksi/dokumentasi", lane: null, roles: Object.freeze(["PRODUCTION_DOCUMENTER", "PRODUCTION_LEAD", "ADMIN", "OWNER"]) }),
+  // Aplikasi PIC QC (Fase 2 LAYANAN): antrean pengujian awal, TERLIHAT walau menu QC desktop disembunyikan. Peran = cermin izin server (QC_WRITE / PRODUCTION_EXECUTE_ANY → QC_LEAD, ADMIN, OWNER); Lead/Meja tidak punya izin tulis uji, maka tidak ditawari.
+  Object.freeze({ key: "qc", label: "PIC QC", to: "/produksi/qc", lane: null, roles: Object.freeze(["QC_LEAD", "ADMIN", "OWNER"]) }),
 ]);
+// Aplikasi PIC QC: kerangka & bottom navigation yang sama dengan aplikasi lantai lain (Antrean · Akun).
+export const QC_NAV_TABS = Object.freeze([
+  Object.freeze({ key: "antrean", label: "Antrean", icon: "ClipboardCheck" }),
+  Object.freeze({ key: "akun", label: "Akun", icon: "User" }),
+]);
+export const qcTabOf = (raw) => (QC_NAV_TABS.some((t) => t.key === raw) ? raw : "antrean");
 // Pengguna multi-peran hanya melihat mode yang memang diizinkan perannya (tidak ada tombol yang pasti 403).
 export const allowedModes = (roles = []) => APP_MODES.filter((m) => (roles || []).some((r) => m.roles.includes(r)));
 export const modeOfLane = (lane) => APP_MODES.find((m) => m.lane === (lane === "CORNER" || lane === "MATERIAL" ? lane : "TABLE"));

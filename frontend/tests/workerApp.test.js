@@ -51,7 +51,8 @@ test("mode aplikasi: multi-role hanya melihat mode yang diizinkan; peran tanpa i
   assert.deepEqual(allowedModes(["PRODUCTION_DOCUMENTER"]).map((m) => m.key), ["dokumentasi"]);
   assert.deepEqual(allowedModes(["PRODUCTION_WORKER", "PRODUCTION_DOCUMENTER"]).map((m) => m.key), ["meja", "corner", "bahan", "dokumentasi"]);
   assert.deepEqual(allowedModes(["ADMIN"]).map((m) => m.key), APP_MODES.map((m) => m.key));
-  for (const r of [["SALES"], ["FINANCE"], ["DRIVER"], ["WAREHOUSE"], ["QC_LEAD"], []]) assert.deepEqual(allowedModes(r), [], r.join());
+  for (const r of [["SALES"], ["FINANCE"], ["DRIVER"], ["WAREHOUSE"], []]) assert.deepEqual(allowedModes(r), [], r.join());
+  assert.deepEqual(allowedModes(["QC_LEAD"]).map((m) => m.key), ["qc"], "PIC QC hanya melihat mode PIC QC (Aplikasi PIC QC, Fase 2 LAYANAN)");
   assert.equal(modeOfLane("MATERIAL").to, "/produksi/bahan"); assert.equal(modeOfLane("CORNER").to, "/produksi/corner"); assert.equal(modeOfLane("TABLE").to, "/produksi/meja");
 });
 

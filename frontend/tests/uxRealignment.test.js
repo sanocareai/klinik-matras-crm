@@ -31,10 +31,10 @@ function loadModel() {
   return new Function("STEP_BY_NO", "bucketStyle", "PRODUCT_TYPE_LABELS", "rankOfView", `${src}\nreturn { priorityMeta, dataGaps, materialBadge, stageText, backlogOf, mergeQcWithViews, pipelineChips, mejaLabel, MEJA, humanizeRequest, isGantiKain, mattressInfo, salesNoteOf };`)(STEP_BY_NO, bucketStyle, PRODUCT_TYPE_LABELS, rankOfView);
 }
 
-test("Navigasi Production (P12B.2): OPERASIONAL 6 menu; MODE KERJA akordeon default tertutup; KONTROL & LAPORAN 3 menu; ADMINISTRASI = Pengaturan; tanpa Legacy", () => {
+test("Navigasi Production (P12B.2): OPERASIONAL 7 menu; MODE KERJA akordeon default tertutup; KONTROL & LAPORAN 3 menu; ADMINISTRASI = Pengaturan; tanpa Legacy", () => {
   const sec = Object.fromEntries(PRODUCTION_NAV.map((x) => [x.section, x]));
   assert.deepEqual(PRODUCTION_NAV.map((x) => x.section), ["OPERASIONAL", "MODE KERJA", "KONTROL & LAPORAN", "ADMINISTRASI"]);
-  assert.deepEqual(sec["OPERASIONAL"].items.map((i) => i.label), ["Ringkasan", "Order Produksi", "Status Produksi", "Rencana Produksi", "Bahan Produksi"]); // Slice 1: QC disembunyikan sementara
+  assert.deepEqual(sec["OPERASIONAL"].items.map((i) => i.label), ["Ringkasan", "Order Produksi", "Status Produksi", "Rencana Produksi", "Antrean PIC QC", "Bahan Produksi"]); // Slice 1: QC disembunyikan sementara
   assert.deepEqual(sec["MODE KERJA"].items.map((i) => i.label), ["Aplikasi Meja", "Aplikasi Corner", "Aplikasi Dokumentasi", "Andon TV"]);
   assert.ok(sec["MODE KERJA"].collapsible && sec["MODE KERJA"].defaultClosed, "akordeon, default tertutup");
   assert.deepEqual(sec["KONTROL & LAPORAN"].items.map((i) => i.label), ["KPI & Laporan", "Biaya Produksi", "Komplain & Revisi"]);

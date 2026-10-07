@@ -102,6 +102,7 @@ const ProductionRencanaWorkspace = lazy(() => import("../pages/bengkel/Productio
 const WarehouseProductionQueue = lazy(() => import("../pages/warehouse/WarehouseProductionQueue.jsx"));
 const WorkerLane = lazy(() => import("../pages/produksi/WorkerLane.jsx"));
 const ProductionDocumentation = lazy(() => import("../pages/produksi/ProductionDocumentation.jsx"));
+const ProductionQcApp = lazy(() => import("../pages/produksi/ProductionQcApp.jsx"));
 const ProductionAndon = lazy(() => import("../pages/bengkel/ProductionAndon.jsx"));
 // P8.1 (UI & Navigation Consolidation, 29 September 2026) — hub/halaman BARU
 // murni navigasi & layout; TIDAK ada state machine/API/migration baru.
@@ -119,6 +120,7 @@ export const STANDALONE_PAGES = [
   { path: "/produksi/corner", render: (ctx) => <DemoPage slotBar><WorkerLane lane="CORNER" user={ctx?.user} onLogout={ctx?.onLogout} /></DemoPage> },
   { path: "/produksi/bahan", render: (ctx) => <DemoPage slotBar><WorkerLane lane="MATERIAL" user={ctx?.user} onLogout={ctx?.onLogout} /></DemoPage> }, // PIC Bahan per pekerjaan
   { path: "/produksi/dokumentasi", render: (ctx) => <DemoPage slotBar><ProductionDocumentation user={ctx?.user} onLogout={ctx?.onLogout} /></DemoPage> },
+  { path: "/produksi/qc", render: (ctx) => <DemoPage slotBar><ProductionQcApp user={ctx?.user} onLogout={ctx?.onLogout} /></DemoPage> }, // Aplikasi PIC QC — antrean pengujian awal
   { path: "/produksi/ringkasan-saya", render: () => <ProductionKpi /> }, // P11 — ringkasan pekerjaan sendiri (PIC/dokumentasi/QC)
   { path: "/bengkel/andon", render: () => <ProductionAndon /> },
 ];

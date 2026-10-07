@@ -6,16 +6,16 @@ import { SECTION_BY_KEY } from "./componentNotesModel.js";
 
 // Antrean PENGUJIAN AWAL untuk PIC QC (fase 2 Produksi LAYANAN): unit yang menunggu "QC sebelum bongkar" atau "Uji fondasi awal". Sumber = kartu Run (next.wait) — bukan antrean paralel.
 // Formulir = ComponentNoteSheet yang SAMA dengan Unit 360/Meja/Dokumentasi (hasil tersimpan di Catatan Komponen, satu sumber). Hanya pemegang izin QC yang melihat antrean (server 403 untuk lainnya).
-export default function PreTestQueue() {
+export default function PreTestQueue({ standalone = false, onLoaded = null }) {
   const [items, setItems] = useState(null); const [allowed, setAllowed] = useState(true); const [error, setError] = useState("");
   const [open, setOpen] = useState(null); const [detail, setDetail] = useState(null); const [notice, setNotice] = useState("");
   const load = useCallback(async () => {
-    try { const r = await api.getComponentQcQueue(); setItems(r.items || []); setError(""); }
+    try { const r = await api.getComponentQcQueue(); setItems(r.items || []); setError(""); onLoaded?.(r.items || []); }
     catch (e) { if (e?.status === 403) setAllowed(false); else setError("Antrean pengujian awal belum bisa dimuat."); }
-  }, []);
+  }, [onLoaded]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => { if (!notice) return undefined; const t = setTimeout(() => setNotice(""), 4000); return () => clearTimeout(t); }, [notice]);
-  if (!allowed) return null;
+  if (!allowed) return standalone ? <p role="alert" data-testid="pretest-forbidden" className="m-0 rounded-btn bg-orangebg px-3 py-3 text-[13.5px] text-orange">Akun ini tidak memiliki izin PIC QC. Hubungi Admin bila Anda seharusnya mencatat pengujian awal.</p> : null;
 
   async function openSheet(item) {
     setOpen(item); setDetail(null);
@@ -24,7 +24,7 @@ export default function PreTestQueue() {
   const salesOf = (item) => (detail?.salesContext || { complaintLabels: item.customer.complaints, request: item.customer.request, customerWeightKg: item.customer.weightKg, orderNumber: item.customer.orderNumber });
 
   return (
-    <section aria-label="Pengujian awal menunggu PIC QC" data-testid="pretest-queue" className="mb-4 space-y-2 rounded-[14px] border border-line bg-surface p-3">
+    <section aria-label="Pengujian awal menunggu PIC QC" data-testid="pretest-queue" className={standalone ? "space-y-2" : "mb-4 space-y-2 rounded-[14px] border border-line bg-surface p-3"}>
       <div className="flex items-center gap-2"><ClipboardCheck size={16} className="text-accent" aria-hidden /><h2 className="m-0 text-[14px] font-bold text-ink">Pengujian awal menunggu PIC QC</h2></div>
       {notice && <p role="status" data-testid="pretest-notice" className="m-0 rounded-btn bg-greenbg px-3 py-2 text-[13px] font-semibold text-green">{notice}</p>}
       {error && <p role="alert" className="m-0 text-[13px] text-red">{error} <button type="button" onClick={load} className="font-bold underline">Coba lagi</button></p>}

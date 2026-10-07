@@ -3,6 +3,7 @@
 // (lib/menuVisibility.js). Server tetap penegak izin sebenarnya — di sini hanya menyembunyikan menu yang pasti buntu.
 export const PRODUCTION_SETTINGS_ROLES = Object.freeze(["ADMIN", "OWNER", "PRODUCTION_LEAD"]);
 export const PRODUCTION_KPI_ROLES = Object.freeze(["ADMIN", "OWNER", "PRODUCTION_LEAD"]);
+export const PRODUCTION_QC_APP_ROLES = Object.freeze(["ADMIN", "OWNER", "QC_LEAD"]);
 
 export const PRODUCTION_NAV = Object.freeze([
   {
@@ -12,6 +13,8 @@ export const PRODUCTION_NAV = Object.freeze([
       { to: "/bengkel/order-produksi", label: "Order Produksi", icon: "Boxes" },
       { to: "/bengkel/production-v2", label: "Status Produksi", icon: "CalendarClock" },
       { to: "/bengkel/rencana-produksi", label: "Rencana Produksi", icon: "ClipboardList" },
+      // Antrean pengujian awal PIC QC (Fase 2 LAYANAN) — terlihat langsung di OPERASIONAL (bukan di akordeon tertutup) untuk pemegang izin QC; berdiri sendiri, tidak bergantung pada menu QC desktop yang disembunyikan. Server menegakkan izin tulis.
+      { to: "/produksi/qc", label: "Antrean PIC QC", icon: "ClipboardCheck", bolehPeran: PRODUCTION_QC_APP_ROLES },
       // Menu Quality Control DISEMBUNYIKAN sementara (simplifikasi slice 1; gerbang lifecycle QC diubah di slice 2). Halaman & rute tetap ada (tautan lama/bookmark tidak patah).
       { to: "/bengkel/materials", label: "Bahan Produksi", icon: "ArrowUpFromLine" },
     ],
