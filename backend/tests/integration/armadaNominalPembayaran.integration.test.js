@@ -15,13 +15,15 @@ test.before(async () => { await truncateAll(); server = await startTestServer(bu
 test.after(async () => { await truncateAll(); await server.close(); await testPrisma.$disconnect(); });
 test.afterEach(async () => { await truncateAll(); });
 
-async function fixture({ value = 1_200_000, ongkir = 0 } = {}) {
+async function fixture({ value = 1_200_000, ongkir = 0, sebagai = "ADMIN" } = {}) {
+  // Pengaman nominal dites dengan akun yang BOLEH mencatat pembayaran (ADMIN). Driver sendiri ditolak total (lihat tes terakhir).
   const driver = await createTestUser({ roles: ["DRIVER"] });
+  const pencatat = sebagai === "DRIVER" ? driver : await createTestUser({ roles: [sebagai] });
   const customer = await testPrisma.customer.create({ data: { name: "Pelanggan Nominal", city: "Jakarta" } });
   const route = await testPrisma.route.create({ data: { code: `NOM-RTE-${++seq}`, date: new Date("2026-10-06T00:00:00.000Z"), status: "PUBLISHED", publishedAt: new Date(), driverId: driver.user.id } });
   const order = await testPrisma.order.create({ data: { customerId: customer.id, orderNumber: `NOM-ORD-${++seq}`, value, ongkir, category: "LAYANAN", status: "DELIVERED" } });
   const job = await testPrisma.job.create({ data: { type: "DELIVERY", orderId: order.id, routeId: route.id, driverId: driver.user.id, status: "COMPLETED", sequence: 1 } });
-  return { order, job, api: makeClient(server.baseUrl, driver.token) };
+  return { order, job, api: makeClient(server.baseUrl, pencatat.token) };
 }
 const bayar = (f, body) => f.api.post(`/api/armada/jobs/${f.job.id}/payment`, { method: "CASH", ...body });
 const jumlahPayment = (f) => testPrisma.payment.count({ where: { orderId: f.order.id } });
@@ -78,4 +80,17 @@ test("periksaNominal (murni): sisa kecil yang sah tidak dianggap salah ketik; ba
   assert.equal(periksaNominal({ amount: 6_000, tagihan: 100_000, dibayar: 95_000 })?.code, "NOMINAL_MELEBIHI_SISA");
   assert.equal(periksaNominal({ amount: 1_000, tagihan: 0, dibayar: 0 })?.code, "NOMINAL_KECIL_PERLU_KONFIRMASI");
   assert.equal(periksaNominal({ amount: 10_000, tagihan: 1_200_000, dibayar: 0 }), null, "tepat di batas = tidak dianggap kecil");
+});
+
+test("DRIVER tidak boleh mencatat pembayaran sama sekali (keputusan Owner 7 Okt 2026): 403 PEMBAYARAN_BUKAN_UNTUK_DRIVER, tidak ada Payment/jurnal", async () => {
+  const f = await fixture({ sebagai: "DRIVER" });
+  const jurnalSebelum = await testPrisma.finJournalEntry.count();
+  for (const body of [{ amount: 1_200_000 }, { amount: 1, konfirmasiNominalKecil: true }, { amount: 500_000, method: "TRANSFER" }]) {
+    const r = await bayar(f, body);
+    assert.equal(r.status, 403, JSON.stringify(r.body));
+    assert.equal(r.body.code, "PEMBAYARAN_BUKAN_UNTUK_DRIVER");
+    assert.match(r.body.error, /Sales/);
+  }
+  assert.equal(await jumlahPayment(f), 0);
+  assert.equal(await testPrisma.finJournalEntry.count(), jurnalSebelum);
 });
