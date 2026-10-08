@@ -64,16 +64,16 @@ export default function ProductionWorkflowSettings() {
 
         <Card className="space-y-2 p-4" data-testid="qc-gate-default-card">
           <h3 className="m-0 text-[14px] font-bold text-ink">Gerbang QC untuk run baru</h3>
-          <p className="m-0 text-[12.5px] text-ink3">Bawaan <b>nonaktif</b> (kebijakan lama) sampai Admin mengaktifkannya. Bila aktif, run LAYANAN yang dibuka SETELAH ini dipin ke versi yang dipilih saat lahir: <b>V1</b> = catatan PIC QC sebelum bongkar; <b>V2</b> = V1 + gerbang perakitan (uji fondasi baru, hasil aktual, uji kasur jadi). Mengubah bawaan <b>tidak mengubah run yang sudah ada</b>; menerapkan ke run berjalan hanya lewat aksi eksplisit beralasan yang tercatat di run itu.</p>
+          <p className="m-0 text-[12.5px] text-ink3">Bawaan <b>nonaktif</b> (kebijakan lama) sampai Admin mengaktifkannya. Bila aktif, run LAYANAN yang dibuka SETELAH ini dipin ke versi yang dipilih saat lahir: <b>Gerbang awal</b> = catatan PIC QC sebelum bongkar; <b>Gerbang awal + perakitan</b> = gerbang awal + uji hasil perakitan (uji fondasi baru, hasil aktual, uji kasur jadi). Mengubah bawaan <b>tidak mengubah run yang sudah ada</b>; menerapkan ke run berjalan hanya lewat aksi eksplisit beralasan yang tercatat di run itu.</p>
           <div className="flex flex-wrap items-center gap-3">
             <label className="flex items-center gap-2 text-[13px] text-ink"><input data-testid="qc-gate-default-toggle" type="checkbox" disabled={!canWrite || !!busy} checked={!!s?.qcGateDefault?.enabled}
               onChange={(e) => run("qcgate", () => api.setProductionV2QcGateDefault(e.target.checked, e.target.checked ? (s?.qcGateDefault?.policy || "QC_GATE_V2") : undefined), e.target.checked ? "Gerbang QC aktif untuk run baru." : "Gerbang QC dimatikan untuk run baru (run yang sudah ada tidak berubah).")} /> Aktif untuk run baru</label>
             <select data-testid="qc-gate-default-version" aria-label="Versi gerbang QC untuk run baru" className={SELECT} disabled={!canWrite || !!busy || !s?.qcGateDefault?.enabled} value={s?.qcGateDefault?.policy || "QC_GATE_V2"}
               onChange={(e) => run("qcgatev", () => api.setProductionV2QcGateDefault(true, e.target.value), "Versi gerbang QC untuk run baru diperbarui.")}>
-              <option value="QC_GATE_V1">V1 — QC sebelum bongkar</option>
-              <option value="QC_GATE_V2">V2 — V1 + gerbang perakitan</option>
+              <option value="QC_GATE_V1">Gerbang awal — QC sebelum bongkar</option>
+              <option value="QC_GATE_V2">Gerbang awal + perakitan</option>
             </select>
-            <span className="text-[12px] text-ink3" data-testid="qc-gate-default-state">{s?.qcGateDefault?.enabled ? `Aktif: ${s.qcGateDefault.policy}` : "Nonaktif (kebijakan lama)"}</span>
+            <span className="text-[12px] text-ink3" data-testid="qc-gate-default-state">{s?.qcGateDefault?.enabled ? `Aktif: ${s.qcGateDefault.policy === "QC_GATE_V1" ? "gerbang awal" : "gerbang awal + perakitan"}` : "Nonaktif (kebijakan lama)"}</span>
           </div>
         </Card>
 

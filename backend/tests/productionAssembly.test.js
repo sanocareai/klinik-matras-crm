@@ -111,7 +111,7 @@ test("validator tahap 7/8 dengan gerbang: bukti 7 menuntut hasil aktual & menaut
 test("kontrak sumber: kebijakan V2 dipin pada Run baru; Run NULL/V1 tidak terkunci; satu pintu pembaca bukti; QC PASS butuh uji kasur jadi; tanpa tabel/penulis stok baru", () => {
   const src = (f) => fs.readFileSync(path.join(here, "..", "src", f), "utf8");
   assert.match(src("services/productionSettingsService.js"), /QC_GATE_POLICY_V2 = "QC_GATE_V2"/);
-  assert.match(src("services/productionWorkshopExecutionCommandService.js"), /qcGatePolicyVersion: QC_GATE_POLICY_V2/); assert.match(src("services/unitCustodyCommandService.js"), /qcGatePolicyVersion: QC_GATE_POLICY_V2/);
+  assert.match(src("services/productionWorkshopExecutionCommandService.js"), /qcGatePolicyVersion: await defaultQcGatePolicy[(]tx[)]/); assert.match(src("services/unitCustodyCommandService.js"), /qcGatePolicyVersion: await defaultQcGatePolicy[(]tx[)]/);
   assert.match(src("services/productionWorkshopExecutionCommandService.js"), /hasAssemblyGate = \(run\) => run\?\.qcGatePolicyVersion === QC_GATE_POLICY_V2/);
   assert.match(src("services/productionStepCommandService.js"), /assemblyGate = isLayanan && inModule && hasAssemblyGate\(run\)/);
   assert.match(src("services/productionQcHandoffCommandService.js"), /QC_FINISHED_TEST_REQUIRED/); assert.doesNotMatch(src("services/productionQcHandoffCommandService.js").replace(/\/\/.*$/gm, ""), /productionStepEvidence\.findMany\([^)]*stepNo: \{ in: \[6, 7\]/);
