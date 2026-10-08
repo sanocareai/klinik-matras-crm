@@ -23,7 +23,7 @@ import {
   ORDER_STATUS_BUCKET_LABELS, orderStatusBucket,
   PAYMENT_STATUS_LABELS, PAYMENT_STATUS_BADGE, PAYMENT_STATUSES, KOTA_LIST,
   HEALTH_COMPLAINT_LABELS, HEALTH_COMPLAINT_OPTIONS,
-  parseOrderNotes, buildOrderNotes, promoLabel,
+  parseOrderNotes, buildOrderNotes, promoLabel, hargaSebelumDiskonPromo,
   PRODUCT_LINE_LABELS, PRODUCT_LINE_ICONS, PRODUCT_TYPES_BY_LINE, PRODUCT_TYPE_LABELS, PRICE_ITEM_KIND_LABELS,
   jenisProdukOptions, resolveVariantKey, UKURAN_VARIANT_KEY,
 } from "../../utils/format.js";
@@ -33,6 +33,7 @@ import { opsiStatusBayar } from "../../features/klaim/klaimLunasLogic.js";
 import { useKlaimLunasAktif } from "../../features/klaim/useKlaimLunasAktif.js";
 import { lunasDicegat, PESAN_LUNAS_BUTUH_PEMBAYARAN } from "../../features/klaim/klaimLunasLogic.js";
 import UkuranCustomFields from "./UkuranCustomFields.jsx";
+import PromoLimitNotice from "./PromoLimitNotice.jsx";
 import { isUkuranCustom, validasiUkuranCustom, formatUkuranKasur } from "../../utils/ukuranKasur.js";
 import DeliveryTimeline from "../../features/armada/components/DeliveryTimeline.jsx";
 import ComplaintCaseSection from "./ComplaintCaseSection.jsx";
@@ -279,9 +280,7 @@ function buildWaMessage(order, customer, actorName) {
   // tampilan pesan WA (bukan disimpan). Kalau promo tidak punya
   // discountPercent (mis. promo bonus item), tidak ada cara menghitung
   // mundur yang benar — tampilkan final biaya apa adanya, jangan menebak.
-  const biayaAwal = order.promo?.discountPercent
-    ? Math.round(finalBiaya / (1 - order.promo.discountPercent / 100))
-    : finalBiaya;
+  const biayaAwal = hargaSebelumDiskonPromo(finalBiaya, order.promo);
   const alamatLengkap = `${order.deliveryAddress || "-"}${order.deliveryCity ? `, ${order.deliveryCity}` : ""}`;
 
   return [
@@ -1356,6 +1355,10 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
         ) : (
           <div style={{ fontSize: 13, color: "var(--text-muted)" }}>—</div>
         )}
+        <PromoLimitNotice
+          promo={promos.find((p) => p.id === promoId) || (order.promo && order.promo.id === (promoId || order.promoId) ? order.promo : null)}
+          items={items}
+        />
       </div>
 
       {/* Items layanan — hanya untuk LAYANAN */}
@@ -2156,6 +2159,7 @@ function AddOrderForm({ customerId, onDone, onCancel, orderOptions, promos }) {
               placeholder="Tanpa promo" ariaLabel="Pilih promo"
               triggerClassName="w-full max-w-none"
             />
+            <PromoLimitNotice promo={promos.find((p) => p.id === promoId)} items={items} />
           </div>
         )}
 

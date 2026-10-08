@@ -27,7 +27,7 @@ const LEBAR_TETAP = {
   "ID Order": 20, Pelanggan: 22, "No HP": 16, Kota: 14, "Sales Person": 14, Kategori: 13, "Lini Produk": 14, "Jenis Produk": 16,
   "Merk/Model": 18, "Ukuran/Konfigurasi": 24, Layanan: 30, Status: 13, "Jenis Pekerjaan": 20, "No Komplain": 20, "Keluhan Komplain": 40,
   "Hari di Status": 11, "Perkiraan?": 10, Mandek: 9, Pembayaran: 14, "Sudah Lunas?": 11, "Tanggal Lunas": 13, Nilai: 15,
-  "Ada Nego Di Bawah Standard": 16, Promo: 22, Ongkir: 13, "Ongkir Klaim Garansi": 14, Komplain: 10, "Kondisi Kesehatan": 16,
+  "Ada Nego Di Bawah Standard": 16, Promo: 22, "Cek Batas Diskon": 30, Ongkir: 13, "Ongkir Klaim Garansi": 14, Komplain: 10, "Kondisi Kesehatan": 16,
   "Kategori Keluhan": 24, "Berat Badan": 18, "Keluhan/Catatan": 36, "Kota Pengiriman": 16, "Alamat Pengiriman": 36,
   "Estimasi Pick Up": 14, "Tanggal Pick Up Pasti": 14, "Estimasi Kirim": 14, "Tanggal Kirim Pasti": 14, "Tgl Pickup Komplain": 14,
   "Tgl Kirim Komplain": 14, "Link Lokasi": 18, Dibuat: 12,
@@ -115,6 +115,10 @@ function buatSheetOrder(wb, rows, meta) {
       if (h === "Mandek" && r[h] === "Ya") {
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: WARNA.mandek[0] } };
         cell.font = { name: "Calibri", size: 11, bold: true, color: { argb: WARNA.mandek[1] } };
+      }
+      if (h === "Cek Batas Diskon" && String(r[h] || "").startsWith("MELEBIHI")) {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEE2E2" } };
+        cell.font = { name: "Calibri", size: 11, bold: true, color: { argb: "FFB91C1C" } };
       }
       if (h === "Status" && m.menunggu) cell.font = { name: "Calibri", size: 11, bold: true, color: { argb: "FF92400E" } };
       // Tautan: nomor HP -> chat WhatsApp, Link Lokasi -> peta.
@@ -260,6 +264,9 @@ function buatSheetRingkasan(wb, rows, meta, headers, info) {
   baris("Nilai order Menunggu (belum masuk omset)", `SUMIFS(${NILAI},${STATUS},"Menunggu")`,
     rows.reduce((s, row, i) => (meta[i]?.menunggu ? s + (Number(row.Nilai) || 0) : s), 0), rp);
   baris("Order komplain / revisi aktif", `COUNTIFS(${rng("Jenis Pekerjaan")},"KOMPLAIN / REVISI")`, hitung((m) => m.komplain));
+  if (headers.includes("Cek Batas Diskon")) {
+    baris("Order diskon melebihi batas promo", `COUNTIFS(${rng("Cek Batas Diskon")},"MELEBIHI*")`, rows.filter((x) => String(x["Cek Batas Diskon"] || "").startsWith("MELEBIHI")).length);
+  }
   if (headers.includes("Mandek")) baris("Order mandek", `COUNTIFS(${rng("Mandek")},"Ya")`, rows.filter((x) => x.Mandek === "Ya").length);
   r++;
 

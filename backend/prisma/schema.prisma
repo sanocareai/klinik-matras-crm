@@ -1550,6 +1550,10 @@ model Promo {
   code            String    @unique
   name            String // nama tampil (mis. "Merdeka dari Sakit Pinggang")
   discountPercent Int? // opsional — sebagian promo mungkin bukan persen (mis. bonus item)
+  // Batas maksimal diskon (8 Okt 2026): potongan harga MAKSIMUM dalam Rupiah, mis. "diskon 17% maks Rp500.000". NULL = tanpa
+  // batas. Dipakai dua hal: (1) harga-sebelum-diskon di invoice/WA dipotong batas ini, (2) peringatan di form/order/export bila
+  // diskon yang diberikan melampauinya. Lihat services/diskonPromo.js.
+  maxDiscountAmount Int? @map("max_discount_amount")
   validFrom       DateTime? @db.Date
   validUntil      DateTime? @db.Date
   active          Boolean   @default(true)

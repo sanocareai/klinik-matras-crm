@@ -299,7 +299,23 @@ export function parseOrderNotes(notes) {
 // frontend/src/utils/format.js. Kode voucher didahulukan (D-026, lihat
 // catatan di sana) karena satu campaign bisa punya beberapa kode berbeda.
 export function promoLabel(p) {
-  return `${p.code} — ${p.name}`;
+  // Batas maksimal diskon (8 Okt 2026) ikut tampil — sama dengan web.
+  const batas = p.maxDiscountAmount != null ? ` · maks ${formatRupiahShort(p.maxDiscountAmount)}` : "";
+  return `${p.code} — ${p.name}${batas}`;
+}
+
+// Peringatan batas maksimal diskon promo (8 Okt 2026) — SAMA PERSIS dengan cekBatasDiskonPromo() di frontend/src/utils/format.js
+// dan periksaBatasDiskon() di backend/src/services/diskonPromo.js. Diskon = selisih harga final ke harga STANDARD katalog.
+export function cekBatasDiskonPromo(items, promo) {
+  const batas = promo?.maxDiscountAmount;
+  if (batas == null) return null;
+  let diskon = 0;
+  for (const it of items || []) {
+    if (it?.standardPrice == null) continue;
+    const selisih = Number(it.standardPrice) - (Number(it.harga) || 0);
+    if (selisih > 0) diskon += selisih;
+  }
+  return { batas, diskon, lebih: Math.max(0, diskon - batas), melebihi: diskon > batas };
 }
 
 // "14:05" untuk timestamp di bubble chat

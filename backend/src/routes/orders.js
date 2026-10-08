@@ -36,6 +36,7 @@ import { suggestDeliveryJob } from "../services/deliveryHandoff.js";
 import { ensurePickupJobForOrder } from "../services/armadaAutoJob.js";
 import { executeDeliveryCrossBoundaryCommand } from "../services/deliveryCrossBoundaryCommandService.js";
 import { cancelOrderDeliveryJobs } from "../services/deliveryJobCancellationService.js";
+import { hitungDiskonPromo, periksaBatasDiskon } from "../services/diskonPromo.js";
 import { V2_FLAGS } from "../services/v2FeatureFlags.js";
 import { ACTIVE_JOB_STATUSES } from "../services/jobStatus.js";
 import { sendText, sendMedia, isPlaceholderGroupJid } from "../services/wahaClient.js";
@@ -1237,7 +1238,7 @@ orderRouter.get("/", async (req, res) => {
         },
         // D-026 — cukup id/code/name untuk chip di tabel, tidak perlu round
         // trip terpisah tiap baris.
-        promo: { select: { id: true, code: true, name: true } },
+        promo: { select: { id: true, code: true, name: true, discountPercent: true, maxDiscountAmount: true } },
         // D-036 (30 Agustus 2026) — supaya Sales CRM bisa lihat status
         // Delivery TANPA pindah halaman ("masing-masing divisi tau order A
         // sudah di tahap mana"). Cuma field ringkas, bukan seluruh job
@@ -1398,6 +1399,8 @@ orderRouter.get("/", async (req, res) => {
         daysInStatusPerkiraan: !trans,
         pickupJob: ringkasJob(pickupJob),
         deliveryJob: ringkasJob(deliveryJob),
+        // Peringatan batas maksimal diskon promo (8 Okt 2026) — null bila tanpa promo/tanpa batas.
+        promoCheck: periksaBatasDiskon({ items: o.items, promo: o.promo }),
         complaintPickupJob: ringkasJob(complaintPickupJob),
         complaintDeliveryJob: ringkasJob(complaintDeliveryJob),
       };
@@ -2040,9 +2043,7 @@ function buildWaMessage(order, customer, actorName) {
 
   const layanan    = (order.items || []).map((i) => i.layananName).join(", ") || "-";
   const finalBiaya = order.value || 0;
-  const biayaAwal = order.promo?.discountPercent
-    ? Math.round(finalBiaya / (1 - order.promo.discountPercent / 100))
-    : finalBiaya;
+  const biayaAwal = hitungDiskonPromo({ totalFinal: finalBiaya, promo: order.promo }).hargaSebelumDiskon;
   const alamatLengkap = `${order.deliveryAddress || "-"}${order.deliveryCity ? `, ${order.deliveryCity}` : ""}`;
 
   return [
@@ -2094,7 +2095,7 @@ orderRouter.post("/:id/send-wa-summary", async (req, res) => {
         customer: { include: { assignedSales: { select: { name: true } } } },
         items: { orderBy: { sortOrder: "asc" } },
         weightEntries: { orderBy: { sortOrder: "asc" } },
-        promo: { select: { code: true, discountPercent: true } },
+        promo: { select: { code: true, discountPercent: true, maxDiscountAmount: true } },
       },
     });
     if (!order) return res.status(404).json({ error: "Order tidak ditemukan" });
@@ -2458,6 +2459,16 @@ orderRouter.post("/:id/complaint/resolve", requirePermission(P.ORDER_WRITE), asy
   }
 });
 
+// Peringatan batas diskon promo untuk SATU order — dikirim di respons tulis-item supaya web/app bisa langsung memberi tahu
+// sales tanpa mengambil ulang order. TIDAK memblokir (lihat services/diskonPromo.js).
+async function promoCheckOrder(orderId) {
+  const o = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: { items: { select: { harga: true, standardPrice: true } }, promo: { select: { code: true, maxDiscountAmount: true } } },
+  });
+  return o ? periksaBatasDiskon({ items: o.items, promo: o.promo }) : null;
+}
+
 // POST /api/orders/:orderId/items — tambah item layanan
 orderRouter.post("/:orderId/items", async (req, res) => {
   // priceItemId/variantKey/normalPrice/standardPrice (29 Agustus 2026) —
@@ -2490,7 +2501,7 @@ orderRouter.post("/:orderId/items", async (req, res) => {
       },
     });
     const newTotal = await syncOrderValue(req.params.orderId);
-    res.status(201).json({ item, orderValue: newTotal });
+    res.status(201).json({ item, orderValue: newTotal, promoCheck: await promoCheckOrder(req.params.orderId) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -2514,7 +2525,7 @@ orderRouter.patch("/items/:itemId", async (req, res) => {
       },
     });
     const newTotal = await syncOrderValue(item.orderId);
-    res.json({ item, orderValue: newTotal });
+    res.json({ item, orderValue: newTotal, promoCheck: await promoCheckOrder(item.orderId) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

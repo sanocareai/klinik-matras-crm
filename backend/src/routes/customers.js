@@ -396,7 +396,7 @@ customerRouter.get("/:id", async (req, res) => {
         include: {
           items:         { orderBy: { sortOrder: "asc" } },
           weightEntries: { orderBy: { sortOrder: "asc" } },
-          promo:         { select: { id: true, code: true, name: true } }, // D-026
+          promo:         { select: { id: true, code: true, name: true, discountPercent: true, maxDiscountAmount: true } }, // D-026 (+batas diskon 8 Okt 2026)
           // D-036 (30 Agustus 2026) — sama dengan GET /api/orders (routes/
           // orders.js), supaya OrderSection.jsx di drawer Pelanggan bisa
           // menampilkan status Delivery yang SAMA PERSIS dengan halaman

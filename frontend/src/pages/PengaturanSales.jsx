@@ -631,7 +631,10 @@ function PromoSection() {
   const [promos, setPromos] = useState(null);
   const [msg, setMsg] = useState(null);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ code: "", name: "", discountPercent: "", validFrom: "", validUntil: "" });
+  const [form, setForm] = useState({ code: "", name: "", discountPercent: "", maxDiscountAmount: "", validFrom: "", validUntil: "" });
+  // Edit batas diskon/persen promo yang sudah ada (8 Okt 2026) — sebelumnya promo hanya bisa dibuat & dinonaktifkan.
+  const [editId, setEditId] = useState(null);
+  const [editForm, setEditForm] = useState({ discountPercent: "", maxDiscountAmount: "" });
   const [saving, setSaving] = useState(false);
 
   function showMsg(type, text) {
@@ -652,10 +655,11 @@ function PromoSection() {
       await api.createPromo({
         code: form.code, name: form.name,
         discountPercent: form.discountPercent || undefined,
+        maxDiscountAmount: form.maxDiscountAmount || undefined,
         validFrom: form.validFrom || undefined,
         validUntil: form.validUntil || undefined,
       });
-      setForm({ code: "", name: "", discountPercent: "", validFrom: "", validUntil: "" });
+      setForm({ code: "", name: "", discountPercent: "", maxDiscountAmount: "", validFrom: "", validUntil: "" });
       setShowForm(false);
       showMsg("success", "Promo dibuat");
       load();
@@ -663,6 +667,25 @@ function PromoSection() {
       showMsg("error", err.message);
     } finally {
       setSaving(false);
+    }
+  }
+
+  function mulaiEdit(p) {
+    setEditId(p.id);
+    setEditForm({ discountPercent: p.discountPercent ?? "", maxDiscountAmount: p.maxDiscountAmount ?? "" });
+  }
+
+  async function simpanEdit(p) {
+    try {
+      await api.updatePromo(p.id, {
+        discountPercent: editForm.discountPercent === "" ? null : Number(editForm.discountPercent),
+        maxDiscountAmount: editForm.maxDiscountAmount === "" ? null : Number(editForm.maxDiscountAmount),
+      });
+      setEditId(null);
+      showMsg("success", "Promo diperbarui");
+      load();
+    } catch (err) {
+      showMsg("error", err.message);
     }
   }
 
@@ -684,7 +707,9 @@ function PromoSection() {
       <CardDescription className="mb-5">
         Kampanye yang bisa dipilih sales saat input order (mis. "Merdeka dari Sakit Pinggang").
         Diskonnya cuma PENANDA untuk laporan — harga akhir tetap diketik manual sales seperti biasa,
-        tidak dihitung otomatis dari sini.
+        tidak dihitung otomatis dari sini. <strong>Batas maksimal diskon</strong> (Rupiah) membatasi potongan per order:
+        sales mendapat peringatan merah di form &amp; order bila diskonnya (selisih harga di bawah harga standard)
+        melebihi batas, dan order itu ditandai di export Excel. Kosongkan bila promo tanpa batas.
       </CardDescription>
 
       {msg && <div className="mb-4"><InlineFeedback msg={msg} /></div>}
@@ -703,6 +728,10 @@ function PromoSection() {
             <Field label="Diskon (%)" className="min-w-[100px]">
               <Input type="number" min="0" max="100" value={form.discountPercent}
                 onChange={(e) => setForm((f) => ({ ...f, discountPercent: e.target.value }))} placeholder="17" />
+            </Field>
+            <Field label="Maks. diskon (Rp)" className="min-w-[150px]">
+              <Input type="number" min="1" step="1000" value={form.maxDiscountAmount}
+                onChange={(e) => setForm((f) => ({ ...f, maxDiscountAmount: e.target.value }))} placeholder="500000 (kosong = tanpa batas)" />
             </Field>
             <Field label="Mulai">
               <Input type="date" value={form.validFrom} onChange={(e) => setForm((f) => ({ ...f, validFrom: e.target.value }))} />
@@ -733,7 +762,26 @@ function PromoSection() {
                   {p.discountPercent != null && (
                     <span className="text-[11px] font-bold text-green">{p.discountPercent}%</span>
                   )}
+                  {p.maxDiscountAmount != null ? (
+                    <span className="rounded-chip bg-orangebg px-1.5 py-0.5 text-[11px] font-bold text-orange">maks {formatRupiah(p.maxDiscountAmount)}</span>
+                  ) : (
+                    <span className="text-[11px] text-ink3">tanpa batas Rp</span>
+                  )}
                 </div>
+                {editId === p.id && (
+                  <div className="mt-2 flex flex-wrap items-end gap-2">
+                    <Field label="Diskon (%)" className="w-[100px]">
+                      <Input type="number" min="1" max="99" value={editForm.discountPercent}
+                        onChange={(e) => setEditForm((f) => ({ ...f, discountPercent: e.target.value }))} />
+                    </Field>
+                    <Field label="Maks. diskon (Rp)" className="w-[180px]">
+                      <Input type="number" min="1" step="1000" value={editForm.maxDiscountAmount} placeholder="kosong = tanpa batas"
+                        onChange={(e) => setEditForm((f) => ({ ...f, maxDiscountAmount: e.target.value }))} />
+                    </Field>
+                    <Button size="sm" onClick={() => simpanEdit(p)}>Simpan</Button>
+                    <Button variant="neutral" size="sm" onClick={() => setEditId(null)}>Batal</Button>
+                  </div>
+                )}
                 <p className="mt-0.5 text-xs text-ink3">
                   {p.orderCount} order · {formatRupiah(p.totalValue)}
                   {(p.validFrom || p.validUntil) && (
@@ -741,6 +789,7 @@ function PromoSection() {
                   )}
                 </p>
               </div>
+              {editId !== p.id && <Button variant="neutral" size="sm" onClick={() => mulaiEdit(p)}>Ubah batas</Button>}
               <Button variant="neutral" size="sm" onClick={() => toggleActive(p)}>
                 {p.active ? "Nonaktifkan" : "Aktifkan"}
               </Button>
