@@ -237,3 +237,39 @@ test("Pemindai anomali: jurnal penyesuaian (kunci :RECLAS:) TIDAK dianggap 'pemb
   );
   assert.equal(salah.length, 0);
 });
+
+test("Payment PENGGANTI diverifikasi setelah Rp1 ditolak (kasus nyata): Piutang 0 (bukan minus), Uang Muka 0, status LUNAS + paidAt dari ledger, jurnal seimbang, Diagnosis Piutang tanpa anomali; order lain tidak berubah", async () => {
+  const c = await dunia();
+  const o = await c.order();
+  const lain = await c.order(500_000);
+  const pLain = await c.bayar(lain, 200_000);
+  await c.akui(lain);
+  const sebelumLain = [await piutang(lain.id), await uangMuka(lain.id)];
+  const p1 = await c.bayar(o, 1);
+  await c.akui(o);
+  assert.equal((await tolak(c, p1)).status, 200);
+  assert.equal(await piutang(o.id), 1_200_000);
+  assert.equal(await uangMuka(o.id), 0);
+  // Diagnosis Piutang: order itu murni tagihan sah (tidak ada anomali Rp1 / uang muka debit)
+  const { diagnosisPiutang } = await import("../../src/services/finance/piutangDiagnosis.js");
+  const sebelumDiag = await diagnosisPiutang(testPrisma);
+  const baris = sebelumDiag.baris.find((b) => b.orderId === o.id);
+  assert.ok(baris, "order masih berpiutang");
+  assert.equal(baris.saldoPiutang, 1_200_000);
+  assert.equal(baris.kategori, "TAGIHAN_SAH");
+  // Payment pengganti (setelah pengakuan → Cr Piutang) lalu verifikasi
+  const p2 = await c.bayar(o, 1_200_000);
+  const v = await c.f.post(`/api/finance/pembayaran/${p2.id}/verifikasi`, {});
+  assert.ok([200, 201].includes(v.status) && v.body.ok === true, JSON.stringify(v.body).slice(0, 300));
+  assert.equal(await piutang(o.id), 0, "piutang tepat nol — tidak minus");
+  assert.equal(await uangMuka(o.id), 0);
+  const ord = await testPrisma.order.findUnique({ where: { id: o.id } });
+  assert.equal(ord.paymentStatus, "LUNAS");
+  assert.ok(ord.paidAt, "paidAt dihitung ulang dari ledger");
+  assert.ok(await seimbang());
+  const diag = await diagnosisPiutang(testPrisma);
+  assert.equal(diag.baris.some((b) => b.orderId === o.id), false, "tidak ada lagi baris/anomali untuk order itu");
+  assert.deepEqual([await piutang(lain.id), await uangMuka(lain.id)], sebelumLain, "order lain tidak berubah");
+  assert.equal((await testPrisma.payment.findUnique({ where: { id: pLain.id } })).cancelledAt, null);
+  assert.equal(await jumlahReklas(), 1, "tepat satu jurnal penyesuaian untuk seluruh skenario");
+});
