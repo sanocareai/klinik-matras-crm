@@ -1,6 +1,6 @@
 # Purchase Order Bahan Baku — Fase 1 integrasi Finance → Gudang
 
-Status: dibangun di branch `feat/finance-po-bahan-baku` (dasar: commit live 1a783034). **Belum di-merge, belum di-deploy, tidak ada data production yang diubah.**
+Status: dibangun di branch `feat/finance-po-bahan-baku` (dasar: HEAD main `1a783034`; release live saat dicek 8 Okt 2026 = `2e7d5db8`, 113 commit di depan dasar ini — merge percobaan ke live tanpa konflik dan skema gabungan valid; ulangi pengecekan baseline live sebelum rilis). **Belum di-merge, belum di-deploy, tidak ada data production yang diubah.**
 
 ## Prinsip
 
@@ -9,7 +9,7 @@ Status: dibangun di branch `feat/finance-po-bahan-baku` (dasar: commit live 1a78
 3. **PO tidak menyimpan saldo.** Dipesan = `qty` baris PO. Diterima baik, ditolak, belum diterima, dan ditagih dihitung dari baris penerimaan berstatus `COMPLETED` yang menunjuk baris PO.
 4. **Penerimaan tanpa PO tetap ada** (jalur lama, dokumen historis tidak disentuh/di-backfill) dan ditandai "Tanpa PO".
 
-## Model data (migration `20261017090000_purchase_order_bahan_baku`, aditif)
+## Model data (migration `20261022090000_purchase_order_bahan_baku`, aditif)
 
 - `fin_purchase_orders` — `po_number` unik `PO-DDMMYYYY-NNN` (urut per bulan, `generateDocumentNumber`), supplier (FK `fin_suppliers`), tanggal PO, estimasi kedatangan, catatan, status (`DRAFT`, `DISETUJUI`, `DITERIMA_SEBAGIAN`, `SELESAI`, `DIBATALKAN`), pembuat, penyetuju + waktu, alasan batal.
 - `fin_purchase_order_lines` — item katalog (`materials`), `unit` (snapshot), `qty` Decimal(14,3), `unit_price` **Int rupiah bulat** (sama dengan `stock_movements.unit_cost`), catatan, urutan.
