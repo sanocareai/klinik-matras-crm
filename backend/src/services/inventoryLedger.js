@@ -189,6 +189,7 @@ export async function computeStockSnapshot(client) {
            m.reference_unit_cost AS "referenceUnitCost", m.reference_unit_cost_month AS "referenceUnitCostMonth",
            m.reference_stock_value AS "referenceStockValue", m.reference_stock_value_month AS "referenceStockValueMonth",
            m.data_note AS "dataNote",
+           m.kind, m.created_via AS "createdVia", m.specification, m.storage_hint AS "storageHint",
            COALESCE(SUM(sm.qty), 0)::float AS balance,
            COALESCE(res.reserved, 0)::float AS reserved,
            (COALESCE(SUM(sm.qty), 0) - COALESCE(res.reserved, 0))::float AS available,
@@ -214,7 +215,8 @@ export async function computeStockSnapshot(client) {
     GROUP BY m.id, m.code, m.name, m.unit, m.active, m.category,
              m.service_line, m.reorder_point, m.reorder_qty, res.reserved,
              m.vendor, m.item_group, m.reference_unit_cost, m.reference_unit_cost_month,
-             m.reference_stock_value, m.reference_stock_value_month, m.data_note
+             m.reference_stock_value, m.reference_stock_value_month, m.data_note,
+             m.kind, m.created_via, m.specification, m.storage_hint
     ORDER BY m.code ASC
   `;
 }
