@@ -545,3 +545,91 @@ test("Fase 3 LAYANAN: PIC Bahan ditugaskan per pekerjaan; pemakaian aktual hanya
   const sAssign = await w.lead.api.post(`${V2}/runs/${sRun.id}/build/material-operator`, { operatorId: febriOp.id, expectedRevision: (await card(w, sRun.id)).revision }, key("sewa-as"));
   assert.equal(sAssign.status, 409); assert.equal(sAssign.body.code, "BUILD_NOT_APPLICABLE");
 });
+
+// ---------------------------------------------------------------------------------------------------------------------------------------------------
+// Fase 3 LAYANAN — rencana bahan (BOM) oleh PIC Bahan yang DITUGASKAN: command planning yang sama, otorisasi per pekerjaan, revisi/idempotensi, tanpa akses luas.
+// ---------------------------------------------------------------------------------------------------------------------------------------------------
+test("Fase 3 LAYANAN: PIC Bahan mengisi & merevisi BOM rencana lewat command planning yang sama; non-PIC/Lead/Gudang ditolak; revisi basi 409; replay idempoten; terkunci setelah serah; tanpa stok", async () => {
+  const w = await world();
+  const febriU = await createTestUser({ roles: ["PRODUCTION_WORKER"] }); const febri = { ...febriU, api: makeClient(server.baseUrl, febriU.token) };
+  const ferdyU = await createTestUser({ roles: ["PRODUCTION_WORKER"] }); const ferdy = { ...ferdyU, api: makeClient(server.baseUrl, ferdyU.token) };
+  const febriOp = await testPrisma.productionOperator.create({ data: { userId: febri.user.id, primaryWorkCenterId: w.wc } });
+  await testPrisma.productionOperator.create({ data: { userId: ferdy.user.id, primaryWorkCenterId: w.wc } });
+  const adminU = await createTestUser({ roles: ["ADMIN"] }); const admin = { ...adminU, api: makeClient(server.baseUrl, adminU.token) };
+  const { unit, run } = await acceptedUnit(w);
+  const planned = await planOnBoard(w, run.id, { station: "TABLE_1", corner: false });
+  await throughIntake(w, run.id);
+  ok(await step(w, w.nadya, run.id, 5, { payload: DIAG }));
+  const diagPhoto = (await media(w.nadya, run.id, "i"))[0];
+  const diag = await w.nadya.api.post(`${V2}/diagnosis/${run.id}/submit`, {
+    expectedRevision: 0, workCenterId: w.wc, photoUrls: [diagPhoto], recommendedServiceId: w.service.id,
+    findings: { general: { condition: "Kasur kempes", mainDamage: "Fondasi keropos", damageLevel: "SEDANG", teardownNote: "Per karatan" }, foundation: { oldCondition: "Per karatan", action: "REPLACE", size: "180x200", qty: "1" }, layers: [{ oldCondition: "Busa tipis", action: "REPLACE", material: "Busa HD", thickness: "5cm", qty: "2" }], components: { spring: "Ganti per baru" }, serviceNote: "Restorasi penuh fondasi dan lapisan atas sesuai keluhan sakit pinggang" },
+    materials: [{ materialId: w.fondasi.id, qty: 1 }],
+  }, key(`diag-${++seq}`));
+  assert.equal(diag.status, 201, JSON.stringify(diag.body));
+  const url = `${V2}/runs/${run.id}/build/plan-bom`;
+  const planRev = async () => (await card(w, run.id)).plan.revision;
+  const movesAt = () => testPrisma.stockMovement.count({ where: { unitId: unit.id } });
+  const m0 = await movesAt();
+
+  // belum ada PIC Bahan -> semua ditolak (kecuali ADMIN/OWNER lewat izin lintas-lini yang sudah ada)
+  const noPic = await febri.api.post(url, { expectedRevision: await planRev(), lines: [{ materialId: w.fondasi.id, qty: 1 }, { materialId: w.lapisan.id, qty: 2 }] }, key("nopic"));
+  assert.equal(noPic.status, 403); assert.equal(noPic.body.code, "BUILD_NO_MATERIAL_OPERATOR");
+  const c0 = await card(w, run.id);
+  ok(await w.lead.api.post(`${V2}/runs/${run.id}/build/material-operator`, { operatorId: febriOp.id, expectedRevision: c0.revision }, key("as")));
+
+  // akses TIDAK diperluas: Lead, Gudang/Meja, dan PIC Bahan pekerjaan lain ditolak di endpoint ini
+  const body = (rev, lines) => ({ expectedRevision: rev, lines });
+  for (const [who, tag] of [[w.lead, "lead"], [w.nadya, "gudang-meja"], [ferdy, "pic-lain"]]) {
+    const r = await who.api.post(url, body(await planRev(), [{ materialId: w.fondasi.id, qty: 1 }, { materialId: w.lapisan.id, qty: 2 }]), key(tag));
+    assert.equal(r.status, 403, `${tag}: ${JSON.stringify(r.body)}`); assert.equal(r.body.code, "BUILD_MATERIAL_OPERATOR_MISMATCH");
+  }
+  assert.equal((await card(w, run.id)).bom.length, 1, "penolakan tanpa efek");
+
+  // PIC yang ditugaskan: isi BOM (tambah bahan ke-2) -> revisi rencana naik; baris lama tetap, baris baru aktif
+  const rev1 = await planRev();
+  const k1 = key("ok1");
+  const r1 = await febri.api.post(url, body(rev1, [{ materialId: w.fondasi.id, qty: 1 }, { materialId: w.lapisan.id, qty: 2 }]), k1);
+  assert.equal(r1.status, 200, JSON.stringify(r1.body));
+  const replay = await febri.api.post(url, body(rev1, [{ materialId: w.fondasi.id, qty: 1 }, { materialId: w.lapisan.id, qty: 2 }]), k1);
+  assert.equal(replay.status, 200); assert.equal(replay.body.replayed, true, "replay idempoten (kunci sama)");
+  assert.equal(await testPrisma.plannedBOMLine.count({ where: { planId: planned.planId, status: "ACTIVE" } }), 2);
+  const stale = await febri.api.post(url, body(rev1, [{ materialId: w.fondasi.id, qty: 3 }]), key("stale"));
+  assert.equal(stale.status, 409); assert.equal(stale.body.code, "PLAN_REVISION_CONFLICT", "revisi rencana basi ditolak");
+  const diffKey = await febri.api.post(url, body(rev1, [{ materialId: w.fondasi.id, qty: 9 }]), k1);
+  assert.equal(diffKey.status, 409); assert.equal(diffKey.body.code, "IDEMPOTENCY_CONFLICT", "kunci sama + isi beda = ditolak");
+
+  // revisi: qty fondasi 1 -> 2, lapisan dibuang; baris lama SUPERSEDED (histori), tanpa stok
+  const r2 = await febri.api.post(url, body(await planRev(), [{ materialId: w.fondasi.id, qty: 2 }]), key("rev2"));
+  assert.equal(r2.status, 200, JSON.stringify(r2.body));
+  const active = await testPrisma.plannedBOMLine.findMany({ where: { planId: planned.planId, status: "ACTIVE" } });
+  assert.deepEqual(active.map((l) => [l.materialId, Number(l.qty)]), [[w.fondasi.id, 2]]);
+  assert.ok(await testPrisma.plannedBOMLine.count({ where: { planId: planned.planId, status: "SUPERSEDED" } }) >= 2, "histori BOM dipertahankan");
+  const bad = await febri.api.post(url, body(await planRev(), [{ materialId: w.fondasi.id, qty: 0 }]), key("zero")); assert.equal(bad.status, 400);
+  const dup = await febri.api.post(url, body(await planRev(), [{ materialId: w.fondasi.id, qty: 1 }, { materialId: w.fondasi.id, qty: 1 }]), key("dup")); assert.equal(dup.status, 400);
+  assert.equal(await movesAt(), m0, "menyimpan rencana bahan TIDAK mengeluarkan stok");
+  assert.equal(await testPrisma.materialReservation.count({ where: { planId: planned.planId } }), 0, "tidak ada reservasi dari PIC Bahan");
+
+  // ADMIN lewat izin lintas-lini yang sudah ada tetap boleh (tidak diubah)
+  assert.equal((await admin.api.post(url, body(await planRev(), [{ materialId: w.fondasi.id, qty: 2 }, { materialId: w.lapisan.id, qty: 1 }]), key("admin"))).status, 200);
+  // Gudang mereservasi & menyerahkan -> BOM terkunci untuk PIC Bahan (command planning menolak)
+  const plan = (await w.lead.api.get(`${P}/plans/${planned.planId}`)).body;
+  const reserve = ok(await w.nadya.api.post(`${P}/plans/${planned.planId}/reserve`, { expectedRevision: plan.revision }, key("res")));
+  assert.equal(reserve.status, "MATERIAL_RESERVED");
+  const req = await w.nadya.api.post(`${P}/plans/${planned.planId}/material-request`, {}, key("mr")); assert.equal(req.status, 201);
+  const locked = await febri.api.post(url, body(await planRev(), [{ materialId: w.fondasi.id, qty: 5 }]), key("locked"));
+  assert.equal(locked.status, 409); assert.equal(locked.body.code, "PLAN_MATERIAL_ISSUE_ACTIVE");
+  await pick(w, req.body.issueId);
+  const locked2 = await febri.api.post(url, body(await planRev(), [{ materialId: w.fondasi.id, qty: 5 }]), key("locked2"));
+  assert.equal(locked2.status, 409); assert.equal(locked2.body.code, "PLAN_MATERIAL_ALREADY_ISSUED");
+  // rantai: BOM rencana, diserahkan, dipakai TERPISAH tapi tertaut lewat kartu (tanpa stok baru saat mencatat pemakaian)
+  const issuedMoves = await testPrisma.stockMovement.count({ where: { unitId: unit.id, type: "ISSUE" } });
+  const cd = await card(w, run.id);
+  assert.deepEqual(cd.bom.map((b) => [b.materialId, b.qty]).sort(), [[w.fondasi.id, 2], [w.lapisan.id, 1]].sort());
+  assert.deepEqual(cd.issuedMaterials.map((i) => i.materialId).sort(), [w.fondasi.id, w.lapisan.id].sort(), "diserahkan = yang direservasi/dipick");
+  const used = await febri.api.post(`${V2}/runs/${run.id}/build/materials`, { expectedRevision: cd.revision, materials: [{ materialId: w.fondasi.id, qty: 1 }] }, key("used"));
+  assert.equal(used.status, 200, JSON.stringify(used.body));
+  assert.equal(await testPrisma.stockMovement.count({ where: { unitId: unit.id, type: "ISSUE" } }), issuedMoves, "stok keluar tepat sekali (Gudang), tidak ganda");
+  const cf = await card(w, run.id);
+  assert.equal(cf.materialPic.record.materials[0].qty, 1); assert.equal(cf.bom.length, 2);
+});

@@ -12,7 +12,7 @@ import {
   applyAdaptationPolicy, applyQcGatePolicy, delayProductionWork, finishProduction, previewFinishProduction, recordProductionStep, reportMaterialShortage, resolveMaterialShortage, skipProductionStep,
 } from "../services/productionStepCommandService.js";
 import { resumeWork } from "../services/productionResumeService.js";
-import { confirmBuildCorner, recordBuildMaterials, setBuildMaterialOperator } from "../services/productionBuildCommandService.js";
+import { confirmBuildCorner, recordBuildMaterials, setBuildMaterialOperator, setBuildPlannedBOM } from "../services/productionBuildCommandService.js";
 import {
   getProductionSettings, inspectWorkshopDefaultLocation, listServiceMappings, setAdaptationDefault, setServiceMapping, setWorkshopDefaultLocation,
 } from "../services/productionSettingsService.js";
@@ -162,6 +162,16 @@ productionExperienceRouter.post("/runs/:runId/build/corner", requirePermission(P
   try {
     if (!(await assertRunInCohort(res, req.params.runId))) return;
     res.json(await confirmBuildCorner(prisma, { runId: req.params.runId, required: req.body?.required, reason: req.body?.reason ?? null, actorId: req.user.id, idempotencyKey: idem(req), expectedRevision: req.body?.expectedRevision }));
+  } catch (err) { handleErr(err, res); }
+});
+// Rencana bahan (BOM) oleh PIC Bahan yang ditugaskan: { expectedRevision (revisi RENCANA, dari kartu), lines: [{materialId, qty}] }. Command planning yang sama; otorisasi PIC per pekerjaan di command.
+productionExperienceRouter.post("/runs/:runId/build/plan-bom", requireAnyPermission(P.UNIT_STAGE_WRITE, P.INVENTORY_WRITE), async (req, res) => {
+  try {
+    if (!(await assertRunInCohort(res, req.params.runId))) return;
+    res.json(await setBuildPlannedBOM(prisma, {
+      runId: req.params.runId, actorId: req.user.id, canExecuteAny: hasPermission(req.user, P.PRODUCTION_EXECUTE_ANY), idempotencyKey: idem(req),
+      expectedRevision: req.body?.expectedRevision, lines: req.body?.lines,
+    }));
   } catch (err) { handleErr(err, res); }
 });
 productionExperienceRouter.post("/runs/:runId/build/materials", requireAnyPermission(P.UNIT_STAGE_WRITE, P.INVENTORY_WRITE), async (req, res) => {

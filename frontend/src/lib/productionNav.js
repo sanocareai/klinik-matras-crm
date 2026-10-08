@@ -13,8 +13,6 @@ export const PRODUCTION_NAV = Object.freeze([
       { to: "/bengkel/order-produksi", label: "Order Produksi", icon: "Boxes" },
       { to: "/bengkel/production-v2", label: "Status Produksi", icon: "CalendarClock" },
       { to: "/bengkel/rencana-produksi", label: "Rencana Produksi", icon: "ClipboardList" },
-      // Antrean pengujian awal PIC QC (Fase 2 LAYANAN) — terlihat langsung di OPERASIONAL (bukan di akordeon tertutup) untuk pemegang izin QC; berdiri sendiri, tidak bergantung pada menu QC desktop yang disembunyikan. Server menegakkan izin tulis.
-      { to: "/produksi/qc", label: "Antrean PIC QC", icon: "ClipboardCheck", bolehPeran: PRODUCTION_QC_APP_ROLES },
       // Menu Quality Control DISEMBUNYIKAN sementara (simplifikasi slice 1; gerbang lifecycle QC diubah di slice 2). Halaman & rute tetap ada (tautan lama/bookmark tidak patah).
       { to: "/bengkel/materials", label: "Bahan Produksi", icon: "ArrowUpFromLine" },
     ],
@@ -28,6 +26,9 @@ export const PRODUCTION_NAV = Object.freeze([
       { to: "/produksi/meja", label: "Aplikasi Meja", icon: "Wrench" },
       { to: "/produksi/corner", label: "Aplikasi Corner", icon: "Scissors" },
       { to: "/produksi/dokumentasi", label: "Aplikasi Dokumentasi", icon: "Camera" },
+      // Antrean pengujian awal PIC QC (Fase 2 LAYANAN) — sejajar aplikasi petugas lain di Mode Kerja (OPERASIONAL tidak dipenuhi); berdiri sendiri, tidak bergantung pada menu QC desktop yang disembunyikan.
+      // Hanya pemegang izin QC yang melihatnya (QC_LEAD/ADMIN/OWNER); server menegakkan izin tulis.
+      { to: "/produksi/qc", label: "Aplikasi PIC QC", icon: "ClipboardCheck", bolehPeran: PRODUCTION_QC_APP_ROLES },
       { to: "/bengkel/andon", label: "Andon TV", icon: "Tv" },
     ],
   },

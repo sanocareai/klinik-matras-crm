@@ -23,11 +23,12 @@ test("mode PIC QC hanya untuk pemegang izin QC di server (QC_LEAD/ADMIN/OWNER) â
   assert.equal(allowedModes(["QC_LEAD"]).some((m) => m.key === "qc"), true);
 });
 
-test("menu desktop 'Quality Control' tetap disembunyikan, tetapi 'Antrean PIC QC' terlihat langsung di OPERASIONAL (bukan akordeon tertutup) dan hanya untuk peran berizin", () => {
+test("menu desktop 'Quality Control' tetap disembunyikan; 'Aplikasi PIC QC' di MODE KERJA sejajar aplikasi petugas lain (OPERASIONAL tidak dipenuhi) dan hanya untuk peran berizin", () => {
   const flat = PRODUCTION_NAV.flatMap((s) => s.items.map((i) => ({ ...i, section: s.section })));
   assert.equal(flat.some((i) => /quality-control/.test(i.to)), false, "menu QC desktop tetap tersembunyi");
   const item = flat.find((i) => i.to === "/produksi/qc");
-  assert.equal(item.section, "OPERASIONAL"); assert.equal(item.label, "Antrean PIC QC");
+  assert.equal(item.section, "MODE KERJA"); assert.equal(item.label, "Aplikasi PIC QC");
+  assert.equal(flat.filter((i) => i.section === "OPERASIONAL").length, 5, "OPERASIONAL kembali 5 menu (tanpa menu QC)");
   const visible = (roles) => roles.some((r) => item.bolehPeran.includes(r));
   assert.equal(visible(["QC_LEAD"]), true); assert.equal(visible(["PRODUCTION_WORKER"]), false);
 });

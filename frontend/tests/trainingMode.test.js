@@ -39,7 +39,7 @@ test("tiap peran hanya melihat halaman sesuai izinnya (matriks halaman latihan)"
   assert.deepEqual(labels(["OWNER"]), TRAINING_PAGES.map((p) => p.label));
   assert.deepEqual(labels(["PRODUCTION_LEAD"]), ["Ringkasan", "Status Produksi", "Rencana Produksi", "Quality Control", "KPI & Laporan", "Aplikasi Meja", "Aplikasi Corner", "Aplikasi Dokumentasi", "KPI Gudang"]);
   assert.deepEqual(labels(["PRODUCTION_WORKER"]), ["Aplikasi Meja", "Aplikasi Corner"]);
-  assert.deepEqual(labels(["QC_LEAD"]), ["Status Produksi", "Quality Control", "Antrean PIC QC"]);
+  assert.deepEqual(labels(["QC_LEAD"]), ["Status Produksi", "Quality Control", "Aplikasi PIC QC"]);
   assert.deepEqual(labels(["WAREHOUSE"]), ["Antrean Gudang", "KPI Gudang"]);
   assert.deepEqual(labels(["PRODUCTION_DOCUMENTER"]), ["Aplikasi Dokumentasi"]);
   assert.deepEqual(labels(["SALES"]), []); assert.deepEqual(labels(["FINANCE"]), []);

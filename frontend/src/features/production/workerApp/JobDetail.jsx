@@ -12,6 +12,8 @@ import { stepOf } from "@/features/production/experience.js";
 import { V1ActionBar, V1MaterialsPanel } from "./V1Panels.jsx";
 import { ShortageSheet, StepSheet, intentKeys } from "./workerSheets.jsx";
 import MaterialRecordSheet from "./materialSheet.jsx";
+import BomPlanSheet from "./BomPlanSheet.jsx";
+import MaterialChain from "./MaterialChain.jsx";
 import { DelaySheet, FinishSheet, SkipSheet } from "./adaptationSheets.jsx";
 import { ComponentNotesPanel } from "@/features/production/componentNotes/ComponentNotesPanel.jsx";
 import { isV1Actionable, jobFromV1, jobFromV2, submitState } from "./workerAppModel.js";
@@ -110,8 +112,9 @@ function PicBahanInfo({ card }) {
         <div className="rounded-btn bg-inset px-3 py-2"><dt className="m-0 text-ink3">PIC Bahan</dt><dd className="m-0 font-semibold text-ink" data-testid="pic-bahan-name">{p.materialOperator?.name || "Belum ditugaskan"}</dd></div>
         <div className="rounded-btn bg-inset px-3 py-2"><dt className="m-0 text-ink3">Pemakaian aktual{p.record ? ` (versi ${p.record.version})` : ""}</dt>
           <dd className="m-0 font-semibold text-ink" data-testid="pic-bahan-usage">{p.record?.materials?.length ? p.record.materials.map((m) => `${m.name || m.code} ${m.qty}`).join(", ") : "Belum dicatat"}</dd></div>
-        <p className="m-0 text-[12px] text-ink3">Racikan fondasi/lapisan ditentukan PIC Meja/PIC QC di Catatan Komponen. Mencatat pemakaian tidak mengeluarkan stok — stok keluar hanya saat Gudang menyerahkan bahan.</p>
+        <p className="m-0 text-[12px] text-ink3">Racikan fondasi/lapisan ditentukan PIC Meja/PIC QC di Catatan Komponen. Mencatat rencana atau pemakaian tidak mengeluarkan stok — stok keluar hanya saat Gudang menyerahkan bahan.</p>
       </dl>
+      <div className="mt-3"><MaterialChain card={card} /></div>
     </Section>
   );
 }
@@ -218,7 +221,10 @@ function V2Detail({ job, lane, onBack, onChanged }) {
         <div className="wa-actionbar" data-testid="v2-actionbar"><div className="wa-actionbar-inner">
           {!online && <OfflineNote />}
           {materialLane ? (
-            <button type="button" className="wa-primary" data-testid="open-material-record" data-mutates onClick={() => setSheet("material")}>{card.track === "BUILD" ? "Catat Racikan & Bahan" : "Catat Bahan Dipakai"}</button>
+            <>
+              {card.track !== "BUILD" && card.plan && <button type="button" className="wa-secondary" data-testid="open-bom-plan" data-mutates onClick={() => setSheet("bom")}>{card.bom?.length ? "Revisi Rencana Bahan (BOM)" : "Isi Rencana Bahan (BOM)"}</button>}
+              <button type="button" className="wa-primary" data-testid="open-material-record" data-mutates onClick={() => setSheet("material")}>{card.track === "BUILD" ? "Catat Racikan & Bahan" : "Catat Bahan Dipakai"}</button>
+            </>
           ) : mineNow ? (
             <>
               {next.rework && <p className="m-0 rounded-btn bg-orangebg px-3 py-2 text-[13px] text-orange">Uji tekstur {String(next.lastVerdict || "").replace("_", " ").toLowerCase()} — sesuaikan lapisan lalu kirim ulang bukti.</p>}
@@ -244,6 +250,7 @@ function V2Detail({ job, lane, onBack, onChanged }) {
       )}
 
       {sheet === "step" && card && next && <StepSheet card={card} next={next} onClose={() => setSheet(null)} onSubmitted={async (result) => { if (result) { setSheet(null); setNotice(result.verdict && result.verdict !== "PAS" ? "Hasil uji tercatat — lanjutkan rework lapisan." : "Tahap tersimpan."); } await afterChange(); }} />}
+      {sheet === "bom" && card && <BomPlanSheet card={card} onClose={() => setSheet(null)} onSubmitted={async (result) => { setSheet(null); if (result) setNotice(`Rencana bahan tersimpan (rencana rev ${result.revision}).`); await afterChange(); }} />}
       {sheet === "material" && card && <MaterialRecordSheet card={card} onClose={() => setSheet(null)} onSubmitted={async (result) => { setSheet(null); if (result) setNotice(result.changed === false ? "Tidak ada perubahan." : card.track === "BUILD" ? `Racikan & bahan tersimpan (versi ${result.version}).` : `Bahan dipakai tersimpan (versi ${result.version}).`); await afterChange(); }} />}
       {sheet === "skip" && card && next && <SkipSheet card={card} next={next} stageLabel={stepOf(next.stepNo, card.track)?.label} onClose={() => setSheet(null)} onDone={async () => { setSheet(null); setNotice("Tahap dicatat dilewati (Adaptasi sistem)."); await afterChange(); }} />}
       {sheet === "finish" && card && <FinishSheet card={card} onClose={() => setSheet(null)} onDone={(res) => { setSheet(null); setFinishedMsg(`Unit Siap Kirim. QC tidak dilakukan; ${res.skippedSteps?.length ?? 0} tahap dicatat dilewati.`); }} />}

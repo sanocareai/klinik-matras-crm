@@ -8484,7 +8484,10 @@ model ProductionRun {
   routeChecksum        String?                  @map("route_checksum")
   // Slice 2 (flow adaptasi): kebijakan adaptasi EKSPLISIT pada run. NULL = proses lengkap (perilaku lama, tidak diubah); "ADAPTATION_V1" = QC & penerimaan barang jadi tidak wajib.
   adaptationPolicy     String?                  @map("adaptation_policy") @db.VarChar(40)
-  // Fase 2 (LAYANAN): versi kebijakan gerbang QC sebelum bongkar. NULL = run lama/belum diterapkan (gerbang TIDAK berlaku, perilaku lama); "QC_GATE_V1" = dipin saat run dibuat atau diterapkan eksplisit (tercatat).
+  // Fase 2 LAYANAN (QC sebelum bongkar): kebijakan gerbang QC EKSPLISIT pada run, pola SAMA dengan adaptationPolicy di atas — dipin SEKALI saat run dibuat
+  // (defaultQcGatePolicy di productionSettingsService.js), TIDAK PERNAH ditimpa otomatis. NULL = run lama / belum dipin (gerbang WHOLE_TEST_BEFORE/
+  // FOUNDATION_TEST_BEFORE TIDAK berlaku, perilaku SEBELUM Fase 2); "QC_GATE_V1" = gerbang Fase 2 berlaku. Migrasi ke QC_GATE_V1 untuk run lama yang masih
+  // berjalan HANYA lewat aksi eksplisit tercatat (applyQcGatePolicy), tidak pernah dibackfill massal — lihat gap Fase 2 "jangan otomatis diterapkan ke run berjalan".
   qcGatePolicyVersion  String?                  @map("qc_gate_policy_version") @db.VarChar(40)
   migrationSource      String?                  @map("migration_source")
   migrationSourceId    String?                  @map("migration_source_id")

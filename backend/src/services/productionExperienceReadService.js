@@ -2,7 +2,7 @@
 // BACA-SAJA. Semua keadaan tahap diturunkan dari data P1–P6 + bukti P8 lewat loadStepContext (sumber yang sama dengan command) —
 // tidak ada status UI yang disimpan terpisah. Pemanggil (routes) wajib memfilter unitIds dari reader cohort; unit di luar cohort tidak pernah
 // dimuat. Data customer seperlunya: nama, berat badan, keluhan, request — tanpa telepon/alamat.
-import { componentMessageLines, getComponentReportBlock, measurementMessageLines } from "./productionComponentNoteService.js";
+import { componentMessageLines, getComponentReportBlock, measurementMessageLines, planVsActualMessageLines } from "./productionComponentNoteService.js";
 import {
   ANDON_BUCKETS, COMMAND_CENTER_COLUMNS, STEP_BY_NO, STEPS, andonBucketOf, commandCenterColumn, isSkippedEvidence, stepNoForStage,
 } from "../lib/domain/productionSteps.js";
@@ -643,6 +643,7 @@ export function buildReportMessage(report) {
   if (report.finishing) lines.push(`• Finishing    : Model ${STYLE_LABEL[report.finishing.mattressStyle] || report.finishing.mattressStyle} | Kain ${report.finishing.fabricSpec} | List ${report.finishing.borderColor}`);
   lines.push("");
   lines.push(...componentMessageLines(report.components?.comparison));
+  { const pva = planVsActualMessageLines(report.components?.comparison, { always: report.order?.category === "LAYANAN" }); if (pva.length) lines.push(...pva, ""); } // Fase 3: rencana vs aktual (Belum dicatat bila kosong)
   if (report.skippedSteps?.length) lines.push(`• Tahap dilewati (Adaptasi sistem): ${report.skippedSteps.map((s) => s.label).join(", ")} — tidak dikerjakan, tanpa foto/hasil uji`);
   if (report.qcStatus === "TIDAK_DILAKUKAN") lines.push("• QC          : tidak dilakukan (mode adaptasi) — bukan lulus");
   lines.push("");
@@ -699,7 +700,7 @@ export async function getProductionReport(prisma, runId, { unitIds } = {}) {
     build: ctx.state.buildTrack ? { racikan: latestOf(evidence, 6)?.payload?.racikan ?? ctx.buildRecord?.racikan ?? null, materialOperator: ctx.buildView?.materialOperator?.name ?? null, corner: ctx.buildView?.corner ?? null, note: latestOf(evidence, 6)?.payload?.note ?? null, salesServices: (run.unit.order?.items || []).map((i) => i.layananName).filter(Boolean), productType: run.unit.order?.productType ?? null } : null,
     skippedSteps: [...new Map(skippedEvidence.map((e) => [e.stepNo, e])).values()].sort((a, b) => a.stepNo - b.stepNo).map((e) => ({ stepNo: e.stepNo, label: STEP_BY_NO[e.stepNo]?.label ?? `Tahap ${e.stepNo}`, reason: e.payload?.reason ?? null, at: e.createdAt, by: actorName.get(e.actorId) ?? null })),
     unit: { unitCode: run.unit.unitCode, merk: run.unit.merk, ukuran: run.unit.ukuran, service: run.unit.service?.labelId ?? null },
-    order: { orderNumber: run.unit.order?.orderNumber ?? null, customerName: run.unit.order?.customer?.name ?? null, complaints: (run.unit.order?.complaintCategory || []).map((c) => COMPLAINT_LABEL[c] || c), request: run.unit.order?.notes ?? null, weightKg: run.unit.order?.beratBadan ?? null },
+    order: { orderNumber: run.unit.order?.orderNumber ?? null, customerName: run.unit.order?.customer?.name ?? null, category: run.unit.order?.category ?? null, complaints: (run.unit.order?.complaintCategory || []).map((c) => COMPLAINT_LABEL[c] || c), request: run.unit.order?.notes ?? null, weightKg: run.unit.order?.beratBadan ?? null },
     pic: {
       table: actorName.get(tableActor) || nameOf(run.plan?.operator) || null,
       corner: actorName.get(cornerActor) || nameOf(run.plan?.cornerOperator) || null,

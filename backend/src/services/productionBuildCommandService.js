@@ -16,6 +16,7 @@ import { assertNoOpenRunException } from "./productionRunGuards.js";
 import { bumpRunRevisionInTx, loadRunForWrite, mayExecuteAnyUnit } from "./productionWorkshopExecutionCommandService.js";
 import { assertExpectedRevision, assertIdempotencyKey, cornerDecisionLocked, issuedQtyByMaterial, loadStepContext } from "./productionStepCommandService.js";
 import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState } from "./v2FeatureFlags.js";
+import { setPlannedBOM } from "./productionPlanningCommandService.js";
 
 const hash = (value) => createHash("sha256").update(JSON.stringify(value ?? null)).digest("hex");
 function buildError(message, statusCode, code, details) {
@@ -218,6 +219,28 @@ export async function recordBuildMaterials(prisma, { runId, actorId, canExecuteA
     const response = { runId, revision, version, recordId: record.id, changed: true };
     await finishCommand(tx, command, revision, response);
     return { replayed: false, ...response };
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 4. Rencana bahan (BOM) oleh PIC Bahan yang DITUGASKAN pada pekerjaan ini (Fase 3). Memakai command planning yang SAMA (setPlannedBOM: revisi rencana, idempotensi, tolak bila bahan sudah
+//    diserahkan/ada permintaan ambil aktif, reservasi dilepas bila BOM berubah) — hanya aturan akses yang berbeda: PIC Bahan per pekerjaan (atau ADMIN/OWNER lewat PRODUCTION_EXECUTE_ANY).
+//    Tidak memberi akses BOM luas kepada Lead/Gudang/Meja; tidak menulis stok (reservasi/serah tetap oleh Gudang).
+// ---------------------------------------------------------------------------
+export async function setBuildPlannedBOM(prisma, { runId, actorId, canExecuteAny = false, idempotencyKey, expectedRevision, lines }) {
+  if (!runId) throw buildError("runId wajib diisi", 400, "BUILD_RUN_REQUIRED");
+  if (!Array.isArray(lines)) throw buildError("Daftar bahan tidak valid", 400, "BUILD_INPUT_INVALID");
+  const plan = await prisma.productionRunPlan.findUnique({ where: { runId }, select: { id: true } });
+  if (!plan) throw buildError("Pekerjaan ini belum punya rencana produksi", 404, "BUILD_PLAN_NOT_FOUND");
+  return setPlannedBOM(prisma, {
+    planId: plan.id, actorId, idempotencyKey, expectedRevision, lines,
+    authorize: async (tx) => {
+      if (canExecuteAny) return;
+      const operator = actorId ? await tx.productionOperator.findUnique({ where: { userId: actorId }, select: { id: true, active: true } }) : null;
+      const setting = await tx.productionRunBuildSetting.findUnique({ where: { runId }, select: { materialOperatorId: true } });
+      if (!setting?.materialOperatorId) throw buildError("Pekerjaan ini belum punya PIC Bahan — Lead perlu menetapkannya lebih dulu", 403, "BUILD_NO_MATERIAL_OPERATOR");
+      if (!operator || !operator.active || operator.id !== setting.materialOperatorId) throw buildError("Anda bukan PIC Bahan yang ditugaskan pada pekerjaan ini", 403, "BUILD_MATERIAL_OPERATOR_MISMATCH");
+    },
   });
 }
 

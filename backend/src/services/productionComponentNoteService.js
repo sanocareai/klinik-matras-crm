@@ -145,6 +145,25 @@ export function measurementMessageLines(m) {
   return lines;
 }
 
+/** Ringkasan RACIKAN RENCANA vs HASIL AKTUAL untuk pesan Sales (Fase 3). Data kosong = "Belum dicatat" (tidak dikarang). `always` = tampilkan bagian ini walau keduanya kosong (LAYANAN). */
+export function planVsActualMessageLines(comparison, { always = false } = {}) {
+  const plan = comparison?.plan ?? null; const actual = comparison?.actual ?? null;
+  if (!plan && !actual && !always) return [];
+  const item = (l) => `${l.actionLabel} ${l.label}${l.thicknessCm ? ` ${l.thicknessCm} cm` : ""}`;
+  const lines = ["📐 RACIKAN RENCANA vs HASIL AKTUAL:"];
+  const fPlan = plan ? (plan.foundation ? `${plan.foundation.actionLabel} ${plan.foundation.label}` : "tidak ada perubahan fondasi dicatat") : "Belum dicatat";
+  const fAct = actual ? (actual.foundation ? `${actual.foundation.actionLabel} ${actual.foundation.label}` : "tidak ada perubahan fondasi dicatat") : "Belum dicatat";
+  lines.push(`• Fondasi : rencana ${fPlan} → aktual ${fAct}`);
+  const n = Math.max(plan?.layers?.length ?? 0, actual?.layers?.length ?? 0);
+  for (let i = 0; i < n; i++) {
+    const p = plan?.layers?.[i]; const a = actual?.layers?.[i];
+    lines.push(`• Lapisan ${i + 1}: rencana ${p ? item(p) : (plan ? "tidak direncanakan" : "Belum dicatat")} → aktual ${a ? item(a) : (actual ? "tidak ada" : "Belum dicatat")}`);
+  }
+  if (!n && (plan || actual)) lines.push("• Lapisan : tidak ada lapisan dicatat");
+  lines.push(`• Total tinggi lapisan: rencana ${plan?.summary?.totalThicknessCm != null ? `${plan.summary.totalThicknessCm} cm${plan.summary.totalComplete ? "" : " (belum lengkap)"}` : "Belum dicatat"} · aktual ${actual?.summary?.totalThicknessCm != null ? `${actual.summary.totalThicknessCm} cm${actual.summary.totalComplete ? "" : " (belum lengkap)"}` : "Belum dicatat"}${comparison?.planVsActual?.total?.differenceCm != null ? ` · selisih ${comparison.planVsActual.total.differenceCm > 0 ? "+" : ""}${comparison.planVsActual.total.differenceCm} cm` : ""}`);
+  return lines;
+}
+
 /** Teks ringkas "Sebelum -> Sesudah" untuk pesan Sales. Data belum dicatat disebut jelas, bukan dikarang. */
 export function componentMessageLines(comparison) {
   if (!comparison?.recordedAny) return [];

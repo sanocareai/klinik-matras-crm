@@ -759,6 +759,9 @@ export const api = {
     request(`/production-v2/runs/${runId}/build/material-operator`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   confirmProductionV2BuildCorner: (runId, data, idempotencyKey = mutationKey("pv2-build-corner")) =>
     request(`/production-v2/runs/${runId}/build/corner`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  // Fase 3: rencana bahan (BOM) oleh PIC Bahan yang ditugaskan -> command planning yang sama (setPlannedBOM); expectedRevision = revisi RENCANA (kartu.plan.revision).
+  setProductionV2BuildPlanBom: (runId, data, idempotencyKey) =>
+    request(`/production-v2/runs/${runId}/build/plan-bom`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   recordProductionV2BuildMaterials: (runId, data, idempotencyKey) =>
     request(`/production-v2/runs/${runId}/build/materials`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   recordProductionV2Step: (runId, stepNo, data, idempotencyKey) =>

@@ -79,3 +79,24 @@ test("dokumentasi TIDAK wajib pada analisis/racikan: PLAN_RACIKAN tanpa minimal 
   assert.equal(B2.maxMediaFor("PLAN_RACIKAN"), 8);
   assert.deepEqual(B2.normalizeMediaItems([], { kindOf: () => "image", section: "PLAN_RACIKAN" }), []);
 });
+
+test("pesan Sales: ringkasan racikan rencana vs hasil aktual; kosong = 'Belum dicatat' (tidak dikarang); selain LAYANAN tanpa catatan = tidak muncul", async () => {
+  const { planVsActualMessageLines } = await import("../src/services/productionComponentNoteService.js");
+  const plan = { data: normalizeSectionData("PLAN_RACIKAN", { foundation: { action: "REPAIR", system: "BONNELL" }, layers: [{ action: "REPLACE", material: manual("Busa baru"), thicknessCm: 7 }, { action: "KEEP", fromOrder: 2 }] }), version: 1 };
+  const onlyPlan = planVsActualMessageLines(buildComparison({ layersBefore: before, plan }), { always: true }).join("\n");
+  assert.match(onlyPlan, /RACIKAN RENCANA vs HASIL AKTUAL/); assert.match(onlyPlan, /Fondasi : rencana Diperbaiki Per bonnell → aktual Belum dicatat/);
+  assert.match(onlyPlan, /Lapisan 1: rencana Diganti Bahan manual: Busa baru 7 cm → aktual Belum dicatat/); assert.match(onlyPlan, /rencana 11 cm · aktual Belum dicatat/);
+  const after = { data: normalizeSectionData("AFTER", { foundation: { action: "REPAIR", system: "BONNELL" }, layers: [{ action: "REPLACE", material: manual("Busa baru"), thicknessCm: 6 }, { action: "KEEP", fromOrder: 2 }, { action: "REPLACE", material: manual("Tambahan"), thicknessCm: 1 }] }), version: 1 };
+  const both = planVsActualMessageLines(buildComparison({ layersBefore: before, plan, after }), { always: true }).join("\n");
+  assert.match(both, /Lapisan 3: rencana tidak direncanakan → aktual Diganti Bahan manual: Tambahan 1 cm/); assert.match(both, /rencana 11 cm · aktual 11 cm · selisih 0 cm/);
+  assert.equal(planVsActualMessageLines(buildComparison({})).length, 0, "tanpa catatan & bukan LAYANAN: tidak ada bagian ini");
+  assert.match(planVsActualMessageLines(buildComparison({}), { always: true }).join("\n"), /Fondasi : rencana Belum dicatat → aktual Belum dicatat/);
+});
+
+test("route PIC Bahan BOM: command planning yang sama (authorize hook), tanpa penulis BOM kedua", () => {
+  const read = (f) => fs.readFileSync(path.join(here, "..", "src", f), "utf8");
+  assert.match(read("services/productionBuildCommandService.js"), /setPlannedBOM\(prisma, \{[\s\S]*authorize:/);
+  assert.match(read("services/productionPlanningCommandService.js"), /if \(authorize\) await authorize\(tx, plan\)/);
+  assert.match(read("routes/productionExperience.js"), /"\/runs\/:runId\/build\/plan-bom", requireAnyPermission\(P\.UNIT_STAGE_WRITE, P\.INVENTORY_WRITE\)/);
+  assert.doesNotMatch(read("services/productionBuildCommandService.js").replace(/\/\/.*$/gm, ""), /plannedBOMLine\.(create|update)/, "BOM hanya ditulis command planning");
+});

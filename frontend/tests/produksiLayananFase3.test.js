@@ -110,3 +110,37 @@ test("dokumentasi tidak wajib pada analisis/racikan (frontend): racikan rencana 
   const d = { ...M.draftFromEntry("PLAN_RACIKAN", null), foundationOn: true, foundation: { action: "KEEP", system: "", material: null, note: "" } };
   assert.equal(M.validateDraft("PLAN_RACIKAN", d), null, "tanpa foto/video pun sah");
 });
+
+test("rantai bahan PIC Bahan: racikan → BOM → diserahkan → dipakai; empat sumber terpisah, ditautkan per bahan; kosong = Belum dicatat", async () => {
+  const C = await import("../src/features/production/workerApp/materialChainModel.js");
+  const plan = { data: { foundation: { action: "REPLACE", system: "BONNELL", material: { kind: "CATALOG", materialId: "m-spring", code: "SP", name: "Pocket spring", unit: "PCS", supplier: "CV Pegas" } },
+    layers: [{ action: "REPLACE", material: { kind: "CATALOG", materialId: "m-busa", code: "BS", name: "Busa HR", unit: "PCS", itemGroup: "HR FOAM" }, thicknessCm: 5 }, { action: "REPLACE", material: { kind: "MANUAL", text: "Kapuk" } }] } };
+  const { rows, unlinked, hasPlan } = C.materialChainRows({ planEntry: plan, bom: [{ materialId: "m-spring", qty: 1, name: "Pocket spring", uom: "PCS" }, { materialId: "m-lem", qty: 2, name: "Lem", uom: "KG" }], issued: [{ materialId: "m-spring", qty: 1 }], used: [{ materialId: "m-spring", qty: 2 }, { materialId: "m-busa", qty: 1 }] });
+  const by = Object.fromEntries(rows.map((r) => [r.materialId, r]));
+  assert.equal(hasPlan, true); assert.deepEqual(unlinked.map((u) => u.label), ["Bahan manual: Kapuk"], "manual tidak bisa ditautkan ke BOM");
+  assert.deepEqual(by["m-spring"].racikan.map((u) => u.where), ["Fondasi"]); assert.equal(by["m-spring"].supplier, "CV Pegas");
+  assert.deepEqual([by["m-spring"].bomQty, by["m-spring"].issuedQty, by["m-spring"].usedQty], [1, 1, 2]);
+  assert.deepEqual(by["m-spring"].flags, ["DIPAKAI_MELEBIHI_SERAH"]);
+  assert.deepEqual([by["m-busa"].bomQty, by["m-busa"].issuedQty, by["m-busa"].usedQty], [null, null, 1], "kosong tetap null (tampil Belum dicatat), bukan 0");
+  assert.deepEqual(by["m-busa"].flags.sort(), ["DIPAKAI_TANPA_SERAH", "RACIKAN_TANPA_BOM"]);
+  assert.deepEqual(by["m-lem"].flags, ["BOM_TANPA_RACIKAN"]); assert.deepEqual(C.materialChainRows({}).rows, []); assert.equal(C.materialChainRows({}).hasPlan, false);
+  // draf BOM <-> payload (command planning yang sama)
+  const d = C.bomDraftFromCard([{ materialId: "m1", code: "A", name: "A", qty: 2, uom: "PCS" }]);
+  assert.deepEqual(C.bomPayload(d), [{ materialId: "m1", qty: 2 }]); assert.equal(C.bomUnchanged(d, [{ materialId: "m1", qty: 2 }]), true);
+  assert.equal(C.validateBomDraft([]), "Tambahkan minimal satu bahan ke BOM."); assert.match(C.validateBomDraft([{ materialId: "m", name: "X", qty: "0" }]), /Isi jumlah X/);
+  assert.match(C.validateBomDraft([{ materialId: "m", name: "X", qty: "1" }, { materialId: "m", name: "X", qty: "1" }]), /dua kali/);
+  assert.equal(C.validateBomDraft(d), null);
+  assert.match(C.bomLockedReason({ issuedMaterials: [{ materialId: "m" }] }), /terkunci/); assert.equal(C.bomLockedReason({ issuedMaterials: [] }), null);
+  assert.equal(C.bomWillReleaseReservation({ plan: { status: "MATERIAL_RESERVED" } }), true);
+});
+
+test("UI PIC Bahan: BOM lewat endpoint run-scoped (bukan endpoint planning luas), idempotensi per niat, hanya LAYANAN; rantai bahan terpasang; stok tidak disebut keluar", () => {
+  const sheet = strip(src("features", "production", "workerApp", "BomPlanSheet.jsx")); const jd = strip(src("features", "production", "workerApp", "JobDetail.jsx"));
+  assert.match(sheet, /api\.setProductionV2BuildPlanBom\(card\.runId, \{ expectedRevision: card\.plan\.revision/); assert.doesNotMatch(sheet, /setPlannedBOM|\/production-planning/);
+  assert.match(sheet, /keyRef\.current = newKey\(\)/, "kunci idempotensi baru saat isi berubah"); assert.match(sheet, /PLAN_REVISION_CONFLICT/);
+  assert.match(sheet, /data-testid="bom-locked"/); assert.match(sheet, /data-testid="bom-add-from-racikan"/); assert.match(sheet, /tidak mengeluarkan stok/);
+  assert.match(src("api.js"), /setProductionV2BuildPlanBom:[\s\S]*\/build\/plan-bom/);
+  assert.match(jd, /card\.track !== "BUILD" && card\.plan && <button[^>]*data-testid="open-bom-plan"/); assert.match(jd, /<MaterialChain card=\{card\} \/>/); assert.match(jd, /sheet === "bom"/);
+  const chain = strip(src("features", "production", "workerApp", "MaterialChain.jsx"));
+  for (const id of ["chain-racikan", "chain-bom", "chain-issued", "chain-used", "chain-no-plan"]) assert.ok(chain.includes(id), id);
+});
