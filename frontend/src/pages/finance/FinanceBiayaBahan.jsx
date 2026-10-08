@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Boxes } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
@@ -7,6 +8,8 @@ import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
 import { HalamanFinance, JudulKartu, Penjelasan, tanggalPendek } from "@/features/finance/shared.jsx";
 import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
+import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
+import { KenapaBeda } from "@/features/finance/kontrak.jsx";
 import JejakBiayaBahan from "@/features/finance/JejakBiayaBahan.jsx";
 import { teksRupiah } from "@/features/finance/biayaBahanLogic.js";
 
@@ -21,7 +24,8 @@ export default function FinanceBiayaBahan() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [pilih, setPilih] = useState(null);
+  const [sp] = useSearchParams();
+  const [pilih, setPilih] = useState(sp.get("buka") || null); // tautan dari panel PO: ?buka=<unitId>
 
   const muat = useCallback(async (opsi) => {
     const diam = opsi?.diam === true;
@@ -34,10 +38,18 @@ export default function FinanceBiayaBahan() {
   useEffect(() => { muat({ diam: pernahMuat.current }); pernahMuat.current = true; }, [muat]);
 
   const daftar = data?.units || [];
-  const aktif = daftar.find((u) => u.unitId === pilih) || null;
+  const aktif = daftar.find((u) => u.unitId === pilih) || (pilih ? { unitId: pilih, unitCode: "Unit", orderNumber: null } : null);
 
   return (
-    <HalamanFinance title="Biaya Bahan per Unit" subtitle="Jejak biaya bahan setiap unit produksi, dari PO sampai faktur." loading={loading} error={error} onRetry={muat}>
+    <HalamanFinance
+      title="Biaya Bahan per Unit" subtitle="Jejak biaya bahan setiap unit produksi, dari PO sampai faktur." loading={loading} error={error} onRetry={muat}
+      actions={(
+        <TombolExportExcel
+          modul="biaya-bahan"
+          ambilBody={() => ({ filter: { q: qTunda.trim() }, filterLabel: labelFilterAktif([["Pencarian unit/order", qTunda.trim()]]) })}
+        />
+      )}
+    >
       <Penjelasan>
         Biaya persediaan dihitung dari <strong>harga PO/perolehan</strong> (rata-rata tertimbang) yang <strong>dibekukan saat Gudang memposting</strong> pergerakan stok — tidak berubah oleh transaksi bertanggal mundur.
         <strong> Selisih harga faktur</strong> ditampilkan terpisah. Bagian yang belum final ditandai <strong>Tanpa harga</strong> atau <strong>Belum final</strong>; angka kosong bukan Rp0. Halaman ini hanya membaca: stok keluar tetap hanya lewat Material Issue Gudang.
@@ -81,6 +93,7 @@ export default function FinanceBiayaBahan() {
           </CardContent>
         </Card>
       </div>
+      <KenapaBeda metrik={["biaya_bahan_unit_bersih", "biaya_bahan_selisih_faktur", "persediaan_nilai"]} />
     </HalamanFinance>
   );
 }

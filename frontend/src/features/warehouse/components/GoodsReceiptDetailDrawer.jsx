@@ -6,13 +6,14 @@ import { Button } from "@/components/ui/button.jsx";
 import StatusBadge from "./StatusBadge.jsx";
 import SumberPO from "./SumberPO.jsx";
 import { teksJumlah } from "@/features/finance/purchaseOrderLogic.js";
+import JejakPemakaianPenerimaan from "@/features/warehouse/components/JejakPemakaianPenerimaan.jsx";
 import {
   RECEIPT_STATUS_REAL, RECEIPT_SOURCE_REAL, RECEIPT_FORWARD_FLOW, UNIT_LABEL,
 } from "../inventoryReal.js";
 
 // Detail Goods Receipt — mengedit hasil kedatangan & inspeksi per baris,
 // lalu menjalankan transisi status. COMPLETED hanya bisa dicapai lewat
-// tombol "Confirm Putaway" (POST /:id/putaway) — itu SATU-SATUNYA titik
+// tombol "Simpan ke Stok" (internal: putaway) (POST /:id/putaway) — itu SATU-SATUNYA titik
 // yang menulis baris stock_movements RECEIPT nyata, lihat catatan panjang
 // di schema.prisma & routes/goodsReceipt.js.
 const waktu = (s) => new Date(s).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
@@ -234,6 +235,13 @@ export default function GoodsReceiptDetailDrawer({ receiptId, onClose, onChanged
                     ))}
                   </div>
 
+                  {["ARRIVED", "INSPECTION", "READY_FOR_PUTAWAY", "COMPLETED"].includes(status) && (
+                    <div className="mt-3 border-t border-line pt-3">
+                      <h4 className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ink3">Progres bahan ini</h4>
+                      <JejakPemakaianPenerimaan receiptId={receiptId} status={status} />
+                    </div>
+                  )}
+
                   {bisaIsiKedatangan && Object.keys(lineEdits).length > 0 && (
                     <Button variant="secondary" size="sm" className="mt-2" onClick={simpanBaris} disabled={busy}>
                       {busy ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />} Simpan Perubahan Baris
@@ -247,6 +255,11 @@ export default function GoodsReceiptDetailDrawer({ receiptId, onClose, onChanged
           {receipt && !selesai && (
             <div className="shrink-0 border-t border-line p-3">
               {error && <p className="mb-2 text-[12px] text-red">{error}</p>}
+              {status === "READY_FOR_PUTAWAY" && !rejecting && (
+                <p className="mb-2 text-[11.5px] text-ink3">
+                  Hanya barang yang dinyatakan baik yang masuk ke stok. Tindakan ini menambah persediaan dan membuat jurnal penerimaan secara otomatis.
+                </p>
+              )}
               {rejecting ? (
                 <div className="space-y-2">
                   <textarea
@@ -268,7 +281,7 @@ export default function GoodsReceiptDetailDrawer({ receiptId, onClose, onChanged
                   </Button>
                   {status === "READY_FOR_PUTAWAY" ? (
                     <Button size="sm" className="ml-auto" onClick={putaway} disabled={busy}>
-                      {busy ? <Loader2 size={14} className="animate-spin" /> : <PackageCheck size={14} />} Konfirmasi Putaway
+                      {busy ? <Loader2 size={14} className="animate-spin" /> : <PackageCheck size={14} />} Simpan ke Stok
                     </Button>
                   ) : nextStatus && nextStatus !== "COMPLETED" ? (
                     <Button size="sm" className="ml-auto" onClick={majukan} disabled={busy}>

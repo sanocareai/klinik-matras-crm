@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Inbox, Plus, RefreshCw } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
@@ -27,8 +28,8 @@ const TABS = [
   { key: "SCHEDULED",         label: "Scheduled" },
   { key: "ARRIVED",           label: "Arrived" },
   { key: "INSPECTION",        label: "Inspection" },
-  { key: "READY_FOR_PUTAWAY", label: "Ready for Putaway" },
-  { key: "COMPLETED",         label: "Completed" },
+  { key: "READY_FOR_PUTAWAY", label: "Siap Disimpan" },
+  { key: "COMPLETED",         label: "Sudah Masuk Stok" },
   { key: "REJECTED",          label: "Rejected" },
 ];
 
@@ -41,6 +42,8 @@ export default function WarehouseGoodsReceipt() {
   const [error, setError] = useState("");
   const [formOpen, setFormOpen] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
+  const [sp] = useSearchParams();
+  useEffect(() => { const id = sp.get("buka"); if (id) setSelectedId(id); }, []); // eslint-disable-line react-hooks/exhaustive-deps -- tautan dalam dibaca sekali saat halaman dibuka
 
   const load = useCallback(() => {
     setLoading(true);

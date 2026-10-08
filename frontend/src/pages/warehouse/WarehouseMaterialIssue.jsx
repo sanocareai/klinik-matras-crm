@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { ClipboardList, Plus, RefreshCw } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
@@ -39,6 +40,8 @@ export default function WarehouseMaterialIssue() {
   const [error, setError] = useState("");
   const [formOpen, setFormOpen] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
+  const [sp] = useSearchParams();
+  useEffect(() => { const id = sp.get("buka"); if (id) setSelectedId(id); }, []); // eslint-disable-line react-hooks/exhaustive-deps -- tautan dalam dibaca sekali saat halaman dibuka
 
   const load = useCallback(() => {
     setLoading(true);

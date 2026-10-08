@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { ChevronDown, ChevronRight, AlertTriangle } from "lucide-react";
+import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge.jsx";
 import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
@@ -38,16 +39,24 @@ export default function JejakBiayaBahan({ unitId, sumber = "unit" }) {
       </div>
 
       {d.izinHarga && (
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3" data-testid="kartu-ringkasan">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4" data-testid="kartu-ringkasan">
           <div className="rounded-btn bg-inset px-3 py-2">
             <div className="text-[11px] text-ink3">{total.judul}</div>
             <div className={cn("text-[15px] font-bold tabular-nums", total.pasti ? "text-ink" : "text-orange")} data-testid="total-biaya">{total.nilai}</div>
             <div className="text-[11.5px] text-ink2">{total.sub}</div>
+            {d.ringkasan.totalBiaya != null && (
+              <div className="mt-0.5 text-[11.5px] tabular-nums text-ink2" data-testid="rumus-biaya">Pemakaian {teksRupiah(d.ringkasan.totalBiaya)} − retur {teksRupiah(d.ringkasan.totalRetur) ?? "Rp0"}</div>
+            )}
           </div>
           <div className="rounded-btn bg-inset px-3 py-2">
             <div className="text-[11px] text-ink3">Susut / waste (di luar biaya unit)</div>
             <div className="text-[15px] font-bold tabular-nums text-ink">{teksRupiah(d.ringkasan.nilaiSusut) ?? "Belum bisa dihitung"}</div>
             <div className="text-[11.5px] text-ink2">Dinilai pada harga saat pergerakan</div>
+          </div>
+          <div className="rounded-btn bg-inset px-3 py-2" data-testid="kartu-tanpa-harga">
+            <div className="text-[11px] text-ink3">Pergerakan tanpa harga</div>
+            <div className={cn("text-[15px] font-bold tabular-nums", d.ringkasan.jumlahTanpaHarga > 0 ? "text-orange" : "text-ink")}>{d.ringkasan.jumlahTanpaHarga}</div>
+            <div className="text-[11.5px] text-ink2">{d.ringkasan.jumlahTanpaHarga > 0 ? "Tidak dihitung ke biaya (bukan Rp0)" : "Semua pergerakan punya harga"}</div>
           </div>
           <div className="rounded-btn bg-inset px-3 py-2" data-testid="kartu-selisih-faktur">
             <div className="text-[11px] text-ink3">Selisih harga faktur (terpisah)</div>
@@ -120,7 +129,7 @@ function Pergerakan({ r, izinHarga }) {
         <span className="text-ink3">{wib(r.tanggal)}</span>
         <span className="font-semibold text-ink">{JENIS_BIAYA[r.jenisBiaya] || r.jenisBiaya}</span>
         <span className="tabular-nums">{teksQty(r.qty)} {r.satuan}</span>
-        {r.dokumen && <span className="font-mono text-[11.5px] text-ink2">{r.dokumen.nomor}</span>}
+        {r.dokumen && <Link to={`/warehouse/material-issue?buka=${r.dokumen.materialIssueId}`} className="font-mono text-[11.5px] text-accent hover:underline">{r.dokumen.nomor}</Link>}
         <Badge variant={sb.variant}>{sb.label}</Badge>
         {fk && <Badge variant={fk.variant}>{fk.label}</Badge>}
         <span className={cn("ml-auto font-semibold tabular-nums", nilai.pasti ? "text-ink" : "text-orange")} data-testid="nilai-pergerakan">{nilai.teks}</span>
@@ -129,6 +138,9 @@ function Pergerakan({ r, izinHarga }) {
       <div className="mt-0.5 text-[11.5px] text-ink2">
         {r.status === "DINILAI" ? (
           <>
+            {izinHarga && r.sumber.some((s) => s.purchaseOrderId) && (
+              <span className="mr-1">{r.sumber.filter((s) => s.purchaseOrderId).map((s, i) => <span key={i}>{i ? " " : ""}<Link to={`/finance/purchase-orders?buka=${s.purchaseOrderId}`} className="font-mono text-accent hover:underline">{s.poNumber}</Link></span>)} ·</span>
+            )}
             Dasar harga {izinHarga ? `${teksRupiah(r.hargaDasar)} / ${r.satuan}` : "(disembunyikan)"} — rata-rata tertimbang per {wib(r.asOfDasar)}:{" "}
             {r.sumber.length === 0 ? "stok awal" : r.sumber.map((s, i) => <span key={i}>{i ? "; " : ""}{teksSumber(s, izinHarga)}</span>)}
             {r.sumberDipangkas > 0 && ` (+${r.sumberDipangkas} lot lain)`}

@@ -255,7 +255,7 @@ export default function WarehouseDashboard() {
           <Card className="overflow-hidden">
             <CardHeader>
               <CardTitle>Penerimaan Barang</CardTitle>
-              <CardDescription>Goods receipt yang belum selesai (draft s/d siap ditempatkan).</CardDescription>
+              <CardDescription>Goods receipt yang belum selesai (draft s/d siap disimpan).</CardDescription>
             </CardHeader>
             <IncomingGoodsTable rows={incomingGoods} />
           </Card>

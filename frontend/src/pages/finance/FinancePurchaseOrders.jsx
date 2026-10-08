@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Plus, ClipboardList, Trash2, Pencil, Ban, CheckCircle2, ListChecks, FileText } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -10,6 +11,7 @@ import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD, TABLE_VIEW_CLASS, CARD_VIEW_CLASS } from "@/components/ui/table.jsx";
 import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
+import JejakBiayaPO from "@/features/finance/JejakBiayaPO.jsx";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi, Pilihan, InputUang, tanggalPendek,
 } from "@/features/finance/shared.jsx";
@@ -23,7 +25,7 @@ import {
 
 // PURCHASE ORDER BAHAN BAKU — Fase 1 integrasi Finance → Gudang.
 // PO adalah dokumen KOMITMEN: menyimpan, menyetujui, merevisi, atau membatalkan PO TIDAK mengubah stok dan TIDAK membuat jurnal.
-// Stok masuk dan jurnal persediaan baru lahir saat Gudang menempatkan barang (putaway) dari Penerimaan Barang yang dibuat dari PO ini.
+// Stok masuk dan jurnal persediaan baru lahir saat Gudang menekan Simpan ke Stok (putaway) dari Penerimaan Barang yang dibuat dari PO ini.
 // Angka dipesan / diterima baik / ditolak / belum diterima / ditagih dihitung server dari penerimaan Gudang — layar ini hanya menampilkan.
 
 const hariIniISO = () => new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
@@ -43,6 +45,8 @@ export default function FinancePurchaseOrders() {
   const [pesan, setPesan] = useState(null);
   const [form, setForm] = useState(null); // { kunci, po? } — kunci baru tiap dibuka = isian bersih
   const [detailId, setDetailId] = useState(null);
+  const [sp] = useSearchParams();
+  useEffect(() => { const id = sp.get("buka"); if (id) setDetailId(id); }, []); // eslint-disable-line react-hooks/exhaustive-deps -- tautan dalam (dari panel lain) cukup dibaca sekali
 
   const muat = useCallback(async (opsi) => {
     const diam = opsi?.diam === true;
@@ -83,7 +87,7 @@ export default function FinancePurchaseOrders() {
 
       <Penjelasan>
         PO hanya <strong>rencana dan komitmen</strong>: menyimpan atau menyetujui PO <strong>tidak mengubah stok dan tidak membuat jurnal</strong>. Setelah disetujui, Gudang memilih PO ini
-        saat membuat <strong>Penerimaan Baru</strong>, mencatat jumlah datang, baik, dan ditolak, lalu menempatkan barang ke rak. Hanya penempatan itu yang menambah stok dan persediaan.
+        saat membuat <strong>Penerimaan Baru</strong>, mencatat jumlah datang, baik, dan ditolak, lalu menekan <strong>Simpan ke Stok</strong>. Hanya langkah itu yang menambah stok dan persediaan.
         Penerimaan tanpa PO tetap bisa dibuat Gudang, tetapi ditandai <strong>Tanpa PO</strong> dan tidak ada pencocokan jumlah maupun harga.
       </Penjelasan>
 
@@ -481,6 +485,13 @@ function IsiDetail({ po, segar, onUbahFaktur, onSetujuiFaktur, onTolakFaktur, on
         )}
         <p className="mt-1.5 text-[11.5px] text-ink3">Faktur dan pembayarannya tidak menambah stok. Jumlah yang menagih lebih dari barang baik yang belum ditagih akan <strong>tertahan</strong>; beda harga wajib tinjauan Finance (tanpa toleransi otomatis).</p>
       </section>
+
+      {po.status !== "DRAFT" && (po.penerimaan || []).length > 0 && (
+        <section>
+          <h4 className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ink3">Jejak Biaya Bahan</h4>
+          <JejakBiayaPO poId={po.id} segar={segar} />
+        </section>
+      )}
 
       <section>
         <h4 className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ink3">Riwayat</h4>

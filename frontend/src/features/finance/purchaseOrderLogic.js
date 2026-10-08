@@ -24,13 +24,13 @@ export const NAMA_EVENT_PO = {
   DISETUJUI: "PO disetujui",
   DIBATALKAN: "PO dibatalkan",
   REVISI_JUMLAH: "Jumlah direvisi",
-  PENERIMAAN_DITEMPATKAN: "Penerimaan ditempatkan ke stok",
+  PENERIMAAN_DITEMPATKAN: "Penerimaan disimpan ke stok",
   STATUS_BERUBAH: "Status berubah",
 };
 
 export const LABEL_STATUS_PENERIMAAN = {
   DRAFT: "Draft", SCHEDULED: "Dijadwalkan", ARRIVED: "Tiba", INSPECTION: "Pemeriksaan",
-  READY_FOR_PUTAWAY: "Siap Ditempatkan", COMPLETED: "Selesai", REJECTED: "Ditolak",
+  READY_FOR_PUTAWAY: "Siap Disimpan", COMPLETED: "Sudah Masuk Stok", REJECTED: "Ditolak",
 };
 
 export const baris0 = () => ({ materialId: "", qty: "", unitPrice: "" });
@@ -129,7 +129,7 @@ export function kalimatEvent(e) {
   switch (e.type) {
     case "REVISI_JUMLAH": return `Jumlah direvisi ${teksJumlah(m.sebelum)} → ${teksJumlah(m.sesudah)}${e.note ? ` — ${e.note}` : ""}`;
     case "DIBATALKAN": return `PO dibatalkan${e.note ? ` — ${e.note}` : ""}`;
-    case "PENERIMAAN_DITEMPATKAN": return `Penerimaan ${e.note || ""} ditempatkan ke stok`.replace("  ", " ");
+    case "PENERIMAAN_DITEMPATKAN": return `Penerimaan ${e.note || ""} disimpan ke stok`.replace("  ", " ");
     case "STATUS_BERUBAH": return `Status ${STATUS_PO[m.dari]?.label || m.dari} → ${STATUS_PO[m.ke]?.label || m.ke}`;
     default: return NAMA_EVENT_PO[e.type] || e.type;
   }

@@ -95,8 +95,8 @@ export const RECEIPT_STATUS_REAL = {
   SCHEDULED:          { label: "Scheduled",         labelId: "Dijadwalkan",       tone: "accent" },
   ARRIVED:            { label: "Arrived",           labelId: "Tiba",              tone: "accent" },
   INSPECTION:         { label: "Inspection",        labelId: "Pemeriksaan",       tone: "orange" },
-  READY_FOR_PUTAWAY:  { label: "Ready for Putaway", labelId: "Siap Ditempatkan",  tone: "accent" },
-  COMPLETED:          { label: "Completed",         labelId: "Selesai",           tone: "green" },
+  READY_FOR_PUTAWAY:  { label: "Siap Disimpan", labelId: "Siap Disimpan",  tone: "accent" },
+  COMPLETED:          { label: "Sudah Masuk Stok",  labelId: "Sudah Masuk Stok",           tone: "green" },
   REJECTED:           { label: "Rejected",          labelId: "Ditolak",           tone: "red" },
 };
 export const RECEIPT_FORWARD_FLOW = ["DRAFT", "SCHEDULED", "ARRIVED", "INSPECTION", "READY_FOR_PUTAWAY", "COMPLETED"];

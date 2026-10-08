@@ -83,3 +83,23 @@ test("komponen: tanpa tombol aksi tulis; menjelaskan stok hanya via Material Iss
   assert.ok(h.includes("angka kosong bukan Rp0"));
   assert.doesNotMatch(h, /<Button[^>]*>(Simpan|Setujui|Posting)/);
 });
+
+// ── Bahasa UI Gudang: kata "Putaway" tidak boleh muncul sebagai teks yang dilihat pengguna (nama internal route/fungsi boleh tetap) ──
+test("UI Gudang/Finance memakai 'Simpan ke Stok', bukan 'Putaway', pada label, tombol, dan teks bantuan", async () => {
+  const fs = await import("node:fs");
+  const path = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const akar = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../src");
+  const baca = (p) => fs.readFileSync(path.join(akar, p), "utf8");
+  const real = baca("features/warehouse/inventoryReal.js");
+  assert.match(real, /READY_FOR_PUTAWAY:\s*\{ label: "Siap Disimpan"/);
+  assert.match(real, /COMPLETED:\s*\{ label: "Sudah Masuk Stok"/);
+  const drawer = baca("features/warehouse/components/GoodsReceiptDetailDrawer.jsx");
+  assert.match(drawer, /Simpan ke Stok<\/|Simpan ke Stok\s*$/m);
+  assert.match(drawer, /Hanya barang yang dinyatakan baik yang masuk ke stok\. Tindakan ini menambah persediaan dan membuat jurnal penerimaan secara otomatis\./);
+  // teks JSX/literal yang tampil (bukan komentar //, bukan identifier): tidak ada "Putaway" / "Siap Ditempatkan"
+  for (const f of ["features/warehouse/inventoryReal.js", "features/warehouse/components/GoodsReceiptDetailDrawer.jsx", "pages/warehouse/WarehouseGoodsReceipt.jsx", "pages/warehouse/WarehouseDashboard.jsx", "features/finance/purchaseOrderLogic.js", "pages/finance/FinancePurchaseOrders.jsx"]) {
+    const tampil = baca(f).split("\n").filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n").replace(/\/\/.*$/gm, "");
+    assert.doesNotMatch(tampil.replace(/READY_FOR_PUTAWAY/g, "").replace(/putawayGoodsReceipt|async function putaway|onClick=\{putaway\}/g, ""), /Putaway|Ready for Putaway|Siap Ditempatkan|Konfirmasi Putaway/, `${f}: istilah lama masih tampil`);
+  }
+});

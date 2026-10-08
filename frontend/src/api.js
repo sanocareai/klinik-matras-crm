@@ -1874,6 +1874,8 @@ export const api = {
   getBiayaBahanUnits: (params = {}) => request(`/finance/biaya-bahan/unit${qsFinance(params)}`),
   getBiayaBahanUnit: (unitId) => request(`/finance/biaya-bahan/unit/${unitId}`),
   getJejakBahanUnit: (unitId) => request(`/units/${unitId}/jejak-bahan`),
+  getBiayaBahanPO: (poId) => request(`/finance/biaya-bahan/po/${poId}`),
+  getJejakPemakaianPenerimaan: (receiptId) => request(`/inventory/goods-receipts/${receiptId}/jejak-pemakaian`),
   // Pintu Gudang: PO yang boleh diterima, TANPA harga.
   getGudangPurchaseOrders: (params = {}) => request(`/inventory/purchase-orders${qsFinance(params)}`),
   getFinanceSupplierPayments: (params = {}) => request(`/finance/supplier-payments${qsFinance(params)}`),
