@@ -15,7 +15,7 @@ export default function UnitV1Materials({ unitId, roles, onChanged }) {
   const [busy, setBusy] = useState(false); const [msg, setMsg] = useState({ kind: "", text: "" });
   const load = useCallback(() => api.getUnitMaterials(unitId).then(setUsage).catch((e) => setMsg({ kind: "error", text: e.message })), [unitId]);
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { if (canWrite) api.getMaterials({ active: true }).then((d) => setCatalog(Array.isArray(d) ? d : d.materials || [])).catch(() => {}); }, [canWrite]);
+  useEffect(() => { if (canWrite) api.getMaterials({ active: true, untuk: "produksi" }).then((d) => setCatalog(Array.isArray(d) ? d : d.materials || [])).catch(() => {}); }, [canWrite]);
   async function add() {
     setBusy(true); setMsg({ kind: "", text: "" });
     try { await api.addUnitMaterial(unitId, { materialId: form.materialId, qty: Number(form.qty), note: form.note }); setForm({ materialId: "", qty: "", note: "" }); await load(); onChanged?.(); setMsg({ kind: "ok", text: "Pemakaian bahan tercatat." }); }

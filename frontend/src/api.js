@@ -1860,6 +1860,11 @@ export const api = {
   // Purchase Order bahan baku (Finance) — kunci idempotensi dipegang pemanggil per sesi dialog supaya kirim ulang tidak menggandakan PO.
   getPurchaseOrders: (params = {}) => request(`/finance/purchase-orders${qsFinance(params)}`),
   getPurchaseOrder: (id) => request(`/finance/purchase-orders/${id}`),
+  // SKU baru dari PO (hanya Admin Finance untuk cek-duplikat & perbaikan) + Katalog Supplier. SKU baru baru lahir saat draf PO disimpan.
+  cekDuplikatSku: (data) => request("/finance/purchase-orders/sku/cek-duplikat", { method: "POST", body: JSON.stringify(data) }),
+  getAsalSku: (materialId) => request(`/finance/purchase-orders/sku/${materialId}`),
+  perbaikiSku: (materialId, data) => request(`/finance/purchase-orders/sku/${materialId}`, { method: "PATCH", body: JSON.stringify(data) }),
+  getKatalogSupplier: (params = {}) => request(`/finance/purchase-orders/katalog-supplier${qsFinance(params)}`),
   createPurchaseOrder: (data, idempotencyKey = mutationKey("po")) => request("/finance/purchase-orders", { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   updatePurchaseOrder: (id, data) => request(`/finance/purchase-orders/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   approvePurchaseOrder: (id) => request(`/finance/purchase-orders/${id}/approve`, { method: "POST", body: JSON.stringify({}) }),

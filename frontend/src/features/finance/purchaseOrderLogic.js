@@ -2,6 +2,7 @@
 // Angka kuantitas (dipesan, diterima baik, ditolak, belum diterima, ditagih) SELALU dari server; di sini hanya pemformatan dan validasi isian.
 
 import { bodyTermin } from "./terminLogic.js";
+import { UNIT_LABEL } from "../warehouse/inventoryReal.js";
 
 // Termin PO: hanya mengganti termin (admin + alasan); jatuh tempo dihitung saat faktur dibuat.
 const bodyTerminPO = (t) => {
@@ -43,6 +44,90 @@ export const LABEL_STATUS_PENERIMAAN = {
 
 export const baris0 = () => ({ materialId: "", qty: "", unitPrice: "" });
 
+// ── SKU baru langsung dari PO + konversi satuan beli → stok ──────────────────────────────────────────
+// Barang baru HANYA hidup di isian formulir (l.materialBaru) sampai PO disimpan — server membuat SKU, katalog supplier, dan PO dalam satu transaksi.
+// Aturan di sini = petunjuk dini; server tetap yang memutuskan (duplikat, izin, presisi).
+
+// Label satuan SATU sumber dengan Gudang (inventoryReal.UNIT_LABEL) supaya "dus"/"kaleng" sama di PO, Penerimaan, dan stok.
+export const SATUAN_OPSI = Object.entries(UNIT_LABEL);
+export const labelSatuan = (u) => SATUAN_OPSI.find(([k]) => k === u)?.[1] ?? (u || "");
+export const JENIS_SKU_OPSI = [
+  { key: "BAHAN_PRODUKSI", label: "Bahan Produksi", hint: "Tersedia di katalog Produksi (tidak otomatis masuk BOM mana pun)." },
+  { key: "PERLENGKAPAN_STOK", label: "Perlengkapan Stok", hint: "Hanya untuk Gudang; tidak muncul sebagai bahan Produksi." },
+];
+export const labelJenisSku = (k) => JENIS_SKU_OPSI.find((j) => j.key === k)?.label ?? "—";
+export const PESAN_NON_STOK = "Jasa dan barang non-stok tidak dibuat sebagai SKU. Catat lewat Pengeluaran, Pengajuan Biaya, atau Tagihan Supplier.";
+
+export const materialBaru0 = () => ({
+  nama: "", kategori: "", jenis: "", spesifikasi: "", satuanBeli: "", satuanStok: "", faktorKonversi: "",
+  namaSupplier: "", kodeSupplier: "", moq: "", estimasiKirimHari: "", lokasi: "", catatan: "", konfirmasiMirip: false, alasanMirip: "",
+});
+
+const desimal = (v) => { const s = String(v ?? ""); const i = s.indexOf("."); return i < 0 ? 0 : s.length - i - 1; };
+
+/** Satuan beli efektif baris: barang baru → isian modal; material yang ada → pilihan baris (kosong = satuan stok). */
+export function satuanStokBaris(l, unitStok = null) { return l.materialBaru ? l.materialBaru.satuanStok : unitStok; }
+export function satuanBeliBaris(l, unitStok = null) {
+  const stok = satuanStokBaris(l, unitStok);
+  return (l.materialBaru ? l.materialBaru.satuanBeli : l.satuanBeli) || stok || null;
+}
+/** { satuanBeli, satuanStok, faktor } bila baris berkonversi; null bila tanpa konversi (atau satuan stok belum diketahui). */
+export function infoKonversi(l, unitStok = null) {
+  const stok = satuanStokBaris(l, unitStok);
+  const beli = satuanBeliBaris(l, unitStok);
+  if (!stok || !beli || beli === stok) return null;
+  const faktor = Number(l.materialBaru ? l.materialBaru.faktorKonversi : l.faktorKonversi);
+  return { satuanBeli: beli, satuanStok: stok, faktor };
+}
+/** Jumlah dalam satuan stok = jumlah beli × faktor (null bila tanpa konversi / isian belum lengkap). */
+export function qtyStok(l, unitStok = null) {
+  const k = infoKonversi(l, unitStok);
+  const q = Number(l.qty);
+  if (!k || !(k.faktor > 0) || !(q > 0)) return null;
+  return Math.round(q * k.faktor * 1e6) / 1e6;
+}
+/** Kalimat "Setara dengan 24 kaleng" untuk layar & PDF; null bila tanpa konversi. */
+export function teksSetara(l, unitStok = null) {
+  const n = qtyStok(l, unitStok); const k = infoKonversi(l, unitStok);
+  return n == null ? null : `Setara dengan ${teksJumlah(n)} ${labelSatuan(k.satuanStok)}`;
+}
+
+/** Galat isian modal "Buat Barang Baru"; null = lengkap. */
+export function galatMaterialBaru(m) {
+  if (!m) return "Isi data barang baru";
+  if (/^(JASA|NON_?STOK|BIAYA|LAYANAN)/i.test(String(m.jenis || ""))) return PESAN_NON_STOK;
+  if (!String(m.nama || "").trim()) return "Nama barang wajib diisi";
+  if (!String(m.kategori || "").trim()) return "Kategori wajib diisi";
+  if (!m.jenis) return "Pilih jenis barang: Bahan Produksi atau Perlengkapan Stok";
+  if (!m.satuanStok) return "Pilih satuan stok";
+  const beli = m.satuanBeli || m.satuanStok;
+  if (beli !== m.satuanStok) {
+    const f = Number(m.faktorKonversi);
+    if (!(f > 0)) return `Isi faktor konversi: 1 ${labelSatuan(beli)} = berapa ${labelSatuan(m.satuanStok)}`;
+    if (desimal(m.faktorKonversi) > 4) return "Faktor konversi maksimal 4 angka di belakang koma";
+  }
+  if (m.moq !== "" && m.moq != null && !(Number(m.moq) > 0)) return "MOQ harus lebih dari 0";
+  if (m.estimasiKirimHari !== "" && m.estimasiKirimHari != null && !(Number.isInteger(Number(m.estimasiKirimHari)) && Number(m.estimasiKirimHari) >= 0 && Number(m.estimasiKirimHari) <= 365)) return "Estimasi waktu kirim harus 0–365 hari";
+  return null;
+}
+
+/** Ringkas barang baru pada formulir (untuk kalimat konfirmasi): [{ baris, nama }]. */
+export const daftarBarangBaru = (lines) => lines.map((l, i) => (l.materialBaru ? { baris: i + 1, nama: l.materialBaru.nama } : null)).filter(Boolean);
+
+/** Isian modal → bentuk body API (angka bertipe angka, kosong dibuang). */
+export function bodyMaterialBaru(m) {
+  const beli = m.satuanBeli || m.satuanStok;
+  const o = {
+    nama: m.nama.trim(), kategori: m.kategori.trim(), jenis: m.jenis, satuanStok: m.satuanStok, satuanBeli: beli,
+    ...(beli !== m.satuanStok && { faktorKonversi: Number(m.faktorKonversi) }),
+  };
+  for (const k of ["spesifikasi", "namaSupplier", "kodeSupplier", "lokasi", "catatan"]) if (String(m[k] || "").trim()) o[k] = String(m[k]).trim();
+  if (m.moq !== "" && m.moq != null) o.moq = Number(m.moq);
+  if (m.estimasiKirimHari !== "" && m.estimasiKirimHari != null) o.estimasiKirimHari = Number(m.estimasiKirimHari);
+  if (m.konfirmasiMirip) { o.konfirmasiMirip = true; o.alasanMirip = String(m.alasanMirip || "").trim(); }
+  return o;
+}
+
 /** Format jumlah: tanpa nol berlebih, maksimal 3 desimal, pemisah Indonesia. */
 export function teksJumlah(n) {
   const v = Number(n);
@@ -58,28 +143,42 @@ export function subtotal(l) {
 export const totalIsian = (lines) => lines.reduce((s, l) => s + subtotal(l), 0);
 
 /** Pesan galat per baris isian; null = valid. Aturan sama dengan server (server tetap yang memutuskan). */
-export function galatBaris(l) {
-  if (!l.materialId) return "Pilih item";
+export function galatBaris(l, unitStok = null) {
+  if (l.materialBaru) { const g = galatMaterialBaru(l.materialBaru); if (g) return g; }
+  else if (!l.materialId) return "Pilih item";
   const q = Number(l.qty);
   if (!(q > 0)) return "Jumlah harus lebih dari 0";
   if (Math.abs(q * 1000 - Math.round(q * 1000)) > 1e-6) return "Jumlah maksimal 3 angka di belakang koma";
   const h = Number(l.unitPrice);
   if (!Number.isInteger(h) || h <= 0) return "Harga satuan harus rupiah bulat lebih dari 0";
+  // Satuan beli ≠ satuan stok: faktor wajib; jumlah stok (jumlah × faktor) maksimal 4 desimal; harga per satuan stok minimal Rp1.
+  if (!l.materialBaru && l.satuanBeli && unitStok && l.satuanBeli !== unitStok) {
+    const f = Number(l.faktorKonversi);
+    if (!(f > 0)) return `Isi faktor konversi: 1 ${labelSatuan(l.satuanBeli)} = berapa ${labelSatuan(unitStok)}`;
+    if (desimal(l.faktorKonversi) > 4) return "Faktor konversi maksimal 4 angka di belakang koma";
+  }
+  const kv = infoKonversi(l, unitStok);
+  if (kv && kv.faktor > 0) {
+    const stok = Math.round(q * kv.faktor * 1e6) / 1e6;
+    if (Math.abs(stok * 10000 - Math.round(stok * 10000)) > 1e-6) return "Jumlah × faktor konversi melebihi 4 angka di belakang koma — ubah jumlah atau faktor";
+    if (h / kv.faktor < 1) return "Harga per satuan stok kurang dari Rp1 — periksa faktor konversi atau harga";
+  }
   return null;
 }
 
 /** Galat keseluruhan formulir PO; null = boleh disimpan. */
-export function galatFormulir(f) {
+export function galatFormulir(f, unitMap = null) {
   if (!f.supplierId) return "Pilih supplier";
   if (!f.orderDate) return "Isi tanggal PO";
   if (f.expectedDate && f.expectedDate < f.orderDate) return "Estimasi kedatangan tidak boleh sebelum tanggal PO";
   if (f.lines.length === 0) return "Tambahkan minimal satu item";
   const ganda = new Set();
   for (const [i, l] of f.lines.entries()) {
-    const g = galatBaris(l);
+    const g = galatBaris(l, unitMap?.get?.(l.materialId) ?? null);
     if (g) return `Baris ${i + 1}: ${g}`;
-    if (ganda.has(l.materialId)) return `Baris ${i + 1}: item yang sama sudah ada — gabungkan jadi satu baris`;
-    ganda.add(l.materialId);
+    const kunci = l.materialBaru ? `baru:${l.materialBaru.nama.trim().toLowerCase().replace(/\s+/g, " ")}` : l.materialId;
+    if (ganda.has(kunci)) return `Baris ${i + 1}: item yang sama sudah ada — gabungkan jadi satu baris`;
+    ganda.add(kunci);
   }
   return null;
 }
@@ -91,7 +190,11 @@ export function formDariPO(po) {
     orderDate: String(po.orderDate).slice(0, 10),
     expectedDate: po.expectedDate ? String(po.expectedDate).slice(0, 10) : "",
     notes: po.notes || "",
-    lines: po.lines.map((l) => ({ materialId: l.materialId, qty: String(l.dipesan), unitPrice: String(l.hargaSatuan) })),
+    lines: po.lines.map((l) => ({
+      materialId: l.materialId, qty: String(l.dipesan), unitPrice: String(l.hargaSatuan),
+      ...(l.konversi && { satuanBeli: l.konversi.satuanBeli, faktorKonversi: String(l.konversi.faktor) }),
+      ...(l.namaSupplier && { namaSupplier: l.namaSupplier }), ...(l.kodeSupplier && { kodeSupplier: l.kodeSupplier }),
+    })),
   };
 }
 
@@ -99,7 +202,15 @@ export function bodyDariForm(f) {
   return {
     ...(f.termin ? bodyTerminPO(f.termin) : {}),
     supplierId: f.supplierId, orderDate: f.orderDate, expectedDate: f.expectedDate || null, notes: f.notes.trim() || null,
-    lines: f.lines.map((l) => ({ materialId: l.materialId, qty: Number(l.qty), unitPrice: Number(l.unitPrice) })),
+    lines: f.lines.map((l) => {
+      const dasar = { qty: Number(l.qty), unitPrice: Number(l.unitPrice) };
+      if (l.materialBaru) return { materialBaru: bodyMaterialBaru(l.materialBaru), ...dasar };
+      return {
+        materialId: l.materialId, ...dasar,
+        ...(l.satuanBeli && l.faktorKonversi && { satuanBeli: l.satuanBeli, faktorKonversi: Number(l.faktorKonversi) }),
+        ...(l.namaSupplier && { namaSupplier: l.namaSupplier }), ...(l.kodeSupplier && { kodeSupplier: l.kodeSupplier }),
+      };
+    }),
   };
 }
 
@@ -136,6 +247,8 @@ export function aksiPO(po) {
 export function kalimatEvent(e) {
   const m = e.metadata || {};
   switch (e.type) {
+    case "DIBUAT": return m.skuBaru?.length ? `PO dibuat · ${m.skuBaru.length} barang baru: ${m.skuBaru.map((s) => s.kode).join(", ")}` : NAMA_EVENT_PO.DIBUAT;
+    case "DIUBAH": return m.skuBaru?.length ? `Draf diubah · ${m.skuBaru.length} barang baru: ${m.skuBaru.map((s) => s.kode).join(", ")}` : NAMA_EVENT_PO.DIUBAH;
     case "REVISI_JUMLAH": return `Jumlah direvisi ${teksJumlah(m.sebelum)} → ${teksJumlah(m.sesudah)}${e.note ? ` — ${e.note}` : ""}`;
     case "DIBATALKAN": return `PO dibatalkan${e.note ? ` — ${e.note}` : ""}`;
     case "PENERIMAAN_DITEMPATKAN": return `Penerimaan ${e.note || ""} disimpan ke stok`.replace("  ", " ");

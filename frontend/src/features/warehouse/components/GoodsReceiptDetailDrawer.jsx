@@ -16,6 +16,8 @@ import {
 // tombol "Simpan ke Stok" (internal: putaway) (POST /:id/putaway) — itu SATU-SATUNYA titik
 // yang menulis baris stock_movements RECEIPT nyata, lihat catatan panjang
 // di schema.prisma & routes/goodsReceipt.js.
+// Satuan tampil: label Indonesia bila ada, selain itu kode huruf kecil (BOX, CAN, … satuan baru dari PO belum tentu ada di UNIT_LABEL).
+const satuanTampil = (u) => UNIT_LABEL[u] || String(u || "").toLowerCase();
 const waktu = (s) => new Date(s).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
 
 export default function GoodsReceiptDetailDrawer({ receiptId, onClose, onChanged }) {
@@ -176,9 +178,15 @@ export default function GoodsReceiptDetailDrawer({ receiptId, onClose, onChanged
                       <div key={line.id} className="rounded-btn border border-border p-2.5">
                         <div className="flex items-center justify-between">
                           <p className="text-[12.5px] font-semibold text-ink">{line.material.code}</p>
-                          <p className="text-[11px] text-ink3">Dijadwalkan {line.orderedQty ?? "—"} {UNIT_LABEL[line.material.unit]}</p>
+                          <p className="text-[11px] text-ink3">Dijadwalkan {line.orderedQty ?? "—"} {satuanTampil(line.purchaseOrderLine?.purchaseUnit || line.material.unit)}</p>
                         </div>
                         <p className="text-[11px] text-ink2">{line.material.name}</p>
+                        {line.purchaseOrderLine?.purchaseUnit && (
+                          <p className="mt-1 text-[11px] font-medium text-accent" data-testid="konversi-penerimaan">
+                            Hitung dalam {satuanTampil(line.purchaseOrderLine.purchaseUnit)} sesuai PO. 1 {satuanTampil(line.purchaseOrderLine.purchaseUnit)} = {teksJumlah(Number(line.purchaseOrderLine.conversionFactor))} {satuanTampil(line.material.unit)}
+                            {" — "}Simpan ke Stok menambah {teksJumlah(Math.round(Number(line.acceptedQty ?? 0) * Number(line.purchaseOrderLine.conversionFactor) * 1e4) / 1e4)} {satuanTampil(line.material.unit)}.
+                          </p>
+                        )}
                         {(() => {
                           const q = receipt.poRingkas?.lines?.find((b) => b.id === line.purchaseOrderLineId);
                           return q ? (

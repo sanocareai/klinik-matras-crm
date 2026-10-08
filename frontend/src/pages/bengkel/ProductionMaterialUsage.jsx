@@ -31,7 +31,7 @@ export default function ProductionMaterialUsage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    api.getMaterials({ active: true }).then(setMaterials).catch(() => {});
+    api.getMaterials({ active: true, untuk: "produksi" }).then(setMaterials).catch(() => {});
   }, []);
 
   const load = useCallback(() => {

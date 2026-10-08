@@ -150,7 +150,7 @@ export function ShortageSheet({ card, onClose, onDone }) {
   const [query, setQuery] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  useEffect(() => { api.getMaterials({ active: "true" }).then((d) => setMaterials(Array.isArray(d) ? d : d?.items || [])).catch(() => setMaterials([])); }, []);
+  useEffect(() => { api.getMaterials({ active: "true", untuk: "produksi" }).then((d) => setMaterials(Array.isArray(d) ? d : d?.items || [])).catch(() => setMaterials([])); }, []);
   const bomFirst = useMemo(() => {
     const bomIds = new Set((card.bom || []).map((b) => b.materialId));
     const fromBom = (card.bom || []).map((b) => ({ id: b.materialId, name: b.name, code: b.code }));

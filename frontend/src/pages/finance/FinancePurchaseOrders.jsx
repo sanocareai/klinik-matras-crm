@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
 import JejakBiayaPO from "@/features/finance/JejakBiayaPO.jsx";
 import TerminFaktur from "@/features/finance/TerminFaktur.jsx";
+import { adalahAdminKeuangan } from "@/features/finance/matriksAksi.js";
 import { TERMIN_AWAL, galatTermin, teksTermin } from "@/features/finance/terminLogic.js";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi, Pilihan, InputUang, tanggalPendek,
@@ -22,6 +23,7 @@ import { CardList, RowCard } from "@/features/finance/cards.jsx";
 import {
   STATUS_PO, TAB_PO, LABEL_STATUS_PENERIMAAN, baris0, teksJumlah, subtotal, totalIsian, galatBaris, galatFormulir,
   formDariPO, bodyDariForm, ringkasProgres, nilaiBelumDiterima, aksiPO, kalimatEvent,
+  SATUAN_OPSI, JENIS_SKU_OPSI, PESAN_NON_STOK, labelSatuan, labelJenisSku, materialBaru0, galatMaterialBaru, bodyMaterialBaru, teksSetara, infoKonversi, daftarBarangBaru,
   FAKTUR_TERBUKA, LABEL_STATUS_FAKTUR, formFakturAwal, formFakturDariEvaluasi, galatFaktur, subtotalFaktur, totalFaktur, petunjukBaris, bodyFaktur, statusFaktur,
 } from "@/features/finance/purchaseOrderLogic.js";
 
@@ -191,13 +193,189 @@ function Progres({ teks, persen }) {
 }
 
 // ── Formulir PO (baru / ubah draf) ───────────────────────────────────────
+function penggunaAdminKeuangan() {
+  try { return adalahAdminKeuangan(JSON.parse(localStorage.getItem("user") || "null")); } catch { return false; }
+}
+
+// Pencarian material yang ADA: kode, nama, atau kategori. Daftar tampil inline (bukan popover) supaya tidak terpotong area gulir modal.
+function PemilihMaterial({ materials, value, nomor, namaCadangan, onPilih }) {
+  const [q, setQ] = useState("");
+  const terpilih = materials.find((m) => m.id === value);
+  const hasil = useMemo(() => {
+    const t = q.trim().toLowerCase();
+    const cocok = t ? materials.filter((m) => `${m.code} ${m.name} ${m.itemGroup || ""}`.toLowerCase().includes(t)) : materials;
+    return cocok.slice(0, 8);
+  }, [materials, q]);
+  if (value) {
+    return (
+      <div className="flex min-w-0 items-center gap-2 rounded-lg bg-surface px-3 py-2" data-testid="material-terpilih">
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[13px] font-semibold text-ink">{terpilih ? `${terpilih.code} — ${terpilih.name}` : (namaCadangan || "Item")}</div>
+          {terpilih && <div className="text-[11.5px] text-ink3">Satuan stok {labelSatuan(terpilih.unit)}{terpilih.kind ? ` · ${labelJenisSku(terpilih.kind)}` : ""}</div>}
+        </div>
+        <button type="button" onClick={() => onPilih("")} className="shrink-0 text-[12px] font-semibold text-accent max-sm:min-h-11 max-sm:px-2">Ganti</button>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari material (kode, nama, atau kategori)…" aria-label={`Cari material baris ${nomor}`} />
+      <ul role="listbox" aria-label={`Hasil pencarian material baris ${nomor}`} className="mt-1 max-h-44 list-none divide-y divide-line overflow-y-auto rounded-lg border border-line p-0">
+        {hasil.length === 0 && <li className="px-3 py-2 text-[12px] text-ink3">Tidak ada material yang cocok. Bila barangnya memang belum ada, buat barang baru.</li>}
+        {hasil.map((m) => (
+          <li key={m.id}>
+            <button type="button" role="option" aria-selected="false" onClick={() => onPilih(m.id)} className="flex w-full min-w-0 items-center gap-2 px-3 py-2 text-left text-[12.5px] hover:bg-hovertint max-sm:min-h-11">
+              <span className="shrink-0 font-mono text-[11.5px] font-semibold text-ink">{m.code}</span>
+              <span className="min-w-0 flex-1 truncate text-ink2">{m.name}</span>
+              <span className="shrink-0 text-[11px] text-ink3">{labelSatuan(m.unit)}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+// Modal "Buat Barang Baru". Tidak menulis apa pun: hanya mengumpulkan data + memeriksa duplikat. SKU baru lahir saat draf PO disimpan (satu transaksi dengan PO-nya).
+function ModalBarangBaru({ awal, supplierId, supplierNama, onClose, onSimpan, onPakaiMaterial }) {
+  const [m, setM] = useState(() => ({ ...materialBaru0(), ...(awal || {}) }));
+  const [periksa, setPeriksa] = useState(null); // { pasti, mirip }
+  const [galat, setGalat] = useState("");
+  const [sibuk, setSibuk] = useState(false);
+  const set = (k, v) => { setM((s) => ({ ...s, [k]: v })); setPeriksa(null); };
+  const beli = m.satuanBeli || m.satuanStok;
+  const beda = !!m.satuanStok && beli !== m.satuanStok;
+  const galatIsi = galatMaterialBaru(m);
+  const perluKonfirmasi = !!periksa && periksa.pasti.length === 0 && periksa.mirip.length > 0;
+  const alasanKurang = perluKonfirmasi && (!m.konfirmasiMirip || String(m.alasanMirip || "").trim().length < 5);
+
+  async function periksaDanPakai() {
+    setGalat("");
+    if (periksa && periksa.pasti.length === 0 && (periksa.mirip.length === 0 || (m.konfirmasiMirip && !alasanKurang))) return onSimpan(m);
+    setSibuk(true);
+    try {
+      const r = await api.cekDuplikatSku({ supplierId, materialBaru: bodyMaterialBaru({ ...m, konfirmasiMirip: false }) });
+      setPeriksa({ pasti: r.pasti || [], mirip: r.mirip || [] });
+      if ((r.pasti || []).length === 0 && (r.mirip || []).length === 0) onSimpan(m);
+    } catch (e) { setGalat(e.message || "Gagal memeriksa duplikat"); } finally { setSibuk(false); }
+  }
+
+  const label = periksa?.pasti.length ? "Barang sudah ada" : perluKonfirmasi ? "Lanjutkan sebagai barang baru" : "Periksa & pakai di PO";
+  return (
+    <Modal
+      open onOpenChange={(v) => !v && onClose()}
+      title="Buat Barang Baru"
+      description={`Barang ini baru dibuat saat PO disimpan${supplierNama ? ` (supplier ${supplierNama})` : ""}. Belum ada stok, jurnal, atau utang yang tercatat.`}
+      className="w-[640px]"
+      footer={
+        <div className="flex w-full flex-col gap-2">
+          {(galat || (galatIsi && m.nama)) && <p role="alert" className="rounded-lg bg-orangebg px-3 py-2 text-[12.5px] leading-snug text-orange">{galat || galatIsi}</p>}
+          <div className="flex justify-end gap-2">
+            <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
+            <TombolAksi disabled={!!galatIsi || sibuk || !!periksa?.pasti.length || alasanKurang} onClick={periksaDanPakai}>{sibuk ? "Memeriksa…" : label}</TombolAksi>
+          </div>
+        </div>
+      }
+    >
+      <div className="space-y-3" data-testid="modal-barang-baru">
+        <Field label="Nama barang" required><Input value={m.nama} onChange={(e) => set("nama", e.target.value)} placeholder="mis. Lem Semprot 500 ml" maxLength={200} /></Field>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="Kategori" required hint="mis. Perekat, Busa, Kain, APD."><Input value={m.kategori} onChange={(e) => set("kategori", e.target.value)} maxLength={80} /></Field>
+          <Field label="Jenis" required>
+            <div className="grid grid-cols-1 gap-1.5" role="radiogroup" aria-label="Jenis barang">
+              {JENIS_SKU_OPSI.map((j) => (
+                <button
+                  key={j.key} type="button" role="radio" aria-checked={m.jenis === j.key} onClick={() => set("jenis", j.key)}
+                  className={cn("rounded-lg border px-3 py-2 text-left max-sm:min-h-11", m.jenis === j.key ? "border-accent bg-hovertint" : "border-line")}
+                >
+                  <span className="block text-[12.5px] font-semibold text-ink">{j.label}</span>
+                  <span className="block text-[11px] leading-snug text-ink3">{j.hint}</span>
+                </button>
+              ))}
+            </div>
+          </Field>
+        </div>
+        <p className="rounded-lg bg-surface px-3 py-2 text-[11.5px] leading-snug text-ink2">{PESAN_NON_STOK}</p>
+        <Field label="Spesifikasi singkat"><Input value={m.spesifikasi} onChange={(e) => set("spesifikasi", e.target.value)} placeholder="mis. kaleng aerosol 500 ml" maxLength={500} /></Field>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="Satuan pembelian" hint="Satuan yang tertulis di PO dan faktur supplier.">
+            <Pilihan value={beli} onChange={(v) => set("satuanBeli", v)} aria-label="Satuan pembelian">
+              <option value="">— pilih —</option>
+              {SATUAN_OPSI.map(([k, t]) => <option key={k} value={k}>{t}</option>)}
+            </Pilihan>
+          </Field>
+          <Field label="Satuan stok" required hint="Satuan di Gudang. Setelah ada pergerakan stok, satuan ini terkunci.">
+            <Pilihan value={m.satuanStok} onChange={(v) => set("satuanStok", v)} aria-label="Satuan stok">
+              <option value="">— pilih —</option>
+              {SATUAN_OPSI.map(([k, t]) => <option key={k} value={k}>{t}</option>)}
+            </Pilihan>
+          </Field>
+        </div>
+        {beda && (
+          <Field label={`Faktor konversi: 1 ${labelSatuan(beli)} = … ${labelSatuan(m.satuanStok)}`} required hint="Maksimal 4 angka di belakang koma. Contoh: 1 box berisi 12 kaleng → isi 12.">
+            <input
+              type="number" inputMode="decimal" min="0" step="any" value={m.faktorKonversi} aria-label="Faktor konversi"
+              onChange={(e) => set("faktorKonversi", e.target.value)}
+              className="h-9 w-full rounded-lg bg-surface px-3 text-right text-sm tabular-nums text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/40 max-sm:h-11"
+            />
+          </Field>
+        )}
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="Nama barang versi supplier"><Input value={m.namaSupplier} onChange={(e) => set("namaSupplier", e.target.value)} maxLength={200} /></Field>
+          <Field label="Kode barang supplier"><Input value={m.kodeSupplier} onChange={(e) => set("kodeSupplier", e.target.value)} maxLength={100} /></Field>
+          <Field label="MOQ (opsional)" hint="Jumlah pesan minimum dalam satuan pembelian."><Input type="number" inputMode="decimal" min="0" value={m.moq} onChange={(e) => set("moq", e.target.value)} /></Field>
+          <Field label="Estimasi waktu kirim (hari, opsional)"><Input type="number" inputMode="numeric" min="0" max="365" value={m.estimasiKirimHari} onChange={(e) => set("estimasiKirimHari", e.target.value)} /></Field>
+          <Field label="Lokasi penyimpanan (opsional)"><Input value={m.lokasi} onChange={(e) => set("lokasi", e.target.value)} placeholder="mis. Rak B2" maxLength={200} /></Field>
+          <Field label="Catatan"><Input value={m.catatan} onChange={(e) => set("catatan", e.target.value)} maxLength={500} /></Field>
+        </div>
+
+        {periksa?.pasti.length > 0 && (
+          <div role="alert" data-testid="duplikat-pasti" className="rounded-lg bg-redbg px-3 py-2.5 text-[12.5px] text-red">
+            <p className="font-semibold">Barang ini sudah ada di master material — jangan buat SKU baru.</p>
+            <ul className="mt-1.5 list-none space-y-1 p-0">
+              {periksa.pasti.map((c) => (
+                <li key={c.materialId} className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono font-semibold">{c.kode}</span><span className="min-w-0 flex-1">{c.nama} · {labelSatuan(c.satuan)} <span className="opacity-80">({c.alasan})</span></span>
+                  <button type="button" onClick={() => onPakaiMaterial(c.materialId)} className="shrink-0 rounded-lg bg-surface px-2.5 py-1 text-[12px] font-semibold text-accent max-sm:min-h-11">Pakai material ini</button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {perluKonfirmasi && (
+          <div role="alert" data-testid="duplikat-mirip" className="rounded-lg bg-orangebg px-3 py-2.5 text-[12.5px] text-orange">
+            <p className="font-semibold">Ada barang yang mirip. Periksa dulu agar tidak terjadi SKU ganda.</p>
+            <ul className="mt-1.5 list-none space-y-1 p-0">
+              {periksa.mirip.map((c) => (
+                <li key={c.materialId} className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono font-semibold">{c.kode}</span><span className="min-w-0 flex-1">{c.nama} · {labelSatuan(c.satuan)} <span className="opacity-80">({c.alasan})</span></span>
+                  <button type="button" onClick={() => onPakaiMaterial(c.materialId)} className="shrink-0 rounded-lg bg-surface px-2.5 py-1 text-[12px] font-semibold text-accent max-sm:min-h-11">Pakai material ini</button>
+                </li>
+              ))}
+            </ul>
+            <label className="mt-2 flex items-start gap-2 text-ink">
+              <input type="checkbox" checked={!!m.konfirmasiMirip} onChange={(e) => setM((s) => ({ ...s, konfirmasiMirip: e.target.checked }))} className="mt-0.5" />
+              <span>Saya sudah memeriksa — ini memang barang yang berbeda.</span>
+            </label>
+            {m.konfirmasiMirip && <div className="mt-1.5"><Input value={m.alasanMirip} onChange={(e) => setM((s) => ({ ...s, alasanMirip: e.target.value }))} placeholder="Alasan (wajib, min. 5 huruf), mis. beda ketebalan" aria-label="Alasan melanjutkan barang mirip" maxLength={300} /></div>}
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
 function ModalPO({ kunci, po, onClose, onSaved }) {
   const mengubah = !!po;
+  const bolehBuatSku = useMemo(penggunaAdminKeuangan, []);
   const [f, setF] = useState(() => (po ? formDariPO(po) : { supplierId: "", orderDate: hariIniISO(), expectedDate: "", notes: "", lines: [baris0()] }));
   const [termin, setTermin] = useState(TERMIN_AWAL);
   const [suppliers, setSuppliers] = useState([]);
   const [materials, setMaterials] = useState([]);
   const [galat, setGalat] = useState("");
+  const [barangBaru, setBarangBaru] = useState(null); // { baris, awal? } — modal Buat Barang Baru untuk baris ke-n
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const setBaris = (i, patch) => setF((s) => ({ ...s, lines: s.lines.map((l, idx) => (idx === i ? { ...l, ...patch } : l)) }));
 
@@ -207,8 +385,11 @@ function ModalPO({ kunci, po, onClose, onSaved }) {
   }, []);
 
   const bahan = useMemo(() => new Map(materials.map((m) => [m.id, m])), [materials]);
-  const galatForm = galatFormulir(f) || galatTermin(termin);
+  const unitMap = useMemo(() => new Map(materials.map((m) => [m.id, m.unit])), [materials]);
+  const galatForm = galatFormulir(f, unitMap) || galatTermin(termin);
   const total = totalIsian(f.lines);
+  const namaSupplier = suppliers.find((s) => s.id === f.supplierId)?.name || po?.supplier?.name || "";
+  const jumlahBaru = daftarBarangBaru(f.lines).length;
 
   async function simpan() {
     setGalat("");
@@ -228,6 +409,7 @@ function ModalPO({ kunci, po, onClose, onSaved }) {
       footer={
         <div className="flex w-full flex-col gap-2">
           {(galat || (galatForm && f.supplierId)) && <p role="alert" data-testid="galat-po" className="rounded-lg bg-orangebg px-3 py-2 text-[12.5px] leading-snug text-orange">{galat || galatForm}</p>}
+          {jumlahBaru > 0 && <p data-testid="info-barang-baru" className="text-[12px] text-ink2">{jumlahBaru} barang baru akan dibuat di master material saat draf ini disimpan.</p>}
           <div className="flex items-center justify-between gap-3">
             <span className="text-[12.5px] text-ink2">Total <strong className="tabular-nums text-ink">{formatUang(total)}</strong></span>
             <div className="flex gap-2">
@@ -256,48 +438,95 @@ function ModalPO({ kunci, po, onClose, onSaved }) {
         <div>
           <div className="mb-1.5 flex items-center justify-between">
             <span className="text-[12px] font-semibold text-ink2">Item bahan baku</span>
-            <button type="button" onClick={() => set("lines", [...f.lines, baris0()])} className="flex items-center gap-1 text-[12px] font-semibold text-accent"><Plus size={12} /> Tambah baris</button>
+            <button type="button" onClick={() => set("lines", [...f.lines, baris0()])} className="flex items-center gap-1 text-[12px] font-semibold text-accent max-sm:min-h-11"><Plus size={12} /> Tambah baris</button>
           </div>
           <div className="space-y-2">
             {f.lines.map((l, i) => {
               const m = bahan.get(l.materialId);
-              const g = (l.materialId || l.qty || l.unitPrice) ? galatBaris(l) : null;
+              const unitStok = l.materialBaru ? l.materialBaru.satuanStok : m?.unit ?? null;
+              const g = (l.materialId || l.materialBaru || l.qty || l.unitPrice) ? galatBaris(l, unitStok) : null;
+              const setara = teksSetara(l, unitStok);
+              const kv = infoKonversi(l, unitStok);
+              const satuanBeli = l.materialBaru ? (l.materialBaru.satuanBeli || l.materialBaru.satuanStok) : (l.satuanBeli || unitStok);
               return (
                 <div key={i} className="rounded-lg border border-line p-2.5" data-testid="baris-po">
-                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_96px_132px] sm:items-end">
-                    <Field label={`Item ${i + 1}`}>
-                      <Pilihan value={l.materialId} onChange={(v) => setBaris(i, { materialId: v })} aria-label={`Item baris ${i + 1}`}>
-                        <option value="">— pilih item katalog —</option>
-                        {materials.map((mm) => <option key={mm.id} value={mm.id}>{mm.code} — {mm.name}</option>)}
-                        {l.materialId && !bahan.has(l.materialId) && <option value={l.materialId}>{po?.lines?.find((x) => x.materialId === l.materialId)?.nama || "Item"}</option>}
-                      </Pilihan>
-                    </Field>
-                    <Field label={`Jumlah${m ? ` (${m.unit})` : ""}`}>
+                  {l.materialBaru ? (
+                    <div className="min-w-0 rounded-lg bg-surface px-3 py-2" data-testid="barang-baru">
+                      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                        <Badge variant="accent">Barang baru — akan dibuat saat PO disimpan</Badge>
+                        <div className="flex items-center gap-3">
+                          <button type="button" onClick={() => setBarangBaru({ baris: i, awal: l.materialBaru })} className="shrink-0 text-[12px] font-semibold text-accent max-sm:min-h-11">Ubah</button>
+                          <button type="button" onClick={() => setBaris(i, { materialBaru: null })} className="shrink-0 text-[12px] font-semibold text-ink2 max-sm:min-h-11">Pakai material yang ada</button>
+                        </div>
+                      </div>
+                      <div className="mt-1.5 break-words text-[13px] font-semibold text-ink">{l.materialBaru.nama}</div>
+                      <div className="text-[11.5px] text-ink3">{labelJenisSku(l.materialBaru.jenis)} · satuan stok {labelSatuan(l.materialBaru.satuanStok)}{l.materialBaru.kodeSupplier ? ` · kode supplier ${l.materialBaru.kodeSupplier}` : ""}</div>
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      <PemilihMaterial
+                        materials={materials} value={l.materialId} nomor={i + 1} namaCadangan={po?.lines?.find((x) => x.materialId === l.materialId)?.nama}
+                        onPilih={(id) => setBaris(i, { materialId: id, satuanBeli: "", faktorKonversi: "" })}
+                      />
+                      {!l.materialId && (bolehBuatSku ? (
+                        <button type="button" onClick={() => setBarangBaru({ baris: i, awal: null })} className="flex items-center gap-1 text-[12px] font-semibold text-accent max-sm:min-h-11" data-testid="tombol-barang-baru"><Plus size={12} /> Buat Barang Baru</button>
+                      ) : (
+                        <p className="text-[11.5px] text-ink3" data-testid="petunjuk-barang-baru">Barangnya belum ada di master material? Minta Admin Finance membuat barang baru dari PO.</p>
+                      ))}
+                    </div>
+                  )}
+                  <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-[110px_minmax(0,1fr)_140px] sm:items-start">
+                    <Field label={`Jumlah${satuanBeli ? ` (${labelSatuan(satuanBeli)})` : ""}`}>
                       <input
                         type="number" inputMode="decimal" min="0" step="any" value={l.qty} aria-label={`Jumlah baris ${i + 1}`}
                         onChange={(e) => setBaris(i, { qty: e.target.value })}
                         className="h-9 w-full rounded-lg bg-surface px-3 text-right text-sm tabular-nums text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/40 max-sm:h-11"
                       />
                     </Field>
-                    <Field label="Harga satuan (Rp)">
+                    {!l.materialBaru && m ? (
+                      <Field label="Satuan pembelian">
+                        <div className="flex items-center gap-2">
+                          <Pilihan value={l.satuanBeli || m.unit} onChange={(v) => setBaris(i, v === m.unit ? { satuanBeli: "", faktorKonversi: "" } : { satuanBeli: v })} aria-label={`Satuan pembelian baris ${i + 1}`}>
+                            {SATUAN_OPSI.map(([k, t]) => <option key={k} value={k}>{t}</option>)}
+                          </Pilihan>
+                          {kv && (
+                            <input
+                              type="number" inputMode="decimal" min="0" step="any" value={l.faktorKonversi || ""} aria-label={`Faktor konversi baris ${i + 1}`} placeholder={`isi ${labelSatuan(m.unit)}`}
+                              onChange={(e) => setBaris(i, { faktorKonversi: e.target.value })}
+                              className="h-9 w-24 shrink-0 rounded-lg bg-surface px-2 text-right text-sm tabular-nums text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/40 max-sm:h-11"
+                            />
+                          )}
+                        </div>
+                      </Field>
+                    ) : <div className="hidden sm:block" />}
+                    <Field label={`Harga per ${satuanBeli ? labelSatuan(satuanBeli) : "satuan"} (Rp)`}>
                       <InputUang value={l.unitPrice} onChange={(v) => setBaris(i, { unitPrice: v })} aria-label={`Harga satuan baris ${i + 1}`} />
                     </Field>
                   </div>
-                  <div className="mt-1.5 flex items-center justify-between gap-2">
+                  <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                     <span className="text-[12px] text-ink2">Subtotal <strong className="tabular-nums text-ink">{formatUang(subtotal(l))}</strong></span>
-                    {g && l.materialId && <span className="min-w-0 truncate text-[11.5px] text-orange">{g}</span>}
+                    {setara && <span data-testid="setara" className="text-[12px] font-medium text-accent">{setara}</span>}
+                    {g && (l.materialId || l.materialBaru) && <span className="min-w-0 basis-full truncate text-[11.5px] text-orange sm:basis-auto">{g}</span>}
                     <button
                       type="button" onClick={() => set("lines", f.lines.length > 1 ? f.lines.filter((_, idx) => idx !== i) : f.lines)} disabled={f.lines.length === 1}
-                      aria-label={`Hapus baris ${i + 1}`} className="shrink-0 rounded-lg p-2 text-ink3 hover:bg-redbg hover:text-red disabled:opacity-30"
+                      aria-label={`Hapus baris ${i + 1}`} className="ml-auto shrink-0 rounded-lg p-2 text-ink3 hover:bg-redbg hover:text-red disabled:opacity-30"
                     ><Trash2 size={14} /></button>
                   </div>
                 </div>
               );
             })}
           </div>
-          {materials.length === 0 && <p className="mt-1.5 text-[11.5px] text-ink3">Belum ada item aktif di katalog — tambahkan lewat Stock &amp; Material di Gudang dulu.</p>}
+          {materials.length === 0 && <p className="mt-1.5 text-[11.5px] text-ink3">Belum ada item aktif di katalog — {bolehBuatSku ? "gunakan “Buat Barang Baru” pada baris di atas." : "minta Admin Finance membuat barang baru, atau tambahkan lewat Stock & Material di Gudang."}</p>}
         </div>
       </div>
+      {barangBaru && (
+        <ModalBarangBaru
+          awal={barangBaru.awal} supplierId={f.supplierId} supplierNama={namaSupplier}
+          onClose={() => setBarangBaru(null)}
+          onSimpan={(mb) => { setBaris(barangBaru.baris, { materialId: "", materialBaru: mb, satuanBeli: "", faktorKonversi: "" }); setBarangBaru(null); }}
+          onPakaiMaterial={(id) => { setBaris(barangBaru.baris, { materialId: id, materialBaru: null, satuanBeli: "", faktorKonversi: "" }); setBarangBaru(null); }}
+        />
+      )}
     </Modal>
   );
 }
@@ -429,7 +658,7 @@ function IsiDetail({ po, segar, onUbahFaktur, onSetujuiFaktur, onTolakFaktur, on
             <TBody>
               {po.lines.map((l) => (
                 <TR key={l.id}>
-                  <TD><div className="font-medium text-ink">{l.kode}</div><div className="text-[11.5px] text-ink2">{l.nama}</div></TD>
+                  <TD><div className="font-medium text-ink">{l.kode}</div><div className="text-[11.5px] text-ink2">{l.nama}</div>{l.konversi && <div data-testid="konversi-detail" className="text-[11.5px] text-accent">1 {labelSatuan(l.konversi.satuanBeli)} = {teksJumlah(l.konversi.faktor)} {labelSatuan(l.konversi.satuanStok)} · setara {teksJumlah(l.dipesan * l.konversi.faktor)} {labelSatuan(l.konversi.satuanStok)}</div>}</TD>
                   <TD numeric>{teksJumlah(l.dipesan)} {l.satuan}</TD>
                   <TD numeric>{teksJumlah(l.diterimaBaik)}</TD>
                   <TD numeric>{teksJumlah(l.ditolak)}</TD>
@@ -446,6 +675,7 @@ function IsiDetail({ po, segar, onUbahFaktur, onSetujuiFaktur, onTolakFaktur, on
           {po.lines.map((l) => (
             <li key={l.id} className="rounded-lg border border-line p-2.5 text-[12.5px]">
               <div className="font-medium text-ink">{l.kode} — {l.nama}</div>
+              {l.konversi && <div className="text-[11.5px] text-accent">1 {labelSatuan(l.konversi.satuanBeli)} = {teksJumlah(l.konversi.faktor)} {labelSatuan(l.konversi.satuanStok)} · setara {teksJumlah(l.dipesan * l.konversi.faktor)} {labelSatuan(l.konversi.satuanStok)}</div>}
               <dl className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1">
                 <div><dt className="text-ink3">Dipesan</dt><dd className="ml-0 tabular-nums">{teksJumlah(l.dipesan)} {l.satuan}</dd></div>
                 <div><dt className="text-ink3">Diterima baik</dt><dd className="ml-0 tabular-nums">{teksJumlah(l.diterimaBaik)}</dd></div>

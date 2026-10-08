@@ -148,6 +148,13 @@ export default function ItemDetailDrawer({ item, onClose, onEdit, onChanged }) {
                   : <span className="text-ink3">Tidak tercatat</span>}
               </Baris>
               <Baris label="Status item">{item.active ? "Aktif" : "Nonaktif"}</Baris>
+              {item.createdVia === "PO" && (
+                <Baris label="Asal SKU">
+                  <span data-testid="asal-sku-po">Dibuat dari Purchase Order{item.kind ? ` · ${item.kind === "PERLENGKAPAN_STOK" ? "Perlengkapan Stok (hanya Gudang)" : "Bahan Produksi"}` : ""}</span>
+                </Baris>
+              )}
+              {item.specification && <Baris label="Spesifikasi">{item.specification}</Baris>}
+              {item.storageHint && <Baris label="Lokasi penyimpanan">{item.storageHint}</Baris>}
             </dl>
             <p className="mt-1 text-[10.5px] leading-relaxed text-ink3">
               Harga &amp; nilai stok referensi adalah snapshot satu kali dari stock

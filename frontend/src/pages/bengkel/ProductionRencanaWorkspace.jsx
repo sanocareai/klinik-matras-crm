@@ -447,7 +447,7 @@ export default function ProductionRencanaWorkspace() {
   useEffect(() => { loadRefs(); }, [loadRefs]);
   // Bahan & stok hanya untuk Kelola Rencana (BOM). Terpisah dari workshop/PIC: kegagalannya tidak boleh mengosongkan pilihan PIC.
   useEffect(() => {
-    Promise.all([api.getMaterials({ active: "true" }), api.getStock()]).then(([m, st]) => setRefs((r) => ({ ...r, materials: m || [], stock: st || [] }))).catch(() => {});
+    Promise.all([api.getMaterials({ active: "true", untuk: "produksi" }), api.getStock()]).then(([m, st]) => setRefs((r) => ({ ...r, materials: m || [], stock: st || [] }))).catch(() => {});
   }, []);
   // Galat drag/urutan muncul di atas halaman; pengguna biasanya sedang menggulir di kartu meja — bawa galat ke pandangan.
   const alertRef = useRef(null);
