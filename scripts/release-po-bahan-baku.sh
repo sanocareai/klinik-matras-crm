@@ -125,27 +125,7 @@ const LAMA = "(goods_receipts|goods_receipt_lines|fin_supplier_bills)";
 const POLA = [
   ["enum", /^CREATE TYPE "FinPurchaseOrderStatus" AS ENUM \(/],
   ["tabel", /^CREATE TABLE "fin_[a-z_]+" \(/],
-  ["tambah_kolom", new RegExp(`^ALTER TABLE "${LAMA}" ADD COLUMN "[a-z_]+" (UUID|TEXT|TIMESTAMP\\(3\\))(, ADD COLUMN "[a-z_]+" (UUID|TEXT|TIMESTAMP\\(3\\)))*# Migrasi PO: DUA migrasi aditif yang sudah diaudit (nama → sha256 isi LF). Pemeriksaan di bawah FAIL-CLOSED; perubahan sekecil apa pun = berhenti sampai diaudit ulang.
-! printf '%s\n' "$CHANGED" | grep -qE 'package(-lock)?\.json$' || die "dependensi (package.json/lock) berubah — tidak diizinkan pada rilis ini"
-PRISMA_CHANGED="$(printf '%s\n' "$CHANGED" | grep -E '^backend/prisma/' || true)"
-EXPECT_PRISMA="$( { printf 'backend/prisma/schema.prisma\n'; for m in "${MIGRASI[@]}"; do printf 'backend/prisma/migrations/%s/migration.sql\n' "$m"; done; } | LC_ALL=C sort)"
-[ "$(printf '%s\n' "$PRISMA_CHANGED" | LC_ALL=C sort)" = "$EXPECT_PRISMA" ] || { printf '%s\n' "$PRISMA_CHANGED"; die "berkas prisma yang berubah HARUS tepat schema.prisma + 2 migrasi PO"; }
-# Migrasi yang sudah ada di baseline TIDAK boleh diubah/dihapus (yang sudah pernah diterapkan di produksi): hanya penambahan.
-[ -z "$(sg diff --name-status "$BASE_SHA" "$DEPLOY_SHA" -- backend/prisma/migrations | grep -v '^A' || true)" ] || die "ada migrasi baseline yang DIUBAH/DIHAPUS — dilarang"
-# schema.prisma: hanya penambahan baris (nol baris dihapus/diubah di model yang sudah ada)
-SCHEMA_DEL="$(sg diff --numstat "$BASE_SHA" "$DEPLOY_SHA" -- backend/prisma/schema.prisma | awk '{print $2}')"
-[ "$SCHEMA_DEL" = "0" ] || die "schema.prisma menghapus/mengubah ${SCHEMA_DEL} baris yang sudah ada — hanya penambahan yang diizinkan"
-ALL_ISI=""
-for m in "${MIGRASI[@]}"; do
-  [[ "$m" =~ ^[0-9]{14}_[a-z0-9_]+$ ]] || die "nama migrasi tidak valid: $m"
-  MIGSQL="$(sg show "${DEPLOY_SHA}:backend/prisma/migrations/${m}/migration.sql" | tr -d '\r')"
-  MIG_SHA="$(printf '%s\n' "$MIGSQL" | sha256sum | cut -d' ' -f1)"
-  [ "${MIGRASI_SHA[$m]}" = "$MIG_SHA" ] || die "isi migrasi ${m} BERBEDA dari yang diaudit (sha256 ${MIG_SHA}) — audit ulang lalu perbarui pin"
-  ALL_ISI+="$(printf '%s\n' "$MIGSQL" | grep -v '^[[:space:]]*--' | grep -v '^[[:space:]]*$' || true)"$'\n'
-  ok "migrasi ${m}: sha256 cocok pin (${MIG_SHA:0:12})"
-done
-cat > "$BK_DIR/scan-migrasi.mjs" <<'SCANJS'
-)],
+  ["tambah_kolom", new RegExp(`^ALTER TABLE "${LAMA}" ADD COLUMN "[a-z_]+" (UUID|TEXT|TIMESTAMP\\(3\\))(, ADD COLUMN "[a-z_]+" (UUID|TEXT|TIMESTAMP\\(3\\)))*$`)],
   ["indeks", /^CREATE INDEX "(fin_[a-z_0-9]+|goods_receipts_[a-z_0-9]+|goods_receipt_lines_[a-z_0-9]+)" ON "(fin_[a-z_]+|goods_receipts|goods_receipt_lines)"\(/],
   ["indeks_unik", /^CREATE UNIQUE INDEX "fin_[a-z_0-9]+" ON "fin_[a-z_]+"\(/],
   ["fk", /^ALTER TABLE "(fin_[a-z_]+|goods_receipts|goods_receipt_lines)" ADD CONSTRAINT "[a-z_0-9]+_fkey" FOREIGN KEY \("[a-z_]+"\) REFERENCES "(fin_[a-z_]+|User|materials|goods_receipts|goods_receipt_lines)"\("id"\) ON DELETE (RESTRICT|SET NULL|CASCADE) ON UPDATE CASCADE$/],
