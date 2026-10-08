@@ -1,5 +1,5 @@
 import "./setup/env.js";
-import test from "node:test";
+import test, { mock } from "node:test";
 import assert from "node:assert/strict";
 import bcrypt from "bcryptjs";
 import express from "express";
@@ -259,5 +259,27 @@ test("callback tambahan dari environment tetap exact-match dan ikut menerima iss
     assert.equal(new URL(res.headers.get("location")).searchParams.get("iss"), ISSUER);
   } finally {
     delete process.env.MCP_CHATGPT_REDIRECT_URIS;
+  }
+});
+
+test("log diagnostik DCR: registrasi valid tidak mencatat penolakan; penolakan mencatat hanya URI yang ditolak", async () => {
+  const warn = mock.method(console, "warn", () => {});
+  try {
+    const sebelum = await testPrisma.mcpOAuthClient.count();
+    const sah = await daftarClient([STABLE]);
+    assert.equal(sah.res.status, 201);
+    assert.equal(await testPrisma.mcpOAuthClient.count(), sebelum + 1);
+    const logPenolakan = () => warn.mock.calls.map((c) => c.arguments.join(" ")).filter((l) => l.includes("mcp_oauth_register_rejected"));
+    assert.equal(logPenolakan().length, 0);
+
+    const asing = "https://chatgpt.com/connector/oauth/uji-integrasi-log";
+    const ditolak = await daftarClient([STABLE, asing]);
+    assert.equal(ditolak.res.status, 400);
+    assert.equal(await testPrisma.mcpOAuthClient.count(), sebelum + 1, "penolakan tidak boleh menulis klien");
+    const baris = logPenolakan();
+    assert.equal(baris.length, 1);
+    assert.deepEqual(JSON.parse(baris[0]).redirect_uris, [asing]);
+  } finally {
+    warn.mock.restore();
   }
 });
