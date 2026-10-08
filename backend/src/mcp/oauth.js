@@ -183,6 +183,13 @@ wellKnownRouter.get("/.well-known/oauth-protected-resource/mcp-chatgpt", (_req, 
 // HARUS ["none"] (public client, PKCE) — kalau tidak, sesuai docs Anthropic,
 // Claude tidak akan memilih CIMD dan mencoba DCR seperti biasa, yang memang
 // jalur yang kita dukung di sini.
+//
+// authorization_response_iss_parameter_supported (RFC 9207): setiap respons
+// otorisasi yang sukses membawa `iss` = issuer di bawah (lihat POST
+// /oauth/authorize). Syarat ChatGPT memakai callback stabil
+// https://chatgpt.com/connector_platform_oauth_redirect; kalau diiklankan tapi
+// `iss` tidak dikirim, ChatGPT menolak responsnya — jangan ubah satu tanpa
+// yang lain.
 wellKnownRouter.get("/.well-known/oauth-authorization-server", (req, res) => {
   const base = publicUrl();
   res.json({
@@ -195,7 +202,16 @@ wellKnownRouter.get("/.well-known/oauth-authorization-server", (req, res) => {
     code_challenge_methods_supported: ["S256"],
     token_endpoint_auth_methods_supported: ["none"],
     scopes_supported: [OAUTH_SCOPE],
+    authorization_response_iss_parameter_supported: true,
   });
+});
+
+// Server ini BUKAN OpenID Provider (tidak ada id_token, userinfo, atau jwks).
+// Tanpa route ini klien OIDC yang menebak discovery mendapat index.html React
+// (catch-all SPA) berstatus 200 — HTML yang tampak seperti metadata valid.
+// 404 JSON = "OIDC tidak didukung"; klien jatuh ke oauth-authorization-server.
+wellKnownRouter.get(["/.well-known/openid-configuration", "/.well-known/openid-configuration/*"], (_req, res) => {
+  res.status(404).json({ error: "not_found", error_description: "OpenID Connect discovery tidak didukung; gunakan /.well-known/oauth-authorization-server" });
 });
 
 // ─── /oauth/* — register, authorize, token ──────────────────────────────────
@@ -324,9 +340,13 @@ mcpOAuthRouter.post("/oauth/authorize", async (req, res) => {
     },
   });
 
+  // redirect_uri sudah lolos validateAuthorizeParams (terdaftar exact-match pada
+  // client). searchParams.set meng-encode nilai; `iss` (RFC 9207) = issuer yang
+  // SAMA dengan metadata, supaya klien bisa mendeteksi serangan mix-up.
   const redirectUrl = new URL(redirect_uri);
   redirectUrl.searchParams.set("code", code);
   if (state) redirectUrl.searchParams.set("state", state);
+  redirectUrl.searchParams.set("iss", publicUrl());
   res.redirect(302, redirectUrl.toString());
 });
 

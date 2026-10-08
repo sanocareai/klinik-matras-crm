@@ -28,6 +28,7 @@ after(() => {
 
 const {
   ALLOWED_REDIRECT_URI,
+  CHATGPT_STABLE_REDIRECT_URI,
   allowedRedirectUris,
   computeCodeChallengeS256,
   verifyPkce,
@@ -120,7 +121,7 @@ test("verifyAccessToken null total kalau MCP_OAUTH_JWT_SECRET belum diset (fail-
 });
 
 // ── Validasi redirect_uris (Dynamic Client Registration) ───────────────────
-test("validateRedirectUris: hanya menerima persis redirect URI Claude", () => {
+test("validateRedirectUris: hanya menerima persis redirect URI Claude dan callback stabil ChatGPT", () => {
   assert.equal(validateRedirectUris([ALLOWED_REDIRECT_URI]).valid, true);
   assert.equal(validateRedirectUris([]).valid, false);
   assert.equal(validateRedirectUris(null).valid, false);
@@ -133,7 +134,7 @@ test("validateRedirectUris menerima callback ChatGPT yang dikonfigurasi tanpa wi
   const chatGptCallback = "https://chatgpt.example.test/oauth/callback";
   process.env.MCP_CHATGPT_REDIRECT_URIS = chatGptCallback;
   try {
-    assert.deepEqual(allowedRedirectUris(), [ALLOWED_REDIRECT_URI, chatGptCallback]);
+    assert.deepEqual(allowedRedirectUris(), [ALLOWED_REDIRECT_URI, CHATGPT_STABLE_REDIRECT_URI, chatGptCallback]);
     assert.deepEqual(validateRedirectUris([chatGptCallback]), {
       valid: true,
       redirectUris: [chatGptCallback],
@@ -142,4 +143,22 @@ test("validateRedirectUris menerima callback ChatGPT yang dikonfigurasi tanpa wi
   } finally {
     delete process.env.MCP_CHATGPT_REDIRECT_URIS;
   }
+});
+
+test("callback stabil ChatGPT diterima persis tanpa konfigurasi env; varian mirip ditolak (tanpa wildcard)", () => {
+  assert.equal(CHATGPT_STABLE_REDIRECT_URI, "https://chatgpt.com/connector_platform_oauth_redirect");
+  assert.deepEqual(allowedRedirectUris(), [ALLOWED_REDIRECT_URI, CHATGPT_STABLE_REDIRECT_URI]);
+  assert.deepEqual(validateRedirectUris([CHATGPT_STABLE_REDIRECT_URI]), { valid: true, redirectUris: [CHATGPT_STABLE_REDIRECT_URI] });
+  for (const uri of [
+    CHATGPT_STABLE_REDIRECT_URI + "/",
+    CHATGPT_STABLE_REDIRECT_URI + "?x=1",
+    CHATGPT_STABLE_REDIRECT_URI + "/evil",
+    "http://chatgpt.com/connector_platform_oauth_redirect",
+    "https://chatgpt.com/connector/oauth/abc123",
+    "https://chatgpt.com/*",
+    "https://*.chatgpt.com/connector_platform_oauth_redirect",
+  ]) {
+    assert.equal(validateRedirectUris([uri]).valid, false, uri);
+  }
+  assert.equal(validateRedirectUris([CHATGPT_STABLE_REDIRECT_URI, "https://evil.example/callback"]).valid, false);
 });

@@ -1,7 +1,10 @@
 # SANSS Sales CRM — ChatGPT Plugin berbasis MCP
 
-Status: implementasi source dan test lokal. Belum di-deploy dan belum pernah
-dipanggil dari ChatGPT.
+Status: endpoint `/mcp-chatgpt` sudah di-deploy ke production, tetapi koneksi dari
+ChatGPT belum terbukti (login OAuth dan satu panggilan tool nyata belum lulus).
+Percobaan Create 8 Okt 2026 gagal di Dynamic Client Registration (400
+`invalid_redirect_uri`) karena callback ChatGPT belum ada di allowlist; perbaikannya
+adalah callback stabil + issuer identification di bawah.
 
 ## Endpoint dan transport
 
@@ -47,12 +50,32 @@ gate ini:
 - Dokumentasi lama menawarkan `unmask`. Sekarang schema REST menyembunyikannya
   dan server memaksa `unmask: false`.
 - `/mcp` tetap mempertahankan 18 nama lama untuk kompatibilitas Claude.
-- OAuth lama hanya mengizinkan callback Claude. Allowlist sekarang dapat
-  ditambah dengan callback ChatGPT melalui environment, tetap exact-match dan
-  tanpa wildcard.
+- OAuth lama hanya mengizinkan callback Claude. Allowlist sekarang berisi callback
+  Claude + callback stabil ChatGPT `https://chatgpt.com/connector_platform_oauth_redirect`
+  (hardcode), dan dapat ditambah lewat environment; selalu exact-match, tanpa
+  wildcard.
 - Token statis `/mcp` tidak membawa identitas user/role. Karena itu endpoint
   ChatGPT tidak menerima token statis dan mewajibkan OAuth user.
 - Tool grup internal dan isi pesan tidak tersedia pada `/mcp-chatgpt`.
+
+## Callback stabil dan issuer identification (RFC 9207)
+
+ChatGPT hanya memakai callback stabil bila authorization server mengiklankan
+`authorization_response_iss_parameter_supported: true` dan mengirim `iss` pada
+respons otorisasi; tanpa itu ChatGPT memakai callback per-koneksi
+`https://chatgpt.com/connector/oauth/{callback_id}` yang tidak ditampilkan di UI.
+Karena itu server ini:
+
+- mengiklankan `authorization_response_iss_parameter_supported: true` di
+  `/.well-known/oauth-authorization-server`;
+- menambahkan `iss=<MCP_PUBLIC_URL>` (sama persis dengan `issuer`) bersama `code` dan
+  `state` pada setiap redirect sukses dari `POST /oauth/authorize`. Kegagalan login
+  atau validasi tidak pernah me-redirect, jadi tidak ada respons error yang perlu `iss`;
+- menjawab 404 JSON untuk `/.well-known/openid-configuration` (dan sub-path) agar
+  tidak jatuh ke HTML React. Server ini bukan OpenID Provider.
+
+Jangan mengiklankan `authorization_response_iss_parameter_supported` tanpa `iss`
+(ChatGPT menolak responsnya), dan sebaliknya.
 
 ## Konfigurasi environment
 
@@ -62,10 +85,12 @@ commit:
 ```dotenv
 MCP_PUBLIC_URL="https://app.sanomatrassehat.com"
 MCP_OAUTH_JWT_SECRET="<secret-terpisah-dari-JWT_SECRET>"
-MCP_CHATGPT_REDIRECT_URIS="<callback-persis-yang-diberikan-ChatGPT>"
+# Opsional: hanya bila ChatGPT meminta callback per-koneksi (bukan yang stabil).
+# MCP_CHATGPT_REDIRECT_URIS="<callback-persis-yang-diberikan-ChatGPT>"
 ```
 
-Beberapa callback dapat dipisahkan koma. Seluruh URI wajib cocok dengan
+`MCP_CHATGPT_REDIRECT_URIS` tidak lagi wajib: callback stabil sudah ada di kode.
+Beberapa callback tambahan dapat dipisahkan koma. Seluruh URI wajib cocok dengan
 allowlist. Kredensial production tidak perlu dan tidak boleh diubah untuk test
 source lokal.
 
@@ -119,12 +144,12 @@ Referensi resmi:
 
 ### Konfigurasi dan deploy backend
 
-1. Di halaman pengelolaan koneksi MCP ChatGPT, salin redirect URI yang
-   ditampilkan. Jangan menebak URI atau memakai contoh dari dokumentasi.
+1. Callback stabil sudah ada di kode; UI ChatGPT tidak menampilkan redirect URI,
+   jadi jangan menebak callback per-koneksi.
 2. Di konfigurasi rahasia VPS, pertahankan `MCP_OAUTH_JWT_SECRET` yang sudah
-   ada, pastikan `MCP_PUBLIC_URL=https://app.sanomatrassehat.com`, lalu isi
-   `MCP_CHATGPT_REDIRECT_URIS` dengan URI persis tersebut. Jangan gunakan
-   wildcard dan jangan menaruh nilainya di Git atau command yang tercatat log.
+   ada dan pastikan `MCP_PUBLIC_URL=https://app.sanomatrassehat.com`
+   (menentukan `issuer` dan `iss`). Jangan gunakan wildcard dan jangan menaruh
+   secret di Git atau command yang tercatat log.
 3. Di `~/klinik-matras`, tarik `main` terbaru dan jalankan
    `docker compose up -d --build backend`. Tidak ada migration untuk rilis ini.
 4. Pastikan sertifikat HTTPS valid dan reverse proxy meneruskan POST

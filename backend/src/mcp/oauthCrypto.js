@@ -10,20 +10,28 @@
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
 
-// Callback Claude dipertahankan untuk kompatibilitas. Callback ChatGPT dapat
-// ditambahkan melalui environment dan semuanya tetap exact-match; server ini
-// bukan authorization server serba guna dan tidak menerima wildcard.
+// Callback Claude dipertahankan untuk kompatibilitas. Callback ChatGPT stabil
+// ada di bawah; callback lain dapat ditambahkan melalui environment dan semuanya
+// tetap exact-match; server ini bukan authorization server serba guna dan tidak
+// menerima wildcard.
 export const ALLOWED_REDIRECT_URI = "https://claude.ai/api/mcp/auth_callback";
 
-// Callback ChatGPT tidak di-hardcode: nilai tepatnya berasal dari koneksi
-// developer-mode yang dibuat oleh admin. Daftarkan URI itu di environment,
-// dipisahkan koma bila OpenAI memberi lebih dari satu. Tidak ada wildcard.
+// Callback stabil ChatGPT (dokumentasi resmi OpenAI). ChatGPT hanya memakainya
+// bila authorization server mengiklankan authorization_response_iss_parameter_supported
+// dan benar-benar mengirim `iss` pada respons otorisasi (RFC 9207) — keduanya
+// dikerjakan di oauth.js. Tanpa itu ChatGPT memakai callback per-koneksi
+// (/connector/oauth/{callback_id}) yang tidak bisa diketahui sebelumnya.
+export const CHATGPT_STABLE_REDIRECT_URI = "https://chatgpt.com/connector_platform_oauth_redirect";
+
+// Allowlist exact-match, tanpa wildcard: callback Claude + callback stabil
+// ChatGPT. Callback tambahan (mis. callback per-koneksi lama) tetap bisa
+// didaftarkan lewat environment, dipisahkan koma.
 export function allowedRedirectUris() {
   const configured = String(process.env.MCP_CHATGPT_REDIRECT_URIS || "")
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean);
-  return [...new Set([ALLOWED_REDIRECT_URI, ...configured])];
+  return [...new Set([ALLOWED_REDIRECT_URI, CHATGPT_STABLE_REDIRECT_URI, ...configured])];
 }
 
 export const OAUTH_SCOPE = "mcp:read";
