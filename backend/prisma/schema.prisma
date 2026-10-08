@@ -7478,6 +7478,9 @@ model FinSupplierBillAllocation {
 
   qty         Decimal  @db.Decimal(14, 3)
   poUnitPrice Int      @map("po_unit_price") // harga PO yang dipakai menilai penutupan GRNI (sama dengan harga stok saat putaway)
+  // Nilai penutupan GRNI alokasi ini (2 desimal). Klaim terakhir yang menuntaskan satu baris penerimaan mengambil SISA (nilai baris − klaim aktif lain)
+  // sehingga jumlah seluruh alokasi sebuah baris tepat sama dengan nilai stok baris itu — tanpa sisa sen di GRNI, apa pun urutan persetujuan/pembatalan.
+  poValue     Decimal  @map("po_value") @db.Decimal(18, 2)
   createdAt   DateTime @default(now()) @map("created_at")
 
   @@index([billId])

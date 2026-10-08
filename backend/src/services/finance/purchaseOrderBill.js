@@ -10,7 +10,8 @@
 //   4. Nilai penutupan GRNI = jumlah teralokasi × HARGA PO (harga yang sama dengan nilai stok saat putaway), bukan harga faktur.
 import { lockRowForUpdate } from "../inventoryLedger.js";
 import { generateDocumentNumber, toBookDate, todayBookDateWIB, findEntryByKey } from "./journal.js";
-import { toMoney, sumMoney, ZERO, moneyToNumber } from "./money.js";
+import { toMoney, sumMoney, ZERO, moneyToNumber, Decimal } from "./money.js";
+import { nilaiBarisPenerimaan } from "./posting/supplier.js";
 
 export class TagihanPoError extends Error {
   constructor(message, statusCode = 409, code) { super(message); this.statusCode = statusCode; if (code) this.code = code; }
@@ -122,7 +123,7 @@ async function siapkanMasukan(tx, body, { po }) {
     dipakai.add(poLine.id);
     const qty = Number(l.qty);
     if (!Number.isFinite(qty) || qty <= 0) throw gagal(`Baris ${no}: jumlah faktur harus lebih dari 0`);
-    if (Math.abs(qty * 100 - Math.round(qty * 100)) > 1e-6) throw gagal(`Baris ${no}: jumlah maksimal 2 angka di belakang koma`);
+    if (Math.abs(qty * 1000 - Math.round(qty * 1000)) > 1e-6) throw gagal(`Baris ${no}: jumlah maksimal 3 angka di belakang koma`);
     const harga = Number(l.unitPrice);
     if (!Number.isFinite(harga) || harga <= 0) throw gagal(`Baris ${no}: harga faktur harus lebih dari 0`);
     if (Math.abs(harga * 100 - Math.round(harga * 100)) > 1e-6) throw gagal(`Baris ${no}: harga faktur maksimal 2 angka di belakang koma`);
@@ -134,7 +135,7 @@ async function siapkanMasukan(tx, body, { po }) {
     const ada = await tx.goodsReceipt.findMany({ where: { id: { in: idPenerimaan }, purchaseOrderId: po.id, status: "COMPLETED" }, select: { id: true } });
     if (ada.length !== idPenerimaan.length) throw gagal("Ada penerimaan yang dipilih bukan penerimaan selesai dari PO ini");
   }
-  const jumlah = sumMoney(hasil.map((h) => toMoney(h.qty).times(toMoney(h.invoiceUnitPrice))));
+  const jumlah = sumMoney(hasil.map((h) => nilaiBarisPenerimaan(h.qty, h.invoiceUnitPrice)));
   if (b.amount !== undefined && b.amount !== null && b.amount !== "" && !toMoney(b.amount).equals(jumlah)) {
     throw gagal(`Nominal faktur (${moneyToNumber(toMoney(b.amount))}) harus sama dengan jumlah baris (${moneyToNumber(jumlah)}). Biaya lain (ongkir/pajak) belum didukung pada faktur atas PO.`, 400, "NOMINAL_TIDAK_SAMA");
   }
@@ -218,7 +219,7 @@ export async function evaluasiTagihanPO(tx, billId) {
     const ditagihLain = konteks.filter((b) => b.purchaseOrderLineId === l.purchaseOrderLineId).reduce((s, b) => s + b.diklaimK, 0);
     const tersedia = tersediaPerBaris(konteks, l.purchaseOrderLineId, terpilih);
     const selisihSatuan = toMoney(l.invoiceUnitPrice).minus(toMoney(l.poUnitPrice));
-    const selisihNilai = selisihSatuan.times(toMoney(l.qty));
+    const selisihNilai = toMoney(selisihSatuan.times(new Decimal(String(l.qty))));
     return {
       id: l.id, purchaseOrderLineId: l.purchaseOrderLineId, kode: pl?.material?.code ?? null, nama: pl?.material?.name ?? null, satuan: pl?.unit ?? null,
       dipesan: Number(pl?.qty ?? 0), diterimaBaik: dariK(diterima), sudahDitagih: dariK(ditagihLain), tersedia: dariK(tersedia),
@@ -300,7 +301,7 @@ export async function setujuiTagihanPO(tx, { bill, catatanTinjauan, userId }) {
 
   const poLines = await tx.finSupplierBillPoLine.findMany({ where: { billId: bill.id }, orderBy: { sortOrder: "asc" } });
   if (poLines.length === 0) throw gagal("Faktur atas PO ini tidak punya baris", 409);
-  const jumlah = sumMoney(poLines.map((l) => toMoney(l.qty).times(toMoney(l.invoiceUnitPrice))));
+  const jumlah = sumMoney(poLines.map((l) => nilaiBarisPenerimaan(l.qty, l.invoiceUnitPrice)));
   if (!jumlah.equals(toMoney(bill.amount))) throw gagal("Nominal faktur tidak sama dengan jumlah baris — edit faktur lalu coba lagi", 409, "NOMINAL_TIDAK_SAMA");
 
   const terpilih = (await tx.finSupplierBillPoReceipt.findMany({ where: { billId: bill.id }, select: { goodsReceiptId: true } })).map((r) => r.goodsReceiptId);
@@ -340,11 +341,27 @@ export async function setujuiTagihanPO(tx, { bill, catatanTinjauan, userId }) {
     }
   }
 
+  // Nilai penutupan GRNI per alokasi. Nilai baris penerimaan = qty baik EKSAK × harga PO dibulatkan sekali (sama dengan jurnal penerimaan).
+  // Alokasi yang menuntaskan baris mengambil sisa nilai; selain itu qty × harga dibulatkan. Dihitung di bawah kunci PO (serial).
+  const lineIds = [...new Set(alokasi.map((a) => a.goodsReceiptLineId))];
+  const barisGr = lineIds.length ? await tx.goodsReceiptLine.findMany({ where: { id: { in: lineIds } }, select: { id: true, acceptedQty: true } }) : [];
+  const klaimLain = lineIds.length ? await tx.finSupplierBillAllocation.findMany({
+    where: { goodsReceiptLineId: { in: lineIds }, billId: { not: bill.id }, bill: { status: { in: STATUS_MASUK_BUKU } } },
+    select: { goodsReceiptLineId: true, qty: true, poValue: true },
+  }) : [];
   for (const a of alokasi) {
+    const harga = poLines.find((l) => l.id === a.billPoLineId).poUnitPrice;
+    const lain = klaimLain.filter((x) => x.goodsReceiptLineId === a.goodsReceiptLineId);
+    const qtyLainK = lain.reduce((s2, x) => s2 + k(x.qty), 0);
+    const nilaiLain = sumMoney(lain.map((x) => x.poValue));
+    const diterima = barisGr.find((x) => x.id === a.goodsReceiptLineId).acceptedQty;
+    const menuntaskan = qtyLainK + a.qtyK === k(diterima);
+    const nilai = menuntaskan ? nilaiBarisPenerimaan(diterima, harga).minus(nilaiLain) : toMoney(new Decimal(dariK(a.qtyK)).times(harga));
+    if (nilai.lessThan(0)) throw gagal(`Nilai penutupan GRNI untuk penerimaan ${a.receiptNumber} menjadi negatif — periksa klaim faktur lain pada baris yang sama`, 409, "ALOKASI_NILAI_TIDAK_VALID");
     await tx.finSupplierBillAllocation.create({
       data: {
         billId: bill.id, billPoLineId: a.billPoLineId, goodsReceiptId: a.goodsReceiptId, goodsReceiptLineId: a.goodsReceiptLineId,
-        qty: dariK(a.qtyK), poUnitPrice: poLines.find((l) => l.id === a.billPoLineId).poUnitPrice,
+        qty: dariK(a.qtyK), poUnitPrice: harga, poValue: nilai,
       },
     });
   }
@@ -355,11 +372,11 @@ export async function setujuiTagihanPO(tx, { bill, catatanTinjauan, userId }) {
 /** Penutupan GRNI untuk jurnal persetujuan: per penerimaan, Σ jumlah teralokasi × harga PO. Dipakai posting/supplier.js. */
 export async function grniDebitPerPenerimaan(tx, billId) {
   const rows = await tx.finSupplierBillAllocation.findMany({
-    where: { billId }, select: { goodsReceiptId: true, qty: true, poUnitPrice: true, goodsReceipt: { select: { receiptNumber: true } } },
+    where: { billId }, select: { goodsReceiptId: true, poValue: true, goodsReceipt: { select: { receiptNumber: true } } },
   });
   const per = new Map();
   for (const r of rows) {
-    const nilai = toMoney(r.qty).times(toMoney(r.poUnitPrice));
+    const nilai = toMoney(r.poValue);
     const x = per.get(r.goodsReceiptId) ?? { goodsReceiptId: r.goodsReceiptId, receiptNumber: r.goodsReceipt.receiptNumber, nilai: ZERO };
     x.nilai = x.nilai.plus(nilai);
     per.set(r.goodsReceiptId, x);

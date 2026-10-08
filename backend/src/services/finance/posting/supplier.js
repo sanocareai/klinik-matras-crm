@@ -42,7 +42,7 @@ import { resolveAccount, SYSTEM_KEYS, AccountError } from "../accounts.js";
 import { ambilKebijakanPersediaan, metodeUntukTanggal, METODE_PERSEDIAAN, pesanPerpetual } from "../inventoryMethod.js";
 import { statusCutoverUntuk, penerimaanTertutupPeriodik } from "../persediaanAwal.js";
 import { resolvePostingGap } from "../journal.js";
-import { toMoney, sumMoney, ZERO } from "../money.js";
+import { toMoney, sumMoney, ZERO, Decimal } from "../money.js";
 import { barisBiayaAdmin } from "../transferFee.js";
 import { grniDebitPerPenerimaan } from "../purchaseOrderBill.js";
 
@@ -62,6 +62,12 @@ export const KEY = {
  * dan itu harus terlihat sebagai pekerjaan (FinPostingGap), bukan
  * ditambal dengan harga tebakan.
  */
+// Nilai satu baris = qty EKSAK (hingga 4 desimal sesuai ledger stok) × harga satuan, dibulatkan SATU kali ke 2 desimal.
+// (toMoney(qty) membulatkan qty ke 2 desimal lebih dulu — salah untuk qty seperti 0,125; data produksi saat ini maksimal 1 desimal sehingga tidak berubah.)
+export function nilaiBarisPenerimaan(qty, unitCost) {
+  return toMoney(new Decimal(String(qty)).times(new Decimal(String(unitCost))));
+}
+
 export async function nilaiPenerimaan(tx, goodsReceiptId) {
   const movements = await tx.stockMovement.findMany({
     where: { goodsReceiptId, type: "RECEIPT" },
@@ -76,7 +82,7 @@ export async function nilaiPenerimaan(tx, goodsReceiptId) {
 
   const total = berharga.length === 0
     ? ZERO
-    : sumMoney(berharga.map((m) => toMoney(m.qty).times(toMoney(m.unitCost))));
+    : sumMoney(berharga.map((m) => nilaiBarisPenerimaan(m.qty, m.unitCost)));
 
   return { total, jumlahBaris: movements.length, tanpaHarga };
 }

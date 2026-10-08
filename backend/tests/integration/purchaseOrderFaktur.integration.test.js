@@ -362,7 +362,7 @@ test("izin: Akuntan mencatat tapi tidak menyetujui; Penyetuju menyetujui; Gudang
 });
 
 // ═══ 8. VALIDASI, EDIT, KOREKSI, UNBILLED ═════════════════════════════════════════════════════════════════════
-test("validasi faktur: nomor faktur wajib, jumlah/harga 2 desimal, tanpa baris ganda, supplier harus sama, PO draf ditolak, nominal dihitung dari baris", async () => {
+test("validasi faktur: nomor faktur wajib, jumlah 3 desimal/harga 2 desimal, tanpa baris ganda, supplier harus sama, PO draf ditolak, nominal dihitung dari baris", async () => {
   const w = await dunia();
   const po = await poDisetujui(w, { qty: 10 });
   await penerimaan(w, po.id, { datang: 10, baik: 10 });
@@ -371,7 +371,7 @@ test("validasi faktur: nomor faktur wajib, jumlah/harga 2 desimal, tanpa baris g
   assert.equal((await kirim({ supplierRef: "" })).status, 400);
   assert.equal((await kirim({ lines: [] })).status, 400);
   assert.equal((await kirim({ lines: [{ purchaseOrderLineId: pl, qty: 0, unitPrice: 1 }] })).status, 400);
-  assert.equal((await kirim({ lines: [{ purchaseOrderLineId: pl, qty: 1.234, unitPrice: 1 }] })).status, 400);
+  assert.equal((await kirim({ lines: [{ purchaseOrderLineId: pl, qty: 1.2345, unitPrice: 1 }] })).status, 400);
   assert.equal((await kirim({ lines: [{ purchaseOrderLineId: pl, qty: 1, unitPrice: 0 }] })).status, 400);
   assert.equal((await kirim({ lines: [{ purchaseOrderLineId: pl, qty: 1, unitPrice: 1.234 }] })).status, 400);
   assert.equal((await kirim({ lines: [{ purchaseOrderLineId: pl, qty: 1, unitPrice: 1 }, { purchaseOrderLineId: pl, qty: 1, unitPrice: 1 }] })).status, 400);
@@ -483,4 +483,187 @@ test("paritas: faktur atas PO dan tagihan lama atas penerimaan yang sama nilainy
   assert.equal((await setujui(w, f.body.billId)).status, 200);
   const jPo = (await jurnalTagihan(f.body.billId)).map((l) => [l.kode, l.debit, l.kredit]);
   assert.deepEqual(jPo.sort(), jLama.sort());
+});
+
+// ═══ 10. PRESISI 3 DESIMAL & ALOKASI GRNI ═══════════════════════════════════════════════════════════════════════
+// Audit Gudang produksi (8 Okt 2026): satuan KG/SHEET/ROLL/CAN/METER memakai pecahan hingga 1 desimal; ledger stok Decimal(12,4); PO/faktur Decimal(14,3).
+// Pecahan 3 desimal tidak boleh diturunkan presisinya, dan penutupan GRNI per alokasi harus menjumlah TEPAT ke nilai stok baris penerimaan.
+const H3 = 43_291; // 0,125 × 43.291 = 5.411,375 → pembulatan SATU kali ke 5.411,38
+
+test("qty eksak: penerimaan 0,125 KG × 43.291 dinilai 5.411,38 (bukan qty dibulatkan 0,13 × 43.291); PO/faktur menerima 3 desimal, menolak 4", async () => {
+  const w = await dunia();
+  const po = await poDisetujui(w, { qty: 0.125, harga: H3 });
+  assert.equal(po.lines[0].dipesan, 0.125);
+  await penerimaan(w, po.id, { datang: 0.125, baik: 0.125 });
+  assert.equal(await saldoAkun("1-1400"), 5411.38);
+  assert.equal(await saldoAkun("2-1150"), -5411.38);
+  const l4 = await w.f.post("/api/finance/purchase-orders", { supplierId: w.supplier.id, orderDate: hariIni(), lines: [{ materialId: w.lem.id, qty: 1.2345, unitPrice: 1000 }] });
+  assert.equal(l4.status, 400);
+  const f4 = await buatFaktur(w, po, { qty: 0.1234 });
+  assert.equal(f4.status, 400);
+});
+
+test("alokasi GRNI: 3 faktur x 0,125 atas satu baris 0,375 -> nilai alokasi 5.411,38 + 5.411,38 + sisa 5.411,37 = nilai stok 16.234,13; GRNI tepat nol", async () => {
+  const w = await dunia();
+  const po = await poDisetujui(w, { qty: 0.375, harga: H3 });
+  await penerimaan(w, po.id, { datang: 0.375, baik: 0.375 });
+  assert.equal(await saldoAkun("1-1400"), 16234.13);
+  const ids = [];
+  for (let i = 0; i < 3; i++) {
+    const f = await buatFaktur(w, po, { qty: 0.125, harga: H3 });
+    assert.equal(f.status, 201, JSON.stringify(f.body));
+    const ok = await setujui(w, f.body.billId);
+    assert.equal(ok.status, 200, JSON.stringify(ok.body));
+    ids.push(f.body.billId);
+  }
+  const nilai = [];
+  for (const id of ids) nilai.push(Number((await testPrisma.finSupplierBillAllocation.findFirst({ where: { billId: id } })).poValue));
+  assert.deepEqual(nilai, [5411.38, 5411.38, 5411.37]);
+  assert.equal(await saldoAkun("2-1150"), 0, "GRNI tepat nol (tanpa sisa sen)");
+  // Faktur 0,125 x 43.291 = 5.411,375 -> 5.411,38 per faktur (pembulatan SATU kali per baris, seperti faktur supplier); tiga faktur = 16.234,14 vs nilai stok 16.234,13:
+  // selisih 1 sen masuk Selisih Harga Pembelian lewat kebijakan existing (harga sama dengan PO, jadi tanpa tinjauan harga).
+  assert.equal(await saldoAkun("2-1100"), -16234.14);
+  assert.equal(await saldoAkun((await testPrisma.finAccount.findUnique({ where: { systemKey: SYSTEM_KEYS.SELISIH_HARGA_PEMBELIAN } })).code), 0.01);
+  const lagi = await buatFaktur(w, po, { qty: 0.001, harga: H3 });
+  assert.equal((await setujui(w, lagi.body.billId)).status, 409, "tidak ada barang baik tersisa");
+});
+
+test("alokasi GRNI: batal faktur di tengah lalu tagih ulang tetap menutup GRNI tepat nol", async () => {
+  const w = await dunia();
+  const po = await poDisetujui(w, { qty: 0.375, harga: H3 });
+  await penerimaan(w, po.id, { datang: 0.375, baik: 0.375 });
+  const a = await buatFaktur(w, po, { qty: 0.125, harga: H3 }); await setujui(w, a.body.billId);
+  const b = await buatFaktur(w, po, { qty: 0.125, harga: H3 }); await setujui(w, b.body.billId);
+  const c = await buatFaktur(w, po, { qty: 0.125, harga: H3 }); await setujui(w, c.body.billId);
+  assert.equal((await w.a.post(`/api/finance/bills/${a.body.billId}/cancel`, { reason: "salah faktur" })).status, 200);
+  assert.equal(await saldoAkun("2-1150"), -5411.38, "klaim A dilepas: nilai A kembali ke GRNI");
+  const d = await buatFaktur(w, po, { qty: 0.125, harga: H3 });
+  assert.equal((await setujui(w, d.body.billId)).status, 200);
+  assert.equal(await saldoAkun("2-1150"), 0);
+  // Faktur 0,125 x 43.291 = 5.411,375 -> 5.411,38 per faktur (pembulatan SATU kali per baris, seperti faktur supplier); tiga faktur = 16.234,14 vs nilai stok 16.234,13:
+  // selisih 1 sen masuk Selisih Harga Pembelian lewat kebijakan existing (harga sama dengan PO, jadi tanpa tinjauan harga).
+  assert.equal(await saldoAkun("2-1100"), -16234.14);
+  assert.equal(await saldoAkun((await testPrisma.finAccount.findUnique({ where: { systemKey: SYSTEM_KEYS.SELISIH_HARGA_PEMBELIAN } })).code), 0.01);
+  const aktif = await testPrisma.finSupplierBillAllocation.findMany({ where: { bill: { status: { in: ["DISETUJUI", "DIBAYAR_SEBAGIAN", "LUNAS"] } } } });
+  assert.equal(Math.round(aktif.reduce((s, x) => s + Number(x.poValue), 0) * 100), 1623413, "jumlah nilai alokasi aktif = nilai stok baris");
+});
+
+test("penerimaan parsial 3 desimal: 0,333 + 0,333 + 0,334 untuk PO 1; satu faktur gabungan menutup GRNI nol", async () => {
+  const w = await dunia();
+  const po = await poDisetujui(w, { qty: 1, harga: H3 });
+  await penerimaan(w, po.id, { jadwal: 0.333, datang: 0.333, baik: 0.333 });
+  await penerimaan(w, po.id, { jadwal: 0.333, datang: 0.333, baik: 0.333 });
+  await penerimaan(w, po.id, { jadwal: 0.334, datang: 0.334, baik: 0.334 });
+  const d = (await w.f.get(`/api/finance/purchase-orders/${po.id}`)).body;
+  assert.equal(d.status, "SELESAI");
+  assert.equal(d.lines[0].diterimaBaik, 1);
+  const f = await buatFaktur(w, po, { qty: 1, harga: H3 });
+  assert.equal(f.body.tertahan, false);
+  assert.equal((await setujui(w, f.body.billId)).status, 200);
+  assert.equal(await saldoAkun("2-1150"), 0);
+  // Nilai stok dibulatkan per penerimaan: 14.415,90 + 14.415,90 + 14.459,19 = 43.290,99 (bukan 43.291); faktur 43.291 -> selisih 1 sen ke Selisih Harga Pembelian.
+  assert.equal(await saldoAkun("1-1400"), 43290.99);
+  assert.equal(await saldoAkun("2-1100"), -H3);
+  assert.equal(await saldoAkun((await testPrisma.finAccount.findUnique({ where: { systemKey: SYSTEM_KEYS.SELISIH_HARGA_PEMBELIAN } })).code), 0.01);
+  assert.equal(await testPrisma.finSupplierBillAllocation.count({ where: { billId: f.body.billId } }), 3);
+});
+
+test("penerimaan tertaut PO menolak jumlah datang/baik/ditolak lebih dari 3 desimal", async () => {
+  const w = await dunia();
+  const po = await poDisetujui(w, { qty: 10 });
+  const gr = await w.g.post("/api/inventory/goods-receipts", { purchaseOrderId: po.id });
+  for (const st of ["SCHEDULED", "ARRIVED", "INSPECTION"]) await w.g.patch(`/api/inventory/goods-receipts/${gr.body.id}`, { status: st });
+  const r = await w.g.patch(`/api/inventory/goods-receipts/${gr.body.id}/lines/${gr.body.lines[0].id}`, { receivedQty: 1.2345, acceptedQty: 1 });
+  assert.equal(r.status, 400);
+  assert.match(r.body.error, /3 angka/);
+});
+
+// ═══ 11. PEMBATALAN FAKTUR PO: DIBAYAR, DIREKONSILIASI, PERIODE TERTUTUP ════════════════════════════════════════
+async function fakturDisetujui(w, { qty = 8 } = {}) {
+  const po = await poDisetujui(w, { qty: 10 });
+  await penerimaan(w, po.id, { datang: qty, baik: qty });
+  const f = await buatFaktur(w, po, { qty });
+  assert.equal((await setujui(w, f.body.billId)).status, 200);
+  return { po, billId: f.body.billId, qty };
+}
+/** true = klaim masih utuh (faktur baru atas qty yang sama tertahan); false = klaim lepas. Faktur uji ditolak kembali. */
+async function klaimUtuh(w, po, qty) {
+  const g = await buatFaktur(w, po, { qty });
+  const e = await ev(w, g.body.billId);
+  await w.a.post(`/api/finance/bills/${g.body.billId}/reject`, { reason: "uji" });
+  return e.tertahan;
+}
+const statusTagihan = async (id) => (await testPrisma.finSupplierBill.findUnique({ where: { id } })).status;
+const jurnalAktifTagihan = (id) => testPrisma.finJournalEntry.count({ where: { source: "TAGIHAN_SUPPLIER", sourceId: id, status: "POSTED", idempotencyKey: { startsWith: "TAGIHAN_SUPPLIER:" } } });
+
+test("pembatalan faktur PO yang sudah DIBAYAR ditolak (klaim utuh); setelah pembayaran dibatalkan lewat alur resmi, pembatalan sah melepas klaim", async () => {
+  const w = await dunia();
+  const { po, billId, qty } = await fakturDisetujui(w);
+  const bayar = await w.a.post("/api/finance/supplier-payments", { supplierId: w.supplier.id, date: hariIni(), cashAccountId: w.bank.id, allocations: [{ billId, amount: qty * HARGA }] });
+  assert.equal(bayar.status, 201, JSON.stringify(bayar.body));
+  const tolak = await w.a.post(`/api/finance/bills/${billId}/cancel`, { reason: "salah" });
+  assert.equal(tolak.status, 409);
+  assert.match(tolak.body.error, /pembayaran aktif/);
+  assert.equal(await statusTagihan(billId), "LUNAS");
+  assert.equal(await jurnalAktifTagihan(billId), 1);
+  assert.equal(await testPrisma.finSupplierBillAllocation.count({ where: { billId } }), 1);
+  assert.equal(await klaimUtuh(w, po, qty), true, "klaim tetap utuh");
+
+  const batalBayar = await w.a.post(`/api/finance/supplier-payments/${bayar.body.id}/cancel`, { reason: "salah rekening" });
+  assert.equal(batalBayar.status, 200, JSON.stringify(batalBayar.body));
+  assert.equal(await klaimUtuh(w, po, qty), true, "membatalkan pembayaran TIDAK melepas klaim barang");
+  const batal = await w.a.post(`/api/finance/bills/${billId}/cancel`, { reason: "faktur keliru" });
+  assert.equal(batal.status, 200, JSON.stringify(batal.body));
+  assert.equal(await klaimUtuh(w, po, qty), false, "klaim lepas setelah pembatalan sah");
+  assert.equal(await saldoAkun("2-1150"), -(qty * HARGA));
+  assert.equal(await saldoAkun("2-1100"), 0);
+});
+
+test("pembatalan faktur PO yang jurnalnya sudah DIREKONSILIASI ditolak (jurnal tetap, klaim utuh); setelah pencocokan dilepas, pembatalan sah", async () => {
+  const w = await dunia();
+  const { po, billId, qty } = await fakturDisetujui(w);
+  const baris = await testPrisma.finJournalLine.findFirst({ where: { entry: { source: "TAGIHAN_SUPPLIER", sourceId: billId } } });
+  const st = await testPrisma.finBankStatement.create({ data: { cashAccountId: w.bank.id, periodStart: new Date("2026-10-01"), periodEnd: new Date("2026-10-31"), openingBalance: 0, closingBalance: 0, status: "DRAFT" } });
+  const sl = await testPrisma.finBankStatementLine.create({ data: { statementId: st.id, date: new Date("2026-10-05"), description: "x", amount: 1, status: "COCOK", matchedLineId: baris.id } });
+  const tolak = await w.a.post(`/api/finance/bills/${billId}/cancel`, { reason: "salah" });
+  assert.equal(tolak.status, 409);
+  assert.equal(tolak.body.code, "SUDAH_DIREKONSILIASI");
+  assert.equal(await statusTagihan(billId), "DISETUJUI");
+  assert.equal(await jurnalAktifTagihan(billId), 1);
+  assert.equal(await klaimUtuh(w, po, qty), true);
+  await testPrisma.finBankStatementLine.update({ where: { id: sl.id }, data: { matchedLineId: null, status: "BELUM_COCOK" } });
+  assert.equal((await w.a.post(`/api/finance/bills/${billId}/cancel`, { reason: "salah" })).status, 200);
+  assert.equal(await klaimUtuh(w, po, qty), false);
+});
+
+test("pembatalan faktur PO di periode tertutup: bila pembalikan ditolak SELURUH pembatalan batal (status, jurnal, klaim utuh); setelah periode dibuka, sah", async () => {
+  const w = await dunia();
+  const { po, billId, qty } = await fakturDisetujui(w);
+  const hari = new Date(`${hariIni()}T00:00:00.000Z`);
+  const y = hari.getUTCFullYear(); const m = hari.getUTCMonth() + 1;
+  await testPrisma.finPeriod.upsert({ where: { year_month: { year: y, month: m } }, update: { status: "CLOSED" }, create: { year: y, month: m, status: "CLOSED" } });
+  const sebelum = { jurnal: await testPrisma.finJournalEntry.count(), alok: await testPrisma.finSupplierBillAllocation.count() };
+  const tolak = await w.a.post(`/api/finance/bills/${billId}/cancel`, { reason: "salah" });
+  assert.ok(tolak.status >= 400 && tolak.status < 500, `harus ditolak, dapat ${tolak.status} ${JSON.stringify(tolak.body)}`);
+  assert.equal(await statusTagihan(billId), "DISETUJUI");
+  assert.equal(await jurnalAktifTagihan(billId), 1);
+  assert.equal(await testPrisma.finJournalEntry.count(), sebelum.jurnal, "tidak ada jurnal pembalik setengah jadi");
+  assert.equal(await testPrisma.finSupplierBillAllocation.count(), sebelum.alok);
+  await testPrisma.finPeriod.update({ where: { year_month: { year: y, month: m } }, data: { status: "OPEN" } });
+  assert.equal(await klaimUtuh(w, po, qty), true, "klaim utuh");
+  assert.equal((await w.a.post(`/api/finance/bills/${billId}/cancel`, { reason: "salah" })).status, 200);
+  assert.equal(await klaimUtuh(w, po, qty), false);
+});
+
+test("pembatalan paralel dua kali pada faktur PO yang sama: satu berhasil, satu 409; saldo GRNI kembali sekali", async () => {
+  const w = await dunia();
+  const { po, billId, qty } = await fakturDisetujui(w);
+  const [r1, r2] = await Promise.all([
+    w.a.post(`/api/finance/bills/${billId}/cancel`, { reason: "paralel 1" }),
+    w.a.post(`/api/finance/bills/${billId}/cancel`, { reason: "paralel 2" }),
+  ]);
+  assert.deepEqual([r1.status, r2.status].sort(), [200, 409]);
+  assert.equal(await saldoAkun("2-1150"), -(qty * HARGA));
+  assert.equal(await saldoAkun("2-1100"), 0);
+  assert.equal(await klaimUtuh(w, po, qty), false);
 });

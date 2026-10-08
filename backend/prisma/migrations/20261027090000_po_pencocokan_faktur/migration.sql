@@ -35,6 +35,7 @@ CREATE TABLE "fin_supplier_bill_allocations" (
     "goods_receipt_line_id" UUID NOT NULL,
     "qty" DECIMAL(14,3) NOT NULL,
     "po_unit_price" INTEGER NOT NULL,
+    "po_value" DECIMAL(18,2) NOT NULL,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "fin_supplier_bill_allocations_pkey" PRIMARY KEY ("id")
@@ -92,6 +93,6 @@ ALTER TABLE "fin_supplier_bill_allocations" ADD CONSTRAINT "fin_supplier_bill_al
 ALTER TABLE "fin_supplier_bill_allocations" ADD CONSTRAINT "fin_supplier_bill_allocations_goods_receipt_line_id_fkey" FOREIGN KEY ("goods_receipt_line_id") REFERENCES "goods_receipt_lines"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 
--- Pengaman data: jumlah dan harga faktur selalu positif; klaim alokasi tidak boleh nol.
+-- Pengaman data: jumlah dan harga faktur selalu positif; klaim alokasi tidak boleh nol; nilai alokasi tidak negatif.
 ALTER TABLE "fin_supplier_bill_po_lines" ADD CONSTRAINT "fin_supplier_bill_po_lines_qty_positif" CHECK ("qty" > 0 AND "invoice_unit_price" > 0 AND "po_unit_price" > 0);
-ALTER TABLE "fin_supplier_bill_allocations" ADD CONSTRAINT "fin_supplier_bill_allocations_qty_positif" CHECK ("qty" > 0);
+ALTER TABLE "fin_supplier_bill_allocations" ADD CONSTRAINT "fin_supplier_bill_allocations_qty_positif" CHECK ("qty" > 0 AND "po_value" >= 0);

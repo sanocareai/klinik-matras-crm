@@ -62,7 +62,7 @@ async function siapkanMasukan(tx, body) {
 
     const qty = Number(l.qty);
     if (!Number.isFinite(qty) || qty <= 0) throw gagal(`Baris ${no} (${material.code}): jumlah harus lebih dari 0`);
-    if (Math.abs(qty * 100 - Math.round(qty * 100)) > 1e-6) throw gagal(`Baris ${no} (${material.code}): jumlah maksimal 2 angka di belakang koma`);
+    if (Math.abs(qty * 1000 - Math.round(qty * 1000)) > 1e-6) throw gagal(`Baris ${no} (${material.code}): jumlah maksimal 3 angka di belakang koma`);
     if (qty > 99_999_999) throw gagal(`Baris ${no} (${material.code}): jumlah terlalu besar`);
 
     const harga = Number(l.unitPrice);
@@ -164,7 +164,7 @@ export async function revisiJumlah(tx, { id, lineId, qty, reason, userId }) {
   if (!line) throw gagal("Baris PO tidak ditemukan", 404);
   const baru = Number(qty);
   if (!Number.isFinite(baru) || baru <= 0) throw gagal("Jumlah baru harus lebih dari 0");
-  if (Math.abs(baru * 100 - Math.round(baru * 100)) > 1e-6) throw gagal("Jumlah maksimal 2 angka di belakang koma");
+  if (Math.abs(baru * 1000 - Math.round(baru * 1000)) > 1e-6) throw gagal("Jumlah maksimal 3 angka di belakang koma");
 
   const kuantitas = await hitungKuantitas(tx, po);
   const q = kuantitas.get(line.id);
@@ -287,6 +287,9 @@ export async function siapkanPenerimaanDariPO(tx, { purchaseOrderId, pilihan }) 
  */
 export async function validasiBarisPenerimaanPO(tx, { receiptLine, nilai }) {
   const { receivedQty, acceptedQty, rejectedQty } = nilai;
+  for (const [nama, v] of [["datang", receivedQty], ["baik", acceptedQty], ["ditolak", rejectedQty]]) {
+    if (v != null && Number.isFinite(Number(v)) && Math.abs(Number(v) * 1000 - Math.round(Number(v) * 1000)) > 1e-6) throw gagal(`Jumlah ${nama} penerimaan dari PO maksimal 3 angka di belakang koma`);
+  }
   for (const [nama, v] of [["Diterima", receivedQty], ["Baik", acceptedQty], ["Ditolak", rejectedQty]]) {
     if (v != null && (!Number.isFinite(Number(v)) || Number(v) < 0)) throw gagal(`Jumlah ${nama.toLowerCase()} tidak boleh negatif`);
   }
