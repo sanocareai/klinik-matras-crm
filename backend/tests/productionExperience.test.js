@@ -250,7 +250,7 @@ test("audit READER P10B: semua pembaca production_step_evidence_v2 teraudit; bar
   const readers = report.findings.filter((f) => f.kind === "STEP_EVIDENCE_READER" || f.kind === "STEP_EVIDENCE_SQL_READER");
   assert.ok(readers.length >= 4, "pembaca Prisma + SQL terdeteksi: " + readers.map((r) => r.file + ":" + r.disposition).join(","));
   assert.deepEqual([...new Set(readers.map((r) => r.file))].sort(), [
-    "src/routes/productionEvidenceMedia.js", "src/services/productionComponentNoteService.js", "src/services/productionDocumentationService.js", "src/services/productionMaterialReturnService.js", "src/services/productionReportingService.js", "src/services/productionStepCommandService.js",
+    "src/routes/productionEvidenceMedia.js", "src/services/finance/biayaBahan.js", "src/services/productionComponentNoteService.js", "src/services/productionDocumentationService.js", "src/services/productionMaterialReturnService.js", "src/services/productionReportingService.js", "src/services/productionStepCommandService.js",
   ]);
   // slice 3: pembaca Catatan Komponen = TINJAUAN bersyarat (bukan sekadar allowlist): filter DOC_ wajib, SQL hanya kolom media, tanpa penulisan lifecycle/stok/BOM/retur.
   const CMP = "src/services/productionComponentNoteService.js";
