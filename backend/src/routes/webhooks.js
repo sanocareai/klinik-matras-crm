@@ -21,6 +21,7 @@ import { isInternalStaffPhone } from "../utils/staffDirectory.js";
 import { idPesanInti } from "../utils/idPesanWa.js";
 import { cariPesanSudahAda } from "../utils/cariPesanSudahAda.js";
 import { fieldPosterVideo } from "../utils/videoThumb.js";
+import { captureInbound } from "../services/ctwaCapture.js";
 
 export const webhookRouter = express.Router();
 
@@ -476,7 +477,7 @@ async function handleGroupMessage(payload, groupJid, externalId, sessionName) {
 // ── Pesan masuk dari customer (inbound) — dipakai event "message" DAN
 // "message.any" (fromMe:false). Return "saved" kalau berhasil, "skip-dupe"
 // kalau race condition P2002 kejar duluan disimpan request lain.
-async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, mediaInfo, externalId, sessionName }) {
+async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, mediaInfo, externalId, sessionName, event, engine }) {
   // Deteksi sumber lead (3 lapis) — hanya untuk customer BARU
   const existingCustomer = await prisma.customer.findUnique({ where: { phone } });
 
@@ -800,6 +801,16 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
     if (e.code !== "P2002") throw e;
     return "skip-dupe";
   }
+
+  // FASE 0 capture atribusi CTWA (observasi saja, lihat services/ctwaCapture.js).
+  // Sengaja SETELAH Message.create berhasil dan HANYA di jalur "saved": event
+  // `message` + `message.any` untuk pesan yang sama tidak menggandakan
+  // observasi (yang kalah race kena P2002 di atas), dan kegagalan capture
+  // tidak mungkin menggagalkan penyimpanan pesan. Fungsinya tidak pernah
+  // melempar & tidak di-await; try/catch ini hanya jaring terakhir.
+  try {
+    captureInbound({ payload, event, engine, externalId, isNewCustomer: !existingCustomer });
+  } catch { /* observasi bukan jalur kritis */ }
 
   // Pesan masuk baru → unread=true (badge sidebar lama) + unreadCount+1 (badge baru)
   // + isRead=false (belum dibuka lagi)
@@ -1294,7 +1305,7 @@ webhookRouter.post("/waha", async (req, res) => {
     // ── Pesan masuk dari customer (inbound) — event "message" ATAU
     // "message.any" dengan fromMe:false (idempotency di atas cegah dobel
     // proses kalau "message" sudah duluan simpan pesan yang sama) ─────────
-    const action = await handleInboundMessage({ payload, phone, pushName, text, hasMedia, mediaInfo, externalId, sessionName });
+    const action = await handleInboundMessage({ payload, phone, pushName, text, hasMedia, mediaInfo, externalId, sessionName, event, engine });
     if (isAnyEvent) console.log(`[webhook][any] fromMe=false chat=${chatJid} resolved=${phone} action=${action}`);
 
   } catch (err) {

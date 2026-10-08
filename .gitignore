@@ -55,3 +55,6 @@ backend/scripts/data/warehouse-import/
 # P12A staging: env & kredensial QA-PV2 (acak) tidak boleh di-commit
 backend/.env.staging
 backend/data/qa-pv2-credentials.json
+
+# Capture atribusi CTWA Fase 0 (berkas observasi ter-sanitasi, retensi maks 7 hari)
+backend/data/ctwa-capture/
