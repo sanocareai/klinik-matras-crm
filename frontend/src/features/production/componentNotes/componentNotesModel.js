@@ -78,6 +78,12 @@ export function compareTestsView(before, after, dropKey) {
       : `Perbandingan langsung belum valid: PIC QC belum mengonfirmasi metode pengujian sebanding dengan uji awal. Awal ${raw(before)} · sekarang ${raw(after)} — kedua angka ditampilkan apa adanya, tanpa selisih.`,
   };
 }
+const STAGE_LABEL = { foundation_upgrade: "Fondasi Baru", comfort_layer_upgrade: "Lapisan Baru", foam_addition: "Tambah Busa", cover_replacement: "Ganti Kain Luar" };
+/** Putusan "REWORK:<kode tahap>" → teks Indonesia ("rework → Lapisan Baru"); kode tak dikenal ditampilkan apa adanya (tanpa garis bawah). */
+export function reworkDispositionText(disposition) {
+  const m = /^REWORK:(.+)$/.exec(String(disposition ?? "")); if (!m) return disposition ? String(disposition) : "";
+  return `rework → ${STAGE_LABEL[m[1]] || m[1].replace(/_/g, " ")}`;
+}
 /** Gerbang LULUS putaran ini (UI; server menegakkan: QC_FOUNDATION_NEW_TEST_REQUIRED / QC_AFTER_REQUIRED / QC_FINISHED_TEST_REQUIRED). assembly = data.assembly dari Catatan Komponen. */
 export function decisionGate(assembly) {
   if (!assembly?.applicable) return { ok: true, missing: [], parts: [], message: "" };

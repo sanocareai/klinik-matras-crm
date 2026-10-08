@@ -1,6 +1,6 @@
 import React from "react";
 import { Badge } from "@/components/ui/badge.jsx";
-import { NOT_RECORDED } from "./componentNotesModel.js";
+import { NOT_RECORDED, reworkDispositionText } from "./componentNotesModel.js";
 
 // Perjalanan unit (Fase 4 LAYANAN): KONDISI AWAL → RACIKAN → HASIL AKHIR dalam satu ringkasan. SATU sumber (Catatan Komponen; `measurements` + `comparison` + `assembly` dari endpoint yang sama)
 // dipakai di Meja, Aplikasi PIC QC, Dokumentasi, Unit 360, dan laporan. Data kosong = "Belum dicatat". Penurunan kasur utuh dan fondasi TIDAK dijumlahkan; tanpa label "amblas" otomatis.
@@ -66,7 +66,7 @@ export function JourneySummary({ data, compact = false }) {
           <ul className="m-0 list-none space-y-1 p-0">
             {asm.rounds.map((r) => (
               <li key={r.inspectionId} data-testid="round-row" className="text-[12.5px] text-ink2">
-                <b>Putaran {r.round}</b> — QC gagal{r.verdict ? ` (${r.verdict === "TERLALU_EMPUK" ? "terlalu empuk" : "terlalu keras"})` : ""}{r.note ? `: “${r.note}”` : ""}{r.disposition ? <span className="text-ink3"> · {String(r.disposition).replace("REWORK:", "rework → ")}</span> : null}
+                <b>Putaran {r.round}</b> — QC gagal{r.verdict ? ` (${r.verdict === "TERLALU_EMPUK" ? "terlalu empuk" : "terlalu keras"})` : ""}{r.note ? `: “${r.note}”` : ""}{r.disposition ? <span className="text-ink3"> · {reworkDispositionText(r.disposition)}</span> : null}
               </li>
             ))}
           </ul>

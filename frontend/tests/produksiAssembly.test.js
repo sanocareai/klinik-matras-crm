@@ -101,3 +101,10 @@ test("kontrak UI: ringkasan perjalanan di panel (Meja/Corner/Dokumentasi/Unit 36
   const sheet = strip(src("features", "production", "componentNotes", "ComponentNoteSheet.jsx")); for (const id of ["same-method", "test-compare", "copy-plan", "deviation-note", "deviation-warning"]) assert.ok(sheet.includes(id), id);
   assert.match(sheet, /section === "WHOLE_TEST_AFTER" && <WholeTestForm[^>]* after /); assert.match(sheet, /section === "FOUNDATION_TEST_AFTER" && <FoundationTestForm[^>]* after /);
 });
+
+test("riwayat putaran: kode tahap rework tampil sebagai teks Indonesia (kode tak dikenal tanpa garis bawah)", () => {
+  assert.equal(M.reworkDispositionText("REWORK:comfort_layer_upgrade"), "rework → Lapisan Baru");
+  assert.equal(M.reworkDispositionText("REWORK:foundation_upgrade"), "rework → Fondasi Baru");
+  assert.equal(M.reworkDispositionText("REWORK:some_new_stage"), "rework → some new stage");
+  assert.equal(M.reworkDispositionText(null), "");
+});
