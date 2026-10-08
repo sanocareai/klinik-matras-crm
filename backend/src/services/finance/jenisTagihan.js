@@ -36,6 +36,7 @@ const KATEGORI_PEMBELIAN = {
 const KATEGORI_BIAYA_BAHAN = ["BAHAN_BAKU_MANUAL"];
 const KEY_GR = (id) => `PENERIMAAN_BAHAN:${id}`;
 const STATUS_AKTIF = ["DRAFT", "MENUNGGU_APPROVAL", "DISETUJUI", "DIBAYAR_SEBAGIAN", "LUNAS"];
+const STATUS_MASUK_BUKU_PO = ["DISETUJUI", "DIBAYAR_SEBAGIAN", "LUNAS"];
 
 const norm = (t) => String(t || "").trim().toLowerCase().replace(/\s+/g, " ");
 
@@ -51,9 +52,17 @@ export async function pastikanPeriodikBerlaku(db, billDate) {
  * Validasi isian & kembalikan kolom yang disimpan (billType, goodsReceiptId, expenseCategoryId, purchaseCategoryId).
  * Dipanggil saat BUAT dan UBAH (draf/menunggu). Tidak menulis apa pun.
  */
-export async function siapkanJenisTagihan(db, { billType, goodsReceiptId, expenseCategoryId, purchaseCategoryId, billDate }) {
+export async function siapkanJenisTagihan(db, { billType, goodsReceiptId, expenseCategoryId, purchaseCategoryId, billDate, purchaseOrderId }) {
   if (!billType) throw new JenisTagihanError("Jenis tagihan wajib dipilih (Bahan Baku, Jasa/Operasional, Mesin/Peralatan, Uang Muka Pembelian, atau Biaya Produksi Non-Stok)");
   if (!JENIS_TAGIHAN[billType]) throw new JenisTagihanError(`Jenis tagihan "${billType}" tidak dikenal`, 400);
+
+  // PO Fase 2: faktur yang dicocokkan dengan PO bahan baku. Penerimaannya ditautkan per baris lewat alokasi (bukan goodsReceiptId), dan syarat
+  // "bahan baku pascacutover wajib menaut penerimaan" dipenuhi oleh pencocokan PO itu sendiri.
+  if (purchaseOrderId) {
+    if (billType !== "BAHAN_BAKU") throw new JenisTagihanError("Faktur atas PO hanya untuk jenis Bahan Baku / Stok");
+    if (goodsReceiptId || expenseCategoryId || purchaseCategoryId) throw new JenisTagihanError("Faktur atas PO tidak memakai tautan penerimaan tunggal atau kategori biaya");
+    return { billType, goodsReceiptId: null, expenseCategoryId: null, purchaseCategoryId: null };
+  }
 
   if (billType === "BAHAN_BAKU") {
     if (expenseCategoryId || purchaseCategoryId) throw new JenisTagihanError("Tagihan bahan baku tidak memakai kategori biaya — nilainya masuk Persediaan Bahan Baku");
@@ -124,6 +133,9 @@ export async function pastikanAmanDisetujui(tx, bill, { lewatiPenerimaanBelumDit
     );
   }
 
+  // Faktur atas PO: pencocokan jumlah/harga & alokasi ke penerimaan dilakukan purchaseOrderBill.setujuiTagihanPO (di bawah kunci PO).
+  if (bill.purchaseOrderId) return;
+
   if (bill.billType !== "BAHAN_BAKU") return;
 
   if (bill.goodsReceiptId) {
@@ -138,6 +150,11 @@ export async function pastikanAmanDisetujui(tx, bill, { lewatiPenerimaanBelumDit
       select: { billNumber: true },
     });
     if (lain) throw new JenisTagihanError(`Penerimaan barang ini sudah ditagih di ${lain.billNumber} — persediaan akan tercatat dua kali`, 409, "PENERIMAAN_SUDAH_DITAGIH");
+    // Penerimaan dari PO yang sebagian/seluruhnya sudah ditagih lewat faktur atas PO: tagihan satu-penerimaan (lama) akan menutup GRNI dua kali.
+    const lewatPo = await tx.finSupplierBillAllocation.findFirst({
+      where: { goodsReceiptId: bill.goodsReceiptId, bill: { status: { in: STATUS_MASUK_BUKU_PO } } }, select: { bill: { select: { billNumber: true } } },
+    });
+    if (lewatPo) throw new JenisTagihanError(`Penerimaan barang ini sudah ditagih lewat faktur atas PO ${lewatPo.bill.billNumber} — persediaan akan tercatat dua kali`, 409, "PENERIMAAN_SUDAH_DITAGIH");
     return;
   }
 
@@ -148,7 +165,7 @@ export async function pastikanAmanDisetujui(tx, bill, { lewatiPenerimaanBelumDit
   const sup = await tx.finSupplier.findUnique({ where: { id: bill.supplierId }, select: { name: true, aliases: true } });
   const nama = [sup?.name, ...(sup?.aliases || [])].map(norm).filter(Boolean);
   if (nama.length === 0) return;
-  const grs = await tx.goodsReceipt.findMany({ where: { finSupplierBills: { none: { status: { in: STATUS_AKTIF } } } }, select: { id: true, receiptNumber: true, supplier: true } });
+  const grs = await tx.goodsReceipt.findMany({ where: { finSupplierBills: { none: { status: { in: STATUS_AKTIF } } }, billAllocations: { none: { bill: { status: { in: STATUS_AKTIF } } } } }, select: { id: true, receiptNumber: true, supplier: true } });
   for (const gr of grs.filter((g) => nama.includes(norm(g.supplier)))) {
     const j = await findEntryByKey(tx, KEY_GR(gr.id));
     if (j && j.status === "POSTED") {

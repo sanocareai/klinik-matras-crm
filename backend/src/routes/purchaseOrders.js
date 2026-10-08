@@ -9,6 +9,7 @@ import { requirePermission, PERMISSIONS as P, hasPermission } from "../middlewar
 import { prisma } from "../db.js";
 import { handleFinanceError } from "./finance.js";
 import { bentukPO, daftarPO, daftarRiwayat, buatPO, ubahDraf, setujuiPO, batalkanPO, revisiJumlah } from "../services/finance/purchaseOrder.js";
+import { pandanganPenagihan, buatTagihanDariPO, ubahTagihanPO, evaluasiTagihanPO } from "../services/finance/purchaseOrderBill.js";
 
 // ── Finance ──────────────────────────────────────────────────────────────
 export const purchaseOrderFinanceRouter = express.Router();
@@ -19,6 +20,38 @@ purchaseOrderFinanceRouter.get("/", requirePermission(P.FINANCE_READ), async (re
   try {
     const { status, supplierId, q } = req.query;
     res.json({ purchaseOrders: await daftarPO(prisma, { status, supplierId, q, harga: true }) });
+  } catch (e) { handleFinanceError(e, res); }
+});
+
+// ── Faktur supplier atas PO (Fase 2): pencocokan per baris. Persetujuan lewat POST /api/finance/bills/:id/approve (body.catatanTinjauanHarga bila harga berbeda).
+// Faktur/pembayaran TIDAK menambah stok. Rute /faktur/* sebelum /:id.
+purchaseOrderFinanceRouter.get("/faktur/:billId", requirePermission(P.FINANCE_READ), async (req, res) => {
+  try {
+    const ev = await evaluasiTagihanPO(prisma, req.params.billId);
+    if (!ev) return res.status(404).json({ error: "Faktur atas PO tidak ditemukan" });
+    res.json(ev);
+  } catch (e) { handleFinanceError(e, res); }
+});
+
+purchaseOrderFinanceRouter.patch("/faktur/:billId", requirePermission(P.FINANCE_POST), async (req, res) => {
+  try {
+    const id = await prisma.$transaction((tx) => ubahTagihanPO(tx, { billId: req.params.billId, body: req.body, userId: req.user.id, adalahAdmin: hasPermission(req.user, P.FINANCE_ADMIN) }));
+    res.json(await evaluasiTagihanPO(prisma, id));
+  } catch (e) { handleFinanceError(e, res); }
+});
+
+purchaseOrderFinanceRouter.get("/:id/penagihan", requirePermission(P.FINANCE_READ), async (req, res) => {
+  try {
+    const v = await pandanganPenagihan(prisma, req.params.id);
+    if (!v) return res.status(404).json({ error: "PO tidak ditemukan" });
+    res.json(v);
+  } catch (e) { handleFinanceError(e, res); }
+});
+
+purchaseOrderFinanceRouter.post("/:id/faktur", requirePermission(P.FINANCE_POST), async (req, res) => {
+  try {
+    const id = await prisma.$transaction((tx) => buatTagihanDariPO(tx, { poId: req.params.id, body: req.body, userId: req.user.id }));
+    res.status(201).json(await evaluasiTagihanPO(prisma, id));
   } catch (e) { handleFinanceError(e, res); }
 });
 

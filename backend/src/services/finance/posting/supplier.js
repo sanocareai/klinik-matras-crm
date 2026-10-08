@@ -44,6 +44,7 @@ import { statusCutoverUntuk, penerimaanTertutupPeriodik } from "../persediaanAwa
 import { resolvePostingGap } from "../journal.js";
 import { toMoney, sumMoney, ZERO } from "../money.js";
 import { barisBiayaAdmin } from "../transferFee.js";
+import { grniDebitPerPenerimaan } from "../purchaseOrderBill.js";
 
 export const KEY = {
   goodsReceipt: (id) => `PENERIMAAN_BAHAN:${id}`,
@@ -174,7 +175,27 @@ export async function postSupplierBill(tx, { billId, userId = null }) {
   const utangUsaha = await resolveAccount(tx, SYSTEM_KEYS.UTANG_USAHA);
   const lines = [];
 
-  if (bill.goodsReceiptId && (await penerimaanTertutupPeriodik(tx, bill.goodsReceiptId))) {
+  if (bill.purchaseOrderId) {
+    // PO Fase 2 — faktur yang dicocokkan per baris dengan PO. GRNI ditutup per PENERIMAAN sebesar jumlah teralokasi × HARGA PO (harga yang sama dengan
+    // nilai stok saat putaway); selisih terhadap nominal faktur (harga faktur berbeda) memakai kebijakan Selisih Harga Pembelian yang sama dengan alur lama.
+    // TIDAK ada pergerakan stok. Alokasi ditulis saat persetujuan (purchaseOrderBill.setujuiTagihanPO), sebelum fungsi ini.
+    const grir = await resolveAccount(tx, SYSTEM_KEYS.UTANG_BELUM_DITAGIH);
+    const { daftar, total: nilaiTerima } = await grniDebitPerPenerimaan(tx, billId);
+    if (daftar.length === 0) throw new AccountError(`Faktur ${bill.billNumber} atas PO belum punya alokasi ke penerimaan — tidak bisa dijurnal.`, 409);
+    for (const d of daftar) {
+      if (d.nilai.greaterThan(0)) lines.push({ accountId: grir.id, debit: d.nilai, description: `Penutup penerimaan ${d.receiptNumber} (faktur atas PO)`.slice(0, 250), supplierId: bill.supplierId });
+    }
+    const selisih = nilaiTagihan.minus(nilaiTerima);
+    if (!selisih.isZero()) {
+      const akunSelisih = await resolveAccount(tx, SYSTEM_KEYS.SELISIH_HARGA_PEMBELIAN);
+      lines.push({
+        accountId: akunSelisih.id,
+        ...(selisih.greaterThan(0) ? { debit: selisih } : { credit: selisih.negated() }),
+        description: "Selisih harga faktur supplier vs harga PO (ditinjau Finance)",
+        supplierId: bill.supplierId,
+      });
+    }
+  } else if (bill.goodsReceiptId && (await penerimaanTertutupPeriodik(tx, bill.goodsReceiptId))) {
     // B3.6 — penerimaan sebelum cutover yang tidak dijurnal ke Persediaan (tercakup stok opname): tagihannya periodik, Dr 5-1100.
     const bahanTerpakai = await resolveAccount(tx, SYSTEM_KEYS.BEBAN_POKOK_BAHAN);
     lines.push({ accountId: bahanTerpakai.id, debit: nilaiTagihan, description: `Pembelian bahan baku (periodik, penerimaan ${bill.goodsReceipt?.receiptNumber || ""} tercakup stok opname)`.slice(0, 250), supplierId: bill.supplierId });

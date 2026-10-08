@@ -62,7 +62,7 @@ async function siapkanMasukan(tx, body) {
 
     const qty = Number(l.qty);
     if (!Number.isFinite(qty) || qty <= 0) throw gagal(`Baris ${no} (${material.code}): jumlah harus lebih dari 0`);
-    if (Math.abs(qty * 1000 - Math.round(qty * 1000)) > 1e-6) throw gagal(`Baris ${no} (${material.code}): jumlah maksimal 3 angka di belakang koma`);
+    if (Math.abs(qty * 100 - Math.round(qty * 100)) > 1e-6) throw gagal(`Baris ${no} (${material.code}): jumlah maksimal 2 angka di belakang koma`);
     if (qty > 99_999_999) throw gagal(`Baris ${no} (${material.code}): jumlah terlalu besar`);
 
     const harga = Number(l.unitPrice);
@@ -164,7 +164,7 @@ export async function revisiJumlah(tx, { id, lineId, qty, reason, userId }) {
   if (!line) throw gagal("Baris PO tidak ditemukan", 404);
   const baru = Number(qty);
   if (!Number.isFinite(baru) || baru <= 0) throw gagal("Jumlah baru harus lebih dari 0");
-  if (Math.abs(baru * 1000 - Math.round(baru * 1000)) > 1e-6) throw gagal("Jumlah maksimal 3 angka di belakang koma");
+  if (Math.abs(baru * 100 - Math.round(baru * 100)) > 1e-6) throw gagal("Jumlah maksimal 2 angka di belakang koma");
 
   const kuantitas = await hitungKuantitas(tx, po);
   const q = kuantitas.get(line.id);
@@ -195,6 +195,7 @@ export async function hitungKuantitas(tx, po) {
     where: { purchaseOrderLine: { purchaseOrderId: po.id } },
     select: {
       purchaseOrderLineId: true, receivedQty: true, acceptedQty: true, rejectedQty: true,
+      billAllocations: { where: { bill: { status: { in: STATUS_TAGIHAN_AKTIF } } }, select: { qty: true } },
       goodsReceipt: { select: { id: true, status: true, finSupplierBills: { select: { status: true } } } },
     },
   });
@@ -209,7 +210,9 @@ export async function hitungKuantitas(tx, po) {
     if (st === "COMPLETED") {
       a.diterimaBaikK += k(b.acceptedQty);
       a.ditolakK += k(b.rejectedQty);
-      if (b.goodsReceipt.finSupplierBills.some((t) => STATUS_TAGIHAN_AKTIF.includes(t.status))) a.ditagihK += k(b.acceptedQty);
+      // Faktur atas PO (Fase 2) mengklaim per baris penerimaan lewat alokasi; tagihan lama menutup seluruh penerimaan (tidak boleh terhitung ganda).
+      const lama = b.goodsReceipt.finSupplierBills.some((t) => STATUS_TAGIHAN_AKTIF.includes(t.status));
+      a.ditagihK += lama ? k(b.acceptedQty) : Math.min(k(b.acceptedQty), b.billAllocations.reduce((s, x) => s + k(x.qty), 0));
     } else if (STATUS_PENERIMAAN_BERJALAN.includes(st)) {
       a.dalamProsesK += k(b.receivedQty);
     }
@@ -396,12 +399,25 @@ export async function bentukPO(tx, id, { harga = true, denganPenerimaan = true }
       select: {
         id: true, receiptNumber: true, status: true, deliveryNote: true, receivedDate: true, createdAt: true,
         finSupplierBills: { select: { id: true, billNumber: true, supplierRef: true, status: true, ...(harga && { amount: true }) } },
+        // Faktur atas PO (Fase 2) menagih per baris penerimaan lewat alokasi.
+        billAllocations: { select: { bill: { select: { id: true, billNumber: true, supplierRef: true, status: true } } } },
         lines: { select: { id: true, purchaseOrderLineId: true, orderedQty: true, receivedQty: true, acceptedQty: true, rejectedQty: true } },
       },
     });
+    if (harga) {
+      const faktur = await tx.finSupplierBill.findMany({
+        where: { purchaseOrderId: po.id }, orderBy: { createdAt: "asc" },
+        select: { id: true, billNumber: true, supplierRef: true, status: true, amount: true, poReviewNote: true, createdAt: true },
+      });
+      keluaran.faktur = faktur.map((f) => ({ ...f, amount: Number(f.amount) }));
+    }
     keluaran.penerimaan = penerimaan.map((r) => ({
       ...r,
-      finSupplierBills: r.finSupplierBills.map((t) => ({ ...t, ...(t.amount !== undefined && { amount: Number(t.amount) }) })),
+      finSupplierBills: [
+        ...r.finSupplierBills.map((t) => ({ ...t, ...(t.amount !== undefined && { amount: Number(t.amount) }) })),
+        ...[...new Map(r.billAllocations.map((a) => [a.bill.id, a.bill])).values()].map((t) => ({ ...t, lewatPO: true })),
+      ],
+      billAllocations: undefined,
     }));
   }
   return keluaran;

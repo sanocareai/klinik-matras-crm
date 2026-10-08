@@ -26,6 +26,7 @@ export const billInclude = {
   supplier: { select: { id: true, code: true, name: true, paymentTermDays: true } },
   goodsReceipt: { select: { id: true, receiptNumber: true, supplier: true, receivedDate: true } },
   purchaseCategory: { select: { id: true, code: true, name: true } },
+  purchaseOrder: { select: { id: true, poNumber: true } },
   approvedBy: { select: { id: true, name: true } },
   createdBy: { select: { id: true, name: true } },
   replaces: { select: { id: true, billNumber: true } },
@@ -142,15 +143,20 @@ export async function ambilDaftarSupplier(db, { includeInactive = false } = {}, 
 /** Dokumen penerimaan barang yang BELUM pernah ditagih — dipakai UI saat membuat tagihan supplier & kartu ringkasan. */
 export async function ambilPenerimaanBelumDitagih(db) {
   const receipts = await db.goodsReceipt.findMany({
+    // Penerimaan yang SEBAGIAN sudah ditagih lewat faktur atas PO (alokasi) tetap tampil sampai seluruh jumlah baiknya teralokasi (disaring di bawah).
     where: { status: "COMPLETED", finSupplierBills: { none: {} } },
     orderBy: { receivedDate: "desc" },
     take: 100,
     select: {
       id: true, receiptNumber: true, supplier: true, receivedDate: true, sourceReference: true,
       movements: { where: { type: "RECEIPT" }, select: { qty: true, unitCost: true } },
+      lines: { where: { purchaseOrderLineId: { not: null } }, select: { id: true, acceptedQty: true } },
+      billAllocations: { where: { bill: { status: { in: ["DISETUJUI", "DIBAYAR_SEBAGIAN", "LUNAS"] } } }, select: { goodsReceiptLineId: true, qty: true } },
     },
   });
-  return receipts.map((r) => {
+  const sisaPo = (r) => r.lines.reduce((s, l) => s + Math.max(0, Number(l.acceptedQty ?? 0) - r.billAllocations.filter((a) => a.goodsReceiptLineId === l.id).reduce((x, a) => x + Number(a.qty), 0)), 0);
+  const belumHabisDitagih = (r) => r.billAllocations.length === 0 || r.lines.length === 0 || sisaPo(r) > 1e-9;
+  return receipts.filter(belumHabisDitagih).map((r) => {
     const berharga = r.movements.filter((m) => m.unitCost != null && m.unitCost > 0);
     const nilai = berharga.length === 0 ? ZERO : sumMoney(berharga.map((m) => toMoney(m.qty).times(toMoney(m.unitCost))));
     return {

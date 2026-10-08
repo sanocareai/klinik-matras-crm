@@ -5374,6 +5374,10 @@ model GoodsReceipt {
   purchaseOrderId String?           @map("purchase_order_id") @db.Uuid
   purchaseOrder   FinPurchaseOrder? @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
 
+  // Fase 2 — pencocokan faktur per baris: klaim jumlah baik penerimaan ini oleh tagihan supplier atas PO, dan penerimaan yang dipilih Finance.
+  billAllocations FinSupplierBillAllocation[]
+  poBillLinks     FinSupplierBillPoReceipt[]
+
   @@index([status])
   @@index([expectedDate])
   @@index([purchaseOrderId])
@@ -5404,6 +5408,7 @@ model GoodsReceiptLine {
   // baris ini pada penerimaan berstatus COMPLETED — satu-satunya sumber kebenaran, tidak ada saldo tersimpan di PO.
   purchaseOrderLineId String?               @map("purchase_order_line_id") @db.Uuid
   purchaseOrderLine   FinPurchaseOrderLine? @relation(fields: [purchaseOrderLineId], references: [id], onDelete: Restrict)
+  billAllocations     FinSupplierBillAllocation[]
 
   @@index([goodsReceiptId])
   @@index([materialId])
@@ -7312,9 +7317,22 @@ model FinSupplierBill {
   replaces       FinSupplierBill? @relation("FinBillVersi", fields: [replacesBillId], references: [id], onDelete: Restrict)
   replacedBy     FinSupplierBill? @relation("FinBillVersi")
 
+  // PO Fase 2 — faktur yang dicocokkan per baris dengan PO bahan baku. NULL = tagihan biasa (alur lama, tidak berubah).
+  // Jumlah faktur per baris (poLines) dibandingkan dengan barang baik yang belum ditagih; alokasi ke baris penerimaan baru dibuat saat DISETUJUI.
+  purchaseOrderId String?           @map("purchase_order_id") @db.Uuid
+  purchaseOrder   FinPurchaseOrder? @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  // Catatan tinjauan Finance bila ada selisih harga PO vs faktur (wajib saat menyetujui). Tidak ada toleransi otomatis.
+  poReviewNote  String?   @map("po_review_note")
+  poReviewedBy  String?   @map("po_reviewed_by")
+  poReviewedAt  DateTime? @map("po_reviewed_at")
+  poLines       FinSupplierBillPoLine[]
+  poReceipts    FinSupplierBillPoReceipt[]
+  poAllocations FinSupplierBillAllocation[]
+
   @@index([supplierId, status])
   @@index([dueDate])
   @@index([status])
+  @@index([purchaseOrderId])
   @@map("fin_supplier_bills")
 }
 
@@ -7359,6 +7377,7 @@ model FinPurchaseOrder {
   lines    FinPurchaseOrderLine[]
   events   FinPurchaseOrderEvent[]
   receipts GoodsReceipt[]
+  bills    FinSupplierBill[]
 
   @@index([supplierId, status])
   @@index([status])
@@ -7383,6 +7402,7 @@ model FinPurchaseOrderLine {
   sortOrder Int     @default(0) @map("sort_order")
 
   receiptLines GoodsReceiptLine[]
+  billLines    FinSupplierBillPoLine[]
 
   @@index([purchaseOrderId])
   @@index([materialId])
@@ -7403,6 +7423,67 @@ model FinPurchaseOrderEvent {
 
   @@index([purchaseOrderId, createdAt])
   @@map("fin_purchase_order_events")
+}
+
+// ─── PO FASE 2 — PENCOCOKAN FAKTUR PER BARIS ─────────────────────────────────────────────────────────────────────────────
+// Faktur (FinSupplierBill dengan purchaseOrderId) menagih jumlah per BARIS PO pada harga faktur. TIDAK menulis stok. Jumlah baik yang sama tidak
+// boleh ditagih dua kali: klaim dihitung dari alokasi tagihan berstatus masuk buku (DISETUJUI/DIBAYAR/LUNAS) dan ditegakkan saat menyetujui di bawah
+// kunci baris PO (services/finance/purchaseOrderBill.js). Faktur yang menagih lebih dari barang baik yang belum ditagih TERTAHAN (tidak bisa disetujui).
+model FinSupplierBillPoLine {
+  id      String          @id @default(uuid()) @db.Uuid
+  billId  String          @map("bill_id") @db.Uuid
+  bill    FinSupplierBill @relation(fields: [billId], references: [id], onDelete: Cascade)
+
+  purchaseOrderLineId String               @map("purchase_order_line_id") @db.Uuid
+  purchaseOrderLine   FinPurchaseOrderLine @relation(fields: [purchaseOrderLineId], references: [id], onDelete: Restrict)
+
+  qty              Decimal @db.Decimal(14, 3)
+  // Harga satuan menurut FAKTUR supplier; poUnitPrice = snapshot harga PO saat faktur dicatat (harga PO tidak berubah setelah disetujui).
+  invoiceUnitPrice Decimal @map("invoice_unit_price") @db.Decimal(18, 2)
+  poUnitPrice      Int     @map("po_unit_price")
+  sortOrder        Int     @default(0) @map("sort_order")
+
+  allocations FinSupplierBillAllocation[]
+
+  @@unique([billId, purchaseOrderLineId])
+  @@index([purchaseOrderLineId])
+  @@map("fin_supplier_bill_po_lines")
+}
+
+// Penerimaan yang DIPILIH Finance untuk faktur ini (kosong = semua penerimaan PO yang masih punya barang baik belum ditagih).
+model FinSupplierBillPoReceipt {
+  id             String          @id @default(uuid()) @db.Uuid
+  billId         String          @map("bill_id") @db.Uuid
+  bill           FinSupplierBill @relation(fields: [billId], references: [id], onDelete: Cascade)
+  goodsReceiptId String          @map("goods_receipt_id") @db.Uuid
+  goodsReceipt   GoodsReceipt    @relation(fields: [goodsReceiptId], references: [id], onDelete: Restrict)
+
+  @@unique([billId, goodsReceiptId])
+  @@index([goodsReceiptId])
+  @@map("fin_supplier_bill_po_receipts")
+}
+
+// Klaim jumlah baik per BARIS PENERIMAAN oleh sebuah faktur — dibuat saat faktur disetujui (urutan FIFO penerimaan). Baris tetap ada setelah
+// faktur dibatalkan (riwayat), tetapi tidak dihitung lagi karena status faktur DIBATALKAN.
+model FinSupplierBillAllocation {
+  id                 String                @id @default(uuid()) @db.Uuid
+  billId             String                @map("bill_id") @db.Uuid
+  bill               FinSupplierBill       @relation(fields: [billId], references: [id], onDelete: Cascade)
+  billPoLineId       String                @map("bill_po_line_id") @db.Uuid
+  billPoLine         FinSupplierBillPoLine @relation(fields: [billPoLineId], references: [id], onDelete: Cascade)
+  goodsReceiptId     String                @map("goods_receipt_id") @db.Uuid
+  goodsReceipt       GoodsReceipt          @relation(fields: [goodsReceiptId], references: [id], onDelete: Restrict)
+  goodsReceiptLineId String                @map("goods_receipt_line_id") @db.Uuid
+  goodsReceiptLine   GoodsReceiptLine      @relation(fields: [goodsReceiptLineId], references: [id], onDelete: Restrict)
+
+  qty         Decimal  @db.Decimal(14, 3)
+  poUnitPrice Int      @map("po_unit_price") // harga PO yang dipakai menilai penutupan GRNI (sama dengan harga stok saat putaway)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([billId])
+  @@index([goodsReceiptLineId])
+  @@index([goodsReceiptId])
+  @@map("fin_supplier_bill_allocations")
 }
 
 // Pembayaran KE supplier. Satu pembayaran bisa melunasi beberapa tagihan

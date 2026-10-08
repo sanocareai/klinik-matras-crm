@@ -128,7 +128,7 @@ export async function blokirKoreksiTagihanBatch(db, ids) {
   const bills = await db.finSupplierBill.findMany({
     where: { id: { in: ids } },
     select: {
-      id: true, status: true, replacedBy: { select: { billNumber: true } },
+      id: true, status: true, purchaseOrderId: true, replacedBy: { select: { billNumber: true } },
       allocations: { where: { payment: { cancelledAt: null } }, select: { id: true } },
     },
   });
@@ -147,6 +147,8 @@ export async function blokirKoreksiTagihanBatch(db, ids) {
     }
     if (b.status === "DITOLAK") { set("DITOLAK", "Tagihan ini sudah ditolak.", "Catat tagihan baru bila memang perlu."); continue; }
     if (["DRAFT", "MENUNGGU_APPROVAL"].includes(b.status)) { set("BELUM_DISETUJUI", "Tagihan ini belum disetujui, belum ada jurnalnya.", "Gunakan Edit (bukan Koreksi)."); continue; }
+    // PO Fase 2: faktur yang dicocokkan per baris mengklaim jumlah baik penerimaan. Menimpa nilainya lewat versi pengganti akan membuat klaim ganda/menggantung.
+    if (b.purchaseOrderId) { set("FAKTUR_ATAS_PO", "Faktur ini dicocokkan per baris dengan PO dan sudah mengklaim jumlah barang baik.", "Batalkan faktur (jurnal dibalik, klaim dilepas) lalu catat ulang faktur atas PO dengan data yang benar."); continue; }
     if (b.allocations.length > 0 || ["DIBAYAR_SEBAGIAN", "LUNAS"].includes(b.status)) {
       set("ADA_PEMBAYARAN", `Tagihan ini sudah punya ${b.allocations.length || 1} pembayaran aktif ke supplier, sehingga hasil koreksi bisa ambigu.`, "Batalkan pembayarannya dulu di Supplier & Utang, lalu koreksi tagihan.");
       continue;
