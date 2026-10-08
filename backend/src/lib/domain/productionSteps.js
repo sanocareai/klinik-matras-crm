@@ -101,7 +101,7 @@ function requireMedia(media, { min = 1, video = false, label }) {
 
 // Baris material (tahap 6/7/10): harus bagian dari Planned BOM yang sudah DISERAHKAN Gudang untuk rencana ini; qty tidak melebihi yang diserahkan.
 // Tidak ada potong stok di sini — stok berkurang sekali saat Gudang menyerahkan (Material Issue P4).
-export function normalizeMaterialLines(lines, { issuedQtyByMaterial, required, label }) {
+export function normalizeMaterialLines(lines, { issuedQtyByMaterial, required, label, remainingMode = false }) {
   if (lines == null || (Array.isArray(lines) && lines.length === 0)) {
     if (required) throw invalid(`${label}: pilih minimal satu bahan dari Gudang yang dipakai`);
     return [];
@@ -117,7 +117,7 @@ export function normalizeMaterialLines(lines, { issuedQtyByMaterial, required, l
     if (!Number.isFinite(qty) || qty <= 0) throw invalid(`${label}: jumlah bahan harus lebih dari 0`);
     const issued = issuedQtyByMaterial?.get(materialId);
     if (issued == null) throw stepError(`${label}: bahan ini tidak ada di bahan yang diserahkan Gudang untuk unit ini`, 422, "STEP_MATERIAL_NOT_ISSUED", { materialId });
-    if (qty > issued + 1e-9) throw stepError(`${label}: jumlah melebihi bahan yang diserahkan Gudang (${issued})`, 422, "STEP_MATERIAL_OVER_ISSUED", { materialId, issued });
+    if (qty > issued + 1e-9) throw stepError(remainingMode ? `${label}: jumlah melebihi sisa bahan yang belum terpakai (${issued}); bahan tambahan diminta PIC Bahan lalu diserahkan Gudang` : `${label}: jumlah melebihi bahan yang diserahkan Gudang (${issued})`, 422, "STEP_MATERIAL_OVER_ISSUED", { materialId, issued });
     return { materialId, qty };
   });
 }
@@ -229,6 +229,8 @@ const label = `Tahap ${stepNo} (${stepLabelFor(stepNo, step.label, ctx.buildTrac
     case 8: {
       // Fase 4 (LAYANAN, Run V2): uji kasur jadi DITULIS PIC QC (WHOLE_TEST_AFTER); Meja hanya melanjutkan — bukti menaut versi catatan QC (tanpa menyalin angka), media = foto/video PIC QC yang sudah tersimpan.
       if (ctx.assemblyGate) {
+        if (ctx.assemblyHasFoundation && !ctx.assemblyRefs?.foundationTestAfter?.ok) throw stepError("Uji fondasi baru belum dicatat PIC QC untuk putaran ini", 409, "STEP_WAITING_FOUNDATION_NEW_TEST_PENDING");
+        if (!ctx.assemblyRefs?.after?.ok) throw stepError("Hasil aktual susunan belum dicatat untuk putaran ini (Catatan Komponen › Sesudah pengerjaan)", 409, "STEP_AFTER_REQUIRED");
         if (!ctx.assemblyRefs?.wholeTestAfter?.ok) throw stepError("Uji kasur jadi belum dicatat PIC QC", 409, "STEP_WAITING_FINISHED_TEST_PENDING");
         return { media: normalizeMedia(ctx.assemblyRefs.wholeTestAfter.mediaUrls), payload: { qcRef: { section: "WHOLE_TEST_AFTER", version: ctx.assemblyRefs.wholeTestAfter.version } } };
       }
@@ -375,9 +377,16 @@ export function deriveNextAction(state) {
       // Jalur pengerjaan kasur: racikan harus tercatat (bukti ber-racikan atau catatan PIC Bahan) sebelum uji tekstur — mis. bukti umum yang disimpan saat jenis produk belum jelas tidak cukup.
       const racikanMissing = !!state.buildTrack && !state.racikanRecorded;
       // Fase 4 (LAYANAN, Run V2): perakitan -> uji fondasi baru (PIC QC) -> susun lapisan + hasil aktual (Meja) -> uji kasur jadi (PIC QC) -> Meja melanjutkan ke gerbang QC. Verdict tekstur Meja tidak dipakai di jalur ini.
+      // Tiga jenis racikan: HANYA fondasi (modul terakhir = tahap 6), HANYA lapisan (modul terakhir = tahap 7, tanpa uji fondasi baru), atau KEDUANYA. Tak satu pun melewati hasil aktual + uji kasur jadi PIC QC.
       if (state.assemblyGate) {
-        if (!state.foundationNewTestOk) return wait("QC", "FOUNDATION_NEW_TEST_PENDING", { stepNo });
-        if (!lastModule) return { actor, stepNo, action: "EVIDENCE", gated: true, ...(state.afterOk ? {} : { layersAfterRequired: true }) };
+        if (stepNo === 6) { // fondasi menjadi modul terakhir: bukti Meja dulu, lalu uji fondasi baru
+          if (!lastModule) return { actor, stepNo, action: "EVIDENCE", gated: true };
+          if (!state.foundationNewTestOk) return wait("QC", "FOUNDATION_NEW_TEST_PENDING", { stepNo });
+        } else {
+          if (state.assemblyHasFoundation && !state.foundationNewTestOk) return wait("QC", "FOUNDATION_NEW_TEST_PENDING", { stepNo });
+          if (!lastModule) return { actor, stepNo, action: "EVIDENCE", gated: true, ...(state.afterOk ? {} : { layersAfterRequired: true }) };
+        }
+        if (!state.afterOk) return wait("TABLE", "AFTER_PENDING", { stepNo });
         if (!state.wholeTestAfterOk) return wait("QC", "FINISHED_TEST_PENDING", { stepNo: 8 });
         return { actor, stepNo: 8, action: "TEST", continueOnly: true, qcRecorded: true };
       }

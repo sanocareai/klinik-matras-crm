@@ -148,6 +148,8 @@ export async function loadStepContext(client, run) {
   const preTeardownGate = isLayanan && inIntake;
   const assemblyGate = isLayanan && inModule && hasAssemblyGate(run);
   const latestAt = (n) => { const e = evidence.filter((x) => x.stepNo === n && !isSkippedEvidence(x)).at(-1); return e ? new Date(e.createdAt).getTime() : null; };
+  const moduleSteps = new Set((split?.stages || []).filter((s) => s.phase === "MODULE").map((s) => stepNoForStage(s)));
+  const assemblyHasFoundation = moduleSteps.has(6); const assemblyHasLayers = moduleSteps.has(7);
   const assemblyRefs = assemblyGate ? await loadAssemblyFacts(client, { unitId: run.unitId, runId: run.id, step6At: latestAt(6), step7At: latestAt(7) }) : null;
   const gateRefs = preTeardownGate ? await loadPreTeardownFacts(client, { unitId: run.unitId, runId: run.id }) : null;
   const lastStep6 = evidence.filter((e) => e.stepNo === 6 && !isSkippedEvidence(e)).at(-1);
@@ -179,7 +181,7 @@ export async function loadStepContext(client, run) {
     qcGatePolicy: run.qcGatePolicyVersion || null, // Fase 2: NULL = run lama, gerbang QC sebelum bongkar tidak berlaku
     adaptation: isAdaptationRun(run), // slice 2: QC tidak wajib -> tahap kerja tuntas = siap "Selesaikan Produksi"
     preTeardownGate, gateRefs,
-    assemblyGate, assemblyRefs, foundationNewTestOk: !!assemblyRefs?.foundationTestAfter?.ok, afterOk: !!assemblyRefs?.after?.ok, wholeTestAfterOk: !!assemblyRefs?.wholeTestAfter?.ok,
+    assemblyGate, assemblyRefs, assemblyHasFoundation, assemblyHasLayers, foundationNewTestOk: !!assemblyRefs?.foundationTestAfter?.ok, afterOk: !!assemblyRefs?.after?.ok, wholeTestAfterOk: !!assemblyRefs?.wholeTestAfter?.ok,
     qcBeforeRecorded: !!gateRefs?.wholeTest, layersBeforeRecorded: !!gateRefs?.layers, foundationTestRecorded: !!gateRefs?.foundationTest,
   };
   return { path, split, pathError, evidence: ordered, documentation, openShortage, latestInspection, material, state, buildSetting, buildRecord, buildView, materialPicView, next: deriveNextAction(state) };
@@ -228,7 +230,37 @@ async function toBuildView(client, setting, record, { cornerLocked = false } = {
 export async function loadAssemblyGateFactsForRun(client, run) {
   const rows = await client.productionStepEvidence.findMany({ where: { runId: run.id, stepNo: { in: [6, 7] }, stepCode: { not: { startsWith: DOC_STEP_CODE_PREFIX } } }, orderBy: { createdAt: "asc" }, select: { stepNo: true, createdAt: true, payload: true } });
   const last = (n) => { const e = rows.filter((r) => r.stepNo === n && !isSkippedEvidence(r)).at(-1); return e ? new Date(e.createdAt).getTime() : null; };
-  return loadAssemblyFacts(client, { unitId: run.unitId, runId: run.id, step6At: last(6), step7At: last(7) });
+  const facts = await loadAssemblyFacts(client, { unitId: run.unitId, runId: run.id, step6At: last(6), step7At: last(7) });
+  // jenis racikan Run ini (modul yang ada di rute): hanya fondasi / hanya lapisan / keduanya
+  let hasFoundation = true; let hasLayers = true;
+  try { const split = workshopPathOf(await pathForUnit(client, run.unit)); const steps = new Set((split?.stages || []).filter((s) => s.phase === "MODULE").map((s) => stepNoForStage(s))); hasFoundation = steps.has(6); hasLayers = steps.has(7); } catch { /* rute tak terbaca: anggap keduanya (paling ketat) */ }
+  return { ...facts, hasFoundation, hasLayers };
+}
+
+/**
+ * Tampilan PUTARAN perakitan untuk pembaca (kartu, Catatan Komponen, laporan, form putusan QC). Putaran = 1 + jumlah putusan QC GAGAL (rework). Riwayat putaran sebelumnya TETAP terlihat
+ * (rounds[]), tetapi hasil dari putaran lama TIDAK dianggap hasil putaran terbaru: current.<x>.ok = false bila catatan itu belum diperbarui setelah putusan gagal / bukti Meja terbaru.
+ * rework.open = putusan gagal sudah ada, rework belum dimulai (jendela untuk permintaan bahan rework oleh PIC Bahan); rework.issue = permintaan bahan rework yang sudah diajukan (bila ada).
+ */
+export async function loadAssemblyView(client, run) {
+  const order = await client.order.findUnique({ where: { id: run.unit.orderId }, select: { category: true } });
+  if (!(hasAssemblyGate(run) && !isAdaptationRun(run) && order?.category === "LAYANAN")) return { applicable: false };
+  const [facts, inspections] = await Promise.all([
+    loadAssemblyGateFactsForRun(client, run),
+    client.qualityInspection.findMany({ where: { runId: run.id }, orderBy: { version: "asc" }, select: { id: true, version: true, result: true, disposition: true, inspectedAt: true, createdAt: true, qcFitTest: { select: { note: true, verdict: true, referenceWeightKg: true } } } }),
+  ]);
+  const fails = inspections.filter((i) => i.result === "FAIL_REWORK");
+  const rounds = fails.map((f, i) => ({ round: i + 1, inspectionId: f.id, version: f.version, at: f.inspectedAt || f.createdAt, disposition: f.disposition ?? null, verdict: f.qcFitTest?.verdict ?? null, note: f.qcFitTest?.note ?? null, referenceWeightKg: f.qcFitTest?.referenceWeightKg ?? null }));
+  const latest = inspections.at(-1);
+  const latestAt = latest ? new Date(latest.inspectedAt || latest.createdAt).getTime() : 0;
+  const reworkOpen = !!latest && latest.result === "FAIL_REWORK" && run.currentPhase === "PROCESS" && !activeOperation(run) && !(run.operations || []).some((op) => new Date(op.createdAt).getTime() > latestAt);
+  const issue = latest?.result === "FAIL_REWORK" ? await client.materialIssue.findFirst({ where: { reworkInspectionId: latest.id, status: { not: "CANCELLED" } }, select: { id: true, issueNumber: true, status: true } }) : null;
+  const pick = (f) => (f ? { version: f.version, ok: !!f.ok } : null);
+  return {
+    applicable: true, round: fails.length + 1, rounds, hasFoundation: facts.hasFoundation, hasLayers: facts.hasLayers,
+    current: { foundationTest: pick(facts.foundationTestAfter), after: pick(facts.after), wholeTest: pick(facts.wholeTestAfter) },
+    rework: { open: reworkOpen, inspectionId: reworkOpen ? latest.id : null, issue: issue ? { issueId: issue.id, issueNumber: issue.issueNumber, status: issue.status } : null },
+  };
 }
 
 // Ringkasan pengerjaan terakhir (bukti tahap 6) untuk pembaca lain (mis. layar QC): racikan + penjelasan. Pembaca bukti tetap SATU pintu di file ini (audit pembaca P10B).
@@ -249,6 +281,23 @@ export async function issuedQtyByMaterial(tx, planId) {
   const map = new Map();
   for (const line of lines) map.set(line.materialId, (map.get(line.materialId) || 0) + Number(line.issuedQty || 0));
   return map;
+}
+
+// Fase 4 (gerbang perakitan): pemakaian dihitung KUMULATIF lintas putaran terhadap yang diserahkan Gudang (termasuk bahan tambahan rework) — bukti baru hanya boleh memakai SISA yang belum terpakai
+// oleh bukti sebelumnya (tahap 6/7/10, bukan yang dilewati). Tanpa gerbang: perilaku lama (per bukti vs total diserahkan).
+export function usedByEvidence(evidence) {
+  const used = new Map();
+  for (const e of evidence || []) {
+    if (![6, 7, 10].includes(e.stepNo) || isSkippedEvidence(e)) continue;
+    for (const l of e.payload?.materials || []) used.set(l.materialId, (used.get(l.materialId) || 0) + Number(l.qty || 0));
+  }
+  return used;
+}
+function remainingIssuedFor(ctx, issued) {
+  if (!ctx.state.assemblyGate) return issued;
+  const used = usedByEvidence(ctx.evidence); const out = new Map();
+  for (const [id, qty] of issued) out.set(id, Math.max(0, Math.round((qty - (used.get(id) || 0)) * 10000) / 10000));
+  return out;
 }
 
 async function writeEvidence(tx, { run, stepNo, operationRunId, stageId, payload, media, actorId, commandId }) {
@@ -288,6 +337,7 @@ function waitMessage(next) {
     case "AWAITING_WAREHOUSE": return "Barang jadi menunggu diterima Gudang.";
     case "HANDOFF_REJECTED": return "Barang jadi ditolak Gudang — tindak lanjut lewat Production Lead.";
     case "EXCEPTION_OPEN": return "Ada konflik data yang harus diselesaikan Production Lead lebih dulu.";
+    case "AFTER_PENDING": return "Menunggu PIC Meja mencatat hasil aktual susunan (Catatan Komponen › Sesudah pengerjaan) untuk putaran ini.";
     case "FOUNDATION_NEW_TEST_PENDING": return "Menunggu PIC QC menguji fondasi baru (tinggi tanpa beban, dibebani, foto/video) sebelum lapisan disusun.";
     case "FINISHED_TEST_PENDING": return "Menunggu PIC QC menguji kasur jadi (feel, kesesuaian keluhan awal, berat penguji, penurunan kasur utuh).";
     case "QC_BEFORE_PENDING": return "Menunggu PIC QC mencatat uji kasur sebelum bongkar (QC sebelum bongkar).";
@@ -330,7 +380,7 @@ export async function recordProductionStep(prisma, { runId, stepNo, actorId, ide
 
     const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "RECORD_PRODUCTION_STEP", aggregateId: runId, requestHash, expectedRevision: revisionExpected });
     const now = new Date();
-    const evidenceCtx = { preTeardownGate: ctx.state.preTeardownGate, gateRefs: ctx.state.gateRefs, assemblyGate: ctx.state.assemblyGate, assemblyRefs: ctx.state.assemblyRefs, issuedQtyByMaterial: [6, 7, 10].includes(requestedStep) ? await issuedQtyByMaterial(tx, run.plan?.id) : new Map(), buildTrack: ctx.state.buildTrack, productFlow: ctx.state.productFlow, racikanRecorded: ctx.state.racikanRecorded, materialsByPic: !!(ctx.state.materialOperatorId || ctx.buildRecord), picRestoration: !!ctx.state.materialPicRestoration };
+    const evidenceCtx = { preTeardownGate: ctx.state.preTeardownGate, gateRefs: ctx.state.gateRefs, assemblyGate: ctx.state.assemblyGate, assemblyRefs: ctx.state.assemblyRefs, assemblyHasFoundation: ctx.state.assemblyHasFoundation, remainingMode: !!ctx.state.assemblyGate, issuedQtyByMaterial: [6, 7, 10].includes(requestedStep) ? remainingIssuedFor(ctx, await issuedQtyByMaterial(tx, run.plan?.id)) : new Map(), buildTrack: ctx.state.buildTrack, productFlow: ctx.state.productFlow, racikanRecorded: ctx.state.racikanRecorded, materialsByPic: !!(ctx.state.materialOperatorId || ctx.buildRecord), picRestoration: !!ctx.state.materialPicRestoration };
     let evidence = null;
     let transition = null;
     let autoStarted = null;

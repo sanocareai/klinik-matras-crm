@@ -62,30 +62,44 @@ export function materialAttributes(ref) {
   return [{ key: "unknown", label: "Bahan", value: UNKNOWN_LABEL }];
 }
 
-// ---- Fase 4: kesebandingan uji awal vs uji setelah perbaikan (PARITAS dengan backend compareTests/COMPARABLE_WEIGHT_TOLERANCE_KG; server menghitung ulang) ----
-export const COMPARABLE_WEIGHT_TOLERANCE_KG = 2;
-/** before/after: { testerWeightKg, <drop> }; after.sameMethodAsBefore harus true. Tidak sebanding -> kedua angka tampil, TANPA selisih. */
+// ---- Fase 4: kesebandingan uji awal vs uji setelah perbaikan (PARITAS dengan backend compareTests; server menghitung ulang) ----
+// Sebanding HANYA bila PIC QC MENGONFIRMASI metode pengujian sebanding (sameMethodAsBefore). Tanpa aturan otomatis dari selisih berat. Belum dikonfirmasi: dua angka mentah + alasan, TANPA selisih.
+/** before/after: { testerWeightKg, testMethod, <drop> }; after.sameMethodAsBefore harus true agar selisih tampil. */
 export function compareTestsView(before, after, dropKey) {
+  const raw = (v) => (v ? `turun ${v[dropKey]} cm (berat ${v.testerWeightKg} kg; ${v.testMethod ?? "metode belum dicatat"})` : null);
   if (!before || !after) return { available: false, comparable: false, differenceCm: null, text: !before && !after ? "Uji awal dan uji setelah perbaikan belum dicatat" : !before ? "Uji awal belum dicatat — tidak bisa dibandingkan" : "Uji setelah perbaikan belum dicatat" };
-  const heavy = Math.abs(Number(before.testerWeightKg) - Number(after.testerWeightKg)) > COMPARABLE_WEIGHT_TOLERANCE_KG;
-  const comparable = after.sameMethodAsBefore === true && !heavy;
+  const comparable = after.sameMethodAsBefore === true;
   const bd = before[dropKey]; const ad = after[dropKey];
-  const why = [heavy ? `berat penguji berbeda (awal ${before.testerWeightKg} kg, baru ${after.testerWeightKg} kg)` : null, after.sameMethodAsBefore !== true ? "titik/metode tidak ditandai sama dengan uji awal" : null].filter(Boolean).join("; ");
   const diff = comparable ? Math.round((bd - ad) * 100) / 100 : null;
-  return { available: true, comparable, differenceCm: diff, beforeDropCm: bd, afterDropCm: ad, text: comparable ? `Sebanding dengan uji awal: turun ${bd} cm → ${ad} cm${diff > 0 ? ` (${diff} cm lebih sedikit)` : diff < 0 ? ` (${Math.abs(diff)} cm lebih banyak)` : " (sama)"}` : `Perbandingan langsung belum valid: ${why}. Awal turun ${bd} cm · sekarang turun ${ad} cm — tanpa selisih.` };
+  const weightNote = comparable && Number(before.testerWeightKg) !== Number(after.testerWeightKg) ? ` — berat penguji berbeda (awal ${before.testerWeightKg} kg, baru ${after.testerWeightKg} kg), dikonfirmasi sebanding oleh PIC QC` : "";
+  return {
+    available: true, comparable, differenceCm: diff, beforeDropCm: bd, afterDropCm: ad,
+    text: comparable ? `Sebanding dengan uji awal (dikonfirmasi PIC QC): turun ${bd} cm → ${ad} cm${diff > 0 ? ` (${diff} cm lebih sedikit)` : diff < 0 ? ` (${Math.abs(diff)} cm lebih banyak)` : " (sama)"}${weightNote}`
+      : `Perbandingan langsung belum valid: PIC QC belum mengonfirmasi metode pengujian sebanding dengan uji awal. Awal ${raw(before)} · sekarang ${raw(after)} — kedua angka ditampilkan apa adanya, tanpa selisih.`,
+  };
 }
+/** Gerbang LULUS putaran ini (UI; server menegakkan: QC_FOUNDATION_NEW_TEST_REQUIRED / QC_AFTER_REQUIRED / QC_FINISHED_TEST_REQUIRED). assembly = data.assembly dari Catatan Komponen. */
+export function decisionGate(assembly) {
+  if (!assembly?.applicable) return { ok: true, missing: [], parts: [], message: "" };
+  const c = assembly.current || {}; const missing = []; const parts = [];
+  if (assembly.hasFoundation) (c.foundationTest?.ok ? parts.push("uji fondasi baru") : missing.push(c.foundationTest ? "uji fondasi baru (belum diuji ulang pada putaran ini)" : "uji fondasi baru"));
+  c.after?.ok ? parts.push("hasil aktual susunan") : missing.push(c.after ? "hasil aktual susunan (belum diperbarui pada putaran ini)" : "hasil aktual susunan");
+  c.wholeTest?.ok ? parts.push("uji kasur jadi") : missing.push(c.wholeTest ? "uji kasur jadi (belum diuji ulang pada putaran ini)" : "uji kasur jadi");
+  return { ok: missing.length === 0, missing, parts, message: missing.length ? `Belum lengkap untuk putaran ${assembly.round}: ${missing.join("; ")}. Gagal → rework tetap bisa diputuskan.` : "" };
+}
+
 /** Pratinjau di formulir: angka draf (belum tersimpan) vs uji awal tersimpan. */
 export function draftComparison(section, draft, measurements) {
   const num2 = (v) => { const t = String(v ?? "").trim().replace(",", "."); return t === "" ? null : Number(t); };
   if (section === "FOUNDATION_TEST_AFTER") {
     const b = measurements?.foundation; const u = num2(draft.unloadedHeight); const l = num2(draft.loadedHeight); const w = num2(draft.testerWeight);
     if (!b || u == null || l == null || w == null || l > u) return compareTestsView(b, null, "dropCm");
-    return compareTestsView(b, { testerWeightKg: w, dropCm: Math.round((u - l) * 100) / 100, sameMethodAsBefore: !!draft.sameMethod }, "dropCm");
+    return compareTestsView(b, { testerWeightKg: w, testMethod: (draft.testMethod || "").trim() || null, dropCm: Math.round((u - l) * 100) / 100, sameMethodAsBefore: !!draft.sameMethod }, "dropCm");
   }
   if (section === "WHOLE_TEST_AFTER") {
     const b = measurements?.whole; const w = num2(draft.testerWeight); const d = num2(draft.wholeDrop);
     if (!b || w == null || d == null) return compareTestsView(b, null, "wholeDropCm");
-    return compareTestsView(b, { testerWeightKg: w, wholeDropCm: d, sameMethodAsBefore: !!draft.sameMethod }, "wholeDropCm");
+    return compareTestsView(b, { testerWeightKg: w, testMethod: (draft.testMethod || "").trim() || null, wholeDropCm: d, sameMethodAsBefore: !!draft.sameMethod }, "wholeDropCm");
   }
   return null;
 }

@@ -74,9 +74,9 @@ test("Meja: tahap 2/4 'Lanjutkan' satu ketuk setelah PIC QC mencatat; menunggu P
 
 test("kontrak komponen: PIC QC saja yang melihat tombol uji; antrean PIC QC di Hub QC; laporan memuat blok pengujian terpisah; konteks Sales rujukan saja", () => {
   const panel = src("features", "production", "componentNotes", "ComponentNotesPanel.jsx");
-  assert.match(panel, /\(s\.qc \? !!data\.canWriteQc : canWrite\)/); assert.match(panel, /<PreTestBlock measurements=\{data\.measurements\} \/>/); assert.match(panel, /data-testid="section-video"/);
+  assert.match(panel, /\(s\.qc \? !!data\.canWriteQc : canWrite\)/); assert.match(panel, /<PreTestBlock measurements=\{data\.measurements\} assembly=\{data\.assembly\} \/>/); assert.match(panel, /data-testid="section-video"/);
   assert.match(src("pages", "bengkel", "ProductionQcHub.jsx"), /<PreTestQueue \/>/);
-  assert.match(src("pages", "bengkel", "ProductionReportV2.jsx"), /<PreTestBlock measurements=\{report\.components\?\.measurements\} \/>/);
+  assert.match(src("pages", "bengkel", "ProductionReportV2.jsx"), /<PreTestBlock measurements=\{report\.components\?\.measurements\} assembly=\{report\.components\?\.assembly\} \/>/);
   const block = src("features", "production", "componentNotes", "PreTestBlock.jsx");
   assert.match(block, /data-testid="pretest-separation"/); assert.match(block, /NOT_RECORDED/); assert.doesNotMatch(block, /amblas/i, "tidak ada kategori amblas otomatis");
   const sheet = src("features", "production", "componentNotes", "ComponentNoteSheet.jsx");

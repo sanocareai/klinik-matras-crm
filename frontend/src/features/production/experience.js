@@ -138,6 +138,7 @@ export function waitCopy(next) {
     // kartu Planner diklik (server menegakkan ulang, bukan cuma UI).
     case "PENDING_ARRIVAL": return { title: "Menunggu konfirmasi kedatangan", text: "Unit sudah masuk produksi (pickup berhasil) tapi belum dikonfirmasi tiba di workshop. Konfirmasi kedatangan dulu di Rencana Produksi sebelum tahap ini bisa dimulai." };
     case "AWAITING_QC": return { title: "Menunggu QC", text: "Petugas QC akan menguji unit ini. Anda bisa lanjut ke unit lain." };
+    case "AFTER_PENDING": return { title: "Menunggu hasil aktual susunan", text: "PIC Meja perlu mencatat hasil aktual susunan (Catatan Komponen › Sesudah pengerjaan) untuk putaran ini. Setelah itu PIC QC menguji kasur jadi." };
     case "FOUNDATION_NEW_TEST_PENDING": return { title: "Menunggu uji fondasi baru", text: "PIC QC perlu menguji fondasi yang baru dirakit (tinggi tanpa beban dan dibebani, berat penguji, metode, foto/video). Setelah tercatat, Anda bisa menyusun lapisan." };
     case "FINISHED_TEST_PENDING": return { title: "Menunggu uji kasur jadi", text: "PIC QC perlu menguji kasur jadi (feel, kesesuaian keluhan awal, berat penguji, penurunan kasur utuh). Setelah tercatat, tombol Lanjutkan ke Gerbang QC muncul di sini." };
     case "QC_BEFORE_PENDING": return { title: "Menunggu QC sebelum bongkar", text: "PIC QC perlu mencatat uji kasur sebelum bongkar (kesesuaian keluhan, feel awal, berat penguji, penurunan kasur utuh). Setelah tercatat, tombol Lanjutkan muncul di sini." };

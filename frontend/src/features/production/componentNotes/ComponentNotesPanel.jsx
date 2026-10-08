@@ -82,7 +82,7 @@ export function ComponentNotesPanel({ unitId, unitCode = null, stepNo = null, sh
         })}
       </ul>
       <JourneySummary data={data} />
-      <PreTestBlock measurements={data.measurements} />
+      <PreTestBlock measurements={data.measurements} assembly={data.assembly} />
       <BeforeAfterSummary comparison={data.comparison} />
       {showHistory && data.history.length > 1 && (
         <details className="text-[12px]" data-testid="component-history">

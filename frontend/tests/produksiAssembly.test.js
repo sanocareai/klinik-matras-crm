@@ -36,17 +36,34 @@ test("formulir uji kasur jadi: berat penguji tidak terisi otomatis; penurunan 0 
   assert.match(M.validateDraft("WHOLE_TEST_AFTER", { ...d, media: [] }), /uji kasur jadi/); assert.match(M.validateDraft("WHOLE_TEST_AFTER", { ...d, testerWeight: "" }), /berat penguji aktual/);
 });
 
-test("kesebandingan di UI = server (paritas): sebanding hanya bila metode ditandai sama dan berat setara; selain itu tanpa selisih", () => {
-  const before = { testerWeightKg: 75, dropCm: 10 };
-  for (const [after, comparable, diff] of [[{ testerWeightKg: 75, dropCm: 2, sameMethodAsBefore: true }, true, 8], [{ testerWeightKg: 77, dropCm: 2, sameMethodAsBefore: true }, true, 8], [{ testerWeightKg: 60, dropCm: 2, sameMethodAsBefore: true }, false, null], [{ testerWeightKg: 75, dropCm: 2, sameMethodAsBefore: false }, false, null]]) {
-    const c = M.compareTestsView(before, after, "dropCm"); assert.deepEqual([c.comparable, c.differenceCm], [comparable, diff], JSON.stringify(after));
+test("kesebandingan = KONFIRMASI PIC QC (tanpa toleransi berat otomatis): klien = server; belum dikonfirmasi -> dua angka mentah + alasan, tanpa selisih", () => {
+  const before = { testerWeightKg: 75, testMethod: "Beban di tengah", dropCm: 10 };
+  for (const [after, comparable, diff] of [
+    [{ testerWeightKg: 75, dropCm: 2, sameMethodAsBefore: true }, true, 8],
+    [{ testerWeightKg: 60, dropCm: 2, sameMethodAsBefore: true }, true, 8], // berat beda TAPI PIC QC mengonfirmasi sebanding -> selisih tampil
+    [{ testerWeightKg: 75, dropCm: 2, sameMethodAsBefore: false }, false, null], // berat sama TAPI belum dikonfirmasi -> tidak sebanding
+    [{ testerWeightKg: 60, dropCm: 2, sameMethodAsBefore: false }, false, null],
+  ]) {
+    const c = M.compareTestsView(before, { testMethod: "Beban di tengah", ...after }, "dropCm"); assert.deepEqual([c.comparable, c.differenceCm], [comparable, diff], JSON.stringify(after));
     const server = B.buildMeasurements({ foundationTest: { version: 1, data: B.normalizeSectionData("FOUNDATION_TEST_BEFORE", { system: "BONNELL", unloadedHeightCm: 25, loadedHeightCm: 15, testerWeightKg: 75, testMethod: "Beban di tengah" }) }, foundationAfter: { version: 1, data: B.normalizeSectionData("FOUNDATION_TEST_AFTER", { system: "BONNELL", unloadedHeightCm: 25, loadedHeightCm: 23, testerWeightKg: after.testerWeightKg, testMethod: "Beban di tengah", sameMethodAsBefore: after.sameMethodAsBefore }) } }).comparisons.foundation;
     assert.deepEqual([server.comparable, server.differenceCm], [c.comparable, c.differenceCm], "paritas klien/server");
   }
-  assert.match(M.compareTestsView(before, { testerWeightKg: 60, dropCm: 2, sameMethodAsBefore: true }, "dropCm").text, /belum valid.*Awal turun 10 cm · sekarang turun 2 cm/);
-  assert.equal(M.compareTestsView(null, null, "dropCm").available, false);
-  const prev = M.draftComparison("FOUNDATION_TEST_AFTER", { unloadedHeight: "25", loadedHeight: "23", testerWeight: "60", sameMethod: true }, { foundation: { testerWeightKg: 75, dropCm: 10 } }); assert.equal(prev.comparable, false);
+  const no = M.compareTestsView(before, { testerWeightKg: 60, testMethod: "Duduk di tengah", dropCm: 2, sameMethodAsBefore: false }, "dropCm");
+  assert.match(no.text, /belum valid.*PIC QC belum mengonfirmasi.*Awal turun 10 cm \(berat 75 kg; Beban di tengah\) · sekarang turun 2 cm \(berat 60 kg; Duduk di tengah\).*tanpa selisih/);
+  assert.match(M.compareTestsView(before, { testerWeightKg: 60, testMethod: "x", dropCm: 2, sameMethodAsBefore: true }, "dropCm").text, /dikonfirmasi PIC QC.*berat penguji berbeda \(awal 75 kg, baru 60 kg\), dikonfirmasi sebanding oleh PIC QC/);
+  assert.equal(M.compareTestsView(null, null, "dropCm").available, false); assert.equal("COMPARABLE_WEIGHT_TOLERANCE_KG" in M, false, "tidak ada ambang berat otomatis");
+  const prev = M.draftComparison("FOUNDATION_TEST_AFTER", { unloadedHeight: "25", loadedHeight: "23", testerWeight: "75", testMethod: "Beban di tengah", sameMethod: false }, { foundation: { testerWeightKg: 75, testMethod: "Beban di tengah", dropCm: 10 } }); assert.equal(prev.comparable, false, "berat sama pun tidak otomatis sebanding");
   assert.equal(M.draftComparison("FOUNDATION_TEST_AFTER", { unloadedHeight: "", loadedHeight: "", testerWeight: "", sameMethod: false }, { foundation: { testerWeightKg: 75, dropCm: 10 } }).available, false, "belum diisi: tidak ada klaim");
+});
+
+test("gerbang putusan LULUS per putaran (UI): jenis racikan fondasi/lapisan/keduanya; catatan putaran lama tidak dihitung", () => {
+  assert.equal(M.decisionGate(null).ok, true); assert.equal(M.decisionGate({ applicable: false }).ok, true);
+  const mk = (o) => ({ applicable: true, round: 2, hasFoundation: true, hasLayers: true, current: { foundationTest: { version: 1, ok: true }, after: { version: 2, ok: true }, wholeTest: { version: 1, ok: true } }, ...o });
+  assert.deepEqual(M.decisionGate(mk({})).parts, ["uji fondasi baru", "hasil aktual susunan", "uji kasur jadi"]);
+  const stale = M.decisionGate(mk({ current: { foundationTest: { version: 1, ok: true }, after: { version: 2, ok: false }, wholeTest: { version: 1, ok: false } } }));
+  assert.equal(stale.ok, false); assert.match(stale.message, /putaran 2.*hasil aktual susunan \(belum diperbarui pada putaran ini\).*uji kasur jadi \(belum diuji ulang pada putaran ini\)/);
+  assert.equal(M.decisionGate(mk({ hasFoundation: false, hasLayers: true, current: { foundationTest: null, after: { version: 1, ok: true }, wholeTest: { version: 1, ok: true } } })).ok, true, "hanya lapisan: tanpa uji fondasi baru");
+  assert.equal(M.decisionGate(mk({ hasFoundation: true, hasLayers: false, current: { foundationTest: null, after: { version: 1, ok: true }, wholeTest: { version: 1, ok: true } } })).ok, false, "hanya fondasi: uji fondasi baru tetap wajib");
 });
 
 test("hasil aktual vs rencana: salin dari rencana; deteksi perbedaan lokal; alasan wajib bila beda; payload memuat alasan", () => {
@@ -77,9 +94,9 @@ test("kontrak UI: ringkasan perjalanan di panel (Meja/Corner/Dokumentasi/Unit 36
   for (const id of ["journey-summary", "journey-awal", "journey-racikan", "journey-akhir", "journey-cmp-foundation", "journey-cmp-whole", "journey-separation"]) assert.ok(j.includes(id), id);
   assert.match(j, /NOT_RECORDED/); assert.doesNotMatch(j, /amblas/i, "tanpa label amblas otomatis");
   assert.match(strip(src("features", "production", "componentNotes", "ComponentNotesPanel.jsx")), /<JourneySummary data=\{data\} \/>/);
-  assert.match(strip(src("pages", "bengkel", "ProductionReportV2.jsx")), /<JourneySummary data=\{\{ measurements: report\.components\.measurements, comparison: report\.components\.comparison \}\} \/>/);
+  assert.match(strip(src("pages", "bengkel", "ProductionReportV2.jsx")), /<JourneySummary data=\{\{ measurements: report\.components\.measurements, comparison: report\.components\.comparison, assembly: report\.components\.assembly \}\} \/>/);
   const pre = strip(src("features", "production", "componentNotes", "PreTestBlock.jsx")); for (const id of ["posttest-foundation", "posttest-whole", "foundation-compare", "whole-compare", "foundation-after-drop"]) assert.ok(pre.includes(id), id);
-  const q = strip(src("features", "production", "componentNotes", "PreTestQueue.jsx")); assert.match(q, /pretest-decision-link/); assert.match(q, /analysis=\{detail\}/);
+  const q = strip(src("features", "production", "componentNotes", "PreTestQueue.jsx")); assert.match(q, /pretest-decision-open/); assert.match(q, /<QcDecisionSheet/); assert.match(q, /analysis=\{detail\}/);
   const sheet = strip(src("features", "production", "componentNotes", "ComponentNoteSheet.jsx")); for (const id of ["same-method", "test-compare", "copy-plan", "deviation-note", "deviation-warning"]) assert.ok(sheet.includes(id), id);
   assert.match(sheet, /section === "WHOLE_TEST_AFTER" && <WholeTestForm[^>]* after /); assert.match(sheet, /section === "FOUNDATION_TEST_AFTER" && <FoundationTestForm[^>]* after /);
 });

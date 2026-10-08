@@ -86,7 +86,7 @@ function SameMethodCompare({ section, draft, set, measurements }) {
   const cmp = draftComparison(section, draft, measurements);
   return (
     <>
-      <label className="flex min-h-[44px] items-center gap-2 rounded-btn bg-inset px-3 text-[14px] font-semibold text-ink"><input type="checkbox" data-testid="same-method" checked={!!draft.sameMethod} onChange={(e) => set({ sameMethod: e.target.checked })} /> Titik &amp; metode sama dengan uji awal</label>
+      <label className="flex min-h-[44px] items-center gap-2 rounded-btn bg-inset px-3 text-[14px] font-semibold text-ink"><input type="checkbox" data-testid="same-method" checked={!!draft.sameMethod} onChange={(e) => set({ sameMethod: e.target.checked })} /> Saya mengonfirmasi: titik, metode, dan kondisi pengujian SEBANDING dengan uji awal (selisih hanya tampil bila dicentang)</label>
       {cmp && <p data-testid="test-compare" data-comparable={cmp.comparable ? "1" : "0"} className={`m-0 rounded-btn px-3 py-2 text-[13px] ${cmp.available && !cmp.comparable ? "bg-orangebg text-orange" : "bg-inset text-ink2"}`}>{cmp.text}</p>}
     </>
   );

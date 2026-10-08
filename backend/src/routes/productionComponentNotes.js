@@ -17,7 +17,8 @@ import { sniffImageType } from "../services/productionUnitPhotoService.js";
 import { PRODUCTION_READER_MODE, isProductionWriterEnabledFor, loadV2Flags, resolveProductionReaderState, resolveProductionWriterState } from "../services/v2FeatureFlags.js";
 import { assertCanUploadComponentMedia, getComponentNotes, recordComponentSection, searchComponentMaterials } from "../services/productionComponentNoteService.js";
 import { componentError, isQcSection } from "../lib/domain/productionComponents.js";
-import { COMPLAINT_LABEL, loadRuns, viewsOf } from "../services/productionExperienceReadService.js";
+import { COMPLAINT_LABEL, RUN_VIEW_INCLUDE, loadRuns, viewsOf } from "../services/productionExperienceReadService.js";
+import { loadAssemblyView } from "../services/productionStepCommandService.js";
 
 ensureEvidenceDirs();
 const IMAGE_MAX = 15 * 1024 * 1024;
@@ -73,7 +74,10 @@ productionComponentNotesRouter.get("/units/:unitId", requireAnyPermission(...REA
     if (!notes) return res.status(404).json({ error: "Unit tidak ditemukan atau di luar cohort", code: "UNIT_NOT_FOUND" });
     const writerOn = isProductionWriterEnabledFor(resolveProductionWriterState(await loadV2Flags(prisma)), unitId);
     const salesContext = notes.salesContext ? { ...notes.salesContext, complaintLabels: (notes.salesContext.complaints || []).map((c) => COMPLAINT_LABEL[c] || c) } : null;
-    res.json({ readerMode: "COHORT", canWrite: canWriteRole(req.user) && writerOn, canWriteQc: canWriteQc(req.user) && writerOn, ...notes, salesContext });
+    // Fase 4: putaran perakitan (riwayat gagal→rework + keabsahan catatan putaran ini) untuk Run aktif terbaru unit ini.
+    const latestRun = await prisma.productionRun.findFirst({ where: { unitId, status: { notIn: ["CANCELLED", "PENDING_ARRIVAL"] } }, orderBy: { createdAt: "desc" }, include: RUN_VIEW_INCLUDE });
+    const assembly = latestRun ? await loadAssemblyView(prisma, latestRun) : { applicable: false };
+    res.json({ readerMode: "COHORT", canWrite: canWriteRole(req.user) && writerOn, canWriteQc: canWriteQc(req.user) && writerOn, ...notes, salesContext, assembly });
   } catch (err) { handleErr(err, res); }
 });
 

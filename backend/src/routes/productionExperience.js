@@ -12,7 +12,7 @@ import {
   applyAdaptationPolicy, applyQcGatePolicy, delayProductionWork, finishProduction, previewFinishProduction, recordProductionStep, reportMaterialShortage, resolveMaterialShortage, skipProductionStep,
 } from "../services/productionStepCommandService.js";
 import { resumeWork } from "../services/productionResumeService.js";
-import { confirmBuildCorner, recordBuildMaterials, setBuildMaterialOperator, setBuildPlannedBOM } from "../services/productionBuildCommandService.js";
+import { confirmBuildCorner, recordBuildMaterials, requestBuildReworkMaterial, setBuildMaterialOperator, setBuildPlannedBOM } from "../services/productionBuildCommandService.js";
 import {
   getProductionSettings, inspectWorkshopDefaultLocation, listServiceMappings, setAdaptationDefault, setServiceMapping, setWorkshopDefaultLocation,
 } from "../services/productionSettingsService.js";
@@ -171,6 +171,15 @@ productionExperienceRouter.post("/runs/:runId/build/plan-bom", requireAnyPermiss
     res.json(await setBuildPlannedBOM(prisma, {
       runId: req.params.runId, actorId: req.user.id, canExecuteAny: hasPermission(req.user, P.PRODUCTION_EXECUTE_ANY), idempotencyKey: idem(req),
       expectedRevision: req.body?.expectedRevision, lines: req.body?.lines,
+    }));
+  } catch (err) { handleErr(err, res); }
+});
+// Permintaan bahan rework oleh PIC Bahan yang ditugaskan: { expectedRevision (revisi RUN, dari kartu), lines: [{materialId, qty}] }. Command QC yang sama; Gudang menyerahkan lewat pick yang ada.
+productionExperienceRouter.post("/runs/:runId/build/rework-material", requireAnyPermission(P.UNIT_STAGE_WRITE, P.INVENTORY_WRITE), async (req, res) => {
+  try {
+    if (!(await assertRunInCohort(res, req.params.runId))) return;
+    res.status(201).json(await requestBuildReworkMaterial(prisma, {
+      runId: req.params.runId, actorId: req.user.id, canExecuteAny: hasPermission(req.user, P.PRODUCTION_EXECUTE_ANY), idempotencyKey: idem(req), expectedRevision: req.body?.expectedRevision, lines: req.body?.lines,
     }));
   } catch (err) { handleErr(err, res); }
 });

@@ -244,6 +244,8 @@ export async function recordQualityInspection(prisma, { runId, actorId, canInspe
     // Fase 4 (LAYANAN, Run V2, bukan adaptasi): putusan SESUAI (PASS) hanya setelah PIC QC mencatat uji kasur jadi untuk putaran perakitan ini. FAIL (rework) dan WAIVED (kewenangan khusus) tidak diblokir.
     if (data.result === "PASS" && hasAssemblyGate(run) && !isAdaptationRun(run) && run.unit.order?.category === "LAYANAN") {
       const facts = await loadAssemblyGateFactsForRun(tx, run);
+      if (facts.hasFoundation && !facts.foundationTestAfter?.ok) throw qcError("Uji fondasi baru belum dicatat PIC QC untuk putaran ini — catat dulu sebelum memutuskan Lulus", 409, "QC_FOUNDATION_NEW_TEST_REQUIRED");
+      if (!facts.after?.ok) throw qcError("Hasil aktual susunan belum dicatat untuk putaran ini — PIC Meja perlu mencatatnya sebelum Lulus", 409, "QC_AFTER_REQUIRED");
       if (!facts.wholeTestAfter?.ok) throw qcError("Uji kasur jadi belum dicatat PIC QC untuk putaran ini — catat dulu di Aplikasi PIC QC sebelum memutuskan Sesuai", 409, "QC_FINISHED_TEST_REQUIRED");
     }
 
@@ -346,7 +348,8 @@ async function openSupplementalMaterialInTx(tx, { run, inspectionId, lines, acto
 }
 
 // Tambah bahan tambahan SETELAH FAIL tetapi SEBELUM rework dimulai (mis. stok baru tersedia / kebutuhan baru terlihat).
-export async function requestReworkMaterial(prisma, { runId, actorId, idempotencyKey, expectedRevision, lines }) {
+// `authorize` (opsional): dipanggil di dalam transaksi setelah run terkunci & revisi cocok — dipakai PIC Bahan per pekerjaan (aturan akses sendiri) tanpa membuat penulis permintaan bahan kedua.
+export async function requestReworkMaterial(prisma, { runId, actorId, idempotencyKey, expectedRevision, lines, authorize = null }) {
   if (!runId) throw qcError("runId wajib diisi", 400, "QC_RUN_ID_REQUIRED");
   assertIdempotencyKey(idempotencyKey);
   const revisionExpected = assertExpectedRevision(expectedRevision);
@@ -364,6 +367,7 @@ export async function requestReworkMaterial(prisma, { runId, actorId, idempotenc
     assertRunConsistent(run, run.unit);
     await assertNoOpenRunException(tx, run.id);
     assertRunRevision(run, revisionExpected);
+    if (authorize) await authorize(tx, run);
     const latest = run.inspections[0];
     if (!latest || latest.result !== "FAIL_REWORK" || run.currentPhase !== "PROCESS" || activeOperation(run)) {
       throw qcError("Bahan tambahan hanya dapat diajukan untuk rework yang belum dimulai (setelah QC FAIL)", 409, "QC_NOT_IN_REWORK");

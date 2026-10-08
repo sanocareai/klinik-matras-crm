@@ -13,7 +13,9 @@ import { V1ActionBar, V1MaterialsPanel } from "./V1Panels.jsx";
 import { ShortageSheet, StepSheet, intentKeys } from "./workerSheets.jsx";
 import MaterialRecordSheet from "./materialSheet.jsx";
 import BomPlanSheet from "./BomPlanSheet.jsx";
+import ReworkMaterialSheet from "./ReworkMaterialSheet.jsx";
 import MaterialChain from "./MaterialChain.jsx";
+import { reworkState } from "./materialChainModel.js";
 import { DelaySheet, FinishSheet, SkipSheet } from "./adaptationSheets.jsx";
 import { ComponentNotesPanel } from "@/features/production/componentNotes/ComponentNotesPanel.jsx";
 import { isV1Actionable, jobFromV1, jobFromV2, submitState } from "./workerAppModel.js";
@@ -222,6 +224,7 @@ function V2Detail({ job, lane, onBack, onChanged }) {
           {!online && <OfflineNote />}
           {materialLane ? (
             <>
+              {reworkState(card).kind === "OPEN" && <button type="button" className="wa-secondary" data-testid="open-rework-material" data-mutates onClick={() => setSheet("rework")}>Minta Bahan Rework</button>}
               {card.track !== "BUILD" && card.plan && <button type="button" className="wa-secondary" data-testid="open-bom-plan" data-mutates onClick={() => setSheet("bom")}>{card.bom?.length ? "Revisi Rencana Bahan (BOM)" : "Isi Rencana Bahan (BOM)"}</button>}
               <button type="button" className="wa-primary" data-testid="open-material-record" data-mutates onClick={() => setSheet("material")}>{card.track === "BUILD" ? "Catat Racikan & Bahan" : "Catat Bahan Dipakai"}</button>
             </>
@@ -250,6 +253,7 @@ function V2Detail({ job, lane, onBack, onChanged }) {
       )}
 
       {sheet === "step" && card && next && <StepSheet card={card} next={next} onClose={() => setSheet(null)} onSubmitted={async (result) => { if (result) { setSheet(null); setNotice(result.verdict && result.verdict !== "PAS" ? "Hasil uji tercatat — lanjutkan rework lapisan." : "Tahap tersimpan."); } await afterChange(); }} />}
+      {sheet === "rework" && card && <ReworkMaterialSheet card={card} onClose={() => setSheet(null)} onSubmitted={async (result) => { setSheet(null); setNotice(result ? `Permintaan bahan rework terkirim ke Gudang (${result.supplementalIssue?.issueNumber || "tanpa nomor"}).` : "Data berubah — dimuat ulang. Periksa lalu ajukan lagi."); await afterChange(); }} />}
       {sheet === "bom" && card && <BomPlanSheet card={card} onClose={() => setSheet(null)} onSubmitted={async (result) => { setSheet(null); setNotice(result ? `Rencana bahan tersimpan (rencana rev ${result.revision}).` : "Rencana bahan sudah diubah pihak lain — data dimuat ulang. Periksa lalu simpan ulang."); await afterChange(); }} />}
       {sheet === "material" && card && <MaterialRecordSheet card={card} onClose={() => setSheet(null)} onSubmitted={async (result) => { setSheet(null); if (result) setNotice(result.changed === false ? "Tidak ada perubahan." : card.track === "BUILD" ? `Racikan & bahan tersimpan (versi ${result.version}).` : `Bahan dipakai tersimpan (versi ${result.version}).`); await afterChange(); }} />}
       {sheet === "skip" && card && next && <SkipSheet card={card} next={next} stageLabel={stepOf(next.stepNo, card.track)?.label} onClose={() => setSheet(null)} onDone={async () => { setSheet(null); setNotice("Tahap dicatat dilewati (Adaptasi sistem)."); await afterChange(); }} />}

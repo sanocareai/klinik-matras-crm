@@ -452,24 +452,24 @@ export function buildMeasurements({ wholeTest = null, foundationTest = null, lay
 }
 
 // ---- Fase 4: kesebandingan uji awal vs uji setelah perbaikan -------------------------------------------------------------------------------------------------
-// Sebanding HANYA bila PIC QC menandai "titik & metode sama dengan uji awal" DAN berat penguji aktual berselisih <= toleransi. Bila tidak: kedua angka tetap ditampilkan, TANPA selisih dan tanpa kesimpulan.
-export const COMPARABLE_WEIGHT_TOLERANCE_KG = 2;
+// Sebanding HANYA bila PIC QC MENGONFIRMASI (sameMethodAsBefore = true) bahwa metode/titik/kondisi pengujian sebanding dengan uji awal. TIDAK ada aturan otomatis dari selisih berat.
+// Belum dikonfirmasi: kedua angka mentah (beserta berat & metode masing-masing) tampil, TANPA selisih dan tanpa kesimpulan. Sudah dikonfirmasi: selisih tampil; bila berat penguji berbeda,
+// perbedaan itu tetap disebut ("dikonfirmasi sebanding oleh PIC QC") — penilaian ada di PIC QC, bukan di sistem.
 function compareTests(before, after, dropKey, noun) {
+  const raw = (v) => (v ? `turun ${v[dropKey]} cm (berat ${v.testerWeightKg} kg; ${v.testMethod})` : null);
   if (!before || !after) {
-    return { available: false, comparable: false, reasons: [], text: !before && !after ? `Uji awal dan uji setelah perbaikan ${NOT_RECORDED_LABEL.toLowerCase()}` : !before ? `Uji awal ${noun} ${NOT_RECORDED_LABEL.toLowerCase()} — tidak bisa dibandingkan` : `Uji setelah perbaikan ${noun} ${NOT_RECORDED_LABEL.toLowerCase()}`, beforeDropCm: before?.[dropKey] ?? null, afterDropCm: after?.[dropKey] ?? null, differenceCm: null };
+    return { available: false, comparable: false, reasons: [], text: !before && !after ? `Uji awal dan uji setelah perbaikan ${NOT_RECORDED_LABEL.toLowerCase()}` : !before ? `Uji awal ${noun} ${NOT_RECORDED_LABEL.toLowerCase()} — tidak bisa dibandingkan` : `Uji setelah perbaikan ${noun} ${NOT_RECORDED_LABEL.toLowerCase()}`, beforeDropCm: before?.[dropKey] ?? null, afterDropCm: after?.[dropKey] ?? null, beforeRaw: raw(before), afterRaw: raw(after), differenceCm: null };
   }
-  const reasons = [];
-  if (after.sameMethodAsBefore !== true) reasons.push("METODE_TIDAK_DITANDAI_SAMA");
-  if (Math.abs(Number(before.testerWeightKg) - Number(after.testerWeightKg)) > COMPARABLE_WEIGHT_TOLERANCE_KG) reasons.push("BERAT_BEDA");
-  const comparable = reasons.length === 0;
+  const comparable = after.sameMethodAsBefore === true;
+  const reasons = comparable ? [] : ["METODE_BELUM_DIKONFIRMASI_SEBANDING"];
   const bd = before[dropKey]; const ad = after[dropKey];
-  const why = [reasons.includes("BERAT_BEDA") ? `berat penguji berbeda (awal ${before.testerWeightKg} kg, baru ${after.testerWeightKg} kg)` : null, reasons.includes("METODE_TIDAK_DITANDAI_SAMA") ? "titik/metode tidak ditandai sama dengan uji awal" : null].filter(Boolean).join("; ");
   const differenceCm = comparable ? round(bd - ad) : null; // positif = penurunan berkurang
+  const weightNote = comparable && Number(before.testerWeightKg) !== Number(after.testerWeightKg) ? ` — berat penguji berbeda (awal ${before.testerWeightKg} kg, baru ${after.testerWeightKg} kg), dikonfirmasi sebanding oleh PIC QC` : "";
   return {
-    available: true, comparable, reasons, beforeDropCm: bd, afterDropCm: ad, differenceCm,
+    available: true, comparable, reasons, beforeDropCm: bd, afterDropCm: ad, differenceCm, beforeRaw: raw(before), afterRaw: raw(after),
     text: comparable
-      ? `Sebanding dengan uji awal (metode sama, berat ${before.testerWeightKg} kg vs ${after.testerWeightKg} kg): turun ${bd} cm → ${ad} cm${differenceCm > 0 ? ` (${differenceCm} cm lebih sedikit)` : differenceCm < 0 ? ` (${Math.abs(differenceCm)} cm lebih banyak)` : " (sama)"}`
-      : `Perbandingan langsung belum valid: ${why}. Awal turun ${bd} cm · sekarang turun ${ad} cm — kedua angka ditampilkan apa adanya, tanpa selisih.`,
+      ? `Sebanding dengan uji awal (dikonfirmasi PIC QC): turun ${bd} cm → ${ad} cm${differenceCm > 0 ? ` (${differenceCm} cm lebih sedikit)` : differenceCm < 0 ? ` (${Math.abs(differenceCm)} cm lebih banyak)` : " (sama)"}${weightNote}`
+      : `Perbandingan langsung belum valid: PIC QC belum mengonfirmasi metode pengujian sebanding dengan uji awal. Awal ${raw(before)} · sekarang ${raw(after)} — kedua angka ditampilkan apa adanya, tanpa selisih.`,
   };
 }
 

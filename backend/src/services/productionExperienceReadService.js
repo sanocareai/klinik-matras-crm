@@ -8,7 +8,7 @@ import {
 } from "../lib/domain/productionSteps.js";
 import { listMaterialReturns } from "./productionMaterialReturnService.js";
 import { BOARD_DEFAULTS, compareStationOrder, formatProductionDate, parseProductionDate, stationLabel, todayWib } from "../lib/domain/productionBoard.js";
-import { applicableStepsFor, loadStepContext } from "./productionStepCommandService.js";
+import { applicableStepsFor, loadAssemblyView, loadStepContext, usedByEvidence } from "./productionStepCommandService.js";
 import { buildRunDocumentation, documentationBuckets } from "./productionDocumentationRead.js";
 import { sourceOfStep } from "../lib/domain/productionDocumentation.js";
 import { BUILD_NA_REASON, BUILD_STAGE_LABEL, NON_KASUR_NA_REASON, stepLabelFor } from "../lib/domain/productionBuildTrack.js";
@@ -444,7 +444,9 @@ export async function getRunCard(prisma, runId, { unitIds, now = new Date() } = 
   return {
     ...view,
     bom: (run.plan?.bomLines || []).map((l) => ({ id: l.id, materialId: l.materialId, code: l.material.code, name: l.material.name, qty: Number(l.qty), uom: l.material.unit, supplemental: !!l.supplementalInspectionId })),
-    issuedMaterials: [...issued.values()],
+    // Fase 4: per bahan — diserahkan (semua putaran, termasuk bahan tambahan rework), terpakai (bukti Meja + catatan PIC Bahan terbaru), sisa. Tiga angka TERPISAH, bukan satu.
+    issuedMaterials: (() => { const used = usedByEvidence(ctx.evidence); for (const l of (ctx.buildRecord?.materials || [])) used.set(l.materialId, (used.get(l.materialId) || 0) + Number(l.qty || 0)); return [...issued.values()].map((m) => ({ ...m, usedQty: Math.round((used.get(m.materialId) || 0) * 10000) / 10000, remainingQty: Math.max(0, Math.round((m.qty - (used.get(m.materialId) || 0)) * 10000) / 10000) })); })(),
+    assembly: await loadAssemblyView(prisma, run),
     evidence: ctx.evidence.map((e) => ({
       id: e.id, stepNo: e.stepNo, stepLabel: STEP_BY_NO[e.stepNo]?.label, version: e.version, payload: e.payload, createdAt: e.createdAt,
       actor: actorName.get(e.actorId) || null,
@@ -724,7 +726,7 @@ export async function getProductionReport(prisma, runId, { unitIds } = {}) {
     cornerChecklist: latestOf(evidence, 11)?.payload?.checklist ?? null,
     media: { before: [...mediaOf([1, 2, 3]), ...docBuckets.before], process: [...mediaOf([4, 6, 7]), ...docBuckets.process], after: [...mediaOf([8, 9, 11, 12]), ...docBuckets.after] },
     documentation,
-    components,
+    components: components ? { ...components, assembly: await loadAssemblyView(prisma, run) } : components,
     handoffStatus: fg?.status ?? null,
     broadcast: outboxRow
       ? { status: outboxRow.status, deliveredAt: outboxRow.deliveredAt, attempts: outboxRow.attempts, lastError: outboxRow.lastError, queuedAt: outboxRow.createdAt, consumerAvailable: false }

@@ -83,7 +83,7 @@ export function MaterialLines({ issued, value = [], onChange, emptyText }) {
         <li key={m.materialId} className="flex items-center gap-3 rounded-btn bg-inset px-3 py-2">
           <div className="min-w-0 flex-1">
             <p className="truncate text-[14px] font-semibold text-ink">{m.name}</p>
-            <p className="text-[12px] text-ink3">{m.code} · diserahkan {m.qty} {String(m.uom || "").toLowerCase()}</p>
+            <p className="text-[12px] text-ink3">{m.code} · diserahkan {m.qty} {String(m.uom || "").toLowerCase()}{m.remainingQty != null && m.remainingQty !== m.qty ? ` · sisa ${m.remainingQty}` : ""}</p>
           </div>
           <input aria-label={`Jumlah ${m.name} dipakai`} inputMode="decimal" placeholder="0" className="h-12 w-20 rounded-btn border border-line bg-surface px-2 text-center text-[15px] text-ink"
             value={qtyOf(m.materialId)} onChange={(e) => set(m.materialId, e.target.value)} />

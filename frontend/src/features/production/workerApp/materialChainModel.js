@@ -70,6 +70,25 @@ export function validateBomDraft(draft = []) {
   }
   return null;
 }
+// ---- permintaan bahan rework (command QC yang sama) ----
+export const reworkLinesPayload = (lines = []) => lines.map((l) => ({ materialId: l.materialId, qty: num(l.qty) }));
+export function validateReworkLines(lines = []) {
+  if (!lines.length) return "Tambahkan minimal satu bahan tambahan.";
+  const seen = new Set();
+  for (const l of lines) {
+    const name = l.name || l.code || "bahan"; const q = num(l.qty);
+    if (q == null || !(q > 0)) return `Isi jumlah ${name} (lebih dari 0).`;
+    if (seen.has(l.materialId)) return `${name} muncul dua kali — satu bahan satu baris.`;
+    seen.add(l.materialId);
+  }
+  return null;
+}
+/** Status rework untuk PIC Bahan: terbuka (boleh minta), sudah diminta (tampilkan nomor & status Gudang), atau tidak berlaku. */
+export function reworkState(card) {
+  const r = card?.assembly?.rework; if (!card?.assembly?.applicable || !r) return { kind: "NONE" };
+  if (r.issue) return { kind: "REQUESTED", issue: r.issue };
+  return r.open ? { kind: "OPEN" } : { kind: "NONE" };
+}
 export const bomUnchanged = (draft = [], bom = []) => {
   const a = bomPayload(draft).map((l) => `${l.materialId}:${l.qty}`).sort().join("|");
   const b = bom.map((x) => `${x.materialId}:${Number(x.qty)}`).sort().join("|");

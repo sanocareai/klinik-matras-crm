@@ -639,14 +639,15 @@ test("Fase 3 LAYANAN: PIC Bahan mengisi & merevisi BOM rencana lewat command pla
 // ---------------------------------------------------------------------------------------------------------------------------------------------------
 // Fase 4 LAYANAN — perakitan fondasi & lapisan -> uji PIC QC -> serah ke gerbang QC (Run V2). HTTP + DB sungguhan.
 // ---------------------------------------------------------------------------------------------------------------------------------------------------
-async function toModuleStart(w, { v2 = true } = {}) {
+async function toModuleStart(w, { v2 = true, service = null, corner = false } = {}) {
   const { unit, run } = await acceptedUnit(w, { v2 });
-  const planned = await planOnBoard(w, run.id, { station: "TABLE_1", corner: false });
+  const svc = service ? await testPrisma.serviceCatalog.findUniqueOrThrow({ where: { code: service } }) : w.service;
+  const planned = await planOnBoard(w, run.id, { station: "TABLE_1", corner });
   await throughIntake(w, run.id);
   ok(await step(w, w.nadya, run.id, 5, { payload: DIAG }));
   const diagPhoto = (await media(w.nadya, run.id, "i"))[0];
   const diag = await w.nadya.api.post(`${V2}/diagnosis/${run.id}/submit`, {
-    expectedRevision: 0, workCenterId: w.wc, photoUrls: [diagPhoto], recommendedServiceId: w.service.id,
+    expectedRevision: 0, workCenterId: w.wc, photoUrls: [diagPhoto], recommendedServiceId: svc.id,
     findings: { general: { condition: "Kasur kempes", mainDamage: "Fondasi keropos", damageLevel: "SEDANG", teardownNote: "Per karatan" }, foundation: { oldCondition: "Per karatan", action: "REPLACE", size: "180x200", qty: "1" }, layers: [{ oldCondition: "Busa tipis", action: "REPLACE", material: "Busa HD", thickness: "5cm", qty: "2" }], components: { spring: "Ganti per baru" }, serviceNote: "Restorasi penuh fondasi dan lapisan atas sesuai keluhan sakit pinggang" },
     materials: [{ materialId: w.fondasi.id, qty: 1 }, { materialId: w.lapisan.id, qty: 2 }],
   }, key(`diag-${++seq}`));
@@ -654,8 +655,9 @@ async function toModuleStart(w, { v2 = true } = {}) {
   const issueId = await setBomAndIssue(w, planned.planId);
   ok(await step(w, w.nadya, run.id, 5, {}));
   await pick(w, issueId);
-  ok(await step(w, w.nadya, run.id, 6, {})); // mulai modul fondasi
-  return { unit, run, planned };
+  const first = await card(w, run.id);
+  ok(await step(w, w.nadya, run.id, first.next.stepNo, {})); // mulai modul pertama sesuai jenis racikan (6 fondasi / 7 lapisan)
+  return { unit, run, planned, startStep: first.next.stepNo };
 }
 const cn = (who, unitId, sec, body) => who.api.post(`${V2}/component-notes/units/${unitId}/sections/${sec}`, body, key(`cn-${sec}-${++seq}`));
 const notesOf = async (who, unitId) => { const r = await who.api.get(`${V2}/component-notes/units/${unitId}`); assert.equal(r.status, 200, JSON.stringify(r.body)); return r.body; };
@@ -692,13 +694,14 @@ test("Fase 4: perakitan V2 — Meja rakit fondasi → PIC QC uji fondasi baru �
   // sebanding: metode ditandai sama + berat 75 vs 75 -> selisih dihitung; kasur utuh & fondasi TIDAK dijumlahkan
   assert.equal(n.measurements.comparisons.foundation.comparable, true); assert.equal(n.measurements.comparisons.foundation.differenceCm, 8);
   assert.equal(n.measurements.combinedEstimate, null); assert.doesNotMatch(JSON.stringify(n.measurements), /"total(Drop|Penurunan)"|"sum"|"category"|"kategori"/i, "tanpa penjumlahan & tanpa kategori otomatis (kata bebas PIC QC tidak dihitung)");
-  // tidak sebanding: berat 60 kg (koreksi beralasan) -> kedua angka, TANPA selisih
+  // berat penguji beda TETAPI PIC QC mengonfirmasi sebanding -> selisih tetap tampil (tanpa ambang berat otomatis)
   const ft2 = await cn(w.qc, unit.id, "FOUNDATION_TEST_AFTER", { expectedVersion: 1, reason: "Penguji berbeda", data: { ...PT.FOUNDATION_AFTER, testerWeightKg: 60 }, media: await PT.uploadVideo(server, w.qc, unit.id) }); assert.equal(ft2.status, 201);
   n = await notesOf(w.qc, unit.id); const cmpF = n.measurements.comparisons.foundation;
-  assert.deepEqual([cmpF.comparable, cmpF.differenceCm, cmpF.beforeDropCm, cmpF.afterDropCm, cmpF.reasons], [false, null, 10, 2, ["BERAT_BEDA"]]); assert.match(cmpF.text, /belum valid/);
-  // tidak sebanding: metode tidak ditandai sama
+  assert.deepEqual([cmpF.comparable, cmpF.differenceCm, cmpF.beforeDropCm, cmpF.afterDropCm], [true, 8, 10, 2], "dikonfirmasi sebanding -> selisih tampil walau berat beda"); assert.match(cmpF.text, /dikonfirmasi PIC QC.*berat penguji berbeda/);
+  // belum dikonfirmasi (sameMethodAsBefore=false) -> DUA angka mentah + alasan, tanpa selisih, walau berat sama
   const ft3 = await cn(w.qc, unit.id, "FOUNDATION_TEST_AFTER", { expectedVersion: 2, reason: "Metode berbeda", data: { ...PT.FOUNDATION_AFTER, sameMethodAsBefore: false }, media: await PT.uploadVideo(server, w.qc, unit.id) }); assert.equal(ft3.status, 201);
-  assert.deepEqual((await notesOf(w.qc, unit.id)).measurements.comparisons.foundation.reasons, ["METODE_TIDAK_DITANDAI_SAMA"]);
+  const cmp3 = (await notesOf(w.qc, unit.id)).measurements.comparisons.foundation;
+  assert.deepEqual([cmp3.comparable, cmp3.differenceCm, cmp3.reasons, cmp3.beforeDropCm, cmp3.afterDropCm], [false, null, ["METODE_BELUM_DIKONFIRMASI_SEBANDING"], 10, 2]); assert.match(cmp3.text, /belum valid.*PIC QC belum mengonfirmasi metode pengujian sebanding.*tanpa selisih/);
   // konflik versi + replay idempoten + tanpa perubahan
   const stale = await cn(w.qc, unit.id, "FOUNDATION_TEST_AFTER", { expectedVersion: 1, reason: "basi", data: PT.FOUNDATION_AFTER, media: await PT.uploadVideo(server, w.qc, unit.id) }); assert.equal(stale.status, 409); assert.equal(stale.body.code, "COMPONENT_VERSION_CONFLICT");
   const rk = key("rep"); const repBody = { expectedVersion: 3, reason: "Kembalikan metode sama", data: PT.FOUNDATION_AFTER, media: await PT.uploadVideo(server, w.qc, unit.id) };
@@ -759,41 +762,182 @@ test("Fase 4: perakitan V2 — Meja rakit fondasi → PIC QC uji fondasi baru �
   assert.match(assemblyMessageLines({ recorded: {}, comparisons: {} }, { always: true }).join("\n"), /Uji Fondasi Baru : Belum dicatat[\s\S]*Uji Kasur Jadi {2}: Belum dicatat/);
 });
 
-test("Fase 4: QC GAGAL -> rework tahap lapisan -> hasil aktual & uji kasur jadi WAJIB dicatat ULANG (catatan lama tidak dipakai); QC SESUAI hanya setelah uji ulang", async () => {
+// ---- Fase 4 (finalisasi): helper jenis racikan, rework, bahan tambahan lewat PIC Bahan, retur ----
+const QP = "/api/production-planning/qc/runs";
+const AFTER_FOUNDATION_ONLY = { foundation: { action: "REPLACE", system: "BONNELL", material: { kind: "MANUAL", text: "Pocket spring 25 cm" } }, layers: [] };
+async function picBahan(w, runId) {
+  const u = await createTestUser({ roles: ["PRODUCTION_WORKER"] }); const pic = { ...u, api: makeClient(server.baseUrl, u.token) };
+  const op = await testPrisma.productionOperator.create({ data: { userId: pic.user.id, primaryWorkCenterId: w.wc } });
+  ok(await w.lead.api.post(`${V2}/runs/${runId}/build/material-operator`, { operatorId: op.id, expectedRevision: (await card(w, runId)).revision }, key("pic-as")));
+  return pic;
+}
+async function qcFail(w, runId, { stageCode = null, note = "Tengah masih agak turun" } = {}) {
+  const det = (await w.qc.api.get(`${QP}/${runId}`)).body; const gate = det.stages.find((s) => s.isQcGate);
+  const pre = det.stages.filter((s) => !s.isQcGate && s.order < gate.order);
+  const stage = stageCode ? pre.find((s) => s.code === stageCode) : pre.at(-1);
+  assert.ok(stage, `tahap rework ${stageCode} tidak ada: ${pre.map((s) => s.code)}`);
+  const r = await w.qc.api.post(`${QP}/${runId}/inspect`, { expectedRevision: (await card(w, runId)).revision, result: "FAIL", photoUrls: ["/media/job-photos/p6.jpg"], referenceWeightKg: 75, fitVerdict: "TERLALU_EMPUK", note, reworkStageId: stage.id }, key(`qcfail-${++seq}`));
+  assert.equal(r.status, 200, JSON.stringify(r.body)); return r;
+}
+const qcPass = async (w, runId) => w.qc.api.post(`${QP}/${runId}/inspect`, { expectedRevision: (await card(w, runId)).revision, result: "PASS", photoUrls: ["/media/job-photos/p6.jpg"], referenceWeightKg: 60, fitVerdict: "PAS", note: "lulus uji" }, key(`qcpass-${++seq}`));
+const queueSections = async (w, unitId) => (await w.qc.api.get(`${V2}/component-notes/qc-queue`)).body.items.filter((i) => i.unitId === unitId).map((i) => i.section);
+const reworkReq = (who, runId, rev, lines, k) => who.api.post(`${V2}/runs/${runId}/build/rework-material`, { expectedRevision: rev, lines }, k || key(`rw-${++seq}`));
+const issueMoves = (unitId) => testPrisma.stockMovement.count({ where: { unitId, type: "ISSUE" } });
+const Kinds = [
+  { name: "fondasi + lapisan", service: "UPG_FONDASI_LAPISAN", foundation: true, layers: true },
+  { name: "hanya fondasi", service: "UPG_FONDASI", foundation: true, layers: false },
+  { name: "hanya lapisan", service: "UPG_LAPISAN", foundation: false, layers: true },
+];
+
+test("Fase 4: TIGA jenis racikan (fondasi+lapisan, hanya fondasi, hanya lapisan) — tiap jenis wajib melewati hasil aktual + uji QC sebelum Meja menyerahkan; tanpa celah satu modul; stok tidak berubah", async () => {
   const w = await world();
-  const { unit, run } = await toModuleStart(w);
-  ok(await step(w, w.nadya, run.id, 6, { payload: { note: "Fondasi dipasang", materials: [{ materialId: w.fondasi.id, qty: 1 }] }, media: await media(w.nadya, run.id, "v") }));
-  await PT.foundationAfter(server, w.qc, run.id);
-  await PT.afterRecord(server, w.nadya, run.id);
-  ok(await step(w, w.nadya, run.id, 7, { payload: { materials: [{ materialId: w.lapisan.id, qty: 2 }] }, media: await media(w.nadya, run.id, "i") }));
+  for (const k of Kinds) {
+    const { unit, run, startStep } = await toModuleStart(w, { service: k.service });
+    const s0 = await stockCounts(unit.id);
+    let c = await card(w, run.id);
+    assert.deepEqual([c.assembly.applicable, c.assembly.hasFoundation, c.assembly.hasLayers, c.assembly.round], [true, k.foundation, k.layers, 1], k.name);
+    assert.equal(startStep, k.foundation ? 6 : 7, `${k.name}: modul pertama`);
+    const afterOver = k.foundation && !k.layers ? AFTER_FOUNDATION_ONLY : {};
+    if (k.foundation) {
+      ok(await step(w, w.nadya, run.id, 6, { payload: { note: "Fondasi dipasang", materials: [{ materialId: w.fondasi.id, qty: 1 }] }, media: await media(w.nadya, run.id, "v") }));
+      c = await card(w, run.id);
+      assert.deepEqual([c.next.action, c.next.wait, c.next.actor], ["WAIT", "FOUNDATION_NEW_TEST_PENDING", "QC"], `${k.name}: tunggu uji fondasi baru`);
+      assert.deepEqual(await queueSections(w, unit.id), ["FOUNDATION_TEST_AFTER"]);
+      const early = await step(w, w.nadya, run.id, 8, {}); assert.equal(early.status, 409, `${k.name}: serah dini ditolak`);
+      assert.equal(c.assembly.current.foundationTest?.ok ?? false, false);
+      await PT.foundationAfter(server, w.qc, run.id);
+    } else {
+      assert.equal((await queueSections(w, unit.id)).includes("FOUNDATION_TEST_AFTER"), false, "hanya lapisan: tidak menunggu uji fondasi baru");
+      assert.equal(c.assembly.hasFoundation, false);
+    }
+    // hasil aktual susunan wajib sebelum modul terakhir dianggap selesai
+    c = await card(w, run.id);
+    if (k.layers) {
+      assert.deepEqual([c.next.action, c.next.gated, c.next.layersAfterRequired], ["EVIDENCE", true, true], `${k.name}: bukti lapisan menuntut hasil aktual`);
+      const noAfter = await step(w, w.nadya, run.id, 7, { payload: { materials: [{ materialId: w.lapisan.id, qty: 2 }] }, media: await media(w.nadya, run.id, "i") }); assert.equal(noAfter.body.code, "STEP_AFTER_REQUIRED");
+    } else {
+      assert.deepEqual([c.next.action, c.next.wait, c.next.actor], ["WAIT", "AFTER_PENDING", "TABLE"], "hanya fondasi: hasil aktual dulu");
+      assert.equal((await step(w, w.nadya, run.id, 8, {})).status, 409);
+    }
+    assert.equal((await PT.afterRecord(server, w.nadya, run.id, afterOver)).status, 201);
+    if (k.layers) ok(await step(w, w.nadya, run.id, 7, { payload: { materials: [{ materialId: w.lapisan.id, qty: 2 }] }, media: await media(w.nadya, run.id, "i") }));
+    c = await card(w, run.id);
+    assert.deepEqual([c.next.action, c.next.wait, c.next.actor, c.next.stepNo], ["WAIT", "FINISHED_TEST_PENDING", "QC", 8], `${k.name}: tunggu uji kasur jadi`);
+    assert.deepEqual(await queueSections(w, unit.id), ["WHOLE_TEST_AFTER"]);
+    const skip = await step(w, w.nadya, run.id, 8, { payload: { verdict: "PAS", testerWeightKg: 85 }, media: await media(w.nadya, run.id, "v") }); assert.equal(skip.body.code, "STEP_WAITING_FINISHED_TEST_PENDING", "uji tekstur Meja tidak menggantikan uji QC");
+    await PT.wholeAfter(server, w.qc, run.id);
+    c = await card(w, run.id); assert.deepEqual([c.next.action, c.next.continueOnly, c.next.qcRecorded], ["TEST", true, true]);
+    ok(await step(w, w.nadya, run.id, 8, {}));
+    c = await card(w, run.id); assert.equal(c.next.wait, "AWAITING_QC", k.name);
+    assert.deepEqual([c.assembly.current.after.ok, c.assembly.current.wholeTest.ok, c.assembly.current.foundationTest?.ok ?? null], [true, true, k.foundation ? true : null], "ketiga fakta putaran ini lengkap");
+    assert.deepEqual(await stockCounts(unit.id), s0, `${k.name}: rakit/uji/hasil aktual tidak menambah stok, BOM, reservasi, retur`);
+    const pass = await qcPass(w, run.id); assert.equal(pass.status, 200, `${k.name}: ${JSON.stringify(pass.body)}`);
+    assert.deepEqual((await testPrisma.qualityInspection.findMany({ where: { runId: run.id }, orderBy: { version: "asc" } })).map((i) => i.result), ["PASS"]);
+  }
+});
+
+// Rework (QC GAGAL) dengan permintaan bahan lewat PIC Bahan, serah Gudang (pick yang ada), replay/konflik, dan retur tepat sekali.
+async function reworkScenario({ target, kindService = "UPG_FONDASI_LAPISAN" }) {
+  const w = await world();
+  const { unit, run } = await toModuleStart(w, { service: kindService, corner: true });
+  const fondasiRework = target === "FONDASI";
+  const pic = await picBahan(w, run.id); // PIC Bahan ditugaskan sebelum pemakaian tercatat (aturan yang ada: tidak bisa ditetapkan setelah pemakaian masuk bukti)
+  // jalur PIC Bahan: pemakaian aktual dicatat PIC Bahan (snapshot kumulatif, versi terbaru = keadaan sekarang); bukti Meja tidak memuat bahan
+  const usage = async (materials) => pic.api.post(`${V2}/runs/${run.id}/build/materials`, { expectedRevision: (await card(w, run.id)).revision, materials }, key(`use-${++seq}`));
+  ok(await usage([{ materialId: w.fondasi.id, qty: 1 }, { materialId: w.lapisan.id, qty: 2 }]));
+  // putaran 1 lengkap -> QC GAGAL (alasan + tahap rework)
+  ok(await step(w, w.nadya, run.id, 6, { payload: { note: "Fondasi dipasang" }, media: await media(w.nadya, run.id, "v") }));
+  await PT.foundationAfter(server, w.qc, run.id); await PT.afterRecord(server, w.nadya, run.id);
+  ok(await step(w, w.nadya, run.id, 7, { payload: {}, media: await media(w.nadya, run.id, "i") }));
   await PT.wholeAfter(server, w.qc, run.id, { complaintMatch: "SEBAGIAN", feelNote: "Tengah masih agak turun", wholeDropCm: 2 });
   ok(await step(w, w.nadya, run.id, 8, {}));
-  const Qp = "/api/production-planning/qc/runs";
-  const det = (await w.qc.api.get(`${Qp}/${run.id}`)).body; const gate = det.stages.find((s) => s.isQcGate); const reworkStage = det.stages.filter((s) => !s.isQcGate && s.order < gate.order).at(-1);
-  const rev = (await card(w, run.id)).revision;
-  const fail = await w.qc.api.post(`${Qp}/${run.id}/inspect`, { expectedRevision: rev, result: "FAIL", photoUrls: ["/media/job-photos/p6.jpg"], referenceWeightKg: 75, fitVerdict: "TERLALU_EMPUK", note: "Tengah masih agak turun", reworkStageId: reworkStage.id }, key("qcfail"));
-  assert.equal(fail.status, 200, JSON.stringify(fail.body)); assert.equal(fail.body.nextPhase, "PROCESS");
-  const s0 = await stockCounts(unit.id);
-  // rework: Meja mulai lagi; catatan LAMA (AFTER v1, uji kasur jadi v1) tidak cukup — gerbang meminta catatan baru
-  let c = await card(w, run.id); assert.equal(c.next.action, "START", JSON.stringify(c.next));
+  await qcFail(w, run.id, { stageCode: fondasiRework ? "foundation_upgrade" : null });
+  const s0 = await stockCounts(unit.id); const issue0 = await issueMoves(unit.id);
+
+  // putaran 2 terbuka: riwayat putaran 1 tetap terlihat, fakta putaran ini belum ada
+  let c = await card(w, run.id);
+  assert.deepEqual([c.assembly.round, c.assembly.rounds.length, c.assembly.rework.open, c.assembly.rework.issue], [2, 1, true, null]);
+  assert.equal(c.assembly.rounds[0].round, 1);
+  assert.deepEqual([c.assembly.current.after.ok, c.assembly.current.wholeTest.ok], [false, false], "catatan lama (putaran 1) bukan hasil putaran terbaru");
+  assert.equal(c.assembly.current.foundationTest.ok, true, "uji fondasi putaran 1 berlaku sampai fondasi dirakit ulang");
+
+  // permintaan bahan rework: hanya PIC Bahan yang DITUGASKAN
+  const ferdyU = await createTestUser({ roles: ["PRODUCTION_WORKER"] }); const ferdy = { ...ferdyU, api: makeClient(server.baseUrl, ferdyU.token) };
+  await testPrisma.productionOperator.create({ data: { userId: ferdy.user.id, primaryWorkCenterId: w.wc } });
+  const lines = fondasiRework ? [{ materialId: w.fondasi.id, qty: 1 }, { materialId: w.lapisan.id, qty: 2 }] : [{ materialId: w.lapisan.id, qty: 2 }];
+  c = await card(w, run.id);
+  for (const [who, tag] of [[w.lead, "lead"], [w.nadya, "gudang-meja"], [ferdy, "pic-lain"], [w.qc, "qc"]]) {
+    const r = await reworkReq(who, run.id, c.revision, lines); assert.equal(r.status, 403, `${tag}: ${JSON.stringify(r.body)}`);
+  }
+  assert.equal(await testPrisma.materialIssue.count({ where: { reworkInspectionId: { not: null } } }), 0, "penolakan tanpa efek");
+  assert.equal((await reworkReq(pic, run.id, c.revision, [{ materialId: w.lapisan.id, qty: 0 }])).status, 400, "jumlah harus > 0");
+  const rk = key("rw-ok");
+  const req = await reworkReq(pic, run.id, c.revision, lines, rk); assert.equal(req.status, 201, JSON.stringify(req.body));
+  const issueId = req.body.supplementalIssue.issueId; assert.ok(issueId);
+  const replay = await reworkReq(pic, run.id, c.revision, lines, rk); assert.equal(replay.body.replayed, true, "replay idempoten"); assert.equal(replay.body.supplementalIssue.issueId, issueId);
+  const diff = await reworkReq(pic, run.id, c.revision, [{ materialId: w.lapisan.id, qty: 9 }], rk); assert.equal(diff.status, 409); assert.equal(diff.body.code, "IDEMPOTENCY_CONFLICT");
+  const c1 = await card(w, run.id);
+  const stale = await reworkReq(pic, run.id, c.revision, lines); assert.equal(stale.status, 409, "revisi basi ditolak");
+  const dupe = await reworkReq(pic, run.id, c1.revision, lines); assert.equal(dupe.status, 409); assert.equal(dupe.body.code, "QC_REWORK_MATERIAL_EXISTS", "satu permintaan per inspeksi");
+  assert.equal(await testPrisma.materialIssue.count({ where: { reworkInspectionId: { not: null }, status: { not: "CANCELLED" } } }), 1);
+  assert.equal(await issueMoves(unit.id), issue0, "meminta bahan TIDAK mengeluarkan stok (Gudang yang menyerahkan)");
+  assert.equal(c1.assembly.rework.issue.issueId, issueId);
+
+  // sebelum Gudang menyerahkan bahan tambahan, rework belum bisa dimulai Meja dan pemakaian tambahan belum bisa dicatat
+  assert.deepEqual([c1.next.action, c1.next.wait, c1.next.actor], ["WAIT", "MATERIAL_NOT_READY", "WAREHOUSE"], JSON.stringify(c1.next));
+  const cumulative = fondasiRework ? [{ materialId: w.fondasi.id, qty: 2 }, { materialId: w.lapisan.id, qty: 3 }] : [{ materialId: w.fondasi.id, qty: 1 }, { materialId: w.lapisan.id, qty: 3 }];
+  const overEarly = await usage(cumulative); assert.equal(overEarly.status, 422); assert.equal(overEarly.body.code, "STEP_MATERIAL_OVER_ISSUED", "bahan tambahan belum diserahkan Gudang -> belum bisa dicatat terpakai");
+  // Gudang menyerahkan memakai command pick yang ada: stok keluar tepat sekali
+  const pk = await pick(w, issueId); assert.ok(pk);
+  assert.equal(await issueMoves(unit.id), issue0 + lines.length, "satu pergerakan ISSUE per baris tambahan");
+  const pk2 = await w.nadya.api.post(`${P}/material-requests/${issueId}/pick`, { expectedRevision: 1 }, key(`pk2-${++seq}`)); assert.notEqual(pk2.status, 200, "pick ulang ditolak");
+  assert.equal(await issueMoves(unit.id), issue0 + lines.length, "tidak ada stok keluar ganda");
+  c = await card(w, run.id); assert.equal(c.assembly.rework.issue.status, "ISSUED");
+  assert.equal(c.next.action, "START", JSON.stringify(c.next));
   ok(await step(w, w.nadya, run.id, c.next.stepNo, {}));
-  c = await card(w, run.id); assert.deepEqual([c.next.action, c.next.gated, c.next.layersAfterRequired], ["EVIDENCE", true, true], "hasil aktual harus diperbarui setelah putusan gagal");
-  const old7 = await step(w, w.nadya, run.id, 7, { payload: { materials: [{ materialId: w.lapisan.id, qty: 1 }] }, media: await media(w.nadya, run.id, "i") }); assert.equal(old7.body.code, "STEP_AFTER_REQUIRED");
-  assert.equal((await PT.afterRecord(server, w.nadya, run.id, { layers: [{ action: "REPLACE", material: { kind: "MANUAL", text: "Busa HD baru lebih tebal" }, thicknessCm: 6 }] }, { expectedVersion: 1, reason: "Perbaikan setelah QC gagal" })).status, 201);
-  ok(await step(w, w.nadya, run.id, 7, { payload: { materials: [{ materialId: w.lapisan.id, qty: 1 }] }, media: await media(w.nadya, run.id, "i") }));
-  c = await card(w, run.id); assert.deepEqual([c.next.action, c.next.wait], ["WAIT", "FINISHED_TEST_PENDING"], "uji kasur jadi lama (sebelum QC gagal) tidak dipakai lagi");
-  const tooSoon = await step(w, w.nadya, run.id, 8, {}); assert.equal(tooSoon.status, 409);
+  const late = await reworkReq(pic, run.id, (await card(w, run.id)).revision, lines); assert.equal(late.status, 409); assert.match(late.body.code, /^QC_(NOT_IN_REWORK|REWORK_ALREADY_STARTED)$/, "hanya sebelum rework dimulai");
+  c = await card(w, run.id);
+  const lap = c.issuedMaterials.find((i) => i.materialId === w.lapisan.id);
+  assert.deepEqual([lap.qty, lap.usedQty, lap.remainingQty], [4, 2, 2], "diserahkan 2+2, terpakai 2, sisa 2 (kumulatif lintas putaran)");
+
+  const overAll = await usage([{ materialId: w.fondasi.id, qty: 1 }, { materialId: w.lapisan.id, qty: 5 }]); assert.equal(overAll.status, 422, "melebihi total diserahkan ditolak");
+  ok(await usage(cumulative));
+  if (fondasiRework) {
+    ok(await step(w, w.nadya, run.id, 6, { payload: { note: "Fondasi baru" }, media: await media(w.nadya, run.id, "v") }));
+    c = await card(w, run.id); assert.equal(c.next.wait, "FOUNDATION_NEW_TEST_PENDING", "fondasi dirakit ulang -> uji fondasi baru wajib ulang");
+    assert.equal(c.assembly.current.foundationTest.ok, false);
+    assert.equal((await PT.foundationAfter(server, w.qc, run.id, {}, { expectedVersion: 1, reason: "Uji ulang setelah fondasi diperbaiki" })).status, 201);
+  }
+  assert.equal((await PT.afterRecord(server, w.nadya, run.id, { layers: [{ action: "REPLACE", material: { kind: "MANUAL", text: "Busa HD lebih tebal" }, thicknessCm: 6 }] }, { expectedVersion: 1, reason: "Perbaikan setelah QC gagal" })).status, 201);
+  ok(await step(w, w.nadya, run.id, 7, { payload: {}, media: await media(w.nadya, run.id, "i") }));
+  c = await card(w, run.id); assert.deepEqual([c.next.wait, c.next.stepNo], ["FINISHED_TEST_PENDING", 8], "uji kasur jadi putaran 1 tidak dipakai");
+  assert.equal((await step(w, w.nadya, run.id, 8, {})).status, 409);
   await PT.wholeAfter(server, w.qc, run.id, { complaintMatch: "SESUAI", feelNote: "Tengah kokoh", wholeDropCm: 1 }, { expectedVersion: 1, reason: "Uji ulang setelah perbaikan" });
   ok(await step(w, w.nadya, run.id, 8, {}));
   c = await card(w, run.id); assert.equal(c.next.wait, "AWAITING_QC");
-  const rev2 = c.revision;
-  const pass = await w.qc.api.post(`${Qp}/${run.id}/inspect`, { expectedRevision: rev2, result: "PASS", photoUrls: ["/media/job-photos/p6.jpg"], referenceWeightKg: 60, fitVerdict: "PAS", note: "lulus uji" }, key("qcpass"));
-  assert.equal(pass.status, 200, JSON.stringify(pass.body));
-  const insp = await testPrisma.qualityInspection.findMany({ where: { runId: run.id }, orderBy: { version: "asc" } }); assert.deepEqual(insp.map((i) => i.result), ["FAIL_REWORK", "PASS"], "inspeksi lama immutable");
-  const n = await notesOf(w.qc, unit.id); assert.deepEqual([n.sections.AFTER.version, n.sections.WHOLE_TEST_AFTER.version, n.sections.FOUNDATION_TEST_AFTER.version], [2, 2, 1], "riwayat berversi; uji fondasi baru tidak perlu diulang bila fondasi tidak dirakit ulang");
-  assert.equal(n.sections.WHOLE_TEST_AFTER.correctionReason, "Uji ulang setelah perbaikan");
-  assert.deepEqual(await stockCounts(unit.id), s0, "rework: catatan & uji tidak menambah stock movement/BOM/reservasi/retur");
-});
+  assert.deepEqual([c.assembly.round, c.assembly.current.foundationTest.ok, c.assembly.current.after.ok, c.assembly.current.wholeTest.ok], [2, true, true, true]);
+  const pass = await qcPass(w, run.id); assert.equal(pass.status, 200, JSON.stringify(pass.body));
+  assert.deepEqual((await testPrisma.qualityInspection.findMany({ where: { runId: run.id }, orderBy: { version: "asc" } })).map((i) => i.result), ["FAIL_REWORK", "PASS"], "inspeksi lama immutable");
+  const n = await notesOf(w.qc, unit.id);
+  assert.deepEqual([n.sections.AFTER.version, n.sections.WHOLE_TEST_AFTER.version, n.sections.FOUNDATION_TEST_AFTER.version], [2, 2, fondasiRework ? 2 : 1], "riwayat berversi tetap tersimpan");
+  assert.equal(await testPrisma.unitComponentEntry.count({ where: { unitId: unit.id, section: "AFTER" } }), 2);
+
+  // selesai lewat Corner -> retur sisa TEPAT SEKALI (lapisan diserahkan 2+2, terpakai 2+1 = sisa 1; fondasi habis)
+  ok(await step(w, w.nadya, run.id, 9, { payload: { note: "siap dibungkus" }, media: await media(w.nadya, run.id, "i") }));
+  ok(await step(w, w.corner, run.id, 10, { payload: { mattressStyle: "PILLOWTOP", fabricSpec: "Knitting putih quilting", borderColor: "Abu-abu tua" } }));
+  ok(await step(w, w.corner, run.id, 11, { payload: { checklist: { jahitan: true, list: true, resleting: true, kebersihan: true } }, media: await media(w.nadya, run.id, "i", "v") }));
+  ok(await step(w, w.corner, run.id, 12, { payload: { confirm: true }, media: await media(w.nadya, run.id, "i") }));
+  const rets = await testPrisma.productionMaterialReturn.findMany({ where: { runId: run.id } });
+  assert.equal(rets.length, 1, JSON.stringify(rets.map((r) => [r.materialId, Number(r.qty)]))); assert.deepEqual([rets[0].materialId, Number(rets[0].qty), rets[0].status], [w.lapisan.id, 1, "PENDING"]);
+  const rkey = key("ret"); const recv = await w.nadya.api.post(`${V2}/material-returns/${rets[0].id}/receive`, { expectedRevision: rets[0].revision }, rkey); assert.equal(recv.status, 200, JSON.stringify(recv.body));
+  const again = await w.nadya.api.post(`${V2}/material-returns/${rets[0].id}/receive`, { expectedRevision: rets[0].revision }, rkey); assert.equal(again.body.replayed, true, "replay retur idempoten");
+  const twice = await w.nadya.api.post(`${V2}/material-returns/${rets[0].id}/receive`, { expectedRevision: rets[0].revision + 1 }, key("ret2")); assert.equal(twice.status, 409); assert.equal(twice.body.code, "RETURN_ALREADY_RECEIVED");
+  assert.equal(await testPrisma.stockMovement.count({ where: { unitId: unit.id, type: "RETURN" } }), 1, "retur masuk stok tepat sekali");
+  assert.equal(await issueMoves(unit.id), issue0 + lines.length, "total stok keluar = putaran 1 + bahan tambahan, tanpa ganda");
+  void s0;
+}
+test("Fase 4: rework LAPISAN — QC gagal -> PIC Bahan minta bahan -> Gudang serah (pick) -> hasil aktual & uji kasur jadi ulang -> lulus; replay/konflik; stok & retur tepat sekali", async () => { await reworkScenario({ target: "LAPISAN" }); });
+test("Fase 4: rework FONDASI — uji fondasi baru wajib ulang bersama hasil aktual & uji kasur jadi; bahan tambahan fondasi+lapisan lewat PIC Bahan; stok & retur tepat sekali", async () => { await reworkScenario({ target: "FONDASI" }); });
 
 test("Fase 4: Run lama (NULL) dan V1 TIDAK terkunci gerbang perakitan; V1 -> V2 hanya lewat penerapan eksplisit; adaptasi/SEWA/NEW tidak terkena", async () => {
   const w = await world();

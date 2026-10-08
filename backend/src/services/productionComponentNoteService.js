@@ -90,7 +90,7 @@ export async function loadAssemblyFacts(client, { unitId, runId, step6At = null,
   const fta = latest.FOUNDATION_TEST_AFTER; const aft = latest.AFTER; const wta = latest.WHOLE_TEST_AFTER;
   const ftaOk = !!fta && (step6At == null || t(fta) > step6At);
   const aftOk = !!aft && t(aft) > Math.max(t(fta) ?? 0, failAt);
-  const wtaOk = !!wta && t(wta) > Math.max(step7At ?? 0, failAt);
+  const wtaOk = !!wta && t(wta) > Math.max(step7At ?? 0, step6At ?? 0, failAt); // putaran ini: lebih baru dari bukti modul terakhir (fondasi/lapisan) DAN putusan gagal terakhir
   return {
     foundationTestAfter: fta ? { version: fta.version, ok: ftaOk, mediaUrls: mediaUrls(fta) } : null,
     after: aft ? { version: aft.version, ok: aftOk } : null,

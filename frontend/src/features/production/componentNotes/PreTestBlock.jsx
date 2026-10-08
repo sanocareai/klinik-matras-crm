@@ -3,7 +3,7 @@ import { NOT_RECORDED } from "./componentNotesModel.js";
 
 // Pengujian awal (fase 2 Produksi LAYANAN) — TIGA pengukuran ditampilkan TERPISAH: kasur utuh, lapisan, fondasi. Tidak dijumlahkan dan tidak ada kategori otomatis; data kosong = "Belum dicatat".
 // Satu komponen dipakai Meja, Dokumentasi, Unit 360, dan laporan (data dari satu endpoint Catatan Komponen — tanpa input ulang).
-export function PreTestBlock({ measurements, compact = false }) {
+export function PreTestBlock({ measurements, assembly = null, compact = false }) {
   const m = measurements;
   if (!m || !(m.recorded?.whole || m.recorded?.foundation || m.recorded?.layers || m.recorded?.wholeAfter || m.recorded?.foundationAfter)) return null;
   const w = m.whole; const f = m.foundation; const l = m.layers;
@@ -40,8 +40,9 @@ export function PreTestBlock({ measurements, compact = false }) {
       </Row>
       {(m.recorded?.foundationAfter || m.recorded?.wholeAfter) && (
         <>
+          {assembly?.applicable && assembly.round > 1 && <p className="m-0 text-[12px] text-orange" data-testid="posttest-round-note">Putaran {assembly.round}: hasil uji dari putaran sebelumnya ditandai sampai diuji ulang.</p>}
           <p className="m-0 pt-1 text-[13px] font-bold text-ink">Uji setelah perbaikan</p>
-          <Row label="Uji fondasi baru (PIC QC)" testid="posttest-foundation">
+          <Row label={`Uji fondasi baru (PIC QC)${assembly?.applicable && m.foundationAfter && !assembly.current?.foundationTest?.ok ? " — putaran sebelumnya" : ""}`} testid="posttest-foundation">
             {m.foundationAfter ? (
               <>
                 <p className="m-0">{[m.foundationAfter.systemLabel, m.foundationAfter.material].filter(Boolean).join(" · ")}</p>
@@ -51,7 +52,7 @@ export function PreTestBlock({ measurements, compact = false }) {
               </>
             ) : <p className="m-0 text-ink3">{NOT_RECORDED}</p>}
           </Row>
-          <Row label="Uji kasur jadi (PIC QC)" testid="posttest-whole">
+          <Row label={`Uji kasur jadi (PIC QC)${assembly?.applicable && m.wholeAfter && !assembly.current?.wholeTest?.ok ? " — putaran sebelumnya" : ""}`} testid="posttest-whole">
             {m.wholeAfter ? (
               <>
                 <p className="m-0">{m.wholeAfter.complaintMatchLabel}{m.wholeAfter.complaintNote ? ` — ${m.wholeAfter.complaintNote}` : ""}</p>

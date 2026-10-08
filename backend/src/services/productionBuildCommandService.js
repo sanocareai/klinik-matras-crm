@@ -17,6 +17,7 @@ import { bumpRunRevisionInTx, loadRunForWrite, mayExecuteAnyUnit } from "./produ
 import { assertExpectedRevision, assertIdempotencyKey, cornerDecisionLocked, issuedQtyByMaterial, loadStepContext } from "./productionStepCommandService.js";
 import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState } from "./v2FeatureFlags.js";
 import { setPlannedBOM } from "./productionPlanningCommandService.js";
+import { requestReworkMaterial } from "./productionQcHandoffCommandService.js";
 
 const hash = (value) => createHash("sha256").update(JSON.stringify(value ?? null)).digest("hex");
 function buildError(message, statusCode, code, details) {
@@ -234,6 +235,25 @@ export async function setBuildPlannedBOM(prisma, { runId, actorId, canExecuteAny
   if (!plan) throw buildError("Pekerjaan ini belum punya rencana produksi", 404, "BUILD_PLAN_NOT_FOUND");
   return setPlannedBOM(prisma, {
     planId: plan.id, actorId, idempotencyKey, expectedRevision, lines,
+    authorize: async (tx) => {
+      if (canExecuteAny) return;
+      const operator = actorId ? await tx.productionOperator.findUnique({ where: { userId: actorId }, select: { id: true, active: true } }) : null;
+      const setting = await tx.productionRunBuildSetting.findUnique({ where: { runId }, select: { materialOperatorId: true } });
+      if (!setting?.materialOperatorId) throw buildError("Pekerjaan ini belum punya PIC Bahan — Lead perlu menetapkannya lebih dulu", 403, "BUILD_NO_MATERIAL_OPERATOR");
+      if (!operator || !operator.active || operator.id !== setting.materialOperatorId) throw buildError("Anda bukan PIC Bahan yang ditugaskan pada pekerjaan ini", 403, "BUILD_MATERIAL_OPERATOR_MISMATCH");
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 5. Permintaan bahan REWORK oleh PIC Bahan yang DITUGASKAN (Fase 4), setelah putusan QC gagal dan sebelum rework dimulai. Memakai command QC yang SAMA (requestReworkMaterial: reservasi
+//    + Material Issue tambahan READY_TO_PICK, satu permintaan per inspeksi, idempoten, revisi Run); Gudang menyerahkan lewat pick yang sudah ada (stok keluar tepat sekali di sana).
+//    Tidak menulis stok di sini; hanya aturan akses (PIC Bahan per pekerjaan atau ADMIN/OWNER lewat PRODUCTION_EXECUTE_ANY) yang berbeda.
+// ---------------------------------------------------------------------------
+export async function requestBuildReworkMaterial(prisma, { runId, actorId, canExecuteAny = false, idempotencyKey, expectedRevision, lines }) {
+  if (!runId) throw buildError("runId wajib diisi", 400, "BUILD_RUN_REQUIRED");
+  return requestReworkMaterial(prisma, {
+    runId, actorId, idempotencyKey, expectedRevision, lines,
     authorize: async (tx) => {
       if (canExecuteAny) return;
       const operator = actorId ? await tx.productionOperator.findUnique({ where: { userId: actorId }, select: { id: true, active: true } }) : null;
