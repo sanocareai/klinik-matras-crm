@@ -1868,6 +1868,18 @@ export const api = {
   // Faktur supplier atas PO (Fase 2): pencocokan per baris. Persetujuan lewat approveFinanceBill(id, { catatanTinjauanHarga }).
   getPenagihanPurchaseOrder: (id) => request(`/finance/purchase-orders/${id}/penagihan`),
   createFakturPurchaseOrder: (id, data, idempotencyKey = mutationKey("fak")) => request(`/finance/purchase-orders/${id}/faktur`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  // PDF Purchase Order (sistem dokumen SANSS yang sama dengan invoice). File, bukan JSON: di-fetch manual dengan Bearer (pola getOrderInvoicePdf).
+  getPurchaseOrderPdf: async (id) => {
+    const res = await fetch(BASE + `/finance/purchase-orders/${id}/pdf`, { headers: authHeaders() });
+    if (res.status === 401) { handleUnauthorized(); throw new Error("Sesi berakhir, silakan login kembali"); }
+    if (!res.ok) {
+      let msg = "Gagal membuat PDF Purchase Order";
+      try { msg = (await res.json()).error || msg; } catch {}
+      throw new Error(msg);
+    }
+    const cd = res.headers.get("Content-Disposition") || "";
+    return { blob: await res.blob(), namaFile: cd.match(/filename="([^"]+)"/)?.[1] || "purchase-order.pdf" };
+  },
   getFakturPurchaseOrder: (billId) => request(`/finance/purchase-orders/faktur/${billId}`),
   updateFakturPurchaseOrder: (billId, data) => request(`/finance/purchase-orders/faktur/${billId}`, { method: "PATCH", body: JSON.stringify(data) }),
   // Jejak biaya bahan per unit (baca-saja). Finance: nominal penuh; Unit 360: nominal hanya bila punya izin harga (server yang memutuskan).

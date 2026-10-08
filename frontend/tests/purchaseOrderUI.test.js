@@ -212,3 +212,17 @@ test("dialog persetujuan faktur beda harga menampilkan NOMINAL selisih total, ar
   assert.ok(h.includes("nilai menurut harga PO"));
   assert.ok(h.includes("formatUang(Math.abs(ev.selisihHargaTotal))"));
 });
+
+// ── PDF Purchase Order: tombol di detail PO (Finance) + API file ──
+test("detail PO: tombol Pratinjau PDF & Unduh PDF memanggil api.getPurchaseOrderPdf (rute finance, Bearer, nama berkas dari header); tidak memanggil rute Gudang", async () => {
+  const fsx = await import("node:fs"); const pathx = await import("node:path"); const { fileURLToPath } = await import("node:url");
+  const dirx = pathx.dirname(fileURLToPath(import.meta.url));
+  const halaman = fsx.readFileSync(pathx.join(dirx, "../src/pages/finance/FinancePurchaseOrders.jsx"), "utf8");
+  const apiSrc = fsx.readFileSync(pathx.join(dirx, "../src/api.js"), "utf8");
+  assert.match(halaman, /data-testid="po-pdf-lihat"/);
+  assert.match(halaman, /data-testid="po-pdf-unduh"/);
+  assert.match(halaman, /api\.getPurchaseOrderPdf\(id\)/);
+  assert.match(apiSrc, /getPurchaseOrderPdf: async \(id\) =>/);
+  assert.match(apiSrc, /\/finance\/purchase-orders\/\$\{id\}\/pdf/);
+  assert.match(apiSrc, /Content-Disposition/);
+});

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Plus, ClipboardList, Trash2, Pencil, Ban, CheckCircle2, ListChecks, FileText } from "lucide-react";
+import { Plus, ClipboardList, Trash2, Pencil, Ban, CheckCircle2, ListChecks, FileText, Download, Eye } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -324,6 +324,18 @@ function ModalDetailPO({ id, onClose, onChanged, onUbah }) {
   }
 
   const aksi = po ? aksiPO(po) : null;
+
+  // Pratinjau (tab baru) dan unduh PDF — murni baca; pola sama dengan Invoice Sales.
+  const [sibukPdf, setSibukPdf] = useState(null);
+  async function bukaPdf(unduh) {
+    setSibukPdf(unduh ? "unduh" : "lihat"); setGalat("");
+    try {
+      const { blob, namaFile } = await api.getPurchaseOrderPdf(id);
+      const url = URL.createObjectURL(blob);
+      if (unduh) { const a = document.createElement("a"); a.href = url; a.download = namaFile; a.click(); setTimeout(() => URL.revokeObjectURL(url), 5000); }
+      else { window.open(url, "_blank"); setTimeout(() => URL.revokeObjectURL(url), 30000); }
+    } catch (e) { setGalat(e.message || "Gagal membuat PDF"); } finally { setSibukPdf(null); }
+  }
   return (
     <>
       <Modal
@@ -336,6 +348,8 @@ function ModalDetailPO({ id, onClose, onChanged, onUbah }) {
             <div className="flex w-full flex-col gap-2">
               {galat && <p role="alert" data-testid="galat-detail-po" className="rounded-lg bg-redbg px-3 py-2 text-[12.5px] leading-snug text-red">{galat}</p>}
               <div className="flex flex-wrap items-center justify-end gap-2">
+                <Button variant="neutral" onClick={() => bukaPdf(false)} disabled={!!sibukPdf} data-testid="po-pdf-lihat" className="max-sm:min-h-11 max-sm:px-4"><Eye size={14} /> {sibukPdf === "lihat" ? "Membuat…" : "Pratinjau PDF"}</Button>
+                <Button variant="neutral" onClick={() => bukaPdf(true)} disabled={!!sibukPdf} data-testid="po-pdf-unduh" className="max-sm:min-h-11 max-sm:px-4"><Download size={14} /> {sibukPdf === "unduh" ? "Membuat…" : "Unduh PDF"}</Button>
                 {["DISETUJUI", "DITERIMA_SEBAGIAN", "SELESAI"].includes(po.status) && <Button variant="neutral" onClick={() => setFaktur({})} className="max-sm:min-h-11 max-sm:px-4"><FileText size={14} /> Catat faktur</Button>}
                 {aksi.batalkan && <Button variant="neutral" onClick={() => setDialog("batal")} className="max-sm:min-h-11 max-sm:px-4"><Ban size={14} /> Batalkan PO</Button>}
                 {aksi.revisi && <Button variant="neutral" onClick={() => setDialog("revisi")} className="max-sm:min-h-11 max-sm:px-4"><ListChecks size={14} /> Revisi jumlah</Button>}
