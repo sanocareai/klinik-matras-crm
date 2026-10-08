@@ -1,10 +1,21 @@
 import "./setup/env.js";
 import test from "node:test";
 import assert from "node:assert/strict";
+import sharp from "sharp";
 import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestUser } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
+
+// Bukti Kelengkapan Standar (7 Okt 2026) — SELALU wajib minimal 1 foto
+// sebelum POST /routes/:id/start bisa sukses (lihat routePrepChecklist.js);
+// tes di file ini soal pod/eksekusi job, kirim 1 foto seadanya saja.
+async function kirimKelengkapan(token, routeId) {
+  const fd = new FormData();
+  fd.append("photos", new Blob([await sharp({ create: { width: 4, height: 4, channels: 3, background: { r: 1, g: 2, b: 3 } } }).jpeg().toBuffer()], { type: "image/jpeg" }), "k.jpg");
+  const res = await fetch(`${server.baseUrl}/api/armada/routes/${routeId}/kelengkapan`, { method: "POST", headers: { Authorization: `Bearer ${token}` }, body: fd });
+  if (res.status !== 201) throw new Error(`gagal kirim kelengkapan fixture rute ${routeId}: ${res.status} ${await res.text()}`);
+}
 
 let server;
 let seq = 0;
@@ -48,6 +59,7 @@ const key = (value) => ({ "Idempotency-Key": `driver-test-${value}-123456` });
 
 test("route start -> pilih stop -> tiba -> POD; double tap idempoten dan dua crew konsisten", async () => {
   const f = await fixture();
+  await kirimKelengkapan(f.driver.token, f.route.id);
   const started = await f.driver.api.post(`/api/armada/routes/${f.route.id}/start`, {
     proofPhotoUrls: ["/media/job-photos/load.jpg"],
   }, key("route-start"));

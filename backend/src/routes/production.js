@@ -26,13 +26,16 @@ import { loadCurrentStageAssignments } from "../services/productionRouting.js";
 import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
 import { PRODUCTION_READER_MODE, loadV2Flags, resolveProductionReaderState } from "../services/v2FeatureFlags.js";
 import { prisma } from "../db.js";
+import { listV1WorkerQueue } from "../services/v1WorkerQueue.js";
 import { notifyReadyForDelivery } from "../services/customerNotifications.js";
+import { DISPLAY_STATUS_UNIT_FILTER, displayStatusCountsOf, displayStatusOfOrder, displayStatusOfUnit, physicalPresenceOf, priorityDisplay } from "../lib/domain/productionDisplay.js";
+import { loadOpenComplaintsByUnit } from "../services/productionComplaints.js";
 
 export const productionRouter = express.Router();
 productionRouter.use(requireAuth);
 
 function handleErr(err, res) {
-  if (err instanceof StageTransitionError) return res.status(err.statusCode).json({ error: err.message });
+  if (err instanceof StageTransitionError) return res.status(err.statusCode).json({ error: err.message, ...(typeof err.code === "string" && /^UNIT_/.test(err.code) ? { code: err.code } : {}) });
   console.error("Production error:", err);
   return res.status(500).json({ error: "Server error: " + err.message });
 }
@@ -201,7 +204,7 @@ productionRouter.post("/units/:id/done", requirePermission(P.UNIT_STAGE_WRITE), 
   try {
     const { photoUrls, note } = req.body;
     const before = await prisma.unit.findUnique({ where: { id: req.params.id }, select: { status: true } });
-    await recordStageDone(req.params.id, { actorId: req.user.id, photoUrls, note });
+    await recordStageDone(req.params.id, { actorId: req.user.id, photoUrls, note, requireAssignedOperator: true });
     const status = await getUnitStatus(req.params.id);
 
     // FR-N trigger 3/4: "Siap dikirim" — HANYA saat status BENAR-BENAR baru
@@ -354,8 +357,17 @@ productionRouter.get("/orders/:orderId/documentation", requirePermission(P.UNIT_
 productionRouter.get("/work-orders", requirePermission(P.UNIT_READ), async (req, res) => {
   try {
     const { status, serviceLine, q } = req.query;
+    // Simplifikasi slice 1 — paginasi + filter status tampilan di SERVER (sebelumnya berhenti di 500 unit). Tanpa page/pageSize: halaman 1 berukuran 100
+    // (bukan seluruh daftar) dan respons memuat total/hasMore supaya pemanggil tahu masih ada sisanya. displayStatus = Pengambilan|Diproses|Siap Kirim|Terkirim.
+    const pageSize = Math.min(Math.max(parseInt(req.query.pageSize, 10) || 100, 1), 200);
+    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+    // displayStatus boleh daftar dipisah koma (mis. PENGAMBILAN,DIPROSES,SIAP_KIRIM untuk "Aktif" = semua kecuali Terkirim).
+    const displayFilter = String(req.query.displayStatus || "").toUpperCase().split(",").filter((k) => k in DISPLAY_STATUS_UNIT_FILTER);
+    const displayUnitStatuses = displayFilter.length ? [...new Set(displayFilter.flatMap((k) => DISPLAY_STATUS_UNIT_FILTER[k]))] : null;
     const where = {
       ...(status && { status }),
+      ...(displayUnitStatuses && !status ? { status: { in: displayUnitStatuses } } : {}),
+      ...(req.query.real === "1" ? { order: { status: { not: "CANCELLED" }, customer: { pipelineStage: { not: "SPAM" }, isInternalStaff: false } } } : {}),
       ...(serviceLine && { serviceLine }),
       ...(q?.trim() && {
         OR: [
@@ -383,13 +395,16 @@ productionRouter.get("/work-orders", requirePermission(P.UNIT_READ), async (req,
         order: {
           select: {
             id: true, orderNumber: true, status: true,
+            items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } }, // Layanan Sales (satu-satunya layanan yang ditampilkan)
             customer: { select: { id: true, name: true } },
           },
         },
       },
-      orderBy: [{ createdAt: "desc" }],
-      take: 500,
+      orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
     });
+    const totalMatching = await prisma.unit.count({ where });
 
     // productionStatus level-UNIT (Production Core Slice 1/2) — DUA query
     // batch, lihat catatan di GET /board soal isReworkTarget TIDAK dihitung
@@ -405,7 +420,9 @@ productionRouter.get("/work-orders", requirePermission(P.UNIT_READ), async (req,
     // Sumber V1/V2 per unit (P12B.5): cohort reader yang SAMA dengan Unit 360 (production-v2). READ-ONLY — tidak membuat Run/backfill; reader OFF = semua V1.
     const readerState = resolveProductionReaderState(await loadV2Flags(prisma));
     const v2Units = readerState.mode === PRODUCTION_READER_MODE.OFF ? new Set() : new Set(readerState.unitIds);
+    const complaintsByUnit = await loadOpenComplaintsByUnit(prisma, units.map((u) => ({ id: u.id, orderId: u.orderId })));
     const unitsWithStatus = units.map((u) => {
+      const prio = priorityDisplay({ stored: u.priority, complaintCases: complaintsByUnit.get(u.id) || [] });
       const lastLog = lastLogByUnitId[u.id] || null;
       const blocker = blockerByUnitId[u.id] || null;
       const assignment = assignmentByUnitId[u.id] || null;
@@ -414,6 +431,10 @@ productionRouter.get("/work-orders", requirePermission(P.UNIT_READ), async (req,
       });
       return {
         ...u, inProductionV2: v2Units.has(u.id), productionStatus,
+        // Kosakata sederhana (slice 1): status order/unit, keberadaan fisik, prioritas Normal·Tinggi·Komplain (Komplain dari ComplaintCase resmi). Enum mentah tetap ada di atas.
+        orderStatusDisplay: displayStatusOfOrder(u.order?.status), unitStatusDisplay: displayStatusOfUnit(u.status),
+        presence: physicalPresenceOf({ unitStatus: u.status, runStatus: null, runOrigin: null, inboundAccepted: false }),
+        priorityDisplay: { key: prio.key, label: prio.label, rank: prio.rank, complaintCases: prio.complaintCases },
         productionStatusReason: describeProductionStatus(productionStatus, lastLog, blocker),
         // Work Center/Assigned To (Slice 4O) — dari StageAssignment tahap
         // sekarang (batch, di atas), fallback ke defaultWorkCenter tahap
@@ -445,10 +466,24 @@ productionRouter.get("/work-orders", requirePermission(P.UNIT_READ), async (req,
     res.json({
       units: unitsWithStatus,
       statusCounts: statusCounts.map((s) => ({ status: s.status, count: s._count._all })),
+      // Hitungan per status TAMPILAN (Pengambilan/Diproses/Siap Kirim/Terkirim) dari hitungan di atas — sumber sama, satu kosakata.
+      displayStatusCounts: displayStatusCountsOf(statusCounts.map((s) => ({ status: s.status, count: s._count._all }))),
+      page, pageSize, total: totalMatching, hasMore: (page - 1) * pageSize + units.length < totalMatching,
     });
   } catch (err) {
     handleErr(err, res);
   }
+});
+
+// GET /api/production/v1-worker-queue?lane=TABLE|CORNER — antrean pekerjaan V1 milik PIC yang login untuk Aplikasi Meja/Corner (P12C.1). BACA-SAJA.
+// Penugasan sah yang belum dimulai (siap / menunggu prasyarat) + "menunggu penugasan berikutnya" bagi PIC terakhir. Lini Corner dibaca dari tahap Corner KANONIK
+// (lib/domain/v1WorkerQueue.js#laneOfStage), bukan tebakan nama layanan. Permission UNIT_READ; hanya mengembalikan unit milik operator pemanggil.
+productionRouter.get("/v1-worker-queue", requirePermission(P.UNIT_READ), async (req, res) => {
+  try {
+    const lane = String(req.query.lane || "TABLE").toUpperCase();
+    if (!["TABLE", "CORNER"].includes(lane)) return res.status(400).json({ error: "lane harus TABLE atau CORNER", code: "LANE_INVALID" });
+    res.json(await listV1WorkerQueue(prisma, { userId: req.user.id, lane }));
+  } catch (err) { handleErr(err, res); }
 });
 
 // GET /api/production/qc-queue — unit yang currentStage-nya gerbang QC

@@ -103,7 +103,7 @@ export default function WarehouseProductionQueue() {
         {notice && <div role="status" className="rounded-btn bg-greenbg px-3 py-2.5 text-[12.5px] text-green">{notice}</div>}
         {error && <div role="alert" className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{error}</div>}
         {data?.readerMode === "OFF" ? (
-          <Card className="p-0"><EmptyState icon={Package} title="Produksi V2 belum aktif" description="Antrean ini terisi setelah Production V2 diaktifkan untuk unit terkait." /></Card>
+          <Card className="p-0"><EmptyState icon={Package} title="Antrean produksi belum aktif" description="Antrean ini terisi setelah Production Lead mengaktifkannya untuk unit terkait." /></Card>
         ) : (
           <>
             <div className="grid grid-cols-2 gap-3 md:grid-cols-5">

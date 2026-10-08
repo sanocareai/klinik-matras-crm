@@ -14,8 +14,9 @@ const DRAWER = fs.readFileSync(path.join(__dirname, "..", "src", "features", "pr
 const STATUS_PRODUKSI = fs.readFileSync(path.join(__dirname, "..", "src", "pages", "bengkel", "ProductionPlannerV2.jsx"), "utf8");
 const RENCANA_PRODUKSI = fs.readFileSync(path.join(__dirname, "..", "src", "pages", "bengkel", "ProductionRencanaWorkspace.jsx"), "utf8");
 
-test("Unit 360: 6 bagian wajib (Ringkasan, Proses, Bahan, Dokumentasi, QC & Handoff, Aktivitas)", () => {
-  for (const label of ["Ringkasan", "Proses", "Bahan", "Dokumentasi", "QC & Handoff", "Aktivitas"]) {
+test("Unit 360: 6 bagian wajib (Ringkasan, Pekerjaan, Bahan, Dokumentasi, QC & Handoff, Aktivitas) — tab 'Kerja V1' dihapus (Slice 1)", () => {
+  assert.ok(!DRAWER.includes("Kerja V1"), "tab Kerja V1 hilang");
+  for (const label of ["Ringkasan", "Pekerjaan", "Bahan", "Dokumentasi", "QC & Handoff", "Aktivitas"]) {
     assert.ok(DRAWER.includes(`"${label}"`), `bagian "${label}" tidak ditemukan di Unit 360`);
   }
 });
@@ -68,8 +69,8 @@ test("Status Produksi & Rencana Produksi: deep-link via ?unit= disinkronkan lewa
   }
 });
 
-test("Status Produksi & Rencana Produksi: aksi tulis lama (Jadwalkan/Layanan, Kelola Rencana) TETAP ada, dijangkau dari dalam Unit 360 (bukan dihapus)", () => {
-  assert.match(STATUS_PRODUKSI, /manageLabel="Kelola Jadwal \/ Layanan"/);
+test("Status Produksi & Rencana Produksi: aksi tulis lama (Jadwalkan, Kelola Rencana) TETAP ada, dijangkau dari dalam Unit 360 (bukan dihapus)", () => {
+  assert.match(STATUS_PRODUKSI, /manageLabel="Kelola Jadwal"/);
   assert.match(STATUS_PRODUKSI, /onManage=\{\(\) => \{ const item = allItems\.find/);
   assert.match(RENCANA_PRODUKSI, /manageLabel="Kelola Rencana"/);
   assert.match(RENCANA_PRODUKSI, /onManage=\{\(\) => openManageFor\(overviewUnitId\)\}/);

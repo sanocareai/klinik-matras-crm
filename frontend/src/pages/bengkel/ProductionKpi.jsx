@@ -86,7 +86,7 @@ export default function ProductionKpi({ defaultTab = DEFAULT_TAB }) {
     <PageContainer fluid>
       <PageHeader
         title="KPI & Laporan"
-        subtitle={readOnlyHint || "Satu kontrak metrik untuk dashboard, daftar unit, dan export. Hanya Produksi V2 dalam cohort."}
+        subtitle={readOnlyHint || "Satu kontrak metrik untuk dashboard, daftar unit, dan export. Hanya unit yang sudah masuk rencana produksi."}
         actions={<Button variant="ghost" size="sm" onClick={load} disabled={loading || !tab}><RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Muat Ulang</Button>}
       />
       <PageBody>
@@ -166,7 +166,7 @@ function ExportPanel({ tabs, period, filters }) {
   const items = tabs.filter((t) => EXPORTABLE[t.key]);
   return (
     <div className="space-y-3" data-testid="panel-export">
-      <p className="m-0 rounded-btn bg-inset px-3 py-2 text-[12px] text-ink2">Unduhan memakai periode dan filter di atas — angkanya identik dengan layar. Produksi V2 dalam cohort saja.</p>
+      <p className="m-0 rounded-btn bg-inset px-3 py-2 text-[12px] text-ink2">Unduhan memakai periode dan filter di atas — angkanya identik dengan layar. Unit yang sudah masuk rencana produksi saja.</p>
       {items.map((t) => (
         <Card key={t.key} className="p-3" data-testid={`export-${t.key}`}>
           <h3 className="m-0 mb-2 text-[13.5px] font-bold text-ink">{t.label}</h3>
@@ -200,7 +200,7 @@ function StationsPanel({ doc, onList, onUnit }) {
               <Stat label="Selesai" value={s.finished} onClick={s.finished ? () => onList(`${s.label} — unit selesai`, `stations/${s.code}/units/finished`) : null} />
               <Stat label="Rata-rata durasi" value={s.avgDurationMin == null ? "Data belum cukup" : formatMinutes(s.avgDurationMin)} muted={s.avgDurationMin == null} />
               <Stat label="Terlambat" value={`${s.lateFinished} selesai · ${s.lateOpen} berjalan`} />
-              <Stat label="Aktif / jeda / blokir" value={`${formatMinutes(s.activeMin)} / ${formatMinutes(s.pauseMin)} / ${formatMinutes(s.blockedMin)}`} />
+              <Stat label="Aktif / jeda / tertunda" value={`${formatMinutes(s.activeMin)} / ${formatMinutes(s.pauseMin)} / ${formatMinutes(s.blockedMin)}`} />
               <Stat label="Urutan manual" value={s.manualOrderPct == null ? "—" : `${s.manualOrderUnits} (${formatCell(s.manualOrderPct, "angka")}%)`} />
             </dl>
             <p className="m-0 mt-2 text-[11.5px] text-ink3" data-testid={`bottleneck-${s.code}`}>Bottleneck: {s.bottleneck ? `${s.bottleneck.label} (${formatMinutes(s.bottleneck.avgMin)}, n=${s.bottleneck.n})` : "Data belum cukup"}</p>

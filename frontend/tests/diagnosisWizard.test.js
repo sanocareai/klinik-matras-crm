@@ -10,7 +10,11 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const WIZARD = fs.readFileSync(path.join(__dirname, "..", "src", "features", "production", "DiagnosisWizard.jsx"), "utf8");
-const WORKER_LANE = fs.readFileSync(path.join(__dirname, "..", "src", "pages", "produksi", "WorkerLane.jsx"), "utf8");
+// P12C: Aplikasi Meja/Corner dipecah ke src/features/production/workerApp/* (WorkerLane.jsx tinggal perangkai). Kontrak yang diuji tetap: sumber gabungan keduanya.
+const WORKER_LANE = (() => {
+  const root = path.join(__dirname, "..", "src"); const dir = path.join(root, "features", "production", "workerApp");
+  return [path.join(root, "pages", "produksi", "WorkerLane.jsx"), ...fs.readdirSync(dir).filter((n) => /\.(jsx?|css)$/.test(n)).map((n) => path.join(dir, n))].map((p) => fs.readFileSync(p, "utf8")).join("\n");
+})();
 const DRAWER = fs.readFileSync(path.join(__dirname, "..", "src", "features", "production", "UnitOverviewDrawer.jsx"), "utf8");
 
 test("DiagnosisWizard: 6 section wajib (Informasi Sales, Hasil Bongkar, Fondasi, Lapisan & Komponen, Bahan, Review & Simpan)", () => {
@@ -46,8 +50,8 @@ test("DiagnosisWizard: bahan katalog (search) DAN bahan manual/noncatalog terpis
   assert.match(WIZARD, /placeholder="Kenapa tidak ada di katalog\?"/);
 });
 
-test("DiagnosisWizard: layanan teknis dipilih dari katalog (getServiceCatalog), TIDAK menampilkan field harga/HPP", () => {
-  assert.match(WIZARD, /api\.getServiceCatalog\(\)/);
+test("DiagnosisWizard (slice 2): operator TIDAK memilih layanan teknis lagi (tanpa katalog/dropdown/recommendedServiceId); tidak menampilkan field harga/HPP", () => {
+  assert.doesNotMatch(WIZARD, /getServiceCatalog|recommendedServiceId|Layanan teknis \*|Pilih layanan teknis/);
   assert.doesNotMatch(WIZARD, /referenceUnitCost|referenceStockValue|HPP/i);
 });
 
@@ -99,14 +103,16 @@ test("Unit 360: selector uji stabil (dialog, loading, ready) tersedia dan tab ha
 });
 
 test("WorkerLane: selector stabil kartu antrean, detail unit, request-khusus, dan CTA diagnosis", () => {
-  assert.match(WORKER_LANE, /data-testid="worker-unit-card" data-unit-code=\{item\.unit\.unitCode\}/);
+  assert.match(WORKER_LANE, /data-testid="worker-unit-card" data-unit-code=\{job\.unitCode\}/);
   assert.match(WORKER_LANE, /data-testid="worker-unit-detail"/);
-  assert.match(WORKER_LANE, /data-testid="request-khusus"/);
-  assert.match(WORKER_LANE, /data-testid=\{next\.stepNo === 5 \? "open-diagnosis" : undefined\}/);
+  assert.match(WORKER_LANE, /data-testid="sales-note"/, "catatan/request Sales (selector stabil pengganti request-khusus)");
+  assert.match(WORKER_LANE, /data-testid=\{next\.action === "RESUME" \? "resume-work" : next\.stepNo === 5 \? "open-diagnosis" : "v2-primary"\}/);
 });
 
 test("WorkerLane: teks bebas Sales (Request khusus/Keluhan) tidak melebar — min-w-0 + break-words + overflow-wrap:anywhere", () => {
-  assert.match(WORKER_LANE, /data-testid="request-khusus" className="col-span-2 min-w-0[^"]*"><dt[^>]*>Request khusus<\/dt><dd className="m-0 break-words[^"]*\[overflow-wrap:anywhere\]/);
+  assert.match(WORKER_LANE, /data-testid="sales-note" className=\{`wa-wrap m-0/, "catatan Sales memakai .wa-wrap");
+  assert.match(WORKER_LANE, /\.wa-wrap \{ overflow-wrap: anywhere; word-break: break-word; \}/, "wa-wrap = overflow-wrap:anywhere");
+  assert.match(WORKER_LANE, /className="wa-wrap m-0 line-clamp-2 text-\[18px\]/, "nama customer panjang: clamp 2 baris + wrap");
 });
 
 // Label tombol pembuka wizard (Unit 360): perilaku fungsi murni dieksekusi langsung dari sumbernya (tanpa jsdom).
@@ -133,7 +139,8 @@ test("Unit 360: panel memakai diagnosisCtaLabel + hasLocalDraft dan badge status
 
 // Regresi bug yang ditemukan QA visual: /master-data/service-catalog mengembalikan { services: [...] } (semua pemanggil lain
 // membaca .services); wizard sempat membaca d.items sehingga dropdown "Layanan teknis" SELALU kosong dan submit UI 400.
-test("DiagnosisWizard: dropdown layanan teknis membaca { services } dari /master-data/service-catalog", () => {
-  assert.ok(WIZARD.includes("setServices(Array.isArray(d?.services) ? d.services : [])"));
+test("DiagnosisWizard (slice 2): tidak ada dropdown layanan teknis — pemetaan Sales->produksi dikelola Admin (Pengaturan Produksi)", () => {
+  assert.ok(!WIZARD.includes("setServices"));
   assert.ok(!WIZARD.includes("d?.items"));
+  assert.match(WIZARD, /pemetaan Layanan Sales yang dikelola Admin/);
 });

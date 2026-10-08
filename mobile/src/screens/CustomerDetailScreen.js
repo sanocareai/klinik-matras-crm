@@ -5,7 +5,7 @@
 // duplikasi logic, cuma beda chrome (header+back di sini vs handle
 // indicator bottom sheet di sana) dan tombol "Buka Chat" (cuma relevan di
 // sini — CustomerSheet dibuka DARI chat yang sudah aktif).
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from "react-native";
 import { ChevronLeft } from "lucide-react-native";
 import { useTokens, useIsDarkMode } from "../constants/theme";
@@ -19,6 +19,13 @@ export default function CustomerDetailScreen({ route, navigation }) {
   const { customerId, name: routeName, phone: routePhone } = route.params;
   const [headerName, setHeaderName] = useState(routeName || routePhone || "Pelanggan");
   const [openingChat, setOpeningChat] = useState(false);
+  // Kembali dari Rincian Pesanan (layar lain di atas layar ini) → muat ulang diam-diam; fokus pertama (saat layar baru dibuka) dilewati.
+  const [silentReloadKey, setSilentReloadKey] = useState(0);
+  const sudahFokus = useRef(false);
+  useEffect(() => navigation.addListener("focus", () => {
+    if (sudahFokus.current) setSilentReloadKey((k) => k + 1);
+    sudahFokus.current = true;
+  }), [navigation]);
 
   async function handleOpenChat(customer) {
     if (openingChat) return;
@@ -59,6 +66,7 @@ export default function CustomerDetailScreen({ route, navigation }) {
       <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
         <CustomerProfileContent
           customerId={customerId}
+          silentReloadKey={silentReloadKey}
           onOpenChat={handleOpenChat}
           onCustomerLoaded={(c) => setHeaderName(c.name || c.phone || "Pelanggan")}
         />

@@ -6,7 +6,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { testPrisma, truncateAll } from "./setup/testDb.js";
-import { createTestUser, createTestMaterial, seedBalance } from "./setup/fixtures.js";
+import { assignCurrentStageTo, createTestUser, createTestMaterial, seedBalance } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
 import { V2_FLAGS } from "../../src/services/v2FeatureFlags.js";
@@ -94,6 +94,7 @@ test("KONFLIK ATOMIK prioritas/target: paralel → satu menang; expected usang d
 test("blokir paralel: dua penyelesaian bersamaan → satu 200, satu 409 (sudah ada guard atomik engine)", async () => {
   const id = W.lc.id;
   assert.equal((await W.who.lead.http.patch(`/api/units/${id}/service`, { serviceId: W.services[0].id })).status, 200);
+  await assignCurrentStageTo(id, W.who.worker.user.id); // P12C.2: aksi tahap hanya untuk PIC yang ditugaskan
   assert.equal((await W.who.worker.http.post(`/api/units/${id}/stages/start`, {})).status, 200);
   const stageId = (await testPrisma.unit.findUniqueOrThrow({ where: { id }, select: { currentStageId: true } })).currentStageId;
   assert.equal((await W.who.worker.http.post(`/api/units/${id}/stages/${stageId}/fail`, { blockReason: "MATERIAL_SHORTAGE", note: "uji" })).status, 200);
@@ -127,6 +128,7 @@ test("LIFECYCLE non-cohort via HTTP nyata: layanan → tahap berjalan → jeda/l
   let t = await tl(); let guard = 0;
   while (t.path.find((p) => p.isCurrent)?.stage.requiresQc !== true && guard++ < 12) {
     const cur = t.path.find((p) => p.isCurrent);
+    await assignCurrentStageTo(id, W.who.worker.user.id); // P12C.2: tahap Meja/Corner ditugaskan ke PIC sebelum dikerjakan
     if (cur.status === "READY" || cur.status === "NOT_STARTED" || cur.status === "BLOCKED") assert.equal((await worker.post(`/api/units/${id}/stages/start`, {})).status, 200);
     if (cur.stage.id) {
       const p = await worker.post(`/api/units/${id}/stages/${cur.stage.id}/pause`, { reason: "BREAK" });
@@ -189,6 +191,7 @@ test("MATRIKS KEPEMILIKAN: writer OFF, reader-only, cohort tanpa Run → jalur V
     assert.equal(prod.status, 200, `${name} production: ${JSON.stringify(prod.body)}`);
     const mt = await worker.post(`/api/units/${unit.id}/materials`, { materialId: mat.id, qty: 1 });
     assert.equal(mt.status, 201, `${name} bahan: ${JSON.stringify(mt.body)}`);
+    await assignCurrentStageTo(unit.id, W.who.worker.user.id); // P12C.2
     for (const [what, r] of [["route", await lead.post(`/api/units/${unit.id}/route`, {})], ["assign", await lead.post(`/api/units/${unit.id}/stages/${randomUUID()}/assign`, { workCenterId: null, operatorId: null })], ["stage", await worker.post(`/api/units/${unit.id}/stages/start`, {})]]) {
       assert.ok(!owned(r), `${name} ${what} tidak boleh ditolak sebagai milik V2: ${JSON.stringify(r.body)}`);
       if (what === "stage") assert.equal(r.status, 200, `${name} mulai tahap V1 berjalan: ${JSON.stringify(r.body)}`);

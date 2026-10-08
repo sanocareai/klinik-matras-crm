@@ -117,3 +117,43 @@ for (const nama of ["template-impor-rekening-koran.csv", "template-impor-rekenin
     assert.ok(t.baris.every((b) => /CONTOH/.test(b.deskripsi)), "setiap baris contoh wajib bertanda CONTOH agar tidak tak sengaja diimpor sebagai data asli");
   });
 }
+
+// ── Bentuk berkas Mandiri ASLI (ditemukan 6 Okt 2026): SEMUA sel berupa teks kaya, tanggal dd/mm/yy, nominal bilangan bulat tanpa pemisah, dua kolom "Description",
+// teks dibungkus tanda kutip, tanpa kolom Saldo, ada kolom "Account No" dan kolom kosong di ujung. Data di bawah SINTETIS (nama/nominal karangan).
+import ExcelJS from "exceljs";
+const kaya = (t) => ({ richText: [{ font: { size: 10 }, text: String(t) }] });
+async function berkasMandiriSintetis() {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("balance_inquiry_notional_report");
+  ws.addRow(["Account No", "Date", "Val. Date", "Transaction Code", "Description", "Description", "Reference No.", "Debit", "Credit", ""].map(kaya));
+  const baris = [
+    ["1230000000001", "01/09/26", "01/09/26", "7820", '"MCM InhouseTrf  KE PIHAK UJI Transfer Fee 202609011100000001"', '"gaji uji                    "', null, "7850000", "0"],
+    ["1230000000001", "02/09/26", "02/09/26", "8061", '"BIFAST Inc GL-CS"', '"20260902BMRIIDJA010O0000000001"', null, "0", "1250000"],
+    ["1230000000001", "02/09/26", "02/09/26", "8060", '""', '"20260902BMRIIDJA010O0000000002"', null, "2500", "0"],
+    ["1230000000001", "30/09/26", "30/09/26", "0160", '"Bunga"', '""', null, "0", "13950.36"],
+  ];
+  for (const b of baris) ws.addRow(b.map((x) => (x == null ? null : kaya(x))));
+  return Buffer.from(await wb.xlsx.writeBuffer());
+}
+
+test("Mandiri ASLI (sintetis): sel teks kaya + dd/mm/yy + dua kolom Description + tanda kutip + tanpa Saldo → terbaca penuh, tanpa galat", async () => {
+  const t = await telaahBerkas(await berkasMandiriSintetis(), "account_statement.xlsx");
+  assert.equal(t.galat.length, 0, JSON.stringify(t.galat));
+  assert.equal(t.baris.length, 4);
+  assert.deepEqual(t.baris.map((b) => b.tanggal), ["2026-09-01", "2026-09-02", "2026-09-02", "2026-09-30"]);
+  assert.equal(t.baris[0].debit, "7850000.00");
+  assert.equal(t.baris[1].kredit, "1250000.00");
+  assert.equal(t.baris[2].debit, "2500.00");
+  assert.equal(t.baris[3].kredit, "13950.36", "desimal titik dari bank (bunga) terbaca");
+  assert.equal(t.baris[0].deskripsi, "MCM InhouseTrf KE PIHAK UJI Transfer Fee 202609011100000001 | gaji uji", "dua kolom Description digabung, kutip & spasi dibuang");
+  assert.equal(t.baris[1].deskripsi, "BIFAST Inc GL-CS | 20260902BMRIIDJA010O0000000001");
+  assert.equal(t.baris[2].deskripsi, "20260902BMRIIDJA010O0000000002", "kolom utama kosong → hanya catatan");
+  assert.equal(t.rantaiSaldo.diperiksa, false, "tanpa kolom saldo: rantai tidak diperiksa (bukan galat)");
+  assert.deepEqual(t.deskripsiTambahan, [5]);
+});
+
+test("Baris dengan debit & kredit terpisah dari berkas Mandiri sintetis menghasilkan sidik jari unik per baris (dua biaya Rp2.500 berbeda referensinya)", async () => {
+  const t = await telaahBerkas(await berkasMandiriSintetis(), "account_statement.xlsx");
+  const f = sidikJariBaris("rek-sintetis", t.baris);
+  assert.equal(new Set(f).size, f.length);
+});

@@ -202,6 +202,16 @@ async function advance(ctx, W, spec, { unit, order }) {
   if (spec.stage === "lapisan_selesai") { await maybeDocs(ctx, W, spec, run.id); return; } // Lapisan Jadi: uji tekstur akhir (8) belum dikirim
   await step(meja, 8, { verdict: "PAS", testerWeightKg: spec.kg }, await media(meja, "v"));
   if (spec.stage === "menunggu_qc") { await maybeDocs(ctx, W, spec, run.id); return; }
+  // Slice 2: run berkebijakan ADAPTASI tidak melewati QC — Meja -> Corner langsung (gerbang QC dicatat tidak dilakukan saat tahap 9); penutupan lewat "Selesaikan Produksi" (diuji terpisah).
+  const adaptation = !!(await prisma.productionRun.findUniqueOrThrow({ where: { id: run.id }, select: { adaptationPolicy: true } })).adaptationPolicy;
+  if (adaptation) {
+    await step(meja, 9, { note: "siap dibungkus (adaptasi)" }, await media(meja, "i"));
+    await step(corner, 10, { mattressStyle: "PILLOWTOP", fabricSpec: "Knitting putih quilting", borderColor: "Abu-abu tua" });
+    if (spec.stage === "corner") { await maybeDocs(ctx, W, spec, run.id); return; }
+    await step(corner, 11, { checklist: { jahitan: true, list: true, resleting: true, kebersihan: true } }, await media(meja, "i", "v"));
+    await step(corner, 12, { confirm: true }, await media(meja, "i"));
+    await maybeDocs(ctx, W, spec, run.id); return; // siap "Selesaikan Produksi" (retur sisa bahan tetap wajib bila ada)
+  }
   const qcRun = await kit.get(A.qc, `${P}/qc/runs/${run.id}`);
   if (spec.stage === "qc_gagal") {
     const gate = qcRun.stages.find((s) => s.isQcGate); const reworkStage = qcRun.stages.filter((s) => !s.isQcGate && s.order < gate.order).at(-1);

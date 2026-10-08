@@ -126,7 +126,8 @@ test("isi kartu: customer dummy, nomor order/resi, foto, layanan Sales, layanan 
 
 test("pagar kode: pembungkus 7 halaman + KPI gudang; api.js memanggil gerbang; admin-only; tidak ada penyimpanan lokal; dataset hanya lewat import() dinamis", () => {
   const reg = read("src/routes/pageRegistry.jsx");
-  for (const [route, comp] of [["/produksi/dokumentasi", "ProductionDocumentation"], ["/bengkel/kpi", "ProductionKpi"], ["/bengkel/production-v2", "ProductionPlannerV2"], ["/bengkel/rencana-produksi", "ProductionRencanaWorkspace"], ["/bengkel/ringkasan", "ProductionRingkasan"], ["/bengkel/quality-control", "ProductionQcHub"], ["/warehouse/antrean-produksi", "WarehouseProductionQueue"]]) {
+  assert.match(reg, /path: "\/produksi\/dokumentasi", render: \(ctx\) => <DemoPage slotBar><ProductionDocumentation/, "P12D: Dokumentasi memakai kerangka aplikasi (bar Mode Latihan di tab Akun)");
+  for (const [route, comp] of [["/bengkel/kpi", "ProductionKpi"], ["/bengkel/production-v2", "ProductionPlannerV2"], ["/bengkel/rencana-produksi", "ProductionRencanaWorkspace"], ["/bengkel/ringkasan", "ProductionRingkasan"], ["/bengkel/quality-control", "ProductionQcHub"], ["/warehouse/antrean-produksi", "WarehouseProductionQueue"]]) {
     assert.match(reg, new RegExp(`path: "${route}", render: \\(\\) => <DemoPage><${comp}`), route);
   }
   const api = read("src/api.js");
@@ -153,7 +154,7 @@ test("pagar kode: pembungkus 7 halaman + KPI gudang; api.js memanggil gerbang; a
 test("tombol mutasi di semua halaman Production ditandai data-mutates (dinonaktifkan DemoPage); tab tersimpan tidak membawa ?demo=1", () => {
   const must = [
     ["src/pages/bengkel/ProductionPlannerV2.jsx", 3], ["src/features/production/ScheduleModals.jsx", 3], ["src/pages/bengkel/ProductionQc.jsx", 10], ["src/pages/bengkel/ProductionRencanaWorkspace.jsx", 10],
-    ["src/pages/warehouse/WarehouseProductionQueue.jsx", 5], ["src/pages/produksi/ProductionDocumentation.jsx", 3], ["src/features/production/DocumentationDraftUi.jsx", 4], ["src/features/production/UnitOverviewDrawer.jsx", 3],
+    ["src/pages/warehouse/WarehouseProductionQueue.jsx", 5], ["src/features/production/docApp/DocDetail.jsx", 4], ["src/features/production/docApp/DocTabs.jsx", 1], ["src/features/production/DocumentationDraftUi.jsx", 4], ["src/features/production/UnitOverviewDrawer.jsx", 3],
     ["src/features/production/DiagnosisWizard.jsx", 1], ["src/features/production/UnitPhotoThumb.jsx", 1], ["src/features/production/TargetPanel.jsx", 1], ["src/features/production/ReportParts.jsx", 2],
   ];
   for (const [f, min] of must) assert.ok((read(f).match(/data-mutates/g) || []).length >= min, `${f} ≥ ${min} tombol bertanda`);

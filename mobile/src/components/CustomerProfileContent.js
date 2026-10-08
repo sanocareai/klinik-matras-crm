@@ -83,7 +83,7 @@ function Section({ title, children }) {
 // sama persis dengan sebelumnya. Naikkan reloadKey (mis. counter) tiap kali
 // parent ingin data dipaksa fresh lagi (CustomerSheet: tiap open(); belum
 // dipakai CustomerDetailScreen karena screen baru selalu instance baru).
-export default function CustomerProfileContent({ customerId, onOpenChat, onCustomerLoaded, reloadKey }) {
+export default function CustomerProfileContent({ customerId, onOpenChat, onCustomerLoaded, reloadKey, silentReloadKey }) {
   const tokens = useTokens();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
   const [customer, setCustomer] = useState(null);
@@ -231,6 +231,10 @@ export default function CustomerProfileContent({ customerId, onOpenChat, onCusto
     } catch {}
   }
 
+  // Muat ulang TANPA skeleton (kartu order yang sedang dibuka tidak menutup) — dipakai CustomerDetailScreen saat kembali dari Rincian
+  // Pesanan, supaya status/pembayaran yang baru diubah di sana tidak tampil basi.
+  useEffect(() => { if (silentReloadKey) refreshOrders(); }, [silentReloadKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
   function handleOrderDeleted(orderId) {
     setCustomer((c) => (c ? { ...c, orders: (c.orders || []).filter((o) => o.id !== orderId) } : c));
     setEditingOrder(null);
@@ -372,6 +376,7 @@ export default function CustomerProfileContent({ customerId, onOpenChat, onCusto
             onRefresh={refreshOrders}
             onDeleted={handleOrderDeleted}
             onEdit={setEditingOrder}
+            customerName={customer.name || customer.phone}
           />
         ))}
         <TouchableOpacity style={styles.addOrderBtn} onPress={() => setShowOrderForm(true)}>

@@ -22,6 +22,7 @@ const { unitCustodyRouter } = await import("../../../src/routes/unitCustody.js")
 const { productionPlanningRouter } = await import("../../../src/routes/productionPlanning.js");
 const { productionExperienceRouter } = await import("../../../src/routes/productionExperience.js");
 const { productionEvidencePathRouter } = await import("../../../src/routes/productionEvidenceMedia.js");
+const { prepProofPathRouter } = await import("../../../src/routes/routePrepProofMedia.js");
 const { productionUnitPhotoPathRouter } = await import("../../../src/routes/productionUnitPhoto.js");
 const { stockAdjustmentRouter } = await import("../../../src/routes/stockAdjustment.js");
 const { replenishmentRouter } = await import("../../../src/routes/replenishment.js");
@@ -109,6 +110,7 @@ export function buildTestApp() {
   app.use("/api/production-planning", productionPlanningRouter);
   app.use("/api/production-v2", productionExperienceRouter);
   app.use("/media/production-evidence", productionEvidencePathRouter);
+  app.use("/media/route-prep-proofs", prepProofPathRouter); // bukti checklist persiapan: Bearer atau URL bertanda-tangan (bukan statis publik)
   app.use("/media/unit-photo", productionUnitPhotoPathRouter);
   app.use("/api/inventory/adjustments", stockAdjustmentRouter);
   app.use("/api/inventory/replenishment", replenishmentRouter);

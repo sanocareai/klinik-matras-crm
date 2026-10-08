@@ -27,21 +27,22 @@ import { recordActivity, EVENT_TYPES } from "../lib/activityLog.js";
 import { validatePauseReason } from "../lib/domain/stageExecution.js";
 import { isLastStage } from "../lib/domain/routing.js";
 import { lockRowForUpdate } from "./inventoryLedger.js";
-import { offerFinishedGoodsCustodyInTx } from "./unitCustodyCommandService.js";
+import { completeAdaptationRunInTx, offerFinishedGoodsCustodyInTx } from "./unitCustodyCommandService.js";
 import { assertNoOpenRunException, assertNoV1Drift } from "./productionRunGuards.js";
 import { lockUnitOwnership } from "./unitV2Ownership.js";
 import {
-  completeStageInTx, pathForUnit, pauseStageInTx, resolveCurrentTarget, resumeStageInTx, startStageInTx,
+  completeStageInTx, pathForUnit, pauseStageInTx, resolveCurrentTarget, resumeStageInTx, skipStageForAdaptationInTx, startStageInTx,
 } from "./unitStageEngine.js";
 import { PHASE_TERMINAL_STATUSES, isStrictLifecycleRun, transitionPhases } from "./productionPhaseLifecycle.js";
 import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState } from "./v2FeatureFlags.js";
+import { ADAPTATION_POLICY, defaultAdaptationPolicy } from "./productionSettingsService.js";
 
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
-const BORN_CATEGORIES = ["BARU", "SEWA"];
+export const BORN_CATEGORIES = ["BARU", "SEWA"];
 // Unit lahir di workshop = baru dibuat: status RECEIVED, belum punya tahap/log produksi V1. Unit yang sudah berjalan/selesai di V1
 // (legacy) atau punya jalur pickup/custody TIDAK boleh dimasukkan ke V2 lewat jalur ini.
-const BORN_UNIT_STATUSES = ["RECEIVED"];
+export const BORN_UNIT_STATUSES = ["RECEIVED"];
 
 function workError(message, statusCode, code, details) {
   return Object.assign(new Error(message), { statusCode, code, ...(details ? { details } : {}) });
@@ -250,6 +251,7 @@ function processStartTransition(run, now) {
   updates.push({ phase: "PROCESS", data: { status: "ACTIVE", startedAt: now } });
   return updates;
 }
+export const isAdaptationRun = (run) => run?.adaptationPolicy === ADAPTATION_POLICY;
 export function activeOperation(run) { return run.operations.find((op) => op.status === "ACTIVE" || op.status === "PAUSED") || null; }
 
 // Naikkan revisi run (dipakai juga command bukti P8 untuk langkah tanpa transisi tahap) — penulis production_runs_v2 tetap file ini.
@@ -267,13 +269,18 @@ async function bumpRun(tx, run, data) {
 // 0. Unit BARU/SEWA yang lahir di workshop TANPA pickup -> Production Run WORKSHOP_BORN (kanonis; bukan migrationSource).
 //    Tidak membuat custody apa pun: custody barang jadi baru lahir setelah QC/P6.
 // ---------------------------------------------------------------------------
-export async function registerWorkshopBornRun(prisma, { unitId, actorId, idempotencyKey }) {
+export async function registerWorkshopBornRun(prisma, args) {
+  return prisma.$transaction((tx) => registerWorkshopBornRunInTx(tx, args));
+}
+
+// Varian di dalam transaksi pemanggil (Rencana Produksi: buka Run + rencana + jadwal = SATU commit). Isi command TIDAK berubah.
+export async function registerWorkshopBornRunInTx(tx, { unitId, actorId, idempotencyKey }) {
   if (!unitId) throw workError("unitId wajib diisi", 400, "WORKSHOP_UNIT_REQUIRED");
   assertIdempotencyKey(idempotencyKey);
   const actor = actorId || "SYSTEM";
   const requestHash = hash({ commandType: "REGISTER_WORKSHOP_RUN", unitId });
 
-  return prisma.$transaction(async (tx) => {
+  return (async () => {
     await lockRowForUpdate(tx, "units", unitId);
     await lockUnitOwnership(tx, unitId); // pembukaan Run = pengambilalihan kepemilikan (lihat unitV2Ownership.js)
     const replay = await findReplay(tx, actor, idempotencyKey, requestHash);
@@ -299,7 +306,7 @@ export async function registerWorkshopBornRun(prisma, { unitId, actorId, idempot
     const phases = [["INTAKE", "NOT_APPLICABLE", na], ["DIAGNOSIS", "NOT_APPLICABLE", na], ["PROCESS", "NOT_STARTED", null], ["QC", "NOT_STARTED", null], ["HANDOFF", "NOT_STARTED", null]];
     const run = await tx.productionRun.create({
       data: {
-        unitId, kind: "NEW_PRODUCT", origin: "WORKSHOP_BORN", status: "ACTIVE", currentPhase: "PROCESS", revision: 1,
+        unitId, kind: "NEW_PRODUCT", origin: "WORKSHOP_BORN", status: "ACTIVE", currentPhase: "PROCESS", revision: 1, adaptationPolicy: await defaultAdaptationPolicy(tx),
         phases: { create: phases.map(([phase, status, reason], index) => ({ phase, status, reason, sequence: index + 1 })) },
       },
     });
@@ -314,7 +321,7 @@ export async function registerWorkshopBornRun(prisma, { unitId, actorId, idempot
     const response = { runId: run.id, unitId, origin: "WORKSHOP_BORN", status: "ACTIVE", revision: 1 };
     await finishCommand(tx, command, 1, response);
     return { replayed: false, ...response };
-  });
+  })();
 }
 
 // ---------------------------------------------------------------------------
@@ -465,7 +472,7 @@ export async function resumeWorkshopStage(prisma, { runId, actorId, idempotencyK
 
 export async function applyResumeInTx(tx, { run, op, actorId }) {
   await viaEngine(() => resumeStageInTx(tx, run.unitId, op.stageId, { actorId }));
-  await tx.productionOperationRun.update({ where: { id: op.id }, data: { status: "ACTIVE" } });
+  await tx.productionOperationRun.update({ where: { id: op.id }, data: { status: "ACTIVE", delayKind: null, delayNote: null } });
   const revision = await bumpRun(tx, run, {});
   await outbox(tx, {
     eventType: "production.stage.resumed", aggregateId: run.id, revision, dedupeKey: `production-stage-resumed:${run.id}:${revision}`,
@@ -493,18 +500,21 @@ export async function applyCompleteInTx(tx, { run, op, actorId, note = null, pho
   await tx.productionOperationRun.update({ where: { id: op.id }, data: { status: "COMPLETED", completedAt: now } });
   const unit = await tx.unit.findUniqueOrThrow({ where: { id: run.unitId }, select: { currentStageId: true, status: true } });
   const path = await pathForUnit(tx, run.unit);
+  const adaptation = isAdaptationRun(run);
   const handoffReady = isLastStage(path, op.stageId);
   const next = !handoffReady && unit.currentStageId ? path.find((s) => s.id === unit.currentStageId) : null;
-  const awaitingQc = !!next?.requiresQc;
+  // Mode adaptasi (slice 2): QC tidak wajib — tahap kerja terakhir TIDAK memindahkan run ke fase QC; run tetap di PROCESS menunggu "Selesaikan Produksi".
+  const awaitingQc = !!next?.requiresQc && !isAdaptationRun(run);
   // Penutupan PROCESS dan pembukaan HANDOFF dalam SATU transisi atomik (hanya satu fase berjalan).
   const phaseUpdates = [];
-  if (awaitingQc || handoffReady) phaseUpdates.push({ phase: "PROCESS", data: { status: "COMPLETED", completedAt: now } });
-  if (handoffReady) phaseUpdates.push({ phase: "HANDOFF", data: { status: "ACTIVE", startedAt: now, reason: null } });
+  if (awaitingQc || (handoffReady && !adaptation)) phaseUpdates.push({ phase: "PROCESS", data: { status: "COMPLETED", completedAt: now } });
+  if (handoffReady && !adaptation) phaseUpdates.push({ phase: "HANDOFF", data: { status: "ACTIVE", startedAt: now, reason: null } });
   if (phaseUpdates.length) await transitionPhases(tx, run.id, phaseUpdates);
-  const revision = await bumpRun(tx, run, awaitingQc ? { currentPhase: "QC" } : handoffReady ? { currentPhase: "HANDOFF" } : {});
+  const revision = await bumpRun(tx, run, awaitingQc ? { currentPhase: "QC" } : (handoffReady && !adaptation) ? { currentPhase: "HANDOFF" } : {});
   // Handoff barang jadi HANYA setelah tahap `finished` (terakhir) selesai; QC wajib sudah lulus/di-waive (divalidasi offerFinishedGoodsCustodyInTx,
   // kesalahan apa pun me-rollback seluruh penyelesaian tahap ini).
-  const handoff = handoffReady ? await offerFinishedGoodsCustodyInTx(tx, { runId: run.id, actorId }) : null;
+  // Mode adaptasi: TIDAK ada penawaran barang jadi/custody (penerimaan Gudang tidak diwajibkan); penutupan lewat "Selesaikan Produksi".
+  const handoff = handoffReady && !adaptation ? await offerFinishedGoodsCustodyInTx(tx, { runId: run.id, actorId }) : null;
   await outbox(tx, {
     eventType: "production.stage.completed", aggregateId: run.id, revision, dedupeKey: `production-stage-completed:${run.id}:${revision}`,
     payload: { runId: run.id, unitId: run.unitId, stageId: op.stageId, awaitingQc, handoffReady, revision, occurredAt: now.toISOString(), actorId },
@@ -520,6 +530,133 @@ export async function applyCompleteInTx(tx, { run, op, actorId, note = null, pho
     });
   }
   return { runId: run.id, revision, stage: { id: op.stageId, code: op.stageCode, label: op.stageLabel }, status: "COMPLETED", awaitingQc, handoffReady, ...(handoff ? { handoffId: handoff.handoff.id } : {}), unitStatus: unit.status };
+}
+
+// ---------------------------------------------------------------------------
+// 5. FLOW ADAPTASI (slice 2). Helper dipakai command bukti tahap (productionStepCommandService.js) di TRANSAKSI YANG SAMA dengan bukti SKIPPED;
+//    penulis production_operation_runs_v2 / fase / run tetap file ini. Semua hanya berlaku untuk run berkebijakan ADAPTATION_V1.
+// ---------------------------------------------------------------------------
+export function assertAdaptationRun(run) {
+  if (!isAdaptationRun(run)) throw workError("Mode adaptasi tidak aktif untuk Production Run ini", 409, "ADAPTATION_NOT_ENABLED");
+}
+
+// Kebijakan adaptasi pada run yang BELUM terminal (aksi eksplisit Admin/Lead; run lama tidak pernah diubah otomatis). Tidak menyentuh tahap/fase/stok.
+export async function applyAdaptationPolicyInTx(tx, { run }) {
+  if (isAdaptationRun(run)) return { runId: run.id, revision: run.revision, changed: false };
+  const revision = await bumpRun(tx, run, { adaptationPolicy: ADAPTATION_POLICY });
+  return { runId: run.id, revision, changed: true };
+}
+
+// Validasi melewati SATU tahap target (tanpa gerbang bahan: melewati tahap tidak memakai bahan). Tahap harus pra-QC, bukan gerbang QC, belum berjalan.
+export async function prepareSkipInTx(tx, run) {
+  assertAdaptationRun(run);
+  await assertNoOpenRunException(tx, run.id);
+  assertUnitInProduction(run);
+  const process = assertProcessApplicable(run);
+  if (activeOperation(run)) throw workError("Masih ada tahap berjalan/ditunda pada run ini; selesaikan atau lanjutkan tahap tersebut dulu", 409, "WORKSHOP_STAGE_ALREADY_ACTIVE");
+  const path = await pathForUnit(tx, run.unit);
+  const { stage, state } = await resolveCurrentTarget(tx, run.unit, path);
+  if (!stage || !["FIRST", "READY"].includes(state)) throw workError("Tidak ada tahap yang dapat dilewati pada keadaan ini", 409, "WORKSHOP_SKIP_NOT_AVAILABLE", { state });
+  if (stage.requiresQc) {
+    throw workError('Gerbang QC tidak dilewati sendiri: dicatat "tidak dilakukan" saat Kirim ke Corner (tahap 9) atau lewat Selesaikan Produksi', 409, "WORKSHOP_SKIP_USE_FINISH", { stageCode: stage.code });
+  }
+  if (stage.phase === "INTAKE") assertPlanReadyForIntake(run.plan);
+  return { process, stage };
+}
+
+async function recordSkippedOperation(tx, { run, stage, now, qcNotPerformed }) {
+  const sequence = (run.operations.at(-1)?.sequence ?? 0) + 1;
+  const operation = await tx.productionOperationRun.create({
+    data: {
+      runId: run.id, stageId: stage.id, stageCode: stage.code, stageLabel: stage.labelId, sequence, required: !stage.isOptional, status: "SKIPPED", completedAt: now,
+      planSnapshot: { workCenterId: run.plan?.workCenterId ?? null, operatorId: run.plan?.operatorId ?? null, serviceId: run.unit.serviceId, planId: run.plan?.id ?? null, skipped: true, qcNotPerformed: !!qcNotPerformed },
+    },
+  });
+  return { operation, sequence };
+}
+
+// Lewati satu tahap target: ledger tahap SKIP (engine) + operasi SKIPPED + fase PROCESS dibuka bila perlu + revisi + outbox.
+export async function applySkipStageInTx(tx, { run, prepared, actorId, note = null, now = new Date() }) {
+  const { process, stage } = prepared;
+  await viaEngine(() => skipStageForAdaptationInTx(tx, run.unitId, stage.id, { actorId, note, deferReady: true, qcNotPerformed: false }));
+  const { operation, sequence } = await recordSkippedOperation(tx, { run, stage, now, qcNotPerformed: false });
+  if (process.status === "NOT_STARTED") await transitionPhases(tx, run.id, processStartTransition(run, now));
+  const revision = await bumpRun(tx, run, { currentPhase: "PROCESS", startedAt: run.startedAt || now });
+  await outbox(tx, {
+    eventType: "production.stage.skipped", aggregateId: run.id, revision, dedupeKey: `production-stage-skipped:${run.id}:${revision}`,
+    payload: { runId: run.id, unitId: run.unitId, stageId: stage.id, stageCode: stage.code, sequence, policy: ADAPTATION_POLICY, revision, occurredAt: now.toISOString(), actorId },
+  });
+  return { runId: run.id, revision, stage: { id: stage.id, code: stage.code, label: stage.labelId, phase: stage.phase, sequence: stage.sequence }, status: "SKIPPED", operationRunId: operation.id };
+}
+
+// Syarat "Selesaikan Produksi" (murni dari keadaan terbaca; tanpa efek). Mengembalikan daftar penghalang berkode untuk UI/command.
+export function finishBlockersOf(run, { openShortage = false, exceptionOpen = false } = {}) {
+  const out = [];
+  if (!isAdaptationRun(run)) out.push({ code: "ADAPTATION_NOT_ENABLED", text: "Mode adaptasi belum aktif untuk run ini" });
+  if (run.status === "PENDING_ARRIVAL") out.push({ code: "PENDING_ARRIVAL", text: "Unit belum dikonfirmasi tiba di workshop" });
+  else if (TERMINAL_RUN.includes(run.status)) out.push({ code: "RUN_TERMINAL", text: "Production Run sudah selesai/dibatalkan" });
+  if (!run.plan || run.plan.status === "CANCELLED") out.push({ code: "NO_PLAN", text: "Rencana produksi belum ditugaskan (operator/workshop)" });
+  if (!["RECEIVED", "IN_PRODUCTION"].includes(run.unit?.status)) out.push({ code: "UNIT_NOT_IN_PRODUCTION", text: `Unit berstatus ${run.unit?.status}; bukan pekerjaan workshop` });
+  if (activeOperation(run)) out.push({ code: "ACTIVE_OPERATION", text: "Ada tahap yang sedang berjalan atau ditunda — selesaikan atau lanjutkan dulu" });
+  if (openShortage) out.push({ code: "OPEN_SHORTAGE", text: "Menunggu bahan dari Gudang — selesaikan masalah bahan dulu" });
+  if (exceptionOpen) out.push({ code: "EXCEPTION_OPEN", text: "Ada konflik data yang harus diselesaikan Production Lead" });
+  if (run.phases?.some((p) => p.status === "BLOCKED")) out.push({ code: "PHASE_BLOCKED", text: "Ada fase run yang terhenti — tindak lanjut lewat Production Lead" });
+  return out;
+}
+
+// Selesaikan Produksi: SEMUA tahap tersisa dicatat SKIPPED secara eksplisit (QC: "tidak dilakukan"), fase QC/HANDOFF ditutup NOT_APPLICABLE (bukan COMPLETED palsu, tanpa
+// custody barang jadi), run COMPLETED, lalu unit READY_FOR_DELIVERY lewat jalur engine yang SAMA (saran job Delivery idempoten: tanpa job ganda). Pemanggil sudah memvalidasi.
+export async function applyAdaptationFinishInTx(tx, { run, actorId, now = new Date() }) {
+  const skipped = []; let qcNotPerformed = false;
+  let current = run;
+  for (let guard = 0; guard < 40; guard += 1) {
+    const unit = await tx.unit.findUniqueOrThrow({ where: { id: run.unitId }, select: { id: true, serviceId: true, currentStageId: true, status: true, orderId: true } });
+    const path = await pathForUnit(tx, unit);
+    const { stage, state } = await resolveCurrentTarget(tx, unit, path);
+    if (state === "DONE") break;
+    if (!stage || !["FIRST", "READY"].includes(state)) throw workError("Tahap unit tidak dapat ditutup otomatis pada keadaan ini — perlu penanganan Production Lead", 409, "WORKSHOP_FINISH_STAGE_STATE", { state });
+    const qc = !!stage.requiresQc;
+    await viaEngine(() => skipStageForAdaptationInTx(tx, run.unitId, stage.id, { actorId, note: "Selesaikan Produksi.", deferReady: true, qcNotPerformed: qc }));
+    await recordSkippedOperation(tx, { run: current, stage, now, qcNotPerformed: qc });
+    skipped.push({ id: stage.id, code: stage.code, label: stage.labelId, phase: stage.phase, qcNotPerformed: qc });
+    if (qc) qcNotPerformed = true;
+    current = await tx.productionRun.findUniqueOrThrow({ where: { id: run.id }, include: RUN_INCLUDE });
+  }
+  const fresh = await tx.productionRun.findUniqueOrThrow({ where: { id: run.id }, include: { phases: true } });
+  const reasonQc = "QC tidak dilakukan (mode adaptasi) — bukan lulus dan bukan di-waive";
+  const reasonHandoff = "Penerimaan barang jadi Gudang tidak diwajibkan (mode adaptasi); tidak ada custody ACCEPTED";
+  const phaseUpdates = [];
+  for (const phase of fresh.phases) {
+    if (PHASE_TERMINAL_STATUSES.includes(phase.status)) continue;
+    if (phase.phase === "QC") phaseUpdates.push({ phase: "QC", data: { status: "NOT_APPLICABLE", reason: reasonQc } });
+    else if (phase.phase === "HANDOFF") phaseUpdates.push({ phase: "HANDOFF", data: { status: "NOT_APPLICABLE", reason: reasonHandoff } });
+    else if (phase.status === "ACTIVE") phaseUpdates.push({ phase: phase.phase, data: { status: "COMPLETED", completedAt: now } });
+    else phaseUpdates.push({ phase: phase.phase, data: { status: "NOT_APPLICABLE", reason: "Dilewati — Selesaikan Produksi (mode adaptasi)" } });
+  }
+  if (phaseUpdates.length) await transitionPhases(tx, run.id, phaseUpdates);
+  // Penutupan run + pelepasan ke Delivery = milik custody service (ownership run COMPLETED/READY_FOR_DELIVERY); P5 hanya menutup fase dan memanggilnya.
+  const closed = await viaEngine(() => completeAdaptationRunInTx(tx, { runId: run.id, actorId, now }));
+  return { runId: run.id, revision: closed.revision, skipped, qcNotPerformed, unitStatus: closed.unitStatus };
+}
+
+// Gerbang QC pada run adaptasi: dicatat TIDAK DILAKUKAN (ledger SKIP berkatalog + operasi SKIPPED). Dipanggil saat tahap 9 (Kirim ke Corner). Unit maju ke tahap Corner.
+export async function applyQcNotPerformedInTx(tx, { run, actorId, now = new Date() }) {
+  assertAdaptationRun(run);
+  const path = await pathForUnit(tx, run.unit);
+  const { stage, state } = await resolveCurrentTarget(tx, run.unit, path);
+  if (!stage?.requiresQc || !["FIRST", "READY"].includes(state)) throw workError("Unit tidak sedang berada di gerbang QC", 409, "WORKSHOP_QC_GATE_NOT_CURRENT", { state });
+  if (activeOperation(run)) throw workError("Masih ada tahap berjalan/ditunda pada run ini", 409, "WORKSHOP_STAGE_ALREADY_ACTIVE");
+  await viaEngine(() => skipStageForAdaptationInTx(tx, run.unitId, stage.id, { actorId, note: "Kirim ke Corner.", deferReady: true, qcNotPerformed: true }));
+  await recordSkippedOperation(tx, { run, stage, now, qcNotPerformed: true });
+  return { stage: { id: stage.id, code: stage.code, label: stage.labelId } };
+}
+
+// Tunda Pekerjaan pada pekerjaan di papan (ARAHAN/KENDALA/LAINNYA): jeda SAH P5 (PROCESS_DELAY) + penanda alasan di operasi. BAHAN tetap lewat laporan kekurangan bahan.
+export async function applyDelayInTx(tx, { run, op, actorId, kind, label, note = null }) {
+  const pauseNote = `Tunda Pekerjaan — ${label}${note ? `: ${note}` : ""}`;
+  const result = await applyPauseInTx(tx, { run, op, actorId, reason: "PROCESS_DELAY", note: pauseNote });
+  await tx.productionOperationRun.update({ where: { id: op.id }, data: { delayKind: kind, delayNote: note || null } });
+  return { ...result, delayKind: kind };
 }
 
 // ---------------------------------------------------------------------------

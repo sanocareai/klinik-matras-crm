@@ -4,7 +4,7 @@
 // Perintah:
 //   seed [--rotate-passwords]                 master data + akun + 12 unit matriks demo (idempoten)
 //   master [--rotate-passwords]               hanya master data + akun
-//   unit --stage=<s> [--station=TABLE_1] [--priority=0|1|2] [--docs=lengkap|kurang]   unit baru pada tahap tertentu
+//   unit --stage=<s> [--station=TABLE_1] [--priority=0|1|2] [--docs=lengkap|kurang] [--day=<offset hari WIB>]   unit baru pada tahap tertentu
 //   lifecycle                                 satu lifecycle penuh pickup→…→barang jadi (unit baru)
 //   legacy [--lifecycle]                      (P12B.5/6) 3 unit NON-V2 (V1 murni, di luar cohort, tanpa Run) untuk menguji aksi V1 di drawer Unit 360; idempoten. --lifecycle = SATU unit V1 baru (kode unik) untuk lifecycle UI
 //   status                                    ringkasan unit QA-PV2 dan data non-QA-PV2 (harus 0)
@@ -43,7 +43,7 @@ try {
     if (cmd === "seed") console.log(JSON.stringify(await S.seedMatrix(ctx, W), null, 1));
     if (cmd === "unit") {
       const stage = flag("stage"); if (!S.STAGE_ORDER.includes(stage)) throw new Error(`--stage harus salah satu: ${S.STAGE_ORDER.join(", ")}`);
-      console.log(JSON.stringify(await S.runLifecycle(ctx, W, { stage, station: flag("station", "TABLE_1"), prio: Number(flag("priority", 0)), docs: flag("docs", "kurang") })));
+      console.log(JSON.stringify(await S.runLifecycle(ctx, W, { stage, station: flag("station", "TABLE_1"), prio: Number(flag("priority", 0)), docs: flag("docs", "kurang"), day: Number(flag("day", 1)) })));
     }
     if (cmd === "lifecycle") console.log(JSON.stringify(await S.runLifecycle(ctx, W, { stage: "siap_kirim" })));
     console.log(`[qa-pv2] selesai. Kredensial (acak) ada di ${path.join(ctx.dataDir, "qa-pv2-credentials.json")} — TIDAK dicetak.`);

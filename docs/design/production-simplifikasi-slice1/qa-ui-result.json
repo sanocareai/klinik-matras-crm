@@ -1,0 +1,357 @@
+[
+ {
+  "name": "prelude: ada pekerjaan langsung 'Sedang berjalan' untuk uji Tunda/Lanjutkan",
+  "ok": true,
+  "extra": "running=2"
+ },
+ {
+  "name": "S1 daftar Order Produksi dimuat",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S1 Order Produksi (Aktif): tanpa istilah V1/V2/Layanan Teknis/Blokir/Terhambat/Mendesak",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S1 tab status Pengambilan/Diproses/Siap Kirim ada; Terkirim TIDAK di Aktif",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S1 daftar dimuat bertahap dengan penghitung total",
+  "ok": true,
+  "extra": "Menampilkan 50 dari 678 unit"
+ },
+ {
+  "name": "S1 paginasi: seluruh unit termuat (unit unik = total server) dan melewati 500",
+  "ok": true,
+  "extra": "total server=678 unit unik termuat=678 (klik 'Muat lagi' 13x)"
+ },
+ {
+  "name": "S1 badge prioritas hanya Normal/Tinggi/Komplain",
+  "ok": true,
+  "extra": "KOMPLAIN,TINGGI"
+ },
+ {
+  "name": "S1 filter Siap Kirim menampilkan unit Siap Kirim (histori utuh)",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S1 Riwayat menampilkan Terkirim",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S1 Order Produksi (390): tanpa istilah V1/V2/Layanan Teknis/Blokir/Terhambat/Mendesak",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S2 Rencana Produksi: backlog dimuat",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S2 Rencana Produksi: tanpa istilah V1/V2/Layanan Teknis/Blokir/Terhambat/Mendesak",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S2 backlog menunjukkan total sebenarnya (>500)",
+  "ok": true,
+  "extra": "597 unit"
+ },
+ {
+  "name": "S2 kartu pertama backlog = Komplain",
+  "ok": true,
+  "extra": "KOMPLAIN"
+ },
+ {
+  "name": "S2 default hanya Diproses: tidak ada kartu Siap Kirim/Terkirim di backlog",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S2 filter backlog Pengambilan tersedia",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S2 filter Pengambilan memuat unit Pengambilan dengan label 'belum tiba'",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S3 Status Produksi: tanpa istilah V1/V2/Layanan Teknis/Blokir/Terhambat/Mendesak",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S3 kolom 'Serah ke Gudang' (bukan 'Siap Kirim') pada pipeline",
+  "ok": true,
+  "extra": "kolom tahap kerja"
+ },
+ {
+  "name": "S4 Ringkasan: tanpa istilah V1/V2/Layanan Teknis/Blokir/Terhambat/Mendesak",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S5 menu 'Quality Control' disembunyikan dari sidebar",
+  "ok": true,
+  "extra": "Ringkasan | Order Produksi | Status Produksi | Rencana Produksi | Bahan Produksi | KPI & Laporan | Biaya Produksi | Komplain & Revisi | Pengaturan"
+ },
+ {
+  "name": "S5 halaman QC tetap bisa dibuka langsung (lifecycle tak diubah)",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S6a Lead yang BUKAN PIC aktif ditolak server; pesan izin TIDAK dilabeli 'Pekerjaan Tertunda'",
+  "ok": true,
+  "extra": "Akun Anda bukan PIC produksi yang aktif — tidak bisa mengerjakan tahap ini"
+ },
+ {
+  "name": "S6a penolakan tidak membuat penundaan di server",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S6a drawer Unit 360 (unit di luar papan) terbuka",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S6a Unit 360 unit di luar papan: tanpa istilah V1/V2/Layanan Teknis/Blokir/Terhambat/Mendesak",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S6a hanya Layanan Sales; tanpa label 'Layanan Teknis'",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S6a bagian 'Pekerjaan' ada; tanpa tab 'Kerja V1'",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S6a tombol 'Tunda Pekerjaan' pada pekerjaan berjalan",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S6a pilihan alasan: Menunggu bahan, Menunggu arahan, Kendala pengerjaan, Lainnya",
+  "ok": true,
+  "extra": "Menunggu bahan | Menunggu arahan | Kendala pengerjaan | Lainnya"
+ },
+ {
+  "name": "S6a label 'Kenapa pekerjaan ditunda?'",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S6a 'Lainnya' tanpa keterangan: tombol Tunda Pekerjaan nonaktif",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S6a server mencatat blokir dengan enum yang ada (AWAITING_CUSTOMER) — tanpa enum baru",
+  "ok": true,
+  "extra": "AWAITING_CUSTOMER"
+ },
+ {
+  "name": "S6a status 'Tertunda — menunggu arahan' + judul 'Pekerjaan Tertunda'",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S6a tombol 'Lanjutkan Pekerjaan' tersedia untuk pemegang izin tahap",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S6a setelah Lanjutkan Pekerjaan: tidak ada blokir aktif",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S6b drawer Unit 360 (unit di papan) terbuka",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S6b tab: Ringkasan, Pekerjaan, Bahan, Dokumentasi, QC & Handoff, Aktivitas — TANPA 'Kerja V1'",
+  "ok": true,
+  "extra": "Ringkasan | Pekerjaan | Bahan | Dokumentasi | QC & Handoff | Aktivitas"
+ },
+ {
+  "name": "S6b Unit 360 Ringkasan (di papan): tanpa istilah V1/V2/Layanan Teknis/Blokir/Terhambat/Mendesak",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S6b Unit 360 tab Pekerjaan: tanpa istilah V1/V2/Layanan Teknis/Blokir/Terhambat/Mendesak",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S7 Aplikasi Meja: kartu pekerjaan dimuat",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S7 Aplikasi Meja (beranda): tanpa istilah V1/V2/Layanan Teknis/Blokir/Terhambat/Mendesak",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S7 kartu menampilkan status order/unit (Diproses), bukan sumber V1/V2",
+  "ok": true,
+  "extra": "Diproses"
+ },
+ {
+  "name": "S7 kartu tertunda: 'Tertunda — <alasan>' dari server",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S7 detail pekerjaan tertunda terbuka",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S7 detail pekerjaan tertunda: tanpa istilah V1/V2/Layanan Teknis/Blokir/Terhambat/Mendesak",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S7 penjelasan siapa yang harus bertindak (tanpa tombol palsu)",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S7 buka pekerjaan 'Sedang berjalan'",
+  "ok": true,
+  "extra": "QA-PV2-V1-LMUTN30KV"
+ },
+ {
+  "name": "S7 sheet 'Tunda Pekerjaan' + 'Kenapa pekerjaan ditunda?'",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S7 4 pilihan alasan di Meja",
+  "ok": true,
+  "extra": "Menunggu bahan | Menunggu arahan | Kendala pengerjaan | Lainnya"
+ },
+ {
+  "name": "S7 'Lainnya' tanpa keterangan: tombol nonaktif",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S7 server: blokir OTHER + keterangan (kontrak yang ada)",
+  "ok": true,
+  "extra": "OTHER/Mesin jahit macet"
+ },
+ {
+  "name": "S7 buka kartu pekerjaan di papan",
+  "ok": true,
+  "extra": "QA-PV2-U116"
+ },
+ {
+  "name": "S7 tombol 'Tunda Pekerjaan' pada pekerjaan di papan (menggantikan 'Menunggu Bahan Baku')",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S7 sheet menjelaskan alasan 'Menunggu bahan' + 'Kenapa pekerjaan ditunda?'",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S7 sheet Tunda Pekerjaan (papan): tanpa istilah V1/V2/Layanan Teknis/Blokir/Terhambat/Mendesak",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S7 pilih bahan yang kurang",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S7 setelah kirim: 'Tertunda — menunggu bahan' + siapa yang bertindak (Gudang)",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S7 Aplikasi Meja (1440): tanpa istilah V1/V2/Layanan Teknis/Blokir/Terhambat/Mendesak",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S8 Aplikasi Corner: tanpa istilah V1/V2/Layanan Teknis/Blokir/Terhambat/Mendesak",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S9 Aplikasi Dokumentasi (antrean): tanpa istilah V1/V2/Layanan Teknis/Blokir/Terhambat/Mendesak",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S9 hanya Layanan Sales (tanpa Layanan teknis)",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S9 Aplikasi Dokumentasi (detail): tanpa istilah V1/V2/Layanan Teknis/Blokir/Terhambat/Mendesak",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S10 Sales tidak punya akses Aplikasi Meja (tanpa kartu pekerjaan)",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S10 Gudang (hanya baca): tidak ada tombol Tunda/Lanjutkan/Mulai di Unit 360",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S10 Dokumenter tidak dapat mengubah rencana (tanpa kontrol jadwal/tombol tulis)",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S11 sebelum: MULTI1-U1, KOMP1-U1, B001-U1 ada di backlog (Diproses)",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S11 sesudah: ketiga unit hilang dari backlog (Siap Kirim/Terkirim tidak tampil di backlog)",
+  "ok": true,
+  "extra": "sebelum=597 sesudah=594"
+ },
+ {
+  "name": "S11 hitungan status bergeser: Diproses −3, Siap Kirim +2, Terkirim +1",
+  "ok": true,
+  "extra": "{\"PENGAMBILAN\":13,\"DIPROSES\":655,\"SIAP_KIRIM\":10,\"TERKIRIM\":2} → {\"PENGAMBILAN\":13,\"DIPROSES\":652,\"SIAP_KIRIM\":12,\"TERKIRIM\":3}"
+ },
+ {
+  "name": "S11 histori utuh: unit muncul di Siap Kirim / Terkirim",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "S11 unit Siap Kirim/Terkirim tidak muncul di antrean Meja",
+  "ok": true,
+  "extra": ""
+ }
+]

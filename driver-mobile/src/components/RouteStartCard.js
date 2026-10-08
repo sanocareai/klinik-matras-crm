@@ -10,15 +10,18 @@
 // terima tetap wajib per stop — itu yang penting).
 import React, { useMemo, useState } from "react";
 import { View, Text, Pressable, StyleSheet, Linking, Alert, ActivityIndicator } from "react-native";
-import { Map, Navigation } from "lucide-react-native";
+import { useNavigation } from "@react-navigation/native";
+import { ClipboardList, Clock, Map, Navigation } from "lucide-react-native";
 import PhotoCapture from "./PhotoCapture";
 import { api } from "../api";
 import { useTheme } from "../hooks/useTheme";
 import { useAuth } from "../context/AuthContext";
 import { useExecutionSync } from "../context/ExecutionSyncContext";
+import { checklistSiapBerangkat } from "../lib/prepChecklistStatus";
 
 export default function RouteStartCard({ route, assignedCount, sampleJobId, onChanged }) {
   const theme = useTheme();
+  const navigation = useNavigation();
   const { markOnlineLocally } = useAuth();
   const { submit, queue, checkStatus, discard } = useExecutionSync();
   const styles = useMemo(() => makeStyles(theme), [theme]);
@@ -28,7 +31,37 @@ export default function RouteStartCard({ route, assignedCount, sampleJobId, onCh
   const [err, setErr] = useState("");
   const [mapBusy, setMapBusy] = useState(false);
   const [checking, setChecking] = useState(false);
+  const [checklistBusy, setChecklistBusy] = useState(false);
   const pending = queue.find((item) => item.routeId === route.id && item.action === "route-start");
+
+  function bukaPersiapanPerjalanan() {
+    navigation.navigate("PersiapanPerjalanan", { routeId: route.id, routeCode: route.code });
+  }
+
+  // Checklist Persiapan Perjalanan (7 Okt 2026) — dicek SEGAR dari server
+  // (bukan cache) tiap kali driver menekan "Mulai Perjalanan": kalau ada
+  // item wajib belum terpenuhi, arahkan ke halaman Persiapan Perjalanan
+  // DULU alih-alih langsung membuka form foto muatan. Gerbang sungguhan
+  // tetap di server (POST /routes/:id/start) — ini murni mencegah driver
+  // mengisi foto muatan dulu lalu baru tahu ditolak checklist.
+  async function cekChecklistLaluMulai() {
+    setChecklistBusy(true);
+    try {
+      const cek = await api.getRoutePrepChecklist(route.id);
+      if (!checklistSiapBerangkat(cek.items, (cek.kelengkapan?.photoUrls?.length || 0) > 0)) {
+        bukaPersiapanPerjalanan();
+        return;
+      }
+      setMode("starting");
+    } catch (e) {
+      // Gagal memeriksa (mis. offline) — tetap izinkan lanjut ke form foto;
+      // POST /routes/:id/start di server yang akan menolak kalau memang
+      // belum lengkap (fail-safe ke arah AMAN, bukan diam-diam melewati).
+      setMode("starting");
+    } finally {
+      setChecklistBusy(false);
+    }
+  }
 
   async function bukaMaps() {
     setMapBusy(true);
@@ -87,6 +120,18 @@ export default function RouteStartCard({ route, assignedCount, sampleJobId, onCh
         <Text style={styles.mapsBtnText}>Buka Rute di Google Maps</Text>
       </Pressable>
 
+      <Pressable style={[styles.mapsBtn, { marginTop: 8 }]} onPress={() => navigation.navigate("HistoriWaktu", { routeId: route.id, routeCode: route.code })} accessibilityLabel="Histori Waktu rute dan stop">
+        <Clock size={15} color={theme.ACCENT} />
+        <Text style={styles.mapsBtnText}>Histori Waktu</Text>
+      </Pressable>
+
+      {route.status === "PUBLISHED" && assignedCount > 0 && (
+        <Pressable style={[styles.mapsBtn, { marginTop: 8 }]} onPress={bukaPersiapanPerjalanan}>
+          <ClipboardList size={15} color={theme.ACCENT} />
+          <Text style={styles.mapsBtnText}>Persiapan Perjalanan</Text>
+        </Pressable>
+      )}
+
       {pending ? (
         <>
           <Text style={styles.pendingText}>
@@ -122,8 +167,8 @@ export default function RouteStartCard({ route, assignedCount, sampleJobId, onCh
       ) : null}
 
       {route.status === "PUBLISHED" && assignedCount > 0 && mode === "idle" && !pending && (
-        <Pressable style={styles.startBtn} onPress={() => setMode("starting")}>
-          <Navigation size={15} color="#FFFFFF" />
+        <Pressable style={styles.startBtn} onPress={cekChecklistLaluMulai} disabled={checklistBusy}>
+          {checklistBusy ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Navigation size={15} color="#FFFFFF" />}
           <Text style={styles.startBtnText}>Mulai Perjalanan ({assignedCount} stop)</Text>
         </Pressable>
       )}

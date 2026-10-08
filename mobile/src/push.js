@@ -149,7 +149,6 @@ export function registerForPush(user, { paksa = false } = {}) {
 async function daftarPush() {
   try {
     if (!Device.isDevice) return null; // emulator tanpa Google Play tidak bisa
-    if (user) lastRegisteredUser = user;
 
     await ensureChannels();
 

@@ -9,7 +9,7 @@ export function compareStationOrder(a, b) {
   if (sa != null && sb != null && sa !== sb) return sa - sb;
   if (sa != null && sb == null) return -1;
   if (sa == null && sb != null) return 1;
-  return ((b?.priority ?? 0) - (a?.priority ?? 0))
+  return ((b?.priorityRank ?? b?.priority ?? 0) - (a?.priorityRank ?? a?.priority ?? 0))
     || (new Date(a?.targetStartAt || 0).getTime() - new Date(b?.targetStartAt || 0).getTime());
 }
 

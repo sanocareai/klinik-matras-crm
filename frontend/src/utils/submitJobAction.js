@@ -27,17 +27,19 @@ export async function uploadBlobs(jobId, blobs) {
 // yang sudah tahu ini lagi memproses antrean).
 export async function performSubmit(jobId, action, payload, photoFiles = [], signatureBlob = null) {
   const idempotencyKey = payload.idempotencyKey || createIdempotencyKey();
+  // Waktu KEJADIAN = saat driver menekan tombol (disimpan di payload yang tahan antrean), bukan saat antrean berhasil terkirim.
+  const timeOpts = { source: "DRIVER_WEB", occurredAt: payload.occurredAt || null };
   // Foto wajib di start/arrive juga (8 September 2026, dokumentasi tiap
   // tahap) — upload dulu (pola SAMA dengan complete/fail di bawah), baru
   // kirim URL-nya ke server. Validasi "wajib minimal 1" ada di backend
   // (& di UI lewat disabled tombol) — di sini murni upload+kirim.
   if (action === "start") {
     const startPhotoUrls = await uploadBlobs(jobId, photoFiles);
-    return api.startArmadaJob(jobId, { proofPhotoUrls: startPhotoUrls }, idempotencyKey);
+    return api.startArmadaJob(jobId, { proofPhotoUrls: startPhotoUrls }, idempotencyKey, timeOpts);
   }
   if (action === "arrive") {
     const arrivalPhotoUrls = await uploadBlobs(jobId, photoFiles);
-    return api.arriveArmadaJob(jobId, { proofPhotoUrls: arrivalPhotoUrls, location: payload.location }, idempotencyKey);
+    return api.arriveArmadaJob(jobId, { proofPhotoUrls: arrivalPhotoUrls, location: payload.location }, idempotencyKey, timeOpts);
   }
 
   const proofPhotoUrls = await uploadBlobs(jobId, photoFiles);
@@ -50,16 +52,18 @@ export async function performSubmit(jobId, action, payload, photoFiles = [], sig
   if (action === "complete") {
     return api.completeArmadaJob(jobId, {
       proofPhotoUrls, signatureUrl, recipientName: payload.recipientName, note: payload.note, location: payload.location,
-    }, idempotencyKey);
+    }, idempotencyKey, timeOpts);
   }
   if (action === "fail") {
     return api.failArmadaJob(jobId, {
       failureReason: payload.failureReason, failurePhotoUrls: proofPhotoUrls, note: payload.note, location: payload.location,
-    }, idempotencyKey);
+    }, idempotencyKey, timeOpts);
   }
   if (action === "payment") {
     return api.recordJobPayment(jobId, {
       amount: payload.amount, method: payload.method, proofPhotoUrl: proofPhotoUrls[0] || null,
+      // Pengaman nominal (6 Okt 2026): server menolak nominal sangat kecil kecuali pengguna sudah mengonfirmasi.
+      ...(payload.konfirmasiNominalKecil && { konfirmasiNominalKecil: true }),
     });
   }
   // Lapor revisi di lokasi (18 September 2026) — lihat catatan panjang di
@@ -76,7 +80,7 @@ export async function performSubmit(jobId, action, payload, photoFiles = [], sig
 // ulang otomatis begitu online lagi, supaya driver tetap bisa lanjut
 // bekerja tanpa menunggu sinyal.
 export async function submitOrQueue(jobId, action, payload, photoFiles = [], signatureBlob = null) {
-  const durablePayload = { ...payload, idempotencyKey: payload.idempotencyKey || createIdempotencyKey() };
+  const durablePayload = { ...payload, idempotencyKey: payload.idempotencyKey || createIdempotencyKey(), occurredAt: payload.occurredAt || new Date().toISOString() };
   try {
     const result = await performSubmit(jobId, action, durablePayload, photoFiles, signatureBlob);
     return { queued: false, result };

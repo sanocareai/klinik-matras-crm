@@ -8,6 +8,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { summaryFromV1, summaryFromV2 } from "../src/features/production/ringkasanModel.js";
 import { PRODUCTION_NAV } from "../src/lib/productionNav.js";
+import { rankOfView } from "../src/features/production/productionLabels.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Komentar dibuang: tes memeriksa KODE, bukan catatan yang (wajar) menyebut komponen lama.
@@ -27,13 +28,13 @@ function loadModel() {
   const STEP_BY_NO = { 5: { label: "Diagnosa" }, 1: { label: "Sebelum Bongkar" } };
   const bucketStyle = (k) => ({ label: k || "Antrean" });
   const PRODUCT_TYPE_LABELS = { KASUR_SPRING: "Kasur Spring", KASUR_BUSA: "Kasur Busa", KASUR_LAINNYA: "Lainnya" };
-  return new Function("STEP_BY_NO", "bucketStyle", "PRODUCT_TYPE_LABELS", `${src}\nreturn { priorityMeta, dataGaps, materialBadge, stageText, backlogOf, mergeQcWithViews, pipelineChips, mejaLabel, MEJA, humanizeRequest, isGantiKain, mattressInfo, salesNoteOf };`)(STEP_BY_NO, bucketStyle, PRODUCT_TYPE_LABELS);
+  return new Function("STEP_BY_NO", "bucketStyle", "PRODUCT_TYPE_LABELS", "rankOfView", `${src}\nreturn { priorityMeta, dataGaps, materialBadge, stageText, backlogOf, mergeQcWithViews, pipelineChips, mejaLabel, MEJA, humanizeRequest, isGantiKain, mattressInfo, salesNoteOf };`)(STEP_BY_NO, bucketStyle, PRODUCT_TYPE_LABELS, rankOfView);
 }
 
 test("Navigasi Production (P12B.2): OPERASIONAL 6 menu; MODE KERJA akordeon default tertutup; KONTROL & LAPORAN 3 menu; ADMINISTRASI = Pengaturan; tanpa Legacy", () => {
   const sec = Object.fromEntries(PRODUCTION_NAV.map((x) => [x.section, x]));
   assert.deepEqual(PRODUCTION_NAV.map((x) => x.section), ["OPERASIONAL", "MODE KERJA", "KONTROL & LAPORAN", "ADMINISTRASI"]);
-  assert.deepEqual(sec["OPERASIONAL"].items.map((i) => i.label), ["Ringkasan", "Order Produksi", "Status Produksi", "Rencana Produksi", "Quality Control", "Bahan Produksi"]);
+  assert.deepEqual(sec["OPERASIONAL"].items.map((i) => i.label), ["Ringkasan", "Order Produksi", "Status Produksi", "Rencana Produksi", "Bahan Produksi"]); // Slice 1: QC disembunyikan sementara
   assert.deepEqual(sec["MODE KERJA"].items.map((i) => i.label), ["Aplikasi Meja", "Aplikasi Corner", "Aplikasi Dokumentasi", "Andon TV"]);
   assert.ok(sec["MODE KERJA"].collapsible && sec["MODE KERJA"].defaultClosed, "akordeon, default tertutup");
   assert.deepEqual(sec["KONTROL & LAPORAN"].items.map((i) => i.label), ["KPI & Laporan", "Biaya Produksi", "Komplain & Revisi"]);
@@ -119,10 +120,11 @@ test("Kartu foto-pertama: foto besar di atas, placeholder eksplisit 'Belum ada f
   assert.match(CARD, /data-testid="sales-note"/);
 });
 
-test("unitCardModel: prioritas Tinggi/Mendesak merah + ikon; Normal tanpa ikon", () => {
+test("unitCardModel: prioritas Komplain merah + ikon; Tinggi (termasuk Mendesak lama) oranye + ikon; Normal tanpa ikon", () => {
   const { priorityMeta } = loadModel();
-  assert.deepEqual([priorityMeta(2).tone, priorityMeta(2).icon, priorityMeta(2).label], ["red", "urgent", "Mendesak"]);
-  assert.deepEqual([priorityMeta(1).tone, priorityMeta(1).icon, priorityMeta(1).label], ["red", "high", "Tinggi"]);
+  assert.deepEqual([priorityMeta(3).tone, priorityMeta(3).icon, priorityMeta(3).label], ["red", "urgent", "Komplain"]);
+  assert.deepEqual([priorityMeta(2).tone, priorityMeta(2).icon, priorityMeta(2).label], ["orange", "high", "Tinggi"], "Mendesak lama tampil Tinggi");
+  assert.deepEqual([priorityMeta(1).tone, priorityMeta(1).icon, priorityMeta(1).label], ["orange", "high", "Tinggi"]);
   assert.equal(priorityMeta(0).icon, null);
 });
 
@@ -159,20 +161,19 @@ test("unitCardModel: kartu QC dipetakan ke view Command Center lewat runId (fall
 });
 
 // Kontrak layanan: Layanan Dipesan (Sales) read-only vs Layanan Teknis (hasil Diagnosis) — tampil TERPISAH di kartu, Unit 360, wizard.
-test("Kontrak layanan: kartu menampilkan 'Layanan Sales' DAN 'Layanan Teknis' sebagai dua baris terpisah", () => {
+test("Kontrak layanan (Slice 1): kartu hanya menampilkan 'Layanan Sales'", () => {
   assert.match(CARD, /Layanan Sales: /);
-  assert.match(CARD, /data-testid="tech-service"/);
-  assert.match(CARD, /Layanan Teknis: /);
+  assert.doesNotMatch(CARD, /data-testid="tech-service"|Layanan Teknis/, "Slice 1: layanan teknis tidak tampil di kartu");
 });
-test("Kontrak layanan: Unit 360 — 'Layanan Teknis (Produksi)' terpisah dari 'Layanan Dipesan (Sales)' (badge ORDER = read-only)", () => {
+test("Kontrak layanan (Slice 1): Unit 360 hanya menampilkan 'Layanan Sales' (badge ORDER = read-only); layanan teknis tidak tampil", () => {
   const D = read("features", "production", "UnitOverviewDrawer.jsx");
-  assert.match(D, /label="Layanan Teknis \(Produksi\)"/);
-  assert.match(D, /label="Layanan Dipesan \(Sales\)" field=\{d\.salesContext\.salesServices\}/);
+  assert.doesNotMatch(D, /Layanan Teknis|Layanan teknis/);
+  assert.match(D, /label="Layanan Sales" field=\{d\.salesContext\.salesServices\}/);
 });
 test("Kontrak layanan: wizard menampilkan Layanan Dipesan (Sales) hanya-baca & menegaskan layanan teknis tidak mengubah order", () => {
   const W = read("features", "production", "DiagnosisWizard.jsx");
   assert.match(W, /data-testid="sales-ordered-service"/);
-  assert.match(W, /tidak mengubah order, item, atau harga/);
+  assert.doesNotMatch(W, /Layanan teknis/, "slice 2: tidak ada pilihan layanan teknis");
 });
 test("humanizeRequest: JSON intake Sales jadi kalimat terbaca; teks biasa & JSON tak dikenal tidak diubah", () => {
   const { humanizeRequest } = loadModel();
@@ -186,7 +187,8 @@ test("humanizeRequest: JSON intake Sales jadi kalimat terbaca; teks biasa & JSON
 test("Rencana: MejaColumn menerima onHandleDown & drag; kartu meja dan backlog punya handle seret (antar-meja / balik ke backlog)", () => {
   assert.match(RENCANA, /<MejaColumn [\s\S]*?onHandleDown=\{onHandleDown\}/);
   assert.ok(RENCANA.includes("handle={<DragHandle unitCode={v.unit.unitCode} disabled={busy} onPointerDown={(e) => onHandleDown(e, v)} />}"));
-  assert.equal((RENCANA.match(/<DragHandle /g) || []).length, 2, "backlog + meja");
+  assert.equal((RENCANA.match(/<DragHandle /g) || []).length, 3, "backlog (kartu rencana) + backlog (order nyata siap onboarding) + meja");
+  assert.ok(RENCANA.includes("onPointerDown={(e) => onHandleDown(e, viewOfOnboardCard(it))}"), "kartu order nyata memakai mesin seret yang SAMA (view sintetis)");
 });
 
 // ---- Temuan sandbox QA (fix/production-v2-sandbox-findings) ----
@@ -195,12 +197,14 @@ test("Sandbox#1 Revisi Diagnosis tidak lagi kosong: wizard di-seed dari diagnosi
   assert.match(W, /export function serverSeed\(cur\)/);
   assert.match(W, /const seed = local \|\| \(server \? serverSeed\(server\) : null\)/);
   assert.match(W, /filter\(\(m\) => m\.status === "NEEDS_MAPPING"\)/, "hanya bahan manual belum terpetakan yang dibawa");
-  assert.match(read("pages", "produksi", "WorkerLane.jsx"), /current: diagState\.current/);
+  assert.match(read("features", "production", "workerApp", "workerSheets.jsx"), /current: diagState\.current/); // P12C: lembar diagnosis diekstrak dari WorkerLane
   assert.match(read("features", "production", "UnitOverviewDrawer.jsx"), /current: data\.diagnosis\?\.current \?\? null/);
 });
 test("Sandbox#3 PIC/Gudang tidak memicu 403 daftar workshop/operator di Status & Rencana", () => {
   assert.match(STATUS, /if \(!canRoute\) return;/);
-  assert.match(RENCANA, /if \(!canUploadPhoto\) \{/);
+  assert.match(RENCANA, /if \(!canManagePlanning\(\)\) \{ setRefs/, "peran tanpa izin menjadwalkan tidak memanggil getPlanningRefs");
+  assert.match(RENCANA, /const readUser = \(\) =>/, "peran dibaca SAAT dipakai, bukan dibekukan saat modul dimuat");
+  assert.doesNotMatch(RENCANA, /^const user = \(\(\) =>/m, "tidak ada snapshot localStorage tingkat modul");
 });
 test("Sandbox#5/#6 Rencana: reservasi tampil kode·nama (bukan UUID) dan ada tombol 'Ajukan Pengambilan Bahan' di UI baru", () => {
   assert.match(RENCANA, /matLabel\(r\.materialId\)/);
@@ -232,9 +236,8 @@ test("Sandbox#10 Gudang: retur & waste bisa ditautkan ke unit (unitId) supaya Si
 // Revisi kartu Rencana Produksi (2 Okt 2026): layanan cukup dari Sales (tanpa Layanan Teknis), + jenis/merk/ukuran kasur,
 // + catatan Sales, + Ganti Kain berwarna beda (krusial: harus sesuai keinginan customer).
 const PLAN = read("features", "production", "PlanCard.jsx");
-test("Rencana Produksi: kartu PlanCard tanpa Layanan Teknis & tanpa harga; Status/QC (UnitCard) tetap menampilkan Layanan Teknis", () => {
-  assert.match(CARD, /showTechService = true/);
-  assert.match(CARD, /\{showTechService && \(/);
+test("Rencana Produksi: PlanCard dan UnitCard tanpa Layanan Teknis & tanpa harga (Slice 1)", () => {
+  assert.ok(!/showTechService|Layanan Teknis|tech-service/.test(CARD), "UnitCard: tanpa Layanan Teknis");
   assert.ok(!/Layanan Teknis|tech-service|formatRupiah|orderValue/.test(PLAN), "PlanCard: tanpa Layanan Teknis dan tanpa harga");
   assert.ok(!/Layanan Teknis|formatRupiah|orderValue/.test(RENCANA));
   assert.equal((RENCANA.match(/<PlanCard /g) || []).length, 3, "backlog + meja + ghost seret");
@@ -248,7 +251,7 @@ test("Kartu unit: baris Kasur (jenis·merk·ukuran) & Catatan Sales ada di kartu
 test("PlanCard: tiga blok berbeda (Layanan Sales biru · Kasur netral · Catatan Sales kuning + 'Sales: nama'), teks kosong, operasional terpisah, dua kolom via container query", () => {
   for (const t of ['kind="sales" label="Layanan Sales"', 'kind="kasur" label="Kasur"', 'kind="note" label="Catatan Sales"']) assert.ok(PLAN.includes(t), t);
   for (const t of ["Layanan belum dicatat Sales", "Data kasur belum lengkap", "Catatan Sales belum tersedia", "Sales: {c.salesName}"]) assert.ok(PLAN.includes(t), t);
-  for (const t of ["Tahap", "Bahan", "Target", "Meja", "PIC usulan", "tahap</span>"]) assert.ok(PLAN.includes(t), t);
+  for (const t of ["Tahap", "Bahan", "Target", "Meja", "PIC usulan", "progressText(view.progress)"]) assert.ok(PLAN.includes(t), t);
   assert.match(PLAN, /testid="row-stage"/); assert.match(PLAN, /testid="row-material"/, "status bahan terpisah dari nama tahap");
   assert.match(PLAN, /@container/); assert.match(PLAN, /@\[34rem\]:grid-cols-2/);
   assert.match(PLAN, /formatTanggal\(plan\.productionDate\)/, "target format Indonesia");
@@ -257,15 +260,15 @@ test("PlanCard: tiga blok berbeda (Layanan Sales biru · Kasur netral · Catatan
   const css = fs.readFileSync(path.join(__dirname, "..", "src", "index.css"), "utf8");
   for (const c of [".plan-block-sales", ".plan-block-kasur", ".plan-block-note", ".plan-prio-urgent", ".plan-prio-high", ".plan-prio-normal"]) assert.ok(css.includes(c), c);
 });
-test("Prioritas kanonis: MENDESAK merah tua + api + garis tebal; TINGGI merah terang; NORMAL biru; overdue badge terpisah; tidak diinfer dari catatan", () => {
+test("Prioritas kanonis (Slice 1): KOMPLAIN merah tua + api + garis tebal; TINGGI oranye; NORMAL netral; overdue badge terpisah; tidak diinfer dari catatan", () => {
   const M = loadModel();
-  const u = M.priorityMeta(2), h = M.priorityMeta(1), n = M.priorityMeta(0);
-  assert.deepEqual([u.label, u.icon, u.badgeClass, u.stripeWidth], ["Mendesak", "urgent", "plan-prio-urgent", 7]);
+  const u = M.priorityMeta(3), h = M.priorityMeta(1), n = M.priorityMeta(0);
+  assert.deepEqual([u.label, u.icon, u.badgeClass, u.stripeWidth], ["Komplain", "urgent", "plan-prio-urgent", 7]);
   assert.deepEqual([h.label, h.icon, h.badgeClass, h.stripeWidth], ["Tinggi", "high", "plan-prio-high", 5]);
   assert.deepEqual([n.label, n.icon, n.badgeClass], ["Normal", null, "plan-prio-normal"]);
   assert.ok(u.stripeWidth > h.stripeWidth && h.stripeWidth > n.stripeWidth, "garis kiri makin tebal makin mendesak");
   assert.match(PLAN, /view\.timer\?\.late && <Badge variant="red">Terlambat<\/Badge>/, "overdue = badge terpisah");
-  assert.match(PLAN, /priorityMeta\(plan\?\.priority \?\? 0\)/, "prioritas dari plan.priority");
+  assert.match(PLAN, /priorityMeta\(rankOfView\(view\)\)/, "peringkat dari server (Komplain resmi / plan.priority)");
   assert.ok(!/request|notes|catatan/i.test(PLAN.slice(PLAN.indexOf("const p = priorityMeta"), PLAN.indexOf("const p = priorityMeta") + 80)), "tidak diinfer dari teks");
 });
 test("Ganti Kain: kartu berwarna beda (oranye) + kotak peringatan yang selalu tampil; hanya dikenali dari layanan Sales", () => {

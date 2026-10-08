@@ -109,7 +109,7 @@ export function workshopErrorMessage(error) {
     case "WORKSHOP_UNIT_NOT_IN_PRODUCTION": return error.message || "Status unit tidak lagi produksi — hubungi Production Lead.";
     case "PRODUCTION_RUN_EXCEPTION_OPEN": return "Ada konflik rekonsiliasi yang belum diselesaikan untuk run ini.";
     case "WORKSHOP_PAUSE_REASON_INVALID": return error.message || "Alasan jeda tidak valid.";
-    case "WORKSHOP_WRITER_OFF": return "Eksekusi workshop V2 belum aktif untuk unit ini.";
+    case "WORKSHOP_WRITER_OFF": return "Pengerjaan di workshop belum aktif untuk unit ini.";
     default: return error?.message || "Gagal memproses perintah";
   }
 }

@@ -4,6 +4,7 @@ import React from "react";
 import { LABEL_DIVISI, formatUang, tanggalPendek, tanggalJam, Foto } from "./shared.jsx";
 import { LinkBukti } from "./receiptMedia.jsx";
 import { LABEL_METODE_PJK } from "./penjualanKaryawanLogic.js";
+import { namaBerkaitan } from "./pembelianPihak.js";
 
 const uang = (v) => (v === null || v === undefined ? null : formatUang(v));
 const nama = (o) => o?.name || null;
@@ -53,6 +54,8 @@ function bagianUangKeluar(d) {
       ...barisBiayaAdminPanel(d),
       ["Ditalangi oleh", nama(d.reimburseTo)],
       ["Dibayar ke", nama(d.supplier) || d.payeeName],
+      // "Dibeli dari" ikut tampil bila berbeda dari supplier terdaftar (sebelumnya tersembunyi — PUR-07102026-009).
+      ...(nama(d.supplier) && d.payeeName?.trim() && !namaBerkaitan(nama(d.supplier), d.payeeName) ? [["Dibeli dari", d.payeeName.trim()]] : []),
     ],
   };
 }

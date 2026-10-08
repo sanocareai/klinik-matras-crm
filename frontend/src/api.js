@@ -9,6 +9,12 @@ function mutationKey(prefix = "web") {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
 }
 
+// Histori waktu rute/stop (fase 2): setiap aksi eksekusi membawa SUMBER aksi + WAKTU KEJADIAN perangkat (antrean offline mempertahankan waktu aslinya).
+// Waktu diterima server selalu dicatat server sendiri. Sumber bawaan = ADMIN_WEB (input dari web admin); Driver Web mengirim DRIVER_WEB.
+function execHeaders(idempotencyKey, { occurredAt = null, source = "ADMIN_WEB" } = {}) {
+  return { "Idempotency-Key": idempotencyKey, "X-Action-Source": source, "X-Event-Occurred-At": occurredAt || new Date().toISOString() };
+}
+
 function authHeaders() {
   const token = localStorage.getItem("token");
   return token ? { Authorization: `Bearer ${token}` } : {};
@@ -135,7 +141,7 @@ function uploadWithProgress(path, formData, onProgress) {
   });
 }
 
-async function requestFormData(path, formData, method = "POST") {
+async function requestFormData(path, formData, method = "POST", extraHeaders = {}) {
   const demo = demoBlock("Unggah berkas"); if (demo) return demo;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -144,7 +150,7 @@ async function requestFormData(path, formData, method = "POST") {
     const res = await fetch(`${BASE}${path}`, {
       method,
       signal: controller.signal,
-      headers: authHeaders(),
+      headers: { ...authHeaders(), ...extraHeaders },
       body: formData,
     });
     adoptRefreshedToken(res);
@@ -206,6 +212,7 @@ export const api = {
   // Daftar SELURUH unit (Production Tahap 1) — lebih lebar dari /board yang
   // sengaja cuma menampilkan unit yang ada di bengkel hari ini.
   getWorkOrders: (params = {}) => {
+    // page/pageSize/displayStatus/real dipakai server (paginasi + filter status tampilan); tanpa page = halaman 1 berukuran 100 beserta total/hasMore.
     const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
     return request(`/production/work-orders${qs ? `?${qs}` : ""}`);
   },
@@ -326,8 +333,33 @@ export const api = {
   getRouteMap: (id) => request(`/armada/routes/${id}/map`),
   // Mulai SATU rute sekaligus — foto muatan sekali, semua job ASSIGNED di
   // rute jadi EN_ROUTE (POST /armada/routes/:id/start).
-  startRoute: (id, data = {}, idempotencyKey = mutationKey("route")) => request(`/armada/routes/${id}/start`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  startRoute: (id, data = {}, idempotencyKey = mutationKey("route"), opts = {}) => request(`/armada/routes/${id}/start`, { method: "POST", headers: execHeaders(idempotencyKey, opts), body: JSON.stringify(data) }),
+  // Histori waktu rute & stop (Indonesia + WIB, disusun server) + koreksi append-only (alasan wajib; hanya ROUTE_WRITE).
+  getRouteTimeline: (routeId) => request(`/armada/routes/${routeId}/timeline`),
+  correctRouteTime: (routeId, data, idempotencyKey = mutationKey("timeline-fix")) => request(`/armada/routes/${routeId}/timeline/corrections`, { method: "POST", headers: execHeaders(idempotencyKey), body: JSON.stringify(data) }),
   cancelRoute: (id) => request(`/armada/routes/${id}/cancel`, { method: "PATCH" }),
+
+  // Checklist Persiapan Perjalanan (7 Okt 2026) — susun/edit (admin/dispatcher,
+  // ROUTE_WRITE), progres+bukti (baca, JOB_WRITE/JOB_OWN_WRITE), gerbang
+  // sebenarnya ada di startRoute di atas (409 CHECKLIST_BELUM_LENGKAP kalau
+  // item wajib belum terpenuhi). `revision` (dari GET) WAJIB dikirim balik
+  // sebagai expectedRevision di tiap tambah/edit item — konkurensi
+  // optimistik, lihat catatan panjang services/routePrepChecklist.js.
+  getRoutePrepChecklist: (routeId) => request(`/armada/routes/${routeId}/prep-checklist`),
+  addRoutePrepChecklistItem: (routeId, data) =>
+    request(`/armada/routes/${routeId}/prep-checklist/items`, { method: "POST", body: JSON.stringify(data) }),
+  updateRoutePrepChecklistItem: (routeId, itemId, data) =>
+    request(`/armada/routes/${routeId}/prep-checklist/items/${itemId}`, { method: "PATCH", body: JSON.stringify(data) }),
+  // Bukti per item (driver) — multipart field "photo" (opsional kalau item
+  // photoRequired=false) + "note" opsional. Idempotency-Key WAJIB (retry
+  // double-tap tidak boleh membuat baris bukti dobel).
+  submitRoutePrepChecklistProof: (routeId, itemId, formData, idempotencyKey = mutationKey("checklist-proof")) =>
+    requestFormData(`/armada/routes/${routeId}/prep-checklist/items/${itemId}/proof`, formData, "POST", { "Idempotency-Key": idempotencyKey }),
+  // Bukti Kelengkapan Standar (7 Okt 2026) — TERPISAH dari item di atas: SELALU
+  // wajib (tidak perlu admin menyusun apa pun), 1-2 foto ("photos") + catatan
+  // bebas opsional ("note"). Submit ulang MENIMPA seluruh set (bukan menambah).
+  submitRouteKelengkapan: (routeId, formData) =>
+    requestFormData(`/armada/routes/${routeId}/kelengkapan`, formData, "POST"),
   // Hapus permanen — untuk rute DRAFT atau CANCELLED (D-059, diperluas
   // D-061). Beda dari cancelRoute (soft, riwayatnya tetap ada) — ini
   // benar-benar menghapus baris Route-nya. PUBLISHED/COMPLETED ditolak
@@ -452,7 +484,7 @@ export const api = {
   // proofPhotoUrls WAJIB sejak 8 September 2026 (dokumentasi tiap tahap) —
   // data opsional untuk kompatibilitas pemanggil lama, backend yang
   // menegakkan validasi wajibnya.
-  startArmadaJob: (jobId, data = {}, idempotencyKey = mutationKey("start")) => request(`/armada/jobs/${jobId}/start`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  startArmadaJob: (jobId, data = {}, idempotencyKey = mutationKey("start"), opts = {}) => request(`/armada/jobs/${jobId}/start`, { method: "POST", headers: execHeaders(idempotencyKey, opts), body: JSON.stringify(data) }),
   // D-034 — ping GPS driver (Live Tracking nyata). pings: array {lat,lng,
   // accuracy,recordedAt} — lihat utils/positionQueue.js untuk pengelompokan
   // per job sebelum dikirim.
@@ -471,8 +503,8 @@ export const api = {
   // — lihat services/routeTracking.js. SEMUA angka di sini ESTIMASI, bukan
   // tagihan pasti — label UI WAJIB menyebutnya begitu.
   getRouteTrace: (routeId) => request(`/armada/routes/${routeId}/route-trace`),
-  arriveArmadaJob: (jobId, data = {}, idempotencyKey = mutationKey("arrive")) => request(`/armada/jobs/${jobId}/arrive`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
-  completeArmadaJob: (jobId, data, idempotencyKey = mutationKey("complete")) => request(`/armada/jobs/${jobId}/complete`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  arriveArmadaJob: (jobId, data = {}, idempotencyKey = mutationKey("arrive"), opts = {}) => request(`/armada/jobs/${jobId}/arrive`, { method: "POST", headers: execHeaders(idempotencyKey, opts), body: JSON.stringify(data) }),
+  completeArmadaJob: (jobId, data, idempotencyKey = mutationKey("complete"), opts = {}) => request(`/armada/jobs/${jobId}/complete`, { method: "POST", headers: execHeaders(idempotencyKey, opts), body: JSON.stringify(data) }),
   // Tambah bukti SETELAH job sudah Selesai (8 September 2026) — lihat
   // catatan panjang di routes/armada.js PATCH /jobs/:id/proof-photos.
   addJobProofPhotos: (jobId, data) => request(`/armada/jobs/${jobId}/proof-photos`, { method: "PATCH", body: JSON.stringify(data) }),
@@ -707,11 +739,13 @@ export const api = {
     return request(`/inventory/reports/summary${qs ? `?${qs}` : ""}`);
   },
   getUnitByCode: (code) => request(`/units/by-code/${encodeURIComponent(code)}`),
-  failArmadaJob: (jobId, data, idempotencyKey = mutationKey("fail")) => request(`/armada/jobs/${jobId}/fail`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  failArmadaJob: (jobId, data, idempotencyKey = mutationKey("fail"), opts = {}) => request(`/armada/jobs/${jobId}/fail`, { method: "POST", headers: execHeaders(idempotencyKey, opts), body: JSON.stringify(data) }),
 
   // Unit — detail & aksi tahap (Production Tahap 2)
   getUnitStatus: (unitId) => request(`/units/${unitId}`),
   getUnitTimeline: (unitId) => request(`/units/${unitId}/timeline`),
+  // P12C.1 — antrean V1 milik PIC (penugasan sah termasuk yang belum dimulai; lini Meja/Corner kanonik). BACA-SAJA.
+  getV1WorkerQueue: (lane) => request(`/production/v1-worker-queue?lane=${String(lane || "").toUpperCase() === "CORNER" ? "CORNER" : "TABLE"}`),
   startUnitStage: (unitId) => request(`/units/${unitId}/stages/start`, { method: "POST" }),
   completeUnitStage: (unitId, stageId, { photoUrls, note } = {}) =>
     request(`/units/${unitId}/stages/${stageId}/complete`, { method: "POST", body: JSON.stringify({ photoUrls, note }) }),
@@ -729,6 +763,8 @@ export const api = {
   getProductionV2Board: (date) => request(`/production-v2/board${date ? `?date=${encodeURIComponent(date)}` : ""}`),
   // P9B — Ringkasan Produksi + kolom pipeline Rencana Produksi: SATU payload dipakai kedua halaman.
   getProductionV2CommandCenter: () => request("/production-v2/command-center"),
+  // Backlog Rencana Produksi (slice 1): filter + paginasi di server. status = DIPROSES (default) | PENGAMBILAN.
+  getProductionV2Backlog: ({ status = "DIPROSES", q = "", page = 1, pageSize = 25 } = {}) => request(`/production-v2/backlog?status=${encodeURIComponent(status)}&page=${page}&pageSize=${pageSize}${q ? `&q=${encodeURIComponent(q)}` : ""}`),
   getProductionV2Andon: (date) => request(`/production-v2/andon${date ? `?date=${encodeURIComponent(date)}` : ""}`),
   getProductionV2Card: (runId) => request(`/production-v2/runs/${runId}/card`),
   // P9C — Unit 360: satu bacaan kanonis per unit (setara detail Resi), dipakai kartu Status Produksi & Rencana Produksi.
@@ -738,6 +774,9 @@ export const api = {
   getProductionV2Report: (runId) => request(`/production-v2/runs/${runId}/report`),
   planProductionV2Unit: (data, idempotencyKey = mutationKey("p8-plan")) =>
     request("/production-v2/plans", { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  // Rencana order nyata: workshop + PIC yang sah (dihitung server, dengan alasan + tautan bila kosong) dan daftar eligibility/aktivasi (Admin/Owner/Kepala Produksi).
+  getPlanningRefs: () => request("/production-v2/planning/refs"),
+  getRencanaEligibility: () => request("/production-v2/planning/eligibility"),
   scheduleProductionV2Plan: (planId, data, idempotencyKey = mutationKey("p8-schedule")) =>
     request(`/production-v2/plans/${planId}/schedule`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   // Urutan manual unit per meja (drag-drop / naik-turun) — daftar LENGKAP plan id di slot menurut urutan baru.
@@ -760,9 +799,28 @@ export const api = {
     request(`/production-v2/runs/${runId}/material-shortage`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   resolveProductionV2Shortage: (id, data, idempotencyKey = mutationKey("p8-shortage-resolve")) =>
     request(`/production-v2/material-shortages/${id}/resolve`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  // Slice 2 (flow adaptasi): lewati tahap, Selesaikan Produksi (pratinjau + konfirmasi), Tunda/Lanjutkan, Pengaturan Admin.
+  skipProductionV2Step: (runId, stepNo, data = {}, idempotencyKey = mutationKey("s2-skip")) =>
+    request(`/production-v2/runs/${runId}/steps/${stepNo}/skip`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  getProductionV2FinishPreview: (runId) => request(`/production-v2/runs/${runId}/finish-preview`),
+  finishProductionV2Run: (runId, data = {}, idempotencyKey = mutationKey("s2-finish")) =>
+    request(`/production-v2/runs/${runId}/finish`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  applyProductionV2Adaptation: (runId, data = {}, idempotencyKey = mutationKey("s2-adapt")) =>
+    request(`/production-v2/runs/${runId}/adaptation`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  delayProductionV2Run: (runId, data = {}, idempotencyKey = mutationKey("s2-delay")) =>
+    request(`/production-v2/runs/${runId}/delay`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  resumeProductionWork: (unitId, data = {}, idempotencyKey = mutationKey("s2-resume")) =>
+    request(`/production-v2/units/${unitId}/resume-work`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  getProductionV2Settings: () => request("/production-v2/settings"),
+  getProductionV2ServiceMappings: () => request("/production-v2/settings/service-mappings"),
+  setProductionV2WorkshopLocation: (locationId) => request("/production-v2/settings/workshop-location", { method: "PUT", body: JSON.stringify({ locationId }) }),
+  setProductionV2AdaptationDefault: (enabled) => request("/production-v2/settings/adaptation-default", { method: "PUT", body: JSON.stringify({ enabled }) }),
+  setProductionV2ServiceMapping: (priceItemId, serviceId) => request(`/production-v2/settings/service-mappings/${priceItemId}`, { method: "PUT", body: JSON.stringify({ serviceId: serviceId || null }) }),
   // P9A — "Unit Tiba di Workshop": pemilih lokasi Receiving/WIP + konfirmasi kedatangan fisik (tanpa buka workspace Gudang).
   getProductionV2ReceivingLocations: () => request("/production-v2/receiving-locations"),
-  confirmProductionV2UnitArrival: (unitId, data, idempotencyKey = mutationKey("p9a-confirm-arrival")) =>
+  // Slice 2: satu aksi — lokasi workshop bawaan dari Pengaturan Admin (locationId tidak dikirim).
+  getProductionV2ArrivalConfig: () => request("/production-v2/arrival-config"),
+  confirmProductionV2UnitArrival: (unitId, data = {}, idempotencyKey = mutationKey("p9a-confirm-arrival")) =>
     request(`/production-v2/units/${unitId}/confirm-arrival`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   uploadProductionV2Evidence: (runId, files, onProgress) => {
     const fd = new FormData();
@@ -783,6 +841,16 @@ export const api = {
     request(`/production-v2/documentation/runs/${runId}/submit`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   correctProductionV2Documentation: (runId, data, idempotencyKey = mutationKey("p10b-doc-fix")) =>
     request(`/production-v2/documentation/runs/${runId}/correct`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  // Slice 3 — Catatan Komponen kanonis per unit (Sebelum -> Sesudah): satu data untuk Meja, Corner, Dokumentasi, Unit 360, laporan. Informasi saja (tanpa stok/BOM/lifecycle).
+  getComponentNotes: (unitId) => request(`/production-v2/component-notes/units/${unitId}`),
+  searchComponentMaterials: (q = "") => request(`/production-v2/component-notes/materials?q=${encodeURIComponent(q)}`),
+  uploadComponentNoteMedia: (unitId, files, onProgress) => {
+    const fd = new FormData();
+    for (const file of files) fd.append("files", file);
+    return uploadWithProgress(`/production-v2/component-notes/units/${unitId}/upload`, fd, onProgress);
+  },
+  saveComponentNote: (unitId, section, data, idempotencyKey = mutationKey("s3-component")) =>
+    request(`/production-v2/component-notes/units/${unitId}/sections/${section}`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   // P11 — Reporting & KPI Production–Warehouse (BACA-SAJA). `qs` = query string yang SAMA untuk layar, drill-down, dan export.
   // P12A — server hanya memutuskan boleh/tidak (ADMIN/OWNER); dataset demo dimuat frontend setelah 200.
   getDemoAccess: () => request("/production-v2/demo/access"),
@@ -1077,10 +1145,12 @@ export const api = {
   getOrderTimeline: (orderId) => request(`/orders/${orderId}/timeline`),
   // Invoice (31 Agustus 2026) — nominal & status SELALU dari backend
   // (services/invoice.js), UI tidak pernah menghitung tagihan sendiri.
-  getOrderInvoice: (orderId) => request(`/orders/${orderId}/invoice`),
-  updateOrderInvoice: (orderId, data) =>
-    request(`/orders/${orderId}/invoice`, { method: "PATCH", body: JSON.stringify(data) }),
-  sendOrderInvoice: (orderId) => request(`/orders/${orderId}/invoice/send`, { method: "POST" }),
+  // jenis (opsional): "DP" | "TOTAL" — jenis tagihan dokumen (6 Okt 2026); kosong = otomatis (DP bila DP disepakati & belum terpenuhi).
+  getOrderInvoice: (orderId, jenis) => request(`/orders/${orderId}/invoice${jenis ? `?jenis=${jenis}` : ""}`),
+  updateOrderInvoice: (orderId, data, jenis) =>
+    request(`/orders/${orderId}/invoice${jenis ? `?jenis=${jenis}` : ""}`, { method: "PATCH", body: JSON.stringify(data) }),
+  sendOrderInvoice: (orderId, jenis) =>
+    request(`/orders/${orderId}/invoice/send`, { method: "POST", body: JSON.stringify({ jenis: jenis || undefined }) }),
   // Gabung invoice lintas-order (2 Sep 2026) — lihat services/invoice.js.
   getMergeableOrders: (orderId) => request(`/orders/${orderId}/invoice/mergeable`),
   attachOrderToInvoice: (orderId, targetOrderId) =>
@@ -1090,8 +1160,8 @@ export const api = {
   // PDF = FILE, bukan JSON — sama alasan dengan exportCustomersVCard di atas:
   // di-fetch manual dengan header Bearer, <a href> polos tidak bisa membawa
   // otorisasi (endpoint ini dijaga requireAuth di backend).
-  getOrderInvoicePdf: async (orderId) => {
-    const res = await fetch(BASE + `/orders/${orderId}/invoice/pdf`, { headers: authHeaders() });
+  getOrderInvoicePdf: async (orderId, jenis) => {
+    const res = await fetch(BASE + `/orders/${orderId}/invoice/pdf${jenis ? `?jenis=${jenis}` : ""}`, { headers: authHeaders() });
     if (res.status === 401) { handleUnauthorized(); throw new Error("Sesi berakhir, silakan login kembali"); }
     if (!res.ok) {
       let msg = "Gagal membuat PDF invoice";
@@ -1560,6 +1630,7 @@ export const api = {
   getFinanceCashFlow: (params = {}) => request(`/finance/reports/cash-flow${qsFinance(params)}`),
   getFinanceLedger: (accountId, params = {}) => request(`/finance/reports/ledger/${accountId}${qsFinance(params)}`),
   getFinanceReceivables: (params = {}) => request(`/finance/reports/receivables${qsFinance(params)}`),
+  getFinancePiutangDiagnosis: (params = {}) => request(`/finance/reports/receivables/diagnosis${qsFinance(params)}`),
   getFinancePayables: (params = {}) => request(`/finance/reports/payables${qsFinance(params)}`),
 
   // Pengeluaran & reimbursement

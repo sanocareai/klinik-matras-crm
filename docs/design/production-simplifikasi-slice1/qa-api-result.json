@@ -1,0 +1,197 @@
+[
+ {
+  "name": "backlog 200 untuk Production Lead",
+  "ok": true,
+  "extra": "status=200"
+ },
+ {
+  "name": "total backlog > 500 (tidak berhenti di 500)",
+  "ok": true,
+  "extra": "total=597"
+ },
+ {
+  "name": "semua halaman terambil = total, tanpa duplikat",
+  "ok": true,
+  "extra": "halaman=6 terambil=597 unik=597"
+ },
+ {
+  "name": "urutan: Komplain lebih dulu",
+  "ok": true,
+  "extra": "item pertama=QA-PV2-S1-B010-U1 (Komplain)"
+ },
+ {
+  "name": "multi-unit: unit Diproses ada, unit Siap Kirim TIDAK ada (order sama)",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "backlog default tidak memuat Siap Kirim",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "backlog default tidak memuat Siap Kirim (dalam pengiriman)",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "backlog default tidak memuat Terkirim",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "backlog default tidak memuat Pengambilan",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "backlog default tidak memuat lead SPAM",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "backlog default tidak memuat staf internal",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "backlog default tidak memuat order dibatalkan",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "backlog default tidak memuat Pengambilan (order PICKUP)",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "filter Pengambilan memuat unit Pengambilan + presence 'belum tiba'",
+  "ok": true,
+  "extra": "n=12"
+ },
+ {
+  "name": "status=SIAP_KIRIM tidak membuka backlog histori (jatuh ke Diproses)",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "status=TERKIRIM tidak membuka backlog histori (jatuh ke Diproses)",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "Komplain: kasus unit-spesifik hanya unit itu (KOMP1 U1=Komplain, U2=Normal)",
+  "ok": true,
+  "extra": "Komplain/Normal"
+ },
+ {
+  "name": "Komplain: kasus tingkat order = semua unit order (MULTI1 U1,U2,U3)",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "Komplain: kasus SELESAI = Normal (KOMP2)",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "Komplain: teks 'komplain' di catatan + hasComplaint TANPA kasus = Normal (TEKS1)",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "Prioritas lama Mendesak/Kritis/Tinggi tampil Tinggi; data tersimpan utuh",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "work-orders mengembalikan counts 4 status",
+  "ok": true,
+  "extra": "{\"PENGAMBILAN\":12,\"DIPROSES\":655,\"SIAP_KIRIM\":10,\"TERKIRIM\":2}"
+ },
+ {
+  "name": "histori utuh: displayStatus=SIAP_KIRIM memuat QA-PV2-S1-SIAP1-U1",
+  "ok": true,
+  "extra": "n=10"
+ },
+ {
+  "name": "histori utuh: displayStatus=TERKIRIM memuat QA-PV2-S1-DONE1-U1",
+  "ok": true,
+  "extra": "n=2"
+ },
+ {
+  "name": "histori utuh: displayStatus=PENGAMBILAN memuat QA-PV2-S1-AMBIL1-U1",
+  "ok": true,
+  "extra": "n=12"
+ },
+ {
+  "name": "izin baca backlog = izin papan yang sudah ada (sales_fadlan)",
+  "ok": true,
+  "extra": "backlog=200 papan=200"
+ },
+ {
+  "name": "backlog tanpa harga untuk sales_fadlan",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "izin baca backlog = izin papan yang sudah ada (driver)",
+  "ok": true,
+  "extra": "backlog=403 papan=403"
+ },
+ {
+  "name": "izin baca backlog = izin papan yang sudah ada (meja1)",
+  "ok": true,
+  "extra": "backlog=200 papan=200"
+ },
+ {
+  "name": "backlog tanpa harga untuk meja1",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "izin baca backlog = izin papan yang sudah ada (gudang)",
+  "ok": true,
+  "extra": "backlog=200 papan=200"
+ },
+ {
+  "name": "backlog tanpa harga untuk gudang",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "izin baca backlog = izin papan yang sudah ada (qc)",
+  "ok": true,
+  "extra": "backlog=200 papan=200"
+ },
+ {
+  "name": "backlog tanpa harga untuk qc",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "izin baca backlog = izin papan yang sudah ada (dokumentasi)",
+  "ok": true,
+  "extra": "backlog=200 papan=200"
+ },
+ {
+  "name": "backlog tanpa harga untuk dokumentasi",
+  "ok": true,
+  "extra": ""
+ },
+ {
+  "name": "izin: operator meja TIDAK boleh ubah prioritas/target (403)",
+  "ok": true,
+  "extra": "status=403"
+ },
+ {
+  "name": "izin: Sales TIDAK boleh mulai tahap (403)",
+  "ok": true,
+  "extra": "status=403"
+ },
+ {
+  "name": "izin: Gudang TIDAK boleh menunda pekerjaan tahap (403)",
+  "ok": true,
+  "extra": "status=403"
+ }
+]

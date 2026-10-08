@@ -17,13 +17,13 @@ export default function UnitOrderFallback({ data, error, loading, roles = [], on
     <div className="space-y-3 pb-4" data-testid="unit-order-fallback">
       {v2View ? (
         <div className="rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-orange" data-testid="unit-v2-not-owned-notice">
-          <p className="m-0 font-semibold">Production V2 belum memegang eksekusi unit ini.</p>
-          <p className="m-0 mt-0.5">Belum ada Production Run V2 yang aktif (atau penulisan V2 belum menyala untuk unit ini), jadi pekerjaan dilakukan lewat jalur V1. Begitu Run V2 aktif, jalur ini otomatis terkunci dan pekerjaan pindah ke Diagnosis, Rencana, Meja/Corner, dan QC.</p>
+          <p className="m-0 font-semibold">Unit ini belum punya rencana di papan produksi.</p>
+          <p className="m-0 mt-0.5">Pekerjaan dikerjakan langsung dari bagian Pekerjaan di bawah. Setelah unit masuk rencana produksi, pekerjaan pindah ke Diagnosis, Rencana, Meja/Corner, dan QC.</p>
         </div>
       ) : (
       <div className="rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-orange" data-testid="unit-v2-notice">
-        <p className="m-0 font-semibold">Unit ini belum memakai alur Production V2.</p>
-        <p className="m-0 mt-0.5">Berikut data order dan unit aslinya (baca-saja). Bagian berikut akan tersedia setelah unit masuk Production V2:</p>
+        <p className="m-0 font-semibold">Unit ini belum punya rencana di papan produksi.</p>
+        <p className="m-0 mt-0.5">Berikut data order dan unit (pekerjaan tetap bisa dikerjakan dari bagian Pekerjaan). Bagian berikut tersedia setelah unit masuk rencana produksi:</p>
         <ul className="m-0 mt-1 list-disc pl-5">{V2_SECTIONS_UNAVAILABLE.map(([k, d]) => <li key={k}><b>{k}</b> — {d}</li>)}</ul>
       </div>
       )}
@@ -37,7 +37,7 @@ export default function UnitOrderFallback({ data, error, loading, roles = [], on
       <UnitV1Materials unitId={data.unit.id} roles={roles} onChanged={onChanged} />
       {data.productionStatusReason && <p className="m-0 text-[12px] text-ink3">{data.productionStatusReason}</p>}
       <section data-testid="unit-fallback-path">
-        <h3 className="m-0 mb-1 text-[13px] font-bold text-ink">Jalur tahap produksi (V1)</h3>
+        <h3 className="m-0 mb-1 text-[13px] font-bold text-ink">Tahap pengerjaan</h3>
         {path.length === 0 ? <p className="m-0 text-[12.5px] text-ink3">Layanan belum ditetapkan — jalur tahap belum tersusun.</p> : (
           <ol className="m-0 list-none space-y-1 p-0">
             {path.map((p, i) => (

@@ -79,8 +79,10 @@ test("fallback unit non-V2 di drawer yang sama: fakta order/unit asli + penjelas
   // layanan, prioritas, dan target TIDAK diduplikasi di fakta — hanya ada di UnitV1Actions
   for (const k of ["Layanan", "Layanan Teknis", "Prioritas", "Target selesai"]) assert.equal(facts[k], undefined, `${k} tidak diduplikasi di fakta`);
   assert.deepEqual(V2_SECTIONS_UNAVAILABLE.map(([k]) => k), ["Proses", "Bahan", "Dokumentasi", "QC & Handoff", "Aktivitas"]);
+  assert.ok(!/V1|V2/.test(JSON.stringify(V2_SECTIONS_UNAVAILABLE)), "Slice 1: tanpa istilah V1/V2 di penjelasan");
   const comp = strip(src("features", "production", "UnitOrderFallback.jsx"));
-  assert.match(comp, /belum memakai alur Production V2/); assert.match(comp, /data-testid="unit-v2-notice"/);
+  assert.match(comp, /belum punya rencana di papan produksi/); assert.match(comp, /data-testid="unit-v2-notice"/);
+  assert.doesNotMatch(comp, />[^<{]*\b(V1|V2)\b[^<{]*</, "Slice 1: tanpa label V1/V2 pada teks tampilan");
   assert.doesNotMatch(comp, /<button|<Button|navigate|<Link|href=/, "baca-saja, tanpa jalur ke halaman lain");
   const drawer = strip(src("features", "production", "UnitOverviewDrawer.jsx"));
   assert.match(drawer, /api\.getUnitTimeline\(unitId\)/);

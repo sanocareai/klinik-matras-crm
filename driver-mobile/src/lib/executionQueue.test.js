@@ -304,3 +304,14 @@ test("queue V2 menolak revision/device kosong dan membatasi retry otomatis", asy
   assert.equal(item.syncState, "RETRY_EXHAUSTED");
   assert.equal(item.attempts, 5);
 });
+
+test("histori waktu: waktu KEJADIAN dari antrean (saat tombol ditekan) ikut terkirim walau baru tersinkron belakangan; retry memakai waktu yang sama", async () => {
+  const api = createFakeApi();
+  const q = createExecutionQueue({ storage: createFakeStorage(), fs: createFakeFs(), api });
+  const item = await q.enqueueExecution({ userId: "u1", jobId: "j1", action: "arrive", payload: { location: null }, photos: [] });
+  await new Promise((r) => setTimeout(r, 15)); // simulasi: terkirim belakangan (offline)
+  await q.flushExecutionQueue("u1");
+  const call = api._calls.find((c) => c[0] === "arriveArmadaJob");
+  assert.equal(call[4].occurredAt, item.createdAt, "waktu kejadian = createdAt item antrean, bukan waktu kirim");
+  assert.ok(new Date(call[4].occurredAt).getTime() < Date.now(), "tidak memakai waktu sekarang");
+});

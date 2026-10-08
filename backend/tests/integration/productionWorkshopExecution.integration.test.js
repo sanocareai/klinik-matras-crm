@@ -4,7 +4,7 @@ import "./setup/env.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { testPrisma, truncateAll } from "./setup/testDb.js";
-import { createTestMaterial, createTestUser, seedBalance } from "./setup/fixtures.js";
+import { assignCurrentStageTo, createTestMaterial, createTestUser, seedBalance } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
 import { V2_FLAGS } from "../../src/services/v2FeatureFlags.js";
@@ -354,12 +354,14 @@ test("writer OFF / non-cohort: perintah V2 503 tanpa jejak; V1 tetap jalan norma
   assert.equal(off.status, 503); assert.equal(off.body.code, "WORKSHOP_WRITER_OFF");
   assert.equal(await testPrisma.productionOperationRun.count(), 0);
   assert.equal((await testPrisma.v2Command.count({ where: { commandType: { endsWith: "_WORKSHOP_STAGE" } } })), 0);
+  await assignCurrentStageTo(unit.id, w.op.user.id); // P12C.2: aksi tahap V1 hanya untuk PIC yang ditugaskan
   const v1 = await w.op.api.post(`/api/units/${unit.id}/stages/start`, {});
   assert.equal(v1.status, 200, JSON.stringify(v1.body));
   assert.equal(await testPrisma.productionOperationRun.count(), 0, "V1 tidak meninggalkan jejak V2");
   // Non-cohort (writer ON untuk unit lain): V2 503, V1 normal.
   const { unit: other } = await acceptedUnit();
   await setWriter({ enabled: true, unitIds: ["00000000-0000-0000-0000-000000000000"] });
+  await assignCurrentStageTo(other.id, w.op.user.id); // P12C.2
   const v1other = await w.op.api.post(`/api/units/${other.id}/stages/start`, {});
   assert.equal(v1other.status, 200, JSON.stringify(v1other.body));
 });
@@ -417,6 +419,7 @@ test("AUDIT F1/F2/F3: SEMUA penulis ledger tahap V1 dipagari untuk unit V2 (fail
   // Blokir V1 (unit di luar V2) dapat diselesaikan: resolveBlocker tidak lagi ReferenceError dan tidak dipagari.
   const legacyUnit = (await acceptedUnit()).unit;
   await setWriter({ enabled: false, unitIds: [legacyUnit.id] });
+  await assignCurrentStageTo(legacyUnit.id, w.op.user.id); // P12C.2
   const started = await w.op.api.post(`/api/units/${legacyUnit.id}/stages/start`, {});
   assert.equal(started.status, 200, JSON.stringify(started.body));
   const failed = await failStage(legacyUnit.id, started.body.stage.id, { actorId: w.op.user.id, blockReason: "MACHINE_DOWN", note: "mesin mati" });

@@ -11,6 +11,7 @@ import { resetSidebarPreferences } from "@/lib/sidebarSections.js";
 import ProductionWorkCenters from "./ProductionWorkCenters.jsx";
 import ProductionOperators from "./ProductionOperators.jsx";
 import ProductionServiceStages from "./ProductionServiceStages.jsx";
+import ProductionWorkflowSettings from "./ProductionWorkflowSettings.jsx";
 
 // Pengaturan Produksi (P12B.2) — SATU halaman untuk Area Kerja, Operator & PIC, Layanan & Tahapan, Target Produksi, dan Tampilan.
 // Halaman/komponen yang SUDAH ADA dipakai ulang (endpoint sama). Visibilitas tab = lib/productionSettings.js (cermin izin backend, bukan izin baru).
@@ -65,6 +66,7 @@ export default function ProductionSettings() {
     "area-kerja": () => <ProductionWorkCenters />,
     operator: () => <ProductionOperators />,
     layanan: () => <ProductionServiceStages />,
+    "alur-kerja": () => <ProductionWorkflowSettings />,
     target: () => <TargetTab roles={roles} />,
     tampilan: () => <AppearanceTab />,
   };

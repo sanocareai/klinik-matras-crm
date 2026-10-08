@@ -509,6 +509,10 @@ model User {
   replenishmentsApproved     ReplenishmentRequest[]   @relation("ReplenishmentApprover")
   routesCreated              Route[]                  @relation("RouteCreator")
   routesLastEdited           Route[]                  @relation("RouteLastEditor")
+  prepChecklistItemsCreated  RoutePrepChecklistItem[] @relation("RoutePrepChecklistItemCreator")
+  prepChecklistItemsUpdated  RoutePrepChecklistItem[] @relation("RoutePrepChecklistItemUpdater")
+  prepChecklistProofsUploaded RoutePrepChecklistProof[] @relation("RoutePrepChecklistProofUploader")
+  routeCompletenessSubmitted  Route[]                   @relation("RouteCompletenessSubmitter")
   scopeRevisionsMade         ScopeRevision[]          @relation("ScopeRevisionProposer")
   scopeRevisionsDecided      ScopeRevision[]          @relation("ScopeRevisionDecider")
   productsCreated            Product[]                @relation("ProductCreator")
@@ -1749,6 +1753,7 @@ model Unit {
   materialIssues    MaterialIssue[]
   complaintCases    ComplaintCase[]
   productionRunsV2  ProductionRun[]
+  componentEntries  UnitComponentEntry[]
   custodyHandoffs   UnitCustodyHandoff[]
   productionRunExceptions ProductionRunException[]
   productionMaterialShortages ProductionMaterialShortage[]
@@ -2529,6 +2534,10 @@ model Job {
   deliveryStateV2    DeliveryJobState?
   cancellationV2     DeliveryJobCancellation?
   stopAssignmentsV2  RouteStopAssignment[]
+
+  // Checklist Persiapan Perjalanan (7 Okt 2026) — item lingkup STOP (terkait
+  // order/stop ini, bukan seluruh rute). Lihat model RoutePrepChecklistItem.
+  prepChecklistItems RoutePrepChecklistItem[]
 
   @@index([orderId])
   @@index([driverId, scheduledDate]) // "job saya hari ini" driver
@@ -3981,9 +3990,145 @@ model Route {
   deliveryStateV2    DeliveryRouteState?
   publicationsV2     RoutePublication[]
 
+  // Checklist Persiapan Perjalanan (7 Okt 2026, permintaan owner — "jangan
+  // sampai lupa plastik/tali/kaki kasur sebelum berangkat"). Token
+  // konkurensi optimistik untuk edit checklist (lihat RoutePrepChecklistItem.
+  // revision) — dinaikkan tiap kali item ditambah/diubah/diarsipkan, DIBACA
+  // klien web sebagai expectedChecklistRevision sebelum edit berikutnya.
+  // prepChecklistLockedAt diisi SEKALI saat rute benar-benar berangkat
+  // (POST /routes/:id/start sukses) — sesudah itu checklist KEBERANGKATAN
+  // beku permanen (instruksi admin boleh terus diedit untuk rute LAIN/
+  // berikutnya, tapi tidak lagi mengubah apa yang sudah jadi syarat
+  // berangkat rute ini).
+  prepChecklistRevision Int       @default(0) @map("prep_checklist_revision")
+  prepChecklistLockedAt DateTime? @map("prep_checklist_locked_at")
+
+  prepChecklistItems  RoutePrepChecklistItem[]
+  prepChecklistProofs RoutePrepChecklistProof[]
+
+  // Bukti Kelengkapan Standar (7 Okt 2026, permintaan owner) — TERPISAH dari
+  // daftar item checklist yang disusun admin: section ini SELALU wajib dan
+  // tidak perlu admin mengatur apa pun (rute tanpa satu pun item checklist
+  // admin tetap punya gerbang ini). "Plastik/tali/tools" dkk cukup disebut
+  // di catatan bebas, bukan dicentang satu-satu. Maksimal 2 foto (divalidasi
+  // di aplikasi, bukan skema) disimpan di direktori terlindungi yang sama
+  // dengan bukti checklist (lihat routes/routePrepProofMedia.js). Submit
+  // ulang MENIMPA seluruh set (foto+catatan) — kolom datar seperti
+  // Job.startPhotoUrls, bukan ledger proof beririsan revision.
+  completenessPhotoUrls      String[]  @default([]) @map("completeness_photo_urls")
+  completenessNote           String?   @map("completeness_note")
+  completenessSubmittedAt    DateTime? @map("completeness_submitted_at")
+  completenessSubmittedById  String?   @map("completeness_submitted_by")
+  completenessSubmittedBy    User?     @relation("RouteCompletenessSubmitter", fields: [completenessSubmittedById], references: [id], onDelete: SetNull)
+
   @@index([date, status]) // papan Route Planner per tanggal
   @@index([driverId, date])
   @@map("routes")
+}
+
+enum RoutePrepChecklistScope {
+  ROUTE // berlaku utk seluruh rute (mis. foto muatan terikat tali, kaki/roda kasur dicek)
+  STOP // berlaku utk satu order/stop tertentu (jobId wajib terisi)
+}
+
+// Checklist Persiapan Perjalanan — disusun dispatcher/admin SAAT menyusun
+// rute (Route Planner), diisi driver di app sebelum tombol "Mulai
+// Perjalanan" (POST /routes/:id/start) bisa ditekan. SATU baris per item
+// (bukan JSON di kolom Route) supaya progres per-item & bukti per-item bisa
+// dites/di-query independen, pola sama dengan model item-per-baris lain di
+// file ini (JobUnit, dst) alih-alih kolom array/JSON yang buta terhadap isi.
+//
+// Hapus-lunak (archivedAt), BUKAN delete fisik — RoutePrepChecklistProof
+// yang sudah dikirim driver harus tetap bisa ditelusuri ke item yang
+// (dulu) memintanya walau admin kemudian menghapusnya dari checklist aktif.
+model RoutePrepChecklistItem {
+  id      String @id @default(uuid()) @db.Uuid
+  routeId String @map("route_id") @db.Uuid
+  route   Route  @relation(fields: [routeId], references: [id], onDelete: Cascade)
+
+  title  String
+  detail String?
+  // "jumlah opsional" di spec — mis. "4 kaki kasur", TIDAK dipaksa/divalidasi
+  // terhadap apa pun (bukan stok), murni informasi buat driver di instruksi.
+  quantity Int?
+
+  scope RoutePrepChecklistScope @default(ROUTE)
+  // WAJIB terisi kalau scope = STOP (item ini milik satu order/stop), harus
+  // NULL kalau scope = ROUTE. Job HARUS anggota routeId yang sama (divalidasi
+  // di services/routePrepChecklist.js, bukan di level schema).
+  jobId String? @map("job_id") @db.Uuid
+  job   Job?    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  // "wajib sebelum berangkat" — kalau true, item ini masuk gerbang POST
+  // /routes/:id/start (lihat services/routePrepChecklist.js#evaluateGate).
+  required Boolean @default(true)
+  // "foto wajib" — kalau true, bukti item ini harus punya photoUrl (bukan
+  // sekadar tanda "selesai" tanpa lampiran).
+  photoRequired Boolean @default(true) @map("photo_required")
+  sortOrder     Int     @default(0) @map("sort_order")
+
+  archivedAt DateTime? @map("archived_at")
+
+  // Dinaikkan tiap kali ISI item ini berubah (title/detail/quantity/scope/
+  // jobId/required/photoRequired) ATAU diarsipkan. Dua peran sekaligus:
+  //   1. Token konkurensi optimistik PER-ITEM untuk edit (admin lain yang
+  //      membaca revision lama ditolak 409 kalau mengedit berdasarkan data
+  //      basi — lihat services/routePrepChecklist.js#applyItemEdit).
+  //   2. Penanda "bukti jadi basi" — RoutePrepChecklistProof menyimpan
+  //      snapshot revision saat dikirim; begitu item diedit, revision naik
+  //      dan bukti LAMA otomatis tidak lagi dihitung "bukti terkini" oleh
+  //      gerbang start (driver wajib unggah ulang foto sesuai instruksi
+  //      baru) — tanpa perlu menghapus/menandai baris proof lama.
+  revision Int @default(1)
+
+  createdById String? @map("created_by")
+  createdBy   User?   @relation("RoutePrepChecklistItemCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  updatedById String? @map("updated_by")
+  updatedBy   User?   @relation("RoutePrepChecklistItemUpdater", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  proofs RoutePrepChecklistProof[]
+
+  @@index([routeId, archivedAt])
+  @@index([jobId])
+  @@map("route_prep_checklist_items")
+}
+
+// Bukti driver per item (foto dan/atau tanda "selesai"). Append-only — tidak
+// pernah di-update, hanya ditambah (driver yang mengulang foto item yang
+// sama membuat baris baru; "bukti terkini" = baris termuda yang
+// itemRevision-nya cocok dengan RoutePrepChecklistItem.revision saat ini,
+// lihat services/routePrepChecklist.js#latestProofByItem).
+model RoutePrepChecklistProof {
+  id      String                 @id @default(uuid()) @db.Uuid
+  routeId String                 @map("route_id") @db.Uuid
+  route   Route                  @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  itemId  String                 @map("item_id") @db.Uuid
+  item    RoutePrepChecklistItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  itemRevision Int     @map("item_revision")
+  // /media/job-photos/... — storage & static-serving SAMA PERSIS dengan foto
+  // bukti job lain (keamanan akses = nama file tak-tertebak, lihat
+  // index.js#/media/job-photos), BUKAN mekanisme baru. NULL kalau item ini
+  // photoRequired=false (bukti cukup "ditandai selesai" tanpa lampiran).
+  photoUrl String? @map("photo_url")
+  note     String?
+
+  uploadedById String @map("uploaded_by")
+  uploadedBy   User   @relation("RoutePrepChecklistProofUploader", fields: [uploadedById], references: [id], onDelete: Restrict)
+
+  // Idempotency retry (double-tap "Kirim") — pola SAMA dengan
+  // DeliveryExecutionEvent, TABEL TERPISAH (bukan reuse) karena aksinya
+  // "kirim bukti checklist", bukan transisi status job/rute.
+  idempotencyKey String @unique @map("idempotency_key")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([itemId, itemRevision, createdAt])
+  @@index([routeId])
+  @@map("route_prep_checklist_proofs")
 }
 
 // Ledger teknis untuk audit + idempotency aksi lapangan. Status terakhir
@@ -4001,7 +4146,19 @@ model DeliveryExecutionEvent {
   routeId        String?  @map("route_id") @db.Uuid
   route          Route?   @relation(fields: [routeId], references: [id], onDelete: SetNull)
   payload        Json?
+  // createdAt = WAKTU DITERIMA SERVER (selalu terisi, tidak pernah dari klien).
   createdAt      DateTime @default(now()) @map("created_at")
+
+  // Histori waktu rute/stop (fase 2 Checklist Persiapan Perjalanan, 7 Okt 2026) — SATU-SATUNYA ledger waktu eksekusi (tidak ada tabel baru):
+  //   occurredAt  = WAKTU KEJADIAN menurut perangkat (antrean offline mempertahankannya); NULL pada event lama (sebelum kolom ini) — pembaca
+  //                 memakai createdAt sebagai "waktu server" dan menandainya, TIDAK mengarang waktu kejadian.
+  //   source      = sumber aksi: DRIVER_APP | DRIVER_WEB | ADMIN_WEB | SYSTEM | KLIEN_LAMA (tanpa header sumber); NULL pada event lama.
+  //   timeQuality = LANGSUNG | SINKRON_TERLAMBAT | JAM_PERANGKAT_MASA_DEPAN | JAM_PERANGKAT_USANG | JAM_PERANGKAT_TIDAK_VALID | WAKTU_SERVER;
+  //                 dihitung SAAT event ditulis (server-now vs waktu perangkat), bukan saat dibaca.
+  // Koreksi waktu = event baru (action TIME_CORRECTED, payload merujuk event target + alasan); event asli tidak pernah diubah/dihapus.
+  occurredAt     DateTime? @map("occurred_at")
+  source         String?
+  timeQuality    String?   @map("time_quality")
 
   @@index([jobId, createdAt])
   @@index([routeId, createdAt])
@@ -8433,6 +8590,38 @@ model V2FeatureFlag {
   @@map("v2_feature_flags")
 }
 
+// Slice 3 — Catatan Komponen kanonis per unit (Sebelum -> Sesudah). APPEND-ONLY: koreksi = baris versi baru (alasan wajib), baris lama tidak diubah/dihapus.
+// Tiga seksi per unit (LAYERS_BEFORE, FOUNDATION_BEFORE, AFTER), masing-masing versinya sendiri. INFORMASI saja: bukan BOM/pemakaian/retur, tidak menyentuh stok maupun lifecycle.
+model UnitComponentEntry {
+  id        String   @id @default(uuid()) @db.Uuid
+  unitId    String   @map("unit_id") @db.Uuid
+  unit      Unit     @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  runId     String?  @map("run_id") @db.Uuid
+  section   String   @db.VarChar(24)
+  version   Int
+  payload   Json     @default("{}")
+  media     Json     @default("[]")
+  reason    String?
+  actorId   String?  @map("actor_id")
+  commandId String?  @map("command_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([unitId, section, version])
+  @@index([unitId, createdAt])
+  @@map("unit_component_entries_v2")
+}
+
+// Slice 2 — pengaturan Admin Production (satu baris per kunci): workshop_default_location_id, adaptation_default_policy. Bukan flag/cohort.
+model ProductionSetting {
+  key         String   @id @db.VarChar(80)
+  value       Json     @default("{}")
+  updatedById String?  @map("updated_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("production_settings")
+}
+
 model V2MigrationRun {
   id                String                 @id @default(uuid()) @db.Uuid
   kind              String
@@ -8552,6 +8741,8 @@ model ProductionRun {
   reworkRuns           ProductionRun[]          @relation("ProductionRunRework")
   routeSnapshot        Json?                    @map("route_snapshot")
   routeChecksum        String?                  @map("route_checksum")
+  // Slice 2 (flow adaptasi): kebijakan adaptasi EKSPLISIT pada run. NULL = proses lengkap (perilaku lama, tidak diubah); "ADAPTATION_V1" = QC & penerimaan barang jadi tidak wajib.
+  adaptationPolicy     String?                  @map("adaptation_policy") @db.VarChar(40)
   migrationSource      String?                  @map("migration_source")
   migrationSourceId    String?                  @map("migration_source_id")
   migrationRuleVersion String?                  @map("migration_rule_version")
@@ -8682,6 +8873,9 @@ model ProductionOperationRun {
   required     Boolean                   @default(true)
   status       ProductionOperationStatus @default(NOT_STARTED)
   planSnapshot Json                      @default("{}") @map("plan_snapshot")
+  // Slice 2: alasan Tunda Pekerjaan pada pekerjaan di papan (ARAHAN/KENDALA/LAINNYA). BAHAN tidak disimpan di sini (lewat laporan kekurangan bahan).
+  delayKind    String?                   @map("delay_kind") @db.VarChar(20)
+  delayNote    String?                   @map("delay_note")
   startedAt    DateTime?                 @map("started_at")
   completedAt  DateTime?                 @map("completed_at")
   createdAt    DateTime                  @default(now()) @map("created_at")

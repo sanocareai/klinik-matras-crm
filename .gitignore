@@ -8,6 +8,9 @@ backend/data/unit-photos/*
 !backend/data/unit-photos/.gitkeep
 backend/data/job-photos/*
 !backend/data/job-photos/.gitkeep
+# Bukti Checklist Persiapan Perjalanan (upload runtime, TIDAK statis publik) — jangan pernah di-commit
+backend/data/route-prep-proofs/*
+!backend/data/route-prep-proofs/.gitkeep
 backend/data/payment-proofs/*
 !backend/data/payment-proofs/.gitkeep
 # Foto nota/bukti finance (upload runtime, produksi memakai root persisten) — jangan pernah di-commit

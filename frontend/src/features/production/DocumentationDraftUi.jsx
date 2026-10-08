@@ -10,6 +10,7 @@ import {
   MAX_RETRY, STATUS, createDraftManager, createIdbAdapter, createMemoryAdapter, draftStatusLabel, makeThumbDataUrl,
 } from "@/features/production/documentationDrafts.js";
 import { compressImage } from "@/utils/compressImage.js";
+import "@/features/production/docApp/doc-app.css";
 
 // UI draf offline Aplikasi Dokumentasi (P10B): hook manager (IndexedDB), panel antrean kirim, dan sheet kamera yang bekerja DI ATAS draf
 // persisten — foto langsung disimpan di HP, diunggah otomatis saat online, dan tetap ada setelah refresh/PWA tertutup.
@@ -80,13 +81,21 @@ export function useDraftManager() {
 const CATEGORY_FALLBACK = "Dokumentasi";
 function recLabel(r) { return r.categoryLabel || CATEGORY_FALLBACK; }
 
-export function DraftPanel({ manager, records, online, onResume }) {
+export function DraftPanel({ manager, records, online, onResume, showEmpty = false }) {
   const [error, setError] = useState("");
-  if (!records.length) return null;
+  if (!records.length) {
+    return showEmpty ? (
+      <section aria-label="Antrean kirim di HP ini" className="wa-card p-6 text-center" data-testid="draft-empty">
+        <CloudOff className="mx-auto mb-2 text-ink3" size={30} aria-hidden />
+        <p className="m-0 text-[16px] font-extrabold text-ink">Tidak ada draf</p>
+        <p className="m-0 mt-1 text-[13.5px] text-ink3">Foto yang menunggu sinyal atau belum dikirim tersimpan di sini dan hilang setelah terkirim.</p>
+      </section>
+    ) : null;
+  }
   const guard = async (fn) => { setError(""); try { await fn(); } catch (e) { setError(docFriendlyError(e)); } };
   const del = (r) => guard(async () => { if (window.confirm(`Hapus draft ${recLabel(r)} (${r.unitCode || "unit"})? ${r.items.length} foto di HP ini akan dibuang.`)) await manager.discard(r.id); });
   return (
-    <section aria-label="Antrean kirim di HP ini" className="space-y-2 rounded-card border border-line bg-surface p-3" data-testid="draft-panel">
+    <section aria-label="Antrean kirim di HP ini" className="wa-card space-y-3 p-4" data-testid="draft-panel">
       <div className="flex items-center gap-2">
         <CloudOff size={16} className="text-ink3" aria-hidden />
         <p className="m-0 text-[13px] font-bold text-ink">Tersimpan di HP ({records.length})</p>
@@ -95,7 +104,7 @@ export function DraftPanel({ manager, records, online, onResume }) {
       {error && <p role="alert" className="m-0 rounded-btn bg-redbg px-3 py-2 text-[12.5px] text-red">{error}</p>}
       <ul className="m-0 list-none space-y-2 p-0">
         {records.map((r) => (
-          <li key={r.id} className="space-y-1.5 rounded-btn bg-inset p-2.5" data-testid="draft-record" data-status={r.status} data-run-id={r.runId} data-category={r.category}>
+          <li key={r.id} className="space-y-2 rounded-btn bg-inset p-3" data-testid="draft-record" data-status={r.status} data-run-id={r.runId} data-category={r.category}>
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <p className="m-0 break-words text-[13px] font-semibold text-ink [overflow-wrap:anywhere]">{r.unitCode || "Unit"} · {recLabel(r)}{r.correction ? " (koreksi)" : ""}</p>
@@ -105,6 +114,7 @@ export function DraftPanel({ manager, records, online, onResume }) {
                 {r.status === STATUS.SENDING ? <Loader2 size={11} className="mr-1 inline animate-spin" aria-hidden /> : null}{r.status === STATUS.FAILED ? "Gagal" : r.status === STATUS.DRAFT ? "Draf" : r.status === STATUS.SENDING ? "Mengirim" : "Antre"}
               </Badge>
             </div>
+            {r.items.some((i) => i.thumb) && <div className="da-draft-thumbs" data-testid="draft-thumbs">{r.items.filter((i) => i.thumb).slice(0, 5).map((i) => <img key={i.id} src={i.thumb} alt="" />)}</div>}
             {r.status === STATUS.FAILED && r.lastError && <p className="m-0 break-words text-[12px] text-red [overflow-wrap:anywhere]" data-testid="draft-error">{r.lastError}</p>}
             <div className="flex flex-wrap gap-1.5">
               {r.status === STATUS.DRAFT && <Button size="sm" variant="secondary" className="min-h-[44px]" onClick={() => onResume(r)} data-testid="draft-resume" data-mutates><Play size={13} aria-hidden /> Lanjutkan</Button>}
@@ -136,12 +146,13 @@ function useObjectUrls(items) {
   return urls;
 }
 
-export function CaptureSheet({ manager, online, detail, category, correction, resumeId = null, onClose, onDone }) {
+export function CaptureSheet({ manager, online, detail, category, correction, resumeId = null, initialFiles = null, onClose, onDone }) {
   const [rec, setRec] = useState(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [reason, setReason] = useState("");
   const recId = useRef(resumeId);
+  const seeded = useRef(false);
 
   const load = useCallback(async () => { if (recId.current) setRec(await manager.get(recId.current)); }, [manager]);
   useEffect(() => {
@@ -155,6 +166,12 @@ export function CaptureSheet({ manager, online, detail, category, correction, re
         });
         if (!alive || !r) return;
         recId.current = r.id; setRec(r); setReason(r.correction?.reason || "");
+        // Foto yang dipilih lewat bilah aksi (kamera/galeri) masuk ke draf yang SAMA lewat manager.addFiles (IndexedDB), bukan jalur baru.
+        if (initialFiles?.length && !resumeId && !seeded.current) {
+          seeded.current = true;
+          const res = await manager.addFiles(r.id, initialFiles);
+          if (alive && res?.rejected?.length) setError([...new Set(res.rejected.map((x) => x.message))].join(" "));
+        }
         manager.uploadPending(r.id).catch(() => {});
       } catch (e) { setError(docFriendlyError(e)); }
     })();

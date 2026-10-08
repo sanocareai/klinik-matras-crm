@@ -1278,24 +1278,51 @@ financeTxRouter.post("/suppliers", requirePermission(P.FINANCE_POST), async (req
   }
 });
 
+// Ubah data master supplier (7 Okt 2026: layar Master Supplier tidak punya tombol edit). Kode TIDAK bisa diubah. Data master saja — tidak ada jurnal, "Sisa Utang" tetap dari tagihan & pembayaran.
+// Setiap perubahan dicatat (siapa, apa, sebelum → sesudah) di riwayat aktivitas; perubahan REKENING bank ditandai khusus (data rawan penipuan pembayaran). Tanpa perubahan nyata → tidak ada catatan.
+const TEKS_SUPPLIER = ["name", "phone", "email", "address", "bankName", "bankAccount", "bankHolder", "notes"];
 financeTxRouter.patch("/suppliers/:id", requirePermission(P.FINANCE_POST), async (req, res) => {
   try {
-    const { name, phone, email, address, aliases, paymentTermDays, bankName, bankAccount, bankHolder, notes, active } = req.body;
-    const updated = await prisma.finSupplier.update({
-      where: { id: req.params.id },
-      data: {
-        ...(name !== undefined && { name: name.trim() }),
-        ...(phone !== undefined && { phone: phone?.trim() || null }),
-        ...(email !== undefined && { email: email?.trim() || null }),
-        ...(address !== undefined && { address: address?.trim() || null }),
-        ...(aliases !== undefined && { aliases: Array.isArray(aliases) ? aliases.filter(Boolean) : [] }),
-        ...(paymentTermDays !== undefined && { paymentTermDays: paymentTermDays ? Number(paymentTermDays) : null }),
-        ...(bankName !== undefined && { bankName: bankName?.trim() || null }),
-        ...(bankAccount !== undefined && { bankAccount: bankAccount?.trim() || null }),
-        ...(bankHolder !== undefined && { bankHolder: bankHolder?.trim() || null }),
-        ...(notes !== undefined && { notes: notes?.trim() || null }),
-        ...(active !== undefined && { active: Boolean(active) }),
-      },
+    const b = req.body ?? {};
+    const lama = await prisma.finSupplier.findUnique({ where: { id: req.params.id } });
+    if (!lama) throw err("Supplier tidak ditemukan", 404);
+    const data = {};
+    for (const k of TEKS_SUPPLIER) {
+      if (b[k] === undefined) continue;
+      if (b[k] !== null && typeof b[k] !== "string") throw err(`Isian ${k} harus berupa teks`);
+      const v = (b[k] ?? "").trim();
+      if (k === "name") { if (!v) throw err("Nama supplier tidak boleh kosong"); if (v.length > 200) throw err("Nama supplier maksimal 200 karakter"); data.name = v; continue; }
+      if (v.length > 500) throw err(`Isian ${k} terlalu panjang (maksimal 500 karakter)`);
+      data[k] = v || null;
+    }
+    if (data.email && !/^\S+@\S+\.\S+$/.test(data.email)) throw err("Format email tidak valid");
+    if (b.paymentTermDays !== undefined) {
+      const kosong = b.paymentTermDays === null || b.paymentTermDays === "" || Number(b.paymentTermDays) === 0;
+      const n = Number(b.paymentTermDays);
+      if (!kosong && (!Number.isInteger(n) || n < 0 || n > 365)) throw err("Termin pembayaran harus bilangan bulat 0–365 hari");
+      data.paymentTermDays = kosong ? null : n;
+    }
+    if (b.aliases !== undefined) {
+      if (!Array.isArray(b.aliases)) throw err("Alias harus berupa daftar");
+      data.aliases = [...new Set(b.aliases.filter(Boolean).map((a) => String(a).trim()).filter(Boolean))];
+    }
+    if (b.active !== undefined) {
+      if (typeof b.active !== "boolean") throw err("Status aktif harus true atau false");
+      data.active = b.active;
+    }
+    // Hanya yang BENAR-BENAR berubah (sebelum → sesudah).
+    const sama = (x, y) => JSON.stringify(x ?? null) === JSON.stringify(y ?? null);
+    const changes = {};
+    for (const [k, v] of Object.entries(data)) if (!sama(lama[k], v)) changes[k] = { dari: lama[k] ?? null, ke: v ?? null };
+    if (Object.keys(changes).length === 0) return res.json(lama);
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const baru = await tx.finSupplier.update({ where: { id: lama.id }, data: Object.fromEntries(Object.keys(changes).map((k) => [k, data[k]])) });
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.FIN_SUPPLIER, entityId: lama.id, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: req.user.id,
+        metadata: { supplierCode: lama.code, supplierName: lama.name, changes, rekeningBerubah: ["bankName", "bankAccount", "bankHolder"].some((k) => k in changes) },
+      });
+      return baru;
     });
     res.json(updated);
   } catch (e) {
@@ -1341,9 +1368,11 @@ financeTxRouter.post("/bills", requirePermission(P.FINANCE_POST), async (req, re
     }
 
     const supplier = await prisma.finSupplier.findUnique({
-      where: { id: supplierId }, select: { id: true, paymentTermDays: true },
+      where: { id: supplierId }, select: { id: true, paymentTermDays: true, active: true, name: true },
     });
     if (!supplier) throw err("Supplier tidak ditemukan", 404);
+    // Supplier nonaktif tidak menerima tagihan BARU (pembayaran utang lama tetap boleh — utangnya masih ada). Aktifkan lagi lewat Master Supplier bila perlu.
+    if (supplier.active === false) throw err(`Supplier ${supplier.name} nonaktif — aktifkan dulu di Master Supplier untuk membuat tagihan baru`, 409);
 
     const tglTagihan = parseTanggal(billDate);
     // Jatuh tempo dari termin supplier kalau tidak diisi manual. Kalau

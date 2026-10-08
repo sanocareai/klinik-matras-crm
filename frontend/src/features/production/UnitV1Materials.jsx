@@ -23,7 +23,7 @@ export default function UnitV1Materials({ unitId, roles, onChanged }) {
   }
   return (
     <section className="rounded-btn border border-line p-3" data-testid="v1-materials">
-      <h3 className="m-0 mb-1 text-[13px] font-bold text-ink">Bahan Digunakan (V1)</h3>
+      <h3 className="m-0 mb-1 text-[13px] font-bold text-ink">Bahan Digunakan</h3>
       <p className="m-0 mb-2 text-[11.5px] text-ink3">Dicatat langsung — stok gudang berkurang otomatis (jumlah negatif = koreksi).</p>
       {canWrite && (
         <div className="mb-2 flex flex-wrap items-end gap-2">

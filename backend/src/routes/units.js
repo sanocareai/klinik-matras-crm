@@ -26,7 +26,10 @@ import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js
 import { tryProvisionUnitRoute, changeUnitRoute, assignStage } from "../services/productionRouting.js";
 import { postStockMovement } from "../services/inventoryLedger.js";
 import { guardV1UnitWrite, UnitConflictError, UUID_RE } from "../services/unitV2Ownership.js";
+import { priorityDisplay } from "../lib/domain/productionDisplay.js";
+import { loadOpenComplaintsByUnit } from "../services/productionComplaints.js";
 import { prisma } from "../db.js";
+import { signUnitPhotoUrlsBulk } from "./productionUnitPhoto.js";
 
 export const unitRouter = express.Router();
 unitRouter.use(requireAuth);
@@ -82,7 +85,7 @@ function handleEngineError(err, res) {
 // (atau retry tahap yang sedang blocked).
 unitRouter.post("/:id/stages/start", requirePermission(P.UNIT_STAGE_WRITE), async (req, res) => {
   try {
-    const result = await startStage(req.params.id, { actorId: req.user.id });
+    const result = await startStage(req.params.id, { actorId: req.user.id, requireAssignedOperator: true });
     res.json(result);
   } catch (err) {
     handleEngineError(err, res);
@@ -94,7 +97,7 @@ unitRouter.post("/:id/stages/:stageId/complete", requirePermission(P.UNIT_STAGE_
   try {
     const { photoUrls, note } = req.body;
     const log = await completeStage(req.params.id, req.params.stageId, {
-      actorId: req.user.id, photoUrls, note,
+      actorId: req.user.id, photoUrls, note, requireAssignedOperator: true,
     });
     res.json(log);
   } catch (err) {
@@ -111,7 +114,7 @@ unitRouter.post("/:id/stages/:stageId/fail", requirePermission(P.UNIT_STAGE_WRIT
   try {
     const { blockReason, note } = req.body;
     const result = await failStage(req.params.id, req.params.stageId, {
-      actorId: req.user.id, blockReason, note,
+      actorId: req.user.id, blockReason, note, requireAssignedOperator: true,
     });
     res.json(result);
   } catch (err) {
@@ -126,7 +129,7 @@ unitRouter.post("/:id/stages/:stageId/pause", requirePermission(P.UNIT_STAGE_WRI
   try {
     const { reason, note } = req.body;
     const result = await pauseStage(req.params.id, req.params.stageId, {
-      actorId: req.user.id, reason, note,
+      actorId: req.user.id, reason, note, requireAssignedOperator: true,
     });
     res.json(result);
   } catch (err) {
@@ -137,7 +140,7 @@ unitRouter.post("/:id/stages/:stageId/pause", requirePermission(P.UNIT_STAGE_WRI
 // POST /api/units/:id/stages/:stageId/resume — LANJUTKAN tahap yang dijeda.
 unitRouter.post("/:id/stages/:stageId/resume", requirePermission(P.UNIT_STAGE_WRITE), async (req, res) => {
   try {
-    const result = await resumeStage(req.params.id, req.params.stageId, { actorId: req.user.id });
+    const result = await resumeStage(req.params.id, req.params.stageId, { actorId: req.user.id, requireAssignedOperator: true });
     res.json(result);
   } catch (err) {
     handleEngineError(err, res);
@@ -424,7 +427,7 @@ unitRouter.get("/:id/timeline", requirePermission(P.UNIT_READ), async (req, res)
         service: true,
         currentStage: true,
         // items: HANYA nama layanan (Layanan Dipesan Sales, read-only untuk drawer unit non-V2) — tanpa harga; dikeluarkan dari payload di bawah.
-        order: { select: { id: true, orderNumber: true, status: true, customer: { select: { id: true, name: true, phone: true } }, items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } } } },
+        order: { select: { id: true, orderNumber: true, status: true, notes: true, customer: { select: { id: true, name: true, phone: true, assignedSales: { select: { name: true } } } }, items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } } } },
         qcFitTests: { include: { stage: { select: { id: true, labelId: true } }, testedBy: { select: { id: true, name: true } } }, orderBy: { createdAt: "desc" } },
         // Snapshot rute produksi (Production Core Slice 4D/4J/4K) — relasi
         // FK langsung di Unit, SATU JOIN, TIDAK butuh batch loader terpisah
@@ -549,8 +552,16 @@ unitRouter.get("/:id/timeline", requirePermission(P.UNIT_READ), async (req, res)
 
     const { items: orderItems = [], ...orderBase } = unit.order || {};
     const salesServices = [...new Set(orderItems.map((i) => i.layananName).filter(Boolean))];
+    // Konteks Sales untuk Aplikasi Meja (jalur V1 setara kartu V2): catatan order, nama Sales, foto unit bertanda tangan. READ-ONLY, tanpa harga.
+    const photoUrl = (await signUnitPhotoUrlsBulk(prisma, [unit.id])).get(unit.id) ?? null;
+    const salesContext = { request: unit.order?.notes ?? null, salesName: unit.order?.customer?.assignedSales?.name ?? null, photoUrl };
+    // Prioritas tampilan (Normal/Tinggi/Komplain): Komplain dari ComplaintCase resmi yang masih terbuka — bukan dari teks/bendera order.
+    const complaintsForUnit = await loadOpenComplaintsByUnit(prisma, [{ id: unit.id, orderId: unit.orderId }]);
+    const prioDisplay = priorityDisplay({ stored: unit.priority, complaintCases: complaintsForUnit.get(unit.id) || [] });
     res.json({
       unit: { ...unit, order: unit.order ? orderBase : unit.order },
+      priorityDisplay: { key: prioDisplay.key, label: prioDisplay.label, rank: prioDisplay.rank, complaintCases: prioDisplay.complaintCases },
+      salesContext,
       // Layanan Dipesan (Sales) — order-scoped, READ-ONLY; TERPISAH dari Layanan Teknis Produksi (unit.service, ditetapkan Produksi).
       salesServices,
       path: timeline, qcFitTests: unit.qcFitTests,

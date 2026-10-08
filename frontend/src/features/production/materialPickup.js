@@ -52,7 +52,7 @@ export function pickErrorMessage(error) {
     case "MATERIAL_ISSUE_ALREADY_PICKED": return "Bahan sudah diserahkan sebelumnya.";
     case "MATERIAL_ISSUE_CANCELLED": return "Permintaan ini sudah dibatalkan.";
     case "MATERIAL_ISSUE_SHORTAGE": return `Stok fisik tidak cukup — tidak ada bahan yang dikeluarkan. ${error.message || ""}`.trim();
-    case "MATERIAL_ISSUE_WRITER_OFF": return "Pengambilan bahan V2 belum aktif untuk unit ini.";
+    case "MATERIAL_ISSUE_WRITER_OFF": return "Pengambilan bahan belum aktif untuk unit ini.";
     default: return error?.message || "Gagal memproses permintaan";
   }
 }

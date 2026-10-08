@@ -471,10 +471,12 @@ export const api = {
   // Foto bukti bayar — multipart field "photo", balikan { url } dipakai sbg proofPhotoUrl.
   uploadPaymentProof: (orderId, file) => uploadFile(`/orders/${orderId}/payments/proof`, file, {}, "photo"),
   // Invoice & garansi & komplain (19 Sep 2026) — endpoint SAMA dengan web.
-  getOrderInvoice: (orderId) => request(`/orders/${orderId}/invoice`),
-  updateOrderInvoice: (orderId, data) =>
-    request(`/orders/${orderId}/invoice`, { method: "PATCH", body: JSON.stringify(data) }),
-  sendOrderInvoice: (orderId) => request(`/orders/${orderId}/invoice/send`, { method: "POST" }),
+  // jenis (opsional): "DP" | "TOTAL" — jenis tagihan dokumen (6 Okt 2026); kosong = otomatis. Paritas dengan web.
+  getOrderInvoice: (orderId, jenis) => request(`/orders/${orderId}/invoice${jenis ? `?jenis=${jenis}` : ""}`),
+  updateOrderInvoice: (orderId, data, jenis) =>
+    request(`/orders/${orderId}/invoice${jenis ? `?jenis=${jenis}` : ""}`, { method: "PATCH", body: JSON.stringify(data) }),
+  sendOrderInvoice: (orderId, jenis) =>
+    request(`/orders/${orderId}/invoice/send`, { method: "POST", body: JSON.stringify({ jenis: jenis || undefined }) }),
   sendOrderWarranty: (orderId, years) =>
     request(`/orders/${orderId}/warranty/send`, { method: "POST", body: JSON.stringify({ years }) }),
   getComplaintCases: (params) => request("/complaints" + buildQuery(params)),

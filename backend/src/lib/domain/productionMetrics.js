@@ -130,7 +130,7 @@ export function activeFilterLabels(f, { stationLabel = (c) => c, operatorName = 
   if (f.operator) out.push(`PIC: ${operatorName(f.operator)}`);
   if (f.step != null) out.push(`Tahap: ${f.step}`);
   if (f.status) out.push(`Status: ${STATUS_BUCKETS[f.status]}`);
-  if (f.priority != null) out.push(`Prioritas: ${["Normal", "Tinggi", "Mendesak"][f.priority]}`);
+  if (f.priority != null) out.push(`Prioritas: ${f.priority >= 1 ? "Tinggi" : "Normal"}`);
   if (f.service) out.push(`Layanan: ${serviceLabel(f.service)}`);
   if (f.qc) out.push(`QC: ${{ PASS: "Lulus pertama kali", FAIL: "Pernah gagal", BELUM: "Belum QC" }[f.qc]}`);
   if (f.docs) out.push(`Dokumentasi: ${f.docs === "LENGKAP" ? "Lengkap" : "Kurang"}`);
@@ -142,7 +142,7 @@ export function matchesFilters(fact, f) {
   if (f.operator && fact.operatorId !== f.operator && fact.cornerOperatorId !== f.operator) return false;
   if (f.step != null && fact.currentStepNo !== f.step) return false;
   if (f.status && fact.statusBucket !== f.status) return false;
-  if (f.priority != null && fact.priority !== f.priority) return false;
+  if (f.priority != null && (f.priority >= 1 ? !(fact.priority >= 1) : fact.priority !== 0)) return false; // Tinggi mencakup nilai lama Mendesak (2); Normal = tepat 0 (unit tanpa rencana tidak ikut, seperti semula)
   if (f.service && fact.serviceCode !== f.service) return false;
   if (f.qc === "PASS" && fact.qc.first !== "PASS") return false;
   if (f.qc === "FAIL" && !(fact.qc.fails > 0)) return false;
@@ -161,7 +161,7 @@ export const METRICS = Object.freeze([
   { key: "units_in", group: "Arus unit", label: "Unit masuk", unit: "unit", kind: "count", basis: "arrived", formula: "Unit yang tiba di workshop (custody diterima Gudang; unit lahir workshop = saat run dibuat) dalam periode." },
   { key: "units_scheduled", group: "Arus unit", label: "Terjadwal", unit: "unit", kind: "count", basis: "planned", formula: "Unit dengan tanggal direncanakan (jadwal meja) dalam periode." },
   { key: "in_progress", group: "Posisi saat ini", label: "Sedang dikerjakan", unit: "unit", kind: "count", basis: "snapshot", formula: "Unit berstatus Sedang dikerjakan: ada operasi AKTIF dan tidak tertunda." },
-  { key: "delayed", group: "Posisi saat ini", label: "Tertunda", unit: "unit", kind: "count", basis: "snapshot", formula: "Unit dengan operasi dijeda/terblokir atau laporan kekurangan bahan yang masih terbuka." },
+  { key: "delayed", group: "Posisi saat ini", label: "Tertunda", unit: "unit", kind: "count", basis: "snapshot", formula: "Unit dengan operasi dijeda atau pekerjaan ditunda atau laporan kekurangan bahan yang masih terbuka." },
   { key: "late_open", group: "Posisi saat ini", label: "Terlambat (belum selesai)", unit: "unit", kind: "count", basis: "snapshot", formula: "Unit belum selesai produksi dan waktu sekarang melewati target selesai rencana." },
   { key: "waiting_material", group: "Posisi saat ini", label: "Menunggu bahan", unit: "unit", kind: "count", basis: "snapshot", formula: "Unit dengan kekurangan bahan terbuka, atau permintaan pengambilan bahan belum diserahkan Gudang." },
   { key: "waiting_qc", group: "Posisi saat ini", label: "Menunggu QC", unit: "unit", kind: "count", basis: "snapshot", formula: "Unit pada fase QC (tahap produksi selesai, menunggu keputusan QC)." },

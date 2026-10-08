@@ -259,8 +259,8 @@ test("UI terpasang: konfirmasi sebelum meninggalkan halaman saat ada pekerjaan a
   assert.match(page, /beforeunload/); assert.match(page, /isActive\(statsRef\.current\)/);
   assert.match(page, /addEventListener\("online"/); assert.match(page, /\.onOnline\(\)/);
   assert.match(page, /Hapus draft/); assert.match(page, /Coba Lagi/); assert.match(page, /window\.confirm/);
-  assert.match(page, /createIdbAdapter\(\)/); assert.match(page, /principalId/); assert.match(page, /onLeave=\{drafts\.confirmLeave\}/);
-  assert.match(src("components", "StandaloneShell.jsx"), /onLeave && !onLeave\(\)/);
+  assert.match(page, /createIdbAdapter\(\)/); assert.match(page, /principalId/); assert.match(src("features", "production", "docApp", "DocTabs.jsx"), /onLeave=\{drafts\.confirmLeave\}/, "keluar dari aplikasi lewat Akun tetap meminta konfirmasi saat ada kiriman aktif");
+  assert.match(src("features", "production", "workerApp", "Tabs.jsx"), /onLeave && !onLeave\(\)/); assert.match(src("features", "production", "workerApp", "Tabs.jsx"), /if \(!onLeave \|\| onLeave\(\)\) navigate\(m\.to\)/);
   assert.match(page, /pendingText/);
   const app = src("App.jsx");
   assert.match(app, /purgePrincipalDrafts\(createIdbAdapter\(\), principal\)/);

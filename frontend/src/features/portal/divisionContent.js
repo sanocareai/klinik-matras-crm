@@ -66,7 +66,7 @@ export const DIVISION_CONTENT = {
     modules: [
       { title: "Status Produksi",      description: "Papan status fisik unit: dari akan masuk sampai siap kirim.", icon: ClipboardList, path: "/bengkel/production-v2" },
       { title: "Order Produksi",       description: "Seluruh unit kasur beserta status dan tahap pengerjaannya.", icon: Boxes, path: "/bengkel/order-produksi" },
-      { title: "Quality Control",      description: "Uji berat badan, verdict QC, dan catatan mutu per unit.", icon: ScanLine, path: "/bengkel/quality-control" },
+      // Quality Control disembunyikan sementara (slice 1); kembali di slice 2.
       { title: "Perencanaan Kapasitas", description: "Rencana kapasitas mesin, tim, dan shift produksi.", icon: BarChart3, path: null },
       { title: "Resep Produk",         description: "Bill of material dan standar konstruksi tiap tipe kasur.", icon: Boxes, path: null },
       { title: "Perawatan Mesin",      description: "Jadwal perawatan mesin dan laporan downtime.", icon: Wrench, path: null },

@@ -15,7 +15,9 @@ import { COMPLAINT_LABEL, RUN_VIEW_INCLUDE, STYLE_LABEL, VERDICT_LABEL, customer
 import { loadStepContext } from "./productionStepCommandService.js";
 import { buildRunDocumentation, documentationBuckets } from "./productionDocumentationRead.js";
 import { sourceOfStep } from "../lib/domain/productionDocumentation.js";
-import { PRIORITY_LABEL, formatProductionDate, stationLabel } from "../lib/domain/productionBoard.js";
+import { formatProductionDate, stationLabel } from "../lib/domain/productionBoard.js";
+import { arrivalConfirmedByStaff, displayStatusOfOrder, displayStatusOfUnit, physicalPresenceOf, priorityDisplay } from "../lib/domain/productionDisplay.js";
+import { loadOpenComplaintsByUnit } from "./productionComplaints.js";
 import { STEP_BY_NO } from "../lib/domain/productionSteps.js";
 import { signEvidenceUrl } from "../routes/productionEvidenceMedia.js";
 import { signUnitPhotoUrlIfAny } from "../routes/productionUnitPhoto.js";
@@ -56,9 +58,13 @@ async function loadPickup(prisma, unitId) {
     },
   });
   if (!handoff) {
+    // Tanpa handoff: kedatangan bisa tetap dikonfirmasi PETUGAS (unit order nyata tanpa pickup tercatat). Dibaca dari catatan aktivitas asli (siapa, kapan, lokasi) — bukan bukti pickup/custody.
+    const ev = await prisma.activityEvent.findFirst({ where: { entityType: "unit", entityId: unitId, eventType: "PRODUCTION_ARRIVAL_CONFIRMED_NO_CUSTODY" }, orderBy: { createdAt: "desc" }, select: { actorId: true, createdAt: true, metadata: true } });
+    const who = ev?.actorId ? await prisma.user.findUnique({ where: { id: ev.actorId }, select: { name: true } }) : null;
     return {
       exists: false, custodyStatus: null, custodyStatusLabel: null,
       job: null, isSingleUnitJob: null, pickupCompletedAt: null, arrivedAtWorkshop: null,
+      staffArrival: ev ? { confirmedAt: ev.createdAt, confirmedByName: who?.name ?? null, locationCode: ev.metadata?.locationCode ?? null } : null,
     };
   }
   const job = handoff.deliveryJob;
@@ -185,7 +191,8 @@ async function buildNoRunOverview(prisma, unit, { canSeeValue }) {
   const photoUrl = await signUnitPhotoUrlIfAny(prisma, unit.id);
   const order = unit.order;
   const warnings = [];
-  if (!unit.serviceId) warnings.push({ code: "LAYANAN_BELUM", text: "Layanan unit belum ditetapkan (ditetapkan setelah diagnosa)" });
+  const complaintsByUnit = await loadOpenComplaintsByUnit(prisma, [{ id: unit.id, orderId: unit.orderId }]);
+  const prioNoRun = priorityDisplay({ stored: unit.priority ?? "NORMAL", complaintCases: complaintsByUnit.get(unit.id) || [] });
   if (!pickup.exists) warnings.push({ code: "CUSTODY_TIDAK_DITEMUKAN", text: "Tidak ada catatan custody masuk untuk unit ini" });
   warnings.push({ code: "BELUM_ADA_RUN", text: "Unit belum masuk proses produksi (belum ada Production Run)" });
 
@@ -193,7 +200,10 @@ async function buildNoRunOverview(prisma, unit, { canSeeValue }) {
     identity: {
       unitId: unit.id, unitCode: unit.unitCode, orderId: unit.orderId, orderNumber: order?.orderNumber ?? null,
       merk: unit.merk, ukuran: unit.ukuran, status: unit.status, photoUrl,
-      target: { productionDate: null, priority: null, priorityLabel: null, targetCompleteAt: null, late: false },
+      orderStatus: displayStatusOfOrder(order?.status) || null, unitStatus: displayStatusOfUnit(unit.status) || null,
+      presence: physicalPresenceOf({ unitStatus: unit.status, runStatus: null, runOrigin: null, inboundAccepted: pickup?.status === "ACCEPTED" }),
+      priority: { key: prioNoRun.key, label: prioNoRun.label, rank: prioNoRun.rank, complaintCases: prioNoRun.complaintCases },
+      target: { productionDate: null, priority: null, priorityLabel: prioNoRun.label, targetCompleteAt: null, late: false },
       pic: { table: null, corner: null }, station: { code: null, label: "Belum dijadwalkan" },
       bucket: "ANTREAN", bucketLabel: "Belum masuk produksi",
     },
@@ -214,7 +224,7 @@ async function buildNoRunOverview(prisma, unit, { canSeeValue }) {
     service: { code: unit.service?.code ?? null, label: unit.service?.labelId ?? null, set: !!unit.serviceId },
     pickup,
     planning: null,
-    production: { runId: null, runStatus: null, currentPhase: null, started: false, steps: [], progress: { done: 0, total: 12 }, timer: null, activeOp: null },
+    production: { runId: null, runStatus: null, currentPhase: null, started: false, steps: [], progress: { done: 0, skipped: 0, remaining: 12, total: 12 }, adaptation: null, qcStatus: "BELUM", timer: null, activeOp: null },
     materials: { lines: [], shortageOpen: false, shortageItems: [] },
     evidence: { before: [], process: [], after: [] },
     qc: [],
@@ -233,11 +243,11 @@ async function buildNoRunOverview(prisma, unit, { canSeeValue }) {
 // sama persis dengan yang sudah datang lewat run.unit.order (RUN_VIEW_INCLUDE), diukur nyata: 4 query
 // SQL duplikat per request (diagnostik P9C audit N+1/query-count, 30 Sep 2026).
 const UNIT_FULL_SELECT = {
-  id: true, unitCode: true, orderId: true, serviceId: true, status: true, merk: true, ukuran: true,
+  id: true, unitCode: true, orderId: true, serviceId: true, status: true, priority: true, merk: true, ukuran: true,
   service: { select: { code: true, labelId: true } },
   order: {
     select: {
-      orderNumber: true, category: true, productLine: true, productType: true, beratBadan: true, notes: true,
+      orderNumber: true, status: true, category: true, productLine: true, productType: true, beratBadan: true, notes: true,
       complaintCategory: true, customerPromiseDate: true, value: true,
       weightEntries: { select: { label: true, beratKg: true }, orderBy: { sortOrder: "asc" } },
       items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } },
@@ -287,6 +297,9 @@ export async function getUnitOverview(prisma, unitId, { unitIds, canSeeValue = f
   const customer = customerOf(run);
   const warnings = warningsOf(run, ctx, materialStatus);
   const indicators = indicatorsOf(run, ctx, materialStatus);
+  const complaintsByUnit = await loadOpenComplaintsByUnit(prisma, [{ id: unitId, orderId: run.unit.orderId }]);
+  const prio = priorityDisplay({ stored: run.plan?.priority ?? 0, complaintCases: complaintsByUnit.get(unitId) || [] });
+  const inboundAccepted = run.custodyHandoffs.some((h) => h.direction === "INBOUND" && h.status === "ACCEPTED") || arrivalConfirmedByStaff(run.phases);
 
   const mediaOf = (stepNos) => ctx.evidence.filter((e) => stepNos.includes(e.stepNo))
     .flatMap((e) => (Array.isArray(e.media) ? e.media : []).map((m) => ({ stepNo: e.stepNo, stepLabel: STEP_BY_NO[e.stepNo]?.label, kind: m.kind, url: signEvidenceUrl(m.url), source: sourceOfStep(e.stepNo) })))
@@ -308,9 +321,12 @@ export async function getUnitOverview(prisma, unitId, { unitIds, canSeeValue = f
     identity: {
       unitId: run.unit.id, unitCode: run.unit.unitCode, orderId: run.unit.orderId, orderNumber: customer.orderNumber,
       merk: run.unit.merk, ukuran: run.unit.ukuran, status: run.unit.status, photoUrl,
+      orderStatus: displayStatusOfOrder(run.unit.order?.status) || null, unitStatus: displayStatusOfUnit(run.unit.status) || null,
+      presence: physicalPresenceOf({ unitStatus: run.unit.status, runStatus: run.status, runOrigin: run.origin, inboundAccepted }),
+      priority: { key: prio.key, label: prio.label, rank: prio.rank, complaintCases: prio.complaintCases },
       target: {
         productionDate: run.plan?.productionDate ? formatProductionDate(run.plan.productionDate) : null,
-        priority: run.plan?.priority ?? null, priorityLabel: run.plan ? (PRIORITY_LABEL[run.plan.priority] || "Normal") : null,
+        priority: run.plan?.priority ?? null, priorityLabel: prio.label,
         targetCompleteAt: run.plan?.targetCompleteAt ?? null,
         late: !!(run.plan?.targetCompleteAt && !TERMINAL_RUN.includes(run.status) && run.currentPhase !== "HANDOFF" && new Date(run.plan.targetCompleteAt).getTime() < now.getTime()),
       },
@@ -334,20 +350,26 @@ export async function getUnitOverview(prisma, unitId, { unitIds, canSeeValue = f
     planning: run.plan ? {
       planId: run.plan.id, status: run.plan.status, revision: run.plan.revision,
       productionDate: formatProductionDate(run.plan.productionDate), stationCode: run.plan.stationCode, stationLabel: stationLabel(run.plan.stationCode),
-      priority: run.plan.priority, priorityLabel: PRIORITY_LABEL[run.plan.priority] || "Normal",
+      priority: run.plan.priority, priorityLabel: prio.label,
       workCenter: run.plan.workCenter, operator: run.plan.operator ? { id: run.plan.operator.id, name: nameOf(run.plan.operator) } : null,
       cornerWorkCenter: run.plan.cornerWorkCenter, cornerOperator: run.plan.cornerOperator ? { id: run.plan.cornerOperator.id, name: nameOf(run.plan.cornerOperator) } : null,
       materialReservedAt: run.plan.materialReservedAt, targetStartAt: run.plan.targetStartAt, targetCompleteAt: run.plan.targetCompleteAt,
     } : null,
     production: {
       runId: run.id, revision: run.revision, runStatus: run.status, currentPhase: run.currentPhase, started: run.operations.length > 0 || ctx.evidence.length > 0,
-      steps, progress: { done: applicableSteps.filter((s) => s.status === "DONE").length, total: applicableSteps.length },
+      // dikerjakan (done) / dilewati (skipped) / tersisa (remaining) — tahap dilewati (mode adaptasi) bukan pekerjaan.
+      steps, progress: (() => {
+        const worked = applicableSteps.filter((s) => s.status === "DONE").length; const skipped = applicableSteps.filter((s) => s.status === "SKIPPED").length;
+        return { done: worked, skipped, remaining: applicableSteps.length - worked - skipped, total: applicableSteps.length };
+      })(),
+      adaptation: run.adaptationPolicy ? { policy: run.adaptationPolicy } : null,
+      qcStatus: ctx.latestInspection ? "DILAKUKAN" : (run.adaptationPolicy && run.operations.some((o) => o.status === "SKIPPED" && o.planSnapshot?.qcNotPerformed) ? "TIDAK_DILAKUKAN" : "BELUM"),
       timer: {
         startedAt: firstStart, stepStartedAt: op?.startedAt ?? null,
         elapsedMinutes: firstStart ? minutesBetween(firstStart, TERMINAL_RUN.includes(run.status) ? run.completedAt || now : now) : 0,
         stepElapsedMinutes: op?.startedAt ? minutesBetween(op.startedAt, now) : 0,
       },
-      activeOp: op ? { stageLabel: op.stageLabel, status: op.status, startedAt: op.startedAt } : null,
+      activeOp: op ? { stageLabel: op.stageLabel, status: op.status, startedAt: op.startedAt, delayKind: op.delayKind ?? null, delayNote: op.delayNote ?? null } : null,
       indicators,
     },
     materials,

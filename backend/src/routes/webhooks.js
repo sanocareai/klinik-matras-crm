@@ -19,6 +19,7 @@ import { ambilTemplateIklanAktif, cocokkanTemplateIklan, ambilTeksTombolWebsite 
 import { apakahMintaBerhenti, TAG_OPT_OUT } from "../services/broadcastPolicy.js";
 import { isInternalStaffPhone } from "../utils/staffDirectory.js";
 import { idPesanInti } from "../utils/idPesanWa.js";
+import { cariPesanSudahAda } from "../utils/cariPesanSudahAda.js";
 import { fieldPosterVideo } from "../utils/videoThumb.js";
 
 export const webhookRouter = express.Router();
@@ -1185,7 +1186,8 @@ webhookRouter.post("/waha", async (req, res) => {
     // admin yang bersamaan dengan CRM kirim pesan (externalId sama).
     const externalId = payload.id;
     if (!externalId) return;
-    const existing = await prisma.message.findUnique({ where: { externalId } });
+    // Pesan keluar: gema WAHA bisa membawa id berbasis LID (beda string dari yang disimpan CRM) — dicocokkan lewat ID inti, lihat cariPesanSudahAda.js.
+    const existing = await cariPesanSudahAda(prisma, externalId, { fromMe: !!payload.fromMe });
     if (existing) {
       // BUG (fix): WAHA (GOWS, dikonfirmasi dari log produksi) TIDAK SELALU
       // kirim event "message.ack"/"message.receipt" terpisah untuk progres
@@ -1204,7 +1206,7 @@ webhookRouter.post("/waha", async (req, res) => {
       const freshAck = payload.ack ?? payload._data?.ack;
       if (typeof freshAck === "number" && freshAck > existing.ack) {
         await prisma.message.update({ where: { id: existing.id }, data: { ack: freshAck } });
-        emitMessageAck(existing.conversationId, externalId, freshAck);
+        emitMessageAck(existing.conversationId, existing.externalId, freshAck); // externalId TERSIMPAN (client mencocokkan dengan itu)
         console.log(`[webhook] Ack ter-update dari re-fire ${event}: ${externalId} ${existing.ack} → ${freshAck}`);
       } else {
         console.log("[webhook] Duplikat dibuang (externalId sudah ada):", externalId);

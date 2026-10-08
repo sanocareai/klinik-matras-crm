@@ -149,7 +149,10 @@ test("filter kombinasi: meja × status × QC × dokumentasi × prioritas × PIC 
   const komplit = await ctxOf({ docs: "LENGKAP" }); assert.deepEqual(komplit.facts.map((f) => f.unitCode).sort(), [...lengkap].filter(([, v]) => v).map(([k]) => k).sort());
   assert.ok(exp.length > 0); assert.deepEqual(combo.facts.map((f) => f.unitCode).sort(), exp.map((s) => s.unitCode).sort());
   const op = await ctxOf({ operator: fx.mejaUsers[0].op.id }); assert.ok(op.facts.length > 0 && op.facts.every((f) => f.operatorId === fx.mejaUsers[0].op.id || f.cornerOperatorId === fx.mejaUsers[0].op.id));
-  const pr = await ctxOf({ priority: 2 }); assert.deepEqual(pr.facts.map((f) => f.unitCode).sort(), fx.specs.filter((s) => s.priority === 2 && s.station).map((s) => s.unitCode).sort());
+  // Slice 1: prioritas pengguna hanya Normal/Tinggi — "Tinggi" mencakup nilai tersimpan 1 dan nilai lama 2 (Mendesak); parameter lama priority=2 setara Tinggi
+  const pr = await ctxOf({ priority: 2 }); assert.deepEqual(pr.facts.map((f) => f.unitCode).sort(), fx.specs.filter((s) => s.priority >= 1 && s.station).map((s) => s.unitCode).sort());
+  const pr1 = await ctxOf({ priority: 1 }); assert.deepEqual(pr1.facts.map((f) => f.unitCode).sort(), pr.facts.map((f) => f.unitCode).sort(), "Tinggi = nilai 1 dan 2");
+  const pr0 = await ctxOf({ priority: 0 }); assert.ok(pr0.facts.length > 0 && pr0.facts.every((f) => f.priority === 0), "Normal = nilai 0");
   const qf = await ctxOf({ qc: "FAIL" }); assert.deepEqual(qf.facts.map((f) => f.unitCode).sort(), fx.specs.filter((s) => s.qc?.some((q) => q.result === "FAIL_REWORK")).map((s) => s.unitCode).sort());
   const qb = await ctxOf({ qc: "BELUM" }); assert.ok(qb.facts.every((f) => f.qc.count === 0));
   const dk = await ctxOf({ docs: "KURANG" }); assert.ok(dk.facts.length && dk.facts.every((f) => !f.docs.lengkap));

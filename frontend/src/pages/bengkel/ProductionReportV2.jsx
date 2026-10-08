@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { friendlyError } from "@/features/production/experience.js";
+import { BeforeAfterSummary } from "@/features/production/componentNotes/BeforeAfterSummary.jsx";
 
 // Paket Laporan Produksi V2 (P8E) — before · proses · after untuk Sales. Media bertanda tangan (akses aman, kedaluwarsa 60 menit).
 // Status broadcast dibaca dari outbox: selama pengirim otomatis belum aktif, status jujur "Menunggu pengirim" (PENDING) — tidak pernah
@@ -65,8 +66,15 @@ export default function ProductionReportV2() {
         <div className="grid gap-3 md:grid-cols-3">
           <Card className="space-y-1 p-4 text-[12.5px]"><p className="font-bold text-ink">Unit</p><p className="text-ink2">{[report.unit.merk, report.unit.ukuran].filter(Boolean).join(" · ") || "—"}</p><p className="text-ink2">{report.unit.service || "Layanan —"}</p><p className="text-ink3">{report.pic.station}</p></Card>
           <Card className="space-y-1 p-4 text-[12.5px]"><p className="font-bold text-ink">PIC</p><p className="text-ink2">Meja: {report.pic.table || "—"}</p><p className="text-ink2">Corner: {report.pic.corner || "—"}</p><p className="text-ink2">Sales: {report.pic.sales || "—"}</p></Card>
-          <Card className="space-y-1 p-4 text-[12.5px]"><p className="font-bold text-ink">Hasil</p><p className="text-ink2">Uji akhir: {report.finalTest ? `${VERDICT[report.finalTest.verdict]} (${report.finalTest.testerWeightKg} kg)` : "—"}</p><p className="text-ink2">QC: {report.qc ? (report.qc.result === "PASS" ? "Lulus" : report.qc.result) : "—"}</p><p className="text-ink2">Gudang: {report.handoffStatus === "ACCEPTED" ? "Diterima" : report.handoffStatus ? "Menunggu diterima" : "—"}</p></Card>
+          <Card className="space-y-1 p-4 text-[12.5px]"><p className="font-bold text-ink">Hasil</p><p className="text-ink2">Uji akhir: {report.finalTest ? `${VERDICT[report.finalTest.verdict]} (${report.finalTest.testerWeightKg} kg)` : "—"}</p><p className="text-ink2" data-testid="report-qc">QC: {report.qc ? (report.qc.result === "PASS" ? "Lulus" : report.qc.result) : report.qcStatus === "TIDAK_DILAKUKAN" ? "Tidak dilakukan (mode adaptasi)" : "—"}</p><p className="text-ink2">Gudang: {report.handoffStatus === "ACCEPTED" ? "Diterima" : report.handoffStatus ? "Menunggu diterima" : report.adaptation && report.status === "COMPLETED" ? "Tidak diwajibkan (mode adaptasi)" : "—"}</p></Card>
         </div>
+        {report.skippedSteps?.length > 0 && (
+          <Card className="space-y-1 p-4 text-[12.5px]" data-testid="report-skipped">
+            <p className="font-bold text-ink">Tahap dilewati (Adaptasi sistem)</p>
+            <p className="text-ink3">Tahap berikut tidak dikerjakan — tanpa foto atau hasil uji, dan tidak dihitung sebagai pekerjaan.</p>
+            <ul className="m-0 list-none space-y-0.5 p-0">{report.skippedSteps.map((s) => <li key={s.stepNo} className="text-ink2">{s.stepNo}. {s.label} — Dilewati{s.by ? ` oleh ${s.by}` : ""}</li>)}</ul>
+          </Card>
+        )}
         <Card className="space-y-2 p-4 text-[13px]">
           <p className="font-bold text-ink">Ringkasan diagnosa</p>
           {report.order.complaints.length > 0 && <p className="text-ink2"><b>Keluhan:</b> {report.order.complaints.join(", ")}</p>}
@@ -77,6 +85,18 @@ export default function ProductionReportV2() {
           {report.textureTests.length > 1 && <p className="text-ink2"><b>Riwayat uji tekstur:</b> {report.textureTests.map((t) => VERDICT[t.verdict]).join(" → ")}</p>}
           {report.finishing && <p className="text-ink2"><b>Finishing:</b> {STYLE[report.finishing.mattressStyle]} · kain {report.finishing.fabricSpec} · list {report.finishing.borderColor}</p>}
         </Card>
+        {report.components && (
+          <Card className="space-y-3 p-4" data-testid="report-components">
+            <p className="font-bold text-ink">Komponen: Sebelum → Sesudah</p>
+            <BeforeAfterSummary comparison={report.components.comparison} />
+            {report.components.mediaCount > 0 && (
+              <div className="space-y-3">
+                <Gallery title="Foto komponen — sebelum dibongkar" items={report.components.media.before.map((m) => ({ ...m, url: m.previewUrl, stepLabel: "Catatan komponen", documentation: true }))} />
+                <Gallery title="Foto komponen — sesudah" items={report.components.media.after.map((m) => ({ ...m, url: m.previewUrl, stepLabel: "Catatan komponen", documentation: true }))} />
+              </div>
+            )}
+          </Card>
+        )}
         <Card className="space-y-4 p-4">
           <Gallery title="Before" items={report.media.before} />
           <Gallery title="Proses" items={report.media.process} />

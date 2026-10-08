@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { AlertTriangle, ArrowLeft, Clock, Maximize2, PackageX } from "lucide-react";
 import { api } from "@/api.js";
 import { BUCKET_STYLE, bucketStyle, formatMinutes, initials, wibDate } from "@/features/production/experience.js";
+import { progressText } from "@/features/production/productionLabels.js";
 
 // Live TV Andon (kiosk 1920×1080, read-only, tetap wajib login). Polling ringan 20 detik HANYA saat tab terlihat — tanpa infra baru.
 const POLL_MS = 20_000;
@@ -35,7 +36,7 @@ function Tile({ item }) {
       )}
       <div className="flex items-center justify-between gap-2 text-[17px] leading-tight text-ink2">
         <span className="flex items-center gap-2"><Clock size={20} aria-hidden /> {formatMinutes(item.timer?.stepElapsedMinutes || item.timer?.elapsedMinutes)}</span>
-        <span className="tabular-nums">{item.progress.done}/{item.progress.total} tahap</span>
+        <span className="tabular-nums">{progressText(item.progress)}</span>
         {late && <span className="flex items-center gap-1 font-bold text-red"><AlertTriangle size={20} aria-hidden /> Terlambat</span>}
       </div>
       <div className="h-2 shrink-0 overflow-hidden rounded-full bg-line"><div className={`h-full ${st.dot}`} style={{ width: `${item.progress.total ? (item.progress.done / item.progress.total) * 100 : 0}%` }} /></div>
@@ -88,7 +89,7 @@ export default function ProductionAndon() {
       </header>
 
       {error && !data && <p role="alert" className="rounded-xl bg-redbg p-6 text-[24px] text-red">{error}</p>}
-      {data?.readerMode === "OFF" && <p className="rounded-xl bg-surface p-10 text-center text-[28px] text-ink3">Produksi V2 belum aktif untuk papan ini.</p>}
+      {data?.readerMode === "OFF" && <p className="rounded-xl bg-surface p-10 text-center text-[28px] text-ink3">Papan ini belum aktif.</p>}
 
       {data?.stations?.length > 0 && (
         <div className="grid min-h-0 flex-1 grid-cols-4 gap-5">

@@ -39,6 +39,9 @@ import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js
 import { syncOrderStatus } from "./orderStatusSync.js";
 import { suggestDeliveryJob } from "./deliveryHandoff.js";
 import { guardV1UnitWrite, UnitV2OwnedError, UnitConcurrentChangeError } from "./unitV2Ownership.js";
+import { PERMISSIONS as P } from "../constants/permissions.js";
+import { hasPermission } from "../middleware/authorize.js";
+import { decideV1StageActor } from "../lib/domain/v1StageActor.js";
 
 // Isolation SERIALIZABLE untuk keempat perintah eksekusi inti (START/PAUSE/
 // RESUME/COMPLETE, Production Core Slice 3I) — pola "baca state tahap
@@ -56,9 +59,10 @@ import { guardV1UnitWrite, UnitV2OwnedError, UnitConcurrentChangeError } from ".
 const EXECUTION_TX_OPTIONS = { isolationLevel: Prisma.TransactionIsolationLevel.Serializable };
 
 class StageTransitionError extends Error {
-  constructor(message, statusCode = 400) {
+  constructor(message, statusCode = 400, code = undefined) {
     super(message);
     this.statusCode = statusCode;
+    if (code) this.code = code;
   }
 }
 
@@ -77,6 +81,29 @@ async function assertNotV2ExecutionOwned(tx, unitId, what = "tahap produksi", ac
     if (err instanceof UnitConcurrentChangeError) throw new StageTransitionError(err.message, 409);
     throw err;
   }
+}
+
+// P12C.2 — PENEGAKAN PENUGASAN V1 DI SERVER untuk aksi operator Meja/Corner (mulai/selesai/jeda/lanjut/hambatan/catat-selesai).
+// WAJIB dipanggil di DALAM transaksi eksekusi, SETELAH assertNotV2ExecutionOwned (kunci baris unit): POST .../assign memegang kunci unit yang sama,
+// jadi penugasan dibaca dan mutasi ditulis dalam satu urutan serial — penugasan yang berubah di tengah jalan tidak bisa lolos.
+// Validasi: pengguna aktif, tahap kanonik sekarang = tahap yang dituju, penugasan tahap itu, kepemilikan PIC / izin PRODUCTION_EXECUTE_ANY (ADMIN/OWNER).
+// Opt-in oleh rute (requireAssignedOperator) karena pemanggil internal lain (mis. blokir otomatis usulan revisi lingkup) bukan aksi operator.
+export async function assertV1StageActorInTx(tx, unitId, { actorId, stageId = null } = {}) {
+  const actor = actorId
+    ? await tx.user.findUnique({ where: { id: actorId }, select: { active: true, role: true, roles: { select: { role: true } } } })
+    : null;
+  if (!actor || actor.active === false) throw new StageTransitionError("Akun tidak aktif atau tidak dikenal — aksi tidak dijalankan", 403, "UNIT_V1_NOT_OPERATOR");
+  const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId } });
+  const path = await pathForUnit(tx, unit);
+  const target = await resolveCurrentTarget(tx, unit, path);
+  const [assignment, operator] = await Promise.all([
+    target.stage ? tx.stageAssignment.findUnique({ where: { unitId_stageId: { unitId, stageId: target.stage.id } }, select: { operatorId: true } }) : null,
+    tx.productionOperator.findUnique({ where: { userId: actorId }, select: { id: true, active: true } }),
+  ]);
+  const override = hasPermission({ role: actor.role, roles: [actor.role, ...(actor.roles || []).map((r) => r.role)] }, P.PRODUCTION_EXECUTE_ANY);
+  const decision = decideV1StageActor({ target, requestedStageId: stageId, assignment, operator, override });
+  if (!decision.ok) throw new StageTransitionError(decision.message, decision.status, decision.code);
+  return decision;
 }
 
 /** Ambil seluruh tahap INTAKE/FINISH global + tahap MODULE milik satu layanan. */
@@ -352,9 +379,10 @@ export async function resolveNextStageForUnits(units) {
  * MULAI sebuah tahap. Lihat resolveCurrentTarget() untuk aturan penentuan
  * tahap targetnya.
  */
-export async function startStage(unitId, { actorId } = {}) {
+export async function startStage(unitId, { actorId, requireAssignedOperator = false } = {}) {
   return prisma.$transaction(async (tx) => {
     await assertNotV2ExecutionOwned(tx, unitId, "mulai tahap", actorId);
+    if (requireAssignedOperator) await assertV1StageActorInTx(tx, unitId, { actorId });
     return startStageInTx(tx, unitId, { actorId });
   }, EXECUTION_TX_OPTIONS);
 }
@@ -452,9 +480,10 @@ export async function startStageInTx(tx, unitId, { actorId, allowRerunOfLastStag
  * mengarang angka. Ini penting untuk laporan cycle time nanti: baris
  * berdurasi NULL harus dikecualikan, bukan dianggap nol.
  */
-export async function recordStageDone(unitId, { actorId, photoUrls = [], note } = {}) {
+export async function recordStageDone(unitId, { actorId, photoUrls = [], note, requireAssignedOperator = false } = {}) {
   return prisma.$transaction(async (tx) => {
     await assertNotV2ExecutionOwned(tx, unitId, "selesai tahap", actorId);
+    if (requireAssignedOperator) await assertV1StageActorInTx(tx, unitId, { actorId });
     const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId } });
     const path = await pathForUnit(tx, unit);
     const { stage, state } = await resolveCurrentTarget(tx, unit, path);
@@ -505,9 +534,10 @@ export async function recordStageDone(unitId, { actorId, photoUrls = [], note } 
  * kosong, atau tahap ini requiresQc (harus lewat recordQcFitTest, bukan
  * endpoint generik ini — putusan QC punya bentuk data sendiri).
  */
-export async function completeStage(unitId, stageId, { actorId, photoUrls = [], note } = {}) {
+export async function completeStage(unitId, stageId, { actorId, photoUrls = [], note, requireAssignedOperator = false } = {}) {
   return prisma.$transaction(async (tx) => {
     await assertNotV2ExecutionOwned(tx, unitId, "selesai tahap", actorId);
+    if (requireAssignedOperator) await assertV1StageActorInTx(tx, unitId, { actorId, stageId });
     return completeStageInTx(tx, unitId, stageId, { actorId, photoUrls, note });
   }, EXECUTION_TX_OPTIONS);
 }
@@ -567,9 +597,10 @@ export async function completeStageInTx(tx, unitId, stageId, { actorId, photoUrl
  * (Serializable) membuat salah satunya gagal dengan konflik serialisasi
  * (P2034) alih-alih diam-diam menulis dua baris PAUSE berurutan.
  */
-export async function pauseStage(unitId, stageId, { actorId, reason, note, photoUrls = [] } = {}) {
+export async function pauseStage(unitId, stageId, { actorId, reason, note, photoUrls = [], requireAssignedOperator = false } = {}) {
   return prisma.$transaction(async (tx) => {
     await assertNotV2ExecutionOwned(tx, unitId, "jeda tahap", actorId);
+    if (requireAssignedOperator) await assertV1StageActorInTx(tx, unitId, { actorId, stageId });
     return pauseStageInTx(tx, unitId, stageId, { actorId, reason, note, photoUrls });
   }, EXECUTION_TX_OPTIONS);
 }
@@ -615,9 +646,10 @@ export async function pauseStageInTx(tx, unitId, stageId, { actorId, reason, not
  * (baris terakhir sudah bukan PAUSE lagi); race bersamaan ditangkap
  * EXECUTION_TX_OPTIONS (Serializable), sama seperti pauseStage().
  */
-export async function resumeStage(unitId, stageId, { actorId } = {}) {
+export async function resumeStage(unitId, stageId, { actorId, requireAssignedOperator = false } = {}) {
   return prisma.$transaction(async (tx) => {
     await assertNotV2ExecutionOwned(tx, unitId, "lanjut tahap", actorId);
+    if (requireAssignedOperator) await assertV1StageActorInTx(tx, unitId, { actorId, stageId });
     return resumeStageInTx(tx, unitId, stageId, { actorId });
   }, EXECUTION_TX_OPTIONS);
 }
@@ -634,7 +666,7 @@ export async function resumeStageInTx(tx, unitId, stageId, { actorId } = {}) {
 
   if (last?.action === "FAIL") {
     throw new StageTransitionError(
-      `Tahap "${stage.labelId}" sedang terhambat (blocked) — selesaikan blokirnya dulu lalu gunakan "Mulai Lagi", bukan Lanjutkan`
+      `Tahap "${stage.labelId}" sedang tertunda — pilih "Lanjutkan Pekerjaan" (mulai lagi) setelah kendalanya selesai, bukan Lanjutkan jeda`
     );
   }
   if (!last || last.action !== "PAUSE") {
@@ -761,7 +793,7 @@ async function finishStageInternal(tx, unitId, stage, openLog, { actorId, photoU
  * partial unique index, ditangkap di bawah sebagai 409 — bukan diam-diam
  * membuat dua blokir aktif untuk unit yang sama).
  */
-export async function failStage(unitId, stageId, { actorId, blockReason, note } = {}) {
+export async function failStage(unitId, stageId, { actorId, blockReason, note, requireAssignedOperator = false } = {}) {
   // Validasi MURNI (bisa diuji tanpa database) — lihat
   // lib/domain/productionExceptions.js#validateBlockReason.
   const validationError = validateBlockReason({ reason: blockReason, note });
@@ -770,6 +802,7 @@ export async function failStage(unitId, stageId, { actorId, blockReason, note } 
   try {
     return await prisma.$transaction(async (tx) => {
       await assertNotV2ExecutionOwned(tx, unitId, "hambatan/gagal tahap", actorId);
+      if (requireAssignedOperator) await assertV1StageActorInTx(tx, unitId, { actorId, stageId });
       const stage = await tx.routingStage.findUniqueOrThrow({ where: { id: stageId } });
       const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId } });
 
@@ -779,7 +812,7 @@ export async function failStage(unitId, stageId, { actorId, blockReason, note } 
       // lebih jelas dibanding "tidak ada tahap yang sedang berjalan" kalau
       // ternyata ada jalur yang belum terpikirkan.
       if (!isProductionEligible(unit.status)) {
-        throw new StageTransitionError("Unit ini sudah selesai/dibatalkan secara produksi — tidak bisa membuka blokir baru");
+        throw new StageTransitionError("Unit ini sudah selesai/dibatalkan secara produksi — tidak bisa menunda pekerjaan lagi");
       }
 
       const open = await findOpenWork(tx, unitId, stageId);
@@ -824,7 +857,7 @@ export async function failStage(unitId, stageId, { actorId, blockReason, note } 
     // (lihat migration.sql) — dua "Tandai Terhambat" bersamaan untuk unit
     // yang sama, race window sudah ditutup DB, bukan kode ini.
     if (err.code === "P2002") {
-      throw new StageTransitionError("Unit ini sudah punya blokir produksi yang masih terbuka", 409);
+      throw new StageTransitionError("Pekerjaan unit ini sudah ditunda dan belum dilanjutkan", 409);
     }
     throw err;
   }
@@ -845,7 +878,7 @@ export async function failStage(unitId, stageId, { actorId, blockReason, note } 
 export async function resolveBlocker(blockerId, { actorId, resolutionNote } = {}) {
   return prisma.$transaction(async (tx) => {
     const existing = await tx.productionBlocker.findUnique({ where: { id: blockerId } });
-    if (!existing) throw new StageTransitionError("Blokir tidak ditemukan", 404);
+    if (!existing) throw new StageTransitionError("Data penundaan pekerjaan tidak ditemukan", 404);
     // Tidak ada padanan V2 untuk menyelesaikan blokir V1 lama: tidak ditolak, tetapi bila Run V2 non-terminal ada, drift dicatat.
     await assertNotV2ExecutionOwned(tx, existing.unitId, "penyelesaian blokir V1", actorId, false);
 
@@ -857,7 +890,7 @@ export async function resolveBlocker(blockerId, { actorId, resolutionNote } = {}
       },
     });
     if (result.count === 0) {
-      throw new StageTransitionError("Blokir ini sudah diselesaikan sebelumnya dan tidak bisa diubah lagi", 409);
+      throw new StageTransitionError("Pekerjaan ini sudah dilanjutkan sebelumnya dan tidak bisa diubah lagi", 409);
     }
 
     await recordActivity(tx, {
@@ -1023,6 +1056,28 @@ export async function waiveQcGateInTx(tx, unitId, stageId, { actorId, note, defe
   });
   await advanceUnitPastStage(tx, unitId, stage, { deferReady });
   return log;
+}
+
+// Slice 2 (flow adaptasi) — melewati SATU tahap target lewat aksi sah mode adaptasi. Ledger jujur: SATU baris SKIP berkatalog eksplisit "⚠️ SKIPPED — Adaptasi sistem" (bukan COMPLETE,
+// tanpa foto/hasil uji). qcNotPerformed=true (gerbang QC): catatan "QC TIDAK DILAKUKAN" — BUKAN lulus dan BUKAN waive; tidak ada qc_fit_tests yang dikarang.
+// Pemanggil (command V2 adaptasi) menegakkan izin, kebijakan run, dan kepemilikan; fungsi ini menolak tahap yang bukan target / sedang berjalan / terblokir.
+export async function skipStageForAdaptationInTx(tx, unitId, stageId, { actorId, note = null, deferReady = true, qcNotPerformed = false } = {}) {
+  const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId } });
+  const path = await pathForUnit(tx, unit);
+  const { stage: target, state } = await resolveCurrentTarget(tx, unit, path);
+  if (!target || target.id !== stageId) throw new StageTransitionError("Tahap yang dilewati bukan tahap berikutnya unit ini", 409);
+  if (!["FIRST", "READY"].includes(state)) throw new StageTransitionError(`Tahap "${target.labelId}" tidak dapat dilewati pada keadaan ${state}`, 409);
+  if (qcNotPerformed !== !!target.requiresQc) throw new StageTransitionError(qcNotPerformed ? `Tahap "${target.labelId}" bukan gerbang QC` : `Gerbang QC "${target.labelId}" hanya dicatat \"tidak dilakukan\" lewat Selesaikan Produksi`, 409);
+  const prefix = qcNotPerformed
+    ? "⚠️ QC TIDAK DILAKUKAN — mode adaptasi (bukan lulus, bukan di-waive; tidak ada hasil uji)."
+    : "⚠️ SKIPPED — Adaptasi sistem (tahap dilewati, bukan dikerjakan; tanpa foto/hasil uji).";
+  const log = await tx.unitStageLog.create({ data: { unitId, stageId, action: "SKIP", actorId, note: note ? `${prefix} ${String(note).trim()}` : prefix } });
+  if (unit.status === "RECEIVED" || unit.status === "AWAITING_PICKUP") {
+    await tx.unit.update({ where: { id: unitId }, data: { status: "IN_PRODUCTION" } });
+    await syncOrderStatus(tx, unit.orderId);
+  }
+  await advanceUnitPastStage(tx, unitId, target, { deferReady });
+  return { log, stage: target };
 }
 
 // Seluruh tahap jalur unit sudah selesai (tahap terakhir COMPLETE/SKIP)? Dipakai command V2 sebelum handoff barang jadi.

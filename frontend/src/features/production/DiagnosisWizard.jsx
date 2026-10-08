@@ -44,7 +44,6 @@ export function serverSeed(cur) {
     media: (cur.prefill?.photos || []).map((ph, i) => ({ id: `srv-${i}`, kind: "image", status: "done", progress: 100, url: ph.url, previewUrl: ph.previewUrl })),
     bomLines: (cur.prefill?.bomLines || []).map((l) => ({ materialId: l.materialId, code: l.code, name: l.name, unit: l.unit, qty: String(l.qty) })),
     manualMaterials: (cur.manualMaterials || []).filter((m) => m.status === "NEEDS_MAPPING").map((m) => ({ description: m.description, estimatedUnit: m.estimatedUnit || "", qty: String(m.qty), reason: m.reason || "" })),
-    recommendedServiceId: cur.recommendedServiceId || null,
   };
 }
 
@@ -254,17 +253,10 @@ function MaterialsSection({ bomLines, setBomLines, manualMaterials, setManualMat
   );
 }
 
-function ReviewSection({ findings, setFindings, services, recommendedServiceId, setRecommendedServiceId, priorServiceLabel, bomLines, manualMaterials }) {
-  const differs = priorServiceLabel && recommendedServiceId && services.find((s) => s.id === recommendedServiceId)?.labelId !== priorServiceLabel;
+// Slice 2: operator TIDAK memilih layanan lagi — rute pengerjaan mengikuti pemetaan Layanan Sales yang dikelola Admin (Pengaturan Produksi).
+function ReviewSection({ findings, setFindings, bomLines, manualMaterials }) {
   return (
     <div className="space-y-4">
-      <Field label="Layanan teknis *" hint="Ditetapkan Production dari hasil diagnosa. Terpisah dari Layanan Dipesan (Sales): tidak mengubah order, item, atau harga.">
-        <select className={inputCls} value={recommendedServiceId || ""} onChange={(e) => setRecommendedServiceId(e.target.value)}>
-          <option value="">— Pilih layanan teknis —</option>
-          {services.map((s) => <option key={s.id} value={s.id}>{s.labelId}</option>)}
-        </select>
-      </Field>
-      {differs && <p className="flex items-center gap-1.5 rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-orange"><AlertTriangle size={13} aria-hidden /> Layanan teknis berbeda dari yang tercatat sebelumnya ({priorServiceLabel}). Order/harga Sales TIDAK berubah.</p>}
       <Field label="Kesimpulan diagnosis *" hint="Rangkuman hasil diagnosa untuk unit ini — dipakai sebagai catatan resmi tahap Diagnosa.">
         <textarea className={textareaCls} value={findings.serviceNote} onChange={(e) => setFindings((f) => ({ ...f, serviceNote: e.target.value }))} placeholder="mis. Fondasi diganti karena keropos, lapisan atas diperkuat sesuai keluhan sakit pinggang" />
       </Field>
@@ -287,8 +279,6 @@ export function DiagnosisWizard({ card, onClose, onSubmitted }) {
   const [media, setMedia] = useState(() => (seed?.media || []).filter((m) => m.status === "done"));
   const [bomLines, setBomLines] = useState(() => seed?.bomLines || []);
   const [manualMaterials, setManualMaterials] = useState(() => seed?.manualMaterials || []);
-  const [recommendedServiceId, setRecommendedServiceId] = useState(() => seed?.recommendedServiceId || null);
-  const [services, setServices] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   // "Ada perubahan belum terkirim" hanya dibaca saat menutup — BUKAN state render. Sebelumnya
@@ -299,15 +289,14 @@ export function DiagnosisWizard({ card, onClose, onSubmitted }) {
   const dirtyRef = useRef(false);
   const mountedRef = useRef(false);
 
-  useEffect(() => { api.getServiceCatalog().then((d) => setServices(Array.isArray(d?.services) ? d.services : [])).catch(() => setServices([])); }, []);
   useEffect(() => {
     if (!mountedRef.current) { mountedRef.current = true; return; }
     dirtyRef.current = true;
-  }, [findings, media, bomLines, manualMaterials, recommendedServiceId]);
+  }, [findings, media, bomLines, manualMaterials]);
   useEffect(() => {
-    const t = setTimeout(() => saveLocalDraft(runId, { findings, media: media.filter((m) => m.status === "done"), bomLines, manualMaterials, recommendedServiceId }), 400);
+    const t = setTimeout(() => saveLocalDraft(runId, { findings, media: media.filter((m) => m.status === "done"), bomLines, manualMaterials }), 400);
     return () => clearTimeout(t);
-  }, [runId, findings, media, bomLines, manualMaterials, recommendedServiceId]);
+  }, [runId, findings, media, bomLines, manualMaterials]);
 
   function requestClose() {
     if (dirtyRef.current && !window.confirm("Diagnosis belum dikirim — draft tersimpan di perangkat ini. Tutup sekarang?")) return;
@@ -324,7 +313,7 @@ export function DiagnosisWizard({ card, onClose, onSubmitted }) {
       const photoUrls = media.filter((m) => m.status === "done").map((m) => m.url);
       const res = await api.submitProductionV2Diagnosis(runId, {
         expectedRevision: card.diagnosisRevision ?? 0, workCenterId: card.workCenterId,
-        findings: buildFindingsPayload(), photoUrls, recommendedServiceId,
+        findings: buildFindingsPayload(), photoUrls,
         materials: bomLines.filter((l) => Number(l.qty) > 0).map((l) => ({ materialId: l.materialId, qty: Number(l.qty) })),
         manualMaterials: manualMaterials.filter((m) => m.description?.trim()).map((m) => ({ description: m.description, estimatedUnit: m.estimatedUnit || null, qty: Number(m.qty), reason: m.reason })),
       });
@@ -334,7 +323,6 @@ export function DiagnosisWizard({ card, onClose, onSubmitted }) {
   }
 
   const key = SECTIONS[section][0];
-  const priorServiceLabel = card.priorServiceLabel;
 
   return (
     <div role="dialog" aria-modal="true" aria-label="Isi Diagnosis" className="fixed inset-0 z-[210] flex flex-col bg-base">
@@ -357,8 +345,7 @@ export function DiagnosisWizard({ card, onClose, onSubmitted }) {
         {key === "layers" && <LayersSection findings={findings} setFindings={setFindings} />}
         {key === "materials" && <MaterialsSection bomLines={bomLines} setBomLines={setBomLines} manualMaterials={manualMaterials} setManualMaterials={setManualMaterials} />}
         {key === "review" && (
-          <ReviewSection findings={findings} setFindings={setFindings} services={services} recommendedServiceId={recommendedServiceId} setRecommendedServiceId={setRecommendedServiceId}
-            priorServiceLabel={priorServiceLabel} bomLines={bomLines} manualMaterials={manualMaterials} />
+          <ReviewSection findings={findings} setFindings={setFindings} bomLines={bomLines} manualMaterials={manualMaterials} />
         )}
         {error && <div role="alert" className="rounded-btn bg-redbg px-3 py-3 text-[13.5px] text-red">{error}</div>}
       </div>

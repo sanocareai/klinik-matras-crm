@@ -5,7 +5,8 @@ import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import { formatTanggalJam, formatDurasiMenit } from "@/utils/formatDate.js";
-import { BLOCK_REASON_REAL, PRODUCTION_PRIORITY_REAL, SERVICE_LINE_REAL } from "@/features/bengkel/unitStatus.js";
+import { SERVICE_LINE_REAL } from "@/features/bengkel/unitStatus.js";
+import { DELAY_TITLE, RESUME_ACTION_LABEL, delayReasonOfBlock, priorityOf, resumeInfo } from "@/features/production/productionLabels.js";
 import { canResolveBlockerV1, canRouteV1, conflictMessage, detectConflict, draftOf, isDraftDirty, productionPatchOf } from "./unitV1ActionsModel.js";
 
 // P12B.5 — aksi V1 yang SAH untuk unit NON-V2 di drawer Unit 360 (menggantikan halaman Unit lama): Layanan Teknis, Prioritas & Target, Blokir.
@@ -27,8 +28,6 @@ export default function UnitV1Actions({ data, roles, onData, onChanged }) {
   const [draft, setDraft] = useState(() => draftOf(unit));
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState({ section: "", kind: "", text: "" });
-  const [resolving, setResolving] = useState(false);
-  const [note, setNote] = useState("");
 
   // Draf mengikuti data terbaru dari server (setelah simpan / muat ulang karena konflik).
   useEffect(() => { setDraft(draftOf(data.unit)); setServiceId(""); }, [data.unit.id, data.unit.priority, data.unit.productionDueAt, data.unit.serviceId]);
@@ -51,29 +50,31 @@ export default function UnitV1Actions({ data, roles, onData, onChanged }) {
     } finally { setBusy(""); }
   }
 
-  const saveService = () => run("service", ["service"], () => api.setUnitService(unit.id, serviceId, unit.serviceId ?? null), "Layanan teknis tersimpan.");
+  const saveService = () => run("service", ["service"], () => api.setUnitService(unit.id, serviceId, unit.serviceId ?? null), "Rute pengerjaan tersimpan.");
   const patch = productionPatchOf(draft, unit);
   const saveProduction = () => run("production", ["priority", "due"], () => api.updateUnitProduction(unit.id, { ...patch, expected: { priority: unit.priority || "NORMAL", productionDueAt: unit.productionDueAt || null } }), "Prioritas & target tersimpan.");
-  const resolveBlocker = () => run("blocker", ["blocker"], async () => { await api.resolveBlocker(unit.id, data.activeBlocker.id, note.trim() || undefined); setResolving(false); setNote(""); }, "Blokir ditandai selesai.");
   const m = (s) => (msg.section === s ? msg : { kind: "", text: "" });
   const blocker = data.activeBlocker;
 
   return (
     <div className="space-y-3" data-testid="unit-v1-actions">
-      <Section title="Layanan" testid="v1-service">
-        <dl className="m-0 grid grid-cols-1 gap-2 text-[12.5px] sm:grid-cols-2">
+      <Section title="Layanan Sales" testid="v1-service">
+        <dl className="m-0 grid grid-cols-1 gap-2 text-[12.5px]">
           <div className="min-w-0 rounded-btn bg-inset px-3 py-2" data-testid="v1-sales-services"><dt className="m-0 text-ink3">Layanan Dipesan (Sales) <span className="rounded-chip bg-accentbg px-1 py-0.5 text-[9px] font-semibold text-accent">ORDER · baca-saja</span></dt><dd className="m-0 break-words font-semibold text-ink">{(data.salesServices || []).length ? data.salesServices.join(", ") : "Belum dicatat"}</dd></div>
-          <div className="min-w-0 rounded-btn bg-inset px-3 py-2" data-testid="v1-technical-service"><dt className="m-0 text-ink3">Layanan Teknis (Produksi)</dt><dd className="m-0 break-words font-semibold text-ink">{unit.service?.labelId || "Belum ditetapkan"}</dd></div>
         </dl>
-        {canRoute ? (
-          <div className="mt-2 flex flex-wrap items-center gap-2">
-            <select aria-label="Pilih layanan teknis" data-testid="v1-service-select" className={`${SELECT_CLS} min-w-[220px] flex-1`} value={serviceId} onChange={(e) => setServiceId(e.target.value)}>
-              <option value="">{unit.service ? "Ubah layanan teknis…" : "Pilih layanan teknis…"}</option>
-              {services.filter((s) => s.id !== unit.serviceId).map((s) => <option key={s.id} value={s.id}>{s.labelId} ({SERVICE_LINE_REAL[s.serviceLine]?.label || s.serviceLine})</option>)}
-            </select>
-            <Button size="sm" data-testid="v1-service-save" onClick={saveService} disabled={!serviceId || !!busy}>{busy === "service" && <Loader2 size={14} className="animate-spin" />} Tetapkan</Button>
+        {/* Layanan teknis TIDAK ditampilkan dan tidak diubah (data historis dipertahankan). Hanya bila rute pengerjaan BELUM ada, Production Lead boleh menentukannya agar tahap bisa dimulai (aksi manusia, bukan tebakan). */}
+        {!unit.service && (canRoute ? (
+          <div className="mt-2 space-y-1.5" data-testid="v1-route-needed">
+            <p className="m-0 text-[12px] text-orange">Rute pengerjaan belum ditentukan — pilih jenis pengerjaan agar tahap bisa dimulai.</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <select aria-label="Pilih jenis pengerjaan" data-testid="v1-service-select" className={`${SELECT_CLS} min-w-[220px] flex-1`} value={serviceId} onChange={(e) => setServiceId(e.target.value)}>
+                <option value="">Pilih jenis pengerjaan…</option>
+                {services.map((s) => <option key={s.id} value={s.id}>{s.labelId} ({SERVICE_LINE_REAL[s.serviceLine]?.label || s.serviceLine})</option>)}
+              </select>
+              <Button size="sm" data-testid="v1-service-save" onClick={saveService} disabled={!serviceId || !!busy}>{busy === "service" && <Loader2 size={14} className="animate-spin" />} Tetapkan</Button>
+            </div>
           </div>
-        ) : <p className="m-0 mt-2 text-[11.5px] text-ink3">Layanan teknis ditetapkan Production Lead.</p>}
+        ) : <p className="m-0 mt-2 text-[11.5px] text-ink3">Rute pengerjaan ditentukan Production Lead.</p>)}
         <Msg kind={m("service").kind} testid="v1-service-msg">{m("service").text}</Msg>
       </Section>
 
@@ -81,8 +82,8 @@ export default function UnitV1Actions({ data, roles, onData, onChanged }) {
         {canRoute ? (
           <div className="space-y-2">
             <label className="block text-[11.5px] font-semibold text-ink2">Prioritas
-              <select data-testid="v1-priority" className={`${SELECT_CLS} mt-1`} value={draft.priority} onChange={(e) => setDraft((d) => ({ ...d, priority: e.target.value }))}>
-                {Object.entries(PRODUCTION_PRIORITY_REAL).map(([k, p]) => <option key={k} value={k}>{p.label}</option>)}
+              <select data-testid="v1-priority" className={`${SELECT_CLS} mt-1`} value={["HIGH", "URGENT", "CRITICAL"].includes(draft.priority) ? "HIGH" : "NORMAL"} onChange={(e) => setDraft((d) => ({ ...d, priority: e.target.value }))}>
+                <option value="NORMAL">Normal</option><option value="HIGH">Tinggi</option>
               </select>
             </label>
             <div><span className="block text-[11.5px] font-semibold text-ink2">Target Produksi Selesai</span>
@@ -90,26 +91,18 @@ export default function UnitV1Actions({ data, roles, onData, onChanged }) {
             <Button size="sm" className="w-full" data-testid="v1-production-save" onClick={saveProduction} disabled={!!busy || !isDraftDirty(draft, unit)}>{busy === "production" && <Loader2 size={14} className="animate-spin" />} Simpan</Button>
           </div>
         ) : (
-          <dl className="m-0 space-y-1 text-[12.5px]"><div className="flex justify-between"><dt className="text-ink3">Prioritas</dt><dd className="m-0 text-ink">{PRODUCTION_PRIORITY_REAL[unit.priority]?.label || "Normal"}</dd></div><div className="flex justify-between"><dt className="text-ink3">Target selesai</dt><dd className="m-0 text-ink" data-testid="v1-due-readonly">{draftOf(unit).due || "—"}</dd></div></dl>
+          <dl className="m-0 space-y-1 text-[12.5px]"><div className="flex justify-between"><dt className="text-ink3">Prioritas</dt><dd className="m-0 text-ink">{priorityOf({ priority: unit.priority, priorityDisplay: data.priorityDisplay }).label}</dd></div><div className="flex justify-between"><dt className="text-ink3">Target selesai</dt><dd className="m-0 text-ink" data-testid="v1-due-readonly">{draftOf(unit).due || "—"}</dd></div></dl>
         )}
         <Msg kind={m("production").kind} testid="v1-production-msg">{m("production").text}</Msg>
       </Section>
 
-      <Section title="Blokir Produksi" testid="v1-blocker">
-        {!blocker ? <p className="m-0 text-[12.5px] text-ink3">Tidak ada blokir aktif.</p> : (
+      <Section title={DELAY_TITLE} testid="v1-blocker">
+        {!blocker ? <p className="m-0 text-[12.5px] text-ink3">Pekerjaan tidak sedang tertunda.</p> : (
           <div className="space-y-2" data-testid="v1-blocker-active">
-            <div className="flex items-center gap-2"><Badge variant="red">{BLOCK_REASON_REAL[blocker.reason]?.label || blocker.reason}</Badge>{blocker.stage?.labelId && <span className="text-[12px] text-ink3">tahap {blocker.stage.labelId}</span>}</div>
+            <div className="flex items-center gap-2"><Badge variant="red" data-testid="v1-delay-status">Tertunda — {delayReasonOfBlock(blocker.reason).label.toLowerCase()}</Badge>{blocker.stage?.labelId && <span className="text-[12px] text-ink3">tahap {blocker.stage.labelId}</span>}</div>
             {blocker.note && <p className="m-0 text-[12.5px] text-ink2">{blocker.note}</p>}
-            <p className="m-0 text-[11.5px] text-ink3">Dibuka {formatTanggalJam(blocker.openedAt)}{blocker.openedBy?.name ? ` oleh ${blocker.openedBy.name}` : ""} · {formatDurasiMenit(Math.max(0, Math.floor((Date.now() - new Date(blocker.openedAt).getTime()) / 60000)))}</p>
-            {!canResolve ? <p className="m-0 text-[11.5px] text-ink3">Hanya tim produksi/QC yang dapat menyelesaikan blokir ini.</p> : !resolving ? (
-              <Button size="sm" variant="secondary" data-testid="v1-blocker-open" onClick={() => setResolving(true)}>Selesaikan blokir</Button>
-            ) : (
-              <div className="space-y-2">
-                <textarea data-testid="v1-blocker-note" rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Bagaimana hambatan ini diselesaikan? (opsional)" className="w-full rounded-btn border border-border bg-surface px-2.5 py-2 text-[12.5px] text-ink outline-none placeholder:text-ink3 focus:border-accent" />
-                <div className="flex gap-2"><Button size="sm" variant="ghost" className="flex-1" onClick={() => { setResolving(false); setNote(""); }}>Batal</Button>
-                  <Button size="sm" className="flex-1" data-testid="v1-blocker-confirm" onClick={resolveBlocker} disabled={!!busy}>{busy === "blocker" ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Konfirmasi selesai</Button></div>
-              </div>
-            )}
+            <p className="m-0 text-[11.5px] text-ink3">Ditunda {formatTanggalJam(blocker.openedAt)}{blocker.openedBy?.name ? ` oleh ${blocker.openedBy.name}` : ""} · {formatDurasiMenit(Math.max(0, Math.floor((Date.now() - new Date(blocker.openedAt).getTime()) / 60000)))}</p>
+            <p className="m-0 text-[11.5px] text-ink3" data-testid="v1-resume-who">{resumeInfo({ source: "BLOCKER", reason: blocker.reason, canResume: canResolve && blocker.reason !== "MATERIAL_SHORTAGE" }).kind === "BUTTON" ? `Tekan "${RESUME_ACTION_LABEL}" di bagian Pekerjaan setelah kendalanya selesai.` : resumeInfo({ source: "BLOCKER", reason: blocker.reason, canResume: false }).text}</p>
           </div>
         )}
         <Msg kind={m("blocker").kind} testid="v1-blocker-msg">{m("blocker").text}</Msg>

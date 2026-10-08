@@ -8,7 +8,7 @@
 
 import { formatTanggal } from "@/utils/formatDate.js";
 
-const PRIORITY_LABEL = { NORMAL: "Normal", HIGH: "Tinggi", URGENT: "Mendesak", CRITICAL: "Kritis" };
+const PRIORITY_LABEL = { NORMAL: "Normal", HIGH: "Tinggi", URGENT: "Tinggi", CRITICAL: "Tinggi" }; // Mendesak/Kritis lama tampil Tinggi (nilai tersimpan tidak diubah)
 
 /**
  * Ubah satu ActivityEvent (dari GET /api/activity) jadi kalimat Bahasa

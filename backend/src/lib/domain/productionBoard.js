@@ -11,7 +11,8 @@ export const BOARD_DEFAULTS = Object.freeze({
   workEndHourWib: 17,
 });
 
-export const PRIORITY_LABEL = Object.freeze({ 0: "Normal", 1: "Tinggi", 2: "Mendesak" });
+// Prioritas pengguna hanya Normal · Tinggi · Komplain (Komplain = turunan ComplaintCase resmi, lihat productionDisplay.js). Nilai lama 2 ("Mendesak") tersimpan apa adanya, hanya DITAMPILKAN Tinggi.
+export const PRIORITY_LABEL = Object.freeze({ 0: "Normal", 1: "Tinggi", 2: "Tinggi" });
 
 // Urutan kartu di satu meja. Urutan MANUAL (stationSequence, diatur Planner lewat drag-drop / tombol naik-turun) selalu menang;
 // prioritas hanya URUTAN BAWAAN untuk kartu yang belum punya nomor manual (prioritas tinggi dulu, lalu target mulai paling awal).
@@ -22,7 +23,7 @@ export function compareStationOrder(a, b) {
   if (sa != null && sb != null && sa !== sb) return sa - sb;
   if (sa != null && sb == null) return -1;
   if (sa == null && sb != null) return 1;
-  return ((b?.priority ?? 0) - (a?.priority ?? 0))
+  return ((b?.priorityRank ?? b?.priority ?? 0) - (a?.priorityRank ?? a?.priority ?? 0))
     || (new Date(a?.targetStartAt || 0).getTime() - new Date(b?.targetStartAt || 0).getTime());
 }
 

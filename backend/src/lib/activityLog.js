@@ -17,6 +17,7 @@ import { BLOCK_REASON_LABEL } from "./domain/productionExceptions.js";
 export const ENTITY_TYPES = Object.freeze({
   UNIT: "unit",
   ORDER: "order",
+  PRODUCTION_SETTING: "production_setting", // Slice 2 — pengaturan Admin Production
   // Audit Gudang & Inventory (12 Sept 2026) — MATERIAL untuk perubahan data
   // master (reorderPoint/kategori/aktif-nonaktif, sebelumnya tidak
   // tercatat SAMA SEKALI), sisanya satu entityType per jenis dokumen
@@ -50,6 +51,7 @@ export const ENTITY_TYPES = Object.freeze({
   // Pembayaran pelanggan (Finance Mobile S5): verifikasi & penolakan Payment.
   PAYMENT: "payment",
   FIN_SUPPLIER_BILL: "fin_supplier_bill",
+  FIN_SUPPLIER: "fin_supplier", // master supplier: perubahan data (nama/kontak/rekening/termin/status) — 7 Okt 2026
   FIN_REFUND: "fin_refund",
   FIN_PERIOD: "fin_period",
   FIN_ACCOUNT: "fin_account",
@@ -87,6 +89,8 @@ export const ENTITY_TYPES = Object.freeze({
   INCENTIVE_SNAPSHOT: "incentive_snapshot",
   // Pembayaran Insentif (24 September 2026) — entityId = id IncentivePayout.
   INCENTIVE_PAYOUT: "incentive_payout",
+  // Checklist Persiapan Perjalanan (7 Okt 2026) — entityId = Route.id.
+  ROUTE_PREP_CHECKLIST: "route_prep_checklist",
 });
 
 export const EVENT_TYPES = Object.freeze({
@@ -177,6 +181,9 @@ export const EVENT_TYPES = Object.freeze({
   // Eksekusi Workshop V2 (P5): unit BARU/SEWA didaftarkan lahir di workshop; run selesai tahap workshop -> menunggu QC.
   PRODUCTION_WORKSHOP_RUN_REGISTERED: "PRODUCTION_WORKSHOP_RUN_REGISTERED",
   PRODUCTION_WORKSHOP_AWAITING_QC: "PRODUCTION_WORKSHOP_AWAITING_QC",
+  // Rencana Produksi order nyata: Run dibuka (belum tiba) saat Jadwalkan; kedatangan fisik tanpa custody dikonfirmasi eksplisit.
+  PRODUCTION_RUN_ONBOARDED_RENCANA: "PRODUCTION_RUN_ONBOARDED_RENCANA",
+  PRODUCTION_ARRIVAL_CONFIRMED_NO_CUSTODY: "PRODUCTION_ARRIVAL_CONFIRMED_NO_CUSTODY",
   // QC V2, rework, barang jadi, dan rekonsiliasi override V1 (P6). Detail (hasil, inspeksi, alasan) ada di metadata.
   PRODUCTION_QC_RECORDED: "PRODUCTION_QC_RECORDED",
   PRODUCTION_QC_WAIVED: "PRODUCTION_QC_WAIVED",
@@ -197,9 +204,20 @@ export const EVENT_TYPES = Object.freeze({
   PRODUCTION_STATION_REORDERED: "PRODUCTION_STATION_REORDERED",
   PRODUCTION_MATERIAL_RETURN_REQUESTED: "PRODUCTION_MATERIAL_RETURN_REQUESTED",
   PRODUCTION_MATERIAL_RETURN_RECEIVED: "PRODUCTION_MATERIAL_RETURN_RECEIVED",
+  // Slice 2 (flow adaptasi): tahap dilewati (SKIPPED), QC tidak dilakukan, produksi diselesaikan lewat adaptasi, kebijakan adaptasi diterapkan, Tunda/Lanjutkan Pekerjaan di papan, pengaturan Admin.
+  PRODUCTION_STEP_SKIPPED: "PRODUCTION_STEP_SKIPPED",
+  PRODUCTION_QC_NOT_PERFORMED: "PRODUCTION_QC_NOT_PERFORMED",
+  PRODUCTION_FINISHED_ADAPTATION: "PRODUCTION_FINISHED_ADAPTATION",
+  PRODUCTION_ADAPTATION_APPLIED: "PRODUCTION_ADAPTATION_APPLIED",
+  PRODUCTION_WORK_DELAYED: "PRODUCTION_WORK_DELAYED",
+  PRODUCTION_WORK_RESUMED: "PRODUCTION_WORK_RESUMED",
+  PRODUCTION_SETTING_CHANGED: "PRODUCTION_SETTING_CHANGED",
   // P10B — Aplikasi Dokumentasi (foto dokumentasi produksi; TIDAK mengubah lifecycle).
   PRODUCTION_DOCUMENTATION_ADDED: "PRODUCTION_DOCUMENTATION_ADDED",
   PRODUCTION_DOCUMENTATION_CORRECTED: "PRODUCTION_DOCUMENTATION_CORRECTED",
+  // Slice 3 — Catatan Komponen kanonis per unit (informasi; tidak mengubah stok/lifecycle).
+  PRODUCTION_COMPONENT_RECORDED: "PRODUCTION_COMPONENT_RECORDED",
+  PRODUCTION_COMPONENT_CORRECTED: "PRODUCTION_COMPONENT_CORRECTED",
   DOCUMENT_CANCELLED: "DOCUMENT_CANCELLED",
   DOCUMENT_POSTED: "DOCUMENT_POSTED", // ledger benar-benar tertulis (putaway/issue/dispatch/receive/complete/post)
 
@@ -267,6 +285,16 @@ export const EVENT_TYPES = Object.freeze({
   // sisaSesudah, reason (khusus VOID) }.
   INCENTIVE_PAYOUT_CREATED: "INCENTIVE_PAYOUT_CREATED",
   INCENTIVE_PAYOUT_VOIDED: "INCENTIVE_PAYOUT_VOIDED",
+
+  // Checklist Persiapan Perjalanan (7 Okt 2026) — satu event generik per
+  // titik keputusan (pola sama dengan DOCUMENT_APPROVED/dst), detail di
+  // metadata. CHECKLIST_GATE_OVERRIDDEN dicatat HANYA saat dispatcher/admin
+  // memaksa berangkat walau ada item wajib belum terpenuhi (lihat POST
+  // /routes/:id/start) — alasan WAJIB ada di metadata.reason.
+  CHECKLIST_ITEM_ADDED: "CHECKLIST_ITEM_ADDED",
+  CHECKLIST_ITEM_UPDATED: "CHECKLIST_ITEM_UPDATED",
+  CHECKLIST_ITEM_ARCHIVED: "CHECKLIST_ITEM_ARCHIVED",
+  CHECKLIST_GATE_OVERRIDDEN: "CHECKLIST_GATE_OVERRIDDEN",
 });
 
 /**
@@ -341,13 +369,13 @@ export function formatActivitySentence(event) {
     case EVENT_TYPES.SERVICE_ASSIGNED:
       return `Layanan produksi ditetapkan: ${metadata.serviceLabel || "—"}`;
     case EVENT_TYPES.PRODUCTION_BLOCKED: {
-      const label = BLOCK_REASON_LABEL[metadata.reason] || metadata.reason || "Unknown reason";
-      return metadata.note ? `Production blocked — ${label}: ${metadata.note}` : `Production blocked — ${label}`;
+      const label = (BLOCK_REASON_LABEL[metadata.reason] || metadata.reason || "alasan belum tercatat").toLowerCase();
+      return metadata.note ? `Pekerjaan tertunda — ${label}: ${metadata.note}` : `Pekerjaan tertunda — ${label}`;
     }
     case EVENT_TYPES.PRODUCTION_BLOCKER_RESOLVED:
       return metadata.resolutionNote
-        ? `Production blocker resolved — ${metadata.resolutionNote}`
-        : "Production blocker resolved";
+        ? `Pekerjaan dilanjutkan — ${metadata.resolutionNote}`
+        : "Pekerjaan dilanjutkan";
     case EVENT_TYPES.STAGE_STARTED:
       return `${metadata.stage || "Tahap"} started`;
     case EVENT_TYPES.STAGE_PAUSED: {
@@ -420,6 +448,10 @@ export function formatActivitySentence(event) {
       return `Gudang menyerahkan bahan ${metadata.issueNumber || "—"} untuk unit ${metadata.unitCode || "—"} (${metadata.lineCount ?? 0} bahan, stok berkurang)`;
     case EVENT_TYPES.PRODUCTION_WORKSHOP_RUN_REGISTERED:
       return `Unit ${metadata.unitCode || "—"} (${metadata.category || "—"}) didaftarkan lahir di workshop tanpa pickup`;
+    case EVENT_TYPES.PRODUCTION_RUN_ONBOARDED_RENCANA:
+      return metadata.origin === "WORKSHOP_BORN" ? `Unit ${metadata.unitCode || "—"} dimasukkan ke Rencana Produksi (Run dibuka — unit dibuat di workshop, tanpa pickup)` : `Unit ${metadata.unitCode || "—"} dimasukkan ke Rencana Produksi (Run dibuka, belum tiba di workshop${metadata.viaCustody ? "; mengikuti pickup yang sudah tercatat" : "; tanpa pickup tercatat"})`;
+    case EVENT_TYPES.PRODUCTION_ARRIVAL_CONFIRMED_NO_CUSTODY:
+      return `Kedatangan unit ${metadata.unitCode || "—"} di workshop dikonfirmasi petugas (lokasi ${metadata.locationCode || "—"}; tanpa serah-terima custody karena tidak ada pickup tercatat)`;
     case EVENT_TYPES.PRODUCTION_WORKSHOP_AWAITING_QC:
       return `Seluruh tahap workshop unit ${metadata.unitCode || "—"} selesai — menunggu QC`;
     case EVENT_TYPES.PRODUCTION_QC_RECORDED:
@@ -444,12 +476,30 @@ export function formatActivitySentence(event) {
       return `Urutan unit ${metadata.unitCode || "—"} di ${metadata.stationCode || "meja"} diubah manual: posisi ${metadata.from ?? "—"} → ${metadata.to ?? "—"}`;
     case EVENT_TYPES.PRODUCTION_MATERIAL_RETURN_REQUESTED:
       return `Sisa bahan unit ${metadata.unitCode || "—"} (${metadata.lineCount ?? 0} bahan) menunggu diterima Gudang`;
+    case EVENT_TYPES.PRODUCTION_STEP_SKIPPED:
+      return `Tahap ${(metadata.stepNos || []).join(", ") || "—"} (${metadata.stageLabel || "—"}) unit ${metadata.unitCode || "—"} DILEWATI — ${metadata.reason || "Adaptasi sistem"} (bukan dikerjakan; tanpa foto/hasil uji)`;
+    case EVENT_TYPES.PRODUCTION_QC_NOT_PERFORMED:
+      return `QC unit ${metadata.unitCode || "—"} TIDAK DILAKUKAN — ${metadata.reason || "Adaptasi sistem"} (bukan lulus/di-waive)`;
+    case EVENT_TYPES.PRODUCTION_FINISHED_ADAPTATION:
+      return `Produksi unit ${metadata.unitCode || "—"} diselesaikan (mode adaptasi): ${metadata.skippedCount ?? 0} tahap dilewati, QC tidak dilakukan, unit Siap Kirim tanpa penerimaan barang jadi Gudang`;
+    case EVENT_TYPES.PRODUCTION_ADAPTATION_APPLIED:
+      return `Mode adaptasi diterapkan pada Production Run unit ${metadata.unitCode || "—"}${metadata.reason ? ` — ${metadata.reason}` : ""}`;
+    case EVENT_TYPES.PRODUCTION_WORK_DELAYED:
+      return `Pekerjaan unit ${metadata.unitCode || "—"} ditunda: ${metadata.reasonLabel || "—"}${metadata.note ? ` — ${metadata.note}` : ""}`;
+    case EVENT_TYPES.PRODUCTION_WORK_RESUMED:
+      return `Pekerjaan unit ${metadata.unitCode || "—"} dilanjutkan${metadata.reasonLabel ? ` (sebelumnya: ${metadata.reasonLabel})` : ""}`;
+    case EVENT_TYPES.PRODUCTION_SETTING_CHANGED:
+      return `Pengaturan Production "${metadata.label || metadata.key || "—"}" diubah${metadata.to != null ? ` → ${metadata.to}` : ""}`;
     case EVENT_TYPES.PRODUCTION_MATERIAL_RETURN_RECEIVED:
       return `Gudang menerima retur sisa ${metadata.materialCode || "bahan"} ${metadata.qty ?? "—"} dari unit ${metadata.unitCode || "—"}`;
     case EVENT_TYPES.PRODUCTION_DOCUMENTATION_ADDED:
       return `Dokumentasi ${metadata.categoryLabel || metadata.category || "produksi"} unit ${metadata.unitCode || "—"}: ${metadata.count ?? 0} foto ditambahkan (${metadata.source || "Manual"})`;
     case EVENT_TYPES.PRODUCTION_DOCUMENTATION_CORRECTED:
       return `Dokumentasi ${metadata.categoryLabel || metadata.category || "produksi"} unit ${metadata.unitCode || "—"} dikoreksi — ${metadata.reason || "tanpa alasan"}`;
+    case EVENT_TYPES.PRODUCTION_COMPONENT_RECORDED:
+      return `Catatan komponen unit ${metadata.unitCode || "—"}: ${metadata.sectionLabel || metadata.section || "—"} dicatat (versi ${metadata.version ?? 1}${metadata.mediaCount ? `, ${metadata.mediaCount} foto` : ""})`;
+    case EVENT_TYPES.PRODUCTION_COMPONENT_CORRECTED:
+      return `Catatan komponen unit ${metadata.unitCode || "—"}: ${metadata.sectionLabel || metadata.section || "—"} dikoreksi (versi ${metadata.version ?? "—"}) — ${metadata.reason || "tanpa alasan"}`;
     case EVENT_TYPES.PRODUCTION_STEP_RECORDED:
       return `Tahap ${metadata.stepNo ?? "—"} (${metadata.stepLabel || "—"}) unit ${metadata.unitCode || "—"} tercatat${metadata.verdict ? ` — hasil ${metadata.verdict}` : ""}`;
     case EVENT_TYPES.PRODUCTION_MATERIAL_SHORTAGE_REPORTED:
@@ -551,6 +601,10 @@ export function formatActivitySentence(event) {
       return `Dokumen ${nomor} dikoreksi (jurnal lama dibalik, jurnal baru diposting) — ${metadata.reason || "tanpa keterangan"}`;
     }
     case EVENT_TYPES.DOCUMENT_EDITED: {
+      if (metadata.supplierCode) {
+        const f = Object.keys(metadata.changes || {});
+        return `Supplier ${metadata.supplierCode} diubah: ${f.join(", ") || "—"}${metadata.rekeningBerubah ? " (REKENING BERUBAH)" : ""}`;
+      }
       const nomor = metadata.expenseNumber || metadata.transferNumber || metadata.incomeNumber
         || metadata.billNumber || metadata.refundNumber || "—";
       const fields = Object.keys(metadata.changes || {});
@@ -581,6 +635,18 @@ export function formatActivitySentence(event) {
       return `Pembayaran insentif Rp${(metadata.amount ?? 0).toLocaleString("id-ID")} dicatat (${metadata.method || "?"}${metadata.referenceNumber ? `, ref ${metadata.referenceNumber}` : ""}) — sisa Rp${(metadata.sisaSesudah ?? 0).toLocaleString("id-ID")}`;
     case EVENT_TYPES.INCENTIVE_PAYOUT_VOIDED:
       return `Pembayaran insentif Rp${(metadata.amount ?? 0).toLocaleString("id-ID")} dibatalkan (void) — ${metadata.reason || "tanpa keterangan"} (sisa jadi Rp${(metadata.sisaSesudah ?? 0).toLocaleString("id-ID")})`;
+    case EVENT_TYPES.CHECKLIST_ITEM_ADDED:
+      return `Item checklist "${metadata.title || "—"}" ditambahkan${metadata.required ? " (wajib sebelum berangkat)" : ""}`;
+    case EVENT_TYPES.CHECKLIST_ITEM_UPDATED: {
+      const fields = Object.keys(metadata.changes || {});
+      return fields.length
+        ? `Item checklist "${metadata.title || "—"}" diubah: ${fields.join(", ")}`
+        : `Item checklist "${metadata.title || "—"}" diubah`;
+    }
+    case EVENT_TYPES.CHECKLIST_ITEM_ARCHIVED:
+      return `Item checklist "${metadata.title || "—"}" dihapus dari daftar aktif`;
+    case EVENT_TYPES.CHECKLIST_GATE_OVERRIDDEN:
+      return `Checklist persiapan DILEWATI — rute tetap diberangkatkan walau ${metadata.missingCount ?? 0} item wajib belum terpenuhi (${(metadata.missingTitles || []).join(", ") || "—"}) — ${metadata.reason || "tanpa alasan"}`;
     default:
       // eventType yang belum dikenali modul ini (mis. ditambahkan slice
       // berikutnya) — tampilkan apa adanya alih-alih melempar error, supaya

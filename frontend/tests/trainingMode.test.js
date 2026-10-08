@@ -65,7 +65,9 @@ test("gerbang halaman: peran non-admin yang membuka halaman di luar izinnya TIDA
 
 test("halaman latihan terpasang: seluruh halaman dibungkus DemoPage, termasuk Aplikasi Meja & Corner; data tersedia di snapshot", () => {
   const reg = src("routes", "pageRegistry.jsx");
-  for (const [to, comp] of [["/produksi/meja", "WorkerLane lane=\"TABLE\""], ["/produksi/corner", "WorkerLane lane=\"CORNER\""], ["/produksi/dokumentasi", "ProductionDocumentation"]]) assert.match(reg, new RegExp(`path: "${to}", render: \\(\\) => <DemoPage><${comp}`), to);
+  // P12C: Aplikasi Meja/Corner menerima ctx (user/onLogout) untuk tab Akun; P12D: Aplikasi Dokumentasi juga (kerangka sama).
+  // slotBar: bar Mode Latihan pindah ke tab Akun (aplikasi lantai mobile) — perilaku demo tidak berubah.
+  for (const [to, comp, args, slot] of [["/produksi/meja", "WorkerLane lane=\"TABLE\"", "ctx", " slotBar"], ["/produksi/corner", "WorkerLane lane=\"CORNER\"", "ctx", " slotBar"], ["/produksi/dokumentasi", "ProductionDocumentation", "ctx", " slotBar"]]) assert.match(reg, new RegExp(`path: "${to}", render: \\(${args}\\) => <DemoPage${slot}><${comp}`), to);
   for (const to of ["/bengkel/ringkasan", "/bengkel/production-v2", "/bengkel/rencana-produksi", "/bengkel/quality-control", "/bengkel/kpi", "/warehouse/antrean-produksi", "/warehouse/kpi"]) assert.match(reg, new RegExp(`path: "${to}", render: \\(\\) => <DemoPage>`), to);
   const urls = new Set(snapshot.entries.map((e) => e.url));
   for (const u of ["/production-v2/worker/table", "/production-v2/worker/corner"]) assert.ok(urls.has(u), u);
@@ -117,10 +119,17 @@ test("NOL mutasi: semua metode non-GET, unggah, dan export ditolak SEBELUM jarin
 });
 
 test("tombol aksi Aplikasi Meja/Corner bertanda data-mutates (dinonaktifkan di Mode Latihan); membuka lembar isian tetap baca-saja", () => {
-  const wl = src("pages", "produksi", "WorkerLane.jsx");
-  assert.equal((wl.match(/data-mutates/g) || []).length, 3, "kirim tahap, kirim kekurangan bahan, aksi cepat");
-  assert.match(wl, /<button type="button" data-mutates onClick=\{submit\} disabled=\{busy\}/);
-  assert.match(wl, /data-mutates=\{isQuickAction\(next\) \? "" : undefined\}/);
+  // P12C: tombol ada di workerApp/* — SETIAP titik kirim ke server bertanda data-mutates (Mode Latihan menonaktifkannya); membuka lembar tetap baca-saja.
+  const sheets = src("features", "production", "workerApp", "workerSheets.jsx");
+  assert.equal((sheets.match(/data-mutates/g) || []).length, 2, "kirim tahap, kirim kekurangan bahan");
+  assert.match(sheets, /<button type="button" data-mutates onClick=\{submit\} disabled=\{gate\.disabled\}/);
+  assert.match(src("features", "production", "workerApp", "JobDetail.jsx"), /data-mutates=\{next\.action === "RESUME" \|\| isQuickAction\(next\) \? "" : undefined\}/);
+  // slice 2: setiap tombol kirim pada lembar adaptasi (lewati / selesaikan / tunda) juga bertanda data-mutates
+  const ad = src("features", "production", "workerApp", "adaptationSheets.jsx");
+  for (const id of ["skip-confirm", "finish-confirm", "delay-confirm"]) assert.match(ad, new RegExp("data-mutates data-testid=\"" + id + "\""), id);
+  const v1 = src("features", "production", "workerApp", "V1Panels.jsx");
+  for (const id of ["v1-primary", "v1-complete-save", "v1-pause-save", "v1-block-save", "v1-material-save"]) assert.match(v1, new RegExp(`data-mutates[^>]*data-testid="${id}"`), id);
+  for (const open of ["v1-pause-open", "v1-block-open"]) assert.doesNotMatch(v1.match(new RegExp(`<button[^>]*data-testid="${open}"[^>]*>`))[0], /data-mutates/, `${open}: hanya membuka lembar`);
 });
 
 test("checklist: baca-saja (tanpa tombol/input/centang/handler), isi sesuai peran", () => {

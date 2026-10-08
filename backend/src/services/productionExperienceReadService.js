@@ -2,17 +2,20 @@
 // BACA-SAJA. Semua keadaan tahap diturunkan dari data P1–P6 + bukti P8 lewat loadStepContext (sumber yang sama dengan command) —
 // tidak ada status UI yang disimpan terpisah. Pemanggil (routes) wajib memfilter unitIds dari reader cohort; unit di luar cohort tidak pernah
 // dimuat. Data customer seperlunya: nama, berat badan, keluhan, request — tanpa telepon/alamat.
+import { componentMessageLines, getComponentReportBlock } from "./productionComponentNoteService.js";
 import {
-  ANDON_BUCKETS, COMMAND_CENTER_COLUMNS, STEP_BY_NO, STEPS, andonBucketOf, commandCenterColumn, stepNoForStage,
+  ANDON_BUCKETS, COMMAND_CENTER_COLUMNS, STEP_BY_NO, STEPS, andonBucketOf, commandCenterColumn, isSkippedEvidence, stepNoForStage,
 } from "../lib/domain/productionSteps.js";
 import { listMaterialReturns } from "./productionMaterialReturnService.js";
-import { BOARD_DEFAULTS, PRIORITY_LABEL, compareStationOrder, formatProductionDate, parseProductionDate, stationLabel, todayWib } from "../lib/domain/productionBoard.js";
+import { BOARD_DEFAULTS, compareStationOrder, formatProductionDate, parseProductionDate, stationLabel, todayWib } from "../lib/domain/productionBoard.js";
 import { applicableStepsFor, loadStepContext } from "./productionStepCommandService.js";
 import { buildRunDocumentation, documentationBuckets } from "./productionDocumentationRead.js";
 import { sourceOfStep } from "../lib/domain/productionDocumentation.js";
 import { listEligibleUnitsForPlanning } from "./productionPlanningCommandService.js";
 import { signEvidenceUrl } from "../routes/productionEvidenceMedia.js";
 import { signUnitPhotoUrlIfAny, signUnitPhotoUrlsBulk } from "../routes/productionUnitPhoto.js";
+import { arrivalConfirmedByStaff, delayReasonOfBlock, displayStatusOfOrder, displayStatusOfUnit, isFinishedUnitStatus, physicalPresenceOf, priorityDisplay } from "../lib/domain/productionDisplay.js";
+import { loadOpenComplaintsByUnit } from "./productionComplaints.js";
 
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
 export const COMPLAINT_LABEL = Object.freeze({
@@ -29,11 +32,11 @@ export const RUN_VIEW_INCLUDE = {
       service: { select: { code: true, labelId: true } },
       order: {
         select: {
-          orderNumber: true, category: true, productType: true, beratBadan: true, notes: true, complaintCategory: true, customerPromiseDate: true,
+          orderNumber: true, status: true, category: true, productType: true, beratBadan: true, notes: true, complaintCategory: true, customerPromiseDate: true,
           // P9 UX — nama layanan yang DIPESAN di Sales (snapshot OrderItem.layananName). SENGAJA hanya nama: harga tidak di-select.
           items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } },
           weightEntries: { select: { label: true, beratKg: true }, orderBy: { sortOrder: "asc" } },
-          customer: { select: { name: true, city: true, assignedSales: { select: { id: true, name: true } } } },
+          customer: { select: { name: true, city: true, pipelineStage: true, isInternalStaff: true, assignedSales: { select: { id: true, name: true } } } },
         },
       },
     },
@@ -77,6 +80,7 @@ export function stepStatuses(ctx) {
     const e = recorded.get(step.no);
     let status;
     if (!applicable.includes(step.no)) status = "NA";
+    else if (e && isSkippedEvidence(e)) status = "SKIPPED"; // dilewati (mode adaptasi) — BUKAN dikerjakan; tanpa foto/hasil uji
     else if (next.wait === "COMPLETED") status = "DONE";
     else if (step.no === next.stepNo && next.action !== "WAIT") status = "CURRENT";
     else if (step.no === next.stepNo && next.action === "WAIT" && !e) status = "WAITING";
@@ -96,7 +100,8 @@ export function indicatorsOf(run, ctx, materialStatus) {
     bom: run.plan?.bomLines.length ? "OK" : "BELUM",
     material: materialStatus.key,
     workshop: ctx.state.activeOp ? (ctx.state.activeOp.status === "PAUSED" ? "DIJEDA" : "BERJALAN") : (run.operations.length ? "MENUNGGU" : "BELUM_MULAI"),
-    qc: qc ? (qc.result === "PASS" ? "LULUS" : qc.result === "FAIL_REWORK" ? "REWORK" : qc.result === "OVERRIDDEN" ? "WAIVED" : qc.result) : "BELUM",
+    qc: qc ? (qc.result === "PASS" ? "LULUS" : qc.result === "FAIL_REWORK" ? "REWORK" : qc.result === "OVERRIDDEN" ? "WAIVED" : qc.result)
+      : (run.adaptationPolicy && run.operations.some((o) => o.status === "SKIPPED" && o.planSnapshot?.qcNotPerformed) ? "TIDAK_DILAKUKAN" : "BELUM"),
     handoff: fg ? fg.status : "BELUM",
   };
 }
@@ -104,8 +109,7 @@ export function indicatorsOf(run, ctx, materialStatus) {
 export function warningsOf(run, ctx, materialStatus) {
   const w = [];
   if (!run.plan?.operatorId) w.push({ code: "OPERATOR_BELUM", text: "PIC meja belum ditetapkan" });
-  if (!run.unit.serviceId) w.push({ code: "LAYANAN_BELUM", text: "Layanan unit belum ditetapkan (ditetapkan setelah diagnosa)" });
-  const diagnosed = ctx.evidence.some((e) => e.stepNo === 5);
+  const diagnosed = ctx.evidence.some((e) => e.stepNo === 5 && !isSkippedEvidence(e)); // tahap dilewati (adaptasi) bukan diagnosa yang selesai
   if (diagnosed && !run.plan?.bomLines.length) w.push({ code: "BOM_BELUM", text: "Diagnosa selesai — BOM belum dibuat" });
   if (["BOM_BELUM_ADA", "BELUM_DIRESERVASI", "MENUNGGU_DISIAPKAN", "SIAP_DIAMBIL"].includes(materialStatus.key) && diagnosed) w.push({ code: "BAHAN_BELUM", text: materialStatus.label });
   if (ctx.openShortage) w.push({ code: "KEKURANGAN", text: "Menunggu bahan baku dari Gudang" });
@@ -135,7 +139,7 @@ export function customerOf(run) {
   };
 }
 
-export function toRunView(run, ctx, { now = new Date(), photoUrl = null } = {}) {
+export function toRunView(run, ctx, { now = new Date(), photoUrl = null, complaints = [] } = {}) {
   const shortage = ctx.openShortage;
   const materialStatus = materialStatusOf(run.plan, ctx.material, shortage);
   const steps = stepStatuses(ctx);
@@ -145,15 +149,22 @@ export function toRunView(run, ctx, { now = new Date(), photoUrl = null } = {}) 
   const op = ctx.state.activeOp;
   const next = ctx.next;
   const bucket = andonBucketOf({ next, started });
+  const prio = priorityDisplay({ stored: run.plan?.priority ?? 0, complaintCases: complaints });
+  const inboundAccepted = run.custodyHandoffs.some((h) => h.direction === "INBOUND" && h.status === "ACCEPTED") || arrivalConfirmedByStaff(run.phases);
   return {
     runId: run.id, revision: run.revision, status: run.status, currentPhase: run.currentPhase, origin: run.origin,
+    // Tiga sumbu terpisah (simplifikasi slice 1): status order, keberadaan fisik, tahap (next/bucket). service (teknis) tetap ada di payload sebagai data historis; UI hanya menampilkan Layanan Sales.
+    orderStatus: displayStatusOfOrder(run.unit.order?.status) || null,
+    unitStatus: displayStatusOfUnit(run.unit.status) || null,
+    presence: physicalPresenceOf({ unitStatus: run.unit.status, runStatus: run.status, runOrigin: run.origin, inboundAccepted }),
+    priority: { key: prio.key, label: prio.label, rank: prio.rank, complaintCases: prio.complaintCases },
     unit: { id: run.unit.id, orderId: run.unit.orderId, unitCode: run.unit.unitCode, merk: run.unit.merk, ukuran: run.unit.ukuran, status: run.unit.status, service: run.unit.service ? { code: run.unit.service.code, label: run.unit.service.labelId } : null, photoUrl },
     customer: customerOf(run),
     plan: run.plan ? {
       id: run.plan.id, status: run.plan.status, revision: run.plan.revision,
       productionDate: formatProductionDate(run.plan.productionDate), stationCode: run.plan.stationCode, stationLabel: stationLabel(run.plan.stationCode),
       stationSequence: run.plan.stationSequence ?? null,
-      priority: run.plan.priority, priorityLabel: PRIORITY_LABEL[run.plan.priority] || "Normal",
+      priority: run.plan.priority, priorityLabel: prio.label, priorityKey: prio.key, priorityRank: prio.complaintCases.length ? 3 : (run.plan.priority ?? 0), // rank untuk URUTAN bawaan: Komplain > nilai tersimpan (Mendesak lama tetap di atas Tinggi)
       workCenter: run.plan.workCenter, cornerWorkCenter: run.plan.cornerWorkCenter,
       operator: run.plan.operator ? { id: run.plan.operator.id, userId: run.plan.operator.userId, name: nameOf(run.plan.operator) } : null,
       cornerOperator: run.plan.cornerOperator ? { id: run.plan.cornerOperator.id, userId: run.plan.cornerOperator.userId, name: nameOf(run.plan.cornerOperator) } : null,
@@ -161,9 +172,14 @@ export function toRunView(run, ctx, { now = new Date(), photoUrl = null } = {}) 
       bomCount: run.plan.bomLines.length,
     } : null,
     next, bucket, bucketLabel: ANDON_BUCKETS.find((b) => b.key === bucket)?.label ?? bucket,
-    progress: { done: applicable.filter((s) => s.status === "DONE").length, total: applicable.length },
+    // Progres membedakan dikerjakan (done) / dilewati (skipped) / tersisa (remaining). KPI & kunci 12/12 hanya menghitung "done" sebagai pekerjaan.
+    progress: (() => {
+      const worked = applicable.filter((s) => s.status === "DONE").length; const skipped = applicable.filter((s) => s.status === "SKIPPED").length;
+      return { done: worked, skipped, remaining: applicable.length - worked - skipped, total: applicable.length };
+    })(),
+    adaptation: run.adaptationPolicy ? { policy: run.adaptationPolicy } : null,
     steps,
-    activeOp: op ? { stageLabel: op.stageLabel, status: op.status, startedAt: op.startedAt } : null,
+    activeOp: op ? { stageLabel: op.stageLabel, status: op.status, startedAt: op.startedAt, delayKind: op.delayKind ?? null, delayNote: op.delayNote ?? null } : null,
     timer: {
       startedAt: firstStart, stepStartedAt: op?.startedAt ?? null,
       elapsedMinutes: firstStart ? minutesBetween(firstStart, TERMINAL_RUN.includes(run.status) ? run.completedAt || now : now) : 0,
@@ -178,13 +194,14 @@ export function toRunView(run, ctx, { now = new Date(), photoUrl = null } = {}) 
   };
 }
 
-async function loadRuns(prisma, where) {
+export async function loadRuns(prisma, where) {
   return prisma.productionRun.findMany({ where, include: RUN_VIEW_INCLUDE, orderBy: [{ createdAt: "asc" }] });
 }
-async function viewsOf(prisma, runs, opts) {
+export async function viewsOf(prisma, runs, opts) {
   const photoByUnit = await signUnitPhotoUrlsBulk(prisma, runs.map((r) => r.unitId));
+  const complaintsByUnit = await loadOpenComplaintsByUnit(prisma, runs.map((r) => ({ id: r.unitId, orderId: r.unit?.orderId ?? null })));
   const views = [];
-  for (const run of runs) views.push(toRunView(run, await loadStepContext(prisma, run), { ...opts, photoUrl: photoByUnit.get(run.unitId) ?? null }));
+  for (const run of runs) views.push(toRunView(run, await loadStepContext(prisma, run), { ...opts, photoUrl: photoByUnit.get(run.unitId) ?? null, complaints: complaintsByUnit.get(run.unitId) || [] }));
   return views;
 }
 
@@ -230,15 +247,19 @@ export async function getProductionBoard(prisma, { date, unitIds, config = BOARD
     listAwaitingArrivalNoRunUnits(prisma, unitIds),
   ]);
   const scheduled = await viewsOf(prisma, scheduledRuns, { now });
-  const unscheduled = await viewsOf(prisma, unscheduledRuns, { now });
+  const unscheduledAll = await viewsOf(prisma, unscheduledRuns, { now });
+  // Siap Kirim/Terkirim (status unit) tidak tampil di meja maupun backlog; datanya tetap utuh dan KPI hari itu tetap menghitung seluruh rencana.
+  const workable = (v) => !isFinishedUnitStatus(v.unit.status);
+  const unscheduled = unscheduledAll.filter(workable);
   const stations = config.stations.map((code) => {
-    const items = scheduled.filter((v) => v.plan?.stationCode === code).sort((a, b) => compareStationOrder(a.plan, b.plan));
+    const items = scheduled.filter((v) => v.plan?.stationCode === code && workable(v)).sort((a, b) => compareStationOrder(a.plan, b.plan));
     const operatorNames = [...new Set(items.map((v) => v.plan?.operator?.name).filter(Boolean))];
     return { code, label: stationLabel(code), capacity: config.capacityPerStation, count: items.length, operatorNames, items };
   });
   const completed = scheduled.filter((v) => ["HANDOFF", "SELESAI"].includes(v.bucket)).length;
   return {
     date: formatProductionDate(day), config: { dailyTarget: config.dailyTarget, stations: config.stations, capacityPerStation: config.capacityPerStation },
+    hiddenFinished: scheduled.filter((v) => !workable(v)).length,
     kpi: { target: config.dailyTarget, planned: scheduled.length, completed, waitingMaterial: scheduled.filter((v) => v.bucket === "MENUNGGU_BAHAN").length, late: scheduled.filter((v) => v.timer.late).length },
     stations,
     unscheduled: {
@@ -275,7 +296,6 @@ function attentionItemsFrom(views, { today }) {
     // Data Sales penting belum lengkap — definisi konservatif: berat badan customer (satu-satunya field kuantitatif wajib
     // untuk diagnosa/fondasi yang SUDAH dimodelkan Order.beratBadan) belum diisi.
     if (v.customer.weightKg == null) push(v, "warning", "DATA_SALES_BELUM_LENGKAP", `${label}: berat badan customer belum diisi Sales`);
-    if (v.warnings.some((w) => w.code === "LAYANAN_BELUM")) push(v, "warning", "LAYANAN_BELUM", `${label}: unit belum punya layanan terpetakan`);
     // PIC/meja belum ada — HANYA untuk unit yang SUDAH dijadwalkan ke meja+tanggal tapi PIC belum ditetapkan (unit yang
     // memang belum dijadwalkan sama sekali sudah terhitung tersendiri di KPI "Belum Dijadwalkan", tidak diulang di sini).
     if (v.plan?.stationCode && !v.plan?.operator) push(v, "warning", "PIC_BELUM_ADA", `${label}: sudah dijadwalkan tapi PIC meja belum ditetapkan`);
@@ -304,7 +324,8 @@ export async function getProductionCommandCenter(prisma, { unitIds, now = new Da
       orderBy: [{ scheduledDate: "asc" }],
     }),
   ]);
-  const views = await viewsOf(prisma, activeRuns, { now });
+  const viewsAll = await viewsOf(prisma, activeRuns, { now });
+  const views = viewsAll.filter((v) => !isFinishedUnitStatus(v.unit.status)); // Siap Kirim/Terkirim tidak tampil di papan/backlog
   const completedToday = await viewsOf(prisma, completedTodayRuns, { now });
 
   let valueByOrderId = new Map();
@@ -437,7 +458,7 @@ export async function listWorkerQueue(prisma, { unitIds, userId, lane, all = fal
     unitId: { in: unitIds }, status: { notIn: TERMINAL_RUN },
     plan: { is: { ...planWhere, status: { not: "CANCELLED" } } },
   });
-  const views = await viewsOf(prisma, runs, { now });
+  const views = (await viewsOf(prisma, runs, { now })).filter((v) => !isFinishedUnitStatus(v.unit.status));
   const items = views
     .filter((v) => (lane === "CORNER"
       ? v.next?.actor === "CORNER" || (v.next?.stepNo >= 10 && v.next?.stepNo <= 12)
@@ -463,7 +484,7 @@ export async function getAndonBoard(prisma, { date, unitIds, config = BOARD_DEFA
       items: s.items.map((v) => ({
         runId: v.runId, unitCode: v.unit.unitCode, customerName: v.customer.name, merk: v.unit.merk, ukuran: v.unit.ukuran,
         bucket: v.bucket, bucketLabel: v.bucketLabel, stepNo: v.next?.stepNo ?? null, stepLabel: v.next?.stepNo ? STEP_BY_NO[v.next.stepNo]?.label : null,
-        progress: v.progress, timer: v.timer, priority: v.plan?.priority ?? 0, operatorName: v.plan?.operator?.name ?? null,
+        progress: v.progress, timer: v.timer, priority: v.plan?.priorityRank ?? 0, priorityLabel: v.plan?.priorityLabel ?? "Normal", operatorName: v.plan?.operator?.name ?? null,
         cornerName: v.plan?.cornerOperator?.name ?? null, shortage: v.shortage ? v.shortage.items.map((i) => i.name) : null,
       })),
     })),
@@ -559,10 +580,16 @@ export function buildReportMessage(report) {
   if (report.finalTest) lines.push(`• Uji Akhir    : Diuji beban ${report.finalTest.testerWeightKg} kg -> Hasil Tekstur ${VERDICT_LABEL[report.finalTest.verdict] || report.finalTest.verdict}`);
   if (report.finishing) lines.push(`• Finishing    : Model ${STYLE_LABEL[report.finishing.mattressStyle] || report.finishing.mattressStyle} | Kain ${report.finishing.fabricSpec} | List ${report.finishing.borderColor}`);
   lines.push("");
+  lines.push(...componentMessageLines(report.components?.comparison));
+  if (report.skippedSteps?.length) lines.push(`• Tahap dilewati (Adaptasi sistem): ${report.skippedSteps.map((s) => s.label).join(", ")} — tidak dikerjakan, tanpa foto/hasil uji`);
+  if (report.qcStatus === "TIDAK_DILAKUKAN") lines.push("• QC          : tidak dilakukan (mode adaptasi) — bukan lulus");
+  lines.push("");
   lines.push(`📸 PAKET DOKUMENTASI BEFORE - PROSES - AFTER (${report.mediaCount} MEDIA):`);
   lines.push(`🔗 ${report.reportPath}`);
   lines.push("");
-  lines.push(report.handoffStatus === "ACCEPTED"
+  lines.push(report.adaptation && report.status === "COMPLETED" && !report.handoffStatus
+    ? "Status saat ini: SIAP KIRIM (mode adaptasi — QC dan penerimaan barang jadi Gudang tidak diwajibkan). Silakan konfirmasi jadwal kirim ke customer."
+    : report.handoffStatus === "ACCEPTED"
     ? "Status saat ini: READY FOR DELIVERY HANDOFF. Silakan konfirmasi jadwal kirim ke customer."
     : "Status saat ini: menunggu diterima Gudang (barang jadi). Jadwal kirim dikonfirmasi setelah Gudang menerima.");
   return lines.join("\n");
@@ -572,7 +599,9 @@ export async function getProductionReport(prisma, runId, { unitIds } = {}) {
   const run = await prisma.productionRun.findFirst({ where: { id: runId, unitId: { in: unitIds } }, include: RUN_VIEW_INCLUDE });
   if (!run) return null;
   const ctx = await loadStepContext(prisma, run);
-  const evidence = ctx.evidence;
+  // Bukti SKIPPED (mode adaptasi) BUKAN pekerjaan: tidak boleh mengisi PIC, hasil uji, bahan, finishing, media, maupun status "siap". Dilaporkan terpisah sebagai tahap dilewati.
+  const skippedEvidence = ctx.evidence.filter((e) => isSkippedEvidence(e));
+  const evidence = ctx.evidence.filter((e) => !isSkippedEvidence(e));
   const materialIds = [...new Set(evidence.filter((e) => [6, 7, 10].includes(e.stepNo)).flatMap((e) => (e.payload?.materials || []).map((m) => m.materialId)))];
   const materials = materialIds.length ? await prisma.material.findMany({ where: { id: { in: materialIds } }, select: { id: true, code: true, name: true, unit: true } }) : [];
   const matById = new Map(materials.map((m) => [m.id, m]));
@@ -582,7 +611,7 @@ export async function getProductionReport(prisma, runId, { unitIds } = {}) {
     for (const r of rows) latestPerOp.set(r.operationRunId || r.id, r);
     return [...latestPerOp.values()].flatMap((e) => (e.payload?.materials || []).map((m) => ({ ...m, code: matById.get(m.materialId)?.code ?? "—", name: matById.get(m.materialId)?.name ?? "—", uom: matById.get(m.materialId)?.unit ?? null })));
   };
-  const actorIds = [...new Set(evidence.map((e) => e.actorId).filter(Boolean))];
+  const actorIds = [...new Set(ctx.evidence.map((e) => e.actorId).filter(Boolean))];
   const actors = actorIds.length ? await prisma.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, name: true } }) : [];
   const actorName = new Map(actors.map((a) => [a.id, a.name]));
   const tableActor = latestOf(evidence, 5)?.actorId || latestOf(evidence, 1)?.actorId;
@@ -596,11 +625,14 @@ export async function getProductionReport(prisma, runId, { unitIds } = {}) {
     where: { eventType: "production.report.ready", aggregateId: run.id }, orderBy: { id: "desc" },
     select: { status: true, deliveredAt: true, attempts: true, lastError: true, createdAt: true },
   });
+  const components = await getComponentReportBlock(prisma, run.unitId); // slice 3: catatan komponen kanonis (unit) — perbandingan Sebelum→Sesudah, belum dicatat disebut jelas
   const documentation = await buildRunDocumentation(prisma, run, ctx);
   const docBuckets = documentationBuckets(documentation);
   const report = {
     runId: run.id, status: run.status, reportPath: `/bengkel/production-v2/laporan/${run.id}`,
-    ready: !!latestOf(evidence, 12),
+    ready: !!latestOf(evidence, 12) || (!!run.adaptationPolicy && run.status === "COMPLETED"),
+    adaptation: !!run.adaptationPolicy,
+    skippedSteps: [...new Map(skippedEvidence.map((e) => [e.stepNo, e])).values()].sort((a, b) => a.stepNo - b.stepNo).map((e) => ({ stepNo: e.stepNo, label: STEP_BY_NO[e.stepNo]?.label ?? `Tahap ${e.stepNo}`, reason: e.payload?.reason ?? null, at: e.createdAt, by: actorName.get(e.actorId) ?? null })),
     unit: { unitCode: run.unit.unitCode, merk: run.unit.merk, ukuran: run.unit.ukuran, service: run.unit.service?.labelId ?? null },
     order: { orderNumber: run.unit.order?.orderNumber ?? null, customerName: run.unit.order?.customer?.name ?? null, complaints: (run.unit.order?.complaintCategory || []).map((c) => COMPLAINT_LABEL[c] || c), request: run.unit.order?.notes ?? null, weightKg: run.unit.order?.beratBadan ?? null },
     pic: {
@@ -617,10 +649,12 @@ export async function getProductionReport(prisma, runId, { unitIds } = {}) {
     textureTests: finalTests.map((e) => ({ version: e.version, verdict: e.payload?.verdict, testerWeightKg: e.payload?.testerWeightKg, at: e.createdAt })),
     finalTest: finalPass ? finalPass.payload : null,
     qc: ctx.latestInspection ? { result: ctx.latestInspection.result, version: ctx.latestInspection.version, at: ctx.latestInspection.inspectedAt } : null,
+    qcStatus: ctx.latestInspection ? "DILAKUKAN" : (run.adaptationPolicy && run.operations.some((o) => o.status === "SKIPPED" && o.planSnapshot?.qcNotPerformed) ? "TIDAK_DILAKUKAN" : "BELUM"),
     finishing: latestOf(evidence, 10)?.payload ?? null,
     cornerChecklist: latestOf(evidence, 11)?.payload?.checklist ?? null,
     media: { before: [...mediaOf([1, 2, 3]), ...docBuckets.before], process: [...mediaOf([4, 6, 7]), ...docBuckets.process], after: [...mediaOf([8, 9, 11, 12]), ...docBuckets.after] },
     documentation,
+    components,
     handoffStatus: fg?.status ?? null,
     broadcast: outboxRow
       ? { status: outboxRow.status, deliveredAt: outboxRow.deliveredAt, attempts: outboxRow.attempts, lastError: outboxRow.lastError, queuedAt: outboxRow.createdAt, consumerAvailable: false }

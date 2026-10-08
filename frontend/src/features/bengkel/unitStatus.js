@@ -7,16 +7,18 @@
 // menawarkan pilihan yang mustahil cocok.
 
 // enum UnitStatus — 9 nilai, apa adanya di schema.
+// Simplifikasi Production slice 1: SATU kosakata status — Pengambilan · Diproses · Siap Kirim · Terkirim (cermin backend/src/lib/domain/productionDisplay.js, dijaga tes paritas).
+// Ini status ORDER/UNIT saja; keberadaan fisik (belum tiba / di workshop) dan tahap pengerjaan ditampilkan TERPISAH, tidak dicampur ke badge ini.
 export const UNIT_STATUS_REAL = {
-  AWAITING_PICKUP:        { label: "Menunggu Dijemput",   tone: "neutral" },
-  IN_TRANSIT_IN:          { label: "Dalam Perjalanan Masuk", tone: "accent" },
-  RECEIVED:               { label: "Diterima Bengkel",    tone: "accent" },
-  IN_PRODUCTION:          { label: "Sedang Dikerjakan",   tone: "accent" },
-  READY_FOR_DELIVERY:     { label: "Siap Dikirim",        tone: "green" },
-  READY_ON_CUSTOMER_HOLD: { label: "Ditahan Pelanggan",   tone: "orange" },
-  IN_TRANSIT_OUT:         { label: "Dalam Pengiriman",    tone: "accent" },
-  DELIVERED:              { label: "Terkirim",            tone: "green" },
-  CANCELLED:              { label: "Dibatalkan",          tone: "neutral" },
+  AWAITING_PICKUP:        { label: "Pengambilan",  tone: "neutral", detail: "Menunggu dijemput" },
+  IN_TRANSIT_IN:          { label: "Pengambilan",  tone: "neutral", detail: "Dalam perjalanan ke workshop" },
+  RECEIVED:               { label: "Diproses",     tone: "accent" },
+  IN_PRODUCTION:          { label: "Diproses",     tone: "accent" },
+  READY_FOR_DELIVERY:     { label: "Siap Kirim",   tone: "green" },
+  READY_ON_CUSTOMER_HOLD: { label: "Siap Kirim",   tone: "orange", detail: "Ditahan pelanggan" },
+  IN_TRANSIT_OUT:         { label: "Siap Kirim",   tone: "green", detail: "Dalam pengiriman" },
+  DELIVERED:              { label: "Terkirim",     tone: "green" },
+  CANCELLED:              { label: "Dibatalkan",   tone: "neutral" },
 };
 
 // Status yang dianggap "ada di bengkel" — SAMA dengan IN_WORKSHOP di
@@ -36,7 +38,7 @@ export const PRODUCTION_STATUS_REAL = {
   QUEUED:      { label: "Menunggu Dikerjakan", tone: "neutral" },
   IN_PROGRESS: { label: "Sedang Dikerjakan", tone: "accent" },
   PAUSED:      { label: "Dijeda",            tone: "orange" },
-  BLOCKED:     { label: "Terhambat",         tone: "red" },
+  BLOCKED:     { label: "Pekerjaan Tertunda", tone: "red" },
   WAITING_QC:  { label: "Menunggu QC",       tone: "orange" },
   REWORK:      { label: "Dikerjakan Ulang",  tone: "orange" },
   COMPLETED:   { label: "Selesai",           tone: "green" },
@@ -47,11 +49,13 @@ export const PRODUCTION_STATUS_REAL = {
 // nilai, default NORMAL. TERPISAH dari status (spec: prioritas tidak boleh
 // disimpulkan dari status apa pun, murni keputusan manusia lewat
 // PATCH /units/:id/production).
+// Prioritas pengguna: Normal · Tinggi · Komplain. Nilai lama Mendesak/Kritis HANYA ditampilkan Tinggi (data tersimpan tidak diubah). Komplain = turunan ComplaintCase resmi dari server (priorityDisplay), bukan enum ini.
 export const PRODUCTION_PRIORITY_REAL = {
   NORMAL:   { label: "Normal",   tone: "neutral" },
-  HIGH:     { label: "Tinggi",   tone: "accent" },
-  URGENT:   { label: "Mendesak", tone: "orange" },
-  CRITICAL: { label: "Kritis",   tone: "red" },
+  HIGH:     { label: "Tinggi",   tone: "orange" },
+  URGENT:   { label: "Tinggi",   tone: "orange" },
+  CRITICAL: { label: "Tinggi",   tone: "orange" },
+  COMPLAINT: { label: "Komplain", tone: "red" },
 };
 
 // enum ServiceLine — D-004: dua lini tidak boleh campur material.
@@ -77,7 +81,7 @@ export const STAGE_LOG_STATUS = {
   NOT_STARTED: { label: "Belum Dimulai", tone: "neutral" },
   IN_PROGRESS: { label: "Sedang Berjalan", tone: "accent" },
   PAUSED:      { label: "Dijeda",         tone: "orange" },
-  BLOCKED:     { label: "Terhambat",      tone: "red" },
+  BLOCKED:     { label: "Tertunda",       tone: "red" },
   DONE:        { label: "Selesai",        tone: "green" },
   SKIPPED:     { label: "Dilewati",       tone: "neutral" },
 };
@@ -93,16 +97,16 @@ export const PAUSE_REASON_REAL = {
 };
 
 // enum BlockReason (PRD §6.2) — WAJIB diisi saat menggagalkan tahap.
+// Bahasa sederhana (slice 1): 8 nilai enum DITAMPILKAN sebagai 4 alasan "Pekerjaan Tertunda" (pemetaan di productionLabels.js, paritas dengan backend).
 export const BLOCK_REASON_REAL = {
-  MATERIAL_SHORTAGE:          { label: "Bahan Habis" },
-  AWAITING_CUSTOMER_APPROVAL: { label: "Menunggu Persetujuan Pelanggan" },
-  MACHINE_DOWN:               { label: "Mesin/Alat Rusak" },
-  QUALITY_ISSUE:              { label: "Masalah Kualitas" },
+  MATERIAL_SHORTAGE:          { label: "Menunggu bahan" },
+  AWAITING_CUSTOMER_APPROVAL: { label: "Menunggu arahan" },
+  AWAITING_CUSTOMER:          { label: "Menunggu arahan" },
+  AWAITING_OPERATOR:          { label: "Menunggu arahan" },
+  MACHINE_DOWN:               { label: "Kendala pengerjaan" },
+  QUALITY_ISSUE:              { label: "Kendala pengerjaan" },
+  AWAITING_TOOL:              { label: "Kendala pengerjaan" },
   OTHER:                      { label: "Lainnya" },
-  // Ditambah Production Core Slice 2 — lihat schema.prisma enum BlockReason.
-  AWAITING_CUSTOMER: { label: "Menunggu Pelanggan" },
-  AWAITING_OPERATOR: { label: "Menunggu Operator" },
-  AWAITING_TOOL:     { label: "Menunggu Alat" },
 };
 
 // EXCEPTION_TYPE (Production Core Slice 2D) — cermin FRONTEND dari
@@ -112,8 +116,8 @@ export const BLOCK_REASON_REAL = {
 export const EXCEPTION_TYPE_REAL = {
   OVERDUE:          { label: "Overdue",         tone: "red" },
   AT_RISK:          { label: "At Risk",         tone: "orange" },
-  BLOCKED:          { label: "Blocked",         tone: "red" },
-  WAITING_APPROVAL: { label: "Waiting Approval", tone: "orange" },
+  BLOCKED:          { label: "Pekerjaan Tertunda", tone: "red" },
+  WAITING_APPROVAL: { label: "Menunggu arahan", tone: "orange" },
   REWORK:           { label: "Rework",          tone: "orange" },
 };
 

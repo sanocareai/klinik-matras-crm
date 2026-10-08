@@ -16,6 +16,7 @@ import { parseHistoryMessage } from "../utils/parseHistoryMessage.js";
 import { resolveMediaExt } from "../utils/mediaExt.js";
 import { fieldPosterVideo } from "../utils/videoThumb.js";
 import { rencanaForward } from "../utils/forwardPlan.js";
+import { simpanPesanGaleri } from "../utils/simpanPesanGaleri.js";
 import { downloadAndSaveMedia } from "./webhooks.js";
 import { emitNewMessage, emitConversationUpdate, emitMessageUpdate, emitMessageDeleted } from "../socket.js";
 
@@ -1568,33 +1569,25 @@ conversationRouter.post("/:id/send-product", canWriteConversation, async (req, r
         )
       );
       conversation.sessionId = session;
-      let msg;
-      try {
-        // externalId WAJIB disimpan (BUG 1 Okt 2026): tanpa ini centang
-        // kirim/terima/baca tidak pernah bisa dicocokkan — bubble ini macet di
-        // ikon jam — dan gema webhook dari WAHA tidak dikenali sebagai pesan
-        // yang sama, jadi tiap foto galeri muncul DUA kali (satu jam pending,
-        // satu centang biru).
-        msg = await prisma.message.create({
-          data: {
-            conversationId: conversation.id,
-            direction: "OUTBOUND",
-            content: caption,
-            mediaType: "image",
-            mediaUrl: img.url,
-            externalId: waResult?.id || null,
-            clientId: cid,
-          },
-        });
-      } catch (e) {
-        if (e.code !== "P2002") throw e;
-        // Race sempit: (a) 2 request ber-clientId sama lolos cek alreadySent
-        // nyaris bersamaan, ATAU (b) gema webhook WAHA sudah menyimpan pesan
-        // ini lebih dulu (externalId sama).
-        msg = (cid && await prisma.message.findUnique({ where: { clientId: cid } }))
-          || (waResult?.id && await prisma.message.findUnique({ where: { externalId: waResult.id } }));
-        if (!msg) throw e;
-      }
+      // externalId WAJIB disimpan (BUG 1 Okt 2026): tanpa ini centang
+      // kirim/terima/baca tidak pernah bisa dicocokkan — bubble ini macet di
+      // ikon jam — dan gema webhook dari WAHA tidak dikenali sebagai pesan
+      // yang sama, jadi tiap foto galeri muncul DUA kali (satu jam pending,
+      // satu centang biru).
+      // Race sempit (P2002) ditangani di helper: (a) 2 request ber-clientId sama lolos cek alreadySent nyaris bersamaan, ATAU
+      // (b) gema webhook WAHA sudah menyimpan pesan ini lebih dulu (externalId sama). sentById = pengirim (lihat simpanPesanGaleri.js).
+      const msg = await simpanPesanGaleri(prisma, {
+        sentById: req.user.id,
+        data: {
+          conversationId: conversation.id,
+          direction: "OUTBOUND",
+          content: caption,
+          mediaType: "image",
+          mediaUrl: img.url,
+          externalId: waResult?.id || null,
+          clientId: cid,
+        },
+      });
       savedMessages.push(msg);
       // BUG YANG DIPERBAIKI (26 Agustus 2026 — laporan "loading lama pas
       // kirim banyak media"): sebelumnya SEMUA gambar di-emit BARENGAN di
@@ -1754,24 +1747,17 @@ conversationRouter.post("/:id/send-documentation", canWriteConversation, async (
       conversation.sessionId = session;
       // externalId disimpan supaya ack ter-update & gema webhook tidak jadi
       // bubble kedua — lihat catatan di /send-product.
-      let msg;
-      try {
-        msg = await prisma.message.create({
-          data: {
-            conversationId: conversation.id,
-            direction: "OUTBOUND",
-            content: caption,
-            mediaType: "image",
-            mediaUrl: url,
-            externalId: waResult?.id || null,
-            sentById: req.user.id,
-          },
-        });
-      } catch (e) {
-        if (e.code !== "P2002" || !waResult?.id) throw e;
-        msg = await prisma.message.findUnique({ where: { externalId: waResult.id } });
-        if (!msg) throw e;
-      }
+      const msg = await simpanPesanGaleri(prisma, {
+        sentById: req.user.id,
+        data: {
+          conversationId: conversation.id,
+          direction: "OUTBOUND",
+          content: caption,
+          mediaType: "image",
+          mediaUrl: url,
+          externalId: waResult?.id || null,
+        },
+      });
       savedMessages.push(msg);
       // Sama seperti /send-product — emit per foto begitu terkirim, bukan
       // dibatch di akhir, supaya progress terasa real-time (lihat catatan

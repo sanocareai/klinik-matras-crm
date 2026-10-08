@@ -41,7 +41,7 @@ export default function ProductionServiceStages() {
         <Card className="overflow-hidden p-0">
           <CardHeader>
             <CardTitle>Layanan</CardTitle>
-            <CardDescription>Jenis layanan yang bisa ditetapkan ke unit setelah diagnosa.</CardDescription>
+            <CardDescription>Rute pengerjaan dan urutan tahapnya (pengaturan Production Lead).</CardDescription>
           </CardHeader>
           {services === null ? (
             <div className="grid gap-2 p-4 sm:grid-cols-2 lg:grid-cols-3">{[1, 2, 3].map((n) => <div key={n} className="h-14 animate-pulse rounded-btn bg-inset" />)}</div>

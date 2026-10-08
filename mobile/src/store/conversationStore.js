@@ -91,11 +91,17 @@ export const useConversationStore = create((set) => ({
   // muncul di Belum Dibalas"): isUnanswered/unansweredMinutes cuma diisi dari hasil fetch server dan TIDAK PERNAH diperbarui oleh pesan baru,
   // jadi chat yang baru dibalas tetap tersangkut di tab "Belum Dibalas" (dan chat yang baru dijawab pelanggan tidak masuk) sampai daftar
   // di-refresh. Definisi sama dengan server (GET /conversations): belum dibalas = pesan TERAKHIR berarah INBOUND.
-  bumpConversation: (id, preview, ts, unreadDelta = 0, direction) => set((state) => {
+  //
+  // pesan (opsional, objek Message penuh dari event message:new): daftar Inbox membaca teks preview, ikon media & centang dari messages[0] —
+  // field yang SEBELUMNYA hanya terisi saat fetch dari server, jadi pesan baru lewat socket hanya mengubah jam/urutan sementara teksnya tetap lama.
+  bumpConversation: (id, preview, ts, unreadDelta = 0, direction, pesan) => set((state) => {
     const existing = state.conversationsById[id];
     if (!existing) return {};
+    const pesanLama = existing.messages?.[0];
+    const pesanBaruLebihTerbaru = pesan && (!pesanLama || new Date(pesan.createdAt || ts || Date.now()) >= new Date(pesanLama.createdAt || 0));
     const updated = {
       ...existing,
+      ...(pesanBaruLebihTerbaru ? { messages: [pesan] } : {}),
       lastMessageAt: ts || new Date().toISOString(),
       unread: unreadDelta > 0 ? true : existing.unread,
       unreadCount: unreadDelta > 0 ? (existing.unreadCount || 0) + unreadDelta : existing.unreadCount,

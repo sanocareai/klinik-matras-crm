@@ -116,13 +116,18 @@ async function assertWriterEnabledForUnit(tx, unitId) {
 // ---------------------------------------------------------------------------
 // 1. Buat rencana (DRAFT) untuk satu Production Run yang eligible.
 // ---------------------------------------------------------------------------
-export async function createProductionPlan(prisma, { runId, actorId, idempotencyKey }) {
+export async function createProductionPlan(prisma, args) {
+  return prisma.$transaction((tx) => createProductionPlanInTx(tx, args));
+}
+
+// Varian di dalam transaksi pemanggil (Rencana: buka Run + buat rencana + jadwalkan = SATU commit). Isi command TIDAK berubah.
+export async function createProductionPlanInTx(tx, { runId, actorId, idempotencyKey }) {
   if (!runId) throw planError("runId wajib diisi", 400, "PLAN_RUN_ID_REQUIRED");
   assertIdempotencyKey(idempotencyKey);
   const actor = actorId || "SYSTEM";
   const requestHash = hash({ commandType: "CREATE_PLAN", runId });
 
-  return prisma.$transaction(async (tx) => {
+  return (async () => {
     await lockRowForUpdate(tx, "production_runs_v2", runId);
     const replay = await findReplay(tx, actor, idempotencyKey, requestHash);
     if (replay) return replay;
@@ -172,7 +177,7 @@ export async function createProductionPlan(prisma, { runId, actorId, idempotency
     const response = { planId: plan.id, runId, status: "DRAFT", revision: 1 };
     await finishCommand(tx, command, 1, response);
     return { replayed: false, ...response };
-  });
+  })();
 }
 
 // P4: rencana yang sudah punya permintaan pengambilan bahan AKTIF (READY_TO_PICK) atau sudah DISERAHKAN (ISSUED) tidak
@@ -265,7 +270,12 @@ export async function assignProductionPlan(prisma, { planId, actorId, idempotenc
 //     (default 3) dijaga di dalam transaksi setelah mengunci plan. Keluarkan dari papan = productionDate & stationCode null.
 //     Mengganti PIC saat masih ada tahap aktif/dijeda ditolak (operasi berjalan milik PIC lama).
 // ---------------------------------------------------------------------------
-export async function scheduleProductionPlan(prisma, { planId, actorId, idempotencyKey, expectedRevision, config = BOARD_DEFAULTS, ...input }) {
+export async function scheduleProductionPlan(prisma, args) {
+  return prisma.$transaction((tx) => scheduleProductionPlanInTx(tx, args));
+}
+
+// Varian di dalam transaksi pemanggil (lihat createProductionPlanInTx). Validasi input tetap dilakukan SEBELUM menyentuh DB.
+export async function scheduleProductionPlanInTx(tx, { planId, actorId, idempotencyKey, expectedRevision, config = BOARD_DEFAULTS, ...input }) {
   assertIdempotencyKey(idempotencyKey);
   const revisionExpected = assertExpectedRevision(expectedRevision);
   const data = normalizeScheduleInput(input, config);
@@ -275,7 +285,7 @@ export async function scheduleProductionPlan(prisma, { planId, actorId, idempote
     productionDate: data.productionDate ? formatProductionDate(data.productionDate) : null,
   });
 
-  return prisma.$transaction(async (tx) => {
+  return (async () => {
     const replay = await findReplay(tx, actor, idempotencyKey, requestHash);
     if (replay) return replay;
     const plan = await loadPlanForWrite(tx, planId);
@@ -348,7 +358,7 @@ export async function scheduleProductionPlan(prisma, { planId, actorId, idempote
     };
     await finishCommand(tx, command, revision, response);
     return { replayed: false, ...response };
-  });
+  })();
 }
 
 // ---------------------------------------------------------------------------

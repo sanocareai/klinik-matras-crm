@@ -22,6 +22,7 @@ import { ACTIVE_JOB_STATUSES } from "./jobStatus.js";
 // status mana yang layak diakui (STATUS_PENGAKUAN) & idempoten per order.
 import { bukukanPengakuanPendapatan } from "./finance/hooks.js";
 import { SETTLED_JOB_STATUSES } from "./deliveryExecution.js";
+import { recordRouteCompleted } from "./deliveryTimeline.js";
 import { executeDeliveryCrossBoundaryCommand } from "./deliveryCrossBoundaryCommandService.js";
 import { V2_FLAGS } from "./v2FeatureFlags.js";
 
@@ -95,16 +96,22 @@ export function computeOrderStatus(units) {
 // HANYA menyentuh rute PUBLISHED (bukan DRAFT — belum ada apa pun untuk
 // "selesai", dan bukan CANCELLED — sudah status akhir sendiri) yang punya
 // minimal 1 job — rute kosong tidak relevan ditandai selesai.
-export async function syncRouteCompletionStatus(tx, routeId) {
-  if (!routeId) return;
+// `evt` (opsional) = { actorId, time, triggerJobId } dari aksi yang memicu penyelesaian rute: event "rute selesai" (ledger eksekusi) ditulis di transaksi yang SAMA
+// dengan perubahan status. Tanpa `evt` (jalur bulk/sinkron lain) event tetap ditulis sebagai SISTEM dengan waktu server.
+// `evt.deferEvent` = pemanggil menulis event rute selesai SENDIRI (recordRouteCompleted) sesudah event job pemicunya, supaya urutan ledger = urutan kejadian. Mengembalikan true bila rute BARU saja selesai.
+export async function syncRouteCompletionStatus(tx, routeId, evt = {}) {
+  if (!routeId) return false;
   const route = await tx.route.findUnique({ where: { id: routeId }, select: { status: true } });
-  if (!route || !["PUBLISHED", "IN_PROGRESS"].includes(route.status)) return;
+  if (!route || !["PUBLISHED", "IN_PROGRESS"].includes(route.status)) return false;
   const jobs = await tx.job.findMany({ where: { routeId }, select: { status: true } });
-  if (jobs.length === 0) return;
+  if (jobs.length === 0) return false;
   const semuaTuntas = jobs.every((j) => SETTLED_JOB_STATUSES.includes(j.status));
   if (semuaTuntas) {
     await tx.route.update({ where: { id: routeId }, data: { status: "COMPLETED", completedAt: new Date() } });
+    if (!evt.deferEvent) await recordRouteCompleted(tx, routeId, evt.time || null, { actorId: evt.actorId ?? null, triggerJobId: evt.triggerJobId ?? null });
+    return true;
   }
+  return false;
 }
 
 // Job yang belum jalan (lihat ACTIVE_JOB_STATUSES) DI-SINKRON jadi COMPLETED,

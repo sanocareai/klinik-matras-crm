@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge.jsx";
 import { ProgressBar } from "@/components/ui/progress.jsx";
 import { formatRupiah } from "@/utils/format.js";
 import { formatTanggal } from "@/utils/formatDate.js";
-import { friendlyError, priorityTone } from "@/features/production/experience.js";
+import { friendlyError } from "@/features/production/experience.js";
+import { DELAY_TITLE, SKIP_LABEL, delayKindText, delayStatusText, presenceTone, priorityOf, progressText, resumeInfo, statusOf } from "@/features/production/productionLabels.js";
 import { UnitPhotoThumb } from "@/features/production/UnitPhotoThumb.jsx";
 import { DOC_SOURCE_BADGE, DOC_SOURCE_LABEL, DOC_STATUS } from "@/features/production/documentation.js";
 import { DiagnosisWizard, diagnosisCtaLabel, hasLocalDraft } from "@/features/production/DiagnosisWizard.jsx";
@@ -15,6 +16,7 @@ import { humanizeRequest } from "@/features/production/unitCardModel.js";
 import { rolesOf } from "@/lib/roles.js";
 import { isOutsideV2 } from "@/features/production/unit360Availability.js";
 import UnitOrderFallback from "@/features/production/UnitOrderFallback.jsx";
+import { ComponentNotesPanel } from "@/features/production/componentNotes/ComponentNotesPanel.jsx";
 
 // P9C — Unit 360: satu drawer kanonis (setara "detail Resi") dibuka dari kartu Status Produksi MAUPUN Rencana
 // Produksi — komponen ini TIDAK peduli dari halaman mana ia dipanggil, hanya butuh unitId. Deep-link (?unit=)
@@ -46,25 +48,25 @@ function Field({ label, value }) {
 }
 
 const TABS = [
-  ["ringkasan", "Ringkasan"], ["proses", "Proses"], ["bahan", "Bahan"],
+  ["ringkasan", "Ringkasan"], ["pekerjaan", "Pekerjaan"], ["bahan", "Bahan"],
   ["dokumentasi", "Dokumentasi"], ["qc", "QC & Handoff"], ["aktivitas", "Aktivitas"],
 ];
 
 // P12B.5 — unit COHORT V2: perubahan hanya lewat pemilik perintah V2 (tidak ada jalur V1 di drawer ini → tidak ada bypass diagnosis/QC/custody).
-// Prioritas & target = rencana (Rencana Produksi); layanan teknis = Diagnosis (tab Proses); hambatan = Menunggu Bahan Baku / Gudang.
+// Prioritas & target = rencana (Rencana Produksi); Komplain = kasus resmi; pekerjaan tertunda karena bahan = "Tunda Pekerjaan" (Menunggu bahan) dan dilanjutkan Gudang.
 function V2Owners({ d }) {
   const t = d.identity.target;
+  const pr = priorityOf({ priority: d.identity.priority });
   return (
     <div className="rounded-btn border border-line p-3" data-testid="v2-owners">
-      <p className="m-0 mb-2 text-[12.5px] font-bold text-ink">Prioritas, target, dan hambatan</p>
+      <p className="m-0 mb-2 text-[12.5px] font-bold text-ink">Prioritas, target, dan pekerjaan tertunda</p>
       <dl className="m-0 mb-2 grid grid-cols-2 gap-2 text-[12px] sm:grid-cols-3">
-        <Field label="Prioritas" value={t.priorityLabel || "Normal"} />
+        <Field label="Prioritas" value={pr.label} />
         <Field label="Target selesai" value={t.targetCompleteAt ? fmtD(t.targetCompleteAt) : null} />
       </dl>
       <ul className="m-0 list-disc space-y-0.5 pl-5 text-[11.5px] text-ink3">
-        <li>Layanan teknis diisi lewat <b>Diagnosis</b> (tab Proses).</li>
-        <li>Prioritas dan target diubah di <b>Rencana Produksi</b>.</li>
-        <li>Hambatan bahan dicatat lewat <b>Menunggu Bahan Baku</b> dan diselesaikan Gudang.</li>
+        <li>Prioritas Normal/Tinggi dan target diubah di <b>Rencana Produksi</b>. <b>Komplain</b> otomatis dari kasus komplain resmi.</li>
+        <li>Pekerjaan yang tertunda karena bahan dicatat lewat <b>Tunda Pekerjaan</b> (Menunggu bahan); Gudang yang menyediakan bahan, lalu pekerjaan dilanjutkan.</li>
       </ul>
     </div>
   );
@@ -75,7 +77,9 @@ function Ringkasan({ d }) {
     <div className="space-y-3">
       <dl className="m-0 grid grid-cols-2 gap-2 text-[12.5px] sm:grid-cols-3">
         <Field label="Merk & Ukuran" value={[d.identity.merk, d.identity.ukuran].filter(Boolean).join(" ")} />
-        <Field label="Layanan Teknis (Produksi)" value={d.service.set ? d.service.label : "Belum ditetapkan — diisi dari Diagnosis"} />
+        <Field label="Status order" value={d.identity.orderStatus?.label || statusOf({ status: d.identity.status }).label} />
+        <Field label="Status unit" value={statusOf({ unitStatusDisplay: d.identity.unitStatus, status: d.identity.status }).label} />
+        <Field label="Posisi unit" value={d.identity.presence?.label} />
         <Field label="Meja / Workshop" value={d.identity.station.label} />
         <Field label="PIC Meja" value={d.identity.pic.table} />
         <Field label="PIC Corner" value={d.identity.pic.corner} />
@@ -86,12 +90,13 @@ function Ringkasan({ d }) {
       </dl>
       <div className="flex flex-wrap items-center gap-1.5">
         <Badge variant="neutral">{d.identity.bucketLabel}</Badge>
-        {d.identity.target.priority > 0 && <Badge variant={priorityTone(d.identity.target.priority)}>{d.identity.target.priorityLabel}</Badge>}
+        {priorityOf({ priority: d.identity.priority }).key !== "NORMAL" && <Badge variant={priorityOf({ priority: d.identity.priority }).tone} data-testid="priority-badge">{priorityOf({ priority: d.identity.priority }).label}</Badge>}
+        {d.identity.presence?.key === "NOT_ARRIVED" && <Badge variant={presenceTone(d.identity.presence)} data-testid="presence-badge">{d.identity.presence.label}</Badge>}
         {d.identity.target.late && <Badge variant="red">Terlambat</Badge>}
       </div>
       <V2Owners d={d} />
       <OrderField label="Keluhan Customer" field={d.salesContext.complaints} format={bdArr} />
-      <OrderField label="Layanan Dipesan (Sales)" field={d.salesContext.salesServices} format={bdArr} />
+      <OrderField label="Layanan Sales" field={d.salesContext.salesServices} format={bdArr} />
       <OrderField label="Request Customer" field={d.salesContext.request} format={(v) => bd(humanizeRequest(v))} />
       {d.salesContext.dataGaps?.length > 0 && (
         <ul className="m-0 list-none space-y-1 p-0">
@@ -114,7 +119,12 @@ function Ringkasan({ d }) {
             <Field label="Tiba di workshop" value={d.pickup.arrivedAtWorkshop ? fmtDT(d.pickup.arrivedAtWorkshop) : null} />
             <Field label="Status custody" value={d.pickup.custodyStatusLabel} />
           </dl>
-        ) : <p className="m-0 text-[12px] text-ink3">Belum ada catatan custody masuk untuk unit ini.</p>}
+        ) : (
+          <div className="space-y-1">
+            <p className="m-0 text-[12px] text-ink3">Belum ada catatan pickup/custody masuk untuk unit ini.</p>
+            {d.pickup.staffArrival && <p data-testid="staff-arrival" className="m-0 text-[12px] text-ink2">Kedatangan di workshop dikonfirmasi petugas{d.pickup.staffArrival.confirmedByName ? ` ${d.pickup.staffArrival.confirmedByName}` : ""} pada {fmtDT(d.pickup.staffArrival.confirmedAt)}{d.pickup.staffArrival.locationCode ? ` · lokasi ${d.pickup.staffArrival.locationCode}` : ""} (bukan bukti pickup).</p>}
+          </div>
+        )}
         {d.pickup.exists && d.pickup.isSingleUnitJob === false && (
           <p className="mt-2 flex items-center gap-1.5 text-[11.5px] text-ink3"><AlertTriangle size={12} aria-hidden /> Job pickup ini membawa lebih dari satu unit — foto pickup tidak diatribusikan otomatis ke unit manapun.</p>
         )}
@@ -141,7 +151,6 @@ function DiagnosisPanel({ d, onOpenWizard }) {
         <div className="space-y-2 text-[12.5px]">
           <span data-testid="diagnosis-status" data-diagnosis-status={diag.status} className="inline-block"><Badge variant={diag.status === "RECORDED" ? "green" : "neutral"}>{diag.status === "RECORDED" ? "Sudah dikirim" : "Draft"}</Badge></span>
           <dl className="m-0 grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <div className="min-w-0 rounded-btn bg-inset px-3 py-2"><dt className="m-0 text-ink3">Layanan teknis</dt><dd className="m-0 break-words font-semibold text-ink">{bd(diag.recommendedServiceLabel)}</dd></div>
             <div className="min-w-0 rounded-btn bg-inset px-3 py-2"><dt className="m-0 text-ink3">Dikirim</dt><dd className="m-0 font-semibold text-ink">{fmtDT(diag.recordedAt)}</dd></div>
           </dl>
           {diag.findings?.serviceNote && <div className="min-w-0 rounded-btn bg-inset px-3 py-2"><dt className="m-0 text-ink3">Kesimpulan diagnosis</dt><dd className="m-0 break-words font-semibold text-ink">{diag.findings.serviceNote}</dd></div>}
@@ -157,19 +166,60 @@ function DiagnosisPanel({ d, onOpenWizard }) {
   );
 }
 
-function Proses({ d, onOpenDiagnosis }) {
+// Mode adaptasi (slice 2): kebijakan tersimpan PER RUN; run lama tidak berubah otomatis. Penerapan pada run berjalan = aksi eksplisit pemegang izin (server menegakkan).
+function AdaptationPanel({ d, canApply, onApplied }) {
+  const [busy, setBusy] = useState(false); const [err, setErr] = useState(""); const [ask, setAsk] = useState(false);
+  const p = d.production;
+  if (p.adaptation) {
+    return (
+      <div data-testid="adaptation-panel" className="rounded-btn border border-line p-3 text-[12.5px]">
+        <p className="m-0 font-semibold text-ink">Mode adaptasi aktif untuk run ini</p>
+        <p className="m-0 mt-0.5 text-ink3">Tahap boleh dilewati (dicatat “{SKIP_LABEL}”, alasan Adaptasi sistem). QC {p.qcStatus === "TIDAK_DILAKUKAN" ? "tidak dilakukan (bukan lulus)" : p.qcStatus === "DILAKUKAN" ? "dilakukan" : "tidak diwajibkan"}; penerimaan barang jadi Gudang tidak diwajibkan.</p>
+      </div>
+    );
+  }
+  if (!canApply || ["COMPLETED", "CANCELLED"].includes(p.runStatus)) return null;
+  async function apply() {
+    setBusy(true); setErr("");
+    try { await api.applyProductionV2Adaptation(p.runId, { expectedRevision: p.revision, reason: "Diterapkan dari Unit 360" }); onApplied(); }
+    catch (e) { setErr(friendlyError(e)); } finally { setBusy(false); }
+  }
+  return (
+    <div data-testid="adaptation-apply" className="rounded-btn border border-line p-3 text-[12.5px]">
+      <p className="m-0 font-semibold text-ink">Proses lengkap (QC wajib)</p>
+      <p className="m-0 mt-0.5 text-ink3">Run ini memakai alur lengkap. Mode adaptasi hanya diterapkan atas keputusan eksplisit dan tidak mengubah tahap/bukti yang sudah ada.</p>
+      {!ask ? (
+        <Button size="sm" variant="secondary" className="mt-2" data-testid="adaptation-apply-btn" onClick={() => setAsk(true)}>Terapkan mode adaptasi untuk unit ini</Button>
+      ) : (
+        <div data-testid="adaptation-apply-confirm" className="mt-2 rounded-btn bg-orangebg px-3 py-2 text-orange">
+          <p className="m-0 font-semibold">Terapkan pada unit ini saja?</p>
+          <p className="m-0 mt-0.5">Tahap boleh dilewati dan QC tidak lagi diwajibkan untuk run ini. Tahap dan bukti yang sudah ada tidak diubah, dan unit lain tidak terpengaruh.</p>
+          <div className="mt-2 flex gap-2">
+            <Button size="sm" data-mutates data-testid="adaptation-apply-yes" disabled={busy} onClick={apply}>{busy ? "Menerapkan…" : "Ya, terapkan"}</Button>
+            <Button size="sm" variant="secondary" disabled={busy} onClick={() => setAsk(false)}>Batal</Button>
+          </div>
+        </div>
+      )}
+      {err && <p role="alert" className="m-0 mt-1 text-red">{err}</p>}
+    </div>
+  );
+}
+
+function Proses({ d, onOpenDiagnosis, canApplyAdaptation = false, onChanged }) {
   if (!d.production.runId) return <p className="text-[12.5px] text-ink3">Unit belum masuk proses produksi (belum ada Production Run).</p>;
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
         <div className="flex-1"><ProgressBar value={d.production.progress.total ? (d.production.progress.done / d.production.progress.total) * 100 : 0} /></div>
-        <span className="shrink-0 text-[11px] text-ink3 tabular-nums">{d.production.progress.done} dari {d.production.progress.total} tahap</span>
+        <span data-testid="overview-progress" className="shrink-0 text-[11px] text-ink3 tabular-nums">{progressText(d.production.progress)}</span>
       </div>
+      <AdaptationPanel d={d} canApply={canApplyAdaptation} onApplied={() => onChanged?.()} />
       <ol className="m-0 grid list-none grid-cols-1 gap-1 p-0 sm:grid-cols-2">
         {d.production.steps.map((s) => (
           <li key={s.no} className={`flex min-h-[44px] items-center gap-2 rounded-btn px-3 py-2 text-[12.5px] ${s.status === "DONE" ? "bg-greenbg text-green" : s.status === "CURRENT" ? "bg-accentbg font-semibold text-accent" : s.status === "WAITING" ? "bg-orangebg text-orange" : s.status === "NA" ? "text-ink3 line-through" : "bg-inset text-ink3"}`}>
             {s.status === "DONE" ? <CheckCircle2 size={14} aria-hidden /> : <span className="w-4 shrink-0 text-center tabular-nums">{s.no}</span>}
             <span className="min-w-0 flex-1 truncate">{s.label}</span>
+            {s.status === "SKIPPED" && <span data-testid="step-skipped" className="shrink-0 text-[10.5px] font-semibold text-ink3">{SKIP_LABEL}</span>}
             {s.actor && <span className="shrink-0 text-[10px] text-ink3">{s.actor}</span>}
           </li>
         ))}
@@ -177,7 +227,7 @@ function Proses({ d, onOpenDiagnosis }) {
       {d.production.activeOp && (
         <div className="rounded-btn border border-line p-3 text-[12.5px]">
           <p className="m-0 text-ink3">Sedang berjalan</p>
-          <p className="m-0 font-semibold text-ink">{d.production.activeOp.stageLabel} — {d.production.activeOp.status}</p>
+          <p className="m-0 font-semibold text-ink">{d.production.activeOp.stageLabel} — {d.production.activeOp.status === "PAUSED" && d.production.activeOp.delayKind ? delayKindText(d.production.activeOp.delayKind, d.production.activeOp.delayNote) : d.production.activeOp.status}</p>
         </div>
       )}
       <DiagnosisPanel d={d} onOpenWizard={onOpenDiagnosis} />
@@ -237,7 +287,7 @@ function Bahan({ d, onDiagnosisRefresh }) {
   return (
     <div className="space-y-3">
       {d.materials.shortageOpen && (
-        <p className="flex items-center gap-1.5 break-words rounded-btn bg-redbg px-3 py-2 text-[12.5px] text-red"><PackageX size={13} aria-hidden className="shrink-0" /> Menunggu bahan baku dari Gudang{d.materials.shortageNote ? `: ${d.materials.shortageNote}` : ""}</p>
+        <p className="flex items-center gap-1.5 break-words rounded-btn bg-redbg px-3 py-2 text-[12.5px] text-red"><PackageX size={13} aria-hidden className="shrink-0" /> <span data-testid="delay-status">{delayStatusText("MATERIAL_SHORTAGE")}{d.materials.shortageNote ? `: ${d.materials.shortageNote}` : ""}</span> <span data-testid="resume-who" className="text-ink3">— {resumeInfo({ source: "SHORTAGE", reason: "MATERIAL_SHORTAGE", canResume: false }).text}</span></p>
       )}
       {d.materials.lines.length > 0 && (
         <div className="overflow-x-auto"><table className="w-full min-w-[560px] text-left text-[12px]" data-testid="material-table">
@@ -312,6 +362,7 @@ function Dokumentasi({ d }) {
   return (
     <div className="space-y-4">
       <MatriksDokumentasi matrix={d.documentation} />
+      <div className="space-y-2 rounded-card border border-line p-3" data-testid="unit360-component-notes"><p className="m-0 text-[12.5px] font-bold text-ink">Catatan Komponen — Sebelum → Sesudah</p><ComponentNotesPanel unitId={d.identity.unitId} unitCode={d.identity.unitCode} /></div>
       <div><p className="mb-1.5 text-[12.5px] font-bold text-ink">Before</p><MediaGrid items={d.evidence.before} empty="Belum ada dokumentasi before." /></div>
       <div><p className="mb-1.5 text-[12.5px] font-bold text-ink">Proses</p><MediaGrid items={d.evidence.process} empty="Belum ada dokumentasi proses." /></div>
       <div><p className="mb-1.5 text-[12.5px] font-bold text-ink">After</p><MediaGrid items={d.evidence.after} empty="Belum ada dokumentasi after." /></div>
@@ -322,7 +373,7 @@ function Dokumentasi({ d }) {
 function QcHandoff({ d }) {
   return (
     <div className="space-y-3">
-      {d.qc.length === 0 ? <p className="text-[12.5px] text-ink3">Belum ada inspeksi QC.</p> : d.qc.map((q) => (
+      {d.qc.length === 0 ? <p data-testid="qc-none" className="text-[12.5px] text-ink3">{d.production.qcStatus === "TIDAK_DILAKUKAN" ? "QC tidak dilakukan (mode adaptasi) — bukan lulus dan bukan di-waive." : "Belum ada inspeksi QC."}</p> : d.qc.map((q) => (
         <div key={q.version} className="rounded-btn border border-line p-3">
           <div className="flex items-center justify-between">
             <p className="m-0 text-[12.5px] font-bold text-ink">Versi {q.version} — {q.resultLabel}</p>
@@ -341,8 +392,8 @@ function QcHandoff({ d }) {
       <div className="rounded-btn border border-line p-3">
         <p className="m-0 mb-2 text-[12.5px] font-bold text-ink">Handoff & Kesiapan Kirim</p>
         <dl className="m-0 grid grid-cols-2 gap-2 text-[12px]">
-          <Field label="Status Unit" value={d.deliveryReadiness.unitStatus} />
-          <Field label="Siap Kirim" value={d.deliveryReadiness.readyForDelivery ? "Ya" : "Belum"} />
+          <Field label="Status Unit" value={statusOf({ status: d.deliveryReadiness.unitStatus }).label} />
+          <Field label="Sudah Siap Kirim" value={d.deliveryReadiness.readyForDelivery ? "Ya" : "Belum"} />
           {d.deliveryReadiness.finishedGoodsHandoff && <>
             <Field label="Status Serah Gudang" value={d.deliveryReadiness.finishedGoodsHandoff.status} />
             <Field label="Diserahkan" value={d.deliveryReadiness.finishedGoodsHandoff.offeredAt ? fmtDT(d.deliveryReadiness.finishedGoodsHandoff.offeredAt) : null} />
@@ -382,7 +433,8 @@ export function UnitOverviewDrawer({ unitId, onClose, onManage, manageLabel = "K
   const [tab, setTab] = useState("ringkasan");
   const [showDiagnosis, setShowDiagnosis] = useState(false);
   const [v1Work, setV1Work] = useState({ data: null, error: "", loading: false });
-  // P12B.6: V2 belum memiliki eksekusi unit (writer OFF / reader-only / belum ada Run / Run selesai) -> tab "Kerja V1" (kontrak sama dengan guard server).
+  // Aksi pekerjaan langsung (jalur lama) muncul DI DALAM tab Pekerjaan bila papan produksi belum memegang eksekusi unit (writer OFF / reader-only / belum ada Run / Run selesai):
+  // kontrak izin & kepemilikan sama dengan guard server; tidak ada tab terpisah dan tidak ada label sumber.
   const v1Workable = data?.ownership?.v2ExecutionOwned === false;
 
   const reload = useCallback(() => {
@@ -406,7 +458,7 @@ export function UnitOverviewDrawer({ unitId, onClose, onManage, manageLabel = "K
   }, [unitId]);
 
   useEffect(() => {
-    if (tab !== "v1" || !v1Workable || !unitId || v1Work.data || v1Work.loading) return undefined;
+    if (tab !== "pekerjaan" || !v1Workable || !unitId || v1Work.data || v1Work.loading) return undefined;
     let alive = true;
     setV1Work({ data: null, error: "", loading: true });
     api.getUnitTimeline(unitId)
@@ -422,7 +474,7 @@ export function UnitOverviewDrawer({ unitId, onClose, onManage, manageLabel = "K
     try {
       await api.recordProductionV2Step(data.production.runId, 5, {
         expectedRevision: data.production.revision, workCenterId: data.planning?.workCenter?.id,
-        payload: { diagnosis: result.serviceLabel ? `Layanan teknis: ${result.serviceLabel}` : "Diagnosis dikirim", inputMethod: "TEXT" }, media: [],
+        payload: { diagnosis: "Diagnosis dikirim", inputMethod: "TEXT" }, media: [],
       }, `p9d-unit360-close-${data.production.runId}-${Date.now()}`);
     } catch { /* diagnosis sudah tersimpan; operator/Lead bisa menutup tahap dari Aplikasi Meja */ }
     reload();
@@ -448,12 +500,12 @@ export function UnitOverviewDrawer({ unitId, onClose, onManage, manageLabel = "K
             </div>
             {data.ownership?.v1Drift && (
               <div role="alert" data-testid="unit-v1-drift-notice" className="mb-3 shrink-0 rounded-btn bg-redbg px-3 py-2 text-[12.5px] text-red">
-                <p className="m-0 font-semibold">Proyeksi V2 perlu direkonsiliasi.</p>
-                <p className="m-0 mt-0.5">Ada {data.ownership.v1Drift.count} aksi V1 ({(data.ownership.v1Drift.kinds || []).join(", ") || "—"}) yang dikerjakan saat Production V2 tidak memegang eksekusi unit ini. Command V2 (langkah, rencana, bahan, diagnosis) dihentikan sampai Production Run dibatalkan oleh Production Lead; setelah itu unit dikerjakan lewat V1 atau Run baru.</p>
+                <p className="m-0 font-semibold">Data pekerjaan unit ini perlu direkonsiliasi.</p>
+                <p className="m-0 mt-0.5">Ada {data.ownership.v1Drift.count} aksi ({(data.ownership.v1Drift.kinds || []).join(", ") || "—"}) yang dikerjakan lewat jalur lama saat papan produksi tidak memegang pekerjaan unit ini. Langkah, rencana, bahan, dan diagnosis dihentikan sampai Production Lead membatalkan rencana produksi unit ini; setelah itu unit dikerjakan lewat jalur lama atau rencana baru.</p>
               </div>
             )}
             <div role="tablist" aria-label="Bagian Unit 360" className="mb-3 flex shrink-0 gap-1 overflow-x-auto border-b border-line">
-              {[...TABS, ...(v1Workable ? [["v1", "Kerja V1"]] : [])].map(([k, l]) => (
+              {TABS.map(([k, l]) => (
                 <button key={k} type="button" role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
                   className={`min-h-[44px] shrink-0 whitespace-nowrap border-b-2 px-3 text-[12.5px] font-semibold ${tab === k ? "border-accent text-accent" : "border-transparent text-ink3"}`}>
                   {l}
@@ -462,12 +514,16 @@ export function UnitOverviewDrawer({ unitId, onClose, onManage, manageLabel = "K
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto pb-2">
               {tab === "ringkasan" && <Ringkasan d={data} />}
-              {tab === "proses" && <Proses d={data} onOpenDiagnosis={() => setShowDiagnosis(true)} />}
+              {tab === "pekerjaan" && (
+                <div className="space-y-3">
+                  <Proses d={data} onOpenDiagnosis={() => setShowDiagnosis(true)} canApplyAdaptation={rolesOf(currentUserLocal()).some((r) => ["ADMIN", "OWNER", "PRODUCTION_LEAD"].includes(r))} onChanged={() => { reload(); onChanged?.(); }} />
+                  {v1Workable && <div data-testid="pekerjaan-actions"><UnitOrderFallback v2View data={v1Work.data} error={v1Work.error} loading={v1Work.loading} roles={rolesOf(currentUserLocal())} onData={(t) => setV1Work({ data: t, error: "", loading: false })} onChanged={() => { reload(); onChanged?.(); }} /></div>}
+                </div>
+              )}
               {tab === "bahan" && <Bahan d={data} onDiagnosisRefresh={reload} />}
               {tab === "dokumentasi" && <Dokumentasi d={data} />}
               {tab === "qc" && <QcHandoff d={data} />}
               {tab === "aktivitas" && <Aktivitas d={data} />}
-              {tab === "v1" && v1Workable && <UnitOrderFallback v2View data={v1Work.data} error={v1Work.error} loading={v1Work.loading} roles={rolesOf(currentUserLocal())} onData={(t) => setV1Work({ data: t, error: "", loading: false })} onChanged={() => { reload(); onChanged?.(); }} />}
             </div>
           </div>
         )}

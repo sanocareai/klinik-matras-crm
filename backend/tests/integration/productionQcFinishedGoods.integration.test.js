@@ -3,7 +3,7 @@ import "./setup/env.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { testPrisma, truncateAll } from "./setup/testDb.js";
-import { createTestMaterial, createTestUser, seedBalance } from "./setup/fixtures.js";
+import { assignCurrentStageTo, createTestMaterial, createTestUser, seedBalance } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
 import { V2_FLAGS } from "../../src/services/v2FeatureFlags.js";
@@ -717,6 +717,7 @@ test("jalur V1 non-cohort tidak berubah: QC PAS via endpoint V1 lalu tahap terak
   const api = w.qc.api; // QC_LEAD: UNIT_STAGE_WRITE + QC_WRITE
   let gateReached = false;
   for (let guard = 0; guard < 30 && !gateReached; guard += 1) {
+    await assignCurrentStageTo(unit.id, w.qc.user.id); // P12C.2: tahap lantai hanya untuk PIC yang ditugaskan (gerbang QC dikecualikan, tetap UNIT_STAGE_WRITE)
     const started = await api.post(`/api/units/${unit.id}/stages/start`, {});
     assert.equal(started.status, 200, JSON.stringify(started.body));
     if (started.body.stage.requiresQc) { gateReached = true; break; }
@@ -729,6 +730,7 @@ test("jalur V1 non-cohort tidak berubah: QC PAS via endpoint V1 lalu tahap terak
   assert.equal(qc.status, 200, JSON.stringify(qc.body)); assert.equal(qc.body.result, "PASSED");
   assert.equal((await testPrisma.unit.findUniqueOrThrow({ where: { id: unit.id }, include: { currentStage: true } })).currentStage.code, "corner_sewing");
   for (let guard = 0; guard < 5; guard += 1) {
+    await assignCurrentStageTo(unit.id, w.qc.user.id); // P12C.2: tahap pasca-QC (Corner) juga dijaga penugasan
     const started = await api.post(`/api/units/${unit.id}/stages/start`, {});
     assert.equal(started.status, 200, JSON.stringify(started.body));
     const done = await api.post(`/api/units/${unit.id}/stages/${started.body.stage.id}/complete`, { photoUrls: PHOTO });

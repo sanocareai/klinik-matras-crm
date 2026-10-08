@@ -17,7 +17,8 @@ const LAYOUT = read("components", "Layout.jsx");
 const REGISTRY = read("routes", "pageRegistry.jsx");
 const PAGE_ONLY = read("pages", "produksi", "ProductionDocumentation.jsx");
 const DRAFT_UI = read("features", "production", "DocumentationDraftUi.jsx");
-const PAGE = PAGE_ONLY + "\n" + DRAFT_UI;
+const DOC_APP = ["DocUi.jsx", "DocUnitCard.jsx", "DocDetail.jsx", "DocTabs.jsx"].map((f) => read("features", "production", "docApp", f)).join("\n"); // P12D: layar dipecah per komponen
+const PAGE = PAGE_ONLY + "\n" + DRAFT_UI + "\n" + DOC_APP;
 const CAPTURE = read("features", "production", "components", "EvidenceCapture.jsx");
 const DRAWER = read("features", "production", "UnitOverviewDrawer.jsx");
 const REPORT = read("pages", "bengkel", "ProductionReportV2.jsx");
@@ -83,16 +84,17 @@ test("menu & route: Aplikasi Dokumentasi di 'MODE KERJA' sejajar Aplikasi Meja/C
   const mode = PRODUCTION_NAV.find((sec) => sec.section === "MODE KERJA");
   assert.deepEqual(mode.items.map((x) => x.label), ["Aplikasi Meja", "Aplikasi Corner", "Aplikasi Dokumentasi", "Andon TV"]);
   assert.equal(mode.items.find((x) => x.label === "Aplikasi Dokumentasi").to, "/produksi/dokumentasi");
-  assert.match(REGISTRY, /path: "\/produksi\/dokumentasi", render: \(\) => <DemoPage><ProductionDocumentation \/><\/DemoPage>/); // P12A: dibungkus Mode Demo (admin-only)
+  assert.match(REGISTRY, /path: "\/produksi\/dokumentasi", render: \(ctx\) => <DemoPage slotBar><ProductionDocumentation user=\{ctx\?\.user\} onLogout=\{ctx\?\.onLogout\} \/><\/DemoPage>/); // P12A: dibungkus Mode Demo (admin-only); P12D: user/logout dari konteks seperti Meja
   const standalone = REGISTRY.slice(REGISTRY.indexOf("export const STANDALONE_PAGES"), REGISTRY.indexOf("export function standalonePageFor"));
   assert.ok(standalone.includes("/produksi/dokumentasi"), "mandiri (PWA), bukan halaman sidebar");
   assert.match(PENGGUNA, /PRODUCTION_DOCUMENTER: "Petugas Dokumentasi"/);
 });
 
 test("layar: filter 6 status + counts, pencarian customer/resi/unit, kartu lengkap, kamera-first + galeri, pratinjau/keterangan/urutan/hapus, tombol tulis hanya bila canWrite", () => {
+  assert.doesNotMatch(PAGE, /services.technical|Layanan teknis/, "Slice 1: hanya Layanan Sales yang tampil");
   assert.match(PAGE, /aria-label="Cari customer, resi, atau kode unit"/);
   assert.match(PAGE, /role="tablist" aria-label="Saring antrean dokumentasi"/); assert.match(PAGE, /data\?\.counts\?\.\[f\.key\]/);
-  for (const needle of ["item.unit.photoUrl", "item.customerName", "item.orderNumber", "item.services.sales", "item.services.technical", "item.step", "item.station", "item.pic.table", "item.progress", "item.docs.missing", "doc-summary"]) assert.ok(PAGE.includes(needle), needle);
+  for (const needle of ["item.unit.photoUrl", "item.customerName", "item.orderNumber", "item.services.sales", "item.step", "item.station", "item.pic.table", "item.progress", "item.docs.missing", "doc-summary"]) assert.ok(PAGE.includes(needle), needle);
   assert.match(PAGE, /<EvidenceCapture[\s\S]{0,600}imagesOnly withCaption reorderable/);
   assert.match(PAGE, /api\.uploadProductionV2Documentation\(runId, \[blob\], onProgress\)/);
   assert.match(PAGE, /canWrite && \(\s*<div className="flex flex-wrap gap-2">/);
@@ -102,7 +104,7 @@ test("layar: filter 6 status + counts, pencarian customer/resi/unit, kartu lengk
   assert.match(PAGE, /manager\.queue\(rec\.id\)/, "Kirim memasukkan draf persisten ke antrean (bukan POST langsung)");
   assert.match(PAGE, /onError=\{\(\) => setBroken\(true\)\}/, "gambar rusak -> fallback, bukan ikon pecah");
   assert.match(PAGE, /\[overflow-wrap:anywhere\]/, "nama panjang tidak meluap");
-  assert.match(PAGE, /<StandaloneShell[\s\S]*? wide>/);
+  assert.match(PAGE_ONLY, /<WorkerAppShell tabs=\{DOC_NAV_TABS\}/, "kerangka Meja/Corner dipakai ulang (P12D)"); assert.doesNotMatch(PAGE_ONLY, /<StandaloneShell/);
   assert.match(PAGE, /Dokumentasi \{item\.docs\.satisfied\}\/\{item\.docs\.required\}/);
   assert.doesNotMatch(PAGE, /orderValue|harga|payment|Rp/, "tanpa harga/pembayaran");
 });

@@ -25,8 +25,8 @@ import { moneyToNumber } from "../services/finance/money.js";
 import { resiBaru, dasarStatusBayar, PILIH_TAGIHAN } from "../services/finance/tagihanOrder.js";
 // D-180 — jembatan ke buku besar. Lihat catatan panjang di hooks.js: modul
 // finance TIDAK PERNAH boleh menjatuhkan pencatatan pembayaran/order.
-import { bukukanPembayaran, batalkanJurnalPembayaran, bukukanPengakuanPendapatan } from "../services/finance/hooks.js";
-import { buildInvoiceView, setInvoiceLifecycle, attachOrderToInvoice, detachInvoiceFromBundle } from "../services/invoice.js";
+import { bukukanPembayaran, batalkanJurnalPembayaran, bukukanPengakuanPendapatan, batalkanPengakuanPendapatan } from "../services/finance/hooks.js";
+import { normalisasiJenis, buildInvoiceView, setInvoiceLifecycle, attachOrderToInvoice, detachInvoiceFromBundle } from "../services/invoice.js";
 import { renderInvoicePdf } from "../services/invoicePdf.js";
 import { buildWarrantyView, markWarrantySent, WARRANTY_YEARS_VALID } from "../services/warranty.js";
 import { renderWarrantyPdf } from "../services/warrantyPdf.js";
@@ -459,6 +459,8 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
             actorId: req.user?.id || null,
             reason: statusOverrideNote?.trim() || "Dibatalkan melalui perubahan status Sales",
           });
+          // Buku besar: order batal tidak boleh menyimpan piutang/pendapatan — balik jurnal pengakuannya (tidak ada pembayaran aktif; sudah dijaga checkCancelBlockers).
+          await batalkanPengakuanPendapatan(tx, { orderId: updated.id, reason: statusOverrideNote?.trim() || "perubahan status Sales", userId: req.user?.id || null });
         } else if (status === "DELIVERED") {
           const unitEnRoute = await tx.unit.findFirst({
             where: {
@@ -1246,6 +1248,10 @@ orderRouter.get("/", async (req, res) => {
           where: { status: { not: "FAILED" } },
           select: {
             id: true, type: true, status: true, scheduledDate: true,
+            // Penanda job KOMPLAIN/REVISI (7 Okt 2026): job pickup/kirim milik kasus komplain atau klaim
+            // garansi TIDAK boleh menggantikan jadwal order aslinya (lihat pickupJob/complaintPickupJob di bawah).
+            complaintCaseId: true,
+            revisionJobLink: { select: { id: true } },
             driver: { select: { name: true } },
             vehicle: { select: { plateNumber: true } },
             // rescheduleCase (D-160, 13 September 2026) — badge "Dijadwal
@@ -1316,8 +1322,14 @@ orderRouter.get("/", async (req, res) => {
       // terbaru. Order normal cuma punya 1 job aktif per tipe di satu
       // waktu (PRD §5.2), tapi kalau toh ada sisa lebih dari satu (reschedule
       // lama, dst), yang terbaru itu paling relevan ditampilkan ke sales.
-      const pickupJob   = jobs.find((j) => j.type === "PICKUP") || null;
-      const deliveryJob = jobs.find((j) => j.type === "DELIVERY") || null;
+      // 7 Okt 2026 (laporan owner): jobs diurutkan terbaru-dulu, jadi find() dulu mengambil job
+      // pickup/kirim KOMPLAIN yang lebih baru dan MENGGANTIKAN jadwal order asli di daftar &
+      // export. Sekarang job order asli dan job komplain/revisi dipisah; keduanya tampil sendiri-sendiri.
+      const jobKomplain = (j) => !!j.complaintCaseId || !!j.revisionJobLink;
+      const pickupJob   = jobs.find((j) => j.type === "PICKUP" && !jobKomplain(j)) || null;
+      const deliveryJob = jobs.find((j) => j.type === "DELIVERY" && !jobKomplain(j)) || null;
+      const complaintPickupJob   = jobs.find((j) => j.type === "PICKUP" && jobKomplain(j)) || null;
+      const complaintDeliveryJob = jobs.find((j) => j.type === "DELIVERY" && jobKomplain(j)) || null;
       const ringkasJob = (j) => j && {
         status: j.status, scheduledDate: j.scheduledDate,
         driverName: j.driver?.name || null, vehiclePlate: j.vehicle?.plateNumber || null,
@@ -1386,6 +1398,8 @@ orderRouter.get("/", async (req, res) => {
         daysInStatusPerkiraan: !trans,
         pickupJob: ringkasJob(pickupJob),
         deliveryJob: ringkasJob(deliveryJob),
+        complaintPickupJob: ringkasJob(complaintPickupJob),
+        complaintDeliveryJob: ringkasJob(complaintDeliveryJob),
       };
     });
 
@@ -1454,7 +1468,8 @@ orderRouter.get("/", async (req, res) => {
 // (tidak ada backfill massal — invoice lahir saat pertama kali dibuka).
 orderRouter.get("/:id/invoice", async (req, res) => {
   try {
-    const view = await buildInvoiceView(req.params.id, { userId: req.user?.id || null });
+    // ?jenis=DP|TOTAL (6 Okt 2026) — jenis tagihan dokumen; kosong = otomatis. Lihat tentukanJenisTagihan() di services/invoice.js.
+    const view = await buildInvoiceView(req.params.id, { userId: req.user?.id || null, jenis: normalisasiJenis(req.query.jenis) });
     if (!view) return res.status(404).json({ error: "Order tidak ditemukan" });
     res.json(view);
   } catch (err) {
@@ -1494,7 +1509,7 @@ orderRouter.patch("/:id/invoice", async (req, res) => {
       await setInvoiceLifecycle(req.params.id, lifecycleStatus);
     }
 
-    res.json(await buildInvoiceView(req.params.id, { userId: req.user?.id || null }));
+    res.json(await buildInvoiceView(req.params.id, { userId: req.user?.id || null, jenis: normalisasiJenis(req.query.jenis) }));
   } catch (err) {
     if (err.statusCode) return res.status(err.statusCode).json({ error: err.message });
     console.error("patch invoice error:", err);
@@ -1507,7 +1522,7 @@ orderRouter.patch("/:id/invoice", async (req, res) => {
 // berkali-kali sebelum benar-benar dikirim ke customer.
 orderRouter.get("/:id/invoice/pdf", async (req, res) => {
   try {
-    const view = await buildInvoiceView(req.params.id, { userId: req.user?.id || null });
+    const view = await buildInvoiceView(req.params.id, { userId: req.user?.id || null, jenis: normalisasiJenis(req.query.jenis) });
     if (!view) return res.status(404).json({ error: "Order tidak ditemukan" });
     const buffer = await renderInvoicePdf(view);
     res.setHeader("Content-Type", "application/pdf");
@@ -1637,7 +1652,8 @@ orderRouter.post("/:id/invoice/detach", async (req, res) => {
 // benar sampai ke WhatsApp customer, bukan sekadar tombol diklik.
 orderRouter.post("/:id/invoice/send", async (req, res) => {
   try {
-    const view = await buildInvoiceView(req.params.id, { userId: req.user?.id || null });
+    // body.jenis (DP|TOTAL): dokumen yang DIKIRIM harus sama dengan yang dipilih Sales di layar.
+    const view = await buildInvoiceView(req.params.id, { userId: req.user?.id || null, jenis: normalisasiJenis(req.body?.jenis) });
     if (!view) return res.status(404).json({ error: "Order tidak ditemukan" });
     if (!view.customer.id) {
       return res.status(400).json({ error: "Order ini tidak punya pelanggan yang valid." });
@@ -1658,7 +1674,10 @@ orderRouter.post("/:id/invoice/send", async (req, res) => {
     if (!target) return res.status(400).json({ error: "Nomor WhatsApp pelanggan tidak tersedia." });
 
     const buffer = await renderInvoicePdf(view);
-    const filename = `${view.invoice.invoiceNumber}.pdf`;
+    // Invoice DP & TOTAL diberi nama berkas berbeda: berkas yang sama dipakai ulang oleh bubble chat di CRM (mediaUrl), jadi mengirim TOTAL
+    // belakangan tidak boleh menimpa PDF DP yang sudah terkirim sebelumnya.
+    const jenisTagihan = view.nominal.jenisTagihan;
+    const filename = jenisTagihan === "DP" ? `${view.invoice.invoiceNumber}-DP.pdf` : `${view.invoice.invoiceNumber}.pdf`;
     fs.writeFileSync(path.join(invoicePdfsDir, filename), buffer);
     const BACKEND_INTERNAL_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:4000";
     const fileUrl = `${BACKEND_INTERNAL_URL}/media/invoice-pdfs/${filename}`;
@@ -1690,6 +1709,7 @@ orderRouter.post("/:id/invoice/send", async (req, res) => {
       `Halo ${namaSapaan}, berikut invoice untuk pesanan Anda 🙏\n` +
       `Terima kasih sudah mempercayakan tidur sehat Anda kepada Klinik Matras — Ahlinya Kasur Sehat.\n\n` +
       `Invoice No: ${view.invoice.invoiceNumber}\n` +
+      (jenisTagihan === "DP" ? `Jenis tagihan: *DP (uang muka)* — Rp${Number(view.nominal.dpKurang || 0).toLocaleString("id-ID")}\n` : "") +
       // Gabung invoice lintas-order (2 Sep 2026) — pakai view.orders[]
       // (SEMUA order dalam bundle), bukan view.order (cuma primary).
       // Bug nyata: caption WA cuma nyebut 1 order padahal invoice-nya
@@ -1730,7 +1750,7 @@ orderRouter.post("/:id/invoice/send", async (req, res) => {
 
     await setInvoiceLifecycle(req.params.id, "SENT");
 
-    res.json(await buildInvoiceView(req.params.id, { userId: req.user?.id || null }));
+    res.json(await buildInvoiceView(req.params.id, { userId: req.user?.id || null, jenis: normalisasiJenis(req.body?.jenis) }));
   } catch (err) {
     console.error("[invoice/send] error:", err);
     res.status(500).json({ error: "Gagal mengirim invoice" });
@@ -2361,6 +2381,8 @@ orderRouter.post("/:id/cancel", async (req, res) => {
       await tx.orderStatusTransition.create({
         data: { orderId: result.id, fromStatus: order.status, toStatus: "CANCELLED", changedById: req.user?.id || null },
       });
+      // Buku besar: balik jurnal pengakuan pendapatan order ini (tidak ada pembayaran aktif; sudah dijaga checkCancelBlockers).
+      await batalkanPengakuanPendapatan(tx, { orderId: result.id, reason: reason?.trim() || "salah input", userId: req.user?.id || null });
       return result;
     });
 

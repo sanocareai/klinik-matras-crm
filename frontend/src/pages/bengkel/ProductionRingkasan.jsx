@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { AlertTriangle, CheckCircle2, ClipboardCheck, Clock, Hourglass, Loader2, PackageX, PlayCircle, RefreshCw, ShieldCheck, Target, Timer } from "lucide-react";
-import { SourceBadge, useV1Units } from "@/features/production/v1Source.jsx";
+import { useV1Units } from "@/features/production/v1Source.jsx";
+import { DELAY_TITLE } from "@/features/production/productionLabels.js";
 import { unitDetailPath } from "@/lib/legacyProductionRoutes.js";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
@@ -44,7 +45,7 @@ export default function ProductionRingkasan() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
 
-  const { v1: orders } = useV1Units();
+  const { v1: orders, total: offBoardTotal, hasMore: offBoardMore } = useV1Units();
   const v1Blocked = useMemo(() => orders.filter((u) => u.productionStatus === "BLOCKED"), [orders]);
   const roles = currentRoles();
   const allowed = roles.some((r) => ["ADMIN", "OWNER", "PRODUCTION_LEAD", "PRODUCTION_WORKER", "QC_LEAD", "WAREHOUSE"].includes(r));
@@ -90,17 +91,17 @@ export default function ProductionRingkasan() {
               {summary.tiles.map((t) => <Tile key={t.key} tile={t} />)}
             </div>
 
-            {(summary.pipeline.length > 0 || orders.length > 0) && (
+            {(summary.pipeline.length > 0 || offBoardTotal > 0) && (
               <Card className="p-4" data-testid="pipeline-strip">
                 <div className="mb-2 flex items-center justify-between">
                   <h2 className="m-0 text-[13.5px] font-bold text-ink">Posisi unit di jalur produksi</h2>
                   <Link to="/bengkel/production-v2" className="text-[12.5px] font-semibold text-accent underline">Buka Status Produksi →</Link>
                 </div>
                 <div className="grid grid-cols-3 gap-2 sm:grid-cols-5 xl:grid-cols-9">
-                  {orders.length > 0 && (
-                    <Link to="/bengkel/order-produksi?tab=aktif" data-testid="v1-segment" className="min-w-0 rounded-btn border border-dashed border-line bg-inset p-2.5 text-center no-underline hover:bg-hovertint">
-                      <p className="m-0 text-[18px] font-bold tabular-nums text-ink">{orders.length}</p>
-                      <p className="m-0 flex items-center justify-center gap-1 truncate text-[11px] text-ink3" title="Order asli di luar Production V2">Order asli <SourceBadge source="V1" /></p>
+                  {offBoardTotal > 0 && (
+                    <Link to="/bengkel/order-produksi?tab=aktif" data-testid="offboard-segment" className="min-w-0 rounded-btn border border-dashed border-line bg-inset p-2.5 text-center no-underline hover:bg-hovertint">
+                      <p className="m-0 text-[18px] font-bold tabular-nums text-ink">{offBoardTotal}</p>
+                      <p className="m-0 truncate text-[11px] text-ink3" title="Order Diproses yang belum masuk papan">Belum masuk papan</p>
                     </Link>
                   )}
                   {summary.pipeline.map((s) => (
@@ -124,8 +125,8 @@ export default function ProductionRingkasan() {
                     {v1Blocked.slice(0, 4).map((u) => (
                       <li key={`v1-${u.id}`} data-testid="v1-attention" className="flex items-start gap-2.5 px-4 py-3">
                         <span className="mt-1.5 h-2 w-2 shrink-0 rounded-full bg-red" aria-hidden />
-                        <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-1.5"><Badge variant="red">Kritis</Badge><SourceBadge source="V1" />{u.order?.orderNumber && <span className="text-[11px] text-ink3">{u.order.orderNumber}</span>}</div>
-                          <p className="m-0 mt-0.5 break-words text-[12.5px] text-ink2">{u.unitCode}: tahap terhambat (order asli, jalur V1)</p></div>
+                        <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-1.5"><Badge variant="red">{DELAY_TITLE}</Badge>{u.order?.orderNumber && <span className="text-[11px] text-ink3">{u.order.orderNumber}</span>}</div>
+                          <p className="m-0 mt-0.5 break-words text-[12.5px] text-ink2">{u.unitCode}: pekerjaan tertunda — perlu dilanjutkan oleh tim produksi.</p></div>
                         <Button size="sm" variant="secondary" className="min-h-[40px] shrink-0" asChild><Link to={unitDetailPath(u.id)}>Buka</Link></Button>
                       </li>
                     ))}
@@ -144,6 +145,7 @@ export default function ProductionRingkasan() {
                     ))}
                   </ul>
                 )}
+                {offBoardMore && <p className="m-0 border-t border-line px-4 py-2 text-[11.5px] text-ink3" data-testid="offboard-partial">Pekerjaan tertunda dibaca dari {orders.length} unit terbaru dari {offBoardTotal}; lihat Order Produksi untuk semuanya.</p>}
                 {summary.attention.length > 8 && <p className="m-0 border-t border-line px-4 py-2 text-[11.5px] text-ink3">+{summary.attention.length - 8} hal lainnya — lihat Status Produksi.</p>}
               </Card>
 

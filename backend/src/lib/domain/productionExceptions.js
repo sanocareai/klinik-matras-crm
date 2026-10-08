@@ -24,6 +24,7 @@
 // yang harus "benar" sejak awal.
 
 import { PRODUCTION_COMPLETE_UNIT_STATUSES } from "./productionState.js";
+import { delayReasonOfBlock } from "./productionDisplay.js";
 
 // Nilai enum BlockReason (schema.prisma) — pola yang sama dengan
 // PRODUCTION_PRIORITY_VALUES di productionState.js.
@@ -47,16 +48,8 @@ const APPROVAL_BLOCK_REASONS = new Set(["AWAITING_CUSTOMER_APPROVAL"]);
 // dipakai membangun `reason`/`title` exception yang manusiawi. Diekspor
 // supaya lib/activityLog.js (linimasa PRODUCTION_BLOCKED/RESOLVED) memakai
 // label yang SAMA, bukan salinan kedua.
-export const BLOCK_REASON_LABEL = {
-  MATERIAL_SHORTAGE: "Waiting material",
-  AWAITING_CUSTOMER_APPROVAL: "Waiting approval",
-  MACHINE_DOWN: "Tool/machine issue",
-  QUALITY_ISSUE: "Quality issue",
-  OTHER: "Other",
-  AWAITING_CUSTOMER: "Waiting customer",
-  AWAITING_OPERATOR: "Waiting operator",
-  AWAITING_TOOL: "Waiting tool",
-};
+// Bahasa sederhana (slice 1): 8 nilai enum dikelompokkan jadi 4 alasan yang dilihat pengguna (lihat productionDisplay.js#DELAY_REASONS). Enum & histori TIDAK berubah.
+export const BLOCK_REASON_LABEL = Object.freeze(Object.fromEntries(BLOCK_REASON_VALUES.map((v) => [v, delayReasonOfBlock(v).label])));
 
 export const SEVERITY = Object.freeze({
   INFO: "INFO",
@@ -114,7 +107,7 @@ export function validateBlockReason({ reason, note }) {
     return `blockReason harus salah satu dari: ${BLOCK_REASON_VALUES.join(", ")}`;
   }
   if (reason === "OTHER" && (!note || note.trim().length < 3)) {
-    return 'blockReason "OTHER" wajib disertai catatan yang jelas kenapa terhambat';
+    return 'Alasan "Lainnya" wajib disertai keterangan yang jelas kenapa pekerjaan ditunda';
   }
   return null;
 }
@@ -175,7 +168,7 @@ export function deriveAtRisk({ unit, now = new Date(), hasOpenBlocker = false, b
   if (hasOpenBlocker) {
     reasons.push({
       code: "BLOCKED",
-      label: `Blocked — ${BLOCK_REASON_LABEL[blockerReason] || blockerReason || "unknown reason"}`,
+      label: `Tertunda — ${(BLOCK_REASON_LABEL[blockerReason] || blockerReason || "alasan belum tercatat").toLowerCase()}`,
     });
   }
 
@@ -264,11 +257,11 @@ export function buildExceptionsForUnit({ unit, now = new Date(), blocker = null,
       ...base,
       type: isApproval ? EXCEPTION_TYPE.WAITING_APPROVAL : EXCEPTION_TYPE.BLOCKED,
       severity: SEVERITY.HIGH,
-      title: isApproval ? "Waiting Approval" : "Production Blocked",
+      title: isApproval ? "Menunggu arahan" : "Pekerjaan Tertunda",
       reason: blocker.note ? `${reasonLabel} — ${blocker.note}` : reasonLabel,
       startedAt: blocker.openedAt,
       durationMinutes,
-      recommendedAction: isApproval ? "Follow up customer decision" : "Resolve blocker",
+      recommendedAction: isApproval ? "Tindak lanjuti keputusan pelanggan" : "Lanjutkan Pekerjaan setelah kendala selesai",
       urgencyMinutes: durationMinutes,
     });
   }

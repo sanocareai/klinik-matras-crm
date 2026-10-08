@@ -34,7 +34,7 @@ async function readerCohort() {
   const ids = [...state.unitIds];
   return ids.length ? ids : null;
 }
-const OFF = (extra = {}) => ({ readerMode: "OFF", message: "Produksi V2 belum aktif — laporan terisi setelah Production V2 diaktifkan untuk unit terkait.", ...extra });
+const OFF = (extra = {}) => ({ readerMode: "OFF", message: "Laporan produksi belum aktif — laporan terisi setelah Production Lead mengaktifkannya untuk unit terkait.", ...extra });
 const query = (req) => ({ from: req.query.from, to: req.query.to, station: req.query.station, operator: req.query.operator, step: req.query.step, status: req.query.status, priority: req.query.priority, service: req.query.service, qc: req.query.qc, docs: req.query.docs, granularity: req.query.granularity });
 
 // Dokumen laporan menurut jenis + izin. Satu fungsi dipakai JSON dan export -> layar = berkas.
@@ -74,7 +74,7 @@ productionReportsRouter.get("/meta", async (req, res) => {
     if (!unitIds) return res.json({ ...OFF(), ...base });
     const meta = { ...base, readerMode: "COHORT", targetPerHari: BOARD_DEFAULTS.dailyTarget, targetNote: "Target harian = konfigurasi sistem (belum ada target tercatat).",
       stations: BOARD_DEFAULTS.stations.map((code) => ({ code, label: stationLabel(code) })), capacityPerStation: BOARD_DEFAULTS.capacityPerStation,
-      statuses: Object.entries(STATUS_BUCKETS).map(([key, label]) => ({ key, label })), priorities: Object.entries(PRIORITY_LABEL).map(([key, label]) => ({ key: Number(key), label })), qcFilters: QC_FILTERS, docFilters: DOC_FILTERS,
+      statuses: Object.entries(STATUS_BUCKETS).map(([key, label]) => ({ key, label })), priorities: [{ key: 0, label: PRIORITY_LABEL[0] }, { key: 1, label: PRIORITY_LABEL[1] }], qcFilters: QC_FILTERS, docFilters: DOC_FILTERS,
       metrics: METRICS.map((m) => ({ key: m.key, group: m.group, label: m.label, unit: m.unit, kind: m.kind, formula: m.formula, basis: m.basis === "snapshot" ? "Posisi saat ini" : (DATE_BASES[m.basis] || m.basis), note: m.note || null })) };
     if (c.full) {
       const ctx = await buildReportContext(prisma, { unitIds, query: {} });

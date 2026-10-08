@@ -8,6 +8,7 @@ import { FileText, Send, Pencil } from "lucide-react-native";
 import { api, downloadAndShareFile } from "../../api";
 import { useTokens } from "../../constants/theme";
 import { formatRupiah, shortDate } from "../../utils/format";
+import { MODE_DP, hitungDpDariInput, isianAwalDp, gantiModeDp } from "../../lib/invoiceDp";
 
 const STATUS_LABEL = {
   DRAFT: "Draft", SENT: "Terkirim", VIEWED: "Dilihat", PARTIALLY_PAID: "Dibayar Sebagian",
@@ -33,13 +34,62 @@ export default function OrderInvoiceTab({ orderId }) {
   const [alamat, setAlamat] = useState("");
   const [jatuhTempo, setJatuhTempo] = useState("");
   const [catatan, setCatatan] = useState("");
-  const [busy, setBusy] = useState(null); // "save" | "pdf" | "send"
+  const [busy, setBusy] = useState(null); // "save" | "pdf" | "send" | "jenis" | "dp"
+  // Jenis tagihan yang dipilih Sales: null = otomatis; "DP" | "TOTAL" = pilihan eksplisit. Dikirim ke server pada lihat/PDF/kirim supaya dokumen
+  // yang DIKIRIM sama dengan yang tampil. dpTarget order TIDAK pernah dihapus oleh pilihan ini.
+  const [jenis, setJenis] = useState(null);
+  const [formDp, setFormDp] = useState(false);
+  const [dpDraft, setDpDraft] = useState("");
+  const [dpMode, setDpMode] = useState(MODE_DP.PERSEN); // DP diisi dalam PERSEN dari total atau langsung NOMINAL (Rp); yang disimpan selalu nominal
 
-  const load = useCallback(() => {
+  const load = useCallback((j = null) => {
     setError("");
-    api.getOrderInvoice(orderId).then(setView).catch((e) => setError(e.message));
+    api.getOrderInvoice(orderId, j).then(setView).catch((e) => setError(e.message));
   }, [orderId]);
   useEffect(() => { setView(null); load(); }, [load]);
+
+  async function gantiJenis(k) {
+    setBusy("jenis");
+    try {
+      setView(await api.getOrderInvoice(orderId, k));
+      setJenis(k); setFormDp(false);
+    } catch (e) {
+      Alert.alert("Gagal mengganti jenis tagihan", e.message);
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Pilih DP: sudah disepakati → langsung; belum → form (default 30% dari total, bisa diganti ke nominal), disimpan sebagai "DP disepakati" order.
+  function bukaFormDp(dpTarget = null) {
+    const awal = isianAwalDp({ total: view?.nominal?.totalTagihan || 0, dpTarget });
+    setDpMode(awal.mode); setDpDraft(awal.nilai); setFormDp(true);
+  }
+  function pilihDp() {
+    const n = view?.nominal;
+    if (n?.bisaDP) return gantiJenis("DP");
+    if (!(n?.dpTarget > 0)) bukaFormDp();
+  }
+  function ubahModeDp(ke) {
+    if (ke === dpMode) return;
+    setDpDraft(gantiModeDp({ dari: dpMode, ke, nilai: dpDraft, total: view?.nominal?.totalTagihan || 0 }));
+    setDpMode(ke);
+  }
+
+  async function simpanDp() {
+    const hitung = hitungDpDariInput({ mode: dpMode, nilai: dpDraft, total: view?.nominal?.totalTagihan || 0 });
+    if (!hitung.ok) { Alert.alert("DP", hitung.galat); return; }
+    setBusy("dp");
+    try {
+      await api.updateOrder(view.order?.id || orderId, { dpTarget: hitung.nominal });
+      setView(await api.getOrderInvoice(orderId, "DP"));
+      setJenis("DP"); setFormDp(false);
+    } catch (e) {
+      Alert.alert("Gagal menyimpan DP", e.message);
+    } finally {
+      setBusy(null);
+    }
+  }
 
   function startEdit() {
     const inv = view.invoice;
@@ -59,7 +109,7 @@ export default function OrderInvoiceTab({ orderId }) {
     try {
       const v = await api.updateOrderInvoice(orderId, {
         namaTujuan: nama.trim(), alamatTujuan: alamat.trim(), dueDate: jatuhTempo, notes: catatan.trim(),
-      });
+      }, jenis);
       setView(v);
       setEdit(false);
     } catch (e) {
@@ -72,7 +122,8 @@ export default function OrderInvoiceTab({ orderId }) {
   async function sharePdf() {
     setBusy("pdf");
     try {
-      await downloadAndShareFile(`/orders/${orderId}/invoice/pdf`, `${view.invoice.invoiceNumber}.pdf`, "application/pdf");
+      const j = view.nominal?.jenisTagihan;
+      await downloadAndShareFile(`/orders/${orderId}/invoice/pdf${j ? `?jenis=${j}` : ""}`, `${view.invoice.invoiceNumber}${j === "DP" ? "-DP" : ""}.pdf`, "application/pdf");
     } catch (e) {
       Alert.alert("Gagal membuat PDF", e.message);
     } finally {
@@ -81,16 +132,17 @@ export default function OrderInvoiceTab({ orderId }) {
   }
 
   function sendWa() {
-    Alert.alert("Kirim invoice?", `Invoice ${view.invoice.invoiceNumber} akan dikirim ke WhatsApp ${view.customer?.nama || "customer"}.`, [
+    const jenisKirim = view.nominal?.jenisTagihan;
+    Alert.alert("Kirim invoice?", `Invoice ${jenisKirim === "DP" ? "DP " : ""}${view.invoice.invoiceNumber} akan dikirim ke WhatsApp ${view.customer?.nama || "customer"}.`, [
       { text: "Batal", style: "cancel" },
       {
         text: "Kirim",
         onPress: async () => {
           setBusy("send");
           try {
-            await api.sendOrderInvoice(orderId);
+            await api.sendOrderInvoice(orderId, jenisKirim);
             Alert.alert("Terkirim", "Invoice sudah dikirim ke WhatsApp customer.");
-            load();
+            load(jenis);
           } catch (e) {
             Alert.alert("Gagal kirim", e.message);
           } finally {
@@ -148,6 +200,64 @@ export default function OrderInvoiceTab({ orderId }) {
         )}
       </View>
 
+      {!batal && !nominal.lunas ? (
+        <View style={styles.card} testID="pilih-jenis-tagihan">
+          <Text style={styles.section}>Jenis tagihan</Text>
+          <View style={{ flexDirection: "row", gap: 8 }} accessibilityRole="radiogroup">
+            {[["TOTAL", "Total / Pelunasan"], ["DP", "DP (uang muka)"]].map(([k, label]) => {
+              const aktif = nominal.jenisTagihan === k;
+              const nonaktif = !!busy || (k === "DP" && nominal.dpTarget > 0 && !nominal.bisaDP);
+              return (
+                <TouchableOpacity
+                  key={k} disabled={nonaktif} onPress={() => (k === "DP" ? pilihDp() : gantiJenis("TOTAL"))}
+                  style={[styles.chip, aktif && styles.chipOn, nonaktif && { opacity: 0.45 }]}
+                  accessibilityRole="radio" accessibilityState={{ selected: aktif, disabled: nonaktif }} testID={`jenis-tagihan-${k}`}
+                >
+                  <Text style={[styles.chipText, aktif && { color: "#fff" }]}>{label}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          {nominal.dpTarget > 0 && !nominal.bisaDP && !nominal.dibayarTidakRinci ? (
+            <Text style={styles.muted}>DP {formatRupiah(nominal.dpTarget)} sudah terpenuhi — tagihan berikutnya berupa pelunasan.</Text>
+          ) : null}
+          {formDp ? (() => {
+            const hitung = hitungDpDariInput({ mode: dpMode, nilai: dpDraft, total: nominal.totalTagihan });
+            return (
+              <View style={{ gap: 6 }} testID="form-dp-invoice">
+                <Text style={styles.muted}>DP yang disepakati — isi dalam:</Text>
+                <View style={{ flexDirection: "row", gap: 8 }} accessibilityRole="radiogroup">
+                  {[[MODE_DP.PERSEN, "Persen (%)"], [MODE_DP.NOMINAL, "Nominal (Rp)"]].map(([k, label]) => (
+                    <TouchableOpacity key={k} onPress={() => ubahModeDp(k)} style={[styles.chip, dpMode === k && styles.chipOn]} accessibilityRole="radio" accessibilityState={{ selected: dpMode === k }} testID={`dp-mode-${k}`}>
+                      <Text style={[styles.chipText, dpMode === k && { color: "#fff" }]}>{label}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <TextInput
+                  style={styles.input} keyboardType={dpMode === MODE_DP.PERSEN ? "decimal-pad" : "numeric"} value={dpDraft}
+                  onChangeText={(v) => setDpDraft(v.replace(dpMode === MODE_DP.PERSEN ? /[^0-9.,]/g : /[^0-9]/g, ""))}
+                  placeholder={dpMode === MODE_DP.PERSEN ? "mis. 30" : "mis. 1500000"} placeholderTextColor={tokens.color.textMuted}
+                />
+                <Text style={[styles.muted, !hitung.ok && { color: tokens.color.danger }]} testID="pratinjau-dp">
+                  {hitung.ok ? `= ${formatRupiah(hitung.nominal)} (${String(hitung.persen).replace(".", ",")}% dari total ${formatRupiah(nominal.totalTagihan)})` : hitung.galat}
+                </Text>
+                <View style={{ flexDirection: "row", gap: 8 }}>
+                  <TouchableOpacity style={styles.btnGhost} onPress={() => setFormDp(false)} disabled={!!busy}><Text style={styles.btnGhostText}>Batal</Text></TouchableOpacity>
+                  <TouchableOpacity style={[styles.btnPrimary, !hitung.ok && { opacity: 0.4 }]} onPress={simpanDp} disabled={!!busy || !hitung.ok} testID="simpan-dp-invoice">
+                    <Text style={styles.btnPrimaryText}>{busy === "dp" ? "Menyimpan…" : "Simpan & Pakai"}</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            );
+          })() : null}
+          {!formDp && nominal.modeDP ? (
+            <TouchableOpacity onPress={() => bukaFormDp(nominal.dpTarget)} disabled={!!busy} testID="ubah-dp-invoice">
+              <Text style={[styles.muted, { color: tokens.color.accent, fontWeight: "700" }]}>Ubah DP ({formatRupiah(nominal.dpTarget)})</Text>
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      ) : null}
+
       <View style={styles.card}>
         <Text style={styles.section}>Rincian</Text>
         {items.length === 0 && <Text style={styles.muted}>Belum ada item layanan.</Text>}
@@ -157,12 +267,16 @@ export default function OrderInvoiceTab({ orderId }) {
         <View style={styles.sep} />
         {nominal.nilaiDiskon > 0 && <Row label={`Diskon${nominal.diskonPersen ? ` ${nominal.diskonPersen}%` : ""}`} value={`− ${formatRupiah(nominal.nilaiDiskon)}`} styles={styles} />}
         {nominal.ongkir > 0 && <Row label="Ongkir" value={formatRupiah(nominal.ongkir)} styles={styles} />}
-        <Row label="Total tagihan" value={formatRupiah(nominal.totalTagihan)} bold styles={styles} />
+        {nominal.modeDP ? (
+          <Row label="Tagihan DP" value={formatRupiah(nominal.dpTarget)} bold styles={styles} />
+        ) : (
+          <Row label="Total tagihan" value={formatRupiah(nominal.totalTagihan)} bold styles={styles} />
+        )}
         <Row label="Sudah dibayar" value={formatRupiah(nominal.dibayar)} color={tokens.color.success} styles={styles} />
         {nominal.modeDP ? (
           <>
-            <Row label="DP disepakati" value={formatRupiah(nominal.dpTarget)} styles={styles} />
             <Row label="Sisa DP" value={formatRupiah(nominal.dpKurang)} bold color={tokens.color.danger} styles={styles} />
+            <Text style={styles.muted}>Total keseluruhan order: {formatRupiah(nominal.totalTagihan)}</Text>
           </>
         ) : (
           <Row label="Sisa tagihan" value={formatRupiah(nominal.sisa)} bold color={nominal.sisa > 0 ? tokens.color.danger : undefined} styles={styles} />
@@ -187,6 +301,9 @@ export default function OrderInvoiceTab({ orderId }) {
 
 function createStyles(t) {
   return StyleSheet.create({
+    chip: { flex: 1, alignItems: "center", paddingVertical: 10, borderRadius: 10, borderWidth: StyleSheet.hairlineWidth, borderColor: t.color.border, backgroundColor: t.color.subtle },
+    chipOn: { backgroundColor: t.color.accent, borderColor: t.color.accent },
+    chipText: { fontSize: 12.5, fontWeight: "700", color: t.color.textSecondary },
     card: { ...t.glass.surface, borderRadius: 12, padding: 12, gap: 6 },
     head: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
     number: { fontSize: 14, fontWeight: "800", color: t.color.textPrimary, fontFamily: "monospace" },

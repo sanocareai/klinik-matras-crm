@@ -35,6 +35,7 @@ import { CardList, RowCard } from "@/features/finance/cards.jsx";
 import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
 import { specPengeluaran } from "@/features/finance/detailSpecs.js";
 import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
+import { resetSaatBuka } from "@/features/finance/resetSaatBuka.jsx";
 
 function teksMode(mode) {
   return mode === "LANGSUNG" ? "Bayar langsung" : mode === "REIMBURSEMENT" ? "Reimbursement" : "Utang";
@@ -476,7 +477,7 @@ export default function FinanceExpenses() {
   );
 }
 
-function ModalPengeluaran({ open, onClose, kategori, rekening, onSubmit }) {
+function ModalPengeluaranIsi({ open, onClose, kategori, rekening, onSubmit }) {
   const [f, setF] = useState({
     date: "", amount: "", description: "", categoryId: "", division: "",
     mode: "LANGSUNG", cashAccountId: "", reimburseToId: "", payeeName: "", orderId: "", notes: "", receiptUrl: "", ...BIAYA_KOSONG,
@@ -596,3 +597,6 @@ function ModalBayar({ expense, onClose, rekening, onSubmit }) {
     </Modal>
   );
 }
+
+// Formulir dikosongkan setiap dibuka (lihat features/finance/resetSaatBuka.jsx).
+const ModalPengeluaran = resetSaatBuka(ModalPengeluaranIsi);

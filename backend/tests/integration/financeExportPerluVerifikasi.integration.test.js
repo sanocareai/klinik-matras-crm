@@ -115,7 +115,8 @@ test("TAB PERLU VERIFIKASI: sheet Ringkasan, Payment Menunggu, Klaim Lunas Sales
   assert.equal(total["Jumlah"], baris("Payment menunggu verifikasi")["Jumlah"] + baris("Klaim Lunas Sales (jumlah)")["Jumlah"] + tumpang);
   // Definisi Angka + metadata
   assert.ok(r.wb.getWorksheet("Definisi Angka").rowCount >= 7);
-  assert.match(String(sp.kepala[1]), /1 Sep 2026.*30 Sep 2026/);
+  // Antrean "Perlu Verifikasi" TIDAK terikat periode (6 Okt 2026): label menyatakan semua periode, bukan rentang yang dikirim klien.
+  assert.match(String(sp.kepala[1]), /Semua periode/);
   assert.match(String(r.wb.getWorksheet("Payment Menunggu").getRow(5).getCell(1).value), /Zona waktu: WIB/);
 });
 
@@ -153,9 +154,11 @@ test("SARINGAN dipertahankan di antrean: cara bayar, pencarian, chip bukti, alok
   // klaim tidak terpengaruh saringan Payment
   const r = await unduhExport(server.baseUrl, w.admin.token, "pembayaran", { periode: PERIODE, filter: { status: "belum_verifikasi", sertakanKlaim: true, hanyaKlaim: false, metode: "CASH" } });
   assert.equal(bacaSheet(r.wb, "Klaim Lunas Sales").baris.length, 4);
-  // periode lain → Payment menunggu kosong tetapi klaim (tak terikat periode) tetap ada
+  // periode lain → antrean TIDAK terikat periode: Payment menunggu (dari September) dan klaim tetap ikut — sama persis dengan periode September
   const okt = await unduhExport(server.baseUrl, w.admin.token, "pembayaran", { periode: { from: "2026-10-01", to: "2026-10-31" }, filter: { status: "belum_verifikasi", sertakanKlaim: true, hanyaKlaim: false } });
-  assert.equal(bacaSheet(okt.wb, "Payment Menunggu").baris.length, 0);
+  const sep = await unduhExport(server.baseUrl, w.admin.token, "pembayaran", { periode: PERIODE, filter: { status: "belum_verifikasi", sertakanKlaim: true, hanyaKlaim: false } });
+  assert.equal(bacaSheet(okt.wb, "Payment Menunggu").baris.length, bacaSheet(sep.wb, "Payment Menunggu").baris.length);
+  assert.ok(bacaSheet(okt.wb, "Payment Menunggu").baris.length > 0);
   assert.equal(bacaSheet(okt.wb, "Klaim Lunas Sales").baris.length, 4);
 });
 

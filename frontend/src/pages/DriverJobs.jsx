@@ -1,8 +1,19 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  AlertTriangle, Camera, CheckCircle2, CloudOff, Eraser, Home, Loader2, Map, MapPin,
+  AlertTriangle, Camera, CheckCircle2, CloudOff, Eraser, Home, Loader2, Map as MapIcon, MapPin,
   Navigation, Phone, RefreshCw, Truck, Wallet, WifiOff, X,
 } from "lucide-react";
+// PRA-ADA (bug ditemukan saat QA browser nyata Checklist Persiapan
+// Perjalanan, 7 Okt 2026) — ikon diimpor sebagai `Map` BERSAMA `new Map()`
+// (groupRoutes di bawah) di modul YANG SAMA: import lokal SELALU menimpa
+// identifier global dalam satu modul, jadi `new Map()` memanggil komponen
+// ikon (bukan constructor), melempar "Map is not a constructor" dan
+// MENGHANCURKAN SELURUH halaman FocusedJobList setiap kali driver punya
+// job aktif (groupRoutes dipanggil tanpa syarat). Tidak pernah tertangkap
+// sebelumnya karena tidak ada tes yang BENAR-BENAR me-render file ini di
+// browser — `vite build`/babel cuma memastikan sintaks valid, bukan
+// perilaku runtime. Diganti jadi alias `MapIcon` di sini; `new Map()` di
+// bawah sekarang aman memanggil Map bawaan JS.
 import { compressImage } from "../utils/compressImage.js";
 import { formatRupiah, waLinkFromPhone } from "../utils/format.js";
 import { getQueue, removeAction } from "../utils/offlineQueue.js";
@@ -13,6 +24,8 @@ import { usePushSubscription } from "../hooks/usePushSubscription.js";
 import { useMyJobs } from "@/features/armada/hooks/useMyJobs.js";
 import { mapsUrl } from "@/features/armada/jobStatus.js";
 import { SalesBadge, ProductBadge } from "@/features/armada/components/JobBadges.jsx";
+import RoutePrepChecklistDriverPanel from "@/features/armada/components/RoutePrepChecklistDriverPanel.jsx";
+import RouteTimelinePanel from "@/features/armada/components/RouteTimelinePanel.jsx";
 import { ISSUE_STATUS } from "@/features/armada/issueStatus.js";
 import { api } from "@/api.js";
 import { Card } from "@/components/ui/card.jsx";
@@ -194,50 +207,11 @@ const PAYMENT_METHODS = [
   { value: "QRIS", label: "QRIS" },
 ];
 
-// ── Catat Pembayaran (D-011) — HANYA untuk job DELIVERY yang sudah selesai.
-// Customer kadang bayar cash langsung ke driver saat kasur diantar; ini
-// satu-satunya jejak audit kas yang ada sekarang, jadi dibuat semudah
-// mungkin — jumlah + metode, foto opsional (WAJIB kalau tunai, supaya ada
-// bukti serah terima uang, sama semangatnya dengan foto bukti job).
-function PaymentSection({ job, onChanged, onQueued }) {
-  const [open, setOpen] = useState(false);
-  const [amount, setAmount] = useState("");
-  const [method, setMethod] = useState("CASH");
-  const [photo, setPhoto] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const [justQueued, setJustQueued] = useState(false);
-  const [err, setErr] = useState("");
-
-  function handlePhoto(e) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    compressImage(file).then(setPhoto);
-    e.target.value = "";
-  }
-
-  async function handleSave() {
-    const amountInt = parseInt(amount, 10);
-    if (!amountInt || amountInt <= 0) { setErr("Jumlah wajib diisi"); return; }
-    if (method === "CASH" && !photo) { setErr("Foto bukti wajib untuk pembayaran tunai"); return; }
-    setBusy(true);
-    setErr("");
-    try {
-      const { queued } = await submitOrQueue(job.id, "payment", { amount: amountInt, method }, photo ? [photo] : []);
-      setOpen(false);
-      setAmount(""); setMethod("CASH"); setPhoto(null);
-      if (queued) {
-        setJustQueued(true);
-        onQueued();
-      } else {
-        onChanged();
-      }
-    } catch (e2) {
-      setErr(e2.message);
-    } finally {
-      setBusy(false);
-    }
-  }
-
+// ── Pembayaran pada job pengiriman — DRIVER TIDAK LAGI MENCATAT PEMBAYARAN (keputusan Owner 7 Okt 2026).
+// Sebelumnya (D-011) driver boleh mencatat uang tunai dari customer; kasus nyata 6 Okt: driver mengetik "1" untuk order Rp1.200.000 dan langsung masuk Uang Kas.
+// Pembayaran/DP dicatat Sales (atau Finance). Layar ini hanya MENAMPILKAN pembayaran yang sudah tercatat pada order ini + pengingat. Server juga menolak
+// (POST /armada/jobs/:id/payment → 403 PEMBAYARAN_BUKAN_UNTUK_DRIVER), jadi aplikasi lama yang masih menampilkan tombolnya tidak bisa mencatat apa pun.
+function PaymentSection({ job }) {
   return (
     <div className="mt-3 border-t border-border pt-3">
       {job.payments?.length > 0 && (
@@ -253,53 +227,10 @@ function PaymentSection({ job, onChanged, onQueued }) {
           ))}
         </div>
       )}
-
-      {justQueued && (
-        <div className="mb-2 flex items-center gap-1.5 rounded-lg bg-orangebg px-3 py-2 text-xs text-orange">
-          <CloudOff className="h-3.5 w-3.5 shrink-0" /> Tersimpan offline — akan terkirim otomatis
-        </div>
-      )}
-
-      {!open && (
-        <Button variant="neutral" className="h-10 w-full text-xs" onClick={() => { setOpen(true); setJustQueued(false); }}>
-          <Wallet className="h-3.5 w-3.5" /> Catat Pembayaran
-        </Button>
-      )}
-
-      {open && (
-        <div className="space-y-2">
-          <input
-            type="number" inputMode="numeric" placeholder="Jumlah diterima (Rp)"
-            value={amount} onChange={(e) => setAmount(e.target.value)}
-            className="h-10 w-full rounded-lg border border-border px-3 text-sm outline-none focus:border-accent"
-          />
-          <div className="grid grid-cols-3 gap-1.5">
-            {PAYMENT_METHODS.map((m) => (
-              <button
-                key={m.value} type="button" onClick={() => setMethod(m.value)}
-                className={`h-9 rounded-lg border-2 text-xs font-medium ${
-                  method === m.value ? "border-accent bg-accentbg text-accent" : "border-border text-ink2"
-                }`}
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
-          <label className="flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed
-                            border-border text-xs font-medium text-ink2 hover:border-accent hover:text-accent">
-            <Camera className="h-3.5 w-3.5" />
-            {photo ? "Foto siap" : "Foto Bukti (opsional untuk non-tunai)"}
-            <input type="file" accept="image/*" hidden onChange={handlePhoto} />
-          </label>
-          {err && <p className="text-[11px] text-red">{err}</p>}
-          <div className="flex gap-2">
-            <Button variant="neutral" className="h-10 flex-1 text-xs" onClick={() => { setOpen(false); setErr(""); }}>Batal</Button>
-            <Button className="h-10 flex-1 text-xs" disabled={busy} onClick={handleSave}>
-              {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Simpan"}
-            </Button>
-          </div>
-        </div>
-      )}
+      <p className="flex items-start gap-1.5 rounded-lg bg-inset px-3 py-2 text-[11.5px] leading-snug text-ink2" data-testid="driver-tanpa-catat-bayar">
+        <Wallet className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        Pembayaran dicatat oleh Sales. Bila customer membayar tunai kepadamu, segera laporkan ke Sales order ini — jangan dicatat sendiri di aplikasi.
+      </p>
     </div>
   );
 }
@@ -673,6 +604,12 @@ function RouteStartBanner({ route, assignedCount, sampleJobId, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [mapBusy, setMapBusy] = useState(false);
+  // Checklist Persiapan Perjalanan (7 Okt 2026) — UX saja: nonaktifkan tombol
+  // lebih awal kalau item wajib belum lengkap. Gerbang SEBENARNYA tetap di
+  // backend (POST /routes/:id/start menolak 409 CHECKLIST_BELUM_LENGKAP
+  // terlepas dari state ini) — default true supaya rute TANPA checklist
+  // tidak pernah tertahan menunggu panel ini selesai memuat.
+  const [checklistReady, setChecklistReady] = useState(true);
 
   async function openMaps() {
     setMapBusy(true);
@@ -696,7 +633,7 @@ function RouteStartBanner({ route, assignedCount, sampleJobId, onChanged }) {
     setErr("");
     try {
       const urls = await uploadBlobs(sampleJobId, photos);
-      await api.startRoute(route.id, { proofPhotoUrls: urls });
+      await api.startRoute(route.id, { proofPhotoUrls: urls }, undefined, { source: "DRIVER_WEB" });
       setMode("idle");
       setPhotos([]);
       onChanged();
@@ -719,13 +656,22 @@ function RouteStartBanner({ route, assignedCount, sampleJobId, onChanged }) {
         className="mt-2 flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-accent/40
                    text-xs font-semibold text-accent disabled:opacity-50"
       >
-        {mapBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Map className="h-3.5 w-3.5" />}
+        {mapBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <MapIcon className="h-3.5 w-3.5" />}
         Buka Rute di Google Maps
       </button>
 
+      {assignedCount > 0 && <RoutePrepChecklistDriverPanel routeId={route.id} onReadyChange={setChecklistReady} />}
+
+      {/* Histori Waktu (fase 2) — dibuka atas permintaan driver; isi disusun server (WIB, Indonesia). */}
+      <details className="mt-2" data-testid="driver-route-timeline">
+        <summary className="cursor-pointer text-xs font-semibold text-ink2">Histori Waktu rute &amp; stop</summary>
+        <RouteTimelinePanel routeId={route.id} className="mt-2" />
+      </details>
+
       {assignedCount > 0 && mode === "idle" && (
-        <Button className="mt-2 h-11 w-full text-xs" onClick={() => setMode("starting")}>
-          <Navigation className="mr-1.5 h-3.5 w-3.5" /> Mulai Perjalanan ({assignedCount} stop)
+        <Button className="mt-2 h-11 w-full text-xs" disabled={!checklistReady} onClick={() => setMode("starting")}>
+          <Navigation className="mr-1.5 h-3.5 w-3.5" />
+          {checklistReady ? `Mulai Perjalanan (${assignedCount} stop)` : "Lengkapi Checklist Dulu"}
         </Button>
       )}
 

@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge.jsx";
 import { ProgressBar } from "@/components/ui/progress.jsx";
 import { bucketStyle, initials, targetDateBadge } from "@/features/production/experience.js";
 import { dataGaps, isGantiKain, materialBadge, mattressInfo, mejaLabel, priorityMeta, salesNoteOf, stageText } from "@/features/production/unitCardModel.js";
+import { delayStatusText, presenceTone, progressText, rankOfView, viewPresence, viewStatus } from "@/features/production/productionLabels.js";
 
 // P9 UX Realignment — SATU kartu unit untuk Status Produksi, Rencana Produksi (backlog + slot meja), dan Quality
 // Control. Klik kartu = buka Unit 360 (aksi utama); aksi sekunder (Jadwalkan/Pindahkan, Putusan QC, Unit Tiba) ada di
@@ -95,12 +96,15 @@ export function PicChips({ view }) {
 }
 
 export function UnitCard({
-  view, onOpen, footer = null, variant = "photo", today, tomorrow, showGaps = true, className = "", qcBadge = null, seq = null, showTechService = true,
+  view, onOpen, footer = null, variant = "photo", today, tomorrow, showGaps = true, className = "", qcBadge = null, seq = null,
 }) {
   if (!view) return null;
   const c = view.customer || {};
-  const p = priorityMeta(view.plan?.priority ?? 0);
+  const rank = rankOfView(view);
+  const p = priorityMeta(rank);
   const st = bucketStyle(view.bucket);
+  const status = viewStatus(view);
+  const presence = viewPresence(view);
   const dateBadge = today && tomorrow ? targetDateBadge(view, today, tomorrow) : null;
   const gaps = showGaps ? dataGaps(view) : [];
   const mat = materialBadge(view);
@@ -121,13 +125,13 @@ export function UnitCard({
       <p className="m-0 line-clamp-2 text-[13px] text-ink2" title={sales || ""}>
         <span className="font-semibold text-ink3">Layanan Sales: </span>{sales || <span className="text-ink3">belum tercatat</span>}
       </p>
-      {showTechService && (
-        <p data-testid="tech-service" className="m-0 line-clamp-1 text-[13px] text-ink2" title={view.unit.service?.label || ""}>
-          <span className="font-semibold text-ink3">Layanan Teknis: </span>{view.unit.service?.label || <span className="text-ink3">belum ditetapkan (dari Diagnosis)</span>}
-        </p>
-      )}
       <MattressLine view={view} />
       <SalesNote view={view} />
+      {/* Tiga hal terpisah: status (Pengambilan/Diproses/Siap Kirim/Terkirim), keberadaan fisik, tahap pengerjaan. */}
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Badge variant={status.tone} data-testid="status-badge">{status.label}</Badge>
+        {presence && <Badge variant={presenceTone(presence)} data-testid="presence-badge">{presence.label}</Badge>}
+      </div>
       <div className="flex flex-wrap items-center gap-1.5">
         <Badge variant={st.badge}>{st.label}</Badge>
         {view.next?.stepNo && <span className="text-[13px] font-medium text-ink2">{stageText(view)}</span>}
@@ -141,11 +145,11 @@ export function UnitCard({
       {view.progress && (
         <div className="flex items-center gap-2">
           <div className="flex-1"><ProgressBar value={progress} variant={view.shortage ? "warning" : "accent"} /></div>
-          <span className="shrink-0 text-[12px] text-ink3 tabular-nums">{view.progress.done}/{view.progress.total} tahap</span>
+          <span className="shrink-0 text-[12px] text-ink3 tabular-nums">{progressText(view.progress)}</span>
         </div>
       )}
       {qcBadge}
-      {view.shortage && <p className="m-0 flex items-center gap-1 text-[12px] font-medium text-red"><PackageX size={12} aria-hidden /> Menunggu bahan: {view.shortage.items?.map((i) => i.name).join(", ")}</p>}
+      {view.shortage && <p data-testid="delay-status" className="m-0 flex items-center gap-1 text-[12px] font-medium text-red"><PackageX size={12} aria-hidden /> {delayStatusText("MATERIAL_SHORTAGE")}: {view.shortage.items?.map((i) => i.name).join(", ")}</p>}
       {gaps.length > 0 && (
         <ul data-testid="data-gaps" className="m-0 flex list-none flex-wrap gap-1 p-0">
           {gaps.map((g) => <li key={g} className="inline-flex items-center gap-1 rounded-chip bg-orangebg px-1.5 py-0.5 text-[11.5px] font-medium text-orange"><AlertTriangle size={11} aria-hidden /> {g}</li>)}
@@ -157,7 +161,7 @@ export function UnitCard({
   return (
     <article data-testid="unit-card" data-unit-code={view.unit.unitCode} data-priority={p.key} data-ganti-kain={gantiKain ? "true" : undefined}
       className={`relative w-full min-w-0 overflow-hidden rounded-card bg-surface shadow-sm ${view.bucket === "MENUNGGU_BAHAN" ? "ring-1 ring-orange/40" : ""} ${className}`}>
-      <CardStripes priority={view.plan?.priority ?? 0} gantiKain={gantiKain} />
+      <CardStripes priority={rank} gantiKain={gantiKain} />
       <button type="button" onClick={open} className="block w-full text-left hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent" aria-label={`Buka Unit 360 ${view.unit.unitCode}`}>
         {variant === "compact" ? (
           <>
@@ -165,7 +169,7 @@ export function UnitCard({
               <UnitPhoto photoUrl={view.unit.photoUrl} variant="compact" />
               <div className="min-w-0 flex-1 space-y-1.5">
                 {head}
-                <div className="flex flex-wrap items-center gap-1.5">{seq != null && <span data-testid="seq" className="rounded-chip bg-accentbg px-2 py-0.5 text-[11.5px] font-bold text-accent">Urutan {seq}</span>}<PriorityTag priority={view.plan?.priority ?? 0} />{seq == null && <Badge variant="neutral">{station}</Badge>}</div>
+                <div className="flex flex-wrap items-center gap-1.5">{seq != null && <span data-testid="seq" className="rounded-chip bg-accentbg px-2 py-0.5 text-[11.5px] font-bold text-accent">Urutan {seq}</span>}<PriorityTag priority={rank} />{seq == null && <Badge variant="neutral">{station}</Badge>}</div>
               </div>
             </div>
             {body}
@@ -174,7 +178,7 @@ export function UnitCard({
           <>
             <div className="relative">
               <UnitPhoto photoUrl={view.unit.photoUrl} variant="photo" />
-              <div className="absolute left-2 top-2"><PriorityTag priority={view.plan?.priority ?? 0} /></div>
+              <div className="absolute left-2 top-2"><PriorityTag priority={rank} /></div>
               <div className="absolute right-2 top-2"><span className="inline-flex items-center gap-1 rounded-chip bg-surface/95 px-2 py-0.5 text-[11.5px] font-semibold text-ink shadow-sm"><Wrench size={12} aria-hidden /> {station}</span></div>
             </div>
             <div className="px-3 pt-3 pl-5">{head}</div>

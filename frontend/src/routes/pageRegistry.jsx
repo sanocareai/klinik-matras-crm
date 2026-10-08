@@ -116,9 +116,9 @@ const ProductionSettings = lazy(() => import("../pages/bengkel/ProductionSetting
 
 // Halaman MANDIRI (P8): dirender App.jsx di luar sidebar/tab desktop — aplikasi PIC (PWA mobile) dan kiosk Andon TV. Tetap wajib login.
 export const STANDALONE_PAGES = [
-  { path: "/produksi/meja", render: () => <DemoPage><WorkerLane lane="TABLE" /></DemoPage> },
-  { path: "/produksi/corner", render: () => <DemoPage><WorkerLane lane="CORNER" /></DemoPage> },
-  { path: "/produksi/dokumentasi", render: () => <DemoPage><ProductionDocumentation /></DemoPage> },
+  { path: "/produksi/meja", render: (ctx) => <DemoPage slotBar><WorkerLane lane="TABLE" user={ctx?.user} onLogout={ctx?.onLogout} /></DemoPage> },
+  { path: "/produksi/corner", render: (ctx) => <DemoPage slotBar><WorkerLane lane="CORNER" user={ctx?.user} onLogout={ctx?.onLogout} /></DemoPage> },
+  { path: "/produksi/dokumentasi", render: (ctx) => <DemoPage slotBar><ProductionDocumentation user={ctx?.user} onLogout={ctx?.onLogout} /></DemoPage> },
   { path: "/produksi/ringkasan-saya", render: () => <ProductionKpi /> }, // P11 — ringkasan pekerjaan sendiri (PIC/dokumentasi/QC)
   { path: "/bengkel/andon", render: () => <ProductionAndon /> },
 ];

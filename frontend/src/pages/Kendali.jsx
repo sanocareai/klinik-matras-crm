@@ -294,12 +294,12 @@ export default function Kendali() {
           subtitle="Ringkasan lintas divisi — bengkel, armada, dan kualitas — dalam satu tampilan."
           health={
             units.blocked.length > 0
-              ? { label: `${units.blocked.length} unit terblokir`, tone: "warn" }
+              ? { label: `${units.blocked.length} pekerjaan tertunda`, tone: "warn" }
               : { label: "Operasional sehat", tone: "ok" }
           }
           stats={[
             { label: "Total unit aktif", value: units.totalUnits, hint: "di seluruh tahap" },
-            { label: "Unit terblokir", value: units.blocked.length, hint: "butuh tindakan" },
+            { label: "Pekerjaan tertunda", value: units.blocked.length, hint: "butuh tindakan" },
             {
               label: "Rework rate QC",
               value: rework.reworkRate == null ? "—" : `${Math.round(rework.reworkRate * 100)}%`,
@@ -346,13 +346,13 @@ export default function Kendali() {
           </div>
         </Card>
 
-        {/* Unit terblokir */}
+        {/* Pekerjaan tertunda */}
         <Card>
           <CardHeader>
-            <CardTitle>Unit Terblokir</CardTitle>
+            <CardTitle>Pekerjaan Tertunda</CardTitle>
           </CardHeader>
           {units.blocked.length === 0 ? (
-            <EmptyState icon={PackageCheck} title="Tidak ada unit terblokir" description="Semua unit berjalan normal di tahapnya masing-masing." />
+            <EmptyState icon={PackageCheck} title="Tidak ada pekerjaan tertunda" description="Semua unit berjalan normal di tahapnya masing-masing." />
           ) : (
             <div className="flex flex-col gap-2">
               {units.blocked.map((b) => (

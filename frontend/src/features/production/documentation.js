@@ -50,7 +50,7 @@ export function docBatches(items) {
 export function docFriendlyError(error) {
   const code = error?.code || "";
   if (error?.status === 0 || code === "NETWORK" || code === "TIMEOUT" || error?.name === "TypeError" || /Failed to fetch|NetworkError|Load failed/i.test(error?.message || "")) return "Koneksi terputus. Foto belum terkirim — periksa sinyal lalu tekan Kirim lagi.";
-  if (code === "DOC_WRITER_OFF") return "Produksi V2 belum aktif untuk unit ini — dokumentasi belum bisa dikirim.";
+  if (code === "DOC_WRITER_OFF") return "Dokumentasi unit ini belum aktif — belum bisa dikirim. Hubungi Production Lead.";
   if (code === "DOC_MEDIA_ALREADY_SUBMITTED") return "Foto ini sudah tercatat di unit ini. Hapus foto yang sama lalu kirim lagi.";
   if (code === "DOC_MEDIA_OTHER_UNIT") return "Foto ini sudah dipakai sebagai bukti unit lain. Ambil foto baru.";
   if (code === "DOC_MEDIA_NOT_FOUND") return "Ada foto yang belum selesai terunggah. Unggah ulang lalu kirim.";
@@ -61,3 +61,55 @@ export function docFriendlyError(error) {
 }
 // Kunci idempoten mengikuti NIAT kirim: dipakai ulang bila jaringan putus (isi sama), diganti setelah sukses atau ditolak server.
 export const isRetryableDocError = (error) => !error?.status || error.status === 0 || error.status >= 500;
+
+// ---------------------------------------------------------------------------------------------------------------------------------------
+// P12D — desain modern Aplikasi Dokumentasi (mode aplikasi, mobile-first). Hanya logika TAMPILAN murni di bawah; kontrak matriks/minimum/kekurangan
+// tetap milik backend (categories, missing, docs, totals dibaca apa adanya dari server). Tidak ada penyimpanan/antrean baru.
+// Bottom navigation: MAKSIMAL 4 (diuji). Urutan = urutan tampil.
+export const DOC_NAV_TABS = Object.freeze([
+  Object.freeze({ key: "unit", label: "Unit", icon: "Layers" }),
+  Object.freeze({ key: "kamera", label: "Kamera", icon: "Camera" }),
+  Object.freeze({ key: "draf", label: "Draf", icon: "CloudUpload" }),
+  Object.freeze({ key: "akun", label: "Akun", icon: "User" }),
+]);
+export const DOC_TAB_KEYS = Object.freeze(DOC_NAV_TABS.map((t) => t.key));
+export const docTabOf = (raw) => (DOC_TAB_KEYS.includes(raw) ? raw : "unit");
+export const DOC_GROUP_KEYS = Object.freeze(["BEFORE", "PROCESS", "AFTER"]);
+export const docGroupOf = (raw) => (DOC_GROUP_KEYS.includes(raw) ? raw : "BEFORE");
+
+export const fmtDocTime = (iso) => (iso ? new Date(iso).toLocaleString("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—");
+export const missingTotal = (missing) => (missing || []).reduce((n, m) => n + (Number(m.missing) || 0), 0);
+
+// Persentase kelengkapan dari angka SERVER (docs.satisfied / docs.required) — tidak dihitung ulang dari daftar kategori.
+export function docCompleteness(docs) {
+  const required = Number(docs?.required) || 0; const satisfied = Number(docs?.satisfied) || 0;
+  return { required, satisfied, pct: required > 0 ? Math.min(100, Math.round((satisfied / required) * 100)) : 0 };
+}
+// Chip status kartu unit: lengkap / kurang N / belum dimulai / berjalan (semua dari flag + missing server).
+export function docStatusChip(item) {
+  const flags = item?.docs?.flags || {}; const miss = missingTotal(item?.docs?.missing);
+  if (flags.lengkap) return { key: "LENGKAP", label: "Lengkap", tone: "green" };
+  if (miss > 0) return { key: "KURANG", label: `Kurang ${miss} foto`, tone: "red" };
+  if (flags.belumDimulai) return { key: "BELUM", label: "Belum dimulai", tone: "neutral" };
+  return { key: "BERJALAN", label: "Berjalan", tone: "accent" };
+}
+// Ringkasan satu kelompok (Before/Proses/After) dari kategori server: untuk segmen & tanda kurang.
+export function groupStats(categories, group) {
+  const cats = (categories || []).filter((c) => c.group === group && c.applicable);
+  return { applicable: cats.length, missing: cats.reduce((n, c) => n + (Number(c.missing) || 0), 0), photos: cats.reduce((n, c) => n + (Number(c.count) || 0), 0) };
+}
+// Kategori yang disarankan untuk "Ambil Foto": yang KURANG pertama di kelompok terpilih; kalau tidak ada, kategori berlaku pertama di kelompok;
+// kalau kelompok itu kosong, kekurangan pertama di mana pun. Mengembalikan null bila tidak ada kategori yang berlaku.
+export function suggestCategory(categories, group) {
+  const all = (categories || []).filter((c) => c.applicable);
+  const inGroup = all.filter((c) => c.group === group);
+  return inGroup.find((c) => c.status === "KURANG") || inGroup[0] || all.find((c) => c.status === "KURANG") || all[0] || null;
+}
+// Keterangan thumbnail: sumber, waktu, pengunggah — dari item matriks server apa adanya.
+export function thumbMeta(item) {
+  return { source: DOC_SOURCE_LABEL[item?.source] || item?.source || "—", time: fmtDocTime(item?.createdAt), actor: item?.actorName || "—" };
+}
+// Unit yang paling butuh foto lebih dulu (kurang terbanyak), lalu yang belum lengkap; urutan server dipertahankan untuk yang sama.
+export function sortForCamera(items) {
+  return [...(items || [])].map((it, i) => ({ it, i, m: missingTotal(it.docs?.missing) })).sort((a, b) => b.m - a.m || a.i - b.i).map((x) => x.it);
+}

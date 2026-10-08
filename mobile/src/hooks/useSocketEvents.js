@@ -2,13 +2,31 @@
 // frontend/src/features/inbox/hooks/useSocketEvents.js versi web. Dipasang
 // SEKALI di App.js (bukan per layar) supaya tetap aktif walau user pindah
 // dari Inbox ke Chat ke Customer.
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { getSocket } from "../lib/socket";
 import { useMessageStore } from "../store/messageStore";
 import { useConversationStore } from "../store/conversationStore";
 import { useSocketStatusStore } from "../store/socketStatusStore";
+import { AppState } from "react-native";
+import { queryClient } from "../lib/queryClient";
+import { buatPemulih, pesanTerakhirBasi } from "../lib/pemulihanDaftar";
 
 export function useSocketEvents() {
+  // Satu pemulih untuk seluruh hook: AppState aktif, socket tersambung ulang, dan update percakapan dengan pesan terakhir yang belum kita punya.
+  const pemulihRef = useRef(null);
+  if (!pemulihRef.current) pemulihRef.current = buatPemulih({ muatUlang: () => queryClient.invalidateQueries({ queryKey: ["conversations"] }) });
+  useEffect(() => {
+    const pemulih = pemulihRef.current;
+    const socket = getSocket();
+    let pernahPutus = false;
+    const onDisconnect = () => { pernahPutus = true; };
+    const onConnect = () => { if (pernahPutus) { pernahPutus = false; pemulih.minta(); } };
+    socket.on("disconnect", onDisconnect);
+    socket.on("connect", onConnect);
+    const sub = AppState.addEventListener("change", (s) => { if (s === "active") pemulih.minta(); });
+    return () => { socket.off("disconnect", onDisconnect); socket.off("connect", onConnect); sub.remove(); pemulih.batal(); };
+  }, []);
+
   // Status koneksi → banner "Menyambung ulang..." (SocketStatusBanner.js).
   // Socket.IO client sudah reconnect otomatis (reconnection:true di
   // lib/socket.js) — di sini cuma mencerminkan status itu ke UI.
@@ -40,6 +58,7 @@ export function useSocketEvents() {
         message.createdAt,
         message.direction === "INBOUND" ? 1 : 0,
         message.direction,
+        message,
       );
     }
 
@@ -53,6 +72,9 @@ export function useSocketEvents() {
     function handleConversationUpdate(payload) {
       if (!payload?.id) return;
       useConversationStore.getState().upsertConversation(payload);
+      // Payload slim tidak membawa pesan terakhir (isi/arah/centang). Balasan yang diketik dari WhatsApp di HP atau oleh sales lain tidak
+      // ikut message:new (hanya ke room chat yang dibuka) → muat ulang daftar supaya preview tidak basi.
+      if (pesanTerakhirBasi(useConversationStore.getState().conversationsById[payload.id])) pemulihRef.current.minta();
     }
 
     // Pesan yang SUDAH ada berubah kontennya (diedit/dihapus lewat WAHA

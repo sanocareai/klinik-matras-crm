@@ -5,6 +5,7 @@ import { ProgressBar } from "@/components/ui/progress.jsx";
 import { targetDateBadge } from "@/features/production/experience.js";
 import { dataGaps, isGantiKain, materialBadge, mattressInfo, mejaLabel, priorityMeta, salesNoteOf, stageText } from "@/features/production/unitCardModel.js";
 import { isPlanComplete } from "@/features/production/planDnd.js";
+import { delayStatusText, progressText, rankOfView, viewPresence, viewStatus } from "@/features/production/productionLabels.js";
 import { UnitPhoto } from "@/features/production/UnitCard.jsx";
 import { formatTanggal } from "@/utils/formatDate.js";
 
@@ -56,7 +57,9 @@ export function PlanCard({ view, seq = null, today, tomorrow, onOpen, handle = n
   if (!view) return null;
   const c = view.customer || {};
   const plan = view.plan || null;
-  const p = priorityMeta(plan?.priority ?? 0);
+  const p = priorityMeta(rankOfView(view));
+  const status = viewStatus(view);
+  const presence = viewPresence(view);
   const gantiKain = isGantiKain(view);
   const complete = isPlanComplete(view);
   const m = mattressInfo(view);
@@ -76,7 +79,7 @@ export function PlanCard({ view, seq = null, today, tomorrow, onOpen, handle = n
 
   return (
     <article data-testid="unit-card" data-card="plan" data-drag-card data-unit-code={view.unit.unitCode} data-priority={p.key} data-ganti-kain={gantiKain ? "true" : undefined} data-complete={complete ? "true" : undefined}
-      className={`@container relative w-full min-w-0 overflow-hidden rounded-card bg-surface shadow-sm ${view.bucket === "MENUNGGU_BAHAN" ? "ring-1 ring-orange/40" : ""} ${complete ? "opacity-60" : ""} ${dragging ? "opacity-40" : ""}`}>
+      className={`@container relative w-full min-w-0 shrink-0 overflow-hidden rounded-card bg-surface shadow-sm ${view.bucket === "MENUNGGU_BAHAN" ? "ring-1 ring-orange/40" : ""} ${complete ? "opacity-60" : ""} ${dragging ? "opacity-40" : ""}`}>
       <span aria-hidden data-testid="priority-stripe" className={`absolute inset-y-0 left-0 ${p.stripeClass}`} />
       {gantiKain && <span aria-hidden data-testid="ganti-kain-stripe" className="absolute inset-y-0 w-1 bg-orange" style={{ left: p.stripeWidth }} />}
       {showHandle && <div className="absolute right-2 top-2 z-10">{handle}</div>}
@@ -117,6 +120,8 @@ export function PlanCard({ view, seq = null, today, tomorrow, onOpen, handle = n
           </div>
 
           <div className="min-w-0 space-y-1.5" data-testid="plan-ops">
+            <Row label="Status" testid="row-status"><Badge variant={status.tone}>{status.label}</Badge>{status.detail && <span className="ml-1.5 text-[12px] text-ink3">{status.detail}</span>}</Row>
+            {presence && <Row label="Posisi" testid="row-presence"><span className={presence.key === "NOT_ARRIVED" ? "font-semibold text-orange" : ""}>{presence.label}</span></Row>}
             <Row label="Tahap" testid="row-stage">{stageText(view)}</Row>
             <Row label="Bahan" testid="row-material">{mat ? <Badge variant={mat.tone}>{mat.label}</Badge> : <span className="text-ink3">—</span>}</Row>
             <Row label="Target" testid="row-target">
@@ -131,10 +136,10 @@ export function PlanCard({ view, seq = null, today, tomorrow, onOpen, handle = n
             {view.progress && (
               <div className="flex items-center gap-2 pt-0.5" data-testid="row-progress">
                 <div className="flex-1"><ProgressBar value={progress} variant={view.shortage ? "warning" : "accent"} /></div>
-                <span className="shrink-0 text-[12.5px] font-semibold tabular-nums text-ink2">{view.progress.done}/{view.progress.total} tahap</span>
+                <span className="shrink-0 text-[12.5px] font-semibold tabular-nums text-ink2">{progressText(view.progress)}</span>
               </div>
             )}
-            {view.shortage && <p className="m-0 flex items-center gap-1 text-[12.5px] font-medium text-red"><PackageX size={13} aria-hidden /> Menunggu bahan: {view.shortage.items?.map((i) => i.name).join(", ")}</p>}
+            {view.shortage && <p data-testid="delay-status" className="m-0 flex items-center gap-1 text-[12.5px] font-medium text-red"><PackageX size={13} aria-hidden /> {delayStatusText("MATERIAL_SHORTAGE")}: {view.shortage.items?.map((i) => i.name).join(", ")}</p>}
             {gaps.length > 0 && (
               <ul data-testid="data-gaps" className="m-0 flex list-none flex-wrap gap-1 p-0">
                 {gaps.map((g) => <li key={g} className="inline-flex items-center gap-1 rounded-chip bg-orangebg px-1.5 py-0.5 text-[11.5px] font-medium text-orange"><AlertTriangle size={11} aria-hidden /> {g}</li>)}

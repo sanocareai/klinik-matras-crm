@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button.jsx";
 // ini punya tombol Setujui/Tolak (gerbang). SEKARANG murni VISIBILITAS — Produksi lihat apa yang sudah
 // ditandai dispatcher pagi ini, dan boleh membatalkan kalau keliru, tapi tidak perlu klik apa pun untuk
 // yang sudah benar (sudah berlaku duluan). Lihat catatan desain lengkap di services/morningPriority.js.
-const PRIORITY_LABEL = { NORMAL: "Normal", HIGH: "Tinggi", URGENT: "Mendesak", CRITICAL: "Kritis" };
+const PRIORITY_LABEL = { NORMAL: "Normal", HIGH: "Tinggi", URGENT: "Tinggi", CRITICAL: "Tinggi" }; // Mendesak/Kritis lama tampil Tinggi (nilai tersimpan tidak diubah)
 const PRIORITY_TONE = { NORMAL: "neutral", HIGH: "accent", URGENT: "orange", CRITICAL: "red" };
 
 export default function MorningPriorityApprovalPanel() {

@@ -125,7 +125,7 @@ export default function App() {
   // mengubah user — TabsProvider taruh `ctx` di dependency array useMemo-nya,
   // objek baru tiap render App akan bikin context tab ikut render ulang
   // sia-sia setiap kali (mis. tiap tick usePolling di halaman lain).
-  const tabsCtx = useMemo(() => ({ user, onUserUpdate: handleUserUpdate }), [user]);
+  const tabsCtx = useMemo(() => ({ user, onUserUpdate: handleUserUpdate, onLogout: handleLogout }), [user]); // onLogout: Akun di aplikasi lantai (halaman mandiri tanpa Layout)
 
   if (!user || sessionExpired) {
     return (

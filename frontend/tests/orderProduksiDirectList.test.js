@@ -29,7 +29,7 @@ test("filter ringan di baris saring halaman yang sama (satu tablist), bukan bila
   assert.match(WO, /data-testid=\{`order-scope-\$\{sc\.key\}`\}/);
   assert.match(WO, /title=\{onScopeChange \|\| scope \? "Order Produksi" : "Work Order"\}/);
   assert.doesNotMatch(WO, /Order Produksi Aktif|Riwayat Order Produksi/, "judul tunggal 'Order Produksi'");
-  assert.match(WO, /scope === "riwayat" \|\| scope === "semua" \? \[\]/, "status rinci hanya untuk Aktif");
+  assert.match(WO, /scope === "riwayat" \? \[\] : scope === "aktif" \? DISPLAY_STATUS_TABS\.filter\(\(t\) => t\.key !== "TERKIRIM"\) : DISPLAY_STATUS_TABS/, "Riwayat tanpa tab status; Aktif tanpa Terkirim; Semua = 4 status");
 });
 
 test("membaca order asli TIDAK butuh Production V2 / Mode Latihan: daftar hanya memakai getWorkOrders", () => {
@@ -40,14 +40,14 @@ test("membaca order asli TIDAK butuh Production V2 / Mode Latihan: daftar hanya 
 
 test("loading, kosong, dan galat tampil langsung pada daftar", () => {
   assert.match(WO, /TableSkeletonRows/); assert.match(WO, /<EmptyState[\s\S]{0,200}Tidak ada unit yang cocok/);
-  assert.match(WO, /\{error && <div className="rounded-btn bg-redbg[^"]*">\{error\}<\/div>\}/);
-  assert.match(WO, /\.catch\(\(e\) => setError\(e\.message\)\)/);
+  assert.match(WO, /\{error && <div role="alert" className="rounded-btn bg-redbg[^"]*">\{error\}<\/div>\}/);
+  assert.match(WO, /catch \(e\) \{ if \(id === reqRef\.current\) setError\(e\.message\); \}/);
 });
 
 test("klik baris/kartu membuka Unit 360 (drawer kanonis), bukan halaman lama; unit non-V2 mendapat fallback data order asli", () => {
   assert.match(WO, /<TR key=\{u\.id\} clickable data-testid="order-row"[^>]*onClick=\{\(\) => setDetailUnit\(u\)\}/);
-  assert.match(WO, /data-testid="order-row" data-unit-code=\{u\.unitCode\}\s*onClick=\{\(\) => setDetailUnit\(u\)\}/, "kartu mobile juga");
-  assert.match(WO, /<UnitOverviewDrawer unitId=\{openUnitId\} onClose=\{\(\) => setDetailUnit\(null\)\} onChanged=\{load\} \/>/);
+  assert.match(WO, /data-testid="order-row" data-unit-code=\{u\.unitCode\} data-priority=\{pr\.key\}\s*onClick=\{\(\) => setDetailUnit\(u\)\}/, "kartu mobile juga");
+  assert.match(WO, /<UnitOverviewDrawer unitId=\{openUnitId\} onClose=\{\(\) => setDetailUnit\(null\)\} onChanged=\{reload\} \/>/);
   assert.doesNotMatch(WO, /<Modal\b|navigate\(|useNavigate/, "tanpa modal ringkas terpisah dan tanpa navigasi ke halaman/tab lain");
   const drawer = strip(src("features", "production", "UnitOverviewDrawer.jsx"));
   assert.match(drawer, /import \{ isOutsideV2 \} from "@\/features\/production\/unit360Availability\.js"/);

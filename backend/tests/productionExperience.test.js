@@ -183,7 +183,7 @@ test("kolom Status Produksi (P9B.1): keadaan fisik, bukan status jadwal; tanpa m
   assert.equal(commandCenterColumn({ bucket: "LAPISAN", ...withPlan, next: { stepNo: 8 } }), "LAPISAN", "lapisan selesai, uji tekstur belum dikirim -> Lapisan Jadi");
   assert.equal(commandCenterColumn({ bucket: "QC", ...withPlan, next: { stepNo: 9 } }), "UJI_TEKSTUR");
   assert.equal(commandCenterColumn({ bucket: "QC", ...withPlan, next: { stepNo: 7, wait: "AWAITING_QC" } }), "UJI_TEKSTUR", "rework menunggu QC tetap di uji tekstur walau stepNo pemicu-nya 7");
-  assert.deepEqual(COMMAND_CENTER_COLUMNS.map((c) => c.label), ["Akan Masuk — Pickup Terjadwal", "Dalam Perjalanan", "Tiba / Belum Mulai", "Tahap Bongkar", "Uji Fondasi", "Fondasi Jadi", "Lapisan Jadi", "Uji Tekstur Sebelum Corner", "Corner", "Siap Kirim"]);
+  assert.deepEqual(COMMAND_CENTER_COLUMNS.map((c) => c.label), ["Akan Masuk — Pickup Terjadwal", "Dalam Perjalanan", "Tiba / Belum Mulai", "Tahap Bongkar", "Uji Fondasi", "Fondasi Jadi", "Lapisan Jadi", "Uji Tekstur Sebelum Corner", "Corner", "Serah ke Gudang"]);
   assert.ok(!COMMAND_CENTER_COLUMNS.some((c) => c.key === "QC"), "kolom QC dilebur");
   assert.equal(commandCenterColumn({ bucket: "CORNER", ...withPlan, next: { stepNo: 11 } }), "CORNER");
   assert.equal(commandCenterColumn({ bucket: "HANDOFF", ...withPlan, next: { stepNo: 12, wait: "AWAITING_WAREHOUSE" } }), "SIAP_KIRIM");
@@ -240,8 +240,18 @@ test("audit READER P10B: semua pembaca production_step_evidence_v2 teraudit; bar
   const readers = report.findings.filter((f) => f.kind === "STEP_EVIDENCE_READER" || f.kind === "STEP_EVIDENCE_SQL_READER");
   assert.ok(readers.length >= 4, "pembaca Prisma + SQL terdeteksi: " + readers.map((r) => r.file + ":" + r.disposition).join(","));
   assert.deepEqual([...new Set(readers.map((r) => r.file))].sort(), [
-    "src/routes/productionEvidenceMedia.js", "src/services/productionDocumentationService.js", "src/services/productionMaterialReturnService.js", "src/services/productionReportingService.js", "src/services/productionStepCommandService.js",
+    "src/routes/productionEvidenceMedia.js", "src/services/productionComponentNoteService.js", "src/services/productionDocumentationService.js", "src/services/productionMaterialReturnService.js", "src/services/productionReportingService.js", "src/services/productionStepCommandService.js",
   ]);
+  // slice 3: pembaca Catatan Komponen = TINJAUAN bersyarat (bukan sekadar allowlist): filter DOC_ wajib, SQL hanya kolom media, tanpa penulisan lifecycle/stok/BOM/retur.
+  const CMP = "src/services/productionComponentNoteService.js";
+  const cmpSrc = loadBackendSources(backendRoot);
+  const noDocFilter = new Map(cmpSrc); noDocFilter.set(CMP, cmpSrc.get(CMP).replace(/stepCode: { not: { startsWith: "DOC_" } }/, "stepCode: undefined"));
+  assert.ok(auditProductionExperienceWriters(noDocFilter).findings.some((f) => f.disposition === "MISSING_DOC_FILTER_component_notes"), "saran komponen tanpa filter DOC_ = pelanggaran");
+  const sqlPayload = new Map(cmpSrc); sqlPayload.set(CMP, cmpSrc.get(CMP).replace("e.media @>", "e.payload @>").replace("e.media @>", "e.payload @>"));
+  assert.ok(auditProductionExperienceWriters(sqlPayload).findings.some((f) => f.disposition === "COMPONENT_SQL_READER_MUST_BE_MEDIA_ONLY"), "SQL komponen membaca payload = pelanggaran");
+  const stockWrite = new Map(cmpSrc); stockWrite.set(CMP, cmpSrc.get(CMP) + "\nawait tx.stockMovement.create({ data: {} });\nawait tx.plannedBOMLine.create({ data: {} });\nawait tx.productionRun.update({ where: {}, data: {} });\n");
+  const sw = auditProductionExperienceWriters(stockWrite).findings.filter((f) => !f.ok).map((f) => f.disposition);
+  assert.ok(sw.includes("FORBIDDEN_stockMovement") && sw.includes("FORBIDDEN_plannedBOMLine") && sw.includes("FORBIDDEN_productionRun"), sw.join(","));
   assert.equal(report.findings.filter((f) => !f.ok).length, 0);
   const sources = loadBackendSources(backendRoot);
   const STEP = "src/services/productionStepCommandService.js";

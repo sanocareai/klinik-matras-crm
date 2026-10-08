@@ -3,7 +3,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import {
-  kekuranganForm, bisaDiajukan, alasanNonaktif, opsiStatusBayar, cekBerkas, formDariKlaim, buktiDariKlaim, bodyDariForm,
+  kekuranganForm, bisaDiajukan as bisaDiajukanMentah, alasanNonaktif as alasanNonaktifMentah, opsiStatusBayar, labelVerifikasi, FIELD_PEMBATAL_VERIFIKASI, PESAN_BELUM_VERIFIKASI, cekBerkas, formDariKlaim, buktiDariKlaim, bodyDariForm,
   simpanDrafLokal, bacaDrafLokal, hapusDrafLokal, STATUS_BUKTI, METODE_KLAIM, JENIS_BAYAR, nominalOtomatis, jenisAwal, jenisDariNominal, dampakNominal, STATUS_BISA_DIEDIT, lunasDicegat, PESAN_LUNAS_BUTUH_PEMBAYARAN,
 } from "../src/lib/klaimLunas.js";
 
@@ -11,6 +11,10 @@ const LENGKAP = { paymentDate: "2026-10-01", amount: "1500000", method: "TRANSFE
 const OK = [{ key: "a", status: STATUS_BUKTI.TERSIMPAN }];
 const toko = () => { const m = new Map(); return { getString: (k) => m.get(k), set: (k, v) => m.set(k, v), delete: (k) => m.delete(k), m }; };
 const baca = (p) => fs.readFileSync(new URL(p, import.meta.url), "utf8").split("\r\n").join("\n");
+
+// Konfirmasi verifikasi Sales (6 Okt 2026) tercentang untuk SEMUA pernyataan lama; perilaku konfirmasinya sendiri diuji di bagian bawah berkas.
+const bisaDiajukan = (f, b, o = {}) => bisaDiajukanMentah(f, b, { sudahVerifikasi: true, ...o });
+const alasanNonaktif = (f, b, o = {}) => alasanNonaktifMentah(f, b, { sudahVerifikasi: true, ...o });
 
 test("Tombol nonaktif tanpa catatan / nominal valid / metode / rekening Transfer / bukti", () => {
   assert.equal(bisaDiajukan(LENGKAP, OK), true);
@@ -117,7 +121,7 @@ test("Komponen: 'Ajukan Klaim Lunas', 'Bukti Pembayaran' (bukan hanya 'Bukti Tra
   assert.doesNotMatch(k, /Bukti Transfer/);
   assert.doesNotMatch(k, /Tandai Lunas/);
   assert.match(k, /disabled=\{!aktifTombol\}/);
-  assert.match(k, /bisaDiajukan\(form, bukti, \{ mengirim, online, sisa: info\?\.sisa \?\? null \}\)/);
+  assert.match(k, /bisaDiajukan\(form, bukti, \{ mengirim, online, sisa: info\?\.sisa \?\? null, sudahVerifikasi \}\)/);
   assert.match(k, /testID=\{`jenis-\$\{j\.value\}`\}/);
   assert.match(k, /Ajukan Pembayaran DP/);
   assert.match(k, /testID="dampak-nominal"/);
@@ -174,4 +178,41 @@ test("Jenis pembayaran DP / Pelunasan: nominal otomatis, jenis dari nominal, dam
   assert.equal(bisaDiajukan({ ...LENGKAP, amount: "2100000" }, OK, { sisa: 2090000 }), false);
   assert.equal(kekuranganForm({ ...LENGKAP, amount: "2100000" }, OK).length, 0, "tanpa info sisa, tidak ada batas di sisi klien");
   assert.ok(!("jenis" in bodyDariForm({ ...LENGKAP, jenis: "DP" })), "jenis hanya bantuan UI, tidak dikirim ke server");
+});
+
+// ── KONFIRMASI VERIFIKASI SALES (6 Okt 2026) ────────────────────────────────────────────────────────────────────────
+test("Mobile: konfirmasi verifikasi WAJIB — tanpa centang Ajukan nonaktif; dengan centang aktif; hanya boolean true persis", () => {
+  assert.equal(bisaDiajukanMentah(LENGKAP, OK), false);
+  assert.equal(bisaDiajukanMentah(LENGKAP, OK, { sudahVerifikasi: true }), true);
+  for (const v of ["true", 1, {}, null, undefined]) assert.equal(bisaDiajukanMentah(LENGKAP, OK, { sudahVerifikasi: v }), false, String(v));
+});
+
+test("Mobile: centang tidak menolong isian kurang / bukti antre / offline / sedang mengirim", () => {
+  const V = { sudahVerifikasi: true };
+  assert.equal(bisaDiajukanMentah({ ...LENGKAP, amount: "" }, OK, V), false);
+  assert.equal(bisaDiajukanMentah(LENGKAP, [...OK, { status: STATUS_BUKTI.ANTRE }], V), false);
+  assert.equal(bisaDiajukanMentah(LENGKAP, OK, { ...V, online: false }), false);
+  assert.equal(bisaDiajukanMentah(LENGKAP, OK, { ...V, mengirim: true }), false);
+});
+
+test("Mobile: alasan nonaktif — isian kurang didahulukan, lalu pesan konfirmasi", () => {
+  assert.equal(alasanNonaktifMentah(LENGKAP, OK), PESAN_BELUM_VERIFIKASI);
+  assert.equal(alasanNonaktifMentah(LENGKAP, OK, { sudahVerifikasi: true }), null);
+  assert.equal(alasanNonaktifMentah({ ...LENGKAP, note: "" }, OK), "Catatan pembayaran wajib diisi");
+  assert.match(alasanNonaktifMentah(LENGKAP, OK, { online: false }), /Tidak ada koneksi/, "offline lebih mendesak daripada konfirmasi");
+});
+
+test("Mobile: label mengikuti metode dan konfirmasi dibatalkan oleh perubahan nominal/tanggal/metode/rekening", () => {
+  assert.match(labelVerifikasi("CASH"), /uang tunai/);
+  assert.match(labelVerifikasi("TRANSFER"), /mutasi rekening/);
+  assert.deepEqual([...FIELD_PEMBATAL_VERIFIKASI].sort(), ["amount", "cashAccountId", "method", "paymentDate"]);
+});
+
+test("Sheet mobile: kotak centang ada (hanya saat bisa diedit), reset oleh perubahan angka, dan ajukan() menegakkannya", () => {
+  const k = fs.readFileSync(new URL("../src/components/order/OrderKlaimLunas.js", import.meta.url), "utf8");
+  assert.match(k, /testID="konfirmasi-verifikasi"/);
+  assert.match(k, /accessibilityRole="checkbox"/);
+  assert.match(k, /\{bisaDiedit \? \(\s*<TouchableOpacity\s+style=\{\[styles\.verif/);
+  assert.match(k, /useEffect\(\(\) => \{ setSudahVerifikasi\(false\); \}, \[kunciVerifikasi, klaim\?\.id\]\)/);
+  assert.match(k, /if \(!bisaDiajukan\(form, bukti, \{ mengirim, online, sisa: info\?\.sisa \?\? null, sudahVerifikasi \}\)\) return;/);
 });

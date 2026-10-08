@@ -14,7 +14,7 @@ import { resolveUnitPhotosBulk } from "./productionUnitPhotoService.js";
 import { usedQtyByMaterial } from "./productionUnitOverviewService.js";
 import { applicableStepsFor } from "./productionStepCommandService.js";
 import { BOARD_DEFAULTS, PRIORITY_LABEL, stationLabel } from "../lib/domain/productionBoard.js";
-import { STEP_BY_NO, stepNoForStage } from "../lib/domain/productionSteps.js";
+import { STEP_BY_NO, isSkippedEvidence, stepNoForStage } from "../lib/domain/productionSteps.js";
 import { buildDocumentationMatrix, deriveNextStepNo, isDocumentationRow, LEGACY_PHOTO_PREFIX, parseDocRows } from "../lib/domain/productionDocumentation.js";
 import {
   DATE_BASES, METRICS, MIN_SAMPLE, SLA, SLA_NOTE, STATUS_BUCKETS, activeFilterLabels, bucketKey, computeMetrics, drillRows, formatMinutes, inPeriod, keyInPeriod,
@@ -98,7 +98,10 @@ export async function loadFacts(prisma, { unitIds, now = new Date() }) {
     const fgAccepted = fg.filter((h) => h.status === "ACCEPTED" && h.acceptedAt).sort((a, b) => b.acceptedAt - a.acceptedAt)[0];
     const fgOffered = fg.filter((h) => h.status === "OFFERED").sort((a, b) => b.offeredAt - a.offeredAt)[0];
     const handoffPhase = run.phases.find((p) => p.phase === "HANDOFF");
-    const step12 = stepEv.filter((e) => e.stepNo === 12).at(-1);
+    // Tahap yang DILEWATI (mode adaptasi) bukan pekerjaan: tidak dihitung sebagai penyelesaian tahap 12 maupun durasi; QC tidak dilakukan bukan lulus/gagal.
+    const step12 = stepEv.filter((e) => e.stepNo === 12 && !isSkippedEvidence(e)).at(-1);
+    const skippedSteps = [...new Set(stepEv.filter(isSkippedEvidence).map((e) => e.stepNo))].length;
+    const qcNotPerformed = !!run.adaptationPolicy && run.operations.some((o) => o.status === "SKIPPED" && o.planSnapshot?.qcNotPerformed) && run.inspections.filter((q) => q.result !== "PENDING").length === 0;
     const finishedAt = step12?.createdAt ?? handoffPhase?.startedAt ?? null;
     const readyAt = fgAccepted?.acceptedAt ?? (run.status === "COMPLETED" ? run.completedAt : null) ?? null;
     const arrivedAt = inbound?.acceptedAt ?? (run.origin === "WORKSHOP_BORN" ? run.createdAt : null);
@@ -160,6 +163,7 @@ export async function loadFacts(prisma, { unitIds, now = new Date() }) {
       operatorId: plan?.operator?.id ?? null, operatorName: plan?.operator?.user?.name ?? null, cornerOperatorId: plan?.cornerOperator?.id ?? null, cornerOperatorName: plan?.cornerOperator?.user?.name ?? null,
       currentStepNo: deriveNextStepNo(recorded) && !finishedAt ? Math.min(12, deriveNextStepNo(recorded)) : (recorded.size ? Math.max(...recorded) : (run.status === "PENDING_ARRIVAL" ? null : 1)),
       statusBucket, delayReason, waitingMaterial: openShortage || waitingIssue, openException: run.exceptions.length > 0,
+      adaptation: !!run.adaptationPolicy, skippedSteps, qcNotPerformed,
       qc, docs: { required: matrix.totals.required, satisfied: matrix.totals.satisfied, missingTotal: matrix.missingTotal, lengkap: matrix.flags.lengkap, photos: matrix.totals.photos },
       materials, extraMaterial: materials.some((m) => m.supplemental) || planIssues.some((i) => i.reworkInspectionId), waste,
       returns: { pending: pendingRet.length, partial: retRows.filter((r) => r.status === "RECEIVED" && r.receivedQty != null && Number(r.receivedQty) < Number(r.qty) - 1e-9).length, done: retRows.filter((r) => r.status === "RECEIVED").length, oldestPendingAt: pendingRet.map((r) => r.requestedAt).sort((a, b) => a - b)[0] ?? null },
@@ -219,9 +223,10 @@ export const UNIT_COLUMNS = [
   { key: "status", header: "Status", tipe: "teks" }, { key: "step", header: "Tahap", tipe: "angka" },
   { key: "planned", header: "Direncanakan", tipe: "tanggal" }, { key: "arrived", header: "Masuk", tipe: "waktu" }, { key: "started", header: "Mulai", tipe: "waktu" }, { key: "finished", header: "Selesai", tipe: "waktu" }, { key: "ready", header: "Siap Kirim", tipe: "waktu" },
   { key: "target", header: "Target Selesai", tipe: "waktu" }, { key: "tatMin", header: "TAT Masuk→Siap (mnt)", tipe: "angka" }, { key: "late", header: "Terlambat", tipe: "teks" },
+  { key: "completion", header: "Cara Selesai", tipe: "teks" }, { key: "skippedSteps", header: "Tahap Dilewati", tipe: "angka" },
   { key: "qcFirst", header: "QC Pertama", tipe: "teks" }, { key: "qcFails", header: "QC Gagal (x)", tipe: "angka" }, { key: "docPct", header: "Dokumentasi (%)", tipe: "angka" }, { key: "docMissing", header: "Foto Kurang", tipe: "angka" },
   { key: "returnPending", header: "Retur Pending", tipe: "angka" }, { key: "wasteQty", header: "Waste (qty)", tipe: "angka" }, { key: "extraMaterial", header: "Tambahan Bahan", tipe: "teks" },
-  { key: "activeMin", header: "Aktif (mnt)", tipe: "angka" }, { key: "pauseMin", header: "Jeda (mnt)", tipe: "angka" }, { key: "blockedMin", header: "Blokir (mnt)", tipe: "angka" },
+  { key: "activeMin", header: "Aktif (mnt)", tipe: "angka" }, { key: "pauseMin", header: "Jeda (mnt)", tipe: "angka" }, { key: "blockedMin", header: "Tertunda (mnt)", tipe: "angka" },
 ];
 export function unitRow(f, now) {
   const lateOpen = f.lateOpen(now); const lateFin = f.finishedAt && f.targetCompleteAt && f.finishedAt > f.targetCompleteAt;
@@ -229,7 +234,8 @@ export function unitRow(f, now) {
     runId: f.runId, unitId: f.unitId, unitCode: f.unitCode, orderNumber: f.orderNumber, service: f.serviceLabel, station: f.stationCode ? stationLabel(f.stationCode) : null, pic: f.operatorName, corner: f.cornerOperatorName,
     priority: PRIORITY_LABEL[f.priority] || "Normal", status: STATUS_BUCKETS[f.statusBucket], step: f.currentStepNo, planned: f.plannedDate, arrived: iso(f.arrivedAt), started: iso(f.startedAt), finished: iso(f.finishedAt), ready: iso(f.readyAt), target: iso(f.targetCompleteAt),
     tatMin: f.readyAt && f.arrivedAt ? minutesBetween(f.arrivedAt, f.readyAt) : null, late: lateOpen ? "Ya (belum selesai)" : lateFin ? "Ya (selesai terlambat)" : f.targetCompleteAt ? "Tidak" : "—",
-    qcFirst: f.qc.first === "PASS" ? "Lulus" : f.qc.first === "FAIL" ? "Gagal" : f.qc.first || "Belum QC", qcFails: f.qc.fails, docPct: f.docs.required ? round1((f.docs.satisfied / f.docs.required) * 100) : null, docMissing: f.docs.missingTotal,
+    completion: f.adaptation ? (f.runStatus === "COMPLETED" ? (f.skippedSteps > 0 ? "Adaptasi (tahap dilewati)" : "Adaptasi (semua tahap dikerjakan)") : "Mode adaptasi") : "Proses lengkap", skippedSteps: f.skippedSteps ?? 0,
+    qcFirst: f.qcNotPerformed ? "Tidak dilakukan" : f.qc.first === "PASS" ? "Lulus" : f.qc.first === "FAIL" ? "Gagal" : f.qc.first || "Belum QC", qcFails: f.qc.fails, docPct: f.docs.required ? round1((f.docs.satisfied / f.docs.required) * 100) : null, docMissing: f.docs.missingTotal,
     returnPending: f.returns.pending, wasteQty: Math.round(f.waste.reduce((s, w) => s + w.qty, 0) * 10000) / 10000, extraMaterial: f.extraMaterial ? "Ya" : "Tidak",
     activeMin: f.timing.activeMin, pauseMin: f.timing.pauseMin, blockedMin: f.timing.blockedMin,
   };
@@ -304,11 +310,11 @@ export function stationsDoc(ctx) {
   doc.tables = [
     { key: "stations", title: "Meja 1–4", columns: [
       { key: "label", header: "Meja", tipe: "teks" }, { key: "capacityPerDay", header: "Kapasitas/hari", tipe: "angka" }, { key: "activeDays", header: "Hari aktif", tipe: "angka" }, { key: "scheduled", header: "Unit masuk (terjadwal)", tipe: "angka" }, { key: "finished", header: "Selesai", tipe: "angka" },
-      { key: "utilizationPct", header: "Utilisasi (%)", tipe: "angka" }, { key: "avgDurationMin", header: "Rata-rata durasi (mnt)", tipe: "angka" }, { key: "durationN", header: "n durasi", tipe: "angka" }, { key: "activeMin", header: "Aktif (mnt)", tipe: "angka" }, { key: "pauseMin", header: "Jeda (mnt)", tipe: "angka" }, { key: "blockedMin", header: "Blokir (mnt)", tipe: "angka" },
+      { key: "utilizationPct", header: "Utilisasi (%)", tipe: "angka" }, { key: "avgDurationMin", header: "Rata-rata durasi (mnt)", tipe: "angka" }, { key: "durationN", header: "n durasi", tipe: "angka" }, { key: "activeMin", header: "Aktif (mnt)", tipe: "angka" }, { key: "pauseMin", header: "Jeda (mnt)", tipe: "angka" }, { key: "blockedMin", header: "Tertunda (mnt)", tipe: "angka" },
       { key: "lateFinished", header: "Selesai terlambat", tipe: "angka" }, { key: "lateOpen", header: "Terlambat (berjalan)", tipe: "angka" }, { key: "manualOrderUnits", header: "Unit urutan manual", tipe: "angka" }, { key: "manualOrderPct", header: "Urutan manual (%)", tipe: "angka" }, { key: "bottleneck", header: "Bottleneck tahap", tipe: "teks" }],
       rows: rows.map(({ runIds, stages, ...r }) => ({ ...r, utilizationPct: fmt(r.utilizationPct), bottleneck: r.bottleneck ? `${r.bottleneck.label} (${formatMinutes(r.bottleneck.avgMin)}, n=${r.bottleneck.n})` : `Data belum cukup (n<${MIN_SAMPLE} per tahap)` })),
       note: "Utilisasi = unit terjadwal ÷ (kapasitas/hari × hari aktif). Hari aktif = hari berjadwal dalam periode (semua meja). Sel kosong = Data belum cukup." },
-    { key: "stages", title: "Durasi per tahap (tahap selesai dalam periode)", columns: [{ key: "station", header: "Meja", tipe: "teks" }, { key: "stage", header: "Tahap", tipe: "teks" }, { key: "n", header: "n", tipe: "angka" }, { key: "avgMin", header: "Rata-rata (mnt)", tipe: "angka" }, { key: "pauseMin", header: "Jeda (mnt)", tipe: "angka" }, { key: "blockedMin", header: "Blokir (mnt)", tipe: "angka" }],
+    { key: "stages", title: "Durasi per tahap (tahap selesai dalam periode)", columns: [{ key: "station", header: "Meja", tipe: "teks" }, { key: "stage", header: "Tahap", tipe: "teks" }, { key: "n", header: "n", tipe: "angka" }, { key: "avgMin", header: "Rata-rata (mnt)", tipe: "angka" }, { key: "pauseMin", header: "Jeda (mnt)", tipe: "angka" }, { key: "blockedMin", header: "Tertunda (mnt)", tipe: "angka" }],
       rows: rows.flatMap((r) => r.stages.sort((a, b) => a.stepNo - b.stepNo).map((s) => ({ station: r.label, stage: `${s.stepNo}. ${s.label}`, n: s.n, avgMin: s.n >= MIN_SAMPLE ? s.avgMin : null, pauseMin: s.pauseMin, blockedMin: s.blockedMin }))), empty: "Belum ada tahap selesai pada periode ini." },
   ];
   doc.definitions = defsFor(["target_vs_done", "on_time"]).concat([{ key: "utilisasi", label: "Utilisasi meja", formula: "Unit terjadwal ÷ (kapasitas per hari × hari aktif).", basis: DATE_BASES.planned, note: null }]);
@@ -323,7 +329,7 @@ export function operatorsDoc(ctx, { onlyOperatorUserId = null } = {}) {
   doc.tables = [
     { key: "operators", title: "PIC (urut nama — tanpa ranking tunggal; volume & periode sebagai konteks)", columns: [
       { key: "name", header: "PIC", tipe: "teks" }, { key: "role", header: "Peran", tipe: "teks" }, { key: "assigned", header: "Penugasan", tipe: "angka" }, { key: "finished", header: "Selesai", tipe: "angka" }, { key: "active", header: "Aktif", tipe: "angka" }, { key: "late", header: "Terlambat", tipe: "angka" },
-      { key: "pauseMin", header: "Jeda (mnt)", tipe: "angka" }, { key: "blockedMin", header: "Blokir (mnt)", tipe: "angka" }, { key: "qcN", header: "n QC", tipe: "angka" }, { key: "firstPassPct", header: "Lulus QC pertama (%)", tipe: "angka" }, { key: "reworkPct", header: "Rework (%)", tipe: "angka" }, { key: "docN", header: "n dok.", tipe: "angka" }, { key: "docPct", header: "Kelengkapan dok. (%)", tipe: "angka" }],
+      { key: "pauseMin", header: "Jeda (mnt)", tipe: "angka" }, { key: "blockedMin", header: "Tertunda (mnt)", tipe: "angka" }, { key: "qcN", header: "n QC", tipe: "angka" }, { key: "firstPassPct", header: "Lulus QC pertama (%)", tipe: "angka" }, { key: "reworkPct", header: "Rework (%)", tipe: "angka" }, { key: "docN", header: "n dok.", tipe: "angka" }, { key: "docPct", header: "Kelengkapan dok. (%)", tipe: "angka" }],
       rows: rows.map(({ runIds, stages, ...r }) => ({ ...r, role: r.role === "MEJA" ? "PIC Meja" : "PIC Corner" })), note: `Persentase hanya tampil bila n ≥ ${MIN_SAMPLE}; selain itu "Data belum cukup". Rework/QC hanya untuk PIC Meja.`, empty: "Belum ada penugasan PIC pada filter ini." },
     { key: "operatorStages", title: "Durasi per tahap per PIC", columns: [{ key: "name", header: "PIC", tipe: "teks" }, { key: "stage", header: "Tahap", tipe: "teks" }, { key: "n", header: "n", tipe: "angka" }, { key: "avgMin", header: "Rata-rata (mnt)", tipe: "angka" }], rows: rows.flatMap((r) => r.stages.map((s) => ({ name: r.name, stage: `${s.stepNo}. ${s.label}`, n: s.n, avgMin: s.avgMin }))), empty: "Belum ada tahap selesai pada periode ini." },
   ];
@@ -399,7 +405,7 @@ export function unitDetailDoc(ctx, runId) {
   doc.unit = { runId: f.runId, unitId: f.unitId, unitCode: f.unitCode };
   doc.tables = [
     { key: "unit", title: "Ringkasan unit", columns: [{ key: "label", header: "Indikator", tipe: "teks" }, { key: "value", header: "Nilai", tipe: "teks" }], rows: UNIT_COLUMNS.map((c) => ({ label: c.header, value: formatCell(row[c.key], c.tipe) })) }, // sudah diformat (waktu WIB, angka id-ID): layar = berkas
-    { key: "stages", title: "Rincian tahap (WIB)", columns: [{ key: "stage", header: "Tahap", tipe: "teks" }, { key: "operator", header: "PIC", tipe: "teks" }, { key: "startedAt", header: "Mulai", tipe: "waktu" }, { key: "completedAt", header: "Selesai", tipe: "waktu" }, { key: "elapsedMin", header: "Durasi (mnt)", tipe: "angka" }, { key: "activeMin", header: "Aktif (mnt)", tipe: "angka" }, { key: "pauseMin", header: "Jeda (mnt)", tipe: "angka" }, { key: "blockedMin", header: "Blokir (mnt)", tipe: "angka" }],
+    { key: "stages", title: "Rincian tahap (WIB)", columns: [{ key: "stage", header: "Tahap", tipe: "teks" }, { key: "operator", header: "PIC", tipe: "teks" }, { key: "startedAt", header: "Mulai", tipe: "waktu" }, { key: "completedAt", header: "Selesai", tipe: "waktu" }, { key: "elapsedMin", header: "Durasi (mnt)", tipe: "angka" }, { key: "activeMin", header: "Aktif (mnt)", tipe: "angka" }, { key: "pauseMin", header: "Jeda (mnt)", tipe: "angka" }, { key: "blockedMin", header: "Tertunda (mnt)", tipe: "angka" }],
       rows: f.stages.sort((a, b) => a.stepNo - b.stepNo).map((s) => ({ stage: `${s.stepNo}. ${s.label}`, operator: s.operator === "CORNER" ? f.cornerOperatorName : f.operatorName, startedAt: iso(s.startedAt), completedAt: iso(s.completedAt), elapsedMin: s.elapsedMin, activeMin: s.activeMin, pauseMin: s.pauseMin, blockedMin: s.blockedMin })), empty: "Belum ada tahap dikerjakan." },
     { key: "materials", title: "Bahan: rencana vs aktual", columns: [{ key: "code", header: "Kode", tipe: "teks" }, { key: "name", header: "Bahan", tipe: "teks" }, { key: "uom", header: "Satuan", tipe: "teks" }, { key: "planned", header: "Rencana", tipe: "angka" }, { key: "issued", header: "Diserahkan", tipe: "angka" }, { key: "used", header: "Terpakai", tipe: "angka" }, { key: "returned", header: "Retur", tipe: "angka" }, { key: "waste", header: "Waste", tipe: "angka" }, { key: "supplemental", header: "Tambahan", tipe: "teks" }],
       rows: f.materials.map((m) => ({ ...m, supplemental: m.supplemental ? "Ya" : "Tidak" })), empty: "Tidak ada rencana bahan." },

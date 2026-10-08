@@ -192,6 +192,11 @@ function buildQuery(params) {
   return q ? "?" + q : "";
 }
 
+// Histori waktu rute/stop (fase 2): sumber aksi + WAKTU KEJADIAN (saat driver menekan tombol; antrean offline mempertahankannya). Waktu diterima = catatan server.
+function execHeaders(idempotencyKey, meta = {}) {
+  return { "Idempotency-Key": idempotencyKey, "X-Action-Source": "DRIVER_APP", ...(meta.occurredAt ? { "X-Event-Occurred-At": meta.occurredAt } : {}) };
+}
+
 function executionMeta(data, meta = {}) {
   return {
     ...data,
@@ -245,10 +250,51 @@ export const api = {
   // Mulai SATU rute sekaligus — foto muatan sekali, semua job ASSIGNED di
   // rute jadi EN_ROUTE (lihat POST /armada/routes/:id/start).
   startRoute: (routeId, data = {}, idempotencyKey, meta = {}) =>
-    request(`/armada/routes/${routeId}/start`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(executionMeta(data, meta)) }),
+    request(`/armada/routes/${routeId}/start`, { method: "POST", headers: execHeaders(idempotencyKey, meta), body: JSON.stringify(executionMeta(data, meta)) }),
+  // Histori waktu rute & stop (Indonesia + WIB, disusun server).
+  getRouteTimeline: (routeId) => request(`/armada/routes/${routeId}/timeline`),
   // Link Google Maps rute (sumber = manualMapsUrl admin, fallback auto
   // multi-stop) — sama presedennya dengan broadcast WA.
   getRouteMap: (routeId) => request(`/armada/routes/${routeId}/map`),
+
+  // Checklist Persiapan Perjalanan (7 Okt 2026) — halaman "Persiapan
+  // Perjalanan" sebelum RouteStartCard mengizinkan "Mulai Perjalanan".
+  // `idempotencyKey` sebagai FORM FIELD (bukan header) — backend membaca
+  // keduanya (lihat requireIdempotencyKey), dan uploadFile() di sini belum
+  // mendukung header kustom per-panggilan (headers-nya tetap hardcode
+  // Authorization/X-Device-Id, lihat definisinya di atas).
+  getRoutePrepChecklist: (routeId) => request(`/armada/routes/${routeId}/prep-checklist`),
+  submitRoutePrepChecklistProof: (routeId, itemId, file, { note, idempotencyKey } = {}) =>
+    uploadFile(`/armada/routes/${routeId}/prep-checklist/items/${itemId}/proof`, file, { ...(note && { note }), idempotencyKey }, "photo"),
+  // Bukti Kelengkapan Standar (7 Okt 2026) — TERPISAH dari item di atas:
+  // SELALU wajib (tidak perlu admin menyusun apa pun), lihat
+  // routePrepChecklist.js. Backend menerima sampai 2 foto field "photos",
+  // tapi File.upload() di sini hanya mengirim SATU file per panggilan (lihat
+  // uploadFile di atas) — cukup, karena syarat gerbang hanya "minimal 1
+  // foto". Submit ulang MENIMPA (web mendukung 2 foto lewat fetch+FormData
+  // biasa, lihat frontend/src/api.js — platform beda, kontrak server sama).
+  submitRouteKelengkapan: (routeId, file, { note } = {}) =>
+    uploadFile(`/armada/routes/${routeId}/kelengkapan`, file, { ...(note && { note }) }, "photos"),
+  // Item TANPA foto wajib ("cek kondisi kasur" dkk) — tidak ada file untuk
+  // dikirim lewat File.upload() (expo-file-system), jadi fetch+FormData
+  // text-only biasa (bukan masalah "unsupported FormData part" — itu
+  // khusus PART BERISI FILE {uri,name,type}, field teks biasa aman di New
+  // Architecture). TIDAK lewat request() di atas — Content-Type di sana
+  // di-hardcode "application/json" dan akan merusak boundary multipart.
+  confirmRoutePrepChecklistItemDone: async (routeId, itemId, { note, idempotencyKey } = {}) => {
+    const fd = new FormData();
+    if (note) fd.append("note", note);
+    fd.append("idempotencyKey", idempotencyKey);
+    const res = await fetch(`${serverUrl}/api/armada/routes/${routeId}/prep-checklist/items/${itemId}/proof`, {
+      method: "POST",
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: fd,
+    });
+    const text = await res.text();
+    let parsed; try { parsed = JSON.parse(text); } catch {}
+    if (!res.ok) throw Object.assign(new Error(parsed?.error || `Error ${res.status}`), { status: res.status, code: parsed?.code });
+    return parsed;
+  },
 
   // Tampilan admin/owner (10 Sep 2026) — dipakai AdminHomeScreen. SEMUA
   // endpoint SUDAH ADA & dipakai dispatcher di web (ArmadaDashboard/
@@ -271,10 +317,10 @@ export const api = {
   getRoutePath: (points) =>
     request(`/armada/route-path${buildQuery({ points: points.map(([lat, lng]) => `${lat},${lng}`).join(";") })}`),
   getArmadaIssues: (params = {}) => request(`/armada/issues${buildQuery(params)}`),
-  startArmadaJob: (jobId, data = {}, idempotencyKey, meta = {}) => request(`/armada/jobs/${jobId}/start`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(executionMeta(data, meta)) }),
-  arriveArmadaJob: (jobId, data = {}, idempotencyKey, meta = {}) => request(`/armada/jobs/${jobId}/arrive`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(executionMeta(data, meta)) }),
-  completeArmadaJob: (jobId, data, idempotencyKey, meta = {}) => request(`/armada/jobs/${jobId}/complete`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(executionMeta(data, meta)) }),
-  failArmadaJob: (jobId, data, idempotencyKey, meta = {}) => request(`/armada/jobs/${jobId}/fail`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(executionMeta(data, meta)) }),
+  startArmadaJob: (jobId, data = {}, idempotencyKey, meta = {}) => request(`/armada/jobs/${jobId}/start`, { method: "POST", headers: execHeaders(idempotencyKey, meta), body: JSON.stringify(executionMeta(data, meta)) }),
+  arriveArmadaJob: (jobId, data = {}, idempotencyKey, meta = {}) => request(`/armada/jobs/${jobId}/arrive`, { method: "POST", headers: execHeaders(idempotencyKey, meta), body: JSON.stringify(executionMeta(data, meta)) }),
+  completeArmadaJob: (jobId, data, idempotencyKey, meta = {}) => request(`/armada/jobs/${jobId}/complete`, { method: "POST", headers: execHeaders(idempotencyKey, meta), body: JSON.stringify(executionMeta(data, meta)) }),
+  failArmadaJob: (jobId, data, idempotencyKey, meta = {}) => request(`/armada/jobs/${jobId}/fail`, { method: "POST", headers: execHeaders(idempotencyKey, meta), body: JSON.stringify(executionMeta(data, meta)) }),
   recordJobPayment: (jobId, data) => request(`/armada/jobs/${jobId}/payment`, { method: "POST", body: JSON.stringify(data) }),
   // Lapor revisi di lokasi (18 September 2026) — port dari frontend/src/api.js,
   // lihat catatan panjang di backend routes/armada.js POST /jobs/:id/report-revision.

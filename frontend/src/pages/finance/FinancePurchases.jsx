@@ -32,6 +32,8 @@ import { CardList, RowCard } from "@/features/finance/cards.jsx";
 import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
 import { specPembelian } from "@/features/finance/detailSpecs.js";
 import TombolExportExcel, { labelFilterAktif } from "@/features/finance/ExportExcel.jsx";
+import { resetSaatBuka } from "@/features/finance/resetSaatBuka.jsx";
+import { pihakPembelian, peringatanSupplierBeda } from "@/features/finance/pembelianPihak.js";
 
 function teksModePembelian(mode) {
   return mode === "LANGSUNG" ? "Bayar langsung" : mode === "REIMBURSEMENT" ? "Reimbursement" : "Utang";
@@ -433,8 +435,15 @@ export default function FinancePurchases() {
                             <TD className="max-w-0 w-full pl-4">
                               <span className="line-clamp-2 break-words" title={p.description}>{p.description}</span>
                               {p.reimburseTo && <span className="block truncate text-[11px] text-ink3" title={`ditalangi ${p.reimburseTo.name}`}>ditalangi {p.reimburseTo.name}</span>}
-                              {p.supplier && <span className="block truncate text-[11px] text-ink3" title={`dari ${p.supplier.name}`}>dari {p.supplier.name}</span>}
-                              {!p.supplier && p.payeeName && p.payeeName.trim().toLowerCase() !== (p.reimburseTo?.name || "").trim().toLowerCase() && <span className="block truncate text-[11px] text-ink3" title={`dari ${p.payeeName}`}>dari {p.payeeName}</span>}
+                              {(() => {
+                                const pihak = pihakPembelian(p);
+                                return (
+                                  <>
+                                    {pihak.supplier && <span className="block truncate text-[11px] text-ink3" title={`supplier ${pihak.supplier}`}>dari {pihak.supplier}</span>}
+                                    {pihak.dibeliDari && <span className="block truncate text-[11px] text-ink3" title={`dibeli dari ${pihak.dibeliDari}`} data-testid="dibeli-dari">{pihak.supplier ? "dibeli dari " : "dari "}{pihak.dibeliDari}</span>}
+                                  </>
+                                );
+                              })()}
                             </TD>
                             {(tier === "full" || tier === "reduced") && <TD className="min-w-0">{klasifikasi}</TD>}
                             {tier === "full" && <TD className="min-w-0">{pembayaran}</TD>}
@@ -521,7 +530,7 @@ export default function FinancePurchases() {
   );
 }
 
-function ModalPembelian({ open, onClose, kategori, rekening, suppliers, onSubmit }) {
+function ModalPembelianIsi({ open, onClose, kategori, rekening, suppliers, onSubmit }) {
   const [f, setF] = useState({
     date: "", amount: "", description: "", categoryId: "", division: "",
     mode: "LANGSUNG", cashAccountId: "", supplierId: "", reimburseToId: "", payeeName: "", notes: "", receiptUrl: "", ...BIAYA_KOSONG,
@@ -541,10 +550,16 @@ function ModalPembelian({ open, onClose, kategori, rekening, suppliers, onSubmit
       description="Pengajuan lahir berstatus Menunggu Persetujuan dan belum menyentuh buku besar."
       className="w-[520px]"
       footer={
-        <>
-          <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
-          <TombolAksi onClick={() => onSubmit(denganBiaya(f, f.mode === "LANGSUNG"))} disabled={!valid}>Ajukan</TombolAksi>
-        </>
+        <div className="flex w-full flex-col gap-2">
+          {/* Peringatan di FOOTER (selalu terlihat) — di badan dialog yang bisa di-scroll ia tersembunyi di bawah lipatan. */}
+          {peringatanSupplierBeda(suppliers, f) && (
+            <p role="alert" data-testid="peringatan-supplier-beda" className="rounded-lg bg-orangebg px-3 py-2 text-[12.5px] leading-snug text-orange">{peringatanSupplierBeda(suppliers, f)}</p>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
+            <TombolAksi onClick={() => onSubmit(denganBiaya(f, f.mode === "LANGSUNG"))} disabled={!valid}>Ajukan</TombolAksi>
+          </div>
+        </div>
       }
     >
       <div className="space-y-3">
@@ -904,3 +919,6 @@ function RiwayatDpList({ items, arah, onBatalkan }) {
     </div>
   );
 }
+
+// Formulir dikosongkan setiap dibuka (lihat features/finance/resetSaatBuka.jsx).
+const ModalPembelian = resetSaatBuka(ModalPembelianIsi);

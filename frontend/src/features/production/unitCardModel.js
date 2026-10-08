@@ -3,13 +3,13 @@
 // view Command Center yang sudah dikirim server — modul ini hanya MENERJEMAHKAN, tidak menghitung KPI sendiri.
 import { STEP_BY_NO, bucketStyle } from "@/features/production/experience.js";
 import { PRODUCT_TYPE_LABELS } from "@/utils/format.js";
+import { rankOfView } from "@/features/production/productionLabels.js";
 
-// Prioritas: merah untuk Tinggi/Mendesak TIDAK hanya lewat warna — ada ikon + teks + penanda tepi (lihat UnitCard).
+// Prioritas pengguna: Normal · Tinggi · Komplain. Argumen = PERINGKAT (rankOfView): 3 = Komplain (ComplaintCase resmi dari server), 1/2 = Tinggi (nilai lama Mendesak tampil Tinggi), 0 = Normal.
+// Tanda tidak hanya warna: label + ikon + garis kiri (lebar berbeda). Kelas .plan-* ada di index.css. Overdue = badge TERPISAH, bukan perubahan prioritas.
 export function priorityMeta(priority) {
-  // Nilai KANONIS dari plan.priority (0/1/2) — tidak pernah disimpulkan dari catatan/teks. Overdue = badge TERPISAH, bukan perubahan prioritas.
-  // Tanda tidak hanya warna: label + ikon + garis kiri (lebar berbeda). Kelas .plan-* ada di index.css.
-  if (priority === 2) return { key: "URGENT", label: "Mendesak", tone: "red", icon: "urgent", edge: "border-l-[4px] border-l-red", badgeClass: "plan-prio-urgent", stripeClass: "plan-stripe-urgent", stripeWidth: 7 };
-  if (priority === 1) return { key: "HIGH", label: "Tinggi", tone: "red", icon: "high", edge: "border-l-[4px] border-l-red", badgeClass: "plan-prio-high", stripeClass: "plan-stripe-high", stripeWidth: 5 };
+  if (priority >= 3) return { key: "COMPLAINT", label: "Komplain", tone: "red", icon: "urgent", edge: "border-l-[4px] border-l-red", badgeClass: "plan-prio-urgent", stripeClass: "plan-stripe-urgent", stripeWidth: 7 };
+  if (priority >= 1) return { key: "HIGH", label: "Tinggi", tone: "orange", icon: "high", edge: "border-l-[4px] border-l-orange", badgeClass: "plan-prio-high", stripeClass: "plan-stripe-high", stripeWidth: 5 };
   return { key: "NORMAL", label: "Normal", tone: "neutral", icon: null, edge: "border-l-[4px] border-l-transparent", badgeClass: "plan-prio-normal", stripeClass: "plan-stripe-normal", stripeWidth: 4 };
 }
 
@@ -64,7 +64,20 @@ export function backlogOf(columns) {
       if (item.runId && !item.plan?.stationCode) out.push(item);
     }
   }
-  return out.sort((a, b) => (b.plan?.priority ?? 0) - (a.plan?.priority ?? 0));
+  return out.sort((a, b) => rankOfView(b) - rankOfView(a));
+}
+
+// View sintetis dari kartu backlog yang BELUM punya Run tetapi boleh dijadwalkan (onboarding): dipakai mesin seret (ghost + keputusan drop) dan formulir Jadwalkan.
+// `runId` sintetis ("unit:<id>") hanya pengenal klien; server menerima `unitId` (POST /production-v2/plans) dan membuka Run di transaksi yang sama dengan penjadwalan.
+export function viewOfOnboardCard(item) {
+  const c = item?.card; if (!c) return null;
+  return {
+    runId: `unit:${c.unit.id}`, onboardUnitId: c.unit.id, plan: null,
+    suggestedPriority: c.priority?.key === "NORMAL" ? 0 : 1,
+    unit: { id: c.unit.id, unitCode: c.unit.unitCode, merk: c.unit.merk ?? null, ukuran: c.unit.ukuran ?? null, photoUrl: c.unit.photoUrl ?? null },
+    customer: { name: c.customer?.name ?? null, orderNumber: c.customer?.orderNumber ?? null, salesServices: c.customer?.salesServices || [] },
+    priority: c.priority, unitStatus: c.unitStatus, orderStatus: c.orderStatus, presence: c.presence, bucket: null, next: null, progress: null,
+  };
 }
 
 // Pemetaan item kartu QC (antrean P6) -> view Command Center yang sama (lewat runId) supaya kartu QC = kartu Status.

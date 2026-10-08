@@ -241,6 +241,32 @@ export function stepNoForStage(stage) {
 }
 
 // ---------------------------------------------------------------------------
+// Flow adaptasi (slice 2): tahap boleh DILEWATI lewat aksi sah; dicatat sebagai bukti berstatus SKIPPED (tanpa media, tanpa hasil uji).
+// Bukti SKIPPED tetap baris immutable di production_step_evidence_v2 (payload.outcome = "SKIPPED"); progres membedakan dikerjakan vs dilewati.
+// ---------------------------------------------------------------------------
+export const SKIP_OUTCOME = "SKIPPED";
+export const SKIP_REASON = "Adaptasi sistem";
+export const isSkippedEvidence = (e) => e?.payload?.outcome === SKIP_OUTCOME;
+export const skippedEvidencePayload = (note = null) => ({ outcome: SKIP_OUTCOME, reason: SKIP_REASON, policy: "ADAPTATION_V1", note: note || null });
+
+// Nomor tahap blueprint yang ditutup bila SATU tahap routing dilewati. isLastPreQc: modul terakhir sebelum QC juga menutup tahap 8 (uji tekstur PIC).
+export function stepsCoveredByStage(stage, { isLastPreQc = false } = {}) {
+  if (!stage) return [];
+  switch (stage.code) {
+    case "pre_teardown_test": return [1, 2];
+    case "teardown": return [3];
+    case "foundation_test": return [4];
+    case "diagnosis": return [5];
+    case "corner_sewing": return [10, 11];
+    case "finished": return [12];
+    default: break;
+  }
+  if (stage.requiresQc) return [];
+  if (stage.phase === "MODULE") return [Number(stage.sequence) <= 10 ? 6 : 7, ...(isLastPreQc ? [8] : [])];
+  return [];
+}
+
+// ---------------------------------------------------------------------------
 // Derivasi aksi berikutnya (murni). state:
 //   { runStatus, currentPhase, qcCompleted, unitStatus, handoffPhaseStatus, exceptionOpen,
 //     activeOp: { stageCode, stagePhase, stageSequence, status, isLastPreQc } | null,
@@ -309,7 +335,10 @@ export function deriveNextAction(state) {
 
   const target = state.target;
   if (!target) return wait("NONE", "NO_TARGET");
-  if (target.requiresQc) return wait("QC", "AWAITING_QC", { stepNo: 8 });
+  // Mode adaptasi: semua tahap sudah tuntas -> tinggal "Selesaikan Produksi" (pratinjau + konfirmasi). Tidak ada tahap yang diulang.
+  if (state.adaptation && target.done) return wait("TABLE", "READY_TO_FINISH", { stepNo: 12 });
+  // Mode adaptasi: Meja -> Corner TETAP berjalan tanpa putusan QC. Tahap 9 "Kirim ke Corner" (bukti foto) mencatat gerbang QC sebagai TIDAK DILAKUKAN (bukan lulus, bukan di-waive).
+  if (target.requiresQc) return state.adaptation ? { actor: "TABLE", stepNo: 9, action: "HANDOFF", qcNotPerformed: true } : wait("QC", "AWAITING_QC", { stepNo: 8 });
   if (target.isPostQc) {
     if (target.code === "corner_sewing") {
       if (!state.step9SinceQc) return { actor: "TABLE", stepNo: 9, action: "HANDOFF" };
@@ -335,7 +364,7 @@ export const ANDON_BUCKETS = Object.freeze([
   { key: "ANTREAN", label: "Antrean", tone: "neutral" },
   { key: "BONGKAR", label: "Proses Bongkar", tone: "info" },
   { key: "DIAGNOSA", label: "Diagnosa", tone: "info" },
-  { key: "MENUNGGU_BAHAN", label: "Menunggu Bahan", tone: "danger" },
+  { key: "MENUNGGU_BAHAN", label: "Tertunda — menunggu bahan", tone: "danger" },
   { key: "FONDASI", label: "Fondasi Baru", tone: "info" },
   { key: "LAPISAN", label: "Lapisan Baru", tone: "info" },
   { key: "QC", label: "QC / Rework", tone: "warning" },
@@ -389,7 +418,7 @@ export const COMMAND_CENTER_COLUMNS = Object.freeze([
   { key: "LAPISAN", label: "Lapisan Jadi" },
   { key: "UJI_TEKSTUR", label: "Uji Tekstur Sebelum Corner" },
   { key: "CORNER", label: "Corner" },
-  { key: "SIAP_KIRIM", label: "Siap Kirim" },
+  { key: "SIAP_KIRIM", label: "Serah ke Gudang" }, // tahap kerja (unit Diproses menunggu Gudang) — BUKAN status Siap Kirim (itu status order/unit)
 ]);
 
 // view: hasil toRunView (punya .plan, .next, .bucket). Mengembalikan null untuk SELESAI (sudah diserahkan tuntas —

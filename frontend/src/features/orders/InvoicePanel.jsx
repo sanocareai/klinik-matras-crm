@@ -12,6 +12,7 @@ import { formatTanggalPendek } from "@/utils/formatDate.js";
 import { cn } from "@/lib/utils.js";
 import { useResiAktif } from "@/features/resi/useResiAktif.js";
 import { DP_PERSEN } from "@/features/resi/logika.js";
+import { MODE_DP, hitungDpDariInput, isianAwalDp, gantiModeDp } from "./invoiceDpLogic.js";
 
 // ─── PANEL INVOICE (31 Agustus 2026) ────────────────────────────────────────
 // Komponen ini SENGAJA tidak menghitung apa pun. Seluruh nominal & status
@@ -88,7 +89,12 @@ function buatTeksInvoice(v) {
     baris.push(`Diskon ${nominal.diskonPersen}%${nominal.promoCode ? ` (${nominal.promoCode})` : ""}: -${rp(nominal.nilaiDiskon)}`);
   }
   if (nominal.ongkir) baris.push(`Ongkir: ${rp(nominal.ongkir)}`);
-  baris.push(``, `*TOTAL: ${rp(nominal.totalTagihan)}*`);
+  if (nominal.modeDP) {
+    // Invoice DP: headline = DP yang diminta sekarang; total order hanya info (sama dengan PDF).
+    baris.push(``, `*TAGIHAN DP: ${rp(nominal.dpTarget)}*`, `(Total keseluruhan order: ${rp(nominal.totalTagihan)})`);
+  } else {
+    baris.push(``, `*TOTAL: ${rp(nominal.totalTagihan)}*`);
+  }
   // Rincian per transaksi (2 Sep 2026) — kalau lebih dari 1 pembayaran
   // (mis. DP lalu pelunasan), teks WA ikut sebutkan satu-satu, konsisten
   // dengan PDF-nya, bukan cuma angka gabungan.
@@ -100,7 +106,7 @@ function buatTeksInvoice(v) {
   }
   baris.push(
     `Sudah dibayar: ${rp(nominal.dibayar)}`,
-    `*Sisa: ${rp(nominal.sisa)}*`,
+    nominal.modeDP ? `*Sisa DP: ${rp(nominal.dpKurang)}*` : `*Sisa: ${rp(nominal.sisa)}*`,
   );
   if (invoice.dueDate) baris.push(``, `Jatuh tempo: ${formatTanggalPendek(invoice.dueDate)}`);
   if (order.pickupConfirmedDate || order.pickupEstimate) {
@@ -128,6 +134,12 @@ export default function InvoicePanel({ orderId, onChanged }) {
   const [mergeLoading, setMergeLoading] = useState(false);
   const [attachingId, setAttachingId] = useState(null);
   const [detachingId, setDetachingId] = useState(null);
+  // Jenis tagihan yang dipilih Sales (6 Okt 2026): null = otomatis; "DP" | "TOTAL" = pilihan eksplisit. Dikirim ke server pada lihat/PDF/kirim
+  // supaya dokumen yang DIKIRIM sama dengan yang tampil. dpTarget order TIDAK pernah dihapus oleh pilihan ini.
+  const [jenis, setJenis] = useState(null);
+  const [formDp, setFormDp] = useState(false);
+  const [dpDraft, setDpDraft] = useState("");
+  const [dpMode, setDpMode] = useState(MODE_DP.PERSEN); // DP diisi dalam PERSEN dari total atau langsung NOMINAL (Rp); yang disimpan selalu nominal
 
   useEffect(() => {
     if (!orderId) return;
@@ -143,7 +155,7 @@ export default function InvoicePanel({ orderId, onChanged }) {
   async function ubah(data, namaAksi) {
     setAksi(namaAksi);
     try {
-      const r = await api.updateOrderInvoice(orderId, data);
+      const r = await api.updateOrderInvoice(orderId, data, jenis);
       setView(r);
       setError(null);
       onChanged?.(r);
@@ -167,7 +179,7 @@ export default function InvoicePanel({ orderId, onChanged }) {
   async function previewPdf() {
     setAksi("PREVIEW");
     try {
-      const { blob } = await api.getOrderInvoicePdf(orderId);
+      const { blob } = await api.getOrderInvoicePdf(orderId, view?.nominal?.jenisTagihan);
       const url = URL.createObjectURL(blob);
       window.open(url, "_blank");
       // Revoke ditunda — tab baru butuh waktu memuat blob-nya SEBELUM url-nya
@@ -184,7 +196,7 @@ export default function InvoicePanel({ orderId, onChanged }) {
   async function downloadPdf() {
     setAksi("DOWNLOAD");
     try {
-      const { blob, namaFile } = await api.getOrderInvoicePdf(orderId);
+      const { blob, namaFile } = await api.getOrderInvoicePdf(orderId, view?.nominal?.jenisTagihan);
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url; a.download = namaFile; a.click();
@@ -258,10 +270,56 @@ export default function InvoicePanel({ orderId, onChanged }) {
     }
   }
 
+  // Ganti jenis tagihan dokumen. Hanya mengganti TAMPILAN/dokumen — tidak mengubah order.
+  async function gantiJenis(k) {
+    setAksi("JENIS");
+    try {
+      const r = await api.getOrderInvoice(orderId, k);
+      setView(r); setJenis(k); setFormDp(false); setError(null);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setAksi(null);
+    }
+  }
+
+  // Pilih DP: bila DP sudah disepakati → langsung; bila belum → form (default 30% dari total, bisa diganti ke nominal), disimpan sebagai
+  // "DP disepakati" order (satu-satunya tempat kesepakatan DP disimpan).
+  function bukaFormDp(dpTarget = null) {
+    const awalIsi = isianAwalDp({ total: view?.nominal?.totalTagihan || 0, dpTarget });
+    setDpMode(awalIsi.mode); setDpDraft(awalIsi.nilai); setFormDp(true); setError(null);
+  }
+  function pilihDp() {
+    const n = view?.nominal;
+    if (n?.bisaDP) return gantiJenis("DP");
+    if (!(n?.dpTarget > 0)) bukaFormDp();
+  }
+  function ubahModeDp(ke) {
+    if (ke === dpMode) return;
+    setDpDraft(gantiModeDp({ dari: dpMode, ke, nilai: dpDraft, total: view?.nominal?.totalTagihan || 0 }));
+    setDpMode(ke);
+  }
+
+  async function simpanDp() {
+    const hitung = hitungDpDariInput({ mode: dpMode, nilai: dpDraft, total: view?.nominal?.totalTagihan || 0 });
+    if (!hitung.ok) { setError(hitung.galat); return; }
+    setAksi("SIMPAN_DP");
+    try {
+      await api.updateOrder(view.orders?.[0]?.id || orderId, { dpTarget: hitung.nominal });
+      const r = await api.getOrderInvoice(orderId, "DP");
+      setView(r); setJenis("DP"); setFormDp(false); setError(null);
+      onChanged?.(r);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setAksi(null);
+    }
+  }
+
   async function kirimWa() {
     setAksi("KIRIM");
     try {
-      const r = await api.sendOrderInvoice(orderId);
+      const r = await api.sendOrderInvoice(orderId, view?.nominal?.jenisTagihan);
       setView(r);
       setError(null);
       onChanged?.(r);
@@ -443,6 +501,75 @@ export default function InvoicePanel({ orderId, onChanged }) {
         ) : null}
         {nominal.ongkir > 0 && <BarisUang label={resiTampil ? "Ongkir Tambahan" : "Ongkir"} value={formatRupiah(nominal.ongkir)} />}
 
+        {/* PEMILIH JENIS TAGIHAN (6 Okt 2026) — dulu tidak ada pilihan sama sekali: DP muncul "otomatis" hanya bila ada DP disepakati DAN sudah ada
+            pembayaran. Sekarang Sales memilih dokumen yang mau ditagihkan: Total/Pelunasan atau DP (uang muka). */}
+        {!dibatalkan && !nominal.lunas && (
+          <div className="mb-2.5 rounded-lg bg-inset p-2" data-testid="pilih-jenis-tagihan">
+            <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wide text-ink3">Jenis tagihan</p>
+            <div className="flex gap-1.5" role="radiogroup" aria-label="Jenis tagihan">
+              {[["TOTAL", "Total / Pelunasan"], ["DP", "DP (uang muka)"]].map(([k, label]) => {
+                const aktif = nominal.jenisTagihan === k;
+                const dpSudahTerpenuhi = k === "DP" && nominal.dpTarget > 0 && !nominal.bisaDP;
+                const gabunganTanpaDp = k === "DP" && orders.length > 1 && !nominal.bisaDP;
+                return (
+                  <button
+                    key={k} type="button" role="radio" aria-checked={aktif} data-testid={"jenis-tagihan-" + k}
+                    disabled={!!aksi || dpSudahTerpenuhi || gabunganTanpaDp}
+                    onClick={() => (k === "DP" ? pilihDp() : gantiJenis("TOTAL"))}
+                    className={cn(
+                      "h-9 flex-1 rounded-lg border text-[12px] font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                      aktif ? "border-accent bg-accentbg text-accent" : "border-line bg-surface text-ink2 hover:border-accent",
+                    )}
+                  >{label}</button>
+                );
+              })}
+            </div>
+            {nominal.dpTarget > 0 && !nominal.bisaDP && !nominal.dibayarTidakRinci && (
+              <p className="mt-1.5 text-[11px] text-ink3">DP {formatRupiah(nominal.dpTarget)} sudah terpenuhi — tagihan berikutnya berupa pelunasan.</p>
+            )}
+            {orders.length > 1 && !nominal.bisaDP && (
+              <p className="mt-1.5 text-[11px] text-ink3">Invoice gabungan: atur "DP disepakati" di tiap order untuk menagih DP.</p>
+            )}
+            {formDp && (() => {
+              const hitung = hitungDpDariInput({ mode: dpMode, nilai: dpDraft, total: nominal.totalTagihan });
+              return (
+                <div className="mt-2 flex flex-col gap-1.5" data-testid="form-dp-invoice">
+                  <div className="flex items-center justify-between gap-2">
+                    <label htmlFor="invoice-dp-nilai" className="text-[11px] font-medium text-ink2">DP yang disepakati</label>
+                    <div className="flex gap-1" role="radiogroup" aria-label="Isi DP dalam">
+                      {[[MODE_DP.PERSEN, "Persen (%)"], [MODE_DP.NOMINAL, "Nominal (Rp)"]].map(([k, label]) => (
+                        <button key={k} type="button" role="radio" aria-checked={dpMode === k} data-testid={"dp-mode-" + k} onClick={() => ubahModeDp(k)}
+                          className={cn("h-7 rounded-md border px-2 text-[11px] font-semibold", dpMode === k ? "border-accent bg-accentbg text-accent" : "border-line bg-surface text-ink2")}>{label}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <input
+                      id="invoice-dp-nilai" inputMode={dpMode === MODE_DP.PERSEN ? "decimal" : "numeric"} value={dpDraft}
+                      onChange={(e) => setDpDraft(e.target.value.replace(dpMode === MODE_DP.PERSEN ? /[^0-9.,]/g : /[^0-9]/g, ""))}
+                      placeholder={dpMode === MODE_DP.PERSEN ? "mis. 30" : "mis. 1500000"}
+                      className="h-9 min-w-0 flex-1 rounded-lg border border-line bg-surface px-3 text-[13px] tabular-nums text-ink outline-none focus:border-accent"
+                    />
+                    <button type="button" onClick={simpanDp} disabled={!!aksi || !hitung.ok} data-testid="simpan-dp-invoice"
+                      className="h-9 rounded-lg bg-accent px-3 text-[12px] font-semibold text-white disabled:opacity-50">Simpan & Pakai</button>
+                    <button type="button" onClick={() => setFormDp(false)} disabled={!!aksi}
+                      className="h-9 rounded-lg bg-surface px-3 text-[12px] font-semibold text-ink2">Batal</button>
+                  </div>
+                  <p className={cn("text-[11px]", hitung.ok ? "text-ink3" : "text-red")} data-testid="pratinjau-dp" role={hitung.ok ? undefined : "alert"}>
+                    {hitung.ok
+                      ? <>= <strong className="text-ink">{formatRupiah(hitung.nominal)}</strong> ({String(hitung.persen).replace(".", ",")}% dari total {formatRupiah(nominal.totalTagihan)})</>
+                      : hitung.galat}
+                  </p>
+                </div>
+              );
+            })()}
+            {!formDp && nominal.modeDP && orders.length === 1 && (
+              <button type="button" onClick={() => bukaFormDp(nominal.dpTarget)} disabled={!!aksi} data-testid="ubah-dp-invoice"
+                className="mt-1.5 text-[11px] font-semibold text-accent hover:underline">Ubah DP ({formatRupiah(nominal.dpTarget)})</button>
+            )}
+          </div>
+        )}
+
         {/* modeDP (16 Sep 2026, laporan owner: "customer kadang mau
             invoice DP dulu") — SEBELUMNYA headline SELALU total order
             PENUH walau baru fase DP, dpTarget cuma catatan kecil di
@@ -486,7 +613,7 @@ export default function InvoicePanel({ orderId, onChanged }) {
 
             {/* DP disepakati — hanya jalur "terpenuhi" sejak modeDP ada
                 (kasus "kurang" sekarang jadi headline di atas). */}
-            {nominal.dpTarget > 0 && nominal.sumber === "ledger" && (
+            {nominal.dpTarget > 0 && nominal.sumber === "ledger" && !nominal.bisaDP && (
               <p className="mt-2 rounded-lg bg-greenbg px-2.5 py-2 text-[11px] leading-relaxed text-ink">
                 DP disepakati <strong>{formatRupiah(nominal.dpTarget)}</strong> — <strong className="text-green">terpenuhi.</strong>
               </p>

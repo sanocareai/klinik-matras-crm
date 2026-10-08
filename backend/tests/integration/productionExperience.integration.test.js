@@ -150,7 +150,7 @@ test("lifecycle 12 tahap penuh: custody -> papan -> intake -> diagnosa (menunggu
   const cardOnBoard = t1.items[0];
   assert.equal(cardOnBoard.customer.weightKg, 85); assert.deepEqual(cardOnBoard.customer.complaints, ["Sakit pinggang"]); assert.equal(cardOnBoard.customer.request, "Minta tekstur firm");
   assert.equal(cardOnBoard.next.stepNo, 1); assert.equal(cardOnBoard.bucket, "ANTREAN");
-  assert.ok(cardOnBoard.warnings.some((x) => x.code === "LAYANAN_BELUM"));
+  assert.ok(!cardOnBoard.warnings.some((x) => x.code === "LAYANAN_BELUM"), "Slice 1: layanan teknis tidak ditampilkan — tidak ada peringatan layanan teknis di kartu");
   assert.equal(JSON.stringify(board).includes("phone"), false, "tanpa nomor telepon customer");
 
   // Tahap tidak bisa dilewati.
@@ -259,7 +259,7 @@ test("lifecycle 12 tahap penuh: custody -> papan -> intake -> diagnosa (menunggu
   const phases = await testPrisma.productionPhaseRun.findMany({ where: { runId: run.id } });
   assert.ok(phases.every((p) => ["COMPLETED", "NOT_APPLICABLE", "CANCELLED"].includes(p.status)), JSON.stringify(phases.map((p) => [p.phase, p.status])));
   const finalCard = await card(w, run.id);
-  assert.equal(finalCard.bucket, "SELESAI"); assert.deepEqual(finalCard.progress, { done: 12, total: 12 });
+  assert.equal(finalCard.bucket, "SELESAI"); assert.deepEqual(finalCard.progress, { done: 12, skipped: 0, remaining: 0, total: 12 });
   assert.equal(await testPrisma.stockMovement.count({ where: { materialIssueId: issueId } }), 2, "stok keluar SEKALI per bahan saat Gudang menyerahkan, tidak digandakan oleh bukti");
 
   // Bukti immutable di database.

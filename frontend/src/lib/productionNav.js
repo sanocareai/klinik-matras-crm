@@ -12,7 +12,7 @@ export const PRODUCTION_NAV = Object.freeze([
       { to: "/bengkel/order-produksi", label: "Order Produksi", icon: "Boxes" },
       { to: "/bengkel/production-v2", label: "Status Produksi", icon: "CalendarClock" },
       { to: "/bengkel/rencana-produksi", label: "Rencana Produksi", icon: "ClipboardList" },
-      { to: "/bengkel/quality-control", label: "Quality Control", icon: "ClipboardCheck" },
+      // Menu Quality Control DISEMBUNYIKAN sementara (simplifikasi slice 1; gerbang lifecycle QC diubah di slice 2). Halaman & rute tetap ada (tautan lama/bookmark tidak patah).
       { to: "/bengkel/materials", label: "Bahan Produksi", icon: "ArrowUpFromLine" },
     ],
   },

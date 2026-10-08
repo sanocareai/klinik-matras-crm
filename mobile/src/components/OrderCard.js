@@ -71,7 +71,7 @@ function ChipPicker({ options, labels, value, onChange }) {
   );
 }
 
-export default function OrderCard({ order, onRefresh, onDeleted, onEdit, onExpand }) {
+export default function OrderCard({ order, onRefresh, onDeleted, onEdit, onExpand, customerName: namaPelanggan }) {
   const tokens = useTokens();
   const styles = useMemo(() => createStyles(tokens), [tokens]);
   const info = parseNotes(order.notes);
@@ -221,7 +221,7 @@ export default function OrderCard({ order, onRefresh, onDeleted, onEdit, onExpan
               onPress={() => navigateToOrderTimeline({
                 orderId: order.id,
                 orderNumber: order.orderNumber,
-                customerName: order.customerName,
+                customerName: order.customerName || namaPelanggan,
               })}
             >
               <PackageSearch size={12} color={tokens.color.accent} strokeWidth={2.2} />
@@ -246,7 +246,7 @@ export default function OrderCard({ order, onRefresh, onDeleted, onEdit, onExpan
               <TouchableOpacity
                 style={[styles.quickBtn, styles.quickBtnPrimary]}
                 accessibilityRole="button" accessibilityLabel="Catat pembayaran"
-                onPress={() => navigateToOrderTimeline({ orderId: order.id, orderNumber: order.orderNumber, customerName: order.customerName, tab: "pembayaran", bukaKlaim: true })}
+                onPress={() => navigateToOrderTimeline({ orderId: order.id, orderNumber: order.orderNumber, customerName: order.customerName || namaPelanggan, tab: "pembayaran", bukaKlaim: true })}
               >
                 <Wallet size={13} color="#fff" strokeWidth={2.2} />
                 <Text style={styles.quickBtnPrimaryText}>Catat Pembayaran</Text>
@@ -255,7 +255,7 @@ export default function OrderCard({ order, onRefresh, onDeleted, onEdit, onExpan
             <TouchableOpacity
               style={styles.quickBtn}
               accessibilityRole="button" accessibilityLabel="Kirim dokumentasi"
-              onPress={() => navigateToOrderTimeline({ orderId: order.id, orderNumber: order.orderNumber, customerName: order.customerName, tab: "dokumentasi" })}
+              onPress={() => navigateToOrderTimeline({ orderId: order.id, orderNumber: order.orderNumber, customerName: order.customerName || namaPelanggan, tab: "dokumentasi" })}
             >
               <Camera size={13} color={tokens.color.accent} strokeWidth={2.2} />
               <Text style={styles.quickBtnText}>Kirim Dokumentasi</Text>
