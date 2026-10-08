@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Plus, ClipboardList, Trash2, Pencil, Ban, CheckCircle2, ListChecks } from "lucide-react";
+import { Plus, ClipboardList, Trash2, Pencil, Ban, CheckCircle2, ListChecks, FileText } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -18,6 +18,7 @@ import { CardList, RowCard } from "@/features/finance/cards.jsx";
 import {
   STATUS_PO, TAB_PO, LABEL_STATUS_PENERIMAAN, baris0, teksJumlah, subtotal, totalIsian, galatBaris, galatFormulir,
   formDariPO, bodyDariForm, ringkasProgres, nilaiBelumDiterima, aksiPO, kalimatEvent,
+  FAKTUR_TERBUKA, LABEL_STATUS_FAKTUR, formFakturAwal, formFakturDariEvaluasi, galatFaktur, subtotalFaktur, totalFaktur, petunjukBaris, bodyFaktur, statusFaktur,
 } from "@/features/finance/purchaseOrderLogic.js";
 
 // PURCHASE ORDER BAHAN BAKU — Fase 1 integrasi Finance → Gudang.
@@ -298,11 +299,16 @@ function ModalDetailPO({ id, onClose, onChanged, onUbah }) {
   const [po, setPo] = useState(null);
   const [galat, setGalat] = useState("");
   const [dialog, setDialog] = useState(null); // "batal" | "revisi"
+  const [faktur, setFaktur] = useState(null); // { editBillId? } — formulir faktur
+  const [setujuiFaktur, setSetujuiFaktur] = useState(null); // evaluasi faktur yang butuh catatan tinjauan harga
+  const [tolakFaktur, setTolakFaktur] = useState(null);
+  const [segar, setSegar] = useState(0);
 
   const muat = useCallback(async () => {
     try { setPo(await api.getPurchaseOrder(id)); setGalat(""); } catch (e) { setGalat(e.message || "Gagal memuat PO"); }
   }, [id]);
   useEffect(() => { muat(); }, [muat]);
+  const segarkan = useCallback(async () => { await muat(); await onChanged(); setSegar((n) => n + 1); }, [muat, onChanged]);
 
   async function jalankan(fn) {
     setGalat("");
@@ -322,6 +328,7 @@ function ModalDetailPO({ id, onClose, onChanged, onUbah }) {
             <div className="flex w-full flex-col gap-2">
               {galat && <p role="alert" data-testid="galat-detail-po" className="rounded-lg bg-redbg px-3 py-2 text-[12.5px] leading-snug text-red">{galat}</p>}
               <div className="flex flex-wrap items-center justify-end gap-2">
+                {["DISETUJUI", "DITERIMA_SEBAGIAN", "SELESAI"].includes(po.status) && <Button variant="neutral" onClick={() => setFaktur({})} className="max-sm:min-h-11 max-sm:px-4"><FileText size={14} /> Catat faktur</Button>}
                 {aksi.batalkan && <Button variant="neutral" onClick={() => setDialog("batal")} className="max-sm:min-h-11 max-sm:px-4"><Ban size={14} /> Batalkan PO</Button>}
                 {aksi.revisi && <Button variant="neutral" onClick={() => setDialog("revisi")} className="max-sm:min-h-11 max-sm:px-4"><ListChecks size={14} /> Revisi jumlah</Button>}
                 {aksi.ubah && <Button variant="neutral" onClick={() => onUbah(po)} className="max-sm:min-h-11 max-sm:px-4"><Pencil size={14} /> Ubah draf</Button>}
@@ -335,8 +342,35 @@ function ModalDetailPO({ id, onClose, onChanged, onUbah }) {
           ) : galat ? <p role="alert" className="text-[12.5px] text-red">{galat}</p> : null
         }
       >
-        {!po ? <p className="py-6 text-[13px] text-ink3">Memuat…</p> : <IsiDetail po={po} />}
+        {!po ? <p className="py-6 text-[13px] text-ink3">Memuat…</p> : (
+          <IsiDetail
+            po={po} segar={segar}
+            onUbahFaktur={(billId) => setFaktur({ editBillId: billId })}
+            onSetujuiFaktur={setSetujuiFaktur}
+            onTolakFaktur={setTolakFaktur}
+            onGalat={setGalat}
+            onSegarkan={segarkan}
+          />
+        )}
       </Modal>
+      {faktur && po && (
+        <ModalFaktur
+          key={faktur.editBillId || "baru"} po={po} editBillId={faktur.editBillId} onClose={() => setFaktur(null)}
+          onSaved={async () => { setFaktur(null); await segarkan(); }}
+        />
+      )}
+      {setujuiFaktur && (
+        <ModalSetujuiFaktur ev={setujuiFaktur} onClose={() => setSetujuiFaktur(null)} onSetujui={async (catatan) => { await api.approveFinanceBill(setujuiFaktur.billId, { catatanTinjauanHarga: catatan }); setSetujuiFaktur(null); await segarkan(); }} />
+      )}
+      {tolakFaktur && (
+        <ModalAlasan
+          judul={`Tolak faktur ${tolakFaktur.supplierRef || tolakFaktur.billNumber}`}
+          deskripsi="Faktur yang ditolak tidak mengklaim barang apa pun. Catat faktur baru bila perlu."
+          label="Alasan penolakan" tombol="Tolak Faktur" galat={galat}
+          onClose={() => setTolakFaktur(null)}
+          onSubmit={async (alasan) => { try { await api.rejectFinanceBill(tolakFaktur.billId, alasan); setTolakFaktur(null); await segarkan(); } catch (e) { setGalat(e.message || "Gagal menolak faktur"); } }}
+        />
+      )}
       {dialog === "batal" && po && (
         <ModalAlasan
           judul={`Batalkan ${po.poNumber}`}
@@ -353,7 +387,7 @@ function ModalDetailPO({ id, onClose, onChanged, onUbah }) {
   );
 }
 
-function IsiDetail({ po }) {
+function IsiDetail({ po, segar, onUbahFaktur, onSetujuiFaktur, onTolakFaktur, onGalat, onSegarkan }) {
   const barisLaku = po.status !== "DRAFT";
   return (
     <div className="space-y-4">
@@ -434,6 +468,20 @@ function IsiDetail({ po }) {
         )}
       </section>
 
+      <section data-testid="seksi-faktur">
+        <h4 className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ink3">Faktur supplier atas PO ini</h4>
+        {(po.faktur || []).length === 0 ? (
+          <p className="text-[12.5px] text-ink3">{["DISETUJUI", "DITERIMA_SEBAGIAN", "SELESAI"].includes(po.status) ? "Belum ada faktur. Klik “Catat faktur” setelah faktur supplier diterima." : "Faktur bisa dicatat setelah PO disetujui."}</p>
+        ) : (
+          <div className="space-y-2">
+            {po.faktur.map((fk) => (
+              <KartuFaktur key={fk.id} fk={fk} segar={segar} onUbah={onUbahFaktur} onSetujui={onSetujuiFaktur} onTolak={onTolakFaktur} onGalat={onGalat} onSegarkan={onSegarkan} />
+            ))}
+          </div>
+        )}
+        <p className="mt-1.5 text-[11.5px] text-ink3">Faktur dan pembayarannya tidak menambah stok. Jumlah yang menagih lebih dari barang baik yang belum ditagih akan <strong>tertahan</strong>; beda harga wajib tinjauan Finance (tanpa toleransi otomatis).</p>
+      </section>
+
       <section>
         <h4 className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ink3">Riwayat</h4>
         <ol className="list-none space-y-1 p-0">
@@ -443,6 +491,240 @@ function IsiDetail({ po }) {
         </ol>
       </section>
     </div>
+  );
+}
+
+// Satu faktur: status pencocokan + tabel per baris (dipesan, diterima baik, sudah ditagih, diajukan, harga PO, harga faktur, selisih).
+function KartuFaktur({ fk, segar, onUbah, onSetujui, onTolak, onGalat, onSegarkan }) {
+  const [ev, setEv] = useState(null);
+  const [galat, setGalat] = useState("");
+  const [buka, setBuka] = useState(FAKTUR_TERBUKA.includes(fk.status));
+  useEffect(() => {
+    let batal = false;
+    api.getFakturPurchaseOrder(fk.id).then((d) => { if (!batal) setEv(d); }).catch((e) => { if (!batal) setGalat(e.message); });
+    return () => { batal = true; };
+  }, [fk.id, fk.status, segar]);
+  const st = statusFaktur(ev);
+  const terbuka = FAKTUR_TERBUKA.includes(fk.status);
+
+  async function setujui() {
+    setGalat(""); onGalat("");
+    if (ev?.perluTinjauanHarga) { onSetujui(ev); return; }
+    try { await api.approveFinanceBill(fk.id, {}); await onSegarkan(); } catch (e) { setGalat(e.message); }
+  }
+
+  return (
+    <div className="rounded-lg border border-line p-3 text-[12.5px]" data-testid="kartu-faktur">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-mono text-[12px] font-semibold text-ink">{fk.supplierRef || fk.billNumber}</span>
+        <span className="text-ink3">{fk.billNumber}</span>
+        <Badge variant={st.variant}>{st.label}</Badge>
+        <span className="ml-auto tabular-nums text-ink">{formatUang(fk.amount)}</span>
+        <button type="button" className="text-[12px] font-semibold text-accent" onClick={() => setBuka((v) => !v)}>{buka ? "Sembunyikan" : "Pencocokan"}</button>
+      </div>
+      {ev?.tertahan && (
+        <ul className="mt-2 list-none space-y-1 p-0" data-testid="alasan-tertahan">
+          {ev.alasanTertahan.map((a, i) => <li key={i} className="rounded-lg bg-redbg px-3 py-1.5 text-[12px] text-red">{a}</li>)}
+        </ul>
+      )}
+      {buka && ev && (
+        <>
+          <TableWrap className="mt-2 hidden md:block">
+            <Table>
+              <THead><TR><TH>Item</TH><TH numeric>Dipesan</TH><TH numeric>Diterima baik</TH><TH numeric>Sudah ditagih</TH><TH numeric>Diajukan di faktur ini</TH><TH numeric>Harga PO</TH><TH numeric>Harga faktur</TH><TH numeric>Selisih</TH></TR></THead>
+              <TBody>
+                {ev.barisFaktur.map((b) => (
+                  <TR key={b.id}>
+                    <TD><div className="font-medium text-ink">{b.kode}</div></TD>
+                    <TD numeric>{teksJumlah(b.dipesan)} {b.satuan}</TD>
+                    <TD numeric>{teksJumlah(b.diterimaBaik)}</TD>
+                    <TD numeric>{teksJumlah(b.sudahDitagih)}</TD>
+                    <TD numeric className={b.melebihi ? "font-semibold text-red" : "font-semibold text-ink"}>{teksJumlah(b.diajukanIni)}</TD>
+                    <TD numeric><Uang value={b.hargaPO} /></TD>
+                    <TD numeric><Uang value={b.hargaFaktur} /></TD>
+                    <TD numeric className={b.selisihHarga !== 0 ? "font-semibold text-orange" : ""}>{b.selisihHarga === 0 ? "—" : <><Uang value={b.selisihHarga} /> / sat · <Uang value={b.selisihNilai} /></>}</TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
+          </TableWrap>
+          <ul className="mt-2 list-none space-y-2 p-0 md:hidden">
+            {ev.barisFaktur.map((b) => (
+              <li key={b.id} className="rounded-lg border border-line p-2.5">
+                <div className="font-medium text-ink">{b.kode}</div>
+                <dl className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1">
+                  <div><dt className="text-ink3">Dipesan</dt><dd className="ml-0 tabular-nums">{teksJumlah(b.dipesan)} {b.satuan}</dd></div>
+                  <div><dt className="text-ink3">Diterima baik</dt><dd className="ml-0 tabular-nums">{teksJumlah(b.diterimaBaik)}</dd></div>
+                  <div><dt className="text-ink3">Sudah ditagih</dt><dd className="ml-0 tabular-nums">{teksJumlah(b.sudahDitagih)}</dd></div>
+                  <div><dt className="text-ink3">Diajukan di faktur ini</dt><dd className={cn("ml-0 tabular-nums", b.melebihi && "font-semibold text-red")}>{teksJumlah(b.diajukanIni)}</dd></div>
+                  <div><dt className="text-ink3">Harga PO</dt><dd className="ml-0 tabular-nums">{formatUang(b.hargaPO)}</dd></div>
+                  <div><dt className="text-ink3">Harga faktur</dt><dd className="ml-0 tabular-nums">{formatUang(b.hargaFaktur)}</dd></div>
+                  <div className="col-span-2"><dt className="text-ink3">Selisih</dt><dd className={cn("ml-0 tabular-nums", b.selisihHarga !== 0 && "font-semibold text-orange")}>{b.selisihHarga === 0 ? "—" : `${formatUang(b.selisihHarga)} per satuan · ${formatUang(b.selisihNilai)}`}</dd></div>
+                </dl>
+              </li>
+            ))}
+          </ul>
+          {ev.perluTinjauanHarga && terbuka && <p className="mt-2 rounded-lg bg-orangebg px-3 py-1.5 text-[12px] text-orange" data-testid="perlu-tinjauan">Harga faktur berbeda dari harga PO (selisih {formatUang(ev.selisihHargaTotal)}). Wajib ditinjau Finance saat menyetujui; selisihnya masuk Selisih Harga Pembelian.</p>}
+          {ev.catatanTinjauan && <p className="mt-2 text-[12px] text-ink2">Catatan tinjauan: {ev.catatanTinjauan}</p>}
+          {ev.alokasi?.length > 0 && <p className="mt-1 text-[11.5px] text-ink3">Menagih penerimaan: {[...new Set(ev.alokasi.map((a) => a.receiptNumber))].join(", ")}</p>}
+        </>
+      )}
+      {galat && <p role="alert" className="mt-2 rounded-lg bg-redbg px-3 py-1.5 text-[12px] text-red">{galat}</p>}
+      {terbuka && (
+        <div className="mt-2 flex flex-wrap justify-end gap-2">
+          <Button size="sm" variant="neutral" onClick={() => onTolak({ ...fk, billId: fk.id })}>Tolak</Button>
+          <Button size="sm" variant="neutral" onClick={() => onUbah(fk.id)}><Pencil size={13} /> Ubah</Button>
+          <TombolAksi size="sm" disabled={!ev || ev.tertahan} title={ev?.tertahan ? "Faktur tertahan — lihat alasan di atas" : undefined} onClick={setujui}>Setujui</TombolAksi>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Formulir faktur atas PO: per baris jumlah & harga faktur, dengan petunjuk dini (akan tertahan / beda harga). Server tetap memutuskan.
+function ModalFaktur({ po, editBillId, onClose, onSaved }) {
+  const mengubah = !!editBillId;
+  const [kunci] = useState(idKunci);
+  const [p, setP] = useState(null);
+  const [f, setF] = useState(null);
+  const [galat, setGalat] = useState("");
+  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  const setBaris = (i, patch) => setF((s) => ({ ...s, lines: s.lines.map((l, idx) => (idx === i ? { ...l, ...patch } : l)) }));
+
+  useEffect(() => {
+    let batal = false;
+    (async () => {
+      try {
+        const pandangan = await api.getPenagihanPurchaseOrder(po.id);
+        const ev = mengubah ? await api.getFakturPurchaseOrder(editBillId) : null;
+        if (batal) return;
+        setP(pandangan);
+        setF(mengubah ? { ...formFakturDariEvaluasi({ ...ev, billDate: ev.billDate }, pandangan), billDate: ev.billDate ? String(ev.billDate).slice(0, 10) : hariIniISO() } : formFakturAwal(pandangan, hariIniISO()));
+      } catch (e) { if (!batal) setGalat(e.message || "Gagal memuat data penagihan"); }
+    })();
+    return () => { batal = true; };
+  }, [po.id, editBillId, mengubah]);
+
+  const galatForm = f ? galatFaktur(f, { edit: mengubah }) : "Memuat…";
+  const total = f ? totalFaktur(f.lines) : 0;
+  const barisPO = new Map((p?.barisPO || []).map((b) => [b.purchaseOrderLineId, b]));
+
+  async function simpan() {
+    setGalat("");
+    try {
+      const body = bodyFaktur(f, { edit: mengubah });
+      if (mengubah) await api.updateFakturPurchaseOrder(editBillId, body); else await api.createFakturPurchaseOrder(po.id, body, `fak-${kunci}`);
+      await onSaved();
+    } catch (e) { setGalat(e.message || "Gagal menyimpan faktur"); }
+  }
+
+  return (
+    <Modal
+      open onOpenChange={(v) => !v && onClose()}
+      title={mengubah ? "Ubah Faktur atas PO" : `Catat Faktur atas ${po.poNumber}`}
+      description="Faktur dicocokkan per baris dengan PO. Disimpan sebagai Menunggu Persetujuan. Faktur dan pembayarannya tidak menambah stok."
+      className="w-[860px]"
+      footer={
+        <div className="flex w-full flex-col gap-2">
+          {(galat || (galatForm && f && f.supplierRef)) && <p role="alert" data-testid="galat-faktur" className="rounded-lg bg-orangebg px-3 py-2 text-[12.5px] leading-snug text-orange">{galat || galatForm}</p>}
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[12.5px] text-ink2">Total faktur <strong className="tabular-nums text-ink">{formatUang(total)}</strong></span>
+            <div className="flex gap-2">
+              <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
+              <TombolAksi disabled={!!galatForm} onClick={simpan}>{mengubah ? "Simpan Perubahan" : "Simpan Faktur"}</TombolAksi>
+            </div>
+          </div>
+        </div>
+      }
+    >
+      {!f ? <p className="py-6 text-[13px] text-ink3">{galat || "Memuat…"}</p> : (
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <Field label="Nomor faktur supplier" required><Input value={f.supplierRef} onChange={(e) => set("supplierRef", e.target.value)} placeholder="mis. 2327/CR/EB/10/2026" aria-label="Nomor faktur supplier" /></Field>
+            <Field label="Tanggal faktur" required><Input type="date" value={f.billDate} onChange={(e) => set("billDate", e.target.value)} /></Field>
+            <Field label="Jatuh tempo" hint="Kosong = mengikuti termin supplier."><Input type="date" min={f.billDate} value={f.dueDate} onChange={(e) => set("dueDate", e.target.value)} /></Field>
+          </div>
+
+          {p.penerimaan.length > 0 && (
+            <div>
+              <span className="mb-1 block text-[12px] font-semibold text-ink2">Penerimaan yang ditagih <span className="font-normal text-ink3">(kosong = semua penerimaan PO yang masih punya barang baik belum ditagih)</span></span>
+              <div className="flex flex-wrap gap-2">
+                {p.penerimaan.map((r) => (
+                  <label key={r.id} className="flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-[12px]">
+                    <input type="checkbox" checked={f.receiptIds.includes(r.id)} onChange={(e) => set("receiptIds", e.target.checked ? [...f.receiptIds, r.id] : f.receiptIds.filter((x) => x !== r.id))} />
+                    <span className="font-mono">{r.receiptNumber}</span><span className="text-ink3">baik {teksJumlah(r.diterimaBaik)} · belum ditagih {teksJumlah(r.tersedia)}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            {f.lines.map((l, i) => {
+              const b = barisPO.get(l.purchaseOrderLineId);
+              const petunjuk = petunjukBaris(l, b) || [];
+              return (
+                <div key={l.purchaseOrderLineId} className="rounded-lg border border-line p-2.5" data-testid="baris-faktur">
+                  <label className="flex items-start gap-2 text-[12.5px]">
+                    <input type="checkbox" checked={l.pakai} onChange={(e) => setBaris(i, { pakai: e.target.checked, ...(e.target.checked && !l.qty && b.tersedia > 0 && { qty: String(b.tersedia) }) })} className="mt-0.5" aria-label={`Faktur baris ${b.kode}`} />
+                    <span className="min-w-0 flex-1">
+                      <span className="font-semibold text-ink">{b.kode}</span> <span className="text-ink2">{b.nama}</span>
+                      <span className="mt-0.5 block text-[11.5px] text-ink3">Dipesan {teksJumlah(b.dipesan)} {b.satuan} · diterima baik {teksJumlah(b.diterimaBaik)} · sudah ditagih {teksJumlah(b.sudahDitagih)} · <strong className="text-ink2">tersedia {teksJumlah(b.tersedia)}</strong> · harga PO {formatUang(b.hargaPO)}</span>
+                    </span>
+                  </label>
+                  {l.pakai && (
+                    <div className="mt-2 grid grid-cols-1 gap-2 pl-6 sm:grid-cols-[120px_160px_1fr] sm:items-end">
+                      <Field label={`Jumlah (${b.satuan})`}>
+                        <input type="number" inputMode="decimal" min="0" step="any" value={l.qty} aria-label={`Jumlah faktur ${b.kode}`} onChange={(e) => setBaris(i, { qty: e.target.value })}
+                          className="h-9 w-full rounded-lg bg-surface px-3 text-right text-sm tabular-nums text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/40 max-sm:h-11" />
+                      </Field>
+                      <Field label="Harga faktur (Rp)"><InputUang value={l.unitPrice} onChange={(v) => setBaris(i, { unitPrice: v })} aria-label={`Harga faktur ${b.kode}`} /></Field>
+                      <div className="text-[12px] text-ink2">Subtotal <strong className="tabular-nums text-ink">{formatUang(subtotalFaktur(l))}</strong></div>
+                    </div>
+                  )}
+                  {petunjuk.map((x) => <p key={x.jenis} className={cn("mt-1.5 pl-6 text-[11.5px]", x.jenis === "tertahan" ? "text-red" : "text-orange")} data-testid={`petunjuk-${x.jenis}`}>{x.teks}</p>)}
+                </div>
+              );
+            })}
+          </div>
+
+          {mengubah && <Field label="Alasan perubahan" required><Input value={f.reason} onChange={(e) => set("reason", e.target.value)} aria-label="Alasan perubahan" /></Field>}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+// Persetujuan faktur yang harganya berbeda dari PO: Finance wajib menulis catatan tinjauan (tidak ada toleransi otomatis).
+function ModalSetujuiFaktur({ ev, onClose, onSetujui }) {
+  const [catatan, setCatatan] = useState("");
+  const [galat, setGalat] = useState("");
+  const berbeda = ev.barisFaktur.filter((b) => b.selisihHarga !== 0);
+  return (
+    <Modal
+      open onOpenChange={(v) => !v && onClose()} title={`Tinjau selisih harga — ${ev.supplierRef || ev.billNumber}`} className="w-[560px]"
+      description="Harga faktur berbeda dari harga PO. Setelah disetujui, selisihnya dijurnal ke Selisih Harga Pembelian (kebijakan yang sudah berlaku); GRNI ditutup sebesar harga PO."
+      footer={
+        <div className="flex w-full flex-col gap-2">
+          {galat && <p role="alert" className="rounded-lg bg-redbg px-3 py-2 text-[12.5px] text-red">{galat}</p>}
+          <div className="flex justify-end gap-2">
+            <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Kembali</Button>
+            <TombolAksi disabled={catatan.trim().length < 5} onClick={async () => { try { await onSetujui(catatan.trim()); } catch (e) { setGalat(e.message); } }}>Setujui dengan tinjauan</TombolAksi>
+          </div>
+        </div>
+      }
+    >
+      <div className="space-y-3">
+        <ul className="list-none space-y-1 p-0 text-[12.5px]">
+          {berbeda.map((b) => (
+            <li key={b.id} className="rounded-lg bg-orangebg px-3 py-1.5 text-orange">{b.kode}: harga PO {formatUang(b.hargaPO)} → faktur {formatUang(b.hargaFaktur)} × {teksJumlah(b.diajukanIni)} = selisih {formatUang(b.selisihNilai)}</li>
+          ))}
+        </ul>
+        <Field label="Catatan tinjauan Finance" required hint={`Minimal 5 karakter (${catatan.trim().length}/5). Tersimpan permanen bersama nama peninjau.`}>
+          <Input value={catatan} onChange={(e) => setCatatan(e.target.value)} placeholder="mis. kenaikan harga disetujui Owner" aria-label="Catatan tinjauan" autoFocus />
+        </Field>
+      </div>
+    </Modal>
   );
 }
 

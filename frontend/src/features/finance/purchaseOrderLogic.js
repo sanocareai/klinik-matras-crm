@@ -54,7 +54,7 @@ export function galatBaris(l) {
   if (!l.materialId) return "Pilih item";
   const q = Number(l.qty);
   if (!(q > 0)) return "Jumlah harus lebih dari 0";
-  if (Math.abs(q * 1000 - Math.round(q * 1000)) > 1e-6) return "Jumlah maksimal 3 angka di belakang koma";
+  if (Math.abs(q * 100 - Math.round(q * 100)) > 1e-6) return "Jumlah maksimal 2 angka di belakang koma";
   const h = Number(l.unitPrice);
   if (!Number.isInteger(h) || h <= 0) return "Harga satuan harus rupiah bulat lebih dari 0";
   return null;
@@ -133,4 +133,85 @@ export function kalimatEvent(e) {
     case "STATUS_BERUBAH": return `Status ${STATUS_PO[m.dari]?.label || m.dari} → ${STATUS_PO[m.ke]?.label || m.ke}`;
     default: return NAMA_EVENT_PO[e.type] || e.type;
   }
+}
+
+// ── Faktur supplier atas PO (Fase 2) ─────────────────────────────────────
+// Angka tersedia/sudah ditagih/diterima baik dihitung SERVER; layar ini hanya memberi petunjuk dini (peringatan "akan tertahan") — keputusan tertahan ada di server.
+
+export const LABEL_STATUS_FAKTUR = { MENUNGGU_APPROVAL: "Menunggu Persetujuan", DRAFT: "Draf", DISETUJUI: "Disetujui", DIBAYAR_SEBAGIAN: "Dibayar Sebagian", LUNAS: "Lunas", DITOLAK: "Ditolak", DIBATALKAN: "Dibatalkan" };
+export const FAKTUR_TERBUKA = ["DRAFT", "MENUNGGU_APPROVAL"];
+
+/** Isian awal formulir faktur dari pandangan penagihan PO: tiap baris yang masih punya barang baik belum ditagih terisi sejumlah tersedia pada harga PO. */
+export function formFakturAwal(p, hariIni) {
+  return {
+    supplierRef: "", billDate: hariIni, dueDate: "", description: "", reason: "", receiptIds: [],
+    lines: p.barisPO.map((l) => ({ purchaseOrderLineId: l.purchaseOrderLineId, pakai: l.tersedia > 0, qty: l.tersedia > 0 ? String(l.tersedia) : "", unitPrice: String(l.hargaPO) })),
+  };
+}
+
+/** Isian formulir dari evaluasi faktur yang sudah ada (mengubah faktur yang belum disetujui). */
+export function formFakturDariEvaluasi(ev, pandangan) {
+  const ada = new Map(ev.barisFaktur.map((b) => [b.purchaseOrderLineId, b]));
+  return {
+    supplierRef: ev.supplierRef || "", billDate: ev.billDate ? String(ev.billDate).slice(0, 10) : "", dueDate: "", description: "", reason: "", receiptIds: ev.penerimaanTerpilih || [],
+    lines: pandangan.barisPO.map((l) => {
+      const b = ada.get(l.purchaseOrderLineId);
+      return { purchaseOrderLineId: l.purchaseOrderLineId, pakai: !!b, qty: b ? String(b.diajukanIni) : "", unitPrice: b ? String(b.hargaFaktur) : String(l.hargaPO) };
+    }),
+  };
+}
+
+const dua = (v) => Math.abs(Number(v) * 100 - Math.round(Number(v) * 100)) < 1e-6;
+
+/** Galat satu baris faktur yang dipakai; null = valid. */
+export function galatBarisFaktur(l) {
+  const q = Number(l.qty); const h = Number(l.unitPrice);
+  if (!(q > 0)) return "Jumlah faktur harus lebih dari 0";
+  if (!dua(q)) return "Jumlah maksimal 2 angka di belakang koma";
+  if (!(h > 0)) return "Harga faktur harus lebih dari 0";
+  if (!dua(h)) return "Harga faktur maksimal 2 angka di belakang koma";
+  return null;
+}
+
+export function galatFaktur(f, { edit = false } = {}) {
+  if (!f.supplierRef.trim()) return "Isi nomor faktur supplier";
+  if (!f.billDate) return "Isi tanggal faktur";
+  if (f.dueDate && f.dueDate < f.billDate) return "Jatuh tempo tidak boleh sebelum tanggal faktur";
+  const dipakai = f.lines.filter((l) => l.pakai);
+  if (dipakai.length === 0) return "Pilih minimal satu baris yang difakturkan";
+  for (const l of dipakai) { const g = galatBarisFaktur(l); if (g) return g; }
+  if (edit && f.reason.trim().length < 3) return "Isi alasan perubahan";
+  return null;
+}
+
+export const subtotalFaktur = (l) => (l.pakai ? Math.round(Number(l.qty || 0) * Number(l.unitPrice || 0) * 100) / 100 : 0);
+export const totalFaktur = (lines) => lines.reduce((s, l) => s + subtotalFaktur(l), 0);
+
+/** Petunjuk dini per baris: jumlah > tersedia = akan tertahan; harga ≠ harga PO = perlu tinjauan harga. */
+export function petunjukBaris(l, baris) {
+  if (!l.pakai) return null;
+  const petunjuk = [];
+  if (Number(l.qty) > baris.tersedia + 1e-9) petunjuk.push({ jenis: "tertahan", teks: `Melebihi barang baik yang belum ditagih (${teksJumlah(baris.tersedia)}) — faktur akan tertahan` });
+  if (Number(l.unitPrice) !== baris.hargaPO && Number(l.unitPrice) > 0) petunjuk.push({ jenis: "harga", teks: `Beda dari harga PO (${baris.hargaPO}) — perlu tinjauan Finance` });
+  return petunjuk;
+}
+
+export function bodyFaktur(f, { edit = false } = {}) {
+  return {
+    supplierRef: f.supplierRef.trim(), billDate: f.billDate, dueDate: f.dueDate || undefined, description: f.description.trim() || undefined,
+    receiptIds: f.receiptIds,
+    lines: f.lines.filter((l) => l.pakai).map((l) => ({ purchaseOrderLineId: l.purchaseOrderLineId, qty: Number(l.qty), unitPrice: Number(l.unitPrice) })),
+    ...(edit && { reason: f.reason.trim() }),
+  };
+}
+
+/** Status tampilan satu faktur dari evaluasi server. */
+export function statusFaktur(ev) {
+  if (!ev) return { label: "—", variant: "neutral" };
+  if (FAKTUR_TERBUKA.includes(ev.status)) {
+    if (ev.tertahan) return { label: "Tertahan", variant: "red" };
+    if (ev.perluTinjauanHarga) return { label: "Perlu tinjauan harga", variant: "orange" };
+    return { label: "Siap disetujui", variant: "green" };
+  }
+  return { label: LABEL_STATUS_FAKTUR[ev.status] || ev.status, variant: ev.status === "DIBATALKAN" || ev.status === "DITOLAK" ? "neutral" : "accent" };
 }

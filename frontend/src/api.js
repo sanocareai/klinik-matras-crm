@@ -1855,7 +1855,7 @@ export const api = {
   getFinanceUnbilledReceipts: () => request("/finance/bills/unbilled-receipts"),
   getFinanceInventoryMethod: (tanggal) => request(`/finance/inventory-method${tanggal ? `?tanggal=${encodeURIComponent(tanggal)}` : ""}`),
   createFinanceBill: (data) => request("/finance/bills", { method: "POST", body: JSON.stringify(data) }),
-  approveFinanceBill: (id) => request(`/finance/bills/${id}/approve`, { method: "POST" }),
+  approveFinanceBill: (id, body = {}) => request(`/finance/bills/${id}/approve`, { method: "POST", body: JSON.stringify(body) }),
   rejectFinanceBill: (id, reason) => request(`/finance/bills/${id}/reject`, { method: "POST", body: JSON.stringify({ reason }) }),
   // Purchase Order bahan baku (Finance) — kunci idempotensi dipegang pemanggil per sesi dialog supaya kirim ulang tidak menggandakan PO.
   getPurchaseOrders: (params = {}) => request(`/finance/purchase-orders${qsFinance(params)}`),
@@ -1865,6 +1865,11 @@ export const api = {
   approvePurchaseOrder: (id) => request(`/finance/purchase-orders/${id}/approve`, { method: "POST", body: JSON.stringify({}) }),
   cancelPurchaseOrder: (id, reason) => request(`/finance/purchase-orders/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
   revisiJumlahPurchaseOrder: (id, data) => request(`/finance/purchase-orders/${id}/revisi-jumlah`, { method: "POST", body: JSON.stringify(data) }),
+  // Faktur supplier atas PO (Fase 2): pencocokan per baris. Persetujuan lewat approveFinanceBill(id, { catatanTinjauanHarga }).
+  getPenagihanPurchaseOrder: (id) => request(`/finance/purchase-orders/${id}/penagihan`),
+  createFakturPurchaseOrder: (id, data, idempotencyKey = mutationKey("fak")) => request(`/finance/purchase-orders/${id}/faktur`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  getFakturPurchaseOrder: (billId) => request(`/finance/purchase-orders/faktur/${billId}`),
+  updateFakturPurchaseOrder: (billId, data) => request(`/finance/purchase-orders/faktur/${billId}`, { method: "PATCH", body: JSON.stringify(data) }),
   // Pintu Gudang: PO yang boleh diterima, TANPA harga.
   getGudangPurchaseOrders: (params = {}) => request(`/inventory/purchase-orders${qsFinance(params)}`),
   getFinanceSupplierPayments: (params = {}) => request(`/finance/supplier-payments${qsFinance(params)}`),

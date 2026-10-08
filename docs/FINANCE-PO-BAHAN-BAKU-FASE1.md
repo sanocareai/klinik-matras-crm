@@ -63,8 +63,42 @@ Status: dibangun di branch `feat/finance-po-bahan-baku` (dasar: HEAD main `1a783
 4. **Pembatalan PO yang disetujui** memakai izin `finance:admin` (pola tagihan/pembelian). Konfirmasi bahwa Finance biasa tidak boleh membatalkannya.
 5. **Mulai kapan wajib PO?** Saat ini PO opsional (penerimaan tanpa PO tetap diizinkan, hanya ditandai). Tentukan apakah kelak penerimaan bahan baku dari supplier wajib PO.
 
-## Pengujian
+## Pengujian (Fase 1)
 
 - Backend: `tests/integration/purchaseOrderBahanBaku.integration.test.js` (18 tes).
 - Frontend: `frontend/tests/purchaseOrderUI.test.js` (11 tes) + QA browser Finance & Gudang di 1440 dan 390 px.
 - Sebelum rilis: periksa baseline live terbaru (`.release-commit` di VPS), merge ke branch rilis aktif, dan pastikan migration ini berurutan paling akhir.
+
+---
+
+# Fase 2 — Pencocokan faktur supplier per baris PO
+
+Branch `feat/finance-po-faktur-fase2` (dasar: merge live `2e7d5db8` + Fase 1). Migration `20261027090000_po_pencocokan_faktur` (aditif + 2 CHECK qty/harga positif); migration PO Fase 1 diurutkan ulang menjadi `20261026090000` agar paling akhir terhadap seluruh migration kandidat (live, Produksi Fase 4: sampai `20261025100000`).
+
+## Aturan
+1. **Faktur/pembayaran tidak menambah stok.** Tidak ada `postStockMovement` di jalur faktur; tes membandingkan snapshot `stock_movements` sebelum/sesudah faktur dan pembayaran.
+2. **Barang baik yang sama tidak ditagih dua kali.** Klaim = alokasi per baris penerimaan (`fin_supplier_bill_allocations`) dari faktur berstatus masuk buku, plus penerimaan yang sudah ditagih lewat tagihan lama (`goodsReceiptId`, dianggap terklaim penuh). Ditegakkan saat **menyetujui**, di bawah kunci baris tagihan lalu kunci baris PO — dua persetujuan paralel diserialkan; yang kedua melihat klaim pertama dan **tertahan** (409 `TAGIHAN_PO_TERTAHAN`, tanpa alokasi/jurnal tertulis). Dua persetujuan faktur yang sama: satu 200, satu 409.
+3. **Tanpa toleransi otomatis.** Faktur yang menagih lebih dari barang baik belum ditagih tertahan dengan alasan per baris. Harga faktur ≠ harga PO (sekecil apa pun) wajib catatan tinjauan Finance (≥5 karakter, `body.catatanTinjauanHarga` pada approve; tersimpan bersama peninjau & waktu).
+4. **Jurnal** memakai kebijakan existing: Dr GRNI (2-1150) per penerimaan = jumlah teralokasi × **harga PO** (sama dengan nilai stok saat putaway) ± Selisih Harga Pembelian (selisih nominal faktur vs nilai itu) / Cr Utang Usaha. Bentuk identik dengan tagihan lama (tes paritas).
+5. Alokasi FIFO menurut tanggal terima penerimaan; `receiptIds` membatasi penerimaan yang ditagih (kosong = semua yang masih punya sisa).
+6. Faktur atas PO **tidak bisa dikoreksi** (versi pengganti) — blokir `FAKTUR_ATAS_PO`; batalkan (jurnal dibalik, klaim lepas karena status DIBATALKAN) lalu catat ulang. Nominal faktur selalu Σ(jumlah × harga faktur); biaya lain (ongkir/pajak) belum didukung. Tagihan lama yang menaut penerimaan yang sudah diklaim faktur atas PO ditolak (`PENERIMAAN_SUDAH_DITAGIH`), dan sebaliknya.
+
+## Kontrak API (untuk layar Produksi/Gudang berikutnya)
+Semua di `/api/finance/purchase-orders` kecuali disebut lain; baca = `finance:read`, catat/ubah = `finance:post`, setuju = `finance:approve` (`POST /api/finance/bills/:id/approve`), batal = `finance:admin` (`POST /api/finance/bills/:id/cancel`).
+
+| Endpoint | Fungsi |
+|---|---|
+| `GET /:id/penagihan` | Per baris PO: `dipesan, diterimaBaik, sudahDitagih, tersedia, hargaPO`; per penerimaan: `diterimaBaik, sudahDitagih, tersedia`; `fakturTerbuka` |
+| `POST /:id/faktur` `{ supplierRef, billDate, dueDate?, description?, receiptIds?, lines:[{purchaseOrderLineId, qty, unitPrice}] }` | Catat faktur (Menunggu Persetujuan); `Idempotency-Key` didukung; mengembalikan evaluasi |
+| `GET /faktur/:billId` | Evaluasi: per baris `dipesan, diterimaBaik, sudahDitagih, tersedia, diajukanIni, hargaPO, hargaFaktur, selisihHarga, selisihNilai, melebihi`; `tertahan`, `alasanTertahan[]`, `perluTinjauanHarga`, `selisihHargaTotal`, `catatanTinjauan`, `alokasi[]` |
+| `PATCH /faktur/:billId` `{ reason, ...isian }` | Ubah faktur yang belum disetujui (ganti seluruh baris; nominal dihitung ulang) |
+| `GET /:id` | Detail PO kini memuat `faktur[]` dan, per penerimaan, tagihan (lama & via alokasi `lewatPO:true`); kolom `ditagih` per baris = alokasi + tagihan lama |
+| `POST /api/finance/bills/:id/approve` `{ catatanTinjauanHarga? }` | Setujui; 409 kode `TAGIHAN_PO_TERTAHAN` / `SELISIH_HARGA_PERLU_TINJAUAN` / `PENERIMAAN_BELUM_DIBUKUKAN` / `PO_TIDAK_BISA_DIFAKTURKAN` |
+
+Catatan: jumlah PO & faktur kini maksimal 2 desimal (Fase 1 sebelumnya 3) agar penutupan GRNI per alokasi tepat pada presisi uang 2 desimal.
+
+## Keputusan yang masih terbuka
+- Toleransi selisih harga: saat ini nol (semua selisih wajib tinjauan). Tentukan ambang bila ingin otomatis.
+- Biaya tambahan faktur (ongkir/pajak/diskon header) belum didukung.
+- Retur setelah faktur disetujui: belum ada alur otomatis; faktur dibatalkan lalu dicatat ulang dengan jumlah baru (penolakan barang di Gudang sebelum putaway sudah mengurangi jumlah baik yang bisa ditagih).
+- Satu penerimaan sebagian ditagih lewat faktur atas PO **dan** ingin ditagih lewat tagihan lama: ditolak; wajib lewat PO.
