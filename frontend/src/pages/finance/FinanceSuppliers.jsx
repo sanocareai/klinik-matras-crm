@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
 import { specOtomatis } from "@/features/finance/detailSpecs.js";
-import { Plus, Building2, FileText, Banknote, Pencil, History, Ban, CheckCircle2 } from "lucide-react";
+import { Plus, Building2, FileText, Banknote, Pencil, History, Ban, CheckCircle2, CalendarClock } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -33,6 +33,9 @@ import { formDariSupplier, payloadPerubahan, galatForm, rekeningBerubah, supplie
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
 import PilihJenisTagihan, { bodyJenis, jenisLengkap } from "@/features/finance/JenisTagihan.jsx";
 import { resetSaatBuka } from "@/features/finance/resetSaatBuka.jsx";
+import JadwalAgingUtang from "@/features/finance/JadwalAgingUtang.jsx";
+import TerminFaktur from "@/features/finance/TerminFaktur.jsx";
+import { daftarPilihanTermin, payloadTerminSupplier, bodyTermin, galatTermin, TERMIN_AWAL, bolehMencatatFinance } from "@/features/finance/terminLogic.js";
 
 // Tagihan: belum disetujui = Edit bebas (belum ada jurnal). Sudah disetujui = jurnal sudah ada, JANGAN diubah —
 // Batalkan (jurnal dibalik; diblokir server kalau sudah ada pembayaran aktif) lalu catat ulang.
@@ -101,6 +104,7 @@ function statusTempo(b, awalHariIni) {
 
 const TAB = [
   { key: "tagihan", label: "Tagihan (Utang)", Icon: FileText, penjelasan: "Tagihan yang datang dari supplier — begitu disetujui, jadi utang resmi di buku besar." },
+  { key: "aging", label: "Jadwal & Aging", Icon: CalendarClock, penjelasan: "Utang supplier menurut tanggal jatuh tempo — status barang, faktur, dan pembayaran dipisahkan. Barang boleh sudah dipakai Produksi walau faktur belum dibayar." },
   { key: "pembayaran", label: "Pembayaran", Icon: Banknote, penjelasan: "Riwayat uang yang sudah dikeluarkan untuk melunasi tagihan supplier." },
   { key: "supplier", label: "Master Supplier", Icon: Building2, penjelasan: "Data lengkap para supplier — kontak, termin pembayaran, dan rekening tujuan transfer." },
 ];
@@ -231,7 +235,7 @@ export default function FinanceSuppliers() {
       actions={(
         <>
           {/* Export mengikuti TAB AKTIF: baris yang tampil setelah pencarian/filter sisi-klien dikirim sebagai `ids` (urutan layar). */}
-          <TombolExportExcel
+          {tab !== "aging" && <TombolExportExcel
             modul="supplier-utang"
             ambilBody={() => {
               if (tab === "tagihan") {
@@ -251,11 +255,12 @@ export default function FinanceSuppliers() {
                 filterLabel: labelFilterAktif([["Tab", "Master Supplier"], ["Status", fStatusS && (fStatusS === "aktif" ? "Aktif" : "Nonaktif")], ["Utang", fUtang && (fUtang === "ada" ? "Ada sisa utang" : "Lunas")], ["Pencarian", qS.trim()]]),
               };
             }}
-          />
-          <Button size="sm" onClick={() => setModal(tab === "supplier" ? "supplier" : tab === "pembayaran" ? "bayar" : "tagihan")}>
+          />}
+          {tab !== "aging" && <Button size="sm" onClick={() => setModal(tab === "supplier" ? "supplier" : tab === "pembayaran" ? "bayar" : "tagihan")}>
             <Plus size={14} />
             {tab === "supplier" ? "Supplier Baru" : tab === "pembayaran" ? "Catat Pembayaran" : "Tagihan Baru"}
-          </Button>
+          </Button>}
+          {tab === "aging" && <Button size="sm" onClick={() => setModal("bayar")}><Banknote size={14} /> Catat Pembayaran</Button>}
         </>
       )}
     >
@@ -309,6 +314,10 @@ export default function FinanceSuppliers() {
       <p className="text-[13px] leading-relaxed text-ink3">
         {TAB.find((t) => t.key === tab)?.penjelasan}
       </p>
+
+      {tab === "aging" && (
+        <JadwalAgingUtang suppliers={suppliersAktif} rekening={rekening} bolehJadwal={(() => { try { return bolehMencatatFinance(JSON.parse(localStorage.getItem("user") || "null")); } catch { return false; } })()} onBukaPembayaran={() => setModal("bayar")} />
+      )}
 
       {tab === "tagihan" && (
         <>
@@ -536,7 +545,7 @@ export default function FinanceSuppliers() {
                       <TD sticky className="font-mono text-[12px]">{s.code}</TD>
                       <TD truncate className="font-medium">{s.name}</TD>
                       <TD truncate className="text-[12px] text-ink2">{s.phone || s.email || "—"}</TD>
-                      <TD className="whitespace-nowrap text-[12px]">{s.paymentTermDays ? `${s.paymentTermDays} hari` : "—"}</TD>
+                      <TD className="whitespace-nowrap text-[12px]">{s.paymentTermType === "TUNAI" ? "Tunai/COD" : s.paymentTermType === "TANGGAL_KHUSUS" ? "Tanggal khusus" : s.paymentTermDays ? `${s.paymentTermDays} hari` : "—"}</TD>
                       <TD truncate className="text-[12px] text-ink2">
                         {s.bankAccount ? `${s.bankName || ""} ${s.bankAccount}`.trim() : "—"}
                       </TD>
@@ -611,7 +620,7 @@ export default function FinanceSuppliers() {
       <ModalBayarSupplier
         open={modal === "bayar"} onClose={() => setModal(null)}
         suppliers={suppliersAktif} bills={bills} rekening={rekening}
-        onSubmit={(d) => aksi(() => api.createFinanceSupplierPayment(d))}
+        onSubmit={(d, kunci) => aksi(() => api.createFinanceSupplierPayment(d, kunci))}
       />
       <PanelDetail spec={panelRincian} onClose={() => setPanelRincian(null)} />
     </HalamanFinance>
@@ -622,7 +631,7 @@ export default function FinanceSuppliers() {
 // Mode edit: galat server tampil di dalam dialog dan tombol dilepas lagi (dialog tidak boleh terkunci).
 function ModalSupplierIsi({ open, onClose, onSubmit, supplier = null }) {
   const edit = !!supplier;
-  const [f, setF] = useState(() => (edit ? formDariSupplier(supplier) : { code: "", name: "", phone: "", email: "", address: "", paymentTermDays: "", bankName: "", bankAccount: "", bankHolder: "", notes: "" }));
+  const [f, setF] = useState(() => (edit ? formDariSupplier(supplier) : { code: "", name: "", phone: "", email: "", address: "", paymentTermDays: "", paymentTermPilihan: "", bankName: "", bankAccount: "", bankHolder: "", notes: "" }));
   const [sibuk, setSibuk] = useState(false);
   const [galat, setGalat] = useState(null);
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
@@ -633,7 +642,7 @@ function ModalSupplierIsi({ open, onClose, onSubmit, supplier = null }) {
 
   async function kirim() {
     setSibuk(true); setGalat(null);
-    try { await onSubmit(edit ? perubahan : f); }
+    try { await onSubmit(edit ? perubahan : { ...f, ...payloadTerminSupplier(f.paymentTermPilihan) }); }
     catch (e) { setGalat(e?.message || "Gagal menyimpan supplier"); setSibuk(false); }
   }
   return (
@@ -665,8 +674,10 @@ function ModalSupplierIsi({ open, onClose, onSubmit, supplier = null }) {
           <Field label="Email"><Input value={f.email} onChange={(e) => set("email", e.target.value)} /></Field>
         </div>
         <Field label="Alamat"><Input value={f.address} onChange={(e) => set("address", e.target.value)} /></Field>
-        <Field label="Termin pembayaran (hari)" hint="Dipakai menghitung jatuh tempo tagihan otomatis">
-          <Input type="number" value={f.paymentTermDays} onChange={(e) => set("paymentTermDays", e.target.value)} placeholder="30" />
+        <Field label="Termin pembayaran" hint="Bawaan saja: PO/faktur menyimpan salinannya sendiri, jadi mengubah ini tidak mengubah dokumen lama. Jatuh tempo = tanggal faktur supplier + hari termin.">
+          <Pilihan value={f.paymentTermPilihan} onChange={(v) => set("paymentTermPilihan", v)} aria-label="Termin pembayaran">
+            {daftarPilihanTermin(f.paymentTermPilihan).map((p) => <option key={p.nilai} value={p.nilai}>{p.label}</option>)}
+          </Pilihan>
         </Field>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Bank"><Input value={f.bankName} onChange={(e) => set("bankName", e.target.value)} /></Field>
@@ -684,11 +695,12 @@ function ModalTagihanIsi({ open, onClose, suppliers, unbilled, kategori, kategor
     supplierId: "", supplierRef: "", billDate: "", dueDate: "", amount: "",
     description: "", billType: "", goodsReceiptId: "", expenseCategoryId: "", purchaseCategoryId: "",
   });
+  const [termin, setTermin] = useState(TERMIN_AWAL);
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
-  const valid = f.supplierId && f.description.trim() && Number(f.amount) > 0 && jenisLengkap(f, metodeInfo);
+  const valid = f.supplierId && f.description.trim() && Number(f.amount) > 0 && jenisLengkap(f, metodeInfo) && !galatTermin(termin, { perluTanggal: false });
   const kirim = () => {
-    const { goodsReceiptId, expenseCategoryId, purchaseCategoryId, billType, ...dasar } = f;
-    return onSubmit({ ...dasar, ...bodyJenis(f) });
+    const { goodsReceiptId, expenseCategoryId, purchaseCategoryId, billType, dueDate, ...dasar } = f;
+    return onSubmit({ ...dasar, ...bodyJenis(f), ...bodyTermin(termin) });
   };
 
   return (
@@ -713,12 +725,8 @@ function ModalTagihanIsi({ open, onClose, suppliers, unbilled, kategori, kategor
           <Field label="Nomor faktur supplier"><Input value={f.supplierRef} onChange={(e) => set("supplierRef", e.target.value)} /></Field>
           <Field label="Nominal tagihan" required><InputUang value={f.amount} onChange={(v) => set("amount", v)} /></Field>
         </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Tanggal tagihan"><DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.billDate} onChange={(v) => set("billDate", v)} /></Field>
-          <Field label="Jatuh tempo" hint="Kosongkan untuk ikut termin supplier">
-            <DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.dueDate} onChange={(v) => set("dueDate", v)} />
-          </Field>
-        </div>
+        <Field label="Tanggal tagihan (tanggal faktur supplier)"><DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.billDate} onChange={(v) => set("billDate", v)} /></Field>
+        <TerminFaktur supplierId={f.supplierId} tanggalFaktur={f.billDate} value={termin} onChange={setTermin} />
 
         <PilihJenisTagihan
           f={f} set={set} kategori={kategori} kategoriBeli={kategoriBeli} unbilled={unbilled} metodeInfo={metodeInfo}
@@ -733,6 +741,12 @@ function ModalBayarSupplierIsi({ open, onClose, suppliers, bills, rekening, onSu
   const [f, setF] = useState({ supplierId: "", date: "", cashAccountId: "", reference: "", notes: "", ...BIAYA_KOSONG });
   const [alokasi, setAlokasi] = useState({});
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  // Kunci idempotensi: sama untuk klik ganda/retry isian yang SAMA (server memutar ulang hasil pertama), baru bila isian berubah.
+  const kunciRef = useRef({ isi: "", kunci: "" });
+  const kunciBayar = (isi) => {
+    if (kunciRef.current.isi !== isi) kunciRef.current = { isi, kunci: `sp-${globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2, 10)}` };
+    return kunciRef.current.kunci;
+  };
 
   const tagihanTerbuka = useMemo(
     () => bills.filter((b) => b.supplierId === f.supplierId && ["DISETUJUI", "DIBAYAR_SEBAGIAN"].includes(b.status) && b.sisa > 0),
@@ -753,12 +767,15 @@ function ModalBayarSupplierIsi({ open, onClose, suppliers, bills, rekening, onSu
           <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
           <TombolAksi
             disabled={!valid}
-            onClick={() => onSubmit({
-              ...denganBiaya(f),
-              allocations: Object.entries(alokasi)
-                .filter(([, v]) => Number(v) > 0)
-                .map(([billId, amount]) => ({ billId, amount: Number(amount) })),
-            })}
+            onClick={() => {
+              const body = {
+                ...denganBiaya(f),
+                allocations: Object.entries(alokasi)
+                  .filter(([, v]) => Number(v) > 0)
+                  .map(([billId, amount]) => ({ billId, amount: Number(amount) })),
+              };
+              return onSubmit(body, kunciBayar(JSON.stringify(body)));
+            }}
           >
             Simpan
           </TombolAksi>
@@ -795,7 +812,7 @@ function ModalBayarSupplierIsi({ open, onClose, suppliers, bills, rekening, onSu
                     <div className="min-w-0 text-[13px]">
                       <span className="block truncate font-medium">{b.billNumber} · {b.description}</span>
                       <span className="text-[11px] text-ink3">
-                        sisa {formatUang(b.sisa)}{b.dueDate ? ` · jatuh tempo ${tanggalPendek(b.dueDate)}` : ""}
+                        sisa {formatUang(b.sisa)}{b.dueDate ? ` · jatuh tempo ${tanggalPendek(b.dueDate)}` : " · jatuh tempo belum diisi"}
                       </span>
                     </div>
                     <InputUang
@@ -870,7 +887,7 @@ function ModalEditTagihan({ bill, suppliers, kategori, kategoriBeli, metodeInfo 
         </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Tanggal tagihan"><DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.billDate} onChange={(v) => set("billDate", v)} /></Field>
-          <Field label="Jatuh tempo"><DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.dueDate} onChange={(v) => set("dueDate", v)} /></Field>
+          <Field label="Jatuh tempo" hint="Mengganti dari termin supplier hanya boleh admin keuangan (alasan perubahan di bawah dipakai)"><DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.dueDate} onChange={(v) => set("dueDate", v)} /></Field>
         </div>
         {!bill.billType && (
           <p className="rounded-lg bg-orangebg px-3 py-2 text-[12.5px] text-orange">

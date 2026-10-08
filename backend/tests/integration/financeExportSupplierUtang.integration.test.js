@@ -32,7 +32,7 @@ async function siapkan() {
   const a = makeClient(server.baseUrl, admin.token);
 
   const buat = async (supplier, extra) => {
-    const r = await a.post("/api/finance/bills", { supplierId: supplier.id, billDate: "2026-09-10", amount: 1_000_000, description: "Jasa jahit", billType: "JASA_OPERASIONAL", expenseCategoryId: kat.id, ...extra });
+    const r = await a.post("/api/finance/bills", { supplierId: supplier.id, billDate: "2026-09-10", amount: 1_000_000, description: "Jasa jahit", billType: "JASA_OPERASIONAL", expenseCategoryId: kat.id, ...extra, ...(extra.dueDate && { alasanTermin: "Uji" }) });
     assert.equal(r.status, 201, JSON.stringify(r.body));
     return r.body;
   };

@@ -6803,6 +6803,7 @@ model FinCashAccount {
   transfersFrom    FinCashTransfer[]    @relation("FinTransferFrom")
   transfersTo      FinCashTransfer[]    @relation("FinTransferTo")
   supplierPayments FinSupplierPayment[]
+  scheduledBills   FinSupplierBill[]    @relation("FinBillScheduledAccount")
   refunds          FinRefund[]
   payments         Payment[]
   bankImportBatches FinBankImportBatch[]
@@ -7220,6 +7221,9 @@ model FinSupplier {
   // tanggal tagihan). NULL = tidak ada termin baku, jatuh tempo diisi
   // manual per tagihan.
   paymentTermDays Int? @map("payment_term_days")
+  // Termin Pembayaran & Aging Utang (Okt 2026): jenis termin bawaan supplier — TUNAI (COD) | HARI (pakai paymentTermDays: 7/14/30/45/60) | TANGGAL_KHUSUS
+  // (tanggal jatuh tempo diisi per dokumen). NULL + paymentTermDays terisi = data lama (dibaca sebagai HARI). Hanya DEFAULT: dokumen menyimpan snapshot sendiri.
+  paymentTermType String? @map("payment_term_type") @db.VarChar(20)
 
   bankName    String? @map("bank_name")
   bankAccount String? @map("bank_account")
@@ -7332,6 +7336,23 @@ model FinSupplierBill {
   poReviewNote  String?   @map("po_review_note")
   poReviewedBy  String?   @map("po_reviewed_by")
   poReviewedAt  DateTime? @map("po_reviewed_at")
+
+  // Termin & jadwal bayar (Okt 2026). Snapshot termin: dueDate = billDate + termDays (termBasis TANGGAL_FAKTUR) kecuali TANGGAL_KHUSUS / override.
+  // termSource: MASTER_SUPPLIER | PO | OVERRIDE_FAKTUR (alasan wajib). Semua NULL = tagihan lama: jatuh tempo TIDAK ditebak.
+  termType           String?   @map("term_type") @db.VarChar(20)
+  termDays           Int?      @map("term_days")
+  termBasis          String?   @map("term_basis") @db.VarChar(30)
+  termSource         String?   @map("term_source") @db.VarChar(20)
+  termOverrideReason String?   @map("term_override_reason")
+  termSetById        String?   @map("term_set_by")
+  termSetAt          DateTime? @map("term_set_at")
+  // Draf jadwal pembayaran (rencana saja — TIDAK menjurnal, TIDAK membayar).
+  scheduledPayDate      DateTime?       @map("scheduled_pay_date") @db.Date
+  scheduledCashAccountId String?        @map("scheduled_cash_account_id") @db.Uuid
+  scheduledCashAccount  FinCashAccount? @relation("FinBillScheduledAccount", fields: [scheduledCashAccountId], references: [id], onDelete: SetNull)
+  scheduledNote         String?         @map("scheduled_note")
+  scheduledById         String?         @map("scheduled_by")
+  scheduledAt           DateTime?       @map("scheduled_at")
   poLines       FinSupplierBillPoLine[]
   poReceipts    FinSupplierBillPoReceipt[]
   poAllocations FinSupplierBillAllocation[]
@@ -7377,6 +7398,14 @@ model FinPurchaseOrder {
   approvedAt   DateTime? @map("approved_at")
   cancelledAt  DateTime? @map("cancelled_at")
   cancelReason String?   @map("cancel_reason")
+
+  // Snapshot termin pembayaran (TIDAK ikut berubah bila master supplier diubah). termSource: MASTER_SUPPLIER | PO (diganti Finance pada PO ini).
+  termType           String?   @map("term_type") @db.VarChar(20)
+  termDays           Int?      @map("term_days")
+  termSource         String?   @map("term_source") @db.VarChar(20)
+  termOverrideReason String?   @map("term_override_reason")
+  termSetById        String?   @map("term_set_by")
+  termSetAt          DateTime? @map("term_set_at")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")

@@ -12,6 +12,8 @@ import { TableWrap, Table, THead, TBody, TR, TH, TD, TABLE_VIEW_CLASS, CARD_VIEW
 import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
 import JejakBiayaPO from "@/features/finance/JejakBiayaPO.jsx";
+import TerminFaktur from "@/features/finance/TerminFaktur.jsx";
+import { TERMIN_AWAL, galatTermin, teksTermin } from "@/features/finance/terminLogic.js";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi, Pilihan, InputUang, tanggalPendek,
 } from "@/features/finance/shared.jsx";
@@ -192,6 +194,7 @@ function Progres({ teks, persen }) {
 function ModalPO({ kunci, po, onClose, onSaved }) {
   const mengubah = !!po;
   const [f, setF] = useState(() => (po ? formDariPO(po) : { supplierId: "", orderDate: hariIniISO(), expectedDate: "", notes: "", lines: [baris0()] }));
+  const [termin, setTermin] = useState(TERMIN_AWAL);
   const [suppliers, setSuppliers] = useState([]);
   const [materials, setMaterials] = useState([]);
   const [galat, setGalat] = useState("");
@@ -204,13 +207,13 @@ function ModalPO({ kunci, po, onClose, onSaved }) {
   }, []);
 
   const bahan = useMemo(() => new Map(materials.map((m) => [m.id, m])), [materials]);
-  const galatForm = galatFormulir(f);
+  const galatForm = galatFormulir(f) || galatTermin(termin);
   const total = totalIsian(f.lines);
 
   async function simpan() {
     setGalat("");
     try {
-      const body = bodyDariForm(f);
+      const body = bodyDariForm({ ...f, termin });
       const hasil = mengubah ? await api.updatePurchaseOrder(po.id, body) : await api.createPurchaseOrder(body, `po-${kunci}`);
       await onSaved(hasil.id);
     } catch (e) { setGalat(e.message || "Gagal menyimpan PO"); }
@@ -244,6 +247,7 @@ function ModalPO({ kunci, po, onClose, onSaved }) {
               {mengubah && !suppliers.some((s) => s.id === f.supplierId) && <option value={f.supplierId}>{po.supplier.name}</option>}
             </Pilihan>
           </Field>
+          <div className="sm:col-span-2"><TerminFaktur mode="po" supplierId={f.supplierId} tanggalFaktur={f.orderDate} value={termin} onChange={setTermin} /></div>
           <Field label="Tanggal PO" required><Input type="date" value={f.orderDate} onChange={(e) => set("orderDate", e.target.value)} /></Field>
           <Field label="Estimasi kedatangan" hint="Boleh dikosongkan."><Input type="date" min={f.orderDate} value={f.expectedDate} onChange={(e) => set("expectedDate", e.target.value)} /></Field>
           <Field label="Catatan"><Input value={f.notes} onChange={(e) => set("notes", e.target.value)} placeholder="mis. kirim ke Gudang Utama sebelum Jumat" /></Field>
@@ -400,6 +404,7 @@ function IsiDetail({ po, segar, onUbahFaktur, onSetujuiFaktur, onTolakFaktur, on
         <span className="text-[12px] text-ink2">Dibuat oleh {po.createdBy?.name || "—"}{po.approvedBy ? ` · disetujui ${po.approvedBy.name} (${tglJam(po.approvedAt)})` : ""}</span>
       </div>
       {po.notes && <p className="text-[12.5px] text-ink2">{po.notes}</p>}
+      <p className="m-0 text-[12.5px] text-ink2" data-testid="termin-po">Termin pembayaran: <strong className="text-ink">{po.termin ? teksTermin({ label: po.termin.label, sumber: po.termin.sumber }) : "belum ditetapkan"}</strong>{po.termin?.alasan ? ` — diganti: ${po.termin.alasan}` : ""}</p>
       {po.status === "DIBATALKAN" && <p className="rounded-lg bg-redbg px-3 py-2 text-[12.5px] text-red">Dibatalkan {tglJam(po.cancelledAt)} — {po.cancelReason}</p>}
 
       <section>
@@ -596,6 +601,7 @@ function KartuFaktur({ fk, segar, onUbah, onSetujui, onTolak, onGalat, onSegarka
 function ModalFaktur({ po, editBillId, onClose, onSaved }) {
   const mengubah = !!editBillId;
   const [kunci] = useState(idKunci);
+  const [termin, setTermin] = useState(TERMIN_AWAL);
   const [p, setP] = useState(null);
   const [f, setF] = useState(null);
   const [galat, setGalat] = useState("");
@@ -616,14 +622,14 @@ function ModalFaktur({ po, editBillId, onClose, onSaved }) {
     return () => { batal = true; };
   }, [po.id, editBillId, mengubah]);
 
-  const galatForm = f ? galatFaktur(f, { edit: mengubah }) : "Memuat…";
+  const galatForm = f ? (galatFaktur(f, { edit: mengubah }) || galatTermin(termin, { perluTanggal: false })) : "Memuat…";
   const total = f ? totalFaktur(f.lines) : 0;
   const barisPO = new Map((p?.barisPO || []).map((b) => [b.purchaseOrderLineId, b]));
 
   async function simpan() {
     setGalat("");
     try {
-      const body = bodyFaktur(f, { edit: mengubah });
+      const body = bodyFaktur({ ...f, termin }, { edit: mengubah });
       if (mengubah) await api.updateFakturPurchaseOrder(editBillId, body); else await api.createFakturPurchaseOrder(po.id, body, `fak-${kunci}`);
       await onSaved();
     } catch (e) { setGalat(e.message || "Gagal menyimpan faktur"); }
@@ -653,8 +659,8 @@ function ModalFaktur({ po, editBillId, onClose, onSaved }) {
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Field label="Nomor faktur supplier" required><Input value={f.supplierRef} onChange={(e) => set("supplierRef", e.target.value)} placeholder="mis. 2327/CR/EB/10/2026" aria-label="Nomor faktur supplier" /></Field>
             <Field label="Tanggal faktur" required><Input type="date" value={f.billDate} onChange={(e) => set("billDate", e.target.value)} /></Field>
-            <Field label="Jatuh tempo" hint="Kosong = mengikuti termin supplier."><Input type="date" min={f.billDate} value={f.dueDate} onChange={(e) => set("dueDate", e.target.value)} /></Field>
           </div>
+          <TerminFaktur purchaseOrderId={po.id} supplierId={po.supplier?.id} tanggalFaktur={f.billDate} value={termin} onChange={setTermin} />
 
           {p.penerimaan.length > 0 && (
             <div>

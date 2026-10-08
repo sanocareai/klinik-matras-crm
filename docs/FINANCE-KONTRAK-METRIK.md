@@ -373,6 +373,22 @@ Beban/kas keluar yang divisinya TIDAK terbukti dari dokumen sumber (tidak ada di
 | Tampil di | Laporan Divisi |
 | Export | laporan-divisi |
 
+### Utang Supplier per Jatuh Tempo (Aging) (`utang_jatuh_tempo_aging`)
+
+Sisa utang faktur supplier yang sudah disetujui, dikelompokkan menurut TANGGAL JATUH TEMPO (terlambat, hari ini, 1–7, 8–14, 15–30, lebih dari 30 hari). Tidak memakai tanggal barang datang, dan status barang tidak memengaruhinya.
+
+| | |
+|---|---|
+| Rumus | Σ (nilai faktur − pembayaran aktif) per kelompok umur terhadap tanggal jatuh tempo; faktur tanpa tanggal jatuh tempo dihitung terpisah |
+| Sumber | tabel fin_supplier_bills + fin_supplier_payment_allocations |
+| Status dihitung | disetujui, dibayar sebagian (lunas hanya tampil di kelompok Lunas) |
+| Basis tanggal | Tanggal dokumen |
+| Termasuk | Faktur supplier yang sudah disetujui dan masih ada sisa; Pembayaran sebagian (sisa tetap terbuka, jatuh tempo tetap) |
+| Tidak termasuk | Faktur belum disetujui; Pembayaran yang dibatalkan (reversal); Biaya transfer/BI-FAST (beban bank, bukan pengurang utang); Barang diterima yang belum difakturkan (GRNI) |
+| Pasangan rekonsiliasi | Utang Supplier; Komitmen Belum Dibayar |
+| Tampil di | Jadwal & Aging Utang |
+| Export | aging-utang |
+
 ## Kas, bank & rekonsiliasi
 
 ### Kas & Bank (Menurut Buku) (`kas_bank_buku`)

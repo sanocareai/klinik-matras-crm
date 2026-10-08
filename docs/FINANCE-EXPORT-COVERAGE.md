@@ -24,6 +24,8 @@ Mode filter: **Server** = layar mengirim filter/periode ke endpoint daftar, expo
 | **Buku Besar** (per akun) | `buku-besar` | `GET /finance/reports/ledger/:accountId` (`bukuBesar`) | Server: akun + periode; klien: pencarian/sumber/jenis/status → `ids` | Saldo awal, total debit/kredit, saldo akhir → baris TOTAL + sheet Ringkasan | (alasan pembalikan pada keterangan dipotong untuk non-admin) |
 | **Biaya Bahan per Unit** (Okt 2026) | `biaya-bahan` | `GET /finance/biaya-bahan/unit` + `/unit/:id` (`daftarUnitBiaya` + `bacaJejakUnit`) | Server: q (kode unit / nomor order); layar dan export memuat 100 unit terbaru yang sama | Total Biaya Bahan, Retur, Biaya Bersih, Waste, Selisih Harga Faktur → sheet Ringkasan per Unit (+ Rincian Pergerakan, Tanpa Harga, Retur dan Waste); sel kosong = belum diketahui (bukan Rp0), total hanya menjumlah baris Dinilai | — (tanpa kolom sensitif; izin finance:read) |
 
+| **Jadwal & Aging Utang** (tab di Supplier & Utang, Okt 2026) | `aging-utang` | `GET /finance/utang/aging` (`bacaAgingUtang`) — satu read-model untuk kartu, tabel, detail, export | Server: supplier, pencarian, tanggal faktur, jatuh tempo; tab kelompok tidak membatasi export (tiap kelompok = sheet) | Kartu (utang aktif, terlambat, 7/30 hari, dijadwalkan, tanpa jatuh tempo) → sheet Ringkasan Aging + total tiap sheet; enam sheet: Ringkasan Aging, Utang Aktif, Jatuh Tempo, Dibayar Sebagian, Lunas, Tanpa Jatuh Tempo | alasan ganti termin, catatan jadwal bayar |
+
 ## A2. Export lewat endpoint sendiri — Laporan Divisi (Fase 2)
 
 | Halaman / tab | Endpoint | Isi | Parity |

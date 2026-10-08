@@ -10,6 +10,7 @@
 //      di layar. Melebihi PO butuh penanganan eksplisit: Finance merevisi jumlah PO (tercatat sebelum/sesudah + alasan).
 import { generateDocumentNumber, toBookDate } from "./journal.js";
 import { lockRowForUpdate } from "../inventoryLedger.js";
+import { tentukanTerminPO, TerminError, labelTermin } from "./termin.js";
 
 export class PurchaseOrderError extends Error {
   constructor(message, statusCode = 400) { super(message); this.statusCode = statusCode; }
@@ -35,7 +36,7 @@ const rp = (n) => Math.round(n * 100) / 100;
 async function siapkanMasukan(tx, body) {
   const b = body ?? {};
   if (!b.supplierId) throw gagal("Supplier wajib dipilih");
-  const supplier = await tx.finSupplier.findUnique({ where: { id: b.supplierId }, select: { id: true, name: true, active: true } });
+  const supplier = await tx.finSupplier.findUnique({ where: { id: b.supplierId }, select: { id: true, name: true, active: true, paymentTermDays: true, paymentTermType: true } });
   if (!supplier) throw gagal("Supplier tidak ditemukan", 404);
   if (!supplier.active) throw gagal(`Supplier ${supplier.name} nonaktif — aktifkan dulu atau pilih supplier lain`, 409);
 
@@ -89,13 +90,21 @@ async function kunciDanMuat(tx, id) {
 
 // ── Perintah ─────────────────────────────────────────────────────────────
 
-export async function buatPO(tx, { body, userId }) {
+/** Snapshot termin PO: warisi master supplier, atau ganti (finance:admin + alasan). Galat termin → gagal() supaya route memetakannya ke 4xx. */
+function terminPO(supplier, body, { userId, bolehOverride }) {
+  try {
+    return tentukanTerminPO({ supplier, masukan: { terminJenis: body?.terminJenis, terminHari: body?.terminHari, alasan: body?.alasanTermin }, boleh: { override: !!bolehOverride }, userId });
+  } catch (e) { if (e instanceof TerminError) throw gagal(e.message, e.statusCode, e.code); throw e; }
+}
+
+export async function buatPO(tx, { body, userId, bolehOverride = false }) {
   const m = await siapkanMasukan(tx, body);
+  const termin = terminPO(m.supplier, body, { userId, bolehOverride });
   const poNumber = await generateDocumentNumber(tx, "PO", m.orderDate);
   const po = await tx.finPurchaseOrder.create({
     data: {
       poNumber, supplierId: m.supplier.id, orderDate: m.orderDate, expectedDate: m.expectedDate, notes: m.notes,
-      status: "DRAFT", createdById: userId,
+      status: "DRAFT", createdById: userId, ...termin,
       lines: { create: m.lines },
     },
   });
@@ -103,14 +112,17 @@ export async function buatPO(tx, { body, userId }) {
   return po.id;
 }
 
-export async function ubahDraf(tx, { id, body, userId }) {
+export async function ubahDraf(tx, { id, body, userId, bolehOverride = false }) {
   const po = await kunciDanMuat(tx, id);
   if (po.status !== "DRAFT") throw gagal(`PO berstatus ${po.status} tidak bisa diubah — hanya draf yang bisa diedit (batalkan dan buat PO baru bila perlu)`, 409);
   const m = await siapkanMasukan(tx, body);
   await tx.finPurchaseOrderLine.deleteMany({ where: { purchaseOrderId: po.id } });
+  // Termin: ikut master supplier baru bila supplier diganti atau termin diketik ulang; selain itu snapshot lama dipertahankan.
+  const ulangTermin = m.supplier.id !== po.supplierId || (body?.terminJenis !== undefined && body?.terminJenis !== null && body?.terminJenis !== "");
+  const termin = ulangTermin ? terminPO(m.supplier, body, { userId, bolehOverride }) : {};
   await tx.finPurchaseOrder.update({
     where: { id: po.id },
-    data: { supplierId: m.supplier.id, orderDate: m.orderDate, expectedDate: m.expectedDate, notes: m.notes, lines: { create: m.lines } },
+    data: { supplierId: m.supplier.id, orderDate: m.orderDate, expectedDate: m.expectedDate, notes: m.notes, ...termin, lines: { create: m.lines } },
   });
   await catat(tx, po, "DIUBAH", userId, { metadata: { supplier: m.supplier.name, jumlahBaris: m.lines.length } });
   return po.id;
@@ -392,6 +404,8 @@ export async function bentukPO(tx, id, { harga = true, denganPenerimaan = true }
     cancelledAt: po.cancelledAt, cancelReason: po.cancelReason,
     createdAt: po.createdAt,
     lines,
+    // Termin hanya untuk Finance (Gudang tidak melihat harga/utang). Snapshot dokumen — tidak berubah bila master supplier diubah.
+    ...(harga && { termin: po.termType ? { jenis: po.termType, hari: po.termDays, label: labelTermin(po.termType, po.termDays), sumber: po.termSource, alasan: po.termOverrideReason, olehId: po.termSetById, pada: po.termSetAt } : null }),
     ...(harga && { totalDipesan: total("nilaiDipesan"), totalDiterima: total("nilaiDiterima"), totalDitagih: total("nilaiDitagih") }),
   };
 

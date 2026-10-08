@@ -554,7 +554,7 @@ export async function tolakPembayaran(tx, { paymentId, reason, userId }) {
   }
   await recordActivity(tx, {
     entityType: ENTITY_TYPES.PAYMENT, entityId: p.id, eventType: EVENT_TYPES.DOCUMENT_REJECTED, actorId: userId,
-    metadata: { aksi: "tolak_pembayaran", reason: alasan, orderNumber: p.order?.orderNumber ?? null, amount: uang(p.amount), jurnalDibalik: !!jurnal?.reversed },
+    metadata: { aksi: "tolak_pembayaran", reason: alasan, orderNumber: p.order?.orderNumber ?? null, amount: uang(p.amount), jurnalDibalik: !!jurnal?.reversed, ...(jurnal?.reklas?.length && { reklasUangMuka: jurnal.reklas.map((r) => ({ orderId: r.orderId, jumlah: r.jumlah, jurnal: r.entryNumber })) }) },
   });
   return { paymentId: p.id, orderIds, status, jurnal };
 }

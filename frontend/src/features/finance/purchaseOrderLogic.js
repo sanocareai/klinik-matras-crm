@@ -1,6 +1,14 @@
 // Logika murni layar Purchase Order bahan baku (tanpa React) — supaya aturan tampilan bisa dites tanpa browser.
 // Angka kuantitas (dipesan, diterima baik, ditolak, belum diterima, ditagih) SELALU dari server; di sini hanya pemformatan dan validasi isian.
 
+import { bodyTermin } from "./terminLogic.js";
+
+// Termin PO: hanya mengganti termin (admin + alasan); jatuh tempo dihitung saat faktur dibuat.
+const bodyTerminPO = (t) => {
+  const b = bodyTermin(t);
+  return t?.ganti ? { terminJenis: b.terminJenis, terminHari: b.terminHari, alasanTermin: b.alasanTermin } : {};
+};
+
 export const STATUS_PO = {
   DRAFT: { label: "Draf", variant: "neutral" },
   DISETUJUI: { label: "Disetujui", variant: "accent" },
@@ -89,6 +97,7 @@ export function formDariPO(po) {
 
 export function bodyDariForm(f) {
   return {
+    ...(f.termin ? bodyTerminPO(f.termin) : {}),
     supplierId: f.supplierId, orderDate: f.orderDate, expectedDate: f.expectedDate || null, notes: f.notes.trim() || null,
     lines: f.lines.map((l) => ({ materialId: l.materialId, qty: Number(l.qty), unitPrice: Number(l.unitPrice) })),
   };
@@ -199,7 +208,7 @@ export function petunjukBaris(l, baris) {
 
 export function bodyFaktur(f, { edit = false } = {}) {
   return {
-    supplierRef: f.supplierRef.trim(), billDate: f.billDate, dueDate: f.dueDate || undefined, description: f.description.trim() || undefined,
+    supplierRef: f.supplierRef.trim(), billDate: f.billDate, ...(f.termin ? bodyTermin(f.termin) : { dueDate: f.dueDate || undefined }), description: f.description.trim() || undefined,
     receiptIds: f.receiptIds,
     lines: f.lines.filter((l) => l.pakai).map((l) => ({ purchaseOrderLineId: l.purchaseOrderLineId, qty: Number(l.qty), unitPrice: Number(l.unitPrice) })),
     ...(edit && { reason: f.reason.trim() }),
