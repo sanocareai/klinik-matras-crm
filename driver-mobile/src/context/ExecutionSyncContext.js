@@ -71,7 +71,7 @@ export function ExecutionSyncProvider({ children }) {
     const latest = await readExecutionQueue(userId);
     setQueue(latest);
     const pending = latest.find((entry) => entry.idempotencyKey === item.idempotencyKey);
-    if (pending?.blocked) throw new Error(pending.lastError || "Aksi ditolak server");
+    if (pending?.blocked) throw Object.assign(new Error(pending.lastError || "Aksi ditolak server"), { code: pending.lastErrorCode || null });
     if (!pending) queryClient.invalidateQueries({ queryKey: ["armada", "my-jobs"] });
     return { pending: !!pending };
   }, [userId, deviceId, connected]);

@@ -638,6 +638,16 @@ function RouteStartBanner({ route, assignedCount, sampleJobId, onChanged }) {
       setPhotos([]);
       onChanged();
     } catch (e) {
+      // Gerbang Checklist Persiapan Perjalanan baru kelihatan sekarang (checklistReady sempat salah/belum
+      // selesai dimuat) — tutup form foto dan kembalikan fokus ke panel Checklist yang sudah tampil di atas,
+      // alih-alih cuma menampilkan galat generik di sini.
+      if (e.code === "CHECKLIST_BELUM_LENGKAP") {
+        setMode("idle");
+        setPhotos([]);
+        setChecklistReady(false);
+        setErr("Checklist Persiapan Perjalanan belum lengkap — lengkapi dulu di panel di atas sebelum memulai perjalanan.");
+        return;
+      }
       setErr(e.message || "Gagal memulai rute");
     } finally {
       setBusy(false);

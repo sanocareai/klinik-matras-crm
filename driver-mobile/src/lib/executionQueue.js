@@ -137,6 +137,7 @@ export function createExecutionQueue({ storage, fs, api: client }) {
         createdAt: new Date().toISOString(),
         attempts: 0,
         lastError: null,
+        lastErrorCode: null,
         blocked: false,
         syncState: "PENDING",
       };
@@ -319,7 +320,7 @@ export function createExecutionQueue({ storage, fs, api: client }) {
               await writeQueue(userId, queue);
               break;
             }
-            queue[index] = { ...item, attempts: item.attempts + 1, blocked: true, syncState: "CONFLICT", lastError: outcome.reason };
+            queue[index] = { ...item, attempts: item.attempts + 1, blocked: true, syncState: "CONFLICT", lastError: outcome.reason, lastErrorCode: error.code || null };
             await writeQueue(userId, queue);
             // Konflik status utk item ini SUDAH final (blocked dengan
             // alasan jelas) — bukan error transien yang butuh menghentikan
@@ -330,7 +331,7 @@ export function createExecutionQueue({ storage, fs, api: client }) {
           // kind === "block" — 403 otorisasi, tabrakan idempotency key,
           // atau validasi 4xx: benar-benar tidak valid lagi, reconciliation
           // status tidak relevan.
-          queue[index] = { ...item, attempts: item.attempts + 1, blocked: true, syncState: "CONFLICT", lastError: verdict.reason || error.message || "Gagal sinkronisasi" };
+          queue[index] = { ...item, attempts: item.attempts + 1, blocked: true, syncState: "CONFLICT", lastError: verdict.reason || error.message || "Gagal sinkronisasi", lastErrorCode: error.code || null };
           await writeQueue(userId, queue);
           index += 1;
         }

@@ -96,6 +96,15 @@ export default function RouteStartCard({ route, assignedCount, sampleJobId, onCh
       setPhotos([]);
       onChanged();
     } catch (e) {
+      // Gerbang checklist baru kelihatan sekarang (pemeriksaan awal di cekChecklistLaluMulai gagal/offline,
+      // atau berubah tepat sebelum submit) — arahkan ke Persiapan Perjalanan alih-alih cuma menampilkan
+      // galat di sini, supaya driver tidak menebak "bukti apa yang kurang" sendiri.
+      if (e.code === "CHECKLIST_BELUM_LENGKAP") {
+        setMode("idle");
+        setPhotos([]);
+        bukaPersiapanPerjalanan();
+        return;
+      }
       setErr(e.message || "Gagal memulai rute");
     } finally {
       setBusy(false);
