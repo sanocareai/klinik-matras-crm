@@ -1,0 +1,36 @@
+{
+ "note": "Staging terisolasi, image dari commit e21c5334; setting Admin → Run baru dipin V2 → alur normal Meja→PIC QC→Meja→PIC QC→putusan Lulus",
+ "setting": {
+  "results": [
+   {
+    "name": "A1 tanpa setting eksplisit: toggle TIDAK aktif, tertulis 'Nonaktif (kebijakan lama)', tanpa baris setting",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "A2 Admin mengaktifkan → setting tersimpan QC_GATE_V2 (bawaan versi penuh), tercatat audit",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "A3 Admin memilih versi 'Gerbang awal' → QC_GATE_V1; lalu kembali ke 'Gerbang awal + perakitan' → QC_GATE_V2",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "A4 Run yang SUDAH ada tidak berubah oleh perubahan bawaan",
+    "ok": true,
+    "extra": ""
+   }
+  ],
+  "errs": [],
+  "http": []
+ },
+ "flow": {
+  "pass": 32,
+  "total": 32,
+  "failed": [],
+  "consoleErrors": [],
+  "http": []
+ }
+}

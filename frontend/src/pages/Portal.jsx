@@ -6,6 +6,10 @@ import { PageContainer } from "@/components/ui/page.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { WORKSPACE_ART } from "@/features/portal/WorkspaceArt.jsx";
 import { cn } from "@/lib/utils.js";
+import { rolesOf } from "@/lib/roles.js";
+import { landingPathFor, readLastWorkerMode } from "@/lib/landing.js";
+
+function readStoredUser() { try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; } }
 
 // Landing portal SANSS (PRD §4). Halaman AWAL setelah login.
 //
@@ -352,8 +356,10 @@ export default function Portal() {
         const list = data.portals || [];
         // Role tunggal -> lompat langsung, jangan tampilkan layar pemilih
         // untuk satu-satunya pilihan yang ada (PRD §4).
+        // PIC Meja (peran lantai saja) mendarat di Aplikasi Meja; peran lain ke portalnya (lihat lib/landing.js).
         if (list.length === 1) {
-          navigate(list[0].path, { replace: true });
+          const to = landingPathFor({ roles: rolesOf(data.roles ? data : readStoredUser()), portals: list, lastMode: readLastWorkerMode() });
+          navigate(to || list[0].path, { replace: true });
           return;
         }
         setMe(data);

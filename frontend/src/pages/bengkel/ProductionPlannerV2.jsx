@@ -198,8 +198,9 @@ export default function ProductionPlannerV2() {
         {error && <div role="alert" className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{error}</div>}
 
         {/* Usulan Prioritas Pagi dari Dispatcher (3 Oktober 2026) — lihat MorningPriorityApprovalPanel.jsx.
-            Komponen sembunyi diri sendiri kalau akun ini tidak berhak (403) atau tidak ada usulan PENDING. */}
-        <MorningPriorityApprovalPanel />
+            Komponen sembunyi diri sendiri kalau akun ini tidak berhak (403) atau tidak ada usulan PENDING.
+            Hanya dipasang untuk peran pemegang izin (ADMIN/OWNER/PRODUCTION_LEAD): PIC Meja yang mendarat di halaman ini sesudah login TIDAK boleh memicu request yang pasti 403. */}
+        {canRoute && <MorningPriorityApprovalPanel />}
 
         {reader === "OFF" && offTotal === 0 ? (
           <Card className="p-0"><EmptyState icon={ClipboardList} title="Papan produksi belum aktif" description="Papan tampil setelah Production Lead mengaktifkannya untuk unit terkait. Sementara itu, gunakan Order Produksi." action={<Button size="sm" variant="secondary" asChild><Link to="/bengkel/work-orders">Buka Work Order</Link></Button>} /></Card>

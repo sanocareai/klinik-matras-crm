@@ -38,7 +38,7 @@ export const DOC_CATEGORIES = Object.freeze([
   { key: "PROCESS", label: "Proses pengerjaan", group: "PROCESS", min: 2, storeStepNo: 7, stepSources: [], due: { modulesDone: true } },
   { key: "TEXTURE_TEST", label: "Uji tekstur", group: "AFTER", min: 1, storeStepNo: 8, stepSources: [8], due: { step: 8 } },
   { key: "QC", label: "QC", group: "AFTER", min: 2, storeStepNo: 8, stepSources: [], qcPhotos: true, due: { qc: true } },
-  { key: "CORNER", label: "Corner", group: "AFTER", min: 2, storeStepNo: 11, stepSources: [9, 11], due: { step: 11 } },
+  { key: "CORNER", label: "Corner", group: "AFTER", min: 2, storeStepNo: 11, stepSources: [9, 11], needsStep: 11, due: { step: 11 } },
   { key: "FINAL_RESULT", label: "Hasil akhir", group: "AFTER", min: 3, storeStepNo: 12, stepSources: [12], due: { step: 12 } },
   { key: "READY_TO_SHIP", label: "Siap kirim / packing", group: "AFTER", min: 2, storeStepNo: 12, stepSources: [], due: { runCompleted: true } },
 ]);
@@ -108,7 +108,7 @@ export function parseDocRows(rows) {
 //   run: { origin, status } · qcDone: boolean · stepMedia: Map<stepNo, [{ url, kind, evidenceId, actorName, createdAt }]>
 //   extra: { pickupPhoto?: {url,createdAt}|null, diagnosisPhotos?: [{url,kind}], qcPhotos?: [{url,kind}] }
 //   docRows: hasil parseDocRows (+ actorName pada tiap baris)
-export function buildDocumentationMatrix({ applicableSteps, recordedSteps, nextStepNo = null, started, run, qcDone, stepMedia, extra = {}, docRows = [] }) {
+export function buildDocumentationMatrix({ applicableSteps, recordedSteps, nextStepNo = null, started, run, qcDone, stepMedia, extra = {}, docRows = [], naReasons = {} }) {
   const applicable = new Set(applicableSteps || []);
   const done = (n) => recordedSteps.has(n) || (nextStepNo != null && nextStepNo > n) || run.status === "COMPLETED";
   const moduleSteps = [6, 7].filter((n) => applicable.has(n));
@@ -142,7 +142,7 @@ export function buildDocumentationMatrix({ applicableSteps, recordedSteps, nextS
     const count = items.length;
     const missing = applicableCat && due ? Math.max(0, cat.min - count) : 0;
     const status = !applicableCat ? "NA" : count >= cat.min ? "LENGKAP" : due ? "KURANG" : "MENUNGGU";
-    return { key: cat.key, label: cat.label, group: cat.group, groupLabel: DOC_GROUPS[cat.group], min: cat.min, applicable: applicableCat, due, count, missing, status, items, history };
+    return { key: cat.key, label: cat.label, group: cat.group, groupLabel: DOC_GROUPS[cat.group], min: cat.min, applicable: applicableCat, due, count, missing, status, items, history, ...(!applicableCat ? { naReason: naReasons[cat.key] || "Kategori ini tidak berlaku untuk pekerjaan ini" } : {}) };
   });
   const missingBy = { BEFORE: 0, PROCESS: 0, AFTER: 0 };
   const missingList = [];
@@ -158,6 +158,39 @@ export function buildDocumentationMatrix({ applicableSteps, recordedSteps, nextS
       lengkap: started && complete,
     },
   };
+}
+
+// Fase 5 — rangkaian dokumentasi akhir: sebelum bongkar → isi kasur lama → racikan → hasil rakitan → uji QC → kain/Corner → hasil jadi.
+// Foto/video DIHITUNG dari kategori matriks (sumber Meja/QC/Corner/Driver/Dokumenter dikenali dari item.source) — tidak ada berkas yang disalin; kategori yang tidak berlaku diberi alasan, bukan foto buatan.
+export const SEQUENCE_SOURCE_LABEL = Object.freeze({ PRODUKSI: "Meja", QC: "QC", CORNER: "Corner", DRIVER_PICKUP: "Driver", GUDANG: "Gudang", MANUAL: "Dokumenter" });
+export const DOC_SEQUENCE = Object.freeze([
+  { key: "BEFORE_TEARDOWN", label: "Sebelum bongkar", categories: ["PICKUP_ARRIVAL", "INITIAL_CONDITION", "BEFORE_TEARDOWN"], notes: [] },
+  { key: "OLD_CONTENT", label: "Isi kasur lama", categories: ["TEARDOWN_DIAGNOSIS"], notes: ["LAYERS_BEFORE", "FOUNDATION_BEFORE"] },
+  { key: "RACIKAN", label: "Racikan", categories: [], notes: ["PLAN_RACIKAN"] },
+  { key: "ASSEMBLY", label: "Hasil rakitan", categories: ["FOUNDATION", "LAYER_COMPONENT", "PROCESS"], notes: ["AFTER"] },
+  { key: "QC_TEST", label: "Uji QC", categories: ["TEXTURE_TEST", "QC"], notes: ["FOUNDATION_TEST_AFTER", "WHOLE_TEST_AFTER"] },
+  { key: "CORNER", label: "Kain / Corner", categories: ["CORNER"], notes: [] },
+  { key: "FINAL", label: "Hasil jadi & siap kirim", categories: ["FINAL_RESULT", "READY_TO_SHIP"], notes: [] },
+]);
+export function buildDocumentationSequence(matrix, { recordedNotes = new Set(), cornerStatus = null } = {}) {
+  const byKey = new Map(matrix.categories.map((c) => [c.key, c]));
+  return DOC_SEQUENCE.map((st) => {
+    const cats = st.categories.map((k) => byKey.get(k)).filter(Boolean);
+    const applicableCats = cats.filter((c) => c.applicable);
+    const items = applicableCats.flatMap((c) => c.items);
+    const sources = {};
+    for (const it of items) { const l = SEQUENCE_SOURCE_LABEL[it.source] || it.source; sources[l] = (sources[l] || 0) + 1; }
+    const notesRecorded = st.notes.filter((n) => recordedNotes.has(n));
+    const missing = applicableCats.reduce((s, c) => s + c.missing, 0);
+    const allNa = cats.length > 0 && applicableCats.length === 0;
+    const naReason = allNa ? (cats.map((c) => c.naReason).find(Boolean) || null) : null;
+    const status = allNa ? "NA" : applicableCats.length === 0 ? (notesRecorded.length ? "LENGKAP" : "MENUNGGU")
+      : missing > 0 ? "KURANG" : applicableCats.every((c) => c.status === "LENGKAP") ? "LENGKAP" : "MENUNGGU";
+    return {
+      key: st.key, label: st.label, status, naReason, missing, count: items.length, sources, categories: st.categories, notesRecorded,
+      ...(st.key === "CORNER" && cornerStatus ? { cornerStatus: cornerStatus.status, cornerLabel: cornerStatus.label } : {}),
+    };
+  });
 }
 
 // Tahap yang dianggap "lewat" untuk kelengkapan dokumentasi: tahap setelah bukti tertinggi yang sudah tercatat. SATU definisi dipakai

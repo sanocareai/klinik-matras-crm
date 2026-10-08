@@ -1,0 +1,339 @@
+{
+ "note": "Run final pada staging terisolasi, image dari commit kandidat, data seed baru. Bagian awal = alur QC normal (Meja→PIC QC→Meja→PIC QC→putusan Lulus); lanjutan = Corner→Selesaikan Produksi→Gudang (retur tertunda)→Siap Kirim→tampilan terpadu 390/1440 terang/gelap. 1 respons 409 disengaja (penerimaan barang jadi ditolak saat retur tertunda).",
+ "pass": 65,
+ "total": 65,
+ "failed": [],
+ "consoleErrors": [
+  "Failed to load resource: the server responded with a status of 409 (Conflict)"
+ ],
+ "http": [
+  "gudang 409 POST /api/inventory/unit-custody/0afa1942-e166-4380-9a4d-ac4ecddf62ab/accept @/warehouse/finished-goods"
+ ],
+ "results": [
+  {
+   "name": "A1.1 Meja melihat ringkasan perjalanan: racikan rencana + hasil akhir 'Belum dicatat'",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "A1.3 klik Kirim tahap 6 → bukti fondasi tersimpan",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "A1.4 Meja menunggu uji fondasi baru PIC QC; tombol kirim lapisan tidak ada",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "A2.1 antrean PIC QC memuat G1 'uji fondasi baru'",
+   "ok": true,
+   "extra": "QAF4-MUZ7JESU-G2|WHOLE_TEST_AFTER,QAF4-MUZ7O9AM-G2|WHOLE_TEST_AFTER,QAF4-MUZ7R9XS-G3|QC_DECISION,QAF4-MUZKIOYG-G1|FOUNDATION_TEST_AFTER"
+  },
+  {
+   "name": "A2.2 berat penguji tidak terisi otomatis; kotak konfirmasi sebanding TIDAK tercentang",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "A2.3 BERAT SAMA (75 = 75) tetapi belum dikonfirmasi → TIDAK sebanding: dua angka mentah + alasan, tanpa selisih (tidak ada aturan ±2 kg)",
+   "ok": true,
+   "extra": "Perbandingan langsung belum valid: PIC QC belum mengonfirmasi metode pengujian sebanding dengan uji awal. Awal turun 10 cm (berat 75 kg; Beban di tengah rangka) · sekarang turun 2 cm (berat 75 kg; Beban di tengah rangka) — kedua angka ditampilkan apa adanya, tanpa selisih."
+  },
+  {
+   "name": "A2.4 Simpan → v1 tersimpan, sameMethodAsBefore=false, penurunan 2 cm dihitung server",
+   "ok": true,
+   "extra": "1|{\"note\": null, \"dropCm\": 2, \"system\": \"BONNELL\", \"material\": null, \"testMethod\": \"Beban di tengah rangka\", \"loadedHeig"
+  },
+  {
+   "name": "A3.1 Unit 360: uji fondasi baru tampil dengan 'Perbandingan langsung belum valid' dan kedua angka",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "A3.2 mencentang konfirmasi → pratinjau SEBANDING 'turun 10 cm → 2 cm (8 cm lebih sedikit)'",
+   "ok": true,
+   "extra": "Sebanding dengan uji awal (dikonfirmasi PIC QC): turun 10 cm → 2 cm (8 cm lebih sedikit)"
+  },
+  {
+   "name": "A3.3 koreksi tanpa alasan ditolak; v1 utuh",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "A3.4 v2 tersimpan (sameMethodAsBefore=true) dengan alasan; riwayat v1 tetap ada",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "A3.5 Unit 360: sekarang 'Sebanding ... 8 cm lebih sedikit'",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "A4.1 mengubah ketebalan lapisan 2 (5→4): peringatan 'Berbeda dari rencana: Lapisan 2'",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "A4.2 simpan tanpa alasan perbedaan ditolak; tidak ada baris",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "A4.3 hasil aktual v1 tersimpan beralasan; rencana tetap v1",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "A4.4 rencana ↔ aktual berdampingan: total rencana 12 cm vs aktual 11 cm",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "A4.5 Kirim tahap 7 → bukti lapisan menaut hasil aktual v1",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "A4.6 Meja menunggu uji kasur jadi PIC QC",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "A5.1 antrean memuat G1 'uji kasur jadi'",
+   "ok": true,
+   "extra": "QAF4-MUZ7JESU-G2|WHOLE_TEST_AFTER,QAF4-MUZ7O9AM-G2|WHOLE_TEST_AFTER,QAF4-MUZ7R9XS-G3|QC_DECISION,QAF4-MUZKIOYG-G1|WHOLE_TEST_AFTER"
+  },
+  {
+   "name": "A5.2 sebelum dicentang: belum sebanding (dua angka mentah), tanpa selisih",
+   "ok": true,
+   "extra": "Perbandingan langsung belum valid: PIC QC belum mengonfirmasi metode pengujian sebanding dengan uji awal. Awal turun 3 cm (berat 75 kg; Berbaring di tengah 1 menit) · sekarang turun 1 cm (berat 75 kg; Berbaring di tengah 1 menit) — kedua angka ditampilkan apa adanya, tanpa selisih."
+  },
+  {
+   "name": "A5.3 setelah dikonfirmasi: sebanding 'turun 3 cm → 1 cm (2 cm lebih sedikit)'; tanpa label 'amblas' otomatis",
+   "ok": true,
+   "extra": "Sebanding dengan uji awal (dikonfirmasi PIC QC): turun 3 cm → 1 cm (2 cm lebih sedikit)"
+  },
+  {
+   "name": "A5.4 Simpan → uji kasur jadi v1 (Sesuai, berat 75, penurunan 1, dikonfirmasi sebanding)",
+   "ok": true,
+   "extra": "1|{\"note\": null, \"feelNote\": \"Tengah kokoh, pinggir rata\", \"qcInFrame\": true, \"testMethod\": \"Berbaring di tengah 1 menit"
+  },
+  {
+   "name": "B1.1 tombol satu ketuk 'Lanjutkan ke Gerbang QC' muncul",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "B1.2 bukti tahap 8 menaut uji kasur jadi v1 (tanpa menyalin angka)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "B1.3 Meja menunggu putusan QC",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "B1.4 efek bahan: tidak ada stok/ISSUE/RETURN/retur baru dari rakit-uji-hasil aktual-serah ke QC",
+   "ok": true,
+   "extra": "3|3|0|0 → 3|3|0|0"
+  },
+  {
+   "name": "B2.1 antrean memuat G1 sebagai 'Putuskan Hasil QC'",
+   "ok": true,
+   "extra": "QAF4-MUZ7JESU-G2|WHOLE_TEST_AFTER,QAF4-MUZ7O9AM-G2|WHOLE_TEST_AFTER,QAF4-MUZ7R9XS-G3|QC_DECISION,QAF4-MUZKIOYG-G1|QC_DECISION"
+  },
+  {
+   "name": "B2.2 formulir putusan menampilkan ringkasan perjalanan + gerbang putaran 1 LENGKAP (uji fondasi baru · hasil aktual · uji kasur jadi)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "B2.3 simpan tanpa berat acuan & foto ditolak dengan pesan jelas; belum ada inspeksi",
+   "ok": true,
+   "extra": "Foto bukti wajib untuk hasil Lulus/Gagal"
+  },
+  {
+   "name": "B2.4 klik Simpan — Lulus → inspeksi PASS tercatat lewat command QC yang ada",
+   "ok": true,
+   "extra": "PASS"
+  },
+  {
+   "name": "B2.5 Run lanjut ke tahap setelah gerbang (fase PROCESS, bukan menunggu QC)",
+   "ok": true,
+   "extra": "{\"actor\":\"TABLE\",\"stepNo\":9,\"action\":\"HANDOFF\"}"
+  },
+  {
+   "name": "B2.6 audit bahan: stok/ISSUE/RETURN tidak bertambah sampai putusan QC",
+   "ok": true,
+   "extra": "3|3|0|0 → 3|3|0|0"
+  },
+  {
+   "name": "C1.1 status terpadu 'Menunggu dikerjakan Corner' + kartu permintaan Sales tampil dengan 'Perlu konfirmasi Sales' (motif & warna belum tertulis; tidak ditebak)",
+   "ok": true,
+   "extra": "badge=MENUNGGU DIKERJAKAN CORNER"
+  },
+  {
+   "name": "C1.2 tahap 9 tersimpan (satu bukti); unit pindah ke antrean Corner",
+   "ok": true,
+   "extra": "{\"actor\":\"CORNER\",\"stepNo\":10,\"action\":\"START_CORNER\"}"
+  },
+  {
+   "name": "C2.1 PIC Corner melihat kartu permintaan Sales: 'Perlu konfirmasi Sales', motif/warna 'belum tertulis', catatan pesanan apa adanya, petunjuk 'jangan menebak'",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "C2.2 formulir Mulai Jahit memuat blok periksa permintaan (kain lama/baru, kesesuaian) — Bahasa Indonesia",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "C2.3 kirim kosong ditolak di UI dengan pesan jelas; tidak ada bukti tahap 10",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "C2.4 'Perlu konfirmasi Sales': kain baru tanpa hasil konfirmasi Sales ditolak (tidak boleh menebak motif/warna)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "C2.5 Mulai Jahit tersimpan: permintaan diperiksa, kain baru dipasang, ada perbedaan + catatan, hasil konfirmasi Sales, status permintaan saat mulai",
+   "ok": true,
+   "extra": "{\"note\": null, \"materials\": [], \"fabricMode\": \"NEW_INSTALLED\", \"fabricSpec\": \"Kn"
+  },
+  {
+   "name": "C2.6 status terpadu: 'Sedang di Corner'",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "C2.7 Jahit Selesai kosong ditolak (checklist/pekerjaan Corner)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "C2.8 tanpa foto/video hasil jahit ditolak",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "C2.9 Jahit Selesai tersimpan: pekerjaan Corner + 'tidak ada perbedaan' + checklist",
+   "ok": true,
+   "extra": "{\"note\": null, \"checklist\": {\"list\": true, \"jahitan\": true, "
+  },
+  {
+   "name": "C2.10 status terpadu: 'Sedang di Corner' (jahit selesai, menunggu konfirmasi)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "C3.1 pratinjau: Putusan QC ✓ (kebijakan Run 'Gerbang awal + perakitan'), Keputusan Corner ✓, Tahap berjalan ✓; sisa bahan akan dikembalikan ke Gudang",
+   "ok": true,
+   "extra": "1,1,1"
+  },
+  {
+   "name": "C3.2 satu penawaran barang jadi ke Gudang; bukti tahap 12 satu; event laporan satu",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "C3.3 status terpadu: 'Menunggu Gudang menerima barang jadi'; BELUM Siap Kirim; belum ada job Delivery",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "C4.1 kartu barang jadi unit ini tampil di Gudang (Terima)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "C4.2 retur tertunda: penerimaan barang jadi DITOLAK sebelum sisa bahan diterima (pesan di dialog menyebut retur); unit tetap belum Siap Kirim",
+   "ok": true,
+   "extra": "Gudang Jakarta)\n\nSisa bahan unit ini belum diterima Gudang — terima retur di Antrean Gudang (tab Retur) dulu, lalu terima barang jadi.\n\nBatal\nTerima Barang Jadi"
+  },
+  {
+   "name": "C4.3 antrean Retur Sisa memuat unit ini; Terima retur diklik",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "C4.4 retur diterima: stok RETURN masuk tepat sekali (tidak ada ISSUE tambahan)",
+   "ok": true,
+   "extra": "3|0 → 3|1"
+  },
+  {
+   "name": "C4.5 barang jadi diterima → unit Siap Kirim; tepat satu job Delivery; handoff tetap satu",
+   "ok": true,
+   "extra": "READY_FOR_DELIVERY job=1"
+  },
+  {
+   "name": "C4.6 audit akhir: ISSUE tidak bertambah, RETURN +1, event laporan satu",
+   "ok": true,
+   "extra": "3|1"
+  },
+  {
+   "name": "C4.7 status terpadu: 'Siap Kirim'",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "C5 [390-terang] Unit 360: status 'Siap Kirim' + kartu Corner (permintaan Sales, 'Sudah dikonfirmasi Sales'); tema light; tanpa scroll horizontal",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "C5 [390-terang] laporan: status Siap Kirim, kartu Corner (kain baru, konfirmasi Sales, pekerjaan Corner), rangkaian 7 langkah; tanpa scroll horizontal",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "C5 [390-gelap] Unit 360: status 'Siap Kirim' + kartu Corner (permintaan Sales, 'Sudah dikonfirmasi Sales'); tema dark; tanpa scroll horizontal",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "C5 [390-gelap] laporan: status Siap Kirim, kartu Corner (kain baru, konfirmasi Sales, pekerjaan Corner), rangkaian 7 langkah; tanpa scroll horizontal",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "C5 [1440-terang] Unit 360: status 'Siap Kirim' + kartu Corner (permintaan Sales, 'Sudah dikonfirmasi Sales'); tema light; tanpa scroll horizontal",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "C5 [1440-terang] laporan: status Siap Kirim, kartu Corner (kain baru, konfirmasi Sales, pekerjaan Corner), rangkaian 7 langkah; tanpa scroll horizontal",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "C5 [1440-gelap] Unit 360: status 'Siap Kirim' + kartu Corner (permintaan Sales, 'Sudah dikonfirmasi Sales'); tema dark; tanpa scroll horizontal",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "C5 [1440-gelap] laporan: status Siap Kirim, kartu Corner (kain baru, konfirmasi Sales, pekerjaan Corner), rangkaian 7 langkah; tanpa scroll horizontal",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "C6.1 Aplikasi Dokumentasi: rangkaian sebelum bongkar → isi kasur lama → racikan → hasil rakitan → uji QC → kain/Corner → hasil jadi (7 langkah, status tiap langkah)",
+   "ok": true,
+   "extra": "BEFORE_TEARDOWN,KURANG | OLD_CONTENT,LENGKAP | RACIKAN,LENGKAP | ASSEMBLY,KURANG | QC_TEST,KURANG | CORNER,LENGKAP | FINAL,KURANG"
+  },
+  {
+   "name": "C6.2 sumber dikenali per langkah (Meja, QC, Corner) tanpa menyalin berkas — Driver/Dokumenter tidak ada di data seed ini (dicakup tes unit)",
+   "ok": true,
+   "extra": "1 | Sebelum bongkar | Kurang | 2 foto/video · Meja 2 · kurang 4 | 2 | Isi kasur lama | Lengkap | 3 foto/video · Meja 3 · catatan komponen: 1 | 3 | Racikan | Lengkap | 0 foto/video · catatan komponen: "
+  },
+  {
+   "name": "C7.1 papan & backlog Rencana aktif tidak memuat unit ini; Unit 360/laporan tetap memuatnya (riwayat)",
+   "ok": true,
+   "extra": ""
+  }
+ ]
+}

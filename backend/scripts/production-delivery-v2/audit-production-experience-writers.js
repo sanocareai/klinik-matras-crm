@@ -40,7 +40,9 @@ const REPORT_FILES = ["src/lib/domain/productionMetrics.js", "src/services/produ
 const TARGET_SERVICE = "src/services/productionTargetService.js";
 const TARGET_ROUTE = "src/routes/productionTargets.js";
 const REPORT_PURE_IMPORTS = new Set(["workshopPathOf", "applicableStepsFor"]); // fungsi murni (tanpa prisma/tx) dari modul command
-const READER_ALLOW = new Set(["src/services/productionStepCommandService.js", MATERIAL_RETURN, DOC_SERVICE, REPORT_SERVICE, COMPONENT_SERVICE]);
+// Jejak biaya bahan per unit (Finance, rilis live 7c4e5586): pembaca BACA-SAJA bukti pemakaian tahap 6/7/10 untuk tampilan biaya — wajib menyaring baris DOC_* (dicek di bawah) dan tidak menulis apa pun.
+const BIAYA_BAHAN = "src/services/finance/biayaBahan.js";
+const READER_ALLOW = new Set(["src/services/productionStepCommandService.js", MATERIAL_RETURN, DOC_SERVICE, REPORT_SERVICE, COMPONENT_SERVICE, BIAYA_BAHAN]);
 const SQL_READER_ALLOW = new Set([MEDIA, DOC_SERVICE, COMPONENT_SERVICE]);
 const READ_OPS = "(findMany|findFirst|findFirstOrThrow|findUnique|findUniqueOrThrow|count|aggregate|groupBy)";
 const DOC_READ = "src/services/productionDocumentationRead.js";
@@ -105,6 +107,8 @@ export function auditProductionExperienceWriters(files) {
   // Pembaca lifecycle WAJIB menyaring baris DOC_*.
   const matReturn = stripComments((files.get(MATERIAL_RETURN) || "").replace(/\r\n/g, "\n"));
   if (matReturn && new RegExp(String.raw`\.productionStepEvidence\.${READ_OPS}`).test(matReturn) && !/startsWith:\s*"DOC_"/.test(matReturn)) add(MATERIAL_RETURN, null, "", "DOC_FILTER", "MISSING_DOC_FILTER_material_return", false);
+  const biaya = stripComments((files.get(BIAYA_BAHAN) || "").replace(/\r\n/g, "\n"));
+  if (biaya && new RegExp(String.raw`\.productionStepEvidence\.${READ_OPS}`).test(biaya) && !/startsWith:\s*"DOC_"/.test(biaya)) add(BIAYA_BAHAN, null, "", "DOC_FILTER", "MISSING_DOC_FILTER_biaya_bahan", false);
   if (!/allEvidence\.filter\(\(e\) => !isDocumentationRow\(e\)\)/.test(step)) add(STEP, null, "", "DOC_FILTER", "MISSING_DOC_FILTER_loadStepContext", false);
   if (!/NOT:\s*\{\s*stepCode:\s*\{\s*startsWith:\s*DOC_STEP_CODE_PREFIX/.test(step)) add(STEP, null, "", "DOC_FILTER", "MISSING_DOC_FILTER_writeEvidence_version", false);
   // Catatan Komponen (slice 3): pembaca bersyarat + tidak menulis lifecycle/stok/BOM/retur + tidak memanggil helper lifecycle.

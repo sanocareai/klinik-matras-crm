@@ -18,6 +18,27 @@ export const STEPS = Object.freeze([
 ]);
 export const STEP_BY_NO = Object.freeze(Object.fromEntries(STEPS.map((s) => [s.no, s])));
 
+// Jalur PENGERJAAN (pesanan BARU/custom, view.track === "BUILD"): tahap 6 = "Pengerjaan Pesanan"; tahap 1–5 & 7 tidak berlaku (server menandai NA).
+export const BUILD_TRACK = "BUILD";
+export const BUILD_STEP = Object.freeze({ no: 6, label: "Pengerjaan Pesanan", actor: "TABLE", hint: "Foto/video hasil pengerjaan sesuai spesifikasi & layanan pesanan Sales. Catat bahan Gudang yang dipakai bila ada." });
+export const BUILD_STEP_KASUR_HINT = "Catat racikan fondasi/lapisan yang dipakai (bersama PIC QC), foto/video hasil pengerjaan, dan bahan Gudang yang dipakai bila ada.";
+/** Label bucket menurut jalur: pada jalur pengerjaan bucket "Fondasi Baru" bernama "Pengerjaan Pesanan". */
+export const bucketLabelOf = (bucket, track) => (track === BUILD_TRACK && bucket === "FONDASI" ? BUILD_STEP.label : bucketStyle(bucket).label);
+export const stepOf = (no, track) => (track === BUILD_TRACK && no === 6 ? BUILD_STEP : STEP_BY_NO[no]);
+/** Alur produk jalur pengerjaan: "KASUR" (racikan + uji tekstur/berat badan) atau "NON_KASUR" (divan/sofa: tanpa uji kasur). Dari klasifikasi KANONIS server (card.product.flow). */
+// Tanpa fallback ke kasur: klasifikasi belum ada/jelas = "UNCONFIRMED" (pengujian/racikan khusus kasur ditahan sampai jenis produk dikonfirmasi pada order).
+export const productFlowOf = (card) => (card?.track === BUILD_TRACK ? card?.product?.flow || "UNCONFIRMED" : null);
+export const isUnconfirmed = (card) => productFlowOf(card) === "UNCONFIRMED";
+/** Pemakaian/racikan dicatat PIC Bahan (ditugaskan atau sudah ada catatan): PIC Meja tidak mengisi ulang (satu sumber). */
+export const materialsByPic = (card) => (card?.track === BUILD_TRACK ? !!(card?.build?.materialOperator || card?.build?.record) : !!(card?.materialPic?.materialOperator || card?.materialPic?.record)); // Fase 3: LAYANAN juga (PIC Bahan per pekerjaan)
+/** Fase 3: pekerjaan LAYANAN (restorasi) yang punya PIC Bahan ditugaskan/tercatat. */
+export const isPicRestoration = (card) => card?.track !== BUILD_TRACK && !!card?.materialPic;
+/** Pemakaian bahan tahap ini dicatat PIC Bahan (bukan Meja): tahap 6 (semua jalur) dan tahap 7 (LAYANAN). */
+export const stepMaterialsByPic = (card, stepNo) => (stepNo === 6 || (stepNo === 7 && isPicRestoration(card))) && materialsByPic(card);
+export const isNonKasur = (card) => productFlowOf(card) === "NON_KASUR";
+/** Aturan media per tahap menurut jalur: tahap 6 jalur pengerjaan = foto ATAU video (video wajib hanya pada jalur restorasi). */
+export const mediaRuleFor = (stepNo, track) => (track === BUILD_TRACK && stepNo === 6 ? { min: 1, video: false } : MEDIA_RULES[stepNo] || { min: 0, video: false });
+
 export const OLD_MATERIALS = Object.freeze([
   { value: "PER", label: "Per / Spring" }, { value: "BUSA", label: "Busa" }, { value: "REBONDED", label: "Rebonded" },
   { value: "KAIN", label: "Kain" }, { value: "LATEX", label: "Latex" }, { value: "KAPUK", label: "Kapuk" }, { value: "LAINNYA", label: "Lainnya" },
@@ -72,7 +93,7 @@ export const priorityTone = (priority) => (priority >= 3 ? "red" : priority >= 1
 // "Belum Dijadwalkan"/"Dijadwalkan" DIHAPUS sebagai kolom (status jadwal sekarang badge kartu, bukan kolom) —
 // diganti "Dalam Perjalanan"/"Tiba / Belum Mulai" yang mencerminkan KEADAAN FISIK unit, bukan status jadwalnya.
 export const COMMAND_CENTER_COLUMNS = Object.freeze([
-  "AKAN_MASUK", "DALAM_PERJALANAN", "TIBA_BELUM_MULAI", "BONGKAR", "UJI_FONDASI", "FONDASI", "LAPISAN", "UJI_TEKSTUR", "CORNER", "SIAP_KIRIM",
+  "AKAN_MASUK", "DALAM_PERJALANAN", "TIBA_BELUM_MULAI", "PENGERJAAN", "UJI_HASIL", "BONGKAR", "UJI_FONDASI", "FONDASI", "LAPISAN", "UJI_TEKSTUR", "CORNER", "SIAP_KIRIM",
 ]);
 
 // Badge tanggal target (terpisah dari badge prioritas): besok=oranye, hari ini & belum mulai=merah, sudah lewat=merah "Terlambat".
@@ -86,16 +107,16 @@ export function targetDateBadge(view, today, tomorrow) {
 }
 
 // Teks tombol aksi utama untuk kartu pekerja.
-export function actionLabel(next, { stageLabel } = {}) {
+export function actionLabel(next, { stageLabel, track } = {}) {
   if (!next) return null;
-  const step = STEP_BY_NO[next.stepNo];
+  const step = stepOf(next.stepNo, track);
   switch (next.action) {
     case "START_WITH_EVIDENCE": return "Mulai: Foto Sebelum Bongkar";
     case "START": return `Mulai ${stageLabel || step?.label || "Tahap"}`;
     case "RESUME": return "Lanjutkan Pekerjaan";
-    case "COMPLETE": return next.stepNo === 5 && !next.serviceMissing && next.continueOnly ? "Lanjutkan" : `Kirim ${step?.label || "Tahap"}`;
-    case "EVIDENCE": return next.rework ? `Ulangi ${step?.label || "Lapisan"} (Rework)` : `Kirim Bukti ${step?.label || ""}`.trim();
-    case "TEST": return "Kirim Uji Tekstur Akhir";
+    case "COMPLETE": return !next.serviceMissing && next.continueOnly ? "Lanjutkan" : `Kirim ${step?.label || "Tahap"}`;
+    case "EVIDENCE": return next.general ? "Kirim Catatan & Dokumentasi Umum" : next.rework ? `Ulangi ${step?.label || "Lapisan"} (Rework)` : `Kirim Bukti ${step?.label || ""}`.trim();
+    case "TEST": return next.continueOnly ? "Lanjutkan ke Gerbang QC" : "Kirim Uji Tekstur Akhir"; // Fase 4: uji kasur jadi ditulis PIC QC; Meja hanya melanjutkan
     case "HANDOFF": return "Kirim ke Corner";
     case "START_CORNER": return "Mulai Jahit";
     case "FINISH": return "Konfirmasi Selesai";
@@ -105,7 +126,8 @@ export function actionLabel(next, { stageLabel } = {}) {
 
 // Aksi yang TIDAK butuh form (langsung kirim).
 export function isQuickAction(next) {
-  return next?.action === "START" || next?.action === "RESUME" || (next?.action === "COMPLETE" && next.stepNo === 5 && next.continueOnly);
+  // continueOnly = bukti sudah ada di sumbernya (diagnosa tahap 5; catatan PIC QC tahap 2/4) -> satu ketuk "Lanjutkan" tanpa formulir.
+  return next?.action === "START" || next?.action === "RESUME" || ((next?.action === "COMPLETE" || next?.action === "TEST") && !!next.continueOnly);
 }
 
 export function waitCopy(next) {
@@ -116,6 +138,15 @@ export function waitCopy(next) {
     // kartu Planner diklik (server menegakkan ulang, bukan cuma UI).
     case "PENDING_ARRIVAL": return { title: "Menunggu konfirmasi kedatangan", text: "Unit sudah masuk produksi (pickup berhasil) tapi belum dikonfirmasi tiba di workshop. Konfirmasi kedatangan dulu di Rencana Produksi sebelum tahap ini bisa dimulai." };
     case "AWAITING_QC": return { title: "Menunggu QC", text: "Petugas QC akan menguji unit ini. Anda bisa lanjut ke unit lain." };
+    case "AFTER_PENDING": return { title: "Menunggu hasil aktual susunan", text: "PIC Meja perlu mencatat hasil aktual susunan (Catatan Komponen › Sesudah pengerjaan) untuk putaran ini. Setelah itu PIC QC menguji kasur jadi." };
+    case "FOUNDATION_NEW_TEST_PENDING": return { title: "Menunggu uji fondasi baru", text: "PIC QC perlu menguji fondasi yang baru dirakit (tinggi tanpa beban dan dibebani, berat penguji, metode, foto/video). Setelah tercatat, Anda bisa menyusun lapisan." };
+    case "FINISHED_TEST_PENDING": return { title: "Menunggu uji kasur jadi", text: "PIC QC perlu menguji kasur jadi (feel, kesesuaian keluhan awal, berat penguji, penurunan kasur utuh). Setelah tercatat, tombol Lanjutkan ke Gerbang QC muncul di sini." };
+    case "QC_BEFORE_PENDING": return { title: "Menunggu QC sebelum bongkar", text: "PIC QC perlu mencatat uji kasur sebelum bongkar (kesesuaian keluhan, feel awal, berat penguji, penurunan kasur utuh). Setelah tercatat, tombol Lanjutkan muncul di sini." };
+    case "FOUNDATION_TEST_PENDING": return { title: "Menunggu uji fondasi awal", text: "PIC QC perlu mencatat uji fondasi awal (tinggi tanpa beban dan dibebani, berat penguji, metode). Setelah tercatat, tombol Lanjutkan muncul di sini." };
+    case "PRODUCT_TYPE_UNCONFIRMED": return { title: "Jenis produk perlu dikonfirmasi", text: `${next.problem || "Jenis produk pada order belum jelas."} Minta Sales memperbaiki jenis produk pada order — produksi tidak mengubah order. Catatan dan dokumentasi umum tetap bisa disimpan; racikan dan pengujian khusus kasur ditahan sampai jelas.` };
+    case "CORNER_NOT_CONFIRMED": return { title: "Kebutuhan Corner belum dikonfirmasi", text: "Production Lead perlu mengonfirmasi apakah pekerjaan ini butuh Corner (kain/jahit) di Unit 360 › Proses. QC dan tahap berikutnya menunggu." };
+    case "USAGE_NOT_RECORDED": return { title: "Menunggu PIC Bahan", text: "Pemakaian bahan pekerjaan ini dicatat PIC Bahan lebih dulu (satu sumber pemakaian aktual). Setelah tercatat, PIC Meja bisa menutup tahap ini tanpa mengisi bahan lagi." };
+    case "RACIKAN_NOT_RECORDED": return { title: "Menunggu PIC Bahan", text: "Racikan fondasi/lapisan belum dicatat PIC Bahan. Pengerjaan boleh berjalan; bukti dikirim setelah racikan tercatat." };
     case "MATERIAL_NOT_READY": return { title: "Bahan belum turun", text: "Gudang belum menyerahkan bahan untuk tahap berikutnya. Tekan “Tunda Pekerjaan” (Menunggu bahan) bila bahan dibutuhkan sekarang." };
     case "READY_TO_FINISH": return { title: "Siap diselesaikan", text: "Semua tahap kerja tuntas. Tekan Selesaikan Produksi — QC tidak diwajibkan pada mode adaptasi (dicatat tidak dilakukan, bukan lulus)." };
     case "MATERIAL_SHORTAGE": return { title: "Tertunda — menunggu bahan", text: "Laporan kekurangan bahan sudah terkirim ke Gudang. Yang bertindak: Gudang. Pekerjaan bisa dilanjutkan setelah bahan diserahkan." };
@@ -156,9 +187,28 @@ export function friendlyError(error) {
   return error.message || "Terjadi kesalahan. Coba lagi.";
 }
 
+// Fase 5 — Corner (cermin kontrak server). "Perlu konfirmasi Sales" = motif/warna tidak tertulis: sistem TIDAK menebak; PIC Corner mencatat hasil konfirmasi Sales sendiri.
+export const CORNER_FABRIC_MODES = [{ value: "OLD_REUSED", label: "Kain lama dipakai kembali" }, { value: "NEW_INSTALLED", label: "Kain baru dipasang" }];
+export const CORNER_REQUEST_MATCH = [{ value: "SESUAI", label: "Sesuai permintaan Sales" }, { value: "ADA_PERBEDAAN", label: "Ada perbedaan" }];
+export const SALES_CONFIRM_LABEL = "Perlu konfirmasi Sales";
+export function validateCornerStartForm(f, brief) {
+  if (!f.requestChecked) return "Centang bahwa permintaan Sales sudah Anda periksa.";
+  if (!f.fabricMode) return "Pilih: kain lama dipakai kembali atau kain baru dipasang.";
+  if (!f.requestMatch) return "Pilih apakah pekerjaan sesuai permintaan Sales atau ada perbedaan.";
+  if (f.requestMatch === "ADA_PERBEDAAN" && (f.requestNote || "").trim().length < 3) return "Jelaskan perbedaan dari permintaan Sales.";
+  if (brief?.fabricChangeRequested && f.fabricMode === "OLD_REUSED" && f.requestMatch !== "ADA_PERBEDAAN") return "Sales meminta ganti kain tetapi kain lama dipakai kembali — pilih \"Ada perbedaan\" dan jelaskan alasannya.";
+  if (brief?.needsSalesConfirmation && f.fabricMode === "NEW_INSTALLED" && (f.salesConfirmation || "").trim().length < 3) return `${SALES_CONFIRM_LABEL}: tulis hasil konfirmasi Sales untuk ${(brief.missing || []).join(" dan ")} sebelum memasang kain baru.`;
+  return null;
+}
+export function validateCornerDoneForm(f) {
+  if ((f.cornerWork || "").trim().length < 3) return "Tulis pekerjaan Corner yang dilakukan.";
+  if (!f.noDifference && (f.differenceNote || "").trim().length < 1) return "Isi catatan perbedaan, atau centang \"Tidak ada perbedaan\".";
+  return null;
+}
+
 // Validasi awal form tahap (cermin kontrak server). Mengembalikan pesan galat atau null.
-export function validateStepForm(stepNo, form, { mediaItems = [] } = {}) {
-  const rule = MEDIA_RULES[stepNo] || { min: 0, video: false };
+export function validateStepForm(stepNo, form, { mediaItems = [], track, flow = "KASUR", byPic = false, gated = false, layersRequired = false, layersAfterRequired = false, cornerV2 = false, cornerBrief = null } = {}) {
+  const rule = mediaRuleFor(stepNo, track);
   const done = mediaItems.filter((m) => m.status === "done");
   if (mediaItems.some((m) => m.status === "uploading")) return "Tunggu unggahan selesai.";
   if (mediaItems.some((m) => m.status === "error")) return "Ada unggahan gagal — coba lagi atau hapus.";
@@ -169,7 +219,10 @@ export function validateStepForm(stepNo, form, { mediaItems = [] } = {}) {
   switch (stepNo) {
     case 1: return f.conditionConfirmed ? null : "Centang konfirmasi ukuran & kondisi kain luar.";
     case 2: return (f.feelNote || "").trim().length >= 3 ? null : "Tulis catatan rasa awal.";
-    case 3: return (f.oldMaterials || []).length ? null : "Centang minimal satu material lama.";
+    case 3:
+      // Fase 2 (LAYANAN): lapisan awal dicatat di Catatan Komponen (wajib); centang jenis material lama menjadi opsional.
+      if (gated && layersRequired) return "Catat susunan lapisan awal (atas ke bawah) di bagian Catatan Komponen dulu.";
+      return gated || (f.oldMaterials || []).length ? null : "Centang minimal satu material lama.";
     case 4: {
       const a = num(f.heightBeforeCm); const b = num(f.heightCompressedCm); const w = num(f.testerWeightKg);
       if (!(a > 0) || !(b > 0)) return "Isi tinggi awal dan tinggi saat ditekan (cm).";
@@ -179,9 +232,17 @@ export function validateStepForm(stepNo, form, { mediaItems = [] } = {}) {
     }
     case 5: return (f.diagnosis || "").trim().length >= 10 ? null : "Tulis penjelasan diagnosa (minimal 10 karakter).";
     case 6:
-      if (!(f.materials || []).some((m) => num(m.qty) > 0)) return "Pilih bahan Gudang yang dipakai.";
+      if (track === BUILD_TRACK) { // bahan opsional pada jalur pengerjaan; kasur custom wajib mencatat racikan fondasi dan/atau lapisan (kecuali dicatat PIC Bahan)
+        // Jenis produk belum jelas: catatan + dokumentasi UMUM tetap boleh disimpan (tanpa racikan); hanya racikan/uji khusus jenis produk yang menunggu Sales.
+        if (flow === "KASUR" && !byPic && (f.racikanFondasi || "").trim().length < 3 && (f.racikanLapisan || "").trim().length < 3) return "Isi racikan fondasi dan/atau lapisan.";
+        return (f.note || "").trim().length >= 3 ? null : "Jelaskan pengerjaan pesanan.";
+      }
+      if (!byPic && !(f.materials || []).some((m) => num(m.qty) > 0)) return "Pilih bahan Gudang yang dipakai.";
       return (f.note || "").trim().length >= 3 ? null : "Jelaskan isi fondasi baru.";
-    case 7: return (f.materials || []).some((m) => num(m.qty) > 0) ? null : "Pilih bahan Gudang yang dipakai.";
+    case 7:
+      // Fase 4 (LAYANAN, Run V2): hasil aktual susunan dicatat di Catatan Komponen (Sesudah pengerjaan) lebih dulu; bukti hanya menaut versinya.
+      if (gated && layersAfterRequired) return "Catat susunan hasil aktual (atas ke bawah) di Catatan Komponen › Sesudah pengerjaan dulu.";
+      return byPic || (f.materials || []).some((m) => num(m.qty) > 0) ? null : "Pilih bahan Gudang yang dipakai.";
     case 8: {
       if (!f.verdict) return "Pilih hasil uji: PAS, Terlalu Keras, atau Terlalu Empuk.";
       return num(f.testerWeightKg) > 0 ? null : "Isi berat penguji (kg).";
@@ -189,15 +250,18 @@ export function validateStepForm(stepNo, form, { mediaItems = [] } = {}) {
     case 10:
       if (!f.mattressStyle) return "Pilih model kasur.";
       if ((f.fabricSpec || "").trim().length < 2) return "Isi spesifikasi/warna kain.";
-      return (f.borderColor || "").trim().length >= 2 ? null : "Isi warna list.";
-    case 11: return CORNER_CHECKLIST.every((c) => f.checklist?.[c.key]) ? null : "Lengkapi checklist jahitan.";
+      if ((f.borderColor || "").trim().length < 2) return "Isi warna list.";
+      return cornerV2 ? validateCornerStartForm(f, cornerBrief) : null;
+    case 11:
+      if (!CORNER_CHECKLIST.every((c) => f.checklist?.[c.key])) return "Lengkapi checklist jahitan.";
+      return cornerV2 ? validateCornerDoneForm(f) : null;
     case 12: return f.confirm ? null : "Centang konfirmasi selesai.";
     default: return null;
   }
 }
 
 // Payload server dari form UI (angka dinormalisasi, field kosong dibuang).
-export function buildStepPayload(stepNo, form) {
+export function buildStepPayload(stepNo, form, { track, flow = "KASUR", byPic = false, cornerV2 = false } = {}) {
   const f = form || {};
   const num = (v) => Number(String(v ?? "").replace(",", "."));
   const lines = (list) => (list || []).filter((m) => num(m.qty) > 0).map((m) => ({ materialId: m.materialId, qty: num(m.qty) }));
@@ -207,12 +271,17 @@ export function buildStepPayload(stepNo, form) {
     case 3: return { oldMaterials: (f.oldMaterials || []).map((type) => ({ type, note: f.oldMaterialNotes?.[type]?.trim() || undefined })), note: f.note?.trim() || undefined };
     case 4: return { heightBeforeCm: num(f.heightBeforeCm), heightCompressedCm: num(f.heightCompressedCm), testerWeightKg: num(f.testerWeightKg), foundationIssues: (f.foundationIssues || []).filter(Boolean), note: f.note?.trim() || undefined };
     case 5: return { diagnosis: (f.diagnosis || "").trim(), inputMethod: f.inputMethod === "VOICE" ? "VOICE" : "TEXT" };
-    case 6: return { materials: lines(f.materials), note: (f.note || "").trim() };
-    case 7: return { materials: lines(f.materials), note: f.note?.trim() || undefined };
+    case 6: {
+      const base = { materials: byPic ? [] : lines(f.materials), note: (f.note || "").trim() };
+      if (track === BUILD_TRACK && flow === "KASUR" && !byPic) base.racikan = { fondasi: (f.racikanFondasi || "").trim() || undefined, lapisan: (f.racikanLapisan || "").trim() || undefined };
+      return base;
+    }
+    case 7: return { materials: byPic ? [] : lines(f.materials), note: f.note?.trim() || undefined };
     case 8: return { verdict: f.verdict, testerWeightKg: num(f.testerWeightKg), note: f.note?.trim() || undefined };
     case 9: return { note: f.note?.trim() || undefined };
-    case 10: return { mattressStyle: f.mattressStyle, fabricSpec: (f.fabricSpec || "").trim(), borderColor: (f.borderColor || "").trim(), materials: lines(f.materials), note: f.note?.trim() || undefined };
-    case 11: return { checklist: Object.fromEntries(CORNER_CHECKLIST.map((c) => [c.key, !!f.checklist?.[c.key]])), note: f.note?.trim() || undefined };
+    case 10: return { mattressStyle: f.mattressStyle, fabricSpec: (f.fabricSpec || "").trim(), borderColor: (f.borderColor || "").trim(), materials: lines(f.materials), note: f.note?.trim() || undefined,
+      ...(cornerV2 ? { requestChecked: !!f.requestChecked, fabricMode: f.fabricMode, requestMatch: f.requestMatch, requestNote: f.requestNote?.trim() || undefined, salesConfirmation: f.salesConfirmation?.trim() || undefined } : {}) };
+    case 11: return { ...(cornerV2 ? { cornerWork: (f.cornerWork || "").trim(), noDifference: !!f.noDifference, differenceNote: f.noDifference ? undefined : (f.differenceNote || "").trim() || undefined } : {}), checklist: Object.fromEntries(CORNER_CHECKLIST.map((c) => [c.key, !!f.checklist?.[c.key]])), note: f.note?.trim() || undefined };
     case 12: return { confirm: !!f.confirm, note: f.note?.trim() || undefined };
     default: return {};
   }
@@ -251,6 +320,8 @@ export function createIntentKeys(makeId = () => globalThis.crypto?.randomUUID?.(
 }
 
 // Galat final (bukan jaringan) -> kunci dilepas; galat jaringan -> kunci dipertahankan untuk Coba Lagi.
+/** Galat command PIC Bahan: pesan server yang SPESIFIK (mis. "Anda bukan PIC Bahan yang ditugaskan…") ditampilkan apa adanya; selain itu pesan ramah umum. */
+export const friendlyBuildError = (e) => (e?.code && /^BUILD_/.test(e.code) && e.message ? e.message : friendlyError(e));
 export const isRetryableError = (error) => !error?.status || error.status >= 500 && error.status !== 503;
 
 export function formatMinutes(total) {
@@ -277,7 +348,7 @@ export function canDropOn(station, item) {
 // Indikator ringkas untuk kartu Planner.
 const IND = Object.freeze({
   custody: { label: "Custody", ok: ["OK", "LAHIR_DI_WORKSHOP"] },
-  service: { label: "Layanan", ok: ["OK"] },
+  service: { label: "Layanan", ok: ["OK", "TIDAK_BERLAKU"] }, // TIDAK_BERLAKU = jalur pengerjaan (layanan Sales jadi acuan, bukan layanan teknis)
   bom: { label: "BOM", ok: ["OK"] },
   material: { label: "Bahan", ok: ["SUDAH_DISERAHKAN"], bad: ["KEKURANGAN"] },
   workshop: { label: "Workshop", ok: ["BERJALAN"], bad: ["DIJEDA"] },
@@ -297,4 +368,41 @@ export const initials = (name) => String(name || "?").split(/[\s/]+/).filter(Boo
 // Tanggal lokal WIB "YYYY-MM-DD" (untuk default papan H-1 = besok).
 export function wibDate(offsetDays = 0, now = new Date()) {
   return new Date(now.getTime() + 7 * 3600_000 + offsetDays * 86400_000).toISOString().slice(0, 10);
+}
+
+// ---- PIC Bahan (jalur pengerjaan): racikan + pemakaian aktual. Validasi mencerminkan server (server tetap pemutus); bahan hanya dari yang diserahkan Gudang.
+export function validateMaterialRecord(form, { flow = "KASUR", issued = [] } = {}) {
+  const f = form || {};
+  if (flow === "RESTORATION") { // LAYANAN: hanya pemakaian aktual; racikan dicatat PIC Meja/QC di Catatan Komponen
+    const used = (f.materials || []).filter((m) => Number(String(m.qty ?? "").replace(",", ".")) > 0);
+    if (!used.length) return "Isi pemakaian bahan.";
+    for (const l of used) {
+      const item = issued.find((m) => m.materialId === l.materialId);
+      if (!item) return "Bahan yang dipakai harus dari bahan yang diserahkan Gudang.";
+      if (Number(String(l.qty).replace(",", ".")) > Number(item.qty) + 1e-9) return `Jumlah ${item.name} melebihi yang diserahkan Gudang (${item.qty}).`;
+    }
+    return null;
+  }
+  const num = (v) => Number(String(v ?? "").replace(",", "."));
+  const lines = (f.materials || []).filter((m) => num(m.qty) > 0);
+  const hasRacikan = (f.racikanFondasi || "").trim().length >= 3 || (f.racikanLapisan || "").trim().length >= 3;
+  if (flow === "UNCONFIRMED" && ((f.racikanFondasi || "").trim() || (f.racikanLapisan || "").trim())) return "Jenis produk belum jelas — racikan kasur ditahan sampai Sales mengonfirmasi jenis produk.";
+  if (flow === "KASUR") {
+    if (((f.racikanFondasi || "").trim() && (f.racikanFondasi || "").trim().length < 3) || ((f.racikanLapisan || "").trim() && (f.racikanLapisan || "").trim().length < 3)) return "Racikan minimal 3 karakter.";
+  }
+  if (!hasRacikan && !lines.length) return flow === "KASUR" ? "Isi racikan dan/atau pemakaian bahan." : "Isi pemakaian bahan.";
+  for (const l of lines) {
+    const item = issued.find((m) => m.materialId === l.materialId);
+    if (!item) return "Bahan yang dipakai harus dari bahan yang diserahkan Gudang.";
+    if (num(l.qty) > Number(item.qty) + 1e-9) return `Jumlah ${item.name} melebihi yang diserahkan Gudang (${item.qty}).`;
+  }
+  return null;
+}
+export function buildMaterialRecordBody(form, { flow = "KASUR", revision }) {
+  const f = form || {};
+  const num = (v) => Number(String(v ?? "").replace(",", "."));
+  const body = { expectedRevision: revision, materials: (f.materials || []).filter((m) => num(m.qty) > 0).map((m) => ({ materialId: m.materialId, qty: num(m.qty) })) };
+  if (flow === "KASUR") { const fondasi = (f.racikanFondasi || "").trim(); const lapisan = (f.racikanLapisan || "").trim(); if (fondasi || lapisan) body.racikan = { fondasi: fondasi || undefined, lapisan: lapisan || undefined }; }
+  const note = (f.note || "").trim(); if (note) body.note = note;
+  return body;
 }

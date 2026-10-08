@@ -1,0 +1,56 @@
+{
+ "note": "Run final pada staging terisolasi (BUKAN production). Backend image dibangun bersih dari arsip commit c0806072 (backend tidak berubah sesudahnya); dist frontend dari arsip commit final 5a7ee518. A Meja 24/24; B PIC Bahan+Meja+NEW 21/21; C PIC QC/Unit360/Dokumentasi/adaptasi/laporan (dijalankan dua kali pada data yang sama: run 1 gagal di asersi selektor menu Mode Kerja, run 2 gagal hanya di C7.1 karena AFTER sudah ada dari run 1 — artefak skrip); D Corner 6/6; E alur BOM PIC Bahan 21/21. File ini memuat run C ke-2.",
+ "runs": {
+  "a": {
+   "pass": 24,
+   "total": 24,
+   "failed": [],
+   "consoleErrors": [
+    "Failed to load resource: the server responded with a status of 409 (Conflict)"
+   ],
+   "http4xx": [
+    "worker1 409 POST /api/production-v2/component-notes/units/2e6ce6bc-5324-49d9-b00d-768ba8caf840/sections/PLAN_RACIKAN @/produksi/meja"
+   ]
+  },
+  "b": {
+   "pass": 21,
+   "total": 21,
+   "failed": [],
+   "consoleErrors": [],
+   "http4xx": []
+  },
+  "c": {
+   "pass": 30,
+   "total": 31,
+   "failed": [
+    "C7.1 pratinjau total hasil aktual: 6 + 4 (dari catatan awal) + 3 = 13 cm lengkap"
+   ],
+   "consoleErrors": [
+    "Failed to load resource: the server responded with a status of 403 (Forbidden)"
+   ],
+   "http4xx": [
+    "lead 403 GET /api/production-v2/component-notes/qc-queue @/produksi/qc"
+   ]
+  },
+  "d": {
+   "pass": 6,
+   "total": 6,
+   "failed": [],
+   "consoleErrors": [],
+   "http4xx": []
+  },
+  "e": {
+   "pass": 21,
+   "total": 21,
+   "failed": [],
+   "consoleErrors": [
+    "Failed to load resource: the server responded with a status of 409 (Conflict)",
+    "Failed to load resource: the server responded with a status of 403 (Forbidden)"
+   ],
+   "http4xx": [
+    "worker2 409 POST /api/production-v2/runs/8f90478e-563e-4946-851b-66d810af0611/build/plan-bom @/produksi/bahan",
+    "worker2 403 POST /api/production-v2/runs/8f90478e-563e-4946-851b-66d810af0611/build/plan-bom @/produksi/bahan"
+   ]
+  }
+ }
+}

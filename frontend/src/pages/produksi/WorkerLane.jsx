@@ -10,6 +10,7 @@ import { ShortageSheet } from "@/features/production/workerApp/workerSheets.jsx"
 import useWorkerJobs from "@/features/production/workerApp/useWorkerJobs.js";
 import { HANDOFF_TITLE, handoffNotice, modeOfLane, tabOf } from "@/features/production/workerApp/workerAppModel.js";
 import { rolesOf } from "@/lib/roles.js";
+import { rememberWorkerMode } from "@/lib/landing.js";
 
 // P12C — Aplikasi Meja / Corner (mode aplikasi, mobile-first). Bottom navigation: Kerja · Bahan · Aktivitas · Akun. Tanpa sidebar desktop.
 // Server = otoritas urutan, izin, dan aksi berikutnya. Semua aksi memakai endpoint/command yang sudah ada (V2: /production-v2 steps, diagnosis, shortage;
@@ -35,6 +36,7 @@ export default function WorkerLane({ lane = "TABLE", user: userProp = null, onLo
   const { jobs, loading, error, readerMode, operator, v1Status, reload, reloadAll, refreshV1Unit, retryV1, fetchV1Queue } = useWorkerJobs({ lane, paused: !!jobKey || !!reportCard });
   const selected = useMemo(() => (jobKey ? jobs.find((j) => j.key === jobKey) || null : null), [jobs, jobKey]);
   const mode = modeOfLane(lane);
+  useEffect(() => { if (mode?.key) rememberWorkerMode(mode.key); }, [mode?.key]); // landing berikutnya (lib/landing.js) memakai mode terakhir yang masih diizinkan
   const onHandoff = useCallback((job) => setHandoff(handoffNotice({ unitCode: job?.unitCode, orderNumber: job?.orderNumber })), []);
   // Bila unit itu kembali ke antrean PIC ini (dialihkan balik), pesan lama tidak relevan lagi.
   // Saat pesan dipasang, kartunya BELUM hilang dari daftar (muat ulang baru menyusul) — jadi pesan hanya dibersihkan setelah kartu terlihat hilang (gone) lalu muncul lagi.

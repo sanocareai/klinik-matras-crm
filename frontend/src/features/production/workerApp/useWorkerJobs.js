@@ -17,7 +17,7 @@ async function inBatches(items, size, fn) {
 }
 
 export default function useWorkerJobs({ lane = "TABLE", paused = false } = {}) {
-  const laneKey = lane === "CORNER" ? "corner" : "table";
+  const laneKey = lane === "CORNER" ? "corner" : lane === "MATERIAL" ? "material" : "table";
   const [v2, setV2] = useState({ items: null, operator: null, readerMode: null });
   const [v1, setV1] = useState({ status: "idle", items: [], timelines: {} });
   const [loading, setLoading] = useState(true);
@@ -27,6 +27,7 @@ export default function useWorkerJobs({ lane = "TABLE", paused = false } = {}) {
   useEffect(() => () => { aliveRef.current = false; }, []);
 
   const loadV1 = useCallback(async () => {
+    if (lane === "MATERIAL") { setV1({ status: "ready", items: [], timelines: {} }); return; } // antrean PIC Bahan hanya V2 (jalur pengerjaan)
     setV1((s0) => ({ ...s0, status: s0.items.length ? s0.status : "loading" }));
     try {
       const d = await api.getV1WorkerQueue(laneKey);
@@ -38,7 +39,7 @@ export default function useWorkerJobs({ lane = "TABLE", paused = false } = {}) {
     } catch {
       if (aliveRef.current) setV1((s0) => ({ ...s0, status: "error" }));
     }
-  }, [laneKey]);
+  }, [laneKey, lane]);
 
   const loadQueue = useCallback(async ({ withV1 = true } = {}) => {
     try {

@@ -82,7 +82,7 @@ test("pesan galat ramah & aturan kunci idempoten: jaringan putus = coba lagi den
 
 test("menu & route: Aplikasi Dokumentasi di 'MODE KERJA' sejajar Aplikasi Meja/Corner/Andon TV; halaman mandiri /produksi/dokumentasi", () => {
   const mode = PRODUCTION_NAV.find((sec) => sec.section === "MODE KERJA");
-  assert.deepEqual(mode.items.map((x) => x.label), ["Aplikasi Meja", "Aplikasi Corner", "Aplikasi Dokumentasi", "Andon TV"]);
+  assert.deepEqual(mode.items.map((x) => x.label), ["Aplikasi Meja", "Aplikasi Corner", "Aplikasi Dokumentasi", "Aplikasi PIC QC", "Andon TV"]);
   assert.equal(mode.items.find((x) => x.label === "Aplikasi Dokumentasi").to, "/produksi/dokumentasi");
   assert.match(REGISTRY, /path: "\/produksi\/dokumentasi", render: \(ctx\) => <DemoPage slotBar><ProductionDocumentation user=\{ctx\?\.user\} onLogout=\{ctx\?\.onLogout\} \/><\/DemoPage>/); // P12A: dibungkus Mode Demo (admin-only); P12D: user/logout dari konteks seperti Meja
   const standalone = REGISTRY.slice(REGISTRY.indexOf("export const STANDALONE_PAGES"), REGISTRY.indexOf("export function standalonePageFor"));

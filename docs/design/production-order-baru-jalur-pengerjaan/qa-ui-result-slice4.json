@@ -1,0 +1,221 @@
+{
+ "results": [
+  {
+   "name": "S1.1 [390-light] PIC Meja (PRODUCTION_WORKER saja) mendarat di Aplikasi Meja setelah login",
+   "ok": true,
+   "extra": "/produksi/meja"
+  },
+  {
+   "name": "S1.2 [390-light] pilihan mode tampil sesuai permission (Meja/Corner/PIC Bahan; tanpa Dokumentasi)",
+   "ok": true,
+   "extra": "Meja Bongkar | Meja Corner | PIC Bahan"
+  },
+  {
+   "name": "S1.3 klik mode 'Meja Corner' -> pindah ke Aplikasi Corner",
+   "ok": true,
+   "extra": "/produksi/corner"
+  },
+  {
+   "name": "S1.4 mode terakhir diingat: membuka '/' lagi mendarat di Corner",
+   "ok": true,
+   "extra": "/produksi/corner"
+  },
+  {
+   "name": "S1.5 kembali ke Meja Bongkar -> landing kembali ke Meja",
+   "ok": true,
+   "extra": "/produksi/meja"
+  },
+  {
+   "name": "S1.1 [390-dark] PIC Meja (PRODUCTION_WORKER saja) mendarat di Aplikasi Meja setelah login",
+   "ok": true,
+   "extra": "/produksi/meja"
+  },
+  {
+   "name": "S1.2 [390-dark] pilihan mode tampil sesuai permission (Meja/Corner/PIC Bahan; tanpa Dokumentasi)",
+   "ok": true,
+   "extra": "Meja Bongkar | Meja Corner | PIC Bahan"
+  },
+  {
+   "name": "S1.6 ADMIN TIDAK diarahkan ke Aplikasi Meja",
+   "ok": true,
+   "extra": "/"
+  },
+  {
+   "name": "S1.7 ADMIN tetap bisa membuka Aplikasi Meja bila perlu (akses sesuai permission)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S1.8 ADMIN melihat pilihan mode lengkap (termasuk Dokumentasi)",
+   "ok": true,
+   "extra": "Meja Bongkar | Meja Corner | PIC Bahan | Dokumentasi"
+  },
+  {
+   "name": "S1.6 OWNER TIDAK diarahkan ke Aplikasi Meja",
+   "ok": true,
+   "extra": "/"
+  },
+  {
+   "name": "S1.6 PRODUCTION_LEAD TIDAK diarahkan ke Aplikasi Meja",
+   "ok": true,
+   "extra": "/"
+  },
+  {
+   "name": "S2.0 kartu C1/C2/C3 ada di Belum Dijadwalkan dan dapat dijadwalkan",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S2.1 modal menampilkan 'Corner diperlukan?' tanpa pilihan bawaan",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S2.2 Simpan tanpa memilih Corner ditolak di UI (tanpa request ke server, tanpa Run)",
+   "ok": true,
+   "extra": "Pilih: Corner diperlukan atau tidak diperlukan."
+  },
+  {
+   "name": "S2.3 memilih 'Tidak diperlukan' memunculkan kolom alasan",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S2.4 'Tidak diperlukan' tanpa alasan ditolak; alasan 2 huruf ditolak",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S2.4b alasan < 3 karakter ditolak",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S2.5 klik Simpan -> TERSIMPAN atomik: Run + jadwal + keputusan Corner (tidak diperlukan, beralasan) dalam satu permintaan",
+   "ok": true,
+   "extra": "false|Tanpa pekerjaan kain/jahit|TABLE_1|PLANNED posts=1"
+  },
+  {
+   "name": "S2.6 tidak ada operasi Corner terbuka untuk C1 (tahap 9–11 tidak berlaku, bukan selesai palsu)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S2.7 reload: C1 tetap di Meja 1 dan hilang dari Belum Dijadwalkan",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S2.8 produk ambigu: kebutuhan konfirmasi jenis produk tampil di modal",
+   "ok": true,
+   "extra": "Jenis produk perlu dikonfirmasi. Jenis kasur belum diisi pada order (lini KASUR adalah nilai bawaan, bukan bukti) — Sales perlu mengonfirmas"
+  },
+  {
+   "name": "S2.9 produk ambigu tetap terjadwal; Corner diperlukan tersimpan; order Sales tidak diubah",
+   "ok": true,
+   "extra": "t"
+  },
+  {
+   "name": "S2.10 C2 (divan) terjadwal tanpa Corner",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S2.11 modal 390 gelap: pilihan Corner terbaca",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S3.1 kartu V1 menunjukkan aksi 'Kirim Uji Tekstur Akhir' (tahap 8)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S3.2 unggah video gagal -> item berstatus 'error' dengan tombol Coba lagi (tanpa duplikasi)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S3.3 Coba lagi -> video terunggah (1 item, done, jenis video)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S3.4a berat penguji yang TAMPIL (bawaan berat customer 75 kg) ikut tersimpan di isian — tanpa mengetik ulang",
+   "ok": true,
+   "extra": "75"
+  },
+  {
+   "name": "S3.4 form uji tekstur terisi (hasil PAS + berat penguji diubah ke 70 kg)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S3.5 kirim gagal (jaringan putus) -> pesan koneksi jujur + tombol Coba Lagi; belum ada evidence tahap 8 di DB",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S3.6 Coba Lagi -> evidence tahap 8 TERSIMPAN tepat 1 (tanpa duplikasi) dengan 1 media",
+   "ok": true,
+   "extra": "1|1"
+  },
+  {
+   "name": "S3.7 percobaan ulang memakai Idempotency-Key yang SAMA",
+   "ok": true,
+   "extra": "p8-8-f0e87bda-08b6-4488-97af-d912284553ce / p8-8-f0e87bda-08b6-4488-97af-d912284553ce"
+  },
+  {
+   "name": "S3.8 media tersimpan berjenis video",
+   "ok": true,
+   "extra": "video|/media/production-evidence/f76a03eb343b1225c928d4e1303328e53dbe34e7.mp4"
+  },
+  {
+   "name": "S3.9 setelah reload: tahap 8 tercatat selesai di UI (tidak lagi meminta uji tekstur)",
+   "ok": true,
+   "extra": "Uji Tekstur Akhir"
+  },
+  {
+   "name": "S3.10 URL video dari kartu server (ditandatangani) dapat diputar: durasi>0, resolusi 320x240, readyState>=2, waktu berjalan",
+   "ok": true,
+   "extra": "{\"duration\":3,\"w\":320,\"h\":240,\"ready\":4,\"t\":1.215841}"
+  },
+  {
+   "name": "S4.1 tombol 'Kirim Catatan & Dokumentasi Umum' tersedia; tidak ada 'Kirim Uji Tekstur'",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S4.2 lembar menjelaskan: catatan umum tetap bisa; racikan/uji kasur menunggu Sales; tanpa kolom racikan",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S4.3 klik Kirim -> catatan umum TERSIMPAN (1 baris, general=true, tanpa racikan)",
+   "ok": true,
+   "extra": "1|true|false"
+  },
+  {
+   "name": "S4.4 tahap Pengerjaan Pesanan TIDAK ditutup (masih ACTIVE) dan tidak ada tahap 8/QC",
+   "ok": true,
+   "extra": "ACTIVE"
+  },
+  {
+   "name": "S4.5 setelah reload: catatan umum tetap boleh ditambah; uji kasur tetap ditahan",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S5.1 (asersi diperbaiki) tombol 'Konfirmasi Selesai' ada; TIDAK ada TOMBOL 'Kirim ke Corner' (teks langkah 'tidak berlaku' hanya label)",
+   "ok": true,
+   "extra": "teks 'Kirim ke Corner' sebagai label NA: true"
+  },
+  {
+   "name": "S5.2 klik Konfirmasi Selesai -> operasi custom_build + finished selesai, tanpa operasi Corner",
+   "ok": true,
+   "extra": "custom_build:COMPLETED,finished:COMPLETED"
+  }
+ ],
+ "consoleErrors": [],
+ "http": []
+}
