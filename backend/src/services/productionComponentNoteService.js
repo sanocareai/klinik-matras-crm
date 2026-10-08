@@ -339,7 +339,9 @@ export async function recordComponentSection(prisma, { unitId, section, actor, i
     });
 
     // Tanpa perubahan bermakna -> tidak ada versi baru (jangan menggandakan histori dengan salinan identik).
-    if (latest && canon(stripSnapshotExtras(latest.payload)) === canon(stripSnapshotExtras(resolved)) && canon(latest.media) === canon(mediaJson)) {
+    // Pengecualian: hasil aktual (AFTER) yang dikonfirmasi ULANG dengan alasan koreksi (mis. setelah rework hasilnya ternyata sama) tetap menjadi versi baru — gerbang putaran berikutnya menuntut
+    // catatan yang lebih baru dari putusan gagal; tanpa ini PIC Meja tidak bisa melanjutkan.
+    if (latest && !(correcting && section === "AFTER") && canon(stripSnapshotExtras(latest.payload)) === canon(stripSnapshotExtras(resolved)) && canon(latest.media) === canon(mediaJson)) {
       const response = { unitId, section, version: latest.version, unchanged: true };
       await tx.v2Command.update({ where: { id: command.id }, data: { status: "APPLIED", appliedRevision: latest.version, response, completedAt: new Date() } });
       return { replayed: false, ...response };

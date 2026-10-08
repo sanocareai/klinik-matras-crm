@@ -922,7 +922,9 @@ async function reworkScenario({ target, kindService = "UPG_FONDASI_LAPISAN" }) {
     assert.equal(c.assembly.current.foundationTest.ok, false);
     assert.equal((await PT.foundationAfter(server, w.qc, run.id, {}, { expectedVersion: 1, reason: "Uji ulang setelah fondasi diperbaiki" })).status, 201);
   }
-  assert.equal((await PT.afterRecord(server, w.nadya, run.id, { layers: [{ action: "REPLACE", material: { kind: "MANUAL", text: "Busa HD lebih tebal" }, thicknessCm: 6 }] }, { expectedVersion: 1, reason: "Perbaikan setelah QC gagal" })).status, 201);
+  // LAPISAN: hasil aktual berubah (lebih tebal). FONDASI: hasil ternyata SAMA dengan putaran 1 -> dikonfirmasi ulang dengan alasan tetap menjadi versi baru (gerbang menuntut catatan lebih baru dari putusan gagal).
+  const reAfter = await PT.afterRecord(server, w.nadya, run.id, fondasiRework ? {} : { layers: [{ action: "REPLACE", material: { kind: "MANUAL", text: "Busa HD lebih tebal" }, thicknessCm: 6 }] }, { expectedVersion: 1, reason: "Perbaikan setelah QC gagal" });
+  assert.equal(reAfter.status, 201); assert.equal(reAfter.body.version, 2); assert.equal(reAfter.body.unchanged, false, "konfirmasi ulang beralasan = versi baru walau isi sama");
   ok(await step(w, w.nadya, run.id, 7, { payload: {}, media: await media(w.nadya, run.id, "i") }));
   c = await card(w, run.id); assert.deepEqual([c.next.wait, c.next.stepNo], ["FINISHED_TEST_PENDING", 8], "uji kasur jadi putaran 1 tidak dipakai");
   assert.equal((await step(w, w.nadya, run.id, 8, {})).status, 409);
