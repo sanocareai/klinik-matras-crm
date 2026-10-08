@@ -16,6 +16,7 @@ DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 CAND_BRANCH="${CAND_BRANCH:-fix/finance-reklas-uang-muka-batal-payment}"
 # Berkas yang BOLEH berbeda dari baseline: EKSPLISIT path persis. Prisma/package/frontend/Production/Delivery/MCP tidak boleh ikut.
 ALLOWED_RE='^(backend/src/services/finance/reklasUangMuka\.js|backend/src/services/finance/hooks\.js|backend/src/services/finance/pembayaran\.js|backend/tests/integration/tolakPembayaranReklasUangMuka\.integration\.test\.js|backend/scripts/koreksiRp1Reklas20260928179\.js|scripts/release-reklas-uang-muka\.sh)$'
+BACKEND_SRC_CHANGED_RE='^backend/src/'
 PUBLIC_URL="https://app.sanomatrassehat.com"
 INTERNAL_URL="http://127.0.0.1:4000"
 REPO_URL="https://github.com/sanocareai/klinik-matras-crm.git"
