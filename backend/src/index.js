@@ -79,6 +79,7 @@ import { mobileRouter } from "./routes/mobileAuth.js";
 import { inventoryRouter }  from "./routes/inventory.js";
 import { goodsReceiptRouter } from "./routes/goodsReceipt.js";
 import { purchaseOrderFinanceRouter, purchaseOrderGudangRouter } from "./routes/purchaseOrders.js";
+import { jejakBahanUnitRouter, biayaBahanFinanceRouter } from "./routes/biayaBahan.js";
 import { materialIssueRouter } from "./routes/materialIssue.js";
 import { complaintsRouter } from "./routes/complaints.js";
 import { stockTransferRouter } from "./routes/stockTransfer.js";
@@ -238,6 +239,7 @@ app.use("/api/knowledge",    knowledgeRouter);
 // Tidak ada user existing yang punya role produksi, jadi mounting ini AMAN:
 // endpointnya ada tapi tidak ada satu pun akun yang bisa memakainya sampai
 // role diberikan lewat UserRole. Lihat docs/sano-hub/PHASE-0.md.
+app.use("/api/units",        jejakBahanUnitRouter); // jejak biaya bahan per unit (baca-saja; nominal hanya bila finance:read)
 app.use("/api/units",        unitRouter);
 app.use("/api/morning-priority-requests", morningPriorityRouter);
 app.use("/api/production",   productionRouter);
@@ -276,6 +278,7 @@ app.use("/api/inventory",    inventoryRouter);
 app.use("/api/inventory/goods-receipts", goodsReceiptRouter);
 app.use("/api/inventory/purchase-orders", purchaseOrderGudangRouter); // PO bahan baku — Gudang baca saja, tanpa harga
 app.use("/api/finance/purchase-orders", purchaseOrderFinanceRouter);
+app.use("/api/finance/biaya-bahan", biayaBahanFinanceRouter);
 app.use("/api/inventory/material-issues", materialIssueRouter);
 app.use("/api/inventory/transfers", stockTransferRouter);
 app.use("/api/inventory/stock-counts", stockCountRouter);

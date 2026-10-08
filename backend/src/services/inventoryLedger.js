@@ -134,7 +134,7 @@ export async function postStockMovement(tx, {
     );
   }
 
-  return tx.stockMovement.create({
+  const baris = await tx.stockMovement.create({
     data: {
       materialId, type, qty: qtyNum,
       location: location || undefined,
@@ -155,6 +155,13 @@ export async function postStockMovement(tx, {
     },
     include: { material: { select: { code: true, name: true, unit: true } } },
   });
+  // Jejak biaya bahan per unit: nilai & dasar harga pergerakan bertaut unit DIBEKUKAN di transaksi yang sama (append-only). Tidak menulis stok/jurnal lain;
+  // kegagalan pembekuan tidak pernah menggagalkan perintah Gudang (lihat services/finance/biayaBahan.js). import dinamis: finance mengimpor modul ini.
+  if (baris.unitId) {
+    const { catatValuasiPergerakan } = await import("./finance/biayaBahan.js");
+    await catatValuasiPergerakan(tx, baris);
+  }
+  return baris;
 }
 
 /**

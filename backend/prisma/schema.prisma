@@ -5261,6 +5261,9 @@ model StockMovement {
   goodsReceiptId String?       @map("goods_receipt_id") @db.Uuid
   goodsReceipt   GoodsReceipt? @relation(fields: [goodsReceiptId], references: [id], onDelete: SetNull)
 
+  // Jejak biaya bahan per unit — nilai & dasar harga yang DIBEKUKAN saat pergerakan ini diposting (hanya untuk pergerakan bertaut unit).
+  valuation FinStockMovementValuation?
+
   // Warehouse Tahap 3 — jejak balik ke Material Issue yang menghasilkan
   // baris ISSUE ini. NULLABLE: movement ISSUE lama (lewat POST
   // /movements/issue langsung ke unit) tidak punya dokumen alur approval.
@@ -7487,6 +7490,38 @@ model FinSupplierBillAllocation {
   @@index([goodsReceiptLineId])
   @@index([goodsReceiptId])
   @@map("fin_supplier_bill_allocations")
+}
+
+// ─── JEJAK BIAYA BAHAN PER UNIT (Okt 2026) ──────────────────────────────────────────────────────────────────────────────
+// Satu baris = nilai & DASAR HARGA sebuah pergerakan stok bertaut unit (ISSUE/RETURN/WASTE/ADJUSTMENT), DIBEKUKAN di transaksi yang sama dengan
+// postStockMovement (services/inventoryLedger.js). Append-only (trigger menolak UPDATE/DELETE) supaya biaya historis tidak berubah ketika ada
+// transaksi bertanggal mundur atau harga rata-rata bergeser. TIDAK menulis stok/jurnal; Unit TIDAK menyimpan total biaya (selalu dibaca dari sini).
+// status TANPA_HARGA = material belum punya harga perolehan saat itu → unit_cost_basis & value NULL (BUKAN 0).
+model FinStockMovementValuation {
+  id         String        @id @default(uuid()) @db.Uuid
+  movementId String        @unique @map("movement_id") @db.Uuid
+  movement   StockMovement @relation(fields: [movementId], references: [id], onDelete: Restrict)
+
+  materialId   String   @map("material_id") @db.Uuid
+  unitId       String   @map("unit_id") @db.Uuid
+  movementType String   @map("movement_type") @db.VarChar(20)
+  // PEMAKAIAN (ISSUE) | RETUR (RETURN, mengurangi biaya) | SUSUT (WASTE, di luar biaya unit) | PENYESUAIAN (ADJUSTMENT)
+  costKind     String   @map("cost_kind") @db.VarChar(20)
+  qty          Decimal  @db.Decimal(14, 4) // bertanda seperti ledger stok
+  status       String   @db.VarChar(20) // DINILAI | TANPA_HARGA
+
+  // Harga rata-rata tertimbang saat posting (belum dibulatkan) dan nilai bertanda biaya (+ menambah biaya unit, − mengurangi).
+  unitCostBasis Decimal? @map("unit_cost_basis") @db.Decimal(24, 8)
+  value         Decimal? @db.Decimal(18, 2)
+  basisMethod   String   @default("RATA_RATA_TERTIMBANG") @map("basis_method") @db.VarChar(30)
+  // Rincian dasar: { asOf, totalQty, totalNilai, sumber:[{receiptMovementId, goodsReceiptId, receiptNumber, poNumber, purchaseOrderLineId, qty, unitCost}], opening }
+  basis         Json?
+
+  valuedAt DateTime @default(now()) @map("valued_at")
+
+  @@index([unitId, valuedAt])
+  @@index([materialId])
+  @@map("fin_stock_movement_valuations")
 }
 
 // Pembayaran KE supplier. Satu pembayaran bisa melunasi beberapa tagihan

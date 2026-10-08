@@ -13,6 +13,7 @@ import express from "express";
 const { inventoryRouter } = await import("../../../src/routes/inventory.js");
 const { goodsReceiptRouter } = await import("../../../src/routes/goodsReceipt.js");
 const { purchaseOrderFinanceRouter, purchaseOrderGudangRouter } = await import("../../../src/routes/purchaseOrders.js");
+const { jejakBahanUnitRouter, biayaBahanFinanceRouter } = await import("../../../src/routes/biayaBahan.js");
 const { materialIssueRouter } = await import("../../../src/routes/materialIssue.js");
 const { stockTransferRouter } = await import("../../../src/routes/stockTransfer.js");
 const { stockCountRouter } = await import("../../../src/routes/stockCount.js");
@@ -95,6 +96,7 @@ export function buildTestApp() {
   // urutan match Express untuk path yang tumpang-tindih, mis.
   // /api/inventory vs /api/inventory/goods-receipts) identik dengan
   // produksi.
+  app.use("/api/units", jejakBahanUnitRouter);
   app.use("/api/units", unitRouter);
   app.use("/api/production", productionRouter); // P12B.5: work-orders (penanda sumber V1/V2)
   app.use("/api/morning-priority-requests", morningPriorityRouter);
@@ -130,6 +132,7 @@ export function buildTestApp() {
   app.use("/api/finance", financeRekonCutoffRouter);
   app.use("/api/finance", financePenerimaanRouter);
   app.use("/api/finance/purchase-orders", purchaseOrderFinanceRouter);
+  app.use("/api/finance/biaya-bahan", biayaBahanFinanceRouter);
   app.use("/api/finance", financePersediaanAwalRouter);
   app.use("/api/finance", financeApprovalsRouter);
   app.use("/api/finance", financePemasukanRouter);

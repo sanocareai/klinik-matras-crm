@@ -32,7 +32,7 @@ import { postJournal, recordPostingGap, resolvePostingGap, findEntryByKey } from
 import { statusCutoverUntuk, pembukaAktif, awalCutover } from "../persediaanAwal.js";
 import { ambilKebijakanPersediaan } from "../inventoryMethod.js";
 import { resolveAccount, SYSTEM_KEYS, AccountError } from "../accounts.js";
-import { toMoney, sumMoney, ZERO } from "../money.js";
+import { toMoney, sumMoney, ZERO, Decimal } from "../money.js";
 
 export const KEY = {
   materialIssue: (id) => `PEMAKAIAN_BAHAN:${id}`,
@@ -57,6 +57,15 @@ export const KEY = {
  * tercampur penerimaan tanggal 15 yang belum ada saat pemakaian itu terjadi.
  */
 export async function hargaRataRata(tx, materialId, { asOf } = {}) {
+  return (await dasarHargaRataRata(tx, materialId, { asOf })).harga;
+}
+
+/**
+ * Sama dengan hargaRataRata tetapi mengembalikan juga DASAR perhitungannya (dipakai jejak biaya bahan per unit untuk membekukan dasar harga):
+ *   { harga: Decimal|null, totalQty, totalNilai, sumber: [{ receiptMovementId, goodsReceiptId, qty, unitCost }], opening: {qty, unitCost}|null, asOf }
+ * Kuantitas dikalikan harga secara EKSAK (qty hingga 4 desimal sesuai ledger) — sebelumnya toMoney(qty) membulatkan qty ke 2 desimal lebih dulu.
+ */
+export async function dasarHargaRataRata(tx, materialId, { asOf } = {}) {
   // B3.6 — mulai cutover perpetual (setelah persediaan awal diposting) basis harga = baris stok opname material itu +
   // penerimaan SEJAK cutover. Penerimaan sebelum cutover sudah tercakup nilai stok opname, jadi tidak ikut dirata-rata.
   const k = await ambilKebijakanPersediaan(tx);
@@ -67,19 +76,26 @@ export async function hargaRataRata(tx, materialId, { asOf } = {}) {
       materialId, type: "RECEIPT", unitCost: { not: null },
       ...((asOf || aktif) && { createdAt: { ...(asOf && { lte: asOf }), ...(aktif && { gte: mulai }) } }),
     },
-    select: { qty: true, unitCost: true },
+    select: { id: true, qty: true, unitCost: true, goodsReceiptId: true },
+    orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
+  let opening = null;
   if (aktif) {
     const awal = await tx.finInventoryOpeningLine.findUnique({ where: { openingId_materialId: { openingId: aktif.id, materialId } }, select: { qty: true, unitCost: true } });
-    if (awal) receipts.push({ qty: awal.qty, unitCost: awal.unitCost });
+    if (awal) { opening = { qty: awal.qty, unitCost: awal.unitCost }; receipts.push({ id: null, qty: awal.qty, unitCost: awal.unitCost, goodsReceiptId: null }); }
   }
   const berharga = receipts.filter((r) => Number(r.qty) > 0 && Number(r.unitCost) > 0);
-  if (berharga.length === 0) return null;
+  const kosong = { harga: null, totalQty: ZERO, totalNilai: ZERO, sumber: [], opening: null, asOf: asOf ?? null };
+  if (berharga.length === 0) return kosong;
 
-  const totalNilai = sumMoney(berharga.map((r) => toMoney(r.qty).times(toMoney(r.unitCost))));
-  const totalQty = sumMoney(berharga.map((r) => r.qty));
-  if (totalQty.isZero()) return null;
-  return totalNilai.dividedBy(totalQty);
+  const totalNilai = berharga.reduce((a, r) => a.plus(new Decimal(String(r.qty)).times(new Decimal(String(r.unitCost)))), ZERO);
+  const totalQty = berharga.reduce((a, r) => a.plus(new Decimal(String(r.qty))), ZERO);
+  if (totalQty.isZero()) return kosong;
+  return {
+    harga: totalNilai.dividedBy(totalQty), totalQty, totalNilai, asOf: asOf ?? null,
+    sumber: berharga.filter((r) => r.id).map((r) => ({ receiptMovementId: r.id, goodsReceiptId: r.goodsReceiptId, qty: String(r.qty), unitCost: Number(r.unitCost) })),
+    opening: opening ? { qty: String(opening.qty), unitCost: Number(opening.unitCost) } : null,
+  };
 }
 
 // Jenis pergerakan yang MENGURANGI persediaan dan akun beban tujuannya.
@@ -146,8 +162,8 @@ async function bukukanPergerakan(tx, {
       tanpaHarga.push(m);
       continue;
     }
-    const qty = toMoney(m.qty);
-    const nilai = qty.times(harga).abs();
+    const qty = new Decimal(String(m.qty));
+    const nilai = toMoney(qty.times(harga).abs());
     if (nilai.isZero()) continue;
     const baris = { movement: m, nilai, akunKey: AKUN_PER_TIPE[m.type] || SYSTEM_KEYS.SELISIH_STOK };
     if (qty.greaterThan(0)) persediaanNaik.push(baris);
