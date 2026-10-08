@@ -318,7 +318,16 @@ export async function selesaikanJobPengambilanTertinggal(tx, orderId) {
 }
 
 /** Hitung ulang satu Order dan tulis Order.status kalau berubah + berhak. */
-export async function syncOrderStatus(tx, orderId) {
+// `forceStagedUnitIds` (8 Oktober 2026, dokumentasi POD grup driver) — Set opsional unit id yang
+// HARUS dihitung dalam agregasi weakest-link walau currentStageId-nya NULL. Dipakai HANYA oleh
+// pemanggil POST /jobs/:id/complete (lihat armada.js) untuk unit yang BARU SAJA dipastikan
+// RECEIVED/DELIVERED oleh penyelesaian job itu sendiri — bukti fisik sudah ada (job COMPLETED +
+// bukti foto), jadi "belum pernah masuk stage engine produksi" tidak lagi relevan menahan sync
+// order untuk unit INI secara spesifik. TIDAK mengubah computeOrderStatus() (fungsi murni) maupun
+// pemanggil lain (orders.js, orderCreation.js, unitStageEngine.js) — unit lain di order yang sama
+// yang TIDAK baru saja disentuh job ini tetap mengikuti aturan lama (dikecualikan bila currentStageId
+// NULL), supaya 199 unit backfill lama yang belum diadopsi tetap aman seperti sebelumnya.
+export async function syncOrderStatus(tx, orderId, { forceStagedUnitIds } = {}) {
   const order = await tx.order.findUnique({
     where: { id: orderId },
     select: { status: true, statusLocked: true, category: true },
@@ -331,8 +340,11 @@ export async function syncOrderStatus(tx, orderId) {
   // Armada antar/ambil) diam-diam menimpa status SEWA.
   if (order.category === "SEWA") return;
 
-  const units = await tx.unit.findMany({ where: { orderId }, select: { status: true, currentStageId: true } });
-  const computed = computeOrderStatus(units);
+  const units = await tx.unit.findMany({ where: { orderId }, select: { id: true, status: true, currentStageId: true } });
+  const unitsUntukHitung = forceStagedUnitIds && forceStagedUnitIds.size
+    ? units.map((u) => (u.currentStageId == null && forceStagedUnitIds.has(u.id) ? { ...u, currentStageId: "__FORCED_STAGED_FOR_SYNC__" } : u))
+    : units;
+  const computed = computeOrderStatus(unitsUntukHitung);
   if (computed === null || computed === order.status) return;
 
   await tx.order.update({ where: { id: orderId }, data: { status: computed } });
@@ -367,9 +379,9 @@ export async function syncOrderStatus(tx, orderId) {
  * (mis. updateMany job Armada) — sinkronkan tiap order yang terdampak,
  * bukan cuma satu.
  */
-export async function syncOrderStatusForUnits(tx, unitIds) {
+export async function syncOrderStatusForUnits(tx, unitIds, { forceStagedUnitIds } = {}) {
   if (!unitIds || unitIds.length === 0) return;
   const units = await tx.unit.findMany({ where: { id: { in: unitIds } }, select: { orderId: true } });
   const orderIds = [...new Set(units.map((u) => u.orderId))];
-  for (const orderId of orderIds) await syncOrderStatus(tx, orderId);
+  for (const orderId of orderIds) await syncOrderStatus(tx, orderId, { forceStagedUnitIds });
 }
