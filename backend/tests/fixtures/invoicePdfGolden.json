@@ -1,0 +1,27 @@
+{
+  "sederhana": {
+    "sha256": "10d877ea49aaa87ced051b20e0c8fdada656eff396d0e119287752cbb1740d48",
+    "bytes": 120176,
+    "halaman": 1
+  },
+  "diskonOngkirDibayar": {
+    "sha256": "516d5ff4f1c24d72a00d23955699504d51cec1f2ffc98c9f6c95a827db960970",
+    "bytes": 121895,
+    "halaman": 2
+  },
+  "modeDP": {
+    "sha256": "50d78287ad902a39a92e7ef8b55e0a0f4b18e0168078636b320ab109c089878f",
+    "bytes": 120455,
+    "halaman": 1
+  },
+  "gabungan": {
+    "sha256": "3c7851ff8de6fe6aea32e22421303ec38380a2b456a013803f6c67e0e93937ba",
+    "bytes": 120919,
+    "halaman": 1
+  },
+  "panjangMultiHalaman": {
+    "sha256": "170519449cd11ddc437d4d198dfbc0a0c18a5179e5558124d0c4d75c9fb3019c",
+    "bytes": 127921,
+    "halaman": 3
+  }
+}

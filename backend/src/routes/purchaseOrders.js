@@ -9,6 +9,8 @@ import { requirePermission, PERMISSIONS as P, hasPermission } from "../middlewar
 import { prisma } from "../db.js";
 import { handleFinanceError } from "./finance.js";
 import { bentukPO, daftarPO, daftarRiwayat, buatPO, ubahDraf, setujuiPO, batalkanPO, revisiJumlah } from "../services/finance/purchaseOrder.js";
+import { bangunViewPO, namaBerkasPO } from "../services/finance/purchaseOrderDocument.js";
+import { renderPurchaseOrderPdf } from "../services/purchaseOrderPdf.js";
 import { pandanganPenagihan, buatTagihanDariPO, ubahTagihanPO, evaluasiTagihanPO } from "../services/finance/purchaseOrderBill.js";
 
 // ── Finance ──────────────────────────────────────────────────────────────
@@ -53,6 +55,25 @@ purchaseOrderFinanceRouter.post("/:id/faktur", requirePermission(P.FINANCE_POST)
     const id = await prisma.$transaction((tx) => buatTagihanDariPO(tx, { poId: req.params.id, body: req.body, userId: req.user.id, bolehOverride: hasPermission(req.user, P.FINANCE_ADMIN) }));
     res.status(201).json(await evaluasiTagihanPO(prisma, id));
   } catch (e) { handleFinanceError(e, res); }
+});
+
+// PDF Purchase Order (sistem dokumen SANSS yang sama dengan invoice). Hanya Finance (memuat harga & nilai). Murni baca: tidak mengubah PO, stok, atau jurnal.
+const POLA_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+purchaseOrderFinanceRouter.get("/:id/pdf", requirePermission(P.FINANCE_READ), async (req, res) => {
+  try {
+    if (!POLA_UUID.test(req.params.id)) return res.status(404).json({ error: "PO tidak ditemukan" });
+    const view = await bangunViewPO(prisma, req.params.id);
+    if (!view) return res.status(404).json({ error: "PO tidak ditemukan" });
+    const buffer = await renderPurchaseOrderPdf(view);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename="${namaBerkasPO(view.po.poNumber)}"`);
+    res.setHeader("Cache-Control", "no-store");
+    res.send(buffer);
+  } catch (err) {
+    if (err?.statusCode) return handleFinanceError(err, res);
+    console.error("po pdf error:", err);
+    res.status(500).json({ error: "Gagal membuat PDF Purchase Order" });
+  }
 });
 
 purchaseOrderFinanceRouter.get("/:id", requirePermission(P.FINANCE_READ), async (req, res) => {
