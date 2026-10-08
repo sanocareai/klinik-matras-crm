@@ -222,26 +222,6 @@ export const PAYMENT_STATUS_BADGE = {
   LUNAS:       { background: "#f0fdf4", color: "#16a34a" },
 };
 
-// Warna badge Kategori Order & Status Order — SATU sumber untuk layar (OrderSection.jsx) dan export Excel berwarna (features/orders/exportExcelSpec.js).
-// Dipindah dari OrderSection.jsx (7 Okt 2026) supaya warna di Excel tidak pernah berbeda dari yang dilihat sales di layar.
-export const CATEGORY_BADGE  = {
-  LAYANAN: { bg: "#ede9fe", color: "#5b21b6" },
-  BARU:    { bg: "#dcfce7", color: "#166534" },
-  SEWA:    { bg: "#dbeafe", color: "#1e40af" },
-};
-
-export const ORDER_STATUS_BADGE = {
-  PENDING:    { bg: "#fef3c7", color: "#92400e" },
-  PICKUP:     { bg: "#dbeafe", color: "#1e40af" },
-  PROCESSING: { bg: "#ede9fe", color: "#5b21b6" },
-  READY:      { bg: "#ccfbf1", color: "#065f46" },
-  SHIPPING:   { bg: "#dbeafe", color: "#1e40af" }, // sama biru dengan PICKUP — "sedang di jalan" (arah keluar)
-  DELIVERED:  { bg: "#dcfce7", color: "#166534" },
-  CANCELLED:  { bg: "#fee2e2", color: "#991b1b" },
-  SEWA_DIKIRIM: { bg: "#dbeafe", color: "#1e40af" },
-  SEWA_DIAMBIL: { bg: "#dcfce7", color: "#166534" },
-};
-
 export const PAYMENT_STATUSES = ["BELUM_BAYAR", "DP", "LUNAS"];
 
 export const PIPELINE_STAGES = Object.entries(STAGE_LABELS).map(([v, l]) => ({ value: v, label: l }));
