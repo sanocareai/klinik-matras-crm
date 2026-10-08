@@ -836,6 +836,20 @@ test("Fase 4: TIGA jenis racikan (fondasi+lapisan, hanya fondasi, hanya lapisan)
   }
 });
 
+test("Fase 4: hasil aktual berbahan KATALOG yang SAMA dengan rencana tidak minta alasan; bahan katalog berbeda tetap wajib beralasan (perbandingan setelah ref katalog di-resolve)", async () => {
+  const w = await world();
+  const { unit } = await toModuleStart(w);
+  const cat = (m) => ({ kind: "CATALOG", materialId: m.id });
+  const plan = { foundation: { action: "REPLACE", system: "BONNELL", material: cat(w.fondasi) }, layers: [{ action: "REPLACE", material: cat(w.lapisan), thicknessCm: 3 }] };
+  assert.equal((await cn(w.nadya, unit.id, "PLAN_RACIKAN", { expectedVersion: 0, media: [], data: plan })).status, 201);
+  const other = await createTestMaterial({ name: `Latex Lain ${++seq}` });
+  const diff = await cn(w.nadya, unit.id, "AFTER", { expectedVersion: 0, media: [], data: { ...plan, layers: [{ action: "REPLACE", material: cat(other), thicknessCm: 3 }] } });
+  assert.equal(diff.status, 422); assert.equal(diff.body.code, "COMPONENT_DEVIATION_REASON_REQUIRED"); assert.deepEqual(diff.body.details.items.map((i) => [i.part, i.diffs]), [["LAPISAN_1", ["BAHAN"]]], "hanya bahan yang benar-benar beda");
+  const same = await cn(w.nadya, unit.id, "AFTER", { expectedVersion: 0, media: [], data: plan });
+  assert.equal(same.status, 201, JSON.stringify(same.body)); assert.equal(same.body.version, 1, "bahan katalog identik = sesuai rencana, tanpa alasan");
+  const n = await notesOf(w.nadya, unit.id); assert.deepEqual(n.comparison.planVsActual.layers.map((l) => l.status), ["SAMA"]); assert.equal(n.comparison.planVsActual.foundation.status, "SAMA");
+});
+
 // Rework (QC GAGAL) dengan permintaan bahan lewat PIC Bahan, serah Gudang (pick yang ada), replay/konflik, dan retur tepat sekali.
 async function reworkScenario({ target, kindService = "UPG_FONDASI_LAPISAN" }) {
   const w = await world();

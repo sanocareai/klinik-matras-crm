@@ -330,8 +330,9 @@ export async function recordComponentSection(prisma, { unitId, section, actor, i
       if (!evidenceFileExists(it.url)) throw componentError("Ada foto yang belum selesai terunggah — unggah ulang lalu simpan", 422, "COMPONENT_MEDIA_NOT_FOUND");
       if (await otherUnitUsesFile(tx, unitId, it.url)) throw componentError("Foto ini sudah dipakai sebagai bukti unit lain dan tidak bisa dipakai di sini", 409, "COMPONENT_MEDIA_OTHER_UNIT");
     }
-    if (section === "AFTER") await assertDeviationExplained(tx, unitId, normalized);
     const resolved = await resolveMaterialRefs(tx, normalized);
+    // Perbedaan dari rencana dibandingkan setelah ref katalog di-resolve ke snapshot server (kode/nama) — rencana menyimpan snapshot yang sama; sebelum resolve, bahan katalog yang identik terbaca "berbeda".
+    if (section === "AFTER") await assertDeviationExplained(tx, unitId, resolved);
     const mediaJson = items.map((i) => ({ url: i.url, kind: i.kind, caption: i.caption, order: i.order, ...(i.layerOrder ? { layerOrder: i.layerOrder } : {}) }));
     const command = await tx.v2Command.create({
       data: { domain: "PRODUCTION", actorId: actorKey, idempotencyKey, commandType: "COMPONENT_RECORD", aggregateType: "Unit", aggregateId: unitId, expectedRevision: exp, requestHash },
