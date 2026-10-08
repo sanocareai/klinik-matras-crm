@@ -102,3 +102,20 @@ Presisi: jumlah PO & faktur maksimal **3 desimal** (Decimal(14,3); ledger stok D
 - Biaya tambahan faktur (ongkir/pajak/diskon header) belum didukung.
 - Retur setelah faktur disetujui: belum ada alur otomatis; faktur dibatalkan lalu dicatat ulang dengan jumlah baru (penolakan barang di Gudang sebelum putaway sudah mengurangi jumlah baik yang bisa ditagih).
 - Satu penerimaan sebagian ditagih lewat faktur atas PO **dan** ingin ditagih lewat tagihan lama: ditolak; wajib lewat PO.
+
+---
+
+# Kontrak untuk fase berikutnya: jejak biaya bahan per unit Produksi
+
+Yang SUDAH tersedia dari PO Fase 1+2 (dasar angka biaya):
+- Penerimaan dari PO menulis `stock_movements` RECEIPT dengan `unit_cost` = **harga satuan PO** (rupiah bulat), `goods_receipt_id` dan (lewat baris penerimaan) `purchase_order_line_id` → supplier, PO, dan faktur dapat ditelusuri dari setiap RECEIPT.
+- Penerimaan **tanpa PO** tetap tidak punya `unit_cost` (gap `TANPA_HARGA_PEROLEHAN`) — jejak biaya bahan hanya lengkap untuk bahan yang masuk lewat PO (atau stok opname cutover).
+- Pemakaian: `stock_movements` ISSUE/RETURN/WASTE membawa `unit_id` (unit produksi) dan `material_issue_id`; dokumen keluar `MaterialIssue.unitId` wajib untuk sumber `PRODUCTION_WORK_ORDER`. Endpoint baca existing: `GET /api/units/:id/materials`.
+- Nilai pemakaian dibukukan oleh `posting/inventory.js` memakai **harga rata-rata tertimbang berjalan** (`hargaRataRata(materialId, {asOf})`: Σ qty×unit_cost ÷ Σ qty atas RECEIPT berharga sampai saat itu, + baris stok opname sejak cutover). Nilai ini DIHITUNG saat posting jurnal; **tidak disimpan per pergerakan**.
+
+Usulan kontrak (read-model, tanpa menulis stok/jurnal), untuk disepakati dengan sesi Produksi:
+1. `GET /api/finance/biaya-bahan/unit/:unitId` (izin `finance:read` + `unit:read`) → per baris pemakaian: `{ movementId, tanggal, materialId, kode, nama, satuan, qty (bertanda), hargaRataRata (asOf = tanggal pemakaian), nilai, dokumen: { materialIssueId, nomor }, status: DINILAI | TANPA_HARGA }`, total biaya bahan unit, dan daftar baris `TANPA_HARGA` (jangan dijumlah sebagai nol).
+2. Asal harga per baris (opsional, untuk audit): lot RECEIPT yang membentuk rata-rata → PO/faktur terkait (hanya bila `purchase_order_line_id` ada).
+3. Jangan menyimpan biaya per unit sebagai kolom baru di `Unit`; hitung dari ledger (sumber tunggal) dan cache bila perlu. Retur (`RETURN`) mengurangi biaya; `WASTE` ditandai terpisah (susut, bukan biaya unit) — keputusan Produksi/Owner apakah susut dibebankan ke unit.
+4. Presisi: kuantitas ledger Decimal(12,4); gunakan `nilaiBarisPenerimaan`-style (qty eksak × harga, bulatkan sekali) — jangan `toMoney(qty)`.
+5. Batasan yang harus dinyatakan di UI: rata-rata tertimbang (bukan FIFO/lot); stok sebelum cutover memakai harga stok opname; bahan tanpa harga perolehan tidak dinilai.

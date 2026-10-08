@@ -471,7 +471,7 @@ test("tagihan supplier atas penerimaan dari PO: nilai penerimaan terisi dari har
 });
 
 // ═══ 8. VALIDASI MASUKAN ════════════════════════════════════════════════════════════════════════════════════════
-test("validasi PO: harga bulat > 0, jumlah > 0 maks 2 desimal, tanpa item ganda, estimasi tidak mendahului tanggal PO, supplier & item aktif", async () => {
+test("validasi PO: harga bulat > 0, jumlah > 0 maks 3 desimal, tanpa item ganda, estimasi tidak mendahului tanggal PO, supplier & item aktif", async () => {
   const w = await dunia();
   const dasar = { supplierId: w.supplier.id, orderDate: "2026-10-08", lines: [{ materialId: w.lem.id, qty: 1, unitPrice: HARGA }] };
   const coba = (patch) => w.f.post("/api/finance/purchase-orders", { ...dasar, ...patch });
@@ -481,7 +481,7 @@ test("validasi PO: harga bulat > 0, jumlah > 0 maks 2 desimal, tanpa item ganda,
   assert.equal((await coba({ lines: baris({ unitPrice: 0 }) })).status, 400);
   assert.equal((await coba({ lines: baris({ qty: 0 }) })).status, 400);
   assert.equal((await coba({ lines: baris({ qty: -1 }) })).status, 400);
-  assert.equal((await coba({ lines: baris({ qty: 1.234 }) })).status, 400);
+  assert.equal((await coba({ lines: baris({ qty: 1.2345 }) })).status, 400);
   assert.equal((await coba({ lines: [] })).status, 400);
   assert.equal((await coba({ lines: [dasar.lines[0], dasar.lines[0]] })).status, 400, "item ganda");
   assert.equal((await coba({ expectedDate: "2026-10-01" })).status, 400);
@@ -495,7 +495,7 @@ test("validasi PO: harga bulat > 0, jumlah > 0 maks 2 desimal, tanpa item ganda,
   await testPrisma.material.update({ where: { id: w.lem.id }, data: { active: false } });
   assert.equal((await coba({})).status, 409, "item nonaktif");
   await testPrisma.material.update({ where: { id: w.lem.id }, data: { active: true } });
-  assert.equal((await coba({ lines: baris({ qty: 2.5 }) })).status, 201, "2 desimal diizinkan");
+  assert.equal((await coba({ lines: baris({ qty: 2.125 }) })).status, 201, "3 desimal diizinkan");
 
   // Draf bisa diubah; yang sudah disetujui tidak.
   const po = await poDisetujui(w, { qty: 1 });
