@@ -197,6 +197,26 @@ test("409 state-conflict dan status server TIDAK sesuai target -> blocked dengan
   assert.match(queue[0].lastError, /Gagal/);
 });
 
+test("409 gerbang Checklist Persiapan Perjalanan (CHECKLIST_BELUM_LENGKAP) saat route-start -> blocked dengan lastErrorCode terpreservasi (bukan cuma pesan teks)", async () => {
+  const api = createFakeApi({
+    async startRoute() {
+      throw Object.assign(new Error("Checklist persiapan belum lengkap: Bukti Kelengkapan (foto plastik/tali/tools, dll) — lengkapi dulu sebelum memulai perjalanan"), { status: 409, code: "CHECKLIST_BELUM_LENGKAP" });
+    },
+    async getMyJobs() {
+      return { jobs: [], routes: [{ id: "r1", status: "PUBLISHED" }] }; // belum berubah di server -> reconcile tidak bisa menyimpulkan "sudah selesai"
+    },
+  });
+  const q = makeQueue({ apiOverrides: api });
+  await q.enqueueExecution({ userId: "u1", jobId: "j1", routeId: "r1", action: "route-start", payload: {}, photos: [] });
+  const result = await q.flushExecutionQueue("u1");
+  assert.equal(result.synced, 0);
+  const queue = await q.readExecutionQueue("u1");
+  assert.equal(queue.length, 1);
+  assert.equal(queue[0].blocked, true);
+  assert.equal(queue[0].lastErrorCode, "CHECKLIST_BELUM_LENGKAP", "kode galat server dipertahankan — bukan cuma pesan teks yang bisa berubah kapan saja");
+  assert.match(queue[0].lastError, /Rute masih berstatus PUBLISHED/, "pesan ditampilkan tetap dari hasil reconcile (bukan pesan asli yang disalin)");
+});
+
 test("item blocked bisa di-refresh (reconcileOne) dan di-discard, tidak mengunci job permanen", async () => {
   const api = createFakeApi({
     async arriveArmadaJob() {
