@@ -30,6 +30,7 @@ import {
   hashToken,
   signAccessToken,
   validateRedirectUris,
+  allowedRedirectUris,
 } from "./oauthCrypto.js";
 
 // --- Multi-resource (RFC 8707) -- SATU authorization server, beberapa
@@ -228,10 +229,31 @@ const oauthLoginLimiter = createRateLimiter({ limit: 10, windowMs: 60_000 });
 // RFC 7591 — Dynamic Client Registration. Hanya callback Claude bawaan dan
 // callback ChatGPT yang dikonfigurasi eksplisit yang diterima exact-match
 // (validateRedirectUris); URI lain ditolak seluruhnya.
+// Log diagnostik penolakan DCR: HANYA nama event, waktu, dan redirect_uris yang
+// TIDAK ada di allowlist (tiap URI dipotong 300 karakter, maksimal 10 entri).
+// Sengaja tanpa body/header/cookie/IP/field lain — URI callback bukan rahasia,
+// tetapi body registrasi bisa memuat apa saja yang dikirim klien. JSON.stringify
+// menetralkan newline (tidak bisa memalsukan baris log). Validasi tidak diubah.
+const REGISTER_LOG_MAX_URIS = 10;
+const REGISTER_LOG_MAX_CHARS = 300;
+export function rejectedRedirectUrisForLog(redirectUris) {
+  if (!Array.isArray(redirectUris)) return [];
+  const allowed = allowedRedirectUris();
+  return redirectUris
+    .filter((u) => !(typeof u === "string" && allowed.includes(u)))
+    .slice(0, REGISTER_LOG_MAX_URIS)
+    .map((u) => (typeof u === "string" ? u.slice(0, REGISTER_LOG_MAX_CHARS) : `<${typeof u}>`));
+}
+
 mcpOAuthRouter.post("/oauth/register", express.json(), async (req, res) => {
   const { redirect_uris } = req.body || {};
   const check = validateRedirectUris(redirect_uris);
   if (!check.valid) {
+    console.warn(JSON.stringify({
+      event: "mcp_oauth_register_rejected",
+      at: new Date().toISOString(),
+      redirect_uris: rejectedRedirectUrisForLog(redirect_uris),
+    }));
     return res.status(400).json({ error: "invalid_redirect_uri", error_description: check.reason });
   }
 
