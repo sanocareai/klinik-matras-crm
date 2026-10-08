@@ -520,7 +520,7 @@ test("J. Run lama (tanpa kebijakan adaptasi) TIDAK berubah: QC tetap wajib, Corn
   const early = await step(w, w.nadya, run.id, 9, { payload: {}, media: await media(w.nadya, run.id, "i") });
   assert.equal(early.status, 409); assert.equal(early.body.code, "STEP_WAITING_AWAITING_QC");
   const fin = await finishPost(w, w.nadya, run.id, { tag: "fin-j" });
-  assert.equal(fin.status, 409); assert.equal(fin.body.code, "FINISH_ADAPTATION_NOT_ENABLED");
+  assert.equal(fin.status, 409); assert.equal(fin.body.code, "FINISH_NOT_READY", "Fase 5: run non-adaptasi tidak lagi ditolak karena adaptasi, tetapi karena syarat (QC/tahap) belum terpenuhi — tanpa tahap dilewati");
 });
 
 test("K. Izin pengaturan: PRODUCTION_SETTINGS_WRITE hanya Admin/Owner; operator/QC/Gudang/Driver ditolak; perubahan tercatat", async () => {
