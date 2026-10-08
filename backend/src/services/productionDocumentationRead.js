@@ -6,7 +6,7 @@ import { applicableStepsFor } from "./productionStepCommandService.js";
 import { resolveUnitPhoto } from "./productionUnitPhotoService.js";
 import { signEvidenceUrl } from "../routes/productionEvidenceMedia.js";
 import { signUnitPhotoUrl } from "../routes/productionUnitPhoto.js";
-import { buildDocumentationMatrix, deriveNextStepNo, parseDocRows, LEGACY_PHOTO_PREFIX } from "../lib/domain/productionDocumentation.js";
+import { buildDocumentationMatrix, buildDocumentationSequence, deriveNextStepNo, parseDocRows, LEGACY_PHOTO_PREFIX } from "../lib/domain/productionDocumentation.js";
 import { STEP_BY_NO } from "../lib/domain/productionSteps.js";
 
 
@@ -43,7 +43,7 @@ export async function buildRunDocumentation(prisma, run, ctx) {
   }));
   const started = run.status !== "PENDING_ARRIVAL" && ((run.operations?.length ?? 0) > 0 || evidence.length > 0);
   const matrix = buildDocumentationMatrix({
-    applicableSteps: applicableStepsFor(ctx.split),
+    applicableSteps: applicableStepsFor(ctx.split, ctx.state?.productFlow ?? "KASUR"),
     recordedSteps: new Set(evidence.map((e) => e.stepNo)),
     nextStepNo: deriveNextStepNo(new Set(evidence.map((e) => e.stepNo))),
     started,
@@ -52,6 +52,7 @@ export async function buildRunDocumentation(prisma, run, ctx) {
     stepMedia,
     extra: { pickupPhoto: pickupPhoto ? { url: pickupPhoto.url, createdAt: pickupPhoto.createdAt } : null, diagnosisPhotos, qcPhotos },
     docRows,
+    naReasons: { CORNER: ctx.state?.buildTrack && ctx.state?.cornerRequired === false ? (ctx.state.cornerReason ? `Corner tidak diperlukan — keputusan Lead: ${ctx.state.cornerReason}` : "Corner tidak diperlukan (keputusan Lead)") : run.adaptationPolicy ? "Mode adaptasi: tahap Corner dilewati" : "Corner tidak berlaku untuk pekerjaan ini" },
   });
   // Foto identitas manual (bukan driver) ditandai Manual, bukan Driver Pickup.
   if (pickupPhoto?.source === "PRODUCTION_MANUAL") {
@@ -59,6 +60,16 @@ export async function buildRunDocumentation(prisma, run, ctx) {
     for (const it of cat.items) if (it.origin === "PICKUP") it.source = "MANUAL";
   }
   return matrix;
+}
+
+// Rangkaian akhir (Fase 5): memakai matriks yang sama + catatan komponen yang tercatat + status Corner. Baca-saja.
+export async function buildRunSequence(prisma, run, ctx, matrix) {
+  const { getComponentNotes } = await import("./productionComponentNoteService.js");
+  const notes = await getComponentNotes(prisma, run.unitId, { includeSuggestions: false });
+  const recorded = new Set(Object.entries(notes.sections || {}).filter(([, v]) => v).map(([k]) => k));
+  const { cornerAndLifecycleOf } = await import("./productionExperienceReadService.js");
+  const { corner, lifecycle } = cornerAndLifecycleOf(run, ctx);
+  return { lifecycle, corner, sequence: buildDocumentationSequence(matrix, { recordedNotes: recorded, cornerStatus: corner }) };
 }
 
 // Foto dokumentasi dalam bentuk bucket before/process/after yang dipakai Unit 360 & Laporan (sudah ada), supaya foto yang baru

@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestMaterial, createTestUser, seedBalance } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
+import * as PT from "./setup/preTeardown.js";
 import { makeClient } from "./setup/httpClient.js";
 import { V2_FLAGS } from "../../src/services/v2FeatureFlags.js";
 
@@ -107,8 +108,11 @@ const pick = async (w, issueId) => ok(await w.nadya.api.post(`${P}/material-requ
 // Tahap 1–4 (intake) sampai operasi diagnosa berjalan.
 async function throughIntake(w, runId) {
   ok(await step(w, w.nadya, runId, 1, { payload: { conditionConfirmed: true, conditionNote: "kain luar kusam" }, media: await media(w.nadya, runId, "i") }));
+  await PT.qcWhole(server, w.qc, runId); // fase 2: catatan PIC QC / lapisan awal (gerbang tahap 2)
   ok(await step(w, w.nadya, runId, 2, { payload: { feelNote: "Tengah terasa amblas" }, media: await media(w.nadya, runId, "v") }));
+  await PT.layersBefore(server, w.nadya, runId); // fase 2: catatan PIC QC / lapisan awal (gerbang tahap 3)
   ok(await step(w, w.nadya, runId, 3, { payload: { oldMaterials: ["PER", { type: "BUSA", note: "kuning kempes" }] }, media: await media(w.nadya, runId, "i", "i") }));
+  await PT.foundationTest(server, w.qc, runId); // fase 2: catatan PIC QC / lapisan awal (gerbang tahap 4)
   ok(await step(w, w.nadya, runId, 4, { payload: { heightBeforeCm: 24, heightCompressedCm: 17, testerWeightKg: 85, foundationIssues: ["Per tengah lemah"] }, media: await media(w.nadya, runId, "v") }));
 }
 
@@ -211,6 +215,7 @@ test("matriks & antrean: kartu lengkap, filter Before/Proses/After Kurang, penca
   // Baris dokumentasi memakai tabel bukti yang sama, versi >= 1000, tidak mengganggu nomor versi tahap berikutnya.
   const row = await testPrisma.productionStepEvidence.findFirstOrThrow({ where: { runId: run.id, stepCode: "DOC_BEFORE_TEARDOWN" } });
   assert.equal(row.stepNo, 1); assert.ok(row.version >= 1000); assert.equal(row.operationRunId, null);
+  await PT.qcWhole(server, w.qc, run.id); // fase 2: catatan PIC QC / lapisan awal (gerbang tahap 2)
   ok(await step(w, w.nadya, run.id, 2, { payload: { feelNote: "Tengah terasa amblas" }, media: await media(w.nadya, run.id, "v") }));
   assert.equal((await testPrisma.productionStepEvidence.findFirstOrThrow({ where: { runId: run.id, stepNo: 2, stepCode: "S02_FEEL_TEST" } })).version, 1);
   // Bukti baris dokumentasi tidak bisa diubah/dihapus (immutable di database).

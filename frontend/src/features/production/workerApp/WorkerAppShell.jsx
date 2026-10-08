@@ -1,5 +1,5 @@
 import React from "react";
-import { Activity, ArrowLeft, Briefcase, Camera, CloudUpload, Layers, Package, RefreshCw, User, WifiOff } from "lucide-react";
+import { Activity, ArrowLeft, Briefcase, Camera, ClipboardCheck, CloudUpload, Layers, Package, RefreshCw, User, WifiOff } from "lucide-react";
 import ThemeToggle from "@/components/ThemeToggle.jsx";
 import { useOnline } from "@/components/StandaloneShell.jsx";
 import { NAV_TABS } from "./workerAppModel.js";
@@ -7,7 +7,7 @@ import "./worker-app.css";
 
 // Kerangka aplikasi lantai (mobile-first): header ringkas + bottom navigation (maks. 4). TANPA sidebar desktop. Halaman tetap memakai sesi & tema aplikasi.
 // P12D: kerangka yang SAMA dipakai Aplikasi Dokumentasi lewat prop `tabs` (default = tab Meja/Corner; perilaku Meja/Corner tidak berubah).
-const ICONS = { Briefcase, Package, Activity, User, Layers, Camera, CloudUpload };
+const ICONS = { Briefcase, Package, Activity, User, Layers, Camera, CloudUpload, ClipboardCheck };
 
 export default function WorkerAppShell({ title, subtitle, tab, onTab, badges = {}, tabs = NAV_TABS, onRefresh, refreshing = false, onBack = null, children, hideNav = false, actionPad = false }) {
   const online = useOnline();

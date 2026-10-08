@@ -5,7 +5,7 @@
 //    `GET /units/:id/timeline`. Tahap V1 TIDAK pernah dipetakan ke 12 langkah V2 (dua mesin berbeda, label & progres masing-masing dari server).
 import { isGantiKain, materialBadge, mattressInfo, salesNoteOf, stageText } from "@/features/production/unitCardModel.js";
 import { delayStatusText, priorityOf, resumeInfo, statusOf, viewPresence, viewStatus } from "@/features/production/productionLabels.js";
-import { bucketStyle } from "@/features/production/experience.js";
+import { bucketLabelOf, bucketStyle } from "@/features/production/experience.js";
 import { canMaterialV1, canStageV1, needsPhotoOf, stageStateOf } from "@/features/production/unitV1ActionsModel.js";
 
 // Bottom navigation: MAKSIMAL 4 (diuji). Urutan = urutan tampil.
@@ -23,11 +23,21 @@ const FLOOR_ROLES = ["PRODUCTION_WORKER", "PRODUCTION_LEAD", "ADMIN", "OWNER"];
 export const APP_MODES = Object.freeze([
   Object.freeze({ key: "meja", label: "Meja Bongkar", to: "/produksi/meja", lane: "TABLE", roles: FLOOR_ROLES }),
   Object.freeze({ key: "corner", label: "Meja Corner", to: "/produksi/corner", lane: "CORNER", roles: FLOOR_ROLES }),
+  // PIC Bahan per pekerjaan (jalur Pengerjaan Pesanan): hanya pekerjaan yang ditugaskan kepadanya oleh Lead; otorisasi ditegakkan server per pekerjaan (bukan peran baru).
+  Object.freeze({ key: "bahan", label: "PIC Bahan", to: "/produksi/bahan", lane: "MATERIAL", roles: FLOOR_ROLES }),
   Object.freeze({ key: "dokumentasi", label: "Dokumentasi", to: "/produksi/dokumentasi", lane: null, roles: Object.freeze(["PRODUCTION_DOCUMENTER", "PRODUCTION_LEAD", "ADMIN", "OWNER"]) }),
+  // Aplikasi PIC QC (Fase 2 LAYANAN): antrean pengujian awal, TERLIHAT walau menu QC desktop disembunyikan. Peran = cermin izin server (QC_WRITE / PRODUCTION_EXECUTE_ANY → QC_LEAD, ADMIN, OWNER); Lead/Meja tidak punya izin tulis uji, maka tidak ditawari.
+  Object.freeze({ key: "qc", label: "PIC QC", to: "/produksi/qc", lane: null, roles: Object.freeze(["QC_LEAD", "ADMIN", "OWNER"]) }),
 ]);
+// Aplikasi PIC QC: kerangka & bottom navigation yang sama dengan aplikasi lantai lain (Antrean · Akun).
+export const QC_NAV_TABS = Object.freeze([
+  Object.freeze({ key: "antrean", label: "Antrean", icon: "ClipboardCheck" }),
+  Object.freeze({ key: "akun", label: "Akun", icon: "User" }),
+]);
+export const qcTabOf = (raw) => (QC_NAV_TABS.some((t) => t.key === raw) ? raw : "antrean");
 // Pengguna multi-peran hanya melihat mode yang memang diizinkan perannya (tidak ada tombol yang pasti 403).
 export const allowedModes = (roles = []) => APP_MODES.filter((m) => (roles || []).some((r) => m.roles.includes(r)));
-export const modeOfLane = (lane) => APP_MODES.find((m) => m.lane === (lane === "CORNER" ? "CORNER" : "TABLE"));
+export const modeOfLane = (lane) => APP_MODES.find((m) => m.lane === (lane === "CORNER" || lane === "MATERIAL" ? lane : "TABLE"));
 
 // ---- Prioritas: Normal · Tinggi · Komplain (Komplain hanya dari kasus komplain resmi yang dikirim server) ----
 // Nilai tersimpan lama (Mendesak/Kritis) tampil "Tinggi"; enum/histori tidak diubah. `value` = peringkat urut (bukan label).
@@ -55,7 +65,7 @@ export function jobFromV2(item) {
     gantiKain: isGantiKain(view), gantiKainNoteMissing: isGantiKain(view) && !salesNoteOf(view),
     priority: priorityOfV2(item),
     status: viewStatus(item), presence: viewPresence(item),
-    stage: { label: stageText(item), bucket: item.bucket, tone: style.badge, bucketLabel: style.label },
+    stage: { label: stageText(item), bucket: item.bucket, tone: style.badge, bucketLabel: bucketLabelOf(item?.bucket, item?.track) },
     stationLabel: item.plan?.stationLabel ?? null, sequence: item.plan?.stationSequence ?? null,
     adaptation: !!item?.adaptation, delayKind: item?.activeOp?.status === "PAUSED" ? (item.activeOp.delayKind ?? null) : null, delayNote: item?.activeOp?.delayNote ?? null,
     progress: prog, materialWaiting: waiting, material: materialBadge(item), late: !!item.timer?.late,

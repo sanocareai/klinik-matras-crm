@@ -30,12 +30,13 @@ import { lockRowForUpdate } from "./inventoryLedger.js";
 import { completeAdaptationRunInTx, offerFinishedGoodsCustodyInTx } from "./unitCustodyCommandService.js";
 import { assertNoOpenRunException, assertNoV1Drift } from "./productionRunGuards.js";
 import { lockUnitOwnership } from "./unitV2Ownership.js";
+import { BUILD_CATEGORIES, BUILD_NA_REASON, pathHasBuildStage } from "../lib/domain/productionBuildTrack.js";
 import {
   completeStageInTx, pathForUnit, pauseStageInTx, resolveCurrentTarget, resumeStageInTx, skipStageForAdaptationInTx, startStageInTx,
 } from "./unitStageEngine.js";
 import { PHASE_TERMINAL_STATUSES, isStrictLifecycleRun, transitionPhases } from "./productionPhaseLifecycle.js";
 import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState } from "./v2FeatureFlags.js";
-import { ADAPTATION_POLICY, defaultAdaptationPolicy } from "./productionSettingsService.js";
+import { ADAPTATION_POLICY, QC_GATE_POLICIES, QC_GATE_POLICY_V2, defaultAdaptationPolicy, defaultQcGatePolicy } from "./productionSettingsService.js";
 
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
@@ -252,6 +253,8 @@ function processStartTransition(run, now) {
   return updates;
 }
 export const isAdaptationRun = (run) => run?.adaptationPolicy === ADAPTATION_POLICY;
+export const hasQcGatePolicy = (run) => QC_GATE_POLICIES.includes(run?.qcGatePolicyVersion);
+export const hasAssemblyGate = (run) => run?.qcGatePolicyVersion === QC_GATE_POLICY_V2;
 export function activeOperation(run) { return run.operations.find((op) => op.status === "ACTIVE" || op.status === "PAUSED") || null; }
 
 // Naikkan revisi run (dipakai juga command bukti P8 untuk langkah tanpa transisi tahap) — penulis production_runs_v2 tetap file ini.
@@ -302,11 +305,11 @@ export async function registerWorkshopBornRunInTx(tx, { unitId, actorId, idempot
 
     const now = new Date();
     const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "REGISTER_WORKSHOP_RUN", aggregateId: unitId, requestHash });
-    const na = "Unit lahir di workshop (tanpa pickup)";
+    const na = BUILD_CATEGORIES.includes(unit.order.category) ? BUILD_NA_REASON : "Unit lahir di workshop (tanpa pickup)";
     const phases = [["INTAKE", "NOT_APPLICABLE", na], ["DIAGNOSIS", "NOT_APPLICABLE", na], ["PROCESS", "NOT_STARTED", null], ["QC", "NOT_STARTED", null], ["HANDOFF", "NOT_STARTED", null]];
     const run = await tx.productionRun.create({
       data: {
-        unitId, kind: "NEW_PRODUCT", origin: "WORKSHOP_BORN", status: "ACTIVE", currentPhase: "PROCESS", revision: 1, adaptationPolicy: await defaultAdaptationPolicy(tx),
+        unitId, kind: "NEW_PRODUCT", origin: "WORKSHOP_BORN", status: "ACTIVE", currentPhase: "PROCESS", revision: 1, adaptationPolicy: await defaultAdaptationPolicy(tx), qcGatePolicyVersion: await defaultQcGatePolicy(tx),
         phases: { create: phases.map(([phase, status, reason], index) => ({ phase, status, reason, sequence: index + 1 })) },
       },
     });
@@ -351,18 +354,24 @@ export async function startWorkshopStage(prisma, { runId, actorId, idempotencyKe
   });
 }
 
+// Tahap pasca-QC yang dikerjakan PIC CORNER. Jalur pengerjaan TANPA tahap Jahit Corner (Corner dikonfirmasi tidak diperlukan pada rencana): Finish dikerjakan PIC Meja,
+// jadi bukan "tahap Corner" untuk otorisasi PIC maupun penetapan operator operasi.
+function isCornerPostQcStage(path, stageId) {
+  const { postQcStages } = workshopPathOf(path);
+  if (!postQcStages.some((st) => st.id === stageId)) return false;
+  return !(pathHasBuildStage(path) && !path.some((st) => st.code === "corner_sewing"));
+}
 // Tahap berikutnya pasca-QC? (tanpa melempar; dipakai memilih pihak yang berwenang sebelum validasi penuh)
 export async function peekStartIsPostQc(tx, run) {
   try {
     const path = await pathForUnit(tx, run.unit);
-    const { postQcStages } = workshopPathOf(path);
     const { stage } = await resolveCurrentTarget(tx, run.unit, path);
-    return !!stage && postQcStages.some((s) => s.id === stage.id);
+    return !!stage && isCornerPostQcStage(path, stage.id);
   } catch { return false; }
 }
 export async function isPostQcStage(tx, run, stageId) {
   try {
-    return workshopPathOf(await pathForUnit(tx, run.unit)).postQcStages.some((s) => s.id === stageId);
+    return isCornerPostQcStage(await pathForUnit(tx, run.unit), stageId);
   } catch { return false; }
 }
 
@@ -379,9 +388,10 @@ export async function prepareStartInTx(tx, run) {
   // targetState DONE dengan fase PROCESS masih ACTIVE = tahap terakhir dijalankan ULANG (rework setelah penolakan Gudang); yang benar-benar selesai
   // sudah ditolak assertProcessApplicable (PROCESS COMPLETED -> AWAITING_QC/IN_HANDOFF).
   if (!stage || !executable.some((s) => s.id === stage.id)) throw workError("Tahap unit sekarang tidak ada di jalur workshop — perlu penanganan Production Lead", 409, "WORKSHOP_STAGE_MISMATCH");
-  if (stage.phase === "INTAKE") assertPlanReadyForIntake(run.plan);
+  // Jalur pengerjaan (pesanan BARU/custom): spesifikasi Sales = acuan; cukup rencana DITUGASKAN (jadwal + PIC) — bahan tercatat sesuai pekerjaan nyata, bukan gerbang mulai.
+  if (stage.phase === "INTAKE" || pathHasBuildStage(path)) assertPlanReadyForIntake(run.plan);
   else await assertMaterialIssued(tx, run.plan);
-  return { process, stage, isPostQc: postQcStages.some((s) => s.id === stage.id) };
+  return { process, stage, isPostQc: isCornerPostQcStage(path, stage.id) };
 }
 
 // Terapkan mulai tahap (engine V1 *InTx + operasi V2 + fase + revisi + outbox). Pemanggil sudah mengunci unit->run dan memvalidasi.
@@ -547,6 +557,14 @@ export async function applyAdaptationPolicyInTx(tx, { run }) {
   return { runId: run.id, revision, changed: true };
 }
 
+// Terapkan gerbang QC sebelum bongkar pada run yang SUDAH berjalan (aksi EKSPLISIT; run lama tidak pernah diubah otomatis). Tidak menyentuh tahap/bukti/catatan/stok.
+export async function applyQcGatePolicyInTx(tx, { run, version = QC_GATE_POLICY_V2 }) {
+  // sudah pada versi itu, atau sudah V2 (tidak diturunkan) -> tanpa perubahan
+  if (run.qcGatePolicyVersion === version || run.qcGatePolicyVersion === QC_GATE_POLICY_V2) return { runId: run.id, revision: run.revision, changed: false };
+  const revision = await bumpRun(tx, run, { qcGatePolicyVersion: version });
+  return { runId: run.id, revision, changed: true };
+}
+
 // Validasi melewati SATU tahap target (tanpa gerbang bahan: melewati tahap tidak memakai bahan). Tahap harus pra-QC, bukan gerbang QC, belum berjalan.
 export async function prepareSkipInTx(tx, run) {
   assertAdaptationRun(run);
@@ -560,7 +578,7 @@ export async function prepareSkipInTx(tx, run) {
   if (stage.requiresQc) {
     throw workError('Gerbang QC tidak dilewati sendiri: dicatat "tidak dilakukan" saat Kirim ke Corner (tahap 9) atau lewat Selesaikan Produksi', 409, "WORKSHOP_SKIP_USE_FINISH", { stageCode: stage.code });
   }
-  if (stage.phase === "INTAKE") assertPlanReadyForIntake(run.plan);
+  if (stage.phase === "INTAKE" || pathHasBuildStage(path)) assertPlanReadyForIntake(run.plan);
   return { process, stage };
 }
 

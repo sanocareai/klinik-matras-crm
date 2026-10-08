@@ -785,6 +785,19 @@ export const api = {
   // Antrean retur sisa bahan: Gudang menerima fisik sisa bahan dari produksi (stok RETURN tertaut unit).
   receiveProductionV2MaterialReturn: (id, data, idempotencyKey = mutationKey("pv2-return-receive")) =>
     request(`/production-v2/material-returns/${id}/receive`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  // Jalur Pengerjaan Pesanan: PIC Bahan per pekerjaan, kebutuhan Corner (dikonfirmasi pada rencana), catatan racikan/pemakaian bahan.
+  setProductionV2BuildMaterialOperator: (runId, data, idempotencyKey = mutationKey("pv2-build-pic")) =>
+    request(`/production-v2/runs/${runId}/build/material-operator`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  confirmProductionV2BuildCorner: (runId, data, idempotencyKey = mutationKey("pv2-build-corner")) =>
+    request(`/production-v2/runs/${runId}/build/corner`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  // Fase 3: rencana bahan (BOM) oleh PIC Bahan yang ditugaskan -> command planning yang sama (setPlannedBOM); expectedRevision = revisi RENCANA (kartu.plan.revision).
+  setProductionV2BuildPlanBom: (runId, data, idempotencyKey) =>
+    request(`/production-v2/runs/${runId}/build/plan-bom`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  // Fase 4: PIC Bahan meminta bahan rework (command QC yang sama; Gudang menyerahkan lewat pick yang ada).
+  requestProductionV2BuildReworkMaterial: (runId, data, idempotencyKey) =>
+    request(`/production-v2/runs/${runId}/build/rework-material`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  recordProductionV2BuildMaterials: (runId, data, idempotencyKey) =>
+    request(`/production-v2/runs/${runId}/build/materials`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   recordProductionV2Step: (runId, stepNo, data, idempotencyKey) =>
     request(`/production-v2/runs/${runId}/steps/${stepNo}`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   // P9D — Diagnosis Produksi + Planned BOM Terpadu.
@@ -814,6 +827,7 @@ export const api = {
   getProductionV2Settings: () => request("/production-v2/settings"),
   getProductionV2ServiceMappings: () => request("/production-v2/settings/service-mappings"),
   setProductionV2WorkshopLocation: (locationId) => request("/production-v2/settings/workshop-location", { method: "PUT", body: JSON.stringify({ locationId }) }),
+  setProductionV2QcGateDefault: (enabled, version) => request("/production-v2/settings/qc-gate-default", { method: "PUT", body: JSON.stringify({ enabled, ...(version ? { version } : {}) }) }),
   setProductionV2AdaptationDefault: (enabled) => request("/production-v2/settings/adaptation-default", { method: "PUT", body: JSON.stringify({ enabled }) }),
   setProductionV2ServiceMapping: (priceItemId, serviceId) => request(`/production-v2/settings/service-mappings/${priceItemId}`, { method: "PUT", body: JSON.stringify({ serviceId: serviceId || null }) }),
   // P9A — "Unit Tiba di Workshop": pemilih lokasi Receiving/WIP + konfirmasi kedatangan fisik (tanpa buka workspace Gudang).
@@ -843,6 +857,7 @@ export const api = {
     request(`/production-v2/documentation/runs/${runId}/correct`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   // Slice 3 — Catatan Komponen kanonis per unit (Sebelum -> Sesudah): satu data untuk Meja, Corner, Dokumentasi, Unit 360, laporan. Informasi saja (tanpa stok/BOM/lifecycle).
   getComponentNotes: (unitId) => request(`/production-v2/component-notes/units/${unitId}`),
+  getComponentQcQueue: () => request("/production-v2/component-notes/qc-queue"), // fase 2: antrean pengujian awal (hanya PIC QC; 403 untuk lainnya)
   searchComponentMaterials: (q = "") => request(`/production-v2/component-notes/materials?q=${encodeURIComponent(q)}`),
   uploadComponentNoteMedia: (unitId, files, onProgress) => {
     const fd = new FormData();

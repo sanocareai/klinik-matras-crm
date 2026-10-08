@@ -65,3 +65,8 @@
 }
 /* Halaman detail: ruang bawah cukup untuk batang aksi lengket (tombol utama + sekunder) supaya konten terakhir tetap terjangkau. */
 .wa-main-action { padding-bottom: calc(210px + env(safe-area-inset-bottom)); }
+
+/* Aksi sekunder di bar aksi (mis. Rencana Bahan PIC Bahan): kontur, di atas tombol utama. */
+.wa-secondary { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 52px; width: 100%; border-radius: 18px; cursor: pointer; background: transparent;
+  border: 2px solid var(--accent); color: var(--accent); font-size: 15px; font-weight: 800; }
+[data-theme="dark"] .wa-secondary { border-color: #2F6BEA; color: #8FB0F5; }

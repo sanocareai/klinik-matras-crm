@@ -4,6 +4,8 @@ import { api } from "@/api.js";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
+import { LifecycleBadge } from "@/features/production/components/LifecycleBadge.jsx";
+import { CornerRequestCard } from "@/features/production/components/CornerRequestCard.jsx";
 import { ProgressBar } from "@/components/ui/progress.jsx";
 import { formatRupiah } from "@/utils/format.js";
 import { formatTanggal } from "@/utils/formatDate.js";
@@ -12,6 +14,7 @@ import { DELAY_TITLE, SKIP_LABEL, delayKindText, delayStatusText, presenceTone, 
 import { UnitPhotoThumb } from "@/features/production/UnitPhotoThumb.jsx";
 import { DOC_SOURCE_BADGE, DOC_SOURCE_LABEL, DOC_STATUS } from "@/features/production/documentation.js";
 import { DiagnosisWizard, diagnosisCtaLabel, hasLocalDraft } from "@/features/production/DiagnosisWizard.jsx";
+import BuildPlanPanel from "@/features/production/BuildPlanPanel.jsx";
 import { humanizeRequest } from "@/features/production/unitCardModel.js";
 import { rolesOf } from "@/lib/roles.js";
 import { isOutsideV2 } from "@/features/production/unit360Availability.js";
@@ -91,11 +94,13 @@ function Ringkasan({ d }) {
       </dl>
       <div className="flex flex-wrap items-center gap-1.5">
         <Badge variant="neutral">{d.identity.bucketLabel}</Badge>
+        {d.production?.lifecycle && <LifecycleBadge lifecycle={d.production.lifecycle} />}
         {priorityOf({ priority: d.identity.priority }).key !== "NORMAL" && <Badge variant={priorityOf({ priority: d.identity.priority }).tone} data-testid="priority-badge">{priorityOf({ priority: d.identity.priority }).label}</Badge>}
         {d.identity.presence?.key === "NOT_ARRIVED" && <Badge variant={presenceTone(d.identity.presence)} data-testid="presence-badge">{d.identity.presence.label}</Badge>}
         {d.identity.target.late && <Badge variant="red">Terlambat</Badge>}
       </div>
       <V2Owners d={d} />
+      {d.production?.cornerView && d.production.runId && (d.production.cornerView.status.status !== "BELUM_SAMPAI" || d.production.cornerView.request.fabricChangeRequested) && <CornerRequestCard cornerView={d.production.cornerView} />}
       <OrderField label="Keluhan Customer" field={d.salesContext.complaints} format={bdArr} />
       <OrderField label="Layanan Sales" field={d.salesContext.salesServices} format={bdArr} />
       <OrderField label="Request Customer" field={d.salesContext.request} format={(v) => bd(humanizeRequest(v))} />
@@ -220,6 +225,7 @@ function Proses({ d, onOpenDiagnosis, canApplyAdaptation = false, onChanged }) {
           <li key={s.no} className={`flex min-h-[44px] items-center gap-2 rounded-btn px-3 py-2 text-[12.5px] ${s.status === "DONE" ? "bg-greenbg text-green" : s.status === "CURRENT" ? "bg-accentbg font-semibold text-accent" : s.status === "WAITING" ? "bg-orangebg text-orange" : s.status === "NA" ? "text-ink3 line-through" : "bg-inset text-ink3"}`}>
             {s.status === "DONE" ? <CheckCircle2 size={14} aria-hidden /> : <span className="w-4 shrink-0 text-center tabular-nums">{s.no}</span>}
             <span className="min-w-0 flex-1 truncate">{s.label}</span>
+            {s.status === "NA" && <span data-testid="step-na" title={s.naReason || undefined} className="shrink-0 text-[10.5px] font-semibold text-ink3 no-underline">tidak berlaku</span>}
             {s.status === "SKIPPED" && <span data-testid="step-skipped" className="shrink-0 text-[10.5px] font-semibold text-ink3">{SKIP_LABEL}</span>}
             {s.actor && <span className="shrink-0 text-[10px] text-ink3">{s.actor}</span>}
           </li>
@@ -231,7 +237,17 @@ function Proses({ d, onOpenDiagnosis, canApplyAdaptation = false, onChanged }) {
           <p className="m-0 font-semibold text-ink">{d.production.activeOp.stageLabel} — {d.production.activeOp.status === "PAUSED" && d.production.activeOp.delayKind ? delayKindText(d.production.activeOp.delayKind, d.production.activeOp.delayNote) : d.production.activeOp.status}</p>
         </div>
       )}
-      <DiagnosisPanel d={d} onOpenWizard={onOpenDiagnosis} />
+      {d.production.track === "BUILD"
+        ? (
+          <div className="space-y-2">
+            <BuildPlanPanel d={d} canPlan={canApplyAdaptation} onChanged={onChanged} />
+            <p data-testid="build-track-note" className="m-0 rounded-btn bg-inset px-3 py-2 text-[12.5px] text-ink2">Pesanan baru/custom: dikerjakan langsung dari spesifikasi &amp; layanan pesanan Sales. Pickup, bongkar, pencatatan komponen sebelum perbaikan, dan Diagnosis tidak berlaku.{d.production.product?.flow === "NON_KASUR" ? " Produk non-kasur: tanpa uji tekstur/berat badan kasur." : ""}{d.production.build?.corner?.confirmed && d.production.build.corner.required === false ? ` Corner tidak diperlukan — ${d.production.build.corner.reason}.` : ""}</p>
+            {d.production.product?.flow !== "NON_KASUR" && (
+              <p data-testid="overview-racikan" className="m-0 rounded-btn border border-line px-3 py-2 text-[12.5px] text-ink2"><span className="text-ink3">Racikan: </span>{[d.production.racikan?.fondasi && `Fondasi — ${d.production.racikan.fondasi}`, d.production.racikan?.lapisan && `Lapisan — ${d.production.racikan.lapisan}`].filter(Boolean).join(" · ") || "belum dicatat"}</p>
+            )}
+          </div>
+        )
+        : <DiagnosisPanel d={d} onOpenWizard={onOpenDiagnosis} />}
     </div>
   );
 }
@@ -363,7 +379,7 @@ function Dokumentasi({ d }) {
   return (
     <div className="space-y-4">
       <MatriksDokumentasi matrix={d.documentation} />
-      <div className="space-y-2 rounded-card border border-line p-3" data-testid="unit360-component-notes"><p className="m-0 text-[12.5px] font-bold text-ink">Catatan Komponen — Sebelum → Sesudah</p><ComponentNotesPanel unitId={d.identity.unitId} unitCode={d.identity.unitCode} /></div>
+      <div className="kpi-glass-guard space-y-2 rounded-card border border-line p-3" data-testid="unit360-component-notes"><p className="m-0 text-[12.5px] font-bold text-ink">Catatan Komponen — Sebelum → Sesudah</p><ComponentNotesPanel unitId={d.identity.unitId} unitCode={d.identity.unitCode} /></div>
       <div><p className="mb-1.5 text-[12.5px] font-bold text-ink">Before</p><MediaGrid items={d.evidence.before} empty="Belum ada dokumentasi before." /></div>
       <div><p className="mb-1.5 text-[12.5px] font-bold text-ink">Proses</p><MediaGrid items={d.evidence.process} empty="Belum ada dokumentasi proses." /></div>
       <div><p className="mb-1.5 text-[12.5px] font-bold text-ink">After</p><MediaGrid items={d.evidence.after} empty="Belum ada dokumentasi after." /></div>

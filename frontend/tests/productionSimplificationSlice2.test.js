@@ -92,7 +92,7 @@ test("Unit 360: mode adaptasi terlihat (progres, QC tidak dilakukan); penerapan 
 test("Pengaturan Alur Kerja: tab terdaftar; menulis hanya bila server mengizinkan; lokasi tidak dipilih otomatis", () => {
   const page = strip(src("pages", "bengkel", "ProductionSettings.jsx")); assert.match(page, /"alur-kerja": \(\) => <ProductionWorkflowSettings \/>/);
   const wf = strip(src("pages", "bengkel", "ProductionWorkflowSettings.jsx"));
-  for (const id of ["workshop-location-select", "adaptation-default-toggle", "mapping-row", "workshop-location-state"]) assert.ok(wf.includes(id), id);
+  for (const id of ["workshop-location-select", "adaptation-default-toggle", "qc-gate-default-toggle", "mapping-row", "workshop-location-state"]) assert.ok(wf.includes(id), id);
   assert.match(wf, /Tidak pernah dipilih otomatis/); assert.match(wf, /Run yang sudah ada tidak berubah/);
 });
 

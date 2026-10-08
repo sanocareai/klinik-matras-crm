@@ -1,6 +1,7 @@
 import React from "react";
 import { AlertTriangle, CalendarDays, ChevronsUp, Flame, ImageOff, PackageX, Scissors, Wrench } from "lucide-react";
 import { Badge } from "@/components/ui/badge.jsx";
+import { LifecycleBadge } from "@/features/production/components/LifecycleBadge.jsx";
 import { ProgressBar } from "@/components/ui/progress.jsx";
 import { bucketStyle, initials, targetDateBadge } from "@/features/production/experience.js";
 import { dataGaps, isGantiKain, materialBadge, mattressInfo, mejaLabel, priorityMeta, salesNoteOf, stageText } from "@/features/production/unitCardModel.js";
@@ -132,6 +133,7 @@ export function UnitCard({
         <Badge variant={status.tone} data-testid="status-badge">{status.label}</Badge>
         {presence && <Badge variant={presenceTone(presence)} data-testid="presence-badge">{presence.label}</Badge>}
       </div>
+      {view.lifecycle && <div className="flex flex-wrap items-center gap-1.5"><LifecycleBadge lifecycle={view.lifecycle} /></div>}
       <div className="flex flex-wrap items-center gap-1.5">
         <Badge variant={st.badge}>{st.label}</Badge>
         {view.next?.stepNo && <span className="text-[13px] font-medium text-ink2">{stageText(view)}</span>}
