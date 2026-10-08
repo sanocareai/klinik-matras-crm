@@ -4,6 +4,8 @@ import { X, Loader2, ArrowRight, XCircle, PackageCheck, Save } from "lucide-reac
 import { api } from "@/api.js";
 import { Button } from "@/components/ui/button.jsx";
 import StatusBadge from "./StatusBadge.jsx";
+import SumberPO from "./SumberPO.jsx";
+import { teksJumlah } from "@/features/finance/purchaseOrderLogic.js";
 import {
   RECEIPT_STATUS_REAL, RECEIPT_SOURCE_REAL, RECEIPT_FORWARD_FLOW, UNIT_LABEL,
 } from "../inventoryReal.js";
@@ -126,12 +128,13 @@ export default function GoodsReceiptDetailDrawer({ receiptId, onClose, onChanged
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-[200] bg-black/30 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
         <Dialog.Content
-          aria-label="Detail Goods Receipt"
+          aria-label="Detail Penerimaan Barang"
           className="fixed right-0 top-0 z-[201] flex h-full w-full flex-col bg-surface shadow-2xl outline-none data-[state=open]:animate-in data-[state=open]:slide-in-from-right sm:w-[560px]"
         >
           <div className="flex shrink-0 items-center gap-2 border-b border-line px-4 py-3">
             <Dialog.Title className="truncate text-[15px] font-bold text-ink">{receipt?.receiptNumber || "…"}</Dialog.Title>
             {status && <StatusBadge map={RECEIPT_STATUS_REAL} value={status} />}
+            {receipt && <SumberPO receipt={receipt} />}
             <Dialog.Close aria-label="Tutup" className="ml-auto flex h-8 w-8 items-center justify-center rounded-lg text-ink3 hover:bg-hovertint hover:text-ink">
               <X size={16} />
             </Dialog.Close>
@@ -147,30 +150,47 @@ export default function GoodsReceiptDetailDrawer({ receiptId, onClose, onChanged
             {receipt && (
               <>
                 <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[12px]">
-                  <div><dt className="text-ink3">Source Type</dt><dd className="font-medium text-ink">{RECEIPT_SOURCE_REAL[receipt.sourceType]?.label}</dd></div>
-                  <div><dt className="text-ink3">Reference</dt><dd className="font-medium text-ink">{receipt.sourceReference || "—"}</dd></div>
-                  <div><dt className="text-ink3">Supplier / Sender</dt><dd className="font-medium text-ink">{receipt.supplier || "—"}</dd></div>
-                  <div><dt className="text-ink3">Expected Date</dt><dd className="font-medium text-ink">{receipt.expectedDate ? waktu(receipt.expectedDate) : "—"}</dd></div>
-                  <div><dt className="text-ink3">Received Date</dt><dd className="font-medium text-ink">{receipt.receivedDate ? waktu(receipt.receivedDate) : "—"}</dd></div>
+                  <div><dt className="text-ink3">Jenis sumber</dt><dd className="font-medium text-ink">{RECEIPT_SOURCE_REAL[receipt.sourceType]?.labelId || RECEIPT_SOURCE_REAL[receipt.sourceType]?.label}</dd></div>
+                  <div><dt className="text-ink3">Referensi</dt><dd className="font-medium text-ink">{receipt.sourceReference || "—"}</dd></div>
+                  <div><dt className="text-ink3">Supplier / Pengirim</dt><dd className="font-medium text-ink">{receipt.supplier || "—"}</dd></div>
+                  <div><dt className="text-ink3">Perkiraan tiba</dt><dd className="font-medium text-ink">{receipt.expectedDate ? waktu(receipt.expectedDate) : "—"}</dd></div>
+                  <div><dt className="text-ink3">Tanggal diterima</dt><dd className="font-medium text-ink">{receipt.receivedDate ? waktu(receipt.receivedDate) : "—"}</dd></div>
                   <div><dt className="text-ink3">Dibuat oleh</dt><dd className="font-medium text-ink">{receipt.createdBy?.name || "—"}</dd></div>
                 </dl>
                 {receipt.notes && <p className="mt-2 text-[11.5px] text-ink2">{receipt.notes}</p>}
+                {receipt.purchaseOrderId ? (
+                  <p className="mt-2 rounded-btn bg-accentbg px-3 py-2 text-[12px] text-accent" data-testid="sumber-po">
+                    Dari <strong>{receipt.purchaseOrder?.poNumber}</strong>. Supplier dan item berasal dari PO. Jumlah baik tidak boleh melebihi sisa PO; kelebihan ditangani Finance lewat revisi jumlah PO.
+                  </p>
+                ) : (
+                  <p className="mt-2 rounded-btn bg-inset px-3 py-2 text-[12px] text-ink2" data-testid="sumber-tanpa-po">
+                    Penerimaan ini <strong>tanpa PO</strong>: tidak ada pencocokan jumlah dan harga terhadap pesanan.
+                  </p>
+                )}
 
                 <div className="mt-4 border-t border-line pt-3">
-                  <h4 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-ink3">Item Lines</h4>
+                  <h4 className="mb-2 text-[11px] font-bold uppercase tracking-wide text-ink3">Baris item</h4>
                   <div className="space-y-2.5">
                     {receipt.lines.map((line) => (
                       <div key={line.id} className="rounded-btn border border-border p-2.5">
                         <div className="flex items-center justify-between">
                           <p className="text-[12.5px] font-semibold text-ink">{line.material.code}</p>
-                          <p className="text-[11px] text-ink3">Ordered {line.orderedQty ?? "—"} {UNIT_LABEL[line.material.unit]}</p>
+                          <p className="text-[11px] text-ink3">Dijadwalkan {line.orderedQty ?? "—"} {UNIT_LABEL[line.material.unit]}</p>
                         </div>
                         <p className="text-[11px] text-ink2">{line.material.name}</p>
+                        {(() => {
+                          const q = receipt.poRingkas?.lines?.find((b) => b.id === line.purchaseOrderLineId);
+                          return q ? (
+                            <p className="mt-1 text-[11px] text-ink2" data-testid="progres-po-baris">
+                              PO: dipesan {teksJumlah(q.dipesan)} · sudah masuk {teksJumlah(q.diterimaBaik)} · ditolak {teksJumlah(q.ditolak)} · <strong>sisa {teksJumlah(q.belumDiterima)}</strong>
+                            </p>
+                          ) : null;
+                        })()}
 
                         {bisaIsiKedatangan ? (
                           <div className="mt-2 grid grid-cols-3 gap-2">
                             <div>
-                              <label className="mb-0.5 block text-[10px] text-ink3">Received</label>
+                              <label className="mb-0.5 block text-[10px] text-ink3">Datang</label>
                               <input
                                 type="number" step="any" min="0" value={nilai(line, "receivedQty")}
                                 onChange={(e) => edit(line.id, "receivedQty", e.target.value)}
@@ -178,7 +198,7 @@ export default function GoodsReceiptDetailDrawer({ receiptId, onClose, onChanged
                               />
                             </div>
                             <div>
-                              <label className="mb-0.5 block text-[10px] text-ink3">Accepted</label>
+                              <label className="mb-0.5 block text-[10px] text-ink3">Diterima baik</label>
                               <input
                                 type="number" step="any" min="0" value={nilai(line, "acceptedQty")}
                                 onChange={(e) => edit(line.id, "acceptedQty", e.target.value)}
@@ -186,7 +206,7 @@ export default function GoodsReceiptDetailDrawer({ receiptId, onClose, onChanged
                               />
                             </div>
                             <div>
-                              <label className="mb-0.5 block text-[10px] text-ink3">Rejected</label>
+                              <label className="mb-0.5 block text-[10px] text-ink3">Ditolak</label>
                               <input
                                 type="number" step="any" min="0" value={nilai(line, "rejectedQty")}
                                 onChange={(e) => edit(line.id, "rejectedQty", e.target.value)}
@@ -194,7 +214,7 @@ export default function GoodsReceiptDetailDrawer({ receiptId, onClose, onChanged
                               />
                             </div>
                             <div className="col-span-3">
-                              <label className="mb-0.5 block text-[10px] text-ink3">Condition</label>
+                              <label className="mb-0.5 block text-[10px] text-ink3">Kondisi</label>
                               <input
                                 type="text" value={nilai(line, "condition")}
                                 onChange={(e) => edit(line.id, "condition", e.target.value)}
@@ -206,8 +226,8 @@ export default function GoodsReceiptDetailDrawer({ receiptId, onClose, onChanged
                         ) : (
                           <p className="mt-1.5 text-[11px] text-ink3">
                             {selesai
-                              ? `Received ${line.receivedQty ?? "—"} · Accepted ${line.acceptedQty ?? "—"} · Rejected ${line.rejectedQty ?? "—"}`
-                              : "Isi setelah barang tiba (status Arrived)."}
+                              ? `Datang ${line.receivedQty ?? "—"} · Diterima baik ${line.acceptedQty ?? "—"} · Ditolak ${line.rejectedQty ?? "—"}`
+                              : "Isi setelah barang tiba (status Tiba)."}
                           </p>
                         )}
                       </div>
@@ -237,23 +257,23 @@ export default function GoodsReceiptDetailDrawer({ receiptId, onClose, onChanged
                   <div className="flex justify-end gap-2">
                     <Button variant="ghost" size="sm" onClick={() => setRejecting(false)}>Batal</Button>
                     <Button variant="destructive" size="sm" onClick={tolak} disabled={busy}>
-                      {busy ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />} Tolak Receipt
+                      {busy ? <Loader2 size={14} className="animate-spin" /> : <XCircle size={14} />} Tolak Penerimaan
                     </Button>
                   </div>
                 </div>
               ) : (
                 <div className="flex gap-2">
                   <Button variant="ghost" size="sm" onClick={() => setRejecting(true)}>
-                    <XCircle size={14} /> Reject
+                    <XCircle size={14} /> Tolak
                   </Button>
                   {status === "READY_FOR_PUTAWAY" ? (
                     <Button size="sm" className="ml-auto" onClick={putaway} disabled={busy}>
-                      {busy ? <Loader2 size={14} className="animate-spin" /> : <PackageCheck size={14} />} Confirm Putaway
+                      {busy ? <Loader2 size={14} className="animate-spin" /> : <PackageCheck size={14} />} Konfirmasi Putaway
                     </Button>
                   ) : nextStatus && nextStatus !== "COMPLETED" ? (
                     <Button size="sm" className="ml-auto" onClick={majukan} disabled={busy}>
                       {busy ? <Loader2 size={14} className="animate-spin" /> : <ArrowRight size={14} />}
-                      Advance to {RECEIPT_STATUS_REAL[nextStatus]?.label}
+                      Lanjut ke {RECEIPT_STATUS_REAL[nextStatus]?.labelId || RECEIPT_STATUS_REAL[nextStatus]?.label}
                     </Button>
                   ) : null}
                 </div>

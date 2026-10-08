@@ -1786,6 +1786,16 @@ export const api = {
   createFinanceBill: (data) => request("/finance/bills", { method: "POST", body: JSON.stringify(data) }),
   approveFinanceBill: (id) => request(`/finance/bills/${id}/approve`, { method: "POST" }),
   rejectFinanceBill: (id, reason) => request(`/finance/bills/${id}/reject`, { method: "POST", body: JSON.stringify({ reason }) }),
+  // Purchase Order bahan baku (Finance) — kunci idempotensi dipegang pemanggil per sesi dialog supaya kirim ulang tidak menggandakan PO.
+  getPurchaseOrders: (params = {}) => request(`/finance/purchase-orders${qsFinance(params)}`),
+  getPurchaseOrder: (id) => request(`/finance/purchase-orders/${id}`),
+  createPurchaseOrder: (data, idempotencyKey = mutationKey("po")) => request("/finance/purchase-orders", { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  updatePurchaseOrder: (id, data) => request(`/finance/purchase-orders/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  approvePurchaseOrder: (id) => request(`/finance/purchase-orders/${id}/approve`, { method: "POST", body: JSON.stringify({}) }),
+  cancelPurchaseOrder: (id, reason) => request(`/finance/purchase-orders/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
+  revisiJumlahPurchaseOrder: (id, data) => request(`/finance/purchase-orders/${id}/revisi-jumlah`, { method: "POST", body: JSON.stringify(data) }),
+  // Pintu Gudang: PO yang boleh diterima, TANPA harga.
+  getGudangPurchaseOrders: (params = {}) => request(`/inventory/purchase-orders${qsFinance(params)}`),
   getFinanceSupplierPayments: (params = {}) => request(`/finance/supplier-payments${qsFinance(params)}`),
   createFinanceSupplierPayment: (data) => request("/finance/supplier-payments", { method: "POST", body: JSON.stringify(data) }),
   cancelFinanceSupplierPayment: (id, reason) => request(`/finance/supplier-payments/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),

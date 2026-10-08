@@ -475,6 +475,7 @@ const DIVISIONS = {
           { to: "/finance/invoices",    label: "Invoice & Jatuh Tempo", Icon: FileSpreadsheet },
           { to: "/finance/receivables", label: "Piutang & Refund",      Icon: Users },
           { to: "/finance/suppliers",   label: "Supplier & Utang", Icon: Building2 },
+          { to: "/finance/purchase-orders", label: "Purchase Order", Icon: ClipboardList },
         ],
       },
       {

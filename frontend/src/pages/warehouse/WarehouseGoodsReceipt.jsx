@@ -12,6 +12,7 @@ import { cn } from "@/lib/utils.js";
 import StatusBadge from "@/features/warehouse/components/StatusBadge.jsx";
 import GoodsReceiptFormModal from "@/features/warehouse/components/GoodsReceiptFormModal.jsx";
 import GoodsReceiptDetailDrawer from "@/features/warehouse/components/GoodsReceiptDetailDrawer.jsx";
+import SumberPO from "@/features/warehouse/components/SumberPO.jsx";
 import { RECEIPT_STATUS_REAL, RECEIPT_SOURCE_REAL } from "@/features/warehouse/inventoryReal.js";
 
 // Goods Receipt — Warehouse Tahap 2B. DATA NYATA.
@@ -85,7 +86,7 @@ export default function WarehouseGoodsReceipt() {
               {t.label}
             </button>
           ))}
-          {rows && <span className="ml-auto self-center text-[11.5px] text-ink3">{rows.length} receipt</span>}
+          {rows && <span className="ml-auto self-center text-[11.5px] text-ink3">{rows.length} penerimaan</span>}
         </div>
 
         {error && <div className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{error}</div>}
@@ -104,7 +105,7 @@ export default function WarehouseGoodsReceipt() {
                 <Table>
                   <THead>
                     <TR>
-                      <TH>No. Receipt</TH><TH>Referensi</TH><TH>Sumber</TH><TH>Supplier</TH>
+                      <TH>No. Penerimaan</TH><TH>Referensi</TH><TH>Sumber</TH><TH>Supplier</TH>
                       <TH>Perkiraan Tiba</TH><TH numeric>Item</TH><TH>Status</TH>
                     </TR>
                   </THead>
@@ -114,7 +115,7 @@ export default function WarehouseGoodsReceipt() {
                       <TR key={r.id} clickable onClick={() => setSelectedId(r.id)}>
                         <TD className="font-semibold text-ink">{r.receiptNumber}</TD>
                         <TD className="text-ink2">{r.sourceReference || "—"}</TD>
-                        <TD className="whitespace-nowrap text-ink2">{RECEIPT_SOURCE_REAL[r.sourceType]?.label}</TD>
+                        <TD className="whitespace-nowrap text-ink2"><span className="mr-1.5">{RECEIPT_SOURCE_REAL[r.sourceType]?.labelId || RECEIPT_SOURCE_REAL[r.sourceType]?.label}</span><SumberPO receipt={r} /></TD>
                         <TD truncate>{r.supplier || "—"}</TD>
                         <TD className="whitespace-nowrap text-ink2">{r.expectedDate ? tanggal(r.expectedDate) : "—"}</TD>
                         <TD numeric>{r.lines.length}</TD>
@@ -135,6 +136,7 @@ export default function WarehouseGoodsReceipt() {
                     >
                       <div className="flex items-center gap-2">
                         <span className="text-[12.5px] font-semibold text-ink">{r.receiptNumber}</span>
+                        <SumberPO receipt={r} />
                         <StatusBadge map={RECEIPT_STATUS_REAL} value={r.status} className="ml-auto shrink-0" />
                       </div>
                       <div className="mt-0.5 truncate text-[13px] text-ink">{r.supplier || RECEIPT_SOURCE_REAL[r.sourceType]?.label}</div>
