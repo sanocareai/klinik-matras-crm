@@ -40,7 +40,7 @@ import { api } from "../api";
 import { useAuth } from "../context/AuthContext";
 import { useTokens } from "../constants/theme";
 import {
-  formatRupiah, ORDER_STATUS_LABELS, orderStatusesForCategory, PAYMENT_STATUS_LABELS, PAYMENT_STATUSES,
+  formatRupiah, formatRupiahShort, cekBatasDiskonPromo, ORDER_STATUS_LABELS, orderStatusesForCategory, PAYMENT_STATUS_LABELS, PAYMENT_STATUSES,
   PRODUCT_LINE_LABELS, PRODUCT_TYPE_LABELS, PRICE_ITEM_KIND_LABELS,
   jenisProdukOptions, resolveVariantKey,
 } from "../utils/format";
@@ -179,7 +179,8 @@ function parseNotes(notes) {
 // bikin sales lihat "MDSP-Aug" dobel tanpa tahu mana yang mana. Kode
 // SELALU ditaruh duluan (paling menonjol) karena itu satu-satunya pembeda.
 function promoLabel(p) {
-  return `${p.code} — ${p.name}`;
+  const batas = p.maxDiscountAmount != null ? ` · maks ${formatRupiahShort(p.maxDiscountAmount)}` : "";
+  return `${p.code} — ${p.name}${batas}`;
 }
 
 // Ukuran Custom — Lebar & Panjang (cm), paritas dengan web (components/customer/UkuranCustomFields.jsx). Galat tampil setelah field disentuh
@@ -1388,6 +1389,26 @@ export default function OrderFormModal({
                   : "Tanpa promo"}
               </Text>
             </TouchableOpacity>
+            {/* Batas maksimal diskon promo (8 Okt 2026) — peringatan saja, TIDAK memblokir simpan. */}
+            {(() => {
+              const pr = promos.find((p) => p.id === promoId) || (order?.promo?.id === promoId ? order.promo : null);
+              const cek = pr ? cekBatasDiskonPromo(items, pr) : null;
+              if (!cek) return null;
+              return (
+                <Text
+                  style={{
+                    marginTop: 6, fontSize: 12, lineHeight: 17,
+                    color: cek.melebihi ? tokens.color.danger : tokens.color.textSecondary,
+                    fontWeight: cek.melebihi ? "700" : "400",
+                  }}
+                  accessibilityLiveRegion={cek.melebihi ? "polite" : "none"}
+                >
+                  {cek.melebihi
+                    ? `Diskon melebihi batas promo ${pr.code}: maks ${formatRupiah(cek.batas)}, diskon di bawah harga standard ${formatRupiah(cek.diskon)} (lebih ${formatRupiah(cek.lebih)}). Order tetap bisa disimpan tapi akan ditandai di laporan.`
+                    : `Batas maksimal diskon ${pr.code}: ${formatRupiah(cek.batas)} · terpakai ${formatRupiah(cek.diskon)}`}
+                </Text>
+              );
+            })()}
 
             {/* Keluhan / Catatan */}
             <Text style={styles.label}>{isLayanan ? "Keluhan Detail/Request Khusus" : "Catatan"}</Text>

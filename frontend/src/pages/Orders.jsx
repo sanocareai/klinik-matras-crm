@@ -918,6 +918,12 @@ export default function Orders() {
           ? (belowStandardCount > 0 ? `Ya (${belowStandardCount})` : "Tidak")
           : "",
         Promo: o.promo ? `${o.promo.code} — ${o.promo.name}` : "",
+        // Batas maksimal diskon promo (8 Okt 2026): kosong = promo tanpa batas / tanpa promo.
+        "Cek Batas Diskon": o.promoCheck
+          ? (o.promoCheck.melebihi
+            ? `MELEBIHI (+Rp${o.promoCheck.lebih.toLocaleString("id-ID")}; batas Rp${o.promoCheck.batas.toLocaleString("id-ID")})`
+            : `Dalam batas (Rp${o.promoCheck.diskon.toLocaleString("id-ID")} dari Rp${o.promoCheck.batas.toLocaleString("id-ID")})`)
+          : "",
         Ongkir: o.ongkir || 0,
         "Ongkir Klaim Garansi": o.ongkirKlaimGaransi || 0,
         Komplain: o.hasComplaint ? "Ya" : "",

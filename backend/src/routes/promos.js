@@ -10,6 +10,7 @@ import express from "express";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { rolesOf } from "../middleware/authorize.js";
+import { normalisasiBatasDiskon } from "../services/diskonPromo.js";
 
 export const promoRouter = express.Router();
 promoRouter.use(requireAuth);
@@ -63,12 +64,25 @@ promoRouter.get("/", async (req, res) => {
   }
 });
 
-// POST /api/promos { code, name, discountPercent?, validFrom?, validUntil? }
+// Validasi persen & batas Rupiah (8 Okt 2026) — sebelumnya persen tidak divalidasi sama sekali (bisa 250 atau -5).
+function cekDiskon({ discountPercent, maxDiscountAmount }) {
+  if (discountPercent !== undefined && discountPercent !== null && discountPercent !== "") {
+    const n = Number(discountPercent);
+    if (!Number.isInteger(n) || n < 1 || n > 99) return { error: "Diskon (%) harus bilangan bulat 1–99" };
+  }
+  const batas = normalisasiBatasDiskon(maxDiscountAmount);
+  if (Number.isNaN(batas)) return { error: "Batas maksimal diskon harus bilangan bulat Rupiah lebih dari 0 (kosongkan jika tanpa batas)" };
+  return { batas };
+}
+
+// POST /api/promos { code, name, discountPercent?, maxDiscountAmount?, validFrom?, validUntil? }
 promoRouter.post("/", requireAdmin, async (req, res) => {
   try {
-    const { code, name, discountPercent, validFrom, validUntil } = req.body;
+    const { code, name, discountPercent, maxDiscountAmount, validFrom, validUntil } = req.body;
     if (!code?.trim())  return res.status(400).json({ error: "Kode promo wajib diisi" });
     if (!name?.trim())  return res.status(400).json({ error: "Nama promo wajib diisi" });
+    const cek = cekDiskon({ discountPercent, maxDiscountAmount });
+    if (cek.error) return res.status(400).json({ error: cek.error });
 
     const promo = await prisma.promo.create({
       data: {
@@ -76,6 +90,7 @@ promoRouter.post("/", requireAdmin, async (req, res) => {
         name: name.trim(),
         discountPercent: discountPercent !== undefined && discountPercent !== null && discountPercent !== ""
           ? Number(discountPercent) : null,
+        maxDiscountAmount: cek.batas,
         validFrom:  validFrom  ? new Date(validFrom)  : null,
         validUntil: validUntil ? new Date(validUntil) : null,
         createdById: req.user.id,
@@ -91,7 +106,9 @@ promoRouter.post("/", requireAdmin, async (req, res) => {
 // PATCH /api/promos/:id — edit atau nonaktifkan (active: false).
 promoRouter.patch("/:id", requireAdmin, async (req, res) => {
   try {
-    const { code, name, discountPercent, validFrom, validUntil, active } = req.body;
+    const { code, name, discountPercent, maxDiscountAmount, validFrom, validUntil, active } = req.body;
+    const cek = cekDiskon({ discountPercent, maxDiscountAmount });
+    if (cek.error) return res.status(400).json({ error: cek.error });
     const promo = await prisma.promo.update({
       where: { id: req.params.id },
       data: {
@@ -100,6 +117,7 @@ promoRouter.patch("/:id", requireAdmin, async (req, res) => {
         ...(discountPercent !== undefined && {
           discountPercent: discountPercent === null || discountPercent === "" ? null : Number(discountPercent),
         }),
+        ...(maxDiscountAmount !== undefined && { maxDiscountAmount: cek.batas }),
         ...(validFrom  !== undefined && { validFrom:  validFrom  ? new Date(validFrom)  : null }),
         ...(validUntil !== undefined && { validUntil: validUntil ? new Date(validUntil) : null }),
         ...(active !== undefined && { active: !!active }),

@@ -634,7 +634,34 @@ export function buildOrderNotes(info) {
 // TERPISAH dengan `name` yang sama persis — kode SELALU ditaruh duluan
 // (paling menonjol) karena itu satu-satunya pembeda antar promo serupa.
 export function promoLabel(p) {
-  return `${p.code} — ${p.name}`;
+  // Batas maksimal diskon (8 Okt 2026) ikut tampil supaya sales tahu batasnya saat memilih promo.
+  const batas = p.maxDiscountAmount != null ? ` · maks ${formatRupiahShort(p.maxDiscountAmount)}` : "";
+  return `${p.code} — ${p.name}${batas}`;
+}
+
+// Peringatan batas maksimal diskon promo (8 Okt 2026) — salinan klien dari backend/src/services/diskonPromo.js#periksaBatasDiskon
+// (pola sama dgn konstanta lain yang diduplikasi manual web↔backend↔mobile). Diskon diukur dari selisih harga final ke harga
+// STANDARD katalog; item tanpa harga standard tidak dinilai; item di atas standard tidak menutupi item lain.
+export function cekBatasDiskonPromo(items, promo) {
+  const batas = promo?.maxDiscountAmount;
+  if (batas == null) return null;
+  let diskon = 0;
+  for (const it of items || []) {
+    if (it?.standardPrice == null) continue;
+    const selisih = Number(it.standardPrice) - (Number(it.harga) || 0);
+    if (selisih > 0) diskon += selisih;
+  }
+  return { batas, diskon, lebih: Math.max(0, diskon - batas), melebihi: diskon > batas };
+}
+
+// Harga sebelum diskon untuk tampilan (ringkasan WA): dihitung mundur dari persen promo, dipotong batas Rupiah bila ada.
+export function hargaSebelumDiskonPromo(final, promo) {
+  const f = Number(final) || 0;
+  const persen = promo?.discountPercent;
+  if (!persen || persen <= 0 || persen >= 100) return f;
+  const mentah = Math.round(f / (1 - persen / 100)) - f;
+  const batas = promo?.maxDiscountAmount;
+  return f + (batas != null && mentah > batas ? batas : mentah);
 }
 
 // Preset date range — KOMPATIBILITAS. Definisi kanonik seluruh preset sekarang

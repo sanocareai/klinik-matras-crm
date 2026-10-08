@@ -31,6 +31,7 @@
 import { prisma } from "../db.js";
 import { kontribusiPembayaranOrder } from "./finance/allocation.js";
 import { formatUkuranKasur } from "../lib/ukuranKasur.js";
+import { hitungDiskonPromo } from "./diskonPromo.js";
 
 // ─── Merk/Ukuran kasur + label Lini/Jenis Produk (6 September 2026) ────────
 // BUG NYATA ditemukan hari ini (laporan owner: caption invoice WA kurang
@@ -193,11 +194,9 @@ export function hitungNominal(order, payments = [], { jenis = null } = {}) {
 
   // Harga sebelum diskon dihitung MUNDUR dari harga final — persis cara
   // buildRingkasanOrder() di routes/orders.js. Tanpa promo, keduanya sama.
+  // Dipotong batas maksimal Rupiah promo bila ada (8 Okt 2026) — lihat services/diskonPromo.js.
   const diskonPersen = order.promo?.discountPercent || null;
-  const hargaSebelumDiskon = diskonPersen
-    ? Math.round(totalLayanan / (1 - diskonPersen / 100))
-    : totalLayanan;
-  const nilaiDiskon = hargaSebelumDiskon - totalLayanan;
+  const { hargaSebelumDiskon, nilaiDiskon } = hitungDiskonPromo({ totalFinal: totalLayanan, promo: order.promo });
 
   // Yang benar-benar ditagih = layanan + ongkir. `ongkirKlaimGaransi`
   // SENGAJA tidak dijumlahkan ke tagihan: itu ongkir yang ditanggung untuk
@@ -341,7 +340,7 @@ async function buildSingleOrderView(orderId, { userId = null, autoCreate = true,
     where: { id: orderId },
     include: {
       items: { orderBy: { sortOrder: "asc" } },
-      promo: { select: { code: true, name: true, discountPercent: true } },
+      promo: { select: { code: true, name: true, discountPercent: true, maxDiscountAmount: true } },
       // payments dimuat TERPISAH di bawah (kontribusiPembayaranOrder, sadar
       // alokasi). Entri yang dibatalkan (koreksi salah input, lihat orders.js
       // POST /:id/payments/:paymentId/cancel) tetap TIDAK ikut dihitung ATAU
