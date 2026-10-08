@@ -15,7 +15,7 @@ import { isUnitPathDoneInTx, markUnitReadyForDeliveryInTx } from "./unitStageEng
 import { assertNoOpenRunException, assertRunConsistent } from "./productionRunGuards.js";
 import { assertNoPendingReturnsInTx } from "./productionMaterialReturnService.js";
 import { assertPhasesReadyForHandoffDecision, assertRunPhasesTerminal, transitionPhases } from "./productionPhaseLifecycle.js";
-import { defaultAdaptationPolicy, requireWorkshopDefaultLocation } from "./productionSettingsService.js";
+import { QC_GATE_POLICY_V2, defaultAdaptationPolicy, requireWorkshopDefaultLocation } from "./productionSettingsService.js";
 import { ARRIVAL_NO_CUSTODY_REASON } from "../lib/domain/productionDisplay.js";
 import {
   isProductionWriterEnabledFor, loadV2Flags, productionWriterEnabledForUnit, resolveProductionWriterState,
@@ -318,7 +318,7 @@ export async function openProductionIntakeV2(tx, { unitId, actorId = null }) {
   const notApplicable = kind === "FULFILLMENT_ONLY" ? new Set(["DIAGNOSIS", "PROCESS", "QC"]) : new Set();
   const run = await tx.productionRun.create({
     data: {
-      unitId, kind, origin: "CUSTODY_PICKUP", status: "ACTIVE", currentPhase: "INTAKE", startedAt: now, revision: 1, parentRunId: last?.id || null, adaptationPolicy: await defaultAdaptationPolicy(tx),
+      unitId, kind, origin: "CUSTODY_PICKUP", status: "ACTIVE", currentPhase: "INTAKE", startedAt: now, revision: 1, parentRunId: last?.id || null, adaptationPolicy: await defaultAdaptationPolicy(tx), qcGatePolicyVersion: QC_GATE_POLICY_V2,
       phases: {
         create: PHASES.map((phase, index) => ({
           phase, sequence: index + 1,
@@ -371,7 +371,7 @@ export async function openPendingArrivalIntakeV2InTx(tx, { unitId, actorId = nul
   // manual di luar fungsi ini) TETAP revisi 1 — tidak terpengaruh.
   const run = await tx.productionRun.create({
     data: {
-      unitId, kind, origin: "CUSTODY_PICKUP", status: "PENDING_ARRIVAL", currentPhase: null, startedAt: null, revision: 0, parentRunId: last?.id || null, adaptationPolicy: await defaultAdaptationPolicy(tx),
+      unitId, kind, origin: "CUSTODY_PICKUP", status: "PENDING_ARRIVAL", currentPhase: null, startedAt: null, revision: 0, parentRunId: last?.id || null, adaptationPolicy: await defaultAdaptationPolicy(tx), qcGatePolicyVersion: QC_GATE_POLICY_V2,
       phases: {
         create: PHASES.map((phase, index) => ({
           phase, sequence: index + 1,

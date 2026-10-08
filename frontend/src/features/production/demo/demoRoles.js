@@ -18,6 +18,7 @@ export const TRAINING_PAGES = Object.freeze([
   { label: "Aplikasi Meja", to: "/produksi/meja", roles: ["ADMIN", "OWNER", "PRODUCTION_LEAD", "PRODUCTION_WORKER"] },
   { label: "Aplikasi Corner", to: "/produksi/corner", roles: ["ADMIN", "OWNER", "PRODUCTION_LEAD", "PRODUCTION_WORKER"] },
   { label: "Aplikasi Dokumentasi", to: "/produksi/dokumentasi", roles: ["ADMIN", "OWNER", "PRODUCTION_LEAD", "PRODUCTION_DOCUMENTER"] },
+  { label: "Aplikasi PIC QC", to: "/produksi/qc", roles: ["ADMIN", "OWNER", "QC_LEAD"] },
   { label: "Antrean Gudang", to: "/warehouse/antrean-produksi", roles: ["ADMIN", "OWNER", "WAREHOUSE"] },
   { label: "KPI Gudang", to: "/warehouse/kpi", roles: ["ADMIN", "OWNER", "PRODUCTION_LEAD", "WAREHOUSE"] },
 ]);

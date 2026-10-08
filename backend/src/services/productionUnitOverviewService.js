@@ -18,7 +18,7 @@ import { sourceOfStep } from "../lib/domain/productionDocumentation.js";
 import { formatProductionDate, stationLabel } from "../lib/domain/productionBoard.js";
 import { arrivalConfirmedByStaff, displayStatusOfOrder, displayStatusOfUnit, physicalPresenceOf, priorityDisplay } from "../lib/domain/productionDisplay.js";
 import { loadOpenComplaintsByUnit } from "./productionComplaints.js";
-import { STEP_BY_NO } from "../lib/domain/productionSteps.js";
+import { STEP_BY_NO, isSkippedEvidence } from "../lib/domain/productionSteps.js";
 import { signEvidenceUrl } from "../routes/productionEvidenceMedia.js";
 import { signUnitPhotoUrlIfAny } from "../routes/productionUnitPhoto.js";
 import { getDiagnosisState } from "./productionDiagnosisCommandService.js";
@@ -289,7 +289,7 @@ export async function getUnitOverview(prisma, unitId, { unitIds, canSeeValue = f
   const applicableSteps = steps.filter((s) => s.status !== "NA");
   const [pickup, materials, qc, diagnosis] = await Promise.all([
     loadPickup(prisma, unitId),
-    loadMaterials(prisma, run.plan, { evidence: ctx.evidence, unitId }),
+    loadMaterials(prisma, run.plan, { evidence: [...ctx.evidence, ...(ctx.buildRecord ? [{ stepNo: 6, payload: { materials: ctx.buildRecord.materials } }] : [])], unitId }),
     loadQc(prisma, run.id),
     getDiagnosisState(prisma, run.id),
   ]);
@@ -345,7 +345,8 @@ export async function getUnitOverview(prisma, unitId, { unitIds, canSeeValue = f
       productLine: orderScopedField(orderExtra?.productLine ?? null), productType: orderScopedField(orderExtra?.productType ?? null),
       dataGaps,
     },
-    service: { code: run.unit.service?.code ?? null, label: run.unit.service?.labelId ?? null, set: !!run.unit.serviceId },
+    // Jalur pengerjaan (BARU/custom): layanan teknis & Diagnosis TIDAK BERLAKU — spesifikasi + layanan Sales (salesContext) adalah acuan.
+    service: { code: run.unit.service?.code ?? null, label: run.unit.service?.labelId ?? null, set: !!run.unit.serviceId, applicable: !ctx.state.buildTrack },
     pickup,
     planning: run.plan ? {
       planId: run.plan.id, status: run.plan.status, revision: run.plan.revision,
@@ -356,7 +357,8 @@ export async function getUnitOverview(prisma, unitId, { unitIds, canSeeValue = f
       materialReservedAt: run.plan.materialReservedAt, targetStartAt: run.plan.targetStartAt, targetCompleteAt: run.plan.targetCompleteAt,
     } : null,
     production: {
-      runId: run.id, revision: run.revision, runStatus: run.status, currentPhase: run.currentPhase, started: run.operations.length > 0 || ctx.evidence.length > 0,
+      runId: run.id, revision: run.revision, track: ctx.state.buildTrack ? "BUILD" : "RESTORATION", product: ctx.state.buildTrack ? { class: ctx.state.productClass, flow: ctx.state.productFlow, problem: ctx.state.productProblem } : null,
+      racikan: ctx.state.buildTrack ? (ctx.evidence.filter((e) => e.stepNo === 6 && !isSkippedEvidence(e)).at(-1)?.payload?.racikan ?? ctx.buildRecord?.racikan ?? null) : null, build: ctx.buildView ?? null, runStatus: run.status, currentPhase: run.currentPhase, started: run.operations.length > 0 || ctx.evidence.length > 0,
       // dikerjakan (done) / dilewati (skipped) / tersisa (remaining) — tahap dilewati (mode adaptasi) bukan pekerjaan.
       steps, progress: (() => {
         const worked = applicableSteps.filter((s) => s.status === "DONE").length; const skipped = applicableSteps.filter((s) => s.status === "SKIPPED").length;

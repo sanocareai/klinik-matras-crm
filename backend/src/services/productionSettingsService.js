@@ -12,6 +12,12 @@ export const SETTING_KEYS = Object.freeze({
   ADAPTATION_DEFAULT: "adaptation_default_policy",
 });
 export const ADAPTATION_POLICY = "ADAPTATION_V1";
+// Versi kebijakan gerbang QC sebelum bongkar (Fase 2 LAYANAN). Dipin pada Run BARU; run yang sudah berjalan tidak pernah diubah otomatis.
+export const QC_GATE_POLICY = "QC_GATE_V1";
+// Fase 4: V2 = gerbang V1 (sebelum bongkar) + gerbang PERAKITAN (uji fondasi baru, hasil aktual, uji kasur jadi). Run BARU dipin V2; Run V1/NULL tidak pernah terkunci oleh gerbang perakitan
+// (V1 hanya bila Fase 2/3 sudah rilis lebih dulu; NULL = Run lama). Menaikkan V1 -> V2 hanya lewat penerapan eksplisit tercatat.
+export const QC_GATE_POLICY_V2 = "QC_GATE_V2";
+export const QC_GATE_POLICIES = Object.freeze([QC_GATE_POLICY, QC_GATE_POLICY_V2]);
 export const ARRIVAL_LOCATION_TYPES = Object.freeze(["RECEIVING_AREA", "WIP_AREA"]);
 
 function settingsError(message, statusCode, code, details) {

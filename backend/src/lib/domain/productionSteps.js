@@ -17,6 +17,8 @@
 //  11  Jahit Selesai            = SELESAI corner_sewing (foto/video + checklist)
 //  12  Konfirmasi Selesai       = (foto kasur selesai) MULAI+SELESAI finished -> penawaran barang jadi ke Gudang (P6) + event laporan (outbox, PENDING)
 
+import { CORNER_UNCONFIRMED_WAIT, PRODUCT_FLOW, PRODUCT_UNCONFIRMED_WAIT, stepLabelFor } from "./productionBuildTrack.js";
+
 export const STEP_ACTOR = Object.freeze({ TABLE: "TABLE", CORNER: "CORNER" });
 
 export const STEPS = Object.freeze([
@@ -99,7 +101,7 @@ function requireMedia(media, { min = 1, video = false, label }) {
 
 // Baris material (tahap 6/7/10): harus bagian dari Planned BOM yang sudah DISERAHKAN Gudang untuk rencana ini; qty tidak melebihi yang diserahkan.
 // Tidak ada potong stok di sini — stok berkurang sekali saat Gudang menyerahkan (Material Issue P4).
-export function normalizeMaterialLines(lines, { issuedQtyByMaterial, required, label }) {
+export function normalizeMaterialLines(lines, { issuedQtyByMaterial, required, label, remainingMode = false }) {
   if (lines == null || (Array.isArray(lines) && lines.length === 0)) {
     if (required) throw invalid(`${label}: pilih minimal satu bahan dari Gudang yang dipakai`);
     return [];
@@ -115,7 +117,7 @@ export function normalizeMaterialLines(lines, { issuedQtyByMaterial, required, l
     if (!Number.isFinite(qty) || qty <= 0) throw invalid(`${label}: jumlah bahan harus lebih dari 0`);
     const issued = issuedQtyByMaterial?.get(materialId);
     if (issued == null) throw stepError(`${label}: bahan ini tidak ada di bahan yang diserahkan Gudang untuk unit ini`, 422, "STEP_MATERIAL_NOT_ISSUED", { materialId });
-    if (qty > issued + 1e-9) throw stepError(`${label}: jumlah melebihi bahan yang diserahkan Gudang (${issued})`, 422, "STEP_MATERIAL_OVER_ISSUED", { materialId, issued });
+    if (qty > issued + 1e-9) throw stepError(remainingMode ? `${label}: jumlah melebihi sisa bahan yang belum terpakai (${issued}); bahan tambahan diminta PIC Bahan lalu diserahkan Gudang` : `${label}: jumlah melebihi bahan yang diserahkan Gudang (${issued})`, 422, "STEP_MATERIAL_OVER_ISSUED", { materialId, issued });
     return { materialId, qty };
   });
 }
@@ -126,19 +128,29 @@ export function validateStepEvidence(stepNo, input, ctx = {}) {
   if (!step) throw stepError("Tahap tidak dikenal", 400, "STEP_UNKNOWN");
   const p = input?.payload && typeof input.payload === "object" && !Array.isArray(input.payload) ? input.payload : {};
   const media = normalizeMedia(input?.media);
-  const label = `Tahap ${stepNo} (${step.label})`;
+  const PRODUCT_UNCONFIRMED_WAIT_CODE = "STEP_WAITING_" + PRODUCT_UNCONFIRMED_WAIT;
+const label = `Tahap ${stepNo} (${stepLabelFor(stepNo, step.label, ctx.buildTrack)})`; // jalur pengerjaan: tahap 6 = Pengerjaan Pesanan
   switch (stepNo) {
     case 1:
       requireMedia(media, { label });
       if (p.conditionConfirmed !== true) throw invalid(`${label}: konfirmasi ukuran & kondisi kain luar wajib dicentang`);
       return { media, payload: { conditionConfirmed: true, conditionNote: optionalText(p.conditionNote, "Catatan kondisi") } };
     case 2:
+      // Fase 2 (LAYANAN, bukan adaptasi): hasil uji kasur utuh DITULIS PIC QC lewat Catatan Komponen (WHOLE_TEST_BEFORE, satu sumber data). PIC Meja hanya melanjutkan tahap — bukti ini
+      // hanya menautkan versi catatan QC yang dipakai (tanpa menyalin angka). Adaptasi/jalur lama tetap memakai bukti PIC (video + catatan rasa awal).
+      if (ctx.preTeardownGate) {
+        if (!ctx.gateRefs?.wholeTest) throw stepError("QC sebelum bongkar belum dicatat PIC QC", 409, "STEP_WAITING_QC_BEFORE_PENDING");
+        return { media: normalizeMedia(ctx.gateRefs.wholeTest.mediaUrls), payload: { qcRef: { section: "WHOLE_TEST_BEFORE", version: ctx.gateRefs.wholeTest.version } } };
+      }
       requireMedia(media, { label, video: true });
       return { media, payload: { feelNote: text(p.feelNote, 3, "Catatan rasa awal") } };
     case 3: {
       requireMedia(media, { label });
       const items = Array.isArray(p.oldMaterials) ? p.oldMaterials : [];
-      if (items.length === 0) throw invalid(`${label}: centang minimal satu material lama yang ditemukan`);
+      // Fase 2 (LAYANAN, bukan adaptasi): lapisan awal (atas ke bawah, per lapis + ketebalan + foto/video) wajib tercatat di Catatan Komponen (LAYERS_BEFORE) sebelum bongkar ditutup;
+      // centang jenis material lama menjadi opsional (histori lama tetap terbaca apa adanya).
+      if (ctx.preTeardownGate && !ctx.gateRefs?.layers) throw stepError("Catat susunan lapisan awal (atas ke bawah) dulu sebelum menyelesaikan bongkar", 409, "STEP_LAYERS_REQUIRED");
+      if (items.length === 0 && !ctx.preTeardownGate) throw invalid(`${label}: centang minimal satu material lama yang ditemukan`);
       const seen = new Set();
       const oldMaterials = items.map((item) => {
         const type = typeof item === "string" ? item : item?.type;
@@ -147,9 +159,14 @@ export function validateStepEvidence(stepNo, input, ctx = {}) {
         seen.add(type);
         return { type, note: optionalText(typeof item === "string" ? null : item?.note, "Catatan material", 300) };
       });
-      return { media, payload: { oldMaterials, note: optionalText(p.note, "Catatan") } };
+      return { media, payload: { oldMaterials, note: optionalText(p.note, "Catatan"), ...(ctx.preTeardownGate ? { layersRef: { section: "LAYERS_BEFORE", version: ctx.gateRefs.layers.version, layersUnknown: !!ctx.gateRefs.layers.layersUnknown } } : {}) } };
     }
     case 4: {
+      // Fase 2 (LAYANAN, bukan adaptasi): uji fondasi awal DITULIS PIC QC (FOUNDATION_TEST_BEFORE); penurunan dihitung server dari tinggi tanpa beban − dibebani. Di sini hanya melanjutkan tahap.
+      if (ctx.preTeardownGate) {
+        if (!ctx.gateRefs?.foundationTest) throw stepError("Uji fondasi awal belum dicatat PIC QC", 409, "STEP_WAITING_FOUNDATION_TEST_PENDING");
+        return { media: normalizeMedia(ctx.gateRefs.foundationTest.mediaUrls), payload: { qcRef: { section: "FOUNDATION_TEST_BEFORE", version: ctx.gateRefs.foundationTest.version }, foundationIssues: Array.isArray(p.foundationIssues) ? p.foundationIssues.map((s) => text(s, 2, "Masalah fondasi", 200)) : [] } };
+      }
       requireMedia(media, { label, video: true });
       const heightBeforeCm = positiveNumber(p.heightBeforeCm, "Tinggi awal (cm)", { max: 100 });
       const heightCompressedCm = positiveNumber(p.heightCompressedCm, "Tinggi saat ditekan (cm)", { max: 100 });
@@ -168,25 +185,55 @@ export function validateStepEvidence(stepNo, input, ctx = {}) {
       const inputMethod = p.inputMethod === "VOICE" ? "VOICE" : "TEXT";
       return { media, payload: { diagnosis: text(p.diagnosis, 10, "Penjelasan diagnosa", 4000), inputMethod } };
     }
-    case 6:
-      requireMedia(media, { label, video: true });
-      return {
-        media,
-        payload: {
-          materials: normalizeMaterialLines(p.materials, { ...ctx, required: true, label }),
-          note: text(p.note, 3, "Penjelasan isi fondasi"),
-        },
-      };
-    case 7:
+    case 6: {
+      // Jalur pengerjaan (pesanan BARU/custom): foto ATAU video hasil pengerjaan (video tidak wajib — itu khas uji fondasi restorasi); jalur restorasi tetap wajib video.
+      requireMedia(media, { label, video: !ctx.buildTrack });
+      // PIC Bahan per pekerjaan (jalur pengerjaan): pemakaian & racikan dicatat PIC Bahan lewat command resminya — satu sumber, tidak ada hitung ganda di bukti PIC Meja.
+      const p6Materials = Array.isArray(p.materials) ? p.materials : [];
+      // Fase 3: LAYANAN dengan PIC Bahan ditugaskan -> aturan satu sumber yang sama (pemakaian dicatat PIC Bahan, bukan di bukti Meja).
+      const picOwns = !!ctx.materialsByPic && (!!ctx.buildTrack || !!ctx.picRestoration);
+      if (picOwns && p6Materials.length) {
+        throw stepError("Pemakaian bahan pekerjaan ini dicatat PIC Bahan — kosongkan daftar bahan pada bukti pengerjaan", 409, "STEP_MATERIAL_BY_MATERIAL_PIC");
+      }
+      // Bahan dari Gudang BOLEH kosong pada jalur pengerjaan (pemakaian dicatat sesuai pekerjaan nyata); jalur restorasi tetap wajib.
+      const base = { materials: normalizeMaterialLines(p.materials, { ...ctx, required: !ctx.buildTrack && !picOwns, label }), note: text(p.note, 3, ctx.buildTrack ? "Penjelasan pengerjaan" : "Penjelasan isi fondasi") };
+      // Jenis produk belum jelas (UNCONFIRMED): catatan + dokumentasi UMUM pengerjaan tetap boleh disimpan (foto/video + penjelasan). Yang menunggu koreksi Sales HANYA racikan dan pengujian khusus jenis
+      // produk — racikan yang terkirim diabaikan (tidak disimpan); tahap tidak ditutup; tanda `general` membedakannya dari bukti penutup.
+      if (ctx.buildTrack && ctx.productFlow === PRODUCT_FLOW.UNCONFIRMED) return { media, payload: { ...base, general: true } };
+      // Kasur custom: racikan fondasi/lapisan (ditentukan PIC Meja bersama PIC QC) wajib tercatat — dari bukti ini ATAU dari catatan PIC Bahan. Non-kasur (divan/sofa) tidak memakai racikan kasur.
+      if (ctx.buildTrack && ctx.productFlow === PRODUCT_FLOW.KASUR) {
+        const r = p.racikan && typeof p.racikan === "object" && !Array.isArray(p.racikan) ? p.racikan : {};
+        const fondasi = optionalText(r.fondasi, "Racikan fondasi", 400); const lapisan = optionalText(r.lapisan, "Racikan lapisan", 400);
+        const given = (fondasi?.length ?? 0) >= 3 || (lapisan?.length ?? 0) >= 3;
+        if (!given && !ctx.racikanRecorded) throw invalid(`${label}: isi racikan fondasi dan/atau lapisan (minimal 3 karakter)`);
+        if (given) base.racikan = { fondasi: fondasi || null, lapisan: lapisan || null };
+      }
+      return { media, payload: base };
+    }
+    case 7: {
       requireMedia(media, { label });
+      // Fase 4 (LAYANAN, Run V2): hasil aktual susunan (Catatan Komponen › Sesudah pengerjaan) wajib tercatat SETELAH uji fondasi baru sebelum bukti lapisan diterima; bukti hanya menautkan versinya.
+      if (ctx.assemblyGate && !ctx.assemblyRefs?.after?.ok) throw stepError("Catat susunan hasil aktual (Catatan Komponen › Sesudah pengerjaan) dulu sebelum mengirim bukti lapisan", 409, "STEP_AFTER_REQUIRED");
+      const p7Materials = Array.isArray(p.materials) ? p.materials : [];
+      const picOwns7 = !!ctx.materialsByPic && !!ctx.picRestoration;
+      if (picOwns7 && p7Materials.length) throw stepError("Pemakaian bahan pekerjaan ini dicatat PIC Bahan — kosongkan daftar bahan pada bukti lapisan", 409, "STEP_MATERIAL_BY_MATERIAL_PIC");
       return {
         media,
         payload: {
-          materials: normalizeMaterialLines(p.materials, { ...ctx, required: true, label }),
+          materials: normalizeMaterialLines(p.materials, { ...ctx, required: !picOwns7, label }),
           note: optionalText(p.note, "Catatan lapisan"),
+          ...(ctx.assemblyGate ? { afterRef: { section: "AFTER", version: ctx.assemblyRefs.after.version } } : {}),
         },
       };
+    }
     case 8: {
+      // Fase 4 (LAYANAN, Run V2): uji kasur jadi DITULIS PIC QC (WHOLE_TEST_AFTER); Meja hanya melanjutkan — bukti menaut versi catatan QC (tanpa menyalin angka), media = foto/video PIC QC yang sudah tersimpan.
+      if (ctx.assemblyGate) {
+        if (ctx.assemblyHasFoundation && !ctx.assemblyRefs?.foundationTestAfter?.ok) throw stepError("Uji fondasi baru belum dicatat PIC QC untuk putaran ini", 409, "STEP_WAITING_FOUNDATION_NEW_TEST_PENDING");
+        if (!ctx.assemblyRefs?.after?.ok) throw stepError("Hasil aktual susunan belum dicatat untuk putaran ini (Catatan Komponen › Sesudah pengerjaan)", 409, "STEP_AFTER_REQUIRED");
+        if (!ctx.assemblyRefs?.wholeTestAfter?.ok) throw stepError("Uji kasur jadi belum dicatat PIC QC", 409, "STEP_WAITING_FINISHED_TEST_PENDING");
+        return { media: normalizeMedia(ctx.assemblyRefs.wholeTestAfter.mediaUrls), payload: { qcRef: { section: "WHOLE_TEST_AFTER", version: ctx.assemblyRefs.wholeTestAfter.version } } };
+      }
       requireMedia(media, { label, video: true });
       if (!TEXTURE_VERDICTS.includes(p.verdict)) throw invalid(`${label}: pilih hasil PAS, TERLALU KERAS, atau TERLALU EMPUK`);
       return { media, payload: { verdict: p.verdict, testerWeightKg: positiveNumber(p.testerWeightKg, "Berat penguji (kg)", { max: 300 }), note: optionalText(p.note, "Catatan uji") } };
@@ -306,13 +353,44 @@ export function deriveNextAction(state) {
       if (state.openShortage) return wait("WAREHOUSE", "MATERIAL_SHORTAGE", { stepNo, pausedActor: actor });
       return { actor, stepNo, action: "RESUME" };
     }
+    if (state.buildTrack && op.stagePhase === "MODULE") {
+      // Jenis produk kanonis belum jelas: bukti pengerjaan/uji khusus kasur DITAHAN (pekerjaan fisik boleh berjalan) sampai Sales mengonfirmasi jenis pada order.
+      // Catatan/dokumentasi umum tetap bisa disimpan (EVIDENCE general); tahap TIDAK ditutup dan uji khusus kasur (8)/QC tidak muncul sebelum jenis jelas. `hold` memberi tahu UI alasan penahanan.
+      if (state.productFlow === PRODUCT_FLOW.UNCONFIRMED) return { actor, stepNo, action: "EVIDENCE", general: true, hold: PRODUCT_UNCONFIRMED_WAIT, problem: state.productProblem ?? null };
+      // Produk NON-kasur (divan/sofa): tanpa uji tekstur PIC (tahap 8) — satu kiriman bukti menutup tahap lalu menunggu pemeriksaan hasil PIC QC.
+      if (state.productFlow === PRODUCT_FLOW.NON_KASUR) return { actor, stepNo, action: "COMPLETE" };
+      // Kasur dengan PIC Bahan: racikan dicatat PIC Bahan lebih dulu (PIC Meja menutup pengerjaan setelahnya).
+      if (state.materialOperatorId && !state.racikanRecorded) return wait("MATERIAL_PIC", "RACIKAN_NOT_RECORDED", { stepNo });
+    }
+    // Fase 2 (LAYANAN, bukan adaptasi): tahap bongkar menunggu catatan PIC QC / lapisan awal. Adaptasi dan jalur pengerjaan (NEW/custom) TIDAK melewati blok ini.
+    if (state.preTeardownGate && op.stagePhase === "INTAKE") {
+      if (op.stageCode === "pre_teardown_test") return state.qcBeforeRecorded ? { actor, stepNo, action: "COMPLETE", continueOnly: true, qcRecorded: true } : wait("QC", "QC_BEFORE_PENDING", { stepNo });
+      if (op.stageCode === "foundation_test") return state.foundationTestRecorded ? { actor, stepNo, action: "COMPLETE", continueOnly: true, qcRecorded: true } : wait("QC", "FOUNDATION_TEST_PENDING", { stepNo });
+      if (op.stageCode === "teardown") return { actor, stepNo, action: "COMPLETE", gated: true, ...(state.layersBeforeRecorded ? {} : { layersRequired: true }) };
+    }
     if (op.isLastPreQc && op.stagePhase === "MODULE") {
       // Bukti diurutkan kronologis (`order`). Hasil uji TERLALU KERAS/EMPUK setelah bukti modul terakhir = rework: bukti modul wajib diulang.
       const verdict = latestTextureVerdict(state.opEvidence);
       const moduleEvidence = (state.opEvidence || []).filter((e) => e.stepNo === stepNo);
       const lastModule = moduleEvidence[moduleEvidence.length - 1];
       const reworkPending = !!verdict && verdict.payload?.verdict !== "PAS" && (!lastModule || verdict.order > lastModule.order);
-      if (!lastModule || reworkPending) return { actor, stepNo, action: "EVIDENCE", rework: reworkPending, lastVerdict: verdict?.payload?.verdict ?? null };
+      // Jalur pengerjaan kasur: racikan harus tercatat (bukti ber-racikan atau catatan PIC Bahan) sebelum uji tekstur — mis. bukti umum yang disimpan saat jenis produk belum jelas tidak cukup.
+      const racikanMissing = !!state.buildTrack && !state.racikanRecorded;
+      // Fase 4 (LAYANAN, Run V2): perakitan -> uji fondasi baru (PIC QC) -> susun lapisan + hasil aktual (Meja) -> uji kasur jadi (PIC QC) -> Meja melanjutkan ke gerbang QC. Verdict tekstur Meja tidak dipakai di jalur ini.
+      // Tiga jenis racikan: HANYA fondasi (modul terakhir = tahap 6), HANYA lapisan (modul terakhir = tahap 7, tanpa uji fondasi baru), atau KEDUANYA. Tak satu pun melewati hasil aktual + uji kasur jadi PIC QC.
+      if (state.assemblyGate) {
+        if (stepNo === 6) { // fondasi menjadi modul terakhir: bukti Meja dulu, lalu uji fondasi baru
+          if (!lastModule) return { actor, stepNo, action: "EVIDENCE", gated: true };
+          if (!state.foundationNewTestOk) return wait("QC", "FOUNDATION_NEW_TEST_PENDING", { stepNo });
+        } else {
+          if (state.assemblyHasFoundation && !state.foundationNewTestOk) return wait("QC", "FOUNDATION_NEW_TEST_PENDING", { stepNo });
+          if (!lastModule) return { actor, stepNo, action: "EVIDENCE", gated: true, ...(state.afterOk ? {} : { layersAfterRequired: true }) };
+        }
+        if (!state.afterOk) return wait("TABLE", "AFTER_PENDING", { stepNo });
+        if (!state.wholeTestAfterOk) return wait("QC", "FINISHED_TEST_PENDING", { stepNo: 8 });
+        return { actor, stepNo: 8, action: "TEST", continueOnly: true, qcRecorded: true };
+      }
+      if (!lastModule || reworkPending || racikanMissing) return { actor, stepNo, action: "EVIDENCE", rework: reworkPending, lastVerdict: verdict?.payload?.verdict ?? null };
       return { actor, stepNo: 8, action: "TEST" };
     }
     // P9D: selain layanan/jalur modul (P8, lama), tahap 5 juga menunggu Diagnosis Produksi selesai — bahan
@@ -330,6 +408,8 @@ export function deriveNextAction(state) {
     // satu ketuk (payload kosong -> recordProductionStep memakai ulang diagnosa yang sudah ada). Sebelumnya flag ini tidak pernah
     // dikirim server sehingga PIC dipaksa mengisi ulang wizard dari kosong.
     if (op.stageCode === "diagnosis" && (state.opEvidence || []).some((e) => e.stepNo === 5)) return { actor, stepNo, action: "COMPLETE", continueOnly: true };
+    // Fase 3 (LAYANAN dengan PIC Bahan): pemakaian bahan fondasi dicatat PIC Bahan lewat command resminya — Meja menutup tahap 6 setelah itu (hindari pemakaian tak tercatat -> retur penuh palsu).
+    if (state.materialPicRestoration && state.materialOperatorId && stepNo === 6 && !state.usageRecorded) return wait("MATERIAL_PIC", "USAGE_NOT_RECORDED", { stepNo });
     return { actor, stepNo, action: "COMPLETE" };
   }
 
@@ -338,18 +418,30 @@ export function deriveNextAction(state) {
   // Mode adaptasi: semua tahap sudah tuntas -> tinggal "Selesaikan Produksi" (pratinjau + konfirmasi). Tidak ada tahap yang diulang.
   if (state.adaptation && target.done) return wait("TABLE", "READY_TO_FINISH", { stepNo: 12 });
   // Mode adaptasi: Meja -> Corner TETAP berjalan tanpa putusan QC. Tahap 9 "Kirim ke Corner" (bukti foto) mencatat gerbang QC sebagai TIDAK DILAKUKAN (bukan lulus, bukan di-waive).
-  if (target.requiresQc) return state.adaptation ? { actor: "TABLE", stepNo: 9, action: "HANDOFF", qcNotPerformed: true } : wait("QC", "AWAITING_QC", { stepNo: 8 });
+  if (target.requiresQc) {
+    if (state.buildTrack) {
+      // Kebutuhan Corner harus DIKONFIRMASI pada rencana sebelum gerbang QC dilewati (jalur Corner ditentukan olehnya; tidak diasumsikan dari jenis produk).
+      if (state.cornerRequired == null) return wait("PLANNER", CORNER_UNCONFIRMED_WAIT, { stepNo: 9 });
+      // Corner tidak diperlukan + adaptasi: tidak ada tahap "Kirim ke Corner" sebagai pemicu — QC dicatat tidak dilakukan lewat Selesaikan Produksi.
+      if (state.cornerRequired === false && state.adaptation) return wait("TABLE", "READY_TO_FINISH", { stepNo: 12 });
+    }
+    // Produk non-kasur (jalur pengerjaan) tidak punya tahap 8 (uji tekstur kasur): menunggu pemeriksaan hasil PIC QC tanpa nomor tahap.
+    return state.adaptation ? { actor: "TABLE", stepNo: 9, action: "HANDOFF", qcNotPerformed: true } : wait("QC", "AWAITING_QC", { stepNo: state.buildTrack && state.productFlow === PRODUCT_FLOW.NON_KASUR ? null : 8 });
+  }
   if (target.isPostQc) {
     if (target.code === "corner_sewing") {
+      if (state.buildTrack && state.cornerRequired == null) return wait("PLANNER", CORNER_UNCONFIRMED_WAIT, { stepNo: 9 });
       if (!state.step9SinceQc) return { actor: "TABLE", stepNo: 9, action: "HANDOFF" };
       return { actor: "CORNER", stepNo: 10, action: "START_CORNER" };
     }
-    if (target.code === "finished") return { actor: "CORNER", stepNo: 12, action: "FINISH" };
+    // Tanpa Corner (dikonfirmasi pada rencana): Finish dikonfirmasi PIC Meja (tahap Jahit Corner tidak ada di jalur).
+    if (target.code === "finished") return { actor: state.buildTrack && state.cornerRequired === false ? "TABLE" : "CORNER", stepNo: 12, action: "FINISH" };
     return { actor: "CORNER", stepNo: stepNoForStage(target), action: "START" };
   }
   if (target.code === "pre_teardown_test") return { actor: "TABLE", stepNo: 1, action: "START_WITH_EVIDENCE" };
   const stepNo = stepNoForStage(target);
-  if (target.phase === "MODULE" && !state.materialReady) {
+  // Jalur pengerjaan (pesanan BARU): unit langsung dapat dikerjakan setelah dijadwalkan + PIC ditentukan; BOM/serah bahan tetap tersedia tetapi TIDAK menahan mulai.
+  if (target.phase === "MODULE" && !state.materialReady && !state.buildTrack) {
     return state.openShortage ? wait("WAREHOUSE", "MATERIAL_SHORTAGE", { stepNo }) : wait("WAREHOUSE", "MATERIAL_NOT_READY", { stepNo });
   }
   return { actor: "TABLE", stepNo, action: "START" };
@@ -374,7 +466,7 @@ export const ANDON_BUCKETS = Object.freeze([
   { key: "TERHENTI", label: "Perlu Tindakan", tone: "danger" },
 ]);
 
-export function andonBucketOf({ next, started, rework = false }) {
+export function andonBucketOf({ next, started, rework = false, buildTrack = false }) {
   if (!next) return "ANTREAN";
   if (next.wait === "PENDING_ARRIVAL") return "DALAM_PERJALANAN";
   if (next.wait === "COMPLETED") return "SELESAI";
@@ -383,6 +475,7 @@ export function andonBucketOf({ next, started, rework = false }) {
   if (next.wait === "AWAITING_WAREHOUSE") return "HANDOFF";
   if (next.wait === "AWAITING_QC" || rework || next.rework) return "QC";
   if (next.stepNo === 1 && !started) return "ANTREAN";
+  if (buildTrack && next.stepNo === 6 && !started) return "ANTREAN"; // jalur pengerjaan: tahap pertama = Pengerjaan Pesanan (tahap 6)
   if (next.stepNo >= 10) return "CORNER";
   if (next.stepNo === 9) return "QC";
   if (next.stepNo === 8 || next.stepNo === 7) return "LAPISAN";
@@ -412,6 +505,8 @@ export const COMMAND_CENTER_COLUMNS = Object.freeze([
   { key: "AKAN_MASUK", label: "Akan Masuk — Pickup Terjadwal" },
   { key: "DALAM_PERJALANAN", label: "Dalam Perjalanan" },
   { key: "TIBA_BELUM_MULAI", label: "Tiba / Belum Mulai" },
+  { key: "PENGERJAAN", label: "Pengerjaan Pesanan" }, // jalur pengerjaan (BARU/custom): bukan "Fondasi Jadi" — tidak ada tahap bongkar/uji fondasi
+  { key: "UJI_HASIL", label: "Uji Hasil Sebelum Corner" }, // jalur pengerjaan: uji tekstur PIC (kasur) / pemeriksaan hasil QC, sebelum Corner
   { key: "BONGKAR", label: "Tahap Bongkar" },
   { key: "UJI_FONDASI", label: "Uji Fondasi" },
   { key: "FONDASI", label: "Fondasi Jadi" },
@@ -442,9 +537,15 @@ export function commandCenterColumn(view) {
   if (view.bucket === "DALAM_PERJALANAN") return "DALAM_PERJALANAN";
   // Bucket semantik (QC/HANDOFF) diperiksa LEBIH DULU dari stepNo mentah: rework yang menunggu QC bisa terpicu dari
   // stepNo 7/8 (uji tekstur gagal) tapi TETAP harus jatuh ke kolom uji tekstur, bukan Fondasi/Lapisan Jadi.
-  if (view.bucket === "QC") return "UJI_TEKSTUR";
+  if (view.bucket === "QC") return view.track === "BUILD" ? "UJI_HASIL" : "UJI_TEKSTUR";
   if (view.bucket === "HANDOFF") return "SIAP_KIRIM";
   const stepNo = view.next?.stepNo;
+  // Jalur pengerjaan (BARU/custom): belum mulai = Tiba / Belum Mulai; Pengerjaan Pesanan berjalan = kolom Pengerjaan Pesanan (BUKAN "Fondasi Jadi" sebelum ada fondasi selesai);
+  // uji tekstur PIC / pemeriksaan hasil QC / Kirim ke Corner = Uji Hasil. Tahap Corner (>=10) tetap kolom Corner.
+  if (view.track === "BUILD") {
+    if (stepNo === 6) return view.bucket === "ANTREAN" || view.bucket === "TERHENTI" ? "TIBA_BELUM_MULAI" : "PENGERJAAN";
+    if (stepNo === 8 || stepNo === 9) return "UJI_HASIL";
+  }
   if (stepNo === 9) return "UJI_TEKSTUR";
   if (stepNo === 8) return "LAPISAN";
   if (stepNo === 7) return "FONDASI";

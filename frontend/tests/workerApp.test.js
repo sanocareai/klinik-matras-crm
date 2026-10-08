@@ -47,12 +47,13 @@ test("bottom navigation: tepat 4 tab bernama Kerja, Bahan, Aktivitas, Akun; tab 
 });
 
 test("mode aplikasi: multi-role hanya melihat mode yang diizinkan; peran tanpa izin lantai tidak melihat apa pun", () => {
-  assert.deepEqual(allowedModes(["PRODUCTION_WORKER"]).map((m) => m.key), ["meja", "corner"]);
+  assert.deepEqual(allowedModes(["PRODUCTION_WORKER"]).map((m) => m.key), ["meja", "corner", "bahan"]);
   assert.deepEqual(allowedModes(["PRODUCTION_DOCUMENTER"]).map((m) => m.key), ["dokumentasi"]);
-  assert.deepEqual(allowedModes(["PRODUCTION_WORKER", "PRODUCTION_DOCUMENTER"]).map((m) => m.key), ["meja", "corner", "dokumentasi"]);
+  assert.deepEqual(allowedModes(["PRODUCTION_WORKER", "PRODUCTION_DOCUMENTER"]).map((m) => m.key), ["meja", "corner", "bahan", "dokumentasi"]);
   assert.deepEqual(allowedModes(["ADMIN"]).map((m) => m.key), APP_MODES.map((m) => m.key));
-  for (const r of [["SALES"], ["FINANCE"], ["DRIVER"], ["WAREHOUSE"], ["QC_LEAD"], []]) assert.deepEqual(allowedModes(r), [], r.join());
-  assert.equal(modeOfLane("CORNER").to, "/produksi/corner"); assert.equal(modeOfLane("TABLE").to, "/produksi/meja");
+  for (const r of [["SALES"], ["FINANCE"], ["DRIVER"], ["WAREHOUSE"], []]) assert.deepEqual(allowedModes(r), [], r.join());
+  assert.deepEqual(allowedModes(["QC_LEAD"]).map((m) => m.key), ["qc"], "PIC QC hanya melihat mode PIC QC (Aplikasi PIC QC, Fase 2 LAYANAN)");
+  assert.equal(modeOfLane("MATERIAL").to, "/produksi/bahan"); assert.equal(modeOfLane("CORNER").to, "/produksi/corner"); assert.equal(modeOfLane("TABLE").to, "/produksi/meja");
 });
 
 test("kartu V2: semua nilai dari server (foto, Sales, kasur, catatan + nama Sales, prioritas, tahap, progres)", () => {
@@ -193,7 +194,7 @@ test("komponen: setiap aksi tulis lewat command server yang ada; tidak ada statu
   assert.match(detail, /setNotice\("Tersimpan\."\); await afterChange\(\)/, "pesan sukses SETELAH server menerima");
   const sheets = strip(read("workerSheets.jsx"));
   assert.match(sheets, /submitState\(\{ online, busy \}\)/); assert.match(sheets, /disabled=\{gate\.disabled\}/); assert.match(sheets, /data-testid="offline-submit-note"/);
-  assert.match(sheets, /validateStepForm\(stepNo, form, \{ mediaItems: media \}\)/, "foto wajib divalidasi sebelum kirim");
+  assert.match(sheets, /validateStepForm\(stepNo, form, \{ mediaItems: media, track: card\.track, flow, byPic, gated: !!next\.gated, layersRequired: !!next\.layersRequired, layersAfterRequired: !!next\.layersAfterRequired \}\)/, "foto wajib divalidasi sebelum kirim");
   const v1 = strip(read("V1Panels.jsx"));
   for (const call of ["api.startUnitStage", "api.resumeProductionWork", "api.completeUnitStage", "api.pauseUnitStage", "api.failUnitStage", "api.addUnitMaterial"]) assert.ok(v1.includes(call), call);
   assert.doesNotMatch(v1, /skipUnitStage|changeUnitRoute|recordQcFitTest|resolveBlocker|assignUnitStage/, "aksi berisiko/QC/penugasan TIDAK ada di aplikasi lantai");

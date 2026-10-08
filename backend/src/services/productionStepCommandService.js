@@ -22,11 +22,11 @@ import {
 } from "../lib/domain/productionSteps.js";
 import { assertNoOpenRunException } from "./productionRunGuards.js";
 import {
-  RUN_INCLUDE, activeOperation, applyAdaptationFinishInTx, applyAdaptationPolicyInTx, applyCompleteInTx, applyDelayInTx, applyPauseInTx, applyResumeInTx, applySkipStageInTx, applyStartInTx,
-  applyQcNotPerformedInTx, assertAdaptationRun, authorizeOperator, bumpRunRevisionInTx, finishBlockersOf, isAdaptationRun, isPostQcStage, loadMaterialFacts, loadRunForWrite, materialReadiness, peekStartIsPostQc,
+  RUN_INCLUDE, activeOperation, applyAdaptationFinishInTx, applyAdaptationPolicyInTx, applyQcGatePolicyInTx, applyCompleteInTx, applyDelayInTx, applyPauseInTx, applyResumeInTx, applySkipStageInTx, applyStartInTx,
+  applyQcNotPerformedInTx, assertAdaptationRun, authorizeOperator, bumpRunRevisionInTx, finishBlockersOf, hasAssemblyGate, hasQcGatePolicy, isAdaptationRun, isPostQcStage, loadMaterialFacts, loadRunForWrite, materialReadiness, peekStartIsPostQc,
   prepareSkipInTx, prepareStartInTx, workshopPathOf,
 } from "./productionWorkshopExecutionCommandService.js";
-import { ADAPTATION_POLICY } from "./productionSettingsService.js";
+import { ADAPTATION_POLICY, QC_GATE_POLICIES, QC_GATE_POLICY_V2 } from "./productionSettingsService.js";
 import { pathForUnit, resolveCurrentTarget } from "./unitStageEngine.js";
 import { lockRowForUpdate } from "./inventoryLedger.js";
 import { evidenceFileExists } from "../lib/productionEvidenceStore.js";
@@ -34,6 +34,8 @@ import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState
 import { isDocumentationRow, DOC_STEP_CODE_PREFIX } from "../lib/domain/productionDocumentation.js";
 import { computeRunLeftovers, createLeftoverReturnsInTx } from "./productionMaterialReturnService.js";
 import { allManualMaterialsMapped, diagnosisBomValid } from "./productionDiagnosisCommandService.js";
+import { buildApplicableSteps, classifyProduct, pathHasBuildStage } from "../lib/domain/productionBuildTrack.js";
+import { loadAssemblyFacts, loadPreTeardownFacts } from "./productionComponentNoteService.js";
 
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
@@ -118,6 +120,41 @@ export async function loadStepContext(client, run) {
   // Mode adaptasi: tidak ada inspeksi QC; tahap 9 tercatat = serah ke Corner sudah dilakukan.
   const step9SinceQc = isAdaptationRun(run) ? evidence.some((e) => e.stepNo === 9 && !isSkippedEvidence(e)) : qcAt != null && evidence.some((e) => e.stepNo === 9 && new Date(e.createdAt).getTime() >= qcAt);
   const ordered = evidence.map((e, index) => ({ ...e, order: index }));
+  // Jalur pengerjaan: alur produk (KASUR / NON_KASUR / UNCONFIRMED) dari klasifikasi KANONIS pesanan (lini + jenis produk), bukan nama/awalan resi. Jenis belum jelas = UNCONFIRMED
+  // (uji/racikan khusus kasur ditahan + kebutuhan konfirmasi ditampilkan); TIDAK ada fallback ke alur kasur. Plus pengaturan Run (PIC Bahan, kebutuhan Corner) dan catatan racikan/pemakaian terbaru.
+  const buildTrack = pathHasBuildStage(split?.stages);
+  const product = buildTrack
+    ? classifyProduct((await client.order.findUnique({ where: { id: run.unit.orderId }, select: { productLine: true, productType: true } })) || {})
+    : null;
+  // Fase 3 (LAYANAN): PIC Bahan per pekerjaan juga berlaku untuk restorasi (kategori LAYANAN) — pengaturan & catatan pemakaian dibaca dari tabel yang SAMA (tanpa salinan paralel).
+  // SEWA dan jalur lain tidak ikut. Jalur BUILD tidak berubah.
+  const materialPicRestoration = !buildTrack && run.unit?.order?.category === "LAYANAN";
+  const [buildSetting, buildRecord] = buildTrack || materialPicRestoration
+    ? await Promise.all([
+      client.productionRunBuildSetting.findUnique({ where: { runId: run.id }, include: { materialOperator: { select: { id: true, userId: true, active: true, user: { select: { name: true } } } } } }),
+      client.productionBuildMaterialRecord.findFirst({ where: { runId: run.id }, orderBy: { version: "desc" } }),
+    ])
+    : [null, null];
+  const cornerLocked = buildTrack ? await cornerDecisionLocked(client, run) : false;
+  const buildView = buildTrack ? await toBuildView(client, buildSetting, buildRecord, { cornerLocked }) : null;
+  const materialPicView = materialPicRestoration && (buildSetting || buildRecord) ? await toBuildView(client, buildSetting, buildRecord) : null;
+  // Fase 2 (LAYANAN): gerbang QC sebelum bongkar / lapisan awal / uji fondasi awal. Hanya jalur restorasi non-adaptasi; fakta dibaca hanya saat Run berada di tahap bongkar (hemat query papan).
+  // Hanya kategori LAYANAN (restorasi): SEWA dan jalur pengerjaan (BARU/custom) TIDAK berubah.
+  const inIntake = ["pre_teardown_test", "teardown", "foundation_test"].includes(op?.stageCode);
+  // Fase 4 (LAYANAN, perakitan): gerbang uji fondasi baru / hasil aktual / uji kasur jadi di tahap MODUL (6–8). Hanya Run berkebijakan V2; Run V1/NULL, adaptasi, BARU, SEWA tidak terkena.
+  const inModule = opStage?.phase === "MODULE";
+  const isLayanan = !buildTrack && !isAdaptationRun(run) && hasQcGatePolicy(run) && (inIntake || inModule)
+    ? (await client.order.findUnique({ where: { id: run.unit.orderId }, select: { category: true } }))?.category === "LAYANAN" : false;
+  const preTeardownGate = isLayanan && inIntake;
+  const assemblyGate = isLayanan && inModule && hasAssemblyGate(run);
+  const latestAt = (n) => { const e = evidence.filter((x) => x.stepNo === n && !isSkippedEvidence(x)).at(-1); return e ? new Date(e.createdAt).getTime() : null; };
+  const moduleSteps = new Set((split?.stages || []).filter((s) => s.phase === "MODULE").map((s) => stepNoForStage(s)));
+  const assemblyHasFoundation = moduleSteps.has(6); const assemblyHasLayers = moduleSteps.has(7);
+  const assemblyRefs = assemblyGate ? await loadAssemblyFacts(client, { unitId: run.unitId, runId: run.id, step6At: latestAt(6), step7At: latestAt(7) }) : null;
+  const gateRefs = preTeardownGate ? await loadPreTeardownFacts(client, { unitId: run.unitId, runId: run.id }) : null;
+  const lastStep6 = evidence.filter((e) => e.stepNo === 6 && !isSkippedEvidence(e)).at(-1);
+  const hasRacikan = (r) => !!r && ((String(r.fondasi || "").trim().length >= 3) || (String(r.lapisan || "").trim().length >= 3));
+  const racikanRecorded = buildTrack && (evidence.some((e) => e.stepNo === 6 && !isSkippedEvidence(e) && hasRacikan(e.payload?.racikan)) || hasRacikan(buildRecord?.racikan));
   const state = {
     runStatus: run.status, currentPhase: run.currentPhase, unitStatus: run.unit.status,
     handoffPhaseStatus: run.phases.find((p) => p.phase === "HANDOFF")?.status ?? null,
@@ -134,15 +171,27 @@ export async function loadStepContext(client, run) {
     openShortage: !!openShortage,
     serviceSet: !!run.unit.serviceId,
     pathHasModules: !!split?.stages.some((s) => s.phase === "MODULE"),
+    buildTrack,
+    productFlow: product?.flow ?? null, productClass: product?.productClass ?? null, productProblem: product?.problem ?? null,
+    cornerRequired: buildTrack ? (buildSetting?.cornerRequired ?? null) : null, cornerReason: buildSetting?.cornerReason ?? null,
+    materialOperatorId: buildSetting?.materialOperatorId ?? null, racikanRecorded, lastStep6Version: lastStep6?.version ?? null,
+    materialPicRestoration, usageRecorded: (buildRecord?.materials || []).length > 0, // Fase 3: LAYANAN dengan PIC Bahan — pemakaian aktual dicatat PIC Bahan (satu sumber)
     materialReady: material.ready,
     diagnosisManualMapped, diagnosisBomHasLines,
+    qcGatePolicy: run.qcGatePolicyVersion || null, // Fase 2: NULL = run lama, gerbang QC sebelum bongkar tidak berlaku
     adaptation: isAdaptationRun(run), // slice 2: QC tidak wajib -> tahap kerja tuntas = siap "Selesaikan Produksi"
+    preTeardownGate, gateRefs,
+    assemblyGate, assemblyRefs, assemblyHasFoundation, assemblyHasLayers, foundationNewTestOk: !!assemblyRefs?.foundationTestAfter?.ok, afterOk: !!assemblyRefs?.after?.ok, wholeTestAfterOk: !!assemblyRefs?.wholeTestAfter?.ok,
+    qcBeforeRecorded: !!gateRefs?.wholeTest, layersBeforeRecorded: !!gateRefs?.layers, foundationTestRecorded: !!gateRefs?.foundationTest,
   };
-  return { path, split, pathError, evidence: ordered, documentation, openShortage, latestInspection, material, state, next: deriveNextAction(state) };
+  return { path, split, pathError, evidence: ordered, documentation, openShortage, latestInspection, material, state, buildSetting, buildRecord, buildView, materialPicView, next: deriveNextAction(state) };
 }
 
 // Nomor tahap yang berlaku untuk jalur unit (untuk "x dari 12"): tahap 6/7 hanya bila jalurnya punya modul terkait.
-export function applicableStepsFor(split) {
+export function applicableStepsFor(split, productFlow = "KASUR") {
+  // Jalur pengerjaan (pesanan BARU): bongkar, pencatatan komponen lama, uji fondasi lama, dan diagnosa kerusakan TIDAK BERLAKU (status NA di tampilan, bukan dikerjakan).
+  // Produk non-kasur (divan/sofa): uji tekstur kasur (tahap 8) juga tidak berlaku. Corner tidak diperlukan (dikonfirmasi pada rencana) = jalur tanpa tahap Jahit Corner -> tahap 9–11 tidak berlaku.
+  if (pathHasBuildStage(split?.stages)) return buildApplicableSteps(productFlow, { corner: (split?.postQcStages || []).some((st) => st.code === "corner_sewing") });
   const steps = new Set([1, 2, 3, 4, 5, 8, 9, 10, 11, 12]);
   for (const stage of split?.stages || []) {
     const n = stepNoForStage(stage);
@@ -152,13 +201,103 @@ export function applicableStepsFor(split) {
   return [...steps].sort((a, b) => a - b);
 }
 
+// Keputusan Corner terkunci setelah unit melewati gerbang QC / masuk tahap Jahit Corner atau Finish (jalur sesudah gerbang sudah ditentukan). Satu sumber: command Corner + tampilan.
+let LATE_STAGE_IDS = null;
+export async function cornerDecisionLocked(client, run) {
+  if (run.currentPhase === "HANDOFF" || ["COMPLETED", "CANCELLED"].includes(run.status)) return true;
+  LATE_STAGE_IDS ||= (await client.routingStage.findMany({ where: { code: { in: ["corner_sewing", "finished"] } }, select: { id: true } })).map((st) => st.id);
+  const currentStageId = run.unit?.currentStageId ?? (await client.unit.findUnique({ where: { id: run.unitId }, select: { currentStageId: true } }))?.currentStageId ?? null;
+  if (currentStageId && LATE_STAGE_IDS.includes(currentStageId)) return true;
+  return LATE_STAGE_IDS.length ? (await client.unitStageLog.count({ where: { unitId: run.unitId, stageId: { in: LATE_STAGE_IDS }, createdAt: { gte: run.createdAt } } })) > 0 : false;
+}
+
+// Tampilan pengaturan Run + catatan racikan/pemakaian terbaru (jalur pengerjaan) — nama bahan dilengkapi sekali jalan.
+async function toBuildView(client, setting, record, { cornerLocked = false } = {}) {
+  const lines = Array.isArray(record?.materials) ? record.materials : [];
+  const mats = lines.length ? await client.material.findMany({ where: { id: { in: lines.map((l) => l.materialId) } }, select: { id: true, code: true, name: true, unit: true } }) : [];
+  const byId = new Map(mats.map((m) => [m.id, m]));
+  return {
+    materialOperator: setting?.materialOperator ? { id: setting.materialOperator.id, userId: setting.materialOperator.userId, name: setting.materialOperator.user?.name ?? null, active: setting.materialOperator.active } : null,
+    corner: { required: setting?.cornerRequired ?? null, reason: setting?.cornerReason ?? null, confirmed: setting?.cornerRequired != null, locked: cornerLocked },
+    record: record ? {
+      version: record.version, racikan: record.racikan ?? null, note: record.note ?? null, at: record.createdAt, by: record.actorId ?? null,
+      materials: lines.map((l) => ({ materialId: l.materialId, qty: Number(l.qty), code: byId.get(l.materialId)?.code ?? null, name: byId.get(l.materialId)?.name ?? null, uom: byId.get(l.materialId)?.unit ?? null })),
+    } : null,
+  };
+}
+
+// Fase 4: fakta gerbang perakitan untuk pembaca lain (mis. putusan QC): waktu bukti Meja terakhir dibaca DI SINI (pintu pembaca bukti), lalu digabung dengan catatan komponen. Baca-saja.
+export async function loadAssemblyGateFactsForRun(client, run) {
+  const rows = await client.productionStepEvidence.findMany({ where: { runId: run.id, stepNo: { in: [6, 7] }, stepCode: { not: { startsWith: DOC_STEP_CODE_PREFIX } } }, orderBy: { createdAt: "asc" }, select: { stepNo: true, createdAt: true, payload: true } });
+  const last = (n) => { const e = rows.filter((r) => r.stepNo === n && !isSkippedEvidence(r)).at(-1); return e ? new Date(e.createdAt).getTime() : null; };
+  const facts = await loadAssemblyFacts(client, { unitId: run.unitId, runId: run.id, step6At: last(6), step7At: last(7) });
+  // jenis racikan Run ini (modul yang ada di rute): hanya fondasi / hanya lapisan / keduanya
+  let hasFoundation = true; let hasLayers = true;
+  try { const split = workshopPathOf(await pathForUnit(client, run.unit)); const steps = new Set((split?.stages || []).filter((s) => s.phase === "MODULE").map((s) => stepNoForStage(s))); hasFoundation = steps.has(6); hasLayers = steps.has(7); } catch { /* rute tak terbaca: anggap keduanya (paling ketat) */ }
+  return { ...facts, hasFoundation, hasLayers };
+}
+
+/**
+ * Tampilan PUTARAN perakitan untuk pembaca (kartu, Catatan Komponen, laporan, form putusan QC). Putaran = 1 + jumlah putusan QC GAGAL (rework). Riwayat putaran sebelumnya TETAP terlihat
+ * (rounds[]), tetapi hasil dari putaran lama TIDAK dianggap hasil putaran terbaru: current.<x>.ok = false bila catatan itu belum diperbarui setelah putusan gagal / bukti Meja terbaru.
+ * rework.open = putusan gagal sudah ada, rework belum dimulai (jendela untuk permintaan bahan rework oleh PIC Bahan); rework.issue = permintaan bahan rework yang sudah diajukan (bila ada).
+ */
+export async function loadAssemblyView(client, run) {
+  const order = await client.order.findUnique({ where: { id: run.unit.orderId }, select: { category: true } });
+  if (!(hasAssemblyGate(run) && !isAdaptationRun(run) && order?.category === "LAYANAN")) return { applicable: false };
+  const [facts, inspections] = await Promise.all([
+    loadAssemblyGateFactsForRun(client, run),
+    client.qualityInspection.findMany({ where: { runId: run.id }, orderBy: { version: "asc" }, select: { id: true, version: true, result: true, disposition: true, inspectedAt: true, createdAt: true, qcFitTest: { select: { note: true, verdict: true, referenceWeightKg: true } } } }),
+  ]);
+  const fails = inspections.filter((i) => i.result === "FAIL_REWORK");
+  const rounds = fails.map((f, i) => ({ round: i + 1, inspectionId: f.id, version: f.version, at: f.inspectedAt || f.createdAt, disposition: f.disposition ?? null, verdict: f.qcFitTest?.verdict ?? null, note: f.qcFitTest?.note ?? null, referenceWeightKg: f.qcFitTest?.referenceWeightKg ?? null }));
+  const latest = inspections.at(-1);
+  const latestAt = latest ? new Date(latest.inspectedAt || latest.createdAt).getTime() : 0;
+  const reworkOpen = !!latest && latest.result === "FAIL_REWORK" && run.currentPhase === "PROCESS" && !activeOperation(run) && !(run.operations || []).some((op) => new Date(op.createdAt).getTime() > latestAt);
+  const issue = latest?.result === "FAIL_REWORK" ? await client.materialIssue.findFirst({ where: { reworkInspectionId: latest.id, status: { not: "CANCELLED" } }, select: { id: true, issueNumber: true, status: true } }) : null;
+  const pick = (f) => (f ? { version: f.version, ok: !!f.ok } : null);
+  return {
+    applicable: true, round: fails.length + 1, rounds, hasFoundation: facts.hasFoundation, hasLayers: facts.hasLayers,
+    current: { foundationTest: pick(facts.foundationTestAfter), after: pick(facts.after), wholeTest: pick(facts.wholeTestAfter) },
+    rework: { open: reworkOpen, inspectionId: reworkOpen ? latest.id : null, issue: issue ? { issueId: issue.id, issueNumber: issue.issueNumber, status: issue.status } : null },
+  };
+}
+
+// Ringkasan pengerjaan terakhir (bukti tahap 6) untuk pembaca lain (mis. layar QC): racikan + penjelasan. Pembaca bukti tetap SATU pintu di file ini (audit pembaca P10B).
+export async function loadBuildSummary(client, runId) {
+  const [row, record] = await Promise.all([
+    client.productionStepEvidence.findFirst({ where: { runId, stepNo: 6, stepCode: { not: { startsWith: DOC_STEP_CODE_PREFIX } } }, orderBy: { version: "desc" }, select: { payload: true } }),
+    client.productionBuildMaterialRecord.findFirst({ where: { runId }, orderBy: { version: "desc" }, select: { racikan: true, note: true } }),
+  ]);
+  const ev = row && !isSkippedEvidence(row) ? row.payload : null;
+  // Racikan: dari bukti PIC Meja bila ada, kalau tidak dari catatan PIC Bahan (versi terbaru).
+  return { racikan: ev?.racikan ?? record?.racikan ?? null, note: ev?.note ?? record?.note ?? null };
+}
+
 // Bahan yang sudah DISERAHKAN Gudang untuk rencana ini (issue ISSUED), per material.
-async function issuedQtyByMaterial(tx, planId) {
+export async function issuedQtyByMaterial(tx, planId) {
   if (!planId) return new Map();
   const lines = await tx.materialIssueLine.findMany({ where: { materialIssue: { productionPlanId: planId, status: "ISSUED" } }, select: { materialId: true, issuedQty: true } });
   const map = new Map();
   for (const line of lines) map.set(line.materialId, (map.get(line.materialId) || 0) + Number(line.issuedQty || 0));
   return map;
+}
+
+// Fase 4 (gerbang perakitan): pemakaian dihitung KUMULATIF lintas putaran terhadap yang diserahkan Gudang (termasuk bahan tambahan rework) — bukti baru hanya boleh memakai SISA yang belum terpakai
+// oleh bukti sebelumnya (tahap 6/7/10, bukan yang dilewati). Tanpa gerbang: perilaku lama (per bukti vs total diserahkan).
+export function usedByEvidence(evidence) {
+  const used = new Map();
+  for (const e of evidence || []) {
+    if (![6, 7, 10].includes(e.stepNo) || isSkippedEvidence(e)) continue;
+    for (const l of e.payload?.materials || []) used.set(l.materialId, (used.get(l.materialId) || 0) + Number(l.qty || 0));
+  }
+  return used;
+}
+function remainingIssuedFor(ctx, issued) {
+  if (!ctx.state.assemblyGate) return issued;
+  const used = usedByEvidence(ctx.evidence); const out = new Map();
+  for (const [id, qty] of issued) out.set(id, Math.max(0, Math.round((qty - (used.get(id) || 0)) * 10000) / 10000));
+  return out;
 }
 
 async function writeEvidence(tx, { run, stepNo, operationRunId, stageId, payload, media, actorId, commandId }) {
@@ -198,6 +337,12 @@ function waitMessage(next) {
     case "AWAITING_WAREHOUSE": return "Barang jadi menunggu diterima Gudang.";
     case "HANDOFF_REJECTED": return "Barang jadi ditolak Gudang — tindak lanjut lewat Production Lead.";
     case "EXCEPTION_OPEN": return "Ada konflik data yang harus diselesaikan Production Lead lebih dulu.";
+    case "AFTER_PENDING": return "Menunggu PIC Meja mencatat hasil aktual susunan (Catatan Komponen › Sesudah pengerjaan) untuk putaran ini.";
+    case "FOUNDATION_NEW_TEST_PENDING": return "Menunggu PIC QC menguji fondasi baru (tinggi tanpa beban, dibebani, foto/video) sebelum lapisan disusun.";
+    case "FINISHED_TEST_PENDING": return "Menunggu PIC QC menguji kasur jadi (feel, kesesuaian keluhan awal, berat penguji, penurunan kasur utuh).";
+    case "QC_BEFORE_PENDING": return "Menunggu PIC QC mencatat uji kasur sebelum bongkar (QC sebelum bongkar).";
+    case "FOUNDATION_TEST_PENDING": return "Menunggu PIC QC mencatat uji fondasi awal.";
+    case "USAGE_NOT_RECORDED": return "Menunggu PIC Bahan mencatat pemakaian bahan pekerjaan ini (satu sumber pemakaian aktual).";
     case "COMPLETED": return "Produksi unit ini sudah selesai.";
     default: return "Tahap ini belum bisa dikerjakan sekarang.";
   }
@@ -235,7 +380,7 @@ export async function recordProductionStep(prisma, { runId, stepNo, actorId, ide
 
     const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "RECORD_PRODUCTION_STEP", aggregateId: runId, requestHash, expectedRevision: revisionExpected });
     const now = new Date();
-    const evidenceCtx = { issuedQtyByMaterial: [6, 7, 10].includes(requestedStep) ? await issuedQtyByMaterial(tx, run.plan?.id) : new Map() };
+    const evidenceCtx = { preTeardownGate: ctx.state.preTeardownGate, gateRefs: ctx.state.gateRefs, assemblyGate: ctx.state.assemblyGate, assemblyRefs: ctx.state.assemblyRefs, assemblyHasFoundation: ctx.state.assemblyHasFoundation, remainingMode: !!ctx.state.assemblyGate, issuedQtyByMaterial: [6, 7, 10].includes(requestedStep) ? remainingIssuedFor(ctx, await issuedQtyByMaterial(tx, run.plan?.id)) : new Map(), buildTrack: ctx.state.buildTrack, productFlow: ctx.state.productFlow, racikanRecorded: ctx.state.racikanRecorded, materialsByPic: !!(ctx.state.materialOperatorId || ctx.buildRecord), picRestoration: !!ctx.state.materialPicRestoration };
     let evidence = null;
     let transition = null;
     let autoStarted = null;
@@ -302,8 +447,8 @@ export async function recordProductionStep(prisma, { runId, stepNo, actorId, ide
         const op = activeOperation(run);
         const validated = validateStepEvidence(8, { payload, media }, evidenceCtx);
         await record(op.id, op.stageId, validated);
-        if (validated.payload.verdict === "PAS") {
-          transition = await applyCompleteInTx(tx, { run, op, actorId, note: `Uji tekstur PIC: PAS${validated.payload.note ? ` — ${validated.payload.note}` : ""}`, photoUrls: validated.media.map((m) => m.url) });
+        if (validated.payload.verdict === "PAS" || validated.payload.qcRef) { // gerbang perakitan: uji kasur jadi ditulis PIC QC (qcRef) — Meja hanya melanjutkan ke gerbang QC
+          transition = await applyCompleteInTx(tx, { run, op, actorId, note: validated.payload.qcRef ? `Uji kasur jadi dicatat PIC QC (versi ${validated.payload.qcRef.version})` : `Uji tekstur PIC: PAS${validated.payload.note ? ` — ${validated.payload.note}` : ""}`, photoUrls: validated.media.map((m) => m.url) });
           revision = transition.revision;
         } else {
           revision = await bumpRunRevisionInTx(tx, run);
@@ -535,7 +680,9 @@ export async function skipProductionStep(prisma, { runId, stepNo, actorId, idemp
     const prepared = await prepareSkipInTx(tx, run); // pra-cek kebijakan, konflik/drift, tahap target boleh dilewati
     const ctx = await loadStepContext(tx, run);
     const lastPreQc = ctx.split?.stages.at(-1) ?? null;
-    const covered = stepsCoveredByStage(prepared.stage, { isLastPreQc: !!lastPreQc && lastPreQc.id === prepared.stage.id });
+    const coveredAll = stepsCoveredByStage(prepared.stage, { isLastPreQc: !!lastPreQc && lastPreQc.id === prepared.stage.id });
+    // Jalur pengerjaan: hanya tahap yang BERLAKU yang ditutup SKIPPED (tahap tidak berlaku tetap NA, tidak dikarang sebagai "dilewati").
+    const covered = ctx.state.buildTrack ? coveredAll.filter((n) => applicableStepsFor(ctx.split, ctx.state.productFlow).includes(n)) : coveredAll;
     if (!covered.includes(requestedStep)) {
       throw stepError(`Tahap ${requestedStep} bukan tahap yang berikutnya. Tahap berikutnya: ${covered.join(", ") || "—"} (${prepared.stage.labelId}).`, 409, "STEP_OUT_OF_ORDER", { expectedStep: covered[0] ?? null, action: "SKIP" });
     }
@@ -577,7 +724,7 @@ export async function previewFinishProduction(prisma, runId) {
   const done = ctx.state.target?.done === true;
   const idx = done ? path.length : (curId ? path.findIndex((s) => s.id === curId) : 0);
   const remainingStages = path.slice(Math.max(0, idx)).map((s) => ({ id: s.id, code: s.code, label: s.labelId, isQcGate: !!s.requiresQc }));
-  const applicable = applicableStepsFor(ctx.split);
+  const applicable = applicableStepsFor(ctx.split, ctx.state?.productFlow ?? "KASUR");
   const recorded = new Set(ctx.evidence.map((e) => e.stepNo));
   const willSkipSteps = applicable.filter((n) => !recorded.has(n)).map((n) => ({ no: n, label: STEP_BY_NO[n].label }));
   const doneSteps = ctx.evidence.filter((e) => !isSkippedEvidence(e)).map((e) => e.stepNo);
@@ -640,7 +787,7 @@ export async function finishProduction(prisma, { runId, actorId, idempotencyKey,
     const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "FINISH_PRODUCTION", aggregateId: runId, requestHash, expectedRevision: revisionExpected });
     const now = new Date();
     const result = await applyAdaptationFinishInTx(tx, { run, actorId, now });
-    const applicable = applicableStepsFor(ctx.split);
+    const applicable = applicableStepsFor(ctx.split, ctx.state?.productFlow ?? "KASUR");
     const written = [];
     for (const no of applicable) {
       if (ctx.evidence.some((e) => e.stepNo === no)) continue;
@@ -673,6 +820,40 @@ export async function finishProduction(prisma, { runId, actorId, idempotencyKey,
     await finishCommand(tx, command, result.revision, response);
     return { replayed: false, ...response };
   }, { timeout: 30_000 });
+}
+
+// Terapkan gerbang QC sebelum bongkar pada run yang sudah berjalan (aksi EKSPLISIT, tercatat; run lama tidak pernah diubah otomatis). Hanya jalur LAYANAN; tidak mengubah tahap/bukti/catatan/stok.
+export async function applyQcGatePolicy(prisma, { runId, actorId, idempotencyKey, expectedRevision, reason = null, version = QC_GATE_POLICY_V2 }) {
+  if (!QC_GATE_POLICIES.includes(version)) throw stepError("Versi kebijakan gerbang QC tidak dikenal", 400, "QC_GATE_VERSION_INVALID");
+  if (!runId) throw stepError("runId wajib diisi", 400, "STEP_RUN_REQUIRED");
+  assertIdempotencyKey(idempotencyKey);
+  const revisionExpected = assertExpectedRevision(expectedRevision);
+  const cleanReason = typeof reason === "string" ? reason.trim().slice(0, 300) || null : null;
+  if (!cleanReason) throw stepError("Alasan penerapan gerbang QC wajib diisi", 400, "QC_GATE_REASON_REQUIRED");
+  const actor = actorId || "SYSTEM";
+  const requestHash = hash({ commandType: "APPLY_QC_GATE_POLICY", runId, expectedRevision: revisionExpected, reason: cleanReason, version });
+  return prisma.$transaction(async (tx) => {
+    const replay = await findReplay(tx, actor, idempotencyKey, requestHash);
+    if (replay) return replay;
+    const run = await loadRunForWrite(tx, runId);
+    await assertWriterEnabledForUnit(tx, run.unitId);
+    assertRunRevision(run, revisionExpected);
+    await assertNoOpenRunException(tx, run.id);
+    if (isAdaptationRun(run)) throw stepError("Run mode adaptasi tidak memakai gerbang QC sebelum bongkar", 409, "QC_GATE_NOT_APPLICABLE");
+    const ctxOrder = await tx.order.findUnique({ where: { id: run.unit.orderId }, select: { category: true } });
+    if (ctxOrder?.category !== "LAYANAN") throw stepError("Gerbang QC sebelum bongkar hanya untuk pesanan LAYANAN", 409, "QC_GATE_NOT_APPLICABLE");
+    const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "APPLY_QC_GATE_POLICY", aggregateId: runId, requestHash, expectedRevision: revisionExpected });
+    const applied = await applyQcGatePolicyInTx(tx, { run, version });
+    if (applied.changed) {
+      await recordActivity(tx, {
+        entityType: "unit", entityId: run.unitId, eventType: EVENT_TYPES.PRODUCTION_QC_GATE_APPLIED, actorId: actorId || null,
+        metadata: { unitCode: run.unit.unitCode, runId: run.id, reason: cleanReason, policy: version, previousPolicy: run.qcGatePolicyVersion || null },
+      });
+    }
+    const response = { runId, revision: applied.revision, policy: applied.changed ? version : (run.qcGatePolicyVersion || version), changed: applied.changed };
+    await finishCommand(tx, command, applied.revision, response);
+    return { replayed: false, ...response };
+  });
 }
 
 // Terapkan kebijakan adaptasi pada run yang sudah berjalan (aksi EKSPLISIT Admin/Lead; run lama tidak pernah diubah otomatis). Tidak mengubah tahap/bukti/stok.

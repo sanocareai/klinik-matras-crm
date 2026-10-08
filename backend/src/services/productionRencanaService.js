@@ -21,6 +21,7 @@ import {
 import { assertIdempotencyKey, createProductionPlanInTx, scheduleProductionPlanInTx } from "./productionPlanningCommandService.js";
 import { offerUnitCustody, openPendingArrivalIntakeV2InTx } from "./unitCustodyCommandService.js";
 import { BORN_CATEGORIES, BORN_UNIT_STATUSES, registerWorkshopBornRunInTx } from "./productionWorkshopExecutionCommandService.js";
+import { confirmBuildCornerInTx, normalizeCornerInput } from "./productionBuildCommandService.js";
 
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
 const hash = (value) => createHash("sha256").update(JSON.stringify(value ?? null)).digest("hex");
@@ -97,9 +98,11 @@ export async function planAndScheduleUnit(prisma, { unitId, actorId, idempotency
   if (!unitId || !UUID_RE.test(String(unitId))) throw rencanaError("unitId wajib diisi (UUID)", 400, "RENCANA_UNIT_ID_INVALID");
   assertIdempotencyKey(idempotencyKey);
   const data = normalizeScheduleInput(input, config); // 400 bila tanggal/meja/prioritas/PIC tidak valid — SEBELUM menyentuh DB
+  // Pilihan "Corner diperlukan?" (modal Jadwalkan jalur pengerjaan) — validasi yang SAMA dengan command Unit 360, sebelum DB; alasan wajib bila tidak diperlukan.
+  const corner = input.cornerRequired === undefined || input.cornerRequired === null ? null : normalizeCornerInput({ required: input.cornerRequired, reason: input.cornerReason });
   if (data.unschedule) throw rencanaError("Mengeluarkan dari papan dilakukan lewat jadwal rencana yang sudah ada", 400, "RENCANA_UNSCHEDULE_NOT_SUPPORTED");
   const actor = actorId || "SYSTEM";
-  const requestHash = hash({ commandType: "RENCANA_PLAN_SCHEDULE_UNIT", unitId, ...data, productionDate: formatProductionDate(data.productionDate) });
+  const requestHash = hash({ commandType: "RENCANA_PLAN_SCHEDULE_UNIT", unitId, ...data, productionDate: formatProductionDate(data.productionDate), ...(corner ? { corner } : {}) });
 
   return prisma.$transaction(async (tx) => {
     // Kunci unit LEBIH DULU, baru cari replay: dua permintaan bersamaan dengan kunci yang sama diserialkan di sini — yang kalah menunggu lalu MELIHAT command yang sudah commit
@@ -128,7 +131,13 @@ export async function planAndScheduleUnit(prisma, { unitId, actorId, idempotency
       productionDate: input.productionDate, stationCode: input.stationCode, priority: input.priority,
       workCenterId: input.workCenterId, operatorId: input.operatorId, cornerWorkCenterId: input.cornerWorkCenterId, cornerOperatorId: input.cornerOperatorId,
     });
-    const response = { ...scheduled, runId: opened.runId, onboarded: opened.onboarded, viaCustody: opened.viaCustody, origin: opened.origin, created };
+    // Corner dikonfirmasi pada rencana: SATU transaksi dengan onboarding + jadwal. Bukan jalur pengerjaan (mis. Run lain/custody/SEWA) = ditolak (422/409), tidak diam-diam diabaikan.
+    let cornerResult = null;
+    if (corner) {
+      if (opened.origin !== "WORKSHOP_BORN") throw rencanaError("Pilihan Corner hanya untuk pesanan BARU/custom yang dikerjakan langsung di workshop", 422, "RENCANA_CORNER_NOT_APPLICABLE");
+      cornerResult = await confirmBuildCornerInTx(tx, { runId: opened.runId, choice: corner, actorId, idempotencyKey: `${idempotencyKey}:corner` });
+    }
+    const response = { ...scheduled, runId: opened.runId, onboarded: opened.onboarded, viaCustody: opened.viaCustody, origin: opened.origin, created, ...(cornerResult ? { corner: cornerResult.corner } : {}) };
     await tx.v2Command.update({ where: { id: command.id }, data: { status: "APPLIED", appliedRevision: scheduled.revision, response, completedAt: new Date() } });
     return { ...response, replayed: false };
   }, { timeout: 20_000, maxWait: 10_000 });

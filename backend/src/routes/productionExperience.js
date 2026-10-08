@@ -9,16 +9,17 @@ import { prisma } from "../db.js";
 import { createProductionPlan, reorderStationPlans, scheduleProductionPlan } from "../services/productionPlanningCommandService.js";
 import { cohortStatesOf, getPlanningRefs, listRencanaEligibility, planAndScheduleUnit } from "../services/productionRencanaService.js";
 import {
-  applyAdaptationPolicy, delayProductionWork, finishProduction, previewFinishProduction, recordProductionStep, reportMaterialShortage, resolveMaterialShortage, skipProductionStep,
+  applyAdaptationPolicy, applyQcGatePolicy, delayProductionWork, finishProduction, previewFinishProduction, recordProductionStep, reportMaterialShortage, resolveMaterialShortage, skipProductionStep,
 } from "../services/productionStepCommandService.js";
 import { resumeWork } from "../services/productionResumeService.js";
+import { confirmBuildCorner, recordBuildMaterials, requestBuildReworkMaterial, setBuildMaterialOperator, setBuildPlannedBOM } from "../services/productionBuildCommandService.js";
 import {
   getProductionSettings, inspectWorkshopDefaultLocation, listServiceMappings, setAdaptationDefault, setServiceMapping, setWorkshopDefaultLocation,
 } from "../services/productionSettingsService.js";
 import { receiveMaterialReturn } from "../services/productionMaterialReturnService.js";
 import { confirmUnitArrival, listReceivingLocations } from "../services/unitCustodyCommandService.js";
 import {
-  getAndonBoard, getProductionBoard, getProductionCommandCenter, getProductionReport, getRunCard, getWarehouseProductionQueue, listWorkerQueue,
+  getAndonBoard, getProductionBoard, getProductionCommandCenter, getProductionReport, getRunCard, getWarehouseProductionQueue, listMaterialQueue, listWorkerQueue,
 } from "../services/productionExperienceReadService.js";
 import { getUnitOverview } from "../services/productionUnitOverviewService.js";
 import { listBacklog, parseBacklogQuery } from "../services/productionBacklog.js";
@@ -135,6 +136,60 @@ productionExperienceRouter.get("/units/:unitId/overview", requireAnyPermission(.
     const activeRun = await prisma.productionRun.findFirst({ where: { unitId: req.params.unitId, status: { notIn: ["COMPLETED", "CANCELLED"] } }, select: { id: true } });
     const v1Drift = activeRun ? await findV1Drift(prisma, { runId: activeRun.id, unitId: req.params.unitId }) : null; // aksi V1 saat writer OFF -> command V2 berhenti sampai rekonsiliasi
     res.json({ readerMode: "COHORT", ...overview, ownership: { v2ExecutionOwned: await isUnitV2ExecutionOwned(prisma, req.params.unitId), v1Drift } });
+  } catch (err) { handleErr(err, res); }
+});
+
+// GET /api/production-v2/worker/material — antrean PIC BAHAN (jalur pengerjaan): pekerjaan yang PIC Bahan-nya = operator yang login (ADMIN/OWNER: semuanya). Otorisasi PIC di command.
+// Didaftarkan SEBELUM /worker/:lane. Izin rute = salah satu izin produksi/gudang yang sudah ada (tidak ada izin/peran baru).
+productionExperienceRouter.get("/worker/material", requireAnyPermission(P.UNIT_STAGE_WRITE, P.INVENTORY_WRITE), async (req, res) => {
+  try {
+    const unitIds = await readerCohort();
+    if (!unitIds) return inert(res, { items: [], operator: null });
+    res.json({ readerMode: "COHORT", lane: "MATERIAL", ...(await listMaterialQueue(prisma, { unitIds, userId: req.user.id, all: hasPermission(req.user, P.PRODUCTION_EXECUTE_ANY) })) });
+  } catch (err) { handleErr(err, res); }
+});
+
+// ---- Jalur Pengerjaan Pesanan: PIC Bahan per pekerjaan, kebutuhan Corner, catatan racikan/pemakaian bahan ------------------------------------------
+// Penetapan PIC Bahan & konfirmasi Corner = izin penjadwalan (PRODUCTION_ASSIGNMENT_WRITE: Lead/Admin/Owner). Catat racikan/pemakaian = PIC Bahan yang ditugaskan (ditegakkan
+// command) atau ADMIN/OWNER lewat PRODUCTION_EXECUTE_ANY; izin rute hanya pintu masuk (tidak memberi peran baru).
+productionExperienceRouter.post("/runs/:runId/build/material-operator", requirePermission(P.PRODUCTION_ASSIGNMENT_WRITE), async (req, res) => {
+  try {
+    if (!(await assertRunInCohort(res, req.params.runId))) return;
+    res.json(await setBuildMaterialOperator(prisma, { runId: req.params.runId, operatorId: req.body?.operatorId ?? null, actorId: req.user.id, idempotencyKey: idem(req), expectedRevision: req.body?.expectedRevision }));
+  } catch (err) { handleErr(err, res); }
+});
+productionExperienceRouter.post("/runs/:runId/build/corner", requirePermission(P.PRODUCTION_ASSIGNMENT_WRITE), async (req, res) => {
+  try {
+    if (!(await assertRunInCohort(res, req.params.runId))) return;
+    res.json(await confirmBuildCorner(prisma, { runId: req.params.runId, required: req.body?.required, reason: req.body?.reason ?? null, actorId: req.user.id, idempotencyKey: idem(req), expectedRevision: req.body?.expectedRevision }));
+  } catch (err) { handleErr(err, res); }
+});
+// Rencana bahan (BOM) oleh PIC Bahan yang ditugaskan: { expectedRevision (revisi RENCANA, dari kartu), lines: [{materialId, qty}] }. Command planning yang sama; otorisasi PIC per pekerjaan di command.
+productionExperienceRouter.post("/runs/:runId/build/plan-bom", requireAnyPermission(P.UNIT_STAGE_WRITE, P.INVENTORY_WRITE), async (req, res) => {
+  try {
+    if (!(await assertRunInCohort(res, req.params.runId))) return;
+    res.json(await setBuildPlannedBOM(prisma, {
+      runId: req.params.runId, actorId: req.user.id, canExecuteAny: hasPermission(req.user, P.PRODUCTION_EXECUTE_ANY), idempotencyKey: idem(req),
+      expectedRevision: req.body?.expectedRevision, lines: req.body?.lines,
+    }));
+  } catch (err) { handleErr(err, res); }
+});
+// Permintaan bahan rework oleh PIC Bahan yang ditugaskan: { expectedRevision (revisi RUN, dari kartu), lines: [{materialId, qty}] }. Command QC yang sama; Gudang menyerahkan lewat pick yang ada.
+productionExperienceRouter.post("/runs/:runId/build/rework-material", requireAnyPermission(P.UNIT_STAGE_WRITE, P.INVENTORY_WRITE), async (req, res) => {
+  try {
+    if (!(await assertRunInCohort(res, req.params.runId))) return;
+    res.status(201).json(await requestBuildReworkMaterial(prisma, {
+      runId: req.params.runId, actorId: req.user.id, canExecuteAny: hasPermission(req.user, P.PRODUCTION_EXECUTE_ANY), idempotencyKey: idem(req), expectedRevision: req.body?.expectedRevision, lines: req.body?.lines,
+    }));
+  } catch (err) { handleErr(err, res); }
+});
+productionExperienceRouter.post("/runs/:runId/build/materials", requireAnyPermission(P.UNIT_STAGE_WRITE, P.INVENTORY_WRITE), async (req, res) => {
+  try {
+    if (!(await assertRunInCohort(res, req.params.runId))) return;
+    res.json(await recordBuildMaterials(prisma, {
+      runId: req.params.runId, actorId: req.user.id, canExecuteAny: hasPermission(req.user, P.PRODUCTION_EXECUTE_ANY), idempotencyKey: idem(req),
+      expectedRevision: req.body?.expectedRevision, racikan: req.body?.racikan ?? null, materials: req.body?.materials ?? [], note: req.body?.note ?? null,
+    }));
   } catch (err) { handleErr(err, res); }
 });
 
@@ -283,6 +338,13 @@ productionExperienceRouter.post("/runs/:runId/finish", requirePermission(P.UNIT_
 productionExperienceRouter.post("/runs/:runId/adaptation", requireAnyPermission(P.UNIT_ROUTING_WRITE, P.PRODUCTION_SETTINGS_WRITE), async (req, res) => {
   try {
     res.json(await applyAdaptationPolicy(prisma, { runId: req.params.runId, actorId: req.user.id, idempotencyKey: idem(req), expectedRevision: req.body?.expectedRevision, reason: req.body?.reason }));
+  } catch (err) { handleErr(err, res); }
+});
+
+// POST /api/production-v2/runs/:runId/qc-gate { expectedRevision, reason } — terapkan gerbang QC sebelum bongkar (Fase 2) pada SATU run LAYANAN yang sudah berjalan. EKSPLISIT + tercatat; run lama tidak berubah otomatis.
+productionExperienceRouter.post("/runs/:runId/qc-gate", requireAnyPermission(P.UNIT_ROUTING_WRITE, P.PRODUCTION_SETTINGS_WRITE), async (req, res) => {
+  try {
+    res.json(await applyQcGatePolicy(prisma, { runId: req.params.runId, actorId: req.user.id, idempotencyKey: idem(req), expectedRevision: req.body?.expectedRevision, reason: req.body?.reason, ...(req.body?.version ? { version: req.body.version } : {}) }));
   } catch (err) { handleErr(err, res); }
 });
 

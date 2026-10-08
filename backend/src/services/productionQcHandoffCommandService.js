@@ -19,15 +19,16 @@ import { createHash } from "node:crypto";
 import { recordActivity, EVENT_TYPES } from "../lib/activityLog.js";
 import { lockRowForUpdate } from "./inventoryLedger.js";
 import {
-  isUnitPathDoneInTx, recordQcFitTestInTx, reopenStageBeforeQcInTx, restoreUnitStatusInTx, startStageInTx, waiveQcGateInTx, pathForUnit,
+  isUnitPathDoneInTx, recordQcFitTestInTx, reopenStageBeforeQcInTx, restoreUnitStatusInTx, startStageInTx, waiveQcGateInTx, pathForUnit, buildTrackUnits,
 } from "./unitStageEngine.js";
 import { cancelOfferedFinishedGoodsCustodyInTx, offerFinishedGoodsCustodyInTx } from "./unitCustodyCommandService.js";
 import { assertPlanBOMLines, loadPlanForWrite, reserveSupplementalInTx } from "./productionPlanningCommandService.js";
 import { createSupplementalIssueInTx } from "./productionMaterialIssueCommandService.js";
-import { getWorkshopRun, workshopPathOf } from "./productionWorkshopExecutionCommandService.js";
+import { getWorkshopRun, hasAssemblyGate, isAdaptationRun, workshopPathOf } from "./productionWorkshopExecutionCommandService.js";
 import {
   ALLOWED_RESOLUTIONS, RUN_OWNED_STATUSES, RUN_TERMINAL_STATUSES, assertNoOpenRunException, assertRunConsistent, detectRunInconsistency,
 } from "./productionRunGuards.js";
+import { loadAssemblyGateFactsForRun, loadBuildSummary } from "./productionStepCommandService.js";
 import { assertRunPhasesTerminal, transitionPhases } from "./productionPhaseLifecycle.js";
 import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState } from "./v2FeatureFlags.js";
 
@@ -59,10 +60,13 @@ export function assertRunRevision(run, expectedRevision) {
   }
 }
 
+// Profil pemeriksaan QC menurut alur produk: KASUR (uji berat badan) | GENERIC (divan/sofa) | UNCONFIRMED (jenis belum jelas: ditahan). Jalur lama (bukan BUILD) = KASUR.
+const qcProfileOf = (info) => (!info ? "KASUR" : info.flow === "NON_KASUR" ? "GENERIC" : info.flow === "UNCONFIRMED" ? "UNCONFIRMED" : "KASUR");
 const cleanUrls = (value) => (Array.isArray(value) ? value.map((u) => String(u ?? "").trim()).filter(Boolean) : []);
 
 // Validasi + normalisasi input inspeksi (murni; diuji unit). Mengembalikan objek ternormalisasi atau melempar galat 400/422 berkode.
-export function validateInspectionInput(input = {}) {
+// generic = pemeriksaan hasil NON-kasur (divan/sofa, jalur pengerjaan): TANPA berat acuan/uji berat badan — keputusan lulus/gagal + foto + catatan saja.
+export function validateInspectionInput(input = {}, { generic = false } = {}) {
   const result = String(input.result ?? "").toUpperCase();
   if (!RESULT_TO_DB[result]) throw qcError("Hasil QC harus PASS, FAIL, atau WAIVED", 400, "QC_RESULT_INVALID");
   const photoUrls = cleanUrls(input.photoUrls);
@@ -78,9 +82,11 @@ export function validateInspectionInput(input = {}) {
   }
 
   if (photoUrls.length === 0) throw qcError("Foto bukti wajib untuk PASS/FAIL", 400, "QC_EVIDENCE_REQUIRED");
-  const weight = Number(input.referenceWeightKg);
-  if (!Number.isInteger(weight) || weight <= 0) throw qcError("Berat acuan (kg, bilangan bulat > 0) wajib diisi", 400, "QC_WEIGHT_REQUIRED");
-  out.referenceWeightKg = weight;
+  if (!generic) {
+    const weight = Number(input.referenceWeightKg);
+    if (!Number.isInteger(weight) || weight <= 0) throw qcError("Berat acuan (kg, bilangan bulat > 0) wajib diisi", 400, "QC_WEIGHT_REQUIRED");
+    out.referenceWeightKg = weight;
+  }
 
   const items = [];
   if (input.items != null) {
@@ -96,6 +102,17 @@ export function validateInspectionInput(input = {}) {
       if (!label) throw qcError(`Label butir ${code} wajib diisi`, 400, "QC_ITEMS_INVALID");
       items.push({ itemCode: code, label, result: itemResult, note: String(item?.note ?? "").trim() || null, photoUrls: cleanUrls(item?.photoUrls) });
     });
+  }
+
+  if (generic) {
+    if (input.customerPreferenceOverride || input.fitVerdict) throw qcError("Produk non-kasur tidak memakai uji berat badan/tekstur kasur", 422, "QC_GENERIC_NO_FIT");
+    if (items.some((item) => item.result === "NOT_OK") && result === "PASS") throw qcError("PASS tidak boleh memuat butir checklist NOT_OK", 422, "QC_ITEM_CONTRADICTS");
+    if (result === "PASS") return { ...out, generic: true, fitVerdict: null, customerPreferenceOverride: null, educationGiven: false, items, supplementalMaterials: [] };
+    if (note.length < 3) throw qcError("Catatan temuan wajib diisi untuk FAIL (minimal 3 karakter)", 400, "QC_NOTE_REQUIRED");
+    if (!input.reworkStageId) throw qcError("Tahap rework wajib ditentukan secara eksplisit", 400, "QC_REWORK_STAGE_REQUIRED");
+    const supplementalMaterials = Array.isArray(input.supplementalMaterials) ? input.supplementalMaterials.map((l) => ({ materialId: l?.materialId, qty: Number(l?.qty) })) : [];
+    if (supplementalMaterials.length) assertPlanBOMLines(supplementalMaterials);
+    return { ...out, generic: true, fitVerdict: null, reworkStageId: input.reworkStageId, items, supplementalMaterials };
   }
 
   if (result === "PASS") {
@@ -188,7 +205,13 @@ export async function recordQualityInspection(prisma, { runId, actorId, canInspe
   if (!runId) throw qcError("runId wajib diisi", 400, "QC_RUN_ID_REQUIRED");
   assertIdempotencyKey(idempotencyKey);
   const revisionExpected = assertExpectedRevision(expectedRevision);
-  const data = validateInspectionInput(input);
+  // Profil QC ditentukan SERVER dari jenis produk kanonis (bukan dari isian klien): NON-kasur pada jalur pengerjaan = pemeriksaan hasil tanpa uji berat badan.
+  const pre = await prisma.productionRun.findUnique({ where: { id: runId }, select: { unitId: true } });
+  const preInfo = pre ? (await buildTrackUnits(prisma, [pre.unitId])).get(pre.unitId) : null;
+  // Jenis produk belum jelas: TIDAK ada uji berat badan kasur maupun pemeriksaan generik (tanpa fallback ke kasur) sampai jenis dikonfirmasi pada order.
+  if (preInfo?.flow === "UNCONFIRMED" && String(input.result ?? "").toUpperCase() !== "WAIVED") throw qcError(preInfo.problem || "Jenis produk belum jelas — konfirmasi jenis produk dulu", 409, "QC_PRODUCT_TYPE_UNCONFIRMED");
+  const generic = preInfo?.flow === "NON_KASUR";
+  const data = validateInspectionInput(input, { generic });
   if (data.result === "WAIVED" ? !canWaive : !canInspect) {
     throw qcError(data.result === "WAIVED" ? "Hanya pihak berwenang (QC_WAIVE) yang boleh mem-waive QC" : "Anda tidak berwenang memutuskan hasil QC (QC_WRITE)", 403, data.result === "WAIVED" ? "QC_WAIVE_FORBIDDEN" : "QC_WRITE_REQUIRED");
   }
@@ -204,6 +227,12 @@ export async function recordQualityInspection(prisma, { runId, actorId, canInspe
     assertRunConsistent(run, run.unit);
     await assertNoOpenRunException(tx, run.id);
     assertRunRevision(run, revisionExpected);
+    // Jalur pengerjaan: pengujian khusus kasur DITAHAN sampai jenis produk kanonis jelas; jalur setelah QC (Corner) harus sudah dikonfirmasi pada rencana sebelum QC lulus/di-waive.
+    const buildInfo = (await buildTrackUnits(tx, [run.unitId])).get(run.unitId);
+    if (buildInfo) {
+      if (buildInfo.flow === "UNCONFIRMED" && data.result !== "WAIVED") throw qcError(buildInfo.problem || "Jenis produk belum jelas — konfirmasi jenis produk dulu", 409, "QC_PRODUCT_TYPE_UNCONFIRMED");
+      if (buildInfo.cornerRequired == null && data.result !== "FAIL") throw qcError("Kebutuhan Corner belum dikonfirmasi pada rencana — Lead perlu mengonfirmasinya sebelum QC diputuskan", 409, "QC_CORNER_NOT_CONFIRMED");
+    }
     const process = phaseOf(run, "PROCESS");
     if (run.status !== "ACTIVE" || run.currentPhase !== "QC" || process?.status !== "COMPLETED" || phaseOf(run, "QC")?.status !== "NOT_STARTED" || activeOperation(run)) {
       throw qcError("Inspeksi QC hanya untuk run yang sedang menunggu QC (semua tahap sebelum gerbang selesai)", 409, "QC_NOT_AWAITING", { currentPhase: run.currentPhase, status: run.status });
@@ -211,6 +240,14 @@ export async function recordQualityInspection(prisma, { runId, actorId, canInspe
     const path = await pathForUnit(tx, run.unit);
     const { qcStage } = workshopPathOf(path);
     if (run.unit.currentStageId !== qcStage.id) throw qcError("Unit tidak berada di gerbang QC pada ledger tahap", 409, "QC_GATE_MISMATCH");
+
+    // Fase 4 (LAYANAN, Run V2, bukan adaptasi): putusan SESUAI (PASS) hanya setelah PIC QC mencatat uji kasur jadi untuk putaran perakitan ini. FAIL (rework) dan WAIVED (kewenangan khusus) tidak diblokir.
+    if (data.result === "PASS" && hasAssemblyGate(run) && !isAdaptationRun(run) && run.unit.order?.category === "LAYANAN") {
+      const facts = await loadAssemblyGateFactsForRun(tx, run);
+      if (facts.hasFoundation && !facts.foundationTestAfter?.ok) throw qcError("Uji fondasi baru belum dicatat PIC QC untuk putaran ini — catat dulu sebelum memutuskan Lulus", 409, "QC_FOUNDATION_NEW_TEST_REQUIRED");
+      if (!facts.after?.ok) throw qcError("Hasil aktual susunan belum dicatat untuk putaran ini — PIC Meja perlu mencatatnya sebelum Lulus", 409, "QC_AFTER_REQUIRED");
+      if (!facts.wholeTestAfter?.ok) throw qcError("Uji kasur jadi belum dicatat PIC QC untuk putaran ini — catat dulu di Aplikasi PIC QC sebelum memutuskan Sesuai", 409, "QC_FINISHED_TEST_REQUIRED");
+    }
 
     const now = new Date();
     const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "RECORD_QC", aggregateId: runId, requestHash, expectedRevision: revisionExpected });
@@ -227,6 +264,7 @@ export async function recordQualityInspection(prisma, { runId, actorId, canInspe
       fit = await viaEngine(() => recordQcFitTestInTx(tx, run.unitId, qcStage.id, {
         actorId, verdict: data.fitVerdict, referenceWeightKg: data.referenceWeightKg, customerPreferenceOverride: data.customerPreferenceOverride,
         educationGiven: data.educationGiven, note: data.note || null, photoUrls: data.photoUrls, reworkStageId: data.result === "FAIL" ? data.reworkStageId : null, deferReady: true,
+        ...(data.generic ? { generic: true, genericPassed: data.result === "PASS" } : {}),
       }));
       if ((data.result === "PASS") !== (fit.result === "PASSED")) throw qcError("Hasil uji berat badan tidak konsisten dengan keputusan QC", 422, "QC_VERDICT_INVALID");
       reworkStage = fit.reworkStage ?? null;
@@ -310,7 +348,8 @@ async function openSupplementalMaterialInTx(tx, { run, inspectionId, lines, acto
 }
 
 // Tambah bahan tambahan SETELAH FAIL tetapi SEBELUM rework dimulai (mis. stok baru tersedia / kebutuhan baru terlihat).
-export async function requestReworkMaterial(prisma, { runId, actorId, idempotencyKey, expectedRevision, lines }) {
+// `authorize` (opsional): dipanggil di dalam transaksi setelah run terkunci & revisi cocok — dipakai PIC Bahan per pekerjaan (aturan akses sendiri) tanpa membuat penulis permintaan bahan kedua.
+export async function requestReworkMaterial(prisma, { runId, actorId, idempotencyKey, expectedRevision, lines, authorize = null }) {
   if (!runId) throw qcError("runId wajib diisi", 400, "QC_RUN_ID_REQUIRED");
   assertIdempotencyKey(idempotencyKey);
   const revisionExpected = assertExpectedRevision(expectedRevision);
@@ -328,6 +367,7 @@ export async function requestReworkMaterial(prisma, { runId, actorId, idempotenc
     assertRunConsistent(run, run.unit);
     await assertNoOpenRunException(tx, run.id);
     assertRunRevision(run, revisionExpected);
+    if (authorize) await authorize(tx, run);
     const latest = run.inspections[0];
     if (!latest || latest.result !== "FAIL_REWORK" || run.currentPhase !== "PROCESS" || activeOperation(run)) {
       throw qcError("Bahan tambahan hanya dapat diajukan untuk rework yang belum dimulai (setelah QC FAIL)", 409, "QC_NOT_IN_REWORK");
@@ -665,12 +705,16 @@ export async function listQcQueue(prisma, { tab = "AWAITING_QC", unitIds = null,
     },
     orderBy: [{ updatedAt: "asc" }, { id: "asc" }], take: 200,
   });
-  return runs
+  const selected = runs
     .map((run) => ({ run, state: stateOf(run) }))
     .filter(({ state }) => state === tab)
-    .slice(0, Math.min(Math.max(Number(limit) || 100, 1), 200))
+    .slice(0, Math.min(Math.max(Number(limit) || 100, 1), 200));
+  const builds = await buildTrackUnits(prisma, selected.map(({ run }) => run.unitId));
+  return selected
     .map(({ run, state }) => ({
       runId: run.id, revision: run.revision, state, origin: run.origin, currentPhase: run.currentPhase,
+      // Jalur pengerjaan (BARU/custom): profil QC dari jenis produk kanonis — KASUR (uji berat badan) atau GENERIC (pemeriksaan hasil divan/sofa, tanpa uji berat badan).
+      track: builds.has(run.unitId) ? "BUILD" : "RESTORATION", qcProfile: qcProfileOf(builds.get(run.unitId)), productClass: builds.get(run.unitId)?.productClass ?? null, productClassProblem: builds.get(run.unitId)?.problem ?? null, cornerRequired: builds.get(run.unitId)?.cornerRequired ?? null,
       unit: { id: run.unit.id, unitCode: run.unit.unitCode, status: run.unit.status, orderNumber: run.unit.order?.orderNumber ?? null, category: run.unit.order?.category ?? null },
       workCenter: run.plan?.workCenter ?? null, operator: run.plan?.operator ? { id: run.plan.operator.id, name: run.plan.operator.user?.name ?? null } : null,
       lastInspection: run.inspections[0] ? { version: run.inspections[0].version, result: run.inspections[0].result, disposition: run.inspections[0].disposition, inspectedAt: run.inspections[0].inspectedAt } : null,
@@ -702,8 +746,13 @@ export async function getQcRun(prisma, runId) {
   });
   const found = detectRunInconsistency({ run, unit: run.unit });
   const conflictOpen = run.exceptions.find((e) => e.status === "OPEN") || null;
+  const build = (await buildTrackUnits(prisma, [run.unitId])).get(run.unitId) ?? null;
+  const buildSummary = build ? await loadBuildSummary(prisma, runId) : null;
+  const orderSpec = build ? await prisma.order.findFirst({ where: { units: { some: { id: run.unitId } } }, select: { notes: true, productType: true, items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } } } }) : null;
   return {
     ...base, state: stateOf({ ...run, exceptions: run.exceptions }),
+    track: build ? "BUILD" : "RESTORATION", qcProfile: qcProfileOf(build), productClass: build?.productClass ?? null, productClassProblem: build?.problem ?? null, cornerRequired: build?.cornerRequired ?? null, cornerReason: build?.cornerReason ?? null,
+    ...(build ? { racikan: buildSummary?.racikan ?? null, buildNote: buildSummary?.note ?? null, salesServices: (orderSpec?.items || []).map((i) => i.layananName), salesNotes: orderSpec?.notes ?? null } : {}),
     inspections: run.inspections.map((i) => ({
       id: i.id, version: i.version, result: i.result, disposition: i.disposition, overrideReason: i.overrideReason, inspectedAt: i.inspectedAt, inspector: nameById.get(i.inspectorId) ?? null, qcFitTestId: i.qcFitTestId,
       items: i.items.map((item) => ({ itemCode: item.itemCode, label: item.label, result: item.result, note: item.note, photoUrls: item.photoUrls })),

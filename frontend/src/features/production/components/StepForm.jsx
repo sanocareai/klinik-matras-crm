@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Check, Mic, MicOff } from "lucide-react";
-import { CORNER_CHECKLIST, MATTRESS_STYLES, OLD_MATERIALS, TEXTURE_VERDICTS } from "@/features/production/experience.js";
+import { CORNER_CHECKLIST, MATTRESS_STYLES, OLD_MATERIALS, TEXTURE_VERDICTS , productFlowOf, stepMaterialsByPic } from "@/features/production/experience.js";
 
 // Isian per tahap (mobile-first, target sentuh >= 44px). `form` dikelola induk supaya ikut draft lokal.
 const field = "block w-full rounded-btn border border-line bg-surface px-3 py-3 text-[15px] text-ink placeholder:text-ink3 focus:outline-none focus:ring-2 focus:ring-accent/40";
@@ -70,7 +70,7 @@ function useSpeech(onText) {
   return { supported: true, listening, toggle };
 }
 
-function MaterialLines({ issued, value = [], onChange, emptyText }) {
+export function MaterialLines({ issued, value = [], onChange, emptyText }) {
   if (!issued?.length) return <p className="rounded-btn bg-orangebg px-3 py-3 text-[13px] text-orange">{emptyText}</p>;
   const qtyOf = (id) => value.find((m) => m.materialId === id)?.qty ?? "";
   const set = (id, qty) => {
@@ -83,7 +83,7 @@ function MaterialLines({ issued, value = [], onChange, emptyText }) {
         <li key={m.materialId} className="flex items-center gap-3 rounded-btn bg-inset px-3 py-2">
           <div className="min-w-0 flex-1">
             <p className="truncate text-[14px] font-semibold text-ink">{m.name}</p>
-            <p className="text-[12px] text-ink3">{m.code} · diserahkan {m.qty} {String(m.uom || "").toLowerCase()}</p>
+            <p className="text-[12px] text-ink3">{m.code} · diserahkan {m.qty} {String(m.uom || "").toLowerCase()}{m.remainingQty != null && m.remainingQty !== m.qty ? ` · sisa ${m.remainingQty}` : ""}</p>
           </div>
           <input aria-label={`Jumlah ${m.name} dipakai`} inputMode="decimal" placeholder="0" className="h-12 w-20 rounded-btn border border-line bg-surface px-2 text-center text-[15px] text-ink"
             value={qtyOf(m.materialId)} onChange={(e) => set(m.materialId, e.target.value)} />
@@ -100,6 +100,8 @@ export function StepForm({ stepNo, form, setForm, card, next }) {
   const speech = useSpeech((text) => setForm((prev) => ({ ...prev, diagnosis: `${prev.diagnosis ? `${prev.diagnosis.trim()} ` : ""}${text}`, inputMethod: "VOICE" })));
   const weight = card?.customer?.weightKg;
   const issued = card?.issuedMaterials || [];
+  // Berat penguji yang TAMPIL (bawaan = berat customer) harus ikut tersimpan di isian: tanpa ini kolom terlihat terisi tetapi validasi/pengiriman menganggapnya kosong.
+  useEffect(() => { if ((stepNo === 4 || stepNo === 8) && weight && form.testerWeightKg === undefined) setForm((prev) => (prev.testerWeightKg === undefined ? { ...prev, testerWeightKg: String(weight) } : prev)); }, [stepNo, weight, form.testerWeightKg, setForm]);
 
   switch (stepNo) {
     case 1:
@@ -121,7 +123,14 @@ export function StepForm({ stepNo, form, setForm, card, next }) {
       const selected = form.oldMaterials || [];
       return (
         <div className="space-y-2">
-          <p className={labelCls}>Material lama yang ditemukan</p>
+          {next?.gated && (
+            <p data-testid="layers-gate-note" className={`m-0 rounded-btn px-3 py-2 text-[13px] ${next.layersRequired ? "bg-orangebg text-orange" : "bg-greenbg text-green"}`}>
+              {next.layersRequired
+                ? "Catat susunan lapisan awal (atas ke bawah, per lapis: bahan, ketebalan, kondisi) di bagian Catatan Komponen sebelum menyelesaikan bongkar. Foto/video di bawah menjadi dokumentasi isi kasur untuk customer."
+                : "Lapisan awal sudah tercatat di Catatan Komponen. Lampirkan foto/video isi kasur yang ditemukan."}
+            </p>
+          )}
+          <p className={labelCls}>{next?.gated ? "Material lama yang ditemukan (opsional)" : "Material lama yang ditemukan"}</p>
           <div className="grid grid-cols-2 gap-2">
             {OLD_MATERIALS.map((m) => (
               <Toggle key={m.value} checked={selected.includes(m.value)} onChange={(v) => set({ oldMaterials: v ? [...selected, m.value] : selected.filter((x) => x !== m.value) })}>{m.label}</Toggle>
@@ -170,15 +179,36 @@ export function StepForm({ stepNo, form, setForm, card, next }) {
         </div>
       );
     case 6:
-    case 7:
+    case 7: {
+      const byPic = stepMaterialsByPic(card, stepNo);
+      const flow6 = stepNo === 6 && card?.track === "BUILD" ? productFlowOf(card) : null;
       return (
         <div className="space-y-3">
-          <p className={labelCls}>Bahan dari Gudang yang dipakai</p>
-          <MaterialLines issued={issued} value={form.materials} onChange={(materials) => set({ materials })} emptyText="Belum ada bahan yang diserahkan Gudang untuk unit ini." />
-          <div><label htmlFor="s67" className={labelCls}>{stepNo === 6 ? "Penjelasan isi fondasi" : "Catatan lapisan (opsional)"}</label>
+          {byPic ? (
+            <div data-testid="by-pic-note" className="space-y-1 rounded-btn bg-inset px-3 py-2 text-[13px] text-ink2">
+              <p className="m-0 font-bold text-ink">{card.track === "BUILD" ? "Racikan & pemakaian bahan" : "Pemakaian bahan"} dicatat PIC Bahan{(card.build?.materialOperator?.name || card.materialPic?.materialOperator?.name) ? `: ${card.build?.materialOperator?.name || card.materialPic?.materialOperator?.name}` : ""}</p>
+              {card.track === "BUILD" ? (card.racikan ? <p className="m-0">{[card.racikan.fondasi && `Fondasi — ${card.racikan.fondasi}`, card.racikan.lapisan && `Lapisan — ${card.racikan.lapisan}`].filter(Boolean).join(" · ")}</p> : <p className="m-0 text-orange">Racikan belum dicatat PIC Bahan.</p>) : <p className="m-0" data-testid="by-pic-racikan-note">Racikan fondasi/lapisan ada di Catatan Komponen (Racikan rencana) — ditentukan PIC Meja/PIC QC.</p>}
+              {(card.build ?? card.materialPic)?.record?.materials?.length > 0 && <p className="m-0" data-testid="by-pic-usage">Bahan dipakai: {(card.build ?? card.materialPic).record.materials.map((m) => `${m.name || m.code} ${m.qty}`).join(", ")}</p>}
+            </div>
+          ) : (
+            <>
+              <p className={labelCls}>{card?.track === "BUILD" ? "Bahan dari Gudang yang dipakai (opsional)" : "Bahan dari Gudang yang dipakai"}</p>
+              <MaterialLines issued={issued} value={form.materials} onChange={(materials) => set({ materials })} emptyText="Belum ada bahan yang diserahkan Gudang untuk unit ini." />
+            </>
+          )}
+          {flow6 === "UNCONFIRMED" && <p data-testid="unconfirmed-note" className="m-0 rounded-btn bg-orangebg px-3 py-2 text-[13px] text-orange">Jenis produk belum jelas pada order — catatan dan dokumentasi umum tetap bisa disimpan. Racikan dan pengujian khusus kasur menunggu Sales mengonfirmasi jenis produk.</p>}
+          {!byPic && flow6 === "KASUR" && (
+            <div className="space-y-2" data-testid="racikan-fields">
+              <p className={labelCls}>Racikan kasur (fondasi &amp; lapisan)</p>
+              <input aria-label="Racikan fondasi" className={field} placeholder="Fondasi — mis. pocket spring 25 cm + penguat pinggir" value={form.racikanFondasi || ""} onChange={(e) => set({ racikanFondasi: e.target.value })} />
+              <input aria-label="Racikan lapisan" className={field} placeholder="Lapisan — mis. latex 3 cm + busa D23 2 cm" value={form.racikanLapisan || ""} onChange={(e) => set({ racikanLapisan: e.target.value })} />
+            </div>
+          )}
+          <div><label htmlFor="s67" className={labelCls}>{stepNo === 6 ? (card?.track === "BUILD" ? "Penjelasan pengerjaan pesanan" : "Penjelasan isi fondasi") : "Catatan lapisan (opsional)"}</label>
             <textarea id="s67" rows={2} className={field} value={form.note || ""} onChange={(e) => set({ note: e.target.value })} /></div>
         </div>
       );
+    }
     case 8:
       return (
         <div className="space-y-3">
@@ -216,7 +246,7 @@ export function StepForm({ stepNo, form, setForm, card, next }) {
     case 12:
       return (
         <div className="space-y-2">
-          <Toggle checked={form.confirm} onChange={(v) => set({ confirm: v })}>Jahitan selesai & kasur siap diserahkan ke Gudang</Toggle>
+          <Toggle checked={form.confirm} onChange={(v) => set({ confirm: v })}>{card?.track === "BUILD" ? "Pekerjaan selesai & produk siap diserahkan ke Gudang" : "Jahitan selesai & kasur siap diserahkan ke Gudang"}</Toggle>
           <p className="text-[12.5px] text-ink3">Setelah dikonfirmasi, unit ditawarkan ke Gudang (belum siap kirim sampai Gudang menerima). Laporan untuk Sales disiapkan otomatis.</p>
         </div>
       );

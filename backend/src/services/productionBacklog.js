@@ -13,6 +13,7 @@ import { loadRuns, viewsOf } from "./productionExperienceReadService.js";
 import { signUnitPhotoUrlsBulk } from "../routes/productionUnitPhoto.js";
 import { diagnoseUnitPhotosBulk } from "./productionUnitPhotoService.js";
 import { RENCANA_ACTION, photoNoteOf } from "../lib/domain/productionRencana.js";
+import { BUILD_CATEGORIES, classifyProduct } from "../lib/domain/productionBuildTrack.js";
 import { classifyUnitRow, cohortStatesOf } from "./productionRencanaService.js";
 import { loadV2Flags } from "./v2FeatureFlags.js";
 
@@ -95,7 +96,8 @@ export async function listBacklog(prisma, { cohortUnitIds = null, states = null,
     where: { id: { in: pageIds } },
     select: {
       id: true, unitCode: true, orderId: true, status: true, merk: true, ukuran: true, createdAt: true,
-      order: { select: { orderNumber: true, status: true, items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } }, customer: { select: { name: true, city: true } } } },
+      order: { select: { orderNumber: true, status: true, category: true, productLine: true, productType: true, items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } }, customer: { select: { name: true, city: true } } } },
+      jobUnits: { where: { job: { type: "PICKUP" } }, select: { id: true }, take: 1 }, // pickup nyata = jalur custody (bukan lahir di workshop)
       productionRunsV2: { where: { status: { notIn: TERMINAL_RUN } }, select: { id: true, origin: true, status: true, custodyHandoffs: { select: { direction: true, status: true } } }, take: 1, orderBy: { createdAt: "desc" } },
     },
   }) : [];
@@ -119,7 +121,11 @@ export async function listBacklog(prisma, { cohortUnitIds = null, states = null,
       unitId: u.id, schedulable: !!view, view,
       // Aksi berikutnya yang JELAS per kartu (server = otoritas): SCHEDULE | ONBOARD_SCHEDULE (Jadwalkan membuka Run) | AWAIT_ACTIVATION | WAIT_PICKUP | EXCEPTION.
       // `onboardable` = kartu boleh dijadwalkan/diseret walau belum punya Run; `view` null — formulir jadwal mengirim unitId.
-      rencana: { action: view ? RENCANA_ACTION.SCHEDULE : cls.action, code: cls.code, message: cls.message, next: cls.next, onboardable: !view && cls.action === RENCANA_ACTION.ONBOARD_SCHEDULE },
+      rencana: {
+        action: view ? RENCANA_ACTION.SCHEDULE : cls.action, code: cls.code, message: cls.message, next: cls.next, onboardable: !view && cls.action === RENCANA_ACTION.ONBOARD_SCHEDULE,
+        // Jalur Pengerjaan Pesanan (BARU/custom, lahir di workshop): modal Jadwalkan menampilkan "Corner diperlukan?" + kebutuhan konfirmasi jenis produk. null = bukan jalur ini.
+        build: !view && cls.action === RENCANA_ACTION.ONBOARD_SCHEDULE && BUILD_CATEGORIES.includes(u.order?.category) && !(u.jobUnits?.length) ? (() => { const p = classifyProduct({ productLine: u.order?.productLine, productType: u.order?.productType }); return { product: { class: p.productClass, flow: p.flow, problem: p.problem } }; })() : null,
+      },
       card: {
         photoNote: photoNoteOf({ photoUrl: photos.get(u.id) ?? null, diagnosis: photoDiag.get(u.id) }),
         unit: { id: u.id, unitCode: u.unitCode, merk: u.merk, ukuran: u.ukuran, photoUrl: photos.get(u.id) ?? null },

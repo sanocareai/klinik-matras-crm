@@ -119,7 +119,7 @@ test("A. Satu catatan kanonis per unit: Meja menyimpan Lapisan+Fondasi sebelum (
   assert.deepEqual([c.material.kind, c.condition], ["UNKNOWN", "TIDAK_DIKETAHUI"]);
   assert.equal(reads.meja.sections.FOUNDATION_BEFORE.data.system, "BONNELL");
   assert.equal(reads.meja.sections.AFTER, null, "Sesudah belum dicatat — tidak dikarang");
-  assert.deepEqual(reads.meja.comparison.status, { layersBefore: true, foundationBefore: true, after: false });
+  assert.deepEqual(reads.meja.comparison.status, { layersBefore: true, foundationBefore: true, after: false, plan: false });
   assert.equal(reads.meja.comparison.gaps.length, 1); assert.match(reads.meja.comparison.gaps[0].text, /Sesudah pengerjaan belum dicatat/);
   assert.ok(reads.meja.comparison.layers.every((r) => r.outcome === "UNRECORDED" && r.final === null), "tanpa hasil akhir palsu");
   assert.equal(await testPrisma.unitComponentEntry.count({ where: { unitId: u.unit.id } }), 2);
@@ -137,7 +137,7 @@ test("B. Sesudah (dipertahankan/diperbaiki/diganti) + perbandingan Sebelum→Ses
   ok(await put(w.meja, u.unit.id, "LAYERS_BEFORE", { expectedVersion: 0, data: LAYERS(w) }));
   // hanya Sebelum-lapisan: fondasi & sesudah belum dicatat
   let c = ok(await get(w.doc, u.unit.id), 200).comparison;
-  assert.deepEqual(c.status, { layersBefore: true, foundationBefore: false, after: false }); assert.equal(c.gaps.length, 2);
+  assert.deepEqual(c.status, { layersBefore: true, foundationBefore: false, after: false, plan: false }); assert.equal(c.gaps.length, 2);
   ok(await put(w.meja, u.unit.id, "FOUNDATION_BEFORE", { expectedVersion: 0, data: FOUNDATION(w) }));
   const pa = await photo(w.corner, u.unit.id);
   const after = ok(await put(w.corner, u.unit.id, "AFTER", { expectedVersion: 0, data: AFTER(w), media: [pa] }));
@@ -259,7 +259,7 @@ test("G. Izin: Meja/Corner/Lead/Dokumentasi/Admin boleh menulis; Sales/Gudang/Dr
   const salesRead = await get(w.sales, u.unit.id);
   if (salesRead.status === 200) { assert.equal(salesRead.body.canWrite, false); assert.equal(salesRead.body.suggestions, undefined, "saran bahan hanya untuk penulis"); }
   const cat = ok(await w.meja.api.get(`${CN}/materials?q=busa`), 200);
-  assert.ok(cat.items.length >= 1); assert.deepEqual(Object.keys(cat.items[0]).sort(), ["code", "kind", "label", "materialId", "name", "unit"], "tanpa stok/harga");
+  assert.ok(cat.items.length >= 1); assert.deepEqual(Object.keys(cat.items[0]).sort(), ["code", "itemGroup", "kind", "label", "materialId", "name", "supplier", "unit"], "tanpa stok/harga (supplier & kelompok = atribut katalog Fase 3)");
   assert.equal((await get(w.meja, u.unit.id)).body.canWrite, true);
   assert.equal((await w.meja.api.get(`${CN}/units/not-a-uuid`)).status, 400);
 });

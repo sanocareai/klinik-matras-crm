@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestUser } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
+import * as PT from "./setup/preTeardown.js";
 import { makeClient } from "./setup/httpClient.js";
 import { V2_FLAGS } from "../../src/services/v2FeatureFlags.js";
 
@@ -90,12 +91,15 @@ async function reachStep5(w, unit) {
   const s1 = await w.nadya.api.post(`${V2}/runs/${run.id}/steps/1`, { expectedRevision: 1, workCenterId: w.wc, payload: { conditionConfirmed: true }, media: [media1] }, key(`p9d-s1-${++seq}`));
   assert.equal(s1.status, 200, JSON.stringify(s1.body));
   const media2 = await mediaUpload(w.nadya, run.id, true);
+  await PT.qcWhole(server, w.nadya, run.id); // fase 2: catatan PIC QC / lapisan awal (gerbang tahap 2)
   const s2 = await w.nadya.api.post(`${V2}/runs/${run.id}/steps/2`, { expectedRevision: s1.body.revision, workCenterId: w.wc, payload: { feelNote: "Terasa keras" }, media: [media2] }, key(`p9d-s2-${++seq}`));
   assert.equal(s2.status, 200, JSON.stringify(s2.body));
   const media3 = await mediaUpload(w.nadya, run.id, false);
+  await PT.layersBefore(server, w.nadya, run.id); // fase 2: catatan PIC QC / lapisan awal (gerbang tahap 3)
   const s3 = await w.nadya.api.post(`${V2}/runs/${run.id}/steps/3`, { expectedRevision: s2.body.revision, workCenterId: w.wc, payload: { oldMaterials: ["PER"], note: "per keropos" }, media: [media3] }, key(`p9d-s3-${++seq}`));
   assert.equal(s3.status, 200, JSON.stringify(s3.body));
   const media4 = await mediaUpload(w.nadya, run.id, true);
+  await PT.foundationTest(server, w.nadya, run.id); // fase 2: catatan PIC QC / lapisan awal (gerbang tahap 4)
   const s4 = await w.nadya.api.post(`${V2}/runs/${run.id}/steps/4`, { expectedRevision: s3.body.revision, workCenterId: w.wc, payload: { heightBeforeCm: 25, heightCompressedCm: 15, testerWeightKg: 70 }, media: [media4] }, key(`p9d-s4-${++seq}`));
   assert.equal(s4.status, 200, JSON.stringify(s4.body));
   return testPrisma.productionRun.findUniqueOrThrow({ where: { id: run.id } });

@@ -26,7 +26,7 @@ const flat = (m) => m.flatMap((s) => s.labels);
 test("struktur final: urutan section & menu persis sesuai keputusan", () => {
   assert.deepEqual(PRODUCTION_NAV.map((s) => [s.section, s.items.map((i) => i.label)]), [
     ["OPERASIONAL", ["Ringkasan", "Order Produksi", "Status Produksi", "Rencana Produksi", "Bahan Produksi"]], // Slice 1: menu QC disembunyikan sementara (rute & halaman tetap ada)
-    ["MODE KERJA", ["Aplikasi Meja", "Aplikasi Corner", "Aplikasi Dokumentasi", "Andon TV"]],
+    ["MODE KERJA", ["Aplikasi Meja", "Aplikasi Corner", "Aplikasi Dokumentasi", "Aplikasi PIC QC", "Andon TV"]],
     ["KONTROL & LAPORAN", ["KPI & Laporan", "Biaya Produksi", "Komplain & Revisi"]],
     ["ADMINISTRASI", ["Pengaturan"]],
   ]);
@@ -53,10 +53,12 @@ test("ikon: satu ikon per menu, tidak ada duplikat, dan semuanya terpetakan di L
 
 test("matriks menu per peran (ADMIN/OWNER, Lead, Operator, QC, Gudang, Dokumenter, Finance, Sales)", () => {
   const ALL = flat(menuFor(["ADMIN"]));
-  assert.equal(ALL.length, 13, "ADMIN: seluruh 13 menu (tanpa QC yang disembunyikan sementara)");
+  assert.equal(ALL.length, 14, "ADMIN: seluruh 14 menu (menu QC desktop tetap disembunyikan; +Antrean PIC QC, Fase 2 LAYANAN)");
   assert.deepEqual(flat(menuFor(["OWNER"])), ALL, "OWNER = ADMIN");
   // Production Lead: semuanya (KPI, Biaya, Pengaturan sesuai gerbang peran)
-  assert.deepEqual(flat(menuFor(["PRODUCTION_LEAD"])), ALL);
+  // (kecuali "Antrean PIC QC": izin tulis uji = QC_WRITE/PRODUCTION_EXECUTE_ANY, yang Lead TIDAK punya — tidak ditawari tombol yang pasti 403)
+  assert.deepEqual(flat(menuFor(["PRODUCTION_LEAD"])), ALL.filter((l) => l !== "Aplikasi PIC QC"));
+  assert.ok(flat(menuFor(["QC_LEAD"])).includes("Aplikasi PIC QC") && !flat(menuFor(["QC_LEAD"])).includes("Quality Control"), "PIC QC melihat antrean sendiri; menu QC desktop tetap tersembunyi");
   // Operator / QC / Gudang / Dokumenter: tanpa KPI & Laporan, Biaya Produksi, Pengaturan; section ADMINISTRASI tidak muncul sama sekali
   for (const role of ["PRODUCTION_WORKER", "QC_LEAD", "WAREHOUSE", "PRODUCTION_DOCUMENTER"]) {
     const m = menuFor([role]);

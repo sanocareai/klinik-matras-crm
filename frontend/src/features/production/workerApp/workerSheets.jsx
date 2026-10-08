@@ -6,7 +6,7 @@ import EvidenceCapture from "@/features/production/components/EvidenceCapture.js
 import StepForm from "@/features/production/components/StepForm.jsx";
 import { DiagnosisWizard } from "@/features/production/DiagnosisWizard.jsx";
 import {
-  MEDIA_RULES, STEP_BY_NO, actionLabel, buildStepPayload, clearDraft, createIntentKeys, friendlyError, isRetryableError, loadDraft, saveDraft, validateStepForm,
+  BUILD_STEP_KASUR_HINT, stepMaterialsByPic, mediaRuleFor, productFlowOf, stepOf, actionLabel, buildStepPayload, clearDraft, createIntentKeys, friendlyError, isRetryableError, loadDraft, saveDraft, validateStepForm,
 } from "@/features/production/experience.js";
 import { submitState } from "./workerAppModel.js";
 import { DELAY_ACTION_LABEL, DELAY_QUESTION, DELAY_REASONS, delayStatusText } from "@/features/production/productionLabels.js";
@@ -19,7 +19,7 @@ import { DELAY_ACTION_LABEL, DELAY_QUESTION, DELAY_REASONS, delayStatusText } fr
 export const intentKeys = createIntentKeys();
 const storage = typeof window !== "undefined" ? window.localStorage : null;
 
-function OfflineNote() {
+export function OfflineNote() {
   return (
     <p role="status" data-testid="offline-submit-note" className="m-0 flex items-start gap-2 rounded-btn bg-orangebg px-3 py-2 text-[12.5px] font-semibold text-orange">
       <WifiOff size={15} className="mt-px shrink-0" aria-hidden /> {submitState({ online: false, busy: false }).reason}
@@ -27,7 +27,7 @@ function OfflineNote() {
   );
 }
 
-function SheetHeader({ onClose, subtitle, title }) {
+export function SheetHeader({ onClose, subtitle, title }) {
   return (
     <div className="flex items-center gap-2 border-b border-line bg-surface px-3 py-2" style={{ paddingTop: "calc(0.5rem + env(safe-area-inset-top))" }}>
       <button type="button" onClick={onClose} aria-label="Tutup" className="flex h-11 w-11 items-center justify-center rounded-btn text-ink2 hover:bg-hovertint"><X size={20} aria-hidden /></button>
@@ -84,7 +84,12 @@ export function StepSheet({ card, next, onClose, onSubmitted }) {
 
 function StepFormSheet({ card, next, stepNo, onClose, onSubmitted }) {
   const online = useOnline();
-  const step = STEP_BY_NO[stepNo];
+  const step = stepOf(stepNo, card.track);
+  const flow = productFlowOf(card) || "KASUR";
+  const byPic = stepMaterialsByPic(card, stepNo);
+  const rule = mediaRuleFor(stepNo, card.track);
+  const stepHint = card.track === "BUILD" && stepNo === 6 && flow === "KASUR" && !byPic ? BUILD_STEP_KASUR_HINT
+    : byPic && card.track !== "BUILD" ? (stepNo === 6 ? "Video uji fondasi baru. Pemakaian bahan sudah dicatat PIC Bahan — tidak perlu diisi lagi." : "Foto lapisan baru. Pemakaian bahan sudah dicatat PIC Bahan — tidak perlu diisi lagi.") : step?.hint; // Fase 3: LAYANAN dengan PIC Bahan
   const draft = useMemo(() => loadDraft(storage, card.runId, stepNo), [card.runId, stepNo]);
   const [form, setForm] = useState(() => draft?.form || {});
   const [media, setMedia] = useState(() => (draft?.media || []).filter((m) => m.status === "done"));
@@ -99,14 +104,14 @@ function StepFormSheet({ card, next, stepNo, onClose, onSubmitted }) {
   }, [form, media, card.runId, stepNo]);
 
   async function submit() {
-    const invalid = validateStepForm(stepNo, form, { mediaItems: media });
+    const invalid = validateStepForm(stepNo, form, { mediaItems: media, track: card.track, flow, byPic, gated: !!next.gated, layersRequired: !!next.layersRequired, layersAfterRequired: !!next.layersAfterRequired });
     if (invalid) { setError(invalid); return; }
     setBusy(true); setError(""); setCanRetry(false);
     const key = intentKeys.keyFor(card.runId, stepNo, card.revision);
     try {
       const result = await api.recordProductionV2Step(card.runId, stepNo, {
         expectedRevision: card.revision, workCenterId: card.workCenterId,
-        payload: buildStepPayload(stepNo, form), media: media.filter((m) => m.status === "done").map((m) => m.url),
+        payload: buildStepPayload(stepNo, form, { track: card.track, flow, byPic }), media: media.filter((m) => m.status === "done").map((m) => m.url),
       }, key);
       intentKeys.release(card.runId, stepNo, card.revision);
       clearDraft(storage, card.runId, stepNo);
@@ -123,19 +128,19 @@ function StepFormSheet({ card, next, stepNo, onClose, onSubmitted }) {
     <div role="dialog" aria-modal="true" aria-label={step?.label} className="fixed inset-0 z-50 flex flex-col bg-base">
       <SheetHeader onClose={onClose} subtitle={`Tahap ${stepNo} · ${card.unit.unitCode}`} title={`${step?.label}${next.rework ? " (Rework)" : ""}`} />
       <div className="flex-1 space-y-4 overflow-y-auto px-3 py-4">
-        <p className="rounded-btn bg-accentbg px-3 py-2 text-[13.5px] text-accent">{step?.hint}</p>
+        <p className="rounded-btn bg-accentbg px-3 py-2 text-[13.5px] text-accent">{stepHint}</p>
         {draft?.savedAt && <p className="text-[12px] text-ink3">Draft terakhir dipulihkan.</p>}
         <StepForm stepNo={stepNo} form={form} setForm={setForm} card={card} next={next} />
-        {(MEDIA_RULES[stepNo]?.min > 0 || stepNo === 5 || stepNo === 10) && (
-          <EvidenceCapture runId={card.runId} items={media} onChange={setMedia} rule={MEDIA_RULES[stepNo]} disabled={busy || !online} />
+        {(rule.min > 0 || stepNo === 5 || stepNo === 10) && (
+          <EvidenceCapture runId={card.runId} items={media} onChange={setMedia} rule={rule} disabled={busy || !online} />
         )}
         {error && <div role="alert" className="rounded-btn bg-redbg px-3 py-3 text-[13.5px] text-red">{error}</div>}
       </div>
       <div className="space-y-2 border-t border-line bg-surface px-3 pt-3" style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
         {!online && <OfflineNote />}
-        <button type="button" data-mutates onClick={submit} disabled={gate.disabled}
+        <button type="button" data-mutates data-testid="step-submit" onClick={submit} disabled={gate.disabled}
           className="flex min-h-[56px] w-full items-center justify-center gap-2 rounded-btn bg-accent text-[16px] font-bold text-white disabled:opacity-50">
-          {busy ? <><Loader2 size={20} className="animate-spin" aria-hidden /> Mengirim…</> : canRetry ? "Coba Lagi" : actionLabel(next, { stageLabel: card.activeOp?.stageLabel })}
+          {busy ? <><Loader2 size={20} className="animate-spin" aria-hidden /> Mengirim…</> : canRetry ? "Coba Lagi" : actionLabel(next, { stageLabel: card.activeOp?.stageLabel, track: card.track })}
         </button>
       </div>
     </div>
