@@ -27,7 +27,7 @@ SyncDiscrepancy|0|-
 TrackedLink|0|-
 UnresolvedMessage|0|-
 User|9|2deb4a101f62a184ae00c1373d85a8b2
-_prisma_migrations|223|74d5b467fb927ce8998ca012cad9df02
+_prisma_migrations|223|5dfd764d1152c963171a8f1e16c3fbe7
 activity_events|586|73fc268d4212c146acbb17399fe5adaf
 api_idempotency_keys|0|-
 broadcast_campaigns|0|-
