@@ -11,8 +11,8 @@
 // pemanggil TIDAK menyangka itu unik per unit. Field yang genuinely per-unit (foto, plan, evidence, BOM, QC,
 // custody) SELALU difilter lewat runId/unitId spesifik unit ini — tidak pernah "milik order", mencegah
 // kebocoran antar-unit bersaudara (lihat resolveUnitPhoto yang sudah menolak atribusi job multi-unit).
-import { COMPLAINT_LABEL, RUN_VIEW_INCLUDE, STYLE_LABEL, VERDICT_LABEL, customerOf, indicatorsOf, latestOf, materialStatusOf, minutesBetween, nameOf, stepStatuses, warningsOf } from "./productionExperienceReadService.js";
-import { loadStepContext } from "./productionStepCommandService.js";
+import { COMPLAINT_LABEL, RUN_VIEW_INCLUDE, STYLE_LABEL, VERDICT_LABEL, customerOf, indicatorsOf, latestOf, materialStatusOf, minutesBetween, nameOf, stepStatuses, warningsOf, cornerAndLifecycleOf } from "./productionExperienceReadService.js";
+import { loadCornerView, loadStepContext } from "./productionStepCommandService.js";
 import { buildRunDocumentation, documentationBuckets } from "./productionDocumentationRead.js";
 import { sourceOfStep } from "../lib/domain/productionDocumentation.js";
 import { formatProductionDate, stationLabel } from "../lib/domain/productionBoard.js";
@@ -357,6 +357,7 @@ export async function getUnitOverview(prisma, unitId, { unitIds, canSeeValue = f
       materialReservedAt: run.plan.materialReservedAt, targetStartAt: run.plan.targetStartAt, targetCompleteAt: run.plan.targetCompleteAt,
     } : null,
     production: {
+      ...cornerAndLifecycleOf(run, ctx), cornerView: await loadCornerView(prisma, run, ctx), // Fase 5: status yang sama dengan Meja/Corner/Status Produksi/laporan
       runId: run.id, revision: run.revision, track: ctx.state.buildTrack ? "BUILD" : "RESTORATION", product: ctx.state.buildTrack ? { class: ctx.state.productClass, flow: ctx.state.productFlow, problem: ctx.state.productProblem } : null,
       racikan: ctx.state.buildTrack ? (ctx.evidence.filter((e) => e.stepNo === 6 && !isSkippedEvidence(e)).at(-1)?.payload?.racikan ?? ctx.buildRecord?.racikan ?? null) : null, build: ctx.buildView ?? null, runStatus: run.status, currentPhase: run.currentPhase, started: run.operations.length > 0 || ctx.evidence.length > 0,
       // dikerjakan (done) / dilewati (skipped) / tersisa (remaining) — tahap dilewati (mode adaptasi) bukan pekerjaan.

@@ -329,8 +329,8 @@ productionExperienceRouter.get("/runs/:runId/finish-preview", requireAnyPermissi
 // POST /api/production-v2/runs/:runId/finish { expectedRevision, workCenterId, confirm: true } — Selesaikan Produksi. Konfirmasi eksplisit WAJIB (confirm === true).
 productionExperienceRouter.post("/runs/:runId/finish", requirePermission(P.UNIT_STAGE_WRITE), async (req, res) => {
   try {
-    if (req.body?.confirm !== true) return res.status(400).json({ error: "Konfirmasi eksplisit diperlukan: tahap yang tersisa akan dicatat DILEWATI dan QC dicatat tidak dilakukan", code: "FINISH_CONFIRM_REQUIRED" });
-    res.json(await finishProduction(prisma, { runId: req.params.runId, actorId: req.user.id, idempotencyKey: idem(req), expectedRevision: req.body?.expectedRevision, workCenterId: req.body?.workCenterId }));
+    if (req.body?.confirm !== true) return res.status(400).json({ error: "Konfirmasi eksplisit diperlukan sebelum produksi diselesaikan", code: "FINISH_CONFIRM_REQUIRED" });
+    res.json(await finishProduction(prisma, { runId: req.params.runId, actorId: req.user.id, idempotencyKey: idem(req), expectedRevision: req.body?.expectedRevision, workCenterId: req.body?.workCenterId, media: req.body?.media, note: req.body?.note }));
   } catch (err) { handleErr(err, res); }
 });
 

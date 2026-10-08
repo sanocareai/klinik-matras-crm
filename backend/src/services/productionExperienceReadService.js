@@ -8,8 +8,10 @@ import {
 } from "../lib/domain/productionSteps.js";
 import { listMaterialReturns } from "./productionMaterialReturnService.js";
 import { BOARD_DEFAULTS, compareStationOrder, formatProductionDate, parseProductionDate, stationLabel, todayWib } from "../lib/domain/productionBoard.js";
-import { applicableStepsFor, loadAssemblyView, loadStepContext, usedByEvidence } from "./productionStepCommandService.js";
-import { buildRunDocumentation, documentationBuckets } from "./productionDocumentationRead.js";
+import { applicableStepsFor, loadAssemblyView, loadCornerView, loadStepContext, usedByEvidence } from "./productionStepCommandService.js";
+import { cornerStatusOf } from "../lib/domain/productionCorner.js";
+import { lifecycleStatusOf } from "../lib/domain/productionLifecycle.js";
+import { buildRunDocumentation, buildRunSequence, documentationBuckets } from "./productionDocumentationRead.js";
 import { sourceOfStep } from "../lib/domain/productionDocumentation.js";
 import { BUILD_NA_REASON, BUILD_STAGE_LABEL, NON_KASUR_NA_REASON, stepLabelFor } from "../lib/domain/productionBuildTrack.js";
 import { listEligibleUnitsForPlanning } from "./productionPlanningCommandService.js";
@@ -143,6 +145,18 @@ export function customerOf(run) {
   };
 }
 
+// Status Corner + siklus produksi dari run+ctx (tanpa DB) — dipakai toRunView, laporan, dan Unit 360 agar semua layar menampilkan status yang sama.
+export function cornerAndLifecycleOf(run, ctx) {
+  const evSteps = new Set(ctx.evidence.filter((e) => !isSkippedEvidence(e)).map((e) => e.stepNo));
+  const cornerApplies = (ctx.split?.postQcStages || []).some((s) => s.code === "corner_sewing");
+  const corner = cornerStatusOf({ cornerApplies, decision: ctx.state?.buildTrack ? ctx.state.cornerRequired : null, reason: ctx.state?.cornerReason ?? null, steps: evSteps, runStatus: run.status, qcPassed: ["PASS", "OVERRIDDEN"].includes(ctx.latestInspection?.result), adaptation: !!run.adaptationPolicy });
+  const lifecycle = lifecycleStatusOf({
+    runStatus: run.status, currentPhase: run.currentPhase, unitStatus: run.unit?.status, next: ctx.next, latestQcResult: ctx.latestInspection?.result ?? null, cornerStatus: corner,
+    adaptation: !!run.adaptationPolicy, handoffStatus: (run.custodyHandoffs || []).filter((h) => h.direction === "FINISHED_GOODS").at(-1)?.status ?? null, started: (run.operations?.length ?? 0) > 0 || ctx.evidence.length > 0,
+  });
+  return { corner, lifecycle };
+}
+
 export function toRunView(run, ctx, { now = new Date(), photoUrl = null, complaints = [] } = {}) {
   const shortage = ctx.openShortage;
   const materialStatus = materialStatusOf(run.plan, ctx.material, shortage);
@@ -191,6 +205,7 @@ export function toRunView(run, ctx, { now = new Date(), photoUrl = null, complai
     })(),
     adaptation: run.adaptationPolicy ? { policy: run.adaptationPolicy } : null,
     qcGatePolicy: run.qcGatePolicyVersion || null, // Fase 2: NULL = run lama (gerbang QC sebelum bongkar tidak berlaku)
+    ...cornerAndLifecycleOf(run, ctx), // Fase 5: corner (status jujur) + lifecycle (status siklus yang sama di semua layar)
     steps,
     activeOp: op ? { stageLabel: op.stageLabel, status: op.status, startedAt: op.startedAt, delayKind: op.delayKind ?? null, delayNote: op.delayNote ?? null } : null,
     timer: {
@@ -447,6 +462,7 @@ export async function getRunCard(prisma, runId, { unitIds, now = new Date() } = 
     // Fase 4: per bahan — diserahkan (semua putaran, termasuk bahan tambahan rework), terpakai (bukti Meja + catatan PIC Bahan terbaru), sisa. Tiga angka TERPISAH, bukan satu.
     issuedMaterials: (() => { const used = usedByEvidence(ctx.evidence); for (const l of (ctx.buildRecord?.materials || [])) used.set(l.materialId, (used.get(l.materialId) || 0) + Number(l.qty || 0)); return [...issued.values()].map((m) => ({ ...m, usedQty: Math.round((used.get(m.materialId) || 0) * 10000) / 10000, remainingQty: Math.max(0, Math.round((m.qty - (used.get(m.materialId) || 0)) * 10000) / 10000) })); })(),
     assembly: await loadAssemblyView(prisma, run),
+    cornerView: await loadCornerView(prisma, run, ctx), // Fase 5: permintaan Sales + status Corner + catatan PIC Corner
     evidence: ctx.evidence.map((e) => ({
       id: e.id, stepNo: e.stepNo, stepLabel: STEP_BY_NO[e.stepNo]?.label, version: e.version, payload: e.payload, createdAt: e.createdAt,
       actor: actorName.get(e.actorId) || null,
@@ -721,11 +737,13 @@ export async function getProductionReport(prisma, runId, { unitIds } = {}) {
     textureTests: finalTests.map((e) => ({ version: e.version, verdict: e.payload?.verdict, testerWeightKg: e.payload?.testerWeightKg, at: e.createdAt })),
     finalTest: finalPass ? finalPass.payload : null,
     qc: ctx.latestInspection ? { result: ctx.latestInspection.result, version: ctx.latestInspection.version, at: ctx.latestInspection.inspectedAt } : null,
+    ...cornerAndLifecycleOf(run, ctx), cornerView: await loadCornerView(prisma, run, ctx),
     qcStatus: ctx.latestInspection ? "DILAKUKAN" : (run.adaptationPolicy && run.operations.some((o) => o.status === "SKIPPED" && o.planSnapshot?.qcNotPerformed) ? "TIDAK_DILAKUKAN" : "BELUM"),
     finishing: latestOf(evidence, 10)?.payload ?? null,
     cornerChecklist: latestOf(evidence, 11)?.payload?.checklist ?? null,
     media: { before: [...mediaOf([1, 2, 3]), ...docBuckets.before], process: [...mediaOf([4, 6, 7]), ...docBuckets.process], after: [...mediaOf([8, 9, 11, 12]), ...docBuckets.after] },
     documentation,
+    sequence: (await buildRunSequence(prisma, run, ctx, documentation)).sequence,
     components: components ? { ...components, assembly: await loadAssemblyView(prisma, run) } : components,
     handoffStatus: fg?.status ?? null,
     broadcast: outboxRow

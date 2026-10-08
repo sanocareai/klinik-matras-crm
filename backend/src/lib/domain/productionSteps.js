@@ -17,6 +17,7 @@
 //  11  Jahit Selesai            = SELESAI corner_sewing (foto/video + checklist)
 //  12  Konfirmasi Selesai       = (foto kasur selesai) MULAI+SELESAI finished -> penawaran barang jadi ke Gudang (P6) + event laporan (outbox, PENDING)
 
+import { validateCornerDone, validateCornerStart } from "./productionCorner.js";
 import { CORNER_UNCONFIRMED_WAIT, PRODUCT_FLOW, PRODUCT_UNCONFIRMED_WAIT, stepLabelFor } from "./productionBuildTrack.js";
 
 export const STEP_ACTOR = Object.freeze({ TABLE: "TABLE", CORNER: "CORNER" });
@@ -241,11 +242,14 @@ const label = `Tahap ${stepNo} (${stepLabelFor(stepNo, step.label, ctx.buildTrac
     case 9:
       requireMedia(media, { label });
       return { media, payload: { note: optionalText(p.note, "Catatan") } };
-    case 10:
+    case 10: {
       if (!MATTRESS_STYLES.includes(p.mattressStyle)) throw invalid(`${label}: pilih model Biasa, Plushtop, atau Pillowtop`);
+      // Fase 5 (Run berkebijakan V2): PIC Corner memeriksa permintaan Sales, mencatat kain lama/baru, dan melampirkan foto/video proses. Run V1/NULL: kontrak lama.
+      const corner = ctx.cornerGate ? validateCornerStart(p, { brief: ctx.cornerBrief, mediaCount: media.length, label }, invalid) : {};
       return {
         media,
         payload: {
+          ...corner,
           mattressStyle: p.mattressStyle,
           fabricSpec: text(p.fabricSpec, 2, "Spesifikasi/warna kain", 200),
           borderColor: text(p.borderColor, 2, "Warna list", 100),
@@ -253,12 +257,14 @@ const label = `Tahap ${stepNo} (${stepLabelFor(stepNo, step.label, ctx.buildTrac
           note: optionalText(p.note, "Catatan"),
         },
       };
+    }
     case 11: {
       requireMedia(media, { label });
       const checklist = p.checklist && typeof p.checklist === "object" ? p.checklist : {};
       const missing = CORNER_CHECKLIST.filter((key) => checklist[key] !== true);
       if (missing.length) throw invalid(`${label}: checklist belum lengkap (${missing.join(", ")})`);
-      return { media, payload: { checklist: Object.fromEntries(CORNER_CHECKLIST.map((k) => [k, true])), note: optionalText(p.note, "Catatan") } };
+      const corner = ctx.cornerGate ? validateCornerDone(p, { label }, invalid) : {};
+      return { media, payload: { ...corner, checklist: Object.fromEntries(CORNER_CHECKLIST.map((k) => [k, true])), note: optionalText(p.note, "Catatan") } };
     }
     case 12:
       // Tahap routing "finished" wajib foto (routing_stages.requires_photo) — foto kasur selesai/terbungkus.

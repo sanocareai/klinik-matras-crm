@@ -36,6 +36,7 @@ import { computeRunLeftovers, createLeftoverReturnsInTx } from "./productionMate
 import { allManualMaterialsMapped, diagnosisBomValid } from "./productionDiagnosisCommandService.js";
 import { buildApplicableSteps, classifyProduct, pathHasBuildStage } from "../lib/domain/productionBuildTrack.js";
 import { loadAssemblyFacts, loadPreTeardownFacts } from "./productionComponentNoteService.js";
+import { buildCornerRequest, cornerStatusOf } from "../lib/domain/productionCorner.js";
 
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
@@ -226,6 +227,23 @@ async function toBuildView(client, setting, record, { cornerLocked = false } = {
   };
 }
 
+// Fase 5: tampilan Corner untuk satu Run — SATU sumber untuk Meja, Corner, Dokumentasi, Unit 360, Status Produksi, dan laporan. Baca-saja.
+// Permintaan Sales hanya dari item pesanan + catatan pesanan apa adanya (motif/warna TIDAK ditebak); status Corner jujur (tidak berlaku = tanpa aktivitas/bukti Corner).
+export async function loadCornerView(client, run, ctx) {
+  const order = await client.order.findUnique({ where: { id: run.unit.orderId }, select: { notes: true, items: { orderBy: { sortOrder: "asc" }, select: { layananName: true } } } });
+  const request = buildCornerRequest({ items: order?.items || [], orderNotes: order?.notes ?? null });
+  const cornerApplies = (ctx.split?.postQcStages || []).some((s) => s.code === "corner_sewing");
+  const steps = new Set(ctx.evidence.filter((e) => !isSkippedEvidence(e)).map((e) => e.stepNo));
+  const qcPassed = ["PASS", "OVERRIDDEN"].includes(ctx.latestInspection?.result);
+  const decision = ctx.state.buildTrack ? ctx.state.cornerRequired : null;
+  const status = cornerStatusOf({ cornerApplies, decision, reason: ctx.state.cornerReason, steps, runStatus: run.status, qcPassed, adaptation: isAdaptationRun(run) });
+  const lastOf = (n) => ctx.evidence.filter((e) => e.stepNo === n && !isSkippedEvidence(e)).at(-1) ?? null;
+  const recOf = (e) => (e ? { version: e.version, at: e.createdAt, by: e.actorId ?? null, mediaCount: (e.media || []).length, ...e.payload } : null);
+  let decidedBy = null;
+  if (status.status === "TIDAK_BERLAKU" && ctx.buildSetting?.updatedById) decidedBy = (await client.user.findUnique({ where: { id: ctx.buildSetting.updatedById }, select: { name: true } }))?.name ?? null;
+  return { request, status: { ...status, ...(decidedBy ? { decidedBy } : {}) }, contractV2: hasAssemblyGate(run), records: { start: recOf(lastOf(10)), done: recOf(lastOf(11)) } };
+}
+
 // Fase 4: fakta gerbang perakitan untuk pembaca lain (mis. putusan QC): waktu bukti Meja terakhir dibaca DI SINI (pintu pembaca bukti), lalu digabung dengan catatan komponen. Baca-saja.
 export async function loadAssemblyGateFactsForRun(client, run) {
   const rows = await client.productionStepEvidence.findMany({ where: { runId: run.id, stepNo: { in: [6, 7] }, stepCode: { not: { startsWith: DOC_STEP_CODE_PREFIX } } }, orderBy: { createdAt: "asc" }, select: { stepNo: true, createdAt: true, payload: true } });
@@ -380,7 +398,9 @@ export async function recordProductionStep(prisma, { runId, stepNo, actorId, ide
 
     const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "RECORD_PRODUCTION_STEP", aggregateId: runId, requestHash, expectedRevision: revisionExpected });
     const now = new Date();
-    const evidenceCtx = { preTeardownGate: ctx.state.preTeardownGate, gateRefs: ctx.state.gateRefs, assemblyGate: ctx.state.assemblyGate, assemblyRefs: ctx.state.assemblyRefs, assemblyHasFoundation: ctx.state.assemblyHasFoundation, remainingMode: !!ctx.state.assemblyGate, issuedQtyByMaterial: [6, 7, 10].includes(requestedStep) ? remainingIssuedFor(ctx, await issuedQtyByMaterial(tx, run.plan?.id)) : new Map(), buildTrack: ctx.state.buildTrack, productFlow: ctx.state.productFlow, racikanRecorded: ctx.state.racikanRecorded, materialsByPic: !!(ctx.state.materialOperatorId || ctx.buildRecord), picRestoration: !!ctx.state.materialPicRestoration };
+    const cornerGate = hasAssemblyGate(run) && [10, 11].includes(requestedStep);
+    const cornerBrief = cornerGate && requestedStep === 10 ? (await loadCornerView(tx, run, ctx)).request : null;
+    const evidenceCtx = { cornerGate, cornerBrief, preTeardownGate: ctx.state.preTeardownGate, gateRefs: ctx.state.gateRefs, assemblyGate: ctx.state.assemblyGate, assemblyRefs: ctx.state.assemblyRefs, assemblyHasFoundation: ctx.state.assemblyHasFoundation, remainingMode: !!ctx.state.assemblyGate, issuedQtyByMaterial: [6, 7, 10].includes(requestedStep) ? remainingIssuedFor(ctx, await issuedQtyByMaterial(tx, run.plan?.id)) : new Map(), buildTrack: ctx.state.buildTrack, productFlow: ctx.state.productFlow, racikanRecorded: ctx.state.racikanRecorded, materialsByPic: !!(ctx.state.materialOperatorId || ctx.buildRecord), picRestoration: !!ctx.state.materialPicRestoration };
     let evidence = null;
     let transition = null;
     let autoStarted = null;
@@ -712,10 +732,44 @@ export async function skipProductionStep(prisma, { runId, stepNo, actorId, idemp
 }
 
 // Penghalang & ringkasan untuk "Selesaikan Produksi" (BACA-SAJA; dipakai kartu dan pratinjau). Tidak menulis apa pun.
+// Fase 5: pratinjau untuk Run NON-adaptasi — "Selesaikan Produksi" = konfirmasi tahap 12 (foto hasil jadi) yang menawarkan barang jadi ke Gudang. SIAP KIRIM baru terjadi setelah
+// Gudang menerima barang jadi (dan retur sisa bahan diterima); tidak ada penerimaan/custody/foto/jurnal yang dibuat di sini. Baca-saja.
+async function previewHandoffFinish(prisma, run, ctx) {
+  const view = await loadCornerView(prisma, run, ctx);
+  const qcResult = ctx.latestInspection?.result ?? null;
+  const qcOk = ["PASS", "OVERRIDDEN"].includes(qcResult);
+  const policy = run.qcGatePolicyVersion || null;
+  const cornerDone = !view.status.applies || (view.records.start && view.records.done);
+  const leftovers = (await computeRunLeftovers(prisma, run)) || [];
+  const mats = leftovers.length ? await prisma.material.findMany({ where: { id: { in: leftovers.map((l) => l.materialId) } }, select: { id: true, code: true, name: true, unit: true } }) : [];
+  const mById = new Map(mats.map((m) => [m.id, m]));
+  const pending = await prisma.productionMaterialReturn.findMany({ where: { runId: run.id, status: "PENDING" }, select: { qty: true, material: { select: { code: true, name: true, unit: true } } } });
+  const checks = [
+    { key: "QC", ok: qcOk, label: "Putusan QC", detail: qcOk ? (qcResult === "OVERRIDDEN" ? "Dilewati dengan kewenangan khusus (dicatat bukan lulus)" : "Sesuai (lulus)") : "Belum ada putusan QC yang meloloskan", policy: policy === "QC_GATE_V2" ? "Gerbang awal + perakitan" : policy === "QC_GATE_V1" ? "Gerbang awal" : "Kebijakan lama" },
+    { key: "CORNER", ok: !!cornerDone, label: "Keputusan Corner", detail: view.status.applies ? (cornerDone ? "Corner selesai dikerjakan dan dicatat" : "Corner belum selesai dicatat") : `Tidak berlaku — ${view.status.reason}`, status: view.status.status },
+    { key: "TAHAP", ok: !activeOperation(run) || ctx.next.action === "FINISH", label: "Tahap berjalan", detail: ctx.next.action === "FINISH" ? "Siap konfirmasi hasil jadi" : "Masih ada tahap yang harus diselesaikan" },
+  ];
+  const blockers = [];
+  if (run.status === "PENDING_ARRIVAL") blockers.push({ code: "PENDING_ARRIVAL", text: "Unit belum dikonfirmasi tiba di workshop" });
+  else if (TERMINAL_RUN.includes(run.status) || run.currentPhase === "HANDOFF") blockers.push({ code: "ALREADY_FINISHED", text: "Produksi sudah diselesaikan — barang jadi sudah ditawarkan ke Gudang" });
+  else if (ctx.next.action !== "FINISH") blockers.push({ code: "NOT_READY", text: ctx.next.action === "WAIT" ? waitMessage(ctx.next) : `Tahap berikutnya adalah ${STEP_BY_NO[ctx.next.stepNo]?.label || "—"}, bukan konfirmasi selesai.` });
+  if (ctx.openShortage) blockers.push({ code: "OPEN_SHORTAGE", text: "Menunggu bahan dari Gudang — selesaikan masalah bahan dulu" });
+  if (ctx.state.exceptionOpen) blockers.push({ code: "EXCEPTION_OPEN", text: "Ada konflik data yang harus diselesaikan Production Lead" });
+  return {
+    runId: run.id, revision: run.revision, adaptation: false, kind: "HANDOFF_GUDANG", stepNo: 12, canFinish: blockers.length === 0, blockers, checks,
+    corner: view.status, expectedReturns: leftovers.map((l) => ({ code: mById.get(l.materialId)?.code ?? null, name: mById.get(l.materialId)?.name ?? null, unit: mById.get(l.materialId)?.unit ?? null, qty: l.qty })),
+    pendingReturns: pending.map((r) => ({ code: r.material.code, name: r.material.name, unit: r.material.unit ?? null, qty: Number(r.qty) })),
+    requires: { media: "Foto hasil jadi (kasur selesai/terbungkus)", confirm: true },
+    remainingStages: [], willSkipSteps: [], qcNotPerformed: false,
+    statement: "Barang jadi ditawarkan ke Gudang. Status Siap Kirim baru terjadi setelah Gudang menerima barang jadi dan sisa bahan dikembalikan. Tidak ada tahap yang dilewati, tidak ada penerimaan, custody, foto, atau jurnal yang dibuat otomatis.",
+  };
+}
+
 export async function previewFinishProduction(prisma, runId) {
   const run = await prisma.productionRun.findUnique({ where: { id: runId }, include: RUN_INCLUDE });
   if (!run) throw stepError("Production Run tidak ditemukan", 404, "WORKSHOP_RUN_NOT_FOUND");
   const ctx = await loadStepContext(prisma, run);
+  if (!isAdaptationRun(run)) return previewHandoffFinish(prisma, run, ctx);
   const blockers = finishBlockersOf(run, { openShortage: !!ctx.openShortage, exceptionOpen: !!ctx.state.exceptionOpen });
   const pendingReturns = await prisma.productionMaterialReturn.findMany({ where: { runId, status: "PENDING" }, select: { qty: true, material: { select: { code: true, name: true, unit: true } } } });
   // Tahap routing yang BELUM tuntas (dari target sekarang sampai akhir) dan nomor tahap blueprint yang akan dicatat SKIPPED — pratinjau murni, tanpa tulisan.
@@ -753,9 +807,24 @@ async function authorizeFinishOperator(tx, run, actorId, workCenterId) {
 
 // Selesaikan Produksi (mode adaptasi): menutup lifecycle yang diperlukan SECARA EKSPLISIT lalu unit Siap Kirim. Retur sisa bahan tetap WAJIB: bila ada sisa yang belum diterima
 // Gudang, antrean retur dibuka dan command berhenti dengan alasan jelas (completed:false) — tidak dilewati diam-diam. body: { expectedRevision, workCenterId }.
-export async function finishProduction(prisma, { runId, actorId, idempotencyKey, expectedRevision, workCenterId }) {
+export async function finishProduction(prisma, { runId, actorId, idempotencyKey, expectedRevision, workCenterId, media = [], note = null }) {
   if (!runId) throw stepError("runId wajib diisi", 400, "STEP_RUN_REQUIRED");
   assertIdempotencyKey(idempotencyKey);
+  // Fase 5: Run NON-adaptasi diselesaikan lewat aksi yang SAMA (tahap 12) — server tetap menegakkan putusan QC (sesuai kebijakan Run), keputusan Corner, tahap berjalan, dan retur sisa bahan
+  // (barang jadi tidak bisa diterima Gudang selama retur PENDING). Ulangan kunci sama = respons sama (tahap 12 idempoten); dua penyelesaian bersamaan: satu menang, lainnya 409.
+  const kind = await prisma.productionRun.findUnique({ where: { id: runId }, select: { adaptationPolicy: true } });
+  if (kind && !kind.adaptationPolicy) {
+    try {
+      const res = await recordProductionStep(prisma, { runId, stepNo: 12, actorId, idempotencyKey, expectedRevision, workCenterId, payload: { confirm: true, ...(note ? { note } : {}) }, media });
+      return { ...res, completed: false, finishKind: "HANDOFF_GUDANG", waitingFor: "GUDANG_BARANG_JADI", message: "Barang jadi ditawarkan ke Gudang. Siap Kirim setelah Gudang menerima barang jadi dan sisa bahan." };
+    } catch (error) {
+      if (/^STEP_(WAITING_|OUT_OF_ORDER)/.test(error?.code || "")) {
+        const pv = await previewFinishProduction(prisma, runId).catch(() => null);
+        throw stepError(`Produksi belum bisa diselesaikan: ${pv?.blockers?.[0]?.text || error.message}`, 409, "FINISH_NOT_READY", { blockers: pv?.blockers || [], cause: error.code });
+      }
+      throw error;
+    }
+  }
   const revisionExpected = assertExpectedRevision(expectedRevision);
   const actor = actorId || "SYSTEM";
   const requestHash = hash({ commandType: "FINISH_PRODUCTION", runId, expectedRevision: revisionExpected, workCenterId: workCenterId || null });

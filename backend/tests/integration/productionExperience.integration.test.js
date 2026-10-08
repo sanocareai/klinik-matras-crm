@@ -764,6 +764,25 @@ test("Fase 4: perakitan V2 — Meja rakit fondasi → PIC QC uji fondasi baru �
   assert.match(assemblyMessageLines({ recorded: {}, comparisons: {} }, { always: true }).join("\n"), /Uji Fondasi Baru : Belum dicatat[\s\S]*Uji Kasur Jadi {2}: Belum dicatat/);
 });
 
+// ---- Fase 5: helper Corner ----
+const cornerStart = (over = {}) => ({ mattressStyle: "PILLOWTOP", fabricSpec: "Knitting putih quilting", borderColor: "Abu-abu tua", requestChecked: true, fabricMode: "OLD_REUSED", requestMatch: "SESUAI", ...over });
+const cornerDone = (over = {}) => ({ checklist: { jahitan: true, list: true, resleting: true, kebersihan: true }, cornerWork: "Kain dijahit ulang pada sisi kiri", noDifference: true, ...over });
+// Unit LAYANAN V2 sampai QC LULUS (putaran 1) lewat jalur resmi; leftoverLapisan = jumlah lapisan yang DIPAKAI (diserahkan 2) — kurang dari 2 = sisa retur.
+async function layananToQcPass(w, { notes = "Minta tekstur firm", items = [], usedLapisan = 2 } = {}) {
+  const { unit, run } = await toModuleStart(w, { corner: true });
+  const order = await testPrisma.unit.findUniqueOrThrow({ where: { id: unit.id }, select: { orderId: true } });
+  await testPrisma.order.update({ where: { id: order.orderId }, data: { notes } });
+  for (const [i, name] of items.entries()) await testPrisma.orderItem.create({ data: { orderId: order.orderId, layananName: name, harga: 100000, sortOrder: i } });
+  ok(await step(w, w.nadya, run.id, 6, { payload: { note: "Fondasi dipasang", materials: [{ materialId: w.fondasi.id, qty: 1 }] }, media: await media(w.nadya, run.id, "v") }));
+  await PT.foundationAfter(server, w.qc, run.id); await PT.afterRecord(server, w.nadya, run.id);
+  ok(await step(w, w.nadya, run.id, 7, { payload: { materials: [{ materialId: w.lapisan.id, qty: usedLapisan }] }, media: await media(w.nadya, run.id, "i") }));
+  await PT.wholeAfter(server, w.qc, run.id);
+  ok(await step(w, w.nadya, run.id, 8, {}));
+  const pass = await qcPass(w, run.id); assert.equal(pass.status, 200, JSON.stringify(pass.body));
+  return { unit, run, orderId: order.orderId };
+}
+const finishCall = async (who, w, runId, { key: k = key(`fin-${++seq}`), rev = null, media: m = [] } = {}) => who.api.post(`${V2}/runs/${runId}/finish`, { expectedRevision: rev ?? (await card(w, runId)).revision, workCenterId: w.wc, confirm: true, media: m }, k);
+
 // ---- Fase 4 (finalisasi): helper jenis racikan, rework, bahan tambahan lewat PIC Bahan, retur ----
 const QP = "/api/production-planning/qc/runs";
 const AFTER_FOUNDATION_ONLY = { foundation: { action: "REPLACE", system: "BONNELL", material: { kind: "MANUAL", text: "Pocket spring 25 cm" } }, layers: [] };
@@ -850,6 +869,88 @@ test("Fase 4: hasil aktual berbahan KATALOG yang SAMA dengan rencana tidak minta
   const same = await cn(w.nadya, unit.id, "AFTER", { expectedVersion: 0, media: [], data: plan });
   assert.equal(same.status, 201, JSON.stringify(same.body)); assert.equal(same.body.version, 1, "bahan katalog identik = sesuai rencana, tanpa alasan");
   const n = await notesOf(w.nadya, unit.id); assert.deepEqual(n.comparison.planVsActual.layers.map((l) => l.status), ["SAMA"]); assert.equal(n.comparison.planVsActual.foundation.status, "SAMA");
+});
+
+test("Fase 5: Corner DIPERLUKAN — permintaan Sales tidak jelas = 'Perlu konfirmasi Sales' (tanpa menebak); PIC Corner wajib periksa, catat kain, pekerjaan, perbedaan, media; selesaikan sekali; retur tertunda menahan Siap Kirim", async () => {
+  const w = await world();
+  const { unit, run, orderId } = await layananToQcPass(w, { notes: "Mohon ganti kain, jangan terlalu tebal", items: ["Ganti Kain Pinggir"], usedLapisan: 1 });
+  const s0 = await stockCounts(unit.id);
+  let c = await card(w, run.id);
+  assert.deepEqual([c.cornerView.request.status, c.cornerView.request.statusLabel, c.cornerView.request.missing], ["PERLU_KONFIRMASI_SALES", "Perlu konfirmasi Sales", ["motif", "warna"]], "motif/warna tidak ditebak");
+  assert.match(c.cornerView.request.hint, /jangan menebak/); assert.equal(c.cornerView.request.notes, "Mohon ganti kain, jangan terlalu tebal"); assert.deepEqual(c.cornerView.request.fabricItems, ["Ganti Kain Pinggir"]);
+  assert.equal(c.cornerView.status.status, "MENUNGGU_CORNER"); assert.equal(c.lifecycle.key, "MENUNGGU_CORNER");
+  // Meja serahkan ke Corner (tahap 9), lalu PIC Corner
+  ok(await step(w, w.nadya, run.id, 9, { payload: { note: "siap dibungkus" }, media: await media(w.nadya, run.id, "i") }));
+  const bad = async (payload, mediaKinds, expectRe) => { const r = await step(w, w.corner, run.id, 10, { payload, media: mediaKinds.length ? await media(w.nadya, run.id, ...mediaKinds) : [] }); assert.equal(r.status, 400, JSON.stringify(r.body)); assert.match(r.body.error, expectRe); };
+  await bad(cornerStart({ requestChecked: false }), ["i"], /sudah memeriksa permintaan Sales/);
+  await bad(cornerStart({ fabricMode: "OLD_REUSED", requestMatch: "SESUAI" }), ["i"], /Sales meminta ganti kain tetapi kain lama dipakai kembali/);
+  await bad(cornerStart({ fabricMode: "NEW_INSTALLED" }), ["i"], /Hasil konfirmasi Sales \(Perlu konfirmasi Sales: motif & warna belum tertulis\)/);
+  await bad(cornerStart({ fabricMode: "NEW_INSTALLED", salesConfirmation: "Sales: motif polos warna abu" }), [], /minimal 1 foto\/video proses/);
+  await bad(cornerStart({ fabricMode: "OLD_REUSED", requestMatch: "ADA_PERBEDAAN" }), ["i"], /Catatan perbedaan dari permintaan Sales/);
+  assert.equal(await testPrisma.productionStepEvidence.count({ where: { runId: run.id, stepNo: 10 } }), 0, "penolakan tanpa bukti");
+  ok(await step(w, w.corner, run.id, 10, { payload: cornerStart({ fabricMode: "NEW_INSTALLED", requestMatch: "ADA_PERBEDAAN", requestNote: "Kain baru dipasang atas konfirmasi Sales", salesConfirmation: "Sales (telepon): motif polos, warna abu-abu tua" }), media: await media(w.nadya, run.id, "i", "v") }));
+  const ev10 = (await testPrisma.productionStepEvidence.findFirstOrThrow({ where: { runId: run.id, stepNo: 10 } })).payload;
+  assert.deepEqual([ev10.requestChecked, ev10.fabricMode, ev10.requestMatch, ev10.requestStatusAtStart], [true, "NEW_INSTALLED", "ADA_PERBEDAAN", "PERLU_KONFIRMASI_SALES"]); assert.match(ev10.salesConfirmation, /abu-abu tua/);
+  c = await card(w, run.id); assert.deepEqual([c.cornerView.status.status, c.lifecycle.key], ["DIKERJAKAN", "DI_CORNER"]);
+  const noWork = await step(w, w.corner, run.id, 11, { payload: cornerDone({ cornerWork: "" }), media: await media(w.nadya, run.id, "i") }); assert.equal(noWork.status, 400);
+  const noDiff = await step(w, w.corner, run.id, 11, { payload: cornerDone({ noDifference: false }), media: await media(w.nadya, run.id, "i") }); assert.equal(noDiff.status, 400); assert.match(noDiff.body.error, /catatan perbedaan/i);
+  ok(await step(w, w.corner, run.id, 11, { payload: cornerDone({ noDifference: false, differenceNote: "Ukuran list 1 cm lebih lebar dari rencana" }), media: await media(w.nadya, run.id, "i", "v") }));
+  c = await card(w, run.id); assert.equal(c.cornerView.records.done.cornerWork, "Kain dijahit ulang pada sisi kiri"); assert.equal(c.cornerView.records.done.differenceNote, "Ukuran list 1 cm lebih lebar dari rencana");
+
+  // Selesaikan Produksi: pratinjau jujur, lalu SATU aksi
+  const pv = ok(await w.corner.api.get(`${V2}/runs/${run.id}/finish-preview`));
+  assert.deepEqual([pv.kind, pv.canFinish, pv.checks.map((x) => [x.key, x.ok])], ["HANDOFF_GUDANG", true, [["QC", true], ["CORNER", true], ["TAHAP", true]]]);
+  assert.equal(pv.checks[0].policy, "Gerbang awal + perakitan"); assert.equal(pv.expectedReturns.length, 1, "sisa lapisan 1 akan dikembalikan ke Gudang");
+  const noConfirm = await w.corner.api.post(`${V2}/runs/${run.id}/finish`, { expectedRevision: c.revision, workCenterId: w.wc }, key("nc")); assert.equal(noConfirm.status, 400);
+  const noPhoto = await finishCall(w.corner, w, run.id); assert.equal(noPhoto.status, 400, "foto hasil jadi wajib");
+  const fk = key("fin-ok"); const photos = await media(w.nadya, run.id, "i");
+  const [r1, r2] = await Promise.all([finishCall(w.corner, w, run.id, { key: fk, rev: c.revision, media: photos }), finishCall(w.corner, w, run.id, { key: key("fin-race"), rev: c.revision, media: await media(w.nadya, run.id, "i") })]);
+  assert.deepEqual([r1.status, r2.status].sort(), [200, 409], `dua penyelesaian bersamaan: satu menang — ${JSON.stringify([r1.body, r2.body]).slice(0, 300)}`);
+  const winner = r1.status === 200 ? r1 : r2; assert.ok(winner.body.handoffId); assert.equal(winner.body.completed, false); assert.equal(winner.body.finishKind, "HANDOFF_GUDANG");
+  const again = await finishCall(w.corner, w, run.id, { key: fk, rev: c.revision, media: photos });
+  if (r1.status === 200) { assert.equal(again.status, 200); assert.equal(again.body.replayed, true, "replay idempoten"); }
+  const third = await finishCall(w.corner, w, run.id, { key: key("fin-3") }); assert.equal(third.status, 409, "penyelesaian ketiga ditolak");
+  assert.equal(await testPrisma.unitCustodyHandoff.count({ where: { unitId: unit.id, direction: "FINISHED_GOODS" } }), 1, "satu penawaran barang jadi");
+  assert.equal(await testPrisma.domainOutbox.count({ where: { eventType: "production.report.ready", aggregateId: run.id } }), 1, "satu event laporan");
+  assert.equal(await testPrisma.productionStepEvidence.count({ where: { runId: run.id, stepNo: 12, NOT: { stepCode: { startsWith: "DOC_" } } } }), 1);
+  c = await card(w, run.id); assert.equal(c.lifecycle.key, "MENUNGGU_GUDANG"); assert.equal(c.cornerView.status.status, "SELESAI");
+  assert.equal((await testPrisma.unit.findUniqueOrThrow({ where: { id: unit.id } })).status, "IN_PRODUCTION", "belum Siap Kirim sebelum Gudang menerima");
+  assert.equal(await testPrisma.job.count({ where: { orderId, type: "DELIVERY" } }), 0, "belum ada job Delivery");
+  // retur tertunda menahan penerimaan barang jadi
+  const fg = await testPrisma.unitCustodyHandoff.findFirstOrThrow({ where: { unitId: unit.id, direction: "FINISHED_GOODS" } });
+  const rets = await testPrisma.productionMaterialReturn.findMany({ where: { runId: run.id } }); assert.equal(rets.length, 1); assert.equal(Number(rets[0].qty), 1);
+  const held = await w.nadya.api.post(`/api/inventory/unit-custody/${fg.id}/accept`, { locationId: w.fg.id, expectedRevision: fg.revision }, key("fg-held")); assert.equal(held.status, 409); assert.equal(held.body.code, "RETURN_PENDING");
+  ok(await w.nadya.api.post(`${V2}/material-returns/${rets[0].id}/receive`, { expectedRevision: rets[0].revision }, key("ret-ok")));
+  const accept = await w.nadya.api.post(`/api/inventory/unit-custody/${fg.id}/accept`, { locationId: w.fg.id, expectedRevision: fg.revision }, key("fg-ok")); assert.equal(accept.status, 200, JSON.stringify(accept.body));
+  assert.equal((await testPrisma.unit.findUniqueOrThrow({ where: { id: unit.id } })).status, "READY_FOR_DELIVERY");
+  assert.equal(await testPrisma.job.count({ where: { orderId, type: "DELIVERY" } }), 1, "tepat satu job Delivery");
+  c = await card(w, run.id); assert.equal(c.lifecycle.key, "SIAP_KIRIM");
+  const s1 = await stockCounts(unit.id);
+  assert.deepEqual([s1.issue - s0.issue, s1.ret - s0.ret], [0, 1], "stok keluar tidak bertambah; retur masuk tepat sekali");
+  assert.equal(await testPrisma.materialIssue.count({ where: { productionPlan: { runId: run.id } } }), 1, "Material Issue tidak ganda");
+  const rep = ok(await w.lead.api.get(`${V2}/runs/${run.id}/report`)); assert.equal(rep.lifecycle.key, "SIAP_KIRIM"); assert.equal(rep.cornerView.status.status, "SELESAI");
+  assert.deepEqual(rep.sequence.map((x) => x.key), ["BEFORE_TEARDOWN", "OLD_CONTENT", "RACIKAN", "ASSEMBLY", "QC_TEST", "CORNER", "FINAL"]);
+  const ov = ok(await w.lead.api.get(`${V2}/units/${unit.id}/overview`)); assert.equal(ov.production.lifecycle.key, "SIAP_KIRIM", "Unit 360 = status yang sama");
+});
+
+test("Fase 5: ganti kain DENGAN detail Sales tertulis = 'Permintaan kain tertulis' (tanpa konfirmasi tambahan); tanpa permintaan kain = kain lama boleh dipakai kembali", async () => {
+  const w = await world();
+  const withDetail = await layananToQcPass(w, { notes: "Ganti kain motif polos warna abu-abu tua", items: ["Ganti Kain Sarung"] });
+  let c = await card(w, withDetail.run.id); assert.deepEqual([c.cornerView.request.status, c.cornerView.request.needsSalesConfirmation], ["JELAS", false]);
+  ok(await step(w, w.nadya, withDetail.run.id, 9, { payload: {}, media: await media(w.nadya, withDetail.run.id, "i") }));
+  ok(await step(w, w.corner, withDetail.run.id, 10, { payload: cornerStart({ fabricMode: "NEW_INSTALLED" }), media: await media(w.nadya, withDetail.run.id, "i") }));
+  const noReq = await layananToQcPass(w, { notes: "Minta tekstur firm", items: ["Upgrade Fondasi"] });
+  c = await card(w, noReq.run.id); assert.deepEqual([c.cornerView.request.status, c.cornerView.request.fabricChangeRequested], ["TIDAK_ADA_PERMINTAAN_KAIN", false]);
+  ok(await step(w, w.nadya, noReq.run.id, 9, { payload: {}, media: await media(w.nadya, noReq.run.id, "i") }));
+  ok(await step(w, w.corner, noReq.run.id, 10, { payload: cornerStart({ fabricMode: "OLD_REUSED", requestMatch: "SESUAI" }), media: await media(w.nadya, noReq.run.id, "i") }));
+});
+
+test("Fase 5: QC belum meloloskan = Selesaikan Produksi ditolak dengan alasan; tidak ada penawaran barang jadi", async () => {
+  const w = await world();
+  const { unit, run } = await toModuleStart(w, { corner: true });
+  const pv = ok(await w.corner.api.get(`${V2}/runs/${run.id}/finish-preview`)); assert.equal(pv.canFinish, false); assert.equal(pv.checks.find((x) => x.key === "QC").ok, false);
+  const r = await finishCall(w.corner, w, run.id, { media: await media(w.nadya, run.id, "i") }); assert.equal(r.status, 409); assert.equal(r.body.code, "FINISH_NOT_READY");
+  assert.equal(await testPrisma.unitCustodyHandoff.count({ where: { unitId: unit.id, direction: "FINISHED_GOODS" } }), 0);
 });
 
 // Rework (QC GAGAL) dengan permintaan bahan lewat PIC Bahan, serah Gudang (pick yang ada), replay/konflik, dan retur tepat sekali.
@@ -942,8 +1043,8 @@ async function reworkScenario({ target, kindService = "UPG_FONDASI_LAPISAN" }) {
 
   // selesai lewat Corner -> retur sisa TEPAT SEKALI (lapisan diserahkan 2+2, terpakai 2+1 = sisa 1; fondasi habis)
   ok(await step(w, w.nadya, run.id, 9, { payload: { note: "siap dibungkus" }, media: await media(w.nadya, run.id, "i") }));
-  ok(await step(w, w.corner, run.id, 10, { payload: { mattressStyle: "PILLOWTOP", fabricSpec: "Knitting putih quilting", borderColor: "Abu-abu tua" } }));
-  ok(await step(w, w.corner, run.id, 11, { payload: { checklist: { jahitan: true, list: true, resleting: true, kebersihan: true } }, media: await media(w.nadya, run.id, "i", "v") }));
+  ok(await step(w, w.corner, run.id, 10, { payload: cornerStart(), media: await media(w.nadya, run.id, "i") }));
+  ok(await step(w, w.corner, run.id, 11, { payload: cornerDone(), media: await media(w.nadya, run.id, "i", "v") }));
   ok(await step(w, w.corner, run.id, 12, { payload: { confirm: true }, media: await media(w.nadya, run.id, "i") }));
   const rets = await testPrisma.productionMaterialReturn.findMany({ where: { runId: run.id } });
   assert.equal(rets.length, 1, JSON.stringify(rets.map((r) => [r.materialId, Number(r.qty)]))); assert.deepEqual([rets[0].materialId, Number(rets[0].qty), rets[0].status], [w.lapisan.id, 1, "PENDING"]);

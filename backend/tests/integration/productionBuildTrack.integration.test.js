@@ -715,8 +715,16 @@ test("Corner mengikuti kebutuhan yang dikonfirmasi pada rencana: belum dikonfirm
   assert.equal(wrong.status, 409, "tidak ada tahap Kirim ke Corner");
   const meja = ok(await w.nadya.api.get(`${V2}/worker/table`)); assert.ok(meja.items.some((i) => i.runId === rb.run.id), "tetap di antrean Meja");
   const corner = ok(await w.corner.api.get(`${V2}/worker/corner`)); assert.ok(!corner.items.some((i) => i.runId === rb.run.id), "tidak masuk antrean Corner");
-  const fin = ok(await step(w, w.nadya, rb.run.id, 12, { payload: { confirm: true }, media: await media(w.nadya, rb.run.id, "i") }));
-  assert.ok(fin.handoffId);
+  // Fase 5: Corner TIDAK diperlukan — status jujur "tidak berlaku" + alasan + pemutus; PIC Meja menyelesaikan lewat SATU aksi Selesaikan Produksi (tanpa aktivitas/bukti Corner palsu)
+  const cv = (await card(w, rb.run.id)); assert.deepEqual([cv.cornerView.status.status, cv.cornerView.status.applies, cv.cornerView.status.reason], ["TIDAK_BERLAKU", false, "Divan polos, tidak ada kain/jahit"]);
+  assert.ok(cv.cornerView.status.decidedBy, "pemutus (Lead) tercatat"); assert.equal(cv.lifecycle.key, "SIAP_DISELESAIKAN"); assert.equal(cv.lifecycle.cornerNotApplicable, true);
+  const pvb = ok(await w.nadya.api.get(`${V2}/runs/${rb.run.id}/finish-preview`)); assert.deepEqual([pvb.kind, pvb.canFinish], ["HANDOFF_GUDANG", true]); assert.match(pvb.checks.find((x) => x.key === "CORNER").detail, /Tidak berlaku — Divan polos/);
+  const finKey = key("fin-div"); const finPhoto = await media(w.nadya, rb.run.id, "i"); const finRev = (await card(w, rb.run.id)).revision;
+  const [f1, f2] = await Promise.all([1, 2].map((i) => w.nadya.api.post(`${V2}/runs/${rb.run.id}/finish`, { expectedRevision: finRev, workCenterId: w.wc, confirm: true, media: finPhoto }, i === 1 ? finKey : key("fin-div-2"))));
+  assert.deepEqual([f1.status, f2.status].sort(), [200, 409], "dua penyelesaian bersamaan: satu menang");
+  const fin = (f1.status === 200 ? f1 : f2).body;
+  assert.ok(fin.handoffId); assert.equal(fin.finishKind, "HANDOFF_GUDANG");
+  assert.equal(await testPrisma.unitCustodyHandoff.count({ where: { unitId: b.unit.id, direction: "FINISHED_GOODS" } }), 1);
   const ops = await testPrisma.productionOperationRun.findMany({ where: { runId: rb.run.id }, orderBy: { sequence: "asc" } });
   assert.deepEqual(ops.map((o) => [o.stageCode, o.status]), [["custom_build", "COMPLETED"], ["finished", "COMPLETED"]], "tidak ada operasi Corner; tidak ada 'selesai palsu'");
   assert.equal(await testPrisma.productionStepEvidence.count({ where: { runId: rb.run.id, stepNo: { in: [9, 10, 11] } } }), 0);
