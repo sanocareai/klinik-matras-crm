@@ -278,14 +278,28 @@ export async function bacaJejakUnit(db, unitId, { izinHarga = false } = {}) {
   if (produksiSelesai === false) belumFinal.push({ jenis: "PRODUKSI_BELUM_SELESAI", pesan: "Produksi unit ini belum selesai — pemakaian, waste, dan retur masih bisa bertambah" });
   for (const dk of dokumenBelumKeluar) belumFinal.push({ jenis: "ISSUE_BELUM_KELUAR", dokumen: dk.issueNumber, pesan: `Material Issue ${dk.issueNumber} (${dk.status}) belum dikeluarkan Gudang — belum menjadi biaya`, });
 
-  const semuaTanpaNilai = baris.length > 0 && !adaDinilai;
-  const keras = belumFinal.filter((x) => !["FAKTUR_BELUM_ADA"].includes(x.jenis));
-  const statusBiaya = baris.length === 0 ? "BELUM_ADA_PEMAKAIAN" : keras.length === 0 ? "FINAL_MENURUT_HARGA_PO" : "BELUM_FINAL";
-
   const bahan = [...bahanMap.values()].sort((a, b) => a.kode.localeCompare(b.kode)).map((b) => {
     const sisa = b.diserahkan.minus(b.dipakaiPIC).minus(b.waste).minus(b.retur);
     return { ...b, diserahkan: Number(b.diserahkan), dipakaiPIC: Number(b.dipakaiPIC), waste: Number(b.waste), retur: Number(b.retur), penyesuaian: Number(b.penyesuaian), returPending: Number(b.returPending), sisaDiUnit: Number(sisa) };
   });
+
+  // Satu entri per (jenis, bahan) — bukan satu per pergerakan — supaya daftar tetap terbaca.
+  const gabung = new Map();
+  const PER_BAHAN = { FAKTUR_BELUM_ADA: (k, q, n) => `${k}: ${q} (dari ${n} pergerakan) masih menurut harga PO, faktur supplier belum disetujui — selisih harga faktur belum diketahui`, TANPA_HARGA: (k, q, n) => `${k}: ${n} pergerakan (${q}) belum punya harga perolehan — tidak dihitung (bukan Rp0)`, ESTIMASI_HISTORIS: (k, q, n) => `${k}: ${n} pergerakan (${q}) terjadi sebelum nilai dibekukan — hanya estimasi` };
+  const belumFinalRingkas = [];
+  for (const x of belumFinal) {
+    if (!PER_BAHAN[x.jenis]) { belumFinalRingkas.push(x); continue; }
+    const kunci = `${x.jenis}|${x.kode}`;
+    const g = gabung.get(kunci) ?? { jenis: x.jenis, kode: x.kode, qty: 0, n: 0, movementIds: [] };
+    g.qty += Number(x.qty ?? 0); g.n += 1; g.movementIds.push(x.movementId);
+    gabung.set(kunci, g);
+  }
+  const satuanKode = new Map(bahan.map((b) => [b.kode, b.satuan]));
+  for (const g of gabung.values()) belumFinalRingkas.push({ jenis: g.jenis, kode: g.kode, qty: g.qty, jumlahPergerakan: g.n, movementIds: g.movementIds, pesan: PER_BAHAN[g.jenis](g.kode, `${Number(g.qty.toFixed(4))} ${satuanKode.get(g.kode) ?? ""}`.trim(), g.n) });
+  belumFinal.length = 0; belumFinal.push(...belumFinalRingkas);
+  const semuaTanpaNilai = baris.length > 0 && !adaDinilai;
+  const keras = belumFinal.filter((x) => !["FAKTUR_BELUM_ADA"].includes(x.jenis));
+  const statusBiaya = baris.length === 0 ? "BELUM_ADA_PEMAKAIAN" : keras.length === 0 ? "FINAL_MENURUT_HARGA_PO" : "BELUM_FINAL";
 
   const hasil = {
     unit: { id: unit.id, unitCode: unit.unitCode, orderNumber: unit.order?.orderNumber ?? null },

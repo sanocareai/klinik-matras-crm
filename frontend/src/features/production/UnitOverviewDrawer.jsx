@@ -489,6 +489,7 @@ export function UnitOverviewDrawer({ unitId, onClose, onManage, manageLabel = "K
       <div className="flex min-h-0 flex-1 flex-col px-6 pb-4">
         {error && <p role="alert" className="rounded-btn bg-redbg px-3 py-2 text-[12.5px] text-red">{error}</p>}
         {unavailable && <div data-testid="unit-overview-fallback"><UnitOrderFallback data={legacy.data} error={legacy.error} loading={legacy.loading} roles={rolesOf(currentUserLocal())} onData={(t) => setLegacy({ data: t, error: "", loading: false })} onChanged={onChanged} /></div>}
+        {unavailable && <div className="mt-4 border-t border-line pt-3" data-testid="unit360-jejak-bahan-fallback"><JejakBiayaBahan unitId={unitId} sumber="unit" /></div>}
         {!data && !error && !unavailable && <div data-testid="unit-overview-loading" className="space-y-2"><div className="h-6 w-2/3 animate-pulse rounded bg-inset" /><div className="h-24 animate-pulse rounded bg-inset" /></div>}
         {data && (
           <div data-testid="unit-overview-ready" className="flex min-h-0 flex-1 flex-col">

@@ -69,6 +69,7 @@ test("pemasangan: rute Finance, menu, API, dan Unit 360 tab Bahan memakai kompon
   const u = baca("../src/features/production/UnitOverviewDrawer.jsx");
   assert.ok(u.includes('<JejakBiayaBahan unitId={data.identity.unitId} sumber="unit" />'));
   assert.ok(u.includes('data-testid="unit360-jejak-bahan"'));
+  assert.ok(u.includes('data-testid="unit360-jejak-bahan-fallback"'), "unit di luar V2 juga menampilkan jejak biaya");
 });
 
 test("komponen: tanpa tombol aksi tulis; menjelaskan stok hanya via Material Issue; menandai belum final & catatan PIC bukan stok", () => {
