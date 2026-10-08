@@ -66,7 +66,7 @@ test("kontrak UI: konteks analisis (Sales + komponen lama + QC awal + uji fondas
   const sheet = strip(src("features", "production", "componentNotes", "ComponentNoteSheet.jsx"));
   assert.match(sheet, /section === "PLAN_RACIKAN"/); assert.match(sheet, /plan-total-preview/); assert.match(sheet, /<AnalysisContext data=\{analysis\} \/>/); assert.match(sheet, /planned/);
   const panel = strip(src("features", "production", "componentNotes", "ComponentNotesPanel.jsx"));
-  assert.match(panel, /showAnalysis && <AnalysisContext data=\{data\} \/>/); assert.match(panel, /analysis=\{sheet === "PLAN_RACIKAN" \? data : null\}/);
+  assert.match(panel, /showAnalysis && <AnalysisContext data=\{data\} \/>/); assert.match(panel, /analysis=\{\["PLAN_RACIKAN", "WHOLE_TEST_AFTER", "FOUNDATION_TEST_AFTER"\]\.includes\(sheet\) \? data : null\}/);
   const jd = strip(src("features", "production", "workerApp", "JobDetail.jsx"));
   assert.match(jd, /showAnalysis=\{card\.track !== "BUILD"\}/, "konteks analisis di Meja untuk LAYANAN; jalur BUILD tidak berubah");
 });
