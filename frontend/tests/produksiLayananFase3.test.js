@@ -104,3 +104,9 @@ test("PIC Bahan LAYANAN: pemakaian aktual dicatat PIC Bahan; Meja tidak mengisi 
   assert.match(sheet, /restoration \? "RESTORATION"/); assert.match(sheet, /material-restoration-note/);
   assert.match(strip(src("features", "production", "workerApp", "JobDetail.jsx")), /data-testid="pic-bahan-usage"/);
 });
+
+test("dokumentasi tidak wajib pada analisis/racikan (frontend): racikan rencana tanpa minimal media; konteks analisis tidak mengunggah apa pun", () => {
+  assert.equal(M.minMediaFor("PLAN_RACIKAN"), 0); assert.equal(M.maxMediaFor("PLAN_RACIKAN"), 8);
+  const d = { ...M.draftFromEntry("PLAN_RACIKAN", null), foundationOn: true, foundation: { action: "KEEP", system: "", material: null, note: "" } };
+  assert.equal(M.validateDraft("PLAN_RACIKAN", d), null, "tanpa foto/video pun sah");
+});

@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import * as B2 from "../src/lib/domain/productionComponents.js";
 import {
   COMPONENT_SECTIONS, QC_SECTION_KEYS, buildComparison, materialAttributes, normalizeSectionData, summarizeResultLayers,
 } from "../src/lib/domain/productionComponents.js";
@@ -71,4 +72,10 @@ test("kontrak sumber: rencana/aktual tidak menyentuh stok-BOM-issue; PIC Bahan L
   assert.match(build, /allowRestoration: true/); assert.match(build, /BUILD_RACIKAN_NOT_APPLICABLE_LAYANAN/);
   const schema = fs.readFileSync(path.join(here, "..", "prisma", "schema.prisma"), "utf8");
   assert.doesNotMatch(schema, /model\s+\w*(PlanRacikan|RacikanRencana|LayananMaterial)\w*/i, "tidak ada tabel paralel untuk racikan/PIC Bahan LAYANAN");
+});
+
+test("dokumentasi TIDAK wajib pada analisis/racikan: PLAN_RACIKAN tanpa minimal media; foto opsional (maks 8)", () => {
+  assert.equal(COMPONENT_SECTIONS.PLAN_RACIKAN.minMedia ?? 0, 0);
+  assert.equal(B2.maxMediaFor("PLAN_RACIKAN"), 8);
+  assert.deepEqual(B2.normalizeMediaItems([], { kindOf: () => "image", section: "PLAN_RACIKAN" }), []);
 });

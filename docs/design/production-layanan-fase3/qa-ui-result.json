@@ -1,0 +1,46 @@
+{
+ "note": "Run konsolidasi pada staging terisolasi (BUKAN production); image kandidat bersih dari arsip commit. A: Meja; B: PIC Bahan+Meja+NEW; C: PIC QC/Unit360/Dokumentasi/adaptasi/laporan 390+1440 x terang+gelap; D: Corner. Kegagalan yang tercatat = salah asersi skrip (lihat README), diverifikasi manual.",
+ "runs": {
+  "a": {
+   "pass": 23,
+   "total": 24,
+   "failed": [
+    "A3.3 daftar rencana atas->bawah dengan tindakan & ketebalan (dari catatan awal ditandai)"
+   ],
+   "consoleErrors": [
+    "Failed to load resource: the server responded with a status of 409 (Conflict)"
+   ],
+   "http4xx": [
+    "worker1 409 POST /api/production-v2/component-notes/units/293ae962-2965-4bec-84a2-c2a501c6ffea/sections/PLAN_RACIKAN @/produksi/meja"
+   ]
+  },
+  "b": {
+   "pass": 19,
+   "total": 21,
+   "failed": [
+    "B2.7 tampilan: pemakaian aktual muncul di bagian PIC Bahan",
+    "B3.2 formulir tahap 6: catatan 'Pemakaian bahan dicatat PIC Bahan: <nama>' + bahan dipakai terbaca; tanpa input bahan"
+   ],
+   "consoleErrors": [],
+   "http4xx": []
+  },
+  "c": {
+   "pass": 30,
+   "total": 30,
+   "failed": [],
+   "consoleErrors": [
+    "Failed to load resource: the server responded with a status of 403 (Forbidden)"
+   ],
+   "http4xx": [
+    "lead 403 GET /api/production-v2/component-notes/qc-queue @/produksi/qc"
+   ]
+  },
+  "d": {
+   "pass": 6,
+   "total": 6,
+   "failed": [],
+   "consoleErrors": [],
+   "http4xx": []
+  }
+ }
+}

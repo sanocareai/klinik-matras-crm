@@ -57,3 +57,6 @@ Terhadap baseline live terakhir yang diketahui (`86cb882f`): branch ini membawa 
 - Unit LAYANAN yang **sedang aktif di tahap 2–4 saat deploy** akan menunggu catatan PIC QC (perubahan perilaku yang disengaja); perlu komunikasi ke Meja/PIC QC dan antrean PIC QC dipantau pada hari pertama.
 - Baseline live tidak dapat dibaca ulang dari production; rehearsal memakai dump staging 218.
 - Flag/cohort tidak diubah; unit di luar cohort Production V2 tidak mendapat fitur ini.
+
+## 6. Pembaruan (Fase 3)
+Gap §5 yang ditutup di `docs/design/production-layanan-fase3/`: gerbang QC kini dipin per Run baru (Run lama tidak terkena; penerapan eksplisit tercatat), izin QC per role dibuktikan HTTP, Aplikasi PIC QC mandiri `/produksi/qc`, panel Corner & Dokumentasi diklik-uji. Koreksi: izin QC dipegang ADMIN/OWNER/QC_LEAD (Production Lead **tidak** memegangnya).
