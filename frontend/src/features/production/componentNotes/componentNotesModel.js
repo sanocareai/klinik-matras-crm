@@ -138,10 +138,10 @@ export function draftFromEntry(section, entry, suggestions = null) {
   }
   if (section === "WHOLE_TEST_BEFORE" || section === "WHOLE_TEST_AFTER") {
     // Berat penguji AKTUAL: tidak pernah diisi otomatis dari berat customer (Sales) — kosong sampai petugas mengetik.
-    return { sameMethod: !!d?.sameMethodAsBefore, complaintMatch: d?.complaintMatch || "", complaintNote: toText(d?.complaintNote), feelNote: toText(d?.feelNote), testerWeight: toText(d?.testerWeightKg), testMethod: toText(d?.testMethod), wholeDrop: toText(d?.wholeDropCm), qcInFrame: !!d?.qcInFrame, note: toText(d?.note), media: mediaItems(entry?.media), reason: "" };
+    return { sameMethod: false, /* konfirmasi sebanding harus dibuat ULANG di setiap penyimpanan (tidak disalin dari versi lama) */ complaintMatch: d?.complaintMatch || "", complaintNote: toText(d?.complaintNote), feelNote: toText(d?.feelNote), testerWeight: toText(d?.testerWeightKg), testMethod: toText(d?.testMethod), wholeDrop: toText(d?.wholeDropCm), qcInFrame: !!d?.qcInFrame, note: toText(d?.note), media: mediaItems(entry?.media), reason: "" };
   }
   if (section === "FOUNDATION_TEST_BEFORE" || section === "FOUNDATION_TEST_AFTER") {
-    return { sameMethod: !!d?.sameMethodAsBefore, system: d?.system || "", material: stripRef(d?.material), unloadedHeight: toText(d?.unloadedHeightCm), loadedHeight: toText(d?.loadedHeightCm), testerWeight: toText(d?.testerWeightKg), testMethod: toText(d?.testMethod), note: toText(d?.note), media: mediaItems(entry?.media), reason: "" };
+    return { sameMethod: false, /* konfirmasi sebanding harus dibuat ULANG di setiap penyimpanan */ system: d?.system || "", material: stripRef(d?.material), unloadedHeight: toText(d?.unloadedHeightCm), loadedHeight: toText(d?.loadedHeightCm), testerWeight: toText(d?.testerWeightKg), testMethod: toText(d?.testMethod), note: toText(d?.note), media: mediaItems(entry?.media), reason: "" };
   }
   if (section === "FOUNDATION_BEFORE") {
     return { system: d?.system || "", material: stripRef(d?.material), condition: d?.condition || "", note: toText(d?.note), media: mediaItems(entry?.media), reason: "" };

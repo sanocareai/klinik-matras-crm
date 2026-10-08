@@ -26,7 +26,8 @@ test("formulir uji fondasi baru: draf <-> payload (penurunan TIDAK dikirim, pena
   const p = M.payloadFromDraft("FOUNDATION_TEST_AFTER", d); assert.equal(p.sameMethodAsBefore, true); assert.equal("dropCm" in p, false); assert.deepEqual([p.unloadedHeightCm, p.loadedHeightCm], [25, 23]);
   assert.match(M.validateDraft("FOUNDATION_TEST_AFTER", { ...d, loadedHeight: "26" }), /tidak boleh lebih besar/); assert.match(M.validateDraft("FOUNDATION_TEST_AFTER", { ...d, testerWeight: "" }), /berat penguji/); assert.match(M.validateDraft("FOUNDATION_TEST_AFTER", { ...d, media: [] }), /minimal 1 foto\/video/);
   assert.equal("sameMethodAsBefore" in M.payloadFromDraft("FOUNDATION_TEST_BEFORE", d), false, "uji awal tidak berubah");
-  assert.equal(M.draftFromEntry("FOUNDATION_TEST_AFTER", { data: { ...p, dropCm: 2 }, media: [] }).sameMethod, true);
+  assert.equal(M.draftFromEntry("FOUNDATION_TEST_AFTER", { data: { ...p, dropCm: 2 }, media: [] }).sameMethod, false, "membuka versi lama: konfirmasi sebanding TIDAK disalin — PIC QC mengonfirmasi ulang di setiap penyimpanan");
+  assert.equal(M.draftFromEntry("WHOLE_TEST_AFTER", { data: { sameMethodAsBefore: true, complaintMatch: "SESUAI" }, media: [] }).sameMethod, false);
 });
 
 test("formulir uji kasur jadi: berat penguji tidak terisi otomatis; penurunan 0 sah; media wajib; pesan khusus kasur jadi", () => {
