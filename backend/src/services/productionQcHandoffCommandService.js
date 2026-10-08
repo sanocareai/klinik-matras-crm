@@ -24,11 +24,11 @@ import {
 import { cancelOfferedFinishedGoodsCustodyInTx, offerFinishedGoodsCustodyInTx } from "./unitCustodyCommandService.js";
 import { assertPlanBOMLines, loadPlanForWrite, reserveSupplementalInTx } from "./productionPlanningCommandService.js";
 import { createSupplementalIssueInTx } from "./productionMaterialIssueCommandService.js";
-import { getWorkshopRun, workshopPathOf } from "./productionWorkshopExecutionCommandService.js";
+import { getWorkshopRun, hasAssemblyGate, isAdaptationRun, workshopPathOf } from "./productionWorkshopExecutionCommandService.js";
 import {
   ALLOWED_RESOLUTIONS, RUN_OWNED_STATUSES, RUN_TERMINAL_STATUSES, assertNoOpenRunException, assertRunConsistent, detectRunInconsistency,
 } from "./productionRunGuards.js";
-import { loadBuildSummary } from "./productionStepCommandService.js";
+import { loadAssemblyGateFactsForRun, loadBuildSummary } from "./productionStepCommandService.js";
 import { assertRunPhasesTerminal, transitionPhases } from "./productionPhaseLifecycle.js";
 import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState } from "./v2FeatureFlags.js";
 
@@ -240,6 +240,12 @@ export async function recordQualityInspection(prisma, { runId, actorId, canInspe
     const path = await pathForUnit(tx, run.unit);
     const { qcStage } = workshopPathOf(path);
     if (run.unit.currentStageId !== qcStage.id) throw qcError("Unit tidak berada di gerbang QC pada ledger tahap", 409, "QC_GATE_MISMATCH");
+
+    // Fase 4 (LAYANAN, Run V2, bukan adaptasi): putusan SESUAI (PASS) hanya setelah PIC QC mencatat uji kasur jadi untuk putaran perakitan ini. FAIL (rework) dan WAIVED (kewenangan khusus) tidak diblokir.
+    if (data.result === "PASS" && hasAssemblyGate(run) && !isAdaptationRun(run) && run.unit.order?.category === "LAYANAN") {
+      const facts = await loadAssemblyGateFactsForRun(tx, run);
+      if (!facts.wholeTestAfter?.ok) throw qcError("Uji kasur jadi belum dicatat PIC QC untuk putaran ini — catat dulu di Aplikasi PIC QC sebelum memutuskan Sesuai", 409, "QC_FINISHED_TEST_REQUIRED");
+    }
 
     const now = new Date();
     const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "RECORD_QC", aggregateId: runId, requestHash, expectedRevision: revisionExpected });

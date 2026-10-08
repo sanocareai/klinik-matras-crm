@@ -116,7 +116,7 @@ export function actionLabel(next, { stageLabel, track } = {}) {
     case "RESUME": return "Lanjutkan Pekerjaan";
     case "COMPLETE": return !next.serviceMissing && next.continueOnly ? "Lanjutkan" : `Kirim ${step?.label || "Tahap"}`;
     case "EVIDENCE": return next.general ? "Kirim Catatan & Dokumentasi Umum" : next.rework ? `Ulangi ${step?.label || "Lapisan"} (Rework)` : `Kirim Bukti ${step?.label || ""}`.trim();
-    case "TEST": return "Kirim Uji Tekstur Akhir";
+    case "TEST": return next.continueOnly ? "Lanjutkan ke Gerbang QC" : "Kirim Uji Tekstur Akhir"; // Fase 4: uji kasur jadi ditulis PIC QC; Meja hanya melanjutkan
     case "HANDOFF": return "Kirim ke Corner";
     case "START_CORNER": return "Mulai Jahit";
     case "FINISH": return "Konfirmasi Selesai";
@@ -127,7 +127,7 @@ export function actionLabel(next, { stageLabel, track } = {}) {
 // Aksi yang TIDAK butuh form (langsung kirim).
 export function isQuickAction(next) {
   // continueOnly = bukti sudah ada di sumbernya (diagnosa tahap 5; catatan PIC QC tahap 2/4) -> satu ketuk "Lanjutkan" tanpa formulir.
-  return next?.action === "START" || next?.action === "RESUME" || (next?.action === "COMPLETE" && !!next.continueOnly);
+  return next?.action === "START" || next?.action === "RESUME" || ((next?.action === "COMPLETE" || next?.action === "TEST") && !!next.continueOnly);
 }
 
 export function waitCopy(next) {
@@ -138,6 +138,8 @@ export function waitCopy(next) {
     // kartu Planner diklik (server menegakkan ulang, bukan cuma UI).
     case "PENDING_ARRIVAL": return { title: "Menunggu konfirmasi kedatangan", text: "Unit sudah masuk produksi (pickup berhasil) tapi belum dikonfirmasi tiba di workshop. Konfirmasi kedatangan dulu di Rencana Produksi sebelum tahap ini bisa dimulai." };
     case "AWAITING_QC": return { title: "Menunggu QC", text: "Petugas QC akan menguji unit ini. Anda bisa lanjut ke unit lain." };
+    case "FOUNDATION_NEW_TEST_PENDING": return { title: "Menunggu uji fondasi baru", text: "PIC QC perlu menguji fondasi yang baru dirakit (tinggi tanpa beban dan dibebani, berat penguji, metode, foto/video). Setelah tercatat, Anda bisa menyusun lapisan." };
+    case "FINISHED_TEST_PENDING": return { title: "Menunggu uji kasur jadi", text: "PIC QC perlu menguji kasur jadi (feel, kesesuaian keluhan awal, berat penguji, penurunan kasur utuh). Setelah tercatat, tombol Lanjutkan ke Gerbang QC muncul di sini." };
     case "QC_BEFORE_PENDING": return { title: "Menunggu QC sebelum bongkar", text: "PIC QC perlu mencatat uji kasur sebelum bongkar (kesesuaian keluhan, feel awal, berat penguji, penurunan kasur utuh). Setelah tercatat, tombol Lanjutkan muncul di sini." };
     case "FOUNDATION_TEST_PENDING": return { title: "Menunggu uji fondasi awal", text: "PIC QC perlu mencatat uji fondasi awal (tinggi tanpa beban dan dibebani, berat penguji, metode). Setelah tercatat, tombol Lanjutkan muncul di sini." };
     case "PRODUCT_TYPE_UNCONFIRMED": return { title: "Jenis produk perlu dikonfirmasi", text: `${next.problem || "Jenis produk pada order belum jelas."} Minta Sales memperbaiki jenis produk pada order — produksi tidak mengubah order. Catatan dan dokumentasi umum tetap bisa disimpan; racikan dan pengujian khusus kasur ditahan sampai jelas.` };
@@ -185,7 +187,7 @@ export function friendlyError(error) {
 }
 
 // Validasi awal form tahap (cermin kontrak server). Mengembalikan pesan galat atau null.
-export function validateStepForm(stepNo, form, { mediaItems = [], track, flow = "KASUR", byPic = false, gated = false, layersRequired = false } = {}) {
+export function validateStepForm(stepNo, form, { mediaItems = [], track, flow = "KASUR", byPic = false, gated = false, layersRequired = false, layersAfterRequired = false } = {}) {
   const rule = mediaRuleFor(stepNo, track);
   const done = mediaItems.filter((m) => m.status === "done");
   if (mediaItems.some((m) => m.status === "uploading")) return "Tunggu unggahan selesai.";
@@ -217,7 +219,10 @@ export function validateStepForm(stepNo, form, { mediaItems = [], track, flow = 
       }
       if (!byPic && !(f.materials || []).some((m) => num(m.qty) > 0)) return "Pilih bahan Gudang yang dipakai.";
       return (f.note || "").trim().length >= 3 ? null : "Jelaskan isi fondasi baru.";
-    case 7: return byPic || (f.materials || []).some((m) => num(m.qty) > 0) ? null : "Pilih bahan Gudang yang dipakai.";
+    case 7:
+      // Fase 4 (LAYANAN, Run V2): hasil aktual susunan dicatat di Catatan Komponen (Sesudah pengerjaan) lebih dulu; bukti hanya menaut versinya.
+      if (gated && layersAfterRequired) return "Catat susunan hasil aktual (atas ke bawah) di Catatan Komponen › Sesudah pengerjaan dulu.";
+      return byPic || (f.materials || []).some((m) => num(m.qty) > 0) ? null : "Pilih bahan Gudang yang dipakai.";
     case 8: {
       if (!f.verdict) return "Pilih hasil uji: PAS, Terlalu Keras, atau Terlalu Empuk.";
       return num(f.testerWeightKg) > 0 ? null : "Isi berat penguji (kg).";

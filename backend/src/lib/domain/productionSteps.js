@@ -212,6 +212,8 @@ const label = `Tahap ${stepNo} (${stepLabelFor(stepNo, step.label, ctx.buildTrac
     }
     case 7: {
       requireMedia(media, { label });
+      // Fase 4 (LAYANAN, Run V2): hasil aktual susunan (Catatan Komponen › Sesudah pengerjaan) wajib tercatat SETELAH uji fondasi baru sebelum bukti lapisan diterima; bukti hanya menautkan versinya.
+      if (ctx.assemblyGate && !ctx.assemblyRefs?.after?.ok) throw stepError("Catat susunan hasil aktual (Catatan Komponen › Sesudah pengerjaan) dulu sebelum mengirim bukti lapisan", 409, "STEP_AFTER_REQUIRED");
       const p7Materials = Array.isArray(p.materials) ? p.materials : [];
       const picOwns7 = !!ctx.materialsByPic && !!ctx.picRestoration;
       if (picOwns7 && p7Materials.length) throw stepError("Pemakaian bahan pekerjaan ini dicatat PIC Bahan — kosongkan daftar bahan pada bukti lapisan", 409, "STEP_MATERIAL_BY_MATERIAL_PIC");
@@ -220,10 +222,16 @@ const label = `Tahap ${stepNo} (${stepLabelFor(stepNo, step.label, ctx.buildTrac
         payload: {
           materials: normalizeMaterialLines(p.materials, { ...ctx, required: !picOwns7, label }),
           note: optionalText(p.note, "Catatan lapisan"),
+          ...(ctx.assemblyGate ? { afterRef: { section: "AFTER", version: ctx.assemblyRefs.after.version } } : {}),
         },
       };
     }
     case 8: {
+      // Fase 4 (LAYANAN, Run V2): uji kasur jadi DITULIS PIC QC (WHOLE_TEST_AFTER); Meja hanya melanjutkan — bukti menaut versi catatan QC (tanpa menyalin angka), media = foto/video PIC QC yang sudah tersimpan.
+      if (ctx.assemblyGate) {
+        if (!ctx.assemblyRefs?.wholeTestAfter?.ok) throw stepError("Uji kasur jadi belum dicatat PIC QC", 409, "STEP_WAITING_FINISHED_TEST_PENDING");
+        return { media: normalizeMedia(ctx.assemblyRefs.wholeTestAfter.mediaUrls), payload: { qcRef: { section: "WHOLE_TEST_AFTER", version: ctx.assemblyRefs.wholeTestAfter.version } } };
+      }
       requireMedia(media, { label, video: true });
       if (!TEXTURE_VERDICTS.includes(p.verdict)) throw invalid(`${label}: pilih hasil PAS, TERLALU KERAS, atau TERLALU EMPUK`);
       return { media, payload: { verdict: p.verdict, testerWeightKg: positiveNumber(p.testerWeightKg, "Berat penguji (kg)", { max: 300 }), note: optionalText(p.note, "Catatan uji") } };
@@ -366,6 +374,13 @@ export function deriveNextAction(state) {
       const reworkPending = !!verdict && verdict.payload?.verdict !== "PAS" && (!lastModule || verdict.order > lastModule.order);
       // Jalur pengerjaan kasur: racikan harus tercatat (bukti ber-racikan atau catatan PIC Bahan) sebelum uji tekstur — mis. bukti umum yang disimpan saat jenis produk belum jelas tidak cukup.
       const racikanMissing = !!state.buildTrack && !state.racikanRecorded;
+      // Fase 4 (LAYANAN, Run V2): perakitan -> uji fondasi baru (PIC QC) -> susun lapisan + hasil aktual (Meja) -> uji kasur jadi (PIC QC) -> Meja melanjutkan ke gerbang QC. Verdict tekstur Meja tidak dipakai di jalur ini.
+      if (state.assemblyGate) {
+        if (!state.foundationNewTestOk) return wait("QC", "FOUNDATION_NEW_TEST_PENDING", { stepNo });
+        if (!lastModule) return { actor, stepNo, action: "EVIDENCE", gated: true, ...(state.afterOk ? {} : { layersAfterRequired: true }) };
+        if (!state.wholeTestAfterOk) return wait("QC", "FINISHED_TEST_PENDING", { stepNo: 8 });
+        return { actor, stepNo: 8, action: "TEST", continueOnly: true, qcRecorded: true };
+      }
       if (!lastModule || reworkPending || racikanMissing) return { actor, stepNo, action: "EVIDENCE", rework: reworkPending, lastVerdict: verdict?.payload?.verdict ?? null };
       return { actor, stepNo: 8, action: "TEST" };
     }

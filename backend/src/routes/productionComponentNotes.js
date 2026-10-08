@@ -137,8 +137,9 @@ productionComponentNotesRouter.get("/qc-queue", (req, res, next) => (canWriteQc(
     if (!unitIds) return res.json({ readerMode: "OFF", items: [] });
     const runs = await loadRuns(prisma, { unitId: { in: unitIds }, status: { notIn: ["COMPLETED", "CANCELLED", "PENDING_ARRIVAL"] } });
     const views = await viewsOf(prisma, runs, {});
-    const KIND = { QC_BEFORE_PENDING: "WHOLE_TEST_BEFORE", FOUNDATION_TEST_PENDING: "FOUNDATION_TEST_BEFORE" };
-    const items = views.filter((v) => KIND[v.next?.wait]).map((v) => ({
+    // QC_DECISION = putusan QC (jalur P6 yang sudah ada) — hanya tautan; formulir tetap di halaman QC. Dua jenis uji Fase 4 hanya muncul untuk Run V2 LAYANAN (gerbang perakitan).
+    const KIND = { QC_BEFORE_PENDING: "WHOLE_TEST_BEFORE", FOUNDATION_TEST_PENDING: "FOUNDATION_TEST_BEFORE", FOUNDATION_NEW_TEST_PENDING: "FOUNDATION_TEST_AFTER", FINISHED_TEST_PENDING: "WHOLE_TEST_AFTER", AWAITING_QC: "QC_DECISION" };
+    const items = views.filter((v) => (v.next?.wait === "AWAITING_QC" ? (v.track === "RESTORATION" && v.qcGatePolicy === "QC_GATE_V2" && !v.adaptation) : KIND[v.next?.wait])).map((v) => ({
       runId: v.runId, unitId: v.unit.id, unitCode: v.unit.unitCode, section: KIND[v.next.wait], wait: v.next.wait, stepNo: v.next.stepNo,
       customer: { name: v.customer?.name ?? null, orderNumber: v.customer?.orderNumber ?? null, request: v.customer?.request ?? null, complaints: v.customer?.complaints ?? [], weightKg: v.customer?.weightKg ?? null },
       station: v.plan?.stationLabel ?? null, merk: v.unit.merk ?? null, ukuran: v.unit.ukuran ?? null,

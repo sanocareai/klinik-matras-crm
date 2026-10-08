@@ -23,10 +23,10 @@ import {
 import { assertNoOpenRunException } from "./productionRunGuards.js";
 import {
   RUN_INCLUDE, activeOperation, applyAdaptationFinishInTx, applyAdaptationPolicyInTx, applyQcGatePolicyInTx, applyCompleteInTx, applyDelayInTx, applyPauseInTx, applyResumeInTx, applySkipStageInTx, applyStartInTx,
-  applyQcNotPerformedInTx, assertAdaptationRun, authorizeOperator, bumpRunRevisionInTx, finishBlockersOf, hasQcGatePolicy, isAdaptationRun, isPostQcStage, loadMaterialFacts, loadRunForWrite, materialReadiness, peekStartIsPostQc,
+  applyQcNotPerformedInTx, assertAdaptationRun, authorizeOperator, bumpRunRevisionInTx, finishBlockersOf, hasAssemblyGate, hasQcGatePolicy, isAdaptationRun, isPostQcStage, loadMaterialFacts, loadRunForWrite, materialReadiness, peekStartIsPostQc,
   prepareSkipInTx, prepareStartInTx, workshopPathOf,
 } from "./productionWorkshopExecutionCommandService.js";
-import { ADAPTATION_POLICY, QC_GATE_POLICY } from "./productionSettingsService.js";
+import { ADAPTATION_POLICY, QC_GATE_POLICIES, QC_GATE_POLICY_V2 } from "./productionSettingsService.js";
 import { pathForUnit, resolveCurrentTarget } from "./unitStageEngine.js";
 import { lockRowForUpdate } from "./inventoryLedger.js";
 import { evidenceFileExists } from "../lib/productionEvidenceStore.js";
@@ -35,7 +35,7 @@ import { isDocumentationRow, DOC_STEP_CODE_PREFIX } from "../lib/domain/producti
 import { computeRunLeftovers, createLeftoverReturnsInTx } from "./productionMaterialReturnService.js";
 import { allManualMaterialsMapped, diagnosisBomValid } from "./productionDiagnosisCommandService.js";
 import { buildApplicableSteps, classifyProduct, pathHasBuildStage } from "../lib/domain/productionBuildTrack.js";
-import { loadPreTeardownFacts } from "./productionComponentNoteService.js";
+import { loadAssemblyFacts, loadPreTeardownFacts } from "./productionComponentNoteService.js";
 
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
@@ -141,9 +141,14 @@ export async function loadStepContext(client, run) {
   // Fase 2 (LAYANAN): gerbang QC sebelum bongkar / lapisan awal / uji fondasi awal. Hanya jalur restorasi non-adaptasi; fakta dibaca hanya saat Run berada di tahap bongkar (hemat query papan).
   // Hanya kategori LAYANAN (restorasi): SEWA dan jalur pengerjaan (BARU/custom) TIDAK berubah.
   const inIntake = ["pre_teardown_test", "teardown", "foundation_test"].includes(op?.stageCode);
-  const isLayanan = !buildTrack && !isAdaptationRun(run) && hasQcGatePolicy(run) && inIntake
+  // Fase 4 (LAYANAN, perakitan): gerbang uji fondasi baru / hasil aktual / uji kasur jadi di tahap MODUL (6–8). Hanya Run berkebijakan V2; Run V1/NULL, adaptasi, BARU, SEWA tidak terkena.
+  const inModule = opStage?.phase === "MODULE";
+  const isLayanan = !buildTrack && !isAdaptationRun(run) && hasQcGatePolicy(run) && (inIntake || inModule)
     ? (await client.order.findUnique({ where: { id: run.unit.orderId }, select: { category: true } }))?.category === "LAYANAN" : false;
-  const preTeardownGate = isLayanan;
+  const preTeardownGate = isLayanan && inIntake;
+  const assemblyGate = isLayanan && inModule && hasAssemblyGate(run);
+  const latestAt = (n) => { const e = evidence.filter((x) => x.stepNo === n && !isSkippedEvidence(x)).at(-1); return e ? new Date(e.createdAt).getTime() : null; };
+  const assemblyRefs = assemblyGate ? await loadAssemblyFacts(client, { unitId: run.unitId, runId: run.id, step6At: latestAt(6), step7At: latestAt(7) }) : null;
   const gateRefs = preTeardownGate ? await loadPreTeardownFacts(client, { unitId: run.unitId, runId: run.id }) : null;
   const lastStep6 = evidence.filter((e) => e.stepNo === 6 && !isSkippedEvidence(e)).at(-1);
   const hasRacikan = (r) => !!r && ((String(r.fondasi || "").trim().length >= 3) || (String(r.lapisan || "").trim().length >= 3));
@@ -174,6 +179,7 @@ export async function loadStepContext(client, run) {
     qcGatePolicy: run.qcGatePolicyVersion || null, // Fase 2: NULL = run lama, gerbang QC sebelum bongkar tidak berlaku
     adaptation: isAdaptationRun(run), // slice 2: QC tidak wajib -> tahap kerja tuntas = siap "Selesaikan Produksi"
     preTeardownGate, gateRefs,
+    assemblyGate, assemblyRefs, foundationNewTestOk: !!assemblyRefs?.foundationTestAfter?.ok, afterOk: !!assemblyRefs?.after?.ok, wholeTestAfterOk: !!assemblyRefs?.wholeTestAfter?.ok,
     qcBeforeRecorded: !!gateRefs?.wholeTest, layersBeforeRecorded: !!gateRefs?.layers, foundationTestRecorded: !!gateRefs?.foundationTest,
   };
   return { path, split, pathError, evidence: ordered, documentation, openShortage, latestInspection, material, state, buildSetting, buildRecord, buildView, materialPicView, next: deriveNextAction(state) };
@@ -216,6 +222,13 @@ async function toBuildView(client, setting, record, { cornerLocked = false } = {
       materials: lines.map((l) => ({ materialId: l.materialId, qty: Number(l.qty), code: byId.get(l.materialId)?.code ?? null, name: byId.get(l.materialId)?.name ?? null, uom: byId.get(l.materialId)?.unit ?? null })),
     } : null,
   };
+}
+
+// Fase 4: fakta gerbang perakitan untuk pembaca lain (mis. putusan QC): waktu bukti Meja terakhir dibaca DI SINI (pintu pembaca bukti), lalu digabung dengan catatan komponen. Baca-saja.
+export async function loadAssemblyGateFactsForRun(client, run) {
+  const rows = await client.productionStepEvidence.findMany({ where: { runId: run.id, stepNo: { in: [6, 7] }, stepCode: { not: { startsWith: DOC_STEP_CODE_PREFIX } } }, orderBy: { createdAt: "asc" }, select: { stepNo: true, createdAt: true, payload: true } });
+  const last = (n) => { const e = rows.filter((r) => r.stepNo === n && !isSkippedEvidence(r)).at(-1); return e ? new Date(e.createdAt).getTime() : null; };
+  return loadAssemblyFacts(client, { unitId: run.unitId, runId: run.id, step6At: last(6), step7At: last(7) });
 }
 
 // Ringkasan pengerjaan terakhir (bukti tahap 6) untuk pembaca lain (mis. layar QC): racikan + penjelasan. Pembaca bukti tetap SATU pintu di file ini (audit pembaca P10B).
@@ -275,6 +288,8 @@ function waitMessage(next) {
     case "AWAITING_WAREHOUSE": return "Barang jadi menunggu diterima Gudang.";
     case "HANDOFF_REJECTED": return "Barang jadi ditolak Gudang — tindak lanjut lewat Production Lead.";
     case "EXCEPTION_OPEN": return "Ada konflik data yang harus diselesaikan Production Lead lebih dulu.";
+    case "FOUNDATION_NEW_TEST_PENDING": return "Menunggu PIC QC menguji fondasi baru (tinggi tanpa beban, dibebani, foto/video) sebelum lapisan disusun.";
+    case "FINISHED_TEST_PENDING": return "Menunggu PIC QC menguji kasur jadi (feel, kesesuaian keluhan awal, berat penguji, penurunan kasur utuh).";
     case "QC_BEFORE_PENDING": return "Menunggu PIC QC mencatat uji kasur sebelum bongkar (QC sebelum bongkar).";
     case "FOUNDATION_TEST_PENDING": return "Menunggu PIC QC mencatat uji fondasi awal.";
     case "USAGE_NOT_RECORDED": return "Menunggu PIC Bahan mencatat pemakaian bahan pekerjaan ini (satu sumber pemakaian aktual).";
@@ -315,7 +330,7 @@ export async function recordProductionStep(prisma, { runId, stepNo, actorId, ide
 
     const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "RECORD_PRODUCTION_STEP", aggregateId: runId, requestHash, expectedRevision: revisionExpected });
     const now = new Date();
-    const evidenceCtx = { preTeardownGate: ctx.state.preTeardownGate, gateRefs: ctx.state.gateRefs, issuedQtyByMaterial: [6, 7, 10].includes(requestedStep) ? await issuedQtyByMaterial(tx, run.plan?.id) : new Map(), buildTrack: ctx.state.buildTrack, productFlow: ctx.state.productFlow, racikanRecorded: ctx.state.racikanRecorded, materialsByPic: !!(ctx.state.materialOperatorId || ctx.buildRecord), picRestoration: !!ctx.state.materialPicRestoration };
+    const evidenceCtx = { preTeardownGate: ctx.state.preTeardownGate, gateRefs: ctx.state.gateRefs, assemblyGate: ctx.state.assemblyGate, assemblyRefs: ctx.state.assemblyRefs, issuedQtyByMaterial: [6, 7, 10].includes(requestedStep) ? await issuedQtyByMaterial(tx, run.plan?.id) : new Map(), buildTrack: ctx.state.buildTrack, productFlow: ctx.state.productFlow, racikanRecorded: ctx.state.racikanRecorded, materialsByPic: !!(ctx.state.materialOperatorId || ctx.buildRecord), picRestoration: !!ctx.state.materialPicRestoration };
     let evidence = null;
     let transition = null;
     let autoStarted = null;
@@ -382,8 +397,8 @@ export async function recordProductionStep(prisma, { runId, stepNo, actorId, ide
         const op = activeOperation(run);
         const validated = validateStepEvidence(8, { payload, media }, evidenceCtx);
         await record(op.id, op.stageId, validated);
-        if (validated.payload.verdict === "PAS") {
-          transition = await applyCompleteInTx(tx, { run, op, actorId, note: `Uji tekstur PIC: PAS${validated.payload.note ? ` — ${validated.payload.note}` : ""}`, photoUrls: validated.media.map((m) => m.url) });
+        if (validated.payload.verdict === "PAS" || validated.payload.qcRef) { // gerbang perakitan: uji kasur jadi ditulis PIC QC (qcRef) — Meja hanya melanjutkan ke gerbang QC
+          transition = await applyCompleteInTx(tx, { run, op, actorId, note: validated.payload.qcRef ? `Uji kasur jadi dicatat PIC QC (versi ${validated.payload.qcRef.version})` : `Uji tekstur PIC: PAS${validated.payload.note ? ` — ${validated.payload.note}` : ""}`, photoUrls: validated.media.map((m) => m.url) });
           revision = transition.revision;
         } else {
           revision = await bumpRunRevisionInTx(tx, run);
@@ -758,14 +773,15 @@ export async function finishProduction(prisma, { runId, actorId, idempotencyKey,
 }
 
 // Terapkan gerbang QC sebelum bongkar pada run yang sudah berjalan (aksi EKSPLISIT, tercatat; run lama tidak pernah diubah otomatis). Hanya jalur LAYANAN; tidak mengubah tahap/bukti/catatan/stok.
-export async function applyQcGatePolicy(prisma, { runId, actorId, idempotencyKey, expectedRevision, reason = null }) {
+export async function applyQcGatePolicy(prisma, { runId, actorId, idempotencyKey, expectedRevision, reason = null, version = QC_GATE_POLICY_V2 }) {
+  if (!QC_GATE_POLICIES.includes(version)) throw stepError("Versi kebijakan gerbang QC tidak dikenal", 400, "QC_GATE_VERSION_INVALID");
   if (!runId) throw stepError("runId wajib diisi", 400, "STEP_RUN_REQUIRED");
   assertIdempotencyKey(idempotencyKey);
   const revisionExpected = assertExpectedRevision(expectedRevision);
   const cleanReason = typeof reason === "string" ? reason.trim().slice(0, 300) || null : null;
   if (!cleanReason) throw stepError("Alasan penerapan gerbang QC wajib diisi", 400, "QC_GATE_REASON_REQUIRED");
   const actor = actorId || "SYSTEM";
-  const requestHash = hash({ commandType: "APPLY_QC_GATE_POLICY", runId, expectedRevision: revisionExpected, reason: cleanReason });
+  const requestHash = hash({ commandType: "APPLY_QC_GATE_POLICY", runId, expectedRevision: revisionExpected, reason: cleanReason, version });
   return prisma.$transaction(async (tx) => {
     const replay = await findReplay(tx, actor, idempotencyKey, requestHash);
     if (replay) return replay;
@@ -777,14 +793,14 @@ export async function applyQcGatePolicy(prisma, { runId, actorId, idempotencyKey
     const ctxOrder = await tx.order.findUnique({ where: { id: run.unit.orderId }, select: { category: true } });
     if (ctxOrder?.category !== "LAYANAN") throw stepError("Gerbang QC sebelum bongkar hanya untuk pesanan LAYANAN", 409, "QC_GATE_NOT_APPLICABLE");
     const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "APPLY_QC_GATE_POLICY", aggregateId: runId, requestHash, expectedRevision: revisionExpected });
-    const applied = await applyQcGatePolicyInTx(tx, { run });
+    const applied = await applyQcGatePolicyInTx(tx, { run, version });
     if (applied.changed) {
       await recordActivity(tx, {
         entityType: "unit", entityId: run.unitId, eventType: EVENT_TYPES.PRODUCTION_QC_GATE_APPLIED, actorId: actorId || null,
-        metadata: { unitCode: run.unit.unitCode, runId: run.id, reason: cleanReason, policy: QC_GATE_POLICY, previousPolicy: run.qcGatePolicyVersion || null },
+        metadata: { unitCode: run.unit.unitCode, runId: run.id, reason: cleanReason, policy: version, previousPolicy: run.qcGatePolicyVersion || null },
       });
     }
-    const response = { runId, revision: applied.revision, policy: QC_GATE_POLICY, changed: applied.changed };
+    const response = { runId, revision: applied.revision, policy: applied.changed ? version : (run.qcGatePolicyVersion || version), changed: applied.changed };
     await finishCommand(tx, command, applied.revision, response);
     return { replayed: false, ...response };
   });

@@ -36,7 +36,7 @@ import {
 } from "./unitStageEngine.js";
 import { PHASE_TERMINAL_STATUSES, isStrictLifecycleRun, transitionPhases } from "./productionPhaseLifecycle.js";
 import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState } from "./v2FeatureFlags.js";
-import { ADAPTATION_POLICY, QC_GATE_POLICY, defaultAdaptationPolicy } from "./productionSettingsService.js";
+import { ADAPTATION_POLICY, QC_GATE_POLICIES, QC_GATE_POLICY_V2, defaultAdaptationPolicy } from "./productionSettingsService.js";
 
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
@@ -253,7 +253,8 @@ function processStartTransition(run, now) {
   return updates;
 }
 export const isAdaptationRun = (run) => run?.adaptationPolicy === ADAPTATION_POLICY;
-export const hasQcGatePolicy = (run) => run?.qcGatePolicyVersion === QC_GATE_POLICY;
+export const hasQcGatePolicy = (run) => QC_GATE_POLICIES.includes(run?.qcGatePolicyVersion);
+export const hasAssemblyGate = (run) => run?.qcGatePolicyVersion === QC_GATE_POLICY_V2;
 export function activeOperation(run) { return run.operations.find((op) => op.status === "ACTIVE" || op.status === "PAUSED") || null; }
 
 // Naikkan revisi run (dipakai juga command bukti P8 untuk langkah tanpa transisi tahap) — penulis production_runs_v2 tetap file ini.
@@ -308,7 +309,7 @@ export async function registerWorkshopBornRunInTx(tx, { unitId, actorId, idempot
     const phases = [["INTAKE", "NOT_APPLICABLE", na], ["DIAGNOSIS", "NOT_APPLICABLE", na], ["PROCESS", "NOT_STARTED", null], ["QC", "NOT_STARTED", null], ["HANDOFF", "NOT_STARTED", null]];
     const run = await tx.productionRun.create({
       data: {
-        unitId, kind: "NEW_PRODUCT", origin: "WORKSHOP_BORN", status: "ACTIVE", currentPhase: "PROCESS", revision: 1, adaptationPolicy: await defaultAdaptationPolicy(tx), qcGatePolicyVersion: QC_GATE_POLICY,
+        unitId, kind: "NEW_PRODUCT", origin: "WORKSHOP_BORN", status: "ACTIVE", currentPhase: "PROCESS", revision: 1, adaptationPolicy: await defaultAdaptationPolicy(tx), qcGatePolicyVersion: QC_GATE_POLICY_V2,
         phases: { create: phases.map(([phase, status, reason], index) => ({ phase, status, reason, sequence: index + 1 })) },
       },
     });
@@ -557,9 +558,10 @@ export async function applyAdaptationPolicyInTx(tx, { run }) {
 }
 
 // Terapkan gerbang QC sebelum bongkar pada run yang SUDAH berjalan (aksi EKSPLISIT; run lama tidak pernah diubah otomatis). Tidak menyentuh tahap/bukti/catatan/stok.
-export async function applyQcGatePolicyInTx(tx, { run }) {
-  if (hasQcGatePolicy(run)) return { runId: run.id, revision: run.revision, changed: false };
-  const revision = await bumpRun(tx, run, { qcGatePolicyVersion: QC_GATE_POLICY });
+export async function applyQcGatePolicyInTx(tx, { run, version = QC_GATE_POLICY_V2 }) {
+  // sudah pada versi itu, atau sudah V2 (tidak diturunkan) -> tanpa perubahan
+  if (run.qcGatePolicyVersion === version || run.qcGatePolicyVersion === QC_GATE_POLICY_V2) return { runId: run.id, revision: run.revision, changed: false };
+  const revision = await bumpRun(tx, run, { qcGatePolicyVersion: version });
   return { runId: run.id, revision, changed: true };
 }
 

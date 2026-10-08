@@ -10,6 +10,7 @@ import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { friendlyError } from "@/features/production/experience.js";
 import { BeforeAfterSummary } from "@/features/production/componentNotes/BeforeAfterSummary.jsx";
 import { PreTestBlock } from "@/features/production/componentNotes/PreTestBlock.jsx";
+import { JourneySummary } from "@/features/production/componentNotes/JourneySummary.jsx";
 
 // Paket Laporan Produksi V2 (P8E) — before · proses · after untuk Sales. Media bertanda tangan (akses aman, kedaluwarsa 60 menit).
 // Status broadcast dibaca dari outbox: selama pengirim otomatis belum aktif, status jujur "Menunggu pengirim" (PENDING) — tidak pernah
@@ -90,6 +91,7 @@ export default function ProductionReportV2() {
         {report.components && (
           <Card className="space-y-3 p-4" data-testid="report-components">
             <p className="font-bold text-ink">Komponen: Sebelum → Sesudah</p>
+            <JourneySummary data={{ measurements: report.components.measurements, comparison: report.components.comparison }} />
             <BeforeAfterSummary comparison={report.components.comparison} />
             {report.components.mediaCount > 0 && (
               <div className="space-y-3">

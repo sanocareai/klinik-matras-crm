@@ -35,14 +35,16 @@ export default function PreTestQueue({ standalone = false, onLoaded = null }) {
           <li key={`${it.runId}-${it.section}`} data-testid="pretest-item" data-unit-code={it.unitCode} data-section={it.section} className="flex flex-wrap items-center justify-between gap-2 rounded-btn bg-inset p-3">
             <div className="min-w-0">
               <p className="m-0 text-[14px] font-bold text-ink">{it.unitCode} <span className="font-normal text-ink3">· {it.customer.orderNumber || "—"} · {it.customer.name || "—"}</span></p>
-              <p className="m-0 text-[12.5px] text-ink3">{SECTION_BY_KEY[it.section]?.label}{it.station ? ` · ${it.station}` : ""}</p>
+              <p className="m-0 text-[12.5px] text-ink3">{SECTION_BY_KEY[it.section]?.label ?? "Menunggu putusan hasil QC (Sesuai / Perlu perbaikan)"}{it.station ? ` · ${it.station}` : ""}</p>
             </div>
-            <button type="button" data-mutates data-testid="pretest-open" onClick={() => openSheet(it)} className="min-h-[44px] rounded-btn bg-accent px-4 text-[14px] font-bold text-white">Catat {SECTION_BY_KEY[it.section]?.short}</button>
+            {it.section === "QC_DECISION"
+              ? <a data-testid="pretest-decision-link" href="/bengkel/quality-control" className="inline-flex min-h-[44px] items-center rounded-btn bg-accent px-4 text-[14px] font-bold text-white no-underline">Putuskan Hasil QC</a>
+              : <button type="button" data-mutates data-testid="pretest-open" onClick={() => openSheet(it)} className="min-h-[44px] rounded-btn bg-accent px-4 text-[14px] font-bold text-white">Catat {SECTION_BY_KEY[it.section]?.short}</button>}
           </li>
         ))}
       </ul>
       {open && detail && (
-        <ComponentNoteSheet unitId={open.unitId} unitCode={open.unitCode} section={open.section} entry={detail.sections?.[open.section] || null} salesContext={salesOf(open)}
+        <ComponentNoteSheet unitId={open.unitId} unitCode={open.unitCode} section={open.section} entry={detail.sections?.[open.section] || null} salesContext={salesOf(open)} analysis={detail} measurements={detail.measurements} plan={detail.sections?.PLAN_RACIKAN}
           onClose={() => setOpen(null)} onReload={async () => { setOpen(null); await load(); }}
           onSaved={async () => { setOpen(null); setNotice(`${SECTION_BY_KEY[open.section]?.label} tersimpan untuk ${open.unitCode}.`); await load(); }} />
       )}

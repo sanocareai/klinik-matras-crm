@@ -4,6 +4,7 @@ import { api } from "@/api.js";
 import { isDemoActive } from "@/features/production/demo/demoGate.js";
 import { AnalysisContext } from "./AnalysisContext.jsx";
 import { BeforeAfterSummary } from "./BeforeAfterSummary.jsx";
+import { JourneySummary } from "./JourneySummary.jsx";
 import { ComponentNoteSheet } from "./ComponentNoteSheet.jsx";
 import { PreTestBlock } from "./PreTestBlock.jsx";
 import { DISPLAY_ORDER, NOT_RECORDED, SECTIONS, focusCopy, focusFor, fmtStamp, sectionStatusText } from "./componentNotesModel.js";
@@ -80,6 +81,7 @@ export function ComponentNotesPanel({ unitId, unitCode = null, stepNo = null, sh
           );
         })}
       </ul>
+      <JourneySummary data={data} />
       <PreTestBlock measurements={data.measurements} />
       <BeforeAfterSummary comparison={data.comparison} />
       {showHistory && data.history.length > 1 && (
@@ -95,7 +97,7 @@ export function ComponentNotesPanel({ unitId, unitCode = null, stepNo = null, sh
           </ul>
         </details>
       )}
-      {sheet && <ComponentNoteSheet unitId={unitId} unitCode={unitCode || data.unitCode} section={sheet} entry={data.sections[sheet]} suggestions={data.suggestions} beforeCount={beforeCount} beforeLayers={beforeLayers} salesContext={data.salesContext} analysis={sheet === "PLAN_RACIKAN" ? data : null}
+      {sheet && <ComponentNoteSheet unitId={unitId} unitCode={unitCode || data.unitCode} section={sheet} entry={data.sections[sheet]} suggestions={data.suggestions} beforeCount={beforeCount} beforeLayers={beforeLayers} salesContext={data.salesContext} analysis={["PLAN_RACIKAN", "WHOLE_TEST_AFTER", "FOUNDATION_TEST_AFTER"].includes(sheet) ? data : null} measurements={data.measurements} plan={data.sections.PLAN_RACIKAN}
         onClose={() => setSheet(null)} onSaved={done} onReload={async () => { setSheet(null); await load(); }} />}
     </div>
   );

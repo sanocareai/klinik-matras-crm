@@ -2,7 +2,7 @@
 // BACA-SAJA. Semua keadaan tahap diturunkan dari data P1–P6 + bukti P8 lewat loadStepContext (sumber yang sama dengan command) —
 // tidak ada status UI yang disimpan terpisah. Pemanggil (routes) wajib memfilter unitIds dari reader cohort; unit di luar cohort tidak pernah
 // dimuat. Data customer seperlunya: nama, berat badan, keluhan, request — tanpa telepon/alamat.
-import { componentMessageLines, getComponentReportBlock, measurementMessageLines, planVsActualMessageLines } from "./productionComponentNoteService.js";
+import { componentMessageLines, getComponentReportBlock, measurementMessageLines, planVsActualMessageLines, assemblyMessageLines } from "./productionComponentNoteService.js";
 import {
   ANDON_BUCKETS, COMMAND_CENTER_COLUMNS, STEP_BY_NO, STEPS, andonBucketOf, commandCenterColumn, isSkippedEvidence, stepNoForStage,
 } from "../lib/domain/productionSteps.js";
@@ -644,6 +644,7 @@ export function buildReportMessage(report) {
   lines.push("");
   lines.push(...componentMessageLines(report.components?.comparison));
   { const pva = planVsActualMessageLines(report.components?.comparison, { always: report.order?.category === "LAYANAN" }); if (pva.length) lines.push(...pva, ""); } // Fase 3: rencana vs aktual (Belum dicatat bila kosong)
+  { const asm = assemblyMessageLines(report.components?.measurements, { always: report.order?.category === "LAYANAN" }); if (asm.length) lines.push(...asm, ""); } // Fase 4: uji fondasi baru + kasur jadi (sebanding / belum valid)
   if (report.skippedSteps?.length) lines.push(`• Tahap dilewati (Adaptasi sistem): ${report.skippedSteps.map((s) => s.label).join(", ")} — tidak dikerjakan, tanpa foto/hasil uji`);
   if (report.qcStatus === "TIDAK_DILAKUKAN") lines.push("• QC          : tidak dilakukan (mode adaptasi) — bukan lulus");
   lines.push("");

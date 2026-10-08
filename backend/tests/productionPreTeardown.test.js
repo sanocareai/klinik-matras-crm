@@ -17,7 +17,7 @@ const WHOLE = { complaintMatch: "SEBAGIAN", feelNote: "tengah amblas", testerWei
 const FOUND = { system: "BONNELL", unloadedHeightCm: 25, loadedHeightCm: 15, testerWeightKg: 75, testMethod: "beban di tengah rangka" };
 
 test("seksi pengujian: hanya QC_SECTION_KEYS yang QC; seksi lama tidak berubah", () => {
-  assert.deepEqual(QC_SECTION_KEYS, ["WHOLE_TEST_BEFORE", "FOUNDATION_TEST_BEFORE"]);
+  assert.deepEqual(QC_SECTION_KEYS, ["WHOLE_TEST_BEFORE", "FOUNDATION_TEST_BEFORE", "FOUNDATION_TEST_AFTER", "WHOLE_TEST_AFTER"]);
   assert.equal(isQcSection("LAYERS_BEFORE"), false); assert.equal(isQcSection("WHOLE_TEST_BEFORE"), true);
   assert.deepEqual(Object.keys(COMPONENT_SECTIONS).slice(0, 3), ["LAYERS_BEFORE", "FOUNDATION_BEFORE", "AFTER"]);
 });
@@ -75,7 +75,7 @@ test("media: seksi pengujian & lapisan boleh VIDEO; seksi lama tetap foto saja; 
 
 test("pengukuran TERPISAH: kasur utuh, lapisan, fondasi tidak dijumlahkan; tanpa estimasi gabungan/kategori; data kosong = Belum dicatat", () => {
   const empty = buildMeasurements({});
-  assert.deepEqual(empty.recorded, { whole: false, foundation: false, layers: false }); assert.equal(empty.combinedEstimate, null);
+  assert.deepEqual(empty.recorded, { whole: false, foundation: false, layers: false, wholeAfter: false, foundationAfter: false }); assert.equal(empty.combinedEstimate, null);
   const m = buildMeasurements({
     wholeTest: { version: 1, data: normalizeSectionData("WHOLE_TEST_BEFORE", WHOLE) }, foundationTest: { version: 2, data: normalizeSectionData("FOUNDATION_TEST_BEFORE", FOUND) },
     layersBefore: { version: 1, data: { layers: [{ material: { kind: "UNKNOWN" }, thicknessCm: 6, condition: "BAIK" }, { material: { kind: "UNKNOWN" }, thicknessCm: 4, condition: "BAIK" }] } },

@@ -12,7 +12,7 @@ import { evidenceFileExists } from "../lib/productionEvidenceStore.js";
 import { mediaKindOf } from "../lib/domain/productionSteps.js";
 import { signEvidenceUrl } from "../routes/productionEvidenceMedia.js";
 import {
-  COMPONENT_SECTIONS, COMPONENT_SECTION_KEYS, LIMITS, MATERIAL_KINDS, buildComparison, buildMeasurements, componentError, normalizeMediaItems, normalizeSectionData, materialLabel, summarizeLayers, summarizeResultLayers,
+  COMPONENT_SECTIONS, COMPONENT_SECTION_KEYS, LIMITS, MATERIAL_KINDS, buildComparison, detectDeviation, buildMeasurements, componentError, normalizeMediaItems, normalizeSectionData, materialLabel, summarizeLayers, summarizeResultLayers,
 } from "../lib/domain/productionComponents.js";
 
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
@@ -68,6 +68,36 @@ export async function loadPreTeardownFacts(client, { unitId, runId }) {
   return { wholeTest: v("WHOLE_TEST_BEFORE"), layers: latest.LAYERS_BEFORE ? { version: latest.LAYERS_BEFORE.version, layersUnknown: !!latest.LAYERS_BEFORE.payload?.layersUnknown } : null, foundationTest: v("FOUNDATION_TEST_BEFORE") };
 }
 
+/**
+ * Fakta gerbang PERAKITAN (Fase 4), diukur terhadap waktu di Run ini — bukan sekadar "pernah ada" — supaya putaran rework butuh catatan BARU:
+ *  - foundationTestAfter.ok : uji fondasi baru ditulis SETELAH bukti tahap 6 terakhir (merakit ulang fondasi = uji ulang);
+ *  - after.ok               : hasil aktual (AFTER) ditulis/diperbarui SETELAH uji fondasi baru dan SETELAH putusan QC gagal terakhir;
+ *  - wholeTestAfter.ok      : uji kasur jadi ditulis SETELAH bukti tahap 7 terakhir dan setelah putusan QC gagal terakhir.
+ * step6At/step7At = ms dari bukti Meja terakhir (null bila belum ada). Seksi dari Run lain tidak dihitung (hanya entri Run ini atau tanpa Run).
+ */
+export async function loadAssemblyFacts(client, { unitId, runId, step6At = null, step7At = null }) {
+  const [rows, lastFail] = await Promise.all([
+    client.unitComponentEntry.findMany({
+      where: { unitId, section: { in: ["FOUNDATION_TEST_AFTER", "AFTER", "WHOLE_TEST_AFTER"] }, OR: [{ runId }, { runId: null }] },
+      orderBy: [{ section: "asc" }, { version: "asc" }], select: { section: true, version: true, createdAt: true, media: true },
+    }),
+    client.qualityInspection.findFirst({ where: { runId, result: "FAIL_REWORK" }, orderBy: { inspectedAt: "desc" }, select: { inspectedAt: true, createdAt: true } }),
+  ]);
+  const latest = {}; for (const r of rows) latest[r.section] = r;
+  const t = (r) => (r ? new Date(r.createdAt).getTime() : null);
+  const failAt = lastFail ? new Date(lastFail.inspectedAt || lastFail.createdAt).getTime() : 0;
+  const mediaUrls = (r) => (Array.isArray(r?.media) ? r.media : []).map((m) => m.url);
+  const fta = latest.FOUNDATION_TEST_AFTER; const aft = latest.AFTER; const wta = latest.WHOLE_TEST_AFTER;
+  const ftaOk = !!fta && (step6At == null || t(fta) > step6At);
+  const aftOk = !!aft && t(aft) > Math.max(t(fta) ?? 0, failAt);
+  const wtaOk = !!wta && t(wta) > Math.max(step7At ?? 0, failAt);
+  return {
+    foundationTestAfter: fta ? { version: fta.version, ok: ftaOk, mediaUrls: mediaUrls(fta) } : null,
+    after: aft ? { version: aft.version, ok: aftOk } : null,
+    wholeTestAfter: wta ? { version: wta.version, ok: wtaOk, mediaUrls: mediaUrls(wta) } : null,
+  };
+}
+
 /** Saran (read-only, TIDAK tersimpan) dari bahan yang dipakai di tahap 6/7 — hanya mempermudah mengisi "Sesudah"; bukan data komponen sampai disimpan operator. */
 async function loadSuggestions(client, unitId) {
   const run = await client.productionRun.findFirst({ where: { unitId, status: { not: "CANCELLED" } }, orderBy: { createdAt: "desc" }, select: { id: true } });
@@ -103,6 +133,8 @@ export async function getComponentNotes(client, unitId, { includeSuggestions = t
     wholeTest: sections.WHOLE_TEST_BEFORE ? { data: sections.WHOLE_TEST_BEFORE.data, version: sections.WHOLE_TEST_BEFORE.version } : null,
     foundationTest: sections.FOUNDATION_TEST_BEFORE ? { data: sections.FOUNDATION_TEST_BEFORE.data, version: sections.FOUNDATION_TEST_BEFORE.version } : null,
     layersBefore: sections.LAYERS_BEFORE ? { data: sections.LAYERS_BEFORE.data, version: sections.LAYERS_BEFORE.version } : null,
+    wholeAfter: sections.WHOLE_TEST_AFTER ? { data: sections.WHOLE_TEST_AFTER.data, version: sections.WHOLE_TEST_AFTER.version } : null,
+    foundationAfter: sections.FOUNDATION_TEST_AFTER ? { data: sections.FOUNDATION_TEST_AFTER.data, version: sections.FOUNDATION_TEST_AFTER.version } : null,
   });
   return {
     unitId: unit.id, unitCode: unit.unitCode, sections, comparison, measurements, salesContext: await loadSalesContext(client, unitId),
@@ -121,7 +153,8 @@ export async function getComponentReportBlock(client, unitId) {
   if (!notes) return null;
   const { sections } = notes;
   const before = [...(sections.LAYERS_BEFORE?.media ?? []), ...(sections.FOUNDATION_BEFORE?.media ?? [])];
-  const after = sections.AFTER?.media ?? [];
+  // Fase 4: media uji setelah perbaikan (fondasi baru + kasur jadi) ikut paket "sesudah".
+  const after = [...(sections.AFTER?.media ?? []), ...(sections.FOUNDATION_TEST_AFTER?.media ?? []), ...(sections.WHOLE_TEST_AFTER?.media ?? [])];
   // Fase 2: media pengujian awal (kasur utuh + fondasi) ikut paket "sebelum"; pengukuran tampil TERPISAH (tidak dijumlahkan).
   const testMedia = [...(sections.WHOLE_TEST_BEFORE?.media ?? []), ...(sections.FOUNDATION_TEST_BEFORE?.media ?? [])];
   return { comparison: notes.comparison, measurements: notes.measurements, layersSummary: sections.LAYERS_BEFORE?.summary ?? null, status: notes.comparison.status, media: { before: [...before, ...testMedia], after }, mediaCount: before.length + testMedia.length + after.length };
@@ -142,6 +175,20 @@ export function measurementMessageLines(m) {
     ? `• Uji Fondasi    : ${[f.systemLabel, f.material].filter(Boolean).join(" · ")}; ${f.unloadedHeightCm} cm tanpa beban → ${f.loadedHeightCm} cm dibebani ${f.testerWeightKg} kg (${f.testMethod}); penurunan fondasi ${f.dropCm} cm`
     : "• Uji Fondasi    : Belum dicatat");
   lines.push("• Catatan        : pengukuran kasur utuh, lapisan, dan fondasi berbeda dan tidak dijumlahkan.");
+  return lines;
+}
+
+/** Ringkasan HASIL UJI SETELAH PERBAIKAN untuk pesan Sales (Fase 4): uji fondasi baru + uji kasur jadi, dengan perbandingan terhadap uji awal HANYA bila sebanding. Kosong = "Belum dicatat". Tidak dijumlahkan, tanpa label "amblas". */
+export function assemblyMessageLines(m, { always = false } = {}) {
+  const rec = m?.recorded || {};
+  if (!rec.foundationAfter && !rec.wholeAfter && !always) return [];
+  const fa = m?.foundationAfter; const wa = m?.wholeAfter; const cf = m?.comparisons?.foundation; const cw = m?.comparisons?.whole;
+  const lines = ["🧪 HASIL UJI SETELAH PERBAIKAN:"];
+  lines.push(fa ? `• Uji Fondasi Baru : ${[fa.systemLabel, fa.material].filter(Boolean).join(" · ")}; ${fa.unloadedHeightCm} cm tanpa beban → ${fa.loadedHeightCm} cm dibebani ${fa.testerWeightKg} kg (${fa.testMethod}); penurunan fondasi ${fa.dropCm} cm` : "• Uji Fondasi Baru : Belum dicatat");
+  if (fa && cf?.text) lines.push(`   ↳ ${cf.text}`);
+  lines.push(wa ? `• Uji Kasur Jadi  : ${wa.complaintMatchLabel}; feel "${wa.feelNote}"; beban ${wa.testerWeightKg} kg (${wa.testMethod}); penurunan kasur utuh ${wa.wholeDropCm} cm` : "• Uji Kasur Jadi  : Belum dicatat");
+  if (wa && cw?.text) lines.push(`   ↳ ${cw.text}`);
+  lines.push("• Catatan         : penurunan fondasi dan kasur utuh berbeda dan tidak dijumlahkan.");
   return lines;
 }
 
@@ -213,6 +260,16 @@ function stripSnapshotExtras(v) {
   return v;
 }
 
+// Fase 4: hasil aktual yang MENYIMPANG dari racikan rencana wajib disertai alasan (dicatat sebagai bagian dari revisi berversi). Tanpa racikan rencana = tidak ada yang dibandingkan (perilaku lama).
+async function assertDeviationExplained(tx, unitId, afterData) {
+  if (afterData.deviationNote) return;
+  const latestOf = (section) => tx.unitComponentEntry.findFirst({ where: { unitId, section }, orderBy: { version: "desc" }, select: { payload: true, version: true } });
+  const [plan, layersBefore, foundationBefore] = await Promise.all([latestOf("PLAN_RACIKAN"), latestOf("LAYERS_BEFORE"), latestOf("FOUNDATION_BEFORE")]);
+  if (!plan) return;
+  const dev = detectDeviation({ plan: { data: plan.payload, version: plan.version }, after: { data: afterData, version: null }, layersBefore: layersBefore ? { data: layersBefore.payload } : null, foundationBefore: foundationBefore ? { data: foundationBefore.payload } : null });
+  if (dev.hasDeviation) throw componentError("Hasil aktual berbeda dari racikan rencana — tulis alasan perbedaannya", 422, "COMPONENT_DEVIATION_REASON_REQUIRED", { items: dev.items });
+}
+
 // Ganti ref katalog dengan snapshot server (kode/nama/satuan); bahan harus ada & aktif. Tidak ada klien yang bisa memalsukan nama katalog.
 async function resolveMaterialRefs(tx, data) {
   const refs = [];
@@ -273,6 +330,7 @@ export async function recordComponentSection(prisma, { unitId, section, actor, i
       if (!evidenceFileExists(it.url)) throw componentError("Ada foto yang belum selesai terunggah — unggah ulang lalu simpan", 422, "COMPONENT_MEDIA_NOT_FOUND");
       if (await otherUnitUsesFile(tx, unitId, it.url)) throw componentError("Foto ini sudah dipakai sebagai bukti unit lain dan tidak bisa dipakai di sini", 409, "COMPONENT_MEDIA_OTHER_UNIT");
     }
+    if (section === "AFTER") await assertDeviationExplained(tx, unitId, normalized);
     const resolved = await resolveMaterialRefs(tx, normalized);
     const mediaJson = items.map((i) => ({ url: i.url, kind: i.kind, caption: i.caption, order: i.order, ...(i.layerOrder ? { layerOrder: i.layerOrder } : {}) }));
     const command = await tx.v2Command.create({

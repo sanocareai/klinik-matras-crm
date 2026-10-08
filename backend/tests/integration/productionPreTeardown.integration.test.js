@@ -287,12 +287,12 @@ test("adaptasi, SEWA, dan jalur NEW/custom TIDAK terkena gerbang; tahap boleh di
   assert.notEqual((await card(w, lr.id)).next.wait, "QC_BEFORE_PENDING");
 });
 
-test("kebijakan gerbang QC dipin per Run: Run baru terpin QC_GATE_V1; Run lama (NULL) TIDAK otomatis terkena; penerapan eksplisit, beralasan, bergerbang izin/revisi, idempoten, tercatat", async () => {
+test("kebijakan gerbang QC dipin per Run: Run baru terpin QC_GATE_V2; Run lama (NULL) TIDAK otomatis terkena; penerapan eksplisit, beralasan, bergerbang izin/revisi, idempoten, tercatat", async () => {
   const w = await world();
   // Run baru -> terpin
   const { unit, run } = await layananUnit(w);
-  assert.equal((await testPrisma.productionRun.findUniqueOrThrow({ where: { id: run.id } })).qcGatePolicyVersion, "QC_GATE_V1", "Run baru dipin saat dibuat");
-  assert.equal((await card(w, run.id)).qcGatePolicy, "QC_GATE_V1");
+  assert.equal((await testPrisma.productionRun.findUniqueOrThrow({ where: { id: run.id } })).qcGatePolicyVersion, "QC_GATE_V2", "Run baru dipin saat dibuat");
+  assert.equal((await card(w, run.id)).qcGatePolicy, "QC_GATE_V2");
 
   // Simulasi Run yang sudah berjalan sebelum rilis (kolom NULL): perilaku LAMA, tidak ada gerbang
   await testPrisma.productionRun.update({ where: { id: run.id }, data: { qcGatePolicyVersion: null } });
@@ -313,7 +313,7 @@ test("kebijakan gerbang QC dipin per Run: Run baru terpin QC_GATE_V1; Run lama (
 
   const gk = key("g4");
   const applied = ok(await w.lead.api.post(url, { expectedRevision: old.revision, reason: "Run baru mulai hari ini, ikut gerbang QC" }, gk));
-  assert.deepEqual([applied.policy, applied.changed, applied.revision], ["QC_GATE_V1", true, old.revision + 1]);
+  assert.deepEqual([applied.policy, applied.changed, applied.revision], ["QC_GATE_V2", true, old.revision + 1]);
   const replay = ok(await w.lead.api.post(url, { expectedRevision: old.revision, reason: "Run baru mulai hari ini, ikut gerbang QC" }, gk));
   assert.equal(replay.revision, applied.revision, "replay idempoten (kunci sama)");
   const logs = await testPrisma.activityEvent.findMany({ where: { entityId: unit.id, eventType: "PRODUCTION_QC_GATE_APPLIED" } });
@@ -324,7 +324,7 @@ test("kebijakan gerbang QC dipin per Run: Run baru terpin QC_GATE_V1; Run lama (
 
   // Setelah diterapkan, gerbang berlaku: tahap 2 menunggu PIC QC
   const gated = await card(w, run.id);
-  assert.deepEqual([gated.qcGatePolicy, gated.next.action, gated.next.wait], ["QC_GATE_V1", "WAIT", "QC_BEFORE_PENDING"]);
+  assert.deepEqual([gated.qcGatePolicy, gated.next.action, gated.next.wait], ["QC_GATE_V2", "WAIT", "QC_BEFORE_PENDING"]);
   assert.equal((await w.qc.api.get(`${CN}/qc-queue`)).body.items.length, 1);
 
   // Tidak berlaku untuk adaptasi/BARU/SEWA

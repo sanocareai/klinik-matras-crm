@@ -14,7 +14,7 @@ const src = (...p) => fs.readFileSync(path.join(here, "..", "src", ...p), "utf8"
 const done = (id = "m1", extra = {}) => ({ id, kind: "video", status: "done", url: `/media/production-evidence/${id}.mp4`, caption: "", ...extra });
 
 test("seksi pengujian terdaftar sebagai QC; media minimal 1 dan maksimal sesuai server", () => {
-  assert.deepEqual(SECTIONS.filter((s) => s.qc).map((s) => s.key), ["WHOLE_TEST_BEFORE", "FOUNDATION_TEST_BEFORE"]);
+  assert.deepEqual(SECTIONS.filter((s) => s.qc).map((s) => s.key), ["WHOLE_TEST_BEFORE", "FOUNDATION_TEST_BEFORE", "FOUNDATION_TEST_AFTER", "WHOLE_TEST_AFTER"]);
   assert.equal(minMediaFor("WHOLE_TEST_BEFORE"), 1); assert.equal(minMediaFor("AFTER"), 0);
   assert.deepEqual([maxMediaFor("AFTER"), maxMediaFor("WHOLE_TEST_BEFORE"), maxMediaFor("LAYERS_BEFORE")], [8, 12, 24]);
 });

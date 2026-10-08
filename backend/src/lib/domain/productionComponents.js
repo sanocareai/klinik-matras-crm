@@ -12,9 +12,12 @@ export const COMPONENT_SECTIONS = Object.freeze({
   LAYERS_BEFORE: { key: "LAYERS_BEFORE", label: "Lapisan sebelum dibongkar", phase: "BEFORE" },
   FOUNDATION_BEFORE: { key: "FOUNDATION_BEFORE", label: "Fondasi sebelum dibongkar", phase: "BEFORE" },
   AFTER: { key: "AFTER", label: "Sesudah pengerjaan", phase: "AFTER" },
-  PLAN_RACIKAN: { key: "PLAN_RACIKAN", label: "Racikan rencana", phase: "PLAN" },
   WHOLE_TEST_BEFORE: { key: "WHOLE_TEST_BEFORE", label: "QC sebelum bongkar (uji kasur utuh)", phase: "BEFORE", qc: true, minMedia: 1 },
   FOUNDATION_TEST_BEFORE: { key: "FOUNDATION_TEST_BEFORE", label: "Uji fondasi awal", phase: "BEFORE", qc: true, minMedia: 1 },
+  // Fase 4 (LAYANAN, perakitan -> uji hasil): pengujian SETELAH perbaikan ditulis PIC QC (pola sama dengan uji awal Fase 2). Pengukuran tidak pernah dijumlahkan; perbandingan dengan uji awal HANYA bila sebanding.
+  FOUNDATION_TEST_AFTER: { key: "FOUNDATION_TEST_AFTER", label: "Uji fondasi baru", phase: "AFTER", qc: true, minMedia: 1 },
+  WHOLE_TEST_AFTER: { key: "WHOLE_TEST_AFTER", label: "Uji kasur jadi", phase: "AFTER", qc: true, minMedia: 1 },
+  PLAN_RACIKAN: { key: "PLAN_RACIKAN", label: "Racikan rencana", phase: "PLAN" },
 });
 // Seksi PENGUJIAN: hanya pemegang izin QC (PIC QC) yang boleh menulis — ditegakkan di route (bukan penugasan Meja).
 export const QC_SECTION_KEYS = Object.freeze(Object.keys(COMPONENT_SECTIONS).filter((k) => COMPONENT_SECTIONS[k].qc));
@@ -162,6 +165,9 @@ export function normalizeSectionData(section, data) {
   }
   if (section === "WHOLE_TEST_BEFORE") return normalizeWholeTest(data, note);
   if (section === "FOUNDATION_TEST_BEFORE") return normalizeFoundationTest(data, note);
+  // Fase 4: uji SETELAH perbaikan = bentuk yang sama + penanda QC "titik & metode sama dengan uji awal" (dasar kesebandingan; bukan tebakan dari teks bebas).
+  if (section === "WHOLE_TEST_AFTER") return { ...normalizeWholeTest(data, note), sameMethodAsBefore: data.sameMethodAsBefore === true };
+  if (section === "FOUNDATION_TEST_AFTER") return { ...normalizeFoundationTest(data, note), sameMethodAsBefore: data.sameMethodAsBefore === true };
   // AFTER (hasil aktual) dan PLAN_RACIKAN (rencana) berbentuk sama — satu normalizer, tanpa salinan paralel.
   return normalizeResultShape(data, note, { planned: section === "PLAN_RACIKAN" });
 }
@@ -197,7 +203,9 @@ function normalizeResultShape(data, note, { planned }) {
       thicknessCm: normalizeThickness(r.thicknessCm, fld), note: cleanText(r.note, LIMITS.ITEM_NOTE, `${fld}: catatan`),
     };
   });
-  return { foundation, layers, note };
+  // Fase 4: alasan perbedaan hasil aktual dari racikan rencana (opsional di normalizer; WAJIB bila ada perbedaan — ditegakkan service terhadap PLAN_RACIKAN). Hanya ada di AFTER; entri lama tanpa kunci ini tidak berubah.
+  const deviationNote = planned ? null : cleanText(data.deviationNote, LIMITS.NOTE, "Alasan perbedaan");
+  return { foundation, layers, ...(deviationNote ? { deviationNote } : {}), note };
 }
 
 // Seksi lama: hanya FOTO (perilaku slice 3 dipertahankan). Seksi PENGUJIAN dan LAYERS_BEFORE (fase 2): foto ATAU video; LAYERS_BEFORE boleh menautkan media ke satu lapisan (layerOrder 1..jumlah lapisan).
@@ -427,14 +435,55 @@ export function summarizeLayers(data) {
 export const SEPARATION_NOTE = "Penurunan kasur utuh, lapisan terpisah, dan fondasi adalah pengukuran berbeda dan TIDAK dijumlahkan (menghindari hitung ganda). Kategori kondisi tidak ditetapkan otomatis dari angka.";
 
 /** Tampilan terpisah tiga jenis pengukuran. Estimasi gabungan hanya bila ada pengukuran komponen terpisah dengan metode sejenis — belum ada data seperti itu, jadi selalu null (tidak dikarang). */
-export function buildMeasurements({ wholeTest = null, foundationTest = null, layersBefore = null } = {}) {
+export function buildMeasurements({ wholeTest = null, foundationTest = null, layersBefore = null, wholeAfter = null, foundationAfter = null } = {}) {
   const w = wholeTest?.data ?? null; const f = foundationTest?.data ?? null; const l = layersBefore?.data ?? null;
+  const wView = (e) => (e ? { version: e.version, complaintMatch: e.data.complaintMatch, complaintMatchLabel: complaintMatchLabel(e.data.complaintMatch), complaintNote: e.data.complaintNote ?? null, feelNote: e.data.feelNote, testerWeightKg: e.data.testerWeightKg, testMethod: e.data.testMethod, wholeDropCm: e.data.wholeDropCm, qcInFrame: e.data.qcInFrame ?? null, sameMethodAsBefore: e.data.sameMethodAsBefore ?? null, note: e.data.note ?? null } : null);
+  const fView = (e) => (e ? { version: e.version, system: e.data.system, systemLabel: systemLabel(e.data.system), material: materialLabel(e.data.material), unloadedHeightCm: e.data.unloadedHeightCm, loadedHeightCm: e.data.loadedHeightCm, dropCm: e.data.dropCm, testerWeightKg: e.data.testerWeightKg, testMethod: e.data.testMethod, sameMethodAsBefore: e.data.sameMethodAsBefore ?? null, note: e.data.note ?? null } : null);
+  const wb = wView(wholeTest); const fb = fView(foundationTest); const wa = wView(wholeAfter); const fa = fView(foundationAfter);
   return {
-    whole: w ? { version: wholeTest.version, complaintMatch: w.complaintMatch, complaintMatchLabel: complaintMatchLabel(w.complaintMatch), complaintNote: w.complaintNote ?? null, feelNote: w.feelNote, testerWeightKg: w.testerWeightKg, testMethod: w.testMethod, wholeDropCm: w.wholeDropCm, qcInFrame: !!w.qcInFrame, note: w.note ?? null } : null,
-    foundation: f ? { version: foundationTest.version, system: f.system, systemLabel: systemLabel(f.system), material: materialLabel(f.material), unloadedHeightCm: f.unloadedHeightCm, loadedHeightCm: f.loadedHeightCm, dropCm: f.dropCm, testerWeightKg: f.testerWeightKg, testMethod: f.testMethod, note: f.note ?? null } : null,
+    whole: wb, foundation: fb,
     layers: l ? { version: layersBefore.version, ...summarizeLayers(l) } : null,
-    recorded: { whole: !!w, foundation: !!f, layers: !!l },
+    wholeAfter: wa, foundationAfter: fa,
+    comparisons: { foundation: compareTests(fb, fa, "dropCm", "fondasi"), whole: compareTests(wb, wa, "wholeDropCm", "kasur utuh") },
+    recorded: { whole: !!w, foundation: !!f, layers: !!l, wholeAfter: !!wa, foundationAfter: !!fa },
     combinedEstimate: null, // tidak ada pengukuran komponen terpisah yang metodenya sepadan; tidak ada estimasi gabungan
     separationNote: SEPARATION_NOTE,
   };
 }
+
+// ---- Fase 4: kesebandingan uji awal vs uji setelah perbaikan -------------------------------------------------------------------------------------------------
+// Sebanding HANYA bila PIC QC menandai "titik & metode sama dengan uji awal" DAN berat penguji aktual berselisih <= toleransi. Bila tidak: kedua angka tetap ditampilkan, TANPA selisih dan tanpa kesimpulan.
+export const COMPARABLE_WEIGHT_TOLERANCE_KG = 2;
+function compareTests(before, after, dropKey, noun) {
+  if (!before || !after) {
+    return { available: false, comparable: false, reasons: [], text: !before && !after ? `Uji awal dan uji setelah perbaikan ${NOT_RECORDED_LABEL.toLowerCase()}` : !before ? `Uji awal ${noun} ${NOT_RECORDED_LABEL.toLowerCase()} — tidak bisa dibandingkan` : `Uji setelah perbaikan ${noun} ${NOT_RECORDED_LABEL.toLowerCase()}`, beforeDropCm: before?.[dropKey] ?? null, afterDropCm: after?.[dropKey] ?? null, differenceCm: null };
+  }
+  const reasons = [];
+  if (after.sameMethodAsBefore !== true) reasons.push("METODE_TIDAK_DITANDAI_SAMA");
+  if (Math.abs(Number(before.testerWeightKg) - Number(after.testerWeightKg)) > COMPARABLE_WEIGHT_TOLERANCE_KG) reasons.push("BERAT_BEDA");
+  const comparable = reasons.length === 0;
+  const bd = before[dropKey]; const ad = after[dropKey];
+  const why = [reasons.includes("BERAT_BEDA") ? `berat penguji berbeda (awal ${before.testerWeightKg} kg, baru ${after.testerWeightKg} kg)` : null, reasons.includes("METODE_TIDAK_DITANDAI_SAMA") ? "titik/metode tidak ditandai sama dengan uji awal" : null].filter(Boolean).join("; ");
+  const differenceCm = comparable ? round(bd - ad) : null; // positif = penurunan berkurang
+  return {
+    available: true, comparable, reasons, beforeDropCm: bd, afterDropCm: ad, differenceCm,
+    text: comparable
+      ? `Sebanding dengan uji awal (metode sama, berat ${before.testerWeightKg} kg vs ${after.testerWeightKg} kg): turun ${bd} cm → ${ad} cm${differenceCm > 0 ? ` (${differenceCm} cm lebih sedikit)` : differenceCm < 0 ? ` (${Math.abs(differenceCm)} cm lebih banyak)` : " (sama)"}`
+      : `Perbandingan langsung belum valid: ${why}. Awal turun ${bd} cm · sekarang turun ${ad} cm — kedua angka ditampilkan apa adanya, tanpa selisih.`,
+  };
+}
+
+// ---- Fase 4: perbedaan hasil aktual (AFTER) dari racikan rencana (PLAN_RACIKAN) --------------------------------------------------------------------------------
+// Bagian yang BELUM dicatat di AFTER (fondasi null / lapisan kosong) tidak dihitung sebagai perbedaan (mis. fondasi dicatat lebih dulu, lapisan menyusul). Dipakai service untuk mewajibkan alasan.
+export function detectDeviation({ plan = null, after = null, layersBefore = null, foundationBefore = null } = {}) {
+  if (!plan || !after) return { hasDeviation: false, items: [] };
+  const pv = resultView({ data: plan.data ?? plan, version: plan.version ?? null }, layersBefore, foundationBefore);
+  const av = resultView({ data: after.data ?? after, version: after.version ?? null }, layersBefore, foundationBefore);
+  const cmpRes = planVsActualOf(pv, av);
+  const items = [];
+  const hasFoundationActual = !!av?.foundation; const hasLayersActual = (av?.layers?.length ?? 0) > 0;
+  if (cmpRes.foundation && hasFoundationActual && cmpRes.foundation.status !== "SAMA") items.push({ part: "FONDASI", status: cmpRes.foundation.status, diffs: cmpRes.foundation.diffs });
+  if (hasLayersActual) for (const l of cmpRes.layers) if (l.status !== "SAMA") items.push({ part: `LAPISAN_${l.order}`, status: l.status, diffs: l.diffs });
+  return { hasDeviation: items.length > 0, items };
+}
+

@@ -48,7 +48,7 @@ async function world() {
   return { op: c(lead), gudang: c(gudang), gudang2: c(gudang2), qc: c(qc), qc2: c(qc2), admin: c(admin), workCenter, wc: workCenter.id, operator, fgArea, rcvArea, fgInactive, service };
 }
 
-async function acceptedUnit() {
+async function acceptedUnit({ v2 = false } = {}) {
   const driver = await createTestUser({ roles: ["DRIVER"] });
   const dapi = makeClient(server.baseUrl, driver.token);
   const customer = await testPrisma.customer.create({ data: { name: "Pelanggan P6" } });
@@ -69,7 +69,9 @@ async function acceptedUnit() {
   const loc = await testPrisma.storageLocation.create({ data: { warehouseId: warehouse.id, zone: "RCV", locationType: "RECEIVING_AREA", code: `RCV-IN-${++seq}` } });
   const acc = await makeClient(server.baseUrl, wh.token).post(`/api/inventory/unit-custody/${handoff.id}/accept`, { locationId: loc.id, expectedRevision: 1 }, key(`${tag}-x`));
   assert.equal(acc.status, 200, JSON.stringify(acc.body));
-  return { unit, run: await testPrisma.productionRun.findFirstOrThrow({ where: { unitId: unit.id } }) };
+  // Fase 4: tes ini TIDAK menguji gerbang perakitan -> Run disematkan ke kebijakan V1 (jalur modul lama: uji tekstur Meja, tanpa uji QC fondasi baru/kasur jadi). Gerbang perakitan diuji di productionAssembly.integration.test.js.
+  const run = await testPrisma.productionRun.findFirstOrThrow({ where: { unitId: unit.id } });
+  return { unit, run: v2 ? run : await testPrisma.productionRun.update({ where: { id: run.id }, data: { qcGatePolicyVersion: "QC_GATE_V1" } }) };
 }
 
 // Unit BARU/SEWA lahir di workshop (tanpa pickup) -> run WORKSHOP_BORN lewat command P5.

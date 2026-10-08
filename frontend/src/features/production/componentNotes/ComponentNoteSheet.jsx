@@ -4,9 +4,11 @@ import { api } from "@/api.js";
 import { useOnline } from "@/components/StandaloneShell.jsx";
 import { EvidenceCapture } from "@/features/production/components/EvidenceCapture.jsx";
 import { AnalysisContext } from "./AnalysisContext.jsx";
+import { JourneySummary } from "./JourneySummary.jsx";
 import { MaterialPicker } from "./MaterialPicker.jsx";
 import { SalesContextBox } from "./SalesContextBox.jsx";
 import {
+  draftComparison, draftDeviations, draftFromPlan,
   ACTIONS, COMPLAINT_MATCHES, CONDITIONS, FOUNDATION_SYSTEMS, MAX_LAYERS, SECTION_BY_KEY, applySuggestions, draftFromEntry, emptyLayerAfter, emptyLayerBefore, friendlyComponentError,
   hasPendingUploads, maxMediaFor, mediaPayload, minMediaFor, payloadFromDraft, summarizeLayersDraft, summarizeResultDraft, validateDraft,
 } from "./componentNotesModel.js";
@@ -79,7 +81,18 @@ function LayersBeforeForm({ draft, set }) {
 
 const NumInput = ({ value, onChange, testid, label, placeholder }) => <input data-testid={testid} inputMode="decimal" aria-label={label} className={FIELD} placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} />;
 
-function WholeTestForm({ draft, set, salesContext }) {
+// Fase 4: penanda "titik & metode sama dengan uji awal" + pratinjau perbandingan terhadap uji awal (hanya bila sebanding; server menghitung ulang).
+function SameMethodCompare({ section, draft, set, measurements }) {
+  const cmp = draftComparison(section, draft, measurements);
+  return (
+    <>
+      <label className="flex min-h-[44px] items-center gap-2 rounded-btn bg-inset px-3 text-[14px] font-semibold text-ink"><input type="checkbox" data-testid="same-method" checked={!!draft.sameMethod} onChange={(e) => set({ sameMethod: e.target.checked })} /> Titik &amp; metode sama dengan uji awal</label>
+      {cmp && <p data-testid="test-compare" data-comparable={cmp.comparable ? "1" : "0"} className={`m-0 rounded-btn px-3 py-2 text-[13px] ${cmp.available && !cmp.comparable ? "bg-orangebg text-orange" : "bg-inset text-ink2"}`}>{cmp.text}</p>}
+    </>
+  );
+}
+
+function WholeTestForm({ draft, set, salesContext, after = false, measurements = null }) {
   return (
     <>
       <SalesContextBox ctx={salesContext} />
@@ -91,12 +104,13 @@ function WholeTestForm({ draft, set, salesContext }) {
         <Field label="Penurunan kasur utuh (cm) *" hint="Boleh 0 bila tidak turun"><NumInput testid="whole-drop-input" label="Penurunan kasur utuh (cm)" placeholder="mis. 4" value={draft.wholeDrop} onChange={(v) => set({ wholeDrop: v })} /></Field>
       </div>
       <Field label="Titik / metode pengujian *"><input data-testid="test-method" aria-label="Titik atau metode pengujian" className={FIELD} maxLength={200} placeholder="Mis. duduk di tengah, lalu berbaring 1 menit" value={draft.testMethod} onChange={(e) => set({ testMethod: e.target.value })} /></Field>
+      {after && <SameMethodCompare section="WHOLE_TEST_AFTER" draft={draft} set={set} measurements={measurements} />}
       <label className="flex min-h-[44px] items-center gap-2 rounded-btn bg-inset px-3 text-[14px] font-semibold text-ink"><input type="checkbox" data-testid="qc-in-frame" checked={draft.qcInFrame} onChange={(e) => set({ qcInFrame: e.target.checked })} /> Foto/video memperlihatkan PIC QC sedang menguji kasur *</label>
     </>
   );
 }
 
-function FoundationTestForm({ draft, set }) {
+function FoundationTestForm({ draft, set, after = false, measurements = null }) {
   const a = Number(String(draft.unloadedHeight).replace(",", ".")); const b = Number(String(draft.loadedHeight).replace(",", "."));
   const drop = draft.unloadedHeight !== "" && draft.loadedHeight !== "" && Number.isFinite(a) && Number.isFinite(b) && b <= a ? Math.round((a - b) * 100) / 100 : null;
   return (
@@ -110,6 +124,7 @@ function FoundationTestForm({ draft, set }) {
       <p className="m-0 rounded-btn bg-inset px-3 py-2 text-[13px] font-semibold text-ink" data-testid="drop-preview">Penurunan fondasi: {drop == null ? "Belum dicatat" : `${drop} cm`} <span className="font-normal text-ink3">(dihitung sistem: tanpa beban − dibebani; bukan dijumlahkan dengan uji kasur utuh)</span></p>
       <Field label="Berat penguji aktual (kg) *"><NumInput testid="tester-weight" label="Berat penguji aktual (kg)" placeholder="mis. 75" value={draft.testerWeight} onChange={(v) => set({ testerWeight: v })} /></Field>
       <Field label="Titik / metode pengujian *"><input data-testid="test-method" aria-label="Titik atau metode pengujian" className={FIELD} maxLength={200} placeholder="Mis. beban di tengah rangka, diukur di empat sudut" value={draft.testMethod} onChange={(e) => set({ testMethod: e.target.value })} /></Field>
+      {after && <SameMethodCompare section="FOUNDATION_TEST_AFTER" draft={draft} set={set} measurements={measurements} />}
     </>
   );
 }
@@ -124,13 +139,15 @@ function FoundationBeforeForm({ draft, set }) {
   );
 }
 
-function AfterForm({ draft, set, beforeCount, beforeLayers = [], planned = false }) {
+function AfterForm({ draft, set, beforeCount, beforeLayers = [], planned = false, plan = null }) {
+  const deviations = !planned && plan ? draftDeviations(draft, plan) : [];
   const upd = (id, patch) => set({ layers: draft.layers.map((l) => (l.id === id ? { ...l, ...patch } : l)) });
   const move = (i, d) => { const j = i + d; if (j < 0 || j >= draft.layers.length) return; const next = [...draft.layers]; [next[i], next[j]] = [next[j], next[i]]; set({ layers: next }); };
   const f = draft.foundation;
   const setF = (patch) => set({ foundation: { ...f, ...patch } });
   return (
     <>
+      {!planned && plan && <button type="button" data-testid="copy-plan" onClick={() => set(draftFromPlan(plan, draft))} className="min-h-[48px] w-full rounded-btn bg-accentbg px-3 text-[13.5px] font-semibold text-accent">Isi dari racikan rencana (bisa diubah)</button>}
       {!planned && draft.suggestions && (draft.suggestions.foundation?.length > 0 || draft.suggestions.layers?.length > 0) && (
         <button type="button" data-testid="use-suggestions" onClick={() => set(applySuggestions(draft, draft.suggestions))} className="min-h-[48px] w-full rounded-btn bg-accentbg px-3 text-[13.5px] font-semibold text-accent">Isi dari bahan terpakai di tahap pengerjaan (bisa diubah)</button>
       )}
@@ -165,12 +182,18 @@ function AfterForm({ draft, set, beforeCount, beforeLayers = [], planned = false
           <Note value={l.note} onChange={(v) => upd(l.id, { note: v })} testid="after-layer-note" />
         </div>
       ))}
+      {!planned && plan && (
+        <div className="space-y-1.5" data-testid="deviation-block" data-deviations={deviations.length}>
+          {deviations.length > 0 ? <p role="status" className="m-0 rounded-btn bg-orangebg px-3 py-2 text-[13px] text-orange" data-testid="deviation-warning">Berbeda dari rencana: {deviations.join(", ")}. Alasan perbedaan wajib diisi dan tercatat di versi ini; rencana tidak ditimpa.</p> : <p className="m-0 text-[12.5px] text-ink3" data-testid="deviation-none">Sesuai rencana (atau bagian yang belum diisi tidak dihitung berbeda).</p>}
+          <Field label={deviations.length ? "Alasan perbedaan dari rencana *" : "Catatan perbedaan dari rencana (opsional)"}><textarea data-testid="deviation-note" aria-label="Alasan perbedaan dari rencana" rows={2} maxLength={500} className={FIELD} placeholder="Mis. stok busa D44 5 cm habis, dipakai 4 cm" value={draft.deviationNote || ""} onChange={(e) => set({ deviationNote: e.target.value })} /></Field>
+        </div>
+      )}
       {draft.layers.length < MAX_LAYERS && <button type="button" data-testid="add-after-layer" onClick={() => set({ layers: [...draft.layers, emptyLayerAfter()] })} className="flex min-h-[48px] w-full items-center justify-center gap-1.5 rounded-btn bg-accentbg text-[14px] font-semibold text-accent"><Plus size={16} aria-hidden /> Tambah lapisan hasil</button>}
     </>
   );
 }
 
-export function ComponentNoteSheet({ unitId, unitCode, section, entry, suggestions, beforeCount = 0, beforeLayers = [], salesContext = null, analysis = null, onClose, onSaved, onReload }) {
+export function ComponentNoteSheet({ unitId, unitCode, section, entry, suggestions, beforeCount = 0, beforeLayers = [], salesContext = null, analysis = null, measurements = null, plan = null, onClose, onSaved, onReload }) {
   const online = useOnline();
   const meta = SECTION_BY_KEY[section];
   const keyRef = useRef(newKey("s3-comp"));
@@ -180,10 +203,10 @@ export function ComponentNoteSheet({ unitId, unitCode, section, entry, suggestio
   const set = (patch) => { setDraftState((d) => ({ ...d, ...patch })); keyRef.current = newKey("s3-comp"); if (!conflict) setError(""); };
   const correcting = !!entry;
   const uploading = hasPendingUploads(draft);
-  const problem = validateDraft(section, draft, { correcting });
+  const problem = validateDraft(section, draft, { correcting, plan });
 
   async function save() {
-    const bad = validateDraft(section, draft, { correcting });
+    const bad = validateDraft(section, draft, { correcting, plan });
     if (bad) { setError(bad); return; }
     setBusy(true); setError("");
     try {
@@ -209,6 +232,9 @@ export function ComponentNoteSheet({ unitId, unitCode, section, entry, suggestio
       {section === "FOUNDATION_BEFORE" && <FoundationBeforeForm draft={draft} set={set} />}
       {section === "WHOLE_TEST_BEFORE" && <WholeTestForm draft={draft} set={set} salesContext={salesContext} />}
       {section === "FOUNDATION_TEST_BEFORE" && <FoundationTestForm draft={draft} set={set} />}
+      {(section === "WHOLE_TEST_AFTER" || section === "FOUNDATION_TEST_AFTER") && analysis && <JourneySummary data={analysis} compact />}
+      {section === "WHOLE_TEST_AFTER" && <WholeTestForm draft={draft} set={set} salesContext={salesContext} after measurements={measurements} />}
+      {section === "FOUNDATION_TEST_AFTER" && <FoundationTestForm draft={draft} set={set} after measurements={measurements} />}
       {section === "PLAN_RACIKAN" && (
         <>
           {analysis ? <AnalysisContext data={analysis} /> : <SalesContextBox ctx={salesContext} />}
@@ -216,7 +242,7 @@ export function ComponentNoteSheet({ unitId, unitCode, section, entry, suggestio
           <AfterForm draft={draft} set={set} beforeCount={beforeCount} beforeLayers={beforeLayers} planned />
         </>
       )}
-      {section === "AFTER" && <AfterForm draft={draft} set={set} beforeCount={beforeCount} beforeLayers={beforeLayers} />}
+      {section === "AFTER" && <AfterForm draft={draft} set={set} beforeCount={beforeCount} beforeLayers={beforeLayers} plan={plan} />}
       <Field label="Catatan umum"><Note value={draft.note} onChange={(v) => set({ note: v })} placeholder="Catatan umum (opsional)" /></Field>
       <div className="space-y-2" data-testid="component-photos">
         <p className="m-0 text-[13px] font-semibold text-ink2" data-testid="media-heading">{minMediaFor(section) ? "Foto/video (wajib minimal 1" : section === "LAYERS_BEFORE" ? "Foto/video isi kasur yang ditemukan (disarankan; tampil ke customer" : "Foto (opsional"}, maksimal {maxMediaFor(section)})</p>
