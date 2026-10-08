@@ -1,0 +1,74 @@
+[
+ {
+  "name": "S1 clean install",
+  "desc": "DB kosong → seluruh migration",
+  "before": 0,
+  "after": 228,
+  "expected": 228,
+  "cols": 2,
+  "qcGateCol": 1,
+  "replayNoPending": true,
+  "unfinished": 0,
+  "ok": true
+ },
+ {
+  "name": "S2 live baseline",
+  "desc": "keadaan live 219 migration → 228",
+  "before": 219,
+  "after": 228,
+  "expected": 228,
+  "cols": 2,
+  "qcGateCol": 1,
+  "replayNoPending": true,
+  "unfinished": 0,
+  "ok": true
+ },
+ {
+  "name": "S3 live + QC gate lokal (Fase 2/3 awal)",
+  "desc": "live + build_stage/plan_settings/qc_sections/qc_gate_policy sudah applied; tertunda: density, plan_racikan, assembly_tests",
+  "before": 223,
+  "after": 228,
+  "expected": 228,
+  "cols": 2,
+  "qcGateCol": 1,
+  "replayNoPending": true,
+  "unfinished": 0,
+  "ok": true
+ },
+ {
+  "name": "S4 + density sudah applied & tercatat",
+  "desc": "kolom density ada dan migration ditandai applied (DB tes sesi lain)",
+  "before": 224,
+  "after": 228,
+  "expected": 228,
+  "cols": 2,
+  "qcGateCol": 1,
+  "replayNoPending": true,
+  "unfinished": 0,
+  "ok": true
+ },
+ {
+  "name": "S5 + kolom density ada tapi migration TIDAK tercatat",
+  "desc": "kolom manual tanpa catatan migration → migration idempoten (IF NOT EXISTS)",
+  "before": 223,
+  "after": 228,
+  "expected": 228,
+  "cols": 2,
+  "qcGateCol": 1,
+  "replayNoPending": true,
+  "unfinished": 0,
+  "ok": true
+ },
+ {
+  "name": "S6 Fase 4 penuh (tanpa density)",
+  "desc": "semua kecuali density (cabang Fase 4 murni + live)",
+  "before": 227,
+  "after": 228,
+  "expected": 228,
+  "cols": 2,
+  "qcGateCol": 1,
+  "replayNoPending": true,
+  "unfinished": 0,
+  "ok": true
+ }
+]
