@@ -10,11 +10,12 @@ import { ENTITY_TYPES, EVENT_TYPES, recordActivity } from "../lib/activityLog.js
 export const SETTING_KEYS = Object.freeze({
   WORKSHOP_LOCATION: "workshop_default_location_id",
   ADAPTATION_DEFAULT: "adaptation_default_policy",
+  QC_GATE_DEFAULT: "qc_gate_default_policy",
 });
 export const ADAPTATION_POLICY = "ADAPTATION_V1";
 // Versi kebijakan gerbang QC sebelum bongkar (Fase 2 LAYANAN). Dipin pada Run BARU; run yang sudah berjalan tidak pernah diubah otomatis.
 export const QC_GATE_POLICY = "QC_GATE_V1";
-// Fase 4: V2 = gerbang V1 (sebelum bongkar) + gerbang PERAKITAN (uji fondasi baru, hasil aktual, uji kasur jadi). Run BARU dipin V2; Run V1/NULL tidak pernah terkunci oleh gerbang perakitan
+// Fase 4: V2 = gerbang V1 (sebelum bongkar) + gerbang PERAKITAN (uji fondasi baru, hasil aktual, uji kasur jadi). Run BARU dipin sesuai setting bawaan Admin (tanpa setting = NULL); Run V1/NULL tidak pernah terkunci oleh gerbang perakitan
 // (V1 hanya bila Fase 2/3 sudah rilis lebih dulu; NULL = Run lama). Menaikkan V1 -> V2 hanya lewat penerapan eksplisit tercatat.
 export const QC_GATE_POLICY_V2 = "QC_GATE_V2";
 export const QC_GATE_POLICIES = Object.freeze([QC_GATE_POLICY, QC_GATE_POLICY_V2]);
@@ -92,11 +93,32 @@ export async function setAdaptationDefault(prisma, { enabled, actorId }) {
   });
 }
 
+// ---------------------------------------------------------------- kebijakan gerbang QC bawaan ------------------------------------------------------------
+// Dibaca SAAT Production Run dibuat dan di-SNAPSHOT ke runs.qc_gate_policy_version; mengubah bawaan TIDAK retroaktif (run yang sudah ada tidak berubah).
+// Penerapan ke run berjalan hanya lewat aksi eksplisit tercatat (POST /runs/:id/qc-gate → applyQcGatePolicy).
+// TANPA setting eksplisit = kebijakan lama (NULL, tanpa gerbang): tidak ada perubahan perilaku sampai Admin mengaktifkannya. Nilai setting: "QC_GATE_V1" | "QC_GATE_V2" | null (nonaktif eksplisit).
+export async function defaultQcGatePolicy(client) {
+  const row = await client.productionSetting.findUnique({ where: { key: SETTING_KEYS.QC_GATE_DEFAULT } });
+  const p = row?.value?.policy;
+  return QC_GATE_POLICIES.includes(p) ? p : null;
+}
+
+export async function setQcGateDefault(prisma, { enabled, version = QC_GATE_POLICY_V2, actorId }) {
+  if (typeof enabled !== "boolean") throw settingsError("enabled wajib berupa true/false", 400, "SETTING_ENABLED_REQUIRED");
+  if (enabled && !QC_GATE_POLICIES.includes(version)) throw settingsError("Versi kebijakan gerbang QC tidak dikenal", 400, "QC_GATE_VERSION_INVALID");
+  return prisma.$transaction(async (tx) => {
+    const policy = enabled ? version : null;
+    await writeSetting(tx, { key: SETTING_KEYS.QC_GATE_DEFAULT, value: { policy }, actorId, label: "Gerbang QC untuk run baru", to: enabled ? `aktif (${policy})` : "nonaktif" });
+    return { enabled, policy };
+  });
+}
+
 export async function getProductionSettings(client) {
   const location = await inspectWorkshopDefaultLocation(client);
   return {
     workshopLocation: { configured: location.configured, valid: location.valid, problem: location.problem, location: location.location ? { id: location.location.id, code: location.location.code, zone: location.location.zone, locationType: location.location.locationType } : null },
     adaptationDefault: { enabled: (await defaultAdaptationPolicy(client)) === ADAPTATION_POLICY, policy: ADAPTATION_POLICY },
+    qcGateDefault: await (async () => { const policy = await defaultQcGatePolicy(client); return { enabled: policy !== null, policy, versions: [...QC_GATE_POLICIES] }; })(),
     locationChoices: await listArrivalLocationChoices(client),
   };
 }

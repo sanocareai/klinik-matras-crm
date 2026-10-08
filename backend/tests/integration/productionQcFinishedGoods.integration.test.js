@@ -1,6 +1,7 @@
 // P6 QC V2 + rework + barang jadi + rekonsiliasi override V1: lifecycle AWAITING_QC -> ... -> run COMPLETED / unit READY_FOR_DELIVERY.
 import "./setup/env.js";
 import test from "node:test";
+import { setQcGateDefault } from "../../src/services/productionSettingsService.js";
 import assert from "node:assert/strict";
 import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { assignCurrentStageTo, createTestMaterial, createTestUser, seedBalance } from "./setup/fixtures.js";
@@ -49,6 +50,7 @@ async function world() {
 }
 
 async function acceptedUnit({ v2 = false } = {}) {
+  if (v2) await setQcGateDefault(testPrisma, { enabled: true, version: "QC_GATE_V2", actorId: null });
   const driver = await createTestUser({ roles: ["DRIVER"] });
   const dapi = makeClient(server.baseUrl, driver.token);
   const customer = await testPrisma.customer.create({ data: { name: "Pelanggan P6" } });

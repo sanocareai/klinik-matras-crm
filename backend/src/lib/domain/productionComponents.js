@@ -98,8 +98,8 @@ export function materialLabel(ref) {
   return UNKNOWN_LABEL;
 }
 
-// Atribut bahan yang BENAR-BENAR tersedia (snapshot katalog saat dicatat). Nilai kosong tidak ditampilkan dan tidak dikarang; Material master belum punya kolom densitas/ketebalan,
-// jadi keduanya hanya muncul bila suatu saat ada di snapshot. Bahan manual / tidak diketahui tetap sah dan ditandai apa adanya.
+// Atribut bahan yang BENAR-BENAR tersedia (snapshot katalog saat dicatat). Nilai kosong tidak ditampilkan dan tidak dikarang; Densitas & ketebalan katalog (Material.density/thicknessCm, opsional)
+// hanya muncul bila master memilikinya — kosong tidak ditampilkan dan tidak dikarang. Bahan manual / tidak diketahui tetap sah dan ditandai apa adanya.
 export function materialAttributes(ref) {
   if (!ref) return [];
   const has = (v) => v !== null && v !== undefined && String(v).trim() !== "";

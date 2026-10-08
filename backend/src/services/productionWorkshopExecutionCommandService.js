@@ -36,7 +36,7 @@ import {
 } from "./unitStageEngine.js";
 import { PHASE_TERMINAL_STATUSES, isStrictLifecycleRun, transitionPhases } from "./productionPhaseLifecycle.js";
 import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState } from "./v2FeatureFlags.js";
-import { ADAPTATION_POLICY, QC_GATE_POLICIES, QC_GATE_POLICY_V2, defaultAdaptationPolicy } from "./productionSettingsService.js";
+import { ADAPTATION_POLICY, QC_GATE_POLICIES, QC_GATE_POLICY_V2, defaultAdaptationPolicy, defaultQcGatePolicy } from "./productionSettingsService.js";
 
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
@@ -309,7 +309,7 @@ export async function registerWorkshopBornRunInTx(tx, { unitId, actorId, idempot
     const phases = [["INTAKE", "NOT_APPLICABLE", na], ["DIAGNOSIS", "NOT_APPLICABLE", na], ["PROCESS", "NOT_STARTED", null], ["QC", "NOT_STARTED", null], ["HANDOFF", "NOT_STARTED", null]];
     const run = await tx.productionRun.create({
       data: {
-        unitId, kind: "NEW_PRODUCT", origin: "WORKSHOP_BORN", status: "ACTIVE", currentPhase: "PROCESS", revision: 1, adaptationPolicy: await defaultAdaptationPolicy(tx), qcGatePolicyVersion: QC_GATE_POLICY_V2,
+        unitId, kind: "NEW_PRODUCT", origin: "WORKSHOP_BORN", status: "ACTIVE", currentPhase: "PROCESS", revision: 1, adaptationPolicy: await defaultAdaptationPolicy(tx), qcGatePolicyVersion: await defaultQcGatePolicy(tx),
         phases: { create: phases.map(([phase, status, reason], index) => ({ phase, status, reason, sequence: index + 1 })) },
       },
     });

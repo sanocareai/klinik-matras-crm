@@ -253,7 +253,7 @@ async function otherUnitUsesFile(tx, unitId, url) {
 }
 
 // Atribut snapshot yang ditambahkan Fase 3 (supplier, kelompok) tidak dihitung saat menilai "isi sama dengan versi terkini" — entri lama tanpa atribut itu tidak memicu versi baru hanya karena snapshot diperkaya.
-const SNAPSHOT_EXTRAS = new Set(["supplier", "itemGroup"]);
+const SNAPSHOT_EXTRAS = new Set(["supplier", "itemGroup", "density", "thicknessCm"]);
 function stripSnapshotExtras(v) {
   if (Array.isArray(v)) return v.map(stripSnapshotExtras);
   if (v && typeof v === "object") return Object.fromEntries(Object.entries(v).filter(([k]) => !SNAPSHOT_EXTRAS.has(k)).map(([k, x]) => [k, stripSnapshotExtras(x)]));
@@ -279,12 +279,12 @@ async function resolveMaterialRefs(tx, data) {
   visit(data.foundation, "material");
   if (!refs.length) return data;
   const ids = [...new Set(refs.map(([h, k]) => h[k].materialId))];
-  const mats = await tx.material.findMany({ where: { id: { in: ids }, active: true }, select: { id: true, code: true, name: true, unit: true, vendor: true, itemGroup: true } });
+  const mats = await tx.material.findMany({ where: { id: { in: ids }, active: true }, select: { id: true, code: true, name: true, unit: true, vendor: true, itemGroup: true, density: true, thicknessCm: true } });
   const byId = new Map(mats.map((m) => [m.id, m]));
   for (const [h, k] of refs) {
     const m = byId.get(h[k].materialId);
     if (!m) throw componentError("Bahan katalog tidak ditemukan atau tidak aktif — pilih bahan lain atau “Bahan manual”", 422, "COMPONENT_MATERIAL_NOT_FOUND");
-    h[k] = { kind: MATERIAL_KINDS.CATALOG, materialId: m.id, code: m.code, name: m.name, unit: m.unit, ...(m.vendor ? { supplier: m.vendor } : {}), ...(m.itemGroup ? { itemGroup: m.itemGroup } : {}) };
+    h[k] = { kind: MATERIAL_KINDS.CATALOG, materialId: m.id, code: m.code, name: m.name, unit: m.unit, ...(m.vendor ? { supplier: m.vendor } : {}), ...(m.itemGroup ? { itemGroup: m.itemGroup } : {}), ...(m.density != null ? { density: m.density } : {}), ...(m.thicknessCm != null ? { thicknessCm: m.thicknessCm } : {}) };
   }
   return data;
 }
@@ -361,12 +361,12 @@ export async function recordComponentSection(prisma, { unitId, section, actor, i
   });
 }
 
-/** Pencarian katalog bahan untuk formulir (tanpa harga/stok): id, kode, nama, satuan + supplier & kelompok bila ada di master (tidak dikarang). */
+/** Pencarian katalog bahan untuk formulir (tanpa harga/stok): id, kode, nama, satuan + supplier, kelompok, densitas, dan ketebalan bila ada di master (tidak dikarang; null apa adanya). */
 export async function searchComponentMaterials(client, q) {
   const needle = String(q || "").trim().slice(0, 60);
   const where = { active: true, ...(needle ? { OR: [{ code: { contains: needle, mode: "insensitive" } }, { name: { contains: needle, mode: "insensitive" } }] } : {}) };
-  const rows = await client.material.findMany({ where, orderBy: [{ name: "asc" }], take: 25, select: { id: true, code: true, name: true, unit: true, vendor: true, itemGroup: true } });
-  return rows.map((m) => ({ kind: MATERIAL_KINDS.CATALOG, materialId: m.id, code: m.code, name: m.name, unit: m.unit, supplier: m.vendor || null, itemGroup: m.itemGroup || null, label: materialLabel({ kind: MATERIAL_KINDS.CATALOG, code: m.code, name: m.name }) }));
+  const rows = await client.material.findMany({ where, orderBy: [{ name: "asc" }], take: 25, select: { id: true, code: true, name: true, unit: true, vendor: true, itemGroup: true, density: true, thicknessCm: true } });
+  return rows.map((m) => ({ kind: MATERIAL_KINDS.CATALOG, materialId: m.id, code: m.code, name: m.name, unit: m.unit, supplier: m.vendor || null, itemGroup: m.itemGroup || null, density: m.density ?? null, thicknessCm: m.thicknessCm ?? null, label: materialLabel({ kind: MATERIAL_KINDS.CATALOG, code: m.code, name: m.name }) }));
 }
 
 // Cohort baca: pemanggil memastikan unit ada di reader cohort sebelum membaca.

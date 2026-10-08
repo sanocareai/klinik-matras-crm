@@ -2,6 +2,7 @@
 import "./setup/env.js";
 import "./setup/productionEvidenceTmpEnv.js";
 import test from "node:test";
+import { setQcGateDefault } from "../../src/services/productionSettingsService.js";
 import assert from "node:assert/strict";
 import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestMaterial, createTestUser, seedBalance } from "./setup/fixtures.js";
@@ -59,6 +60,7 @@ async function world() {
 
 // Unit LAYANAN lewat pickup nyata (V1) + custody INBOUND diterima Nadya (Gudang).
 async function acceptedUnit(w, { cohort = true, v2 = false } = {}) {
+  if (v2) await setQcGateDefault(testPrisma, { enabled: true, version: "QC_GATE_V2", actorId: null }); // bawaan Admin eksplisit; tanpa setting = kebijakan lama (NULL)
   const customer = await testPrisma.customer.create({ data: { name: `Ibu Maya ${++seq}` } });
   const order = await testPrisma.order.create({
     data: { customerId: customer.id, orderNumber: `P8O-${++seq}`, value: 1000, category: "LAYANAN", beratBadan: 85, complaintCategory: ["SAKIT_PINGGANG"], notes: "Minta tekstur firm" },

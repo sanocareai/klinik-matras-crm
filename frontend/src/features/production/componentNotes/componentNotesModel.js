@@ -50,7 +50,7 @@ export function materialText(ref) {
   return UNKNOWN_LABEL;
 }
 
-/** Atribut bahan yang BENAR-BENAR ada (snapshot katalog saat dicatat). Kosong tidak ditampilkan/dikarang; densitas & ketebalan katalog hanya muncul bila ada datanya (master belum punya). Paritas dengan backend materialAttributes. */
+/** Atribut bahan yang BENAR-BENAR ada (snapshot katalog saat dicatat). Kosong tidak ditampilkan/dikarang; densitas & ketebalan katalog (Material.density/thicknessCm, opsional) hanya muncul bila master mengisinya. Paritas dengan backend materialAttributes. */
 export function materialAttributes(ref) {
   if (!ref) return [];
   const has = (v) => v !== null && v !== undefined && String(v).trim() !== "";
@@ -133,7 +133,7 @@ const toText = (v) => (v == null ? "" : String(v));
 export const emptyLayerBefore = () => ({ id: rowId(), material: null, thickness: "", condition: "", note: "" });
 export const emptyLayerAfter = () => ({ id: rowId(), action: "", fromOrder: "", material: null, thickness: "", note: "" });
 const mediaItems = (media, layers = null) => (media || []).map((m, i) => ({ id: `srv-${i}-${rowId()}`, kind: m.kind || "image", status: "done", progress: 100, url: m.url, previewUrl: m.previewUrl || m.url, caption: m.caption || "", layerRowId: m.layerOrder && layers ? layers[m.layerOrder - 1]?.id ?? null : null }));
-const stripRef = (r) => (r ? (r.kind === "CATALOG" ? { kind: "CATALOG", materialId: r.materialId, code: r.code, name: r.name, unit: r.unit, ...(r.supplier ? { supplier: r.supplier } : {}), ...(r.itemGroup ? { itemGroup: r.itemGroup } : {}) } : r.kind === "MANUAL" ? { kind: "MANUAL", text: r.text } : { kind: "UNKNOWN" }) : null);
+const stripRef = (r) => (r ? (r.kind === "CATALOG" ? { kind: "CATALOG", materialId: r.materialId, code: r.code, name: r.name, unit: r.unit, ...(r.supplier ? { supplier: r.supplier } : {}), ...(r.itemGroup ? { itemGroup: r.itemGroup } : {}), ...(r.density != null ? { density: r.density } : {}), ...(r.thicknessCm != null ? { thicknessCm: r.thicknessCm } : {}) } : r.kind === "MANUAL" ? { kind: "MANUAL", text: r.text } : { kind: "UNKNOWN" }) : null);
 
 /** Draf formulir dari entri server (atau kosong). */
 export function draftFromEntry(section, entry, suggestions = null) {

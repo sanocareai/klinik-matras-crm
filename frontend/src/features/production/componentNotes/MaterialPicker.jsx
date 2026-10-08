@@ -53,7 +53,7 @@ export function MaterialPicker({ value, onChange, label = "Bahan", optional = fa
           {!searching && results.length > 0 && (
             <ul data-testid="material-results" className="m-0 max-h-48 list-none space-y-1 overflow-y-auto rounded-btn border border-line p-1">
               {results.map((m) => (
-                <li key={m.materialId}><button type="button" data-material-code={m.code} onClick={() => onChange({ kind: "CATALOG", materialId: m.materialId, code: m.code, name: m.name, unit: m.unit, ...(m.supplier ? { supplier: m.supplier } : {}), ...(m.itemGroup ? { itemGroup: m.itemGroup } : {}) })}
+                <li key={m.materialId}><button type="button" data-material-code={m.code} onClick={() => onChange({ kind: "CATALOG", materialId: m.materialId, code: m.code, name: m.name, unit: m.unit, ...(m.supplier ? { supplier: m.supplier } : {}), ...(m.itemGroup ? { itemGroup: m.itemGroup } : {}), ...(m.density != null ? { density: m.density } : {}), ...(m.thicknessCm != null ? { thicknessCm: m.thicknessCm } : {}) })}
                   className="flex min-h-[44px] w-full items-center justify-between gap-2 rounded-btn px-2 py-1 text-left text-[13.5px] text-ink hover:bg-hovertint"><span className="min-w-0 break-words">{m.name}<MaterialAttrs value={{ kind: "CATALOG", ...m }} /></span><span className="shrink-0 text-[12px] text-ink3">{m.code}</span></button></li>
               ))}
             </ul>
