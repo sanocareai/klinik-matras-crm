@@ -1,39 +1,509 @@
 {
- "note": "Staging terisolasi (BUKAN production); image backend+frontend dari arsip commit bersih bd391aaa/bfa93e38 (kode runtime sama dengan HEAD final; commit sesudahnya hanya tes). A: Meja→QC→Meja→QC (G1); B: QC gagal→rework→uji ulang→QC sesuai + audit bahan + Unit360/laporan; C: Unit360+laporan 390/1440 terang/gelap (B7 diulang setelah asersi huruf-besar-kecil diperbaiki). A.A1.2 dan B.B7 gagal karena asersi skrip (huruf besar/kecil), diverifikasi ulang manual/ulang-jalan.",
+ "note": "QA FINAL (run konsolidasi terakhir). Staging terisolasi (BUKAN production); image backend+frontend dari arsip commit 9820762d, data benar-benar baru (seed baru: bahan + 3 unit LAYANAN V2). A: alur normal (G1) lewat klik nyata. B: gagal → minta bahan rework (PIC Bahan) → serah Gudang → rework → uji ulang → lulus (G2); putaran 1 sampai gerbang QC digerakkan lewat API resmi, semua langkah baru lewat UI. C: sapuan 390/1440 × terang/gelap (G3 untuk form putusan & PIC Bahan, G2 untuk Unit 360 + laporan). Iterasi sebelumnya menemukan 3 bug produk + beberapa asersi skrip yang salah; semuanya dicatat di README §6.",
  "runs": {
   "a": {
-   "pass": 34,
-   "total": 35,
-   "failed": [
-    "A1.2 kondisi awal terbaca: kasur utuh turun 3 cm · 75 kg; fondasi 25 → 15 cm turun 10 cm — terpisah, tidak dijumlahkan"
-   ],
-   "consoleErrors": [
-    "Failed to load resource: the server responded with a status of 409 (Conflict)",
-    "Failed to load resource: the server responded with a status of 409 (Conflict)"
-   ],
-   "http4xx": [
-    "qc 409 POST /api/production-v2/component-notes/units/73d87fb3-0fcd-4e4c-9594-c703227dd512/sections/FOUNDATION_TEST_AFTER @/bengkel/order-produksi",
-    "worker1 409 POST /api/production-v2/component-notes/units/73d87fb3-0fcd-4e4c-9594-c703227dd512/sections/AFTER @/produksi/meja"
-   ]
+   "pass": 32,
+   "total": 32,
+   "failed": [],
+   "consoleErrors": [],
+   "http4xx": []
   },
   "b": {
-   "pass": 26,
-   "total": 30,
-   "failed": [
-    "B7 [390-light] Unit 360: kondisi awal → racikan → hasil akhir (angka terpisah; fondasi baru turun 2 cm, kasur jadi turun 1 cm)",
-    "B7 [390-dark] Unit 360: kondisi awal → racikan → hasil akhir (angka terpisah; fondasi baru turun 2 cm, kasur jadi turun 1 cm)",
-    "B7 [1440-light] Unit 360: kondisi awal → racikan → hasil akhir (angka terpisah; fondasi baru turun 2 cm, kasur jadi turun 1 cm)",
-    "B7 [1440-dark] Unit 360: kondisi awal → racikan → hasil akhir (angka terpisah; fondasi baru turun 2 cm, kasur jadi turun 1 cm)"
-   ],
+   "pass": 33,
+   "total": 33,
+   "failed": [],
    "consoleErrors": [],
    "http4xx": []
   },
   "c": {
-   "pass": 12,
-   "total": 12,
+   "pass": 30,
+   "total": 30,
    "failed": [],
    "consoleErrors": [],
    "http4xx": []
   }
+ },
+ "results": {
+  "a": [
+   {
+    "name": "A1.1 Meja melihat ringkasan perjalanan: racikan rencana + hasil akhir 'Belum dicatat'",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "A1.3 klik Kirim tahap 6 → bukti fondasi tersimpan",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "A1.4 Meja menunggu uji fondasi baru PIC QC; tombol kirim lapisan tidak ada",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "A2.1 antrean PIC QC memuat G1 'uji fondasi baru'",
+    "ok": true,
+    "extra": "QAF4-MUZ7JESU-G2|WHOLE_TEST_AFTER,QAF4-MUZ7O9AM-G2|WHOLE_TEST_AFTER,QAF4-MUZ7R9XS-G3|QC_DECISION,QAF4-MUZ88T7S-G1|FOUNDATION_TEST_AFTER"
+   },
+   {
+    "name": "A2.2 berat penguji tidak terisi otomatis; kotak konfirmasi sebanding TIDAK tercentang",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "A2.3 BERAT SAMA (75 = 75) tetapi belum dikonfirmasi → TIDAK sebanding: dua angka mentah + alasan, tanpa selisih (tidak ada aturan ±2 kg)",
+    "ok": true,
+    "extra": "Perbandingan langsung belum valid: PIC QC belum mengonfirmasi metode pengujian sebanding dengan uji awal. Awal turun 10 cm (berat 75 kg; Beban di tengah rangka) · sekarang turun 2 cm (berat 75 kg; Beban di tengah rangka) — kedua angka ditampilkan apa adanya, tanpa selisih."
+   },
+   {
+    "name": "A2.4 Simpan → v1 tersimpan, sameMethodAsBefore=false, penurunan 2 cm dihitung server",
+    "ok": true,
+    "extra": "1|{\"note\": null, \"dropCm\": 2, \"system\": \"BONNELL\", \"material\": null, \"testMethod\": \"Beban di tengah rangka\", \"loadedHeig"
+   },
+   {
+    "name": "A3.1 Unit 360: uji fondasi baru tampil dengan 'Perbandingan langsung belum valid' dan kedua angka",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "A3.2 mencentang konfirmasi → pratinjau SEBANDING 'turun 10 cm → 2 cm (8 cm lebih sedikit)'",
+    "ok": true,
+    "extra": "Sebanding dengan uji awal (dikonfirmasi PIC QC): turun 10 cm → 2 cm (8 cm lebih sedikit)"
+   },
+   {
+    "name": "A3.3 koreksi tanpa alasan ditolak; v1 utuh",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "A3.4 v2 tersimpan (sameMethodAsBefore=true) dengan alasan; riwayat v1 tetap ada",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "A3.5 Unit 360: sekarang 'Sebanding ... 8 cm lebih sedikit'",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "A4.1 mengubah ketebalan lapisan 2 (5→4): peringatan 'Berbeda dari rencana: Lapisan 2'",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "A4.2 simpan tanpa alasan perbedaan ditolak; tidak ada baris",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "A4.3 hasil aktual v1 tersimpan beralasan; rencana tetap v1",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "A4.4 rencana ↔ aktual berdampingan: total rencana 12 cm vs aktual 11 cm",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "A4.5 Kirim tahap 7 → bukti lapisan menaut hasil aktual v1",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "A4.6 Meja menunggu uji kasur jadi PIC QC",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "A5.1 antrean memuat G1 'uji kasur jadi'",
+    "ok": true,
+    "extra": "QAF4-MUZ7JESU-G2|WHOLE_TEST_AFTER,QAF4-MUZ7O9AM-G2|WHOLE_TEST_AFTER,QAF4-MUZ7R9XS-G3|QC_DECISION,QAF4-MUZ88T7S-G1|WHOLE_TEST_AFTER"
+   },
+   {
+    "name": "A5.2 sebelum dicentang: belum sebanding (dua angka mentah), tanpa selisih",
+    "ok": true,
+    "extra": "Perbandingan langsung belum valid: PIC QC belum mengonfirmasi metode pengujian sebanding dengan uji awal. Awal turun 3 cm (berat 75 kg; Berbaring di tengah 1 menit) · sekarang turun 1 cm (berat 75 kg; Berbaring di tengah 1 menit) — kedua angka ditampilkan apa adanya, tanpa selisih."
+   },
+   {
+    "name": "A5.3 setelah dikonfirmasi: sebanding 'turun 3 cm → 1 cm (2 cm lebih sedikit)'; tanpa label 'amblas' otomatis",
+    "ok": true,
+    "extra": "Sebanding dengan uji awal (dikonfirmasi PIC QC): turun 3 cm → 1 cm (2 cm lebih sedikit)"
+   },
+   {
+    "name": "A5.4 Simpan → uji kasur jadi v1 (Sesuai, berat 75, penurunan 1, dikonfirmasi sebanding)",
+    "ok": true,
+    "extra": "1|{\"note\": null, \"feelNote\": \"Tengah kokoh, pinggir rata\", \"qcInFrame\": true, \"testMethod\": \"Berbaring di tengah 1 menit"
+   },
+   {
+    "name": "B1.1 tombol satu ketuk 'Lanjutkan ke Gerbang QC' muncul",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "B1.2 bukti tahap 8 menaut uji kasur jadi v1 (tanpa menyalin angka)",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "B1.3 Meja menunggu putusan QC",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "B1.4 efek bahan: tidak ada stok/ISSUE/RETURN/retur baru dari rakit-uji-hasil aktual-serah ke QC",
+    "ok": true,
+    "extra": "3|3|0|0 → 3|3|0|0"
+   },
+   {
+    "name": "B2.1 antrean memuat G1 sebagai 'Putuskan Hasil QC'",
+    "ok": true,
+    "extra": "QAF4-MUZ7JESU-G2|WHOLE_TEST_AFTER,QAF4-MUZ7O9AM-G2|WHOLE_TEST_AFTER,QAF4-MUZ7R9XS-G3|QC_DECISION,QAF4-MUZ88T7S-G1|QC_DECISION"
+   },
+   {
+    "name": "B2.2 formulir putusan menampilkan ringkasan perjalanan + gerbang putaran 1 LENGKAP (uji fondasi baru · hasil aktual · uji kasur jadi)",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "B2.3 simpan tanpa berat acuan & foto ditolak dengan pesan jelas; belum ada inspeksi",
+    "ok": true,
+    "extra": "Foto bukti wajib untuk hasil Lulus/Gagal"
+   },
+   {
+    "name": "B2.4 klik Simpan — Lulus → inspeksi PASS tercatat lewat command QC yang ada",
+    "ok": true,
+    "extra": "PASS"
+   },
+   {
+    "name": "B2.5 Run lanjut ke tahap setelah gerbang (fase PROCESS, bukan menunggu QC)",
+    "ok": true,
+    "extra": "{\"actor\":\"TABLE\",\"stepNo\":9,\"action\":\"HANDOFF\"}"
+   },
+   {
+    "name": "B2.6 audit bahan akhir: stok/ISSUE/RETURN/retur tidak bertambah dari seluruh alur normal",
+    "ok": true,
+    "extra": "3|3|0|0 → 3|3|0|0"
+   }
+  ],
+  "b": [
+   {
+    "name": "B0 putaran 1 (API resmi) sampai gerbang QC: Run MENUNGGU putusan QC; PIC Bahan mencatat pemakaian awal",
+    "ok": true,
+    "extra": "stok 3|3|0|0"
+   },
+   {
+    "name": "R1.1 putusan terbuka di putaran 1 dengan ringkasan perjalanan",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "R1.2 mode Gagal → rework menampilkan hasil uji berat badan, alasan wajib, tahap rework, dan catatan bahan via PIC Bahan",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "R1.3 Gagal tanpa alasan/foto/tahap rework ditolak (pesan jelas); belum ada inspeksi",
+    "ok": true,
+    "extra": "Foto bukti wajib untuk hasil Lulus/Gagal"
+   },
+   {
+    "name": "R1.4 tahap rework 'Lapisan' dapat dipilih",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "R1.5 Simpan — Gagal & Buka Rework → inspeksi FAIL_REWORK tercatat (command QC yang ada)",
+    "ok": true,
+    "extra": "FAIL_REWORK"
+   },
+   {
+    "name": "R1.6 putaran 2 terbuka: rework terbuka, belum ada permintaan bahan; catatan putaran 1 tidak dihitung sebagai hasil putaran 2",
+    "ok": true,
+    "extra": "{\"foundationTest\":{\"version\":1,\"ok\":true},\"after\":{\"version\":1,\"ok\":false},\"wholeTest\":{\"version\":1,\"ok\":false}}"
+   },
+   {
+    "name": "R1.7 stok tidak bergerak karena putusan gagal",
+    "ok": true,
+    "extra": "3|3|0|0 → 3|3|0|0"
+   },
+   {
+    "name": "R2.1 PIC Bahan melihat 'Putaran 2 · 1 putusan QC gagal sebelumnya' dan tombol Minta Bahan Rework",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "R2.2 kirim tanpa bahan ditolak di UI (petunjuk jelas); belum ada permintaan",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "R2.3 bahan tambahan 'Busa HR D44 5cm' ditambahkan dari katalog",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "R2.4 klik Ajukan → Material Issue tambahan dibuat (siap diambil Gudang) lewat command QC yang sama",
+    "ok": true,
+    "extra": "MI-081026-47 READY_TO_PICK"
+   },
+   {
+    "name": "R2.5 stok TIDAK keluar saat meminta (Gudang yang menyerahkan)",
+    "ok": true,
+    "extra": "3|3|0|0 → 3|3|0|0"
+   },
+   {
+    "name": "R2.6 kartu PIC Bahan menampilkan nomor permintaan & status 'menunggu Gudang'; tombol minta hilang (satu per inspeksi)",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "R2.7 Meja belum bisa memulai rework sebelum Gudang menyerahkan (menunggu bahan)",
+    "ok": true,
+    "extra": "{\"actor\":\"WAREHOUSE\",\"action\":\"WAIT\",\"wait\":\"MATERIAL_NOT_READY\",\"stepNo\":7}"
+   },
+   {
+    "name": "R3.1 antrean Gudang memuat permintaan tambahan MI-081026-47",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "R3.2 tombol Serahkan Bahan untuk permintaan itu ditemukan",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "R3.3 Serahkan Bahan → status ISSUED; stok keluar tepat sekali (+1 ISSUE)",
+    "ok": true,
+    "extra": "ISSUED 3|3|0|0 → 4|4|0|0"
+   },
+   {
+    "name": "R3.4 serah ulang ditolak/idempoten: tidak ada stok keluar ganda",
+    "ok": true,
+    "extra": "409 4|4|0|0"
+   },
+   {
+    "name": "R4.1 Meja melihat riwayat putusan gagal (putaran sebelumnya) dan hasil putaran ini belum ada",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "R4.2 rework dimulai; hasil aktual LAMA tidak cukup: bukti lapisan menuntut hasil aktual baru",
+    "ok": true,
+    "extra": "{\"actor\":\"TABLE\",\"stepNo\":7,\"action\":\"EVIDENCE\",\"gated\":true,\"layersAfterRequired\":true}"
+   },
+   {
+    "name": "R4.3 hasil aktual putaran 2 tersimpan v2 beralasan; v1 (putaran 1) utuh di riwayat",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "R4.4 Kirim tahap 7 rework → bukti ke-2; Meja MENUNGGU uji kasur jadi ULANG (uji lama putaran 1 tidak dipakai)",
+    "ok": true,
+    "extra": "bukti tahap 7 = 2"
+   },
+   {
+    "name": "R5.1 antrean PIC QC memuat G2 'uji kasur jadi' (putaran 2)",
+    "ok": true,
+    "extra": "QAF4-MUZ7JESU-G2|WHOLE_TEST_AFTER,QAF4-MUZ7O9AM-G2|WHOLE_TEST_AFTER,QAF4-MUZ7R9XS-G3|QC_DECISION,QAF4-MUZ88T7S-G2|WHOLE_TEST_AFTER"
+   },
+   {
+    "name": "R5.2 belum dikonfirmasi: dua angka mentah + alasan (awal turun 3 cm · sekarang turun 1 cm), tanpa selisih",
+    "ok": true,
+    "extra": "Perbandingan langsung belum valid: PIC QC belum mengonfirmasi metode pengujian sebanding dengan uji awal. Awal turun 3 cm (berat 75 kg; Berbaring di tengah 1 menit) · sekarang turun 1 cm (berat 75 kg; Berbaring di tengah 1 menit) — kedua angka ditampilkan apa adanya, tanpa selisih."
+   },
+   {
+    "name": "R5.3 setelah PIC QC mengonfirmasi: sebanding 'turun 3 cm → 1 cm (2 cm lebih sedikit)'",
+    "ok": true,
+    "extra": "Sebanding dengan uji awal (dikonfirmasi PIC QC): turun 3 cm → 1 cm (2 cm lebih sedikit)"
+   },
+   {
+    "name": "R5.4 uji kasur jadi v2 tersimpan dengan alasan; v1 (putaran 1, 'Sebagian') tetap di riwayat",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "R6.1 'Lanjutkan ke Gerbang QC' muncul setelah uji ulang",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "R6.2 Run menunggu putusan QC (putaran 2)",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "R7.1 putusan menunjukkan putaran 2 dan gerbang putaran ini lengkap",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "R7.2 riwayat putaran 1 (gagal) tetap terlihat di ringkasan; bukan dianggap hasil putaran terbaru",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "R7.3 inspeksi: FAIL_REWORK lalu PASS (immutable)",
+    "ok": true,
+    "extra": "FAIL_REWORK,PASS"
+   },
+   {
+    "name": "R7.4 stok akhir: hanya +1 ISSUE (bahan tambahan, tepat sekali); tidak ada RETURN sebelum produksi selesai",
+    "ok": true,
+    "extra": "4|4|0|0"
+   }
+  ],
+  "c": [
+   {
+    "name": "C0 data: G3 baru menunggu putusan QC (putaran 1); G2 (hasil skrip B) lulus setelah rework (putaran 2)",
+    "ok": true,
+    "extra": "{\"g3\":\"AWAITING_QC\",\"g2\":2}"
+   },
+   {
+    "name": "C1 [390-terang] antrean PIC QC: tema light diterapkan; tanpa scroll horizontal",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "C1 [390-terang] form putusan LULUS: gerbang putaran 1 lengkap + ringkasan perjalanan; tombol simpan terlihat di layar; tanpa scroll horizontal",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "C1 [390-terang] form putusan GAGAL: verdict, alasan, tahap rework, catatan PIC Bahan; tombol simpan terlihat; tanpa scroll horizontal",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "C1 [390-gelap] antrean PIC QC: tema dark diterapkan; tanpa scroll horizontal",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "C1 [390-gelap] form putusan LULUS: gerbang putaran 1 lengkap + ringkasan perjalanan; tombol simpan terlihat di layar; tanpa scroll horizontal",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "C1 [390-gelap] form putusan GAGAL: verdict, alasan, tahap rework, catatan PIC Bahan; tombol simpan terlihat; tanpa scroll horizontal",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "C1 [1440-terang] antrean PIC QC: tema light diterapkan; tanpa scroll horizontal",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "C1 [1440-terang] form putusan LULUS: gerbang putaran 1 lengkap + ringkasan perjalanan; tombol simpan terlihat di layar; tanpa scroll horizontal",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "C1 [1440-terang] form putusan GAGAL: verdict, alasan, tahap rework, catatan PIC Bahan; tombol simpan terlihat; tanpa scroll horizontal",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "C1 [1440-gelap] antrean PIC QC: tema dark diterapkan; tanpa scroll horizontal",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "C1 [1440-gelap] form putusan LULUS: gerbang putaran 1 lengkap + ringkasan perjalanan; tombol simpan terlihat di layar; tanpa scroll horizontal",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "C1 [1440-gelap] form putusan GAGAL: verdict, alasan, tahap rework, catatan PIC Bahan; tombol simpan terlihat; tanpa scroll horizontal",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "C0b G3 diputus gagal: putaran 2, rework terbuka",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "C2 [390-terang] PIC Bahan: 'Putaran 2' + '1 putusan QC gagal sebelumnya' + tombol Minta Bahan Rework; tema light; tanpa scroll horizontal",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "C2 [390-terang] lembar Minta Bahan Rework: tombol Ajukan terlihat di layar; tanpa scroll horizontal",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "C2 [390-gelap] PIC Bahan: 'Putaran 2' + '1 putusan QC gagal sebelumnya' + tombol Minta Bahan Rework; tema dark; tanpa scroll horizontal",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "C2 [390-gelap] lembar Minta Bahan Rework: tombol Ajukan terlihat di layar; tanpa scroll horizontal",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "C2 [1440-terang] PIC Bahan: 'Putaran 2' + '1 putusan QC gagal sebelumnya' + tombol Minta Bahan Rework; tema light; tanpa scroll horizontal",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "C2 [1440-terang] lembar Minta Bahan Rework: tombol Ajukan terlihat di layar; tanpa scroll horizontal",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "C2 [1440-gelap] PIC Bahan: 'Putaran 2' + '1 putusan QC gagal sebelumnya' + tombol Minta Bahan Rework; tema dark; tanpa scroll horizontal",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "C2 [1440-gelap] lembar Minta Bahan Rework: tombol Ajukan terlihat di layar; tanpa scroll horizontal",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "C3 [390-terang] Unit 360 G2: ringkasan perjalanan memuat putaran 2 dan riwayat putaran sebelumnya; angka fondasi baru & kasur jadi terpisah; tanpa scroll horizontal",
+    "ok": true,
+    "extra": "Kondisi awal → racikan → hasil akhir | PUTARAN 2 | 1 | Kondisi awal | Kasur utuh | turun 3 cm · 75 kg | Fondasi | 25 → 15 cm · turun 10 cm | Lapisan awal | Total tinggi l"
+   },
+   {
+    "name": "C3 [390-terang] laporan G2: ringkasan perjalanan + rencana vs aktual + uji setelah perbaikan; tema light; tanpa scroll horizontal",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "C3 [390-gelap] Unit 360 G2: ringkasan perjalanan memuat putaran 2 dan riwayat putaran sebelumnya; angka fondasi baru & kasur jadi terpisah; tanpa scroll horizontal",
+    "ok": true,
+    "extra": "Kondisi awal → racikan → hasil akhir | PUTARAN 2 | 1 | Kondisi awal | Kasur utuh | turun 3 cm · 75 kg | Fondasi | 25 → 15 cm · turun 10 cm | Lapisan awal | Total tinggi l"
+   },
+   {
+    "name": "C3 [390-gelap] laporan G2: ringkasan perjalanan + rencana vs aktual + uji setelah perbaikan; tema dark; tanpa scroll horizontal",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "C3 [1440-terang] Unit 360 G2: ringkasan perjalanan memuat putaran 2 dan riwayat putaran sebelumnya; angka fondasi baru & kasur jadi terpisah; tanpa scroll horizontal",
+    "ok": true,
+    "extra": "Kondisi awal → racikan → hasil akhir | PUTARAN 2 | 1 | Kondisi awal | Kasur utuh | turun 3 cm · 75 kg | Fondasi | 25 → 15 cm · turun 10 cm | Lapisan awal | Total tinggi l"
+   },
+   {
+    "name": "C3 [1440-terang] laporan G2: ringkasan perjalanan + rencana vs aktual + uji setelah perbaikan; tema light; tanpa scroll horizontal",
+    "ok": true,
+    "extra": ""
+   },
+   {
+    "name": "C3 [1440-gelap] Unit 360 G2: ringkasan perjalanan memuat putaran 2 dan riwayat putaran sebelumnya; angka fondasi baru & kasur jadi terpisah; tanpa scroll horizontal",
+    "ok": true,
+    "extra": "Kondisi awal → racikan → hasil akhir | PUTARAN 2 | 1 | Kondisi awal | Kasur utuh | turun 3 cm · 75 kg | Fondasi | 25 → 15 cm · turun 10 cm | Lapisan awal | Total tinggi l"
+   },
+   {
+    "name": "C3 [1440-gelap] laporan G2: ringkasan perjalanan + rencana vs aktual + uji setelah perbaikan; tema dark; tanpa scroll horizontal",
+    "ok": true,
+    "extra": ""
+   }
+  ]
  }
 }
