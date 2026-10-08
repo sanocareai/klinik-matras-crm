@@ -270,7 +270,7 @@ dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d postgres -v ON_ERROR_STOP
 reh_drop() { dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d postgres -X -q -c "DROP DATABASE IF EXISTS \"${REH_DB}\"" </dev/null >/dev/null 2>&1 || true; }
 gzip -dc "$BACKUP_FILE" | dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d "$REH_DB" -v ON_ERROR_STOP=0 -X -q > "$BK_DIR/restore-rehearsal.log" 2>&1 || true
 RPSQL() { dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d "$REH_DB" -X -At -q -c "$1" </dev/null; }
-KUNCI_TABEL='"Order" payments fin_journal_entries fin_journal_lines fin_payment_allocations stock_movements goods_receipts goods_receipt_lines materials material_issues material_issue_lines fin_supplier_bills fin_supplier_payments fin_purchase_orders fin_supplier_bill_allocations "Unit"'
+KUNCI_TABEL='"Order" payments fin_journal_entries fin_journal_lines fin_payment_allocations stock_movements goods_receipts goods_receipt_lines materials material_issues material_issue_lines fin_supplier_bills fin_supplier_payments fin_purchase_orders fin_supplier_bill_allocations units'
 for T in $KUNCI_TABEL; do
   A="$(psql_live -At -c "select count(*) from $T")"; B="$(RPSQL "select count(*) from $T")"
   [ "$A" = "$B" ] || { reh_drop; die "restore rehearsal tidak identik untuk $T (produksi=$A restore=$B) — backup/restore bermasalah"; }
