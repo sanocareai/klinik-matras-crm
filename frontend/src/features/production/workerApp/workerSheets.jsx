@@ -88,7 +88,8 @@ function StepFormSheet({ card, next, stepNo, onClose, onSubmitted }) {
   const flow = productFlowOf(card) || "KASUR";
   const byPic = stepMaterialsByPic(card, stepNo);
   const rule = mediaRuleFor(stepNo, card.track);
-  const stepHint = card.track === "BUILD" && stepNo === 6 && flow === "KASUR" && !byPic ? BUILD_STEP_KASUR_HINT : step?.hint;
+  const stepHint = card.track === "BUILD" && stepNo === 6 && flow === "KASUR" && !byPic ? BUILD_STEP_KASUR_HINT
+    : byPic && card.track !== "BUILD" ? (stepNo === 6 ? "Video uji fondasi baru. Pemakaian bahan sudah dicatat PIC Bahan — tidak perlu diisi lagi." : "Foto lapisan baru. Pemakaian bahan sudah dicatat PIC Bahan — tidak perlu diisi lagi.") : step?.hint; // Fase 3: LAYANAN dengan PIC Bahan
   const draft = useMemo(() => loadDraft(storage, card.runId, stepNo), [card.runId, stepNo]);
   const [form, setForm] = useState(() => draft?.form || {});
   const [media, setMedia] = useState(() => (draft?.media || []).filter((m) => m.status === "done"));
@@ -137,7 +138,7 @@ function StepFormSheet({ card, next, stepNo, onClose, onSubmitted }) {
       </div>
       <div className="space-y-2 border-t border-line bg-surface px-3 pt-3" style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}>
         {!online && <OfflineNote />}
-        <button type="button" data-mutates onClick={submit} disabled={gate.disabled}
+        <button type="button" data-mutates data-testid="step-submit" onClick={submit} disabled={gate.disabled}
           className="flex min-h-[56px] w-full items-center justify-center gap-2 rounded-btn bg-accent text-[16px] font-bold text-white disabled:opacity-50">
           {busy ? <><Loader2 size={20} className="animate-spin" aria-hidden /> Mengirim…</> : canRetry ? "Coba Lagi" : actionLabel(next, { stageLabel: card.activeOp?.stageLabel, track: card.track })}
         </button>
