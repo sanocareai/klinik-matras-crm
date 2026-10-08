@@ -1,5 +1,6 @@
 // Edit Master Supplier — logika murni (tanpa React) supaya bisa dites. Server (PATCH /finance/suppliers/:id) yang memvalidasi & mencatat riwayat; klien hanya
 // mengirim bidang yang BENAR-BENAR berubah dan menandai perubahan rekening bank.
+import { nilaiPilihanTermin, payloadTerminSupplier } from "./terminLogic.js";
 
 export const BIDANG_TEKS = ["name", "phone", "email", "address", "bankName", "bankAccount", "bankHolder", "notes"];
 const norm = (v) => String(v ?? "").trim();
@@ -9,6 +10,8 @@ export function formDariSupplier(s) {
   const f = { code: s?.code ?? "" };
   for (const k of BIDANG_TEKS) f[k] = s?.[k] ?? "";
   f.paymentTermDays = s?.paymentTermDays ? String(s.paymentTermDays) : "";
+  // Termin bawaan (Tunai/COD, 7/14/30/45/60 hari, tanggal khusus) — nilai <select>; hanya DEFAULT, dokumen menyimpan snapshot sendiri.
+  f.paymentTermPilihan = nilaiPilihanTermin(s?.paymentTermType, s?.paymentTermDays);
   return f;
 }
 
@@ -16,9 +19,14 @@ export function formDariSupplier(s) {
 export function payloadPerubahan(awal, form) {
   const out = {};
   for (const k of BIDANG_TEKS) if (norm(form[k]) !== norm(awal?.[k])) out[k] = norm(form[k]);
-  const terminAwal = awal?.paymentTermDays ? Number(awal.paymentTermDays) : null;
-  const terminBaru = norm(form.paymentTermDays) === "" ? null : Number(form.paymentTermDays);
-  if (terminBaru !== terminAwal) out.paymentTermDays = terminBaru;
+  const pilihanAwal = nilaiPilihanTermin(awal?.paymentTermType, awal?.paymentTermDays);
+  if (form.paymentTermPilihan !== undefined && form.paymentTermPilihan !== pilihanAwal) {
+    Object.assign(out, payloadTerminSupplier(form.paymentTermPilihan));
+  } else {
+    const terminAwal = awal?.paymentTermDays ? Number(awal.paymentTermDays) : null;
+    const terminBaru = norm(form.paymentTermDays) === "" ? null : Number(form.paymentTermDays);
+    if (terminBaru !== terminAwal) out.paymentTermDays = terminBaru;
+  }
   return out;
 }
 

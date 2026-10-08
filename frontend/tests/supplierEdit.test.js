@@ -76,7 +76,7 @@ test("halaman: kolom Aksi di Master Supplier (Edit + Nonaktifkan/Aktifkan), supp
 });
 
 test("dialog edit: mengirim hanya perubahan, galat server tampil di dalam dialog dan tombol dilepas, peringatan rekening, kode terkunci", () => {
-  assert.match(halaman, /onSubmit\(edit \? perubahan : f\)/);
+  assert.match(halaman, /onSubmit\(edit \? perubahan : \{ \.\.\.f, \.\.\.payloadTerminSupplier/);
   assert.match(halaman, /catch \(e\) \{ setGalat\(e\?\.message \|\| "Gagal menyimpan supplier"\); setSibuk\(false\); \}/);
   assert.match(halaman, /onOpenChange=\{\(v\) => \{ if \(!v && !sibuk\) onClose\(\); \}\}/);
   assert.match(halaman, /data-testid="peringatan-rekening"/);

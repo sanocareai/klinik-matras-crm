@@ -1879,7 +1879,13 @@ export const api = {
   // Pintu Gudang: PO yang boleh diterima, TANPA harga.
   getGudangPurchaseOrders: (params = {}) => request(`/inventory/purchase-orders${qsFinance(params)}`),
   getFinanceSupplierPayments: (params = {}) => request(`/finance/supplier-payments${qsFinance(params)}`),
-  createFinanceSupplierPayment: (data) => request("/finance/supplier-payments", { method: "POST", body: JSON.stringify(data) }),
+  // Idempotency-Key per percobaan (klik ganda/retry tidak membuat pembayaran dan jurnal ganda).
+  createFinanceSupplierPayment: (data, idempotencyKey = mutationKey("sp")) => request("/finance/supplier-payments", { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  // Jadwal & Aging Utang Supplier: satu read-model server untuk kartu, tabel, detail, dan export.
+  getAgingUtang: (params = {}) => request(`/finance/utang/aging${qsFinance(params)}`),
+  getAgingUtangDetail: (billId) => request(`/finance/utang/aging/${billId}`),
+  pratinjauTermin: (data) => request("/finance/utang/termin/pratinjau", { method: "POST", body: JSON.stringify(data) }),
+  aturJadwalBayar: (billId, data) => request(`/finance/bills/${billId}/jadwal-bayar`, { method: "PUT", body: JSON.stringify(data) }),
   cancelFinanceSupplierPayment: (id, reason) => request(`/finance/supplier-payments/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
 
   // Kas: transfer & pemasukan lain
