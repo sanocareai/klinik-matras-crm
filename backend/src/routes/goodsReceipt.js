@@ -21,6 +21,9 @@ import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js
 import { postGoodsReceiptValue } from "../services/finance/posting/supplier.js";
 import { JournalError } from "../services/finance/journal.js";
 import { AccountError } from "../services/finance/accounts.js";
+// Fase 1 integrasi Finance→Gudang: penerimaan boleh bersumber dari PO bahan baku (services/finance/purchaseOrder.js). PO tidak
+// pernah menulis stok; yang dilakukan di sini hanya MEMBACA PO untuk mengisi dokumen, membatasi jumlah baik, dan menilai stok.
+import { siapkanPenerimaanDariPO, validasiBarisPenerimaanPO, periksaPutaway, selesaiPutaway, bentukPO } from "../services/finance/purchaseOrder.js";
 
 export const goodsReceiptRouter = express.Router();
 goodsReceiptRouter.use(requireAuth);
@@ -49,7 +52,16 @@ const FORWARD_FLOW = ["DRAFT", "SCHEDULED", "ARRIVED", "INSPECTION", "READY_FOR_
 const receiptInclude = {
   lines: { include: { material: { select: { id: true, code: true, name: true, unit: true } } } },
   createdBy: { select: { id: true, name: true } },
+  // Sumber PO (NULL = penerimaan TANPA PO). Tanpa harga: Gudang tidak melihat nilai uang.
+  purchaseOrder: { select: { id: true, poNumber: true, status: true } },
 };
+
+// Menempelkan ringkasan kuantitas PO (dipesan/diterima baik/ditolak/belum diterima) ke detail penerimaan — TANPA harga.
+async function denganRingkasanPO(receipt) {
+  if (!receipt?.purchaseOrderId) return receipt;
+  const po = await bentukPO(prisma, receipt.purchaseOrderId, { harga: false, denganPenerimaan: false });
+  return { ...receipt, poRingkas: po && { id: po.id, poNumber: po.poNumber, status: po.status, expectedDate: po.expectedDate, lines: po.lines } };
+}
 
 function generateReceiptCode(date) {
   const d = new Date(date);
@@ -78,7 +90,7 @@ goodsReceiptRouter.get("/:id", requirePermission(P.INVENTORY_READ), async (req, 
   try {
     const receipt = await prisma.goodsReceipt.findUnique({ where: { id: req.params.id }, include: receiptInclude });
     if (!receipt) return res.status(404).json({ error: "Goods receipt tidak ditemukan" });
-    res.json(receipt);
+    res.json(await denganRingkasanPO(receipt));
   } catch (err) {
     handleErr(err, res);
   }
@@ -88,7 +100,19 @@ goodsReceiptRouter.get("/:id", requirePermission(P.INVENTORY_READ), async (req, 
 // { sourceType, sourceReference?, supplier?, expectedDate?, notes?, lines: [{materialId, orderedQty?}] }
 goodsReceiptRouter.post("/", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
   try {
-    const { sourceType, sourceReference, supplier, expectedDate, notes, lines } = req.body;
+    const { purchaseOrderId, expectedDate, notes } = req.body;
+    let { sourceType, sourceReference, supplier, lines } = req.body;
+
+    // Dari PO: supplier, referensi, jenis sumber, dan baris item diisi DARI PO (bukan dari isian bebas). Gudang tetap mengisi surat jalan,
+    // jumlah datang, baik, dan ditolak lewat tahapan penerimaan seperti biasa. Tanpa purchaseOrderId = jalur lama (tanpa PO).
+    let dariPO = null;
+    if (purchaseOrderId) {
+      dariPO = await siapkanPenerimaanDariPO(prisma, { purchaseOrderId, pilihan: req.body.lines });
+      sourceType = "PURCHASE_ORDER";
+      sourceReference = dariPO.po.poNumber;
+      supplier = dariPO.supplierName;
+      lines = dariPO.lines;
+    }
     if (!SOURCE_TYPES.includes(sourceType)) throw new ReceiptError("Source type tidak valid");
     if (!Array.isArray(lines) || lines.length === 0) throw new ReceiptError("Minimal satu item wajib diisi");
     for (const l of lines) {
@@ -108,6 +132,7 @@ goodsReceiptRouter.post("/", requirePermission(P.INVENTORY_WRITE), async (req, r
         receiptNumber, sourceType,
         sourceReference: sourceReference || null,
         supplier: supplier || null,
+        purchaseOrderId: dariPO ? dariPO.po.id : null,
         expectedDate: expectedDate ? new Date(`${expectedDate}T00:00:00.000Z`) : null,
         notes: notes || null,
         createdById: req.user.id,
@@ -115,12 +140,13 @@ goodsReceiptRouter.post("/", requirePermission(P.INVENTORY_WRITE), async (req, r
           create: lines.map((l) => ({
             materialId: l.materialId,
             orderedQty: l.orderedQty != null && l.orderedQty !== "" ? Number(l.orderedQty) : null,
+            purchaseOrderLineId: l.purchaseOrderLineId || null,
           })),
         },
       },
       include: receiptInclude,
     });
-    res.status(201).json(receipt);
+    res.status(201).json(await denganRingkasanPO(receipt));
   } catch (err) {
     handleErr(err, res);
   }
@@ -138,6 +164,11 @@ goodsReceiptRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), async (re
     }
 
     const { sourceReference, supplier, expectedDate, receivedDate, deliveryNote, notes, status } = req.body;
+    // Penerimaan dari PO: supplier & referensi berasal dari PO dan tidak boleh diketik ulang (menjaga tautan PO ↔ penerimaan ↔ tagihan).
+    if (existing.purchaseOrderId) {
+      if (supplier !== undefined && (supplier || null) !== existing.supplier) throw new ReceiptError("Supplier penerimaan ini berasal dari PO dan tidak bisa diubah");
+      if (sourceReference !== undefined && (sourceReference || null) !== existing.sourceReference) throw new ReceiptError("Referensi penerimaan ini berasal dari PO dan tidak bisa diubah");
+    }
     const data = {};
     if (sourceReference !== undefined) data.sourceReference = sourceReference || null;
     if (supplier !== undefined) data.supplier = supplier || null;
@@ -180,6 +211,18 @@ goodsReceiptRouter.patch("/:id/lines/:lineId", requirePermission(P.INVENTORY_WRI
 
     const { receivedQty, acceptedQty, rejectedQty, condition, notes } = req.body;
     const toNum = (v) => (v === undefined ? undefined : v === "" || v === null ? null : Number(v));
+    // Baris yang tertaut PO: baik + ditolak ≤ datang, dan baik ≤ sisa PO (pemeriksaan dini; penegakan akhir di putaway). Baris tanpa PO: aturan lama.
+    if (line.purchaseOrderLineId) {
+      const gabung = (baru, lama) => (baru === undefined ? lama : toNum(baru));
+      await validasiBarisPenerimaanPO(prisma, {
+        receiptLine: line,
+        nilai: {
+          receivedQty: gabung(receivedQty, line.receivedQty),
+          acceptedQty: gabung(acceptedQty, line.acceptedQty),
+          rejectedQty: gabung(rejectedQty, line.rejectedQty),
+        },
+      });
+    }
     const updated = await prisma.goodsReceiptLine.update({
       where: { id: line.id },
       data: {
@@ -224,9 +267,13 @@ goodsReceiptRouter.post("/:id/putaway", requirePermission(P.INVENTORY_WRITE), as
         throw new ReceiptError("Tidak ada baris dengan Accepted Quantity — isi hasil inspeksi dulu");
       }
 
+      // Penerimaan dari PO: kunci PO, pastikan jumlah baik kumulatif tidak melebihi PO (melebihi = 409, TIDAK ada stok tertulis), dan ambil
+      // harga satuan PO untuk menilai stok — itulah yang membuat jurnal Dr Persediaan / Cr Utang Barang Belum Ditagih terbentuk di bawah.
+      const cek = await periksaPutaway(tx, receipt);
       for (const line of diterima) {
         await postStockMovement(tx, {
           materialId: line.materialId, type: "RECEIPT", qty: line.acceptedQty,
+          unitCost: line.purchaseOrderLineId ? cek?.harga.get(line.purchaseOrderLineId) : undefined,
           location, supplier: receipt.supplier || null,
           note: `Putaway ${receipt.receiptNumber}`, goodsReceiptId: receipt.id,
           createdById: req.user.id,
@@ -236,6 +283,10 @@ goodsReceiptRouter.post("/:id/putaway", requirePermission(P.INVENTORY_WRITE), as
         where: { id: receipt.id },
         data: { status: "COMPLETED", receivedDate: receipt.receivedDate || new Date() },
         include: receiptInclude,
+      });
+      await selesaiPutaway(tx, {
+        receipt, userId: req.user.id,
+        ditempatkan: diterima.map((l) => ({ materialId: l.materialId, purchaseOrderLineId: l.purchaseOrderLineId, diterimaBaik: l.acceptedQty, ditolak: l.rejectedQty ?? 0 })),
       });
       await recordActivity(tx, {
         entityType: ENTITY_TYPES.GOODS_RECEIPT, entityId: receipt.id,

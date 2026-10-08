@@ -554,6 +554,9 @@ model User {
   finSuppliersCreated                    FinSupplier[]                   @relation("FinSupplierCreator")
   finBillsCreated                        FinSupplierBill[]               @relation("FinBillCreator")
   finBillsApproved                       FinSupplierBill[]               @relation("FinBillApprover")
+  finPurchaseOrdersCreated               FinPurchaseOrder[]              @relation("FinPurchaseOrderCreator")
+  finPurchaseOrdersApproved              FinPurchaseOrder[]              @relation("FinPurchaseOrderApprover")
+  finPurchaseOrderEvents                 FinPurchaseOrderEvent[]         @relation("FinPurchaseOrderEventActor")
   finSupplierPaymentsMade                FinSupplierPayment[]            @relation("FinSupplierPaymentCreator")
   finSupplierPaymentsVoided              FinSupplierPayment[]            @relation("FinSupplierPaymentCanceller")
   finPaymentAllocations                  FinPaymentAllocation[]          @relation("FinPaymentAllocationCreator")
@@ -5027,6 +5030,7 @@ model Material {
   reservations            MaterialReservation[]
   finInventoryOpeningLines FinInventoryOpeningLine[]
   goodsReceiptLines       GoodsReceiptLine[]
+  purchaseOrderLines      FinPurchaseOrderLine[]
   materialIssueLines      MaterialIssueLine[]
   stockTransferLines      StockTransferLine[]
   stockCountLines         StockCountLine[]
@@ -5208,8 +5212,14 @@ model GoodsReceipt {
   // menulis pergerakan stok apa pun (lihat catatan di FinSupplierBill).
   finSupplierBills FinSupplierBill[]
 
+  // Fase 1 integrasi Finance→Gudang — PO bahan baku yang menjadi sumber penerimaan ini. NULL = penerimaan TANPA PO
+  // (jalur lama, termasuk seluruh dokumen historis; TIDAK di-backfill). Restrict: PO yang sudah punya penerimaan tidak bisa dihapus.
+  purchaseOrderId String?           @map("purchase_order_id") @db.Uuid
+  purchaseOrder   FinPurchaseOrder? @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+
   @@index([status])
   @@index([expectedDate])
+  @@index([purchaseOrderId])
   @@map("goods_receipts")
 }
 
@@ -5233,8 +5243,14 @@ model GoodsReceiptLine {
   condition String? // catatan kondisi fisik saat inspeksi
   notes     String?
 
+  // Baris PO yang dipenuhi baris penerimaan ini (NULL = penerimaan tanpa PO). Jumlah diterima baik per baris PO dihitung dari
+  // baris ini pada penerimaan berstatus COMPLETED — satu-satunya sumber kebenaran, tidak ada saldo tersimpan di PO.
+  purchaseOrderLineId String?               @map("purchase_order_line_id") @db.Uuid
+  purchaseOrderLine   FinPurchaseOrderLine? @relation(fields: [purchaseOrderLineId], references: [id], onDelete: Restrict)
+
   @@index([goodsReceiptId])
   @@index([materialId])
+  @@index([purchaseOrderLineId])
   @@map("goods_receipt_lines")
 }
 
@@ -7053,6 +7069,7 @@ model FinSupplier {
   expenses     FinExpense[]
   purchases    FinPurchase[]
   journalLines FinJournalLine[]
+  purchaseOrders FinPurchaseOrder[]
 
   @@index([active])
   @@map("fin_suppliers")
@@ -7142,6 +7159,93 @@ model FinSupplierBill {
   @@index([dueDate])
   @@index([status])
   @@map("fin_supplier_bills")
+}
+
+// ─── PURCHASE ORDER BAHAN BAKU (Fase 1 integrasi Finance → Gudang, Okt 2026) ─────────────────────────────────────────────
+//
+// PO adalah DOKUMEN KOMITMEN, bukan transaksi: menyimpan/menyetujui PO TIDAK menulis stock_movements dan TIDAK membuat jurnal.
+// Stok masuk dan jurnal Dr Persediaan / Cr Utang Barang Belum Ditagih tetap HANYA lahir saat putaway penerimaan yang sah
+// (routes/goodsReceipt.js). Karena itu PO tidak menyimpan saldo: dipesan = kolom qty; diterima baik / ditolak / belum diterima
+// dihitung dari baris penerimaan COMPLETED yang menunjuk baris PO ini (services/finance/purchaseOrder.js).
+enum FinPurchaseOrderStatus {
+  DRAFT
+  DISETUJUI
+  DITERIMA_SEBAGIAN
+  SELESAI
+  DIBATALKAN
+}
+
+model FinPurchaseOrder {
+  id       String @id @default(uuid()) @db.Uuid
+  poNumber String @unique @map("po_number") // PO-DDMMYYYY-NNN (generateDocumentNumber, urut per bulan)
+
+  supplierId String      @map("supplier_id") @db.Uuid
+  supplier   FinSupplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+
+  orderDate    DateTime  @map("order_date") @db.Date
+  expectedDate DateTime? @map("expected_date") @db.Date
+  notes        String?
+
+  status FinPurchaseOrderStatus @default(DRAFT)
+
+  createdById String? @map("created_by")
+  createdBy   User?   @relation("FinPurchaseOrderCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  approvedById String? @map("approved_by")
+  approvedBy   User?   @relation("FinPurchaseOrderApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt   DateTime? @map("approved_at")
+  cancelledAt  DateTime? @map("cancelled_at")
+  cancelReason String?   @map("cancel_reason")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  lines    FinPurchaseOrderLine[]
+  events   FinPurchaseOrderEvent[]
+  receipts GoodsReceipt[]
+
+  @@index([supplierId, status])
+  @@index([status])
+  @@map("fin_purchase_orders")
+}
+
+model FinPurchaseOrderLine {
+  id              String           @id @default(uuid()) @db.Uuid
+  purchaseOrderId String           @map("purchase_order_id") @db.Uuid
+  purchaseOrder   FinPurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+
+  materialId String   @map("material_id") @db.Uuid
+  material   Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
+
+  // Satuan disalin dari katalog saat PO dibuat (snapshot) supaya tampilan PO lama tidak berubah bila katalog diubah.
+  unit      String
+  qty       Decimal @db.Decimal(14, 3)
+  // Rupiah BULAT per satuan — sama dengan StockMovement.unitCost (Int) yang kelak menilai penerimaan; pecahan rupiah per satuan
+  // akan terpotong diam-diam di ledger, jadi ditolak sejak PO.
+  unitPrice Int     @map("unit_price")
+  notes     String?
+  sortOrder Int     @default(0) @map("sort_order")
+
+  receiptLines GoodsReceiptLine[]
+
+  @@index([purchaseOrderId])
+  @@index([materialId])
+  @@map("fin_purchase_order_lines")
+}
+
+// Riwayat PO (append-only): siapa, kapan, apa. metadata menyimpan sebelum/sesudah untuk revisi jumlah.
+model FinPurchaseOrderEvent {
+  id              String           @id @default(uuid()) @db.Uuid
+  purchaseOrderId String           @map("purchase_order_id") @db.Uuid
+  purchaseOrder   FinPurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  type            String           @db.VarChar(40) // DIBUAT, DIUBAH, DISETUJUI, DIBATALKAN, REVISI_JUMLAH, PENERIMAAN_DITEMPATKAN, STATUS_BERUBAH
+  actorId         String?          @map("actor_id")
+  actor           User?            @relation("FinPurchaseOrderEventActor", fields: [actorId], references: [id], onDelete: SetNull)
+  note            String?
+  metadata        Json?
+  createdAt       DateTime         @default(now()) @map("created_at")
+
+  @@index([purchaseOrderId, createdAt])
+  @@map("fin_purchase_order_events")
 }
 
 // Pembayaran KE supplier. Satu pembayaran bisa melunasi beberapa tagihan
