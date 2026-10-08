@@ -20,6 +20,7 @@
 //    dihapus atau diubah nominalnya.
 
 import { siapkanJenisTagihan, pastikanAmanDisetujui, jenisTampilan } from "../services/finance/jenisTagihan.js";
+import { setujuiTagihanPO } from "../services/finance/purchaseOrderBill.js";
 import { ambilKebijakanPersediaan, metodeUntukTanggal, kunciTanggal, CATATAN_PERIODIK } from "../services/finance/inventoryMethod.js";
 import { pandanganCutoff, daftarException, buatSnapshot } from "../services/finance/rekonSnapshot.js";
 import express from "express";
@@ -1420,6 +1421,9 @@ financeTxRouter.post("/bills/:id/approve", requirePermission(P.FINANCE_APPROVE),
         throw err(`Tagihan ini sudah berstatus ${b.status}`, 409);
       }
       await pastikanAmanDisetujui(tx, b);
+      // PO Fase 2: faktur atas PO — kunci PO, tegakkan jumlah ≤ barang baik belum ditagih (tertahan bila lebih), wajibkan catatan tinjauan bila harga berbeda,
+      // lalu tulis alokasi ke baris penerimaan. Tidak menulis stok.
+      if (b.purchaseOrderId) await setujuiTagihanPO(tx, { bill: b, catatanTinjauan: req.body?.catatanTinjauanHarga, userId: req.user.id });
       const updated = await tx.finSupplierBill.update({
         where: { id: b.id },
         data: { status: "DISETUJUI", approvedAt: new Date(), approvedById: req.user.id },
@@ -2722,6 +2726,9 @@ financeTxRouter.patch("/bills/:id", requirePermission(P.FINANCE_POST), async (re
         throw err("Hanya pembuat tagihan (atau admin keuangan) yang boleh mengedit", 403);
       }
       const b = req.body || {};
+      if (bl.purchaseOrderId && ["amount", "billType", "goodsReceiptId", "expenseCategoryId", "purchaseCategoryId"].some((k2) => b[k2] !== undefined)) {
+        throw err("Faktur ini dicocokkan dengan PO — nominal dan baris diubah lewat PATCH /api/finance/purchase-orders/faktur/:id (nominal dihitung dari baris).", 409);
+      }
       const data = {};
       if (b.supplierId !== undefined) {
         const sup = await tx.finSupplier.findUnique({ where: { id: b.supplierId }, select: { active: true } });
@@ -2748,7 +2755,7 @@ financeTxRouter.patch("/bills/:id", requirePermission(P.FINANCE_POST), async (re
         const jenis = await siapkanJenisTagihan(tx, {
           billType: pakai("billType"), goodsReceiptId: pakai("goodsReceiptId"),
           expenseCategoryId: pakai("expenseCategoryId"), purchaseCategoryId: pakai("purchaseCategoryId"),
-          billDate: data.billDate ?? bl.billDate,
+          billDate: data.billDate ?? bl.billDate, purchaseOrderId: bl.purchaseOrderId,
         });
         Object.assign(data, jenis);
       }

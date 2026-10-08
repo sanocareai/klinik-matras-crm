@@ -12,6 +12,7 @@ import express from "express";
 // ADALAH kode asli yang sama persis dijalankan produksi — bukan tiruan.
 const { inventoryRouter } = await import("../../../src/routes/inventory.js");
 const { goodsReceiptRouter } = await import("../../../src/routes/goodsReceipt.js");
+const { purchaseOrderFinanceRouter, purchaseOrderGudangRouter } = await import("../../../src/routes/purchaseOrders.js");
 const { materialIssueRouter } = await import("../../../src/routes/materialIssue.js");
 const { stockTransferRouter } = await import("../../../src/routes/stockTransfer.js");
 const { stockCountRouter } = await import("../../../src/routes/stockCount.js");
@@ -99,6 +100,7 @@ export function buildTestApp() {
   app.use("/api/morning-priority-requests", morningPriorityRouter);
   app.use("/api/inventory", inventoryRouter);
   app.use("/api/inventory/goods-receipts", goodsReceiptRouter);
+  app.use("/api/inventory/purchase-orders", purchaseOrderGudangRouter);
   app.use("/api/inventory/material-issues", materialIssueRouter);
   app.use("/api/inventory/transfers", stockTransferRouter);
   app.use("/api/inventory/stock-counts", stockCountRouter);
@@ -127,6 +129,7 @@ export function buildTestApp() {
   app.use("/api/finance", financeKoreksiRouter);
   app.use("/api/finance", financeRekonCutoffRouter);
   app.use("/api/finance", financePenerimaanRouter);
+  app.use("/api/finance/purchase-orders", purchaseOrderFinanceRouter);
   app.use("/api/finance", financePersediaanAwalRouter);
   app.use("/api/finance", financeApprovalsRouter);
   app.use("/api/finance", financePemasukanRouter);

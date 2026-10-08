@@ -42,8 +42,9 @@ import { resolveAccount, SYSTEM_KEYS, AccountError } from "../accounts.js";
 import { ambilKebijakanPersediaan, metodeUntukTanggal, METODE_PERSEDIAAN, pesanPerpetual } from "../inventoryMethod.js";
 import { statusCutoverUntuk, penerimaanTertutupPeriodik } from "../persediaanAwal.js";
 import { resolvePostingGap } from "../journal.js";
-import { toMoney, sumMoney, ZERO } from "../money.js";
+import { toMoney, sumMoney, ZERO, Decimal } from "../money.js";
 import { barisBiayaAdmin } from "../transferFee.js";
+import { grniDebitPerPenerimaan } from "../purchaseOrderBill.js";
 
 export const KEY = {
   goodsReceipt: (id) => `PENERIMAAN_BAHAN:${id}`,
@@ -61,6 +62,12 @@ export const KEY = {
  * dan itu harus terlihat sebagai pekerjaan (FinPostingGap), bukan
  * ditambal dengan harga tebakan.
  */
+// Nilai satu baris = qty EKSAK (hingga 4 desimal sesuai ledger stok) × harga satuan, dibulatkan SATU kali ke 2 desimal.
+// (toMoney(qty) membulatkan qty ke 2 desimal lebih dulu — salah untuk qty seperti 0,125; data produksi saat ini maksimal 1 desimal sehingga tidak berubah.)
+export function nilaiBarisPenerimaan(qty, unitCost) {
+  return toMoney(new Decimal(String(qty)).times(new Decimal(String(unitCost))));
+}
+
 export async function nilaiPenerimaan(tx, goodsReceiptId) {
   const movements = await tx.stockMovement.findMany({
     where: { goodsReceiptId, type: "RECEIPT" },
@@ -75,7 +82,7 @@ export async function nilaiPenerimaan(tx, goodsReceiptId) {
 
   const total = berharga.length === 0
     ? ZERO
-    : sumMoney(berharga.map((m) => toMoney(m.qty).times(toMoney(m.unitCost))));
+    : sumMoney(berharga.map((m) => nilaiBarisPenerimaan(m.qty, m.unitCost)));
 
   return { total, jumlahBaris: movements.length, tanpaHarga };
 }
@@ -174,7 +181,27 @@ export async function postSupplierBill(tx, { billId, userId = null }) {
   const utangUsaha = await resolveAccount(tx, SYSTEM_KEYS.UTANG_USAHA);
   const lines = [];
 
-  if (bill.goodsReceiptId && (await penerimaanTertutupPeriodik(tx, bill.goodsReceiptId))) {
+  if (bill.purchaseOrderId) {
+    // PO Fase 2 — faktur yang dicocokkan per baris dengan PO. GRNI ditutup per PENERIMAAN sebesar jumlah teralokasi × HARGA PO (harga yang sama dengan
+    // nilai stok saat putaway); selisih terhadap nominal faktur (harga faktur berbeda) memakai kebijakan Selisih Harga Pembelian yang sama dengan alur lama.
+    // TIDAK ada pergerakan stok. Alokasi ditulis saat persetujuan (purchaseOrderBill.setujuiTagihanPO), sebelum fungsi ini.
+    const grir = await resolveAccount(tx, SYSTEM_KEYS.UTANG_BELUM_DITAGIH);
+    const { daftar, total: nilaiTerima } = await grniDebitPerPenerimaan(tx, billId);
+    if (daftar.length === 0) throw new AccountError(`Faktur ${bill.billNumber} atas PO belum punya alokasi ke penerimaan — tidak bisa dijurnal.`, 409);
+    for (const d of daftar) {
+      if (d.nilai.greaterThan(0)) lines.push({ accountId: grir.id, debit: d.nilai, description: `Penutup penerimaan ${d.receiptNumber} (faktur atas PO)`.slice(0, 250), supplierId: bill.supplierId });
+    }
+    const selisih = nilaiTagihan.minus(nilaiTerima);
+    if (!selisih.isZero()) {
+      const akunSelisih = await resolveAccount(tx, SYSTEM_KEYS.SELISIH_HARGA_PEMBELIAN);
+      lines.push({
+        accountId: akunSelisih.id,
+        ...(selisih.greaterThan(0) ? { debit: selisih } : { credit: selisih.negated() }),
+        description: "Selisih harga faktur supplier vs harga PO (ditinjau Finance)",
+        supplierId: bill.supplierId,
+      });
+    }
+  } else if (bill.goodsReceiptId && (await penerimaanTertutupPeriodik(tx, bill.goodsReceiptId))) {
     // B3.6 — penerimaan sebelum cutover yang tidak dijurnal ke Persediaan (tercakup stok opname): tagihannya periodik, Dr 5-1100.
     const bahanTerpakai = await resolveAccount(tx, SYSTEM_KEYS.BEBAN_POKOK_BAHAN);
     lines.push({ accountId: bahanTerpakai.id, debit: nilaiTagihan, description: `Pembelian bahan baku (periodik, penerimaan ${bill.goodsReceipt?.receiptNumber || ""} tercakup stok opname)`.slice(0, 250), supplierId: bill.supplierId });

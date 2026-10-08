@@ -43,6 +43,7 @@ Mode filter: **Server** = layar mengirim filter/periode ke endpoint daftar, expo
 | **Persediaan Awal (cutover)** | Tidak (di luar 11 modul) | Alur input/pemeriksaan snapshot (Tempel CSV); bukan laporan transaksi. Usul lanjutan: template hitung fisik. |
 | **Laporan Keuangan** — Laba Rugi, Neraca, Arus Kas, Neraca Saldo | Tidak (di luar 11 modul) | Laporan terhitung; angka pokoknya dapat ditelusuri dari Buku Besar & Jurnal Umum. Usul lanjutan bila Owner butuh Excel laporan. |
 | **Bagan Akun**, **Pengaturan Finance** | Tidak | Data master/konfigurasi, bukan transaksi. |
+| **Purchase Order Bahan Baku** (Okt 2026) | Tidak (di luar 11 modul) | Dokumen komitmen tanpa jurnal. Tagihan dan stok yang lahir darinya tercakup export Supplier & Utang dan Jurnal Umum. Export PO dibuat bila Finance minta. |
 | **Pengecualian Tanggal Lunas** (keputusan Owner, 2 Okt 2026) | Tidak (di luar 11 modul) | Daftar riwayat keputusan Owner yang kecil; setiap perubahan juga tercatat di Aktivitas order. Export dibuat bila Owner minta. |
 | **Penjualan Karyawan** (input manual di luar Order, 2 Okt 2026) | Tidak (di luar 11 modul) | Modul baru. Jurnalnya (sumber Penjualan Karyawan / Pembayaran Penjualan Karyawan) tercakup Jurnal Umum & Buku Besar; pendapatannya tercakup export Pemasukan (Pemasukan Lain · Penjualan karyawan). Export khusus bisa dibuat bila Owner minta. |
 
