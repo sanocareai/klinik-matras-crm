@@ -513,7 +513,9 @@ export async function setPlannedBOMInTx(tx, { plan, lines, actorId, commandId = 
   return { planId: plan.id, status: nextStatus, revision, lineCount: normalized.length, releasedReservations: releasedCount };
 }
 
-export async function setPlannedBOM(prisma, { planId, actorId, idempotencyKey, expectedRevision, lines }) {
+// `authorize` (opsional): dipanggil di DALAM transaksi, setelah plan terkunci & revisi cocok, SEBELUM command dicatat — dipakai pemanggil yang punya aturan akses sendiri (mis. PIC Bahan per pekerjaan)
+// tanpa membuat penulis BOM kedua. Tanpa authorize: perilaku lama persis.
+export async function setPlannedBOM(prisma, { planId, actorId, idempotencyKey, expectedRevision, lines, authorize = null }) {
   assertIdempotencyKey(idempotencyKey);
   const revisionExpected = assertExpectedRevision(expectedRevision);
   const actor = actorId || "SYSTEM";
@@ -526,6 +528,7 @@ export async function setPlannedBOM(prisma, { planId, actorId, idempotencyKey, e
     const plan = await loadPlanForWrite(tx, planId);
     assertPlanRevision(plan, revisionExpected);
     await assertWriterEnabledForUnit(tx, plan.run.unitId);
+    if (authorize) await authorize(tx, plan);
 
     const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "SET_PLANNED_BOM", aggregateType: "ProductionRunPlan", aggregateId: planId, requestHash, expectedRevision: revisionExpected });
     const response = await setPlannedBOMInTx(tx, { plan, lines, actorId, commandId: command.id });

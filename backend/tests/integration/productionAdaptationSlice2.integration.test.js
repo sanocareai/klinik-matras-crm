@@ -3,10 +3,12 @@
 import "./setup/env.js";
 import "./setup/productionEvidenceTmpEnv.js";
 import test from "node:test";
+import { setQcGateDefault } from "../../src/services/productionSettingsService.js";
 import assert from "node:assert/strict";
 import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestMaterial, createTestUser, seedBalance } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
+import * as PT from "./setup/preTeardown.js";
 import { makeClient } from "./setup/httpClient.js";
 import { V2_FLAGS } from "../../src/services/v2FeatureFlags.js";
 
@@ -58,7 +60,8 @@ async function world() {
 }
 
 // Unit LAYANAN lewat pickup nyata (V1) + custody INBOUND diterima Nadya (Gudang).
-async function acceptedUnit(w, { cohort = true } = {}) {
+async function acceptedUnit(w, { cohort = true, v2 = false } = {}) {
+  if (v2) await setQcGateDefault(testPrisma, { enabled: true, version: "QC_GATE_V2", actorId: null }); // bawaan Admin eksplisit; tanpa setting = kebijakan lama (NULL)
   const customer = await testPrisma.customer.create({ data: { name: `Ibu Maya ${++seq}` } });
   const order = await testPrisma.order.create({
     data: { customerId: customer.id, orderNumber: `S2O-${++seq}`, value: 1000, category: "LAYANAN", beratBadan: 85, complaintCategory: ["SAKIT_PINGGANG"], notes: "Minta tekstur firm" },
@@ -77,7 +80,9 @@ async function acceptedUnit(w, { cohort = true } = {}) {
   const handoff = await testPrisma.unitCustodyHandoff.findFirstOrThrow({ where: { unitId: unit.id, direction: "INBOUND" } });
   const acc = await w.nadya.api.post(`/api/inventory/unit-custody/${handoff.id}/accept`, { locationId: w.rcv.id, expectedRevision: 1 }, key(`${tag}-x`));
   assert.equal(acc.status, 200, JSON.stringify(acc.body));
-  return { unit, run: await testPrisma.productionRun.findFirstOrThrow({ where: { unitId: unit.id } }) };
+  // Fase 4: tes ini TIDAK menguji gerbang perakitan -> Run disematkan ke kebijakan V1 (jalur modul lama: uji tekstur Meja, tanpa uji QC fondasi baru/kasur jadi). Gerbang perakitan diuji di productionAssembly.integration.test.js.
+  const run = await testPrisma.productionRun.findFirstOrThrow({ where: { unitId: unit.id } });
+  return { unit, run: v2 ? run : await testPrisma.productionRun.update({ where: { id: run.id }, data: { qcGatePolicyVersion: "QC_GATE_V1" } }) };
 }
 
 async function planOnBoard(w, runId, { station = "TABLE_1", corner = true, tag = `plan-${++seq}` } = {}) {
@@ -130,8 +135,11 @@ const pick = async (w, issueId) => ok(await w.nadya.api.post(`${P}/material-requ
 // Tahap 1–4 (intake) sampai operasi diagnosa berjalan.
 async function throughIntake(w, runId) {
   ok(await step(w, w.nadya, runId, 1, { payload: { conditionConfirmed: true, conditionNote: "kain luar kusam" }, media: await media(w.nadya, runId, "i") }));
+  await PT.qcWhole(server, w.qc, runId); // fase 2: catatan PIC QC / lapisan awal (gerbang tahap 2)
   ok(await step(w, w.nadya, runId, 2, { payload: { feelNote: "Tengah terasa amblas" }, media: await media(w.nadya, runId, "v") }));
+  await PT.layersBefore(server, w.nadya, runId); // fase 2: catatan PIC QC / lapisan awal (gerbang tahap 3)
   ok(await step(w, w.nadya, runId, 3, { payload: { oldMaterials: ["PER", { type: "BUSA", note: "kuning kempes" }] }, media: await media(w.nadya, runId, "i", "i") }));
+  await PT.foundationTest(server, w.qc, runId); // fase 2: catatan PIC QC / lapisan awal (gerbang tahap 4)
   ok(await step(w, w.nadya, runId, 4, { payload: { heightBeforeCm: 24, heightCompressedCm: 17, testerWeightKg: 85, foundationIssues: ["Per tengah lemah"] }, media: await media(w.nadya, runId, "v") }));
 }
 
@@ -512,7 +520,7 @@ test("J. Run lama (tanpa kebijakan adaptasi) TIDAK berubah: QC tetap wajib, Corn
   const early = await step(w, w.nadya, run.id, 9, { payload: {}, media: await media(w.nadya, run.id, "i") });
   assert.equal(early.status, 409); assert.equal(early.body.code, "STEP_WAITING_AWAITING_QC");
   const fin = await finishPost(w, w.nadya, run.id, { tag: "fin-j" });
-  assert.equal(fin.status, 409); assert.equal(fin.body.code, "FINISH_ADAPTATION_NOT_ENABLED");
+  assert.equal(fin.status, 409); assert.equal(fin.body.code, "FINISH_NOT_READY", "Fase 5: run non-adaptasi tidak lagi ditolak karena adaptasi, tetapi karena syarat (QC/tahap) belum terpenuhi — tanpa tahap dilewati");
 });
 
 test("K. Izin pengaturan: PRODUCTION_SETTINGS_WRITE hanya Admin/Owner; operator/QC/Gudang/Driver ditolak; perubahan tercatat", async () => {

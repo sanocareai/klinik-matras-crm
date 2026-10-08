@@ -3,6 +3,7 @@
 // (lib/menuVisibility.js). Server tetap penegak izin sebenarnya — di sini hanya menyembunyikan menu yang pasti buntu.
 export const PRODUCTION_SETTINGS_ROLES = Object.freeze(["ADMIN", "OWNER", "PRODUCTION_LEAD"]);
 export const PRODUCTION_KPI_ROLES = Object.freeze(["ADMIN", "OWNER", "PRODUCTION_LEAD"]);
+export const PRODUCTION_QC_APP_ROLES = Object.freeze(["ADMIN", "OWNER", "QC_LEAD"]);
 
 export const PRODUCTION_NAV = Object.freeze([
   {
@@ -25,6 +26,9 @@ export const PRODUCTION_NAV = Object.freeze([
       { to: "/produksi/meja", label: "Aplikasi Meja", icon: "Wrench" },
       { to: "/produksi/corner", label: "Aplikasi Corner", icon: "Scissors" },
       { to: "/produksi/dokumentasi", label: "Aplikasi Dokumentasi", icon: "Camera" },
+      // Antrean pengujian awal PIC QC (Fase 2 LAYANAN) — sejajar aplikasi petugas lain di Mode Kerja (OPERASIONAL tidak dipenuhi); berdiri sendiri, tidak bergantung pada menu QC desktop yang disembunyikan.
+      // Hanya pemegang izin QC yang melihatnya (QC_LEAD/ADMIN/OWNER); server menegakkan izin tulis.
+      { to: "/produksi/qc", label: "Aplikasi PIC QC", icon: "ClipboardCheck", bolehPeran: PRODUCTION_QC_APP_ROLES },
       { to: "/bengkel/andon", label: "Andon TV", icon: "Tv" },
     ],
   },

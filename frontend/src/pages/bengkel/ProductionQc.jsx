@@ -130,18 +130,25 @@ function MaterialRows({ rows, onChange, disabled }) {
 }
 
 function InspectionForm({ run, busy, onSubmit, onError }) {
+  const generic = run.qcProfile === "GENERIC";
+  const unconfirmed = run.qcProfile === "UNCONFIRMED"; // jenis produk belum jelas: TIDAK ada fallback ke uji kasur — keputusan ditahan sampai Sales mengonfirmasi jenis pada order
+  const cornerHeld = run.track === "BUILD" && run.cornerRequired == null; // Corner harus dikonfirmasi Lead pada rencana sebelum QC lulus/waive // divan/sofa (jalur pengerjaan): pemeriksaan hasil tanpa uji berat badan/tekstur kasur
   const [form, setForm] = useState({ mode: "PASS", photoUrls: [], referenceWeightKg: "", fitVerdict: "PAS", customerPreferenceOverride: "", educationGiven: false, note: "", reworkStageId: "", reason: "", materials: [] });
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
   const stages = reworkStageOptions(run);
   const mode = form.mode;
   const submit = () => {
-    const check = validateInspectionForm(form);
+    const profile = generic ? "GENERIC" : "KASUR";
+    const check = validateInspectionForm(form, { profile });
     if (!check.valid) { onError(check.errors[0]); return; }
-    onSubmit(buildInspectionBody(form, run.revision));
+    onSubmit(buildInspectionBody(form, run.revision, { profile }));
   };
   return (
     <section aria-label="Catat hasil QC" className="space-y-3 rounded-card border border-line p-3">
-      <h3 className="text-[12.5px] font-bold text-ink">Catat Hasil QC</h3>
+      {unconfirmed && <p data-testid="qc-unconfirmed-hold" role="alert" className="m-0 rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-orange"><b>Putusan QC ditahan.</b> Jenis produk belum jelas{run.productClassProblem ? ` — ${run.productClassProblem}` : ""}. Uji berat badan kasur tidak dipakai sebagai cadangan; minta Sales memperbaiki jenis produk pada order.</p>}
+      {cornerHeld && <p data-testid="qc-corner-hold" role="alert" className="m-0 rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-orange"><b>Lulus/Waive ditahan.</b> Kebutuhan Corner belum dikonfirmasi pada rencana — Production Lead mengonfirmasinya di Unit 360 › Proses. (Gagal/rework tetap bisa dicatat.)</p>}
+      <h3 className="text-[12.5px] font-bold text-ink">{generic ? "Catat Pemeriksaan Hasil" : "Catat Hasil QC"}</h3>
+      {generic && <p data-testid="qc-generic-note" className="m-0 rounded-btn bg-inset px-3 py-2 text-[12px] text-ink2">Produk non-kasur (divan/sofa): periksa hasil pengerjaan terhadap spesifikasi pesanan. Tidak ada uji berat badan/tekstur kasur.</p>}
       <div role="tablist" aria-label="Jenis hasil QC" className="flex gap-1">
         {QC_MODES.map((m) => (
           <button key={m.key} role="tab" aria-selected={mode === m.key} type="button" onClick={() => set({ mode: m.key, fitVerdict: m.key === "FAIL" ? "TERLALU_KERAS" : "PAS" })}
@@ -158,15 +165,15 @@ function InspectionForm({ run, busy, onSubmit, onError }) {
         </div>
       ) : (
         <div className="space-y-2">
-          <label className="block text-[12px] text-ink3">Berat acuan (kg)
+          {!generic && <label className="block text-[12px] text-ink3">Berat acuan (kg)
             <input type="number" min="1" step="1" className={field} value={form.referenceWeightKg} onChange={(e) => set({ referenceWeightKg: e.target.value })} />
-          </label>
-          <label className="block text-[12px] text-ink3">Hasil uji berat badan
+          </label>}
+          {!generic && <label className="block text-[12px] text-ink3">Hasil uji berat badan
             <select className={field} value={form.fitVerdict} onChange={(e) => set({ fitVerdict: e.target.value })}>
               {(mode === "FAIL" ? FAIL_VERDICTS : FIT_VERDICTS).map((v) => <option key={v.value} value={v.value}>{v.label}</option>)}
             </select>
-          </label>
-          {mode === "PASS" && form.fitVerdict !== "PAS" && (
+          </label>}
+          {!generic && mode === "PASS" && form.fitVerdict !== "PAS" && (
             <div className="space-y-2 rounded-btn bg-inset p-2">
               <label className="block text-[12px] text-ink3">Override preferensi customer
                 <select className={field} value={form.customerPreferenceOverride} onChange={(e) => set({ customerPreferenceOverride: e.target.value })}>
@@ -198,7 +205,7 @@ function InspectionForm({ run, busy, onSubmit, onError }) {
           )}
         </div>
       )}
-      <Button size="sm" data-mutates onClick={submit} disabled={busy}><ClipboardCheck size={14} /> {busy ? "Menyimpan…" : mode === "PASS" ? "Simpan — Lulus" : mode === "FAIL" ? "Simpan — Gagal (Buka Rework)" : "Simpan — Waive QC"}</Button>
+      <Button size="sm" data-mutates onClick={submit} disabled={busy || (unconfirmed && mode !== "WAIVED") || (cornerHeld && mode !== "FAIL")}><ClipboardCheck size={14} /> {busy ? "Menyimpan…" : mode === "PASS" ? "Simpan — Lulus" : mode === "FAIL" ? "Simpan — Gagal (Buka Rework)" : "Simpan — Waive QC"}</Button>
     </section>
   );
 }
@@ -288,7 +295,19 @@ function RunDetailModal({ runId, onClose, onChanged }) {
               <Badge variant={badge.variant}>{badge.label}</Badge>
               <span className="text-[12px] text-ink3">Revisi run {run.revision}</span>
               {run.origin === "WORKSHOP_BORN" && <Badge variant="accent">Lahir di Workshop</Badge>}
+              {run.track === "BUILD" && <Badge variant="neutral">{run.qcProfile === "GENERIC" ? "Pesanan non-kasur" : run.qcProfile === "UNCONFIRMED" ? "Jenis produk belum jelas" : "Pesanan kasur"}</Badge>}
             </div>
+            {run.track === "BUILD" && (
+              <section aria-label="Spesifikasi pesanan" data-testid="qc-build-spec" className="space-y-1 rounded-card border border-line p-3 text-[12.5px]">
+                <h3 className="text-[12.5px] font-bold text-ink">Spesifikasi &amp; Racikan</h3>
+                <p className="m-0 text-ink2"><span className="text-ink3">Layanan Sales: </span>{run.salesServices?.length ? run.salesServices.join(", ") : "—"}</p>
+                {run.salesNotes && <p className="m-0 text-ink2"><span className="text-ink3">Catatan Sales: </span>{run.salesNotes}</p>}
+                {run.qcProfile !== "GENERIC" && <p data-testid="qc-racikan" className="m-0 text-ink2"><span className="text-ink3">Racikan: </span>{[run.racikan?.fondasi && `Fondasi — ${run.racikan.fondasi}`, run.racikan?.lapisan && `Lapisan — ${run.racikan.lapisan}`].filter(Boolean).join(" · ") || "belum dicatat"}</p>}
+                {run.buildNote && <p className="m-0 text-ink2"><span className="text-ink3">Pengerjaan: </span>{run.buildNote}</p>}
+                <p data-testid="qc-corner-info" className="m-0 text-ink2"><span className="text-ink3">Corner: </span>{run.cornerRequired == null ? "belum dikonfirmasi" : run.cornerRequired ? "diperlukan" : `tidak diperlukan — ${run.cornerReason || ""}`}</p>
+                {run.productClassProblem && <p data-testid="qc-product-problem" className="m-0 rounded-btn bg-orangebg px-2 py-1 text-orange">Jenis produk: {run.productClassProblem}</p>}
+              </section>
+            )}
 
             {run.conflict && <ConflictPanel run={run} busy={busy}
               onOpen={() => execute("exception-open", (key) => api.openRunException(runId, key), (r) => (r.alreadyOpen ? "Konflik sudah tercatat sebelumnya." : "Konflik dicatat."))}
@@ -300,7 +319,7 @@ function RunDetailModal({ runId, onClose, onChanged }) {
               <ol className="divide-y divide-line rounded-card border border-line">
                 {run.stages.map((s) => (
                   <li key={s.id} className="flex items-center justify-between gap-2 px-3 py-2 text-[12.5px]">
-                    <span className="text-ink">{s.order}. {s.label}{s.isQcGate ? " · gerbang QC" : ""}</span>
+                    <span className="text-ink">{s.order}. {s.isQcGate && run.qcProfile === "GENERIC" ? "Pemeriksaan Hasil" : s.label}{s.isQcGate ? " · gerbang QC" : ""}</span>
                     <Badge variant={s.status === "COMPLETED" ? "success" : s.status === "AWAITING_QC" ? "warning" : s.status === "ACTIVE" ? "info" : "neutral"}>{STAGE_STATUS_LABEL[s.status] || s.status}</Badge>
                   </li>
                 ))}

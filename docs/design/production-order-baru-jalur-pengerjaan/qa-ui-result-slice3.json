@@ -1,0 +1,184 @@
+{
+ "at": "2026-10-07T02:50:00.540Z",
+ "pass": 34,
+ "fail": 1,
+ "results": [
+  {
+   "name": "P1.1 Unit 360 M1 (kasur): panel rencana pengerjaan tampil",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "P1.2 Corner tertulis BELUM dikonfirmasi (tidak diasumsikan)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "P1.3 klik Simpan Corner -> tersimpan di DB (diperlukan)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "P1.4 klik Tetapkan PIC Bahan -> tersimpan di DB",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "P1.5 tampilan menyebut nama PIC Bahan",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "P1.6 Corner tidak diperlukan TANPA alasan ditolak di UI (tidak tersimpan)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "P1.7 dengan alasan -> tersimpan di DB (tidak diperlukan + alasan)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "P1.8 U1: kebutuhan konfirmasi jenis produk ditampilkan; order tidak diubah",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "P2.1 M1: tahap 'Pengerjaan Pesanan'; tahap bongkar/diagnosa tertulis 'tidak berlaku' (bukan dikerjakan)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "P2.2 klik 'Mulai Pengerjaan Pesanan' (UI) -> operasi mulai di DB",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "P2.3 racikan belum dicatat -> 'Menunggu PIC Bahan' (PIC Meja tidak bisa kirim bukti)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "P3.1 antrean PIC Bahan memuat M1 (hanya pekerjaan yang ditugaskan)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "P3.2 detail memuat PIC Bahan, Corner, dan tombol 'Catat Racikan & Bahan'",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "P3.3 lembar terbuka: kolom racikan kasur + bahan yang diserahkan Gudang",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "P3.4 kirim kosong ditolak di UI; tidak ada catatan di DB",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "P3.5 jumlah melebihi yang diserahkan ditolak di UI",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "P3.6 klik Simpan -> TERSIMPAN di DB (versi 1, racikan, 2 bahan)",
+   "ok": true,
+   "extra": "1|Pocket spring 25 cm + penguat pinggir|2"
+  },
+  {
+   "name": "P3.7 UI menampilkan konfirmasi + catatan terbaru",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "P3.8 stok keluar TIDAK bertambah oleh pencatatan (tepat sekali di Gudang)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "P4.1 setelah racikan tercatat, tombol 'Kirim Bukti Pengerjaan Pesanan' tersedia",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "P4.2 lembar bukti: catatan 'dicatat PIC Bahan' (tanpa isian bahan/racikan ulang)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "P4.3 kirim tanpa foto/penjelasan ditolak di UI; tidak ada bukti di DB",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "P4.4 foto terunggah (status done) lewat input file nyata",
+   "ok": true,
+   "extra": "[\"done\"]"
+  },
+  {
+   "name": "P4.5 klik Kirim -> bukti TERSIMPAN di DB (1 bukti, 1 media, tanpa bahan ganda)",
+   "ok": true,
+   "extra": "1|1|true"
+  },
+  {
+   "name": "P4.6 UI: tahap berikutnya = uji tekstur (Pengerjaan Pesanan tertutup oleh bukti)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "P5.1 D2: mulai pengerjaan (UI)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "P5.2 D2 (non-kasur): tombol 'Kirim Pengerjaan Pesanan' (satu kiriman, tanpa uji tekstur)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "P5.3 lembar bukti divan TIDAK memuat racikan kasur",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "P5.4 bukti D2 TERSIMPAN; unit menunggu pemeriksaan QC",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "P5.5 QC divan: pemeriksaan hasil (tanpa berat acuan), Corner 'tidak diperlukan' tertulis, gerbang 'Pemeriksaan Hasil'",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "P5.6 klik 'Simpan — Lulus' -> inspeksi TERSIMPAN di DB (PASS, tanpa uji berat badan)",
+   "ok": true,
+   "extra": "PASS"
+  },
+  {
+   "name": "P5.7 tanpa Corner: Finish dikerjakan PIC Meja (tombol 'Konfirmasi Selesai'; tidak ada 'Kirim ke Corner')",
+   "ok": false,
+   "extra": ""
+  },
+  {
+   "name": "P5.7b lembar Finish tanpa Corner: copy 'Pekerjaan selesai & produk siap diserahkan' (bukan 'Jahitan selesai')",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "P5.8 klik Konfirmasi Selesai -> TERSIMPAN: operasi custom_build + finished selesai, tanpa operasi Corner; barang jadi ditawarkan",
+   "ok": true,
+   "extra": "custom_build:COMPLETED,finished:COMPLETED"
+  },
+  {
+   "name": "P6.1 U1: 'Jenis produk perlu dikonfirmasi' + minta Sales memperbaiki order; tidak ada tombol kirim bukti",
+   "ok": true,
+   "extra": ""
+  }
+ ],
+ "httpErrors": [],
+ "consoleErrors": []
+}

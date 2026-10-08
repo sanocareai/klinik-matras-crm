@@ -119,7 +119,7 @@ test("A. Satu catatan kanonis per unit: Meja menyimpan Lapisan+Fondasi sebelum (
   assert.deepEqual([c.material.kind, c.condition], ["UNKNOWN", "TIDAK_DIKETAHUI"]);
   assert.equal(reads.meja.sections.FOUNDATION_BEFORE.data.system, "BONNELL");
   assert.equal(reads.meja.sections.AFTER, null, "Sesudah belum dicatat — tidak dikarang");
-  assert.deepEqual(reads.meja.comparison.status, { layersBefore: true, foundationBefore: true, after: false });
+  assert.deepEqual(reads.meja.comparison.status, { layersBefore: true, foundationBefore: true, after: false, plan: false });
   assert.equal(reads.meja.comparison.gaps.length, 1); assert.match(reads.meja.comparison.gaps[0].text, /Sesudah pengerjaan belum dicatat/);
   assert.ok(reads.meja.comparison.layers.every((r) => r.outcome === "UNRECORDED" && r.final === null), "tanpa hasil akhir palsu");
   assert.equal(await testPrisma.unitComponentEntry.count({ where: { unitId: u.unit.id } }), 2);
@@ -137,7 +137,7 @@ test("B. Sesudah (dipertahankan/diperbaiki/diganti) + perbandingan Sebelum→Ses
   ok(await put(w.meja, u.unit.id, "LAYERS_BEFORE", { expectedVersion: 0, data: LAYERS(w) }));
   // hanya Sebelum-lapisan: fondasi & sesudah belum dicatat
   let c = ok(await get(w.doc, u.unit.id), 200).comparison;
-  assert.deepEqual(c.status, { layersBefore: true, foundationBefore: false, after: false }); assert.equal(c.gaps.length, 2);
+  assert.deepEqual(c.status, { layersBefore: true, foundationBefore: false, after: false, plan: false }); assert.equal(c.gaps.length, 2);
   ok(await put(w.meja, u.unit.id, "FOUNDATION_BEFORE", { expectedVersion: 0, data: FOUNDATION(w) }));
   const pa = await photo(w.corner, u.unit.id);
   const after = ok(await put(w.corner, u.unit.id, "AFTER", { expectedVersion: 0, data: AFTER(w), media: [pa] }));
@@ -259,7 +259,8 @@ test("G. Izin: Meja/Corner/Lead/Dokumentasi/Admin boleh menulis; Sales/Gudang/Dr
   const salesRead = await get(w.sales, u.unit.id);
   if (salesRead.status === 200) { assert.equal(salesRead.body.canWrite, false); assert.equal(salesRead.body.suggestions, undefined, "saran bahan hanya untuk penulis"); }
   const cat = ok(await w.meja.api.get(`${CN}/materials?q=busa`), 200);
-  assert.ok(cat.items.length >= 1); assert.deepEqual(Object.keys(cat.items[0]).sort(), ["code", "kind", "label", "materialId", "name", "unit"], "tanpa stok/harga");
+  assert.ok(cat.items.length >= 1); assert.deepEqual(Object.keys(cat.items[0]).sort(), ["code", "density", "itemGroup", "kind", "label", "materialId", "name", "supplier", "thicknessCm", "unit"], "tanpa stok/harga (supplier, kelompok, densitas, ketebalan = atribut katalog)");
+  assert.deepEqual([cat.items[0].density, cat.items[0].thicknessCm], [null, null], "densitas/ketebalan TIDAK dikarang bila katalog belum mengisinya");
   assert.equal((await get(w.meja, u.unit.id)).body.canWrite, true);
   assert.equal((await w.meja.api.get(`${CN}/units/not-a-uuid`)).status, 400);
 });
@@ -315,4 +316,22 @@ test("J. Laporan before–after: kartu laporan run memuat perbandingan + foto; p
   assert.match(rep.message, /KOMPONEN SEBELUM → SESUDAH/); assert.match(rep.message, /Lapisan 1: Busa HD D26/); assert.match(rep.message, /Tetap digunakan: Lapisan 2/);
   assert.match(rep.message, /Fondasi sebelum dibongkar belum dicatat/); assert.doesNotMatch(rep.message, /undefined/);
   assert.equal(rep.mediaCount, 0, "foto komponen tidak dihitung sebagai media tahap (dua kanal terpisah)");
+});
+
+// Gap Fase 3 item 3: katalog bahan menampilkan densitas/ketebalan/supplier BILA ADA di Material; tidak dikarang bila kosong; snapshot catatan menyimpannya.
+test("K. Katalog bahan: densitas/ketebalan/supplier tampil bila dicatat di Material, tidak dikarang bila kosong, dan ikut snapshot catatan", async () => {
+  const { w, units } = await setup();
+  const lengkap = await createTestMaterial({ name: "Latex D80 Premium", density: 80, thicknessCm: 3, vendor: "CV Latex Jaya" });
+  const kosong = await createTestMaterial({ name: "Latex Tanpa Spesifikasi" });
+  const r = ok(await w.meja.api.get(`${CN}/materials?q=latex`), 200);
+  const a = r.items.find((m) => m.materialId === lengkap.id); const b = r.items.find((m) => m.materialId === kosong.id);
+  assert.deepEqual([a.density, a.thicknessCm, a.supplier], [80, 3, "CV Latex Jaya"]);
+  assert.deepEqual([b.density, b.thicknessCm, b.supplier], [null, null, null], "tidak ditebak dari bahan lain");
+  const unitId = units[0].unit.id;
+  const saved = await put(w.meja, unitId, "AFTER", { expectedVersion: 0, media: [], data: { foundation: null, layers: [{ action: "REPLACE", material: { kind: "CATALOG", materialId: lengkap.id }, thicknessCm: 3 }, { action: "REPLACE", material: { kind: "CATALOG", materialId: kosong.id }, thicknessCm: 5 }] } });
+  assert.equal(saved.status, 201, JSON.stringify(saved.body));
+  const notes = ok(await w.meja.api.get(`${CN}/units/${unitId}`), 200);
+  const [m1, m2] = notes.sections.AFTER.data.layers.map((l) => l.material);
+  assert.deepEqual([m1.density, m1.thicknessCm, m1.supplier], [80, 3, "CV Latex Jaya"], "snapshot menyimpan atribut katalog saat dicatat");
+  assert.equal("density" in m2 || "thicknessCm" in m2, false, "bahan tanpa nilai: tidak ada atribut yang dikarang");
 });
