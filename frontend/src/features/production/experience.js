@@ -187,8 +187,27 @@ export function friendlyError(error) {
   return error.message || "Terjadi kesalahan. Coba lagi.";
 }
 
+// Fase 5 — Corner (cermin kontrak server). "Perlu konfirmasi Sales" = motif/warna tidak tertulis: sistem TIDAK menebak; PIC Corner mencatat hasil konfirmasi Sales sendiri.
+export const CORNER_FABRIC_MODES = [{ value: "OLD_REUSED", label: "Kain lama dipakai kembali" }, { value: "NEW_INSTALLED", label: "Kain baru dipasang" }];
+export const CORNER_REQUEST_MATCH = [{ value: "SESUAI", label: "Sesuai permintaan Sales" }, { value: "ADA_PERBEDAAN", label: "Ada perbedaan" }];
+export const SALES_CONFIRM_LABEL = "Perlu konfirmasi Sales";
+export function validateCornerStartForm(f, brief) {
+  if (!f.requestChecked) return "Centang bahwa permintaan Sales sudah Anda periksa.";
+  if (!f.fabricMode) return "Pilih: kain lama dipakai kembali atau kain baru dipasang.";
+  if (!f.requestMatch) return "Pilih apakah pekerjaan sesuai permintaan Sales atau ada perbedaan.";
+  if (f.requestMatch === "ADA_PERBEDAAN" && (f.requestNote || "").trim().length < 3) return "Jelaskan perbedaan dari permintaan Sales.";
+  if (brief?.fabricChangeRequested && f.fabricMode === "OLD_REUSED" && f.requestMatch !== "ADA_PERBEDAAN") return "Sales meminta ganti kain tetapi kain lama dipakai kembali — pilih \"Ada perbedaan\" dan jelaskan alasannya.";
+  if (brief?.needsSalesConfirmation && f.fabricMode === "NEW_INSTALLED" && (f.salesConfirmation || "").trim().length < 3) return `${SALES_CONFIRM_LABEL}: tulis hasil konfirmasi Sales untuk ${(brief.missing || []).join(" dan ")} sebelum memasang kain baru.`;
+  return null;
+}
+export function validateCornerDoneForm(f) {
+  if ((f.cornerWork || "").trim().length < 3) return "Tulis pekerjaan Corner yang dilakukan.";
+  if (!f.noDifference && (f.differenceNote || "").trim().length < 1) return "Isi catatan perbedaan, atau centang \"Tidak ada perbedaan\".";
+  return null;
+}
+
 // Validasi awal form tahap (cermin kontrak server). Mengembalikan pesan galat atau null.
-export function validateStepForm(stepNo, form, { mediaItems = [], track, flow = "KASUR", byPic = false, gated = false, layersRequired = false, layersAfterRequired = false } = {}) {
+export function validateStepForm(stepNo, form, { mediaItems = [], track, flow = "KASUR", byPic = false, gated = false, layersRequired = false, layersAfterRequired = false, cornerV2 = false, cornerBrief = null } = {}) {
   const rule = mediaRuleFor(stepNo, track);
   const done = mediaItems.filter((m) => m.status === "done");
   if (mediaItems.some((m) => m.status === "uploading")) return "Tunggu unggahan selesai.";
@@ -231,15 +250,18 @@ export function validateStepForm(stepNo, form, { mediaItems = [], track, flow = 
     case 10:
       if (!f.mattressStyle) return "Pilih model kasur.";
       if ((f.fabricSpec || "").trim().length < 2) return "Isi spesifikasi/warna kain.";
-      return (f.borderColor || "").trim().length >= 2 ? null : "Isi warna list.";
-    case 11: return CORNER_CHECKLIST.every((c) => f.checklist?.[c.key]) ? null : "Lengkapi checklist jahitan.";
+      if ((f.borderColor || "").trim().length < 2) return "Isi warna list.";
+      return cornerV2 ? validateCornerStartForm(f, cornerBrief) : null;
+    case 11:
+      if (!CORNER_CHECKLIST.every((c) => f.checklist?.[c.key])) return "Lengkapi checklist jahitan.";
+      return cornerV2 ? validateCornerDoneForm(f) : null;
     case 12: return f.confirm ? null : "Centang konfirmasi selesai.";
     default: return null;
   }
 }
 
 // Payload server dari form UI (angka dinormalisasi, field kosong dibuang).
-export function buildStepPayload(stepNo, form, { track, flow = "KASUR", byPic = false } = {}) {
+export function buildStepPayload(stepNo, form, { track, flow = "KASUR", byPic = false, cornerV2 = false } = {}) {
   const f = form || {};
   const num = (v) => Number(String(v ?? "").replace(",", "."));
   const lines = (list) => (list || []).filter((m) => num(m.qty) > 0).map((m) => ({ materialId: m.materialId, qty: num(m.qty) }));
@@ -257,8 +279,9 @@ export function buildStepPayload(stepNo, form, { track, flow = "KASUR", byPic = 
     case 7: return { materials: byPic ? [] : lines(f.materials), note: f.note?.trim() || undefined };
     case 8: return { verdict: f.verdict, testerWeightKg: num(f.testerWeightKg), note: f.note?.trim() || undefined };
     case 9: return { note: f.note?.trim() || undefined };
-    case 10: return { mattressStyle: f.mattressStyle, fabricSpec: (f.fabricSpec || "").trim(), borderColor: (f.borderColor || "").trim(), materials: lines(f.materials), note: f.note?.trim() || undefined };
-    case 11: return { checklist: Object.fromEntries(CORNER_CHECKLIST.map((c) => [c.key, !!f.checklist?.[c.key]])), note: f.note?.trim() || undefined };
+    case 10: return { mattressStyle: f.mattressStyle, fabricSpec: (f.fabricSpec || "").trim(), borderColor: (f.borderColor || "").trim(), materials: lines(f.materials), note: f.note?.trim() || undefined,
+      ...(cornerV2 ? { requestChecked: !!f.requestChecked, fabricMode: f.fabricMode, requestMatch: f.requestMatch, requestNote: f.requestNote?.trim() || undefined, salesConfirmation: f.salesConfirmation?.trim() || undefined } : {}) };
+    case 11: return { ...(cornerV2 ? { cornerWork: (f.cornerWork || "").trim(), noDifference: !!f.noDifference, differenceNote: f.noDifference ? undefined : (f.differenceNote || "").trim() || undefined } : {}), checklist: Object.fromEntries(CORNER_CHECKLIST.map((c) => [c.key, !!f.checklist?.[c.key]])), note: f.note?.trim() || undefined };
     case 12: return { confirm: !!f.confirm, note: f.note?.trim() || undefined };
     default: return {};
   }

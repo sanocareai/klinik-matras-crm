@@ -6,6 +6,9 @@ import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
+import { LifecycleBadge } from "@/features/production/components/LifecycleBadge.jsx";
+import { DocSequence } from "@/features/production/components/DocSequence.jsx";
+import { CornerRequestCard } from "@/features/production/components/CornerRequestCard.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { friendlyError } from "@/features/production/experience.js";
 import { BeforeAfterSummary } from "@/features/production/componentNotes/BeforeAfterSummary.jsx";
@@ -65,6 +68,15 @@ export default function ProductionReportV2() {
       <PageBody>
         {!report.ready && <div className="rounded-btn bg-orangebg px-3 py-2.5 text-[12.5px] text-orange">Produksi belum dikonfirmasi selesai — laporan masih sementara.</div>}
         {b.status === "PENDING" && <div className="flex items-center gap-2 rounded-btn bg-inset px-3 py-2.5 text-[12.5px] text-ink2"><Send size={14} aria-hidden /> Laporan sudah masuk antrean kirim (outbox). Pengirim otomatis ke grup & PIC Sales belum aktif — kirim manual dengan “Salin Pesan”.</div>}
+        {report.lifecycle && <Card className="space-y-2 p-4 text-[12.5px]" data-testid="report-lifecycle"><p className="m-0 font-bold text-ink">Status produksi</p><LifecycleBadge lifecycle={report.lifecycle} />{report.lifecycle.detail && <p className="m-0 text-ink3">{report.lifecycle.detail}</p>}</Card>}
+        {report.cornerView && (report.cornerView.status.status === "TIDAK_BERLAKU" || report.cornerView.request.fabricChangeRequested || report.cornerView.records.start) && (
+          <Card className="space-y-2 p-4 text-[12.5px]" data-testid="report-corner">
+            <CornerRequestCard cornerView={report.cornerView} />
+            {report.cornerView.records.start && <p className="m-0 text-ink2" data-testid="report-corner-start">Corner mulai: {report.cornerView.records.start.fabricMode === "NEW_INSTALLED" ? "kain baru dipasang" : report.cornerView.records.start.fabricMode === "OLD_REUSED" ? "kain lama dipakai kembali" : "—"}{report.cornerView.records.start.requestMatch === "ADA_PERBEDAAN" ? ` · ada perbedaan: ${report.cornerView.records.start.requestNote || "—"}` : report.cornerView.records.start.requestMatch ? " · sesuai permintaan Sales" : ""}{report.cornerView.records.start.salesConfirmation ? ` · konfirmasi Sales: ${report.cornerView.records.start.salesConfirmation}` : ""}</p>}
+            {report.cornerView.records.done && <p className="m-0 text-ink2" data-testid="report-corner-done">Pekerjaan Corner: {report.cornerView.records.done.cornerWork || "—"}{report.cornerView.records.done.noDifference ? " · tidak ada perbedaan" : report.cornerView.records.done.differenceNote ? ` · perbedaan: ${report.cornerView.records.done.differenceNote}` : ""}</p>}
+          </Card>
+        )}
+        {report.sequence?.length > 0 && <Card className="space-y-2 p-4" data-testid="report-sequence"><p className="m-0 text-[13px] font-bold text-ink">Rangkaian dokumentasi</p><DocSequence sequence={report.sequence} /></Card>}
         <div className="grid gap-3 md:grid-cols-3">
           <Card className="space-y-1 p-4 text-[12.5px]"><p className="font-bold text-ink">Unit</p><p className="text-ink2">{[report.unit.merk, report.unit.ukuran].filter(Boolean).join(" · ") || "—"}</p><p className="text-ink2">{report.unit.service || "Layanan —"}</p><p className="text-ink3">{report.pic.station}</p></Card>
           <Card className="space-y-1 p-4 text-[12.5px]"><p className="font-bold text-ink">PIC</p><p className="text-ink2">Meja: {report.pic.table || "—"}</p><p className="text-ink2">Corner: {report.pic.corner || "—"}</p><p className="text-ink2">Sales: {report.pic.sales || "—"}</p></Card>

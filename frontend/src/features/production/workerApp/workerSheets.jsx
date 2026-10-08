@@ -104,14 +104,14 @@ function StepFormSheet({ card, next, stepNo, onClose, onSubmitted }) {
   }, [form, media, card.runId, stepNo]);
 
   async function submit() {
-    const invalid = validateStepForm(stepNo, form, { mediaItems: media, track: card.track, flow, byPic, gated: !!next.gated, layersRequired: !!next.layersRequired, layersAfterRequired: !!next.layersAfterRequired });
+    const invalid = validateStepForm(stepNo, form, { mediaItems: media, track: card.track, flow, byPic, gated: !!next.gated, layersRequired: !!next.layersRequired, layersAfterRequired: !!next.layersAfterRequired, cornerV2: !!card.cornerView?.contractV2, cornerBrief: card.cornerView?.request ?? null });
     if (invalid) { setError(invalid); return; }
     setBusy(true); setError(""); setCanRetry(false);
     const key = intentKeys.keyFor(card.runId, stepNo, card.revision);
     try {
       const result = await api.recordProductionV2Step(card.runId, stepNo, {
         expectedRevision: card.revision, workCenterId: card.workCenterId,
-        payload: buildStepPayload(stepNo, form, { track: card.track, flow, byPic }), media: media.filter((m) => m.status === "done").map((m) => m.url),
+        payload: buildStepPayload(stepNo, form, { track: card.track, flow, byPic, cornerV2: !!card.cornerView?.contractV2 }), media: media.filter((m) => m.status === "done").map((m) => m.url),
       }, key);
       intentKeys.release(card.runId, stepNo, card.revision);
       clearDraft(storage, card.runId, stepNo);

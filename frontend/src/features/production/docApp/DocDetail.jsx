@@ -3,6 +3,9 @@ import { AlertTriangle, Camera, History, Images, Pencil, Plus, UserRound, MapPin
 import { api } from "@/api.js";
 import { useOnline } from "@/components/StandaloneShell.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
+import { LifecycleBadge } from "@/features/production/components/LifecycleBadge.jsx";
+import { DocSequence } from "@/features/production/components/DocSequence.jsx";
+import { CornerRequestCard } from "@/features/production/components/CornerRequestCard.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { ProgressBar } from "@/components/ui/progress.jsx";
 import { CaptureSheet } from "@/features/production/DocumentationDraftUi.jsx";
@@ -136,6 +139,7 @@ export default function DocDetail({ runId, group, onGroup, drafts, resume, onRes
                   <span className="inline-flex items-center gap-1"><MapPin size={12} aria-hidden /> {detail.station || "Belum dijadwalkan"}</span>
                   <span className="inline-flex items-center gap-1"><UserRound size={12} aria-hidden /> PIC {detail.pic.table || "—"}</span>
                 </p>
+                {detail.lifecycle && <LifecycleBadge lifecycle={detail.lifecycle} />}
                 <div className="space-y-1.5 rounded-btn bg-inset p-3">
                   <div className="flex items-center justify-between gap-2"><p className="m-0 text-[13px] font-extrabold text-ink" data-testid="detail-total">Dokumentasi {detail.totals.satisfied}/{detail.totals.required} foto terpenuhi · {detail.totals.photos} foto</p><span className="text-[12px] font-bold tabular-nums text-accent">{comp.pct}%</span></div>
                   <ProgressBar value={comp.pct} />
@@ -143,6 +147,7 @@ export default function DocDetail({ runId, group, onGroup, drafts, resume, onRes
                 </div>
               </div>
             </div>
+            {detail.sequence?.length > 0 && <section className="wa-card space-y-3 p-4" data-testid="doc-sequence-section" aria-label="Rangkaian dokumentasi akhir"><h2 className="m-0 text-[15px] font-extrabold text-ink">Rangkaian dokumentasi</h2><DocSequence sequence={detail.sequence} />{detail.corner && detail.corner.status !== "BELUM_SAMPAI" && <p className="m-0 text-[12.5px] text-ink3" data-testid="doc-corner-status">Corner: {detail.corner.label}{detail.corner.reason ? ` — ${detail.corner.reason}` : ""}</p>}</section>}
             <section className="wa-card space-y-3 p-4" data-testid="doc-component-notes" aria-label="Catatan komponen"><p className="m-0 text-[16px] font-extrabold text-ink">Catatan Komponen</p><ComponentNotesPanel unitId={detail.unit.id} unitCode={detail.unit.unitCode} showHistory /></section>
             {!detail.canWrite && <p className="m-0 flex items-start gap-2 rounded-btn bg-inset px-3 py-3 text-[13px] text-ink2" data-testid="readonly-note"><AlertTriangle size={15} className="mt-px shrink-0" aria-hidden /> Anda hanya bisa melihat dokumentasi (tanpa izin mengirim, atau dokumentasi unit ini belum aktif).</p>}
           </div>

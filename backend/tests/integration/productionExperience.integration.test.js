@@ -928,6 +928,10 @@ test("Fase 5: Corner DIPERLUKAN — permintaan Sales tidak jelas = 'Perlu konfir
   const s1 = await stockCounts(unit.id);
   assert.deepEqual([s1.issue - s0.issue, s1.ret - s0.ret], [0, 1], "stok keluar tidak bertambah; retur masuk tepat sekali");
   assert.equal(await testPrisma.materialIssue.count({ where: { productionPlan: { runId: run.id } } }), 1, "Material Issue tidak ganda");
+  const boardOf = async () => JSON.stringify(ok(await w.lead.api.get(`${V2}/board?date=${DATE}`)));
+  assert.ok(!(await boardOf()).includes(unit.unitCode), "Siap Kirim hilang dari papan/backlog Rencana aktif");
+  const backlog = JSON.stringify(ok(await w.lead.api.get(`${V2}/backlog?status=DIPROSES&pageSize=100`))); assert.ok(!backlog.includes(unit.unitCode));
+  assert.equal((await testPrisma.unit.findUniqueOrThrow({ where: { id: unit.id } })).status, "READY_FOR_DELIVERY", "tetap ada di riwayat (unit, laporan, Unit 360)");
   const rep = ok(await w.lead.api.get(`${V2}/runs/${run.id}/report`)); assert.equal(rep.lifecycle.key, "SIAP_KIRIM"); assert.equal(rep.cornerView.status.status, "SELESAI");
   assert.deepEqual(rep.sequence.map((x) => x.key), ["BEFORE_TEARDOWN", "OLD_CONTENT", "RACIKAN", "ASSEMBLY", "QC_TEST", "CORNER", "FINAL"]);
   const ov = ok(await w.lead.api.get(`${V2}/units/${unit.id}/overview`)); assert.equal(ov.production.lifecycle.key, "SIAP_KIRIM", "Unit 360 = status yang sama");

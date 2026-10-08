@@ -4,6 +4,8 @@ import { api } from "@/api.js";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
+import { LifecycleBadge } from "@/features/production/components/LifecycleBadge.jsx";
+import { CornerRequestCard } from "@/features/production/components/CornerRequestCard.jsx";
 import { ProgressBar } from "@/components/ui/progress.jsx";
 import { formatRupiah } from "@/utils/format.js";
 import { formatTanggal } from "@/utils/formatDate.js";
@@ -91,11 +93,13 @@ function Ringkasan({ d }) {
       </dl>
       <div className="flex flex-wrap items-center gap-1.5">
         <Badge variant="neutral">{d.identity.bucketLabel}</Badge>
+        {d.production?.lifecycle && <LifecycleBadge lifecycle={d.production.lifecycle} />}
         {priorityOf({ priority: d.identity.priority }).key !== "NORMAL" && <Badge variant={priorityOf({ priority: d.identity.priority }).tone} data-testid="priority-badge">{priorityOf({ priority: d.identity.priority }).label}</Badge>}
         {d.identity.presence?.key === "NOT_ARRIVED" && <Badge variant={presenceTone(d.identity.presence)} data-testid="presence-badge">{d.identity.presence.label}</Badge>}
         {d.identity.target.late && <Badge variant="red">Terlambat</Badge>}
       </div>
       <V2Owners d={d} />
+      {d.production?.cornerView && d.production.runId && (d.production.cornerView.status.status !== "BELUM_SAMPAI" || d.production.cornerView.request.fabricChangeRequested) && <CornerRequestCard cornerView={d.production.cornerView} />}
       <OrderField label="Keluhan Customer" field={d.salesContext.complaints} format={bdArr} />
       <OrderField label="Layanan Sales" field={d.salesContext.salesServices} format={bdArr} />
       <OrderField label="Request Customer" field={d.salesContext.request} format={(v) => bd(humanizeRequest(v))} />

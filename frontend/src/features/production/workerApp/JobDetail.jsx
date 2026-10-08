@@ -17,6 +17,8 @@ import ReworkMaterialSheet from "./ReworkMaterialSheet.jsx";
 import MaterialChain from "./MaterialChain.jsx";
 import { reworkState } from "./materialChainModel.js";
 import { DelaySheet, FinishSheet, SkipSheet } from "./adaptationSheets.jsx";
+import { LifecycleBadge } from "@/features/production/components/LifecycleBadge.jsx";
+import { CornerRequestCard } from "@/features/production/components/CornerRequestCard.jsx";
 import { ComponentNotesPanel } from "@/features/production/componentNotes/ComponentNotesPanel.jsx";
 import { isV1Actionable, jobFromV1, jobFromV2, submitState } from "./workerAppModel.js";
 
@@ -203,6 +205,8 @@ function V2Detail({ job, lane, onBack, onChanged }) {
                 <div className="mb-3"><ProgressLine job={view} /></div>
                 <StepList steps={card.steps} lane={lane} noCorner={card.track === "BUILD" && card.build?.corner?.required === false} />
               </Section>
+              {card.lifecycle && <div className="flex flex-wrap items-center gap-2" data-testid="job-lifecycle"><LifecycleBadge lifecycle={card.lifecycle} />{card.lifecycle.detail && <span className="text-[12.5px] text-ink3">{card.lifecycle.detail}</span>}</div>}
+              {card.cornerView && (card.cornerView.status.status === "TIDAK_BERLAKU" || card.cornerView.request.fabricChangeRequested || next?.stepNo >= 9) && <CornerRequestCard cornerView={card.cornerView} />}
               {card.track === "BUILD" && <BuildInfo card={card} />}
               {card.materialPic && <PicBahanInfo card={card} />}
               <Section title="Catatan Komponen" testid="section-komponen"><ComponentNotesPanel unitId={card.unit.id} unitCode={card.unit.unitCode} stepNo={next?.stepNo ?? null} onChanged={loadCard} showAnalysis={card.track !== "BUILD"} /></Section>
