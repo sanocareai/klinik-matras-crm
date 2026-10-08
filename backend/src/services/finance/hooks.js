@@ -36,6 +36,7 @@
 import { postPaymentReceived, postRevenueRecognition, STATUS_PENGAKUAN, KEY } from "./posting/orderRevenue.js";
 import { recordPostingGap, findEntryByKey, reverseJournal, JournalError } from "./journal.js";
 import { AccountError } from "./accounts.js";
+import { sesuaikanReklasUangMuka } from "./reklasUangMuka.js";
 
 function bolehDitelan(err) {
   return err instanceof JournalError || err instanceof AccountError;
@@ -157,7 +158,21 @@ export async function batalkanJurnalPembayaran(tx, { paymentId, reason, userId =
       reason: reason || "Entri pembayaran dibatalkan di CRM",
       userId,
     });
-    return { reversed: true, reversal };
+    // Pemindahan Uang Muka → Piutang di jurnal pengakuan pendapatan tidak ikut surut saat pembayaran dibalik — sesuaikan sebesar kontribusi Payment ini (lihat reklasUangMuka.js).
+    let reklas = [];
+    try {
+      reklas = await sesuaikanReklasUangMuka(tx, { paymentId, entryAsli: entry, userId, date: reversal.date });
+    } catch (e) {
+      if (!bolehDitelan(e)) throw e;
+      await recordPostingGap(tx, {
+        source: "REVERSAL",
+        sourceId: reversal.id,
+        reason: "RECLAS_UANG_MUKA_GAGAL",
+        detail: `Pembayaran dibatalkan dan jurnalnya dibalik (${reversal.entryNumber}), tetapi penyesuaian Uang Muka → Piutang order terkait belum bisa diposting: ${e.message}. Periksa saldo Uang Muka order itu di Diagnosis Piutang.`,
+        metadata: { paymentId, reversalId: reversal.id },
+      });
+    }
+    return { reversed: true, reversal, reklas };
   } catch (err) {
     if (!bolehDitelan(err)) throw err;
     // Umumnya: periode jurnal aslinya sudah ditutup DAN periode hari ini
