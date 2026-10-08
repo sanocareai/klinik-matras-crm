@@ -21,6 +21,7 @@
 
 import { siapkanJenisTagihan, pastikanAmanDisetujui, jenisTampilan } from "../services/finance/jenisTagihan.js";
 import { setujuiTagihanPO } from "../services/finance/purchaseOrderBill.js";
+import { tentukanTerminDokumen, validasiTermin } from "../services/finance/termin.js";
 import { ambilKebijakanPersediaan, metodeUntukTanggal, kunciTanggal, CATATAN_PERIODIK } from "../services/finance/inventoryMethod.js";
 import { pandanganCutoff, daftarException, buatSnapshot } from "../services/finance/rekonSnapshot.js";
 import express from "express";
@@ -1246,7 +1247,10 @@ financeTxRouter.get("/suppliers", requirePermission(P.FINANCE_READ), async (req,
 
 financeTxRouter.post("/suppliers", requirePermission(P.FINANCE_POST), async (req, res) => {
   try {
-    const { code, name, phone, email, address, aliases, paymentTermDays, bankName, bankAccount, bankHolder, notes } = req.body;
+    const { code, name, phone, email, address, aliases, paymentTermDays, paymentTermType, bankName, bankAccount, bankHolder, notes } = req.body;
+    // Termin baru: jenis + hari dari pilihan resmi (Tunai/COD, 7/14/30/45/60 hari, tanggal khusus). Tanpa jenis = perilaku lama (hari bebas, jenis kosong).
+    let terminBaru = null;
+    if (paymentTermType) terminBaru = validasiTermin(paymentTermType, paymentTermDays);
     if (!name?.trim()) throw err("Nama supplier wajib diisi");
 
     // Kode dibuat otomatis kalau tidak diisi — supplier baru sering dicatat
@@ -1265,7 +1269,8 @@ financeTxRouter.post("/suppliers", requirePermission(P.FINANCE_POST), async (req
         email: email?.trim() || null,
         address: address?.trim() || null,
         aliases: Array.isArray(aliases) ? aliases.filter(Boolean).map((a) => String(a).trim()) : [],
-        paymentTermDays: paymentTermDays ? Number(paymentTermDays) : null,
+        paymentTermType: terminBaru ? terminBaru.jenis : null,
+        paymentTermDays: terminBaru ? (terminBaru.jenis === "HARI" ? terminBaru.hari : null) : (paymentTermDays ? Number(paymentTermDays) : null),
         bankName: bankName?.trim() || null,
         bankAccount: bankAccount?.trim() || null,
         bankHolder: bankHolder?.trim() || null,
@@ -1297,7 +1302,14 @@ financeTxRouter.patch("/suppliers/:id", requirePermission(P.FINANCE_POST), async
       data[k] = v || null;
     }
     if (data.email && !/^\S+@\S+\.\S+$/.test(data.email)) throw err("Format email tidak valid");
-    if (b.paymentTermDays !== undefined) {
+    if (b.paymentTermType !== undefined) {
+      // Jenis termin eksplisit: HARI memakai pilihan resmi; TUNAI/TANGGAL_KHUSUS tidak punya hari. Kosongkan (null) = tanpa termin baku.
+      if (b.paymentTermType === null || b.paymentTermType === "") { data.paymentTermType = null; data.paymentTermDays = null; }
+      else {
+        const t = validasiTermin(b.paymentTermType, b.paymentTermDays);
+        data.paymentTermType = t.jenis; data.paymentTermDays = t.jenis === "HARI" ? t.hari : null;
+      }
+    } else if (b.paymentTermDays !== undefined) {
       const kosong = b.paymentTermDays === null || b.paymentTermDays === "" || Number(b.paymentTermDays) === 0;
       const n = Number(b.paymentTermDays);
       if (!kosong && (!Number.isInteger(n) || n < 0 || n > 365)) throw err("Termin pembayaran harus bilangan bulat 0–365 hari");
@@ -1369,7 +1381,7 @@ financeTxRouter.post("/bills", requirePermission(P.FINANCE_POST), async (req, re
     }
 
     const supplier = await prisma.finSupplier.findUnique({
-      where: { id: supplierId }, select: { id: true, paymentTermDays: true, active: true, name: true },
+      where: { id: supplierId }, select: { id: true, paymentTermDays: true, paymentTermType: true, active: true, name: true },
     });
     if (!supplier) throw err("Supplier tidak ditemukan", 404);
     // Supplier nonaktif tidak menerima tagihan BARU (pembayaran utang lama tetap boleh — utangnya masih ada). Aktifkan lagi lewat Master Supplier bila perlu.
@@ -1380,10 +1392,12 @@ financeTxRouter.post("/bills", requirePermission(P.FINANCE_POST), async (req, re
     // supplier tidak punya termin baku, dibiarkan NULL apa adanya —
     // laporan umur utang akan menyebut acuannya "tanggal tagihan" secara
     // eksplisit, bukan mengarang tanggal jatuh tempo.
-    let tglJatuhTempo = dueDate ? parseTanggal(dueDate) : null;
-    if (!tglJatuhTempo && supplier.paymentTermDays) {
-      tglJatuhTempo = new Date(tglTagihan.getTime() + supplier.paymentTermDays * 86400000);
-    }
+    // Termin & jatuh tempo (Okt 2026): default dari master supplier, snapshot disimpan di tagihan; mengganti dari default = finance:admin + alasan (services/finance/termin.js).
+    const { dueDate: tglJatuhTempo, snapshot: snapTermin } = tentukanTerminDokumen({
+      supplier, tanggalFaktur: tglTagihan, userId: req.user.id,
+      masukan: { terminJenis: req.body.terminJenis, terminHari: req.body.terminHari, dueDate, alasan: req.body.alasanTermin },
+      boleh: { override: hasPermission(req.user, P.FINANCE_ADMIN) },
+    });
 
     const created = await prisma.finSupplierBill.create({
       data: {
@@ -1392,6 +1406,7 @@ financeTxRouter.post("/bills", requirePermission(P.FINANCE_POST), async (req, re
         supplierId,
         billDate: tglTagihan,
         dueDate: tglJatuhTempo,
+        ...snapTermin,
         amount: nominal,
         description: description.trim(),
         billType: jenis.billType,
@@ -2737,7 +2752,21 @@ financeTxRouter.patch("/bills/:id", requirePermission(P.FINANCE_POST), async (re
       }
       if (b.supplierRef !== undefined) data.supplierRef = b.supplierRef?.trim() || null;
       if (b.billDate !== undefined) data.billDate = parseTanggal(b.billDate);
-      if (b.dueDate !== undefined) data.dueDate = b.dueDate ? parseTanggal(b.dueDate) : null;
+      if (b.dueDate !== undefined || b.terminJenis !== undefined) {
+        // Ubah jatuh tempo/termin sebelum disetujui: aturan yang sama dengan saat membuat (default snapshot dokumen → override = admin + alasan).
+        const supBaru = await tx.finSupplier.findUnique({ where: { id: data.supplierId ?? bl.supplierId }, select: { paymentTermDays: true, paymentTermType: true } });
+        const po = bl.purchaseOrderId ? await tx.finPurchaseOrder.findUnique({ where: { id: bl.purchaseOrderId }, select: { termType: true, termDays: true } }) : null;
+        const tglFaktur = data.billDate ?? (b.billDate !== undefined ? parseTanggal(b.billDate) : bl.billDate);
+        const hasilTermin = tentukanTerminDokumen({
+          supplier: supBaru, po, tanggalFaktur: tglFaktur, userId: req.user.id,
+          masukan: { terminJenis: b.terminJenis, terminHari: b.terminHari, dueDate: b.dueDate, alasan: b.alasanTermin ?? alasanUbah },
+          boleh: { override: hasPermission(req.user, P.FINANCE_ADMIN) },
+        });
+        const hari = (d) => (d ? new Date(d).toISOString().slice(0, 10) : null);
+        const sn = hasilTermin.snapshot;
+        const berubah = hari(hasilTermin.dueDate) !== hari(bl.dueDate) || sn.termType !== bl.termType || sn.termDays !== bl.termDays || sn.termSource !== bl.termSource;
+        if (berubah) { data.dueDate = hasilTermin.dueDate; Object.assign(data, sn); } // tanpa perubahan nyata: snapshot lama (aktor/waktu) tidak ditimpa
+      }
       if (b.amount !== undefined) {
         const nominal = toMoney(b.amount, { field: "Nominal tagihan" });
         if (nominal.lessThanOrEqualTo(0)) throw err("Nominal tagihan harus lebih dari 0");
@@ -2829,7 +2858,7 @@ const OPSI_TRANSAKSI_KOREKSI = { maxWait: 15_000, timeout: 60_000 };
 
 financeTxRouter.post("/bills/:id/info", requirePermission(P.FINANCE_POST), wajibIdempotencyKey, async (req, res) => {
   try {
-    const hasil = await prisma.$transaction((tx) => editInfoTagihan(tx, { billId: req.params.id, body: req.body, alasan: req.body?.reason, userId: req.user.id }), OPSI_TRANSAKSI_KOREKSI);
+    const hasil = await prisma.$transaction((tx) => editInfoTagihan(tx, { billId: req.params.id, body: req.body, alasan: req.body?.reason, userId: req.user.id, bolehOverride: hasPermission(req.user, P.FINANCE_ADMIN) }), OPSI_TRANSAKSI_KOREKSI);
     res.json(hasil);
   } catch (e) { handleFinanceError(e, res); }
 });

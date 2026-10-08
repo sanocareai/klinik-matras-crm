@@ -9,6 +9,7 @@
 //      disetujui, selisihnya dijurnal oleh kebijakan Selisih Harga Pembelian yang sudah ada (posting/supplier.js: Dr/Cr akun SELISIH_HARGA_PEMBELIAN).
 //   4. Nilai penutupan GRNI = jumlah teralokasi × HARGA PO (harga yang sama dengan nilai stok saat putaway), bukan harga faktur.
 import { lockRowForUpdate } from "../inventoryLedger.js";
+import { tentukanTerminDokumen, TerminError } from "./termin.js";
 import { generateDocumentNumber, toBookDate, todayBookDateWIB, findEntryByKey } from "./journal.js";
 import { toMoney, sumMoney, ZERO, moneyToNumber, Decimal } from "./money.js";
 import { nilaiBarisPenerimaan } from "./posting/supplier.js";
@@ -109,7 +110,7 @@ async function siapkanMasukan(tx, body, { po }) {
   const ref = String(b.supplierRef ?? "").trim();
   if (!ref) throw gagal("Nomor faktur supplier wajib diisi untuk faktur atas PO");
   const tgl = b.billDate ? toBookDate(b.billDate) : todayBookDateWIB();
-  const jatuhTempo = b.dueDate ? toBookDate(b.dueDate) : null;
+  const jatuhTempoDiketik = b.dueDate ? toBookDate(b.dueDate) : null;
 
   const lines = Array.isArray(b.lines) ? b.lines : [];
   if (lines.length === 0) throw gagal("Minimal satu baris faktur wajib diisi");
@@ -139,26 +140,35 @@ async function siapkanMasukan(tx, body, { po }) {
   if (b.amount !== undefined && b.amount !== null && b.amount !== "" && !toMoney(b.amount).equals(jumlah)) {
     throw gagal(`Nominal faktur (${moneyToNumber(toMoney(b.amount))}) harus sama dengan jumlah baris (${moneyToNumber(jumlah)}). Biaya lain (ongkir/pajak) belum didukung pada faktur atas PO.`, 400, "NOMINAL_TIDAK_SAMA");
   }
-  return { ref, tgl, jatuhTempo, lines: hasil, idPenerimaan, jumlah, deskripsi: String(b.description ?? "").trim() };
+  return { ref, tgl, jatuhTempoDiketik, termin: { terminJenis: b.terminJenis, terminHari: b.terminHari, alasan: b.alasanTermin }, lines: hasil, idPenerimaan, jumlah, deskripsi: String(b.description ?? "").trim() };
 }
 
 async function muatPo(tx, poId) {
-  return tx.finPurchaseOrder.findUnique({ where: { id: poId }, include: { lines: { orderBy: { sortOrder: "asc" }, include: { material: { select: { code: true, name: true } } } }, supplier: { select: { id: true, name: true, paymentTermDays: true } } } });
+  return tx.finPurchaseOrder.findUnique({ where: { id: poId }, include: { lines: { orderBy: { sortOrder: "asc" }, include: { material: { select: { code: true, name: true } } } }, supplier: { select: { id: true, name: true, paymentTermDays: true, paymentTermType: true } } } });
+}
+
+/** Termin faktur: default = snapshot PO (atau master supplier); mengganti = finance:admin + alasan. Galat termin dipetakan ke 4xx. */
+function terminFaktur(po, m, { userId, bolehOverride }) {
+  try {
+    return tentukanTerminDokumen({
+      supplier: po.supplier, po, tanggalFaktur: m.tgl, userId,
+      masukan: { ...m.termin, dueDate: m.jatuhTempoDiketik }, boleh: { override: !!bolehOverride },
+    });
+  } catch (e) { if (e instanceof TerminError) throw gagal(e.message, e.statusCode, e.code); throw e; }
 }
 
 // ── Perintah ─────────────────────────────────────────────────────────────
 
 /** Catat faktur atas PO (status Menunggu Persetujuan). Jumlah yang melebihi barang baik belum ditagih TIDAK ditolak di sini — faktur tertahan saat disetujui. */
-export async function buatTagihanDariPO(tx, { poId, body, userId }) {
+export async function buatTagihanDariPO(tx, { poId, body, userId, bolehOverride = false }) {
   const po = await muatPo(tx, poId);
   if (!po) throw gagal("PO tidak ditemukan", 404);
   const m = await siapkanMasukan(tx, body, { po });
-  let jatuhTempo = m.jatuhTempo;
-  if (!jatuhTempo && po.supplier.paymentTermDays) jatuhTempo = new Date(m.tgl.getTime() + po.supplier.paymentTermDays * 86400000);
+  const { dueDate: jatuhTempo, snapshot: snapTermin } = terminFaktur(po, m, { userId, bolehOverride });
   const bill = await tx.finSupplierBill.create({
     data: {
       billNumber: await generateDocumentNumber(tx, "BILL", m.tgl),
-      supplierRef: m.ref, supplierId: po.supplierId, billDate: m.tgl, dueDate: jatuhTempo,
+      supplierRef: m.ref, supplierId: po.supplierId, billDate: m.tgl, dueDate: jatuhTempo, ...snapTermin,
       amount: m.jumlah,
       description: m.deskripsi || `Faktur ${m.ref} atas ${po.poNumber}`,
       billType: "BAHAN_BAKU", purchaseOrderId: po.id,
@@ -180,13 +190,25 @@ export async function ubahTagihanPO(tx, { billId, body, userId, adalahAdmin }) {
   if (!STATUS_TERBUKA.includes(bill.status)) throw gagal(`Tagihan berstatus ${bill.status} tidak bisa diubah. Yang sudah masuk buku: batalkan lalu catat ulang.`, 409);
   if (bill.createdById !== userId && !adalahAdmin) throw gagal("Hanya pembuat tagihan (atau admin keuangan) yang boleh mengedit", 403);
   const po = await muatPo(tx, bill.purchaseOrderId);
-  const m = await siapkanMasukan(tx, { supplierRef: bill.supplierRef, billDate: bill.billDate, dueDate: bill.dueDate, description: bill.description, ...body }, { po });
+  const m = await siapkanMasukan(tx, { supplierRef: bill.supplierRef, billDate: bill.billDate, description: bill.description, ...body }, { po });
+  // Jatuh tempo/termin: diubah hanya bila diketik; tanggal faktur berubah → hitung ulang dari termin tersimpan (kecuali termin hasil override Finance — dipertahankan).
+  const adaInput = body?.dueDate !== undefined || body?.terminJenis !== undefined;
+  const tanggalBerubah = body?.billDate !== undefined && bill.termType && bill.termSource !== "OVERRIDE_FAKTUR";
+  let patchTermin = {};
+  if (adaInput || tanggalBerubah) {
+    const jenis = body?.terminJenis !== undefined ? body.terminJenis : bill.termType;
+    const hari = body?.terminJenis !== undefined ? body.terminHari : bill.termDays;
+    const khusus = !jenis || jenis === "TANGGAL_KHUSUS";
+    const diketik = body?.dueDate !== undefined ? m.jatuhTempoDiketik : (khusus ? bill.dueDate : null);
+    const hasil = terminFaktur(po, { ...m, termin: { terminJenis: jenis, terminHari: hari, alasan: body?.alasanTermin }, jatuhTempoDiketik: diketik }, { userId, bolehOverride: adalahAdmin });
+    patchTermin = { dueDate: hasil.dueDate, ...hasil.snapshot };
+  }
   await tx.finSupplierBillPoLine.deleteMany({ where: { billId } });
   await tx.finSupplierBillPoReceipt.deleteMany({ where: { billId } });
   await tx.finSupplierBill.update({
     where: { id: billId },
     data: {
-      supplierRef: m.ref, billDate: m.tgl, dueDate: m.jatuhTempo ?? bill.dueDate, amount: m.jumlah,
+      supplierRef: m.ref, billDate: m.tgl, ...patchTermin, amount: m.jumlah,
       description: m.deskripsi || bill.description,
       poLines: { create: m.lines },
       poReceipts: { create: m.idPenerimaan.map((goodsReceiptId) => ({ goodsReceiptId })) },

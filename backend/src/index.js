@@ -80,6 +80,7 @@ import { inventoryRouter }  from "./routes/inventory.js";
 import { goodsReceiptRouter } from "./routes/goodsReceipt.js";
 import { purchaseOrderFinanceRouter, purchaseOrderGudangRouter } from "./routes/purchaseOrders.js";
 import { jejakBahanUnitRouter, biayaBahanFinanceRouter, jejakPenerimaanRouter } from "./routes/biayaBahan.js";
+import { financeUtangRouter } from "./routes/financeUtang.js";
 import { materialIssueRouter } from "./routes/materialIssue.js";
 import { complaintsRouter } from "./routes/complaints.js";
 import { stockTransferRouter } from "./routes/stockTransfer.js";
@@ -255,6 +256,7 @@ app.use("/api/finance",      financePushHooks); // S11: pemicu push (mengamati r
 app.use("/api/finance",      financeRouter);
 app.use("/api/finance",      financeTxRouter); // additive, tidak mengubah financeRouter
 app.use("/api/finance",      financeKasbonRouter);
+app.use("/api/finance",      financeUtangRouter); // jadwal & aging utang supplier (baca + draf jadwal bayar)
 app.use("/api/finance",      financePenjualanKaryawanRouter);
 app.use("/api/finance",      financePengecualianLunasRouter);
 app.use("/api/finance",      financeExportRouter); // Export Excel Finance (B3.9) — read-only, server-side

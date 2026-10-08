@@ -50,7 +50,7 @@ purchaseOrderFinanceRouter.get("/:id/penagihan", requirePermission(P.FINANCE_REA
 
 purchaseOrderFinanceRouter.post("/:id/faktur", requirePermission(P.FINANCE_POST), async (req, res) => {
   try {
-    const id = await prisma.$transaction((tx) => buatTagihanDariPO(tx, { poId: req.params.id, body: req.body, userId: req.user.id }));
+    const id = await prisma.$transaction((tx) => buatTagihanDariPO(tx, { poId: req.params.id, body: req.body, userId: req.user.id, bolehOverride: hasPermission(req.user, P.FINANCE_ADMIN) }));
     res.status(201).json(await evaluasiTagihanPO(prisma, id));
   } catch (e) { handleFinanceError(e, res); }
 });
@@ -72,7 +72,7 @@ async function jalankan(res, fn) {
 
 purchaseOrderFinanceRouter.post("/", requirePermission(P.FINANCE_POST), async (req, res) => {
   try {
-    const id = await prisma.$transaction((tx) => buatPO(tx, { body: req.body, userId: req.user.id }));
+    const id = await prisma.$transaction((tx) => buatPO(tx, { body: req.body, userId: req.user.id, bolehOverride: hasPermission(req.user, P.FINANCE_ADMIN) }));
     const po = await bentukPO(prisma, id, { harga: true });
     res.status(201).json({ ...po, riwayat: await daftarRiwayat(prisma, id) });
   } catch (e) { handleFinanceError(e, res); }
@@ -80,7 +80,7 @@ purchaseOrderFinanceRouter.post("/", requirePermission(P.FINANCE_POST), async (r
 
 purchaseOrderFinanceRouter.patch("/:id", requirePermission(P.FINANCE_POST), async (req, res) => {
   try {
-    await jalankan(res, (tx) => ubahDraf(tx, { id: req.params.id, body: req.body, userId: req.user.id }));
+    await jalankan(res, (tx) => ubahDraf(tx, { id: req.params.id, body: req.body, userId: req.user.id, bolehOverride: hasPermission(req.user, P.FINANCE_ADMIN) }));
   } catch (e) { handleFinanceError(e, res); }
 });
 

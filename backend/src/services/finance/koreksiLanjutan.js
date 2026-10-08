@@ -30,6 +30,7 @@ import { getVerificationGate } from "./settings.js";
 import { hitungBiayaTransfer } from "./transferFee.js";
 import { recomputeOrderPaymentStatus } from "../paymentLedger.js";
 import { lockRowForUpdate } from "../inventoryLedger.js";
+import { terminDokumen, terminMaster, hitungJatuhTempo } from "./termin.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../../lib/activityLog.js";
 
 const ALASAN_MAKS = 500;
@@ -197,7 +198,7 @@ async function cariTagihan(tx, billId) {
 }
 
 /** Edit informasi tagihan yang SUDAH disetujui: nomor faktur supplier, jatuh tempo, lampiran. Tanpa jurnal. */
-export async function editInfoTagihan(tx, { billId, body, alasan, userId }) {
+export async function editInfoTagihan(tx, { billId, body, alasan, userId, bolehOverride = false }) {
   const reason = alasanWajib(alasan);
   const perubahan = normalisasiInfoTagihan(body || {});
   const b = await cariTagihan(tx, billId);
@@ -209,6 +210,18 @@ export async function editInfoTagihan(tx, { billId, body, alasan, userId }) {
     if (!sama(k, b[k], v)) { before[k] = b[k] instanceof Date ? hari(b[k]) : (b[k] ?? null); after[k] = v instanceof Date ? hari(v) : (v ?? null); }
   }
   if (Object.keys(after).length === 0) throw new KoreksiError("Tidak ada perubahan yang dikirim", 400, "TANPA_PERUBAHAN");
+  // Jatuh tempo berubah = ganti termin/tanggal dari default: bila default berupa Tunai/hari, hanya finance:admin yang boleh (alasan sudah wajib). Snapshot termin dicatat.
+  if ("dueDate" in after) {
+    const sup = await tx.finSupplier.findUnique({ where: { id: b.supplierId }, select: { paymentTermDays: true, paymentTermType: true } });
+    const po = b.purchaseOrderId ? await tx.finPurchaseOrder.findUnique({ where: { id: b.purchaseOrderId }, select: { termType: true, termDays: true } }) : null;
+    const bawaan = terminDokumen(b) ?? terminDokumen(po) ?? terminMaster(sup);
+    const hasilBawaan = bawaan && bawaan.jenis !== "TANGGAL_KHUSUS" ? hitungJatuhTempo(bawaan, b.billDate) : null;
+    const override = !!hasilBawaan && perubahan.dueDate !== null && hari(perubahan.dueDate) !== hari(hasilBawaan);
+    if (override && !bolehOverride) throw tolak("Mengganti jatuh tempo dari termin supplier hanya boleh oleh admin keuangan (finance:admin).", "Minta admin keuangan mengubahnya, atau gunakan Koreksi.", 403, "TERMIN_OVERRIDE_TIDAK_BERHAK");
+    Object.assign(perubahan, perubahan.dueDate
+      ? { termType: "TANGGAL_KHUSUS", termDays: null, termBasis: "TANGGAL_FAKTUR", termSource: "OVERRIDE_FAKTUR", termOverrideReason: reason, termSetById: userId, termSetAt: new Date() }
+      : { termType: null, termDays: null, termBasis: null, termSource: null, termOverrideReason: null, termSetById: userId, termSetAt: new Date() });
+  }
   // Nomor faktur yang sama dari supplier yang sama tidak boleh ada di tagihan aktif lain (aturan yang sama saat disetujui).
   if (after.supplierRef) {
     const dobel = await tx.finSupplierBill.findFirst({
@@ -310,6 +323,11 @@ export async function koreksiTagihan(tx, { billId, body, alasan, userId, preview
       billType: nilai.billType, goodsReceiptId: nilai.goodsReceiptId,
       expenseCategoryId: nilai.expenseCategoryId, purchaseCategoryId: nilai.purchaseCategoryId,
       status: "DISETUJUI", approvedAt: new Date(), approvedById: userId, createdById: lama.createdById, replacesBillId: lama.id,
+      // Termin & jadwal bayar ikut versi pengganti; jatuh tempo yang diganti lewat koreksi tercatat sebagai override (alasan koreksi, pengoreksi, waktu).
+      ...(perubahan.dueDate !== undefined && !sama("dueDate", lama.dueDate, nilai.dueDate)
+        ? { termType: nilai.dueDate ? "TANGGAL_KHUSUS" : null, termDays: null, termBasis: nilai.dueDate ? "TANGGAL_FAKTUR" : null, termSource: nilai.dueDate ? "OVERRIDE_FAKTUR" : null, termOverrideReason: nilai.dueDate ? reason : null, termSetById: userId, termSetAt: new Date() }
+        : { termType: lama.termType, termDays: lama.termDays, termBasis: lama.termBasis, termSource: lama.termSource, termOverrideReason: lama.termOverrideReason, termSetById: lama.termSetById, termSetAt: lama.termSetAt }),
+      scheduledPayDate: lama.scheduledPayDate, scheduledCashAccountId: lama.scheduledCashAccountId, scheduledNote: lama.scheduledNote, scheduledById: lama.scheduledById, scheduledAt: lama.scheduledAt,
     },
   });
   // Cek "supplier punya penerimaan barang yang belum ditagih" DILEWATI bila supplier tidak berubah: tagihan ini sudah lolos cek itu saat pertama
