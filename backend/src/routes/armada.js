@@ -37,6 +37,7 @@ import {
   RESCHEDULE_STATUS_LABEL, rescheduleCaseInclude,
 } from "../services/rescheduleCase.js";
 import { notifySalesJobCompleted, notifySalesUnpaidAfterDelivery } from "../services/deliveryCompletionNotify.js";
+import { buildDriverGroupCaption, isPodBroadcastActive } from "../services/driverGroupDocumentation.js";
 import { traceRoute } from "../services/routeTracking.js";
 import { recordRouteCompleted, readTimeMeta, EXEC_ACTIONS, buildRouteTimeline, validateCorrectionInput, isCorrectableAction, isSuspectQuality, TIME_QUALITY } from "../services/deliveryTimeline.js";
 import { prepProofUpload, prepProofUploadMulti, signPrepProofUrl, PREP_PROOF_PREFIX } from "./routePrepProofMedia.js";
@@ -225,19 +226,14 @@ function handleErr(err, res) {
   return res.status(500).json({ error: "Server error: " + err.message });
 }
 
-// ⛔ NONAKTIF SEMENTARA (6 September 2026, keputusan owner) — "lagi test
-// sistem ya... nice, tapi untuk sekarang stop dulu broadcast ke grupnya,
-// kita matangkan dulu sistem saat ini". Owner sendiri yang baru tes fitur
-// ini (foto POD otomatis ke grup WA driver) dan MINTA DIPAUSE — bukan
-// ditemukan rusak, sengaja dimatikan sampai owner minta nyalakan lagi.
-// Pola SAMA PERSIS dengan DELIVERY_NOTIF_AKTIF di services/
-// customerNotifications.js (kill-switch satu baris, JANGAN tulis ulang
-// fungsinya) — TIDAK ada hubungannya dengan ringkasan rute publish/edit,
-// itu TIDAK diminta dipause (lihat notifyNatashaText di bawah — target
-// ringkasan rute sekarang chat pribadi Natasha, bukan grup, sejak 6
-// September 2026).
-const POD_BROADCAST_AKTIF = false;
-
+// DIAKTIFKAN KEMBALI (8 Oktober 2026, keputusan owner): setiap driver
+// menyelesaikan pickup/delivery, bukti fotonya otomatis menjadi dokumentasi
+// informasi di Grup WhatsApp Driver yang sudah diverifikasi admin lewat
+// PUT /api/armada/driver-group. Default aktif; ops tetap punya kill-switch
+// darurat tanpa perlu deploy ulang dengan POD_BROADCAST_AKTIF=false.
+//
+// Flag ini KHUSUS dokumentasi internal. DELIVERY_NOTIF_AKTIF di services/
+// customerNotifications.js tetap terpisah dan tidak ikut dinyalakan.
 // D-018: kirim foto+ringkasan job selesai/gagal ke grup driver yang
 // ditugaskan (Conversation.isDriverGroup). BEST-EFFORT, SELALU dibungkus
 // try/catch oleh pemanggil — menyelesaikan job ADALAH kebenaran (Unit/Job
@@ -250,7 +246,7 @@ const POD_BROADCAST_AKTIF = false;
 // pola yang sama dengan "kepala produksi update ke grup" yang Gilang
 // sebut sebagai praktik biasa, bukan sesuatu yang perlu direview per pesan.
 async function notifyDriverGroup(job, photoUrls, headline) {
-  if (!POD_BROADCAST_AKTIF) return; // diam total — lihat catatan flag di atas
+  if (!isPodBroadcastActive()) return; // diam total — lihat catatan flag di atas
   const group = await prisma.conversation.findFirst({ where: { type: "GROUP", isDriverGroup: true } });
   if (!group) return; // belum ditetapkan — diam-diam, bukan error
 
@@ -258,13 +254,12 @@ async function notifyDriverGroup(job, photoUrls, headline) {
   if (!target) return;
 
   const BACKEND_INTERNAL_URL = process.env.BACKEND_INTERNAL_URL || "http://backend:4000";
-  const orderNo = job.units[0]?.unit?.order?.orderNumber || job.orderId;
-  const unitList = job.units.map((ju) => ju.unit.unitCode).join(", ");
+  const captionAkhir = buildDriverGroupCaption(job, headline);
 
   const savedMessages = [];
   for (let i = 0; i < photoUrls.length; i++) {
     const isLast = i === photoUrls.length - 1;
-    const caption = isLast ? `${headline}\n*${orderNo}*\n${unitList}` : "";
+    const caption = isLast ? captionAkhir : "";
     try {
       const { result: wahaMsg, session } = await sendWithSessionFallback(group, (s) =>
         sendMedia(
@@ -5533,7 +5528,10 @@ armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_
       if (job.type === "PICKUP") {
         await offerUnitCustody(tx, { direction: "INBOUND", unitIds: jobUnits.map((ju) => ju.unitId), jobId: job.id, actorId: req.user.id });
       }
-      await syncOrderStatusForUnits(tx, jobUnits.map((ju) => ju.unitId));
+      // forceStagedUnitIds (8 Oktober 2026) — unit yang BARU SAJA dipastikan RECEIVED/DELIVERED di
+      // atas ikut dihitung agregasi weakest-link order walau belum pernah masuk stage engine
+      // produksi (currentStageId NULL — unit legacy/belum-diadopsi). Lihat catatan di orderStatusSync.js.
+      await syncOrderStatusForUnits(tx, jobUnits.map((ju) => ju.unitId), { forceStagedUnitIds: new Set(jobUnits.map((ju) => ju.unitId)) });
       const routeJustCompleted = await syncRouteCompletionStatus(tx, job.routeId, { deferEvent: true });
       // Tutup kasus reschedule (D-160, 13 September 2026) — job yang PERNAH
       // direschedule dan AKHIRNYA benar-benar Selesai menutup kasusnya
