@@ -244,7 +244,7 @@ export function StepForm({ stepNo, form, setForm, card, next }) {
               </div>
               {form.requestMatch === "ADA_PERBEDAAN" && <textarea rows={2} aria-label="Catatan perbedaan dari permintaan Sales" data-testid="request-note" className={field} value={form.requestNote || ""} onChange={(e) => set({ requestNote: e.target.value })} placeholder="Jelaskan perbedaannya (wajib)" />}
               {(brief?.needsSalesConfirmation || form.fabricMode === "NEW_INSTALLED") && (
-                <div><label htmlFor="s10sc" className={labelCls}>{brief?.needsSalesConfirmation ? `Hasil konfirmasi Sales (${SALES_CONFIRM_LABEL}) *` : "Hasil konfirmasi Sales (opsional)"}</label>
+                <div><label htmlFor="s10sc" className={labelCls}>{brief?.needsSalesConfirmation ? `Konfirmasi Sales yang Anda catat (${SALES_CONFIRM_LABEL}) *` : "Konfirmasi Sales yang Anda catat (opsional)"}</label>
                   <textarea id="s10sc" rows={2} data-testid="sales-confirmation" className={field} value={form.salesConfirmation || ""} onChange={(e) => set({ salesConfirmation: e.target.value })} placeholder="mis. Sales (telepon): motif polos, warna abu-abu tua" /></div>
               )}
             </div>

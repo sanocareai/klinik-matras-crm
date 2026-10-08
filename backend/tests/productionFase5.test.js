@@ -18,8 +18,13 @@ test("permintaan Sales: ganti kain tanpa motif/warna tertulis = 'Perlu konfirmas
   const none = buildCornerRequest({ items: [{ layananName: "Upgrade Fondasi" }], orderNotes: "Minta tekstur firm" });
   assert.deepEqual([none.status, none.fabricChangeRequested, none.missing], ["TIDAK_ADA_PERMINTAAN_KAIN", false, []]);
   assert.equal(buildCornerRequest({}).status, "TIDAK_ADA_PERMINTAAN_KAIN");
-  const fromNotes = buildCornerRequest({ items: [], orderNotes: "tolong ganti sarung kasurnya" });
-  assert.equal(fromNotes.fabricChangeRequested, true, "permintaan di catatan pesanan tanpa item kain tetap terbaca");
+  // PENENTU = layanan Sales yang dipesan: catatan yang sekadar menyebut ganti kain TIDAK menjadi permintaan
+  const fromNotes = buildCornerRequest({ items: [{ layananName: "Upgrade Fondasi" }], orderNotes: "tolong ganti sarung kasurnya, motif polos warna abu" });
+  assert.deepEqual([fromNotes.fabricChangeRequested, fromNotes.noteOnly, fromNotes.status, fromNotes.needsSalesConfirmation, fromNotes.missing], [false, true, "TIDAK_ADA_PERMINTAAN_KAIN", false, []]);
+  assert.match(fromNotes.hint, /layanan ganti kain tidak dipesan Sales — tidak dianggap permintaan/); assert.equal(fromNotes.notes, "tolong ganti sarung kasurnya, motif polos warna abu", "catatan tetap dikutip apa adanya");
+  const noItemsNoNotes = buildCornerRequest({ items: [], orderNotes: null }); assert.deepEqual([noItemsNoNotes.noteOnly, noItemsNoNotes.hint], [false, null]);
+  const ordered = buildCornerRequest({ items: [{ layananName: "Ganti Kain Sarung" }], orderNotes: "ganti sarung" });
+  assert.deepEqual([ordered.fabricChangeRequested, ordered.noteOnly, ordered.needsSalesConfirmation], [true, false, true], "layanan dipesan tetapi motif/warna tidak tertulis = perlu konfirmasi");
 });
 
 test("status Corner jujur: tidak berlaku (alasan + tanpa aktivitas), menunggu, dikerjakan, jahit selesai, selesai", () => {

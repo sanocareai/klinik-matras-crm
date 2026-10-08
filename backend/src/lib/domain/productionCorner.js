@@ -1,8 +1,9 @@
 // Fase 5 — Corner: ringkasan permintaan Sales (kain/motif/warna/permintaan khusus), status Corner yang jujur, dan kontrak catatan PIC Corner. MURNI (tanpa DB).
 //
-// Prinsip: sistem TIDAK menebak motif atau warna. Sumber permintaan hanya (a) nama item pesanan (mis. "Ganti Kain Pinggir") dan (b) catatan pesanan apa adanya.
-// Bila permintaan ganti kain ada tetapi motif dan/atau warna tidak tertulis, statusnya "Perlu konfirmasi Sales" — PIC Corner tidak boleh memasang kain baru tanpa
-// mencatat hasil konfirmasi Sales (teks bebas milik PIC Corner, bukan hasil tebakan sistem).
+// Prinsip: sistem TIDAK menebak motif atau warna. PENENTU permintaan ganti kain = LAYANAN SALES yang dipesan (item pesanan, mis. "Ganti Kain Pinggir"). Catatan pesanan hanya
+// dikutip apa adanya dan dipakai membaca motif/warna; catatan yang SEKADAR menyebut ganti kain tanpa layanan itu dipesan TIDAK menjadi permintaan (hanya ditandai agar PIC Corner bertanya ke Sales).
+// Bila layanan ganti kain dipesan tetapi motif dan/atau warna tidak tertulis, statusnya "Perlu konfirmasi Sales" — PIC Corner tidak boleh memasang kain baru tanpa mencatat hasil
+// konfirmasi Sales (teks bebas yang DICATAT PIC Corner; bukan diisi Sales sendiri dan bukan tebakan sistem).
 
 export const CORNER_FABRIC_MODES = Object.freeze({ OLD_REUSED: "Kain lama dipakai kembali", NEW_INSTALLED: "Kain baru dipasang" });
 export const CORNER_REQUEST_MATCH = Object.freeze({ SESUAI: "Sesuai permintaan Sales", ADA_PERBEDAAN: "Ada perbedaan dari permintaan Sales" });
@@ -19,19 +20,22 @@ const clean = (v, max = 600) => (typeof v === "string" ? v.trim().slice(0, max) 
 export function buildCornerRequest({ items = [], orderNotes = null } = {}) {
   const notes = clean(orderNotes, 1000) || null;
   const fabricItems = (items || []).map((i) => clean(i?.layananName, 200)).filter((n) => n && FABRIC_ITEM.test(n));
-  const fabricInNotes = !!notes && FABRIC_NOTE.test(notes);
-  const fabricChangeRequested = fabricItems.length > 0 || fabricInNotes;
+  const noteMentionsFabric = !!notes && FABRIC_NOTE.test(notes);
+  const fabricChangeRequested = fabricItems.length > 0; // hanya layanan Sales yang dipesan
   const motifMentioned = !!notes && MOTIF.test(notes);
   const colorMentioned = !!notes && COLOR.test(notes);
   const missing = fabricChangeRequested ? [...(motifMentioned ? [] : ["motif"]), ...(colorMentioned ? [] : ["warna"])] : [];
   const needsSalesConfirmation = fabricChangeRequested && missing.length > 0;
+  const noteOnly = !fabricChangeRequested && noteMentionsFabric;
   const status = !fabricChangeRequested ? "TIDAK_ADA_PERMINTAAN_KAIN" : needsSalesConfirmation ? "PERLU_KONFIRMASI_SALES" : "JELAS";
   const statusLabel = status === "PERLU_KONFIRMASI_SALES" ? SALES_CONFIRM_LABEL : status === "JELAS" ? "Permintaan kain tertulis" : "Tidak ada permintaan ganti kain";
   return {
-    fabricChangeRequested, fabricItems, notes, motifMentioned, colorMentioned, missing, needsSalesConfirmation, status, statusLabel,
+    fabricChangeRequested, fabricItems, notes, noteMentionsFabric, noteOnly, motifMentioned, colorMentioned, missing, needsSalesConfirmation, status, statusLabel,
     hint: needsSalesConfirmation
       ? `Permintaan ganti kain ada, tetapi ${missing.join(" dan ")} belum tertulis di pesanan. Hubungi Sales — jangan menebak.`
-      : null,
+      : noteOnly
+        ? "Catatan pesanan menyebut kain, tetapi layanan ganti kain tidak dipesan Sales — tidak dianggap permintaan. Tanyakan ke Sales bila perlu."
+        : null,
   };
 }
 

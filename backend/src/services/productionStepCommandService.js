@@ -238,7 +238,9 @@ export async function loadCornerView(client, run, ctx) {
   const decision = ctx.state.buildTrack ? ctx.state.cornerRequired : null;
   const status = cornerStatusOf({ cornerApplies, decision, reason: ctx.state.cornerReason, steps, runStatus: run.status, qcPassed, adaptation: isAdaptationRun(run) });
   const lastOf = (n) => ctx.evidence.filter((e) => e.stepNo === n && !isSkippedEvidence(e)).at(-1) ?? null;
-  const recOf = (e) => (e ? { version: e.version, at: e.createdAt, by: e.actorId ?? null, mediaCount: (e.media || []).length, ...e.payload } : null);
+  const startEv = lastOf(10);
+  const startActor = startEv?.actorId ? (await client.user.findUnique({ where: { id: startEv.actorId }, select: { name: true } }))?.name ?? null : null;
+  const recOf = (e) => (e ? { version: e.version, at: e.createdAt, by: e.actorId ?? null, ...(e === startEv ? { byName: startActor } : {}), mediaCount: (e.media || []).length, ...e.payload } : null);
   let decidedBy = null;
   if (status.status === "TIDAK_BERLAKU" && ctx.buildSetting?.updatedById) decidedBy = (await client.user.findUnique({ where: { id: ctx.buildSetting.updatedById }, select: { name: true } }))?.name ?? null;
   return { request, status: { ...status, ...(decidedBy ? { decidedBy } : {}) }, contractV2: hasAssemblyGate(run), records: { start: recOf(lastOf(10)), done: recOf(lastOf(11)) } };

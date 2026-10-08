@@ -16,7 +16,8 @@ export function CornerRequestCard({ cornerView, compact = false }) {
       </section>
     );
   }
-  const confirmed = (cornerView.records?.start?.salesConfirmation || "").trim();
+  const start = cornerView.records?.start; const confirmed = (start?.salesConfirmation || "").trim();
+  const when = start?.at ? new Date(start.at).toLocaleString("id-ID", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : null;
   const needs = !!r?.needsSalesConfirmation && !confirmed; // sudah ada hasil konfirmasi Sales yang dicatat PIC Corner → tidak lagi "perlu konfirmasi"
   return (
     <section data-testid="corner-request-card" data-state={r?.status} className={`space-y-2 rounded-btn px-3 py-3 text-[13px] ${needs ? "bg-orangebg text-ink" : "bg-inset text-ink2"}`}>
@@ -24,7 +25,14 @@ export function CornerRequestCard({ cornerView, compact = false }) {
         {needs ? <AlertTriangle size={15} className="text-orange" aria-hidden /> : <CheckCircle2 size={15} className="text-green" aria-hidden />} Permintaan Sales untuk Corner
       </p>
       {needs && <p className="m-0 rounded-btn bg-orange px-2 py-1 text-[12.5px] font-bold text-white" data-testid="sales-confirm-flag">{SALES_CONFIRM_LABEL}</p>}
-      {r?.needsSalesConfirmation && confirmed && <p className="m-0 rounded-btn bg-greenbg px-2 py-1 text-[12.5px] font-bold text-green" data-testid="sales-confirmed">Sudah dikonfirmasi Sales — {confirmed}</p>}
+      {r?.needsSalesConfirmation && confirmed && (
+        <div className="m-0 rounded-btn bg-greenbg px-2 py-1.5 text-[12.5px] text-green" data-testid="sales-confirmed">
+          <p className="m-0 font-bold" data-testid="sales-confirmed-label">Konfirmasi Sales dicatat oleh PIC Corner</p>
+          <p className="m-0" data-testid="sales-confirmed-meta">Dicatat oleh {start?.byName || "PIC Corner"}{when ? ` · ${when}` : ""}</p>
+          <p className="m-0" data-testid="sales-confirmed-body">Isi: {confirmed}</p>
+        </div>
+      )}
+      {r?.noteOnly && <p className="m-0 rounded-btn bg-inset px-2 py-1 text-[12.5px] text-ink2" data-testid="note-only-flag">Catatan menyebut kain, tetapi layanan ganti kain tidak dipesan.</p>}
       <dl className="m-0 space-y-1">
         <div><dt className="inline text-ink3">Ganti kain: </dt><dd className="inline font-semibold text-ink" data-testid="req-fabric">{r?.fabricChangeRequested ? (r.fabricItems?.length ? r.fabricItems.join(", ") : "ya (dari catatan pesanan)") : "tidak diminta"}</dd></div>
         <div><dt className="inline text-ink3">Motif: </dt><dd className="inline font-semibold text-ink" data-testid="req-motif">{!r?.fabricChangeRequested ? "—" : r.motifMentioned ? "tertulis di catatan" : "belum tertulis"}</dd></div>

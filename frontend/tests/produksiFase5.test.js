@@ -45,7 +45,10 @@ test("payload & validasi tahap 10/11 hanya berubah untuk Run kontrak Fase 5 (V2)
 test("kontrak sumber: kartu permintaan Sales, status terpadu, rangkaian dokumentasi, pratinjau penyelesaian — teks Indonesia, selektor stabil, satu sumber server", () => {
   const card = read("features/production/components/CornerRequestCard.jsx");
   for (const id of ["corner-request-card", "sales-confirm-flag", "req-fabric", "req-motif", "req-color", "req-notes", "req-hint", "corner-na-reason"]) assert.ok(card.includes(`data-testid="${id}"`), id);
-  assert.match(card, /Perlu konfirmasi Sales|SALES_CONFIRM_LABEL/); assert.match(card, /Corner tidak berlaku/); assert.doesNotMatch(card, /\b(Pending|Required|Not applicable)\b/);
+  assert.match(card, /Perlu konfirmasi Sales|SALES_CONFIRM_LABEL/);
+  assert.match(card, /Konfirmasi Sales dicatat oleh PIC Corner/); assert.match(card, /data-testid="sales-confirmed-meta"/); assert.match(card, /data-testid="sales-confirmed-body"/); assert.match(card, /layanan ganti kain tidak dipesan/);
+  assert.doesNotMatch(card, /Sudah dikonfirmasi Sales/, "tidak mengklaim Sales sendiri yang mengisi");
+  assert.match(read("pages/bengkel/ProductionReportV2.jsx"), /Konfirmasi Sales dicatat oleh PIC Corner/); assert.match(card, /Corner tidak berlaku/); assert.doesNotMatch(card, /\b(Pending|Required|Not applicable)\b/);
   const form = read("features/production/components/StepForm.jsx");
   for (const id of ["corner-check-block", "request-note", "sales-confirmation", "corner-done-block", "corner-work", "difference-note"]) assert.ok(form.includes(`data-testid="${id}"`), id);
   assert.match(form, /FinishPreviewBlock/); assert.match(form, /contractV2/);

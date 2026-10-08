@@ -892,6 +892,8 @@ test("Fase 5: Corner DIPERLUKAN — permintaan Sales tidak jelas = 'Perlu konfir
   const ev10 = (await testPrisma.productionStepEvidence.findFirstOrThrow({ where: { runId: run.id, stepNo: 10 } })).payload;
   assert.deepEqual([ev10.requestChecked, ev10.fabricMode, ev10.requestMatch, ev10.requestStatusAtStart], [true, "NEW_INSTALLED", "ADA_PERBEDAAN", "PERLU_KONFIRMASI_SALES"]); assert.match(ev10.salesConfirmation, /abu-abu tua/);
   c = await card(w, run.id); assert.deepEqual([c.cornerView.status.status, c.lifecycle.key], ["DIKERJAKAN", "DI_CORNER"]);
+  const st = c.cornerView.records.start; assert.equal(st.byName, w.corner.user.name, "aktor yang mencatat konfirmasi = PIC Corner (bukan Sales)"); assert.ok(st.at, "waktu tercatat"); assert.match(st.salesConfirmation, /abu-abu tua/);
+  assert.equal(st.by, w.corner.user.id);
   const noWork = await step(w, w.corner, run.id, 11, { payload: cornerDone({ cornerWork: "" }), media: await media(w.nadya, run.id, "i") }); assert.equal(noWork.status, 400);
   const noDiff = await step(w, w.corner, run.id, 11, { payload: cornerDone({ noDifference: false }), media: await media(w.nadya, run.id, "i") }); assert.equal(noDiff.status, 400); assert.match(noDiff.body.error, /catatan perbedaan/i);
   ok(await step(w, w.corner, run.id, 11, { payload: cornerDone({ noDifference: false, differenceNote: "Ukuran list 1 cm lebih lebar dari rencana" }), media: await media(w.nadya, run.id, "i", "v") }));
@@ -945,6 +947,13 @@ test("Fase 5: ganti kain DENGAN detail Sales tertulis = 'Permintaan kain tertuli
   ok(await step(w, w.corner, withDetail.run.id, 10, { payload: cornerStart({ fabricMode: "NEW_INSTALLED" }), media: await media(w.nadya, withDetail.run.id, "i") }));
   const noReq = await layananToQcPass(w, { notes: "Minta tekstur firm", items: ["Upgrade Fondasi"] });
   c = await card(w, noReq.run.id); assert.deepEqual([c.cornerView.request.status, c.cornerView.request.fabricChangeRequested], ["TIDAK_ADA_PERMINTAAN_KAIN", false]);
+  // catatan order yang SEKADAR menyebut ganti kain tanpa layanan itu dipesan: bukan permintaan (layanan Sales = penentu); catatan tetap dikutip + ditandai
+  const noteOnly = await layananToQcPass(w, { notes: "Tolong ganti kain sarungnya sekalian", items: ["Upgrade Fondasi"] });
+  c = await card(w, noteOnly.run.id);
+  assert.deepEqual([c.cornerView.request.status, c.cornerView.request.fabricChangeRequested, c.cornerView.request.noteOnly, c.cornerView.request.needsSalesConfirmation], ["TIDAK_ADA_PERMINTAAN_KAIN", false, true, false]);
+  assert.equal(c.cornerView.request.notes, "Tolong ganti kain sarungnya sekalian");
+  ok(await step(w, w.nadya, noteOnly.run.id, 9, { payload: {}, media: await media(w.nadya, noteOnly.run.id, "i") }));
+  ok(await step(w, w.corner, noteOnly.run.id, 10, { payload: cornerStart({ fabricMode: "OLD_REUSED", requestMatch: "SESUAI" }), media: await media(w.nadya, noteOnly.run.id, "i") }));
   ok(await step(w, w.nadya, noReq.run.id, 9, { payload: {}, media: await media(w.nadya, noReq.run.id, "i") }));
   ok(await step(w, w.corner, noReq.run.id, 10, { payload: cornerStart({ fabricMode: "OLD_REUSED", requestMatch: "SESUAI" }), media: await media(w.nadya, noReq.run.id, "i") }));
 });
