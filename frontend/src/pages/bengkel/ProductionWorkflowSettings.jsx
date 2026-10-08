@@ -62,6 +62,13 @@ export default function ProductionWorkflowSettings() {
             onChange={(e) => run("adapt", () => api.setProductionV2AdaptationDefault(e.target.checked), e.target.checked ? "Mode adaptasi aktif untuk run baru." : "Mode adaptasi dimatikan untuk run baru.")} /> Aktif untuk run baru</label>
         </Card>
 
+        <Card className="space-y-2 p-4" data-testid="qc-gate-default-card">
+          <h3 className="m-0 text-[14px] font-bold text-ink">Gerbang QC sebelum bongkar untuk run baru</h3>
+          <p className="m-0 text-[12.5px] text-ink3">Bawaan <b>aktif</b>: run yang dibuka SETELAH ini wajib melewati catatan PIC QC sebelum bongkar (kebijakan dicatat pada run saat dibuat). Mematikan bawaan <b>tidak mengubah run yang sudah ada</b>; menerapkan gerbang ke run berjalan hanya lewat aksi eksplisit yang tercatat di run itu.</p>
+          <label className="flex items-center gap-2 text-[13px] text-ink"><input data-testid="qc-gate-default-toggle" type="checkbox" disabled={!canWrite || !!busy} checked={s?.qcGateDefault ? !!s.qcGateDefault.enabled : true}
+            onChange={(e) => run("qcgate", () => api.setProductionV2QcGateDefault(e.target.checked), e.target.checked ? "Gerbang QC aktif untuk run baru." : "Gerbang QC dimatikan untuk run baru (run yang sudah ada tidak berubah).")} /> Aktif untuk run baru</label>
+        </Card>
+
         <Card className="space-y-2 p-4" data-testid="service-mapping-card">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="m-0 text-[14px] font-bold text-ink">Pemetaan layanan Sales → layanan produksi</h3>

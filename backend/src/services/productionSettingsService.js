@@ -10,9 +10,11 @@ import { ENTITY_TYPES, EVENT_TYPES, recordActivity } from "../lib/activityLog.js
 export const SETTING_KEYS = Object.freeze({
   WORKSHOP_LOCATION: "workshop_default_location_id",
   ADAPTATION_DEFAULT: "adaptation_default_policy",
+  QC_GATE_DEFAULT: "qc_gate_default_policy",
 });
 export const ADAPTATION_POLICY = "ADAPTATION_V1";
 // Versi kebijakan gerbang QC sebelum bongkar (Fase 2 LAYANAN). Dipin pada Run BARU; run yang sudah berjalan tidak pernah diubah otomatis.
+// BAWAAN AKTIF: tanpa setting tersimpan, run baru dipin QC_GATE_V1. Admin dapat menonaktifkan bawaan (run baru dipin NULL = tanpa gerbang) lewat setting — bukan hardcode.
 export const QC_GATE_POLICY = "QC_GATE_V1";
 export const ARRIVAL_LOCATION_TYPES = Object.freeze(["RECEIVING_AREA", "WIP_AREA"]);
 
@@ -88,11 +90,28 @@ export async function setAdaptationDefault(prisma, { enabled, actorId }) {
   });
 }
 
+// ---------------------------------------------------------------- kebijakan gerbang QC bawaan ------------------------------------------------------------
+// Dibaca SAAT Production Run dibuat dan di-SNAPSHOT ke runs.qc_gate_policy_version; mengubah bawaan TIDAK retroaktif (run yang sudah ada tidak berubah).
+// Penerapan ke run berjalan hanya lewat aksi eksplisit tercatat (POST /runs/:id/qc-gate → applyQcGatePolicy).
+export async function defaultQcGatePolicy(client) {
+  const row = await client.productionSetting.findUnique({ where: { key: SETTING_KEYS.QC_GATE_DEFAULT } });
+  return row && row.value && row.value.policy === null ? null : QC_GATE_POLICY;
+}
+
+export async function setQcGateDefault(prisma, { enabled, actorId }) {
+  if (typeof enabled !== "boolean") throw settingsError("enabled wajib berupa true/false", 400, "SETTING_ENABLED_REQUIRED");
+  return prisma.$transaction(async (tx) => {
+    await writeSetting(tx, { key: SETTING_KEYS.QC_GATE_DEFAULT, value: { policy: enabled ? QC_GATE_POLICY : null }, actorId, label: "Gerbang QC sebelum bongkar untuk run baru", to: enabled ? "aktif" : "nonaktif" });
+    return { enabled, policy: QC_GATE_POLICY };
+  });
+}
+
 export async function getProductionSettings(client) {
   const location = await inspectWorkshopDefaultLocation(client);
   return {
     workshopLocation: { configured: location.configured, valid: location.valid, problem: location.problem, location: location.location ? { id: location.location.id, code: location.location.code, zone: location.location.zone, locationType: location.location.locationType } : null },
     adaptationDefault: { enabled: (await defaultAdaptationPolicy(client)) === ADAPTATION_POLICY, policy: ADAPTATION_POLICY },
+    qcGateDefault: { enabled: (await defaultQcGatePolicy(client)) === QC_GATE_POLICY, policy: QC_GATE_POLICY },
     locationChoices: await listArrivalLocationChoices(client),
   };
 }

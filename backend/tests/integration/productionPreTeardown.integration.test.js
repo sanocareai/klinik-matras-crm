@@ -333,6 +333,41 @@ test("kebijakan gerbang QC dipin per Run: Run baru terpin QC_GATE_V1; Run lama (
   assert.equal(sres.status, 409); assert.equal(sres.body.code, "QC_GATE_NOT_APPLICABLE");
 });
 
+test("bawaan gerbang QC: AKTIF tanpa setting; Admin dapat menonaktifkan/mengaktifkan (setting tercatat); di-snapshot saat Run dibuat; perubahan bawaan TIDAK retroaktif; penerapan ke Run lama tetap eksplisit & bertrail", async () => {
+  const w = await world();
+  const adminU = await createTestUser({ roles: ["ADMIN"] }); const admin = { ...adminU, api: makeClient(server.baseUrl, adminU.token) };
+  const getDefault = async () => (await admin.api.get(`${V2}/settings`)).body.qcGateDefault;
+  // 1) tanpa setting tersimpan = AKTIF; Run baru dipin QC_GATE_V1
+  assert.deepEqual(await getDefault(), { enabled: true, policy: "QC_GATE_V1" });
+  assert.equal(await testPrisma.productionSetting.count({ where: { key: "qc_gate_default_policy" } }), 0, "bawaan aktif bukan karena baris setting (tidak ada hardcode tersembunyi di DB)");
+  const a = await layananUnit(w, "TABLE_1");
+  assert.equal((await testPrisma.productionRun.findUniqueOrThrow({ where: { id: a.run.id } })).qcGatePolicyVersion, "QC_GATE_V1");
+  // 2) hanya pemegang izin pengaturan produksi (ADMIN/OWNER); input tidak valid ditolak
+  for (const [who, name] of [[w.lead, "lead"], [w.qc, "qc"], [w.nadya, "meja"]]) assert.equal((await who.api.put(`${V2}/settings/qc-gate-default`, { enabled: false })).status, 403, name);
+  assert.equal((await admin.api.put(`${V2}/settings/qc-gate-default`, { enabled: "ya" })).status, 400);
+  assert.equal(await testPrisma.productionSetting.count({ where: { key: "qc_gate_default_policy" } }), 0, "ditolak = tidak ada perubahan");
+  // 3) Admin menonaktifkan: tercatat; Run yang SUDAH ada tidak berubah; Run BARU dipin NULL (perilaku lama)
+  assert.deepEqual(ok(await admin.api.put(`${V2}/settings/qc-gate-default`, { enabled: false })), { enabled: false, policy: "QC_GATE_V1" });
+  assert.equal((await getDefault()).enabled, false);
+  const ev = await testPrisma.activityEvent.findMany({ where: { eventType: "PRODUCTION_SETTING_CHANGED", entityId: "qc_gate_default_policy" } });
+  assert.equal(ev.length, 1); assert.equal(ev[0].actorId, admin.user.id); assert.equal(ev[0].metadata.to, "nonaktif");
+  assert.equal((await testPrisma.productionRun.findUniqueOrThrow({ where: { id: a.run.id } })).qcGatePolicyVersion, "QC_GATE_V1", "tidak retroaktif: Run lama tetap terpin");
+  const b = await layananUnit(w, "TABLE_2");
+  assert.equal((await testPrisma.productionRun.findUniqueOrThrow({ where: { id: b.run.id } })).qcGatePolicyVersion, null, "Run baru setelah dinonaktifkan = tanpa gerbang");
+  assert.equal((await card(w, b.run.id)).qcGatePolicy, null);
+  // 4) penerapan ke Run itu tetap aksi eksplisit yang beralasan dan bertrail (bukan efek setting)
+  const rev = (await card(w, b.run.id)).revision;
+  const applied = ok(await w.lead.api.post(`${V2}/runs/${b.run.id}/qc-gate`, { expectedRevision: rev, reason: "Run ini tetap harus melewati gerbang QC" }, key("apply")));
+  assert.deepEqual([applied.policy, applied.changed], ["QC_GATE_V1", true]);
+  assert.equal(await testPrisma.activityEvent.count({ where: { entityId: b.unit.id, eventType: "PRODUCTION_QC_GATE_APPLIED" } }), 1);
+  // 5) Admin mengaktifkan lagi: Run berikutnya dipin lagi; Run sebelumnya tidak berubah
+  ok(await admin.api.put(`${V2}/settings/qc-gate-default`, { enabled: true })); assert.equal((await getDefault()).enabled, true);
+  const c = await layananUnit(w, "TABLE_3");
+  assert.equal((await testPrisma.productionRun.findUniqueOrThrow({ where: { id: c.run.id } })).qcGatePolicyVersion, "QC_GATE_V1");
+  assert.equal((await testPrisma.productionRun.findUniqueOrThrow({ where: { id: a.run.id } })).qcGatePolicyVersion, "QC_GATE_V1");
+  assert.equal(await testPrisma.activityEvent.count({ where: { eventType: "PRODUCTION_SETTING_CHANGED", entityId: "qc_gate_default_policy" } }), 2, "dua perubahan bawaan tercatat");
+});
+
 // ---------------------------------------------------------------------------------------------------------------------------------------------------
 // Fase 3 LAYANAN — analisis & racikan: PLAN_RACIKAN (rencana) vs AFTER (aktual), total tinggi, atribut katalog, versi/koreksi/konflik/replay, izin, tanpa efek stok/BOM.
 // ---------------------------------------------------------------------------------------------------------------------------------------------------
@@ -420,7 +455,7 @@ test("Fase 3: racikan rencana (fondasi + lapisan atas->bawah, ketebalan, total) 
   const cat = ok(await w.nadya.api.get(`${CN}/materials?q=${encodeURIComponent(busa.code)}`)); const hit = cat.items.find((m) => m.materialId === busa.id);
   assert.deepEqual([hit.code, hit.name, hit.unit, hit.supplier, hit.itemGroup], [busa.code, busa.name, "PCS", "CV Busa Jaya", "HR FOAM"]);
   const hit2 = ok(await w.nadya.api.get(`${CN}/materials?q=${encodeURIComponent(polos.code)}`)).items.find((m) => m.materialId === polos.id); assert.deepEqual([hit2.supplier, hit2.itemGroup], [null, null]);
-  assert.equal("density" in hit, false, "Material master belum punya densitas — tidak dikarang");
+  assert.deepEqual([hit.density, hit.thicknessCm, hit2.density, hit2.thicknessCm], [null, null, null, null], "densitas/ketebalan katalog kosong = null apa adanya, tidak dikarang");
 
   // Rencana & aktual TIDAK menyentuh stok, BOM, reservasi, issue, retur.
   assert.deepEqual(await sideEffectCounts(unit.id), counts0, "tanpa efek stok/BOM/reservasi/issue/retur");

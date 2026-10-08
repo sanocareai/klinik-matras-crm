@@ -14,7 +14,7 @@ import {
 import { resumeWork } from "../services/productionResumeService.js";
 import { confirmBuildCorner, recordBuildMaterials, setBuildMaterialOperator, setBuildPlannedBOM } from "../services/productionBuildCommandService.js";
 import {
-  getProductionSettings, inspectWorkshopDefaultLocation, listServiceMappings, setAdaptationDefault, setServiceMapping, setWorkshopDefaultLocation,
+  getProductionSettings, inspectWorkshopDefaultLocation, listServiceMappings, setAdaptationDefault, setQcGateDefault, setServiceMapping, setWorkshopDefaultLocation,
 } from "../services/productionSettingsService.js";
 import { receiveMaterialReturn } from "../services/productionMaterialReturnService.js";
 import { confirmUnitArrival, listReceivingLocations } from "../services/unitCustodyCommandService.js";
@@ -373,6 +373,9 @@ productionExperienceRouter.put("/settings/workshop-location", requirePermission(
 });
 productionExperienceRouter.put("/settings/adaptation-default", requirePermission(P.PRODUCTION_SETTINGS_WRITE), async (req, res) => {
   try { res.json(await setAdaptationDefault(prisma, { enabled: req.body?.enabled, actorId: req.user.id })); } catch (err) { handleErr(err, res); }
+});
+productionExperienceRouter.put("/settings/qc-gate-default", requirePermission(P.PRODUCTION_SETTINGS_WRITE), async (req, res) => {
+  try { res.json(await setQcGateDefault(prisma, { enabled: req.body?.enabled, actorId: req.user.id })); } catch (err) { handleErr(err, res); }
 });
 productionExperienceRouter.get("/settings/service-mappings", requireAnyPermission(P.PRODUCTION_SETTINGS_WRITE, P.UNIT_ROUTING_WRITE), async (_req, res) => {
   try { res.json(await listServiceMappings(prisma)); } catch (err) { handleErr(err, res); }

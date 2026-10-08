@@ -793,6 +793,7 @@ export const api = {
   getProductionV2Settings: () => request("/production-v2/settings"),
   getProductionV2ServiceMappings: () => request("/production-v2/settings/service-mappings"),
   setProductionV2WorkshopLocation: (locationId) => request("/production-v2/settings/workshop-location", { method: "PUT", body: JSON.stringify({ locationId }) }),
+  setProductionV2QcGateDefault: (enabled) => request("/production-v2/settings/qc-gate-default", { method: "PUT", body: JSON.stringify({ enabled }) }),
   setProductionV2AdaptationDefault: (enabled) => request("/production-v2/settings/adaptation-default", { method: "PUT", body: JSON.stringify({ enabled }) }),
   setProductionV2ServiceMapping: (priceItemId, serviceId) => request(`/production-v2/settings/service-mappings/${priceItemId}`, { method: "PUT", body: JSON.stringify({ serviceId: serviceId || null }) }),
   // P9A — "Unit Tiba di Workshop": pemilih lokasi Receiving/WIP + konfirmasi kedatangan fisik (tanpa buka workspace Gudang).

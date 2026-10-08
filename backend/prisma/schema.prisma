@@ -5012,6 +5012,12 @@ model Material {
 
   active Boolean @default(true)
 
+  // Gap Fase 3 item 3 (katalog bahan untuk Catatan Komponen — Meja/QC/PIC Bahan): densitas & ketebalan OPSIONAL dengan sengaja — kebanyakan
+  // material (kain, per, lem, dst.) tidak punya nilai ini; NULL berarti "belum dicatat", TIDAK PERNAH ditebak/diisi otomatis. Supplier memakai
+  // `vendor` yang sudah ada (diisi dari stock opname Excel) — tidak ada kolom baru untuk itu, menghindari dua sumber yang bisa berbeda.
+  density     Float? // kg/m3 — notasi umum busa "D24" dsb.
+  thicknessCm Float? @map("thickness_cm")
+
   // Reorder alert (PRD FR-I-05), D-024. Keduanya OPSIONAL dengan sengaja —
   // tidak semua material perlu dipantau (bahan langka/sekali pakai tidak
   // relevan direstok). reorderPoint null = alert MATI untuk material itu,
