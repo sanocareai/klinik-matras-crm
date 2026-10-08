@@ -91,7 +91,7 @@ async function selisihFakturPerLot(db, sumberSemua, bahanId) {
       purchaseOrderLine: { select: { unitPrice: true } },
       billAllocations: {
         where: { bill: { status: { in: STATUS_TAGIHAN_MASUK_BUKU } } },
-        select: { qty: true, billPoLine: { select: { invoiceUnitPrice: true } } },
+        select: { qty: true, billPoLine: { select: { invoiceUnitPrice: true } }, bill: { select: { id: true, billNumber: true } } },
       },
       goodsReceipt: { select: { finSupplierBills: { where: { status: { in: STATUS_TAGIHAN_MASUK_BUKU } }, select: { billNumber: true } } } },
     },
@@ -107,9 +107,19 @@ async function selisihFakturPerLot(db, sumberSemua, bahanId) {
       diterima, tercakup: tercakup.greaterThan(diterima) ? diterima : tercakup,
       hargaFakturRata: tercakup.isZero() ? null : nilaiFaktur.dividedBy(tercakup),
       fakturLama: b.goodsReceipt.finSupplierBills.map((x) => x.billNumber),
+      fakturDok: [...new Map(b.billAllocations.map((x) => [x.bill.id, { id: x.bill.id, nomor: x.bill.billNumber }])).values()],
     });
   }
   return peta;
+}
+
+/** Retur Produksi yang bertaut ke pergerakan RETURN (per bahan; bila beberapa, yang diterima paling dekat waktunya). */
+function returUntuk(dokRetur, m) {
+  const kandidat = dokRetur.filter((x) => x.materialId === m.materialId && x.status === "RECEIVED");
+  if (kandidat.length === 0) return null;
+  const t = new Date(m.createdAt).getTime();
+  const x = [...kandidat].sort((a, b) => Math.abs(new Date(a.receivedAt ?? 0) - t) - Math.abs(new Date(b.receivedAt ?? 0) - t))[0];
+  return { returId: x.id, diterimaPada: x.receivedAt };
 }
 
 /**
@@ -159,6 +169,11 @@ export async function bacaJejakUnit(db, unitId, { izinHarga = false } = {}) {
     ? new Set((await db.finJournalEntry.findMany({ where: { idempotencyKey: { in: kunciJurnal }, status: { in: ["POSTED", "REVERSED"] } }, select: { idempotencyKey: true } })).map((j) => j.idempotencyKey))
     : new Set();
 
+  // tautan dokumen: penerimaan → PO, retur Produksi
+  const idTerima = [...new Set(pergerakan.flatMap((m) => (m.valuation?.basis?.sumber ?? []).map((s) => s.goodsReceiptId)).filter(Boolean))];
+  const petaPO = idTerima.length ? new Map((await db.goodsReceipt.findMany({ where: { id: { in: idTerima } }, select: { id: true, purchaseOrderId: true } })).map((g) => [g.id, g.purchaseOrderId])) : new Map();
+  const dokRetur = await db.productionMaterialReturn.findMany({ where: { unitId }, select: { id: true, materialId: true, status: true, receivedAt: true, receivedQty: true } });
+
   // selisih harga faktur per lot
   const sumberSemua = pergerakan.flatMap((m) => (m.valuation?.basis?.sumber ?? []));
   const lot = await selisihFakturPerLot(db, sumberSemua, [...new Set(pergerakan.map((m) => m.materialId))]);
@@ -189,7 +204,7 @@ export async function bacaJejakUnit(db, unitId, { izinHarga = false } = {}) {
     }
 
     // selisih faktur (di luar biaya persediaan)
-    let selisihDiketahui = ZERO; let qtyFakturBelumAda = ZERO; let qtyTanpaPO = ZERO; const fakturLama = new Set();
+    let selisihDiketahui = ZERO; let qtyFakturBelumAda = ZERO; let qtyTanpaPO = ZERO; const fakturLama = new Set(); const fakturDok = new Map();
     const sumber = basis?.sumber ?? [];
     const totalQtyDasar = d(basis?.totalQty ?? 0);
     if (status === "DINILAI" && totalQtyDasar.greaterThan(0)) {
@@ -197,6 +212,7 @@ export async function bacaJejakUnit(db, unitId, { izinHarga = false } = {}) {
         const bobot = d(s.qty).dividedBy(totalQtyDasar);
         const qtyLot = mutlak.times(bobot);
         const l = lot.get(`${s.goodsReceiptId}|${m.materialId}`);
+        l?.fakturDok.forEach((x) => fakturDok.set(x.id, x));
         if (!s.goodsReceiptId || !l || !l.adaPO) { qtyTanpaPO = qtyTanpaPO.plus(qtyLot); l?.fakturLama.forEach((n) => fakturLama.add(n)); continue; }
         const porsiTercakup = l.diterima.isZero() ? ZERO : l.tercakup.dividedBy(l.diterima);
         const qtyTercakup = qtyLot.times(porsiTercakup);
@@ -220,10 +236,12 @@ export async function bacaJejakUnit(db, unitId, { izinHarga = false } = {}) {
       dokumen: m.materialIssue ? { materialIssueId: m.materialIssue.id, nomor: m.materialIssue.issueNumber } : null,
       oleh: m.createdBy?.name ?? null, catatan: m.reason || m.note || null,
       jurnal: jurnal.has(`PEMAKAIAN_BAHAN:${m.materialIssueId}`) || jurnal.has(`PEMAKAIAN_BAHAN_MOVEMENT:${m.id}`) ? "TERBUKU" : "BELUM_DIJURNAL",
-      sumber: sumber.map((s) => ({ receiptNumber: s.receiptNumber ?? null, poNumber: s.poNumber ?? null, qty: Number(s.qty), unitCost: s.unitCost, goodsReceiptId: s.goodsReceiptId ?? null })),
+      statusBiaya: status === "DINILAI" ? "DINILAI" : status === "TANPA_HARGA" ? "TANPA_HARGA" : "BELUM_FINAL",
+      retur: m.type === "RETURN" ? returUntuk(dokRetur, m) : null,
+      sumber: sumber.map((s) => ({ receiptNumber: s.receiptNumber ?? null, poNumber: s.poNumber ?? null, qty: Number(s.qty), unitCost: s.unitCost, goodsReceiptId: s.goodsReceiptId ?? null, purchaseOrderId: s.goodsReceiptId ? petaPO.get(s.goodsReceiptId) ?? null : null })),
       sumberDipangkas: basis?.sumberDipangkas ?? 0,
       asOfDasar: basis?.asOf ?? null,
-      faktur: status === "DINILAI" ? { status: statusFaktur, selisih: selisihDiketahui, qtyBelumAdaFaktur: qtyFakturBelumAda, qtyTanpaPO, fakturLama: [...fakturLama] } : null,
+      faktur: status === "DINILAI" ? { status: statusFaktur, selisih: selisihDiketahui, qtyBelumAdaFaktur: qtyFakturBelumAda, qtyTanpaPO, fakturLama: [...fakturLama], dokumen: [...fakturDok.values()] } : null,
     });
   }
 
@@ -255,14 +273,14 @@ export async function bacaJejakUnit(db, unitId, { izinHarga = false } = {}) {
 
   // ── ringkasan & daftar belum final ──
   const belumFinal = [];
-  let biaya = ZERO; let adaDinilai = false; let susut = ZERO; let selisihFaktur = ZERO; let penyesuaian = ZERO;
+  let biaya = ZERO; let bruto = ZERO; let returTotal = ZERO; let adaDinilai = false; let susut = ZERO; let selisihFaktur = ZERO; let penyesuaian = ZERO;
   let estimasiBelumFinal = ZERO;
   for (const r of baris) {
     if (r.status === "DINILAI") {
       adaDinilai = true;
       if (r.jenisBiaya === "SUSUT") susut = susut.plus(r.nilai);
       else if (r.jenisBiaya === "PENYESUAIAN") { penyesuaian = penyesuaian.plus(r.nilai); biaya = biaya.plus(r.nilai); }
-      else biaya = biaya.plus(r.nilai);
+      else { biaya = biaya.plus(r.nilai); if (r.jenisBiaya === "RETUR") returTotal = returTotal.minus(r.nilai); else bruto = bruto.plus(r.nilai); }
       if (r.jenisBiaya !== "SUSUT") selisihFaktur = selisihFaktur.plus(r.faktur?.selisih ?? ZERO);
       if (r.faktur?.status === "FAKTUR_BELUM_ADA" || r.faktur?.status === "FAKTUR_SEBAGIAN") belumFinal.push({ jenis: "FAKTUR_BELUM_ADA", movementId: r.movementId, kode: r.kode, pesan: `${r.kode}: sebagian harga masih menurut PO, faktur supplier belum disetujui (selisih harga faktur belum diketahui)`, qty: Number(r.faktur.qtyBelumAdaFaktur) });
     } else if (r.status === "TANPA_HARGA") {
@@ -308,6 +326,7 @@ export async function bacaJejakUnit(db, unitId, { izinHarga = false } = {}) {
     produksiSelesai,
     ringkasan: {
       biayaPersediaan: { nilai: adaDinilai ? biaya : null, lengkap: adaDinilai && statusBiaya === "FINAL_MENURUT_HARGA_PO", sebagian: adaDinilai && statusBiaya !== "FINAL_MENURUT_HARGA_PO", dasar: "Harga PO/perolehan (rata-rata tertimbang) yang dibekukan saat pergerakan diposting" },
+      totalBiaya: adaDinilai ? bruto : null, totalRetur: adaDinilai ? returTotal : null, totalWaste: adaDinilai ? susut : null, nilaiBersih: adaDinilai ? biaya : null,
       nilaiSusut: adaDinilai ? susut : null,
       penyesuaian: penyesuaian,
       selisihHargaFaktur: { nilai: selisihFaktur, catatan: "Di luar biaya persediaan; dibukukan ke Selisih Harga Pembelian saat faktur disetujui. Hanya bagian yang fakturnya sudah disetujui." },
@@ -331,6 +350,7 @@ function serialisasi(h) {
       ...h.ringkasan,
       biayaPersediaan: { ...h.ringkasan.biayaPersediaan, nilai: uang(h.ringkasan.biayaPersediaan.nilai) },
       nilaiSusut: uang(h.ringkasan.nilaiSusut), penyesuaian: uang(h.ringkasan.penyesuaian),
+      totalBiaya: uang(h.ringkasan.totalBiaya), totalRetur: uang(h.ringkasan.totalRetur), totalWaste: uang(h.ringkasan.totalWaste), nilaiBersih: uang(h.ringkasan.nilaiBersih),
       selisihHargaFaktur: { ...h.ringkasan.selisihHargaFaktur, nilai: uang(h.ringkasan.selisihHargaFaktur.nilai) },
       estimasiBelumFinal: uang(h.ringkasan.estimasiBelumFinal),
     },
@@ -347,7 +367,7 @@ function serialisasi(h) {
 function sembunyikanHarga(h) {
   return {
     ...h,
-    ringkasan: { ...h.ringkasan, biayaPersediaan: { nilai: null, lengkap: h.ringkasan.biayaPersediaan.lengkap, sebagian: h.ringkasan.biayaPersediaan.sebagian, dasar: null }, nilaiSusut: null, penyesuaian: null, selisihHargaFaktur: null, estimasiBelumFinal: null },
+    ringkasan: { ...h.ringkasan, biayaPersediaan: { nilai: null, lengkap: h.ringkasan.biayaPersediaan.lengkap, sebagian: h.ringkasan.biayaPersediaan.sebagian, dasar: null }, nilaiSusut: null, penyesuaian: null, selisihHargaFaktur: null, estimasiBelumFinal: null, totalBiaya: null, totalRetur: null, totalWaste: null, nilaiBersih: null },
     bahan: h.bahan.map((b) => ({
       ...b,
       pergerakan: b.pergerakan.map((r) => ({

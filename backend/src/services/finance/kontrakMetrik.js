@@ -207,6 +207,17 @@ export const METRIK = Object.freeze([
     "saldo akun Persediaan (penerimaan − HPP pemakaian ± opname)", "jurnal persediaan; kuantitas dari stock_movements", "terposting", "POSISI",
     ["Penerimaan barang bernilai", "Persediaan awal (cutover)"], ["Barang yang dipakai produksi (menjadi HPP)"], ["pembelian_aktif", "utang_supplier"], ["Persediaan Awal", "Neraca"], []),
 
+  m("biaya_bahan_unit_bersih", "Biaya Bahan Bersih per Unit", "ASET",
+    "Biaya bahan baku yang dipakai satu unit produksi menurut harga PO/perolehan yang DIBEKUKAN saat Gudang memposting pergerakan stok, dikurangi retur yang sudah diterima Gudang. Waste dan selisih harga faktur dilaporkan terpisah.",
+    "Σ nilai beku pemakaian (Material Issue) − Σ nilai beku retur diterima; baris tanpa harga tidak dihitung (kosong, bukan Rp0)", "tabel fin_stock_movement_valuations + stock_movements", "dinilai (harga PO/perolehan rata-rata tertimbang saat diposting)", "TGL_DOKUMEN",
+    ["Pemakaian lewat Material Issue yang sudah dikeluarkan Gudang", "Retur sisa bahan yang sudah diterima Gudang (mengurangi biaya)"], ["Waste/susut (dilaporkan terpisah)", "Selisih harga faktur supplier", "Pemakaian tanpa harga perolehan", "Catatan pemakaian PIC (hanya pembanding fisik)", "Retur yang baru diminta"],
+    ["persediaan_nilai", "biaya_bahan_selisih_faktur"], ["Biaya Bahan per Unit", "Detail PO (Jejak Biaya Bahan)"], ["biaya-bahan"]),
+  m("biaya_bahan_selisih_faktur", "Selisih Harga Faktur (Bahan)", "ASET",
+    "Beda harga faktur supplier terhadap harga PO untuk bahan yang sudah dipakai produksi. Dibukukan ke Selisih Harga Pembelian saat faktur disetujui dan TIDAK pernah mengubah nilai pemakaian historis per unit.",
+    "Σ qty dipakai × (harga faktur − harga PO), hanya bagian yang fakturnya sudah disetujui", "tabel fin_supplier_bill_allocations + dasar harga beku", "faktur DISETUJUI / DIBAYAR_SEBAGIAN / LUNAS", "TGL_DOKUMEN",
+    ["Bagian pemakaian yang fakturnya sudah disetujui"], ["Bagian yang fakturnya belum ada (ditandai belum final)", "Biaya persediaan unit"],
+    ["biaya_bahan_unit_bersih"], ["Biaya Bahan per Unit", "Detail PO (Jejak Biaya Bahan)"], ["biaya-bahan"]),
+
   // ═══ LAPORAN KEUANGAN ════════════════════════════════════════════════════════════════════════════════════════
   m("laba_bersih_sementara", "Laba Bersih Sementara", "LAPORAN",
     "Pendapatan bersih dikurangi HPP dan beban operasional menurut jurnal pada periode. 'Sementara' karena belum semua pengakuan/penyesuaian periode ditutup.",

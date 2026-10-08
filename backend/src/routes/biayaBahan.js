@@ -7,6 +7,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, requireAnyPermission, PERMISSIONS as P, hasPermission } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
 import { bacaJejakUnit, daftarUnitBiaya } from "../services/finance/biayaBahan.js";
+import { bacaJejakPO, bacaJejakPenerimaan } from "../services/finance/biayaBahanSumber.js";
 
 const POLA_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function galat(err, res) {
@@ -38,6 +39,28 @@ biayaBahanFinanceRouter.get("/unit/:id", requirePermission(P.FINANCE_READ), asyn
     if (!POLA_UUID.test(req.params.id)) return res.status(404).json({ error: "Unit tidak ditemukan" });
     const hasil = await bacaJejakUnit(prisma, req.params.id, { izinHarga: true });
     if (!hasil) return res.status(404).json({ error: "Unit tidak ditemukan" });
+    res.json(hasil);
+  } catch (e) { galat(e, res); }
+});
+
+// Panel "Jejak Biaya Bahan" pada PO (Finance): nilai diterima, dipakai Produksi, retur, waste, selisih harga faktur, sampai ke unit.
+biayaBahanFinanceRouter.get("/po/:id", requirePermission(P.FINANCE_READ), async (req, res) => {
+  try {
+    if (!POLA_UUID.test(req.params.id)) return res.status(404).json({ error: "PO tidak ditemukan" });
+    const hasil = await bacaJejakPO(prisma, req.params.id, { izinHarga: true });
+    if (!hasil) return res.status(404).json({ error: "PO tidak ditemukan" });
+    res.json(hasil);
+  } catch (e) { galat(e, res); }
+});
+
+// Progres penerimaan di Gudang: Diterima → Diperiksa → Simpan ke Stok → Dipakai Produksi / Tersisa. Harga hanya untuk yang punya finance:read.
+export const jejakPenerimaanRouter = express.Router();
+jejakPenerimaanRouter.use(requireAuth);
+jejakPenerimaanRouter.get("/:id/jejak-pemakaian", requireAnyPermission(P.INVENTORY_READ, P.FINANCE_READ), async (req, res) => {
+  try {
+    if (!POLA_UUID.test(req.params.id)) return res.status(404).json({ error: "Penerimaan tidak ditemukan" });
+    const hasil = await bacaJejakPenerimaan(prisma, req.params.id, { izinHarga: hasPermission(req.user, P.FINANCE_READ) });
+    if (!hasil) return res.status(404).json({ error: "Penerimaan tidak ditemukan" });
     res.json(hasil);
   } catch (e) { galat(e, res); }
 });

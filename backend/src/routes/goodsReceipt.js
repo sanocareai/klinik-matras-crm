@@ -185,7 +185,7 @@ goodsReceiptRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), async (re
         throw new ReceiptError(`Tidak bisa langsung ke status ${status} dari ${existing.status} — harus berurutan`);
       }
       if (status === "COMPLETED") {
-        throw new ReceiptError("Status COMPLETED hanya ditetapkan lewat putaway (POST /:id/putaway)");
+        throw new ReceiptError("Status COMPLETED hanya ditetapkan lewat Simpan ke Stok (POST /:id/putaway)");
       }
       data.status = status;
     }
@@ -260,7 +260,7 @@ goodsReceiptRouter.post("/:id/putaway", requirePermission(P.INVENTORY_WRITE), as
       await lockRowForUpdate(tx, "goods_receipts", preCheck.id);
       const receipt = await tx.goodsReceipt.findUnique({ where: { id: preCheck.id }, include: receiptInclude });
       if (receipt.status !== "READY_FOR_PUTAWAY") {
-        throw new ReceiptError("Hanya receipt berstatus Ready for Putaway yang bisa ditempatkan");
+        throw new ReceiptError("Hanya receipt berstatus Siap Disimpan yang bisa disimpan ke stok");
       }
       const diterima = receipt.lines.filter((l) => l.acceptedQty != null && l.acceptedQty > 0);
       if (diterima.length === 0) {
@@ -275,7 +275,7 @@ goodsReceiptRouter.post("/:id/putaway", requirePermission(P.INVENTORY_WRITE), as
           materialId: line.materialId, type: "RECEIPT", qty: line.acceptedQty,
           unitCost: line.purchaseOrderLineId ? cek?.harga.get(line.purchaseOrderLineId) : undefined,
           location, supplier: receipt.supplier || null,
-          note: `Putaway ${receipt.receiptNumber}`, goodsReceiptId: receipt.id,
+          note: `Simpan ke Stok ${receipt.receiptNumber}`, goodsReceiptId: receipt.id,
           createdById: req.user.id,
         });
       }

@@ -13,7 +13,7 @@ import express from "express";
 const { inventoryRouter } = await import("../../../src/routes/inventory.js");
 const { goodsReceiptRouter } = await import("../../../src/routes/goodsReceipt.js");
 const { purchaseOrderFinanceRouter, purchaseOrderGudangRouter } = await import("../../../src/routes/purchaseOrders.js");
-const { jejakBahanUnitRouter, biayaBahanFinanceRouter } = await import("../../../src/routes/biayaBahan.js");
+const { jejakBahanUnitRouter, biayaBahanFinanceRouter, jejakPenerimaanRouter } = await import("../../../src/routes/biayaBahan.js");
 const { materialIssueRouter } = await import("../../../src/routes/materialIssue.js");
 const { stockTransferRouter } = await import("../../../src/routes/stockTransfer.js");
 const { stockCountRouter } = await import("../../../src/routes/stockCount.js");
@@ -101,6 +101,7 @@ export function buildTestApp() {
   app.use("/api/production", productionRouter); // P12B.5: work-orders (penanda sumber V1/V2)
   app.use("/api/morning-priority-requests", morningPriorityRouter);
   app.use("/api/inventory", inventoryRouter);
+  app.use("/api/inventory/goods-receipts", jejakPenerimaanRouter);
   app.use("/api/inventory/goods-receipts", goodsReceiptRouter);
   app.use("/api/inventory/purchase-orders", purchaseOrderGudangRouter);
   app.use("/api/inventory/material-issues", materialIssueRouter);

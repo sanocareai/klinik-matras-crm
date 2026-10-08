@@ -92,7 +92,7 @@ test("COVERAGE TAB: setiap halaman Finance diklasifikasi — punya metrik di kon
   const TANPA_ANGKA = new Set(["FinanceAccounts.jsx", "FinanceInvoices.jsx", "FinanceJournal.jsx", "FinanceLedger.jsx", "FinancePersediaanAwal.jsx", "FinanceSettings.jsx", "FinancePengecualianLunas.jsx", "FinancePenjualanKaryawan.jsx",
     // Purchase Order: nilai PO/ditunggu adalah KOMITMEN dokumen (harga × jumlah), bukan angka buku besar — PO tidak menjurnal apa pun, jadi tidak ada metrik kontrak untuknya.
     "FinancePurchaseOrders.jsx",
-    // Biaya Bahan per Unit: read-model nilai pergerakan stok yang DIBEKUKAN (bukan metrik kontrak laporan keuangan); tidak menjurnal dan tidak menyimpan total di Unit.
+    // Biaya Bahan per Unit: kartu angkanya hidup di komponen JejakBiayaBahan (read-model nilai beku); definisinya tetap di kontrak (biaya_bahan_*) dan dipakai panel KenapaBeda halaman ini.
     "FinanceBiayaBahan.jsx"]);
   // Halaman tipis yang seluruh kartunya hidup di komponen fitur: kunci metrik dibaca dari komponen itu (tetap divalidasi terhadap kontrak).
   const DELEGASI_FITUR = { "FinanceLaporanDivisi.jsx": "../features/laporanDivisi/LaporanDivisi.jsx" };

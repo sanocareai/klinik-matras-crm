@@ -317,7 +317,7 @@ export async function periksaPutaway(tx, receipt) {
   await lockRowForUpdate(tx, "fin_purchase_orders", receipt.purchaseOrderId);
   const po = await tx.finPurchaseOrder.findUnique({ where: { id: receipt.purchaseOrderId }, include: { lines: true } });
   if (!STATUS_PO_BISA_DITERIMA.includes(po.status)) {
-    throw gagal(`PO ${po.poNumber} berstatus ${po.status} — penerimaan ini tidak bisa ditempatkan. Hubungi Finance.`, 409);
+    throw gagal(`PO ${po.poNumber} berstatus ${po.status} — penerimaan ini tidak bisa disimpan ke stok. Hubungi Finance.`, 409);
   }
   const kuantitas = await hitungKuantitas(tx, po);
   const harga = new Map();
@@ -329,7 +329,7 @@ export async function periksaPutaway(tx, receipt) {
     if (k(l.acceptedQty) > k(q.belumDiterima)) {
       throw gagal(
         `Jumlah baik ${l.material?.code ?? ""} (${l.acceptedQty}) melebihi sisa PO ${po.poNumber} (${q.belumDiterima} dari ${q.dipesan} dipesan; ` +
-        `${q.diterimaBaik} sudah masuk stok). Putaway dibatalkan, tidak ada stok yang tertulis. Kurangi jumlah baik atau minta Finance merevisi jumlah PO.`, 409);
+        `${q.diterimaBaik} sudah masuk stok). Simpan ke Stok dibatalkan, tidak ada stok yang tertulis. Kurangi jumlah baik atau minta Finance merevisi jumlah PO.`, 409);
     }
     harga.set(l.purchaseOrderLineId, baris.unitPrice);
   }

@@ -79,7 +79,7 @@ import { mobileRouter } from "./routes/mobileAuth.js";
 import { inventoryRouter }  from "./routes/inventory.js";
 import { goodsReceiptRouter } from "./routes/goodsReceipt.js";
 import { purchaseOrderFinanceRouter, purchaseOrderGudangRouter } from "./routes/purchaseOrders.js";
-import { jejakBahanUnitRouter, biayaBahanFinanceRouter } from "./routes/biayaBahan.js";
+import { jejakBahanUnitRouter, biayaBahanFinanceRouter, jejakPenerimaanRouter } from "./routes/biayaBahan.js";
 import { materialIssueRouter } from "./routes/materialIssue.js";
 import { complaintsRouter } from "./routes/complaints.js";
 import { stockTransferRouter } from "./routes/stockTransfer.js";
@@ -275,6 +275,7 @@ app.use("/api/finance",      financeMediaRouter);
 // Aplikasi mobile Finance: sesi 15 menit + refresh rotasi, token push perangkat, config.
 app.use("/api/mobile",       mobileRouter);
 app.use("/api/inventory",    inventoryRouter);
+app.use("/api/inventory/goods-receipts", jejakPenerimaanRouter); // jejak pemakaian per penerimaan (baca-saja) — sebelum router penerimaan
 app.use("/api/inventory/goods-receipts", goodsReceiptRouter);
 app.use("/api/inventory/purchase-orders", purchaseOrderGudangRouter); // PO bahan baku — Gudang baca saja, tanpa harga
 app.use("/api/finance/purchase-orders", purchaseOrderFinanceRouter);

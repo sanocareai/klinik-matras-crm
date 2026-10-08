@@ -160,6 +160,45 @@ test("satu unit: penerimaan parsial PO, beberapa Material Issue, waste, retur, f
   const jenis = j.belumFinal.map((x) => x.jenis);
   assert.ok(jenis.includes("TANPA_HARGA") && jenis.includes("RETUR_BELUM_DITERIMA") && jenis.includes("PRODUKSI_BELUM_SELESAI") && jenis.includes("FAKTUR_BELUM_ADA"), jenis.join(","));
   assert.equal(j.ringkasan.jumlahTanpaHarga, 1);
+  // total eksplisit untuk API: pemakaian − retur = bersih; waste terpisah; status per baris DINILAI/TANPA_HARGA/BELUM_FINAL
+  assert.deepEqual([j.ringkasan.totalBiaya, j.ringkasan.totalRetur, j.ringkasan.totalWaste, j.ringkasan.nilaiBersih], [379_740, 91_948, 45_974, 287_792]);
+  assert.equal(j.ringkasan.totalBiaya - j.ringkasan.totalRetur, j.ringkasan.nilaiBersih);
+  assert.deepEqual(lem.pergerakan.map((r) => r.statusBiaya), ["DINILAI", "DINILAI", "DINILAI", "DINILAI"]);
+  assert.equal(b.statusBiaya, "TANPA_HARGA");
+  // tautan dokumen sumber: PO, penerimaan, faktur
+  assert.equal(lem.pergerakan[0].sumber[0].purchaseOrderId, po1.id);
+  assert.equal(lem.pergerakan[0].sumber[0].goodsReceiptId, r1.id);
+  assert.deepEqual(lem.pergerakan[0].faktur.dokumen.map((x) => x.id), [fk.body.billId]);
+
+  // Panel PO (Finance): dekomposisi dari dasar harga beku — PO1 6 KG @43.290, PO2 4 KG @50.000; jumlah kedua PO = total unit
+  const pp1 = (await w.f.get(`/api/finance/biaya-bahan/po/${po1.id}`)).body;
+  const pp2 = (await w.f.get(`/api/finance/biaya-bahan/po/${po2.id}`)).body;
+  assert.deepEqual([pp1.ringkasan.nilaiDiterima, pp1.ringkasan.nilaiDipakai, pp1.ringkasan.nilaiRetur, pp1.ringkasan.nilaiWaste, pp1.ringkasan.nilaiBersihDipakai, pp1.ringkasan.selisihHargaFaktur], [259_740, 259_740, 51_948, 25_974, 207_792, 4_260]);
+  assert.deepEqual([pp2.ringkasan.nilaiDiterima, pp2.ringkasan.nilaiDipakai, pp2.ringkasan.nilaiRetur, pp2.ringkasan.nilaiWaste, pp2.ringkasan.selisihHargaFaktur], [200_000, 100_000, 40_000, 20_000, 0]);
+  assert.equal(pp1.ringkasan.nilaiDipakai + pp2.ringkasan.nilaiDipakai, 359_740, "pemakaian kedua PO = pemakaian bahan LEM di unit");
+  assert.equal(pp1.ringkasan.nilaiRetur + pp2.ringkasan.nilaiRetur, 91_948);
+  assert.equal(pp1.ringkasan.nilaiWaste + pp2.ringkasan.nilaiWaste, 45_974);
+  assert.equal(pp1.unit.length, 1);
+  assert.equal(pp1.unit[0].unitId, w.unit.id);
+  // selisih faktur TIDAK mengubah nilai pemakaian historis (sebelum/sesudah faktur sama)
+  assert.equal(lem.pergerakan[0].nilai, 129_870);
+
+  // Progres Gudang per penerimaan: Diterima → Diperiksa → Simpan ke Stok → Dipakai/Tersisa; harga TIDAK dikirim ke peran Gudang
+  const g1 = (await w.g.get(`/api/inventory/goods-receipts/${r1.id}/jejak-pemakaian`)).body;
+  const g2 = (await w.g.get(`/api/inventory/goods-receipts/${r2.id}/jejak-pemakaian`)).body;
+  assert.deepEqual(g1.langkah.map((l) => l.selesai), [true, true, true, true]);
+  assert.deepEqual([g1.bahan[0].masukStok, g1.bahan[0].dipakaiProduksi, g1.bahan[0].waste, g1.bahan[0].returDiterima, g1.bahan[0].tersisa], [6, 6, 0.6, 1.2, 0.6]);
+  assert.deepEqual([g2.bahan[0].masukStok, g2.bahan[0].dipakaiProduksi, g2.bahan[0].waste, g2.bahan[0].returDiterima, g2.bahan[0].tersisa], [4, 2, 0.4, 0.8, 2.4]);
+  const noMi = async (m) => (await testPrisma.materialIssue.findUnique({ where: { id: m.id } })).issueNumber;
+  assert.deepEqual(g1.materialIssue.map((m) => [m.nomor, m.qty]), [[await noMi(mi1), 3], [await noMi(mi2), 3]]);
+  assert.deepEqual(g2.materialIssue.map((m) => [m.nomor, m.qty]), [[await noMi(mi2), 2]]);
+  assert.equal(g1.izinHarga, false);
+  assert.equal(g1.bahan[0].nilaiDipakai, null);
+  assert.ok(!JSON.stringify(g1).match(/43290|43.290|unitCost|hargaDasar/), "tidak ada harga di respons Gudang");
+  assert.equal((await w.f.get(`/api/inventory/goods-receipts/${r1.id}/jejak-pemakaian`)).body.bahan[0].nilaiDipakai, 259_740, "Finance melihat nilai");
+  assert.equal((await w.s.get(`/api/inventory/goods-receipts/${r1.id}/jejak-pemakaian`)).status, 403);
+  assert.equal((await w.s.get(`/api/finance/biaya-bahan/po/${po1.id}`)).status, 403);
+  assert.equal((await w.g.get(`/api/finance/biaya-bahan/po/${po1.id}`)).status, 403, "rute harga PO tertutup untuk Gudang");
 
   // selisih harga faktur terpisah (710 per KG pada lot 1): issue#1 3×710=2.130; issue#2 3×710=2.130 (2 KG dari lot 2 belum ada faktur); retur −1,2×710=−852 → 3.408
   assert.equal(j.ringkasan.selisihHargaFaktur.nilai, 3_408);

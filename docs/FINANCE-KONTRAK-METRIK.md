@@ -601,6 +601,38 @@ Nilai bahan/barang di gudang menurut buku (bertambah dari penerimaan barang, ber
 | Tampil di | Persediaan Awal; Neraca |
 | Export | — |
 
+### Biaya Bahan Bersih per Unit (`biaya_bahan_unit_bersih`)
+
+Biaya bahan baku yang dipakai satu unit produksi menurut harga PO/perolehan yang DIBEKUKAN saat Gudang memposting pergerakan stok, dikurangi retur yang sudah diterima Gudang. Waste dan selisih harga faktur dilaporkan terpisah.
+
+| | |
+|---|---|
+| Rumus | Σ nilai beku pemakaian (Material Issue) − Σ nilai beku retur diterima; baris tanpa harga tidak dihitung (kosong, bukan Rp0) |
+| Sumber | tabel fin_stock_movement_valuations + stock_movements |
+| Status dihitung | dinilai (harga PO/perolehan rata-rata tertimbang saat diposting) |
+| Basis tanggal | Tanggal dokumen |
+| Termasuk | Pemakaian lewat Material Issue yang sudah dikeluarkan Gudang; Retur sisa bahan yang sudah diterima Gudang (mengurangi biaya) |
+| Tidak termasuk | Waste/susut (dilaporkan terpisah); Selisih harga faktur supplier; Pemakaian tanpa harga perolehan; Catatan pemakaian PIC (hanya pembanding fisik); Retur yang baru diminta |
+| Pasangan rekonsiliasi | Nilai Persediaan; Selisih Harga Faktur (Bahan) |
+| Tampil di | Biaya Bahan per Unit; Detail PO (Jejak Biaya Bahan) |
+| Export | biaya-bahan |
+
+### Selisih Harga Faktur (Bahan) (`biaya_bahan_selisih_faktur`)
+
+Beda harga faktur supplier terhadap harga PO untuk bahan yang sudah dipakai produksi. Dibukukan ke Selisih Harga Pembelian saat faktur disetujui dan TIDAK pernah mengubah nilai pemakaian historis per unit.
+
+| | |
+|---|---|
+| Rumus | Σ qty dipakai × (harga faktur − harga PO), hanya bagian yang fakturnya sudah disetujui |
+| Sumber | tabel fin_supplier_bill_allocations + dasar harga beku |
+| Status dihitung | faktur DISETUJUI / DIBAYAR_SEBAGIAN / LUNAS |
+| Basis tanggal | Tanggal dokumen |
+| Termasuk | Bagian pemakaian yang fakturnya sudah disetujui |
+| Tidak termasuk | Bagian yang fakturnya belum ada (ditandai belum final); Biaya persediaan unit |
+| Pasangan rekonsiliasi | Biaya Bahan Bersih per Unit |
+| Tampil di | Biaya Bahan per Unit; Detail PO (Jejak Biaya Bahan) |
+| Export | biaya-bahan |
+
 ## Laporan keuangan
 
 ### Laba Bersih Sementara (`laba_bersih_sementara`)
