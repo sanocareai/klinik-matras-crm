@@ -291,6 +291,8 @@ export function createIntentKeys(makeId = () => globalThis.crypto?.randomUUID?.(
 }
 
 // Galat final (bukan jaringan) -> kunci dilepas; galat jaringan -> kunci dipertahankan untuk Coba Lagi.
+/** Galat command PIC Bahan: pesan server yang SPESIFIK (mis. "Anda bukan PIC Bahan yang ditugaskan…") ditampilkan apa adanya; selain itu pesan ramah umum. */
+export const friendlyBuildError = (e) => (e?.code && /^BUILD_/.test(e.code) && e.message ? e.message : friendlyError(e));
 export const isRetryableError = (error) => !error?.status || error.status >= 500 && error.status !== 503;
 
 export function formatMinutes(total) {

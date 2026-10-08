@@ -3,7 +3,7 @@ import { Loader2 } from "lucide-react";
 import { api } from "@/api.js";
 import { useOnline } from "@/components/StandaloneShell.jsx";
 import { MaterialLines } from "@/features/production/components/StepForm.jsx";
-import { buildMaterialRecordBody, createIntentKeys, friendlyError, isRetryableError, productFlowOf, validateMaterialRecord } from "@/features/production/experience.js";
+import { buildMaterialRecordBody, createIntentKeys, friendlyBuildError, friendlyError, isRetryableError, productFlowOf, validateMaterialRecord } from "@/features/production/experience.js";
 import { submitState } from "./workerAppModel.js";
 import { OfflineNote, SheetHeader } from "./workerSheets.jsx";
 
@@ -43,7 +43,7 @@ export default function MaterialRecordSheet({ card, onClose, onSubmitted }) {
       onSubmitted(result);
     } catch (e) {
       if (isRetryableError(e)) setCanRetry(true); else intentKeysMaterial.release(card.runId, "materials", card.revision);
-      setError(friendlyError(e));
+      setError(friendlyBuildError(e));
       if (e.code === "STEP_REVISION_CONFLICT") onSubmitted(null);
     } finally { setBusy(false); }
   }

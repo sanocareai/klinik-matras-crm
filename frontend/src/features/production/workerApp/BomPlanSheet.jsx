@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, Plus, Search, Trash2 } from "lucide-react";
 import { api } from "@/api.js";
 import { useOnline } from "@/components/StandaloneShell.jsx";
-import { friendlyError, isRetryableError } from "@/features/production/experience.js";
+import { friendlyBuildError, isRetryableError } from "@/features/production/experience.js";
 import { MaterialAttrs } from "@/features/production/componentNotes/MaterialPicker.jsx";
 import { submitState } from "./workerAppModel.js";
 import { bomDraftFromCard, bomLockedReason, bomPayload, bomUnchanged, bomWillReleaseReservation, racikanRefs, validateBomDraft } from "./materialChainModel.js";
@@ -47,7 +47,7 @@ export default function BomPlanSheet({ card, onClose, onSubmitted }) {
       onSubmitted(result);
     } catch (e) {
       if (isRetryableError(e)) setCanRetry(true); else keyRef.current = newKey();
-      setError(friendlyError(e));
+      setError(friendlyBuildError(e));
       if (e.code === "PLAN_REVISION_CONFLICT") onSubmitted(null);
     } finally { setBusy(false); }
   }
