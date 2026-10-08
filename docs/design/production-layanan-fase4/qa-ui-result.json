@@ -1,0 +1,39 @@
+{
+ "note": "Staging terisolasi (BUKAN production); image backend+frontend dari arsip commit bersih bd391aaa/bfa93e38 (kode runtime sama dengan HEAD final; commit sesudahnya hanya tes). A: Meja→QC→Meja→QC (G1); B: QC gagal→rework→uji ulang→QC sesuai + audit bahan + Unit360/laporan; C: Unit360+laporan 390/1440 terang/gelap (B7 diulang setelah asersi huruf-besar-kecil diperbaiki). A.A1.2 dan B.B7 gagal karena asersi skrip (huruf besar/kecil), diverifikasi ulang manual/ulang-jalan.",
+ "runs": {
+  "a": {
+   "pass": 34,
+   "total": 35,
+   "failed": [
+    "A1.2 kondisi awal terbaca: kasur utuh turun 3 cm · 75 kg; fondasi 25 → 15 cm turun 10 cm — terpisah, tidak dijumlahkan"
+   ],
+   "consoleErrors": [
+    "Failed to load resource: the server responded with a status of 409 (Conflict)",
+    "Failed to load resource: the server responded with a status of 409 (Conflict)"
+   ],
+   "http4xx": [
+    "qc 409 POST /api/production-v2/component-notes/units/73d87fb3-0fcd-4e4c-9594-c703227dd512/sections/FOUNDATION_TEST_AFTER @/bengkel/order-produksi",
+    "worker1 409 POST /api/production-v2/component-notes/units/73d87fb3-0fcd-4e4c-9594-c703227dd512/sections/AFTER @/produksi/meja"
+   ]
+  },
+  "b": {
+   "pass": 26,
+   "total": 30,
+   "failed": [
+    "B7 [390-light] Unit 360: kondisi awal → racikan → hasil akhir (angka terpisah; fondasi baru turun 2 cm, kasur jadi turun 1 cm)",
+    "B7 [390-dark] Unit 360: kondisi awal → racikan → hasil akhir (angka terpisah; fondasi baru turun 2 cm, kasur jadi turun 1 cm)",
+    "B7 [1440-light] Unit 360: kondisi awal → racikan → hasil akhir (angka terpisah; fondasi baru turun 2 cm, kasur jadi turun 1 cm)",
+    "B7 [1440-dark] Unit 360: kondisi awal → racikan → hasil akhir (angka terpisah; fondasi baru turun 2 cm, kasur jadi turun 1 cm)"
+   ],
+   "consoleErrors": [],
+   "http4xx": []
+  },
+  "c": {
+   "pass": 12,
+   "total": 12,
+   "failed": [],
+   "consoleErrors": [],
+   "http4xx": []
+  }
+ }
+}

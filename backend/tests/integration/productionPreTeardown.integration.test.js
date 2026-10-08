@@ -404,7 +404,7 @@ test("Fase 3: racikan rencana (fondasi + lapisan atas->bawah, ketebalan, total) 
   assert.equal(resave.body.unchanged, true, "entri lama tanpa supplier tidak membuat versi baru");
 
   // Hasil AKTUAL (AFTER) terpisah dari rencana; perbandingan rencana vs aktual + total tinggi; selisih ditampilkan, tidak dikarang.
-  const after = await post(w.nadya, "AFTER", { expectedVersion: 0, data: { foundation: { action: "REPLACE", system: "BONNELL", note: "ganti penuh" }, layers: [
+  const after = await post(w.nadya, "AFTER", { expectedVersion: 0, data: { deviationNote: "Tebal lapisan 1 menjadi 6 cm; fondasi diganti penuh", foundation: { action: "REPLACE", system: "BONNELL", note: "ganti penuh" }, layers: [
     { action: "REPLACE", material: { kind: "CATALOG", materialId: busa.id }, thicknessCm: 6 }, { action: "KEEP", fromOrder: 2 }, { action: "REPLACE", material: { kind: "MANUAL", text: "Busa bekas" }, thicknessCm: 3 }] } }, "after");
   assert.equal(after.status, 201, JSON.stringify(after.body));
   const n3 = await notes(w.qc, unit.id); const pva = n3.comparison.planVsActual;
