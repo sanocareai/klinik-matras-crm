@@ -72,10 +72,12 @@ export async function nilaiPenerimaan(tx, goodsReceiptId) {
   const movements = await tx.stockMovement.findMany({
     where: { goodsReceiptId, type: "RECEIPT" },
     select: {
-      id: true, qty: true, unitCost: true,
+      id: true, qty: true, unitCost: true, unitCostExact: true,
       material: { select: { id: true, code: true, name: true } },
     },
   });
+  // Harga eksak (penerimaan berkonversi satuan) menggantikan unitCost bulat; selebihnya perilaku lama.
+  for (const m of movements) if (m.unitCostExact != null) m.unitCost = m.unitCostExact;
 
   const berharga = movements.filter((m) => m.unitCost != null && m.unitCost > 0);
   const tanpaHarga = movements.filter((m) => m.unitCost == null || m.unitCost <= 0);

@@ -88,7 +88,7 @@ async function selisihFakturPerLot(db, sumberSemua, bahanId) {
     where: { goodsReceiptId: { in: idPenerimaan }, materialId: { in: bahanId } },
     select: {
       id: true, goodsReceiptId: true, materialId: true, acceptedQty: true, purchaseOrderLineId: true,
-      purchaseOrderLine: { select: { unitPrice: true } },
+      purchaseOrderLine: { select: { unitPrice: true, conversionFactor: true } },
       billAllocations: {
         where: { bill: { status: { in: STATUS_TAGIHAN_MASUK_BUKU } } },
         select: { qty: true, billPoLine: { select: { invoiceUnitPrice: true } }, bill: { select: { id: true, billNumber: true } } },
@@ -104,6 +104,8 @@ async function selisihFakturPerLot(db, sumberSemua, bahanId) {
     peta.set(`${b.goodsReceiptId}|${b.materialId}`, {
       adaPO: !!b.purchaseOrderLineId,
       hargaPO: b.purchaseOrderLine?.unitPrice ?? null,
+      // Harga PO/faktur dalam SATUAN BELI; qty jejak dalam satuan stok → bagi dengan faktor konversi (1 bila tanpa konversi).
+      faktor: d(b.purchaseOrderLine?.conversionFactor ?? 1),
       diterima, tercakup: tercakup.greaterThan(diterima) ? diterima : tercakup,
       hargaFakturRata: tercakup.isZero() ? null : nilaiFaktur.dividedBy(tercakup),
       fakturLama: b.goodsReceipt.finSupplierBills.map((x) => x.billNumber),
@@ -216,7 +218,7 @@ export async function bacaJejakUnit(db, unitId, { izinHarga = false } = {}) {
         if (!s.goodsReceiptId || !l || !l.adaPO) { qtyTanpaPO = qtyTanpaPO.plus(qtyLot); l?.fakturLama.forEach((n) => fakturLama.add(n)); continue; }
         const porsiTercakup = l.diterima.isZero() ? ZERO : l.tercakup.dividedBy(l.diterima);
         const qtyTercakup = qtyLot.times(porsiTercakup);
-        if (l.hargaFakturRata != null) selisihDiketahui = selisihDiketahui.plus(qtyTercakup.times(l.hargaFakturRata.minus(d(l.hargaPO))).times(tandaBiaya));
+        if (l.hargaFakturRata != null) selisihDiketahui = selisihDiketahui.plus(qtyTercakup.times(l.hargaFakturRata.minus(d(l.hargaPO))).dividedBy(l.faktor).times(tandaBiaya));
         qtyFakturBelumAda = qtyFakturBelumAda.plus(qtyLot.minus(qtyTercakup));
       }
     }

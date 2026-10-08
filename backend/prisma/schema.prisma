@@ -5174,6 +5174,16 @@ model Material {
 
   active Boolean @default(true)
 
+  // SKU baru dari Purchase Order (Okt 2026) — semua nullable; material lama TIDAK terisi (tidak ditebak).
+  // kind: BAHAN_PRODUKSI (tersedia di katalog Produksi) | PERLENGKAPAN_STOK (hanya Gudang; tidak jadi bahan BOM Produksi). NULL = material lama (perilaku lama).
+  kind          String?  @map("kind") @db.VarChar(24)
+  specification String?
+  storageHint   String?  @map("storage_hint")
+  createdVia    String?  @map("created_via") @db.VarChar(20)
+  createdById   String?  @map("created_by")
+  skuOrigin       FinMaterialSkuOrigin?
+  supplierCatalog FinSupplierMaterial[]
+
   // Reorder alert (PRD FR-I-05), D-024. Keduanya OPSIONAL dengan sengaja —
   // tidak semua material perlu dipantau (bahan langka/sekali pakai tidak
   // relevan direstok). reorderPoint null = alert MATI untuk material itu,
@@ -5241,6 +5251,9 @@ model StockMovement {
   // Diisi saat RECEIPT (FR-I-01: "records qty, unit cost, supplier,
   // batch") — bukan fitur tambahan, ini bagian inti goods receipt.
   unitCost    Int?    @map("unit_cost") // Rupiah per satuan
+  // Harga satuan stok EKSAK untuk penerimaan dengan konversi satuan (mis. 1 BOX Rp43.290 = 12 CAN → 3.607,5/CAN). Terisi HANYA pada penerimaan berkonversi;
+  // unitCost (Int) tetap diisi (dibulatkan) untuk pembaca lama. Penilaian (jurnal, rata-rata tertimbang, jejak biaya) memakai nilai eksak bila ada.
+  unitCostExact Decimal? @map("unit_cost_exact") @db.Decimal(24, 8)
   supplier    String?
   batchNumber String? @map("batch_number")
 
@@ -7243,6 +7256,8 @@ model FinSupplier {
   purchases    FinPurchase[]
   journalLines FinJournalLine[]
   purchaseOrders FinPurchaseOrder[]
+  materialCatalog FinSupplierMaterial[]
+  skuPertama      FinMaterialSkuOrigin[]
 
   @@index([active])
   @@map("fin_suppliers")
@@ -7411,6 +7426,7 @@ model FinPurchaseOrder {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   lines    FinPurchaseOrderLine[]
+  skuPertama FinMaterialSkuOrigin[]
   events   FinPurchaseOrderEvent[]
   receipts GoodsReceipt[]
   bills    FinSupplierBill[]
@@ -7436,6 +7452,15 @@ model FinPurchaseOrderLine {
   unitPrice Int     @map("unit_price")
   notes     String?
   sortOrder Int     @default(0) @map("sort_order")
+
+  // Konversi satuan pembelian → satuan stok (Okt 2026). NULL = tanpa konversi (satuan PO = satuan stok, perilaku lama). Terisi: unit = purchaseUnit (BOX),
+  // qty dalam satuan pembelian, stok bertambah qty × conversionFactor (satuan stok material) saat Simpan ke Stok. Snapshot — tidak berubah bila katalog supplier berubah.
+  purchaseUnit      String?  @map("purchase_unit") @db.VarChar(20)
+  conversionFactor  Decimal? @map("conversion_factor") @db.Decimal(18, 4)
+  supplierMaterialId String? @map("supplier_material_id") @db.Uuid
+  supplierMaterial  FinSupplierMaterial? @relation(fields: [supplierMaterialId], references: [id], onDelete: SetNull)
+  supplierItemName  String?  @map("supplier_item_name")
+  supplierSku       String?  @map("supplier_sku")
 
   receiptLines GoodsReceiptLine[]
   billLines    FinSupplierBillPoLine[]
@@ -10080,4 +10105,56 @@ model FinCashCount {
 
   @@index([cashAccountId, countDate])
   @@map("fin_cash_counts")
+}
+
+
+// Asal SKU yang dibuat dari form Purchase Order (Okt 2026): siapa, kapan, PO & supplier pertama, data awal, kandidat/alasan override duplikat. 1:1 dengan material.
+model FinMaterialSkuOrigin {
+  id         String   @id @default(uuid()) @db.Uuid
+  materialId String   @unique @map("material_id") @db.Uuid
+  material   Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
+
+  createdById          String?   @map("created_by")
+  firstPurchaseOrderId String?   @map("first_purchase_order_id") @db.Uuid
+  firstPurchaseOrder   FinPurchaseOrder? @relation(fields: [firstPurchaseOrderId], references: [id], onDelete: SetNull)
+  firstSupplierId      String?   @map("first_supplier_id") @db.Uuid
+  firstSupplier        FinSupplier? @relation(fields: [firstSupplierId], references: [id], onDelete: SetNull)
+  normalizedName       String    @map("normalized_name")
+  initialData          Json      @map("initial_data")
+  duplicateCandidates  Json?     @map("duplicate_candidates")
+  duplicateOverrideReason String? @map("duplicate_override_reason")
+  createdAt            DateTime  @default(now()) @map("created_at")
+
+  @@index([normalizedName])
+  @@map("fin_material_sku_origins")
+}
+
+// Katalog Supplier: relasi supplier ↔ material internal (satu SKU internal, banyak supplier). Harga terakhir HANYA informasi — tidak menulis ulang PO lama, stok, atau biaya.
+model FinSupplierMaterial {
+  id         String      @id @default(uuid()) @db.Uuid
+  supplierId String      @map("supplier_id") @db.Uuid
+  supplier   FinSupplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  materialId String      @map("material_id") @db.Uuid
+  material   Material    @relation(fields: [materialId], references: [id], onDelete: Restrict)
+
+  supplierItemName String? @map("supplier_item_name")
+  supplierSku      String? @map("supplier_sku")
+  purchaseUnit     String  @map("purchase_unit") @db.VarChar(20)
+  conversionFactor Decimal @default(1) @map("conversion_factor") @db.Decimal(18, 4)
+  moq              Decimal? @db.Decimal(14, 3)
+  leadTimeDays     Int?    @map("lead_time_days")
+  lastPrice        Int?    @map("last_price")
+  lastPriceAt      DateTime? @map("last_price_at") @db.Date
+  active           Boolean @default(true)
+
+  createdById String?  @map("created_by")
+  updatedById String?  @map("updated_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  poLines FinPurchaseOrderLine[]
+
+  @@unique([supplierId, materialId])
+  @@index([materialId])
+  @@map("fin_supplier_materials")
 }

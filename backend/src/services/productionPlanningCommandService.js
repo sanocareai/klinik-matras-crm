@@ -449,6 +449,8 @@ export async function setPlannedBOMInTx(tx, { plan, lines, actorId, commandId = 
     const material = byId.get(line.materialId);
     if (!material) throw planError("Material tidak ditemukan", 404, "PLAN_BOM_MATERIAL_NOT_FOUND", { materialId: line.materialId });
     if (!material.active) throw planError(`Material ${material.code} sudah nonaktif`, 422, "PLAN_BOM_MATERIAL_INACTIVE", { materialId: line.materialId });
+    // SKU "Perlengkapan Stok" (dibuat dari PO) hanya untuk Gudang — bukan bahan produksi, jadi tidak boleh masuk BOM. Material lama (kind NULL) tidak terpengaruh.
+    if (material.kind === "PERLENGKAPAN_STOK") throw planError(`${material.code} adalah Perlengkapan Stok (hanya Gudang) dan tidak bisa menjadi bahan BOM Produksi`, 422, "PLAN_BOM_MATERIAL_PERLENGKAPAN_STOK", { materialId: line.materialId });
   }
 
   const now = new Date();

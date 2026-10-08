@@ -7,10 +7,12 @@ import { requireAuth } from "../middleware/auth.js";
 import { idempotency } from "../middleware/idempotency.js";
 import { requirePermission, PERMISSIONS as P, hasPermission } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
+const POLA_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 import { handleFinanceError } from "./finance.js";
 import { bentukPO, daftarPO, daftarRiwayat, buatPO, ubahDraf, setujuiPO, batalkanPO, revisiJumlah } from "../services/finance/purchaseOrder.js";
 import { bangunViewPO, namaBerkasPO } from "../services/finance/purchaseOrderDocument.js";
 import { renderPurchaseOrderPdf } from "../services/purchaseOrderPdf.js";
+import { pratinjauDuplikat, daftarKatalog, bacaAsalSku, perbaikiSku } from "../services/finance/skuBaru.js";
 import { pandanganPenagihan, buatTagihanDariPO, ubahTagihanPO, evaluasiTagihanPO } from "../services/finance/purchaseOrderBill.js";
 
 // ── Finance ──────────────────────────────────────────────────────────────
@@ -23,6 +25,30 @@ purchaseOrderFinanceRouter.get("/", requirePermission(P.FINANCE_READ), async (re
     const { status, supplierId, q } = req.query;
     res.json({ purchaseOrders: await daftarPO(prisma, { status, supplierId, q, harga: true }) });
   } catch (e) { handleFinanceError(e, res); }
+});
+
+// ── SKU baru dari PO + Katalog Supplier (rute statis SEBELUM /:id). Membuat/memperbaiki SKU = finance:admin; membaca katalog = finance:read.
+// Pratinjau TIDAK menulis apa pun (SKU baru baru lahir saat draf PO disimpan, atomik dengan PO-nya).
+purchaseOrderFinanceRouter.post("/sku/cek-duplikat", requirePermission(P.FINANCE_ADMIN), async (req, res) => {
+  try { res.json(await pratinjauDuplikat(prisma, { supplierId: req.body?.supplierId, materialBaru: req.body?.materialBaru })); } catch (e) { handleFinanceError(e, res); }
+});
+purchaseOrderFinanceRouter.get("/sku/:materialId", requirePermission(P.FINANCE_READ), async (req, res) => {
+  try {
+    if (!POLA_UUID.test(req.params.materialId)) return res.status(404).json({ error: "Material tidak ditemukan" });
+    const a = await bacaAsalSku(prisma, req.params.materialId);
+    if (!a) return res.status(404).json({ error: "Material tidak ditemukan" });
+    res.json(a);
+  } catch (e) { handleFinanceError(e, res); }
+});
+purchaseOrderFinanceRouter.patch("/sku/:materialId", requirePermission(P.FINANCE_ADMIN), async (req, res) => {
+  try {
+    if (!POLA_UUID.test(req.params.materialId)) return res.status(404).json({ error: "Material tidak ditemukan" });
+    await prisma.$transaction((tx) => perbaikiSku(tx, { materialId: req.params.materialId, body: req.body, userId: req.user.id }));
+    res.json(await bacaAsalSku(prisma, req.params.materialId));
+  } catch (e) { handleFinanceError(e, res); }
+});
+purchaseOrderFinanceRouter.get("/katalog-supplier", requirePermission(P.FINANCE_READ), async (req, res) => {
+  try { res.json({ katalog: await daftarKatalog(prisma, { supplierId: req.query.supplierId, materialId: req.query.materialId, q: req.query.q, aktif: req.query.aktif, harga: true }) }); } catch (e) { handleFinanceError(e, res); }
 });
 
 // ── Faktur supplier atas PO (Fase 2): pencocokan per baris. Persetujuan lewat POST /api/finance/bills/:id/approve (body.catatanTinjauanHarga bila harga berbeda).
@@ -58,7 +84,6 @@ purchaseOrderFinanceRouter.post("/:id/faktur", requirePermission(P.FINANCE_POST)
 });
 
 // PDF Purchase Order (sistem dokumen SANSS yang sama dengan invoice). Hanya Finance (memuat harga & nilai). Murni baca: tidak mengubah PO, stok, atau jurnal.
-const POLA_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 purchaseOrderFinanceRouter.get("/:id/pdf", requirePermission(P.FINANCE_READ), async (req, res) => {
   try {
     if (!POLA_UUID.test(req.params.id)) return res.status(404).json({ error: "PO tidak ditemukan" });
@@ -93,7 +118,7 @@ async function jalankan(res, fn) {
 
 purchaseOrderFinanceRouter.post("/", requirePermission(P.FINANCE_POST), async (req, res) => {
   try {
-    const id = await prisma.$transaction((tx) => buatPO(tx, { body: req.body, userId: req.user.id, bolehOverride: hasPermission(req.user, P.FINANCE_ADMIN) }));
+    const id = await prisma.$transaction((tx) => buatPO(tx, { body: req.body, userId: req.user.id, bolehOverride: hasPermission(req.user, P.FINANCE_ADMIN), bolehBuatSku: hasPermission(req.user, P.FINANCE_ADMIN) }));
     const po = await bentukPO(prisma, id, { harga: true });
     res.status(201).json({ ...po, riwayat: await daftarRiwayat(prisma, id) });
   } catch (e) { handleFinanceError(e, res); }
@@ -101,7 +126,7 @@ purchaseOrderFinanceRouter.post("/", requirePermission(P.FINANCE_POST), async (r
 
 purchaseOrderFinanceRouter.patch("/:id", requirePermission(P.FINANCE_POST), async (req, res) => {
   try {
-    await jalankan(res, (tx) => ubahDraf(tx, { id: req.params.id, body: req.body, userId: req.user.id, bolehOverride: hasPermission(req.user, P.FINANCE_ADMIN) }));
+    await jalankan(res, (tx) => ubahDraf(tx, { id: req.params.id, body: req.body, userId: req.user.id, bolehOverride: hasPermission(req.user, P.FINANCE_ADMIN), bolehBuatSku: hasPermission(req.user, P.FINANCE_ADMIN) }));
   } catch (e) { handleFinanceError(e, res); }
 });
 

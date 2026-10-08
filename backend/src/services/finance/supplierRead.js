@@ -8,6 +8,7 @@
 
 import { jenisTampilan } from "./jenisTagihan.js";
 import { toMoney, sumMoney, moneyToNumber, ZERO } from "./money.js";
+import { nilaiBarisPenerimaan } from "./posting/supplier.js";
 import { ringkasBiaya } from "./transferFee.js";
 
 /** Urutkan baris hasil query `id in (...)` mengikuti urutan `ids` (urutan layar). */
@@ -149,7 +150,7 @@ export async function ambilPenerimaanBelumDitagih(db) {
     take: 100,
     select: {
       id: true, receiptNumber: true, supplier: true, receivedDate: true, sourceReference: true,
-      movements: { where: { type: "RECEIPT" }, select: { qty: true, unitCost: true } },
+      movements: { where: { type: "RECEIPT" }, select: { qty: true, unitCost: true, unitCostExact: true } },
       lines: { where: { purchaseOrderLineId: { not: null } }, select: { id: true, acceptedQty: true } },
       billAllocations: { where: { bill: { status: { in: ["DISETUJUI", "DIBAYAR_SEBAGIAN", "LUNAS"] } } }, select: { goodsReceiptLineId: true, qty: true } },
     },
@@ -157,8 +158,9 @@ export async function ambilPenerimaanBelumDitagih(db) {
   const sisaPo = (r) => r.lines.reduce((s, l) => s + Math.max(0, Number(l.acceptedQty ?? 0) - r.billAllocations.filter((a) => a.goodsReceiptLineId === l.id).reduce((x, a) => x + Number(a.qty), 0)), 0);
   const belumHabisDitagih = (r) => r.billAllocations.length === 0 || r.lines.length === 0 || sisaPo(r) > 1e-9;
   return receipts.filter(belumHabisDitagih).map((r) => {
-    const berharga = r.movements.filter((m) => m.unitCost != null && m.unitCost > 0);
-    const nilai = berharga.length === 0 ? ZERO : sumMoney(berharga.map((m) => toMoney(m.qty).times(toMoney(m.unitCost))));
+    for (const m of r.movements) if (m.unitCostExact != null) m.unitCost = m.unitCostExact;
+    const berharga = r.movements.filter((m) => m.unitCost != null && Number(m.unitCost) > 0);
+    const nilai = berharga.length === 0 ? ZERO : sumMoney(berharga.map((m) => nilaiBarisPenerimaan(m.qty, m.unitCost)));
     return {
       id: r.id, receiptNumber: r.receiptNumber, supplier: r.supplier,
       receivedDate: r.receivedDate, sourceReference: r.sourceReference,

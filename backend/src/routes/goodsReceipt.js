@@ -50,7 +50,8 @@ const SOURCE_TYPES = [
 const FORWARD_FLOW = ["DRAFT", "SCHEDULED", "ARRIVED", "INSPECTION", "READY_FOR_PUTAWAY", "COMPLETED"];
 
 const receiptInclude = {
-  lines: { include: { material: { select: { id: true, code: true, name: true, unit: true } } } },
+  // purchaseOrderLine (tanpa harga): satuan beli & faktor konversi — jumlah penerimaan PO dalam SATUAN BELI, stok bertambah dalam satuan stok.
+  lines: { include: { material: { select: { id: true, code: true, name: true, unit: true } }, purchaseOrderLine: { select: { unit: true, purchaseUnit: true, conversionFactor: true } } } },
   createdBy: { select: { id: true, name: true } },
   // Sumber PO (NULL = penerimaan TANPA PO). Tanpa harga: Gudang tidak melihat nilai uang.
   purchaseOrder: { select: { id: true, poNumber: true, status: true } },
@@ -271,11 +272,14 @@ goodsReceiptRouter.post("/:id/putaway", requirePermission(P.INVENTORY_WRITE), as
       // harga satuan PO untuk menilai stok — itulah yang membuat jurnal Dr Persediaan / Cr Utang Barang Belum Ditagih terbentuk di bawah.
       const cek = await periksaPutaway(tx, receipt);
       for (const line of diterima) {
+        // Baris PO berkonversi satuan (mis. 2 BOX × 12 = 24 CAN): stok bertambah dalam satuan stok, harga per satuan stok eksak (unitCostExact) supaya nilai penerimaan tetap persis nilai PO.
+        const kv = line.purchaseOrderLineId ? cek?.konversi.get(line.purchaseOrderLineId) : undefined;
         await postStockMovement(tx, {
-          materialId: line.materialId, type: "RECEIPT", qty: line.acceptedQty,
-          unitCost: line.purchaseOrderLineId ? cek?.harga.get(line.purchaseOrderLineId) : undefined,
+          materialId: line.materialId, type: "RECEIPT", qty: kv ? kv.qtyStok.toString() : line.acceptedQty,
+          unitCost: kv ? kv.hargaStokBulat : line.purchaseOrderLineId ? cek?.harga.get(line.purchaseOrderLineId) : undefined,
+          unitCostExact: kv ? kv.hargaStokEksak.toString() : undefined,
           location, supplier: receipt.supplier || null,
-          note: `Simpan ke Stok ${receipt.receiptNumber}`, goodsReceiptId: receipt.id,
+          note: kv ? `Simpan ke Stok ${receipt.receiptNumber} (${line.acceptedQty} ${kv.satuanBeli} × ${kv.faktor.toString()})` : `Simpan ke Stok ${receipt.receiptNumber}`, goodsReceiptId: receipt.id,
           createdById: req.user.id,
         });
       }

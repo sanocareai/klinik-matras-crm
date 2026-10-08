@@ -152,6 +152,11 @@ export async function createMaterialIssue({
     const unit = await prisma.unit.findUnique({ where: { id: unitId }, select: { id: true } });
     if (!unit) throw new IssueError("Unit produksi tidak ditemukan", 404);
   }
+  // Permintaan bahan untuk unit/Work Order Produksi tidak boleh memuat "Perlengkapan Stok" (SKU Gudang-saja dari PO). Permintaan Gudang biasa tidak dibatasi.
+  if (unitId || requiresUnitLink(sourceType)) {
+    const perlengkapan = await prisma.material.findMany({ where: { id: { in: lines.map((l) => l.materialId) }, kind: "PERLENGKAPAN_STOK" }, select: { code: true } });
+    if (perlengkapan.length > 0) throw new IssueError(`${perlengkapan.map((m) => m.code).join(", ")} adalah Perlengkapan Stok (hanya Gudang) dan tidak bisa diminta sebagai bahan produksi`, 422);
+  }
 
   const today = new Date();
   const startOfDay = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));

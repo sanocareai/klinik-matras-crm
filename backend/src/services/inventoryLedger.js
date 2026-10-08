@@ -112,7 +112,7 @@ export async function lockMaterialBalance(tx, materialId) {
  * @param {import("@prisma/client").Prisma.TransactionClient} tx
  */
 export async function postStockMovement(tx, {
-  materialId, type, qty, location, unitId, unitCost, supplier, batchNumber,
+  materialId, type, qty, location, unitId, unitCost, unitCostExact, supplier, batchNumber,
   reason, note, createdById,
   goodsReceiptId, materialIssueId, stockTransferId, stockCountId,
   damagedStockRecordId, returnRecordId, stockAdjustmentRequestId,
@@ -140,6 +140,8 @@ export async function postStockMovement(tx, {
       location: location || undefined,
       unitId: unitId || null,
       unitCost: unitCost != null && unitCost !== "" ? Number(unitCost) : null,
+      // Harga eksak per satuan stok (hanya penerimaan berkonversi satuan) — string Decimal supaya tidak lewat float.
+      unitCostExact: unitCostExact != null && unitCostExact !== "" ? String(unitCostExact) : null,
       supplier: supplier || null,
       batchNumber: batchNumber || null,
       reason: reason || null,

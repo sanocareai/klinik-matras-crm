@@ -66,6 +66,8 @@ inventoryRouter.get("/materials", requireAnyPermission(P.INVENTORY_READ, P.UNIT_
     // bisa dibereskan alih-alih tersembunyi.
     if (req.query.category === "none") where.category = null;
     else if (req.query.category) where.category = req.query.category;
+    // ?untuk=produksi → pilihan bahan Produksi: tanpa "Perlengkapan Stok" (SKU Gudang-saja). Material lama (kind NULL) tetap tampil.
+    if (req.query.untuk === "produksi") where.OR = [{ kind: null }, { kind: { not: "PERLENGKAPAN_STOK" } }];
     const materials = await prisma.material.findMany({ where, orderBy: { code: "asc" } });
     res.json(materials);
   } catch (err) {

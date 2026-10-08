@@ -339,6 +339,7 @@ export async function mapManualMaterial(prisma, { manualMaterialId, materialId, 
     const material = await tx.material.findUnique({ where: { id: materialId } });
     if (!material) throw diagError("Material tidak ditemukan", 404, "PLAN_BOM_MATERIAL_NOT_FOUND");
     if (!material.active) throw diagError(`Material ${material.code} sudah nonaktif`, 422, "PLAN_BOM_MATERIAL_INACTIVE");
+    if (material.kind === "PERLENGKAPAN_STOK") throw diagError(`${material.code} adalah Perlengkapan Stok (hanya Gudang) dan tidak bisa dipetakan sebagai bahan BOM Produksi`, 422, "PLAN_BOM_MATERIAL_PERLENGKAPAN_STOK");
     const finalQty = qty != null ? Number(qty) : Number(manual.qty);
     if (!Number.isFinite(finalQty) || finalQty <= 0) throw diagError("Jumlah pemetaan harus lebih dari 0", 400, "DIAGNOSIS_MAPPING_QTY_INVALID");
 

@@ -11,11 +11,13 @@
 import { generateDocumentNumber, toBookDate } from "./journal.js";
 import { lockRowForUpdate } from "../inventoryLedger.js";
 import { tentukanTerminPO, TerminError, labelTermin } from "./termin.js";
+import { Decimal } from "./money.js";
+import { buatSkuBaru, pastikanKatalog, catatHargaTerakhir, tautkanPoPertama, validasiFaktor, periksaKonversiBaris, SATUAN_VALID, SkuError } from "./skuBaru.js";
 
 export class PurchaseOrderError extends Error {
-  constructor(message, statusCode = 400) { super(message); this.statusCode = statusCode; }
+  constructor(message, statusCode = 400, code = null) { super(message); this.statusCode = statusCode; if (code) this.code = code; }
 }
-const gagal = (m, s = 400) => new PurchaseOrderError(m, s);
+const gagal = (m, s = 400, c = null) => new PurchaseOrderError(m, s, c);
 
 export const STATUS_PO = ["DRAFT", "DISETUJUI", "DITERIMA_SEBAGIAN", "SELESAI", "DIBATALKAN"];
 // Status PO yang boleh menerima barang (membuat penerimaan baru & putaway).
@@ -32,8 +34,13 @@ const rp = (n) => Math.round(n * 100) / 100;
 
 // ── Masukan ──────────────────────────────────────────────────────────────
 
-/** Validasi + normalisasi isi PO (dipakai buat & ubah draf). Mengembalikan data siap simpan. */
-async function siapkanMasukan(tx, body) {
+/**
+ * Validasi + normalisasi isi PO (dipakai buat & ubah draf & persetujuan). Mengembalikan data siap simpan.
+ * Baris boleh berupa material yang ADA (materialId) atau BARANG BARU (materialBaru) — barang baru dibuat di sini, di dalam transaksi pemanggil, hanya oleh
+ * finance:admin (bolehBuatSku) dan hanya bila buatSku (tidak saat revalidasi persetujuan). Gagal di mana pun ⇒ transaksi dibatalkan: tidak ada SKU/katalog/PO setengah jadi.
+ * Konversi satuan: baris memakai satuan beli (unit) + faktor ke satuan stok material; tanpa konversi purchaseUnit/conversionFactor NULL (perilaku lama).
+ */
+async function siapkanMasukan(tx, body, { bolehBuatSku = false, buatSku = false, userId = null } = {}) {
   const b = body ?? {};
   if (!b.supplierId) throw gagal("Supplier wajib dipilih");
   const supplier = await tx.finSupplier.findUnique({ where: { id: b.supplierId }, select: { id: true, name: true, active: true, paymentTermDays: true, paymentTermType: true } });
@@ -51,15 +58,36 @@ async function siapkanMasukan(tx, body) {
 
   const dipakai = new Set();
   const hasil = [];
+  const skuBaru = [];
   for (const [i, l] of lines.entries()) {
     const no = i + 1;
-    if (!l?.materialId) throw gagal(`Baris ${no}: item katalog wajib dipilih`);
-    if (dipakai.has(l.materialId)) throw gagal(`Baris ${no}: item yang sama sudah ada di PO ini — gabungkan jumlahnya jadi satu baris`);
-    dipakai.add(l.materialId);
-
-    const material = await tx.material.findUnique({ where: { id: l.materialId }, select: { id: true, code: true, name: true, unit: true, active: true } });
-    if (!material) throw gagal(`Baris ${no}: item katalog tidak ditemukan`, 404);
-    if (!material.active) throw gagal(`Baris ${no}: ${material.code} nonaktif di katalog`, 409);
+    let material; let katalogMasukan = null; let satuanBeli; let faktor;
+    if (!l?.materialId && l?.materialBaru) {
+      if (!buatSku) throw gagal(`Baris ${no}: barang baru hanya bisa dibuat saat menyimpan draf PO`, 400);
+      if (!bolehBuatSku) throw gagal(`Baris ${no}: membuat barang baru dari PO membutuhkan izin Admin Finance. Pilih material yang sudah ada, atau minta Admin Finance.`, 403, "BUAT_SKU_BUTUH_ADMIN");
+      let dibuat;
+      try { dibuat = await buatSkuBaru(tx, { data: l.materialBaru, supplier, userId }); }
+      catch (e) { if (e instanceof SkuError) e.message = `Baris ${no}: ${e.message}`; throw e; }
+      material = { id: dibuat.material.id, code: dibuat.material.code, name: dibuat.material.name, unit: dibuat.material.unit, active: true };
+      katalogMasukan = dibuat.masukan; satuanBeli = dibuat.masukan.satuanBeli; faktor = dibuat.masukan.faktor;
+      skuBaru.push({ materialId: material.id, kode: material.code, nama: material.name, jenis: dibuat.masukan.jenis, baris: no });
+    } else {
+      if (!l?.materialId) throw gagal(`Baris ${no}: item katalog wajib dipilih`);
+      material = await tx.material.findUnique({ where: { id: l.materialId }, select: { id: true, code: true, name: true, unit: true, active: true } });
+      if (!material) throw gagal(`Baris ${no}: item katalog tidak ditemukan`, 404);
+      if (!material.active) throw gagal(`Baris ${no}: ${material.code} nonaktif di katalog`, 409);
+      // Satuan beli eksplisit (mis. BOX untuk material berstok CAN) + faktor wajib bila berbeda dari satuan stok; tanpa input = tanpa konversi.
+      satuanBeli = l.satuanBeli ? String(l.satuanBeli) : String(material.unit);
+      if (!SATUAN_VALID.includes(satuanBeli)) throw gagal(`Baris ${no} (${material.code}): satuan pembelian tidak valid`);
+      try { faktor = validasiFaktor(satuanBeli, String(material.unit), l.faktorKonversi); }
+      catch (e) { if (e instanceof SkuError) throw gagal(`Baris ${no} (${material.code}): ${e.message}`, 400, e.code); throw e; }
+      const adaInfoKatalog = l.namaSupplier || l.kodeSupplier || l.moq || l.estimasiKirimHari;
+      if (adaInfoKatalog || satuanBeli !== String(material.unit)) {
+        katalogMasukan = { namaSupplier: l.namaSupplier?.trim() || null, kodeSupplier: l.kodeSupplier?.trim() || null, satuanBeli, faktor, moq: l.moq ? new Decimal(String(l.moq)) : null, leadTimeDays: l.estimasiKirimHari !== undefined && l.estimasiKirimHari !== null && l.estimasiKirimHari !== "" ? Number(l.estimasiKirimHari) : null };
+      }
+    }
+    if (dipakai.has(material.id)) throw gagal(`Baris ${no}: item yang sama sudah ada di PO ini — gabungkan jumlahnya jadi satu baris`);
+    dipakai.add(material.id);
 
     const qty = Number(l.qty);
     if (!Number.isFinite(qty) || qty <= 0) throw gagal(`Baris ${no} (${material.code}): jumlah harus lebih dari 0`);
@@ -70,9 +98,21 @@ async function siapkanMasukan(tx, body) {
     if (!Number.isInteger(harga) || harga <= 0) throw gagal(`Baris ${no} (${material.code}): harga satuan harus rupiah bulat lebih dari 0`);
     if (harga > 2_000_000_000) throw gagal(`Baris ${no} (${material.code}): harga satuan terlalu besar`);
 
-    hasil.push({ materialId: material.id, unit: String(material.unit), qty: dariK(k(qty)), unitPrice: harga, notes: l.notes?.trim() || null, sortOrder: i });
+    const konversi = satuanBeli !== String(material.unit);
+    if (konversi) {
+      try { periksaKonversiBaris({ qty: dariK(k(qty)), faktor, hargaBeli: harga }); }
+      catch (e) { if (e instanceof SkuError) throw gagal(`Baris ${no} (${material.code}): ${e.message}`, 400, e.code); throw e; }
+    }
+    // Relasi Katalog Supplier (supplier ↔ SKU internal): dibuat/diperbarui di transaksi yang sama; baris PO menyimpan SNAPSHOT-nya.
+    let katalog = await tx.finSupplierMaterial.findUnique({ where: { supplierId_materialId: { supplierId: supplier.id, materialId: material.id } } });
+    if (katalogMasukan) katalog = await pastikanKatalog(tx, { supplierId: supplier.id, materialId: material.id, data: katalogMasukan, userId });
+    hasil.push({
+      materialId: material.id, unit: satuanBeli, qty: dariK(k(qty)), unitPrice: harga, notes: l.notes?.trim() || null, sortOrder: i,
+      ...(konversi && { purchaseUnit: satuanBeli, conversionFactor: faktor.toString() }),
+      ...(katalog && { supplierMaterialId: katalog.id, supplierItemName: katalog.supplierItemName, supplierSku: katalog.supplierSku }),
+    });
   }
-  return { supplier, orderDate, expectedDate, notes: b.notes?.trim() || null, lines: hasil };
+  return { supplier, orderDate, expectedDate, notes: b.notes?.trim() || null, lines: hasil, skuBaru };
 }
 
 // Riwayat PO = tabel event sendiri (aktor + waktu + sebelum/sesudah). Tidak memakai activity_logs: teks tampilannya per jenis kejadian
@@ -97,8 +137,8 @@ function terminPO(supplier, body, { userId, bolehOverride }) {
   } catch (e) { if (e instanceof TerminError) throw gagal(e.message, e.statusCode, e.code); throw e; }
 }
 
-export async function buatPO(tx, { body, userId, bolehOverride = false }) {
-  const m = await siapkanMasukan(tx, body);
+export async function buatPO(tx, { body, userId, bolehOverride = false, bolehBuatSku = false }) {
+  const m = await siapkanMasukan(tx, body, { bolehBuatSku, buatSku: true, userId });
   const termin = terminPO(m.supplier, body, { userId, bolehOverride });
   const poNumber = await generateDocumentNumber(tx, "PO", m.orderDate);
   const po = await tx.finPurchaseOrder.create({
@@ -108,14 +148,16 @@ export async function buatPO(tx, { body, userId, bolehOverride = false }) {
       lines: { create: m.lines },
     },
   });
-  await catat(tx, po, "DIBUAT", userId, { metadata: { supplier: m.supplier.name, jumlahBaris: m.lines.length } });
+  for (const s of m.skuBaru) await tautkanPoPertama(tx, { materialId: s.materialId, purchaseOrderId: po.id });
+  await catat(tx, po, "DIBUAT", userId, { metadata: { supplier: m.supplier.name, jumlahBaris: m.lines.length, ...(m.skuBaru.length && { skuBaru: m.skuBaru }) } });
   return po.id;
 }
 
-export async function ubahDraf(tx, { id, body, userId, bolehOverride = false }) {
+export async function ubahDraf(tx, { id, body, userId, bolehOverride = false, bolehBuatSku = false }) {
   const po = await kunciDanMuat(tx, id);
   if (po.status !== "DRAFT") throw gagal(`PO berstatus ${po.status} tidak bisa diubah — hanya draf yang bisa diedit (batalkan dan buat PO baru bila perlu)`, 409);
-  const m = await siapkanMasukan(tx, body);
+  // Baris yang SUDAH berisi SKU buatan draf ini dikirim ulang frontend dengan materialId (bukan materialBaru) → tidak dibuat dua kali.
+  const m = await siapkanMasukan(tx, body, { bolehBuatSku, buatSku: true, userId });
   await tx.finPurchaseOrderLine.deleteMany({ where: { purchaseOrderId: po.id } });
   // Termin: ikut master supplier baru bila supplier diganti atau termin diketik ulang; selain itu snapshot lama dipertahankan.
   const ulangTermin = m.supplier.id !== po.supplierId || (body?.terminJenis !== undefined && body?.terminJenis !== null && body?.terminJenis !== "");
@@ -124,7 +166,8 @@ export async function ubahDraf(tx, { id, body, userId, bolehOverride = false }) 
     where: { id: po.id },
     data: { supplierId: m.supplier.id, orderDate: m.orderDate, expectedDate: m.expectedDate, notes: m.notes, ...termin, lines: { create: m.lines } },
   });
-  await catat(tx, po, "DIUBAH", userId, { metadata: { supplier: m.supplier.name, jumlahBaris: m.lines.length } });
+  for (const s of m.skuBaru) await tautkanPoPertama(tx, { materialId: s.materialId, purchaseOrderId: po.id });
+  await catat(tx, po, "DIUBAH", userId, { metadata: { supplier: m.supplier.name, jumlahBaris: m.lines.length, ...(m.skuBaru.length && { skuBaru: m.skuBaru }) } });
   return po.id;
 }
 
@@ -134,9 +177,11 @@ export async function setujuiPO(tx, { id, userId }) {
   // Validasi ulang isi saat disetujui: supplier/katalog bisa berubah sejak draf dibuat.
   await siapkanMasukan(tx, {
     supplierId: po.supplierId, orderDate: po.orderDate, expectedDate: po.expectedDate,
-    lines: po.lines.map((l) => ({ materialId: l.materialId, qty: Number(l.qty), unitPrice: l.unitPrice })),
-  });
+    lines: po.lines.map((l) => ({ materialId: l.materialId, qty: Number(l.qty), unitPrice: l.unitPrice, ...(l.purchaseUnit && { satuanBeli: l.purchaseUnit, faktorKonversi: l.conversionFactor.toString() }) })),
+  }, { userId });
   await tx.finPurchaseOrder.update({ where: { id: po.id }, data: { status: "DISETUJUI", approvedAt: new Date(), approvedById: userId } });
+  // Harga terakhir Katalog Supplier = informasi saja (tidak menyentuh PO lama, stok, atau biaya). Dicatat saat PO menjadi komitmen.
+  await catatHargaTerakhir(tx, { purchaseOrderId: po.id, tanggal: po.orderDate, userId });
   await catat(tx, po, "DISETUJUI", userId);
   return po.id;
 }
@@ -310,6 +355,10 @@ export async function validasiBarisPenerimaanPO(tx, { receiptLine, nilai }) {
   }
   if (acceptedQty != null && Number(acceptedQty) > 0) {
     const baris = await tx.finPurchaseOrderLine.findUnique({ where: { id: receiptLine.purchaseOrderLineId }, include: { purchaseOrder: true } });
+    if (baris.purchaseUnit && baris.conversionFactor != null) {
+      try { periksaKonversiBaris({ qty: acceptedQty, faktor: baris.conversionFactor, hargaBeli: baris.unitPrice }); }
+      catch (e) { if (e instanceof SkuError) throw gagal(e.message, 400, e.code); throw e; }
+    }
     const po = await tx.finPurchaseOrder.findUnique({ where: { id: baris.purchaseOrderId }, include: { lines: true } });
     const q = (await hitungKuantitas(tx, po)).get(baris.id);
     if (k(acceptedQty) > k(q.belumDiterima)) {
@@ -333,6 +382,8 @@ export async function periksaPutaway(tx, receipt) {
   }
   const kuantitas = await hitungKuantitas(tx, po);
   const harga = new Map();
+  // Baris berkonversi satuan: poLineId → { faktor, qtyStok (Decimal), hargaStokEksak (Decimal 8dp), hargaStokBulat }. Kosong untuk baris tanpa konversi.
+  const konversi = new Map();
   for (const l of receipt.lines) {
     if (!l.purchaseOrderLineId || !(Number(l.acceptedQty) > 0)) continue;
     const baris = po.lines.find((x) => x.id === l.purchaseOrderLineId);
@@ -344,8 +395,16 @@ export async function periksaPutaway(tx, receipt) {
         `${q.diterimaBaik} sudah masuk stok). Simpan ke Stok dibatalkan, tidak ada stok yang tertulis. Kurangi jumlah baik atau minta Finance merevisi jumlah PO.`, 409);
     }
     harga.set(l.purchaseOrderLineId, baris.unitPrice);
+    if (baris.purchaseUnit && baris.conversionFactor != null) {
+      const f = new Decimal(String(baris.conversionFactor));
+      let qtyStok;
+      try { qtyStok = periksaKonversiBaris({ qty: l.acceptedQty, faktor: f, hargaBeli: baris.unitPrice }); }
+      catch (e) { if (e instanceof SkuError) throw gagal(`${l.material?.code ?? ""}: ${e.message} Simpan ke Stok dibatalkan, tidak ada stok yang tertulis.`, 409, e.code); throw e; }
+      const eksak = new Decimal(baris.unitPrice).dividedBy(f).toDecimalPlaces(8);
+      konversi.set(l.purchaseOrderLineId, { faktor: f, qtyStok, hargaStokEksak: eksak, hargaStokBulat: Math.max(1, eksak.toDecimalPlaces(0).toNumber()), satuanBeli: baris.purchaseUnit });
+    }
   }
-  return { po, harga };
+  return { po, harga, konversi };
 }
 
 /** Setelah stok tertulis: hitung ulang status PO dan catat riwayat. */
@@ -369,6 +428,11 @@ function bentukBaris(l, q, { harga }) {
     kode: l.material?.code ?? null,
     nama: l.material?.name ?? null,
     satuan: l.unit,
+    // Konversi satuan beli → stok (NULL = tanpa konversi). satuanStok selalu satuan master material.
+    satuanStok: l.material?.unit ?? l.unit,
+    ...(l.purchaseUnit && { konversi: { satuanBeli: l.purchaseUnit, faktor: Number(l.conversionFactor), satuanStok: l.material?.unit ?? null } }),
+    ...(l.supplierItemName && { namaSupplier: l.supplierItemName }),
+    ...(l.supplierSku && { kodeSupplier: l.supplierSku }),
     catatan: l.notes,
     ...q,
     ...(harga && {

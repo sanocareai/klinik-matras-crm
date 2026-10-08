@@ -76,9 +76,11 @@ export async function dasarHargaRataRata(tx, materialId, { asOf } = {}) {
       materialId, type: "RECEIPT", unitCost: { not: null },
       ...((asOf || aktif) && { createdAt: { ...(asOf && { lte: asOf }), ...(aktif && { gte: mulai }) } }),
     },
-    select: { id: true, qty: true, unitCost: true, goodsReceiptId: true },
+    select: { id: true, qty: true, unitCost: true, unitCostExact: true, goodsReceiptId: true },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
   });
+  // Penerimaan berkonversi satuan membawa harga EKSAK per satuan stok (unitCostExact); selainnya unitCost bulat seperti biasa.
+  for (const r of receipts) if (r.unitCostExact != null) r.unitCost = r.unitCostExact;
   let opening = null;
   if (aktif) {
     const awal = await tx.finInventoryOpeningLine.findUnique({ where: { openingId_materialId: { openingId: aktif.id, materialId } }, select: { qty: true, unitCost: true } });

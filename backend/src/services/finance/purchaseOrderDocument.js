@@ -17,7 +17,11 @@ export async function bangunViewPO(db, id) {
     po: {
       id: po.id, poNumber: po.poNumber, status: po.status, orderDate: po.orderDate, expectedDate: po.expectedDate, notes: po.notes,
       approvedBy: po.approvedBy, approvedAt: po.approvedAt, cancelledAt: po.cancelledAt, cancelReason: po.cancelReason,
-      lines: po.lines.map((l) => ({ kode: l.kode, nama: l.nama, satuan: l.satuan, catatan: l.catatan, dipesan: l.dipesan, hargaSatuan: l.hargaSatuan, nilaiDipesan: l.nilaiDipesan })),
+      lines: po.lines.map((l) => ({
+        kode: l.kode, nama: l.nama, satuan: l.satuan, catatan: l.catatan, dipesan: l.dipesan, hargaSatuan: l.hargaSatuan, nilaiDipesan: l.nilaiDipesan,
+        // Baris berkonversi satuan: PDF menambah catatan "Setara dengan [jumlah] [satuan stok]." (tanpa konversi: tidak ada field → tampilan lama persis).
+        ...(l.konversi && { setaraQty: Math.round(l.dipesan * l.konversi.faktor * 10000) / 10000, setaraSatuan: l.konversi.satuanStok }),
+      })),
       totalDipesan: po.totalDipesan,
     },
     supplier: { kode: sup?.code ?? po.supplier.code, nama: sup?.name ?? po.supplier.name, alamat: sup?.address ?? "", telepon: sup?.phone ?? "", email: sup?.email ?? "" },
