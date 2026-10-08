@@ -1870,6 +1870,10 @@ export const api = {
   createFakturPurchaseOrder: (id, data, idempotencyKey = mutationKey("fak")) => request(`/finance/purchase-orders/${id}/faktur`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   getFakturPurchaseOrder: (billId) => request(`/finance/purchase-orders/faktur/${billId}`),
   updateFakturPurchaseOrder: (billId, data) => request(`/finance/purchase-orders/faktur/${billId}`, { method: "PATCH", body: JSON.stringify(data) }),
+  // Jejak biaya bahan per unit (baca-saja). Finance: nominal penuh; Unit 360: nominal hanya bila punya izin harga (server yang memutuskan).
+  getBiayaBahanUnits: (params = {}) => request(`/finance/biaya-bahan/unit${qsFinance(params)}`),
+  getBiayaBahanUnit: (unitId) => request(`/finance/biaya-bahan/unit/${unitId}`),
+  getJejakBahanUnit: (unitId) => request(`/units/${unitId}/jejak-bahan`),
   // Pintu Gudang: PO yang boleh diterima, TANPA harga.
   getGudangPurchaseOrders: (params = {}) => request(`/inventory/purchase-orders${qsFinance(params)}`),
   getFinanceSupplierPayments: (params = {}) => request(`/finance/supplier-payments${qsFinance(params)}`),

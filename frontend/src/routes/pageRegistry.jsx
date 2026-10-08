@@ -57,6 +57,7 @@ const FinanceCash           = lazy(() => import("../pages/finance/FinanceCash.js
 const FinancePayments       = lazy(() => import("../pages/finance/FinancePayments.jsx"));
 const FinanceReceivables    = lazy(() => import("../pages/finance/FinanceReceivables.jsx"));
 const FinancePurchaseOrders = lazy(() => import("../pages/finance/FinancePurchaseOrders.jsx"));
+const FinanceBiayaBahan = lazy(() => import("../pages/finance/FinanceBiayaBahan.jsx"));
 const FinancePemasukan      = lazy(() => import("../pages/finance/FinancePemasukan.jsx"));
 const FinanceInvoices       = lazy(() => import("../pages/finance/FinanceInvoices.jsx"));
 const FinanceExpenses       = lazy(() => import("../pages/finance/FinanceExpenses.jsx"));
@@ -218,6 +219,7 @@ export const PAGES = [
   { path: "/finance/uang-muka",      render: () => <FinanceUangMuka /> },
   { path: "/finance/suppliers",      render: () => <FinanceSuppliers /> },
   { path: "/finance/purchase-orders", render: () => <FinancePurchaseOrders /> },
+  { path: "/finance/biaya-bahan", render: () => <FinanceBiayaBahan /> },
   { path: "/finance/reconciliation", render: () => <FinanceReconciliation /> },
   { path: "/finance/journal",        render: () => <FinanceJournal /> },
   { path: "/finance/persediaan-awal", render: () => <FinancePersediaanAwal /> },

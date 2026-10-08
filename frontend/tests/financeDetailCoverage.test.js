@@ -20,6 +20,7 @@ const DETAIL_SENDIRI = {
   "FinancePayments.jsx": "baris membuka DetailPembayaranDialog (panel samping) via bukaDialog(\"detail\")",
   "FinancePemasukan.jsx": "klik baris memanggil onBuka(b) → rincian sumber pemasukan",
   "FinanceJournal.jsx": "klik baris membuka detail jurnal (setDetail)",
+  "FinanceBiayaBahan.jsx": "klik unit membuka panel jejak biaya (JejakBiayaBahan) di sebelah daftar",
   "FinancePurchaseOrders.jsx": "klik baris membuka ModalDetailPO (setDetailId): item, progres penerimaan, tagihan, riwayat",
   "FinanceLaporanDivisi.jsx": "drill-down sendiri di features/laporanDivisi: kategori → Transaksi (dokumen sumber + aturan atribusi) → tombol 'Buka di Finance' ke modul sumber",
 };

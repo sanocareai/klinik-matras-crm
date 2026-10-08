@@ -37,6 +37,7 @@ const TIDAK_DIEKSPOR = {
   "FinanceReports.jsx": "laporan terhitung (Laba Rugi/Neraca/Arus Kas/Neraca Saldo), ditelusuri dari Buku Besar & Jurnal Umum",
   "FinanceAccounts.jsx": "master bagan akun",
   "FinanceSettings.jsx": "konfigurasi",
+  "FinanceBiayaBahan.jsx": "read-model baca-saja jejak biaya per unit (Okt 2026); export dibuat bila Finance minta — nilai pemakaian sudah tercakup export Jurnal/HPP",
   "FinancePurchaseOrders.jsx": "modul baru (Okt 2026): dokumen komitmen tanpa jurnal; belum ada kebutuhan laporan — export dibuat bila Finance minta (tagihan & stok yang lahir darinya sudah tercakup export Supplier & Utang dan Jurnal)",
   "FinancePengecualianLunas.jsx": "daftar riwayat keputusan Owner (puluhan baris); riwayat penuh ada di Aktivitas order; export dibuat bila Owner minta",
   "FinancePenjualanKaryawan.jsx": "modul baru (2 Okt 2026): jurnalnya tercakup Jurnal Umum & Buku Besar, pendapatan tercakup export Pemasukan (Pemasukan Lain · Penjualan karyawan); export khusus dibuat bila Owner minta",

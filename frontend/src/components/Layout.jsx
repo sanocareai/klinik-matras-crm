@@ -476,6 +476,7 @@ const DIVISIONS = {
           { to: "/finance/receivables", label: "Piutang & Refund",      Icon: Users },
           { to: "/finance/suppliers",   label: "Supplier & Utang", Icon: Building2 },
           { to: "/finance/purchase-orders", label: "Purchase Order", Icon: ClipboardList },
+          { to: "/finance/biaya-bahan", label: "Biaya Bahan per Unit", Icon: Boxes },
         ],
       },
       {

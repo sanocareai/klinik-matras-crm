@@ -17,6 +17,7 @@ import { rolesOf } from "@/lib/roles.js";
 import { isOutsideV2 } from "@/features/production/unit360Availability.js";
 import UnitOrderFallback from "@/features/production/UnitOrderFallback.jsx";
 import { ComponentNotesPanel } from "@/features/production/componentNotes/ComponentNotesPanel.jsx";
+import JejakBiayaBahan from "@/features/finance/JejakBiayaBahan.jsx";
 
 // P9C — Unit 360: satu drawer kanonis (setara "detail Resi") dibuka dari kartu Status Produksi MAUPUN Rencana
 // Produksi — komponen ini TIDAK peduli dari halaman mana ia dipanggil, hanya butuh unitId. Deep-link (?unit=)
@@ -520,7 +521,7 @@ export function UnitOverviewDrawer({ unitId, onClose, onManage, manageLabel = "K
                   {v1Workable && <div data-testid="pekerjaan-actions"><UnitOrderFallback v2View data={v1Work.data} error={v1Work.error} loading={v1Work.loading} roles={rolesOf(currentUserLocal())} onData={(t) => setV1Work({ data: t, error: "", loading: false })} onChanged={() => { reload(); onChanged?.(); }} /></div>}
                 </div>
               )}
-              {tab === "bahan" && <Bahan d={data} onDiagnosisRefresh={reload} />}
+              {tab === "bahan" && <><Bahan d={data} onDiagnosisRefresh={reload} /><div className="mt-4 border-t border-line pt-3" data-testid="unit360-jejak-bahan"><JejakBiayaBahan unitId={data.identity.unitId} sumber="unit" /></div></>}
               {tab === "dokumentasi" && <Dokumentasi d={data} />}
               {tab === "qc" && <QcHandoff d={data} />}
               {tab === "aktivitas" && <Aktivitas d={data} />}
