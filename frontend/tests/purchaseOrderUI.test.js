@@ -25,7 +25,7 @@ test("galatBaris & galatFormulir: aturan sama dengan server", () => {
   assert.equal(galatBaris({ materialId: "m", qty: "10", unitPrice: "43290" }), null);
   assert.match(galatBaris({ materialId: "", qty: "1", unitPrice: "1" }), /Pilih item/);
   assert.match(galatBaris({ materialId: "m", qty: "0", unitPrice: "1" }), /lebih dari 0/);
-  assert.match(galatBaris({ materialId: "m", qty: "1.234", unitPrice: "1" }), /2 angka/);
+  assert.match(galatBaris({ materialId: "m", qty: "1.2345", unitPrice: "1" }), /3 angka/);
   assert.match(galatBaris({ materialId: "m", qty: "1", unitPrice: "100.5" }), /rupiah bulat/);
   assert.match(galatBaris({ materialId: "m", qty: "1", unitPrice: "0" }), /rupiah bulat/);
 
@@ -150,7 +150,7 @@ test("galatFaktur: nomor faktur, tanggal, minimal satu baris, jumlah/harga 2 des
   assert.match(galatFaktur({ ...f, billDate: "" }), /tanggal faktur/);
   assert.match(galatFaktur({ ...f, dueDate: "2026-10-01" }), /Jatuh tempo/);
   assert.match(galatFaktur({ ...f, lines: f.lines.map((l) => ({ ...l, pakai: false })) }), /minimal satu baris/);
-  assert.match(galatFaktur({ ...f, lines: [{ ...f.lines[0], qty: "1.234" }] }), /2 angka/);
+  assert.match(galatFaktur({ ...f, lines: [{ ...f.lines[0], qty: "1.2345" }] }), /3 angka/);
   assert.match(galatFaktur({ ...f, lines: [{ ...f.lines[0], unitPrice: "0" }] }), /Harga faktur/);
   assert.match(galatFaktur(f, { edit: true }), /alasan/);
   assert.equal(galatFaktur({ ...f, reason: "salah ketik" }, { edit: true }), null);
@@ -202,4 +202,13 @@ test("pemasangan Fase 2: API faktur, kolom pencocokan per baris, tinjauan harga,
   const mulai = h.indexOf("footer={", h.indexOf("function ModalFaktur("));
   assert.match(h.slice(mulai, mulai + 400), /galat-faktur/);
   assert.ok(h.includes("createFakturPurchaseOrder(po.id, body, `fak-${kunci}`)"), "kunci idempotensi per sesi dialog");
+});
+
+test("dialog persetujuan faktur beda harga menampilkan NOMINAL selisih total, arahnya, dan nilai faktur vs nilai menurut harga PO", () => {
+  const h = baca("../src/pages/finance/FinancePurchaseOrders.jsx");
+  assert.match(h, /data-testid="selisih-total"/);
+  assert.ok(h.includes("Selisih harga total:"));
+  assert.ok(h.includes("LEBIH MAHAL dari PO") && h.includes("LEBIH MURAH dari PO"));
+  assert.ok(h.includes("nilai menurut harga PO"));
+  assert.ok(h.includes("formatUang(Math.abs(ev.selisihHargaTotal))"));
 });

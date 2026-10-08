@@ -54,7 +54,7 @@ export function galatBaris(l) {
   if (!l.materialId) return "Pilih item";
   const q = Number(l.qty);
   if (!(q > 0)) return "Jumlah harus lebih dari 0";
-  if (Math.abs(q * 100 - Math.round(q * 100)) > 1e-6) return "Jumlah maksimal 2 angka di belakang koma";
+  if (Math.abs(q * 1000 - Math.round(q * 1000)) > 1e-6) return "Jumlah maksimal 3 angka di belakang koma";
   const h = Number(l.unitPrice);
   if (!Number.isInteger(h) || h <= 0) return "Harga satuan harus rupiah bulat lebih dari 0";
   return null;
@@ -162,12 +162,13 @@ export function formFakturDariEvaluasi(ev, pandangan) {
 }
 
 const dua = (v) => Math.abs(Number(v) * 100 - Math.round(Number(v) * 100)) < 1e-6;
+const tiga = (v) => Math.abs(Number(v) * 1000 - Math.round(Number(v) * 1000)) < 1e-6;
 
 /** Galat satu baris faktur yang dipakai; null = valid. */
 export function galatBarisFaktur(l) {
   const q = Number(l.qty); const h = Number(l.unitPrice);
   if (!(q > 0)) return "Jumlah faktur harus lebih dari 0";
-  if (!dua(q)) return "Jumlah maksimal 2 angka di belakang koma";
+  if (!tiga(q)) return "Jumlah maksimal 3 angka di belakang koma";
   if (!(h > 0)) return "Harga faktur harus lebih dari 0";
   if (!dua(h)) return "Harga faktur maksimal 2 angka di belakang koma";
   return null;

@@ -95,7 +95,7 @@ Semua di `/api/finance/purchase-orders` kecuali disebut lain; baca = `finance:re
 | `GET /:id` | Detail PO kini memuat `faktur[]` dan, per penerimaan, tagihan (lama & via alokasi `lewatPO:true`); kolom `ditagih` per baris = alokasi + tagihan lama |
 | `POST /api/finance/bills/:id/approve` `{ catatanTinjauanHarga? }` | Setujui; 409 kode `TAGIHAN_PO_TERTAHAN` / `SELISIH_HARGA_PERLU_TINJAUAN` / `PENERIMAAN_BELUM_DIBUKUKAN` / `PO_TIDAK_BISA_DIFAKTURKAN` |
 
-Catatan: jumlah PO & faktur kini maksimal 2 desimal (Fase 1 sebelumnya 3) agar penutupan GRNI per alokasi tepat pada presisi uang 2 desimal.
+Presisi: jumlah PO & faktur maksimal **3 desimal** (Decimal(14,3); ledger stok Decimal(12,4)); harga faktur 2 desimal; harga PO rupiah bulat. Audit Gudang produksi 8 Okt 2026: satuan KG/SHEET/ROLL/CAN/METER memakai pecahan hingga 1 desimal (nol penerimaan, 360 pergerakan, maks 1 desimal), jadi 3 desimal cukup dan tidak diturunkan. Nilai baris = qty EKSAK × harga dibulatkan SATU kali (sebelumnya `toMoney(qty)` membulatkan qty ke 2 desimal lebih dulu — dibetulkan di `nilaiBarisPenerimaan`). Alokasi faktur menyimpan `po_value`; klaim yang menuntaskan satu baris penerimaan mengambil sisa nilai sehingga GRNI tepat nol apa pun urutan persetujuan/pembatalan. Pembulatan per baris dapat menyisakan selisih 1 sen antara faktur dan nilai stok; itu dijurnal ke Selisih Harga Pembelian (kebijakan existing).
 
 ## Keputusan yang masih terbuka
 - Toleransi selisih harga: saat ini nol (semua selisih wajib tinjauan). Tentukan ambang bila ingin otomatis.

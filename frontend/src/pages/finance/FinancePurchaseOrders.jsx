@@ -715,9 +715,13 @@ function ModalSetujuiFaktur({ ev, onClose, onSetujui }) {
       }
     >
       <div className="space-y-3">
+        <div className="rounded-lg bg-orangebg px-3 py-2 text-[13px] text-orange" data-testid="selisih-total">
+          <div>Selisih harga total: <strong className="tabular-nums">{formatUang(Math.abs(ev.selisihHargaTotal))}</strong> {ev.selisihHargaTotal > 0 ? "LEBIH MAHAL dari PO (menjadi beban Selisih Harga Pembelian)" : "LEBIH MURAH dari PO (menjadi keuntungan Selisih Harga Pembelian)"}</div>
+          <div className="mt-0.5 text-[12px]">Nilai faktur <span className="tabular-nums">{formatUang(ev.amount)}</span> · nilai menurut harga PO <span className="tabular-nums">{formatUang(ev.amount - ev.selisihHargaTotal)}</span></div>
+        </div>
         <ul className="list-none space-y-1 p-0 text-[12.5px]">
           {berbeda.map((b) => (
-            <li key={b.id} className="rounded-lg bg-orangebg px-3 py-1.5 text-orange">{b.kode}: harga PO {formatUang(b.hargaPO)} → faktur {formatUang(b.hargaFaktur)} × {teksJumlah(b.diajukanIni)} = selisih {formatUang(b.selisihNilai)}</li>
+            <li key={b.id} className="rounded-lg bg-inset px-3 py-1.5 text-ink2" data-testid="selisih-baris">{b.kode}: harga PO {formatUang(b.hargaPO)} → faktur {formatUang(b.hargaFaktur)} × {teksJumlah(b.diajukanIni)} = selisih <strong className="tabular-nums text-ink">{formatUang(b.selisihNilai)}</strong></li>
           ))}
         </ul>
         <Field label="Catatan tinjauan Finance" required hint={`Minimal 5 karakter (${catatan.trim().length}/5). Tersimpan permanen bersama nama peninjau.`}>
