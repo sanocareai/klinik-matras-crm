@@ -57,3 +57,15 @@ Dua keadaan berbeda:
 - Draf penerimaan yang tersisa dari percobaan yang gagal dipakai ulang oleh permintaan berikutnya (tidak dihapus). Isian yang pasti salah (tanpa PIC/catatan/tanggal/jumlah) ditolak sebelum draf disiapkan.
 - Barang ditolak tetap dihitung sudah datang secara fisik; yang menutupnya adalah pengiriman pengganti (bukan pengiriman biasa).
 - Jadwal pengiriman (draf dari “Penerimaan Baru” Gudang maupun dari Finance) mengikuti “Belum dipenuhi supplier”.
+
+## Rilis (fail-closed)
+
+`scripts/release-po-terintegrasi.sh <DEPLOY_SHA> <BASE_SHA> [--preflight-only]` — release-directory di atas release aktif; berhenti di langkah mana pun yang menyimpang.
+
+- **Sumber:** kandidat harus turunan baseline; berkas yang berbeda dari baseline HANYA yang ada di allowlist eksplisit; tanpa `frontend/dist`, `package*.json`, Docker/compose, artefak foto uji; `schema.prisma` hanya penambahan baris; migrasi baseline tidak boleh berubah.
+- **Pin migrasi:** `20261101090000_po_terintegrasi_kedatangan` dipin sha256 (isi LF). Perubahan sekecil apa pun = berhenti sampai diaudit ulang dan pin diperbarui.
+- **Pemindai DDL (daftar putih per pernyataan, 20 pernyataan):** 4 ADD COLUMN (nullable / `arrival_revision` DEFAULT 0) pada 3 tabel, 1 tabel baru `goods_receipt_events`, 2 indeks, 4 FK, 6 CHECK, 1 pasang DROP+ADD `fin_supplier_bills_term_chk` (hanya menambah `TANGGAL_TIBA`), 1 fungsi append-only (badan hanya `RAISE EXCEPTION`), 1 trigger `BEFORE UPDATE OR DELETE`. UPDATE/INSERT/DELETE/DROP TABLE/DROP COLUMN/ALTER COLUMN/TRUNCATE = berhenti.
+- **Backup + restore nyata:** `pg_dump` + checksum, lalu restore ke DB sementara dan perbandingan jumlah baris (19 tabel) dan SIDIK JARI isi baris penuh (17 tabel lama, tanpa kolom baru) dengan produksi.
+- **Rehearsal migrasi:** migrasi diterapkan pada hasil restore dengan image baru; kolom baru kosong, tidak ada backfill; 10 constraint + fungsi + trigger terpasang; uji perilaku (append-only menolak UPDATE/DELETE, CHECK menolak data salah dan meloloskan data benar, `TANGGAL_TIBA` diterima) lalu dibatalkan; sidik jari tabel lama identik sebelum vs sesudah.
+- **Smoke baca-saja:** izin Gudang/Finance/Sales, tampilan Gudang tanpa harga, penulisan ditolak tanpa efek (termasuk tidak ada draf baru), aging & umur utang pada data lama, jumlah baris semua tabel tidak berubah.
+- **Rollback guard:** `scripts/rollback-guard-po-terintegrasi.sh` (baca-saja) menolak rollback kode (exit 1) bila ada faktur `TANGGAL_TIBA`, penerimaan dengan kedatangan tercatat, baris pengganti/pendamping, atau riwayat kedatangan; exit 2 bila tidak bisa memastikan. Instruksi rollback yang dicetak skrip rilis mewajibkan guard dijalankan lebih dulu.
