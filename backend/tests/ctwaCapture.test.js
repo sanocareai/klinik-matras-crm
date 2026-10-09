@@ -12,8 +12,9 @@ import path from "path";
 import {
   buildObservation, captureInbound, describeSourceUrl, purgeCaptures, effectiveRetentionDays,
   _getStats, _resetForTests, MAX_RETENTION_DAYS,
+  flushCapture, _queueLength, _hooks, MAX_QUEUE, BREAKER_FAILS, BREAKER_COOLDOWN_MS, SIGNAL_VERDICTS,
 } from "../src/services/ctwaCapture.js";
-import { summarize, igShortcodeToMediaId } from "../src/services/ctwaCaptureAnalysis.js";
+import { summarize, summarizeCounts, igShortcodeToMediaId } from "../src/services/ctwaCaptureAnalysis.js";
 
 const SALT = "salt-uji-0123456789abcdef";
 const CLID = "AfhKBK8ZBWyKw3p49jW-KFh_rNlyzXmCKW0eSdHULJZtXqZk"; // ekor "tXqZk" tak boleh muncul
@@ -149,10 +150,32 @@ test("payload BUKAN CTWA tidak menghasilkan data atribusi apa pun", () => {
   assert.equal(kosong.verdict, "NO_MESSAGE_BODY");
 });
 
-test("entry point non-iklan (QR/profil) tanpa externalAdReply = CONTEXT_NON_AD, bukan CTWA", () => {
+test("entry point non-iklan (QR/profil) tanpa externalAdReply = ENTRY_POINT_OTHER (bersinyal, tapi BUKAN CTWA)", () => {
   const p = plainPayload();
   p._data.Message = { extendedTextMessage: { contextInfo: { conversionSource: "qr_code", entryPointConversionSource: "profile_link" } } };
-  assert.equal(buildObservation(p, ctx()).verdict, "CONTEXT_NON_AD");
+  const o = buildObservation(p, ctx());
+  assert.equal(o.verdict, "ENTRY_POINT_OTHER");
+  assert.equal(o.ctwaClid, null);
+  assert.ok(SIGNAL_VERDICTS.has(o.verdict));
+});
+
+test("key atribusi di luar contextInfo (mis. _data.Info.CtwaContext) = OTHER_ATTRIBUTION_FIELD; nilainya tidak disalin", () => {
+  const p = plainPayload();
+  p._data.Info.CtwaContext = { headline: "IklanCanaryJudul", phone: "6281234567890" };
+  const o = buildObservation(p, ctx());
+  assert.equal(o.verdict, "OTHER_ATTRIBUTION_FIELD");
+  assert.deepEqual(o.signalKeys, ["CtwaContext"]);
+  assertNoCanary(JSON.stringify(o));
+});
+
+test("pesan biasa & reply: verdict TIDAK bersinyal (tidak akan ditulis ke JSONL)", () => {
+  assert.ok(!SIGNAL_VERDICTS.has(buildObservation(plainPayload(), ctx()).verdict));
+  const reply = plainPayload();
+  reply._data.Message = { extendedTextMessage: { contextInfo: { stanzaId: "ABC", quotedMessage: { conversation: "x" }, mentionedJid: ["6281234567890@c.us"], expiration: 0 } } };
+  const o = buildObservation(reply, ctx());
+  assert.equal(o.verdict, "CONTEXT_NON_AD");
+  assert.ok(!SIGNAL_VERDICTS.has(o.verdict));
+  assert.ok(!SIGNAL_VERDICTS.has(buildObservation({ id: "x", _data: {} }, ctx()).verdict));
 });
 
 test("externalAdReply tanpa penanda iklan & tanpa clid = AD_REPLY_UNMARKED (diamati, tidak diklaim iklan)", () => {
@@ -234,7 +257,7 @@ test("igShortcodeToMediaId: basis-64 posisional; karakter asing -> null", () => 
 
 // ── penulis, flag, retensi ─────────────────────────────────────────────────
 let tmp;
-const ENV_KEYS = ["CTWA_ATTRIBUTION_CAPTURE_ENABLED", "CTWA_CAPTURE_HASH_SALT", "CTWA_CAPTURE_DIR", "CTWA_CAPTURE_RETENTION_DAYS"];
+const ENV_KEYS = ["CTWA_ATTRIBUTION_CAPTURE_ENABLED", "CTWA_CAPTURE_HASH_SALT", "CTWA_CAPTURE_DIR", "CTWA_CAPTURE_RETENTION_DAYS", "CTWA_CAPTURE_MIN_FREE_MB"];
 let savedEnv;
 beforeEach(() => {
   savedEnv = Object.fromEntries(ENV_KEYS.map((k) => [k, process.env[k]]));
@@ -243,16 +266,18 @@ beforeEach(() => {
   delete process.env.CTWA_ATTRIBUTION_CAPTURE_ENABLED;
   delete process.env.CTWA_CAPTURE_HASH_SALT;
   delete process.env.CTWA_CAPTURE_RETENTION_DAYS;
+  process.env.CTWA_CAPTURE_MIN_FREE_MB = "0"; // guard disk dimatikan kecuali tes yang memang menguji-nya
   _resetForTests();
 });
 afterEach(() => {
+  _resetForTests(); // hentikan timer & kembalikan hook
   for (const k of ENV_KEYS) { if (savedEnv[k] === undefined) delete process.env[k]; else process.env[k] = savedEnv[k]; }
   fs.rmSync(tmp, { recursive: true, force: true });
 });
 
 const settle = async (cond, ms = 2000) => { const t = Date.now(); while (!cond() && Date.now() - t < ms) await new Promise((r) => setTimeout(r, 10)); };
 const capDir = () => process.env.CTWA_CAPTURE_DIR;
-const lines = () => (fs.existsSync(capDir()) ? fs.readdirSync(capDir()).flatMap((f) => fs.readFileSync(path.join(capDir(), f), "utf8").split("\n").filter(Boolean)) : []);
+const lines = () => (fs.existsSync(capDir()) ? fs.readdirSync(capDir()).filter((f) => f.endsWith(".jsonl")).flatMap((f) => fs.readFileSync(path.join(capDir(), f), "utf8").split("\n").filter(Boolean)) : []);
 const call = (over = {}) => captureInbound({ payload: ctwaPayload(), event: "message", engine: "GOWS", externalId: "false_6281234567890@c.us_3EB0AAAA1111", isNewCustomer: true, ...over });
 
 test("flag default MATI: tidak ada berkas, tidak ada pekerjaan", async () => {
@@ -307,16 +332,46 @@ test("customer baru DAN lama sama-sama teramati (pesan berbeda)", async () => {
   assert.deepEqual(rows.map((r) => r.customer).sort(), ["EXISTING", "NEW"]);
 });
 
-test("payload non-CTWA tercatat sebagai non-CTWA, tanpa data atribusi", async () => {
+test("pesan biasa TIDAK menghasilkan baris JSONL — hanya dihitung agregat (tanpa data customer)", async () => {
   process.env.CTWA_ATTRIBUTION_CAPTURE_ENABLED = "true";
   process.env.CTWA_CAPTURE_HASH_SALT = SALT;
-  call({ payload: plainPayload(), externalId: "false_a@c.us_3EB0BBBB2222" });
-  await settle(() => _getStats().written === 1);
-  const o = JSON.parse(lines()[0]);
-  assert.equal(o.verdict, "NO_CONTEXT_INFO");
-  assert.equal(o.ctwaClid, undefined);
-  assert.equal(o.values, undefined);
-  assertNoCanary(lines()[0]);
+  for (let i = 0; i < 20; i++) call({ payload: plainPayload(), externalId: `false_a@c.us_3EB0PLAIN${i}`, isNewCustomer: i % 2 === 0 });
+  const reply = plainPayload();
+  reply._data.Message = { extendedTextMessage: { contextInfo: { stanzaId: "ABC", quotedMessage: { conversation: "quoted canary text" } } } };
+  call({ payload: reply, externalId: "false_a@c.us_3EB0REPLY1" });
+  await settle(() => _getStats().observed === 21);
+  assert.equal(_getStats().observed, 21);
+  assert.equal(_getStats().written, 0);
+  await flushCapture();
+  assert.equal(lines().length, 0, "tidak boleh ada satu pun baris per-pesan");
+  const berkas = fs.readdirSync(capDir());
+  assert.deepEqual(berkas, [`ctwa-capture-counts-${new Date().toISOString().slice(0, 10)}.json`]);
+  const c = JSON.parse(fs.readFileSync(path.join(capDir(), berkas[0]), "utf8"));
+  assert.equal(c.total, 21);
+  assert.equal(c.signal, 0);
+  assert.equal(c.verdicts.NO_CONTEXT_INFO, 20);
+  assert.equal(c.verdicts.CONTEXT_NON_AD, 1);
+  assert.equal(c.customer.NEW.total + c.customer.EXISTING.total, 21);
+  // berkas agregat hanya angka: tidak ada ID pesan, hash, nomor, kanari
+  const mentah = fs.readFileSync(path.join(capDir(), berkas[0]), "utf8");
+  assertNoCanary(mentah, "counts");
+  assert.ok(!/3EB0|msgIdHash/.test(mentah));
+});
+
+test("campuran: hanya pesan bersinyal yang ditulis; agregat mencatat keduanya", async () => {
+  process.env.CTWA_ATTRIBUTION_CAPTURE_ENABLED = "true";
+  process.env.CTWA_CAPTURE_HASH_SALT = SALT;
+  call({ payload: plainPayload(), externalId: "false_a@c.us_3EB0M1" });
+  call({ payload: ctwaPayload(), externalId: "false_a@c.us_3EB0M2" });
+  call({ payload: plainPayload(), externalId: "false_a@c.us_3EB0M3" });
+  await settle(() => _getStats().written === 1 && _getStats().observed === 3);
+  await flushCapture();
+  assert.equal(lines().length, 1);
+  assert.equal(JSON.parse(lines()[0]).verdict, "CTWA_AD");
+  const c = JSON.parse(fs.readFileSync(path.join(capDir(), fs.readdirSync(capDir()).find((f) => f.includes("counts"))), "utf8"));
+  assert.equal(c.total, 3);
+  assert.equal(c.signal, 1);
+  assert.equal(c.signalWritten, 1);
 });
 
 test("kegagalan tulis tidak melempar & tidak mengubah apa pun (dir = berkas biasa)", async () => {
@@ -410,4 +465,218 @@ test("performa builder: 5000 observasi jauh di bawah anggaran", () => {
   const ms = Number(process.hrtime.bigint() - t0) / 1e6;
   console.log(`# builder: ${(ms / 5000 * 1000).toFixed(1)} µs/observasi`);
   assert.ok(ms < 2000);
+});
+
+// ── HARDENING: antrean serial, batas antrean, breaker, disk, flag, restart ──
+const hidupkan = () => { process.env.CTWA_ATTRIBUTION_CAPTURE_ENABLED = "true"; process.env.CTWA_CAPTURE_HASH_SALT = SALT; };
+const sinyal = (i, over = {}) => call({ payload: ctwaPayload(), externalId: `false_a@c.us_3EBX${i}`, ...over });
+const hariIni = () => new Date().toISOString().slice(0, 10);
+const jsonlHariIni = () => path.join(capDir(), `ctwa-capture-${hariIni()}.jsonl`);
+const gerbang = () => { let buka; const p = new Promise((r) => { buka = r; }); return { p, buka }; };
+
+test("append bersamaan: 300 pesan bersinyal serentak -> setiap baris utuh & unik, tidak ada yang menyisip", async () => {
+  hidupkan();
+  for (let i = 0; i < 300; i++) sinyal(i);
+  await settle(() => _getStats().written === 300, 8000);
+  assert.equal(_getStats().written, 300);
+  const mentah = fs.readFileSync(jsonlHariIni(), "utf8");
+  assert.ok(mentah.endsWith("\n"));
+  const baris = mentah.split("\n").filter(Boolean);
+  assert.equal(baris.length, 300);
+  const ids = new Set(baris.map((l) => JSON.parse(l).msgIdHash)); // JSON.parse melempar bila ada baris rusak/bersisipan
+  assert.equal(ids.size, 300);
+});
+
+test("antrean berbatas: lonjakan saat disk macet -> memori tidak tumbuh, kelebihan di-drop & dihitung, inbox tak terganggu", async () => {
+  hidupkan();
+  const g = gerbang();
+  const asli = _hooks.appendFile;
+  _hooks.appendFile = async (...a) => { await g.p; return asli(...a); };
+  const total = MAX_QUEUE + 200;
+  for (let i = 0; i < total; i++) assert.doesNotThrow(() => sinyal(i));
+  await settle(() => _getStats().observed === total, 8000);
+  assert.equal(_getStats().observed, total);
+  assert.ok(_queueLength() <= MAX_QUEUE, `antrean ${_queueLength()} melebihi batas`);
+  // 1 item sedang ditulis (tertahan) + MAX_QUEUE mengantre; sisanya di-drop
+  assert.equal(_getStats().droppedQueueFull, total - (MAX_QUEUE + 1));
+  g.buka();
+  await settle(() => _getStats().written === MAX_QUEUE + 1, 8000);
+  assert.equal(_getStats().written, MAX_QUEUE + 1);
+  assert.equal(_queueLength(), 0);
+  await flushCapture();
+  const c = JSON.parse(fs.readFileSync(path.join(capDir(), `ctwa-capture-counts-${hariIni()}.json`), "utf8"));
+  assert.equal(c.total, total, "volume agregat tetap lengkap walau baris di-drop");
+  assert.equal(c.dropped.queueFull, total - (MAX_QUEUE + 1));
+});
+
+test("disk penuh (ENOSPC): breaker terbuka, penulisan berhenti tanpa menghantam disk, pulih sesudah jeda", async () => {
+  hidupkan();
+  let t = Date.now();
+  _hooks.now = () => t;
+  const asli = _hooks.appendFile;
+  let panggilan = 0;
+  _hooks.appendFile = async () => { panggilan++; throw Object.assign(new Error("disk penuh"), { code: "ENOSPC" }); };
+  sinyal(1);
+  await settle(() => _getStats().failed === 1);
+  assert.equal(panggilan, 1);
+  for (let i = 2; i < 12; i++) sinyal(i);
+  await settle(() => _getStats().droppedBreaker === 10);
+  assert.equal(_getStats().droppedBreaker, 10);
+  assert.equal(panggilan, 1, "selama breaker terbuka appendFile tidak dipanggil lagi");
+  assert.equal(_getStats().written, 0);
+
+  _hooks.appendFile = asli;           // disk lega kembali
+  t += BREAKER_COOLDOWN_MS + 1;       // lewat masa jeda
+  sinyal(99);
+  await settle(() => _getStats().written === 1);
+  assert.equal(_getStats().written, 1);
+  for (const l of lines()) JSON.parse(l); // semua baris yang ada utuh
+});
+
+test("kegagalan umum berturut-turut (folder tak writable): berhenti setelah BREAKER_FAILS, bukan tiap pesan", async () => {
+  hidupkan();
+  let panggilan = 0;
+  _hooks.appendFile = async () => { panggilan++; throw Object.assign(new Error("x"), { code: "EACCES" }); };
+  for (let i = 0; i < 30; i++) sinyal(i);
+  await settle(() => _getStats().observed === 30);
+  await settle(() => _getStats().failed + _getStats().droppedBreaker === 30);
+  assert.equal(panggilan, BREAKER_FAILS);
+  assert.equal(_getStats().failed, BREAKER_FAILS);
+  assert.equal(_getStats().droppedBreaker, 30 - BREAKER_FAILS);
+});
+
+test("ruang disk di bawah ambang: tidak menulis (disk dipakai bersama Postgres/uploads); pulih setelah lega", async () => {
+  hidupkan();
+  process.env.CTWA_CAPTURE_MIN_FREE_MB = "500";
+  let t = Date.now();
+  _hooks.now = () => t;
+  _hooks.statfs = async () => ({ bavail: 1000, bsize: 4096 }); // ~4 MB bebas
+  sinyal(1);
+  await settle(() => _getStats().droppedLowDisk === 1);
+  assert.equal(_getStats().droppedLowDisk, 1);
+  assert.equal(_getStats().written, 0);
+  assert.equal(lines().length, 0);
+
+  _hooks.statfs = async () => ({ bavail: 10_000_000, bsize: 4096 }); // ~40 GB
+  t += 61_000;
+  sinyal(2);
+  await settle(() => _getStats().written === 1);
+  assert.equal(_getStats().written, 1);
+});
+
+test("statfs gagal/tidak tersedia: tidak memblokir capture", async () => {
+  hidupkan();
+  process.env.CTWA_CAPTURE_MIN_FREE_MB = "500";
+  _hooks.statfs = async () => { throw Object.assign(new Error("nope"), { code: "ENOSYS" }); };
+  sinyal(1);
+  await settle(() => _getStats().written === 1);
+  assert.equal(_getStats().written, 1);
+});
+
+test("berkas harian penuh (5 MB): baris berikutnya di-drop & dihitung, tidak ada tulis", async () => {
+  hidupkan();
+  fs.mkdirSync(capDir(), { recursive: true });
+  fs.writeFileSync(jsonlHariIni(), Buffer.concat([Buffer.alloc(5 * 1024 * 1024 - 10, 0x61), Buffer.from("\n")]));
+  sinyal(1);
+  await settle(() => _getStats().droppedFileCap === 1);
+  assert.equal(_getStats().droppedFileCap, 1);
+  assert.equal(_getStats().written, 0);
+});
+
+test("flag dimatikan saat antrean berisi: sisa antrean dibuang, tidak ditulis; panggilan baru langsung berhenti", async () => {
+  hidupkan();
+  const g = gerbang();
+  const asli = _hooks.appendFile;
+  _hooks.appendFile = async (...a) => { await g.p; return asli(...a); };
+  for (let i = 0; i < 6; i++) sinyal(i);
+  await settle(() => _getStats().observed === 6);
+  process.env.CTWA_ATTRIBUTION_CAPTURE_ENABLED = "false";
+  assert.equal(sinyal(100), false);
+  g.buka();
+  await settle(() => _queueLength() === 0 && _getStats().droppedFlagOff === 5);
+  assert.equal(_getStats().droppedFlagOff, 5);
+  assert.ok(_getStats().written <= 1, "hanya item yang sudah in-flight boleh selesai");
+  await flushCapture(); // flag mati: agregat dibuang, tidak ditulis
+  assert.equal(fs.readdirSync(capDir()).filter((f) => f.includes("counts")).length, 0);
+});
+
+test("salt tidak valid (kosong / terlalu pendek): tidak menulis apa pun, tidak membuat folder", async () => {
+  process.env.CTWA_ATTRIBUTION_CAPTURE_ENABLED = "true";
+  for (const salt of [undefined, "", "pendek"]) {
+    if (salt === undefined) delete process.env.CTWA_CAPTURE_HASH_SALT; else process.env.CTWA_CAPTURE_HASH_SALT = salt;
+    assert.equal(sinyal(1), false);
+  }
+  await new Promise((r) => setTimeout(r, 50));
+  await flushCapture();
+  assert.equal(fs.existsSync(capDir()), false);
+  assert.equal(_getStats().observed, 0);
+  assert.equal(_getStats().skippedNoSalt, 3);
+});
+
+test("ekor berkas terpotong (crash/disk penuh) tidak merekat ke baris berikutnya", async () => {
+  hidupkan();
+  fs.mkdirSync(capDir(), { recursive: true });
+  fs.writeFileSync(jsonlHariIni(), '{"v":1,"verdict":"CTWA_AD","msgIdHash":"terpoto'); // tanpa newline
+  sinyal(1);
+  await settle(() => _getStats().written === 1);
+  const semua = fs.readFileSync(jsonlHariIni(), "utf8").split("\n").filter(Boolean);
+  assert.equal(semua.length, 2);
+  assert.throws(() => JSON.parse(semua[0]));    // sisa terpotong tetap berdiri sendiri
+  assert.equal(JSON.parse(semua[1]).verdict, "CTWA_AD"); // baris baru utuh
+});
+
+test("restart proses: agregat digabung dengan berkas hari itu, bukan ditimpa; tanpa .tmp tersisa", async () => {
+  hidupkan();
+  for (let i = 0; i < 3; i++) call({ payload: plainPayload(), externalId: `false_a@c.us_3EB0R${i}` });
+  await settle(() => _getStats().observed === 3);
+  await flushCapture();
+  _resetForTests(); // = proses baru: memori kosong, berkas tetap
+  for (let i = 3; i < 7; i++) call({ payload: plainPayload(), externalId: `false_a@c.us_3EB0R${i}` });
+  await settle(() => _getStats().observed === 4);
+  await flushCapture();
+  const f = path.join(capDir(), `ctwa-capture-counts-${hariIni()}.json`);
+  assert.equal(JSON.parse(fs.readFileSync(f, "utf8")).total, 7);
+  assert.deepEqual(fs.readdirSync(capDir()).filter((n) => n.endsWith(".tmp")), []);
+});
+
+test("berkas agregat rusak tidak menggagalkan flush (mulai dari nol)", async () => {
+  hidupkan();
+  fs.mkdirSync(capDir(), { recursive: true });
+  fs.writeFileSync(path.join(capDir(), `ctwa-capture-counts-${hariIni()}.json`), "{bukan json");
+  call({ payload: plainPayload(), externalId: "false_a@c.us_3EB0Z1" });
+  await settle(() => _getStats().observed === 1);
+  await flushCapture();
+  assert.equal(JSON.parse(fs.readFileSync(path.join(capDir(), `ctwa-capture-counts-${hariIni()}.json`), "utf8")).total, 1);
+});
+
+test("purge menjangkau berkas agregat & .tmp lama, tapi tidak berkas lain; --all membersihkan semuanya", async () => {
+  fs.mkdirSync(capDir(), { recursive: true });
+  const now = Date.UTC(2026, 9, 9, 12, 0, 0);
+  const tulis = (n) => fs.writeFileSync(path.join(capDir(), n), "{}");
+  tulis("ctwa-capture-counts-2026-09-01.json");
+  tulis("ctwa-capture-counts-2026-09-01.json.tmp");
+  tulis("ctwa-capture-counts-2026-10-09.json");
+  tulis("ctwa-capture-2026-10-09.jsonl");
+  tulis("ctwa-capture-counts-2026-09-01.json.bak"); // bukan pola
+  tulis("README.txt");
+  const r = await purgeCaptures({ now });
+  assert.deepEqual(r.removed.sort(), ["ctwa-capture-counts-2026-09-01.json", "ctwa-capture-counts-2026-09-01.json.tmp"]);
+  const rAll = await purgeCaptures({ now, all: true });
+  assert.deepEqual(rAll.removed.sort(), ["ctwa-capture-2026-10-09.jsonl", "ctwa-capture-counts-2026-10-09.json"]);
+  assert.deepEqual(fs.readdirSync(capDir()).sort(), ["README.txt", "ctwa-capture-counts-2026-09-01.json.bak"]);
+});
+
+test("summarizeCounts: volume per hari & persen bersinyal; sidik salt ganda diperingatkan", () => {
+  const v = summarizeCounts([
+    { day: "2026-10-09", total: 1000, signal: 90, signalWritten: 90, customer: { NEW: { total: 300 }, EXISTING: { total: 700 } }, dropped: { queueFull: 2 } },
+    { day: "2026-10-10", total: 3000, signal: 110, signalWritten: 110, customer: { NEW: { total: 500 }, EXISTING: { total: 2500 } }, dropped: {} },
+  ]);
+  assert.equal(v.inboundPerDay.avg, 2000);
+  assert.equal(v.inboundPerDay.max, 3000);
+  assert.equal(v.totals.dropped.queueFull, 2);
+  assert.equal(v.signalPct, 5);
+  const a = buildObservation(ctwaPayload(), ctx({ externalId: "f_a_3EB01" }));
+  const b = buildObservation(ctwaPayload(), ctx({ externalId: "f_a_3EB02", salt: "salt-lain-0123456789abcdef" }));
+  assert.ok(summarize([a, b]).saltWarning);
+  assert.equal(summarize([a]).saltWarning, null);
 });

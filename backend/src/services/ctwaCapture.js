@@ -8,45 +8,61 @@
 //
 // ⚠️ INI BUKAN ATRIBUSI. Modul ini TIDAK mengubah Customer.leadSource,
 // TIDAK membuat attribution_touch, TIDAK mengirim apa pun ke Meta. Ia hanya
-// mencatat satu baris observasi ter-sanitasi per pesan inbound.
+// mencatat observasi ter-sanitasi.
+//
+// ── DUA KELUARAN ───────────────────────────────────────────────────────────
+//   1. JSONL (ctwa-capture-YYYY-MM-DD.jsonl): SATU baris HANYA untuk pesan yang
+//      punya SINYAL atribusi (externalAdReply, penanda iklan, entry point
+//      conversion, atau key bernama referral/ctwa/dst). Pesan biasa — termasuk
+//      reply yang cuma punya quotedMessage — TIDAK menghasilkan baris.
+//   2. Hitungan agregat harian (ctwa-capture-counts-YYYY-MM-DD.json): angka
+//      saja (total inbound, per verdict, baru/lama, jumlah drop). Tanpa ID
+//      pesan, tanpa data customer. Ini penyebut untuk "berapa persen pesan
+//      yang membawa sinyal" dan sekaligus ukuran volume inbound aktual.
 //
 // ── YANG DILARANG MASUK CAPTURE (dijaga di kode, bukan janji) ──────────────
 //   isi pesan, nama customer, nomor telepon/JID, media, healthStatus,
 //   complaintCategory, token/API key, payload mentah.
 // Caranya ALLOWLIST: observasi dirakit dari nol, field demi field, dan
 // tiap nilai divalidasi bentuknya. TIDAK ADA jalur "salin objek lalu buang
-// yang sensitif" — objek payload tidak pernah disalin. Nilai yang gagal
-// validasi TIDAK disimpan; hanya dicatat bahwa ia ditolak (`rejected`).
+// yang sensitif". Nilai yang gagal validasi TIDAK disimpan; hanya dicatat
+// bahwa ia ditolak (`rejected`).
 //
 // ── ctwa_clid ──────────────────────────────────────────────────────────────
 // Disimpan HANYA sebagai HMAC-SHA256 (dipotong 16 hex) + panjang + kelas
-// karakter. Nilai utuh tidak pernah ditulis/di-log. Empat karakter terakhir
-// SENGAJA TIDAK disimpan: untuk tujuan Fase 0 (apakah clid ada, apakah unik
-// per klik, apakah satu clid muncul di >1 pesan) hash saja sudah cukup, dan
-// ekor 4 karakter dari ID ber-entropi tinggi memang tidak membantu debugging
-// apa pun yang tidak bisa dijawab hash + panjang. Kalau suatu saat butuh
-// mencocokkan dengan Ads Manager, itu keputusan Fase 1 dengan pembahasan sendiri.
+// karakter. Nilai utuh dan potongannya (termasuk 4 karakter terakhir) tidak
+// pernah ditulis/di-log.
 //
 // ── FEATURE FLAG ───────────────────────────────────────────────────────────
 // CTWA_ATTRIBUTION_CAPTURE_ENABLED harus persis "true" (default: mati).
 // Wajib juga CTWA_CAPTURE_HASH_SALT (>=16 karakter); tanpa salt capture
-// menolak menyala — hash tanpa salt bisa dicocokkan dengan data di tempat lain.
+// menolak menyala. Jangan memutar salt di tengah jendela observasi: hash lama
+// dan baru tidak bisa dicocokkan (tiap baris membawa `sid`, sidik salt 6 hex,
+// supaya report bisa memperingatkan).
 //
-// ── ISOLASI KEGAGALAN ──────────────────────────────────────────────────────
-// captureInbound() sinkron-ringan: cek flag lalu menjadwalkan kerja lewat
-// setImmediate, dan TIDAK PERNAH melempar. Dipanggil SETELAH Message.create
-// berhasil, jadi tidak mungkin menggagalkan penyimpanan pesan atau mengubah
-// nilai kembalian handler. Karena hanya jalur "saved" yang memanggilnya,
-// event `message` dan `message.any` untuk pesan yang sama (salah satunya
-// kena P2002 → skip-dupe) tidak menggandakan observasi; ada juga dedupe
-// in-memory berbasis hash ID pesan sebagai sabuk kedua.
-//
-// ── PENYIMPANAN & RETENSI ──────────────────────────────────────────────────
-// JSONL harian di backend/data/ctwa-capture/ (bind-mount ke host; TANPA
-// perubahan skema DB — attribution_touch dilarang di fase ini). Retensi
-// maksimum 7 hari: berkas harian yang hari-UTC-nya lebih tua dari itu dihapus
-// otomatis sekali per hari (juga saat flag mati) dan lewat
-// scripts/ctwa-capture-purge.js. Batas ukuran per berkas 5 MB.
+// ── ISOLASI KEGAGALAN & KEAMANAN TEPI ──────────────────────────────────────
+// captureInbound() sinkron-ringan, TIDAK PERNAH melempar, dipanggil SETELAH
+// Message.create berhasil. Penulisan lewat SATU antrean serial berbatas
+// (MAX_QUEUE): tidak ada append bersamaan yang bisa saling menyisip, dan
+// lonjakan pesan tidak membuat memori tumbuh — antrean penuh = drop + counter,
+// inbox tetap jalan. Berhenti-aman:
+//   - salt tidak valid        -> tidak menulis apa pun
+//   - folder tak bisa ditulis -> circuit breaker (BREAKER_FAILS gagal berturut
+//                                -> jeda BREAKER_COOLDOWN_MS), bukan menghantam
+//                                filesystem tiap pesan
+//   - disk penuh / hampir     -> ENOSPC membuka breaker; sebelum itu, ruang
+//                                bebas < CTWA_CAPTURE_MIN_FREE_MB (default
+//                                1024) menghentikan tulis (disk dipakai bersama
+//                                Postgres & uploads — jangan jadi pemicu disk penuh)
+//   - restart proses          -> antrean memori hilang (wajar); ekor baris
+//                                terpotong akibat crash dilindungi dengan
+//                                awalan "\n" pada tulis pertama berkas
+//   - flag jadi false         -> captureInbound langsung berhenti; sisa antrean
+//                                dibuang tanpa ditulis
+// ── RETENSI ────────────────────────────────────────────────────────────────
+// Maksimum 7 hari (berkas harian dihapus otomatis sekali per hari-UTC, juga
+// saat flag mati) + scripts/ctwa-capture-purge.js [--all]. TANPA perubahan
+// skema DB.
 
 import crypto from "crypto";
 import fs from "fs";
@@ -61,14 +77,24 @@ export const SCHEMA_VERSION = 1;
 export const MAX_RETENTION_DAYS = 7;
 export const MAX_FILE_BYTES = 5 * 1024 * 1024;
 export const MAX_LINE_BYTES = 4096;
+export const MAX_QUEUE = 500;
+export const BREAKER_FAILS = 5;
+export const BREAKER_COOLDOWN_MS = 60_000;
+export const COUNTS_FLUSH_MS = 60_000;
+const DISK_CHECK_MS = 60_000;
+const DEFAULT_MIN_FREE_MB = 1024;
 const MAX_DEPTH = 4;
 const MAX_KEYS = 40;
 const DEDUPE_CAP = 2000;
-const FILE_RE = /^ctwa-capture-(\d{4})-(\d{2})-(\d{2})\.jsonl$/;
+const FILE_RE = /^ctwa-capture-(?:counts-)?(\d{4})-(\d{2})-(\d{2})\.jsonl?(?:\.tmp)?$/;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 // Penanda iklan — SAMA dengan PENANDA_IKLAN_CTWA di leadAttribution.js.
 const PENANDA_IKLAN = /fb_ads|ig_ads|ctwa_ad/i;
+// Nama key yang MENCIRIKAN data atribusi (hanya NAMA key yang dicocokkan).
+const SIGNAL_KEY_RE = /(referral|ctwa|adreply|ad_?context|entry_?point|conversion|campaign|utm_|source_?(id|type|url)|fbclid|gclid)/i;
+
+export const SIGNAL_VERDICTS = new Set(["CTWA_AD", "AD_REPLY_UNMARKED", "ENTRY_POINT_OTHER", "OTHER_ATTRIBUTION_FIELD"]);
 
 // ── konfigurasi ────────────────────────────────────────────────────────────
 export function isCaptureFlagOn() {
@@ -85,6 +111,11 @@ export function effectiveRetentionDays() {
   return Math.min(n, MAX_RETENTION_DAYS);
 }
 
+function minFreeBytes() {
+  const n = parseInt(process.env.CTWA_CAPTURE_MIN_FREE_MB ?? "", 10);
+  return (Number.isFinite(n) && n >= 0 ? n : DEFAULT_MIN_FREE_MB) * 1024 * 1024;
+}
+
 function saltOrNull() {
   const s = process.env.CTWA_CAPTURE_HASH_SALT;
   return typeof s === "string" && s.length >= 16 ? s : null;
@@ -94,20 +125,47 @@ function hmac(salt, value) {
   return crypto.createHmac("sha256", salt).update(String(value)).digest("hex").slice(0, 16);
 }
 
-// ── statistik in-memory (tanpa nilai apa pun dari payload) ─────────────────
-const stats = { observed: 0, written: 0, deduped: 0, failed: 0, skippedNoSalt: 0, droppedOversize: 0, droppedFileCap: 0 };
+// Titik injeksi untuk tes (waktu, statfs, appendFile). Produksi memakai bawaan.
+export const _hooks = {
+  now: () => Date.now(),
+  statfs: (p) => fs.promises.statfs(p),
+  appendFile: (f, data, opts) => fs.promises.appendFile(f, data, opts),
+};
+
+// ── statistik proses (tanpa nilai apa pun dari payload) ────────────────────
+const stats = {
+  observed: 0, written: 0, deduped: 0, failed: 0, skippedNoSalt: 0,
+  droppedOversize: 0, droppedFileCap: 0, droppedQueueFull: 0, droppedLowDisk: 0, droppedBreaker: 0, droppedFlagOff: 0,
+};
 export function _getStats() { return { ...stats }; }
+export function _queueLength() { return queue.length; }
+
+const recentIds = new Map();
+const fileState = new Map(); // path -> { size, needsNewline }
+const queue = [];
+let draining = false;
+const breaker = { fails: 0, openUntil: 0 };
+let diskCheck = { at: 0, ok: true };
+let lastPurgeDay = null;
+let lastWarnAt = 0;
+let countsTimer = null;
+let countsFlushing = null;
+const counts = new Map();      // day -> delta sejak proses start
+const countsBase = new Map();  // day -> isi berkas saat pertama kali di-flush proses ini
+
 export function _resetForTests() {
   for (const k of Object.keys(stats)) stats[k] = 0;
-  recentIds.clear();
-  fileSizes.clear();
-  lastPurgeDay = null;
-  lastWarnAt = 0;
+  recentIds.clear(); fileState.clear(); queue.length = 0; draining = false;
+  breaker.fails = 0; breaker.openUntil = 0; diskCheck = { at: 0, ok: true };
+  lastPurgeDay = null; lastWarnAt = 0; counts.clear(); countsBase.clear(); countsFlushing = null;
+  if (countsTimer) { clearTimeout(countsTimer); countsTimer = null; }
+  _hooks.now = () => Date.now();
+  _hooks.statfs = (p) => fs.promises.statfs(p);
+  _hooks.appendFile = (f, data, opts) => fs.promises.appendFile(f, data, opts);
 }
 
 // Peringatan dibatasi 1x/menit dan HANYA memuat kode error, tidak pernah
 // pesan error (pesan error bisa menyisipkan path/nilai).
-let lastWarnAt = 0;
 function warnLimited(code) {
   const now = Date.now();
   if (now - lastWarnAt < 60_000) return;
@@ -134,6 +192,7 @@ function presence(obj, names) {
 
 const ENUM_RE = /^[A-Za-z0-9_\-]{1,32}$/;
 const DIGITS_RE = /^\d{1,32}$/;
+const KEYNAME_RE = /^[A-Za-z][A-Za-z0-9_]{0,40}$/;
 
 function enumValue(v) {
   if (typeof v === "number" && Number.isFinite(v)) v = String(v);
@@ -145,7 +204,12 @@ function digitsValue(v) {
 }
 function safeKeyNames(obj) {
   if (!isObj(obj)) return [];
-  return Object.keys(obj).filter((k) => /^[A-Za-z][A-Za-z0-9_]{0,40}$/.test(k)).sort().slice(0, MAX_KEYS);
+  return Object.keys(obj).filter((k) => KEYNAME_RE.test(k)).sort().slice(0, MAX_KEYS);
+}
+function signalKeyNames(...objs) {
+  const out = new Set();
+  for (const o of objs) for (const k of safeKeyNames(o)) if (SIGNAL_KEY_RE.test(k)) out.add(k);
+  return [...out].sort().slice(0, MAX_KEYS);
 }
 
 /**
@@ -213,14 +277,14 @@ function findContext(payload) {
     if (!isObj(root)) continue;
     sawContainer = true;
     // BFS terbatas: [node, namaKunciPenampung, kedalaman]
-    const queue = [[root, null, 0]];
+    const bfs = [[root, null, 0]];
     let visited = 0;
-    while (queue.length && visited < 200) {
-      const [node, via, depth] = queue.shift();
+    while (bfs.length && visited < 200) {
+      const [node, via, depth] = bfs.shift();
       visited++;
       const ctx = node.contextInfo;
       if (isObj(ctx)) {
-        const cand = { container: name, messageType: via && /^[A-Za-z][A-Za-z0-9_]{0,40}$/.test(via) ? via : null, depth, ctx };
+        const cand = { container: name, messageType: via && KEYNAME_RE.test(via) ? via : null, depth, ctx };
         const ear = isObj(ctx.externalAdReply);
         const marker = PENANDA_IKLAN.test(`${enumValue(ctx.conversionSource) || ""} ${enumValue(ctx.entryPointConversionSource) || ""}`);
         const clid = typeof ctx.externalAdReply?.ctwaClid === "string" && ctx.externalAdReply.ctwaClid.trim() !== "";
@@ -231,7 +295,7 @@ function findContext(payload) {
       for (const key of Object.keys(node).slice(0, MAX_KEYS)) {
         if (key === "contextInfo") continue; // jangan turun ke quotedMessage dll
         const child = node[key];
-        if (isObj(child)) queue.push([child, key, depth + 1]);
+        if (isObj(child)) bfs.push([child, key, depth + 1]);
       }
     }
   }
@@ -251,6 +315,8 @@ function providerTimestamp(payload) {
 
 /**
  * Rakit observasi ter-sanitasi. FUNGSI MURNI (tanpa I/O).
+ * Dipanggil untuk SETIAP pesan (verdict dipakai untuk hitungan agregat), tapi
+ * hanya yang `SIGNAL_VERDICTS.has(verdict)` yang ditulis ke JSONL.
  * @param {object} payload   payload WAHA (hanya dibaca; tidak pernah disalin)
  * @param {{event?:string, engine?:string, externalId?:string, isNewCustomer?:boolean, salt:string, now?:number}} ctx
  */
@@ -261,6 +327,7 @@ export function buildObservation(payload, ctx) {
 
   const base = {
     v: SCHEMA_VERSION,
+    sid: hmac(ctx.salt, "sid").slice(0, 6),
     observedAt: new Date(now).toISOString(),
     event: ctx.event === "message" || ctx.event === "message.any" ? ctx.event : "other",
     engine: enumValue(ctx.engine) || null,
@@ -271,7 +338,11 @@ export function buildObservation(payload, ctx) {
   };
 
   const { found, sawContainer } = findContext(payload);
+  const data = payload?._data;
+  const extraKeys = signalKeyNames(found?.ctx, isObj(data) ? data : null, isObj(data?.Info) ? data.Info : null);
+
   if (!found) {
+    if (extraKeys.length) return { ...base, verdict: "OTHER_ATTRIBUTION_FIELD", signalKeys: extraKeys };
     return { ...base, verdict: sawContainer ? "NO_CONTEXT_INFO" : "NO_MESSAGE_BODY" };
   }
 
@@ -321,7 +392,12 @@ export function buildObservation(payload, ctx) {
   if (pSrcUrl.state === "present" && !url) rejected.push("sourceUrl");
 
   const marker = PENANDA_IKLAN.test(`${values.conversionSource || ""} ${values.entryPointConversionSource || ""}`);
-  const verdict = clid || marker ? "CTWA_AD" : ear ? "AD_REPLY_UNMARKED" : "CONTEXT_NON_AD";
+  const entryPointPresent = [pConv, pEntry, pApp, pDelay].some((p) => p.state !== "absent");
+  const verdict = clid || marker ? "CTWA_AD"
+    : ear ? "AD_REPLY_UNMARKED"
+    : entryPointPresent ? "ENTRY_POINT_OTHER"
+    : extraKeys.length ? "OTHER_ATTRIBUTION_FIELD"
+    : "CONTEXT_NON_AD";
 
   return {
     ...base,
@@ -337,33 +413,224 @@ export function buildObservation(payload, ctx) {
     // Hanya NAMA key (bukan nilai) — menjawab "field referral lain apa yang benar-benar ada".
     externalAdReplyKeys: safeKeyNames(ear),
     contextInfoKeys: safeKeyNames(c),
+    signalKeys: extraKeys.length ? extraKeys : undefined,
   };
 }
 
-// ── penulisan ──────────────────────────────────────────────────────────────
-const recentIds = new Map();
-const fileSizes = new Map();
+// ── hitungan agregat harian ────────────────────────────────────────────────
+const dayKey = (ms) => new Date(ms).toISOString().slice(0, 10);
 
-function dayKey(ms) { return new Date(ms).toISOString().slice(0, 10); }
+function emptyCounts(day) {
+  return {
+    v: 1, day, total: 0, signal: 0, signalWritten: 0,
+    verdicts: {}, events: {},
+    customer: { NEW: { total: 0, signal: 0 }, EXISTING: { total: 0, signal: 0 } },
+    dropped: {},
+  };
+}
+const bump = (map, key, n = 1) => { map[key] = (map[key] || 0) + n; };
 
-async function appendLine(line, now) {
-  const dir = captureDir();
-  const bytes = Buffer.byteLength(line);
-  if (bytes > MAX_LINE_BYTES) { stats.droppedOversize++; return false; }
-  const file = path.join(dir, `ctwa-capture-${dayKey(now)}.jsonl`);
-  let size = fileSizes.get(file);
-  if (size === undefined) {
-    await fs.promises.mkdir(dir, { recursive: true, mode: 0o700 });
-    size = await fs.promises.stat(file).then((s) => s.size, () => 0);
+function dayCounts(ms) {
+  const day = dayKey(ms);
+  let c = counts.get(day);
+  if (!c) { c = emptyCounts(day); counts.set(day, c); }
+  return c;
+}
+
+function countObservation(obs, ms) {
+  const c = dayCounts(ms);
+  const sig = SIGNAL_VERDICTS.has(obs.verdict);
+  c.total++;
+  if (sig) c.signal++;
+  bump(c.verdicts, obs.verdict);
+  bump(c.events, obs.event);
+  const cust = c.customer[obs.customer] || (c.customer[obs.customer] = { total: 0, signal: 0 });
+  cust.total++;
+  if (sig) cust.signal++;
+  scheduleCountsFlush();
+}
+
+function countDrop(reason, ms) {
+  const k = "dropped" + reason[0].toUpperCase() + reason.slice(1);
+  stats[k] = (stats[k] || 0) + 1;
+  bump(dayCounts(ms).dropped, reason);
+  scheduleCountsFlush();
+}
+
+function mergeCounts(a, b) {
+  const out = emptyCounts(b.day || a.day);
+  for (const src of [a, b]) {
+    if (!isObj(src)) continue;
+    for (const k of ["total", "signal", "signalWritten"]) out[k] += Number(src[k]) || 0;
+    for (const grp of ["verdicts", "events", "dropped"]) {
+      for (const [k, v] of Object.entries(isObj(src[grp]) ? src[grp] : {})) if (typeof v === "number" && KEYNAME_RE.test(k)) bump(out[grp], k, v);
+    }
+    for (const t of ["NEW", "EXISTING"]) {
+      out.customer[t].total += Number(src.customer?.[t]?.total) || 0;
+      out.customer[t].signal += Number(src.customer?.[t]?.signal) || 0;
+    }
   }
-  if (size + bytes > MAX_FILE_BYTES) { stats.droppedFileCap++; return false; }
-  await fs.promises.appendFile(file, line, { mode: 0o600 });
-  fileSizes.set(file, size + bytes);
+  return out;
+}
+
+function scheduleCountsFlush() {
+  if (countsTimer) return;
+  countsTimer = setTimeout(() => { countsTimer = null; flushCapture().catch(() => {}); }, COUNTS_FLUSH_MS);
+  countsTimer.unref?.();
+}
+
+/** Tulis hitungan agregat (tmp + rename atomik). Aman dipanggil kapan saja. */
+export function flushCapture() {
+  if (countsFlushing) return countsFlushing;
+  const run = (async () => {
+    try {
+      if (!isCaptureFlagOn()) { counts.clear(); return; }      // flag mati: buang, jangan tulis
+      if (breakerOpen() || !(await diskOk())) return;           // tulis ditunda; delta tetap di memori
+      const dir = captureDir();
+      for (const [day, delta] of [...counts.entries()]) {
+        const file = path.join(dir, `ctwa-capture-counts-${day}.json`);
+        if (!countsBase.has(day)) {
+          const txt = await fs.promises.readFile(file, "utf8").catch(() => null);
+          let base = emptyCounts(day);
+          try { if (txt) base = mergeCounts(emptyCounts(day), JSON.parse(txt)); } catch { /* berkas rusak: mulai dari nol */ }
+          countsBase.set(day, base);
+        }
+        const merged = mergeCounts(countsBase.get(day), delta);
+        const body = JSON.stringify(merged);
+        await fs.promises.mkdir(dir, { recursive: true, mode: 0o700 });
+        const tmp = `${file}.tmp`;
+        await fs.promises.writeFile(tmp, body, { mode: 0o600 });
+        await fs.promises.rename(tmp, file);
+      }
+      noteSuccess();
+    } catch (e) {
+      noteFailure(e);
+    }
+  })();
+  // Pelepasan kunci lewat .finally(): jalur sinkron (mis. flag mati) tidak boleh meninggalkan
+  // promise lama terpasang selamanya.
+  const p = run.finally(() => { if (countsFlushing === p) countsFlushing = null; });
+  countsFlushing = p;
+  return p;
+}
+
+// ── circuit breaker & disk guard ───────────────────────────────────────────
+function breakerOpen() { return _hooks.now() < breaker.openUntil; }
+function noteSuccess() { breaker.fails = 0; }
+function noteFailure(e) {
+  stats.failed++;
+  breaker.fails++;
+  if (breaker.fails >= BREAKER_FAILS || e?.code === "ENOSPC" || e?.code === "EDQUOT") {
+    breaker.openUntil = _hooks.now() + BREAKER_COOLDOWN_MS;
+    breaker.fails = 0;
+  }
+  warnLimited(`gagal menulis (${e?.code || "ERR"})`);
+}
+
+async function nearestExisting(p) {
+  let cur = p;
+  for (let i = 0; i < 4; i++) {
+    try { await fs.promises.access(cur); return cur; } catch { cur = path.dirname(cur); }
+  }
+  return cur;
+}
+
+/** false = ruang bebas di bawah ambang -> jangan menulis. Gagal mengukur = anggap aman. */
+async function diskOk() {
+  const t = _hooks.now();
+  if (t - diskCheck.at < DISK_CHECK_MS) return diskCheck.ok;
+  let ok = true;
+  const min = minFreeBytes();
+  if (min > 0) {
+    try {
+      const st = await _hooks.statfs(await nearestExisting(captureDir()));
+      ok = Number(st.bavail) * Number(st.bsize) >= min;
+    } catch { ok = true; }
+  }
+  diskCheck = { at: t, ok };
+  return ok;
+}
+
+// ── antrean tulis serial ───────────────────────────────────────────────────
+async function prepareFile(file) {
+  let st = fileState.get(file);
+  if (st) return st;
+  st = { size: 0, needsNewline: false };
+  try {
+    const stat = await fs.promises.stat(file);
+    st.size = stat.size;
+    if (stat.size > 0) {
+      // Ekor berkas tanpa "\n" = sisa tulis terpotong (crash/disk penuh): awali dengan newline.
+      const fh = await fs.promises.open(file, "r");
+      try {
+        const buf = Buffer.alloc(1);
+        await fh.read(buf, 0, 1, stat.size - 1);
+        st.needsNewline = buf[0] !== 0x0a;
+      } finally { await fh.close(); }
+    }
+  } catch { /* berkas belum ada */ }
+  fileState.set(file, st);
+  return st;
+}
+
+async function writeOne(item) {
+  if (breakerOpen()) return countDrop("breaker", item.now);
+  if (!(await diskOk())) return countDrop("lowDisk", item.now);
+
+  const dir = captureDir();
+  const file = path.join(dir, `ctwa-capture-${dayKey(item.now)}.jsonl`);
+  try {
+    const st = await prepareFile(file);
+    const payload = (st.needsNewline ? "\n" : "") + item.line;
+    const bytes = Buffer.byteLength(payload);
+    if (st.size + bytes > MAX_FILE_BYTES) return countDrop("fileCap", item.now);
+    try {
+      await _hooks.appendFile(file, payload, { mode: 0o600 });
+    } catch (e) {
+      if (e?.code !== "ENOENT") throw e;
+      await fs.promises.mkdir(dir, { recursive: true, mode: 0o700 }); // folder hilang: buat ulang, coba sekali lagi
+      await _hooks.appendFile(file, payload, { mode: 0o600 });
+    }
+    st.size += bytes;
+    st.needsNewline = false;
+    stats.written++;
+    dayCounts(item.now).signalWritten++;
+    noteSuccess();
+  } catch (e) {
+    const st = fileState.get(file);
+    if (st) st.needsNewline = true; // tulis bisa setengah jadi: awali tulis berikutnya dengan newline
+    noteFailure(e);
+  }
+}
+
+async function drain() {
+  draining = true;
+  try {
+    while (queue.length) {
+      const item = queue.shift();
+      if (!isCaptureFlagOn()) {
+        // Flag dimatikan saat antrean masih berisi: buang semuanya, jangan tulis.
+        countDrop("flagOff", item.now);
+        for (const rest of queue.splice(0)) countDrop("flagOff", rest.now);
+        break;
+      }
+      await writeOne(item);
+    }
+  } finally {
+    draining = false;
+  }
+}
+
+function enqueue(line, now) {
+  if (Buffer.byteLength(line) > MAX_LINE_BYTES) { stats.droppedOversize++; return false; }
+  if (queue.length >= MAX_QUEUE) { countDrop("queueFull", now); return false; }
+  queue.push({ line, now });
+  if (!draining) drain().catch(() => { stats.failed++; });
   return true;
 }
 
-async function observeAndWrite(args, salt) {
-  const now = Date.now();
+async function observe(args, salt) {
+  const now = _hooks.now();
   const core = idPesanInti(args.externalId) ?? String(args.externalId ?? "");
   const key = hmac(salt, core);
   if (recentIds.has(key)) { stats.deduped++; return; }
@@ -372,7 +639,8 @@ async function observeAndWrite(args, salt) {
 
   const obs = buildObservation(args.payload, { ...args, salt, now });
   stats.observed++;
-  if (await appendLine(JSON.stringify(obs) + "\n", now)) stats.written++;
+  countObservation(obs, now);
+  if (SIGNAL_VERDICTS.has(obs.verdict)) enqueue(JSON.stringify(obs) + "\n", now);
 }
 
 /**
@@ -386,9 +654,10 @@ export function captureInbound({ payload, event, engine, externalId, isNewCustom
     const salt = saltOrNull();
     if (!salt) { stats.skippedNoSalt++; warnLimited("flag aktif tetapi CTWA_CAPTURE_HASH_SALT (>=16 karakter) belum diisi — capture dilewati"); return false; }
     setImmediate(() => {
-      observeAndWrite({ payload, event, engine, externalId, isNewCustomer }, salt).catch((e) => {
+      if (!isCaptureFlagOn()) return;
+      observe({ payload, event, engine, externalId, isNewCustomer }, salt).catch((e) => {
         stats.failed++;
-        warnLimited(`gagal menulis observasi (${e?.code || "ERR"})`);
+        warnLimited(`gagal memproses observasi (${e?.code || "ERR"})`);
       });
     });
     return true;
@@ -401,10 +670,11 @@ export function captureInbound({ payload, event, engine, externalId, isNewCustom
 
 // ── retensi ────────────────────────────────────────────────────────────────
 /**
- * Hapus berkas harian yang melewati retensi. HANYA menyentuh nama berkas yang
- * cocok pola ketat (ctwa-capture-YYYY-MM-DD.jsonl) — tidak pernah berkas lain.
- * Berkas dihapus bila AWAL hari-UTC-nya lebih tua dari retensi, sehingga baris
- * tertua yang tersisa tidak pernah lebih tua dari `retentionDays`.
+ * Hapus berkas capture yang melewati retensi. HANYA menyentuh nama berkas yang
+ * cocok pola ketat (ctwa-capture[-counts]-YYYY-MM-DD.json[l][.tmp]) — tidak
+ * pernah berkas lain. Berkas dihapus bila AWAL hari-UTC-nya lebih tua dari
+ * retensi, sehingga baris tertua yang tersisa tidak pernah lebih tua dari
+ * `retentionDays`.
  */
 export async function purgeCaptures({ dir = captureDir(), retentionDays = effectiveRetentionDays(), now = Date.now(), all = false, dryRun = false } = {}) {
   const days = Math.min(Math.max(1, retentionDays), MAX_RETENTION_DAYS);
@@ -423,7 +693,12 @@ export async function purgeCaptures({ dir = captureDir(), retentionDays = effect
     const dayStart = Date.UTC(+m[1], +m[2] - 1, +m[3]);
     if (all || dayStart < now - days * DAY_MS) {
       try {
-        if (!dryRun) { await fs.promises.unlink(path.join(dir, name)); fileSizes.delete(path.join(dir, name)); }
+        if (!dryRun) {
+          await fs.promises.unlink(path.join(dir, name));
+          fileState.delete(path.join(dir, name));
+          const cm = /^ctwa-capture-counts-(\d{4}-\d{2}-\d{2})\.json$/.exec(name);
+          if (cm) { countsBase.delete(cm[1]); counts.delete(cm[1]); }
+        }
         removed.push(name);
       } catch { errors++; }
     } else kept++;
@@ -431,7 +706,6 @@ export async function purgeCaptures({ dir = captureDir(), retentionDays = effect
   return { removed, kept, errors };
 }
 
-let lastPurgeDay = null;
 function maybePurgeDaily() {
   const today = dayKey(Date.now());
   if (lastPurgeDay === today) return;

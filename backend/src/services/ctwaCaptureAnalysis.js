@@ -57,6 +57,7 @@ export function summarize(rows) {
   const urlKinds = {};
   const entryApps = {};
   const entrySources = {};
+  const saltIds = new Set();
   const adKeys = {};
   const ctxKeys = {};
   const rejected = {};
@@ -69,6 +70,7 @@ export function summarize(rows) {
   const idTokenByKind = {};
 
   for (const r of uniq) {
+    if (r.sid) saltIds.add(r.sid);
     inc(verdicts, r.verdict || "?");
     inc(events, r.event || "?");
     if (r.customer) inc(byCustomer[r.customer] || (byCustomer[r.customer] = {}), r.verdict || "?");
@@ -154,7 +156,40 @@ export function summarize(rows) {
       distinctIdTokensByKind: Object.fromEntries(Object.entries(idTokenByKind).map(([k, s]) => [k, s.size])),
       instagramComparison: igCompare,
     },
+    saltIds: [...saltIds],
+    saltWarning: saltIds.size > 1 ? "Lebih dari satu salt terdeteksi: hash clid/ID pesan tidak bisa dibandingkan lintas salt." : null,
     lagSeconds: { n: lags.length, max: lags.length ? Math.max(...lags) : null },
     conclusions,
+  };
+}
+
+/**
+ * Ringkas berkas hitungan harian (ctwa-capture-counts-*.json). Murni angka.
+ * Inilah ukuran VOLUME inbound aktual (pesan individual yang tersimpan) dan
+ * penyebut untuk "berapa persen pesan membawa sinyal atribusi".
+ */
+export function summarizeCounts(rows) {
+  const days = [];
+  const tot = { total: 0, signal: 0, signalWritten: 0, dropped: {}, verdicts: {}, NEW: 0, EXISTING: 0 };
+  for (const r of rows) {
+    if (!r || typeof r !== "object" || typeof r.day !== "string") continue;
+    const total = Number(r.total) || 0, signal = Number(r.signal) || 0;
+    days.push({
+      day: r.day, total, signal, signalWritten: Number(r.signalWritten) || 0,
+      signalPct: pct(signal, total), dropped: r.dropped || {},
+    });
+    tot.total += total; tot.signal += signal; tot.signalWritten += Number(r.signalWritten) || 0;
+    tot.NEW += Number(r.customer?.NEW?.total) || 0; tot.EXISTING += Number(r.customer?.EXISTING?.total) || 0;
+    for (const [k, v] of Object.entries(r.dropped || {})) tot.dropped[k] = (tot.dropped[k] || 0) + v;
+    for (const [k, v] of Object.entries(r.verdicts || {})) tot.verdicts[k] = (tot.verdicts[k] || 0) + v;
+  }
+  days.sort((a, b) => a.day.localeCompare(b.day));
+  const n = days.length;
+  return {
+    days,
+    totals: tot,
+    inboundPerDay: n ? { avg: Math.round(tot.total / n), max: Math.max(...days.map((d) => d.total)), min: Math.min(...days.map((d) => d.total)) } : null,
+    signalPct: pct(tot.signal, tot.total),
+    note: "total = pesan individual inbound yang tersimpan saat capture menyala (sudah dedupe); hari pertama/terakhir bisa parsial.",
   };
 }

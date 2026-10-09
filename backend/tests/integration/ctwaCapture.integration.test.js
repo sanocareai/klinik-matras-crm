@@ -29,7 +29,7 @@ const { default: express } = await import("express");
 const { testPrisma, truncateAll } = await import("./setup/testDb.js");
 const { startTestServer } = await import("./setup/testApp.js");
 const { webhookRouter } = await import("../../src/routes/webhooks.js");
-const { _getStats, _resetForTests } = await import("../../src/services/ctwaCapture.js");
+const { _getStats, _resetForTests, flushCapture } = await import("../../src/services/ctwaCapture.js");
 
 const CLID = "AfhKBK8ZBWyKw3p49jW-KFh_rNlyzXmCKW0eSdHULJZtXqZk";
 const TEXT_CANARY = "rahasia keluhan pinggang canary";
@@ -94,7 +94,7 @@ const customerOf = (phone) => testPrisma.customer.findUnique({
   select: { leadSource: true, leadSourceDetail: true, ctwaClid: true, ctwaSourceUrl: true, pipelineStage: true, leadSourceConfirmed: true },
 });
 const captureLines = () => (fs.existsSync(CAP_DIR)
-  ? fs.readdirSync(CAP_DIR).flatMap((f) => fs.readFileSync(path.join(CAP_DIR, f), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)))
+  ? fs.readdirSync(CAP_DIR).filter((f) => f.endsWith(".jsonl")).flatMap((f) => fs.readFileSync(path.join(CAP_DIR, f), "utf8").split("\n").filter(Boolean).map((l) => JSON.parse(l)))
   : []);
 
 const PH_OFF = "6285100000001", PH_ON = "6285100000002", PH_NON = "6285100000003", PH_RACE = "6285100000004", PH_FAIL = "6285100000005";
@@ -142,18 +142,22 @@ test("customer LAMA yang membawa konteks iklan juga teramati; hasil Customer tid
   assert.equal(o.fields.sourceId, "absent");
 });
 
-test("payload TANPA CTWA: tidak ada atribusi palsu di capture maupun di Customer", async () => {
+test("pesan biasa (TANPA CTWA): tidak ada baris JSONL, tidak ada atribusi palsu; hanya dihitung agregat", async () => {
+  const barisSebelum = captureLines().length;
+  const diamatiSebelum = _getStats().observed;
   const p = gows({ phone: PH_NON, msgId: "3EB0INT00004", ctwa: false });
   await post("message", p);
   assert.ok(await settle(async () => (await msgCount(p.id)) === 1));
-  assert.ok(await settle(() => captureLines().length >= 3));
+  assert.ok(await settle(() => _getStats().observed === diamatiSebelum + 1));
   const c = await customerOf(PH_NON);
   assert.notEqual(c.leadSource, "META_ADS");
   assert.equal(c.ctwaClid, null);
-  const obs = captureLines().filter((l) => l.verdict === "NO_CONTEXT_INFO");
-  assert.equal(obs.length, 1);
-  assert.equal(obs[0].ctwaClid, undefined);
-  assert.equal(obs[0].values, undefined);
+  assert.equal(captureLines().length, barisSebelum, "pesan biasa tidak boleh menambah satu baris pun");
+  await flushCapture();
+  const hari = fs.readdirSync(CAP_DIR).find((f) => f.startsWith("ctwa-capture-counts-"));
+  const agregat = JSON.parse(fs.readFileSync(path.join(CAP_DIR, hari), "utf8"));
+  assert.ok(agregat.verdicts.NO_CONTEXT_INFO >= 1);
+  assert.ok(agregat.total > agregat.signal, "penyebut lebih besar dari jumlah bersinyal");
 });
 
 test("event `message` + `message.any` bersamaan untuk pesan yang sama = 1 Message & 1 observasi", async () => {
@@ -193,4 +197,18 @@ test("berkas capture: tanpa isi chat, nama, nomor, JID, ctwa_clid utuh", async (
   for (const s of [TEXT_CANARY, NAME_CANARY, CLID, "tXqZk", PH_OFF, PH_ON, PH_NON, PH_RACE, PH_FAIL, "6285100000", "@c.us", "@lid"]) {
     assert.ok(!semua.includes(s), `bocor di berkas capture: ${s}`);
   }
+});
+
+test("prosedur audit volume (docs/CTWA-CAPTURE-PHASE0.md): SQL agregat valid, hanya angka per hari WIB", async () => {
+  const rows = await testPrisma.$queryRawUnsafe(`
+    SELECT to_char((m."createdAt" AT TIME ZONE 'UTC') AT TIME ZONE 'Asia/Jakarta', 'YYYY-MM-DD') AS hari_wib,
+           count(*)::int AS inbound
+    FROM "Message" m
+    JOIN "Conversation" c ON c.id = m."conversationId"
+    WHERE m.direction = 'INBOUND' AND c.type = 'INDIVIDUAL' AND m."createdAt" >= now() - interval '14 days'
+    GROUP BY 1 ORDER BY 1`);
+  assert.deepEqual(Object.keys(rows[0]).sort(), ["hari_wib", "inbound"], "tidak boleh ada kolom selain hari dan jumlah");
+  const total = rows.reduce((a, r) => a + r.inbound, 0);
+  assert.equal(total, await testPrisma.message.count({ where: { direction: "INBOUND", conversation: { type: "INDIVIDUAL" } } }));
+  assert.ok(total >= 5);
 });
