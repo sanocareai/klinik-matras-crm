@@ -1,1 +1,0 @@
-import{r as o,j as u}from"./vendor-query-lt1T2TzN.js";function c(s){function i(t){const[e,r]=o.useState({open:!!t.open,sesi:0}),a=!!t.open;let n=e.sesi;return a!==e.open&&(n=a?e.sesi+1:e.sesi,r({open:a,sesi:n})),u.jsx(s,{...t},n)}return i.displayName=`ResetSaatBuka(${s.displayName||s.name||"Komponen"})`,i}export{c as r};
