@@ -26,7 +26,9 @@ const ENGINE = "src/services/unitStageEngine.js";
 const ORDERS = "src/routes/orders.js";
 const PRODUCTION_ROUTE = "src/routes/production.js";
 // Penulis Unit.status yang dikenal (perubahan status di luar produksi/QC: pengiriman, sinkron order, provisioning).
-const KNOWN_UNIT_STATUS_WRITERS = new Set([ENGINE, ORDERS, "src/routes/armada.js", "src/services/orderStatusSync.js", "src/services/unitProvisioning.js", "src/services/complaintCase.js"]);
+// penjualanKaryawanOrder.js (Finance, live 934142cd): membatalkan unit order Penjualan Karyawan, DIJAGA assertOrderUnitsNotV2Owned (unit yang sudah dimiliki Production V2 ditolak) — keberadaan penjaga diperiksa di bawah.
+const PKR_ORDER_SERVICE = "src/services/penjualanKaryawanOrder.js";
+const KNOWN_UNIT_STATUS_WRITERS = new Set([ENGINE, ORDERS, "src/routes/armada.js", "src/services/orderStatusSync.js", "src/services/unitProvisioning.js", "src/services/complaintCase.js", PKR_ORDER_SERVICE]);
 
 const writeRegex = (model) => new RegExp(String.raw`\.${model}\.${OPS}\s*\(`, "g");
 const RULES = [
@@ -78,8 +80,10 @@ export function auditQcHandoffWriters(files) {
     if (rel !== CUSTODY && rel !== ENGINE && /\bmarkUnitReadyForDeliveryInTx\s*\(/.test(stripComments(text))) add(rel, 0, "READY_FOR_DELIVERY_WRITER", "UNOWNED_CALLER", false);
     for (const match of text.matchAll(/\.unit\.(update|updateMany)\s*\(/g)) {
       if (!/\bstatus\s*:/.test(text.slice(match.index, match.index + 260))) continue;
-      const ok = KNOWN_UNIT_STATUS_WRITERS.has(rel);
-      add(rel, lineOf(text, match.index), "UNIT_STATUS_WRITER", ok ? "KNOWN_PATH" : "UNKNOWN_UNIT_STATUS_WRITER", ok);
+      let ok = KNOWN_UNIT_STATUS_WRITERS.has(rel);
+      // Penulis status unit milik Finance hanya sah bila penjaga kepemilikan V2 masih ada di berkas yang sama.
+      if (rel === PKR_ORDER_SERVICE && !/\bassertOrderUnitsNotV2Owned\s*\(/.test(stripComments(text))) ok = false;
+      add(rel, lineOf(text, match.index), "UNIT_STATUS_WRITER", ok ? "KNOWN_PATH" : rel === PKR_ORDER_SERVICE ? "PKR_WITHOUT_V2_OWNERSHIP_GUARD" : "UNKNOWN_UNIT_STATUS_WRITER", ok);
     }
   }
 
