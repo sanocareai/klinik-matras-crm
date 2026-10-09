@@ -16,6 +16,7 @@ import { signEvidenceUrl } from "../routes/productionEvidenceMedia.js";
 import { signUnitPhotoUrlIfAny, signUnitPhotoUrlsBulk } from "../routes/productionUnitPhoto.js";
 import { arrivalConfirmedByStaff, delayReasonOfBlock, displayStatusOfOrder, displayStatusOfUnit, isFinishedUnitStatus, physicalPresenceOf, priorityDisplay } from "../lib/domain/productionDisplay.js";
 import { loadOpenComplaintsByUnit } from "./productionComplaints.js";
+import { PKR_ORDER_SELECT, rujukanPkrDariOrder } from "./pkrProduksiGuard.js";
 
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
 export const COMPLAINT_LABEL = Object.freeze({
@@ -33,6 +34,7 @@ export const RUN_VIEW_INCLUDE = {
       order: {
         select: {
           orderNumber: true, status: true, category: true, productType: true, beratBadan: true, notes: true, complaintCategory: true, customerPromiseDate: true,
+          ...PKR_ORDER_SELECT, // rujukan Penjualan Karyawan (badge di kartu Produksi)
           // P9 UX — nama layanan yang DIPESAN di Sales (snapshot OrderItem.layananName). SENGAJA hanya nama: harga tidak di-select.
           items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } },
           weightEntries: { select: { label: true, beratKg: true }, orderBy: { sortOrder: "asc" } },
@@ -160,6 +162,7 @@ export function toRunView(run, ctx, { now = new Date(), photoUrl = null, complai
     priority: { key: prio.key, label: prio.label, rank: prio.rank, complaintCases: prio.complaintCases },
     unit: { id: run.unit.id, orderId: run.unit.orderId, unitCode: run.unit.unitCode, merk: run.unit.merk, ukuran: run.unit.ukuran, status: run.unit.status, service: run.unit.service ? { code: run.unit.service.code, label: run.unit.service.labelId } : null, photoUrl },
     customer: customerOf(run),
+    penjualanKaryawan: rujukanPkrDariOrder(run.unit.order),
     plan: run.plan ? {
       id: run.plan.id, status: run.plan.status, revision: run.plan.revision,
       productionDate: formatProductionDate(run.plan.productionDate), stationCode: run.plan.stationCode, stationLabel: stationLabel(run.plan.stationCode),

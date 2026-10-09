@@ -26,7 +26,7 @@
 // definisi ledger lama HANYA kalau parameter itu tidak diberikan.
 
 import { Prisma } from "@prisma/client";
-import { bacaSpesifikasiPkr, PESAN_SPEK_BELUM_LENGKAP } from "../lib/domain/pkrSpesifikasi.js";
+import { pesanPkrBelumLengkap } from "./pkrProduksiGuard.js";
 import { prisma } from "../db.js";
 import {
   buildUnitPath, getNextStage, isLastStage, isLastIntakeStage, findComfortLayerModule,
@@ -378,13 +378,8 @@ export async function resolveNextStageForUnits(units) {
 
 // Gerbang Order Penjualan Karyawan: order dari PKR yang spesifikasi produksinya belum lengkap ("Perlu dilengkapi") TIDAK boleh mulai dikerjakan. Order biasa lolos tanpa efek.
 async function pastikanSpesifikasiPkrLengkap(tx, orderId) {
-  const o = await tx.order.findUnique({
-    where: { id: orderId },
-    select: { penjualanKaryawanId: true, notes: true, pkrPerluDikirim: true, deliveryAddress: true, deliveryCity: true, penjualanKaryawan: { select: { nomor: true } } },
-  });
-  if (!o?.penjualanKaryawanId) return;
-  const spek = bacaSpesifikasiPkr(o);
-  if (!spek.lengkap) throw new StageTransitionError(PESAN_SPEK_BELUM_LENGKAP(o.penjualanKaryawan?.nomor, spek.kurang));
+  const pesan = await pesanPkrBelumLengkap(tx, orderId, "Produksi belum boleh dimulai atau direkam");
+  if (pesan) throw new StageTransitionError(pesan);
 }
 
 /**

@@ -13,6 +13,7 @@ import { createHash } from "node:crypto";
 import { recordActivity, EVENT_TYPES } from "../lib/activityLog.js";
 import { lockRowForUpdate } from "./inventoryLedger.js";
 import { UUID_RE, lockUnitOwnership } from "./unitV2Ownership.js";
+import { PKR_ORDER_SELECT, rujukanPkrDariOrder } from "./pkrProduksiGuard.js";
 import { BOARD_DEFAULTS, formatProductionDate, normalizeScheduleInput } from "../lib/domain/productionBoard.js";
 import { RENCANA_ACTION, classifyRencanaUnit } from "../lib/domain/productionRencana.js";
 import {
@@ -29,7 +30,7 @@ const rencanaError = (message, statusCode, code, details) => Object.assign(new E
 // Kolom Unit yang dibutuhkan klasifikasi — dipakai backlog (bulk), command (satu unit), dan daftar eligibility.
 export const RENCANA_UNIT_SELECT = {
   id: true, unitCode: true, status: true, currentStageId: true,
-  order: { select: { id: true, orderNumber: true, status: true, category: true, customer: { select: { name: true, pipelineStage: true, isInternalStaff: true } } } },
+  order: { select: { id: true, orderNumber: true, status: true, category: true, ...PKR_ORDER_SELECT, customer: { select: { name: true, pipelineStage: true, isInternalStaff: true } } } },
   _count: { select: { stageLogs: true } },
   productionRunsV2: { where: { status: { notIn: TERMINAL_RUN } }, select: { id: true, status: true, plan: { select: { id: true, stationCode: true, status: true } } }, take: 1, orderBy: { createdAt: "desc" } },
 };
@@ -39,7 +40,9 @@ export function cohortStatesOf(flags) {
 }
 
 export function classifyUnitRow(row, { reader, writer }) {
+  const pkr = rujukanPkrDariOrder(row.order); // order Penjualan Karyawan: spesifikasi belum lengkap = tidak boleh direncanakan
   return classifyRencanaUnit({
+    pkrKurang: pkr && !pkr.lengkap ? { nomor: pkr.nomor, kurang: pkr.kurang } : null,
     unitStatus: row.status, orderStatus: row.order?.status, customerStage: row.order?.customer?.pipelineStage ?? null, isInternalStaff: !!row.order?.customer?.isInternalStaff,
     hasActiveRun: row.productionRunsV2.length > 0, stageLogCount: row._count?.stageLogs ?? 0, hasCurrentStage: !!row.currentStageId,
     readerEnabled: isProductionReaderEnabledFor(reader, row.id), writerEnabled: isProductionWriterEnabledFor(writer, row.id),

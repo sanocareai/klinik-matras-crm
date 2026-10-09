@@ -29,6 +29,7 @@ import { isLastStage } from "../lib/domain/routing.js";
 import { lockRowForUpdate } from "./inventoryLedger.js";
 import { completeAdaptationRunInTx, offerFinishedGoodsCustodyInTx } from "./unitCustodyCommandService.js";
 import { assertNoOpenRunException, assertNoV1Drift } from "./productionRunGuards.js";
+import { pesanPkrBelumLengkapUnit } from "./pkrProduksiGuard.js";
 import { lockUnitOwnership } from "./unitV2Ownership.js";
 import {
   completeStageInTx, pathForUnit, pauseStageInTx, resolveCurrentTarget, resumeStageInTx, skipStageForAdaptationInTx, startStageInTx,
@@ -289,6 +290,8 @@ export async function registerWorkshopBornRunInTx(tx, { unitId, actorId, idempot
     if (!unit) throw workError("Unit tidak ditemukan", 404, "WORKSHOP_UNIT_NOT_FOUND");
     await assertWriterEnabledForUnit(tx, unitId);
     if (!BORN_CATEGORIES.includes(unit.order?.category)) throw workError("Hanya unit BARU/SEWA yang boleh didaftarkan lahir di workshop", 422, "WORKSHOP_BORN_CATEGORY_INVALID");
+    const pesanPkr = await pesanPkrBelumLengkapUnit(tx, unitId, "Belum bisa didaftarkan ke workshop");
+    if (pesanPkr) throw workError(pesanPkr, 422, "WORKSHOP_PKR_PERLU_DILENGKAPI"); // order Penjualan Karyawan belum lengkap
     if (!BORN_UNIT_STATUSES.includes(unit.status)) throw workError(`Unit berstatus ${unit.status}; tidak dapat didaftarkan ke workshop`, 409, "WORKSHOP_BORN_STATUS_INVALID");
     const active = await tx.productionRun.findFirst({ where: { unitId, status: { notIn: TERMINAL_RUN } }, select: { id: true } });
     if (active) throw workError("Unit ini sudah memiliki Production Run aktif", 409, "WORKSHOP_RUN_ALREADY_EXISTS", { runId: active.id });

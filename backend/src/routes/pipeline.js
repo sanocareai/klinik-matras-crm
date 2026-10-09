@@ -15,9 +15,10 @@ pipelineRouter.use(requireAuth);
 pipelineRouter.get("/board", async (req, res) => {
   try {
     const { from, to } = req.query;
+    // staffUserId: null — profil internal karyawan (Penjualan Karyawan → Order CRM) bukan lead Sales, tidak masuk papan pipeline.
     const where = (from && to)
-      ? { createdAt: { gte: startOfDayWIB(from), lt: endOfDayExclusiveWIB(to) } }
-      : {};
+      ? { createdAt: { gte: startOfDayWIB(from), lt: endOfDayExclusiveWIB(to) }, staffUserId: null }
+      : { staffUserId: null };
 
     const customers = await prisma.customer.findMany({
       where,

@@ -12,7 +12,7 @@
 // custody) SELALU difilter lewat runId/unitId spesifik unit ini — tidak pernah "milik order", mencegah
 // kebocoran antar-unit bersaudara (lihat resolveUnitPhoto yang sudah menolak atribusi job multi-unit).
 import { COMPLAINT_LABEL, RUN_VIEW_INCLUDE, STYLE_LABEL, VERDICT_LABEL, customerOf, indicatorsOf, latestOf, materialStatusOf, minutesBetween, nameOf, stepStatuses, warningsOf } from "./productionExperienceReadService.js";
-import { bacaSpesifikasiPkr } from "../lib/domain/pkrSpesifikasi.js";
+import { PKR_ORDER_SELECT, rujukanPkrDariOrder } from "./pkrProduksiGuard.js";
 import { loadStepContext } from "./productionStepCommandService.js";
 import { buildRunDocumentation, documentationBuckets } from "./productionDocumentationRead.js";
 import { sourceOfStep } from "../lib/domain/productionDocumentation.js";
@@ -263,13 +263,9 @@ export async function getUnitOverview(prisma, unitId, opsi = {}) {
   const hasil = await getUnitOverviewDasar(prisma, unitId, opsi);
   const orderId = hasil?.identity?.orderId;
   if (!orderId) return hasil;
-  const o = await prisma.order.findUnique({
-    where: { id: orderId },
-    select: { penjualanKaryawanId: true, notes: true, pkrPerluDikirim: true, deliveryAddress: true, deliveryCity: true, penjualanKaryawan: { select: { nomor: true, seller: { select: { name: true } } } } },
-  });
-  if (!o?.penjualanKaryawanId) return hasil;
-  const spek = bacaSpesifikasiPkr(o);
-  hasil.identity.penjualanKaryawan = { nomor: o.penjualanKaryawan.nomor, penjual: o.penjualanKaryawan.seller.name, perluDikirim: o.pkrPerluDikirim, spesifikasiLengkap: spek.lengkap, kurang: spek.kurang };
+  const o = await prisma.order.findUnique({ where: { id: orderId }, select: PKR_ORDER_SELECT });
+  const r = rujukanPkrDariOrder(o);
+  if (r) hasil.identity.penjualanKaryawan = r; // bentuk SAMA dengan kartu daftar Produksi (rujukanPkrDariOrder)
   return hasil;
 }
 

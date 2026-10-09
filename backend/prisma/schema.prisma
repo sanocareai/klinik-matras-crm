@@ -437,6 +437,7 @@ model User {
   isSalesTeamLead Boolean @default(false)
 
   assignedCustomers          Customer[]               @relation("AssignedSales")
+  customerInternal           Customer?                @relation("CustomerStaffUser")
   assignedConversations      Conversation[]           @relation("AssignedAgent")
   notes                      Note[]
   salesTargets               SalesTarget[]
@@ -771,6 +772,12 @@ model Customer {
   // tetap ada 1 langkah tinjau sebelum menyembunyikan percakapan siapa
   // pun dari Inbox.
   isInternalStaff Boolean @default(false) @map("is_internal_staff")
+
+  // PROFIL INTERNAL KARYAWAN untuk Penjualan Karyawan → Order CRM (Okt 2026). Identitas = ID akun (User.id), BUKAN nama/email/nomor: nama di baris ini hanya SNAPSHOT saat profil
+  // dibuat (tidak ikut berubah, tidak dipakai mencocokkan). UNIQUE = satu karyawan paling banyak satu profil Customer internal yang dipakai ulang oleh semua PKR-nya; tiap PKR tetap
+  // punya Order sendiri. NULL untuk pelanggan biasa. Dibuat hanya oleh services/penjualanKaryawanOrder.js (di bawah kunci baris User).
+  staffUserId String? @unique @map("staff_user_id")
+  staffUser   User?   @relation("CustomerStaffUser", fields: [staffUserId], references: [id], onDelete: Restrict)
 
   // ── Atribusi iklan Meta Click-to-WhatsApp (CTWA) ──────────────────────
   // Iklan CTWA melompat LANGSUNG ke WhatsApp tanpa lewat website, jadi tag

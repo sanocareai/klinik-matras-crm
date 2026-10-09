@@ -5,7 +5,9 @@
 //      value = 0, tanpa OrderItem, tanpa Payment, tanpa invoice, tanpa jurnal, salesOwnerId = null. Trigger DB (migrasi 20261031090000) menolak payments / invoices / baris
 //      jurnal / OrderItem baru yang menunjuk order ini; kode aplikasi menolak lebih dulu dengan pesan yang jelas.
 //   2. Tautan PKR ↔ Order 1:1: UNIQUE pada Order.penjualanKaryawanId. Pembuatan di bawah KUNCI BARIS PKR (lockRowForUpdate) dan idempoten: permintaan ulang / paralel mengembalikan
-//      order yang sama, tidak pernah membuat order, customer, atau unit kedua. Karyawan penjual ditautkan lewat PKR.sellerId (ID akun stabil), bukan email.
+//      order yang sama, tidak pernah membuat order atau unit kedua. Pemilik order = SATU profil Customer internal PER KARYAWAN (Customer.staffUserId UNIQUE, diisi dari PKR.sellerId = ID
+//      akun yang stabil — bukan nama/email): semua PKR karyawan yang sama memakai ulang profil itu, tiap PKR tetap punya Order sendiri. Nama di profil hanyalah snapshot; nama pembeli
+//      (kerabat) tetap di PKR.buyerName dan disalin sebagai snapshot ke catatan order.
 //   3. Unit lahir lewat jalur BAKU createOrderForCustomer → createUnitsForOrder (unitProvisioning.js); job pickup/delivery lewat ensurePickup/DeliveryJob yang SUDAH idempoten.
 //      Tidak ada jalur Produksi/Delivery baru.
 //   4. Spesifikasi produksi (merk, ukuran, dikirim/diambil, alamat bila dikirim) dihitung dinamis (lib/domain/pkrSpesifikasi.js). Belum lengkap = "Perlu dilengkapi" dan
@@ -67,8 +69,27 @@ export function normalisasiSpesifikasi(m = {}) {
 
 const susunNotes = ({ merk, ukuran, pkr, catatan }) => JSON.stringify({
   ...(merk && { merkKasur: merk }), ...(ukuran && { ukuranKasur: ukuran }),
-  pkrNomor: pkr.nomor, catatan: `Penjualan Karyawan ${pkr.nomor} — penjual ${pkr.seller.name}${catatan ? `. ${catatan}` : ""}`,
+  pkrNomor: pkr.nomor, pembeliPkr: pkr.buyerName, catatan: `Penjualan Karyawan ${pkr.nomor} — penjual ${pkr.seller.name}, pembeli ${pkr.buyerName}${catatan ? `. ${catatan}` : ""}`,
 });
+
+/**
+ * Profil Customer internal karyawan: SATU per karyawan, dikenali lewat ID akun (Customer.staffUserId), dipakai ulang oleh semua PKR-nya. Pencarian-lalu-buat dilakukan di bawah kunci
+ * baris User supaya dua PKR bersamaan milik karyawan yang sama menghasilkan SATU profil (yang kalah menunggu lalu melihat profil yang sudah ada). Nama = snapshot saat dibuat.
+ */
+export async function profilCustomerKaryawan(tx, sellerId) {
+  await lockRowForUpdate(tx, '"User"', sellerId, { cast: "text" });
+  const ada = await tx.customer.findUnique({ where: { staffUserId: sellerId } });
+  if (ada) return { customer: ada, baru: false };
+  const u = await tx.user.findUnique({ where: { id: sellerId }, select: { id: true, name: true } });
+  if (!u) throw gagal("Karyawan penjual tidak ditemukan", 404);
+  const customer = await tx.customer.create({
+    data: {
+      staffUserId: u.id, name: u.name, tags: [TAG_PKR], leadSource: "OTHER", leadSourceDetail: "Profil internal karyawan (Penjualan Karyawan)", leadSourceConfirmed: true,
+      pipelineStage: "TRANSACTION", assignedSalesId: null,
+    },
+  });
+  return { customer, baru: true };
+}
 
 async function muatPkr(tx, penjualanId) {
   await lockRowForUpdate(tx, '"fin_penjualan_karyawan"', penjualanId);
@@ -111,13 +132,8 @@ export async function buatAtauTautkanOrder(tx, { penjualanId, userId = null, spe
 
   const kategori = spek.kategori ?? "BARU";
   const jumlahUnit = spek.jumlahUnit ?? 1;
-  // Pembeli = pelanggan operasional PER PKR (nama dari PKR). Tanpa nomor/IG supaya tidak menabrak unique, tanpa sales, ditandai tag. Tidak ada percakapan/pipeline sales.
-  const customer = await tx.customer.create({
-    data: {
-      name: pkr.buyerName, tags: [TAG_PKR], leadSource: "OTHER", leadSourceDetail: `Penjualan Karyawan ${pkr.nomor}`, leadSourceConfirmed: true,
-      pipelineStage: "TRANSACTION", assignedSalesId: null, ...(spek.kota && { city: spek.kota }),
-    },
-  });
+  // Pemilik order = profil Customer internal karyawan penjual (satu per karyawan, dipakai ulang). Tanpa nomor/IG, tanpa sales, ditandai tag. Tidak ada percakapan/pipeline sales.
+  const { customer } = await profilCustomerKaryawan(tx, pkr.sellerId);
   const order = await createOrderForCustomer(customer.id, {
     category: kategori, unitCount: jumlahUnit, quantity: jumlahUnit,
     notes: susunNotes({ merk: spek.merk, ukuran: spek.ukuran, pkr, catatan: pkr.notes }),

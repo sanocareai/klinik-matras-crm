@@ -24,6 +24,7 @@ export const RENCANA_EXCEPTION = Object.freeze({
   HAS_V1_PROGRESS: "HAS_V1_PROGRESS",
   PARTIAL_ACTIVATION: "PARTIAL_ACTIVATION",
   RUN_OUTSIDE_COHORT: "RUN_OUTSIDE_COHORT", // Run lama (custody/backfill) di luar cohort V2 — bukan tugas Rencana
+  PKR_PERLU_DILENGKAPI: "PKR_PERLU_DILENGKAPI", // order Penjualan Karyawan yang spesifikasinya belum lengkap — Finance harus melengkapi dulu
 });
 
 const FINISHED_UNIT = ["READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD", "IN_TRANSIT_OUT", "DELIVERED"];
@@ -43,12 +44,18 @@ const act = (action, code, message, next) => ({ action, code, eligible: action =
  * @param {boolean} [u.hasCurrentStage] tahap V1 berjalan
  * @param {boolean} [u.readerEnabled] unit ada di cohort reader
  * @param {boolean} [u.writerEnabled] unit ada di cohort writer
+ * @param {{ nomor?: string|null, kurang: string[] }|null} [u.pkrKurang] order Penjualan Karyawan yang belum lengkap (data yang kurang); null/kosong = tidak ada hambatan
  */
 export function classifyRencanaUnit(u) {
   const E = RENCANA_EXCEPTION; const A = RENCANA_ACTION;
   if (u.isInternalStaff || u.customerStage === "SPAM") return act(A.EXCEPTION, E.INTERNAL_OR_SPAM, "Pelanggan internal/spam — tidak masuk Rencana Produksi.", "Tidak ada tindakan.");
   if (u.unitStatus === "CANCELLED" || u.orderStatus === "CANCELLED") return act(A.EXCEPTION, E.UNIT_CANCELLED, "Order/unit dibatalkan — tidak masuk Rencana Produksi.", "Tidak ada tindakan.");
   if (FINISHED_UNIT.includes(u.unitStatus)) return act(A.EXCEPTION, E.UNIT_FINISHED, "Unit sudah Siap Kirim/Terkirim — tidak masuk Rencana Produksi.", "Lihat riwayatnya di Order Produksi.");
+  if (u.pkrKurang?.kurang?.length) {
+    return act(A.EXCEPTION, E.PKR_PERLU_DILENGKAPI,
+      `Order Penjualan Karyawan${u.pkrKurang.nomor ? ` ${u.pkrKurang.nomor}` : ""} perlu dilengkapi dulu — belum bisa dijadwalkan. Data yang kurang: ${u.pkrKurang.kurang.join(", ")}.`,
+      "Lengkapi di Finance › Penjualan Karyawan (Lengkapi spesifikasi order); setelah lengkap unit ini langsung bisa dijadwalkan.");
+  }
   const activated = !!u.readerEnabled && !!u.writerEnabled;
   if (u.hasActiveRun) {
     if (activated) return act(A.SCHEDULE, null, "Sudah punya Run produksi — siap dijadwalkan.", "Klik Jadwalkan atau seret ke Meja.");

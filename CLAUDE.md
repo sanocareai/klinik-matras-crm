@@ -1773,3 +1773,21 @@ Dua mekanisme yang TIDAK BOLEH dicampur (satu penjualan = satu mekanisme, supaya
 **Kasus penerimaan (tes `bankRekon.integration.test.js`):** buku PT Sano − bank = Rp13.940.189 → daftar bank belum dibukukan (6.715.170 + 7.225.019) menjelaskan PERSIS, belum dijelaskan Rp0; Fee Farhan hanya exception + skenario (selisih 7.225.019 bila terbukti dari PT Sano), tidak pernah tertaut otomatis.
 
 **Catatan rilis §26 (2 Okt 2026, setelah rilis):** live di produksi lewat `461c14bc` + hotfix kode-saja `605a20db` (smoke menemukan bug LAMA di `dokumenTerkait` buku.js: jurnal KASBON impor dengan `sourceId` "IMPORT-KASBON-SEPT2026-N" — bukan UUID — membuat Mutasi Rekening/detail jurnal 500 (Prisma P2023); id bukan-UUID kini dilewati). ⚠️ `sourceId` jurnal bersifat teks polimorfik: JANGAN pernah memasukkannya langsung ke `where id in [...]` tabel ber-tipe UUID tanpa menyaring UUID. Rollback: image `klinik-matras-backend:rollback-pre-pbr-605a20db` (kode lama TIDAK punya penjaga rekening universal; tabel V2 tetap aman). Sakelar `bank_reconciliation_v2_active` MATI di produksi.
+
+---
+
+## 27. PENJUALAN KARYAWAN → ORDER CRM → UNIT PRODUKSI → DELIVERY (9 Okt 2026 — branch feat/penjualan-karyawan-order-crm, BELUM rilis)
+
+PKR (§23) tetap SATU-SATUNYA sumber nominal, pembayaran, piutang, jurnal. Setiap PKR AKTIF melahirkan SATU order CRM operasional (`Order.penjualanKaryawanId` UNIQUE, 1:1) yang **tidak membawa uang**:
+value 0, tanpa OrderItem/Payment/invoice/jurnal/pengakuan pendapatan, `salesOwnerId` null. Kode: `services/penjualanKaryawanOrder.js` (+ `pkrGuard.js`, `pkrProduksiGuard.js`, `lib/domain/pkrSpesifikasi.js`).
+
+- **Pemilik order = SATU profil Customer internal PER KARYAWAN** (`Customer.staffUserId` UNIQUE = ID akun, BUKAN nama/email). Dua PKR karyawan yang sama = satu Customer + dua Order. Nama di profil = snapshot;
+  nama pembeli (kerabat) tetap di `PKR.buyerName` + disalin ke catatan order (`pembeliPkr`). Dibuat di bawah kunci baris User (paralel aman). Profil ini bukan lead Sales (dikeluarkan dari papan pipeline & hitungan pelanggan baru MCP).
+- **Spesifikasi belum lengkap** (merk, ukuran, dikirim/ambil sendiri, alamat bila dikirim) = "Perlu dilengkapi": TIDAK boleh direncanakan/dijadwalkan (Rencana, PIC, target harian, registrasi workshop), dimulai, atau direkam tahapnya —
+  pesan menyebut data yang kurang. Satu pintu: `pkrProduksiGuard.js`. Setelah dilengkapi pintu yang sama langsung terbuka TANPA Order/Unit baru.
+- **Rujukan PKR di daftar Produksi tidak bergantung flag V2**: `rujukanPkrDariOrder()` dilampirkan di backlog Rencana, work-orders, board, daftar plan, view Run, Unit 360 V2 (overview) dan non-V2 (`/units/:id/timeline`).
+- **Trigger DB (5)** menolak posting customer untuk order PKR: INSERT/UPDATE order_id pada payments, invoices, fin_payment_allocations, OrderItem, dan baris jurnal HANYA bila header jurnal PEMBAYARAN_ORDER / PENGAKUAN_PENDAPATAN / REFUND.
+  Sengaja DIIZINKAN: jurnal resmi PKR (PENJUALAN_KARYAWAN, PEMBAYARAN_PENJUALAN_KARYAWAN, REVERSAL) dan biaya operasional yang menandai order PKR (bensin/insentif/pemakaian bahan). Order biasa tidak pernah ditolak.
+- PKR lama: dry-run `GET /api/finance/penjualan-karyawan/order-crm/dry-run` + aksi eksplisit "Buat/Tautkan Order CRM" per dokumen. TIDAK ada backfill massal. Pembatalan PKR setelah Produksi/Delivery berjalan DIBLOKIR (409).
+- ⚠️ Rollback KODE setelah ada order PKR berbahaya (kode lama memperlakukannya sebagai order biasa bernilai 0 → celah posting NILAI_ORDER_NOL). Skrip rilis: `scripts/release-penjualan-karyawan-order-crm.sh` (fail-closed, 2 migrasi dipin SHA, rehearsal restore + uji perilaku trigger).
+

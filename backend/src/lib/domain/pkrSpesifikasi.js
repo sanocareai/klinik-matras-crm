@@ -42,5 +42,5 @@ export function bacaSpesifikasiPkr(order) {
   return { lengkap: kurang.length === 0, kurang, merk, ukuran, perluDikirim, alamat, kota };
 }
 
-export const PESAN_SPEK_BELUM_LENGKAP = (nomor, kurang) =>
-  `Order Penjualan Karyawan${nomor ? ` ${nomor}` : ""} perlu dilengkapi dulu (${kurang.join(", ")}). Produksi belum boleh dimulai. Lengkapi di Finance › Penjualan Karyawan.`;
+export const PESAN_SPEK_BELUM_LENGKAP = (nomor, kurang, akibat = "Produksi belum boleh dimulai") =>
+  `Order Penjualan Karyawan${nomor ? ` ${nomor}` : ""} perlu dilengkapi dulu (data yang kurang: ${kurang.join(", ")}). ${akibat}. Lengkapi di Finance › Penjualan Karyawan.`;

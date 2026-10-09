@@ -64,8 +64,10 @@ test("PKR dicatat menghasilkan TEPAT 1 Order + 1 Unit + 1 Customer tertaut 1:1; 
   assert.equal(order.value, 0);
   assert.equal(order.salesOwnerId, null);
   assert.equal(order.paymentStatus, "BELUM_BAYAR");
-  assert.equal(order.customer.name, "Bu Ani (kerabat)");
+  assert.equal(order.customer.staffUserId, w.seller.id, "pemilik order = profil internal karyawan, dikenali lewat ID akun");
+  assert.equal(order.customer.name, "Emon Uji", "nama profil = snapshot nama karyawan; nama pembeli (kerabat) tetap di PKR");
   assert.deepEqual(order.customer.tags, ["Penjualan Karyawan"]);
+  assert.equal(JSON.parse(order.notes).pembeliPkr, "Bu Ani (kerabat)", "nama pembeli disalin sebagai snapshot ke catatan order");
   assert.equal(order.units.length, 1);
   assert.equal(order.units[0].merk, "Sano");
   const j = await jejak();
@@ -141,11 +143,14 @@ test("order 'diserahkan' TIDAK mengakui pendapatan, tidak membuat gap, dan jalur
   await assert.rejects(() => testPrisma.payment.create({ data: { orderId: order.id, amount: 1000, method: "CASH", recordedById: user.id } }), /Penjualan Karyawan hanya dokumen operasional/);
   await assert.rejects(() => testPrisma.invoice.create({ data: { orderId: order.id, invoiceNumber: "INV-UJI-001" } }), /Penjualan Karyawan hanya dokumen operasional/);
   await assert.rejects(() => testPrisma.orderItem.create({ data: { orderId: order.id, layananName: "Kasur", harga: 1000 } }), /Penjualan Karyawan hanya dokumen operasional/);
+  // Baris jurnal: ditolak HANYA untuk posting customer (pembayaran/pengakuan pendapatan/refund) — lihat blok "AUDIT TRIGGER" di bawah untuk sisi yang sengaja diizinkan.
   const ln = await testPrisma.finJournalLine.findFirst();
+  const entriTes = await testPrisma.finJournalEntry.create({ data: { entryNumber: "JV-UJI-TOLAK", date: new Date("2026-10-09"), description: "uji", source: "PENGAKUAN_PENDAPATAN", sourceId: randomUUID() } });
   await assert.rejects(
-    () => testPrisma.$executeRawUnsafe(`INSERT INTO fin_journal_lines (id, entry_id, line_no, account_id, debit, credit, order_id) VALUES (gen_random_uuid(), $1::uuid, 99, $2::uuid, 1, 0, $3)`, ln.entryId, ln.accountId, order.id),
+    () => testPrisma.$executeRawUnsafe(`INSERT INTO fin_journal_lines (id, entry_id, line_no, account_id, debit, credit, order_id) VALUES (gen_random_uuid(), $1::uuid, 1, $2::uuid, 1, 0, $3)`, entriTes.id, ln.accountId, order.id),
     /Penjualan Karyawan hanya dokumen operasional/,
   );
+  await testPrisma.finJournalEntry.delete({ where: { id: entriTes.id } });
   assert.deepEqual(await jejak(), sebelum);
   assert.ok(p.id);
 });

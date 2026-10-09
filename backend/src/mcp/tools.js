@@ -350,7 +350,7 @@ export function registerReadOnlyTools(server) {
     },
     async (args) => {
       const periodeCustomer = whereTanggal(args.dari, args.sampai);
-      // Order operasional Penjualan Karyawan (nominal di Finance) tidak dihitung sebagai penjualan; pelanggan PKR (tag "Penjualan Karyawan") bukan pelanggan baru.
+      // Order operasional Penjualan Karyawan (nominal di Finance) tidak dihitung sebagai penjualan; profil internal karyawan (Customer.staffUserId) bukan pelanggan baru.
       const periode = { ...periodeCustomer, penjualanKaryawanId: null };
       const tanpaBatal = { ...periode, status: { not: "CANCELLED" } };
 
@@ -359,7 +359,7 @@ export function registerReadOnlyTools(server) {
         prisma.order.groupBy({ by: ["status"], where: periode, _count: true, _sum: { value: true } }),
         prisma.order.groupBy({ by: ["category"], where: tanpaBatal, _count: true, _sum: { value: true } }),
         prisma.order.groupBy({ by: ["paymentStatus"], where: tanpaBatal, _count: true, _sum: { value: true } }),
-        prisma.customer.count({ where: { ...periodeCustomer, NOT: { tags: { has: "Penjualan Karyawan" } } } }),
+        prisma.customer.count({ where: { ...periodeCustomer, staffUserId: null } }),
       ]);
 
       return hasil({

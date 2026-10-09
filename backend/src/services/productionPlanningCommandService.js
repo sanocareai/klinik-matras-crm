@@ -28,6 +28,7 @@ import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState
 import { BOARD_DEFAULTS, assertStationCapacity, formatProductionDate, normalizeScheduleInput, parseProductionDate, workWindowFor } from "../lib/domain/productionBoard.js";
 import { signUnitPhotoUrlIfAny, signUnitPhotoUrlsBulk } from "../routes/productionUnitPhoto.js";
 import { assertNoV1Drift } from "./productionRunGuards.js";
+import { PKR_ORDER_SELECT, pesanPkrBelumLengkap, rujukanPkrDariOrder } from "./pkrProduksiGuard.js";
 
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
 const EPSILON = 1e-6;
@@ -38,6 +39,12 @@ function planError(message, statusCode, code, details) {
 }
 
 const hash = (value) => createHash("sha256").update(JSON.stringify(value ?? null)).digest("hex");
+
+// Order Penjualan Karyawan yang spesifikasinya belum lengkap TIDAK boleh direncanakan/dijadwalkan (lihat pkrProduksiGuard.js). Order biasa: tidak ada efek.
+async function pastikanPkrLengkap(tx, orderId) {
+  const pesan = await pesanPkrBelumLengkap(tx, orderId, "Belum bisa direncanakan atau dijadwalkan di Rencana Produksi");
+  if (pesan) throw planError(pesan, 422, "PLAN_PKR_PERLU_DILENGKAPI");
+}
 
 export function assertIdempotencyKey(key) {
   if (!key || !IDEMPOTENCY_KEY.test(key)) {
@@ -143,6 +150,7 @@ export async function createProductionPlanInTx(tx, { runId, actorId, idempotency
     });
     if (!run) throw planError("Production Run tidak ditemukan", 404, "PLAN_RUN_NOT_FOUND");
     await assertWriterEnabledForUnit(tx, run.unitId);
+    await pastikanPkrLengkap(tx, run.unit.orderId);
     if (["COMPLETED", "CANCELLED"].includes(run.status)) {
       throw planError("Production Run ini sudah selesai/dibatalkan; tidak bisa direncanakan", 409, "PLAN_RUN_TERMINAL");
     }
@@ -198,7 +206,7 @@ export async function loadPlanForWrite(tx, planId) {
   const plan = await tx.productionRunPlan.findUnique({
     where: { id: planId },
     include: {
-      run: { select: { id: true, unitId: true, unit: { select: { unitCode: true } } } },
+      run: { select: { id: true, unitId: true, unit: { select: { unitCode: true, orderId: true } } } },
       bomLines: { where: { status: "ACTIVE" } },
       reservations: { where: { status: "ACTIVE" } },
     },
@@ -231,6 +239,7 @@ export async function assignProductionPlan(prisma, { planId, actorId, idempotenc
     assertPlanNotCancelled(plan);
     assertPlanRevision(plan, revisionExpected);
     await assertWriterEnabledForUnit(tx, plan.run.unitId);
+    await pastikanPkrLengkap(tx, plan.run.unit.orderId);
 
     const workCenter = await tx.workCenter.findUnique({ where: { id: workCenterId } });
     if (!workCenter || !workCenter.active) throw planError("Workshop/work center tidak valid atau nonaktif", 422, "PLAN_WORK_CENTER_INVALID");
@@ -292,6 +301,7 @@ export async function scheduleProductionPlanInTx(tx, { planId, actorId, idempote
     assertPlanNotCancelled(plan);
     assertPlanRevision(plan, revisionExpected);
     await assertWriterEnabledForUnit(tx, plan.run.unitId);
+    if (!data.unschedule) await pastikanPkrLengkap(tx, plan.run.unit.orderId); // mengeluarkan dari papan tetap boleh
 
     const now = new Date();
     let update;
@@ -825,7 +835,7 @@ export async function listEligibleUnitsForPlanning(prisma, { unitIds = null, lim
       ...(unitIds ? { unitId: { in: unitIds } } : {}),
     },
     include: {
-      unit: { select: { id: true, unitCode: true, merk: true, ukuran: true, storageLocation: true, order: { select: { orderNumber: true } } } },
+      unit: { select: { id: true, unitCode: true, merk: true, ukuran: true, storageLocation: true, order: { select: { orderNumber: true, ...PKR_ORDER_SELECT } } } },
       phases: { where: { phase: "PROCESS" }, select: { status: true } },
     },
     orderBy: [{ createdAt: "asc" }],
@@ -837,6 +847,7 @@ export async function listEligibleUnitsForPlanning(prisma, { unitIds = null, lim
   return eligible.map((run) => ({
     runId: run.id, unit: { id: run.unit.id, unitCode: run.unit.unitCode, merk: run.unit.merk, ukuran: run.unit.ukuran, storageLocation: run.unit.storageLocation, orderNumber: run.unit.order?.orderNumber ?? null, photoUrl: photoByUnit.get(run.unit.id) ?? null },
     kind: run.kind, isLegacyException: !!run.migrationSource,
+    penjualanKaryawan: rujukanPkrDariOrder(run.unit.order), // rujukan Penjualan Karyawan; "Perlu dilengkapi" = server menolak rencana (PLAN_PKR_PERLU_DILENGKAPI)
     // P9A — kartu tetap "Rencanakan" seperti biasa, TAPI UI perlu tahu unit
     // ini belum tiba secara fisik (badge "Dalam perjalanan ke workshop") supaya
     // tidak menyiratkan siap dikerjakan segera setelah dijadwalkan.
@@ -856,7 +867,7 @@ const PLAN_LIST_INCLUDE = {
         select: {
           id: true, unitCode: true, merk: true, ukuran: true, serviceId: true,
           service: { select: { code: true, labelId: true } },
-          order: { select: { orderNumber: true, customer: { select: { name: true, city: true, assignedSales: { select: { name: true } } } } } },
+          order: { select: { orderNumber: true, ...PKR_ORDER_SELECT, customer: { select: { name: true, city: true, assignedSales: { select: { name: true } } } } } },
         },
       },
     },
@@ -897,6 +908,7 @@ function formatPlan(row, photoUrl = null) {
       service: unit.service ? { code: unit.service.code, label: unit.service.labelId } : null, photoUrl,
     },
     customer: { name: order?.customer?.name ?? null, city: order?.customer?.city ?? null, salesName: order?.customer?.assignedSales?.name ?? null },
+    penjualanKaryawan: rujukanPkrDariOrder(order),
     workCenter: row.workCenter, operator: row.operator ? { ...row.operator, name: row.operator.user?.name ?? null } : null,
     cornerWorkCenter: row.cornerWorkCenter, cornerOperator: row.cornerOperator ? { ...row.cornerOperator, name: row.cornerOperator.user?.name ?? null } : null,
     productionDate: row.productionDate, stationCode: row.stationCode, priority: row.priority,

@@ -30,6 +30,7 @@ import { listV1WorkerQueue } from "../services/v1WorkerQueue.js";
 import { notifyReadyForDelivery } from "../services/customerNotifications.js";
 import { DISPLAY_STATUS_UNIT_FILTER, displayStatusCountsOf, displayStatusOfOrder, displayStatusOfUnit, physicalPresenceOf, priorityDisplay } from "../lib/domain/productionDisplay.js";
 import { loadOpenComplaintsByUnit } from "../services/productionComplaints.js";
+import { PKR_ORDER_SELECT, rujukanPkrDariOrder, pesanPkrBelumLengkap } from "../services/pkrProduksiGuard.js";
 
 export const productionRouter = express.Router();
 productionRouter.use(requireAuth);
@@ -91,7 +92,7 @@ productionRouter.get("/board", requirePermission(P.UNIT_READ), async (req, res) 
           include: {
             currentStage: true,
             service: true,
-            order: { select: { id: true, orderNumber: true, customer: { select: { name: true } } } },
+            order: { select: { id: true, orderNumber: true, ...PKR_ORDER_SELECT, customer: { select: { name: true } } } },
           },
         },
       },
@@ -104,7 +105,7 @@ productionRouter.get("/board", requirePermission(P.UNIT_READ), async (req, res) 
       include: {
         currentStage: true,
         service: true,
-        order: { select: { id: true, orderNumber: true, customer: { select: { name: true } } } },
+        order: { select: { id: true, orderNumber: true, ...PKR_ORDER_SELECT, customer: { select: { name: true } } } },
       },
       orderBy: { createdAt: "asc" },
     });
@@ -147,6 +148,8 @@ productionRouter.get("/board", requirePermission(P.UNIT_READ), async (req, res) 
       });
       return {
         ...unit, nextStage, productionStatus,
+        // Rujukan Penjualan Karyawan (null untuk order biasa) — dihitung dari order, tidak bergantung flag V2.
+        penjualanKaryawan: rujukanPkrDariOrder(unit.order),
         productionStatusReason: describeProductionStatus(productionStatus, lastLog, blocker),
       };
     };
@@ -176,6 +179,12 @@ productionRouter.post("/targets", requirePermission(P.UNIT_STAGE_WRITE), async (
       return res.status(400).json({ error: "unitIds wajib diisi" });
     }
     const targetDate = resolveTargetDate(date);
+    // Target harian = menjadwalkan unit: order Penjualan Karyawan yang belum lengkap tidak boleh ditargetkan (pesan menyebut data yang kurang).
+    const unitOrders = await prisma.unit.findMany({ where: { id: { in: unitIds } }, select: { orderId: true } });
+    for (const orderId of new Set(unitOrders.map((u) => u.orderId))) {
+      const pesan = await pesanPkrBelumLengkap(prisma, orderId, "Belum bisa dijadwalkan sebagai target produksi");
+      if (pesan) return res.status(422).json({ error: pesan, code: "UNIT_PKR_PERLU_DILENGKAPI" });
+    }
     await prisma.productionTarget.createMany({
       data: unitIds.map((unitId) => ({ targetDate, unitId, createdById: req.user.id, note })),
       skipDuplicates: true,
@@ -394,7 +403,7 @@ productionRouter.get("/work-orders", requirePermission(P.UNIT_READ), async (req,
         service: { select: { id: true, code: true, labelId: true, serviceLine: true } },
         order: {
           select: {
-            id: true, orderNumber: true, status: true,
+            id: true, orderNumber: true, status: true, ...PKR_ORDER_SELECT,
             items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } }, // Layanan Sales (satu-satunya layanan yang ditampilkan)
             customer: { select: { id: true, name: true } },
           },
@@ -431,6 +440,8 @@ productionRouter.get("/work-orders", requirePermission(P.UNIT_READ), async (req,
       });
       return {
         ...u, inProductionV2: v2Units.has(u.id), productionStatus,
+        // Rujukan Penjualan Karyawan (null untuk order biasa): badge + nomor PKR + karyawan + kirim/ambil sendiri + "Perlu dilengkapi" — tidak bergantung flag V2.
+        penjualanKaryawan: rujukanPkrDariOrder(u.order),
         // Kosakata sederhana (slice 1): status order/unit, keberadaan fisik, prioritas Normal·Tinggi·Komplain (Komplain dari ComplaintCase resmi). Enum mentah tetap ada di atas.
         orderStatusDisplay: displayStatusOfOrder(u.order?.status), unitStatusDisplay: displayStatusOfUnit(u.status),
         presence: physicalPresenceOf({ unitStatus: u.status, runStatus: null, runOrigin: null, inboundAccepted: false }),

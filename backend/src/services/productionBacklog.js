@@ -15,6 +15,7 @@ import { diagnoseUnitPhotosBulk } from "./productionUnitPhotoService.js";
 import { RENCANA_ACTION, photoNoteOf } from "../lib/domain/productionRencana.js";
 import { classifyUnitRow, cohortStatesOf } from "./productionRencanaService.js";
 import { loadV2Flags } from "./v2FeatureFlags.js";
+import { PKR_ORDER_SELECT, rujukanPkrDariOrder } from "./pkrProduksiGuard.js";
 
 export const BACKLOG_STATUSES = Object.freeze(["DIPROSES", "PENGAMBILAN"]);
 const UNIT_STATUS_FOR = Object.freeze({ DIPROSES: ["RECEIVED", "IN_PRODUCTION"], PENGAMBILAN: ["AWAITING_PICKUP", "IN_TRANSIT_IN"] });
@@ -66,7 +67,7 @@ export async function listBacklog(prisma, { cohortUnitIds = null, states = null,
     where, take: BACKLOG_MAX_CANDIDATES + 1,
     select: {
       id: true, orderId: true, createdAt: true, priority: true, status: true, currentStageId: true, _count: { select: { stageLogs: true } },
-      order: { select: { status: true, customer: { select: { pipelineStage: true, isInternalStaff: true } } } },
+      order: { select: { status: true, ...PKR_ORDER_SELECT, customer: { select: { pipelineStage: true, isInternalStaff: true } } } },
       productionRunsV2: { where: { status: { notIn: TERMINAL_RUN } }, select: { id: true, plan: { select: { priority: true } } } },
     },
   });
@@ -95,7 +96,7 @@ export async function listBacklog(prisma, { cohortUnitIds = null, states = null,
     where: { id: { in: pageIds } },
     select: {
       id: true, unitCode: true, orderId: true, status: true, merk: true, ukuran: true, createdAt: true,
-      order: { select: { orderNumber: true, status: true, items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } }, customer: { select: { name: true, city: true } } } },
+      order: { select: { orderNumber: true, status: true, ...PKR_ORDER_SELECT, items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } }, customer: { select: { name: true, city: true } } } },
       productionRunsV2: { where: { status: { notIn: TERMINAL_RUN } }, select: { id: true, origin: true, status: true, custodyHandoffs: { select: { direction: true, status: true } } }, take: 1, orderBy: { createdAt: "desc" } },
     },
   }) : [];
@@ -115,12 +116,16 @@ export async function listBacklog(prisma, { cohortUnitIds = null, states = null,
     const view = run && cohort.has(u.id) ? viewByRun.get(run.id) || null : null;
     const prio = priorityDisplay({ stored: storedById.get(id) ?? 0, complaintCases: complaints.get(u.id) || [] });
     const cls = classById.get(id);
+    // Order Penjualan Karyawan: rujukan tampil di kartu TANPA bergantung flag V2 (dihitung dari order, bukan dari Run); belum lengkap = tidak boleh dijadwalkan walau sudah punya Run.
+    const pkr = rujukanPkrDariOrder(u.order);
+    const pkrBlokir = !!pkr && !pkr.lengkap;
     return {
-      unitId: u.id, schedulable: !!view, view,
+      unitId: u.id, schedulable: !!view && !pkrBlokir, view: pkrBlokir ? null : view,
       // Aksi berikutnya yang JELAS per kartu (server = otoritas): SCHEDULE | ONBOARD_SCHEDULE (Jadwalkan membuka Run) | AWAIT_ACTIVATION | WAIT_PICKUP | EXCEPTION.
       // `onboardable` = kartu boleh dijadwalkan/diseret walau belum punya Run; `view` null — formulir jadwal mengirim unitId.
-      rencana: { action: view ? RENCANA_ACTION.SCHEDULE : cls.action, code: cls.code, message: cls.message, next: cls.next, onboardable: !view && cls.action === RENCANA_ACTION.ONBOARD_SCHEDULE },
+      rencana: { action: view && !pkrBlokir ? RENCANA_ACTION.SCHEDULE : cls.action, code: cls.code, message: cls.message, next: cls.next, onboardable: !view && cls.action === RENCANA_ACTION.ONBOARD_SCHEDULE },
       card: {
+        penjualanKaryawan: pkr,
         photoNote: photoNoteOf({ photoUrl: photos.get(u.id) ?? null, diagnosis: photoDiag.get(u.id) }),
         unit: { id: u.id, unitCode: u.unitCode, merk: u.merk, ukuran: u.ukuran, photoUrl: photos.get(u.id) ?? null },
         customer: { name: u.order?.customer?.name ?? null, orderNumber: u.order?.orderNumber ?? null, salesServices: (u.order?.items || []).map((i) => i.layananName).filter(Boolean) },
