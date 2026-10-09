@@ -220,16 +220,21 @@ export async function bacaAgingUtang(db, filter = {}) {
     status: { in: termasukLunas ? STATUS_FAKTUR_AGING : ["DISETUJUI", "DIBAYAR_SEBAGIAN"] },
     ...(filter.supplierId && { supplierId: filter.supplierId }),
     ...((tgl(filter.fakturDari) || tgl(filter.fakturSampai)) && { billDate: { ...(tgl(filter.fakturDari) && { gte: tgl(filter.fakturDari) }), ...(tgl(filter.fakturSampai) && { lte: tgl(filter.fakturSampai) }) } }),
-    ...((tgl(filter.jatuhTempoDari) || tgl(filter.jatuhTempoSampai)) && { dueDate: { ...(tgl(filter.jatuhTempoDari) && { gte: tgl(filter.jatuhTempoDari) }), ...(tgl(filter.jatuhTempoSampai) && { lte: tgl(filter.jatuhTempoSampai) }) } }),
-    ...(filter.q && { OR: [
+    // Faktur atas PO dengan dasar tanggal tiba punya beberapa jatuh tempo (satu per penerimaan) sedangkan kolom dueDate hanya menyimpan yang terawal: di sini ia ikut diambil, lalu BARIS-nya disaring menurut jatuh tempo masing-masing (di bawah).
+    ...((tgl(filter.jatuhTempoDari) || tgl(filter.jatuhTempoSampai)) && { OR: [{ termBasis: DASAR_TANGGAL_TIBA }, { dueDate: { ...(tgl(filter.jatuhTempoDari) && { gte: tgl(filter.jatuhTempoDari) }), ...(tgl(filter.jatuhTempoSampai) && { lte: tgl(filter.jatuhTempoSampai) }) } }] }),
+    ...(filter.q && { AND: [{ OR: [
       { supplierRef: { contains: String(filter.q), mode: "insensitive" } }, { billNumber: { contains: String(filter.q), mode: "insensitive" } },
       { supplier: { name: { contains: String(filter.q), mode: "insensitive" } } }, { purchaseOrder: { poNumber: { contains: String(filter.q), mode: "insensitive" } } },
-    ] }),
+    ] }] }),
   };
   const bills = await db.finSupplierBill.findMany({ where, include: billInclude, orderBy: [{ dueDate: "asc" }, { billDate: "asc" }], take: 5000 });
   const penerimaanPO = await muatPenerimaanPO(db, [...new Set(bills.map((b) => b.purchaseOrderId).filter(Boolean))]);
   const nama = await namaUser(db, bills.flatMap((b) => [b.termSetById, b.scheduledById]));
   let baris = bills.flatMap((b) => bentukBarisFaktur(b, { hariIni, penerimaanPO, nama }));
+  // Filter jatuh tempo menilai tiap BARIS menurut tanggalnya sendiri: nominal tidak menggandakan dan tidak ikut membawa jadwal di luar periode.
+  const jtDari = filter.jatuhTempoDari && /^\d{4}-\d{2}-\d{2}$/.test(String(filter.jatuhTempoDari)) ? String(filter.jatuhTempoDari) : null;
+  const jtSampai = filter.jatuhTempoSampai && /^\d{4}-\d{2}-\d{2}$/.test(String(filter.jatuhTempoSampai)) ? String(filter.jatuhTempoSampai) : null;
+  if (jtDari || jtSampai) baris = baris.filter((r) => r.tanggalJatuhTempo && (!jtDari || r.tanggalJatuhTempo >= jtDari) && (!jtSampai || r.tanggalJatuhTempo <= jtSampai));
   if (!termasukLunas) baris = baris.filter((r) => r.kelompok !== "LUNAS");
   // Kartu & rekap kelompok dihitung SEBELUM tab/kelompok memilih baris — angkanya tetap sama saat pengguna berpindah tab (dan sama dengan export).
   const ringkasan = ringkas(baris);

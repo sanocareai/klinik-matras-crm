@@ -14,6 +14,7 @@ import { toBookDate, todayBookDateWIB } from "./journal.js";
 import { aktualPendampingPenerimaan, pendampingPO, PendampingError, sama3 } from "../../lib/domain/pendamping.js";
 import { hitungJatuhTempo, labelTermin } from "./termin.js";
 import { sinkronJatuhTempoFakturPO } from "./jadwalJatuhTempo.js";
+import { DEFINISI_PROGRES, hitungProgresPO, ringkasProgresPO } from "./progresPO.js";
 
 export class KedatanganError extends Error {
   constructor(message, statusCode = 400, code = null) { super(message); this.name = "KedatanganError"; this.statusCode = statusCode; if (code) this.code = code; }
@@ -23,7 +24,6 @@ const gagal = (m, s = 400, c = null) => new KedatanganError(m, s, c);
 export const WORKSPACE = Object.freeze({ FINANCE: "FINANCE", GUDANG: "GUDANG" });
 export const STATUS_PO_BISA_DITERIMA = ["DISETUJUI", "DITERIMA_SEBAGIAN"];
 const STATUS_BERJALAN = ["DRAFT", "SCHEDULED", "ARRIVED", "INSPECTION", "READY_FOR_PUTAWAY"];
-const STATUS_SUDAH_TIBA = ["ARRIVED", "INSPECTION", "READY_FOR_PUTAWAY", "COMPLETED"];
 const BUKTI_MAKS = 5;
 
 const k = (v) => Math.round(Number(v ?? 0) * 1000);
@@ -50,39 +50,8 @@ export function aktorDariSesi(user, workspace, roles) {
 }
 
 // ── Kuantitas ────────────────────────────────────────────────────────────
-
-/**
- * Per baris PO: dipesan, datang (tercatat tiba, belum ditolak penerimaannya), baik (hasil pemeriksaan), ditolak, masukStok (putaway selesai), sisa (dipesan − masukStok),
- * sisaDatang (batas jumlah yang masih boleh dicatat datang = dipesan − masukStok − barang di penerimaan berjalan yang belum ditolak), dan jumlah pendamping aktual.
- */
-export async function kuantitasKedatangan(db, poId) {
-  const po = await db.finPurchaseOrder.findUnique({ where: { id: poId }, select: { lines: { select: { id: true, qty: true } } } });
-  if (!po) return new Map();
-  const baris = await db.goodsReceiptLine.findMany({
-    where: { purchaseOrderLine: { purchaseOrderId: poId } },
-    select: { purchaseOrderLineId: true, receivedQty: true, acceptedQty: true, rejectedQty: true, companionQty: true, goodsReceipt: { select: { status: true } } },
-  });
-  const peta = new Map(po.lines.map((l) => [l.id, { dipesanK: k(l.qty), datangK: 0, baikK: 0, ditolakK: 0, masukStokK: 0, berjalanNetoK: 0, pendampingK: 0, adaPendamping: false }]));
-  for (const b of baris) {
-    const a = peta.get(b.purchaseOrderLineId);
-    if (!a) continue;
-    const st = b.goodsReceipt.status;
-    if (!STATUS_SUDAH_TIBA.includes(st)) continue;
-    a.datangK += k(b.receivedQty); a.baikK += k(b.acceptedQty); a.ditolakK += k(b.rejectedQty);
-    if (b.companionQty !== null && b.companionQty !== undefined) { a.pendampingK += k(b.companionQty); a.adaPendamping = true; }
-    if (st === "COMPLETED") a.masukStokK += k(b.acceptedQty);
-    else a.berjalanNetoK += Math.max(0, k(b.receivedQty) - k(b.rejectedQty));
-  }
-  const hasil = new Map();
-  for (const [id, a] of peta) {
-    hasil.set(id, {
-      dipesan: dariK(a.dipesanK), datang: dariK(a.datangK), baik: dariK(a.baikK), ditolak: dariK(a.ditolakK), masukStok: dariK(a.masukStokK),
-      sisa: dariK(Math.max(0, a.dipesanK - a.masukStokK)), sisaDatang: dariK(Math.max(0, a.dipesanK - a.masukStokK - a.berjalanNetoK)),
-      pendampingAktual: a.adaPendamping ? dariK(a.pendampingK) : null,
-    });
-  }
-  return hasil;
-}
+// Satu helper progres (progresPO.js) untuk Finance, Gudang, kartu, detail, dan batas jumlah datang. Definisi tiap angka ada di sana.
+export const kuantitasKedatangan = hitungProgresPO;
 
 // ── Status "Barang Akan Datang" ──────────────────────────────────────────
 
@@ -97,7 +66,7 @@ export function statusBarangAkanDatang({ po, penerimaan, kuantitas, hariIni }) {
     if (aktif.some((r) => r.status === "READY_FOR_PUTAWAY")) bendera.add("SIAP_DISIMPAN");
     const nilai = [...kuantitas.values()];
     const adaDatang = nilai.some((q) => k(q.datang) > 0 || k(q.masukStok) > 0);
-    const belumLengkap = nilai.some((q) => k(q.sisaDatang) > 0);
+    const belumLengkap = nilai.some((q) => k(q.belumDatang) > 0);
     if (!adaDatang) bendera.add("MENUNGGU_KEDATANGAN");
     else if (belumLengkap) bendera.add("DITERIMA_SEBAGIAN");
     if (po.expectedDate && hariKunci(po.expectedDate) < hariIni && belumLengkap) bendera.add("TERLAMBAT");
@@ -111,8 +80,8 @@ export function statusBarangAkanDatang({ po, penerimaan, kuantitas, hariIni }) {
 function kekuranganPenerimaan(r, poLineById) {
   if (!r.arrivedDate) return [];
   const daftar = [];
-  if (!r.deliveryNote || !String(r.deliveryNote).trim()) daftar.push("Surat jalan belum diisi");
-  if (!r.arrivalProofUrls?.length) daftar.push("Bukti kedatangan belum diunggah");
+  if (!r.deliveryNote || !String(r.deliveryNote).trim()) daftar.push("Surat jalan belum dilampirkan");
+  if (!r.arrivalProofUrls?.length) daftar.push("Bukti kedatangan belum dilampirkan");
   for (const l of r.lines) {
     const p = pendampingPO({ unit: "", qty: 0, ...(poLineById.get(l.purchaseOrderLineId) ?? {}) });
     if (p?.mode === "AKTUAL" && (l.companionQty === null || l.companionQty === undefined) && k(l.receivedQty) > 0) daftar.push(`Jumlah ${p.satuan.toLowerCase()} aktual belum diisi (${l.material?.code ?? "item"})`);
@@ -187,7 +156,7 @@ export async function bentukBarangAkanDatang(db, poId, { finance = false, hariIn
     const p = pendampingPO(l);
     return {
       id: l.id, materialId: l.materialId, kode: l.material?.code ?? null, nama: l.material?.name ?? null, satuan: l.unit, catatan: l.notes,
-      ...q,
+      ...q, progres: q,
       pendamping: p && { ...p, aktual: q.pendampingAktual },
       ...(finance && { hargaSatuan: l.unitPrice, nilaiDipesan: Math.round((q.dipesan * l.unitPrice) * 100) / 100, nilaiMasukStok: Math.round((q.masukStok * l.unitPrice) * 100) / 100 }),
     };
@@ -196,7 +165,8 @@ export async function bentukBarangAkanDatang(db, poId, { finance = false, hariIn
     id: po.id, poNumber: po.poNumber, status: po.status,
     statusAkanDatang: { kode: status.utama, label: STATUS_AKAN_DATANG[status.utama] }, bendera: status.bendera.map((b) => ({ kode: b, label: STATUS_AKAN_DATANG[b] })),
     supplier: po.supplier, orderDate: hariKunci(po.orderDate), expectedDate: hariKunci(po.expectedDate), hariTerlambat, notes: po.notes, cancelReason: po.cancelReason,
-    lines, penerimaan: recs.map((r) => bentukPenerimaan(r, { po, poLineById, finance })),
+    lines, progres: ringkasProgresPO(lines), progresDefinisi: DEFINISI_PROGRES,
+    penerimaan: recs.map((r) => bentukPenerimaan(r, { po, poLineById, finance })),
   };
   if (finance) {
     keluaran.termin = po.termType ? { jenis: po.termType, hari: po.termDays, label: labelTermin(po.termType, po.termDays), sumber: po.termSource } : null;
@@ -281,19 +251,70 @@ async function kunciPOUntukTulis(tx, poId) {
 // ── Perintah: catat kedatangan ───────────────────────────────────────────
 
 /**
- * Catat barang TIBA pada SATU pengiriman. `receiptId` (opsional) = penerimaan terjadwal yang sudah ada (belum tiba); tanpa itu dibuat penerimaan baru (satu per pengiriman).
+ * Siapkan (atau pakai ulang) DRAF PENERIMAAN untuk pengiriman berikutnya dari PO — IDEMPOTEN. Finance atau Gudang boleh memulai lebih dulu; Gudang TIDAK perlu membuat penerimaan lebih dulu.
+ * Draf = penerimaan berstatus Draf/Terjadwal yang kedatangannya belum dicatat. Bila sudah ada satu, dipakai (yang tertua); bila belum, dibuat satu (baris = yang belum datang).
+ * Dipanggil DI LUAR transaksi catat (transaksi sendiri, hanya mengunci PO) supaya urutan kunci catat tetap penerimaan → PO. Tidak menulis stok/jurnal.
+ * @param {import("@prisma/client").PrismaClient} db  klien utama (bukan tx)
+ * Mengembalikan { receiptId, receiptNumber, dibuat }.
+ */
+export async function pastikanDrafPenerimaan(db, { poId, aktor, sekarang = new Date() }) {
+  return db.$transaction(async (tx) => {
+    const po = await kunciPOUntukTulis(tx, poId);
+    if (!STATUS_PO_BISA_DITERIMA.includes(po.status)) throw gagal(`PO ${po.poNumber} berstatus ${po.status} — hanya PO yang disetujui dan belum selesai yang bisa menerima barang`, 409, "PO_TIDAK_BISA_DITERIMA");
+    const ada = await tx.goodsReceipt.findFirst({ where: { purchaseOrderId: po.id, status: { in: ["DRAFT", "SCHEDULED"] }, arrivalRevision: 0 }, orderBy: [{ createdAt: "asc" }, { receiptNumber: "asc" }], select: { id: true, receiptNumber: true } });
+    if (ada) return { receiptId: ada.id, receiptNumber: ada.receiptNumber, dibuat: false };
+    const kuantitas = await kuantitasKedatangan(tx, po.id);
+    const sisa = po.lines.filter((l) => k(kuantitas.get(l.id).belumDatang) > 0);
+    if (sisa.length === 0) throw gagal(`PO ${po.poNumber} sudah terpenuhi — tidak ada barang yang belum datang. Minta Finance merevisi jumlah PO bila memang ada kiriman tambahan.`, 409, "PO_SUDAH_TERPENUHI");
+    const nomor = await nomorPenerimaanBaru(tx, sekarang);
+    const rec = await tx.goodsReceipt.create({
+      data: {
+        receiptNumber: nomor, sourceType: "PURCHASE_ORDER", sourceReference: po.poNumber, supplier: po.supplier.name, purchaseOrderId: po.id, expectedDate: po.expectedDate, createdById: aktor.userId,
+        lines: { create: sisa.map((l) => ({ materialId: l.materialId, orderedQty: kuantitas.get(l.id).belumDatang, purchaseOrderLineId: l.id })) },
+      },
+    });
+    await catatPO(tx, po.id, "PENERIMAAN_DRAF_DIBUAT", aktor, { note: nomor, metadata: { receiptId: rec.id, workspace: aktor.workspace } });
+    return { receiptId: rec.id, receiptNumber: rec.receiptNumber, dibuat: true };
+  });
+}
+
+/** Pemeriksaan isian tanpa akses basis data (tanggal, PIC, catatan, jumlah). Pemeriksaan yang butuh PO (sebelum tanggal PO, melebihi PO) tetap di catatKedatangan. */
+function validasiAwalMasukan(m, hari) {
+  const x = m ?? {};
+  if (!x.tanggalTiba || !/^\d{4}-\d{2}-\d{2}$/.test(String(x.tanggalTiba).slice(0, 10)) || Number.isNaN(Date.parse(`${String(x.tanggalTiba).slice(0, 10)}T00:00:00Z`))) throw gagal("Tanggal barang tiba wajib diisi (format YYYY-MM-DD)");
+  if (String(x.tanggalTiba).slice(0, 10) > hari) throw gagal("Tanggal barang tiba tidak boleh di masa depan");
+  teksWajib(x.penerima, "PIC/penerima barang", 2, 120);
+  teksWajib(x.catatan, "Catatan kedatangan", 1, 1000);
+  const masuk = Array.isArray(x.lines) ? x.lines.filter((l) => l && l.jumlahDatang !== undefined && l.jumlahDatang !== null && l.jumlahDatang !== "" && Number(l.jumlahDatang) !== 0) : [];
+  if (masuk.length === 0) throw gagal("Isi jumlah datang minimal satu item");
+  masuk.forEach((l, i) => jumlahDatang(l.jumlahDatang, i + 1));
+}
+
+/**
+ * Pintu resmi mencatat kedatangan dari route (Finance ATAU Gudang): tanpa `receiptId` memakai/membuat draf yang sama secara idempoten, lalu mencatat di transaksi tersendiri.
+ * Dua petugas yang menekan bersamaan memakai draf yang sama; yang kedua ditolak 409 KEDATANGAN_SUDAH_DICATAT (tidak menimpa, tidak menggandakan).
+ */
+export async function catatKedatanganPO(db, { poId, receiptId = null, masukan, aktor, sekarang = new Date() }) {
+  // Isian yang pasti salah (tanpa PIC/catatan/tanggal/jumlah) ditolak SEBELUM menyiapkan draf — penolakan murni tidak meninggalkan apa pun.
+  if (!receiptId) validasiAwalMasukan(masukan, hariKunci(todayBookDateWIB(sekarang)));
+  const rid = receiptId || (await pastikanDrafPenerimaan(db, { poId, aktor, sekarang })).receiptId;
+  return db.$transaction((tx) => catatKedatangan(tx, { poId, receiptId: rid, masukan, aktor, sekarang }));
+}
+
+/**
+ * Catat barang TIBA pada SATU pengiriman = SATU penerimaan (draf) yang sudah ada. Lewat route, gunakan `catatKedatanganPO` (menyiapkan draf bila belum ada).
  * masukan: { tanggalTiba, penerima, catatan, suratJalan?, bukti?[], lines:[{ purchaseOrderLineId, jumlahDatang, jumlahPendamping? }] }
  * aktor : { userId, roles, workspace } — dari sesi.
  * Mengembalikan { receiptId, receiptNumber, dibuat }.
  */
-export async function catatKedatangan(tx, { poId, receiptId = null, masukan, aktor, sekarang = new Date() }) {
+export async function catatKedatangan(tx, { poId, receiptId, masukan, aktor, sekarang = new Date() }) {
   const m = masukan ?? {};
   const hari = hariKunci(todayBookDateWIB(sekarang));
   // Urutan kunci: penerimaan (bila ada) → PO. Sama dengan putaway (penerimaan → PO), jadi tidak ada siklus kunci.
-  let receipt = null;
-  if (receiptId) {
-    await lockRowForUpdate(tx, "goods_receipts", receiptId);
-    receipt = await tx.goodsReceipt.findUnique({ where: { id: receiptId }, include: { lines: true } });
+  if (!receiptId) throw gagal("Penerimaan wajib ditentukan (gunakan catatKedatanganPO)", 500);
+  await lockRowForUpdate(tx, "goods_receipts", receiptId);
+  const receipt = await tx.goodsReceipt.findUnique({ where: { id: receiptId }, include: { lines: true } });
+  {
     if (!receipt || receipt.purchaseOrderId !== poId) throw gagal("Penerimaan tidak ditemukan pada PO ini", 404);
     if (receipt.arrivalRevision > 0) {
       const oleh = receipt.arrivalRecordedById ? (await tx.user.findUnique({ where: { id: receipt.arrivalRecordedById }, select: { name: true } }))?.name : null;
@@ -319,11 +340,11 @@ export async function catatKedatangan(tx, { poId, receiptId = null, masukan, akt
     const no = i + 1;
     const pl = po.lines.find((x) => x.id === l.purchaseOrderLineId);
     if (!pl) throw gagal(`Baris ${no}: bukan bagian dari ${po.poNumber}`);
-    if (receipt && !receipt.lines.some((x) => x.purchaseOrderLineId === pl.id)) throw gagal(`Baris ${no}: ${pl.material.code} tidak ada pada penerimaan ${receipt.receiptNumber}`);
+    if (!receipt.lines.some((x) => x.purchaseOrderLineId === pl.id)) throw gagal(`Baris ${no}: ${pl.material.code} tidak ada pada penerimaan ${receipt.receiptNumber}`);
     const datang = jumlahDatang(l.jumlahDatang, no);
     const q = kuantitas.get(pl.id);
-    if (k(datang) > k(q.sisaDatang)) {
-      throw gagal(`Jumlah datang ${pl.material.code} (${datang} ${pl.unit}) melebihi sisa PO ${po.poNumber}: dipesan ${q.dipesan}, sudah masuk stok ${q.masukStok}, sudah tercatat tiba dan belum ditolak ${dariK(k(q.dipesan) - k(q.masukStok) - k(q.sisaDatang))} → sisa ${q.sisaDatang} ${pl.unit}. Total penerimaan tidak boleh melebihi PO — minta Finance merevisi jumlah PO bila memang dikirim lebih.`, 409, "MELEBIHI_PO");
+    if (k(datang) > k(q.belumDatang)) {
+      throw gagal(`Jumlah datang ${pl.material.code} (${datang} ${pl.unit}) melebihi sisa PO ${po.poNumber}: dipesan ${q.dipesan}, sudah datang dan belum ditolak ${dariK(k(q.dipesan) - k(q.belumDatang))} → belum datang ${q.belumDatang} ${pl.unit}. Total penerimaan tidak boleh melebihi PO — minta Finance merevisi jumlah PO bila memang dikirim lebih.`, 409, "MELEBIHI_PO");
     }
     let pendamping;
     try { pendamping = aktualPendampingPenerimaan(pl, datang, l.jumlahPendamping, { nomor: no }); }
@@ -331,29 +352,20 @@ export async function catatKedatangan(tx, { poId, receiptId = null, masukan, akt
     lineRows.push({ pl, datang, pendamping });
   }
 
-  const sebelum = receipt ? { status: receipt.status } : null;
+  const sebelum = { status: receipt.status };
   const dataKedatangan = {
     status: "ARRIVED", arrivedDate: tiba, arrivalRecordedById: aktor.userId, arrivalRecordedAt: sekarang, arrivalActorRoles: aktor.roles, arrivalWorkspace: aktor.workspace,
     arrivalReceiver: penerima, arrivalNote: catatan, arrivalProofUrls: berkas, arrivalRevision: 1, ...(suratJalan !== null && { deliveryNote: suratJalan }),
   };
-  let dibuat = false;
-  if (receipt) {
-    await tx.goodsReceipt.update({ where: { id: receipt.id }, data: dataKedatangan });
-    for (const { pl, datang, pendamping } of lineRows) {
-      const baris = receipt.lines.find((x) => x.purchaseOrderLineId === pl.id);
-      await tx.goodsReceiptLine.update({ where: { id: baris.id }, data: { receivedQty: datang, companionQty: pendamping } });
-    }
-  } else {
-    const nomor = await nomorPenerimaanBaru(tx, sekarang);
-    receipt = await tx.goodsReceipt.create({
-      data: {
-        receiptNumber: nomor, sourceType: "PURCHASE_ORDER", sourceReference: po.poNumber, supplier: po.supplier.name, purchaseOrderId: po.id,
-        expectedDate: po.expectedDate, createdById: aktor.userId, ...dataKedatangan,
-        lines: { create: lineRows.map(({ pl, datang, pendamping }) => ({ materialId: pl.materialId, orderedQty: datang, receivedQty: datang, purchaseOrderLineId: pl.id, companionQty: pendamping })) },
-      },
-    });
-    dibuat = true;
+  await tx.goodsReceipt.update({ where: { id: receipt.id }, data: dataKedatangan });
+  for (const { pl, datang, pendamping } of lineRows) {
+    const baris = receipt.lines.find((x) => x.purchaseOrderLineId === pl.id);
+    await tx.goodsReceiptLine.update({ where: { id: baris.id }, data: { receivedQty: datang, companionQty: pendamping } });
   }
+  // Baris draf yang tidak ikut datang di pengiriman ini dibuang (draf hanya rencana; baris yang tidak tiba tidak perlu diperiksa).
+  const ikut = new Set(lineRows.map((x) => x.pl.id));
+  const buang = receipt.lines.filter((x) => !ikut.has(x.purchaseOrderLineId));
+  if (buang.length) await tx.goodsReceiptLine.deleteMany({ where: { id: { in: buang.map((x) => x.id) } } });
   const sesudah = {
     tanggalTiba: hariKunci(tiba), penerima, catatan, suratJalan, bukti: berkas,
     lines: lineRows.map(({ pl, datang, pendamping }) => ({ purchaseOrderLineId: pl.id, kode: pl.material.code, datang, pendamping })),
@@ -361,7 +373,7 @@ export async function catatKedatangan(tx, { poId, receiptId = null, masukan, akt
   await tx.goodsReceiptEvent.create({ data: { goodsReceiptId: receipt.id, type: "KEDATANGAN_DICATAT", actorId: aktor.userId, actorRoles: aktor.roles, workspace: aktor.workspace, before: sebelum, after: sesudah } });
   await catatPO(tx, po.id, "KEDATANGAN_DICATAT", aktor, { note: receipt.receiptNumber, metadata: { receiptId: receipt.id, workspace: aktor.workspace, tanggalTiba: hariKunci(tiba), baris: sesudah.lines } });
   await sinkronJatuhTempoFakturPO(tx, po.id);
-  return { receiptId: receipt.id, receiptNumber: receipt.receiptNumber, dibuat };
+  return { receiptId: receipt.id, receiptNumber: receipt.receiptNumber, dibuat: false };
 }
 
 // ── Perintah: koreksi kedatangan ─────────────────────────────────────────
@@ -417,7 +429,7 @@ export async function koreksiKedatangan(tx, { receiptId, perubahan, alasan, revi
         if (receipt.status !== "ARRIVED" || baris.acceptedQty !== null || baris.rejectedQty !== null) throw gagal(`Jumlah datang ${pl.material.code} tidak bisa dikoreksi lagi: penerimaan sudah masuk pemeriksaan/penyimpanan. Selesaikan lewat hasil pemeriksaan atau tolak penerimaan.`, 409, "JUMLAH_TERKUNCI");
         datangBaru = jumlahDatang(l.jumlahDatang, no);
         const q = kuantitas.get(pl.id);
-        const sisaMaks = dariK(k(q.sisaDatang) + k(baris.receivedQty)); // jumlah lama dilepas dulu
+        const sisaMaks = dariK(k(q.belumDatang) + k(baris.receivedQty)); // jumlah lama dilepas dulu
         if (k(datangBaru) > k(sisaMaks)) throw gagal(`Jumlah datang ${pl.material.code} (${datangBaru} ${pl.unit}) melebihi sisa PO ${po.poNumber} (maksimal ${sisaMaks} ${pl.unit}). Minta Finance merevisi jumlah PO bila memang dikirim lebih.`, 409, "MELEBIHI_PO");
       }
       if (ubahJumlah || ubahPendamping) {

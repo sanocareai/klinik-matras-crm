@@ -14,7 +14,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { idempotency, wajibIdempotencyKey } from "../middleware/idempotency.js";
 import { requirePermission, PERMISSIONS as P, rolesOf } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
-import { aktorDariSesi, bentukBarangAkanDatang, catatKedatangan, daftarBarangAkanDatang, koreksiKedatangan, KedatanganError, WORKSPACE } from "../services/finance/kedatangan.js";
+import { aktorDariSesi, bentukBarangAkanDatang, catatKedatanganPO, daftarBarangAkanDatang, koreksiKedatangan, KedatanganError, pastikanDrafPenerimaan, WORKSPACE } from "../services/finance/kedatangan.js";
 
 const POLA_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -78,7 +78,16 @@ barangAkanDatangRouter.post("/:poId/kedatangan", requirePermission(P.INVENTORY_W
   try {
     if (!POLA_UUID.test(req.params.poId)) return res.status(404).json({ error: "PO tidak ditemukan" });
     const aktor = aktorDariSesi(req.user, WORKSPACE.GUDANG, rolesOf(req.user));
-    const hasil = await prisma.$transaction((tx) => catatKedatangan(tx, { poId: req.params.poId, receiptId: req.body?.receiptId || null, masukan: req.body, aktor }));
+    const hasil = await catatKedatanganPO(prisma, { poId: req.params.poId, receiptId: req.body?.receiptId || null, masukan: req.body, aktor });
     res.status(201).json({ ...hasil, po: await bentukBarangAkanDatang(prisma, req.params.poId, { finance: false }) });
+  } catch (e) { galatKedatangan(e, res); }
+});
+
+// Siapkan/pakai draf penerimaan untuk pengiriman berikutnya (idempoten). Gudang tidak harus membuat penerimaan lebih dulu; Finance bisa memulai dari PO.
+barangAkanDatangRouter.post("/:poId/draf-penerimaan", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+  try {
+    if (!POLA_UUID.test(req.params.poId)) return res.status(404).json({ error: "PO tidak ditemukan" });
+    const aktor = aktorDariSesi(req.user, WORKSPACE.GUDANG, rolesOf(req.user));
+    res.json(await pastikanDrafPenerimaan(prisma, { poId: req.params.poId, aktor }));
   } catch (e) { galatKedatangan(e, res); }
 });
