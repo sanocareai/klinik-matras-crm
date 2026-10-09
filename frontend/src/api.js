@@ -1769,6 +1769,10 @@ export const api = {
   catatPembayaranPenjualanKaryawan: (id, data) => request(`/finance/penjualan-karyawan/${id}/pembayaran`, { method: "POST", body: JSON.stringify(data) }),
   batalPembayaranPenjualanKaryawan: (id, pid, reason) => request(`/finance/penjualan-karyawan/${id}/pembayaran/${pid}/batal`, { method: "POST", body: JSON.stringify({ reason }) }),
   batalPenjualanKaryawan: (id, reason) => request(`/finance/penjualan-karyawan/${id}/batal`, { method: "POST", body: JSON.stringify({ reason }) }),
+  // Sinkronisasi Order CRM (PKR lama: dry-run + aksi eksplisit per dokumen; lengkapi spesifikasi/alamat). Order hanya dokumen operasional — tanpa uang.
+  getPenjualanKaryawanOrderCrmDryRun: () => request("/finance/penjualan-karyawan/order-crm/dry-run"),
+  buatOrderCrmPenjualanKaryawan: (id, spesifikasi, orderId) => request(`/finance/penjualan-karyawan/${id}/order-crm`, { method: "POST", body: JSON.stringify({ spesifikasi, ...(orderId && { orderId }) }) }),
+  lengkapiOrderCrmPenjualanKaryawan: (id, data) => request(`/finance/penjualan-karyawan/${id}/order-crm`, { method: "PUT", body: JSON.stringify(data) }),
   // Verifikasi penerimaan order yang ditandai LUNAS sales tanpa catatan pembayaran
   getFinanceLunasBelumDicatat: () => request("/finance/penerimaan/lunas-belum-dicatat"),
   verifikasiPenerimaan: (data) => request("/finance/penerimaan/verifikasi", { method: "POST", body: JSON.stringify(data) }),

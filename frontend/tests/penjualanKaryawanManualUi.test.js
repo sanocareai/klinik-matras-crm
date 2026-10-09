@@ -37,5 +37,5 @@ test("Layar: angka dari server (tidak menjumlah baris di klien), tanggal cutoff 
   assert.doesNotMatch(s, /2026-09-18"/, "tanggal cutoff tidak ditanam di klien");
   assert.match(s, /api\.createPenjualanKaryawan\(\{\s*date: f\.date, sellerId: f\.sellerId/);
   assert.doesNotMatch(s, /createPenjualanKaryawan\(\{[^}]*total:/s, "total tidak dikirim ke server");
-  assert.match(s, /Tidak melewati produksi maupun delivery|tidak lewat Order/i, "menjelaskan bahwa ini di luar Order/produksi/delivery");
+  assert.match(s, /order CRM operasional.*tidak membawa uang|tidak lewat Order/is, "menjelaskan bahwa order CRM hanya dokumen operasional tanpa uang (sejak sinkronisasi 31 Okt 2026)");
 });

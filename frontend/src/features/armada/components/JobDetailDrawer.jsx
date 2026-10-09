@@ -602,8 +602,11 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                 {job ? customerOf(job) || "Detail Job" : "Detail Job"}
               </Dialog.Title>
               {job && (
-                <p className="mt-0.5 flex items-center gap-1.5 text-[11.5px] text-ink3">
+                <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11.5px] text-ink3">
                   {orderNumberOf(job)} · {JOB_TYPE_REAL[job.type]?.label || job.type}
+                  {job.penjualanKaryawan && (
+                    <span className="font-semibold text-accent" data-testid="job-rujukan-pkr">Penjualan Karyawan · {job.penjualanKaryawan.nomor}{job.penjualanKaryawan.penjual ? ` (${job.penjualanKaryawan.penjual})` : ""}</span>
+                  )}
                 </p>
               )}
             </div>

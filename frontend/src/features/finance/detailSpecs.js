@@ -154,6 +154,18 @@ export function specPenjualanKaryawan(p, { badge, aksi } = {}) {
       { judul: "Penjualan", baris: [["Tanggal", tanggalPendek(p.date)], ["Karyawan penjual", nama(p.seller)], ["Pembeli", p.buyerName], ["Sudah dibayar", uang(p.terbayar)], ["Catatan", p.notes]] },
       { judul: `Item (${(p.items || []).length})`, baris: (p.items || []).map((i) => [i.name, `${i.quantity} × ${formatUang(i.unitPrice)} = ${formatUang(i.subtotal)}`]) },
       ...(bayar.length > 0 ? [{ judul: `Pembayaran (${bayar.length})`, baris: bayar.map((x, i) => [`${i + 1}. ${tanggalPendek(x.date)}`, `${formatUang(x.amount)} · ${LABEL_METODE_PJK[x.method] || x.method}${x.cashAccount ? ` ke ${x.cashAccount.name}` : ""}${x.notes ? ` — ${x.notes}` : ""}`]) }] : []),
+      ...(p.sinkron ? [{
+        judul: "Order CRM, Produksi, Delivery",
+        baris: p.sinkron.order
+          ? [
+            ["Order CRM", p.sinkron.order.nomor], ["Status order", p.sinkron.order.statusLabel],
+            ["Spesifikasi", p.sinkron.order.spesifikasi.lengkap ? "Lengkap" : `Perlu dilengkapi: ${p.sinkron.order.spesifikasi.kurang.join(", ")}`],
+            ["Unit", (p.sinkron.units || []).map((u) => `${u.kode} (${u.label})`).join(", ")],
+            ["Produksi", p.sinkron.produksi?.label], ["Delivery", p.sinkron.delivery?.label],
+            ["Pembayaran", `${p.sinkron.pembayaran.label} — dibaca dari penjualan ini, bukan dari order`],
+          ]
+          : [["Order CRM", "Belum ada. Gunakan “Buat/Tautkan Order CRM”."]],
+      }] : []),
       { judul: "Jejak", baris: [["Dibuat oleh", nama(p.createdBy)], ["Dibuat pada", TAMPIL_TANGGAL(p.createdAt)], ["Dibatalkan", p.cancelledAt ? `${TAMPIL_TANGGAL(p.cancelledAt)}${p.cancelReason ? ` — ${p.cancelReason}` : ""}` : null]] },
     ],
   };

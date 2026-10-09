@@ -30,6 +30,7 @@ import { opsiStatusBayar, lunasDicegat, PESAN_LUNAS_BUTUH_PEMBAYARAN } from "@/f
 import { useKlaimLunasAktif } from "@/features/klaim/useKlaimLunasAktif.js";
 import OrderTimelineDrawer from "../features/orders/OrderTimelineDrawer.jsx";
 import ReadinessBadge from "../features/orders/ReadinessBadge.jsx";
+import { LabelOrderPkr, BadgeBayarPkr } from "../features/finance/PkrOrderCrm.jsx";
 import { JOB_STATUS_REAL } from "../features/armada/jobStatus.js";
 import { REVISION_STATUS } from "../features/armada/revisionStatus.js";
 
@@ -319,9 +320,10 @@ function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageC
             {order.orderNumber || "tanpa ID"}
           </p>
           {order.staffSeller && <p className="mt-0.5 truncate text-[10px] font-semibold text-accent" data-testid="label-penjualan-karyawan">Penjualan Karyawan · {order.staffSeller.name}</p>}
+          <LabelOrderPkr pkr={order.penjualanKaryawan} className="mt-0.5" />
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
-          <PaymentStatusSelect order={order} onChange={onPaymentChange} locked={paymentLocked} />
+          {order.penjualanKaryawan ? <BadgeBayarPkr pkr={order.penjualanKaryawan} /> : <PaymentStatusSelect order={order} onChange={onPaymentChange} locked={paymentLocked} />}
           <ReadinessBadge order={order} />
         </div>
       </div>
@@ -898,7 +900,7 @@ export default function Orders() {
         // routes/orders.js.
         "Perkiraan?": o.daysInStatusPerkiraan ? "Ya" : "Tidak",
         Mandek: isMandek(o) ? "Ya" : "",
-        Pembayaran: PAYMENT_STATUS_LABELS[o.paymentStatus] || o.paymentStatus,
+        Pembayaran: o.penjualanKaryawan ? `${o.penjualanKaryawan.pembayaran?.label ?? "—"} (Penjualan Karyawan ${o.penjualanKaryawan.nomor})` : (PAYMENT_STATUS_LABELS[o.paymentStatus] || o.paymentStatus),
         // "Sudah Lunas?" + "Tanggal Lunas" (1 September 2026, permintaan
         // owner: export tidak ada tanda jelas mana yang lunas) — kolom
         // Ya/Tidak eksplisit, TERPISAH dari "Pembayaran" di atas supaya
@@ -907,7 +909,7 @@ export default function Orders() {
         // ditandai lunas, bukan tanggal order dibuat) — kosong kalau belum
         // pernah lunas ATAU order LUNAS lama dari sebelum fitur ini ada
         // (paidAt belum tercatat, lihat catatan di services/paymentLedger.js).
-        "Sudah Lunas?": o.paymentStatus === "LUNAS" ? "Ya" : "Tidak",
+        "Sudah Lunas?": (o.penjualanKaryawan ? o.penjualanKaryawan.pembayaran?.status === "LUNAS" : o.paymentStatus === "LUNAS") ? "Ya" : "Tidak",
         "Tanggal Lunas": o.paidAt ? o.paidAt.slice(0, 10) : "",
 
         // ── Nilai & harga ────────────────────────────────────────────────
@@ -1364,6 +1366,7 @@ export default function Orders() {
                       <td className="whitespace-nowrap px-3 py-2.5 font-mono text-[11px] text-ink2">
                         {o.orderNumber || "—"}
                         {o.staffSeller && <span className="mt-0.5 block whitespace-normal font-sans text-[10px] font-semibold text-accent" data-testid="label-penjualan-karyawan">Penjualan Karyawan · {o.staffSeller.name}</span>}
+                        <LabelOrderPkr pkr={o.penjualanKaryawan} className="mt-0.5" />
                       </td>
                       <td className="px-3 py-2.5">
                         <div className="flex items-center gap-2">
@@ -1425,10 +1428,10 @@ export default function Orders() {
                         {o.daysInStatus}h{o.daysInStatusPerkiraan ? "*" : ""}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5">
-                        <PaymentStatusSelect order={o} onChange={handlePaymentChange} locked={o.paymentStatus === "LUNAS" && !canEditLunas} />
+                        {o.penjualanKaryawan ? <BadgeBayarPkr pkr={o.penjualanKaryawan} /> : <PaymentStatusSelect order={o} onChange={handlePaymentChange} locked={o.paymentStatus === "LUNAS" && !canEditLunas} />}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5 text-right font-bold tabular-nums text-ink">
-                        {formatRupiah(o.value || 0)}
+                        {o.penjualanKaryawan ? <span className="font-normal text-ink3" title="Nominal dikelola di Finance › Penjualan Karyawan">di Finance</span> : formatRupiah(o.value || 0)}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5">
                         {o.promo ? (

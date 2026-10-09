@@ -24,8 +24,11 @@ import { specPenjualanKaryawan } from "@/features/finance/detailSpecs.js";
 import { adminSaatIni } from "@/features/finance/aksiMenu.jsx";
 import { totalItems, normalisasiJumlah, metodeButuhRekening, LABEL_METODE_PJK } from "@/features/finance/penjualanKaryawanLogic.js";
 import { resetSaatBuka } from "@/features/finance/resetSaatBuka.jsx";
+import { RingkasOrderCrm, FormOrderCrm, ModalOrderCrm } from "@/features/finance/PkrOrderCrm.jsx";
+import { orderCrmKosong, bodyOrderCrm, galatOrderCrm, aksiOrderCrm } from "@/features/finance/pkrOrderCrmLogic.js";
 
-// PENJUALAN KARYAWAN — input MANUAL di luar Order. Karyawan non-Sales menjual ke kerabat; tidak membuat Order/Customer, tidak masuk produksi atau delivery.
+// PENJUALAN KARYAWAN — dicatat MANUAL oleh Finance. Karyawan non-Sales menjual ke kerabat. Sejak sinkronisasi Order CRM (Okt 2026), setiap penjualan otomatis melahirkan SATU order operasional
+// (unit produksi + pengiriman); order itu TIDAK membawa uang — nominal, piutang, dan jurnal tetap di sini.
 // Pendapatan diakui saat dicatat dan tagihannya jadi Piutang Karyawan milik karyawan penjual; pelunasan = tunai/transfer ke rekening atau potong gaji.
 // Semua angka (total, terbayar, sisa, status) dihitung SERVER; layar ini hanya menampilkan. Jurnal & alasan: backend services/finance/posting/penjualanKaryawan.js.
 
@@ -58,6 +61,7 @@ export default function FinancePenjualanKaryawan() {
   const [bayarUntuk, setBayarUntuk] = useState(null);
   const [riwayatId, setRiwayatId] = useState(null);
   const [panelRincian, setPanelRincian] = useState(null);
+  const [orderCrmUntuk, setOrderCrmUntuk] = useState(null); // { p, mode: "buat" | "lengkapi" }
   const admin = adminSaatIni();
 
   const muat = useCallback(async (opsi) => {
@@ -93,8 +97,11 @@ export default function FinancePenjualanKaryawan() {
 
   function aksiBaris(p) {
     const bisaBayar = p.statusTampil === "BELUM_BAYAR" || p.statusTampil === "SEBAGIAN";
+    const ac = aksiOrderCrm(p);
     const items = [
       { label: "Riwayat pembayaran", onClick: () => setRiwayatId(p.id) },
+      { label: "Buat/Tautkan Order CRM", hidden: !ac.buat, onClick: () => setOrderCrmUntuk({ p, mode: "buat" }) },
+      { label: "Lengkapi spesifikasi order", hidden: !ac.lengkapi, onClick: () => setOrderCrmUntuk({ p, mode: "lengkapi" }) },
       {
         label: "Batalkan penjualan", destructive: true, hidden: !admin || p.statusTampil === "DIBATALKAN",
         onClick: () => {
@@ -110,7 +117,7 @@ export default function FinancePenjualanKaryawan() {
   return (
     <HalamanFinance
       title="Penjualan Karyawan"
-      subtitle="Penjualan karyawan non-Sales ke kerabat, dicatat manual di luar Order. Tidak melewati produksi maupun delivery."
+      subtitle="Penjualan karyawan non-Sales ke kerabat, dicatat Finance. Tiap penjualan otomatis punya order CRM untuk Produksi dan Delivery, tanpa uang di order."
       loading={loading}
       error={error}
       onRetry={muat}
@@ -131,7 +138,8 @@ export default function FinancePenjualanKaryawan() {
       )}
 
       <Penjelasan>
-        Dipakai untuk penjualan yang <strong>tidak lewat Order</strong> (pembelinya bukan pelanggan di Inbox/CRM). Pendapatan diakui saat dicatat dan masuk
+        Dipakai untuk penjualan karyawan ke kerabat (pembelinya bukan pelanggan Inbox/CRM). Setiap penjualan otomatis membuat <strong>satu order CRM operasional</strong> berikut unitnya
+        untuk Produksi dan Delivery; order itu <strong>tidak membawa uang</strong> — nominal, pembayaran, piutang, dan jurnal tetap di halaman ini. Pendapatan diakui saat dicatat dan masuk
         total pendapatan perusahaan, <strong>terpisah dari omzet Tim Sales</strong>. Tagihannya tercatat sebagai <strong>Piutang Karyawan</strong> milik karyawan penjual
         sampai dibayar (tunai/transfer ke rekening) atau <strong>dipotong dari gaji</strong>. HPP tidak dibukukan di sini. Pembayaran bertanggal sebelum
         tanggal cutoff saldo awal ({data?.cutoff ? tanggalPendek(data.cutoff) : "18 Sep 2026"}) tidak menambah saldo kas/bank karena uangnya sudah tercakup di saldo awal.
@@ -203,7 +211,7 @@ export default function FinancePenjualanKaryawan() {
                   <TR>
                     <TH sticky width={124}>Nomor</TH><TH width={78}>Tanggal</TH><TH width={140}>Karyawan</TH><TH>Pembeli</TH>
                     <TH numeric width={108} hideBelow="2xl">Total</TH><TH numeric width={108} hideBelow="2xl">Dibayar</TH><TH numeric width={112}>Sisa</TH>
-                    <TH width={118}>Status</TH><TH width={AKSI_COL_WIDTH}>Aksi</TH>
+                    <TH width={118}>Status</TH><TH width={210}>Order CRM</TH><TH width={AKSI_COL_WIDTH}>Aksi</TH>
                   </TR>
                 </THead>
                 <TBody>
@@ -219,6 +227,12 @@ export default function FinancePenjualanKaryawan() {
                         <TD hideBelow="2xl" numeric><Uang value={p.terbayar} nolSebagaiStrip /></TD>
                         <TD numeric><Uang value={p.sisa} className="font-bold" nolSebagaiStrip /></TD>
                         <TD><StatusPenjualan p={p} /></TD>
+                        <TD>
+                          <div className="space-y-1" onClick={(e) => e.stopPropagation()}>
+                            <RingkasOrderCrm sinkron={p.sinkron} />
+                            {aksiOrderCrm(p).buat && <Button size="sm" variant="neutral" onClick={() => setOrderCrmUntuk({ p, mode: "buat" })}>Buat/Tautkan Order CRM</Button>}
+                          </div>
+                        </TD>
                         <TD><RowActions primary={a.primary} items={a.items} /></TD>
                       </TR>
                     );
@@ -242,6 +256,7 @@ export default function FinancePenjualanKaryawan() {
                       { label: "Sisa", value: formatUang(p.sisa) },
                       { label: "Total", value: formatUang(p.total) },
                       { label: "Dibayar", value: formatUang(p.terbayar) },
+                      { label: "Order CRM", value: <RingkasOrderCrm sinkron={p.sinkron} /> },
                     ]}
                     actions={<RowActions primary={a.primary} items={a.items} />}
                   />
@@ -259,6 +274,16 @@ export default function FinancePenjualanKaryawan() {
         onBatal={(pay) => {
           const alasan = window.prompt("Alasan membatalkan pembayaran ini? Jurnalnya akan dibalik:");
           if (alasan?.trim()) return aksi(() => api.batalPembayaranPenjualanKaryawan(riwayat.id, pay.id, alasan.trim()));
+        }}
+      />
+      <ModalOrderCrm
+        key={orderCrmUntuk ? `${orderCrmUntuk.p.id}-${orderCrmUntuk.mode}` : "tutup"}
+        penjualan={orderCrmUntuk?.p || null} mode={orderCrmUntuk?.mode} onClose={() => setOrderCrmUntuk(null)}
+        onSubmit={async (body) => {
+          if (orderCrmUntuk.mode === "lengkapi") await api.lengkapiOrderCrmPenjualanKaryawan(orderCrmUntuk.p.id, body);
+          else await api.buatOrderCrmPenjualanKaryawan(orderCrmUntuk.p.id, body);
+          setOrderCrmUntuk(null);
+          await muat({ diam: true });
         }}
       />
       <PanelDetail spec={panelRincian} onClose={() => setPanelRincian(null)} />
@@ -325,7 +350,7 @@ function BarisBayar({ b, onChange, rek, st, muat, onHapus, cutoff }) {
 }
 
 function ModalPenjualanBaruIsi({ open, onClose, aksi, cutoff }) {
-  const kosong = () => ({ date: hariIniISO(), sellerId: "", buyerName: "", notes: "", items: [{ name: "", quantity: 1, unitPrice: "" }], pembayaran: [] });
+  const kosong = () => ({ date: hariIniISO(), sellerId: "", buyerName: "", notes: "", items: [{ name: "", quantity: 1, unitPrice: "" }], pembayaran: [], orderCrm: orderCrmKosong() });
   const [f, setF] = useState(kosong);
   const [karyawan, setKaryawan] = useState([]);
   const [galatKar, setGalatKar] = useState(null);
@@ -343,14 +368,14 @@ function ModalPenjualanBaruIsi({ open, onClose, aksi, cutoff }) {
   const bayarTotal = f.pembayaran.reduce((a, b) => a + (Number(b.amount) || 0), 0);
   const itemsValid = f.items.length > 0 && f.items.every((i) => i.name.trim() && normalisasiJumlah(i.quantity) !== null && Number(i.unitPrice) > 0);
   const bayarValid = f.pembayaran.every((b) => Number(b.amount) > 0 && (!rekeningWajib(b, cutoff) || b.cashAccountId));
-  const valid = f.sellerId && f.buyerName.trim().length >= 2 && itemsValid && bayarValid && bayarTotal <= total;
+  const valid = f.sellerId && f.buyerName.trim().length >= 2 && itemsValid && bayarValid && bayarTotal <= total && !galatOrderCrm(f.orderCrm);
   const setItem = (i, patch) => set("items", f.items.map((it, n) => (n === i ? { ...it, ...patch } : it)));
 
   return (
     <Modal
       open={open} onOpenChange={(v) => !v && onClose()}
       title="Catat Penjualan Karyawan"
-      description="Penjualan di luar Order. Tidak membuat order, produksi, atau pengiriman."
+      description="Nominal, piutang, dan jurnal dicatat di sini. Otomatis dibuat satu order CRM operasional (unit produksi + pengiriman) tanpa uang."
       className="w-[680px]"
       footer={(
         <>
@@ -361,6 +386,7 @@ function ModalPenjualanBaruIsi({ open, onClose, aksi, cutoff }) {
               date: f.date, sellerId: f.sellerId, buyerName: f.buyerName.trim(), notes: f.notes.trim() || undefined,
               items: f.items.map((i) => ({ name: i.name.trim(), quantity: normalisasiJumlah(i.quantity), unitPrice: Number(i.unitPrice) })), // jumlah dikirim sebagai teks bertitik ("1.6")
               pembayaran: f.pembayaran.map(bodyBayar),
+              orderCrm: bodyOrderCrm(f.orderCrm),
             }))}
           >Catat Penjualan</TombolAksi>
         </>
@@ -414,6 +440,12 @@ function ModalPenjualanBaruIsi({ open, onClose, aksi, cutoff }) {
               Dibayar {formatUang(bayarTotal)} · sisa tagihan {formatUang(Math.max(total - bayarTotal, 0))}{bayarTotal > total ? " — melebihi total penjualan" : ""}
             </p>
           )}
+        </div>
+
+        <div className="space-y-2 rounded-lg bg-inset p-3" data-testid="bagian-order-crm">
+          <p className="text-[13px] font-semibold text-ink">Order untuk Produksi dan Delivery</p>
+          <p className="text-[12px] text-ink3">Boleh dikosongkan dulu. Order tetap dibuat dan berstatus “Perlu dilengkapi”; Produksi baru bisa mulai setelah merk, ukuran, dan pilihan kirim terisi.</p>
+          <FormOrderCrm nilai={f.orderCrm} onChange={(v) => set("orderCrm", v)} baru />
         </div>
 
         <Field label="Catatan"><Input value={f.notes} onChange={(e) => set("notes", e.target.value)} /></Field>

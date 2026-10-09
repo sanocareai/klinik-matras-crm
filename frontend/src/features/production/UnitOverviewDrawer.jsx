@@ -496,7 +496,18 @@ export function UnitOverviewDrawer({ unitId, onClose, onManage, manageLabel = "K
             <div className="mb-3 flex shrink-0 items-center gap-3">
               <UnitPhotoThumb photoUrl={data.identity.photoUrl} size={56} />
               <div className="min-w-0 flex-1">
-                {data.permissions.canSeeValue && data.orderValue != null && <p className="m-0 text-[13px] font-semibold text-ink2">{formatRupiah(data.orderValue)}</p>}
+                {data.permissions.canSeeValue && data.orderValue != null && !data.identity.penjualanKaryawan && <p className="m-0 text-[13px] font-semibold text-ink2">{formatRupiah(data.orderValue)}</p>}
+                {data.identity.penjualanKaryawan && (
+                  <p className="m-0 text-[12.5px] text-ink2" data-testid="unit360-rujukan-pkr">
+                    <span className="font-semibold text-accent">Penjualan Karyawan · {data.identity.penjualanKaryawan.nomor}</span>
+                    {data.identity.penjualanKaryawan.penjual ? ` · penjual ${data.identity.penjualanKaryawan.penjual}` : ""}
+                    {!data.identity.penjualanKaryawan.spesifikasiLengkap && (
+                      <span className="ml-1.5 rounded bg-orangebg px-1.5 py-0.5 font-semibold text-orange" data-testid="unit360-pkr-perlu-dilengkapi">
+                        Perlu dilengkapi: {data.identity.penjualanKaryawan.kurang.join(", ")} — Produksi belum boleh mulai
+                      </span>
+                    )}
+                  </p>
+                )}
               </div>
               {onManage && <Button size="sm" variant="secondary" data-mutates className="min-h-[44px] shrink-0" onClick={onManage}>{manageLabel}</Button>}
             </div>
