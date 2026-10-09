@@ -5,7 +5,10 @@
 import express from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { idempotency } from "../middleware/idempotency.js";
-import { requirePermission, PERMISSIONS as P, hasPermission } from "../middleware/authorize.js";
+import { requirePermission, PERMISSIONS as P, hasPermission, rolesOf } from "../middleware/authorize.js";
+import { wajibIdempotencyKey } from "../middleware/idempotency.js";
+import { aktorDariSesi, bentukBarangAkanDatang, catatKedatangan, daftarBarangAkanDatang, koreksiKedatangan, WORKSPACE } from "../services/finance/kedatangan.js";
+import { galatKedatangan, terimaBukti } from "./barangAkanDatang.js";
 import { prisma } from "../db.js";
 const POLA_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 import { handleFinanceError } from "./finance.js";
@@ -25,6 +28,22 @@ purchaseOrderFinanceRouter.get("/", requirePermission(P.FINANCE_READ), async (re
     const { status, supplierId, q } = req.query;
     res.json({ purchaseOrders: await daftarPO(prisma, { status, supplierId, q, harga: true }) });
   } catch (e) { handleFinanceError(e, res); }
+});
+
+// ── KEDATANGAN barang (PO terintegrasi Finance–Gudang). Data & aturan SAMA dengan halaman Gudang "Barang Akan Datang" (services/finance/kedatangan.js); Finance melihat versi lengkap
+// (harga, nilai, termin, jatuh tempo per penerimaan). Mencatat kedatangan TIDAK menulis stok/jurnal. Aktor/peran/workspace dari sesi. Rute statis SEBELUM /:id.
+purchaseOrderFinanceRouter.get("/kedatangan", requirePermission(P.FINANCE_READ), async (req, res) => {
+  try { res.json(await daftarBarangAkanDatang(prisma, { status: req.query.status || null, q: req.query.q || null, finance: true })); } catch (e) { galatKedatangan(e, res); }
+});
+purchaseOrderFinanceRouter.post("/bukti-kedatangan", requirePermission(P.FINANCE_POST), terimaBukti);
+purchaseOrderFinanceRouter.post("/penerimaan/:receiptId/koreksi-kedatangan", requirePermission(P.FINANCE_POST), wajibIdempotencyKey, async (req, res) => {
+  try {
+    if (!POLA_UUID.test(req.params.receiptId)) return res.status(404).json({ error: "Penerimaan tidak ditemukan" });
+    const aktor = aktorDariSesi(req.user, WORKSPACE.FINANCE, rolesOf(req.user));
+    const hasil = await prisma.$transaction((tx) => koreksiKedatangan(tx, { receiptId: req.params.receiptId, perubahan: req.body?.perubahan, alasan: req.body?.alasan, revisiDiharapkan: req.body?.revisi, aktor }));
+    const rec = await prisma.goodsReceipt.findUnique({ where: { id: hasil.receiptId }, select: { purchaseOrderId: true } });
+    res.json({ ...hasil, kedatangan: await bentukBarangAkanDatang(prisma, rec.purchaseOrderId, { finance: true }) });
+  } catch (e) { galatKedatangan(e, res); }
 });
 
 // ── SKU baru dari PO + Katalog Supplier (rute statis SEBELUM /:id). Membuat/memperbaiki SKU = finance:admin; membaca katalog = finance:read.
@@ -101,11 +120,20 @@ purchaseOrderFinanceRouter.get("/:id/pdf", requirePermission(P.FINANCE_READ), as
   }
 });
 
+purchaseOrderFinanceRouter.post("/:id/kedatangan", requirePermission(P.FINANCE_POST), wajibIdempotencyKey, async (req, res) => {
+  try {
+    if (!POLA_UUID.test(req.params.id)) return res.status(404).json({ error: "PO tidak ditemukan" });
+    const aktor = aktorDariSesi(req.user, WORKSPACE.FINANCE, rolesOf(req.user));
+    const hasil = await prisma.$transaction((tx) => catatKedatangan(tx, { poId: req.params.id, receiptId: req.body?.receiptId || null, masukan: req.body, aktor }));
+    res.status(201).json({ ...hasil, kedatangan: await bentukBarangAkanDatang(prisma, req.params.id, { finance: true }) });
+  } catch (e) { galatKedatangan(e, res); }
+});
+
 purchaseOrderFinanceRouter.get("/:id", requirePermission(P.FINANCE_READ), async (req, res) => {
   try {
     const po = await bentukPO(prisma, req.params.id, { harga: true });
     if (!po) return res.status(404).json({ error: "PO tidak ditemukan" });
-    res.json({ ...po, riwayat: await daftarRiwayat(prisma, po.id) });
+    res.json({ ...po, riwayat: await daftarRiwayat(prisma, po.id), kedatangan: await bentukBarangAkanDatang(prisma, po.id, { finance: true }) });
   } catch (e) { handleFinanceError(e, res); }
 });
 

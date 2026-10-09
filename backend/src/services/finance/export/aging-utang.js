@@ -11,6 +11,7 @@ const jumlah = (rows, key) => rows.reduce((a, r) => a + (Number(r[key]) || 0), 0
 const KOLOM = [
   { key: "supplier", header: "Supplier", tipe: "teks", lebar: 26 }, { key: "po", header: "No. PO", tipe: "teks", lebar: 20 },
   { key: "nomorFaktur", header: "No. Faktur Supplier", tipe: "teks", lebar: 22 }, { key: "nomorTagihan", header: "No. Tagihan", tipe: "teks", lebar: 20 },
+  { key: "penerimaan", header: "Penerimaan (jadwal per penerimaan)", tipe: "teks", lebar: 28 },
   { key: "tglDiterima", header: "Tanggal Barang Diterima", tipe: "tanggal" }, { key: "tglFaktur", header: "Tanggal Faktur", tipe: "tanggal" },
   { key: "termin", header: "Termin", tipe: "teks", lebar: 16 }, { key: "sumberTermin", header: "Sumber Termin", tipe: "teks", lebar: 20 },
   { key: "tglJatuhTempo", header: "Tanggal Jatuh Tempo", tipe: "tanggal" }, { key: "umur", header: "Umur Utang (hari)", tipe: "angka" },
@@ -22,7 +23,7 @@ const KOLOM = [
 ];
 
 const barisSheet = (r) => ({
-  supplier: r.supplier, po: r.po?.nomor ?? "", nomorFaktur: r.nomorFaktur ?? "", nomorTagihan: r.nomorTagihan, tglDiterima: r.tanggalBarangDiterima, tglFaktur: r.tanggalFaktur,
+  supplier: r.supplier, po: r.po?.nomor ?? "", penerimaan: r.jadwal ? `${r.jadwal.nomorPenerimaan} (${r.jadwal.ke}/${r.jadwal.dari}) — ${r.jadwal.statusLabel}` : "", nomorFaktur: r.nomorFaktur ?? "", nomorTagihan: r.nomorTagihan, tglDiterima: r.tanggalBarangDiterima, tglFaktur: r.tanggalFaktur,
   termin: r.termin.label ?? "Belum ditetapkan", sumberTermin: r.termin.sumber ? (SUMBER[r.termin.sumber] ?? r.termin.sumber) : "", tglJatuhTempo: r.tanggalJatuhTempo,
   umur: r.umurUtangHari, hariKeJatuhTempo: r.hariKeJatuhTempo, nilaiFaktur: r.nilaiFaktur, dibayar: r.dibayar, sisa: r.sisaUtang,
   rencanaBayar: r.jadwalBayar?.tanggal ?? null, rekening: r.rekeningPembayaran ?? "",
@@ -39,7 +40,7 @@ async function ambil(db, { filter, filterLabel }) {
 
   const tentu = (baris, nama, judul, catatanKosong, tambahan = []) => ({
     nama, judul, kolom: KOLOM, baris: baris.map((x) => x.b),
-    total: { label: `TOTAL (${baris.length} faktur)`, nilai: { nilaiFaktur: jumlah(baris.map((x) => x.b), "nilaiFaktur"), dibayar: jumlah(baris.map((x) => x.b), "dibayar"), sisa: jumlah(baris.map((x) => x.b), "sisa") } },
+    total: { label: `TOTAL (${new Set(baris.map((x) => x.r.billId)).size} faktur${baris.length !== new Set(baris.map((x) => x.r.billId)).size ? `, ${baris.length} jadwal` : ""})`, nilai: { nilaiFaktur: jumlah(baris.map((x) => x.b), "nilaiFaktur"), dibayar: jumlah(baris.map((x) => x.b), "dibayar"), sisa: jumlah(baris.map((x) => x.b), "sisa") } },
     pesanKosong: baris.length === 0 ? catatanKosong : undefined, catatan: tambahan.length ? tambahan : undefined,
   });
 

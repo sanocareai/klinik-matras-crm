@@ -9,6 +9,7 @@ import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestUser, createTestMaterial, createTestUnit, seedBalance } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
+import { bawaSampaiSiap, catatTibaResmi } from "./setup/kedatangan.js";
 import { ensureDefaultChartOfAccounts } from "../../src/services/finance/accounts.js";
 import { SETTING_KEYS } from "../../src/services/finance/settings.js";
 
@@ -46,8 +47,7 @@ async function poDisetujui(w, { qty, harga, material = w.lem }) {
 async function penerimaan(w, po, { baik }) {
   const gr = await w.g.post("/api/inventory/goods-receipts", { purchaseOrderId: po.id });
   assert.equal(gr.status, 201, JSON.stringify(gr.body));
-  for (const st of ["SCHEDULED", "ARRIVED", "INSPECTION", "READY_FOR_PUTAWAY"]) assert.equal((await w.g.patch(`/api/inventory/goods-receipts/${gr.body.id}`, { status: st })).status, 200);
-  assert.equal((await w.g.patch(`/api/inventory/goods-receipts/${gr.body.id}/lines/${gr.body.lines[0].id}`, { receivedQty: baik, acceptedQty: baik })).status, 200);
+  await bawaSampaiSiap(w.g, gr.body, { datang: baik, baik });
   assert.equal((await w.g.post(`/api/inventory/goods-receipts/${gr.body.id}/putaway`, {})).status, 200);
   return gr.body;
 }

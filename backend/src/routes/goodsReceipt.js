@@ -188,6 +188,10 @@ goodsReceiptRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), async (re
       if (status === "COMPLETED") {
         throw new ReceiptError("Status COMPLETED hanya ditetapkan lewat Simpan ke Stok (POST /:id/putaway)");
       }
+      // Penerimaan dari PO: "tiba" dicatat LEWAT Catat Barang Tiba (tanggal tiba, jumlah datang, PIC/penerima, catatan wajib; aktor/peran/workspace dari sesi) — dasar termin & audit.
+      if (status === "ARRIVED" && existing.purchaseOrderId && existing.arrivalRevision === 0) {
+        throw new ReceiptError("Barang dari PO dinyatakan tiba lewat Catat Barang Tiba (Barang Akan Datang), bukan dengan mengganti status — tanggal tiba, jumlah datang, PIC/penerima, dan catatan wajib diisi.");
+      }
       data.status = status;
     }
 
@@ -212,6 +216,10 @@ goodsReceiptRouter.patch("/:id/lines/:lineId", requirePermission(P.INVENTORY_WRI
 
     const { receivedQty, acceptedQty, rejectedQty, condition, notes } = req.body;
     const toNum = (v) => (v === undefined ? undefined : v === "" || v === null ? null : Number(v));
+    // Jumlah DATANG baris PO ditetapkan oleh Catat Barang Tiba dan hanya dikoreksi lewat Koreksi Kedatangan (alasan + riwayat); pemeriksaan (baik/ditolak) tetap di sini.
+    if (line.purchaseOrderLineId && receivedQty !== undefined && toNum(receivedQty) !== (line.receivedQty ?? null)) {
+      throw new ReceiptError("Jumlah datang barang dari PO dicatat lewat Catat Barang Tiba dan dikoreksi lewat Koreksi Kedatangan (wajib alasan) — tidak diubah dari sini.");
+    }
     // Baris yang tertaut PO: baik + ditolak ≤ datang, dan baik ≤ sisa PO (pemeriksaan dini; penegakan akhir di putaway). Baris tanpa PO: aturan lama.
     if (line.purchaseOrderLineId) {
       const gabung = (baru, lama) => (baru === undefined ? lama : toNum(baru));

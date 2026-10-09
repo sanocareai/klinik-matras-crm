@@ -10,6 +10,7 @@ import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestUser, createTestMaterial } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
+import { bawaSampaiSiap, catatTibaResmi } from "./setup/kedatangan.js";
 import { ensureDefaultChartOfAccounts } from "../../src/services/finance/accounts.js";
 import { toMoney } from "../../src/services/finance/money.js";
 
@@ -57,14 +58,11 @@ async function maju(w, grId, dari = "DRAFT") {
 }
 const isi = (w, grId, lineId, body) => w.g.patch(`/api/inventory/goods-receipts/${grId}/lines/${lineId}`, body);
 
-/** Penerimaan dari PO yang sudah siap putaway: datang/baik/ditolak diisi. */
+/** Penerimaan dari PO yang sudah siap putaway: datang lewat Catat Barang Tiba (jalur resmi), lalu baik/ditolak diisi saat pemeriksaan. */
 async function penerimaanSiap(w, poId, { datang, baik, tolak = 0 }) {
   const gr = await buatPenerimaan(w, poId);
   assert.equal(gr.status, 201, JSON.stringify(gr.body));
-  await maju(w, gr.body.id);
-  const baris = gr.body.lines[0];
-  const r = await isi(w, gr.body.id, baris.id, { receivedQty: datang, acceptedQty: baik, rejectedQty: tolak });
-  assert.equal(r.status, 200, JSON.stringify(r.body));
+  await bawaSampaiSiap(w.g, gr.body, { datang, baik, tolak });
   return gr.body;
 }
 
@@ -199,8 +197,7 @@ test("PO dengan banyak baris: penerimaan berisi sebagian baris; status sebagian 
   const gr = await buatPenerimaan(w, po.id, { lines: [{ purchaseOrderLineId: bLem.id }] });
   assert.equal(gr.status, 201, JSON.stringify(gr.body));
   assert.equal(gr.body.lines.length, 1);
-  await maju(w, gr.body.id);
-  await isi(w, gr.body.id, gr.body.lines[0].id, { receivedQty: 4, acceptedQty: 4 });
+  await bawaSampaiSiap(w.g, gr.body, { datang: 4, baik: 4 });
   assert.equal((await w.g.post(`/api/inventory/goods-receipts/${gr.body.id}/putaway`, {})).status, 200);
   assert.equal((await detail(w, po.id)).status, "DITERIMA_SEBAGIAN");
 
@@ -215,15 +212,16 @@ test("jumlah baik yang melebihi sisa PO ditolak saat diisi (pesan jelas) dan di 
   const w = await dunia();
   const po = await poDisetujui(w, { qty: 10 });
   const gr = await buatPenerimaan(w, po.id);
-  await maju(w, gr.body.id);
   const lineId = gr.body.lines[0].id;
 
-  const lebih = await isi(w, gr.body.id, lineId, { receivedQty: 11, acceptedQty: 11 });
+  // Jumlah DATANG yang melebihi sisa PO ditolak sejak dicatat (jalur resmi Catat Barang Tiba).
+  const lebih = await catatTibaResmi(w.g, { poId: po.id, receiptId: gr.body.id, lines: [{ purchaseOrderLineId: gr.body.lines[0].purchaseOrderLineId, jumlahDatang: 11 }] });
   assert.equal(lebih.status, 409);
   assert.match(lebih.body.error, /melebihi sisa PO/);
   assert.match(lebih.body.error, /merevisi jumlah PO/);
 
-  const lewatBatas = await isi(w, gr.body.id, lineId, { receivedQty: 5, acceptedQty: 4, rejectedQty: 3 });
+  await bawaSampaiSiap(w.g, gr.body, { datang: 5 });
+  const lewatBatas = await isi(w, gr.body.id, lineId, { acceptedQty: 4, rejectedQty: 3 });
   assert.equal(lewatBatas.status, 400, "baik + ditolak tidak boleh melebihi yang datang");
 
   // Akali lewat DB (mis. data lama / skrip): penegakan akhir di putaway tetap menahan.
@@ -258,7 +256,9 @@ test("dua penerimaan bersamaan (6 + 6 untuk PO 10): putaway paralel → tepat sa
   const w = await dunia();
   const po = await poDisetujui(w, { qty: 10 });
   const g1 = await penerimaanSiap(w, po.id, { datang: 6, baik: 6 });
-  const g2 = await penerimaanSiap(w, po.id, { datang: 6, baik: 6 }); // sama-sama lolos cek dini karena belum ada yang masuk stok
+  // Penerimaan kedua DIAKALI lewat DB (jalur resmi sudah menolak datang 6 + 6 > PO 10): penegakan akhir di putaway tetap menahan salah satunya.
+  const g2 = await penerimaanSiap(w, po.id, { datang: 4, baik: 4 });
+  await testPrisma.goodsReceiptLine.update({ where: { id: g2.lines[0].id }, data: { receivedQty: 6, acceptedQty: 6 } });
 
   const [r1, r2] = await Promise.all([
     w.g.post(`/api/inventory/goods-receipts/${g1.id}/putaway`, {}),

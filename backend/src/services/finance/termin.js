@@ -1,7 +1,8 @@
 // TERMIN PEMBAYARAN SUPPLIER — satu tempat untuk aturan: jenis termin, hitung jatuh tempo, siapa boleh mengganti, dan snapshot pada dokumen.
 //
 // Jenis:  TUNAI (COD, jatuh tempo = tanggal faktur) | HARI (7/14/30/45/60 hari setelah tanggal faktur) | TANGGAL_KHUSUS (tanggal diisi per dokumen).
-// Dasar:  selalu TANGGAL_FAKTUR (tanggal faktur supplier) — BUKAN tanggal barang datang dan BUKAN tanggal disimpan ke stok.
+// Dasar:  TANGGAL_FAKTUR (tanggal faktur supplier) untuk faktur biasa. FAKTUR ATAS PO (Okt 2026): TANGGAL_TIBA — tanggal barang tiba yang dicatat pada penerimaan, per penerimaan
+//         (services/finance/jadwalJatuhTempo.js). Tidak pernah tanggal PO dan bukan tanggal disimpan ke stok. Faktur lama tetap TANGGAL_FAKTUR (tidak diubah).
 // Sumber: MASTER_SUPPLIER (default dari master) | PO (Finance mengganti pada PO) | OVERRIDE_FAKTUR (Finance mengganti pada faktur; alasan wajib).
 //
 // Aturan penting:
@@ -77,7 +78,9 @@ const samaTermin = (a, b) => !!a && !!b && a.jenis === b.jenis && (a.hari ?? nul
  *   sekarang, userId
  * Mengembalikan { dueDate, snapshot } — snapshot siap ditulis ke kolom term*.
  */
-export function tentukanTerminDokumen({ supplier, po = null, tanggalFaktur, masukan = {}, boleh = {}, userId = null, sekarang = new Date() }) {
+export function tentukanTerminDokumen({ supplier, po = null, tanggalFaktur, tanggalDasar = undefined, dasar = DASAR_TERMIN, masukan = {}, boleh = {}, userId = null, sekarang = new Date() }) {
+  // tanggalDasar (opsional): tanggal acuan hitung jatuh tempo bila BUKAN tanggal faktur (mis. tanggal tiba paling awal). null = belum ada tanggalnya → jatuh tempo tidak ditebak.
+  const acuan = tanggalDasar !== undefined ? tanggalDasar : tanggalFaktur;
   const dariPO = terminDokumen(po);
   const bawaan = dariPO ?? terminMaster(supplier);
   const sumberBawaan = dariPO ? SUMBER_TERMIN.PO : SUMBER_TERMIN.MASTER_SUPPLIER;
@@ -101,10 +104,10 @@ export function tentukanTerminDokumen({ supplier, po = null, tanggalFaktur, masu
   // 2. Hitung jatuh tempo; tanggal yang diketik di luar hasil termin = override tanggal (hanya bermakna untuk TUNAI/HARI).
   let dueDate = null;
   if (termin) {
-    if (termin.jenis === "TANGGAL_KHUSUS") dueDate = hitungJatuhTempo(termin, tanggalFaktur, tanggalDiketik);
+    if (termin.jenis === "TANGGAL_KHUSUS") dueDate = hitungJatuhTempo(termin, tanggalFaktur ?? acuan, tanggalDiketik);
     else {
-      const hasil = hitungJatuhTempo(termin, tanggalFaktur);
-      if (tanggalDiketik && tanggalDiketik !== kunciHari(hasil)) { override = true; sumber = SUMBER_TERMIN.OVERRIDE_FAKTUR; termin = { jenis: "TANGGAL_KHUSUS", hari: null }; dueDate = hitungJatuhTempo(termin, tanggalFaktur, tanggalDiketik); }
+      const hasil = hitungJatuhTempo(termin, acuan);
+      if (tanggalDiketik && tanggalDiketik !== (hasil ? kunciHari(hasil) : null)) { override = true; sumber = SUMBER_TERMIN.OVERRIDE_FAKTUR; termin = { jenis: "TANGGAL_KHUSUS", hari: null }; dueDate = hitungJatuhTempo(termin, tanggalFaktur ?? acuan ?? tanggalDiketik, tanggalDiketik); }
       else dueDate = hasil;
     }
   }
@@ -118,7 +121,7 @@ export function tentukanTerminDokumen({ supplier, po = null, tanggalFaktur, masu
   return {
     dueDate,
     snapshot: {
-      termType: termin.jenis, termDays: termin.jenis === "HARI" ? termin.hari : termin.jenis === "TUNAI" ? 0 : null, termBasis: DASAR_TERMIN,
+      termType: termin.jenis, termDays: termin.jenis === "HARI" ? termin.hari : termin.jenis === "TUNAI" ? 0 : null, termBasis: ["TUNAI", "HARI"].includes(termin.jenis) ? dasar : DASAR_TERMIN,
       termSource: sumber, termOverrideReason: override ? alasan : (alasan || null), termSetById: userId, termSetAt: sekarang,
     },
   };
@@ -144,14 +147,16 @@ export function tentukanTerminPO({ supplier, masukan = {}, boleh = {}, userId = 
 }
 
 /** Pratinjau termin untuk formulir (klien tidak menghitung sendiri). */
-export function pratinjauTermin({ supplier, po = null, tanggalFaktur }) {
+export function pratinjauTermin({ supplier, po = null, tanggalFaktur, dasar = DASAR_TERMIN }) {
   const dariPO = terminDokumen(po);
   const termin = dariPO ?? terminMaster(supplier);
   const sumber = termin ? (dariPO ? SUMBER_TERMIN.PO : SUMBER_TERMIN.MASTER_SUPPLIER) : null;
-  const dueDate = termin && termin.jenis !== "TANGGAL_KHUSUS" ? hitungJatuhTempo(termin, tanggalFaktur) : null;
+  // Dasar TANGGAL_TIBA (PO dan faktur atas PO): termin TUNAI/HARI TIDAK berjalan saat PO dibuat dan bukan dari tanggal faktur — jatuh tempo baru ada per penerimaan setelah barang tiba dicatat.
+  const tiba = dasar === "TANGGAL_TIBA" && !!termin && ["TUNAI", "HARI"].includes(termin.jenis);
+  const dueDate = !tiba && termin && termin.jenis !== "TANGGAL_KHUSUS" ? hitungJatuhTempo(termin, tanggalFaktur) : null;
   return {
     ada: !!termin, jenis: termin?.jenis ?? null, hari: termin?.hari ?? null, label: termin ? labelTermin(termin.jenis, termin.hari) : null, sumber,
-    dasar: DASAR_TERMIN, tanggalFaktur: tanggalFaktur ? kunciHari(tanggalFaktur) : null, dueDate: dueDate ? kunciHari(dueDate) : null,
-    perluTanggal: termin?.jenis === "TANGGAL_KHUSUS" || !termin,
+    dasar: tiba ? "TANGGAL_TIBA" : DASAR_TERMIN, tanggalFaktur: tanggalFaktur ? kunciHari(tanggalFaktur) : null, dueDate: dueDate ? kunciHari(dueDate) : null,
+    perluTanggal: tiba ? false : termin?.jenis === "TANGGAL_KHUSUS" || !termin,
   };
 }

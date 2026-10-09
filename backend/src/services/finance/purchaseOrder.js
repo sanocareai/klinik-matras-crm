@@ -12,6 +12,7 @@ import { generateDocumentNumber, toBookDate } from "./journal.js";
 import { lockRowForUpdate } from "../inventoryLedger.js";
 import { tentukanTerminPO, TerminError, labelTermin } from "./termin.js";
 import { Decimal } from "./money.js";
+import { validasiPendamping, pendampingPO, PendampingError } from "../../lib/domain/pendamping.js";
 import { buatSkuBaru, pastikanKatalog, catatHargaTerakhir, tautkanPoPertama, validasiFaktor, periksaKonversiBaris, SATUAN_VALID, SkuError } from "./skuBaru.js";
 
 export class PurchaseOrderError extends Error {
@@ -103,11 +104,16 @@ async function siapkanMasukan(tx, body, { bolehBuatSku = false, buatSku = false,
       try { periksaKonversiBaris({ qty: dariK(k(qty)), faktor, hargaBeli: harga }); }
       catch (e) { if (e instanceof SkuError) throw gagal(`Baris ${no} (${material.code}): ${e.message}`, 400, e.code); throw e; }
     }
+    // Jumlah fisik pendamping (informasi kontrol; tidak memengaruhi nilai/stok/jurnal). Tidak bisa digabung konversi satuan.
+    let pendamping;
+    try { pendamping = validasiPendamping(l.pendamping, { nomor: no, kode: material.code, adaKonversi: konversi }); }
+    catch (e) { if (e instanceof PendampingError) throw gagal(e.message, 400, e.code); throw e; }
     // Relasi Katalog Supplier (supplier ↔ SKU internal): dibuat/diperbarui di transaksi yang sama; baris PO menyimpan SNAPSHOT-nya.
     let katalog = await tx.finSupplierMaterial.findUnique({ where: { supplierId_materialId: { supplierId: supplier.id, materialId: material.id } } });
     if (katalogMasukan) katalog = await pastikanKatalog(tx, { supplierId: supplier.id, materialId: material.id, data: katalogMasukan, userId });
     hasil.push({
       materialId: material.id, unit: satuanBeli, qty: dariK(k(qty)), unitPrice: harga, notes: l.notes?.trim() || null, sortOrder: i,
+      ...pendamping,
       ...(konversi && { purchaseUnit: satuanBeli, conversionFactor: faktor.toString() }),
       ...(katalog && { supplierMaterialId: katalog.id, supplierItemName: katalog.supplierItemName, supplierSku: katalog.supplierSku }),
     });
@@ -434,6 +440,8 @@ function bentukBaris(l, q, { harga }) {
     ...(l.supplierItemName && { namaSupplier: l.supplierItemName }),
     ...(l.supplierSku && { kodeSupplier: l.supplierSku }),
     catatan: l.notes,
+    // Jumlah fisik pendamping (null = tanpa pendamping): satuan utama tetap dasar nilai & stok.
+    pendamping: pendampingPO({ unit: l.unit, qty: l.qty, companionUnit: l.companionUnit, companionMode: l.companionMode, companionRatio: l.companionRatio, companionEstimate: l.companionEstimate }),
     ...q,
     ...(harga && {
       hargaSatuan: l.unitPrice,

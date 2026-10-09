@@ -13,6 +13,7 @@ import { tentukanTerminDokumen, TerminError } from "./termin.js";
 import { generateDocumentNumber, toBookDate, todayBookDateWIB, findEntryByKey } from "./journal.js";
 import { toMoney, sumMoney, ZERO, moneyToNumber, Decimal } from "./money.js";
 import { nilaiBarisPenerimaan } from "./posting/supplier.js";
+import { DASAR_TANGGAL_TIBA, jadwalDariFaktur, sinkronJatuhTempoFakturPO } from "./jadwalJatuhTempo.js";
 
 export class TagihanPoError extends Error {
   constructor(message, statusCode = 409, code) { super(message); this.statusCode = statusCode; if (code) this.code = code; }
@@ -42,7 +43,7 @@ export async function muatKonteks(tx, poId, { kecualiBillId = null } = {}) {
       id: true, purchaseOrderLineId: true, acceptedQty: true,
       goodsReceipt: {
         select: {
-          id: true, receiptNumber: true, receivedDate: true, createdAt: true,
+          id: true, receiptNumber: true, receivedDate: true, arrivedDate: true, createdAt: true, status: true,
           finSupplierBills: { where: { status: { in: STATUS_MASUK_BUKU } }, select: { id: true } },
         },
       },
@@ -65,7 +66,8 @@ export async function muatKonteks(tx, poId, { kecualiBillId = null } = {}) {
     return {
       id: b.id, purchaseOrderLineId: b.purchaseOrderLineId,
       receiptId: b.goodsReceipt.id, receiptNumber: b.goodsReceipt.receiptNumber,
-      urut: `${(b.goodsReceipt.receivedDate ?? b.goodsReceipt.createdAt).toISOString()}|${b.goodsReceipt.receiptNumber}|${b.id}`,
+      tanggalTiba: b.goodsReceipt.arrivedDate, statusPenerimaan: b.goodsReceipt.status,
+      urut: `${(b.goodsReceipt.arrivedDate ?? b.goodsReceipt.receivedDate ?? b.goodsReceipt.createdAt).toISOString()}|${b.goodsReceipt.receiptNumber}|${b.id}`,
       diterimaK, diklaimK, tersediaK: diterimaK - diklaimK, ditagihLama: lama,
     };
   });
@@ -136,11 +138,14 @@ async function siapkanMasukan(tx, body, { po }) {
     const ada = await tx.goodsReceipt.findMany({ where: { id: { in: idPenerimaan }, purchaseOrderId: po.id, status: "COMPLETED" }, select: { id: true } });
     if (ada.length !== idPenerimaan.length) throw gagal("Ada penerimaan yang dipilih bukan penerimaan selesai dari PO ini");
   }
+  // Dasar termin faktur atas PO = TANGGAL TIBA (bukan tanggal faktur): tanggal tiba paling awal dari penerimaan terpilih (atau semua penerimaan PO yang sudah masuk stok). Belum ada = null (tidak ditebak).
+  const sudahTiba = await tx.goodsReceipt.findMany({ where: { purchaseOrderId: po.id, status: "COMPLETED", arrivedDate: { not: null }, ...(idPenerimaan.length > 0 && { id: { in: idPenerimaan } }) }, select: { arrivedDate: true }, orderBy: { arrivedDate: "asc" }, take: 1 });
+  const tanggalTiba = sudahTiba[0]?.arrivedDate ?? null;
   const jumlah = sumMoney(hasil.map((h) => nilaiBarisPenerimaan(h.qty, h.invoiceUnitPrice)));
   if (b.amount !== undefined && b.amount !== null && b.amount !== "" && !toMoney(b.amount).equals(jumlah)) {
     throw gagal(`Nominal faktur (${moneyToNumber(toMoney(b.amount))}) harus sama dengan jumlah baris (${moneyToNumber(jumlah)}). Biaya lain (ongkir/pajak) belum didukung pada faktur atas PO.`, 400, "NOMINAL_TIDAK_SAMA");
   }
-  return { ref, tgl, jatuhTempoDiketik, termin: { terminJenis: b.terminJenis, terminHari: b.terminHari, alasan: b.alasanTermin }, lines: hasil, idPenerimaan, jumlah, deskripsi: String(b.description ?? "").trim() };
+  return { ref, tgl, tanggalTiba, jatuhTempoDiketik, termin: { terminJenis: b.terminJenis, terminHari: b.terminHari, alasan: b.alasanTermin }, lines: hasil, idPenerimaan, jumlah, deskripsi: String(b.description ?? "").trim() };
 }
 
 async function muatPo(tx, poId) {
@@ -151,7 +156,7 @@ async function muatPo(tx, poId) {
 function terminFaktur(po, m, { userId, bolehOverride }) {
   try {
     return tentukanTerminDokumen({
-      supplier: po.supplier, po, tanggalFaktur: m.tgl, userId,
+      supplier: po.supplier, po, tanggalFaktur: m.tgl, tanggalDasar: m.tanggalTiba ?? null, dasar: DASAR_TANGGAL_TIBA, userId,
       masukan: { ...m.termin, dueDate: m.jatuhTempoDiketik }, boleh: { override: !!bolehOverride },
     });
   } catch (e) { if (e instanceof TerminError) throw gagal(e.message, e.statusCode, e.code); throw e; }
@@ -270,6 +275,8 @@ export async function evaluasiTagihanPO(tx, billId) {
   return {
     billId: bill.id, billNumber: bill.billNumber, status: bill.status, supplierRef: bill.supplierRef, billDate: bill.billDate, dueDate: bill.dueDate, purchaseOrderId: po.id, poNumber: po.poNumber,
     amount: moneyToNumber(toMoney(bill.amount)),
+    termBasis: bill.termBasis,
+    jadwalJatuhTempo: await jadwalFakturUntukEvaluasi(tx, { bill, konteks, terpilih, masukBuku }),
     penerimaanTerpilih: terpilih,
     tertahan: alasan.length > 0, alasanTertahan: alasan,
     perluTinjauanHarga: adaSelisih, selisihHargaTotal: moneyToNumber(sumMoney(baris.map((b) => b.selisihNilai))),
@@ -278,6 +285,29 @@ export async function evaluasiTagihanPO(tx, billId) {
     alokasi: bill.poAllocations.map((a) => ({ goodsReceiptId: a.goodsReceiptId, receiptNumber: a.goodsReceipt.receiptNumber, goodsReceiptLineId: a.goodsReceiptLineId, qty: Number(a.qty), hargaPO: a.poUnitPrice })),
     masukBuku,
   };
+}
+
+/**
+ * Jadwal jatuh tempo per penerimaan untuk evaluasi satu faktur (dasar TANGGAL TIBA). Faktur masuk buku → dari alokasi nyata; belum disetujui → dari alokasi FIFO rencana.
+ * Total nilai jadwal = nilai faktur (tidak ada hitung ganda); pembayaran diterapkan FIFO menurut jatuh tempo. null untuk faktur dengan dasar tanggal faktur (lama).
+ */
+async function jadwalFakturUntukEvaluasi(tx, { bill, konteks, terpilih, masukBuku }) {
+  if (bill.termBasis !== DASAR_TANGGAL_TIBA) return null;
+  let alokasi;
+  if (masukBuku) {
+    const nyata = await tx.finSupplierBillAllocation.findMany({ where: { billId: bill.id }, select: { billPoLineId: true, qty: true, goodsReceipt: { select: { id: true, receiptNumber: true, arrivedDate: true, status: true } } } });
+    alokasi = nyata.map((a) => ({ billPoLineId: a.billPoLineId, receiptId: a.goodsReceipt.id, receiptNumber: a.goodsReceipt.receiptNumber, tanggalTiba: a.goodsReceipt.arrivedDate, status: a.goodsReceipt.status, qty: Number(a.qty) }));
+  } else {
+    const rencana = alokasiFifo(konteks, bill.poLines, terpilih).alokasi;
+    const info = new Map(konteks.map((b) => [b.receiptId, b]));
+    alokasi = rencana.map((a) => ({ billPoLineId: a.billPoLineId, receiptId: a.goodsReceiptId, receiptNumber: a.receiptNumber, tanggalTiba: info.get(a.goodsReceiptId)?.tanggalTiba ?? null, status: info.get(a.goodsReceiptId)?.statusPenerimaan ?? "COMPLETED", qty: dariK(a.qtyK) }));
+  }
+  const bayar = await tx.finSupplierPaymentAllocation.findMany({ where: { billId: bill.id, payment: { cancelledAt: null } }, select: { amount: true } });
+  const jadwal = jadwalDariFaktur({ bill, alokasi, dibayar: sumMoney(bayar.map((x) => x.amount)), hariIni: todayBookDateWIB().toISOString().slice(0, 10) });
+  return (jadwal ?? []).map((j) => ({
+    penerimaanId: j.receiptId, nomorPenerimaan: j.receiptNumber, tanggalTiba: j.tanggalTiba, jatuhTempo: j.jatuhTempo, nilai: moneyToNumber(j.nilai), dibayar: moneyToNumber(j.dibayar), sisa: moneyToNumber(j.sisa),
+    status: j.status, statusLabel: j.statusLabel, terlambat: j.terlambat,
+  }));
 }
 
 /** Pandangan penagihan satu PO untuk membuat faktur: per baris dipesan/diterima baik/sudah ditagih/tersedia + penerimaan beserta sisa tertagihnya. */
@@ -388,6 +418,7 @@ export async function setujuiTagihanPO(tx, { bill, catatanTinjauan, userId }) {
     });
   }
   if (catatan) await tx.finSupplierBill.update({ where: { id: bill.id }, data: { poReviewNote: catatan, poReviewedBy: userId, poReviewedAt: new Date() } });
+  await sinkronJatuhTempoFakturPO(tx, po.id); // due_date faktur = jatuh tempo TERAWAL dari penerimaan yang benar-benar ditagih
   return { alokasi: alokasi.length, selisihHarga: berbeda.length > 0 };
 }
 

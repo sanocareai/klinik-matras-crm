@@ -11,6 +11,7 @@ import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestUser, createTestMaterial } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
+import { bawaSampaiSiap, catatTibaResmi } from "./setup/kedatangan.js";
 import { ensureDefaultChartOfAccounts } from "../../src/services/finance/accounts.js";
 import { bangunViewPO } from "../../src/services/finance/purchaseOrderDocument.js";
 import { normalisasiNama, prefixDariNama, validasiFaktor, periksaKonversiBaris } from "../../src/services/finance/skuBaru.js";
@@ -250,9 +251,7 @@ test("konversi BOX→CAN: PO 2 BOX → stok +24 CAN, nilai penerimaan = nilai PO
 
   const gr = (await w.g.post("/api/inventory/goods-receipts", { purchaseOrderId: po.id })).body;
   assert.equal(gr.lines[0].purchaseOrderLine.purchaseUnit, "BOX", "penerimaan Gudang membawa satuan beli");
-  for (const st of ["SCHEDULED", "ARRIVED", "INSPECTION", "READY_FOR_PUTAWAY"]) assert.equal((await w.g.patch(`/api/inventory/goods-receipts/${gr.id}`, { status: st })).status, 200);
-  const isi = await w.g.patch(`/api/inventory/goods-receipts/${gr.id}/lines/${gr.lines[0].id}`, { receivedQty: 2, acceptedQty: 2, rejectedQty: 0 });
-  assert.equal(isi.status, 200, JSON.stringify(isi.body));
+  await bawaSampaiSiap(w.g, gr, { datang: 2, baik: 2, tolak: 0 });
   const put = await w.g.post(`/api/inventory/goods-receipts/${gr.id}/putaway`, { location: "RAK-B02" });
   assert.equal(put.status, 200, JSON.stringify(put.body));
 
@@ -281,9 +280,9 @@ test("penerimaan berkonversi yang melebihi presisi stok ditolak sebelum stok ter
   const po = (await w.a.post("/api/finance/purchase-orders", poBody(w, [{ materialId: m.id, qty: 5, unitPrice: 90_000, satuanBeli: "BOX", faktorKonversi: 12.5001 }]))).body;
   assert.equal((await w.a.post(`/api/finance/purchase-orders/${po.id}/approve`, {})).status, 200);
   const gr = (await w.g.post("/api/inventory/goods-receipts", { purchaseOrderId: po.id })).body;
-  for (const st of ["SCHEDULED", "ARRIVED", "INSPECTION", "READY_FOR_PUTAWAY"]) await w.g.patch(`/api/inventory/goods-receipts/${gr.id}`, { status: st });
+  await bawaSampaiSiap(w.g, gr, { datang: 0.333, sampaiInspeksi: true });
   // 0,333 BOX × 12,5001 = 4,16253 → 5 desimal > presisi stok 4.
-  const isi = await w.g.patch(`/api/inventory/goods-receipts/${gr.id}/lines/${gr.lines[0].id}`, { receivedQty: 0.333, acceptedQty: 0.333, rejectedQty: 0 });
+  const isi = await w.g.patch(`/api/inventory/goods-receipts/${gr.id}/lines/${gr.lines[0].id}`, { acceptedQty: 0.333, rejectedQty: 0 });
   assert.equal(isi.status, 400, JSON.stringify(isi.body));
   assert.equal(await testPrisma.stockMovement.count(), 0);
 });
@@ -302,8 +301,7 @@ test("SKU boleh diperbaiki Admin sebelum ada pergerakan; sesudahnya kode & satua
   // Beri pergerakan stok → terkunci.
   assert.equal((await w.a.post(`/api/finance/purchase-orders/${po.id}/approve`, {})).status, 200);
   const gr = (await w.g.post("/api/inventory/goods-receipts", { purchaseOrderId: po.id })).body;
-  for (const st of ["SCHEDULED", "ARRIVED", "INSPECTION", "READY_FOR_PUTAWAY"]) await w.g.patch(`/api/inventory/goods-receipts/${gr.id}`, { status: st });
-  await w.g.patch(`/api/inventory/goods-receipts/${gr.id}/lines/${gr.lines[0].id}`, { receivedQty: 2, acceptedQty: 2, rejectedQty: 0 });
+  await bawaSampaiSiap(w.g, gr, { datang: 2, baik: 2, tolak: 0 });
   assert.equal((await w.g.post(`/api/inventory/goods-receipts/${gr.id}/putaway`, {})).status, 200);
 
   const kunci = await w.a.patch(`/api/finance/purchase-orders/sku/${id}`, { satuanStok: "KG" });

@@ -21,6 +21,8 @@ export async function bangunViewPO(db, id) {
         kode: l.kode, nama: l.nama, satuan: l.satuan, catatan: l.catatan, dipesan: l.dipesan, hargaSatuan: l.hargaSatuan, nilaiDipesan: l.nilaiDipesan,
         // Baris berkonversi satuan: PDF menambah catatan "Setara dengan [jumlah] [satuan stok]." (tanpa konversi: tidak ada field → tampilan lama persis).
         ...(l.konversi && { setaraQty: Math.round(l.dipesan * l.konversi.faktor * 10000) / 10000, setaraSatuan: l.konversi.satuanStok }),
+        // Jumlah fisik pendamping (informasi kontrol): "10 KG — perkiraan 2 lembar". Tidak ada pendamping → tidak ada field (tampilan lama persis).
+        ...(l.pendamping && { pendampingTeks: `${Number(l.dipesan).toLocaleString("id-ID", { maximumFractionDigits: 3 })} ${l.satuan} — ${l.pendamping.teks}` }),
       })),
       totalDipesan: po.totalDipesan,
     },

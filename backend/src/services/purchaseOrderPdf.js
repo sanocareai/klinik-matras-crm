@@ -130,7 +130,7 @@ export function renderPurchaseOrderPdf(view) {
       const judulBaris = `${l.nama}`;
       const tinggiNama = doc.heightOfString(judulBaris, { width: kolDeskW });
       doc.fontSize(8).font(FONT_TEKS);
-      const subBaris = [l.kode, l.setaraSatuan ? `Setara dengan ${fmtQty(l.setaraQty)} ${l.setaraSatuan}.` : null, l.catatan].filter(Boolean).join(" · ");
+      const subBaris = [l.kode, l.pendampingTeks ?? null, l.setaraSatuan ? `Setara dengan ${fmtQty(l.setaraQty)} ${l.setaraSatuan}.` : null, l.catatan].filter(Boolean).join(" · ");
       const tinggiSub = subBaris ? doc.heightOfString(subBaris, { width: kolDeskW }) + 3 : 0;
       const tinggiBaris = Math.max(TINGGI_BARIS_MIN, tinggiNama + tinggiSub + 16);
       if (y + tinggiBaris > pageHeight - BATAS_BAWAH_HALAMAN) {
