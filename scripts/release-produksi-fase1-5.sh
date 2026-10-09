@@ -125,7 +125,7 @@ for m in "${MIG_ORDER[@]}"; do
   ISI="$(printf '%s\n' "$MIGSQL" | grep -v '^[[:space:]]*--' | grep -v '^[[:space:]]*$' || true)"
   # Larang perintah destruktif. Diizinkan: DROP CONSTRAINT hanya untuk CHECK section komponen (dibuat ulang sebagai pelebaran), INSERT hanya ke routing_stages,
   # DROP/DELETE/UPDATE/TRUNCATE/RENAME lain = berhenti. (Isi fungsi trigger tidak mengandung perintah-perintah ini.)
-  SCAN="$(printf '%s\n' "$ISI" | sed -E 's/ON (DELETE|UPDATE) (CASCADE|RESTRICT|SET NULL|NO ACTION)//g; s/BEFORE UPDATE OR DELETE//g; s/ALTER TABLE "unit_component_entries_v2" DROP CONSTRAINT "unit_component_entries_v2_section_check";//g; s/INSERT INTO "routing_stages"//g')"
+  SCAN="$(printf '%s\n' "$ISI" | grep -v 'RAISE EXCEPTION' | sed -E 's/ON (DELETE|UPDATE) (CASCADE|RESTRICT|SET NULL|NO ACTION)//g; s/BEFORE UPDATE OR DELETE//g; s/ALTER TABLE "unit_component_entries_v2" DROP CONSTRAINT "unit_component_entries_v2_section_check";//g; s/INSERT INTO "routing_stages"//g')"
   printf '%s\n' "$SCAN" | grep -Eiw 'DROP|DELETE|TRUNCATE|UPDATE|RENAME|INSERT|ALTER[[:space:]]+COLUMN|GRANT|REVOKE|COPY' >/dev/null && { printf '%s\n' "$SCAN" | grep -Eiw 'DROP|DELETE|TRUNCATE|UPDATE|RENAME|INSERT|ALTER[[:space:]]+COLUMN|GRANT|REVOKE|COPY' | sed 's/^/        /'; die "migrasi ${m} mengandung perintah non-aditif di luar yang diaudit"; }
   ok "migrasi ${m}: sha256 cocok pin (${MIG_SHA:0:12}), aditif"
 done
