@@ -530,7 +530,8 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
       if (sumberCtwa && detectedSource === "WHATSAPP_DIRECT") {
         detectedSource = sumberCtwa;
         detectedDetail = ctwaDetail(ctwa);
-        console.log("[attribution] Lapis 0b Meta CTWA:", detectedDetail, "clid:", ctwa.clid?.slice(0, 16));
+        // clid TIDAK PERNAH di-log (utuh maupun potongan) — hanya ada/tidaknya.
+        console.log("[attribution] Lapis 0b Meta CTWA:", detectedDetail, "clid:", ctwa.clid ? "ada" : "tidak ada");
       }
     }
 
