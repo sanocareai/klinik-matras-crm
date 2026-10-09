@@ -26,7 +26,9 @@ const STATUS_SUDAH_TIBA = ["ARRIVED", "INSPECTION", "READY_FOR_PUTAWAY", "COMPLE
 /** Daftar kolom progres + definisinya — dikirim server supaya semua layar memakai label & arti yang sama. */
 export const DEFINISI_PROGRES = Object.freeze([
   { kunci: "dipesan", label: "Dipesan", definisi: "Jumlah yang dipesan di PO." },
-  { kunci: "datang", label: "Datang", definisi: "Total yang benar-benar tiba (fisik) di semua pengiriman, termasuk yang kemudian ditolak dan pengiriman pengganti." },
+  { kunci: "datangAsli", label: "Pengiriman asli tiba", definisi: "Total yang tiba pada pengiriman asli (bukan pengganti), termasuk yang kemudian ditolak. Inilah yang dihitung terhadap jumlah dipesan." },
+  { kunci: "pengganti", label: "Pengganti tiba", definisi: "Total yang tiba sebagai pengiriman pengganti barang yang ditolak. Tidak menambah pasokan baru dan tidak menaikkan batas PO." },
+  { kunci: "datang", label: "Total fisik tiba", definisi: "Pengiriman asli tiba + pengganti tiba: seluruh barang yang pernah tiba secara fisik, termasuk yang ditolak." },
   { kunci: "belumDatang", label: "Belum datang", definisi: "Dipesan dikurangi datang pada pengiriman asli. Barang ditolak tetap dihitung sudah datang; pengiriman pengganti tidak mengurangi angka ini dan tidak menaikkan batas PO." },
   { kunci: "belumDiperiksa", label: "Belum diperiksa", definisi: "Sudah tiba, tetapi hasil baik/ditolak belum diisi Gudang." },
   { kunci: "ditolak", label: "Ditolak", definisi: "Hasil pemeriksaan: barang yang ditolak. Tetap tercatat sebagai riwayat setelah pengganti tiba." },
@@ -40,8 +42,8 @@ export const DEFINISI_PROGRES = Object.freeze([
 const KUNCI_ANGKA = DEFINISI_PROGRES.map((d) => d.kunci);
 
 /**
- * Progres per baris PO: Map<purchaseOrderLineId, { dipesan, datang, belumDatang, belumDiperiksa, ditolak, menungguPengganti, baikBelumDisimpan, masukStok,
- *   belumDipenuhiSupplier, belumMasukStok, pengganti (jumlah pengganti yang sudah tiba), pendampingAktual }>.
+ * Progres per baris PO: Map<purchaseOrderLineId, { dipesan, datangAsli, pengganti, datang (total fisik), belumDatang, belumDiperiksa, ditolak, menungguPengganti, baikBelumDisimpan, masukStok,
+ *   belumDipenuhiSupplier, belumMasukStok, pendampingAktual }>. Bridge: datang = datangAsli + pengganti; masuk stok maksimum = dipesan.
  */
 export async function hitungProgresPO(db, poId) {
   const po = await db.finPurchaseOrder.findUnique({ where: { id: poId }, select: { lines: { select: { id: true, qty: true } } } });
@@ -68,11 +70,11 @@ export async function hitungProgresPO(db, poId) {
     const belumDatangK = Math.max(0, a.dipesanK - a.asliK);
     const menungguK = Math.max(0, a.ditolakK - a.penggantiK);
     hasil.set(id, {
-      dipesan: dariK(a.dipesanK), datang: dariK(a.datangK), belumDatang: dariK(belumDatangK),
+      dipesan: dariK(a.dipesanK), datangAsli: dariK(a.asliK), pengganti: dariK(a.penggantiK), datang: dariK(a.datangK), belumDatang: dariK(belumDatangK),
       belumDiperiksa: dariK(a.belumDiperiksaK), ditolak: dariK(a.ditolakK), menungguPengganti: dariK(menungguK),
       baikBelumDisimpan: dariK(Math.max(0, a.baikK - a.masukStokK)), masukStok: dariK(a.masukStokK),
       belumDipenuhiSupplier: dariK(belumDatangK + menungguK), belumMasukStok: dariK(Math.max(0, a.dipesanK - a.masukStokK)),
-      pengganti: dariK(a.penggantiK), pendampingAktual: a.adaPendamping ? dariK(a.pendampingK) : null,
+      pendampingAktual: a.adaPendamping ? dariK(a.pendampingK) : null,
     });
   }
   return hasil;

@@ -9,7 +9,9 @@ Dipakai API Finance & Gudang (daftar, kartu, detail), batas jumlah datang, dan r
 | Label | Arti |
 |---|---|
 | Dipesan | jumlah di PO |
-| Datang | total yang benar-benar tiba (fisik), termasuk yang kemudian ditolak dan pengiriman pengganti |
+| Pengiriman asli tiba | total yang tiba pada pengiriman asli (bukan pengganti), termasuk yang kemudian ditolak |
+| Pengganti tiba | total yang tiba sebagai pengiriman pengganti barang ditolak |
+| Total fisik tiba (`datang`) | pengiriman asli tiba + pengganti tiba: seluruh barang yang pernah tiba secara fisik, termasuk yang ditolak |
 | Belum datang | Dipesan − datang pada pengiriman ASLI. Barang ditolak tetap dihitung sudah datang; pengganti tidak mengurangi angka ini (batas PO tidak naik) |
 | Belum diperiksa | sudah tiba, hasil baik/ditolak belum diisi Gudang |
 | Ditolak | hasil pemeriksaan: ditolak (riwayat) |
@@ -19,8 +21,23 @@ Dipakai API Finance & Gudang (daftar, kartu, detail), batas jumlah datang, dan r
 | Belum dipenuhi supplier | Belum datang + Menunggu pengganti |
 | Belum masuk stok | Dipesan − masuk stok |
 
-Invarian: Datang = Belum diperiksa + Ditolak + Baik belum disimpan + Masuk stok.
+Invarian (data yang dicatat lewat alur ini): Total fisik tiba = Pengiriman asli + Pengganti = Belum diperiksa + Ditolak + Baik belum disimpan + Masuk stok. Data lama yang diisi dengan aturan lama tidak dijamin memenuhi persamaan kedua.
 Fixture: PO 10 KG, datang 8, baik 7, ditolak 1, masuk stok 5 → Datang 8 · Belum datang 2 · Menunggu pengganti 1 · Baik belum disimpan 2 · Belum dipenuhi supplier 3 · Belum masuk stok 5.
+
+### Jembatan kuantitas PO 10 KG (diuji: `BRIDGE 10 KG` di poTerintegrasi)
+
+Urutan: (1) pengiriman asli 5 KG baik; (2) pengiriman asli 3 KG: 2 KG baik + 1 KG ditolak; (3) pengganti 1 KG baik; (4) **pengiriman asli terakhir 2 KG baik**.
+
+| Setelah langkah | Asli tiba | Pengganti | Total fisik | Baik/masuk stok | Ditolak | Belum datang | Menunggu pengganti | Belum dipenuhi supplier |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 5 | 0 | 5 | 5 | 0 | 5 | 0 | 5 |
+| 2 | 8 | 0 | 8 | 7 | 1 | 2 | 1 | 3 |
+| 3 | 8 | 1 | 9 | 8 | 1 | 2 | 0 | 2 |
+| 4 | **10** | **1** | **11** | **10** | **1** | **0** | **0** | **0** |
+
+Jembatan: asli 10 + pengganti 1 = total fisik 11; total fisik 11 − ditolak 1 = baik/masuk stok 10 = dipesan. Nilai PO, nilai masuk stok, GRNI (Dr Persediaan / Cr GRNI), faktur, utang, dan pembayaran semuanya **10 KG** (bukan 11): barang ditolak tidak pernah masuk stok dan tidak ditagih, pengganti hanya menggantikan.
+
+**Faktur 10 KG** boleh dicatat kapan saja (status Menunggu Persetujuan, tertahan + alasan), tetapi **ditolak saat disetujui (409)** selama barang baik yang sudah disimpan ke stok dan belum ditagih kurang dari 10 KG (diuji pada 5, 7, 8 KG, dan 8 KG + 2 KG sudah diperiksa tetapi belum disimpan). Tidak ada jurnal utang dan tidak ada alokasi sebelum disetujui. Faktur 11 KG dan faktur tambahan setelah semua tertagih juga ditolak. Faktur 10 KG yang sah memiliki jadwal termin per penerimaan yang membawa barang baik (4 penerimaan), dan Σ jadwal = total faktur persis. Pembayaran penuh 10 KG melunasi; pembayaran lebih ditolak.
 
 ### Pengiriman pengganti
 Pengganti ditandai di Catat Barang Tiba (centang pengganti) dan menyimpan hubungan ke baris penolakan asal (`goods_receipt_lines.replacement_for_line_id`). Jumlahnya dibatasi sisa penolakan baris asal, tidak menaikkan batas PO (belum datang tetap), dan tidak menggandakan nilai PO, stok, GRNI, faktur, atau jadwal termin: hanya barang baik yang masuk stok dan ditagih. Contoh pengganti 1 KG pada fixture: Datang 9, Menunggu pengganti 0, Belum datang 2, Belum dipenuhi supplier 2. Penolakan asal tidak bisa diturunkan di bawah pengganti yang tercatat, dan penerimaan asal yang sudah punya pengganti tidak bisa ditolak seluruhnya.
@@ -65,7 +82,9 @@ Dua keadaan berbeda:
 - **Sumber:** kandidat harus turunan baseline; berkas yang berbeda dari baseline HANYA yang ada di allowlist eksplisit; tanpa `frontend/dist`, `package*.json`, Docker/compose, artefak foto uji; `schema.prisma` hanya penambahan baris; migrasi baseline tidak boleh berubah.
 - **Pin migrasi:** `20261101090000_po_terintegrasi_kedatangan` dipin sha256 (isi LF). Perubahan sekecil apa pun = berhenti sampai diaudit ulang dan pin diperbarui.
 - **Pemindai DDL (daftar putih per pernyataan, 20 pernyataan):** 4 ADD COLUMN (nullable / `arrival_revision` DEFAULT 0) pada 3 tabel, 1 tabel baru `goods_receipt_events`, 2 indeks, 4 FK, 6 CHECK, 1 pasang DROP+ADD `fin_supplier_bills_term_chk` (hanya menambah `TANGGAL_TIBA`), 1 fungsi append-only (badan hanya `RAISE EXCEPTION`), 1 trigger `BEFORE UPDATE OR DELETE`. UPDATE/INSERT/DELETE/DROP TABLE/DROP COLUMN/ALTER COLUMN/TRUNCATE = berhenti.
-- **Backup + restore nyata:** `pg_dump` + checksum, lalu restore ke DB sementara dan perbandingan jumlah baris (19 tabel) dan SIDIK JARI isi baris penuh (17 tabel lama, tanpa kolom baru) dengan produksi.
+- **Backup + restore nyata:** `pg_dump` + checksum, lalu restore ke DB sementara; hasil restore dibandingkan dengan DOKUMEN BEKU produksi (lihat bawah), dan sidik jari baris penuh 17 tabel lama pada restore dibandingkan sebelum vs sesudah migrasi (statis, tidak terpengaruh transaksi baru).
 - **Rehearsal migrasi:** migrasi diterapkan pada hasil restore dengan image baru; kolom baru kosong, tidak ada backfill; 10 constraint + fungsi + trigger terpasang; uji perilaku (append-only menolak UPDATE/DELETE, CHECK menolak data salah dan meloloskan data benar, `TANGGAL_TIBA` diterima) lalu dibatalkan; sidik jari tabel lama identik sebelum vs sesudah.
-- **Smoke baca-saja:** izin Gudang/Finance/Sales, tampilan Gudang tanpa harga, penulisan ditolak tanpa efek (termasuk tidak ada draf baru), aging & umur utang pada data lama, jumlah baris semua tabel tidak berubah.
+- **Dokumen pembanding beku:** sebelum backup, skrip membekukan T0 (jam DB, 5 menit lalu) dan membandingkan hanya dokumen yang tidak mungkin berubah menurut aturan bisnis: penerimaan Selesai/Ditolak, PO Selesai/Dibatalkan, faktur Dibatalkan/Ditolak (semuanya diam sejak sebelum T0), baris stok dan jurnal yang dibuat sebelum T0, saldo per akun dari jurnal itu, dan seluruh flag `fin_settings`. Perbandingan dilakukan: produksi vs restore, pasca-migrasi sebelum switch, dan pasca-switch. Dokumen terbuka dan transaksi sah yang muncul saat rilis TIDAK diperbandingkan, jadi tidak membuat rilis gagal; perubahan pada dokumen beku, jumlah migrasi, health, izin, atau flag tetap menggagalkan (fail-closed).
+- **Pemeriksaan global hanya di jendela yang sah:** "semua kolom/tabel baru kosong, tanpa backfill" diperiksa SETELAH migrasi dan SEBELUM switch (hanya backend lama yang melayani dan ia tidak mengenal kolom baru). Setelah switch tidak ada asumsi global tentang PO/kedatangan/faktur baru.
+- **Smoke baca-saja (tidak menulis):** izin Gudang/Finance/Sales, tampilan Gudang tanpa harga, struktur progres 12 angka untuk data apa pun, PO terminal beku tanpa kedatangan, dan invarian aging (Σ baris tiap faktur = nilai faktur; baris berjadwal hanya untuk faktur TANGGAL_TIBA). Delapan pemanggilan tulis memakai token tanpa izin / tanpa Idempotency-Key dan wajib dijawab 400/401/403/428 sebelum menyentuh data; Prisma hanya find/count.
 - **Rollback guard:** `scripts/rollback-guard-po-terintegrasi.sh` (baca-saja) menolak rollback kode (exit 1) bila ada faktur `TANGGAL_TIBA`, penerimaan dengan kedatangan tercatat, baris pengganti/pendamping, atau riwayat kedatangan; exit 2 bila tidak bisa memastikan. Instruksi rollback yang dicetak skrip rilis mewajibkan guard dijalankan lebih dulu.

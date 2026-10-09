@@ -237,8 +237,27 @@ union all select 'fin_journal_entries', count(*), md5(coalesce(string_agg(to_jso
 union all select 'fin_journal_lines', count(*), md5(coalesce(string_agg(to_jsonb(x)::text, '|' order by x.id),'')) from fin_journal_lines x
 union all select 'order', count(*), md5(coalesce(string_agg(to_jsonb(x)::text, '|' order by x.id),'')) from \"Order\" x
 union all select 'payments', count(*), md5(coalesce(string_agg(to_jsonb(x)::text, '|' order by x.id),'')) from payments x"
-psql_live -At -c "$FP_SQL" | LC_ALL=C sort > "$BK_DIR/data-sebelum.txt" || die "sidik jari data sebelum gagal"
-ok "sidik jari tabel lama sebelum rilis tersimpan ($(wc -l < "$BK_DIR/data-sebelum.txt") tabel)"
+# DOKUMEN PEMBANDING DIBEKUKAN: hanya dokumen yang menurut aturan bisnis tidak mungkin berubah (penerimaan Selesai/Ditolak, PO Selesai/Dibatalkan, faktur Dibatalkan/Ditolak yang sudah diam sebelum T0;
+# baris stok dan jurnal yang dibuat sebelum T0 (append-only); saldo per akun dari jurnal itu; seluruh flag fin_settings). T0 = jam DB (UTC) 5 menit lalu. Dokumen terbuka dan transaksi baru TIDAK diperbandingkan.
+T0="$(psql_live -At -c "select to_char((now() at time zone 'utc') - interval '5 minutes', 'YYYY-MM-DD HH24:MI:SS.MS')")"
+[[ "$T0" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}\ [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}$ ]] || die "T0 tidak valid: $T0"
+FP_BEKU_SQL="$(cat <<FPBEKU
+select 'gr_final', count(*), md5(coalesce(string_agg((to_jsonb(x) - ARRAY['arrived_date','arrival_recorded_by','arrival_recorded_at','arrival_actor_roles','arrival_workspace','arrival_receiver','arrival_note','arrival_proof_urls','arrival_revision'])::text, '|' order by x.id),'')) from goods_receipts x where x.status in ('COMPLETED','REJECTED') and x.updated_at < '$T0'::timestamp
+union all select 'gr_final_lines', count(*), md5(coalesce(string_agg((to_jsonb(x) - ARRAY['companion_qty','replacement_for_line_id'])::text, '|' order by x.id),'')) from goods_receipt_lines x where x.goods_receipt_id in (select id from goods_receipts where status in ('COMPLETED','REJECTED') and updated_at < '$T0'::timestamp)
+union all select 'po_final', count(*), md5(coalesce(string_agg(to_jsonb(x)::text, '|' order by x.id),'')) from fin_purchase_orders x where x.status in ('SELESAI','DIBATALKAN') and x.updated_at < '$T0'::timestamp
+union all select 'po_final_lines', count(*), md5(coalesce(string_agg((to_jsonb(x) - ARRAY['companion_unit','companion_mode','companion_ratio','companion_estimate'])::text, '|' order by x.id),'')) from fin_purchase_order_lines x where x.purchase_order_id in (select id from fin_purchase_orders where status in ('SELESAI','DIBATALKAN') and updated_at < '$T0'::timestamp)
+union all select 'bill_final', count(*), md5(coalesce(string_agg(to_jsonb(x)::text, '|' order by x.id),'')) from fin_supplier_bills x where x.status in ('DIBATALKAN','DITOLAK') and x.updated_at < '$T0'::timestamp
+union all select 'stok', count(*), md5(coalesce(string_agg(to_jsonb(x)::text, '|' order by x.id),'')) from stock_movements x where x.created_at < '$T0'::timestamp
+union all select 'jurnal_baris', count(*), md5(coalesce(string_agg(to_jsonb(x)::text, '|' order by x.id),'')) from fin_journal_lines x where x.entry_id in (select id from fin_journal_entries where created_at < '$T0'::timestamp)
+union all select 'saldo_akun', count(*), md5(coalesce(string_agg(s.account_id::text || ':' || s.d::text || ':' || s.c::text, '|' order by s.account_id),'')) from (select l.account_id, sum(l.debit) d, sum(l.credit) c from fin_journal_lines l join fin_journal_entries e on e.id = l.entry_id where e.created_at < '$T0'::timestamp group by l.account_id) s
+union all select 'flag', count(*), md5(coalesce(string_agg(f.key || '=' || f.value, '|' order by f.key),'')) from fin_settings f
+FPBEKU
+)"
+psql_live -At -c "$FP_BEKU_SQL" | LC_ALL=C sort > "$BK_DIR/data-sebelum.txt" || die "sidik jari dokumen beku sebelum gagal"
+[ "$(grep -c . "$BK_DIR/data-sebelum.txt")" = "9" ] || die "sidik jari dokumen beku tidak 9 baris"
+# PO TERMINAL beku (maks 200) untuk smoke: dipakai sebagai pembanding "tidak ada kedatangan" — tidak mungkin berubah menurut aturan bisnis.
+LEGACY_PO_FINAL="$(psql_live -At -c "select coalesce(string_agg(id::text, ',' order by id), '') from (select id from fin_purchase_orders where status in ('SELESAI','DIBATALKAN') and updated_at < '$T0'::timestamp order by id limit 200) s")"
+ok "dokumen pembanding dibekukan pada T0=${T0} UTC ($(awk -F'|' '{n+=$2} END{print n+0}' "$BK_DIR/data-sebelum.txt") baris di 9 kelompok); PO terminal beku untuk smoke: $(printf '%s' "$LEGACY_PO_FINAL" | tr ',' '\n' | grep -c .)"
 
 say "2b. Sumber node_modules frontend (package.json identik dengan kandidat)"
 LOCK_NEW="$BK_DIR/pkg-baru.json"; sg show "${DEPLOY_SHA}:frontend/package.json" > "$LOCK_NEW"
@@ -287,10 +306,10 @@ NEW_INDEX="$(grep -o 'index-[A-Za-z0-9_-]*\.js' "$NEW_DIR/frontend/dist/index.ht
 MAPS_KEY="$(sed -n 's/^VITE_GOOGLE_MAPS_JS_KEY=//p' "$PERSIST/frontend/.env" | tr -d '\r"'"'"' ')"
 [ -n "$(grep -lF "$MAPS_KEY" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat VITE_GOOGLE_MAPS_JS_KEY"
 # Fitur rilis ini + fitur rilis sebelumnya (jangan sampai hilang dari bundel).
-for s1 in "Barang Akan Datang" "Catat Barang Tiba" "Arti tiap angka" "Menunggu pengganti" "Belum dilampirkan" "Pengganti untuk" "Ini pengiriman pengganti" "Menunggu tanggal penerimaan"; do [ -n "$(grep -lF "$s1" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat fitur: ${s1}"; done
+for s1 in "Batas jumlah pengganti" "Barang Akan Datang" "Catat Barang Tiba" "Arti tiap angka" "Menunggu pengganti" "Belum dilampirkan" "Pengganti untuk" "Ini pengiriman pengganti" "Menunggu tanggal penerimaan"; do [ -n "$(grep -lF "$s1" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat fitur: ${s1}"; done
 for s2 in "Jadwal & Aging" "Total Utang Aktif" "Pratinjau PDF" "Buat Barang Baru" "Buat/Tautkan Order CRM" "Penjualan Karyawan" "Ajukan Klaim Lunas" "Mutasi & Rekonsiliasi" "Laporan Biaya Divisi"; do [ -n "$(grep -lF "$s2" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru kehilangan fitur rilis sebelumnya: ${s2}"; done
 if [ "$NEW_INDEX" = "$PREV_INDEX" ]; then die "frontend berubah tetapi bundel baru identik dengan lama (tidak diharapkan)"; fi
-ok "dist baru ${NEW_INDEX} (lama ${PREV_INDEX}); 8 teks fitur baru + 9 teks fitur lama ada"
+ok "dist baru ${NEW_INDEX} (lama ${PREV_INDEX}); 9 teks fitur baru + 9 teks fitur lama ada"
 
 PHASE="4c-aset-lama"; say "4c. Bawa aset ber-hash dari dist release aktif (tab terbuka saat deploy tetap bisa memuat chunk lama)"
 OLD_ASSETS="$BK_DIR/aset-lama.txt"; : > "$OLD_ASSETS"
@@ -320,15 +339,14 @@ reh_drop() { dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d postgres -X 
 gzip -dc "$BACKUP_FILE" | dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d "$REH_DB" -v ON_ERROR_STOP=0 -X -q > "$BK_DIR/restore-rehearsal.log" 2>&1 || true
 RPSQL() { dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d "$REH_DB" -X -At -q -c "$1" </dev/null; }
 KUNCI_TABEL='goods_receipts goods_receipt_lines fin_purchase_orders fin_purchase_order_lines fin_purchase_order_events fin_supplier_bills fin_supplier_bill_po_lines fin_supplier_bill_allocations fin_supplier_payments fin_supplier_payment_allocations fin_suppliers stock_movements materials fin_journal_entries fin_journal_lines "Order" payments "Customer" "User"'
-for T in $KUNCI_TABEL; do
-  A="$(psql_live -At -c "select count(*) from $T")"; B="$(RPSQL "select count(*) from $T")"
-  [ "$A" = "$B" ] || { reh_drop; die "restore rehearsal tidak identik untuk $T (produksi=$A restore=$B) — backup/restore bermasalah"; }
-done
-ok "restore nyata identik (jumlah baris) untuk 19 tabel kunci"
-psql_live -At -c "$FP_SQL" | LC_ALL=C sort > "$BK_DIR/fp-prod.txt" || { reh_drop; die "sidik jari produksi gagal"; }
-RPSQL "$FP_SQL" | LC_ALL=C sort > "$BK_DIR/fp-reh-sebelum.txt" || { reh_drop; die "sidik jari rehearsal gagal"; }
-cmp -s "$BK_DIR/fp-prod.txt" "$BK_DIR/fp-reh-sebelum.txt" || { diff "$BK_DIR/fp-prod.txt" "$BK_DIR/fp-reh-sebelum.txt" || true; reh_drop; die "isi hasil restore BERBEDA dari produksi (sidik jari)"; }
-ok "restore nyata identik dengan produksi (sidik jari isi baris penuh: penerimaan, baris penerimaan, PO, baris PO, faktur, alokasi, pembayaran, stok, jurnal, order, payment)"
+# Restore dibandingkan dengan DOKUMEN BEKU (id/kondisi dibekukan sebelum backup), bukan tabel hidup: transaksi sah selama rilis boleh menambah/mengubah dokumen terbuka tanpa menggagalkan rehearsal.
+psql_live -At -c "$FP_BEKU_SQL" | LC_ALL=C sort > "$BK_DIR/fp-prod-beku.txt" || { reh_drop; die "sidik jari dokumen beku produksi gagal"; }
+cmp -s "$BK_DIR/data-sebelum.txt" "$BK_DIR/fp-prod-beku.txt" || { diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/fp-prod-beku.txt" || true; reh_drop; die "dokumen pembanding beku BERUBAH selama backup (produksi)"; }
+RPSQL "$FP_BEKU_SQL" | LC_ALL=C sort > "$BK_DIR/fp-reh-beku.txt" || { reh_drop; die "sidik jari dokumen beku rehearsal gagal"; }
+cmp -s "$BK_DIR/data-sebelum.txt" "$BK_DIR/fp-reh-beku.txt" || { diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/fp-reh-beku.txt" || true; reh_drop; die "hasil RESTORE berbeda dari dokumen beku produksi (backup/restore bermasalah)"; }
+RPSQL "$FP_SQL" | LC_ALL=C sort > "$BK_DIR/fp-reh-sebelum.txt" || { reh_drop; die "sidik jari penuh rehearsal gagal"; }
+[ "$(grep -c . "$BK_DIR/fp-reh-sebelum.txt")" = "17" ] || { reh_drop; die "sidik jari penuh rehearsal tidak 17 tabel"; }
+ok "restore nyata IDENTIK dengan dokumen beku produksi (penerimaan/PO/faktur terminal, stok, jurnal, saldo per akun, flag) — transaksi sah selama rilis tidak diperbandingkan"
 REH_PW="$(sed -n 's/^DATABASE_URL=\"\?postgresql:\/\/[^:]*:\([^@]*\)@.*/\1/p' "$PERSIST/backend/.env" | sed -n 1p)"
 [ -n "$REH_PW" ] || { reh_drop; die "tidak bisa membaca kata sandi DB dari .env untuk rehearsal"; }
 REH_PEND="$(comm -23 <(ls -1 "$NEW_DIR/backend/prisma/migrations" | grep -E '^[0-9]{14}_' | LC_ALL=C sort) <(RPSQL "select migration_name from _prisma_migrations where finished_at is not null and rolled_back_at is null order by 1" | LC_ALL=C sort) || true)"
@@ -411,10 +429,6 @@ ok "perilaku terbukti di DB rehearsal: $(printf '%s\n' "$UJI_OUT" | sed -n 's/.*
 RPSQL "$FP_SQL" | LC_ALL=C sort > "$BK_DIR/fp-reh-sesudah.txt" || { reh_drop; die "sidik jari rehearsal sesudah gagal"; }
 cmp -s "$BK_DIR/fp-reh-sebelum.txt" "$BK_DIR/fp-reh-sesudah.txt" || { diff "$BK_DIR/fp-reh-sebelum.txt" "$BK_DIR/fp-reh-sesudah.txt" || true; reh_drop; die "migrasi/uji rehearsal MENGUBAH isi tabel lama"; }
 [ "$(RPSQL "select count(*) from goods_receipts where receipt_number='GR-UJI-REHEARSAL'")" = "0" ] || { reh_drop; die "data uji rehearsal tidak dibatalkan"; }
-for T in $KUNCI_TABEL; do
-  A="$(psql_live -At -c "select count(*) from $T")"; B="$(RPSQL "select count(*) from $T")"
-  [ "$A" = "$B" ] || { reh_drop; die "jumlah baris $T berubah oleh migrasi rehearsal (produksi=$A rehearsal=$B)"; }
-done
 reh_drop
 ok "rehearsal lulus: isi 17 tabel lama IDENTIK sebelum vs sesudah migrasi + uji perilaku (sidik jari baris penuh tanpa kolom baru); kolom baru kosong; DB sementara dihapus"
 
@@ -430,6 +444,15 @@ psql_live -At -c "select finished_at is not null from _prisma_migrations where m
 ok "migrasi diterapkan: ${MIG}; tidak ada yang menggantung"
 curl -fsS --max-time 8 "${INTERNAL_URL}/api/health" | grep '"ok":true' >/dev/null || die "backend lama tidak sehat setelah migrasi (aditif, tidak diharapkan)"
 ok "backend lama tetap sehat setelah migrasi aditif"
+# SETELAH migrasi, SEBELUM switch: hanya backend LAMA yang melayani dan ia tidak mengenal kolom baru → seluruh kolom/tabel baru HARUS kosong (tanpa backfill). Pemeriksaan global ini hanya sah di jendela ini.
+[ "$(psql_live -At -c "select count(*) from goods_receipts where arrival_revision <> 0 or arrived_date is not null or arrival_recorded_at is not null or arrival_receiver is not null")" = "0" ] || die "kolom kedatangan TIDAK kosong setelah migrasi (backfill tidak diizinkan)"
+[ "$(psql_live -At -c "select count(*) from goods_receipt_lines where replacement_for_line_id is not null or companion_qty is not null")" = "0" ] || die "kolom pengganti/pendamping baris penerimaan TIDAK kosong setelah migrasi"
+[ "$(psql_live -At -c "select count(*) from fin_purchase_order_lines where companion_unit is not null or companion_mode is not null or companion_ratio is not null or companion_estimate is not null")" = "0" ] || die "kolom pendamping baris PO TIDAK kosong setelah migrasi"
+[ "$(psql_live -At -c "select count(*) from fin_supplier_bills where term_basis = 'TANGGAL_TIBA'")" = "0" ] || die "ada faktur TANGGAL_TIBA setelah migrasi sebelum switch (tidak mungkin tanpa backfill)"
+[ "$(psql_live -At -c "select count(*) from goods_receipt_events")" = "0" ] || die "goods_receipt_events TIDAK kosong setelah migrasi"
+psql_live -At -c "$FP_BEKU_SQL" | LC_ALL=C sort > "$BK_DIR/data-pasca-migrasi.txt" || die "sidik jari dokumen beku pasca-migrasi gagal"
+diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/data-pasca-migrasi.txt" >/dev/null || { diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/data-pasca-migrasi.txt" || true; die "dokumen pembanding beku BERUBAH oleh migrasi (jangan switch)"; }
+ok "pasca-migrasi sebelum switch: seluruh kolom/tabel baru kosong (tanpa backfill) dan dokumen pembanding beku identik"
 
 PHASE="7-switch"; say "7. Switch backend ke release baru (SATU kali)"
 dcp "$NEW_DIR" up -d --no-deps backend </dev/null >/dev/null 2>&1 || die "docker compose up backend gagal"
@@ -457,27 +480,29 @@ ok "${NBE} berkas backend di container = kandidat (byte-identik)"
 PSQLN() { dcp "$NEW_DIR" exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" -X -At -q -c "$1" </dev/null; }
 [ "$(PSQLN "select count(*) from information_schema.tables where table_schema='public' and table_name='goods_receipt_events'")" = "1" ] || die "tabel goods_receipt_events tidak ada setelah rilis"
 [ "$(PSQLN "select count(*) from pg_trigger where tgname='trg_goods_receipt_events_append_only' and not tgisinternal")" = "1" ] || die "trigger append-only tidak ada setelah rilis"
-[ "$(PSQLN "select count(*) from goods_receipts where arrival_revision <> 0 or arrived_date is not null")" = "0" ] || die "ADA penerimaan dengan kedatangan tercatat setelah rilis (backfill tidak diizinkan)"
-[ "$(PSQLN "select count(*) from fin_supplier_bills where term_basis='TANGGAL_TIBA'")" = "0" ] || die "ADA faktur TANGGAL_TIBA setelah rilis (belum ada yang boleh)"
-[ "$(PSQLN "select count(*) from goods_receipt_lines where replacement_for_line_id is not null or companion_qty is not null")" = "0" ] || die "ADA baris penerimaan berpendamping/pengganti setelah rilis (backfill tidak diizinkan)"
-[ "$(PSQLN "select count(*) from goods_receipt_events")" = "0" ] || die "riwayat kedatangan tidak kosong setelah rilis"
-ok "tabel/trigger ada; TIDAK ada kedatangan, faktur TANGGAL_TIBA, pendamping, pengganti, atau riwayat (tanpa backfill; data baru hanya lahir dari pemakaian)"
+ok "tabel goods_receipt_events dan trigger append-only ada (tidak ada asumsi tentang dokumen baru: kedatangan/faktur TANGGAL_TIBA yang sah boleh sudah muncul)"
 dcp "$NEW_DIR" run --rm --no-deps -T backend npx prisma migrate status </dev/null 2>&1 | grep -i 'up to date' >/dev/null || die "migrate status produksi tidak 'up to date'"
 [ -d "$PERSIST/backend/data/receipt-proofs" ] || die "folder bukti kedatangan (${PERSIST}/backend/data/receipt-proofs) tidak terbentuk di root persisten"
 ok "folder bukti kedatangan ada di root persisten; migrate status up to date"
-PHASE="8b-smoke"; say "8b. Smoke test izin + pembacaan (baca-saja; TIDAK ada PO/penerimaan/draf/transaksi QA di produksi)"
-dcp "$NEW_DIR" exec -T backend node --input-type=module - <<'NODE' || die "smoke test GAGAL"
+PHASE="8b-smoke"; say "8b. Smoke test izin + pembacaan (baca-saja; tidak menulis; tahan terhadap transaksi sah yang muncul saat rilis)"
+dcp "$NEW_DIR" exec -T -e LEGACY_PO_FINAL="$LEGACY_PO_FINAL" backend node --input-type=module - <<'NODE' || die "smoke test GAGAL"
 import { createRequire } from "node:module";
 const require = createRequire(process.cwd() + "/");
 const jwt = require("jsonwebtoken");
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 const BASE = "http://127.0.0.1:4000";
+// SMOKE BACA-SAJA. Tanpa asumsi global ("tidak ada PO/kedatangan/faktur baru"): transaksi operasional sah yang muncul saat deploy TIDAK membuat smoke gagal.
+// Pembanding = (a) PO LAMA TERMINAL yang dibekukan sebelum switch (LEGACY_PO_FINAL; tidak mungkin berubah menurut aturan bisnis) dan (b) invarian yang berlaku untuk keadaan data apa pun.
+// Tidak menulis: Prisma hanya find/count; setiap pemanggilan tulis lewat API memakai token tanpa izin / tanpa Idempotency-Key dan WAJIB dijawab 400/401/403/428 (dicatat di buku besar tulis di bawah).
 let fail = 0;
 const rec = (n, ok, d = "") => { if (!ok) fail++; console.log(`  ${ok ? "PASS" : "FAIL"}  ${n}${d ? " — " + d : ""}`); };
+const LEGACY = new Set(String(process.env.LEGACY_PO_FINAL ?? "").split(",").filter(Boolean));
+const bukuTulis = []; // { n, status }
 async function api(method, path, token, body, headers = {}) {
   const r = await fetch(BASE + path, { method, headers: { ...(token ? { Authorization: "Bearer " + token } : {}), ...(body ? { "Content-Type": "application/json" } : {}), ...headers }, body: body ? JSON.stringify(body) : undefined });
   let json = null; try { json = await r.json(); } catch { /* bukan JSON */ }
+  if (method !== "GET") bukuTulis.push({ n: `${method} ${path.replace(/[0-9a-f-]{36}/g, ":id")}`, status: r.status });
   return { status: r.status, json };
 }
 const tokenUntuk = async (user) => {
@@ -498,9 +523,8 @@ const gudang = await userDengan("WAREHOUSE", new Set());
 if (!adm || !sales || !gudang) { rec("akun ADMIN, SALES murni, dan WAREHOUSE tersedia", false, `adm=${!!adm} sales=${!!sales} gudang=${!!gudang}`); process.exit(1); }
 const tA = await tokenUntuk(adm), tS = await tokenUntuk(sales), tG = await tokenUntuk(gudang);
 const nol = "00000000-0000-4000-8000-000000000000";
-const cacah = async () => [await prisma.goodsReceipt.count(), await prisma.goodsReceiptLine.count(), await prisma.goodsReceiptEvent.count(), await prisma.finPurchaseOrder.count(), await prisma.finPurchaseOrderLine.count(), await prisma.finSupplierBill.count(), await prisma.stockMovement.count(), await prisma.finJournalEntry.count(), await prisma.finJournalLine.count(), await prisma.finSupplierPayment.count()];
-const sebelum = await cacah();
 const KUNCI_HARGA = ["hargaSatuan", "unitPrice", "nilaiDipesan", "nilaiMasukStok", "totalDipesan", "totalMasukStok", "termin", "jatuhTempo", "faktur", "utang", "pembayaran"];
+const KUNCI_PROGRES = ["dipesan", "datangAsli", "pengganti", "datang", "belumDatang", "belumDiperiksa", "ditolak", "menungguPengganti", "baikBelumDisimpan", "masukStok", "belumDipenuhiSupplier", "belumMasukStok"];
 
 rec("Barang Akan Datang (Gudang): tanpa token -> 401", (await api("GET", "/api/inventory/barang-akan-datang")).status === 401);
 rec("Barang Akan Datang (Gudang): SALES -> 403", (await api("GET", "/api/inventory/barang-akan-datang", tS)).status === 403);
@@ -509,33 +533,42 @@ rec("Barang Akan Datang (Gudang) -> 200 berisi daftar PO", bad.status === 200 &&
 const mentah = JSON.stringify(bad.json ?? {});
 rec("tampilan Gudang TIDAK memuat harga/nilai/termin/faktur/utang/pembayaran", !KUNCI_HARGA.some((k) => mentah.includes(`"${k}"`)), KUNCI_HARGA.filter((k) => mentah.includes(`"${k}"`)).join(","));
 const baris = bad.json?.purchaseOrders ?? [];
-rec("tiap PO punya progres server (10 angka) dan definisi", baris.every((p) => p.progres && Array.isArray(p.progresDefinisi) && p.progresDefinisi.length === 10 && p.lines.every((l) => ["dipesan", "datang", "belumDatang", "belumDiperiksa", "ditolak", "menungguPengganti", "baikBelumDisimpan", "masukStok", "belumDipenuhiSupplier", "belumMasukStok"].every((k) => typeof l[k] === "number"))), `${baris.length} PO`);
-rec("PO lama: tidak ada kedatangan tercatat; semua baris 'Tanggal belum ditetapkan'/menunggu — tidak ditebak", baris.every((p) => p.penerimaan.every((r) => r.kedatanganDicatat === false)), `${baris.reduce((n, p) => n + p.penerimaan.length, 0)} penerimaan`);
+rec("tiap PO punya progres server (12 angka) dan 12 definisi — berlaku untuk data apa pun", baris.every((p) => p.progres && Array.isArray(p.progresDefinisi) && p.progresDefinisi.length === 12 && p.lines.every((l) => KUNCI_PROGRES.every((k) => typeof l[k] === "number"))), `${baris.length} PO`);
+const lama = baris.filter((p) => LEGACY.has(p.id));
+rec("PO lama TERMINAL (dibekukan sebelum switch): tidak ada kedatangan tercatat — tidak ditebak/backfill", lama.every((p) => p.penerimaan.every((r) => r.kedatanganDicatat === false)), `${lama.length} dari ${LEGACY.size} PO beku tampil di daftar`);
+console.log(`  INFO  ${baris.length} PO di daftar; ${lama.length} PO beku diperiksa; PO/penerimaan baru yang muncul saat rilis TIDAK memengaruhi hasil`);
 rec("detail PO id tak dikenal (Gudang) -> 404", (await api("GET", `/api/inventory/barang-akan-datang/${nol}`, tG)).status === 404);
 const fin = await api("GET", "/api/finance/purchase-orders/kedatangan", tA);
 rec("Finance: kedatangan semua PO (admin) -> 200", fin.status === 200 && Array.isArray(fin.json?.purchaseOrders), `${fin.json?.purchaseOrders?.length} PO`);
 rec("Finance: kedatangan semua PO — SALES -> 403, tanpa token -> 401", (await api("GET", "/api/finance/purchase-orders/kedatangan", tS)).status === 403 && (await api("GET", "/api/finance/purchase-orders/kedatangan")).status === 401);
-// Penulisan: harus ditolak izin/idempotensi TANPA menulis apa pun.
-rec("catat tiba (Gudang) tanpa token -> 401", (await api("POST", `/api/inventory/barang-akan-datang/${nol}/kedatangan`, null, { x: 1 }, { "Idempotency-Key": "smoke-poti-anon" })).status === 401);
-rec("catat tiba (Gudang) SALES -> 403", (await api("POST", `/api/inventory/barang-akan-datang/${nol}/kedatangan`, tS, { x: 1 }, { "Idempotency-Key": "smoke-poti-sales-g" })).status === 403);
-rec("draf penerimaan (Gudang) SALES -> 403; tanpa token -> 401", (await api("POST", `/api/inventory/barang-akan-datang/${nol}/draf-penerimaan`, tS)).status === 403 && (await api("POST", `/api/inventory/barang-akan-datang/${nol}/draf-penerimaan`)).status === 401);
-rec("catat tiba (Finance) SALES -> 403; draf penerimaan (Finance) SALES -> 403", (await api("POST", `/api/finance/purchase-orders/${nol}/kedatangan`, tS, { x: 1 }, { "Idempotency-Key": "smoke-poti-sales-f" })).status === 403 && (await api("POST", `/api/finance/purchase-orders/${nol}/draf-penerimaan`, tS)).status === 403);
-rec("koreksi kedatangan SALES -> 403", (await api("POST", `/api/inventory/barang-akan-datang/penerimaan/${nol}/koreksi`, tS, { alasan: "uji" }, { "Idempotency-Key": "smoke-poti-sales-k" })).status === 403);
-rec("catat tiba (admin) tanpa Idempotency-Key -> 428 (ditolak sebelum menulis)", (await api("POST", `/api/finance/purchase-orders/${nol}/kedatangan`, tA, { x: 1 })).status === 428);
-// Aging & umur utang memakai jadwal per penerimaan; pada data lama (tanpa TANGGAL_TIBA) hasilnya sama dengan sebelumnya.
+// Penulisan: SEMUA harus ditolak izin/idempotensi SEBELUM menyentuh data.
+await api("POST", `/api/inventory/barang-akan-datang/${nol}/kedatangan`, null, { x: 1 }, { "Idempotency-Key": "smoke-poti-anon" });
+await api("POST", `/api/inventory/barang-akan-datang/${nol}/kedatangan`, tS, { x: 1 }, { "Idempotency-Key": "smoke-poti-sales-g" });
+await api("POST", `/api/inventory/barang-akan-datang/${nol}/draf-penerimaan`, tS);
+await api("POST", `/api/inventory/barang-akan-datang/${nol}/draf-penerimaan`);
+await api("POST", `/api/finance/purchase-orders/${nol}/kedatangan`, tS, { x: 1 }, { "Idempotency-Key": "smoke-poti-sales-f" });
+await api("POST", `/api/finance/purchase-orders/${nol}/draf-penerimaan`, tS);
+await api("POST", `/api/inventory/barang-akan-datang/penerimaan/${nol}/koreksi`, tS, { alasan: "uji" }, { "Idempotency-Key": "smoke-poti-sales-k" });
+await api("POST", `/api/finance/purchase-orders/${nol}/kedatangan`, tA, { x: 1 }); // tanpa Idempotency-Key -> 428 sebelum handler
+const SAH = new Set([400, 401, 403, 428]);
+rec(`semua ${bukuTulis.length} pemanggilan tulis ditolak sebelum menyentuh data (hanya 400/401/403/428): smoke TIDAK menulis data produksi`, bukuTulis.length === 8 && bukuTulis.every((b) => SAH.has(b.status)), bukuTulis.map((b) => `${b.n}=${b.status}`).join("; "));
+// Aging & umur utang: invarian yang berlaku untuk data apa pun (faktur lama maupun faktur TANGGAL_TIBA yang sah muncul saat rilis).
 const ag = await api("GET", "/api/finance/utang/aging", tA);
 rec("aging utang (admin) -> 200 dengan kartu ringkasan", ag.status === 200 && typeof ag.json?.ringkasan?.kartu?.totalUtangAktif === "number", `total aktif ${ag.json?.ringkasan?.kartu?.totalUtangAktif}`);
-rec("aging utang: faktur lama tetap SATU baris tiap faktur (belum ada jadwal per penerimaan)", ag.json?.baris?.every((b) => !b.jadwal) && new Set(ag.json.baris.map((b) => b.billId)).size === ag.json.baris.length, `${ag.json?.baris?.length} baris`);
+const rows = ag.json?.baris ?? [];
+const billIds = [...new Set(rows.map((b) => b.billId))];
+const bills = await prisma.finSupplierBill.findMany({ where: { id: { in: billIds } }, select: { id: true, amount: true, termBasis: true } });
+const peta = new Map(bills.map((b) => [b.id, b]));
+const sen = (x) => Math.round(Number(x) * 100);
+rec("aging: Σ nilai baris tiap faktur = nilai faktur (tidak ganda) dan baris berjadwal hanya untuk faktur TANGGAL_TIBA", billIds.every((id) => { const rs = rows.filter((r) => r.billId === id); const b = peta.get(id); return b && sen(rs.reduce((s, r) => s + r.nilaiFaktur, 0)) === sen(b.amount) && rs.every((r) => !!r.jadwal === (b.termBasis === "TANGGAL_TIBA")); }), `${billIds.length} faktur, ${rows.length} baris`);
 const um = await api("GET", "/api/finance/reports/payables", tA);
 rec("umur utang (admin) -> 200", um.status === 200 && typeof um.json?.total === "number", `total ${um.json?.total}`);
-console.log(`  INFO  umur utang total=${um.json?.total} vs aging total aktif=${ag.json?.ringkasan?.kartu?.totalUtangAktif} (data lama: dihitung per faktur, dua angka itu lazimnya sama)`);
-const sesudah = await cacah();
-rec("tidak ada penerimaan/baris/riwayat/PO/faktur/stok/jurnal/pembayaran yang berubah selama smoke (termasuk TIDAK ada draf penerimaan baru)", sebelum.every((n, i) => n === sesudah[i]), `${sebelum.join(",")} -> ${sesudah.join(",")}`);
+console.log(`  INFO  umur utang total=${um.json?.total} vs aging total aktif=${ag.json?.ringkasan?.kartu?.totalUtangAktif} (hanya informasi; transaksi sah dapat mengubah keduanya)`);
 await prisma.$disconnect();
 console.log(`\nRINGKASAN smoke: ${fail} gagal`);
 process.exit(fail ? 1 : 0);
 NODE
-ok "smoke test lulus (izin Gudang/Finance/Sales, Gudang tanpa harga, penulisan ditolak tanpa efek, aging & umur utang data lama, tidak ada data berubah)"
+ok "smoke test lulus (izin Gudang/Finance/Sales, Gudang tanpa harga, PO terminal beku tanpa kedatangan, invarian aging, 8 penulisan ditolak sebelum menyentuh data); transaksi sah saat rilis tidak membuatnya gagal"
 OLD_ONLY="$(sed -n 1p "$OLD_ASSETS" || true)"
 if [ -n "$OLD_ONLY" ]; then
   [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "${PUBLIC_URL}/assets/${OLD_ONLY}")" = "200" ] || die "aset lama /assets/${OLD_ONLY} tidak bisa diunduh (404) — pembawaan aset lama gagal"
@@ -547,9 +580,9 @@ sleep 20
 [ "$(docker inspect -f '{{.RestartCount}}' "$CID_NEW")" = "0" ] || die "backend restart sendiri setelah switch"
 [ "$(docker inspect -f '{{.State.Running}}' "$CID_NEW")" = "true" ] || die "backend tidak berjalan"
 ok "backend stabil: RestartCount=0 setelah 20 detik"
-dcp "$NEW_DIR" exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" -X -At -q -c "$FP_SQL" </dev/null | LC_ALL=C sort > "$BK_DIR/data-sesudah.txt" || die "sidik jari data sesudah gagal"
-diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/data-sesudah.txt" >/dev/null || { diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/data-sesudah.txt" || true; die "isi tabel lama berubah selama rilis — periksa (transaksi pengguna yang sah juga bisa menyebabkan ini; bandingkan dengan backup)"; }
-ok "isi 17 tabel lama (penerimaan, PO, faktur, pembayaran, stok, jurnal, order, payment…) IDENTIK sebelum vs sesudah rilis"
+dcp "$NEW_DIR" exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" -X -At -q -c "$FP_BEKU_SQL" </dev/null | LC_ALL=C sort > "$BK_DIR/data-sesudah.txt" || die "sidik jari dokumen beku sesudah gagal"
+diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/data-sesudah.txt" >/dev/null || { diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/data-sesudah.txt" || true; die "dokumen PEMBANDING (beku sebelum switch) BERUBAH selama rilis — periksa dengan backup"; }
+ok "dokumen pembanding beku (penerimaan/PO/faktur terminal, stok, jurnal, saldo per akun, flag) IDENTIK sebelum vs sesudah rilis; transaksi sah yang muncul saat rilis tidak diperbandingkan"
 # Pembersihan release lama (setelah rilis TERBUKTI sehat). Dipertahankan: 4 terbaru (mtime), release baru, release sebelumnya, dan release yang dirujuk container berjalan. Kegagalan di sini TIDAK menggagalkan rilis.
 PHASE="9-pembersihan"; say "9. Pembersihan release lama (menyisakan 4 terbaru + yang dipakai container)"
 (

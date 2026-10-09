@@ -437,8 +437,9 @@ test("PO, kedatangan, koreksi, dan faktur tidak menulis stok; stok & jurnal pers
 });
 
 // ═══ 9. Definisi progres PO (satu helper server) ═══
-const BERKAS = ["dipesan", "datang", "belumDatang", "belumDiperiksa", "ditolak", "menungguPengganti", "baikBelumDisimpan", "masukStok", "belumDipenuhiSupplier", "belumMasukStok"];
-const angka = (p) => Object.fromEntries(BERKAS.map((k) => [k, p[k]]));
+const BERKAS10 = ["dipesan", "datang", "belumDatang", "belumDiperiksa", "ditolak", "menungguPengganti", "baikBelumDisimpan", "masukStok", "belumDipenuhiSupplier", "belumMasukStok"];
+const BERKAS = ["dipesan", "datangAsli", "pengganti", "datang", "belumDatang", "belumDiperiksa", "ditolak", "menungguPengganti", "baikBelumDisimpan", "masukStok", "belumDipenuhiSupplier", "belumMasukStok"];
+const angka = (p) => Object.fromEntries(BERKAS10.map((k) => [k, p[k]]));
 
 test("progres PO 10 KG: datang 5 lalu 3, baik & masuk stok baru 5 → Datang 8, Belum datang 2, Belum diperiksa 3, Masuk stok 5, Belum masuk stok 5 — angka SAMA di Finance, Gudang, daftar, dan detail", async () => {
   const w = await dunia();
@@ -470,7 +471,7 @@ test("progres PO 10 KG: datang 5 lalu 3, baik & masuk stok baru 5 → Datang 8, 
   assert.equal(daftarF.progres.persenMasukStok, 50);
   assert.deepEqual(det.progresDefinisi.map((d) => d.kunci), BERKAS);
   assert.ok(det.progresDefinisi.every((d) => d.definisi.length > 10) && !JSON.stringify(det.progresDefinisi).includes('"Sisa"'));
-  assert.deepEqual(det.progres.total, harapan, "total PO satu satuan = jumlah baris");
+  assert.deepEqual(Object.fromEntries(BERKAS10.map((k) => [k, det.progres.total[k]])), harapan, "total PO satu satuan = jumlah baris");
   assert.equal(det.totalBelumMasukStok, 5 * H, "nilai belum masuk stok = belum masuk stok × harga");
   assert.equal(JSON.stringify(daftarG).includes("totalBelumMasukStok"), false, "Gudang tanpa nilai");
 });
@@ -840,4 +841,99 @@ test("pengganti: dibatasi sisa penolakan; ditolak asal tidak boleh turun di bawa
   assert.equal(ok.status, 200, JSON.stringify(ok.body));
   const p = (await detailF(w, po.id)).lines[0];
   assert.deepEqual([p.datang, p.menungguPengganti, p.belumDatang], [8, 0, 4]);
+});
+
+// ═══ 13. Bridge kuantitas 10 KG: asli 5 + asli 3 (2 baik, 1 ditolak) + pengganti 1 + asli terakhir 2 ═══
+test("BRIDGE 10 KG: asli 10, pengganti 1, total fisik 11, baik/masuk stok 10, ditolak 1 — nilai PO/GRNI/faktur/utang/pembayaran 10 KG saja; faktur 10 KG ditolak selama baik tertagih < 10; Σ jadwal = faktur", async () => {
+  const w = await dunia();
+  const po = await poDisetujui(w);
+  const L = po.lines[0].id;
+  const fak = (qty) => w.f.post(`/api/finance/purchase-orders/${po.id}/faktur`, { supplierRef: ref(), billDate: geser(-1), lines: [{ purchaseOrderLineId: L, qty, unitPrice: H }] });
+  // Faktur boleh DICATAT (Menunggu Persetujuan, tertahan + alasan) tetapi TIDAK PERNAH bisa disetujui/dibukukan melebihi barang baik yang dapat ditagih: tidak ada utang, jurnal, atau alokasi.
+  const tolakFaktur = async (qty, baikSaatIni) => {
+    const r = await fak(qty);
+    assert.equal(r.status, 201, JSON.stringify(r.body));
+    const ev = (await w.f.get(`/api/finance/purchase-orders/faktur/${r.body.billId}`)).body;
+    assert.equal(ev.tertahan, true, `faktur ${qty} KG tertahan saat baik tertagih baru ${baikSaatIni} KG`);
+    assert.match(ev.alasanTertahan.join(" "), /barang baik yang belum ditagih hanya/);
+    const setuju = await w.ap.post(`/api/finance/bills/${r.body.billId}/approve`, {});
+    assert.equal(setuju.status, 409, `faktur ${qty} KG HARUS ditolak saat disetujui; baik tertagih baru ${baikSaatIni} KG: ${JSON.stringify(setuju.body).slice(0, 200)}`);
+    const b = await testPrisma.finSupplierBill.findUnique({ where: { id: r.body.billId } });
+    assert.equal(b.status, "MENUNGGU_APPROVAL");
+    assert.equal(await testPrisma.finJournalEntry.count({ where: { source: "TAGIHAN_SUPPLIER", sourceId: b.id } }), 0, "tanpa jurnal utang");
+    assert.equal(await testPrisma.finSupplierBillAllocation.count({ where: { billId: b.id } }), 0, "tanpa alokasi");
+    assert.equal((await w.ap.post(`/api/finance/bills/${b.id}/reject`, { reason: "Uji: melebihi barang baik" })).status, 200);
+  };
+  const tolakFaktur10 = (baik) => tolakFaktur(10, baik);
+  const simpan = async (rid, baik, tolak = 0) => { await isiPeriksa(w, rid, { baik, tolak }); assert.equal((await simpanStok(w, rid)).status, 200); };
+
+  // 1) pengiriman asli 5 KG baik
+  const a1 = await tiba(w.g, po.id, { tanggalTiba: geser(-12), lines: [{ purchaseOrderLineId: L, jumlahDatang: 5 }] });
+  await simpan(a1.body.receiptId, 5); await tolakFaktur10(5);
+  // 2) pengiriman asli 3 KG: 2 baik + 1 ditolak
+  const a2 = await tiba(w.g, po.id, { tanggalTiba: geser(-8), lines: [{ purchaseOrderLineId: L, jumlahDatang: 3 }] });
+  await simpan(a2.body.receiptId, 2, 1); await tolakFaktur10(7);
+  let p = (await detailF(w, po.id)).lines[0];
+  assert.deepEqual(angka(p), { dipesan: 10, datang: 8, belumDatang: 2, belumDiperiksa: 0, ditolak: 1, menungguPengganti: 1, baikBelumDisimpan: 0, masukStok: 7, belumDipenuhiSupplier: 3, belumMasukStok: 3 });
+  // 3) pengganti 1 KG baik
+  const g = await tiba(w.g, po.id, { tanggalTiba: geser(-4), lines: [{ purchaseOrderLineId: L, jumlahDatang: 1, pengganti: true }] });
+  assert.equal(g.status, 201, JSON.stringify(g.body));
+  await simpan(g.body.receiptId, 1); await tolakFaktur10(8);
+  p = (await detailF(w, po.id)).lines[0];
+  assert.deepEqual([p.datangAsli, p.pengganti, p.datang, p.belumDatang, p.menungguPengganti, p.belumDipenuhiSupplier, p.masukStok], [8, 1, 9, 2, 0, 2, 8], "pengganti menutup penolakan, BELUM menutup jumlah dipesan");
+  // 4) pengiriman asli terakhir 2 KG baik
+  const a3 = await tiba(w.g, po.id, { tanggalTiba: geser(-2), lines: [{ purchaseOrderLineId: L, jumlahDatang: 2 }] });
+  assert.equal(a3.status, 201, JSON.stringify(a3.body));
+  await isiPeriksa(w, a3.body.receiptId, { baik: 2 });
+  await tolakFaktur10(8); // sudah diperiksa tetapi belum Simpan ke Stok: belum bisa ditagih
+  assert.equal((await simpanStok(w, a3.body.receiptId)).status, 200);
+
+  // ── JEMBATAN KUANTITAS (angka dari satu helper server, Finance = Gudang)
+  const akhir = { dipesan: 10, datangAsli: 10, pengganti: 1, datang: 11, belumDatang: 0, belumDiperiksa: 0, ditolak: 1, menungguPengganti: 0, baikBelumDisimpan: 0, masukStok: 10, belumDipenuhiSupplier: 0, belumMasukStok: 0 };
+  const barisG = (await detailG(w, po.id)).lines[0]; const barisF = (await detailF(w, po.id)).lines[0];
+  assert.deepEqual(Object.fromEntries(Object.keys(akhir).map((k) => [k, barisG[k]])), akhir, "Gudang");
+  assert.deepEqual(Object.fromEntries(Object.keys(akhir).map((k) => [k, barisF[k]])), akhir, "Finance");
+  assert.equal(akhir.datangAsli + akhir.pengganti, akhir.datang, "asli + pengganti = total fisik");
+  assert.equal(akhir.datang - akhir.ditolak, akhir.masukStok, "total fisik − ditolak = baik/masuk stok");
+  assert.equal(akhir.masukStok, akhir.dipesan, "baik/masuk stok maksimum = dipesan");
+  assert.equal((await detailF(w, po.id)).statusAkanDatang.kode, "SELESAI");
+
+  // ── nilai: hanya 10 KG (bukan 11)
+  const poFin = (await w.f.get(`/api/finance/purchase-orders/${po.id}`)).body;
+  assert.equal(poFin.totalDipesan, 10 * H, "nilai PO");
+  assert.equal(poFin.totalDiterima, 10 * H, "nilai masuk stok");
+  const stok = await testPrisma.stockMovement.findMany();
+  assert.equal(stok.reduce((s, m) => s + Number(m.qty), 0), 10, "stok masuk total 10 KG");
+  assert.equal(stok.reduce((s, m) => s + Number(m.qty) * Number(m.unitCost), 0), 10 * H, "nilai persediaan 10 KG × harga PO");
+  const grni = await testPrisma.finJournalEntry.findMany({ where: { source: "PENERIMAAN_BAHAN" }, include: { lines: true } });
+  assert.equal(grni.length, 4, "satu jurnal per penerimaan yang disimpan");
+  assert.equal(grni.reduce((s, e) => s + e.lines.reduce((x, l) => x + Number(l.debit), 0), 0), 10 * H, "GRNI/persediaan Dr = 10 KG");
+  assert.equal(grni.reduce((s, e) => s + e.lines.reduce((x, l) => x + Number(l.credit), 0), 0), 10 * H, "GRNI Cr = 10 KG");
+
+  // ── faktur 10 KG sah: satu faktur, jadwal per penerimaan, Σ jadwal = faktur
+  await tolakFaktur(11, 10); // 11 KG tidak pernah boleh (nilai PO hanya 10 KG)
+  const ok = await fak(10);
+  assert.equal(ok.status, 201, JSON.stringify(ok.body));
+  assert.equal((await w.ap.post(`/api/finance/bills/${ok.body.billId}/approve`, {})).status, 200);
+  const bill = await testPrisma.finSupplierBill.findUnique({ where: { id: ok.body.billId } });
+  assert.equal(Number(bill.amount), 10 * H, "faktur = 10 KG");
+  const aging = (await w.f.get("/api/finance/utang/aging")).body;
+  const jadwal = aging.baris.filter((b) => b.billId === ok.body.billId);
+  assert.equal(jadwal.length, 4, "satu jadwal per penerimaan yang membawa barang baik (pengganti ikut)");
+  assert.equal(jadwal.reduce((s, b) => s + b.nilaiFaktur, 0), 10 * H, "Σ jadwal = total faktur (tepat)");
+  assert.equal(jadwal.reduce((s, b) => s + b.sisaUtang, 0), 10 * H);
+  assert.equal(aging.ringkasan.kartu.totalUtangAktif, 10 * H, "utang = 10 KG");
+  const utang = await testPrisma.finJournalEntry.findMany({ where: { source: "TAGIHAN_SUPPLIER", sourceId: ok.body.billId }, include: { lines: { include: { account: true } } } });
+  assert.equal(utang.length, 1);
+  assert.equal(utang[0].lines.filter((l) => l.account.code === "2-1100").reduce((s, l) => s + Number(l.credit) - Number(l.debit), 0), 10 * H, "jurnal utang usaha 10 KG");
+  // faktur kedua apa pun tidak bisa menagih lagi
+  await tolakFaktur(1, "habis ditagih"); // tidak ada barang baik tersisa untuk ditagih
+
+  // ── pembayaran penuh = 10 KG
+  const bayar = await w.a.post("/api/finance/supplier-payments", { supplierId: w.supplier.id, date: hariIni(), cashAccountId: w.bank.id, allocations: [{ billId: ok.body.billId, amount: 10 * H }] }, kunci());
+  assert.equal(bayar.status, 201, JSON.stringify(bayar.body));
+  assert.equal(Number(bayar.body.amount), 10 * H);
+  assert.equal((await testPrisma.finSupplierBill.findUnique({ where: { id: ok.body.billId } })).status, "LUNAS");
+  const lebih = await w.a.post("/api/finance/supplier-payments", { supplierId: w.supplier.id, date: hariIni(), cashAccountId: w.bank.id, allocations: [{ billId: ok.body.billId, amount: H }] }, kunci());
+  assert.ok([400, 409].includes(lebih.status), "tidak bisa membayar lebih dari faktur 10 KG");
 });
