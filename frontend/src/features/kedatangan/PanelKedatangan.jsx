@@ -159,7 +159,7 @@ export function ModalCatatKedatangan({ po, receipt = null, receiptId = null, wor
               <div key={l.purchaseOrderLineId} className="rounded-lg border border-line p-2.5" data-testid="baris-datang">
                 <div className="flex flex-wrap items-baseline justify-between gap-x-3">
                   <span className="text-[13px] font-medium text-ink">{l.kode} — {l.nama}</span>
-                  <span className="text-[11.5px] text-ink3">Dipesan {jumlahTeks(l.dipesan)} {l.satuan} · belum datang {jumlahTeks(l.belumDatang)} {l.satuan}</span>
+                  <span className="text-[11.5px] text-ink3">Dipesan {jumlahTeks(l.dipesan)} {l.satuan} · belum datang {jumlahTeks(l.belumDatang)} {l.satuan}{l.menungguPengganti > 0 ? ` · menunggu pengganti ${jumlahTeks(l.menungguPengganti)} ${l.satuan}` : ""}</span>
                 </div>
                 <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <Field label={`Jumlah datang (${l.satuan})`}>
@@ -178,6 +178,12 @@ export function ModalCatatKedatangan({ po, receipt = null, receiptId = null, wor
                     </div>
                   )}
                 </div>
+                {l.menungguPengganti > 0 && (
+                  <label className="mt-2 flex items-start gap-2 rounded-lg bg-inset px-3 py-2 text-[12px] text-ink2 max-sm:min-h-11" data-testid="centang-pengganti">
+                    <input type="checkbox" checked={!!l.pengganti} onChange={(e) => setBaris(i, { pengganti: e.target.checked })} className="mt-0.5" aria-label={`Pengiriman pengganti ${l.kode}`} />
+                    <span><strong className="text-ink">Ini pengiriman pengganti</strong> untuk barang yang ditolak ({jumlahTeks(l.sisaPengganti)} {l.satuan} menunggu pengganti). Pengganti tidak menaikkan jumlah PO dan tidak mengurangi “belum datang”; hubungannya ke penerimaan asal tersimpan.</span>
+                  </label>
+                )}
               </div>
             ))}
             {f.lines.length === 0 && <p className="text-[12.5px] text-ink3">Tidak ada item yang masih boleh datang pada PO ini.</p>}
@@ -286,7 +292,7 @@ export function KartuPenerimaan({ r, finance, bolehTulis, onCatat, onKoreksi, ek
       )}
       <div className="mt-1.5 text-ink2">
         {r.lines.filter((x) => x.datang != null).map((x) => (
-          <div key={x.id} className="tabular-nums">{x.kode}: datang {jumlahTeks(x.datang)} · baik {jumlahTeks(x.baik ?? 0)} · ditolak {jumlahTeks(x.ditolak ?? 0)} · masuk stok {jumlahTeks(x.masukStok)}{x.pendamping ? ` · ${String(x.pendamping.satuan).toLowerCase()} ${x.pendamping.aktual == null ? "belum diisi" : jumlahTeks(x.pendamping.aktual)}` : ""}</div>
+          <div key={x.id} className="tabular-nums">{x.kode}{x.penggantiDari ? <Badge variant="accent" className="ml-1" data-testid="pengganti-dari">Pengganti untuk {x.penggantiDari.nomor}</Badge> : null}: datang {jumlahTeks(x.datang)} · baik {jumlahTeks(x.baik ?? 0)} · ditolak {jumlahTeks(x.ditolak ?? 0)} · masuk stok {jumlahTeks(x.masukStok)}{x.pendamping ? ` · ${String(x.pendamping.satuan).toLowerCase()} ${x.pendamping.aktual == null ? "belum diisi" : jumlahTeks(x.pendamping.aktual)}` : ""}</div>
         ))}
       </div>
       {finance && r.jatuhTempo && (
@@ -318,7 +324,7 @@ export default function PanelKedatangan({ po, workspace, bolehTulis = true, onCh
   const [dialog, setDialog] = useState(null); // { jenis: "catat"|"koreksi", receipt?, receiptId? }
   const [menyiapkan, setMenyiapkan] = useState(false);
   const [galatSiap, setGalatSiap] = useState("");
-  const bisaMenerima = ["DISETUJUI", "DITERIMA_SEBAGIAN"].includes(po.status) && po.lines.some((l) => Number(l.belumDatang) > 0);
+  const bisaMenerima = ["DISETUJUI", "DITERIMA_SEBAGIAN"].includes(po.status) && po.lines.some((l) => Number(l.belumDipenuhiSupplier) > 0);
   const adaDraf = po.penerimaan.some((r) => !r.kedatanganDicatat && ["DRAFT", "SCHEDULED"].includes(r.status));
   // Tanpa penerimaan lebih dulu (Finance-first atau Gudang-first): server menyiapkan/memakai draf yang SAMA (idempoten), lalu kedatangan dicatat di draf itu.
   async function mulaiCatat() {

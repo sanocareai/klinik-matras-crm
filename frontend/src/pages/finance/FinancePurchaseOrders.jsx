@@ -686,13 +686,14 @@ function IsiDetail({ po, segar, onUbahFaktur, onSetujuiFaktur, onTolakFaktur, on
         <h4 className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ink3">Item &amp; progres penerimaan</h4>
         <TableWrap className="hidden md:block">
           <Table>
-            <THead><TR><TH>Item</TH><TH numeric>Dipesan</TH><TH numeric title="Dipesan dikurangi datang aktif (datang dikurangi yang ditolak)">Belum datang</TH><TH numeric title="Baik yang sudah disimpan ke stok">Masuk stok</TH><TH numeric title="Dipesan dikurangi masuk stok">Belum masuk stok</TH><TH numeric>Sudah ditagih</TH><TH numeric>Harga satuan</TH><TH numeric>Nilai PO</TH></TR></THead>
+            <THead><TR><TH>Item</TH><TH numeric>Dipesan</TH><TH numeric title="Dipesan dikurangi datang pengiriman asli. Barang ditolak tetap dihitung sudah datang.">Belum datang</TH><TH numeric title="Jumlah ditolak yang belum diganti supplier">Menunggu pengganti</TH><TH numeric title="Baik yang sudah disimpan ke stok">Masuk stok</TH><TH numeric title="Dipesan dikurangi masuk stok">Belum masuk stok</TH><TH numeric>Sudah ditagih</TH><TH numeric>Harga satuan</TH><TH numeric>Nilai PO</TH></TR></THead>
             <TBody>
               {po.lines.map((l) => (
                 <TR key={l.id}>
                   <TD><div className="font-medium text-ink">{l.kode}</div><div className="text-[11.5px] text-ink2">{l.nama}</div>{l.konversi && <div data-testid="konversi-detail" className="text-[11.5px] text-accent">1 {labelSatuan(l.konversi.satuanBeli)} = {teksJumlah(l.konversi.faktor)} {labelSatuan(l.konversi.satuanStok)} · setara {teksJumlah(l.dipesan * l.konversi.faktor)} {labelSatuan(l.konversi.satuanStok)}</div>}</TD>
                   <TD numeric>{teksJumlah(l.dipesan)} {l.satuan}</TD>
                   <TD numeric className={l.progres.belumDatang > 0 && barisLaku ? "font-semibold text-ink" : ""}>{teksJumlah(l.progres.belumDatang)}</TD>
+                  <TD numeric className={l.progres.menungguPengganti > 0 ? "font-semibold text-orange" : ""}>{teksJumlah(l.progres.menungguPengganti)}</TD>
                   <TD numeric>{teksJumlah(l.progres.masukStok)}</TD>
                   <TD numeric className={l.progres.belumMasukStok > 0 && barisLaku ? "font-semibold text-ink" : ""}>{teksJumlah(l.progres.belumMasukStok)}</TD>
                   <TD numeric>{teksJumlah(l.ditagih)}</TD>
@@ -711,6 +712,7 @@ function IsiDetail({ po, segar, onUbahFaktur, onSetujuiFaktur, onTolakFaktur, on
               <dl className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1">
                 <div><dt className="text-ink3">Dipesan</dt><dd className="ml-0 tabular-nums">{teksJumlah(l.dipesan)} {l.satuan}</dd></div>
                 <div><dt className="text-ink3">Belum datang</dt><dd className="ml-0 tabular-nums">{teksJumlah(l.progres.belumDatang)}</dd></div>
+                <div><dt className="text-ink3">Menunggu pengganti</dt><dd className="ml-0 tabular-nums">{teksJumlah(l.progres.menungguPengganti)}</dd></div>
                 <div><dt className="text-ink3">Masuk stok</dt><dd className="ml-0 tabular-nums">{teksJumlah(l.progres.masukStok)}</dd></div>
                 <div><dt className="text-ink3">Belum masuk stok</dt><dd className="ml-0 tabular-nums">{teksJumlah(l.progres.belumMasukStok)}</dd></div>
                 <div><dt className="text-ink3">Sudah ditagih</dt><dd className="ml-0 tabular-nums">{teksJumlah(l.ditagih)}</dd></div>

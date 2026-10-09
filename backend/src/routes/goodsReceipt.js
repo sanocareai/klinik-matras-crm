@@ -220,6 +220,12 @@ goodsReceiptRouter.patch("/:id/lines/:lineId", requirePermission(P.INVENTORY_WRI
     if (line.purchaseOrderLineId && receivedQty !== undefined && toNum(receivedQty) !== (line.receivedQty ?? null)) {
       throw new ReceiptError("Jumlah datang barang dari PO dicatat lewat Catat Barang Tiba dan dikoreksi lewat Koreksi Kedatangan (wajib alasan) — tidak diubah dari sini.");
     }
+    // Baris penolakan yang sudah diganti supplier: jumlah ditolak tidak boleh turun di bawah pengganti yang sudah tercatat (hubungan pengganti → asal harus tetap masuk akal).
+    if (line.purchaseOrderLineId && rejectedQty !== undefined) {
+      const pengganti = await prisma.goodsReceiptLine.findMany({ where: { replacementForLineId: line.id, goodsReceipt: { status: { not: "REJECTED" } } }, select: { receivedQty: true } });
+      const sudahDiganti = pengganti.reduce((n, r) => n + Math.round(Number(r.receivedQty ?? 0) * 1000), 0) / 1000;
+      if (sudahDiganti > 0 && Number(toNum(rejectedQty) ?? 0) < sudahDiganti) throw new ReceiptError(`Jumlah ditolak tidak boleh di bawah ${sudahDiganti}: sebanyak itu sudah dicatat sebagai pengiriman pengganti dari baris ini.`);
+    }
     // Baris yang tertaut PO: baik + ditolak ≤ datang, dan baik ≤ sisa PO (pemeriksaan dini; penegakan akhir di putaway). Baris tanpa PO: aturan lama.
     if (line.purchaseOrderLineId) {
       const gabung = (baru, lama) => (baru === undefined ? lama : toNum(baru));
@@ -340,6 +346,8 @@ goodsReceiptRouter.patch("/:id/reject", requirePermission(P.INVENTORY_WRITE), as
       if (receipt.status === "COMPLETED" || receipt.status === "REJECTED") {
         throw new ReceiptError(`Receipt berstatus ${receipt.status} tidak bisa ditolak`);
       }
+      const dipakaiPengganti = await tx.goodsReceiptLine.count({ where: { replacementForLine: { goodsReceiptId: receipt.id }, goodsReceipt: { status: { not: "REJECTED" } } } });
+      if (dipakaiPengganti > 0) throw new ReceiptError("Penerimaan ini sudah punya pengiriman pengganti yang tercatat — tidak bisa ditolak seluruhnya.");
       const result = await tx.goodsReceipt.update({
         where: { id: receipt.id },
         data: { status: "REJECTED", notes: [receipt.notes, `Ditolak: ${reason.trim()}`].filter(Boolean).join(" — ") },

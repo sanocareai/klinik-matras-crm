@@ -15,11 +15,11 @@ export function catatTibaResmi(klien, { poId, receiptId = null, lines, tanggal =
  * Bawa penerimaan dari PO (hasil POST /goods-receipts, status DRAFT) sampai SIAP DISIMPAN: jadwalkan → catat tiba resmi → periksa → siap simpan.
  * `baik` undefined = hanya sampai tiba+periksa tanpa mengisi hasil (mis. untuk uji penolakan). Mengembalikan respons catat-tiba.
  */
-export async function bawaSampaiSiap(klien, gr, { datang, baik, tolak = 0, lineIndex = 0, tanggal, sampaiInspeksi = false }) {
+export async function bawaSampaiSiap(klien, gr, { datang, baik, tolak = 0, lineIndex = 0, tanggal, sampaiInspeksi = false, pengganti = false }) {
   const urut = (st) => klien.patch(`/api/inventory/goods-receipts/${gr.id}`, { status: st });
   let r = await urut("SCHEDULED"); if (r.status !== 200) throw new Error(`SCHEDULED gagal: ${JSON.stringify(r.body)}`);
   const baris = gr.lines[lineIndex];
-  const t = await catatTibaResmi(klien, { poId: gr.purchaseOrderId, receiptId: gr.id, tanggal: tanggal ?? undefined, lines: [{ purchaseOrderLineId: baris.purchaseOrderLineId, jumlahDatang: datang }] });
+  const t = await catatTibaResmi(klien, { poId: gr.purchaseOrderId, receiptId: gr.id, tanggal: tanggal ?? undefined, lines: [{ purchaseOrderLineId: baris.purchaseOrderLineId, jumlahDatang: datang, ...(pengganti && { pengganti: true }) }] });
   if (t.status !== 201) throw new Error(`catat tiba gagal: ${JSON.stringify(t.body)}`);
   r = await urut("INSPECTION"); if (r.status !== 200) throw new Error(`INSPECTION gagal: ${JSON.stringify(r.body)}`);
   if (baik !== undefined) {

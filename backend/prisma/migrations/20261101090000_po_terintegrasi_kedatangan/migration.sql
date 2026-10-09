@@ -14,6 +14,7 @@ ADD COLUMN "arrival_revision" INTEGER NOT NULL DEFAULT 0;
 
 -- AlterTable: jumlah fisik pendamping aktual per baris penerimaan
 ALTER TABLE "goods_receipt_lines" ADD COLUMN "companion_qty" DECIMAL(14,3);
+ALTER TABLE "goods_receipt_lines" ADD COLUMN "replacement_for_line_id" UUID;
 
 -- AlterTable: definisi pendamping per baris PO
 ALTER TABLE "fin_purchase_order_lines" ADD COLUMN "companion_unit" VARCHAR(20),
@@ -63,6 +64,11 @@ ALTER TABLE "goods_receipts" ADD CONSTRAINT "goods_receipts_kedatangan_chk" CHEC
 
 -- Jumlah pendamping tidak negatif.
 ALTER TABLE "goods_receipt_lines" ADD CONSTRAINT "goods_receipt_lines_companion_chk" CHECK ("companion_qty" IS NULL OR "companion_qty" >= 0);
+
+-- Pengiriman pengganti barang yang ditolak: menunjuk baris penerimaan asal (tidak boleh menunjuk dirinya sendiri).
+CREATE INDEX "goods_receipt_lines_replacement_for_line_id_idx" ON "goods_receipt_lines"("replacement_for_line_id");
+ALTER TABLE "goods_receipt_lines" ADD CONSTRAINT "goods_receipt_lines_replacement_for_line_id_fkey" FOREIGN KEY ("replacement_for_line_id") REFERENCES "goods_receipt_lines"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "goods_receipt_lines" ADD CONSTRAINT "goods_receipt_lines_pengganti_chk" CHECK ("replacement_for_line_id" IS NULL OR "replacement_for_line_id" <> "id");
 
 -- Pendamping PO: semua NULL, atau satuan + mode valid (TETAP wajib rasio > 0 tanpa estimasi tersimpan; AKTUAL tanpa rasio, estimasi opsional ≥ 0); tidak boleh digabung konversi satuan beli→stok.
 ALTER TABLE "fin_purchase_order_lines" ADD CONSTRAINT "fin_purchase_order_lines_pendamping_chk" CHECK (

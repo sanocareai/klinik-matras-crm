@@ -327,12 +327,12 @@ export async function siapkanPenerimaanDariPO(tx, { purchaseOrderId, pilihan }) 
         if (!l) throw gagal("Ada baris yang bukan bagian dari PO ini");
         return { l, diminta: p.orderedQty };
       })
-    : po.lines.filter((l) => kuantitas.get(l.id).belumDatang > 0).map((l) => ({ l, diminta: undefined }));
+    : po.lines.filter((l) => kuantitas.get(l.id).belumDipenuhiSupplier > 0).map((l) => ({ l, diminta: undefined }));
   if (dipilih.length === 0) throw gagal(`PO ${po.poNumber} sudah terpenuhi — tidak ada sisa yang bisa diterima`, 409);
   if (new Set(dipilih.map((d) => d.l.id)).size !== dipilih.length) throw gagal("Baris PO yang sama dipilih lebih dari sekali");
 
   const lines = dipilih.map(({ l, diminta }) => {
-    const sisa = kuantitas.get(l.id).belumDatang;
+    const sisa = kuantitas.get(l.id).belumDipenuhiSupplier;
     if (sisa <= 0) throw gagal(`Salah satu baris sudah terpenuhi penuh di PO ${po.poNumber}`, 409);
     let qty = sisa;
     if (diminta !== undefined && diminta !== null && diminta !== "") {

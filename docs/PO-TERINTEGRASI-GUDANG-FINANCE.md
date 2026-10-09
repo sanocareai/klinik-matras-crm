@@ -9,16 +9,21 @@ Dipakai API Finance & Gudang (daftar, kartu, detail), batas jumlah datang, dan r
 | Label | Arti |
 |---|---|
 | Dipesan | jumlah di PO |
-| Datang | total tercatat tiba di semua pengiriman, termasuk yang kemudian ditolak |
-| Belum datang | Dipesan − datang aktif (datang − ditolak; barang ditolak harus dikirim ulang) |
+| Datang | total yang benar-benar tiba (fisik), termasuk yang kemudian ditolak dan pengiriman pengganti |
+| Belum datang | Dipesan − datang pada pengiriman ASLI. Barang ditolak tetap dihitung sudah datang; pengganti tidak mengurangi angka ini (batas PO tidak naik) |
 | Belum diperiksa | sudah tiba, hasil baik/ditolak belum diisi Gudang |
-| Ditolak | hasil pemeriksaan: ditolak |
-| Baik belum disimpan | lolos periksa, Simpan ke Stok belum ditekan |
+| Ditolak | hasil pemeriksaan: ditolak (riwayat) |
+| Menunggu pengganti | Ditolak (asli + pengganti yang ditolak lagi) − pengganti yang sudah tiba |
+| Baik belum disimpan | jumlah baik − masuk stok |
 | Masuk stok | baik yang sudah disimpan (satu-satunya yang menambah stok) |
+| Belum dipenuhi supplier | Belum datang + Menunggu pengganti |
 | Belum masuk stok | Dipesan − masuk stok |
 
 Invarian: Datang = Belum diperiksa + Ditolak + Baik belum disimpan + Masuk stok.
-Contoh PO 10 KG, datang 5 lalu 3, baik & masuk stok baru 5: Datang 8 · Belum datang 2 · Belum diperiksa 3 · Masuk stok 5 · Belum masuk stok 5.
+Fixture: PO 10 KG, datang 8, baik 7, ditolak 1, masuk stok 5 → Datang 8 · Belum datang 2 · Menunggu pengganti 1 · Baik belum disimpan 2 · Belum dipenuhi supplier 3 · Belum masuk stok 5.
+
+### Pengiriman pengganti
+Pengganti ditandai di Catat Barang Tiba (centang pengganti) dan menyimpan hubungan ke baris penolakan asal (`goods_receipt_lines.replacement_for_line_id`). Jumlahnya dibatasi sisa penolakan baris asal, tidak menaikkan batas PO (belum datang tetap), dan tidak menggandakan nilai PO, stok, GRNI, faktur, atau jadwal termin: hanya barang baik yang masuk stok dan ditagih. Contoh pengganti 1 KG pada fixture: Datang 9, Menunggu pengganti 0, Belum datang 2, Belum dipenuhi supplier 2. Penolakan asal tidak bisa diturunkan di bawah pengganti yang tercatat, dan penerimaan asal yang sudah punya pengganti tidak bisa ditolak seluruhnya.
 
 ## Alur catat kedatangan
 
@@ -50,5 +55,5 @@ Dua keadaan berbeda:
 ## Pilihan desain yang perlu diketahui
 
 - Draf penerimaan yang tersisa dari percobaan yang gagal dipakai ulang oleh permintaan berikutnya (tidak dihapus). Isian yang pasti salah (tanpa PIC/catatan/tanggal/jumlah) ditolak sebelum draf disiapkan.
-- “Belum datang” = dipesan dikurangi datang aktif. Barang ditolak kembali menjadi belum datang.
-- Jadwal pengiriman (draf dari “Penerimaan Baru” Gudang maupun dari Finance) mengikuti “Belum datang”.
+- Barang ditolak tetap dihitung sudah datang secara fisik; yang menutupnya adalah pengiriman pengganti (bukan pengiriman biasa).
+- Jadwal pengiriman (draf dari “Penerimaan Baru” Gudang maupun dari Finance) mengikuti “Belum dipenuhi supplier”.

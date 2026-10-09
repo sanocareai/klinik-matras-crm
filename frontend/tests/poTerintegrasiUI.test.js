@@ -15,9 +15,9 @@ const baca = (p) => fs.readFileSync(path.join(dir, p), "utf8");
 const po = () => ({
   id: "po1", poNumber: "PO-01102026-001", orderDate: "2026-09-01", status: "DISETUJUI",
   lines: [
-    { id: "l1", kode: "BUSA-R50", nama: "Busa", satuan: "KG", dipesan: 10, belumDatang: 10, pendamping: { satuan: "LEMBAR", mode: "AKTUAL", rasio: null, estimasi: 2, aktual: null, teks: "perkiraan 2 lembar" } },
-    { id: "l2", kode: "LEM-1", nama: "Lem", satuan: "DUS", dipesan: 3, belumDatang: 3, pendamping: { satuan: "KALENG", mode: "TETAP", rasio: 12, estimasi: 36, aktual: null, teks: "setara 36 kaleng" } },
-    { id: "l3", kode: "KAIN", nama: "Kain", satuan: "METER", dipesan: 5, belumDatang: 0, pendamping: null },
+    { id: "l1", kode: "BUSA-R50", nama: "Busa", satuan: "KG", dipesan: 10, belumDatang: 10, belumDipenuhiSupplier: 10, menungguPengganti: 0, pendamping: { satuan: "LEMBAR", mode: "AKTUAL", rasio: null, estimasi: 2, aktual: null, teks: "perkiraan 2 lembar" } },
+    { id: "l2", kode: "LEM-1", nama: "Lem", satuan: "DUS", dipesan: 3, belumDatang: 3, belumDipenuhiSupplier: 3, menungguPengganti: 0, pendamping: { satuan: "KALENG", mode: "TETAP", rasio: 12, estimasi: 36, aktual: null, teks: "setara 36 kaleng" } },
+    { id: "l3", kode: "KAIN", nama: "Kain", satuan: "METER", dipesan: 5, belumDatang: 0, belumDipenuhiSupplier: 0, menungguPengganti: 0, pendamping: null },
   ],
 });
 
@@ -35,7 +35,7 @@ test("formulir catat tiba: hanya item yang masih boleh datang; PIC, catatan, tan
   f.catatan = "Dus utuh"; assert.match(galatKedatangan(f), /jumlah datang minimal satu/);
   f.lines[0].jumlahDatang = "11"; assert.match(galatKedatangan(f), /melebihi yang belum datang.*merevisi jumlah PO/);
   f.lines[0].jumlahDatang = "5"; assert.equal(galatKedatangan(f), null);
-  assert.deepEqual(kekuranganIsian(f), ["Surat jalan belum diisi", "Bukti kedatangan belum diunggah", "Jumlah lembar aktual BUSA-R50 belum diisi"]);
+  assert.deepEqual(kekuranganIsian(f), ["Surat jalan belum dilampirkan", "Bukti kedatangan belum dilampirkan", "Jumlah lembar aktual BUSA-R50 belum diisi"]);
   f.suratJalan = "SJ-1"; f.bukti = ["/media/receipt-proofs/x.jpg"]; f.lines[0].jumlahPendamping = "1";
   assert.deepEqual(kekuranganIsian(f), []);
   assert.deepEqual(bodyKedatangan(f, "r1"), {
@@ -134,7 +134,7 @@ test("Finance-first: tombol Catat Barang Tiba di PO menyiapkan draf idempoten du
 });
 
 test("formulir: tidak melebihi yang belum datang (dari server); pendamping aktual negatif ditolak di layar", () => {
-  const po = { orderDate: "2026-10-01", lines: [{ id: "l1", kode: "BUSA", nama: "Busa", satuan: "KG", dipesan: 10, belumDatang: 2, pendamping: { satuan: "LEMBAR", mode: "AKTUAL", rasio: null, estimasi: 2 } }] };
+  const po = { orderDate: "2026-10-01", lines: [{ id: "l1", kode: "BUSA", nama: "Busa", satuan: "KG", dipesan: 10, belumDatang: 2, belumDipenuhiSupplier: 2, menungguPengganti: 0, pendamping: { satuan: "LEMBAR", mode: "AKTUAL", rasio: null, estimasi: 2 } }] };
   const f = formKedatanganAwal(po);
   f.penerima = "Budi"; f.catatan = "ok"; f.tanggalTiba = "2026-10-05";
   f.lines[0].jumlahDatang = "3";
@@ -142,4 +142,19 @@ test("formulir: tidak melebihi yang belum datang (dari server); pendamping aktua
   f.lines[0].jumlahDatang = "2"; f.lines[0].jumlahPendamping = "-1";
   assert.match(galatKedatangan(f, { tanggalPO: po.orderDate }), /tidak boleh negatif/);
   f.lines[0].jumlahPendamping = "1"; assert.equal(galatKedatangan(f, { tanggalPO: po.orderDate }), null);
+});
+
+test("pengganti: item yang menunggu pengganti ditawarkan walau belum datang 0; centang pengganti dibatasi sisa penolakan, tidak menaikkan batas PO; body membawa pengganti", () => {
+  const po = { orderDate: "2026-10-01", lines: [{ id: "l1", kode: "BUSA", nama: "Busa", satuan: "KG", dipesan: 10, belumDatang: 0, menungguPengganti: 1, belumDipenuhiSupplier: 1, asalPengganti: [{ lineId: "x", sisa: 1 }], pendamping: null }] };
+  const f = formKedatanganAwal(po);
+  assert.equal(f.lines.length, 1, "tetap ditawarkan karena menunggu pengganti");
+  f.penerima = "Budi"; f.catatan = "ok"; f.tanggalTiba = "2026-10-05"; f.lines[0].jumlahDatang = "1";
+  assert.match(galatKedatangan(f, { tanggalPO: po.orderDate }), /melebihi yang belum datang.*centang pengiriman pengganti/, "tanpa centang: dibatasi belum datang (0) dan diberi petunjuk");
+  f.lines[0].pengganti = true; assert.equal(galatKedatangan(f, { tanggalPO: po.orderDate }), null);
+  f.lines[0].jumlahDatang = "2"; assert.match(galatKedatangan(f, { tanggalPO: po.orderDate }), /menunggu pengganti \(1 KG\)/);
+  f.lines[0].jumlahDatang = "1";
+  assert.equal(bodyKedatangan(f, "r1").lines[0].pengganti, true);
+  assert.equal("pengganti" in bodyKedatangan({ ...f, lines: [{ ...f.lines[0], pengganti: false }] }, "r1").lines[0], false);
+  const panel = baca("../src/features/kedatangan/PanelKedatangan.jsx");
+  assert.match(panel, /centang-pengganti/); assert.match(panel, /Pengganti untuk/); assert.match(panel, /belumDipenuhiSupplier/);
 });

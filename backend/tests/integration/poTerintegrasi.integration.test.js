@@ -128,7 +128,7 @@ test("PO 10 KG (perkiraan 2 lembar) → datang 5 KG/1 lembar → 5 KG/1 lembar p
 });
 
 // ═══ 2. Over-receipt, ditolak melepas sisa, paralel, replay ═══
-test("total penerimaan melebihi PO ditolak (409, Finance revisi PO); barang ditolak melepas sisa; kedatangan paralel dan replay tidak menimpa", async () => {
+test("total penerimaan melebihi PO ditolak (409, Finance revisi PO); barang ditolak TETAP terhitung sudah datang (tidak melepas batas PO); kedatangan paralel dan replay tidak menimpa", async () => {
   const w = await dunia();
   const po = await poDisetujui(w);
   const L = po.lines[0].id;
@@ -138,11 +138,13 @@ test("total penerimaan melebihi PO ditolak (409, Finance revisi PO); barang dito
   assert.equal(lebih.status, 409); assert.equal(lebih.body.code, "MELEBIHI_PO");
   assert.match(lebih.body.error, /melebihi sisa PO/); assert.match(lebih.body.error, /merevisi jumlah PO/);
   assert.equal(await testPrisma.goodsReceipt.count({ where: { arrivalRevision: { gt: 0 } } }), 1, "penolakan tidak mencatat kedatangan apa pun (draf kosong yang tersisa dipakai ulang)");
-  // 6 datang, 2 ditolak saat pemeriksaan → sisa yang boleh datang = 10 − 0 − (6−2) = 6
+  // 6 datang, 2 ditolak saat pemeriksaan → yang ditolak TETAP sudah datang: pengiriman biasa maksimal 10 − 6 = 4; 2 ditolak menunggu pengganti
   await isiPeriksa(w, a.body.receiptId, { baik: 4, tolak: 2 });
-  assert.equal((await tiba(w.g, po.id, { tanggalTiba: geser(-1), lines: [{ purchaseOrderLineId: L, jumlahDatang: 7 }] })).status, 409);
-  const pengganti = await tiba(w.g, po.id, { tanggalTiba: geser(-1), lines: [{ purchaseOrderLineId: L, jumlahDatang: 6 }] });
-  assert.equal(pengganti.status, 201, JSON.stringify(pengganti.body));
+  const lebihLagi = await tiba(w.g, po.id, { tanggalTiba: geser(-1), lines: [{ purchaseOrderLineId: L, jumlahDatang: 5 }] });
+  assert.equal(lebihLagi.status, 409); assert.equal(lebihLagi.body.code, "MELEBIHI_PO");
+  assert.match(lebihLagi.body.error, /tandai sebagai pengiriman pengganti/, "pesan menunjuk jalur pengganti untuk 2 yang menunggu");
+  const biasa = await tiba(w.g, po.id, { tanggalTiba: geser(-1), lines: [{ purchaseOrderLineId: L, jumlahDatang: 4 }] });
+  assert.equal(biasa.status, 201, JSON.stringify(biasa.body));
   // Finance menaikkan PO → bisa menerima lebih
   assert.equal((await w.a.post(`/api/finance/purchase-orders/${po.id}/revisi-jumlah`, { lineId: L, qty: 12, reason: "Supplier kirim lebih, disepakati" })).status, 200);
   assert.equal((await tiba(w.g, po.id, { tanggalTiba: hariIni(), lines: [{ purchaseOrderLineId: L, jumlahDatang: 2 }] })).status, 201);
@@ -435,7 +437,7 @@ test("PO, kedatangan, koreksi, dan faktur tidak menulis stok; stok & jurnal pers
 });
 
 // ═══ 9. Definisi progres PO (satu helper server) ═══
-const BERKAS = ["dipesan", "datang", "belumDatang", "belumDiperiksa", "ditolak", "baikBelumDisimpan", "masukStok", "belumMasukStok"];
+const BERKAS = ["dipesan", "datang", "belumDatang", "belumDiperiksa", "ditolak", "menungguPengganti", "baikBelumDisimpan", "masukStok", "belumDipenuhiSupplier", "belumMasukStok"];
 const angka = (p) => Object.fromEntries(BERKAS.map((k) => [k, p[k]]));
 
 test("progres PO 10 KG: datang 5 lalu 3, baik & masuk stok baru 5 → Datang 8, Belum datang 2, Belum diperiksa 3, Masuk stok 5, Belum masuk stok 5 — angka SAMA di Finance, Gudang, daftar, dan detail", async () => {
@@ -448,12 +450,12 @@ test("progres PO 10 KG: datang 5 lalu 3, baik & masuk stok baru 5 → Datang 8, 
   const r2 = await tibaFin(w.f, po.id, { tanggalTiba: geser(-1), lines: [{ purchaseOrderLineId: L, jumlahDatang: 3 }] });
   assert.equal(r2.status, 201, JSON.stringify(r2.body));
 
-  const harapan = { dipesan: 10, datang: 8, belumDatang: 2, belumDiperiksa: 3, ditolak: 0, baikBelumDisimpan: 0, masukStok: 5, belumMasukStok: 5 };
+  const harapan = { dipesan: 10, datang: 8, belumDatang: 2, belumDiperiksa: 3, ditolak: 0, menungguPengganti: 0, baikBelumDisimpan: 0, masukStok: 5, belumDipenuhiSupplier: 2, belumMasukStok: 5 };
   const g = (await detailG(w, po.id)).lines[0]; const f = (await detailF(w, po.id)).lines[0];
   assert.deepEqual(angka(g), harapan, "Gudang (halaman Barang Akan Datang)");
   assert.deepEqual(angka(f), harapan, "Finance (kedatangan lengkap)");
   assert.equal(g.datang - g.belumDiperiksa - g.ditolak - g.baikBelumDisimpan - g.masukStok, 0, "invarian: datang = belum diperiksa + ditolak + baik belum disimpan + masuk stok");
-  assert.equal(g.belumDatang, g.dipesan - g.datang, "tanpa penolakan: belum datang = dipesan − datang");
+  assert.equal(g.belumDatang, g.dipesan - g.datang, "belum datang = dipesan − datang fisik");
   // detail PO Finance, detail PO Gudang, dan daftar keduanya
   const det = (await w.f.get(`/api/finance/purchase-orders/${po.id}`)).body;
   assert.deepEqual(angka(det.lines[0].progres), harapan, "detail PO Finance");
@@ -473,7 +475,7 @@ test("progres PO 10 KG: datang 5 lalu 3, baik & masuk stok baru 5 → Datang 8, 
   assert.equal(JSON.stringify(daftarG).includes("totalBelumMasukStok"), false, "Gudang tanpa nilai");
 });
 
-test("progres: barang ditolak kembali menjadi belum datang; baik belum disimpan terpisah dari masuk stok; tiap barang terhitung sekali", async () => {
+test("progres: barang ditolak TETAP sudah datang secara fisik; baik belum disimpan = baik − masuk stok; invarian datang = diperiksa + ditolak + baik belum disimpan + masuk stok", async () => {
   const w = await dunia();
   const po = await poDisetujui(w);
   const L = po.lines[0].id;
@@ -482,12 +484,14 @@ test("progres: barang ditolak kembali menjadi belum datang; baik belum disimpan 
   await simpanStok(w, r1.body.receiptId);
   const r2 = await tiba(w.g, po.id, { tanggalTiba: geser(-1), lines: [{ purchaseOrderLineId: L, jumlahDatang: 3 }] });
   await isiPeriksa(w, r2.body.receiptId, { baik: 2, tolak: 1 }); // siap disimpan, belum Simpan ke Stok
+  const f1 = { dipesan: 10, datang: 8, belumDatang: 2, belumDiperiksa: 0, ditolak: 1, menungguPengganti: 1, baikBelumDisimpan: 2, masukStok: 5, belumDipenuhiSupplier: 3, belumMasukStok: 5 };
   const p = (await detailG(w, po.id)).lines[0];
-  assert.deepEqual(angka(p), { dipesan: 10, datang: 8, belumDatang: 3, belumDiperiksa: 0, ditolak: 1, baikBelumDisimpan: 2, masukStok: 5, belumMasukStok: 5 });
+  assert.deepEqual(angka(p), f1, "FIXTURE: datang 8, baik 7, ditolak 1, masuk stok 5");
+  assert.deepEqual(angka((await detailF(w, po.id)).lines[0]), f1, "Finance sama");
   assert.equal(p.datang, p.belumDiperiksa + p.ditolak + p.baikBelumDisimpan + p.masukStok);
+  assert.equal(p.belumDipenuhiSupplier, p.belumDatang + p.menungguPengganti);
   assert.equal((await simpanStok(w, r2.body.receiptId)).status, 200);
-  const q = (await detailG(w, po.id)).lines[0];
-  assert.deepEqual(angka(q), { dipesan: 10, datang: 8, belumDatang: 3, belumDiperiksa: 0, ditolak: 1, baikBelumDisimpan: 0, masukStok: 7, belumMasukStok: 3 });
+  assert.deepEqual(angka((await detailG(w, po.id)).lines[0]), { dipesan: 10, datang: 8, belumDatang: 2, belumDiperiksa: 0, ditolak: 1, menungguPengganti: 1, baikBelumDisimpan: 0, masukStok: 7, belumDipenuhiSupplier: 3, belumMasukStok: 3 });
 });
 
 // ═══ 10. Finance-first / Gudang-first / paralel / replay ═══
@@ -530,7 +534,7 @@ test("Finance-first: Finance menekan Catat Barang Tiba dari PO tanpa penerimaan;
   assert.equal((await detailG(w, po.id)).statusAkanDatang.kode, "SIAP_DISIMPAN");
   assert.equal((await w.f.post(`/api/inventory/goods-receipts/${t.body.receiptId}/putaway`, {})).status, 403, "Finance tidak boleh Simpan ke Stok");
   assert.equal((await simpanStok(w, t.body.receiptId)).status, 200);
-  assert.deepEqual(angka((await detailG(w, po.id)).lines[0]), { dipesan: 10, datang: 6, belumDatang: 4, belumDiperiksa: 0, ditolak: 0, baikBelumDisimpan: 0, masukStok: 6, belumMasukStok: 4 });
+  assert.deepEqual(angka((await detailG(w, po.id)).lines[0]), { dipesan: 10, datang: 6, belumDatang: 4, belumDiperiksa: 0, ditolak: 0, menungguPengganti: 0, baikBelumDisimpan: 0, masukStok: 6, belumDipenuhiSupplier: 4, belumMasukStok: 4 });
 });
 
 test("Finance-first TANPA draf lebih dulu (satu panggilan) membuat draf lalu mencatat; Gudang-first (draf dari Penerimaan Baru) dipakai Finance; PO terpenuhi tidak bisa membuat draf", async () => {
@@ -700,4 +704,140 @@ test("AUDIT aging: satu faktur dua penerimaan — total faktur/utang sekali; jad
   assert.equal((await w.f.get("/api/finance/reports/payables")).body.total, 0);
   const ulang = await w.f.post(`/api/finance/purchase-orders/${po.id}/faktur`, { supplierRef: ref(), billDate: geser(-1), lines: [{ purchaseOrderLineId: L, qty: 10, unitPrice: H }] });
   assert.equal(ulang.status, 201, "alokasi faktur yang dibatalkan dilepas; PO bisa ditagih ulang");
+});
+
+// ═══ 12. Penolakan lalu pengiriman PENGGANTI ═══
+const dataPengganti = async (w) => {
+  // PO 10 KG: GR1 5 baik masuk stok; GR2 datang 3 → baik 2, ditolak 1, masuk stok (fixture: datang 8, baik 7, ditolak 1, masuk stok 5 sebelum GR2 disimpan)
+  const po = await poDisetujui(w);
+  const L = po.lines[0].id;
+  const r1 = await tiba(w.g, po.id, { tanggalTiba: geser(-8), suratJalan: "SJ-1", lines: [{ purchaseOrderLineId: L, jumlahDatang: 5 }] });
+  await isiPeriksa(w, r1.body.receiptId, { baik: 5 }); await simpanStok(w, r1.body.receiptId);
+  const r2 = await tiba(w.g, po.id, { tanggalTiba: geser(-5), suratJalan: "SJ-2", lines: [{ purchaseOrderLineId: L, jumlahDatang: 3 }] });
+  await isiPeriksa(w, r2.body.receiptId, { baik: 2, tolak: 1 });
+  return { po, L, r1, r2 };
+};
+const punya = (g, k) => g.lines[0][k];
+
+test("FIXTURE: PO 10 KG datang 8, baik 7, ditolak 1, masuk stok 5 → datang fisik 8, belum datang 2, menunggu pengganti 1, baik belum disimpan 2, belum dipenuhi supplier 3, belum masuk stok 5 (Finance = Gudang)", async () => {
+  const w = await dunia();
+  const { po } = await dataPengganti(w);
+  const harapan = { dipesan: 10, datang: 8, belumDatang: 2, belumDiperiksa: 0, ditolak: 1, menungguPengganti: 1, baikBelumDisimpan: 2, masukStok: 5, belumDipenuhiSupplier: 3, belumMasukStok: 5 };
+  const g = await detailG(w, po.id); const f = await detailF(w, po.id);
+  assert.deepEqual(angka(g.lines[0]), harapan);
+  assert.deepEqual(angka(f.lines[0]), harapan);
+  assert.deepEqual(g.lines[0].asalPengganti.map((a) => [a.sisa]), [[1]], "baris penolakan asal yang menunggu pengganti terlihat");
+  assert.deepEqual(angka((await w.f.get(`/api/finance/purchase-orders/${po.id}`)).body.lines[0].progres), harapan);
+});
+
+test("PENGGANTI 1 KG: datang fisik 9; menunggu pengganti 0; batas PO tidak naik (belum datang tetap 2, bukan 11); hubungan ke baris asal tersimpan; stok/GRNI/faktur/termin tidak ganda", async () => {
+  const w = await dunia();
+  const { po, L, r1, r2 } = await dataPengganti(w);
+  await simpanStok(w, r2.body.receiptId); // GR2 masuk stok: baik 2
+  assert.equal(await testPrisma.stockMovement.count(), 2);
+  const awal = await cacah();
+  const asalLine = await testPrisma.goodsReceiptLine.findFirst({ where: { goodsReceiptId: r2.body.receiptId } });
+
+  // pengganti ditandai pengganti → tidak dipandang pasokan baru
+  const rp = await tiba(w.g, po.id, { tanggalTiba: geser(-2), suratJalan: "SJ-3", lines: [{ purchaseOrderLineId: L, jumlahDatang: 1, pengganti: true }] });
+  assert.equal(rp.status, 201, JSON.stringify(rp.body));
+  const baris = await testPrisma.goodsReceiptLine.findFirst({ where: { goodsReceiptId: rp.body.receiptId } });
+  assert.equal(baris.replacementForLineId, asalLine.id, "hubungan ke baris penolakan asal tersimpan");
+  assert.deepEqual(await cacah(), awal, "mencatat pengganti tidak menulis stok/jurnal/tagihan");
+  const kartu = rp.body.po.penerimaan.find((r) => r.id === rp.body.receiptId);
+  assert.equal(kartu.lines[0].penggantiDari.nomor, (await testPrisma.goodsReceipt.findUnique({ where: { id: r2.body.receiptId } })).receiptNumber);
+  assert.deepEqual(angka(rp.body.po.lines[0]), { dipesan: 10, datang: 9, belumDatang: 2, belumDiperiksa: 1, ditolak: 1, menungguPengganti: 0, baikBelumDisimpan: 0, masukStok: 7, belumDipenuhiSupplier: 2, belumMasukStok: 3 });
+  assert.equal(rp.body.po.lines[0].pengganti, 1);
+  const ev = await testPrisma.goodsReceiptEvent.findFirst({ where: { goodsReceiptId: rp.body.receiptId } });
+  assert.equal(ev.after.lines[0].penggantiDari, kartu.lines[0].penggantiDari.nomor, "audit menyebut penerimaan asal");
+
+  // batas PO tetap 10: pengganti kedua ditolak (tidak ada penolakan menunggu); pengiriman biasa > belum datang (2) ditolak — bukan 3 apalagi 11
+  const lagi = await tiba(w.g, po.id, { tanggalTiba: geser(-1), lines: [{ purchaseOrderLineId: L, jumlahDatang: 1, pengganti: true }] });
+  assert.equal(lagi.status, 409); assert.equal(lagi.body.code, "TANPA_PENOLAKAN");
+  const biasa3 = await tiba(w.g, po.id, { tanggalTiba: geser(-1), lines: [{ purchaseOrderLineId: L, jumlahDatang: 3 }] });
+  assert.equal(biasa3.status, 409); assert.equal(biasa3.body.code, "MELEBIHI_PO");
+  assert.match(biasa3.body.error, /belum datang 2/);
+
+  // pengganti diperiksa baik → masuk stok SEKALI, nilai sesuai harga PO
+  await isiPeriksa(w, rp.body.receiptId, { baik: 1 });
+  assert.equal((await simpanStok(w, rp.body.receiptId)).status, 200);
+  const stok = await testPrisma.stockMovement.findMany({ orderBy: { createdAt: "asc" } });
+  assert.deepEqual(stok.map((m) => Number(m.qty)), [5, 2, 1], "stok = barang baik saja; yang ditolak tidak masuk dan pengganti masuk sekali");
+  const grni = await testPrisma.finJournalEntry.findMany({ where: { source: "PENERIMAAN_BAHAN" }, include: { lines: true } });
+  assert.deepEqual(grni.map((e) => e.lines.reduce((s, l) => s + Number(l.debit), 0)).sort((a, b) => a - b), [H, 2 * H, 5 * H], "tiap penerimaan bernilai baik × harga PO; tidak ada nilai ganda");
+  assert.equal((await testPrisma.finPurchaseOrder.findUnique({ where: { id: po.id } })).status, "DITERIMA_SEBAGIAN");
+
+  // sisa 2 dikirim biasa → PO selesai; fisik 11 = 10 baik + 1 ditolak; tidak melewati batas
+  const sisa = await tiba(w.g, po.id, { tanggalTiba: geser(-1), suratJalan: "SJ-4", lines: [{ purchaseOrderLineId: L, jumlahDatang: 2 }] });
+  assert.equal(sisa.status, 201, JSON.stringify(sisa.body));
+  await isiPeriksa(w, sisa.body.receiptId, { baik: 2 }); await simpanStok(w, sisa.body.receiptId);
+  const akhir = (await detailF(w, po.id));
+  assert.deepEqual(angka(akhir.lines[0]), { dipesan: 10, datang: 11, belumDatang: 0, belumDiperiksa: 0, ditolak: 1, menungguPengganti: 0, baikBelumDisimpan: 0, masukStok: 10, belumDipenuhiSupplier: 0, belumMasukStok: 0 });
+  assert.equal(akhir.statusAkanDatang.kode, "SELESAI");
+  assert.equal((await testPrisma.finPurchaseOrder.findUnique({ where: { id: po.id } })).status, "SELESAI");
+
+  // faktur 10 KG: satu utang, jadwal termin per penerimaan baik (4 penerimaan), nilai sekali
+  const fk = await w.f.post(`/api/finance/purchase-orders/${po.id}/faktur`, { supplierRef: ref(), billDate: geser(-1), lines: [{ purchaseOrderLineId: L, qty: 10, unitPrice: H }] });
+  assert.equal(fk.status, 201, JSON.stringify(fk.body));
+  assert.equal((await w.ap.post(`/api/finance/bills/${fk.body.billId}/approve`, {})).status, 200);
+  const aging = (await w.f.get("/api/finance/utang/aging")).body;
+  const jadwal = aging.baris.filter((b) => b.billId === fk.body.billId);
+  assert.equal(jadwal.length, 4, "satu jadwal per penerimaan yang membawa barang baik");
+  assert.equal(jadwal.reduce((s, b) => s + b.nilaiFaktur, 0), 10 * H, "nilai faktur sekali, bukan 11 KG");
+  assert.equal(aging.ringkasan.kartu.totalUtangAktif, 10 * H);
+  assert.equal(await testPrisma.finJournalEntry.count({ where: { source: "TAGIHAN_SUPPLIER", sourceId: fk.body.billId } }), 1);
+  void r1;
+});
+
+test("pengganti: ditolak lagi membuka pengganti baru; replay kunci sama = satu pengganti; PARALEL dua pengganti pada penolakan 1 KG → satu berhasil", async () => {
+  const w = await dunia();
+  const { po, L, r2 } = await dataPengganti(w);
+  await simpanStok(w, r2.body.receiptId);
+  // replay: kunci sama dua kali → satu baris pengganti
+  const h = kunci();
+  const a1 = await tiba(w.g, po.id, { tanggalTiba: geser(-2), lines: [{ purchaseOrderLineId: L, jumlahDatang: 1, pengganti: true }] }, h);
+  const a2 = await tiba(w.g, po.id, { tanggalTiba: geser(-2), lines: [{ purchaseOrderLineId: L, jumlahDatang: 1, pengganti: true }] }, h);
+  assert.equal(a1.status, 201); assert.equal(a2.status, 201); assert.equal(a2.body.receiptId, a1.body.receiptId);
+  assert.equal(await testPrisma.goodsReceiptLine.count({ where: { replacementForLineId: { not: null } } }), 1);
+  // pengganti ini ditolak lagi → menunggu pengganti kembali 1
+  await isiPeriksa(w, a1.body.receiptId, { baik: 0, tolak: 1 });
+  let p = (await detailG(w, po.id)).lines[0];
+  assert.deepEqual([p.datang, p.belumDatang, p.ditolak, p.menungguPengganti, p.belumDipenuhiSupplier], [9, 2, 2, 1, 3]);
+  // paralel: dua draf terpisah (Finance & Gudang) mencatat pengganti 1 KG bersamaan pada penolakan yang tersisa 1 KG
+  const d1 = await w.f.post(`/api/finance/purchase-orders/${po.id}/draf-penerimaan`, {});
+  const d2 = await w.g.post("/api/inventory/goods-receipts", { purchaseOrderId: po.id });
+  assert.notEqual(d1.body.receiptId, d2.body.id);
+  const [b1, b2] = await Promise.all([
+    tibaFin(w.f, po.id, { receiptId: d1.body.receiptId, tanggalTiba: geser(-1), lines: [{ purchaseOrderLineId: L, jumlahDatang: 1, pengganti: true }] }),
+    tiba(w.g, po.id, { receiptId: d2.body.id, tanggalTiba: geser(-1), lines: [{ purchaseOrderLineId: L, jumlahDatang: 1, pengganti: true }] }),
+  ]);
+  assert.deepEqual([b1.status, b2.status].sort(), [201, 409], JSON.stringify([b1.body, b2.body]));
+  assert.equal([b1, b2].find((x) => x.status === 409).body.code, "TANPA_PENOLAKAN");
+  p = (await detailG(w, po.id)).lines[0];
+  assert.deepEqual([p.datang, p.menungguPengganti, p.belumDatang], [10, 0, 2], "tepat satu pengganti tercatat; belum datang tetap 2");
+});
+
+test("pengganti: dibatasi sisa penolakan; ditolak asal tidak boleh turun di bawah pengganti; penerimaan asal yang sudah punya pengganti tidak bisa ditolak seluruhnya; koreksi jumlah pengganti dibatasi", async () => {
+  const w = await dunia();
+  const po = await poDisetujui(w);
+  const L = po.lines[0].id;
+  const r1 = await tiba(w.g, po.id, { tanggalTiba: geser(-5), lines: [{ purchaseOrderLineId: L, jumlahDatang: 6 }] });
+  await isiPeriksa(w, r1.body.receiptId, { baik: 4, tolak: 2 }); // siap disimpan
+  const lebih = await tiba(w.g, po.id, { tanggalTiba: geser(-1), lines: [{ purchaseOrderLineId: L, jumlahDatang: 3, pengganti: true }] });
+  assert.equal(lebih.status, 409); assert.equal(lebih.body.code, "MELEBIHI_PENOLAKAN");
+  const rp = await tiba(w.g, po.id, { tanggalTiba: geser(-1), lines: [{ purchaseOrderLineId: L, jumlahDatang: 1, pengganti: true }] });
+  assert.equal(rp.status, 201, JSON.stringify(rp.body));
+  // asal: ditolak tidak boleh di bawah 1 (sudah diganti 1)
+  const asalLine = await testPrisma.goodsReceiptLine.findFirst({ where: { goodsReceiptId: r1.body.receiptId } });
+  const turun = await w.g.patch(`/api/inventory/goods-receipts/${r1.body.receiptId}/lines/${asalLine.id}`, { rejectedQty: 0, acceptedQty: 6 });
+  assert.equal(turun.status, 400); assert.match(turun.body.error, /pengiriman pengganti/);
+  const tolakSemua = await w.g.patch(`/api/inventory/goods-receipts/${r1.body.receiptId}/reject`, { reason: "Salah kirim" });
+  assert.equal(tolakSemua.status, 400); assert.match(tolakSemua.body.error, /pengganti/);
+  // koreksi jumlah pengganti: maksimal sisa penolakan (2) — 3 ditolak, 2 boleh
+  const lagi = await w.g.post(`/api/inventory/barang-akan-datang/penerimaan/${rp.body.receiptId}/koreksi`, { revisi: 1, alasan: "Ternyata dua yang datang", perubahan: { lines: [{ purchaseOrderLineId: L, jumlahDatang: 3 }] } }, kunci());
+  assert.equal(lagi.status, 409); assert.equal(lagi.body.code, "MELEBIHI_PENOLAKAN");
+  const ok = await w.g.post(`/api/inventory/barang-akan-datang/penerimaan/${rp.body.receiptId}/koreksi`, { revisi: 1, alasan: "Ternyata dua yang datang", perubahan: { lines: [{ purchaseOrderLineId: L, jumlahDatang: 2 }] } }, kunci());
+  assert.equal(ok.status, 200, JSON.stringify(ok.body));
+  const p = (await detailF(w, po.id)).lines[0];
+  assert.deepEqual([p.datang, p.menungguPengganti, p.belumDatang], [8, 0, 4]);
 });

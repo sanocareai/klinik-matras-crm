@@ -5464,9 +5464,16 @@ model GoodsReceiptLine {
   // Jumlah FISIK PENDAMPING aktual (mis. 1 LEMBAR untuk 5 KG busa) — informasi kontrol saja; TIDAK memengaruhi nilai persediaan, stok, atau jurnal.
   companionQty        Decimal? @map("companion_qty") @db.Decimal(14, 3)
 
+  // Pengiriman PENGGANTI: baris ini menggantikan barang yang DITOLAK pada baris penerimaan asal (NULL = pengiriman biasa). Pengganti tidak menaikkan batas PO:
+  // jumlahnya dibatasi sisa penolakan baris asal dan tidak dihitung sebagai pasokan baru terhadap jumlah dipesan.
+  replacementForLineId String?            @map("replacement_for_line_id") @db.Uuid
+  replacementForLine   GoodsReceiptLine?  @relation("PenggantiBaris", fields: [replacementForLineId], references: [id], onDelete: Restrict)
+  replacementLines     GoodsReceiptLine[] @relation("PenggantiBaris")
+
   @@index([goodsReceiptId])
   @@index([materialId])
   @@index([purchaseOrderLineId])
+  @@index([replacementForLineId])
   @@map("goods_receipt_lines")
 }
 

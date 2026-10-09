@@ -41,11 +41,11 @@ export function teksPendampingAktual(l) {
 
 // ── Formulir catat barang tiba ───────────────────────────────────────────
 
-/** Isian awal: tiap item PO yang masih boleh datang (sisaDatang > 0); jumlah dikosongkan supaya petugas mengisi angka nyata. */
+/** Isian awal: tiap item PO yang masih harus dikirim supplier (belum dipenuhi > 0: belum datang atau menunggu pengganti); jumlah dikosongkan supaya petugas mengisi angka nyata. */
 export function formKedatanganAwal(po, receipt = null) {
   const lines = po.lines
-    .filter((l) => (receipt ? receipt.lines.some((x) => x.purchaseOrderLineId === l.id) : Number(l.belumDatang) > 0))
-    .map((l) => ({ purchaseOrderLineId: l.id, kode: l.kode, nama: l.nama, satuan: l.satuan, belumDatang: Number(l.belumDatang), dipesan: Number(l.dipesan), pendamping: l.pendamping ? { satuan: l.pendamping.satuan, mode: l.pendamping.mode, rasio: l.pendamping.rasio ?? null } : null, jumlahDatang: "", jumlahPendamping: "" }));
+    .filter((l) => (receipt ? receipt.lines.some((x) => x.purchaseOrderLineId === l.id) : Number(l.belumDipenuhiSupplier) > 0))
+    .map((l) => ({ purchaseOrderLineId: l.id, kode: l.kode, nama: l.nama, satuan: l.satuan, belumDatang: Number(l.belumDatang), menungguPengganti: Number(l.menungguPengganti ?? 0), sisaPengganti: Number(l.asalPengganti?.[0]?.sisa ?? l.menungguPengganti ?? 0), pengganti: false, dipesan: Number(l.dipesan), pendamping: l.pendamping ? { satuan: l.pendamping.satuan, mode: l.pendamping.mode, rasio: l.pendamping.rasio ?? null } : null, jumlahDatang: "", jumlahPendamping: "" }));
   return { tanggalTiba: hariIniISO(), penerima: "", catatan: "", suratJalan: "", bukti: [], lines };
 }
 
@@ -62,7 +62,9 @@ export function galatKedatangan(f, { tanggalPO = null } = {}) {
     const n = Number(l.jumlahDatang);
     if (!(n > 0)) return `${l.kode}: jumlah datang harus lebih dari 0`;
     if (!tigaDesimal(n)) return `${l.kode}: jumlah datang maksimal 3 angka di belakang koma`;
-    if (k3(n) > k3(l.belumDatang)) return `${l.kode}: jumlah datang (${jumlahTeks(n)} ${l.satuan}) melebihi yang belum datang (${jumlahTeks(l.belumDatang)} ${l.satuan}). Minta Finance merevisi jumlah PO bila memang dikirim lebih.`;
+    if (l.pengganti) {
+      if (k3(n) > k3(l.sisaPengganti)) return `${l.kode}: jumlah pengganti (${jumlahTeks(n)} ${l.satuan}) melebihi barang ditolak yang menunggu pengganti (${jumlahTeks(l.sisaPengganti)} ${l.satuan}). Pengganti tidak menaikkan jumlah PO.`;
+    } else if (k3(n) > k3(l.belumDatang)) return `${l.kode}: jumlah datang (${jumlahTeks(n)} ${l.satuan}) melebihi yang belum datang (${jumlahTeks(l.belumDatang)} ${l.satuan}). Minta Finance merevisi jumlah PO bila memang dikirim lebih${l.menungguPengganti > 0 ? "; bila ini barang pengganti untuk yang ditolak, centang pengiriman pengganti" : ""}.`;
     if (l.jumlahPendamping !== "" && l.pendamping?.mode === "AKTUAL" && !(Number(l.jumlahPendamping) >= 0)) return `${l.kode}: jumlah ${String(l.pendamping.satuan).toLowerCase()} tidak boleh negatif`;
   }
   return null;
@@ -71,8 +73,8 @@ export function galatKedatangan(f, { tanggalPO = null } = {}) {
 /** Kekurangan yang akan terlihat setelah disimpan (surat jalan/bukti opsional): daftar peringatan lunak. */
 export function kekuranganIsian(f) {
   const d = [];
-  if (!String(f.suratJalan).trim()) d.push("Surat jalan belum diisi");
-  if (!f.bukti.length) d.push("Bukti kedatangan belum diunggah");
+  if (!String(f.suratJalan).trim()) d.push("Surat jalan belum dilampirkan");
+  if (!f.bukti.length) d.push("Bukti kedatangan belum dilampirkan");
   for (const l of f.lines.filter((x) => x.jumlahDatang !== "" && Number(x.jumlahDatang) > 0)) {
     if (l.pendamping?.mode === "AKTUAL" && l.jumlahPendamping === "") d.push(`Jumlah ${String(l.pendamping.satuan).toLowerCase()} aktual ${l.kode} belum diisi`);
   }
@@ -87,6 +89,7 @@ export function bodyKedatangan(f, receiptId = null) {
     ...(f.bukti.length && { bukti: f.bukti }),
     lines: f.lines.filter((l) => l.jumlahDatang !== "" && Number(l.jumlahDatang) !== 0).map((l) => ({
       purchaseOrderLineId: l.purchaseOrderLineId, jumlahDatang: Number(l.jumlahDatang),
+      ...(l.pengganti && { pengganti: true }),
       ...(l.pendamping?.mode === "AKTUAL" && l.jumlahPendamping !== "" && { jumlahPendamping: Number(l.jumlahPendamping) }),
     })),
   };

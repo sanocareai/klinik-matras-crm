@@ -59,10 +59,10 @@ async function maju(w, grId, dari = "DRAFT") {
 const isi = (w, grId, lineId, body) => w.g.patch(`/api/inventory/goods-receipts/${grId}/lines/${lineId}`, body);
 
 /** Penerimaan dari PO yang sudah siap putaway: datang lewat Catat Barang Tiba (jalur resmi), lalu baik/ditolak diisi saat pemeriksaan. */
-async function penerimaanSiap(w, poId, { datang, baik, tolak = 0 }) {
+async function penerimaanSiap(w, poId, { datang, baik, tolak = 0, pengganti = false }) {
   const gr = await buatPenerimaan(w, poId);
   assert.equal(gr.status, 201, JSON.stringify(gr.body));
-  await bawaSampaiSiap(w.g, gr.body, { datang, baik, tolak });
+  await bawaSampaiSiap(w.g, gr.body, { datang, baik, tolak, pengganti });
   return gr.body;
 }
 
@@ -171,17 +171,21 @@ test("PO 10 → datang 9 → baik 8 / ditolak 1 → Putaway: stok +8, jurnal Dr 
   assert.equal(d.penerimaan.length, 1);
   assert.equal(d.penerimaan[0].lines[0].purchaseOrderLineId, po.lines[0].id, "tautan per baris PO ↔ penerimaan");
 
-  // Penerimaan parsial berikutnya: jadwal default = sisa 2.
-  const gr2 = await penerimaanSiap(w, po.id, { datang: 2, baik: 2 });
+  // Penerimaan parsial berikutnya: jadwal default = yang masih harus dikirim supplier (belum datang 1 + menunggu pengganti 1 = 2).
+  // Yang ditolak TETAP terhitung sudah datang: 1 KG pengiriman biasa (menutup jumlah dipesan) + 1 KG PENGGANTI di pengiriman terpisah (tidak menaikkan batas PO).
+  const gr2 = await penerimaanSiap(w, po.id, { datang: 1, baik: 1 });
   assert.equal(gr2.lines[0].orderedQty, 2);
+  const gr3 = await penerimaanSiap(w, po.id, { datang: 1, baik: 1, pengganti: true });
+  assert.equal(gr3.lines[0].orderedQty, 1);
   assert.equal((await w.g.post(`/api/inventory/goods-receipts/${gr2.id}/putaway`, {})).status, 200);
+  assert.equal((await w.g.post(`/api/inventory/goods-receipts/${gr3.id}/putaway`, {})).status, 200);
   assert.equal(await stokMasuk(w.lem.id), 10);
   d = await detail(w, po.id);
   assert.equal(d.status, "SELESAI");
   b = d.lines[0];
   assert.deepEqual([b.diterimaBaik, b.belumDiterima], [10, 0]);
   assert.equal(await saldoAkun("2-1150"), -(10 * HARGA));
-  assert.equal((await detail(w, po.id)).riwayat.filter((e) => e.type === "PENERIMAAN_DITEMPATKAN").length, 2);
+  assert.equal((await detail(w, po.id)).riwayat.filter((e) => e.type === "PENERIMAAN_DITEMPATKAN").length, 3);
 
   // PO selesai tidak bisa dibuatkan penerimaan baru.
   const lagi = await buatPenerimaan(w, po.id);
