@@ -158,3 +158,21 @@ test("pengganti: item yang menunggu pengganti ditawarkan walau belum datang 0; c
   const panel = baca("../src/features/kedatangan/PanelKedatangan.jsx");
   assert.match(panel, /centang-pengganti/); assert.match(panel, /Pengganti untuk/); assert.match(panel, /belumDipenuhiSupplier/);
 });
+
+test("pengganti: pilihan penolakan asal membatasi jumlah pengganti per baris asal; body membawa penggantiDariBarisId", () => {
+  const po = { orderDate: "2026-10-01", lines: [{ id: "l1", kode: "BUSA", nama: "Busa", satuan: "KG", dipesan: 10, belumDatang: 0, menungguPengganti: 3, belumDipenuhiSupplier: 3, asalPengganti: [{ lineId: "a1", receiptNumber: "GR-1", sisa: 1 }, { lineId: "a2", receiptNumber: "GR-2", sisa: 2 }], pendamping: null }] };
+  const f = formKedatanganAwal(po);
+  assert.equal(f.lines[0].asalId, "a1", "bawaan = penolakan tertua");
+  f.penerima = "Budi"; f.catatan = "ok"; f.tanggalTiba = "2026-10-05"; f.lines[0].pengganti = true; f.lines[0].jumlahDatang = "2";
+  assert.match(galatKedatangan(f, { tanggalPO: po.orderDate }), /menunggu pengganti \(1 KG\)/, "asal GR-1 hanya 1 KG");
+  f.lines[0].asalId = "a2"; assert.equal(galatKedatangan(f, { tanggalPO: po.orderDate }), null, "asal GR-2 sisa 2 KG");
+  assert.deepEqual([bodyKedatangan(f, "r1").lines[0].pengganti, bodyKedatangan(f, "r1").lines[0].penggantiDariBarisId], [true, "a2"]);
+  const panel = baca("../src/features/kedatangan/PanelKedatangan.jsx");
+  assert.match(panel, /pilih-asal-pengganti/); assert.match(panel, /batas-pengganti/); assert.match(panel, /Batas jumlah pengganti/);
+});
+
+test("progres: rincian berlabel Indonesia dari definisi server (asli tiba, pengganti tiba, total fisik tiba, belum datang, menunggu pengganti, baik belum disimpan, belum dipenuhi supplier, belum masuk stok)", () => {
+  const src = fs.readFileSync(path.join(dir, "../../backend/src/services/finance/progresPO.js"), "utf8");
+  for (const label of ["Pengiriman asli tiba", "Pengganti tiba", "Total fisik tiba", "Belum datang", "Menunggu pengganti", "Baik belum disimpan", "Belum dipenuhi supplier", "Belum masuk stok"]) assert.ok(src.includes(`label: "${label}"`), label);
+  assert.match(baca("../src/features/kedatangan/PanelKedatangan.jsx"), /definisi\.filter\(\(d\) => d\.kunci !== "dipesan"\)/, "kolom progres = definisi server (tidak ditulis ulang di layar)");
+});

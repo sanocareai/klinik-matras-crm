@@ -45,9 +45,12 @@ export function teksPendampingAktual(l) {
 export function formKedatanganAwal(po, receipt = null) {
   const lines = po.lines
     .filter((l) => (receipt ? receipt.lines.some((x) => x.purchaseOrderLineId === l.id) : Number(l.belumDipenuhiSupplier) > 0))
-    .map((l) => ({ purchaseOrderLineId: l.id, kode: l.kode, nama: l.nama, satuan: l.satuan, belumDatang: Number(l.belumDatang), menungguPengganti: Number(l.menungguPengganti ?? 0), sisaPengganti: Number(l.asalPengganti?.[0]?.sisa ?? l.menungguPengganti ?? 0), pengganti: false, dipesan: Number(l.dipesan), pendamping: l.pendamping ? { satuan: l.pendamping.satuan, mode: l.pendamping.mode, rasio: l.pendamping.rasio ?? null } : null, jumlahDatang: "", jumlahPendamping: "" }));
+    .map((l) => ({ purchaseOrderLineId: l.id, kode: l.kode, nama: l.nama, satuan: l.satuan, belumDatang: Number(l.belumDatang), menungguPengganti: Number(l.menungguPengganti ?? 0), sisaPengganti: Number(l.asalPengganti?.[0]?.sisa ?? l.menungguPengganti ?? 0), asalPengganti: l.asalPengganti ?? [], asalId: l.asalPengganti?.[0]?.lineId ?? "", pengganti: false, dipesan: Number(l.dipesan), pendamping: l.pendamping ? { satuan: l.pendamping.satuan, mode: l.pendamping.mode, rasio: l.pendamping.rasio ?? null } : null, jumlahDatang: "", jumlahPendamping: "" }));
   return { tanggalTiba: hariIniISO(), penerima: "", catatan: "", suratJalan: "", bukti: [], lines };
 }
+
+/** Batas jumlah pengganti = sisa penolakan pada baris asal yang DIPILIH (server tetap menegakkan). */
+export const sisaPenggantiTerpilih = (l) => Number((l.asalPengganti ?? []).find((a) => a.lineId === l.asalId)?.sisa ?? l.sisaPengganti ?? 0);
 
 /** Galat dini (null = siap kirim). Aturan sama dengan server: tanggal tidak di masa depan, PIC, catatan, minimal satu jumlah, tidak melebihi sisa. */
 export function galatKedatangan(f, { tanggalPO = null } = {}) {
@@ -63,7 +66,7 @@ export function galatKedatangan(f, { tanggalPO = null } = {}) {
     if (!(n > 0)) return `${l.kode}: jumlah datang harus lebih dari 0`;
     if (!tigaDesimal(n)) return `${l.kode}: jumlah datang maksimal 3 angka di belakang koma`;
     if (l.pengganti) {
-      if (k3(n) > k3(l.sisaPengganti)) return `${l.kode}: jumlah pengganti (${jumlahTeks(n)} ${l.satuan}) melebihi barang ditolak yang menunggu pengganti (${jumlahTeks(l.sisaPengganti)} ${l.satuan}). Pengganti tidak menaikkan jumlah PO.`;
+      if (k3(n) > k3(sisaPenggantiTerpilih(l))) return `${l.kode}: jumlah pengganti (${jumlahTeks(n)} ${l.satuan}) melebihi barang ditolak yang menunggu pengganti (${jumlahTeks(sisaPenggantiTerpilih(l))} ${l.satuan}). Pengganti tidak menaikkan jumlah PO.`;
     } else if (k3(n) > k3(l.belumDatang)) return `${l.kode}: jumlah datang (${jumlahTeks(n)} ${l.satuan}) melebihi yang belum datang (${jumlahTeks(l.belumDatang)} ${l.satuan}). Minta Finance merevisi jumlah PO bila memang dikirim lebih${l.menungguPengganti > 0 ? "; bila ini barang pengganti untuk yang ditolak, centang pengiriman pengganti" : ""}.`;
     if (l.jumlahPendamping !== "" && l.pendamping?.mode === "AKTUAL" && !(Number(l.jumlahPendamping) >= 0)) return `${l.kode}: jumlah ${String(l.pendamping.satuan).toLowerCase()} tidak boleh negatif`;
   }
@@ -89,7 +92,7 @@ export function bodyKedatangan(f, receiptId = null) {
     ...(f.bukti.length && { bukti: f.bukti }),
     lines: f.lines.filter((l) => l.jumlahDatang !== "" && Number(l.jumlahDatang) !== 0).map((l) => ({
       purchaseOrderLineId: l.purchaseOrderLineId, jumlahDatang: Number(l.jumlahDatang),
-      ...(l.pengganti && { pengganti: true }),
+      ...(l.pengganti && { pengganti: true, ...(l.asalId && { penggantiDariBarisId: l.asalId }) }),
       ...(l.pendamping?.mode === "AKTUAL" && l.jumlahPendamping !== "" && { jumlahPendamping: Number(l.jumlahPendamping) }),
     })),
   };

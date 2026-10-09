@@ -6,12 +6,12 @@ import { Modal } from "@/components/ui/modal.jsx";
 import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/table.jsx";
-import { TombolAksi } from "@/features/finance/shared.jsx";
+import { TombolAksi, Pilihan } from "@/features/finance/shared.jsx";
 import { api } from "@/api.js";
 import { compressImage } from "@/utils/compressImage.js";
 import {
   LABEL_PENERIMAAN, VARIAN_PENERIMAAN, LABEL_WORKSPACE, jumlahTeks, tanggalTeks, waktuTeks, teksPendampingAktual,
-  formKedatanganAwal, galatKedatangan, kekuranganIsian, bodyKedatangan, formKoreksiAwal, bodyKoreksi, galatKoreksi, kalimatRiwayat,
+  formKedatanganAwal, galatKedatangan, sisaPenggantiTerpilih, kekuranganIsian, bodyKedatangan, formKoreksiAwal, bodyKoreksi, galatKoreksi, kalimatRiwayat,
 } from "@/features/kedatangan/kedatanganLogic.js";
 
 // Panel KEDATANGAN barang pada satu PO — dipakai Gudang (Barang Akan Datang) dan Finance (detail PO). Data dan aturan SATU sumber (server): layar hanya menampilkan.
@@ -181,8 +181,22 @@ export function ModalCatatKedatangan({ po, receipt = null, receiptId = null, wor
                 {l.menungguPengganti > 0 && (
                   <label className="mt-2 flex items-start gap-2 rounded-lg bg-inset px-3 py-2 text-[12px] text-ink2 max-sm:min-h-11" data-testid="centang-pengganti">
                     <input type="checkbox" checked={!!l.pengganti} onChange={(e) => setBaris(i, { pengganti: e.target.checked })} className="mt-0.5" aria-label={`Pengiriman pengganti ${l.kode}`} />
-                    <span><strong className="text-ink">Ini pengiriman pengganti</strong> untuk barang yang ditolak ({jumlahTeks(l.sisaPengganti)} {l.satuan} menunggu pengganti). Pengganti tidak menaikkan jumlah PO dan tidak mengurangi “belum datang”; hubungannya ke penerimaan asal tersimpan.</span>
+                    <span><strong className="text-ink">Ini pengiriman pengganti</strong> untuk barang yang ditolak ({jumlahTeks(l.menungguPengganti)} {l.satuan} menunggu pengganti). Pengganti tidak menaikkan jumlah PO dan tidak mengurangi “belum datang”; hubungannya ke penerimaan asal tersimpan.</span>
                   </label>
+                )}
+                {l.menungguPengganti > 0 && l.pengganti && (
+                  <div className="mt-2 space-y-1.5 rounded-lg border border-line p-2.5" data-testid="pilih-asal-pengganti">
+                    {l.asalPengganti.length > 1 ? (
+                      <Field label="Pengganti untuk penolakan di penerimaan" hint="Pilih penolakan yang digantikan oleh pengiriman ini.">
+                        <Pilihan value={l.asalId} onChange={(v) => setBaris(i, { asalId: v })} aria-label={`Penolakan asal ${l.kode}`}>
+                          {l.asalPengganti.map((a) => <option key={a.lineId} value={a.lineId}>{a.receiptNumber} — menunggu pengganti {jumlahTeks(a.sisa)} {l.satuan}</option>)}
+                        </Pilihan>
+                      </Field>
+                    ) : (
+                      <p className="m-0 text-[12.5px] text-ink2">Pengganti untuk penolakan di <strong className="text-ink">{l.asalPengganti[0]?.receiptNumber ?? "—"}</strong>.</p>
+                    )}
+                    <p className="m-0 text-[12px] text-ink2" data-testid="batas-pengganti">Batas jumlah pengganti: <strong className="tabular-nums text-ink">{jumlahTeks(sisaPenggantiTerpilih(l))} {l.satuan}</strong> (sisa penolakan yang belum diganti).</p>
+                  </div>
                 )}
               </div>
             ))}
@@ -292,7 +306,7 @@ export function KartuPenerimaan({ r, finance, bolehTulis, onCatat, onKoreksi, ek
       )}
       <div className="mt-1.5 text-ink2">
         {r.lines.filter((x) => x.datang != null).map((x) => (
-          <div key={x.id} className="tabular-nums">{x.kode}{x.penggantiDari ? <Badge variant="accent" className="ml-1" data-testid="pengganti-dari">Pengganti untuk {x.penggantiDari.nomor}</Badge> : null}: datang {jumlahTeks(x.datang)} · baik {jumlahTeks(x.baik ?? 0)} · ditolak {jumlahTeks(x.ditolak ?? 0)} · masuk stok {jumlahTeks(x.masukStok)}{x.pendamping ? ` · ${String(x.pendamping.satuan).toLowerCase()} ${x.pendamping.aktual == null ? "belum diisi" : jumlahTeks(x.pendamping.aktual)}` : ""}</div>
+          <div key={x.id} className="tabular-nums">{x.kode}{x.penggantiDari ? <>{" "}<Badge variant="accent" className="ml-1" data-testid="pengganti-dari">Pengganti untuk {x.penggantiDari.nomor}</Badge></> : null}: datang {jumlahTeks(x.datang)} · baik {jumlahTeks(x.baik ?? 0)} · ditolak {jumlahTeks(x.ditolak ?? 0)} · masuk stok {jumlahTeks(x.masukStok)}{x.pendamping ? ` · ${String(x.pendamping.satuan).toLowerCase()} ${x.pendamping.aktual == null ? "belum diisi" : jumlahTeks(x.pendamping.aktual)}` : ""}</div>
         ))}
       </div>
       {finance && r.jatuhTempo && (
