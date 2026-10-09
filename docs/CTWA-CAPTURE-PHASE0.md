@@ -106,11 +106,22 @@ Setiap gerbang punya **titik penghentian**: bila tidak terpenuhi, berhenti dan j
 5. Keputusan backup/snapshot (status UNKNOWN di atas) dicatat oleh pemilik.
 
 ### Gerbang 1 — Deploy kode dengan flag OFF
-- Lewat skrip rilis bergerbang repo (pola `scripts/release-*.sh`), kode saja, **tanpa migrasi**, tanpa variabel `CTWA_*`.
-- Rollback tag dibuat otomatis oleh skrip (`klinik-matras-backend:rollback-pre-<kode>-<sha>`).
+Skrip: `scripts/release-ctwa-capture-flag-off.sh` (kode saja, **tanpa migrasi**, tanpa build frontend, tanpa perubahan env, tanpa penghapusan apa pun, tanpa rollback otomatis). Gerbang 0 di atas sudah ditegakkan oleh skrip (baseline, mount, disk ≥ 5 GiB di awal/sebelum build/sebelum switch, `pg_dump` + validasi gzip + verifikasi restore ke DB sementara, `.env` 0 baris `CTWA_*`, folder capture belum ada, `WEBHOOK_DEBUG` mati, allowlist berkas, pin sha256 4 berkas runtime).
+
+```bash
+# dari repo kandidat (laptop) — tanpa push; BASE_SHA = release aktif, DEPLOY_SHA = HEAD kandidat
+git bundle create /tmp/ctwa.bundle <BASE_SHA>..rc/ctwa-capture-phase0-on-live-934142cd
+scp /tmp/ctwa.bundle ubuntu@43.133.152.6:/tmp/ctwa.bundle
+cat scripts/release-ctwa-capture-flag-off.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/rcc.sh'
+ssh ubuntu@43.133.152.6 'BUNDLE=/tmp/ctwa.bundle bash /tmp/rcc.sh <DEPLOY_SHA> <BASE_SHA> --preflight-only'   # baca-saja, ulangi sampai bersih
+ssh ubuntu@43.133.152.6 'BUNDLE=/tmp/ctwa.bundle bash /tmp/rcc.sh <DEPLOY_SHA> <BASE_SHA>'                    # rilis
+```
+Kode keluar: `0` selesai dan terverifikasi; `1` berhenti (skrip mencetak instruksi rollback); `3` rilis aktif tetapi smoke inbox **tertunda** (belum ada pesan inbound dalam `SMOKE_WAIT_SEC`, default 300 dtk) → jalankan nanti `bash /tmp/rcc.sh <DEPLOY_SHA> <BASE_SHA> --verify-only` (baca-saja).
+Rollback tag dibuat otomatis (`klinik-matras-backend:rollback-pre-ctwa0-<sha8>`).
+Skrip diuji pada harness lokal (docker/curl disamarkan): jalur normal, `--preflight-only`, `--verify-only`, dan 15 skenario gagal (baseline bergeser, disk < 5 GiB di awal dan sebelum switch, mount salah, `pg_dump` gagal, restore tidak cocok, `CTWA_*` di `.env` atau container, folder capture sudah ada, `WEBHOOK_DEBUG=1`, berkas di luar allowlist, pin tidak cocok, log memuat clid, log memuat `[ctwa-capture]`, galat webhook, belum ada trafik). Harness itu **bukan** pengganti `--preflight-only` di server.
 
 ### Gerbang 2 — Verifikasi inbox dan flag-off
-Lihat "Smoke test inbox". **STOP + rollback** bila ada pesan inbound yang tidak tersimpan, error baru di log, atau folder capture muncul.
+Sebagian besar otomatis di fase 8 skrip (lihat juga "Smoke test inbox"): release aktif, health, `RestartCount=0`, mount, pin berkas di container, 0 variabel `CTWA_*`, **tidak ada `ctwa-capture*` di container maupun host (sebelum dan sesudah ada trafik inbound nyata)**, 0 galat webhook dan 0 baris `[ctwa-capture]` di log sejak switch, log "Lapis 0b" tanpa nilai clid, route inbox 401 tanpa login, dan ≥ 1 pesan inbound baru tersimpan. **STOP + rollback** bila ada pesan inbound yang tidak tersimpan, error baru di log, atau folder capture muncul. Satu catatan: container diganti (beberapa detik); pesan WhatsApp yang tiba persis di jeda itu bergantung pada retry WAHA (belum diverifikasi) dan sinkronisasi riwayat WAHA→CRM — risiko yang sama dengan setiap rilis backend sebelumnya. Rilis di jam sepi.
 
 ### Gerbang 3 — Aktivasi terpisah (butuh persetujuan pemilik)
 - Prasyarat: Gerbang 2 lulus, disk bebas ≥ 4 GiB, keputusan snapshot ada.

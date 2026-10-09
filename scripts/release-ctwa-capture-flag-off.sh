@@ -35,7 +35,7 @@ RELEASES="$HOME/releases/klinik-matras"; PERSIST="$HOME/klinik-matras"; SRC="$HO
 TAG_KODE="ctwa0"
 
 # Hanya berkas ini yang BOLEH berbeda dari baseline (EKSPLISIT; Production/Delivery/Finance/Inbox-selain-webhooks/schema/package/compose = berhenti).
-ALLOWED_RE='^(\.gitignore|backend/\.env\.example|backend/scripts/ctwa-capture-(purge|report)\.js|backend/src/routes/webhooks\.js|backend/src/services/(ctwaCapture|ctwaCaptureAnalysis|leadAttribution)\.js|backend/tests/(ctwaCapture|leadAttribution)\.test\.js|backend/tests/integration/ctwaCapture\.integration\.test\.js|docs/CTWA-[A-Z0-9-]+\.md|scripts/release-ctwa-capture-flag-off\.sh)$'
+ALLOWED_RE='^(\.gitignore|backend/\.env\.example|backend/scripts/ctwa-capture-(purge|report)\.js|backend/src/routes/webhooks\.js|backend/src/services/(ctwaCapture|ctwaCaptureAnalysis|leadAttribution)\.js|backend/tests/(ctwaCapture|leadAttribution|releaseCtwaCapture)\.test\.js|backend/tests/integration/ctwaCapture\.integration\.test\.js|docs/CTWA-[A-Z0-9-]+\.md|scripts/release-ctwa-capture-flag-off\.sh)$'
 # Pin sha256 (teks LF) berkas RUNTIME. Isi berbeda dari pin = berhenti sampai ditinjau ulang. Diisi saat kandidat dibekukan.
 declare -A PINS=(
   ["backend/src/routes/webhooks.js"]="95759a967921d1ab181a3cdb9879a75cbaa757641a5d5ae304c8a53dcdedb94b"
@@ -125,7 +125,7 @@ verify_live() {
   curl -fsS --max-time 15 "${PUBLIC_URL}/api/health" | grep '"ok":true' >/dev/null || die "healthcheck publik gagal"; ok "health internal + publik"
   [ "$(docker inspect -f '{{.RestartCount}}' "$cid")" = "0" ] && [ "$(docker inspect -f '{{.State.Running}}' "$cid")" = "true" ] || die "backend restart/tidak berjalan"; ok "RestartCount=0, berjalan"
   mount_gate "$cid" "container aktif"
-  local f want have
+  local f have
   for f in "${!PINS[@]}"; do
     have="$(docker exec "$cid" sh -c "cat /app/${f#backend/}" | sha_lf)"
     [ "$have" = "${PINS[$f]}" ] || die "isi ${f} di container BERBEDA dari pin (${have:0:12} != ${PINS[$f]:0:12})"
@@ -246,12 +246,12 @@ ok "DB $(( DB_BYTES / 1048576 )) MiB, dist aktif $(( DIST_KB / 1024 )) MiB (kebu
 if [ "$MODE" = "preflight" ]; then say "Preflight selesai (--preflight-only): produksi TIDAK diubah"; trap - EXIT; exit 0; fi
 
 PHASE="3-backup"; say "3. Backup pra-rilis + checksum + verifikasi restore"
-BACKUP_FILE="$HOME/backups/pre-${TAG_KODE}-${DEPLOY_SHORT}-${TS}.sql.gz"
-dcp "$PREV_DIR" exec -T postgres pg_dump -U "$DB_USER" "$DB_NAME" </dev/null | gzip > "${BACKUP_FILE}.partial" || die "pg_dump gagal — berhenti, tidak ada yang diubah"
-gzip -t "${BACKUP_FILE}.partial" || die "arsip backup rusak"
-gzip -dc "${BACKUP_FILE}.partial" | tail -n 5 | grep 'PostgreSQL database dump complete' >/dev/null || die "dump tidak lengkap"
-[ "$(stat -c %s "${BACKUP_FILE}.partial")" -gt 1000000 ] || die "file backup terlalu kecil"
-mv "${BACKUP_FILE}.partial" "$BACKUP_FILE"; chmod 600 "$BACKUP_FILE"
+BACKUP_TARGET="$HOME/backups/pre-${TAG_KODE}-${DEPLOY_SHORT}-${TS}.sql.gz"   # BACKUP_FILE baru diisi SETELAH backup valid (instruksi rollback tidak menyebut berkas yang belum ada)
+dcp "$PREV_DIR" exec -T postgres pg_dump -U "$DB_USER" "$DB_NAME" </dev/null | gzip > "${BACKUP_TARGET}.partial" || die "pg_dump gagal — berhenti, tidak ada yang diubah"
+gzip -t "${BACKUP_TARGET}.partial" || die "arsip backup rusak"
+gzip -dc "${BACKUP_TARGET}.partial" | tail -n 5 | grep 'PostgreSQL database dump complete' >/dev/null || die "dump tidak lengkap"
+[ "$(stat -c %s "${BACKUP_TARGET}.partial")" -gt 1000000 ] || die "file backup terlalu kecil"
+mv "${BACKUP_TARGET}.partial" "$BACKUP_TARGET"; BACKUP_FILE="$BACKUP_TARGET"; chmod 600 "$BACKUP_FILE"
 ( cd "$(dirname "$BACKUP_FILE")" && sha256sum "$(basename "$BACKUP_FILE")" > "$(basename "$BACKUP_FILE").sha256" && sha256sum -c "$(basename "$BACKUP_FILE").sha256" >/dev/null ) || die "checksum backup gagal"
 chmod 600 "${BACKUP_FILE}.sha256"
 ok "backup ${BACKUP_FILE} ($(du -h "$BACKUP_FILE" | cut -f1)); sha256 $(cut -d' ' -f1 "${BACKUP_FILE}.sha256" | cut -c1-16)…"
@@ -306,7 +306,7 @@ disk_gate "sebelum switch"
 PHASE="7-switch"; say "7. Switch backend ke release baru (SATU kali; env TIDAK diubah)"
 SWITCH_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; SWITCH_NAIVE="$(date -u '+%F %T')"
 dcp "$NEW_DIR" up -d --no-deps backend </dev/null >/dev/null 2>&1 || die "docker compose up backend gagal"
-UP=0; for i in $(seq 1 45); do curl -fsS --max-time 4 "${INTERNAL_URL}/api/health" >/dev/null 2>&1 && { UP=1; break; }; sleep 2; done
+UP=0; for _ in $(seq 1 45); do curl -fsS --max-time 4 "${INTERNAL_URL}/api/health" >/dev/null 2>&1 && { UP=1; break; }; sleep 2; done
 [ "$UP" = "1" ] || die "backend baru tidak sehat dalam 90 detik"
 CID_NEW="$(docker ps -q --filter "label=com.docker.compose.project=${PROJECT}" --filter "label=com.docker.compose.service=backend")"
 [ "$(docker inspect -f '{{.Image}}' "$CID_NEW")" = "$NEW_IMG_ID" ] || die "container berjalan tetapi bukan image baru"
