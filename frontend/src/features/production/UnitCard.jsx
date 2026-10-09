@@ -1,6 +1,7 @@
 import React from "react";
 import { AlertTriangle, CalendarDays, ChevronsUp, Flame, ImageOff, PackageX, Scissors, Wrench } from "lucide-react";
 import { Badge } from "@/components/ui/badge.jsx";
+import PkrRujukan from "@/features/production/PkrRujukan.jsx";
 import { ProgressBar } from "@/components/ui/progress.jsx";
 import { bucketStyle, initials, targetDateBadge } from "@/features/production/experience.js";
 import { dataGaps, isGantiKain, materialBadge, mattressInfo, mejaLabel, priorityMeta, salesNoteOf, stageText } from "@/features/production/unitCardModel.js";
@@ -203,6 +204,7 @@ export function UpcomingCard({ item, onOpen, footer = null, badgeLabel = "Akan M
           <p data-testid="customer-name" className="m-0 line-clamp-2 break-words text-[16px] font-bold leading-tight text-ink [overflow-wrap:anywhere]" title={c.name || ""}>{c.name || "Pelanggan belum dicatat"}</p>
           <p className="m-0 truncate text-[12px] text-ink3">{item.unit.unitCode}{item.unit.orderNumber ? ` · ${item.unit.orderNumber}` : ""}{c.city ? ` · ${c.city}` : ""}</p>
           <p className="m-0 line-clamp-2 text-[13px] text-ink2"><span className="font-semibold text-ink3">Layanan Sales: </span>{c.salesServices?.length ? c.salesServices.join(" + ") : <span className="text-ink3">belum tercatat</span>}</p>
+          <PkrRujukan pkr={item.penjualanKaryawan} />
           <MattressLine view={item} />
           <SalesNote view={item} />
           <div className="flex flex-wrap items-center gap-1.5"><Badge variant="neutral">{badgeLabel}</Badge>{item.scheduledDate && <span className="text-[12px] text-ink3">Pickup {item.scheduledDate}</span>}{item.driverName && <span className="text-[12px] text-ink3">· {item.driverName}</span>}</div>

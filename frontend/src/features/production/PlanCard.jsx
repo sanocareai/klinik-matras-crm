@@ -8,6 +8,7 @@ import { isPlanComplete } from "@/features/production/planDnd.js";
 import { delayStatusText, progressText, rankOfView, viewPresence, viewStatus } from "@/features/production/productionLabels.js";
 import { UnitPhoto } from "@/features/production/UnitCard.jsx";
 import { formatTanggal } from "@/utils/formatDate.js";
+import PkrRujukan from "@/features/production/PkrRujukan.jsx";
 
 // P12A.2 — kartu RENCANA PRODUKSI (backlog + slot meja). Hierarki: header (foto, nama customer, order/unit, prioritas) → tiga blok informasi berbeda
 // (Layanan Sales biru · Kasur netral · Catatan Sales kuning lembut) → operasional (tahap, bahan, target, meja/urutan, PIC, progres).
@@ -92,6 +93,7 @@ export function PlanCard({ view, seq = null, today, tomorrow, onOpen, handle = n
           <div className="min-w-0 flex-1">
             <p data-testid="customer-name" className="m-0 line-clamp-2 break-words text-[16px] font-bold leading-tight text-ink [overflow-wrap:anywhere]" title={c.name || ""}>{c.name || "Pelanggan belum dicatat"}</p>
             <p className="m-0 mt-0.5 truncate text-[12.5px] text-ink3" title={`${view.unit.unitCode}${c.orderNumber ? ` · ${c.orderNumber}` : ""}`}>{view.unit.unitCode}{c.orderNumber ? ` · ${c.orderNumber}` : ""}{c.city ? ` · ${c.city}` : ""}</p>
+            <PkrRujukan pkr={view.penjualanKaryawan} className="mt-1" />
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
               <PriorityBadge meta={p} />
               {view.timer?.late && <Badge variant="red">Terlambat</Badge>}

@@ -13,6 +13,7 @@ import {
 import { cn } from "@/lib/utils.js";
 import { formatTanggal, formatDurasiDetik } from "@/utils/formatDate.js";
 import { UnitOverviewDrawer } from "@/features/production/UnitOverviewDrawer.jsx";
+import PkrRujukan from "@/features/production/PkrRujukan.jsx";
 import { DELAY_TITLE, DISPLAY_STATUS_TABS, presenceTone, priorityOf, salesServicesText, statusOf } from "@/features/production/productionLabels.js";
 
 // "Elapsed" per baris (Production Core Slice 3P) — STATIS per-muat, BUKAN ticking langsung (timer LIVE ada di Detail Unit).
@@ -165,7 +166,10 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
                       return (
                         <TR key={u.id} clickable data-testid="order-row" data-unit-code={u.unitCode} data-priority={pr.key} onClick={() => setDetailUnit(u)}>
                           <TD sticky className="whitespace-nowrap font-semibold text-ink">{u.unitCode}{pr.key !== "NORMAL" && <Badge variant={pr.tone} className="ml-1.5 align-middle" data-testid="priority-badge">{pr.label}</Badge>}</TD>
-                          <TD truncate>{u.order?.customer?.name || "—"}</TD>
+                          <TD truncate={!u.penjualanKaryawan}>
+                            <span className={u.penjualanKaryawan ? "block break-words" : undefined}>{u.order?.customer?.name || "—"}</span>
+                            <PkrRujukan pkr={u.penjualanKaryawan} className="mt-0.5" />
+                          </TD>
                           <TD truncate className="text-ink2" data-testid="sales-services">{salesServicesText((u.order?.items || []).map((i) => i.layananName).filter(Boolean))}</TD>
                           <TD>
                             <Badge variant={st.tone} data-testid="status-badge">{st.label}</Badge>
@@ -201,6 +205,7 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
                           <Badge variant={st.tone} className="ml-auto shrink-0">{st.label}</Badge>
                         </div>
                         <div className="mt-0.5 truncate text-[13px] text-ink">{u.order?.customer?.name || "—"}</div>
+                        <PkrRujukan pkr={u.penjualanKaryawan} className="mt-0.5" />
                         <div className="mt-0.5 break-words text-[11.5px] text-ink2"><span className="font-semibold text-ink3">Layanan Sales: </span>{salesServicesText((u.order?.items || []).map((i) => i.layananName).filter(Boolean))}</div>
                         <div className="mt-0.5 truncate text-[11px] text-ink2">
                           {u.order?.orderNumber || "—"}

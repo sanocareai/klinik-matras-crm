@@ -65,7 +65,7 @@ test("pemasangan: API, Finance (kolom + tombol Buat/Tautkan + form), CRM Orders,
   assert.match(ord, /LabelOrderPkr pkr=\{order\.penjualanKaryawan\}/);
   assert.match(ord, /BadgeBayarPkr/);
   assert.match(ord, /di Finance/);
-  assert.match(baca("../src/features/production/UnitOverviewDrawer.jsx"), /unit360-pkr-perlu-dilengkapi/);
+  assert.match(baca("../src/features/production/UnitOverviewDrawer.jsx"), /unit360-rujukan-pkr/);
   assert.match(baca("../src/features/armada/components/JobDetailDrawer.jsx"), /job-rujukan-pkr/);
   const komp = baca("../src/features/finance/PkrOrderCrm.jsx");
   assert.match(komp, /Perlu dilengkapi/);

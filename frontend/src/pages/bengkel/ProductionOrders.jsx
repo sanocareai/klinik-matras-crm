@@ -19,6 +19,8 @@ import { formatTanggalPendek } from "@/utils/formatDate.js";
 import { JOB_STATUS_REAL } from "@/features/armada/jobStatus.js";
 import OrderTimelineDrawer from "@/features/orders/OrderTimelineDrawer.jsx";
 import { StatusSelect } from "@/features/orders/StatusSelect.jsx";
+import PkrRujukan from "@/features/production/PkrRujukan.jsx";
+import { rujukanDariRingkas } from "@/features/production/pkrRujukanModel.js";
 
 // Semua Order — Produksi (D-086, 5 September 2026). Laporan owner: "sales
 // suka lupa ubah status order, jadi kenapa gue ingin disemua workspace sales
@@ -300,6 +302,7 @@ export default function ProductionOrders() {
                       <span className="flex items-center gap-2">
                         <Avatar name={o.customerName} size="sm" />
                         <span className="truncate">{o.customerName || "—"}</span>
+                        <PkrRujukan pkr={rujukanDariRingkas(o.penjualanKaryawan)} />
                         {/* Komplain (D-108, 6 September 2026) — laporan owner: komplain
                             yang dicatat Sales CRM tidak pernah kelihatan di Produksi/
                             Delivery (silo total). Datanya SUDAH ada di respons ini
@@ -324,11 +327,15 @@ export default function ProductionOrders() {
                     <TD><JobChip label="Ambil" job={o.pickupJob} /></TD>
                     <TD><JobChip label="Kirim" job={o.deliveryJob} /></TD>
                     <TD>
-                      <Badge variant={paymentStatusVariant(o.paymentStatus)}>
-                        {PAYMENT_STATUS_LABELS[o.paymentStatus] || o.paymentStatus}
-                      </Badge>
+                      {o.penjualanKaryawan ? (
+                        <Badge variant="neutral" title="Status pembayaran dibaca dari Penjualan Karyawan di Finance">{o.penjualanKaryawan.pembayaran?.label ?? "—"}</Badge>
+                      ) : (
+                        <Badge variant={paymentStatusVariant(o.paymentStatus)}>
+                          {PAYMENT_STATUS_LABELS[o.paymentStatus] || o.paymentStatus}
+                        </Badge>
+                      )}
                     </TD>
-                    <TD numeric>{formatRupiah(o.value || 0)}</TD>
+                    <TD numeric>{o.penjualanKaryawan ? <span className="font-normal text-ink3" title="Nominal dikelola di Finance › Penjualan Karyawan">di Finance</span> : formatRupiah(o.value || 0)}</TD>
                     <TD>{formatTanggalPendek(o.createdAt)}</TD>
                   </TR>
                 ))

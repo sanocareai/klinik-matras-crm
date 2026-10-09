@@ -5,6 +5,7 @@ import UnitV1Actions from "./UnitV1Actions.jsx";
 import UnitV1Stage from "./UnitV1Stage.jsx";
 import UnitV1Materials from "./UnitV1Materials.jsx";
 import { V2_SECTIONS_UNAVAILABLE, dash, unitFacts } from "./unitOrderFallbackModel.js";
+import PkrRujukan from "./PkrRujukan.jsx";
 
 // P12B.4 — isi drawer Unit 360 untuk unit yang BELUM masuk Production V2 (Unit 360 = 404; cohort tidak diperluas). Membaca data order/unit ASLI
 // (GET /units/:id/timeline, baca-saja) di drawer yang sama — tanpa halaman Unit terpisah, tanpa tab baru. Bagian V2 yang belum ada dijelaskan apa adanya.
@@ -27,6 +28,7 @@ export default function UnitOrderFallback({ data, error, loading, roles = [], on
         <ul className="m-0 mt-1 list-disc pl-5">{V2_SECTIONS_UNAVAILABLE.map(([k, d]) => <li key={k}><b>{k}</b> — {d}</li>)}</ul>
       </div>
       )}
+      {data.penjualanKaryawan && <div data-testid="unit360-rujukan-pkr"><PkrRujukan pkr={data.penjualanKaryawan} rinci /></div>}
       <dl className="m-0 grid grid-cols-2 gap-2 text-[12.5px]">
         {unitFacts(data).map(([k, v]) => (
           <div key={k} className="min-w-0 rounded-btn bg-inset px-3 py-2"><dt className="m-0 text-ink3">{k}</dt><dd className="m-0 break-words font-semibold text-ink">{dash(v)}</dd></div>

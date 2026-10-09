@@ -19,6 +19,7 @@ import { UnitPhotoPanel } from "@/features/production/UnitPhotoThumb.jsx";
 import MorningPriorityApprovalPanel from "@/features/production/MorningPriorityApprovalPanel.jsx";
 import { UnitOverviewDrawer } from "@/features/production/UnitOverviewDrawer.jsx";
 import { UnitCard, UpcomingCard, PicChips } from "@/features/production/UnitCard.jsx";
+import PkrRujukan from "@/features/production/PkrRujukan.jsx";
 import { ScheduleModal } from "@/features/production/ScheduleModals.jsx";
 import { mejaLabel, pipelineChips, stageText } from "@/features/production/unitCardModel.js";
 
@@ -263,7 +264,7 @@ export default function ProductionPlannerV2() {
                     {v1.map((u) => (
                       <tr key={`v1-${u.id}`} data-testid="v1-row" data-unit-code={u.unitCode} className="cursor-pointer border-t border-line hover:bg-hovertint" onClick={() => openOverview(u.id)}>
                         <td className="px-3 py-2 font-semibold text-ink">{u.unitCode}<div className="font-normal text-ink3">{u.order?.orderNumber || ""}</div></td>
-                        <td className="px-3 py-2">{u.order?.customer?.name || "—"}</td>
+                        <td className="px-3 py-2">{u.order?.customer?.name || "—"}<PkrRujukan pkr={u.penjualanKaryawan} className="mt-0.5" /></td>
                         <td className="px-3 py-2">{salesServicesText((u.order?.items || []).map((x) => x.layananName).filter(Boolean))}</td>
                         <td className="px-3 py-2"><Badge variant={viewStatus({ unit: u, unitStatus: u.unitStatusDisplay }).tone}>{viewStatus({ unit: u, unitStatus: u.unitStatusDisplay }).label}</Badge></td>
                         <td className="px-3 py-2"><span className="text-ink3">{u.currentStage?.labelId || "Belum masuk papan"}</span></td>

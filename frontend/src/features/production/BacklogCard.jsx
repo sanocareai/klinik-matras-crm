@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { UnitPhoto } from "@/features/production/UnitCard.jsx";
 import { priorityMeta } from "@/features/production/unitCardModel.js";
+import PkrRujukan from "@/features/production/PkrRujukan.jsx";
 import { presenceTone, priorityOf, salesServicesText, statusTone } from "@/features/production/productionLabels.js";
 
 // Kartu ringkas backlog untuk unit yang BELUM punya kartu rencana penuh (order nyata tanpa Run). Satu bahasa visual dengan PlanCard. Aksi berikutnya SELALU jelas dan datang dari server
@@ -32,6 +33,7 @@ export default function BacklogCard({ item, onOpen, onSchedule = null, handle = 
           <span className="block break-words text-[15px] font-bold leading-tight text-ink [overflow-wrap:anywhere]">{c.customer.name || "Pelanggan belum dicatat"}</span>
           <span className="block truncate text-[12.5px] text-ink3">{c.unit.unitCode}{c.customer.orderNumber ? ` · ${c.customer.orderNumber}` : ""}</span>
           <span className="block break-words text-[13px] text-ink2 [overflow-wrap:anywhere]"><span className="font-semibold text-ink3">Layanan Sales: </span>{salesServicesText(c.customer.salesServices)}</span>
+          <PkrRujukan pkr={c.penjualanKaryawan} />
           <span className="flex flex-wrap items-center gap-1.5">
             {meta.icon && <span data-testid="priority-tag" className={`inline-flex items-center rounded-chip px-2 py-0.5 text-[11.5px] font-bold uppercase tracking-wide ${meta.badgeClass}`}>{pr.label}</span>}
             <Badge variant={statusTone(c.unitStatus?.key)} data-testid="status-badge">{c.unitStatus?.label || "—"}</Badge>

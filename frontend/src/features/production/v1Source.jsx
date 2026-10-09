@@ -3,6 +3,7 @@ import { api } from "@/api.js";
 import { Badge } from "@/components/ui/badge.jsx";
 import { isDemoActive } from "@/features/production/demo/demoGate.js";
 import { selectV1Units, topV1Units } from "@/features/production/nonV2OrdersModel.js";
+import PkrRujukan from "@/features/production/PkrRujukan.jsx";
 import { DELAY_TITLE, presenceTone, priorityOf, salesServicesText, statusOf } from "@/features/production/productionLabels.js";
 
 // Unit yang belum punya rencana di papan Production (daftar ringkas untuk Ringkasan/Status). Simplifikasi slice 1: TANPA label sumber (V1/V2) — pengguna hanya melihat
@@ -32,6 +33,7 @@ export function V1UnitCard({ unit, onOpen }) {
       <span className="truncate text-[13px] font-bold text-ink">{unit.unitCode}</span>
       <span className="truncate text-[12px] text-ink3">{unit.order?.customer?.name || "—"}{unit.order?.orderNumber ? ` · ${unit.order.orderNumber}` : ""}</span>
       <span className="break-words text-[12px] text-ink2 [overflow-wrap:anywhere]"><span className="font-semibold text-ink3">Layanan Sales: </span>{sales}</span>
+      <PkrRujukan pkr={unit.penjualanKaryawan} />
       <span className="flex flex-wrap items-center gap-1">
         <Badge variant={st.tone} data-testid="status-badge">{st.label}</Badge>
         {unit.presence?.label && <Badge variant={presenceTone(unit.presence)}>{unit.presence.label}</Badge>}
