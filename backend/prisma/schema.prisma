@@ -1216,6 +1216,13 @@ model Order {
   // Terisi → order tetap masuk omzet perusahaan tetapi di luar angka Tim Sales. Tidak memengaruhi pembayaran/jurnal. Lihat services/penjualanKaryawan.js.
   staffSellerId         String?       @map("staff_seller_id")
   staffSeller           User?         @relation("OrderStaffSeller", fields: [staffSellerId], references: [id], onDelete: SetNull)
+  // PENJUALAN KARYAWAN → ORDER CRM (Okt 2026): tautan 1:1 ke dokumen PKR di Finance. NULL = order biasa. Terisi = order ini HANYA dokumen operasional (unit, produksi,
+  // delivery); nominal, pembayaran, piutang, dan jurnal tetap di PKR. UNIQUE = satu PKR paling banyak satu order (dan sebaliknya). Trigger DB menolak payments / invoices /
+  // baris jurnal ber-order_id order ini. Lihat services/penjualanKaryawanOrder.js.
+  penjualanKaryawanId   String?       @unique @map("penjualan_karyawan_id") @db.Uuid
+  penjualanKaryawan     FinPenjualanKaryawan? @relation("OrderPenjualanKaryawan", fields: [penjualanKaryawanId], references: [id], onDelete: Restrict)
+  // Apakah barang perlu DIKIRIM (true), diambil sendiri (false), atau belum ditentukan (NULL → spesifikasi "Perlu dilengkapi"). Hanya bermakna untuk order PKR.
+  pkrPerluDikirim       Boolean?      @map("pkr_perlu_dikirim")
   // dpTarget (2 Sep 2026) — nominal DP yang DISEPAKATI dengan customer,
   // bukan yang benar-benar sudah masuk (itu SUM(payments), lihat Payment
   // model). null = tidak ada kesepakatan DP spesifik untuk order ini.
@@ -8394,6 +8401,8 @@ model FinPenjualanKaryawan {
 
   items    FinPenjualanKaryawanItem[]
   payments FinPenjualanKaryawanPayment[]
+  // Order CRM operasional hasil sinkronisasi (0 atau 1; kunci UNIQUE ada di Order.penjualanKaryawanId).
+  orderCrm Order? @relation("OrderPenjualanKaryawan")
 
   @@index([sellerId, status])
   @@index([date])

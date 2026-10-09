@@ -41,9 +41,11 @@ function alamatDariOrder(order) {
 export async function suggestDeliveryJob(tx, unitId) {
   const unit = await tx.unit.findUnique({
     where: { id: unitId },
-    select: { id: true, orderId: true, order: { select: { deliveryAddress: true, deliveryCity: true } } },
+    select: { id: true, orderId: true, order: { select: { deliveryAddress: true, deliveryCity: true, penjualanKaryawanId: true, pkrPerluDikirim: true } } },
   });
   if (!unit) return;
+  // Order Penjualan Karyawan: job pengiriman hanya bila memang perlu dikirim. Diambil sendiri / belum ditentukan = tidak ada job (tidak menggandakan atau membuat job yang tidak perlu).
+  if (unit.order?.penjualanKaryawanId && unit.order.pkrPerluDikirim !== true) return;
 
   // Jaring pengaman: unit ini sudah pernah dimasukkan ke job DELIVERY
   // mana pun sebelumnya (mis. QC rework yang membuat unit "ready" dua

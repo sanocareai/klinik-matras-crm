@@ -243,11 +243,14 @@ export async function postRevenueRecognition(tx, { orderId, userId = null, date 
     where: { id: orderId },
     select: {
       id: true, orderNumber: true, category: true, value: true, ongkir: true,
-      status: true, customerId: true,
+      status: true, customerId: true, penjualanKaryawanId: true,
       customer: { select: { id: true, name: true } },
     },
   });
   if (!order) throw new Error(`Order ${orderId} tidak ditemukan`);
+  // Order Penjualan Karyawan = dokumen operasional. Pendapatan, piutang, dan jurnalnya SUDAH dicatat PKR (posting/penjualanKaryawan.js); mengakui lagi dari order = pendapatan ganda.
+  // Tidak ada gap NILAI_ORDER_NOL juga: order ini memang tidak bernilai di sisi order.
+  if (order.penjualanKaryawanId) return { posted: false, skipped: true, reason: "penjualan_karyawan" };
 
   // Pengakuan AKTIF (POSTED) → tidak ada yang dilakukan. Bila pengakuan sebelumnya sudah DIBALIK (order dibatalkan lalu dibuka lagi), pengakuan baru memakai
   // kunci ber-sufiks supaya tidak bentrok dengan kunci unik jurnal lama (sebelumnya order yang dibuka lagi diam-diam TIDAK diakui ulang).

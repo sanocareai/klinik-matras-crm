@@ -66,7 +66,8 @@ function buildDateWhere(from, to, field = "createdAt") {
 // bukan menggantikan filter yang sudah ada.
 function tanpaOrderSpam(where = {}) {
   const { customer, ...rest } = where;
-  return { ...rest, customer: { ...customer, pipelineStage: { not: "SPAM" } } };
+  // penjualanKaryawanId: null — order operasional Penjualan Karyawan (Okt 2026) bukan penjualan Sales/omzet CRM: nominalnya dikelola PKR di Finance (bukan order biasa).
+  return { ...rest, penjualanKaryawanId: null, customer: { ...customer, pipelineStage: { not: "SPAM" } } };
 }
 
 // ⚠️ Sebelumnya ada helper grantedSalesUserIds() di sini yang menghitung

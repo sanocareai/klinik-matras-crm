@@ -13,6 +13,8 @@
 // jadi dua langkah.
 
 import { adalahGalatInfraDb, kirimGalatInfraDb } from "../lib/dbInfraError.js";
+import { rujukanPkrPerOrder } from "../services/penjualanKaryawanOrder.js";
+import { tolakJikaOrderPkr } from "../services/pkrGuard.js";
 import { offerUnitCustody } from "../services/unitCustodyCommandService.js";
 import { assertRouteAssignmentConsistentForPublish } from "../services/deliveryRouteAssignmentConsistency.js";
 import express from "express";
@@ -4117,7 +4119,9 @@ armadaRouter.get("/jobs/:id", requireAnyPermission(P.JOB_READ, P.JOB_OWN_READ), 
     if (!hasPermission(req.user, P.JOB_READ) && !milikSaya) {
       return res.status(403).json({ error: "Bukan job Anda" });
     }
-    res.json(job);
+    // Rujukan Penjualan Karyawan (nomor PKR + penjual; tanpa nominal) untuk order dari PKR; order biasa: null.
+    const pkr = await rujukanPkrPerOrder(prisma, [job.orderId]);
+    res.json({ ...job, penjualanKaryawan: pkr.get(job.orderId) ?? null });
   } catch (err) {
     handleErr(err, res);
   }
@@ -5879,6 +5883,8 @@ armadaRouter.post("/jobs/:id/payment", requireAnyPermission(P.JOB_WRITE, P.JOB_O
     if (job.type !== "DELIVERY") {
       throw new ArmadaError("Pembayaran hanya dicatat di job pengiriman");
     }
+    // Order Penjualan Karyawan: uangnya dicatat Finance di PKR, bukan di job (supaya tidak jadi pembayaran/piutang ganda).
+    await tolakJikaOrderPkr(prisma, job.orderId, "Pencatatan pembayaran di job").catch((e) => { throw new ArmadaError(e.message, e.statusCode || 409); });
     const { amount, method, proofPhotoUrl, konfirmasiNominalKecil } = req.body;
     const amountInt = Number(amount);
     if (!Number.isInteger(amountInt) || amountInt <= 0) {

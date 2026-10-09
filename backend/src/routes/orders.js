@@ -37,6 +37,8 @@ import { ensurePickupJobForOrder } from "../services/armadaAutoJob.js";
 import { executeDeliveryCrossBoundaryCommand } from "../services/deliveryCrossBoundaryCommandService.js";
 import { cancelOrderDeliveryJobs } from "../services/deliveryJobCancellationService.js";
 import { hitungDiskonPromo, periksaBatasDiskon } from "../services/diskonPromo.js";
+import { blokirBilaOrderPkr } from "../services/pkrGuard.js";
+import { ringkasOrderPkr } from "../services/penjualanKaryawanOrder.js";
 import { V2_FLAGS } from "../services/v2FeatureFlags.js";
 import { ACTIVE_JOB_STATUSES } from "../services/jobStatus.js";
 import { sendText, sendMedia, isPlaceholderGroupJid } from "../services/wahaClient.js";
@@ -48,6 +50,40 @@ import { assertOrderUnitsNotV2Owned } from "../services/productionRunGuards.js";
 
 export const orderRouter = express.Router();
 orderRouter.use(requireAuth);
+
+// ── PENJAGA ORDER PENJUALAN KARYAWAN (Okt 2026) ─────────────────────────────────────────────────────────────────────────────────────────
+// Order dari PKR hanya dokumen operasional: pembayaran, invoice, item/nominal, garansi, ringkasan WA bernominal, dan pembatalan/penghapusan order biasa TIDAK tersedia. Semuanya
+// dikelola di Finance › Penjualan Karyawan. Dipasang SEBELUM rute yang dijaga; order biasa (penjualanKaryawanId NULL) melewatinya tanpa perubahan perilaku.
+const jagaOrderPkr = (aksi, param = "id") => async (req, res, next) => {
+  try { if (await blokirBilaOrderPkr(prisma, res, req.params[param], aksi)) return; next(); } catch (e) { next(e); }
+};
+const jagaItemOrderPkr = (aksi) => async (req, res, next) => {
+  try {
+    const it = await prisma.orderItem.findUnique({ where: { id: req.params.itemId }, select: { orderId: true } });
+    if (it && (await blokirBilaOrderPkr(prisma, res, it.orderId, aksi))) return;
+    next();
+  } catch (e) { next(e); }
+};
+orderRouter.use("/:id/payments", jagaOrderPkr("Pencatatan pembayaran"));
+orderRouter.use("/:id/invoice", jagaOrderPkr("Invoice"));
+orderRouter.use("/:id/warranty", jagaOrderPkr("Garansi bernominal"));
+orderRouter.use("/:id/send-wa-summary", jagaOrderPkr("Ringkasan WhatsApp bernominal"));
+orderRouter.use("/:id/cancel", jagaOrderPkr("Pembatalan order langsung"));
+orderRouter.delete("/:id", jagaOrderPkr("Penghapusan order"));
+orderRouter.post("/:orderId/items", jagaOrderPkr("Item dan harga order", "orderId"));
+orderRouter.patch("/items/:itemId", jagaItemOrderPkr("Item dan harga order"));
+orderRouter.delete("/items/:itemId", jagaItemOrderPkr("Item dan harga order"));
+// PATCH: field uang/harga/status bayar/pembatalan ditolak untuk order PKR; field operasional (alamat, jadwal, merk, ukuran, catatan, status produksi/kirim) tetap boleh.
+orderRouter.patch("/:id", async (req, res, next) => {
+  try {
+    const b = req.body || {};
+    const FIELD_UANG = ["paymentStatus", "hargaTotal", "jenisLayanan", "promoId", "ongkir", "ongkirKlaimGaransi", "dpTarget"];
+    const kena = FIELD_UANG.filter((k) => b[k] !== undefined);
+    if (kena.length && (await blokirBilaOrderPkr(prisma, res, req.params.id, `Mengubah ${kena.join(", ")}`))) return;
+    if (b.status === "CANCELLED" && (await blokirBilaOrderPkr(prisma, res, req.params.id, "Pembatalan order langsung"))) return;
+    next();
+  } catch (e) { next(e); }
+});
 
 // Upload bukti pembayaran DP (D-023) — dir terpisah dari job-photos armada.js
 // karena DP dicatat SEBELUM job pickup/delivery mana pun ada, jadi tidak
@@ -1406,6 +1442,13 @@ orderRouter.get("/", async (req, res) => {
       };
     });
 
+    // Penjualan Karyawan: lampirkan ringkasan (nomor PKR, status bayar dari LEDGER PKR, spesifikasi, produksi, delivery). Nominal hanya untuk yang berizin Finance.
+    const idPkr = items.filter((i) => i.penjualanKaryawanId).map((i) => i.penjualanKaryawanId);
+    if (idPkr.length) {
+      const ringkas = await ringkasOrderPkr(prisma, idPkr, { izinNominal: hasPermission(req.user, P.FINANCE_READ) });
+      for (const it of items) if (it.penjualanKaryawanId) it.penjualanKaryawan = ringkas.get(it.penjualanKaryawanId) ?? null;
+    }
+
     // Ringkasan per status untuk header papan — dihitung di server supaya UI
     // tidak perlu memuat SELURUH order hanya untuk menghitung jumlah kolom.
     const perStatus = await prisma.order.groupBy({
@@ -1428,12 +1471,13 @@ orderRouter.get("/", async (req, res) => {
     // filter status yang SUDAH dipilih user (kalau ada) tidak diam-diam
     // tertimpa — dua kondisi digabung, bukan saling mengganti.
     const [aktifAgg, belumLunasAgg] = await Promise.all([
+      // KPI = penjualan CRM: order operasional Penjualan Karyawan (nominal di Finance) tidak ikut dihitung.
       prisma.order.aggregate({
-        where: { AND: [where, { status: { not: "CANCELLED" } }] },
+        where: { AND: [where, { status: { not: "CANCELLED" }, penjualanKaryawanId: null }] },
         _count: { _all: true }, _sum: { value: true },
       }),
       prisma.order.aggregate({
-        where: { AND: [where, { status: { not: "CANCELLED" }, paymentStatus: { not: "LUNAS" } }] },
+        where: { AND: [where, { status: { not: "CANCELLED" }, paymentStatus: { not: "LUNAS" }, penjualanKaryawanId: null }] },
         _sum: { value: true },
       }),
     ]);

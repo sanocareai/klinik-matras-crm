@@ -12,6 +12,7 @@
 // custody) SELALU difilter lewat runId/unitId spesifik unit ini — tidak pernah "milik order", mencegah
 // kebocoran antar-unit bersaudara (lihat resolveUnitPhoto yang sudah menolak atribusi job multi-unit).
 import { COMPLAINT_LABEL, RUN_VIEW_INCLUDE, STYLE_LABEL, VERDICT_LABEL, customerOf, indicatorsOf, latestOf, materialStatusOf, minutesBetween, nameOf, stepStatuses, warningsOf } from "./productionExperienceReadService.js";
+import { bacaSpesifikasiPkr } from "../lib/domain/pkrSpesifikasi.js";
 import { loadStepContext } from "./productionStepCommandService.js";
 import { buildRunDocumentation, documentationBuckets } from "./productionDocumentationRead.js";
 import { sourceOfStep } from "../lib/domain/productionDocumentation.js";
@@ -256,7 +257,23 @@ const UNIT_FULL_SELECT = {
   },
 };
 
-export async function getUnitOverview(prisma, unitId, { unitIds, canSeeValue = false, now = new Date() } = {}) {
+// Rujukan Penjualan Karyawan (Okt 2026): unit dari order PKR menampilkan nomor PKR + status kelengkapan spesifikasi (Produksi tidak boleh memulai bila "Perlu dilengkapi").
+// Tidak membawa nominal. Order biasa: field tidak ada (bentuk lama tidak berubah).
+export async function getUnitOverview(prisma, unitId, opsi = {}) {
+  const hasil = await getUnitOverviewDasar(prisma, unitId, opsi);
+  const orderId = hasil?.identity?.orderId;
+  if (!orderId) return hasil;
+  const o = await prisma.order.findUnique({
+    where: { id: orderId },
+    select: { penjualanKaryawanId: true, notes: true, pkrPerluDikirim: true, deliveryAddress: true, deliveryCity: true, penjualanKaryawan: { select: { nomor: true, seller: { select: { name: true } } } } },
+  });
+  if (!o?.penjualanKaryawanId) return hasil;
+  const spek = bacaSpesifikasiPkr(o);
+  hasil.identity.penjualanKaryawan = { nomor: o.penjualanKaryawan.nomor, penjual: o.penjualanKaryawan.seller.name, perluDikirim: o.pkrPerluDikirim, spesifikasiLengkap: spek.lengkap, kurang: spek.kurang };
+  return hasil;
+}
+
+async function getUnitOverviewDasar(prisma, unitId, { unitIds, canSeeValue = false, now = new Date() } = {}) {
   // PENTING: cek cohort di JS, BUKAN menaruh dua kunci "id" di satu object literal Prisma where (mis.
   // { id: unitId, ...(unitIds ? { id: { in: unitIds } } : {}) }) — kunci kedua diam-diam MENIMPA yang pertama
   // (semantik object literal JS biasa), membuat query mengabaikan unitId yang diminta sama sekali dan malah

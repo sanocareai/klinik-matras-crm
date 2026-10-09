@@ -349,7 +349,9 @@ export function registerReadOnlyTools(server) {
       annotations: ANOTASI_BACA,
     },
     async (args) => {
-      const periode = whereTanggal(args.dari, args.sampai);
+      const periodeCustomer = whereTanggal(args.dari, args.sampai);
+      // Order operasional Penjualan Karyawan (nominal di Finance) tidak dihitung sebagai penjualan; pelanggan PKR (tag "Penjualan Karyawan") bukan pelanggan baru.
+      const periode = { ...periodeCustomer, penjualanKaryawanId: null };
       const tanpaBatal = { ...periode, status: { not: "CANCELLED" } };
 
       const [agregat, perStatus, perKategori, perBayar, pelangganBaru] = await Promise.all([
@@ -357,7 +359,7 @@ export function registerReadOnlyTools(server) {
         prisma.order.groupBy({ by: ["status"], where: periode, _count: true, _sum: { value: true } }),
         prisma.order.groupBy({ by: ["category"], where: tanpaBatal, _count: true, _sum: { value: true } }),
         prisma.order.groupBy({ by: ["paymentStatus"], where: tanpaBatal, _count: true, _sum: { value: true } }),
-        prisma.customer.count({ where: periode }),
+        prisma.customer.count({ where: { ...periodeCustomer, NOT: { tags: { has: "Penjualan Karyawan" } } } }),
       ]);
 
       return hasil({
@@ -847,10 +849,10 @@ export function registerReadOnlyTools(server) {
         salesAktif,
       ] = await Promise.all([
         prisma.customer.count(),
-        prisma.order.count({ where: { status: { not: "CANCELLED" } } }),
-        prisma.order.aggregate({ where: { status: { not: "CANCELLED" } }, _sum: { value: true } }),
+        prisma.order.count({ where: { status: { not: "CANCELLED" }, penjualanKaryawanId: null } }),
+        prisma.order.aggregate({ where: { status: { not: "CANCELLED" }, penjualanKaryawanId: null }, _sum: { value: true } }),
         prisma.order.aggregate({
-          where: { status: { not: "CANCELLED" }, createdAt: { gte: awalBulan, lt: akhirBulan } },
+          where: { status: { not: "CANCELLED" }, penjualanKaryawanId: null, createdAt: { gte: awalBulan, lt: akhirBulan } },
           _sum: { value: true },
           _count: true,
         }),

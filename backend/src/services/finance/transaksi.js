@@ -719,7 +719,7 @@ export async function cariOrderRefund(db, q) {
   const kata = String(q || "").trim();
   if (kata.length < 2) return [];
   const orders = await db.order.findMany({
-    where: { status: { not: "CANCELLED" }, OR: [{ orderNumber: { contains: kata, mode: "insensitive" } }, { customer: { name: { contains: kata, mode: "insensitive" } } }] },
+    where: { status: { not: "CANCELLED" }, penjualanKaryawanId: null, OR: [{ orderNumber: { contains: kata, mode: "insensitive" } }, { customer: { name: { contains: kata, mode: "insensitive" } } }] },
     orderBy: { createdAt: "desc" }, take: 15, select: { id: true, orderNumber: true, value: true, customer: { select: { name: true } } },
   });
   const gate = await getVerificationGate(db);

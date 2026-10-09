@@ -102,7 +102,7 @@ pipelineRouter.get("/order-board", async (req, res) => {
       ? { createdAt: { gte: startOfDayWIB(from), lt: endOfDayExclusiveWIB(to) } }
       : {};
     const orders = await prisma.order.findMany({
-      where: { ...createdAt, customer: { pipelineStage: { not: "SPAM" } } },
+      where: { ...createdAt, penjualanKaryawanId: null, customer: { pipelineStage: { not: "SPAM" } } }, // order Penjualan Karyawan bukan deal Sales
       select: {
         id: true, orderNumber: true, status: true, value: true, category: true,
         paymentStatus: true, createdAt: true, updatedAt: true,

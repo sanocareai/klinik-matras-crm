@@ -208,6 +208,7 @@ export async function loadIncompleteDataBySales(config) {
   const orders = await prisma.order.findMany({
     where: {
       status: { notIn: ["CANCELLED", "DELIVERED"] },
+      penjualanKaryawanId: null, // order Penjualan Karyawan dilengkapi lewat Finance, bukan tanggung jawab Sales
       createdAt: { gte: startOfDayWIB(config.dataSejakTanggal) },
     },
     select: {
@@ -253,6 +254,7 @@ export async function loadUnpaidDeliveredBySales(config) {
     where: {
       status: "DELIVERED",
       paymentStatus: { not: "LUNAS" },
+      penjualanKaryawanId: null, // status bayar order Penjualan Karyawan ada di ledger PKR (Finance)
       createdAt: { gte: startOfDayWIB(config.dataSejakTanggal) },
     },
     select: {
@@ -283,7 +285,7 @@ export async function loadZeroClosingSalesIds(salesList, now) {
 
   const counts = await prisma.order.groupBy({
     by: ["customerId"],
-    where: { createdAt: { gte: startToday } },
+    where: { createdAt: { gte: startToday }, penjualanKaryawanId: null },
     _count: true,
   });
   // customerId -> perlu diterjemahkan ke assignedSalesId lewat Customer.

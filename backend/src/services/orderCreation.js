@@ -23,6 +23,8 @@ import { tentukanPemilikSalesBaru } from "./salesOwner.js";
 // `opts.tx` (opsional, Resi Gabungan Fase 1): jalankan di dalam transaksi PEMANGGIL (mis. N order dalam SATU transaksi). Tanpa `opts.tx` perilaku
 // PERSIS seperti sebelumnya (transaksi sendiri). Catatan: nomor order (generateOrderNumber) memakai transaksi terpisah, sehingga bila transaksi
 // pemanggil di-rollback nomornya terpakai (ada celah nomor) — tidak ada order/unit/invoice yang tersisa.
+// `opts.tanpaInvoice` + `opts.dataTambahan` (Penjualan Karyawan, Okt 2026): order operasional dari PKR TIDAK boleh punya invoice (nominalnya dikelola PKR di Finance) dan membawa
+// penanda tautan PKR + salesOwnerId null sejak lahir. Tanpa opts ini perilaku PERSIS seperti sebelumnya.
 export async function createOrderForCustomer(customerId, body, userId, opts = {}) {
   const {
     quantity, status, beratBadan, category, unitCount, promoId, deliveryCity, deliveryAddress,
@@ -47,7 +49,9 @@ export async function createOrderForCustomer(customerId, body, userId, opts = {}
   // adalah keadaan yang tidak boleh terjadi; jangan biarkan kegagalan
   // separuh jalan membuatnya lagi.
   const jalankan = async (tx) => {
-    const pemilik = await tentukanPemilikSalesBaru(tx, { customerId, pembuatId: userId }); // stabil sejak dibuat; null = "Tanpa Sales" (tidak ditebak)
+    const pemilik = opts.dataTambahan && "salesOwnerId" in opts.dataTambahan
+      ? { salesOwnerId: opts.dataTambahan.salesOwnerId }
+      : await tentukanPemilikSalesBaru(tx, { customerId, pembuatId: userId }); // stabil sejak dibuat; null = "Tanpa Sales" (tidak ditebak)
     const created = await tx.order.create({
       data: {
         customerId,
@@ -76,6 +80,7 @@ export async function createOrderForCustomer(customerId, body, userId, opts = {}
         ...(tglDelivery && { deliveryConfirmedDate: tglDelivery }),
         ...(locationUrl && { locationUrl }),
         ...(tglJanji && { customerPromiseDate: tglJanji }),
+        ...(opts.dataTambahan || {}),
       },
       include: { items: true },
     });
@@ -96,7 +101,7 @@ export async function createOrderForCustomer(customerId, body, userId, opts = {}
     // Draft invoice lahir BERSAMA order-nya, di transaksi yang SAMA — sales
     // (atau di sini, owner) tidak perlu langkah manual "buat invoice", dan
     // order yang gagal dibuat tidak meninggalkan invoice yatim.
-    await ensureInvoiceForOrder(tx, { orderId: created.id, userId: userId || null });
+    if (!opts.tanpaInvoice) await ensureInvoiceForOrder(tx, { orderId: created.id, userId: userId || null });
 
     return tx.order.findUnique({
       where: { id: created.id },

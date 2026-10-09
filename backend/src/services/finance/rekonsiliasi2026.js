@@ -86,7 +86,7 @@ export async function auditBackfill(db) {
   if (!c.tanggal) return { jendela: null, orders: [], ringkasan: null };
   const sampai = c.pengakuanPertama ?? wibTanggal(new Date());
   const orders = await db.order.findMany({
-    where: { createdAt: { gte: new Date(`${c.tanggal}T00:00:00+07:00`), lt: new Date(`${sampai}T00:00:00+07:00`) } },
+    where: { penjualanKaryawanId: null, createdAt: { gte: new Date(`${c.tanggal}T00:00:00+07:00`), lt: new Date(`${sampai}T00:00:00+07:00`) } },
     select: { id: true, orderNumber: true, createdAt: true, status: true, category: true, value: true, ongkir: true, paymentStatus: true, hasComplaint: true, complaintResolvedAt: true, customer: { select: { name: true } } },
     orderBy: { createdAt: "asc" },
   });

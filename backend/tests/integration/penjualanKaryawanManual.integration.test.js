@@ -1,6 +1,7 @@
 // Test integrasi modul PENJUALAN KARYAWAN MANUAL (input di luar Order) terhadap PostgreSQL sungguhan.
 // Yang dikunci: arah jurnal (piutang karyawan / pendapatan 4-1250), pembayaran tunai-transfer vs potong gaji, pembayaran sebelum cutoff TIDAK menambah kas
-// (lawan Laba Ditahan), batas sisa, pembatalan lewat reversal, penjual wajib non-Sales, dan modul TIDAK membuat Order/Customer/produksi/delivery.
+// (lawan Laba Ditahan), batas sisa, pembatalan lewat reversal, penjual wajib non-Sales, dan — sejak sinkronisasi Order CRM (31 Okt 2026) — modul membuat SATU order operasional
+// (tanpa uang: tidak ada Payment/invoice/jurnal kedua). Detail sinkronisasi: penjualanKaryawanOrderCrm.integration.test.js.
 
 import "./setup/env.js";
 import test from "node:test";
@@ -41,7 +42,7 @@ const badan = (seller, extra = {}) => ({
   ...extra,
 });
 
-test("Catat penjualan: total dihitung server, Dr Piutang Karyawan / Cr Pendapatan Penjualan Karyawan (4-1250), TANPA Order/Customer/produksi/delivery", async () => {
+test("Catat penjualan: total dihitung server, Dr Piutang Karyawan / Cr Pendapatan Penjualan Karyawan (4-1250); order CRM operasional lahir tanpa uang (tanpa Payment/invoice/jurnal kedua)", async () => {
   const { seller, c } = await siapkan();
   const sebelum = { order: await testPrisma.order.count(), customer: await testPrisma.customer.count(), unit: await testPrisma.unit.count() };
 
@@ -58,9 +59,14 @@ test("Catat penjualan: total dihitung server, Dr Piutang Karyawan / Cr Pendapata
   assert.equal(await saldo("4-1200"), "0.00", "tidak bercampur dengan pendapatan produk order");
   assert.equal(await saldo("5-1100"), "0.00", "HPP tidak dibukukan");
 
-  assert.equal(await testPrisma.order.count(), sebelum.order);
-  assert.equal(await testPrisma.customer.count(), sebelum.customer);
-  assert.equal(await testPrisma.unit.count(), sebelum.unit);
+  // Sinkronisasi Order CRM: tepat 1 order + 1 customer + 1 unit baru, TANPA uang (nilai 0, tanpa Payment/invoice).
+  assert.equal(await testPrisma.order.count(), sebelum.order + 1);
+  assert.equal(await testPrisma.customer.count(), sebelum.customer + 1);
+  assert.equal(await testPrisma.unit.count(), sebelum.unit + 1);
+  assert.equal(await testPrisma.payment.count(), 0);
+  assert.equal(await testPrisma.invoice.count(), 0);
+  assert.equal((await testPrisma.order.findFirst()).value, 0);
+  assert.equal(await testPrisma.finJournalEntry.count(), 1, "hanya jurnal PKR");
   const j = await testPrisma.finJournalEntry.findFirst({ where: { source: "PENJUALAN_KARYAWAN" } });
   assert.ok(j, "jurnal bersumber PENJUALAN_KARYAWAN");
 });

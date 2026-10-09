@@ -26,6 +26,7 @@
 // definisi ledger lama HANYA kalau parameter itu tidak diberikan.
 
 import { Prisma } from "@prisma/client";
+import { bacaSpesifikasiPkr, PESAN_SPEK_BELUM_LENGKAP } from "../lib/domain/pkrSpesifikasi.js";
 import { prisma } from "../db.js";
 import {
   buildUnitPath, getNextStage, isLastStage, isLastIntakeStage, findComfortLayerModule,
@@ -375,6 +376,17 @@ export async function resolveNextStageForUnits(units) {
   return result;
 }
 
+// Gerbang Order Penjualan Karyawan: order dari PKR yang spesifikasi produksinya belum lengkap ("Perlu dilengkapi") TIDAK boleh mulai dikerjakan. Order biasa lolos tanpa efek.
+async function pastikanSpesifikasiPkrLengkap(tx, orderId) {
+  const o = await tx.order.findUnique({
+    where: { id: orderId },
+    select: { penjualanKaryawanId: true, notes: true, pkrPerluDikirim: true, deliveryAddress: true, deliveryCity: true, penjualanKaryawan: { select: { nomor: true } } },
+  });
+  if (!o?.penjualanKaryawanId) return;
+  const spek = bacaSpesifikasiPkr(o);
+  if (!spek.lengkap) throw new StageTransitionError(PESAN_SPEK_BELUM_LENGKAP(o.penjualanKaryawan?.nomor, spek.kurang));
+}
+
 /**
  * MULAI sebuah tahap. Lihat resolveCurrentTarget() untuk aturan penentuan
  * tahap targetnya.
@@ -394,6 +406,7 @@ export async function startStage(unitId, { actorId, requireAssignedOperator = fa
 // resolveCurrentTarget() menyebutnya DONE karena lastLog COMPLETE, padahal run V2 sedang memproses ulang. Pemanggil menjamin fase PROCESS run aktif.
 export async function startStageInTx(tx, unitId, { actorId, allowRerunOfLastStage = false } = {}) {
   const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId } });
+  await pastikanSpesifikasiPkrLengkap(tx, unit.orderId);
   const path = await pathForUnit(tx, unit);
   const { stage: targetStage, state } = await resolveCurrentTarget(tx, unit, path);
 
@@ -485,6 +498,7 @@ export async function recordStageDone(unitId, { actorId, photoUrls = [], note, r
     await assertNotV2ExecutionOwned(tx, unitId, "selesai tahap", actorId);
     if (requireAssignedOperator) await assertV1StageActorInTx(tx, unitId, { actorId });
     const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId } });
+    await pastikanSpesifikasiPkrLengkap(tx, unit.orderId); // mencatat tahap selesai (jalur retrospektif) juga dianggap memulai produksi
     const path = await pathForUnit(tx, unit);
     const { stage, state } = await resolveCurrentTarget(tx, unit, path);
 

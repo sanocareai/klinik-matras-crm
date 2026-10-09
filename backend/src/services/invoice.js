@@ -29,6 +29,7 @@
 //    saling bertentangan.
 
 import { prisma } from "../db.js";
+import { tolakJikaOrderPkr } from "./pkrGuard.js";
 import { kontribusiPembayaranOrder } from "./finance/allocation.js";
 import { formatUkuranKasur } from "../lib/ukuranKasur.js";
 import { hitungDiskonPromo } from "./diskonPromo.js";
@@ -147,6 +148,8 @@ export async function generateInvoiceNumber(tx = prisma) {
 // `tx` WAJIB diisi kalau dipanggil dari dalam transaksi order — supaya order
 // gagal = invoice ikut batal, tidak meninggalkan invoice yatim.
 export async function ensureInvoiceForOrder(tx, { orderId, userId = null }) {
+  // Order Penjualan Karyawan tidak boleh punya invoice (nominalnya dikelola PKR; invoice = tagihan ke customer = piutang ganda).
+  await tolakJikaOrderPkr(tx, orderId, "Invoice");
   const existing = await tx.invoice.findUnique({ where: { orderId } });
   if (existing) return existing;
 

@@ -156,6 +156,7 @@ export const EVENT_TYPES = Object.freeze({
   // Penjualan Karyawan (1 Okt 2026): penanda karyawan non-Sales yang menjual sebuah order diubah (metadata: before/to = nama karyawan).
   PENJUALAN_KARYAWAN_DIUBAH: "PENJUALAN_KARYAWAN_DIUBAH",
   BANK_REKON_V2: "BANK_REKON_V2", // metadata.aksi: impor | impor_dibatalkan | cocok | cocok_dibatalkan | dikecualikan | opname | periode_selesai | periode_dibatalkan — services/finance/bankRekon/
+  PKR_ORDER_SINKRON: "PKR_ORDER_SINKRON", // Penjualan Karyawan ↔ Order CRM: dibuat/ditautkan/dilengkapi/dibatalkan — services/penjualanKaryawanOrder.js
   PAIDAT_PENGECUALIAN: "PAIDAT_PENGECUALIAN", // pengecualian tanggal lunas (Order.paidAt) dibuat/dicabut oleh Owner — services/pengecualianPaidAt.js
   // Custody unit Gudang V2 (P1–P2): serah-terima Delivery <-> Gudang. Detail (unit, arah, lokasi, alasan) ada di metadata.
   CUSTODY_OFFERED: "CUSTODY_OFFERED",
@@ -520,6 +521,18 @@ export function formatActivitySentence(event) {
         case "periode_selesai": return `Periode rekonsiliasi diselesaikan (${metadata.periode ?? ""})`;
         case "periode_dibatalkan": return `Periode rekonsiliasi dinyatakan tidak berlaku${alasan}`;
         default: return "Aktivitas rekonsiliasi bank";
+      }
+    }
+    case EVENT_TYPES.PKR_ORDER_SINKRON: {
+      const m = metadata || {};
+      const ref = m.nomorPkr ? ` (${m.nomorPkr})` : "";
+      switch (m.aksi) {
+        case "dibuat": return `Order CRM dibuat otomatis dari Penjualan Karyawan${ref}${m.orderNumber ? ` — ${m.orderNumber}` : ""}; spesifikasi ${m.spesifikasi || "perlu dilengkapi"}`;
+        case "dibuat_lama": return `Order CRM dibuat untuk Penjualan Karyawan lama${ref}${m.orderNumber ? ` — ${m.orderNumber}` : ""}`;
+        case "ditautkan": return `Order CRM ditautkan ke Penjualan Karyawan${ref}`;
+        case "dilengkapi": return `Spesifikasi/logistik order Penjualan Karyawan${ref} diperbarui: ${Object.keys(m.perubahan || {}).join(", ") || "—"}`;
+        case "dibatalkan": return `Order Penjualan Karyawan${ref} dibatalkan bersama PKR — ${m.alasan || "tanpa alasan"}`;
+        default: return `Sinkronisasi Penjualan Karyawan${ref}`;
       }
     }
     case EVENT_TYPES.PAIDAT_PENGECUALIAN:
