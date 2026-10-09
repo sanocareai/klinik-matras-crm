@@ -272,13 +272,40 @@ export function leadSourceFromCtwa(ctwa) {
   return PENANDA_IKLAN_CTWA.test(penanda) ? "META_ADS" : null;
 }
 
+/**
+ * URL kreatif iklan yang AMAN disimpan/di-log: tanpa skema, tanpa "www.",
+ * TANPA query dan fragment. Query bisa membawa ctwa_clid atau pengenal klik
+ * lain; hasil fungsi ini masuk ke log server DAN Customer.leadSourceDetail
+ * (terbaca sales dan tool MCP), jadi tidak boleh membawa itu.
+ */
+export function urlIklanAman(raw) {
+  if (typeof raw !== "string") return "";
+  const tanpaQuery = raw.trim().split(/[?#]/)[0];
+  return tanpaQuery.replace(/^https?:\/\/(www\.)?/i, "").replace(/\/+$/, "").slice(0, 200);
+}
+
 /** Keterangan singkat untuk kolom leadSourceDetail di CRM. */
 export function ctwaDetail(ctwa) {
   if (!ctwa) return null;
   const bagian = ["Meta CTWA"];
   if (ctwa.app) bagian.push(ctwa.app);
-  if (ctwa.sourceUrl) {
-    bagian.push(String(ctwa.sourceUrl).replace(/^https?:\/\/(www\.)?/, "").replace(/\/+$/, ""));
-  }
+  const url = urlIklanAman(ctwa.sourceUrl);
+  if (url) bagian.push(url);
   return bagian.join(" - ");
+}
+
+/**
+ * Keterangan untuk jalur LEGACY (Lapis 2: konteks iklan di key yang belum pernah
+ * teramati di payload GOWS). SEBELUMNYA memakai JSON.stringify(objek).slice(0,200)
+ * — yang menulis isi mentah (termasuk clid bila ada) ke log dan ke
+ * leadSourceDetail. Sekarang HANYA: URL tanpa query, atau headline iklan
+ * (teks iklan, dipotong), atau kalimat tetap. Objek tidak pernah diserialisasi.
+ */
+export function legacyAdContextDetail(ctwa) {
+  const TETAP = "Meta Ads - konteks iklan legacy (detail mentah tidak disimpan)";
+  if (!ctwa || typeof ctwa !== "object") return TETAP;
+  const url = urlIklanAman(ctwa.sourceUrl ?? ctwa.sourceURL);
+  if (url) return url;
+  if (typeof ctwa.headline === "string" && ctwa.headline.trim()) return ctwa.headline.trim().slice(0, 120);
+  return TETAP;
 }

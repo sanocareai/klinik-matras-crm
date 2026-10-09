@@ -13,7 +13,7 @@ import { cleanMime, resolveMediaExt } from "../utils/mediaExt.js";
 import { emitNewMessage, emitMessageAck, emitConversationUpdate, emitMessageUpdate } from "../socket.js";
 import {
   matchCampaignByMessage, CATEGORY_TO_LEAD_SOURCE, extractRefTag, leadSourceFromRefTag,
-  extractCtwaContext, leadSourceFromCtwa, ctwaDetail,
+  extractCtwaContext, leadSourceFromCtwa, ctwaDetail, legacyAdContextDetail,
 } from "../services/leadAttribution.js";
 import { ambilTemplateIklanAktif, cocokkanTemplateIklan, ambilTeksTombolWebsite } from "../services/templateIklan.js";
 import { apakahMintaBerhenti, TAG_OPT_OUT } from "../services/broadcastPolicy.js";
@@ -21,6 +21,7 @@ import { isInternalStaffPhone } from "../utils/staffDirectory.js";
 import { idPesanInti } from "../utils/idPesanWa.js";
 import { cariPesanSudahAda } from "../utils/cariPesanSudahAda.js";
 import { fieldPosterVideo } from "../utils/videoThumb.js";
+import { captureInbound } from "../services/ctwaCapture.js";
 
 export const webhookRouter = express.Router();
 
@@ -476,7 +477,7 @@ async function handleGroupMessage(payload, groupJid, externalId, sessionName) {
 // ── Pesan masuk dari customer (inbound) — dipakai event "message" DAN
 // "message.any" (fromMe:false). Return "saved" kalau berhasil, "skip-dupe"
 // kalau race condition P2002 kejar duluan disimpan request lain.
-async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, mediaInfo, externalId, sessionName }) {
+async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, mediaInfo, externalId, sessionName, event, engine }) {
   // Deteksi sumber lead (3 lapis) — hanya untuk customer BARU
   const existingCustomer = await prisma.customer.findUnique({ where: { phone } });
 
@@ -529,7 +530,8 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
       if (sumberCtwa && detectedSource === "WHATSAPP_DIRECT") {
         detectedSource = sumberCtwa;
         detectedDetail = ctwaDetail(ctwa);
-        console.log("[attribution] Lapis 0b Meta CTWA:", detectedDetail, "clid:", ctwa.clid?.slice(0, 16));
+        // clid TIDAK PERNAH di-log (utuh maupun potongan) — hanya ada/tidaknya.
+        console.log("[attribution] Lapis 0b Meta CTWA:", detectedDetail, "clid:", ctwa.clid ? "ada" : "tidak ada");
       }
     }
 
@@ -576,7 +578,8 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
         rawData.Info?.CtwaContext;
       if (ctwa) {
         detectedSource = "META_ADS";
-        detectedDetail = ctwa.sourceUrl || ctwa.headline || JSON.stringify(ctwa).slice(0, 200);
+        // Tidak pernah menserialisasi objek mentah (bisa memuat clid) — lihat legacyAdContextDetail.
+        detectedDetail = legacyAdContextDetail(ctwa);
         console.log("[attribution] Lapis 2 META_ADS:", detectedDetail);
       }
     }
@@ -800,6 +803,16 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
     if (e.code !== "P2002") throw e;
     return "skip-dupe";
   }
+
+  // FASE 0 capture atribusi CTWA (observasi saja, lihat services/ctwaCapture.js).
+  // Sengaja SETELAH Message.create berhasil dan HANYA di jalur "saved": event
+  // `message` + `message.any` untuk pesan yang sama tidak menggandakan
+  // observasi (yang kalah race kena P2002 di atas), dan kegagalan capture
+  // tidak mungkin menggagalkan penyimpanan pesan. Fungsinya tidak pernah
+  // melempar & tidak di-await; try/catch ini hanya jaring terakhir.
+  try {
+    captureInbound({ payload, event, engine, externalId, isNewCustomer: !existingCustomer });
+  } catch { /* observasi bukan jalur kritis */ }
 
   // Pesan masuk baru → unread=true (badge sidebar lama) + unreadCount+1 (badge baru)
   // + isRead=false (belum dibuka lagi)
@@ -1294,7 +1307,7 @@ webhookRouter.post("/waha", async (req, res) => {
     // ── Pesan masuk dari customer (inbound) — event "message" ATAU
     // "message.any" dengan fromMe:false (idempotency di atas cegah dobel
     // proses kalau "message" sudah duluan simpan pesan yang sama) ─────────
-    const action = await handleInboundMessage({ payload, phone, pushName, text, hasMedia, mediaInfo, externalId, sessionName });
+    const action = await handleInboundMessage({ payload, phone, pushName, text, hasMedia, mediaInfo, externalId, sessionName, event, engine });
     if (isAnyEvent) console.log(`[webhook][any] fromMe=false chat=${chatJid} resolved=${phone} action=${action}`);
 
   } catch (err) {
