@@ -44,8 +44,8 @@ export function teksPendampingAktual(l) {
 /** Isian awal: tiap item PO yang masih boleh datang (sisaDatang > 0); jumlah dikosongkan supaya petugas mengisi angka nyata. */
 export function formKedatanganAwal(po, receipt = null) {
   const lines = po.lines
-    .filter((l) => (receipt ? receipt.lines.some((x) => x.purchaseOrderLineId === l.id) : Number(l.sisaDatang) > 0))
-    .map((l) => ({ purchaseOrderLineId: l.id, kode: l.kode, nama: l.nama, satuan: l.satuan, sisaDatang: Number(l.sisaDatang), dipesan: Number(l.dipesan), pendamping: l.pendamping ? { satuan: l.pendamping.satuan, mode: l.pendamping.mode, rasio: l.pendamping.rasio ?? null } : null, jumlahDatang: "", jumlahPendamping: "" }));
+    .filter((l) => (receipt ? receipt.lines.some((x) => x.purchaseOrderLineId === l.id) : Number(l.belumDatang) > 0))
+    .map((l) => ({ purchaseOrderLineId: l.id, kode: l.kode, nama: l.nama, satuan: l.satuan, belumDatang: Number(l.belumDatang), dipesan: Number(l.dipesan), pendamping: l.pendamping ? { satuan: l.pendamping.satuan, mode: l.pendamping.mode, rasio: l.pendamping.rasio ?? null } : null, jumlahDatang: "", jumlahPendamping: "" }));
   return { tanggalTiba: hariIniISO(), penerima: "", catatan: "", suratJalan: "", bukti: [], lines };
 }
 
@@ -62,7 +62,7 @@ export function galatKedatangan(f, { tanggalPO = null } = {}) {
     const n = Number(l.jumlahDatang);
     if (!(n > 0)) return `${l.kode}: jumlah datang harus lebih dari 0`;
     if (!tigaDesimal(n)) return `${l.kode}: jumlah datang maksimal 3 angka di belakang koma`;
-    if (k3(n) > k3(l.sisaDatang)) return `${l.kode}: jumlah datang (${jumlahTeks(n)} ${l.satuan}) melebihi sisa PO (${jumlahTeks(l.sisaDatang)} ${l.satuan}). Minta Finance merevisi jumlah PO bila memang dikirim lebih.`;
+    if (k3(n) > k3(l.belumDatang)) return `${l.kode}: jumlah datang (${jumlahTeks(n)} ${l.satuan}) melebihi yang belum datang (${jumlahTeks(l.belumDatang)} ${l.satuan}). Minta Finance merevisi jumlah PO bila memang dikirim lebih.`;
     if (l.jumlahPendamping !== "" && l.pendamping?.mode === "AKTUAL" && !(Number(l.jumlahPendamping) >= 0)) return `${l.kode}: jumlah ${String(l.pendamping.satuan).toLowerCase()} tidak boleh negatif`;
   }
   return null;
@@ -151,14 +151,9 @@ export function kalimatRiwayat(e) {
   return `${e.oleh ?? "Sistem"}${dari ? ` (${dari})` : ""} mengoreksi kedatangan — ${ubah.join("; ") || "data"}. Alasan: ${e.alasan}`;
 }
 
-/** Ringkas jumlah pada daftar: "datang 5 / 10 KG" untuk PO satu satuan; selain itu hitungan item. */
+/** Ringkasan pada daftar/kartu: DARI SERVER (progresPO.js). Layar tidak menghitung ulang. */
 export function ringkasKuantitas(po) {
-  const satuan = new Set(po.lines.map((l) => l.satuan));
-  if (satuan.size !== 1) return { teks: `${po.lines.filter((l) => l.sisa <= 0).length}/${po.lines.length} item terpenuhi`, persen: 0 };
-  const dipesan = po.lines.reduce((s, l) => s + l.dipesan, 0);
-  const masuk = po.lines.reduce((s, l) => s + Math.min(l.masukStok, l.dipesan), 0);
-  const datang = po.lines.reduce((s, l) => s + Math.min(l.datang, l.dipesan), 0);
-  return { teks: `${jumlahTeks(datang)} datang · ${jumlahTeks(masuk)} masuk stok / ${jumlahTeks(dipesan)} ${[...satuan][0]}`, persen: dipesan > 0 ? Math.min(100, Math.round((masuk / dipesan) * 100)) : 0 };
+  return { teks: po.progres?.teks ?? "", persen: po.progres?.persenMasukStok ?? 0 };
 }
 
 // ── Pendamping pada formulir PO ──────────────────────────────────────────

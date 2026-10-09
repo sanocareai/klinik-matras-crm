@@ -1907,6 +1907,8 @@ export const api = {
   unggahBuktiKedatanganGudang: (formData) => requestFormData("/inventory/barang-akan-datang/bukti", formData),
   getKedatanganFinance: (params = {}) => request(`/finance/purchase-orders/kedatangan${qsFinance(params)}`),
   catatKedatanganFinance: (poId, data, idempotencyKey = mutationKey("tiba")) => request(`/finance/purchase-orders/${poId}/kedatangan`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  siapkanDrafKedatanganFinance: (poId) => request(`/finance/purchase-orders/${poId}/draf-penerimaan`, { method: "POST", body: JSON.stringify({}) }),
+  siapkanDrafKedatanganGudang: (poId) => request(`/inventory/barang-akan-datang/${poId}/draf-penerimaan`, { method: "POST", body: JSON.stringify({}) }),
   koreksiKedatanganFinance: (receiptId, data, idempotencyKey = mutationKey("koreksi-tiba")) => request(`/finance/purchase-orders/penerimaan/${receiptId}/koreksi-kedatangan`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   unggahBuktiKedatanganFinance: (formData) => requestFormData("/finance/purchase-orders/bukti-kedatangan", formData),
   getFinanceSupplierPayments: (params = {}) => request(`/finance/supplier-payments${qsFinance(params)}`),

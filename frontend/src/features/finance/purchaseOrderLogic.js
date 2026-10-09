@@ -218,23 +218,15 @@ export function bodyDariForm(f) {
   };
 }
 
-/** Ringkasan progres satu PO untuk daftar: total diterima baik vs dipesan per baris (dijumlah hanya bila satuannya sama). */
+/** Ringkasan progres satu PO untuk daftar: DARI SERVER (progresPO.js: masuk stok vs dipesan). Layar tidak menghitung ulang. */
 export function ringkasProgres(po) {
-  const satuan = new Set(po.lines.map((l) => l.satuan));
-  if (satuan.size !== 1) return { teks: `${po.lines.filter((l) => l.belumDiterima <= 0).length}/${po.lines.length} baris terpenuhi`, persen: persenBaris(po) };
-  const dipesan = po.lines.reduce((s, l) => s + l.dipesan, 0);
-  const diterima = po.lines.reduce((s, l) => s + Math.min(l.diterimaBaik, l.dipesan), 0);
-  return { teks: `${teksJumlah(diterima)} / ${teksJumlah(dipesan)} ${[...satuan][0]}`, persen: dipesan > 0 ? Math.min(100, Math.round((diterima / dipesan) * 100)) : 0 };
-}
-function persenBaris(po) {
-  const bagian = po.lines.map((l) => (l.dipesan > 0 ? Math.min(1, l.diterimaBaik / l.dipesan) : 0));
-  return bagian.length ? Math.round((bagian.reduce((a, b) => a + b, 0) / bagian.length) * 100) : 0;
+  return { teks: po.progres?.teks ?? "", persen: po.progres?.persenMasukStok ?? 0 };
 }
 
-/** Nilai barang yang masih ditunggu (belum diterima × harga) untuk PO yang berjalan. */
+/** Nilai barang yang belum masuk stok (dipesan − masuk stok, × harga PO) untuk PO yang berjalan — dari server (po.totalBelumMasukStok). */
 export function nilaiBelumDiterima(po) {
   if (!["DISETUJUI", "DITERIMA_SEBAGIAN"].includes(po.status)) return 0;
-  return po.lines.reduce((s, l) => s + l.belumDiterima * (l.hargaSatuan ?? 0), 0);
+  return po.totalBelumMasukStok ?? 0;
 }
 
 /** Aksi yang masuk akal per status. Server tetap menegakkan izin; ini hanya menyembunyikan tombol yang pasti ditolak. */

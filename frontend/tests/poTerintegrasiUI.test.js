@@ -15,9 +15,9 @@ const baca = (p) => fs.readFileSync(path.join(dir, p), "utf8");
 const po = () => ({
   id: "po1", poNumber: "PO-01102026-001", orderDate: "2026-09-01", status: "DISETUJUI",
   lines: [
-    { id: "l1", kode: "BUSA-R50", nama: "Busa", satuan: "KG", dipesan: 10, sisaDatang: 10, pendamping: { satuan: "LEMBAR", mode: "AKTUAL", rasio: null, estimasi: 2, aktual: null, teks: "perkiraan 2 lembar" } },
-    { id: "l2", kode: "LEM-1", nama: "Lem", satuan: "DUS", dipesan: 3, sisaDatang: 3, pendamping: { satuan: "KALENG", mode: "TETAP", rasio: 12, estimasi: 36, aktual: null, teks: "setara 36 kaleng" } },
-    { id: "l3", kode: "KAIN", nama: "Kain", satuan: "METER", dipesan: 5, sisaDatang: 0, pendamping: null },
+    { id: "l1", kode: "BUSA-R50", nama: "Busa", satuan: "KG", dipesan: 10, belumDatang: 10, pendamping: { satuan: "LEMBAR", mode: "AKTUAL", rasio: null, estimasi: 2, aktual: null, teks: "perkiraan 2 lembar" } },
+    { id: "l2", kode: "LEM-1", nama: "Lem", satuan: "DUS", dipesan: 3, belumDatang: 3, pendamping: { satuan: "KALENG", mode: "TETAP", rasio: 12, estimasi: 36, aktual: null, teks: "setara 36 kaleng" } },
+    { id: "l3", kode: "KAIN", nama: "Kain", satuan: "METER", dipesan: 5, belumDatang: 0, pendamping: null },
   ],
 });
 
@@ -33,7 +33,7 @@ test("formulir catat tiba: hanya item yang masih boleh datang; PIC, catatan, tan
   assert.match(galatKedatangan(f), /PIC/);
   f.penerima = "Budi"; assert.match(galatKedatangan(f), /catatan/);
   f.catatan = "Dus utuh"; assert.match(galatKedatangan(f), /jumlah datang minimal satu/);
-  f.lines[0].jumlahDatang = "11"; assert.match(galatKedatangan(f), /melebihi sisa PO.*merevisi jumlah PO/);
+  f.lines[0].jumlahDatang = "11"; assert.match(galatKedatangan(f), /melebihi yang belum datang.*merevisi jumlah PO/);
   f.lines[0].jumlahDatang = "5"; assert.equal(galatKedatangan(f), null);
   assert.deepEqual(kekuranganIsian(f), ["Surat jalan belum diisi", "Bukti kedatangan belum diunggah", "Jumlah lembar aktual BUSA-R50 belum diisi"]);
   f.suratJalan = "SJ-1"; f.bukti = ["/media/receipt-proofs/x.jpg"]; f.lines[0].jumlahPendamping = "1";
@@ -86,9 +86,10 @@ test("pendamping pada PO: dua mode, validasi dini, tidak digabung konversi satua
   assert.equal(jumlahTeks(1234.5), "1.234,5");
 });
 
-test("ringkas kuantitas daftar: datang dan masuk stok dari dipesan", () => {
-  const r = ringkasKuantitas({ lines: [{ satuan: "KG", dipesan: 10, datang: 5, masukStok: 5, sisa: 5 }] });
-  assert.equal(r.teks, "5 datang · 5 masuk stok / 10 KG"); assert.equal(r.persen, 50);
+test("ringkas kuantitas daftar: dibaca dari server (po.progres), tidak dihitung ulang di layar", () => {
+  const r = ringkasKuantitas({ lines: [{ satuan: "KG", dipesan: 10, datang: 8, masukStok: 5 }], progres: { teks: "5 / 10 KG masuk stok · 8 sudah datang", persenMasukStok: 50 } });
+  assert.equal(r.teks, "5 / 10 KG masuk stok · 8 sudah datang"); assert.equal(r.persen, 50);
+  assert.equal(ringkasKuantitas({ lines: [] }).persen, 0, "tanpa progres dari server: tidak mengarang angka");
 });
 
 test("pemasangan: halaman Gudang tanpa harga, menu & rute, Finance memakai panel yang sama, drawer penerimaan mengarahkan ke Catat Barang Tiba", () => {
@@ -106,4 +107,39 @@ test("pemasangan: halaman Gudang tanpa harga, menu & rute, Finance memakai panel
   assert.match(panel, /Dicatat otomatis atas nama akun Anda/); assert.match(panel, /Koreksi Kedatangan/); assert.match(panel, /Alasan koreksi/);
   assert.match(baca("../src/features/warehouse/components/GoodsReceiptDetailDrawer.jsx"), /catat-tiba-drawer/);
   assert.match(baca("../src/api.js"), /catatKedatanganGudang[\s\S]*Idempotency-Key/);
+});
+
+test("progres: semua angka & definisi dari server — tidak ada label Sisa tanpa arti, tidak ada hitung ulang di layar", () => {
+  const panel = baca("../src/features/kedatangan/PanelKedatangan.jsx");
+  assert.doesNotMatch(panel, /<TH[^>]*>\s*Sisa\s*</, "tidak ada kolom Sisa polos");
+  assert.doesNotMatch(panel, /dt className="text-ink3">Sisa</);
+  assert.match(panel, /definisi=\{po\.progresDefinisi\}/); assert.match(panel, /LegendaProgres/); assert.match(panel, /title=\{d\.definisi\}/);
+  const fin = baca("../src/pages/finance/FinancePurchaseOrders.jsx");
+  assert.match(fin, /l\.progres\.belumDatang/); assert.match(fin, /l\.progres\.masukStok/); assert.match(fin, /l\.progres\.belumMasukStok/);
+  assert.doesNotMatch(fin, /l\.belumDiterima|l\.diterimaBaik/, "Finance tidak lagi memakai kolom lama");
+  assert.match(fin, /<LegendaProgres definisi=\{po\.progresDefinisi\}/);
+  const logic = baca("../src/features/kedatangan/kedatanganLogic.js") + baca("../src/features/finance/purchaseOrderLogic.js");
+  assert.doesNotMatch(logic, /\.reduce\(\(s, l\) => s \+ Math\.min\(l\.(masukStok|diterimaBaik)/, "ringkasan progres tidak dijumlah di klien");
+});
+
+test("Finance-first: tombol Catat Barang Tiba di PO menyiapkan draf idempoten dulu (Finance & Gudang), disembunyikan bila draf sudah ada; surat jalan/bukti kosong tampil Belum dilampirkan", () => {
+  const panel = baca("../src/features/kedatangan/PanelKedatangan.jsx");
+  assert.match(panel, /siapkanDrafKedatanganFinance/); assert.match(panel, /siapkanDrafKedatanganGudang/);
+  assert.match(panel, /bisaMenerima && !adaDraf/);
+  assert.match(panel, /receiptId=\{dialog\.receiptId \?\? null\}/);
+  const api = baca("../src/api.js");
+  assert.match(api, /siapkanDrafKedatanganFinance[\s\S]*draf-penerimaan/); assert.match(api, /siapkanDrafKedatanganGudang[\s\S]*draf-penerimaan/);
+  assert.match(panel, /Belum dilampirkan/g);
+  assert.ok((panel.match(/Belum dilampirkan/g) ?? []).length >= 2, "surat jalan dan bukti");
+});
+
+test("formulir: tidak melebihi yang belum datang (dari server); pendamping aktual negatif ditolak di layar", () => {
+  const po = { orderDate: "2026-10-01", lines: [{ id: "l1", kode: "BUSA", nama: "Busa", satuan: "KG", dipesan: 10, belumDatang: 2, pendamping: { satuan: "LEMBAR", mode: "AKTUAL", rasio: null, estimasi: 2 } }] };
+  const f = formKedatanganAwal(po);
+  f.penerima = "Budi"; f.catatan = "ok"; f.tanggalTiba = "2026-10-05";
+  f.lines[0].jumlahDatang = "3";
+  assert.match(galatKedatangan(f, { tanggalPO: po.orderDate }), /melebihi yang belum datang \(2 KG\)/);
+  f.lines[0].jumlahDatang = "2"; f.lines[0].jumlahPendamping = "-1";
+  assert.match(galatKedatangan(f, { tanggalPO: po.orderDate }), /tidak boleh negatif/);
+  f.lines[0].jumlahPendamping = "1"; assert.equal(galatKedatangan(f, { tanggalPO: po.orderDate }), null);
 });

@@ -210,7 +210,7 @@ export default function GoodsReceiptDetailDrawer({ receiptId, onClose, onChanged
                           const q = receipt.poRingkas?.lines?.find((b) => b.id === line.purchaseOrderLineId);
                           return q ? (
                             <p className="mt-1 text-[11px] text-ink2" data-testid="progres-po-baris">
-                              PO: dipesan {teksJumlah(q.dipesan)} · sudah masuk {teksJumlah(q.diterimaBaik)} · ditolak {teksJumlah(q.ditolak)} · <strong>sisa {teksJumlah(q.belumDiterima)}</strong>
+                              PO: dipesan {teksJumlah(q.progres.dipesan)} · datang {teksJumlah(q.progres.datang)} · belum datang {teksJumlah(q.progres.belumDatang)} · masuk stok {teksJumlah(q.progres.masukStok)} · <strong>belum masuk stok {teksJumlah(q.progres.belumMasukStok)}</strong>
                             </p>
                           ) : null;
                         })()}

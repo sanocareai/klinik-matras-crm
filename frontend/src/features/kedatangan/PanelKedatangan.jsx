@@ -17,49 +17,45 @@ import {
 // Panel KEDATANGAN barang pada satu PO — dipakai Gudang (Barang Akan Datang) dan Finance (detail PO). Data dan aturan SATU sumber (server): layar hanya menampilkan.
 // Mencatat kedatangan TIDAK mengubah stok dan TIDAK membuat jurnal; stok baru bertambah saat Gudang menekan "Simpan ke Stok" di Penerimaan Barang.
 
-// ── Tabel kuantitas per item ─────────────────────────────────────────────
-export function TabelKuantitas({ lines, finance = false }) {
+// ── Progres per item ─────────────────────────────────────────────────────
+// Angka & definisi SEMUA dari server (progresPO.js): layar hanya menampilkan. Tidak ada label "Sisa" tanpa arti — tiap kolom punya definisi (tooltip + legenda).
+const WARNA_PROGRES = { belumDatang: "font-semibold text-ink", belumMasukStok: "font-semibold text-ink" };
+export function TabelKuantitas({ lines, definisi = [], finance = false }) {
+  const kolom = definisi.filter((d) => d.kunci !== "dipesan");
   return (
-    <>
-      <TableWrap className="hidden md:block">
-        <Table>
-          <THead>
-            <TR><TH>Item</TH><TH numeric>Dipesan</TH><TH numeric>Datang</TH><TH numeric>Baik</TH><TH numeric>Ditolak</TH><TH numeric>Masuk stok</TH><TH numeric>Sisa</TH><TH>Jumlah fisik pendamping</TH>{finance && <TH numeric>Harga satuan</TH>}</TR>
-          </THead>
-          <TBody>
-            {lines.map((l) => (
-              <TR key={l.id} data-testid="baris-kuantitas">
-                <TD><div className="font-medium text-ink">{l.kode}</div><div className="text-[11.5px] text-ink2">{l.nama}</div></TD>
-                <TD numeric>{jumlahTeks(l.dipesan)} {l.satuan}</TD>
-                <TD numeric>{jumlahTeks(l.datang)}</TD>
-                <TD numeric>{jumlahTeks(l.baik)}</TD>
-                <TD numeric>{jumlahTeks(l.ditolak)}</TD>
-                <TD numeric>{jumlahTeks(l.masukStok)}</TD>
-                <TD numeric className={l.sisa > 0 ? "font-semibold text-ink" : ""}>{jumlahTeks(l.sisa)}</TD>
-                <TD><PendampingSel l={l} /></TD>
-                {finance && <TD numeric>{l.hargaSatuan?.toLocaleString("id-ID")}</TD>}
-              </TR>
-            ))}
-          </TBody>
-        </Table>
-      </TableWrap>
-      <ul className="list-none space-y-2 p-0 md:hidden">
+    <div className="space-y-2" data-testid="progres-item">
+      <ul className="list-none space-y-2 p-0">
         {lines.map((l) => (
           <li key={l.id} className="rounded-lg border border-line p-2.5 text-[12.5px]" data-testid="baris-kuantitas">
-            <div className="font-medium text-ink">{l.kode} — {l.nama}</div>
-            <dl className="mt-1.5 grid grid-cols-3 gap-x-3 gap-y-1">
-              <div><dt className="text-ink3">Dipesan</dt><dd className="ml-0 tabular-nums">{jumlahTeks(l.dipesan)} {l.satuan}</dd></div>
-              <div><dt className="text-ink3">Datang</dt><dd className="ml-0 tabular-nums">{jumlahTeks(l.datang)}</dd></div>
-              <div><dt className="text-ink3">Baik</dt><dd className="ml-0 tabular-nums">{jumlahTeks(l.baik)}</dd></div>
-              <div><dt className="text-ink3">Ditolak</dt><dd className="ml-0 tabular-nums">{jumlahTeks(l.ditolak)}</dd></div>
-              <div><dt className="text-ink3">Masuk stok</dt><dd className="ml-0 tabular-nums">{jumlahTeks(l.masukStok)}</dd></div>
-              <div><dt className="text-ink3">Sisa</dt><dd className="ml-0 font-semibold tabular-nums">{jumlahTeks(l.sisa)}</dd></div>
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+              <span className="font-medium text-ink">{l.kode} — {l.nama}</span>
+              <span className="tabular-nums text-ink2">Dipesan <strong className="text-ink">{jumlahTeks(l.dipesan)} {l.satuan}</strong>{finance && l.hargaSatuan != null ? <> · harga {l.hargaSatuan.toLocaleString("id-ID")}</> : null}</span>
+            </div>
+            <dl className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-4">
+              {kolom.map((d) => (
+                <div key={d.kunci} title={d.definisi} data-kolom={d.kunci}>
+                  <dt className="text-ink3">{d.label}</dt>
+                  <dd className={`ml-0 tabular-nums ${Number(l[d.kunci]) > 0 ? (WARNA_PROGRES[d.kunci] ?? "") : "text-ink2"}`}>{jumlahTeks(l[d.kunci])}</dd>
+                </div>
+              ))}
             </dl>
-            {l.pendamping && <div className="mt-1"><PendampingSel l={l} /></div>}
+            {l.pendamping && <div className="mt-1.5 border-t border-line pt-1.5"><PendampingSel l={l} /></div>}
           </li>
         ))}
       </ul>
-    </>
+      {definisi.length > 0 && <LegendaProgres definisi={definisi} />}
+    </div>
+  );
+}
+
+export function LegendaProgres({ definisi }) {
+  return (
+    <details className="rounded-lg bg-inset px-3 py-2 text-[12px] text-ink2" data-testid="legenda-progres">
+      <summary className="cursor-pointer font-semibold text-ink max-sm:min-h-11 max-sm:py-2">Arti tiap angka</summary>
+      <dl className="m-0 mt-1.5 space-y-1">
+        {definisi.map((d) => <div key={d.kunci}><dt className="inline font-semibold text-ink">{d.label}: </dt><dd className="inline">{d.definisi}</dd></div>)}
+      </dl>
+    </details>
   );
 }
 
@@ -113,7 +109,7 @@ function UnggahBukti({ workspace, value, onChange }) {
 }
 
 // ── Modal: Catat Barang Tiba ─────────────────────────────────────────────
-export function ModalCatatKedatangan({ po, receipt = null, workspace, onClose, onDone }) {
+export function ModalCatatKedatangan({ po, receipt = null, receiptId = null, workspace, onClose, onDone }) {
   const [f, setF] = useState(() => formKedatanganAwal(po, receipt));
   const [galat, setGalat] = useState("");
   const kunci = useRef(`tiba-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`}`);
@@ -124,7 +120,7 @@ export function ModalCatatKedatangan({ po, receipt = null, workspace, onClose, o
   async function simpan() {
     setGalat("");
     try {
-      const body = bodyKedatangan(f, receipt?.id ?? null);
+      const body = bodyKedatangan(f, receipt?.id ?? receiptId ?? null);
       const hasil = workspace === "FINANCE" ? await api.catatKedatanganFinance(po.id, body, kunci.current) : await api.catatKedatanganGudang(po.id, body, kunci.current);
       await onDone(hasil);
     } catch (e) { setGalat(e.message || "Gagal mencatat kedatangan"); kunci.current = `tiba-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`; }
@@ -149,11 +145,11 @@ export function ModalCatatKedatangan({ po, receipt = null, workspace, onClose, o
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Tanggal barang tiba" required hint="Menjadi dasar jatuh tempo faktur (termin)."><Input type="date" max={new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10)} value={f.tanggalTiba} onChange={(e) => set("tanggalTiba", e.target.value)} /></Field>
           <Field label="PIC / penerima barang" required><Input value={f.penerima} onChange={(e) => set("penerima", e.target.value)} placeholder="mis. Budi (Gudang)" /></Field>
-          <Field label="Nomor surat jalan" hint="Opsional — bila kosong tetap tercatat sebagai kekurangan."><Input value={f.suratJalan} onChange={(e) => set("suratJalan", e.target.value)} /></Field>
+          <Field label="Nomor surat jalan" hint="Opsional — bila kosong tampil sebagai “Belum dilampirkan”."><Input value={f.suratJalan} onChange={(e) => set("suratJalan", e.target.value)} /></Field>
           <Field label="Catatan kedatangan" required><Input value={f.catatan} onChange={(e) => set("catatan", e.target.value)} placeholder="mis. dus utuh, dikirim ekspedisi" /></Field>
         </div>
         <div>
-          <div className="mb-1.5 text-[12px] font-semibold text-ink2">Foto surat jalan / bukti (opsional)</div>
+          <div className="mb-1.5 text-[12px] font-semibold text-ink2">Foto surat jalan / bukti (opsional — bila kosong tampil “Belum dilampirkan”)</div>
           <UnggahBukti workspace={workspace} value={f.bukti} onChange={(v) => set("bukti", v)} />
         </div>
         <div>
@@ -163,7 +159,7 @@ export function ModalCatatKedatangan({ po, receipt = null, workspace, onClose, o
               <div key={l.purchaseOrderLineId} className="rounded-lg border border-line p-2.5" data-testid="baris-datang">
                 <div className="flex flex-wrap items-baseline justify-between gap-x-3">
                   <span className="text-[13px] font-medium text-ink">{l.kode} — {l.nama}</span>
-                  <span className="text-[11.5px] text-ink3">Dipesan {jumlahTeks(l.dipesan)} {l.satuan} · sisa yang boleh datang {jumlahTeks(l.sisaDatang)} {l.satuan}</span>
+                  <span className="text-[11.5px] text-ink3">Dipesan {jumlahTeks(l.dipesan)} {l.satuan} · belum datang {jumlahTeks(l.belumDatang)} {l.satuan}</span>
                 </div>
                 <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
                   <Field label={`Jumlah datang (${l.satuan})`}>
@@ -277,10 +273,11 @@ export function KartuPenerimaan({ r, finance, bolehTulis, onCatat, onKoreksi, ek
         <dl className="mt-1.5 grid grid-cols-1 gap-x-4 gap-y-0.5 text-ink2 sm:grid-cols-2">
           <div><dt className="inline text-ink3">PIC/penerima: </dt><dd className="inline">{r.penerima}</dd></div>
           <div><dt className="inline text-ink3">Dicatat oleh: </dt><dd className="inline" data-testid="dicatat-oleh">{r.dicatat?.oleh ?? "—"} · {LABEL_WORKSPACE[r.dicatat?.workspace] ?? r.dicatat?.workspace} ({String(r.dicatat?.peran ?? "").replace(/,/g, ", ")}) · {waktuTeks(r.dicatat?.pada)}</dd></div>
-          <div><dt className="inline text-ink3">Surat jalan: </dt><dd className="inline">{r.suratJalan ?? "—"}</dd></div>
+          <div><dt className="inline text-ink3">Surat jalan: </dt><dd className="inline" data-testid="surat-jalan">{r.suratJalan ?? <span className="text-orange">Belum dilampirkan</span>}</dd></div>
           <div className="sm:col-span-2"><dt className="inline text-ink3">Catatan: </dt><dd className="inline">{r.catatan}</dd></div>
         </dl>
       )}
+      {r.kedatanganDicatat && !(r.bukti?.length > 0) && <div className="mt-1.5 text-ink2" data-testid="bukti-kosong"><span className="text-ink3">Bukti kedatangan: </span><span className="text-orange">Belum dilampirkan</span></div>}
       {r.bukti?.length > 0 && <div className="mt-1.5 flex flex-wrap gap-1.5">{r.bukti.map((u) => <a key={u} href={u} target="_blank" rel="noreferrer"><img src={u} alt="Bukti kedatangan" className="h-12 w-12 rounded-lg object-cover" /></a>)}</div>}
       {r.kekurangan?.length > 0 && (
         <ul className="m-0 mt-1.5 flex list-none flex-wrap gap-1.5 p-0" data-testid="kekurangan">
@@ -318,23 +315,35 @@ export function KartuPenerimaan({ r, finance, bolehTulis, onCatat, onKoreksi, ek
  */
 export default function PanelKedatangan({ po, workspace, bolehTulis = true, onChanged, ekstraPenerimaan = null }) {
   const finance = workspace === "FINANCE";
-  const [dialog, setDialog] = useState(null); // { jenis: "catat"|"koreksi", receipt? }
-  const bisaMenerima = ["DISETUJUI", "DITERIMA_SEBAGIAN"].includes(po.status) && po.lines.some((l) => Number(l.sisaDatang) > 0);
+  const [dialog, setDialog] = useState(null); // { jenis: "catat"|"koreksi", receipt?, receiptId? }
+  const [menyiapkan, setMenyiapkan] = useState(false);
+  const [galatSiap, setGalatSiap] = useState("");
+  const bisaMenerima = ["DISETUJUI", "DITERIMA_SEBAGIAN"].includes(po.status) && po.lines.some((l) => Number(l.belumDatang) > 0);
+  const adaDraf = po.penerimaan.some((r) => !r.kedatanganDicatat && ["DRAFT", "SCHEDULED"].includes(r.status));
+  // Tanpa penerimaan lebih dulu (Finance-first atau Gudang-first): server menyiapkan/memakai draf yang SAMA (idempoten), lalu kedatangan dicatat di draf itu.
+  async function mulaiCatat() {
+    setGalatSiap(""); setMenyiapkan(true);
+    try {
+      const d = workspace === "FINANCE" ? await api.siapkanDrafKedatanganFinance(po.id) : await api.siapkanDrafKedatanganGudang(po.id);
+      setDialog({ jenis: "catat", receiptId: d.receiptId });
+    } catch (e) { setGalatSiap(e.message || "Gagal menyiapkan penerimaan"); } finally { setMenyiapkan(false); }
+  }
   const urut = useMemo(() => po.penerimaan, [po.penerimaan]);
   return (
     <div className="space-y-3" data-testid="panel-kedatangan">
-      <TabelKuantitas lines={po.lines} finance={finance} />
+      <TabelKuantitas lines={po.lines} definisi={po.progresDefinisi} finance={finance} />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h4 className="m-0 text-[11px] font-bold uppercase tracking-wide text-ink3">Pengiriman &amp; surat jalan ({urut.length})</h4>
-        {bolehTulis && bisaMenerima && <Button size="sm" onClick={() => setDialog({ jenis: "catat" })} className="max-sm:min-h-11" data-testid="catat-tiba"><PackageCheck size={14} /> Catat Barang Tiba</Button>}
+        {bolehTulis && bisaMenerima && !adaDraf && <Button size="sm" disabled={menyiapkan} onClick={mulaiCatat} className="max-sm:min-h-11" data-testid="catat-tiba"><PackageCheck size={14} /> {menyiapkan ? "Menyiapkan…" : "Catat Barang Tiba"}</Button>}
       </div>
+      {galatSiap && <p role="alert" data-testid="galat-siap" className="rounded-lg bg-orangebg px-3 py-2 text-[12.5px] text-orange">{galatSiap}</p>}
       {urut.length === 0 ? <p className="text-[12.5px] text-ink3">Belum ada pengiriman. Catat saat barang pertama tiba — tiap pengiriman menjadi penerimaan sendiri.</p> : (
         <ul className="list-none space-y-2 p-0">
           {urut.map((r) => <KartuPenerimaan key={r.id} r={r} finance={finance} bolehTulis={bolehTulis} ekstra={ekstraPenerimaan ? ekstraPenerimaan(r) : null} onCatat={(x) => setDialog({ jenis: "catat", receipt: x })} onKoreksi={(x) => setDialog({ jenis: "koreksi", receipt: x })} />)}
         </ul>
       )}
       {dialog?.jenis === "catat" && (
-        <ModalCatatKedatangan po={po} receipt={dialog.receipt ?? null} workspace={workspace} onClose={() => setDialog(null)} onDone={async (h) => { setDialog(null); await onChanged?.(h); }} />
+        <ModalCatatKedatangan po={po} receipt={dialog.receipt ?? null} receiptId={dialog.receiptId ?? null} workspace={workspace} onClose={() => { setDialog(null); onChanged?.(); }} onDone={async (h) => { setDialog(null); await onChanged?.(h); }} />
       )}
       {dialog?.jenis === "koreksi" && (
         <ModalKoreksiKedatangan po={po} receipt={dialog.receipt} workspace={workspace} onClose={() => setDialog(null)} onDone={async (h) => { setDialog(null); await onChanged?.(h); }} />
