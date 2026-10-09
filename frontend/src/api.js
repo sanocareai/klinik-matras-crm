@@ -1899,6 +1899,16 @@ export const api = {
   getJejakPemakaianPenerimaan: (receiptId) => request(`/inventory/goods-receipts/${receiptId}/jejak-pemakaian`),
   // Pintu Gudang: PO yang boleh diterima, TANPA harga.
   getGudangPurchaseOrders: (params = {}) => request(`/inventory/purchase-orders${qsFinance(params)}`),
+  // ── Barang Akan Datang / Catat Barang Tiba (PO terintegrasi Finance–Gudang). Satu sumber data; Gudang TANPA harga. Aktor/peran/workspace dari sesi server. Idempotency-Key wajib. ──
+  getBarangAkanDatang: (params = {}) => request(`/inventory/barang-akan-datang${qsFinance(params)}`),
+  getBarangAkanDatangDetail: (poId) => request(`/inventory/barang-akan-datang/${poId}`),
+  catatKedatanganGudang: (poId, data, idempotencyKey = mutationKey("tiba")) => request(`/inventory/barang-akan-datang/${poId}/kedatangan`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  koreksiKedatanganGudang: (receiptId, data, idempotencyKey = mutationKey("koreksi-tiba")) => request(`/inventory/barang-akan-datang/penerimaan/${receiptId}/koreksi`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  unggahBuktiKedatanganGudang: (formData) => requestFormData("/inventory/barang-akan-datang/bukti", formData),
+  getKedatanganFinance: (params = {}) => request(`/finance/purchase-orders/kedatangan${qsFinance(params)}`),
+  catatKedatanganFinance: (poId, data, idempotencyKey = mutationKey("tiba")) => request(`/finance/purchase-orders/${poId}/kedatangan`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  koreksiKedatanganFinance: (receiptId, data, idempotencyKey = mutationKey("koreksi-tiba")) => request(`/finance/purchase-orders/penerimaan/${receiptId}/koreksi-kedatangan`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
+  unggahBuktiKedatanganFinance: (formData) => requestFormData("/finance/purchase-orders/bukti-kedatangan", formData),
   getFinanceSupplierPayments: (params = {}) => request(`/finance/supplier-payments${qsFinance(params)}`),
   // Idempotency-Key per percobaan (klik ganda/retry tidak membuat pembayaran dan jurnal ganda).
   createFinanceSupplierPayment: (data, idempotencyKey = mutationKey("sp")) => request("/finance/supplier-payments", { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),

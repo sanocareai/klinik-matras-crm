@@ -100,7 +100,7 @@ test("formDariPO membawa konversi & info supplier saat draf diubah (SKU yang sud
     supplier: { id: "s1" }, orderDate: "2026-10-09T00:00:00.000Z", expectedDate: null, notes: null,
     lines: [{ materialId: "m9", dipesan: 2, hargaSatuan: 43290, konversi: { satuanBeli: "BOX", faktor: 12, satuanStok: "CAN" }, namaSupplier: "LEM SPRAY", kodeSupplier: "LS-500" }],
   });
-  assert.deepEqual(f.lines[0], { materialId: "m9", qty: "2", unitPrice: "43290", satuanBeli: "BOX", faktorKonversi: "12", namaSupplier: "LEM SPRAY", kodeSupplier: "LS-500" });
+  assert.deepEqual(f.lines[0], { materialId: "m9", qty: "2", unitPrice: "43290", pendamping: { satuan: "", mode: "", rasio: "", estimasi: "" }, satuanBeli: "BOX", faktorKonversi: "12", namaSupplier: "LEM SPRAY", kodeSupplier: "LS-500" });
   assert.equal(f.lines[0].materialBaru, undefined);
 });
 

@@ -50,7 +50,7 @@ test("subtotal & total isian; body ke server bertipe angka", () => {
 
 test("formDariPO: mengisi ulang formulir dari PO draf", () => {
   const f = formDariPO({ supplier: { id: "s1" }, orderDate: "2026-10-08T00:00:00.000Z", expectedDate: null, notes: null, lines: [{ materialId: "m1", dipesan: 10, hargaSatuan: 43290 }] });
-  assert.deepEqual(f, { supplierId: "s1", orderDate: "2026-10-08", expectedDate: "", notes: "", lines: [{ materialId: "m1", qty: "10", unitPrice: "43290" }] });
+  assert.deepEqual(f, { supplierId: "s1", orderDate: "2026-10-08", expectedDate: "", notes: "", lines: [{ materialId: "m1", qty: "10", unitPrice: "43290", pendamping: { satuan: "", mode: "", rasio: "", estimasi: "" } }] });
 });
 
 test("ringkasProgres: satu satuan dijumlah; beda satuan dihitung per baris; diterima tidak melebihi dipesan", () => {

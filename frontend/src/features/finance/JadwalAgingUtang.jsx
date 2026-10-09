@@ -113,7 +113,7 @@ export default function JadwalAgingUtang({ suppliers = [], rekening = [], bolehJ
               </THead>
               <TBody>
                 {baris.map((r) => (
-                  <TR key={r.billId} clickable onClick={() => setDetailId(r.billId)} className={cn("border-l-4", GARIS[r.indikator])} data-testid="baris-aging">
+                  <TR key={r.rowKey ?? r.billId} clickable onClick={() => setDetailId(r.billId)} className={cn("border-l-4", GARIS[r.indikator])} data-testid="baris-aging">
                     <TD><div className="font-medium text-ink">{r.supplier}</div><div className="font-mono text-[11.5px] text-ink2">{r.nomorFaktur || r.nomorTagihan}</div></TD>
                     <TD className="font-mono text-[12px]">{r.po?.nomor ?? "—"}</TD>
                     <TD className="whitespace-nowrap text-[12px]">{r.tanggalBarangDiterima ? tanggalPendek(r.tanggalBarangDiterima) : "—"}</TD>
@@ -132,7 +132,7 @@ export default function JadwalAgingUtang({ suppliers = [], rekening = [], bolehJ
           <CardList className={CARD_VIEW_CLASS}>
             {baris.map((r) => (
               <RowCard
-                key={r.billId} className={cn("border-l-4", GARIS[r.indikator])} onClick={() => setDetailId(r.billId)}
+                key={r.rowKey ?? r.billId} className={cn("border-l-4", GARIS[r.indikator])} onClick={() => setDetailId(r.billId)}
                 title={r.nomorFaktur || r.nomorTagihan} subtitle={r.supplier}
                 status={<Badge variant={NADA_INDIKATOR[r.indikator].variant}>{teksJatuhTempo(r)}</Badge>}
                 fields={[

@@ -20,6 +20,8 @@ import {
 } from "@/features/finance/shared.jsx";
 import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
+import PanelKedatangan from "@/features/kedatangan/PanelKedatangan.jsx";
+import { MODE_PENDAMPING_OPSI, adaPendamping, teksPratinjauPendamping } from "@/features/kedatangan/kedatanganLogic.js";
 import {
   STATUS_PO, TAB_PO, LABEL_STATUS_PENERIMAAN, baris0, teksJumlah, subtotal, totalIsian, galatBaris, galatFormulir,
   formDariPO, bodyDariForm, ringkasProgres, nilaiBelumDiterima, aksiPO, kalimatEvent,
@@ -90,8 +92,8 @@ export default function FinancePurchaseOrders() {
       )}
 
       <Penjelasan>
-        PO hanya <strong>rencana dan komitmen</strong>: menyimpan atau menyetujui PO <strong>tidak mengubah stok dan tidak membuat jurnal</strong>. Setelah disetujui, Gudang memilih PO ini
-        saat membuat <strong>Penerimaan Baru</strong>, mencatat jumlah datang, baik, dan ditolak, lalu menekan <strong>Simpan ke Stok</strong>. Hanya langkah itu yang menambah stok dan persediaan.
+        PO hanya <strong>rencana dan komitmen</strong>: menyimpan atau menyetujui PO <strong>tidak mengubah stok dan tidak membuat jurnal</strong>. Setelah disetujui, PO ini muncul di Gudang sebagai <strong>Barang Akan Datang</strong>. Finance atau Gudang mencatat
+        kedatangan lewat <strong>Catat Barang Tiba</strong> (tiap pengiriman = satu penerimaan sendiri), lalu Gudang memeriksa baik/ditolak dan menekan <strong>Simpan ke Stok</strong>. Hanya langkah terakhir itu yang menambah stok dan persediaan.
         Penerimaan tanpa PO tetap bisa dibuat Gudang, tetapi ditandai <strong>Tanpa PO</strong> dan tidak ada pencocokan jumlah maupun harga.
       </Penjelasan>
 
@@ -503,6 +505,36 @@ function ModalPO({ kunci, po, onClose, onSaved }) {
                       <InputUang value={l.unitPrice} onChange={(v) => setBaris(i, { unitPrice: v })} aria-label={`Harga satuan baris ${i + 1}`} />
                     </Field>
                   </div>
+                  {!kv && (
+                    <details className="mt-2 rounded-lg bg-inset px-2.5 py-2" open={adaPendamping(l.pendamping)} data-testid="pendamping-po">
+                      <summary className="cursor-pointer text-[12px] font-semibold text-ink2 max-sm:min-h-11">Jumlah fisik pendamping (opsional)</summary>
+                      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        <Field label="Satuan pendamping" hint="mis. LEMBAR, KALENG">
+                          <Input value={l.pendamping?.satuan ?? ""} onChange={(e) => setBaris(i, { pendamping: { ...l.pendamping, satuan: e.target.value } })} aria-label={`Satuan pendamping baris ${i + 1}`} />
+                        </Field>
+                        <Field label="Mode">
+                          <Pilihan value={l.pendamping?.mode ?? ""} onChange={(v) => setBaris(i, { pendamping: { ...l.pendamping, mode: v } })} aria-label={`Mode pendamping baris ${i + 1}`}>
+                            <option value="">— pilih mode —</option>
+                            {MODE_PENDAMPING_OPSI.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+                          </Pilihan>
+                        </Field>
+                        {l.pendamping?.mode === "TETAP" && (
+                          <Field label={`Rasio (1 ${satuanBeli ? labelSatuan(satuanBeli) : "satuan"} = …)`}>
+                            <input type="number" inputMode="decimal" min="0" step="any" value={l.pendamping.rasio ?? ""} aria-label={`Rasio pendamping baris ${i + 1}`} onChange={(e) => setBaris(i, { pendamping: { ...l.pendamping, rasio: e.target.value } })}
+                              className="h-9 w-full rounded-lg bg-surface px-3 text-right text-sm tabular-nums text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/40 max-sm:h-11" />
+                          </Field>
+                        )}
+                        {l.pendamping?.mode === "AKTUAL" && (
+                          <Field label="Perkiraan jumlah (opsional)">
+                            <input type="number" inputMode="decimal" min="0" step="any" value={l.pendamping.estimasi ?? ""} aria-label={`Perkiraan pendamping baris ${i + 1}`} onChange={(e) => setBaris(i, { pendamping: { ...l.pendamping, estimasi: e.target.value } })}
+                              className="h-9 w-full rounded-lg bg-surface px-3 text-right text-sm tabular-nums text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/40 max-sm:h-11" />
+                          </Field>
+                        )}
+                      </div>
+                      {l.pendamping?.mode && <p className="mt-1.5 text-[11.5px] text-ink3">{MODE_PENDAMPING_OPSI.find((o) => o.key === l.pendamping.mode)?.hint} Hanya informasi kontrol — tidak memengaruhi stok, nilai persediaan, atau jurnal.</p>}
+                      {teksPratinjauPendamping(l.pendamping, l.qty, satuanBeli ? labelSatuan(satuanBeli) : "") && <p data-testid="pratinjau-pendamping" className="mt-1 text-[12px] font-medium text-accent">Tampil di PO: {teksPratinjauPendamping(l.pendamping, l.qty, satuanBeli ? labelSatuan(satuanBeli) : "")}</p>}
+                    </details>
+                  )}
                   <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                     <span className="text-[12px] text-ink2">Subtotal <strong className="tabular-nums text-ink">{formatUang(subtotal(l))}</strong></span>
                     {setara && <span data-testid="setara" className="text-[12px] font-medium text-accent">{setara}</span>}
@@ -695,7 +727,27 @@ function IsiDetail({ po, segar, onUbahFaktur, onSetujuiFaktur, onTolakFaktur, on
         <p className="mt-1 text-[11.5px] text-ink3">“Sudah ditagih” dihitung dari penerimaan yang tagihan supplier-nya sudah disetujui. Tagihan menempel ke satu penerimaan, bukan ke baris.</p>
       </section>
 
-      <section>
+      {po.kedatangan && po.status !== "DRAFT" && (
+        <section data-testid="seksi-kedatangan">
+          <h4 className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ink3">Kedatangan barang</h4>
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            {po.kedatangan.bendera.map((b) => <Badge key={b.kode} variant={b.kode === "TERLAMBAT" || b.kode === "DIBATALKAN" ? "red" : b.kode === "SELESAI" ? "green" : "accent"}>{b.label}</Badge>)}
+            <span className="text-[12px] text-ink2" data-testid="status-termin-po">{po.kedatangan.terminStatus === "MENUNGGU_TANGGAL_PENERIMAAN" ? "Termin: menunggu tanggal penerimaan (termin berjalan dari tanggal barang tiba, bukan dari tanggal PO)" : "Termin berjalan per penerimaan dari tanggal barang tiba"}</span>
+          </div>
+          <PanelKedatangan
+            po={po.kedatangan} workspace="FINANCE" bolehTulis={po.status !== "DIBATALKAN"} onChanged={onSegarkan}
+            ekstraPenerimaan={(r) => {
+              const lama = (po.penerimaan || []).find((x) => x.id === r.id);
+              return (
+                <p className="m-0 mt-1.5 text-[12px] text-ink2" data-testid="tagihan-penerimaan">
+                  {!lama || lama.finSupplierBills.length === 0 ? "Belum ada tagihan" : lama.finSupplierBills.map((t) => `${t.billNumber} (${t.status === "DISETUJUI" ? "disetujui" : String(t.status).toLowerCase().replace(/_/g, " ")})`).join(", ")}
+                </p>
+              );
+            }}
+          />
+        </section>
+      )}
+      <section hidden={!!po.kedatangan && po.status !== "DRAFT"}>
         <h4 className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ink3">Penerimaan Gudang dari PO ini</h4>
         {(po.penerimaan || []).length === 0 ? (
           <p className="text-[12.5px] text-ink3">{po.status === "DRAFT" ? "Draf belum bisa diterima Gudang." : "Belum ada penerimaan. Gudang memilih PO ini saat membuat Penerimaan Baru."}</p>
@@ -827,6 +879,25 @@ function KartuFaktur({ fk, segar, onUbah, onSetujui, onTolak, onGalat, onSegarka
           {ev.perluTinjauanHarga && terbuka && <p className="mt-2 rounded-lg bg-orangebg px-3 py-1.5 text-[12px] text-orange" data-testid="perlu-tinjauan">Harga faktur berbeda dari harga PO (selisih {formatUang(ev.selisihHargaTotal)}). Wajib ditinjau Finance saat menyetujui; selisihnya masuk Selisih Harga Pembelian.</p>}
           {ev.catatanTinjauan && <p className="mt-2 text-[12px] text-ink2">Catatan tinjauan: {ev.catatanTinjauan}</p>}
           {ev.alokasi?.length > 0 && <p className="mt-1 text-[11.5px] text-ink3">Menagih penerimaan: {[...new Set(ev.alokasi.map((a) => a.receiptNumber))].join(", ")}</p>}
+          {ev.termBasis === "TANGGAL_TIBA" && (
+            <div className="mt-2" data-testid="jadwal-jatuh-tempo-faktur">
+              <h5 className="m-0 mb-1 text-[11px] font-bold uppercase tracking-wide text-ink3">Jadwal jatuh tempo per penerimaan</h5>
+              {(ev.jadwalJatuhTempo || []).length === 0 ? <p className="m-0 text-[12px] text-ink2">Menunggu tanggal penerimaan — jatuh tempo dihitung dari tanggal barang tiba yang dicatat pada penerimaan.</p> : (
+                <ul className="m-0 list-none space-y-1 p-0">
+                  {ev.jadwalJatuhTempo.map((j) => (
+                    <li key={j.penerimaanId} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 rounded-lg bg-inset px-2.5 py-1.5 text-[12px]" data-testid="jadwal-item">
+                      <span className="font-mono font-semibold text-ink">{j.nomorPenerimaan}</span>
+                      <span className="text-ink2">tiba {j.tanggalTiba ? tgl(j.tanggalTiba) : "—"}</span>
+                      <span className="text-ink">{j.jatuhTempo ? `jatuh tempo ${tgl(j.jatuhTempo)}` : j.statusLabel}</span>
+                      <span className="ml-auto tabular-nums text-ink2">{formatUang(j.nilai)} · dibayar {formatUang(j.dibayar)} · sisa {formatUang(j.sisa)}</span>
+                      <Badge variant={j.status === "LUNAS" ? "green" : j.terlambat ? "red" : "neutral"}>{j.terlambat ? "Terlambat" : j.statusLabel}</Badge>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="mt-1 text-[11.5px] text-ink3">Total jadwal sama dengan nilai faktur — utang tetap satu per faktur; pembayaran menutup jadwal yang paling awal jatuh tempo lebih dulu.</p>
+            </div>
+          )}
         </>
       )}
       {galat && <p role="alert" className="mt-2 rounded-lg bg-redbg px-3 py-1.5 text-[12px] text-red">{galat}</p>}
