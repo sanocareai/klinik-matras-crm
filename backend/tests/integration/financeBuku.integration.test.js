@@ -115,6 +115,8 @@ test("Jurnal: daftar (periode, cari, sumber, status, akun), seimbang, dokumen te
   assert.match(dt.catatan, /TIDAK seimbang/);
   assert.equal(dt.baris.length, 2);
 
+  // Limiter API mobile (120/menit/pengguna) terlampaui oleh jumlah GET di atas; ini tes perilaku buku, bukan limiter.
+  resetRateLimits();
   // Detail jurnal normal: baris beraturan, akun, audit trail
   const d = (await get(fin, `/buku/jurnal/${jurnalDok.id}`)).body;
   assert.equal(d.baris.length, 2);
