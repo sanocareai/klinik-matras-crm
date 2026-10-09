@@ -1,6 +1,6 @@
 # Capture atribusi Meta CTWA — Fase 0
 
-**Status:** kode siap, flag **MATI** secara default, belum di-deploy.
+**Status:** kode siap, flag **MATI** secara default, belum di-deploy. Kandidat rilis: branch `rc/ctwa-capture-phase0-on-live-934142cd`.
 **Tujuan:** membuktikan field atribusi apa yang benar-benar diterima dari WAHA/GOWS untuk pesan inbound Click-to-WhatsApp, tanpa menyimpan isi chat atau data pribadi. Ini **bukan atribusi** — tidak mengubah `Customer.leadSource`, tidak membuat `attribution_touch`, tidak mengirim apa pun ke Meta. Tanpa perubahan skema DB.
 
 ## Dua keluaran
@@ -46,45 +46,40 @@ Pesan biasa dan reply (`NO_CONTEXT_INFO`, `CONTEXT_NON_AD`, `NO_MESSAGE_BODY`) *
 
 Capture dipanggil setelah `Message.create` berhasil dan hanya di jalur `saved`; kegagalannya tidak bisa menggagalkan pesan.
 
-## Persistensi, ownership, disk (bukti dari repo)
+## Hasil preflight produksi (metadata saja, 9 Okt 2026, ±15:20 UTC)
 
-- Produksi memakai overlay `docker-compose.release.yml` (ada di `f28e232d`, tidak di `main`) dengan `${SANSS_PERSIST_ROOT}/backend/data:/app/data`. `SANSS_PERSIST_ROOT=$HOME/klinik-matras` → data capture ada di `~/klinik-matras/backend/data/ctwa-capture/` di host, **bertahan** saat container di-recreate dan saat berpindah release directory. Skrip rilis menolak jalan bila `$PERSIST/backend/data` tidak ada.
-- `backend/.dockerignore` mengecualikan `data/`, jadi isi capture tidak ikut masuk image.
-- `Dockerfile` tidak punya `USER` → proses berjalan sebagai **root** di container. Folder dibuat `0700` dan berkas `0600`, pemilik root di host: user `ubuntu` tidak bisa membaca langsung, gunakan `docker exec`.
-- Tidak ada kuota/batas disk di compose. Disk dipakai bersama Postgres, `uploads/` (media WhatsApp, GB), dan image. `.dockerignore` mencatat disk VPS pernah mencapai 0 byte bebas.
-- Log Docker: tidak ada konfigurasi `logging:` di compose (default `json-file`, tidak berbatas kecuali diatur di daemon). Capture hanya menulis ke log bila gagal, maksimum satu baris per menit berisi kode error.
-- **Belum terbukti dari repo (UNKNOWN sampai dicek):** mount aktual di container, ownership aktual, kapasitas dan ruang bebas disk, konfigurasi daemon Docker.
+Diambil lewat SSH read-only: hanya `stat`, `df`, `docker inspect --format` terbatas, dan penghitung `grep -c` untuk env. Tidak ada isi chat, payload, berkas capture, atau secret yang dibaca atau dicetak.
 
-### Cek aman (metadata saja, tanpa membaca isi berkas)
+| Item | Hasil | Arti |
+|---|---|---|
+| Baseline live | release dir `934142cd`, container `klinik-matras-backend-1` (naik ±17 menit sebelum cek), image `sha256:f35df5b6c48a…`, compose `docker-compose.yml` + `docker-compose.release.yml` dari release dir itu | Bukan `main` `f0e406a7` dan bukan `f28e232d` (leluhur live). Baseline bergerak; **cek ulang tepat sebelum rilis** |
+| Mount data | `bind /home/ubuntu/klinik-matras/backend/data -> /app/data` (rw) | Persisten; bertahan saat container/release di-recreate |
+| Folder capture | belum ada di host maupun container | Wajar: flag belum pernah menyala. Setelah deploy flag OFF folder ini **tidak boleh muncul** |
+| Ownership host | `ubuntu:ubuntu 775` untuk `backend/data`; `700` untuk `~/klinik-matras` | `ubuntu` bisa membuat/menghapus isi `backend/data` |
+| Proses container | uid/gid `0/0` (root) | Folder capture akan dibuat `root:root 0700`; `ubuntu` tidak bisa membacanya di host. Report/purge **harus lewat `docker exec`** |
+| Disk | `/dev/vda2` 99 GB, terpakai 89 GB, **bebas 6,0 GB (94%)**, inode 15% | **Sempit.** Disk dipakai bersama `uploads` (34 GB), Postgres, image Docker (118 image, 13,9 GB reclaimable), build cache 10,3 GB |
+| `backend/data` | 357 MB | Capture ≤ 5 MB/hari di atasnya |
+| Docker log | `json-file`, `max-size 100m`, `max-file 3` (daemon.json dan container) | Log container dibatasi ±300 MB; capture tidak menambah log kecuali error ≤ 1 baris/menit |
+| `WEBHOOK_DEBUG` | tidak ada di env container maupun `.env` persist (0 dari 0) | Payload penuh **tidak** dicetak ke log |
+| Flag `CTWA_*` | tidak ada di env container maupun `.env` | Capture mati secara default |
+| Cron user | hanya `canary-monitor.sh` (tiap 10 menit) dan satu `p7b-monitor` (jendela 29 Sep, sudah lewat) | **`backup-database.sh` tidak ada di crontab user** |
+| `/etc/cron.d` | `certbot`, `e2scrub_all`, `sgagenttask`, `sysstat`, `yunjing` | Tidak ada pekerjaan backup yang terlihat |
+| Backup DB | `~/backups` hanya `pre-<rilis>-*.sql.gz` (±30 MB, dari skrip rilis); `~/klinik-matras/backups` punya 3 `klinik_matras_backup_*.sql.gz` terakhir 23 Sep dan dump manual 23–24 Sep; tidak ada `backup.log` | Backup harian terjadwal yang dijelaskan di `PANDUAN-RESTORE-BACKUP.md` **tidak terbukti berjalan**. Cron root tidak bisa dilihat tanpa sudo → belum bisa dipastikan |
+| Backup `backend/data` | tidak ada pekerjaan lokal yang terlihat mengarsipkannya | Lihat status di bawah |
+| Agen cloud | `barad_agent`, `tat_agent`, `YDService`, `YDLive` berjalan; `/etc/cron.d` ada `yunjing`, `sgagenttask` | Pola agen monitoring/otomasi/keamanan Tencent Cloud. **Bukan bukti snapshot** |
+| rclone | remote `gdrive:` terdaftar | Hanya nama remote yang dilihat |
 
-```bash
-# 1. Mount aktual container backend (nama dari memory: klinik-matras-backend-1)
-docker inspect klinik-matras-backend-1 --format '{{range .Mounts}}{{.Source}} -> {{.Destination}} ({{.Type}}, rw={{.RW}}){{"\n"}}{{end}}' | grep -E "/app/data|/app/uploads"
-# 2. Ruang bebas disk dan inode
-df -h "$HOME"; df -i "$HOME" | tail -1
-# 3. Ownership/permission folder (hanya metadata)
-sudo stat -c '%U:%G %a %n' ~/klinik-matras/backend/data ~/klinik-matras/backend/data/ctwa-capture 2>/dev/null
-# 4. Batas log Docker (default dan per container)
-docker inspect klinik-matras-backend-1 --format '{{.HostConfig.LogConfig.Type}} {{.HostConfig.LogConfig.Config}}'
-# 5. Ukuran folder capture (angka saja)
-sudo du -sh ~/klinik-matras/backend/data/ctwa-capture 2>/dev/null
-```
+## Status backup `backend/data`: UNKNOWN
 
-## Status backup
-
-**UNKNOWN** (bukti repo: **NO** untuk backup terdefinisi).
-
-- `backend/scripts/backup-database.sh` (cron harian 03:00 WIB, lalu `rclone` ke Google Drive) dan skrip rilis (`pg_dump` ke `~/backups/pre-*.sql.gz`) hanya mencadangkan **database**.
-- Tidak ada skrip di repo yang mengarsipkan `backend/data` atau `backend/uploads`. Berkas capture berada di luar database, jadi tidak ada di dump mana pun.
-- Yang tidak bisa dibuktikan dari repo: snapshot VPS dari penyedia cloud, cron lain di luar yang didokumentasikan, atau salinan manual.
-
-Cek aman: `crontab -l` (baca nama pekerjaan; abaikan baris yang memuat kredensial), `ls /etc/cron.d`, `rclone listremotes` (nama saja), dan periksa kebijakan snapshot disk di konsol penyedia VPS. Bila ada snapshot seluruh disk, berkas capture ikut tersalin di luar retensi 7 hari → pertimbangkan itu sebelum mengaktifkan.
+- Tidak ada pekerjaan lokal yang terlihat mengarsipkan `backend/data` atau `backend/uploads`. Itu **bukan bukti bahwa tidak ada backup**: snapshot disk penuh dikelola di konsol penyedia cloud (tidak terlihat dari VM), dan cron root tidak bisa dilihat tanpa sudo.
+- Temuan terpisah untuk pemilik: backup DB harian terjadwal tidak terbukti berjalan (lihat tabel). Cek sebelum mengandalkannya.
+- Cek yang perlu dijawab pemilik: apakah konsol penyedia (Tencent Cloud) punya kebijakan snapshot untuk instance ini, dan berapa retensinya. Jika ada, berkas capture ikut tersalin di luar retensi 7 hari; itu **dapat diterima** hanya bila isinya memang ter-sanitasi (hash, tanpa data pribadi), yang dijamin desain ini, tetapi tetap perlu keputusan sadar.
 
 ## Estimasi volume (jangan memakai asumsi 100 pesan/hari)
 
 Angka "50-100 pesan/hari" di `CLAUDE.md` adalah catatan lama saat memakai nomor testing dan **tidak konsisten** dengan kode: komentar produksi mencatat 89–120 lead Meta per hari (14–17 Agt 2026) dan ±2.550 customer pada 14 Agt. Pesan inbound per hari jauh di atas jumlah lead (tiap lead mengirim beberapa pesan, termasuk media), jadi 100 pesan/hari tidak bisa menjadi batas atas. Perkiraan modeling (bukan hasil ukur): ratusan hingga beberapa ribu pesan inbound per hari.
 
-Desain tidak bergantung pada angka itu: JSONL hanya untuk pesan bersinyal (≈ satu per klik iklan, kira-kira puluhan sampai ±200 baris/hari ≈ <300 KB/hari bila konteks iklan hanya menempel di pesan pertama; bila WhatsApp ikut menyertakannya di pesan lanjutan jumlahnya bisa lebih, dan batas 5 MB/hari menjaganya), dibatasi 5 MB/hari dan 500 baris di memori. Biaya tiap pesan inbound dengan flag nyala sekitar 25 µs CPU plus satu penambahan counter.
+Desain tidak bergantung pada angka itu: JSONL hanya untuk pesan bersinyal (kira-kira puluhan sampai ±200 baris/hari ≈ <300 KB/hari bila konteks iklan hanya menempel di pesan pertama; bila WhatsApp ikut menyertakannya di pesan lanjutan jumlahnya bisa lebih, dan batas 5 MB/hari menjaganya), dibatasi 5 MB/hari dan 500 baris di memori. Biaya tiap pesan inbound dengan flag nyala sekitar 25 µs CPU plus satu penambahan counter.
 
 **Angka sebenarnya** didapat dua cara tanpa membaca isi chat:
 
@@ -99,28 +94,87 @@ Desain tidak bergantung pada angka itu: JSONL hanya untuk pesan bersinyal (≈ s
    ```
    Jalankan lewat `docker exec` ke container Postgres; jangan menambah kolom lain ke SELECT.
 
-## Mengaktifkan
+## Urutan deploy bergerbang
 
-1. Buat salt acak (jangan dipakai ulang): `openssl rand -hex 24`
-2. Di `backend/.env` server (`$SANSS_PERSIST_ROOT/backend/.env`):
+Setiap gerbang punya **titik penghentian**: bila tidak terpenuhi, berhenti dan jangan lanjut ke gerbang berikutnya.
+
+### Gerbang 0 — Sebelum rilis (tidak mengubah apa pun)
+1. Cek ulang baseline live: `ssh ubuntu@43.133.152.6 "ls -1dt \$HOME/releases/klinik-matras/*/ | head -1; docker inspect klinik-matras-backend-1 --format '{{.Image}}'"`. Bila release teratas bukan `934142cd`, **berhenti** dan rebase kandidat ke baseline baru (jangan menimpa rilis sesi lain).
+2. Disk: `df -h $HOME`. **STOP bila bebas < 5 GiB** (build image dan frontend butuh ruang; `.dockerignore` mencatat deploy pernah gagal "no space left on device"). Pembersihan image/rollback lama adalah keputusan pemilik, bukan bagian rilis ini.
+3. Mount: `docker inspect klinik-matras-backend-1 --format '{{range .Mounts}}{{.Source}} -> {{.Destination}}{{"\n"}}{{end}}' | grep /app/data` harus menunjuk `~/klinik-matras/backend/data`. **STOP** bila berbeda.
+4. Backup DB segar: skrip rilis membuat `pg_dump` + verifikasi restore. **STOP** bila gagal.
+5. Keputusan backup/snapshot (status UNKNOWN di atas) dicatat oleh pemilik.
+
+### Gerbang 1 — Deploy kode dengan flag OFF
+- Lewat skrip rilis bergerbang repo (pola `scripts/release-*.sh`), kode saja, **tanpa migrasi**, tanpa variabel `CTWA_*`.
+- Rollback tag dibuat otomatis oleh skrip (`klinik-matras-backend:rollback-pre-<kode>-<sha>`).
+
+### Gerbang 2 — Verifikasi inbox dan flag-off
+Lihat "Smoke test inbox". **STOP + rollback** bila ada pesan inbound yang tidak tersimpan, error baru di log, atau folder capture muncul.
+
+### Gerbang 3 — Aktivasi terpisah (butuh persetujuan pemilik)
+- Prasyarat: Gerbang 2 lulus, disk bebas ≥ 4 GiB, keputusan snapshot ada.
+- Tambahkan ke `$SANSS_PERSIST_ROOT/backend/.env`:
+  ```
+  CTWA_ATTRIBUTION_CAPTURE_ENABLED=true
+  CTWA_CAPTURE_HASH_SALT=<openssl rand -hex 24>
+  CTWA_CAPTURE_RETENTION_DAYS=7
+  CTWA_CAPTURE_MIN_FREE_MB=2048
+  ```
+  (2048 MB, bukan default 1024: disk produksi sudah 94%, jadi capture berhenti lebih awal dan menyisakan ruang untuk Postgres dan rilis.)
+- Recreate backend saja (env hanya terbaca saat container dibuat ulang). Jangan memutar salt selama jendela observasi.
+- Verifikasi ±2 menit: `ctwa-capture-counts-<hari>.json` muncul; tidak ada baris `[ctwa-capture]` di log selain peringatan yang disengaja.
+- **Titik penghentian otomatis:** bila disk bebas < 2 GiB capture berhenti sendiri (`lowDisk` di agregat). Bila disk bebas < 1 GiB atau Postgres melaporkan error tulis → matikan flag segera.
+
+### Gerbang 4 — Laporan agregat
+`docker exec klinik-matras-backend-1 node scripts/ctwa-capture-report.js` setelah ≥ 30 observasi `CTWA_AD` (atau 3–7 hari). Putuskan GO/NO-GO `attribution_touch` dengan tabel kriteria di bawah.
+
+### Gerbang 5 — Matikan dan purge
+1. `CTWA_ATTRIBUTION_CAPTURE_ENABLED=false` (atau hapus barisnya), recreate backend.
+2. `docker exec klinik-matras-backend-1 node scripts/ctwa-capture-purge.js --all`
+3. Verifikasi: `docker exec klinik-matras-backend-1 sh -c 'ls /app/data/ctwa-capture | wc -l'` → 0.
+4. Hapus `CTWA_CAPTURE_HASH_SALT` dari `.env`.
+
+### Rollback
+| Situasi | Tindakan |
+|---|---|
+| Capture bermasalah (disk, error), kode OK | Gerbang 5 (matikan flag, purge). Tidak perlu rollback kode |
+| Kode bermasalah (inbox terganggu) | `docker exec … purge --all` dulu bila flag pernah menyala, lalu pakai perintah rollback yang dicetak skrip rilis: `cd <PREV_DIR> && SANSS_PERSIST_ROOT=$HOME/klinik-matras docker compose -p klinik-matras -f docker-compose.yml -f docker-compose.release.yml up -d --no-deps backend` |
+| Tidak ada langkah DB | Kandidat tanpa migrasi |
+
+## Smoke test inbox
+
+Semua cek memakai angka agregat; tidak ada isi chat yang dibaca.
+
+**Sebelum deploy (baseline):**
+```sql
+-- jumlah pesan inbound 30 menit terakhir dan sebaran sumber lead 24 jam (agregat saja)
+SELECT count(*) AS inbound_30m FROM "Message" m JOIN "Conversation" c ON c.id=m."conversationId"
+ WHERE m.direction='INBOUND' AND c.type='INDIVIDUAL' AND m."createdAt" > now() - interval '30 minutes';
+SELECT "leadSource", count(*) FROM "Customer" WHERE "createdAt" > now() - interval '24 hours' GROUP BY 1 ORDER BY 2 DESC;
+```
+
+**Sesudah deploy flag OFF (tunggu ≥ 15 menit trafik nyata):**
+1. Container sehat: `docker ps --filter name=klinik-matras-backend-1` status `Up`, tidak restart-loop.
+2. Pesan tetap masuk: query `inbound_30m` di atas > 0 dan sebanding dengan baseline pada jam sibuk yang sama; log `docker logs --since 10m klinik-matras-backend-1 | grep -c "action=saved"` > 0 (hanya hitungan).
+3. Inbox hidup: buka Inbox di web, pesan terbaru muncul dan unread bertambah (tanpa membuka isi chat pelanggan; cukup lihat badge/jumlah).
+4. Atribusi tetap jalan: sebaran `leadSource` 24 jam tetap memuat `META_ADS` pada proporsi wajar.
+5. **Flag-off tidak membuat berkas:**
+   ```bash
+   docker exec klinik-matras-backend-1 sh -c 'ls -ld /app/data/ctwa-capture 2>&1'   # harus: No such file or directory
+   docker logs --since 30m klinik-matras-backend-1 2>&1 | grep -c "ctwa-capture"     # harus: 0
    ```
-   CTWA_ATTRIBUTION_CAPTURE_ENABLED=true
-   CTWA_CAPTURE_HASH_SALT=<salt langkah 1>
-   CTWA_CAPTURE_RETENTION_DAYS=7
-   CTWA_CAPTURE_MIN_FREE_MB=1024
-   ```
-3. Recreate backend saja (env hanya terbaca saat container dibuat ulang), memakai perintah rilis yang sama dengan skrip rilis.
-4. Verifikasi: tidak ada baris `[ctwa-capture]` di log; setelah ±2 menit ada `ctwa-capture-counts-<hari>.json` di folder capture; `docker exec <backend> node scripts/ctwa-capture-report.js` menampilkan volume.
-5. **Jangan memutar salt selama jendela observasi.** Report memperingatkan bila ada lebih dari satu `sid`.
-6. Tunggu ≥ 30 observasi `CTWA_AD`, lalu jalankan report.
+6. Log bersih dari potongan clid: `docker logs --since 30m klinik-matras-backend-1 2>&1 | grep -c "Lapis 0b"` boleh > 0, tetapi barisnya harus berakhir `clid: ada`/`clid: tidak ada` (cek 1 baris tanpa menyalin isinya).
 
-## Menonaktifkan / rollback
+**Sesudah aktivasi (Gerbang 3):** ulangi cek 1–3, lalu pastikan hanya folder berisi `ctwa-capture-counts-*.json` (dan `.jsonl` bila ada sinyal), `ls -ld` menunjukkan `drwx------ root root`, dan disk bebas tidak turun berarti.
 
-1. Set `CTWA_ATTRIBUTION_CAPTURE_ENABLED=false` (atau hapus baris itu).
-2. Recreate backend.
-3. Hapus data: `docker exec <backend> node scripts/ctwa-capture-purge.js --all`.
+## Mengaktifkan dan menonaktifkan
 
-Rollback kode: kembalikan image/release sebelumnya (mis. tag `rollback-pre-...` dari skrip rilis); karena tidak ada migrasi, tidak ada langkah DB. Berkas lama tetap dibersihkan otomatis sekali per hari-UTC (juga saat flag mati) hanya bila build yang sama masih berjalan; setelah rollback ke build tanpa modul ini, jalankan `purge --all` **sebelum** rollback.
+Lihat **Urutan deploy bergerbang** (Gerbang 3 untuk aktivasi, Gerbang 5 untuk mematikan dan purge) dan tabel Rollback di atas. Aturan umum:
+
+- Flag harus persis `true`; nilai lain (`1`, `TRUE`, kosong) dianggap mati. Env hanya terbaca saat container dibuat ulang.
+- `CTWA_CAPTURE_HASH_SALT` wajib (≥ 16 karakter); tanpa salt capture menolak menulis. Jangan memutar salt selama jendela observasi (report memperingatkan bila ada lebih dari satu `sid`).
+- Setelah flag dimatikan, berkas lama tetap dihapus otomatis oleh build yang sama (sekali per hari-UTC). Sebelum rollback ke build yang tidak memuat modul ini, jalankan `purge --all`.
 
 ## Retensi dan cleanup
 
