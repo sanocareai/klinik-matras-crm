@@ -2,15 +2,18 @@
 // BACA-SAJA. Semua keadaan tahap diturunkan dari data P1–P6 + bukti P8 lewat loadStepContext (sumber yang sama dengan command) —
 // tidak ada status UI yang disimpan terpisah. Pemanggil (routes) wajib memfilter unitIds dari reader cohort; unit di luar cohort tidak pernah
 // dimuat. Data customer seperlunya: nama, berat badan, keluhan, request — tanpa telepon/alamat.
-import { componentMessageLines, getComponentReportBlock } from "./productionComponentNoteService.js";
+import { componentMessageLines, getComponentReportBlock, measurementMessageLines, planVsActualMessageLines, assemblyMessageLines } from "./productionComponentNoteService.js";
 import {
   ANDON_BUCKETS, COMMAND_CENTER_COLUMNS, STEP_BY_NO, STEPS, andonBucketOf, commandCenterColumn, isSkippedEvidence, stepNoForStage,
 } from "../lib/domain/productionSteps.js";
 import { listMaterialReturns } from "./productionMaterialReturnService.js";
 import { BOARD_DEFAULTS, compareStationOrder, formatProductionDate, parseProductionDate, stationLabel, todayWib } from "../lib/domain/productionBoard.js";
-import { applicableStepsFor, loadStepContext } from "./productionStepCommandService.js";
-import { buildRunDocumentation, documentationBuckets } from "./productionDocumentationRead.js";
+import { applicableStepsFor, loadAssemblyView, loadCornerView, loadStepContext, usedByEvidence } from "./productionStepCommandService.js";
+import { cornerStatusOf } from "../lib/domain/productionCorner.js";
+import { lifecycleStatusOf } from "../lib/domain/productionLifecycle.js";
+import { buildRunDocumentation, buildRunSequence, documentationBuckets } from "./productionDocumentationRead.js";
 import { sourceOfStep } from "../lib/domain/productionDocumentation.js";
+import { BUILD_NA_REASON, BUILD_STAGE_LABEL, NON_KASUR_NA_REASON, stepLabelFor } from "../lib/domain/productionBuildTrack.js";
 import { listEligibleUnitsForPlanning } from "./productionPlanningCommandService.js";
 import { signEvidenceUrl } from "../routes/productionEvidenceMedia.js";
 import { signUnitPhotoUrlIfAny, signUnitPhotoUrlsBulk } from "../routes/productionUnitPhoto.js";
@@ -74,7 +77,7 @@ export function materialStatusOf(plan, material, shortage) {
 
 // Status per tahap untuk UI: NA (tidak berlaku di jalur), DONE (bukti tercatat), CURRENT (aksi berikutnya), WAITING (menunggu pihak lain), PENDING.
 export function stepStatuses(ctx) {
-  const applicable = applicableStepsFor(ctx.split);
+  const applicable = applicableStepsFor(ctx.split, ctx.state?.productFlow ?? "KASUR");
   const recorded = new Map();
   for (const e of ctx.evidence) recorded.set(e.stepNo, e);
   const next = ctx.next || {};
@@ -88,7 +91,8 @@ export function stepStatuses(ctx) {
     else if (step.no === next.stepNo && next.action === "WAIT" && !e) status = "WAITING";
     else if (e) status = "DONE";
     else status = "PENDING";
-    return { no: step.no, code: step.code, label: step.label, actor: step.actor, status, at: e?.createdAt ?? null, version: e?.version ?? null };
+    // Jalur pengerjaan: tahap 6 bernama "Pengerjaan Pesanan"; tahap yang tidak berlaku mencatat alasannya ("tidak berlaku", BUKAN dikerjakan).
+    return { no: step.no, code: step.code, label: stepLabelFor(step.no, step.label, ctx.state?.buildTrack), actor: step.actor, status, at: e?.createdAt ?? null, version: e?.version ?? null, ...(status === "NA" && ctx.state?.buildTrack ? { naReason: step.no === 8 ? NON_KASUR_NA_REASON : [9, 10, 11].includes(step.no) ? `Corner tidak diperlukan — ${ctx.state.cornerReason || "dikonfirmasi pada rencana"}` : BUILD_NA_REASON } : {}) };
   });
 }
 
@@ -98,8 +102,9 @@ export function indicatorsOf(run, ctx, materialStatus) {
   const qc = ctx.latestInspection;
   return {
     custody: inbound ? (inbound.status === "ACCEPTED" ? "OK" : inbound.status) : (run.origin === "WORKSHOP_BORN" ? "LAHIR_DI_WORKSHOP" : "BELUM"),
-    service: run.unit.serviceId ? "OK" : "BELUM",
-    bom: run.plan?.bomLines.length ? "OK" : "BELUM",
+    // Jalur pengerjaan: layanan teknis TIDAK dipilih (spesifikasi Sales = acuan) dan BOM opsional — tampil "TIDAK_BERLAKU"/"OPSIONAL", bukan "BELUM".
+    service: ctx.state?.buildTrack ? "TIDAK_BERLAKU" : (run.unit.serviceId ? "OK" : "BELUM"),
+    bom: run.plan?.bomLines.length ? "OK" : (ctx.state?.buildTrack ? "OPSIONAL" : "BELUM"),
     material: materialStatus.key,
     workshop: ctx.state.activeOp ? (ctx.state.activeOp.status === "PAUSED" ? "DIJEDA" : "BERJALAN") : (run.operations.length ? "MENUNGGU" : "BELUM_MULAI"),
     qc: qc ? (qc.result === "PASS" ? "LULUS" : qc.result === "FAIL_REWORK" ? "REWORK" : qc.result === "OVERRIDDEN" ? "WAIVED" : qc.result)
@@ -110,6 +115,7 @@ export function indicatorsOf(run, ctx, materialStatus) {
 
 export function warningsOf(run, ctx, materialStatus) {
   const w = [];
+  if (ctx.state?.buildTrack && ctx.state.productProblem) w.push({ code: "JENIS_PRODUK", text: `Jenis produk: ${ctx.state.productProblem}` });
   if (!run.plan?.operatorId) w.push({ code: "OPERATOR_BELUM", text: "PIC meja belum ditetapkan" });
   const diagnosed = ctx.evidence.some((e) => e.stepNo === 5 && !isSkippedEvidence(e)); // tahap dilewati (adaptasi) bukan diagnosa yang selesai
   if (diagnosed && !run.plan?.bomLines.length) w.push({ code: "BOM_BELUM", text: "Diagnosa selesai — BOM belum dibuat" });
@@ -141,6 +147,18 @@ export function customerOf(run) {
   };
 }
 
+// Status Corner + siklus produksi dari run+ctx (tanpa DB) — dipakai toRunView, laporan, dan Unit 360 agar semua layar menampilkan status yang sama.
+export function cornerAndLifecycleOf(run, ctx) {
+  const evSteps = new Set(ctx.evidence.filter((e) => !isSkippedEvidence(e)).map((e) => e.stepNo));
+  const cornerApplies = (ctx.split?.postQcStages || []).some((s) => s.code === "corner_sewing");
+  const corner = cornerStatusOf({ cornerApplies, decision: ctx.state?.buildTrack ? ctx.state.cornerRequired : null, reason: ctx.state?.cornerReason ?? null, steps: evSteps, runStatus: run.status, qcPassed: ["PASS", "OVERRIDDEN"].includes(ctx.latestInspection?.result), adaptation: !!run.adaptationPolicy });
+  const lifecycle = lifecycleStatusOf({
+    runStatus: run.status, currentPhase: run.currentPhase, unitStatus: run.unit?.status, next: ctx.next, latestQcResult: ctx.latestInspection?.result ?? null, cornerStatus: corner,
+    adaptation: !!run.adaptationPolicy, handoffStatus: (run.custodyHandoffs || []).filter((h) => h.direction === "FINISHED_GOODS").at(-1)?.status ?? null, started: (run.operations?.length ?? 0) > 0 || ctx.evidence.length > 0,
+  });
+  return { corner, lifecycle };
+}
+
 export function toRunView(run, ctx, { now = new Date(), photoUrl = null, complaints = [] } = {}) {
   const shortage = ctx.openShortage;
   const materialStatus = materialStatusOf(run.plan, ctx.material, shortage);
@@ -150,11 +168,19 @@ export function toRunView(run, ctx, { now = new Date(), photoUrl = null, complai
   const firstStart = run.operations[0]?.startedAt ?? null;
   const op = ctx.state.activeOp;
   const next = ctx.next;
-  const bucket = andonBucketOf({ next, started });
+  const bucket = andonBucketOf({ next, started, buildTrack: !!ctx.state?.buildTrack });
   const prio = priorityDisplay({ stored: run.plan?.priority ?? 0, complaintCases: complaints });
   const inboundAccepted = run.custodyHandoffs.some((h) => h.direction === "INBOUND" && h.status === "ACCEPTED") || arrivalConfirmedByStaff(run.phases);
   return {
     runId: run.id, revision: run.revision, status: run.status, currentPhase: run.currentPhase, origin: run.origin,
+    track: ctx.state?.buildTrack ? "BUILD" : "RESTORATION", // BUILD = pesanan BARU/custom (Pengerjaan Pesanan); RESTORATION = jalur lama
+    // Klasifikasi produk kanonis (jalur BUILD): KASUR (uji tekstur/berat badan, racikan) | NON_KASUR (divan/sofa) | BELUM_JELAS (alur kasur dipakai, dilaporkan). `problem` = alasan klasifikasi kurang.
+    product: ctx.state?.buildTrack ? { class: ctx.state.productClass, flow: ctx.state.productFlow, problem: ctx.state.productProblem } : null,
+    racikan: ctx.state?.buildTrack ? (ctx.evidence.filter((e) => e.stepNo === 6 && !isSkippedEvidence(e)).at(-1)?.payload?.racikan ?? ctx.buildRecord?.racikan ?? null) : null,
+    // Pengaturan jalur pengerjaan: PIC Bahan per pekerjaan, kebutuhan Corner yang dikonfirmasi pada rencana, catatan racikan/pemakaian terbaru.
+    build: ctx.buildView ?? null,
+    // Fase 3 (LAYANAN): PIC Bahan per pekerjaan + pemakaian aktual yang dicatat PIC Bahan (tabel yang sama dengan jalur BUILD). null untuk BUILD/SEWA.
+    materialPic: ctx.materialPicView ? { ...ctx.materialPicView, usageRecorded: (ctx.materialPicView.record?.materials || []).length > 0 } : null,
     // Tiga sumbu terpisah (simplifikasi slice 1): status order, keberadaan fisik, tahap (next/bucket). service (teknis) tetap ada di payload sebagai data historis; UI hanya menampilkan Layanan Sales.
     orderStatus: displayStatusOfOrder(run.unit.order?.status) || null,
     unitStatus: displayStatusOfUnit(run.unit.status) || null,
@@ -174,13 +200,15 @@ export function toRunView(run, ctx, { now = new Date(), photoUrl = null, complai
       targetStartAt: run.plan.targetStartAt, targetCompleteAt: run.plan.targetCompleteAt,
       bomCount: run.plan.bomLines.length,
     } : null,
-    next, bucket, bucketLabel: ANDON_BUCKETS.find((b) => b.key === bucket)?.label ?? bucket,
+    next, bucket, bucketLabel: ctx.state?.buildTrack && bucket === "FONDASI" ? BUILD_STAGE_LABEL : (ANDON_BUCKETS.find((b) => b.key === bucket)?.label ?? bucket),
     // Progres membedakan dikerjakan (done) / dilewati (skipped) / tersisa (remaining). KPI & kunci 12/12 hanya menghitung "done" sebagai pekerjaan.
     progress: (() => {
       const worked = applicable.filter((s) => s.status === "DONE").length; const skipped = applicable.filter((s) => s.status === "SKIPPED").length;
       return { done: worked, skipped, remaining: applicable.length - worked - skipped, total: applicable.length };
     })(),
     adaptation: run.adaptationPolicy ? { policy: run.adaptationPolicy } : null,
+    qcGatePolicy: run.qcGatePolicyVersion || null, // Fase 2: NULL = run lama (gerbang QC sebelum bongkar tidak berlaku)
+    ...cornerAndLifecycleOf(run, ctx), // Fase 5: corner (status jujur) + lifecycle (status siklus yang sama di semua layar)
     steps,
     activeOp: op ? { stageLabel: op.stageLabel, status: op.status, startedAt: op.startedAt, delayKind: op.delayKind ?? null, delayNote: op.delayNote ?? null } : null,
     timer: {
@@ -434,7 +462,10 @@ export async function getRunCard(prisma, runId, { unitIds, now = new Date() } = 
   return {
     ...view,
     bom: (run.plan?.bomLines || []).map((l) => ({ id: l.id, materialId: l.materialId, code: l.material.code, name: l.material.name, qty: Number(l.qty), uom: l.material.unit, supplemental: !!l.supplementalInspectionId })),
-    issuedMaterials: [...issued.values()],
+    // Fase 4: per bahan — diserahkan (semua putaran, termasuk bahan tambahan rework), terpakai (bukti Meja + catatan PIC Bahan terbaru), sisa. Tiga angka TERPISAH, bukan satu.
+    issuedMaterials: (() => { const used = usedByEvidence(ctx.evidence); for (const l of (ctx.buildRecord?.materials || [])) used.set(l.materialId, (used.get(l.materialId) || 0) + Number(l.qty || 0)); return [...issued.values()].map((m) => ({ ...m, usedQty: Math.round((used.get(m.materialId) || 0) * 10000) / 10000, remainingQty: Math.max(0, Math.round((m.qty - (used.get(m.materialId) || 0)) * 10000) / 10000) })); })(),
+    assembly: await loadAssemblyView(prisma, run),
+    cornerView: await loadCornerView(prisma, run, ctx), // Fase 5: permintaan Sales + status Corner + catatan PIC Corner
     evidence: ctx.evidence.map((e) => ({
       id: e.id, stepNo: e.stepNo, stepLabel: STEP_BY_NO[e.stepNo]?.label, version: e.version, payload: e.payload, createdAt: e.createdAt,
       actor: actorName.get(e.actorId) || null,
@@ -464,12 +495,26 @@ export async function listWorkerQueue(prisma, { unitIds, userId, lane, all = fal
   const views = (await viewsOf(prisma, runs, { now })).filter((v) => !isFinishedUnitStatus(v.unit.status));
   const items = views
     .filter((v) => (lane === "CORNER"
-      ? v.next?.actor === "CORNER" || (v.next?.stepNo >= 10 && v.next?.stepNo <= 12)
-      : v.next?.stepNo == null || v.next.stepNo <= 9 || v.next?.wait === "AWAITING_QC"))
+      ? v.next?.actor === "CORNER" || (v.next?.stepNo >= 10 && v.next?.stepNo <= 12 && !(v.track === "BUILD" && v.build?.corner?.required === false))
+      // Jalur pengerjaan TANPA Corner: Finish (tahap 12) dikerjakan PIC Meja, jadi tetap di antrean Meja.
+      : v.next?.stepNo == null || v.next.stepNo <= 9 || v.next?.wait === "AWAITING_QC" || (v.track === "BUILD" && v.build?.corner?.required === false && v.next?.actor === "TABLE")))
     // Hari lebih awal dulu, lalu per meja, lalu urutan meja (manual menang atas prioritas — sama dengan papan Rencana).
     .sort((a, b) => String(a.plan?.productionDate || "9999").localeCompare(String(b.plan?.productionDate || "9999"))
       || String(a.plan?.stationCode || "").localeCompare(String(b.plan?.stationCode || ""))
       || compareStationOrder(a.plan, b.plan));
+  return { operator: all ? { id: null, all: true } : { id: operator.id }, items };
+}
+
+// Antrean PIC BAHAN (jalur pengerjaan): pekerjaan yang PIC Bahan-nya = operator yang login (ADMIN/OWNER: semua pekerjaan yang punya PIC Bahan).
+export async function listMaterialQueue(prisma, { unitIds, userId, all = false, now = new Date() }) {
+  const operator = !all && userId ? await prisma.productionOperator.findUnique({ where: { userId }, select: { id: true, active: true } }) : null;
+  if (!all && (!operator || !operator.active)) return { operator: null, items: [] };
+  const runs = await loadRuns(prisma, {
+    unitId: { in: unitIds }, status: { notIn: TERMINAL_RUN },
+    buildSetting: { is: all ? { materialOperatorId: { not: null } } : { materialOperatorId: operator.id } },
+  });
+  const views = (await viewsOf(prisma, runs, { now })).filter((v) => !isFinishedUnitStatus(v.unit.status));
+  const items = views.sort((a, b) => String(a.plan?.productionDate || "9999").localeCompare(String(b.plan?.productionDate || "9999")) || String(a.plan?.stationCode || "").localeCompare(String(b.plan?.stationCode || "")));
   return { operator: all ? { id: null, all: true } : { id: operator.id }, items };
 }
 
@@ -486,7 +531,7 @@ export async function getAndonBoard(prisma, { date, unitIds, config = BOARD_DEFA
       code: s.code, label: s.label, capacity: s.capacity, operatorNames: s.operatorNames,
       items: s.items.map((v) => ({
         runId: v.runId, unitCode: v.unit.unitCode, customerName: v.customer.name, merk: v.unit.merk, ukuran: v.unit.ukuran,
-        bucket: v.bucket, bucketLabel: v.bucketLabel, stepNo: v.next?.stepNo ?? null, stepLabel: v.next?.stepNo ? STEP_BY_NO[v.next.stepNo]?.label : null,
+        bucket: v.bucket, bucketLabel: v.bucketLabel, stepNo: v.next?.stepNo ?? null, stepLabel: v.next?.stepNo ? stepLabelFor(v.next.stepNo, STEP_BY_NO[v.next.stepNo]?.label, v.track === "BUILD") : null,
         progress: v.progress, timer: v.timer, priority: v.plan?.priorityRank ?? 0, priorityLabel: v.plan?.priorityLabel ?? "Normal", operatorName: v.plan?.operator?.name ?? null,
         cornerName: v.plan?.cornerOperator?.name ?? null, shortage: v.shortage ? v.shortage.items.map((i) => i.name) : null,
       })),
@@ -564,6 +609,37 @@ export async function getWarehouseProductionQueue(prisma, { unitIds, now = new D
 // ---------------------------------------------------------------------------
 export const latestOf = (evidence, stepNo) => evidence.filter((e) => e.stepNo === stepNo).at(-1) || null;
 
+// Laporan jalur PENGERJAAN (pesanan BARU/custom): spesifikasi & layanan Sales, racikan, bahan sesuai pemakaian, uji hasil — tanpa bagian diagnosa/bongkar/restorasi.
+function buildTrackReportMessage(report, lines) {
+  const b = report.build || {};
+  lines.push("📐 SPESIFIKASI PESANAN (SALES):");
+  if (b.salesServices?.length) lines.push(`• Layanan Sales : ${b.salesServices.join(", ")}`);
+  if (report.order.request) lines.push(`• Catatan Sales : ${report.order.request}`);
+  lines.push("");
+  lines.push("🛠️ PENGERJAAN & BAHAN (TERCATAT DI WAREHOUSE):");
+  if (b.racikan?.fondasi) lines.push(`• Racikan Fondasi : ${b.racikan.fondasi}`);
+  if (b.racikan?.lapisan) lines.push(`• Racikan Lapisan : ${b.racikan.lapisan}`);
+  if (b.note) lines.push(`• Pengerjaan : ${b.note}`);
+  if (b.materialOperator) lines.push(`• PIC Bahan : ${b.materialOperator}`);
+  if (b.corner?.confirmed) lines.push(b.corner.required ? "• Corner : diperlukan (dikonfirmasi pada rencana)" : `• Corner : tidak diperlukan — ${b.corner.reason || "dikonfirmasi pada rencana"}`);
+  if (report.materials.foundation.length) lines.push(`• Bahan dipakai : ${report.materials.foundation.map((m) => `${m.name} (${m.code})`).join(" + ")}`);
+  if (report.finalTest) lines.push(`• Uji PIC Meja : Diuji beban ${report.finalTest.testerWeightKg} kg -> Hasil Tekstur ${VERDICT_LABEL[report.finalTest.verdict] || report.finalTest.verdict}`);
+  if (report.finishing) lines.push(`• Finishing    : Model ${STYLE_LABEL[report.finishing.mattressStyle] || report.finishing.mattressStyle} | Kain ${report.finishing.fabricSpec} | List ${report.finishing.borderColor}`);
+  lines.push("");
+  if (report.skippedSteps?.length) lines.push(`• Tahap dilewati (Adaptasi sistem): ${report.skippedSteps.map((s) => s.label).join(", ")} — tidak dikerjakan, tanpa foto/hasil uji`);
+  if (report.qcStatus === "TIDAK_DILAKUKAN") lines.push("• QC          : tidak dilakukan (mode adaptasi) — bukan lulus");
+  else if (report.qc) lines.push(`• QC          : ${report.qc.result === "PASS" ? "Lulus" : report.qc.result}${report.product?.flow === "NON_KASUR" ? " (pemeriksaan hasil)" : ""}`);
+  lines.push(`📸 PAKET DOKUMENTASI (${report.mediaCount} MEDIA):`);
+  lines.push(`🔗 ${report.reportPath}`);
+  lines.push("");
+  lines.push(report.adaptation && report.status === "COMPLETED" && !report.handoffStatus
+    ? "Status saat ini: SIAP KIRIM (mode adaptasi — QC dan penerimaan barang jadi Gudang tidak diwajibkan). Silakan konfirmasi jadwal kirim ke customer."
+    : report.handoffStatus === "ACCEPTED"
+    ? "Status saat ini: READY FOR DELIVERY HANDOFF. Silakan konfirmasi jadwal kirim ke customer."
+    : "Status saat ini: menunggu diterima Gudang (barang jadi). Jadwal kirim dikonfirmasi setelah Gudang menerima.");
+  return lines.join("\n");
+}
+
 export function buildReportMessage(report) {
   const lines = [];
   lines.push("✅ [LAPORAN PRODUKSI SELESAI — KLINIK MATRAS]");
@@ -572,9 +648,13 @@ export function buildReportMessage(report) {
   lines.push(`PIC Meja   : ${report.pic.table || "—"} | PIC Corner: ${report.pic.corner || "—"}`);
   lines.push(`PIC Sales  : ${report.pic.sales || "—"}`);
   lines.push("");
+  if (report.track === "BUILD") return buildTrackReportMessage(report, lines);
   lines.push("🔍 RINGKASAN DIAGNOSA & TEMUAN BONGKAR:");
   if (report.order.complaints.length) lines.push(`• Keluhan Customer : ${report.order.complaints.join(", ")}`);
-  if (report.measurement) lines.push(`• Uji Fondasi Lama : Diuji beban ${report.measurement.testerWeightKg} kg, turun dari ${report.measurement.heightBeforeCm} cm ke ${report.measurement.heightCompressedCm} cm (amblas ${report.measurement.dropCm} cm).`);
+  const preTest = measurementMessageLines(report.components?.measurements);
+  // Pengujian awal fase 2 (catatan PIC QC) menggantikan baris uji fondasi dari bukti lama; histori lama tanpa catatan tetap memakai bukti tahap 4 (tanpa kategori otomatis).
+  if (preTest.length) lines.push(...preTest);
+  else if (report.measurement && report.measurement.heightBeforeCm != null) lines.push(`• Uji Fondasi Lama : Diuji beban ${report.measurement.testerWeightKg} kg, turun dari ${report.measurement.heightBeforeCm} cm ke ${report.measurement.heightCompressedCm} cm (penurunan ${report.measurement.dropCm} cm).`);
   if (report.diagnosis) lines.push(`• Diagnosa Teknis  : ${report.diagnosis}`);
   lines.push("");
   lines.push("🛠️ TINDAKAN RESTORASI & KOMPONEN BARU (TERCATAT DI WAREHOUSE):");
@@ -584,6 +664,8 @@ export function buildReportMessage(report) {
   if (report.finishing) lines.push(`• Finishing    : Model ${STYLE_LABEL[report.finishing.mattressStyle] || report.finishing.mattressStyle} | Kain ${report.finishing.fabricSpec} | List ${report.finishing.borderColor}`);
   lines.push("");
   lines.push(...componentMessageLines(report.components?.comparison));
+  { const pva = planVsActualMessageLines(report.components?.comparison, { always: report.order?.category === "LAYANAN" }); if (pva.length) lines.push(...pva, ""); } // Fase 3: rencana vs aktual (Belum dicatat bila kosong)
+  { const asm = assemblyMessageLines(report.components?.measurements, { always: report.order?.category === "LAYANAN" }); if (asm.length) lines.push(...asm, ""); } // Fase 4: uji fondasi baru + kasur jadi (sebanding / belum valid)
   if (report.skippedSteps?.length) lines.push(`• Tahap dilewati (Adaptasi sistem): ${report.skippedSteps.map((s) => s.label).join(", ")} — tidak dikerjakan, tanpa foto/hasil uji`);
   if (report.qcStatus === "TIDAK_DILAKUKAN") lines.push("• QC          : tidak dilakukan (mode adaptasi) — bukan lulus");
   lines.push("");
@@ -617,7 +699,7 @@ export async function getProductionReport(prisma, runId, { unitIds } = {}) {
   const actorIds = [...new Set(ctx.evidence.map((e) => e.actorId).filter(Boolean))];
   const actors = actorIds.length ? await prisma.user.findMany({ where: { id: { in: actorIds } }, select: { id: true, name: true } }) : [];
   const actorName = new Map(actors.map((a) => [a.id, a.name]));
-  const tableActor = latestOf(evidence, 5)?.actorId || latestOf(evidence, 1)?.actorId;
+  const tableActor = latestOf(evidence, 5)?.actorId || latestOf(evidence, 1)?.actorId || (ctx.state.buildTrack ? latestOf(evidence, 6)?.actorId : null);
   const cornerActor = latestOf(evidence, 11)?.actorId || latestOf(evidence, 10)?.actorId;
   const mediaOf = (stepNos) => evidence.filter((e) => stepNos.includes(e.stepNo)).flatMap((e) => (Array.isArray(e.media) ? e.media : []).map((m) => ({ stepNo: e.stepNo, stepLabel: STEP_BY_NO[e.stepNo]?.label, kind: m.kind, url: signEvidenceUrl(m.url), source: sourceOfStep(e.stepNo) }))).filter((m) => m.url);
   const measurement = latestOf(evidence, 4)?.payload ?? null;
@@ -635,9 +717,12 @@ export async function getProductionReport(prisma, runId, { unitIds } = {}) {
     runId: run.id, status: run.status, reportPath: `/bengkel/production-v2/laporan/${run.id}`,
     ready: !!latestOf(evidence, 12) || (!!run.adaptationPolicy && run.status === "COMPLETED"),
     adaptation: !!run.adaptationPolicy,
+    track: ctx.state.buildTrack ? "BUILD" : "RESTORATION",
+    product: ctx.state.buildTrack ? { class: ctx.state.productClass, flow: ctx.state.productFlow, problem: ctx.state.productProblem } : null,
+    build: ctx.state.buildTrack ? { racikan: latestOf(evidence, 6)?.payload?.racikan ?? ctx.buildRecord?.racikan ?? null, materialOperator: ctx.buildView?.materialOperator?.name ?? null, corner: ctx.buildView?.corner ?? null, note: latestOf(evidence, 6)?.payload?.note ?? null, salesServices: (run.unit.order?.items || []).map((i) => i.layananName).filter(Boolean), productType: run.unit.order?.productType ?? null } : null,
     skippedSteps: [...new Map(skippedEvidence.map((e) => [e.stepNo, e])).values()].sort((a, b) => a.stepNo - b.stepNo).map((e) => ({ stepNo: e.stepNo, label: STEP_BY_NO[e.stepNo]?.label ?? `Tahap ${e.stepNo}`, reason: e.payload?.reason ?? null, at: e.createdAt, by: actorName.get(e.actorId) ?? null })),
     unit: { unitCode: run.unit.unitCode, merk: run.unit.merk, ukuran: run.unit.ukuran, service: run.unit.service?.labelId ?? null },
-    order: { orderNumber: run.unit.order?.orderNumber ?? null, customerName: run.unit.order?.customer?.name ?? null, complaints: (run.unit.order?.complaintCategory || []).map((c) => COMPLAINT_LABEL[c] || c), request: run.unit.order?.notes ?? null, weightKg: run.unit.order?.beratBadan ?? null },
+    order: { orderNumber: run.unit.order?.orderNumber ?? null, customerName: run.unit.order?.customer?.name ?? null, category: run.unit.order?.category ?? null, complaints: (run.unit.order?.complaintCategory || []).map((c) => COMPLAINT_LABEL[c] || c), request: run.unit.order?.notes ?? null, weightKg: run.unit.order?.beratBadan ?? null },
     pic: {
       table: actorName.get(tableActor) || nameOf(run.plan?.operator) || null,
       corner: actorName.get(cornerActor) || nameOf(run.plan?.cornerOperator) || null,
@@ -646,18 +731,23 @@ export async function getProductionReport(prisma, runId, { unitIds } = {}) {
     },
     beforeFeel: latestOf(evidence, 2)?.payload?.feelNote ?? null,
     oldMaterials: latestOf(evidence, 3)?.payload?.oldMaterials ?? [],
-    measurement,
+    // Bentuk laporan lama dipertahankan: bukti tahap 4 lama membawa angka sendiri; sejak fase 2 (LAYANAN) angkanya berasal dari uji fondasi awal PIC QC (satu sumber, tidak disalin ke bukti).
+    measurement: measurement?.heightBeforeCm != null ? measurement : (components?.measurements?.foundation
+      ? { heightBeforeCm: components.measurements.foundation.unloadedHeightCm, heightCompressedCm: components.measurements.foundation.loadedHeightCm, dropCm: components.measurements.foundation.dropCm, testerWeightKg: components.measurements.foundation.testerWeightKg, source: "QC_FONDASI_AWAL" }
+      : measurement),
     diagnosis: latestOf(evidence, 5)?.payload?.diagnosis ?? null,
-    materials: { foundation: linesOf(6), layer: linesOf(7), finishing: linesOf(10) },
+    materials: { foundation: [...linesOf(6), ...((ctx.buildView ?? ctx.materialPicView)?.record?.materials || []).map((m) => ({ materialId: m.materialId, qty: m.qty, code: m.code ?? "—", name: m.name ?? "—", uom: m.uom ?? null }))], layer: linesOf(7), finishing: linesOf(10) },
     textureTests: finalTests.map((e) => ({ version: e.version, verdict: e.payload?.verdict, testerWeightKg: e.payload?.testerWeightKg, at: e.createdAt })),
     finalTest: finalPass ? finalPass.payload : null,
     qc: ctx.latestInspection ? { result: ctx.latestInspection.result, version: ctx.latestInspection.version, at: ctx.latestInspection.inspectedAt } : null,
+    ...cornerAndLifecycleOf(run, ctx), cornerView: await loadCornerView(prisma, run, ctx),
     qcStatus: ctx.latestInspection ? "DILAKUKAN" : (run.adaptationPolicy && run.operations.some((o) => o.status === "SKIPPED" && o.planSnapshot?.qcNotPerformed) ? "TIDAK_DILAKUKAN" : "BELUM"),
     finishing: latestOf(evidence, 10)?.payload ?? null,
     cornerChecklist: latestOf(evidence, 11)?.payload?.checklist ?? null,
     media: { before: [...mediaOf([1, 2, 3]), ...docBuckets.before], process: [...mediaOf([4, 6, 7]), ...docBuckets.process], after: [...mediaOf([8, 9, 11, 12]), ...docBuckets.after] },
     documentation,
-    components,
+    sequence: (await buildRunSequence(prisma, run, ctx, documentation)).sequence,
+    components: components ? { ...components, assembly: await loadAssemblyView(prisma, run) } : components,
     handoffStatus: fg?.status ?? null,
     broadcast: outboxRow
       ? { status: outboxRow.status, deliveredAt: outboxRow.deliveredAt, attempts: outboxRow.attempts, lastError: outboxRow.lastError, queuedAt: outboxRow.createdAt, consumerAvailable: false }

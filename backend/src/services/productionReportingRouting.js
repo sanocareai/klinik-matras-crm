@@ -1,6 +1,7 @@
 // Pemuat routing BULK untuk laporan (P11): jumlah query KONSTAN (3) berapa pun jumlah unit. Meniru pathForUnit() unitStageEngine
 // (intake + modul layanan + finish) tanpa query per unit. BACA-SAJA.
 import { buildUnitPath } from "../lib/domain/routing.js";
+import { BUILD_STAGE_CODE } from "../lib/domain/productionBuildTrack.js";
 import { workshopPathOf } from "./productionWorkshopExecutionCommandService.js";
 
 export async function loadStepContextRouting(prisma, serviceIds) {
@@ -17,9 +18,15 @@ export async function loadStepContextRouting(prisma, serviceIds) {
   return {
     stageById,
     // null bila jalur tidak valid (mis. tanpa gerbang QC) — applicableStepsFor menerima null (tampilan lengkap).
-    pathFor(serviceId) {
-      const key = serviceId || "-";
-      if (!cache.has(key)) { try { cache.set(key, workshopPathOf(buildUnitPath(intake, modulesBy.get(serviceId) || [], finish))); } catch { cache.set(key, null); } }
+    // build = unit jalur pengerjaan (pesanan BARU/custom): tanpa INTAKE & tanpa layanan; hanya tahap Pengerjaan Pesanan + FINISH.
+    pathFor(serviceId, { build = false, noCorner = false } = {}) {
+      const key = build ? (noCorner ? "@build-nocorner" : "@build") : (serviceId || "-");
+      if (!cache.has(key)) {
+        try {
+          const buildStage = stages.find((s) => s.code === BUILD_STAGE_CODE && s.active);
+          cache.set(key, workshopPathOf(build ? buildUnitPath([], buildStage ? [buildStage] : [], noCorner ? finish.filter((st) => st.code !== "corner_sewing") : finish) : buildUnitPath(intake, modulesBy.get(serviceId) || [], finish)));
+        } catch { cache.set(key, null); }
+      }
       return cache.get(key);
     },
   };

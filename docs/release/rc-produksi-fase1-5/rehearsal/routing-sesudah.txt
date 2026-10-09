@@ -1,0 +1,13 @@
+pre_teardown_test|1
+fit_test|1
+corner_sewing|2
+teardown|2
+finished|3
+foundation_test|3
+diagnosis|4
+custom_build|10
+foundation_service|10
+foundation_upgrade|10
+comfort_layer_upgrade|20
+foam_addition|20
+cover_replacement|30

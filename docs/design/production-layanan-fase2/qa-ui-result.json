@@ -1,0 +1,238 @@
+{
+ "results": [
+  {
+   "name": "S1.1 LAYANAN: tahap berikutnya 'Foto Sebelum Bongkar' (tahap 1)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S1.2 klik Kirim -> bukti tahap 1 TERSIMPAN",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S1.3 Meja menampilkan 'Menunggu QC sebelum bongkar' (bukan formulir uji rasa); tombol kirim uji tidak ada",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S2.1 antrean PIC QC memuat L1 (QC sebelum bongkar)",
+   "ok": true,
+   "extra": "QAF2-MUY6BHID-L1|WHOLE_TEST_BEFORE,QAF2-MUY6WQPG-L1|WHOLE_TEST_BEFORE,QAF2-MUY7HKGZ-L1|WHOLE_TEST_BEFORE"
+  },
+  {
+   "name": "S2.2 unit yang belum sampai gerbang (L2/L3/A1) tidak muncul di antrean",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S2.3 konteks Sales tampil: keluhan, request, berat customer 82 kg (rujukan saja)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S2.4 berat penguji TIDAK terisi otomatis dari berat customer (kosong)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S2.5 tombol Simpan tertahan + petunjuk jelas sebelum lengkap",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S2.6 Simpan kosong ditolak di UI; tidak ada baris tersimpan",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S2.6b galat validasi lama hilang setelah isian diperbaiki (tidak menyesatkan)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S2.7 tanpa media / tanpa konfirmasi PIC QC dalam frame: Simpan ditolak (petunjuk jelas)",
+   "ok": true,
+   "extra": "Konfirmasi bahwa foto/video memperlihatkan PIC QC sedang menguji kasur."
+  },
+  {
+   "name": "S2.8 klik Simpan -> TERSIMPAN: v1, berat aktual 75, penurunan 4, 1 media berjenis video",
+   "ok": true,
+   "extra": "1|{\"note\": null, \"feelNote\": \"Tengah terasa amblas, pinggir keras\", \"qcInFrame\":"
+  },
+  {
+   "name": "S2.9 reload: L1 keluar dari antrean uji kasur utuh",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S3.1 setelah PIC QC mencatat: tombol 'Lanjutkan' (satu ketuk)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S3.2 klik Lanjutkan -> tahap 2 tercatat menaut versi catatan QC (tanpa menyalin angka)",
+   "ok": true,
+   "extra": "{\"qcRef\": {\"section\": \"WHOLE_TEST_BEFORE\", \"version\": 1}}"
+  },
+  {
+   "name": "S3.3 tahap 3: PIC Meja melihat hasil uji QC (berat aktual, penurunan kasur utuh) di Catatan Komponen",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S3.4 total lapisan belum lengkap tampil jelas bila ada ketebalan kosong (bukan 0)",
+   "ok": true,
+   "extra": "Total tinggi lapisan belum lengkap — 6 cm dari 1 lapisan; 1 lapisan belum diukur"
+  },
+  {
+   "name": "S3.5 setelah semua ketebalan terisi: 'Total tinggi lapisan 10 cm (2 lapisan)'",
+   "ok": true,
+   "extra": "Total tinggi lapisan 10 cm (2 lapisan)"
+  },
+  {
+   "name": "S3.6 klik Simpan -> lapisan awal TERSIMPAN (2 lapis; media video tertaut Lapisan 1)",
+   "ok": true,
+   "extra": "1|{\"note\": null, \"layers\": [{\"note\": null, \"material\": {\"kin"
+  },
+  {
+   "name": "S3.7 reload: lapisan awal + total tampil; tag 'Lapisan 1' pada video; video dapat diputar",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S3.8 tahap 3 tersedia (Kirim Hasil Bongkar)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S3.9 lembar bongkar: tertulis lapisan awal sudah tercatat; centang material lama OPSIONAL",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S3.10 klik Kirim -> dokumentasi bongkar TERSIMPAN dengan tautan lapisan awal v1",
+   "ok": true,
+   "extra": "{\"note\": null, \"layersRef\": {\"section\": \"LAYERS_BEFORE\", \"version\": 1, \"layersUnknown\": fa"
+  },
+  {
+   "name": "S4.1 L1 muncul di antrean 'Uji fondasi awal'",
+   "ok": true,
+   "extra": "QAF2-MUY6BHID-L1|WHOLE_TEST_BEFORE,QAF2-MUY6WQPG-L1|WHOLE_TEST_BEFORE,QAF2-MUY7HKGZ-L1|FOUNDATION_TEST_BEFORE"
+  },
+  {
+   "name": "S4.2 tinggi dibebani > tanpa beban ditolak di UI",
+   "ok": true,
+   "extra": "Tinggi saat dibebani tidak boleh lebih besar dari tinggi tanpa beban."
+  },
+  {
+   "name": "S4.3 pratinjau penurunan 10 cm (25→15), diberi label 'dihitung sistem'",
+   "ok": true,
+   "extra": "Penurunan fondasi: 10 cm (dihitung sistem: tanpa beban − dibebani; bukan dijumlahkan dengan uji kasu"
+  },
+  {
+   "name": "S4.4 klik Simpan -> TERSIMPAN; penurunan 10 cm dihitung server; media video",
+   "ok": true,
+   "extra": "1|{\"note\": null, \"dropCm\": 10, \"system\": \"BONNELL\", \"material\": null, \"testMethod\": \"Beban"
+  },
+  {
+   "name": "S4b.1 'Lanjutkan' tahap 4 tersedia",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S4b.2 tahap 4 tersimpan menaut uji fondasi v1, tanpa menyalin angka; Run maju ke Diagnosa",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S5.1 Unit 360 menampilkan Pengujian awal terpisah (kasur utuh, lapisan, fondasi) tanpa penjumlahan",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S5.2 koreksi tanpa alasan ditolak (UI)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S5.3 konflik versi: form menolak (409) dengan pesan jelas + tombol muat ulang; versi 2 dari perangkat lain TIDAK tertimpa",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S5.4 koreksi berversi: v1(4) v2(6) v3(5) tersimpan; alasan + actor tercatat; versi lama tidak ditimpa",
+   "ok": true,
+   "extra": "1:4:- ; 2:6:Dikoreksi dari perangkat lain ; 3:5:Angka salah ketik"
+  },
+  {
+   "name": "S5.5 replay (retry kunci sama) tidak menggandakan: tepat 3 versi",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S5.6 reload: nilai terkini (5 cm) tampil; riwayat: v1,v2 digantikan, v3 berlaku",
+   "ok": true,
+   "extra": "0,1,1"
+  },
+  {
+   "name": "S6.1 PIC Meja TIDAK melihat tombol catat pengujian QC",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S6.2 API: PIC Meja & Gudang menulis seksi uji -> 403",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S6.3 API: antrean uji hanya PIC QC (Meja 403)",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S7.1 adaptasi: TIDAK menunggu PIC QC; tersedia aksi 'Lewati' dengan alasan",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S7.2 klik Lewati -> tahap SKIPPED tanpa media/hasil uji; tidak ada catatan uji palsu",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S8.1 NEW/custom: 'Mulai Pengerjaan Pesanan' tetap; tidak ada gerbang QC sebelum bongkar",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S8.2 NEW/custom: tidak ada catatan uji QC sebelum bongkar yang dibuat",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S9.1 [390-light] laporan: tiga pengukuran TERPISAH, tidak dijumlahkan, belum dicatat disebut jelas",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S9.1 [390-dark] laporan: tiga pengukuran TERPISAH, tidak dijumlahkan, belum dicatat disebut jelas",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S9.1 [1440-light] laporan: tiga pengukuran TERPISAH, tidak dijumlahkan, belum dicatat disebut jelas",
+   "ok": true,
+   "extra": ""
+  },
+  {
+   "name": "S9.1 [1440-dark] laporan: tiga pengukuran TERPISAH, tidak dijumlahkan, belum dicatat disebut jelas",
+   "ok": true,
+   "extra": ""
+  }
+ ],
+ "consoleErrors": [],
+ "http": [
+  "qc 409 POST /api/production-v2/component-notes/units/5f39493f-cc45-413b-973e-3991e7874280/sections/WHOLE_TEST_BEFORE @/bengkel/order-produksi"
+ ]
+}

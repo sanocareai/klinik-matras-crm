@@ -9,6 +9,7 @@
 //   unit_custody_handoffs_v2 (tiba = INBOUND diterima; barang jadi = FINISHED_GOODS) · production_run_exceptions_v2.
 // V1 TIDAK dibaca sama sekali. Tidak ada harga/pembayaran/HPP. Tidak ada tulisan apa pun (read-only; dijaga writer audit).
 import { loadStepContextRouting } from "./productionReportingRouting.js";
+import { buildTrackUnits } from "./unitStageEngine.js";
 import { formatCell } from "./productionReportExport.js";
 import { resolveUnitPhotosBulk } from "./productionUnitPhotoService.js";
 import { usedQtyByMaterial } from "./productionUnitOverviewService.js";
@@ -66,8 +67,9 @@ export async function loadFacts(prisma, { unitIds, now = new Date() }) {
   const planIds = runs.map((r) => r.plan?.id).filter(Boolean);
   const uIds = [...new Set(runs.map((r) => r.unitId))];
   const serviceIds = [...new Set(runs.map((r) => r.unit.serviceId).filter(Boolean))];
+  const buildUnits = await buildTrackUnits(prisma, uIds); // Map unitId -> klasifikasi produk // jalur pengerjaan (pesanan BARU/custom): tahap berlaku berbeda dari restorasi
 
-  const [evidence, stageLogs, routing, issues, diagnoses, returns, moves, photos] = await Promise.all([
+  const [evidence, stageLogs, routing, issues, diagnoses, returns, moves, photos, buildRecords] = await Promise.all([
     prisma.productionStepEvidence.findMany({ where: { runId: { in: runIds } }, orderBy: [{ createdAt: "asc" }, { version: "asc" }], select: { id: true, runId: true, stepNo: true, stepCode: true, version: true, payload: true, media: true, actorId: true, createdAt: true } }),
     prisma.unitStageLog.findMany({ where: { unitId: { in: uIds } }, orderBy: { createdAt: "asc" }, select: { unitId: true, stageId: true, action: true, createdAt: true } }),
     loadStepContextRouting(prisma, serviceIds),
@@ -76,7 +78,10 @@ export async function loadFacts(prisma, { unitIds, now = new Date() }) {
     prisma.productionMaterialReturn.findMany({ where: { runId: { in: runIds } }, select: { runId: true, materialId: true, qty: true, status: true, requestedAt: true, receivedAt: true, receivedQty: true, material: { select: { code: true, name: true, unit: true } } } }),
     prisma.stockMovement.findMany({ where: { unitId: { in: uIds }, type: { in: ["WASTE", "RETURN"] } }, select: { unitId: true, materialId: true, type: true, qty: true, createdAt: true, material: { select: { code: true, name: true, unit: true } } } }),
     resolveUnitPhotosBulk(prisma, uIds),
+    // Jalur pengerjaan: pemakaian aktual yang dicatat PIC Bahan (versi terbaru per Run = keadaan sekarang).
+    prisma.productionBuildMaterialRecord.findMany({ where: { runId: { in: runIds } }, orderBy: [{ runId: "asc" }, { version: "asc" }], select: { runId: true, materials: true } }),
   ]);
+  const latestBuildRecord = new Map(buildRecords.map((r) => [r.runId, r])); // urut naik -> yang terakhir menang
 
   const evByRun = new Map(); for (const e of evidence) (evByRun.get(e.runId) || evByRun.set(e.runId, []).get(e.runId)).push(e);
   const logsBy = new Map(); for (const l of stageLogs) { const k = `${l.unitId}:${l.stageId}`; (logsBy.get(k) || logsBy.set(k, []).get(k)).push(l); }
@@ -131,7 +136,7 @@ export async function loadFacts(prisma, { unitIds, now = new Date() }) {
     }
 
     // --- bahan
-    const used = usedQtyByMaterial(stepEv);
+    const used = usedQtyByMaterial([...stepEv, ...(latestBuildRecord.has(run.id) ? [{ stepNo: 6, payload: { materials: latestBuildRecord.get(run.id).materials } }] : [])]);
     const issuedBy = new Map(); const issuedMeta = new Map();
     for (const i of planIssues.filter((x) => x.status === "ISSUED")) for (const l of i.lines) { issuedBy.set(l.materialId, (issuedBy.get(l.materialId) || 0) + Number(l.issuedQty || 0)); issuedMeta.set(l.materialId, l.material); }
     const mv = movesByUnit.get(run.unitId) || [];
@@ -140,12 +145,13 @@ export async function loadFacts(prisma, { unitIds, now = new Date() }) {
     const waste = mv.filter((m) => m.type === "WASTE").map((m) => ({ materialId: m.materialId, qty: Math.abs(Number(m.qty)) }));
 
     // --- dokumentasi (matriks kanonis, sama dengan Aplikasi Dokumentasi/Unit 360)
-    const split = routing.pathFor(unit.serviceId);
+    const buildInfo = buildUnits.get(run.unitId);
+    const split = routing.pathFor(unit.serviceId, { build: !!buildInfo, noCorner: buildInfo?.cornerRequired === false });
     const stepMedia = new Map(); for (const e of stepEv) stepMedia.set(e.stepNo, [...(stepMedia.get(e.stepNo) || []), ...(Array.isArray(e.media) ? e.media : []).map((m) => ({ url: m.url, kind: m.kind || "image" }))]);
     const diag = diagByRun.get(run.id);
     const qcUrls = [...new Set(run.inspections.flatMap((q) => q.items.flatMap((i) => (i.photoUrls || []).filter((u) => LEGACY_PHOTO_PREFIX.test(u)))))];
     const matrix = buildDocumentationMatrix({
-      applicableSteps: applicableStepsFor(split), recordedSteps: recorded, nextStepNo: deriveNextStepNo(recorded), started: run.status !== "PENDING_ARRIVAL" && (run.operations.length > 0 || stepEv.length > 0),
+      applicableSteps: applicableStepsFor(split, buildUnits.get(run.unitId)?.flow ?? "KASUR"), recordedSteps: recorded, nextStepNo: deriveNextStepNo(recorded), started: run.status !== "PENDING_ARRIVAL" && (run.operations.length > 0 || stepEv.length > 0),
       run: { origin: run.origin, status: run.status }, qcDone: run.inspections.length > 0, stepMedia,
       extra: { pickupPhoto: photos.get(run.unitId) ? { url: "pickup" } : null, diagnosisPhotos: (diag?.photoUrls || []).map((u) => ({ url: u, kind: "image" })), qcPhotos: qcUrls.map((u) => ({ url: u, kind: "image" })) },
       docRows: parseDocRows(docEv),

@@ -11,15 +11,15 @@
 // pemanggil TIDAK menyangka itu unik per unit. Field yang genuinely per-unit (foto, plan, evidence, BOM, QC,
 // custody) SELALU difilter lewat runId/unitId spesifik unit ini — tidak pernah "milik order", mencegah
 // kebocoran antar-unit bersaudara (lihat resolveUnitPhoto yang sudah menolak atribusi job multi-unit).
-import { COMPLAINT_LABEL, RUN_VIEW_INCLUDE, STYLE_LABEL, VERDICT_LABEL, customerOf, indicatorsOf, latestOf, materialStatusOf, minutesBetween, nameOf, stepStatuses, warningsOf } from "./productionExperienceReadService.js";
+import { COMPLAINT_LABEL, RUN_VIEW_INCLUDE, STYLE_LABEL, VERDICT_LABEL, customerOf, indicatorsOf, latestOf, materialStatusOf, minutesBetween, nameOf, stepStatuses, warningsOf, cornerAndLifecycleOf } from "./productionExperienceReadService.js";
 import { PKR_ORDER_SELECT, rujukanPkrDariOrder } from "./pkrProduksiGuard.js";
-import { loadStepContext } from "./productionStepCommandService.js";
+import { loadCornerView, loadStepContext } from "./productionStepCommandService.js";
 import { buildRunDocumentation, documentationBuckets } from "./productionDocumentationRead.js";
 import { sourceOfStep } from "../lib/domain/productionDocumentation.js";
 import { formatProductionDate, stationLabel } from "../lib/domain/productionBoard.js";
 import { arrivalConfirmedByStaff, displayStatusOfOrder, displayStatusOfUnit, physicalPresenceOf, priorityDisplay } from "../lib/domain/productionDisplay.js";
 import { loadOpenComplaintsByUnit } from "./productionComplaints.js";
-import { STEP_BY_NO } from "../lib/domain/productionSteps.js";
+import { STEP_BY_NO, isSkippedEvidence } from "../lib/domain/productionSteps.js";
 import { signEvidenceUrl } from "../routes/productionEvidenceMedia.js";
 import { signUnitPhotoUrlIfAny } from "../routes/productionUnitPhoto.js";
 import { getDiagnosisState } from "./productionDiagnosisCommandService.js";
@@ -302,7 +302,7 @@ async function getUnitOverviewDasar(prisma, unitId, { unitIds, canSeeValue = fal
   const applicableSteps = steps.filter((s) => s.status !== "NA");
   const [pickup, materials, qc, diagnosis] = await Promise.all([
     loadPickup(prisma, unitId),
-    loadMaterials(prisma, run.plan, { evidence: ctx.evidence, unitId }),
+    loadMaterials(prisma, run.plan, { evidence: [...ctx.evidence, ...(ctx.buildRecord ? [{ stepNo: 6, payload: { materials: ctx.buildRecord.materials } }] : [])], unitId }),
     loadQc(prisma, run.id),
     getDiagnosisState(prisma, run.id),
   ]);
@@ -358,7 +358,8 @@ async function getUnitOverviewDasar(prisma, unitId, { unitIds, canSeeValue = fal
       productLine: orderScopedField(orderExtra?.productLine ?? null), productType: orderScopedField(orderExtra?.productType ?? null),
       dataGaps,
     },
-    service: { code: run.unit.service?.code ?? null, label: run.unit.service?.labelId ?? null, set: !!run.unit.serviceId },
+    // Jalur pengerjaan (BARU/custom): layanan teknis & Diagnosis TIDAK BERLAKU — spesifikasi + layanan Sales (salesContext) adalah acuan.
+    service: { code: run.unit.service?.code ?? null, label: run.unit.service?.labelId ?? null, set: !!run.unit.serviceId, applicable: !ctx.state.buildTrack },
     pickup,
     planning: run.plan ? {
       planId: run.plan.id, status: run.plan.status, revision: run.plan.revision,
@@ -369,7 +370,9 @@ async function getUnitOverviewDasar(prisma, unitId, { unitIds, canSeeValue = fal
       materialReservedAt: run.plan.materialReservedAt, targetStartAt: run.plan.targetStartAt, targetCompleteAt: run.plan.targetCompleteAt,
     } : null,
     production: {
-      runId: run.id, revision: run.revision, runStatus: run.status, currentPhase: run.currentPhase, started: run.operations.length > 0 || ctx.evidence.length > 0,
+      ...cornerAndLifecycleOf(run, ctx), cornerView: await loadCornerView(prisma, run, ctx), // Fase 5: status yang sama dengan Meja/Corner/Status Produksi/laporan
+      runId: run.id, revision: run.revision, track: ctx.state.buildTrack ? "BUILD" : "RESTORATION", product: ctx.state.buildTrack ? { class: ctx.state.productClass, flow: ctx.state.productFlow, problem: ctx.state.productProblem } : null,
+      racikan: ctx.state.buildTrack ? (ctx.evidence.filter((e) => e.stepNo === 6 && !isSkippedEvidence(e)).at(-1)?.payload?.racikan ?? ctx.buildRecord?.racikan ?? null) : null, build: ctx.buildView ?? null, runStatus: run.status, currentPhase: run.currentPhase, started: run.operations.length > 0 || ctx.evidence.length > 0,
       // dikerjakan (done) / dilewati (skipped) / tersisa (remaining) — tahap dilewati (mode adaptasi) bukan pekerjaan.
       steps, progress: (() => {
         const worked = applicableSteps.filter((s) => s.status === "DONE").length; const skipped = applicableSteps.filter((s) => s.status === "SKIPPED").length;

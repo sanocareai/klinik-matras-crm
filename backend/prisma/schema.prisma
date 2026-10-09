@@ -2249,6 +2249,7 @@ model ProductionOperator {
   stageAssignments StageAssignment[]
   productionPlans  ProductionRunPlan[] @relation("PlanOperator")
   cornerPlans      ProductionRunPlan[] @relation("PlanCornerOperator")
+  buildMaterialSettings ProductionRunBuildSetting[]
 
   @@map("production_operators")
 }
@@ -5197,6 +5198,12 @@ model Material {
   createdById   String?  @map("created_by")
   skuOrigin       FinMaterialSkuOrigin?
   supplierCatalog FinSupplierMaterial[]
+
+  // Gap Fase 3 item 3 (katalog bahan untuk Catatan Komponen — Meja/QC/PIC Bahan): densitas & ketebalan OPSIONAL dengan sengaja — kebanyakan
+  // material (kain, per, lem, dst.) tidak punya nilai ini; NULL berarti "belum dicatat", TIDAK PERNAH ditebak/diisi otomatis. Supplier memakai
+  // `vendor` yang sudah ada (diisi dari stock opname Excel) — tidak ada kolom baru untuk itu, menghindari dua sumber yang bisa berbeda.
+  density     Float? // kg/m3 — notasi umum busa "D24" dsb.
+  thicknessCm Float? @map("thickness_cm")
 
   // Reorder alert (PRD FR-I-05), D-024. Keduanya OPSIONAL dengan sengaja —
   // tidak semua material perlu dipantau (bahan langka/sekali pakai tidak
@@ -8936,6 +8943,11 @@ model ProductionRun {
   routeChecksum        String?                  @map("route_checksum")
   // Slice 2 (flow adaptasi): kebijakan adaptasi EKSPLISIT pada run. NULL = proses lengkap (perilaku lama, tidak diubah); "ADAPTATION_V1" = QC & penerimaan barang jadi tidak wajib.
   adaptationPolicy     String?                  @map("adaptation_policy") @db.VarChar(40)
+  // Fase 2 LAYANAN (QC sebelum bongkar): kebijakan gerbang QC EKSPLISIT pada run, pola SAMA dengan adaptationPolicy di atas — dipin SEKALI saat run dibuat
+  // (defaultQcGatePolicy di productionSettingsService.js), TIDAK PERNAH ditimpa otomatis. NULL = run lama / belum dipin (gerbang WHOLE_TEST_BEFORE/
+  // FOUNDATION_TEST_BEFORE TIDAK berlaku, perilaku SEBELUM Fase 2); "QC_GATE_V1" = gerbang Fase 2 berlaku. Migrasi ke QC_GATE_V1 untuk run lama yang masih
+  // berjalan HANYA lewat aksi eksplisit tercatat (applyQcGatePolicy), tidak pernah dibackfill massal — lihat gap Fase 2 "jangan otomatis diterapkan ke run berjalan".
+  qcGatePolicyVersion  String?                  @map("qc_gate_policy_version") @db.VarChar(40)
   migrationSource      String?                  @map("migration_source")
   migrationSourceId    String?                  @map("migration_source_id")
   migrationRuleVersion String?                  @map("migration_rule_version")
@@ -8956,6 +8968,8 @@ model ProductionRun {
   custodyHandoffs      UnitCustodyHandoff[]
   plan                 ProductionRunPlan?
   exceptions           ProductionRunException[]
+  buildSetting         ProductionRunBuildSetting?
+  buildMaterialRecords ProductionBuildMaterialRecord[]
 
   @@unique([migrationSource, migrationSourceId])
   @@index([unitId, status])
@@ -10173,4 +10187,40 @@ model FinSupplierMaterial {
   @@unique([supplierId, materialId])
   @@index([materialId])
   @@map("fin_supplier_materials")
+}
+
+// Jalur Pengerjaan Pesanan (BARU/custom): pengaturan per Run — PIC Bahan per pekerjaan + kebutuhan Corner yang dikonfirmasi pada rencana. Ditulis HANYA oleh
+// services/productionBuildCommandService.js (bukan penulis rencana P3 / bukti P8).
+model ProductionRunBuildSetting {
+  id                 String              @id @default(uuid()) @db.Uuid
+  runId              String              @unique @map("run_id") @db.Uuid
+  run                ProductionRun       @relation(fields: [runId], references: [id], onDelete: Restrict)
+  materialOperatorId String?             @map("material_operator_id") @db.Uuid
+  materialOperator   ProductionOperator? @relation(fields: [materialOperatorId], references: [id], onDelete: SetNull)
+  cornerRequired     Boolean?            @map("corner_required") // NULL = belum dikonfirmasi; FALSE wajib beralasan (CHECK)
+  cornerReason       String?             @map("corner_reason")
+  revision           Int                 @default(1)
+  updatedById        String?             @map("updated_by_id")
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @default(now()) @map("updated_at")
+
+  @@index([materialOperatorId])
+  @@map("production_run_build_settings_v2")
+}
+
+// Catatan racikan + pemakaian aktual oleh PIC Bahan. Append-only (trigger); versi tertinggi = keadaan sekarang. Tidak menulis stok.
+model ProductionBuildMaterialRecord {
+  id        String        @id @default(uuid()) @db.Uuid
+  runId     String        @map("run_id") @db.Uuid
+  run       ProductionRun @relation(fields: [runId], references: [id], onDelete: Restrict)
+  version   Int
+  actorId   String?       @map("actor_id")
+  racikan   Json?
+  materials Json          @default("[]")
+  note      String?
+  commandId String?       @map("command_id") @db.Uuid
+  createdAt DateTime      @default(now()) @map("created_at")
+
+  @@unique([runId, version])
+  @@map("production_build_material_records_v2")
 }

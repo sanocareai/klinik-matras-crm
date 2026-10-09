@@ -16,7 +16,7 @@ import { lockRowForUpdate } from "./inventoryLedger.js";
 import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState } from "./v2FeatureFlags.js";
 import { loadStepContext } from "./productionStepCommandService.js";
 import { RUN_VIEW_INCLUDE, toRunView } from "./productionExperienceReadService.js";
-import { buildRunDocumentation, summarizeMatrix } from "./productionDocumentationRead.js";
+import { buildRunDocumentation, buildRunSequence, summarizeMatrix } from "./productionDocumentationRead.js";
 import { signUnitPhotoUrlsBulk } from "../routes/productionUnitPhoto.js";
 import { evidenceFileExists } from "../lib/productionEvidenceStore.js";
 import {
@@ -79,7 +79,7 @@ export async function getDocumentationDetail(prisma, runId, { unitIds }) {
   const photoByUnit = await signUnitPhotoUrlsBulk(prisma, [run.unitId]);
   const view = toRunView(run, ctx, { photoUrl: photoByUnit.get(run.unitId) ?? null });
   const matrix = await buildRunDocumentation(prisma, run, ctx);
-  return { ...cardOf(view, matrix, photoByUnit.get(run.unitId)), categories: matrix.categories, totals: matrix.totals };
+  return { ...cardOf(view, matrix, photoByUnit.get(run.unitId)), categories: matrix.categories, totals: matrix.totals, ...(await buildRunSequence(prisma, run, ctx, matrix)) };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------
