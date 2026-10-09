@@ -13,7 +13,7 @@ import { cleanMime, resolveMediaExt } from "../utils/mediaExt.js";
 import { emitNewMessage, emitMessageAck, emitConversationUpdate, emitMessageUpdate } from "../socket.js";
 import {
   matchCampaignByMessage, CATEGORY_TO_LEAD_SOURCE, extractRefTag, leadSourceFromRefTag,
-  extractCtwaContext, leadSourceFromCtwa, ctwaDetail,
+  extractCtwaContext, leadSourceFromCtwa, ctwaDetail, legacyAdContextDetail,
 } from "../services/leadAttribution.js";
 import { ambilTemplateIklanAktif, cocokkanTemplateIklan, ambilTeksTombolWebsite } from "../services/templateIklan.js";
 import { apakahMintaBerhenti, TAG_OPT_OUT } from "../services/broadcastPolicy.js";
@@ -578,7 +578,8 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
         rawData.Info?.CtwaContext;
       if (ctwa) {
         detectedSource = "META_ADS";
-        detectedDetail = ctwa.sourceUrl || ctwa.headline || JSON.stringify(ctwa).slice(0, 200);
+        // Tidak pernah menserialisasi objek mentah (bisa memuat clid) — lihat legacyAdContextDetail.
+        detectedDetail = legacyAdContextDetail(ctwa);
         console.log("[attribution] Lapis 2 META_ADS:", detectedDetail);
       }
     }

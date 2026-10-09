@@ -292,3 +292,51 @@ test("CTWA: payload polos / kosong tidak melempar error", () => {
   assert.equal(extractCtwaContext({ _data: { Message: null } }), null);
   assert.equal(ctwaDetail(null), null);
 });
+
+// --- Jalur detail/log yang TIDAK boleh membawa fragmen ctwa_clid -------------
+//
+// leadSourceDetail masuk ke log server DAN terbaca sales/tool MCP. Dua jalur
+// sebelumnya bisa membawa isi mentah: ctwaDetail() mempertahankan query URL,
+// dan Lapis 2 legacy menserialisasi 200 karakter JSON objek konteks.
+import fs from "node:fs";
+import { urlIklanAman, legacyAdContextDetail } from "../src/services/leadAttribution.js";
+
+const CLID_BOCOR = "AfhKBK8ZBWyKw3p49jW-KFh_rNlyzXmCKW0eSdHULJZtXqZk";
+const DETAIL_TETAP = "Meta Ads - konteks iklan legacy (detail mentah tidak disimpan)";
+
+test("urlIklanAman: buang skema, www, query, fragment, slash akhir", () => {
+  assert.equal(urlIklanAman("https://www.instagram.com/p/DXWbO-EAOeT/"), "instagram.com/p/DXWbO-EAOeT");
+  assert.equal(urlIklanAman(`https://www.instagram.com/p/DXWbO-EAOeT/?ctwa_clid=${CLID_BOCOR}&igsh=x#frag`), "instagram.com/p/DXWbO-EAOeT");
+  assert.equal(urlIklanAman("fb.me/77pJdJNsy?utm=1"), "fb.me/77pJdJNsy");
+  assert.equal(urlIklanAman(123), "");
+  assert.equal(urlIklanAman(null), "");
+  assert.ok(urlIklanAman("https://x.example/" + "a".repeat(500)).length <= 200);
+});
+
+test("ctwaDetail: query URL (yang bisa memuat clid) tidak ikut tersimpan/ter-log", () => {
+  const ctwa = { clid: CLID_BOCOR, app: "facebook", sourceUrl: `https://www.instagram.com/p/DXWbO-EAOeT/?ctwa_clid=${CLID_BOCOR}` };
+  const d = ctwaDetail(ctwa);
+  assert.equal(d, "Meta CTWA - facebook - instagram.com/p/DXWbO-EAOeT");
+  assert.ok(!d.includes(CLID_BOCOR.slice(0, 8)));
+});
+
+test("legacyAdContextDetail: objek mentah TIDAK PERNAH diserialisasi", () => {
+  const dariClid = legacyAdContextDetail({ ctwa_clid: CLID_BOCOR, ctwaClid: CLID_BOCOR, lainnya: "x" });
+  assert.equal(dariClid, DETAIL_TETAP);
+  assert.ok(!dariClid.includes(CLID_BOCOR.slice(0, 8)) && !dariClid.includes("{"));
+
+  assert.equal(legacyAdContextDetail("FB_Ads"), DETAIL_TETAP);
+  assert.equal(legacyAdContextDetail(null), DETAIL_TETAP);
+  assert.equal(legacyAdContextDetail({ sourceUrl: `https://fb.me/abc123?ctwa_clid=${CLID_BOCOR}` }), "fb.me/abc123");
+  assert.equal(legacyAdContextDetail({ sourceURL: "https://www.instagram.com/p/AAAA1111/" }), "instagram.com/p/AAAA1111");
+  assert.equal(legacyAdContextDetail({ headline: "  Kasur sehat untuk pinggang  ", ctwa_clid: CLID_BOCOR }), "Kasur sehat untuk pinggang");
+  assert.ok(legacyAdContextDetail({ headline: "h".repeat(500) }).length <= 120);
+});
+
+test("guard statis: webhooks.js tidak lagi men-log/serialisasi potongan clid", () => {
+  const src = fs.readFileSync(new URL("../src/routes/webhooks.js", import.meta.url), "utf8");
+  assert.ok(!/clid[^\n]*\.slice\(/i.test(src), "ada .slice() pada clid di webhooks.js");
+  assert.ok(!/JSON\.stringify\(\s*ctwa/.test(src), "objek konteks CTWA diserialisasi di webhooks.js");
+  const barisLog = src.split(/\r?\n/).filter((l) => /console\.(log|warn|error)/.test(l) && /(\.clid|ctwaClid|ctwa_clid)/.test(l));
+  for (const l of barisLog) assert.ok(l.includes("ctwa.clid ? "), "log memuat nilai clid: " + l.trim());
+});
