@@ -382,7 +382,7 @@ export function statusTagihanEfektif(bill, totalTeralokasi) {
 export async function recomputeBillStatus(tx, billId) {
   const bill = await tx.finSupplierBill.findUnique({
     where: { id: billId },
-    select: { id: true, amount: true, status: true },
+    select: { id: true, amount: true, status: true, creditApplied: true },
   });
   if (!bill) return null;
 
@@ -391,7 +391,11 @@ export async function recomputeBillStatus(tx, billId) {
     select: { amount: true },
   });
   const total = alokasi.length === 0 ? ZERO : sumMoney(alokasi.map((a) => a.amount));
-  const status = statusTagihanEfektif(bill, total);
+  // Debit note / saldo kredit ikut MELUNASI (tanpa uang keluar), tetapi "Dibayar Sebagian" tetap berarti ada uang yang benar-benar dibayar:
+  // lunas bila uang + kredit ≥ nilai; selain itu mengikuti uang yang benar-benar keluar saja.
+  const kredit = toMoney(bill.creditApplied ?? 0);
+  const lunas = total.plus(kredit).greaterThanOrEqualTo(toMoney(bill.amount));
+  const status = lunas && !["DRAFT", "MENUNGGU_APPROVAL", "DITOLAK", "DIBATALKAN"].includes(bill.status) ? "LUNAS" : statusTagihanEfektif(bill, total);
 
   if (status !== bill.status) {
     await tx.finSupplierBill.update({ where: { id: billId }, data: { status } });

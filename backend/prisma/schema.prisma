@@ -5125,6 +5125,7 @@ enum StockMovementType {
   WASTE // terbuang/rusak, WAJIB alasan
   ADJUSTMENT // hasil stock opname, WAJIB alasan (FR-I-06)
   TRANSFER // Warehouse Tahap 4 — perpindahan antar StorageLocation, dua baris per StockTransfer (keluar+masuk), net 0 di saldo total
+  SUPPLIER_RETURN // Retur Supplier untuk kredit: barang KELUAR gudang ke supplier (qty negatif); pembatalan retur = pergerakan balik (qty positif)
 }
 
 // Katalog material — BUKAN ledger, boleh diedit (nama, status aktif).
@@ -5150,6 +5151,7 @@ enum MaterialCategory {
 }
 
 model Material {
+  supplierReturnLines SupplierReturnLine[]
   id          String       @id @default(uuid()) @db.Uuid
   code        String       @unique // mis. "FOAM-HR-D44-5CM", "FABRIC-KNIT-QUILT"
   name        String
@@ -5473,6 +5475,7 @@ model GoodsReceiptLine {
 
   // Pengiriman PENGGANTI: baris ini menggantikan barang yang DITOLAK pada baris penerimaan asal (NULL = pengiriman biasa). Pengganti tidak menaikkan batas PO:
   // jumlahnya dibatasi sisa penolakan baris asal dan tidak dihitung sebagai pasokan baru terhadap jumlah dipesan.
+  returnLines          SupplierReturnLine[]
   replacementForLineId String?            @map("replacement_for_line_id") @db.Uuid
   replacementForLine   GoodsReceiptLine?  @relation("PenggantiBaris", fields: [replacementForLineId], references: [id], onDelete: Restrict)
   replacementLines     GoodsReceiptLine[] @relation("PenggantiBaris")
@@ -6965,6 +6968,8 @@ enum FinJournalSource {
   PENJUALAN_KARYAWAN // Penjualan Karyawan (input manual di luar Order): Dr Piutang Karyawan / Cr Pendapatan Penjualan Karyawan; lihat posting/penjualanKaryawan.js
   PEMBAYARAN_PENJUALAN_KARYAWAN // pelunasan penjualan karyawan: Dr Kas/Bank / Cr Piutang Karyawan, atau potong gaji Dr Beban Gaji / Cr Piutang Karyawan
   PERSEDIAAN_AWAL // B3.6 — penutupan stok periodik → persediaan awal perpetual dari stok opname fisik (FinInventoryOpening)
+  RETUR_SUPPLIER // Retur Supplier: barang keluar gudang — Dr Utang Barang Belum Ditagih / Cr Persediaan Bahan Baku (lihat services/finance/returSupplier.js)
+  DEBIT_NOTE_SUPPLIER // Debit Note Supplier disetujui: Dr Utang Usaha / Cr Utang Barang Belum Ditagih (± Selisih Harga) — mengurangi utang faktur yang SUDAH disetujui
 }
 
 // ── JURNAL UMUM (header) ──────────────────────────────────────────────────
@@ -7285,6 +7290,9 @@ model FinPurchaseCategory {
 // OPSIONAL per tagihan (FinSupplierBill.goodsReceiptId), bukan dengan
 // memigrasikan seluruh riwayat string yang ejaannya belum tentu konsisten.
 model FinSupplier {
+  supplierReturns SupplierReturn[]
+  debitNotes      FinSupplierDebitNote[]
+  credits         FinSupplierCredit[]
   id      String   @id @default(uuid()) @db.Uuid
   code    String   @unique // "SUP-001"
   name    String
@@ -7439,6 +7447,12 @@ model FinSupplierBill {
   poReceipts    FinSupplierBillPoReceipt[]
   poAllocations FinSupplierBillAllocation[]
 
+  // Retur Supplier & Debit Note: bagian nilai faktur yang sudah DIKURANGI oleh debit note disetujui dan pemakaian saldo kredit (dijaga di bawah kunci baris;
+  // sisa utang = amount − pembayaran aktif − creditApplied). Nilai faktur (amount) TIDAK pernah diubah. Default 0 = faktur lama tidak berubah.
+  creditApplied        Decimal                       @default(0) @map("credit_applied") @db.Decimal(18, 2)
+  debitNoteLines       FinSupplierDebitNoteLine[]
+  creditApplications   FinSupplierCreditApplication[]
+
   @@index([supplierId, status])
   @@index([dueDate])
   @@index([status])
@@ -7461,6 +7475,7 @@ enum FinPurchaseOrderStatus {
 }
 
 model FinPurchaseOrder {
+  supplierReturns SupplierReturn[]
   id       String @id @default(uuid()) @db.Uuid
   poNumber String @unique @map("po_number") // PO-DDMMYYYY-NNN (generateDocumentNumber, urut per bulan)
 
@@ -7504,6 +7519,7 @@ model FinPurchaseOrder {
 }
 
 model FinPurchaseOrderLine {
+  returnLines SupplierReturnLine[]
   id              String           @id @default(uuid()) @db.Uuid
   purchaseOrderId String           @map("purchase_order_id") @db.Uuid
   purchaseOrder   FinPurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
@@ -10277,4 +10293,172 @@ model ProductionBuildMaterialRecord {
 
   @@unique([runId, version])
   @@map("production_build_material_records_v2")
+}
+
+// ─── RETUR SUPPLIER & DEBIT NOTE (Okt 2026) ─────────────────────────────────
+// Dua keputusan untuk barang bermasalah: (1) MINTA PENGGANTI = alur penolakan + pengiriman pengganti PO (TIDAK ada dokumen di sini, nilai tagihan tidak berubah);
+// (2) RETUR UNTUK KREDIT = dokumen di bawah. Gudang mencatat kondisi & pergerakan fisik; Finance melihat nilai, menyetujui Debit Note, mengalokasikan saldo kredit.
+// Faktur disetujui TIDAK diubah: utang dikurangi lewat Debit Note (jurnal tertaut); faktur lunas → saldo kredit supplier (tanpa refund kas otomatis).
+
+model SupplierReturn {
+  id            String   @id @default(uuid()) @db.Uuid
+  returnNumber  String   @unique @map("return_number") // RTS-DDMMYYYY-NNN
+  supplierId    String   @map("supplier_id") @db.Uuid
+  supplier      FinSupplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  purchaseOrderId String @map("purchase_order_id") @db.Uuid
+  purchaseOrder FinPurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+
+  decision      String   @default("KREDIT") @db.VarChar(20) // hanya KREDIT; "minta pengganti" memakai alur penolakan PO
+  status        String   @default("DRAFT") @db.VarChar(20) // DRAFT | KELUAR | SELESAI | DIBATALKAN
+  reasonCode    String   @map("reason_code") @db.VarChar(30)
+  reason        String
+  evidenceUrls  String[] @default([]) @map("evidence_urls")
+  note          String?
+  returnDate    DateTime? @map("return_date") @db.Date // tanggal barang keluar (tanggal buku jurnal)
+
+  createdById   String?  @map("created_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  dispatchedById String? @map("dispatched_by")
+  dispatchedAt  DateTime? @map("dispatched_at")
+  dispatchPic   String?  @map("dispatch_pic") // PIC yang menyerahkan / mengirim barang ke supplier
+  dispatchNote  String?  @map("dispatch_note")
+  dispatchProofUrls String[] @default([]) @map("dispatch_proof_urls")
+  cancelledById String?  @map("cancelled_by")
+  cancelledAt   DateTime? @map("cancelled_at")
+  cancelReason  String?  @map("cancel_reason")
+
+  lines      SupplierReturnLine[]
+  debitNotes FinSupplierDebitNote[]
+
+  @@index([supplierId, status])
+  @@index([purchaseOrderId])
+  @@index([status])
+  @@map("supplier_returns")
+}
+
+model SupplierReturnLine {
+  id           String   @id @default(uuid()) @db.Uuid
+  returnId     String   @map("return_id") @db.Uuid
+  supplierReturn SupplierReturn @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  goodsReceiptLineId String @map("goods_receipt_line_id") @db.Uuid
+  goodsReceiptLine   GoodsReceiptLine @relation(fields: [goodsReceiptLineId], references: [id], onDelete: Restrict)
+  purchaseOrderLineId String @map("purchase_order_line_id") @db.Uuid
+  purchaseOrderLine   FinPurchaseOrderLine @relation(fields: [purchaseOrderLineId], references: [id], onDelete: Restrict)
+  materialId   String   @map("material_id") @db.Uuid
+  material     Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
+
+  qty          Decimal  @db.Decimal(14, 3)
+  condition    String?
+  note         String?
+
+  // Dibekukan saat barang KELUAR (di bawah kunci PO): bagian yang belum ditagih (mengurangi jumlah yang boleh ditagih) dan yang sudah ditagih (→ Debit Note).
+  qtyUnbilled  Decimal? @map("qty_unbilled") @db.Decimal(14, 3)
+  qtyBilled    Decimal? @map("qty_billed") @db.Decimal(14, 3)
+  unitCost     Decimal? @map("unit_cost") @db.Decimal(24, 8)
+  stockValue   Decimal? @map("stock_value") @db.Decimal(18, 2)
+  stockValueBilled Decimal? @map("stock_value_billed") @db.Decimal(18, 2)
+  stockMovementId  String? @map("stock_movement_id") @db.Uuid
+  reversalMovementId String? @map("reversal_movement_id") @db.Uuid
+
+  debitNoteLines FinSupplierDebitNoteLine[]
+
+  @@index([returnId])
+  @@index([goodsReceiptLineId])
+  @@index([purchaseOrderLineId])
+  @@map("supplier_return_lines")
+}
+
+model FinSupplierDebitNote {
+  id          String   @id @default(uuid()) @db.Uuid
+  debitNumber String   @unique @map("debit_number") // DN-DDMMYYYY-NNN
+  supplierId  String   @map("supplier_id") @db.Uuid
+  supplier    FinSupplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  returnId    String   @map("return_id") @db.Uuid
+  supplierReturn SupplierReturn @relation(fields: [returnId], references: [id], onDelete: Restrict)
+
+  status      String   @default("MENUNGGU") @db.VarChar(20) // MENUNGGU | DISETUJUI | DIBATALKAN
+  amount      Decimal  @db.Decimal(18, 2) // nilai pengurang utang (jumlah × harga FAKTUR)
+  stockValue  Decimal  @map("stock_value") @db.Decimal(18, 2) // nilai persediaan bagian yang sudah ditagih (penutup GRNI)
+
+  createdById String?  @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  approvedById String? @map("approved_by")
+  approvedAt  DateTime? @map("approved_at")
+  approvalNote String? @map("approval_note")
+  cancelledById String? @map("cancelled_by")
+  cancelledAt DateTime? @map("cancelled_at")
+  cancelReason String? @map("cancel_reason")
+
+  lines   FinSupplierDebitNoteLine[]
+  credit  FinSupplierCredit?
+
+  @@index([supplierId, status])
+  @@index([returnId])
+  @@map("fin_supplier_debit_notes")
+}
+
+model FinSupplierDebitNoteLine {
+  id           String   @id @default(uuid()) @db.Uuid
+  debitNoteId  String   @map("debit_note_id") @db.Uuid
+  debitNote    FinSupplierDebitNote @relation(fields: [debitNoteId], references: [id], onDelete: Cascade)
+  returnLineId String   @map("return_line_id") @db.Uuid
+  returnLine   SupplierReturnLine @relation(fields: [returnLineId], references: [id], onDelete: Restrict)
+  billId       String   @map("bill_id") @db.Uuid
+  bill         FinSupplierBill @relation(fields: [billId], references: [id], onDelete: Restrict)
+  goodsReceiptLineId String @map("goods_receipt_line_id") @db.Uuid
+
+  qty          Decimal  @db.Decimal(14, 3)
+  invoiceUnitPrice Decimal @map("invoice_unit_price") @db.Decimal(18, 2)
+  amount       Decimal  @db.Decimal(18, 2)
+  stockValue   Decimal  @map("stock_value") @db.Decimal(18, 2)
+  // Diisi saat DISETUJUI: sebagian mengurangi sisa utang faktur, selebihnya (faktur sudah dibayar) menjadi saldo kredit supplier.
+  appliedToBill Decimal @default(0) @map("applied_to_bill") @db.Decimal(18, 2)
+  creditAmount  Decimal @default(0) @map("credit_amount") @db.Decimal(18, 2)
+
+  @@index([debitNoteId])
+  @@index([billId])
+  @@index([goodsReceiptLineId])
+  @@map("fin_supplier_debit_note_lines")
+}
+
+model FinSupplierCredit {
+  id          String   @id @default(uuid()) @db.Uuid
+  supplierId  String   @map("supplier_id") @db.Uuid
+  supplier    FinSupplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  debitNoteId String   @unique @map("debit_note_id") @db.Uuid
+  debitNote   FinSupplierDebitNote @relation(fields: [debitNoteId], references: [id], onDelete: Restrict)
+  amount      Decimal  @db.Decimal(18, 2)
+  usedAmount  Decimal  @default(0) @map("used_amount") @db.Decimal(18, 2)
+  status      String   @default("AKTIF") @db.VarChar(20) // AKTIF | DIBATALKAN
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  cancelledAt DateTime? @map("cancelled_at")
+
+  applications FinSupplierCreditApplication[]
+
+  @@index([supplierId, status])
+  @@map("fin_supplier_credits")
+}
+
+model FinSupplierCreditApplication {
+  id         String   @id @default(uuid()) @db.Uuid
+  creditId   String   @map("credit_id") @db.Uuid
+  credit     FinSupplierCredit @relation(fields: [creditId], references: [id], onDelete: Restrict)
+  billId     String   @map("bill_id") @db.Uuid
+  bill       FinSupplierBill @relation(fields: [billId], references: [id], onDelete: Restrict)
+  supplierId String   @map("supplier_id") @db.Uuid
+  amount     Decimal  @db.Decimal(18, 2)
+  status     String   @default("AKTIF") @db.VarChar(20) // AKTIF | DIBATALKAN
+  note       String?
+  appliedById String? @map("applied_by")
+  appliedAt  DateTime @default(now()) @map("applied_at")
+  cancelledById String? @map("cancelled_by")
+  cancelledAt DateTime? @map("cancelled_at")
+  cancelReason String? @map("cancel_reason")
+
+  @@index([creditId])
+  @@index([billId])
+  @@map("fin_supplier_credit_applications")
 }

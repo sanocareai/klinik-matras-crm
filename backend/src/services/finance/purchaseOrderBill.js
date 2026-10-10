@@ -58,6 +58,13 @@ export async function muatKonteks(tx, poId, { kecualiBillId = null } = {}) {
     : [];
   const klaim = new Map();
   for (const a of alokasi) klaim.set(a.goodsReceiptLineId, (klaim.get(a.goodsReceiptLineId) ?? 0) + k(a.qty));
+  // Retur Supplier untuk kredit yang SUDAH keluar gudang: bagian yang belum ditagih saat keluar mengurangi jumlah yang boleh ditagih (sebelum faktur disetujui).
+  // Bagian yang sudah ditagih ditangani Debit Note (faktur lama tidak diubah), jadi tidak dikurangkan lagi di sini.
+  const retur = new Map();
+  if (ids.length) {
+    const rl = await tx.supplierReturnLine.findMany({ where: { goodsReceiptLineId: { in: ids }, supplierReturn: { status: { in: ["KELUAR", "SELESAI"] } } }, select: { goodsReceiptLineId: true, qtyUnbilled: true } });
+    for (const r of rl) retur.set(r.goodsReceiptLineId, (retur.get(r.goodsReceiptLineId) ?? 0) + k(r.qtyUnbilled ?? 0));
+  }
 
   const hasil = baris.map((b) => {
     const diterimaK = k(b.acceptedQty);
@@ -68,7 +75,7 @@ export async function muatKonteks(tx, poId, { kecualiBillId = null } = {}) {
       receiptId: b.goodsReceipt.id, receiptNumber: b.goodsReceipt.receiptNumber,
       tanggalTiba: b.goodsReceipt.arrivedDate, statusPenerimaan: b.goodsReceipt.status,
       urut: `${(b.goodsReceipt.arrivedDate ?? b.goodsReceipt.receivedDate ?? b.goodsReceipt.createdAt).toISOString()}|${b.goodsReceipt.receiptNumber}|${b.id}`,
-      diterimaK, diklaimK, tersediaK: diterimaK - diklaimK, ditagihLama: lama,
+      diterimaK, diklaimK, returK: retur.get(b.id) ?? 0, tersediaK: Math.max(0, diterimaK - diklaimK - (retur.get(b.id) ?? 0)), ditagihLama: lama,
     };
   });
   hasil.sort((a, b) => (a.urut < b.urut ? -1 : 1));
@@ -303,7 +310,8 @@ async function jadwalFakturUntukEvaluasi(tx, { bill, konteks, terpilih, masukBuk
     alokasi = rencana.map((a) => ({ billPoLineId: a.billPoLineId, receiptId: a.goodsReceiptId, receiptNumber: a.receiptNumber, tanggalTiba: info.get(a.goodsReceiptId)?.tanggalTiba ?? null, status: info.get(a.goodsReceiptId)?.statusPenerimaan ?? "COMPLETED", qty: dariK(a.qtyK) }));
   }
   const bayar = await tx.finSupplierPaymentAllocation.findMany({ where: { billId: bill.id, payment: { cancelledAt: null } }, select: { amount: true } });
-  const jadwal = jadwalDariFaktur({ bill, alokasi, dibayar: sumMoney(bayar.map((x) => x.amount)), hariIni: todayBookDateWIB().toISOString().slice(0, 10) });
+  const kreditFaktur = toMoney((await tx.finSupplierBill.findUnique({ where: { id: bill.id }, select: { creditApplied: true } }))?.creditApplied ?? 0);
+  const jadwal = jadwalDariFaktur({ bill, alokasi, dibayar: sumMoney(bayar.map((x) => x.amount)).plus(kreditFaktur), hariIni: todayBookDateWIB().toISOString().slice(0, 10) });
   return (jadwal ?? []).map((j) => ({
     penerimaanId: j.receiptId, nomorPenerimaan: j.receiptNumber, tanggalTiba: j.tanggalTiba, jatuhTempo: j.jatuhTempo, nilai: moneyToNumber(j.nilai), dibayar: moneyToNumber(j.dibayar), sisa: moneyToNumber(j.sisa),
     status: j.status, statusLabel: j.statusLabel, terlambat: j.terlambat,

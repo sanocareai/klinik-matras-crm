@@ -348,13 +348,13 @@ async function sisaUtangSupplier(db, supplierIds) {
   if (!supplierIds.length) return new Map();
   const bills = await db.finSupplierBill.findMany({
     where: { supplierId: { in: supplierIds }, status: { in: ["DISETUJUI", "DIBAYAR_SEBAGIAN"] } },
-    select: { supplierId: true, amount: true, allocations: { where: { payment: { cancelledAt: null } }, select: { amount: true } } },
+    select: { supplierId: true, amount: true, creditApplied: true, allocations: { where: { payment: { cancelledAt: null } }, select: { amount: true } } },
   });
   const peta = new Map();
   for (const b of bills) {
     const bayar = b.allocations.length ? sumMoney(b.allocations.map((a) => a.amount)) : ZERO;
     const cur = peta.get(b.supplierId) ?? { sisa: ZERO, jumlah: 0 };
-    cur.sisa = cur.sisa.plus(toMoney(b.amount).minus(bayar));
+    cur.sisa = cur.sisa.plus(toMoney(b.amount).minus(bayar).minus(toMoney(b.creditApplied ?? 0)));
     cur.jumlah += 1;
     peta.set(b.supplierId, cur);
   }
@@ -431,13 +431,13 @@ export async function daftarTransaksi(db, user, modul, opsi = {}) {
     items = baris.map((b) => normalTagihan(b, user));
     const terbuka = await db.finSupplierBill.findMany({
       where: { status: { in: ["DISETUJUI", "DIBAYAR_SEBAGIAN"] } },
-      select: { amount: true, dueDate: true, billDate: true, allocations: { where: { payment: { cancelledAt: null } }, select: { amount: true } } },
+      select: { amount: true, creditApplied: true, dueDate: true, billDate: true, allocations: { where: { payment: { cancelledAt: null } }, select: { amount: true } } },
     });
     let total = ZERO;
     let lewat = ZERO;
     let nLewat = 0;
     for (const b of terbuka) {
-      const s = toMoney(b.amount).minus(b.allocations.length ? sumMoney(b.allocations.map((a) => a.amount)) : ZERO);
+      const s = toMoney(b.amount).minus(b.allocations.length ? sumMoney(b.allocations.map((a) => a.amount)) : ZERO).minus(toMoney(b.creditApplied ?? 0));
       total = total.plus(s);
       if (umurDari(b.dueDate ?? b.billDate) > 0) { lewat = lewat.plus(s); nLewat += 1; }
     }
@@ -674,7 +674,7 @@ export async function detailTransaksi(db, user, modul, id) {
         bagian("Supplier", [B("Kode", doc.code), B("Nama", doc.name), B("Telepon", doc.phone), B("Email", doc.email), B("Alamat", doc.address), B("Termin pembayaran", doc.paymentTermDays ? `${doc.paymentTermDays} hari` : null), B("Catatan", doc.notes)]),
         bagian("Rekening supplier", [B("Bank", doc.bankName), B("Nomor rekening", doc.bankAccount), B("Atas nama", doc.bankHolder)]),
         bagian("Utang terbuka", terbuka.map((b) => {
-          const s = toMoney(b.amount).minus(b.allocations.length ? sumMoney(b.allocations.map((a) => a.amount)) : ZERO);
+          const s = toMoney(b.amount).minus(b.allocations.length ? sumMoney(b.allocations.map((a) => a.amount)) : ZERO).minus(toMoney(b.creditApplied ?? 0));
           return B(`${b.billNumber} · jatuh tempo ${tgl(b.dueDate) ?? "—"}`, uang(s), "uang", { modul: "tagihan", id: b.id });
         })),
         bagian("Pembayaran terakhir", histori.map((p) => B(`${p.paymentNumber} · ${tgl(p.date)}`, uang(p.amount), "uang", { modul: "pembayaran-supplier", id: p.id }))),

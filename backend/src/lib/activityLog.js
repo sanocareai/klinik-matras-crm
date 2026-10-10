@@ -51,6 +51,8 @@ export const ENTITY_TYPES = Object.freeze({
   // Pembayaran pelanggan (Finance Mobile S5): verifikasi & penolakan Payment.
   PAYMENT: "payment",
   FIN_SUPPLIER_BILL: "fin_supplier_bill",
+  SUPPLIER_RETURN: "supplier_return", // Retur Supplier untuk kredit (Okt 2026)
+  FIN_SUPPLIER_DEBIT_NOTE: "fin_supplier_debit_note", // Debit Note supplier (Okt 2026)
   FIN_SUPPLIER: "fin_supplier", // master supplier: perubahan data (nama/kontak/rekening/termin/status) — 7 Okt 2026
   FIN_REFUND: "fin_refund",
   FIN_PERIOD: "fin_period",

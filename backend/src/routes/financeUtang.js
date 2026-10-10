@@ -69,7 +69,7 @@ financeUtangRouter.put("/bills/:id/jadwal-bayar", requirePermission(P.FINANCE_PO
       await lockRowForUpdate(tx, '"fin_supplier_bills"', req.params.id);
       const bill = await tx.finSupplierBill.findUnique({
         where: { id: req.params.id },
-        select: { id: true, billNumber: true, status: true, amount: true, scheduledPayDate: true, allocations: { where: { payment: { cancelledAt: null } }, select: { amount: true } } },
+        select: { id: true, billNumber: true, status: true, amount: true, creditApplied: true, scheduledPayDate: true, allocations: { where: { payment: { cancelledAt: null } }, select: { amount: true } } },
       });
       if (!bill) throw galat("Faktur tidak ditemukan", 404);
       if (!STATUS_FAKTUR_AGING.includes(bill.status) || bill.status === "LUNAS") throw galat(`Faktur berstatus ${bill.status} — jadwal bayar hanya untuk faktur yang sudah disetujui dan belum lunas`, 409);
