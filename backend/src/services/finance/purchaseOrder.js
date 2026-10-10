@@ -452,9 +452,9 @@ function bentukBaris(l, q, { harga, progres }) {
       nilaiDiterima: nilaiK(k(q.diterimaBaik)),
       nilaiDitagih: nilaiK(k(q.ditagih)),
       nilaiBelumMasukStok: progres ? nilaiK(k(progres.belumMasukStok)) : 0,
-      // Retur Supplier untuk kredit (menurut harga PO, sama dengan nilai masuk stok): bruto − retur = stok bersih.
+      // Retur Supplier untuk kredit (menurut harga PO, sama dengan nilai masuk stok): bruto − retur = diterima bersih dari PO.
       nilaiDiretur: progres ? nilaiK(k(progres.diretur)) : 0,
-      nilaiStokBersih: progres ? nilaiK(k(progres.stokBersih)) : 0,
+      nilaiDiterimaBersih: progres ? nilaiK(k(progres.diterimaBersih)) : 0,
     }),
   };
 }
@@ -487,7 +487,7 @@ export async function bentukPO(tx, id, { harga = true, denganPenerimaan = true }
     progres: ringkasProgresPO(lines.map((l) => ({ satuan: l.satuan, ...l.progres }))), progresDefinisi: DEFINISI_PROGRES,
     // Termin hanya untuk Finance (Gudang tidak melihat harga/utang). Snapshot dokumen — tidak berubah bila master supplier diubah.
     ...(harga && { termin: po.termType ? { jenis: po.termType, hari: po.termDays, label: labelTermin(po.termType, po.termDays), sumber: po.termSource, alasan: po.termOverrideReason, olehId: po.termSetById, pada: po.termSetAt } : null }),
-    ...(harga && { totalDipesan: total("nilaiDipesan"), totalDiterima: total("nilaiDiterima"), totalDitagih: total("nilaiDitagih"), totalBelumMasukStok: total("nilaiBelumMasukStok"), totalDiretur: total("nilaiDiretur"), totalStokBersih: total("nilaiStokBersih") }),
+    ...(harga && { totalDipesan: total("nilaiDipesan"), totalDiterima: total("nilaiDiterima"), totalDitagih: total("nilaiDitagih"), totalBelumMasukStok: total("nilaiBelumMasukStok"), totalDiretur: total("nilaiDiretur"), totalDiterimaBersih: total("nilaiDiterimaBersih") }),
   };
 
   if (denganPenerimaan) {

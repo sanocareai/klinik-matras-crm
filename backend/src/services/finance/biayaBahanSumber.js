@@ -168,7 +168,7 @@ export async function bacaJejakPenerimaan(db, receiptId, { izinHarga = false } =
     return {
       materialId: l.materialId, kode: l.material.code, nama: l.material.name, satuan: l.material.unit,
       dipesan: l.orderedQty, diterima: l.receivedQty, baik: l.acceptedQty, ditolak: l.rejectedQty, masukStok: Number(masukStok),
-      returSupplier: Number(returSupplier.toDecimalPlaces(4)), stokBersih: Number(masukStok.minus(returSupplier).toDecimalPlaces(4)),
+      returSupplier: Number(returSupplier.toDecimalPlaces(4)), diterimaBersih: Number(masukStok.minus(returSupplier).toDecimalPlaces(4)),
       dipakaiProduksi: Number(b.dipakai.toDecimalPlaces(4)), waste: Number(b.waste.toDecimalPlaces(4)), returDiterima: Number(b.retur.toDecimalPlaces(4)),
       tersisa: Number(tersisa.toDecimalPlaces(4)),
       nilaiDipakai: izinHarga ? uang(b.nilaiDipakai) : null,

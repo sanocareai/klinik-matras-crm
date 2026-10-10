@@ -43,6 +43,7 @@ export const LABEL_STATUS_RETUR = Object.freeze({ DRAFT: "Draf — barang belum 
 export const LABEL_STATUS_DN = Object.freeze({ MENUNGGU: "Menunggu persetujuan Finance", DISETUJUI: "Disetujui", DIBATALKAN: "Dibatalkan" });
 
 const STATUS_KELUAR = ["KELUAR", "SELESAI"];
+const STATUS_RETUR_AKTIF = ["DRAFT", "KELUAR", "SELESAI"]; // retur yang belum dibatalkan: draf (rencana) maupun barang sudah keluar
 const STATUS_MASUK_BUKU = ["DISETUJUI", "DIBAYAR_SEBAGIAN", "LUNAS"];
 const STATUS_DN_AKTIF = ["MENUNGGU", "DISETUJUI"];
 const k = (v) => Math.round(Number(v ?? 0) * 1000);
@@ -57,6 +58,26 @@ export function aktorDariSesi(user, workspace, roles) {
 }
 
 // ── Kapasitas & blokir per baris penerimaan ─────────────────────────────
+
+/**
+ * KONTRAK UNTUK ALUR KOREKSI PENERIMAAN (belum ada di repo per 10 Okt 2026; lihat docs/RETUR-SUPPLIER-DEBIT-NOTE.md).
+ * Panggil SEBELUM mengubah jumlah/material/PO baris penerimaan yang sudah masuk stok. Baris yang punya Retur Supplier aktif (draf, barang sudah keluar, selesai)
+ * TIDAK boleh dikoreksi: jumlah retur, stok, GRNI, dan Debit Note bertumpu pada jumlah baik yang tercatat. Jalan yang benar: batalkan retur dulu, lalu koreksi.
+ * Pagar terakhir di basis data (trigger trg_goods_receipt_line_terkunci_retur) hanya menolak untuk retur yang barangnya sudah keluar dan pesannya teknis —
+ * fungsi ini memberi penolakan 409 yang jelas (kode RETUR_AKTIF) termasuk untuk retur draf.
+ */
+export async function pastikanTanpaReturAktif(db, { goodsReceiptId = null, goodsReceiptLineId = null } = {}) {
+  if (!goodsReceiptId && !goodsReceiptLineId) throw new Error("pastikanTanpaReturAktif butuh goodsReceiptId atau goodsReceiptLineId");
+  const baris = await db.supplierReturnLine.findMany({
+    where: { supplierReturn: { status: { in: STATUS_RETUR_AKTIF } }, ...(goodsReceiptLineId ? { goodsReceiptLineId } : { goodsReceiptLine: { goodsReceiptId } }) },
+    select: { qty: true, supplierReturn: { select: { returnNumber: true, status: true } }, goodsReceiptLine: { select: { goodsReceipt: { select: { receiptNumber: true } }, material: { select: { code: true, unit: true } } } } },
+    orderBy: { id: "asc" },
+  });
+  if (baris.length === 0) return;
+  const daftar = baris.map((b) => `${b.supplierReturn.returnNumber} (${LABEL_STATUS_RETUR[b.supplierReturn.status] ?? b.supplierReturn.status}; ${Number(b.qty)} ${b.goodsReceiptLine.material?.unit ?? ""} ${b.goodsReceiptLine.material?.code ?? ""})`.replace(/\s+/g, " "));
+  const nomor = baris[0].goodsReceiptLine.goodsReceipt.receiptNumber;
+  throw gagal(`Penerimaan ${nomor} punya Retur Supplier aktif: ${[...new Set(daftar)].join("; ")}. Batalkan retur itu dulu (Gudang), baru koreksi penerimaan ini.`, 409, "RETUR_AKTIF", { retur: [...new Set(baris.map((b) => b.supplierReturn.returnNumber))] });
+}
 
 /** Jumlah retur AKTIF (barang sudah keluar) pada satu baris penerimaan. Dipakai juga oleh alur koreksi penerimaan untuk tahu batas bawah jumlah baik. */
 export async function qtyReturAktif(db, goodsReceiptLineId) {

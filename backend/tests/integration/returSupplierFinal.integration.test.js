@@ -1,7 +1,7 @@
 // RETUR SUPPLIER — FINALISASI SEBELUM MERGE (Okt 2026). Empat temuan review, masing-masing dikunci terhadap PostgreSQL sungguhan:
 // (1) JURNAL LENGKAP saat harga PO ≠ harga faktur: persediaan, GRNI, utang, Selisih Harga seimbang TANPA residual (sebelum & sesudah faktur, dibayar sebagian, lunas);
 // (2) AUDIT FIFO: sistem memakai rata-rata tertimbang tanpa lot → asal stok tercampur TIDAK pasti → kasus terburuk diblokir dengan pesan jelas; kolam satu-sumber tetap pasti;
-// (3) PROGRES: masuk stok (bruto) · diretur · stok bersih terpisah (Finance & Gudang, satu definisi);
+// (3) PROGRES: masuk stok (bruto) · diretur · diterima bersih dari PO terpisah (Finance & Gudang, satu definisi);
 // (4) GERBANG REKONSILIASI + pembatalan pemakaian saldo kredit yang diaudit.
 import "./setup/env.js";
 import test from "node:test";
@@ -305,48 +305,48 @@ test("PENERIMAAN belum dibukukan ke Persediaan: retur diblokir (PENERIMAAN_BELUM
 });
 
 // ═══ 3. PROGRES: bruto · retur · bersih ═══
-test("PROGRES stok: masuk stok (bruto), diretur, stok bersih terpisah di Finance & Gudang; retur tidak membuka lagi 'belum dipenuhi supplier'; draf tidak dihitung", async () => {
+test("PROGRES stok: masuk stok (bruto), diretur, diterima bersih dari PO terpisah di Finance & Gudang; retur tidak membuka lagi 'belum dipenuhi supplier'; draf tidak dihitung", async () => {
   const w = await dunia();
   const po = await poDisetujui(w, { qty: 10 });
   const a = await terimaDanSimpan(w, po, 5, { tanggal: geser(-8) });
   await terimaDanSimpan(w, po, 5, { tanggal: geser(-3) });
-  const angka = (l) => ({ masukStok: l.masukStok, diretur: l.diretur, stokBersih: l.stokBersih, belumDatang: l.belumDatang, belumDipenuhiSupplier: l.belumDipenuhiSupplier, belumMasukStok: l.belumMasukStok });
+  const angka = (l) => ({ masukStok: l.masukStok, diretur: l.diretur, diterimaBersih: l.diterimaBersih, belumDatang: l.belumDatang, belumDipenuhiSupplier: l.belumDipenuhiSupplier, belumMasukStok: l.belumMasukStok });
   const baca = async () => {
     const [g, p] = await Promise.all([w.g.get(`/api/inventory/barang-akan-datang/${po.id}`), w.f.get(`/api/finance/purchase-orders/${po.id}`)]);
     assert.equal(g.status, 200); assert.equal(p.status, 200, JSON.stringify(p.body));
     return { g: g.body, f: p.body.kedatangan, p: p.body };
   };
   let s = await baca();
-  assert.deepEqual(angka(s.g.lines[0]), { masukStok: 10, diretur: 0, stokBersih: 10, belumDatang: 0, belumDipenuhiSupplier: 0, belumMasukStok: 0 });
+  assert.deepEqual(angka(s.g.lines[0]), { masukStok: 10, diretur: 0, diterimaBersih: 10, belumDatang: 0, belumDipenuhiSupplier: 0, belumMasukStok: 0 });
 
   const draf = (await buatRetur(w, a.lineId, 2)).body;
   s = await baca();
-  assert.equal(s.g.lines[0].diretur, 0, "draf (barang belum keluar) tidak mengurangi stok bersih");
+  assert.equal(s.g.lines[0].diretur, 0, "draf (barang belum keluar) tidak mengurangi diterima bersih dari PO");
 
   assert.equal((await keluar(w, draf.returnId)).status, 200);
   s = await baca();
-  const mau = { masukStok: 10, diretur: 2, stokBersih: 8, belumDatang: 0, belumDipenuhiSupplier: 0, belumMasukStok: 0 };
+  const mau = { masukStok: 10, diretur: 2, diterimaBersih: 8, belumDatang: 0, belumDipenuhiSupplier: 0, belumMasukStok: 0 };
   assert.deepEqual(angka(s.g.lines[0]), mau, "Gudang");
   assert.deepEqual(angka(s.f.lines[0]), mau, "Finance (kartu kedatangan) — angka sama dengan Gudang");
   assert.deepEqual(angka(s.p.lines[0].progres), mau, "Finance (detail PO)");
-  assert.ok(s.g.progresDefinisi.some((d) => d.kunci === "diretur") && s.g.progresDefinisi.some((d) => d.kunci === "stokBersih"));
-  assert.match(s.g.progres.teks, /2 diretur \(stok bersih 8\)/);
+  assert.ok(s.g.progresDefinisi.some((d) => d.kunci === "diretur") && s.g.progresDefinisi.some((d) => d.kunci === "diterimaBersih"));
+  assert.match(s.g.progres.teks, /2 diretur \(diterima bersih dari PO 8\)/);
   // per penerimaan
   const grA = s.g.penerimaan.flatMap((x) => x.lines).find((x) => x.id === a.lineId);
-  assert.deepEqual([grA.masukStok, grA.diretur, grA.stokBersih], [5, 2, 3]);
+  assert.deepEqual([grA.masukStok, grA.diretur, grA.diterimaBersih], [5, 2, 3]);
   // nilai hanya untuk Finance (harga PO)
-  assert.equal(JSON.stringify(s.g).includes("nilaiStokBersih"), false, "Gudang tanpa nilai");
-  assert.deepEqual([s.p.totalDiterima, s.p.totalDiretur, s.p.totalStokBersih], [10 * HARGA_PO, 2 * HARGA_PO, 8 * HARGA_PO]);
-  assert.equal(s.f.totalStokBersih, 8 * HARGA_PO);
+  assert.equal(JSON.stringify(s.g).includes("nilaiDiterimaBersih"), false, "Gudang tanpa nilai");
+  assert.deepEqual([s.p.totalDiterima, s.p.totalDiretur, s.p.totalDiterimaBersih], [10 * HARGA_PO, 2 * HARGA_PO, 8 * HARGA_PO]);
+  assert.equal(s.f.totalDiterimaBersih, 8 * HARGA_PO);
 
   // jejak penerimaan (Gudang): bruto − diretur = bersih; tersisa ikut berkurang
   const jejak = (await w.g.get(`/api/inventory/goods-receipts/${a.receiptId}/jejak-pemakaian`)).body.bahan[0];
-  assert.deepEqual([jejak.masukStok, jejak.returSupplier, jejak.stokBersih, jejak.tersisa], [5, 2, 3, 3]);
+  assert.deepEqual([jejak.masukStok, jejak.returSupplier, jejak.diterimaBersih, jejak.tersisa], [5, 2, 3, 3]);
 
   // pembatalan retur (barang kembali) → bersih kembali
   assert.equal((await w.g.post(`/api/inventory/retur-supplier/${draf.returnId}/batal`, { reason: "Supplier menolak menerima" }, kunci())).status, 200);
   s = await baca();
-  assert.deepEqual(angka(s.g.lines[0]), { masukStok: 10, diretur: 0, stokBersih: 10, belumDatang: 0, belumDipenuhiSupplier: 0, belumMasukStok: 0 });
+  assert.deepEqual(angka(s.g.lines[0]), { masukStok: 10, diretur: 0, diterimaBersih: 10, belumDatang: 0, belumDipenuhiSupplier: 0, belumMasukStok: 0 });
 });
 
 // ═══ 4. GERBANG REKONSILIASI ═══
@@ -480,4 +480,59 @@ test("BATAL PEMAKAIAN KREDIT diaudit: alasan wajib, hanya Admin Keuangan, Idempo
   assert.equal(batal[0].metadata.alasan, "Salah memilih faktur");
   assert.equal(Number(batal[0].metadata.jumlah), 90_000);
   assert.equal(peristiwa.filter((e) => e.metadata?.aksi === "pakai_saldo_kredit").length, 1, "pemakaian awal juga tercatat");
+});
+
+test("DEFINISI server: 'Diterima bersih dari PO' (bukan 'stok bersih'), tegas bukan stok tersedia; kunci lama tidak ada", async () => {
+  const w = await dunia();
+  const po = await poDisetujui(w, { qty: 5 });
+  const g = (await w.g.get(`/api/inventory/barang-akan-datang/${po.id}`)).body;
+  const d = g.progresDefinisi.find((x) => x.kunci === "diterimaBersih");
+  assert.equal(d.label, "Diterima bersih dari PO");
+  assert.match(d.definisi, /BUKAN stok tersedia/);
+  assert.match(d.definisi, /dipakai Produksi atau direservasi/);
+  assert.equal(g.progresDefinisi.some((x) => x.kunci === "stokBersih"), false);
+  assert.equal(JSON.stringify(g).includes("stokBersih"), false, "kunci lama tidak boleh bocor di respons Gudang");
+  assert.equal(/stok bersih/i.test(JSON.stringify(g.progresDefinisi)), false, "tidak ada label 'stok bersih' di definisi server");
+});
+
+// ═══ 6. KONTRAK DENGAN KOREKSI PENERIMAAN ═══
+test("KOREKSI PENERIMAAN dengan retur aktif tertolak jelas: guard RETUR_AKTIF (draf & barang keluar), jalur koreksi/ubah yang ada menolak, trigger DB sebagai pagar terakhir", async () => {
+  const { pastikanTanpaReturAktif, ReturError } = await import("../../src/services/finance/returSupplier.js");
+  const w = await dunia();
+  const po = await poDisetujui(w, { qty: 5 });
+  const r = await terimaDanSimpan(w, po, 5);
+  const tolak = async (opsi) => { try { await pastikanTanpaReturAktif(testPrisma, opsi); return null; } catch (e) { assert.ok(e instanceof ReturError, String(e)); return e; } };
+
+  // tanpa retur: lolos
+  assert.equal(await tolak({ goodsReceiptLineId: r.lineId }), null);
+  assert.equal(await tolak({ goodsReceiptId: r.receiptId }), null);
+
+  // retur DRAF: guard menolak (rencana retur akan rusak bila jumlah baik berubah)
+  const draf = (await buatRetur(w, r.lineId, 2)).body;
+  const e1 = await tolak({ goodsReceiptLineId: r.lineId });
+  assert.equal(e1.code, "RETUR_AKTIF"); assert.equal(e1.statusCode, 409);
+  assert.ok(e1.message.includes(`punya Retur Supplier aktif: ${draf.returnNumber} (Draf`), e1.message);
+  assert.match(e1.message, /Batalkan retur itu dulu \(Gudang\), baru koreksi penerimaan ini/);
+  assert.deepEqual(e1.detail?.retur, [draf.returnNumber]);
+
+  // barang SUDAH keluar: guard menolak lewat baris maupun penerimaan; jalur yang sudah ada menolak jelas; trigger DB menolak
+  assert.equal((await keluar(w, draf.returnId)).status, 200);
+  const e2 = await tolak({ goodsReceiptId: r.receiptId });
+  assert.equal(e2.code, "RETUR_AKTIF");
+  assert.match(e2.message, /Selesai; 2 KG BUSA-R50/, "belum ditagih → tanpa debit note → retur langsung Selesai; pesan tetap menyebut status & jumlah");
+  const det = (await w.g.get(`/api/inventory/barang-akan-datang/${po.id}`)).body;
+  const rec = det.penerimaan.find((x) => x.id === r.receiptId);
+  const koreksi = await w.g.post(`/api/inventory/barang-akan-datang/penerimaan/${r.receiptId}/koreksi`, { revisi: rec.revisi, alasan: "Salah ketik jumlah datang", perubahan: { lines: [{ purchaseOrderLineId: po.lines[0].id, jumlahDatang: 4 }] } }, kunci());
+  assert.equal(koreksi.status, 409, JSON.stringify(koreksi.body));
+  assert.match(koreksi.body.error, /tidak bisa dikoreksi lagi: penerimaan sudah masuk pemeriksaan\/penyimpanan/);
+  const ubah = await w.g.patch(`/api/inventory/goods-receipts/${r.receiptId}/lines/${r.lineId}`, { acceptedQty: 3 });
+  assert.ok([400, 409].includes(ubah.status), `status ${ubah.status}`);
+  assert.match(ubah.body.error, /tidak bisa diubah lagi/);
+  await assert.rejects(testPrisma.goodsReceiptLine.update({ where: { id: r.lineId }, data: { acceptedQty: 3 } }), /Retur Supplier aktif/);
+  assert.equal(Number((await testPrisma.goodsReceiptLine.findUnique({ where: { id: r.lineId } })).acceptedQty), 5, "jumlah baik tidak berubah");
+
+  // retur dibatalkan → guard lolos
+  assert.equal((await w.g.post(`/api/inventory/retur-supplier/${draf.returnId}/batal`, { reason: "Supplier menarik sendiri barangnya" }, kunci())).status, 200);
+  assert.equal(await tolak({ goodsReceiptLineId: r.lineId }), null);
+  assert.equal(await tolak({ goodsReceiptId: r.receiptId }), null);
 });
