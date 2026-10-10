@@ -133,3 +133,13 @@ test("label 'Diterima bersih dari PO' di semua layar; tidak ada klaim 'Stok bers
   assert.match(baca("../src/features/warehouse/components/JejakPemakaianPenerimaan.jsx"), /Bukan stok tersedia/);
   assert.match(po, /Nilai diretur[\s\S]{0,200}diterima bersih dari PO/);
 });
+
+test("tabel item PO Finance: kolom 'Nilai PO' tidak terpotong — Harga satuan dipindah ke sel Item (angka sama), 10 kolom", () => {
+  const po = baca("../src/pages/finance/FinancePurchaseOrders.jsx");
+  const kepala = po.match(/<THead><TR><TH>Item<\/TH>[\s\S]*?<\/TR><\/THead>/)[0];
+  assert.equal((kepala.match(/<TH[ >]/g) ?? []).length, 10, "10 kolom (tadinya 11)");
+  assert.match(kepala, /<TH numeric>Nilai PO<\/TH><\/TR>/, "Nilai PO tetap kolom terakhir");
+  assert.equal(/Harga satuan<\/TH>/.test(kepala), false);
+  assert.match(po, /data-testid="harga-satuan-item">Harga satuan <Uang value=\{l\.hargaSatuan\} \/>/);
+  assert.match(po, /<TD numeric><Uang value=\{l\.nilaiDipesan\} \/><\/TD>/, "angka Nilai PO tidak diubah");
+});
