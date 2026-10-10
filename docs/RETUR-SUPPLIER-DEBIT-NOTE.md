@@ -55,7 +55,7 @@ Pesan blokir menyebut jumlah yang pasti masih ada dan arah penyelesaian (alur ko
 
 Diblokir juga: `PENERIMAAN_BELUM_DIBUKUKAN` — penerimaan yang nilainya belum dibukukan ke Persediaan (sebelum saldo awal/cutover, atau "Posting Tertunda"), karena jurnal retur akan membalik GRNI.
 
-## Progres stok: bruto · retur · bersih
+## Progres: masuk stok (bruto) · diretur · diterima bersih dari PO
 
 Satu definisi di `progresPO.js`, dipakai Finance dan Gudang:
 
@@ -63,9 +63,9 @@ Satu definisi di `progresPO.js`, dipakai Finance dan Gudang:
 |---|---|
 | Masuk stok | Barang baik yang sudah disimpan ke stok — **bruto**, tidak berkurang karena retur. |
 | Diretur ke supplier | Retur untuk kredit yang barangnya sudah keluar gudang (status Barang sudah keluar / Selesai). Draf dan yang dibatalkan tidak dihitung. |
-| Stok bersih PO | Masuk stok − diretur (sebelum dipakai Produksi). |
+| Diterima bersih dari PO | Masuk stok − diretur. **BUKAN stok tersedia**: belum dikurangi pemakaian Produksi, waste, penyesuaian, atau reservasi; stok tersedia hanya dari Stok & Lokasi. |
 
-Retur **tidak** membuka lagi "Belum datang" / "Belum dipenuhi supplier" (retur untuk kredit mengurangi tagihan, bukan meminta pengganti). Di Finance: kolom Diretur & Stok bersih di detail PO, total nilai diretur & stok bersih (harga PO). Di Gudang: kartu Barang Akan Datang (tanpa nilai) dan jejak penerimaan (Masuk stok · Diretur ke supplier · Stok bersih · Retur dari Produksi · Tersisa).
+Retur **tidak** membuka lagi "Belum datang" / "Belum dipenuhi supplier" (retur untuk kredit mengurangi tagihan, bukan meminta pengganti). Di Finance: kolom Diretur & Diterima bersih dari PO di detail PO, total nilai diretur & diterima bersih dari PO (harga PO). Di Gudang: kartu Barang Akan Datang (tanpa nilai) dan jejak penerimaan (Masuk stok · Diretur ke supplier · Diterima bersih dari PO · Retur dari Produksi · Tersisa).
 
 ## Peran
 
@@ -96,11 +96,16 @@ Pencocokan Rekonsiliasi Bank hanya mungkin pada baris kas/bank. Maka jurnal fakt
 
 ## Batas dengan branch Koreksi Penerimaan
 
-- Baris penerimaan dengan retur aktif terkunci oleh trigger; koreksi harus membatalkan retur terlebih dulu.
-- Branch Koreksi tidak boleh mengubah `accepted_qty`/`received_qty` baris yang punya retur aktif dan harus memakai `qtyReturAktif` dari `services/finance/returSupplier.js` bila perlu membaca kuantitas bersih.
+**Status (10 Okt 2026): branch Koreksi Penerimaan TIDAK ditemukan** di repo (semua branch lokal & remote, riwayat komit, worktree). Yang ada hanya `koreksiKedatangan` (live sejak PO Terintegrasi): koreksi tanggal/PIC/catatan/surat jalan/bukti, dan jumlah datang HANYA selama penerimaan masih "Tiba" (belum diperiksa) — jadi tidak pernah menyentuh penerimaan yang sudah punya retur. Maka **tes gabungan Retur + Koreksi BELUM ada dan BELUM dijalankan**; kandidat ini berdiri sendiri.
+
+Kontrak yang harus dipenuhi branch Koreksi bila nanti ada:
+- Panggil `pastikanTanpaReturAktif(db, { goodsReceiptLineId | goodsReceiptId })` (`services/finance/returSupplier.js`) SEBELUM mengubah jumlah/material/PO baris penerimaan yang sudah masuk stok. Retur aktif (draf, barang sudah keluar, selesai) → `409 RETUR_AKTIF` dengan nomor retur dan statusnya; jalan yang benar: batalkan retur dulu (Gudang), baru koreksi.
+- Pagar terakhir di basis data: trigger `trg_goods_receipt_line_terkunci_retur` menolak ubah `received_qty`/`accepted_qty`/`rejected_qty`/`purchase_order_line_id`/`material_id`/`goods_receipt_id` untuk baris dengan retur KELUAR/SELESAI (pesannya teknis; jangan diandalkan sebagai UX).
 - Urutan kunci: retur → PO → material (terurut). Koreksi yang mengunci ulang harus mengikuti urutan ini.
 - Faktur atas PO tidak bisa dikoreksi lewat Koreksi Tagihan (`FAKTUR_ATAS_PO`); penyesuaian nilainya hanya lewat Debit Note.
-- Berkas bersama yang diubah finalisasi ini: `posting/inventory.js` (rata-rata dikurangi retur), `progresPO.js` (+`diretur`, `stokBersih`), `kedatangan.js`, `purchaseOrder.js`, `biayaBahanSumber.js`.
+- Berkas bersama yang diubah rilis ini (berpotensi konflik): `posting/inventory.js`, `progresPO.js`, `kedatangan.js`, `purchaseOrder.js`, `biayaBahanSumber.js`.
+
+Tes yang sudah ada untuk kontrak ini (`returSupplierFinal.integration.test.js`, "KOREKSI PENERIMAAN dengan retur aktif tertolak jelas"): guard menolak untuk retur draf dan barang keluar (baris maupun penerimaan), jalur koreksi kedatangan & ubah baris yang ada menolak, trigger menolak, dan guard lolos setelah retur dibatalkan. **Tes gabungan yang HARUS dijalankan begitu branch Koreksi ada**: setiap jalur ubah-jumlah baru → penolakan `RETUR_AKTIF`; koreksi pada penerimaan tanpa retur tetap lolos; pembatalan retur lalu koreksi lolos; paralel (koreksi vs konfirmasi keluar) tepat satu menang.
 
 ## Keterbatasan yang diketahui
 
@@ -109,10 +114,21 @@ Pencocokan Rekonsiliasi Bank hanya mungkin pada baris kas/bank. Maka jurnal fakt
 - Gerbang rekonsiliasi hanya melindungi jurnal yang dibalik/menjadi dasar; pembayaran terekonsiliasi tidak memblokir (lihat di atas).
 - Bila satu penerimaan memuat dua baris bahan yang sama, jejak penerimaan menjumlah per bahan (perilaku lama).
 
-## Rollback
+## Rilis dan rollback
 
-Migrasi aditif sehingga skema aman dibiarkan. Rollback KODE tidak aman begitu ada Debit Note/saldo kredit/retur KELUAR: `credit_applied` dan jurnal tertaut tetap ada, dan kode lama tidak mengenalinya; rata-rata harga juga dihitung ulang dengan mengabaikan retur bila kode lama dipakai.
+Skrip: `scripts/release-retur-supplier.sh` (release-directory, fail-closed; kerangka sama dengan rilis PO Terintegrasi) dan `scripts/rollback-guard-retur-supplier.sh` (baca-saja).
+
+```
+cat scripts/release-retur-supplier.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/reti1.sh'
+ssh ubuntu@43.133.152.6 'bash /tmp/reti1.sh <DEPLOY_SHA> <BASE_SHA> --preflight-only'
+```
+
+Gerbang (berhenti bila salah satu gagal): kandidat = ujung branch; baseline = release aktif; baseline dan `origin/main` leluhur kandidat; berkas berbeda ⊆ allowlist eksplisit (tanpa `frontend/dist`, dependensi, Docker, artefak uji); migrasi baseline tidak diubah; `schema.prisma` hanya penambahan; **pin sha256 migrasi**; **pemindai DDL daftar putih + 24 mutan uji negatif** (DROP/UPDATE/DELETE/INSERT/TRUNCATE/ALTER COLUMN, kolom/indeks/FK di tabel lama, enum liar, GRANT, trigger/fungsi menulis) semuanya harus ditolak; prasyarat skema (objek rilis belum ada); sidik jari dokumen beku pada T0.
+
+Setelah preflight: backup + checksum, build frontend & image di release dir, **rehearsal** (restore backup NYATA ke DB sementara → migrasi → uji perilaku: CHECK menolak data salah, trigger mengunci baris dengan retur KELUAR, satu debit note aktif per retur, enum terpakai → semuanya dibatalkan → isi 17 tabel lama identik), migrasi, switch, verifikasi (berkas backend byte-identik, **smoke baca-saja**: izin, Gudang tanpa nilai, 14 angka progres berlabel "Diterima bersih dari PO", 9 penulisan ditolak sebelum menyentuh data, 6 invarian basis data), dokumen beku identik sebelum/sesudah.
+
+**Rollback guard** menolak (exit 1) bila ada retur keluar, debit note, saldo kredit/pemakaian, faktur dengan `credit_applied` > 0, pergerakan `SUPPLIER_RETURN` atau jurnal `RETUR_SUPPLIER`/`DEBIT_NOTE_SUPPLIER` — termasuk yang sudah dibatalkan (kode lama tidak mengenal nilai enum itu dan bisa gagal membaca barisnya). Skema aditif aman dibiarkan; rollback KODE tidak aman begitu ada data baru.
 
 ## Tes terarah
 
-`backend/tests/integration/returSupplier.integration.test.js` (11), `returSupplierFinal.integration.test.js` (15), `frontend/tests/returSupplierUI.test.js` (8).
+`backend/tests/integration/returSupplier.integration.test.js` (11), `returSupplierFinal.integration.test.js` (17), `frontend/tests/returSupplierUI.test.js` (10).
