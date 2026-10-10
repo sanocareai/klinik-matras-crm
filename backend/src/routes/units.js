@@ -208,6 +208,8 @@ unitRouter.patch("/:id/service", requirePermission(P.UNIT_ROUTING_WRITE), async 
     if (!existing) return res.status(404).json({ error: "Unit tidak ditemukan" });
     // Tanpa serviceId: rute diturunkan dari item order Sales lewat pemetaan Admin (TIDAK ada pilihan kedua dan tidak ada tebakan). Bila tidak cukup, 409 + alasan + siapa yang memperbaiki.
     if (!serviceId) {
+      // Rute sudah ada: tidak diturunkan ulang diam-diam (mengganti rute butuh serviceId eksplisit lewat jalur yang berwenang).
+      if (existing.serviceId) return res.status(400).json({ error: "serviceId wajib diisi", code: "SERVICE_ID_REQUIRED" });
       const why = await explainProductionServiceForUnit(prisma, existing);
       if (!why.ok) return res.status(409).json({ error: why.message, code: "SERVICE_NOT_DERIVABLE", reason: why.code, fixBy: why.fixBy, salesServices: why.salesServices });
       serviceId = why.serviceId;
