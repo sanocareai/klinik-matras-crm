@@ -34,7 +34,13 @@ export function buatGalat(Galat) {
 export async function pastikanTanpaReturAktifJikaAda(tx, opsi) {
   if (!tx?.supplierReturnLine) return;
   const { pastikanTanpaReturAktif } = await import("./returSupplier.js");
-  await pastikanTanpaReturAktif(tx, opsi);
+  try {
+    await pastikanTanpaReturAktif(tx, opsi);
+  } catch (e) {
+    // Penolakan wajib memuat ARAH tindakan (sama seperti blokir lain di alur koreksi): kontrak Retur menyebut sebabnya, di sini ditambahkan langkah yang harus dikerjakan.
+    if (e?.code === "RETUR_AKTIF" && !e.arah) e.arah = "Gudang: batalkan Retur Supplier itu (Gudang → Retur Supplier → Batalkan; barang yang sudah keluar dikembalikan ke stok), lalu ulangi koreksi penerimaan ini.";
+    throw e;
+  }
 }
 
 async function reservasi(tx, materialId) {
