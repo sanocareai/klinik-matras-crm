@@ -132,7 +132,8 @@ test("Peringatan batas: respons tambah/ubah item & daftar order menandai MELEBIH
   assert.equal(tb.status, 201);
   assert.equal(tb.body.promoCheck, null); // promo tanpa batas: tidak ada pemeriksaan
 
-  const hari = new Date().toISOString().slice(0, 10);
+  // Server memfilter per hari WIB (UTC+7); tanggal UTC salah antara 00.00-07.00 WIB.
+  const hari = new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10);
   const list = await raw("GET", `/api/orders?from=${hari}&to=${hari}&limit=50`, { token: admin });
   assert.equal(list.status, 200, JSON.stringify(list.body));
   const di = list.body.items.find((o) => o.id === order.id);

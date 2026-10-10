@@ -28,7 +28,7 @@ async function world() {
   const [planner, gudang1, gudang2] = await Promise.all([
     createTestUser({ roles: ["PRODUCTION_LEAD"] }), createTestUser({ roles: ["WAREHOUSE"] }), createTestUser({ roles: ["WAREHOUSE"] }),
   ]);
-  const workCenter = await testPrisma.workCenter.create({ data: { code: `WC-${++seq}`, name: "Workshop Tes" } });
+  const workCenter = await testPrisma.workCenter.create({ data: { code: `WC-PLN-${++seq}`, name: "Workshop Tes" } });
   const operator = await testPrisma.productionOperator.create({ data: { userId: planner.user.id } });
   return {
     planner: { ...planner, api: makeClient(server.baseUrl, planner.token) },

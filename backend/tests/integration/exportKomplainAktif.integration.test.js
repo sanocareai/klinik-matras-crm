@@ -36,7 +36,8 @@ test("includeActiveComplaint: order Terkirim dgn komplain aktif ikut, tanpa flag
   await testPrisma.complaintCase.create({ data: { caseNumber: `CMP-T-${Date.now()}-1`, orderId: komplain.id, category: "LAINNYA", description: "Kasur kempis lagi", status: "DALAM_PENANGANAN" } });
   await testPrisma.complaintCase.create({ data: { caseNumber: `CMP-T-${Date.now()}-2`, orderId: selesai.id, category: "LAINNYA", description: "Sudah beres", status: "SELESAI" } });
 
-  const hari = new Date().toISOString().slice(0, 10);
+  // Server memfilter per hari WIB (UTC+7); tanggal UTC salah antara 00.00-07.00 WIB.
+  const hari = new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10);
   const q = `from=${hari}&to=${hari}&limit=100`;
 
   const tanpa = await raw("GET", `/api/orders?${q}`, { token });
@@ -69,7 +70,7 @@ test("Job pickup/kirim KOMPLAIN tidak menggantikan jadwal order asli (pickupJob/
   await testPrisma.job.create({ data: { type: "PICKUP", orderId: o.id, scheduledDate: hari(25), complaintCaseId: kasus.id } });
   await testPrisma.job.create({ data: { type: "DELIVERY", orderId: o.id, scheduledDate: hari(27), complaintCaseId: kasus.id } });
 
-  const hariIni = new Date().toISOString().slice(0, 10);
+  const hariIni = new Date(Date.now() + 7 * 3_600_000).toISOString().slice(0, 10);
   const r = await raw("GET", `/api/orders?from=${hariIni}&to=${hariIni}&limit=50`, { token });
   assert.equal(r.status, 200, JSON.stringify(r.body));
   const item = r.body.items.find((x) => x.id === o.id);

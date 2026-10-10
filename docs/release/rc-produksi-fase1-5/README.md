@@ -24,7 +24,17 @@ Dijalankan di VPS (`rehearsal-fase5.sh`): `pg_dump -Fc` (baca-saja; sha256 `79d1
 ~481 file: `docs/design` 361 (dokumen+tangkapan layar), `frontend/src` 50, `backend/src` 28, `backend/tests` 18, `frontend/tests` 15, `backend/prisma` 8, `backend/scripts` 1. Overlap file dengan perubahan live (Finance/Gudang/PO/Delivery): `schema.prisma` (model berbeda, auto-merge, `prisma validate` OK), `frontend/src/api.js`, `UnitOverviewDrawer.jsx`, `pageRegistry.jsx` — semua bergabung bersih; `inventoryLedger.js` (live: pembekuan valuasi biaya bahan) tidak disentuh Produksi dan diuji bersama. Satu tes audit yang **sudah merah di live** (pembaca bukti `finance/biayaBahan.js`) diperbaiki: pembaca baca-saja itu masuk allowlist audit (wajib filter `DOC_`).
 
 ## 5. Hasil gate (SHA final)
-- **Unit:** (diisi pada SHA final)
+- **Unit:** backend 1157/1157, frontend 799/799 (SHA ed60fd32).
+- **Full suite integrasi (runIsolated, DB unik, serial) pada SHA `9651981c`: 1625 tes, 1616 lulus, 9 gagal** (3 jam 45 menit, 181 berkas). Kesembilan kegagalan dianalisis satu per satu; **tidak ada yang berasal dari kode Produksi**, semuanya pra-ada di live `934142cd` (dibuktikan dengan menjalankan berkas yang sama di checkout 934142cd):
+  | Berkas | Kegagalan | Penyebab | Tindakan |
+  |---|---|---|---|
+  | `financeBuku` (1) | 429 vs 404 | tes melampaui limiter mobile 120 req/menit | tes: `resetRateLimits()` di tengah tes (sudah di `9651981c`) |
+  | `exportKomplainAktif` (2) | hasil kosong / undefined | tes memakai hari UTC, server memfilter hari WIB (gagal 00.00–07.00 WIB) | tes: hari WIB |
+  | `promoBatasDiskon` (1) | undefined `promoCheck` | sama (hari UTC) | tes: hari WIB |
+  | `financeFase1ResiInventory` (1) | kas masuk buku 0 ≠ 1.800.001 | **perilaku Finance, bukan tes**: jurnal pembayaran bertanggal UTC (`orderRevenue.js`), laporan jembatan kas memfilter hari WIB → meleset 00.00–07.00 WIB | TIDAK diubah (di luar scope Produksi; dilaporkan ke Finance). Lulus bila dijalankan setelah 07.00 WIB |
+  | `koreksiPembayaran` (3) | 400 `BUKTI_WAJIB` | aturan bukti wajib Sales (1 Okt) lebih baru dari tes | tes: kirim `proofPhotoUrl` |
+  | `productionPlanning` (2) | unique `workCenter.code` | `WC-1` juga dibuat `expenseSubmissionProduksiGudang`; tabel `work_centers` tidak di-truncate antar berkas | tes: prefix `WC-PLN-` |
+- Perbaikan tes (5 berkas, test-only, tanpa perubahan kode produksi) diverifikasi dengan menjalankan ulang berkas terkait pada SHA final; full suite TIDAK diulang penuh setelah perbaikan tes-saja itu.
 - **Integrasi terarah (DB unik, tanpa full suite):** 337/337 pada kandidat di atas `b3c5502d` (planning, QC, Corner, dokumentasi, stok/retur, handoff, Delivery, custody, PO, biaya bahan, termin/aging utang, valuasi, promo) lalu **199/199** pada kandidat final di atas `2a5ab783` (+ PDF PO). Tes baru: label konfirmasi, catatan yang sekadar menyebut ganti kain.
 - **QA browser pada image gabungan: 76/76** (`qa-ui-result.json`, `screenshots/`): alur QC → Corner diperlukan (permintaan Sales tidak jelas, konfirmasi dicatat PIC Corner) → Selesaikan Produksi → Gudang menolak saat retur tertunda → terima retur → Siap Kirim + 1 job Delivery → tampilan terpadu 390/1440 terang/gelap; ditambah **Corner TIDAK diperlukan** (pesanan BARU divan): status jujur, tanpa aktivitas Corner, PIC Meja menyelesaikan, laporan menandai langkah Corner "Tidak berlaku" dengan alasan. 1 respons 409 disengaja.
 - Koreksi sebelum rilis: label "Konfirmasi Sales dicatat oleh PIC Corner" + nama aktor + waktu + isi (tidak mengklaim Sales yang mengisi); catatan order yang sekadar menyebut ganti kain **bukan** permintaan — layanan Sales yang dipesan menjadi penentu (catatan tetap dikutip + ditandai).

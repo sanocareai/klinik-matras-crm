@@ -261,7 +261,8 @@ async function resi(w) {
     items: [1_000_000, 500_000, 250_001].map((nominal) => ({ merk: "Sano", ukuran: "160x200 cm (Queen)", keluhan: "Pegal", nominal, unitCount: 1 })),
   });
   assert.equal(r.status, 201, JSON.stringify(r.body));
-  const bayarResi = await w.s.post(`/api/resi/${r.body.groupId}/pembayaran`, { method: "TRANSFER", cashAccountId: w.bank.id, tipe: "DP" }, key());
+  // Bukti pembayaran wajib untuk Sales sejak 1 Okt 2026 (resi.js); tes ini lebih tua dari aturan itu.
+  const bayarResi = await w.s.post(`/api/resi/${r.body.groupId}/pembayaran`, { method: "TRANSFER", cashAccountId: w.bank.id, tipe: "DP", proofPhotoUrl: "/media/payment-proofs/resi-test.jpg" }, key());
   assert.equal(bayarResi.status, 201, JSON.stringify(bayarResi.body));
   const payment = await testPrisma.payment.findUnique({ where: { id: bayarResi.body.paymentId ?? bayarResi.body.pembayaran?.id } });
   await testPrisma.paymentVerification.upsert({ where: { paymentId: payment.id }, create: { paymentId: payment.id, verifiedById: w.finance.user.id }, update: {} });
