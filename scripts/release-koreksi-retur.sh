@@ -576,7 +576,7 @@ ok "migrate status up to date"
 [ -d "$PERSIST/backend/data/receipt-proofs" ] || die "folder bukti (${PERSIST}/backend/data/receipt-proofs) tidak ada di root persisten (bukti retur memakainya)"
 ok "folder bukti ada di root persisten (dipakai bukti kondisi & penyerahan retur)"
 PHASE="8b-smoke"; say "8b. Smoke test izin + pembacaan + invarian (baca-saja; tidak menulis; tahan terhadap transaksi sah yang muncul saat rilis)"
-dcp "$NEW_DIR" exec -T -e LEGACY_PO_FINAL="$LEGACY_PO_FINAL" backend node --input-type=module - <<'NODE' || die "smoke test GAGAL"
+dcp "$NEW_DIR" exec -T -e LEGACY_PO_FINAL="$LEGACY_PO_FINAL" backend node --input-type=module - <<'NODE' | tee "$BK_DIR/smoke.log" || die "smoke test GAGAL"
 import { createRequire } from "node:module";
 const require = createRequire(process.cwd() + "/");
 const jwt = require("jsonwebtoken");
@@ -586,8 +586,10 @@ const BASE = "http://127.0.0.1:4000";
 // SMOKE BACA-SAJA. Tanpa asumsi global ("tidak ada retur/debit note baru"): transaksi operasional sah yang muncul saat deploy TIDAK membuat smoke gagal.
 // Pembanding = invarian yang berlaku untuk keadaan data apa pun. Tidak menulis: Prisma hanya count; setiap pemanggilan tulis lewat API memakai token tanpa izin / tanpa Idempotency-Key
 // dan WAJIB dijawab 400/401/403/428 (dicatat di buku besar tulis di bawah).
-let fail = 0;
+let fail = 0; let dilewati = 0;
 const rec = (n, ok, d = "") => { if (!ok) fail++; console.log(`  ${ok ? "PASS" : "FAIL"}  ${n}${d ? " — " + d : ""}`); };
+// SKIP = pemeriksaan TIDAK dilaksanakan (bukan lulus, bukan gagal). Dicetak dengan alasan; dihitung terpisah dan muncul di ringkasan.
+const skip = (n, alasan) => { dilewati++; console.log(`  SKIP  ${n} — DILEWATI: ${alasan}`); };
 const LEGACY = new Set(String(process.env.LEGACY_PO_FINAL ?? "").split(",").filter(Boolean));
 const bukuTulis = [];
 async function api(method, path, token, body, headers = {}) {
@@ -611,8 +613,13 @@ async function userDengan(role, tanpa) {
 const adm = (await userDengan("ADMIN", new Set())) ?? (await userDengan("OWNER", new Set()));
 const sales = await userDengan("SALES", FIN);
 const gudang = await userDengan("WAREHOUSE", FIN);
-if (!adm || !sales || !gudang) { rec("akun ADMIN, SALES murni, dan WAREHOUSE murni (tanpa peran Finance) tersedia", false, `adm=${!!adm} sales=${!!sales} gudang=${!!gudang}`); process.exit(1); }
-const tA = await tokenUntuk(adm), tS = await tokenUntuk(sales), tG = await tokenUntuk(gudang);
+if (!adm || !sales) { rec("akun ADMIN dan SALES murni (tanpa peran Finance) tersedia", false, `adm=${!!adm} sales=${!!sales}`); process.exit(1); }
+// Ketiadaan akun WAREHOUSE murni BUKAN kegagalan rilis, tetapi izin Gudang TIDAK terverifikasi: dilaporkan sebagai SKIP dengan alasan. Tidak ada akun/token dibuat atau direkayasa,
+// dan akun multi-peran (mis. ADMIN+WAREHOUSE) TIDAK dipakai karena akan memberi PASS palsu atas izin Gudang. Asersi izin Gudang dijaga di tes integrasi.
+const ALASAN_GUDANG = "tidak ada akun WAREHOUSE murni (aktif, tanpa peran ADMIN/OWNER/FINANCE/ACCOUNTANT/APPROVER) di production; akun/token Gudang tidak dibuat atau direkayasa";
+if (!gudang) console.log(`  INFO  izin Gudang tidak dapat diverifikasi di production: ${ALASAN_GUDANG}`);
+const tA = await tokenUntuk(adm), tS = await tokenUntuk(sales);
+const tG = gudang ? await tokenUntuk(gudang) : null; // null = tidak ada akun Gudang murni; setiap pemeriksaan Gudang di bawah menjadi SKIP
 const nol = "00000000-0000-4000-8000-000000000000";
 const KUNCI_NILAI = ["nilaiPersediaan", "hargaPerolehan", "saldoKredit", "kurangiSisa", "stockValue", "unitCost", "amount", "hargaSatuan", "nilaiDipesan", "nilaiMasukStok", "nilaiDiterimaBersih", "totalDipesan", "totalMasukStok", "totalDiterimaBersih", "totalDiretur"];
 const KUNCI_PROGRES = ["dipesan", "datangAsli", "pengganti", "datang", "belumDatang", "belumDiperiksa", "ditolak", "menungguPengganti", "baikBelumDisimpan", "masukStok", "diretur", "diterimaBersih", "belumDipenuhiSupplier", "belumMasukStok"];
@@ -621,28 +628,38 @@ const mentahTanpaNilai = (j) => { const s = JSON.stringify(j ?? {}); return KUNC
 // ── Retur Supplier: izin & bentuk ──
 rec("Retur Supplier (Gudang): tanpa token -> 401", (await api("GET", "/api/inventory/retur-supplier")).status === 401);
 rec("Retur Supplier (Gudang): SALES -> 403", (await api("GET", "/api/inventory/retur-supplier", tS)).status === 403);
-const rg = await api("GET", "/api/inventory/retur-supplier", tG);
-rec("Retur Supplier (Gudang): WAREHOUSE -> 200 berisi daftar retur", rg.status === 200 && Array.isArray(rg.json?.retur), `${rg.json?.retur?.length} retur`);
-rec("tampilan Gudang TIDAK memuat nilai rupiah/harga/saldo kredit", mentahTanpaNilai(rg.json).length === 0, mentahTanpaNilai(rg.json).join(","));
-rec("Retur Supplier (Finance): SALES -> 403, WAREHOUSE murni -> 403, tanpa token -> 401",
-  (await api("GET", "/api/finance/retur-supplier", tS)).status === 403 && (await api("GET", "/api/finance/retur-supplier", tG)).status === 403 && (await api("GET", "/api/finance/retur-supplier")).status === 401);
+if (tG) {
+  const rg = await api("GET", "/api/inventory/retur-supplier", tG);
+  rec("Retur Supplier (Gudang): WAREHOUSE -> 200 berisi daftar retur", rg.status === 200 && Array.isArray(rg.json?.retur), `${rg.json?.retur?.length} retur`);
+  rec("tampilan Gudang TIDAK memuat nilai rupiah/harga/saldo kredit", mentahTanpaNilai(rg.json).length === 0, mentahTanpaNilai(rg.json).join(","));
+} else {
+  skip("Retur Supplier (Gudang): WAREHOUSE -> 200 berisi daftar retur", ALASAN_GUDANG);
+  skip("tampilan Gudang TIDAK memuat nilai rupiah/harga/saldo kredit", ALASAN_GUDANG);
+}
+rec("Retur Supplier (Finance): SALES -> 403, tanpa token -> 401", (await api("GET", "/api/finance/retur-supplier", tS)).status === 403 && (await api("GET", "/api/finance/retur-supplier")).status === 401);
+if (tG) rec("Retur Supplier (Finance): WAREHOUSE murni -> 403", (await api("GET", "/api/finance/retur-supplier", tG)).status === 403); else skip("Retur Supplier (Finance): WAREHOUSE murni -> 403", ALASAN_GUDANG);
 const rf = await api("GET", "/api/finance/retur-supplier", tA);
 rec("Retur Supplier (Finance): admin -> 200", rf.status === 200 && Array.isArray(rf.json?.retur), `${rf.json?.retur?.length} retur`);
 const dnl = await api("GET", "/api/finance/retur-supplier/debit-note/daftar", tA);
-rec("Debit Note: admin -> 200 daftar; WAREHOUSE murni -> 403", dnl.status === 200 && Array.isArray(dnl.json?.debitNote) && (await api("GET", "/api/finance/retur-supplier/debit-note/daftar", tG)).status === 403, `${dnl.json?.debitNote?.length} DN`);
+rec("Debit Note: admin -> 200 daftar", dnl.status === 200 && Array.isArray(dnl.json?.debitNote), `${dnl.json?.debitNote?.length} DN`);
+if (tG) rec("Debit Note: WAREHOUSE murni -> 403", (await api("GET", "/api/finance/retur-supplier/debit-note/daftar", tG)).status === 403); else skip("Debit Note: WAREHOUSE murni -> 403", ALASAN_GUDANG);
 const krl = await api("GET", "/api/finance/retur-supplier/kredit/daftar", tA);
-rec("Saldo kredit: admin -> 200 daftar; WAREHOUSE murni -> 403", krl.status === 200 && Array.isArray(krl.json?.kredit) && (await api("GET", "/api/finance/retur-supplier/kredit/daftar", tG)).status === 403, `${krl.json?.kredit?.length} saldo`);
-rec("detail retur/DN/kredit id tak dikenal -> 404 (bukan 500)", (await api("GET", `/api/inventory/retur-supplier/${nol}`, tG)).status === 404 && (await api("GET", `/api/finance/retur-supplier/debit-note/${nol}/pratinjau`, tA)).status === 404);
+rec("Saldo kredit: admin -> 200 daftar", krl.status === 200 && Array.isArray(krl.json?.kredit), `${krl.json?.kredit?.length} saldo`);
+if (tG) rec("Saldo kredit: WAREHOUSE murni -> 403", (await api("GET", "/api/finance/retur-supplier/kredit/daftar", tG)).status === 403); else skip("Saldo kredit: WAREHOUSE murni -> 403", ALASAN_GUDANG);
+rec("detail Debit Note id tak dikenal -> 404 (bukan 500; aktor admin)", (await api("GET", `/api/finance/retur-supplier/debit-note/${nol}/pratinjau`, tA)).status === 404);
+if (tG) rec("detail retur (Gudang) id tak dikenal -> 404 (bukan 500)", (await api("GET", `/api/inventory/retur-supplier/${nol}`, tG)).status === 404); else skip("detail retur (Gudang) id tak dikenal -> 404", ALASAN_GUDANG);
 
 // ── Progres PO: definisi server (14 angka), label baru, invarian untuk data apa pun ──
-const bad = await api("GET", "/api/inventory/barang-akan-datang", tG);
+const aktorBad = tG ? "Gudang" : "admin (pengganti: BUKAN pemeriksaan izin Gudang)";
+const bad = await api("GET", "/api/inventory/barang-akan-datang", tG ?? tA);
 const baris = bad.json?.purchaseOrders ?? [];
-rec("Barang Akan Datang (Gudang) -> 200", bad.status === 200 && Array.isArray(baris), `${baris.length} PO`);
+rec(`Barang Akan Datang -> 200 (aktor: ${aktorBad})`, bad.status === 200 && Array.isArray(baris), `${baris.length} PO`);
 rec("tiap PO: 14 definisi progres; kunci 'diterimaBersih' berlabel 'Diterima bersih dari PO' (bukan 'stok bersih'); tanpa kunci lama", baris.every((p) => Array.isArray(p.progresDefinisi) && p.progresDefinisi.length === 14 && p.progresDefinisi.find((d) => d.kunci === "diterimaBersih")?.label === "Diterima bersih dari PO" && !p.progresDefinisi.some((d) => d.kunci === "stokBersih")), `${baris.length} PO`);
 rec("tiap baris PO punya 14 angka numerik, dan Diterima bersih = Masuk stok − Diretur (berlaku untuk data apa pun)", baris.every((p) => p.lines.every((l) => KUNCI_PROGRES.every((k) => typeof l[k] === "number") && Math.abs(l.diterimaBersih - Math.max(0, l.masukStok - l.diretur)) < 0.0005)));
-rec("tampilan Gudang (progres) TIDAK memuat harga/nilai", mentahTanpaNilai(bad.json).length === 0, mentahTanpaNilai(bad.json).join(","));
+if (tG) rec("tampilan Gudang (progres) TIDAK memuat harga/nilai", mentahTanpaNilai(bad.json).length === 0, mentahTanpaNilai(bad.json).join(",")); else skip("tampilan Gudang (progres) TIDAK memuat harga/nilai", ALASAN_GUDANG);
 const lama = baris.filter((p) => LEGACY.has(p.id));
-if (lama.length > 0) {
+if (lama.length > 0 && !tG) skip("kandidat retur untuk PO lama terminal (Gudang) -> 200 tanpa nilai", ALASAN_GUDANG);
+if (lama.length > 0 && tG) {
   const k = await api("GET", `/api/inventory/retur-supplier/kandidat/${lama[0].id}`, tG);
   rec("kandidat retur untuk PO lama terminal -> 200 (daftar) dan tanpa nilai", k.status === 200 && Array.isArray(k.json?.baris) && mentahTanpaNilai(k.json).length === 0, `${k.json?.baris?.length} baris`);
 }
@@ -653,10 +670,10 @@ const kunci = (n) => ({ "Idempotency-Key": `smoke-reti-${n}` });
 await api("POST", "/api/inventory/retur-supplier", null, { x: 1 }, kunci("anon"));
 await api("POST", "/api/inventory/retur-supplier", tS, { x: 1 }, kunci("sales"));
 await api("POST", `/api/inventory/retur-supplier/${nol}/keluar`, tS, { x: 1 }, kunci("sales-keluar"));
-await api("POST", `/api/finance/retur-supplier/debit-note/${nol}/setujui`, tG, { x: 1 }, kunci("gudang-setuju"));
+if (tG) await api("POST", `/api/finance/retur-supplier/debit-note/${nol}/setujui`, tG, { x: 1 }, kunci("gudang-setuju"));
 await api("POST", `/api/finance/retur-supplier/debit-note/${nol}/batal`, tS, { reason: "uji" }, kunci("sales-batal-dn"));
-await api("POST", `/api/finance/retur-supplier/kredit/${nol}/terapkan`, tG, { x: 1 }, kunci("gudang-kredit"));
-await api("POST", `/api/finance/retur-supplier/kredit-pemakaian/${nol}/batal`, tG, { reason: "uji" }, kunci("gudang-batal-kredit"));
+if (tG) await api("POST", `/api/finance/retur-supplier/kredit/${nol}/terapkan`, tG, { x: 1 }, kunci("gudang-kredit"));
+if (tG) await api("POST", `/api/finance/retur-supplier/kredit-pemakaian/${nol}/batal`, tG, { reason: "uji" }, kunci("gudang-batal-kredit"));
 await api("POST", "/api/inventory/retur-supplier", tA, { x: 1 }); // tanpa Idempotency-Key -> 428 sebelum handler
 await api("POST", `/api/finance/retur-supplier/debit-note/${nol}/setujui`, tA, { x: 1 }); // tanpa Idempotency-Key -> 428
 // ── Koreksi Penerimaan: SATU pintu (Gudang & Finance), izin + penerapan tanpa Idempotency-Key ditolak sebelum menyentuh data ──
@@ -664,16 +681,19 @@ const bk = { perubahan: { catatan: "uji smoke" }, alasan: "uji smoke", revisi: 1
 await api("POST", `/api/inventory/barang-akan-datang/penerimaan/${nol}/koreksi`, null, bk, kunci("kor-anon"));
 await api("POST", `/api/inventory/barang-akan-datang/penerimaan/${nol}/koreksi`, tS, bk, kunci("kor-sales"));
 await api("POST", `/api/finance/purchase-orders/penerimaan/${nol}/koreksi-kedatangan`, null, bk, kunci("korf-anon"));
-await api("POST", `/api/finance/purchase-orders/penerimaan/${nol}/koreksi-kedatangan`, tG, bk, kunci("korf-gudang"));
+if (tG) await api("POST", `/api/finance/purchase-orders/penerimaan/${nol}/koreksi-kedatangan`, tG, bk, kunci("korf-gudang"));
 await api("POST", `/api/finance/purchase-orders/penerimaan/${nol}/koreksi-kedatangan`, tA, bk); // penerapan TANPA Idempotency-Key -> 428 sebelum handler
 await api("POST", `/api/inventory/barang-akan-datang/penerimaan/${nol}/koreksi`, tA, bk); // idem (Gudang) -> 428
 const SAH = new Set([400, 401, 403, 428]);
-rec(`semua ${bukuTulis.length} pemanggilan tulis ditolak sebelum menyentuh data (hanya 400/401/403/428): smoke TIDAK menulis data produksi`, bukuTulis.length === 15 && bukuTulis.every((b) => SAH.has(b.status)), bukuTulis.map((b) => `${b.n}=${b.status}`).join("; "));
+const TULIS_DIHARAPKAN = tG ? 15 : 11; // 4 pemanggilan oleh aktor Gudang tidak dilakukan bila tak ada akun Gudang murni
+if (!tG) skip("4 penolakan tulis oleh WAREHOUSE (setujui DN, terapkan kredit, batal pemakaian kredit, koreksi kedatangan Finance)", ALASAN_GUDANG);
+rec(`semua ${bukuTulis.length} pemanggilan tulis ditolak sebelum menyentuh data (hanya 400/401/403/428): smoke TIDAK menulis data produksi`, bukuTulis.length === TULIS_DIHARAPKAN && bukuTulis.every((b) => SAH.has(b.status)), bukuTulis.map((b) => `${b.n}=${b.status}`).join("; "));
 // PRATINJAU: dikerjakan penuh di transaksi lalu DIBATALKAN (tidak menulis). Id tak dikenal -> 200 dengan boleh=false (bukan 500) untuk Gudang DAN Finance; Gudang tidak melihat nilai.
-const pg = await fetch(BASE + `/api/inventory/barang-akan-datang/penerimaan/${nol}/koreksi`, { method: "POST", headers: { Authorization: "Bearer " + tG, "Content-Type": "application/json" }, body: JSON.stringify({ ...bk, pratinjau: true }) });
+const pg = tG ? await fetch(BASE + `/api/inventory/barang-akan-datang/penerimaan/${nol}/koreksi`, { method: "POST", headers: { Authorization: "Bearer " + tG, "Content-Type": "application/json" }, body: JSON.stringify({ ...bk, pratinjau: true }) }) : null;
 const pf = await fetch(BASE + `/api/finance/purchase-orders/penerimaan/${nol}/koreksi-kedatangan`, { method: "POST", headers: { Authorization: "Bearer " + tA, "Content-Type": "application/json" }, body: JSON.stringify({ ...bk, pratinjau: true }) });
-const pgj = await pg.json().catch(() => null), pfj = await pf.json().catch(() => null);
-rec("pratinjau koreksi (Gudang & Finance) id tak dikenal -> 200 pratinjau=true boleh=false (tanpa Idempotency-Key, tanpa menulis)", pg.status === 200 && pf.status === 200 && pgj?.pratinjau === true && pgj?.boleh === false && pfj?.pratinjau === true && pfj?.boleh === false, `gudang=${pg.status}/${pgj?.boleh} finance=${pf.status}/${pfj?.boleh}`);
+const pgj = pg ? await pg.json().catch(() => null) : null, pfj = await pf.json().catch(() => null);
+rec("pratinjau koreksi (Finance) id tak dikenal -> 200 pratinjau=true boleh=false (tanpa Idempotency-Key, tanpa menulis)", pf.status === 200 && pfj?.pratinjau === true && pfj?.boleh === false, `finance=${pf.status}/${pfj?.boleh}`);
+if (pg) rec("pratinjau koreksi (Gudang) id tak dikenal -> 200 pratinjau=true boleh=false; tanpa nilai", pg.status === 200 && pgj?.pratinjau === true && pgj?.boleh === false && mentahTanpaNilai(pgj).length === 0, `gudang=${pg.status}/${pgj?.boleh}`); else skip("pratinjau koreksi (Gudang) id tak dikenal -> 200", ALASAN_GUDANG);
 const pag = await fetch(BASE + `/api/inventory/barang-akan-datang/penerimaan/${nol}/koreksi`, { method: "POST", headers: { Authorization: "Bearer " + tS, "Content-Type": "application/json" }, body: JSON.stringify({ ...bk, pratinjau: true }) });
 rec("pratinjau koreksi oleh SALES -> 403 (pratinjau tidak melewati izin)", pag.status === 403, String(pag.status));
 
@@ -690,10 +710,17 @@ rec("retur berstatus KELUAR/SELESAI: setiap baris punya pergerakan stok SUPPLIER
 rec("debit note DISETUJUI: punya jurnal DEBIT_NOTE_SUPPLIER yang berlaku (POSTED)", (await hitungSql(`select count(*)::int n from fin_supplier_debit_notes d where d.status = 'DISETUJUI' and not exists (select 1 from fin_journal_entries e where e.source::text = 'DEBIT_NOTE_SUPPLIER' and e.source_id::text = d.id::text and e.status::text = 'POSTED')`)) === 0);
 rec("retur KELUAR/SELESAI: punya jurnal RETUR_SUPPLIER yang berlaku (POSTED)", (await hitungSql(`select count(*)::int n from supplier_returns r where r.status in ('KELUAR','SELESAI') and not exists (select 1 from fin_journal_entries e where e.source::text = 'RETUR_SUPPLIER' and e.source_id::text = r.id::text and e.status::text = 'POSTED')`)) === 0);
 await prisma.$disconnect();
-console.log(`\nRINGKASAN smoke: ${fail} gagal`);
+console.log(`\nRINGKASAN smoke: ${fail} gagal, ${dilewati} dilewati (SKIP)`);
+console.log(`SMOKE_HASIL fail=${fail} skip=${dilewati}`);
 process.exit(fail ? 1 : 0);
 NODE
-ok "smoke test lulus (izin Gudang/Finance/Sales, Gudang tanpa nilai, label & 14 angka progres, 15 penulisan ditolak sebelum menyentuh data, pratinjau koreksi baca-saja, 9 invarian basis data); transaksi sah saat rilis tidak membuatnya gagal"
+SMOKE_SKIP="$(sed -n 's/^SMOKE_HASIL fail=0 skip=\([0-9][0-9]*\)$/\1/p' "$BK_DIR/smoke.log" | tail -n 1)"
+[ -n "$SMOKE_SKIP" ] || die "smoke test tidak mencetak ringkasan SMOKE_HASIL (jangan anggap lulus)"
+if [ "$SMOKE_SKIP" = "0" ]; then
+  ok "smoke test lulus (izin Gudang/Finance/Sales, Gudang tanpa nilai, label & 14 angka progres, 15 penulisan ditolak sebelum menyentuh data, pratinjau koreksi baca-saja, 9 invarian basis data); transaksi sah saat rilis tidak membuatnya gagal"
+else
+  warn "smoke test lulus dengan ${SMOKE_SKIP} pemeriksaan DILEWATI (SKIP): izin Gudang TIDAK terverifikasi di production karena tidak ada akun WAREHOUSE murni (tidak ada akun/token dibuat atau direkayasa). Asersi izin Gudang dijaga oleh tes integrasi; ini BUKAN PASS."
+fi
 OLD_ONLY="$(sed -n 1p "$OLD_ASSETS" || true)"
 if [ -n "$OLD_ONLY" ]; then
   [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "${PUBLIC_URL}/assets/${OLD_ONLY}")" = "200" ] || die "aset lama /assets/${OLD_ONLY} tidak bisa diunduh (404) — pembawaan aset lama gagal"

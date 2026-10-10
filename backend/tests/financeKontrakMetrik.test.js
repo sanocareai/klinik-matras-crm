@@ -93,7 +93,10 @@ test("COVERAGE TAB: setiap halaman Finance diklasifikasi — punya metrik di kon
     // Purchase Order: nilai PO/ditunggu adalah KOMITMEN dokumen (harga × jumlah), bukan angka buku besar — PO tidak menjurnal apa pun, jadi tidak ada metrik kontrak untuknya.
     "FinancePurchaseOrders.jsx",
     // Biaya Bahan per Unit: kartu angkanya hidup di komponen JejakBiayaBahan (read-model nilai beku); definisinya tetap di kontrak (biaya_bahan_*) dan dipakai panel KenapaBeda halaman ini.
-    "FinanceBiayaBahan.jsx"]);
+    "FinanceBiayaBahan.jsx",
+    // Retur Supplier & Debit Note: pembungkus tipis ke features/returSupplier (daftar dokumen retur / debit note / saldo kredit). Nilai di layar adalah nilai DOKUMEN; belum ada metrik kontrak untuk
+    // retur/debit note. Klasifikasi SEMENTARA saat rilis 11 Okt 2026 agar halaman baru tidak lolos tanpa klasifikasi — pemilik kontrak Finance menentukan bila ingin metrik retur_supplier_*.
+    "FinanceReturSupplier.jsx"]);
   // Halaman tipis yang seluruh kartunya hidup di komponen fitur: kunci metrik dibaca dari komponen itu (tetap divalidasi terhadap kontrak).
   const DELEGASI_FITUR = { "FinanceLaporanDivisi.jsx": "../features/laporanDivisi/LaporanDivisi.jsx" };
   const kunci = new Set(METRIK.map((m) => m.kunci));

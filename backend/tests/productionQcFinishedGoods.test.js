@@ -110,7 +110,10 @@ test("migration P6 additif: enum value, kolom nullable, tabel baru, trigger, CHE
   // saat P6 ditulis) sehingga gagal begitu sesi lain menambah tabrakan sah. Kini daftar tabrakan DIKENAL eksplisit: tiap pasangan menyentuh objek DB yang terpisah
   // (diperiksa 4 Okt 2026), diurutkan deterministik oleh Prisma lewat nama folder penuh, dan TIDAK BOLEH di-rename (sudah dipakai database yang sudah migrate).
   // Tabrakan stempel BARU di luar daftar ini tetap menggagalkan tes.
-  const KNOWN_SHARED_STAMPS = new Set(["20260801140000", "20260906150000", "20260928090000", "20261013090000", "20261014090000", "20261021100000"]); // 20261021100000: route_completeness_proof (live, Delivery) + production_component_qc_sections (Produksi) — nama penuh berbeda, aditif, sudah dilatih di rehearsal
+  const KNOWN_SHARED_STAMPS = new Set(["20260801140000", "20260906150000", "20260928090000", "20261013090000", "20261014090000", "20261021100000", "20261102090000"]);
+  // 20261102090000: production_station_pic_target_history (Produksi, LIVE 10 Okt 2026) + retur_supplier_debit_note (Finance, LIVE 10 Okt 2026). Menyentuh objek DB yang terpisah (tabel baru + 1 kolom
+  // nullable di production_run_plans_v2 vs tabel retur/debit note + kolom credit_applied); diuji 10 Okt 2026 pada tiga urutan penerapan (produksi→finance, finance→produksi, sekaligus): semuanya berhasil dan
+  // sidik skema identik. Sudah terpasang di production — TIDAK boleh di-rename. // 20261021100000: route_completeness_proof (live, Delivery) + production_component_qc_sections (Produksi) — nama penuh berbeda, aditif, sudah dilatih di rehearsal
   const byStamp = new Map();
   for (const n of names) byStamp.set(n.slice(0, 14), [...(byStamp.get(n.slice(0, 14)) ?? []), n]);
   const shared = [...byStamp].filter(([, v]) => v.length > 1);
