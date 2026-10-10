@@ -524,7 +524,10 @@ test("KOREKSI PENERIMAAN dengan retur aktif tertolak jelas: guard RETUR_AKTIF (d
   const rec = det.penerimaan.find((x) => x.id === r.receiptId);
   const koreksi = await w.g.post(`/api/inventory/barang-akan-datang/penerimaan/${r.receiptId}/koreksi`, { revisi: rec.revisi, alasan: "Salah ketik jumlah datang", perubahan: { lines: [{ purchaseOrderLineId: po.lines[0].id, jumlahDatang: 4 }] } }, kunci());
   assert.equal(koreksi.status, 409, JSON.stringify(koreksi.body));
-  assert.match(koreksi.body.error, /tidak bisa dikoreksi lagi: penerimaan sudah masuk pemeriksaan\/penyimpanan/);
+  // Sejak Koreksi Penerimaan (satu pintu koreksiKedatangan): penolakan datang dari kontrak Retur (409 RETUR_AKTIF + arah tindakan), bukan lagi dari kunci status pemeriksaan.
+  assert.equal(koreksi.body.code, "RETUR_AKTIF");
+  assert.match(koreksi.body.error, /punya Retur Supplier aktif/);
+  assert.match(koreksi.body.arah, /batalkan Retur Supplier/i);
   const ubah = await w.g.patch(`/api/inventory/goods-receipts/${r.receiptId}/lines/${r.lineId}`, { acceptedQty: 3 });
   assert.ok([400, 409].includes(ubah.status), `status ${ubah.status}`);
   assert.match(ubah.body.error, /tidak bisa diubah lagi/);

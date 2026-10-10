@@ -72,7 +72,7 @@ test("RETUR AKTIF menolak koreksi kuantitas (draf, keluar/selesai) 409 RETUR_AKT
 
   // retur DRAF
   const k1 = await kor(w, r.receiptId, { lines: [{ purchaseOrderLineId: L, jumlahDatang: 5, jumlahBaik: 5 }] }, 1);
-  assert.equal(k1.status, 409); assert.equal(k1.body.code, "RETUR_AKTIF"); assert.match(k1.body.error, /Draf/); assert.match(k1.body.arah, /Batalkan Retur Supplier/);
+  assert.equal(k1.status, 409); assert.equal(k1.body.code, "RETUR_AKTIF"); assert.match(k1.body.error, /Draf/); assert.match(k1.body.arah, /batalkan Retur Supplier/i);
   // lembar saja → boleh (tidak menyentuh kolom jumlah → trigger tidak aktif); retur draf belum mengunci
   const lembar = await kor(w, r.receiptId, { lines: [{ purchaseOrderLineId: L, jumlahPendamping: 2 }] }, 1, "Hitung ulang lembar");
   assert.equal(lembar.status, 200, JSON.stringify(lembar.body));

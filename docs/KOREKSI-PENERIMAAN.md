@@ -32,7 +32,7 @@ Catatan lama tidak diubah. Untuk koreksi jumlah baik: pergerakan `RECEIPT` **pem
 | `RETUR_AKTIF` | Retur Supplier draf/keluar/selesai pada baris (kontrak Retur; trigger DB pagar terakhir) | Batalkan retur dulu (Gudang) |
 | `FAKTUR_DISETUJUI` | Jumlah baik sudah diklaim faktur disetujui | Finance: batalkan faktur (+ pembayaran), koreksi, catat ulang |
 | `TAGIHAN_LAMA` | Tagihan lama aktif menutup penerimaan | Batalkan/koreksi tagihan lebih dulu |
-| `STOK_SUDAH_BERGERAK` | Bahan sudah dipakai/bergerak sejak disimpan (rata-rata tertimbang tanpa lot → asal stok tak pasti) | Koreksi stok (opname/penyesuaian) oleh Gudang |
+| `STOK_SUDAH_BERGERAK` | Bahan sudah dipakai/bergerak sejak disimpan (rata-rata tertimbang tanpa lot → asal stok tak pasti) | Koreksi stok (opname/penyesuaian) oleh Gudang. Retur Supplier per penerimaan (`SUPPLIER_RETURN`) bukan pemakaian dari kolam stok dan tidak ikut dihitung |
 | `TERMIN_TERKUNCI` | Tanggal tiba menggeser jatuh tempo faktur disetujui | Batalkan faktur, koreksi tanggal, catat ulang |
 | `PERIODE_TERTUTUP` | Periode pembukuan hari ini tertutup (koreksi dibukukan hari ini) | Buka periode di Finance › Pengaturan |
 | `STOK_TIDAK_CUKUP` / `STOK_DIRESERVASI` | Stok tersedia tidak cukup untuk pengurangan | Selesaikan reservasi / penyesuaian stok |
@@ -50,6 +50,14 @@ penerimaan → PO → material (di dalam `postStockMovement`). Retur Supplier: r
 ## Kontrak dengan Retur Supplier
 
 `pastikanTanpaReturAktifJikaAda` memanggil `pastikanTanpaReturAktif()` (returSupplier.js) sebelum koreksi kuantitas; tidak berbuat apa pun bila fitur Retur belum terpasang. Tes lintas fitur: `koreksiPenerimaan.integration.test.js` › "RETUR AKTIF" (di-skip tanpa Retur; berjalan di kandidat gabungan).
+
+Aturan interaksi (diuji di `koreksiRetur.integration.test.js`):
+
+- **Penolakan** membawa sebab dan arah: `409 RETUR_AKTIF` + "Batalkan Retur Supplier itu (Gudang → Retur Supplier → Batalkan) lalu ulangi koreksi". Setelah retur dibatalkan, koreksi boleh.
+- **Trigger DB** `trg_goods_receipt_line_terkunci_retur` aktif untuk kolom yang tercantum di SET walau nilainya sama — karena itu koreksi hanya menulis kolom yang BERUBAH. Koreksi lembar/kaitan pengganti pada baris yang punya retur tetap lolos.
+- **Rata-rata harga** (`dasarHargaRataRata`): pembalik koreksi dikurangkan dari RECEIPT positif penerimaan yang sama lebih dulu, baru retur (`SUPPLIER_RETURN`); baris pembalik (qty negatif) tidak pernah ikut dikurangi retur.
+- **Kapasitas retur** memakai jumlah baik SESUDAH koreksi (koreksi 6→5 lalu retur 2 → diterima bersih 3). Selama ada retur aktif jumlah baik tidak bisa diubah sama sekali, jadi tidak ada koreksi yang menembus jumlah yang sudah diretur.
+- **Urutan kunci**: koreksi = penerimaan → PO → material; retur = retur → PO → material; keduanya serial di kunci PO. Balapan koreksi vs retur pada baris yang sama: apa pun pemenangnya, stok = baik − diretur dan persediaan = stok × harga.
 
 ## Perubahan perilaku (disengaja)
 
