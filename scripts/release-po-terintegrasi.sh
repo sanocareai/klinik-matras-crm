@@ -79,7 +79,7 @@ for lf in /tmp/release-*.lock; do
   ( exec 8>"$lf"; flock -n 8 ) || die "deploy lain sedang berjalan (kunci ${lf} dipegang)"
 done
 exec 9>/tmp/release-po-terintegrasi.lock; flock -n 9 || die "rilis ini sudah berjalan"
-OTHER="$(pgrep -af 'release-[a-z0-9-]+\.sh|docker compose .*(up|build)|docker build|prisma migrate' | grep -v "poti1\|release-po-terintegrasi\|pgrep" | grep -v "$$" || true)"
+OTHER="$(pgrep -af 'release-[a-z0-9-]+\.sh|docker compose .*(up|build)|docker build|prisma migrate' | grep -v "poti1\|release-po-terintegrasi\|pgrep\|node src/index.js" | grep -v "$$" || true)"  # 'node src/index.js' = perintah start container backend yang SEDANG melayani (bukan deploy)
 [ -z "$OTHER" ] || { printf '%s\n' "$OTHER" | sed 's/^/        /'; die "ada proses deploy/build/migrasi lain yang berjalan"; }
 ok "tidak ada deploy lain"
 mkdir -p "$BK_DIR" "$HOME/release-src" "$HOME/backups"
