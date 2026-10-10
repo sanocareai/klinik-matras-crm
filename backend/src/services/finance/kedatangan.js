@@ -561,7 +561,15 @@ export async function koreksiKedatangan(tx, { receiptId, perubahan, alasan, revi
 
   // ── Tulis ──
   for (const b of barisUbah) {
-    await tx.goodsReceiptLine.update({ where: { id: b.baris.id }, data: { receivedQty: b.baru.datang, acceptedQty: b.baru.baik, rejectedQty: b.baru.ditolak, companionQty: b.baru.pendamping, replacementForLineId: b.baru.penggantiDari } });
+    // HANYA kolom yang benar-benar berubah ditulis: trigger pengaman Retur (UPDATE OF received_qty/accepted_qty/…) aktif untuk kolom yang tercantum di SET walau nilainya sama,
+    // sehingga koreksi lembar/kaitan pengganti pada baris yang punya retur tidak boleh ikut menyentuh kolom jumlah.
+    const beda = {};
+    if (!sama3(b.baru.datang ?? -1, b.lama.datang ?? -1)) beda.receivedQty = b.baru.datang;
+    if (!sama3(b.baru.baik ?? -1, b.lama.baik ?? -1)) beda.acceptedQty = b.baru.baik;
+    if (!sama3(b.baru.ditolak ?? -1, b.lama.ditolak ?? -1)) beda.rejectedQty = b.baru.ditolak;
+    if (!sama3(b.baru.pendamping ?? -1, b.lama.pendamping ?? -1)) beda.companionQty = b.baru.pendamping;
+    if ((b.baru.penggantiDari ?? null) !== (b.lama.penggantiDari ?? null)) beda.replacementForLineId = b.baru.penggantiDari ?? null;
+    if (Object.keys(beda).length) await tx.goodsReceiptLine.update({ where: { id: b.baris.id }, data: beda });
   }
   let stok = { pergerakan: [], jurnal: null, selisihNilai: null };
   if (rencana.length > 0) stok = await terapkanBaikSesudahStok(tx, { galat: galatKoreksi, receipt, rencana, aktor, revisiBaru, alasan: r, sekarang });
