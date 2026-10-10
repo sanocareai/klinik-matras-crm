@@ -2253,6 +2253,7 @@ model ProductionOperator {
   cornerPlans      ProductionRunPlan[] @relation("PlanCornerOperator")
   buildMaterialSettings ProductionRunBuildSetting[]
 
+  stationDayPics ProductionStationDayPic[] @relation("StationDayPicOperator")
   @@map("production_operators")
 }
 
@@ -9634,6 +9635,9 @@ model ProductionRunPlan {
 
   targetStartAt    DateTime? @map("target_start_at")
   targetCompleteAt DateTime? @map("target_complete_at")
+  // Target produksi PENGECUALIAN per kartu (tanggal kalender WIB). NULL = target bawaan = tanggal papan (productionDate). Diisi hanya bila Kepala Produksi
+  // menetapkan target berbeda dari tanggal papan; tidak pernah diisi otomatis dan tidak pernah mengubah rencana lain.
+  targetDate       DateTime? @map("target_date") @db.Date
 
   plannedById          String?   @map("planned_by_id")
   plannedAt            DateTime? @map("planned_at")
@@ -9650,11 +9654,55 @@ model ProductionRunPlan {
   bomLines       PlannedBOMLine[]
   reservations   MaterialReservation[]
   materialIssues MaterialIssue[]
+  scheduleEvents ProductionPlanScheduleEvent[]
 
   @@index([status, updatedAt])
   @@index([productionDate, stationCode])
   @@index([cornerOperatorId])
   @@map("production_run_plans_v2")
+}
+
+// PIC bawaan per MEJA per TANGGAL produksi (usulan penjadwalan di header Meja 1–4). BUKAN penugasan unit: PIC yang sah per unit tetap production_run_plans_v2.operator_id.
+// Menjadwalkan unit ke meja+tanggal memakai PIC ini bila petugas tidak memilih PIC lain. Tidak ada operator/akun yang dibuat otomatis — PIC harus profil operator aktif.
+model ProductionStationDayPic {
+  id             String   @id @default(uuid()) @db.Uuid
+  productionDate DateTime @map("production_date") @db.Date
+  stationCode    String   @map("station_code")
+  operatorId     String   @map("operator_id") @db.Uuid
+  operator       ProductionOperator @relation("StationDayPicOperator", fields: [operatorId], references: [id], onDelete: Restrict)
+  setById        String?  @map("set_by_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@unique([productionDate, stationCode])
+  @@map("production_station_day_pics_v2")
+}
+
+// Riwayat jadwal/target per rencana — APPEND-ONLY (trigger DB menolak UPDATE/DELETE). Setiap penjadwalan, penjadwalan ulang, pengeluaran dari papan, dan perubahan target
+// tercatat dengan nilai LAMA, nilai BARU, alasan terstruktur + catatan, aktor, dan waktu. "Lewat Target" = target efektif sudah lewat saat dijadwalkan ulang.
+model ProductionPlanScheduleEvent {
+  id     String            @id @default(uuid()) @db.Uuid
+  planId String            @map("plan_id") @db.Uuid
+  plan   ProductionRunPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+  unitId String            @map("unit_id")
+  kind   String // SCHEDULED | RESCHEDULED | UNSCHEDULED | TARGET_CHANGED
+
+  fromDate       DateTime? @map("from_date") @db.Date
+  fromStation    String?   @map("from_station")
+  fromTargetDate DateTime? @map("from_target_date") @db.Date
+  toDate         DateTime? @map("to_date") @db.Date
+  toStation      String?   @map("to_station")
+  toTargetDate   DateTime? @map("to_target_date") @db.Date
+
+  missedTarget Boolean @default(false) @map("missed_target")
+  reasonCode   String? @map("reason_code")
+  note         String?
+  actorId      String? @map("actor_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@index([planId, createdAt])
+  @@index([unitId, createdAt])
+  @@map("production_plan_schedule_events_v2")
 }
 
 model PlannedBOMLine {

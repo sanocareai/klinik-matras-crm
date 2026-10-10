@@ -297,7 +297,32 @@ function InsertLine() {
 // Tombol aksi kartu: kontras tinggi di terang & gelap (bukan varian "secondary" biru-di-atas-biru).
 const ACTION_BTN = "min-h-[44px] border border-line bg-inset text-ink hover:bg-hovertint";
 
-function MejaColumn({ station, drag, saving, onOpen, onMove, onReorder, onHandleDown, today, tomorrow, busy = false, hasDraggable = true }) {
+// PIC bawaan Meja untuk tanggal papan. Memilih PIC TIDAK membuat akun/operator: daftar = profil operator aktif. Daftar kosong dijelaskan, tidak disembunyikan.
+function StationPicPicker({ station, refs, busy, onSet }) {
+  const pic = station.defaultPic;
+  const operators = refs.operators || [];
+  const stale = pic && !pic.active && !operators.some((o) => o.id === pic.operatorId);
+  if (refs.forbidden) return <p className="m-0 truncate text-[11.5px] text-ink3">{station.operatorNames?.length ? `PIC ${station.operatorNames.join(", ")}` : "PIC belum ada"}</p>;
+  if (refs.loaded && operators.length === 0) {
+    return (
+      <p data-testid="station-pic-empty" className="m-0 text-[11.5px] text-orange">
+        Belum ada PIC terdaftar. <Link to="/bengkel/pengaturan?tab=operator" className="font-semibold underline">Daftarkan PIC di Pengaturan › Operator</Link>
+      </p>
+    );
+  }
+  return (
+    <label className="block text-[11px] font-semibold uppercase tracking-wide text-ink3">PIC {station.label}
+      <select data-testid="station-pic" aria-label={`PIC ${station.label} pada tanggal papan`} disabled={busy || !refs.loaded}
+        className="mt-0.5 w-full min-h-[40px] rounded-btn border border-line bg-surface px-2 text-[13px] font-medium normal-case tracking-normal text-ink"
+        value={pic?.operatorId || ""} onChange={(e) => onSet(station.code, e.target.value || null)}>
+        <option value="">{stale ? `${pic.name || "PIC"} (tidak aktif) — pilih ulang` : "— belum dipilih —"}</option>
+        {operators.map((o) => <option key={o.id} value={o.id}>{o.name || o.employeeCode}</option>)}
+      </select>
+    </label>
+  );
+}
+
+function MejaColumn({ station, drag, saving, onOpen, onMove, onReorder, onUnschedule, onHandleDown, today, tomorrow, busy = false, hasDraggable = true, refs, onSetPic }) {
   const cap = stationCapacity(station);
   // Urutan tampil = urutan server (manual > prioritas bawaan), unit 12/12 terkunci di paling bawah.
   const items = planDisplayOrder(station.items);
@@ -320,7 +345,8 @@ function MejaColumn({ station, drag, saving, onOpen, onMove, onReorder, onHandle
       <div className="flex items-start justify-between gap-2 px-1">
         <div className="min-w-0">
           <p className="m-0 text-[14px] font-bold text-ink">{station.label}</p>
-          <p className="m-0 truncate text-[11.5px] text-ink3">{station.operatorNames?.length ? `PIC ${station.operatorNames.join(", ")}` : "PIC belum ada"}</p>
+          <StationPicPicker station={station} refs={refs} busy={busy} onSet={onSetPic} />
+          {items.length > 0 && station.operatorNames?.length > 0 && <p className="m-0 mt-0.5 truncate text-[11px] text-ink3" title={station.operatorNames.join(", ")}>Mengerjakan: {station.operatorNames.join(", ")}</p>}
           {items.length > 1 && <p data-testid="meja-order-hint" className="m-0 text-[11px] text-ink3">{manual ? "Urutan diatur manual" : "Urutan bawaan: prioritas"} · seret lewat ⋮⋮ atau pakai ▲▼</p>}
         </div>
         <span data-testid="meja-capacity" className={`shrink-0 rounded-chip px-2 py-0.5 text-[12px] font-bold tabular-nums ${cap.full ? "bg-redbg text-red" : "bg-surface text-ink2"}`}>{cap.count} / {cap.capacity} unit{cap.full ? " · penuh" : ""}</span>
@@ -347,6 +373,7 @@ function MejaColumn({ station, drag, saving, onOpen, onMove, onReorder, onHandle
                 footer={locked ? null : (
                   <div className="flex w-full gap-1.5">
                     <Button size="sm" variant="neutral" data-mutates className={`flex-1 ${ACTION_BTN}`} disabled={busy} onClick={() => onMove(v, station.code)}><CalendarDays size={13} aria-hidden /> Pindahkan</Button>
+                    <Button size="sm" variant="neutral" data-mutates data-testid="unschedule-button" className={`min-w-[44px] ${ACTION_BTN}`} aria-label={`Kembalikan ${v.unit.unitCode} ke Belum Dijadwalkan`} title="Kembalikan ke Belum Dijadwalkan" disabled={busy} onClick={() => onUnschedule(v)}><Undo2 size={15} aria-hidden /></Button>
                     {movable.length > 1 && (
                       <>
                         <Button size="sm" variant="neutral" className={`min-w-[44px] ${ACTION_BTN}`} data-testid="order-up" data-demo-sim aria-label={`Naikkan urutan ${v.unit.unitCode}`} disabled={busy || mi === 0}
@@ -485,10 +512,13 @@ export default function ProductionRencanaWorkspace() {
     const target = stations.find((s) => s.code === stationCode);
     if (plan?.stationCode === stationCode && plan?.productionDate === date) return;
     if (target && stationCapacity(target).full) { setError(`${target.label} sudah penuh (${stationCapacity(target).label}). Pilih meja lain.`); return; }
-    if (!(plan?.workCenter?.id && plan?.operator?.id)) { setSchedule({ ...view, presetStation: stationCode }); return; }
+    // PIC: PIC bawaan Meja bila ada (server memilihnya di dalam transaksi); kalau tidak, PIC rencana sebelumnya; kalau keduanya kosong, buka dialog agar petugas memilih.
+    const stationPic = target?.defaultPic?.active ? target.defaultPic : null;
+    if (!stationPic && !(plan?.workCenter?.id && plan?.operator?.id)) { setSchedule({ ...view, presetStation: stationCode }); return; }
     await commit("Menyimpan jadwal…", async () => {
       await api.scheduleProductionV2Plan(plan.id, {
-        productionDate: date, stationCode, priority: plan.priority ?? 0, workCenterId: plan.workCenter.id, operatorId: plan.operator.id,
+        productionDate: date, stationCode, priority: plan.priority ?? 0, ...(plan.workCenter?.id ? { workCenterId: plan.workCenter.id } : {}),
+        ...(stationPic ? {} : { operatorId: plan.operator.id }),
         cornerOperatorId: plan.cornerOperator?.id || undefined, expectedRevision: plan.revision,
       });
       const where = `${mejaLabel(stationCode)} — ${fmtLong(date)}`;
@@ -499,6 +529,13 @@ export default function ProductionRencanaWorkspace() {
       } catch (e) {
         return { warning: `${view.unit.unitCode} sudah dijadwalkan ke ${where}, tetapi urutannya belum tersimpan (masuk paling bawah): ${friendlyError(e)}` };
       }
+    });
+  }
+  // PIC bawaan Meja pada tanggal papan. Hanya usulan untuk penjadwalan berikutnya; tidak mengubah PIC unit yang sudah terjadwal.
+  async function setStationPic(stationCode, operatorId) {
+    await commit("Menyimpan PIC meja…", async () => {
+      const r = await api.setProductionV2StationPic(stationCode, { productionDate: date, operatorId });
+      return { notice: r.operatorName ? `PIC ${mejaLabel(stationCode)} tanggal ${fmtLong(date)}: ${r.operatorName}.` : `PIC bawaan ${mejaLabel(stationCode)} dihapus untuk ${fmtLong(date)}.` };
     });
   }
   async function unschedule(view) {
@@ -513,6 +550,8 @@ export default function ProductionRencanaWorkspace() {
   async function moveDate(view, day) {
     const plan = view.plan;
     if (!(plan?.workCenter?.id && plan?.operator?.id && plan?.stationCode)) { setSchedule({ ...view, presetStation: plan?.stationCode }); return; }
+    // Pindah tanggal dari kartu Lewat Target butuh alasan terstruktur: arahkan ke dialog (tidak mengirim tanpa alasan lalu gagal).
+    if (plan.targetMissed) { setSchedule({ ...view, presetStation: plan.stationCode, presetDate: day }); return; }
     await commit("Menyimpan jadwal…", async () => {
       await api.scheduleProductionV2Plan(plan.id, {
         productionDate: day, stationCode: plan.stationCode, priority: plan.priority ?? 0, workCenterId: plan.workCenter.id, operatorId: plan.operator.id,
@@ -634,7 +673,7 @@ export default function ProductionRencanaWorkspace() {
             <WeekStrip centerDate={date} onPick={setDate} drag={drag} refreshKey={board} />
 
             <div className="grid min-w-0 gap-4 xl:grid-cols-[340px_minmax(0,1fr)]">
-              <div className="flex min-w-0 flex-col gap-4">
+              <div className="flex min-w-0 flex-col gap-4 xl:sticky xl:top-3 xl:self-start">
               <section data-testid="backlog-panel" data-drop="backlog" aria-label="Belum Dijadwalkan"
                 className={`flex min-w-0 flex-col gap-2.5 rounded-card bg-inset p-3 xl:max-h-[calc(100vh-260px)] xl:overflow-y-auto ${backlogOver === "unschedule" ? "ring-2 ring-accent" : drag ? "ring-1 ring-line" : ""}`}>
                 <div className="flex items-center justify-between px-1">
@@ -683,8 +722,8 @@ export default function ProductionRencanaWorkspace() {
 
               <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2" data-testid="meja-grid">
                 {(stations.length ? stations : (cfg?.stations || MEJA).map((code) => ({ code, label: mejaLabel(code), capacity: 3, count: 0, items: [], operatorNames: [] }))).map((s) => (
-                  <MejaColumn key={s.code} station={s} drag={drag} saving={!!saving} onHandleDown={onHandleDown}
-                    onOpen={openOverview} onMove={(v, code) => setSchedule({ ...v, presetStation: code })} onReorder={reorderStation} busy={busy} today={today} tomorrow={tomorrow} hasDraggable={hasDraggable} />
+                  <MejaColumn key={s.code} station={s} drag={drag} saving={!!saving} onHandleDown={onHandleDown} refs={refs} onSetPic={setStationPic}
+                    onOpen={openOverview} onMove={(v, code) => setSchedule({ ...v, presetStation: code })} onReorder={reorderStation} onUnschedule={unschedule} busy={busy} today={today} tomorrow={tomorrow} hasDraggable={hasDraggable} />
                 ))}
               </div>
             </div>
@@ -692,6 +731,11 @@ export default function ProductionRencanaWorkspace() {
         )}
       </PageBody>
       {saving && createPortal(<div role="status" data-testid="saving-banner" className="fixed bottom-4 left-1/2 z-[90] -translate-x-1/2 rounded-btn bg-accent px-4 py-2 text-[13px] font-semibold text-white shadow-lg">{saving}</div>, document.body)}
+      {drag && drag.view?.plan?.stationCode && createPortal(
+        <div data-testid="backlog-dock" data-drop="backlog" role="note"
+          className={`fixed inset-x-3 bottom-3 z-[95] flex min-h-[64px] items-center justify-center gap-2 rounded-card border-2 border-dashed px-4 text-center text-[13.5px] font-bold shadow-xl md:left-auto md:right-6 md:w-[420px] ${backlogOver === "unschedule" ? "border-accent bg-accent text-white" : "border-accent bg-surface text-accent"}`}>
+          <Undo2 size={18} aria-hidden /> {backlogOver === "unschedule" ? "Lepas untuk mengembalikan ke Belum Dijadwalkan" : "Lepas di sini → kembali ke Belum Dijadwalkan"}
+        </div>, document.body)}
       {drag && createPortal(
         // Label tujuan di ATAS kartu (tetap terlihat saat jari di tepi bawah layar); posisi dijepit agar ghost tidak terpotong di tepi kiri/kanan.
         <div data-testid="drag-ghost" aria-hidden className="pointer-events-none fixed z-[100] opacity-95 shadow-2xl" style={{ left: Math.max(4, Math.min(drag.x - drag.offX, window.innerWidth - drag.width - 4)), top: drag.y - drag.offY - 34, width: drag.width }}>

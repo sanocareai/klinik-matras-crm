@@ -7,7 +7,7 @@ import {
   ANDON_BUCKETS, COMMAND_CENTER_COLUMNS, STEP_BY_NO, STEPS, andonBucketOf, commandCenterColumn, isSkippedEvidence, stepNoForStage,
 } from "../lib/domain/productionSteps.js";
 import { listMaterialReturns } from "./productionMaterialReturnService.js";
-import { BOARD_DEFAULTS, compareStationOrder, formatProductionDate, parseProductionDate, stationLabel, todayWib } from "../lib/domain/productionBoard.js";
+import { BOARD_DEFAULTS, compareStationOrder, effectiveTargetKey, formatProductionDate, isTargetMissed, parseProductionDate, stationLabel, todayWib } from "../lib/domain/productionBoard.js";
 import { applicableStepsFor, loadAssemblyView, loadCornerView, loadStepContext, usedByEvidence } from "./productionStepCommandService.js";
 import { cornerStatusOf } from "../lib/domain/productionCorner.js";
 import { lifecycleStatusOf } from "../lib/domain/productionLifecycle.js";
@@ -198,6 +198,11 @@ export function toRunView(run, ctx, { now = new Date(), photoUrl = null, complai
       operator: run.plan.operator ? { id: run.plan.operator.id, userId: run.plan.operator.userId, name: nameOf(run.plan.operator) } : null,
       cornerOperator: run.plan.cornerOperator ? { id: run.plan.cornerOperator.id, userId: run.plan.cornerOperator.userId, name: nameOf(run.plan.cornerOperator) } : null,
       targetStartAt: run.plan.targetStartAt, targetCompleteAt: run.plan.targetCompleteAt,
+      // Target produksi: bawaan = tanggal papan; targetDate = pengecualian per kartu. "Lewat Target" dihitung server (WIB), bukan ditebak browser.
+      targetDate: run.plan.targetDate ? formatProductionDate(run.plan.targetDate) : null,
+      targetEffective: effectiveTargetKey(run.plan),
+      targetIsException: !!run.plan.targetDate && formatProductionDate(run.plan.targetDate) !== formatProductionDate(run.plan.productionDate),
+      targetMissed: !TERMINAL_RUN.includes(run.status) && !["HANDOFF", "SELESAI"].includes(bucket) && isTargetMissed(run.plan, now),
       bomCount: run.plan.bomLines.length,
     } : null,
     next, bucket, bucketLabel: ctx.state?.buildTrack && bucket === "FONDASI" ? BUILD_STAGE_LABEL : (ANDON_BUCKETS.find((b) => b.key === bucket)?.label ?? bucket),
@@ -282,10 +287,17 @@ export async function getProductionBoard(prisma, { date, unitIds, config = BOARD
   // Siap Kirim/Terkirim (status unit) tidak tampil di meja maupun backlog; datanya tetap utuh dan KPI hari itu tetap menghitung seluruh rencana.
   const workable = (v) => !isFinishedUnitStatus(v.unit.status);
   const unscheduled = unscheduledAll.filter(workable);
+  const stationPics = await prisma.productionStationDayPic.findMany({
+    where: { productionDate: day }, select: { stationCode: true, operatorId: true, operator: { select: { id: true, active: true, user: { select: { name: true, active: true } } } } },
+  });
+  const picOf = new Map(stationPics.map((p) => [p.stationCode, p]));
   const stations = config.stations.map((code) => {
     const items = scheduled.filter((v) => v.plan?.stationCode === code && workable(v)).sort((a, b) => compareStationOrder(a.plan, b.plan));
     const operatorNames = [...new Set(items.map((v) => v.plan?.operator?.name).filter(Boolean))];
-    return { code, label: stationLabel(code), capacity: config.capacityPerStation, count: items.length, operatorNames, items };
+    const pic = picOf.get(code);
+    // PIC bawaan meja: ditampilkan apa adanya; bila profilnya sudah nonaktif ditandai (tidak dipakai diam-diam) agar petugas memilih ulang.
+    const defaultPic = pic ? { operatorId: pic.operatorId, name: pic.operator?.user?.name || null, active: !!(pic.operator?.active && pic.operator?.user?.active) } : null;
+    return { code, label: stationLabel(code), capacity: config.capacityPerStation, count: items.length, operatorNames, defaultPic, items };
   });
   const completed = scheduled.filter((v) => ["HANDOFF", "SELESAI"].includes(v.bucket)).length;
   return {

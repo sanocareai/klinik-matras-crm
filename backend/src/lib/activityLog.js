@@ -170,6 +170,8 @@ export const EVENT_TYPES = Object.freeze({
   PRODUCTION_PLAN_BOM_SET: "PRODUCTION_PLAN_BOM_SET",
   PRODUCTION_PLAN_MATERIAL_RESERVED: "PRODUCTION_PLAN_MATERIAL_RESERVED",
   PRODUCTION_PLAN_CANCELLED: "PRODUCTION_PLAN_CANCELLED",
+  // PIC bawaan per meja+tanggal (usulan penjadwalan; bukan penugasan unit).
+  PRODUCTION_STATION_PIC_SET: "PRODUCTION_STATION_PIC_SET",
   // Diagnosis Produksi + Planned BOM Terpadu (P9D): hasil bongkar + layanan teknis + Planned BOM dalam satu
   // wizard. Detail (findings ringkas, jumlah bahan, dll) ada di metadata — TIDAK menyalin seluruh findings JSON.
   PRODUCTION_DIAGNOSIS_SUBMITTED: "PRODUCTION_DIAGNOSIS_SUBMITTED",
@@ -438,6 +440,8 @@ export function formatActivitySentence(event) {
       return `Rencana produksi dibuat untuk unit ${metadata.unitCode || "—"}`;
     case EVENT_TYPES.PRODUCTION_PLAN_ASSIGNED:
       return `Rencana unit ${metadata.unitCode || "—"} ditetapkan ke workshop ${metadata.workCenterCode || "—"}`;
+    case EVENT_TYPES.PRODUCTION_STATION_PIC_SET:
+      return metadata.operatorName ? `PIC ${metadata.stationLabel || metadata.stationCode} pada ${metadata.productionDate} ditetapkan: ${metadata.operatorName}` : `PIC bawaan ${metadata.stationLabel || metadata.stationCode} pada ${metadata.productionDate} dihapus`;
     case EVENT_TYPES.PRODUCTION_PLAN_BOM_SET:
       return `Planned BOM unit ${metadata.unitCode || "—"} disusun ulang (${metadata.lineCount ?? 0} bahan)${metadata.releasedReservations ? `, ${metadata.releasedReservations} reservasi dilepas` : ""}`;
     case EVENT_TYPES.PRODUCTION_PLAN_MATERIAL_RESERVED:

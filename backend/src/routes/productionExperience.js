@@ -6,7 +6,7 @@ import express from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { hasPermission, requireAnyPermission, requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
-import { createProductionPlan, reorderStationPlans, scheduleProductionPlan } from "../services/productionPlanningCommandService.js";
+import { createProductionPlan, listPlanScheduleHistory, reorderStationPlans, scheduleProductionPlan, setStationDayPic } from "../services/productionPlanningCommandService.js";
 import { cohortStatesOf, getPlanningRefs, listRencanaEligibility, planAndScheduleUnit } from "../services/productionRencanaService.js";
 import {
   applyAdaptationPolicy, applyQcGatePolicy, delayProductionWork, finishProduction, previewFinishProduction, recordProductionStep, reportMaterialShortage, resolveMaterialShortage, skipProductionStep,
@@ -264,8 +264,23 @@ productionExperienceRouter.post("/plans/:id/schedule", requirePermission(P.PRODU
       productionDate: req.body?.productionDate ?? null, stationCode: req.body?.stationCode ?? null, priority: req.body?.priority,
       workCenterId: req.body?.workCenterId, operatorId: req.body?.operatorId,
       cornerWorkCenterId: req.body?.cornerWorkCenterId, cornerOperatorId: req.body?.cornerOperatorId,
+      ...(Object.prototype.hasOwnProperty.call(req.body || {}, "targetDate") ? { targetDate: req.body.targetDate } : {}),
+      rescheduleReason: req.body?.rescheduleReason, rescheduleNote: req.body?.rescheduleNote,
     }));
   } catch (err) { handleErr(err, res); }
+});
+
+// PUT /api/production-v2/stations/:code/pic { productionDate, operatorId|null } — PIC bawaan Meja pada satu tanggal (usulan penjadwalan, bukan penugasan unit).
+// operatorId null = hapus. Hanya profil operator aktif; tidak membuat akun/operator. Izin = izin menjadwalkan.
+productionExperienceRouter.put("/stations/:code/pic", requirePermission(P.PRODUCTION_ASSIGNMENT_WRITE), async (req, res) => {
+  try {
+    res.json(await setStationDayPic(prisma, { actorId: req.user.id, productionDate: req.body?.productionDate, stationCode: req.params.code, operatorId: req.body?.operatorId || null }));
+  } catch (err) { handleErr(err, res); }
+});
+
+// GET /api/production-v2/plans/:id/schedule-history — riwayat jadwal & target (append-only), terbaru dulu. Baca-saja.
+productionExperienceRouter.get("/plans/:id/schedule-history", requirePermission(P.UNIT_READ), async (req, res) => {
+  try { res.json(await listPlanScheduleHistory(prisma, { planId: req.params.id })); } catch (err) { handleErr(err, res); }
 });
 
 // POST /api/production-v2/stations/reorder { productionDate, stationCode, orderedPlanIds[] } — urutan manual unit di satu meja

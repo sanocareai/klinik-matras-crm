@@ -96,7 +96,7 @@ export function PlanCard({ view, seq = null, today, tomorrow, onOpen, handle = n
             <PkrRujukan pkr={view.penjualanKaryawan} className="mt-1" />
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
               <PriorityBadge meta={p} />
-              {view.timer?.late && <Badge variant="red">Terlambat</Badge>}
+              {view.plan?.targetMissed ? <Badge variant="red" data-testid="missed-target-badge">Lewat Target</Badge> : view.timer?.late && <Badge variant="red">Terlambat</Badge>}
               {complete && <span data-testid="complete-chip" className="inline-flex items-center gap-1 rounded-chip bg-inset px-2 py-0.5 text-[11.5px] font-bold text-ink2"><Lock size={12} aria-hidden /> Selesai 12/12 · terkunci</span>}
             </div>
           </div>
@@ -127,7 +127,13 @@ export function PlanCard({ view, seq = null, today, tomorrow, onOpen, handle = n
             <Row label="Tahap" testid="row-stage">{stageText(view)}</Row>
             <Row label="Bahan" testid="row-material">{mat ? <Badge variant={mat.tone}>{mat.label}</Badge> : <span className="text-ink3">—</span>}</Row>
             <Row label="Target" testid="row-target">
-              {plan?.productionDate ? <span className="inline-flex flex-wrap items-center gap-1.5"><CalendarDays size={12} aria-hidden /> {formatTanggal(plan.productionDate)}{dateBadge && <Badge variant={dateBadge.tone}>{dateBadge.label}</Badge>}</span> : <span className="text-ink3">Belum dijadwalkan</span>}
+              {plan?.productionDate ? (
+                <span className="inline-flex flex-wrap items-center gap-1.5">
+                  <CalendarDays size={12} aria-hidden /> {formatTanggal(plan.targetEffective || plan.productionDate)}
+                  {plan.targetIsException && <span data-testid="target-exception" className="rounded-chip bg-inset px-1.5 py-0.5 text-[11px] font-semibold text-ink2" title={`Tanggal papan ${formatTanggal(plan.productionDate)}; target khusus untuk order ini`}>Target khusus</span>}
+                  {dateBadge && <Badge variant={dateBadge.tone}>{dateBadge.label}</Badge>}
+                </span>
+              ) : <span className="text-ink3">Belum dijadwalkan</span>}
             </Row>
             <Row label="Meja" testid="row-station">{scheduled ? <b className="text-ink">{mejaLabel(plan.stationCode)}{seq != null ? ` · Urutan ${seq}` : ""}</b> : <span className="text-ink3">Belum dijadwalkan</span>}</Row>
             <Row label={scheduled ? "PIC" : "PIC usulan"} testid="row-pic">

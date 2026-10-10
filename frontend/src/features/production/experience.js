@@ -100,6 +100,8 @@ export const COMMAND_CENTER_COLUMNS = Object.freeze([
 // today/tomorrow: string "YYYY-MM-DD" WIB (lihat wibDate()).
 export function targetDateBadge(view, today, tomorrow) {
   if (!view?.plan?.productionDate) return null;
+  // "Lewat Target" dihitung server (WIB) dari target efektif: pengecualian kartu, atau tanggal papan.
+  if (view.plan.targetMissed) return { tone: "red", label: "Lewat Target" };
   if (view.timer?.late) return { tone: "red", label: "Terlambat" };
   if (view.plan.productionDate === today && (view.progress?.done ?? 0) === 0 && !view.activeOp) return { tone: "red", label: "Target hari ini" };
   if (view.plan.productionDate === tomorrow) return { tone: "orange", label: "Target besok" };

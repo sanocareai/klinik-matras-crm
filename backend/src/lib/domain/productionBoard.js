@@ -65,7 +65,9 @@ export function workWindowFor(productionDate, config = BOARD_DEFAULTS) {
 
 // Validasi input penjadwalan (murni). Mengembalikan bentuk ternormalisasi atau melempar 400.
 // Keluarkan dari papan = productionDate & stationCode keduanya null (penugasan operator tidak berubah).
-export function normalizeScheduleInput(input, config = BOARD_DEFAULTS) {
+// deferResources: workshop/PIC boleh kosong di sini — pemanggil melengkapinya DI DALAM transaksi dari PIC bawaan meja+tanggal atau rencana yang sudah ada
+// (resolveScheduleResources), dan menolak dengan pesan yang menjelaskan bila tetap kosong. Tanpa opsi ini perilaku lama (wajib) tidak berubah.
+export function normalizeScheduleInput(input, config = BOARD_DEFAULTS, { deferResources = false } = {}) {
   const { productionDate = null, stationCode = null } = input || {};
   const priority = input?.priority == null ? 0 : Number(input.priority);
   if (!Number.isInteger(priority) || priority < 0 || priority > 2) throw boardError("Prioritas harus 0 (Normal), 1 (Tinggi), atau 2 (Mendesak)", 400, "PLAN_PRIORITY_INVALID");
@@ -73,14 +75,58 @@ export function normalizeScheduleInput(input, config = BOARD_DEFAULTS) {
   const date = parseProductionDate(productionDate);
   if (!date) throw boardError("Tanggal produksi wajib diisi dengan format YYYY-MM-DD", 400, "PLAN_PRODUCTION_DATE_INVALID");
   if (!config.stations.includes(stationCode)) throw boardError("Meja tidak dikenal", 400, "PLAN_STATION_INVALID", { stations: config.stations });
-  if (!input.workCenterId) throw boardError("Workshop/work center wajib dipilih", 400, "PLAN_WORK_CENTER_REQUIRED");
-  if (!input.operatorId) throw boardError("PIC meja (operator) wajib dipilih", 400, "PLAN_OPERATOR_REQUIRED");
+  if (!deferResources && !input.workCenterId) throw boardError("Workshop/work center wajib dipilih", 400, "PLAN_WORK_CENTER_REQUIRED");
+  if (!deferResources && !input.operatorId) throw boardError("PIC meja (operator) wajib dipilih", 400, "PLAN_OPERATOR_REQUIRED");
   if (input.cornerWorkCenterId && !input.cornerOperatorId) throw boardError("Work center Corner hanya berlaku bersama PIC Corner", 400, "PLAN_CORNER_OPERATOR_REQUIRED");
   return {
     unschedule: false, priority, productionDate: date, stationCode,
-    workCenterId: input.workCenterId, operatorId: input.operatorId,
+    workCenterId: input.workCenterId || null, operatorId: input.operatorId || null,
     cornerWorkCenterId: input.cornerWorkCenterId || null, cornerOperatorId: input.cornerOperatorId || null,
   };
+}
+
+// ---- Target & alasan jadwal ulang (Rencana Produksi) ------------------------------------------------------------------------------------
+// Target efektif sebuah rencana = targetDate (pengecualian per kartu) bila ada, jika tidak tanggal papan (productionDate). "Lewat Target" = target efektif < hari ini (WIB)
+// dan rencana belum selesai. Menjadwalkan ulang rencana yang Lewat Target WAJIB beralasan terstruktur + catatan.
+export const RESCHEDULE_REASONS = Object.freeze({
+  CUSTOMER_REQUEST: "Permintaan pelanggan",
+  WAITING_MATERIAL: "Menunggu bahan",
+  WAITING_ARRIVAL: "Unit belum tiba di workshop",
+  CAPACITY: "Kapasitas meja atau PIC",
+  PRIORITY_CHANGE: "Perubahan prioritas",
+  QC_REWORK: "Rework atau hasil QC",
+  OTHER: "Lainnya (jelaskan di catatan)",
+});
+export const RESCHEDULE_NOTE_MIN = 5;
+export const RESCHEDULE_NOTE_MAX = 300;
+
+export const effectiveTargetKey = (plan) => {
+  const d = plan?.targetDate || plan?.productionDate;
+  return d ? formatProductionDate(d) : null;
+};
+// Lewat Target: target efektif sudah lewat (sebelum hari ini WIB). Rencana tanpa tanggal tidak pernah "lewat".
+export const isTargetMissed = (plan, now = new Date()) => {
+  const key = effectiveTargetKey(plan);
+  return !!key && key < todayWib(now);
+};
+
+// Membaca metadata jadwal ulang dari input mentah. targetDate: undefined = tidak diubah, null = kembali ke bawaan (tanggal papan), tanggal = pengecualian.
+export function normalizeRescheduleMeta(input = {}) {
+  const hasTarget = Object.prototype.hasOwnProperty.call(input, "targetDate");
+  let targetDate;
+  if (!hasTarget || input.targetDate === undefined) targetDate = undefined;
+  else if (input.targetDate === null || input.targetDate === "") targetDate = null;
+  else {
+    targetDate = parseProductionDate(input.targetDate);
+    if (!targetDate) throw boardError("Target produksi harus berformat YYYY-MM-DD", 400, "PLAN_TARGET_DATE_INVALID");
+  }
+  const reasonCode = input.rescheduleReason == null || input.rescheduleReason === "" ? null : String(input.rescheduleReason);
+  if (reasonCode && !Object.prototype.hasOwnProperty.call(RESCHEDULE_REASONS, reasonCode)) {
+    throw boardError("Alasan jadwal ulang tidak dikenal", 400, "PLAN_RESCHEDULE_REASON_INVALID", { allowed: Object.keys(RESCHEDULE_REASONS) });
+  }
+  const note = typeof input.rescheduleNote === "string" ? input.rescheduleNote.trim() : "";
+  if (note.length > RESCHEDULE_NOTE_MAX) throw boardError(`Catatan jadwal ulang maksimal ${RESCHEDULE_NOTE_MAX} karakter`, 400, "PLAN_RESCHEDULE_NOTE_INVALID");
+  return { targetDate, reasonCode, note: note || null };
 }
 
 // Kapasitas meja (murni): `occupied` = jumlah plan AKTIF lain di (tanggal, meja) yang sama.

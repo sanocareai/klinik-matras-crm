@@ -25,7 +25,10 @@ import { createHash } from "node:crypto";
 import { recordActivity, EVENT_TYPES } from "../lib/activityLog.js";
 import { lockMaterialBalance, lockRowForUpdate, RESERVED_STATUSES } from "./inventoryLedger.js";
 import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState } from "./v2FeatureFlags.js";
-import { BOARD_DEFAULTS, assertStationCapacity, formatProductionDate, normalizeScheduleInput, parseProductionDate, workWindowFor } from "../lib/domain/productionBoard.js";
+import {
+  BOARD_DEFAULTS, RESCHEDULE_NOTE_MIN, RESCHEDULE_REASONS, assertStationCapacity, effectiveTargetKey, formatProductionDate, isTargetMissed, normalizeRescheduleMeta,
+  normalizeScheduleInput, parseProductionDate, stationLabel, workWindowFor,
+} from "../lib/domain/productionBoard.js";
 import { signUnitPhotoUrlIfAny, signUnitPhotoUrlsBulk } from "../routes/productionUnitPhoto.js";
 import { assertNoV1Drift } from "./productionRunGuards.js";
 import { PKR_ORDER_SELECT, pesanPkrBelumLengkap, rujukanPkrDariOrder } from "./pkrProduksiGuard.js";
@@ -206,7 +209,7 @@ export async function loadPlanForWrite(tx, planId) {
   const plan = await tx.productionRunPlan.findUnique({
     where: { id: planId },
     include: {
-      run: { select: { id: true, unitId: true, unit: { select: { unitCode: true, orderId: true } } } },
+      run: { select: { id: true, status: true, unitId: true, unit: { select: { unitCode: true, orderId: true } } } },
       bomLines: { where: { status: "ACTIVE" } },
       reservations: { where: { status: "ACTIVE" } },
     },
@@ -279,6 +282,39 @@ export async function assignProductionPlan(prisma, { planId, actorId, idempotenc
 //     (default 3) dijaga di dalam transaksi setelah mengunci plan. Keluarkan dari papan = productionDate & stationCode null.
 //     Mengganti PIC saat masih ada tahap aktif/dijeda ditolak (operasi berjalan milik PIC lama).
 // ---------------------------------------------------------------------------
+// Melengkapi workshop + PIC yang tidak dikirim klien. Urutan PIC: input > (slot sama: PIC rencana) > PIC bawaan meja+tanggal > PIC rencana lama. Tidak ada operator
+// yang dibuat atau dipilih diam-diam: bila tetap kosong, penjadwalan DITOLAK dengan pesan yang menjelaskan apa yang harus dilakukan.
+async function resolveScheduleResources(tx, { data, plan }) {
+  let operatorId = data.operatorId || null;
+  let source = operatorId ? "INPUT" : null;
+  if (!operatorId) {
+    const sameSlot = plan.productionDate && formatProductionDate(plan.productionDate) === formatProductionDate(data.productionDate) && plan.stationCode === data.stationCode;
+    if (sameSlot && plan.operatorId) { operatorId = plan.operatorId; source = "PLAN"; }
+  }
+  if (!operatorId) {
+    const pic = await tx.productionStationDayPic.findUnique({
+      where: { productionDate_stationCode: { productionDate: data.productionDate, stationCode: data.stationCode } }, select: { operatorId: true },
+    });
+    if (pic) { operatorId = pic.operatorId; source = "STATION_PIC"; }
+  }
+  if (!operatorId && plan.operatorId) { operatorId = plan.operatorId; source = "PLAN"; }
+  if (!operatorId) {
+    throw planError(`PIC untuk ${stationLabel(data.stationCode)} pada ${formatProductionDate(data.productionDate)} belum dipilih. Pilih PIC di header meja, atau pilih PIC di dialog Jadwalkan.`, 422, "PLAN_OPERATOR_REQUIRED",
+      { stationCode: data.stationCode, productionDate: formatProductionDate(data.productionDate) });
+  }
+  let workCenterId = data.workCenterId || plan.workCenterId || null;
+  if (!workCenterId) {
+    const op = await tx.productionOperator.findUnique({ where: { id: operatorId }, select: { primaryWorkCenterId: true } });
+    workCenterId = op?.primaryWorkCenterId || null;
+  }
+  if (!workCenterId) {
+    const active = await tx.workCenter.findMany({ where: { active: true }, select: { id: true }, take: 2 });
+    if (active.length === 1) workCenterId = active[0].id;
+  }
+  if (!workCenterId) throw planError("Workshop belum ditentukan: belum ada workshop utama pada PIC dan ada lebih dari satu workshop aktif. Pilih workshop di dialog Jadwalkan.", 422, "PLAN_WORK_CENTER_REQUIRED");
+  return { operatorId, workCenterId, source };
+}
+
 export async function scheduleProductionPlan(prisma, args) {
   return prisma.$transaction((tx) => scheduleProductionPlanInTx(tx, args));
 }
@@ -287,11 +323,13 @@ export async function scheduleProductionPlan(prisma, args) {
 export async function scheduleProductionPlanInTx(tx, { planId, actorId, idempotencyKey, expectedRevision, config = BOARD_DEFAULTS, ...input }) {
   assertIdempotencyKey(idempotencyKey);
   const revisionExpected = assertExpectedRevision(expectedRevision);
-  const data = normalizeScheduleInput(input, config);
+  const data = normalizeScheduleInput(input, config, { deferResources: true });
+  const meta = normalizeRescheduleMeta(input);
   const actor = actorId || "SYSTEM";
   const requestHash = hash({
     commandType: "SCHEDULE_PLAN", planId, expectedRevision: revisionExpected, ...data,
     productionDate: data.productionDate ? formatProductionDate(data.productionDate) : null,
+    ...(meta.targetDate !== undefined || meta.reasonCode || meta.note ? { meta: { target: meta.targetDate === undefined ? undefined : meta.targetDate ? formatProductionDate(meta.targetDate) : null, reason: meta.reasonCode, note: meta.note } } : {}),
   });
 
   return (async () => {
@@ -304,10 +342,29 @@ export async function scheduleProductionPlanInTx(tx, { planId, actorId, idempote
     if (!data.unschedule) await pastikanPkrLengkap(tx, plan.run.unit.orderId); // mengeluarkan dari papan tetap boleh
 
     const now = new Date();
+    // Lewat Target: target efektif (pengecualian kartu, atau tanggal papan) sudah lewat dan rencana belum selesai. Memindahkan TANGGAL rencana seperti itu wajib beralasan
+    // terstruktur + catatan; target lama, aktor, dan waktu masuk riwayat. Pindah meja pada tanggal yang sama tidak butuh alasan.
+    const prevDateKey = plan.productionDate ? formatProductionDate(plan.productionDate) : null;
+    const nextDateKey = data.unschedule ? null : formatProductionDate(data.productionDate);
+    const finished = ["COMPLETED", "CANCELLED"].includes(plan.run.status);
+    const missed = !!prevDateKey && !finished && isTargetMissed(plan, now);
+    const dateMoves = !data.unschedule && !!prevDateKey && prevDateKey !== nextDateKey;
+    if (dateMoves && missed && (!meta.reasonCode || !meta.note || meta.note.length < RESCHEDULE_NOTE_MIN)) {
+      throw planError(`Target ${effectiveTargetKey(plan)} sudah lewat. Pilih alasan dan tulis catatan (minimal ${RESCHEDULE_NOTE_MIN} karakter) untuk menjadwalkan ulang.`, 422, "PLAN_RESCHEDULE_REASON_REQUIRED",
+        { missedTarget: true, targetDate: effectiveTargetKey(plan), reasons: RESCHEDULE_REASONS });
+    }
+    let nextTargetDate = plan.targetDate || null;
+    if (!data.unschedule && meta.targetDate !== undefined) nextTargetDate = meta.targetDate;
+    if (!data.unschedule && nextTargetDate && formatProductionDate(nextTargetDate) < nextDateKey) {
+      throw planError("Target produksi tidak boleh lebih awal dari tanggal papan.", 422, "PLAN_TARGET_BEFORE_DATE", { productionDate: nextDateKey });
+    }
     let update;
     if (data.unschedule) {
       update = { productionDate: null, stationCode: null, stationSequence: null, priority: data.priority };
     } else {
+      const resolved = await resolveScheduleResources(tx, { data, plan });
+      data.operatorId = resolved.operatorId;
+      data.workCenterId = resolved.workCenterId;
       const workCenter = await tx.workCenter.findUnique({ where: { id: data.workCenterId } });
       if (!workCenter || !workCenter.active) throw planError("Workshop/work center tidak valid atau nonaktif", 422, "PLAN_WORK_CENTER_INVALID");
       const operator = await tx.productionOperator.findUnique({ where: { id: data.operatorId } });
@@ -351,7 +408,21 @@ export async function scheduleProductionPlanInTx(tx, { planId, actorId, idempote
     }
     const revision = plan.revision + 1;
     const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "SCHEDULE_PLAN", aggregateType: "ProductionRunPlan", aggregateId: planId, requestHash, expectedRevision: revisionExpected });
+    if (!data.unschedule) update.targetDate = nextTargetDate;
     const updated = await tx.productionRunPlan.update({ where: { id: planId }, data: { ...update, revision, commandId: command.id } });
+    const slotChanged = prevDateKey !== nextDateKey || (plan.stationCode || null) !== (updated.stationCode || null);
+    const targetChanged = !data.unschedule && (plan.targetDate ? formatProductionDate(plan.targetDate) : null) !== (nextTargetDate ? formatProductionDate(nextTargetDate) : null);
+    if (slotChanged || targetChanged) {
+      await tx.productionPlanScheduleEvent.create({
+        data: {
+          planId, unitId: plan.run.unitId,
+          kind: data.unschedule ? "UNSCHEDULED" : !prevDateKey ? "SCHEDULED" : slotChanged ? "RESCHEDULED" : "TARGET_CHANGED",
+          fromDate: plan.productionDate || null, fromStation: plan.stationCode || null, fromTargetDate: plan.targetDate || null,
+          toDate: data.unschedule ? null : data.productionDate, toStation: updated.stationCode || null, toTargetDate: data.unschedule ? (plan.targetDate || null) : nextTargetDate,
+          missedTarget: dateMoves && missed, reasonCode: meta.reasonCode, note: meta.note, actorId: actorId || null,
+        },
+      });
+    }
     const productionDate = formatProductionDate(updated.productionDate);
     await outbox(tx, {
       eventType: data.unschedule ? "production.plan.unscheduled" : "production.plan.scheduled", aggregateType: "ProductionRunPlan", aggregateId: planId, revision,
@@ -365,6 +436,7 @@ export async function scheduleProductionPlanInTx(tx, { planId, actorId, idempote
     const response = {
       planId, status: updated.status, revision, productionDate, stationCode: updated.stationCode, priority: updated.priority,
       workCenterId: updated.workCenterId, operatorId: updated.operatorId, cornerWorkCenterId: updated.cornerWorkCenterId, cornerOperatorId: updated.cornerOperatorId,
+      targetDate: updated.targetDate ? formatProductionDate(updated.targetDate) : null,
     };
     await finishCommand(tx, command, revision, response);
     return { replayed: false, ...response };
@@ -379,6 +451,54 @@ export async function scheduleProductionPlanInTx(tx, { planId, actorId, idempote
 //     Hanya baris yang nomornya BERUBAH yang dinaikkan revisinya. Prioritas TIDAK disentuh (urutan manual menang atas prioritas;
 //     prioritas hanya urutan bawaan saat belum ada urutan manual). Tidak mengubah kapasitas/jadwal/PIC.
 // ---------------------------------------------------------------------------
+// PIC bawaan meja+tanggal. operatorId null = hapus (tidak ada PIC bawaan). Hanya profil operator AKTIF; tidak ada akun/operator yang dibuat di sini. Tidak mengubah PIC
+// rencana yang sudah terjadwal — hanya usulan bawaan untuk penjadwalan berikutnya ke meja itu.
+export async function setStationDayPic(prisma, { actorId, productionDate, stationCode, operatorId = null, config = BOARD_DEFAULTS }) {
+  const date = parseProductionDate(productionDate);
+  if (!date) throw planError("Tanggal produksi wajib diisi dengan format YYYY-MM-DD", 400, "PLAN_PRODUCTION_DATE_INVALID");
+  if (!config.stations.includes(stationCode)) throw planError("Meja tidak dikenal", 400, "PLAN_STATION_INVALID", { stations: config.stations });
+  return prisma.$transaction(async (tx) => {
+    await tx.$queryRawUnsafe("SELECT pg_advisory_xact_lock(hashtext($1))::text AS k", `production-station-pic:${formatProductionDate(date)}:${stationCode}`);
+    const where = { productionDate_stationCode: { productionDate: date, stationCode } };
+    const before = await tx.productionStationDayPic.findUnique({ where, select: { operatorId: true } });
+    let result;
+    if (!operatorId) {
+      if (before) await tx.productionStationDayPic.delete({ where });
+      result = { productionDate: formatProductionDate(date), stationCode, operatorId: null, operatorName: null, changed: !!before };
+    } else {
+      const op = await tx.productionOperator.findUnique({ where: { id: operatorId }, select: { id: true, active: true, user: { select: { name: true, active: true } } } });
+      if (!op || !op.active || !op.user?.active) throw planError("PIC tidak terdaftar atau tidak aktif. Daftarkan/aktifkan dulu di Pengaturan Produksi › Operator.", 422, "PLAN_OPERATOR_INVALID");
+      await tx.productionStationDayPic.upsert({ where, create: { productionDate: date, stationCode, operatorId, setById: actorId || null }, update: { operatorId, setById: actorId || null } });
+      result = { productionDate: formatProductionDate(date), stationCode, operatorId, operatorName: op.user.name, changed: before?.operatorId !== operatorId };
+    }
+    if (result.changed) {
+      await recordActivity(tx, {
+        entityType: "station", entityId: `${formatProductionDate(date)}:${stationCode}`, eventType: EVENT_TYPES.PRODUCTION_STATION_PIC_SET, actorId: actorId || null,
+        metadata: { productionDate: result.productionDate, stationCode, stationLabel: stationLabel(stationCode), operatorId: result.operatorId, operatorName: result.operatorName, previousOperatorId: before?.operatorId ?? null },
+      });
+    }
+    return result;
+  });
+}
+
+// Riwayat jadwal & target sebuah rencana (append-only), terbaru dulu. Nama aktor diselesaikan dari tabel pengguna; tidak ada data lain yang dibuka.
+export async function listPlanScheduleHistory(prisma, { planId }) {
+  const rows = await prisma.productionPlanScheduleEvent.findMany({ where: { planId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 100 });
+  const ids = [...new Set(rows.map((r) => r.actorId).filter(Boolean))];
+  const users = ids.length ? await prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } }) : [];
+  const names = new Map(users.map((u) => [u.id, u.name]));
+  const day = (d) => (d ? formatProductionDate(d) : null);
+  return {
+    planId,
+    events: rows.map((r) => ({
+      id: r.id, kind: r.kind, at: r.createdAt, actorName: r.actorId ? names.get(r.actorId) || null : null,
+      from: { date: day(r.fromDate), station: r.fromStation, stationLabel: r.fromStation ? stationLabel(r.fromStation) : null, targetDate: day(r.fromTargetDate) },
+      to: { date: day(r.toDate), station: r.toStation, stationLabel: r.toStation ? stationLabel(r.toStation) : null, targetDate: day(r.toTargetDate) },
+      missedTarget: r.missedTarget, reasonCode: r.reasonCode, reasonLabel: r.reasonCode ? RESCHEDULE_REASONS[r.reasonCode] || r.reasonCode : null, note: r.note,
+    })),
+  };
+}
+
 export async function reorderStationPlans(prisma, { actorId, idempotencyKey, productionDate, stationCode, orderedPlanIds, config = BOARD_DEFAULTS }) {
   assertIdempotencyKey(idempotencyKey);
   const parsedDate = parseProductionDate(productionDate);
