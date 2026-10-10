@@ -12,6 +12,7 @@ import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { TombolAksi, Pilihan } from "@/features/finance/shared.jsx";
 import { UnggahBukti } from "@/features/kedatangan/PanelKedatangan.jsx";
 import { cn } from "@/lib/utils.js";
+import { adalahAdminKeuangan, ALASAN_ADMIN } from "@/features/finance/matriksAksi.js";
 import {
   ALASAN_RETUR, STATUS_RETUR, STATUS_DEBIT_NOTE, TEKS_KEPUTUSAN, jumlahTeks, rupiahTeks, tanggalTeks,
   formReturAwal, bodyRetur, galatRetur, galatKeluar, kalimatDampakDebitNote,
@@ -37,6 +38,7 @@ export default function ReturSupplierWorkspace({ workspace }) {
   const [bukaId, setBukaId] = useState(null);
   const [dnId, setDnId] = useState(null);
   const [kreditId, setKreditId] = useState(null);
+  const [batalPakai, setBatalPakai] = useState(null); // { kredit, aplikasi } — dialog pembatalan pemakaian saldo kredit (diaudit)
 
   const muat = useCallback(async () => {
     setLoading(true); setGalat("");
@@ -106,12 +108,13 @@ export default function ReturSupplierWorkspace({ workspace }) {
             )
         )}
         {tab === "dn" && finance && <DaftarDebitNote data={debitNote} onBuka={setDnId} />}
-        {tab === "kredit" && finance && <DaftarKredit data={kredit} total={totalKredit} onPakai={setKreditId} onBatalPakai={muat} />}
+        {tab === "kredit" && finance && <DaftarKredit data={kredit} total={totalKredit} onPakai={setKreditId} onBatalPakai={(kr, ap) => setBatalPakai({ kredit: kr, aplikasi: ap })} />}
       </PageBody>
       {buat && <DialogBuatRetur A={A} finance={finance} workspace={workspace} onClose={() => setBuat(false)} onDone={async (id) => { setBuat(false); await muat(); setBukaId(id); }} />}
       {bukaId && <DetailRetur A={A} finance={finance} workspace={workspace} id={bukaId} onClose={() => setBukaId(null)} onChanged={muat} onBukaDebitNote={(id) => { setBukaId(null); setTab("dn"); setDnId(id); }} />}
       {dnId && <DialogDebitNote id={dnId} onClose={() => setDnId(null)} onChanged={muat} />}
       {kreditId && <DialogPakaiKredit kredit={kredit.find((k) => k.id === kreditId)} onClose={() => setKreditId(null)} onDone={async () => { setKreditId(null); await muat(); }} />}
+      {batalPakai && <DialogBatalPemakaianKredit kredit={batalPakai.kredit} aplikasi={batalPakai.aplikasi} onClose={() => setBatalPakai(null)} onDone={async () => { setBatalPakai(null); await muat(); }} />}
     </PageContainer>
   );
 }
@@ -179,7 +182,8 @@ function DialogBuatRetur({ A, finance, workspace, onClose, onDone }) {
                   <span className="font-medium text-ink">{k.kode} — {k.nama} · {k.nomorPenerimaan}</span>
                   <span className="text-[11.5px] text-ink3">Diterima baik {jumlahTeks(k.diterima)} {k.satuan} · sudah diretur {jumlahTeks(k.diretur)} · <strong className="text-ink2">boleh diretur {jumlahTeks(k.bolehDiretur)}</strong></span>
                 </div>
-                {k.blokir?.length > 0 && <ul className="m-0 mt-1.5 list-none space-y-1 p-0" data-testid="blokir-retur">{k.blokir.map((b) => <li key={b.kode}><Badge variant="orange">{b.pesan}</Badge></li>)}</ul>}
+                {k.blokir?.length > 0 && <ul className="m-0 mt-1.5 list-none space-y-1 p-0" data-testid="blokir-retur">{k.blokir.map((b) => <li key={b.kode} className="rounded-lg bg-orangebg px-2.5 py-1.5 text-[12px] font-medium leading-snug text-orange">{b.pesan}</li>)}</ul>}
+                {k.peringatan?.length > 0 && <ul className="m-0 mt-1.5 list-none space-y-1 p-0" data-testid="peringatan-retur">{k.peringatan.map((b) => <li key={b.kode} className="rounded-lg bg-orangebg px-2.5 py-1.5 text-[12px] leading-snug text-orange">{b.pesan}</li>)}</ul>}
                 {k.bolehDiretur > 0 && (
                   <div className="mt-2 max-w-[220px]">
                     <Field label={`Jumlah diretur (${k.satuan})`}>
@@ -329,6 +333,7 @@ function DaftarDebitNote({ data, onBuka }) {
 }
 
 function DialogDebitNote({ id, onClose, onChanged }) {
+  const admin = adminKeuanganSesi(); // pembatalan debit note = Admin Keuangan (server tetap penentu)
   const [p, setP] = useState(null);
   const [galat, setGalat] = useState("");
   const [mode, setMode] = useState(null);
@@ -375,7 +380,8 @@ function DialogDebitNote({ id, onClose, onChanged }) {
           )}
           {!mode && (
             <div className="flex flex-wrap justify-end gap-2">
-              {p.status !== "DIBATALKAN" && <Button variant="neutral" size="sm" onClick={() => setMode("batal")} className="max-sm:min-h-11" data-testid="aksi-batal-dn">Batalkan</Button>}
+              {p.status !== "DIBATALKAN" && <Button variant="neutral" size="sm" disabled={!admin} title={admin ? undefined : ALASAN_ADMIN} onClick={() => setMode("batal")} className="max-sm:min-h-11" data-testid="aksi-batal-dn">Batalkan</Button>}
+              {p.status !== "DIBATALKAN" && !admin && <span className="self-center text-[11.5px] text-ink3" data-testid="alasan-batal-dn">{ALASAN_ADMIN}</span>}
               {p.status === "MENUNGGU" && <Button size="sm" onClick={() => setMode("setuju")} className="max-sm:min-h-11" data-testid="aksi-setuju-dn">Setujui</Button>}
             </div>
           )}
@@ -386,29 +392,70 @@ function DialogDebitNote({ id, onClose, onChanged }) {
 }
 
 // ── Finance: saldo kredit ────────────────────────────────────────────────
+function adminKeuanganSesi() {
+  try { return adalahAdminKeuangan(JSON.parse(localStorage.getItem("user") || "null")); } catch { return false; }
+}
+
 function DaftarKredit({ data, total, onPakai, onBatalPakai }) {
-  const [galat, setGalat] = useState("");
-  async function batal(appId) {
-    const alasan = window.prompt("Alasan membatalkan pemakaian saldo kredit (minimal 5 karakter):") ?? "";
-    if (alasan.trim().length < 5) return;
-    try { await api.batalPemakaianKredit(appId, { reason: alasan.trim() }); await onBatalPakai(); } catch (e) { setGalat(e.message || "Gagal membatalkan"); }
-  }
+  const admin = adminKeuanganSesi(); // server tetap penentu (403); ini hanya menjelaskan mengapa tombol nonaktif
   if (data.length === 0) return <Card><EmptyState icon={Wallet} title="Tidak ada saldo kredit" description="Saldo kredit lahir dari Debit Note yang melebihi sisa utang faktur (faktur sudah dibayar)." /></Card>;
   return (
     <div className="space-y-2" data-testid="daftar-kredit">
       <p className="m-0 text-[12.5px] text-ink2">Total saldo kredit aktif <strong className="tabular-nums text-ink">{rupiahTeks(total)}</strong>. Dipakai pada faktur berikutnya hanya atas pilihan dan konfirmasi Finance; tidak ada uang kembali otomatis.</p>
-      {galat && <p role="alert" className="rounded-lg bg-redbg px-3 py-2 text-[12.5px] text-red">{galat}</p>}
       <ul className="list-none space-y-2 p-0">
         {data.map((k) => (
           <li key={k.id} className="rounded-lg border border-line bg-surface p-3" data-testid="kartu-kredit">
             <div className="flex flex-wrap items-center justify-between gap-2"><span className="text-[13.5px] font-semibold text-ink">{k.supplier}</span><Badge variant={k.sisa > 0 ? "accent" : "neutral"}>Sisa {rupiahTeks(k.sisa)}</Badge></div>
             <div className="mt-0.5 text-[12px] tabular-nums text-ink2">Dari {k.debitNote} · jumlah {rupiahTeks(k.jumlah)} · terpakai {rupiahTeks(k.terpakai)}</div>
-            {k.pemakaian.map((a) => <div key={a.id} className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-ink2">Dipakai {rupiahTeks(a.jumlah)} pada {a.faktur}<button type="button" onClick={() => batal(a.id)} className="text-accent underline max-sm:min-h-11">batalkan</button></div>)}
+            {k.pemakaian.map((a) => (
+              <div key={a.id} className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-ink2" data-testid="pemakaian-kredit">
+                <span>Dipakai {rupiahTeks(a.jumlah)} pada {a.faktur}{a.oleh ? ` oleh ${a.oleh}` : ""}</span>
+                <button type="button" disabled={!admin} title={admin ? undefined : ALASAN_ADMIN} onClick={() => onBatalPakai(k, a)} data-testid="batal-pemakaian-kredit"
+                  className="text-accent underline disabled:cursor-not-allowed disabled:text-ink3 disabled:no-underline max-sm:min-h-11">batalkan</button>
+                {!admin && <span className="text-[11.5px] text-ink3">{ALASAN_ADMIN}</span>}
+              </div>
+            ))}
             {k.sisa > 0 && <div className="mt-2"><Button size="sm" onClick={() => onPakai(k.id)} className="max-sm:min-h-11" data-testid="pakai-kredit">Pakai pada faktur…</Button></div>}
           </li>
         ))}
       </ul>
     </div>
+  );
+}
+
+// Pembatalan pemakaian saldo kredit: alasan WAJIB, dampak (dari server) ditampilkan, Idempotency-Key per dialog, tercatat di audit (siapa, kapan, alasan).
+function DialogBatalPemakaianKredit({ kredit, aplikasi, onClose, onDone }) {
+  const [alasan, setAlasan] = useState("");
+  const [galat, setGalat] = useState("");
+  const kunci = useRef(kunciAksi("kredit-batal"));
+  const dini = alasan.trim().length < 5 ? "Isi alasan pembatalan (minimal 5 karakter)" : null;
+  async function kirim() {
+    setGalat("");
+    try { await api.batalPemakaianKredit(aplikasi.id, { reason: alasan.trim() }, kunci.current); await onDone(); }
+    catch (e) { setGalat(e.message || "Gagal membatalkan pemakaian"); kunci.current = kunciAksi("kredit-batal"); }
+  }
+  return (
+    <Modal open onOpenChange={(v) => !v && onClose()} className="w-[560px]" title={`Batalkan pemakaian saldo kredit — ${aplikasi.faktur}`}
+      description="Tercatat di riwayat audit: siapa, kapan, dan alasannya. Tidak ada jurnal baru dan tidak ada uang keluar."
+      footer={<div className="flex w-full flex-col gap-2">{galat && <p role="alert" data-testid="galat-batal-kredit" className="rounded-lg bg-orangebg px-3 py-2 text-[12.5px] text-orange">{galat}</p>}<div className="flex justify-end gap-2"><Button variant="neutral" onClick={onClose} className="max-sm:min-h-11">Kembali</Button><TombolAksi disabled={!!dini} onClick={kirim} data-testid="kirim-batal-kredit">Batalkan Pemakaian</TombolAksi></div></div>}>
+      <div className="space-y-3 text-[12.5px]">
+        <dl className="m-0 grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2" data-testid="rincian-batal-kredit">
+          <div><dt className="text-ink3">Faktur</dt><dd className="ml-0 font-medium text-ink">{aplikasi.faktur}</dd></div>
+          <div><dt className="text-ink3">Supplier</dt><dd className="ml-0 text-ink">{kredit.supplier}</dd></div>
+          <div><dt className="text-ink3">Jumlah dipakai</dt><dd className="ml-0 tabular-nums text-ink">{rupiahTeks(aplikasi.jumlah)}</dd></div>
+          <div><dt className="text-ink3">Dipakai oleh · pada</dt><dd className="ml-0 text-ink">{aplikasi.oleh ?? "—"} · {tanggalTeks(aplikasi.pada)}</dd></div>
+        </dl>
+        {aplikasi.catatan && <p className="m-0 text-ink2">Catatan saat dipakai: {aplikasi.catatan}</p>}
+        <div className="rounded-lg bg-inset px-3 py-2 tabular-nums" data-testid="dampak-batal-kredit">
+          {aplikasi.sisaFaktur != null && <>Sisa utang faktur {aplikasi.faktur}: {rupiahTeks(aplikasi.sisaFaktur)} → <strong className="text-ink">{rupiahTeks(aplikasi.sisaFaktur + aplikasi.jumlah)}</strong>. </>}
+          Saldo kredit {kredit.supplier} kembali bertambah <strong className="text-ink">{rupiahTeks(aplikasi.jumlah)}</strong>.
+        </div>
+        <Field label="Alasan pembatalan" required hint="Minimal 5 karakter; dicatat di audit.">
+          <Input value={alasan} onChange={(e) => setAlasan(e.target.value)} aria-label="Alasan pembatalan pemakaian kredit" placeholder="mis. salah memilih faktur" />
+        </Field>
+        {dini && alasan.length > 0 && <p role="alert" className="m-0 text-orange" data-testid="galat-dini-batal-kredit">{dini}</p>}
+      </div>
+    </Modal>
   );
 }
 

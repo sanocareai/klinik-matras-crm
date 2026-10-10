@@ -75,3 +75,49 @@ test("pemasangan: Gudang tanpa nilai rupiah; Finance memegang debit note & saldo
   assert.match(baca("../src/components/Layout.jsx"), /Retur & Debit Note/);
   assert.match(baca("../src/features/warehouse/inventoryReal.js"), /SUPPLIER_RETURN/);
 });
+
+test("pembatalan pemakaian saldo kredit: dialog beraudit (bukan window.prompt) — alasan wajib, rincian & dampak dari server, hanya Admin Keuangan, kunci per dialog", () => {
+  const ws = baca("../src/features/returSupplier/ReturSupplierWorkspace.jsx");
+  assert.equal(/window\.prompt|window\.confirm|\bprompt\(/.test(ws), false, "tidak boleh ada prompt bawaan browser");
+  assert.match(ws, /function DialogBatalPemakaianKredit/);
+  assert.match(ws, /data-testid="rincian-batal-kredit"/);
+  assert.match(ws, /data-testid="dampak-batal-kredit"/);
+  assert.match(ws, /alasan\.trim\(\)\.length < 5/);
+  assert.match(ws, /Tercatat di riwayat audit: siapa, kapan, dan alasannya/);
+  assert.match(ws, /api\.batalPemakaianKredit\(aplikasi\.id, \{ reason: alasan\.trim\(\) \}, kunci\.current\)/);
+  assert.match(ws, /kunci\.current = kunciAksi\("kredit-batal"\)/, "kunci baru setelah galat");
+  assert.match(ws, /disabled=\{!admin\}[\s\S]{0,80}ALASAN_ADMIN/, "tombol batalkan nonaktif + alasan untuk non-admin");
+  assert.match(ws, /adalahAdminKeuangan/);
+  // tombol hanya membuka dialog (tidak memanggil API langsung)
+  assert.match(ws, /onClick=\{\(\) => onBatalPakai\(k, a\)\}/);
+});
+
+test("asal stok tidak pasti: peringatan server ditampilkan di formulir retur; pesan blokir tidak disamarkan", () => {
+  const ws = baca("../src/features/returSupplier/ReturSupplierWorkspace.jsx");
+  assert.match(ws, /data-testid="peringatan-retur"/);
+  assert.match(ws, /k\.peringatan\.map/);
+  assert.match(ws, /data-testid="blokir-retur"/);
+});
+
+test("progres stok bruto · retur · bersih dipisah di Finance (tabel + kartu + total) dan Gudang (jejak penerimaan)", () => {
+  const po = baca("../src/pages/finance/FinancePurchaseOrders.jsx");
+  assert.match(po, /<TH numeric[^>]*>Diretur<\/TH><TH numeric[^>]*>Stok bersih<\/TH>/);
+  assert.match(po, /data-testid="kolom-diretur"/);
+  assert.match(po, /data-testid="kolom-stok-bersih"/);
+  assert.match(po, /<dt className="text-ink3">Diretur<\/dt>/);
+  assert.match(po, /<dt className="text-ink3">Stok bersih<\/dt>/);
+  assert.match(po, /data-testid="nilai-diretur"/);
+  const jejak = baca("../src/features/warehouse/components/JejakPemakaianPenerimaan.jsx");
+  assert.match(jejak, /data-testid="diretur-supplier"/);
+  assert.match(jejak, /data-testid="stok-bersih"/);
+  assert.match(jejak, /Retur dari Produksi/, "retur dari Produksi dibedakan dari retur ke supplier");
+  // Panel kedatangan (Gudang & Finance) menampilkan SEMUA kolom dari definisi server — kolom baru ikut tanpa menghitung ulang
+  const panel = baca("../src/features/kedatangan/PanelKedatangan.jsx");
+  assert.match(panel, /definisi\.filter\(\(d\) => d\.kunci !== "dipesan"\)/);
+});
+
+test("pembatalan Debit Note: tombol nonaktif + alasan jelas untuk non-Admin Keuangan (server tetap menegakkan 403)", () => {
+  const ws = baca("../src/features/returSupplier/ReturSupplierWorkspace.jsx");
+  assert.match(ws, /disabled=\{!admin\} title=\{admin \? undefined : ALASAN_ADMIN\}[\s\S]{0,160}data-testid="aksi-batal-dn"/);
+  assert.match(ws, /data-testid="alasan-batal-dn"/);
+});
