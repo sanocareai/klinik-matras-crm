@@ -105,6 +105,7 @@ export async function dasarHargaRataRata(tx, materialId, { asOf } = {}) {
     });
     const keluar = new Map(retur.map((x) => [x.goodsReceiptId, new Decimal(String(x._sum.qty ?? 0)).negated()]));
     for (const r of receipts) {
+      if (!(Number(r.qty) > 0)) continue; // baris RECEIPT pembalik koreksi (negatif) / yang sudah habis dikurangi koreksi tidak ikut dikurangi retur
       const n = keluar.get(r.goodsReceiptId);
       if (!n || !n.greaterThan(0)) continue;
       const qty = new Decimal(String(r.qty));

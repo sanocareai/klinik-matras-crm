@@ -96,7 +96,10 @@ export async function rencanaBaikSesudahStok(tx, { galat, receipt, baris, pl, po
   // 3. Bahan sudah bergerak sejak disimpan?
   const awal = gerakan[0]?.createdAt ?? null;
   if (awal) {
-    const bergerak = await tx.stockMovement.groupBy({ by: ["type"], where: { materialId: baris.materialId, createdAt: { gt: awal }, NOT: { type: "RECEIPT" } }, _sum: { qty: true }, _count: { _all: true } });
+    // RECEIPT (penerimaan lain/koreksi) dan SUPPLIER_RETURN (retur per penerimaan — barangnya spesifik, bukan pemakaian dari kolam stok; retur yang masih aktif sudah ditolak
+    // di langkah 1, yang dibatalkan saling meniadakan) BUKAN pemakaian. Disaring di sini (bukan di query) supaya build tanpa fitur Retur tidak memakai nilai enum yang belum ada.
+    const bergerak = (await tx.stockMovement.groupBy({ by: ["type"], where: { materialId: baris.materialId, createdAt: { gt: awal } }, _sum: { qty: true }, _count: { _all: true } }))
+      .filter((b) => b.type !== "RECEIPT" && b.type !== "SUPPLIER_RETURN");
     if (bergerak.length > 0) {
       const ringkas = bergerak.map((b) => `${b.type} ${Math.abs(Number(b._sum.qty ?? 0))} (${b._count._all}×)`).join(", ");
       throw galat(`Bahan ${kode} sudah bergerak sejak ${receipt.receiptNumber} disimpan ke stok: ${ringkas}. Sistem memakai rata-rata tertimbang tanpa lot, jadi asal barang yang keluar tidak bisa dipastikan dan koreksi pembalik/pengganti tidak bisa dibuktikan aman bagi pemakaian Produksi.`, 409, "STOK_SUDAH_BERGERAK",
