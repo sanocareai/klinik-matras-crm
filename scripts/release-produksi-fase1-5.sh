@@ -17,7 +17,7 @@ DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"; FILELIST_PIN="${3:-}"
 [[ "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 1 harus SHA rilis 40 karakter" >&2; exit 1; }
 [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 2 harus SHA release aktif (baseline) 40 karakter" >&2; exit 1; }
 [[ "$FILELIST_PIN" =~ ^[0-9a-f]{64}$ ]] || { echo "STOP: argumen 3 harus sha256 daftar berkas yang direview (64 hex)" >&2; exit 1; }
-CAND_BRANCH="${CAND_BRANCH:-rc/produksi-fase1-5-on-live-934142cd}"
+CAND_BRANCH="${CAND_BRANCH:-rc/produksi-fase1-5-on-live-7ac07558}"
 PUBLIC_URL="https://app.sanomatrassehat.com"
 INTERNAL_URL="http://127.0.0.1:4000"
 REPO_URL="https://github.com/sanocareai/klinik-matras-crm.git"

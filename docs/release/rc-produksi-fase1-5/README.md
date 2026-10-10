@@ -1,16 +1,16 @@
 # Kandidat rilis gabungan Produksi Fase 1–5 — CONDITIONAL GO (dua blocker ditutup di dokumen ini)
 
-**SHA kandidat:** lihat commit paling atas cabang `rc/produksi-fase1-5-on-live-934142cd` (dibangun di atas release live yang aktif).
+**SHA kandidat:** lihat commit paling atas cabang `rc/produksi-fase1-5-on-live-7ac07558` (dibangun di atas release live yang aktif).
 Rilis hanya lewat `scripts/release-produksi-fase1-5.sh` (fail-closed; backup+checksum+rollback). Tidak ada kebijakan V2 yang diaktifkan, tidak ada cohort diperluas, tidak ada unit nyata dikerjakan, tidak ada tulisan ke database production.
 
 ## 1. Freeze release aktif (diverifikasi langsung di VPS, baca-saja)
-- Release aktif terakhir diverifikasi: **`934142cd`** (image backend `sha256:f35df5b6…`), **229** migration applied, 0 menggantung. Bukan `2e7d5db8`, bukan 226/228.
+- Release aktif terakhir diverifikasi: **`7ac07558`** (image backend `sha256:b60d582d…`), **230** migration applied, 0 menggantung (baseline sebelumnya `934142cd`: 229; satu migration baru dari PO Terintegrasi, `20261101090000_po_terintegrasi_kedatangan`). Bukan `2e7d5db8`, bukan 226/228.
 - Dua migration yang sebelumnya saya sebut "applied tetapi folder hilang" (`20260906120000_block_reason_extended`, `20260906130000_production_blockers`) **tidak yatim**: folder ada di repo, checksum production = sha256 berkas. Penyebab salah baca: penyaring `grep -v lock`. Lihat `AUDIT-MIGRASI.md`.
-- Live bergeser selama pekerjaan (`7c4e5586` → `b3c5502d` → `2a5ab783` → `934142cd`); kandidat digabung ulang tiap kali. **Skrip rilis menolak jalan bila release aktif ≠ BASE_SHA yang dipin.**
+- Live bergeser selama pekerjaan (`7c4e5586` → `b3c5502d` → `2a5ab783` → `934142cd` → `7ac07558`); kandidat digabung ulang tiap kali. **Skrip rilis menolak jalan bila release aktif ≠ BASE_SHA yang dipin.**
 
 ## 2. Migration pending (7, semuanya aditif)
 `20261018100000_production_build_stage`, `20261019100000_production_build_plan_settings`, `20261021100000_production_component_qc_sections`, `20261022100000_production_qc_gate_policy`, `20261023100000_material_density_thickness` (idempoten `IF NOT EXISTS`), `20261024100000_production_component_plan_racikan`, `20261025100000_production_component_assembly_tests`.
-Total setelah rilis: **236** applied (229 + 7). Satu-satunya perubahan pada data lama: `routing_stages` +1 baris (`custom_build`, urutan 10) — penambahan, tidak ada baris lama yang berubah. Tidak ada kolom baru NOT NULL tanpa default pada tabel lama.
+Total setelah rilis: **237** applied (230 + 7). Satu-satunya perubahan pada data lama: `routing_stages` +1 baris (`custom_build`, urutan 10) — penambahan, tidak ada baris lama yang berubah. Tidak ada kolom baru NOT NULL tanpa default pada tabel lama.
 
 ## 3. Bukti rehearsal pada SALINAN production (`rehearsal/`)
 Dijalankan di VPS (`rehearsal-fase5.sh`): `pg_dump -Fc` (baca-saja; sha256 `79d1b383…`) → DB scratch di server postgres yang sama → `prisma migrate deploy` dengan image live + migrations kandidat → dibuang. Database production tidak ditulis.
@@ -25,7 +25,7 @@ Dijalankan di VPS (`rehearsal-fase5.sh`): `pg_dump -Fc` (baca-saja; sha256 `79d1
 
 ## 5. Hasil gate (SHA final)
 - **Unit:** backend 1157/1157, frontend 799/799 (SHA ed60fd32).
-- **Full suite integrasi (runIsolated, DB unik, serial) pada SHA `9651981c`: 1625 tes, 1616 lulus, 9 gagal** (3 jam 45 menit, 181 berkas). Kesembilan kegagalan dianalisis satu per satu; **tidak ada yang berasal dari kode Produksi**, semuanya pra-ada di live `934142cd` (dibuktikan dengan menjalankan berkas yang sama di checkout 934142cd):
+- **Full suite integrasi (runIsolated, DB unik, serial) pada SHA `9651981c`: 1625 tes, 1616 lulus, 9 gagal** (3 jam 45 menit, 181 berkas). Kesembilan kegagalan dianalisis satu per satu; **tidak ada yang berasal dari kode Produksi**, semuanya pra-ada di live `934142cd` (baseline saat itu; dibuktikan dengan menjalankan berkas yang sama di checkout 934142cd):
   | Berkas | Kegagalan | Penyebab | Tindakan |
   |---|---|---|---|
   | `financeBuku` (1) | 429 vs 404 | tes melampaui limiter mobile 120 req/menit | tes: `resetRateLimits()` di tengah tes (sudah di `9651981c`) |
@@ -44,3 +44,6 @@ Dijalankan di VPS (`rehearsal-fase5.sh`): `pg_dump -Fc` (baca-saja; sha256 `79d1
 
 ## 7. Setelah rilis
 **V2 tetap mati**: Run baru dipin NULL (kebijakan lama) sampai Admin mengaktifkan bawaan gerbang QC secara eksplisit. Setting dan cohort tidak diubah. **QA perangkat fisik S25 adalah gate terpisah sebelum aktivasi V2** (belum dilakukan). Salinan production tidak memuat unit produksi V2 nyata; perilaku di data riil belum teramati.
+
+## 8. Penggabungan ulang di atas live 7ac07558 (10 Okt 2026, 08.25 WIB)
+Live bergeser dari `934142cd` ke `7ac07558` (PO Terintegrasi Finance–Gudang + capture CTWA Fase 0, +1 migration) tepat sebelum rilis; skrip rilis berhenti sendiri (benar). Kandidat digabung ulang di cabang `rc/produksi-fase1-5-on-live-7ac07558`: merge bersih, tumpang-tindih hanya `schema.prisma`, `frontend/src/api.js`, `pageRegistry.jsx`; `frontend/dist` identik dengan live. Gate relevan pada hasil gabungan: unit backend 1211/1211, frontend 811/811; integrasi terarah (52 berkas: Produksi, PO Terintegrasi, CTWA, Finance, Gudang terkait) **529/529 lulus**.
