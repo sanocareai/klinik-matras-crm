@@ -81,6 +81,25 @@ export async function dasarHargaRataRata(tx, materialId, { asOf } = {}) {
   });
   // Penerimaan berkonversi satuan membawa harga EKSAK per satuan stok (unitCostExact); selainnya unitCost bulat seperti biasa.
   for (const r of receipts) if (r.unitCostExact != null) r.unitCost = r.unitCostExact;
+  // Barang yang DIRETUR ke supplier (SUPPLIER_RETURN, Okt 2026) sudah keluar dari gudang: jumlahnya dikurangkan dari penerimaan asalnya supaya rata-rata
+  // tidak menghitung barang yang tak lagi ada. Pembatalan retur (qty positif) otomatis mengembalikannya. Harga satuan penerimaan tidak berubah.
+  const idPenerimaan = [...new Set(receipts.map((r) => r.goodsReceiptId).filter(Boolean))];
+  if (idPenerimaan.length) {
+    const retur = await tx.stockMovement.groupBy({
+      by: ["goodsReceiptId"],
+      where: { materialId, type: "SUPPLIER_RETURN", goodsReceiptId: { in: idPenerimaan }, ...(asOf && { createdAt: { lte: asOf } }) },
+      _sum: { qty: true },
+    });
+    const keluar = new Map(retur.map((x) => [x.goodsReceiptId, new Decimal(String(x._sum.qty ?? 0)).negated()]));
+    for (const r of receipts) {
+      const n = keluar.get(r.goodsReceiptId);
+      if (!n || !n.greaterThan(0)) continue;
+      const qty = new Decimal(String(r.qty));
+      const ambil = Decimal.min(qty, n); // satu penerimaan bisa punya beberapa baris bahan sama: jumlah retur dibagi berurutan, tidak dikurangkan ganda
+      r.qty = qty.minus(ambil).toString();
+      keluar.set(r.goodsReceiptId, n.minus(ambil));
+    }
+  }
   let opening = null;
   if (aktif) {
     const awal = await tx.finInventoryOpeningLine.findUnique({ where: { openingId_materialId: { openingId: aktif.id, materialId } }, select: { qty: true, unitCost: true } });

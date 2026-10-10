@@ -64,23 +64,32 @@ export async function qtyReturAktif(db, goodsReceiptLineId) {
   return dariK(rl.reduce((s, r) => s + k(r.qty), 0));
 }
 
-async function terpakaiProduksiFifo(tx, { materialId, goodsReceiptId }) {
+/**
+ * ASAL STOK — hasil audit klaim FIFO (Okt 2026).
+ *
+ * Sistem ini memakai harga RATA-RATA TERTIMBANG dan TIDAK melacak lot fisik: Material Issue tidak menyebut penerimaan mana yang diambil
+ * (biayaBahanSumber.js menyatakan hal yang sama: "perkiraan, bukan penunjukan lot fisik"). Maka "bahan dari penerimaan R sudah dipakai
+ * Produksi?" TIDAK bisa dijawab pasti kalau stoknya tercampur — FIFO hanya asumsi, dan versi pertama file ini memakainya sebagai fakta.
+ *
+ * Aturan sekarang (hanya yang bisa dibuktikan dari ledger):
+ *   keluar = Σ pengeluaran ISSUE/WASTE/ADJUSTMENT(−) SETELAH penerimaan R tiba (kotor; pengembalian dari Produksi TIDAK mengurangi — asalnya juga tak pasti).
+ *   • keluar = 0                                → PASTI: seluruh jumlah R masih utuh.
+ *   • keluar > 0, stok sebelum R = 0 dan tidak ada masuk lain setelahnya → PASTI: kolam stok hanya R, jadi pemakaian PASTI dari R.
+ *   • keluar > 0 dan kolam stok tercampur (ada stok lebih tua / penerimaan lain / pengembalian setelah R) → TIDAK PASTI.
+ *     Diambil KASUS TERBURUK: seluruh pengeluaran bisa saja mengambil dari R. Yang boleh diretur hanya bagian yang aman di semua kemungkinan.
+ */
+async function asalStokProduksi(tx, { materialId, goodsReceiptId }) {
   const mv = await tx.stockMovement.findFirst({ where: { goodsReceiptId, materialId, type: "RECEIPT" }, orderBy: { createdAt: "asc" }, select: { createdAt: true } });
-  if (!mv) return { sebelum: 0, terpakai: 0, mv: null };
+  if (!mv) return { pasti: true, sebelum: 0, keluar: 0, masukLain: 0, mv: null };
   const [{ sebelum }] = await tx.$queryRaw`SELECT COALESCE(SUM(qty), 0)::float AS sebelum FROM stock_movements WHERE material_id = ${materialId}::uuid AND created_at < ${mv.createdAt}`;
-  const [{ net }] = await tx.$queryRaw`
-    SELECT COALESCE(SUM(qty), 0)::float AS net FROM stock_movements
-    WHERE material_id = ${materialId}::uuid AND created_at > ${mv.createdAt} AND type IN ('ISSUE', 'WASTE', 'ADJUSTMENT', 'RETURN')`;
-  // net = keluar (negatif) + kembali ke stok (positif). Pemakaian FIFO: yang dipakai lebih dulu menghabiskan stok yang LEBIH TUA dari penerimaan ini; sisanya baru memakan penerimaan ini.
-  const [{ lain }] = await tx.$queryRaw`
-    SELECT COALESCE(SUM(m.qty), 0)::float AS lain FROM stock_movements m
-    WHERE m.material_id = ${materialId}::uuid AND m.type = 'SUPPLIER_RETURN' AND m.created_at > ${mv.createdAt}
-      AND m.goods_receipt_id IS NOT NULL AND m.goods_receipt_id <> ${goodsReceiptId}::uuid
-      AND EXISTS (SELECT 1 FROM stock_movements r WHERE r.goods_receipt_id = m.goods_receipt_id AND r.material_id = m.material_id AND r.type = 'RECEIPT' AND r.created_at < ${mv.createdAt})`;
-  const dipakai = Math.max(0, -net);
-  const sebelumEfektif = Math.max(0, sebelum + lain); // lain < 0 (keluar dari stok yang lebih tua setelah penerimaan ini tiba)
-  const darIni = Math.max(0, dipakai - sebelumEfektif);
-  return { sebelum, terpakai: darIni, mv };
+  const [{ keluar, masuk_lain: masukLain }] = await tx.$queryRaw`
+    SELECT
+      COALESCE(SUM(CASE WHEN qty < 0 AND type IN ('ISSUE', 'WASTE', 'ADJUSTMENT') THEN -qty ELSE 0 END), 0)::float AS keluar,
+      COALESCE(SUM(CASE WHEN qty > 0 AND type <> 'TRANSFER' AND (goods_receipt_id IS NULL OR goods_receipt_id <> ${goodsReceiptId}::uuid) THEN qty ELSE 0 END), 0)::float AS masuk_lain
+    FROM stock_movements
+    WHERE material_id = ${materialId}::uuid AND created_at > ${mv.createdAt}`;
+  const tercampur = sebelum > 1e-6 || masukLain > 1e-6;
+  return { pasti: keluar <= 1e-6 || !tercampur, sebelum, keluar, masukLain, mv };
 }
 
 async function reservedMaterial(tx, materialId) {
@@ -92,6 +101,19 @@ async function reservedMaterial(tx, materialId) {
       SELECT r.qty::float FROM material_reservations_v2 r WHERE r.material_id = ${materialId}::uuid AND r.status = 'ACTIVE'
     ) u`;
   return reserved;
+}
+
+/**
+ * Gerbang REKONSILIASI BANK. Jurnal yang dibalik/menjadi dasar perubahan tidak boleh sudah dicocokkan dengan mutasi bank. Catatan jujur:
+ * pencocokan hanya mungkin pada baris kas/bank, jadi jurnal faktur/retur/debit note (tanpa baris kas) praktis tidak pernah tercocok lewat UI —
+ * gerbang ini FAIL-CLOSED untuk data yang tercocok di luar jalur normal. Pembayaran faktur yang direkonsiliasi TIDAK memblokir: debit note
+ * tidak menyentuh jurnal pembayaran, dan justru skenario faktur lunas → saldo kredit harus tetap bisa berjalan.
+ */
+async function pastikanTidakDirekonsiliasi(tx, sources, label) {
+  try { await pastikanBelumDirekonsiliasi(tx, sources); } catch (e) {
+    if (e?.code === "SUDAH_DIREKONSILIASI") throw gagal(`${label}: jurnalnya sudah dicocokkan dengan mutasi bank (Rekonsiliasi Bank). Lepas pencocokannya di Rekonsiliasi Bank dulu, lalu ulangi aksi ini — mengubahnya diam-diam akan merusak hasil rekonsiliasi.`, 409, "SUDAH_DIREKONSILIASI");
+    throw e;
+  }
 }
 
 export async function periodeTertutup(db, tanggal) {
@@ -133,28 +155,43 @@ export async function kapasitasBaris(db, goodsReceiptLineId, { hitungStok = true
   const billedAvailK = Math.max(0, klaimK - billedReturK);
   const fisikK = Math.max(0, diterimaK - keluarK);
 
-  let pakai = { terpakai: 0 }; let onHand = null; let reserved = null;
+  // Nilai penerimaan harus SUDAH dibukukan (Dr Persediaan / Cr GRNI). Tanpa itu, jurnal retur (Dr GRNI / Cr Persediaan) membalik saldo GRNI dan
+  // mengurangi persediaan yang tidak pernah dicatat — penerimaan sebelum cutover (tercakup stok opname) atau yang masih "Posting Tertunda".
+  if (!blokir.length && gr.status === "COMPLETED") {
+    const jurnalGr = await db.finJournalEntry.findFirst({ where: { source: "PENERIMAAN_BAHAN", sourceId: gr.id, status: "POSTED" }, select: { id: true } });
+    if (!jurnalGr) blokir.push({ kode: "PENERIMAAN_BELUM_DIBUKUKAN", pesan: `Nilai penerimaan ${gr.receiptNumber} belum dibukukan ke Persediaan (sebelum saldo awal/cutover, atau masih "Posting Tertunda" di Finance) — retur belum bisa dijurnal. Selesaikan pembukuan penerimaan itu dulu, atau koreksi lewat Jurnal Umum oleh Admin.` });
+  }
+
+  let asal = { pasti: true, keluar: 0 }; let onHand = null; let reserved = null;
   if (hitungStok && gr.status === "COMPLETED") {
-    pakai = await terpakaiProduksiFifo(db, { materialId: line.materialId, goodsReceiptId: gr.id });
+    asal = await asalStokProduksi(db, { materialId: line.materialId, goodsReceiptId: gr.id });
     const [{ saldo }] = await db.$queryRaw`SELECT COALESCE(SUM(qty), 0)::float AS saldo FROM stock_movements WHERE material_id = ${line.materialId}::uuid`;
     onHand = saldo; reserved = await reservedMaterial(db, line.materialId);
   }
-  const terpakaiK = k(pakai.terpakai);
+  // Kemungkinan terpakai = min(pengeluaran sesudah penerimaan, jumlah baik): PASTI bila kolam stok hanya penerimaan ini, selain itu KASUS TERBURUK.
+  const terpakaiK = Math.min(k(asal.keluar), diterimaK);
   const batasPemakaianK = Math.max(0, fisikK - terpakaiK);
   const tersediaStokK = onHand == null ? fisikK : Math.max(0, k(onHand) - k(reserved));
   let bolehK = Math.min(fisikK, batasPemakaianK, tersediaStokK);
   if (blokir.length) bolehK = 0;
+  const peringatan = [];
+  const tidakPasti = !asal.pasti && terpakaiK > 0;
+  const pesanAsal = `Asal stok ${line.material.code} tidak bisa dipastikan: stok tercampur dengan penerimaan lain dan ${dariK(terpakaiK)} ${line.material.unit} sudah keluar untuk Produksi/penyesuaian setelah ${gr.receiptNumber} tiba. Sistem memakai harga rata-rata dan tidak melacak lot fisik, jadi barang yang keluar bisa saja berasal dari penerimaan ini. Yang pasti masih ada dari penerimaan ini: ${dariK(batasPemakaianK)} ${line.material.unit}.`;
   if (!blokir.length && fisikK > 0 && bolehK === 0) {
-    if (batasPemakaianK === 0) blokir.push({ kode: "DIPAKAI_PRODUKSI", pesan: `Bahan ${line.material.code} dari penerimaan ${gr.receiptNumber} sudah dipakai Produksi (${dariK(terpakaiK)} ${line.material.unit}). Selesaikan lewat alur koreksi stok (opname/penyesuaian) — bukan retur supplier.` });
-    else if (tersediaStokK === 0) blokir.push({ kode: k(reserved) > 0 ? "STOK_DIRESERVASI" : "STOK_TIDAK_CUKUP", pesan: `Stok ${line.material.code} tidak cukup untuk keluar: di gudang ${dariK(k(onHand))}, direservasi ${dariK(k(reserved))}.` });
+    if (batasPemakaianK === 0) {
+      if (tidakPasti) blokir.push({ kode: "ASAL_STOK_TIDAK_PASTI", pesan: `${pesanAsal} Retur diblokir; selesaikan lewat alur koreksi stok (opname/penyesuaian) setelah Gudang memastikan fisik di rak — bukan retur supplier otomatis.` });
+      else blokir.push({ kode: "DIPAKAI_PRODUKSI", pesan: `Bahan ${line.material.code} dari penerimaan ${gr.receiptNumber} sudah dipakai Produksi (${dariK(terpakaiK)} ${line.material.unit}; kolam stoknya hanya penerimaan ini, jadi pasti). Selesaikan lewat alur koreksi stok (opname/penyesuaian) — bukan retur supplier.` });
+    } else if (tersediaStokK === 0) blokir.push({ kode: k(reserved) > 0 ? "STOK_DIRESERVASI" : "STOK_TIDAK_CUKUP", pesan: `Stok ${line.material.code} tidak cukup untuk keluar: di gudang ${dariK(k(onHand))}, direservasi ${dariK(k(reserved))}.` });
+  } else if (!blokir.length && tidakPasti && bolehK < fisikK) {
+    peringatan.push({ kode: "ASAL_STOK_TIDAK_PASTI", pesan: `${pesanAsal} Jumlah retur dibatasi ke ${dariK(bolehK)} ${line.material.unit}.` });
   }
   if (!blokir.length && fisikK === 0) blokir.push({ kode: "SUDAH_HABIS_DIRETUR", pesan: "Seluruh jumlah baik pada baris ini sudah diretur." });
   return {
     goodsReceiptLineId, goodsReceiptId: gr.id, nomorPenerimaan: gr.receiptNumber, purchaseOrderId: gr.purchaseOrderId, purchaseOrderLineId: line.purchaseOrderLineId,
     materialId: line.materialId, kode: line.material.code, nama: line.material.name, satuan: line.material.unit, supplier: gr.supplier,
     diterima: dariK(diterimaK), diretur: dariK(keluarK), ditagih: dariK(klaimK), belumDitagih: dariK(unbilledAvailK), sudahDitagihBisaDidebit: dariK(billedAvailK),
-    terpakaiProduksi: dariK(terpakaiK), stokDiGudang: onHand, direservasi: reserved,
-    bolehDiretur: dariK(bolehK), blokir,
+    terpakaiProduksi: dariK(terpakaiK), asalStokPasti: asal.pasti, stokDiGudang: onHand, direservasi: reserved,
+    bolehDiretur: dariK(bolehK), blokir, peringatan,
     _k: { diterimaK, keluarK, unbilledAvailK, billedAvailK, fisikK, bolehK, terpakaiK },
   };
 }
@@ -216,7 +253,7 @@ export async function pratinjauRetur(db, masukan, { finance = false } = {}) {
     if (!kap) throw gagal("Baris penerimaan tidak ditemukan", 404);
     poIds.add(kap.purchaseOrderId);
     const blokir = [...kap.blokir];
-    if (k(l.qty) > kap._k.bolehK && !blokir.length) blokir.push({ kode: "JUMLAH_MELEBIHI", pesan: `Jumlah retur (${l.qty} ${kap.satuan}) melebihi yang boleh diretur (${kap.bolehDiretur} ${kap.satuan}).` });
+    if (k(l.qty) > kap._k.bolehK && !blokir.length) blokir.push({ kode: "JUMLAH_MELEBIHI", pesan: `Jumlah retur (${l.qty} ${kap.satuan}) melebihi yang boleh diretur (${kap.bolehDiretur} ${kap.satuan}).${kap.peringatan[0] ? ` ${kap.peringatan[0].pesan}` : ""}` });
     const bagianBelumDitagih = Math.min(k(l.qty), kap._k.unbilledAvailK);
     const bagianSudahDitagih = k(l.qty) - bagianBelumDitagih;
     if (bagianSudahDitagih > kap._k.billedAvailK && !blokir.length) blokir.push({ kode: "TIDAK_KONSISTEN", pesan: "Jumlah yang sudah ditagih tidak cukup untuk menampung retur — periksa alokasi faktur." });
@@ -241,7 +278,7 @@ export async function buatRetur(tx, { masukan, aktor, sekarang = new Date() }) {
   const m = siapkanMasukan(masukan);
   const kaps = [];
   for (const l of m.baris) {
-    const kap = await kapasitasBaris(tx, l.goodsReceiptLineId, { hitungStok: false });
+    const kap = await kapasitasBaris(tx, l.goodsReceiptLineId, { hitungStok: false }); // draf = rencana; stok/asal stok ditegakkan saat pratinjau & konfirmasi keluar
     if (!kap) throw gagal("Baris penerimaan tidak ditemukan", 404);
     if (kap.blokir.length) throw gagal(kap.blokir[0].pesan, 409, kap.blokir[0].kode);
     if (k(l.qty) > kap._k.fisikK) throw gagal(`${kap.kode} pada ${kap.nomorPenerimaan}: jumlah retur (${l.qty}) melebihi jumlah baik yang masih ada (${dariK(kap._k.fisikK)} ${kap.satuan})`, 409, "JUMLAH_MELEBIHI");
@@ -342,7 +379,7 @@ export async function keluarkanBarang(tx, { returnId, masukan, aktor, sekarang =
     const kap = await kapasitasBaris(tx, l.goodsReceiptLineId);
     if (kap.blokir.length) throw gagal(kap.blokir[0].pesan, 409, kap.blokir[0].kode, { baris: kap.kode });
     const qK = k(l.qty);
-    if (qK > kap._k.bolehK) throw gagal(`${kap.kode} pada ${kap.nomorPenerimaan}: jumlah retur (${dariK(qK)} ${kap.satuan}) melebihi yang boleh keluar (${kap.bolehDiretur} ${kap.satuan}).`, 409, "JUMLAH_MELEBIHI");
+    if (qK > kap._k.bolehK) throw gagal(`${kap.kode} pada ${kap.nomorPenerimaan}: jumlah retur (${dariK(qK)} ${kap.satuan}) melebihi yang boleh keluar (${kap.bolehDiretur} ${kap.satuan}).${kap.peringatan[0] ? ` ${kap.peringatan[0].pesan}` : ""}`, 409, kap.peringatan[0]?.kode ?? "JUMLAH_MELEBIHI");
     const unbilledK = Math.min(qK, kap._k.unbilledAvailK);
     const billedK = qK - unbilledK;
     if (billedK > kap._k.billedAvailK) throw gagal(`${kap.kode}: bagian yang sudah ditagih tidak cukup untuk menampung retur.`, 409, "TIDAK_KONSISTEN");
@@ -447,7 +484,7 @@ export async function setujuiDebitNote(tx, { debitNoteId, catatan = null, sisaDi
   if (dn.supplierReturn.status === "DIBATALKAN") throw gagal("Retur induk sudah dibatalkan", 409);
   const idFaktur = [...new Set(dn.lines.map((l) => l.billId))].sort();
   for (const id of idFaktur) await lockRowForUpdate(tx, "fin_supplier_bills", id);
-  for (const id of idFaktur) await pastikanBelumDirekonsiliasi(tx, [{ source: "TAGIHAN_SUPPLIER", sourceId: id }]);
+  for (const id of idFaktur) await pastikanTidakDirekonsiliasi(tx, [{ source: "TAGIHAN_SUPPLIER", sourceId: id }], `Faktur ${dn.lines.find((l) => l.billId === id)?.bill.billNumber ?? id}`);
   const pre = await pratinjauDebitNote(tx, debitNoteId);
   if (sisaDiharapkan !== undefined && sisaDiharapkan !== null && Math.abs(Number(sisaDiharapkan) - pre.kurangiSisaUtang) > 0.004) {
     throw gagal(`Sisa utang faktur berubah sejak pratinjau (sekarang debit note mengurangi ${pre.kurangiSisaUtang}). Muat ulang pratinjau lalu setujui lagi.`, 409, "PRATINJAU_USANG");
@@ -506,7 +543,8 @@ export async function batalkanDebitNote(tx, { debitNoteId, alasan, aktor, sekara
   if (dn.status === "DISETUJUI") {
     const idFaktur = [...new Set(dn.lines.map((l) => l.billId))].sort();
     for (const id of idFaktur) await lockRowForUpdate(tx, "fin_supplier_bills", id);
-    for (const id of idFaktur) await pastikanBelumDirekonsiliasi(tx, [{ source: "TAGIHAN_SUPPLIER", sourceId: id }]);
+    for (const id of idFaktur) await pastikanTidakDirekonsiliasi(tx, [{ source: "TAGIHAN_SUPPLIER", sourceId: id }], `Faktur ${dn.lines.find((l) => l.billId === id)?.bill.billNumber ?? id}`);
+    await pastikanTidakDirekonsiliasi(tx, [{ source: "DEBIT_NOTE_SUPPLIER", sourceId: dn.id }], `Debit note ${dn.debitNumber}`);
     if (dn.credit) {
       await lockRowForUpdate(tx, "fin_supplier_credits", dn.credit.id);
       const kr = await tx.finSupplierCredit.findUnique({ where: { id: dn.credit.id } });
@@ -558,6 +596,7 @@ export async function batalkanRetur(tx, { returnId, alasan, aktor, sekarang = ne
   const disetujui = retur.debitNotes.find((d) => d.status === "DISETUJUI");
   if (disetujui) throw gagal(`Debit note ${disetujui.debitNumber} sudah disetujui — batalkan debit note-nya dulu (Finance), baru retur ini.`, 409, "DEBIT_NOTE_DISETUJUI");
   await lockRowForUpdate(tx, "fin_purchase_orders", retur.purchaseOrderId);
+  await pastikanTidakDirekonsiliasi(tx, [{ source: "RETUR_SUPPLIER", sourceId: retur.id }], `Retur ${retur.returnNumber}`);
   for (const d of retur.debitNotes.filter((x) => x.status === "MENUNGGU")) {
     await tx.finSupplierDebitNote.update({ where: { id: d.id }, data: { status: "DIBATALKAN", cancelledById: aktor.userId, cancelledAt: sekarang, cancelReason: `Retur ${retur.returnNumber} dibatalkan: ${r}` } });
   }
@@ -584,13 +623,18 @@ export async function batalkanRetur(tx, { returnId, alasan, aktor, sekarang = ne
 export async function ringkasKredit(db, { supplierId = null } = {}) {
   const kredit = await db.finSupplierCredit.findMany({
     where: { status: "AKTIF", ...(supplierId && { supplierId }) },
-    include: { supplier: { select: { id: true, name: true, code: true } }, debitNote: { select: { id: true, debitNumber: true } }, applications: { where: { status: "AKTIF" }, select: { id: true, amount: true, appliedAt: true, bill: { select: { id: true, billNumber: true } } } } },
+    include: { supplier: { select: { id: true, name: true, code: true } }, debitNote: { select: { id: true, debitNumber: true } }, applications: { where: { status: "AKTIF" }, select: { id: true, amount: true, appliedAt: true, appliedById: true, note: true, bill: { select: { id: true, billNumber: true } } } } },
     orderBy: { createdAt: "asc" },
   });
+  // Dialog pembatalan harus menunjukkan SIAPA yang memakai, KAPAN, dan dampaknya pada sisa utang faktur — semua dari server.
+  const idPelaku = [...new Set(kredit.flatMap((c) => c.applications.map((a) => a.appliedById)).filter(Boolean))];
+  const pelaku = new Map((idPelaku.length ? await db.user.findMany({ where: { id: { in: idPelaku } }, select: { id: true, name: true } }) : []).map((u) => [u.id, u.name]));
+  const sisaPerFaktur = new Map();
+  for (const c of kredit) for (const a of c.applications) if (!sisaPerFaktur.has(a.bill.id)) sisaPerFaktur.set(a.bill.id, uang(await sisaFaktur(db, a.bill.id)));
   return kredit.map((c) => ({
     id: c.id, supplierId: c.supplierId, supplier: c.supplier.name, kodeSupplier: c.supplier.code, debitNote: c.debitNote.debitNumber, debitNoteId: c.debitNote.id,
     jumlah: uang(c.amount), terpakai: uang(c.usedAmount), sisa: uang(toMoney(c.amount).minus(toMoney(c.usedAmount))),
-    dibuat: c.createdAt, pemakaian: c.applications.map((a) => ({ id: a.id, jumlah: uang(a.amount), faktur: a.bill.billNumber, billId: a.bill.id, pada: a.appliedAt })),
+    dibuat: c.createdAt, pemakaian: c.applications.map((a) => ({ id: a.id, jumlah: uang(a.amount), faktur: a.bill.billNumber, billId: a.bill.id, pada: a.appliedAt, oleh: pelaku.get(a.appliedById) ?? null, catatan: a.note ?? null, sisaFaktur: sisaPerFaktur.get(a.bill.id) })),
   }));
 }
 
@@ -625,6 +669,7 @@ export async function terapkanSaldoKredit(tx, { creditId, billId, jumlah, konfir
   if (!kr || kr.status !== "AKTIF") throw gagal("Saldo kredit tidak ditemukan atau sudah dibatalkan", 404);
   const bill = await tx.finSupplierBill.findUnique({ where: { id: billId }, select: { id: true, billNumber: true, supplierId: true, status: true } });
   if (!bill) throw gagal("Faktur tidak ditemukan", 404);
+  await pastikanTidakDirekonsiliasi(tx, [{ source: "TAGIHAN_SUPPLIER", sourceId: billId }], `Faktur ${bill.billNumber}`);
   if (bill.supplierId !== kr.supplierId) throw gagal(`Faktur ${bill.billNumber} bukan milik supplier saldo kredit ini`, 400, "SUPPLIER_BEDA");
   if (!["DISETUJUI", "DIBAYAR_SEBAGIAN"].includes(bill.status)) throw gagal(`Faktur ${bill.billNumber} berstatus ${bill.status} — saldo kredit hanya untuk faktur yang disetujui dan masih punya sisa utang`, 409, "FAKTUR_TIDAK_AKTIF");
   const sisaKredit = toMoney(kr.amount).minus(toMoney(kr.usedAmount));
@@ -650,6 +695,8 @@ export async function batalkanPemakaianKredit(tx, { applicationId, alasan, aktor
   await lockRowForUpdate(tx, "fin_supplier_bills", app0.billId);
   const app = await tx.finSupplierCreditApplication.findUnique({ where: { id: applicationId } });
   if (app.status !== "AKTIF") throw gagal("Pemakaian saldo kredit ini sudah dibatalkan", 409, "SUDAH_DIBATALKAN");
+  const billBatal = await tx.finSupplierBill.findUnique({ where: { id: app.billId }, select: { billNumber: true } });
+  await pastikanTidakDirekonsiliasi(tx, [{ source: "TAGIHAN_SUPPLIER", sourceId: app.billId }], `Faktur ${billBatal?.billNumber ?? app.billId}`);
   await tx.finSupplierCreditApplication.update({ where: { id: app.id }, data: { status: "DIBATALKAN", cancelledById: aktor.userId, cancelledAt: sekarang, cancelReason: r } });
   await tx.finSupplierCredit.update({ where: { id: app.creditId }, data: { usedAmount: { decrement: app.amount } } });
   await tx.finSupplierBill.update({ where: { id: app.billId }, data: { creditApplied: { decrement: app.amount } } });

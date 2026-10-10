@@ -438,7 +438,7 @@ test("PO, kedatangan, koreksi, dan faktur tidak menulis stok; stok & jurnal pers
 
 // ═══ 9. Definisi progres PO (satu helper server) ═══
 const BERKAS10 = ["dipesan", "datang", "belumDatang", "belumDiperiksa", "ditolak", "menungguPengganti", "baikBelumDisimpan", "masukStok", "belumDipenuhiSupplier", "belumMasukStok"];
-const BERKAS = ["dipesan", "datangAsli", "pengganti", "datang", "belumDatang", "belumDiperiksa", "ditolak", "menungguPengganti", "baikBelumDisimpan", "masukStok", "belumDipenuhiSupplier", "belumMasukStok"];
+const BERKAS = ["dipesan", "datangAsli", "pengganti", "datang", "belumDatang", "belumDiperiksa", "ditolak", "menungguPengganti", "baikBelumDisimpan", "masukStok", "diretur", "stokBersih", "belumDipenuhiSupplier", "belumMasukStok"];
 const angka = (p) => Object.fromEntries(BERKAS10.map((k) => [k, p[k]]));
 
 test("progres PO 10 KG: datang 5 lalu 3, baik & masuk stok baru 5 → Datang 8, Belum datang 2, Belum diperiksa 3, Masuk stok 5, Belum masuk stok 5 — angka SAMA di Finance, Gudang, daftar, dan detail", async () => {
