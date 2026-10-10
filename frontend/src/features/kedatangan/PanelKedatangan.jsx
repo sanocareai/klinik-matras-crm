@@ -318,7 +318,7 @@ export function ModalKoreksiKedatangan({ po, receipt, workspace, onClose, onDone
 }
 
 // ── Pratinjau dampak koreksi (SEMUA angka dari server) ───────────────────
-const LABEL_DAMPAK = { datang: "Total fisik tiba", belumDatang: "Belum datang", belumDiperiksa: "Belum diperiksa", ditolak: "Ditolak", menungguPengganti: "Menunggu pengganti", baikBelumDisimpan: "Baik belum disimpan", masukStok: "Masuk stok", belumDipenuhiSupplier: "Belum dipenuhi supplier", belumMasukStok: "Belum masuk stok", datangAsli: "Pengiriman asli tiba", pengganti: "Pengganti tiba" };
+const LABEL_DAMPAK = { datang: "Total fisik tiba", belumDatang: "Belum datang", belumDiperiksa: "Belum diperiksa", ditolak: "Ditolak", menungguPengganti: "Menunggu pengganti", baikBelumDisimpan: "Baik belum disimpan", masukStok: "Masuk stok", belumDipenuhiSupplier: "Belum dipenuhi supplier", belumMasukStok: "Belum masuk stok", datangAsli: "Pengiriman asli tiba", pengganti: "Pengganti tiba", diretur: "Diretur ke supplier", diterimaBersih: "Diterima bersih dari PO" };
 const JALUR_TEKS = { DATA: "Hanya data kedatangan (tanpa efek jumlah).", LANGSUNG: "Koreksi langsung — dalam satu transaksi; progres PO dan jadwal termin yang belum terkunci dihitung ulang.", PEMBALIK_PENGGANTI: "Sudah masuk stok: dibuat pergerakan PEMBALIK + PENGGANTI dan jurnal koreksi; catatan lama dipertahankan." };
 export function DampakKoreksi({ hasil, finance }) {
   if (!hasil.boleh) {
