@@ -300,6 +300,36 @@ test("KONFLIK lewat endpoint: tidak muncul sebagai lunas terbukti; berlabel konf
   } finally { await srv.close(); }
 });
 
+// ── SQL pembanding skrip rilis = loader (pada DB nyata) ────────────────────────────────────────────────────────────────
+// scripts/release-atribusi-kohort.sh membandingkan endpoint dengan SQL INDEPENDEN. Tes ini membuktikan SQL itu benar: sama dengan loader+inti pada DB nyata.
+import fs from "node:fs";
+const sqlSkrip = () => {
+  const src = fs.readFileSync(new URL("../../../scripts/release-atribusi-kohort.sh", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  const m = /read -r -d '' SNAP_SQL <<'SQL' \|\| true\n([\s\S]*?)\nSQL\n/.exec(src);
+  assert.ok(m, "SNAP_SQL tidak ditemukan di skrip rilis");
+  return m[1];
+};
+const snapKode = (t) => [t.leads, t.orders, t.nilaiOrder, t.lunasMenurutCrm.jumlah, t.orderBerLedger, t.lunasTerbuktiLedger.jumlah,
+  t.buktiPelunasan.lunasTanpaLedger, t.buktiPelunasan.konflikLunasTersimpanLedgerTidakCukup, t.buktiPelunasan.kekuranganRupiahKonflik, t.uangLedger].join("|");
+const snapSql = async () => (await testPrisma.$queryRawUnsafe(sqlSkrip()))[0].concat_ws;
+
+test("SQL pembanding skrip rilis = loader+inti pada DB nyata: kasus konflik (gerbang, batal-ganti, ongkir, 50%) — 10 angka identik", async () => {
+  await buatKasusKonflik();
+  const r = await hitungKohort(testPrisma);
+  assert.equal(r.rekonsiliasi.ok, true);
+  assert.equal(await snapSql(), snapKode(r.total));
+  assert.equal(r.total.buktiPelunasan.konflikLunasTersimpanLedgerTidakCukup, 4);
+});
+
+test("SQL pembanding skrip rilis: kasus lengkap (batal, PENDING-tidak, SPAM, staf, refund) — 4 angka dasar identik; refund memang di luar SQL", async () => {
+  await siapkanDunia();
+  await buatKasusLengkap();
+  const r = await hitungKohort(testPrisma);
+  const sql = (await snapSql()).split("|"), kode = snapKode(r.total).split("|");
+  assert.deepEqual(sql.slice(0, 4), kode.slice(0, 4));
+  assert.equal(r.total.refundDisetujui, 500_000, "kasus ini memuat refund → skrip hanya membandingkan 4 angka dasar (exact_sql_ok = false)");
+});
+
 // ── ENDPOINT ────────────────────────────────────────────────────────────────────────────────────────────────────────
 async function mulaiServer() {
   const app = express();
