@@ -48,14 +48,14 @@ financeUtangRouter.get("/utang/aging/:billId", requirePermission(P.FINANCE_READ)
 
 financeUtangRouter.post("/utang/termin/pratinjau", requirePermission(P.FINANCE_READ), async (req, res) => {
   try {
-    const { supplierId, purchaseOrderId, billDate } = req.body ?? {};
+    const { supplierId, purchaseOrderId, billDate, dasar } = req.body ?? {};
     if (!supplierId || !POLA_UUID.test(String(supplierId))) throw galat("Supplier wajib dipilih");
     const supplier = await prisma.finSupplier.findUnique({ where: { id: supplierId }, select: { paymentTermDays: true, paymentTermType: true } });
     if (!supplier) throw galat("Supplier tidak ditemukan", 404);
     const po = purchaseOrderId && POLA_UUID.test(String(purchaseOrderId))
       ? await prisma.finPurchaseOrder.findUnique({ where: { id: purchaseOrderId }, select: { termType: true, termDays: true, supplierId: true } }) : null;
     if (po && po.supplierId !== supplierId) throw galat("PO bukan milik supplier ini", 400);
-    res.json(pratinjauTermin({ supplier, po, tanggalFaktur: billDate ? toBookDate(billDate) : todayBookDateWIB() }));
+    res.json(pratinjauTermin({ supplier, po, tanggalFaktur: billDate ? toBookDate(billDate) : todayBookDateWIB(), dasar: dasar === "TANGGAL_TIBA" || po ? "TANGGAL_TIBA" : undefined }));
   } catch (e) { handleFinanceError(e, res); }
 });
 

@@ -89,6 +89,7 @@ export const DIVISION_CONTENT = {
       // di WarehouseDashboard.jsx.
       { title: "Dashboard",             description: "Ringkasan stok, penerimaan, pengeluaran, dan akurasi inventory.", icon: Gauge, path: "/warehouse/dashboard" },
       { title: "Stok & Material",       description: "Pantau saldo, lokasi rak, lot, dan status seluruh inventory.", icon: Package, path: "/warehouse/inventory" },
+      { title: "Barang Akan Datang",    description: "PO bahan baku yang ditunggu: catat barang tiba, lihat yang terlambat dan siap disimpan (tanpa harga).", icon: Truck, path: "/warehouse/barang-akan-datang" },
       { title: "Penerimaan Barang",     description: "Penerimaan bahan baku dan produk dari supplier atau produksi.", icon: ScanLine, path: "/warehouse/goods-receipt" },
       { title: "Pengeluaran Material",  description: "Pengeluaran material untuk work order produksi.", icon: ClipboardList, path: "/warehouse/material-issue" },
       { title: "Transfer Stok",         description: "Mutasi barang antar lokasi, rak, atau gudang.", icon: Route, path: "/warehouse/transfers" },

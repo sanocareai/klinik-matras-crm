@@ -12,7 +12,9 @@ import { generateDocumentNumber, toBookDate } from "./journal.js";
 import { lockRowForUpdate } from "../inventoryLedger.js";
 import { tentukanTerminPO, TerminError, labelTermin } from "./termin.js";
 import { Decimal } from "./money.js";
+import { validasiPendamping, pendampingPO, PendampingError } from "../../lib/domain/pendamping.js";
 import { buatSkuBaru, pastikanKatalog, catatHargaTerakhir, tautkanPoPertama, validasiFaktor, periksaKonversiBaris, SATUAN_VALID, SkuError } from "./skuBaru.js";
+import { DEFINISI_PROGRES, hitungProgresPO, ringkasProgresPO } from "./progresPO.js";
 
 export class PurchaseOrderError extends Error {
   constructor(message, statusCode = 400, code = null) { super(message); this.statusCode = statusCode; if (code) this.code = code; }
@@ -103,11 +105,16 @@ async function siapkanMasukan(tx, body, { bolehBuatSku = false, buatSku = false,
       try { periksaKonversiBaris({ qty: dariK(k(qty)), faktor, hargaBeli: harga }); }
       catch (e) { if (e instanceof SkuError) throw gagal(`Baris ${no} (${material.code}): ${e.message}`, 400, e.code); throw e; }
     }
+    // Jumlah fisik pendamping (informasi kontrol; tidak memengaruhi nilai/stok/jurnal). Tidak bisa digabung konversi satuan.
+    let pendamping;
+    try { pendamping = validasiPendamping(l.pendamping, { nomor: no, kode: material.code, adaKonversi: konversi }); }
+    catch (e) { if (e instanceof PendampingError) throw gagal(e.message, 400, e.code); throw e; }
     // Relasi Katalog Supplier (supplier ↔ SKU internal): dibuat/diperbarui di transaksi yang sama; baris PO menyimpan SNAPSHOT-nya.
     let katalog = await tx.finSupplierMaterial.findUnique({ where: { supplierId_materialId: { supplierId: supplier.id, materialId: material.id } } });
     if (katalogMasukan) katalog = await pastikanKatalog(tx, { supplierId: supplier.id, materialId: material.id, data: katalogMasukan, userId });
     hasil.push({
       materialId: material.id, unit: satuanBeli, qty: dariK(k(qty)), unitPrice: harga, notes: l.notes?.trim() || null, sortOrder: i,
+      ...pendamping,
       ...(konversi && { purchaseUnit: satuanBeli, conversionFactor: faktor.toString() }),
       ...(katalog && { supplierMaterialId: katalog.id, supplierItemName: katalog.supplierItemName, supplierSku: katalog.supplierSku }),
     });
@@ -312,7 +319,7 @@ export async function siapkanPenerimaanDariPO(tx, { purchaseOrderId, pilihan }) 
   if (!STATUS_PO_BISA_DITERIMA.includes(po.status)) {
     throw gagal(`PO ${po.poNumber} berstatus ${po.status} — hanya PO yang disetujui dan belum selesai yang bisa dibuatkan penerimaan`, 409);
   }
-  const kuantitas = await hitungKuantitas(tx, po);
+  const kuantitas = await hitungProgresPO(tx, po.id); // jadwal pengiriman mengikuti "Belum datang" (satu definisi, progresPO.js)
   const peminta = Array.isArray(pilihan) && pilihan.length > 0 ? pilihan : null;
   const dipilih = peminta
     ? peminta.map((p) => {
@@ -320,12 +327,12 @@ export async function siapkanPenerimaanDariPO(tx, { purchaseOrderId, pilihan }) 
         if (!l) throw gagal("Ada baris yang bukan bagian dari PO ini");
         return { l, diminta: p.orderedQty };
       })
-    : po.lines.filter((l) => kuantitas.get(l.id).belumDiterima > 0).map((l) => ({ l, diminta: undefined }));
+    : po.lines.filter((l) => kuantitas.get(l.id).belumDipenuhiSupplier > 0).map((l) => ({ l, diminta: undefined }));
   if (dipilih.length === 0) throw gagal(`PO ${po.poNumber} sudah terpenuhi — tidak ada sisa yang bisa diterima`, 409);
   if (new Set(dipilih.map((d) => d.l.id)).size !== dipilih.length) throw gagal("Baris PO yang sama dipilih lebih dari sekali");
 
   const lines = dipilih.map(({ l, diminta }) => {
-    const sisa = kuantitas.get(l.id).belumDiterima;
+    const sisa = kuantitas.get(l.id).belumDipenuhiSupplier;
     if (sisa <= 0) throw gagal(`Salah satu baris sudah terpenuhi penuh di PO ${po.poNumber}`, 409);
     let qty = sisa;
     if (diminta !== undefined && diminta !== null && diminta !== "") {
@@ -420,7 +427,7 @@ export async function selesaiPutaway(tx, { receipt, ditempatkan, userId }) {
 
 // ── Bentuk keluaran ──────────────────────────────────────────────────────
 
-function bentukBaris(l, q, { harga }) {
+function bentukBaris(l, q, { harga, progres }) {
   const nilaiK = (qtyK) => rp((qtyK / 1000) * l.unitPrice);
   return {
     id: l.id,
@@ -434,12 +441,17 @@ function bentukBaris(l, q, { harga }) {
     ...(l.supplierItemName && { namaSupplier: l.supplierItemName }),
     ...(l.supplierSku && { kodeSupplier: l.supplierSku }),
     catatan: l.notes,
+    // Jumlah fisik pendamping (null = tanpa pendamping): satuan utama tetap dasar nilai & stok.
+    pendamping: pendampingPO({ unit: l.unit, qty: l.qty, companionUnit: l.companionUnit, companionMode: l.companionMode, companionRatio: l.companionRatio, companionEstimate: l.companionEstimate }),
     ...q,
+    // Progres penerimaan: SATU definisi dari progresPO.js (frontend tidak menghitung ulang). Kolom lama di atas (diterimaBaik/belumDiterima) tetap untuk aturan revisi & penagihan.
+    progres,
     ...(harga && {
       hargaSatuan: l.unitPrice,
       nilaiDipesan: nilaiK(k(q.dipesan)),
       nilaiDiterima: nilaiK(k(q.diterimaBaik)),
       nilaiDitagih: nilaiK(k(q.ditagih)),
+      nilaiBelumMasukStok: progres ? nilaiK(k(progres.belumMasukStok)) : 0,
     }),
   };
 }
@@ -457,7 +469,8 @@ export async function bentukPO(tx, id, { harga = true, denganPenerimaan = true }
   });
   if (!po) return null;
   const kuantitas = await hitungKuantitas(tx, po);
-  const lines = po.lines.map((l) => bentukBaris(l, kuantitas.get(l.id), { harga }));
+  const progres = await hitungProgresPO(tx, po.id);
+  const lines = po.lines.map((l) => bentukBaris(l, kuantitas.get(l.id), { harga, progres: progres.get(l.id) }));
   const total = (f) => rp(lines.reduce((s, l) => s + (l[f] ?? 0), 0));
 
   const keluaran = {
@@ -468,9 +481,10 @@ export async function bentukPO(tx, id, { harga = true, denganPenerimaan = true }
     cancelledAt: po.cancelledAt, cancelReason: po.cancelReason,
     createdAt: po.createdAt,
     lines,
+    progres: ringkasProgresPO(lines.map((l) => ({ satuan: l.satuan, ...l.progres }))), progresDefinisi: DEFINISI_PROGRES,
     // Termin hanya untuk Finance (Gudang tidak melihat harga/utang). Snapshot dokumen — tidak berubah bila master supplier diubah.
     ...(harga && { termin: po.termType ? { jenis: po.termType, hari: po.termDays, label: labelTermin(po.termType, po.termDays), sumber: po.termSource, alasan: po.termOverrideReason, olehId: po.termSetById, pada: po.termSetAt } : null }),
-    ...(harga && { totalDipesan: total("nilaiDipesan"), totalDiterima: total("nilaiDiterima"), totalDitagih: total("nilaiDitagih") }),
+    ...(harga && { totalDipesan: total("nilaiDipesan"), totalDiterima: total("nilaiDiterima"), totalDitagih: total("nilaiDitagih"), totalBelumMasukStok: total("nilaiBelumMasukStok") }),
   };
 
   if (denganPenerimaan) {

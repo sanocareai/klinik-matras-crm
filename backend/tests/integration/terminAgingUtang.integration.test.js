@@ -12,6 +12,7 @@ import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestUser, createTestMaterial } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
+import { bawaSampaiSiap, catatTibaResmi } from "./setup/kedatangan.js";
 import { ensureDefaultChartOfAccounts, SYSTEM_KEYS } from "../../src/services/finance/accounts.js";
 import { toMoney } from "../../src/services/finance/money.js";
 import { tentukanTerminDokumen, hitungJatuhTempo, TerminError } from "../../src/services/finance/termin.js";
@@ -54,8 +55,7 @@ async function poDisetujui(w, { qty = 10, harga = H, extra = {} } = {}) {
 async function penerimaan(w, poId, { datang, baik, tolak = 0, putaway = true, tanggal = null }) {
   const gr = await w.g.post("/api/inventory/goods-receipts", { purchaseOrderId: poId });
   assert.equal(gr.status, 201, JSON.stringify(gr.body));
-  for (const st of ["SCHEDULED", "ARRIVED", "INSPECTION", "READY_FOR_PUTAWAY"]) assert.equal((await w.g.patch(`/api/inventory/goods-receipts/${gr.body.id}`, { status: st })).status, 200);
-  assert.equal((await w.g.patch(`/api/inventory/goods-receipts/${gr.body.id}/lines/${gr.body.lines[0].id}`, { receivedQty: datang, acceptedQty: baik, rejectedQty: tolak })).status, 200);
+  await bawaSampaiSiap(w.g, gr.body, { datang, baik, tolak, tanggal });
   if (putaway) assert.equal((await w.g.post(`/api/inventory/goods-receipts/${gr.body.id}/putaway`, {})).status, 200);
   if (tanggal) await testPrisma.goodsReceipt.update({ where: { id: gr.body.id }, data: { receivedDate: new Date(`${tanggal}T00:00:00Z`) } });
   return gr.body;
@@ -140,8 +140,8 @@ test("master supplier: pilihan termin resmi tersimpan; hari di luar pilihan dito
   const fk = await faktur(w, po, { qty: 10, billDate: tglFaktur });
   assert.equal(fk.status, 201, JSON.stringify(fk.body));
   const bill = await testPrisma.finSupplierBill.findUnique({ where: { id: fk.body.billId } });
-  assert.equal(bill.dueDate.toISOString().slice(0, 10), geser(27), "jatuh tempo = tanggal faktur + 30 hari (BUKAN tanggal barang datang)");
-  assert.deepEqual([bill.termType, bill.termDays, bill.termBasis, bill.termSource, bill.termSetById], ["HARI", 30, "TANGGAL_FAKTUR", "PO", w.fin.user.id]);
+  assert.equal(bill.dueDate.toISOString().slice(0, 10), geser(30), "jatuh tempo faktur atas PO = tanggal barang tiba + 30 hari (BUKAN tanggal faktur/PO)");
+  assert.deepEqual([bill.termType, bill.termDays, bill.termBasis, bill.termSource, bill.termSetById], ["HARI", 30, "TANGGAL_TIBA", "PO", w.fin.user.id]);
 
   // master diubah → PO & faktur lama tidak berubah
   assert.equal((await w.f.patch(`/api/finance/suppliers/${w.supplier.id}`, { paymentTermType: "TUNAI", paymentTermDays: null })).status, 200);
@@ -210,8 +210,7 @@ test("alur penuh: PO tanpa jurnal → Simpan ke Stok sekali (Dr Persediaan/Cr GR
 
   // barang datang & diperiksa: stok belum berubah
   const gr = await w.g.post("/api/inventory/goods-receipts", { purchaseOrderId: po.id });
-  for (const st of ["SCHEDULED", "ARRIVED", "INSPECTION", "READY_FOR_PUTAWAY"]) await w.g.patch(`/api/inventory/goods-receipts/${gr.body.id}`, { status: st });
-  await w.g.patch(`/api/inventory/goods-receipts/${gr.body.id}/lines/${gr.body.lines[0].id}`, { receivedQty: 10, acceptedQty: 10, rejectedQty: 0 });
+  await bawaSampaiSiap(w.g, gr.body, { datang: 10, baik: 10, tolak: 0 });
   assert.deepEqual(await cacah(), awal, "datang & diperiksa belum mengubah stok/jurnal");
   // Simpan ke Stok — klik ganda: sekali
   const ganda = await Promise.all([1, 2].map(() => w.g.post(`/api/inventory/goods-receipts/${gr.body.id}/putaway`, {})));
@@ -316,13 +315,13 @@ test("pembayaran: dua pembayaran paralel melewati sisa → satu berhasil; Idempo
 // ═══ AGING ══════════════════════════════════════════════════════════════════════════════════════════════════════════
 test("aging menurut TANGGAL JATUH TEMPO (bukan tanggal barang datang): kelompok, kartu = jumlah baris, urutan prioritas, data lama tanpa jatuh tempo tidak ditebak", async () => {
   const w = await dunia();
-  // A: barang datang HARI INI tetapi jatuh tempo kemarin → TERLAMBAT
-  const poA = await poDisetujui(w); await penerimaan(w, poA.id, { datang: 10, baik: 10 });
-  const A = await faktur(w, poA, { qty: 10, billDate: geser(-31) });  // 30 hari → jatuh tempo kemarin
+  // A: barang tiba 31 hari lalu, termin 30 hari dari TANGGAL TIBA → jatuh tempo kemarin → TERLAMBAT
+  const poA = await poDisetujui(w, { extra: { orderDate: geser(-40) } }); await penerimaan(w, poA.id, { datang: 10, baik: 10, tanggal: geser(-31) });
+  const A = await faktur(w, poA, { qty: 10 });
   await setujui(w, A.body.billId);
-  // B: barang datang 90 hari lalu, jatuh tempo 45 hari lagi → LEBIH_30 (barang lama TIDAK membuat terlambat)
-  const poB = await poDisetujui(w); await penerimaan(w, poB.id, { datang: 10, baik: 10, tanggal: geser(-90) });
-  const B = await faktur(w, poB, { qty: 10, billDate: geser(-1), extra: { terminJenis: "HARI", terminHari: 45, alasanTermin: "Nego" }, klien: w.a });
+  // B: barang tiba 10 hari lalu, termin 45 hari dari tanggal tiba → jatuh tempo 35 hari lagi → LEBIH_30
+  const poB = await poDisetujui(w, { extra: { orderDate: geser(-20) } }); await penerimaan(w, poB.id, { datang: 10, baik: 10, tanggal: geser(-10) });
+  const B = await faktur(w, poB, { qty: 10, extra: { terminJenis: "HARI", terminHari: 45, alasanTermin: "Nego" }, klien: w.a });
   await setujui(w, B.body.billId);
   // legacy langsung: hari ini, 3 hari, 10 hari, 20 hari, tanpa tanggal, lunas
   const L0 = await billLegacy(w, { dueDate: geser(0), amount: 100_000 });
@@ -338,7 +337,7 @@ test("aging menurut TANGGAL JATUH TEMPO (bukan tanggal barang datang): kelompok,
   assert.deepEqual([k(A.body.billId), k(B.body.billId), k(L0.id), k(L3.id), k(L10.id), k(L20.id), k(Ln.id)], ["TERLAMBAT", "LEBIH_30", "HARI_INI", "H1_7", "H8_14", "H15_30", "TANPA_JATUH_TEMPO"]);
   assert.equal(j.baris.some((r) => r.billId === Ll.id), false, "lunas tidak tampil secara bawaan");
   assert.equal(barisBill(j, A.body.billId).hariTerlambat, 1);
-  assert.equal(barisBill(j, B.body.billId).tanggalBarangDiterima, geser(-90));
+  assert.equal(barisBill(j, B.body.billId).tanggalBarangDiterima, geser(-10));
   assert.equal(barisBill(j, B.body.billId).statusPembayaran, "BELUM_JATUH_TEMPO");
   assert.equal(barisBill(j, A.body.billId).statusPembayaran, "TERLAMBAT");
   assert.equal(barisBill(j, L0.id).statusPembayaran, "JATUH_TEMPO_HARI_INI");
@@ -461,12 +460,12 @@ test("export Excel Aging Utang: enam sheet, angka numerik, total = kartu layar, 
   const total = (n) => baris(n).find((r) => String(r[0] ?? "").startsWith("TOTAL"));
   // total export = kartu layar
   assert.equal(Number(total("Ringkasan Aging")[3]), kt.totalUtangAktif);
-  assert.equal(Number(total("Utang Aktif")[13]), kt.totalUtangAktif, JSON.stringify(total("Utang Aktif")));
-  assert.equal(typeof total("Utang Aktif")[13], "number");
-  assert.equal(Number(total("Dibayar Sebagian")[13]), kt.dibayarSebagian);
-  assert.equal(Number(total("Tanpa Jatuh Tempo")[13]), kt.tanpaJatuhTempo);
-  assert.equal(Number(total("Jatuh Tempo")[13]), kt.totalTerlambat + 125_000);
-  assert.equal(Number(total("Lunas")[11]), 50_000);
+  assert.equal(Number(total("Utang Aktif")[14]), kt.totalUtangAktif, JSON.stringify(total("Utang Aktif")));
+  assert.equal(typeof total("Utang Aktif")[14], "number");
+  assert.equal(Number(total("Dibayar Sebagian")[14]), kt.dibayarSebagian);
+  assert.equal(Number(total("Tanpa Jatuh Tempo")[14]), kt.tanpaJatuhTempo);
+  assert.equal(Number(total("Jatuh Tempo")[14]), kt.totalTerlambat + 125_000);
+  assert.equal(Number(total("Lunas")[12]), 50_000);
   // injection
   const aktif = baris("Utang Aktif");
   assert.ok(aktif.some((r) => String(r[0]).startsWith("'=HYPERLINK")), "nama supplier berawalan '=' dinetralkan");
@@ -485,6 +484,6 @@ test("export Excel Aging Utang: enam sheet, angka numerik, total = kartu layar, 
   assert.ok(teksKosong.some((t) => /Tidak ada utang aktif untuk filter ini/.test(t)));
   const resSup = await ambil({ supplierId: nakal.id });
   const wbS = new ExcelJS.Workbook(); await wbS.xlsx.load(Buffer.from(await resSup.arrayBuffer()));
-  const totSup = []; wbS.getWorksheet("Utang Aktif").eachRow((r) => { if (String(r.values[1] ?? "").startsWith("TOTAL")) totSup.push(r.values[14]); });
+  const totSup = []; wbS.getWorksheet("Utang Aktif").eachRow((r) => { if (String(r.values[1] ?? "").startsWith("TOTAL")) totSup.push(r.values[15]); });
   assert.equal(Number(totSup[0]), (await aging(w, `?supplierId=${nakal.id}`)).ringkasan.kartu.totalUtangAktif);
 });

@@ -13,7 +13,7 @@ import {
   UserRound,
   ShieldCheck,
   FileCheck,
-  Scissors, Tv,
+  Scissors, Tv, Truck,
 } from "lucide-react";
 import { LayoutGroup } from "framer-motion";
 import { api } from "../api.js";
@@ -256,6 +256,8 @@ const DIVISIONS = {
           // P6 — penerimaan BARANG JADI dari Produksi (lokasi wajib; menerima = run selesai + unit siap kirim). Inert bila reader V2 OFF.
           { to: "/warehouse/finished-goods", label: "Terima Barang Jadi", Icon: ArrowDownToLine },
           { to: "/warehouse/inventory", label: "Stok & Lokasi",     Icon: Package },
+          // PO terintegrasi Finance–Gudang: PO yang akan/sedang datang (data yang sama dengan Finance, TANPA harga) + catat barang tiba.
+          { to: "/warehouse/barang-akan-datang", label: "Barang Akan Datang", Icon: Truck },
           { to: "/warehouse/goods-receipt",  label: "Penerimaan Barang", Icon: ArrowDownToLine },
           { to: "/warehouse/material-issue", label: "Pengeluaran Material", Icon: ArrowUpFromLine },
           { to: "/warehouse/transfers",      label: "Transfer Stok",     Icon: ArrowLeftRight },

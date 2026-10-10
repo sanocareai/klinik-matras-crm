@@ -83,6 +83,7 @@ const Gudang         = lazy(() => import("../pages/Gudang.jsx"));
 const WarehouseDashboard   = lazy(() => import("../pages/warehouse/WarehouseDashboard.jsx"));
 const WarehouseInventory   = lazy(() => import("../pages/warehouse/WarehouseInventory.jsx"));
 const WarehouseGoodsReceipt = lazy(() => import("../pages/warehouse/WarehouseGoodsReceipt.jsx"));
+const WarehouseBarangAkanDatang = lazy(() => import("../pages/warehouse/WarehouseBarangAkanDatang.jsx"));
 const WarehouseUnitCustody = lazy(() => import("../pages/warehouse/WarehouseUnitCustody.jsx"));
 const WarehouseMaterialPickup = lazy(() => import("../pages/warehouse/WarehouseMaterialPickup.jsx"));
 const WarehouseFinishedGoods = lazy(() => import("../pages/warehouse/WarehouseFinishedGoods.jsx"));
@@ -249,6 +250,7 @@ export const PAGES = [
   { path: "/gudang",      render: () => <Gudang /> },
   { path: "/warehouse/dashboard", render: () => <WarehouseDashboard /> },
   { path: "/warehouse/inventory", render: () => <WarehouseInventory /> },
+  { path: "/warehouse/barang-akan-datang", render: () => <WarehouseBarangAkanDatang /> },
   { path: "/warehouse/goods-receipt", render: () => <WarehouseGoodsReceipt /> },
   { path: "/warehouse/unit-custody", render: () => <WarehouseUnitCustody /> },
   { path: "/bengkel/production-v2", render: () => <DemoPage><ProductionPlannerV2 /></DemoPage> },

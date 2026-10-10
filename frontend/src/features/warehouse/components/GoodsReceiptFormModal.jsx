@@ -48,7 +48,7 @@ export default function GoodsReceiptFormModal({ open, onClose, onCreated }) {
     setPoId(id);
     const p = (pos || []).find((x) => x.id === id);
     const awal = {};
-    for (const l of p?.lines || []) awal[l.id] = { dipilih: l.belumDiterima > 0, qty: String(l.belumDiterima) };
+    for (const l of p?.lines || []) awal[l.id] = { dipilih: l.progres.belumDatang > 0, qty: String(l.progres.belumDatang) };
     setPilihan(awal);
     setExpectedDate(p?.expectedDate ? String(p.expectedDate).slice(0, 10) : "");
   }
@@ -66,7 +66,7 @@ export default function GoodsReceiptFormModal({ open, onClose, onCreated }) {
     for (const l of dipilih) {
       const q = Number(pilihan[l.id].qty);
       if (!(q > 0)) return `${l.kode}: jumlah dijadwalkan harus lebih dari 0`;
-      if (q > l.belumDiterima + 1e-9) return `${l.kode}: melebihi sisa PO (${teksJumlah(l.belumDiterima)} ${l.satuan})`;
+      if (q > l.progres.belumDatang + 1e-9) return `${l.kode}: melebihi yang belum datang (${teksJumlah(l.progres.belumDatang)} ${l.satuan})`;
     }
     return null;
   }, [po, pilihan]);
@@ -145,7 +145,7 @@ export default function GoodsReceiptFormModal({ open, onClose, onCreated }) {
                   <div className="space-y-2">
                     {po.lines.map((l) => {
                       const p = pilihan[l.id] || { dipilih: false, qty: "" };
-                      const penuh = l.belumDiterima <= 0;
+                      const penuh = l.progres.belumDatang <= 0;
                       return (
                         <div key={l.id} className="rounded-btn border border-border p-2.5" data-testid="baris-po-gudang">
                           <label className="flex items-start gap-2 text-[12.5px]">
@@ -153,7 +153,7 @@ export default function GoodsReceiptFormModal({ open, onClose, onCreated }) {
                             <span className="min-w-0 flex-1">
                               <span className="font-semibold text-ink">{l.kode}</span> <span className="text-ink2">{l.nama}</span>
                               <span className="mt-0.5 block text-[11.5px] text-ink3">
-                                Dipesan {teksJumlah(l.dipesan)} {l.satuan} · sudah masuk {teksJumlah(l.diterimaBaik)} · <strong className="text-ink2">sisa {teksJumlah(l.belumDiterima)}</strong>{penuh ? " — sudah terpenuhi" : ""}
+                                Dipesan {teksJumlah(l.dipesan)} {l.satuan} · masuk stok {teksJumlah(l.progres.masukStok)} · <strong className="text-ink2">belum datang {teksJumlah(l.progres.belumDatang)}</strong>{penuh ? " — sudah terpenuhi" : ""}
                               </span>
                             </span>
                           </label>

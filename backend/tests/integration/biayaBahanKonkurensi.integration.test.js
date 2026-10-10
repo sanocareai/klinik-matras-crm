@@ -9,6 +9,7 @@ import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestUser, createTestMaterial, createTestUnit, seedBalance } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
+import { bawaSampaiSiap } from "./setup/kedatangan.js";
 import { ensureDefaultChartOfAccounts } from "../../src/services/finance/accounts.js";
 import { SETTING_KEYS } from "../../src/services/finance/settings.js";
 import { V2_FLAGS } from "../../src/services/v2FeatureFlags.js";
@@ -41,12 +42,11 @@ async function poDisetujui(w, { qty, harga }) {
   assert.equal(s.status, 200, JSON.stringify(s.body));
   return s.body;
 }
-/** Penerimaan sampai SIAP DISIMPAN (belum Simpan ke Stok). */
-async function penerimaanSiap(w, po, { baik }) {
+/** Penerimaan sampai SIAP DISIMPAN (belum Simpan ke Stok). `datang` (default = baik) dan `tolak` lewat jalur resmi Catat Barang Tiba. */
+async function penerimaanSiap(w, po, { baik, datang = baik, tolak = 0 }) {
   const gr = await w.g.post("/api/inventory/goods-receipts", { purchaseOrderId: po.id });
   assert.equal(gr.status, 201, JSON.stringify(gr.body));
-  for (const st of ["SCHEDULED", "ARRIVED", "INSPECTION", "READY_FOR_PUTAWAY"]) assert.equal((await w.g.patch(`/api/inventory/goods-receipts/${gr.body.id}`, { status: st })).status, 200);
-  assert.equal((await w.g.patch(`/api/inventory/goods-receipts/${gr.body.id}/lines/${gr.body.lines[0].id}`, { receivedQty: baik, acceptedQty: baik })).status, 200);
+  await bawaSampaiSiap(w.g, gr.body, { datang, baik, tolak });
   return gr.body;
 }
 const simpanKeStok = (w, gr) => w.g.post(`/api/inventory/goods-receipts/${gr.id}/putaway`, {});
@@ -69,9 +69,8 @@ const seimbang = (c) => assert.equal(c.d, c.k, "jurnal seimbang (debit = kredit)
 test("klik ganda 'Simpan ke Stok': stok & jurnal penerimaan tepat SEKALI; barang ditolak tidak masuk stok; progres Gudang menunjukkan langkahnya", async () => {
   const w = await dunia();
   const po = await poDisetujui(w, { qty: 10, harga: H });
-  const gr = await penerimaanSiap(w, po, { baik: 8 });
   // tolak 1 dari 9 yang datang: datang 9, baik 8, ditolak 1
-  assert.equal((await w.g.patch(`/api/inventory/goods-receipts/${gr.id}/lines/${gr.lines[0].id}`, { receivedQty: 9, acceptedQty: 8, rejectedQty: 1 })).status, 200);
+  const gr = await penerimaanSiap(w, po, { baik: 8, datang: 9, tolak: 1 });
 
   // sebelum disimpan: langkah "Simpan ke Stok" belum selesai, stok 0
   const sebelum = (await w.g.get(`/api/inventory/goods-receipts/${gr.id}/jejak-pemakaian`)).body;

@@ -16,11 +16,11 @@ export default function TerminFaktur({ supplierId, purchaseOrderId = null, tangg
   useEffect(() => {
     if (!supplierId) { setPr(null); return undefined; }
     let batal = false;
-    api.pratinjauTermin({ supplierId, purchaseOrderId: purchaseOrderId || undefined, billDate: tanggalFaktur || undefined })
+    api.pratinjauTermin({ supplierId, purchaseOrderId: purchaseOrderId || undefined, billDate: tanggalFaktur || undefined, ...(mode === "po" ? { dasar: "TANGGAL_TIBA" } : {}) })
       .then((r) => { if (!batal) { setPr(r); setGalat(""); } })
       .catch((e) => { if (!batal) setGalat(e.message || "Gagal memuat termin"); });
     return () => { batal = true; };
-  }, [supplierId, purchaseOrderId, tanggalFaktur]);
+  }, [supplierId, purchaseOrderId, tanggalFaktur, mode]);
 
   if (!supplierId) return null;
   const set = (patch) => onChange({ ...value, ...patch });
@@ -32,7 +32,9 @@ export default function TerminFaktur({ supplierId, purchaseOrderId = null, tangg
     <div className="space-y-2 rounded-lg bg-inset px-3 py-2.5" data-testid="termin-faktur">
       <p className="m-0 text-[12.5px] text-ink2" data-testid="termin-ringkas">
         {galat ? <span className="text-red">{galat}</span> : !pr ? "Memuat termin…" : pr.ada
-          ? <>Termin <strong className="text-ink">{pr.label}</strong> ({LABEL_SUMBER_TERMIN[pr.sumber] ?? pr.sumber}){pr.dueDate ? <> — jatuh tempo <strong className="text-ink">{tanggalPendek(pr.dueDate)}</strong> (tanggal faktur + {pr.hari ?? 0} hari)</> : <> — isi tanggal jatuh tempo di bawah</>}</>
+          ? pr.dasar === "TANGGAL_TIBA"
+            ? <>Termin <strong className="text-ink">{pr.label}</strong> ({LABEL_SUMBER_TERMIN[pr.sumber] ?? pr.sumber}) — <strong className="text-ink">Menunggu tanggal penerimaan</strong>: termin berjalan dari tanggal barang tiba (per penerimaan), bukan dari tanggal PO atau faktur.</>
+            : <>Termin <strong className="text-ink">{pr.label}</strong> ({LABEL_SUMBER_TERMIN[pr.sumber] ?? pr.sumber}){pr.dueDate ? <> — jatuh tempo <strong className="text-ink">{tanggalPendek(pr.dueDate)}</strong> (tanggal faktur + {pr.hari ?? 0} hari)</> : <> — isi tanggal jatuh tempo di bawah</>}</>
           : <>Supplier ini belum punya termin. Isi tanggal jatuh tempo bila ada; kosong = <strong className="text-ink">Tanggal jatuh tempo belum diisi</strong>.</>}
       </p>
       {mode === "faktur" && pr?.sumber === "PO" && <p className="m-0 text-[11.5px] text-ink3">Termin mengikuti snapshot PO, bukan perubahan master supplier setelahnya.</p>}

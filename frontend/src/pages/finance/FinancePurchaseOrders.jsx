@@ -20,6 +20,8 @@ import {
 } from "@/features/finance/shared.jsx";
 import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
+import PanelKedatangan, { LegendaProgres } from "@/features/kedatangan/PanelKedatangan.jsx";
+import { MODE_PENDAMPING_OPSI, adaPendamping, teksPratinjauPendamping } from "@/features/kedatangan/kedatanganLogic.js";
 import {
   STATUS_PO, TAB_PO, LABEL_STATUS_PENERIMAAN, baris0, teksJumlah, subtotal, totalIsian, galatBaris, galatFormulir,
   formDariPO, bodyDariForm, ringkasProgres, nilaiBelumDiterima, aksiPO, kalimatEvent,
@@ -90,14 +92,14 @@ export default function FinancePurchaseOrders() {
       )}
 
       <Penjelasan>
-        PO hanya <strong>rencana dan komitmen</strong>: menyimpan atau menyetujui PO <strong>tidak mengubah stok dan tidak membuat jurnal</strong>. Setelah disetujui, Gudang memilih PO ini
-        saat membuat <strong>Penerimaan Baru</strong>, mencatat jumlah datang, baik, dan ditolak, lalu menekan <strong>Simpan ke Stok</strong>. Hanya langkah itu yang menambah stok dan persediaan.
+        PO hanya <strong>rencana dan komitmen</strong>: menyimpan atau menyetujui PO <strong>tidak mengubah stok dan tidak membuat jurnal</strong>. Setelah disetujui, PO ini muncul di Gudang sebagai <strong>Barang Akan Datang</strong>. Finance atau Gudang mencatat
+        kedatangan lewat <strong>Catat Barang Tiba</strong> (tiap pengiriman = satu penerimaan sendiri), lalu Gudang memeriksa baik/ditolak dan menekan <strong>Simpan ke Stok</strong>. Hanya langkah terakhir itu yang menambah stok dan persediaan.
         Penerimaan tanpa PO tetap bisa dibuat Gudang, tetapi ditandai <strong>Tanpa PO</strong> dan tidak ada pencocokan jumlah maupun harga.
       </Penjelasan>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <KartuAngka label="PO Berjalan" value={String(ringkas.berjalan)} sub="disetujui dan belum selesai diterima" />
-        <KartuAngka label="Nilai Masih Ditunggu" value={formatUang(ringkas.nilaiMenunggu)} sub="sisa belum diterima × harga PO" />
+        <KartuAngka label="Nilai Belum Masuk Stok" value={formatUang(ringkas.nilaiMenunggu)} sub="dipesan dikurangi masuk stok, × harga PO" />
         <KartuAngka label="Draf Menunggu Persetujuan" value={String(ringkas.draf)} tone={ringkas.draf > 0 ? "orange" : "default"} sub="belum bisa dipilih Gudang" />
       </div>
 
@@ -116,7 +118,7 @@ export default function FinancePurchaseOrders() {
           <>
             <TableWrap className={cn("dh-table", TABLE_VIEW_CLASS)}>
               <Table fixed>
-                <THead><TR><TH sticky width={140}>No. PO</TH><TH>Supplier</TH><TH width={96}>Tanggal</TH><TH width={96}>Estimasi</TH><TH width={190}>Diterima baik</TH><TH numeric width={120}>Nilai PO</TH><TH width={132}>Status</TH></TR></THead>
+                <THead><TR><TH sticky width={140}>No. PO</TH><TH>Supplier</TH><TH width={96}>Tanggal</TH><TH width={96}>Estimasi</TH><TH width={230}>Masuk stok</TH><TH numeric width={120}>Nilai PO</TH><TH width={132}>Status</TH></TR></THead>
                 <TBody>
                   {daftar.map((p) => {
                     const pr = ringkasProgres(p);
@@ -149,7 +151,7 @@ export default function FinancePurchaseOrders() {
                       { label: "Tanggal", value: tgl(p.orderDate) },
                       { label: "Estimasi", value: tgl(p.expectedDate) },
                       { label: "Nilai PO", value: formatUang(p.totalDipesan) },
-                      { label: "Diterima baik", value: pr.teks },
+                      { label: "Masuk stok", value: pr.teks },
                     ]}
                   />
                 );
@@ -503,6 +505,36 @@ function ModalPO({ kunci, po, onClose, onSaved }) {
                       <InputUang value={l.unitPrice} onChange={(v) => setBaris(i, { unitPrice: v })} aria-label={`Harga satuan baris ${i + 1}`} />
                     </Field>
                   </div>
+                  {!kv && (
+                    <details className="mt-2 rounded-lg bg-inset px-2.5 py-2" open={adaPendamping(l.pendamping)} data-testid="pendamping-po">
+                      <summary className="cursor-pointer text-[12px] font-semibold text-ink2 max-sm:min-h-11">Jumlah fisik pendamping (opsional)</summary>
+                      <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+                        <Field label="Satuan pendamping" hint="mis. LEMBAR, KALENG">
+                          <Input value={l.pendamping?.satuan ?? ""} onChange={(e) => setBaris(i, { pendamping: { ...l.pendamping, satuan: e.target.value } })} aria-label={`Satuan pendamping baris ${i + 1}`} />
+                        </Field>
+                        <Field label="Mode">
+                          <Pilihan value={l.pendamping?.mode ?? ""} onChange={(v) => setBaris(i, { pendamping: { ...l.pendamping, mode: v } })} aria-label={`Mode pendamping baris ${i + 1}`}>
+                            <option value="">— pilih mode —</option>
+                            {MODE_PENDAMPING_OPSI.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+                          </Pilihan>
+                        </Field>
+                        {l.pendamping?.mode === "TETAP" && (
+                          <Field label={`Rasio (1 ${satuanBeli ? labelSatuan(satuanBeli) : "satuan"} = …)`}>
+                            <input type="number" inputMode="decimal" min="0" step="any" value={l.pendamping.rasio ?? ""} aria-label={`Rasio pendamping baris ${i + 1}`} onChange={(e) => setBaris(i, { pendamping: { ...l.pendamping, rasio: e.target.value } })}
+                              className="h-9 w-full rounded-lg bg-surface px-3 text-right text-sm tabular-nums text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/40 max-sm:h-11" />
+                          </Field>
+                        )}
+                        {l.pendamping?.mode === "AKTUAL" && (
+                          <Field label="Perkiraan jumlah (opsional)">
+                            <input type="number" inputMode="decimal" min="0" step="any" value={l.pendamping.estimasi ?? ""} aria-label={`Perkiraan pendamping baris ${i + 1}`} onChange={(e) => setBaris(i, { pendamping: { ...l.pendamping, estimasi: e.target.value } })}
+                              className="h-9 w-full rounded-lg bg-surface px-3 text-right text-sm tabular-nums text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/40 max-sm:h-11" />
+                          </Field>
+                        )}
+                      </div>
+                      {l.pendamping?.mode && <p className="mt-1.5 text-[11.5px] text-ink3">{MODE_PENDAMPING_OPSI.find((o) => o.key === l.pendamping.mode)?.hint} Hanya informasi kontrol — tidak memengaruhi stok, nilai persediaan, atau jurnal.</p>}
+                      {teksPratinjauPendamping(l.pendamping, l.qty, satuanBeli ? labelSatuan(satuanBeli) : "") && <p data-testid="pratinjau-pendamping" className="mt-1 text-[12px] font-medium text-accent">Tampil di PO: {teksPratinjauPendamping(l.pendamping, l.qty, satuanBeli ? labelSatuan(satuanBeli) : "")}</p>}
+                    </details>
+                  )}
                   <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                     <span className="text-[12px] text-ink2">Subtotal <strong className="tabular-nums text-ink">{formatUang(subtotal(l))}</strong></span>
                     {setara && <span data-testid="setara" className="text-[12px] font-medium text-accent">{setara}</span>}
@@ -654,15 +686,16 @@ function IsiDetail({ po, segar, onUbahFaktur, onSetujuiFaktur, onTolakFaktur, on
         <h4 className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ink3">Item &amp; progres penerimaan</h4>
         <TableWrap className="hidden md:block">
           <Table>
-            <THead><TR><TH>Item</TH><TH numeric>Dipesan</TH><TH numeric>Diterima baik</TH><TH numeric>Ditolak</TH><TH numeric>Belum diterima</TH><TH numeric>Sudah ditagih</TH><TH numeric>Harga satuan</TH><TH numeric>Nilai PO</TH></TR></THead>
+            <THead><TR><TH>Item</TH><TH numeric>Dipesan</TH><TH numeric title="Dipesan dikurangi datang pengiriman asli. Barang ditolak tetap dihitung sudah datang.">Belum datang</TH><TH numeric title="Jumlah ditolak yang belum diganti supplier">Menunggu pengganti</TH><TH numeric title="Baik yang sudah disimpan ke stok">Masuk stok</TH><TH numeric title="Dipesan dikurangi masuk stok">Belum masuk stok</TH><TH numeric>Sudah ditagih</TH><TH numeric>Harga satuan</TH><TH numeric>Nilai PO</TH></TR></THead>
             <TBody>
               {po.lines.map((l) => (
                 <TR key={l.id}>
                   <TD><div className="font-medium text-ink">{l.kode}</div><div className="text-[11.5px] text-ink2">{l.nama}</div>{l.konversi && <div data-testid="konversi-detail" className="text-[11.5px] text-accent">1 {labelSatuan(l.konversi.satuanBeli)} = {teksJumlah(l.konversi.faktor)} {labelSatuan(l.konversi.satuanStok)} · setara {teksJumlah(l.dipesan * l.konversi.faktor)} {labelSatuan(l.konversi.satuanStok)}</div>}</TD>
                   <TD numeric>{teksJumlah(l.dipesan)} {l.satuan}</TD>
-                  <TD numeric>{teksJumlah(l.diterimaBaik)}</TD>
-                  <TD numeric>{teksJumlah(l.ditolak)}</TD>
-                  <TD numeric className={l.belumDiterima > 0 && barisLaku ? "font-semibold text-ink" : ""}>{teksJumlah(l.belumDiterima)}</TD>
+                  <TD numeric className={l.progres.belumDatang > 0 && barisLaku ? "font-semibold text-ink" : ""}>{teksJumlah(l.progres.belumDatang)}</TD>
+                  <TD numeric className={l.progres.menungguPengganti > 0 ? "font-semibold text-orange" : ""}>{teksJumlah(l.progres.menungguPengganti)}</TD>
+                  <TD numeric>{teksJumlah(l.progres.masukStok)}</TD>
+                  <TD numeric className={l.progres.belumMasukStok > 0 && barisLaku ? "font-semibold text-ink" : ""}>{teksJumlah(l.progres.belumMasukStok)}</TD>
                   <TD numeric>{teksJumlah(l.ditagih)}</TD>
                   <TD numeric><Uang value={l.hargaSatuan} /></TD>
                   <TD numeric><Uang value={l.nilaiDipesan} /></TD>
@@ -678,9 +711,10 @@ function IsiDetail({ po, segar, onUbahFaktur, onSetujuiFaktur, onTolakFaktur, on
               {l.konversi && <div className="text-[11.5px] text-accent">1 {labelSatuan(l.konversi.satuanBeli)} = {teksJumlah(l.konversi.faktor)} {labelSatuan(l.konversi.satuanStok)} · setara {teksJumlah(l.dipesan * l.konversi.faktor)} {labelSatuan(l.konversi.satuanStok)}</div>}
               <dl className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1">
                 <div><dt className="text-ink3">Dipesan</dt><dd className="ml-0 tabular-nums">{teksJumlah(l.dipesan)} {l.satuan}</dd></div>
-                <div><dt className="text-ink3">Diterima baik</dt><dd className="ml-0 tabular-nums">{teksJumlah(l.diterimaBaik)}</dd></div>
-                <div><dt className="text-ink3">Ditolak</dt><dd className="ml-0 tabular-nums">{teksJumlah(l.ditolak)}</dd></div>
-                <div><dt className="text-ink3">Belum diterima</dt><dd className="ml-0 tabular-nums">{teksJumlah(l.belumDiterima)}</dd></div>
+                <div><dt className="text-ink3">Belum datang</dt><dd className="ml-0 tabular-nums">{teksJumlah(l.progres.belumDatang)}</dd></div>
+                <div><dt className="text-ink3">Menunggu pengganti</dt><dd className="ml-0 tabular-nums">{teksJumlah(l.progres.menungguPengganti)}</dd></div>
+                <div><dt className="text-ink3">Masuk stok</dt><dd className="ml-0 tabular-nums">{teksJumlah(l.progres.masukStok)}</dd></div>
+                <div><dt className="text-ink3">Belum masuk stok</dt><dd className="ml-0 tabular-nums">{teksJumlah(l.progres.belumMasukStok)}</dd></div>
                 <div><dt className="text-ink3">Sudah ditagih</dt><dd className="ml-0 tabular-nums">{teksJumlah(l.ditagih)}</dd></div>
                 <div><dt className="text-ink3">Harga satuan</dt><dd className="ml-0 tabular-nums">{formatUang(l.hargaSatuan)}</dd></div>
               </dl>
@@ -689,13 +723,34 @@ function IsiDetail({ po, segar, onUbahFaktur, onSetujuiFaktur, onTolakFaktur, on
         </ul>
         <div className="mt-2 flex flex-wrap justify-end gap-x-6 gap-y-1 text-[12.5px] text-ink2">
           <span>Nilai PO <strong className="tabular-nums text-ink">{formatUang(po.totalDipesan)}</strong></span>
-          <span>Nilai diterima baik <strong className="tabular-nums text-ink">{formatUang(po.totalDiterima)}</strong></span>
+          <span>Nilai masuk stok <strong className="tabular-nums text-ink">{formatUang(po.totalDiterima)}</strong></span>
           <span>Nilai sudah ditagih <strong className="tabular-nums text-ink">{formatUang(po.totalDitagih)}</strong></span>
         </div>
+        {po.progresDefinisi && <div className="mt-2"><LegendaProgres definisi={po.progresDefinisi} /></div>}
         <p className="mt-1 text-[11.5px] text-ink3">“Sudah ditagih” dihitung dari penerimaan yang tagihan supplier-nya sudah disetujui. Tagihan menempel ke satu penerimaan, bukan ke baris.</p>
       </section>
 
-      <section>
+      {po.kedatangan && po.status !== "DRAFT" && (
+        <section data-testid="seksi-kedatangan">
+          <h4 className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ink3">Kedatangan barang</h4>
+          <div className="mb-2 flex flex-wrap items-center gap-1.5">
+            {po.kedatangan.bendera.map((b) => <Badge key={b.kode} variant={b.kode === "TERLAMBAT" || b.kode === "DIBATALKAN" ? "red" : b.kode === "SELESAI" ? "green" : "accent"}>{b.label}</Badge>)}
+            <span className="text-[12px] text-ink2" data-testid="status-termin-po">{po.kedatangan.terminStatus === "MENUNGGU_TANGGAL_PENERIMAAN" ? "Termin: menunggu tanggal penerimaan (termin berjalan dari tanggal barang tiba, bukan dari tanggal PO)" : "Termin berjalan per penerimaan dari tanggal barang tiba"}</span>
+          </div>
+          <PanelKedatangan
+            po={po.kedatangan} workspace="FINANCE" bolehTulis={po.status !== "DIBATALKAN"} onChanged={onSegarkan}
+            ekstraPenerimaan={(r) => {
+              const lama = (po.penerimaan || []).find((x) => x.id === r.id);
+              return (
+                <p className="m-0 mt-1.5 text-[12px] text-ink2" data-testid="tagihan-penerimaan">
+                  {!lama || lama.finSupplierBills.length === 0 ? "Belum ada tagihan" : lama.finSupplierBills.map((t) => `${t.billNumber} (${t.status === "DISETUJUI" ? "disetujui" : String(t.status).toLowerCase().replace(/_/g, " ")})`).join(", ")}
+                </p>
+              );
+            }}
+          />
+        </section>
+      )}
+      <section hidden={!!po.kedatangan && po.status !== "DRAFT"}>
         <h4 className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ink3">Penerimaan Gudang dari PO ini</h4>
         {(po.penerimaan || []).length === 0 ? (
           <p className="text-[12.5px] text-ink3">{po.status === "DRAFT" ? "Draf belum bisa diterima Gudang." : "Belum ada penerimaan. Gudang memilih PO ini saat membuat Penerimaan Baru."}</p>
@@ -827,6 +882,25 @@ function KartuFaktur({ fk, segar, onUbah, onSetujui, onTolak, onGalat, onSegarka
           {ev.perluTinjauanHarga && terbuka && <p className="mt-2 rounded-lg bg-orangebg px-3 py-1.5 text-[12px] text-orange" data-testid="perlu-tinjauan">Harga faktur berbeda dari harga PO (selisih {formatUang(ev.selisihHargaTotal)}). Wajib ditinjau Finance saat menyetujui; selisihnya masuk Selisih Harga Pembelian.</p>}
           {ev.catatanTinjauan && <p className="mt-2 text-[12px] text-ink2">Catatan tinjauan: {ev.catatanTinjauan}</p>}
           {ev.alokasi?.length > 0 && <p className="mt-1 text-[11.5px] text-ink3">Menagih penerimaan: {[...new Set(ev.alokasi.map((a) => a.receiptNumber))].join(", ")}</p>}
+          {ev.termBasis === "TANGGAL_TIBA" && (
+            <div className="mt-2" data-testid="jadwal-jatuh-tempo-faktur">
+              <h5 className="m-0 mb-1 text-[11px] font-bold uppercase tracking-wide text-ink3">Jadwal jatuh tempo per penerimaan</h5>
+              {(ev.jadwalJatuhTempo || []).length === 0 ? <p className="m-0 text-[12px] text-ink2">Menunggu tanggal penerimaan — jatuh tempo dihitung dari tanggal barang tiba yang dicatat pada penerimaan.</p> : (
+                <ul className="m-0 list-none space-y-1 p-0">
+                  {ev.jadwalJatuhTempo.map((j) => (
+                    <li key={j.penerimaanId} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 rounded-lg bg-inset px-2.5 py-1.5 text-[12px]" data-testid="jadwal-item">
+                      <span className="font-mono font-semibold text-ink">{j.nomorPenerimaan}</span>
+                      <span className="text-ink2">tiba {j.tanggalTiba ? tgl(j.tanggalTiba) : "—"}</span>
+                      <span className="text-ink">{j.jatuhTempo ? `jatuh tempo ${tgl(j.jatuhTempo)}` : j.statusLabel}</span>
+                      <span className="ml-auto tabular-nums text-ink2">{formatUang(j.nilai)} · dibayar {formatUang(j.dibayar)} · sisa {formatUang(j.sisa)}</span>
+                      <Badge variant={j.status === "LUNAS" ? "green" : j.terlambat ? "red" : "neutral"}>{j.terlambat ? "Terlambat" : j.statusLabel}</Badge>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="mt-1 text-[11.5px] text-ink3">Total jadwal sama dengan nilai faktur — utang tetap satu per faktur; pembayaran menutup jadwal yang paling awal jatuh tempo lebih dulu.</p>
+            </div>
+          )}
         </>
       )}
       {galat && <p role="alert" className="mt-2 rounded-lg bg-redbg px-3 py-1.5 text-[12px] text-red">{galat}</p>}
@@ -1019,7 +1093,7 @@ function ModalRevisi({ po, galat, onClose, onSubmit }) {
   const [qty, setQty] = useState(String(baris.dipesan));
   const [alasan, setAlasan] = useState("");
   const q = Number(qty);
-  const valid = q > 0 && q >= baris.diterimaBaik && q !== baris.dipesan && alasan.trim().length >= 3;
+  const valid = q > 0 && q >= baris.progres.masukStok && q !== baris.dipesan && alasan.trim().length >= 3;
   return (
     <Modal
       open onOpenChange={(v) => !v && onClose()} title={`Revisi jumlah ${po.poNumber}`} className="w-[520px]"
@@ -1040,7 +1114,7 @@ function ModalRevisi({ po, galat, onClose, onSubmit }) {
             {po.lines.map((l) => <option key={l.id} value={l.id}>{l.kode} — dipesan {teksJumlah(l.dipesan)} {l.satuan}</option>)}
           </Pilihan>
         </Field>
-        <Field label={`Jumlah baru (${baris.satuan})`} hint={`Sudah diterima baik ${teksJumlah(baris.diterimaBaik)}; jumlah baru tidak boleh lebih kecil.`}>
+        <Field label={`Jumlah baru (${baris.satuan})`} hint={`Sudah masuk stok ${teksJumlah(baris.progres.masukStok)}; jumlah baru tidak boleh lebih kecil.`}>
           <Input type="number" step="any" min="0" value={qty} onChange={(e) => setQty(e.target.value)} />
         </Field>
         <Field label="Alasan revisi" required><Input value={alasan} onChange={(e) => setAlasan(e.target.value)} placeholder="mis. supplier hanya sanggup kirim 8" /></Field>

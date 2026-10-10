@@ -7,6 +7,8 @@ import StatusBadge from "./StatusBadge.jsx";
 import SumberPO from "./SumberPO.jsx";
 import { teksJumlah } from "@/features/finance/purchaseOrderLogic.js";
 import JejakPemakaianPenerimaan from "@/features/warehouse/components/JejakPemakaianPenerimaan.jsx";
+import { ModalCatatKedatangan } from "@/features/kedatangan/PanelKedatangan.jsx";
+import { LABEL_WORKSPACE, tanggalTeks, waktuTeks } from "@/features/kedatangan/kedatanganLogic.js";
 import {
   RECEIPT_STATUS_REAL, RECEIPT_SOURCE_REAL, RECEIPT_FORWARD_FLOW, UNIT_LABEL,
 } from "../inventoryReal.js";
@@ -28,6 +30,13 @@ export default function GoodsReceiptDetailDrawer({ receiptId, onClose, onChanged
   const [lineEdits, setLineEdits] = useState({});
   const [rejecting, setRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
+  const [tibaPO, setTibaPO] = useState(null); // detail PO (Barang Akan Datang) untuk formulir Catat Barang Tiba
+
+  // Barang dari PO dinyatakan tiba lewat Catat Barang Tiba (tanggal tiba, PIC, catatan wajib; aktor dari sesi) — bukan dengan memajukan status.
+  async function bukaCatatTiba() {
+    setBusy(true); setError("");
+    try { setTibaPO(await api.getBarangAkanDatangDetail(receipt.purchaseOrderId)); } catch (e) { setError(e.message); } finally { setBusy(false); }
+  }
 
   const load = () => {
     if (!receiptId) return;
@@ -50,6 +59,7 @@ export default function GoodsReceiptDetailDrawer({ receiptId, onClose, onChanged
   // Field kedatangan/inspeksi bisa diisi mulai ARRIVED, supaya data bisa
   // disiapkan sebelum status benar-benar dimajukan ke INSPECTION.
   const bisaIsiKedatangan = !selesai && currentIdx >= RECEIPT_FORWARD_FLOW.indexOf("ARRIVED");
+  const poBelumTiba = !!receipt?.purchaseOrderId && receipt.arrivalRevision === 0 && ["DRAFT", "SCHEDULED"].includes(status);
 
   function edit(lineId, field, value) {
     setLineEdits((e) => ({ ...e, [lineId]: { ...e[lineId], [field]: value } }));
@@ -161,6 +171,15 @@ export default function GoodsReceiptDetailDrawer({ receiptId, onClose, onChanged
                   <div><dt className="text-ink3">Dibuat oleh</dt><dd className="font-medium text-ink">{receipt.createdBy?.name || "—"}</dd></div>
                 </dl>
                 {receipt.notes && <p className="mt-2 text-[11.5px] text-ink2">{receipt.notes}</p>}
+                {receipt.purchaseOrderId && receipt.arrivedDate && (
+                  <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 rounded-btn bg-inset px-3 py-2 text-[12px]" data-testid="info-kedatangan">
+                    <div><dt className="text-ink3">Tanggal barang tiba</dt><dd className="font-medium text-ink">{tanggalTeks(receipt.arrivedDate)}</dd></div>
+                    <div><dt className="text-ink3">PIC / penerima</dt><dd className="font-medium text-ink">{receipt.arrivalReceiver}</dd></div>
+                    <div><dt className="text-ink3">Dicatat dari</dt><dd className="font-medium text-ink">{LABEL_WORKSPACE[receipt.arrivalWorkspace] ?? receipt.arrivalWorkspace} · {waktuTeks(receipt.arrivalRecordedAt)}</dd></div>
+                    <div><dt className="text-ink3">Surat jalan</dt><dd className="font-medium text-ink">{receipt.deliveryNote || "—"}</dd></div>
+                    <div className="col-span-2"><dt className="text-ink3">Catatan kedatangan</dt><dd className="font-medium text-ink">{receipt.arrivalNote}</dd></div>
+                  </dl>
+                )}
                 {receipt.purchaseOrderId ? (
                   <p className="mt-2 rounded-btn bg-accentbg px-3 py-2 text-[12px] text-accent" data-testid="sumber-po">
                     Dari <strong>{receipt.purchaseOrder?.poNumber}</strong>. Supplier dan item berasal dari PO. Jumlah baik tidak boleh melebihi sisa PO; kelebihan ditangani Finance lewat revisi jumlah PO.
@@ -191,7 +210,7 @@ export default function GoodsReceiptDetailDrawer({ receiptId, onClose, onChanged
                           const q = receipt.poRingkas?.lines?.find((b) => b.id === line.purchaseOrderLineId);
                           return q ? (
                             <p className="mt-1 text-[11px] text-ink2" data-testid="progres-po-baris">
-                              PO: dipesan {teksJumlah(q.dipesan)} · sudah masuk {teksJumlah(q.diterimaBaik)} · ditolak {teksJumlah(q.ditolak)} · <strong>sisa {teksJumlah(q.belumDiterima)}</strong>
+                              PO: dipesan {teksJumlah(q.progres.dipesan)} · datang {teksJumlah(q.progres.datang)} · belum datang {teksJumlah(q.progres.belumDatang)} · masuk stok {teksJumlah(q.progres.masukStok)} · <strong>belum masuk stok {teksJumlah(q.progres.belumMasukStok)}</strong>
                             </p>
                           ) : null;
                         })()}
@@ -202,6 +221,7 @@ export default function GoodsReceiptDetailDrawer({ receiptId, onClose, onChanged
                               <label className="mb-0.5 block text-[10px] text-ink3">Datang</label>
                               <input
                                 type="number" step="any" min="0" value={nilai(line, "receivedQty")}
+                                disabled={!!line.purchaseOrderLineId} title={line.purchaseOrderLineId ? "Jumlah datang dicatat lewat Catat Barang Tiba dan dikoreksi lewat Koreksi Kedatangan (Barang Akan Datang)" : undefined}
                                 onChange={(e) => edit(line.id, "receivedQty", e.target.value)}
                                 className="w-full rounded-btn border border-border bg-surface px-1.5 py-1 text-[11.5px] text-ink outline-none focus:border-accent"
                               />
@@ -291,6 +311,10 @@ export default function GoodsReceiptDetailDrawer({ receiptId, onClose, onChanged
                     <Button size="sm" className="ml-auto" onClick={putaway} disabled={busy}>
                       {busy ? <Loader2 size={14} className="animate-spin" /> : <PackageCheck size={14} />} Simpan ke Stok
                     </Button>
+                  ) : poBelumTiba && nextStatus === "ARRIVED" ? (
+                    <Button size="sm" className="ml-auto" onClick={bukaCatatTiba} disabled={busy} data-testid="catat-tiba-drawer">
+                      {busy ? <Loader2 size={14} className="animate-spin" /> : <PackageCheck size={14} />} Catat Barang Tiba
+                    </Button>
                   ) : nextStatus && nextStatus !== "COMPLETED" ? (
                     <Button size="sm" className="ml-auto" onClick={majukan} disabled={busy}>
                       {busy ? <Loader2 size={14} className="animate-spin" /> : <ArrowRight size={14} />}
@@ -303,6 +327,12 @@ export default function GoodsReceiptDetailDrawer({ receiptId, onClose, onChanged
           )}
         </Dialog.Content>
       </Dialog.Portal>
+      {tibaPO && (
+        <ModalCatatKedatangan
+          po={tibaPO} receipt={tibaPO.penerimaan.find((x) => x.id === receiptId) ?? null} workspace="GUDANG"
+          onClose={() => setTibaPO(null)} onDone={() => { setTibaPO(null); load(); onChanged(); }}
+        />
+      )}
     </Dialog.Root>
   );
 }

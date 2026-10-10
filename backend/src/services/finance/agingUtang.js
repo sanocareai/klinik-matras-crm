@@ -6,10 +6,13 @@
 //   • Yang masuk aging: faktur yang sudah masuk buku (DISETUJUI / DIBAYAR_SEBAGIAN / LUNAS). Faktur belum disetujui belum menjadi utang.
 //   • Dibayar = alokasi pembayaran AKTIF (pembayaran yang dibatalkan lewat reversal tidak dihitung). Biaya transfer BUKAN pembayaran utang.
 //   • Faktur tanpa tanggal jatuh tempo (data lama) TIDAK ditebak: kelompok sendiri "Tanggal jatuh tempo belum diisi".
+//   • FAKTUR ATAS PO dengan dasar TANGGAL_TIBA (Okt 2026): satu faktur dapat mencakup beberapa penerimaan → satu BARIS per penerimaan (jatuh tempo masing-masing = tanggal tiba + termin).
+//     Nilai faktur dibagi ke penerimaan menurut alokasi (Σ = nilai faktur), pembayaran diterapkan FIFO menurut jatuh tempo; jumlah faktur dihitung per billId unik — tidak ada hitung ganda.
 //   • Murni baca: tidak ada tulis ke database.
 import { toMoney, sumMoney, moneyToNumber, ZERO } from "./money.js";
 import { todayBookDateWIB } from "./journal.js";
 import { labelTermin } from "./termin.js";
+import { DASAR_TANGGAL_TIBA, jadwalDariFaktur } from "./jadwalJatuhTempo.js";
 
 export const STATUS_FAKTUR_AGING = ["DISETUJUI", "DIBAYAR_SEBAGIAN", "LUNAS"];
 export const KELOMPOK_AGING = Object.freeze([
@@ -98,7 +101,8 @@ const billInclude = {
   purchaseOrder: { select: { id: true, poNumber: true, status: true } },
   goodsReceipt: { select: { id: true, receiptNumber: true, status: true, receivedDate: true } },
   scheduledCashAccount: { select: { id: true, name: true } },
-  poLines: { select: { invoiceUnitPrice: true, poUnitPrice: true } },
+  poLines: { select: { id: true, qty: true, invoiceUnitPrice: true, poUnitPrice: true } },
+  poAllocations: { select: { billPoLineId: true, qty: true, goodsReceipt: { select: { id: true, receiptNumber: true, arrivedDate: true, status: true } } } },
   allocations: {
     where: { payment: { cancelledAt: null } },
     orderBy: { createdAt: "asc" },
@@ -110,13 +114,13 @@ async function muatPenerimaanPO(db, poIds) {
   if (poIds.length === 0) return new Map();
   const rows = await db.goodsReceipt.findMany({
     where: { purchaseOrderId: { in: poIds } },
-    select: { id: true, receiptNumber: true, status: true, receivedDate: true, purchaseOrderId: true, lines: { select: { receivedQty: true, rejectedQty: true, acceptedQty: true } } },
+    select: { id: true, receiptNumber: true, status: true, receivedDate: true, arrivedDate: true, purchaseOrderId: true, lines: { select: { receivedQty: true, rejectedQty: true, acceptedQty: true } } },
   });
   const peta = new Map();
   for (const r of rows) {
     const sudahDatang = r.lines.some((l) => Number(l.receivedQty ?? 0) > 0);
     const ditolak = r.status === "COMPLETED" && r.lines.some((l) => Number(l.rejectedQty ?? 0) > 0);
-    const x = { id: r.id, receiptNumber: r.receiptNumber, status: r.status, receivedDate: r.receivedDate, sudahDatang, ditolak };
+    const x = { id: r.id, receiptNumber: r.receiptNumber, status: r.status, receivedDate: r.arrivedDate ?? r.receivedDate, sudahDatang, ditolak };
     peta.set(r.purchaseOrderId, [...(peta.get(r.purchaseOrderId) ?? []), x]);
   }
   return peta;
@@ -128,18 +132,21 @@ async function namaUser(db, ids) {
   return new Map((await db.user.findMany({ where: { id: { in: unik } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
 }
 
-function bentukBaris(b, { hariIni, penerimaanPO, nama }) {
-  const terbayar = b.allocations.length ? sumMoney(b.allocations.map((a) => a.amount)) : ZERO;
-  const nilai = d(b.amount);
+function bentukBaris(b, { hariIni, penerimaanPO, nama, item = null, pertama = true, dari = 1, ke = 1 }) {
+  // item = satu baris jadwal per penerimaan (faktur atas PO, dasar tanggal tiba): nilai/dibayar/jatuh tempo milik item; selain itu seluruh faktur.
+  const totalBayar = b.allocations.length ? sumMoney(b.allocations.map((a) => a.amount)) : ZERO;
+  const terbayar = item ? item.dibayar : totalBayar;
+  const nilai = item ? item.nilai : d(b.amount);
   const sisa = nilai.minus(terbayar);
   const dibayarSebagian = terbayar.greaterThan(0) && sisa.greaterThan(0);
-  const kelompok = kelompokAging({ dueDate: b.dueDate, sisa, hariIni });
+  const dueDate = item ? item.jatuhTempo : b.dueDate;
+  const kelompok = kelompokAging({ dueDate, sisa, hariIni });
   const penerimaan = b.purchaseOrderId
     ? (penerimaanPO.get(b.purchaseOrderId) ?? [])
     : b.goodsReceipt ? [{ ...b.goodsReceipt, sudahDatang: true, ditolak: false }] : [];
-  const tglDiterima = penerimaan.filter((r) => r.status === "COMPLETED" && r.receivedDate).map((r) => hariKunci(r.receivedDate)).sort().pop() ?? null;
-  const hariKeJatuhTempo = b.dueDate ? selisihHari(b.dueDate, hariIni) : null;
-  const pembayaran = b.allocations.map((a) => ({
+  const tglDiterima = item ? item.tanggalTiba : penerimaan.filter((r) => r.status === "COMPLETED" && r.receivedDate).map((r) => hariKunci(r.receivedDate)).sort().pop() ?? null;
+  const hariKeJatuhTempo = dueDate ? selisihHari(dueDate, hariIni) : null;
+  const pembayaran = (item && !pertama ? [] : b.allocations).map((a) => ({
     paymentId: a.payment.id, nomor: a.payment.paymentNumber, tanggal: hariKunci(a.payment.date), jumlah: moneyToNumber(toMoney(a.amount)),
     rekening: a.payment.cashAccount?.name ?? null, biayaTransfer: moneyToNumber(toMoney(a.payment.transferFeeAmount ?? 0)), referensi: a.payment.reference ?? null,
   }));
@@ -147,7 +154,9 @@ function bentukBaris(b, { hariIni, penerimaanPO, nama }) {
   return {
     billId: b.id, nomorTagihan: b.billNumber, nomorFaktur: b.supplierRef ?? null, supplierId: b.supplierId, supplier: b.supplier.name, kodeSupplier: b.supplier.code,
     po: b.purchaseOrder ? { id: b.purchaseOrder.id, nomor: b.purchaseOrder.poNumber } : null,
-    tanggalBarangDiterima: tglDiterima, tanggalFaktur: hariKunci(b.billDate), tanggalJatuhTempo: hariKunci(b.dueDate),
+    rowKey: item ? `${b.id}:${item.receiptId}` : b.id,
+    jadwal: item ? { penerimaanId: item.receiptId, nomorPenerimaan: item.receiptNumber, tanggalTiba: item.tanggalTiba, status: item.status, statusLabel: item.statusLabel, ke, dari, nilaiFaktur: moneyToNumber(toMoney(b.amount)) } : null,
+    tanggalBarangDiterima: tglDiterima, tanggalFaktur: hariKunci(b.billDate), tanggalJatuhTempo: hariKunci(dueDate),
     termin: {
       jenis: b.termType, hari: b.termDays, label: labelTermin(b.termType, b.termDays), dasar: b.termBasis, sumber: b.termSource ?? (b.dueDate ? "DATA_LAMA" : null),
       alasanOverride: b.termOverrideReason, oleh: nama.get(b.termSetById) ?? null, pada: b.termSetAt,
@@ -164,22 +173,34 @@ function bentukBaris(b, { hariIni, penerimaanPO, nama }) {
   };
 }
 
+/** Baris aging satu faktur: satu baris, atau satu per penerimaan untuk faktur atas PO dengan dasar tanggal tiba (alokasi sudah ada). */
+function bentukBarisFaktur(b, ctx) {
+  if (b.termBasis === DASAR_TANGGAL_TIBA && b.poAllocations?.length) {
+    const alokasi = b.poAllocations.map((a) => ({ billPoLineId: a.billPoLineId, receiptId: a.goodsReceipt.id, receiptNumber: a.goodsReceipt.receiptNumber, tanggalTiba: a.goodsReceipt.arrivedDate, status: a.goodsReceipt.status, qty: Number(a.qty) }));
+    const totalBayar = b.allocations.length ? sumMoney(b.allocations.map((a) => a.amount)) : ZERO;
+    const jadwal = jadwalDariFaktur({ bill: b, alokasi, dibayar: totalBayar, hariIni: ctx.hariIni });
+    if (jadwal?.length) return jadwal.map((item, i) => bentukBaris(b, { ...ctx, item, pertama: i === 0, ke: i + 1, dari: jadwal.length }));
+  }
+  return [bentukBaris(b, ctx)];
+}
+
 function ringkas(baris) {
+  const unik = (rows) => new Set(rows.map((r) => r.billId)).size; // satu faktur boleh punya beberapa baris jadwal — hitung per faktur
   const terbuka = baris.filter((r) => r.kelompok !== "LUNAS");
   const jml = (rows) => sumMoney(rows.map((r) => r._sisa));
   const dalam = (maks) => terbuka.filter((r) => r.hariKeJatuhTempo != null && r.hariKeJatuhTempo >= 0 && r.hariKeJatuhTempo <= maks);
   const kartu = {
-    totalUtangAktif: moneyToNumber(jml(terbuka)), jumlahFakturAktif: terbuka.length,
-    totalTerlambat: moneyToNumber(jml(terbuka.filter((r) => r.kelompok === "TERLAMBAT"))), jumlahTerlambat: terbuka.filter((r) => r.kelompok === "TERLAMBAT").length,
-    jatuhTempo7Hari: moneyToNumber(jml(dalam(7))), jumlahJatuhTempo7Hari: dalam(7).length,
-    jatuhTempo30Hari: moneyToNumber(jml(dalam(30))), jumlahJatuhTempo30Hari: dalam(30).length,
-    sudahDijadwalkan: moneyToNumber(jml(terbuka.filter((r) => r.jadwalBayar))), jumlahDijadwalkan: terbuka.filter((r) => r.jadwalBayar).length,
-    tanpaJatuhTempo: moneyToNumber(jml(terbuka.filter((r) => r.kelompok === "TANPA_JATUH_TEMPO"))), jumlahTanpaJatuhTempo: terbuka.filter((r) => r.kelompok === "TANPA_JATUH_TEMPO").length,
-    dibayarSebagian: moneyToNumber(jml(terbuka.filter((r) => r.dibayarSebagian))), jumlahDibayarSebagian: terbuka.filter((r) => r.dibayarSebagian).length,
+    totalUtangAktif: moneyToNumber(jml(terbuka)), jumlahFakturAktif: unik(terbuka),
+    totalTerlambat: moneyToNumber(jml(terbuka.filter((r) => r.kelompok === "TERLAMBAT"))), jumlahTerlambat: unik(terbuka.filter((r) => r.kelompok === "TERLAMBAT")),
+    jatuhTempo7Hari: moneyToNumber(jml(dalam(7))), jumlahJatuhTempo7Hari: unik(dalam(7)),
+    jatuhTempo30Hari: moneyToNumber(jml(dalam(30))), jumlahJatuhTempo30Hari: unik(dalam(30)),
+    sudahDijadwalkan: moneyToNumber(jml(terbuka.filter((r) => r.jadwalBayar))), jumlahDijadwalkan: unik(terbuka.filter((r) => r.jadwalBayar)),
+    tanpaJatuhTempo: moneyToNumber(jml(terbuka.filter((r) => r.kelompok === "TANPA_JATUH_TEMPO"))), jumlahTanpaJatuhTempo: unik(terbuka.filter((r) => r.kelompok === "TANPA_JATUH_TEMPO")),
+    dibayarSebagian: moneyToNumber(jml(terbuka.filter((r) => r.dibayarSebagian))), jumlahDibayarSebagian: unik(terbuka.filter((r) => r.dibayarSebagian)),
   };
   const perKelompok = KELOMPOK_AGING.map((k) => {
     const rows = baris.filter((r) => r.kelompok === k.kunci);
-    return { kunci: k.kunci, label: k.label, jumlah: rows.length, sisaUtang: moneyToNumber(jml(rows)), nilaiFaktur: moneyToNumber(sumMoney(rows.map((r) => d(r.nilaiFaktur)))) };
+    return { kunci: k.kunci, label: k.label, jumlah: unik(rows), sisaUtang: moneyToNumber(jml(rows)), nilaiFaktur: moneyToNumber(sumMoney(rows.map((r) => d(r.nilaiFaktur)))) };
   });
   return { kartu, perKelompok };
 }
@@ -199,16 +220,21 @@ export async function bacaAgingUtang(db, filter = {}) {
     status: { in: termasukLunas ? STATUS_FAKTUR_AGING : ["DISETUJUI", "DIBAYAR_SEBAGIAN"] },
     ...(filter.supplierId && { supplierId: filter.supplierId }),
     ...((tgl(filter.fakturDari) || tgl(filter.fakturSampai)) && { billDate: { ...(tgl(filter.fakturDari) && { gte: tgl(filter.fakturDari) }), ...(tgl(filter.fakturSampai) && { lte: tgl(filter.fakturSampai) }) } }),
-    ...((tgl(filter.jatuhTempoDari) || tgl(filter.jatuhTempoSampai)) && { dueDate: { ...(tgl(filter.jatuhTempoDari) && { gte: tgl(filter.jatuhTempoDari) }), ...(tgl(filter.jatuhTempoSampai) && { lte: tgl(filter.jatuhTempoSampai) }) } }),
-    ...(filter.q && { OR: [
+    // Faktur atas PO dengan dasar tanggal tiba punya beberapa jatuh tempo (satu per penerimaan) sedangkan kolom dueDate hanya menyimpan yang terawal: di sini ia ikut diambil, lalu BARIS-nya disaring menurut jatuh tempo masing-masing (di bawah).
+    ...((tgl(filter.jatuhTempoDari) || tgl(filter.jatuhTempoSampai)) && { OR: [{ termBasis: DASAR_TANGGAL_TIBA }, { dueDate: { ...(tgl(filter.jatuhTempoDari) && { gte: tgl(filter.jatuhTempoDari) }), ...(tgl(filter.jatuhTempoSampai) && { lte: tgl(filter.jatuhTempoSampai) }) } }] }),
+    ...(filter.q && { AND: [{ OR: [
       { supplierRef: { contains: String(filter.q), mode: "insensitive" } }, { billNumber: { contains: String(filter.q), mode: "insensitive" } },
       { supplier: { name: { contains: String(filter.q), mode: "insensitive" } } }, { purchaseOrder: { poNumber: { contains: String(filter.q), mode: "insensitive" } } },
-    ] }),
+    ] }] }),
   };
   const bills = await db.finSupplierBill.findMany({ where, include: billInclude, orderBy: [{ dueDate: "asc" }, { billDate: "asc" }], take: 5000 });
   const penerimaanPO = await muatPenerimaanPO(db, [...new Set(bills.map((b) => b.purchaseOrderId).filter(Boolean))]);
   const nama = await namaUser(db, bills.flatMap((b) => [b.termSetById, b.scheduledById]));
-  let baris = bills.map((b) => bentukBaris(b, { hariIni, penerimaanPO, nama }));
+  let baris = bills.flatMap((b) => bentukBarisFaktur(b, { hariIni, penerimaanPO, nama }));
+  // Filter jatuh tempo menilai tiap BARIS menurut tanggalnya sendiri: nominal tidak menggandakan dan tidak ikut membawa jadwal di luar periode.
+  const jtDari = filter.jatuhTempoDari && /^\d{4}-\d{2}-\d{2}$/.test(String(filter.jatuhTempoDari)) ? String(filter.jatuhTempoDari) : null;
+  const jtSampai = filter.jatuhTempoSampai && /^\d{4}-\d{2}-\d{2}$/.test(String(filter.jatuhTempoSampai)) ? String(filter.jatuhTempoSampai) : null;
+  if (jtDari || jtSampai) baris = baris.filter((r) => r.tanggalJatuhTempo && (!jtDari || r.tanggalJatuhTempo >= jtDari) && (!jtSampai || r.tanggalJatuhTempo <= jtSampai));
   if (!termasukLunas) baris = baris.filter((r) => r.kelompok !== "LUNAS");
   // Kartu & rekap kelompok dihitung SEBELUM tab/kelompok memilih baris — angkanya tetap sama saat pengguna berpindah tab (dan sama dengan export).
   const ringkasan = ringkas(baris);
@@ -227,6 +253,10 @@ export async function bacaDetailUtang(db, billId, { hariIni } = {}) {
   if (!b || !STATUS_FAKTUR_AGING.includes(b.status)) return null;
   const penerimaanPO = await muatPenerimaanPO(db, b.purchaseOrderId ? [b.purchaseOrderId] : []);
   const nama = await namaUser(db, [b.termSetById, b.scheduledById]);
-  const { _sisa, ...baris } = bentukBaris(b, { hariIni: hariKunci(hariIni ?? todayBookDateWIB()), penerimaanPO, nama });
-  return baris;
+  const hari = hariKunci(hariIni ?? todayBookDateWIB());
+  const rows = bentukBarisFaktur(b, { hariIni: hari, penerimaanPO, nama }).map(({ _sisa, ...r }) => r);
+  // Detail satu faktur: baris faktur (nilai/dibayar/sisa SELURUH faktur) + jadwal jatuh tempo per penerimaan (bila ada) — jumlahnya sama dengan faktur.
+  const faktur = rows.length === 1 && !rows[0].jadwal ? rows[0] : { ...bentukBaris(b, { hariIni: hari, penerimaanPO, nama }) };
+  const { _sisa, ...utuh } = faktur;
+  return { ...utuh, jadwalPerPenerimaan: rows.filter((r) => r.jadwal).map((r) => ({ ...r.jadwal, jatuhTempo: r.tanggalJatuhTempo, nilai: r.nilaiFaktur, dibayar: r.dibayar, sisa: r.sisaUtang, kelompok: r.kelompok, statusPembayaran: r.statusPembayaran })) };
 }

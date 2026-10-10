@@ -13,6 +13,7 @@ import express from "express";
 const { inventoryRouter } = await import("../../../src/routes/inventory.js");
 const { goodsReceiptRouter } = await import("../../../src/routes/goodsReceipt.js");
 const { purchaseOrderFinanceRouter, purchaseOrderGudangRouter } = await import("../../../src/routes/purchaseOrders.js");
+const { barangAkanDatangRouter } = await import("../../../src/routes/barangAkanDatang.js");
 const { jejakBahanUnitRouter, biayaBahanFinanceRouter, jejakPenerimaanRouter } = await import("../../../src/routes/biayaBahan.js");
 const { financeUtangRouter } = await import("../../../src/routes/financeUtang.js");
 const { materialIssueRouter } = await import("../../../src/routes/materialIssue.js");
@@ -106,6 +107,7 @@ export function buildTestApp() {
   app.use("/api/inventory/goods-receipts", jejakPenerimaanRouter);
   app.use("/api/inventory/goods-receipts", goodsReceiptRouter);
   app.use("/api/inventory/purchase-orders", purchaseOrderGudangRouter);
+  app.use("/api/inventory/barang-akan-datang", barangAkanDatangRouter);
   app.use("/api/inventory/material-issues", materialIssueRouter);
   app.use("/api/inventory/transfers", stockTransferRouter);
   app.use("/api/inventory/stock-counts", stockCountRouter);

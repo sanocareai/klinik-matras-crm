@@ -23,6 +23,7 @@
 import { STATUS_DIHITUNG, todayBookDateWIB } from "./journal.js";
 import { toMoney, sumMoney, ZERO, moneyToNumber } from "./money.js";
 import { SETTING_KEYS, getSettingRaw } from "./settings.js";
+import { bacaAgingUtang } from "./agingUtang.js";
 
 // Tipe akun yang masuk LABA RUGI vs NERACA.
 const TIPE_LABA_RUGI = ["PENDAPATAN", "BEBAN_POKOK", "BEBAN"];
@@ -659,14 +660,39 @@ export async function umurUtang(db, { to: batas = todayBookDateWIB() } = {}) {
   const bills = await db.finSupplierBill.findMany({
     where: { status: { in: ["DISETUJUI", "DIBAYAR_SEBAGIAN"] }, billDate: { lte: to } },
     select: {
-      id: true, billNumber: true, supplierRef: true, amount: true, billDate: true, dueDate: true, description: true,
+      id: true, billNumber: true, supplierRef: true, amount: true, billDate: true, dueDate: true, description: true, termBasis: true,
       supplier: { select: { id: true, name: true } },
       allocations: { where: { payment: { cancelledAt: null } }, select: { amount: true } },
     },
   });
 
+  // Faktur atas PO dengan dasar tanggal tiba: SATU faktur = beberapa jatuh tempo (satu per penerimaan). Umur utang dihitung per jadwal itu (sumber yang sama dengan Jadwal & Aging Utang),
+  // supaya kolom dueDate faktur (jatuh tempo TERAWAL) tidak membuat seluruh sisa faktur terlihat terlambat. Jumlah seluruh baris = nilai/sisa faktur (tidak ganda).
+  const idJadwal = new Set(bills.filter((b) => b.termBasis === "TANGGAL_TIBA").map((b) => b.id));
+  const jadwalPerFaktur = new Map();
+  if (idJadwal.size > 0) {
+    const ag = await bacaAgingUtang(db, { hariIni: todayBookDateWIB(to).toISOString().slice(0, 10) });
+    for (const r of ag.baris) if (idJadwal.has(r.billId) && r.jadwal) jadwalPerFaktur.set(r.billId, [...(jadwalPerFaktur.get(r.billId) ?? []), r]);
+  }
+
   const ringkasan = ringkasanKosong();
-  const baris = bills.map((b) => {
+  const baris = bills.flatMap((b) => {
+    const jadwal = jadwalPerFaktur.get(b.id);
+    if (jadwal?.length) {
+      return jadwal.map((r) => {
+        const hariLewat = Math.floor((to - new Date(r.tanggalJatuhTempo ?? b.billDate)) / 86400000);
+        const ember = emberUmur(hariLewat);
+        ringkasan[ember] = ringkasan[ember].plus(toMoney(r.sisaUtang));
+        return {
+          billId: b.id, rowKey: `${b.id}:${r.jadwal.penerimaanId}`, billNumber: b.billNumber, supplierRef: b.supplierRef, supplierId: b.supplier.id, supplierName: b.supplier.name, description: b.description,
+          nilaiTagihan: r.nilaiFaktur, terbayar: r.dibayar, sisa: r.sisaUtang, billDate: b.billDate, dueDate: r.tanggalJatuhTempo ? new Date(`${r.tanggalJatuhTempo}T00:00:00.000Z`) : null,
+          sumberJatuhTempo: r.tanggalJatuhTempo ? "penerimaan" : "tanggal_tagihan", penerimaan: r.jadwal.nomorPenerimaan, hariLewat, ember,
+        };
+      });
+    }
+    return [bentuk(b)];
+  }).filter((b) => b.sisa > 0).sort((a, b) => b.hariLewat - a.hariLewat);
+  function bentuk(b) {
     const terbayar = b.allocations.length === 0 ? ZERO : sumMoney(b.allocations.map((a) => a.amount));
     const sisa = toMoney(b.amount).minus(terbayar);
     const acuan = b.dueDate || b.billDate;
@@ -689,7 +715,7 @@ export async function umurUtang(db, { to: batas = todayBookDateWIB() } = {}) {
       hariLewat,
       ember,
     };
-  }).filter((b) => b.sisa > 0).sort((a, b) => b.hariLewat - a.hariLewat);
+  }
 
   return {
     perTanggal: to,

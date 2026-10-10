@@ -13,6 +13,7 @@ import { makeClient } from "./setup/httpClient.js";
 import { ensureDefaultChartOfAccounts, SYSTEM_KEYS } from "../../src/services/finance/accounts.js";
 import { toMoney } from "../../src/services/finance/money.js";
 import { blokirKoreksiTagihanBatch } from "../../src/services/finance/koreksiLanjutan.js";
+import { bawaSampaiSiap, catatTibaResmi } from "./setup/kedatangan.js";
 
 let server;
 test.before(async () => { await truncateAll(); server = await startTestServer(buildTestApp()); });
@@ -50,9 +51,7 @@ async function poDisetujui(w, { qty = 10, harga = HARGA, lines = null } = {}) {
 async function penerimaan(w, poId, { jadwal, datang, baik, tolak = 0, putaway = true }) {
   const gr = await w.g.post("/api/inventory/goods-receipts", { purchaseOrderId: poId, ...(jadwal !== undefined && { lines: [{ purchaseOrderLineId: (await testPrisma.finPurchaseOrderLine.findFirst({ where: { purchaseOrderId: poId } })).id, orderedQty: jadwal }] }) });
   assert.equal(gr.status, 201, JSON.stringify(gr.body));
-  for (const st of ["SCHEDULED", "ARRIVED", "INSPECTION", "READY_FOR_PUTAWAY"]) assert.equal((await w.g.patch(`/api/inventory/goods-receipts/${gr.body.id}`, { status: st })).status, 200);
-  const r = await w.g.patch(`/api/inventory/goods-receipts/${gr.body.id}/lines/${gr.body.lines[0].id}`, { receivedQty: datang, acceptedQty: baik, rejectedQty: tolak });
-  assert.equal(r.status, 200, JSON.stringify(r.body));
+  await bawaSampaiSiap(w.g, gr.body, { datang, baik, tolak }); // jalur resmi: Catat Barang Tiba → periksa → siap simpan
   if (putaway) assert.equal((await w.g.post(`/api/inventory/goods-receipts/${gr.body.id}/putaway`, {})).status, 200);
   return gr.body;
 }
@@ -572,8 +571,13 @@ test("penerimaan tertaut PO menolak jumlah datang/baik/ditolak lebih dari 3 desi
   const w = await dunia();
   const po = await poDisetujui(w, { qty: 10 });
   const gr = await w.g.post("/api/inventory/goods-receipts", { purchaseOrderId: po.id });
-  for (const st of ["SCHEDULED", "ARRIVED", "INSPECTION"]) await w.g.patch(`/api/inventory/goods-receipts/${gr.body.id}`, { status: st });
-  const r = await w.g.patch(`/api/inventory/goods-receipts/${gr.body.id}/lines/${gr.body.lines[0].id}`, { receivedQty: 1.2345, acceptedQty: 1 });
+  await w.g.patch(`/api/inventory/goods-receipts/${gr.body.id}`, { status: "SCHEDULED" });
+  const L = gr.body.lines[0].purchaseOrderLineId;
+  const tiba = await catatTibaResmi(w.g, { poId: po.id, receiptId: gr.body.id, lines: [{ purchaseOrderLineId: L, jumlahDatang: 1.2345 }] });
+  assert.equal(tiba.status, 400); assert.match(tiba.body.error, /3 angka/);
+  assert.equal((await catatTibaResmi(w.g, { poId: po.id, receiptId: gr.body.id, lines: [{ purchaseOrderLineId: L, jumlahDatang: 2 }] })).status, 201);
+  await w.g.patch(`/api/inventory/goods-receipts/${gr.body.id}`, { status: "INSPECTION" });
+  const r = await w.g.patch(`/api/inventory/goods-receipts/${gr.body.id}/lines/${gr.body.lines[0].id}`, { acceptedQty: 1.2345 });
   assert.equal(r.status, 400);
   assert.match(r.body.error, /3 angka/);
 });

@@ -50,23 +50,19 @@ test("subtotal & total isian; body ke server bertipe angka", () => {
 
 test("formDariPO: mengisi ulang formulir dari PO draf", () => {
   const f = formDariPO({ supplier: { id: "s1" }, orderDate: "2026-10-08T00:00:00.000Z", expectedDate: null, notes: null, lines: [{ materialId: "m1", dipesan: 10, hargaSatuan: 43290 }] });
-  assert.deepEqual(f, { supplierId: "s1", orderDate: "2026-10-08", expectedDate: "", notes: "", lines: [{ materialId: "m1", qty: "10", unitPrice: "43290" }] });
+  assert.deepEqual(f, { supplierId: "s1", orderDate: "2026-10-08", expectedDate: "", notes: "", lines: [{ materialId: "m1", qty: "10", unitPrice: "43290", pendamping: { satuan: "", mode: "", rasio: "", estimasi: "" } }] });
 });
 
-test("ringkasProgres: satu satuan dijumlah; beda satuan dihitung per baris; diterima tidak melebihi dipesan", () => {
-  const po = { lines: [{ satuan: "KG", dipesan: 10, diterimaBaik: 8, belumDiterima: 2 }] };
-  assert.deepEqual(ringkasProgres(po), { teks: "8 / 10 KG", persen: 80 });
-  const campur = { lines: [{ satuan: "KG", dipesan: 4, diterimaBaik: 4, belumDiterima: 0 }, { satuan: "SHEET", dipesan: 6, diterimaBaik: 0, belumDiterima: 6 }] };
-  assert.equal(ringkasProgres(campur).teks, "1/2 baris terpenuhi");
-  assert.equal(ringkasProgres(campur).persen, 50);
-  assert.equal(ringkasProgres({ lines: [{ satuan: "KG", dipesan: 10, diterimaBaik: 12, belumDiterima: 0 }] }).persen, 100);
+test("ringkasProgres: dibaca dari server (po.progres) — layar tidak menghitung ulang", () => {
+  const po = { progres: { teks: "5 / 10 KG masuk stok · 8 sudah datang", persenMasukStok: 50 }, lines: [] };
+  assert.deepEqual(ringkasProgres(po), { teks: "5 / 10 KG masuk stok · 8 sudah datang", persen: 50 });
+  assert.deepEqual(ringkasProgres({ lines: [] }), { teks: "", persen: 0 });
 });
 
-test("nilaiBelumDiterima hanya untuk PO berjalan", () => {
-  const l = [{ belumDiterima: 2, hargaSatuan: 43290 }];
-  assert.equal(nilaiBelumDiterima({ status: "DITERIMA_SEBAGIAN", lines: l }), 86580);
-  assert.equal(nilaiBelumDiterima({ status: "DRAFT", lines: l }), 0);
-  assert.equal(nilaiBelumDiterima({ status: "SELESAI", lines: l }), 0);
+test("nilaiBelumDiterima: nilai belum masuk stok dari server, hanya untuk PO berjalan", () => {
+  assert.equal(nilaiBelumDiterima({ status: "DITERIMA_SEBAGIAN", totalBelumMasukStok: 216450 }), 216450);
+  assert.equal(nilaiBelumDiterima({ status: "DRAFT", totalBelumMasukStok: 216450 }), 0);
+  assert.equal(nilaiBelumDiterima({ status: "SELESAI", totalBelumMasukStok: 0 }), 0);
 });
 
 test("aksiPO: draf bisa diubah/disetujui; disetujui bisa direvisi/dibatalkan; sebagian hanya revisi; selesai & batal tanpa aksi", () => {

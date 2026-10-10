@@ -3,6 +3,7 @@
 
 import { bodyTermin } from "./terminLogic.js";
 import { UNIT_LABEL } from "../warehouse/inventoryReal.js";
+import { pendamping0, pendampingDariPO, bodyPendamping, galatPendamping } from "../kedatangan/kedatanganLogic.js";
 
 // Termin PO: hanya mengganti termin (admin + alasan); jatuh tempo dihitung saat faktur dibuat.
 const bodyTerminPO = (t) => {
@@ -42,7 +43,7 @@ export const LABEL_STATUS_PENERIMAAN = {
   READY_FOR_PUTAWAY: "Siap Disimpan", COMPLETED: "Sudah Masuk Stok", REJECTED: "Ditolak",
 };
 
-export const baris0 = () => ({ materialId: "", qty: "", unitPrice: "" });
+export const baris0 = () => ({ materialId: "", qty: "", unitPrice: "", pendamping: pendamping0() });
 
 // ── SKU baru langsung dari PO + konversi satuan beli → stok ──────────────────────────────────────────
 // Barang baru HANYA hidup di isian formulir (l.materialBaru) sampai PO disimpan — server membuat SKU, katalog supplier, dan PO dalam satu transaksi.
@@ -152,6 +153,8 @@ export function galatBaris(l, unitStok = null) {
   const h = Number(l.unitPrice);
   if (!Number.isInteger(h) || h <= 0) return "Harga satuan harus rupiah bulat lebih dari 0";
   // Satuan beli ≠ satuan stok: faktor wajib; jumlah stok (jumlah × faktor) maksimal 4 desimal; harga per satuan stok minimal Rp1.
+  const gPend = galatPendamping(l.pendamping, { adaKonversi: !!infoKonversi(l, unitStok) });
+  if (gPend) return gPend;
   if (!l.materialBaru && l.satuanBeli && unitStok && l.satuanBeli !== unitStok) {
     const f = Number(l.faktorKonversi);
     if (!(f > 0)) return `Isi faktor konversi: 1 ${labelSatuan(l.satuanBeli)} = berapa ${labelSatuan(unitStok)}`;
@@ -191,7 +194,7 @@ export function formDariPO(po) {
     expectedDate: po.expectedDate ? String(po.expectedDate).slice(0, 10) : "",
     notes: po.notes || "",
     lines: po.lines.map((l) => ({
-      materialId: l.materialId, qty: String(l.dipesan), unitPrice: String(l.hargaSatuan),
+      materialId: l.materialId, qty: String(l.dipesan), unitPrice: String(l.hargaSatuan), pendamping: pendampingDariPO(l),
       ...(l.konversi && { satuanBeli: l.konversi.satuanBeli, faktorKonversi: String(l.konversi.faktor) }),
       ...(l.namaSupplier && { namaSupplier: l.namaSupplier }), ...(l.kodeSupplier && { kodeSupplier: l.kodeSupplier }),
     })),
@@ -204,9 +207,10 @@ export function bodyDariForm(f) {
     supplierId: f.supplierId, orderDate: f.orderDate, expectedDate: f.expectedDate || null, notes: f.notes.trim() || null,
     lines: f.lines.map((l) => {
       const dasar = { qty: Number(l.qty), unitPrice: Number(l.unitPrice) };
-      if (l.materialBaru) return { materialBaru: bodyMaterialBaru(l.materialBaru), ...dasar };
+      if (l.materialBaru) return { materialBaru: bodyMaterialBaru(l.materialBaru), ...dasar, ...(bodyPendamping(l.pendamping) && { pendamping: bodyPendamping(l.pendamping) }) };
       return {
         materialId: l.materialId, ...dasar,
+        ...(bodyPendamping(l.pendamping) && { pendamping: bodyPendamping(l.pendamping) }),
         ...(l.satuanBeli && l.faktorKonversi && { satuanBeli: l.satuanBeli, faktorKonversi: Number(l.faktorKonversi) }),
         ...(l.namaSupplier && { namaSupplier: l.namaSupplier }), ...(l.kodeSupplier && { kodeSupplier: l.kodeSupplier }),
       };
@@ -214,23 +218,15 @@ export function bodyDariForm(f) {
   };
 }
 
-/** Ringkasan progres satu PO untuk daftar: total diterima baik vs dipesan per baris (dijumlah hanya bila satuannya sama). */
+/** Ringkasan progres satu PO untuk daftar: DARI SERVER (progresPO.js: masuk stok vs dipesan). Layar tidak menghitung ulang. */
 export function ringkasProgres(po) {
-  const satuan = new Set(po.lines.map((l) => l.satuan));
-  if (satuan.size !== 1) return { teks: `${po.lines.filter((l) => l.belumDiterima <= 0).length}/${po.lines.length} baris terpenuhi`, persen: persenBaris(po) };
-  const dipesan = po.lines.reduce((s, l) => s + l.dipesan, 0);
-  const diterima = po.lines.reduce((s, l) => s + Math.min(l.diterimaBaik, l.dipesan), 0);
-  return { teks: `${teksJumlah(diterima)} / ${teksJumlah(dipesan)} ${[...satuan][0]}`, persen: dipesan > 0 ? Math.min(100, Math.round((diterima / dipesan) * 100)) : 0 };
-}
-function persenBaris(po) {
-  const bagian = po.lines.map((l) => (l.dipesan > 0 ? Math.min(1, l.diterimaBaik / l.dipesan) : 0));
-  return bagian.length ? Math.round((bagian.reduce((a, b) => a + b, 0) / bagian.length) * 100) : 0;
+  return { teks: po.progres?.teks ?? "", persen: po.progres?.persenMasukStok ?? 0 };
 }
 
-/** Nilai barang yang masih ditunggu (belum diterima × harga) untuk PO yang berjalan. */
+/** Nilai barang yang belum masuk stok (dipesan − masuk stok, × harga PO) untuk PO yang berjalan — dari server (po.totalBelumMasukStok). */
 export function nilaiBelumDiterima(po) {
   if (!["DISETUJUI", "DITERIMA_SEBAGIAN"].includes(po.status)) return 0;
-  return po.lines.reduce((s, l) => s + l.belumDiterima * (l.hargaSatuan ?? 0), 0);
+  return po.totalBelumMasukStok ?? 0;
 }
 
 /** Aksi yang masuk akal per status. Server tetap menegakkan izin; ini hanya menyembunyikan tombol yang pasti ditolak. */
