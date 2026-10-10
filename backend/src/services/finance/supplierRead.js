@@ -40,11 +40,14 @@ export const billInclude = {
 
 export function bentukBill(b) {
   const terbayar = b.allocations?.length ? sumMoney(b.allocations.map((a) => a.amount)) : ZERO;
+  // Debit note disetujui + pemakaian saldo kredit mengurangi sisa; nilai faktur (amount) tidak berubah.
+  const kredit = toMoney(b.creditApplied ?? 0);
   return {
     ...b,
     amount: moneyToNumber(b.amount),
     terbayar: moneyToNumber(terbayar),
-    sisa: moneyToNumber(toMoney(b.amount).minus(terbayar)),
+    kredit: moneyToNumber(kredit),
+    sisa: moneyToNumber(toMoney(b.amount).minus(terbayar).minus(kredit)),
     allocations: b.allocations?.map((a) => ({ ...a, amount: moneyToNumber(a.amount) })),
     jenisTagihan: jenisTampilan(b),
   };
@@ -114,14 +117,14 @@ export async function ambilDaftarPembayaranSupplier(db, { rentang, supplierId } 
 const supplierInclude = {
   bills: {
     where: { status: { in: ["DISETUJUI", "DIBAYAR_SEBAGIAN"] } },
-    select: { amount: true, allocations: { where: { payment: { cancelledAt: null } }, select: { amount: true } } },
+    select: { amount: true, creditApplied: true, allocations: { where: { payment: { cancelledAt: null } }, select: { amount: true } } },
   },
 };
 
 export function bentukSupplier(s) {
   const sisa = s.bills.reduce((acc, b) => {
     const terbayar = b.allocations.length === 0 ? ZERO : sumMoney(b.allocations.map((a) => a.amount));
-    return acc.plus(toMoney(b.amount).minus(terbayar));
+    return acc.plus(toMoney(b.amount).minus(terbayar).minus(toMoney(b.creditApplied ?? 0)));
   }, ZERO);
   return { ...s, bills: undefined, jumlahTagihanTerbuka: s.bills.length, sisaUtang: moneyToNumber(sisa) };
 }

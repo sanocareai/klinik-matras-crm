@@ -41,7 +41,7 @@ export class LedgerError extends Error {
 // (computeStockSnapshot) tidak bisa drift satu sama lain.
 export const RESERVED_STATUSES = ["APPROVED", "READY_TO_PICK", "PICKED"];
 
-const MOVEMENT_TYPES = ["RECEIPT", "ISSUE", "RETURN", "WASTE", "ADJUSTMENT", "TRANSFER"];
+const MOVEMENT_TYPES = ["RECEIPT", "ISSUE", "RETURN", "WASTE", "ADJUSTMENT", "TRANSFER", "SUPPLIER_RETURN"];
 
 // Toleransi floating point — Decimal(12,4) di DB, float di JS. Selisih
 // di bawah ini dianggap nol, bukan "negatif tipis" akibat pembulatan.

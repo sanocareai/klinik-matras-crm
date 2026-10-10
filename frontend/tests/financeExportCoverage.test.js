@@ -39,6 +39,7 @@ const TIDAK_DIEKSPOR = {
   "FinanceAccounts.jsx": "master bagan akun",
   "FinanceSettings.jsx": "konfigurasi",
   "FinancePurchaseOrders.jsx": "modul baru (Okt 2026): dokumen komitmen tanpa jurnal; belum ada kebutuhan laporan — export dibuat bila Finance minta (tagihan & stok yang lahir darinya sudah tercakup export Supplier & Utang dan Jurnal)",
+  "FinanceReturSupplier.jsx": "modul baru (Okt 2026): retur untuk kredit, debit note, saldo kredit; jurnalnya (Retur Supplier / Debit Note Supplier) tercakup Jurnal Umum & Buku Besar, dampak utangnya tercakup export Supplier & Utang; export khusus dibuat bila Finance minta",
   "FinancePengecualianLunas.jsx": "daftar riwayat keputusan Owner (puluhan baris); riwayat penuh ada di Aktivitas order; export dibuat bila Owner minta",
   "FinancePenjualanKaryawan.jsx": "modul baru (2 Okt 2026): jurnalnya tercakup Jurnal Umum & Buku Besar, pendapatan tercakup export Pemasukan (Pemasukan Lain · Penjualan karyawan); export khusus dibuat bila Owner minta",
 };

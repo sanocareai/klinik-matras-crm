@@ -1557,7 +1557,7 @@ financeTxRouter.post("/supplier-payments", requirePermission(P.FINANCE_POST), as
         const bill = await tx.finSupplierBill.findUnique({
           where: { id: b.billId },
           select: {
-            id: true, billNumber: true, amount: true, status: true, supplierId: true,
+            id: true, billNumber: true, amount: true, status: true, supplierId: true, creditApplied: true,
             allocations: { where: { payment: { cancelledAt: null } }, select: { amount: true } },
           },
         });
@@ -1569,7 +1569,7 @@ financeTxRouter.post("/supplier-payments", requirePermission(P.FINANCE_POST), as
           throw err(`Tagihan ${bill.billNumber} berstatus ${bill.status} — hanya tagihan yang sudah disetujui yang bisa dibayar`, 409);
         }
         const terbayar = bill.allocations.length === 0 ? ZERO : sumMoney(bill.allocations.map((a) => a.amount));
-        const sisa = toMoney(bill.amount).minus(terbayar);
+        const sisa = toMoney(bill.amount).minus(terbayar).minus(toMoney(bill.creditApplied ?? 0));
         if (b.amount.greaterThan(sisa)) {
           throw err(
             `Pembayaran untuk tagihan ${bill.billNumber} (${b.amount.toFixed(2)}) melebihi sisa utangnya (${sisa.toFixed(2)})`,
@@ -2826,6 +2826,12 @@ financeTxRouter.post("/bills/:id/cancel", requirePermission(P.FINANCE_ADMIN), as
       const pembayaran = await tx.finSupplierPaymentAllocation.count({ where: { billId: bl.id, payment: { cancelledAt: null } } });
       if (pembayaran > 0) {
         throw err(`Tagihan ini sudah punya ${pembayaran} pembayaran aktif — batalkan pembayarannya dulu (Supplier & Utang), baru tagihannya.`, 409);
+      }
+      // Retur Supplier & Debit Note: faktur yang sudah dikurangi debit note / saldo kredit tidak boleh dibatalkan sebelum dokumen itu dibatalkan (utang, GRNI, dan saldo kredit akan menyimpang).
+      const dnAktif = await tx.finSupplierDebitNoteLine.count({ where: { billId: bl.id, debitNote: { status: { in: ["MENUNGGU", "DISETUJUI"] } } } });
+      const kreditAktif = await tx.finSupplierCreditApplication.count({ where: { billId: bl.id, status: "AKTIF" } });
+      if (dnAktif > 0 || kreditAktif > 0) {
+        throw err(`Tagihan ini sudah punya ${dnAktif} debit note aktif dan ${kreditAktif} pemakaian saldo kredit — batalkan dokumen retur/kredit itu dulu (Supplier & Utang › Retur), baru tagihannya.`, 409);
       }
       await pastikanBelumDirekonsiliasi(tx, [{ source: "TAGIHAN_SUPPLIER", sourceId: bl.id }]);
       await balikkanJurnalAktif(tx, { keyPrefix: SUPPLIER_KEY.bill(bl.id), alasan: `Tagihan ${bl.billNumber} dibatalkan — ${reason}`, userId: req.user.id });

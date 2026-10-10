@@ -258,6 +258,8 @@ const DIVISIONS = {
           { to: "/warehouse/inventory", label: "Stok & Lokasi",     Icon: Package },
           // PO terintegrasi Finance–Gudang: PO yang akan/sedang datang (data yang sama dengan Finance, TANPA harga) + catat barang tiba.
           { to: "/warehouse/barang-akan-datang", label: "Barang Akan Datang", Icon: Truck },
+          // Retur Supplier untuk kredit: kondisi + konfirmasi barang keluar (TANPA nilai). Status sama dengan Finance.
+          { to: "/warehouse/retur-supplier", label: "Retur Supplier", Icon: ArrowUpFromLine },
           { to: "/warehouse/goods-receipt",  label: "Penerimaan Barang", Icon: ArrowDownToLine },
           { to: "/warehouse/material-issue", label: "Pengeluaran Material", Icon: ArrowUpFromLine },
           { to: "/warehouse/transfers",      label: "Transfer Stok",     Icon: ArrowLeftRight },
@@ -478,6 +480,7 @@ const DIVISIONS = {
           { to: "/finance/receivables", label: "Piutang & Refund",      Icon: Users },
           { to: "/finance/suppliers",   label: "Supplier & Utang", Icon: Building2 },
           { to: "/finance/purchase-orders", label: "Purchase Order", Icon: ClipboardList },
+          { to: "/finance/retur-supplier", label: "Retur & Debit Note", Icon: Undo2 },
           { to: "/finance/biaya-bahan", label: "Biaya Bahan per Unit", Icon: Boxes },
         ],
       },

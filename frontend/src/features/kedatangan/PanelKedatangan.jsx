@@ -73,7 +73,7 @@ function PendampingSel({ l }) {
 }
 
 // ── Unggah bukti (opsional) ──────────────────────────────────────────────
-function UnggahBukti({ workspace, value, onChange }) {
+export function UnggahBukti({ workspace, value, onChange, unggah = null }) {
   const ref = useRef(null);
   const [sibuk, setSibuk] = useState(false);
   const [galat, setGalat] = useState("");
@@ -85,7 +85,7 @@ function UnggahBukti({ workspace, value, onChange }) {
     try {
       const fd = new FormData();
       fd.append("foto", await compressImage(file), "bukti.jpg");
-      const { url } = workspace === "FINANCE" ? await api.unggahBuktiKedatanganFinance(fd) : await api.unggahBuktiKedatanganGudang(fd);
+      const { url } = unggah ? await unggah(fd) : workspace === "FINANCE" ? await api.unggahBuktiKedatanganFinance(fd) : await api.unggahBuktiKedatanganGudang(fd);
       onChange([...value, url]);
     } catch (err) { setGalat(err.message || "Gagal mengunggah foto"); } finally { setSibuk(false); }
   }

@@ -660,7 +660,7 @@ export async function umurUtang(db, { to: batas = todayBookDateWIB() } = {}) {
   const bills = await db.finSupplierBill.findMany({
     where: { status: { in: ["DISETUJUI", "DIBAYAR_SEBAGIAN"] }, billDate: { lte: to } },
     select: {
-      id: true, billNumber: true, supplierRef: true, amount: true, billDate: true, dueDate: true, description: true, termBasis: true,
+      id: true, billNumber: true, supplierRef: true, amount: true, creditApplied: true, billDate: true, dueDate: true, description: true, termBasis: true,
       supplier: { select: { id: true, name: true } },
       allocations: { where: { payment: { cancelledAt: null } }, select: { amount: true } },
     },
@@ -694,7 +694,7 @@ export async function umurUtang(db, { to: batas = todayBookDateWIB() } = {}) {
   }).filter((b) => b.sisa > 0).sort((a, b) => b.hariLewat - a.hariLewat);
   function bentuk(b) {
     const terbayar = b.allocations.length === 0 ? ZERO : sumMoney(b.allocations.map((a) => a.amount));
-    const sisa = toMoney(b.amount).minus(terbayar);
+    const sisa = toMoney(b.amount).minus(terbayar).minus(toMoney(b.creditApplied ?? 0));
     const acuan = b.dueDate || b.billDate;
     const hariLewat = Math.floor((to - new Date(acuan)) / 86400000);
     const ember = emberUmur(hariLewat);

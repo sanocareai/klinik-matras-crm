@@ -37,11 +37,13 @@ export default function JejakPemakaianPenerimaan({ receiptId, status }) {
           <div className="mt-0.5 grid grid-cols-2 gap-x-3 gap-y-0.5 text-ink2 sm:grid-cols-4">
             <span>Datang <strong className="tabular-nums text-ink">{teksQty(b.diterima)}</strong></span>
             <span>Baik <strong className="tabular-nums text-ink">{teksQty(b.baik)}</strong> · ditolak <strong className="tabular-nums text-ink">{teksQty(b.ditolak)}</strong></span>
-            <span>Masuk stok <strong className="tabular-nums text-ink">{teksQty(b.masukStok)}</strong></span>
+            <span title="Bruto: yang disimpan ke stok dari penerimaan ini">Masuk stok <strong className="tabular-nums text-ink">{teksQty(b.masukStok)}</strong></span>
+            <span title="Retur Supplier untuk kredit yang barangnya sudah keluar gudang">Diretur ke supplier <strong className="tabular-nums text-ink" data-testid="diretur-supplier">{teksQty(b.returSupplier ?? 0)}</strong></span>
+            <span title="Masuk stok dikurangi diretur ke supplier. Bukan stok tersedia: belum dikurangi pemakaian Produksi (lihat Tersisa).">Diterima bersih dari PO <strong className="tabular-nums text-ink" data-testid="diterima-bersih">{teksQty(b.diterimaBersih ?? b.masukStok)}</strong></span>
             <span>Lokasi <strong className="text-ink">{b.lokasi || "—"}</strong></span>
             <span>Dipakai Produksi <strong className="tabular-nums text-ink">{teksQty(b.dipakaiProduksi)}</strong></span>
             <span>Waste <strong className="tabular-nums text-ink">{teksQty(b.waste)}</strong></span>
-            <span>Retur diterima <strong className="tabular-nums text-ink">{teksQty(b.returDiterima)}</strong></span>
+            <span title="Barang yang dikembalikan Produksi ke gudang">Retur dari Produksi <strong className="tabular-nums text-ink">{teksQty(b.returDiterima)}</strong></span>
             <span>Tersisa <strong className="tabular-nums text-ink">{teksQty(b.tersisa)} {b.satuan}</strong></span>
           </div>
         </div>

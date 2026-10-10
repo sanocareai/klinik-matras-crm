@@ -10,7 +10,11 @@
 //   Ditolak              hasil pemeriksaan: ditolak (riwayat; tidak berkurang saat pengganti tiba).
 //   Menunggu pengganti   Ditolak (asli + pengganti yang ditolak) − pengganti yang sudah tiba. Pengganti yang diterima baik menutupnya; pengganti yang ditolak lagi membukanya lagi.
 //   Baik belum disimpan  jumlah baik − masuk stok.
-//   Masuk stok           baik yang SUDAH disimpan ke stok (satu-satunya yang menambah stok).
+//   Masuk stok           baik yang SUDAH disimpan ke stok (BRUTO — satu-satunya yang menambah stok; tidak berkurang karena retur).
+//   Diretur ke supplier  barang yang sudah masuk stok lalu KELUAR lagi lewat Retur Supplier untuk kredit (barang sudah keluar gudang; retur draf/dibatalkan tidak dihitung).
+//   Diterima bersih dari PO  Masuk stok − Diretur: jumlah barang dari PO ini yang diterima dan tidak dikembalikan ke supplier. BUKAN STOK TERSEDIA — tidak mengurangi pemakaian Produksi,
+//                        reservasi, waste, atau penyesuaian; stok tersedia hanya dari Stok & Lokasi. Retur TIDAK membuka lagi "Belum datang" / "Belum dipenuhi supplier"
+//                        — retur untuk kredit mengurangi tagihan, bukan meminta pengganti.
 //   Belum dipenuhi supplier  Belum datang + Menunggu pengganti = yang masih harus dikirim supplier agar barang baik mencapai jumlah dipesan.
 //   Belum masuk stok     Dipesan − masuk stok.
 // Invarian (data wajar): Datang = Belum diperiksa + Ditolak + Baik belum disimpan + Masuk stok.
@@ -34,7 +38,9 @@ export const DEFINISI_PROGRES = Object.freeze([
   { kunci: "ditolak", label: "Ditolak", definisi: "Hasil pemeriksaan: barang yang ditolak. Tetap tercatat sebagai riwayat setelah pengganti tiba." },
   { kunci: "menungguPengganti", label: "Menunggu pengganti", definisi: "Jumlah ditolak yang belum diganti supplier. Pengganti yang diterima baik menutupnya; pengganti yang ditolak lagi membukanya lagi." },
   { kunci: "baikBelumDisimpan", label: "Baik belum disimpan", definisi: "Jumlah baik dikurangi masuk stok: lolos pemeriksaan, tetapi Simpan ke Stok belum ditekan." },
-  { kunci: "masukStok", label: "Masuk stok", definisi: "Barang baik yang sudah disimpan ke stok. Hanya ini yang menambah stok." },
+  { kunci: "masukStok", label: "Masuk stok", definisi: "Barang baik yang sudah disimpan ke stok (bruto: tidak berkurang karena retur). Hanya ini yang menambah stok." },
+  { kunci: "diretur", label: "Diretur ke supplier", definisi: "Barang yang sudah masuk stok lalu dikeluarkan lagi lewat Retur Supplier untuk kredit (barang benar-benar sudah keluar dari gudang). Tidak membuka lagi \"Belum datang\"." },
+  { kunci: "diterimaBersih", label: "Diterima bersih dari PO", definisi: "Masuk stok dikurangi diretur ke supplier: jumlah barang dari PO ini yang diterima dan tidak dikembalikan. BUKAN stok tersedia — sebagian bisa sudah dipakai Produksi atau direservasi; stok tersedia hanya di Stok & Lokasi." },
   { kunci: "belumDipenuhiSupplier", label: "Belum dipenuhi supplier", definisi: "Belum datang ditambah menunggu pengganti: yang masih harus dikirim supplier agar barang baik mencapai jumlah dipesan." },
   { kunci: "belumMasukStok", label: "Belum masuk stok", definisi: "Dipesan dikurangi masuk stok." },
 ]);
@@ -52,7 +58,13 @@ export async function hitungProgresPO(db, poId) {
     where: { purchaseOrderLine: { purchaseOrderId: poId } },
     select: { purchaseOrderLineId: true, receivedQty: true, acceptedQty: true, rejectedQty: true, companionQty: true, replacementForLineId: true, goodsReceipt: { select: { status: true } } },
   });
-  const peta = new Map(po.lines.map((l) => [l.id, { dipesanK: k(l.qty), datangK: 0, asliK: 0, penggantiK: 0, belumDiperiksaK: 0, ditolakK: 0, baikK: 0, masukStokK: 0, pendampingK: 0, adaPendamping: false }]));
+  // Retur untuk kredit yang barangnya SUDAH keluar gudang (status KELUAR/SELESAI); draf & dibatalkan tidak mengurangi stok.
+  const retur = await db.supplierReturnLine.findMany({
+    where: { purchaseOrderLine: { purchaseOrderId: poId }, supplierReturn: { status: { in: ["KELUAR", "SELESAI"] } } },
+    select: { purchaseOrderLineId: true, qty: true },
+  });
+  const peta = new Map(po.lines.map((l) => [l.id, { dipesanK: k(l.qty), datangK: 0, asliK: 0, penggantiK: 0, belumDiperiksaK: 0, ditolakK: 0, baikK: 0, masukStokK: 0, returK: 0, pendampingK: 0, adaPendamping: false }]));
+  for (const r of retur) { const a = peta.get(r.purchaseOrderLineId); if (a) a.returK += k(r.qty); }
   for (const b of baris) {
     const a = peta.get(b.purchaseOrderLineId);
     if (!a) continue;
@@ -73,6 +85,7 @@ export async function hitungProgresPO(db, poId) {
       dipesan: dariK(a.dipesanK), datangAsli: dariK(a.asliK), pengganti: dariK(a.penggantiK), datang: dariK(a.datangK), belumDatang: dariK(belumDatangK),
       belumDiperiksa: dariK(a.belumDiperiksaK), ditolak: dariK(a.ditolakK), menungguPengganti: dariK(menungguK),
       baikBelumDisimpan: dariK(Math.max(0, a.baikK - a.masukStokK)), masukStok: dariK(a.masukStokK),
+      diretur: dariK(a.returK), diterimaBersih: dariK(Math.max(0, a.masukStokK - a.returK)),
       belumDipenuhiSupplier: dariK(belumDatangK + menungguK), belumMasukStok: dariK(Math.max(0, a.dipesanK - a.masukStokK)),
       pendampingAktual: a.adaPendamping ? dariK(a.pendampingK) : null,
     });
@@ -110,7 +123,7 @@ export function ringkasProgresPO(lines) {
   if (satuan.length === 1) {
     const total = Object.fromEntries(KUNCI_ANGKA.map((kunci) => [kunci, jum(kunci)]));
     const persenMasukStok = total.dipesan > 0 ? Math.min(100, Math.round((Math.min(total.masukStok, total.dipesan) / total.dipesan) * 100)) : 0;
-    return { satuan: satuan[0], dijumlah: true, total, persenMasukStok, teks: `${teksAngka(total.masukStok)} / ${teksAngka(total.dipesan)} ${satuan[0]} masuk stok · ${teksAngka(total.datang)} sudah datang` };
+    return { satuan: satuan[0], dijumlah: true, total, persenMasukStok, teks: `${teksAngka(total.masukStok)} / ${teksAngka(total.dipesan)} ${satuan[0]} masuk stok · ${teksAngka(total.datang)} sudah datang${total.diretur > 0 ? ` · ${teksAngka(total.diretur)} diretur (diterima bersih dari PO ${teksAngka(total.diterimaBersih)})` : ""}` };
   }
   const terpenuhi = lines.filter((l) => k(l.belumMasukStok) <= 0).length;
   const persen = lines.length ? Math.round((lines.reduce((s, l) => s + (l.dipesan > 0 ? Math.min(1, l.masukStok / l.dipesan) : 0), 0) / lines.length) * 100) : 0;

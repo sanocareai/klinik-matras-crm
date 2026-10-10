@@ -22,6 +22,7 @@ const DETAIL_SENDIRI = {
   "FinanceJournal.jsx": "klik baris membuka detail jurnal (setDetail)",
   "FinanceBiayaBahan.jsx": "klik unit membuka panel jejak biaya (JejakBiayaBahan) di sebelah daftar",
   "FinancePurchaseOrders.jsx": "klik baris membuka ModalDetailPO (setDetailId): item, progres penerimaan, tagihan, riwayat",
+  "FinanceReturSupplier.jsx": "klik kartu retur / debit note membuka dialog rincian (DetailRetur, DialogDebitNote: jurnal & dampak dari server); saldo kredit punya dialog pakai/batal sendiri",
   "FinanceLaporanDivisi.jsx": "drill-down sendiri di features/laporanDivisi: kategori → Transaksi (dokumen sumber + aturan atribusi) → tombol 'Buka di Finance' ke modul sumber",
 };
 const TANPA_DAFTAR = {

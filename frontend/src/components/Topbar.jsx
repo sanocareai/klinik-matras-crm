@@ -84,6 +84,8 @@ const ROUTE_LABELS = {
   "/warehouse/finished-goods":  ["Gudang", "Terima Barang Jadi"],
   "/warehouse/inventory":       ["Gudang", "Stok & Lokasi"],
   "/warehouse/barang-akan-datang": ["Gudang", "Barang Akan Datang"],
+  "/warehouse/retur-supplier": ["Gudang", "Retur Supplier"],
+  "/finance/retur-supplier": ["Finance", "Retur & Debit Note"],
   "/warehouse/goods-receipt":   ["Gudang", "Penerimaan Barang"],
   "/warehouse/material-issue":  ["Gudang", "Pengeluaran Material"],
   "/warehouse/transfers":       ["Gudang", "Transfer Stok"],

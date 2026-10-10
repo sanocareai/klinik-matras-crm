@@ -48,6 +48,7 @@ Mode filter: **Server** = layar mengirim filter/periode ke endpoint daftar, expo
 | **Bagan Akun**, **Pengaturan Finance** | Tidak | Data master/konfigurasi, bukan transaksi. |
 | **Purchase Order Bahan Baku** (Okt 2026) | Tidak (di luar 11 modul) | Dokumen komitmen tanpa jurnal. Tagihan dan stok yang lahir darinya tercakup export Supplier & Utang dan Jurnal Umum. Export PO dibuat bila Finance minta. |
 | **Pengecualian Tanggal Lunas** (keputusan Owner, 2 Okt 2026) | Tidak (di luar 11 modul) | Daftar riwayat keputusan Owner yang kecil; setiap perubahan juga tercatat di Aktivitas order. Export dibuat bila Owner minta. |
+| **Retur Supplier & Debit Note** (Okt 2026) | Tidak (di luar 11 modul) | Modul baru: retur untuk kredit, debit note, saldo kredit supplier. Jurnalnya (sumber Retur Supplier / Debit Note Supplier) tercakup Jurnal Umum & Buku Besar; dampaknya pada sisa utang & saldo kredit tercakup export Supplier & Utang. Export khusus dibuat bila Finance minta. |
 | **Penjualan Karyawan** (input manual di luar Order, 2 Okt 2026) | Tidak (di luar 11 modul) | Modul baru. Jurnalnya (sumber Penjualan Karyawan / Pembayaran Penjualan Karyawan) tercakup Jurnal Umum & Buku Besar; pendapatannya tercakup export Pemasukan (Pemasukan Lain · Penjualan karyawan). Export khusus bisa dibuat bila Owner minta. |
 
 ## C. Gap yang ditutup pada finalisasi ini

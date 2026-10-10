@@ -134,10 +134,13 @@ async function namaUser(db, ids) {
 
 function bentukBaris(b, { hariIni, penerimaanPO, nama, item = null, pertama = true, dari = 1, ke = 1 }) {
   // item = satu baris jadwal per penerimaan (faktur atas PO, dasar tanggal tiba): nilai/dibayar/jatuh tempo milik item; selain itu seluruh faktur.
-  const totalBayar = b.allocations.length ? sumMoney(b.allocations.map((a) => a.amount)) : ZERO;
-  const terbayar = item ? item.dibayar : totalBayar;
+  const kreditFaktur = d(b.creditApplied ?? 0);
+  const bayarKas = b.allocations.length ? sumMoney(b.allocations.map((a) => a.amount)) : ZERO;
+  const totalBayar = bayarKas.plus(kreditFaktur); // pembayaran + debit note/saldo kredit
+  // Baris tanpa jadwal: "dibayar" = uang yang benar-benar keluar; kredit dilaporkan terpisah (kreditFaktur) dan tetap mengurangi sisa.
+  const terbayar = item ? item.dibayar : bayarKas;
   const nilai = item ? item.nilai : d(b.amount);
-  const sisa = nilai.minus(terbayar);
+  const sisa = item ? nilai.minus(terbayar) : nilai.minus(totalBayar);
   const dibayarSebagian = terbayar.greaterThan(0) && sisa.greaterThan(0);
   const dueDate = item ? item.jatuhTempo : b.dueDate;
   const kelompok = kelompokAging({ dueDate, sisa, hariIni });
@@ -162,7 +165,7 @@ function bentukBaris(b, { hariIni, penerimaanPO, nama, item = null, pertama = tr
       alasanOverride: b.termOverrideReason, oleh: nama.get(b.termSetById) ?? null, pada: b.termSetAt,
     },
     umurUtangHari: Math.max(0, selisihHari(hariIni, b.billDate)), hariKeJatuhTempo, hariTerlambat: hariKeJatuhTempo != null && hariKeJatuhTempo < 0 && sisa.greaterThan(0) ? -hariKeJatuhTempo : 0,
-    nilaiFaktur: moneyToNumber(nilai), dibayar: moneyToNumber(terbayar), sisaUtang: moneyToNumber(sisa),
+    nilaiFaktur: moneyToNumber(nilai), dibayar: moneyToNumber(terbayar), sisaUtang: moneyToNumber(sisa), kreditFaktur: moneyToNumber(kreditFaktur),
     rekeningPembayaran: b.scheduledCashAccount?.name ?? rekeningTerakhir,
     jadwalBayar: b.scheduledPayDate ? { tanggal: hariKunci(b.scheduledPayDate), rekeningId: b.scheduledCashAccountId, rekening: b.scheduledCashAccount?.name ?? null, catatan: b.scheduledNote, oleh: nama.get(b.scheduledById) ?? null, pada: b.scheduledAt } : null,
     kelompok, dibayarSebagian, indikator: nadaIndikator(kelompok),
@@ -177,7 +180,7 @@ function bentukBaris(b, { hariIni, penerimaanPO, nama, item = null, pertama = tr
 function bentukBarisFaktur(b, ctx) {
   if (b.termBasis === DASAR_TANGGAL_TIBA && b.poAllocations?.length) {
     const alokasi = b.poAllocations.map((a) => ({ billPoLineId: a.billPoLineId, receiptId: a.goodsReceipt.id, receiptNumber: a.goodsReceipt.receiptNumber, tanggalTiba: a.goodsReceipt.arrivedDate, status: a.goodsReceipt.status, qty: Number(a.qty) }));
-    const totalBayar = b.allocations.length ? sumMoney(b.allocations.map((a) => a.amount)) : ZERO;
+    const totalBayar = (b.allocations.length ? sumMoney(b.allocations.map((a) => a.amount)) : ZERO).plus(d(b.creditApplied ?? 0));
     const jadwal = jadwalDariFaktur({ bill: b, alokasi, dibayar: totalBayar, hariIni: ctx.hariIni });
     if (jadwal?.length) return jadwal.map((item, i) => bentukBaris(b, { ...ctx, item, pertama: i === 0, ke: i + 1, dari: jadwal.length }));
   }

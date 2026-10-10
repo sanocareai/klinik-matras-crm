@@ -117,7 +117,7 @@ const selectPenerimaan = {
   events: { orderBy: { createdAt: "asc" }, select: { id: true, type: true, actorRoles: true, workspace: true, reason: true, before: true, after: true, createdAt: true, actor: { select: { id: true, name: true } } } },
 };
 
-function bentukPenerimaan(r, { po, poLineById, finance }) {
+function bentukPenerimaan(r, { po, poLineById, finance, returPerBaris = new Map() }) {
   const baris = r.lines.map((l) => {
     const pl = poLineById.get(l.purchaseOrderLineId);
     const p = pl ? pendampingPO(pl) : null;
@@ -125,6 +125,8 @@ function bentukPenerimaan(r, { po, poLineById, finance }) {
       id: l.id, purchaseOrderLineId: l.purchaseOrderLineId, kode: l.material?.code ?? null, nama: l.material?.name ?? null, satuan: pl?.unit ?? l.material?.unit ?? null,
       dijadwalkan: l.orderedQty, datang: l.receivedQty, baik: l.acceptedQty, ditolak: l.rejectedQty,
       masukStok: r.status === "COMPLETED" ? (l.acceptedQty ?? 0) : 0,
+      diretur: returPerBaris.get(l.id)?.qty ?? 0,
+      diterimaBersih: Math.max(0, (r.status === "COMPLETED" ? Number(l.acceptedQty ?? 0) : 0) - (returPerBaris.get(l.id)?.qty ?? 0)),
       pendamping: p && { satuan: p.satuan, mode: p.mode, aktual: l.companionQty === null || l.companionQty === undefined ? null : Number(l.companionQty) },
       penggantiDari: l.replacementForLine ? { lineId: l.replacementForLineId, nomor: l.replacementForLine.goodsReceipt.receiptNumber } : null,
     };
@@ -153,6 +155,17 @@ export async function bentukBarangAkanDatang(db, poId, { finance = false, hariIn
   const kuantitas = await kuantitasKedatangan(db, po.id);
   const recs = await db.goodsReceipt.findMany({ where: { purchaseOrderId: po.id }, orderBy: [{ createdAt: "asc" }, { receiptNumber: "asc" }], select: selectPenerimaan });
   const poLineById = new Map(po.lines.map((l) => [l.id, { ...l, qty: l.qty }]));
+  // Retur untuk kredit yang barangnya sudah keluar gudang (sama dengan definisi progresPO.js): per baris penerimaan, dipakai kolom "Diretur"/"Diterima bersih dari PO".
+  const returBaris = await db.supplierReturnLine.findMany({
+    where: { purchaseOrderLine: { purchaseOrderId: po.id }, supplierReturn: { status: { in: ["KELUAR", "SELESAI"] } } },
+    select: { goodsReceiptLineId: true, qty: true, stockValue: true },
+  });
+  const returPerBaris = new Map();
+  for (const x of returBaris) {
+    const c = returPerBaris.get(x.goodsReceiptLineId) ?? { qty: 0, nilai: 0 };
+    c.qty = Math.round((c.qty + Number(x.qty)) * 1000) / 1000; c.nilai += Number(x.stockValue ?? 0);
+    returPerBaris.set(x.goodsReceiptLineId, c);
+  }
   const status = statusBarangAkanDatang({ po, penerimaan: recs, kuantitas, hariIni: hari });
   const hariTerlambat = po.expectedDate && status.bendera.includes("TERLAMBAT") ? Math.round((new Date(`${hari}T00:00:00Z`) - new Date(`${hariKunci(po.expectedDate)}T00:00:00Z`)) / 86_400_000) : 0;
   const lines = await Promise.all(po.lines.map(async (l) => {
@@ -163,7 +176,7 @@ export async function bentukBarangAkanDatang(db, poId, { finance = false, hariIn
       id: l.id, materialId: l.materialId, kode: l.material?.code ?? null, nama: l.material?.name ?? null, satuan: l.unit, catatan: l.notes,
       ...q, progres: q, asalPengganti,
       pendamping: p && { ...p, aktual: q.pendampingAktual },
-      ...(finance && { hargaSatuan: l.unitPrice, nilaiDipesan: Math.round((q.dipesan * l.unitPrice) * 100) / 100, nilaiMasukStok: Math.round((q.masukStok * l.unitPrice) * 100) / 100 }),
+      ...(finance && { hargaSatuan: l.unitPrice, nilaiDipesan: Math.round((q.dipesan * l.unitPrice) * 100) / 100, nilaiMasukStok: Math.round((q.masukStok * l.unitPrice) * 100) / 100, nilaiDiterimaBersih: Math.round((q.diterimaBersih * l.unitPrice) * 100) / 100 }),
     };
   }));
   const keluaran = {
@@ -171,13 +184,14 @@ export async function bentukBarangAkanDatang(db, poId, { finance = false, hariIn
     statusAkanDatang: { kode: status.utama, label: STATUS_AKAN_DATANG[status.utama] }, bendera: status.bendera.map((b) => ({ kode: b, label: STATUS_AKAN_DATANG[b] })),
     supplier: po.supplier, orderDate: hariKunci(po.orderDate), expectedDate: hariKunci(po.expectedDate), hariTerlambat, notes: po.notes, cancelReason: po.cancelReason,
     lines, progres: ringkasProgresPO(lines), progresDefinisi: DEFINISI_PROGRES,
-    penerimaan: recs.map((r) => bentukPenerimaan(r, { po, poLineById, finance })),
+    penerimaan: recs.map((r) => bentukPenerimaan(r, { po, poLineById, finance, returPerBaris })),
   };
   if (finance) {
     keluaran.termin = po.termType ? { jenis: po.termType, hari: po.termDays, label: labelTermin(po.termType, po.termDays), sumber: po.termSource } : null;
     keluaran.terminStatus = recs.some((r) => r.arrivedDate) ? "BERJALAN_PER_PENERIMAAN" : "MENUNGGU_TANGGAL_PENERIMAAN";
     keluaran.totalDipesan = Math.round(lines.reduce((s, l) => s + (l.nilaiDipesan ?? 0), 0) * 100) / 100;
     keluaran.totalMasukStok = Math.round(lines.reduce((s, l) => s + (l.nilaiMasukStok ?? 0), 0) * 100) / 100;
+    keluaran.totalDiterimaBersih = Math.round(lines.reduce((s, l) => s + (l.nilaiDiterimaBersih ?? 0), 0) * 100) / 100;
   }
   return keluaran;
 }

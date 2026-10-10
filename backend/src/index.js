@@ -80,6 +80,7 @@ import { inventoryRouter }  from "./routes/inventory.js";
 import { goodsReceiptRouter } from "./routes/goodsReceipt.js";
 import { purchaseOrderFinanceRouter, purchaseOrderGudangRouter } from "./routes/purchaseOrders.js";
 import { barangAkanDatangRouter, receiptProofsDir } from "./routes/barangAkanDatang.js";
+import { returSupplierGudangRouter, returSupplierFinanceRouter } from "./routes/returSupplier.js";
 import { jejakBahanUnitRouter, biayaBahanFinanceRouter, jejakPenerimaanRouter } from "./routes/biayaBahan.js";
 import { financeUtangRouter } from "./routes/financeUtang.js";
 import { materialIssueRouter } from "./routes/materialIssue.js";
@@ -281,6 +282,8 @@ app.use("/api/inventory",    inventoryRouter);
 app.use("/api/inventory/goods-receipts", jejakPenerimaanRouter); // jejak pemakaian per penerimaan (baca-saja) — sebelum router penerimaan
 app.use("/api/inventory/goods-receipts", goodsReceiptRouter);
 app.use("/api/inventory/purchase-orders", purchaseOrderGudangRouter); // PO bahan baku — Gudang baca saja, tanpa harga
+app.use("/api/inventory/retur-supplier", returSupplierGudangRouter); // Retur Supplier (Gudang): kondisi & pergerakan fisik, tanpa nilai
+app.use("/api/finance/retur-supplier", returSupplierFinanceRouter); // Retur Supplier & Debit Note (Finance): nilai, persetujuan, saldo kredit
 app.use("/api/inventory/barang-akan-datang", barangAkanDatangRouter); // Gudang: PO yang akan/sedang datang (tanpa harga) + catat kedatangan
 app.use("/media/receipt-proofs", express.static(receiptProofsDir)); // foto surat jalan/bukti kedatangan (nama berkas acak)
 app.use("/api/finance/purchase-orders", purchaseOrderFinanceRouter);

@@ -57,6 +57,7 @@ export const MOVEMENT_LABEL_REAL = {
   RETURN:     { label: "Return",         labelId: "Retur",       tone: "accent" },
   WASTE:      { label: "Waste",          labelId: "Terbuang",    tone: "red" },
   ADJUSTMENT: { label: "Adjustment",     labelId: "Opname",      tone: "orange" },
+  SUPPLIER_RETURN: { label: "Supplier Return", labelId: "Retur ke Supplier", tone: "orange" },
 };
 
 /**

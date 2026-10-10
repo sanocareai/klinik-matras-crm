@@ -156,14 +156,19 @@ export async function bacaJejakPenerimaan(db, receiptId, { izinHarga = false } =
       else if (v.costKind === "RETUR") { b.retur = b.retur.plus(p.qty); returs.push({ unitCode: unitInfo.get(v.unitId) ?? null, materialId: p.materialId, qty: Number(p.qty.toDecimalPlaces(4)), diterimaPada: v.movement?.createdAt ?? v.valuedAt }); }
     }
   }
+  // Retur Supplier untuk kredit: pergerakan SUPPLIER_RETURN bertaut penerimaan ini (keluar negatif, pembatalan positif) → jumlah NETO yang sudah keluar ke supplier.
+  const returSup = await db.stockMovement.groupBy({ by: ["materialId"], where: { goodsReceiptId: r.id, type: "SUPPLIER_RETURN" }, _sum: { qty: true } });
+  const returSupplierPerBahan = new Map(returSup.map((x) => [x.materialId, d(x._sum.qty).negated()]));
   const barisBahan = r.lines.map((l) => {
     const b = bahan(l.materialId); // jumlah sudah terakumulasi per bahan
     const baik = d(l.acceptedQty);
     const masukStok = disimpan ? baik : ZERO;
-    const tersisa = masukStok.minus(b.dipakai).minus(b.waste).plus(b.retur);
+    const returSupplier = returSupplierPerBahan.get(l.materialId) ?? ZERO;
+    const tersisa = masukStok.minus(returSupplier).minus(b.dipakai).minus(b.waste).plus(b.retur);
     return {
       materialId: l.materialId, kode: l.material.code, nama: l.material.name, satuan: l.material.unit,
       dipesan: l.orderedQty, diterima: l.receivedQty, baik: l.acceptedQty, ditolak: l.rejectedQty, masukStok: Number(masukStok),
+      returSupplier: Number(returSupplier.toDecimalPlaces(4)), diterimaBersih: Number(masukStok.minus(returSupplier).toDecimalPlaces(4)),
       dipakaiProduksi: Number(b.dipakai.toDecimalPlaces(4)), waste: Number(b.waste.toDecimalPlaces(4)), returDiterima: Number(b.retur.toDecimalPlaces(4)),
       tersisa: Number(tersisa.toDecimalPlaces(4)),
       nilaiDipakai: izinHarga ? uang(b.nilaiDipakai) : null,

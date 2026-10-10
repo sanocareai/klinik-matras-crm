@@ -603,7 +603,7 @@ function ModalDetailPO({ id, onClose, onChanged, onUbah }) {
         open onOpenChange={(v) => !v && onClose()}
         title={po ? `${po.poNumber}` : "Memuat PO…"}
         description={po ? `${po.supplier.name} · tanggal ${tgl(po.orderDate)}${po.expectedDate ? ` · estimasi ${tgl(po.expectedDate)}` : ""}` : undefined}
-        className="w-[920px]"
+        className="w-[1180px]"
         footer={
           po && aksi ? (
             <div className="flex w-full flex-col gap-2">
@@ -686,18 +686,19 @@ function IsiDetail({ po, segar, onUbahFaktur, onSetujuiFaktur, onTolakFaktur, on
         <h4 className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ink3">Item &amp; progres penerimaan</h4>
         <TableWrap className="hidden md:block">
           <Table>
-            <THead><TR><TH>Item</TH><TH numeric>Dipesan</TH><TH numeric title="Dipesan dikurangi datang pengiriman asli. Barang ditolak tetap dihitung sudah datang.">Belum datang</TH><TH numeric title="Jumlah ditolak yang belum diganti supplier">Menunggu pengganti</TH><TH numeric title="Baik yang sudah disimpan ke stok">Masuk stok</TH><TH numeric title="Dipesan dikurangi masuk stok">Belum masuk stok</TH><TH numeric>Sudah ditagih</TH><TH numeric>Harga satuan</TH><TH numeric>Nilai PO</TH></TR></THead>
+            <THead><TR><TH>Item</TH><TH numeric>Dipesan</TH><TH numeric title="Dipesan dikurangi datang pengiriman asli. Barang ditolak tetap dihitung sudah datang.">Belum datang</TH><TH numeric title="Jumlah ditolak yang belum diganti supplier">Menunggu pengganti</TH><TH numeric title="Baik yang sudah disimpan ke stok (bruto, sebelum retur)">Masuk stok</TH><TH numeric title="Barang yang sudah masuk stok lalu dikembalikan ke supplier lewat Retur Supplier">Diretur</TH><TH numeric className="min-w-[116px] whitespace-normal" title="Masuk stok dikurangi diretur. Bukan stok tersedia: belum dikurangi pemakaian Produksi.">Diterima bersih dari PO</TH><TH numeric title="Dipesan dikurangi masuk stok">Belum masuk stok</TH><TH numeric>Sudah ditagih</TH><TH numeric>Nilai PO</TH></TR></THead>
             <TBody>
               {po.lines.map((l) => (
                 <TR key={l.id}>
-                  <TD><div className="font-medium text-ink">{l.kode}</div><div className="text-[11.5px] text-ink2">{l.nama}</div>{l.konversi && <div data-testid="konversi-detail" className="text-[11.5px] text-accent">1 {labelSatuan(l.konversi.satuanBeli)} = {teksJumlah(l.konversi.faktor)} {labelSatuan(l.konversi.satuanStok)} · setara {teksJumlah(l.dipesan * l.konversi.faktor)} {labelSatuan(l.konversi.satuanStok)}</div>}</TD>
+                  <TD><div className="font-medium text-ink">{l.kode}</div><div className="text-[11.5px] text-ink2">{l.nama}</div><div className="text-[11.5px] tabular-nums text-ink2" data-testid="harga-satuan-item">Harga satuan <Uang value={l.hargaSatuan} /></div>{l.konversi && <div data-testid="konversi-detail" className="text-[11.5px] text-accent">1 {labelSatuan(l.konversi.satuanBeli)} = {teksJumlah(l.konversi.faktor)} {labelSatuan(l.konversi.satuanStok)} · setara {teksJumlah(l.dipesan * l.konversi.faktor)} {labelSatuan(l.konversi.satuanStok)}</div>}</TD>
                   <TD numeric>{teksJumlah(l.dipesan)} {l.satuan}</TD>
                   <TD numeric className={l.progres.belumDatang > 0 && barisLaku ? "font-semibold text-ink" : ""}>{teksJumlah(l.progres.belumDatang)}</TD>
                   <TD numeric className={l.progres.menungguPengganti > 0 ? "font-semibold text-orange" : ""}>{teksJumlah(l.progres.menungguPengganti)}</TD>
                   <TD numeric>{teksJumlah(l.progres.masukStok)}</TD>
+                  <TD numeric className={l.progres.diretur > 0 ? "font-semibold text-orange" : ""} data-testid="kolom-diretur">{teksJumlah(l.progres.diretur ?? 0)}</TD>
+                  <TD numeric data-testid="kolom-diterima-bersih">{teksJumlah(l.progres.diterimaBersih ?? l.progres.masukStok)}</TD>
                   <TD numeric className={l.progres.belumMasukStok > 0 && barisLaku ? "font-semibold text-ink" : ""}>{teksJumlah(l.progres.belumMasukStok)}</TD>
                   <TD numeric>{teksJumlah(l.ditagih)}</TD>
-                  <TD numeric><Uang value={l.hargaSatuan} /></TD>
                   <TD numeric><Uang value={l.nilaiDipesan} /></TD>
                 </TR>
               ))}
@@ -714,6 +715,8 @@ function IsiDetail({ po, segar, onUbahFaktur, onSetujuiFaktur, onTolakFaktur, on
                 <div><dt className="text-ink3">Belum datang</dt><dd className="ml-0 tabular-nums">{teksJumlah(l.progres.belumDatang)}</dd></div>
                 <div><dt className="text-ink3">Menunggu pengganti</dt><dd className="ml-0 tabular-nums">{teksJumlah(l.progres.menungguPengganti)}</dd></div>
                 <div><dt className="text-ink3">Masuk stok</dt><dd className="ml-0 tabular-nums">{teksJumlah(l.progres.masukStok)}</dd></div>
+                <div><dt className="text-ink3">Diretur</dt><dd className="ml-0 tabular-nums">{teksJumlah(l.progres.diretur ?? 0)}</dd></div>
+                <div><dt className="text-ink3">Diterima bersih dari PO</dt><dd className="ml-0 tabular-nums">{teksJumlah(l.progres.diterimaBersih ?? l.progres.masukStok)}</dd></div>
                 <div><dt className="text-ink3">Belum masuk stok</dt><dd className="ml-0 tabular-nums">{teksJumlah(l.progres.belumMasukStok)}</dd></div>
                 <div><dt className="text-ink3">Sudah ditagih</dt><dd className="ml-0 tabular-nums">{teksJumlah(l.ditagih)}</dd></div>
                 <div><dt className="text-ink3">Harga satuan</dt><dd className="ml-0 tabular-nums">{formatUang(l.hargaSatuan)}</dd></div>
@@ -724,6 +727,7 @@ function IsiDetail({ po, segar, onUbahFaktur, onSetujuiFaktur, onTolakFaktur, on
         <div className="mt-2 flex flex-wrap justify-end gap-x-6 gap-y-1 text-[12.5px] text-ink2">
           <span>Nilai PO <strong className="tabular-nums text-ink">{formatUang(po.totalDipesan)}</strong></span>
           <span>Nilai masuk stok <strong className="tabular-nums text-ink">{formatUang(po.totalDiterima)}</strong></span>
+          {po.totalDiretur > 0 && <span data-testid="nilai-diretur">Nilai diretur <strong className="tabular-nums text-ink">−{formatUang(po.totalDiretur)}</strong> · diterima bersih dari PO <strong className="tabular-nums text-ink">{formatUang(po.totalDiterimaBersih)}</strong></span>}
           <span>Nilai sudah ditagih <strong className="tabular-nums text-ink">{formatUang(po.totalDitagih)}</strong></span>
         </div>
         {po.progresDefinisi && <div className="mt-2"><LegendaProgres definisi={po.progresDefinisi} /></div>}
