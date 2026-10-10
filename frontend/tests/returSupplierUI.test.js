@@ -101,15 +101,15 @@ test("asal stok tidak pasti: peringatan server ditampilkan di formulir retur; pe
 
 test("progres stok bruto · retur · bersih dipisah di Finance (tabel + kartu + total) dan Gudang (jejak penerimaan)", () => {
   const po = baca("../src/pages/finance/FinancePurchaseOrders.jsx");
-  assert.match(po, /<TH numeric[^>]*>Diretur<\/TH><TH numeric[^>]*>Stok bersih<\/TH>/);
+  assert.match(po, /<TH numeric[^>]*>Diretur<\/TH><TH numeric[^>]*>Diterima bersih dari PO<\/TH>/);
   assert.match(po, /data-testid="kolom-diretur"/);
-  assert.match(po, /data-testid="kolom-stok-bersih"/);
+  assert.match(po, /data-testid="kolom-diterima-bersih"/);
   assert.match(po, /<dt className="text-ink3">Diretur<\/dt>/);
-  assert.match(po, /<dt className="text-ink3">Stok bersih<\/dt>/);
+  assert.match(po, /<dt className="text-ink3">Diterima bersih dari PO<\/dt>/);
   assert.match(po, /data-testid="nilai-diretur"/);
   const jejak = baca("../src/features/warehouse/components/JejakPemakaianPenerimaan.jsx");
   assert.match(jejak, /data-testid="diretur-supplier"/);
-  assert.match(jejak, /data-testid="stok-bersih"/);
+  assert.match(jejak, /data-testid="diterima-bersih"/);
   assert.match(jejak, /Retur dari Produksi/, "retur dari Produksi dibedakan dari retur ke supplier");
   // Panel kedatangan (Gudang & Finance) menampilkan SEMUA kolom dari definisi server — kolom baru ikut tanpa menghitung ulang
   const panel = baca("../src/features/kedatangan/PanelKedatangan.jsx");
@@ -120,4 +120,16 @@ test("pembatalan Debit Note: tombol nonaktif + alasan jelas untuk non-Admin Keua
   const ws = baca("../src/features/returSupplier/ReturSupplierWorkspace.jsx");
   assert.match(ws, /disabled=\{!admin\} title=\{admin \? undefined : ALASAN_ADMIN\}[\s\S]{0,160}data-testid="aksi-batal-dn"/);
   assert.match(ws, /data-testid="alasan-batal-dn"/);
+});
+
+test("label 'Diterima bersih dari PO' di semua layar; tidak ada klaim 'Stok bersih'; tooltip menegaskan bukan stok tersedia", () => {
+  const berkas = ["../src/pages/finance/FinancePurchaseOrders.jsx", "../src/features/warehouse/components/JejakPemakaianPenerimaan.jsx", "../src/features/kedatangan/PanelKedatangan.jsx", "../src/features/returSupplier/ReturSupplierWorkspace.jsx", "../src/features/returSupplier/returLogic.js"];
+  for (const f of berkas) {
+    const s = baca(f);
+    assert.equal(/stok bersih|stokBersih|stok-bersih/i.test(s), false, `${f}: istilah 'stok bersih' tidak boleh ada (angka ini bukan stok tersedia)`);
+  }
+  const po = baca("../src/pages/finance/FinancePurchaseOrders.jsx");
+  assert.match(po, /title="Masuk stok dikurangi diretur\. Bukan stok tersedia/);
+  assert.match(baca("../src/features/warehouse/components/JejakPemakaianPenerimaan.jsx"), /Bukan stok tersedia/);
+  assert.match(po, /Nilai diretur[\s\S]{0,200}diterima bersih dari PO/);
 });
