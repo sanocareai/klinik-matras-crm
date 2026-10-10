@@ -42,10 +42,10 @@ export function fgErrorMessage(error) {
     case "CUSTODY_NOT_OFFERED": return "Data sudah berubah (mungkin diproses petugas lain) — muat ulang antrean.";
     case "CUSTODY_LOCATION_INVALID": return "Lokasi tidak valid atau sudah nonaktif — pilih lokasi lain.";
     case "CUSTODY_LOCATION_TYPE_INVALID": return "Lokasi ini bukan area barang jadi/dispatch — pilih lokasi yang sesuai.";
-    case "PRODUCTION_RUN_INCONSISTENT": return "Status unit tidak konsisten dengan Production Run (kemungkinan diubah manual di V1). Hubungi Production Lead untuk rekonsiliasi.";
+    case "PRODUCTION_RUN_INCONSISTENT": return "Status unit tidak konsisten dengan pekerjaan produksi (kemungkinan diubah manual di V1). Hubungi Production Lead untuk rekonsiliasi.";
     case "PRODUCTION_RUN_EXCEPTION_OPEN": return "Ada konflik rekonsiliasi yang belum diselesaikan untuk unit ini.";
     case "CUSTODY_RUN_NOT_IN_HANDOFF":
-    case "CUSTODY_RUN_NOT_ACTIVE": return "Production Run tidak lagi berada di tahap handoff — muat ulang antrean.";
+    case "CUSTODY_RUN_NOT_ACTIVE": return "pekerjaan produksi tidak lagi berada di tahap handoff — muat ulang antrean.";
     case "RETURN_PENDING": return "Sisa bahan unit ini belum diterima Gudang — terima retur di Antrean Gudang (tab Retur) dulu, lalu terima barang jadi.";
     case "CUSTODY_WRITER_OFF": return "Penerimaan barang jadi V2 belum aktif untuk unit ini.";
     default: return error?.message || "Gagal memproses keputusan";

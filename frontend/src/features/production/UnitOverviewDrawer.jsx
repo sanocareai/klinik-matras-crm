@@ -54,7 +54,7 @@ function Field({ label, value }) {
 
 const TABS = [
   ["ringkasan", "Ringkasan"], ["pekerjaan", "Pekerjaan"], ["bahan", "Bahan"],
-  ["dokumentasi", "Dokumentasi"], ["qc", "QC & Handoff"], ["aktivitas", "Aktivitas"],
+  ["dokumentasi", "Dokumentasi"], ["qc", "QC & Serah ke Gudang"], ["aktivitas", "Aktivitas"],
 ];
 
 // P12B.5 — unit COHORT V2: perubahan hanya lewat pemilik perintah V2 (tidak ada jalur V1 di drawer ini → tidak ada bypass diagnosis/QC/custody).
@@ -213,7 +213,7 @@ function AdaptationPanel({ d, canApply, onApplied }) {
 }
 
 function Proses({ d, onOpenDiagnosis, canApplyAdaptation = false, onChanged }) {
-  if (!d.production.runId) return <p className="text-[12.5px] text-ink3">Unit belum masuk proses produksi (belum ada Production Run).</p>;
+  if (!d.production.runId) return <p className="text-[12.5px] text-ink3">Unit belum masuk proses produksi (belum ada pekerjaan produksi yang dibuka).</p>;
   return (
     <div className="space-y-3">
       <div className="flex items-center gap-2">
@@ -408,7 +408,7 @@ function QcHandoff({ d }) {
         </div>
       ))}
       <div className="rounded-btn border border-line p-3">
-        <p className="m-0 mb-2 text-[12.5px] font-bold text-ink">Handoff & Kesiapan Kirim</p>
+        <p className="m-0 mb-2 text-[12.5px] font-bold text-ink">Serah ke Gudang & Kesiapan Kirim</p>
         <dl className="m-0 grid grid-cols-2 gap-2 text-[12px]">
           <Field label="Status Unit" value={statusOf({ status: d.deliveryReadiness.unitStatus }).label} />
           <Field label="Sudah Siap Kirim" value={d.deliveryReadiness.readyForDelivery ? "Ya" : "Belum"} />

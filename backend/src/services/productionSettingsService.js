@@ -158,6 +158,30 @@ export async function setServiceMapping(prisma, { priceItemId, serviceId = null,
  * Layanan produksi unit untuk Diagnosis TANPA meminta operator memilih. Urutan: pemetaan kanonis (item order -> price_items.production_service_id; tepat SATU layanan produksi
  * berbeda) > layanan yang SUDAH tercatat pada unit (data historis) > kebutuhan mapping (409). Nama layanan TIDAK PERNAH dicocokkan/ditebak.
  */
+/**
+ * Penjelasan BACA-SAJA mengapa rute teknis unit sudah/belum bisa ditentukan dari item order Sales (tanpa melempar, tanpa menulis, tanpa menebak).
+ *  { ok: true, source: "MAPPING"|"UNIT", serviceId } | { ok: false, code, message, fixBy: "ADMIN"|"SALES", salesServices[] }
+ * fixBy: ADMIN = pemetaan Layanan Sales -> layanan produksi (Pengaturan Produksi › Alur Kerja); SALES = order tidak punya item layanan yang bisa dibaca.
+ */
+export async function explainProductionServiceForUnit(client, unit) {
+  const items = await client.orderItem.findMany({ where: { orderId: unit.orderId }, select: { layananName: true, priceItem: { select: { productionServiceId: true } } } });
+  const names = [...new Set(items.map((i) => i.layananName).filter(Boolean))];
+  const mapped = [...new Set(items.map((i) => i.priceItem?.productionServiceId).filter(Boolean))];
+  if (mapped.length === 1) return { ok: true, source: "MAPPING", serviceId: mapped[0], salesServices: names };
+  if (mapped.length > 1) {
+    return { ok: false, code: "MAPPING_AMBIGUOUS", fixBy: "ADMIN", salesServices: names,
+      message: `Layanan Sales (${names.join(", ")}) memetakan lebih dari satu rute pengerjaan. Admin perlu memperjelas pemetaan di Pengaturan Produksi › Alur Kerja.` };
+  }
+  if (unit.serviceId) return { ok: true, source: "UNIT", serviceId: unit.serviceId, salesServices: names };
+  if (names.length === 0) {
+    return { ok: false, code: "NO_SALES_SERVICE", fixBy: "SALES", salesServices: [],
+      message: "Order ini belum punya item layanan dari Sales, jadi rute pengerjaan belum bisa ditentukan. Sales perlu melengkapi item layanan pada order." };
+  }
+  const unmapped = [...new Set(items.filter((i) => !i.priceItem?.productionServiceId).map((i) => i.layananName).filter(Boolean))];
+  return { ok: false, code: "MAPPING_NEEDED", fixBy: "ADMIN", salesServices: unmapped.length ? unmapped : names,
+    message: `Layanan Sales (${(unmapped.length ? unmapped : names).join(", ")}) belum dipetakan ke rute pengerjaan. Admin perlu memetakannya di Pengaturan Produksi › Alur Kerja.` };
+}
+
 export async function resolveProductionServiceForUnit(client, unit) {
   const items = await client.orderItem.findMany({ where: { orderId: unit.orderId }, select: { layananName: true, priceItemId: true, priceItem: { select: { productionServiceId: true, name: true } } } });
   const mapped = [...new Set(items.map((i) => i.priceItem?.productionServiceId).filter(Boolean))];

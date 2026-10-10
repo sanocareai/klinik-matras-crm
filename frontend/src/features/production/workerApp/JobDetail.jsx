@@ -314,7 +314,7 @@ function V1Detail({ job, roles, onChanged, refreshV1Unit, fetchV1Queue, onHandof
                       </li>
                     ))}
                   </ol>
-                ) : <p className="m-0 text-[13.5px] text-ink3">Tahap pengerjaan belum tersusun — rute pengerjaan belum ditentukan.</p>}
+                ) : <p className="m-0 text-[13.5px] text-ink3">Tahap pengerjaan belum tersusun — rute pengerjaan belum bisa ditentukan dari Layanan Sales (Admin memetakan layanan, atau Sales melengkapi item order).</p>}
               </Section>
               <Section title="Bahan" testid="section-bahan"><V1MaterialsPanel unitId={job.unitId} roles={roles} onChanged={onChanged} /></Section>
               <Section title="Dokumentasi" testid="section-dokumentasi">

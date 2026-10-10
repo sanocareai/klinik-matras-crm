@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { api } from "@/api.js";
 import { useOnline } from "@/components/StandaloneShell.jsx";
-import { MaterialLines } from "@/features/production/components/StepForm.jsx";
+import MaterialRowsEditor from "@/features/production/components/MaterialRowsEditor.jsx";
+import { fromRecord, rowsPayload, validateMaterialRows } from "@/features/production/materialRows.js";
 import { buildMaterialRecordBody, createIntentKeys, friendlyBuildError, friendlyError, isRetryableError, productFlowOf, validateMaterialRecord } from "@/features/production/experience.js";
 import { submitState } from "./workerAppModel.js";
 import { OfflineNote, SheetHeader } from "./workerSheets.jsx";
@@ -24,16 +25,25 @@ export default function MaterialRecordSheet({ card, onClose, onSubmitted }) {
     racikanFondasi: record?.racikan?.fondasi || "", racikanLapisan: record?.racikan?.lapisan || "", note: record?.note || "",
     materials: (record?.materials || []).map((m) => ({ materialId: m.materialId, qty: String(m.qty) })),
   }));
+  // Baris pemakaian (pola "+ Tambah baris"): bahan HANYA dari yang diserahkan Gudang; baris kosong terakhir tidak dikirim.
+  const [rows, setRows] = useState(() => fromRecord(record?.materials || []));
+  const [rowErrors, setRowErrors] = useState({});
+  const issuedMap = useMemo(() => new Map(issued.map((m) => [m.materialId, m])), [issued]);
+  const options = useMemo(() => issued.map((m) => ({ id: m.materialId, label: `${m.name || m.code}${m.code ? ` (${m.code})` : ""}`, unit: m.uom || null, hint: `Diserahkan ${m.qty} ${String(m.uom || "").toLowerCase()}`.trim() })), [issued]);
+  const availableOf = (id) => { const m = issuedMap.get(id); return m ? Number(m.qty) : null; };
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [canRetry, setCanRetry] = useState(false);
-  useEffect(() => { setError(""); setCanRetry(false); }, [form]);
+  useEffect(() => { setError(""); setCanRetry(false); }, [form, rows]);
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
   const gate = submitState({ online, busy });
-  const body = useMemo(() => buildMaterialRecordBody(form, { flow, revision: card.revision }), [form, flow, card.revision]);
+  const formWithRows = useMemo(() => ({ ...form, materials: rowsPayload(rows).map((l) => ({ materialId: l.materialId, qty: String(l.qty) })) }), [form, rows]);
+  const body = useMemo(() => buildMaterialRecordBody(formWithRows, { flow, revision: card.revision }), [formWithRows, flow, card.revision]);
 
   async function submit() {
-    const invalid = validateMaterialRecord(form, { flow, issued });
+    const v = validateMaterialRows(rows, { requireOne: false, availableOf, labelOf: (id) => issuedMap.get(id)?.name });
+    if (v.error) { setRowErrors(v.rowErrors); setError(v.error); return; }
+    const invalid = validateMaterialRecord(formWithRows, { flow, issued });
     if (invalid) { setError(invalid); return; }
     setBusy(true); setError(""); setCanRetry(false);
     const key = intentKeysMaterial.keyFor(card.runId, "materials", card.revision);
@@ -65,7 +75,8 @@ export default function MaterialRecordSheet({ card, onClose, onSubmitted }) {
         )}
         <div className="space-y-2" data-testid="material-usage-fields">
           <p className={labelCls}>Bahan dari Gudang yang dipakai</p>
-          <MaterialLines issued={issued} value={form.materials} onChange={(materials) => set({ materials })} emptyText="Belum ada bahan yang diserahkan Gudang untuk unit ini." />
+          <MaterialRowsEditor rows={rows} onChange={(r) => { setRowErrors({}); setRows(r); }} options={options} errors={rowErrors} testid="usage-rows" addLabel="Tambah baris" qtyLabel="Jumlah dipakai"
+            emptyOptionsText="Belum ada bahan yang diserahkan Gudang untuk unit ini." />
         </div>
         <div><label htmlFor="mat-note" className={labelCls}>Catatan (opsional)</label>
           <textarea id="mat-note" rows={2} className={field} value={form.note} onChange={(e) => set({ note: e.target.value })} /></div>

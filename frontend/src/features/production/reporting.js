@@ -123,7 +123,7 @@ export function coverageChips(doc) {
   const c = doc?.coverage; if (!c) return [];
   return [
     { key: "cohort", label: "Unit dalam rencana produksi", value: c.cohortUnits },
-    { key: "runs", label: "Run dalam rencana produksi", value: c.runsInCohort },
+    { key: "runs", label: "Pekerjaan dalam rencana produksi", value: c.runsInCohort },
     { key: "filtered", label: "Setelah filter", value: c.runsAfterFilters },
     { key: "total", label: "Total unit berencana produksi di sistem", value: c.totalV2Units },
     { key: "period", label: "Periode", value: `${c.period.from} s/d ${c.period.to} (${c.period.days} hari)` },

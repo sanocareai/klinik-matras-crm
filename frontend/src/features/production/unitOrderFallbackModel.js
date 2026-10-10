@@ -8,7 +8,7 @@ export const V2_SECTIONS_UNAVAILABLE = Object.freeze([
   ["Proses", "diagnosis dan tahap kerja"],
   ["Bahan", "reservasi, penyerahan, dan retur bahan"],
   ["Dokumentasi", "12 kategori foto dokumentasi"],
-  ["QC & Handoff", "putusan QC dan serah-terima barang jadi"],
+  ["QC & Serah ke Gudang", "putusan QC dan serah-terima barang jadi"],
   ["Aktivitas", "jejak aktivitas pekerjaan"],
 ]);
 

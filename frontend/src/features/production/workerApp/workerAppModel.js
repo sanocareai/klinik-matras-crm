@@ -164,7 +164,7 @@ export function primaryActionV1(timeline, roles = [], { state = null } = {}) {
   if (!canStageV1(roles)) return { kind: "NONE", reason: "Hanya tim produksi yang dapat menjalankan tahap." };
   const label = st.current?.stage?.labelId || st.first?.labelId || null;
   switch (st.kind) {
-    case "NEEDS_SERVICE": return { kind: "NONE", reason: "Rute pengerjaan belum ditentukan — menunggu Production Lead." };
+    case "NEEDS_SERVICE": return { kind: "NONE", reason: "Rute pengerjaan belum bisa ditentukan dari Layanan Sales — menunggu Admin (pemetaan layanan) atau Sales (item order)." };
     case "ALL_DONE": return { kind: "NONE", reason: "Seluruh tahap selesai." };
     case "NOT_STARTED": case "READY": return { kind: "START", label: label ? `Mulai ${label}` : "Mulai tahap", stage: st.current?.stage || st.first };
     case "PAUSED": return { kind: "RESUME_WORK", label: "Lanjutkan Pekerjaan", stage: st.current.stage };

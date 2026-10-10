@@ -31,6 +31,7 @@ import { loadOpenComplaintsByUnit } from "../services/productionComplaints.js";
 import { prisma } from "../db.js";
 import { signUnitPhotoUrlsBulk } from "./productionUnitPhoto.js";
 import { PKR_ORDER_SELECT, rujukanPkrDariOrder } from "../services/pkrProduksiGuard.js";
+import { explainProductionServiceForUnit } from "../services/productionSettingsService.js";
 
 export const unitRouter = express.Router();
 unitRouter.use(requireAuth);
@@ -201,15 +202,20 @@ unitRouter.post("/:id/stages/:stageId/qc", requirePermission(P.QC_WRITE), async 
 // customer untuk PERUBAHAN harga masih pekerjaan terpisah, belum dibangun.
 unitRouter.patch("/:id/service", requirePermission(P.UNIT_ROUTING_WRITE), async (req, res) => {
   try {
-    const { serviceId, expectedServiceId } = req.body;
-    if (!serviceId) return res.status(400).json({ error: "serviceId wajib diisi" });
+    const { expectedServiceId } = req.body;
+    let { serviceId } = req.body;
+    const existing = await prisma.unit.findUnique({ where: { id: req.params.id }, select: { id: true, orderId: true, serviceId: true } });
+    if (!existing) return res.status(404).json({ error: "Unit tidak ditemukan" });
+    // Tanpa serviceId: rute diturunkan dari item order Sales lewat pemetaan Admin (TIDAK ada pilihan kedua dan tidak ada tebakan). Bila tidak cukup, 409 + alasan + siapa yang memperbaiki.
+    if (!serviceId) {
+      const why = await explainProductionServiceForUnit(prisma, existing);
+      if (!why.ok) return res.status(409).json({ error: why.message, code: "SERVICE_NOT_DERIVABLE", reason: why.code, fixBy: why.fixBy, salesServices: why.salesServices });
+      serviceId = why.serviceId;
+    }
     if (!UUID_RE.test(String(serviceId))) return res.status(400).json({ error: "serviceId tidak valid", code: "ID_INVALID" });
 
     const service = await prisma.serviceCatalog.findUnique({ where: { id: serviceId } });
     if (!service) return res.status(404).json({ error: "Layanan tidak ditemukan di katalog" });
-
-    const existing = await prisma.unit.findUnique({ where: { id: req.params.id }, select: { id: true } });
-    if (!existing) return res.status(404).json({ error: "Unit tidak ditemukan" });
 
     // Update + jejak aktivitas dalam SATU transaksi (Production Core Slice 1)
     // — sebelum ini penetapan/perubahan layanan unit sama sekali tidak
@@ -569,6 +575,8 @@ unitRouter.get("/:id/timeline", requirePermission(P.UNIT_READ), async (req, res)
       salesServices,
       path: timeline, qcFitTests: unit.qcFitTests,
       needsService: !unit.serviceId,
+      // Mengapa rute pengerjaan belum bisa ditentukan dari Sales + siapa yang memperbaiki (null bila rute sudah ada). Baca-saja, tidak menebak.
+      serviceDerivation: unit.serviceId ? null : await explainProductionServiceForUnit(prisma, { orderId: unit.orderId, serviceId: unit.serviceId }),
       productionStatus,
       productionStatusReason: describeProductionStatus(productionStatus, lastLogForCurrentStage, activeBlocker),
       // Operasional (Production Core Slice 2H — bagian "Unit Detail").

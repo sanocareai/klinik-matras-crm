@@ -188,7 +188,7 @@ export function ScheduleModal({ target, board, date, refs, onClose, onDone, onRe
       if (plan) result = await api.scheduleProductionV2Plan(plan.id, { ...body, expectedRevision: plan.revision });
       else result = await api.planProductionV2Unit(target.onboardUnitId ? { unitId: target.onboardUnitId, ...body } : { runId: target.runId, ...body }); // onboarding: Run dibuka di transaksi yang sama
       // Argumen ke-2 (P12A.3): info penempatan agar pemanggil bisa menetapkan POSISI AWAL menurut prioritas (bukan auto-reorder).
-      onDone(unschedule ? `${unitCode} dikeluarkan dari papan.` : `${unitCode} dijadwalkan ke ${form.stationCode.replace("TABLE_", "Meja ")}${result?.onboarded ? (result.origin === "WORKSHOP_BORN" ? " — Run produksi dibuka (unit dibuat di workshop)" : " — Run produksi dibuka (unit belum tiba di workshop; konfirmasi \"Unit Tiba\" tetap diperlukan)") : ""}.`,
+      onDone(unschedule ? `${unitCode} dikeluarkan dari papan.` : `${unitCode} dijadwalkan ke ${form.stationCode.replace("TABLE_", "Meja ")}${result?.onboarded ? (result.origin === "WORKSHOP_BORN" ? " — Pekerjaan produksi dibuka (unit dibuat di workshop)" : " — Pekerjaan produksi dibuka (unit belum tiba di workshop; konfirmasi \"Unit Tiba\" tetap diperlukan)") : ""}.`,
         unschedule ? null : { planId: plan?.id ?? result?.planId ?? result?.id ?? null, stationCode: form.stationCode, productionDate: form.productionDate, priority: Math.max(Number(form.priority), rankOfView(target) >= 3 ? 3 : 0) }); // peringkat urutan: Komplain tetap di atas
     } catch (e) {
       setError(friendlyError(e));
@@ -206,7 +206,7 @@ export function ScheduleModal({ target, board, date, refs, onClose, onDone, onRe
 
   const refsLoading = refs.loaded === false;
   return (
-    <Modal open onOpenChange={(v) => !v && onClose()} title={plan ? `Jadwal ${unitCode}` : `Rencanakan ${unitCode}`} description={target.onboardUnitId ? "Tanggal produksi, Meja, PIC, dan prioritas. Menyimpan akan membuka Run produksi unit ini (belum tiba) lalu menjadwalkannya — satu langkah." : "Tanggal produksi, meja bongkar, dan PIC. Kapasitas meja dijaga server."}
+    <Modal open onOpenChange={(v) => !v && onClose()} title={plan ? `Jadwal ${unitCode}` : `Rencanakan ${unitCode}`} description={target.onboardUnitId ? "Tanggal produksi, Meja, PIC, dan prioritas. Menyimpan akan membuka pekerjaan produksi unit ini (belum tiba) lalu menjadwalkannya — satu langkah." : "Tanggal produksi, meja bongkar, dan PIC. Kapasitas meja dijaga server."}
       footer={
         <div className="flex w-full flex-wrap justify-end gap-2">
           {plan?.stationCode && <Button variant="neutral" data-mutates disabled={busy} onClick={() => submit(true)}>Keluarkan dari papan</Button>}

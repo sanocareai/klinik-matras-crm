@@ -78,7 +78,7 @@ test("fallback unit non-V2 di drawer yang sama: fakta order/unit asli + penjelas
   assert.equal(facts["Order"], "RES-1"); assert.equal(facts["Pelanggan"], "Vita"); assert.match(facts["Kasur"], /King Koil/);
   // layanan, prioritas, dan target TIDAK diduplikasi di fakta — hanya ada di UnitV1Actions
   for (const k of ["Layanan", "Layanan Teknis", "Prioritas", "Target selesai"]) assert.equal(facts[k], undefined, `${k} tidak diduplikasi di fakta`);
-  assert.deepEqual(V2_SECTIONS_UNAVAILABLE.map(([k]) => k), ["Proses", "Bahan", "Dokumentasi", "QC & Handoff", "Aktivitas"]);
+  assert.deepEqual(V2_SECTIONS_UNAVAILABLE.map(([k]) => k), ["Proses", "Bahan", "Dokumentasi", "QC & Serah ke Gudang", "Aktivitas"]);
   assert.ok(!/V1|V2/.test(JSON.stringify(V2_SECTIONS_UNAVAILABLE)), "Slice 1: tanpa istilah V1/V2 di penjelasan");
   const comp = strip(src("features", "production", "UnitOrderFallback.jsx"));
   assert.match(comp, /belum punya rencana di papan produksi/); assert.match(comp, /data-testid="unit-v2-notice"/);

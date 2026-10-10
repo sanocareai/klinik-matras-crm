@@ -23,15 +23,12 @@ const Msg = ({ kind, children, testid }) => (children ? <p role={kind === "error
 export default function UnitV1Actions({ data, roles, onData, onChanged }) {
   const unit = data.unit;
   const canRoute = canRouteV1(roles); const canResolve = canResolveBlockerV1(roles);
-  const [services, setServices] = useState([]);
-  const [serviceId, setServiceId] = useState("");
   const [draft, setDraft] = useState(() => draftOf(unit));
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState({ section: "", kind: "", text: "" });
 
   // Draf mengikuti data terbaru dari server (setelah simpan / muat ulang karena konflik).
-  useEffect(() => { setDraft(draftOf(data.unit)); setServiceId(""); }, [data.unit.id, data.unit.priority, data.unit.productionDueAt, data.unit.serviceId]);
-  useEffect(() => { if (canRoute) api.getServiceCatalog().then((d) => setServices(d.services || [])).catch(() => {}); }, [canRoute]);
+  useEffect(() => { setDraft(draftOf(data.unit)); }, [data.unit.id, data.unit.priority, data.unit.productionDueAt, data.unit.serviceId]);
 
   // Dua lapis konflik: (1) pra-cek ramah di klien (langsung memberi tahu bidang apa yang berubah), (2) kunci ATOMIK di server — nilai yang dilihat klien dikirim sebagai
   // expected dan server menulis hanya bila DB masih sama (409 UNIT_CONFLICT bila tidak). Lapis 2 yang menjadi penegak; lapis 1 hanya kenyamanan.
@@ -50,7 +47,8 @@ export default function UnitV1Actions({ data, roles, onData, onChanged }) {
     } finally { setBusy(""); }
   }
 
-  const saveService = () => run("service", ["service"], () => api.setUnitService(unit.id, serviceId, unit.serviceId ?? null), "Rute pengerjaan tersimpan.");
+  // Tanpa pilihan: server menurunkan rute dari item order Sales (pemetaan Admin). Bila tidak cukup, alasan + siapa yang memperbaiki tampil di bawah.
+  const saveService = () => run("service", ["service"], () => api.setUnitService(unit.id, null, unit.serviceId ?? null), "Rute pengerjaan ditentukan dari Layanan Sales.");
   const patch = productionPatchOf(draft, unit);
   const saveProduction = () => run("production", ["priority", "due"], () => api.updateUnitProduction(unit.id, { ...patch, expected: { priority: unit.priority || "NORMAL", productionDueAt: unit.productionDueAt || null } }), "Prioritas & target tersimpan.");
   const m = (s) => (msg.section === s ? msg : { kind: "", text: "" });
@@ -65,14 +63,17 @@ export default function UnitV1Actions({ data, roles, onData, onChanged }) {
         {/* Layanan teknis TIDAK ditampilkan dan tidak diubah (data historis dipertahankan). Hanya bila rute pengerjaan BELUM ada, Production Lead boleh menentukannya agar tahap bisa dimulai (aksi manusia, bukan tebakan). */}
         {!unit.service && (canRoute ? (
           <div className="mt-2 space-y-1.5" data-testid="v1-route-needed">
-            <p className="m-0 text-[12px] text-orange">Rute pengerjaan belum ditentukan — pilih jenis pengerjaan agar tahap bisa dimulai.</p>
-            <div className="flex flex-wrap items-center gap-2">
-              <select aria-label="Pilih jenis pengerjaan" data-testid="v1-service-select" className={`${SELECT_CLS} min-w-[220px] flex-1`} value={serviceId} onChange={(e) => setServiceId(e.target.value)}>
-                <option value="">Pilih jenis pengerjaan…</option>
-                {services.map((s) => <option key={s.id} value={s.id}>{s.labelId} ({SERVICE_LINE_REAL[s.serviceLine]?.label || s.serviceLine})</option>)}
-              </select>
-              <Button size="sm" data-testid="v1-service-save" onClick={saveService} disabled={!serviceId || !!busy}>{busy === "service" && <Loader2 size={14} className="animate-spin" />} Tetapkan</Button>
-            </div>
+            {data.serviceDerivation?.ok ? (
+              <>
+                <p className="m-0 text-[12px] text-ink2">Rute pengerjaan belum tersimpan, tetapi dapat ditentukan dari Layanan Sales order ini.</p>
+                <Button size="sm" data-testid="v1-service-save" onClick={saveService} disabled={!!busy}>{busy === "service" && <Loader2 size={14} className="animate-spin" />} Tentukan rute dari Layanan Sales</Button>
+              </>
+            ) : (
+              <p data-testid="v1-route-reason" className="m-0 rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-orange">
+                {data.serviceDerivation?.message || "Rute pengerjaan belum bisa ditentukan dari Layanan Sales order ini."}
+                <span className="mt-0.5 block font-semibold">Yang memperbaiki: {data.serviceDerivation?.fixBy === "SALES" ? "Sales (melengkapi item order)" : "Admin (pemetaan layanan di Pengaturan Produksi)"}.</span>
+              </p>
+            )}
           </div>
         ) : <p className="m-0 mt-2 text-[11.5px] text-ink3">Rute pengerjaan ditentukan Production Lead.</p>)}
         <Msg kind={m("service").kind} testid="v1-service-msg">{m("service").text}</Msg>

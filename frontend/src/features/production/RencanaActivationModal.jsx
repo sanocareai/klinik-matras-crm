@@ -32,7 +32,7 @@ export default function RencanaActivationModal({ onClose }) {
         {!data && !error && <p className="text-[12.5px] text-ink3">Memuat…</p>}
         {data && (
           <>
-            <p className="m-0 text-[12.5px] text-ink2" data-testid="activation-cohort">Cohort aktif sekarang: <b>{data.cohort.writer.size}</b> unit (writer) · <b>{data.cohort.reader.size}</b> unit (reader). {data.cohort.writer.diagnostic || data.cohort.reader.diagnostic ? "Konfigurasi cohort tidak sah — hubungi tim sistem." : "Menambah unit TIDAK terjadi otomatis."}</p>
+            <p className="m-0 text-[12.5px] text-ink2" data-testid="activation-cohort">Unit yang sudah diaktifkan untuk Rencana Produksi: <b>{data.cohort.writer.size}</b> unit (writer) · <b>{data.cohort.reader.size}</b> unit (reader). {data.cohort.writer.diagnostic || data.cohort.reader.diagnostic ? "Konfigurasi cohort tidak sah — hubungi tim sistem." : "Menambah unit TIDAK terjadi otomatis."}</p>
             <div className="flex flex-wrap gap-1.5" data-testid="activation-summary">
               {Object.entries(data.summary.byAction).map(([k, n]) => <Badge key={k} variant={ACTION_LABEL[k]?.[1] || "neutral"}>{ACTION_LABEL[k]?.[0] || k}: {n}</Badge>)}
             </div>
@@ -56,8 +56,8 @@ export default function RencanaActivationModal({ onClose }) {
               <p className="m-0 text-[12.5px] font-semibold text-ink">Cara mengaktifkan (Owner / tim sistem)</p>
               <ol className="m-0 list-decimal space-y-0.5 pl-5 text-[12px] text-ink2">
                 <li>Pastikan backup database terbaru ada.</li>
-                <li>Jalankan <b>dry-run</b> dulu (tanpa <code>--apply</code>) untuk melihat perubahan cohort.</li>
-                <li>Jalankan dengan <code>--apply</code> — unit menjadi dapat dijadwalkan; Run produksi (belum tiba) baru dibuka saat tombol Jadwalkan ditekan.</li>
+                <li>Jalankan <b>dry-run</b> dulu (tanpa <code>--apply</code>) untuk melihat perubahan daftar unit aktif.</li>
+                <li>Jalankan dengan <code>--apply</code> — unit menjadi dapat dijadwalkan; pekerjaan produksi (belum tiba) baru dibuka saat tombol Jadwalkan ditekan.</li>
               </ol>
               {cmd ? <pre className="m-0 mt-1 overflow-x-auto whitespace-pre-wrap rounded-btn bg-surface p-2 text-[11.5px] text-ink" data-testid="activation-command">{cmd}</pre> : <p className="m-0 text-[12px] text-ink3">Tidak ada unit yang menunggu aktivasi saat ini.</p>}
             </div>

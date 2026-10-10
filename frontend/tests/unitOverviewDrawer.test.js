@@ -14,9 +14,9 @@ const DRAWER = fs.readFileSync(path.join(__dirname, "..", "src", "features", "pr
 const STATUS_PRODUKSI = fs.readFileSync(path.join(__dirname, "..", "src", "pages", "bengkel", "ProductionPlannerV2.jsx"), "utf8");
 const RENCANA_PRODUKSI = fs.readFileSync(path.join(__dirname, "..", "src", "pages", "bengkel", "ProductionRencanaWorkspace.jsx"), "utf8");
 
-test("Unit 360: 6 bagian wajib (Ringkasan, Pekerjaan, Bahan, Dokumentasi, QC & Handoff, Aktivitas) — tab 'Kerja V1' dihapus (Slice 1)", () => {
+test("Unit 360: 6 bagian wajib (Ringkasan, Pekerjaan, Bahan, Dokumentasi, QC & Serah ke Gudang, Aktivitas) — tab 'Kerja V1' dihapus (Slice 1)", () => {
   assert.ok(!DRAWER.includes("Kerja V1"), "tab Kerja V1 hilang");
-  for (const label of ["Ringkasan", "Pekerjaan", "Bahan", "Dokumentasi", "QC & Handoff", "Aktivitas"]) {
+  for (const label of ["Ringkasan", "Pekerjaan", "Bahan", "Dokumentasi", "QC & Serah ke Gudang", "Aktivitas"]) {
     assert.ok(DRAWER.includes(`"${label}"`), `bagian "${label}" tidak ditemukan di Unit 360`);
   }
 });

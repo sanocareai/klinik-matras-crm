@@ -59,8 +59,8 @@ export const CONFLICT_KIND_LABEL = Object.freeze({
 
 export const RESOLUTION_LABEL = Object.freeze({
   RESTORE_UNIT_STATUS: { label: "Pulihkan status unit", hint: "Kembalikan unit ke status Diproses; rencana produksi dilanjutkan." },
-  CANCEL_RUN: { label: "Batalkan Production Run", hint: "Run ditutup sebagai dibatalkan; status unit tidak diubah." },
-  ACCEPT_OVERRIDE: { label: "Terima override (tanpa QC/custody)", hint: "Run ditutup TANPA bukti QC/custody. Hanya ADMIN/OWNER (QC_WAIVE)." },
+  CANCEL_RUN: { label: "Batalkan pekerjaan produksi", hint: "Pekerjaan ditutup sebagai dibatalkan; status unit tidak diubah." },
+  ACCEPT_OVERRIDE: { label: "Terima override (tanpa QC/custody)", hint: "Pekerjaan ditutup TANPA bukti QC/serah-terima. Hanya Admin/Owner." },
   NO_LONGER_APPLICABLE: { label: "Tidak berlaku lagi", hint: "Status unit sudah konsisten; tutup catatan konflik." },
 });
 
@@ -178,7 +178,7 @@ export function qcErrorMessage(error) {
     case "QC_REVISION_CONFLICT":
     case "QC_EXCEPTION_REVISION_CONFLICT": return "Data sudah berubah (mungkin diproses petugas lain) — muat ulang detail.";
     case "QC_NOT_AWAITING": return "Run ini tidak sedang menunggu QC (mungkin sudah diputuskan petugas lain).";
-    case "PRODUCTION_RUN_INCONSISTENT": return "Status unit tidak konsisten dengan Production Run (kemungkinan diubah manual di luar rencana produksi). Catat konflik lalu selesaikan lewat rekonsiliasi.";
+    case "PRODUCTION_RUN_INCONSISTENT": return "Status unit tidak konsisten dengan pekerjaan produksi (kemungkinan diubah manual di luar rencana produksi). Catat konflik lalu selesaikan lewat rekonsiliasi.";
     case "PRODUCTION_RUN_EXCEPTION_OPEN": return "Ada konflik rekonsiliasi yang belum diselesaikan untuk run ini.";
     case "QC_WAIVE_FORBIDDEN": return "Hanya pihak berwenang (ADMIN/OWNER) yang boleh mem-waive QC atau menerima override.";
     case "QC_WRITE_REQUIRED": return "Anda tidak berwenang memutuskan hasil QC.";
@@ -188,7 +188,7 @@ export function qcErrorMessage(error) {
     case "QC_REWORK_ALREADY_STARTED": return "Rework sudah dimulai; bahan tambahan tidak dapat diajukan lagi.";
     case "QC_NO_REJECTION": return "Tidak ada penolakan Gudang yang perlu ditindaklanjuti untuk run ini.";
     case "QC_RESOLUTION_NOT_ALLOWED": return error.message || "Resolusi ini tidak berlaku untuk konflik tersebut.";
-    case "QC_RUN_CONSISTENT": return "Status unit sudah konsisten dengan Production Run — tidak ada konflik yang perlu dicatat.";
+    case "QC_RUN_CONSISTENT": return "Status unit sudah konsisten dengan pekerjaan produksi — tidak ada konflik yang perlu dicatat.";
     default: return error?.message || "Gagal memproses perintah";
   }
 }

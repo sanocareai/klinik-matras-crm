@@ -60,7 +60,7 @@ export default function UnitV1Stage({ data, roles, onData, onChanged }) {
 
   let body;
   if (!canStage && !canQc) body = <p className="m-0 text-[12px] text-ink3">Hanya tim produksi/QC yang dapat menjalankan tahap.</p>;
-  else if (st.kind === "NEEDS_SERVICE") body = <p className="m-0 text-[12px] text-ink3">Rute pengerjaan belum ditentukan — minta Production Lead menentukannya dulu sebelum pekerjaan dimulai.</p>;
+  else if (st.kind === "NEEDS_SERVICE") body = <p className="m-0 text-[12px] text-ink3">Rute pengerjaan belum ditentukan dari Layanan Sales order ini — Admin memetakan layanan di Pengaturan Produksi (atau Sales melengkapi item order) sebelum pekerjaan dimulai.</p>;
   else if (st.kind === "ALL_DONE") body = <p className="m-0 text-[12.5px] text-green">Seluruh tahap selesai.</p>;
   else if (!canStage) body = <p className="m-0 text-[12px] text-ink3">Tahap saat ini: <b>{label || st.first?.labelId}</b>. Hanya tim produksi/QC yang dapat menjalankannya.</p>;
   else if (st.kind === "NOT_STARTED") body = <Button size="sm" className="w-full" data-testid="v1-stage-start" disabled={busy} onClick={() => run(() => api.startUnitStage(unit.id), "Tahap dimulai.")}>{busy ? <Loader2 size={14} className="animate-spin" /> : <PlayCircle size={14} />} Mulai {st.first?.labelId}</Button>;

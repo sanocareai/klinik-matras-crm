@@ -217,7 +217,7 @@ function ConflictPanel({ run, busy, onOpen, onResolve, onError }) {
   const allowed = exception?.allowedResolutions || [];
   return (
     <section aria-label="Konflik status" className="space-y-2 rounded-card border border-red p-3">
-      <h3 className="flex items-center gap-1 text-[12.5px] font-bold text-red"><AlertTriangle size={14} /> Konflik status unit vs Production Run</h3>
+      <h3 className="flex items-center gap-1 text-[12.5px] font-bold text-red"><AlertTriangle size={14} /> Konflik status unit vs pekerjaan produksi</h3>
       <p className="text-[12px] text-ink2">{conflictKindLabel(exception?.kind || run.conflict?.detected?.kind)}. Semua perintah QC/produksi untuk run ini ditolak sampai konflik diselesaikan — sistem tidak menebak atau menimpa status unit.</p>
       {!exception ? (
         <Button size="sm" data-mutates onClick={onOpen} disabled={busy}>Catat Konflik</Button>
@@ -413,7 +413,7 @@ function RunDetailModal({ runId, onClose, onChanged }) {
 
             {run.handoffs?.length > 0 && (
               <section aria-label="Riwayat handoff barang jadi">
-                <h3 className="mb-1 text-[12.5px] font-bold text-ink">Riwayat Handoff Barang Jadi</h3>
+                <h3 className="mb-1 text-[12.5px] font-bold text-ink">Riwayat Serah Barang Jadi ke Gudang</h3>
                 <ul className="space-y-1">{run.handoffs.map((h) => <li key={h.id} className="rounded-btn bg-inset px-3 py-2 text-[12px] text-ink2">{h.status} · {waktu(h.offeredAt)}{h.location ? ` · ${h.location.code}` : ""}{h.reason ? ` — ${h.reason}` : ""}</li>)}</ul>
               </section>
             )}

@@ -66,7 +66,10 @@ test("label aksi & teks tunggu dalam Bahasa Indonesia", () => {
   assert.equal(actionLabel({ stepNo: 9, action: "HANDOFF" }), "Kirim ke Corner");
   assert.equal(actionLabel({ stepNo: 6, action: "START" }, { stageLabel: "Upgrade Fondasi" }), "Mulai Upgrade Fondasi");
   assert.equal(waitCopy({ wait: "AWAITING_QC" }).title, "Menunggu QC");
-  assert.match(waitCopy({ wait: "SERVICE_NOT_SET" }).text, /Production Lead/);
+  // Layanan = item order Sales: tidak ada pilihan kedua; pesan menyebut siapa yang memperbaiki data (Admin pemetaan / Sales item order).
+  assert.match(waitCopy({ wait: "SERVICE_NOT_SET" }).text, /Layanan Sales/);
+  assert.match(waitCopy({ wait: "SERVICE_NOT_SET" }).text, /Admin/); assert.match(waitCopy({ wait: "SERVICE_NOT_SET" }).text, /Sales/);
+  assert.doesNotMatch(waitCopy({ wait: "SERVICE_NOT_SET" }).text, /menetapkan layanan unit/);
   assert.match(waitCopy({ wait: "DIAGNOSIS_MANUAL_UNMAPPED" }).text, /memetakan bahan manual/);
   assert.match(waitCopy({ wait: "DIAGNOSIS_BOM_EMPTY" }).text, /Revisi Diagnosis/);
 });

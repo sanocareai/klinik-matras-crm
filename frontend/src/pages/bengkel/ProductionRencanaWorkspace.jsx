@@ -13,7 +13,9 @@ import { Modal } from "@/components/ui/modal.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { formatTanggal } from "@/utils/formatDate.js";
 import { PRIORITIES, friendlyError, stationCapacity, wibDate } from "@/features/production/experience.js";
-import { bomLineAvailability, validateBOMLines } from "@/features/production/planning.js";
+import { bomLineAvailability } from "@/features/production/planning.js";
+import MaterialRowsEditor from "@/features/production/components/MaterialRowsEditor.jsx";
+import { fromRecord, rowsPayload, sameAsSaved, validateMaterialRows } from "@/features/production/materialRows.js";
 import { UnitPhotoPanel } from "@/features/production/UnitPhotoThumb.jsx";
 import { UnitOverviewDrawer } from "@/features/production/UnitOverviewDrawer.jsx";
 import { UpcomingCard } from "@/features/production/UnitCard.jsx";
@@ -101,52 +103,47 @@ function AssignSection({ target, refs, onSaved, onError }) {
 }
 
 function BOMSection({ plan, materials, stockByMaterial, onSaved, onError }) {
-  const [lines, setLines] = useState(() => (plan?.bomLines || []).map((l) => ({ materialId: l.materialId, qty: String(l.qty) })));
+  // Baris bahan memakai pola "+ Tambah baris" (sama dengan PO Finance): baris kosong baru muncul setelah baris terakhir terisi; baris kosong tidak dikirim.
+  const [rows, setRows] = useState(() => fromRecord(plan?.bomLines || []));
+  const [rowErrors, setRowErrors] = useState({});
   const [busy, setBusy] = useState(false);
-  if (!plan) return <p className="rounded-btn border border-dashed border-line p-3 text-[12px] text-ink3">Simpan jadwal &amp; sumber daya dulu sebelum menyusun Planned BOM.</p>;
-  const addLine = () => setLines((prev) => [...prev, { materialId: "", qty: "" }]);
-  const updateLine = (i, patch) => setLines((prev) => prev.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
-  const removeLine = (i) => setLines((prev) => prev.filter((_, idx) => idx !== i));
+  const keyRef = useRef(null); // Idempotency-Key per niat: sama saat Coba Lagi, baru setelah isian berubah
+  useEffect(() => { setRows(fromRecord(plan?.bomLines || [])); setRowErrors({}); keyRef.current = null; }, [plan?.id, plan?.revision]);
+  const options = useMemo(() => (materials || []).map((m) => ({ id: m.id, label: `${m.code} · ${m.name}`, unit: m.unit })), [materials]);
+  if (!plan) return <p className="rounded-btn border border-dashed border-line p-3 text-[12px] text-ink3">Simpan jadwal &amp; sumber daya dulu sebelum menyusun rencana bahan.</p>;
+  const changeRows = (next) => { keyRef.current = null; setRowErrors({}); setRows(next); };
+  const unchanged = sameAsSaved(rows, plan.bomLines || []);
 
   async function submit() {
-    const payload = lines.filter((l) => l.materialId).map((l) => ({ materialId: l.materialId, qty: Number(l.qty) }));
-    const { valid, error } = validateBOMLines(payload);
-    if (!valid) { onError(error); return; }
+    const v = validateMaterialRows(rows, { requireOne: true });
+    if (v.error) { setRowErrors(v.rowErrors); onError(v.error); return; }
     setBusy(true);
     try {
-      const result = await api.setPlannedBOM(plan.id, { lines: payload, expectedRevision: plan.revision });
-      onSaved(result, "Planned BOM disimpan.");
-    } catch (e) { onError(friendlyError(e)); } finally { setBusy(false); }
+      if (!keyRef.current) keyRef.current = `bom-${plan.id}-${plan.revision}-${Date.now().toString(36)}`;
+      const result = await api.setPlannedBOM(plan.id, { lines: rowsPayload(rows), expectedRevision: plan.revision }, keyRef.current);
+      keyRef.current = null;
+      onSaved(result, "Rencana bahan disimpan.");
+    } catch (e) {
+      if (e?.code === "PLAN_REVISION_CONFLICT") {
+        await onSaved(null, "", { keepError: true });
+        onError("Rencana ini sudah diubah orang lain. Daftar sudah dimuat ulang dengan versi terbaru — periksa lalu simpan lagi.");
+      } else onError(friendlyError(e));
+    } finally { setBusy(false); }
   }
 
   return (
-    <div className="space-y-2 rounded-btn border border-line p-3">
-      <p className="text-[12.5px] font-bold text-ink">Planned BOM — kebutuhan, tersedia, status</p>
-      <table className="w-full text-[11.5px]">
-        <thead className="text-ink3"><tr><th className="text-left font-medium">Bahan</th><th className="text-right font-medium">Kebutuhan</th><th className="text-right font-medium">Tersedia</th><th className="text-right font-medium">Status</th><th /></tr></thead>
-        <tbody>
-          {lines.map((line, i) => {
-            const stockRow = stockByMaterial.get(line.materialId);
-            const avail = line.materialId && line.qty ? bomLineAvailability(stockRow, line.qty) : null;
-            return (
-              <tr key={i} className="border-t border-line">
-                <td className="py-1.5 pr-2">
-                  <select value={line.materialId} onChange={(e) => updateLine(i, { materialId: e.target.value })} className="w-full rounded-btn border border-line bg-transparent px-2 py-1 text-ink">
-                    <option value="">— pilih —</option>{materials.map((m) => <option key={m.id} value={m.id}>{m.code} · {m.name}</option>)}
-                  </select>
-                </td>
-                <td className="py-1.5 text-right"><input type="number" min="0" step="0.0001" value={line.qty} onChange={(e) => updateLine(i, { qty: e.target.value })} className="w-16 rounded-btn border border-line bg-transparent px-2 py-1 text-right text-ink" /></td>
-                <td className="py-1.5 text-right text-ink3">{avail ? avail.available : "—"}</td>
-                <td className="py-1.5 text-right">{avail ? <Badge variant={avail.sufficient ? "green" : "red"}>{avail.sufficient ? "Cukup" : `Kurang ${avail.shortage}`}</Badge> : "—"}</td>
-                <td className="py-1.5 text-right"><Button size="sm" variant="ghost" data-mutates onClick={() => removeLine(i)}><XCircle size={13} /></Button></td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+    <div className="space-y-2 rounded-btn border border-line p-3" data-testid="bom-section">
+      <p className="text-[12.5px] font-bold text-ink">Rencana bahan (BOM) — kebutuhan, tersedia, status</p>
+      <MaterialRowsEditor rows={rows} onChange={changeRows} options={options} errors={rowErrors} testid="bom-rows" addLabel="Tambah baris" emptyOptionsText="Belum ada bahan produksi aktif di katalog."
+        hintOf={(row) => {
+          const avail = row.qty ? bomLineAvailability(stockByMaterial.get(row.materialId), row.qty) : null;
+          if (!avail) return <span className="text-ink3">Tersedia: {stockByMaterial.get(row.materialId)?.available ?? "—"}</span>;
+          return <span className="inline-flex items-center gap-1.5"><span className="text-ink3">Tersedia {avail.available}</span><Badge variant={avail.sufficient ? "green" : "red"}>{avail.sufficient ? "Cukup" : `Kurang ${avail.shortage}`}</Badge></span>;
+        }} />
+      <p className="m-0 text-[11.5px] text-ink3">Menyimpan rencana bahan tidak mengeluarkan stok. Bahan baru direservasi/diserahkan Gudang.</p>
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" variant="ghost" data-mutates onClick={addLine}>+ Tambah Bahan</Button>
-        <Button size="sm" variant="secondary" data-mutates disabled={busy} onClick={submit}>{busy ? "Menyimpan…" : "Simpan Planned BOM"}</Button>
+        <Button size="sm" variant="secondary" data-mutates data-testid="bom-save" disabled={busy || unchanged} onClick={submit}>{busy ? "Menyimpan…" : plan.bomLines?.length ? "Simpan Revisi Rencana Bahan" : "Simpan Rencana Bahan"}</Button>
+        {unchanged && <span className="self-center text-[12px] text-ink3">Tidak ada perubahan.</span>}
       </div>
     </div>
   );
@@ -216,11 +213,15 @@ function DetailRencana({ target, refs, materials, stockByMaterial, onClose, onCh
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const unit = current.unit;
-  const applySaved = async (result, message) => {
-    setNotice(message); setError("");
-    if (result?.planId || result?.id) {
-      const fresh = await api.getProductionPlan(result.planId || result.id);
-      setCurrent({ runId: current.runId, unit: fresh.unit, customer: fresh.customer, plan: fresh });
+  // result null = muat ulang rencana (mis. konflik revisi): ambil versi terbaru dari server supaya simpan berikutnya memakai revisi yang benar. keepError: pesan galat tidak dihapus.
+  const applySaved = async (result, message, { keepError = false } = {}) => {
+    setNotice(message); if (!keepError) setError("");
+    const id = result?.planId || result?.id || current.plan?.id;
+    if (id) {
+      try {
+        const fresh = await api.getProductionPlan(id);
+        setCurrent({ runId: current.runId, unit: fresh.unit, customer: fresh.customer, plan: fresh });
+      } catch { /* galat muat ulang tidak menimpa pesan utama */ }
     }
     onChanged();
   };

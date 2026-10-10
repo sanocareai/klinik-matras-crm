@@ -179,7 +179,10 @@ test("PlannerV2 RunDrawer: penetapan layanan V1 dihapus (server menutup 409 UNIT
   const api = src("api.js");
   assert.match(api, /setUnitService: \(unitId, serviceId, expectedServiceId\)/); assert.match(api, /expected \? \{ expected \} : \{\}/);
   const act = strip(src("features", "production", "UnitV1Actions.jsx"));
-  assert.match(act, /unit\.serviceId \?\? null\), "Rute pengerjaan tersimpan\."/); assert.match(act, /expected: \{ priority: unit\.priority \|\| "NORMAL", productionDueAt: unit\.productionDueAt \|\| null \}/);
+  // Tidak ada pilihan layanan: rute diturunkan server dari Layanan Sales (serviceId null); UI tidak punya pemilih jenis pengerjaan.
+  assert.match(act, /api\.setUnitService\(unit\.id, null, unit\.serviceId \?\? null\)/);
+  assert.doesNotMatch(act, /v1-service-select|Pilih jenis pengerjaan|getServiceCatalog/);
+  assert.match(act, /v1-route-reason/); assert.match(act, /Yang memperbaiki:/); assert.match(act, /expected: \{ priority: unit\.priority \|\| "NORMAL", productionDueAt: unit\.productionDueAt \|\| null \}/);
   assert.match(act, /e\.code === "UNIT_CONFLICT"/);
 });
 

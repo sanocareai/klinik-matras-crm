@@ -56,14 +56,15 @@ test("halaman Rencana: kartu order nyata memakai Jadwalkan + seret yang SAMA; sl
   assert.match(RENCANA, /kosong — belum ada unit yang bisa dijadwalkan/);
   assert.match(RENCANA, /const hasDraggable = backlog\.length > 0 \|\| bl\.items\.some\(\(it\) => it\.rencana\?\.onboardable\)/);
   // drag onboardable lewat resolveDrop/decideDrop yang sama -> placeOn -> formulir (PIC wajib) -> satu command
-  assert.match(RENCANA, /if \(!\(plan\?\.workCenter\?\.id && plan\?\.operator\?\.id\)\) \{ setSchedule\(\{ \.\.\.view, presetStation: stationCode \}\); return; \}/);
+  // PIC bawaan Meja dipakai bila ada (server memilihnya); tanpa PIC bawaan dan tanpa PIC rencana -> formulir agar petugas memilih (tidak ada tebakan).
+  assert.match(RENCANA, /if \(!stationPic && !\(plan\?\.workCenter\?\.id && plan\?\.operator\?\.id\)\) \{ setSchedule\(\{ \.\.\.view, presetStation: stationCode \}\); return; \}/);
 });
 
 test("formulir Jadwalkan: unit tanpa Run dikirim sebagai unitId (Run dibuka server di transaksi yang sama); rencana lama tetap runId", () => {
   assert.match(SCHEDULE, /target\.onboardUnitId \? \{ unitId: target\.onboardUnitId, \.\.\.body \} : \{ runId: target\.runId, \.\.\.body \}/);
   assert.match(SCHEDULE, /suggestedPriority/);
-  assert.match(SCHEDULE, /Run produksi dibuka \(unit belum tiba di workshop/, "pesan sukses jujur: belum tiba");
-  assert.match(SCHEDULE, /result\.origin === "WORKSHOP_BORN" \? " — Run produksi dibuka \(unit dibuat di workshop\)"/, "unit BARU/SEWA lahir di workshop: tidak ada klaim 'belum tiba'");
+  assert.match(SCHEDULE, /Pekerjaan produksi dibuka \(unit belum tiba di workshop/, "pesan sukses jujur: belum tiba");
+  assert.match(SCHEDULE, /result\.origin === "WORKSHOP_BORN" \? " — Pekerjaan produksi dibuka \(unit dibuat di workshop\)"/, "unit BARU/SEWA lahir di workshop: tidak ada klaim 'belum tiba'");
   assert.match(API, /planProductionV2Unit: \(data, idempotencyKey = mutationKey\("p8-plan"\)\)/);
 });
 
