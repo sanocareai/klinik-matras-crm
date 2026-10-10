@@ -55,7 +55,7 @@ export function findRunCompletionViolation(phases, { requireHandoffCompleted = t
 // command yang sama ikut terhitung. Run legacy: penulisan tetap dilakukan tanpa pemeriksaan (perilaku lama).
 export async function transitionPhases(tx, runId, updates) {
   const run = await tx.productionRun.findUnique({ where: { id: runId }, select: { id: true, origin: true, migrationSource: true, phases: true } });
-  if (!run) throw lifecycleError("Production Run tidak ditemukan untuk transisi fase", "PHASE_RUN_NOT_FOUND");
+  if (!run) throw lifecycleError("Pekerjaan produksi tidak ditemukan untuk transisi fase", "PHASE_RUN_NOT_FOUND");
   if (isStrictLifecycleRun(run)) {
     const violation = findPhaseInvariantViolation(projectPhases(run.phases, updates));
     if (violation) {
@@ -72,7 +72,7 @@ export async function transitionPhases(tx, runId, updates) {
 // Panggil SEBELUM productionRun.status = COMPLETED (dan sesudah fase HANDOFF ditutup dalam transaksi yang sama). Run legacy: tidak diperiksa.
 export async function assertRunPhasesTerminal(tx, runId, { requireHandoffCompleted = true } = {}) {
   const run = await tx.productionRun.findUnique({ where: { id: runId }, select: { id: true, origin: true, migrationSource: true, phases: true } });
-  if (!run) throw lifecycleError("Production Run tidak ditemukan untuk pemeriksaan penyelesaian", "PHASE_RUN_NOT_FOUND");
+  if (!run) throw lifecycleError("Pekerjaan produksi tidak ditemukan untuk pemeriksaan penyelesaian", "PHASE_RUN_NOT_FOUND");
   if (!isStrictLifecycleRun(run)) return;
   const violation = findRunCompletionViolation(run.phases, { requireHandoffCompleted });
   if (violation) {

@@ -87,7 +87,7 @@ export async function getDocumentationDetail(prisma, runId, { unitIds }) {
 // ---------------------------------------------------------------------------------------------------------------------------
 async function writerGate(tx, unitId) {
   const state = resolveProductionWriterState(await loadV2Flags(tx));
-  if (!isProductionWriterEnabledFor(state, unitId)) throw docError("Produksi V2 tidak aktif untuk unit ini; dokumentasi belum bisa dikirim", 503, "DOC_WRITER_OFF");
+  if (!isProductionWriterEnabledFor(state, unitId)) throw docError("Unit ini belum diaktifkan untuk alur produksi baru; dokumentasi belum bisa dikirim", 503, "DOC_WRITER_OFF");
 }
 
 // actor: { id, hasQcWrite, hasInventoryWrite } — dihitung route dari req.user (server = otoritas izin).
@@ -102,9 +102,9 @@ export function documentationActorRelation(actor, plan) {
 // Untuk route unggah: kenali run + writer cohort SEBELUM menerima berkas apa pun.
 export async function assertCanUploadDocumentation(prisma, { runId }) {
   if (!runId) throw docError("runId wajib diisi", 400, "DOC_RUN_REQUIRED");
-  if (!isUuid(runId)) throw docError("Production Run tidak ditemukan", 404, "DOC_RUN_NOT_FOUND");
+  if (!isUuid(runId)) throw docError("Pekerjaan produksi tidak ditemukan", 404, "DOC_RUN_NOT_FOUND");
   const run = await prisma.productionRun.findUnique({ where: { id: String(runId || "") }, select: { id: true, unitId: true, status: true } });
-  if (!run) throw docError("Production Run tidak ditemukan", 404, "DOC_RUN_NOT_FOUND");
+  if (!run) throw docError("Pekerjaan produksi tidak ditemukan", 404, "DOC_RUN_NOT_FOUND");
   await writerGate(prisma, run.unitId);
   if (TERMINAL_HIDDEN.includes(run.status)) throw docError("Produksi unit ini dibatalkan", 409, "DOC_RUN_CANCELLED");
   return run;
@@ -117,7 +117,7 @@ async function otherUnitUsesFile(tx, runId, url) {
 
 export async function recordDocumentation(prisma, { runId, actor, idempotencyKey, category, items, note = null, supersedesEvidenceId = null, reason = null }) {
   if (!idempotencyKey || !IDEMPOTENCY_KEY.test(idempotencyKey)) throw docError("Idempotency-Key wajib diisi (12-128 karakter)", 400, "IDEMPOTENCY_KEY_INVALID");
-  if (!isUuid(runId)) throw docError("Production Run tidak ditemukan", 404, "DOC_RUN_NOT_FOUND");
+  if (!isUuid(runId)) throw docError("Pekerjaan produksi tidak ditemukan", 404, "DOC_RUN_NOT_FOUND");
   const cat = DOC_CATEGORY_BY_KEY[category];
   if (!cat) throw docError("Kategori dokumentasi tidak dikenal", 400, "DOC_CATEGORY_INVALID");
   const normalized = normalizeDocItems(items, { urlKind: mediaKindOf });
@@ -138,7 +138,7 @@ export async function recordDocumentation(prisma, { runId, actor, idempotencyKey
       return { replayed: true, ...replay.response };
     }
     const run = await tx.productionRun.findUnique({ where: { id: runId }, select: { id: true, unitId: true, status: true, unit: { select: { unitCode: true } }, plan: { select: { operator: { select: { userId: true } }, cornerOperator: { select: { userId: true } } } } } });
-    if (!run) throw docError("Production Run tidak ditemukan", 404, "DOC_RUN_NOT_FOUND");
+    if (!run) throw docError("Pekerjaan produksi tidak ditemukan", 404, "DOC_RUN_NOT_FOUND");
     await writerGate(tx, run.unitId);
     if (TERMINAL_HIDDEN.includes(run.status)) throw docError("Produksi unit ini dibatalkan", 409, "DOC_RUN_CANCELLED");
     const ownership = documentationActorRelation(actor, run.plan);

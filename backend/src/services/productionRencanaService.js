@@ -124,7 +124,7 @@ export async function planAndScheduleUnit(prisma, { unitId, actorId, idempotency
     const opened = await openRencanaRunInTx(tx, { unitId, actorId, idempotencyKey });
     let plan = await tx.productionRunPlan.findUnique({ where: { runId: opened.runId }, select: { id: true, revision: true, status: true } });
     let created = false;
-    if (plan?.status === "CANCELLED") throw rencanaError("Rencana unit ini sudah dibatalkan dan satu Run hanya boleh punya satu rencana — hubungi tim sistem untuk membuka ulang.", 409, "RENCANA_PLAN_CANCELLED");
+    if (plan?.status === "CANCELLED") throw rencanaError("Rencana unit ini sudah dibatalkan dan satu pekerjaan hanya boleh punya satu rencana — hubungi tim sistem untuk membuka ulang.", 409, "RENCANA_PLAN_CANCELLED");
     if (!plan) {
       const c = await createProductionPlanInTx(tx, { runId: opened.runId, actorId, idempotencyKey: `${idempotencyKey}:create` });
       plan = { id: c.planId, revision: c.revision }; created = true;

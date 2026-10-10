@@ -119,7 +119,7 @@ async function findReplay(tx, actor, idempotencyKey, requestHash) {
 async function assertWriterEnabledForUnit(tx, unitId) {
   const state = resolveProductionWriterState(await loadV2Flags(tx));
   if (!isProductionWriterEnabledFor(state, unitId)) {
-    throw planError("Planning V2 tidak aktif untuk unit ini; gunakan alur lama", 503, "PLANNING_WRITER_OFF");
+    throw planError("Unit ini belum diaktifkan untuk Rencana Produksi baru; kerjakan lewat bagian Pekerjaan unit (alur biasa)", 503, "PLANNING_WRITER_OFF");
   }
 }
 
@@ -151,11 +151,11 @@ export async function createProductionPlanInTx(tx, { runId, actorId, idempotency
         custodyHandoffs: { where: { direction: "INBOUND", status: "ACCEPTED" }, select: { id: true }, take: 1 },
       },
     });
-    if (!run) throw planError("Production Run tidak ditemukan", 404, "PLAN_RUN_NOT_FOUND");
+    if (!run) throw planError("Pekerjaan produksi tidak ditemukan", 404, "PLAN_RUN_NOT_FOUND");
     await assertWriterEnabledForUnit(tx, run.unitId);
     await pastikanPkrLengkap(tx, run.unit.orderId);
     if (["COMPLETED", "CANCELLED"].includes(run.status)) {
-      throw planError("Production Run ini sudah selesai/dibatalkan; tidak bisa direncanakan", 409, "PLAN_RUN_TERMINAL");
+      throw planError("Pekerjaan produksi ini sudah selesai/dibatalkan; tidak bisa direncanakan", 409, "PLAN_RUN_TERMINAL");
     }
     if (run.phases[0]?.status && ["ACTIVE", "COMPLETED"].includes(run.phases[0].status)) {
       throw planError("Fase Proses sudah dimulai untuk unit ini; rencana H-1 tidak berlaku lagi", 409, "PLAN_TOO_LATE");

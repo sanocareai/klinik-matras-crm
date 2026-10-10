@@ -51,7 +51,7 @@ const outbox = (tx, { eventType, aggregateId, revision, dedupeKey, payload }) =>
 async function loadBuildRun(tx, { runId, expectedRevision, forMaterials = false, allowRestoration = false }) {
   const run = await loadRunForWrite(tx, runId);
   const state = resolveProductionWriterState(await loadV2Flags(tx));
-  if (!isProductionWriterEnabledFor(state, run.unitId)) throw buildError("Produksi V2 tidak aktif untuk unit ini; gunakan alur lama", 503, "BUILD_WRITER_OFF");
+  if (!isProductionWriterEnabledFor(state, run.unitId)) throw buildError("Unit ini belum diaktifkan untuk alur produksi baru; kerjakan lewat bagian Pekerjaan unit (alur biasa)", 503, "BUILD_WRITER_OFF");
   await assertNoOpenRunException(tx, run.id);
   if (expectedRevision != null && run.revision !== expectedRevision) throw buildError(`Data unit sudah berubah (revisi ${run.revision}, Anda memakai ${expectedRevision}). Muat ulang kartu lalu ulangi.`, 409, "STEP_REVISION_CONFLICT", { revision: run.revision });
   if (!["RECEIVED", "IN_PRODUCTION"].includes(run.unit.status)) throw buildError(`Unit berstatus ${run.unit.status}; bukan pekerjaan workshop`, 409, "BUILD_UNIT_NOT_IN_PRODUCTION", { unitStatus: run.unit.status });

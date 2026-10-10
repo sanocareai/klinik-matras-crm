@@ -84,9 +84,9 @@ productionEvidenceUploadRouter.post("/evidence/upload", (req, res, next) => {
     const runId = String(req.body?.runId || "");
     if (!runId) return evidenceError(res, 400, "runId wajib diisi", "EVIDENCE_RUN_REQUIRED");
     const run = await prisma.productionRun.findUnique({ where: { id: runId }, select: { unitId: true, status: true } });
-    if (!run) return evidenceError(res, 404, "Production Run tidak ditemukan", "EVIDENCE_RUN_NOT_FOUND");
+    if (!run) return evidenceError(res, 404, "Pekerjaan produksi tidak ditemukan", "EVIDENCE_RUN_NOT_FOUND");
     const writer = resolveProductionWriterState(await loadV2Flags(prisma));
-    if (!isProductionWriterEnabledFor(writer, run.unitId)) return evidenceError(res, 503, "Produksi V2 tidak aktif untuk unit ini", "EVIDENCE_WRITER_OFF");
+    if (!isProductionWriterEnabledFor(writer, run.unitId)) return evidenceError(res, 503, "Unit ini belum diaktifkan untuk alur produksi baru", "EVIDENCE_WRITER_OFF");
     if (["COMPLETED", "CANCELLED"].includes(run.status)) return evidenceError(res, 409, "Produksi unit ini sudah selesai/dibatalkan", "EVIDENCE_RUN_TERMINAL");
     const files = req.files || [];
     if (files.length === 0) return evidenceError(res, 400, "Pilih foto atau video (JPG/PNG/WEBP/MP4/WEBM/MOV)", "EVIDENCE_EMPTY");

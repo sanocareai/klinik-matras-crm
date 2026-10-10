@@ -124,7 +124,7 @@ export async function receiveMaterialReturn(prisma, { returnId, actorId, idempot
     const row = await tx.productionMaterialReturn.findUnique({ where: { id: returnId }, include: { material: { select: { code: true } }, run: { select: { unit: { select: { unitCode: true } } } } } });
     if (!row) throw returnError("Retur tidak ditemukan", 404, "RETURN_NOT_FOUND");
     const state = resolveProductionWriterState(await loadV2Flags(tx));
-    if (!isProductionWriterEnabledFor(state, row.unitId)) throw returnError("Produksi V2 tidak aktif untuk unit ini", 503, "RETURN_WRITER_OFF");
+    if (!isProductionWriterEnabledFor(state, row.unitId)) throw returnError("Unit ini belum diaktifkan untuk alur produksi baru", 503, "RETURN_WRITER_OFF");
     if (row.status !== "PENDING") throw returnError("Retur ini sudah diterima", 409, "RETURN_ALREADY_RECEIVED", { revision: row.revision });
     if (row.revision !== rev) throw returnError(`Revisi retur berubah: diharapkan ${rev}, sekarang ${row.revision}. Muat ulang.`, 409, "RETURN_REVISION_CONFLICT", { revision: row.revision });
     const requested = Number(row.qty);

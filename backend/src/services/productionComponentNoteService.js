@@ -232,7 +232,7 @@ export function componentMessageLines(comparison) {
 // ---------------------------------------------------------------------------------------------------------------------------
 async function writerGate(tx, unitId) {
   const state = resolveProductionWriterState(await loadV2Flags(tx));
-  if (!isProductionWriterEnabledFor(state, unitId)) throw componentError("Produksi V2 tidak aktif untuk unit ini; catatan komponen belum bisa disimpan", 503, "COMPONENT_WRITER_OFF");
+  if (!isProductionWriterEnabledFor(state, unitId)) throw componentError("Unit ini belum diaktifkan untuk alur produksi baru; catatan komponen belum bisa disimpan", 503, "COMPONENT_WRITER_OFF");
 }
 
 /** Untuk route unggah foto: kenali unit + writer cohort SEBELUM menerima berkas apa pun. */

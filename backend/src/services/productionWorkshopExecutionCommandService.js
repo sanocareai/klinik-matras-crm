@@ -118,7 +118,7 @@ async function findReplay(tx, actor, idempotencyKey, requestHash) {
 async function assertWriterEnabledForUnit(tx, unitId) {
   const state = resolveProductionWriterState(await loadV2Flags(tx));
   if (!isProductionWriterEnabledFor(state, unitId)) {
-    throw workError("Eksekusi workshop V2 tidak aktif untuk unit ini; gunakan alur lama", 503, "WORKSHOP_WRITER_OFF");
+    throw workError("Unit ini belum diaktifkan untuk eksekusi workshop alur baru; gunakan alur biasa", 503, "WORKSHOP_WRITER_OFF");
   }
 }
 // Kesalahan transisi engine V1 (StageTransitionError) dipetakan ke galat berkode dengan status ASLI engine (400 validasi / 409 konflik); kesalahan lain dilempar apa adanya.
@@ -139,11 +139,11 @@ export const RUN_INCLUDE = {
 // Urutan kunci: unit (sama dengan custody) -> run. Mencegah siklus dengan openProductionIntakeV2 (unit lalu run).
 export async function loadRunForWrite(tx, runId) {
   const pre = await tx.productionRun.findUnique({ where: { id: runId }, select: { unitId: true } });
-  if (!pre) throw workError("Production Run tidak ditemukan", 404, "WORKSHOP_RUN_NOT_FOUND");
+  if (!pre) throw workError("Pekerjaan produksi tidak ditemukan", 404, "WORKSHOP_RUN_NOT_FOUND");
   await lockRowForUpdate(tx, "units", pre.unitId);
   await lockRowForUpdate(tx, "production_runs_v2", runId);
   const run = await tx.productionRun.findUnique({ where: { id: runId }, include: RUN_INCLUDE });
-  if (TERMINAL_RUN.includes(run.status)) throw workError("Production Run sudah selesai/dibatalkan", 409, "WORKSHOP_RUN_TERMINAL");
+  if (TERMINAL_RUN.includes(run.status)) throw workError("Pekerjaan produksi sudah selesai/dibatalkan", 409, "WORKSHOP_RUN_TERMINAL");
   await assertNoV1Drift(tx, { runId, unitId: run.unitId }); // rollback writer OFF -> aksi V1 -> writer ON: berhenti sampai direkonsiliasi (productionRunGuards.js)
   // P9A (One-Location Production Intake) — unit sudah "Masuk Produksi" (pickup
   // berhasil, kartu tampil di board) TAPI belum dikonfirmasi tiba secara fisik
@@ -194,7 +194,7 @@ export function assertOverridePlanAndWorkCenter(plan, workCenterId, { postQc = f
 
 export async function authorizeOperator(tx, run, actorId, workCenterId, { postQc = false } = {}) {
   const plan = run.plan;
-  if (!plan || plan.status === "CANCELLED") throw workError("Production Run belum memiliki rencana aktif", 409, "WORKSHOP_NO_PLAN");
+  if (!plan || plan.status === "CANCELLED") throw workError("Pekerjaan produksi belum memiliki rencana aktif", 409, "WORKSHOP_NO_PLAN");
   const actor = actorId ? await tx.user.findUnique({ where: { id: actorId }, select: { role: true, active: true, roles: { select: { role: true } } } }) : null;
   if (actor?.active && mayExecuteAnyUnit({ role: actor.role, roles: [actor.role, ...(actor.roles || []).map((r) => r.role)] })) {
     assertOverridePlanAndWorkCenter(plan, workCenterId, { postQc });
@@ -229,7 +229,7 @@ function assertUnitInProduction(run, allowed = EXECUTING_UNIT_STATUSES) {
 function phaseOf(run, phase) { return run.phases.find((p) => p.phase === phase); }
 function assertProcessApplicable(run) {
   const process = phaseOf(run, "PROCESS");
-  if (!process || process.status === "NOT_APPLICABLE") throw workError("Run ini tidak memiliki proses workshop", 409, "WORKSHOP_PROCESS_NOT_APPLICABLE");
+  if (!process || process.status === "NOT_APPLICABLE") throw workError("Pekerjaan ini tidak memiliki proses workshop", 409, "WORKSHOP_PROCESS_NOT_APPLICABLE");
   if (process.status === "COMPLETED") {
     if (run.currentPhase === "HANDOFF") throw workError("Seluruh tahap produksi selesai; barang jadi menunggu keputusan Gudang", 409, "WORKSHOP_IN_HANDOFF");
     throw workError("Proses workshop sudah selesai; unit menunggu QC", 409, "WORKSHOP_AWAITING_QC");
@@ -297,10 +297,10 @@ export async function registerWorkshopBornRunInTx(tx, { unitId, actorId, idempot
     if (pesanPkr) throw workError(pesanPkr, 422, "WORKSHOP_PKR_PERLU_DILENGKAPI"); // order Penjualan Karyawan belum lengkap
     if (!BORN_UNIT_STATUSES.includes(unit.status)) throw workError(`Unit berstatus ${unit.status}; tidak dapat didaftarkan ke workshop`, 409, "WORKSHOP_BORN_STATUS_INVALID");
     const active = await tx.productionRun.findFirst({ where: { unitId, status: { notIn: TERMINAL_RUN } }, select: { id: true } });
-    if (active) throw workError("Unit ini sudah memiliki Production Run aktif", 409, "WORKSHOP_RUN_ALREADY_EXISTS", { runId: active.id });
+    if (active) throw workError("Unit ini sudah memiliki pekerjaan produksi aktif", 409, "WORKSHOP_RUN_ALREADY_EXISTS", { runId: active.id });
     const stageLogs = await tx.unitStageLog.count({ where: { unitId } });
     if (unit.currentStageId || stageLogs > 0) {
-      throw workError("Unit ini sudah punya riwayat produksi V1/legacy; tidak dapat didaftarkan sebagai unit lahir di workshop", 409, "WORKSHOP_BORN_UNIT_NOT_FRESH");
+      throw workError("Unit ini sudah punya riwayat produksi dari sistem lama; tidak dapat didaftarkan sebagai unit lahir di workshop", 409, "WORKSHOP_BORN_UNIT_NOT_FRESH");
     }
     const pickup = await tx.jobUnit.findFirst({ where: { unitId, job: { type: "PICKUP" } }, select: { id: true } });
     const inbound = await tx.unitCustodyHandoff.findFirst({ where: { unitId, direction: "INBOUND" }, select: { id: true } });
@@ -550,7 +550,7 @@ export async function applyCompleteInTx(tx, { run, op, actorId, note = null, pho
 //    penulis production_operation_runs_v2 / fase / run tetap file ini. Semua hanya berlaku untuk run berkebijakan ADAPTATION_V1.
 // ---------------------------------------------------------------------------
 export function assertAdaptationRun(run) {
-  if (!isAdaptationRun(run)) throw workError("Mode adaptasi tidak aktif untuk Production Run ini", 409, "ADAPTATION_NOT_ENABLED");
+  if (!isAdaptationRun(run)) throw workError("Mode adaptasi tidak aktif untuk pekerjaan produksi ini", 409, "ADAPTATION_NOT_ENABLED");
 }
 
 // Kebijakan adaptasi pada run yang BELUM terminal (aksi eksplisit Admin/Lead; run lama tidak pernah diubah otomatis). Tidak menyentuh tahap/fase/stok.

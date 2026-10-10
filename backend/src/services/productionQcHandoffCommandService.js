@@ -56,7 +56,7 @@ export function assertExpectedRevision(value) {
 }
 export function assertRunRevision(run, expectedRevision) {
   if (run.revision !== expectedRevision) {
-    throw qcError(`Revisi Production Run berubah: diharapkan ${expectedRevision}, sekarang ${run.revision}. Muat ulang.`, 409, "QC_REVISION_CONFLICT", { revision: run.revision });
+    throw qcError(`Revisi pekerjaan produksi berubah: diharapkan ${expectedRevision}, sekarang ${run.revision}. Muat ulang.`, 409, "QC_REVISION_CONFLICT", { revision: run.revision });
   }
 }
 
@@ -159,7 +159,7 @@ async function findReplay(tx, actor, idempotencyKey, requestHash) {
 }
 async function assertWriterEnabledForUnit(tx, unitId) {
   const state = resolveProductionWriterState(await loadV2Flags(tx));
-  if (!isProductionWriterEnabledFor(state, unitId)) throw qcError("QC/handoff V2 tidak aktif untuk unit ini; gunakan alur lama", 503, "QC_WRITER_OFF");
+  if (!isProductionWriterEnabledFor(state, unitId)) throw qcError("Unit ini belum diaktifkan untuk QC dan serah ke Gudang alur baru; gunakan alur biasa", 503, "QC_WRITER_OFF");
 }
 // Kesalahan transisi engine V1 (StageTransitionError) dipetakan ke galat berkode dengan status ASLI engine.
 async function viaEngine(fn) {
@@ -180,7 +180,7 @@ const RUN_INCLUDE = {
 // Urutan kunci: [plan bila memuat bahan tambahan] -> unit -> run (P3/P4: plan lebih dulu; P5: unit -> run). Tidak pernah run -> unit.
 async function loadRunLocked(tx, runId, { withPlan = false } = {}) {
   const pre = await tx.productionRun.findUnique({ where: { id: runId }, select: { unitId: true, plan: { select: { id: true } } } });
-  if (!pre) throw qcError("Production Run tidak ditemukan", 404, "QC_RUN_NOT_FOUND");
+  if (!pre) throw qcError("Pekerjaan produksi tidak ditemukan", 404, "QC_RUN_NOT_FOUND");
   if (withPlan && pre.plan) await lockRowForUpdate(tx, "production_run_plans_v2", pre.plan.id);
   await lockRowForUpdate(tx, "units", pre.unitId);
   await lockRowForUpdate(tx, "production_runs_v2", runId);
@@ -190,7 +190,7 @@ async function loadRunLocked(tx, runId, { withPlan = false } = {}) {
 const phaseOf = (run, phase) => run.phases.find((p) => p.phase === phase);
 const activeOperation = (run) => run.operations.find((op) => op.status === "ACTIVE" || op.status === "PAUSED") || null;
 function assertRunOpen(run) {
-  if (RUN_TERMINAL_STATUSES.includes(run.status)) throw qcError("Production Run sudah selesai/dibatalkan", 409, "QC_RUN_TERMINAL", { status: run.status });
+  if (RUN_TERMINAL_STATUSES.includes(run.status)) throw qcError("Pekerjaan produksi sudah selesai/dibatalkan", 409, "QC_RUN_TERMINAL", { status: run.status });
 }
 async function bumpRun(tx, run, data = {}) {
   const revision = run.revision + 1;
@@ -340,7 +340,7 @@ export async function recordQualityInspection(prisma, { runId, actorId, canInspe
 
 // Bahan tambahan: reservasi baru (P3) + Material Issue baru READY_TO_PICK (P4) terhubung ke inspeksi. Plan sudah dikunci (withPlan).
 async function openSupplementalMaterialInTx(tx, { run, inspectionId, lines, actorId, commandId }) {
-  if (!run.plan) throw qcError("Production Run belum memiliki rencana; bahan tambahan tidak dapat diajukan", 409, "QC_NO_PLAN");
+  if (!run.plan) throw qcError("Pekerjaan produksi belum memiliki rencana; bahan tambahan tidak dapat diajukan", 409, "QC_NO_PLAN");
   const plan = await loadPlanForWrite(tx, run.plan.id);
   const { reservations } = await reserveSupplementalInTx(tx, { plan, inspectionId, lines, actorId, commandId });
   const issue = await createSupplementalIssueInTx(tx, { plan: { ...plan, revision: plan.revision + 1 }, inspectionId, reservations, actorId, commandId });
@@ -464,7 +464,7 @@ async function lockFinishedGoodsHandoffs(tx, unitId) {
 // Urutan kunci: handoff barang jadi (yang mungkin sedang diputuskan Gudang: handoff -> unit -> run) -> unit -> run.
 async function loadRunLockedWithHandoffs(tx, runId) {
   const pre = await tx.productionRun.findUnique({ where: { id: runId }, select: { unitId: true } });
-  if (!pre) throw qcError("Production Run tidak ditemukan", 404, "QC_RUN_NOT_FOUND");
+  if (!pre) throw qcError("Pekerjaan produksi tidak ditemukan", 404, "QC_RUN_NOT_FOUND");
   await lockFinishedGoodsHandoffs(tx, pre.unitId);
   return loadRunLocked(tx, runId);
 }
@@ -563,7 +563,7 @@ export async function openRunException(prisma, { runId, actorId, idempotencyKey 
     const outcome = await openExceptionInTx(tx, { run, actor, now });
     if (!outcome.exception) {
       // Tidak ada konflik: tidak ada yang dicatat (server yang menentukan, bukan klien).
-      throw qcError("Status unit konsisten dengan Production Run; tidak ada konflik yang perlu dicatat", 409, "QC_RUN_CONSISTENT");
+      throw qcError("Status unit konsisten dengan pekerjaan produksi; tidak ada konflik yang perlu dicatat", 409, "QC_RUN_CONSISTENT");
     }
     const response = { runId, exceptionId: outcome.exception.id, kind: outcome.exception.kind, status: outcome.exception.status, revision: outcome.exception.revision, alreadyOpen: !outcome.created };
     await finishCommand(tx, command, outcome.exception.revision, response);
@@ -608,7 +608,7 @@ export async function resolveRunException(prisma, { exceptionId, actorId, canWai
   if (!["RESTORE_UNIT_STATUS", "CANCEL_RUN", "ACCEPT_OVERRIDE", "NO_LONGER_APPLICABLE"].includes(chosen)) throw qcError("Resolusi tidak dikenal", 400, "QC_RESOLUTION_INVALID");
   const cleaned = String(note ?? "").trim();
   if (cleaned.length < 3) throw qcError("Catatan resolusi wajib diisi (minimal 3 karakter)", 400, "QC_NOTE_REQUIRED");
-  if (chosen === "ACCEPT_OVERRIDE" && !canWaive) throw qcError("Menerima override V1 memerlukan otoritas QC_WAIVE", 403, "QC_WAIVE_FORBIDDEN");
+  if (chosen === "ACCEPT_OVERRIDE" && !canWaive) throw qcError("Menerima override memerlukan izin khusus Admin/Owner", 403, "QC_WAIVE_FORBIDDEN");
   const actor = actorId || "SYSTEM";
   const requestHash = hash({ commandType: "RESOLVE_RUN_EXCEPTION", exceptionId, expectedRevision: revisionExpected, resolution: chosen, note: cleaned });
 

@@ -80,7 +80,7 @@ async function outbox(tx, { eventType, aggregateType = "ProductionRun", aggregat
 }
 async function assertWriterEnabledForUnit(tx, unitId) {
   const state = resolveProductionWriterState(await loadV2Flags(tx));
-  if (!isProductionWriterEnabledFor(state, unitId)) throw stepError("Produksi V2 tidak aktif untuk unit ini; gunakan alur lama", 503, "STEP_WRITER_OFF");
+  if (!isProductionWriterEnabledFor(state, unitId)) throw stepError("Unit ini belum diaktifkan untuk alur produksi baru; kerjakan lewat bagian Pekerjaan unit (alur biasa)", 503, "STEP_WRITER_OFF");
 }
 
 // ---------------------------------------------------------------------------
@@ -769,7 +769,7 @@ async function previewHandoffFinish(prisma, run, ctx) {
 
 export async function previewFinishProduction(prisma, runId) {
   const run = await prisma.productionRun.findUnique({ where: { id: runId }, include: RUN_INCLUDE });
-  if (!run) throw stepError("Production Run tidak ditemukan", 404, "WORKSHOP_RUN_NOT_FOUND");
+  if (!run) throw stepError("Pekerjaan produksi tidak ditemukan", 404, "WORKSHOP_RUN_NOT_FOUND");
   const ctx = await loadStepContext(prisma, run);
   if (!isAdaptationRun(run)) return previewHandoffFinish(prisma, run, ctx);
   const blockers = finishBlockersOf(run, { openShortage: !!ctx.openShortage, exceptionOpen: !!ctx.state.exceptionOpen });
@@ -910,7 +910,7 @@ export async function applyQcGatePolicy(prisma, { runId, actorId, idempotencyKey
     await assertWriterEnabledForUnit(tx, run.unitId);
     assertRunRevision(run, revisionExpected);
     await assertNoOpenRunException(tx, run.id);
-    if (isAdaptationRun(run)) throw stepError("Run mode adaptasi tidak memakai gerbang QC sebelum bongkar", 409, "QC_GATE_NOT_APPLICABLE");
+    if (isAdaptationRun(run)) throw stepError("Pekerjaan mode adaptasi tidak memakai gerbang QC sebelum bongkar", 409, "QC_GATE_NOT_APPLICABLE");
     const ctxOrder = await tx.order.findUnique({ where: { id: run.unit.orderId }, select: { category: true } });
     if (ctxOrder?.category !== "LAYANAN") throw stepError("Gerbang QC sebelum bongkar hanya untuk pesanan LAYANAN", 409, "QC_GATE_NOT_APPLICABLE");
     const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "APPLY_QC_GATE_POLICY", aggregateId: runId, requestHash, expectedRevision: revisionExpected });

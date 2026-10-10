@@ -160,7 +160,7 @@ function normalizePhotoUrls(urls, { min = 0 } = {}) {
 async function assertWriterEnabledForUnit(tx, unitId) {
   const state = resolveProductionWriterState(await loadV2Flags(tx));
   if (!isProductionWriterEnabledFor(state, unitId)) {
-    throw diagError("Production V2 tidak aktif untuk unit ini; gunakan alur lama", 503, "DIAGNOSIS_WRITER_OFF");
+    throw diagError("Unit ini belum diaktifkan untuk alur produksi baru; kerjakan lewat bagian Pekerjaan unit (alur biasa)", 503, "DIAGNOSIS_WRITER_OFF");
   }
 }
 

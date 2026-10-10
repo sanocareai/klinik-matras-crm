@@ -80,7 +80,7 @@ async function findReplay(tx, actor, idempotencyKey, requestHash) {
 async function assertWriterEnabledForUnit(tx, unitId) {
   const state = resolveProductionWriterState(await loadV2Flags(tx));
   if (!isProductionWriterEnabledFor(state, unitId)) {
-    throw issueError("Pengambilan bahan V2 tidak aktif untuk unit ini; gunakan alur lama", 503, "MATERIAL_ISSUE_WRITER_OFF");
+    throw issueError("Unit ini belum diaktifkan untuk pengambilan bahan alur baru; gunakan alur biasa", 503, "MATERIAL_ISSUE_WRITER_OFF");
   }
 }
 

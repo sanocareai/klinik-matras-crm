@@ -242,7 +242,10 @@ test("ATOMIK + kapasitas: Meja penuh / PIC tidak valid menggagalkan SELURUH peri
   const inactive = await mkOperator("PRODUCTION_WORKER", { active: false });
   const badPic = await schedule(target.unit, inactive, { stationCode: "TABLE_2" });
   assert.equal(badPic.status, 422); assert.equal(badPic.body.code, "PLAN_OPERATOR_INVALID"); assert.deepEqual(await counts(target.unit), { runs: 0, plans: 0, handoffs: 0 });
-  const noOp = await w.lead.api.post(`${V2}/plans`, { unitId: target.unit.id, productionDate: DATE, stationCode: "TABLE_2", workCenterId: w.wc.id }, idem("noop")); assert.equal(noOp.status, 400);
+  const noOp = await w.lead.api.post(`${V2}/plans`, { unitId: target.unit.id, productionDate: DATE, stationCode: "TABLE_2", workCenterId: w.wc.id }, idem("noop"));
+  // PIC kosong: sejak PIC bawaan Meja, server melengkapi dari PIC meja+tanggal di dalam transaksi; tanpa PIC bawaan ditolak 422 berpesan jelas dan TIDAK menulis apa pun.
+  assert.equal(noOp.status, 422); assert.equal(noOp.body.code, "PLAN_OPERATOR_REQUIRED"); assert.match(noOp.body.error, /PIC .*belum dipilih/);
+  assert.deepEqual(await counts(target.unit), { runs: 0, plans: 0, handoffs: 0 }, "PIC kosong: tidak ada Run/rencana yatim");
   assert.equal((await schedule(target.unit, op, { stationCode: "TABLE_2" })).status, 201, "Meja lain berhasil");
   assert.deepEqual(await counts(target.unit), { runs: 1, plans: 1, handoffs: 1 });
 });
@@ -259,7 +262,7 @@ test("PENGECUALIAN: progres V1, Siap Kirim/Terkirim, belum diambil, di luar coho
   for (const x of [ready, delivered, spam, staff]) assert.ok(!codes.includes(x.unit.unitCode), "Siap Kirim/Terkirim/SPAM/staf tidak masuk Rencana");
   assert.equal(itemOf(b, out.unit).rencana.action, "AWAIT_ACTIVATION");
   assert.equal(await testPrisma.unitStageLog.count({ where: { unitId: v1.unit.id } }), 1, "fixture progres V1 benar-benar ada");
-  assert.equal(itemOf(b, v1.unit).rencana.code, "HAS_V1_PROGRESS"); assert.match(itemOf(b, v1.unit).rencana.next, /backfill/i);
+  assert.equal(itemOf(b, v1.unit).rencana.code, "HAS_V1_PROGRESS"); assert.match(itemOf(b, v1.unit).rencana.next, /memindahkan riwayat/i); assert.doesNotMatch(itemOf(b, v1.unit).rencana.message, /V1/);
   const r = await schedule(v1.unit, op); assert.equal(r.status, 422); assert.equal(r.body.code, "RENCANA_HAS_V1_PROGRESS");
   assert.equal(await testPrisma.productionRun.count({ where: { unitId: v1.unit.id } }), 0, "progres V1 tidak disentuh, tidak ada Run");
   assert.equal(await testPrisma.unitStageLog.count({ where: { unitId: v1.unit.id } }), 1, "riwayat V1 utuh");

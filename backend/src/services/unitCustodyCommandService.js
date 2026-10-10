@@ -185,8 +185,8 @@ export async function offerFinishedGoodsCustodyInTx(tx, { runId, actorId = null 
     where: { id: runId },
     include: { phases: true, unit: { select: { id: true, unitCode: true, orderId: true, status: true } }, inspections: { orderBy: { version: "desc" }, take: 1 } },
   });
-  if (!run) throw custodyError("Production Run tidak ditemukan", 404, "CUSTODY_RUN_NOT_FOUND");
-  if (run.status !== "ACTIVE") throw custodyError("Production Run tidak aktif; handoff barang jadi tidak dapat dibuat", 409, "CUSTODY_RUN_NOT_ACTIVE", { status: run.status });
+  if (!run) throw custodyError("Pekerjaan produksi tidak ditemukan", 404, "CUSTODY_RUN_NOT_FOUND");
+  if (run.status !== "ACTIVE") throw custodyError("Pekerjaan produksi tidak aktif; serah barang jadi ke Gudang tidak dapat dibuat", 409, "CUSTODY_RUN_NOT_ACTIVE", { status: run.status });
   assertRunConsistent(run, run.unit);
   await assertNoOpenRunException(tx, run.id);
   const phase = (name) => run.phases.find((p) => p.phase === name);
@@ -261,16 +261,16 @@ export async function cancelOfferedFinishedGoodsCustodyInTx(tx, { unitId, actor,
 
 // Kunci unit lalu run (urutan P1–P5; handoff sudah dikunci decide()) dan validasi run untuk keputusan Gudang atas barang jadi.
 async function prepareFinishedGoodsDecision(tx, handoff) {
-  if (!handoff.productionRunId) throw custodyError("Handoff barang jadi tidak terhubung ke Production Run", 409, "CUSTODY_RUN_MISSING");
+  if (!handoff.productionRunId) throw custodyError("Serah barang jadi tidak terhubung ke pekerjaan produksi", 409, "CUSTODY_RUN_MISSING");
   await lockRowForUpdate(tx, "units", handoff.unitId);
   await lockRowForUpdate(tx, "production_runs_v2", handoff.productionRunId);
   const run = await tx.productionRun.findUnique({ where: { id: handoff.productionRunId }, include: { phases: true, unit: { select: { id: true, unitCode: true, orderId: true, status: true } } } });
-  if (!run || run.status !== "ACTIVE") throw custodyError("Production Run tidak aktif; keputusan Gudang atas barang jadi tidak dapat diproses", 409, "CUSTODY_RUN_NOT_ACTIVE", { status: run?.status ?? null });
+  if (!run || run.status !== "ACTIVE") throw custodyError("Pekerjaan produksi tidak aktif; keputusan Gudang atas barang jadi tidak dapat diproses", 409, "CUSTODY_RUN_NOT_ACTIVE", { status: run?.status ?? null });
   assertRunConsistent(run, run.unit);
   await assertNoOpenRunException(tx, run.id);
   const handoffPhase = run.phases.find((p) => p.phase === "HANDOFF");
   if (run.currentPhase !== "HANDOFF" || handoffPhase?.status !== "ACTIVE") {
-    throw custodyError("Production Run tidak berada di fase Handoff", 409, "CUSTODY_RUN_NOT_IN_HANDOFF", { currentPhase: run.currentPhase });
+    throw custodyError("Pekerjaan produksi tidak berada di fase serah ke Gudang", 409, "CUSTODY_RUN_NOT_IN_HANDOFF", { currentPhase: run.currentPhase });
   }
   // Fase lain WAJIB sudah terminal (tanpa auto-close): fase tertinggal = bug transisi -> 409 sebelum ada tulisan apa pun.
   assertPhasesReadyForHandoffDecision(run);
@@ -414,7 +414,7 @@ async function decide(prisma, { handoffId, actorId, idempotencyKey, expectedRevi
     });
     if (!handoff) throw custodyError("Handoff custody tidak ditemukan", 404, "CUSTODY_NOT_FOUND");
     if (!await productionWriterEnabledForUnit(tx, handoff.unitId)) {
-      throw custodyError("Custody V2 tidak aktif untuk unit ini; gunakan alur V1", 503, "CUSTODY_WRITER_OFF");
+      throw custodyError("Unit ini belum diaktifkan untuk serah-terima alur baru; gunakan alur biasa", 503, "CUSTODY_WRITER_OFF");
     }
     assertCanDecide(handoff, revisionExpected);
     const command = await beginCommand(tx, { actor, idempotencyKey, commandType, aggregateId: handoffId, requestHash, expectedRevision: revisionExpected });
@@ -544,7 +544,7 @@ async function confirmArrivalWithoutCustody(prisma, { unitId, actorId, idempoten
     await lockUnitOwnership(tx, unitId);
     const run = await tx.productionRun.findFirst({ where: { unitId, status: "PENDING_ARRIVAL" } });
     if (!run) return null;
-    if (!await productionWriterEnabledForUnit(tx, unitId)) throw custodyError("Custody V2 tidak aktif untuk unit ini; gunakan alur V1", 503, "CUSTODY_WRITER_OFF");
+    if (!await productionWriterEnabledForUnit(tx, unitId)) throw custodyError("Unit ini belum diaktifkan untuk serah-terima alur baru; gunakan alur biasa", 503, "CUSTODY_WRITER_OFF");
     const unit = await tx.unit.findUnique({ where: { id: unitId }, select: { id: true, unitCode: true, status: true } });
     if (!["RECEIVED", "IN_PRODUCTION"].includes(unit?.status)) {
       throw custodyError("Unit belum berstatus Diproses; kedatangan hanya dikonfirmasi lewat serah-terima pickup", 409, "CUSTODY_ARRIVAL_UNIT_STATUS", { status: unit?.status ?? null });
@@ -573,9 +573,9 @@ async function confirmArrivalWithoutCustody(prisma, { unitId, actorId, idempoten
 export async function completeAdaptationRunInTx(tx, { runId, actorId = null, now = new Date() }) {
   await lockRowForUpdate(tx, "production_runs_v2", runId);
   const run = await tx.productionRun.findUnique({ where: { id: runId }, include: { phases: true, unit: { select: { id: true, unitCode: true, orderId: true, status: true } } } });
-  if (!run) throw custodyError("Production Run tidak ditemukan", 404, "CUSTODY_RUN_NOT_FOUND");
+  if (!run) throw custodyError("Pekerjaan produksi tidak ditemukan", 404, "CUSTODY_RUN_NOT_FOUND");
   if (run.adaptationPolicy !== "ADAPTATION_V1") throw custodyError("Penutupan tanpa penerimaan barang jadi hanya untuk run mode adaptasi", 409, "ADAPTATION_NOT_ENABLED");
-  if (run.status !== "ACTIVE") throw custodyError("Production Run tidak aktif", 409, "CUSTODY_RUN_NOT_ACTIVE", { status: run.status });
+  if (run.status !== "ACTIVE") throw custodyError("Pekerjaan produksi tidak aktif", 409, "CUSTODY_RUN_NOT_ACTIVE", { status: run.status });
   assertRunConsistent(run, run.unit);
   await assertNoOpenRunException(tx, run.id);
   for (const phase of ["QC", "HANDOFF"]) {

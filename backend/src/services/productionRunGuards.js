@@ -57,7 +57,7 @@ export function assertRunConsistent(run, unit) {
 export async function assertNoOpenRunException(tx, runId) {
   const open = await tx.productionRunException.findFirst({ where: { runId, status: "OPEN" }, select: { id: true, kind: true } });
   if (open) {
-    throw guardError("Production Run ini punya konflik rekonsiliasi yang belum diselesaikan — selesaikan dulu sebelum melanjutkan.", 409, "PRODUCTION_RUN_EXCEPTION_OPEN", { exceptionId: open.id, kind: open.kind });
+    throw guardError("Pekerjaan produksi ini punya konflik data yang belum diselesaikan — selesaikan dulu sebelum melanjutkan.", 409, "PRODUCTION_RUN_EXCEPTION_OPEN", { exceptionId: open.id, kind: open.kind });
   }
   await assertNoV1Drift(tx, { runId });
 }
