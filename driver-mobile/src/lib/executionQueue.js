@@ -237,6 +237,23 @@ export function createExecutionQueue({ storage, fs, api: client }) {
       const route = (snapshot?.routes || []).find((r) => r.id === item.routeId);
       if (!route) return { resolved: false, reason: "Rute tidak ditemukan di data terbaru — periksa manual di Route Planner." };
       if (isRouteStartSatisfied(route.status)) return { resolved: true };
+      // Tidak ada lagi job ASSIGNED di rute ini (audit 10 Oktober 2026,
+      // laporan Difa — rute RTE-101026-01 tersangkut PERMANEN "masih
+      // PUBLISHED" walau SEMUA stopnya sudah diproses satu-satu lewat jalur
+      // job lepas POST /jobs/:id/start, yang TIDAK pernah butuh route-start
+      // sukses lebih dulu, lihat catatan di sana). POST /routes/:id/start
+      // menolak batch ini begitu target.length===0 ("Tidak ada job 'Siap
+      // Dimulai'") SEBELUM sempat mengubah Route.status — begitu itu
+      // terjadi, cek status semata di atas TIDAK PERNAH bisa resolve true
+      // lagi, item blocked selamanya walau tidak ada yang benar-benar
+      // salah (tujuan batch ini — tempel foto muatan + tandai rute
+      // berjalan — sudah tidak relevan, tidak ada stop ASSIGNED tersisa
+      // untuk ditempeli). Moot, bukan gagal — aman dibuang tanpa dikirim
+      // ulang, sama prinsipnya dengan cabang `resolved:true` lain di sini.
+      const masihAdaAssigned = (snapshot?.jobs || []).some(
+        (j) => j.routeId === item.routeId && j.status === "ASSIGNED"
+      );
+      if (!masihAdaAssigned) return { resolved: true };
       return { resolved: false, reason: `Rute masih berstatus ${route.status} di server — belum bisa dikonfirmasi otomatis.` };
     }
     const job = (snapshot?.jobs || []).find((j) => j.id === item.jobId);
@@ -291,6 +308,7 @@ export function createExecutionQueue({ storage, fs, api: client }) {
               ...item,
               attempts,
               lastError: exhausted ? `Percobaan otomatis dihentikan setelah ${MAX_RETRY_ATTEMPTS} kali: ${error.message || "Gagal sinkronisasi"}` : (error.message || "Gagal sinkronisasi"),
+              lastErrorCode: error.code || null,
               blocked: exhausted,
               syncState: exhausted ? "RETRY_EXHAUSTED" : "PENDING",
             };

@@ -90,6 +90,21 @@ export function classifyExecutionError(error) {
   if (status === 409) {
     if (message.includes("sedang diproses di perangkat lain")) return { kind: "retry" };
     if (message.includes("Idempotency-Key sudah dipakai")) return { kind: "block", reason: message };
+    // Gerbang Checklist Persiapan Perjalanan (bug nyata 10 Oktober 2026,
+    // laporan Difa rute RTE-101026-01) — SEBELUM ini jatuh ke "reconcile"
+    // generik: reconcileItem route-start cuma mengecek Route.status, yang
+    // TIDAK PERNAH berubah selama gerbang checklist menolak (penolakan
+    // terjadi SEBELUM Route.status di-update, lihat POST /routes/:id/start)
+    // — hasilnya item blocked SELAMANYA dengan pesan "masih PUBLISHED" yang
+    // menyesatkan (checklist bisa saja sudah diisi detik berikutnya, server
+    // tidak pernah dicoba lagi). Precondisi ini SEPENUHNYA bisa berubah
+    // lewat tindakan driver sendiri (isi Bukti Kelengkapan lalu kembali ke
+    // app) — persis definisi "retry": antrean otomatis mencoba ulang MUTASI
+    // aslinya (bukan cuma GET reconcile) tiap kembali ke foreground/jeda
+    // backoff, sampai MAX_RETRY_ATTEMPTS — kalau benar-benar tidak pernah
+    // diisi, item akhirnya blocked dengan pesan ASLI dari server (jelas
+    // "Checklist ... lengkapi dulu"), bukan pesan generik ini.
+    if (error?.code === "CHECKLIST_BELUM_LENGKAP") return { kind: "retry" };
     return { kind: "reconcile" };
   }
   if (status === 403) return { kind: "block", reason: message };
