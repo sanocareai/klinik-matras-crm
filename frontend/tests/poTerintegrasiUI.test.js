@@ -58,10 +58,19 @@ test("koreksi: alasan wajib, hanya field yang berubah dikirim, jumlah terkunci s
   f.tanggalTiba = "2026-09-30"; f.lines[0].jumlahDatang = "4";
   assert.equal(galatKoreksi(f, r), null);
   assert.deepEqual(bodyKoreksi(f, r), { revisi: 1, alasan: "Salah ketik tanggal", perubahan: { tanggalTiba: "2026-09-30", lines: [{ purchaseOrderLineId: "l1", jumlahDatang: 4 }] } });
-  const terkunci = formKoreksiAwal({ ...r, status: "INSPECTION" });
-  assert.equal(terkunci.bolehUbahJumlah, false);
-  terkunci.lines[0].jumlahDatang = "3"; terkunci.alasan = "x yyyy";
-  assert.equal(bodyKoreksi(terkunci, { ...r, status: "INSPECTION" }).perubahan.lines, undefined, "jumlah tidak dikirim setelah pemeriksaan");
+  // Tahap (Koreksi Penerimaan, Okt 2026): ARRIVED hanya datang; sesudah pemeriksaan + baik/ditolak; penerimaan yang belum tiba tidak bisa dikoreksi jumlahnya.
+  assert.equal(f.bolehUbahPeriksa, false);
+  const diperiksa = formKoreksiAwal({ ...r, status: "INSPECTION", lines: [{ ...r.lines[0], baik: 5, ditolak: 0 }] });
+  assert.deepEqual([diperiksa.bolehUbahJumlah, diperiksa.bolehUbahPeriksa, diperiksa.sudahStok], [true, true, false]);
+  diperiksa.lines[0].jumlahDatang = "4"; diperiksa.lines[0].jumlahBaik = "4"; diperiksa.alasan = "Salah hitung";
+  assert.deepEqual(bodyKoreksi(diperiksa, { ...r, status: "INSPECTION" }).perubahan.lines, [{ purchaseOrderLineId: "l1", jumlahDatang: 4, jumlahBaik: 4 }]);
+  diperiksa.lines[0].jumlahBaik = "5";
+  assert.match(galatKoreksi(diperiksa, r), /melebihi jumlah datang/, "baik + ditolak ≤ datang diperiksa dini");
+  assert.equal(formKoreksiAwal({ ...r, status: "COMPLETED" }).sudahStok, true);
+  const belumTiba = formKoreksiAwal({ ...r, status: "SCHEDULED" });
+  assert.equal(belumTiba.bolehUbahJumlah, false);
+  belumTiba.lines[0].jumlahDatang = "3"; belumTiba.alasan = "x yyyy";
+  assert.equal(bodyKoreksi(belumTiba, { ...r, status: "SCHEDULED" }).perubahan.lines, undefined, "jumlah tidak dikirim bila belum bisa dikoreksi");
   const k = kalimatRiwayat({ jenis: "KEDATANGAN_DIKOREKSI", oleh: "Sari", workspace: "FINANCE", alasan: "Salah ketik", sebelum: { tanggalTiba: "2026-10-01", lines: [{ purchaseOrderLineId: "l1", kode: "BUSA", datang: 5 }] }, sesudah: { tanggalTiba: "2026-09-30", lines: [{ purchaseOrderLineId: "l1", kode: "BUSA", datang: 4 }] } });
   assert.match(k, /Sari \(Finance\) mengoreksi kedatangan/); assert.match(k, /datang 5 → 4/); assert.match(k, /Alasan: Salah ketik/);
   assert.match(kalimatRiwayat({ jenis: "KEDATANGAN_DICATAT", oleh: "Budi", workspace: "GUDANG", sesudah: { tanggalTiba: "2026-10-01" } }), /Budi \(Gudang\) mencatat barang tiba/);

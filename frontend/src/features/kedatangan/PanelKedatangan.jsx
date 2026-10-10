@@ -212,10 +212,30 @@ export function ModalCatatKedatangan({ po, receipt = null, receiptId = null, wor
 export function ModalKoreksiKedatangan({ po, receipt, workspace, onClose, onDone }) {
   const [f, setF] = useState(() => formKoreksiAwal(receipt));
   const [galat, setGalat] = useState("");
+  const [dampak, setDampak] = useState(null); // { kunciBody, hasil } — pratinjau SERVER untuk isian saat ini
+  const [memuat, setMemuat] = useState(false);
   const kunci = useRef(`koreksi-tiba-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`}`);
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const setBaris = (i, patch) => setF((s) => ({ ...s, lines: s.lines.map((l, idx) => (idx === i ? { ...l, ...patch } : l)) }));
   const galatDini = galatKoreksi(f, receipt, { tanggalPO: po.orderDate });
+  const bodyKini = galatDini === "Belum ada yang diubah" ? "" : JSON.stringify(bodyKoreksi(f, receipt).perubahan);
+  const dampakBerlaku = dampak && dampak.kunciBody === bodyKini ? dampak.hasil : null; // isian berubah → pratinjau lama tidak berlaku
+  const optAsal = (l) => {
+    const pl = (po.lines ?? []).find((x) => x.id === l.purchaseOrderLineId);
+    const daftar = (pl?.asalPengganti ?? []).map((a) => ({ id: a.lineId, label: `${a.receiptNumber} — menunggu pengganti ${jumlahTeks(a.sisa)}` }));
+    if (l.asliPenggantiDariId && !daftar.some((a) => a.id === l.asliPenggantiDariId)) daftar.unshift({ id: l.asliPenggantiDariId, label: `${l.penggantiDariNomor ?? "penolakan asal"} (saat ini)` });
+    return daftar;
+  };
+  async function lihatDampak() {
+    setGalat(""); setMemuat(true);
+    try {
+      const body = { ...bodyKoreksi(f, receipt), alasan: f.alasan.trim() };
+      const hasil = workspace === "FINANCE" ? await api.pratinjauKoreksiKedatanganFinance(receipt.id, body) : await api.pratinjauKoreksiKedatanganGudang(receipt.id, body);
+      setDampak({ kunciBody: JSON.stringify(body.perubahan), hasil });
+      // panel dampak ada di bawah formulir: bawa ke layar supaya hasilnya (atau blokirnya) tidak terlewat
+      setTimeout(() => document.querySelector('[data-testid="dampak-koreksi"], [data-testid="dampak-blokir"]')?.scrollIntoView({ block: "nearest", behavior: "smooth" }), 80);
+    } catch (e) { setGalat(e.message || "Gagal memuat pratinjau dampak"); } finally { setMemuat(false); }
+  }
   async function simpan() {
     setGalat("");
     try {
@@ -227,13 +247,14 @@ export function ModalKoreksiKedatangan({ po, receipt, workspace, onClose, onDone
   return (
     <Modal
       open onOpenChange={(v) => !v && onClose()} title={`Koreksi Kedatangan — ${receipt.nomor}`} className="w-[680px]"
-      description="Setiap koreksi wajib beralasan dan tercatat sebelum–sesudah (siapa, kapan, dari workspace mana). Jumlah datang hanya bisa dikoreksi sebelum pemeriksaan dimulai."
+      description="Setiap koreksi wajib beralasan dan tercatat sebelum–sesudah (siapa, kapan, dari workspace mana). Lihat dampaknya dulu: progres PO, jadwal termin, stok, dan jurnal dihitung server — sesudah Simpan ke Stok, koreksi jumlah baik memakai pembalik + pengganti dan hanya bila terbukti aman."
       footer={
         <div className="flex w-full flex-col gap-2">
           {(galat || (galatDini && f.alasan)) && <p role="alert" data-testid="galat-koreksi" className="rounded-lg bg-orangebg px-3 py-2 text-[12.5px] leading-snug text-orange">{galat || galatDini}</p>}
           <div className="flex justify-end gap-2">
             <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
-            <TombolAksi disabled={!!galatDini} onClick={simpan} data-testid="simpan-koreksi"><Pencil size={14} /> Simpan Koreksi</TombolAksi>
+            <Button variant="neutral" disabled={!!galatDini || memuat} onClick={lihatDampak} data-testid="lihat-dampak" className="max-sm:min-h-11">{memuat ? "Menghitung…" : "Lihat Dampak"}</Button>
+            <TombolAksi disabled={!!galatDini || !dampakBerlaku?.boleh} onClick={simpan} data-testid="simpan-koreksi"><Pencil size={14} /> Simpan Koreksi</TombolAksi>
           </div>
         </div>
       }
@@ -254,10 +275,30 @@ export function ModalKoreksiKedatangan({ po, receipt, workspace, onClose, onDone
             <div className="text-[12px] font-semibold text-ink2">Jumlah</div>
             {f.lines.map((l, i) => (
               <div key={l.purchaseOrderLineId} className="grid grid-cols-1 gap-2 rounded-lg border border-line p-2.5 sm:grid-cols-2">
-                <Field label={`${l.kode} — jumlah datang (${l.satuan})`} hint={f.bolehUbahJumlah ? undefined : "Terkunci: penerimaan sudah masuk pemeriksaan."}>
+                <Field label={`${l.kode} — jumlah datang (${l.satuan})`} hint={f.bolehUbahJumlah ? undefined : "Penerimaan ini tidak bisa dikoreksi jumlahnya."}>
                   <input type="number" inputMode="decimal" min="0" step="any" disabled={!f.bolehUbahJumlah} value={l.jumlahDatang} aria-label={`Koreksi jumlah datang ${l.kode}`} onChange={(e) => setBaris(i, { jumlahDatang: e.target.value })}
                     className="h-9 w-full rounded-lg bg-surface px-3 text-right text-sm tabular-nums text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-60 max-sm:h-11" />
                 </Field>
+                {f.bolehUbahPeriksa && (
+                  <>
+                    <Field label={`${l.kode} — jumlah baik (${l.satuan})`} hint={f.sudahStok ? "Sudah masuk stok: lewat pembalik + pengganti bila aman." : undefined}>
+                      <input type="number" inputMode="decimal" min="0" step="any" value={l.jumlahBaik} aria-label={`Koreksi jumlah baik ${l.kode}`} data-testid={`koreksi-baik-${l.kode}`} onChange={(e) => setBaris(i, { jumlahBaik: e.target.value })}
+                        className="h-9 w-full rounded-lg bg-surface px-3 text-right text-sm tabular-nums text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/40 max-sm:h-11" />
+                    </Field>
+                    <Field label={`${l.kode} — jumlah ditolak (${l.satuan})`}>
+                      <input type="number" inputMode="decimal" min="0" step="any" value={l.jumlahDitolak} aria-label={`Koreksi jumlah ditolak ${l.kode}`} onChange={(e) => setBaris(i, { jumlahDitolak: e.target.value })}
+                        className="h-9 w-full rounded-lg bg-surface px-3 text-right text-sm tabular-nums text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/40 max-sm:h-11" />
+                    </Field>
+                  </>
+                )}
+                {(l.asliPenggantiDariId || optAsal(l).length > 0) && (
+                  <Field label={`${l.kode} — kaitan pengganti`} hint="Pilih penolakan yang digantikan, atau kosongkan bila ini pengiriman asli.">
+                    <Pilihan value={l.penggantiDariId} onChange={(v) => setBaris(i, { penggantiDariId: v })} aria-label={`Koreksi kaitan pengganti ${l.kode}`}>
+                      <option value="">— pengiriman asli (bukan pengganti) —</option>
+                      {optAsal(l).map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
+                    </Pilihan>
+                  </Field>
+                )}
                 {l.pendamping?.mode === "AKTUAL" && (
                   <Field label={`Jumlah ${String(l.pendamping.satuan).toLowerCase()} aktual`}>
                     <input type="number" inputMode="decimal" min="0" step="any" value={l.jumlahPendamping} aria-label={`Koreksi jumlah pendamping ${l.kode}`} onChange={(e) => setBaris(i, { jumlahPendamping: e.target.value })}
@@ -269,8 +310,53 @@ export function ModalKoreksiKedatangan({ po, receipt, workspace, onClose, onDone
           </div>
         )}
         <Field label="Alasan koreksi" required hint="Contoh: tanggal di surat jalan berbeda dengan yang diketik saat barang tiba."><Input value={f.alasan} onChange={(e) => set("alasan", e.target.value)} data-testid="alasan-koreksi" /></Field>
+        {dampakBerlaku && <DampakKoreksi hasil={dampakBerlaku} finance={workspace === "FINANCE"} />}
+        {!dampakBerlaku && !galatDini && <p className="m-0 text-[12px] text-ink3" data-testid="petunjuk-dampak">Tekan “Lihat Dampak” untuk memeriksa akibat koreksi sebelum menyimpan.</p>}
       </div>
     </Modal>
+  );
+}
+
+// ── Pratinjau dampak koreksi (SEMUA angka dari server) ───────────────────
+const LABEL_DAMPAK = { datang: "Total fisik tiba", belumDatang: "Belum datang", belumDiperiksa: "Belum diperiksa", ditolak: "Ditolak", menungguPengganti: "Menunggu pengganti", baikBelumDisimpan: "Baik belum disimpan", masukStok: "Masuk stok", belumDipenuhiSupplier: "Belum dipenuhi supplier", belumMasukStok: "Belum masuk stok", datangAsli: "Pengiriman asli tiba", pengganti: "Pengganti tiba" };
+const JALUR_TEKS = { DATA: "Hanya data kedatangan (tanpa efek jumlah).", LANGSUNG: "Koreksi langsung — dalam satu transaksi; progres PO dan jadwal termin yang belum terkunci dihitung ulang.", PEMBALIK_PENGGANTI: "Sudah masuk stok: dibuat pergerakan PEMBALIK + PENGGANTI dan jurnal koreksi; catatan lama dipertahankan." };
+export function DampakKoreksi({ hasil, finance }) {
+  if (!hasil.boleh) {
+    return (
+      <div role="alert" data-testid="dampak-blokir" className="space-y-1 rounded-lg bg-orangebg px-3 py-2 text-[12.5px] leading-snug text-orange">
+        <div className="font-semibold">Koreksi ini diblokir{hasil.blokir?.[0]?.kode ? ` (${hasil.blokir[0].kode})` : ""}</div>
+        {(hasil.blokir ?? []).map((b, i) => (<div key={i}><p className="m-0">{b.pesan}</p>{b.arah && <p className="m-0 mt-1 font-medium">Yang perlu dilakukan: {b.arah}</p>}</div>))}
+      </div>
+    );
+  }
+  const d = hasil.dampak ?? {};
+  return (
+    <div className="space-y-2 rounded-lg border border-line bg-inset px-3 py-2.5 text-[12.5px]" data-testid="dampak-koreksi">
+      <div className="font-semibold text-ink">Dampak koreksi — {JALUR_TEKS[hasil.jalur] ?? hasil.jalur}</div>
+      {(d.progres ?? []).length > 0 ? (
+        <ul className="m-0 list-none space-y-1 p-0" data-testid="dampak-progres">
+          {d.progres.map((p) => (
+            <li key={p.purchaseOrderLineId}>
+              <span className="font-medium text-ink">{p.kode}</span>:{" "}
+              {p.berubah.map((x) => `${LABEL_DAMPAK[x] ?? x} ${jumlahTeks(p.sebelum[x])} → ${jumlahTeks(p.sesudah[x])} ${p.satuan}`).join(" · ")}
+            </li>
+          ))}
+        </ul>
+      ) : <p className="m-0 text-ink2" data-testid="dampak-progres">Progres PO tidak berubah.</p>}
+      {(d.termin ?? []).filter((t) => t.berubah).length > 0 && (
+        <ul className="m-0 list-none space-y-0.5 p-0" data-testid="dampak-termin">
+          {d.termin.filter((t) => t.berubah).map((t) => <li key={t.fakturId}>Jatuh tempo faktur {t.nomor} ({t.status}): {tanggalTeks(t.jatuhTempoSebelum)} → {tanggalTeks(t.jatuhTempo)}</li>)}
+        </ul>
+      )}
+      {(d.stok ?? []).length > 0 && (
+        <ul className="m-0 list-none space-y-0.5 p-0" data-testid="dampak-stok">
+          {d.stok.map((s) => <li key={s.kode}>Stok {s.kode}: jumlah baik {jumlahTeks(s.baikSebelum)} → {jumlahTeks(s.baikSesudah)} {s.satuan} (selisih stok {s.selisihQtyStok > 0 ? "+" : ""}{jumlahTeks(s.selisihQtyStok)})</li>)}
+        </ul>
+      )}
+      {finance && d.jurnal && <p className="m-0" data-testid="dampak-jurnal">Jurnal koreksi: Persediaan {d.jurnal.arah === "KURANG" ? "dikurangi" : "ditambah"} Rp{Math.round(d.jurnal.nilai).toLocaleString("id-ID")} (lawan: Utang Barang Belum Ditagih). Jurnal penerimaan asli tidak diubah.</p>}
+      {(d.fakturTertunda ?? []).length > 0 && <p className="m-0 text-ink2">Faktur belum disetujui dihitung ulang saat disetujui: {d.fakturTertunda.join(", ")}.</p>}
+      {d.statusPO?.sebelum !== d.statusPO?.sesudah && <p className="m-0">Status PO: {d.statusPO?.sebelum} → {d.statusPO?.sesudah}.</p>}
+    </div>
   );
 }
 

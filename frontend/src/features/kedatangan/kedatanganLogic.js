@@ -100,11 +100,18 @@ export function bodyKedatangan(f, receiptId = null) {
 
 // ── Formulir koreksi ─────────────────────────────────────────────────────
 
+export const KOREKSI_STATUS_JUMLAH = ["ARRIVED", "INSPECTION", "READY_FOR_PUTAWAY", "COMPLETED"];
+export const KOREKSI_STATUS_PERIKSA = ["INSPECTION", "READY_FOR_PUTAWAY", "COMPLETED"];
+
 export function formKoreksiAwal(r) {
   return {
     tanggalTiba: r.tanggalTiba || hariIniISO(), penerima: r.penerima || "", catatan: r.catatan || "", suratJalan: r.suratJalan || "", bukti: [...(r.bukti || [])], alasan: "",
-    bolehUbahJumlah: r.status === "ARRIVED",
-    lines: r.lines.filter((l) => l.datang !== null && l.datang !== undefined).map((l) => ({ purchaseOrderLineId: l.purchaseOrderLineId, kode: l.kode, satuan: l.satuan, asli: Number(l.datang), jumlahDatang: String(l.datang), pendamping: l.pendamping, jumlahPendamping: l.pendamping?.aktual === null || l.pendamping?.aktual === undefined ? "" : String(l.pendamping.aktual), pendampingAsli: l.pendamping?.aktual ?? null })),
+    // Tahap: ARRIVED → datang; INSPECTION/READY_FOR_PUTAWAY → + baik & ditolak; COMPLETED → datang/ditolak langsung, baik lewat pembalik+pengganti (server membuktikan aman/memblokir).
+    bolehUbahJumlah: KOREKSI_STATUS_JUMLAH.includes(r.status), bolehUbahPeriksa: KOREKSI_STATUS_PERIKSA.includes(r.status), sudahStok: r.status === "COMPLETED",
+    lines: r.lines.filter((l) => l.datang !== null && l.datang !== undefined).map((l) => ({ purchaseOrderLineId: l.purchaseOrderLineId, kode: l.kode, satuan: l.satuan, asli: Number(l.datang), jumlahDatang: String(l.datang),
+      asliBaik: l.baik === null || l.baik === undefined ? null : Number(l.baik), jumlahBaik: l.baik === null || l.baik === undefined ? "" : String(l.baik),
+      asliDitolak: l.ditolak === null || l.ditolak === undefined ? null : Number(l.ditolak), jumlahDitolak: l.ditolak === null || l.ditolak === undefined ? "" : String(l.ditolak),
+      penggantiDariId: l.penggantiDari?.lineId ?? "", asliPenggantiDariId: l.penggantiDari?.lineId ?? "", penggantiDariNomor: l.penggantiDari?.nomor ?? null, pendamping: l.pendamping, jumlahPendamping: l.pendamping?.aktual === null || l.pendamping?.aktual === undefined ? "" : String(l.pendamping.aktual), pendampingAsli: l.pendamping?.aktual ?? null })),
   };
 }
 
@@ -120,6 +127,9 @@ export function bodyKoreksi(f, r) {
   for (const l of f.lines) {
     const o = { purchaseOrderLineId: l.purchaseOrderLineId };
     if (f.bolehUbahJumlah && l.jumlahDatang !== "" && Number(l.jumlahDatang) !== l.asli) o.jumlahDatang = Number(l.jumlahDatang);
+    if (f.bolehUbahPeriksa && l.jumlahBaik !== "" && Number(l.jumlahBaik) !== (l.asliBaik ?? 0)) o.jumlahBaik = Number(l.jumlahBaik);
+    if (f.bolehUbahPeriksa && l.jumlahDitolak !== "" && Number(l.jumlahDitolak) !== (l.asliDitolak ?? 0)) o.jumlahDitolak = Number(l.jumlahDitolak);
+    if ((l.penggantiDariId || "") !== (l.asliPenggantiDariId || "")) o.penggantiDariBarisId = l.penggantiDariId || null;
     if (l.pendamping?.mode === "AKTUAL" && l.jumlahPendamping !== "" && Number(l.jumlahPendamping) !== l.pendampingAsli) o.jumlahPendamping = Number(l.jumlahPendamping);
     if (Object.keys(o).length > 1) lines.push(o);
   }
@@ -133,6 +143,11 @@ export function galatKoreksi(f, r, { tanggalPO = null } = {}) {
   if (Object.keys(perubahan).length === 0) return "Belum ada yang diubah";
   if (f.tanggalTiba > hariIniISO()) return "Tanggal barang tiba tidak boleh di masa depan";
   if (tanggalPO && f.tanggalTiba < String(tanggalPO).slice(0, 10)) return `Tanggal barang tiba tidak boleh sebelum tanggal PO (${tanggalTeks(tanggalPO)})`;
+  for (const l of f.lines) {
+    const dt = Number(l.jumlahDatang), bk = Number(l.jumlahBaik || 0), tl = Number(l.jumlahDitolak || 0);
+    if (!(dt > 0)) return `${l.kode}: jumlah datang harus lebih dari 0`;
+    if (f.bolehUbahPeriksa && bk + tl > dt + 1e-9) return `${l.kode}: baik (${jumlahTeks(bk)}) + ditolak (${jumlahTeks(tl)}) melebihi jumlah datang (${jumlahTeks(dt)})`;
+  }
   if (String(f.penerima).trim().length < 2) return "PIC/penerima wajib diisi";
   if (!String(f.catatan).trim()) return "Catatan kedatangan wajib diisi";
   return null;
@@ -151,10 +166,15 @@ export function kalimatRiwayat(e) {
   if (t.bukti !== undefined) ubah.push("bukti diubah");
   for (const b of t.lines ?? []) {
     const a = (s.lines ?? []).find((x) => x.purchaseOrderLineId === b.purchaseOrderLineId);
-    if (a && b.datang !== a.datang) ubah.push(`${b.kode}: datang ${jumlahTeks(a.datang)} → ${jumlahTeks(b.datang)}`);
-    else if (a && b.pendamping !== a.pendamping) ubah.push(`${b.kode}: pendamping ${a.pendamping ?? "—"} → ${b.pendamping ?? "—"}`);
+    if (!a) continue;
+    if (b.datang !== a.datang) ubah.push(`${b.kode}: datang ${jumlahTeks(a.datang)} → ${jumlahTeks(b.datang)}`);
+    if ((b.baik ?? null) !== (a.baik ?? null)) ubah.push(`${b.kode}: baik ${jumlahTeks(a.baik ?? 0)} → ${jumlahTeks(b.baik ?? 0)}`);
+    if ((b.ditolak ?? null) !== (a.ditolak ?? null)) ubah.push(`${b.kode}: ditolak ${jumlahTeks(a.ditolak ?? 0)} → ${jumlahTeks(b.ditolak ?? 0)}`);
+    if (b.pendamping !== a.pendamping) ubah.push(`${b.kode}: pendamping ${a.pendamping ?? "—"} → ${b.pendamping ?? "—"}`);
+    if ((b.penggantiDari ?? null) !== (a.penggantiDari ?? null)) ubah.push(`${b.kode}: kaitan pengganti ${a.penggantiDari ?? "pengiriman asli"} → ${b.penggantiDari ?? "pengiriman asli"}`);
   }
-  return `${e.oleh ?? "Sistem"}${dari ? ` (${dari})` : ""} mengoreksi kedatangan — ${ubah.join("; ") || "data"}. Alasan: ${e.alasan}`;
+  const jalur = t.jalur === "PEMBALIK_PENGGANTI" ? ` [stok dikoreksi lewat pembalik + pengganti${t.jurnalKoreksi ? `, jurnal ${t.jurnalKoreksi}` : ""}]` : "";
+  return `${e.oleh ?? "Sistem"}${dari ? ` (${dari})` : ""} mengoreksi kedatangan — ${ubah.join("; ") || "data"}${jalur}. Alasan: ${e.alasan}`;
 }
 
 /** Ringkasan pada daftar/kartu: DARI SERVER (progresPO.js). Layar tidak menghitung ulang. */
