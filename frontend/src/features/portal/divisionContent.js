@@ -2,7 +2,7 @@ import {
   Users, Wrench, Truck, Gauge, Package,
   MessageSquare, GitBranch, ClipboardList, BarChart3,
   Boxes, ScanLine, Route, CalendarClock, TrendingUp, HeartPulse,
-  Landmark, Banknote, Receipt, BookOpen, Building2, Wallet, ShoppingCart, HandCoins,
+  Landmark, Banknote, Receipt, BookOpen, Building2, Wallet, ShoppingCart, HandCoins, Undo2,
 } from "lucide-react";
 
 // Konten halaman command center per divisi (`.division-page` di file desain
@@ -90,6 +90,7 @@ export const DIVISION_CONTENT = {
       { title: "Dashboard",             description: "Ringkasan stok, penerimaan, pengeluaran, dan akurasi inventory.", icon: Gauge, path: "/warehouse/dashboard" },
       { title: "Stok & Material",       description: "Pantau saldo, lokasi rak, lot, dan status seluruh inventory.", icon: Package, path: "/warehouse/inventory" },
       { title: "Barang Akan Datang",    description: "PO bahan baku yang ditunggu: catat barang tiba, lihat yang terlambat dan siap disimpan (tanpa harga).", icon: Truck, path: "/warehouse/barang-akan-datang" },
+      { title: "Retur Supplier",       description: "Barang bermasalah yang dikembalikan ke supplier untuk kredit: catat kondisi dan konfirmasi barang keluar (tanpa nilai).", icon: Truck, path: "/warehouse/retur-supplier" },
       { title: "Penerimaan Barang",     description: "Penerimaan bahan baku dan produk dari supplier atau produksi.", icon: ScanLine, path: "/warehouse/goods-receipt" },
       { title: "Pengeluaran Material",  description: "Pengeluaran material untuk work order produksi.", icon: ClipboardList, path: "/warehouse/material-issue" },
       { title: "Transfer Stok",         description: "Mutasi barang antar lokasi, rak, atau gudang.", icon: Route, path: "/warehouse/transfers" },
@@ -159,6 +160,7 @@ export const DIVISION_CONTENT = {
       { title: "Kasbon",               description: "Uang muka gaji karyawan: sisa per orang, potong gaji, pelunasan.", icon: HandCoins, path: "/finance/kasbon" },
       { title: "Invoice & Jatuh Tempo", description: "Tagihan ke pelanggan, umurnya, dan yang belum punya tempo.", icon: Receipt, path: "/finance/invoices" },
       { title: "Supplier & Utang",     description: "Tagihan masuk, pembayaran supplier, dan sisa utang.", icon: Building2, path: "/finance/suppliers" },
+      { title: "Retur & Debit Note",   description: "Retur supplier untuk kredit: Debit Note menunggu persetujuan, pengurang utang faktur, dan saldo kredit supplier.", icon: Undo2, path: "/finance/retur-supplier" },
       { title: "Laporan Keuangan",     description: "Laba rugi, neraca, arus kas, dan neraca saldo.", icon: BarChart3, path: "/finance/reports" },
     ],
   },
