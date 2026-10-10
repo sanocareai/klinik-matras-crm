@@ -81,6 +81,19 @@ export async function dasarHargaRataRata(tx, materialId, { asOf } = {}) {
   });
   // Penerimaan berkonversi satuan membawa harga EKSAK per satuan stok (unitCostExact); selainnya unitCost bulat seperti biasa.
   for (const r of receipts) if (r.unitCostExact != null) r.unitCost = r.unitCostExact;
+  // Pembalik KOREKSI PENERIMAAN (RECEIPT bernilai negatif bertaut penerimaan, services/finance/koreksiPenerimaan.js): dikurangkan dari baris RECEIPT positif penerimaan yang SAMA
+  // (terlama dulu) supaya rata-rata tidak menghitung jumlah yang sudah dikoreksi. Baris negatif sendiri tidak ikut dirata-rata (disaring oleh qty > 0 di bawah).
+  const sisaPembalik = new Map();
+  for (const r of receipts) if (r.goodsReceiptId && Number(r.qty) < 0) sisaPembalik.set(r.goodsReceiptId, (sisaPembalik.get(r.goodsReceiptId) ?? new Decimal(0)).plus(new Decimal(String(r.qty)).abs()));
+  for (const r of receipts) {
+    if (!r.goodsReceiptId || !(Number(r.qty) > 0)) continue;
+    const s = sisaPembalik.get(r.goodsReceiptId);
+    if (!s || !s.greaterThan(0)) continue;
+    const q = new Decimal(String(r.qty));
+    const ambil = Decimal.min(q, s);
+    r.qty = q.minus(ambil).toString();
+    sisaPembalik.set(r.goodsReceiptId, s.minus(ambil));
+  }
   let opening = null;
   if (aktif) {
     const awal = await tx.finInventoryOpeningLine.findUnique({ where: { openingId_materialId: { openingId: aktif.id, materialId } }, select: { qty: true, unitCost: true } });

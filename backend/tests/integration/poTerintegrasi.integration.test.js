@@ -283,10 +283,10 @@ test("koreksi tanggal/jumlah: alasan wajib, tercatat sebelum–sesudah, revisi n
   // riwayat append-only di DB
   await assert.rejects(() => testPrisma.goodsReceiptEvent.update({ where: { id: ev[0].id }, data: { reason: "diubah" } }), /append-only/);
   await assert.rejects(() => testPrisma.goodsReceiptEvent.delete({ where: { id: ev[0].id } }), /append-only/);
-  // setelah pemeriksaan jumlah datang terkunci, tanggal tetap boleh
+  // SESUDAH pemeriksaan (Koreksi Penerimaan, Okt 2026): jumlah datang boleh dikoreksi di tahap Siap Disimpan, tetapi tidak boleh di bawah baik + ditolak; tanggal tetap boleh
   await isiPeriksa(w, id, { baik: 4 });
   const kunciJml = await w.f.post(`/api/finance/purchase-orders/penerimaan/${id}/koreksi-kedatangan`, { revisi: 2, alasan: "Salah hitung", perubahan: { lines: [{ purchaseOrderLineId: L, jumlahDatang: 3 }] } }, kunci());
-  assert.equal(kunciJml.status, 409); assert.equal(kunciJml.body.code, "JUMLAH_TERKUNCI");
+  assert.equal(kunciJml.status, 400); assert.equal(kunciJml.body.code, "BAIK_DITOLAK_MELEBIHI_DATANG");
   assert.equal((await w.g.post(`/api/inventory/barang-akan-datang/penerimaan/${id}/koreksi`, { revisi: 2, alasan: "Tanggal tiba bergeser sehari", perubahan: { tanggalTiba: geser(-6) } }, kunci())).status, 200);
 });
 
@@ -385,10 +385,11 @@ test("termin: tidak berjalan saat PO dibuat; satu faktur untuk dua penerimaan = 
   assert.equal(detail.jadwalPerPenerimaan.length, 2);
   assert.equal(detail.nilaiFaktur, 10 * H);
 
-  // koreksi tanggal tiba menggeser jatuh tempo; stok/jurnal faktur tidak berubah
+  // koreksi tanggal tiba yang menggeser jatuh tempo faktur DISETUJUI diblokir (Koreksi Penerimaan, Okt 2026: jadwal termin faktur disetujui terkunci, tidak diubah diam-diam)
   const stokSebelum = await testPrisma.stockMovement.count();
-  assert.equal((await w.f.post(`/api/finance/purchase-orders/penerimaan/${r1.body.receiptId}/koreksi-kedatangan`, { revisi: 1, alasan: "Tanggal tiba di surat jalan lebih awal", perubahan: { tanggalTiba: geser(-15) } }, kunci())).status, 200);
-  assert.equal((await testPrisma.finSupplierBill.findUnique({ where: { id: fk.body.billId } })).dueDate.toISOString().slice(0, 10), geser(-15 + 30));
+  const terkunci = await w.f.post(`/api/finance/purchase-orders/penerimaan/${r1.body.receiptId}/koreksi-kedatangan`, { revisi: 1, alasan: "Tanggal tiba di surat jalan lebih awal", perubahan: { tanggalTiba: geser(-15) } }, kunci());
+  assert.equal(terkunci.status, 409); assert.equal(terkunci.body.code, "TERMIN_TERKUNCI");
+  assert.equal((await testPrisma.finSupplierBill.findUnique({ where: { id: fk.body.billId } })).dueDate.toISOString().slice(0, 10), geser(-12 + 30), "jatuh tempo faktur disetujui tidak berubah");
   assert.equal(await testPrisma.stockMovement.count(), stokSebelum);
   assert.equal(await testPrisma.finJournalEntry.count({ where: { source: "TAGIHAN_SUPPLIER", sourceId: fk.body.billId } }), 1);
   void sebelumFaktur;

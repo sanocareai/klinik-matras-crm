@@ -14,7 +14,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { idempotency, wajibIdempotencyKey } from "../middleware/idempotency.js";
 import { requirePermission, PERMISSIONS as P, rolesOf } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
-import { aktorDariSesi, bentukBarangAkanDatang, catatKedatanganPO, daftarBarangAkanDatang, koreksiKedatangan, KedatanganError, pastikanDrafPenerimaan, WORKSPACE } from "../services/finance/kedatangan.js";
+import { aktorDariSesi, bentukBarangAkanDatang, catatKedatanganPO, daftarBarangAkanDatang, jalankanKoreksiKedatangan, KedatanganError, pastikanDrafPenerimaan, WORKSPACE } from "../services/finance/kedatangan.js";
 
 const POLA_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -36,8 +36,11 @@ export const terimaBukti = (req, res, next) => unggahBukti.single("foto")(req, r
   return res.status(201).json({ url: `/media/receipt-proofs/${req.file.filename}` });
 });
 
+/** Koreksi: Idempotency-Key wajib untuk PENERAPAN; PRATINJAU (body.pratinjau === true) tidak menulis apa pun sehingga tidak butuh kunci. */
+export const wajibKunciKecualiPratinjau = (req, res, next) => (req.body?.pratinjau === true ? next() : wajibIdempotencyKey(req, res, next));
+
 export function galatKedatangan(err, res) {
-  if (typeof err?.statusCode === "number") return res.status(err.statusCode).json({ error: err.message, ...(err.code && { code: err.code }) });
+  if (typeof err?.statusCode === "number") return res.status(err.statusCode).json({ error: err.message, ...(err.code && { code: err.code }), ...(err.arah && { arah: err.arah }), ...(err.detail && { detail: err.detail }) });
   if (err?.code === "P2002") return res.status(409).json({ error: "Nomor penerimaan bentrok — coba lagi" });
   if (err?.code === "P2025") return res.status(404).json({ error: "Data tidak ditemukan" });
   console.error("Kedatangan error:", err);
@@ -55,11 +58,12 @@ barangAkanDatangRouter.get("/", requirePermission(P.INVENTORY_READ), async (req,
 
 barangAkanDatangRouter.post("/bukti", requirePermission(P.INVENTORY_WRITE), terimaBukti);
 
-barangAkanDatangRouter.post("/penerimaan/:receiptId/koreksi", requirePermission(P.INVENTORY_WRITE), wajibIdempotencyKey, async (req, res) => {
+barangAkanDatangRouter.post("/penerimaan/:receiptId/koreksi", requirePermission(P.INVENTORY_WRITE), wajibKunciKecualiPratinjau, async (req, res) => {
   try {
     if (!POLA_UUID.test(req.params.receiptId)) return res.status(404).json({ error: "Penerimaan tidak ditemukan" });
     const aktor = aktorDariSesi(req.user, WORKSPACE.GUDANG, rolesOf(req.user));
-    const hasil = await prisma.$transaction((tx) => koreksiKedatangan(tx, { receiptId: req.params.receiptId, perubahan: req.body?.perubahan, alasan: req.body?.alasan, revisiDiharapkan: req.body?.revisi, aktor }));
+    const hasil = await jalankanKoreksiKedatangan(prisma, { receiptId: req.params.receiptId, perubahan: req.body?.perubahan, alasan: req.body?.alasan, revisiDiharapkan: req.body?.revisi, aktor, finance: false, pratinjau: req.body?.pratinjau === true });
+    if (hasil.pratinjau) return res.json(hasil); // pratinjau dampak: tidak ada yang tertulis
     const rec = await prisma.goodsReceipt.findUnique({ where: { id: hasil.receiptId }, select: { purchaseOrderId: true } });
     res.json({ ...hasil, po: await bentukBarangAkanDatang(prisma, rec.purchaseOrderId, { finance: false }) });
   } catch (e) { galatKedatangan(e, res); }

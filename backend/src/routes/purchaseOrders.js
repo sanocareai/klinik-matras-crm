@@ -7,8 +7,8 @@ import { requireAuth } from "../middleware/auth.js";
 import { idempotency } from "../middleware/idempotency.js";
 import { requirePermission, PERMISSIONS as P, hasPermission, rolesOf } from "../middleware/authorize.js";
 import { wajibIdempotencyKey } from "../middleware/idempotency.js";
-import { aktorDariSesi, bentukBarangAkanDatang, catatKedatanganPO, daftarBarangAkanDatang, koreksiKedatangan, pastikanDrafPenerimaan, WORKSPACE } from "../services/finance/kedatangan.js";
-import { galatKedatangan, terimaBukti } from "./barangAkanDatang.js";
+import { aktorDariSesi, bentukBarangAkanDatang, catatKedatanganPO, daftarBarangAkanDatang, jalankanKoreksiKedatangan, pastikanDrafPenerimaan, WORKSPACE } from "../services/finance/kedatangan.js";
+import { galatKedatangan, terimaBukti, wajibKunciKecualiPratinjau } from "./barangAkanDatang.js";
 import { prisma } from "../db.js";
 const POLA_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 import { handleFinanceError } from "./finance.js";
@@ -36,11 +36,12 @@ purchaseOrderFinanceRouter.get("/kedatangan", requirePermission(P.FINANCE_READ),
   try { res.json(await daftarBarangAkanDatang(prisma, { status: req.query.status || null, q: req.query.q || null, finance: true })); } catch (e) { galatKedatangan(e, res); }
 });
 purchaseOrderFinanceRouter.post("/bukti-kedatangan", requirePermission(P.FINANCE_POST), terimaBukti);
-purchaseOrderFinanceRouter.post("/penerimaan/:receiptId/koreksi-kedatangan", requirePermission(P.FINANCE_POST), wajibIdempotencyKey, async (req, res) => {
+purchaseOrderFinanceRouter.post("/penerimaan/:receiptId/koreksi-kedatangan", requirePermission(P.FINANCE_POST), wajibKunciKecualiPratinjau, async (req, res) => {
   try {
     if (!POLA_UUID.test(req.params.receiptId)) return res.status(404).json({ error: "Penerimaan tidak ditemukan" });
     const aktor = aktorDariSesi(req.user, WORKSPACE.FINANCE, rolesOf(req.user));
-    const hasil = await prisma.$transaction((tx) => koreksiKedatangan(tx, { receiptId: req.params.receiptId, perubahan: req.body?.perubahan, alasan: req.body?.alasan, revisiDiharapkan: req.body?.revisi, aktor }));
+    const hasil = await jalankanKoreksiKedatangan(prisma, { receiptId: req.params.receiptId, perubahan: req.body?.perubahan, alasan: req.body?.alasan, revisiDiharapkan: req.body?.revisi, aktor, finance: true, pratinjau: req.body?.pratinjau === true });
+    if (hasil.pratinjau) return res.json(hasil);
     const rec = await prisma.goodsReceipt.findUnique({ where: { id: hasil.receiptId }, select: { purchaseOrderId: true } });
     res.json({ ...hasil, kedatangan: await bentukBarangAkanDatang(prisma, rec.purchaseOrderId, { finance: true }) });
   } catch (e) { galatKedatangan(e, res); }

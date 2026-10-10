@@ -161,7 +161,7 @@ goodsReceiptRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), async (re
     const existing = await prisma.goodsReceipt.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: "Goods receipt tidak ditemukan" });
     if (existing.status === "COMPLETED" || existing.status === "REJECTED") {
-      throw new ReceiptError(`Receipt berstatus ${existing.status} tidak bisa diubah lagi`);
+      throw new ReceiptError(`Receipt berstatus ${existing.status} tidak bisa diubah lagi${existing.status === "COMPLETED" && existing.purchaseOrderId ? " dari sini — koreksi lewat Koreksi Kedatangan (Barang Akan Datang): wajib alasan, tercatat sebelum–sesudah, dan sesudah Simpan ke Stok memakai pembalik + pengganti bila terbukti aman" : ""}`);
     }
 
     const { sourceReference, supplier, expectedDate, receivedDate, deliveryNote, notes, status } = req.body;
@@ -209,7 +209,7 @@ goodsReceiptRouter.patch("/:id/lines/:lineId", requirePermission(P.INVENTORY_WRI
     const receipt = await prisma.goodsReceipt.findUnique({ where: { id: req.params.id } });
     if (!receipt) return res.status(404).json({ error: "Goods receipt tidak ditemukan" });
     if (receipt.status === "COMPLETED" || receipt.status === "REJECTED") {
-      throw new ReceiptError(`Receipt berstatus ${receipt.status} tidak bisa diubah lagi`);
+      throw new ReceiptError(`Receipt berstatus ${receipt.status} tidak bisa diubah lagi${receipt.status === "COMPLETED" && receipt.purchaseOrderId ? " dari sini — koreksi lewat Koreksi Kedatangan (Barang Akan Datang): wajib alasan, tercatat sebelum–sesudah, dan sesudah Simpan ke Stok memakai pembalik + pengganti bila terbukti aman" : ""}`);
     }
     const line = await prisma.goodsReceiptLine.findFirst({ where: { id: req.params.lineId, goodsReceiptId: receipt.id } });
     if (!line) return res.status(404).json({ error: "Baris item tidak ditemukan" });
