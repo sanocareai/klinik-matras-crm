@@ -51,7 +51,7 @@ function AssignSection({ target, refs, onSaved, onError }) {
     stationCode: plan?.stationCode || refs.stations[0] || "TABLE_1",
     priority: Math.min(plan?.priority ?? 0, 1), // pilihan pengguna hanya Normal/Tinggi
     workCenterId: plan?.workCenter?.id || refs.workCenters[0]?.id || "",
-    operatorId: plan?.operator?.id || "",
+    operatorId: "", // kosong = tetap PIC rencana / ikuti PIC bawaan Meja; terisi hanya bila petugas memilih PIC khusus
     cornerOperatorId: plan?.cornerOperator?.id || "",
   }));
   const [busy, setBusy] = useState(false);
@@ -59,10 +59,12 @@ function AssignSection({ target, refs, onSaved, onError }) {
   const field = "mt-1 w-full rounded-btn border border-line bg-transparent px-3 py-2 text-[13px] text-ink";
 
   async function submit() {
-    if (!form.workCenterId || !form.operatorId) { onError("Pilih workshop dan operator."); return; }
+    if (!form.workCenterId) { onError("Pilih workshop."); return; }
     setBusy(true);
     try {
-      const body = { ...form, priority: Number(form.priority), cornerOperatorId: form.cornerOperatorId || undefined };
+      // PIC kosong = ikuti PIC bawaan Meja (server memilihnya; bila belum ada, server menolak dengan pesan yang menjelaskan).
+      const { operatorId, ...rest } = form;
+      const body = { ...rest, ...(operatorId ? { operatorId } : {}), priority: Number(form.priority), cornerOperatorId: form.cornerOperatorId || undefined };
       const result = plan
         ? await api.scheduleProductionV2Plan(plan.id, { ...body, expectedRevision: plan.revision })
         : await api.planProductionV2Unit({ runId: target.runId, ...body });
@@ -88,7 +90,7 @@ function AssignSection({ target, refs, onSaved, onError }) {
         </label>
         <label className="text-[11.5px] text-ink3">PIC meja
           <select className={field} value={form.operatorId} onChange={(e) => set({ operatorId: e.target.value })}>
-            <option value="">— pilih —</option>{refs.operators.map((o) => <option key={o.id} value={o.id}>{o.name || o.user?.name || o.employeeCode}</option>)}
+            <option value="">{plan?.operator?.name ? `Tetap: ${plan.operator.name}` : "Ikuti PIC bawaan Meja"}</option>{refs.operators.map((o) => <option key={o.id} value={o.id}>{o.name || o.user?.name || o.employeeCode}</option>)}
           </select>
         </label>
         <label className="text-[11.5px] text-ink3">PIC Corner — opsional
