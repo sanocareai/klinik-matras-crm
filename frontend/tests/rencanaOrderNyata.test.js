@@ -105,7 +105,8 @@ test("Unit 360: kedatangan yang dikonfirmasi petugas tanpa pickup dibaca dari ca
 });
 
 test("konflik papan basi: galat penuh/revisi memuat ulang papan di belakang formulir dan memindahkan pilihan dari Meja yang kini penuh", () => {
-  assert.match(SCHEDULE, /const STALE_CODES = \["PLAN_STATION_FULL", "PLAN_REVISION_CONFLICT", "STATION_ORDER_STALE"\]/);
+  // Keadaan unit berubah saat modal terbuka (diaktifkan orang lain / Run muncul / progres V1) juga memuat ulang papan di belakang formulir.
+  assert.match(SCHEDULE, /const STALE_CODES = \["PLAN_STATION_FULL", "PLAN_REVISION_CONFLICT", "STATION_ORDER_STALE", "RENCANA_ACTIVATION_STALE", "RENCANA_RUN_OUTSIDE_COHORT", "RENCANA_HAS_PRIOR_RUN", "RENCANA_HAS_V1_PROGRESS", "RENCANA_PARTIAL_ACTIVATION"\]/);
   assert.match(SCHEDULE, /if \(STALE_CODES\.includes\(e\?\.code\)\) onStale\?\.\(\)/);
   assert.match(SCHEDULE, /stationCapacity\(cur\)\.full && cur\.code !== plan\?\.stationCode/, "Meja rencana ini sendiri tidak dianggap penuh");
   assert.match(RENCANA, /onStale=\{load\}/);
