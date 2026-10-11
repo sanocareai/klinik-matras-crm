@@ -115,6 +115,9 @@ curl -fsS --max-time 15 "${PUBLIC_URL}/api/health" | grep '"ok":true' >/dev/null
 PUB_BEFORE="$(curl -fsS --max-time 15 "${PUBLIC_URL}/" | grep -o 'index-[A-Za-z0-9_-]*\.js' | sed -n 1p)"
 PREV_INDEX="$(grep -o 'index-[A-Za-z0-9_-]*\.js' "$PREV_DIR/frontend/dist/index.html" | sed -n 1p)"
 [ "$PUB_BEFORE" = "$PREV_INDEX" ] || die "bundel publik (${PUB_BEFORE}) != dist release aktif (${PREV_INDEX})"
+ok "health sehat; bundel publik = dist release aktif (${PREV_INDEX})"
+[ -n "$(dcp "$PREV_DIR" ps -q postgres </dev/null)" ] || die "container postgres tidak berjalan"
+[ "$(psql_live -At -c "select count(*) from _prisma_migrations where finished_at is null and rolled_back_at is null")" = "0" ] || die "ada migration menggantung"
 
 # Prasyarat skema: rilis ini TANPA migrasi — semua tabel/kolom yang dipakai sudah ada (rilis Koreksi+Retur sebelumnya) dan tidak ada migrasi tertunda pada kode kandidat.
 for T in goods_receipts goods_receipt_lines goods_receipt_events fin_purchase_orders fin_purchase_order_lines fin_supplier_bills stock_movements supplier_returns; do
