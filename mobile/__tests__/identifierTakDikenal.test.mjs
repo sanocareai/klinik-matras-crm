@@ -39,6 +39,8 @@ const LAYAR = [
   "../src/lib/klaimLunas.js",
   "../src/push.js",
   "../src/lib/lapisanMelayang.js",
+  "../src/lib/labelPemegang.js",
+  "../src/components/ConversationItem.js",
   "../src/lib/pemulihanDaftar.js",
   "../src/hooks/useSocketEvents.js",
   "../src/store/conversationStore.js",

@@ -9,7 +9,10 @@
 import React, { useEffect, useState } from "react";
 import { UserCog } from "lucide-react";
 import { api } from "../../../../api.js";
-import { isAdminUser } from "@/lib/roles.js";
+import { isAdminUser, rolesOf } from "@/lib/roles.js";
+
+// Hanya Sales/Admin AKTIF yang boleh menerima transfer (sama dengan server, utils/perpindahanPercakapan.js).
+const bolehMenerimaTransfer = (u) => u?.active !== false && rolesOf(u).some((r) => r === "SALES" || r === "ADMIN");
 
 export default function TransferPickerPopover({ x, y, conversationId, currentAssignedId, onClose, onTransferred }) {
   const [users, setUsers] = useState([]);
@@ -17,7 +20,7 @@ export default function TransferPickerPopover({ x, y, conversationId, currentAss
   const [transferring, setTransferring] = useState(false);
 
   useEffect(() => {
-    api.getUsers().then(setUsers).catch(() => setUsers([])).finally(() => setLoading(false));
+    api.getUsers().then((list) => setUsers((list || []).filter(bolehMenerimaTransfer))).catch(() => setUsers([])).finally(() => setLoading(false));
   }, []);
 
   async function handleTransfer(userId) {
