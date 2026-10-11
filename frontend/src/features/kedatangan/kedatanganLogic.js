@@ -19,6 +19,13 @@ export const LABEL_PENERIMAAN = {
 export const VARIAN_PENERIMAAN = { DRAFT: "neutral", SCHEDULED: "neutral", ARRIVED: "accent", INSPECTION: "accent", READY_FOR_PUTAWAY: "accent", COMPLETED: "green", REJECTED: "red" };
 export const LABEL_WORKSPACE = { FINANCE: "Finance", GUDANG: "Gudang" };
 
+// Dokumen kosong lama (server menandai kosong): status sudah maju tanpa kedatangan & tanpa satu pun jumlah. Tidak boleh tampil sebagai "Siap disimpan"/"Sedang diperiksa".
+export const LABEL_DOKUMEN_KOSONG = "Dokumen kosong — belum ada kedatangan";
+export const labelPenerimaan = (r) => (r?.kosong ? LABEL_DOKUMEN_KOSONG : LABEL_PENERIMAAN[r?.status] || r?.status);
+export const varianPenerimaan = (r) => (r?.kosong ? "neutral" : VARIAN_PENERIMAAN[r?.status] || "neutral");
+/** Penerimaan yang masih menunggu barang tiba: draf/terjadwal, atau dokumen kosong lama (dipakai ulang oleh Catat Barang Tiba). */
+export const penerimaanBelumTiba = (r) => !!r && !r.kedatanganDicatat && (["DRAFT", "SCHEDULED"].includes(r.status) || r.kosong === true);
+
 export const jumlahTeks = (n) => {
   const v = Number(n);
   return Number.isFinite(v) ? v.toLocaleString("id-ID", { maximumFractionDigits: 3 }) : "—";

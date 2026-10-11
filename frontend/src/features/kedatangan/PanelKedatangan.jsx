@@ -10,7 +10,7 @@ import { TombolAksi, Pilihan } from "@/features/finance/shared.jsx";
 import { api } from "@/api.js";
 import { compressImage } from "@/utils/compressImage.js";
 import {
-  LABEL_PENERIMAAN, VARIAN_PENERIMAAN, LABEL_WORKSPACE, jumlahTeks, tanggalTeks, waktuTeks, teksPendampingAktual,
+  labelPenerimaan, varianPenerimaan, penerimaanBelumTiba, LABEL_WORKSPACE, jumlahTeks, tanggalTeks, waktuTeks, teksPendampingAktual,
   formKedatanganAwal, galatKedatangan, sisaPenggantiTerpilih, kekuranganIsian, bodyKedatangan, formKoreksiAwal, bodyKoreksi, galatKoreksi, kalimatRiwayat,
 } from "@/features/kedatangan/kedatanganLogic.js";
 
@@ -363,12 +363,12 @@ export function DampakKoreksi({ hasil, finance }) {
 // ── Kartu satu pengiriman ────────────────────────────────────────────────
 export function KartuPenerimaan({ r, finance, bolehTulis, onCatat, onKoreksi, ekstra = null }) {
   const [riwayat, setRiwayat] = useState(false);
-  const belumTiba = !r.kedatanganDicatat && ["DRAFT", "SCHEDULED"].includes(r.status);
+  const belumTiba = penerimaanBelumTiba(r);
   return (
     <li className="rounded-lg border border-line px-3 py-2.5 text-[12.5px]" data-testid="kartu-penerimaan" data-nomor={r.nomor}>
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-mono text-[12px] font-semibold text-ink">{r.nomor}</span>
-        <Badge variant={VARIAN_PENERIMAAN[r.status] || "neutral"}>{LABEL_PENERIMAAN[r.status] || r.status}</Badge>
+        <Badge variant={varianPenerimaan(r)}>{labelPenerimaan(r)}</Badge>
         {r.kedatanganDicatat ? <span className="text-ink2" data-testid="tanggal-tiba">Tiba {tanggalTeks(r.tanggalTiba)}</span> : <span className="text-ink3" data-testid="belum-dicatat">{belumTiba ? "Belum tiba" : "Kedatangan belum dicatat (dokumen lama)"}</span>}
         <span className="ml-auto flex flex-wrap gap-2">
           {bolehTulis && belumTiba && <Button size="sm" onClick={() => onCatat(r)} className="max-sm:min-h-11" data-testid="catat-tiba-penerimaan"><PackageCheck size={13} /> Catat Barang Tiba</Button>}
@@ -425,7 +425,7 @@ export default function PanelKedatangan({ po, workspace, bolehTulis = true, onCh
   const [menyiapkan, setMenyiapkan] = useState(false);
   const [galatSiap, setGalatSiap] = useState("");
   const bisaMenerima = ["DISETUJUI", "DITERIMA_SEBAGIAN"].includes(po.status) && po.lines.some((l) => Number(l.belumDipenuhiSupplier) > 0);
-  const adaDraf = po.penerimaan.some((r) => !r.kedatanganDicatat && ["DRAFT", "SCHEDULED"].includes(r.status));
+  const adaDraf = po.penerimaan.some((r) => penerimaanBelumTiba(r));
   // Tanpa penerimaan lebih dulu (Finance-first atau Gudang-first): server menyiapkan/memakai draf yang SAMA (idempoten), lalu kedatangan dicatat di draf itu.
   async function mulaiCatat() {
     setGalatSiap(""); setMenyiapkan(true);
