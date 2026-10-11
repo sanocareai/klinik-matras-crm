@@ -47,6 +47,7 @@ import { buildMessagePreview } from "../utils/messagePreview.js";
 import { emitNewMessage, emitConversationUpdate } from "../socket.js";
 import { maskAccountNumber } from "../utils/maskAccount.js";
 import { assertOrderUnitsNotV2Owned } from "../services/productionRunGuards.js";
+import { atribusiOrderWhere } from "../services/salesOwner.js";
 
 export const orderRouter = express.Router();
 orderRouter.use(requireAuth);
@@ -1141,7 +1142,6 @@ orderRouter.get("/", async (req, res) => {
     // lain (dua `...(cond && { customer: {...} })` terpisah di `where` akan
     // saling timpa karena sama-sama menulis key "customer" yang sama).
     const customerWhere = {
-      ...(salesId       && { assignedSalesId: salesId }),
       ...(pipelineStage && { pipelineStage }),
     };
 
@@ -1174,6 +1174,14 @@ orderRouter.get("/", async (req, res) => {
       // sudah pernah dibetulkan di endpoint ini & GET /armada/pod).
       ...(() => {
         const andClauses = [];
+        // Filter "Sales" (11 Okt 2026) = yang DIKREDITKAN laporan — aturan sama dengan kolom `salesKredit` & laporan Sales (atribusiOrderWhere):
+        // pemilik order tersimpan menang, kalau kosong pemegang percakapan INDIVIDUAL sekarang. Dulu memakai label lead (Customer.assignedSalesId),
+        // sehingga hasil filter bisa tidak cocok dengan nama di kolom/laporan. Penjualan Karyawan tidak punya kredit Sales → tidak ikut.
+        // Masuk andClauses (bukan key AND tersendiri) supaya tidak saling menimpa dengan filter lain di blok ini.
+        if (salesId) {
+          andClauses.push(atribusiOrderWhere(String(salesId), { type: "INDIVIDUAL", assignedToId: String(salesId) }));
+          andClauses.push({ staffSellerId: null, penjualanKaryawanId: null });
+        }
         // hasConfirmedDate (9 September 2026, laporan owner: "filter yang
         // sudah punya tanggal pengambilan dan pengiriman pasti") — tanggal
         // PASTI (pickupConfirmedDate/deliveryConfirmedDate, dikonfirmasi ke

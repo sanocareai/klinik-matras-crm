@@ -9,6 +9,7 @@
 //  • Tiga tulisan terpisah tanpa transaksi → bila salah satu gagal, percakapan terlanjur pindah tapi riwayat/label tidak.
 import { rolesOf } from "../middleware/authorize.js";
 import { statusBelumDibalas } from "./belumDibalas.js";
+import { orderTerdampak, siapkanDaftar, terapkanKeputusanKredit } from "./kreditOrderPerpindahan.js";
 
 export const AMBANG_AMBIL_ALIH_MENIT = 60;
 export const PERAN_BOLEH_MEMEGANG = ["SALES", "ADMIN"];
@@ -78,6 +79,12 @@ export async function ambilAlihPercakapan(prisma, { conversationId, user, sekara
     if (count === 0) throw new PerpindahanError("Percakapan ini baru saja diambil atau dipindahkan orang lain — muat ulang lalu coba lagi", 409, "SUDAH_BERPINDAH");
     await tx.customer.update({ where: { id: conv.customerId }, data: { assignedSalesId: user.id } });
     await tx.handoverEvent.create({ data: { conversationId: conv.id, fromUserId: lamaId || null, toUserId: user.id, reason: "takeover" } });
+    // Kredit closing TIDAK ikut berpindah saat ambil alih (keputusan Owner 11 Okt 2026): order pelanggan ini yang kreditnya ada pada pemegang lama
+    // dikunci ke dia. Yang mengambil alih mendapat kredit untuk order BARU yang dia buat (pemilik order = pembuat), bukan order lama orang lain.
+    if (lamaId) {
+      const terdampak = await orderTerdampak(tx, { customerId: conv.customerId, dariUserId: lamaId });
+      await terapkanKeputusanKredit(tx, { daftar: siapkanDaftar(terdampak), keputusan: [], dariUserId: lamaId, keUserId: user.id, aktorId: user.id, alasan: "" });
+    }
     await tx.note.create({
       data: { customerId: conv.customerId, authorId: user.id, content: prevName ? `🔄 Lead diambil alih dari ${prevName} oleh ${user.name}` : `✅ ${user.name} mengambil lead ini` },
     });
@@ -101,7 +108,7 @@ async function perankanTujuan(prisma, userId) {
  * Transfer oleh admin. `dataLain` = field PATCH lain (status/unread/…) yang ikut ditulis di update yang sama.
  * assignedToId === null = melepas pemegang (perilaku lama dipertahankan, tanpa event).
  */
-export async function transferPercakapan(prisma, { conversationId, assignedToId, actor, dataLain = {} }) {
+export async function transferPercakapan(prisma, { conversationId, assignedToId, actor, dataLain = {}, keputusanOrder = [], alasanOrder = "" }) {
   const sebelum = await prisma.conversation.findUnique({
     where: { id: conversationId }, select: { id: true, assignedToId: true, customerId: true, type: true },
   });
@@ -134,15 +141,30 @@ export async function transferPercakapan(prisma, { conversationId, assignedToId,
     ? `Percakapan ditransfer dari ${lama.name} ke ${tujuan.name} oleh ${actor.name}.`
     : `Percakapan ditransfer ke ${tujuan.name} oleh ${actor.name}.`;
 
+  // Keputusan kredit closing per order (lihat kreditOrderPerpindahan.js). Divalidasi SEBELUM menulis apa pun.
+  const terdampak = sebelum.customerId ? await orderTerdampak(prisma, { customerId: sebelum.customerId, dariUserId: sebelum.assignedToId }) : [];
+  const idTerdampak = new Set(terdampak.map((o) => o.id));
+  const keputusan = Array.isArray(keputusanOrder) ? keputusanOrder : [];
+  const asing = keputusan.find((k) => !k || !idTerdampak.has(String(k.orderId)));
+  if (asing) throw new PerpindahanError("Keputusan kredit memuat order yang bukan atas nama pemegang sebelumnya", 400);
+  const penerimaSales = tujuan.roles.includes("SALES") && tujuan.role === "SALES";
+  const adaIkut = penerimaSales && keputusan.some((k) => k.ikut === true);
+  const alasan = String(alasanOrder ?? "").trim().slice(0, 300);
+  if (adaIkut && !alasan) throw new PerpindahanError("Alasan wajib diisi bila kredit order dipindahkan ke penerima", 400);
+
   return prisma.$transaction(async (tx) => {
     await tx.conversation.update({ where: { id: conversationId }, data: { ...dataLain, assignedToId: tujuan.id, handoverNote } });
     await tx.handoverEvent.create({
       data: { conversationId, fromUserId: sebelum.assignedToId, toUserId: tujuan.id, reason: "transfer" },
     });
     if (sebelum.customerId) await tx.customer.update({ where: { id: sebelum.customerId }, data: { assignedSalesId: tujuan.id } });
-    return tx.conversation.findUnique({
+    const kredit = terdampak.length
+      ? await terapkanKeputusanKredit(tx, { daftar: siapkanDaftar(terdampak), keputusan, dariUserId: sebelum.assignedToId, keUserId: tujuan.id, aktorId: actor.id, alasan })
+      : { ikut: 0, tetap: 0 };
+    const hasil = await tx.conversation.findUnique({
       where: { id: conversationId },
       include: { assignedTo: { select: { id: true, name: true, avatarUrl: true } } },
     });
+    return { ...hasil, kreditOrder: kredit };
   });
 }
