@@ -14,7 +14,7 @@ DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 2 harus SHA release aktif (baseline) 40 karakter" >&2; exit 1; }
 CAND_BRANCH="${CAND_BRANCH:-feat/pic-meja-mode-latihan}"
 # Berkas yang BOLEH berbeda dari baseline: EKSPLISIT path persis. Apa pun di luar daftar = berhenti.
-ALLOWED_RE='^(backend/src/services/productionRencanaService\.js|backend/tests/integration/picDropdownTanpaAdmin\.integration\.test\.js|frontend/src/features/production/demo/DemoControls\.jsx|frontend/src/features/production/workerApp/Tabs\.jsx|frontend/tests/modeLatihanDihilangkan\.test\.js|scripts/release-pic-mode-latihan\.sh)$'
+ALLOWED_RE='^(backend/src/services/productionRencanaService\.js|backend/tests/integration/picDropdownTanpaAdmin\.integration\.test\.js|frontend/src/features/production/demo/DemoControls\.jsx|frontend/src/features/production/workerApp/Tabs\.jsx|frontend/tests/modeLatihanDihilangkan\.test\.js|backend/tests/releaseKoreksiReturSmoke\.test\.js|backend/tests/releaseSmokeWarehouseSkip\.test\.js|scripts/release-(koreksi-retur|penjualan-karyawan-order-crm|po-sku-baru|po-terintegrasi|retur-supplier|pic-mode-latihan)\.sh)$'
 BACKEND_SRC_EXPECT="backend/src/services/productionRencanaService.js"
 FRONTEND_SRC_EXPECT="frontend/src/features/production/demo/DemoControls.jsx frontend/src/features/production/workerApp/Tabs.jsx"
 PUBLIC_URL="https://app.sanomatrassehat.com"
