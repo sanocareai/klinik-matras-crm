@@ -12,7 +12,7 @@ umask 077
 DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 [[ "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 1 harus SHA rilis 40 karakter" >&2; exit 1; }
 [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 2 harus SHA release aktif (baseline) 40 karakter" >&2; exit 1; }
-CAND_BRANCH="${CAND_BRANCH:-feat/invoice-dp}"
+CAND_BRANCH="${CAND_BRANCH:-fix/perpindahan-percakapan}"
 # Migrasi CREATE (tabel/enum/indeks/FK) yang SUDAH diaudit: nama → sha256 isi (LF). Migrasi lain yang bukan "ADD COLUMN" murni = berhenti.
 declare -A MIGRASI_TERAUDIT=()
 NEW_MIGRATION=""   # rilis KODE SAJA: tidak ada migrasi
