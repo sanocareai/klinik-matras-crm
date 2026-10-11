@@ -200,9 +200,11 @@ const get = (path, token) => new Promise((res, rej) => {
     && t.lunasTerbuktiLedger.jumlah === b.lunasTerbuktiLedger + b.konflikBelumLunasTersimpanLedgerCukup;
   console.log("PARTISI_OK=" + partisi);
   console.log("SNAP=" + [t.leads, t.orders, t.nilaiOrder, t.lunasMenurutCrm.jumlah, t.orderBerLedger, t.lunasTerbuktiLedger.jumlah, b.lunasTanpaLedger, b.konflikLunasTersimpanLedgerTidakCukup, b.kekuranganRupiahKonflik, t.uangLedger].join("|"));
-  console.log("KONFLIK=" + b.konflikLunasTersimpanLedgerTidakCukup + " KEKURANGAN=" + b.kekuranganRupiahKonflik + " BELUM_LUNAS_LEDGER_CUKUP=" + b.konflikBelumLunasTersimpanLedgerCukup);
-  console.log("CRM=" + t.lunasMenurutCrm.jumlah + " TERBUKTI_LEDGER=" + t.lunasTerbuktiLedger.jumlah + " TANPA_LEDGER=" + b.lunasTanpaLedger + " BACKFILL_TIDAK_PASTI=" + t.lunasMenurutCrm.tanggalTidakPasti);
-  console.log("BOOKED=" + t.nilaiOrder + " UANG_LEDGER=" + t.uangLedger);
+  console.log("KONFLIK=" + b.konflikLunasTersimpanLedgerTidakCukup); console.log("KEKURANGAN=" + b.kekuranganRupiahKonflik);
+  console.log("BELUM_LUNAS_LEDGER_CUKUP=" + b.konflikBelumLunasTersimpanLedgerCukup);
+  console.log("CRM=" + t.lunasMenurutCrm.jumlah); console.log("TERBUKTI_LEDGER=" + t.lunasTerbuktiLedger.jumlah); console.log("TANPA_LEDGER=" + b.lunasTanpaLedger);
+  console.log("BACKFILL_TIDAK_PASTI=" + t.lunasMenurutCrm.tanggalTidakPasti);
+  console.log("BOOKED=" + t.nilaiOrder); console.log("UANG_LEDGER=" + t.uangLedger);
   console.log("PERINGATAN=" + j.peringatan.map((w) => w.kode).join(","));
   const terlarang = /"(campaignId|adSetId|adId|campaign|adSet|ad|cpa|roas|ctwaClid|leadSourceDetail|phone|name)"\s*:/.exec(r.body);
   console.log("FORBIDDEN=" + (terlarang ? terlarang[1] : "none"));
@@ -254,7 +256,7 @@ verify_live() {
   ok "LUNAS CRM = terbukti ledger + tanpa ledger + konflik; lunas terbukti ledger = terbukti + ledger-cukup-CRM-belum"
   [ "$(val FORBIDDEN)" = "none" ] && [ "$(val ROAS_CPA_KATA)" = "false" ] || die "respons memuat kunci/kata terlarang ($(val FORBIDDEN), roas/cpa=$(val ROAS_CPA_KATA))"
   ok "respons: 0 field campaign/ad set/ad ID/CPA/ROAS/pengenal pribadi"
-  ok "angka: $(val CRM) LUNAS CRM | $(val TERBUKTI_LEDGER) terbukti ledger | $(val TANPA_LEDGER) tanpa ledger | $(val KONFLIK) | backfill tidak pasti $(val BACKFILL_TIDAK_PASTI)"
+  ok "angka: $(val CRM) LUNAS CRM | $(val TERBUKTI_LEDGER) terbukti ledger | $(val TANPA_LEDGER) tanpa ledger | $(val KONFLIK) konflik (kekurangan Rp$(val KEKURANGAN)) | backfill tidak pasti $(val BACKFILL_TIDAK_PASTI)"
   ok "booked $(val BOOKED) vs uang ledger $(val UANG_LEDGER) (angka berbeda, tidak dijumlahkan)"
   ok "peringatan: $(val PERINGATAN)"
   local snap; snap="$(val SNAP)"
