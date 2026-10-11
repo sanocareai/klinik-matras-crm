@@ -131,7 +131,7 @@ ok "tanpa migrasi: seluruh migrasi kandidat sudah terpasang; tabel yang dipakai 
 # baris stok dan jurnal yang dibuat sebelum T0 (append-only); saldo per akun dari jurnal itu; seluruh flag fin_settings). T0 = jam DB (UTC) 5 menit lalu. Dokumen terbuka dan transaksi baru TIDAK diperbandingkan.
 # Daftar id Produksi DIBEKUKAN sekarang; sesudah rilis sidik jari dihitung ulang untuk id yang SAMA (tahan terhadap order/unit baru yang sah; aktivitas Run/rencana/PIC baru = berhenti,
 # karena cohort hanya 1 unit dan rilis ini tidak boleh menyebabkannya).
-idlist() { psql_live -At -c "select coalesce(string_agg(quote_literal(id::text), ',' order by id::text), '') from $1 $2"; }
+idlist() { psql_live -At -c "select coalesce(',' || string_agg(quote_literal(id::text), ',' order by id::text), '') from $1 $2"; }
 IDS_RUN="$(idlist production_runs_v2 '')"; IDS_PLAN="$(idlist production_run_plans_v2 '')"; IDS_PIC="$(idlist production_station_day_pics_v2 '')"
 IDS_EVT="$(idlist production_plan_schedule_events_v2 '')"; IDS_HAND="$(idlist unit_custody_handoffs_v2 '')"
 IDS_UNIT="$(idlist units "where status::text in ('DELIVERED','CANCELLED')")"; IDS_ORD="$(idlist '"Order"' "where status::text in ('DELIVERED','CANCELLED')")"
@@ -172,21 +172,21 @@ union all select 'pembayaran_supplier', count(*), md5(coalesce(string_agg(to_jso
 union all select 'retur_pergerakan_stok', count(*), '-' from stock_movements where type::text = 'SUPPLIER_RETURN' and created_at < '$T0'::timestamp
 union all select 'koreksi_pembalik', count(*), '-' from stock_movements where type::text = 'RECEIPT' and qty < 0 and goods_receipt_id is not null and created_at < '$T0'::timestamp
 union all select 'koreksi_jurnal', count(*), '-' from fin_journal_entries where idempotency_key like 'PENERIMAAN\_BAHAN:%:KOREKSI:%' and created_at < '$T0'::timestamp
-union all select 'prod_run_beku', count(*), md5(coalesce(string_agg(to_jsonb(x)::text, '|' order by x.id), '')) from production_runs_v2 x where x.id::text in ('-',$IDS_RUN)
+union all select 'prod_run_beku', count(*), md5(coalesce(string_agg(to_jsonb(x)::text, '|' order by x.id), '')) from production_runs_v2 x where x.id::text in ('-'$IDS_RUN)
 union all select 'prod_run_total', count(*), '-' from production_runs_v2
-union all select 'prod_rencana_beku', count(*), md5(coalesce(string_agg(to_jsonb(x)::text, '|' order by x.id), '')) from production_run_plans_v2 x where x.id::text in ('-',$IDS_PLAN)
+union all select 'prod_rencana_beku', count(*), md5(coalesce(string_agg(to_jsonb(x)::text, '|' order by x.id), '')) from production_run_plans_v2 x where x.id::text in ('-'$IDS_PLAN)
 union all select 'prod_rencana_total', count(*), '-' from production_run_plans_v2
-union all select 'prod_pic_meja', count(*), md5(coalesce(string_agg(to_jsonb(x)::text, '|' order by x.id), '')) from production_station_day_pics_v2 x where x.id::text in ('-',$IDS_PIC)
+union all select 'prod_pic_meja', count(*), md5(coalesce(string_agg(to_jsonb(x)::text, '|' order by x.id), '')) from production_station_day_pics_v2 x where x.id::text in ('-'$IDS_PIC)
 union all select 'prod_pic_meja_total', count(*), '-' from production_station_day_pics_v2
-union all select 'prod_riwayat_jadwal', count(*), md5(coalesce(string_agg(to_jsonb(x)::text, '|' order by x.id), '')) from production_plan_schedule_events_v2 x where x.id::text in ('-',$IDS_EVT)
+union all select 'prod_riwayat_jadwal', count(*), md5(coalesce(string_agg(to_jsonb(x)::text, '|' order by x.id), '')) from production_plan_schedule_events_v2 x where x.id::text in ('-'$IDS_EVT)
 union all select 'prod_riwayat_total', count(*), '-' from production_plan_schedule_events_v2
-union all select 'prod_handoff', count(*), md5(coalesce(string_agg(to_jsonb(x)::text, '|' order by x.id), '')) from unit_custody_handoffs_v2 x where x.id::text in ('-',$IDS_HAND)
+union all select 'prod_handoff', count(*), md5(coalesce(string_agg(to_jsonb(x)::text, '|' order by x.id), '')) from unit_custody_handoffs_v2 x where x.id::text in ('-'$IDS_HAND)
 union all select 'prod_handoff_total', count(*), '-' from unit_custody_handoffs_v2
 union all select 'prod_operator', count(*), md5(coalesce(string_agg(to_jsonb(x)::text, '|' order by x.id), '')) from production_operators x
 union all select 'prod_setting', count(*), md5(coalesce(string_agg(key || '=' || value::text, '|' order by key), '')) from production_settings
 union all select 'prod_pemetaan_layanan', count(*), md5(coalesce(string_agg(id::text || ':' || coalesce(production_service_id::text, '-'), '|' order by id), '')) from price_items
-union all select 'unit_final_beku', count(*), md5(coalesce(string_agg(to_jsonb(x)::text, '|' order by x.id), '')) from units x where x.id::text in ('-',$IDS_UNIT)
-union all select 'order_final_beku', count(*), md5(coalesce(string_agg(to_jsonb(x)::text, '|' order by x.id), '')) from "Order" x where x.id::text in ('-',$IDS_ORD)
+union all select 'unit_final_beku', count(*), md5(coalesce(string_agg(to_jsonb(x)::text, '|' order by x.id), '')) from units x where x.id::text in ('-'$IDS_UNIT)
+union all select 'order_final_beku', count(*), md5(coalesce(string_agg(to_jsonb(x)::text, '|' order by x.id), '')) from "Order" x where x.id::text in ('-'$IDS_ORD)
 union all select 'aktivasi_rencana', count(*), '-' from activity_events where event_type = 'PRODUCTION_RENCANA_UNIT_ACTIVATED'
 VERIF
 )"
