@@ -76,6 +76,20 @@ export function classifyRencanaUnit(u) {
   return act(A.AWAIT_ACTIVATION, null, "Eligible, tetapi belum diaktifkan untuk Rencana Produksi (menunggu keputusan Owner).", "Owner mengaktifkan unit ini lewat Aktivasi Rencana.");
 }
 
+// Unit yang BOLEH diaktifkan otomatis saat dijadwalkan (seret-lepas / tombol Jadwalkan) oleh pemegang izin Pengaturan Produksi (ADMIN/OWNER), tanpa menjalankan skrip aktivasi.
+// Hanya penambahan unit ke cohort reader+writer (tidak menyentuh unit lain). Yang TETAP ditolak: unit tak eligible (spam/internal/dibatalkan/selesai/belum diambil/PKR belum lengkap)
+// dan unit dengan progres tahap V1 — riwayat V1 harus dipindahkan lewat backfill resmi agar tidak hilang, bukan lewat penjadwalan.
+//  - AWAIT_ACTIVATION                     : eligible, hanya belum di cohort (kasus utama).
+//  - PARTIAL_ACTIVATION                   : baru sebagian izin (reader XOR writer) — dilengkapi.
+//  - RUN_OUTSIDE_COHORT tanpa progres V1  : Run V2 sudah ada (custody/backfill) tetapi unit di luar cohort — setelah diaktifkan menjadi kartu rencana biasa memakai Run yang SAMA.
+export function activatableOnDrop(cls, { stageLogCount = 0, hasCurrentStage = false } = {}) {
+  if (!cls) return false;
+  if (cls.action === RENCANA_ACTION.AWAIT_ACTIVATION) return true;
+  if (cls.action !== RENCANA_ACTION.EXCEPTION) return false;
+  if ((stageLogCount || 0) > 0 || hasCurrentStage) return false;
+  return cls.code === RENCANA_EXCEPTION.PARTIAL_ACTIVATION || cls.code === RENCANA_EXCEPTION.RUN_OUTSIDE_COHORT;
+}
+
 // Penjelasan foto kosong untuk kartu. `diagnosis` dari diagnoseUnitPhotosBulk(); photoUrl non-null = ada foto (tidak perlu penjelasan).
 export function photoNoteOf({ photoUrl, diagnosis }) {
   if (photoUrl) return null;

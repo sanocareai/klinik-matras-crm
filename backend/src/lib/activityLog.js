@@ -188,6 +188,8 @@ export const EVENT_TYPES = Object.freeze({
   PRODUCTION_WORKSHOP_AWAITING_QC: "PRODUCTION_WORKSHOP_AWAITING_QC",
   // Rencana Produksi order nyata: Run dibuka (belum tiba) saat Jadwalkan; kedatangan fisik tanpa custody dikonfirmasi eksplisit.
   PRODUCTION_RUN_ONBOARDED_RENCANA: "PRODUCTION_RUN_ONBOARDED_RENCANA",
+  // Unit diaktifkan untuk Rencana Produksi (cohort reader+writer) oleh ADMIN/OWNER saat menjadwalkan — keputusan sadar, tercatat atas nama pemutusnya.
+  PRODUCTION_RENCANA_UNIT_ACTIVATED: "PRODUCTION_RENCANA_UNIT_ACTIVATED",
   PRODUCTION_ARRIVAL_CONFIRMED_NO_CUSTODY: "PRODUCTION_ARRIVAL_CONFIRMED_NO_CUSTODY",
   // QC V2, rework, barang jadi, dan rekonsiliasi override V1 (P6). Detail (hasil, inspeksi, alasan) ada di metadata.
   PRODUCTION_QC_RECORDED: "PRODUCTION_QC_RECORDED",
@@ -460,6 +462,8 @@ export function formatActivitySentence(event) {
       return `Gudang menyerahkan bahan ${metadata.issueNumber || "—"} untuk unit ${metadata.unitCode || "—"} (${metadata.lineCount ?? 0} bahan, stok berkurang)`;
     case EVENT_TYPES.PRODUCTION_WORKSHOP_RUN_REGISTERED:
       return `Unit ${metadata.unitCode || "—"} (${metadata.category || "—"}) didaftarkan lahir di workshop tanpa pickup`;
+    case EVENT_TYPES.PRODUCTION_RENCANA_UNIT_ACTIVATED:
+      return `Unit ${metadata.unitCode || "—"} diaktifkan untuk Rencana Produksi saat dijadwalkan (sebelumnya: ${metadata.sebelumnya || "belum diaktifkan"}${metadata.punyaRun ? "; sudah punya pekerjaan produksi" : ""})`;
     case EVENT_TYPES.PRODUCTION_RUN_ONBOARDED_RENCANA:
       return metadata.origin === "WORKSHOP_BORN" ? `Unit ${metadata.unitCode || "—"} dimasukkan ke Rencana Produksi (Run dibuka — unit dibuat di workshop, tanpa pickup)` : `Unit ${metadata.unitCode || "—"} dimasukkan ke Rencana Produksi (Run dibuka, belum tiba di workshop${metadata.viaCustody ? "; mengikuti pickup yang sudah tercatat" : "; tanpa pickup tercatat"})`;
     case EVENT_TYPES.PRODUCTION_ARRIVAL_CONFIRMED_NO_CUSTODY:

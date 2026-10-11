@@ -15,9 +15,9 @@ import { lockRowForUpdate } from "./inventoryLedger.js";
 import { UUID_RE, lockUnitOwnership } from "./unitV2Ownership.js";
 import { PKR_ORDER_SELECT, rujukanPkrDariOrder } from "./pkrProduksiGuard.js";
 import { BOARD_DEFAULTS, formatProductionDate, normalizeScheduleInput } from "../lib/domain/productionBoard.js";
-import { RENCANA_ACTION, classifyRencanaUnit } from "../lib/domain/productionRencana.js";
+import { RENCANA_ACTION, activatableOnDrop, classifyRencanaUnit } from "../lib/domain/productionRencana.js";
 import {
-  isProductionReaderEnabledFor, isProductionWriterEnabledFor, loadV2Flags, resolveProductionReaderState, resolveProductionWriterState,
+  V2_FLAGS, isProductionReaderEnabledFor, isProductionWriterEnabledFor, loadV2Flags, resolveProductionReaderState, resolveProductionWriterState,
 } from "./v2FeatureFlags.js";
 import { assertIdempotencyKey, createProductionPlanInTx, scheduleProductionPlanInTx } from "./productionPlanningCommandService.js";
 import { offerUnitCustody, openPendingArrivalIntakeV2InTx } from "./unitCustodyCommandService.js";
@@ -94,18 +94,55 @@ export async function openRencanaRunInTx(tx, { unitId, actorId = null, idempoten
   return { runId: run.id, onboarded: true, viaCustody, jobId: job?.id ?? null, origin: "CUSTODY_PICKUP" };
 }
 
+// Aktivasi unit untuk Rencana Produksi SAAT dijadwalkan (seret-lepas/Jadwalkan) — di DALAM transaksi pemanggil, jadi gagal di mana pun = unit TIDAK teraktivasi. Padanan skrip
+// activate-rencana-units.js untuk SATU unit: hanya MENAMBAH unit ke cohort reader+writer (kunci baris flag, cohort lama utuh), flag yang MATI/cohort rusak = berhenti (menyalakan flag
+// tetap keputusan terpisah). Pemanggil WAJIB sudah memastikan izin (production_settings:write) dan kemauan eksplisit (activateUnit=true).
+export async function activateRencanaUnitInTx(tx, { unitId, actorId = null, idempotencyKey = null }) {
+  await tx.$queryRawUnsafe("SELECT key FROM v2_feature_flags WHERE key IN ($1, $2) ORDER BY key FOR UPDATE", V2_FLAGS.PRODUCTION_READER, V2_FLAGS.PRODUCTION_WRITER);
+  const flags = await loadV2Flags(tx);
+  const states = cohortStatesOf(flags);
+  for (const [label, key, s] of [["reader", V2_FLAGS.PRODUCTION_READER, states.reader], ["writer", V2_FLAGS.PRODUCTION_WRITER, states.writer]]) {
+    if (!flags[key]?.enabled || s.mode !== "COHORT") {
+      throw rencanaError(`Rencana Produksi belum menyala untuk cohort (flag ${label}: ${s.diagnostic || "OFF"}) — menyalakannya adalah keputusan terpisah; unit tidak diaktifkan.`, 503, "RENCANA_ACTIVATION_FLAGS_OFF");
+    }
+  }
+  const row = await tx.unit.findUnique({ where: { id: unitId }, select: RENCANA_UNIT_SELECT });
+  if (!row) throw rencanaError("Unit tidak ditemukan", 404, "RENCANA_UNIT_NOT_FOUND");
+  const cls = classifyUnitRow(row, states);
+  if (cls.action === RENCANA_ACTION.SCHEDULE || cls.action === RENCANA_ACTION.ONBOARD_SCHEDULE) return { activated: false, reason: "SUDAH_AKTIF" };
+  if (!activatableOnDrop(cls, { stageLogCount: row._count?.stageLogs ?? 0, hasCurrentStage: !!row.currentStageId })) throw errorForClassification(cls);
+
+  const id = String(unitId).toLowerCase();
+  const reason = `Aktivasi Rencana Produksi saat Jadwalkan: +1 unit ${row.unitCode} (rencana-drop${idempotencyKey ? `, ${String(idempotencyKey).slice(0, 40)}` : ""}, ${new Date().toISOString()})`;
+  const before = { reader: [...states.reader.unitIds].sort(), writer: [...states.writer.unitIds].sort() };
+  for (const key of [V2_FLAGS.PRODUCTION_READER, V2_FLAGS.PRODUCTION_WRITER]) {
+    const flag = await tx.v2FeatureFlag.findUniqueOrThrow({ where: { key } });
+    const current = Array.isArray(flag.config?.unitIds) ? flag.config.unitIds.map((x) => String(x).toLowerCase()) : [];
+    const list = [...new Set([...current, id])].sort();
+    await tx.v2FeatureFlag.update({ where: { key }, data: { config: { ...(flag.config || {}), unitIds: list }, reason } });
+  }
+  await recordActivity(tx, {
+    entityType: "unit", entityId: unitId, eventType: EVENT_TYPES.PRODUCTION_RENCANA_UNIT_ACTIVATED, actorId: actorId || null,
+    metadata: { unitCode: row.unitCode, sebelumnya: cls.code || cls.action, punyaRun: row.productionRunsV2.length > 0, cohortSebelum: { reader: before.reader.length, writer: before.writer.length } },
+  });
+  return { activated: true, previous: cls.code || cls.action, hadRun: row.productionRunsV2.length > 0, cohortBefore: { reader: before.reader.length, writer: before.writer.length } };
+}
+
 // ---------------------------------------------------------------------------
 // 1. Jadwalkan unit (onboarding bila perlu) — SATU transaksi, SATU pintu untuk tombol Jadwalkan dan seret-lepas.
 // ---------------------------------------------------------------------------
-export async function planAndScheduleUnit(prisma, { unitId, actorId, idempotencyKey, input = {}, config = BOARD_DEFAULTS }) {
+export async function planAndScheduleUnit(prisma, { unitId, actorId, idempotencyKey, input = {}, config = BOARD_DEFAULTS, canActivate = false }) {
   if (!unitId || !UUID_RE.test(String(unitId))) throw rencanaError("unitId wajib diisi (UUID)", 400, "RENCANA_UNIT_ID_INVALID");
   assertIdempotencyKey(idempotencyKey);
   const data = normalizeScheduleInput(input, config, { deferResources: true }); // 400 bila tanggal/meja/prioritas tidak valid — SEBELUM menyentuh DB; PIC/workshop dilengkapi dari PIC bawaan meja di dalam transaksi
   // Pilihan "Corner diperlukan?" (modal Jadwalkan jalur pengerjaan) — validasi yang SAMA dengan command Unit 360, sebelum DB; alasan wajib bila tidak diperlukan.
   const corner = input.cornerRequired === undefined || input.cornerRequired === null ? null : normalizeCornerInput({ required: input.cornerRequired, reason: input.cornerReason });
   if (data.unschedule) throw rencanaError("Mengeluarkan dari papan dilakukan lewat jadwal rencana yang sudah ada", 400, "RENCANA_UNSCHEDULE_NOT_SUPPORTED");
+  // Aktivasi saat Jadwalkan = keputusan sadar: wajib eksplisit (activateUnit=true) DAN pemegang izin Pengaturan Produksi (ADMIN/OWNER). Dicek SEBELUM menyentuh DB.
+  const activate = input.activateUnit === true;
+  if (activate && !canActivate) throw rencanaError("Mengaktifkan unit untuk Rencana Produksi hanya untuk Admin/Owner.", 403, "RENCANA_ACTIVATION_FORBIDDEN");
   const actor = actorId || "SYSTEM";
-  const requestHash = hash({ commandType: "RENCANA_PLAN_SCHEDULE_UNIT", unitId, ...data, productionDate: formatProductionDate(data.productionDate), ...(corner ? { corner } : {}), ...(input.targetDate !== undefined ? { targetDate: input.targetDate } : {}) });
+  const requestHash = hash({ commandType: "RENCANA_PLAN_SCHEDULE_UNIT", unitId, ...data, productionDate: formatProductionDate(data.productionDate), ...(corner ? { corner } : {}), ...(activate ? { activateUnit: true } : {}), ...(input.targetDate !== undefined ? { targetDate: input.targetDate } : {}) });
 
   return prisma.$transaction(async (tx) => {
     // Kunci unit LEBIH DULU, baru cari replay: dua permintaan bersamaan dengan kunci yang sama diserialkan di sini — yang kalah menunggu lalu MELIHAT command yang sudah commit
@@ -121,6 +158,8 @@ export async function planAndScheduleUnit(prisma, { unitId, actorId, idempotency
     const command = await tx.v2Command.create({
       data: { domain: "PRODUCTION", actorId: actor, idempotencyKey, commandType: "RENCANA_PLAN_SCHEDULE_UNIT", aggregateType: "Unit", aggregateId: unitId, requestHash },
     });
+    // Aktivasi (bila diminta) SEBELUM membuka Run: satu transaksi dengan Run + rencana + jadwal. Unit yang sudah aktif = tidak ada perubahan (activated:false).
+    const activation = activate ? await activateRencanaUnitInTx(tx, { unitId, actorId, idempotencyKey }) : null;
     const opened = await openRencanaRunInTx(tx, { unitId, actorId, idempotencyKey });
     let plan = await tx.productionRunPlan.findUnique({ where: { runId: opened.runId }, select: { id: true, revision: true, status: true } });
     let created = false;
@@ -141,7 +180,7 @@ export async function planAndScheduleUnit(prisma, { unitId, actorId, idempotency
       if (opened.origin !== "WORKSHOP_BORN") throw rencanaError("Pilihan Corner hanya untuk pesanan BARU/custom yang dikerjakan langsung di workshop", 422, "RENCANA_CORNER_NOT_APPLICABLE");
       cornerResult = await confirmBuildCornerInTx(tx, { runId: opened.runId, choice: corner, actorId, idempotencyKey: `${idempotencyKey}:corner` });
     }
-    const response = { ...scheduled, runId: opened.runId, onboarded: opened.onboarded, viaCustody: opened.viaCustody, origin: opened.origin, created, ...(cornerResult ? { corner: cornerResult.corner } : {}) };
+    const response = { ...scheduled, runId: opened.runId, onboarded: opened.onboarded, viaCustody: opened.viaCustody, origin: opened.origin, created, ...(activation?.activated ? { activated: true } : {}), ...(cornerResult ? { corner: cornerResult.corner } : {}) };
     await tx.v2Command.update({ where: { id: command.id }, data: { status: "APPLIED", appliedRevision: scheduled.revision, response, completedAt: new Date() } });
     return { ...response, replayed: false };
   }, { timeout: 20_000, maxWait: 10_000 });

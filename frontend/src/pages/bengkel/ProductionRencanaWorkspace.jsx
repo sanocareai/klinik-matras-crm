@@ -486,7 +486,7 @@ export default function ProductionRencanaWorkspace() {
 
   const stockByMaterial = useMemo(() => new Map(refs.stock.map((row) => [row.materialId, row])), [refs.stock]);
   const backlog = bl.schedulableViews;
-  const hasDraggable = backlog.length > 0 || bl.items.some((it) => it.rencana?.onboardable) || (board?.stations || []).some((st) => st.items.length > 0);
+  const hasDraggable = backlog.length > 0 || bl.items.some((it) => it.rencana?.onboardable || it.rencana?.activatable) || (board?.stations || []).some((st) => st.items.length > 0);
   const upcoming = useMemo(() => cc?.columns?.find((c) => c.key === "AKAN_MASUK")?.items || [], [cc]); // forecast read-only (bukan WIP)
   const stations = board?.stations || [];
   const findView = (runId) => backlog.find((v) => v.runId === runId) || stations.flatMap((s) => s.items).find((v) => v.runId === runId);
@@ -515,6 +515,9 @@ export default function ProductionRencanaWorkspace() {
     const target = stations.find((s) => s.code === stationCode);
     if (plan?.stationCode === stationCode && plan?.productionDate === date) return;
     if (target && stationCapacity(target).full) { setError(`${target.label} sudah penuh (${stationCapacity(target).label}). Pilih meja lain.`); return; }
+    // Kartu order nyata (belum punya rencana): selalu lewat formulir Jadwalkan dengan Meja terpilih — workshop, PIC, target, pilihan Corner, dan (bila belum diaktifkan) konfirmasi aktivasi
+    // diputuskan di sana; tidak ada rencana untuk "dipindahkan" langsung.
+    if (!plan?.id) { setSchedule({ ...view, presetStation: stationCode }); return; }
     // PIC: PIC bawaan Meja bila ada (server memilihnya di dalam transaksi); kalau tidak, PIC rencana sebelumnya; kalau keduanya kosong, buka dialog agar petugas memilih.
     const stationPic = target?.defaultPic?.active ? target.defaultPic : null;
     if (!stationPic && !(plan?.workCenter?.id && plan?.operator?.id)) { setSchedule({ ...view, presetStation: stationCode }); return; }
@@ -707,7 +710,7 @@ export default function ProductionRencanaWorkspace() {
                     footer={<Button size="sm" data-mutates className="min-h-[44px] w-full" disabled={busy} onClick={() => setSchedule(it.view)}><CalendarDays size={13} aria-hidden /> Jadwalkan</Button>} />
                 ) : <BacklogCard key={it.unitId} item={it} onOpen={openOverview} busy={busy} dragging={drag?.view?.onboardUnitId === it.unitId}
                   onSchedule={(item) => setSchedule(viewOfOnboardCard(item))}
-                  handle={it.rencana?.onboardable ? <DragHandle unitCode={it.card.unit.unitCode} disabled={busy} onPointerDown={(e) => onHandleDown(e, viewOfOnboardCard(it))} /> : null} />))}
+                  handle={it.rencana?.onboardable || it.rencana?.activatable ? <DragHandle unitCode={it.card.unit.unitCode} disabled={busy} onPointerDown={(e) => onHandleDown(e, viewOfOnboardCard(it))} /> : null} />))}
                 {bl.hasMore && <Button size="sm" variant="secondary" className="min-h-[44px] w-full" data-testid="backlog-more" disabled={bl.loading} onClick={bl.loadMore}>{bl.loading ? "Memuat…" : `Muat lagi (${Math.max(0, bl.total - bl.items.length)} tersisa)`}</Button>}
                 {bl.truncated && <p role="note" className="m-0 text-[11.5px] text-orange" data-testid="backlog-truncated">Daftar sangat panjang — persempit dengan pencarian.</p>}
               </section>

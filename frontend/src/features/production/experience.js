@@ -184,6 +184,7 @@ export function friendlyError(error) {
   if (code === "STATION_ORDER_STALE") return "Isi meja berubah saat Anda menyeret (ada unit masuk/keluar). Kartu dikembalikan dan tampilan dimuat ulang — atur ulang urutannya.";
   if (code === "STATION_ORDER_INVALID") return "Urutan tidak valid. Tampilan dimuat ulang — coba lagi.";
   if (code === "PLAN_STATION_INVALID") return "Meja tujuan tidak dikenal. Muat ulang halaman.";
+  if ((code === "RENCANA_ACTIVATION_FORBIDDEN" || code === "RENCANA_ACTIVATION_FLAGS_OFF") && error.message) return error.message; // alasan aktivasi saat Jadwalkan dari server (izin Admin/Owner; flag belum menyala)
   if (error.status === 403) return "Anda tidak punya akses untuk aksi ini.";
   if (error.status === 503) return "Fitur ini belum aktif untuk unit ini.";
   return error.message || "Terjadi kesalahan. Coba lagi.";

@@ -12,7 +12,7 @@ import { loadOpenComplaintsByUnit } from "./productionComplaints.js";
 import { loadRuns, viewsOf } from "./productionExperienceReadService.js";
 import { signUnitPhotoUrlsBulk } from "../routes/productionUnitPhoto.js";
 import { diagnoseUnitPhotosBulk } from "./productionUnitPhotoService.js";
-import { RENCANA_ACTION, photoNoteOf } from "../lib/domain/productionRencana.js";
+import { RENCANA_ACTION, activatableOnDrop, photoNoteOf } from "../lib/domain/productionRencana.js";
 import { BUILD_CATEGORIES, classifyProduct } from "../lib/domain/productionBuildTrack.js";
 import { classifyUnitRow, cohortStatesOf } from "./productionRencanaService.js";
 import { loadV2Flags } from "./v2FeatureFlags.js";
@@ -60,10 +60,13 @@ function statesFrom({ states, cohortUnitIds }) {
   return { reader: cohort, writer: cohort };
 }
 
-export async function listBacklog(prisma, { cohortUnitIds = null, states = null, status = "DIPROSES", page = 1, pageSize = BACKLOG_PAGE_SIZE_DEFAULT, q = "", now = new Date() } = {}) {
+export async function listBacklog(prisma, { cohortUnitIds = null, states = null, status = "DIPROSES", page = 1, pageSize = BACKLOG_PAGE_SIZE_DEFAULT, q = "", now = new Date(), canActivate = false } = {}) {
   const where = whereFor(status, q);
   const st = states || (cohortUnitIds ? statesFrom({ cohortUnitIds }) : cohortStatesOf(await loadV2Flags(prisma)));
   const cohort = new Set([...st.reader.unitIds].filter((id) => st.writer.unitIds.has(id))); // Run + jadwal butuh reader DAN writer
+  // Aktivasi saat Jadwalkan hanya mungkin bila KEDUA flag menyala dengan cohort sah (menyalakan flag = keputusan terpisah) dan pemanggil pemegang izin Pengaturan Produksi.
+  const activationOpen = !!canActivate && st.reader.mode === "COHORT" && st.writer.mode === "COHORT";
+  const activatableById = new Set();
   const rows = await prisma.unit.findMany({
     where, take: BACKLOG_MAX_CANDIDATES + 1,
     select: {
@@ -80,6 +83,7 @@ export async function listBacklog(prisma, { cohortUnitIds = null, states = null,
   const rencanaCounts = {};
   const ranked = candidates.map((r) => {
     const cls = classifyUnitRow(r, st); classById.set(r.id, cls); rencanaCounts[cls.action] = (rencanaCounts[cls.action] || 0) + 1;
+    if (activationOpen && activatableOnDrop(cls, { stageLogCount: r._count?.stageLogs ?? 0, hasCurrentStage: !!r.currentStageId })) activatableById.add(r.id);
     const stored = Math.max(storedPriorityLevel(r.priority), ...r.productionRunsV2.map((run) => storedPriorityLevel(run.plan?.priority ?? 0)), 0);
     storedById.set(r.id, stored);
     return { id: r.id, createdAt: r.createdAt.getTime(), rank: complaints.has(r.id) ? 2 : stored };
@@ -127,6 +131,8 @@ export async function listBacklog(prisma, { cohortUnitIds = null, states = null,
       // `onboardable` = kartu boleh dijadwalkan/diseret walau belum punya Run; `view` null — formulir jadwal mengirim unitId.
       rencana: {
         action: view && !pkrBlokir ? RENCANA_ACTION.SCHEDULE : cls.action, code: cls.code, message: cls.message, next: cls.next, onboardable: !view && cls.action === RENCANA_ACTION.ONBOARD_SCHEDULE,
+        // Belum diaktifkan tetapi BOLEH diaktifkan otomatis saat dijadwalkan/diseret oleh pemanggil ini (ADMIN/OWNER): kartu tampil dengan handle seret + konfirmasi aktivasi di modal Jadwalkan.
+        activatable: !view && activatableById.has(id),
         // Jalur Pengerjaan Pesanan (BARU/custom, lahir di workshop): modal Jadwalkan menampilkan "Corner diperlukan?" + kebutuhan konfirmasi jenis produk. null = bukan jalur ini.
         build: !view && cls.action === RENCANA_ACTION.ONBOARD_SCHEDULE && BUILD_CATEGORIES.includes(u.order?.category) && !(u.jobUnits?.length) ? (() => { const p = classifyProduct({ productLine: u.order?.productLine, productType: u.order?.productType }); return { product: { class: p.productClass, flow: p.flow, problem: p.problem } }; })() : null,
       },
