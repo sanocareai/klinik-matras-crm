@@ -70,7 +70,7 @@ export async function listBacklog(prisma, { cohortUnitIds = null, states = null,
   const rows = await prisma.unit.findMany({
     where, take: BACKLOG_MAX_CANDIDATES + 1,
     select: {
-      id: true, orderId: true, createdAt: true, priority: true, status: true, currentStageId: true, _count: { select: { stageLogs: true } },
+      id: true, orderId: true, createdAt: true, priority: true, status: true, currentStageId: true, _count: { select: { stageLogs: true, productionRunsV2: true } },
       order: { select: { status: true, ...PKR_ORDER_SELECT, customer: { select: { pipelineStage: true, isInternalStaff: true } } } },
       productionRunsV2: { where: { status: { notIn: TERMINAL_RUN } }, select: { id: true, plan: { select: { priority: true } } } },
     },
@@ -83,7 +83,7 @@ export async function listBacklog(prisma, { cohortUnitIds = null, states = null,
   const rencanaCounts = {};
   const ranked = candidates.map((r) => {
     const cls = classifyUnitRow(r, st); classById.set(r.id, cls); rencanaCounts[cls.action] = (rencanaCounts[cls.action] || 0) + 1;
-    if (activationOpen && activatableOnDrop(cls, { stageLogCount: r._count?.stageLogs ?? 0, hasCurrentStage: !!r.currentStageId })) activatableById.add(r.id);
+    if (activationOpen && activatableOnDrop(cls, { stageLogCount: r._count?.stageLogs ?? 0, hasCurrentStage: !!r.currentStageId, runCount: r._count?.productionRunsV2 ?? 0 })) activatableById.add(r.id);
     const stored = Math.max(storedPriorityLevel(r.priority), ...r.productionRunsV2.map((run) => storedPriorityLevel(run.plan?.priority ?? 0)), 0);
     storedById.set(r.id, stored);
     return { id: r.id, createdAt: r.createdAt.getTime(), rank: complaints.has(r.id) ? 2 : stored };

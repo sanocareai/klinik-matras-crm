@@ -32,7 +32,7 @@ const rencanaError = (message, statusCode, code, details) => Object.assign(new E
 export const RENCANA_UNIT_SELECT = {
   id: true, unitCode: true, status: true, currentStageId: true,
   order: { select: { id: true, orderNumber: true, status: true, category: true, ...PKR_ORDER_SELECT, customer: { select: { name: true, pipelineStage: true, isInternalStaff: true } } } },
-  _count: { select: { stageLogs: true } },
+  _count: { select: { stageLogs: true, productionRunsV2: true } }, // productionRunsV2 = SEMUA Run (juga yang sudah selesai/dibatalkan) — dipakai gerbang aktivasi saat Jadwalkan
   productionRunsV2: { where: { status: { notIn: TERMINAL_RUN } }, select: { id: true, status: true, plan: { select: { id: true, stationCode: true, status: true } } }, take: 1, orderBy: { createdAt: "desc" } },
 };
 
@@ -109,8 +109,14 @@ export async function activateRencanaUnitInTx(tx, { unitId, actorId = null, idem
   const row = await tx.unit.findUnique({ where: { id: unitId }, select: RENCANA_UNIT_SELECT });
   if (!row) throw rencanaError("Unit tidak ditemukan", 404, "RENCANA_UNIT_NOT_FOUND");
   const cls = classifyUnitRow(row, states);
-  if (cls.action === RENCANA_ACTION.SCHEDULE || cls.action === RENCANA_ACTION.ONBOARD_SCHEDULE) return { activated: false, reason: "SUDAH_AKTIF" };
-  if (!activatableOnDrop(cls, { stageLogCount: row._count?.stageLogs ?? 0, hasCurrentStage: !!row.currentStageId })) throw errorForClassification(cls);
+  // Keadaan berubah sejak modal dibuka (orang lain sudah mengaktifkan/menjadwalkan unit ini): JANGAN diam-diam menjadwalkan ulang milik orang lain — muat ulang lalu putuskan lagi.
+  if (cls.action === RENCANA_ACTION.SCHEDULE || cls.action === RENCANA_ACTION.ONBOARD_SCHEDULE) {
+    throw rencanaError("Unit ini sudah diaktifkan atau dijadwalkan oleh orang lain saat Anda membuka formulir. Muat ulang papan lalu periksa jadwalnya.", 409, "RENCANA_ACTIVATION_STALE");
+  }
+  if (cls.action === RENCANA_ACTION.AWAIT_ACTIVATION && (row._count?.productionRunsV2 ?? 0) > 0) {
+    throw rencanaError("Unit ini pernah punya pekerjaan produksi (sudah selesai/dibatalkan) — tidak diaktifkan lewat penjadwalan. Pengaktifannya keputusan terpisah Owner/tim sistem.", 422, "RENCANA_HAS_PRIOR_RUN");
+  }
+  if (!activatableOnDrop(cls, { stageLogCount: row._count?.stageLogs ?? 0, hasCurrentStage: !!row.currentStageId, runCount: row._count?.productionRunsV2 ?? 0 })) throw errorForClassification(cls);
 
   const id = String(unitId).toLowerCase();
   const reason = `Aktivasi Rencana Produksi saat Jadwalkan: +1 unit ${row.unitCode} (rencana-drop${idempotencyKey ? `, ${String(idempotencyKey).slice(0, 40)}` : ""}, ${new Date().toISOString()})`;
@@ -123,9 +129,9 @@ export async function activateRencanaUnitInTx(tx, { unitId, actorId = null, idem
   }
   await recordActivity(tx, {
     entityType: "unit", entityId: unitId, eventType: EVENT_TYPES.PRODUCTION_RENCANA_UNIT_ACTIVATED, actorId: actorId || null,
-    metadata: { unitCode: row.unitCode, sebelumnya: cls.code || cls.action, punyaRun: row.productionRunsV2.length > 0, cohortSebelum: { reader: before.reader.length, writer: before.writer.length } },
+    metadata: { unitCode: row.unitCode, sebelumnya: cls.code || cls.action, cohortSebelum: { reader: before.reader.length, writer: before.writer.length } },
   });
-  return { activated: true, previous: cls.code || cls.action, hadRun: row.productionRunsV2.length > 0, cohortBefore: { reader: before.reader.length, writer: before.writer.length } };
+  return { activated: true, previous: cls.code || cls.action, cohortBefore: { reader: before.reader.length, writer: before.writer.length } };
 }
 
 // ---------------------------------------------------------------------------

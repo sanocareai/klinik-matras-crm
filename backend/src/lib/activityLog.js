@@ -463,7 +463,7 @@ export function formatActivitySentence(event) {
     case EVENT_TYPES.PRODUCTION_WORKSHOP_RUN_REGISTERED:
       return `Unit ${metadata.unitCode || "—"} (${metadata.category || "—"}) didaftarkan lahir di workshop tanpa pickup`;
     case EVENT_TYPES.PRODUCTION_RENCANA_UNIT_ACTIVATED:
-      return `Unit ${metadata.unitCode || "—"} diaktifkan untuk Rencana Produksi saat dijadwalkan (sebelumnya: ${metadata.sebelumnya || "belum diaktifkan"}${metadata.punyaRun ? "; sudah punya pekerjaan produksi" : ""})`;
+      return `Unit ${metadata.unitCode || "—"} diaktifkan untuk Rencana Produksi saat dijadwalkan (sebelumnya: ${metadata.sebelumnya || "belum diaktifkan"})`;
     case EVENT_TYPES.PRODUCTION_RUN_ONBOARDED_RENCANA:
       return metadata.origin === "WORKSHOP_BORN" ? `Unit ${metadata.unitCode || "—"} dimasukkan ke Rencana Produksi (Run dibuka — unit dibuat di workshop, tanpa pickup)` : `Unit ${metadata.unitCode || "—"} dimasukkan ke Rencana Produksi (Run dibuka, belum tiba di workshop${metadata.viaCustody ? "; mengikuti pickup yang sudah tercatat" : "; tanpa pickup tercatat"})`;
     case EVENT_TYPES.PRODUCTION_ARRIVAL_CONFIRMED_NO_CUSTODY:

@@ -1,5 +1,5 @@
 // Aktivasi unit SAAT dijadwalkan (seret-lepas / Jadwalkan) — logika murni + transaksi tiruan (tanpa DB):
-//  - activatableOnDrop: siapa yang BOLEH diaktifkan otomatis, siapa yang tetap ditolak (progres V1, tak eligible);
+//  - activatableOnDrop: HANYA unit eligible tanpa Run apa pun dan tanpa progres V1; Run lama di luar cohort / aktivasi sebagian / progres V1 / tak eligible tetap Pengecualian;
 //  - activateRencanaUnitInTx: hanya MENAMBAH unit ke cohort reader+writer (cohort lama utuh), flag MATI = berhenti tanpa menulis, jejak aktivitas tercatat;
 //  - planAndScheduleUnit: activateUnit=true tanpa izin ADMIN/OWNER = 403 SEBELUM menyentuh DB.
 // Versi HTTP + DB sungguhan ada di tests/integration/rencanaAktivasiSaatJadwalkan.integration.test.js.
@@ -16,17 +16,19 @@ const LAIN2 = "33333333-3333-4333-8333-333333333333";
 const base = { unitStatus: "RECEIVED", orderStatus: "PROCESSING", customerStage: "NEW", isInternalStaff: false, hasActiveRun: false, stageLogCount: 0, hasCurrentStage: false, readerEnabled: false, writerEnabled: false };
 const prog = (over) => ({ stageLogCount: 0, hasCurrentStage: false, ...over });
 
-test("activatableOnDrop: menunggu aktivasi, aktivasi sebagian, dan Run V2 di luar cohort tanpa progres V1 = BOLEH", () => {
+test("activatableOnDrop: HANYA menunggu aktivasi tanpa Run apa pun = BOLEH; aktivasi sebagian dan Run lama di luar cohort = TIDAK (tetap Pengecualian)", () => {
   assert.equal(activatableOnDrop(classifyRencanaUnit(base), prog()), true);
   const sebagian = classifyRencanaUnit({ ...base, readerEnabled: true });
-  assert.equal(sebagian.code, E.PARTIAL_ACTIVATION); assert.equal(activatableOnDrop(sebagian, prog()), true);
+  assert.equal(sebagian.code, E.PARTIAL_ACTIVATION); assert.equal(activatableOnDrop(sebagian, prog()), false);
   const runLuar = classifyRencanaUnit({ ...base, hasActiveRun: true });
-  assert.equal(runLuar.code, E.RUN_OUTSIDE_COHORT); assert.equal(activatableOnDrop(runLuar, prog()), true);
+  assert.equal(runLuar.code, E.RUN_OUTSIDE_COHORT); assert.equal(activatableOnDrop(runLuar, prog()), false, "Run lama di luar cohort tidak boleh diambil alih lewat Jadwalkan, bahkan tanpa log tahap V1");
+  // Run yang sudah selesai/dibatalkan (tidak terlihat sebagai Run aktif) tetap dihitung lewat runCount
+  assert.equal(activatableOnDrop(classifyRencanaUnit(base), prog({ runCount: 1 })), false);
 });
 
 test("activatableOnDrop: progres tahap V1, spam/internal, dibatalkan, Siap Kirim, belum diambil, order bukan Diproses, PKR belum lengkap = TETAP DITOLAK", () => {
   const runLuar = classifyRencanaUnit({ ...base, hasActiveRun: true });
-  assert.equal(activatableOnDrop(runLuar, prog({ stageLogCount: 2 })), false, "Run di luar cohort DENGAN riwayat V1 tidak boleh diaktifkan (riwayat harus dipindahkan resmi)");
+  assert.equal(activatableOnDrop(runLuar, prog({ stageLogCount: 2 })), false);
   assert.equal(activatableOnDrop(runLuar, prog({ hasCurrentStage: true })), false);
   for (const over of [
     { isInternalStaff: true }, { customerStage: "SPAM" }, { unitStatus: "CANCELLED" }, { unitStatus: "DELIVERED" }, { unitStatus: "AWAITING_PICKUP" },
@@ -44,7 +46,7 @@ test("activatableOnDrop: progres tahap V1, spam/internal, dibatalkan, Siap Kirim
 const unitRow = (over = {}) => ({
   id: UNIT, unitCode: "RES-11102026-001-U1", status: "RECEIVED", currentStageId: null,
   order: { id: "o-1", orderNumber: "RES-11102026-001", status: "PROCESSING", category: "LAYANAN", penjualanKaryawanId: null, customer: { name: "Bu Uji", pipelineStage: "NEW", isInternalStaff: false } },
-  _count: { stageLogs: 0 }, productionRunsV2: [], ...over,
+  _count: { stageLogs: 0, productionRunsV2: 0 }, productionRunsV2: [], ...over,
 });
 function fakeTx({ reader = [LAIN], writer = [LAIN], readerOn = true, writerOn = true, row = unitRow() } = {}) {
   const flags = {
@@ -68,7 +70,7 @@ function fakeTx({ reader = [LAIN], writer = [LAIN], readerOn = true, writerOn = 
 test("aktivasi: menambah unit ke reader DAN writer, cohort lama utuh, satu jejak aktivitas atas nama pemutus", async () => {
   const tx = fakeTx({ reader: [LAIN2, LAIN], writer: [LAIN, LAIN2] });
   const r = await activateRencanaUnitInTx(tx, { unitId: UNIT, actorId: "admin-1", idempotencyKey: "kunci-aktivasi-0001" });
-  assert.equal(r.activated, true); assert.equal(r.previous, A.AWAIT_ACTIVATION); assert.equal(r.hadRun, false);
+  assert.equal(r.activated, true); assert.equal(r.previous, A.AWAIT_ACTIVATION);
   assert.deepEqual(tx.flags.production_v2_reader.config.unitIds, [UNIT, LAIN, LAIN2].sort());
   assert.deepEqual(tx.flags.production_v2_writer.config.unitIds, [UNIT, LAIN, LAIN2].sort());
   assert.equal(tx.log.writes.length, 2); assert.equal(tx.log.locks, 1, "baris flag dikunci");
@@ -79,10 +81,9 @@ test("aktivasi: menambah unit ke reader DAN writer, cohort lama utuh, satu jejak
   assert.equal(tx.log.activity[0].actorId, "admin-1"); assert.equal(tx.log.activity[0].entityId, UNIT);
 });
 
-test("aktivasi: unit yang SUDAH aktif = tidak ada perubahan (idempoten), tanpa tulisan", async () => {
+test("aktivasi: unit yang SUDAH aktif/dijadwalkan orang lain saat modal terbuka = 409 RENCANA_ACTIVATION_STALE, tanpa tulisan (tidak menggeser jadwal orang lain)", async () => {
   const tx = fakeTx({ reader: [LAIN, UNIT], writer: [LAIN, UNIT] });
-  const r = await activateRencanaUnitInTx(tx, { unitId: UNIT, actorId: "admin-1" });
-  assert.deepEqual({ activated: r.activated, reason: r.reason }, { activated: false, reason: "SUDAH_AKTIF" });
+  await assert.rejects(activateRencanaUnitInTx(tx, { unitId: UNIT, actorId: "admin-1" }), (e) => e.statusCode === 409 && e.code === "RENCANA_ACTIVATION_STALE");
   assert.equal(tx.log.writes.length, 0); assert.equal(tx.log.activity.length, 0);
 });
 
@@ -96,7 +97,8 @@ test("aktivasi: flag reader/writer MATI atau cohort tidak sah = berhenti 503 tan
 
 test("aktivasi: progres V1 / dibatalkan / spam ditolak berkode, TANPA mengubah cohort", async () => {
   const kasus = [
-    [unitRow({ _count: { stageLogs: 3 } }), "RENCANA_HAS_V1_PROGRESS", 422],
+    [unitRow({ _count: { stageLogs: 3, productionRunsV2: 0 } }), "RENCANA_HAS_V1_PROGRESS", 422],
+    [unitRow({ _count: { stageLogs: 0, productionRunsV2: 1 } }), "RENCANA_HAS_PRIOR_RUN", 422], // pernah punya Run (selesai/dibatalkan)
     [unitRow({ status: "CANCELLED" }), "RENCANA_UNIT_CANCELLED", 422],
     [unitRow({ order: { ...unitRow().order, customer: { name: "x", pipelineStage: "SPAM", isInternalStaff: false } } }), "RENCANA_INTERNAL_OR_SPAM", 422],
     [unitRow({ status: "AWAITING_PICKUP" }), "RENCANA_WAIT_PICKUP", 409],
@@ -108,23 +110,14 @@ test("aktivasi: progres V1 / dibatalkan / spam ditolak berkode, TANPA mengubah c
   }
 });
 
-test("aktivasi: Run di luar cohort TANPA progres V1 diaktifkan (memakai Run yang sama); DENGAN progres V1 ditolak", async () => {
+test("aktivasi: Run lama di luar cohort DITOLAK walau tanpa progres V1 (422 RENCANA_RUN_OUTSIDE_COHORT); aktivasi sebagian DITOLAK (422 RENCANA_PARTIAL_ACTIVATION); cohort tak berubah", async () => {
   const run = [{ id: "run-1", status: "PENDING_ARRIVAL", plan: null }];
-  const ok = fakeTx({ row: unitRow({ productionRunsV2: run }) });
-  const r = await activateRencanaUnitInTx(ok, { unitId: UNIT, actorId: "admin-1" });
-  assert.equal(r.activated, true); assert.equal(r.previous, E.RUN_OUTSIDE_COHORT); assert.equal(r.hadRun, true);
-  assert.ok(ok.flags.production_v2_writer.config.unitIds.includes(UNIT));
-  const tolak = fakeTx({ row: unitRow({ productionRunsV2: run, _count: { stageLogs: 1 } }) });
-  await assert.rejects(activateRencanaUnitInTx(tolak, { unitId: UNIT, actorId: "admin-1" }), (e) => e.code === `RENCANA_${E.RUN_OUTSIDE_COHORT}`);
-  assert.equal(tolak.log.writes.length, 0);
-});
-
-test("aktivasi sebagian (reader saja) dilengkapi: kedua daftar berisi unit sesudahnya", async () => {
-  const tx = fakeTx({ reader: [LAIN, UNIT], writer: [LAIN] });
-  const r = await activateRencanaUnitInTx(tx, { unitId: UNIT, actorId: "admin-1" });
-  assert.equal(r.activated, true); assert.equal(r.previous, E.PARTIAL_ACTIVATION);
-  assert.deepEqual(tx.flags.production_v2_writer.config.unitIds, [UNIT, LAIN].sort());
-  assert.deepEqual(tx.flags.production_v2_reader.config.unitIds, [UNIT, LAIN].sort());
+  const luar = fakeTx({ row: unitRow({ productionRunsV2: run, _count: { stageLogs: 0, productionRunsV2: 1 } }) });
+  await assert.rejects(activateRencanaUnitInTx(luar, { unitId: UNIT, actorId: "admin-1" }), (e) => e.code === `RENCANA_${E.RUN_OUTSIDE_COHORT}` && e.statusCode === 422);
+  assert.equal(luar.log.writes.length, 0); assert.equal(luar.log.activity.length, 0);
+  const sebagian = fakeTx({ reader: [LAIN, UNIT], writer: [LAIN] });
+  await assert.rejects(activateRencanaUnitInTx(sebagian, { unitId: UNIT, actorId: "admin-1" }), (e) => e.code === `RENCANA_${E.PARTIAL_ACTIVATION}` && e.statusCode === 422);
+  assert.equal(sebagian.log.writes.length, 0);
 });
 
 test("planAndScheduleUnit: activateUnit=true tanpa izin ADMIN/OWNER = 403 sebelum menyentuh DB; tanpa activateUnit perilaku lama tidak berubah", async () => {

@@ -56,7 +56,7 @@ export function ArrivalModal({ target, onClose, onDone }) {
   );
 }
 
-const STALE_CODES = ["PLAN_STATION_FULL", "PLAN_REVISION_CONFLICT", "STATION_ORDER_STALE"];
+const STALE_CODES = ["PLAN_STATION_FULL", "PLAN_REVISION_CONFLICT", "STATION_ORDER_STALE", "RENCANA_ACTIVATION_STALE", "RENCANA_RUN_OUTSIDE_COHORT", "RENCANA_HAS_PRIOR_RUN", "RENCANA_HAS_V1_PROGRESS", "RENCANA_PARTIAL_ACTIVATION"];
 // Alasan jadwal ulang bila target sudah lewat — kode HARUS sama dengan RESCHEDULE_REASONS di server (productionBoard.js).
 export const RESCHEDULE_REASON_OPTIONS = [
   ["CUSTOMER_REQUEST", "Permintaan pelanggan"], ["WAITING_MATERIAL", "Menunggu bahan"], ["WAITING_ARRIVAL", "Unit belum tiba di workshop"],

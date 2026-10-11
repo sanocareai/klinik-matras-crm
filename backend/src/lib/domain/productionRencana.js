@@ -77,17 +77,14 @@ export function classifyRencanaUnit(u) {
 }
 
 // Unit yang BOLEH diaktifkan otomatis saat dijadwalkan (seret-lepas / tombol Jadwalkan) oleh pemegang izin Pengaturan Produksi (ADMIN/OWNER), tanpa menjalankan skrip aktivasi.
-// Hanya penambahan unit ke cohort reader+writer (tidak menyentuh unit lain). Yang TETAP ditolak: unit tak eligible (spam/internal/dibatalkan/selesai/belum diambil/PKR belum lengkap)
-// dan unit dengan progres tahap V1 — riwayat V1 harus dipindahkan lewat backfill resmi agar tidak hilang, bukan lewat penjadwalan.
-//  - AWAIT_ACTIVATION                     : eligible, hanya belum di cohort (kasus utama).
-//  - PARTIAL_ACTIVATION                   : baru sebagian izin (reader XOR writer) — dilengkapi.
-//  - RUN_OUTSIDE_COHORT tanpa progres V1  : Run V2 sudah ada (custody/backfill) tetapi unit di luar cohort — setelah diaktifkan menjadi kartu rencana biasa memakai Run yang SAMA.
-export function activatableOnDrop(cls, { stageLogCount = 0, hasCurrentStage = false } = {}) {
-  if (!cls) return false;
-  if (cls.action === RENCANA_ACTION.AWAIT_ACTIVATION) return true;
-  if (cls.action !== RENCANA_ACTION.EXCEPTION) return false;
+// SATU-SATUNYA kasus: unit eligible yang hanya belum masuk cohort (AWAIT_ACTIVATION) dan TIDAK punya Production Run apa pun (aktif maupun yang sudah selesai/dibatalkan) serta tidak punya
+// progres tahap V1. Hanya penambahan unit itu ke cohort reader+writer (unit lain tidak disentuh).
+// TIDAK PERNAH diaktifkan lewat jalur ini — tetap Pengecualian dengan penjelasannya: unit dengan Run/pekerjaan produksi lama di luar cohort (RUN_OUTSIDE_COHORT; pengambilalihan Run lama
+// adalah keputusan terpisah Owner/tim sistem), aktivasi sebagian (PARTIAL_ACTIVATION), progres V1, dan semua unit tak eligible (spam/internal/dibatalkan/selesai/belum diambil/PKR belum lengkap).
+export function activatableOnDrop(cls, { stageLogCount = 0, hasCurrentStage = false, runCount = 0 } = {}) {
+  if (!cls || cls.action !== RENCANA_ACTION.AWAIT_ACTIVATION) return false;
   if ((stageLogCount || 0) > 0 || hasCurrentStage) return false;
-  return cls.code === RENCANA_EXCEPTION.PARTIAL_ACTIVATION || cls.code === RENCANA_EXCEPTION.RUN_OUTSIDE_COHORT;
+  return (runCount || 0) === 0;
 }
 
 // Penjelasan foto kosong untuk kartu. `diagnosis` dari diagnoseUnitPhotosBulk(); photoUrl non-null = ada foto (tidak perlu penjelasan).
