@@ -111,7 +111,7 @@ const SERVERS = {
   },
 };
 
-function makeServer(skrip, bug) {
+function makeServer(skrip, bug, denyAdminGudang = false) {
   const seen = [];
   const rutekan = SERVERS[skrip](bug);
   const server = http.createServer((req, res) => {
@@ -126,6 +126,8 @@ function makeServer(skrip, bug) {
       const gud = has("WAREHOUSE") || fin;
       const nil = req.url.includes(NOL);
       if (!roles) return reply(401);
+      // Simulasi regresi: fungsi Gudang menolak ADMIN (keputusan Owner: ADMIN boleh menjalankan fungsi Gudang) — smoke WAJIB gagal.
+      if (denyAdminGudang && req.url.startsWith("/api/inventory/") && has("ADMIN") && !has("WAREHOUSE")) return reply(403);
       let body = {}; try { body = JSON.parse(Buffer.concat(chunks).toString() || "{}"); } catch { /* kosong */ }
       rutekan(req, reply, { has, fin, gud, nil }, body);
       if (res.headersSent) return;
@@ -140,8 +142,8 @@ function makeServer(skrip, bug) {
   return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve({ server, seen, base: `http://127.0.0.1:${server.address().port}` })));
 }
 
-async function runSmoke(skrip, { users, bug = false }) {
-  const { server, seen, base } = await makeServer(skrip, bug);
+async function runSmoke(skrip, { users, bug = false, denyAdminGudang = false }) {
+  const { server, seen, base } = await makeServer(skrip, bug, denyAdminGudang);
   const code = smokeBody(scriptText(skrip)).replace("http://127.0.0.1:4000", base).replace('const { PrismaClient } = require("@prisma/client");', STUB_PRISMA);
   assert.ok(code.includes(base) && code.includes("class PrismaClient"), "penggantian BASE/Prisma tidak terjadi");
   const out = await new Promise((resolve) => {
@@ -154,9 +156,9 @@ async function runSmoke(skrip, { users, bug = false }) {
   });
   server.close();
   // Hasil dari baris SMOKE_HASIL (di Windows `process.exit` dengan koneksi fetch terbuka memicu assertion libuv — artefak platform uji, bukan production Linux).
-  const m = /SMOKE_HASIL fail=(\d+) skip=(\d+)/.exec(out.stdout);
+  const m = /SMOKE_HASIL fail=(\d+) skip=(\d+) skip_gudang=(\d+) gudang_admin=(\d+)/.exec(out.stdout);
   const exit = m ? (Number(m[1]) === 0 ? 0 : 1) : out.rc;
-  return { ...out, seen, exit, skip: m ? Number(m[2]) : null };
+  return { ...out, seen, exit, skip: m ? Number(m[2]) : null, skipGudang: m ? Number(m[3]) : null, gudangAdmin: m ? Number(m[4]) : null };
 }
 
 const U = (id, role, roles = [role]) => ({ id, name: id, role, roles, active: true });
@@ -182,7 +184,9 @@ test(`${RS}: TANPA WAREHOUSE murni -> SKIP berbukti, tidak exit gagal, tidak ada
   assert.ok(skips.length >= 8, `SKIP kurang: ${skips.length}\n${r.stdout}`);
   for (const l of skips) assert.match(l, /DILEWATI: tidak ada akun WAREHOUSE murni/);
   assert.deepEqual(passLines(r.stdout, /(WAREHOUSE|tampilan Gudang|detail retur \(Gudang\))/), [], "izin Gudang tidak boleh PASS tanpa akun Gudang murni");
-  assert.match(r.stdout, /Barang Akan Datang -> 200 \(aktor: admin \(pengganti: BUKAN pemeriksaan izin Gudang\)\)/);
+  assert.match(r.stdout, /PASS\s+akses Gudang melalui ADMIN: Barang Akan Datang -> 200/);
+  assert.ok(r.gudangAdmin >= 3 && r.skipGudang >= 3, `gudang_admin=${r.gudangAdmin} skip_gudang=${r.skipGudang}`);
+  assert.doesNotMatch(r.stdout, /PASS[^\n]*WAREHOUSE (murni|mandiri)/, "izin WAREHOUSE mandiri tidak boleh diklaim teruji");
   assert.match(r.stdout, /PASS\s+semua 6 pemanggilan tulis ditolak/);
   assert.equal(r.seen.filter((s) => s.uid === "u-multi").length, 0, "akun multi-peran tidak boleh dipakai sebagai Gudang");
 });
@@ -207,6 +211,21 @@ test(`${RS}: tanpa SALES murni tetap fail-closed`, async () => {
   assert.match(r.stdout, /FAIL\s+akun ADMIN dan SALES murni/);
 });
 
+// ───────────────────────── keputusan Owner: ADMIN boleh menjalankan fungsi Gudang ─────────────────────────
+const PT_ADMIN = "release-po-terintegrasi.sh";
+for (const [nama, label] of [[RS, "daftar retur"], [PT_ADMIN, "Barang Akan Datang"]]) {
+  test(`${nama}: regresi — fungsi Gudang menolak ADMIN -> smoke GAGAL (akses Gudang melalui ADMIN adalah gerbang nyata); pengguna tanpa izin tetap ditolak`, async () => {
+    const r = await runSmoke(nama, { users: [ADMIN, SALES], denyAdminGudang: true });
+    assert.equal(r.exit, 1, r.stdout);
+    assert.ok(r.stdout.split("\n").some((l) => l.includes("FAIL  akses Gudang melalui ADMIN: " + label)), r.stdout);
+    // kontrol: tanpa regresi, hasil lulus dan SALES/anonim ditolak pada endpoint Gudang
+    const ok = await runSmoke(nama, { users: [ADMIN, SALES] });
+    assert.equal(ok.exit, 0, ok.stdout);
+    const pass = ok.stdout.split("\n").filter((l) => l.startsWith("  PASS"));
+    assert.ok(pass.some((l) => l.includes("(Gudang): SALES -> 403")), ok.stdout);
+    assert.ok(pass.some((l) => l.includes("(Gudang): tanpa token -> 401")), ok.stdout);
+  });
+}
 // ───────────────────────── release-po-terintegrasi.sh ─────────────────────────
 const PT = "release-po-terintegrasi.sh";
 test(`${PT}: TANPA WAREHOUSE murni -> SKIP berbukti; akun multi-peran (ADMIN+WAREHOUSE) TIDAK lagi dipakai sebagai Gudang`, async () => {
@@ -216,7 +235,9 @@ test(`${PT}: TANPA WAREHOUSE murni -> SKIP berbukti; akun multi-peran (ADMIN+WAR
   assert.equal(skips.length, 2, r.stdout);
   for (const l of skips) assert.match(l, /DILEWATI: tidak ada akun WAREHOUSE murni/);
   assert.deepEqual(passLines(r.stdout, /(tampilan Gudang|\(Gudang\) -> 404)/), []);
-  assert.match(r.stdout, /Barang Akan Datang -> 200 berisi daftar PO \(aktor: admin \(pengganti: BUKAN pemeriksaan izin Gudang\)\)/);
+  assert.match(r.stdout, /PASS\s+akses Gudang melalui ADMIN: Barang Akan Datang -> 200 berisi daftar PO/);
+  assert.match(r.stdout, /PASS\s+akses Gudang melalui ADMIN: detail PO id tak dikenal -> 404/);
+  assert.equal(r.gudangAdmin, 2); assert.equal(r.skipGudang, 2);
   assert.match(r.stdout, /PASS\s+semua 8 pemanggilan tulis ditolak/);
   assert.equal(r.seen.filter((s) => s.uid === "u-multi").length, 0, "akun multi-peran tidak boleh dipakai sebagai Gudang (PASS palsu)");
 });
@@ -298,13 +319,14 @@ for (const nama of [RS, PT, SK, PK, "release-koreksi-retur.sh"]) {
     const s = scriptText(nama);
     assert.match(s, /^warn\(\) \{ printf /m, "warn() harus terdefinisi (jalur lulus-dengan-SKIP tidak boleh exit 127)");
     assert.match(s, /<<'NODE' \| tee "\$BK_DIR\/smoke\.log" \|\| die "smoke test GAGAL"/);
-    assert.match(s, /console\.log\(`SMOKE_HASIL fail=\$\{fail\} skip=\$\{dilewati\}`\);/);
-    assert.match(s, /\[ -n "\$SMOKE_SKIP" \] \|\| die "smoke test tidak mencetak ringkasan SMOKE_HASIL/);
-    assert.match(s, /if \[ "\$SMOKE_SKIP" = "0" \]; then\n\s+ok "smoke test lulus/);
-    assert.match(s, /else\n\s+warn "smoke test lulus dengan \$\{SMOKE_SKIP\} pemeriksaan DILEWATI \(SKIP\)[^\n]*BUKAN PASS\."\nfi/);
+    assert.match(s, /console\.log\(`SMOKE_HASIL fail=\$\{fail\} skip=\$\{dilewati\} skip_gudang=\$\{skipGudang\} gudang_admin=\$\{gudangAdmin\}`\);/);
+    assert.match(s, /\[ -n "\$SMOKE_FIELDS" \] \|\| die "smoke test tidak mencetak ringkasan SMOKE_HASIL/);
+    // skip di luar izin WAREHOUSE mandiri = peringatan; hanya skip WAREHOUSE mandiri = ok jujur (izin WAREHOUSE mandiri TIDAK diklaim teruji); tanpa skip = ok
+    assert.match(s, /if \[ "\$SKIP_LAIN" != "0" \]; then\n\s+warn "smoke test lulus dengan \$\{SKIP_LAIN\} pemeriksaan DILEWATI \(SKIP\)[^\n]*BUKAN PASS[^\n]*"\nelif \[ "\$SMOKE_SKIP_GUDANG" != "0" \]; then\n\s+ok "smoke test lulus — [^\n]*(izin WAREHOUSE mandiri TIDAK diuji|tidak ada klaim izin WAREHOUSE mandiri)[^\n]*"\nelse\n\s+ok "smoke test lulus[^\n]*"\nfi/);
     // tidak ada lagi klaim 'smoke test lulus' tanpa syarat SKIP=0
     const klaim = s.split("\n").filter((l) => /^ok "smoke test lulus/.test(l));
-    assert.deepEqual(klaim, [], "klaim 'smoke test lulus' tanpa syarat SKIP=0 tidak boleh ada di kolom pertama");
+    assert.deepEqual(klaim, [], "klaim 'smoke test lulus' tanpa syarat tidak boleh ada di kolom pertama");
+    assert.doesNotMatch(s, /izin WAREHOUSE mandiri (telah|sudah) (diuji|terverifikasi)/, "tidak boleh mengklaim izin WAREHOUSE mandiri teruji");
   });
   test(`${nama}: blok smoke tidak memilih akun WAREHOUSE/PRODUCTION_LEAD/SALES tanpa mengecualikan peran Finance, dan tidak ada exit(1) karena akun peran-murni absen`, () => {
     const body = smokeBody(scriptText(nama));

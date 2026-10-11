@@ -373,8 +373,10 @@ const jwt = require("jsonwebtoken");
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 const BASE = "http://127.0.0.1:4000";
-let fail = 0; let dilewati = 0;
-const skip = (n, alasan) => { dilewati++; console.log(`  SKIP  ${n} — DILEWATI: ${alasan}`); };
+let fail = 0; let dilewati = 0; let skipGudang = 0; let gudangAdmin = 0;
+const skip = (n, alasan) => { dilewati++; if (/akun WAREHOUSE murni/.test(alasan)) skipGudang++; console.log(`  SKIP  ${n} — DILEWATI: ${alasan}`); };
+// Keputusan Owner: ADMIN boleh menjalankan fungsi Gudang. Pemeriksaan yang dijalankan dengan token ADMIN dilabeli jujur sebagai "akses Gudang melalui ADMIN" — BUKAN izin WAREHOUSE mandiri.
+const viaAdmin = (n, ok, d = "") => { gudangAdmin++; rec(`akses Gudang melalui ADMIN: ${n}`, ok, d); };
 const rec = (n, ok, d = "") => { if (!ok) fail++; console.log(`  ${ok ? "PASS" : "FAIL"}  ${n}${d ? " — " + d : ""}`); };
 async function api(method, path, token, body) {
   const r = await fetch(BASE + path, { method, headers: { ...(token ? { Authorization: "Bearer " + token } : {}), ...(body ? { "Content-Type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined });
@@ -463,16 +465,21 @@ if (po) {
 const sesudah = await cacah();
 rec("tidak ada jurnal/pembayaran/stok/penerimaan/tagihan/PO/baris PO/material/SKU/katalog/alokasi yang berubah selama smoke", sebelum.every((n, i) => n === sesudah[i]), `${sebelum.join(",")} -> ${sesudah.join(",")}`);
 await prisma.$disconnect();
-console.log(`\nRINGKASAN smoke: ${fail} gagal, ${dilewati} dilewati (SKIP)`);
-console.log(`SMOKE_HASIL fail=${fail} skip=${dilewati}`);
+console.log(`\nRINGKASAN smoke: ${fail} gagal, ${dilewati} dilewati (SKIP; ${skipGudang} = izin WAREHOUSE mandiri tidak diuji), ${gudangAdmin} pemeriksaan akses Gudang melalui ADMIN`);
+console.log(`SMOKE_HASIL fail=${fail} skip=${dilewati} skip_gudang=${skipGudang} gudang_admin=${gudangAdmin}`);
 process.exit(fail ? 1 : 0);
 NODE
-SMOKE_SKIP="$(sed -n 's/^SMOKE_HASIL fail=0 skip=\([0-9][0-9]*\)$/\1/p' "$BK_DIR/smoke.log" | tail -n 1)"
-[ -n "$SMOKE_SKIP" ] || die "smoke test tidak mencetak ringkasan SMOKE_HASIL (jangan anggap lulus)"
-if [ "$SMOKE_SKIP" = "0" ]; then
-  ok "smoke test lulus (izin, pratinjau duplikat pada data nyata, katalog kosong, PO/PDF lama normal, tidak ada data berubah)"
+SMOKE_LINE="$(grep '^SMOKE_HASIL ' "$BK_DIR/smoke.log" | tail -n 1)"
+SMOKE_FIELDS="$(printf '%s' "$SMOKE_LINE" | sed -n 's/^SMOKE_HASIL fail=0 skip=\([0-9][0-9]*\) skip_gudang=\([0-9][0-9]*\) gudang_admin=\([0-9][0-9]*\)$/\1 \2 \3/p')"
+[ -n "$SMOKE_FIELDS" ] || die "smoke test tidak mencetak ringkasan SMOKE_HASIL yang lulus (jangan anggap lulus)"
+read -r SMOKE_SKIP SMOKE_SKIP_GUDANG SMOKE_GUDANG_ADMIN <<< "$SMOKE_FIELDS"
+SKIP_LAIN=$((SMOKE_SKIP - SMOKE_SKIP_GUDANG))
+if [ "$SKIP_LAIN" != "0" ]; then
+  warn "smoke test lulus dengan ${SKIP_LAIN} pemeriksaan DILEWATI (SKIP) di luar izin WAREHOUSE mandiri: lihat alasan di ${BK_DIR}/smoke.log (akun peran-murni tidak ada; tidak ada akun/token dibuat atau direkayasa). Ini BUKAN PASS untuk pemeriksaan yang dilewati."
+elif [ "$SMOKE_SKIP_GUDANG" != "0" ]; then
+  ok "smoke test lulus — izin WAREHOUSE mandiri TIDAK diuji (${SMOKE_SKIP_GUDANG} pemeriksaan dilewati: tidak ada akun WAREHOUSE murni — keputusan Owner: ADMIN boleh menjalankan fungsi Gudang); tidak ada klaim izin WAREHOUSE mandiri; (izin, pratinjau duplikat pada data nyata, katalog kosong, PO/PDF lama normal, tidak ada data berubah)"
 else
-  warn "smoke test lulus dengan ${SMOKE_SKIP} pemeriksaan DILEWATI (SKIP): izin peran tanpa akun murni (PRODUCTION_LEAD/WAREHOUSE tanpa peran Finance, atau FINANCE tanpa ADMIN/OWNER) TIDAK terverifikasi di production — tidak ada akun/token dibuat atau direkayasa. Rincian: ${BK_DIR}/smoke.log. Asersi izin dijaga oleh tes integrasi; ini BUKAN PASS."
+  ok "smoke test lulus (izin, pratinjau duplikat pada data nyata, katalog kosong, PO/PDF lama normal, tidak ada data berubah)"
 fi
 # Aset lama tetap bisa diunduh publik (tab yang terbuka saat deploy): ambil satu chunk yang ada di dist lama tetapi TIDAK ada di build baru.
 OLD_ONLY="$(sed -n 1p "$OLD_ASSETS" || true)"
