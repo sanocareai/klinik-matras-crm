@@ -71,6 +71,19 @@ export default function CustomerPanel({ conversation, onClose }) {
       .catch((err) => setLoadError(err.message || "Gagal memuat data pelanggan"));
   }, [customerId, conversation?.type]);
 
+  // Pemegang percakapan berubah (ambil alih / transfer, dari sesi ini maupun orang lain lewat socket) → "Pemilik Lead" di AssignmentSection ikut berubah
+  // di server (Customer.assignedSalesId), tapi `customer` di sini hanya dimuat saat pelanggan berganti, jadi barisnya basi sampai panel dibuka ulang.
+  // Muat ulang SENYAP (tanpa mengosongkan panel/mereset tab). Lewati pemuatan pertama: sudah ditangani efek di atas.
+  const pemegangSebelumnya = useRef(conversation?.assignedToId);
+  useEffect(() => {
+    const awal = pemegangSebelumnya.current;
+    pemegangSebelumnya.current = conversation?.assignedToId;
+    if (awal === conversation?.assignedToId || !customerId || conversation?.type === "GROUP") return;
+    let batal = false;
+    api.getCustomer(customerId).then((c) => { if (!batal) setCustomer(c); }).catch(() => {});
+    return () => { batal = true; };
+  }, [conversation?.assignedToId, customerId, conversation?.type]);
+
   if (conversation?.type === "GROUP") {
     return (
       <>

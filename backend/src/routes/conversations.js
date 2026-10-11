@@ -17,6 +17,7 @@ import { resolveMediaExt } from "../utils/mediaExt.js";
 import { fieldPosterVideo } from "../utils/videoThumb.js";
 import { rencanaForward } from "../utils/forwardPlan.js";
 import { simpanPesanGaleri } from "../utils/simpanPesanGaleri.js";
+import { klaimJikaBelumDimiliki, ambilAlihPercakapan, transferPercakapan, PerpindahanError } from "../utils/perpindahanPercakapan.js";
 import { downloadAndSaveMedia } from "./webhooks.js";
 import { emitNewMessage, emitConversationUpdate, emitMessageUpdate, emitMessageDeleted } from "../socket.js";
 
@@ -167,25 +168,9 @@ export function resolveSendTarget(conversation) {
 // (sebelum siapa pun mengklaim) ikut menghukum orang yang justru
 // menyelamatkan lead terbengkalai.
 async function autoClaimIfUnowned(conversation, user, messageCreatedAt) {
-  if (!rolesOf(user).includes("SALES")) return;
-  if (conversation.assignedToId) return;
-  if (conversation.type === "GROUP") return;
-  await prisma.conversation.update({
-    where: { id: conversation.id },
-    data:  { assignedToId: user.id },
-  });
-  if (conversation.customer && !conversation.customer.assignedSalesId) {
-    await prisma.customer.update({
-      where: { id: conversation.customerId },
-      data:  { assignedSalesId: user.id },
-    });
-  }
-  await prisma.handoverEvent.create({
-    data: {
-      conversationId: conversation.id, fromUserId: null, toUserId: user.id,
-      reason: "auto-claim", createdAt: messageCreatedAt,
-    },
-  });
+  // Logika dipindah ke utils/perpindahanPercakapan.js (11 Okt 2026): klaim sekarang BERSYARAT di database — dua sales yang membalas nyaris
+  // bersamaan tidak lagi sama-sama "menang" (pemegang akhir = penulis terakhir + dua event) dan satu orang tidak lagi mencatat auto-claim dobel.
+  await klaimJikaBelumDimiliki(prisma, { conversation, user, messageCreatedAt });
 }
 
 // Jumlah percakapan belum dibaca (untuk badge sidebar)
@@ -1793,80 +1778,12 @@ conversationRouter.post("/:id/send-documentation", canWriteConversation, async (
 // Ambil alih (handover) percakapan ke user yang request
 conversationRouter.post("/:id/takeover", canWriteConversation, async (req, res) => {
   try {
-    const conv = await prisma.conversation.findUnique({
-      where: { id: req.params.id },
-      include: {
-        customer: true,
-        messages: { orderBy: { createdAt: "desc" }, take: 1 },
-      },
-    });
-    if (!conv) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
-    if (conv.assignedToId === req.user.id)
-      return res.status(400).json({ error: "Percakapan ini sudah jadi lead kamu" });
-
-    const isAdmin          = rolesOf(req.user).includes("ADMIN");
-    const lastMsg          = conv.messages[0] || null;
-    const isUnanswered     = lastMsg?.direction === "INBOUND";
-    const unansweredMinutes = isUnanswered
-      ? Math.floor((Date.now() - new Date(lastMsg.createdAt).getTime()) / 60000)
-      : null;
-    const canTakeOver = !conv.assignedToId || (isUnanswered && (unansweredMinutes ?? 0) >= 60);
-
-    if (!isAdmin && !canTakeOver) {
-      return res.status(403).json({
-        error: "Percakapan ini masih ditangani sales lain, belum lewat 1 jam",
-      });
-    }
-
-    const oldAssignedId = conv.assignedToId;
-    let prevName = null;
-    if (oldAssignedId && oldAssignedId !== req.user.id) {
-      const oldUser = await prisma.user.findUnique({
-        where: { id: oldAssignedId }, select: { name: true },
-      });
-      prevName = oldUser?.name || null;
-    }
-
-    // Bangun handoverNote untuk Context Banner di inbox
-    const handoverNote = prevName
-      ? `Percakapan diambil alih dari ${prevName} oleh ${req.user.name}. Cek riwayat chat di atas untuk konteks sebelumnya.`
-      : `Percakapan diambil oleh ${req.user.name}.`;
-
-    // Reassign conversation + customer
-    const updated = await prisma.conversation.update({
-      where: { id: conv.id },
-      data:  { assignedToId: req.user.id, handoverNote },
-      include: {
-        customer: true,
-        assignedTo: { select: { id: true, name: true, avatarUrl: true } },
-      },
-    });
-    await prisma.customer.update({
-      where: { id: conv.customerId },
-      data:  { assignedSalesId: req.user.id },
-    });
-
-    // Riwayat penanganan LENGKAP (beda dari handoverNote di atas yang cuma
-    // simpan 1 catatan terakhir, ketimpa tiap kali pindah tangan lagi) —
-    // dipakai tampilkan timeline "Riwayat Penanganan" penuh di chat window.
-    await prisma.handoverEvent.create({
-      data: { conversationId: conv.id, fromUserId: oldAssignedId || null, toUserId: req.user.id, reason: "takeover" },
-    });
-
-    // Catat di notes siapa yang ambil alih
-    let noteContent;
-    if (prevName) {
-      noteContent = `🔄 Lead diambil alih dari ${prevName} oleh ${req.user.name}`;
-    } else {
-      noteContent = `✅ ${req.user.name} mengambil lead ini`;
-    }
-    await prisma.note.create({
-      data: { customerId: conv.customerId, authorId: req.user.id, content: noteContent },
-    });
-
+    // Aturan & penulisan di utils/perpindahanPercakapan.js: bersyarat (409 bila sudah diambil orang lain), satu transaksi, grup ditolak.
+    const updated = await ambilAlihPercakapan(prisma, { conversationId: req.params.id, user: req.user });
     emitConversationUpdate(updated);
     res.json(updated);
   } catch (err) {
+    if (err instanceof PerpindahanError) return res.status(err.statusCode).json({ error: err.message, ...(err.code ? { code: err.code } : {}) });
     res.status(500).json({ error: err.message });
   }
 });
@@ -2056,48 +1973,29 @@ conversationRouter.patch("/:id", canWriteConversation, async (req, res) => {
 
   const data = {};
   if (status)                     data.status       = status;
-  if (assignedToId !== undefined) data.assignedToId = assignedToId;
   if (unread !== undefined)       data.unread       = unread;
   if (isRead !== undefined)       { data.isRead = isRead; if (isRead) data.readAt = new Date(); }
   if (handoverNote !== undefined) data.handoverNote = handoverNote;
   if (pinned !== undefined)       { data.pinned = pinned; data.pinnedAt = pinned ? new Date() : null; }
 
-  // Transfer manual (assignedToId berubah lewat sini, BEDA dari ambil-alih
-  // sendiri via POST /:id/takeover) — dicatat juga ke HandoverEvent supaya
-  // timeline "Riwayat Penanganan" lengkap, tidak cuma dari takeover.
-  let prevAssignedToId = null;
-  let customerId = null;
+  // Transfer manual (BEDA dari ambil-alih sendiri via POST /:id/takeover). Seluruh logikanya di utils/perpindahanPercakapan.js:
+  // tujuan wajib Sales/Admin AKTIF, satu transaksi (percakapan + riwayat + label sales), catatan serah-terima ikut diperbarui, dan responsnya
+  // membawa `assignedTo` supaya layar si admin sendiri langsung menampilkan pemegang baru (dulu masih nama lama sampai muat ulang).
   if (assignedToId !== undefined) {
-    const before = await prisma.conversation.findUnique({
-      where: { id: req.params.id }, select: { assignedToId: true, customerId: true },
-    });
-    prevAssignedToId = before?.assignedToId ?? null;
-    customerId = before?.customerId ?? null;
+    try {
+      const hasil = await transferPercakapan(prisma, { conversationId: req.params.id, assignedToId, actor: req.user, dataLain: data });
+      emitConversationUpdate(hasil);
+      return res.json(hasil);
+    } catch (err) {
+      if (err instanceof PerpindahanError) return res.status(err.statusCode).json({ error: err.message });
+      throw err;
+    }
   }
 
   const conversation = await prisma.conversation.update({
     where: { id: req.params.id },
     data,
   });
-
-  if (assignedToId !== undefined && assignedToId && assignedToId !== prevAssignedToId) {
-    await prisma.handoverEvent.create({
-      data: { conversationId: conversation.id, fromUserId: prevAssignedToId, toUserId: assignedToId, reason: "transfer" },
-    }).catch(() => {}); // jangan gagalkan response utama kalau ini gagal
-
-    // BUG YANG DIPERBAIKI: label "Sales Person" di tabel Pelanggan/Pipeline/
-    // Customer 360 dibaca dari Customer.assignedSalesId, BUKAN dari
-    // Conversation.assignedToId — endpoint ini dulu cuma mengubah field
-    // Conversation-nya, jadi label sales tidak pernah berubah sama sekali
-    // setelah transfer (beda dari takeover & auto-assign balasan pertama,
-    // yang keduanya SUDAH menyinkronkan Customer.assignedSalesId).
-    if (customerId) {
-      await prisma.customer.update({
-        where: { id: customerId },
-        data:  { assignedSalesId: assignedToId },
-      }).catch(() => {});
-    }
-  }
 
   emitConversationUpdate(conversation);
   res.json(conversation);

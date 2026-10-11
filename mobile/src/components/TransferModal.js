@@ -10,6 +10,7 @@ import { UserCog, X } from "lucide-react-native";
 import { api } from "../api";
 import { useTokens } from "../constants/theme";
 import Avatar from "./Avatar";
+import { bolehMenerimaTransfer, labelPeranTransfer } from "../lib/targetTransfer";
 
 export default function TransferModal({ visible, conversationId, currentAssignedId, onClose, onTransferred }) {
   const tokens = useTokens();
@@ -21,7 +22,7 @@ export default function TransferModal({ visible, conversationId, currentAssigned
   useEffect(() => {
     if (!visible) return;
     setLoading(true);
-    api.getUsers().then((list) => setUsers(list || [])).catch(() => {}).finally(() => setLoading(false));
+    api.getUsers().then((list) => setUsers((list || []).filter(bolehMenerimaTransfer))).catch(() => {}).finally(() => setLoading(false));
   }, [visible]);
 
   async function handleTransfer(userId) {
@@ -66,7 +67,7 @@ export default function TransferModal({ visible, conversationId, currentAssigned
                   <Avatar name={u.name} avatarUrl={u.avatarUrl} size={36} />
                   <View style={{ flex: 1, marginLeft: 10 }}>
                     <Text style={styles.rowName}>{u.name}</Text>
-                    <Text style={styles.rowRole}>{u.role === "ADMIN" ? "Admin" : "Sales"}</Text>
+                    <Text style={styles.rowRole}>{labelPeranTransfer(u)}</Text>
                   </View>
                   {u.id === currentAssignedId && <Text style={styles.currentBadge}>Sekarang</Text>}
                 </TouchableOpacity>

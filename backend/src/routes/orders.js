@@ -1260,7 +1260,8 @@ orderRouter.get("/", async (req, res) => {
             conversations: {
               where: { type: "INDIVIDUAL" },
               orderBy: { lastMessageAt: "desc" }, take: 1,
-              select: { id: true },
+              // Pemegang percakapan ikut diambil (11 Okt 2026) untuk `salesKredit` di bawah.
+              select: { id: true, assignedToId: true, assignedTo: { select: { id: true, name: true } } },
             },
           },
         },
@@ -1428,6 +1429,7 @@ orderRouter.get("/", async (req, res) => {
         healthStatus:  customer?.healthStatus || null,
         assignedSales: customer?.assignedSales || null,
         conversationId: customer?.conversations?.[0]?.id || null,
+        _pemegangPercakapan: customer?.conversations?.[0]?.assignedTo || null, // sementara; dipakai salesKredit lalu dibuang
         statusSince: sejak,
         daysInStatus: Math.floor((now - new Date(sejak).getTime()) / 86_400_000),
         // true = dihitung dari updatedAt karena riwayat belum ada, jadi bisa
@@ -1441,6 +1443,24 @@ orderRouter.get("/", async (req, res) => {
         complaintDeliveryJob: ringkasJob(complaintDeliveryJob),
       };
     });
+
+    // salesKredit (11 Okt 2026): SIAPA YANG DIKREDITKAN laporan Sales untuk order ini — aturan SAMA dengan services/salesOwner.js#atribusiOrderWhere:
+    // pemilik order eksplisit (salesOwnerId) menang; kalau kosong, pemegang percakapan INDIVIDUAL pelanggan SEKARANG. Sebelumnya daftar Order & Excel
+    // hanya menampilkan `assignedSales` (label pemilik lead), yang bisa BERBEDA dari yang dikreditkan — order tampak "atas nama Fadlan" padahal
+    // laporan mengkreditkan Ervina. `assignedSales` tetap dikirim apa adanya (label lead); kolom baru ini yang sesuai laporan.
+    const idPemilik = [...new Set(items.map((i) => i.salesOwnerId).filter(Boolean))];
+    const namaPemilik = new Map();
+    if (idPemilik.length) {
+      for (const u of await prisma.user.findMany({ where: { id: { in: idPemilik } }, select: { id: true, name: true } })) namaPemilik.set(u.id, u.name);
+    }
+    for (const it of items) {
+      const pemegang = it._pemegangPercakapan || null;
+      delete it._pemegangPercakapan;
+      if (it.penjualanKaryawanId || it.staffSellerId) { it.salesKredit = null; continue; } // Penjualan Karyawan: di luar angka Tim Sales
+      if (it.salesOwnerId) it.salesKredit = { id: it.salesOwnerId, name: namaPemilik.get(it.salesOwnerId) || null, sumber: "PEMILIK_ORDER" };
+      else if (pemegang) it.salesKredit = { id: pemegang.id, name: pemegang.name, sumber: "PEMEGANG_PERCAKAPAN" };
+      else it.salesKredit = null;
+    }
 
     // Penjualan Karyawan: lampirkan ringkasan (nomor PKR, status bayar dari LEDGER PKR, spesifikasi, produksi, delivery). Nominal hanya untuk yang berizin Finance.
     const idPkr = items.filter((i) => i.penjualanKaryawanId).map((i) => i.penjualanKaryawanId);
