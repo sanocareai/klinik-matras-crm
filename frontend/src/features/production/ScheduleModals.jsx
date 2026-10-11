@@ -56,7 +56,7 @@ export function ArrivalModal({ target, onClose, onDone }) {
   );
 }
 
-const STALE_CODES = ["PLAN_STATION_FULL", "PLAN_REVISION_CONFLICT", "STATION_ORDER_STALE"];
+const STALE_CODES = ["PLAN_STATION_FULL", "PLAN_REVISION_CONFLICT", "STATION_ORDER_STALE", "RENCANA_ACTIVATION_STALE", "RENCANA_RUN_OUTSIDE_COHORT", "RENCANA_HAS_PRIOR_RUN", "RENCANA_HAS_V1_PROGRESS", "RENCANA_PARTIAL_ACTIVATION"];
 // Alasan jadwal ulang bila target sudah lewat — kode HARUS sama dengan RESCHEDULE_REASONS di server (productionBoard.js).
 export const RESCHEDULE_REASON_OPTIONS = [
   ["CUSTOMER_REQUEST", "Permintaan pelanggan"], ["WAITING_MATERIAL", "Menunggu bahan"], ["WAITING_ARRIVAL", "Unit belum tiba di workshop"],
@@ -153,6 +153,9 @@ export function ScheduleModal({ target, board, date, refs, onClose, onDone, onRe
   const [reasonNote, setReasonNote] = useState("");
   // Jalur Pengerjaan Pesanan (onboarding): keputusan Corner dikirim BERSAMA jadwal (atomik di server) — tanpa pilihan bawaan, supaya benar-benar dipilih manusia.
   const askCorner = needsCornerChoice(target);
+  // Unit belum diaktifkan untuk Rencana Produksi tetapi boleh diaktifkan oleh pemegang izin saat jadwal disimpan: keputusan sadar, harus dicentang (tidak pernah otomatis diam-diam).
+  const askActivate = !!target.activatable && !!target.onboardUnitId && !target.plan;
+  const [activateOk, setActivateOk] = useState(false);
   const [cornerChoice, setCornerChoice] = useState("");
   const [cornerReason, setCornerReason] = useState("");
   const [busy, setBusy] = useState(false);
@@ -171,6 +174,7 @@ export function ScheduleModal({ target, board, date, refs, onClose, onDone, onRe
     if (!unschedule && customTarget && !targetDate) { setError("Isi tanggal target khusus, atau matikan target khusus."); return; }
     if (!unschedule && customTarget && targetDate < form.productionDate) { setError("Target tidak boleh lebih awal dari tanggal produksi."); return; }
     if (!unschedule && needsReason && (!reasonCode || reasonNote.trim().length < RESCHEDULE_NOTE_MIN)) { setError(`Target sudah lewat: pilih alasan dan tulis catatan (minimal ${RESCHEDULE_NOTE_MIN} karakter).`); return; }
+    if (askActivate && !unschedule && !activateOk) { setError("Centang persetujuan: unit ini akan diaktifkan untuk Rencana Produksi saat jadwal disimpan."); return; }
     const corner = askCorner && !unschedule ? cornerBodyOf(cornerChoice, cornerReason) : { body: {} };
     if (corner.error) { setError(corner.error); return; }
     setBusy(true); setError("");
@@ -179,6 +183,7 @@ export function ScheduleModal({ target, board, date, refs, onClose, onDone, onRe
       ? { productionDate: null, stationCode: null, priority: form.priority }
       : {
         ...rest, priority: Number(form.priority), cornerOperatorId: form.cornerOperatorId || undefined, ...corner.body,
+        ...(askActivate ? { activateUnit: true } : {}),
         ...(operatorId ? { operatorId } : {}), // kosong = server memakai PIC bawaan Meja (tidak ada tebakan di browser)
         ...(customTarget ? { targetDate } : plan?.targetIsException ? { targetDate: null } : {}),
         ...(needsReason ? { rescheduleReason: reasonCode, rescheduleNote: reasonNote.trim() } : {}),
@@ -270,6 +275,13 @@ export function ScheduleModal({ target, board, date, refs, onClose, onDone, onRe
           </div>
         )}
         {plan?.id && <ScheduleHistory planId={plan.id} />}
+        {askActivate && (
+          <div data-testid="schedule-activate" role="note" className="space-y-1.5 rounded-btn bg-orangebg px-3 py-2 sm:col-span-2">
+            <p className="m-0 text-[12.5px] font-semibold text-orange">Unit ini belum diaktifkan untuk Rencana Produksi.</p>
+            <p className="m-0 text-[12px] text-ink2">Menyimpan jadwal akan menambahkan unit ini ke daftar unit Rencana Produksi (unit lain tidak berubah), membuka pekerjaan produksinya (belum tiba di workshop), lalu menjadwalkannya — satu langkah. Tercatat atas nama Anda.</p>
+            <label className="flex items-start gap-2 text-[12.5px] text-ink"><input type="checkbox" data-testid="schedule-activate-ok" className="mt-0.5" checked={activateOk} onChange={(e) => setActivateOk(e.target.checked)} /> Ya, aktifkan unit ini dan jadwalkan.</label>
+          </div>
+        )}
         {askCorner && (
           <fieldset data-testid="schedule-corner" className="m-0 space-y-1.5 border-0 p-0 sm:col-span-2">
             <legend className="text-[12.5px] font-semibold text-ink2">Corner diperlukan? (kain/jahit)</legend>
