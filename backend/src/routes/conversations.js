@@ -18,6 +18,7 @@ import { fieldPosterVideo } from "../utils/videoThumb.js";
 import { rencanaForward } from "../utils/forwardPlan.js";
 import { simpanPesanGaleri } from "../utils/simpanPesanGaleri.js";
 import { klaimJikaBelumDimiliki, ambilAlihPercakapan, transferPercakapan, PerpindahanError } from "../utils/perpindahanPercakapan.js";
+import { orderTerdampak } from "../utils/kreditOrderPerpindahan.js";
 import { downloadAndSaveMedia } from "./webhooks.js";
 import { emitNewMessage, emitConversationUpdate, emitMessageUpdate, emitMessageDeleted } from "../socket.js";
 
@@ -1959,7 +1960,7 @@ conversationRouter.post("/:id/forward", canWriteConversation, async (req, res) =
 
 // Update status / unread / isRead / pinned percakapan
 conversationRouter.patch("/:id", canWriteConversation, async (req, res) => {
-  const { status, assignedToId, unread, isRead, handoverNote, pinned } = req.body;
+  const { status, assignedToId, unread, isRead, handoverNote, pinned, keputusanOrder, alasanOrder } = req.body;
 
   // BUG YANG DIPERBAIKI: transfer lead (ubah assignedToId lewat endpoint ini)
   // sebelumnya TIDAK ADA penegakan role di server — UI menyembunyikan
@@ -1983,12 +1984,13 @@ conversationRouter.patch("/:id", canWriteConversation, async (req, res) => {
   // membawa `assignedTo` supaya layar si admin sendiri langsung menampilkan pemegang baru (dulu masih nama lama sampai muat ulang).
   if (assignedToId !== undefined) {
     try {
-      const hasil = await transferPercakapan(prisma, { conversationId: req.params.id, assignedToId, actor: req.user, dataLain: data });
+      const hasil = await transferPercakapan(prisma, { conversationId: req.params.id, assignedToId, actor: req.user, dataLain: data, keputusanOrder, alasanOrder });
       emitConversationUpdate(hasil);
       return res.json(hasil);
     } catch (err) {
-      if (err instanceof PerpindahanError) return res.status(err.statusCode).json({ error: err.message });
-      throw err;
+      if (err instanceof PerpindahanError || err?.statusCode) return res.status(err.statusCode).json({ error: err.message });
+      console.error("[conversations] transfer gagal:", err);
+      return res.status(500).json({ error: "Gagal memindahkan percakapan" });
     }
   }
 
@@ -1999,6 +2001,21 @@ conversationRouter.patch("/:id", canWriteConversation, async (req, res) => {
 
   emitConversationUpdate(conversation);
   res.json(conversation);
+});
+
+// GET /:id/order-terdampak?ke=<userId> — order yang kreditnya SEKARANG ada pada pemegang percakapan ini dan akan perlu keputusan bila dipindahkan.
+// Dipakai dialog transfer (web & aplikasi). Admin saja, sama dengan transfer itu sendiri. Hanya membaca.
+conversationRouter.get("/:id/order-terdampak", canWriteConversation, async (req, res) => {
+  if (!rolesOf(req.user).includes("ADMIN")) return res.status(403).json({ error: "Hanya admin yang bisa transfer lead ke sales lain" });
+  const conv = await prisma.conversation.findUnique({ where: { id: req.params.id }, select: { assignedToId: true, customerId: true, assignedTo: { select: { id: true, name: true } } } });
+  if (!conv) return res.status(404).json({ error: "Percakapan tidak ditemukan" });
+  const orders = conv.customerId ? await orderTerdampak(prisma, { customerId: conv.customerId, dariUserId: conv.assignedToId }) : [];
+  let penerimaSales = false;
+  if (req.query.ke) {
+    const tujuan = await prisma.user.findUnique({ where: { id: String(req.query.ke) }, select: { role: true, active: true } });
+    penerimaSales = !!tujuan && tujuan.active && tujuan.role === "SALES";
+  }
+  res.json({ dari: conv.assignedTo, penerimaSales, orders });
 });
 
 // Set sessionId manual — dipakai saat conversation.sessionId belum diketahui

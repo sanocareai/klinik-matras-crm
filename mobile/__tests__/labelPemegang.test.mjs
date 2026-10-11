@@ -67,3 +67,19 @@ test("PEMASANGAN: TransferModal memfilter daftar dan memakai helper label", () =
   assert.match(s, /labelPeranTransfer\(u\)/);
   assert.doesNotMatch(s, /u\.role === "ADMIN"/);
 });
+
+import { pilihanAwal, validasiKeputusan, buatPayloadTransfer } from "../src/lib/kreditTransfer.js";
+
+test("KREDIT TRANSFER (mobile): logika sama dengan web — default, alasan wajib, payload eksplisit", () => {
+  const orders = [{ id: "a", sarankanIkut: true }, { id: "b", sarankanIkut: false }];
+  assert.deepEqual(pilihanAwal(orders, true), { a: true, b: false });
+  assert.match(validasiKeputusan({ pilihan: { a: true }, alasan: "", penerimaSales: true }), /alasan/i);
+  assert.deepEqual(buatPayloadTransfer({ userId: "u", orders, pilihan: { a: true, b: false }, alasan: "x", penerimaSales: true }),
+    { assignedToId: "u", keputusanOrder: [{ orderId: "a", ikut: true }, { orderId: "b", ikut: false }], alasanOrder: "x" });
+});
+
+test("PEMASANGAN: TransferModal meminta order terdampak dulu dan mengirim payload keputusan", () => {
+  const s = fs.readFileSync(new URL("../src/components/TransferModal.js", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  assert.match(s, /api\.getOrderTerdampakTransfer\(conversationId, user\.id\)/);
+  assert.match(s, /buatPayloadTransfer\(\{ userId: user\.id, orders, pilihan, alasan, penerimaSales \}\)/);
+});

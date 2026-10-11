@@ -62,3 +62,27 @@ test("kolom sementara tidak bocor ke respons", async () => {
   const o = (await daftar(makeClient(server.baseUrl, token)))["RES-E"];
   assert.equal("_pemegangPercakapan" in o, false);
 });
+
+test("FILTER ?salesId = yang dikreditkan (bukan label lead): cocok dengan kolom salesKredit; gabungan dengan filter lain tidak saling menimpa", async () => {
+  const fadlan = await orang("Fadlan"); const ervina = await orang("Ervina");
+  // F1: label lead Fadlan, tapi pemilik order Ervina (kasus nyata) → harus muncul di filter Ervina, BUKAN Fadlan
+  await buatOrder({ nomor: "F1", labelId: fadlan.id, pemegangId: fadlan.id, pemilikId: ervina.id });
+  // F2: tanpa pemilik, pemegang chat Fadlan → kredit Fadlan
+  await buatOrder({ nomor: "F2", labelId: ervina.id, pemegangId: fadlan.id });
+  // F3: Penjualan Karyawan di chat yang dipegang Fadlan → tidak ikut filter siapa pun
+  const imam = await orang("Imam", ["PRODUCTION_LEAD"]);
+  await buatOrder({ nomor: "F3", pemegangId: fadlan.id, extra: { staffSellerId: imam.id } });
+  // F4: kredit Fadlan, kategori BARU → dipakai menguji gabungan filter
+  const o4 = await buatOrder({ nomor: "F4", pemilikId: fadlan.id });
+  await testPrisma.order.update({ where: { id: o4.id }, data: { category: "BARU" } });
+  const { token } = await createTestUser({ roles: ["ADMIN"] });
+  const api = makeClient(server.baseUrl, token);
+  const nomor = async (q) => { const r = await api.get(`/api/orders?limit=100&${q}`); assert.equal(r.status, 200, JSON.stringify(r.body)); return r.body.items.map((o) => o.orderNumber).sort(); };
+  assert.deepEqual(await nomor(`salesId=${ervina.id}`), ["F1"]);
+  assert.deepEqual(await nomor(`salesId=${fadlan.id}`), ["F2", "F4"]);
+  assert.deepEqual(await nomor(`salesId=${fadlan.id}&category=BARU`), ["F4"]);
+  assert.deepEqual(await nomor(`salesId=${fadlan.id}&hasConfirmedDate=true`), []);
+  // konsistensi: tiap order di hasil filter memang salesKredit-nya orang itu
+  const r = await api.get(`/api/orders?limit=100&salesId=${fadlan.id}`);
+  assert.ok(r.body.items.every((o) => o.salesKredit?.id === fadlan.id));
+});

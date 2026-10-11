@@ -1039,6 +1039,9 @@ export const api = {
   // "Hapus untuk Saya" — hard delete dari DB CRM saja, tidak menyentuh WhatsApp.
   deleteMessageLocal: (conversationId, messageId) =>
     request(`/conversations/${conversationId}/messages/${messageId}/local`, { method: "DELETE" }),
+  // Order yang kreditnya ada pada pemegang percakapan sekarang — bahan dialog keputusan kredit saat transfer (admin).
+  getOrderTerdampakTransfer: (id, ke) =>
+    request(`/conversations/${id}/order-terdampak${ke ? `?ke=${encodeURIComponent(ke)}` : ""}`),
   updateConversation: (id, data) =>
     request(`/conversations/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   // Set sessionId manual — dipakai saat backend tolak kirim (409, sesi WA

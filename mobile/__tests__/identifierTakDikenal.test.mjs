@@ -40,6 +40,8 @@ const LAYAR = [
   "../src/push.js",
   "../src/lib/lapisanMelayang.js",
   "../src/lib/labelPemegang.js",
+  "../src/lib/kreditTransfer.js",
+  "../src/components/TransferModal.js",
   "../src/components/ConversationItem.js",
   "../src/lib/pemulihanDaftar.js",
   "../src/hooks/useSocketEvents.js",
