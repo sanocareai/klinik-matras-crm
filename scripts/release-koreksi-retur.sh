@@ -44,6 +44,7 @@ PHASE="init"; BACKUP_FILE=""; ROLLBACK_TAG=""; PREV_DIR=""; PREV_IMG_ID=""; IMG_
 
 say()  { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 ok()   { printf '  OK    %s\n' "$*"; }
+warn() { printf '  \033[33mPERHATIAN\033[0m %s\n' "$*"; }
 die()  { printf '\n\033[31mSTOP: %s\033[0m\n' "$*" >&2; exit 1; }
 sg()   { git --git-dir="$SRC" "$@"; }
 dcp()  { local d="$1"; shift; ( cd "$d" && SANSS_PERSIST_ROOT="$PERSIST" docker compose -p "$PROJECT" -f docker-compose.yml -f docker-compose.release.yml "$@" ); }

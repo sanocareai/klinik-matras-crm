@@ -156,6 +156,16 @@ test("skrip bash: lulus-dengan-SKIP dilaporkan sebagai PERHATIAN (bukan ok/PASS)
   assert.doesNotMatch(body, /tG\s*=\s*[^;\n]*\btA\b/, "token Gudang tidak boleh diganti token admin");
 });
 
+test("skrip bash: setiap helper (say/ok/warn/die/sg/dcp) yang dipanggil TERDEFINISI — jalur 'lulus dengan SKIP' tidak boleh mati dengan exit 127 (command not found) di bawah set -e", () => {
+  // Bug nyata (11 Okt 2026): warn dipanggil pada jalur lulus-dengan-SKIP tetapi tidak pernah didefinisikan, sehingga rilis akan berhenti tepat setelah smoke lulus.
+  const defined = new Set([...SCRIPT.matchAll(/^([a-z_]+)\(\)\s*\{/gm)].map((m) => m[1]));
+  for (const helper of ["say", "ok", "warn", "die", "sg", "dcp"]) {
+    const used = new RegExp(`(^|[;&|(]\\s*|\\|\\|\\s*|&&\\s*)${helper} ["$]`, "m").test(SCRIPT);
+    if (used) assert.ok(defined.has(helper), `helper ${helper}() dipanggil tetapi tidak didefinisikan`);
+  }
+  assert.ok(defined.has("warn"), "warn() wajib ada (dipakai jalur lulus-dengan-SKIP)");
+});
+
 test("tes INTEGRASI tetap memuat asersi izin Gudang (penjaga: tidak boleh dihapus diam-diam)", () => {
   const read = (f) => fs.readFileSync(path.join(here, "integration", f), "utf8");
   const rs = read("returSupplier.integration.test.js");
