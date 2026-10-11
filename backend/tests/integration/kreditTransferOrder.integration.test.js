@@ -126,14 +126,48 @@ test("penerima Admin: 'ikut' tidak mungkin (pemilik harus Sales) → otomatis te
   assert.equal(await pemilik(s.o.A.id), s.suci.user.id);
 });
 
-test("pemegang lama sudah nonaktif: tidak ada kredit Sales aktif yang bisa tertukar → tidak ada order dikunci", async () => {
+test("PEMEGANG LAMA NONAKTIF (Mila): ordernya DIKUNCI ke dia — tidak diam-diam jadi kredit penerima (termasuk laporan periode lama)", async () => {
   const s = await skenario();
   const mila = await orang("Mila", ["SALES"], false);
   await testPrisma.conversation.update({ where: { id: s.conv.id }, data: { assignedToId: mila.user.id } });
+  // sebelum transfer: A (tanpa pemilik) dikreditkan ke pemegang chat = Mila (nonaktif)
+  const r = await s.admin.api.patch(`/api/conversations/${s.conv.id}`, { assignedToId: s.fadlan.user.id });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.deepEqual(r.body.kreditOrder, { ikut: 0, tetap: 2 }); // A & B (null-owner); C pemilik Suci bukan milik Mila
+  assert.equal(await pemilik(s.o.A.id), mila.user.id);
+  assert.equal(await pemilik(s.o.B.id), mila.user.id);
+  assert.equal(await pemilik(s.o.C.id), s.suci.user.id);
+  assert.equal(await kreditKe(s.fadlan.user.id, s.o.A.id), false, "Fadlan TIDAK mewarisi order lama Mila");
+});
+
+test("PEMEGANG LAMA NONAKTIF: admin boleh memutuskan IKUT ke penerima Sales (eksplisit, beralasan, diaudit)", async () => {
+  const s = await skenario();
+  const mila = await orang("Mila", ["SALES"], false);
+  await testPrisma.conversation.update({ where: { id: s.conv.id }, data: { assignedToId: mila.user.id } });
+  const r = await s.admin.api.patch(`/api/conversations/${s.conv.id}`, {
+    assignedToId: s.fadlan.user.id, keputusanOrder: [{ orderId: s.o.A.id, ikut: true }], alasanOrder: "Fadlan melanjutkan closing lead Mila",
+  });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(await pemilik(s.o.A.id), s.fadlan.user.id);
+  assert.equal(await pemilik(s.o.B.id), mila.user.id);
+});
+
+test("PEMEGANG LAMA ADMIN/leader (Novi): ordernya dikunci — closing leader tidak membengkakkan angka sales yang menerima chat", async () => {
+  const s = await skenario();
+  await testPrisma.conversation.update({ where: { id: s.conv.id }, data: { assignedToId: s.admin.user.id } });
+  const r = await s.admin.api.patch(`/api/conversations/${s.conv.id}`, { assignedToId: s.fadlan.user.id });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.kreditOrder.tetap, 2);
+  assert.equal(await pemilik(s.o.A.id), s.admin.user.id);
+  assert.equal(await kreditKe(s.fadlan.user.id, s.o.A.id), false);
+});
+
+test("percakapan BELUM punya pemegang: tidak ada yang dikunci (klaim pertama bukan pergeseran dari siapa pun)", async () => {
+  const s = await skenario();
+  await testPrisma.conversation.update({ where: { id: s.conv.id }, data: { assignedToId: null } });
   const r = await s.admin.api.patch(`/api/conversations/${s.conv.id}`, { assignedToId: s.fadlan.user.id });
   assert.equal(r.status, 200);
   assert.deepEqual(r.body.kreditOrder, { ikut: 0, tetap: 0 });
-  assert.equal(await pemilik(s.o.A.id), null);
 });
 
 test("AMBIL ALIH oleh sales: order pemegang lama dikunci ke dia (tidak ikut pindah); order milik orang lain tidak tersentuh", async () => {
