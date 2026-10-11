@@ -41,7 +41,10 @@ test("kartu backlog: instruksi lama 'Belum bisa dijadwalkan' dihapus; aksi berik
   assert.doesNotMatch(BACKLOG_CARD, /Belum bisa dijadwalkan/);
   assert.doesNotMatch(BACKLOG_CARD, /data-testid="not-schedulable"/);
   assert.match(BACKLOG_CARD, /const onboardable = !!r\?\.onboardable/);
-  assert.match(BACKLOG_CARD, /\{onboardable && handle &&/, "handle seret hanya untuk kartu yang boleh dijadwalkan");
+  assert.match(BACKLOG_CARD, /const activatable = !onboardable && !!r\?\.activatable/);
+  assert.match(BACKLOG_CARD, /const draggable = onboardable \|\| activatable/);
+  assert.match(BACKLOG_CARD, /\{draggable && handle &&/, "handle seret hanya untuk kartu yang boleh dijadwalkan (onboardable) atau boleh diaktifkan saat dijadwalkan (activatable, ADMIN/OWNER dari server)");
+  assert.match(BACKLOG_CARD, /data-testid="rencana-activate-note"/, "kartu yang diaktifkan saat dijadwalkan menjelaskan konsekuensinya");
   assert.match(BACKLOG_CARD, /data-testid="backlog-schedule"/);
   assert.match(BACKLOG_CARD, /Langkah berikutnya/);
   assert.match(BACKLOG_CARD, /data-testid="photo-note"/, "penjelasan foto kosong ditampilkan");
@@ -54,7 +57,10 @@ test("halaman Rencana: kartu order nyata memakai Jadwalkan + seret yang SAMA; sl
   assert.match(RENCANA, /onSchedule=\{\(item\) => setSchedule\(viewOfOnboardCard\(item\)\)\}/);
   assert.match(RENCANA, /hasDraggable \?/, "teks slot bergantung pada ada-tidaknya unit yang bisa diseret");
   assert.match(RENCANA, /kosong — belum ada unit yang bisa dijadwalkan/);
-  assert.match(RENCANA, /const hasDraggable = backlog\.length > 0 \|\| bl\.items\.some\(\(it\) => it\.rencana\?\.onboardable\)/);
+  assert.match(RENCANA, /const hasDraggable = backlog\.length > 0 \|\| bl\.items\.some\(\(it\) => it\.rencana\?\.onboardable \|\| it\.rencana\?\.activatable\)/);
+  assert.match(RENCANA, /handle=\{it\.rencana\?\.onboardable \|\| it\.rencana\?\.activatable \? <DragHandle/);
+  // kartu order nyata (tanpa plan.id) tidak pernah dikirim langsung sebagai pemindahan: selalu formulir Jadwalkan dengan Meja terpilih
+  assert.match(RENCANA, /if \(!plan\?\.id\) \{ setSchedule\(\{ \.\.\.view, presetStation: stationCode \}\); return; \}/);
   // drag onboardable lewat resolveDrop/decideDrop yang sama -> placeOn -> formulir (PIC wajib) -> satu command
   // PIC bawaan Meja dipakai bila ada (server memilihnya); tanpa PIC bawaan dan tanpa PIC rencana -> formulir agar petugas memilih (tidak ada tebakan).
   assert.match(RENCANA, /if \(!stationPic && !\(plan\?\.workCenter\?\.id && plan\?\.operator\?\.id\)\) \{ setSchedule\(\{ \.\.\.view, presetStation: stationCode \}\); return; \}/);
@@ -99,8 +105,22 @@ test("Unit 360: kedatangan yang dikonfirmasi petugas tanpa pickup dibaca dari ca
 });
 
 test("konflik papan basi: galat penuh/revisi memuat ulang papan di belakang formulir dan memindahkan pilihan dari Meja yang kini penuh", () => {
-  assert.match(SCHEDULE, /const STALE_CODES = \["PLAN_STATION_FULL", "PLAN_REVISION_CONFLICT", "STATION_ORDER_STALE"\]/);
+  // Keadaan unit berubah saat modal terbuka (diaktifkan orang lain / Run muncul / progres V1) juga memuat ulang papan di belakang formulir.
+  assert.match(SCHEDULE, /const STALE_CODES = \["PLAN_STATION_FULL", "PLAN_REVISION_CONFLICT", "STATION_ORDER_STALE", "RENCANA_ACTIVATION_STALE", "RENCANA_RUN_OUTSIDE_COHORT", "RENCANA_HAS_PRIOR_RUN", "RENCANA_HAS_V1_PROGRESS", "RENCANA_PARTIAL_ACTIVATION"\]/);
   assert.match(SCHEDULE, /if \(STALE_CODES\.includes\(e\?\.code\)\) onStale\?\.\(\)/);
   assert.match(SCHEDULE, /stationCapacity\(cur\)\.full && cur\.code !== plan\?\.stationCode/, "Meja rencana ini sendiri tidak dianggap penuh");
   assert.match(RENCANA, /onStale=\{load\}/);
+});
+
+test("aktivasi saat Jadwalkan: penanda dari server (bukan tebakan peran di browser); formulir mewajibkan centang eksplisit dan mengirim activateUnit; tanpa centang tidak terkirim", () => {
+  assert.match(MODEL_SRC, /activatable: !!item\.rencana\?\.activatable/);
+  assert.match(SCHEDULE, /const askActivate = !!target\.activatable && !!target\.onboardUnitId && !target\.plan/);
+  assert.match(SCHEDULE, /if \(askActivate && !unschedule && !activateOk\) \{ setError\(/, "tanpa centang persetujuan -> tidak mengirim apa pun");
+  assert.match(SCHEDULE, /\.\.\.\(askActivate \? \{ activateUnit: true \} : \{\}\)/);
+  assert.match(SCHEDULE, /data-testid="schedule-activate-ok"/);
+  const toView = loadOnboardView();
+  const card = (id) => ({ unit: { id, unitCode: `RES-${id}-U1` }, customer: {}, priority: { key: "NORMAL" } });
+  const aktif = toView({ card: card("u-9"), rencana: { action: "AWAIT_ACTIVATION", activatable: true } });
+  assert.equal(aktif.activatable, true); assert.equal(aktif.onboardUnitId, "u-9"); assert.equal(aktif.plan, null);
+  assert.equal(toView({ card: card("u-8"), rencana: { action: "AWAIT_ACTIVATION", activatable: false } }).activatable, false);
 });

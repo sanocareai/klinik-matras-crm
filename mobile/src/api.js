@@ -268,6 +268,9 @@ export const api = {
     }),
   updateConversation: (id, data) =>
     request(`/conversations/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  // Order yang kreditnya ada pada pemegang percakapan sekarang — bahan dialog keputusan kredit saat transfer (admin).
+  getOrderTerdampakTransfer: (id, ke) =>
+    request(`/conversations/${id}/order-terdampak${ke ? `?ke=${encodeURIComponent(ke)}` : ""}`),
   takeoverConversation: (id) =>
     request(`/conversations/${id}/takeover`, { method: "POST" }),
   // Riwayat LENGKAP siapa saja yang pernah menangani percakapan ini

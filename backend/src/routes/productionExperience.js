@@ -83,7 +83,7 @@ productionExperienceRouter.get("/backlog", requireAnyPermission(...READ_PERMS), 
   try {
     const states = cohortStatesOf(await loadV2Flags(prisma));
     const readerOn = states.reader.mode !== PRODUCTION_READER_MODE.OFF && states.reader.unitIds.size > 0;
-    res.json({ readerMode: readerOn ? "COHORT" : "OFF", ...(await listBacklog(prisma, { states, ...parseBacklogQuery(req.query) })) });
+    res.json({ readerMode: readerOn ? "COHORT" : "OFF", ...(await listBacklog(prisma, { states, canActivate: hasPermission(req.user, P.PRODUCTION_SETTINGS_WRITE), ...parseBacklogQuery(req.query) })) });
   } catch (err) { handleErr(err, res); }
 });
 
@@ -233,7 +233,7 @@ productionExperienceRouter.post("/plans", requirePermission(P.PRODUCTION_ASSIGNM
     const key = idem(req);
     if (!key || key.length > 110) return res.status(400).json({ error: "Idempotency-Key wajib diisi (12-110 karakter)", code: "IDEMPOTENCY_KEY_INVALID" });
     if (!req.body?.runId && req.body?.unitId) { // order nyata (Rencana): buka Run bila perlu + rencana + jadwal = SATU transaksi; tombol Jadwalkan & seret-lepas memakai pintu ini
-      return res.status(201).json(await planAndScheduleUnit(prisma, { unitId: req.body.unitId, actorId: req.user.id, idempotencyKey: key, input: req.body }));
+      return res.status(201).json(await planAndScheduleUnit(prisma, { unitId: req.body.unitId, actorId: req.user.id, idempotencyKey: key, input: req.body, canActivate: hasPermission(req.user, P.PRODUCTION_SETTINGS_WRITE) }));
     }
     const created = await createProductionPlan(prisma, { runId: req.body?.runId, actorId: req.user.id, idempotencyKey: `${key}:create` });
     const scheduled = await scheduleProductionPlan(prisma, {

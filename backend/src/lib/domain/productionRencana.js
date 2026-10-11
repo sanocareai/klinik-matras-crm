@@ -76,6 +76,17 @@ export function classifyRencanaUnit(u) {
   return act(A.AWAIT_ACTIVATION, null, "Eligible, tetapi belum diaktifkan untuk Rencana Produksi (menunggu keputusan Owner).", "Owner mengaktifkan unit ini lewat Aktivasi Rencana.");
 }
 
+// Unit yang BOLEH diaktifkan otomatis saat dijadwalkan (seret-lepas / tombol Jadwalkan) oleh pemegang izin Pengaturan Produksi (ADMIN/OWNER), tanpa menjalankan skrip aktivasi.
+// SATU-SATUNYA kasus: unit eligible yang hanya belum masuk cohort (AWAIT_ACTIVATION) dan TIDAK punya Production Run apa pun (aktif maupun yang sudah selesai/dibatalkan) serta tidak punya
+// progres tahap V1. Hanya penambahan unit itu ke cohort reader+writer (unit lain tidak disentuh).
+// TIDAK PERNAH diaktifkan lewat jalur ini — tetap Pengecualian dengan penjelasannya: unit dengan Run/pekerjaan produksi lama di luar cohort (RUN_OUTSIDE_COHORT; pengambilalihan Run lama
+// adalah keputusan terpisah Owner/tim sistem), aktivasi sebagian (PARTIAL_ACTIVATION), progres V1, dan semua unit tak eligible (spam/internal/dibatalkan/selesai/belum diambil/PKR belum lengkap).
+export function activatableOnDrop(cls, { stageLogCount = 0, hasCurrentStage = false, runCount = 0 } = {}) {
+  if (!cls || cls.action !== RENCANA_ACTION.AWAIT_ACTIVATION) return false;
+  if ((stageLogCount || 0) > 0 || hasCurrentStage) return false;
+  return (runCount || 0) === 0;
+}
+
 // Penjelasan foto kosong untuk kartu. `diagnosis` dari diagnoseUnitPhotosBulk(); photoUrl non-null = ada foto (tidak perlu penjelasan).
 export function photoNoteOf({ photoUrl, diagnosis }) {
   if (photoUrl) return null;

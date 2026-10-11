@@ -90,9 +90,9 @@ async function runSmoke({ users, bugWarehouseFinance = false }) {
   server.close();
   // Hasil ditentukan dari baris SMOKE_HASIL yang dicetak skrip. Kode keluar proses tidak dipakai karena di Windows `process.exit` dengan koneksi fetch terbuka memicu
   // assertion libuv (UV_HANDLE_CLOSING) — artefak platform uji, tidak terjadi di container Linux production. Bila SMOKE_HASIL tidak ada (keluar dini), kode keluar dipakai.
-  const m = /SMOKE_HASIL fail=(\d+) skip=(\d+)/.exec(out.stdout);
+  const m = /SMOKE_HASIL fail=(\d+) skip=(\d+) skip_gudang=(\d+) gudang_admin=(\d+)/.exec(out.stdout);
   const exit = m ? (Number(m[1]) === 0 ? 0 : 1) : out.rc;
-  return { ...out, seen, exit };
+  return { ...out, seen, exit, skip: m ? Number(m[2]) : null, skipGudang: m ? Number(m[3]) : null, gudangAdmin: m ? Number(m[4]) : null };
 }
 
 const U = (id, role, roles = [role]) => ({ id, name: id, role, roles, active: true });
@@ -108,13 +108,18 @@ test("TANPA akun WAREHOUSE murni: pemeriksaan Gudang = SKIP berbukti; rilis tida
   const skips = r.stdout.split("\n").filter((l) => /^\s*SKIP\s/.test(l));
   assert.ok(skips.length >= 8, `SKIP kurang: ${skips.length}\n${r.stdout}`);
   for (const l of skips) assert.match(l, /DILEWATI: tidak ada akun WAREHOUSE murni/, "tiap SKIP wajib berisi alasan");
-  assert.match(r.stdout, /SMOKE_HASIL fail=0 skip=\d+/);
+  assert.match(r.stdout, /SMOKE_HASIL fail=0 skip=\d+ skip_gudang=\d+ gudang_admin=\d+/);
   // tidak ada baris PASS yang mengklaim izin/tampilan Gudang
   // (SALES/anonim ditolak di endpoint Gudang adalah pemeriksaan SAH tanpa akun Gudang; yang dilarang PASS = klaim perilaku AKTOR Gudang)
   const passGudang = r.stdout.split("\n").filter((l) => /^\s*PASS\s/.test(l) && /(WAREHOUSE|tampilan Gudang|pratinjau koreksi \(Gudang\)|detail retur \(Gudang\))/.test(l));
   assert.deepEqual(passGudang, [], "izin Gudang tidak boleh PASS tanpa akun Gudang murni");
   // pengganti admin untuk struktur progres harus diberi label jujur
-  assert.match(r.stdout, /Barang Akan Datang -> 200 \(aktor: admin \(pengganti: BUKAN pemeriksaan izin Gudang\)\)/);
+  // Keputusan Owner: ADMIN boleh menjalankan fungsi Gudang — dibuktikan dengan token ADMIN dan DILABELI 'akses Gudang melalui ADMIN' (bukan izin WAREHOUSE mandiri).
+  assert.match(r.stdout, /PASS\s+akses Gudang melalui ADMIN: Barang Akan Datang -> 200/);
+  assert.match(r.stdout, /PASS\s+akses Gudang melalui ADMIN: daftar retur \(inventory\) -> 200/);
+  assert.match(r.stdout, /PASS\s+akses Gudang melalui ADMIN: detail retur id tak dikenal -> 404/);
+  assert.ok(r.gudangAdmin >= 3 && r.skipGudang >= 8, `gudang_admin=${r.gudangAdmin} skip_gudang=${r.skipGudang}`);
+  assert.doesNotMatch(r.stdout, /PASS[^\n]*WAREHOUSE (murni|mandiri)/, "izin WAREHOUSE mandiri tidak boleh diklaim teruji");
   // jumlah penulisan: 11 (4 oleh aktor Gudang tidak dilakukan), semuanya ditolak sebelum menyentuh data
   assert.match(r.stdout, /PASS\s+semua 11 pemanggilan tulis ditolak/);
   // tidak ada permintaan dengan token akun multi-peran yang diperlakukan sebagai Gudang: token Gudang tidak pernah dibuat
@@ -125,7 +130,7 @@ test("TANPA akun WAREHOUSE murni: pemeriksaan Gudang = SKIP berbukti; rilis tida
 test("DENGAN akun WAREHOUSE murni: semua pemeriksaan Gudang dijalankan (0 SKIP) dan 15 penulisan ditolak", async () => {
   const r = await runSmoke({ users: [ADMIN, SALES, GUDANG_MURNI] });
   assert.equal(r.exit, 0, r.stdout + r.stderr);
-  assert.match(r.stdout, /SMOKE_HASIL fail=0 skip=0/);
+  assert.match(r.stdout, /SMOKE_HASIL fail=0 skip=0 skip_gudang=0 gudang_admin=\d+/);
   assert.doesNotMatch(r.stdout, /^\s*SKIP\s/m);
   for (const frag of ["Retur Supplier (Gudang): WAREHOUSE -> 200", "tampilan Gudang TIDAK memuat nilai", "Retur Supplier (Finance): WAREHOUSE murni -> 403", "Debit Note: WAREHOUSE murni -> 403", "Saldo kredit: WAREHOUSE murni -> 403", "pratinjau koreksi (Gudang)"]) {
     assert.match(r.stdout, new RegExp(`PASS\\s+${frag.replace(/[()]/g, "\\$&")}`), frag);
@@ -148,8 +153,9 @@ test("SALES murni tidak ada: tetap fail-closed (bukan SKIP)", async () => {
 
 test("skrip bash: lulus-dengan-SKIP dilaporkan sebagai PERHATIAN (bukan ok/PASS) dan ringkasan wajib ada", () => {
   assert.match(SCRIPT, /\| tee "\$BK_DIR\/smoke\.log" \|\| die "smoke test GAGAL"/);
-  assert.match(SCRIPT, /\[ -n "\$SMOKE_SKIP" \] \|\| die "smoke test tidak mencetak ringkasan SMOKE_HASIL/);
-  assert.match(SCRIPT, /warn "smoke test lulus dengan \$\{SMOKE_SKIP\} pemeriksaan DILEWATI \(SKIP\): izin Gudang TIDAK terverifikasi di production/);
+  assert.match(SCRIPT, /\[ -n "\$SMOKE_FIELDS" \] \|\| die "smoke test tidak mencetak ringkasan SMOKE_HASIL/);
+  assert.match(SCRIPT, /warn "smoke test lulus dengan \$\{SKIP_LAIN\} pemeriksaan DILEWATI \(SKIP\) di luar izin WAREHOUSE mandiri/);
+  assert.match(SCRIPT, /ok "smoke test lulus — akses Gudang melalui ADMIN terverifikasi \(\$\{SMOKE_GUDANG_ADMIN\} pemeriksaan\); izin WAREHOUSE mandiri TIDAK diuji/);
   // tidak ada pembuatan akun/token pengganti di blok smoke
   const body = smokeBody();
   assert.doesNotMatch(body, /\.(create|createMany|upsert|update|delete)\(/, "smoke tidak boleh menulis lewat Prisma");

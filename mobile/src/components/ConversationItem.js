@@ -18,6 +18,7 @@ import { useConversation, useConversationStore, useConvSearchQuery } from "../st
 import { useAuth } from "../context/AuthContext";
 import { api } from "../api";
 import { lightHaptic } from "../lib/haptics";
+import { labelPemegang } from "../lib/labelPemegang";
 
 const MEDIA_ICON = { image: ImageIcon, video: Video, audio: Mic, document: FileText };
 const MEDIA_LABEL = { image: "Foto", video: "Video", audio: "Pesan suara", document: "Dokumen" };
@@ -113,6 +114,7 @@ function ConversationItemBase({ id, onPress, selectionMode, selected, onToggleSe
   // Badge CS-1/CS-2 — field sessionId cuma berisi salah satu dari ini kalau
   // sudah ter-set (lihat CLAUDE.md "Multi-session WAHA aktif").
   const sessionLabel = c.sessionId === "CS-1" || c.sessionId === "CS-2" ? c.sessionId : null;
+  const label = labelPemegang(c);
   // Sudah dibuka tapi tidak unread lagi → dim (bukan pelanggan aktif butuh perhatian)
   const dim = isRead && !isUnread;
   const previewColor = dim ? tokens.color.textMuted : isUnread ? tokens.color.textPrimary : tokens.color.textSecondary;
@@ -290,7 +292,7 @@ function ConversationItemBase({ id, onPress, selectionMode, selected, onToggleSe
                 </View>
               )}
             </View>
-            {(sessionLabel || c.firstResponder || c.status) && (
+            {(sessionLabel || label.utama || label.pertama || c.status) && (
               <View style={styles.badgesRow}>
                 {c.status && (
                   <PressableScale
@@ -304,10 +306,10 @@ function ConversationItemBase({ id, onPress, selectionMode, selected, onToggleSe
                   </PressableScale>
                 )}
                 {sessionLabel && <Text style={styles.sessionBadge}>{sessionLabel}</Text>}
-                {/* Sales yang PERTAMA balas — beda dari assignedTo (siapa yang
-                    SEDANG pegang sekarang), tetap tampil walau sudah
-                    di-takeover berkali-kali, lihat schema.prisma. */}
-                {c.firstResponder && <Text style={styles.firstResponderBadge}>{c.firstResponder.name}</Text>}
+                {/* Badge utama = yang SEDANG memegang (berubah saat ambil alih/transfer). "1st: X" = pembalas pertama, hanya bila orangnya
+                    berbeda (kredit historis, tidak pernah berubah) — lihat lib/labelPemegang.js. */}
+                {label.utama && <Text style={styles.pemegangBadge} numberOfLines={1}>{label.utama}</Text>}
+                {label.pertama && <Text style={styles.firstResponderBadge} numberOfLines={1}>1st: {label.pertama}</Text>}
               </View>
             )}
           </View>
@@ -395,6 +397,10 @@ function createStyles(tokens) {
   sessionBadge: {
     fontSize: 10, fontWeight: "700", color: tokens.color.accent, backgroundColor: tokens.color.accentSoft,
     paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, overflow: "hidden",
+  },
+  pemegangBadge: {
+    fontSize: 10, fontWeight: "700", color: tokens.color.textPrimary, backgroundColor: tokens.color.subtle,
+    paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, overflow: "hidden", maxWidth: 110,
   },
   firstResponderBadge: {
     fontSize: 10, fontWeight: "500", color: tokens.color.textSecondary, backgroundColor: tokens.color.subtle,

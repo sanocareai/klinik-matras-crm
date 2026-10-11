@@ -15,9 +15,9 @@ import { lockRowForUpdate } from "./inventoryLedger.js";
 import { UUID_RE, lockUnitOwnership } from "./unitV2Ownership.js";
 import { PKR_ORDER_SELECT, rujukanPkrDariOrder } from "./pkrProduksiGuard.js";
 import { BOARD_DEFAULTS, formatProductionDate, normalizeScheduleInput } from "../lib/domain/productionBoard.js";
-import { RENCANA_ACTION, classifyRencanaUnit } from "../lib/domain/productionRencana.js";
+import { RENCANA_ACTION, activatableOnDrop, classifyRencanaUnit } from "../lib/domain/productionRencana.js";
 import {
-  isProductionReaderEnabledFor, isProductionWriterEnabledFor, loadV2Flags, resolveProductionReaderState, resolveProductionWriterState,
+  V2_FLAGS, isProductionReaderEnabledFor, isProductionWriterEnabledFor, loadV2Flags, resolveProductionReaderState, resolveProductionWriterState,
 } from "./v2FeatureFlags.js";
 import { assertIdempotencyKey, createProductionPlanInTx, scheduleProductionPlanInTx } from "./productionPlanningCommandService.js";
 import { offerUnitCustody, openPendingArrivalIntakeV2InTx } from "./unitCustodyCommandService.js";
@@ -32,7 +32,7 @@ const rencanaError = (message, statusCode, code, details) => Object.assign(new E
 export const RENCANA_UNIT_SELECT = {
   id: true, unitCode: true, status: true, currentStageId: true,
   order: { select: { id: true, orderNumber: true, status: true, category: true, ...PKR_ORDER_SELECT, customer: { select: { name: true, pipelineStage: true, isInternalStaff: true } } } },
-  _count: { select: { stageLogs: true } },
+  _count: { select: { stageLogs: true, productionRunsV2: true } }, // productionRunsV2 = SEMUA Run (juga yang sudah selesai/dibatalkan) — dipakai gerbang aktivasi saat Jadwalkan
   productionRunsV2: { where: { status: { notIn: TERMINAL_RUN } }, select: { id: true, status: true, plan: { select: { id: true, stationCode: true, status: true } } }, take: 1, orderBy: { createdAt: "desc" } },
 };
 
@@ -94,18 +94,61 @@ export async function openRencanaRunInTx(tx, { unitId, actorId = null, idempoten
   return { runId: run.id, onboarded: true, viaCustody, jobId: job?.id ?? null, origin: "CUSTODY_PICKUP" };
 }
 
+// Aktivasi unit untuk Rencana Produksi SAAT dijadwalkan (seret-lepas/Jadwalkan) — di DALAM transaksi pemanggil, jadi gagal di mana pun = unit TIDAK teraktivasi. Padanan skrip
+// activate-rencana-units.js untuk SATU unit: hanya MENAMBAH unit ke cohort reader+writer (kunci baris flag, cohort lama utuh), flag yang MATI/cohort rusak = berhenti (menyalakan flag
+// tetap keputusan terpisah). Pemanggil WAJIB sudah memastikan izin (production_settings:write) dan kemauan eksplisit (activateUnit=true).
+export async function activateRencanaUnitInTx(tx, { unitId, actorId = null, idempotencyKey = null }) {
+  await tx.$queryRawUnsafe("SELECT key FROM v2_feature_flags WHERE key IN ($1, $2) ORDER BY key FOR UPDATE", V2_FLAGS.PRODUCTION_READER, V2_FLAGS.PRODUCTION_WRITER);
+  const flags = await loadV2Flags(tx);
+  const states = cohortStatesOf(flags);
+  for (const [label, key, s] of [["reader", V2_FLAGS.PRODUCTION_READER, states.reader], ["writer", V2_FLAGS.PRODUCTION_WRITER, states.writer]]) {
+    if (!flags[key]?.enabled || s.mode !== "COHORT") {
+      throw rencanaError(`Rencana Produksi belum menyala untuk cohort (flag ${label}: ${s.diagnostic || "OFF"}) — menyalakannya adalah keputusan terpisah; unit tidak diaktifkan.`, 503, "RENCANA_ACTIVATION_FLAGS_OFF");
+    }
+  }
+  const row = await tx.unit.findUnique({ where: { id: unitId }, select: RENCANA_UNIT_SELECT });
+  if (!row) throw rencanaError("Unit tidak ditemukan", 404, "RENCANA_UNIT_NOT_FOUND");
+  const cls = classifyUnitRow(row, states);
+  // Keadaan berubah sejak modal dibuka (orang lain sudah mengaktifkan/menjadwalkan unit ini): JANGAN diam-diam menjadwalkan ulang milik orang lain — muat ulang lalu putuskan lagi.
+  if (cls.action === RENCANA_ACTION.SCHEDULE || cls.action === RENCANA_ACTION.ONBOARD_SCHEDULE) {
+    throw rencanaError("Unit ini sudah diaktifkan atau dijadwalkan oleh orang lain saat Anda membuka formulir. Muat ulang papan lalu periksa jadwalnya.", 409, "RENCANA_ACTIVATION_STALE");
+  }
+  if (cls.action === RENCANA_ACTION.AWAIT_ACTIVATION && (row._count?.productionRunsV2 ?? 0) > 0) {
+    throw rencanaError("Unit ini pernah punya pekerjaan produksi (sudah selesai/dibatalkan) — tidak diaktifkan lewat penjadwalan. Pengaktifannya keputusan terpisah Owner/tim sistem.", 422, "RENCANA_HAS_PRIOR_RUN");
+  }
+  if (!activatableOnDrop(cls, { stageLogCount: row._count?.stageLogs ?? 0, hasCurrentStage: !!row.currentStageId, runCount: row._count?.productionRunsV2 ?? 0 })) throw errorForClassification(cls);
+
+  const id = String(unitId).toLowerCase();
+  const reason = `Aktivasi Rencana Produksi saat Jadwalkan: +1 unit ${row.unitCode} (rencana-drop${idempotencyKey ? `, ${String(idempotencyKey).slice(0, 40)}` : ""}, ${new Date().toISOString()})`;
+  const before = { reader: [...states.reader.unitIds].sort(), writer: [...states.writer.unitIds].sort() };
+  for (const key of [V2_FLAGS.PRODUCTION_READER, V2_FLAGS.PRODUCTION_WRITER]) {
+    const flag = await tx.v2FeatureFlag.findUniqueOrThrow({ where: { key } });
+    const current = Array.isArray(flag.config?.unitIds) ? flag.config.unitIds.map((x) => String(x).toLowerCase()) : [];
+    const list = [...new Set([...current, id])].sort();
+    await tx.v2FeatureFlag.update({ where: { key }, data: { config: { ...(flag.config || {}), unitIds: list }, reason } });
+  }
+  await recordActivity(tx, {
+    entityType: "unit", entityId: unitId, eventType: EVENT_TYPES.PRODUCTION_RENCANA_UNIT_ACTIVATED, actorId: actorId || null,
+    metadata: { unitCode: row.unitCode, sebelumnya: cls.code || cls.action, cohortSebelum: { reader: before.reader.length, writer: before.writer.length } },
+  });
+  return { activated: true, previous: cls.code || cls.action, cohortBefore: { reader: before.reader.length, writer: before.writer.length } };
+}
+
 // ---------------------------------------------------------------------------
 // 1. Jadwalkan unit (onboarding bila perlu) — SATU transaksi, SATU pintu untuk tombol Jadwalkan dan seret-lepas.
 // ---------------------------------------------------------------------------
-export async function planAndScheduleUnit(prisma, { unitId, actorId, idempotencyKey, input = {}, config = BOARD_DEFAULTS }) {
+export async function planAndScheduleUnit(prisma, { unitId, actorId, idempotencyKey, input = {}, config = BOARD_DEFAULTS, canActivate = false }) {
   if (!unitId || !UUID_RE.test(String(unitId))) throw rencanaError("unitId wajib diisi (UUID)", 400, "RENCANA_UNIT_ID_INVALID");
   assertIdempotencyKey(idempotencyKey);
   const data = normalizeScheduleInput(input, config, { deferResources: true }); // 400 bila tanggal/meja/prioritas tidak valid — SEBELUM menyentuh DB; PIC/workshop dilengkapi dari PIC bawaan meja di dalam transaksi
   // Pilihan "Corner diperlukan?" (modal Jadwalkan jalur pengerjaan) — validasi yang SAMA dengan command Unit 360, sebelum DB; alasan wajib bila tidak diperlukan.
   const corner = input.cornerRequired === undefined || input.cornerRequired === null ? null : normalizeCornerInput({ required: input.cornerRequired, reason: input.cornerReason });
   if (data.unschedule) throw rencanaError("Mengeluarkan dari papan dilakukan lewat jadwal rencana yang sudah ada", 400, "RENCANA_UNSCHEDULE_NOT_SUPPORTED");
+  // Aktivasi saat Jadwalkan = keputusan sadar: wajib eksplisit (activateUnit=true) DAN pemegang izin Pengaturan Produksi (ADMIN/OWNER). Dicek SEBELUM menyentuh DB.
+  const activate = input.activateUnit === true;
+  if (activate && !canActivate) throw rencanaError("Mengaktifkan unit untuk Rencana Produksi hanya untuk Admin/Owner.", 403, "RENCANA_ACTIVATION_FORBIDDEN");
   const actor = actorId || "SYSTEM";
-  const requestHash = hash({ commandType: "RENCANA_PLAN_SCHEDULE_UNIT", unitId, ...data, productionDate: formatProductionDate(data.productionDate), ...(corner ? { corner } : {}), ...(input.targetDate !== undefined ? { targetDate: input.targetDate } : {}) });
+  const requestHash = hash({ commandType: "RENCANA_PLAN_SCHEDULE_UNIT", unitId, ...data, productionDate: formatProductionDate(data.productionDate), ...(corner ? { corner } : {}), ...(activate ? { activateUnit: true } : {}), ...(input.targetDate !== undefined ? { targetDate: input.targetDate } : {}) });
 
   return prisma.$transaction(async (tx) => {
     // Kunci unit LEBIH DULU, baru cari replay: dua permintaan bersamaan dengan kunci yang sama diserialkan di sini — yang kalah menunggu lalu MELIHAT command yang sudah commit
@@ -121,6 +164,8 @@ export async function planAndScheduleUnit(prisma, { unitId, actorId, idempotency
     const command = await tx.v2Command.create({
       data: { domain: "PRODUCTION", actorId: actor, idempotencyKey, commandType: "RENCANA_PLAN_SCHEDULE_UNIT", aggregateType: "Unit", aggregateId: unitId, requestHash },
     });
+    // Aktivasi (bila diminta) SEBELUM membuka Run: satu transaksi dengan Run + rencana + jadwal. Unit yang sudah aktif = tidak ada perubahan (activated:false).
+    const activation = activate ? await activateRencanaUnitInTx(tx, { unitId, actorId, idempotencyKey }) : null;
     const opened = await openRencanaRunInTx(tx, { unitId, actorId, idempotencyKey });
     let plan = await tx.productionRunPlan.findUnique({ where: { runId: opened.runId }, select: { id: true, revision: true, status: true } });
     let created = false;
@@ -141,7 +186,7 @@ export async function planAndScheduleUnit(prisma, { unitId, actorId, idempotency
       if (opened.origin !== "WORKSHOP_BORN") throw rencanaError("Pilihan Corner hanya untuk pesanan BARU/custom yang dikerjakan langsung di workshop", 422, "RENCANA_CORNER_NOT_APPLICABLE");
       cornerResult = await confirmBuildCornerInTx(tx, { runId: opened.runId, choice: corner, actorId, idempotencyKey: `${idempotencyKey}:corner` });
     }
-    const response = { ...scheduled, runId: opened.runId, onboarded: opened.onboarded, viaCustody: opened.viaCustody, origin: opened.origin, created, ...(cornerResult ? { corner: cornerResult.corner } : {}) };
+    const response = { ...scheduled, runId: opened.runId, onboarded: opened.onboarded, viaCustody: opened.viaCustody, origin: opened.origin, created, ...(activation?.activated ? { activated: true } : {}), ...(cornerResult ? { corner: cornerResult.corner } : {}) };
     await tx.v2Command.update({ where: { id: command.id }, data: { status: "APPLIED", appliedRevision: scheduled.revision, response, completedAt: new Date() } });
     return { ...response, replayed: false };
   }, { timeout: 20_000, maxWait: 10_000 });
@@ -150,6 +195,10 @@ export async function planAndScheduleUnit(prisma, { unitId, actorId, idempotency
 // ---------------------------------------------------------------------------
 // 2. Referensi penjadwalan: workshop + PIC yang sah, dihitung server. Kosong = ada alasan + tindakan berikutnya (tidak pernah kosong tanpa penjelasan).
 // ---------------------------------------------------------------------------
+// Keputusan Owner (11 Okt 2026): akun ADMIN/OWNER tidak muncul sebagai pilihan PIC (dropdown). Hanya menyaring PILIHAN: profil operator & riwayat tidak dihapus/diubah, dan ADMIN/OWNER tetap
+// boleh mengerjakan semua lini (PRODUCTION_EXECUTE_ANY) tanpa menjadi PIC terdaftar di papan.
+export const PIC_EXCLUDED_ROLES = Object.freeze(["ADMIN", "OWNER"]);
+const bukanAdminOwner = { role: { notIn: PIC_EXCLUDED_ROLES }, roles: { none: { role: { in: PIC_EXCLUDED_ROLES } } } };
 export const PRODUCTION_PIC_ROLES = Object.freeze(["PRODUCTION_WORKER"]); // yang mengerjakan Meja/Corner; Kepala Produksi tetap bisa mendaftarkan siapa pun lewat tab Operator
 // Tautan ke tab Pengaturan Produksi (TabbedHub membaca ?tab=): Operator (PIC) & Area Kerja (workshop).
 const LINKS = Object.freeze({ operators: "/bengkel/pengaturan?tab=operator", workCenters: "/bengkel/pengaturan?tab=area-kerja", settings: "/bengkel/pengaturan" });
@@ -158,12 +207,12 @@ export async function getPlanningRefs(prisma, { canRegisterOperator = false } = 
   const [workCenters, operators, candidates] = await Promise.all([
     prisma.workCenter.findMany({ where: { active: true }, select: { id: true, code: true, name: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
     prisma.productionOperator.findMany({
-      where: { active: true, user: { active: true } },
+      where: { active: true, user: { active: true, ...bukanAdminOwner } },
       select: { id: true, employeeCode: true, primaryWorkCenterId: true, user: { select: { id: true, name: true } }, primaryWorkCenter: { select: { id: true, name: true } } },
       orderBy: { createdAt: "asc" },
     }),
     prisma.user.findMany({
-      where: { active: true, productionOperatorProfile: { is: null }, OR: [{ roles: { some: { role: { in: PRODUCTION_PIC_ROLES } } } }, { role: { in: PRODUCTION_PIC_ROLES } }] }, // peran multi-role (user_roles) ATAU kolom peran lama
+      where: { active: true, ...bukanAdminOwner, productionOperatorProfile: { is: null }, OR: [{ roles: { some: { role: { in: PRODUCTION_PIC_ROLES } } } }, { role: { in: PRODUCTION_PIC_ROLES } }] }, // peran multi-role (user_roles) ATAU kolom peran lama
       select: { id: true, name: true, roles: { select: { role: true } } }, orderBy: { name: "asc" },
     }),
   ]);

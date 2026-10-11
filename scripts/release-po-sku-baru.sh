@@ -38,6 +38,7 @@ PHASE="init"; BACKUP_FILE=""; ROLLBACK_TAG=""; PREV_DIR=""; PREV_IMG_ID=""; IMG_
 
 say()  { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 ok()   { printf '  OK    %s\n' "$*"; }
+warn() { printf '  \033[33mPERHATIAN\033[0m %s\n' "$*"; }
 die()  { printf '\n\033[31mSTOP: %s\033[0m\n' "$*" >&2; exit 1; }
 sg()   { git --git-dir="$SRC" "$@"; }
 dcp()  { local d="$1"; shift; ( cd "$d" && SANSS_PERSIST_ROOT="$PERSIST" docker compose -p "$PROJECT" -f docker-compose.yml -f docker-compose.release.yml "$@" ); }
@@ -365,14 +366,17 @@ PSQLN() { dcp "$NEW_DIR" exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" -X -A
 ok "kolom & tabel SKU/katalog ada; material, stok, dan baris PO lama TIDAK terisi (tanpa backfill)"
 echo "  INFO  material = $(PSQLN "select count(*) from materials"); SKU dari PO = $(PSQLN "select count(*) from fin_material_sku_origins"); katalog supplier = $(PSQLN "select count(*) from fin_supplier_materials"); PO = $(PSQLN "select count(*) from fin_purchase_orders")"
 PHASE="8b-smoke"; say "8b. Smoke test izin + pembacaan (baca-saja; TIDAK ada SKU/PO/penerimaan/transaksi QA di produksi)"
-dcp "$NEW_DIR" exec -T backend node --input-type=module - <<'NODE' || die "smoke test GAGAL"
+dcp "$NEW_DIR" exec -T backend node --input-type=module - <<'NODE' | tee "$BK_DIR/smoke.log" || die "smoke test GAGAL"
 import { createRequire } from "node:module";
 const require = createRequire(process.cwd() + "/");
 const jwt = require("jsonwebtoken");
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 const BASE = "http://127.0.0.1:4000";
-let fail = 0;
+let fail = 0; let dilewati = 0; let skipGudang = 0; let gudangAdmin = 0;
+const skip = (n, alasan) => { dilewati++; if (/akun WAREHOUSE murni/.test(alasan)) skipGudang++; console.log(`  SKIP  ${n} — DILEWATI: ${alasan}`); };
+// Keputusan Owner: ADMIN boleh menjalankan fungsi Gudang. Pemeriksaan yang dijalankan dengan token ADMIN dilabeli jujur sebagai "akses Gudang melalui ADMIN" — BUKAN izin WAREHOUSE mandiri.
+const viaAdmin = (n, ok, d = "") => { gudangAdmin++; rec(`akses Gudang melalui ADMIN: ${n}`, ok, d); };
 const rec = (n, ok, d = "") => { if (!ok) fail++; console.log(`  ${ok ? "PASS" : "FAIL"}  ${n}${d ? " — " + d : ""}`); };
 async function api(method, path, token, body) {
   const r = await fetch(BASE + path, { method, headers: { ...(token ? { Authorization: "Bearer " + token } : {}), ...(body ? { "Content-Type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined });
@@ -411,8 +415,14 @@ rec("katalog supplier: tanpa token -> 401", (await api("GET", "/api/finance/purc
 rec("asal SKU: tanpa token -> 401", (await api("GET", `/api/finance/purchase-orders/sku/${nol}`)).status === 401);
 rec("perbaiki SKU: tanpa token -> 401", (await api("PATCH", `/api/finance/purchase-orders/sku/${nol}`)).status === 401);
 // 403 tanpa izin
+// Peran tanpa akun murni = SKIP berbukti (bukan lolos diam-diam): akun multi-peran tidak dipakai (PASS palsu), akun/token tidak dibuat.
+const ALASAN_AKUN = (nama) => `tidak ada akun ${nama} murni (aktif, tanpa peran ADMIN/OWNER/FINANCE/ACCOUNTANT/APPROVER) di production; akun/token tidak dibuat atau direkayasa`;
 for (const [nama, t] of [["SALES", tS], ["PRODUCTION_LEAD", tP], ["WAREHOUSE", tG]]) {
-  if (!t) continue;
+  if (!t) {
+    skip(`cek-duplikat SKU: ${nama} -> 403`, ALASAN_AKUN(nama));
+    skip(`katalog supplier: ${nama} -> 403`, ALASAN_AKUN(nama));
+    continue;
+  }
   rec(`cek-duplikat SKU: ${nama} -> 403`, (await api("POST", "/api/finance/purchase-orders/sku/cek-duplikat", t, { materialBaru: contohBaru })).status === 403);
   rec(`katalog supplier: ${nama} -> 403`, (await api("GET", "/api/finance/purchase-orders/katalog-supplier", t)).status === 403);
 }
@@ -420,7 +430,12 @@ if (tF) {
   rec("cek-duplikat SKU: FINANCE biasa (bukan admin) -> 403", (await api("POST", "/api/finance/purchase-orders/sku/cek-duplikat", tF, { materialBaru: contohBaru })).status === 403);
   rec("perbaiki SKU: FINANCE biasa (bukan admin) -> 403", (await api("PATCH", `/api/finance/purchase-orders/sku/${nol}`, tF, { nama: "x" })).status === 403);
   rec("katalog supplier: FINANCE biasa -> 200 (finance:read)", (await api("GET", "/api/finance/purchase-orders/katalog-supplier", tF)).status === 200);
-} else console.log("  INFO  tidak ada akun FINANCE murni — uji FINANCE biasa dilewati (dicakup tes integrasi)");
+} else {
+  const alasanFin = "tidak ada akun FINANCE biasa (aktif, tanpa peran ADMIN/OWNER) di production; akun/token tidak dibuat atau direkayasa";
+  skip("cek-duplikat SKU: FINANCE biasa (bukan admin) -> 403", alasanFin);
+  skip("perbaiki SKU: FINANCE biasa (bukan admin) -> 403", alasanFin);
+  skip("katalog supplier: FINANCE biasa -> 200 (finance:read)", alasanFin);
+}
 
 // Admin: pembacaan nyata
 const kat = await api("GET", "/api/finance/purchase-orders/katalog-supplier", tA);
@@ -450,10 +465,22 @@ if (po) {
 const sesudah = await cacah();
 rec("tidak ada jurnal/pembayaran/stok/penerimaan/tagihan/PO/baris PO/material/SKU/katalog/alokasi yang berubah selama smoke", sebelum.every((n, i) => n === sesudah[i]), `${sebelum.join(",")} -> ${sesudah.join(",")}`);
 await prisma.$disconnect();
-console.log(`\nRINGKASAN smoke: ${fail} gagal`);
+console.log(`\nRINGKASAN smoke: ${fail} gagal, ${dilewati} dilewati (SKIP; ${skipGudang} = izin WAREHOUSE mandiri tidak diuji), ${gudangAdmin} pemeriksaan akses Gudang melalui ADMIN`);
+console.log(`SMOKE_HASIL fail=${fail} skip=${dilewati} skip_gudang=${skipGudang} gudang_admin=${gudangAdmin}`);
 process.exit(fail ? 1 : 0);
 NODE
-ok "smoke test lulus (izin, pratinjau duplikat pada data nyata, katalog kosong, PO/PDF lama normal, tidak ada data berubah)"
+SMOKE_LINE="$(grep '^SMOKE_HASIL ' "$BK_DIR/smoke.log" | tail -n 1)"
+SMOKE_FIELDS="$(printf '%s' "$SMOKE_LINE" | sed -n 's/^SMOKE_HASIL fail=0 skip=\([0-9][0-9]*\) skip_gudang=\([0-9][0-9]*\) gudang_admin=\([0-9][0-9]*\)$/\1 \2 \3/p')"
+[ -n "$SMOKE_FIELDS" ] || die "smoke test tidak mencetak ringkasan SMOKE_HASIL yang lulus (jangan anggap lulus)"
+read -r SMOKE_SKIP SMOKE_SKIP_GUDANG SMOKE_GUDANG_ADMIN <<< "$SMOKE_FIELDS"
+SKIP_LAIN=$((SMOKE_SKIP - SMOKE_SKIP_GUDANG))
+if [ "$SKIP_LAIN" != "0" ]; then
+  warn "smoke test lulus dengan ${SKIP_LAIN} pemeriksaan DILEWATI (SKIP) di luar izin WAREHOUSE mandiri: lihat alasan di ${BK_DIR}/smoke.log (akun peran-murni tidak ada; tidak ada akun/token dibuat atau direkayasa). Ini BUKAN PASS untuk pemeriksaan yang dilewati."
+elif [ "$SMOKE_SKIP_GUDANG" != "0" ]; then
+  ok "smoke test lulus — izin WAREHOUSE mandiri TIDAK diuji (${SMOKE_SKIP_GUDANG} pemeriksaan dilewati: tidak ada akun WAREHOUSE murni — keputusan Owner: ADMIN boleh menjalankan fungsi Gudang); tidak ada klaim izin WAREHOUSE mandiri; (izin, pratinjau duplikat pada data nyata, katalog kosong, PO/PDF lama normal, tidak ada data berubah)"
+else
+  ok "smoke test lulus (izin, pratinjau duplikat pada data nyata, katalog kosong, PO/PDF lama normal, tidak ada data berubah)"
+fi
 # Aset lama tetap bisa diunduh publik (tab yang terbuka saat deploy): ambil satu chunk yang ada di dist lama tetapi TIDAK ada di build baru.
 OLD_ONLY="$(sed -n 1p "$OLD_ASSETS" || true)"
 if [ -n "$OLD_ONLY" ]; then

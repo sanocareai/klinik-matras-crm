@@ -2,6 +2,7 @@ import { Server } from "socket.io";
 import jwt from "jsonwebtoken";
 import { prisma } from "./db.js";
 import { statusBelumDibalas } from "./utils/belumDibalas.js";
+import { bolehDiambilAlih } from "./utils/perpindahanPercakapan.js";
 
 // Singleton Socket.IO server — di-init sekali dari index.js (attach ke http.Server
 // yang sama dengan Express), lalu dipakai dari webhooks.js/conversations.js lewat
@@ -90,6 +91,18 @@ export function emitMessageDeleted(conversationId, messageId) {
 // tidak pernah tahu bahwa chat sudah dibalas — terutama balasan yang diketik dari WhatsApp di HP (hanya event ini yang sampai ke daftar; message:new
 // cuma ke room chat yang sedang dibuka). Dihitung dari pesan TERAKHIR (definisi sama dengan GET /conversations). Gagal membaca = field dihilangkan
 // (klien mempertahankan nilai lamanya), event tetap terkirim.
+// Cache kecil id→{id,name,avatarUrl} (5 menit): nama pemegang jarang berubah, dan emit dipanggil dari banyak jalur (tiap pesan).
+const CACHE_USER_MS = 5 * 60 * 1000;
+const cacheUser = new Map();
+async function ringkasUser(id) {
+  if (!id) return null;
+  const hit = cacheUser.get(id);
+  if (hit && Date.now() - hit.at < CACHE_USER_MS) return hit.v;
+  const v = await prisma.user.findUnique({ where: { id }, select: { id: true, name: true, avatarUrl: true } });
+  cacheUser.set(id, { at: Date.now(), v });
+  return v;
+}
+
 export async function emitConversationUpdate(conv) {
   if (!io || !conv) return;
   let belumDibalas = {};
@@ -101,9 +114,28 @@ export async function emitConversationUpdate(conv) {
   } catch (e) {
     console.warn("[socket] gagal menghitung isUnanswered untuk", conv.id, e.message);
   }
+  // Pemegang percakapan (11 Okt 2026): payload slim ini dulu TIDAK membawa assignedToId/assignedTo, jadi ambil-alih & transfer tidak pernah
+  // sampai ke klien lain — "Milik Saya"/badge pemegang/tombol "Ambil Alih" mereka basi sampai muat ulang, dan penerima transfer tidak melihat
+  // percakapan barunya. Hanya disertakan bila pemanggil menyuplai assignedToId (baris Conversation penuh), supaya payload parsial tidak menghapus.
+  let pemegang = {};
+  if (conv.assignedToId !== undefined) {
+    try {
+      pemegang = {
+        assignedToId: conv.assignedToId,
+        assignedTo: conv.assignedTo !== undefined ? conv.assignedTo : await ringkasUser(conv.assignedToId),
+        ...(conv.handoverNote !== undefined ? { handoverNote: conv.handoverNote } : {}),
+        ...(belumDibalas.isUnanswered !== undefined
+          ? { canTakeOver: bolehDiambilAlih({ assignedToId: conv.assignedToId, ...belumDibalas }) }
+          : {}),
+      };
+    } catch (e) {
+      console.warn("[socket] gagal menyiapkan pemegang untuk", conv.id, e.message);
+    }
+  }
   io.emit("conversation:update", {
     id: conv.id,
     ...belumDibalas,
+    ...pemegang,
     lastMessagePreview: conv.lastMessagePreview,
     unreadCount: conv.unreadCount,
     // BUG (Task 2d): `unread` (boolean) sebelumnya TIDAK ikut di slim

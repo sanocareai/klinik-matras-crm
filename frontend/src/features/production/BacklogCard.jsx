@@ -17,14 +17,17 @@ export default function BacklogCard({ item, onOpen, onSchedule = null, handle = 
   const c = item.card; if (!c) return null;
   const r = item.rencana || null;
   const onboardable = !!r?.onboardable;
+  // Belum diaktifkan tetapi pemanggil (ADMIN/OWNER) boleh mengaktifkannya SAAT dijadwalkan: server menandai `activatable`; kartu bisa diseret ke Meja, aktivasi dikonfirmasi di formulir Jadwalkan.
+  const activatable = !onboardable && !!r?.activatable;
+  const draggable = onboardable || activatable;
   const pr = priorityOf({ priority: c.priority });
   const meta = priorityMeta(pr.key === "COMPLAINT" ? 3 : pr.key === "HIGH" ? 1 : 0);
   const Icon = NOTE_ICON[r?.action] || Info;
   return (
-    <article data-testid="backlog-card" data-unit-code={c.unit.unitCode} data-priority={pr.key} data-rencana-action={r?.action || undefined} data-drag-card={onboardable ? "" : undefined}
+    <article data-testid="backlog-card" data-unit-code={c.unit.unitCode} data-priority={pr.key} data-rencana-action={r?.action || undefined} data-drag-card={draggable ? "" : undefined}
       className={`relative w-full min-w-0 shrink-0 overflow-hidden rounded-card bg-surface shadow-sm ${dragging ? "opacity-40" : ""}`}>
       <span aria-hidden className={`absolute inset-y-0 left-0 ${meta.stripeClass}`} />
-      {onboardable && handle && <div className="absolute right-2 top-2 z-10">{handle}</div>}
+      {draggable && handle && <div className="absolute right-2 top-2 z-10">{handle}</div>}
       <button type="button" onClick={() => onOpen?.(c.unit.id)} aria-label={`Buka Unit 360 ${c.unit.unitCode}`} className={`flex w-full min-w-0 items-start gap-3 py-3 pl-5 text-left hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent ${onboardable && handle ? "pr-14" : "pr-3"}`}>
         <span className="flex shrink-0 flex-col items-center gap-1">
           <UnitPhoto photoUrl={c.unit.photoUrl} variant="plan" />
@@ -43,9 +46,10 @@ export default function BacklogCard({ item, onOpen, onSchedule = null, handle = 
         </span>
       </button>
       <div className="border-t border-line px-3 py-2 pl-5" data-testid="rencana-next">
-        {onboardable ? (
+        {draggable ? (
           <div className="space-y-1.5">
             <p data-testid="rencana-message" className="m-0 text-[12px] text-ink3">{r.message}</p>
+            {activatable && <p data-testid="rencana-activate-note" className="m-0 flex items-start gap-1.5 text-[12px] font-semibold text-orange"><Hourglass size={13} className="mt-0.5 shrink-0" aria-hidden />Belum diaktifkan untuk Rencana Produksi — seret ke Meja atau tekan Jadwalkan: unit ini otomatis diaktifkan saat jadwal disimpan (dikonfirmasi dulu).</p>}
             <Button size="sm" data-mutates data-testid="backlog-schedule" className="min-h-[44px] w-full" disabled={busy} onClick={() => onSchedule?.(item)}><CalendarDays size={13} aria-hidden /> Jadwalkan</Button>
           </div>
         ) : r ? (

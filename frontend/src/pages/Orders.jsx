@@ -47,6 +47,7 @@ function currentUser() {
 }
 import DateRangePicker from "../components/DateRangePicker.jsx";
 import { makeRange, toApiParams } from "../lib/dateRange.js";
+import { namaSalesKredit, keteranganSalesKredit } from "../features/orders/salesKredit.js";
 import PageErrorBoundary from "../components/PageErrorBoundary.jsx";
 
 // ═══ HALAMAN ORDER ════════════════════════════════════════════════════════
@@ -431,8 +432,8 @@ function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageC
             dipakai untuk placeholder/data kosong) — nama sales itu DATA
             SUNGGUHAN, bukan "kosong", jadi kontrasnya dinaikkan ke text-ink2
             + medium weight supaya kebaca jelas, bukan pudar seperti "—". */}
-        <span className={cn("min-w-0 flex-1 truncate text-[11px]", order.assignedSales ? "font-medium text-ink2" : "text-ink3")}>
-          {order.assignedSales?.name || "Belum ada sales"}
+        <span title={keteranganSalesKredit(order)} className={cn("min-w-0 flex-1 truncate text-[11px]", namaSalesKredit(order) ? "font-medium text-ink2" : "text-ink3")}>
+          {namaSalesKredit(order) || "Belum ada sales"}
         </span>
         <button
           type="button" onClick={(e) => { e.stopPropagation(); onOpenTimeline(order); }}
@@ -593,7 +594,7 @@ export default function Orders() {
     daysInStatus: (o) => o.daysInStatus || 0,
     paymentStatus:(o) => PAYMENT_STATUS_LABELS[o.paymentStatus] || o.paymentStatus || "",
     value:        (o) => o.value || 0,
-    assignedSales:(o) => o.assignedSales?.name || "",
+    assignedSales:(o) => namaSalesKredit(o),
     promo:        (o) => o.promo?.name || "",
     createdAt:    (o) => o.createdAt ? new Date(o.createdAt).getTime() : 0,
   };
@@ -860,7 +861,7 @@ export default function Orders() {
         Pelanggan: o.customerName || "",
         "No HP": o.customerPhone || "",
         Kota: o.customerCity || "",
-        "Sales Person": o.assignedSales?.name || "",
+        "Sales Person": namaSalesKredit(o),
 
         // ── Klasifikasi produk (29 Agustus 2026 — digeser ke depan &
         // dikelompokkan, permintaan owner: dulu tersebar/tidak berurutan).
@@ -967,7 +968,7 @@ export default function Orders() {
         return {
           "ID Order": o.orderNumber || "",
           Pelanggan: o.customerName || "",
-          "Sales Person": o.assignedSales?.name || "",
+          "Sales Person": namaSalesKredit(o),
           // Kategori Produk = Lini Produk order (Kasur/Sofa/Divan) — level
           // order, sama utk semua item di dalamnya.
           "Kategori Produk": PRODUCT_LINE_LABELS[o.productLine] || o.productLine || "",
@@ -1447,8 +1448,8 @@ export default function Orders() {
                           </span>
                         ) : <span className="text-ink3">—</span>}
                       </td>
-                      <td className={cn("whitespace-nowrap px-3 py-2.5", o.assignedSales ? "font-medium text-ink2" : "text-ink3")}>
-                        {o.assignedSales?.name || "—"}
+                      <td title={keteranganSalesKredit(o)} className={cn("whitespace-nowrap px-3 py-2.5", namaSalesKredit(o) ? "font-medium text-ink2" : "text-ink3")}>
+                        {namaSalesKredit(o) || "—"}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5 text-[11px] text-ink3">
                         {o.createdAt ? formatTanggalPendek(o.createdAt) : "—"}
