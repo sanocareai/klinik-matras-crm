@@ -38,6 +38,7 @@ PHASE="init"; BACKUP_FILE=""; ROLLBACK_TAG=""; PREV_DIR=""; PREV_IMG_ID=""; IMG_
 
 say()  { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 ok()   { printf '  OK    %s\n' "$*"; }
+warn() { printf '  \033[33mPERHATIAN\033[0m %s\n' "$*"; }
 die()  { printf '\n\033[31mSTOP: %s\033[0m\n' "$*" >&2; exit 1; }
 sg()   { git --git-dir="$SRC" "$@"; }
 dcp()  { local d="$1"; shift; ( cd "$d" && SANSS_PERSIST_ROOT="$PERSIST" docker compose -p "$PROJECT" -f docker-compose.yml -f docker-compose.release.yml "$@" ); }
@@ -429,14 +430,15 @@ PSQLN() { dcp "$NEW_DIR" exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" -X -A
 [ "$(PSQLN "select count(*) from \"Customer\" where staff_user_id is not null")" = "0" ] || die "ADA profil karyawan terisi setelah rilis (backfill tidak diizinkan)"
 ok "kolom & trigger ada; TIDAK ada order tertaut PKR dan TIDAK ada profil Customer karyawan (tanpa backfill)"
 PHASE="8b-smoke"; say "8b. Smoke test izin + pembacaan (baca-saja; TIDAK ada PKR/order/pelanggan/transaksi QA di produksi)"
-dcp "$NEW_DIR" exec -T backend node --input-type=module - <<'NODE' || die "smoke test GAGAL"
+dcp "$NEW_DIR" exec -T backend node --input-type=module - <<'NODE' | tee "$BK_DIR/smoke.log" || die "smoke test GAGAL"
 import { createRequire } from "node:module";
 const require = createRequire(process.cwd() + "/");
 const jwt = require("jsonwebtoken");
 const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 const BASE = "http://127.0.0.1:4000";
-let fail = 0;
+let fail = 0; let dilewati = 0;
+const skip = (n, alasan) => { dilewati++; console.log(`  SKIP  ${n} — DILEWATI: ${alasan}`); };
 const rec = (n, ok, d = "") => { if (!ok) fail++; console.log(`  ${ok ? "PASS" : "FAIL"}  ${n}${d ? " — " + d : ""}`); };
 async function api(method, path, token, body) {
   const r = await fetch(BASE + path, { method, headers: { ...(token ? { Authorization: "Bearer " + token } : {}), ...(body ? { "Content-Type": "application/json" } : {}) }, body: body ? JSON.stringify(body) : undefined });
@@ -467,8 +469,15 @@ const U = "/api/finance/penjualan-karyawan";
 
 rec("dry-run order CRM: tanpa token -> 401", (await api("GET", `${U}/order-crm/dry-run`)).status === 401);
 rec("buat order CRM: tanpa token -> 401", (await api("POST", `${U}/${nol}/order-crm`)).status === 401);
+// Peran tanpa akun murni = SKIP berbukti (bukan lolos diam-diam): akun multi-peran tidak dipakai (PASS palsu), akun/token tidak dibuat.
+const ALASAN_AKUN = (nama) => `tidak ada akun ${nama} murni (aktif, tanpa peran ADMIN/OWNER/FINANCE/ACCOUNTANT/APPROVER) di production; akun/token tidak dibuat atau direkayasa`;
 for (const [nama, t] of [["SALES", tS], ["PRODUCTION_LEAD", tP]]) {
-  if (!t) continue;
+  if (!t) {
+    skip(`dry-run order CRM: ${nama} -> 403`, ALASAN_AKUN(nama));
+    skip(`buat order CRM: ${nama} -> 403`, ALASAN_AKUN(nama));
+    skip(`lengkapi order CRM: ${nama} -> 403`, ALASAN_AKUN(nama));
+    continue;
+  }
   rec(`dry-run order CRM: ${nama} -> 403`, (await api("GET", `${U}/order-crm/dry-run`, t)).status === 403);
   rec(`buat order CRM: ${nama} -> 403`, (await api("POST", `${U}/${nol}/order-crm`, t, { spesifikasi: {} })).status === 403);
   rec(`lengkapi order CRM: ${nama} -> 403`, (await api("PUT", `${U}/${nol}/order-crm`, t, { merk: "x" })).status === 403);
@@ -480,6 +489,10 @@ const daftar = await api("GET", U, tA);
 rec("daftar PKR (admin) -> 200; sinkron.order kosong untuk semua PKR lama", daftar.status === 200 && Array.isArray(daftar.json?.penjualan) && daftar.json.penjualan.every((p) => !p.sinkron?.order), `${daftar.json?.penjualan?.length} dokumen`);
 const nolPut = await api("PUT", `${U}/${nol}/order-crm`, tA, { merk: "x" });
 rec("lengkapi order CRM id tak dikenal (admin) -> 404", nolPut.status === 404 || nolPut.status === 400, String(nolPut.status));
+if (!tP) {
+  skip("backlog Rencana Produksi -> 200; semua kartu tanpa rujukan PKR", ALASAN_AKUN("PRODUCTION_LEAD"));
+  skip("daftar Work Order -> 200; semua unit tanpa rujukan PKR", ALASAN_AKUN("PRODUCTION_LEAD"));
+}
 if (tP) {
   const bl = await api("GET", "/api/production-v2/backlog?pageSize=50", tP);
   rec("backlog Rencana Produksi -> 200; semua kartu tanpa rujukan PKR (belum ada order PKR)", bl.status === 200 && bl.json?.items?.every((i) => i.card?.penjualanKaryawan === null), `${bl.json?.items?.length} kartu`);
@@ -491,10 +504,17 @@ rec("daftar order CRM -> 200; tidak ada order tertaut PKR", ord.status === 200 &
 const sesudah = await cacah();
 rec("tidak ada order/pelanggan/unit/job/invoice/payment/jurnal/PKR/audit yang berubah selama smoke", sebelum.every((n, i) => n === sesudah[i]), `${sebelum.join(",")} -> ${sesudah.join(",")}`);
 await prisma.$disconnect();
-console.log(`\nRINGKASAN smoke: ${fail} gagal`);
+console.log(`\nRINGKASAN smoke: ${fail} gagal, ${dilewati} dilewati (SKIP)`);
+console.log(`SMOKE_HASIL fail=${fail} skip=${dilewati}`);
 process.exit(fail ? 1 : 0);
 NODE
-ok "smoke test lulus (izin, dry-run baca-saja, daftar PKR tanpa order, daftar Produksi tanpa rujukan, tidak ada data berubah)"
+SMOKE_SKIP="$(sed -n 's/^SMOKE_HASIL fail=0 skip=\([0-9][0-9]*\)$/\1/p' "$BK_DIR/smoke.log" | tail -n 1)"
+[ -n "$SMOKE_SKIP" ] || die "smoke test tidak mencetak ringkasan SMOKE_HASIL (jangan anggap lulus)"
+if [ "$SMOKE_SKIP" = "0" ]; then
+  ok "smoke test lulus (izin, dry-run baca-saja, daftar PKR tanpa order, daftar Produksi tanpa rujukan, tidak ada data berubah)"
+else
+  warn "smoke test lulus dengan ${SMOKE_SKIP} pemeriksaan DILEWATI (SKIP): izin PRODUCTION_LEAD TIDAK terverifikasi di production karena tidak ada akun PRODUCTION_LEAD murni (tidak ada akun/token dibuat atau direkayasa). Rincian: ${BK_DIR}/smoke.log. Asersi izin dijaga oleh tes integrasi; ini BUKAN PASS."
+fi
 OLD_ONLY="$(sed -n 1p "$OLD_ASSETS" || true)"
 if [ -n "$OLD_ONLY" ]; then
   [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "${PUBLIC_URL}/assets/${OLD_ONLY}")" = "200" ] || die "aset lama /assets/${OLD_ONLY} tidak bisa diunduh (404) — pembawaan aset lama gagal"
