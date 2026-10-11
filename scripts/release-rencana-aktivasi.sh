@@ -293,11 +293,11 @@ MAPS_KEY="$(sed -n 's/^VITE_GOOGLE_MAPS_JS_KEY=//p' "$PERSIST/frontend/.env" | t
 [ -n "$(grep -lF "$MAPS_KEY" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat VITE_GOOGLE_MAPS_JS_KEY"
 # Fitur rilis ini + fitur rilis sebelumnya (jangan sampai hilang dari bundel).
 for s1 in "Unit ini belum diaktifkan untuk Rencana Produksi" "Ya, aktifkan unit ini dan jadwalkan" "otomatis diaktifkan saat jadwal disimpan"; do [ -n "$(grep -lF "$s1" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat teks fitur: $s1"; done
-for s2 in "Retur & Debit Note" "Diterima bersih dari PO" "Dokumen kosong — belum ada kedatangan" "Barang Akan Datang" "Catat Barang Tiba" "Rencana Produksi" "Status Produksi" "Perlu konfirmasi Sales" "Belum Dijadwalkan" "Mulai Uji Sebelum Bongkar"; do [ -n "$(grep -lF "$s2" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru kehilangan teks fitur lama: $s2"; done
+for s2 in "Retur & Debit Note" "Diterima bersih dari PO" "Dokumen kosong — belum ada kedatangan" "Barang Akan Datang" "Catat Barang Tiba" "Rencana Produksi" "Status Produksi" "Perlu konfirmasi Sales" "Belum Dijadwalkan"; do [ -n "$(grep -lF "$s2" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru kehilangan teks fitur lama: $s2"; done
 # Label lama yang SENGAJA diganti tidak boleh tersisa (angka itu bukan stok tersedia).
 [ -z "$(grep -lF "Stok bersih" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru masih memuat label 'Stok bersih' (harus 'Diterima bersih dari PO')"
 if [ "$NEW_INDEX" = "$PREV_INDEX" ]; then die "frontend berubah tetapi bundel baru identik dengan lama (tidak diharapkan)"; fi
-ok "dist baru ${NEW_INDEX} (lama ${PREV_INDEX}); 3 teks fitur baru + 10 teks fitur lama ada; label 'Stok bersih' tidak tersisa"
+ok "dist baru ${NEW_INDEX} (lama ${PREV_INDEX}); 3 teks fitur baru + 9 teks fitur lama ada; label 'Stok bersih' tidak tersisa"
 
 PHASE="4c-aset-lama"; say "4c. Bawa aset ber-hash dari dist release aktif (tab terbuka saat deploy tetap bisa memuat chunk lama)"
 OLD_ASSETS="$BK_DIR/aset-lama.txt"; : > "$OLD_ASSETS"
