@@ -8,7 +8,7 @@ import { formatRupiah } from "@/utils/format.js";
 // "Catat Pembayaran" dari foto di chat (2 Okt 2026). Sales menekan foto bukti transfer → pilih order → foto itu otomatis jadi Bukti Pembayaran pada
 // draf klaim → dialog klaim biasa terbuka untuk VERIFIKASI (nominal, tanggal, rekening, catatan) → Sales mengajukan → Finance memverifikasi.
 // Tidak ada alur baru: server memakai aturan klaim yang sama (backend/src/services/finance/klaimDariChat.js). Di sini hanya pemilih order + penyambung.
-const LABEL_KATEGORI = { LAYANAN: "Layanan", SEWA: "Sewa", BARU: "Kasur Baru" };
+const LABEL_KATEGORI = { LAYANAN: "Layanan", SEWA: "Sewa", BARU: "Kasur Baru", CAMPURAN: "Campuran" };
 
 export default function CatatPembayaranDariChat({ message, customerName, onClose, onChanged }) {
   const [tahap, setTahap] = useState("memuat"); // memuat | pilih | menyiapkan | dialog | galat

@@ -32,6 +32,7 @@ import { assertNoOpenRunException, assertNoV1Drift } from "./productionRunGuards
 import { pesanPkrBelumLengkapUnit } from "./pkrProduksiGuard.js";
 import { lockUnitOwnership } from "./unitV2Ownership.js";
 import { BUILD_CATEGORIES, BUILD_NA_REASON, pathHasBuildStage } from "../lib/domain/productionBuildTrack.js";
+import { kategoriUnit } from "../lib/domain/unitKategori.js";
 import {
   completeStageInTx, pathForUnit, pauseStageInTx, resolveCurrentTarget, resumeStageInTx, skipStageForAdaptationInTx, startStageInTx,
 } from "./unitStageEngine.js";
@@ -289,10 +290,11 @@ export async function registerWorkshopBornRunInTx(tx, { unitId, actorId, idempot
     await lockUnitOwnership(tx, unitId); // pembukaan Run = pengambilalihan kepemilikan (lihat unitV2Ownership.js)
     const replay = await findReplay(tx, actor, idempotencyKey, requestHash);
     if (replay) return replay;
-    const unit = await tx.unit.findUnique({ where: { id: unitId }, select: { id: true, unitCode: true, status: true, currentStageId: true, order: { select: { category: true } } } });
+    const unit = await tx.unit.findUnique({ where: { id: unitId }, select: { id: true, unitCode: true, status: true, currentStageId: true, workCategory: true, order: { select: { category: true } } } });
+    const kategoriKerja = kategoriUnit(unit, unit?.order);
     if (!unit) throw workError("Unit tidak ditemukan", 404, "WORKSHOP_UNIT_NOT_FOUND");
     await assertWriterEnabledForUnit(tx, unitId);
-    if (!BORN_CATEGORIES.includes(unit.order?.category)) throw workError("Hanya unit BARU/SEWA yang boleh didaftarkan lahir di workshop", 422, "WORKSHOP_BORN_CATEGORY_INVALID");
+    if (!BORN_CATEGORIES.includes(kategoriKerja)) throw workError("Hanya unit BARU/SEWA yang boleh didaftarkan lahir di workshop", 422, "WORKSHOP_BORN_CATEGORY_INVALID");
     const pesanPkr = await pesanPkrBelumLengkapUnit(tx, unitId, "Belum bisa didaftarkan ke workshop");
     if (pesanPkr) throw workError(pesanPkr, 422, "WORKSHOP_PKR_PERLU_DILENGKAPI"); // order Penjualan Karyawan belum lengkap
     if (!BORN_UNIT_STATUSES.includes(unit.status)) throw workError(`Unit berstatus ${unit.status}; tidak dapat didaftarkan ke workshop`, 409, "WORKSHOP_BORN_STATUS_INVALID");
@@ -308,7 +310,7 @@ export async function registerWorkshopBornRunInTx(tx, { unitId, actorId, idempot
 
     const now = new Date();
     const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "REGISTER_WORKSHOP_RUN", aggregateId: unitId, requestHash });
-    const na = BUILD_CATEGORIES.includes(unit.order.category) ? BUILD_NA_REASON : "Unit lahir di workshop (tanpa pickup)";
+    const na = BUILD_CATEGORIES.includes(kategoriKerja) ? BUILD_NA_REASON : "Unit lahir di workshop (tanpa pickup)";
     const phases = [["INTAKE", "NOT_APPLICABLE", na], ["DIAGNOSIS", "NOT_APPLICABLE", na], ["PROCESS", "NOT_STARTED", null], ["QC", "NOT_STARTED", null], ["HANDOFF", "NOT_STARTED", null]];
     const run = await tx.productionRun.create({
       data: {
@@ -322,7 +324,7 @@ export async function registerWorkshopBornRunInTx(tx, { unitId, actorId, idempot
     });
     await recordActivity(tx, {
       entityType: "unit", entityId: unitId, eventType: EVENT_TYPES.PRODUCTION_WORKSHOP_RUN_REGISTERED, actorId: actorId || null,
-      metadata: { unitCode: unit.unitCode, runId: run.id, category: unit.order.category },
+      metadata: { unitCode: unit.unitCode, runId: run.id, category: kategoriKerja },
     });
     const response = { runId: run.id, unitId, origin: "WORKSHOP_BORN", status: "ACTIVE", revision: 1 };
     await finishCommand(tx, command, 1, response);

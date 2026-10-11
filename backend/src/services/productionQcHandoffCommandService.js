@@ -31,6 +31,7 @@ import {
 import { loadAssemblyGateFactsForRun, loadBuildSummary } from "./productionStepCommandService.js";
 import { assertRunPhasesTerminal, transitionPhases } from "./productionPhaseLifecycle.js";
 import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState } from "./v2FeatureFlags.js";
+import { kategoriUnitDb } from "./unitKategoriDb.js";
 
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
 const FIT_VERDICTS = ["PAS", "TERLALU_KERAS", "TERLALU_EMPUK"];
@@ -242,7 +243,7 @@ export async function recordQualityInspection(prisma, { runId, actorId, canInspe
     if (run.unit.currentStageId !== qcStage.id) throw qcError("Unit tidak berada di gerbang QC pada ledger tahap", 409, "QC_GATE_MISMATCH");
 
     // Fase 4 (LAYANAN, Run V2, bukan adaptasi): putusan SESUAI (PASS) hanya setelah PIC QC mencatat uji kasur jadi untuk putaran perakitan ini. FAIL (rework) dan WAIVED (kewenangan khusus) tidak diblokir.
-    if (data.result === "PASS" && hasAssemblyGate(run) && !isAdaptationRun(run) && run.unit.order?.category === "LAYANAN") {
+    if (data.result === "PASS" && hasAssemblyGate(run) && !isAdaptationRun(run) && (await kategoriUnitDb(tx, run.unitId)) === "LAYANAN") {
       const facts = await loadAssemblyGateFactsForRun(tx, run);
       if (facts.hasFoundation && !facts.foundationTestAfter?.ok) throw qcError("Uji fondasi baru belum dicatat PIC QC untuk putaran ini — catat dulu sebelum memutuskan Lulus", 409, "QC_FOUNDATION_NEW_TEST_REQUIRED");
       if (!facts.after?.ok) throw qcError("Hasil aktual susunan belum dicatat untuk putaran ini — PIC Meja perlu mencatatnya sebelum Lulus", 409, "QC_AFTER_REQUIRED");
@@ -699,7 +700,7 @@ export async function listQcQueue(prisma, { tab = "AWAITING_QC", unitIds = null,
   const runs = await prisma.productionRun.findMany({
     where: { status: { notIn: [...RUN_TERMINAL_STATUSES] }, ...(unitIds ? { unitId: { in: unitIds } } : {}), phases: { some: { phase: "PROCESS", status: { in: ["COMPLETED", "ACTIVE"] } } } },
     include: {
-      unit: { select: { id: true, unitCode: true, status: true, order: { select: { orderNumber: true, category: true } } } },
+      unit: { select: { id: true, unitCode: true, status: true, workCategory: true, order: { select: { orderNumber: true, category: true } } } },
       phases: true, inspections: { orderBy: { version: "desc" }, take: 1 }, exceptions: { where: { status: "OPEN" }, select: { id: true, kind: true, status: true } },
       plan: { select: { workCenter: { select: { id: true, name: true } }, operator: { select: { id: true, user: { select: { name: true } } } } } },
     },
@@ -715,7 +716,7 @@ export async function listQcQueue(prisma, { tab = "AWAITING_QC", unitIds = null,
       runId: run.id, revision: run.revision, state, origin: run.origin, currentPhase: run.currentPhase,
       // Jalur pengerjaan (BARU/custom): profil QC dari jenis produk kanonis — KASUR (uji berat badan) atau GENERIC (pemeriksaan hasil divan/sofa, tanpa uji berat badan).
       track: builds.has(run.unitId) ? "BUILD" : "RESTORATION", qcProfile: qcProfileOf(builds.get(run.unitId)), productClass: builds.get(run.unitId)?.productClass ?? null, productClassProblem: builds.get(run.unitId)?.problem ?? null, cornerRequired: builds.get(run.unitId)?.cornerRequired ?? null,
-      unit: { id: run.unit.id, unitCode: run.unit.unitCode, status: run.unit.status, orderNumber: run.unit.order?.orderNumber ?? null, category: run.unit.order?.category ?? null },
+      unit: { id: run.unit.id, unitCode: run.unit.unitCode, status: run.unit.status, orderNumber: run.unit.order?.orderNumber ?? null, category: run.unit.workCategory ?? run.unit.order?.category ?? null },
       workCenter: run.plan?.workCenter ?? null, operator: run.plan?.operator ? { id: run.plan.operator.id, name: run.plan.operator.user?.name ?? null } : null,
       lastInspection: run.inspections[0] ? { version: run.inspections[0].version, result: run.inspections[0].result, disposition: run.inspections[0].disposition, inspectedAt: run.inspections[0].inspectedAt } : null,
       conflict: run.exceptions[0] ? { exceptionId: run.exceptions[0].id, kind: run.exceptions[0].kind, open: true } : (() => { const found = detectRunInconsistency({ run, unit: run.unit }); return found ? { exceptionId: null, kind: found.kind, open: false } : null; })(),

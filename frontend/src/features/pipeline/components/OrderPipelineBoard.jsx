@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils.js";
 // (New/Prospek/Transaksi/Reviewed/Spam). Papan ini mengelompokkan ORDER
 // menurut status pengerjaannya. READ-ONLY: status order dihitung otomatis dari
 // progres unit (bengkel/armada), jadi tidak ada drag & drop di sini.
-const KATEGORI = { LAYANAN: "Layanan", BARU: "Kasur Baru", SEWA: "Sewa" };
+const KATEGORI = { LAYANAN: "Layanan", BARU: "Kasur Baru", SEWA: "Sewa", CAMPURAN: "Campuran" };
 const BATCH = 20;
 const STALE_MENUNGGU_HARI = 14;
 

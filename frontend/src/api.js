@@ -1802,6 +1802,15 @@ export const api = {
   buatProdukPkr: (data) => request("/finance/penjualan-karyawan/katalog-item/produk", { method: "POST", body: JSON.stringify(data) }),
   ubahProdukPkr: (id, data) => request(`/finance/penjualan-karyawan/katalog-item/produk/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   lengkapiOrderCrmPenjualanKaryawan: (id, data) => request(`/finance/penjualan-karyawan/${id}/order-crm`, { method: "PUT", body: JSON.stringify(data) }),
+  // Komposisi bundel katalog (izin pkr_catalog:manage). Mengganti SELURUH komposisi kategori (atau satu produk bila produkId diisi).
+  simpanKomposisiPkr: (data) => request("/finance/penjualan-karyawan/katalog-item/komposisi", { method: "PUT", body: JSON.stringify(data) }),
+  // Koreksi item (sebelum unit dijadwalkan/diproses): pratinjau dampak tidak menulis; terapkan = alasan + expectedRevision + Idempotency-Key (satu kunci per niat koreksi).
+  pratinjauKoreksiItemPkr: (id, data) => request(`/finance/penjualan-karyawan/${id}/koreksi-item/pratinjau`, { method: "POST", body: JSON.stringify(data) }),
+  koreksiItemPkr: (id, data, idempotencyKey) => request(`/finance/penjualan-karyawan/${id}/koreksi-item`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey || mutationKey("pkr-koreksi") }, body: JSON.stringify(data) }),
+  // Delivery: order PKR menunggu unit lain + aksi eksplisit Kirim sebagian.
+  getPkrPengirimanMenunggu: () => request("/armada/pkr-pengiriman"),
+  getPkrPengirimanOrder: (orderId) => request(`/armada/pkr-pengiriman/${orderId}`),
+  kirimSebagianPkr: (orderId, data, idempotencyKey) => request(`/armada/pkr-pengiriman/${orderId}/kirim-sebagian`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey || mutationKey("pkr-kirim-sebagian") }, body: JSON.stringify(data) }),
   // Verifikasi penerimaan order yang ditandai LUNAS sales tanpa catatan pembayaran
   getFinanceLunasBelumDicatat: () => request("/finance/penerimaan/lunas-belum-dicatat"),
   verifikasiPenerimaan: (data) => request("/finance/penerimaan/verifikasi", { method: "POST", body: JSON.stringify(data) }),

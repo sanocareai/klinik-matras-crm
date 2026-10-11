@@ -1,4 +1,5 @@
 import { executeDeliveryCrossBoundaryCommand } from "./deliveryCrossBoundaryCommandService.js";
+import { gerbangJobOtomatis, buatJobKirimGabungan } from "./pkrPengirimanSebagian.js";
 
 // Integrasi Fase 1 (lanjutan D-006) — jembatan Produksi -> Armada.
 //
@@ -61,6 +62,14 @@ export async function suggestDeliveryJob(tx, unitId) {
     select: { id: true },
   });
   if (already) return;
+
+  // Order Penjualan Karyawan (keputusan Owner): Delivery MENUNGGU seluruh unit yang dikirim siap, lalu membuat SATU job gabungan. Tidak ada job kedua otomatis dan unit yang baru siap
+  // tidak disisipkan ke job yang sudah ada — pengiriman sebagian hanya lewat aksi eksplisit (services/pkrPengirimanSebagian.js#kirimSebagian).
+  if (unit.order?.penjualanKaryawanId) {
+    const gerbang = await gerbangJobOtomatis(tx, unit.orderId);
+    if (!gerbang.boleh) return;
+    return buatJobKirimGabungan(tx, { orderId: unit.orderId, unitIds: gerbang.unitIds, alamat: alamatDariOrder(unit.order) });
+  }
 
   const existing = await tx.job.findFirst({
     where: { orderId: unit.orderId, type: "DELIVERY", status: "UNSCHEDULED" },

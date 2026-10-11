@@ -35,6 +35,7 @@ import { isDocumentationRow, DOC_STEP_CODE_PREFIX } from "../lib/domain/producti
 import { computeRunLeftovers, createLeftoverReturnsInTx } from "./productionMaterialReturnService.js";
 import { allManualMaterialsMapped, diagnosisBomValid } from "./productionDiagnosisCommandService.js";
 import { buildApplicableSteps, classifyProduct, pathHasBuildStage } from "../lib/domain/productionBuildTrack.js";
+import { kategoriUnitDb, produkUnitDb } from "./unitKategoriDb.js";
 import { loadAssemblyFacts, loadPreTeardownFacts } from "./productionComponentNoteService.js";
 import { buildCornerRequest, cornerStatusOf } from "../lib/domain/productionCorner.js";
 
@@ -125,11 +126,12 @@ export async function loadStepContext(client, run) {
   // (uji/racikan khusus kasur ditahan + kebutuhan konfirmasi ditampilkan); TIDAK ada fallback ke alur kasur. Plus pengaturan Run (PIC Bahan, kebutuhan Corner) dan catatan racikan/pemakaian terbaru.
   const buildTrack = pathHasBuildStage(split?.stages);
   const product = buildTrack
-    ? classifyProduct((await client.order.findUnique({ where: { id: run.unit.orderId }, select: { productLine: true, productType: true } })) || {})
+    ? classifyProduct(await produkUnitDb(client, run.unitId)) // jenis produk efektif UNIT (order PKR campuran: tiap unit menurut itemnya)
     : null;
+  const kategoriKerja = await kategoriUnitDb(client, run.unitId); // kategori efektif UNIT (BARU/LAYANAN), bukan satu nilai per order
   // Fase 3 (LAYANAN): PIC Bahan per pekerjaan juga berlaku untuk restorasi (kategori LAYANAN) — pengaturan & catatan pemakaian dibaca dari tabel yang SAMA (tanpa salinan paralel).
   // SEWA dan jalur lain tidak ikut. Jalur BUILD tidak berubah.
-  const materialPicRestoration = !buildTrack && run.unit?.order?.category === "LAYANAN";
+  const materialPicRestoration = !buildTrack && kategoriKerja === "LAYANAN";
   const [buildSetting, buildRecord] = buildTrack || materialPicRestoration
     ? await Promise.all([
       client.productionRunBuildSetting.findUnique({ where: { runId: run.id }, include: { materialOperator: { select: { id: true, userId: true, active: true, user: { select: { name: true } } } } } }),
@@ -145,7 +147,7 @@ export async function loadStepContext(client, run) {
   // Fase 4 (LAYANAN, perakitan): gerbang uji fondasi baru / hasil aktual / uji kasur jadi di tahap MODUL (6–8). Hanya Run berkebijakan V2; Run V1/NULL, adaptasi, BARU, SEWA tidak terkena.
   const inModule = opStage?.phase === "MODULE";
   const isLayanan = !buildTrack && !isAdaptationRun(run) && hasQcGatePolicy(run) && (inIntake || inModule)
-    ? (await client.order.findUnique({ where: { id: run.unit.orderId }, select: { category: true } }))?.category === "LAYANAN" : false;
+    ? kategoriKerja === "LAYANAN" : false;
   const preTeardownGate = isLayanan && inIntake;
   const assemblyGate = isLayanan && inModule && hasAssemblyGate(run);
   const latestAt = (n) => { const e = evidence.filter((x) => x.stepNo === n && !isSkippedEvidence(x)).at(-1); return e ? new Date(e.createdAt).getTime() : null; };
@@ -263,8 +265,8 @@ export async function loadAssemblyGateFactsForRun(client, run) {
  * rework.open = putusan gagal sudah ada, rework belum dimulai (jendela untuk permintaan bahan rework oleh PIC Bahan); rework.issue = permintaan bahan rework yang sudah diajukan (bila ada).
  */
 export async function loadAssemblyView(client, run) {
-  const order = await client.order.findUnique({ where: { id: run.unit.orderId }, select: { category: true } });
-  if (!(hasAssemblyGate(run) && !isAdaptationRun(run) && order?.category === "LAYANAN")) return { applicable: false };
+  const kategoriKerja = await kategoriUnitDb(client, run.unitId);
+  if (!(hasAssemblyGate(run) && !isAdaptationRun(run) && kategoriKerja === "LAYANAN")) return { applicable: false };
   const [facts, inspections] = await Promise.all([
     loadAssemblyGateFactsForRun(client, run),
     client.qualityInspection.findMany({ where: { runId: run.id }, orderBy: { version: "asc" }, select: { id: true, version: true, result: true, disposition: true, inspectedAt: true, createdAt: true, qcFitTest: { select: { note: true, verdict: true, referenceWeightKg: true } } } }),
@@ -911,8 +913,8 @@ export async function applyQcGatePolicy(prisma, { runId, actorId, idempotencyKey
     assertRunRevision(run, revisionExpected);
     await assertNoOpenRunException(tx, run.id);
     if (isAdaptationRun(run)) throw stepError("Pekerjaan mode adaptasi tidak memakai gerbang QC sebelum bongkar", 409, "QC_GATE_NOT_APPLICABLE");
-    const ctxOrder = await tx.order.findUnique({ where: { id: run.unit.orderId }, select: { category: true } });
-    if (ctxOrder?.category !== "LAYANAN") throw stepError("Gerbang QC sebelum bongkar hanya untuk pesanan LAYANAN", 409, "QC_GATE_NOT_APPLICABLE");
+    const kategoriGerbang = await kategoriUnitDb(tx, run.unitId);
+    if (kategoriGerbang !== "LAYANAN") throw stepError("Gerbang QC sebelum bongkar hanya untuk pesanan LAYANAN", 409, "QC_GATE_NOT_APPLICABLE");
     const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "APPLY_QC_GATE_POLICY", aggregateId: runId, requestHash, expectedRevision: revisionExpected });
     const applied = await applyQcGatePolicyInTx(tx, { run, version });
     if (applied.changed) {

@@ -31,7 +31,7 @@ import OrderTimelineDrawer from "@/features/orders/OrderTimelineDrawer.jsx";
 // dengan export Excel (parseOrderNotes), status BISA diubah langsung dari
 // baris (StatusSelect, shared dgn Delivery/Produksi), dan KPI ringkasan di
 // atas. Divisi ini juga ikut "kaca" (glass-division) — lihat Layout.jsx.
-const KATEGORI_LABELS = { LAYANAN: "Layanan", SEWA: "Sewa", BARU: "Baru" };
+const KATEGORI_LABELS = { LAYANAN: "Layanan", SEWA: "Sewa", BARU: "Baru", CAMPURAN: "Campuran" };
 const KATEGORI_OPTIONS = ["LAYANAN", "SEWA", "BARU"];
 
 const PAYMENT_TONE = {

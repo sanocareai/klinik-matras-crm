@@ -555,6 +555,7 @@ export function formatActivitySentence(event) {
         case "kategori_diubah": return `Kategori item PKR ${m.kode ?? ""} diubah${m.sesudah?.aktif === false ? " (dinonaktifkan)" : ""}`;
         case "produk_dibuat": return `Produk item PKR dibuat: ${m.nama ?? m.kode ?? ""}`;
         case "produk_diubah": return `Produk item PKR ${m.kode ?? ""} diubah${m.sesudah?.aktif === false ? " (dinonaktifkan)" : ""}`;
+        case "komposisi_diubah": return `Komposisi set PKR ${m.kategori ?? ""} diubah (${(m.sesudah || []).length} komponen)`;
         default: return "Katalog item Penjualan Karyawan diubah";
       }
     }
@@ -567,6 +568,8 @@ export function formatActivitySentence(event) {
         case "ditautkan": return `Order CRM ditautkan ke Penjualan Karyawan${ref}`;
         case "dilengkapi": return `Spesifikasi/logistik order Penjualan Karyawan${ref} diperbarui: ${Object.keys(m.perubahan || {}).join(", ") || "—"}`;
         case "dibatalkan": return `Order Penjualan Karyawan${ref} dibatalkan bersama PKR — ${m.alasan || "tanpa alasan"}`;
+        case "dikoreksi": return `Item order Penjualan Karyawan${ref} dikoreksi (revisi ${m.revisi ?? "?"}): ${m.ringkas || "—"} — ${m.alasan || "tanpa alasan"}`;
+        case "pengiriman_sebagian": return `Pengiriman sebagian order Penjualan Karyawan${ref}: ${(m.unit || []).join(", ") || "—"} — ${m.alasan || "tanpa alasan"}`;
         default: return `Sinkronisasi Penjualan Karyawan${ref}`;
       }
     }

@@ -19,7 +19,7 @@ import { signEvidenceUrl } from "../routes/productionEvidenceMedia.js";
 import { signUnitPhotoUrlIfAny, signUnitPhotoUrlsBulk } from "../routes/productionUnitPhoto.js";
 import { arrivalConfirmedByStaff, delayReasonOfBlock, displayStatusOfOrder, displayStatusOfUnit, isFinishedUnitStatus, physicalPresenceOf, priorityDisplay } from "../lib/domain/productionDisplay.js";
 import { loadOpenComplaintsByUnit } from "./productionComplaints.js";
-import { PKR_ORDER_SELECT, rujukanPkrDariOrder } from "./pkrProduksiGuard.js";
+import { PKR_ORDER_SELECT, PKR_UNIT_ITEM_SELECT, rujukanPkrDariOrder } from "./pkrProduksiGuard.js";
 
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
 export const COMPLAINT_LABEL = Object.freeze({
@@ -32,7 +32,7 @@ export const VERDICT_LABEL = Object.freeze({ PAS: "PAS", TERLALU_KERAS: "Terlalu
 export const RUN_VIEW_INCLUDE = {
   unit: {
     select: {
-      id: true, unitCode: true, orderId: true, serviceId: true, status: true, currentStageId: true, merk: true, ukuran: true,
+      id: true, unitCode: true, orderId: true, serviceId: true, status: true, currentStageId: true, merk: true, ukuran: true, workCategory: true, productLine: true, productType: true, ...PKR_UNIT_ITEM_SELECT,
       service: { select: { code: true, labelId: true } },
       order: {
         select: {
@@ -132,8 +132,8 @@ export function customerOf(run) {
   const order = run.unit.order;
   return {
     orderNumber: order?.orderNumber ?? null,
-    category: order?.category ?? null,
-    productType: order?.productType ?? null,
+    category: run.unit.workCategory ?? order?.category ?? null, // kategori efektif UNIT (order PKR campuran)
+    productType: run.unit.productType ?? order?.productType ?? null,
     name: order?.customer?.name ?? null,
     city: order?.customer?.city ?? null,
     weightKg: order?.beratBadan ?? null,
@@ -188,7 +188,7 @@ export function toRunView(run, ctx, { now = new Date(), photoUrl = null, complai
     priority: { key: prio.key, label: prio.label, rank: prio.rank, complaintCases: prio.complaintCases },
     unit: { id: run.unit.id, orderId: run.unit.orderId, unitCode: run.unit.unitCode, merk: run.unit.merk, ukuran: run.unit.ukuran, status: run.unit.status, service: run.unit.service ? { code: run.unit.service.code, label: run.unit.service.labelId } : null, photoUrl },
     customer: customerOf(run),
-    penjualanKaryawan: rujukanPkrDariOrder(run.unit.order),
+    penjualanKaryawan: rujukanPkrDariOrder(run.unit.order, { unit: run.unit }),
     plan: run.plan ? {
       id: run.plan.id, status: run.plan.status, revision: run.plan.revision,
       productionDate: formatProductionDate(run.plan.productionDate), stationCode: run.plan.stationCode, stationLabel: stationLabel(run.plan.stationCode),

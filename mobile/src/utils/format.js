@@ -134,11 +134,12 @@ export const PAYMENT_STATUSES = ["BELUM_BAYAR", "DP", "LUNAS"];
 // Label dilepas dari "Kasur" (29 Agustus 2026, paritas dgn web) — kategori
 // ini sekarang berlaku lintas Lini Produk (Kasur/Sofa/Divan), bukan cuma
 // kasur lagi. Lihat PRODUCT_LINE_LABELS dkk di bawah.
-export const CATEGORY_LABELS = { LAYANAN: "Service/Upgrade", BARU: "Baru", SEWA: "Sewa" };
+export const CATEGORY_LABELS = { LAYANAN: "Service/Upgrade", BARU: "Baru", SEWA: "Sewa", CAMPURAN: "Campuran" };
 export const CATEGORY_BADGE = {
   LAYANAN: { backgroundColor: "#ede9fe", color: "#5b21b6" },
   BARU:    { backgroundColor: "#dcfce7", color: "#166534" },
   SEWA:    { backgroundColor: "#dbeafe", color: "#1e40af" },
+  CAMPURAN: { backgroundColor: "#fef3c7", color: "#92400e" }, // order PKR multi-item (produk baru + service)
 };
 
 // Lini Produk & Jenis Produk (29 Agustus 2026) — SAMA PERSIS dengan

@@ -16,7 +16,8 @@ import { RENCANA_ACTION, activatableOnDrop, photoNoteOf } from "../lib/domain/pr
 import { BUILD_CATEGORIES, classifyProduct } from "../lib/domain/productionBuildTrack.js";
 import { classifyUnitRow, cohortStatesOf } from "./productionRencanaService.js";
 import { loadV2Flags } from "./v2FeatureFlags.js";
-import { PKR_ORDER_SELECT, rujukanPkrDariOrder } from "./pkrProduksiGuard.js";
+import { PKR_ORDER_SELECT, PKR_UNIT_ITEM_SELECT, rujukanPkrDariOrder } from "./pkrProduksiGuard.js";
+import { kategoriUnit, produkUnit, statusOrderEfektif } from "../lib/domain/unitKategori.js";
 
 export const BACKLOG_STATUSES = Object.freeze(["DIPROSES", "PENGAMBILAN"]);
 const UNIT_STATUS_FOR = Object.freeze({ DIPROSES: ["RECEIVED", "IN_PRODUCTION"], PENGAMBILAN: ["AWAITING_PICKUP", "IN_TRANSIT_IN"] });
@@ -70,8 +71,8 @@ export async function listBacklog(prisma, { cohortUnitIds = null, states = null,
   const rows = await prisma.unit.findMany({
     where, take: BACKLOG_MAX_CANDIDATES + 1,
     select: {
-      id: true, orderId: true, createdAt: true, priority: true, status: true, currentStageId: true, _count: { select: { stageLogs: true, productionRunsV2: true } },
-      order: { select: { status: true, ...PKR_ORDER_SELECT, customer: { select: { pipelineStage: true, isInternalStaff: true } } } },
+      id: true, orderId: true, createdAt: true, priority: true, status: true, currentStageId: true, workCategory: true, productLine: true, productType: true, ...PKR_UNIT_ITEM_SELECT, _count: { select: { stageLogs: true, productionRunsV2: true } },
+      order: { select: { status: true, category: true, ...PKR_ORDER_SELECT, customer: { select: { pipelineStage: true, isInternalStaff: true } } } },
       productionRunsV2: { where: { status: { notIn: TERMINAL_RUN } }, select: { id: true, plan: { select: { priority: true } } } },
     },
   });
@@ -100,7 +101,7 @@ export async function listBacklog(prisma, { cohortUnitIds = null, states = null,
   const units = pageIds.length ? await prisma.unit.findMany({
     where: { id: { in: pageIds } },
     select: {
-      id: true, unitCode: true, orderId: true, status: true, merk: true, ukuran: true, createdAt: true,
+      id: true, unitCode: true, orderId: true, status: true, merk: true, ukuran: true, createdAt: true, workCategory: true, productLine: true, productType: true, ...PKR_UNIT_ITEM_SELECT,
       order: { select: { orderNumber: true, status: true, category: true, productLine: true, productType: true, ...PKR_ORDER_SELECT, items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } }, customer: { select: { name: true, city: true } } } },
       jobUnits: { where: { job: { type: "PICKUP" } }, select: { id: true }, take: 1 }, // pickup nyata = jalur custody (bukan lahir di workshop)
       productionRunsV2: { where: { status: { notIn: TERMINAL_RUN } }, select: { id: true, origin: true, status: true, custodyHandoffs: { select: { direction: true, status: true } } }, take: 1, orderBy: { createdAt: "desc" } },
@@ -123,7 +124,7 @@ export async function listBacklog(prisma, { cohortUnitIds = null, states = null,
     const prio = priorityDisplay({ stored: storedById.get(id) ?? 0, complaintCases: complaints.get(u.id) || [] });
     const cls = classById.get(id);
     // Order Penjualan Karyawan: rujukan tampil di kartu TANPA bergantung flag V2 (dihitung dari order, bukan dari Run); belum lengkap = tidak boleh dijadwalkan walau sudah punya Run.
-    const pkr = rujukanPkrDariOrder(u.order);
+    const pkr = rujukanPkrDariOrder(u.order, { unit: u });
     const pkrBlokir = !!pkr && !pkr.lengkap;
     return {
       unitId: u.id, schedulable: !!view && !pkrBlokir, view: pkrBlokir ? null : view,
@@ -134,7 +135,7 @@ export async function listBacklog(prisma, { cohortUnitIds = null, states = null,
         // Belum diaktifkan tetapi BOLEH diaktifkan otomatis saat dijadwalkan/diseret oleh pemanggil ini (ADMIN/OWNER): kartu tampil dengan handle seret + konfirmasi aktivasi di modal Jadwalkan.
         activatable: !view && activatableById.has(id),
         // Jalur Pengerjaan Pesanan (BARU/custom, lahir di workshop): modal Jadwalkan menampilkan "Corner diperlukan?" + kebutuhan konfirmasi jenis produk. null = bukan jalur ini.
-        build: !view && cls.action === RENCANA_ACTION.ONBOARD_SCHEDULE && BUILD_CATEGORIES.includes(u.order?.category) && !(u.jobUnits?.length) ? (() => { const p = classifyProduct({ productLine: u.order?.productLine, productType: u.order?.productType }); return { product: { class: p.productClass, flow: p.flow, problem: p.problem } }; })() : null,
+        build: !view && cls.action === RENCANA_ACTION.ONBOARD_SCHEDULE && BUILD_CATEGORIES.includes(kategoriUnit(u, u.order)) && !(u.jobUnits?.length) ? (() => { const p = classifyProduct(produkUnit(u, u.order)); return { product: { class: p.productClass, flow: p.flow, problem: p.problem } }; })() : null,
       },
       card: {
         penjualanKaryawan: pkr,

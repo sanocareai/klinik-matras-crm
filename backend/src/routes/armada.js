@@ -14,6 +14,7 @@
 
 import { adalahGalatInfraDb, kirimGalatInfraDb } from "../lib/dbInfraError.js";
 import { rujukanPkrPerOrder } from "../services/penjualanKaryawanOrder.js";
+import { armadaPkrPengirimanRouter } from "./armadaPkrPengiriman.js";
 import { tolakJikaOrderPkr } from "../services/pkrGuard.js";
 import { offerUnitCustody } from "../services/unitCustodyCommandService.js";
 import { assertRouteAssignmentConsistentForPublish } from "../services/deliveryRouteAssignmentConsistency.js";
@@ -6513,3 +6514,6 @@ armadaRouter.get("/reports/summary", requirePermission(P.JOB_READ), async (req, 
     handleErr(err, res);
   }
 });
+
+// Order Penjualan Karyawan: job pengiriman gabungan + kirim sebagian eksplisit (Okt 2026) — router terpisah (routes/armadaPkrPengiriman.js), dipasang di sini supaya bootstrap index.js tidak berubah.
+armadaRouter.use(armadaPkrPengirimanRouter);

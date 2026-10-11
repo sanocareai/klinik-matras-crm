@@ -29,8 +29,9 @@ import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js
 import { bacaSpesifikasiPkr, bacaNotesOrder } from "../lib/domain/pkrSpesifikasi.js";
 import { toMoney, sumMoney, moneyToNumber, ZERO } from "./finance/money.js";
 import {
-  siapkanItems, lahirkanItemDanUnit, ubahItemOrder, susunCerminan, kunciHimpunan, productLineDariItems, itemDariRow,
+  siapkanItems, lahirkanItemDanUnit, ubahItemOrder, susunCerminan, kunciHimpunan, productLineDariItems, itemDariRow, ITEM_AKTIF,
 } from "./penjualanKaryawanItem.js";
+import { revisiTerakhir } from "./pkrItemRevisi.js";
 import { kategoriOrderDariItems, perluDikirimDariItems, itemVirtualLama } from "../lib/domain/pkrItem.js";
 
 import { PkrOrderError, tolakJikaOrderPkr } from "./pkrGuard.js";
@@ -132,10 +133,10 @@ export async function buatAtauTautkanOrder(tx, { penjualanId, userId = null, spe
   if (pkr.orderCrm) {
     // Replay/klik ganda: kembalikan order yang ada. Daftar item yang dikirim ulang HARUS sama dengan yang tersimpan — isi berbeda = konflik, bukan order kedua yang diam-diam diabaikan.
     if (spek.items !== undefined) {
-      const ada = (await tx.pkrOrderItem.findMany({ where: { orderId: pkr.orderCrm.id }, orderBy: { seq: "asc" } })).map(itemDariRow);
-      const baru = await siapkanItems(tx, spek.items, { izinNonaktif: true });
+      const ada = (await tx.pkrOrderItem.findMany({ where: { orderId: pkr.orderCrm.id, ...ITEM_AKTIF }, orderBy: { seq: "asc" } })).map(itemDariRow);
+      const baru = await siapkanItems(tx, spek.items, { izinNonaktif: true, periksaRute: false });
       if (ada.length === 0 || kunciHimpunan(ada) !== kunciHimpunan(baru)) {
-        throw gagal(`${pkr.nomor} sudah punya order CRM ${pkr.orderCrm.orderNumber} dengan isi item berbeda. Ubah lewat "Lengkapi spesifikasi"; item/jumlah tidak diubah setelah order dibuat.`, 409, "ORDER_SUDAH_ADA_BEDA");
+        throw gagal(`${pkr.nomor} sudah punya order CRM ${pkr.orderCrm.orderNumber} dengan isi item berbeda. Ubah spesifikasi lewat "Lengkapi spesifikasi"; tambah/hapus item atau ubah jumlah lewat "Koreksi item" (sebelum unit dijadwalkan).`, 409, "ORDER_SUDAH_ADA_BEDA");
       }
     }
     return { orderId: pkr.orderCrm.id, orderNumber: pkr.orderCrm.orderNumber, dibuat: false, nomor: pkr.nomor };
@@ -163,7 +164,7 @@ export async function buatAtauTautkanOrder(tx, { penjualanId, userId = null, spe
       pkr, orderId: order.id, userId, aksi: sumber,
       metadata: {
         orderNumber: order.orderNumber, kategori: kategoriOrder, jumlahUnit: totalUnit, unit: lahir.flatMap((x) => x.unit),
-        item: items.map((i) => ({ no: i.no, kategori: i.kategoriCode, produk: i.produkNama, jumlah: i.jumlah, kirim: i.perluDikirim })),
+        item: items.map((i) => ({ no: i.no, kategori: i.kategoriCode, produk: i.produkNama, jumlah: i.jumlah, kirim: i.perluDikirim, ...(i.bundleNo != null && { set: i.bundleNo }) })),
         spesifikasi: bacaSpesifikasiPkr(akhir).lengkap ? "lengkap" : "perlu dilengkapi",
       },
     });
@@ -228,7 +229,7 @@ export async function lengkapiSpesifikasi(tx, { penjualanId, userId = null, masu
   const order = await tx.order.findUnique({ where: { id: pkr.orderCrm.id }, include: { units: { select: { id: true, status: true, currentStageId: true, unitCode: true } } } });
   if (order.status === "CANCELLED" || pkr.status !== "AKTIF") throw gagal("Order ini sudah dibatalkan — tidak bisa diubah", 409);
   const spek = normalisasiSpesifikasi(masukan);
-  const modeItem = (await tx.pkrOrderItem.count({ where: { orderId: order.id } })) > 0;
+  const modeItem = (await tx.pkrOrderItem.count({ where: { orderId: order.id } })) > 0; // termasuk item yang dihapus lunak (order tetap multi-item)
   if (modeItem && [spek.merk, spek.ukuran, spek.perluDikirim, spek.kategori, spek.jumlahUnit].some((v) => v !== undefined)) {
     throw gagal("Order ini memakai daftar item: ubah spesifikasi dan pilihan dikirim/diambil PER ITEM (bukan merk/ukuran di tingkat order)", 400, "SPEK_PER_ITEM");
   }
@@ -258,7 +259,7 @@ export async function lengkapiSpesifikasi(tx, { penjualanId, userId = null, masu
 
   let hasilItem = null;
   if (modeItem && spek.items !== undefined) {
-    hasilItem = await ubahItemOrder(tx, { order, masukan: spek.items });
+    hasilItem = await ubahItemOrder(tx, { order, masukan: spek.items, userId });
     Object.assign(data, hasilItem.data);
     if (hasilItem.perubahan.length) perubahan.item = hasilItem.perubahan;
   }
@@ -391,7 +392,7 @@ export async function ringkasOrderPkr(db, penjualanIds, { izinNominal = true } =
     include: {
       seller: { select: { id: true, name: true } },
       payments: { where: { cancelledAt: null }, select: { amount: true } },
-      orderCrm: { include: { pkrItems: { orderBy: { seq: "asc" }, include: { units: { select: { unit: { select: { unitCode: true, status: true } } } } } }, units: { orderBy: { seq: "asc" }, select: { id: true, unitCode: true, status: true, currentStageId: true, merk: true, ukuran: true } }, jobs: { orderBy: { createdAt: "asc" }, select: { id: true, type: true, status: true } } } },
+      orderCrm: { include: { pkrItems: { where: ITEM_AKTIF, orderBy: { seq: "asc" }, include: { units: { select: { unit: { select: { unitCode: true, status: true } } } } } }, units: { orderBy: { seq: "asc" }, select: { id: true, unitCode: true, status: true, currentStageId: true, merk: true, ukuran: true } }, jobs: { orderBy: { createdAt: "asc" }, select: { id: true, type: true, status: true } } } },
     },
   });
   const hasil = new Map();
@@ -407,10 +408,12 @@ export async function ringkasOrderPkr(db, penjualanIds, { izinNominal = true } =
     const spek = bacaSpesifikasiPkr(o);
     const modeItem = o.pkrItems.length > 0;
     const unitPerItem = (r) => r.units.map((x) => ({ kode: x.unit.unitCode, status: x.unit.status, label: LABEL_UNIT[x.unit.status] || x.unit.status }));
+    const revisi = modeItem ? await revisiTerakhir(db, o.id) : 0;
     const bentukItem = (i, extra = {}) => ({
       no: i.no, kategori: i.kategoriCode, kategoriNama: i.kategoriNama, bentuk: i.bentuk, jenisKerja: i.jenisKerja, produkId: i.produkId ?? null, produk: i.produkNama ?? null, jumlah: i.jumlah, ukuran: i.ukuranLabel || null,
       panjang: i.panjang ?? null, lebar: i.lebar ?? null, tebal: i.tebal ?? null, tinggi: i.tinggi ?? null, spesifikasi: i.spesifikasi ?? null,
-      perluDikirim: i.perluDikirim ?? null, kirimLabel: i.perluDikirim === true ? "Dikirim" : i.perluDikirim === false ? "Diambil sendiri" : "Belum ditentukan", kurang: i.kurang ?? [], ...extra,
+      perluDikirim: i.perluDikirim ?? null, kirimLabel: i.perluDikirim === true ? "Dikirim" : i.perluDikirim === false ? "Diambil sendiri" : "Belum ditentukan", kurang: i.kurang ?? [],
+      bundel: i.bundleNo != null ? { no: i.bundleNo, nama: i.bundleName ?? null } : null, ...extra,
     });
     const items = modeItem
       ? o.pkrItems.map((r) => bentukItem({ ...itemDariRow(r), kurang: (spek.items?.find((x) => x.no === r.seq)?.kurang) ?? [] }, { unit: unitPerItem(r), virtual: false }))
@@ -418,7 +421,7 @@ export async function ringkasOrderPkr(db, penjualanIds, { izinNominal = true } =
         .map((i) => bentukItem({ ...i, kurang: spek.kurang }, { unit: o.units.map((u) => ({ kode: u.unitCode, status: u.status, label: LABEL_UNIT[u.status] || u.status })), virtual: true }));
     hasil.set(p.id, {
       penjualanId: p.id, nomor: p.nomor, statusPkr: p.status, penjual: p.seller, pembeli: p.buyerName, pembayaran,
-      order: { id: o.id, nomor: o.orderNumber, status: o.status, statusLabel: LABEL_ORDER[o.status] || o.status, kategori: o.category, spesifikasi: spek, modeItem },
+      order: { id: o.id, nomor: o.orderNumber, status: o.status, statusLabel: LABEL_ORDER[o.status] || o.status, kategori: o.category, spesifikasi: spek, modeItem, revisi },
       items,
       units: o.units.map((u) => ({ id: u.id, kode: u.unitCode, status: u.status, label: LABEL_UNIT[u.status] || u.status, merk: u.merk, ukuran: u.ukuran })),
       produksi: statusProduksi(o, o.units, spek),

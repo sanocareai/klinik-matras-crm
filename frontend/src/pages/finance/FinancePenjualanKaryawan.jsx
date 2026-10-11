@@ -25,6 +25,7 @@ import { adminSaatIni } from "@/features/finance/aksiMenu.jsx";
 import { totalItems, normalisasiJumlah, metodeButuhRekening, LABEL_METODE_PJK } from "@/features/finance/penjualanKaryawanLogic.js";
 import { resetSaatBuka } from "@/features/finance/resetSaatBuka.jsx";
 import { RingkasOrderCrm, ModalOrderCrm, useKatalogPkr } from "@/features/finance/PkrOrderCrm.jsx";
+import { ModalKoreksiItem } from "@/features/finance/PkrKoreksiItem.jsx";
 import { aksiOrderCrm } from "@/features/finance/pkrOrderCrmLogic.js";
 import { orderCrmItemKosong, bodyOrderCrmItem, galatItems } from "@/features/finance/pkrItemLogic.js";
 import { FormItemProduksi } from "@/features/finance/PkrItemForm.jsx";
@@ -65,6 +66,7 @@ export default function FinancePenjualanKaryawan() {
   const [riwayatId, setRiwayatId] = useState(null);
   const [panelRincian, setPanelRincian] = useState(null);
   const [orderCrmUntuk, setOrderCrmUntuk] = useState(null); // { p, mode: "buat" | "lengkapi" }
+  const [koreksiUntuk, setKoreksiUntuk] = useState(null); // penjualan yang item-nya dikoreksi
   const admin = adminSaatIni();
 
   const muat = useCallback(async (opsi) => {
@@ -105,6 +107,7 @@ export default function FinancePenjualanKaryawan() {
       { label: "Riwayat pembayaran", onClick: () => setRiwayatId(p.id) },
       { label: "Buat/Tautkan Order CRM", hidden: !ac.buat, onClick: () => setOrderCrmUntuk({ p, mode: "buat" }) },
       { label: "Lengkapi spesifikasi order", hidden: !ac.lengkapi, onClick: () => setOrderCrmUntuk({ p, mode: "lengkapi" }) },
+      { label: "Koreksi item order", hint: "Tambah/hapus item atau ubah jumlah (sebelum dijadwalkan)", hidden: !ac.koreksi, onClick: () => setKoreksiUntuk(p) },
       {
         label: "Batalkan penjualan", destructive: true, hidden: !admin || p.statusTampil === "DIBATALKAN",
         onClick: () => {
@@ -289,6 +292,12 @@ export default function FinancePenjualanKaryawan() {
           await muat({ diam: true });
         }}
       />
+      {koreksiUntuk && (
+        <ModalKoreksiItem
+          key={`${koreksiUntuk.id}-koreksi`} penjualan={koreksiUntuk} onClose={() => setKoreksiUntuk(null)}
+          onSelesai={async () => { setKoreksiUntuk(null); await muat({ diam: true }); }}
+        />
+      )}
       <PanelDetail spec={panelRincian} onClose={() => setPanelRincian(null)} />
     </HalamanFinance>
   );

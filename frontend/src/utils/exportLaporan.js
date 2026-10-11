@@ -152,7 +152,7 @@ function sheetPenjualan({ periode, summary }) {
 
   sb.row(["PENDAPATAN PER KATEGORI", "", ""]);
   sb.row(["Kategori", "Jumlah Order", "Nilai"]);
-  const KAT = { LAYANAN: "Layanan/Upgrade", SEWA: "Kasur Sewa", BARU: "Kasur Baru" };
+  const KAT = { LAYANAN: "Layanan/Upgrade", SEWA: "Kasur Sewa", BARU: "Kasur Baru", CAMPURAN: "Campuran (produk baru + service)" };
   (summary?.revenueByCategory || [])
     .slice().sort((a, b) => b.value - a.value)
     .forEach((r) => sb.row([KAT[r.category] || r.category, num(r.count), rp(r.value)]));

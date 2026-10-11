@@ -208,6 +208,12 @@ export const PERMISSIONS = {
   // koreksi metadata, uang muka, template, atau workspace lain.
   DELIVERY_EXPENSE_OWN_READ: "delivery:expense:own:read",
   DELIVERY_EXPENSE_OWN_WRITE: "delivery:expense:own:write",
+
+  // --- Katalog Item PKR (Okt 2026, keputusan Owner) ---------------------------------------------------
+  // Mengelola kategori, produk/varian, pemetaan rute Produksi, dan komposisi bundel (Set Kasur Lengkap) untuk order produksi Penjualan Karyawan. Dipegang Owner/Admin (yang juga
+  // memegang FINANCE_ADMIN dan PRODUCTION_SETTINGS_WRITE — "Finance Admin" dan "Production Admin" bukan peran terpisah di sistem ini). Peran biasa hanya MEMBACA/MEMILIH katalog
+  // (finance:read di form PKR). SENGAJA bukan production_settings:write: katalog ini dipakai Finance dan Produksi, dan izin pengaturan Produksi tidak boleh jadi pintu belakang.
+  PKR_CATALOG_MANAGE: "pkr_catalog:manage",
 };
 
 const P = PERMISSIONS;
@@ -276,6 +282,8 @@ const ADMIN_PERMS = [
   P.INCENTIVE_PAYOUT_READ, P.INCENTIVE_PAYOUT_CREATE, P.INCENTIVE_PAYOUT_VOID,
   // Aplikasi Sano Delivery Control — ADMIN/OWNER (OWNER mewarisi ADMIN_PERMS).
   P.DELIVERY_CONTROL_ACCESS,
+  // Katalog Item PKR (kategori, produk, pemetaan rute Produksi, komposisi bundel).
+  P.PKR_CATALOG_MANAGE,
 ];
 
 export const ROLE_PERMISSIONS = {

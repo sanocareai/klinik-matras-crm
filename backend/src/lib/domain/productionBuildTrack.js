@@ -36,7 +36,7 @@ export const pathHasBuildStage = (stages) => (stages || []).some((s) => s.code =
 // ---------------------------------------------------------------------------
 export const PRODUCT_CLASS = Object.freeze({ KASUR: "KASUR", NON_KASUR: "NON_KASUR", BELUM_JELAS: "BELUM_JELAS" });
 export const PRODUCT_FLOW = Object.freeze({ KASUR: "KASUR", NON_KASUR: "NON_KASUR", UNCONFIRMED: "UNCONFIRMED" });
-const FAMILY_OF_TYPE = Object.freeze({
+export const FAMILY_OF_TYPE = Object.freeze({
   KASUR_SPRING: "KASUR", KASUR_BUSA: "KASUR", MULTIBED: "KASUR", KASUR_2IN1_ATAS: "KASUR", KASUR_2IN1_BAWAH: "KASUR", KASUR_SEHAT: "KASUR", KASUR_2IN1: "KASUR", KASUR_LAINNYA: "KASUR",
   SOFABED: "SOFA", SOFA_L: "SOFA", SOFA_1_SEATER: "SOFA", SOFA_2_SEATER: "SOFA", SOFA_3_SEATER: "SOFA",
   DIVAN_UTAMA: "DIVAN", DIVAN_SANDARAN: "DIVAN",

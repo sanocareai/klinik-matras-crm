@@ -83,6 +83,9 @@ orderRouter.patch("/:id", async (req, res, next) => {
     const kena = FIELD_UANG.filter((k) => b[k] !== undefined);
     if (kena.length && (await blokirBilaOrderPkr(prisma, res, req.params.id, `Mengubah ${kena.join(", ")}`))) return;
     if (b.status === "CANCELLED" && (await blokirBilaOrderPkr(prisma, res, req.params.id, "Pembatalan order langsung"))) return;
+    // Kategori / lini / jenis produk order PKR MENGIKUTI item (kategori order diturunkan dari item; rute Produksi per unit). Mengubahnya dari CRM akan mengacaukan turunan itu.
+    if ((b.category !== undefined || b.productLine !== undefined || b.productType !== undefined)
+      && (await blokirBilaOrderPkr(prisma, res, req.params.id, "Mengubah kategori/lini/jenis produk order (mengikuti item; ubah lewat Koreksi item di Finance › Penjualan Karyawan)"))) return;
     // Order PKR multi-item: spesifikasi item dikelola di Finance › Penjualan Karyawan (tabel pkr_order_items; Order.notes.pkrItems hanya cerminannya). Edit catatan dari CRM tidak boleh
     // menghapus/menimpa daftar item atau menulis merk/ukuran tingkat order yang bertentangan — penjaga ini mempertahankan cerminan dan membuang kunci merk/ukuran lama.
     if (typeof b.notes === "string") {

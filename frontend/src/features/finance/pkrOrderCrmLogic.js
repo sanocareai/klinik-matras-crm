@@ -72,5 +72,7 @@ export function aksiOrderCrm(p) {
   return {
     buat: !batal && !adaOrderCrm(s),
     lengkapi: !batal && adaOrderCrm(s) && s.order.status !== "CANCELLED",
+    // Koreksi item (tambah/hapus item, ubah jumlah) hanya untuk order multi-item; order lama dikoreksi lewat Lengkapi / dibatalkan lalu dicatat ulang.
+    koreksi: !batal && adaOrderCrm(s) && s.order.status !== "CANCELLED" && s.order.modeItem === true,
   };
 }

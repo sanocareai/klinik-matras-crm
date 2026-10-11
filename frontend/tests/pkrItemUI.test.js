@@ -116,3 +116,118 @@ test("pemasangan: halaman PKR memakai daftar item + langkah pratinjau; katalog d
   assert.match(baca("../src/features/production/PkrRujukan.jsx"), /data-testid="pkr-item"/);
   assert.match(baca("../src/features/finance/PkrOrderCrm.jsx"), /Kembali ubah/);
 });
+
+// ── Bundel (Set Kasur Lengkap), Koreksi Item, Delivery sebagian ────────────────────────────────────────
+import {
+  itemBundel, komposisiItem, sinkronKomponen, formKoreksiDariSinkron, operasiKoreksi, galatKoreksi, totalUnitKoreksi, alasanValid,
+} from "../src/features/finance/pkrItemLogic.js";
+
+const KOMPOSISI = [
+  { id: "c1", urutan: 10, jumlah: 1, kategoriId: "k1", kategoriKode: "KASUR_BARU", kategoriNama: "Kasur Baru", bentuk: "KASUR", produkId: null, produkNama: null },
+  { id: "c2", urutan: 20, jumlah: 1, kategoriId: "k2", kategoriKode: "DIVAN_BOX", kategoriNama: "Divan/Box", bentuk: "DIVAN", produkId: null, produkNama: null },
+  { id: "c3", urutan: 30, jumlah: 1, kategoriId: "k3", kategoriKode: "SANDARAN", kategoriNama: "Sandaran/Headboard", bentuk: "SANDARAN", produkId: null, produkNama: null },
+];
+const KATALOG_SET = {
+  ...KATALOG,
+  bentuk: { ...KATALOG.bentuk, SET: { label: "Set kasur lengkap (bundel)", produk: { label: "Paket / set", wajib: false }, bundel: true, dimensi: [], spesifikasi: { label: "Catatan set", keras: false } } },
+  kategori: [
+    ...KATALOG.kategori.map((k) => ({ ...k, komposisi: [] })),
+    { id: "k9", kode: "SET_LENGKAP", nama: "Set Kasur Lengkap", bentuk: "SET", jenisKerja: "BARU", aktif: true, bundel: true, komposisi: KOMPOSISI, produk: [{ id: "ps", kode: "SET_HEMAT", nama: "Set Hemat", komposisi: KOMPOSISI.slice(0, 2) }] },
+  ],
+};
+
+test("bundel: komponen mengikuti komposisi katalog (produk set menimpa kategori); body mengirim satu isian per komponen; unit = jumlah set × komponen", () => {
+  let it = ubahKategoriItem(KATALOG_SET, itemBaru(), "SET_LENGKAP");
+  assert.equal(itemBundel(KATALOG_SET, it), true);
+  assert.deepEqual(it.komponen.map((k) => k.kategoriKode), ["KASUR_BARU", "DIVAN_BOX", "SANDARAN"]);
+  assert.equal(komposisiItem(KATALOG_SET, it).length, 3);
+  // pilih varian "Set Hemat" -> komposisi 2 komponen; isian yang ada dipertahankan menurut kategori komponen
+  it = { ...it, komponen: it.komponen.map((k, n) => (n === 0 ? { ...k, panjang: "200", lebar: "160", tebal: "20" } : k)), jumlah: "2", kirim: "ya" };
+  const hemat = sinkronKomponen(KATALOG_SET, { ...it, produkId: "ps" });
+  assert.deepEqual(hemat.komponen.map((k) => k.kategoriKode), ["KASUR_BARU", "DIVAN_BOX"]);
+  assert.equal(hemat.komponen[0].panjang, "200");
+  assert.equal(totalUnitItems([it], KATALOG_SET), 6); // 2 set × 3 komponen
+  assert.equal(totalUnitItems([it]), 2, "tanpa katalog dihitung apa adanya (kompatibel)");
+  const b = bodyOrderCrmItem({ items: [it], alamat: "Jl. A", kota: "", tanggalKirim: "" }, KATALOG_SET);
+  assert.equal(b.items[0].kategori, "SET_LENGKAP");
+  assert.equal(b.items[0].jumlah, 2); assert.equal(b.items[0].perluDikirim, true);
+  assert.deepEqual(b.items[0].komponen.map((k) => k.kategori), ["KASUR_BARU", "DIVAN_BOX", "SANDARAN"]);
+  assert.deepEqual(b.items[0].komponen[0], { kategori: "KASUR_BARU", panjang: "200", lebar: "160", tebal: "20" });
+  assert.equal(b.alamat, "Jl. A", "ada komponen yang dikirim (ikut Set)");
+  assert.equal(adaItemDikirim([it], KATALOG_SET), true);
+  assert.equal(adaItemDikirim([{ ...it, kirim: "tidak" }], KATALOG_SET), false);
+  assert.equal(adaItemDikirim([{ ...it, kirim: "tidak", komponen: it.komponen.map((k, n) => (n === 1 ? { ...k, kirim: "ya" } : k)) }], KATALOG_SET), true, "komponen boleh menimpa pilihan set");
+});
+
+test("bundel: galat ringan per komponen (angka cm), komposisi kosong menahan; total unit memperhitungkan komponen", () => {
+  const it = ubahKategoriItem(KATALOG_SET, itemBaru(), "SET_LENGKAP");
+  assert.equal(galatItems([it], KATALOG_SET), null, "kekurangan data bukan galat");
+  const salah = { ...it, komponen: it.komponen.map((k, n) => (n === 1 ? { ...k, panjang: "abc" } : k)) };
+  assert.match(galatItems([salah], KATALOG_SET), /Item 1 · Divan\/Box: Panjang/);
+  const tanpaKomposisi = { ...KATALOG_SET, kategori: KATALOG_SET.kategori.map((k) => (k.kode === "SET_LENGKAP" ? { ...k, komposisi: [], produk: [] } : k)) };
+  assert.match(galatItems([ubahKategoriItem(tanpaKomposisi, itemBaru(), "SET_LENGKAP")], tanpaKomposisi), /belum punya komposisi/);
+  assert.match(galatItems([{ ...it, jumlah: "7" }], KATALOG_SET), /Total jumlah unit 21 melebihi batas 20/);
+});
+
+const SINKRON_KOREKSI = {
+  order: { modeItem: true, revisi: 3, spesifikasi: { alamat: "Jl. A", kota: "Bekasi" } },
+  items: [
+    { no: 1, kategori: "KASUR_BARU", kategoriNama: "Kasur Baru", jumlah: 1, produkId: null, produk: "Sano", panjang: 200, lebar: 160, tebal: 20, tinggi: null, spesifikasi: "pegas", perluDikirim: true, unit: [{ status: "RECEIVED" }] },
+    { no: 2, kategori: "DIVAN_BOX", kategoriNama: "Divan/Box", jumlah: 1, produkId: null, produk: "Divan Laci", panjang: 200, lebar: 160, tebal: null, tinggi: 30, spesifikasi: null, perluDikirim: false, unit: [{ status: "RECEIVED" }], bundel: { no: 1 } },
+  ],
+};
+
+test("koreksi: form dari ringkasan server; operasi hanya berisi yang berubah (ubah/hapus/tambah); revisi dari server; galat ringan", () => {
+  const f = formKoreksiDariSinkron(SINKRON_KOREKSI);
+  assert.equal(f.revisi, 3);
+  assert.deepEqual(f.items.map((i) => [i.no, i.jumlah, i.hapus]), [[1, "1", false], [2, "1", false]]);
+  assert.equal(f.items[1].bundel.no, 1);
+  assert.equal(galatKoreksi(f, KATALOG), "Belum ada perubahan");
+  assert.deepEqual(operasiKoreksi(f, KATALOG), []);
+
+  const g = {
+    ...f,
+    items: [{ ...f.items[0], jumlah: "2", panjang: "210" }, { ...f.items[1], hapus: true }],
+    baru: [{ ...itemBaru("SANDARAN"), lebar: "160", tinggi: "120", kirim: "ya" }],
+  };
+  assert.deepEqual(operasiKoreksi(g, KATALOG), [
+    { op: "ubah", no: 1, panjang: "210", jumlah: 2 },
+    { op: "hapus", no: 2 },
+    { op: "tambah", item: { kategori: "SANDARAN", jumlah: 1, lebar: "160", tinggi: "120", perluDikirim: true } },
+  ]);
+  assert.equal(galatKoreksi(g, KATALOG), null);
+  assert.equal(totalUnitKoreksi(g, KATALOG), 3, "kasur ×2 + sandaran ×1 (divan dihapus)");
+  assert.match(galatKoreksi({ ...g, items: [{ ...g.items[0], jumlah: "0" }, g.items[1]] }, KATALOG), /Item 1: jumlah/);
+  assert.match(galatKoreksi({ ...g, items: [{ ...g.items[0], jumlah: "19" }, g.items[1]], baru: [{ ...g.baru[0], jumlah: "5" }] }, KATALOG), /melebihi batas 20/);
+  // kirim -> diambil sendiri, spesifikasi dikosongkan
+  const h = { ...f, items: [{ ...f.items[0], kirim: "tidak", spesifikasi: "" }, f.items[1]] };
+  assert.deepEqual(operasiKoreksi(h, KATALOG), [{ op: "ubah", no: 1, spesifikasi: "", perluDikirim: false }]);
+  assert.equal(alasanValid("  x "), false); assert.equal(alasanValid("Pembeli menambah sandaran"), true);
+});
+
+test("pemasangan: Koreksi item (modal, pratinjau dampak, alasan, Idempotency-Key), kirim sebagian di Delivery, komposisi + pemetaan rute di katalog Admin; tanpa daftar kategori hardcoded", () => {
+  const modal = baca("../src/features/finance/PkrKoreksiItem.jsx");
+  assert.match(modal, /api\.pratinjauKoreksiItemPkr\(/);
+  assert.match(modal, /api\.koreksiItemPkr\(penjualan\.id, \{ operasi: ops, expectedRevision: revisi, alasan:/);
+  assert.match(modal, /data-testid="koreksi-alasan"/);
+  assert.match(modal, /disabled=\{!pra\?\.valid \|\| !alasanValid\(f\.alasan\)\}/, "Terapkan hanya setelah pratinjau valid + alasan");
+  assert.match(modal, /kunci\.current = kunciBaru\(\)/, "satu Idempotency-Key per niat koreksi");
+  assert.match(baca("../src/features/finance/PkrPratinjau.jsx"), /export function PratinjauKoreksi/);
+  assert.match(baca("../src/pages/finance/FinancePenjualanKaryawan.jsx"), /Koreksi item order/);
+  const api = baca("../src/api.js");
+  for (const fn of ["pratinjauKoreksiItemPkr", "koreksiItemPkr", "simpanKomposisiPkr", "kirimSebagianPkr", "getPkrPengirimanMenunggu", "getPkrPengirimanOrder"]) assert.match(api, new RegExp(`${fn}:`));
+  assert.match(api, /koreksi-item\/pratinjau/);
+  assert.match(api, /pkr-pengiriman\/\$\{orderId\}\/kirim-sebagian/);
+  const panel = baca("../src/features/armada/components/PkrPengirimanPanel.jsx");
+  assert.match(panel, /api\.kirimSebagianPkr\(orderId, \{ unitIds: pilih, alasan: alasan\.trim\(\) \}, kunci\.current\)/);
+  assert.match(panel, /Tidak ada job lain yang dibuat otomatis/);
+  assert.match(baca("../src/pages/armada/ArmadaJobs.jsx"), /<PkrPengirimanPanel \/>/);
+  const katalog = baca("../src/pages/bengkel/PkrKatalogItem.jsx");
+  assert.match(katalog, /api\.simpanKomposisiPkr\(/);
+  assert.match(katalog, /Rute belum dipetakan/);
+  assert.match(katalog, /data-testid="belum-dipetakan"/);
+  const form = baca("../src/features/finance/PkrItemForm.jsx");
+  assert.doesNotMatch(form, /KASUR_BARU|DIVAN_BOX|SANDARAN|SET_LENGKAP/);
+  assert.match(form, /data-testid="komponen-set"/);
+  assert.match(form, /koreksi = mode === "koreksi"/);
+});

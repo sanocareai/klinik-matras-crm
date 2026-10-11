@@ -25,16 +25,18 @@ export async function cancelOrderDeliveryJobs(tx, {
   reason,
   actorId = null,
   cancelledAt = new Date(),
+  // Opsional: batasi ke job tertentu (Koreksi Item PKR membatalkan HANYA job pickup yang menjadi kosong). Tanpa ini = seluruh job aktif order (perilaku lama).
+  jobIds = null,
 }) {
   const normalizedReason = String(reason || "Order dibatalkan").trim() || "Order dibatalkan";
   const executionActorId = actorId === "SYSTEM" ? null : actorId;
   const [candidates, activeRescheduleCount] = await Promise.all([
     tx.job.findMany({
-      where: { orderId, status: { in: CANCELLABLE_JOB_STATUSES } },
+      where: { orderId, status: { in: CANCELLABLE_JOB_STATUSES }, ...(jobIds ? { id: { in: jobIds } } : {}) },
       select: { id: true },
       orderBy: { id: "asc" },
     }),
-    tx.rescheduleCase.count({ where: { job: { orderId }, status: "AKTIF" } }),
+    tx.rescheduleCase.count({ where: { job: { orderId, ...(jobIds ? { id: { in: jobIds } } : {}) }, status: "AKTIF" } }),
   ]);
   if (candidates.length === 0 && activeRescheduleCount === 0) {
     return { cancelledJobIds: [], replayed: true };
@@ -54,7 +56,7 @@ export async function cancelOrderDeliveryJobs(tx, {
     mutate: async (commandTx) => {
       await commandTx.$queryRaw`SELECT id FROM jobs WHERE order_id = ${orderId} AND status IN ('UNSCHEDULED', 'SCHEDULED', 'ASSIGNED', 'EN_ROUTE', 'ARRIVED') FOR UPDATE`;
       const jobs = await commandTx.job.findMany({
-        where: { orderId, status: { in: CANCELLABLE_JOB_STATUSES } },
+        where: { orderId, status: { in: CANCELLABLE_JOB_STATUSES }, ...(jobIds ? { id: { in: jobIds } } : {}) },
         include: {
           cancellationV2: true,
           route: { select: { id: true, status: true, driverId: true, helperId: true } },
@@ -150,7 +152,7 @@ export async function cancelOrderDeliveryJobs(tx, {
       }
 
       await commandTx.rescheduleCase.updateMany({
-        where: { job: { orderId }, status: "AKTIF" },
+        where: { job: { orderId, ...(jobIds ? { id: { in: jobIds } } : {}) }, status: "AKTIF" },
         data: { status: "DIBATALKAN", cancelReason: "Order dibatalkan", resolvedAt: cancelledAt },
       });
 

@@ -1,6 +1,6 @@
 import { prisma } from "../db.js";
 
-const PREFIX_MAP = { LAYANAN: "RES", SEWA: "SWS", BARU: "NEW" };
+const PREFIX_MAP = { LAYANAN: "RES", SEWA: "SWS", BARU: "NEW", CAMPURAN: "MIX" }; // MIX = order PKR campuran (BARU + LAYANAN)
 
 // Counter generik per prefix + bulan + tahun, aman dari race condition via
 // transaction — dipakai generateOrderNumber (RES/SWS/NEW) DAN

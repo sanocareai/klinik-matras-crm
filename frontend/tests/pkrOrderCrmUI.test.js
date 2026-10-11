@@ -31,10 +31,11 @@ test("galat isian: jumlah unit 1–20 hanya saat membuat; isian boleh belum leng
 test("form lengkapi diisi dari spesifikasi server; aksi per PKR; label/varian dalam Bahasa Indonesia", () => {
   const sinkron = { order: { kategori: "LAYANAN", status: "PROCESSING", spesifikasi: { merk: "Sano", ukuran: "160 x 200", perluDikirim: false, alamat: null, kota: null, kurang: [], lengkap: true } } };
   assert.deepEqual(orderCrmDariSinkron(sinkron), { ...orderCrmKosong(), kategori: "LAYANAN", merk: "Sano", ukuran: "160 x 200", kirim: "tidak" });
-  assert.deepEqual(aksiOrderCrm({ statusTampil: "BELUM_BAYAR", sinkron: null }), { buat: true, lengkapi: false }, "PKR lama: Buat/Tautkan Order CRM");
-  assert.deepEqual(aksiOrderCrm({ statusTampil: "BELUM_BAYAR", sinkron }), { buat: false, lengkapi: true });
-  assert.deepEqual(aksiOrderCrm({ statusTampil: "DIBATALKAN", sinkron: null }), { buat: false, lengkapi: false });
-  assert.deepEqual(aksiOrderCrm({ statusTampil: "LUNAS", sinkron: { order: { ...sinkron.order, status: "CANCELLED" } } }), { buat: false, lengkapi: false });
+  assert.deepEqual(aksiOrderCrm({ statusTampil: "BELUM_BAYAR", sinkron: null }), { buat: true, lengkapi: false, koreksi: false }, "PKR lama: Buat/Tautkan Order CRM");
+  assert.deepEqual(aksiOrderCrm({ statusTampil: "BELUM_BAYAR", sinkron }), { buat: false, lengkapi: true, koreksi: false }, "order lama (tanpa daftar item): tanpa Koreksi item");
+  assert.deepEqual(aksiOrderCrm({ statusTampil: "BELUM_BAYAR", sinkron: { order: { ...sinkron.order, modeItem: true } } }), { buat: false, lengkapi: true, koreksi: true }, "order multi-item: Koreksi item tersedia");
+  assert.deepEqual(aksiOrderCrm({ statusTampil: "DIBATALKAN", sinkron: null }), { buat: false, lengkapi: false, koreksi: false });
+  assert.deepEqual(aksiOrderCrm({ statusTampil: "LUNAS", sinkron: { order: { ...sinkron.order, status: "CANCELLED", modeItem: true } } }), { buat: false, lengkapi: false, koreksi: false });
   assert.equal(teksKurang({ order: { spesifikasi: { kurang: ["Merk kasur", "Ukuran"] } } }), "Merk kasur, Ukuran");
   assert.equal(VARIAN_PRODUKSI.PERLU_DILENGKAPI, "orange");
   assert.equal(varianDelivery("COMPLETED"), "green"); assert.equal(varianDelivery("BELUM_ADA_JOB"), "orange"); assert.equal(varianDelivery("AMBIL_SENDIRI"), "neutral");
