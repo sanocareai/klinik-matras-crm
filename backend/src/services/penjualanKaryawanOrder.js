@@ -13,6 +13,8 @@
 //   4. Spesifikasi produksi (merk, ukuran, dikirim/diambil, alamat bila dikirim) dihitung dinamis (lib/domain/pkrSpesifikasi.js). Belum lengkap = "Perlu dilengkapi" dan
 //      startStageInTx menolak memulai tahap. Delivery job otomatis HANYA bila order ditandai perlu dikirim (suggestDeliveryJob).
 //   5. Pembatalan PKR setelah Produksi/Delivery berjalan DIBLOKIR; sebelum itu order, unit, dan job (yang belum berjalan) dibatalkan lewat jalur baku — tidak ada yang dihapus.
+//   6. MULTI-ITEM (Okt 2026): satu PKR -> satu Order -> banyak item produksi (kasur + divan + sandaran, dst) di pkr_order_items, tiap item melahirkan unitnya sendiri lewat jalur
+//      baku (services/penjualanKaryawanItem.js). Masukan lama (kategori/jumlahUnit/merk/ukuran) TETAP bekerja untuk klien lama; order lama tanpa item dibaca sebagai "item virtual".
 import { prisma } from "../db.js";
 import { lockRowForUpdate } from "./inventoryLedger.js";
 import { createOrderForCustomer } from "./orderCreation.js";
@@ -26,6 +28,10 @@ import { ukuranCustomWajibSejak } from "./ukuranWajib.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import { bacaSpesifikasiPkr, bacaNotesOrder } from "../lib/domain/pkrSpesifikasi.js";
 import { toMoney, sumMoney, moneyToNumber, ZERO } from "./finance/money.js";
+import {
+  siapkanItems, lahirkanItemDanUnit, ubahItemOrder, susunCerminan, kunciHimpunan, productLineDariItems, itemDariRow,
+} from "./penjualanKaryawanItem.js";
+import { kategoriOrderDariItems, perluDikirimDariItems, itemVirtualLama } from "../lib/domain/pkrItem.js";
 
 import { PkrOrderError, tolakJikaOrderPkr } from "./pkrGuard.js";
 export { PkrOrderError, tolakJikaOrderPkr };
@@ -46,6 +52,14 @@ const teks = (v, maks, nama) => {
 /** Normalisasi masukan spesifikasi (semua opsional). `undefined` = tidak diubah/tidak diisi. */
 export function normalisasiSpesifikasi(m = {}) {
   const o = m ?? {};
+  // Daftar item (multi-item). Tidak boleh dicampur dengan isian lama — satu bentuk per permintaan supaya tidak ambigu.
+  let items;
+  if (o.items !== undefined && o.items !== null) {
+    if (!Array.isArray(o.items)) throw gagal("Daftar item produksi tidak valid");
+    const lama = ["kategori", "jumlahUnit", "merk", "ukuran"].filter((k) => o[k] !== undefined && o[k] !== null && o[k] !== "");
+    if (lama.length) throw gagal(`Isian lama (${lama.join(", ")}) tidak bisa dipakai bersama daftar item — pakai salah satu`, 400, "SPEK_CAMPUR");
+    items = o.items;
+  }
   const kategori = o.kategori === undefined || o.kategori === null || o.kategori === "" ? undefined : String(o.kategori);
   if (kategori !== undefined && !KATEGORI_PKR.includes(kategori)) throw gagal("Jenis pekerjaan harus Kasur Baru atau Service/Upgrade");
   let jumlahUnit;
@@ -61,7 +75,7 @@ export function normalisasiSpesifikasi(m = {}) {
   const tanggalKirim = teks(o.tanggalKirim, 10, "Tanggal kirim");
   if (tanggalKirim && !/^\d{4}-\d{2}-\d{2}$/.test(tanggalKirim)) throw gagal("Tanggal kirim harus berformat YYYY-MM-DD");
   return {
-    kategori, jumlahUnit, perluDikirim,
+    items, kategori, jumlahUnit, perluDikirim,
     merk: teks(o.merk, 100, "Merk kasur"), ukuran: teks(o.ukuran, 100, "Ukuran"),
     alamat: teks(o.alamat, 500, "Alamat pengiriman"), kota: teks(o.kota, 100, "Kota"), tanggalKirim,
   };
@@ -69,6 +83,11 @@ export function normalisasiSpesifikasi(m = {}) {
 
 const susunNotes = ({ merk, ukuran, pkr, catatan }) => JSON.stringify({
   ...(merk && { merkKasur: merk }), ...(ukuran && { ukuranKasur: ukuran }),
+  pkrNomor: pkr.nomor, pembeliPkr: pkr.buyerName, catatan: `Penjualan Karyawan ${pkr.nomor} — penjual ${pkr.seller.name}, pembeli ${pkr.buyerName}${catatan ? `. ${catatan}` : ""}`,
+});
+
+const susunNotesItems = ({ items, pkr, catatan }) => JSON.stringify({
+  pkrItems: susunCerminan(items),
   pkrNomor: pkr.nomor, pembeliPkr: pkr.buyerName, catatan: `Penjualan Karyawan ${pkr.nomor} — penjual ${pkr.seller.name}, pembeli ${pkr.buyerName}${catatan ? `. ${catatan}` : ""}`,
 });
 
@@ -109,9 +128,47 @@ async function muatPkr(tx, penjualanId) {
  */
 export async function buatAtauTautkanOrder(tx, { penjualanId, userId = null, spesifikasi = {}, orderId = null, sumber = "dibuat" }) {
   const pkr = await muatPkr(tx, penjualanId);
-  if (pkr.orderCrm) return { orderId: pkr.orderCrm.id, orderNumber: pkr.orderCrm.orderNumber, dibuat: false, nomor: pkr.nomor };
-  if (pkr.status !== "AKTIF") throw gagal(`${pkr.nomor} sudah dibatalkan — order CRM tidak dibuat`, 409);
   const spek = normalisasiSpesifikasi(spesifikasi);
+  if (pkr.orderCrm) {
+    // Replay/klik ganda: kembalikan order yang ada. Daftar item yang dikirim ulang HARUS sama dengan yang tersimpan — isi berbeda = konflik, bukan order kedua yang diam-diam diabaikan.
+    if (spek.items !== undefined) {
+      const ada = (await tx.pkrOrderItem.findMany({ where: { orderId: pkr.orderCrm.id }, orderBy: { seq: "asc" } })).map(itemDariRow);
+      const baru = await siapkanItems(tx, spek.items, { izinNonaktif: true });
+      if (ada.length === 0 || kunciHimpunan(ada) !== kunciHimpunan(baru)) {
+        throw gagal(`${pkr.nomor} sudah punya order CRM ${pkr.orderCrm.orderNumber} dengan isi item berbeda. Ubah lewat "Lengkapi spesifikasi"; item/jumlah tidak diubah setelah order dibuat.`, 409, "ORDER_SUDAH_ADA_BEDA");
+      }
+    }
+    return { orderId: pkr.orderCrm.id, orderNumber: pkr.orderCrm.orderNumber, dibuat: false, nomor: pkr.nomor };
+  }
+  if (pkr.status !== "AKTIF") throw gagal(`${pkr.nomor} sudah dibatalkan — order CRM tidak dibuat`, 409);
+
+  if (spek.items !== undefined) {
+    if (orderId) throw gagal("Daftar item tidak bisa dipakai untuk menautkan order yang sudah ada — buat order baru atau tautkan tanpa daftar item", 400, "ITEM_TIDAK_UNTUK_TAUTAN");
+    const items = await siapkanItems(tx, spek.items);
+    const { customer } = await profilCustomerKaryawan(tx, pkr.sellerId);
+    const totalUnit = items.reduce((a, i) => a + i.jumlah, 0);
+    const kategoriOrder = kategoriOrderDariItems(items);
+    const order = await createOrderForCustomer(customer.id, {
+      category: kategoriOrder, unitCount: 0, quantity: totalUnit, productLine: productLineDariItems(items),
+      notes: susunNotesItems({ items, pkr, catatan: pkr.notes }),
+      ...(spek.alamat && { deliveryAddress: spek.alamat }), ...(spek.kota && { deliveryCity: spek.kota }),
+      ...(spek.tanggalKirim && { deliveryConfirmedDate: spek.tanggalKirim }),
+    }, userId, {
+      tx, tanpaInvoice: true,
+      dataTambahan: { salesOwnerId: null, penjualanKaryawanId: pkr.id, pkrPerluDikirim: perluDikirimDariItems(items) },
+    });
+    const lahir = await lahirkanItemDanUnit(tx, { pkrId: pkr.id, orderId: order.id, items, userId });
+    const akhir = await tx.order.findUnique({ where: { id: order.id }, select: { notes: true, deliveryAddress: true, deliveryCity: true, pkrPerluDikirim: true } });
+    await catatAudit(tx, {
+      pkr, orderId: order.id, userId, aksi: sumber,
+      metadata: {
+        orderNumber: order.orderNumber, kategori: kategoriOrder, jumlahUnit: totalUnit, unit: lahir.flatMap((x) => x.unit),
+        item: items.map((i) => ({ no: i.no, kategori: i.kategoriCode, produk: i.produkNama, jumlah: i.jumlah, kirim: i.perluDikirim })),
+        spesifikasi: bacaSpesifikasiPkr(akhir).lengkap ? "lengkap" : "perlu dilengkapi",
+      },
+    });
+    return { orderId: order.id, orderNumber: order.orderNumber, dibuat: true, nomor: pkr.nomor, customerId: customer.id, item: lahir };
+  }
 
   if (orderId) {
     await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId);
@@ -171,6 +228,11 @@ export async function lengkapiSpesifikasi(tx, { penjualanId, userId = null, masu
   const order = await tx.order.findUnique({ where: { id: pkr.orderCrm.id }, include: { units: { select: { id: true, status: true, currentStageId: true, unitCode: true } } } });
   if (order.status === "CANCELLED" || pkr.status !== "AKTIF") throw gagal("Order ini sudah dibatalkan — tidak bisa diubah", 409);
   const spek = normalisasiSpesifikasi(masukan);
+  const modeItem = (await tx.pkrOrderItem.count({ where: { orderId: order.id } })) > 0;
+  if (modeItem && [spek.merk, spek.ukuran, spek.perluDikirim, spek.kategori, spek.jumlahUnit].some((v) => v !== undefined)) {
+    throw gagal("Order ini memakai daftar item: ubah spesifikasi dan pilihan dikirim/diambil PER ITEM (bukan merk/ukuran di tingkat order)", 400, "SPEK_PER_ITEM");
+  }
+  if (!modeItem && spek.items !== undefined) throw gagal("Order ini order lama (tanpa daftar item). Ubah lewat isian merk/ukuran/dikirim biasa.", 409, "ORDER_TANPA_ITEM");
   const sebelumSpek = bacaSpesifikasiPkr(order);
   const unitMulai = order.units.filter((u) => u.currentStageId != null && u.status !== "CANCELLED");
   const data = {}; const perubahan = {};
@@ -194,6 +256,12 @@ export async function lengkapiSpesifikasi(tx, { penjualanId, userId = null, masu
     data.notes = notesBaru;
   }
 
+  let hasilItem = null;
+  if (modeItem && spek.items !== undefined) {
+    hasilItem = await ubahItemOrder(tx, { order, masukan: spek.items });
+    Object.assign(data, hasilItem.data);
+    if (hasilItem.perubahan.length) perubahan.item = hasilItem.perubahan;
+  }
   if (spek.perluDikirim !== undefined && spek.perluDikirim !== order.pkrPerluDikirim) {
     if (spek.perluDikirim === false) {
       const jobKirim = await tx.job.count({ where: { orderId: order.id, type: "DELIVERY" } });
@@ -213,7 +281,7 @@ export async function lengkapiSpesifikasi(tx, { penjualanId, userId = null, masu
   if (Object.keys(data).length === 0) throw gagal("Tidak ada perubahan yang dikirim", 400, "TANPA_PERUBAHAN");
 
   const diperbarui = await tx.order.update({ where: { id: order.id }, data });
-  if (data.notes !== undefined) {
+  if (data.notes !== undefined && !modeItem) {
     await sinkronUkuranUnit(tx, order.id, order.notes, data.notes);
     if (perubahan.merk) await tx.unit.updateMany({ where: { orderId: order.id, status: { not: "CANCELLED" }, OR: [{ merk: null }, { merk: perubahan.merk.sebelum ?? "" }] }, data: { merk: perubahan.merk.sesudah } });
   }
@@ -227,7 +295,7 @@ export async function lengkapiSpesifikasi(tx, { penjualanId, userId = null, masu
     }
   }
   // Order ditandai perlu dikirim padahal unit sudah siap kirim: buat kerangka job lewat jalur baku (idempoten).
-  if (perubahan.perluDikirim?.sesudah === true) await ensureDeliveryJobForOrder(tx, diperbarui);
+  if (perubahan.perluDikirim?.sesudah === true || hasilItem?.perluKirimBaru) await ensureDeliveryJobForOrder(tx, diperbarui);
   await catatAudit(tx, { pkr, orderId: order.id, userId, aksi: "dilengkapi", metadata: { perubahan, jobDisinkron, lengkapSesudah: bacaSpesifikasiPkr(diperbarui).lengkap } });
   return { orderId: order.id, perubahan, jobDisinkron, spesifikasi: bacaSpesifikasiPkr(diperbarui) };
 }
@@ -323,7 +391,7 @@ export async function ringkasOrderPkr(db, penjualanIds, { izinNominal = true } =
     include: {
       seller: { select: { id: true, name: true } },
       payments: { where: { cancelledAt: null }, select: { amount: true } },
-      orderCrm: { include: { units: { orderBy: { seq: "asc" }, select: { id: true, unitCode: true, status: true, currentStageId: true, merk: true, ukuran: true } }, jobs: { orderBy: { createdAt: "asc" }, select: { id: true, type: true, status: true } } } },
+      orderCrm: { include: { pkrItems: { orderBy: { seq: "asc" }, include: { units: { select: { unit: { select: { unitCode: true, status: true } } } } } }, units: { orderBy: { seq: "asc" }, select: { id: true, unitCode: true, status: true, currentStageId: true, merk: true, ukuran: true } }, jobs: { orderBy: { createdAt: "asc" }, select: { id: true, type: true, status: true } } } },
     },
   });
   const hasil = new Map();
@@ -337,9 +405,21 @@ export async function ringkasOrderPkr(db, penjualanIds, { izinNominal = true } =
     const o = p.orderCrm;
     if (!o) { hasil.set(p.id, { penjualanId: p.id, nomor: p.nomor, statusPkr: p.status, penjual: p.seller, pembeli: p.buyerName, pembayaran, order: null }); continue; }
     const spek = bacaSpesifikasiPkr(o);
+    const modeItem = o.pkrItems.length > 0;
+    const unitPerItem = (r) => r.units.map((x) => ({ kode: x.unit.unitCode, status: x.unit.status, label: LABEL_UNIT[x.unit.status] || x.unit.status }));
+    const bentukItem = (i, extra = {}) => ({
+      no: i.no, kategori: i.kategoriCode, kategoriNama: i.kategoriNama, bentuk: i.bentuk, jenisKerja: i.jenisKerja, produkId: i.produkId ?? null, produk: i.produkNama ?? null, jumlah: i.jumlah, ukuran: i.ukuranLabel || null,
+      panjang: i.panjang ?? null, lebar: i.lebar ?? null, tebal: i.tebal ?? null, tinggi: i.tinggi ?? null, spesifikasi: i.spesifikasi ?? null,
+      perluDikirim: i.perluDikirim ?? null, kirimLabel: i.perluDikirim === true ? "Dikirim" : i.perluDikirim === false ? "Diambil sendiri" : "Belum ditentukan", kurang: i.kurang ?? [], ...extra,
+    });
+    const items = modeItem
+      ? o.pkrItems.map((r) => bentukItem({ ...itemDariRow(r), kurang: (spek.items?.find((x) => x.no === r.seq)?.kurang) ?? [] }, { unit: unitPerItem(r), virtual: false }))
+      : itemVirtualLama({ kategori: o.category, merk: spek.merk, ukuran: spek.ukuran, jumlahUnit: o.units.filter((u) => u.status !== "CANCELLED").length, perluDikirim: o.pkrPerluDikirim })
+        .map((i) => bentukItem({ ...i, kurang: spek.kurang }, { unit: o.units.map((u) => ({ kode: u.unitCode, status: u.status, label: LABEL_UNIT[u.status] || u.status })), virtual: true }));
     hasil.set(p.id, {
       penjualanId: p.id, nomor: p.nomor, statusPkr: p.status, penjual: p.seller, pembeli: p.buyerName, pembayaran,
-      order: { id: o.id, nomor: o.orderNumber, status: o.status, statusLabel: LABEL_ORDER[o.status] || o.status, kategori: o.category, spesifikasi: spek },
+      order: { id: o.id, nomor: o.orderNumber, status: o.status, statusLabel: LABEL_ORDER[o.status] || o.status, kategori: o.category, spesifikasi: spek, modeItem },
+      items,
       units: o.units.map((u) => ({ id: u.id, kode: u.unitCode, status: u.status, label: LABEL_UNIT[u.status] || u.status, merk: u.merk, ukuran: u.ukuran })),
       produksi: statusProduksi(o, o.units, spek),
       delivery: statusDelivery(o, o.jobs, o.units),

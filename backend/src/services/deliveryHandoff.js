@@ -46,6 +46,11 @@ export async function suggestDeliveryJob(tx, unitId) {
   if (!unit) return;
   // Order Penjualan Karyawan: job pengiriman hanya bila memang perlu dikirim. Diambil sendiri / belum ditentukan = tidak ada job (tidak menggandakan atau membuat job yang tidak perlu).
   if (unit.order?.penjualanKaryawanId && unit.order.pkrPerluDikirim !== true) return;
+  // Order PKR multi-item: pilihan kirim PER ITEM. Unit milik item yang diambil sendiri / belum ditentukan tidak ikut job pengiriman; item yang dikirim bergabung ke job order yang SAMA.
+  if (unit.order?.penjualanKaryawanId) {
+    const tautan = await tx.pkrOrderItemUnit.findUnique({ where: { unitId }, select: { item: { select: { perluDikirim: true } } } });
+    if (tautan && tautan.item.perluDikirim !== true) return;
+  }
 
   // Jaring pengaman: unit ini sudah pernah dimasukkan ke job DELIVERY
   // mana pun sebelumnya (mis. QC rework yang membuat unit "ready" dua

@@ -58,7 +58,7 @@ test("pemasangan: API, Finance (kolom + tombol Buat/Tautkan + form), CRM Orders,
   assert.match(fin, /Buat\/Tautkan Order CRM/);
   assert.match(fin, /Lengkapi spesifikasi order/);
   assert.match(fin, /<TH width=\{210\}>Order CRM<\/TH>/);
-  assert.match(fin, /orderCrm: bodyOrderCrm\(f\.orderCrm\)/);
+  assert.match(fin, /orderCrm: bodyOrderCrmItem\(f\.orderCrm, katalog\)/, "form baru memakai daftar item multi-item (bodyOrderCrm lama tetap untuk order lama)");
   assert.match(fin, /data-testid="bagian-order-crm"/);
   assert.doesNotMatch(fin, /Tidak membuat order, produksi, atau pengiriman/, "teks lama (tanpa order) sudah diganti");
   const ord = baca("../src/pages/Orders.jsx");

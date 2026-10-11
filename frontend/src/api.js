@@ -1790,6 +1790,14 @@ export const api = {
   // Sinkronisasi Order CRM (PKR lama: dry-run + aksi eksplisit per dokumen; lengkapi spesifikasi/alamat). Order hanya dokumen operasional — tanpa uang.
   getPenjualanKaryawanOrderCrmDryRun: () => request("/finance/penjualan-karyawan/order-crm/dry-run"),
   buatOrderCrmPenjualanKaryawan: (id, spesifikasi, orderId) => request(`/finance/penjualan-karyawan/${id}/order-crm`, { method: "POST", body: JSON.stringify({ spesifikasi, ...(orderId && { orderId }) }) }),
+  // Katalog item produksi PKR (kategori/produk dikelola Admin) + pratinjau order multi-item
+  getPkrKatalogItem: () => request("/finance/penjualan-karyawan/katalog-item"),
+  getPkrKatalogKelola: () => request("/finance/penjualan-karyawan/katalog-item/kelola"),
+  pratinjauOrderCrmPkr: (data) => request("/finance/penjualan-karyawan/order-crm/pratinjau", { method: "POST", body: JSON.stringify(data) }),
+  buatKategoriPkr: (data) => request("/finance/penjualan-karyawan/katalog-item/kategori", { method: "POST", body: JSON.stringify(data) }),
+  ubahKategoriPkr: (id, data) => request(`/finance/penjualan-karyawan/katalog-item/kategori/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  buatProdukPkr: (data) => request("/finance/penjualan-karyawan/katalog-item/produk", { method: "POST", body: JSON.stringify(data) }),
+  ubahProdukPkr: (id, data) => request(`/finance/penjualan-karyawan/katalog-item/produk/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   lengkapiOrderCrmPenjualanKaryawan: (id, data) => request(`/finance/penjualan-karyawan/${id}/order-crm`, { method: "PUT", body: JSON.stringify(data) }),
   // Verifikasi penerimaan order yang ditandai LUNAS sales tanpa catatan pembayaran
   getFinanceLunasBelumDicatat: () => request("/finance/penerimaan/lunas-belum-dicatat"),

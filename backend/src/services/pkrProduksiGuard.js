@@ -6,6 +6,7 @@
 //
 // Modul ini sengaja kecil: hanya membaca order dan mengembalikan pesan; pemanggil melempar galat sesuai jenisnya (StageTransitionError, planError, rencanaError).
 import { bacaSpesifikasiPkr, PESAN_SPEK_BELUM_LENGKAP } from "../lib/domain/pkrSpesifikasi.js";
+import { bacaItemsDariNotes } from "../lib/domain/pkrItem.js";
 
 /** Kolom Order yang dibutuhkan untuk menilai kelengkapan + menampilkan rujukan PKR. Dipakai ulang oleh select bacaan (backlog, daftar, Unit 360). */
 export const PKR_ORDER_SELECT = Object.freeze({
@@ -25,6 +26,8 @@ export function rujukanPkrDariOrder(order) {
     pembeli: order.penjualanKaryawan?.buyerName ?? null, perluDikirim: spek.perluDikirim,
     kirimLabel: spek.perluDikirim === true ? "Dikirim" : spek.perluDikirim === false ? "Ambil sendiri" : "Belum ditentukan",
     lengkap: spek.lengkap, kurang: spek.kurang,
+    // Order multi-item: ringkasan item (dari cerminan Order.notes.pkrItems). null untuk order lama satu-spesifikasi.
+    items: (bacaItemsDariNotes(order.notes) || null)?.map((i) => ({ no: i.no, kategori: i.kategoriNama, produk: i.produkNama, jumlah: i.jumlah, ukuran: i.ukuranLabel || null, kirim: i.perluDikirim, kurang: i.kurang })) ?? null,
   };
 }
 

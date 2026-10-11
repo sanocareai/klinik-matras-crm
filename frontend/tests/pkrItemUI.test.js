@@ -1,0 +1,118 @@
+// Form item produksi Penjualan Karyawan (multi-item): logika murni + pemasangan di layar. Definisi kategori/bentuk datang dari SERVER (katalog) — tidak ada daftar di frontend.
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  itemBaru, orderCrmItemKosong, bentukItem, produkKategori, ubahKategoriItem, galatItems, bodyOrderCrmItem, formLengkapiDariSinkron, bodyLengkapiItem, galatLengkapiItem,
+  totalUnitItems, adaItemDikirim, ringkasItemsTeks, KIRIM_ITEM_OPSI,
+} from "../src/features/finance/pkrItemLogic.js";
+
+const dir = path.dirname(fileURLToPath(import.meta.url));
+const baca = (p) => fs.readFileSync(path.join(dir, p), "utf8");
+
+// Katalog seperti respons GET katalog-item (bentuk dikirim server).
+const dim = (key, label, wajib) => ({ key, label, satuan: "cm", wajib });
+const KATALOG = {
+  bentuk: {
+    KASUR: { label: "Kasur", produk: { label: "Produk / merk", wajib: true }, dimensi: [dim("panjang", "Panjang", true), dim("lebar", "Lebar", true), dim("tebal", "Tebal", true)], spesifikasi: { label: "Spesifikasi / catatan", keras: false } },
+    DIVAN: { label: "Divan / box", produk: { label: "Tipe divan", wajib: true }, dimensi: [dim("panjang", "Panjang", true), dim("lebar", "Lebar", true), dim("tinggi", "Tinggi", false)], spesifikasi: { label: "Spesifikasi / catatan", keras: false } },
+    SANDARAN: { label: "Sandaran", produk: { label: "Model", wajib: false }, dimensi: [dim("lebar", "Lebar", true), dim("tinggi", "Tinggi", true), dim("tebal", "Tebal", false)], spesifikasi: { label: "Spesifikasi / catatan", keras: false } },
+    CUSTOM: { label: "Produk custom", produk: { label: "Nama produk", wajib: false }, dimensi: [dim("panjang", "Panjang", false), dim("lebar", "Lebar", false)], spesifikasi: { label: "Spesifikasi produk custom", keras: true } },
+  },
+  kategori: [
+    { id: "k1", kode: "KASUR_BARU", nama: "Kasur Baru", bentuk: "KASUR", jenisKerja: "BARU", aktif: true, produk: [{ id: "p1", kode: "PRD_A", nama: "Matras Custom T20" }] },
+    { id: "k2", kode: "DIVAN_BOX", nama: "Divan/Box", bentuk: "DIVAN", jenisKerja: "BARU", aktif: true, produk: [] },
+    { id: "k3", kode: "SANDARAN", nama: "Sandaran/Headboard", bentuk: "SANDARAN", jenisKerja: "BARU", aktif: true, produk: [] },
+    { id: "k4", kode: "CUSTOM_LAINNYA", nama: "Produk Custom Lainnya", bentuk: "CUSTOM", jenisKerja: "BARU", aktif: true, produk: [] },
+  ],
+};
+
+test("field kontekstual mengikuti bentuk dari server; ganti kategori mengosongkan field yang tidak dipakai dan mereset produk", () => {
+  const k = { ...itemBaru("KASUR_BARU"), produkId: "p1", panjang: "200", lebar: "160", tebal: "20" };
+  assert.deepEqual(bentukItem(KATALOG, k).dimensi.map((d) => d.key), ["panjang", "lebar", "tebal"]);
+  assert.deepEqual(produkKategori(KATALOG, k).map((p) => p.nama), ["Matras Custom T20"]);
+  const jadiSandaran = ubahKategoriItem(KATALOG, k, "SANDARAN");
+  assert.equal(jadiSandaran.kategori, "SANDARAN");
+  assert.equal(jadiSandaran.produkId, ""); assert.equal(jadiSandaran.panjang, "", "panjang tidak dipakai sandaran"); assert.equal(jadiSandaran.lebar, "160", "lebar tetap relevan");
+  assert.deepEqual(bentukItem(KATALOG, itemBaru("")), null);
+});
+
+test("body pembuatan: hanya field relevan; alamat hanya bila ada item yang dikirim; kategori & jumlah ikut", () => {
+  const f = {
+    ...orderCrmItemKosong(), alamat: " Jl. Mawar 5 ", kota: "Bekasi", tanggalKirim: "",
+    items: [
+      { ...itemBaru("KASUR_BARU"), produkNama: "Kasur Sano", jumlah: "2", panjang: "200", lebar: "160,5", tebal: "20", tinggi: "99", kirim: "ya", spesifikasi: " pegas " },
+      { ...itemBaru("SANDARAN"), lebar: "160", tinggi: "120", kirim: "tidak" },
+    ],
+  };
+  const b = bodyOrderCrmItem(f, KATALOG);
+  assert.deepEqual(b.items[0], { kategori: "KASUR_BARU", jumlah: 2, produkNama: "Kasur Sano", panjang: "200", lebar: "160.5", tebal: "20", spesifikasi: "pegas", perluDikirim: true }, "tinggi dibuang (bukan field kasur)");
+  assert.deepEqual(b.items[1], { kategori: "SANDARAN", jumlah: 1, lebar: "160", tinggi: "120", perluDikirim: false });
+  assert.equal(b.alamat, "Jl. Mawar 5"); assert.equal(b.kota, "Bekasi");
+  const semuaAmbil = bodyOrderCrmItem({ ...f, items: f.items.map((i) => ({ ...i, kirim: "tidak" })) }, KATALOG);
+  assert.equal(semuaAmbil.alamat, undefined, "tanpa item dikirim = tanpa alamat");
+  const belum = bodyOrderCrmItem({ ...f, items: [itemBaru("KASUR_BARU")] }, KATALOG);
+  assert.deepEqual(belum.items[0], { kategori: "KASUR_BARU", jumlah: 1 }, "belum ditentukan = tanpa perluDikirim (server menilai 'Perlu dilengkapi')");
+});
+
+test("galat ringan: kategori, jumlah 1–20, angka cm, total unit, custom wajib spesifikasi; kekurangan data bukan galat", () => {
+  assert.match(galatItems([], KATALOG), /minimal satu item/);
+  assert.match(galatItems([itemBaru("")], KATALOG), /Item 1: pilih kategori/);
+  assert.match(galatItems([{ ...itemBaru("KASUR_BARU"), jumlah: "0" }], KATALOG), /1–20/);
+  assert.match(galatItems([{ ...itemBaru("KASUR_BARU"), jumlah: "1.5" }], KATALOG), /1–20/);
+  assert.match(galatItems([{ ...itemBaru("KASUR_BARU"), panjang: "abc" }], KATALOG), /Panjang harus berupa angka dalam cm/);
+  assert.match(galatItems([{ ...itemBaru("KASUR_BARU"), jumlah: "20" }, { ...itemBaru("SANDARAN"), jumlah: "1" }], KATALOG), /melebihi batas 20/);
+  assert.match(galatItems([itemBaru("CUSTOM_LAINNYA")], KATALOG), /wajib diisi spesifikasi/);
+  assert.equal(galatItems([{ ...itemBaru("CUSTOM_LAINNYA"), spesifikasi: "Sofa bed lipat 3 posisi" }], KATALOG), null);
+  assert.equal(galatItems([itemBaru("KASUR_BARU"), itemBaru("DIVAN_BOX")], KATALOG), null, "kosong tapi sah: order 'Perlu dilengkapi'");
+  assert.equal(totalUnitItems([{ jumlah: "2" }, { jumlah: "3" }]), 5);
+  assert.equal(adaItemDikirim([{ kirim: "" }, { kirim: "ya" }]), true);
+  assert.deepEqual(KIRIM_ITEM_OPSI.map((o) => o.label), ["— belum ditentukan —", "Dikirim", "Diambil sendiri"]);
+});
+
+test("lengkapi: form dari ringkasan server (kategori & jumlah terkunci), body per nomor item tanpa kategori/jumlah, kolom dikosongkan dikirim kosong", () => {
+  const sinkron = {
+    order: { modeItem: true, spesifikasi: { alamat: "Jl. A", kota: "Bekasi" } },
+    items: [
+      { no: 1, kategori: "KASUR_BARU", kategoriNama: "Kasur Baru", jumlah: 2, produkId: "p1", produk: "Matras Custom T20", panjang: 200, lebar: 160, tebal: null, tinggi: null, spesifikasi: "pegas", perluDikirim: true, unit: [{ status: "RECEIVED" }] },
+      { no: 2, kategori: "DIVAN_BOX", kategoriNama: "Divan/Box", jumlah: 1, produkId: null, produk: "Divan Laci", panjang: 200, lebar: 160, tebal: null, tinggi: null, spesifikasi: null, perluDikirim: null, unit: [{ status: "IN_PRODUCTION" }] },
+    ],
+  };
+  const f = formLengkapiDariSinkron(sinkron);
+  assert.deepEqual(f.items.map((i) => [i.no, i.kategori, i.jumlah, i.kirim, i.unitTerkunci]), [[1, "KASUR_BARU", "2", "ya", false], [2, "DIVAN_BOX", "1", "", true]]);
+  assert.equal(f.alamat, "Jl. A");
+  const ubah = { ...f, items: [{ ...f.items[0], tebal: "20", spesifikasi: "" }, f.items[1]] };
+  const b = bodyLengkapiItem(ubah, KATALOG);
+  assert.deepEqual(b.items[0], { no: 1, spesifikasi: "", produkId: "p1", panjang: "200", lebar: "160", tebal: "20", perluDikirim: true });
+  assert.equal("kategori" in b.items[0], false); assert.equal("jumlah" in b.items[0], false);
+  assert.deepEqual(b.items[1], { no: 2, spesifikasi: "", produkId: "", produkNama: "Divan Laci", panjang: "200", lebar: "160", tinggi: "", perluDikirim: null });
+  assert.equal(galatLengkapiItem(ubah, KATALOG), null);
+  assert.match(galatLengkapiItem({ items: [{ ...f.items[0], panjang: "x" }] }, KATALOG), /Item 1: Panjang/);
+  assert.equal(ringkasItemsTeks([{ produk: "Kasur Sano", jumlah: 2 }, { kategoriNama: "Divan/Box", jumlah: 1 }]), "Kasur Sano ×2 · Divan/Box");
+});
+
+test("pemasangan: halaman PKR memakai daftar item + langkah pratinjau; katalog dibaca dari server; tab Admin; rujukan Produksi memuat item", () => {
+  const fin = baca("../src/pages/finance/FinancePenjualanKaryawan.jsx");
+  assert.match(fin, /Order untuk Produksi dan Delivery/);
+  assert.match(fin, /<FormItemProduksi katalog=\{katalog\}/);
+  assert.match(fin, /orderCrm: bodyOrderCrmItem\(f\.orderCrm, katalog\)/);
+  assert.match(fin, /api\.pratinjauOrderCrmPkr\(/);
+  assert.match(fin, /data-testid="tinjau-order"/);
+  assert.match(fin, /<PratinjauOrderPkr data=\{pra\} \/>/);
+  assert.match(fin, /disabled=\{!valid \|\| !pra\?\.valid\}/, "Catat Penjualan hanya setelah pratinjau valid");
+  const form = baca("../src/features/finance/PkrItemForm.jsx");
+  assert.match(form, /Tambah Item Produksi/);
+  assert.match(form, /katalog\.bentuk|bentukItem\(katalog/);
+  assert.doesNotMatch(form, /KASUR_BARU|DIVAN_BOX|SANDARAN|SET_LENGKAP/, "tidak ada daftar kategori hardcoded di komponen");
+  const logic = baca("../src/features/finance/pkrItemLogic.js");
+  assert.doesNotMatch(logic.replace(/\/\/.*$/gm, ""), /"KASUR_BARU"|"DIVAN_BOX"/, "logika tidak memuat kode kategori");
+  const api = baca("../src/api.js");
+  for (const fn of ["getPkrKatalogItem", "getPkrKatalogKelola", "pratinjauOrderCrmPkr", "buatKategoriPkr", "ubahKategoriPkr", "buatProdukPkr", "ubahProdukPkr"]) assert.match(api, new RegExp(`${fn}:`));
+  assert.match(api, /penjualan-karyawan\/order-crm\/pratinjau/);
+  const set = baca("../src/pages/bengkel/ProductionSettings.jsx");
+  assert.match(set, /"katalog-item": \(\) => <PkrKatalogItem \/>/);
+  assert.match(baca("../src/features/production/PkrRujukan.jsx"), /data-testid="pkr-item"/);
+  assert.match(baca("../src/features/finance/PkrOrderCrm.jsx"), /Kembali ubah/);
+});

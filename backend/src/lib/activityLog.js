@@ -47,6 +47,7 @@ export const ENTITY_TYPES = Object.freeze({
   FIN_PURCHASE: "fin_purchase",
   FIN_KASBON: "fin_kasbon",
   FIN_PENJUALAN_KARYAWAN: "fin_penjualan_karyawan",
+  PKR_KATALOG: "pkr_katalog", // katalog item produksi Penjualan Karyawan (kategori/produk, dikelola Admin)
   FIN_UANG_MUKA: "fin_uang_muka",
   // Pembayaran pelanggan (Finance Mobile S5): verifikasi & penolakan Payment.
   PAYMENT: "payment",
@@ -158,6 +159,7 @@ export const EVENT_TYPES = Object.freeze({
   // Penjualan Karyawan (1 Okt 2026): penanda karyawan non-Sales yang menjual sebuah order diubah (metadata: before/to = nama karyawan).
   PENJUALAN_KARYAWAN_DIUBAH: "PENJUALAN_KARYAWAN_DIUBAH",
   BANK_REKON_V2: "BANK_REKON_V2", // metadata.aksi: impor | impor_dibatalkan | cocok | cocok_dibatalkan | dikecualikan | opname | periode_selesai | periode_dibatalkan — services/finance/bankRekon/
+  PKR_KATALOG_DIUBAH: "PKR_KATALOG_DIUBAH", // kategori/produk katalog item PKR dibuat/diubah/dinonaktifkan — services/penjualanKaryawanItem.js
   PKR_ORDER_SINKRON: "PKR_ORDER_SINKRON", // Penjualan Karyawan ↔ Order CRM: dibuat/ditautkan/dilengkapi/dibatalkan — services/penjualanKaryawanOrder.js
   PAIDAT_PENGECUALIAN: "PAIDAT_PENGECUALIAN", // pengecualian tanggal lunas (Order.paidAt) dibuat/dicabut oleh Owner — services/pengecualianPaidAt.js
   // Custody unit Gudang V2 (P1–P2): serah-terima Delivery <-> Gudang. Detail (unit, arah, lokasi, alasan) ada di metadata.
@@ -540,6 +542,16 @@ export function formatActivitySentence(event) {
         case "periode_selesai": return `Periode rekonsiliasi diselesaikan (${metadata.periode ?? ""})`;
         case "periode_dibatalkan": return `Periode rekonsiliasi dinyatakan tidak berlaku${alasan}`;
         default: return "Aktivitas rekonsiliasi bank";
+      }
+    }
+    case EVENT_TYPES.PKR_KATALOG_DIUBAH: {
+      const m = metadata || {};
+      switch (m.aksi) {
+        case "kategori_dibuat": return `Kategori item PKR dibuat: ${m.nama ?? m.kode ?? ""}`;
+        case "kategori_diubah": return `Kategori item PKR ${m.kode ?? ""} diubah${m.sesudah?.aktif === false ? " (dinonaktifkan)" : ""}`;
+        case "produk_dibuat": return `Produk item PKR dibuat: ${m.nama ?? m.kode ?? ""}`;
+        case "produk_diubah": return `Produk item PKR ${m.kode ?? ""} diubah${m.sesudah?.aktif === false ? " (dinonaktifkan)" : ""}`;
+        default: return "Katalog item Penjualan Karyawan diubah";
       }
     }
     case EVENT_TYPES.PKR_ORDER_SINKRON: {

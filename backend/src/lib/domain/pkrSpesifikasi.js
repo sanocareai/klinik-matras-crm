@@ -5,6 +5,10 @@
 // bila Sales/Finance mengubah merk/ukuran/alamat lewat jalur mana pun, hasilnya langsung ikut.
 //
 // Lengkap bila: merk kasur terisi, ukuran terisi, sudah ditentukan perlu dikirim atau diambil sendiri, dan bila perlu dikirim maka alamat pengiriman terisi.
+// ORDER MULTI-ITEM (Order.notes.pkrItems, lib/domain/pkrItem.js): lengkap bila SETIAP item lengkap menurut bentuknya (kasur: P×L×T; divan: ukuran + tipe; sandaran: lebar × tinggi;
+// custom: spesifikasi) dan sudah ditentukan dikirim/diambil, serta alamat terisi bila ada item yang dikirim. Order lama (tanpa pkrItems) memakai aturan di atas, TIDAK berubah.
+
+import { bacaItemsDariNotes, kelengkapanItems } from "./pkrItem.js";
 
 function teksAtauNull(v) {
   if (typeof v !== "string") return null;
@@ -29,10 +33,19 @@ export function bacaNotesOrder(notes) {
  */
 export function bacaSpesifikasiPkr(order) {
   const info = bacaNotesOrder(order?.notes);
-  const merk = teksAtauNull(info.merkKasur);
-  const ukuran = teksAtauNull(info.ukuranKasur);
   const alamat = teksAtauNull(order?.deliveryAddress);
   const kota = teksAtauNull(order?.deliveryCity);
+  const items = bacaItemsDariNotes(order?.notes);
+  if (items) {
+    const k = kelengkapanItems(items, { alamat });
+    const ringkas = (f) => items.map((i) => f(i)).filter(Boolean).join("; ") || null;
+    return {
+      lengkap: k.lengkap, kurang: k.kurang, merk: ringkas((i) => `${i.produkNama || i.kategoriNama}${i.jumlah > 1 ? ` ×${i.jumlah}` : ""}`),
+      ukuran: ringkas((i) => i.ukuranLabel), perluDikirim: k.perluDikirim, alamat, kota, items,
+    };
+  }
+  const merk = teksAtauNull(info.merkKasur);
+  const ukuran = teksAtauNull(info.ukuranKasur);
   const perluDikirim = order?.pkrPerluDikirim ?? null;
   const kurang = [];
   if (!merk) kurang.push("Merk kasur");

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { api } from "@/api.js";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -9,6 +10,24 @@ import {
   KATEGORI_PKR_OPSI, KIRIM_OPSI, orderCrmKosong, orderCrmDariSinkron, galatOrderCrm, bodyOrderCrm,
   VARIAN_PRODUKSI, varianDelivery, VARIAN_BAYAR_PKR, teksKurang,
 } from "@/features/finance/pkrOrderCrmLogic.js";
+import {
+  orderCrmItemKosong, bodyOrderCrmItem, galatItems, formLengkapiDariSinkron, bodyLengkapiItem, galatLengkapiItem, ringkasItemsTeks,
+} from "@/features/finance/pkrItemLogic.js";
+import { FormItemProduksi } from "@/features/finance/PkrItemForm.jsx";
+import { PratinjauOrderPkr } from "@/features/finance/PkrPratinjau.jsx";
+
+/** Katalog item produksi (kategori/produk aktif + definisi bentuk) dari server. Dimuat saat `aktif`. */
+export function useKatalogPkr(aktif) {
+  const [s, setS] = useState({ katalog: null, memuat: false, galat: "" });
+  useEffect(() => {
+    if (!aktif) return undefined;
+    let batal = false;
+    setS((x) => ({ ...x, memuat: true, galat: "" }));
+    api.getPkrKatalogItem().then((k) => { if (!batal) setS({ katalog: k, memuat: false, galat: "" }); }).catch((e) => { if (!batal) setS({ katalog: null, memuat: false, galat: e.message || "Gagal memuat katalog item" }); });
+    return () => { batal = true; };
+  }, [aktif]);
+  return s;
+}
 
 // Sinkronisasi Penjualan Karyawan -> Order CRM (Okt 2026). Order CRM hanya DOKUMEN OPERASIONAL (unit produksi + pengiriman). Nominal, pembayaran, piutang, dan jurnal tetap di Penjualan Karyawan.
 
@@ -21,6 +40,7 @@ export function RingkasOrderCrm({ sinkron, className = "" }) {
   return (
     <div className={`min-w-0 space-y-1 ${className}`} data-testid="order-crm-ringkas">
       <div className="truncate font-mono text-[11.5px] font-semibold text-ink">{o.nomor || "—"}</div>
+      {o.modeItem && sinkron.items?.length > 0 && <div className="whitespace-normal text-[11.5px] text-ink2" data-testid="order-crm-item">{ringkasItemsTeks(sinkron.items)}</div>}
       <div className="flex flex-wrap gap-1">
         <Badge variant={VARIAN_PRODUKSI[sinkron.produksi?.kode] || "neutral"} title={teksKurang(sinkron) || undefined}>Produksi: {sinkron.produksi?.label}</Badge>
         <Badge variant={varianDelivery(sinkron.delivery?.kode)}>Delivery: {sinkron.delivery?.label}</Badge>
@@ -64,39 +84,65 @@ export function FormOrderCrm({ nilai, onChange, baru = true, terkunciSpek = fals
   );
 }
 
-/** Modal "Buat/Tautkan Order CRM" (PKR lama) dan "Lengkapi spesifikasi". onSubmit(body) → Promise. */
+/**
+ * Modal "Buat/Tautkan Order CRM" (PKR lama) dan "Lengkapi spesifikasi". onSubmit(body) → Promise.
+ * Order multi-item (sinkron.order.modeItem): lengkapi per item (kategori & jumlah terkunci). Order lama satu-spesifikasi: form lama. Membuat order baru selalu memakai daftar item,
+ * dengan langkah PRATINJAU server sebelum "Buat Order CRM".
+ */
 export function ModalOrderCrm({ penjualan, mode, onClose, onSubmit }) {
   const lengkapi = mode === "lengkapi";
-  const [f, setF] = useState(orderCrmKosong);
+  const modeItem = !!penjualan?.sinkron?.order?.modeItem;
+  const pakaiItem = !lengkapi || modeItem;
+  const { katalog, memuat, galat: galatKatalog } = useKatalogPkr(!!penjualan && pakaiItem);
+  const [f, setF] = useState(orderCrmKosong); // form lama (order satu-spesifikasi)
+  const [fi, setFi] = useState(orderCrmItemKosong);
+  const [langkah, setLangkah] = useState("isi");
+  const [pra, setPra] = useState(null);
   const [galat, setGalat] = useState("");
-  useEffect(() => { if (penjualan) { setF(lengkapi ? orderCrmDariSinkron(penjualan.sinkron) : orderCrmKosong()); setGalat(""); } }, [penjualan, lengkapi]);
+  useEffect(() => {
+    if (!penjualan) return;
+    setF(lengkapi ? orderCrmDariSinkron(penjualan.sinkron) : orderCrmKosong());
+    setFi(lengkapi && modeItem ? formLengkapiDariSinkron(penjualan.sinkron) : orderCrmItemKosong());
+    setLangkah("isi"); setPra(null); setGalat("");
+  }, [penjualan, lengkapi, modeItem]);
   if (!penjualan) return null;
-  const terkunci = lengkapi && (penjualan.sinkron?.units || []).some((u) => !["AWAITING_PICKUP", "RECEIVED", "CANCELLED"].includes(u.status));
-  const g = galatOrderCrm(f, { baru: !lengkapi });
-  async function kirim() {
+  const terkunci = lengkapi && !modeItem && (penjualan.sinkron?.units || []).some((u) => !["AWAITING_PICKUP", "RECEIVED", "CANCELLED"].includes(u.status));
+  const g = !pakaiItem ? galatOrderCrm(f, { baru: false }) : lengkapi ? galatLengkapiItem(fi, katalog) : galatItems(fi.items, katalog);
+  const tinjau = pakaiItem && !lengkapi;
+  async function lanjut() {
     setGalat("");
-    try { await onSubmit(bodyOrderCrm(f, { baru: !lengkapi })); } catch (e) { setGalat(e.message || "Gagal menyimpan"); }
+    try {
+      if (!pakaiItem) await onSubmit(bodyOrderCrm(f, { baru: false }));
+      else if (lengkapi) await onSubmit(bodyLengkapiItem(fi, katalog));
+      else if (langkah === "isi") { setPra(await api.pratinjauOrderCrmPkr({ penjualanId: penjualan.id, orderCrm: bodyOrderCrmItem(fi, katalog) })); setLangkah("tinjau"); }
+      else await onSubmit(bodyOrderCrmItem(fi, katalog));
+    } catch (e) { setGalat(e.message || "Gagal menyimpan"); }
   }
+  const judulTombol = lengkapi ? "Simpan Spesifikasi" : langkah === "isi" ? "Tinjau Order" : "Buat Order CRM";
   return (
     <Modal
       open onOpenChange={(v) => !v && onClose()}
-      title={lengkapi ? `Lengkapi spesifikasi — ${penjualan.nomor}` : `Buat Order CRM — ${penjualan.nomor}`}
+      title={lengkapi ? `Lengkapi spesifikasi — ${penjualan.nomor}` : langkah === "tinjau" ? `Tinjau Order CRM — ${penjualan.nomor}` : `Buat Order CRM — ${penjualan.nomor}`}
       description={lengkapi
         ? "Perubahan alamat disinkronkan ke job yang belum selesai. Tercatat di riwayat."
-        : "Membuat SATU order operasional + unit produksi untuk penjualan ini. Tidak ada pembayaran, invoice, atau jurnal baru."}
-      className="w-[620px]"
+        : "Membuat SATU order operasional + unit produksi per item untuk penjualan ini. Tidak ada pembayaran, invoice, atau jurnal baru."}
+      className="w-[720px]"
       footer={(
         <div className="flex w-full flex-col gap-2">
-          {(galat || g) && <p role="alert" className="rounded-lg bg-orangebg px-3 py-2 text-[12.5px] text-orange">{galat || g}</p>}
+          {(galat || (langkah === "isi" && g)) && <p role="alert" className="rounded-lg bg-orangebg px-3 py-2 text-[12.5px] text-orange">{galat || g}</p>}
           <div className="flex justify-end gap-2">
-            <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
-            <TombolAksi disabled={!!g} onClick={kirim}>{lengkapi ? "Simpan Spesifikasi" : "Buat Order CRM"}</TombolAksi>
+            {tinjau && langkah === "tinjau"
+              ? <Button variant="neutral" onClick={() => { setLangkah("isi"); setGalat(""); }} className="max-sm:min-h-11 max-sm:px-4">Kembali ubah</Button>
+              : <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>}
+            <TombolAksi disabled={tinjau && langkah === "tinjau" ? !pra?.valid || !!pra?.sudahAdaOrder : !!g || (pakaiItem && (memuat || !katalog))} onClick={lanjut} data-testid="aksi-order-crm">{judulTombol}</TombolAksi>
           </div>
         </div>
       )}
     >
-      <FormOrderCrm nilai={f} onChange={setF} baru={!lengkapi} terkunciSpek={terkunci} />
-      {!lengkapi && <p className="mt-3 text-[12px] text-ink3">Boleh dikosongkan dulu. Order tetap dibuat dengan status “Perlu dilengkapi” dan Produksi belum bisa memulai sampai merk, ukuran, dan pilihan kirim terisi.</p>}
+      {!pakaiItem && <FormOrderCrm nilai={f} onChange={setF} baru={false} terkunciSpek={terkunci} />}
+      {pakaiItem && langkah === "isi" && <FormItemProduksi katalog={katalog} nilai={fi} onChange={setFi} mode={lengkapi ? "lengkapi" : "baru"} memuat={memuat} galatMuat={galatKatalog} />}
+      {tinjau && langkah === "tinjau" && <PratinjauOrderPkr data={pra} />}
+      {!lengkapi && langkah === "isi" && <p className="mt-3 text-[12px] text-ink3">Boleh dikosongkan dulu. Order tetap dibuat dengan status “Perlu dilengkapi” dan Produksi belum bisa memulai sampai data tiap item dan pilihan kirim terisi.</p>}
     </Modal>
   );
 }

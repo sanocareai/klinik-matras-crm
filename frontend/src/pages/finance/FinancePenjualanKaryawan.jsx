@@ -24,8 +24,11 @@ import { specPenjualanKaryawan } from "@/features/finance/detailSpecs.js";
 import { adminSaatIni } from "@/features/finance/aksiMenu.jsx";
 import { totalItems, normalisasiJumlah, metodeButuhRekening, LABEL_METODE_PJK } from "@/features/finance/penjualanKaryawanLogic.js";
 import { resetSaatBuka } from "@/features/finance/resetSaatBuka.jsx";
-import { RingkasOrderCrm, FormOrderCrm, ModalOrderCrm } from "@/features/finance/PkrOrderCrm.jsx";
-import { orderCrmKosong, bodyOrderCrm, galatOrderCrm, aksiOrderCrm } from "@/features/finance/pkrOrderCrmLogic.js";
+import { RingkasOrderCrm, ModalOrderCrm, useKatalogPkr } from "@/features/finance/PkrOrderCrm.jsx";
+import { aksiOrderCrm } from "@/features/finance/pkrOrderCrmLogic.js";
+import { orderCrmItemKosong, bodyOrderCrmItem, galatItems } from "@/features/finance/pkrItemLogic.js";
+import { FormItemProduksi } from "@/features/finance/PkrItemForm.jsx";
+import { PratinjauOrderPkr } from "@/features/finance/PkrPratinjau.jsx";
 
 // PENJUALAN KARYAWAN — dicatat MANUAL oleh Finance. Karyawan non-Sales menjual ke kerabat. Sejak sinkronisasi Order CRM (Okt 2026), setiap penjualan otomatis melahirkan SATU order operasional
 // (unit produksi + pengiriman); order itu TIDAK membawa uang — nominal, piutang, dan jurnal tetap di sini.
@@ -350,8 +353,12 @@ function BarisBayar({ b, onChange, rek, st, muat, onHapus, cutoff }) {
 }
 
 function ModalPenjualanBaruIsi({ open, onClose, aksi, cutoff }) {
-  const kosong = () => ({ date: hariIniISO(), sellerId: "", buyerName: "", notes: "", items: [{ name: "", quantity: 1, unitPrice: "" }], pembayaran: [], orderCrm: orderCrmKosong() });
+  const kosong = () => ({ date: hariIniISO(), sellerId: "", buyerName: "", notes: "", items: [{ name: "", quantity: 1, unitPrice: "" }], pembayaran: [], orderCrm: orderCrmItemKosong() });
   const [f, setF] = useState(kosong);
+  const [langkah, setLangkah] = useState("isi"); // "isi" -> "tinjau" (pratinjau server order produksi) -> catat
+  const [pra, setPra] = useState(null);
+  const [galatPra, setGalatPra] = useState("");
+  const { katalog, memuat: memuatKatalog, galat: galatKatalog } = useKatalogPkr(open);
   const [karyawan, setKaryawan] = useState([]);
   const [galatKar, setGalatKar] = useState(null);
   const { rek, st, muat } = useRekening(open);
@@ -360,6 +367,7 @@ function ModalPenjualanBaruIsi({ open, onClose, aksi, cutoff }) {
   useEffect(() => {
     if (!open) return;
     setF(kosong());
+    setLangkah("isi"); setPra(null); setGalatPra("");
     setGalatKar(null);
     api.getKaryawanPenjualanKaryawan().then((r) => setKaryawan(r.karyawan || [])).catch((e) => setGalatKar(e.message || "Gagal memuat daftar karyawan"));
   }, [open]);
@@ -368,7 +376,13 @@ function ModalPenjualanBaruIsi({ open, onClose, aksi, cutoff }) {
   const bayarTotal = f.pembayaran.reduce((a, b) => a + (Number(b.amount) || 0), 0);
   const itemsValid = f.items.length > 0 && f.items.every((i) => i.name.trim() && normalisasiJumlah(i.quantity) !== null && Number(i.unitPrice) > 0);
   const bayarValid = f.pembayaran.every((b) => Number(b.amount) > 0 && (!rekeningWajib(b, cutoff) || b.cashAccountId));
-  const valid = f.sellerId && f.buyerName.trim().length >= 2 && itemsValid && bayarValid && bayarTotal <= total && !galatOrderCrm(f.orderCrm);
+  const galatItem = galatItems(f.orderCrm.items, katalog);
+  const valid = f.sellerId && f.buyerName.trim().length >= 2 && itemsValid && bayarValid && bayarTotal <= total && !galatItem && !!katalog;
+  async function tinjau() {
+    setGalatPra("");
+    try { setPra(await api.pratinjauOrderCrmPkr({ orderCrm: bodyOrderCrmItem(f.orderCrm, katalog) })); setLangkah("tinjau"); }
+    catch (e) { setGalatPra(e.message || "Gagal membuat pratinjau"); }
+  }
   const setItem = (i, patch) => set("items", f.items.map((it, n) => (n === i ? { ...it, ...patch } : it)));
 
   return (
@@ -379,20 +393,32 @@ function ModalPenjualanBaruIsi({ open, onClose, aksi, cutoff }) {
       className="w-[680px]"
       footer={(
         <>
-          <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
-          <TombolAksi
-            disabled={!valid}
+          {(galatPra || (langkah === "isi" && galatItem)) && <p role="alert" className="mr-auto rounded-lg bg-orangebg px-3 py-2 text-[12.5px] text-orange" data-testid="galat-item">{galatPra || galatItem}</p>}
+          {langkah === "tinjau"
+            ? <Button variant="neutral" onClick={() => setLangkah("isi")} className="max-sm:min-h-11 max-sm:px-4">Kembali ubah</Button>
+            : <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>}
+          {langkah === "isi" && <TombolAksi disabled={!valid} onClick={tinjau} data-testid="tinjau-order">Tinjau Order</TombolAksi>}
+          {langkah === "tinjau" && <TombolAksi
+            disabled={!valid || !pra?.valid}
             onClick={() => aksi(() => api.createPenjualanKaryawan({
               date: f.date, sellerId: f.sellerId, buyerName: f.buyerName.trim(), notes: f.notes.trim() || undefined,
               items: f.items.map((i) => ({ name: i.name.trim(), quantity: normalisasiJumlah(i.quantity), unitPrice: Number(i.unitPrice) })), // jumlah dikirim sebagai teks bertitik ("1.6")
               pembayaran: f.pembayaran.map(bodyBayar),
-              orderCrm: bodyOrderCrm(f.orderCrm),
+              orderCrm: bodyOrderCrmItem(f.orderCrm, katalog),
             }))}
-          >Catat Penjualan</TombolAksi>
+          >Catat Penjualan</TombolAksi>}
         </>
       )}
     >
-      <div className="space-y-4">
+      {langkah === "tinjau" && (
+        <div className="space-y-3" data-testid="langkah-tinjau">
+          <div className="rounded-lg bg-inset px-3 py-2 text-[12.5px] text-ink2">
+            <strong className="text-ink">{f.buyerName.trim()}</strong> · {formatUang(total)} · {f.items.length} baris tagihan. Periksa order produksi di bawah, lalu catat.
+          </div>
+          <PratinjauOrderPkr data={pra} />
+        </div>
+      )}
+      <div className={cn("space-y-4", langkah === "tinjau" && "hidden")}>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Tanggal penjualan"><DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.date} onChange={(v) => set("date", v)} /></Field>
           <Field label="Karyawan penjual" required hint={galatKar ? undefined : "Akun aktif non-Sales; dialah yang menanggung tagihannya"}>
@@ -444,8 +470,8 @@ function ModalPenjualanBaruIsi({ open, onClose, aksi, cutoff }) {
 
         <div className="space-y-2 rounded-lg bg-inset p-3" data-testid="bagian-order-crm">
           <p className="text-[13px] font-semibold text-ink">Order untuk Produksi dan Delivery</p>
-          <p className="text-[12px] text-ink3">Boleh dikosongkan dulu. Order tetap dibuat dan berstatus “Perlu dilengkapi”; Produksi baru bisa mulai setelah merk, ukuran, dan pilihan kirim terisi.</p>
-          <FormOrderCrm nilai={f.orderCrm} onChange={(v) => set("orderCrm", v)} baru />
+          <p className="text-[12px] text-ink3">Satu penjualan bisa berisi beberapa item (mis. kasur + divan + sandaran) — semuanya satu order dan satu PKR. Boleh dikosongkan dulu: order tetap dibuat “Perlu dilengkapi”; Produksi baru bisa mulai setelah data tiap item dan pilihan kirim terisi.</p>
+          <FormItemProduksi katalog={katalog} nilai={f.orderCrm} onChange={(v) => set("orderCrm", v)} mode="baru" memuat={memuatKatalog} galatMuat={galatKatalog} />
         </div>
 
         <Field label="Catatan"><Input value={f.notes} onChange={(e) => set("notes", e.target.value)} /></Field>

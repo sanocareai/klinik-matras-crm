@@ -30,6 +30,7 @@ import { pastikanKaryawanNonSales } from "../services/penjualanKaryawan.js";
 import { handleFinanceError } from "./finance.js";
 import { lockRowForUpdate } from "../services/inventoryLedger.js";
 import { buatAtauTautkanOrder, lengkapiSpesifikasi, batalkanOrderBersamaPkr, rapikanAgregatCustomer, ringkasOrderPkr, dryRunPkrTanpaOrder } from "../services/penjualanKaryawanOrder.js";
+import { muatKatalogItem, pratinjauItems, buatKategori, ubahKategori, buatProduk, ubahProduk } from "../services/penjualanKaryawanItem.js";
 
 export const financePenjualanKaryawanRouter = express.Router();
 const BASE = "/penjualan-karyawan";
@@ -117,6 +118,40 @@ financePenjualanKaryawanRouter.get(`${BASE}/order-crm/dry-run`, requirePermissio
   try {
     const daftar = await dryRunPkrTanpaOrder(prisma);
     res.json({ jumlah: daftar.length, daftar, catatan: "Hanya pratinjau. Tidak ada order, unit, job, pembayaran, atau jurnal yang dibuat. Buat per dokumen lewat 'Buat/Tautkan Order CRM'." });
+  } catch (e) { handleFinanceError(e, res); }
+});
+
+// ─── KATALOG ITEM PRODUKSI + PRATINJAU ORDER (multi-item) ────────────────────────────────────────────────────────────
+// Katalog = data yang dikelola Admin (production_settings:write); form membaca yang AKTIF + definisi bentuk isian. Pratinjau hanya MEMBACA: apa yang akan dibuat (unit, pickup, pengiriman,
+// kelengkapan) dengan fungsi yang sama dengan pembuatan — masukan salah dikembalikan sebagai { valid:false, galat } supaya layar menampilkannya, bukan error HTTP.
+financePenjualanKaryawanRouter.get(`${BASE}/katalog-item`, requirePermission(P.FINANCE_READ), async (_req, res) => {
+  try { res.json(await muatKatalogItem(prisma)); } catch (e) { handleFinanceError(e, res); }
+});
+financePenjualanKaryawanRouter.get(`${BASE}/katalog-item/kelola`, requirePermission(P.PRODUCTION_SETTINGS_WRITE), async (_req, res) => {
+  try { res.json(await muatKatalogItem(prisma, { semua: true })); } catch (e) { handleFinanceError(e, res); }
+});
+financePenjualanKaryawanRouter.post(`${BASE}/katalog-item/kategori`, requirePermission(P.PRODUCTION_SETTINGS_WRITE), async (req, res) => {
+  try {
+    const c = await prisma.$transaction((tx) => buatKategori(tx, { ...(req.body || {}), userId: req.user.id }));
+    res.status(201).json(c);
+  } catch (e) { handleFinanceError(e, res); }
+});
+financePenjualanKaryawanRouter.patch(`${BASE}/katalog-item/kategori/:id`, requirePermission(P.PRODUCTION_SETTINGS_WRITE), async (req, res) => {
+  try { res.json(await prisma.$transaction((tx) => ubahKategori(tx, { ...(req.body || {}), id: req.params.id, userId: req.user.id }))); } catch (e) { handleFinanceError(e, res); }
+});
+financePenjualanKaryawanRouter.post(`${BASE}/katalog-item/produk`, requirePermission(P.PRODUCTION_SETTINGS_WRITE), async (req, res) => {
+  try {
+    const p = await prisma.$transaction((tx) => buatProduk(tx, { ...(req.body || {}), userId: req.user.id }));
+    res.status(201).json(p);
+  } catch (e) { handleFinanceError(e, res); }
+});
+financePenjualanKaryawanRouter.patch(`${BASE}/katalog-item/produk/:id`, requirePermission(P.PRODUCTION_SETTINGS_WRITE), async (req, res) => {
+  try { res.json(await prisma.$transaction((tx) => ubahProduk(tx, { ...(req.body || {}), id: req.params.id, userId: req.user.id }))); } catch (e) { handleFinanceError(e, res); }
+});
+financePenjualanKaryawanRouter.post(`${BASE}/order-crm/pratinjau`, requirePermission(P.FINANCE_POST), async (req, res) => {
+  try {
+    const o = req.body?.orderCrm ?? req.body?.spesifikasi ?? {};
+    res.json(await pratinjauItems(prisma, { penjualanId: req.body?.penjualanId || null, items: o.items, alamat: typeof o.alamat === "string" && o.alamat.trim() ? o.alamat.trim() : null }));
   } catch (e) { handleFinanceError(e, res); }
 });
 
