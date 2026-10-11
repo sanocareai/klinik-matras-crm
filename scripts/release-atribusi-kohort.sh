@@ -26,7 +26,7 @@ MODE=release
 for a in "$@"; do case "$a" in --preflight-only) MODE=preflight;; --verify-only) MODE=verify;; --rollback) MODE=rollback;; esac; done
 
 MIN_FREE_KB=$((5 * 1024 * 1024))     # 5 GiB — gerbang keras (awal, setelah backup, sebelum build, sebelum switch)
-CAND_BRANCH="${CAND_BRANCH:-rc/atribusi-kohort-on-live-19e3e958}"
+CAND_BRANCH="${CAND_BRANCH:-rc/atribusi-kohort-on-live-c220e72d}"
 CAND_REF="refs/remotes/origin/cand-atrk"      # ref UNIK: repo sumber dipakai bersama skrip rilis lain (refs/remotes/origin/cand bisa tertimpa sesi lain)
 BUNDLE="${BUNDLE:-}"
 REPO_URL="https://github.com/sanocareai/klinik-matras-crm.git"
@@ -289,7 +289,7 @@ if [ "$MODE" = "rollback" ]; then
   CID="$(backend_cid)"; [ "$(printf '%s\n' "$CID" | grep -c .)" = "1" ] || die "harus tepat satu container backend"
   CUR_DIR="$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$CID")"
   [ "$CUR_DIR" = "$NEW_DIR" ] || die "release aktif (${CUR_DIR}) BUKAN ${DEPLOY_SHORT}; rollback ini tidak berlaku (jangan menimpa rilis lain)"
-  for lf in /tmp/release-*.lock; do [ -e "$lf" ] || continue; [ "$lf" = "/tmp/release-atribusi-kohort.lock" ] && continue; ( exec 8>"$lf"; flock -n 8 ) || die "deploy lain sedang berjalan (kunci ${lf})"; done
+  for lf in /tmp/release-*.lock; do [ -e "$lf" ] || continue; [ "$lf" = "/tmp/release-atribusi-kohort.lock" ] && continue; [ "$lf" = "/tmp/release-atribusi-kohort-giliran.lock" ] && continue; ( exec 8>"$lf"; flock -n 8 ) || die "deploy lain sedang berjalan (kunci ${lf})"; done
   exec 9>/tmp/release-atribusi-kohort.lock; flock -n 9 || die "rilis/rollback ini sudah berjalan"
   CTWA_B="$(ctwa_env_count "$CID")"; ENV_B="$(env_sha)"
   IMG_NAME="$(docker inspect -f '{{.Config.Image}}' "$CID")"
@@ -310,7 +310,7 @@ fi
 
 PHASE="0-lingkungan"; say "0. Lingkungan dan kunci deploy"
 for c in git docker curl gzip sha256sum awk grep flock tar sed df find; do command -v "$c" >/dev/null 2>&1 || die "perintah '$c' tidak ada"; done
-for lf in /tmp/release-*.lock; do [ -e "$lf" ] || continue; ( exec 8>"$lf"; flock -n 8 ) || die "deploy lain sedang berjalan (kunci ${lf} dipegang)"; done
+for lf in /tmp/release-*.lock; do [ -e "$lf" ] || continue; [ "$lf" = "/tmp/release-atribusi-kohort-giliran.lock" ] && continue; ( exec 8>"$lf"; flock -n 8 ) || die "deploy lain sedang berjalan (kunci ${lf} dipegang)"; done
 exec 9>/tmp/release-atribusi-kohort.lock; flock -n 9 || die "rilis ini sudah berjalan"
 OTHER="$(pgrep -af 'release-[a-z0-9-]+\.sh|docker compose .*(up|build)|docker build|prisma migrate' | grep -v "atrk1\|release-atribusi-kohort\|pgrep\|node src/index.js" || true)"
 [ -z "$OTHER" ] || { printf '%s\n' "$OTHER" | sed 's/^/        /'; die "ada proses deploy/build/migrasi lain yang berjalan"; }

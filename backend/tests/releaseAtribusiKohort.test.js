@@ -255,3 +255,12 @@ test("--rollback (shim): rilis aktif BUKAN kandidat (rilis lain sudah menggantik
     assert.ok(!/docker tag /.test(log) && !/force-recreate/.test(log), "tidak boleh mengubah apa pun");
   } finally { fs.rmSync(sb.tmp, { recursive: true, force: true }); }
 });
+
+test("skrip rilis atribusi: lock GILIRAN milik sesi perilis dilewati, lock lain tetap menghentikan", () => {
+  const loops = kode.split("\n").filter((l) => l.includes("for lf in /tmp/release-*.lock"));
+  assert.equal(loops.length, 2, "preflight/rilis dan rollback");
+  for (const l of loops) {
+    assert.match(l, /release-atribusi-kohort-giliran\.lock" \] && continue/);
+    assert.match(l, /flock -n 8 \) \|\| die "deploy lain sedang berjalan/);
+  }
+});
