@@ -56,6 +56,28 @@ export function aktorDariSesi(user, workspace, roles) {
 // Satu helper progres (progresPO.js) untuk Finance, Gudang, kartu, detail, dan batas jumlah datang. Definisi tiap angka ada di sana.
 export const kuantitasKedatangan = hitungProgresPO;
 
+// ── Dokumen kosong lama ──────────────────────────────────────────────────
+
+/**
+ * "Dokumen kosong lama": penerimaan dari PO yang statusnya sudah MAJU (Tiba / Diperiksa / Siap Disimpan) tetapi kedatangannya tidak pernah dicatat dan tidak satu pun jumlah terisi.
+ * Lahir sebelum Catat Barang Tiba wajib (status digeser tanpa data); sekarang tidak bisa lahir lagi (PATCH status ARRIVED ditolak bila arrivalRevision = 0), tetapi yang sudah ada tetap di DB.
+ * Murni (tanpa DB). Pemakaian ulang untuk kedatangan baru dicek lagi di DB (tanpa stok/tagihan) oleh dokumenKosongBisaDipakai.
+ */
+export function penerimaanKosong(r) {
+  if (!r || ["DRAFT", "SCHEDULED", "COMPLETED", "REJECTED"].includes(r.status)) return false;
+  if (Number(r.arrivalRevision ?? 0) > 0 || r.arrivedDate) return false;
+  if (!Array.isArray(r.lines) || r.lines.length === 0) return false;
+  return r.lines.every((l) => [l.receivedQty, l.acceptedQty, l.rejectedQty, l.companionQty].every((v) => v === null || v === undefined || Number(v) === 0));
+}
+
+/** Dokumen kosong lama yang AMAN dipakai untuk kedatangan baru: kosong menurut isi dan tidak punya stok atau tagihan yang menempel. */
+async function dokumenKosongBisaDipakai(tx, r) {
+  if (!penerimaanKosong(r)) return false;
+  if ((await tx.stockMovement.count({ where: { goodsReceiptId: r.id } })) > 0) return false;
+  if ((await tx.finSupplierBill.count({ where: { goodsReceiptId: r.id } })) > 0) return false;
+  return true;
+}
+
 // ── Status "Barang Akan Datang" ──────────────────────────────────────────
 
 /** Bendera + status utama satu PO untuk halaman Gudang. `penerimaan` = [{ status }]; `kuantitas` = Map dari kuantitasKedatangan. */
@@ -64,9 +86,12 @@ export function statusBarangAkanDatang({ po, penerimaan, kuantitas, hariIni }) {
   if (po.status === "DIBATALKAN") bendera.add("DIBATALKAN");
   else if (po.status === "SELESAI") bendera.add("SELESAI");
   else {
-    const aktif = penerimaan.filter((r) => r.status !== "REJECTED");
-    if (aktif.some((r) => ["ARRIVED", "INSPECTION"].includes(r.status))) bendera.add("PERLU_DIPERIKSA");
-    if (aktif.some((r) => r.status === "READY_FOR_PUTAWAY")) bendera.add("SIAP_DISIMPAN");
+    // Bendera mengikuti ISI penerimaan, bukan status saja: dokumen kosong lama tidak memunculkan bendera, dan "Siap Disimpan" hanya bila ada barang baik yang bisa disimpan
+    // (Simpan ke Stok menolak penerimaan tanpa jumlah baik). Tanpa data baris (pemanggil lama) perilaku tetap menurut status.
+    const aktif = penerimaan.filter((r) => r.status !== "REJECTED" && !penerimaanKosong(r));
+    const punyaBaik = (r) => !Array.isArray(r.lines) || r.lines.some((l) => k(l.acceptedQty) > 0);
+    if (aktif.some((r) => ["ARRIVED", "INSPECTION"].includes(r.status) || (r.status === "READY_FOR_PUTAWAY" && !punyaBaik(r)))) bendera.add("PERLU_DIPERIKSA");
+    if (aktif.some((r) => r.status === "READY_FOR_PUTAWAY" && punyaBaik(r))) bendera.add("SIAP_DISIMPAN");
     const nilai = [...kuantitas.values()];
     const adaDatang = nilai.some((q) => k(q.datang) > 0 || k(q.masukStok) > 0);
     const belumLengkap = nilai.some((q) => k(q.belumDipenuhiSupplier) > 0);
@@ -132,7 +157,7 @@ function bentukPenerimaan(r, { po, poLineById, finance, returPerBaris = new Map(
     };
   });
   return {
-    id: r.id, nomor: r.receiptNumber, status: r.status, statusLabel: LABEL_PENERIMAAN[r.status] ?? r.status,
+    id: r.id, nomor: r.receiptNumber, status: r.status, statusLabel: LABEL_PENERIMAAN[r.status] ?? r.status, kosong: penerimaanKosong(r),
     tanggalTiba: hariKunci(r.arrivedDate), kedatanganDicatat: !!r.arrivedDate,
     dicatat: r.arrivedDate ? { oleh: r.arrivalRecordedBy?.name ?? null, peran: r.arrivalActorRoles, workspace: r.arrivalWorkspace, pada: r.arrivalRecordedAt } : null,
     penerima: r.arrivalReceiver, catatan: r.arrivalNote, suratJalan: r.deliveryNote || null, bukti: r.arrivalProofUrls ?? [], revisi: r.arrivalRevision,
@@ -282,6 +307,15 @@ export async function pastikanDrafPenerimaan(db, { poId, aktor, sekarang = new D
     if (!STATUS_PO_BISA_DITERIMA.includes(po.status)) throw gagal(`PO ${po.poNumber} berstatus ${po.status} — hanya PO yang disetujui dan belum selesai yang bisa menerima barang`, 409, "PO_TIDAK_BISA_DITERIMA");
     const ada = await tx.goodsReceipt.findFirst({ where: { purchaseOrderId: po.id, status: { in: ["DRAFT", "SCHEDULED"] }, arrivalRevision: 0 }, orderBy: [{ createdAt: "asc" }, { receiptNumber: "asc" }], select: { id: true, receiptNumber: true } });
     if (ada) return { receiptId: ada.id, receiptNumber: ada.receiptNumber, dibuat: false };
+    // Tidak ada draf: pakai dokumen kosong lama (status maju tanpa data) agar kedatangan tidak membuat dokumen kedua dan dokumen kosong itu tidak tertinggal sebagai "Siap Disimpan".
+    const lama = await tx.goodsReceipt.findMany({
+      where: { purchaseOrderId: po.id, status: { in: ["ARRIVED", "INSPECTION", "READY_FOR_PUTAWAY"] }, arrivalRevision: 0 },
+      orderBy: [{ createdAt: "asc" }, { receiptNumber: "asc" }],
+      select: { id: true, receiptNumber: true, status: true, arrivalRevision: true, arrivedDate: true, lines: { select: { receivedQty: true, acceptedQty: true, rejectedQty: true, companionQty: true } } },
+    });
+    for (const r of lama) {
+      if (await dokumenKosongBisaDipakai(tx, r)) return { receiptId: r.id, receiptNumber: r.receiptNumber, dibuat: false, dipakaiUlang: "DOKUMEN_KOSONG_LAMA" };
+    }
     const kuantitas = await kuantitasKedatangan(tx, po.id);
     const sisa = po.lines.filter((l) => k(kuantitas.get(l.id).belumDipenuhiSupplier) > 0);
     if (sisa.length === 0) throw gagal(`PO ${po.poNumber} sudah terpenuhi — tidak ada barang yang belum datang dan tidak ada penolakan yang menunggu pengganti. Minta Finance merevisi jumlah PO bila memang ada kiriman tambahan.`, 409, "PO_SUDAH_TERPENUHI");
@@ -339,7 +373,7 @@ export async function catatKedatangan(tx, { poId, receiptId, masukan, aktor, sek
       const oleh = receipt.arrivalRecordedById ? (await tx.user.findUnique({ where: { id: receipt.arrivalRecordedById }, select: { name: true } }))?.name : null;
       throw gagal(`Kedatangan ${receipt.receiptNumber} sudah dicatat${oleh ? ` oleh ${oleh}` : ""}${receipt.arrivedDate ? ` (tiba ${hariKunci(receipt.arrivedDate)})` : ""}. Gunakan Koreksi Kedatangan bila ada yang salah.`, 409, "KEDATANGAN_SUDAH_DICATAT");
     }
-    if (!["DRAFT", "SCHEDULED"].includes(receipt.status)) throw gagal(`Penerimaan ${receipt.receiptNumber} berstatus ${LABEL_PENERIMAAN[receipt.status] ?? receipt.status} — kedatangan hanya bisa dicatat pada penerimaan yang belum tiba`, 409);
+    if (!["DRAFT", "SCHEDULED"].includes(receipt.status) && !(await dokumenKosongBisaDipakai(tx, receipt))) throw gagal(`Penerimaan ${receipt.receiptNumber} berstatus ${LABEL_PENERIMAAN[receipt.status] ?? receipt.status} — kedatangan hanya bisa dicatat pada penerimaan yang belum tiba`, 409);
   }
   const po = await kunciPOUntukTulis(tx, poId);
   if (!STATUS_PO_BISA_DITERIMA.includes(po.status)) throw gagal(`PO ${po.poNumber} berstatus ${po.status} — hanya PO yang disetujui dan belum selesai yang bisa menerima barang`, 409, "PO_TIDAK_BISA_DITERIMA");
