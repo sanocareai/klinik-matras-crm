@@ -1,6 +1,6 @@
 # Atribusi Meta Ads — Fase 1: kohort lead → customer → order → pembayaran (endpoint baca-saja)
 
-**Status:** endpoint admin baca-saja, terisolasi, **belum di-deploy/push/merge**. Basis: live `12dda033`. Tanpa migrasi, tanpa penulisan data, tanpa menyentuh Dashboard/`analytics.js`, env, atau capture CTWA.
+**Status:** endpoint admin baca-saja, terisolasi, **belum di-deploy/push/merge**. Basis: live `19e3e958` (hotfix Penerimaan Kosong Lama tetap utuh). Tanpa migrasi, tanpa penulisan data, tanpa menyentuh Dashboard/`analytics.js`, env, atau capture CTWA.
 **Prinsip:** campaign/ad set/ad **tidak** diisi dan tidak dihitung (tidak ada CPA/ROAS). Customer, order, dan rupiah adalah satuan berbeda; booked value dan uang diterima tidak pernah dijumlahkan.
 Sumber audit: `docs/ATRIBUSI-FASE1-AUDIT-REVIEW.md` (`d4f4e811`). Kontrak attribution touch **dipindah** ke branch `feat/atribusi-touch-contract` (tahap berikutnya).
 

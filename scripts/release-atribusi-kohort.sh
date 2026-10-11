@@ -26,7 +26,7 @@ MODE=release
 for a in "$@"; do case "$a" in --preflight-only) MODE=preflight;; --verify-only) MODE=verify;; --rollback) MODE=rollback;; esac; done
 
 MIN_FREE_KB=$((5 * 1024 * 1024))     # 5 GiB — gerbang keras (awal, setelah backup, sebelum build, sebelum switch)
-CAND_BRANCH="${CAND_BRANCH:-rc/atribusi-kohort-on-live-13123c07}"
+CAND_BRANCH="${CAND_BRANCH:-rc/atribusi-kohort-on-live-19e3e958}"
 CAND_REF="refs/remotes/origin/cand-atrk"      # ref UNIK: repo sumber dipakai bersama skrip rilis lain (refs/remotes/origin/cand bisa tertimpa sesi lain)
 BUNDLE="${BUNDLE:-}"
 REPO_URL="https://github.com/sanocareai/klinik-matras-crm.git"
