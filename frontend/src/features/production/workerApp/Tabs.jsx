@@ -3,7 +3,6 @@ import { Link } from "react-router-dom";
 import { ArrowRightLeft, CheckCircle2, ClipboardList, LogOut, PackageX, RefreshCw } from "lucide-react";
 import { api } from "@/api.js";
 import ThemeToggle from "@/components/ThemeToggle.jsx";
-import { DemoBarSlot } from "@/features/production/demo/DemoControls.jsx";
 import { friendlyError } from "@/features/production/experience.js";
 import { emptyFilters, reportQuery } from "@/features/production/reporting.js";
 import { lastActiveTabPath } from "@/lib/openTabs.js";
@@ -197,8 +196,6 @@ export function AkunTab({ user, roles, lane, pathname, onLogout, navigate, curre
         {desktopOk && <Link to={lastActiveTabPath(pathname) || "/portal"} onClick={(e) => { if (onLeave && !onLeave()) e.preventDefault(); }} className="flex min-h-[56px] items-center justify-between px-4 text-ink no-underline"><span className="text-[15px] font-semibold">Buka SANSS (desktop)</span><span className="text-[13px] font-semibold text-accent">Buka</span></Link>}
         {onLogout && <button type="button" data-testid="logout" onClick={onLogout} className="flex min-h-[56px] w-full items-center justify-between px-4 text-left text-red"><span className="text-[15px] font-bold">Keluar</span><LogOut size={18} aria-hidden /></button>}
       </div>
-      {/* Mode Latihan (hanya peran yang berhak): dipindahkan dari atas header aplikasi ke sini; perilaku demo tidak berubah. */}
-      <div className="mt-5 [&>div]:px-0" data-testid="akun-latihan"><DemoBarSlot /></div>
     </div>
   );
 }

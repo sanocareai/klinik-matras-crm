@@ -14,6 +14,9 @@ export const DEMO_PAGES = Object.freeze(TRAINING_PAGES.map((p) => [p.label, p.to
 export const DEMO_UNIT_NOTE = "Dataset latihan berisi 12 unit. Pipeline Status Produksi hanya menampilkan 11 unit karena 1 unit (QA-PV2-U11) sudah selesai dan siap kirim — unit itu tampil di Ringkasan, Aplikasi Dokumentasi, dan Antrean Gudang, bukan di kolom pipeline.";
 export const DEMO_DISABLED_TIP = "Dinonaktifkan di Mode Latihan (hanya-baca, data sintetis)";
 export const canUseDemo = canUseTraining;
+// Keputusan Owner (11 Okt 2026): Mode Latihan DIHILANGKAN dari aplikasi. Satu sakelar kode: tidak ada toggle, banner, lencana, atau dataset sintetis; ?demo=1 diabaikan dan dibuang
+// dari URL. Seluruh halaman memakai data nyata. (Infrastruktur demo dibiarkan tak terpakai agar bisa dikembalikan lewat satu baris bila Owner meminta.)
+export const MODE_LATIHAN_TERSEDIA = false;
 // Tab dalam-app tetap ter-mount saat tersembunyi: hanya halaman pada tab AKTIF yang boleh menyalakan/mematikan demo (state demo bersifat global).
 function useIsActiveTab() { try { return useTabVisibility(); } catch { return true; } }
 const currentRoles = () => { try { return JSON.parse(localStorage.getItem("user"))?.roles || []; } catch { return []; } };
@@ -75,11 +78,25 @@ function DemoBar({ active, onToggle, denied, roles }) {
 const DemoCtx = createContext(null);
 export function DemoBarSlot() {
   const c = useContext(DemoCtx);
-  if (!c?.eligible) return null;
+  if (!MODE_LATIHAN_TERSEDIA || !c?.eligible) return null;
   return <DemoBar active={c.active} onToggle={c.toggle} denied={c.denied} roles={c.roles} />;
 }
 
-export function DemoPage({ children, slotBar = false }) {
+// Mode Latihan dimatikan: halaman dirender apa adanya (data nyata). Tidak ada hook demo yang jalan; ?demo=1 dibuang dari URL.
+function DemoPageNonaktif({ children }) {
+  const [params, setParams] = useSearchParams();
+  useEffect(() => {
+    if (params.get("demo") === null) return;
+    setParams((p) => { const n = new URLSearchParams(p); n.delete("demo"); return n; }, { replace: true });
+  }, [params, setParams]);
+  return <>{children}</>;
+}
+
+export function DemoPage(props) {
+  return MODE_LATIHAN_TERSEDIA ? <DemoPageAktif {...props} /> : <DemoPageNonaktif {...props} />;
+}
+
+function DemoPageAktif({ children, slotBar = false }) {
   const [params, setParams] = useSearchParams();
   // State lokal diselaraskan dari ?demo=1 (di sistem tab dalam-app, perubahan HANYA query tidak menggeser lokasi virtual tab).
   const urlWants = params.get("demo") === "1";

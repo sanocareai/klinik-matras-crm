@@ -195,6 +195,10 @@ export async function planAndScheduleUnit(prisma, { unitId, actorId, idempotency
 // ---------------------------------------------------------------------------
 // 2. Referensi penjadwalan: workshop + PIC yang sah, dihitung server. Kosong = ada alasan + tindakan berikutnya (tidak pernah kosong tanpa penjelasan).
 // ---------------------------------------------------------------------------
+// Keputusan Owner (11 Okt 2026): akun ADMIN/OWNER tidak muncul sebagai pilihan PIC (dropdown). Hanya menyaring PILIHAN: profil operator & riwayat tidak dihapus/diubah, dan ADMIN/OWNER tetap
+// boleh mengerjakan semua lini (PRODUCTION_EXECUTE_ANY) tanpa menjadi PIC terdaftar di papan.
+export const PIC_EXCLUDED_ROLES = Object.freeze(["ADMIN", "OWNER"]);
+const bukanAdminOwner = { role: { notIn: PIC_EXCLUDED_ROLES }, roles: { none: { role: { in: PIC_EXCLUDED_ROLES } } } };
 export const PRODUCTION_PIC_ROLES = Object.freeze(["PRODUCTION_WORKER"]); // yang mengerjakan Meja/Corner; Kepala Produksi tetap bisa mendaftarkan siapa pun lewat tab Operator
 // Tautan ke tab Pengaturan Produksi (TabbedHub membaca ?tab=): Operator (PIC) & Area Kerja (workshop).
 const LINKS = Object.freeze({ operators: "/bengkel/pengaturan?tab=operator", workCenters: "/bengkel/pengaturan?tab=area-kerja", settings: "/bengkel/pengaturan" });
@@ -203,12 +207,12 @@ export async function getPlanningRefs(prisma, { canRegisterOperator = false } = 
   const [workCenters, operators, candidates] = await Promise.all([
     prisma.workCenter.findMany({ where: { active: true }, select: { id: true, code: true, name: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
     prisma.productionOperator.findMany({
-      where: { active: true, user: { active: true } },
+      where: { active: true, user: { active: true, ...bukanAdminOwner } },
       select: { id: true, employeeCode: true, primaryWorkCenterId: true, user: { select: { id: true, name: true } }, primaryWorkCenter: { select: { id: true, name: true } } },
       orderBy: { createdAt: "asc" },
     }),
     prisma.user.findMany({
-      where: { active: true, productionOperatorProfile: { is: null }, OR: [{ roles: { some: { role: { in: PRODUCTION_PIC_ROLES } } } }, { role: { in: PRODUCTION_PIC_ROLES } }] }, // peran multi-role (user_roles) ATAU kolom peran lama
+      where: { active: true, ...bukanAdminOwner, productionOperatorProfile: { is: null }, OR: [{ roles: { some: { role: { in: PRODUCTION_PIC_ROLES } } } }, { role: { in: PRODUCTION_PIC_ROLES } }] }, // peran multi-role (user_roles) ATAU kolom peran lama
       select: { id: true, name: true, roles: { select: { role: true } } }, orderBy: { name: "asc" },
     }),
   ]);
