@@ -9,7 +9,7 @@ import { friendlyError } from "@/features/production/experience.js";
 // setelah aksi jadwal, halaman yang sudah terbuka dimuat ulang dari server (tidak optimistic). Mode Latihan: dari Command Center sintetis (tanpa jaringan).
 export const BACKLOG_PAGE_SIZE = 25;
 // Tab = milestone global berbasis bukti (server): Pengambilan · Diterima di Workshop · Diproses. "Semua" = himpunan lama (unit order Diproses yang sudah dijemput atau lahir di workshop).
-export const BACKLOG_STATUS_TABS = Object.freeze([{ key: "SEMUA", label: "Semua" }, { key: "PENGAMBILAN", label: "Pengambilan" }, { key: "DITERIMA_WORKSHOP", label: "Diterima di Workshop" }, { key: "DIPROSES", label: "Diproses" }]);
+export const BACKLOG_STATUS_TABS = Object.freeze([{ key: "SEMUA", label: "Semua" }, { key: "MENUNGGU_DIJEMPUT", label: "Menunggu Dijemput" }, { key: "PENGAMBILAN", label: "Pengambilan" }, { key: "DITERIMA_WORKSHOP", label: "Diterima di Workshop" }, { key: "DIPROSES", label: "Diproses" }]);
 
 export default function useBacklog({ demoColumns = null } = {}) {
   const [status, setStatus] = useState("SEMUA");
@@ -57,7 +57,7 @@ export default function useBacklog({ demoColumns = null } = {}) {
   const schedulableViews = useMemo(() => items.filter((i) => i.schedulable && i.view).map((i) => i.view), [items]);
   return {
     status, setStatus, q, setQ, items, schedulableViews, reload, loadMore,
-    total: demo ? demoItems.length : state.total, counts: demo ? { SEMUA: demoItems.length, PENGAMBILAN: 0, DITERIMA_WORKSHOP: 0, DIPROSES: demoItems.length } : state.counts, hasMore: demo ? false : state.hasMore,
+    total: demo ? demoItems.length : state.total, counts: demo ? { SEMUA: demoItems.length, MENUNGGU_DIJEMPUT: 0, PENGAMBILAN: 0, DITERIMA_WORKSHOP: 0, DIPROSES: demoItems.length } : state.counts, hasMore: demo ? false : state.hasMore,
     loading: demo ? false : state.loading, error: demo ? "" : state.error, truncated: state.truncated, demo, readerMode: state.readerMode, rencanaCounts: demo ? {} : state.rencanaCounts,
   };
 }

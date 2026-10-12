@@ -15,7 +15,7 @@ const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm,
 test("paritas frontend ↔ backend: urutan & label milestone global; status jadwal; teks histori tanpa bukti", () => {
   assert.deepEqual(L.GLOBAL_STATUS_TABS.map((t) => t.key), [...M.GLOBAL_STATUS_FLOW]);
   assert.deepEqual(L.GLOBAL_STATUS_TABS.map((t) => t.label), M.GLOBAL_STATUS_FLOW.map((k) => M.GLOBAL_STATUS[k].label));
-  assert.deepEqual(L.GLOBAL_STATUS_TABS.map((t) => t.label), ["Pengambilan", "Diterima di Workshop", "Diproses", "Siap Kirim", "Dalam Pengiriman", "Terkirim"]);
+  assert.deepEqual(L.GLOBAL_STATUS_TABS.map((t) => t.label), ["Menunggu Dijemput", "Pengambilan", "Diterima di Workshop", "Diproses", "Siap Kirim", "Dalam Pengiriman", "Terkirim"]);
   assert.deepEqual([...L.GLOBAL_STATUS_ACTIVE_KEYS], M.GLOBAL_STATUS_FLOW.filter((k) => k !== "TERKIRIM"));
   for (const [k, v] of Object.entries(M.SCHEDULE_STATUS)) assert.equal(L.SCHEDULE_STATUS_LABEL[k], v.label, k);
   assert.equal(L.LEGACY_NOT_CONFIRMED_TEXT, M.LEGACY_NOT_CONFIRMED);
@@ -42,7 +42,7 @@ test("statusOf memakai globalStatus server (berbasis bukti) lebih dulu; tanpa it
 test("Backlog Rencana: tab Semua · Pengambilan · Diterima di Workshop · Diproses; default Semua (himpunan lama); kartu menampilkan status global + dasar bukti + jadwal", () => {
   const hook = read("features", "production", "useBacklog.js");
   const tabs = [...hook.match(/BACKLOG_STATUS_TABS = Object\.freeze\(\[(.*?)\]\);/s)[1].matchAll(/\{ key: "(\w+)", label: "([^"]+)" \}/g)].map((m) => [m[1], m[2]]);
-  assert.deepEqual(tabs, [["SEMUA", "Semua"], ["PENGAMBILAN", "Pengambilan"], ["DITERIMA_WORKSHOP", "Diterima di Workshop"], ["DIPROSES", "Diproses"]]);
+  assert.deepEqual(tabs, [["SEMUA", "Semua"], ["MENUNGGU_DIJEMPUT", "Menunggu Dijemput"], ["PENGAMBILAN", "Pengambilan"], ["DITERIMA_WORKSHOP", "Diterima di Workshop"], ["DIPROSES", "Diproses"]]);
   assert.match(hook, /useState\("SEMUA"\)/);
   assert.match(read("api.js"), /getProductionV2Backlog: \(\{ status = "SEMUA"/);
   const card = strip(read("features", "production", "BacklogCard.jsx"));

@@ -19,11 +19,11 @@ import { loadV2Flags } from "./v2FeatureFlags.js";
 import { PKR_ORDER_SELECT, PKR_UNIT_ITEM_SELECT, rujukanPkrDariOrder } from "./pkrProduksiGuard.js";
 import { kategoriUnit, produkUnit, statusOrderEfektif } from "../lib/domain/unitKategori.js";
 import { milestoneOf } from "../lib/domain/workshopMilestone.js";
-import { WHERE_PICKUP_DONE_NOT_RECEIVED, WHERE_PICKUP_IN_PROGRESS, loadMilestoneEvidence, unitWhereForGlobalStatus } from "./workshopMilestoneEvidence.js";
+import { WHERE_PICKUP_DONE_NOT_RECEIVED, WHERE_PICKUP_IN_PROGRESS, WHERE_WAITING_PICKUP, loadMilestoneEvidence, unitWhereForGlobalStatus } from "./workshopMilestoneEvidence.js";
 
 // Tab backlog = milestone global berbasis BUKTI (lib/domain/workshopMilestone.js): Pengambilan · Diterima di Workshop · Diproses. "SEMUA" bukan status — ia hanya penyaring
 // "semua unit order Diproses (unit sudah dijemput atau lahir di workshop)", yaitu himpunan lama "Diproses" sebelum milestone dipisah; tiap kartu tetap membawa status globalnya sendiri.
-export const BACKLOG_STATUSES = Object.freeze(["SEMUA", "PENGAMBILAN", "DITERIMA_WORKSHOP", "DIPROSES"]);
+export const BACKLOG_STATUSES = Object.freeze(["SEMUA", "MENUNGGU_DIJEMPUT", "PENGAMBILAN", "DITERIMA_WORKSHOP", "DIPROSES"]);
 export const BACKLOG_STATUS_DEFAULT = "SEMUA";
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
 export const BACKLOG_MAX_CANDIDATES = 20_000;
@@ -42,6 +42,7 @@ const REAL_CUSTOMER = Object.freeze({ customer: { pipelineStage: { not: "SPAM" }
 // Bagian status (unit + order) per tab. Tingkat ORDER tetap seperti sebelumnya: pickup berjalan = order PENDING/PICKUP; unit sudah di workshop = order PROCESSING.
 function statusClause(status) {
   switch (status) {
+    case "MENUNGGU_DIJEMPUT": return { AND: [WHERE_WAITING_PICKUP, { order: { status: { in: ["PENDING", "PICKUP"] } } }] };
     case "PENGAMBILAN": return { OR: [
       { AND: [WHERE_PICKUP_IN_PROGRESS, { order: { status: { in: ["PENDING", "PICKUP"] } } }] },
       { AND: [WHERE_PICKUP_DONE_NOT_RECEIVED, { order: { status: "PROCESSING" } }] },

@@ -9,12 +9,13 @@ export const DISPLAY_STATUS_TABS = Object.freeze([
   Object.freeze({ key: "SIAP_KIRIM", label: "Siap Kirim" }),
   Object.freeze({ key: "TERKIRIM", label: "Terkirim" }),
 ]);
-const KEY_OF_LABEL = Object.freeze({ Pengambilan: "PENGAMBILAN", "Diterima di Workshop": "DITERIMA_WORKSHOP", Diproses: "DIPROSES", "Siap Kirim": "SIAP_KIRIM", "Dalam Pengiriman": "DALAM_PENGIRIMAN", Terkirim: "TERKIRIM", Dibatalkan: "DIBATALKAN" });
+const KEY_OF_LABEL = Object.freeze({ "Menunggu Dijemput": "MENUNGGU_DIJEMPUT", Pengambilan: "PENGAMBILAN", "Diterima di Workshop": "DITERIMA_WORKSHOP", Diproses: "DIPROSES", "Siap Kirim": "SIAP_KIRIM", "Dalam Pengiriman": "DALAM_PENGIRIMAN", Terkirim: "TERKIRIM", Dibatalkan: "DIBATALKAN" });
 
 // ---- Milestone global (satu kosakata di Sales · Delivery · Production · Warehouse · Finance · Unit 360 · laporan) ------------------------------
 // CERMIN backend/src/lib/domain/workshopMilestone.js (tes paritas). Status global TURUNAN dari bukti di server — klien tidak pernah menurunkannya sendiri; bila server tidak mengirim
 // `globalStatus` (payload lama / Mode Latihan) dipakai peta status tampilan lama. Empat sumbu TERPISAH: status global · keberadaan fisik (presence) · tahap produksi · status jadwal.
 export const GLOBAL_STATUS_TABS = Object.freeze([
+  Object.freeze({ key: "MENUNGGU_DIJEMPUT", label: "Menunggu Dijemput" }),
   Object.freeze({ key: "PENGAMBILAN", label: "Pengambilan" }),
   Object.freeze({ key: "DITERIMA_WORKSHOP", label: "Diterima di Workshop" }),
   Object.freeze({ key: "DIPROSES", label: "Diproses" }),
@@ -40,7 +41,7 @@ export function statusOf(row) {
   if (!base) return { key: "DIPROSES", label: String(row?.status ?? "—"), tone: "neutral", detail: null };
   return { key: KEY_OF_LABEL[base.label] || "DIPROSES", label: base.label, tone: base.tone, detail: base.detail ?? null };
 }
-export const statusTone = (key) => ({ PENGAMBILAN: "neutral", DITERIMA_WORKSHOP: "accent", DIPROSES: "accent", SIAP_KIRIM: "green", DALAM_PENGIRIMAN: "accent", TERKIRIM: "green", DIBATALKAN: "neutral" }[key] || "neutral");
+export const statusTone = (key) => ({ MENUNGGU_DIJEMPUT: "neutral", PENGAMBILAN: "neutral", DITERIMA_WORKSHOP: "accent", DIPROSES: "accent", SIAP_KIRIM: "green", DALAM_PENGIRIMAN: "accent", TERKIRIM: "green", DIBATALKAN: "neutral" }[key] || "neutral");
 
 // ---- Keberadaan fisik (tidak pernah memalsukan konfirmasi tiba) ------------------------------------------------------------------------
 export const presenceLabel = (p) => p?.label || null;

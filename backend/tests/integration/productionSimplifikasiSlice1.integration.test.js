@@ -84,7 +84,7 @@ test("backlog default: order nyata Diproses + unit Diproses; Siap Kirim/Terkirim
   assert.equal(pickCard.unitStatus.label, "Pengambilan"); assert.equal(pickCard.presence.key, "NOT_ARRIVED"); assert.equal(pickCard.globalStatus.key, "PENGAMBILAN");
   const normalCard = p.body.items.find((i) => i.card.unit.unitCode === normal.unitCode).card;
   assert.equal(normalCard.globalStatus.key, "PENGAMBILAN"); assert.equal(normalCard.globalStatus.detail, "Konfirmasi workshop belum tercatat", "tanpa bukti terima: tidak ditebak");
-  assert.deepEqual(p.body.counts, { SEMUA: 4, PENGAMBILAN: 2, DITERIMA_WORKSHOP: 0, DIPROSES: 3 });
+  assert.deepEqual(p.body.counts, { SEMUA: 4, MENUNGGU_DIJEMPUT: 0, PENGAMBILAN: 2, DITERIMA_WORKSHOP: 0, DIPROSES: 3 });
   // status tak dikenal (Siap Kirim/Terkirim bukan backlog) jatuh ke default (SEMUA = himpunan lama) — tidak pernah memuat unit selesai
   for (const s of ["SIAP_KIRIM", "TERKIRIM", "ngawur"]) { const x = await backlog(`?status=${s}`); assert.equal(x.body.status, "SEMUA"); assert.ok(!x.body.items.some((i) => [ready, done].some((u) => u.unitCode === i.card.unit.unitCode))); }
   // pencarian

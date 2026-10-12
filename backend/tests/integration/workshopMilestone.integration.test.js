@@ -66,6 +66,10 @@ async function world() {
     await testPrisma.productionOperationRun.create({ data: { runId: r.id, stageCode: "inspect", stageLabel: "Inspeksi", sequence: 1, status: "SKIPPED", completedAt: new Date() } }); }
   // J: sudah Siap Kirim (tidak masuk backlog)
   W.J = await mkUnit("READY_FOR_DELIVERY", { orderStatus: "READY" });
+  // K: menunggu dijemput (AWAITING_PICKUP, job pickup baru dijadwalkan — driver belum berangkat)
+  W.K = await mkUnit("AWAITING_PICKUP", { orderStatus: "PICKUP" }); await mkJob(W.K, "PICKUP", "SCHEDULED");
+  // L: AWAITING_PICKUP tetapi job pickup SEDANG berlangsung (EN_ROUTE) -> Pengambilan
+  W.L = await mkUnit("AWAITING_PICKUP", { orderStatus: "PICKUP" }); await mkJob(W.L, "PICKUP", "EN_ROUTE");
   return W;
 }
 const snapshotCounts = async () => ({
@@ -78,7 +82,9 @@ test("backlog: tab Pengambilan / Diterima di Workshop / Diproses dihitung dari B
   const W = await world(); const before = await snapshotCounts();
   const code = (...us) => us.map((u) => u.unitCode).sort();
   const p = await backlog("?status=PENGAMBILAN&pageSize=100");
-  assert.deepEqual(codesOf(p), code(W.A, W.G, W.H), "pickup selesai tanpa bukti + handoff baru ditawarkan + pickup berjalan");
+  assert.deepEqual(codesOf(p), code(W.A, W.G, W.H, W.L), "pickup selesai tanpa bukti + handoff baru ditawarkan + IN_TRANSIT_IN + job pickup EN_ROUTE");
+  const mj = await backlog("?status=MENUNGGU_DIJEMPUT&pageSize=100");
+  assert.deepEqual(codesOf(mj), code(W.K), "AWAITING_PICKUP tanpa job pickup berjalan");
   const d = await backlog("?status=DITERIMA_WORKSHOP&pageSize=100");
   assert.deepEqual(codesOf(d), code(W.B, W.C, W.D, W.I), "custody / konfirmasi petugas / lahir di workshop / operasi hanya SKIPPED");
   const x = await backlog("?status=DIPROSES&pageSize=100");
@@ -86,8 +92,8 @@ test("backlog: tab Pengambilan / Diterima di Workshop / Diproses dihitung dari B
   const all = await backlog("?pageSize=100"); // default SEMUA = himpunan lama "Diproses" (unit order Diproses di workshop/sudah dijemput)
   assert.equal(all.status, "SEMUA");
   assert.deepEqual(codesOf(all), code(W.A, W.B, W.C, W.D, W.E, W.F, W.G, W.I));
-  assert.deepEqual(all.counts, { SEMUA: 8, PENGAMBILAN: 3, DITERIMA_WORKSHOP: 4, DIPROSES: 2 });
-  assert.ok(!codesOf(all).includes(W.J.unitCode) && !codesOf(all).includes(W.H.unitCode));
+  assert.deepEqual(all.counts, { SEMUA: 8, MENUNGGU_DIJEMPUT: 1, PENGAMBILAN: 4, DITERIMA_WORKSHOP: 4, DIPROSES: 2 });
+  assert.ok(!codesOf(all).includes(W.J.unitCode) && !codesOf(all).includes(W.H.unitCode) && !codesOf(all).includes(W.K.unitCode));
   // read-only: tidak ada bukti/handoff/status yang dibuat atau diubah oleh membaca
   assert.deepEqual(await snapshotCounts(), before, "membaca backlog tidak menulis apa pun");
 });
@@ -113,14 +119,15 @@ test("kartu backlog: status global + dasar bukti + status jadwal terpisah; histo
 test("/work-orders: filter globalStatus berbasis bukti + globalStatusCounts + bidang per baris; displayStatus lama tidak berubah artinya", async () => {
   const W = await world(); const before = await snapshotCounts();
   const code = (...us) => us.map((u) => u.unitCode).sort();
-  assert.deepEqual(woCodes(await wo("?globalStatus=PENGAMBILAN&pageSize=200")), code(W.A, W.G, W.H));
+  assert.deepEqual(woCodes(await wo("?globalStatus=PENGAMBILAN&pageSize=200")), code(W.A, W.G, W.H, W.L));
+  assert.deepEqual(woCodes(await wo("?globalStatus=MENUNGGU_DIJEMPUT&pageSize=200")), code(W.K));
   assert.deepEqual(woCodes(await wo("?globalStatus=DITERIMA_WORKSHOP&pageSize=200")), code(W.B, W.C, W.D, W.I));
   assert.deepEqual(woCodes(await wo("?globalStatus=DIPROSES&pageSize=200")), code(W.E, W.F));
   assert.deepEqual(woCodes(await wo("?globalStatus=DITERIMA_WORKSHOP,DIPROSES&pageSize=200")), code(W.B, W.C, W.D, W.E, W.F, W.I));
   assert.deepEqual(woCodes(await wo("?globalStatus=SIAP_KIRIM&pageSize=200")), code(W.J));
   const r = await wo("?pageSize=200");
-  assert.deepEqual(r.globalStatusCounts, { PENGAMBILAN: 3, DITERIMA_WORKSHOP: 4, DIPROSES: 2, SIAP_KIRIM: 1, DALAM_PENGIRIMAN: 0, TERKIRIM: 0 });
-  assert.deepEqual(r.globalStatusFlow, ["PENGAMBILAN", "DITERIMA_WORKSHOP", "DIPROSES", "SIAP_KIRIM", "DALAM_PENGIRIMAN", "TERKIRIM"]);
+  assert.deepEqual(r.globalStatusCounts, { MENUNGGU_DIJEMPUT: 1, PENGAMBILAN: 4, DITERIMA_WORKSHOP: 4, DIPROSES: 2, SIAP_KIRIM: 1, DALAM_PENGIRIMAN: 0, TERKIRIM: 0 });
+  assert.deepEqual(r.globalStatusFlow, ["MENUNGGU_DIJEMPUT", "PENGAMBILAN", "DITERIMA_WORKSHOP", "DIPROSES", "SIAP_KIRIM", "DALAM_PENGIRIMAN", "TERKIRIM"]);
   const row = (u) => r.units.find((x) => x.unitCode === u.unitCode);
   assert.equal(row(W.B).globalStatus.key, "DITERIMA_WORKSHOP"); assert.equal(row(W.B).receivedBasisLabel, "Diterima petugas lewat custody");
   assert.equal(row(W.A).globalStatus.key, "PENGAMBILAN"); assert.equal(row(W.A).presence.confirmed, false);

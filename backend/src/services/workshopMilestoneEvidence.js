@@ -24,8 +24,12 @@ export const WHERE_RECEIVED = Object.freeze({
 });
 const NOT_STARTED = Object.freeze({ NOT: WHERE_STARTED });
 const NOT_RECEIVED = Object.freeze({ NOT: WHERE_RECEIVED });
-/** Cabang 1 Pengambilan: pickup belum selesai (menunggu dijemput / dalam perjalanan ke workshop). */
-export const WHERE_PICKUP_IN_PROGRESS = Object.freeze({ status: { in: ["AWAITING_PICKUP", "IN_TRANSIT_IN"] } });
+/** Job pickup SEDANG berlangsung (driver berangkat / tiba di lokasi). UnitStatus tetap AWAITING_PICKUP sepanjang itu. */
+export const WHERE_PICKUP_JOB_RUNNING = Object.freeze({ jobUnits: { some: { job: { type: "PICKUP", status: { in: ["EN_ROUTE", "ARRIVED"] } } } } });
+/** Menunggu Dijemput: belum ada pickup yang berlangsung (belum dijadwalkan, terjadwal, atau driver belum berangkat). */
+export const WHERE_WAITING_PICKUP = Object.freeze({ AND: [{ status: "AWAITING_PICKUP" }, { NOT: WHERE_PICKUP_JOB_RUNNING }] });
+/** Cabang 1 Pengambilan: pickup sedang berlangsung (job EN_ROUTE/ARRIVED, atau status IN_TRANSIT_IN). */
+export const WHERE_PICKUP_IN_PROGRESS = Object.freeze({ OR: [{ status: "IN_TRANSIT_IN" }, { AND: [{ status: "AWAITING_PICKUP" }, WHERE_PICKUP_JOB_RUNNING] }] });
 /** Cabang 2 Pengambilan: pickup selesai (RECEIVED tersimpan) tetapi BELUM ada bukti terima di workshop dan belum dimulai — TIDAK dianggap tiba. */
 export const WHERE_PICKUP_DONE_NOT_RECEIVED = Object.freeze({ AND: [{ status: "RECEIVED" }, NOT_STARTED, NOT_RECEIVED] });
 
@@ -35,6 +39,7 @@ export const WHERE_PICKUP_DONE_NOT_RECEIVED = Object.freeze({ AND: [{ status: "R
  */
 export function unitWhereForGlobalStatus(key) {
   switch (key) {
+    case "MENUNGGU_DIJEMPUT": return WHERE_WAITING_PICKUP;
     case "PENGAMBILAN": return { OR: [WHERE_PICKUP_IN_PROGRESS, WHERE_PICKUP_DONE_NOT_RECEIVED] };
     case "DITERIMA_WORKSHOP": return { AND: [{ status: "RECEIVED" }, WHERE_RECEIVED, NOT_STARTED] };
     case "DIPROSES": return { AND: [{ status: { in: ["RECEIVED", "IN_PRODUCTION"] } }, WHERE_STARTED] };
@@ -59,7 +64,7 @@ export function unitWhereForGlobalStatuses(keys = []) {
  */
 export async function loadMilestoneEvidence(client, unitIds) {
   const ids = [...new Set((unitIds || []).filter(Boolean))];
-  const out = new Map(ids.map((id) => [id, { inboundAccepted: false, staffConfirmed: false, bornInWorkshop: false, started: false, pickupCompleted: false }]));
+  const out = new Map(ids.map((id) => [id, { inboundAccepted: false, staffConfirmed: false, bornInWorkshop: false, started: false, pickupCompleted: false, pickupInProgress: false }]));
   if (!ids.length) return finalize(out);
   const [handoffs, runs, logs, pickups] = await Promise.all([
     client.unitCustodyHandoff.findMany({ where: { unitId: { in: ids }, direction: "INBOUND", status: "ACCEPTED" }, select: { unitId: true } }),
@@ -72,7 +77,7 @@ export async function loadMilestoneEvidence(client, unitIds) {
       },
     }),
     client.unitStageLog.groupBy({ by: ["unitId"], where: { unitId: { in: ids } }, _count: { _all: true } }),
-    client.jobUnit.findMany({ where: { unitId: { in: ids }, job: { type: "PICKUP", status: "COMPLETED" } }, select: { unitId: true } }),
+    client.jobUnit.findMany({ where: { unitId: { in: ids }, job: { type: "PICKUP", status: { in: ["COMPLETED", "EN_ROUTE", "ARRIVED"] } } }, select: { unitId: true, job: { select: { status: true } } } }),
   ]);
   for (const h of handoffs) out.get(h.unitId).inboundAccepted = true;
   for (const r of runs) {
@@ -82,12 +87,12 @@ export async function loadMilestoneEvidence(client, unitIds) {
     if (r.operations.length) e.started = true;
   }
   for (const l of logs) if (l._count._all > 0) out.get(l.unitId).started = true;
-  for (const p of pickups) out.get(p.unitId).pickupCompleted = true;
+  for (const p of pickups) { if (p.job.status === "COMPLETED") out.get(p.unitId).pickupCompleted = true; else out.get(p.unitId).pickupInProgress = true; }
   return finalize(out);
 }
 function finalize(raw) {
   const m = new Map();
-  for (const [id, e] of raw) m.set(id, { receivedBasis: receivedBasisOf(e), started: e.started, pickupCompleted: e.pickupCompleted });
+  for (const [id, e] of raw) m.set(id, { receivedBasis: receivedBasisOf(e), started: e.started, pickupCompleted: e.pickupCompleted, pickupInProgress: e.pickupInProgress });
   return m;
 }
 
@@ -96,7 +101,7 @@ export async function globalStatusMapFor(client, units) {
   const evidence = await loadMilestoneEvidence(client, units.map((u) => u.id));
   const map = new Map();
   for (const u of units) {
-    const e = evidence.get(u.id) || { receivedBasis: null, started: false, pickupCompleted: false };
+    const e = evidence.get(u.id) || { receivedBasis: null, started: false, pickupCompleted: false, pickupInProgress: false };
     map.set(u.id, globalStatusOf({ unitStatus: u.status, ...e }));
   }
   return map;
