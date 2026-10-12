@@ -236,6 +236,8 @@ export function toRunView(run, ctx, { now = new Date(), photoUrl = null, complai
     adaptation: run.adaptationPolicy ? { policy: run.adaptationPolicy } : null,
     qcGatePolicy: run.qcGatePolicyVersion || null, // Fase 2: NULL = run lama (gerbang QC sebelum bongkar tidak berlaku)
     ...cornerAndLifecycleOf(run, ctx), // Fase 5: corner (status jujur) + lifecycle (status siklus yang sama di semua layar)
+    // Keputusan Corner Lead (jalur pengerjaan): diperlukan/tidak + alasan + PEMUTUS (nama diisi viewsOf, batch). null = belum diputuskan / jalur tanpa keputusan eksplisit.
+    cornerDecision: ctx.buildSetting?.cornerRequired != null ? { required: ctx.buildSetting.cornerRequired, reason: ctx.buildSetting.cornerReason ?? null, decidedById: ctx.buildSetting.updatedById ?? null, decidedAt: ctx.buildSetting.updatedAt ?? null, decidedBy: null } : null,
     steps,
     activeOp: op ? { stageLabel: op.stageLabel, status: op.status, startedAt: op.startedAt, delayKind: op.delayKind ?? null, delayNote: op.delayNote ?? null } : null,
     timer: {
@@ -260,6 +262,11 @@ export async function viewsOf(prisma, runs, opts) {
   const complaintsByUnit = await loadOpenComplaintsByUnit(prisma, runs.map((r) => ({ id: r.unitId, orderId: r.unit?.orderId ?? null })));
   const views = [];
   for (const run of runs) views.push(toRunView(run, await loadStepContext(prisma, run), { ...opts, photoUrl: photoByUnit.get(run.unitId) ?? null, complaints: complaintsByUnit.get(run.unitId) || [] }));
+  const deciderIds = [...new Set(views.map((v) => v.cornerDecision?.decidedById).filter(Boolean))];
+  if (deciderIds.length) {
+    const names = new Map((await prisma.user.findMany({ where: { id: { in: deciderIds } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
+    for (const v of views) if (v.cornerDecision?.decidedById) v.cornerDecision.decidedBy = names.get(v.cornerDecision.decidedById) ?? null;
+  }
   return views;
 }
 

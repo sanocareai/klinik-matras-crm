@@ -35,6 +35,7 @@ import { UUID_RE, isUnitV2ExecutionOwned, findV1Drift } from "../services/unitV2
 import { BOARD_DEFAULTS, todayWib } from "../lib/domain/productionBoard.js";
 import { normalizeExportQuery } from "../lib/domain/productionRencanaExport.js";
 import { buildRencanaExport } from "../services/productionRencanaExportService.js";
+import { getCornerBoard, setCornerOperator } from "../services/productionCornerService.js";
 
 export const productionExperienceRouter = express.Router();
 productionExperienceRouter.use(requireAuth);
@@ -101,6 +102,26 @@ productionExperienceRouter.post("/rencana/export", requireAnyPermission(...READ_
     const data = await buildRencanaExport(prisma, { cohortUnitIds, query, canIncludeValue: canValue });
     res.set("Cache-Control", "no-store");
     res.json({ readerMode: cohortUnitIds ? "COHORT" : "OFF", ...data });
+  } catch (err) { handleErr(err, res); }
+});
+
+// GET /api/production-v2/corner-board — tampilan Corner di Rencana Produksi (BACA-SAJA): empat kelompok dari cornerStatusOf + hambatan/aktor/QC/permintaan Sales dari SATU
+// read-model server. Tanpa urutan/kapasitas/target Corner (belum ada kontrak). Cohort reader seperti papan lain.
+productionExperienceRouter.get("/corner-board", requireAnyPermission(...READ_PERMS), async (req, res) => {
+  try {
+    const unitIds = await readerCohort();
+    if (!unitIds) return inert(res, { groups: [], notApplicable: 0 });
+    res.json({ readerMode: "COHORT", ...(await getCornerBoard(prisma, { unitIds })) });
+  } catch (err) { handleErr(err, res); }
+});
+
+// POST /api/production-v2/runs/:runId/corner-operator { operatorId, expectedRevision } — Tetapkan/Ganti PIC Corner. HANYA cornerOperatorId (bukan jadwal ulang). Idempotency-Key wajib;
+// expectedRevision = revisi RENCANA (409 PLAN_REVISION_CONFLICT bila berubah). Pekerjaan Corner yang sudah berjalan tidak dialihkan (409 CORNER_WORK_STARTED).
+productionExperienceRouter.post("/runs/:runId/corner-operator", requirePermission(P.PRODUCTION_ASSIGNMENT_WRITE), async (req, res) => {
+  try {
+    res.json(await setCornerOperator(prisma, {
+      runId: req.params.runId, operatorId: req.body?.operatorId, expectedRevision: req.body?.expectedRevision, actorId: req.user.id, idempotencyKey: idem(req),
+    }));
   } catch (err) { handleErr(err, res); }
 });
 
