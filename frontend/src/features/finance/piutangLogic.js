@@ -80,51 +80,38 @@ export function ringkasDiagnosis(diag) {
 }
 
 /**
- * Kelompok tab "Perlu Tindakan" — urutan dan label mengikuti kategori server; dua sumber di luar buku besar ditambahkan apa adanya:
- *   • sudahDiserahBelumDiakui : order sudah diserahkan tetapi pendapatan belum diakui (belum punya saldo piutang),
- *   • keringananBelumDiBuku   : lunas karena keringanan, uang belum diterima, belum tercatat di buku.
- * Mengembalikan [{ kode, label, tingkat, baris: [{ orderId, orderNumber, customerName, salesName, nilai, penjelasan, tindakan }] }] — hanya kelompok berisi.
+ * Kelompok tab "Perlu Tindakan" dari read-model server `perluTindakanOrder`: SATU order = SATU entri walau punya beberapa masalah (alasan digabung di server).
+ * Entri dikelompokkan menurut ALASAN UTAMA (urutan prioritas server = `alasanTindakan`); alasan lain tampil sebagai "+N alasan lain" dan lengkap di drawer.
+ * Mengembalikan [{ kode, label, tingkat, baris: [{ orderId, orderNumber, customerName, salesName, nilai, alasan[], alasanLain, penjelasan, tindakan }] }] — hanya kelompok berisi.
  */
-const URUTAN_LEDGER = ["ORDER_DIBATALKAN", "NILAI_BEDA_PENGAKUAN", "PAYMENT_BELUM_MENUTUP", "LUNAS_TANPA_PAYMENT", "KREDIT_LAINNYA"];
 export function kelompokPerluTindakan(diag) {
   if (!diag) return [];
-  const meta = diag.kategori ?? {};
-  const hasil = [];
-  for (const kode of URUTAN_LEDGER) {
-    const baris = (diag.baris ?? []).filter((b) => b.kategori === kode).map((b) => ({
-      orderId: b.orderId, orderNumber: b.orderNumber, customerName: b.customerName, salesName: b.salesName, nilai: b.saldoPiutang, penjelasan: b.penjelasan, tindakan: b.tindakan,
-    }));
-    if (baris.length) hasil.push({ kode, label: meta[kode]?.label ?? kode, tingkat: meta[kode]?.tingkat ?? "periksa", baris });
-  }
-  const serah = diag.belumDiakui?.sudahDiserahBelumDiakui ?? [];
-  if (serah.length) {
-    hasil.push({
-      kode: "SUDAH_DISERAHKAN_BELUM_DIAKUI", label: "Sudah diserahkan, belum tercatat di buku", tingkat: "periksa",
-      baris: serah.map((o) => ({
-        orderId: o.orderId, orderNumber: o.orderNumber, customerName: o.customerName, salesName: null, nilai: o.nilaiTagihan,
-        penjelasan: `Order berstatus ${o.orderStatus} tetapi pendapatannya belum diakui, jadi belum menjadi piutang di buku.`,
-        tindakan: "Periksa nilai order dan akui pendapatan lewat alur yang berlaku.",
-      })),
+  const daftar = diag.perluTindakanOrder ?? [];
+  const urut = Object.keys(diag.alasanTindakan ?? {});
+  const hasil = new Map();
+  for (const e of daftar) {
+    const utama = e.alasan?.[0];
+    if (!utama) continue;
+    const g = hasil.get(e.alasanUtama) ?? { kode: e.alasanUtama, label: utama.label, tingkat: utama.tingkat ?? "periksa", baris: [] };
+    g.baris.push({
+      orderId: e.orderId, orderNumber: e.orderNumber, customerName: e.customerName, salesName: e.salesName ?? null, nilai: e.nilai ?? 0,
+      alasan: e.alasan, alasanLain: Math.max(e.alasan.length - 1, 0), penjelasan: utama.penjelasan, tindakan: utama.tindakan,
     });
+    hasil.set(e.alasanUtama, g);
   }
-  const ker = (diag.keringananLunas?.baris ?? []).filter((b) => b.posisiBuku === "BELUM_DI_BUKU");
-  if (ker.length) {
-    hasil.push({
-      kode: "KERINGANAN_BELUM_DI_BUKU", label: "Lunas keringanan, uang belum diterima & belum tercatat di buku", tingkat: "periksa",
-      baris: ker.map((o) => ({
-        orderId: o.orderId, orderNumber: o.orderNumber, customerName: o.customerName, salesName: o.salesName ?? null, nilai: o.sisaTagihan,
-        penjelasan: o.alasan || "Dihitung lunas (Pengecualian Tgl Lunas) tetapi uang pelanggan belum diterima.",
-        tindakan: "Tetap tagihan ke pelanggan; catat pembayaran saat uang diterima.",
-      })),
-    });
-  }
-  return hasil;
+  return [...hasil.values()].sort((x, y) => (urut.indexOf(x.kode) === -1 ? 99 : urut.indexOf(x.kode)) - (urut.indexOf(y.kode) === -1 ? 99 : urut.indexOf(y.kode)));
+}
+
+/** Alasan lengkap satu order dari diagnosis (untuk drawer): [] bila order tidak masuk Perlu Tindakan. */
+export function alasanOrder(diag, orderId) {
+  return (diag?.perluTindakanOrder ?? []).find((e) => e.orderId === orderId)?.alasan ?? [];
 }
 
 /** Penjelasan scope Export untuk filterLabel (server menampilkannya di berkas). `tab` = kunci tab aktif. */
-export function labelScopeExport(tab, { jumlahTampil, jumlahTotal, filterAktif }) {
+export function labelScopeExport(tab, { jumlahTampil, jumlahTotal, filterAktif, posisiTeks = null }) {
   const nama = TAB_PIUTANG.find((t) => t.key === tab)?.label ?? tab;
   const bagian = [["Tab", nama]];
+  if (posisiTeks) bagian.push(["Cutoff posisi", `saldo buku besar sampai ${posisiTeks} (WIB, inklusif) — bukan filter transaksi periode`]);
   if (tab === "daftar" || tab === "jatuh-tempo") bagian.push(["Piutang", `${jumlahTampil} dari ${jumlahTotal} order${filterAktif ? " (sesuai filter aktif)" : ""}`]);
   if (tab === "perlu-tindakan" || tab === "diagnosis") bagian.push(["Catatan", "Berkas memuat daftar Piutang & Refund; rincian diagnosis tidak ikut diekspor"]);
   return bagian;

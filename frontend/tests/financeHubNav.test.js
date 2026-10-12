@@ -101,3 +101,21 @@ test("pemasangan: sidebar Finance dari hub; bilah tab hub membungkus halaman Fin
   const sb = baca("../src/components/SidebarNavSection.jsx");
   assert.match(sb, /item\.badgeN/);
 });
+
+test("judul tab & breadcrumb Finance berbahasa Indonesia dari definisi hub (bukan segmen path Inggris)", async () => {
+  const { titleFromPath } = await import("../src/lib/tabTitles.js");
+  assert.equal(titleFromPath("/finance/receivables"), "Piutang & Refund");
+  assert.equal(titleFromPath("/finance/receivables?tab=diagnosis"), "Piutang & Refund");
+  assert.equal(titleFromPath("/finance/payments"), "Verifikasi");
+  assert.equal(titleFromPath("/finance/cash?tab=mutasi"), "Mutasi Buku");
+  assert.equal(titleFromPath("/finance/suppliers?tab=aging"), "Jadwal & Aging");
+  const ENGLISH = ["Receivables", "Payments", "Invoices", "Cash", "Expenses", "Purchases", "Suppliers", "Journal", "Ledger", "Reconciliation", "Reports", "Accounts", "Settings", "Dashboard"];
+  for (const r of petaRuteLama().map((x) => x.rute)) {
+    const t = titleFromPath(r);
+    assert.ok(!ENGLISH.includes(t), `${r} → ${t}`);
+  }
+  const topbar = baca("../src/components/Topbar.jsx");
+  assert.match(topbar, /labelFinance\(pathname, search\)/);
+  // "Hitung Kas" tidak ada di hub sampai halamannya tersedia
+  assert.ok(!JSON.stringify(FINANCE_HUBS).includes("Hitung Kas"));
+});

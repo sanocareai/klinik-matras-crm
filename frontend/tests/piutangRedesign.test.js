@@ -5,7 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  TAB_PIUTANG, cocokUmur, barisUntukTab, saringPiutang, jumlahFilterAktif, ringkasDiagnosis, kelompokPerluTindakan, labelScopeExport,
+  TAB_PIUTANG, cocokUmur, barisUntukTab, saringPiutang, jumlahFilterAktif, ringkasDiagnosis, kelompokPerluTindakan, alasanOrder, labelScopeExport, periodeBawaanPiutang,
 } from "../src/features/finance/piutangLogic.js";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
@@ -52,26 +52,38 @@ test("saring: pencarian (order/pelanggan/sales/nominal), status, umur, sales; ur
 const DIAG = {
   neraca: 1500, rekonsiliasi: { selisih: 0, perKategori: { TAGIHAN_SAH: { jumlah: 1, total: 1000 }, LUNAS_TANPA_PAYMENT: { jumlah: 1, total: 500 }, KREDIT_LAINNYA: { jumlah: 0, total: 0 } } },
   perluTindakan: { jumlah: 3 },
+  alasanTindakan: { PAYMENT_BELUM_MENUTUP: "x", LUNAS_TANPA_PAYMENT: "y", SUDAH_DISERAHKAN_BELUM_DIAKUI: "z", TANGGAL_LUNAS_BEDA: "w" },
   kategori: { LUNAS_TANPA_PAYMENT: { label: "Lunas di CRM, belum ada pembayaran", tingkat: "periksa" }, TAGIHAN_SAH: { label: "Tagihan sah", tingkat: "tagih" } },
-  baris: [
-    { orderId: "s", kategori: "TAGIHAN_SAH", orderNumber: "S-1", customerName: "Sah", saldoPiutang: 1000, penjelasan: "x", tindakan: "y" },
-    { orderId: "l", kategori: "LUNAS_TANPA_PAYMENT", orderNumber: "L-1", customerName: "Lunas", salesName: "Kiki", saldoPiutang: 500, penjelasan: "Lunas tanpa payment", tindakan: "Catat pembayaran" },
+  // SATU entri per order; order "g" punya dua alasan
+  perluTindakanOrder: [
+    { orderId: "g", orderNumber: "G-1", customerName: "Ganda", salesName: "Kiki", nilai: 1500, alasanUtama: "PAYMENT_BELUM_MENUTUP", alasan: [
+      { kode: "PAYMENT_BELUM_MENUTUP", label: "Pembayaran belum menutup piutang", tingkat: "periksa", penjelasan: "p1", tindakan: "t1" },
+      { kode: "TANGGAL_LUNAS_BEDA", label: "Tanggal lunas berbeda dari tanggal pembayaran yang melunasi", tingkat: "periksa", penjelasan: "p2", tindakan: "t2" },
+    ] },
+    { orderId: "l", orderNumber: "L-1", customerName: "Lunas", salesName: null, nilai: 500, alasanUtama: "LUNAS_TANPA_PAYMENT", alasan: [
+      { kode: "LUNAS_TANPA_PAYMENT", label: "Lunas di CRM, belum ada pembayaran", tingkat: "periksa", penjelasan: "Lunas tanpa payment", tindakan: "Catat pembayaran" },
+    ] },
+    { orderId: "u", orderNumber: "U-1", customerName: "Belum", salesName: null, nilai: 700, alasanUtama: "SUDAH_DISERAHKAN_BELUM_DIAKUI", alasan: [
+      { kode: "SUDAH_DISERAHKAN_BELUM_DIAKUI", label: "Sudah diserahkan, belum tercatat di buku", tingkat: "periksa", penjelasan: "pu", tindakan: "tu" },
+    ] },
   ],
-  belumDiakui: { sudahDiserahBelumDiakui: [{ orderId: "u", orderNumber: "U-1", customerName: "Belum", orderStatus: "DELIVERED", nilaiTagihan: 700 }] },
-  keringananLunas: { baris: [{ orderId: "k", orderNumber: "K-1", customerName: "Keringanan", posisiBuku: "BELUM_DI_BUKU", sisaTagihan: 250 }, { orderId: "k2", posisiBuku: "SUDAH_DI_BUKU", sisaTagihan: 10 }] },
 };
 
-test("strip diagnosis + kelompok Perlu Tindakan dari data server: tagihan sah TIDAK dicampur, sumber di luar buku besar ikut apa adanya", () => {
+test("strip diagnosis + kelompok Perlu Tindakan: satu order satu entri, alasan lain terhitung, urutan prioritas server, tagihan sah tidak dicampur", () => {
   assert.deepEqual(ringkasDiagnosis(DIAG), { cocok: true, perluTindakan: 3, neraca: 1500 });
   assert.equal(ringkasDiagnosis({ ...DIAG, rekonsiliasi: { ...DIAG.rekonsiliasi, selisih: 40 } }).cocok, false);
   assert.equal(ringkasDiagnosis(null), null);
   const g = kelompokPerluTindakan(DIAG);
-  assert.deepEqual(g.map((x) => x.kode), ["LUNAS_TANPA_PAYMENT", "SUDAH_DISERAHKAN_BELUM_DIAKUI", "KERINGANAN_BELUM_DI_BUKU"]);
-  assert.ok(!g.flatMap((x) => x.baris).some((b) => b.orderId === "s"), "tagihan sah tidak ada di Perlu Tindakan");
-  assert.ok(!g.flatMap((x) => x.baris).some((b) => b.orderId === "k2"), "yang sudah di buku tidak ikut");
-  assert.equal(g[0].label, "Lunas di CRM, belum ada pembayaran", "label dari server");
-  assert.equal(g[0].baris[0].nilai, 500);
+  assert.deepEqual(g.map((x) => x.kode), ["PAYMENT_BELUM_MENUTUP", "LUNAS_TANPA_PAYMENT", "SUDAH_DISERAHKAN_BELUM_DIAKUI"]);
+  const semua = g.flatMap((x) => x.baris);
+  assert.equal(new Set(semua.map((b) => b.orderId)).size, semua.length, "tidak ada order ganda");
+  assert.equal(semua.length, 3);
+  const ganda = semua.find((b) => b.orderId === "g");
+  assert.equal(ganda.alasanLain, 1); assert.equal(ganda.alasan.length, 2); assert.equal(ganda.penjelasan, "p1");
+  assert.equal(g[1].label, "Lunas di CRM, belum ada pembayaran", "label dari server");
   assert.deepEqual(kelompokPerluTindakan(null), []);
+  assert.deepEqual(alasanOrder(DIAG, "g").map((a) => a.kode), ["PAYMENT_BELUM_MENUTUP", "TANGGAL_LUNAS_BEDA"]);
+  assert.deepEqual(alasanOrder(DIAG, "tidak-ada"), []);
 });
 
 test("scope export menyebut tab, jumlah baris, dan filter aktif", () => {
@@ -95,7 +107,11 @@ test("pemasangan layar: tab sticky, empat kartu dari server, strip diagnosis, dr
   assert.match(src, /LembarFilter/); assert.match(src, /slide-in-from-bottom/);
   assert.match(src, /Bagaimana angka ini dihitung\?/);
   assert.match(src, /labelScopeExport\(tab,/);
-  assert.match(src, /periode: \{ from: periode\.from, to: periode\.to \}/);
+  assert.match(src, /periode: \{ to: posisi \}/);
+  assert.match(src, /data-testid="posisi-piutang"/); assert.match(src, /Posisi per \$\{tanggalPendek\(posisi\)\} \(WIB\)/);
+  assert.doesNotMatch(src, /PeriodePicker from=/, "posisi saldo bukan rentang periode transaksi");
+  assert.doesNotMatch(src, /Hitung Kas/, "Hitung Kas tidak ditampilkan sebelum halamannya ada");
+  assert.match(src, /alasan: alasanOrder\(diag, terpilih\.orderId\)/); assert.match(src, /data-testid="alasan-lain"/);
   // Diagnosis panjang tidak lagi di layar pertama: hanya dirender di tab Diagnosis
   assert.match(src, /tab === "diagnosis" && \(/);
   assert.doesNotMatch(src.slice(0, src.indexOf("function BarFilterPiutang")), /<DiagnosisPiutang \/>/, "DiagnosisPiutang tanpa prop (muat sendiri) tidak ada di tab bawaan");
@@ -108,4 +124,13 @@ test("DiagnosisPiutang: tanpa prop memuat sendiri (kompatibel); dengan prop mema
   const src = baca("../src/features/finance/DiagnosisPiutang.jsx");
   assert.match(src, /dataLuar !== undefined/);
   assert.match(src, /if \(!dikendalikan\) muat\(\)/);
+});
+
+test("posisi bawaan = hari ini WIB (batas tengah malam WIB, bukan UTC); scope export menyebut cutoff posisi", () => {
+  // 2026-10-11T17:30Z = 12 Okt 00:30 WIB
+  assert.equal(periodeBawaanPiutang(new Date("2026-10-11T17:30:00Z")).to, "2026-10-12");
+  // 2026-10-11T16:59Z = 11 Okt 23:59 WIB
+  assert.equal(periodeBawaanPiutang(new Date("2026-10-11T16:59:00Z")).to, "2026-10-11");
+  const l = labelScopeExport("daftar", { jumlahTampil: 3, jumlahTotal: 8, filterAktif: false, posisiTeks: "12 Okt 2026" });
+  assert.ok(l.some(([k, v]) => k === "Cutoff posisi" && /12 Okt 2026 \(WIB, inklusif\)/.test(v) && /bukan filter transaksi periode/.test(v)));
 });

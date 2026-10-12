@@ -22,10 +22,24 @@ function Daftar({ items, kosong }) {
  * @param detail  respons detail order (atau null selagi dimuat)
  * @param opsi    { memuat, galat, onBukaVerifikasi, onBukaInvoice, onCobaLagi }
  */
-export function specDetailPiutang(row, detail, { memuat = false, galat = "", onBukaVerifikasi, onBukaInvoice, onCobaLagi } = {}) {
+export function specDetailPiutang(row, detail, { memuat = false, galat = "", onBukaVerifikasi, onBukaInvoice, onCobaLagi, alasan = [] } = {}) {
   const t = detail?.tagihan ?? row;
   const statusBayar = row.statusBayar ? <Badge variant={row.statusBayar === "DIBAYAR_SEBAGIAN" ? "accent" : "neutral"}>{LABEL_STATUS_BAYAR[row.statusBayar] || row.statusBayar}</Badge> : null;
   const bagian = [
+    ...(alasan.length ? [{
+      judul: `Mengapa perlu tindakan (${alasan.length})`,
+      baris: [["", (
+        <ul className="m-0 list-none space-y-2 p-0" data-testid="alasan-tindakan">
+          {alasan.map((a) => (
+            <li key={a.kode} className="rounded-lg border border-line px-2.5 py-2">
+              <p className="m-0 text-[13px] font-semibold text-ink">{a.label}</p>
+              <p className="m-0 mt-0.5 text-[12.5px] leading-relaxed text-ink2">{a.penjelasan}</p>
+              <p className="m-0 mt-0.5 text-[12.5px] leading-relaxed text-ink"><strong>Tindakan:</strong> {a.tindakan}</p>
+            </li>
+          ))}
+        </ul>
+      )]],
+    }] : []),
     {
       judul: "Tagihan",
       baris: [

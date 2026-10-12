@@ -8,7 +8,7 @@ import { useUrlTab } from "@/lib/useUrlTab.js";
 import { specDetailPiutang } from "@/features/finance/PiutangDetail.jsx";
 import {
   TAB_PIUTANG, TAB_PIUTANG_KUNCI, STATUS_BAYAR_OPSI, LABEL_STATUS_BAYAR, URUT_OPSI, UMUR_OPSI, barisUntukTab, saringPiutang, jumlahFilterAktif,
-  ringkasDiagnosis, kelompokPerluTindakan, labelScopeExport, teksNominal, periodeBawaanPiutang,
+  ringkasDiagnosis, kelompokPerluTindakan, alasanOrder, labelScopeExport, teksNominal, periodeBawaanPiutang,
 } from "@/features/finance/piutangLogic.js";
 import { VARIAN_TINGKAT } from "@/features/finance/diagnosisPiutangLogic.js";
 import { Card, CardContent } from "@/components/ui/card.jsx";
@@ -95,7 +95,8 @@ export default function FinanceReceivables() {
   const [infoUntuk, setInfoUntuk] = useState(null);
   const [koreksiUntuk, setKoreksiUntuk] = useState(null);
   const [rekening, setRekening] = useState([]);
-  const [periode, setPeriode] = useState(periodeBawaanPiutang); // posisi HARI INI (jatuh tempo & ≤7 hari relatif ke posisi ini)
+  // POSISI saldo (tanggal WIB, bawaan HARI INI): saldo buku besar sampai tanggal itu. BUKAN filter transaksi periode — jatuh tempo & ≤7 hari relatif ke posisi ini.
+  const [posisi, setPosisi] = useState(() => periodeBawaanPiutang().to);
   const [bantuan, setBantuan] = useState(false);
   const [lembarFilter, setLembarFilter] = useState(false);
   const [tab, setTab] = useUrlTab(TAB_PIUTANG_KUNCI, "daftar");
@@ -110,15 +111,15 @@ export default function FinanceReceivables() {
 
   const muatDiagnosis = useCallback(async () => {
     setDiagGalat(null);
-    try { setDiag(await api.getFinancePiutangDiagnosis({ to: periode.to })); } catch (e) { setDiag(null); setDiagGalat(e.message || "Gagal memuat diagnosis piutang"); }
-  }, [periode.to]);
+    try { setDiag(await api.getFinancePiutangDiagnosis({ to: posisi })); } catch (e) { setDiag(null); setDiagGalat(e.message || "Gagal memuat diagnosis piutang"); }
+  }, [posisi]);
 
   const muat = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const [ar, rf, rk] = await Promise.all([
-        api.getFinanceReceivables({ to: periode.to }),
+        api.getFinanceReceivables({ to: posisi }),
         api.getFinanceRefunds(),
         api.getFinanceCashAccounts(),
       ]);
@@ -131,7 +132,7 @@ export default function FinanceReceivables() {
       setLoading(false);
     }
     muatDiagnosis(); // tidak menahan daftar: kartu "Perlu Tindakan" & strip menyusul bila diagnosis lambat/gagal
-  }, [periode.to, muatDiagnosis]);
+  }, [posisi, muatDiagnosis]);
 
   useEffect(() => { muat(); }, [muat]);
 
@@ -150,12 +151,12 @@ export default function FinanceReceivables() {
     setTerpilih(row);
     setDetail({ id: row.orderId, data: null, galat: "", memuat: true });
     try {
-      const d = await api.getFinancePiutangOrder(row.orderId, { to: periode.to });
+      const d = await api.getFinancePiutangOrder(row.orderId, { to: posisi });
       setDetail((s) => (s.id === row.orderId ? { id: row.orderId, data: d, galat: "", memuat: false } : s));
     } catch (e) {
       setDetail((s) => (s.id === row.orderId ? { id: row.orderId, data: null, galat: e.message || "Gagal memuat rincian order", memuat: false } : s));
     }
-  }, [periode.to]);
+  }, [posisi]);
   const tutupDetail = () => { setTerpilih(null); setDetail({ id: null, data: null, galat: "", memuat: false }); };
 
   const semuaBaris = data?.baris || [];
@@ -180,10 +181,10 @@ export default function FinanceReceivables() {
     const refundSemua = tab === "refund" ? refundTampil : refunds;
     const piutangIds = (tab === "daftar" || tab === "jatuh-tempo" ? baris : semuaBaris).map((b) => b.orderId);
     return {
-      periode: { from: periode.from, to: periode.to },
+      periode: { to: posisi },
       filter: { piutangIds, refundIds: refundSemua.map((r) => r.id) },
       filterLabel: labelFilterAktif([
-        ...labelScopeExport(tab, { jumlahTampil: baris.length, jumlahTotal: semuaBaris.length, filterAktif }),
+        ...labelScopeExport(tab, { jumlahTampil: baris.length, jumlahTotal: semuaBaris.length, filterAktif, posisiTeks: tanggalPendek(posisi) }),
         ["Status bayar", fStatus && LABEL_STATUS_BAYAR[fStatus]],
         ["Kelompok umur", UMUR_OPSI.find(([k]) => k === fUmur)?.[1]],
         ["Sales", fSales],
@@ -191,7 +192,7 @@ export default function FinanceReceivables() {
         ["Cari piutang", q.trim()],
         ["Status refund", tab === "refund" && fStatusRefund && (LABEL_STATUS[fStatusRefund] || fStatusRefund)],
         ["Cari refund", tab === "refund" && qRefund.trim()],
-        ["Posisi per", tanggalPendek(periode.to)],
+        ["Posisi per", tanggalPendek(posisi)],
       ]),
     };
   }
@@ -206,6 +207,7 @@ export default function FinanceReceivables() {
       onCobaLagi: () => bukaDetail(terpilih),
       onBukaVerifikasi: () => navigate("/finance/payments"),
       onBukaInvoice: () => navigate("/finance/invoices"),
+      alasan: alasanOrder(diag, terpilih.orderId),
     })
     : panelRefund;
   const panelRincian = specDrawer;
@@ -213,16 +215,19 @@ export default function FinanceReceivables() {
   return (
     <HalamanFinance
       title="Piutang & Refund"
-      subtitle={`Order diserahkan & belum lunas — posisi per ${tanggalPendek(periode.to)}.`}
+      subtitle={`Posisi per ${tanggalPendek(posisi)} (WIB) — saldo piutang di buku besar, bukan filter transaksi.`}
       loading={loading}
       error={error}
       onRetry={muat}
       actions={(
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <PeriodePicker from={periode.from} to={periode.to} onChange={setPeriode} />
+          <label className="flex items-center gap-2 text-[12px] font-semibold text-ink2" data-testid="posisi-piutang">
+            <span className="max-sm:hidden">Posisi per</span>
+            <DatePicker placeholder="Pilih tanggal" value={posisi} onChange={(v) => v && setPosisi(v)} />
+          </label>
           <Button size="sm" variant="tertiary" onClick={() => setBantuan(true)} data-testid="bantuan-piutang" aria-label="Bagaimana angka ini dihitung?" title="Bagaimana angka ini dihitung?" className="max-sm:min-h-11 max-sm:px-2.5"><HelpCircle size={14} /> <span className="max-sm:hidden">Bagaimana angka ini dihitung?</span></Button>
           <TombolExportExcel modul="piutang-refund" disabled={loading} ambilBody={ambilBodyExport} />
-          <Button size="sm" onClick={() => setModalRefund(true)}><Undo2 size={14} /> Ajukan Refund</Button>
+          <Button size="sm" onClick={() => setModalRefund(true)} title="Ajukan Refund" data-testid="ajukan-refund" className="max-sm:min-h-11 max-sm:min-w-11 max-sm:px-0"><Undo2 size={14} /> <span className="max-sm:sr-only">Ajukan Refund</span></Button>
         </div>
       )}
     >
@@ -351,6 +356,7 @@ export default function FinanceReceivables() {
       >
         <div className="space-y-3 text-[13px] leading-relaxed text-ink2" data-testid="isi-bantuan">
           <p className="m-0"><strong className="text-ink">Total Piutang Aktif</strong> = jumlah saldo akun Piutang Usaha per order yang masih terbuka (positif) di buku besar, order yang sudah diserahkan dan belum lunas.</p>
+          <p className="m-0"><strong className="text-ink">Posisi per tanggal</strong> = saldo buku besar sampai tanggal itu (WIB, inklusif); bawaannya hari ini. Ini <em>bukan</em> filter transaksi periode — tidak ada rentang tanggal transaksi di halaman ini.</p>
           <p className="m-0"><strong className="text-ink">Jatuh Tempo</strong> = bagian piutang yang sudah lewat jatuh tempo. Acuan: jatuh tempo invoice; bila tidak ada, tanggal order (kolom Umur menyebutkan).</p>
           <p className="m-0"><strong className="text-ink">Jatuh Tempo ≤7 Hari</strong> = jatuh tempo hari ini sampai 7 hari ke depan.</p>
           <p className="m-0"><strong className="text-ink">Perlu Tindakan</strong> = order yang saldonya bukan tagihan sah (lunas di CRM tanpa Payment, belum tercatat di buku, saldo kredit, nilai berubah setelah diakui, dst).</p>
@@ -606,6 +612,7 @@ function PerluTindakan({ diag, galat, kelompok, onBuka }) {
                   <div className="min-w-0">
                     <p className="m-0 text-[13px] font-medium text-ink">{b.orderNumber || "—"} · {b.customerName}</p>
                     {b.salesName && <p className="m-0 text-[12px] text-ink3">{b.salesName}</p>}
+                    {b.alasanLain > 0 && <p className="m-0 mt-0.5 text-[12px] font-semibold text-orange" data-testid="alasan-lain">+{b.alasanLain} alasan lain — buka untuk melihat semua</p>}
                   </div>
                   <Uang value={b.nilai} className="text-[14px] font-bold" />
                 </div>

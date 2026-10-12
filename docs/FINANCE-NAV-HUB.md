@@ -33,4 +33,10 @@ Kontrak server (aditif, tanpa mengubah field/angka lama):
 - `GET /finance/reports/receivables/diagnosis`: + `perluTindakan { jumlah, perSumber }`.
 - `GET /finance/reports/receivables/order/:orderId` (baru, finance:read): invoice, pembayaran, jurnal akun Piutang Usaha, riwayat — untuk drawer.
 
-Posisi bawaan layar = **hari ini (WIB)**; periode dapat diganti (parameter `to`). Export mengikuti posisi + filter aktif dan menyebut tab/scope di label berkas.
+### Posisi vs periode transaksi
+
+Piutang adalah **posisi saldo** buku besar, bukan daftar transaksi dalam rentang tanggal. Layar menampilkan label eksplisit **"Posisi per <tanggal> (WIB)"** dan satu pemilih tanggal "Posisi per" (tidak ada pemilih rentang periode). Bawaan = **hari ini (WIB)**; batas posisi inklusif sampai akhir hari itu WIB. Export membawa cutoff yang sama (periode berkas "Piutang per <tanggal>" + catatan "Cutoff posisi … bukan filter transaksi periode") dan menyebut tab/scope + filter aktif.
+
+### Perlu Tindakan: satu order = satu entri
+
+Server (`perluTindakanOrder`) menggabungkan semua alasan per order; tab Perlu Tindakan dan hitungan `perluTindakan.jumlah` memakai **order unik**. Urutan prioritas alasan = `URUTAN_ALASAN` (piutangDiagnosis.js); alasan utama menentukan kelompok, alasan lain tampil sebagai "+N alasan lain" dan lengkap di drawer ("Mengapa perlu tindakan (N)"). Kategori baru **"Tanggal lunas berbeda dari tanggal pembayaran yang melunasi"** (`TANGGAL_LUNAS_BEDA`, services/finance/piutangTanggalLunas.js) memakai ulang `jejakPembayaran()`/`tanggalLunasMenurutCrm()` (kohort atribusi): hari WIB pembayaran yang melunasi vs hari WIB `Order.paidAt`; timestamp backfill 31 Agt 2026 tidak dituduh; tanggal yang DIKUNCI Pengecualian Owner dikeluarkan (jumlahnya dilaporkan). Read-model hanya MEMBACA — tidak pernah mengubah `paidAt` atau `Payment`; koreksi lewat alur resmi. Daftar Piutang tetap berbasis ledger.
