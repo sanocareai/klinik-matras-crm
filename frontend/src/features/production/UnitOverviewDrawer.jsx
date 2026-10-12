@@ -10,7 +10,7 @@ import { ProgressBar } from "@/components/ui/progress.jsx";
 import { formatRupiah } from "@/utils/format.js";
 import { formatTanggal } from "@/utils/formatDate.js";
 import { friendlyError } from "@/features/production/experience.js";
-import { DELAY_TITLE, SKIP_LABEL, delayKindText, delayStatusText, presenceTone, priorityOf, progressText, resumeInfo, statusOf } from "@/features/production/productionLabels.js";
+import { DELAY_TITLE, SKIP_LABEL, delayKindText, delayStatusText, presenceTone, priorityOf, progressText, receivedBasisText, resumeInfo, scheduleStatusText, statusOf } from "@/features/production/productionLabels.js";
 import { UnitPhotoThumb } from "@/features/production/UnitPhotoThumb.jsx";
 import { DOC_SOURCE_BADGE, DOC_SOURCE_LABEL, DOC_STATUS } from "@/features/production/documentation.js";
 import { DiagnosisWizard, diagnosisCtaLabel, hasLocalDraft } from "@/features/production/DiagnosisWizard.jsx";
@@ -83,8 +83,10 @@ function Ringkasan({ d }) {
       <dl className="m-0 grid grid-cols-2 gap-2 text-[12.5px] sm:grid-cols-3">
         <Field label="Merk & Ukuran" value={[d.identity.merk, d.identity.ukuran].filter(Boolean).join(" ")} />
         <Field label="Status order" value={d.identity.orderStatus?.label || statusOf({ status: d.identity.status }).label} />
-        <Field label="Status unit" value={statusOf({ unitStatusDisplay: d.identity.unitStatus, status: d.identity.status }).label} />
-        <Field label="Posisi unit" value={d.identity.presence?.label} />
+        {/* Empat sumbu TERPISAH: status global (milestone berbasis bukti) · keberadaan fisik · tahap produksi (bucket) · status jadwal. */}
+        <Field label="Status global" value={(() => { const g = statusOf({ globalStatus: d.identity.globalStatus, unitStatusDisplay: d.identity.unitStatus, status: d.identity.status }); return g.detail ? `${g.label} — ${g.detail}` : g.label; })()} />
+        <Field label="Posisi unit" value={[d.identity.presence?.label, receivedBasisText(d.identity)].filter(Boolean).join(" · ")} />
+        <Field label="Status jadwal" value={scheduleStatusText(d.identity)} />
         <Field label="Meja / Workshop" value={d.identity.station.label} />
         <Field label="PIC Meja" value={d.identity.pic.table} />
         <Field label="PIC Corner" value={d.identity.pic.corner} />

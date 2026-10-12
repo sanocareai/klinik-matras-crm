@@ -764,7 +764,7 @@ export const api = {
   // P9B — Ringkasan Produksi + kolom pipeline Rencana Produksi: SATU payload dipakai kedua halaman.
   getProductionV2CommandCenter: () => request("/production-v2/command-center"),
   // Backlog Rencana Produksi (slice 1): filter + paginasi di server. status = DIPROSES (default) | PENGAMBILAN.
-  getProductionV2Backlog: ({ status = "DIPROSES", q = "", page = 1, pageSize = 25 } = {}) => request(`/production-v2/backlog?status=${encodeURIComponent(status)}&page=${page}&pageSize=${pageSize}${q ? `&q=${encodeURIComponent(q)}` : ""}`),
+  getProductionV2Backlog: ({ status = "SEMUA", q = "", page = 1, pageSize = 25 } = {}) => request(`/production-v2/backlog?status=${encodeURIComponent(status)}&page=${page}&pageSize=${pageSize}${q ? `&q=${encodeURIComponent(q)}` : ""}`),
   getProductionV2Andon: (date) => request(`/production-v2/andon${date ? `?date=${encodeURIComponent(date)}` : ""}`),
   getProductionV2Card: (runId) => request(`/production-v2/runs/${runId}/card`),
   // P9C — Unit 360: satu bacaan kanonis per unit (setara detail Resi), dipakai kartu Status Produksi & Rencana Produksi.
@@ -833,7 +833,7 @@ export const api = {
   setProductionV2QcGateDefault: (enabled, version) => request("/production-v2/settings/qc-gate-default", { method: "PUT", body: JSON.stringify({ enabled, ...(version ? { version } : {}) }) }),
   setProductionV2AdaptationDefault: (enabled) => request("/production-v2/settings/adaptation-default", { method: "PUT", body: JSON.stringify({ enabled }) }),
   setProductionV2ServiceMapping: (priceItemId, serviceId) => request(`/production-v2/settings/service-mappings/${priceItemId}`, { method: "PUT", body: JSON.stringify({ serviceId: serviceId || null }) }),
-  // P9A — "Unit Tiba di Workshop": pemilih lokasi Receiving/WIP + konfirmasi kedatangan fisik (tanpa buka workspace Gudang).
+  // P9A — "Terima Unit di Workshop": pemilih lokasi Receiving/WIP + konfirmasi kedatangan fisik (tanpa buka workspace Gudang).
   getProductionV2ReceivingLocations: () => request("/production-v2/receiving-locations"),
   // Slice 2: satu aksi — lokasi workshop bawaan dari Pengaturan Admin (locationId tidak dikirim).
   getProductionV2ArrivalConfig: () => request("/production-v2/arrival-config"),

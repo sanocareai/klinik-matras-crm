@@ -11,7 +11,8 @@
 // pemanggil TIDAK menyangka itu unik per unit. Field yang genuinely per-unit (foto, plan, evidence, BOM, QC,
 // custody) SELALU difilter lewat runId/unitId spesifik unit ini — tidak pernah "milik order", mencegah
 // kebocoran antar-unit bersaudara (lihat resolveUnitPhoto yang sudah menolak atribusi job multi-unit).
-import { COMPLAINT_LABEL, RUN_VIEW_INCLUDE, STYLE_LABEL, VERDICT_LABEL, customerOf, indicatorsOf, latestOf, materialStatusOf, minutesBetween, nameOf, stepStatuses, warningsOf, cornerAndLifecycleOf } from "./productionExperienceReadService.js";
+import { COMPLAINT_LABEL, RUN_VIEW_INCLUDE, STYLE_LABEL, VERDICT_LABEL, customerOf, indicatorsOf, latestOf, materialStatusOf, milestoneOfRun, minutesBetween, nameOf, stepStatuses, warningsOf, cornerAndLifecycleOf } from "./productionExperienceReadService.js";
+import { milestoneOf, receivedBasisOf } from "../lib/domain/workshopMilestone.js";
 import { PKR_ORDER_SELECT, rujukanPkrDariOrder } from "./pkrProduksiGuard.js";
 import { loadCornerView, loadStepContext } from "./productionStepCommandService.js";
 import { buildRunDocumentation, documentationBuckets } from "./productionDocumentationRead.js";
@@ -196,6 +197,12 @@ async function buildNoRunOverview(prisma, unit, { canSeeValue }) {
   const prioNoRun = priorityDisplay({ stored: unit.priority ?? "NORMAL", complaintCases: complaintsByUnit.get(unit.id) || [] });
   if (!pickup.exists) warnings.push({ code: "CUSTODY_TIDAK_DITEMUKAN", text: "Tidak ada catatan custody masuk untuk unit ini" });
   warnings.push({ code: "BELUM_ADA_RUN", text: "Unit belum masuk proses produksi (belum ada Production Run)" });
+  // Milestone global tanpa Run: bukti terima = custody INBOUND ACCEPTED; "dimulai" = ada log tahap V1 (atau status tersimpan IN_PRODUCTION). Tidak ada tebakan dari pickup.
+  const stageLogCount = await prisma.unitStageLog.count({ where: { unitId: unit.id } });
+  const milestone = milestoneOf({
+    unitStatus: unit.status, receivedBasis: receivedBasisOf({ inboundAccepted: pickup?.status === "ACCEPTED" }),
+    started: stageLogCount > 0, pickupCompleted: !!pickup.exists, scheduled: false,
+  });
 
   return {
     identity: {
@@ -203,6 +210,7 @@ async function buildNoRunOverview(prisma, unit, { canSeeValue }) {
       merk: unit.merk, ukuran: unit.ukuran, status: unit.status, photoUrl,
       orderStatus: displayStatusOfOrder(order?.status) || null, unitStatus: displayStatusOfUnit(unit.status) || null,
       presence: physicalPresenceOf({ unitStatus: unit.status, runStatus: null, runOrigin: null, inboundAccepted: pickup?.status === "ACCEPTED" }),
+      globalStatus: milestone.globalStatus, receivedBasis: milestone.receivedBasis, receivedBasisLabel: milestone.receivedBasisLabel, scheduleStatus: milestone.scheduleStatus,
       priority: { key: prioNoRun.key, label: prioNoRun.label, rank: prioNoRun.rank, complaintCases: prioNoRun.complaintCases },
       target: { productionDate: null, priority: null, priorityLabel: prioNoRun.label, targetCompleteAt: null, late: false },
       pic: { table: null, corner: null }, station: { code: null, label: "Belum dijadwalkan" },
@@ -313,6 +321,7 @@ async function getUnitOverviewDasar(prisma, unitId, { unitIds, canSeeValue = fal
   const complaintsByUnit = await loadOpenComplaintsByUnit(prisma, [{ id: unitId, orderId: run.unit.orderId }]);
   const prio = priorityDisplay({ stored: run.plan?.priority ?? 0, complaintCases: complaintsByUnit.get(unitId) || [] });
   const inboundAccepted = run.custodyHandoffs.some((h) => h.direction === "INBOUND" && h.status === "ACCEPTED") || arrivalConfirmedByStaff(run.phases);
+  const milestone = milestoneOfRun(run, ctx, warnings);
 
   const mediaOf = (stepNos) => ctx.evidence.filter((e) => stepNos.includes(e.stepNo))
     .flatMap((e) => (Array.isArray(e.media) ? e.media : []).map((m) => ({ stepNo: e.stepNo, stepLabel: STEP_BY_NO[e.stepNo]?.label, kind: m.kind, url: signEvidenceUrl(m.url), source: sourceOfStep(e.stepNo) })))
@@ -336,6 +345,7 @@ async function getUnitOverviewDasar(prisma, unitId, { unitIds, canSeeValue = fal
       merk: run.unit.merk, ukuran: run.unit.ukuran, status: run.unit.status, photoUrl,
       orderStatus: displayStatusOfOrder(run.unit.order?.status) || null, unitStatus: displayStatusOfUnit(run.unit.status) || null,
       presence: physicalPresenceOf({ unitStatus: run.unit.status, runStatus: run.status, runOrigin: run.origin, inboundAccepted }),
+      globalStatus: milestone.globalStatus, receivedBasis: milestone.receivedBasis, receivedBasisLabel: milestone.receivedBasisLabel, scheduleStatus: milestone.scheduleStatus,
       priority: { key: prio.key, label: prio.label, rank: prio.rank, complaintCases: prio.complaintCases },
       target: {
         productionDate: run.plan?.productionDate ? formatProductionDate(run.plan.productionDate) : null,

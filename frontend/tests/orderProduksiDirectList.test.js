@@ -29,7 +29,7 @@ test("filter ringan di baris saring halaman yang sama (satu tablist), bukan bila
   assert.match(WO, /data-testid=\{`order-scope-\$\{sc\.key\}`\}/);
   assert.match(WO, /title=\{onScopeChange \|\| scope \? "Order Produksi" : "Work Order"\}/);
   assert.doesNotMatch(WO, /Order Produksi Aktif|Riwayat Order Produksi/, "judul tunggal 'Order Produksi'");
-  assert.match(WO, /scope === "riwayat" \? \[\] : scope === "aktif" \? DISPLAY_STATUS_TABS\.filter\(\(t\) => t\.key !== "TERKIRIM"\) : DISPLAY_STATUS_TABS/, "Riwayat tanpa tab status; Aktif tanpa Terkirim; Semua = 4 status");
+  assert.match(WO, /scope === "riwayat" \? \[\] : scope === "aktif" \? GLOBAL_STATUS_TABS\.filter\(\(t\) => t\.key !== "TERKIRIM"\) : GLOBAL_STATUS_TABS/, "Riwayat tanpa tab status; Aktif tanpa Terkirim; Semua = 6 status milestone global");
 });
 
 test("membaca order asli TIDAK butuh Production V2 / Mode Latihan: daftar hanya memakai getWorkOrders", () => {

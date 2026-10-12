@@ -81,7 +81,7 @@ test("Status Produksi: pipeline murni — tanpa navigator tanggal, KPI ganda, Ka
   assert.match(STATUS, /data-testid="pipeline"/);
   assert.match(STATUS, /data-testid="mobile-column"/);
   assert.match(STATUS, /UnitCard/);
-  assert.match(STATUS, /Unit Tiba di Workshop/);
+  assert.match(STATUS, /Terima Unit di Workshop/);
 });
 
 test("Rencana Produksi: planner harian — backlog 'Belum Dijadwalkan', Meja 1–4 berkapasitas, drag-drop + fallback Jadwalkan/Pindahkan", () => {

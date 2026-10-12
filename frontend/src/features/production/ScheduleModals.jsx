@@ -12,7 +12,7 @@ import { cornerBodyOf, needsCornerChoice } from "@/features/production/unitCardM
 // Status Produksi (jalan pintas dari Unit 360) dan Rencana Produksi (fallback tombol Jadwalkan/Pindahkan untuk drag-drop).
 // Logika & kontrak API TIDAK diubah sama sekali dibanding sebelum dipindah.
 
-// P9A — pemilih lokasi Receiving/WIP untuk "Unit Tiba di Workshop". Tidak ada
+// P9A — pemilih lokasi Receiving/WIP untuk "Terima Unit di Workshop". Tidak ada
 // default terpilih (server juga menolak locationId kosong) — pengguna WAJIB
 // memilih sendiri, sesuai kontrak "jangan pernah menebak lokasi".
 export function ArrivalModal({ target, onClose, onDone }) {
@@ -34,7 +34,7 @@ export function ArrivalModal({ target, onClose, onDone }) {
     } catch (e) { setError(friendlyError(e)); } finally { setBusy(false); }
   }
   return (
-    <Modal open onOpenChange={(v) => !v && onClose()} title={`Unit Tiba di Workshop — ${target.unit.unitCode}`}
+    <Modal open onOpenChange={(v) => !v && onClose()} title={`Terima Unit di Workshop — ${target.unit.unitCode}`}
       description="Konfirmasi kedatangan fisik unit ke lokasi Receiving/WIP. Tahap produksi baru bisa dimulai setelah ini."
       footer={
         <div className="flex w-full justify-end gap-2">

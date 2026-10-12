@@ -5,12 +5,12 @@ import { Card } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { friendlyError } from "@/features/production/experience.js";
 
-// Pengaturan Produksi › Alur Kerja (slice 2): lokasi workshop bawaan ("Unit Tiba di Workshop" satu aksi), mode adaptasi untuk run BARU, dan pemetaan Layanan Sales → layanan produksi
+// Pengaturan Produksi › Alur Kerja (slice 2): lokasi workshop bawaan ("Terima Unit di Workshop" satu aksi), mode adaptasi untuk run BARU, dan pemetaan Layanan Sales → layanan produksi
 // (dipakai Diagnosis agar operator tidak memilih layanan lagi). Menulis hanya ADMIN/OWNER (production_settings:write — server menegakkan); Production Lead hanya melihat.
 const SELECT = "h-9 min-w-[200px] rounded-btn border border-border bg-surface px-2.5 text-[12.5px] text-ink outline-none focus:border-accent disabled:opacity-60";
 
 const PROBLEM_TEXT = {
-  NOT_CONFIGURED: "Belum dikonfigurasi — “Unit Tiba di Workshop” tidak bisa dipakai sampai Admin memilih lokasi.",
+  NOT_CONFIGURED: "Belum dikonfigurasi — “Terima Unit di Workshop” tidak bisa dipakai sampai Admin memilih lokasi.",
   MISSING: "Lokasi yang tersimpan tidak ditemukan — pilih lokasi lain.",
   INACTIVE: "Lokasi yang tersimpan nonaktif — aktifkan atau pilih lokasi lain.",
   WRONG_TYPE: "Lokasi bukan area Receiving/WIP — pilih lokasi yang sesuai.",
@@ -39,7 +39,7 @@ export default function ProductionWorkflowSettings() {
 
         <Card className="space-y-2 p-4" data-testid="workshop-location-card">
           <h3 className="m-0 text-[14px] font-bold text-ink">Lokasi workshop bawaan</h3>
-          <p className="m-0 text-[12.5px] text-ink3">Dipakai tombol “Unit Tiba di Workshop” (satu aksi, tanpa pilihan lokasi). Tidak pernah dipilih otomatis.</p>
+          <p className="m-0 text-[12.5px] text-ink3">Dipakai tombol “Terima Unit di Workshop” (satu aksi, tanpa pilihan lokasi). Tidak pernah dipilih otomatis.</p>
           {loc && (
             <p data-testid="workshop-location-state" className={`m-0 rounded-btn px-3 py-2 text-[12.5px] ${loc.valid ? "bg-greenbg text-green" : "bg-orangebg text-orange"}`}>
               {loc.valid ? `Lokasi aktif: ${loc.location.code}${loc.location.zone ? ` (${loc.location.zone})` : ""}` : PROBLEM_TEXT[loc.problem] || "Lokasi belum valid."}

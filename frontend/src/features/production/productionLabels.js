@@ -9,20 +9,44 @@ export const DISPLAY_STATUS_TABS = Object.freeze([
   Object.freeze({ key: "SIAP_KIRIM", label: "Siap Kirim" }),
   Object.freeze({ key: "TERKIRIM", label: "Terkirim" }),
 ]);
-const KEY_OF_LABEL = Object.freeze({ Pengambilan: "PENGAMBILAN", Diproses: "DIPROSES", "Siap Kirim": "SIAP_KIRIM", Terkirim: "TERKIRIM", Dibatalkan: "DIBATALKAN" });
+const KEY_OF_LABEL = Object.freeze({ Pengambilan: "PENGAMBILAN", "Diterima di Workshop": "DITERIMA_WORKSHOP", Diproses: "DIPROSES", "Siap Kirim": "SIAP_KIRIM", "Dalam Pengiriman": "DALAM_PENGIRIMAN", Terkirim: "TERKIRIM", Dibatalkan: "DIBATALKAN" });
+
+// ---- Milestone global (satu kosakata di Sales · Delivery · Production · Warehouse · Finance · Unit 360 · laporan) ------------------------------
+// CERMIN backend/src/lib/domain/workshopMilestone.js (tes paritas). Status global TURUNAN dari bukti di server — klien tidak pernah menurunkannya sendiri; bila server tidak mengirim
+// `globalStatus` (payload lama / Mode Latihan) dipakai peta status tampilan lama. Empat sumbu TERPISAH: status global · keberadaan fisik (presence) · tahap produksi · status jadwal.
+export const GLOBAL_STATUS_TABS = Object.freeze([
+  Object.freeze({ key: "PENGAMBILAN", label: "Pengambilan" }),
+  Object.freeze({ key: "DITERIMA_WORKSHOP", label: "Diterima di Workshop" }),
+  Object.freeze({ key: "DIPROSES", label: "Diproses" }),
+  Object.freeze({ key: "SIAP_KIRIM", label: "Siap Kirim" }),
+  Object.freeze({ key: "DALAM_PENGIRIMAN", label: "Dalam Pengiriman" }),
+  Object.freeze({ key: "TERKIRIM", label: "Terkirim" }),
+]);
+/** Status yang masih berjalan (belum Terkirim) — lingkup "Aktif" Order Produksi. */
+export const GLOBAL_STATUS_ACTIVE_KEYS = Object.freeze(GLOBAL_STATUS_TABS.filter((t) => t.key !== "TERKIRIM").map((t) => t.key));
+export const LEGACY_NOT_CONFIRMED_TEXT = "Konfirmasi workshop belum tercatat";
+export const SCHEDULE_STATUS_LABEL = Object.freeze({ BELUM_DIJADWALKAN: "Belum dijadwalkan", SUDAH_DIJADWALKAN: "Sudah dijadwalkan", MENUNGGU_BAHAN: "Menunggu bahan", SIAP_DIKERJAKAN: "Siap dikerjakan" });
+/** Label status jadwal dari objek server { key, label } (null bila server tidak mengirim — jangan menebak). */
+export const scheduleStatusText = (row) => row?.scheduleStatus?.label || SCHEDULE_STATUS_LABEL[row?.scheduleStatus?.key] || null;
+/** Dasar bukti diterima di workshop (teks server) atau null. */
+export const receivedBasisText = (row) => row?.receivedBasisLabel || null;
 /** { key, label, tone, detail } untuk satu unit/baris; memakai `unitStatusDisplay` dari server bila ada, jika tidak turunan dari enum UnitStatus (peta yang sama). */
 export function statusOf(row) {
+  const g = row?.globalStatus; // milestone global dari server (berbasis bukti) didahulukan
+  if (g?.label) return { key: g.key || KEY_OF_LABEL[g.label] || "DIPROSES", label: g.label, tone: statusTone(g.key || KEY_OF_LABEL[g.label]), detail: g.detail ?? null };
   const s = row?.unitStatusDisplay || row?.unitStatus;
   const base = UNIT_STATUS_REAL[row?.status];
   if (s?.label) return { key: s.key || KEY_OF_LABEL[s.label] || "DIPROSES", label: s.label, tone: base?.tone || "neutral", detail: s.detail ?? base?.detail ?? null };
   if (!base) return { key: "DIPROSES", label: String(row?.status ?? "—"), tone: "neutral", detail: null };
   return { key: KEY_OF_LABEL[base.label] || "DIPROSES", label: base.label, tone: base.tone, detail: base.detail ?? null };
 }
-export const statusTone = (key) => ({ PENGAMBILAN: "neutral", DIPROSES: "accent", SIAP_KIRIM: "green", TERKIRIM: "green", DIBATALKAN: "neutral" }[key] || "neutral");
+export const statusTone = (key) => ({ PENGAMBILAN: "neutral", DITERIMA_WORKSHOP: "accent", DIPROSES: "accent", SIAP_KIRIM: "green", DALAM_PENGIRIMAN: "accent", TERKIRIM: "green", DIBATALKAN: "neutral" }[key] || "neutral");
 
 // ---- Keberadaan fisik (tidak pernah memalsukan konfirmasi tiba) ------------------------------------------------------------------------
 export const presenceLabel = (p) => p?.label || null;
 export const presenceTone = (p) => (p?.key === "NOT_ARRIVED" ? "orange" : p?.key === "ARRIVED_CONFIRMED" ? "green" : "neutral");
+/** Posisi fisik yang BELUM terbukti (pickup selesai tanpa Terima Unit, atau histori tanpa konfirmasi): teks jujur, bukan tebakan. */
+export const presenceNeedsNote = (p) => !!p && p.confirmed === false;
 
 // ---- Prioritas: Normal · Tinggi · Komplain ------------------------------------------------------------------------------------------------
 export const PRIORITY_TONE = Object.freeze({ NORMAL: "neutral", HIGH: "orange", COMPLAINT: "red" });
@@ -114,5 +138,5 @@ export const rankOfView = (view) => view?.plan?.priorityRank ?? (view?.priority?
 
 // Status/keberadaan fisik kartu dari view server (toRunView). Server memberi `unitStatus` {key,label,detail} & `presence`; bila tidak ada (snapshot Mode Latihan lama),
 // diturunkan dari enum UnitStatus unit — peta yang sama. `presence` TIDAK diturunkan di klien (tidak ada bukti → tidak ditampilkan).
-export const viewStatus = (view) => statusOf({ unitStatusDisplay: view?.unitStatus, status: view?.unit?.status });
+export const viewStatus = (view) => statusOf({ globalStatus: view?.globalStatus, unitStatusDisplay: view?.unitStatus, status: view?.unit?.status });
 export const viewPresence = (view) => (view?.presence?.label ? view.presence : null);
