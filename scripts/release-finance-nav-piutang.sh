@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # RILIS "NAVIGASI FINANCE (10 HUB) + PIUTANG & REFUND": web + backend, TANPA migrasi, TANPA perubahan data — workflow RELEASE-DIRECTORY di atas release aktif (BASE_SHA). FAIL-CLOSED.
 # Isi: sidebar Finance 10 hub (lib/financeHubs.js), bilah tab hub, judul/breadcrumb berbahasa Indonesia, layar Piutang & Refund bertab + drawer detail, label "Posisi per <tanggal> (WIB)",
-# kategori Perlu Tindakan "Tanggal lunas berbeda dari tanggal pembayaran yang melunasi" (read-model server, satu order = satu entri), endpoint baca detail order piutang.
+# kategori Perlu Tindakan (read-model server, satu order = satu entri), endpoint baca detail order piutang.
 # Rilis ini hanya KODE + field respons AKTIF-TAMBAHAN: tidak mengubah angka lama, jurnal, saldo, rumus, Order.paidAt, Payment, akun, role, setting, atau data apa pun.
 #
 #   cat scripts/release-finance-nav-piutang.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/fnp1.sh'
@@ -257,8 +257,8 @@ NEW_INDEX="$(grep -o 'index-[A-Za-z0-9_-]*\.js' "$NEW_DIR/frontend/dist/index.ht
 [ -n "$NEW_INDEX" ] && [ -f "$NEW_DIR/frontend/dist/assets/$NEW_INDEX" ] || die "hasil build frontend tidak valid"
 MAPS_KEY="$(sed -n 's/^VITE_GOOGLE_MAPS_JS_KEY=//p' "$PERSIST/frontend/.env" | tr -d '\r"'"'"' ')"
 [ -n "$(grep -lF "$MAPS_KEY" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat VITE_GOOGLE_MAPS_JS_KEY"
-# Fitur rilis ini + fitur lama (jangan sampai hilang dari bundel).
-for s1 in "Penjualan & Piutang" "Posisi per" "Mengapa perlu tindakan" "Tanggal lunas berbeda dari tanggal pembayaran yang melunasi" "Piutang & Refund" "Rekonsiliasi Sales-Finance"; do [ -n "$(grep -lF "$s1" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat teks fitur: $s1"; done
+# Fitur rilis ini + fitur lama (jangan sampai hilang dari bundel). Label kategori "Tanggal lunas berbeda..." berasal dari SERVER (respons diagnosis), bukan bundel — diverifikasi di smoke, bukan di sini.
+for s1 in "Penjualan & Piutang" "Posisi per" "Mengapa perlu tindakan" "Piutang & Refund" "Rekonsiliasi Sales–Finance"; do [ -n "$(grep -lF "$s1" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat teks fitur: $s1"; done
 for s2 in "Verifikasi Pembayaran" "Retur & Debit Note" "Catat Barang Tiba" "Rencana Produksi" "Status Produksi" "Perlu Verifikasi Finance" "Klaim Lunas dari Sales"; do [ -n "$(grep -lF "$s2" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru kehilangan teks fitur lama: $s2"; done
 # "Hitung Kas" TIDAK boleh tampil sebelum halamannya ada.
 [ -z "$(grep -lF "Hitung Kas" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru memuat 'Hitung Kas' (halamannya belum ada)"
