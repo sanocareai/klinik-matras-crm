@@ -16,7 +16,7 @@ test.after(async () => { await truncateAll(); await server.close(); await testPr
 const PHOTO = ["/media/unit-photos/uji.jpg"];
 async function actor(roles, { operator = false } = {}) {
   const u = await createTestUser({ roles });
-  const op = operator ? await testPrisma.productionOperator.create({ data: { userId: u.user.id } }) : null;
+  const op = operator ? await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: u.user.id } }) : null;
   return { ...u, http: makeClient(server.baseUrl, u.token), op };
 }
 

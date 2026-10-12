@@ -42,7 +42,7 @@ export async function createTestUser({ roles = ["WAREHOUSE"] } = {}) {
  */
 export async function assignCurrentStageTo(unitId, userId) {
   const { pathForUnit, resolveCurrentTarget } = await import("../../../src/services/unitStageEngine.js");
-  const operator = await testPrisma.productionOperator.upsert({ where: { userId }, create: { userId }, update: { active: true } });
+  const operator = await testPrisma.productionOperator.upsert({ where: { userId }, create: { userId, workLanes: ["TABLE", "CORNER"] }, update: { active: true } });
   const unit = await testPrisma.unit.findUniqueOrThrow({ where: { id: unitId } });
   const path = await pathForUnit(testPrisma, unit);
   const { stage } = await resolveCurrentTarget(testPrisma, unit, path);

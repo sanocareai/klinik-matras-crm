@@ -36,7 +36,7 @@ async function world() {
     createTestUser({ roles: ["ADMIN"] }), createTestUser({ roles: ["SALES"] }),
   ]);
   const wc = await testPrisma.workCenter.create({ data: { code: `WC-CR-${++seq}`, name: "Workshop Utama" } });
-  const op = (u, active = true) => testPrisma.productionOperator.create({ data: { userId: u.user.id, primaryWorkCenterId: wc.id, active } });
+  const op = (u, active = true) => testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: u.user.id, primaryWorkCenterId: wc.id, active } });
   const [nadyaOp, cornerOp, corner2Op, adminOp] = await Promise.all([op(nadya), op(corner), op(corner2), op(admin)]);
   const inactive = await createTestUser({ roles: ["PRODUCTION_WORKER"] }); const inactiveOp = await op(inactive, false);
   const c = (u) => ({ ...u, api: makeClient(server.baseUrl, u.token) });

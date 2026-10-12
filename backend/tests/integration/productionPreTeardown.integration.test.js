@@ -37,7 +37,7 @@ async function world() {
   const workCenter = await testPrisma.workCenter.create({ data: { code: `WC-PT-${++seq}`, name: "Workshop Utama" } });
   const warehouse = await testPrisma.warehouse.create({ data: { code: `WH-PT-${++seq}`, name: "Gudang PT" } });
   const rcv = await testPrisma.storageLocation.create({ data: { warehouseId: warehouse.id, zone: "RCV", locationType: "RECEIVING_AREA", code: `RCV-PT-${++seq}` } });
-  const nadyaOp = await testPrisma.productionOperator.create({ data: { userId: nadya.user.id, primaryWorkCenterId: workCenter.id } });
+  const nadyaOp = await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: nadya.user.id, primaryWorkCenterId: workCenter.id } });
   const c = (u) => ({ ...u, api: makeClient(server.baseUrl, u.token) });
   return { lead: c(lead), nadya: c(nadya), qc: c(qc), doc: c(doc), reader: c(reader), admin: c(admin), driver: c(driver), rcv, wc: workCenter.id, nadyaOp };
 }

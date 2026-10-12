@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows } from "@/components/ui/table.jsx";
 import { rolesOf } from "@/lib/roles.js";
+import { LANE, LANE_LABEL, hasLane } from "@/features/production/picLanes.js";
 
 function currentUser() {
   try { return JSON.parse(localStorage.getItem("user") || "null"); } catch { return null; }
@@ -36,6 +37,7 @@ export default function ProductionOperators() {
   const [saveBusy, setSaveBusy] = useState(false);
   const [saveError, setSaveError] = useState("");
 
+  const [laneDraft, setLaneDraft] = useState({}); // "operatorId:LANE" -> boolean (sementara selama menyimpan)
   const [skillEditorId, setSkillEditorId] = useState(null);
   const [skillDraft, setSkillDraft] = useState([]);
   const [skillNewStageId, setSkillNewStageId] = useState("");
@@ -43,9 +45,10 @@ export default function ProductionOperators() {
   const [skillBusy, setSkillBusy] = useState(false);
   const [skillError, setSkillError] = useState("");
 
-  const load = useCallback(() => {
-    setLoading(true); setError("");
-    api.getProductionOperators().then(setData).catch((e) => setError(e.message)).finally(() => setLoading(false));
+  const load = useCallback((silent = false) => {
+    if (!silent) setLoading(true);
+    setError("");
+    return api.getProductionOperators().then(setData).catch((e) => setError(e.message)).finally(() => setLoading(false));
   }, []);
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
@@ -66,6 +69,20 @@ export default function ProductionOperators() {
       await api.updateProductionOperator(op.id, { primaryWorkCenterId: workCenterId || null });
       load();
     } catch (e) { setError(e.message); }
+  }
+
+  // Lini PIC (Meja Bongkar / Corner & Finishing): penetapan EKSPLISIT oleh Admin/Kepala Produksi, bermula kosong. Hanya memengaruhi siapa yang ditawarkan/ditetapkan sebagai PIC berikutnya;
+  // penugasan yang sudah ada di rencana tidak diubah. PIC Bahan tidak memakai lini.
+  // Status optimistis (kotak langsung berubah, nonaktif selama menyimpan); gagal => kembali ke nilai server + pesan galat.
+  async function ubahLini(op, lane, checked) {
+    const next = [LANE.TABLE, LANE.CORNER].filter((l) => (l === lane ? checked : hasLane(op, l)));
+    const k = `${op.id}:${lane}`;
+    setLaneDraft((d) => ({ ...d, [k]: checked })); setError("");
+    try {
+      await api.updateProductionOperator(op.id, { workLanes: next });
+      await load(true);
+    } catch (e) { setError(e.message); }
+    finally { setLaneDraft((d) => { const { [k]: _omit, ...rest } = d; return rest; }); }
   }
 
   async function tambahOperator() {
@@ -126,11 +143,11 @@ export default function ProductionOperators() {
               <Table>
                 <THead>
                   <TR>
-                    <TH>Operator</TH><TH>Status</TH><TH>Work Center Utama</TH><TH>Skill</TH><TH>Penugasan Sekarang</TH>{canManage && <TH>—</TH>}
+                    <TH>Operator</TH><TH>Status</TH><TH>Work Center Utama</TH><TH>Lini PIC</TH><TH>Skill</TH><TH>Penugasan Sekarang</TH>{canManage && <TH>—</TH>}
                   </TR>
                 </THead>
                 <TBody>
-                  {loading && <TableSkeletonRows rows={5} cols={canManage ? 6 : 5} />}
+                  {loading && <TableSkeletonRows rows={5} cols={canManage ? 7 : 6} />}
                   {!loading && operators.map((o) => (
                     <TR key={o.id}>
                       <TD className="font-semibold text-ink">{o.user.name}</TD>
@@ -145,6 +162,19 @@ export default function ProductionOperators() {
                             {workCenters.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
                           </select>
                         ) : (o.primaryWorkCenter?.name || <span className="text-ink3">—</span>)}
+                      </TD>
+                      <TD>
+                        {canManage ? (
+                          <div className="flex flex-col gap-1" data-testid={`lanes-${o.id}`}>
+                            {[LANE.TABLE, LANE.CORNER].map((l) => (
+                              <label key={l} className="flex items-center gap-1.5 text-[12px] text-ink">
+                                <input type="checkbox" data-testid={`lane-${l}-${o.id}`} checked={laneDraft[`${o.id}:${l}`] ?? hasLane(o, l)} disabled={laneDraft[`${o.id}:${l}`] !== undefined} onChange={(e) => ubahLini(o, l, e.target.checked)} />
+                                {LANE_LABEL[l]}
+                              </label>
+                            ))}
+                          </div>
+                        ) : ((o.workLanes || []).length ? (o.workLanes || []).map((l) => LANE_LABEL[l]).join(", ") : <span className="text-ink3">Belum ditetapkan</span>)}
+                        {canManage && !(o.workLanes || []).length && <span className="mt-1 block text-[11px] text-ink3">Belum jadi PIC Meja maupun Corner</span>}
                       </TD>
                       <TD>
                         {o.skills.length > 0 ? (

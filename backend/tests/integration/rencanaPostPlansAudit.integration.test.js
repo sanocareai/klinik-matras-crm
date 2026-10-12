@@ -27,7 +27,7 @@ async function world() {
   const warehouse = await testPrisma.warehouse.create({ data: { code: `WH-AU-${++seq}`, name: "Gudang Audit" } });
   const rcv = await testPrisma.storageLocation.create({ data: { warehouseId: warehouse.id, zone: "RCV", locationType: "RECEIVING_AREA", code: `RCV-AU-${++seq}` } });
   const picUser = await createTestUser({ roles: ["PRODUCTION_WORKER"] });
-  const pic = await testPrisma.productionOperator.create({ data: { userId: picUser.user.id, primaryWorkCenterId: wc.id } });
+  const pic = await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: picUser.user.id, primaryWorkCenterId: wc.id } });
   return { lead, admin, worker, sales, gudang, qc, finance, driver, wc, rcv, pic, picUser };
 }
 async function mkUnit({ category = "LAYANAN", pickup = true, status = "RECEIVED" } = {}) {

@@ -45,8 +45,8 @@ async function world() {
     createTestUser({ roles: ["DRIVER"] }),
   ]);
   const workCenter = await testPrisma.workCenter.create({ data: { code: `WC-S2-${++seq}`, name: "Workshop Utama" } });
-  const nadyaOp = await testPrisma.productionOperator.create({ data: { userId: nadya.user.id, primaryWorkCenterId: workCenter.id } });
-  const cornerOp = await testPrisma.productionOperator.create({ data: { userId: corner.user.id, primaryWorkCenterId: workCenter.id } });
+  const nadyaOp = await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: nadya.user.id, primaryWorkCenterId: workCenter.id } });
+  const cornerOp = await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: corner.user.id, primaryWorkCenterId: workCenter.id } });
   const warehouse = await testPrisma.warehouse.create({ data: { code: `WH-S2-${++seq}`, name: "Gudang P8" } });
   const loc = (zone, locationType) => testPrisma.storageLocation.create({ data: { warehouseId: warehouse.id, zone, locationType, code: `${zone}-P8-${++seq}` } });
   const [rcv, fg] = [await loc("RCV", "RECEIVING_AREA"), await loc("FG", "FINISHED_GOODS_AREA")];
@@ -540,8 +540,8 @@ test("L. Lanjutkan Pekerjaan di LUAR papan (jalur lama): SATU aksi atomik+idempo
   const picU = await createTestUser({ roles: ["PRODUCTION_WORKER"] }); const pic = makeClient(server.baseUrl, picU.token);
   const otherU = await createTestUser({ roles: ["PRODUCTION_WORKER"] }); const other = makeClient(server.baseUrl, otherU.token);
   const adm = await admin();
-  const picOp = await testPrisma.productionOperator.create({ data: { userId: picU.user.id } });
-  await testPrisma.productionOperator.create({ data: { userId: otherU.user.id } });
+  const picOp = await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: picU.user.id } });
+  await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: otherU.user.id } });
   const service = await testPrisma.serviceCatalog.findFirstOrThrow({ where: { active: true }, orderBy: { sortOrder: "asc" } });
   const customer = await testPrisma.customer.create({ data: { name: "Ibu Luar Papan" } });
   const order = await testPrisma.order.create({ data: { customerId: customer.id, orderNumber: `S2L-${++seq}`, value: 1_000_000, category: "LAYANAN" } });

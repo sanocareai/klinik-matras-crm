@@ -43,7 +43,7 @@ async function world() {
 async function mkOperator() {
   const u = await createTestUser({ roles: ["PRODUCTION_WORKER"] });
   await testPrisma.userRole.create({ data: { userId: u.user.id, role: "PRODUCTION_WORKER" } });
-  const op = await testPrisma.productionOperator.create({ data: { userId: u.user.id, primaryWorkCenterId: w.wc.id, active: true } });
+  const op = await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: u.user.id, primaryWorkCenterId: w.wc.id, active: true } });
   return { ...u, op };
 }
 // Order nyata Diproses, unit RECEIVED, TANPA pickup/Run.

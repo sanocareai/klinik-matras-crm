@@ -34,7 +34,7 @@ async function world() {
   ]);
   const driver = await createTestUser({ roles: ["DRIVER"] });
   const workCenter = await testPrisma.workCenter.create({ data: { code: `WC-P9A-${++seq}`, name: "Workshop P9A" } });
-  const operator = await testPrisma.productionOperator.create({ data: { userId: op.user.id } });
+  const operator = await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: op.user.id } });
   const warehouse = await testPrisma.warehouse.create({ data: { code: `WH-P9A-${++seq}`, name: "Gudang P9A" } });
   const loc = (locationType) => testPrisma.storageLocation.create({ data: { warehouseId: warehouse.id, zone: "RCV", locationType, code: `RCV-P9A-${++seq}` } });
   const locations = { receiving: await loc("RECEIVING_AREA"), wip: await loc("WIP_AREA"), dispatch: await loc("DISPATCH_AREA") };

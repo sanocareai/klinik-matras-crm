@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { UnitPhoto } from "@/features/production/UnitCard.jsx";
 import { friendlyError } from "@/features/production/experience.js";
+import { LANE, laneOptions, optionText } from "@/features/production/picLanes.js";
 import { priorityOf, statusOf } from "@/features/production/productionLabels.js";
 import { formatTanggal } from "@/utils/formatDate.js";
 
@@ -52,7 +53,7 @@ function AssignPic({ item, operators, canAssign, onAssigned, onError }) {
       <select aria-label={`PIC Corner ${item.unit.unitCode}`} data-testid="corner-pic-select" value={value} onChange={(e) => setValue(e.target.value)} disabled={busy}
         className="min-h-[40px] min-w-0 max-w-full flex-1 rounded-btn border border-line bg-surface px-2 text-[13px] text-ink">
         <option value="">— pilih PIC Corner —</option>
-        {operators.map((o) => <option key={o.id} value={o.id}>{o.name || o.user?.name || o.employeeCode}</option>)}
+        {laneOptions(operators, LANE.CORNER, item.pic?.corner).map((o) => <option key={o.id} value={o.id}>{optionText(o, LANE.CORNER)}</option>)}
       </select>
       <Button size="sm" data-mutates data-testid="corner-pic-save" className="min-h-[40px]" disabled={busy || !value || value === current} onClick={submit}>
         <UserCog size={13} aria-hidden /> {busy ? "Menyimpan…" : current ? "Ganti" : "Tetapkan"}

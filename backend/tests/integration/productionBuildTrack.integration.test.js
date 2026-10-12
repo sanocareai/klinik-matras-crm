@@ -47,10 +47,10 @@ async function world() {
     createTestUser({ roles: ["ADMIN"] }),
   ]);
   const workCenter = await testPrisma.workCenter.create({ data: { code: `WC-BT-${++seq}`, name: "Workshop Utama" } });
-  const nadyaOp = await testPrisma.productionOperator.create({ data: { userId: nadya.user.id, primaryWorkCenterId: workCenter.id } });
-  const cornerOp = await testPrisma.productionOperator.create({ data: { userId: corner.user.id, primaryWorkCenterId: workCenter.id } });
-  const febriOp = await testPrisma.productionOperator.create({ data: { userId: febri.user.id, primaryWorkCenterId: workCenter.id } });
-  const ferdyOp = await testPrisma.productionOperator.create({ data: { userId: ferdy.user.id, primaryWorkCenterId: workCenter.id } });
+  const nadyaOp = await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: nadya.user.id, primaryWorkCenterId: workCenter.id } });
+  const cornerOp = await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: corner.user.id, primaryWorkCenterId: workCenter.id } });
+  const febriOp = await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: febri.user.id, primaryWorkCenterId: workCenter.id } });
+  const ferdyOp = await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: ferdy.user.id, primaryWorkCenterId: workCenter.id } });
   const warehouse = await testPrisma.warehouse.create({ data: { code: `WH-BT-${++seq}`, name: "Gudang BT" } });
   const fg = await testPrisma.storageLocation.create({ data: { warehouseId: warehouse.id, zone: "FG", locationType: "FINISHED_GOODS_AREA", code: `FG-BT-${++seq}` } });
   const c = (u) => ({ ...u, api: makeClient(server.baseUrl, u.token) });

@@ -15,6 +15,8 @@ import { prisma } from "../db.js";
 import { StageTransitionError } from "./unitStageEngine.js";
 import { guardV1UnitWrite } from "./unitV2Ownership.js";
 import { buildUnitPath } from "../lib/domain/routing.js";
+import { laneOfStage } from "../lib/domain/v1WorkerQueue.js";
+import { WORK_LANES, hasLane, laneLabel } from "../lib/domain/productionLanes.js";
 import { buildRouteStageSnapshot, canReplaceRoute, deriveSkillWarning } from "../lib/domain/productionRouting.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 
@@ -180,6 +182,16 @@ export async function assignStage(unitId, stageId, { workCenterId, operatorId, a
 
     const nextWorkCenterId = workCenterId !== undefined ? workCenterId : (before?.workCenterId ?? null);
     const nextOperatorId = operatorId !== undefined ? operatorId : (before?.operatorId ?? null);
+
+    // PIC Meja Bongkar dan PIC Corner & Finishing penugasan TERPISAH: PIC baru harus berlini sesuai tahap (QC bukan lini lantai — tidak dicek di sini). Penugasan lama yang tidak berubah tidak dipatahkan.
+    if (operator && nextOperatorId !== (before?.operatorId ?? null)) {
+      const lane = laneOfStage(stage);
+      if (lane === WORK_LANES.TABLE || lane === WORK_LANES.CORNER) {
+        if (!hasLane(operator, lane)) {
+          throw new StageTransitionError(`Operator "${operator.user.name}" belum diberi lini ${laneLabel(lane)} di Pengaturan Operator — tahap "${stage.labelId}" tidak bisa ditugaskan kepadanya`);
+        }
+      }
+    }
 
     const assignment = await tx.stageAssignment.upsert({
       where: { unitId_stageId: { unitId, stageId } },

@@ -20,7 +20,7 @@ async function operator(roles, { profile = true, name } = {}) {
   const u = await createTestUser({ roles, ...(name ? { name } : {}) });
   for (const r of roles) if (!(await testPrisma.userRole.findFirst({ where: { userId: u.user.id, role: r } }))) await testPrisma.userRole.create({ data: { userId: u.user.id, role: r } });
   const wc = (await testPrisma.workCenter.findFirst()) || (await testPrisma.workCenter.create({ data: { code: `WC-PIC-${++seq}`, name: "Workshop Utama" } }));
-  const op = profile ? await testPrisma.productionOperator.create({ data: { userId: u.user.id, primaryWorkCenterId: wc.id, active: true } }) : null;
+  const op = profile ? await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: u.user.id, primaryWorkCenterId: wc.id, active: true } }) : null;
   return { ...u, op };
 }
 

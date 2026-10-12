@@ -26,7 +26,7 @@ const setReader = (o) => setFlag(V2_FLAGS.PRODUCTION_READER, o);
 async function world() {
   const [planner, gudang1, gudang2] = await Promise.all([createTestUser({ roles: ["PRODUCTION_LEAD"] }), createTestUser({ roles: ["WAREHOUSE"] }), createTestUser({ roles: ["WAREHOUSE"] })]);
   const workCenter = await testPrisma.workCenter.create({ data: { code: `WC-P4-${++seq}`, name: "Workshop Tes P4" } });
-  const operator = await testPrisma.productionOperator.create({ data: { userId: planner.user.id } });
+  const operator = await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: planner.user.id } });
   const c = (u) => ({ ...u, api: makeClient(server.baseUrl, u.token) });
   return { planner: c(planner), gudang1: c(gudang1), gudang2: c(gudang2), workCenter, operator };
 }

@@ -23,6 +23,7 @@
 //    murni metadata pra-kerja; fase PROCESS baru dimulai lewat jalur produksi lain (di luar scope P3).
 import { createHash } from "node:crypto";
 import { recordActivity, EVENT_TYPES } from "../lib/activityLog.js";
+import { WORK_LANES, hasLane, laneLabel } from "../lib/domain/productionLanes.js";
 import { lockMaterialBalance, lockRowForUpdate, RESERVED_STATUSES } from "./inventoryLedger.js";
 import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState } from "./v2FeatureFlags.js";
 import {
@@ -202,8 +203,15 @@ async function assertNoBlockingMaterialIssue(tx, planId) {
   throw planError("Ada permintaan pengambilan bahan aktif; batalkan permintaan itu lebih dulu", 409, "PLAN_MATERIAL_ISSUE_ACTIVE", { issueId: issue.id });
 }
 
-// Diekspor: dipakai ulang oleh productionMaterialIssueCommandService.js (P4) untuk mengunci+memuat plan di
-// dalam TRANSAKSI YANG SAMA dengan command-nya sendiri (mis. batal sebelum pick -> releaseReservationsInTx).
+/**
+ * PIC Meja Bongkar dan PIC Corner & Finishing adalah penugasan TERPISAH: operator hanya boleh ditetapkan ke lini yang sudah dicentang Admin (workLanes, bermula kosong).
+ * Hanya dicek ketika nilainya BERUBAH dari yang sudah tersimpan di rencana (penugasan lama tidak dipatahkan diam-diam — Admin yang membereskannya lewat ganti PIC).
+ */
+export function assertOperatorLane(operator, lane, { message, code, details } = {}) {
+  if (hasLane(operator, lane)) return;
+  throw planError(message || `Operator belum diberi lini ${laneLabel(lane)} di Pengaturan Operator`, 422, code || "PLAN_OPERATOR_LANE_INVALID", { lane, operatorId: operator?.id || null, ...(details || {}) });
+}
+
 /**
  * Penulis TUNGGAL kolom cornerOperatorId rencana (command owner — lihat audit-planning-writers). Dipanggil productionCornerService.setCornerOperator di dalam transaksi yang
  * sudah mengunci rencana + run dan memeriksa revisi. HANYA cornerOperatorId + revisi + commandId: Meja, tanggal, target, PIC Meja, urutan, work center tidak disentuh.
@@ -212,6 +220,8 @@ export async function writeCornerOperatorInTx(tx, { planId, cornerOperatorId, re
   return tx.productionRunPlan.update({ where: { id: planId }, data: { cornerOperatorId, revision, commandId } });
 }
 
+// Diekspor: dipakai ulang oleh productionMaterialIssueCommandService.js (P4) untuk mengunci+memuat plan di
+// dalam TRANSAKSI YANG SAMA dengan command-nya sendiri (mis. batal sebelum pick -> releaseReservationsInTx).
 export async function loadPlanForWrite(tx, planId) {
   await lockRowForUpdate(tx, "production_run_plans_v2", planId);
   const plan = await tx.productionRunPlan.findUnique({
@@ -256,6 +266,7 @@ export async function assignProductionPlan(prisma, { planId, actorId, idempotenc
     if (!workCenter || !workCenter.active) throw planError("Workshop/work center tidak valid atau nonaktif", 422, "PLAN_WORK_CENTER_INVALID");
     const operator = await tx.productionOperator.findUnique({ where: { id: operatorId } });
     if (!operator || !operator.active) throw planError("Operator tidak valid atau nonaktif", 422, "PLAN_OPERATOR_INVALID");
+    if (plan.operatorId !== operatorId) assertOperatorLane(operator, WORK_LANES.TABLE, { message: "PIC meja harus operator berlini Meja Bongkar (atur di Pengaturan Operator)", code: "PLAN_OPERATOR_LANE_INVALID" });
 
     const now = new Date();
     const revision = plan.revision + 1;
@@ -377,9 +388,11 @@ export async function scheduleProductionPlanInTx(tx, { planId, actorId, idempote
       if (!workCenter || !workCenter.active) throw planError("Workshop/work center tidak valid atau nonaktif", 422, "PLAN_WORK_CENTER_INVALID");
       const operator = await tx.productionOperator.findUnique({ where: { id: data.operatorId } });
       if (!operator || !operator.active) throw planError("PIC meja tidak valid atau nonaktif", 422, "PLAN_OPERATOR_INVALID");
+      if (plan.operatorId !== data.operatorId) assertOperatorLane(operator, WORK_LANES.TABLE, { message: `PIC meja ${resolved.source === "STATION_PIC" ? "bawaan meja itu " : ""}harus operator berlini Meja Bongkar (atur di Pengaturan Operator)`, code: "PLAN_OPERATOR_LANE_INVALID", details: { source: resolved.source } });
       if (data.cornerOperatorId) {
         const corner = await tx.productionOperator.findUnique({ where: { id: data.cornerOperatorId } });
         if (!corner || !corner.active) throw planError("PIC Corner tidak valid atau nonaktif", 422, "PLAN_CORNER_OPERATOR_INVALID");
+        if ((plan.cornerOperatorId || null) !== data.cornerOperatorId) assertOperatorLane(corner, WORK_LANES.CORNER, { message: "PIC Corner harus operator berlini Corner & Finishing (atur di Pengaturan Operator)", code: "PLAN_CORNER_OPERATOR_LANE_INVALID" });
       }
       if (data.cornerWorkCenterId) {
         const cornerCenter = await tx.workCenter.findUnique({ where: { id: data.cornerWorkCenterId } });
@@ -474,8 +487,9 @@ export async function setStationDayPic(prisma, { actorId, productionDate, statio
       if (before) await tx.productionStationDayPic.delete({ where });
       result = { productionDate: formatProductionDate(date), stationCode, operatorId: null, operatorName: null, changed: !!before };
     } else {
-      const op = await tx.productionOperator.findUnique({ where: { id: operatorId }, select: { id: true, active: true, user: { select: { name: true, active: true } } } });
+      const op = await tx.productionOperator.findUnique({ where: { id: operatorId }, select: { id: true, active: true, workLanes: true, user: { select: { name: true, active: true } } } });
       if (!op || !op.active || !op.user?.active) throw planError("PIC tidak terdaftar atau tidak aktif. Daftarkan/aktifkan dulu di Pengaturan Produksi › Operator.", 422, "PLAN_OPERATOR_INVALID");
+      if (before?.operatorId !== operatorId) assertOperatorLane(op, WORK_LANES.TABLE, { message: "PIC bawaan meja harus operator berlini Meja Bongkar (atur di Pengaturan Operator)", code: "PLAN_OPERATOR_LANE_INVALID" });
       await tx.productionStationDayPic.upsert({ where, create: { productionDate: date, stationCode, operatorId, setById: actorId || null }, update: { operatorId, setById: actorId || null } });
       result = { productionDate: formatProductionDate(date), stationCode, operatorId, operatorName: op.user.name, changed: before?.operatorId !== operatorId };
     }

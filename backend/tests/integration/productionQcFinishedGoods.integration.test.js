@@ -38,7 +38,7 @@ async function world() {
     ["PRODUCTION_LEAD", "WAREHOUSE", "WAREHOUSE", "QC_LEAD", "QC_LEAD", "ADMIN"].map((role) => createTestUser({ roles: [role] })),
   );
   const workCenter = await testPrisma.workCenter.create({ data: { code: `WC-P6-${++seq}`, name: "Workshop P6" } });
-  const operator = await testPrisma.productionOperator.create({ data: { userId: lead.user.id } });
+  const operator = await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: lead.user.id } });
   const warehouse = await testPrisma.warehouse.create({ data: { code: `WH-P6-${++seq}`, name: "Gudang P6" } });
   const loc = (zone, locationType, extra = {}) => testPrisma.storageLocation.create({ data: { warehouseId: warehouse.id, zone, locationType, code: `${zone}-P6-${++seq}`, ...extra } });
   const fgArea = await loc("FG", "FINISHED_GOODS_AREA");
@@ -101,6 +101,8 @@ async function prepare(w, { born = null } = {}) {
   assert.equal(created.status, 201, JSON.stringify(created.body));
   const planId = created.body.planId;
   const as = await w.op.api.post(`${P}/plans/${planId}/assign`, { workCenterId: w.wc, operatorId: w.operator.id, targetStartAt: "2026-09-28T01:00:00.000Z", targetCompleteAt: "2026-09-28T09:00:00.000Z", expectedRevision: 1 }, key(`as-${++seq}`));
+  // PIC Corner ditetapkan EKSPLISIT (pemisahan PIC: tahap Corner tidak lagi jatuh ke PIC Meja). Fixture ini memakai satu operator berlini TABLE+CORNER untuk kedua peran.
+  await testPrisma.productionRunPlan.update({ where: { id: planId }, data: { cornerOperatorId: w.operator.id } });
   const material = await createTestMaterial({ name: `Mat P6 ${++seq}` });
   await seedBalance(material.id, 10);
   const bom = await w.op.api.post(`${P}/plans/${planId}/bom`, { lines: [{ materialId: material.id, qty: 2 }], expectedRevision: as.body.revision }, key(`b-${++seq}`));

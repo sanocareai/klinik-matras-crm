@@ -29,8 +29,8 @@ async function world() {
   const worker1 = await createTestUser({ roles: ["PRODUCTION_WORKER"] });
   const worker2 = await createTestUser({ roles: ["PRODUCTION_WORKER"] });
   const wc = await testPrisma.workCenter.create({ data: { code: `WC-PST-${++seq}`, name: "Workshop PST" } });
-  const op1 = await testPrisma.productionOperator.create({ data: { userId: worker1.user.id, primaryWorkCenterId: wc.id } });
-  const op2 = await testPrisma.productionOperator.create({ data: { userId: worker2.user.id } });
+  const op1 = await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: worker1.user.id, primaryWorkCenterId: wc.id } });
+  const op2 = await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: worker2.user.id } });
   return { lead, api: makeClient(server.baseUrl, lead.token), wc, op1, op2, worker1, worker2 };
 }
 
