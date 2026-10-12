@@ -101,3 +101,40 @@ test("smoke rilis dengan DATA (nama/telepon/touch/order/pembayaran): respons tet
     assert.deepEqual(await hitungTabel(), sebelum, "smoke tidak boleh menulis apa pun");
   } finally { delete process.env.ATRIBUSI_TOUCH_CAPTURE_ENABLED; void hariIni; }
 });
+
+// ── SQL yang dipakai fase rehearsal/verifikasi skrip: dijalankan NYATA pada DB yang dimigrasi dari nol (bukti SQL valid dan perilaku constraint) ──
+const heredoc = (nama) => {
+  const m = new RegExp(`read -r -d '' ${nama} <<'([A-Z0-9_]+)' \\|\\| true\\n([\\s\\S]*?)\\n\\1\\n`).exec(skrip);
+  if (!m) throw new Error(`${nama} tidak ditemukan`);
+  return m[2];
+};
+const stringBash = (nama) => {
+  const m = new RegExp(`\\n${nama}="([\\s\\S]*?)"\\n`).exec(skrip);
+  if (!m) throw new Error(`${nama} tidak ditemukan`);
+  return m[1].replace(/\\"/g, '"');
+};
+
+test("UJI_SQL rehearsal: pada DB hasil migrasi menghasilkan ROLLBACK_UJI dengan >= 15 penolakan dan >= 4 baris sah, tanpa TIDAK_DITOLAK; semuanya dibatalkan", async () => {
+  await testPrisma.customer.create({ data: { name: "Contoh Rehearsal", phone: "6285399900011" } });
+  const sebelum = await hitungTabel();
+  let pesan = "";
+  try { await testPrisma.$executeRawUnsafe(heredoc("UJI_SQL")); } catch (e) { pesan = String(e.message); }
+  assert.match(pesan, /ROLLBACK_UJI tolak=(\d+) lolos=(\d+)/, pesan.slice(0, 400));
+  assert.ok(!/TIDAK_DITOLAK/.test(pesan), pesan.slice(0, 400));
+  const [, tolak, lolos] = /ROLLBACK_UJI tolak=(\d+) lolos=(\d+)/.exec(pesan);
+  assert.ok(Number(tolak) >= 15, `tolak=${tolak}`);
+  assert.ok(Number(lolos) >= 4, `lolos=${lolos}`);
+  assert.deepEqual(await hitungTabel(), sebelum, "uji perilaku seluruhnya dibatalkan");
+});
+
+test("SQL sidik jari rehearsal (FP_SQL, SKEMA_SQL) dan hitungan inbox valid dan menghasilkan bentuk yang dibaca skrip", async () => {
+  const fp = await testPrisma.$queryRawUnsafe(stringBash("FP_SQL"));
+  assert.equal(fp.length, 5);
+  const skema = await testPrisma.$queryRawUnsafe(stringBash("SKEMA_SQL").replace(/^SKEMA_SQL=/, ""));
+  assert.equal(skema.length, 5, "5 tabel lama terukur skemanya");
+  const m = /psql_live -At -c "(select count\(\*\) from \\"Message\\" where direction::text='INBOUND' and \\"createdAt\\" >= '\$\{since_utc\}'::timestamptz)"/.exec(skrip);
+  assert.ok(m, "query inbox tidak ditemukan");
+  const q = m[1].replace(/\\"/g, '"').replace("${since_utc}", "2026-01-01T00:00:00Z");
+  const r = await testPrisma.$queryRawUnsafe(q);
+  assert.ok(Number(r[0].count) >= 0);
+});

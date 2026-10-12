@@ -97,7 +97,7 @@ order di balik closing = `lunasTerbuktiLedger` kohort Fase 1.
 | Lapis | Hasil |
 |---|---|
 | Unit (builder touch, atomik via db palsu, impor referensi, laporan, skrip rilis) | 82 (`atribusiTouchReferensi` 15, `atribusiTouchAtomik` 10, `atribusiIklanReport` 17, `releaseAtribusiIklan` 12, + Fase 0/1 terkait) |
-| Integrasi PostgreSQL sekali pakai (migrasi dari nol) | `atribusiIklan` 17/17, `atribusiTouchCrash` 11/11, `releaseAtribusiIklan` 2/2 |
+| Integrasi PostgreSQL sekali pakai (migrasi dari nol) | `atribusiIklan` 17/17, `atribusiTouchCrash` 11/11, `releaseAtribusiIklan` 4/4 (SMOKE_JS asli + UJI_SQL rehearsal 15 tolak/4 lolos pada DB termigrasi) |
 | Crash SIGKILL pada tiap statement transaksi pesan (proses terpisah, router asli) | stmt:1..5 dan after-commit: tidak pernah Message tanpa touch; proses baru memulihkan TEPAT satu touch; customer lama / Ad ID belum terpetakan / flag MATI / dua event bersamaan |
 | Fallback | trigger DB menolak insert (Message tetap commit); P2028/P2034 → dipulihkan atau gagalPulih |
 
