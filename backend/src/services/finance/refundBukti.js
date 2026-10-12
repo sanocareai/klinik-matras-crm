@@ -16,6 +16,8 @@ import { fileURLToPath } from "node:url";
 import { signFile, verifyFileSignature } from "../../lib/mediaSigning.js";
 import { simpanBerkas, hapusBerkasDisk, pathBerkas, berkasTersimpan, BerkasError, POLA_NAMA, MAKS_UKURAN_BYTE } from "./klaimLunasBerkas.js";
 import { KoreksiError } from "./koreksiGate.js";
+import { lockRowForUpdate } from "../inventoryLedger.js";
+import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../../lib/activityLog.js";
 
 export const REFUND_BUKTI_DIR = process.env.REFUND_BUKTI_DIR
   || path.join(path.dirname(fileURLToPath(import.meta.url)), "../../../data/refund-bukti");
@@ -127,6 +129,22 @@ export function bacaPermintaanBukti(bukti) {
   return { mode, ids };
 }
 
+/** Kunci (FOR UPDATE) + periksa bukti STAGED milik pengunggah yang berkas fisiknya ada. Dipakai koreksi DAN "Lampirkan Bukti" (aturan sama). */
+async function muatBuktiStaged(tx, ids, userId) {
+  if (!ids.length) return [];
+  await tx.$queryRawUnsafe("SELECT id FROM fin_refund_evidences WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE", ids);
+  const rows = await tx.finRefundEvidence.findMany({ where: { id: { in: ids } } });
+  const peta = new Map(rows.map((r) => [r.id, r]));
+  for (const id of ids) {
+    const ev = peta.get(id);
+    if (!ev) throw new KoreksiError("Salah satu bukti baru tidak ditemukan (mungkin sudah dibersihkan). Unggah ulang.", 409, "BUKTI_TIDAK_ADA");
+    if (ev.status !== "STAGED") throw new KoreksiError("Salah satu bukti baru sudah dipakai dokumen lain. Unggah ulang bukti yang berbeda.", 409, "BUKTI_SUDAH_DIPAKAI");
+    if (ev.uploadedById !== userId) throw new KoreksiError("Bukti baru harus diunggah oleh Anda sendiri.", 403, "BUKTI_BUKAN_MILIK");
+    if (!berkasTersimpan(ev.storedName, ev.sizeBytes, REFUND_BUKTI_DIR)) throw new KoreksiError("Berkas salah satu bukti baru tidak ditemukan di server. Unggah ulang.", 409, "BUKTI_HILANG");
+  }
+  return ids.map((id) => peta.get(id));
+}
+
 /**
  * Susun rencana bukti untuk dokumen pengganti (TIDAK menulis). Dipanggil di dalam transaksi koreksi supaya bukti baru terkunci (FOR UPDATE) sampai commit/rollback.
  *  LAMA   = bukti dokumen lama dibawa; TAMBAH = lama + baru; GANTI = hanya baru (bukti lama tetap di dokumen lama).
@@ -137,20 +155,7 @@ export async function rencanakanBukti(tx, { lama, permintaan, userId }) {
   const tautLama = await tx.finRefundEvidenceLink.findMany({ where: { refundId: lama.id }, include: { evidence: true }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] });
   const lampiranLama = String(lama.attachmentUrl ?? "").trim() || null;
 
-  let baru = [];
-  if (ids.length) {
-    await tx.$queryRawUnsafe("SELECT id FROM fin_refund_evidences WHERE id = ANY($1::uuid[]) ORDER BY id FOR UPDATE", ids);
-    const rows = await tx.finRefundEvidence.findMany({ where: { id: { in: ids } } });
-    const peta = new Map(rows.map((r) => [r.id, r]));
-    for (const id of ids) {
-      const ev = peta.get(id);
-      if (!ev) throw new KoreksiError("Salah satu bukti baru tidak ditemukan (mungkin sudah dibersihkan). Unggah ulang.", 409, "BUKTI_TIDAK_ADA");
-      if (ev.status !== "STAGED") throw new KoreksiError("Salah satu bukti baru sudah dipakai dokumen lain. Unggah ulang bukti yang berbeda.", 409, "BUKTI_SUDAH_DIPAKAI");
-      if (ev.uploadedById !== userId) throw new KoreksiError("Bukti baru harus diunggah oleh Anda sendiri.", 403, "BUKTI_BUKAN_MILIK");
-      if (!berkasTersimpan(ev.storedName, ev.sizeBytes, REFUND_BUKTI_DIR)) throw new KoreksiError("Berkas salah satu bukti baru tidak ditemukan di server. Unggah ulang.", 409, "BUKTI_HILANG");
-    }
-    baru = ids.map((id) => peta.get(id));
-  }
+  const baru = await muatBuktiStaged(tx, ids, userId);
 
   const dibawa = mode === "GANTI" ? [] : tautLama.map((t) => t.evidence);
   const lampiranDibawa = mode === "GANTI" ? null : lampiranLama;
@@ -185,6 +190,58 @@ export function ringkasRencana(rencana) {
     lama: [...(rencana.lampiranLama ? [{ id: null, nama: "Lampiran lama (tautan)", tipe: null, ukuranByte: null }] : []), ...rencana.lamaBerkas.map(ringkas)],
     pengganti: [...(rencana.lampiranDibawa ? [{ id: null, nama: "Lampiran lama (tautan)", tipe: null, ukuranByte: null }] : []), ...rencana.dibawa.map((e) => ({ ...ringkas(e), origin: "DIBAWA" })), ...rencana.baru.map((e) => ({ ...ringkas(e), origin: "BARU" }))],
     jumlah: rencana.jumlah,
+  };
+}
+
+/**
+ * LAMPIRKAN BUKTI TANPA KOREKSI. Hanya MENAMBAH relasi bukti (append-only) pada dokumen refund yang sudah pernah menghasilkan transaksi — TIDAK membuat dokumen pengganti, TIDAK
+ * menyentuh jurnal/saldo, dan TIDAK mengubah baris fin_refunds sama sekali (nominal, biaya admin, rekening, tanggal, status, updated_at tetap). Bukti yang sudah tertaut tidak bisa
+ * diganti/dihapus (trigger DB). Dokumen yang sudah diganti koreksi boleh diberi bukti (bukti merujuk transaksi versi itu); refund yang belum pernah berjurnal (draf/ditolak) diblokir.
+ */
+export async function lampirkanBuktiSaja(tx, { refundId, ids, alasan, userId }) {
+  const reason = String(alasan ?? "").trim();
+  if (reason.length < 5) throw new KoreksiError("Alasan wajib diisi (minimal 5 karakter)", 400, "ALASAN_WAJIB");
+  if (reason.length > 500) throw new KoreksiError("Alasan terlalu panjang (maksimal 500 karakter)", 400, "TERLALU_PANJANG");
+  if (!Array.isArray(ids) || ids.length === 0) throw new KoreksiError("Unggah minimal satu bukti untuk dilampirkan.", 422, "BUKTI_BARU_WAJIB");
+  const unik = [...new Set(ids.map(String))];
+  if (unik.some((i) => !UUID.test(i))) throw new KoreksiError("ID bukti tidak valid", 400, "BUKTI_TIDAK_VALID");
+  if (!UUID.test(String(refundId))) throw new KoreksiError("Refund tidak ditemukan", 404);
+
+  await lockRowForUpdate(tx, '"fin_refunds"', refundId);
+  const r = await tx.finRefund.findUnique({
+    where: { id: refundId },
+    select: { id: true, refundNumber: true, status: true, amount: true, transferFeeAmount: true, attachmentUrl: true, cashAccount: { select: { name: true } }, replacedBy: { select: { refundNumber: true } } },
+  });
+  if (!r) throw new KoreksiError("Refund tidak ditemukan", 404);
+  // Boleh: refund AKTIF (DISETUJUI) atau versi LAMA yang sudah diganti koreksi (bukti merujuk transaksi versi itu). Draf/ditolak/dibatalkan-tanpa-pengganti diblokir.
+  const berjurnal = await tx.finJournalEntry.count({ where: { source: "REFUND", sourceId: refundId } });
+  const boleh = berjurnal > 0 && (r.status === "DISETUJUI" || (r.status === "DIBATALKAN" && r.replacedBy));
+  if (!boleh) {
+    const label = r.status === "MENUNGGU_APPROVAL" ? "menunggu persetujuan" : r.status === "DITOLAK" ? "ditolak" : r.status === "DIBATALKAN" ? "dibatalkan tanpa dokumen pengganti" : "belum menghasilkan transaksi";
+    throw new KoreksiError(`Refund ${r.refundNumber} berstatus ${label} sehingga tidak bisa diberi bukti transfer. Bukti hanya bisa dilampirkan pada refund yang sudah disetujui (atau versi lama yang sudah dikoreksi).`, 409, "REFUND_BELUM_BERTRANSAKSI");
+  }
+  const sudahTertaut = await tx.finRefundEvidenceLink.count({ where: { refundId } });
+  const lampiran = String(r.attachmentUrl ?? "").trim() ? 1 : 0;
+  if (sudahTertaut + lampiran + unik.length > MAKS_BUKTI_PER_DOKUMEN) {
+    throw new KoreksiError(`Maksimal ${MAKS_BUKTI_PER_DOKUMEN} bukti per dokumen refund (sudah ada ${sudahTertaut + lampiran}).`, 400, "BUKTI_TERLALU_BANYAK");
+  }
+  const baru = await muatBuktiStaged(tx, unik, userId);
+  for (const ev of baru) await tx.finRefundEvidenceLink.create({ data: { refundId, evidenceId: ev.id, origin: "BARU", createdById: userId } });
+  const u = await tx.finRefundEvidence.updateMany({ where: { id: { in: baru.map((e) => e.id) }, status: "STAGED" }, data: { status: "DIGUNAKAN", attachedAt: new Date() } });
+  if (u.count !== baru.length) throw new KoreksiError("Bukti berubah selama diproses. Ulangi.", 409, "BUKTI_BERUBAH");
+  const sesudah = sudahTertaut + lampiran + baru.length;
+  await recordActivity(tx, {
+    entityType: ENTITY_TYPES.FIN_REFUND, entityId: refundId, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: userId,
+    metadata: {
+      aksi: "lampirkan_bukti_refund", refundNumber: r.refundNumber, reason, before: { jumlahBukti: sudahTertaut + lampiran }, after: { jumlahBukti: sesudah },
+      bukti: baru.map((e) => ({ nama: e.originalName, tipe: e.mimeType, ukuranByte: e.sizeBytes })), dampakKeuangan: "Rp0 — hanya melampirkan bukti; jurnal, saldo, dan dokumen tidak berubah",
+      diganti: r.replacedBy?.refundNumber ?? null,
+    },
+  });
+  return {
+    ok: true, refundId, nomor: r.refundNumber, ditambah: baru.length, jumlahBukti: sesudah, dokumenSudahDiganti: r.replacedBy?.refundNumber ?? null,
+    dampakKeuangan: { jurnalBaru: 0, perubahanSaldo: 0, dokumenBaru: 0, ringkasan: "Rp0 — hanya melampirkan bukti" },
+    ringkasan: { status: r.status, rekening: r.cashAccount?.name ?? null, nominal: Number(r.amount), biayaAdmin: Number(r.transferFeeAmount ?? 0), totalKeluar: Number(r.amount) + Number(r.transferFeeAmount ?? 0) },
   };
 }
 

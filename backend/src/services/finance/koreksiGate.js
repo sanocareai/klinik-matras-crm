@@ -236,7 +236,7 @@ export async function riwayatVersi(db, jenis, id) {
 
   // Satu koreksi menulis DUA peristiwa (di dokumen lama & baru) dengan isi sama — tampilkan sekali (yang di dokumen lama).
   const versi = events.filter((e) => !(cfg.replaces && e.metadata?.menggantikan)).map((e) => ({
-    waktu: e.createdAt, aksi: LABEL_AKSI[e.eventType] || e.eventType, eventType: e.eventType,
+    waktu: e.createdAt, aksi: e.metadata?.aksi === "lampirkan_bukti_refund" ? "Bukti dilampirkan" : (LABEL_AKSI[e.eventType] || e.eventType), eventType: e.eventType,
     aktor: e.actorType === "SYSTEM" ? "Sistem" : (namaAktor.get(e.actorId) || "—"),
     alasan: e.metadata?.reason || e.metadata?.alasan || null,
     perubahan: ubahKePerubahan(e.metadata),
@@ -284,7 +284,10 @@ export async function riwayatVersi(db, jenis, id) {
         dibuatOleh: r.createdBy?.name ?? null, disetujuiOleh: r.approvedBy?.name ?? null, dibuatPada: r.createdAt, disetujuiPada: r.approvedAt,
         alasanKoreksi: r.status === "DIBATALKAN" && /^Dikoreksi — /.test(r.rejectReason ?? "") ? r.rejectReason.replace(/^Dikoreksi — /, "") : null,
         lampiranLama: r.attachmentUrl ? true : false,
-        bukti: r.evidenceLinks.map((l) => ({ nama: l.evidence.originalName, tipe: l.evidence.mimeType, origin: l.origin })),
+        bukti: r.evidenceLinks.map((l) => ({ nama: l.evidence.originalName, tipe: l.evidence.mimeType, origin: l.origin, dilampirkanPada: l.createdAt })),
+        lampiranSusulan: events.filter((e) => e.entityId === r.id && e.metadata?.aksi === "lampirkan_bukti_refund").map((e) => ({
+          waktu: e.createdAt, oleh: namaAktor.get(e.actorId) || "—", alasan: e.metadata?.reason ?? null, jumlahDitambah: e.metadata?.bukti?.length ?? 0, jumlahSesudah: e.metadata?.after?.jumlahBukti ?? null, nama: (e.metadata?.bukti ?? []).map((b) => b.nama),
+        })),
         jumlahBukti: r.evidenceLinks.length + (r.attachmentUrl ? 1 : 0),
       };
     }).filter(Boolean);

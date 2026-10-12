@@ -83,7 +83,7 @@ import { sinkronStatusDariFinExpense } from "../services/expenseSubmission/servi
 import { blokirKoreksiBatch, menuKoreksi } from "../services/finance/koreksiPembayaran.js";
 import { ambilDaftarPembayaran } from "../services/finance/customerPaymentRead.js";
 import { ambilDaftarRefund, refundInclude } from "../services/finance/refundRead.js";
-import { unggahBukti, hapusBuktiStaged, bersihkanBuktiStaged, buktiDokumen, jumlahBuktiBatch, BerkasError, MAKS_UKURAN_MB } from "../services/finance/refundBukti.js";
+import { unggahBukti, hapusBuktiStaged, bersihkanBuktiStaged, lampirkanBuktiSaja, buktiDokumen, jumlahBuktiBatch, BerkasError, MAKS_UKURAN_MB } from "../services/finance/refundBukti.js";
 import {
   blokirKoreksiTagihanBatch, blokirKoreksiRefundBatch, menuKoreksiDokumen, editInfoTagihan, koreksiTagihan, editInfoRefund, koreksiRefund,
 } from "../services/finance/koreksiLanjutan.js";
@@ -2075,6 +2075,15 @@ financeTxRouter.delete("/refunds/bukti/:id", requirePermission(P.FINANCE_ADMIN),
     if (e instanceof BerkasError) return res.status(e.statusCode).json({ error: e.message, code: e.code });
     handleFinanceError(e, res);
   }
+});
+
+// "Lampirkan Bukti" TANPA koreksi: hanya menambah relasi bukti (append-only) — tanpa dokumen pengganti, jurnal, atau perubahan saldo. Alasan (>=5 karakter) + Idempotency-Key wajib.
+financeTxRouter.post("/refunds/:id/lampirkan-bukti", requirePermission(P.FINANCE_ADMIN), wajibIdempotencyKey, async (req, res) => {
+  try {
+    const hasil = await prisma.$transaction((tx) => lampirkanBuktiSaja(tx, { refundId: req.params.id, ids: req.body?.bukti?.ids ?? req.body?.ids, alasan: req.body?.reason, userId: req.user.id }), OPSI_TRANSAKSI_KOREKSI);
+    bersihkanBuktiStaged(prisma).catch(() => null);
+    res.status(201).json(hasil);
+  } catch (e) { handleFinanceError(e, res); }
 });
 
 financeTxRouter.get("/refunds/:id/bukti", requirePermission(P.FINANCE_READ), async (req, res) => {

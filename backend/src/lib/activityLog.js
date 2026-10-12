@@ -656,6 +656,9 @@ export function formatActivitySentence(event) {
       return `Dokumen ${nomor} dikoreksi (jurnal lama dibalik, jurnal baru diposting) — ${metadata.reason || "tanpa keterangan"}`;
     }
     case EVENT_TYPES.DOCUMENT_EDITED: {
+      if (metadata.aksi === "lampirkan_bukti_refund") {
+        return `Bukti transfer dilampirkan pada refund ${metadata.refundNumber || "—"} (+${metadata.bukti?.length ?? 0} berkas; jurnal & saldo tidak berubah) — ${metadata.reason || "tanpa keterangan"}`;
+      }
       if (metadata.supplierCode) {
         const f = Object.keys(metadata.changes || {});
         return `Supplier ${metadata.supplierCode} diubah: ${f.join(", ") || "—"}${metadata.rekeningBerubah ? " (REKENING BERUBAH)" : ""}`;
