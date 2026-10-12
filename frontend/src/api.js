@@ -762,6 +762,10 @@ export const api = {
   // Bacaan inert (readerMode OFF) bila reader V2 belum aktif; mutasi ditolak server bila writer V2 tidak aktif untuk unit.
   // Export Excel Rencana Produksi: data snapshot dari server (POST hanya agar id kartu terlihat bisa dikirim di body; tidak ada tulis).
   exportRencanaProduksi: (body) => request("/production-v2/rencana/export", { method: "POST", body: JSON.stringify(body || {}) }),
+  // Corner di Rencana: papan baca (kelompok/hambatan/aktor dari server) + command Tetapkan/Ganti PIC Corner (hanya cornerOperatorId; expectedRevision = revisi rencana).
+  getProductionV2CornerBoard: () => request("/production-v2/corner-board"),
+  setProductionV2CornerOperator: (runId, data, idempotencyKey = mutationKey("corner-pic")) =>
+    request(`/production-v2/runs/${runId}/corner-operator`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   getProductionV2Board: (date) => request(`/production-v2/board${date ? `?date=${encodeURIComponent(date)}` : ""}`),
   // P9B — Ringkasan Produksi + kolom pipeline Rencana Produksi: SATU payload dipakai kedua halaman.
   getProductionV2CommandCenter: () => request("/production-v2/command-center"),

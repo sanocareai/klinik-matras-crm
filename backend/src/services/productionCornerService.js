@@ -17,6 +17,7 @@ import { loadRuns, viewsOf, RUN_VIEW_INCLUDE, cornerAndLifecycleOf } from "./pro
 import { assertExpectedRevision, assertIdempotencyKey, loadStepContext } from "./productionStepCommandService.js";
 import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState } from "./v2FeatureFlags.js";
 import { bukanAdminOwner } from "./productionRencanaService.js";
+import { writeCornerOperatorInTx } from "./productionPlanningCommandService.js";
 
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
 export const CORNER_DONE_WINDOW_DAYS = 7;
@@ -147,7 +148,7 @@ export async function setCornerOperator(prisma, { runId, operatorId, expectedRev
     if (!unchanged) {
       revision = plan.revision + 1;
       // HANYA cornerOperatorId (+ penanda revisi/command). Meja, tanggal, target, PIC Meja, urutan, work center tidak disentuh.
-      await tx.productionRunPlan.update({ where: { id: plan.id }, data: { cornerOperatorId: operatorId, revision, commandId: command.id } });
+      await writeCornerOperatorInTx(tx, { planId: plan.id, cornerOperatorId: operatorId, revision, commandId: command.id });
       await tx.domainOutbox.create({
         data: {
           domain: "PRODUCTION", eventType: "production.plan.corner-operator-set", aggregateType: "ProductionRunPlan", aggregateId: plan.id, aggregateRevision: revision,
