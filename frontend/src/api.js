@@ -760,6 +760,8 @@ export const api = {
 
   // ── Production Experience V2 (P8): Planner papan meja, PIC Table/Corner, Andon, antrean Gudang, laporan Sales ──
   // Bacaan inert (readerMode OFF) bila reader V2 belum aktif; mutasi ditolak server bila writer V2 tidak aktif untuk unit.
+  // Export Excel Rencana Produksi: data snapshot dari server (POST hanya agar id kartu terlihat bisa dikirim di body; tidak ada tulis).
+  exportRencanaProduksi: (body) => request("/production-v2/rencana/export", { method: "POST", body: JSON.stringify(body || {}) }),
   getProductionV2Board: (date) => request(`/production-v2/board${date ? `?date=${encodeURIComponent(date)}` : ""}`),
   // P9B — Ringkasan Produksi + kolom pipeline Rencana Produksi: SATU payload dipakai kedua halaman.
   getProductionV2CommandCenter: () => request("/production-v2/command-center"),
