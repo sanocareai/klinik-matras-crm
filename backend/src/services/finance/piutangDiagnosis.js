@@ -128,7 +128,7 @@ export async function diagnosisPiutang(db, { to: batas = todayBookDateWIB() } = 
   const cutoff = await tanggalCutoff(db);
   const cutoffTeks = tampilCutoff(cutoff);
   const catatan = await catatanLaporan(db);
-  const kosong = { perTanggal: to, neraca: 0, rekonsiliasi: { perKategori: kosongAngka(), selisih: 0 }, baris: [], belumDiakui: { jumlah: 0, total: 0, perStatus: [], sudahDiserahBelumDiakui: [] }, keringananLunas: { jumlah: 0, totalSisa: 0, totalBelumDiBuku: 0, totalSudahDiBuku: 0, totalBelumDiserahkan: 0, baris: [] }, kategori: KATEGORI_PIUTANG, catatan };
+  const kosong = { perTanggal: to, neraca: 0, rekonsiliasi: { perKategori: kosongAngka(), selisih: 0 }, perluTindakan: { jumlah: 0, perSumber: { ledger: { jumlah: 0, total: 0 }, sudahDiserahBelumDiakui: { jumlah: 0, total: 0 }, keringananBelumDiBuku: { jumlah: 0, total: 0 } } }, baris: [], belumDiakui: { jumlah: 0, total: 0, perStatus: [], sudahDiserahBelumDiakui: [] }, keringananLunas: { jumlah: 0, totalSisa: 0, totalBelumDiBuku: 0, totalSudahDiBuku: 0, totalBelumDiserahkan: 0, baris: [] }, kategori: KATEGORI_PIUTANG, catatan };
   if (!akun) return kosong;
 
   const grouped = await db.finJournalLine.groupBy({
@@ -208,10 +208,26 @@ export async function diagnosisPiutang(db, { to: batas = todayBookDateWIB() } = 
     perStatusMap.set(k.status, s);
   }
 
+  const keringanan = await keringananLunas(db, new Map(baris.map((b) => [b.orderId, b.saldoPiutang])));
+  // RINGKAS "PERLU TINDAKAN" (aditif, Okt 2026) — satu angka server untuk kartu/badge/strip layar Piutang, supaya klien tidak menghitung ulang.
+  // Disjoint: (a) order bersaldo selain Tagihan sah; (b) sudah diserahkan tapi pendapatan belum diakui (belum punya saldo); (c) lunas-keringanan yang belum tercatat di buku.
+  const barisTindakan = baris.filter((b) => b.kategori !== "TAGIHAN_SAH");
+  const keringananBelumDiBuku = (keringanan?.baris ?? []).filter((b) => b.posisiBuku === "BELUM_DI_BUKU");
+  const sudahDiserah = belum.filter((k) => STATUS_PENGAKUAN.includes(k.status));
+  const perluTindakan = {
+    jumlah: barisTindakan.length + sudahDiserah.length + keringananBelumDiBuku.length,
+    perSumber: {
+      ledger: { jumlah: barisTindakan.length, total: barisTindakan.reduce((s, r) => s + r.saldoPiutang, 0) },
+      sudahDiserahBelumDiakui: { jumlah: sudahDiserah.length, total: sudahDiserah.reduce((s, k) => s + tagihanOrder(k), 0) },
+      keringananBelumDiBuku: { jumlah: keringananBelumDiBuku.length, total: keringananBelumDiBuku.reduce((s, b) => s + (b.sisaTagihan ?? 0), 0) },
+    },
+  };
+
   return {
     perTanggal: to,
     neraca,
     rekonsiliasi: { perKategori, selisih: Math.round((neraca - totalKategori) * 100) / 100 },
+    perluTindakan,
     baris,
     belumDiakui: {
       jumlah: belum.length,
@@ -220,7 +236,7 @@ export async function diagnosisPiutang(db, { to: batas = todayBookDateWIB() } = 
       sudahDiserahBelumDiakui: belum.filter((k) => STATUS_PENGAKUAN.includes(k.status))
         .map((k) => ({ orderId: k.id, orderNumber: k.orderNumber, customerName: k.customer?.name ?? "—", orderStatus: k.status, nilaiTagihan: tagihanOrder(k) })),
     },
-    keringananLunas: await keringananLunas(db, new Map(baris.map((b) => [b.orderId, b.saldoPiutang]))),
+    keringananLunas: keringanan,
     kategori: KATEGORI_PIUTANG,
     catatan,
   };

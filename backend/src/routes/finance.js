@@ -49,6 +49,7 @@ import {
 import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
 import { ambilDaftarJurnal, bentukJurnal } from "../services/finance/jurnalRead.js";
 import { diagnosisPiutang } from "../services/finance/piutangDiagnosis.js";
+import { detailPiutangOrder } from "../services/finance/piutangDetail.js";
 // hitungNominal & statusEfektif DIPAKAI ULANG dari services/invoice.js —
 // BUKAN dihitung ulang di sini. Itu satu-satunya tempat arti nominal
 // invoice didefinisikan (harga final per item, ongkir ditagihkan,
@@ -1117,6 +1118,18 @@ financeRouter.get("/reports/receivables/diagnosis", requirePermission(P.FINANCE_
   try {
     const { to } = rentangDariQuery(req.query);
     res.json(await diagnosisPiutang(prisma, { to }));
+  } catch (err) {
+    handleFinanceError(err, res);
+  }
+});
+
+// Detail satu order piutang untuk drawer (invoice, pembayaran, jurnal akun Piutang Usaha, riwayat). Hanya baca; angka tagihan = baris daftar yang sama.
+financeRouter.get("/reports/receivables/order/:orderId", requirePermission(P.FINANCE_READ), async (req, res) => {
+  try {
+    const { to } = rentangDariQuery(req.query);
+    const d = await detailPiutangOrder(prisma, { orderId: String(req.params.orderId), to });
+    if (!d) return res.status(404).json({ error: "Order tidak ditemukan" });
+    res.json(d);
   } catch (err) {
     handleFinanceError(err, res);
   }

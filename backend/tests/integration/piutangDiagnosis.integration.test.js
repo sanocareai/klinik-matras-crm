@@ -201,3 +201,87 @@ test("jurnal penyesuaian pengakuan ikut dihitung sebagai 'diakui' — order yang
   assert.equal(sesudah.diakui, 1_200_000);
   assert.equal(sesudah.kategori, "TAGIHAN_SAH");
 });
+
+// ── Kontrak layar Piutang yang didesain ulang (Okt 2026): field AKSI ADITIF; angka lama TIDAK berubah ─────────────────────────────────────────────
+test("umurPiutang: field lama identik; tambahan aditif (tagihanDiakui/sudahDilunasi/statusBayar/jatuhTempo) konsisten dengan saldo ledger yang sama", async () => {
+  const { kelola, diakui, bayar, a } = await siapkan();
+  const belum = await kelola("Belum Bayar", { value: 1_000_000 });
+  await diakui(belum);
+  const dp = await kelola("Dibayar Sebagian", { value: 2_000_000, paymentStatus: "DP" });
+  await diakui(dp);
+  await bayar(dp, 500_000);
+  // order dengan invoice jatuh tempo 3 hari lagi (dalam 7 hari) dan satu lewat 10 hari
+  const hariIni = new Date();
+  const inv = async (o, hari, no) => testPrisma.invoice.create({ data: { invoiceNumber: no, orderId: o.id, dueDate: new Date(Date.UTC(hariIni.getUTCFullYear(), hariIni.getUTCMonth(), hariIni.getUTCDate() + hari)) } });
+  await inv(belum, 3, "INV-UJI-001");
+  await inv(dp, -10, "INV-UJI-002");
+
+  // Posisi = HARI INI (seperti layar Piutang): tanpa ?to= server memakai akhir bulan, yang menggeser acuan "jatuh tempo ≤7 hari".
+  const hariIniWib = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+  const r = await a.get(`/api/finance/reports/receivables?to=${hariIniWib}`);
+  assert.equal(r.status, 200);
+  const langsung = await umurPiutang(testPrisma, { to: new Date(`${hariIniWib}T00:00:00.000Z`) });
+  // kontrak lama: kunci & isi baris yang sudah ada tidak berubah
+  const kunciLama = ["orderId", "orderNumber", "invoiceNumber", "customerId", "customerName", "salesName", "nilaiOrder", "sisaTagihan", "dueDate", "sumberJatuhTempo", "hariLewat", "ember", "orderStatus"];
+  for (const b of r.body.baris) for (const k of kunciLama) assert.ok(k in b, `kunci lama ${k} hilang`);
+  assert.equal(r.body.total, langsung.total);
+  assert.equal(r.body.baris.reduce((s, b) => s + b.sisaTagihan, 0), r.body.total);
+
+  const byNo = Object.fromEntries(r.body.baris.map((b) => [b.orderNumber, b]));
+  const bb = byNo[belum.orderNumber]; const ds = byNo[dp.orderNumber];
+  assert.deepEqual([bb.tagihanDiakui, bb.sudahDilunasi, bb.sisaTagihan, bb.statusBayar], [1_000_000, 0, 1_000_000, "BELUM_BAYAR"]);
+  assert.deepEqual([ds.tagihanDiakui, ds.sudahDilunasi, ds.sisaTagihan, ds.statusBayar], [2_000_000, 500_000, 1_500_000, "DIBAYAR_SEBAGIAN"]);
+  assert.ok(bb.tanggalOrder);
+  // ringkas jatuh tempo dari baris yang sama
+  assert.equal(r.body.jatuhTempo.lewat.jumlah, r.body.baris.filter((b) => b.hariLewat > 0).length);
+  assert.equal(r.body.jatuhTempo.lewat.total, r.body.baris.filter((b) => b.hariLewat > 0).reduce((s, b) => s + b.sisaTagihan, 0));
+  assert.equal(r.body.jatuhTempo.tujuhHari.jumlah, r.body.baris.filter((b) => b.hariLewat <= 0 && b.hariLewat >= -7).length);
+  assert.equal(r.body.jatuhTempo.tujuhHari.jumlah, 1, "order dengan invoice jatuh tempo 3 hari lagi");
+  assert.equal(r.body.jatuhTempo.tujuhHari.total, 1_000_000);
+});
+
+test("diagnosis: perluTindakan (aditif) = baris selain Tagihan sah + sudah diserahkan belum diakui + keringanan belum di buku; kategori lama identik", async () => {
+  const { kelola, diakui, bayar, a } = await siapkan();
+  const sah = await kelola("Tagihan Sah", { value: 1_000_000 }); await diakui(sah);
+  const lunasTanpa = await kelola("Lunas Tanpa Payment", { value: 3_000_000, paymentStatus: "LUNAS" }); await diakui(lunasTanpa);
+  const lebih = await kelola("Lebih Bayar", { value: 1_000_000, paymentStatus: "LUNAS" }); await diakui(lebih); await bayar(lebih, 1_500_000);
+  await kelola("Diserahkan Belum Diakui", { value: 700_000, status: "DELIVERED" });
+  await kelola("Belum Diserahkan", { value: 5_000_000, status: "PROCESSING" });
+
+  const d = await a.get("/api/finance/reports/receivables/diagnosis");
+  assert.equal(d.status, 200);
+  const per = d.body.rekonsiliasi.perKategori;
+  const nonSah = ["ORDER_DIBATALKAN", "NILAI_BEDA_PENGAKUAN", "PAYMENT_BELUM_MENUTUP", "LUNAS_TANPA_PAYMENT", "KREDIT_LAINNYA"].reduce((s, k) => s + (per[k]?.jumlah ?? 0), 0);
+  assert.equal(per.TAGIHAN_SAH.jumlah, 1);
+  assert.equal(d.body.perluTindakan.perSumber.ledger.jumlah, nonSah);
+  assert.equal(d.body.perluTindakan.perSumber.sudahDiserahBelumDiakui.jumlah, d.body.belumDiakui.sudahDiserahBelumDiakui.length);
+  assert.equal(d.body.perluTindakan.perSumber.sudahDiserahBelumDiakui.jumlah, 1);
+  assert.equal(d.body.perluTindakan.jumlah, d.body.perluTindakan.perSumber.ledger.jumlah + d.body.perluTindakan.perSumber.sudahDiserahBelumDiakui.jumlah + d.body.perluTindakan.perSumber.keringananBelumDiBuku.jumlah);
+  assert.ok(d.body.perluTindakan.jumlah >= 3);
+  // saldo neraca & rekonsiliasi tetap cocok
+  assert.equal(d.body.rekonsiliasi.selisih, 0);
+});
+
+test("detail order piutang: invoice, pembayaran (aktif + batal), jurnal akun Piutang Usaha, riwayat; 404 order tak ada; SALES 403", async () => {
+  const { kelola, diakui, bayar, a, s } = await siapkan();
+  const o = await kelola("Detail Uji", { value: 2_000_000, paymentStatus: "DP" });
+  await diakui(o);
+  const p = await bayar(o, 600_000);
+  const batal = await bayar(o, 100_000);
+  await testPrisma.payment.update({ where: { id: batal.id }, data: { cancelledAt: new Date(), cancelReason: "salah input" } });
+  await testPrisma.invoice.create({ data: { invoiceNumber: "INV-DET-001", orderId: o.id } });
+  const r = await a.get(`/api/finance/reports/receivables/order/${o.id}`);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.order.nomor, o.orderNumber);
+  assert.equal(r.body.invoice.nomor, "INV-DET-001");
+  assert.equal(r.body.pembayaran.length, 2);
+  assert.deepEqual(r.body.pembayaran.map((x) => x.dibatalkan), [false, true]);
+  assert.equal(r.body.tagihan.tagihanDiakui, 2_000_000); assert.equal(r.body.tagihan.sudahDilunasi, 700_000);
+  assert.ok(r.body.jurnal.length >= 2);
+  assert.ok(r.body.jurnal.every((j) => typeof j.debit === "number" && typeof j.kredit === "number"));
+  assert.ok(Array.isArray(r.body.riwayat));
+  assert.ok(!JSON.stringify(r.body).includes("proofPhoto"), "bukti foto mentah tidak dikirim");
+  assert.equal((await a.get("/api/finance/reports/receivables/order/tidak-ada")).status, 404);
+  assert.equal((await s.get(`/api/finance/reports/receivables/order/${o.id}`)).status, 403);
+  void p;
+});
