@@ -11,11 +11,13 @@ const read = (...p) => fs.readFileSync(path.join(here, "..", "src", ...p), "utf8
 test("api: getProductionOperatorChoices memanggil ?pilihan=1; getProductionOperators tetap daftar penuh", () => {
   const api = read("api.js");
   assert.match(api, /getProductionOperators: \(\) => request\("\/production\/operators"\),/);
-  assert.match(api, /getProductionOperatorChoices: \(\) => request\("\/production\/operators\?pilihan=1"\)/);
+  // Tetap ?pilihan=1 (tanpa ADMIN/OWNER); opsi lane/stageId (pemisahan PIC Meja/Corner) hanya MENAMBAH penyaringan per lini — tanpa opsi, permintaannya sama seperti sebelumnya.
+  assert.match(api, /getProductionOperatorChoices: \(opts = \{\}\) => request\(`\/production\/operators\?pilihan=1\$\{opts\.lane \?/);
+  assert.match(api, /\$\{opts\.stageId \? `&stageId=/);
 });
 
 test("dropdown pilihan memakai Choices; halaman Operator memakai daftar penuh", () => {
-  assert.match(read("features", "production", "UnitV1Stage.jsx"), /api\.getWorkCenters\(\), api\.getProductionOperatorChoices\(\)/);
+  assert.match(read("features", "production", "UnitV1Stage.jsx"), /api\.getWorkCenters\(\), api\.getProductionOperatorChoices\(\{ stageId: cur\?\.stage\?\.id \}\)/);
   assert.match(read("pages", "bengkel", "ProductionPlannerV2.jsx"), /api\.getProductionOperatorChoices\(\)\.catch/);
   assert.match(read("pages", "bengkel", "ProductionOperators.jsx"), /api\.getProductionOperators\(\)\.then/);
 });
