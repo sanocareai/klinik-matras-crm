@@ -22,6 +22,7 @@ import { idPesanInti } from "../utils/idPesanWa.js";
 import { cariPesanSudahAda } from "../utils/cariPesanSudahAda.js";
 import { fieldPosterVideo } from "../utils/videoThumb.js";
 import { captureInbound } from "../services/ctwaCapture.js";
+import { rekamTouch } from "../services/attribution/touchCapture.js";
 
 export const webhookRouter = express.Router();
 
@@ -813,6 +814,12 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
   try {
     captureInbound({ payload, event, engine, externalId, isNewCustomer: !existingCustomer });
   } catch { /* observasi bukan jalur kritis */ }
+
+  // ATRIBUSI FASE 2: touch iklan (customer.id + message.id sudah ada di sini). Flag ATRIBUSI_TOUCH_CAPTURE_ENABLED (default MATI); idempoten lewat
+  // kunci dedupe per pesan; TIDAK di-await dan tidak pernah melempar — kegagalan atribusi tidak boleh menggagalkan inbox.
+  try {
+    rekamTouch(prisma, { payload, event, engine, externalId, customer, message: inboundMsg, isNewCustomer: !existingCustomer }).catch(() => {});
+  } catch { /* atribusi bukan jalur kritis */ }
 
   // Pesan masuk baru → unread=true (badge sidebar lama) + unreadCount+1 (badge baru)
   // + isRead=false (belum dibuka lagi)

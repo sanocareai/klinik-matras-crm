@@ -40,11 +40,11 @@ TAG_KODE="atrk"
 ALLOWED_RE='^(backend/src/index\.js|backend/src/routes/attributionCohort\.js|backend/src/services/attribution/(cohort|cohortDefinitions|cohortLoader|cohortReport)\.js|backend/tests/(attributionCohort|attributionCohortAudit|attributionCohortReport|releaseAtribusiKohort)\.test\.js|backend/tests/fixtures/attributionAuditShape\.js|backend/tests/integration/attributionCohort\.integration\.test\.js|docs/ATRIBUSI-COHORT-FASE1\.md|scripts/release-atribusi-kohort\.sh)$'
 # Pin sha256 (teks LF) berkas RUNTIME. Isi berbeda dari pin = berhenti sampai ditinjau ulang.
 declare -A PINS=(
-  ["backend/src/index.js"]="6096bddae110a9b78cb33ebebcae8e53c10cb5aa69e28d07adc2b00beb16d80b"
+  ["backend/src/index.js"]="5fec0d94fdfdebaa09c5b00a8c3239a3d06d86b90fa15df1a8617b59bc01ad01"
   ["backend/src/routes/attributionCohort.js"]="dc332e106ed5727067ff6eaa52e66427cda8ac6b9bf4f2ec9fa78f7bc0c453d3"
   ["backend/src/services/attribution/cohort.js"]="c74d0f45feeba0baac178a23fc0c635bb608cc074f87b6ba11a883ede53eb495"
   ["backend/src/services/attribution/cohortDefinitions.js"]="3f6589c364f20dcb6717c77bd009fda64ccae4375621ade2bd225f721e442a53"
-  ["backend/src/services/attribution/cohortLoader.js"]="11360a9434e0294ac358f7bb4d0cfe01f153c1c5c50eaab24e93d37dd76ebac8"
+  ["backend/src/services/attribution/cohortLoader.js"]="03d54a1feb5a64d5f1fd5b9a3ced908d58e0ba38e7dcce519a745dfb0cb3a57b"
   ["backend/src/services/attribution/cohortReport.js"]="c5b35ed938ba983f09baec8915dbe7acfcae7ebcc621f9ea22139dc48536c979"
 )
 

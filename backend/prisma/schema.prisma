@@ -630,6 +630,7 @@ model User {
 
   morningPriorityRequested MorningPriorityRequest[] @relation("MorningPriorityRequestedBy")
   morningPriorityDecided   MorningPriorityRequest[] @relation("MorningPriorityDecidedBy")
+  metaAdReferenceImports MetaAdReferenceImport[] @relation("MetaAdReferenceImportCreator")
 }
 
 // Role JAMAK per user — permission bersifat ADITIF (D-010). Satu orang bisa
@@ -800,6 +801,7 @@ model Customer {
   // Berguna untuk tahu kreatif MANA yang menghasilkan lead, karena payload
   // WA tidak membawa nama campaign.
   ctwaSourceUrl           String?                   @map("ctwa_source_url")
+  attributionTouches      AttributionTouch[]
   customerType            CustomerType              @default(END_USER)
   healthStatus            HealthStatus?
   // D-028 (20 Agustus 2026) — sama seperti Order.complaintCategory, tapi di
@@ -974,6 +976,7 @@ model Message {
   mediaType      String? // "image" | "video" | "audio" | "document"
   mediaUrl       String? // path lokal: /uploads/xxx atau URL WAHA
   externalId     String?          @unique
+  attributionTouches AttributionTouch[]
   replyToId      String? // ID pesan yang dibalas (untuk fitur quote/reply)
   replyTo        Message?         @relation("MessageReply", fields: [replyToId], references: [id], onDelete: SetNull, onUpdate: NoAction)
   replies        Message[]        @relation("MessageReply")
@@ -10781,4 +10784,76 @@ model PkrOrderItemUnit {
 
   @@index([itemId])
   @@map("pkr_order_item_units")
+}
+
+// ── ATRIBUSI CTWA FASE 2 (Okt 2026) ──────────────────────────────────────────────────────────────────────────────────────────
+// Touch iklan per customer (APPEND-ONLY). Tanpa isi chat, nomor, nama, payload mentah, atau clid mentah. Lihat migrasi 20261107090000.
+// adId = string digit; touchAt = UTC (konvensi kolom waktu); touchDateWib = hari kalender WIB (dijaga CHECK di DB).
+model AttributionTouch {
+  id                   String    @id @default(uuid()) @db.Uuid
+  customerId           String    @map("customer_id")
+  customer             Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  messageId            String?   @map("message_id")
+  message              Message?  @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  adId                 String    @map("ad_id") @db.VarChar(32)
+  adSetId              String?   @map("ad_set_id") @db.VarChar(32)
+  campaignId           String?   @map("campaign_id") @db.VarChar(32)
+  mappingStatusAtTouch String    @map("mapping_status_at_touch") @db.VarChar(10) // MAPPED | UNMAPPED
+  touchAt              DateTime  @map("touch_at")
+  touchDateWib         DateTime  @map("touch_date_wib") @db.Date
+  providerTs           DateTime? @map("provider_ts")
+  evidenceSource       String    @map("evidence_source") @db.VarChar(24) // CTWA_AD | AD_REPLY_UNMARKED
+  sourceType           String    @map("source_type") @db.VarChar(16)
+  entryPointSource     String?   @map("entry_point_source") @db.VarChar(32)
+  entryPointApp        String?   @map("entry_point_app") @db.VarChar(32)
+  ctwaClidHash         String?   @map("ctwa_clid_hash") @db.VarChar(16)
+  customerNewAtTouch   Boolean   @map("customer_new_at_touch")
+  dedupeKey            String    @unique @map("dedupe_key") @db.VarChar(64)
+  captureVersion       Int       @default(1) @map("capture_version") @db.SmallInt
+  createdAt            DateTime  @default(now()) @map("created_at")
+
+  @@index([customerId, touchAt])
+  @@index([adId, touchAt])
+  @@index([touchDateWib])
+  @@map("attribution_touches")
+}
+
+// Relasi Ad ID → Ad Set ID → Campaign ID yang dapat diperbarui. ID = kunci; nama = label snapshot.
+model MetaAdReference {
+  adId         String   @id @map("ad_id") @db.VarChar(32)
+  adSetId      String   @map("ad_set_id") @db.VarChar(32)
+  campaignId   String   @map("campaign_id") @db.VarChar(32)
+  adName       String?  @map("ad_name") @db.VarChar(200)
+  adSetName    String?  @map("ad_set_name") @db.VarChar(200)
+  campaignName String?  @map("campaign_name") @db.VarChar(200)
+  source       String   @db.VarChar(24) // ADS_MANAGER_EXPORT | MARKETING_API | MANUAL
+  syncedAt     DateTime @map("synced_at")
+  importId     String?  @map("import_id") @db.Uuid
+  import       MetaAdReferenceImport? @relation(fields: [importId], references: [id], onDelete: SetNull)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@index([campaignId])
+  @@index([adSetId])
+  @@map("meta_ad_references")
+}
+
+model MetaAdReferenceImport {
+  id              String   @id @default(uuid()) @db.Uuid
+  source          String   @db.VarChar(24)
+  fileName        String?  @map("file_name") @db.VarChar(120)
+  contentSha256   String   @map("content_sha256") @db.VarChar(64)
+  rowsTotal       Int      @map("rows_total")
+  rowsAccepted    Int      @map("rows_accepted")
+  rowsRejected    Int      @map("rows_rejected")
+  rowsNew         Int      @map("rows_new")
+  rowsChanged     Int      @map("rows_changed")
+  allowCorrection Boolean  @default(false) @map("allow_correction")
+  createdById     String?  @map("created_by_id")
+  createdBy       User?    @relation("MetaAdReferenceImportCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  references MetaAdReference[]
+
+  @@map("meta_ad_reference_imports")
 }
