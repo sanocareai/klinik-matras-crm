@@ -485,6 +485,8 @@ test("laporan: refund = nominal pelanggan saja (Retur 200.000), biaya admin hany
   const bersih = await mutasiRekening(ctx.bank.id);
   assert.equal(bersih, -202_500, "mutasi bank bersih = total keluar (pengeluaran asli dibalik, pengganti keluar sekali)");
   assert.ok(Array.isArray(aktif));
+  assert.ok(JSON.stringify(mut).includes("202500"), "API Mutasi Kas & Bank memuat uang keluar 202.500 (total keluar)");
+  assert.ok(!JSON.stringify(mut).includes("200000.00,\"kredit\""), "mutasi bank tidak memuat nominal pelanggan saja sebagai uang keluar");
 
   const r = await unduhExport(server.baseUrl, ctx.admin.token, "piutang-refund", { periode: { to: "2026-12-31" }, filter: {} });
   assert.equal(r.status, 200);
@@ -551,4 +553,23 @@ test("refund lama tetap terbaca: biaya admin Rp0 dan bukti kosong; daftar tidak 
   const rw = await ctx.a.get(`/api/finance/riwayat-versi/refunds/${refund.id}`);
   assert.equal(rw.status, 200); assert.deepEqual([rw.body.versiRefund[0].biayaAdmin, rw.body.versiRefund[0].jumlahBukti], [0, 0]);
   assert.equal(await testPrisma.finRefundEvidence.count(), 0); assert.equal(await testPrisma.finRefundEvidenceLink.count(), 0);
+});
+
+// ═══ 11. Uji perilaku rehearsal skrip rilis (SQL yang SAMA) + guard rollback ═══
+test("uji perilaku rehearsal pada skrip rilis: blok SQL menolak 14 data salah, meloloskan 6 data benar, lalu dibatalkan semua (bukti dipakai tak bisa diubah/dihapus; relasi append-only)", async () => {
+  const skrip = fs.readFileSync(new URL("../../../scripts/release-refund-bukti-biaya-admin.sh", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  const m = /<<'UJISQL'\n([\s\S]*?)\nUJISQL\n/.exec(skrip);
+  assert.ok(m, "blok UJISQL tidak ditemukan di skrip rilis");
+  const ctx = await siapkan();
+  await refundDisetujui(ctx); // contoh baris fin_refunds untuk blok uji
+  const sebelum = { ev: await testPrisma.finRefundEvidence.count(), link: await testPrisma.finRefundEvidenceLink.count() };
+  await assert.rejects(() => testPrisma.$executeRawUnsafe(m[1]), (e) => {
+    const pesan = String(e.message);
+    assert.ok(!/TIDAK_DITOLAK/.test(pesan), `ada data salah yang lolos: ${pesan.slice(0, 300)}`);
+    assert.match(pesan, /ROLLBACK_UJI tolak=14 lolos=6/);
+    return true;
+  });
+  assert.deepEqual({ ev: await testPrisma.finRefundEvidence.count(), link: await testPrisma.finRefundEvidenceLink.count() }, sebelum, "blok uji dibatalkan seluruhnya");
+  assert.equal(await testPrisma.finRefund.count({ where: { transferReference: { not: null } } }), 0);
+  assert.match(fs.readFileSync(new URL("../../../scripts/rollback-guard-refund-bukti-biaya-admin.sh", import.meta.url), "utf8"), /transfer_fee_amount > 0 and r\.created_at >= \(select finished_at from _prisma_migrations/);
 });

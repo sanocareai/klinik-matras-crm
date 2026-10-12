@@ -83,7 +83,7 @@ import { sinkronStatusDariFinExpense } from "../services/expenseSubmission/servi
 import { blokirKoreksiBatch, menuKoreksi } from "../services/finance/koreksiPembayaran.js";
 import { ambilDaftarPembayaran } from "../services/finance/customerPaymentRead.js";
 import { ambilDaftarRefund, refundInclude } from "../services/finance/refundRead.js";
-import { unggahBukti, hapusBuktiStaged, buktiDokumen, jumlahBuktiBatch, BerkasError, MAKS_UKURAN_MB } from "../services/finance/refundBukti.js";
+import { unggahBukti, hapusBuktiStaged, bersihkanBuktiStaged, buktiDokumen, jumlahBuktiBatch, BerkasError, MAKS_UKURAN_MB } from "../services/finance/refundBukti.js";
 import {
   blokirKoreksiTagihanBatch, blokirKoreksiRefundBatch, menuKoreksiDokumen, editInfoTagihan, koreksiTagihan, editInfoRefund, koreksiRefund,
 } from "../services/finance/koreksiLanjutan.js";
@@ -2932,6 +2932,7 @@ financeTxRouter.post("/refunds/:id/koreksi", requirePermission(P.FINANCE_ADMIN),
     const hasil = await prisma.$transaction((tx) => koreksiRefund(tx, {
       refundId: req.params.id, body: req.body, alasan: req.body?.reason, userId: req.user.id, preview,
     }), OPSI_TRANSAKSI_KOREKSI);
+    if (!preview) bersihkanBuktiStaged(prisma).catch(() => null); // sapuan bukti belum-dipakai yang basi (di luar transaksi; gagal tidak memengaruhi koreksi)
     res.status(201).json(hasil);
   } catch (e) { tanganiKoreksi(e, res); }
 });
