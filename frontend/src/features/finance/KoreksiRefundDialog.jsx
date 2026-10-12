@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertTriangle, ArrowRight, FileText, Loader2, Paperclip, RotateCw, ShieldCheck, Upload, X } from "lucide-react";
+import { AlertTriangle, ArrowRight, FileText, Loader2, Paperclip, RotateCw, ShieldCheck } from "lucide-react";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -13,8 +13,9 @@ import CaraBayarTransfer from "@/features/finance/CaraBayarTransfer.jsx";
 import { biayaTransferLengkap } from "@/features/finance/biayaTransfer.js";
 import { PratinjauKoreksi } from "@/features/finance/KoreksiAman.jsx";
 import { LinkBukti } from "@/features/finance/receiptMedia.jsx";
+import { BerkasBukti, AreaUnggahBukti, useUnggahBukti } from "@/features/finance/BuktiUnggah.jsx";
 import {
-  MODE_BUKTI, MAKS_BUKTI, formatUkuran, periksaBerkas, berkasDariPaste, kesiapanBukti, modeBawaan, nilaiAwalRefund, adaPerubahanRefund, bodyKoreksiRefund, ringkasUangRefund,
+  MODE_BUKTI, kesiapanBukti, modeBawaan, nilaiAwalRefund, adaPerubahanRefund, bodyKoreksiRefund, ringkasUangRefund,
 } from "@/features/finance/refundKoreksiLogic.js";
 
 // KOREKSI REFUND (Admin Keuangan) — bukti transfer + biaya admin bank. Dua langkah: isi form → pratinjau (server menjalankan kode yang SAMA dengan simpan lalu ROLLBACK).
@@ -31,48 +32,22 @@ function BarisUang({ label, nilai, tebal = false, tone }) {
   );
 }
 
-/** Satu berkas bukti: thumbnail (gambar) atau ikon PDF + nama + ukuran. `aksi` = tombol di kanan. */
-function BerkasBukti({ nama, ukuran, pdf, url, praUrl, status, pesan, aksi, origin }) {
-  const gambar = !pdf && (praUrl || url);
-  const isi = (
-    <>
-      <span className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-line bg-surface">
-        {gambar ? <img src={gambar} alt="" className="h-full w-full object-cover" /> : <FileText size={20} className="text-ink3" aria-hidden="true" />}
-      </span>
-      <span className="min-w-0 flex-1">
-        <span className="block truncate text-[13px] font-medium text-ink">{nama}</span>
-        <span className="block text-[12px] text-ink3">
-          {ukuran != null && formatUkuran(ukuran)}{pdf ? " · PDF" : ""}{origin ? ` · ${origin === "BARU" ? "diunggah untuk dokumen ini" : "dibawa dari dokumen sebelumnya"}` : ""}
-        </span>
-        {status === "uploading" && <span className="flex items-center gap-1 text-[12px] text-ink3" role="status"><Loader2 size={12} className="animate-spin" />Mengunggah…</span>}
-        {status === "gagal" && <span className="block text-[12px] text-red" role="alert">{pesan}</span>}
-      </span>
-    </>
-  );
-  return (
-    <li className="flex items-center gap-2.5 rounded-lg border border-line px-2.5 py-2" data-testid="berkas-bukti">
-      {url && !praUrl ? <a href={url} target="_blank" rel="noreferrer" className="flex min-w-0 flex-1 items-center gap-2.5 hover:opacity-90" title="Buka bukti di tab baru">{isi}</a> : <div className="flex min-w-0 flex-1 items-center gap-2.5">{isi}</div>}
-      {aksi}
-    </li>
-  );
-}
-
 export default function KoreksiRefundDialog({ refund, rekening, onClose, onSaved }) {
   const awal = useMemo(() => nilaiAwalRefund(refund), [refund]);
   const [f, setF] = useState(awal);
   const [alasan, setAlasan] = useState("");
   const [bukti, setBukti] = useState({ memuat: true, galat: "", data: null });
   const [mode, setMode] = useState(null);
-  const [unggahan, setUnggahan] = useState([]); // [{ key, file, praUrl, status: uploading|ok|gagal, bukti?, pesan? }]
   const [pratinjau, setPratinjau] = useState(null);
   const [setuju, setSetuju] = useState(false);
   const [galat, setGalat] = useState("");
   const [sibuk, setSibuk] = useState(false);
   const kunciRef = useRef(null);
-  const unggahanRef = useRef([]);
-  const dipakaiRef = useRef(false);
   const kotakRef = useRef(null);
-  unggahanRef.current = unggahan;
+  // Unggahan bukti dipakai bersama dengan "Lampirkan Bukti" — perubahan daftar membatalkan pratinjau & kunci idempotensi.
+  const { unggahan, tambahBerkas, kirim, buang, saatPaste: tempel, tandaiDipakai, idsBaru, sedangUnggah } = useUnggahBukti({
+    saatUbah: () => { setPratinjau(null); setSetuju(false); kunciRef.current = null; },
+  });
 
   const rek = rekening.find((r) => r.id === f.cashAccountId);
   const set = (k, v) => { setF((s) => ({ ...s, [k]: v })); setPratinjau(null); setSetuju(false); kunciRef.current = null; };
@@ -87,58 +62,10 @@ export default function KoreksiRefundDialog({ refund, rekening, onClose, onSaved
   }, [refund.id]);
   useEffect(() => { muatBukti(); }, [muatBukti]);
 
-  // Bersihkan bukti yang belum dipakai saat dialog ditutup tanpa menyimpan (tidak ada berkas yatim).
-  const bersihkan = useCallback(() => {
-    if (dipakaiRef.current) return;
-    for (const u of unggahanRef.current) {
-      if (u.status === "ok" && u.bukti?.id) api.hapusBuktiRefund(u.bukti.id).catch(() => null);
-      if (u.praUrl) URL.revokeObjectURL(u.praUrl);
-    }
-  }, []);
-  useEffect(() => () => bersihkan(), [bersihkan]);
-
-  const tambahBerkas = useCallback(async (daftar) => {
-    const berkas = Array.from(daftar || []);
-    if (!berkas.length) return;
-    setPratinjau(null); setSetuju(false); kunciRef.current = null;
-    for (const file of berkas) {
-      const key = `${file.name}-${file.size}-${Math.random().toString(36).slice(2, 8)}`;
-      const cek = periksaBerkas(file);
-      const praUrl = file.type.startsWith("image/") ? URL.createObjectURL(file) : null;
-      if (!cek.ok) { setUnggahan((s) => [...s, { key, file, praUrl, status: "gagal", pesan: cek.pesan }]); continue; }
-      setUnggahan((s) => [...s, { key, file, praUrl, status: "uploading" }]);
-      kirim(key, file);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  async function kirim(key, file) {
-    setUnggahan((s) => s.map((u) => (u.key === key ? { ...u, status: "uploading", pesan: "" } : u)));
-    try {
-      const r = await api.uploadBuktiRefund(file);
-      setUnggahan((s) => s.map((u) => (u.key === key ? { ...u, status: "ok", bukti: r.bukti } : u)));
-    } catch (e) {
-      setUnggahan((s) => s.map((u) => (u.key === key ? { ...u, status: "gagal", pesan: e.message || "Gagal mengunggah" } : u)));
-    }
-  }
-
-  function buang(u) {
-    if (u.status === "ok" && u.bukti?.id) api.hapusBuktiRefund(u.bukti.id).catch(() => null);
-    if (u.praUrl) URL.revokeObjectURL(u.praUrl);
-    setUnggahan((s) => s.filter((x) => x.key !== u.key));
-    setPratinjau(null); setSetuju(false); kunciRef.current = null;
-  }
-
-  // Ctrl+V: tempel gambar/berkas dari clipboard ke area bukti.
-  const saatPaste = (e) => {
-    if (mode === "LAMA") return;
-    const berkas = berkasDariPaste(e);
-    if (berkas.length) { e.preventDefault(); tambahBerkas(berkas); }
-  };
+  // Ctrl+V: tempel gambar/berkas dari clipboard ke area bukti (tidak berlaku untuk mode "gunakan bukti lama").
+  const saatPaste = (e) => { if (mode !== "LAMA") tempel(e); };
 
   const jumlahLama = bukti.data?.jumlah ?? 0;
-  const idsBaru = unggahan.filter((u) => u.status === "ok").map((u) => u.bukti.id);
-  const sedangUnggah = unggahan.some((u) => u.status === "uploading");
   const modeAktif = mode ?? modeBawaan(jumlahLama);
   const siapBukti = kesiapanBukti({ jumlahLama, mode: modeAktif, jumlahBaru: idsBaru.length, sedangUnggah });
   const valid = adaPerubahanRefund(awal, f) && Number(f.amount) > 0 && f.date && f.cashAccountId && biayaTransferLengkap(rek, f) && alasan.trim() && siapBukti.siap && !bukti.memuat && !bukti.galat;
@@ -159,8 +86,7 @@ export default function KoreksiRefundDialog({ refund, rekening, onClose, onSaved
     try {
       kunciRef.current ||= kunciBaru();
       await api.koreksiFinanceDoc("refunds", refund.id, body({ konfirmasiBiayaGanda: setuju }), null, kunciRef.current);
-      dipakaiRef.current = true;
-      for (const u of unggahan) if (u.praUrl) URL.revokeObjectURL(u.praUrl);
+      tandaiDipakai();
       onSaved();
     } catch (e) { setGalat(e.message); } finally { setSibuk(false); }
   }
@@ -295,37 +221,7 @@ export default function KoreksiRefundDialog({ refund, rekening, onClose, onSaved
                     </div>
                   </fieldset>
                   {modeAktif !== "LAMA" && (
-                    <div className="space-y-2">
-                      <div
-                        className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-line px-3 py-4 text-center"
-                        onDragOver={(e) => e.preventDefault()}
-                        onDrop={(e) => { e.preventDefault(); tambahBerkas(e.dataTransfer.files); }}
-                        data-testid="area-unggah"
-                      >
-                        <Upload size={18} className="text-ink3" aria-hidden="true" />
-                        <p className="m-0 text-[12.5px] text-ink2">Seret berkas ke sini, <strong>tempel dengan Ctrl+V</strong>, atau pilih dari perangkat.</p>
-                        <label className="inline-flex">
-                          <input type="file" multiple accept="image/jpeg,image/png,image/webp,application/pdf,.jpg,.jpeg,.png,.webp,.pdf" className="sr-only" data-testid="input-berkas" onChange={(e) => { tambahBerkas(e.target.files); e.target.value = ""; }} />
-                          <span className="inline-flex h-9 cursor-pointer items-center rounded-lg bg-surface px-3 text-[13px] font-medium text-ink hover:bg-hovertint max-sm:h-11">Pilih berkas</span>
-                        </label>
-                        <p className="m-0 text-[11.5px] text-ink3">JPG, PNG, WEBP, atau PDF · maksimal 8 MB per berkas · hingga {MAKS_BUKTI} bukti</p>
-                      </div>
-                      {unggahan.length > 0 && (
-                        <ul className="m-0 list-none space-y-1.5 p-0" data-testid="daftar-unggahan">
-                          {unggahan.map((u) => (
-                            <BerkasBukti
-                              key={u.key} nama={u.file.name} ukuran={u.file.size} pdf={u.file.type === "application/pdf"} praUrl={u.praUrl} status={u.status} pesan={u.pesan}
-                              aksi={(
-                                <span className="flex shrink-0 items-center gap-1">
-                                  {u.status === "gagal" && periksaBerkas(u.file).ok && <Button size="sm" variant="neutral" onClick={() => kirim(u.key, u.file)} aria-label={`Coba unggah lagi ${u.file.name}`}><RotateCw size={12} />Ulangi</Button>}
-                                  <Button size="sm" variant="neutral" onClick={() => buang(u)} aria-label={`Hapus ${u.file.name}`} className="max-sm:min-h-11 max-sm:min-w-11"><X size={14} /></Button>
-                                </span>
-                              )}
-                            />
-                          ))}
-                        </ul>
-                      )}
-                    </div>
+                    <AreaUnggahBukti unggahan={unggahan} tambahBerkas={tambahBerkas} kirim={kirim} buang={buang} />
                   )}
                   {!siapBukti.siap && <p className="m-0 text-[12px] text-ink3" role="status">{siapBukti.pesan}</p>}
                 </>

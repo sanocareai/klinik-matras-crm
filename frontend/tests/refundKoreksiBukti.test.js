@@ -6,6 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   MAKS_BYTE, formatUkuran, periksaBerkas, jumlahBuktiPengganti, kesiapanBukti, modeBawaan, nilaiAwalRefund, adaPerubahanRefund, bodyKoreksiRefund, ringkasUangRefund, MODE_BUKTI,
+  KALIMAT_LAMPIR, kesiapanLampir, bodyLampirBukti, bisaLampirBukti,
 } from "../src/features/finance/refundKoreksiLogic.js";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
@@ -71,12 +72,13 @@ test("pemasangan: layar Piutang memakai dialog baru untuk refund; api punya ungg
   const api = baca("../src/api.js");
   assert.match(api, /uploadBuktiRefund: \(file\)/); assert.match(api, /fd\.append\("berkas", file\)/); assert.match(api, /hapusBuktiRefund/); assert.match(api, /getBuktiRefund/);
   const dlg = baca("../src/features/finance/KoreksiRefundDialog.jsx");
-  const teksSemua = dlg + baca("../src/features/finance/refundKoreksiLogic.js");
+  const bersama = baca("../src/features/finance/BuktiUnggah.jsx"); // unggah/paste/drag-drop dipakai BERSAMA koreksi & lampirkan bukti
+  const teksSemua = dlg + bersama + baca("../src/features/finance/refundKoreksiLogic.js");
   for (const t of ["Bukti transfer", "Gunakan bukti lama", "Tambah bukti baru", "Ganti bukti pada dokumen pengganti", "Nominal refund pelanggan", "Biaya admin bank", "Total keluar rekening", "Nomor referensi transfer", "Potensi biaya admin tercatat dua kali", "Coba lagi", "Mengunggah…", "Memuat bukti dokumen lama…"]) assert.ok(teksSemua.includes(t), t);
-  assert.match(dlg, /onPaste=\{saatPaste\}/); assert.match(dlg, /onDrop=/); assert.match(dlg, /api\.hapusBuktiRefund/); assert.match(dlg, /expectedUpdatedAt/); assert.match(dlg, /kunciRef\.current \|\|= kunciBaru\(\)/);
+  assert.match(dlg, /onPaste=\{saatPaste\}/); assert.match(dlg, /useUnggahBukti/); assert.match(dlg, /<AreaUnggahBukti/); assert.match(bersama, /onDrop=/); assert.match(bersama, /api\.hapusBuktiRefund/); assert.match(dlg, /expectedUpdatedAt/); assert.match(dlg, /kunciRef\.current \|\|= kunciBaru\(\)/);
   assert.match(dlg, /konfirmasiBiayaGanda: setuju/); assert.match(dlg, /disabled=\{sibuk \|\| !pratinjau\.seimbang \|\| \(r\?\.perluKonfirmasi && !setuju\)\}/);
-  assert.match(dlg, /accept="image\/jpeg,image\/png,image\/webp,application\/pdf/);
-  assert.doesNotMatch(dlg, /\b(Upload failed|Loading|Retry|Cancel|Save)\b/);
+  assert.match(bersama, /accept="image\/jpeg,image\/png,image\/webp,application\/pdf/);
+  assert.doesNotMatch(dlg + bersama, /\b(Upload failed|Loading|Retry|Cancel|Save)\b/);
   const riw = baca("../src/features/finance/KoreksiAman.jsx");
   assert.match(riw, /data\.versiRefund\?\.length > 0/); assert.match(riw, /Rincian tiap versi refund/);
 });

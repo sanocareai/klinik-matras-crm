@@ -105,3 +105,22 @@ export function ringkasUangRefund({ nominal, biayaAdmin }) {
   const b = Number(biayaAdmin) || 0;
   return { nominalRefund: n, biayaAdmin: b, totalKeluar: n + b };
 }
+
+// ─── "Lampirkan Bukti" (tanpa koreksi) ───────────────────────────────────────
+export const KALIMAT_LAMPIR = "Tindakan ini hanya melampirkan bukti. Tidak mengubah jurnal atau saldo.";
+export const MIN_ALASAN_LAMPIR = 5;
+
+/** Kesiapan: ≥1 bukti baru, tak ada unggahan berjalan, alasan ≥5 karakter, total bukti ≤ batas. */
+export function kesiapanLampir({ jumlahSudah = 0, jumlahBaru = 0, sedangUnggah = false, alasan = "" }) {
+  if (sedangUnggah) return { siap: false, pesan: "Tunggu unggahan bukti selesai." };
+  if (jumlahBaru < 1) return { siap: false, pesan: "Unggah minimal satu bukti untuk dilampirkan." };
+  if (jumlahSudah + jumlahBaru > MAKS_BUKTI) return { siap: false, pesan: `Maksimal ${MAKS_BUKTI} bukti per dokumen (sudah ada ${jumlahSudah}).` };
+  if (String(alasan).trim().length < MIN_ALASAN_LAMPIR) return { siap: false, pesan: `Isi alasan minimal ${MIN_ALASAN_LAMPIR} karakter.` };
+  return { siap: true, pesan: "" };
+}
+
+/** Body lampir: HANYA alasan + id bukti. Tidak membawa nominal/biaya/rekening/tanggal apa pun (server pun tidak menerimanya). */
+export const bodyLampirBukti = ({ alasan, ids }) => ({ reason: String(alasan || "").trim(), bukti: { ids: [...ids] } });
+
+/** Boleh dilampiri bukti: refund aktif (DISETUJUI) atau versi lama yang sudah digantikan koreksi. Cermin server (server tetap penentu). */
+export const bisaLampirBukti = (refund) => refund?.status === "DISETUJUI" || (refund?.status === "DIBATALKAN" && Boolean(refund?.replacedBy?.refundNumber ?? refund?.replacedBy));

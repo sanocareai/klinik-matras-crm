@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
 import { specOtomatis } from "@/features/finance/detailSpecs.js";
 import { useNavigate } from "react-router-dom";
-import { Undo2, HelpCircle, SlidersHorizontal, Search, X } from "lucide-react";
+import { Undo2, HelpCircle, SlidersHorizontal, Search, X, Paperclip } from "lucide-react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { useUrlTab } from "@/lib/useUrlTab.js";
 import { specDetailPiutang } from "@/features/finance/PiutangDetail.jsx";
@@ -25,6 +25,8 @@ import CaraBayarTransfer from "@/features/finance/CaraBayarTransfer.jsx";
 import { BIAYA_KOSONG, denganBiaya, biayaTransferLengkap, bodyBiayaTransfer } from "@/features/finance/biayaTransfer.js";
 import { RiwayatVersiDialog, InfoDialog } from "@/features/finance/KoreksiAman.jsx";
 import KoreksiRefundDialog from "@/features/finance/KoreksiRefundDialog.jsx";
+import LampirkanBuktiDialog from "@/features/finance/LampirkanBuktiDialog.jsx";
+import { bisaLampirBukti } from "@/features/finance/refundKoreksiLogic.js";
 import { aksiRefund as matriksRefund } from "@/features/finance/matriksAksi.js";
 import { KenapaBeda } from "@/features/finance/kontrak.jsx";
 import { bentukItemMenu, adminSaatIni } from "@/features/finance/aksiMenu.jsx";
@@ -43,11 +45,12 @@ import { resetSaatBuka } from "@/features/finance/resetSaatBuka.jsx";
 
 // Refund: belum disetujui = Edit bebas (belum ada jurnal); sudah disetujui = jurnal sudah ada, JANGAN diubah —
 // pilihannya Batalkan (jurnal dibalik resmi, status bayar order dihitung ulang) lalu ajukan ulang dengan data yang benar.
-function aksiRefund(r, { aksi, setEditUntuk, setVersiUntuk, setInfoUntuk, setKoreksiUntuk }) {
+function aksiRefund(r, { aksi, setEditUntuk, setVersiUntuk, setInfoUntuk, setKoreksiUntuk, setLampirUntuk }) {
   const items = bentukItemMenu(matriksRefund(r, { admin: adminSaatIni() }), {
     edit: () => setEditUntuk(r),
     info: () => setInfoUntuk(r),
     koreksi: () => setKoreksiUntuk(r),
+    lampirkan: () => setLampirUntuk(r),
     versi: () => setVersiUntuk(r),
     tolak: () => {
       const alasan = window.prompt("Alasan penolakan refund:");
@@ -95,6 +98,7 @@ export default function FinanceReceivables() {
   const [versiUntuk, setVersiUntuk] = useState(null);
   const [infoUntuk, setInfoUntuk] = useState(null);
   const [koreksiUntuk, setKoreksiUntuk] = useState(null);
+  const [lampirUntuk, setLampirUntuk] = useState(null); // refund yang sedang diberi bukti tanpa koreksi
   const [rekening, setRekening] = useState([]);
   // POSISI saldo (tanggal WIB, bawaan HARI INI): saldo buku besar sampai tanggal itu. BUKAN filter transaksi periode — jatuh tempo & ≤7 hari relatif ke posisi ini.
   const [posisi, setPosisi] = useState(() => periodeBawaanPiutang().to);
@@ -333,7 +337,7 @@ export default function FinanceReceivables() {
           />
           <DaftarRefund
             refunds={refunds} refundTampil={refundTampil} refundMenunggu={refundMenunggu}
-            aksiBaris={(r) => aksiRefund(r, { aksi, setEditUntuk, setVersiUntuk, setInfoUntuk, setKoreksiUntuk })} onBuka={(r) => setPanelRefund(specOtomatis(r))}
+            aksiBaris={(r) => aksiRefund(r, { aksi, setEditUntuk, setVersiUntuk, setInfoUntuk, setKoreksiUntuk, setLampirUntuk })} onBuka={(r) => setPanelRefund(specOtomatis(r, { aksi: bisaLampirBukti(r) && adminSaatIni() ? (<Button variant="neutral" onClick={() => setLampirUntuk(r)} data-testid="lampirkan-dari-detail" className="max-sm:min-h-11 max-sm:px-4"><Paperclip size={14} />Lampirkan Bukti</Button>) : undefined }))}
           />
         </section>
       )}
@@ -393,7 +397,18 @@ export default function FinanceReceivables() {
           onClose={() => setKoreksiUntuk(null)} onSaved={() => { setKoreksiUntuk(null); muat(); }}
         />
       )}
-      {versiUntuk && <RiwayatVersiDialog jenis="refunds" id={versiUntuk.id} nomor={versiUntuk.refundNumber} onClose={() => setVersiUntuk(null)} />}
+      {lampirUntuk && (
+        <LampirkanBuktiDialog
+          refund={lampirUntuk}
+          onClose={() => setLampirUntuk(null)} onSaved={() => { setLampirUntuk(null); setPanelRefund(null); muat(); }}
+        />
+      )}
+      {versiUntuk && (
+        <RiwayatVersiDialog
+          jenis="refunds" id={versiUntuk.id} nomor={versiUntuk.refundNumber} onClose={() => setVersiUntuk(null)}
+          onLampirBukti={adminSaatIni() ? (v) => { setVersiUntuk(null); setLampirUntuk({ id: v.id, refundNumber: v.nomor, amount: v.nominal, transferFeeAmount: v.biayaAdmin, cashAccount: { name: v.rekening }, status: v.status, replacedBy: v.diganti ? { refundNumber: v.diganti } : null }); } : undefined}
+        />
+      )}
       <ModalRefund
         open={modalRefund}
         onClose={() => setModalRefund(false)}

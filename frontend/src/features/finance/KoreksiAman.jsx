@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ShieldCheck, ArrowRight } from "lucide-react";
+import { ShieldCheck, ArrowRight, Paperclip } from "lucide-react";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -211,7 +211,7 @@ export const LABEL_FIELD = {
   cashAccountId: "Rekening", payeeName: "Penerima", reimburseToId: "Penalang", paymentMethod: "Cara bayar",
   transferFeeType: "Metode transfer", transferFeeAmount: "Biaya admin bank", fromAccountId: "Dari rekening",
   toAccountId: "Ke rekening", feeAmount: "Biaya admin", reference: "Referensi", notes: "Catatan",
-  accountId: "Akun pendapatan", attachmentUrl: "Lampiran", receiptUrl: "Bukti", supplierId: "Supplier", mode: "Cara bayar",
+  jumlahBukti: "Jumlah bukti", accountId: "Akun pendapatan", attachmentUrl: "Lampiran", receiptUrl: "Bukti", supplierId: "Supplier", mode: "Cara bayar",
   // Pembayaran masuk (B3.7)
   tanggal: "Tanggal pembayaran", rekening: "Rekening penerima", metode: "Metode pembayaran", order: "Order", alokasi: "Pembagian ke order",
   referenceNumber: "Nomor referensi", internalNote: "Keterangan internal", proofPhotoUrl: "Bukti",
@@ -327,7 +327,7 @@ export function PratinjauKoreksi({ pratinjau, resolusi }) {
 }
 
 // ─── Riwayat versi ───────────────────────────────────────────────────────────
-export function RiwayatVersiDialog({ jenis, id, nomor, onClose, resolusi }) {
+export function RiwayatVersiDialog({ jenis, id, nomor, onClose, resolusi, onLampirBukti }) {
   const [data, setData] = useState(null);
   const [galat, setGalat] = useState("");
   useEffect(() => {
@@ -366,7 +366,10 @@ export function RiwayatVersiDialog({ jenis, id, nomor, onClose, resolusi }) {
             <div data-testid="rincian-versi-refund">
               <div className="mb-1 text-[12px] font-medium uppercase tracking-[0.05em] text-ink3">Rincian tiap versi refund</div>
               <div className="space-y-1.5">
-                {data.versiRefund.map((v) => (
+                {data.versiRefund.map((v, i, semua) => {
+                  const diganti = v.status === "DIBATALKAN" && i < semua.length - 1 ? semua[i + 1].nomor : null;
+                  const bisaLampir = v.status === "DISETUJUI" || Boolean(diganti);
+                  return (
                   <div key={v.id} className="rounded-lg bg-inset px-3 py-2 text-[12.5px]">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span><span className="font-mono">{v.nomor}</span> <span className="text-ink3">· versi {v.nomorVersi}</span></span>
@@ -383,8 +386,19 @@ export function RiwayatVersiDialog({ jenis, id, nomor, onClose, resolusi }) {
                       <dt className="text-ink3">Dibuat</dt><dd>{v.dibuatOleh || "—"} · {tanggalJam(v.dibuatPada)}</dd>
                       {v.alasanKoreksi && (<><dt className="text-ink3">Diganti karena</dt><dd>{v.alasanKoreksi}</dd></>)}
                     </dl>
+                    {v.lampiranSusulan?.length > 0 && (
+                      <ul className="mt-1.5 list-none space-y-0.5 border-t border-line p-0 pt-1.5" data-testid="lampiran-susulan">
+                        {v.lampiranSusulan.map((s, k) => (
+                          <li key={k} className="break-words"><strong>Bukti dilampirkan</strong> · {s.oleh} · {tanggalJam(s.waktu)} · +{s.jumlahDitambah} berkas{s.jumlahSesudah != null ? " (jadi " + s.jumlahSesudah + ")" : ""}{s.alasan ? " — " + s.alasan : ""}</li>
+                        ))}
+                      </ul>
+                    )}
+                    {onLampirBukti && bisaLampir && (
+                      <div className="mt-2"><Button size="sm" variant="neutral" onClick={() => onLampirBukti({ ...v, diganti })} data-testid="lampirkan-dari-riwayat" className="max-sm:min-h-11 max-sm:px-4"><Paperclip size={13} />Lampirkan Bukti</Button></div>
+                    )}
                   </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           )}

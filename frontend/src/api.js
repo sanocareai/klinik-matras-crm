@@ -1758,6 +1758,8 @@ export const api = {
   uploadBuktiRefund: (file) => { const fd = new FormData(); fd.append("berkas", file); return requestFormData("/finance/refunds/bukti/upload", fd); },
   hapusBuktiRefund: (id) => request(`/finance/refunds/bukti/${id}`, { method: "DELETE" }),
   getBuktiRefund: (id) => request(`/finance/refunds/${id}/bukti`),
+  // "Lampirkan Bukti" tanpa koreksi: hanya menambah bukti (append-only); Idempotency-Key dipakai ulang oleh dialog selama isi sama.
+  lampirkanBuktiRefund: (id, data, idempotencyKey = null) => request(`/finance/refunds/${id}/lampirkan-bukti`, { method: "POST", body: JSON.stringify(data), headers: { "Idempotency-Key": idempotencyKey || mutationKey("lampir-bukti") } }),
   cancelFinanceRefund: (id, reason) => request(`/finance/refunds/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
   editFinanceBill: (id, data) => request(`/finance/bills/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   cancelFinanceBill: (id, reason) => request(`/finance/bills/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),

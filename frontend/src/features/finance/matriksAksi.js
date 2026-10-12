@@ -127,12 +127,17 @@ export function aksiRefund(r, { admin = false } = {}) {
     return [
       ok("info", "edit", "Edit Informasi", { hint: "Alasan refund & lampiran. Tanpa jurnal." }),
       itemKoreksi(r, admin, "Koreksi Refund", "Nominal, tanggal, rekening, biaya admin bank, referensi, dan bukti transfer. Jurnal lama dibalik & refund pengganti dibuat (tanpa PIN)."),
+      izinAdmin(admin, ok("lampirkan", "lampirkan", "Lampirkan Bukti", { hint: "Tambah bukti transfer saja. Jurnal, saldo, dan nominal tidak berubah." })),
       riwayat(),
       izinAdmin(admin, ok("batalkan", "catatUlang", "Batalkan & Ajukan Ulang", { destructive: true, konfirmasi: true })),
     ];
   }
   if (r.status === "DIBATALKAN" && r.replacedBy?.refundNumber) {
-    return [tidak("edit", "edit", "Edit", `Sudah dikoreksi — digantikan ${r.replacedBy.refundNumber}. Buka Riwayat untuk versi terbaru`), riwayat()];
+    return [
+      tidak("edit", "edit", "Edit", `Sudah dikoreksi — digantikan ${r.replacedBy.refundNumber}. Buka Riwayat untuk versi terbaru`),
+      izinAdmin(admin, ok("lampirkan", "lampirkan", "Lampirkan Bukti", { hint: `Bukti untuk transaksi versi ini (sudah digantikan ${r.replacedBy.refundNumber}). Jurnal & saldo tidak berubah.` })),
+      riwayat(),
+    ];
   }
   return [tidak("edit", "edit", "Edit", "Refund yang sudah ditolak atau dibatalkan tidak bisa diedit — ajukan refund baru"), riwayat()];
 }

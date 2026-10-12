@@ -46,6 +46,24 @@ Koreksi biaya 2.500 → 5.000 (Lainnya): jurnal lama **dibalik utuh** (termasuk 
 
 Laporan Laba Rugi: Retur = nominal pelanggan saja; Beban Administrasi Bank memuat biaya admin sekali. Mutasi Kas & Bank = total keluar. Export Refund: *Nominal Refund · Biaya Admin · Total Keluar · Rekening · Referensi · Jumlah Bukti* (TOTAL hanya refund Disetujui). Riwayat versi: nominal, biaya admin, total keluar, rekening, referensi, bukti (nama), pembuat/penyetuju, waktu, alasan koreksi.
 
+## 4b. Lampirkan Bukti — tanpa koreksi
+
+Untuk refund yang **nominal, tanggal, rekening, dan jurnalnya sudah benar** tetapi belum punya bukti transfer. Menu Aksi → **Lampirkan Bukti** (juga di panel detail refund dan di Riwayat perubahan per versi). `POST /finance/refunds/:id/lampirkan-bukti`, `{ reason, bukti: { ids } }`.
+
+Yang dilakukan: membuat/memakai bukti (alur unggah yang sama dengan koreksi: isi berkas menentukan tipe, ≤ 8 MB, nama acak, URL bertanda-tangan 5 menit, bersih bila batal) **dan** menambah tautan append-only (`origin = BARU`) ke dokumen yang dipilih. **Tidak** membuat dokumen pengganti, **tidak** membalik/menulis jurnal, **tidak** menyentuh baris `fin_refunds` (nominal, biaya admin, rekening, tanggal, status, `updated_at` identik — dikunci tes). Bukti bisa ditambah bertahap (maks 10 per dokumen, lampiran lama ikut terhitung); yang sudah terlampir tidak bisa diganti/dihapus (trigger DB).
+
+| Aturan | Perilaku |
+|---|---|
+| Izin | hanya `finance:admin`; Finance murni/SALES 403 |
+| Masukan | alasan ≥ 5 karakter, ≥ 1 bukti, `Idempotency-Key` wajib (tanpa kunci 428; kunci sama + isi beda 422; replay = respons pertama) |
+| Paralel | baris dokumen dikunci + bukti dikunci `FOR UPDATE`; dua permintaan dengan bukti sama → tepat satu tautan (satu 201, satu 409) |
+| Boleh | refund **DISETUJUI**, atau versi lama **DIBATALKAN yang sudah diganti koreksi** (bukti merujuk transaksi versi itu) |
+| Diblokir 409 `REFUND_BELUM_BERTRANSAKSI` | menunggu persetujuan, ditolak, dibatalkan tanpa pengganti |
+| Audit | `DOCUMENT_EDITED` dengan `aksi: lampirkan_bukti_refund` (pelaku, waktu, alasan, jumlah sebelum/sesudah, nama berkas, `dampakKeuangan: Rp0`); Riwayat menampilkan "Bukti dilampirkan" dengan nama pelaku |
+| Konfirmasi UI | "Tindakan ini hanya melampirkan bukti. Tidak mengubah jurnal atau saldo." + ringkasan rekening/nominal/biaya admin/total keluar + dampak Rp0 (tanpa pratinjau jurnal) |
+
+Setelah dilampiri, koreksi berikutnya bisa memakai **Gunakan bukti lama** (bukti dibawa sebagai `DIBAWA` ke dokumen pengganti; bukti dokumen lama tetap melekat ke dokumen lama).
+
 ## 5. Rilis & rollback
 
 `scripts/release-refund-bukti-biaya-admin.sh` (fail-closed; allowlist, pin SHA-256 migrasi, pemindai DDL + mutan negatif, backup + restore nyata, rehearsal dengan uji perilaku, sidik jari tabel lama, smoke baca-saja) dan `scripts/rollback-guard-refund-bukti-biaya-admin.sh`: rollback kode **ditolak** bila ada bukti/relasi bukti, referensi transfer, atau koreksi refund ber-biaya-admin yang dibuat sesudah migrasi terpasang.
