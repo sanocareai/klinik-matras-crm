@@ -673,12 +673,13 @@ export default function OrderFormModal({
     // yang cuma punya 1 OrderItem tersembunyi dari "Harga Total" manual
     // tetap kebaca (prefill di atas memuat order.items apa adanya), cuma
     // sekarang bisa diedit/ditambah lewat katalog seperti LAYANAN.
-    const existingItemIds = (order.items || []).map((it) => it.id);
+    // Baris pengurang dari Refund (finRefundId) dikunci server — tidak dikirim ulang, tidak dihapus dari sini.
+    const existingItemIds = (order.items || []).filter((it) => !it.finRefundId).map((it) => it.id);
     const currentItemIds = items.filter((it) => it.id).map((it) => it.id);
     for (const id of existingItemIds) {
       if (!currentItemIds.includes(id)) await api.deleteOrderItem(id);
     }
-    for (const it of items.filter((it) => it.id)) {
+    for (const it of items.filter((it) => it.id && !it.finRefundId)) {
       if (it.layananName?.trim()) await api.updateOrderItem(it.id, { layananName: it.layananName.trim(), harga: Number(it.harga) || 0 });
     }
     for (const it of items.filter((it) => !it.id)) {
@@ -1192,6 +1193,14 @@ export default function OrderFormModal({
                     satunya yang diisi manusia. */}
                 <Text style={styles.subLabel}>{isLayanan ? "Layanan yang diambil" : "Item yang diambil"}</Text>
                 {items.map((it) => {
+                      if (it.finRefundId) {
+                        return (
+                          <View key={it.key} style={styles.svcCard}>
+                            <Text style={styles.svcName} numberOfLines={2}>🔒 {it.layananName}</Text>
+                            <Text style={styles.svcMeta}>{formatRupiah(Number(it.harga) || 0)} · dibuat otomatis oleh Refund, dikunci</Text>
+                          </View>
+                        );
+                      }
                       const st = hargaStatus(it, tokens);
                       const dariKatalog = !!it.priceItemId;
                       const adaReferensi = it.normalPrice != null || it.standardPrice != null;
@@ -1221,7 +1230,7 @@ export default function OrderFormModal({
                                 <Text style={styles.pickBtnText}>Pilih</Text>
                               </TouchableOpacity>
                             )}
-                            {items.length > 1 && (
+                            {items.filter((x) => !x.finRefundId).length > 1 && (
                               <TouchableOpacity onPress={() => removeItem(it.key)} style={styles.removeBtn}>
                                 <X size={16} color={tokens.color.danger} strokeWidth={2.2} />
                               </TouchableOpacity>

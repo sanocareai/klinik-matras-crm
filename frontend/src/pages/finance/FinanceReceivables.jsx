@@ -23,7 +23,7 @@ import DatePicker from "@/components/ui/date-picker.jsx";
 import OrderPicker from "@/features/finance/OrderPicker.jsx";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
-  StatusBadge, Pilihan, InputUang, tanggalPendek, LABEL_STATUS,
+  StatusBadge, Pilihan, InputUang, tanggalPendek, LABEL_STATUS, PemilihBukti,
 } from "@/features/finance/shared.jsx";
 import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
 import DiagnosisPiutang from "@/features/finance/DiagnosisPiutang.jsx";
@@ -361,7 +361,7 @@ export default function FinanceReceivables() {
                     <TD className="whitespace-nowrap text-[12px]">{tanggalPendek(r.date)}</TD>
                     <TD hideBelow="2xl" truncate className="font-medium">{r.order?.orderNumber || "—"}</TD>
                     <TD truncate>{r.order?.customer?.name || "—"}</TD>
-                    <TD truncate>{r.reason}</TD>
+                    <TD truncate>{r.reason}<PenandaRefund r={r} /></TD>
                     <TD numeric><NominalDenganBiaya d={r} /></TD>
                     <TD><StatusBadge status={r.status} /></TD>
                     <TD>
@@ -388,7 +388,7 @@ export default function FinanceReceivables() {
                     { label: "Tanggal", value: tanggalPendek(r.date) },
                     { label: "Nominal", value: nominalTeks(r) },
                     { label: "Order", value: r.order?.orderNumber },
-                    { label: "Alasan", value: r.reason, span: true },
+                    { label: "Alasan", value: <>{r.reason}<PenandaRefund r={r} /></>, span: true },
                   ]}
                   actions={<RowActions primary={a.primary} items={a.items} />}
                 />
@@ -408,8 +408,8 @@ export default function FinanceReceivables() {
       {infoUntuk && (
         <InfoDialog
           jenis="refunds" doc={infoUntuk} nomor={infoUntuk.refundNumber} judulRingkas={`Order ${infoUntuk.order?.orderNumber || ""} · ${formatUang(infoUntuk.amount)}`}
-          kolom={[{ kunci: "alasanRefund", label: "Alasan refund" }]}
-          awal={{ alasanRefund: infoUntuk.reason || "" }}
+          kolom={[{ kunci: "alasanRefund", label: "Alasan refund" }, { kunci: "attachmentUrl", label: "Bukti transfer ke pelanggan", tipe: "bukti" }]}
+          awal={{ alasanRefund: infoUntuk.reason || "", attachmentUrl: infoUntuk.attachmentUrl || "" }}
           onClose={() => setInfoUntuk(null)} onSaved={() => { setInfoUntuk(null); muat(); }}
         />
       )}
@@ -421,8 +421,17 @@ export default function FinanceReceivables() {
             { kunci: "amount", label: "Nominal refund", tipe: "uang", wajib: true },
             { kunci: "date", label: "Tanggal refund", tipe: "tanggal", wajib: true },
             { kunci: "cashAccountId", label: "Rekening sumber pengembalian", tipe: "pilih", opsi: rekening.map((x) => ({ id: x.id, name: x.name })), wajib: true },
+            { kunci: "kurangiNilaiOrder", label: "Jenis refund", tipe: "bool", opsi: OPSI_JENIS_REFUND,
+              petunjuk: "Pembatalan sebagian: nilai order ikut turun sebesar refund, order Lunas tetap Lunas. Pengembalian dana biasa: nilai order tidak berubah." },
+            { kunci: "attachmentUrl", label: "Bukti transfer ke pelanggan", tipe: "bukti" },
           ]}
-          awal={{ amount: Number(koreksiUntuk.amount) || 0, date: String(koreksiUntuk.date || "").slice(0, 10), cashAccountId: koreksiUntuk.cashAccountId || "" }}
+          caraBayar={{ rekening }}
+          awal={{
+            amount: Number(koreksiUntuk.amount) || 0, date: String(koreksiUntuk.date || "").slice(0, 10), cashAccountId: koreksiUntuk.cashAccountId || "",
+            kurangiNilaiOrder: !!koreksiUntuk.kurangiNilaiOrder, attachmentUrl: koreksiUntuk.attachmentUrl || "",
+            paymentMethod: koreksiUntuk.paymentMethod || "TUNAI", transferFeeType: koreksiUntuk.transferFeeType || "",
+            transferFeeAmount: koreksiUntuk.transferFeeType === "LAINNYA" ? Number(koreksiUntuk.transferFeeAmount) || 0 : "",
+          }}
           onClose={() => setKoreksiUntuk(null)} onSaved={() => { setKoreksiUntuk(null); muat(); }}
         />
       )}
@@ -440,7 +449,7 @@ export default function FinanceReceivables() {
 }
 
 function ModalRefundIsi({ open, onClose, rekening, piutang, onSubmit }) {
-  const [f, setF] = useState({ orderId: "", date: "", amount: "", reason: "", cashAccountId: "", ...BIAYA_KOSONG });
+  const [f, setF] = useState({ orderId: "", date: "", amount: "", reason: "", cashAccountId: "", kurangiNilaiOrder: false, attachmentUrl: "", ...BIAYA_KOSONG });
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
   const rek = rekening.find((r) => r.id === f.cashAccountId);
   const valid = f.orderId && f.reason.trim() && f.cashAccountId && Number(f.amount) > 0 && biayaTransferLengkap(rek, f);
@@ -453,7 +462,7 @@ function ModalRefundIsi({ open, onClose, rekening, piutang, onSubmit }) {
       footer={
         <>
           <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
-          <TombolAksi onClick={() => onSubmit(denganBiaya(f, f.mode === "LANGSUNG"))} disabled={!valid}>Ajukan</TombolAksi>
+          <TombolAksi onClick={() => onSubmit(denganBiaya(f))} disabled={!valid}>Ajukan</TombolAksi>
         </>
       }
     >
@@ -496,8 +505,44 @@ function ModalRefundIsi({ open, onClose, rekening, piutang, onSubmit }) {
           </Pilihan>
         </Field>
         <CaraBayarTransfer rekening={rek} nominal={f.amount} value={f} onChange={(b) => setF((s) => ({ ...s, ...b }))} />
+        <JenisRefund value={f.kurangiNilaiOrder} onChange={(v) => set("kurangiNilaiOrder", v)} nominal={f.amount} />
+        <Field label="Bukti transfer ke pelanggan" hint="Opsional saat mengajukan — boleh dilengkapi sebelum/sesudah disetujui lewat Edit Informasi atau Koreksi">
+          <PemilihBukti url={f.attachmentUrl} onChange={(v) => set("attachmentUrl", v || "")} />
+        </Field>
       </div>
     </Modal>
+  );
+}
+
+// Penanda ringkas di tabel: jenis refund + ada/tidaknya bukti transfer (Finance cepat tahu mana yang masih perlu dilengkapi).
+function PenandaRefund({ r }) {
+  if (r.status === "DIBATALKAN" || r.status === "DITOLAK") return null;
+  return (
+    <span className="ml-1.5 inline-flex flex-wrap gap-1 align-middle">
+      {r.kurangiNilaiOrder && <Badge variant="accent">Kurangi nilai order</Badge>}
+      {r.status === "DISETUJUI" && (r.attachmentUrl ? <Badge variant="green">Ada bukti</Badge> : <Badge variant="orange">Belum ada bukti</Badge>)}
+    </span>
+  );
+}
+
+const OPSI_JENIS_REFUND = [
+  { nilai: false, nama: "Pengembalian dana biasa (nilai order tetap)" },
+  { nilai: true, nama: "Pembatalan sebagian — kurangi nilai order" },
+];
+
+// Pilihan jenis refund + penjelasan dampaknya (dihitung server saat disetujui; di sini hanya penjelasan).
+function JenisRefund({ value, onChange, nominal }) {
+  return (
+    <Field label="Jenis refund" required>
+      <Pilihan value={value ? "1" : "0"} onChange={(v) => onChange(v === "1")}>
+        {OPSI_JENIS_REFUND.map((o) => <option key={String(o.nilai)} value={o.nilai ? "1" : "0"}>{o.nama}</option>)}
+      </Pilihan>
+      <p className="mt-1 text-[12px] leading-relaxed text-ink3">
+        {value
+          ? `Saat disetujui, nilai order otomatis turun ${formatUang(Number(nominal) || 0)} (tanpa edit manual). Order yang sudah Lunas tetap Lunas. Biaya admin transfer adalah beban bank, bukan pengurang nilai order.`
+          : "Uang dikembalikan, tetapi nilai order TIDAK berubah — order Lunas akan turun ke DP karena uang yang dipegang berkurang."}
+      </p>
+    </Field>
   );
 }
 
@@ -507,6 +552,7 @@ function ModalEditRefund({ refund, rekening, onClose, onSubmit }) {
   const asli = {
     date: String(refund.date || "").slice(0, 10), amount: Number(refund.amount) || 0, reason: refund.reason || "",
     cashAccountId: refund.cashAccountId || "",
+    kurangiNilaiOrder: !!refund.kurangiNilaiOrder, attachmentUrl: refund.attachmentUrl || "",
     paymentMethod: refund.paymentMethod || "TUNAI", transferFeeType: refund.transferFeeType || "",
     transferFeeAmount: refund.transferFeeType === "LAINNYA" ? Number(refund.transferFeeAmount) || 0 : "",
   };
@@ -520,6 +566,8 @@ function ModalEditRefund({ refund, rekening, onClose, onSubmit }) {
     const sama = k === "amount" ? Number(f[k]) === Number(asli[k]) : (f[k] || "") === (asli[k] || "");
     if (!sama) beda[k] = k === "amount" ? Number(f[k]) : f[k];
   }
+  if (f.kurangiNilaiOrder !== asli.kurangiNilaiOrder) beda.kurangiNilaiOrder = f.kurangiNilaiOrder;
+  if ((f.attachmentUrl || "") !== (asli.attachmentUrl || "")) beda.attachmentUrl = f.attachmentUrl || null;
   const biayaBerubah = f.paymentMethod !== asli.paymentMethod || f.transferFeeType !== asli.transferFeeType
     || String(f.transferFeeAmount) !== String(asli.transferFeeAmount) || f.cashAccountId !== asli.cashAccountId;
   const ada = Object.keys(beda).length > 0 || biayaBerubah;
@@ -551,6 +599,8 @@ function ModalEditRefund({ refund, rekening, onClose, onSubmit }) {
           </Pilihan>
         </Field>
         <CaraBayarTransfer rekening={rek} nominal={f.amount} value={f} onChange={(b) => setF((x) => ({ ...x, ...b }))} />
+        <JenisRefund value={f.kurangiNilaiOrder} onChange={(v) => set("kurangiNilaiOrder", v)} nominal={f.amount} />
+        <Field label="Bukti transfer ke pelanggan"><PemilihBukti url={f.attachmentUrl} onChange={(v) => set("attachmentUrl", v || "")} /></Field>
         <Field label="Alasan perubahan" required hint="Wajib — tercatat di riwayat audit">
           <Input value={alasan} onChange={(e) => setAlasan(e.target.value)} placeholder="mis. salah ketik nominal" />
         </Field>

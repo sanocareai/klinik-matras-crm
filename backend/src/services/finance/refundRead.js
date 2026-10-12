@@ -2,7 +2,7 @@
 // (services/finance/export/piutang-refund.js). Murni baca.
 
 export const refundInclude = {
-  order: { select: { id: true, orderNumber: true, value: true, customer: { select: { id: true, name: true } } } },
+  order: { select: { id: true, orderNumber: true, value: true, paymentStatus: true, ongkir: true, groupId: true, customer: { select: { id: true, name: true } } } },
   cashAccount: { select: { id: true, name: true } },
   approvedBy: { select: { id: true, name: true } },
   createdBy: { select: { id: true, name: true } },

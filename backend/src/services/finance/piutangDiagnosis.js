@@ -17,6 +17,7 @@ import { STATUS_DIHITUNG, todayBookDateWIB } from "./journal.js";
 import { toMoney, moneyToNumber } from "./money.js";
 import { PILIH_TAGIHAN, tagihanOrder, resiBaru } from "./tagihanOrder.js";
 import { STATUS_PENGAKUAN } from "./posting/orderRevenue.js";
+import { totalPenguranganDisetujui } from "./refundNilaiOrder.js";
 import { tanggalCutoff, sebelumCutoff, tampilCutoff } from "./cutoff.js";
 import { catatanLaporan } from "./reports.js";
 
@@ -158,6 +159,10 @@ export async function diagnosisPiutang(db, { to: batas = todayBookDateWIB() } = 
   const orderById = new Map(orders.map((o) => [o.id, o]));
   const pengakuanById = new Map(pengakuan.map((e) => [e.sourceId, { tanggal: e.date, diakui: e.lines.reduce((s, l) => s + Number(l.debit), 0) }]));
   for (const l of penyesuaian) { const p = pengakuanById.get(l.orderId); if (p) p.diakui += Number(l.debit) - Number(l.credit); }
+  // Refund pembatalan sebagian (kurangiNilaiOrder): nilai order turun sebesar refund, tetapi pendapatan sudah dipotong lewat jurnal Retur (bukan lewat piutang) — jadi
+  // 'diakui' dibandingkan setelah dikurangi refund itu; tanpa ini order bersaldo ikut ditandai NILAI_BEDA_PENGAKUAN padahal pembukuannya benar.
+  const kurangiRefund = await totalPenguranganDisetujui(db, ids);
+  for (const [orderId, nominal] of kurangiRefund) { const p = pengakuanById.get(orderId); if (p) p.diakui -= nominal; }
   const bayarById = new Map();
   for (const p of payments) {
     const b = bayarById.get(p.orderId) ?? { total: 0, jumlah: 0, terverifikasi: 0, paling_awal: null };

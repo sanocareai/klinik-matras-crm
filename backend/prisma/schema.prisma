@@ -4655,7 +4655,12 @@ model OrderItem {
   // ter-snapshot, kategorinya (kind) tidak.
   kind PriceItemKind? @map("kind")
 
+  // Baris pengurang milik refund pembatalan sebagian (12 Okt 2026): harga NEGATIF (CHECK di DB), terkunci dari edit/hapus Sales. NULL = item biasa.
+  finRefundId String?    @map("fin_refund_id") @db.Uuid
+  finRefund   FinRefund? @relation(fields: [finRefundId], references: [id], onDelete: Restrict)
+
   @@index([priceItemId])
+  @@index([finRefundId])
 }
 
 // ═══ KATALOG HARGA JUAL (SALES) ═══════════════════════════════════════════
@@ -7843,6 +7848,11 @@ model FinRefund {
   replacesRefundId String?    @unique @map("replaces_refund_id") @db.Uuid
   replaces         FinRefund? @relation("FinRefundVersi", fields: [replacesRefundId], references: [id], onDelete: Restrict)
   replacedBy       FinRefund? @relation("FinRefundVersi")
+
+  // Refund pembatalan sebagian pesanan (12 Okt 2026): saat DISETUJUI nilai order ikut berkurang sebesar `amount` lewat satu OrderItem pengurang
+  // (OrderItem.finRefundId, harga negatif, terkunci). false (default) = pengembalian dana biasa, nilai order tidak berubah. Lihat services/finance/refundNilaiOrder.js.
+  kurangiNilaiOrder Boolean     @default(false) @map("kurangi_nilai_order")
+  orderItems        OrderItem[]
 
   @@index([orderId])
   @@index([status])

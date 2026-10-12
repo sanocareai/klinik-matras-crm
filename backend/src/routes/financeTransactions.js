@@ -56,6 +56,15 @@ import { setAllocations, AllocationError } from "../services/finance/allocation.
 // soal kenapa lockRowForUpdate dipakai ulang, bukan disalin.
 import { lockRowForUpdate } from "../services/inventoryLedger.js";
 import { recomputeOrderPaymentStatus } from "../services/paymentLedger.js";
+import { syncCustomerOrderAggregate } from "../services/customerOrderAggregate.js";
+import { terapkanPenguranganNilai, balikPenguranganNilai, validasiPenguranganNilai } from "../services/finance/refundNilaiOrder.js";
+
+// Lampiran refund (bukti transfer ke pelanggan) HARUS hasil unggah resmi (/finance/receipts/upload), bukan URL bebas.
+function lampiranRefundValid(url) {
+  if (url === undefined || url === null || url === "") return null;
+  if (typeof url !== "string" || !url.startsWith(`${RECEIPTS_URL_PREFIX}/`) || url.length > 500) throw err("Bukti transfer harus diunggah lewat tombol unggah foto");
+  return url;
+}
 import { handleFinanceError, rentangDariQuery } from "./finance.js";
 import { evaluasiSelesai, penyesuaianBukuPeriode, saldoBukuSampai, saldoBelumTeridentifikasi, LABEL_STATUS_REKON, LABEL_REKON_SEMENTARA, STATUS_DRAF_MENUNGGU } from "../services/finance/rekonBank.js";
 import multer from "multer";
@@ -2062,6 +2071,8 @@ financeTxRouter.get("/refunds", requirePermission(P.FINANCE_READ), async (req, r
 financeTxRouter.post("/refunds", requirePermission(P.FINANCE_POST), async (req, res) => {
   try {
     const { orderId, date, amount, reason, cashAccountId, attachmentUrl } = req.body;
+    const kurangiNilaiOrder = req.body.kurangiNilaiOrder === true;
+    const lampiran = lampiranRefundValid(attachmentUrl);
     if (!orderId) throw err("Order wajib dipilih");
     if (!reason?.trim()) throw err("Alasan refund wajib diisi");
     if (!cashAccountId) throw err("Rekening sumber pengembalian wajib dipilih");
@@ -2083,6 +2094,9 @@ financeTxRouter.post("/refunds", requirePermission(P.FINANCE_POST), async (req, 
       );
     }
 
+    // Refund pembatalan sebagian: nilai order ikut berkurang saat DISETUJUI — validasi sejak pengajuan supaya ditolak lebih awal (diulang saat approve).
+    if (kurangiNilaiOrder) await validasiPenguranganNilai(prisma, { orderId, amount: nominal });
+
     const tgl = parseTanggal(date);
     const biaya = await hitungBiayaTransfer(prisma, req.body);
     const created = await prisma.finRefund.create({
@@ -2093,7 +2107,8 @@ financeTxRouter.post("/refunds", requirePermission(P.FINANCE_POST), async (req, 
         paymentMethod: biaya.paymentMethod,
         transferFeeType: biaya.transferFeeType,
         transferFeeAmount: biaya.transferFeeAmount,
-        attachmentUrl: attachmentUrl || null,
+        attachmentUrl: lampiran,
+        kurangiNilaiOrder,
         status: "MENUNGGU_APPROVAL",
         createdById: req.user.id,
       },
@@ -2110,6 +2125,7 @@ financeTxRouter.post("/refunds", requirePermission(P.FINANCE_POST), async (req, 
 
 financeTxRouter.post("/refunds/:id/approve", requirePermission(P.FINANCE_APPROVE), async (req, res) => {
   try {
+    let jejakNilai = null; let customerSinkron = null;
     const hasil = await prisma.$transaction(async (tx) => {
       // Kunci baris dokumen: dua keputusan serempak (double-tap / dua penyetuju) diserialkan — yang kedua melihat status baru dan ditolak 409.
       await lockRowForUpdate(tx, '"fin_refunds"', req.params.id);
@@ -2153,16 +2169,23 @@ financeTxRouter.post("/refunds/:id/approve", requirePermission(P.FINANCE_APPROVE
         data: { status: "DISETUJUI", approvedAt: new Date(), approvedById: req.user.id },
       });
       await postRefund(tx, { refundId: r.id, userId: req.user.id });
+      // Refund pembatalan sebagian: nilai order ikut berkurang sebesar nominal refund SEBELUM status bayar dihitung ulang — jadi order Lunas tetap Lunas
+      // (uang dipegang −A dan nilai order −A: sisa tagihan tidak berubah). Tanpa tanda ini, status turun ke DP seperti dulu (perilaku lama).
+      if (r.kurangiNilaiOrder) {
+        jejakNilai = await terapkanPenguranganNilai(tx, { refund: r });
+        customerSinkron = jejakNilai.customerId || null;
+      }
       // Status bayar order ikut turun: uang yang dikembalikan bukan lagi
       // uang yang kita pegang.
       await recomputeOrderPaymentStatus(tx, r.orderId);
       await recordActivity(tx, {
         entityType: ENTITY_TYPES.FIN_REFUND, entityId: r.id,
         eventType: EVENT_TYPES.DOCUMENT_APPROVED, actorId: req.user.id,
-        metadata: { refundNumber: r.refundNumber, amount: String(r.amount), orderId: r.orderId },
+        metadata: { refundNumber: r.refundNumber, amount: String(r.amount), orderId: r.orderId, ...(jejakNilai?.diterapkan ? { kurangiNilaiOrder: true, nilaiOrderSebelum: jejakNilai.nilaiSebelum, nilaiOrderSesudah: jejakNilai.nilaiSesudah } : {}) },
       });
       return updated;
     });
+    if (customerSinkron) await syncCustomerOrderAggregate(customerSinkron);
     const lengkap = await prisma.finRefund.findUnique({ where: { id: hasil.id }, include: refundInclude });
     res.json({ ...lengkap, amount: moneyToNumber(lengkap.amount) });
   } catch (e) {
@@ -2645,7 +2668,8 @@ financeTxRouter.patch("/refunds/:id", requirePermission(P.FINANCE_POST), async (
         if (!b.cashAccountId) throw err("Rekening sumber pengembalian wajib dipilih");
         data.cashAccountId = b.cashAccountId;
       }
-      if (b.attachmentUrl !== undefined) data.attachmentUrl = b.attachmentUrl || null;
+      if (b.attachmentUrl !== undefined) data.attachmentUrl = lampiranRefundValid(b.attachmentUrl);
+      if (b.kurangiNilaiOrder !== undefined) data.kurangiNilaiOrder = b.kurangiNilaiOrder === true;
 
       const sentuhBiaya = ["paymentMethod", "transferFeeType", "transferFeeAmount"].some((k) => b[k] !== undefined) || (data.cashAccountId && data.cashAccountId !== r.cashAccountId);
       if (sentuhBiaya) {
@@ -2666,6 +2690,11 @@ financeTxRouter.patch("/refunds/:id", requirePermission(P.FINANCE_POST), async (
         return (lama ?? null) !== (v ?? null);
       }));
       if (Object.keys(beda).length === 0) throw err("Tidak ada perubahan yang dikirim");
+
+      // Jenis pembatalan sebagian: validasi ulang terhadap nominal & keadaan order sekarang (hanya bila relevan berubah).
+      if ((data.kurangiNilaiOrder ?? r.kurangiNilaiOrder) && (beda.amount !== undefined || beda.kurangiNilaiOrder !== undefined)) {
+        await validasiPenguranganNilai(tx, { orderId: r.orderId, amount: data.amount ?? r.amount });
+      }
 
       // Nilai baru harus tetap muat di uang yang pernah diterima untuk order ini (aturan yang sama saat dibuat/disetujui).
       if (beda.amount !== undefined) {
@@ -2696,6 +2725,7 @@ financeTxRouter.post("/refunds/:id/cancel", requirePermission(P.FINANCE_ADMIN), 
   try {
     const reason = req.body?.reason?.trim();
     if (!reason) throw err("Alasan pembatalan wajib diisi");
+    let customerSinkron = null;
     const hasil = await prisma.$transaction(async (tx) => {
       await lockRowForUpdate(tx, '"fin_refunds"', req.params.id);
       const r = await tx.finRefund.findUnique({ where: { id: req.params.id } });
@@ -2706,6 +2736,8 @@ financeTxRouter.post("/refunds/:id/cancel", requirePermission(P.FINANCE_ADMIN), 
       await pastikanBelumDirekonsiliasi(tx, [{ source: "REFUND", sourceId: r.id }]);
       await balikkanJurnalAktif(tx, { keyPrefix: ORDER_KEY.refund(r.id), alasan: `Refund ${r.refundNumber} dibatalkan — ${reason}`, userId: req.user.id });
       const updated = await tx.finRefund.update({ where: { id: r.id }, data: { status: "DIBATALKAN", rejectReason: reason } });
+      // Refund pembatalan sebagian dibatalkan → baris pengurang nilai order dihapus, nilai order naik kembali (lalu status bayar dihitung ulang).
+      if (r.kurangiNilaiOrder) customerSinkron = (await balikPenguranganNilai(tx, { refundId: r.id, orderId: r.orderId })).customerId || null;
       await recomputeOrderPaymentStatus(tx, r.orderId);
       await recordActivity(tx, {
         entityType: ENTITY_TYPES.FIN_REFUND, entityId: r.id, eventType: EVENT_TYPES.DOCUMENT_CANCELLED, actorId: req.user.id,
@@ -2713,6 +2745,7 @@ financeTxRouter.post("/refunds/:id/cancel", requirePermission(P.FINANCE_ADMIN), 
       });
       return updated;
     });
+    if (customerSinkron) await syncCustomerOrderAggregate(customerSinkron);
     const lengkap = await prisma.finRefund.findUnique({ where: { id: hasil.id }, include: refundInclude });
     res.json({ ...lengkap, amount: moneyToNumber(lengkap.amount) });
   } catch (e) {
@@ -2892,6 +2925,7 @@ financeTxRouter.post("/refunds/:id/koreksi", requirePermission(P.FINANCE_ADMIN),
     const hasil = await prisma.$transaction((tx) => koreksiRefund(tx, {
       refundId: req.params.id, body: req.body, alasan: req.body?.reason, userId: req.user.id, preview,
     }), OPSI_TRANSAKSI_KOREKSI);
+    if (hasil?.customerId) await syncCustomerOrderAggregate(hasil.customerId); // nilai order bisa berubah (refund pembatalan sebagian)
     res.status(201).json(hasil);
   } catch (e) { tanganiKoreksi(e, res); }
 });

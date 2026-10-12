@@ -2559,6 +2559,9 @@ async function promoCheckOrder(orderId) {
   return o ? periksaBatasDiskon({ items: o.items, promo: o.promo }) : null;
 }
 
+// Baris pengurang nilai dari Refund pembatalan sebagian (OrderItem.finRefundId) dikelola Finance — tidak boleh diubah/dihapus dari sini.
+const ITEM_REFUND_TERKUNCI = "Baris ini dibuat otomatis oleh Refund (pengurang nilai order) dan dikunci. Untuk mengubahnya, minta Finance membatalkan atau mengoreksi refund-nya.";
+
 // POST /api/orders/:orderId/items — tambah item layanan
 orderRouter.post("/:orderId/items", async (req, res) => {
   // priceItemId/variantKey/normalPrice/standardPrice (29 Agustus 2026) —
@@ -2601,8 +2604,15 @@ orderRouter.post("/:orderId/items", async (req, res) => {
 orderRouter.patch("/items/:itemId", async (req, res) => {
   const { layananName, harga, sortOrder } = req.body;
   try {
-    const existing = await prisma.orderItem.findUnique({ where: { id: req.params.itemId }, select: { orderId: true } });
+    const existing = await prisma.orderItem.findUnique({ where: { id: req.params.itemId }, select: { orderId: true, finRefundId: true } });
     if (!existing) return res.status(404).json({ error: "Item tidak ditemukan" });
+    if (existing.finRefundId) {
+      // Klien lama (mobile sebelum OTA) mengirim ulang SEMUA item saat simpan, termasuk baris terkunci dengan isi yang sama: itu BUKAN perubahan — jawab sukses tanpa menulis.
+      const cur = await prisma.orderItem.findUnique({ where: { id: req.params.itemId } });
+      const sama = (layananName === undefined || String(layananName).trim() === cur.layananName) && (harga === undefined || Number(harga) === cur.harga) && (sortOrder === undefined || Number(sortOrder) === cur.sortOrder);
+      if (!sama) return res.status(409).json({ error: ITEM_REFUND_TERKUNCI });
+      return res.json({ item: cur, orderValue: (await prisma.order.findUnique({ where: { id: cur.orderId }, select: { value: true } })).value, promoCheck: await promoCheckOrder(cur.orderId) });
+    }
     const guarded = await guardOrderLocked(req, res, existing.orderId, "mengubah item layanan");
     if (!guarded) return;
 
@@ -2624,8 +2634,9 @@ orderRouter.patch("/items/:itemId", async (req, res) => {
 // DELETE /api/orders/items/:itemId — hapus item layanan
 orderRouter.delete("/items/:itemId", async (req, res) => {
   try {
-    const existing = await prisma.orderItem.findUnique({ where: { id: req.params.itemId }, select: { orderId: true } });
+    const existing = await prisma.orderItem.findUnique({ where: { id: req.params.itemId }, select: { orderId: true, finRefundId: true } });
     if (!existing) return res.status(404).json({ error: "Item tidak ditemukan" });
+    if (existing.finRefundId) return res.status(409).json({ error: ITEM_REFUND_TERKUNCI });
     const guarded = await guardOrderLocked(req, res, existing.orderId, "menghapus item layanan");
     if (!guarded) return;
 

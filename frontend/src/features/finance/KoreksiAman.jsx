@@ -7,7 +7,9 @@ import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
 import DatePicker from "@/components/ui/date-picker.jsx";
 import { api } from "@/api.js";
-import { Pilihan, InputUang, TombolAksi, formatUang, tanggalPendek, tanggalJam } from "@/features/finance/shared.jsx";
+import { Pilihan, InputUang, TombolAksi, PemilihBukti, formatUang, tanggalPendek, tanggalJam } from "@/features/finance/shared.jsx";
+import CaraBayarTransfer from "@/features/finance/CaraBayarTransfer.jsx";
+import { bodyBiayaTransfer, biayaTransferLengkap } from "@/features/finance/biayaTransfer.js";
 
 // EDIT & KOREKSI TRANSAKSI AMAN — potongan bersama.
 //
@@ -218,13 +220,14 @@ export const LABEL_FIELD = {
   // Tagihan supplier & refund (B3.8)
   supplierRef: "Nomor faktur supplier", dueDate: "Jatuh tempo", billDate: "Tanggal tagihan", jatuhTempo: "Jatuh tempo", nominal: "Nominal",
   keterangan: "Keterangan", jenis: "Jenis tagihan", kategoriBiaya: "Kategori biaya", kategoriAset: "Kategori aset", biayaTransfer: "Biaya transfer",
-  alasanRefund: "Alasan refund", reason: "Alasan refund", rekeningSumber: "Rekening sumber",
+  alasanRefund: "Alasan refund", reason: "Alasan refund", rekeningSumber: "Rekening sumber", kurangiNilaiOrder: "Jenis refund",
 };
 const FIELD_UANG = new Set(["amount", "feeAmount", "transferFeeAmount", "nominal", "biayaTransfer"]);
 const FIELD_TANGGAL = new Set(["date", "tanggal", "jatuhTempo", "dueDate", "billDate"]);
 
 /** Tampilkan nilai; `resolusi(field, nilai)` (opsional) menerjemahkan id -> nama. */
 export function tampilNilai(field, v, resolusi) {
+  if (field === "kurangiNilaiOrder") return v === true || v === "true" ? "Pembatalan sebagian (nilai order dikurangi)" : "Pengembalian dana biasa";
   if (v === null || v === undefined || v === "") return "—";
   const r = resolusi?.(field, v);
   if (r) return r;
@@ -274,6 +277,33 @@ function TabelJurnal({ judul, jurnal, tone }) {
   );
 }
 
+// Dampak ke ORDER (refund): status bayar & nilai order. Ditampilkan hanya bila memang berubah, supaya Finance tahu SEBELUM menyimpan.
+const NAMA_STATUS_BAYAR = { LUNAS: "Lunas", DP: "DP", BELUM_BAYAR: "Belum bayar" };
+function DampakOrder({ pratinjau }) {
+  const st = (pratinjau.dampakStatus || []).filter((d) => d.statusLama !== d.statusBaru);
+  const nilai = pratinjau.dampakNilaiOrder;
+  if (!st.length && !nilai) return null;
+  return (
+    <div>
+      <div className="mb-1 text-[12px] font-medium uppercase tracking-[0.05em] text-ink3">Dampak ke order</div>
+      <div className="space-y-1">
+        {nilai && (
+          <div className="flex flex-wrap items-center justify-between gap-x-3 rounded-lg bg-inset px-3 py-2 text-[12.5px]">
+            <span>Nilai order</span>
+            <span className="tabular-nums">{formatUang(nilai.nilaiLama)} <ArrowRight size={11} className="inline" /> <strong>{formatUang(nilai.nilaiBaru)}</strong></span>
+          </div>
+        )}
+        {st.map((d) => (
+          <div key={d.orderId} className="flex flex-wrap items-center justify-between gap-x-3 rounded-lg bg-inset px-3 py-2 text-[12.5px]">
+            <span>Status bayar {d.nomor || ""}</span>
+            <span>{NAMA_STATUS_BAYAR[d.statusLama] || d.statusLama || "—"} <ArrowRight size={11} className="inline" /> <strong>{NAMA_STATUS_BAYAR[d.statusBaru] || d.statusBaru || "—"}</strong></span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function PratinjauKoreksi({ pratinjau, resolusi }) {
   if (!pratinjau) return null;
   return (
@@ -293,6 +323,8 @@ export function PratinjauKoreksi({ pratinjau, resolusi }) {
           ))}
         </div>
       </div>
+
+      <DampakOrder pratinjau={pratinjau} />
 
       {pratinjau.menyentuhJurnal ? (
         <>
@@ -410,7 +442,9 @@ export function RiwayatVersiDialog({ jenis, id, nomor, onClose, resolusi }) {
 // `kolom`: [{ kunci, label, tipe: "teks"|"uang"|"tanggal"|"pilih", opsi?: [{id,name}], wajib? }]
 // `awal`: nilai awal per kunci. Hanya kolom yang BERUBAH yang dikirim.
 // `tanpaPin` (Tagihan Supplier & Refund, keputusan Owner 29 Sep 2026): simpan tanpa PIN — izin server + alasan + pratinjau + Idempotency-Key.
-export function KoreksiDialog({ jenis, doc, nomor, judulRingkas, kolom, awal, onClose, onSaved, resolusi, tanpaPin = false }) {
+// `caraBayar` (opsional, Refund): { rekening: [daftar rekening] } — menampilkan Cara Bayar/biaya admin transfer; `awal` wajib memuat paymentMethod/transferFeeType/transferFeeAmount.
+// Kolom tipe "bukti" = unggah foto bukti transfer (hasil unggah resmi); tipe "bool" = pilihan dua nilai (`opsi`: [{ nilai, nama }]).
+export function KoreksiDialog({ jenis, doc, nomor, judulRingkas, kolom, awal, onClose, onSaved, resolusi, tanpaPin = false, caraBayar = null }) {
   const [f, setF] = useState(awal);
   const [alasan, setAlasan] = useState("");
   const [galat, setGalat] = useState("");
@@ -422,12 +456,16 @@ export function KoreksiDialog({ jenis, doc, nomor, judulRingkas, kolom, awal, on
   const beda = {};
   for (const k of kolom) {
     const a = awal[k.kunci], b = f[k.kunci];
-    const sama = k.tipe === "uang" ? Number(a) === Number(b) : (a || "") === (b || "");
-    if (!sama) beda[k.kunci] = k.tipe === "uang" ? Number(b) : b;
+    const sama = k.tipe === "uang" ? Number(a) === Number(b) : k.tipe === "bool" ? !!a === !!b : (a || "") === (b || "");
+    if (!sama) beda[k.kunci] = k.tipe === "uang" ? Number(b) : k.tipe === "bool" ? !!b : b;
   }
+  const rek = caraBayar ? caraBayar.rekening.find((r) => r.id === f.cashAccountId) : null;
+  const biayaBerubah = !!caraBayar && (f.paymentMethod !== awal.paymentMethod || (f.transferFeeType || "") !== (awal.transferFeeType || "")
+    || String(f.transferFeeAmount ?? "") !== String(awal.transferFeeAmount ?? "") || f.cashAccountId !== awal.cashAccountId);
+  if (biayaBerubah) Object.assign(beda, bodyBiayaTransfer(f));
   const adaPerubahan = Object.keys(beda).length > 0;
-  const wajibTerisi = kolom.every((k) => !k.wajib || (k.tipe === "uang" ? Number(f[k.kunci]) > 0 : f[k.kunci]));
-  const valid = adaPerubahan && wajibTerisi && alasan.trim();
+  const wajibTerisi = kolom.every((k) => !k.wajib || (k.tipe === "uang" ? Number(f[k.kunci]) > 0 : k.tipe === "bool" ? true : f[k.kunci]));
+  const valid = adaPerubahan && wajibTerisi && alasan.trim() && (!caraBayar || biayaTransferLengkap(rek, f));
 
   async function tinjau() {
     setGalat(""); setSibuk(true);
@@ -491,9 +529,17 @@ export function KoreksiDialog({ jenis, doc, nomor, judulRingkas, kolom, awal, on
                         <option value="">— pilih —</option>
                         {k.opsi.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
                       </Pilihan>
+                    ) : k.tipe === "bool" ? (
+                      <Pilihan value={f[k.kunci] ? "1" : "0"} onChange={(v) => set(k.kunci, v === "1")}>
+                        {k.opsi.map((o) => <option key={String(o.nilai)} value={o.nilai ? "1" : "0"}>{o.nama}</option>)}
+                      </Pilihan>
+                    ) : k.tipe === "bukti" ? (
+                      <PemilihBukti url={f[k.kunci] || ""} onChange={(v) => set(k.kunci, v || "")} />
                     ) : <Input value={f[k.kunci] || ""} onChange={(e) => set(k.kunci, e.target.value)} />}
+                  {k.petunjuk && <p className="mt-1 text-[12px] text-ink3">{k.petunjuk}</p>}
                 </Field>
               ))}
+              {caraBayar && <CaraBayarTransfer rekening={rek} nominal={f.amount} value={f} onChange={(b) => { setF((st) => ({ ...st, ...b })); setPratinjau(null); kunciRef.current = null; }} />}
               <Field label="Alasan koreksi" required hint="Wajib — tercatat di riwayat audit">
                 <Input value={alasan} onChange={(e) => { setAlasan(e.target.value); setPratinjau(null); kunciRef.current = null; }} placeholder="mis. salah ketik nominal / salah pilih rekening" />
               </Field>
@@ -546,6 +592,8 @@ export function InfoDialog({ jenis, doc, nomor, judulRingkas, kolom, awal, onClo
           <Field key={k.kunci} label={k.label}>
             {k.tipe === "tanggal"
               ? <DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f[k.kunci]} onChange={(v) => setF((st) => ({ ...st, [k.kunci]: v }))} />
+              : k.tipe === "bukti"
+              ? <PemilihBukti url={f[k.kunci] || ""} onChange={(v) => setF((st) => ({ ...st, [k.kunci]: v || "" }))} />
               : <Input value={f[k.kunci] || ""} onChange={(e) => setF((st) => ({ ...st, [k.kunci]: e.target.value }))} />}
           </Field>
         ))}

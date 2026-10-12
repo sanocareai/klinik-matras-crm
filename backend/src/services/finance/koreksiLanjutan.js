@@ -28,6 +28,8 @@ import { postRefund, sisaBisaDirefund, pendapatanSudahDiakui, KEY as ORDER_KEY }
 import { SYSTEM_KEYS } from "./accounts.js";
 import { getVerificationGate } from "./settings.js";
 import { hitungBiayaTransfer } from "./transferFee.js";
+import { RECEIPTS_URL_PREFIX } from "./receipts.js";
+import { terapkanPenguranganNilai, balikPenguranganNilai } from "./refundNilaiOrder.js";
 import { recomputeOrderPaymentStatus } from "../paymentLedger.js";
 import { lockRowForUpdate } from "../inventoryLedger.js";
 import { terminDokumen, terminMaster, hitungJatuhTempo } from "./termin.js";
@@ -431,7 +433,11 @@ export async function editInfoRefund(tx, { refundId, body, alasan, userId }) {
     if (!t) throw new KoreksiError("Alasan refund wajib diisi", 400, "ALASAN_REFUND_WAJIB");
     perubahan.reason = t;
   }
-  if (body?.attachmentUrl !== undefined) perubahan.attachmentUrl = teks(body.attachmentUrl, 500, "Lampiran");
+  if (body?.attachmentUrl !== undefined) {
+    const u = teks(body.attachmentUrl, 500, "Lampiran");
+    if (u && !u.startsWith(`${RECEIPTS_URL_PREFIX}/`)) throw new KoreksiError("Bukti transfer harus diunggah lewat tombol unggah foto", 400, "LAMPIRAN_TIDAK_VALID");
+    perubahan.attachmentUrl = u || null;
+  }
   const r = await cariRefund(tx, refundId);
   if (r.status === "DIBATALKAN" || r.status === "DITOLAK") {
     throw tolak("Refund ini sudah dibatalkan/diganti.", "Buka Riwayat lalu ubah versi terbarunya.", 409, "SUDAH_DIBATALKAN");
@@ -449,6 +455,12 @@ export async function editInfoRefund(tx, { refundId, body, alasan, userId }) {
 
 function normalisasiKoreksiRefund(body) {
   const p = {};
+  if (body.kurangiNilaiOrder !== undefined) p.kurangiNilaiOrder = body.kurangiNilaiOrder === true;
+  if (body.attachmentUrl !== undefined) {
+    const u = body.attachmentUrl === null || body.attachmentUrl === "" ? null : String(body.attachmentUrl);
+    if (u !== null && (!u.startsWith(`${RECEIPTS_URL_PREFIX}/`) || u.length > 500)) throw new KoreksiError("Bukti transfer harus diunggah lewat tombol unggah foto", 400, "LAMPIRAN_TIDAK_VALID");
+    p.attachmentUrl = u;
+  }
   if (body.amount !== undefined) p.amount = nominal(body.amount, "Nominal refund");
   if (body.date !== undefined) p.date = tanggalBuku(body.date, "Tanggal refund");
   if (body.cashAccountId !== undefined) {
@@ -495,8 +507,13 @@ export async function koreksiRefund(tx, { refundId, body, alasan, userId, previe
       transferFeeAmount: m === "TRANSFER" ? (perubahan.transferFeeAmount !== undefined ? perubahan.transferFeeAmount : lama.transferFeeAmount) : 0,
     });
   }
-  const nilai = { amount: perubahan.amount ?? lama.amount, date: perubahan.date ?? lama.date, reason: perubahan.reason ?? lama.reason, cashAccountId: cashBaru };
+  const nilai = {
+    amount: perubahan.amount ?? lama.amount, date: perubahan.date ?? lama.date, reason: perubahan.reason ?? lama.reason, cashAccountId: cashBaru,
+    kurangiNilaiOrder: perubahan.kurangiNilaiOrder ?? lama.kurangiNilaiOrder,
+    attachmentUrl: perubahan.attachmentUrl !== undefined ? perubahan.attachmentUrl : lama.attachmentUrl,
+  };
   const beda = ["amount", "date", "reason", "cashAccountId"].some((k) => !sama(k, lama[k], nilai[k]))
+    || nilai.kurangiNilaiOrder !== lama.kurangiNilaiOrder || (nilai.attachmentUrl ?? null) !== (lama.attachmentUrl ?? null)
     || !toMoney(lama.transferFeeAmount).equals(biaya.transferFeeAmount) || (lama.paymentMethod ?? null) !== (biaya.paymentMethod ?? null) || (lama.transferFeeType ?? null) !== (biaya.transferFeeType ?? null);
   if (!beda) throw new KoreksiError("Tidak ada perubahan yang dikirim", 400, "TANPA_PERUBAHAN");
 
@@ -510,7 +527,7 @@ export async function koreksiRefund(tx, { refundId, body, alasan, userId, previe
   const sumberLama = [{ source: "REFUND", sourceId: lama.id }];
   const sebelum = await snapshotJurnal(tx, sumberLama);
   const jurnalLama = await jurnalAktif(tx, "REFUND", ORDER_KEY.refund(lama.id));
-  const ordSebelum = await tx.order.findUnique({ where: { id: lama.orderId }, select: { orderNumber: true, paymentStatus: true, paidAt: true } });
+  const ordSebelum = await tx.order.findUnique({ where: { id: lama.orderId }, select: { orderNumber: true, paymentStatus: true, paidAt: true, value: true, customerId: true } });
 
   // Periode rekonsiliasi (BELUM selesai) yang tersentuh — saldo buku SEBELUM dicatat untuk audit.
   const kasTanggal = jurnalLama.flatMap((e) => e.lines.filter((l) => l.cashAccountId).map((l) => ({ cashAccountId: l.cashAccountId, date: e.date })));
@@ -535,12 +552,16 @@ export async function koreksiRefund(tx, { refundId, body, alasan, userId, previe
     data: {
       refundNumber: await generateDocumentNumber(tx, "RFD", nilai.date), orderId: lama.orderId, date: nilai.date, amount: nilai.amount, reason: nilai.reason,
       cashAccountId: cashBaru, paymentMethod: biaya.paymentMethod, transferFeeType: biaya.transferFeeType, transferFeeAmount: biaya.transferFeeAmount,
-      attachmentUrl: lama.attachmentUrl, status: "DISETUJUI", approvedAt: new Date(), approvedById: userId, createdById: lama.createdById, replacesRefundId: lama.id,
+      attachmentUrl: nilai.attachmentUrl, kurangiNilaiOrder: nilai.kurangiNilaiOrder, status: "DISETUJUI", approvedAt: new Date(), approvedById: userId, createdById: lama.createdById, replacesRefundId: lama.id,
     },
   });
   await postRefund(tx, { refundId: baru.id, userId });
+  // Refund pembatalan sebagian: baris pengurang milik refund LAMA dibalik, lalu (bila versi baru bertanda sama) diterapkan lagi dengan nominal baru — nilai order
+  // selalu = Σ item, dan status bayar dihitung ulang sesudahnya. Order Lunas tetap Lunas bila nominal & nilai order bergerak bersama.
+  if (lama.kurangiNilaiOrder) await balikPenguranganNilai(tx, { refundId: lama.id, orderId: lama.orderId });
+  if (nilai.kurangiNilaiOrder) await terapkanPenguranganNilai(tx, { refund: baru });
   await recomputeOrderPaymentStatus(tx, lama.orderId);
-  const ordSesudah = await tx.order.findUnique({ where: { id: lama.orderId }, select: { paymentStatus: true, paidAt: true } });
+  const ordSesudah = await tx.order.findUnique({ where: { id: lama.orderId }, select: { paymentStatus: true, paidAt: true, value: true } });
 
   const sumber = [...sumberLama, { source: "REFUND", sourceId: baru.id }];
   const tampilRek = async (id) => (id === lama.cashAccountId ? lama.cashAccount.name : rek.name);
@@ -562,9 +583,10 @@ export async function koreksiRefund(tx, { refundId, body, alasan, userId, previe
   }
   const dampakStatus = [{ orderId: lama.orderId, nomor: ordSebelum?.orderNumber, statusLama: ordSebelum?.paymentStatus ?? null, statusBaru: ordSesudah?.paymentStatus ?? null, paidAtLama: ordSebelum?.paidAt ?? null, paidAtBaru: ordSesudah?.paidAt ?? null }];
 
+  const dampakNilaiOrder = ordSebelum && ordSesudah && ordSebelum.value !== ordSesudah.value ? { nilaiLama: ordSebelum.value, nilaiBaru: ordSesudah.value } : null;
   if (preview) {
     const data = await susunPratinjau(tx, { sebelum, sources: sumber, perubahan: { before, after } });
-    throw new PratinjauKoreksi({ ...data, dampakStatus, periodeRekon });
+    throw new PratinjauKoreksi({ ...data, dampakStatus, dampakNilaiOrder, periodeRekon });
   }
 
   const tautan = await tautanJurnal(tx, sebelum, sumber);
@@ -577,6 +599,6 @@ export async function koreksiRefund(tx, { refundId, body, alasan, userId, previe
       metadata: { label: "Refund dikoreksi setelah periode dibuat", aksi: "refund_dikoreksi", refundLamaId: lama.id, refundBaruId: baru.id, reason, ...pr },
     });
   }
-  return { ok: true, lamaId: lama.id, baruId: baru.id, nomorBaru: baru.refundNumber, dampakStatus, periodeRekon, ...tautan };
+  return { ok: true, lamaId: lama.id, baruId: baru.id, nomorBaru: baru.refundNumber, dampakStatus, dampakNilaiOrder, customerId: ordSebelum?.customerId ?? null, periodeRekon, ...tautan };
 }
 

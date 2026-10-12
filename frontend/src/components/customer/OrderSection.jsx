@@ -519,12 +519,13 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
 
       // Proses items (hanya LAYANAN)
       if (isLayanan) {
-        const existingItemIds = (order.items || []).map((it) => it.id);
+        // Baris pengurang dari Refund (finRefundId) dikunci server: jangan dihapus/diubah dari sini.
+        const existingItemIds = (order.items || []).filter((it) => !it.finRefundId).map((it) => it.id);
         const currentItemIds  = items.filter((it) => it.id).map((it) => it.id);
         for (const id of existingItemIds) {
           if (!currentItemIds.includes(id)) await api.deleteOrderItem(id);
         }
-        for (const it of items.filter((it) => it.id)) {
+        for (const it of items.filter((it) => it.id && !it.finRefundId)) {
           if (it.layananName?.trim())
             await api.updateOrderItem(it.id, { layananName: it.layananName, harga: Number(it.harga) || 0 });
         }
@@ -1366,7 +1367,13 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
         editing ? (
           <div style={{ marginBottom: 8 }}>
             <span style={metaLabel}>Layanan (add-ons)</span>
-            {items.map((it) => (
+            {items.map((it) => it.finRefundId ? (
+              <div key={it.key} title="Dibuat otomatis oleh Refund — minta Finance membatalkan/mengoreksi refund-nya untuk mengubah"
+                style={{ display: "flex", gap: 6, alignItems: "center", justifyContent: "space-between", marginBottom: 5, fontSize: 12, padding: "5px 8px", borderRadius: 5, background: "var(--bg)", color: "var(--text-secondary)" }}>
+                <span>🔒 {it.layananName}</span>
+                <span style={{ fontWeight: 600 }}>{formatRupiah(Number(it.harga) || 0)}</span>
+              </div>
+            ) : (
               <div key={it.key} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 5 }}>
                 <input
                   list="layanan-suggestions"
@@ -1381,7 +1388,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
                   placeholder="Harga" min="0"
                   style={{ flex: 1, fontSize: 12, padding: "5px 8px", borderRadius: 5, border: "1px solid var(--border)", minWidth: 80 }}
                 />
-                {items.length > 1 && (
+                {items.filter((x) => !x.finRefundId).length > 1 && (
                   <button onClick={() => removeItem(it.key)}
                     style={{ background: "none", border: "none", cursor: "pointer", color: "#dc2626", fontSize: 18, padding: "0 2px" }}>×</button>
                 )}
