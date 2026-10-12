@@ -35,14 +35,14 @@ export async function snapshotItems(db, orderId) {
  * Tulis revisi berikutnya. `expected` (opsional) = revisi yang dilihat klien; tidak cocok -> 409 REVISI_BERUBAH (beserta revisi saat ini).
  * Dipanggil di DALAM transaksi pemanggil dengan baris order terkunci.
  */
-export async function tulisRevisi(tx, { orderId, penjualanId, kind, reason = null, before = null, after, impact = null, userId = null, idempotencyKey = null, expected = null }) {
+export async function tulisRevisi(tx, { orderId, penjualanId, kind, reason = null, before = null, after, impact = null, userId = null, idempotencyKey = null, expected = null, financeBefore = null, financeAfter = null }) {
   const sekarang = await revisiTerakhir(tx, orderId);
   if (expected !== null && expected !== sekarang) {
     throw gagal("Daftar item sudah diubah orang lain atau di layar lain. Muat ulang lalu periksa dampaknya sebelum mengirim lagi.", 409, "REVISI_BERUBAH", { revisiSaatIni: sekarang, revisiDikirim: expected });
   }
   try {
     return await tx.pkrItemRevision.create({
-      data: { orderId, penjualanId, revision: sekarang + 1, kind, reason, beforeItems: before, afterItems: after, impact, actorId: userId, idempotencyKey },
+      data: { orderId, penjualanId, revision: sekarang + 1, kind, reason, beforeItems: before, afterItems: after, impact, actorId: userId, idempotencyKey, ...(financeBefore && { financeBefore }), ...(financeAfter && { financeAfter }) },
     });
   } catch (e) {
     if (e?.code === "P2002") throw gagal("Daftar item baru saja diubah oleh proses lain. Muat ulang lalu ulangi.", 409, "REVISI_BERUBAH", { revisiSaatIni: await revisiTerakhir(tx, orderId) });

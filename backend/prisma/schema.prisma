@@ -8527,7 +8527,27 @@ model FinPenjualanKaryawanItem {
   unitPrice Decimal @map("unit_price") @db.Decimal(18, 2)
   sortOrder Int     @default(0) @map("sort_order")
 
+  // SUMBER KANONIS item penjualan & pemenuhan (Okt 2026). Semua NULL = baris lama / jalur lama (tidak ditebak, tanpa backfill). Dari baris yang sama: Finance (total/piutang/jurnal),
+  // Order CRM (pkr_order_items), Produksi (unit), Delivery/Pickup (mengikuti fulfillment). Nama item = kolom name di atas.
+  categoryId   String?  @map("category_id") @db.Uuid
+  category     PkrItemCategory? @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  productId    String?  @map("product_id") @db.Uuid
+  product      PkrItemProduct? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  categoryCode String?  @map("category_code") @db.VarChar(40)
+  categoryName String?  @map("category_name") @db.VarChar(100)
+  // PRODUKSI_BARU | SERVICE_PICKUP | AMBIL_STOK | TANPA_OPERASIONAL
+  fulfillment  String?  @db.VarChar(24)
+  perluDikirim Boolean? @map("perlu_dikirim")
+  lengthCm     Decimal? @map("length_cm") @db.Decimal(7, 1)
+  widthCm      Decimal? @map("width_cm") @db.Decimal(7, 1)
+  thicknessCm  Decimal? @map("thickness_cm") @db.Decimal(7, 1)
+  heightCm     Decimal? @map("height_cm") @db.Decimal(7, 1)
+  specNotes    String?  @map("spec_notes") @db.VarChar(1000)
+
+  itemsOperasional PkrOrderItem[]
+
   @@index([penjualanId])
+  @@index([categoryId])
   @@map("fin_penjualan_karyawan_items")
 }
 
@@ -10555,6 +10575,7 @@ model PkrItemCategory {
 
   products PkrItemProduct[]
   items    PkrOrderItem[]
+  itemsPenjualan FinPenjualanKaryawanItem[]
   komposisi        PkrBundleComponent[] @relation("PkrBundleKategori")
   komponenDari     PkrBundleComponent[] @relation("PkrBundleKomponenKategori")
 
@@ -10579,6 +10600,7 @@ model PkrItemProduct {
   updatedAt           DateTime @updatedAt @map("updated_at")
 
   items PkrOrderItem[]
+  itemsPenjualan FinPenjualanKaryawanItem[]
   komposisi    PkrBundleComponent[] @relation("PkrBundleProduk")
   komponenDari PkrBundleComponent[] @relation("PkrBundleKomponenProduk")
 
@@ -10617,13 +10639,22 @@ model PkrOrderItem {
   removedAt          DateTime? @map("removed_at")
   removedById        String?   @map("removed_by_id")
   removedReason      String?   @map("removed_reason") @db.VarChar(500)
+  // Tautan UNIK ke baris item penjualan (null = data lama / jalur lama). Baris Set menghasilkan beberapa komponen (componentSeq 1..n). Jumlah = quantity penjualan x componentQty
+  // dan nama = nama baris penjualan — dijaga trigger DB tertunda (pkr_validasi_tautan_item). fulfillment = snapshot cara pemenuhan.
+  saleItemId    String?  @map("sale_item_id") @db.Uuid
+  saleItem      FinPenjualanKaryawanItem? @relation(fields: [saleItemId], references: [id], onDelete: SetNull)
+  componentSeq  Int?     @map("component_seq")
+  componentQty  Int?     @map("component_qty")
+  fulfillment   String?  @db.VarChar(24)
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
   units PkrOrderItemUnit[]
 
   @@unique([orderId, seq])
+  @@unique([saleItemId, componentSeq], map: "pkr_order_items_sale_component_key")
   @@index([penjualanId])
+  @@index([saleItemId])
   @@map("pkr_order_items")
 }
 
@@ -10660,6 +10691,9 @@ model PkrItemRevision {
   reason         String?  @db.VarChar(500)
   beforeItems    Json?    @map("before_items")
   afterItems     Json     @map("after_items")
+  // Jejak audit sisi Finance (nama/jumlah/harga/total) untuk Koreksi atomik — HANYA dibaca endpoint Finance.
+  financeBefore  Json?    @map("finance_before")
+  financeAfter   Json?    @map("finance_after")
   impact         Json?
   actorId        String?  @map("actor_id")
   idempotencyKey String?  @map("idempotency_key") @db.VarChar(128)

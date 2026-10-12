@@ -87,8 +87,10 @@ const susunNotes = ({ merk, ukuran, pkr, catatan }) => JSON.stringify({
   pkrNomor: pkr.nomor, pembeliPkr: pkr.buyerName, catatan: `Penjualan Karyawan ${pkr.nomor} — penjual ${pkr.seller.name}, pembeli ${pkr.buyerName}${catatan ? `. ${catatan}` : ""}`,
 });
 
-const susunNotesItems = ({ items, pkr, catatan }) => JSON.stringify({
+const susunNotesItems = ({ items, pkr, catatan, nonProduksi = [] }) => JSON.stringify({
   pkrItems: susunCerminan(items),
+  // Item penjualan tanpa unit (Ambil dari Stok / Tanpa Operasional): nama + jumlah + cara pemenuhan, TANPA harga — supaya Gudang/CRM tahu apa yang dijual bersama pekerjaan ini.
+  ...(nonProduksi.length && { pkrNonProduksi: nonProduksi }),
   pkrNomor: pkr.nomor, pembeliPkr: pkr.buyerName, catatan: `Penjualan Karyawan ${pkr.nomor} — penjual ${pkr.seller.name}, pembeli ${pkr.buyerName}${catatan ? `. ${catatan}` : ""}`,
 });
 
@@ -127,14 +129,16 @@ async function muatPkr(tx, penjualanId) {
  * Buat SATU order CRM untuk PKR (atau tautkan order kosong yang sudah ada). Dipanggil di DALAM transaksi pemanggil. Idempoten: bila PKR sudah punya order, mengembalikannya (`dibuat:false`).
  * `orderId` (opsional) menautkan order yang SUDAH ada — hanya bila benar-benar kosong secara keuangan (tanpa nilai, item, pembayaran, invoice, atau tautan lain).
  */
-export async function buatAtauTautkanOrder(tx, { penjualanId, userId = null, spesifikasi = {}, orderId = null, sumber = "dibuat" }) {
+export async function buatAtauTautkanOrder(tx, { penjualanId, userId = null, spesifikasi = {}, orderId = null, sumber = "dibuat", itemsSiap = null, nonProduksi = [] }) {
   const pkr = await muatPkr(tx, penjualanId);
   const spek = normalisasiSpesifikasi(spesifikasi);
+  // Jalur TERPADU: item operasional sudah disiapkan dari baris penjualan yang sama (penjualanKaryawanTerpadu.js) — tidak ada daftar item kedua.
+  if (itemsSiap) spek.items = itemsSiap;
   if (pkr.orderCrm) {
     // Replay/klik ganda: kembalikan order yang ada. Daftar item yang dikirim ulang HARUS sama dengan yang tersimpan — isi berbeda = konflik, bukan order kedua yang diam-diam diabaikan.
     if (spek.items !== undefined) {
       const ada = (await tx.pkrOrderItem.findMany({ where: { orderId: pkr.orderCrm.id, ...ITEM_AKTIF }, orderBy: { seq: "asc" } })).map(itemDariRow);
-      const baru = await siapkanItems(tx, spek.items, { izinNonaktif: true, periksaRute: false });
+      const baru = itemsSiap ?? await siapkanItems(tx, spek.items, { izinNonaktif: true, periksaRute: false });
       if (ada.length === 0 || kunciHimpunan(ada) !== kunciHimpunan(baru)) {
         throw gagal(`${pkr.nomor} sudah punya order CRM ${pkr.orderCrm.orderNumber} dengan isi item berbeda. Ubah spesifikasi lewat "Lengkapi spesifikasi"; tambah/hapus item atau ubah jumlah lewat "Koreksi item" (sebelum unit dijadwalkan).`, 409, "ORDER_SUDAH_ADA_BEDA");
       }
@@ -145,13 +149,13 @@ export async function buatAtauTautkanOrder(tx, { penjualanId, userId = null, spe
 
   if (spek.items !== undefined) {
     if (orderId) throw gagal("Daftar item tidak bisa dipakai untuk menautkan order yang sudah ada — buat order baru atau tautkan tanpa daftar item", 400, "ITEM_TIDAK_UNTUK_TAUTAN");
-    const items = await siapkanItems(tx, spek.items);
+    const items = itemsSiap ?? await siapkanItems(tx, spek.items);
     const { customer } = await profilCustomerKaryawan(tx, pkr.sellerId);
     const totalUnit = items.reduce((a, i) => a + i.jumlah, 0);
     const kategoriOrder = kategoriOrderDariItems(items);
     const order = await createOrderForCustomer(customer.id, {
       category: kategoriOrder, unitCount: 0, quantity: totalUnit, productLine: productLineDariItems(items),
-      notes: susunNotesItems({ items, pkr, catatan: pkr.notes }),
+      notes: susunNotesItems({ items, pkr, catatan: pkr.notes, nonProduksi }),
       ...(spek.alamat && { deliveryAddress: spek.alamat }), ...(spek.kota && { deliveryCity: spek.kota }),
       ...(spek.tanggalKirim && { deliveryConfirmedDate: spek.tanggalKirim }),
     }, userId, {
@@ -416,12 +420,12 @@ export async function ringkasOrderPkr(db, penjualanIds, { izinNominal = true } =
       bundel: i.bundleNo != null ? { no: i.bundleNo, nama: i.bundleName ?? null } : null, ...extra,
     });
     const items = modeItem
-      ? o.pkrItems.map((r) => bentukItem({ ...itemDariRow(r), kurang: (spek.items?.find((x) => x.no === r.seq)?.kurang) ?? [] }, { unit: unitPerItem(r), virtual: false }))
+      ? o.pkrItems.map((r) => bentukItem({ ...itemDariRow(r), kurang: (spek.items?.find((x) => x.no === r.seq)?.kurang) ?? [] }, { unit: unitPerItem(r), virtual: false, saleItemId: r.saleItemId ?? null, komponenSeq: r.componentSeq ?? null, pemenuhan: r.fulfillment ?? null }))
       : itemVirtualLama({ kategori: o.category, merk: spek.merk, ukuran: spek.ukuran, jumlahUnit: o.units.filter((u) => u.status !== "CANCELLED").length, perluDikirim: o.pkrPerluDikirim })
         .map((i) => bentukItem({ ...i, kurang: spek.kurang }, { unit: o.units.map((u) => ({ kode: u.unitCode, status: u.status, label: LABEL_UNIT[u.status] || u.status })), virtual: true }));
     hasil.set(p.id, {
       penjualanId: p.id, nomor: p.nomor, statusPkr: p.status, penjual: p.seller, pembeli: p.buyerName, pembayaran,
-      order: { id: o.id, nomor: o.orderNumber, status: o.status, statusLabel: LABEL_ORDER[o.status] || o.status, kategori: o.category, spesifikasi: spek, modeItem, revisi },
+      order: { id: o.id, nomor: o.orderNumber, status: o.status, statusLabel: LABEL_ORDER[o.status] || o.status, kategori: o.category, spesifikasi: spek, modeItem, revisi, nonProduksi: bacaNotesOrder(o.notes).pkrNonProduksi ?? [] },
       items,
       units: o.units.map((u) => ({ id: u.id, kode: u.unitCode, status: u.status, label: LABEL_UNIT[u.status] || u.status, merk: u.merk, ukuran: u.ukuran })),
       produksi: statusProduksi(o, o.units, spek),

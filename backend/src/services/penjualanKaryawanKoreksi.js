@@ -62,14 +62,15 @@ const hash = (v) => createHash("sha256").update(JSON.stringify(v ?? null)).diges
 const angkaAtauNull = (v) => (v === undefined || v === null || v === "" ? null : v);
 
 /** Validasi bentuk masukan operasi (tanpa DB). */
-function bacaOperasi(operasi) {
+function bacaOperasi(operasi, { izinKosong = false } = {}) {
+  if (izinKosong && Array.isArray(operasi) && operasi.length === 0) return [];
   if (!Array.isArray(operasi) || operasi.length === 0) throw gagal("Pilih minimal satu perubahan item", 400, "OPERASI_KOSONG");
   if (operasi.length > MAKS_OPERASI) throw gagal(`Maksimal ${MAKS_OPERASI} perubahan per koreksi`, 400, "OPERASI_TERLALU_BANYAK");
   return operasi.map((o, i) => {
     if (!o || typeof o !== "object" || Array.isArray(o)) throw gagal(`Perubahan ${i + 1}: isian tidak valid`, 400, "OPERASI_TIDAK_VALID");
     if (!["ubah", "hapus", "tambah"].includes(o.op)) throw gagal(`Perubahan ${i + 1}: jenis harus ubah, hapus, atau tambah`, 400, "OPERASI_TIDAK_VALID");
     if (o.op !== "tambah" && !Number.isInteger(Number(o.no))) throw gagal(`Perubahan ${i + 1}: nomor item wajib`, 400, "OPERASI_TIDAK_VALID");
-    if (o.op === "tambah" && (!o.item || typeof o.item !== "object" || Array.isArray(o.item))) throw gagal(`Perubahan ${i + 1}: isian item baru wajib`, 400, "OPERASI_TIDAK_VALID");
+    if (o.op === "tambah" && !o.siap && (!o.item || typeof o.item !== "object" || Array.isArray(o.item))) throw gagal(`Perubahan ${i + 1}: isian item baru wajib`, 400, "OPERASI_TIDAK_VALID");
     return { ...o, no: o.op === "tambah" ? null : Number(o.no) };
   });
 }
@@ -109,10 +110,14 @@ async function ruteBaris(tx, row, produkId = row.productId) {
  * Hitung rencana koreksi (TANPA menulis). `kunci:true` = di bawah kunci (dipakai penerapan).
  * @returns {{ pkr, order, rows, revisiSekarang, plan, impact, itemsSesudah, kunciPermintaan }}
  */
-export async function hitungKoreksi(tx, { penjualanId, operasi, expectedRevision = null, kunci = false }) {
-  const ops = bacaOperasi(operasi);
+export async function hitungKoreksi(tx, { penjualanId, operasi, expectedRevision = null, kunci = false, viaBaris = false, izinTanpaPerubahan = false }) {
+  const ops = bacaOperasi(operasi, { izinKosong: izinTanpaPerubahan });
   const { pkr, order, rows } = await muatKeadaan(tx, penjualanId, { kunci });
   const aktif = rows.filter((r) => !r.removedAt);
+  // Item operasional yang TERTAUT ke baris penjualan hanya boleh dikoreksi lewat Koreksi baris penjualan (Finance + operasional atomik): jalur ini tidak menyentuh harga/total.
+  if (!viaBaris && aktif.some((r) => r.saleItemId)) {
+    throw gagal(`${pkr.nomor} memakai daftar item penjualan terpadu. Koreksi lewat "Koreksi item" pada baris penjualan (jumlah/harga/spesifikasi diubah bersama, atomik).`, 409, "KOREKSI_PAKAI_BARIS");
+  }
   if (aktif.length === 0) {
     throw gagal(`${pkr.nomor} tidak memakai daftar item (order lama). Ubah merk/ukuran lewat "Lengkapi spesifikasi order"; untuk menambah item, batalkan lalu catat ulang.`, 409, "KOREKSI_ORDER_LAMA");
   }
@@ -134,7 +139,10 @@ export async function hitungKoreksi(tx, { penjualanId, operasi, expectedRevision
 
   for (const op of ops) {
     if (op.op === "tambah") {
-      const diterima = await siapkanItems(tx, [op.item], { noAwal: seqBerikut, validasi: false, bundelAwal: bundelBerikut - 1 });
+      // op.siap = item operasional yang sudah disiapkan dari baris penjualan baru (jalur terpadu): beri nomor item/set lanjutan tanpa menyiapkan ulang.
+      const diterima = op.siap
+        ? op.siap.map((it, i) => ({ ...it, no: seqBerikut + i, ...(it.bundleNo != null && { bundleNo: it.bundleNo + bundelBerikut - 1 }) }))
+        : await siapkanItems(tx, [op.item], { noAwal: seqBerikut, validasi: false, bundelAwal: bundelBerikut - 1 });
       for (const it of diterima) { baruItems.push(it); seqBerikut = Math.max(seqBerikut, it.no + 1); if (it.bundleNo != null) bundelBerikut = Math.max(bundelBerikut, it.bundleNo + 1); }
       continue;
     }
@@ -203,7 +211,7 @@ export async function hitungKoreksi(tx, { penjualanId, operasi, expectedRevision
   if (itemsSesudah.length === 0) throw gagal("Koreksi ini menghapus semua item. Bila penjualan memang batal, batalkan Penjualan Karyawan-nya.", 409, "SEMUA_ITEM_DIHAPUS");
   try { validasiHimpunan(itemsSesudah); } catch (e) { if (e instanceof ItemPkrError) throw gagal(e.message, 400, e.code, e.extra); throw e; }
   const adaPerubahan = diubah.length + dihapus.length + ditambah.length > 0;
-  if (!adaPerubahan) throw gagal("Tidak ada perubahan yang dikirim", 400, "TANPA_PERUBAHAN");
+  if (!adaPerubahan && !izinTanpaPerubahan) throw gagal("Tidak ada perubahan yang dikirim", 400, "TANPA_PERUBAHAN");
 
   // Dampak.
   const kategoriSesudah = kategoriOrderDariItems(itemsSesudah);
@@ -276,7 +284,7 @@ function ringkasTeks(impact) {
 /**
  * Terapkan koreksi. Dipanggil di DALAM transaksi pemanggil (atomik). Mengembalikan hasil replay bila Idempotency-Key yang sama dengan isi yang sama sudah diterapkan.
  */
-export async function terapkanKoreksi(tx, { penjualanId, operasi, expectedRevision, alasan, idempotencyKey, userId = null }) {
+export async function terapkanKoreksi(tx, { penjualanId, operasi, expectedRevision, alasan, idempotencyKey, userId = null, viaBaris = false, finance = null, hashPermintaanLuar = null, dampakTambahan = null }) {
   if (!idempotencyKey || !POLA_KUNCI.test(String(idempotencyKey))) {
     throw gagal("Header Idempotency-Key wajib (8–128 karakter) untuk koreksi item", 428, "IDEMPOTENCY_KEY_REQUIRED");
   }
@@ -286,8 +294,9 @@ export async function terapkanKoreksi(tx, { penjualanId, operasi, expectedRevisi
   if (expectedRevision === undefined || expectedRevision === null || !Number.isInteger(Number(expectedRevision)) || Number(expectedRevision) < 1) {
     throw gagal("Revisi yang Anda lihat (expectedRevision) wajib dikirim — buka pratinjau dampak dulu", 400, "REVISI_WAJIB");
   }
-  const ops = bacaOperasi(operasi);
-  const hashPermintaan = hash({ penjualanId, ops, expectedRevision: Number(expectedRevision), alasan: teksAlasan });
+  const ops = bacaOperasi(operasi, { izinKosong: Boolean(finance) });
+  // Koreksi baris penjualan menghitung hash dari masukan ASLI (termasuk harga) — operasi operasional hasil terjemahan bisa sama untuk dua permintaan harga yang berbeda.
+  const hashPermintaan = hashPermintaanLuar ?? hash({ penjualanId, ops, expectedRevision: Number(expectedRevision), alasan: teksAlasan });
 
   // Kunci dulu (PKR -> order), lalu cek replay di bawah kunci: dua permintaan paralel dengan kunci sama diserialkan di sini.
   const { pkr, order } = await muatKeadaan(tx, penjualanId, { kunci: false });
@@ -298,7 +307,8 @@ export async function terapkanKoreksi(tx, { penjualanId, operasi, expectedRevisi
     return { replayed: true, revisi: ada.revision, nomor: pkr.nomor, orderId: order.id, dampak: ada.impact };
   }
 
-  const h = await hitungKoreksi(tx, { penjualanId, operasi: ops, expectedRevision: Number(expectedRevision), kunci: true });
+  const h = await hitungKoreksi(tx, { penjualanId, operasi: ops, expectedRevision: Number(expectedRevision), kunci: true, viaBaris, izinTanpaPerubahan: Boolean(finance) });
+  let jejakFinance = null;
   const sebelum = await snapshotItems(tx, h.order.id);
   const orderId = h.order.id;
 
@@ -373,12 +383,16 @@ export async function terapkanKoreksi(tx, { penjualanId, operasi, expectedRevisi
   await tx.order.update({ where: { id: orderId }, data: dataOrder });
   if (statusBaru) await tx.orderStatusTransition.create({ data: { orderId, fromStatus: h.order.status, toStatus: statusBaru, changedById: userId } });
 
+  // 4b. Sisi Finance (koreksi baris penjualan): dijalankan di transaksi yang SAMA setelah semua perubahan operasional — sinkron nama/ukuran ke baris penjualan, hapus baris,
+  // total + jurnal pengganti. Mengembalikan jejak audit { before, after } untuk buku revisi.
+  if (finance) jejakFinance = typeof finance === "function" ? await finance(tx, h) : finance;
+
   // 5. Buku revisi (token konkurensi) + audit.
   const sesudah = await snapshotItems(tx, orderId);
-  const dampak = { ...h.impact, hashPermintaan, ringkas: ringkasTeks(h.impact), kategoriOrder: { sebelum: h.order.category, sesudah: dataOrder.category } };
+  const dampak = { ...h.impact, hashPermintaan, ringkas: ringkasTeks(h.impact), kategoriOrder: { sebelum: h.order.category, sesudah: dataOrder.category }, ...(dampakTambahan && { keuangan: dampakTambahan }) };
   const rev = await tulisRevisi(tx, {
     orderId, penjualanId: pkr.id, kind: "DIKOREKSI", reason: teksAlasan, before: sebelum, after: sesudah, impact: dampak, userId, idempotencyKey: String(idempotencyKey),
-    expected: Number(expectedRevision),
+    expected: Number(expectedRevision), ...(jejakFinance && { financeBefore: jejakFinance.before, financeAfter: jejakFinance.after }),
   });
   const meta = { aksi: "dikoreksi", nomorPkr: pkr.nomor, penjualanId: pkr.id, orderId, revisi: rev.revision, alasan: teksAlasan, ringkas: ringkasTeks(h.impact), kategoriSebelum: h.order.category, kategoriSesudah: dataOrder.category };
   await recordActivity(tx, { entityType: ENTITY_TYPES.FIN_PENJUALAN_KARYAWAN, entityId: pkr.id, eventType: EVENT_TYPES.PKR_ORDER_SINKRON, actorId: userId, metadata: meta });

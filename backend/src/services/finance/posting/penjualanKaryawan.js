@@ -11,7 +11,7 @@
 // Finance sebesar uang BERSIH yang dibayar, jadi bagian yang dipotong dicatat di sini sebagai Dr Beban Gaji sehingga beban gaji = gaji kotor.
 // HPP TIDAK dibukukan di sini (keputusan Owner 2 Okt 2026): modul ini hanya mengakui pendapatan dan tagihannya.
 
-import { postJournal, findEntryByKey } from "../journal.js";
+import { postJournal, findEntryByKey, reverseJournal } from "../journal.js";
 import { resolveAccount, SYSTEM_KEYS } from "../accounts.js";
 import { toMoney } from "../money.js";
 import { tanggalCutoff, sebelumCutoff } from "../cutoff.js";
@@ -21,10 +21,14 @@ export const KEY = {
   pembayaran: (id, suffix = "") => `PEMBAYARAN_PENJUALAN_KARYAWAN:${id}${suffix}`,
 };
 
-export async function postPenjualanKaryawan(tx, { penjualanId, userId = null }) {
+/**
+ * `versi` > 0 = jurnal PENGGANTI hasil Koreksi nilai (kunci idempotensi ":v<n>"); 0 = jurnal asli. Jurnal lama TIDAK diubah/dihapus — ia dibalik (reverseJournal) dan jurnal baru diposting.
+ */
+export async function postPenjualanKaryawan(tx, { penjualanId, userId = null, versi = 0 }) {
   const p = await tx.finPenjualanKaryawan.findUnique({ where: { id: penjualanId }, include: { seller: { select: { name: true } } } });
   if (!p) throw new Error(`Penjualan karyawan ${penjualanId} tidak ditemukan`);
-  const sudahAda = await findEntryByKey(tx, KEY.penjualan(penjualanId));
+  const kunci = KEY.penjualan(penjualanId, versi > 0 ? `:v${versi}` : "");
+  const sudahAda = await findEntryByKey(tx, kunci);
   if (sudahAda) return { posted: true, entry: sudahAda, created: false };
 
   const piutang = await resolveAccount(tx, SYSTEM_KEYS.PIUTANG_KARYAWAN);
@@ -36,7 +40,7 @@ export async function postPenjualanKaryawan(tx, { penjualanId, userId = null }) 
     description: `${p.nomor} — Penjualan karyawan ${p.seller.name} (pembeli: ${p.buyerName})`,
     source: "PENJUALAN_KARYAWAN",
     sourceId: penjualanId,
-    idempotencyKey: KEY.penjualan(penjualanId),
+    idempotencyKey: kunci,
     userId,
     lines: [
       { accountId: piutang.id, debit: nominal, description: `Tagihan penjualan karyawan — ${p.seller.name}` },
@@ -44,6 +48,26 @@ export async function postPenjualanKaryawan(tx, { penjualanId, userId = null }) 
     ],
   });
   return { posted: true, entry, created };
+}
+
+/** Jurnal penjualan yang MASIH berlaku (POSTED): yang asli, atau pengganti terakhir hasil Koreksi nilai. null bila tidak ada. */
+export async function entriPenjualanAktif(tx, penjualanId) {
+  const semua = await tx.finJournalEntry.findMany({ where: { idempotencyKey: { startsWith: KEY.penjualan(penjualanId) } }, orderBy: { createdAt: "desc" } });
+  return semua.find((e) => e.status === "POSTED") ?? null;
+}
+
+/**
+ * KOREKSI NILAI penjualan (total berubah): balik jurnal yang berlaku, lalu posting jurnal pengganti sebesar total baru — keduanya bertanggal sama dengan dokumen supaya periode
+ * pendapatan tidak bergeser. Periode tertutup menolak (JournalError) dan seluruh transaksi koreksi batal. Dipanggil di DALAM transaksi pemanggil setelah p.total diperbarui.
+ */
+export async function koreksiJurnalPenjualan(tx, { penjualanId, userId = null, alasan }) {
+  const p = await tx.finPenjualanKaryawan.findUnique({ where: { id: penjualanId }, select: { id: true, nomor: true, date: true } });
+  if (!p) throw new Error(`Penjualan karyawan ${penjualanId} tidak ditemukan`);
+  const aktif = await entriPenjualanAktif(tx, penjualanId);
+  if (aktif) await reverseJournal(tx, { entryId: aktif.id, date: p.date, reason: `Koreksi nilai ${p.nomor} — ${alasan}`, userId });
+  const versi = await tx.finJournalEntry.count({ where: { idempotencyKey: { startsWith: KEY.penjualan(penjualanId) } } });
+  const baru = await postPenjualanKaryawan(tx, { penjualanId, userId, versi });
+  return { dibalik: aktif ? aktif.entryNumber : null, baru: baru.entry.entryNumber, versi };
 }
 
 export async function postPembayaranPenjualanKaryawan(tx, { paymentId, userId = null }) {

@@ -66,6 +66,23 @@ export function hitungItems(items, err) {
   return { items: baris, total };
 }
 
+const num = (v) => (v === null || v === undefined ? null : Number(v));
+const LABEL_PEMENUHAN = { PRODUKSI_BARU: "Produksi Baru", SERVICE_PICKUP: "Service / Pickup", AMBIL_STOK: "Ambil dari Stok", TANPA_OPERASIONAL: "Tidak Memerlukan Operasional" };
+
+/**
+ * Bentuk tampil satu baris item penjualan (Finance). Baris lama (fulfillment NULL) tidak punya kolom kanonis -> semua null, tampil seperti sebelumnya.
+ * HARGA ada di sini karena fungsi ini hanya dipakai jalur Finance (izin finance:read); jalur operasional tidak pernah memanggilnya.
+ */
+export function bentukBaris(i) {
+  const { lengthCm, widthCm, thicknessCm, heightCm, specNotes, categoryId, productId, categoryCode, categoryName, fulfillment, perluDikirim, ...dasar } = i;
+  return {
+    ...dasar, quantity: Number(i.quantity), unitPrice: moneyToNumber(i.unitPrice), subtotal: moneyToNumber(subtotalItem(i.unitPrice, i.quantity)),
+    terpadu: fulfillment != null, pemenuhan: fulfillment ?? null, pemenuhanLabel: LABEL_PEMENUHAN[fulfillment] ?? null,
+    kategoriId: categoryId ?? null, kategoriKode: categoryCode ?? null, kategoriNama: categoryName ?? null, produkId: productId ?? null,
+    perluDikirim: perluDikirim ?? null, panjang: num(lengthCm), lebar: num(widthCm), tebal: num(thicknessCm), tinggi: num(heightCm), spesifikasi: specNotes ?? null,
+  };
+}
+
 export const STATUS_LABEL = { DIBATALKAN: "Dibatalkan", LUNAS: "Lunas", SEBAGIAN: "Dibayar sebagian", BELUM_BAYAR: "Belum dibayar" };
 
 /** Bentuk tampil satu dokumen: angka sebagai number, status turunan (bukan kolom — tidak bisa tidak sinkron dengan pembayaran). */
@@ -83,7 +100,7 @@ export function bentukPenjualan(p) {
     sisa: moneyToNumber(sisa),
     statusTampil: status,
     statusLabel: STATUS_LABEL[status],
-    items: p.items.map((i) => ({ ...i, quantity: Number(i.quantity), unitPrice: moneyToNumber(i.unitPrice), subtotal: moneyToNumber(subtotalItem(i.unitPrice, i.quantity)) })),
+    items: p.items.map(bentukBaris),
     payments: p.payments.map((x) => ({ ...x, amount: moneyToNumber(x.amount) })),
   };
 }

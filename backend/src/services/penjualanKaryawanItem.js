@@ -14,6 +14,7 @@ import { tryProvisionUnitRoute } from "./productionRouting.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import { bacaNotesOrder } from "../lib/domain/pkrSpesifikasi.js";
 import { classifyProduct, FAMILY_OF_TYPE } from "../lib/domain/productionBuildTrack.js";
+import { PEMENUHAN } from "../lib/domain/pkrPenjualanItem.js";
 import { tulisRevisi, snapshotItems, revisiTerakhir } from "./pkrItemRevisi.js";
 import {
   BENTUK, MAKS_ITEM, ItemPkrError, normalisasiItem, validasiHimpunan, kategoriOrderDariItems, perluDikirimDariItems, peringatanHimpunan, cerminanItem,
@@ -88,7 +89,9 @@ export async function muatKatalogItem(db, { semua = false } = {}) {
       }),
     };
   });
-  return { bentuk: definisiBentuk(), kategori: hasil, ringkasan: { belumDipetakan }, opsi: { lini: LINI, jenisProduk: JENIS_PRODUK, familiJenis: FAMILY_OF_TYPE } };
+  // pemenuhan: pilihan cara pemenuhan item penjualan (dibaca layar; tidak ada salinan di frontend).
+  const pemenuhan = Object.values(PEMENUHAN).map((p) => ({ kode: p.kode, label: p.label, unit: p.unit, jenisKerja: p.jenisKerja }));
+  return { bentuk: definisiBentuk(), pemenuhan, kategori: hasil, ringkasan: { belumDipetakan }, opsi: { lini: LINI, jenisProduk: JENIS_PRODUK, familiJenis: FAMILY_OF_TYPE } };
 }
 
 /** Komposisi AKTIF bundel: baris khusus produk bila ada, selain itu komposisi bawaan kategori. Urut. */
@@ -134,7 +137,7 @@ export async function siapkanItems(db, raw, { izinNonaktif = false, periksaRute 
   for (let idx = 0; idx < raw.length; idx += 1) {
     const r = raw[idx];
     const kat = cariKategori(r, idx + 1);
-    if (!BENTUK[kat.shape]?.bundel) { mentah.push({ r, bundleNo: null }); continue; }
+    if (!BENTUK[kat.shape]?.bundel) { mentah.push({ r, bundleNo: null, komponenSeq: 1, komponenQty: 1 }); continue; }
     if (!kat.active && !izinNonaktif) throw new ItemPkrError(`Item ${idx + 1}: kategori "${kat.name}" sudah dinonaktifkan Admin`, "KATEGORI_NONAKTIF");
     let produkSet = null;
     if (r.produkId) {
@@ -150,7 +153,11 @@ export async function siapkanItems(db, raw, { izinNonaktif = false, periksaRute 
     try {
       komponen = pecahBundel(r, komposisi.map((k) => ({ kategoriId: k.componentCategoryId, kategoriCode: k.componentCategory.code, produkId: k.componentProductId, qty: k.qty })), { nama: produkSet?.name || kat.name, kode: kat.code });
     } catch (e) { if (e instanceof ItemPkrError) throw new ItemPkrError(`Item ${idx + 1}: ${e.message}`, e.code); throw e; }
-    for (const k of komponen) mentah.push({ r: k, bundleNo, bundleCode: kat.code, bundleName: produkSet?.name || kat.name });
+    // Tautan ke baris penjualan (saleItemId/pemenuhan) ikut ke tiap komponen; komponenSeq = urutan komposisi, komponenQty = jumlah komponen per set.
+    komponen.forEach((k, ki) => mentah.push({
+      r: { ...k, saleItemId: r.saleItemId, pemenuhan: r.pemenuhan }, bundleNo, bundleCode: kat.code, bundleName: produkSet?.name || kat.name, bundleKategoriId: kat.id,
+      bundleProdukId: produkSet?.id ?? null, komponenSeq: ki + 1, komponenQty: komposisi[ki].qty,
+    }));
   }
   if (mentah.length > MAKS_ITEM) throw new ItemPkrError(`Maksimal ${MAKS_ITEM} item produksi per penjualan (set dihitung per komponen)`, "ITEM_TERLALU_BANYAK");
 
@@ -180,7 +187,12 @@ export async function siapkanItems(db, raw, { izinNonaktif = false, periksaRute 
     item.rute = rute;
     item.productLine = rute.productLine ?? null; item.productType = rute.productType ?? null;
     item.productionServiceId = kategori.workKind === "LAYANAN" ? (rute.serviceId ?? null) : null;
-    if (m.bundleNo != null) { item.bundleNo = m.bundleNo; item.bundleCategoryCode = m.bundleCode; item.bundleName = m.bundleName; }
+    if (m.bundleNo != null) {
+      item.bundleNo = m.bundleNo; item.bundleCategoryCode = m.bundleCode; item.bundleName = m.bundleName;
+      item.bundleKategoriId = m.bundleKategoriId ?? null; item.bundleProdukId = m.bundleProdukId ?? null;
+    }
+    // Tautan ke baris penjualan (null = jalur lama): lahirkanItemRows menuliskannya ke pkr_order_items.
+    item.saleItemId = r.saleItemId ?? null; item.pemenuhan = r.pemenuhan ?? null; item.komponenSeq = m.komponenSeq ?? 1; item.komponenQty = m.komponenQty ?? 1;
     if (!rute.ok) gagalRute.push({ no, produk: item.produkNama || item.kategoriNama, kode: rute.kode, pesan: rute.pesan });
     return item;
   });
@@ -238,6 +250,11 @@ export async function pratinjauItems(db, { penjualanId = null, items: raw, alama
     if (e instanceof ItemPkrError) return { valid: false, galat: { pesan: e.message, kode: e.code, ...(e.extra ?? {}) } };
     throw e;
   }
+  return bangunPratinjau(items, { alamat, sudahAda });
+}
+
+/** Bagian pratinjau yang hanya bergantung pada item yang SUDAH siap (dipakai jalur lama dan jalur terpadu). */
+export function bangunPratinjau(items, { alamat = null, sudahAda = null } = {}) {
   const rencana = rencanaUnit(items);
   const kel = kelengkapanItems(items, { alamat });
   const dikirim = items.filter((i) => i.perluDikirim === true).map((i) => i.no);
@@ -292,6 +309,7 @@ export async function lahirkanItemRows(tx, { pkrId, orderId, items, userId = nul
         shape: it.bentuk, workKind: it.jenisKerja, productName: it.produkNama, qty: it.jumlah,
         lengthCm: it.panjang, widthCm: it.lebar, thicknessCm: it.tebal, heightCm: it.tinggi, specNotes: it.spesifikasi, perluDikirim: it.perluDikirim,
         bundleNo: it.bundleNo ?? null, bundleCategoryCode: it.bundleCategoryCode ?? null, bundleName: it.bundleName ?? null,
+        ...(it.saleItemId && { saleItemId: it.saleItemId, componentSeq: it.komponenSeq ?? 1, componentQty: it.komponenQty ?? 1, fulfillment: it.pemenuhan }),
       },
     });
     const unit = await lahirkanUnitItem(tx, { orderId, it, rowId: row.id, layanan, userId });
@@ -424,6 +442,15 @@ export async function ubahItemOrder(tx, { order, masukan, userId = null }) {
         productId: produkIdBaru, productName: baru.produkNama,
       },
     });
+    // Baris penjualan yang TERTAUT (non-bundel) adalah sumber kanonis yang sama: cerminkan nama/ukuran/spesifikasi/kirim ke sana dalam transaksi ini supaya tidak ada dua nilai.
+    // (Komponen Set menyimpan spesifikasi PER KOMPONEN sebagai snapshot operasional; baris penjualannya hanya memegang nama set + harga.)
+    if (row.saleItemId && row.bundleNo == null) {
+      if (!baru.produkNama) throw gagal(`Item ${row.seq}: nama item tidak boleh dikosongkan`, 400, "NAMA_ITEM_WAJIB");
+      await tx.finPenjualanKaryawanItem.update({
+        where: { id: row.saleItemId },
+        data: { name: baru.produkNama, productId: produkIdBaru ?? null, lengthCm: baru.panjang, widthCm: baru.lebar, thicknessCm: baru.tebal, heightCm: baru.tinggi, specNotes: baru.spesifikasi, perluDikirim: baru.perluDikirim },
+      });
+    }
     if (stempel && unitAktif.length) await tx.unit.updateMany({ where: { id: { in: unitAktif.map((u) => u.id) } }, data: stempel });
     // Unit: merk/ukuran mengikuti deskripsi item HANYA bila belum diubah manual (sama dengan deskripsi lama atau kosong) — pola sinkronUkuranUnit.
     const dLama = deskripsiUnit(lama); const dBaru = deskripsiUnit(baru);

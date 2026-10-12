@@ -22,7 +22,7 @@ import { prisma } from "../db.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import { reverseJournal, generateDocumentNumber, toBookDate, todayBookDateWIB, findEntryByKey } from "../services/finance/journal.js";
 import { toMoney } from "../services/finance/money.js";
-import { postPenjualanKaryawan, postPembayaranPenjualanKaryawan, KEY } from "../services/finance/posting/penjualanKaryawan.js";
+import { postPenjualanKaryawan, postPembayaranPenjualanKaryawan, entriPenjualanAktif, KEY } from "../services/finance/posting/penjualanKaryawan.js";
 import { tanggalCutoff, sebelumCutoff, tampilCutoff } from "../services/finance/cutoff.js";
 import { RECEIPTS_URL_PREFIX } from "../services/finance/receipts.js";
 import { penjualanInclude, bentukPenjualan, hitungItems, ambilDaftar, ringkasanPerKaryawan } from "../services/finance/penjualanKaryawanManual.js";
@@ -32,6 +32,9 @@ import { lockRowForUpdate } from "../services/inventoryLedger.js";
 import { buatAtauTautkanOrder, lengkapiSpesifikasi, batalkanOrderBersamaPkr, rapikanAgregatCustomer, ringkasOrderPkr, dryRunPkrTanpaOrder } from "../services/penjualanKaryawanOrder.js";
 import { muatKatalogItem, pratinjauItems, buatKategori, ubahKategori, buatProduk, ubahProduk, simpanKomposisi } from "../services/penjualanKaryawanItem.js";
 import { pratinjauKoreksi, terapkanKoreksi } from "../services/penjualanKaryawanKoreksi.js";
+import { siapkanTerpadu, tulisBarisPenjualan, pratinjauTerpadu } from "../services/penjualanKaryawanTerpadu.js";
+import { pratinjauKoreksiBaris, terapkanKoreksiBaris } from "../services/penjualanKaryawanKoreksiBaris.js";
+import { adaModeTerpadu } from "../lib/domain/pkrPenjualanItem.js";
 
 export const financePenjualanKaryawanRouter = express.Router();
 const BASE = "/penjualan-karyawan";
@@ -160,6 +163,9 @@ financePenjualanKaryawanRouter.put(`${BASE}/katalog-item/komposisi`, requirePerm
 financePenjualanKaryawanRouter.post(`${BASE}/order-crm/pratinjau`, requirePermission(P.FINANCE_POST), async (req, res) => {
   try {
     const o = req.body?.orderCrm ?? req.body?.spesifikasi ?? {};
+    if (adaModeTerpadu(req.body?.items)) {
+      return res.json(await pratinjauTerpadu(prisma, { penjualanId: req.body?.penjualanId || null, items: req.body.items, alamat: typeof o.alamat === "string" && o.alamat.trim() ? o.alamat.trim() : null }));
+    }
     res.json(await pratinjauItems(prisma, { penjualanId: req.body?.penjualanId || null, items: o.items, alamat: typeof o.alamat === "string" && o.alamat.trim() ? o.alamat.trim() : null }));
   } catch (e) { handleFinanceError(e, res); }
 });
@@ -185,6 +191,28 @@ financePenjualanKaryawanRouter.post(`${BASE}/:id/koreksi-item`, requirePermissio
   } catch (e) { handleFinanceError(e, res); }
 });
 
+// ─── KOREKSI BARIS PENJUALAN (Finance + operasional ATOMIK; PKR terpadu) ───────────────────────────────────────────────
+// Mengubah jumlah/harga/ukuran/spesifikasi/kirim, menambah, atau menghapus baris — total, jurnal, item operasional, dan unit berubah dalam SATU transaksi. Setelah Produksi/Delivery berjalan
+// hanya HARGA yang boleh berubah; sisanya diblokir dengan arahan pembatalan resmi. Dampak memuat harga: dijaga izin Finance (FINANCE_POST), sama seperti pencatatan.
+financePenjualanKaryawanRouter.post(`${BASE}/:id/koreksi-baris/pratinjau`, requirePermission(P.FINANCE_POST), async (req, res) => {
+  try {
+    res.json(await pratinjauKoreksiBaris(prisma, { penjualanId: req.params.id, operasi: req.body?.operasi, expectedRevision: req.body?.expectedRevision ?? null }));
+  } catch (e) { handleFinanceError(e, res); }
+});
+
+financePenjualanKaryawanRouter.post(`${BASE}/:id/koreksi-baris`, requirePermission(P.FINANCE_POST), async (req, res) => {
+  try {
+    const hasil = await prisma.$transaction((tx) => terapkanKoreksiBaris(tx, {
+      penjualanId: req.params.id, operasi: req.body?.operasi, expectedRevision: req.body?.expectedRevision, alasan: req.body?.alasan,
+      idempotencyKey: req.headers["idempotency-key"], userId: req.user.id,
+    }), { timeout: 30000, maxWait: 10000 });
+    if (!hasil.replayed) await rapikanAgregatCustomer(hasil.customerId);
+    const lengkap = await prisma.finPenjualanKaryawan.findUnique({ where: { id: req.params.id }, include: penjualanInclude });
+    const sinkron = await ringkasOrderPkr(prisma, [req.params.id]);
+    res.status(hasil.replayed ? 200 : 201).json({ ...hasil, penjualan: bentukPenjualan(lengkap), sinkron: sinkron.get(req.params.id) ?? null });
+  } catch (e) { handleFinanceError(e, res); }
+});
+
 financePenjualanKaryawanRouter.get(`${BASE}/:id`, requirePermission(P.FINANCE_READ), async (req, res) => {
   try {
     const p = await prisma.finPenjualanKaryawan.findUnique({ where: { id: req.params.id }, include: penjualanInclude });
@@ -201,7 +229,10 @@ financePenjualanKaryawanRouter.post(BASE, requirePermission(P.FINANCE_POST), asy
     const pembeli = String(buyerName ?? "").trim().replace(/\s+/g, " ");
     if (pembeli.length < 2) throw err("Nama pembeli wajib diisi");
     if (!sellerId) throw err("Karyawan penjual wajib dipilih");
-    const { items: baris, total } = hitungItems(items, err);
+    // Jalur TERPADU (satu daftar item = penjualan + pemenuhan) atau jalur LAMA (item uang saja + orderCrm terpisah). Tidak boleh dicampur.
+    const terpadu = adaModeTerpadu(items);
+    if (terpadu && req.body?.orderCrm?.items !== undefined) throw Object.assign(err("Daftar item sudah mencakup pemenuhan — jangan kirim orderCrm.items lagi (input ganda)"), { code: "INPUT_GANDA" });
+    const { items: baris, total } = terpadu ? { items: [], total: null } : hitungItems(items, err);
     const bayar = pembayaran == null ? [] : pembayaran;
     if (!Array.isArray(bayar) || bayar.length > 10) throw err("Daftar pembayaran awal tidak valid (maksimal 10)");
 
@@ -209,20 +240,29 @@ financePenjualanKaryawanRouter.post(BASE, requirePermission(P.FINANCE_POST), asy
       const seller = await pastikanKaryawanNonSales(tx, sellerId);
       const tanggal = tanggalBuku(date, "Tanggal penjualan");
       const id = randomUUID();
+      // Terpadu: item disiapkan di DALAM transaksi (katalog dibaca konsisten); total dari baris yang sama dengan item operasional.
+      const s = terpadu ? await siapkanTerpadu(tx, items) : null;
+      const totalDok = terpadu ? s.total : total;
       await tx.finPenjualanKaryawan.create({
         data: {
           id, nomor: await generateDocumentNumber(tx, "PKR", tanggal), date: tanggal, sellerId: seller.id, buyerName: pembeli.slice(0, 200),
-          notes: notes?.trim() || null, total, createdById: req.user.id,
-          items: { create: baris.map((b) => ({ name: b.name, quantity: b.quantity, unitPrice: b.unitPrice, sortOrder: b.sortOrder })) },
+          notes: notes?.trim() || null, total: totalDok, createdById: req.user.id,
+          ...(!terpadu && { items: { create: baris.map((b) => ({ name: b.name, quantity: b.quantity, unitPrice: b.unitPrice, sortOrder: b.sortOrder })) } }),
         },
       });
+      if (terpadu) await tulisBarisPenjualan(tx, id, s.baris);
       await postPenjualanKaryawan(tx, { penjualanId: id, userId: req.user.id });
       await recordActivity(tx, {
         entityType: ENTITY_TYPES.FIN_PENJUALAN_KARYAWAN, entityId: id, eventType: EVENT_TYPES.DOCUMENT_POSTED, actorId: req.user.id,
-        metadata: { aksi: "dicatat", seller: seller.name, buyerName: pembeli, total: String(total), jumlahItem: baris.length },
+        metadata: { aksi: "dicatat", seller: seller.name, buyerName: pembeli, total: String(totalDok), jumlahItem: terpadu ? s.baris.length : baris.length, ...(terpadu && { terpadu: true }) },
       });
       // PKR aktif = "disetujui" (tidak ada langkah persetujuan terpisah): lahirkan SATU order CRM operasional (+ unit) di transaksi yang sama. Gagal di mana pun = PKR, jurnal, dan order batal bersama.
-      await buatAtauTautkanOrder(tx, { penjualanId: id, userId: req.user.id, spesifikasi: req.body?.orderCrm, sumber: "dibuat" });
+      if (!terpadu) await buatAtauTautkanOrder(tx, { penjualanId: id, userId: req.user.id, spesifikasi: req.body?.orderCrm, sumber: "dibuat" });
+      else if (s.opItems.length) {
+        // Hanya alamat/kota/tanggal kirim dari orderCrm; daftar item operasional = turunan baris penjualan yang sama. Tanpa item Produksi/Pickup, Order CRM tidak dibuat.
+        const { alamat, kota, tanggalKirim } = req.body?.orderCrm ?? {};
+        await buatAtauTautkanOrder(tx, { penjualanId: id, userId: req.user.id, spesifikasi: { alamat, kota, tanggalKirim }, sumber: "dibuat", itemsSiap: s.opItems, nonProduksi: s.nonProduksi });
+      }
       for (const b of bayar) await catatPembayaran(tx, id, b, req.user.id);
       return id;
     }, { timeout: 30000, maxWait: 10000 });
@@ -301,7 +341,7 @@ financePenjualanKaryawanRouter.post(`${BASE}/:id/batal`, requirePermission(P.FIN
       if (p.payments.length > 0) throw err("Penjualan ini sudah ada pembayarannya — batalkan pembayarannya dulu", 409);
       // Order CRM: belum diproses → ikut dibatalkan lewat jalur baku (unit CANCELLED, job dibatalkan, riwayat tetap). Produksi/Delivery sudah berjalan → pembatalan DIBLOKIR (409), tidak ada yang berubah.
       customerOrder = await batalkanOrderBersamaPkr(tx, { penjualanId: p.id, userId: req.user.id, alasan: reason });
-      const entry = await findEntryByKey(tx, KEY.penjualan(p.id));
+      const entry = await entriPenjualanAktif(tx, p.id); // jurnal asli, atau pengganti terakhir bila nilai pernah dikoreksi
       if (entry && entry.status === "POSTED") {
         await reverseJournal(tx, { entryId: entry.id, reason: `Penjualan karyawan ${p.nomor} dibatalkan — ${reason}`, userId: req.user.id });
       }
