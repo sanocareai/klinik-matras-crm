@@ -180,11 +180,13 @@ test("bukan touch: pesan biasa, iklan TANPA sourceID (URL postingan saja), sourc
   assert.equal(await touchCount() - sebelum, 0);
 });
 
-test("kegagalan atribusi TIDAK menggagalkan inbox: Message + Customer tetap tersimpan, kegagalan tercatat terpisah", async () => {
-  const asli = prisma.attributionTouch.create;
-  prisma.attributionTouch.create = async () => { throw Object.assign(new Error("simulasi gagal 6285200000008"), { code: "P1001" }); };
+test("DB MENOLAK insert touch (di dalam transaksi pesan): Message + Customer tetap commit; hanya hitungan `gagal` naik; log tanpa nomor", async () => {
+  await tenang();
   _resetTouchStats();
+  await testPrisma.$executeRawUnsafe(`CREATE OR REPLACE FUNCTION atribusi_uji_tolak() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'tolak uji 6285200000008 isi chat rahasia'; END; $$ LANGUAGE plpgsql`);
+  await testPrisma.$executeRawUnsafe(`CREATE TRIGGER atribusi_uji_tolak BEFORE INSERT ON attribution_touches FOR EACH ROW EXECUTE FUNCTION atribusi_uji_tolak()`);
   const warn = console.warn; const log = []; console.warn = (...a) => log.push(a.join(" "));
+  const sebelum = await touchCount();
   try {
     const PH = "6285200000008";
     const p = gows({ phone: PH, msgId: "3EB0ATR00008", ad: AD1 });
@@ -193,8 +195,72 @@ test("kegagalan atribusi TIDAK menggagalkan inbox: Message + Customer tetap ters
     assert.ok(await settle(async () => _getTouchStats().gagal === 1));
     assert.equal(await testPrisma.customer.count({ where: { phone: PH } }), 1);
     assert.equal(await testPrisma.conversation.count({ where: { customer: { phone: PH } } }), 1);
-    assert.ok(log.every((l) => !l.includes("6285200000008")), "log tidak memuat nomor/pesan galat");
-  } finally { console.warn = warn; prisma.attributionTouch.create = asli; }
+    assert.equal(await touchCount(), sebelum, "tidak ada touch tertulis");
+    assert.equal(_getTouchStats().fallbackTransaksi, 0, "transaksi tetap sehat: savepoint dipulihkan, bukan fallback");
+    assert.ok(log.length >= 1 && log.every((l) => !/6285200000008|rahasia/.test(l)), "log hanya kode, tanpa nomor/pesan galat");
+    // pesan berikutnya pada customer yang sama (trigger dilepas) berjalan normal
+    await testPrisma.$executeRawUnsafe("DROP TRIGGER atribusi_uji_tolak ON attribution_touches");
+    const p2 = gows({ phone: PH, msgId: "3EB0ATR00008B", ad: AD1 });
+    await post("message", p2);
+    assert.ok(await settle(async () => (await touchCount()) === sebelum + 1));
+  } finally {
+    console.warn = warn;
+    await testPrisma.$executeRawUnsafe("DROP TRIGGER IF EXISTS atribusi_uji_tolak ON attribution_touches");
+    await testPrisma.$executeRawUnsafe("DROP FUNCTION IF EXISTS atribusi_uji_tolak()");
+  }
+});
+
+test("transaksi pesan bermasalah (P2028): Message disimpan tanpa transaksi, touch DIPULIHKAN sekali; penghitung fallback/dipulihkan naik", async () => {
+  await tenang();
+  _resetTouchStats();
+  const asli = prisma.$transaction.bind(prisma);
+  let ditolak = 0;
+  prisma.$transaction = (fn, o) => {
+    if (typeof fn === "function" && ditolak === 0) { ditolak++; return Promise.reject(Object.assign(new Error("Transaction API error 6285200000009"), { code: "P2028" })); }
+    return asli(fn, o);
+  };
+  const sebelum = await touchCount();
+  try {
+    const PH = "6285200000009";
+    const p = gows({ phone: PH, msgId: "3EB0ATR00009", ad: AD2 });
+    await post("message", p);
+    assert.ok(await settle(async () => (await msgCount(p.id)) === 1), "Message tersimpan walau transaksi bermasalah");
+    assert.ok(await settle(async () => (await touchCount()) === sebelum + 1), "touch dipulihkan lewat percobaan susulan");
+    await tenang();
+    assert.equal(await touchCount(), sebelum + 1, "tepat satu");
+    const s = _getTouchStats();
+    assert.deepEqual([s.fallbackTransaksi, s.dipulihkan, s.gagalPulih, s.tertunda], [1, 1, 0, 0]);
+    const [t] = await testPrisma.attributionTouch.findMany({ where: { customer: { phone: PH } } });
+    assert.equal(t.adId, AD2);
+    assert.equal(t.customerNewAtTouch, true);
+  } finally { prisma.$transaction = asli; }
+});
+
+test("transaksi bermasalah DAN percobaan susulan gagal: inbox tetap tersimpan; gagalPulih tercatat; tidak ada yang tertunda", async () => {
+  await tenang();
+  _resetTouchStats();
+  const asliTx = prisma.$transaction.bind(prisma);
+  const asliCreate = prisma.attributionTouch.create.bind(prisma.attributionTouch);
+  let ditolak = 0;
+  prisma.$transaction = (fn, o) => {
+    if (typeof fn === "function" && ditolak === 0) { ditolak++; return Promise.reject(Object.assign(new Error("tx"), { code: "P2034" })); }
+    return asliTx(fn, o);
+  };
+  prisma.attributionTouch.create = async () => { throw Object.assign(new Error("gagal 6285200000010"), { code: "P1001" }); };
+  const sebelum = await touchCount();
+  const warn = console.warn; const log = []; console.warn = (...a) => log.push(a.join(" "));
+  try {
+    const PH = "6285200000010";
+    const p = gows({ phone: PH, msgId: "3EB0ATR00010", ad: AD1 });
+    await post("message", p);
+    assert.ok(await settle(async () => (await msgCount(p.id)) === 1));
+    assert.ok(await settle(async () => _getTouchStats().gagalPulih === 1));
+    const s = _getTouchStats();
+    assert.deepEqual([s.fallbackTransaksi, s.dipulihkan, s.tertunda], [1, 0, 0]);
+    assert.ok(s.terakhirGagalAt, "waktu kegagalan terakhir tercatat");
+    assert.equal(await touchCount(), sebelum);
+    assert.ok(log.every((l) => !/6285200000010/.test(l)));
+  } finally { console.warn = warn; prisma.$transaction = asliTx; prisma.attributionTouch.create = asliCreate; }
 });
 
 test("constraint DB: Ad ID bukan digit, pemetaan tidak konsisten, tanggal WIB tidak cocok, sumber tak dikenal → ditolak", async () => {
@@ -342,6 +408,11 @@ test("laporan end-to-end per CAMPAIGN: lead, spam, closing, dua jenis lunas, uan
   assert.equal(g1.lunasTerbuktiLedger.jumlah, 2);
   assert.deepEqual(g1.buktiPelunasan, { lunasTerbuktiLedger: 2, lunasTanpaLedger: 0, konflikLunasTersimpanLedgerTidakCukup: 0, konflikBelumLunasTersimpanLedgerCukup: 0, kekuranganRupiahKonflik: 0 });
   assert.equal(g1.uangLedger, M(4) + M(2) + 750_000, "payment 500 rb yang DIBATALKAN tidak dihitung; pengganti 750 rb dihitung");
+  // closing UTAMA = customer dengan order lunas terbukti ledger: C1 (DP Sep + pelunasan Okt) dan C2 (O2); O3 (DP) belum; C5 spam dikecualikan
+  assert.equal(g1.closingUtama.customerLunasTerbuktiLedger, 2);
+  assert.equal(g1.closingUtama.orderLunasTerbuktiLedger, 2);
+  assert.deepEqual(g1.closingUtama.perBulanLunasPertama, { "2026-10": 2 }, "C1 lunas saat pelunasan 5 Okt (bukan DP 30 Sep); C2 lunas 1 Okt");
+  assert.equal(g1.customerDenganOrder, 2, "metrik terpisah: customer dengan order");
   // tiga tanggal dipisah
   assert.equal(g1.rincian.perBulanPembayaran["2026-09"].uangLedger, M(1), "DP O1 pada September");
   assert.equal(g1.rincian.perBulanPembayaran["2026-10"].uangLedger, M(3) + M(2) + 750_000, "pelunasan O1 + O2 + pengganti O3 pada Oktober");
@@ -358,6 +429,7 @@ test("laporan end-to-end per CAMPAIGN: lead, spam, closing, dua jenis lunas, uan
   assert.equal(g3.lunasTerbuktiLedger.jumlah, 0, "LUNAS historis tanpa ledger BUKAN lunas terbukti");
   assert.equal(g3.buktiPelunasan.lunasTanpaLedger, 1);
   assert.equal(g3.uangLedger, 0, "tanpa payment = tidak ada uang diterima");
+  assert.equal(g3.closingUtama.customerLunasTerbuktiLedger, 0, "LUNAS historis tanpa ledger BUKAN closing utama");
 
   const g2 = kunci(j, CAMP2);       // C8
   assert.equal(g2.lead.unik, 1);
@@ -366,6 +438,7 @@ test("laporan end-to-end per CAMPAIGN: lead, spam, closing, dua jenis lunas, uan
   assert.equal(g2.buktiPelunasan.konflikLunasTersimpanLedgerTidakCukup, 1);
   assert.equal(g2.buktiPelunasan.kekuranganRupiahKonflik, 200_000);
   assert.equal(g2.uangLedger, M(2));
+  assert.equal(g2.closingUtama.customerLunasTerbuktiLedger, 0, "LUNAS CRM dengan ledger kurang BUKAN closing utama");
   assert.equal(g2.bookedValue, M(2), "booked = Order.value (tanpa ongkir)");
 
   const u = kunci(j, "UNMAPPED");   // C4
@@ -462,15 +535,38 @@ test("transaksi laporan dipaksa READ ONLY oleh Postgres: penulisan pada transaks
   assert.equal(await testPrisma.customer.count({ where: { name: "Tidak Boleh Tertulis" } }), 0);
 });
 
-test("sinyal: AD_REPLY_UNMARKED direkam tetapi hanya masuk laporan bila sinyal=SEMUA", async () => {
+test("AD_REPLY_UNMARKED hanya AUDIT: direkam, muncul di blok audit, TIDAK menambah lead/closing; sinyal=SEMUA ditolak", async () => {
+  const sebelum = await api("GET", `/?${P}&level=campaign`);
   const c = await testPrisma.customer.create({ data: { name: "Pelanggan Uji", phone: "6285300000099", createdAt: T("2026-10-08T03:00:00Z"), leadSource: "META_ADS" } });
   await testPrisma.attributionTouch.create({ data: {
     customerId: c.id, adId: AD3, touchAt: T("2026-10-08T03:01:00Z"), touchDateWib: T("2026-10-08T00:00:00Z"), mappingStatusAtTouch: "UNMAPPED",
     evidenceSource: "AD_REPLY_UNMARKED", sourceType: "ad", customerNewAtTouch: true, dedupeKey: "uji:unmarked-1",
   } });
-  const biasa = await api("GET", `/?${P}&level=campaign`);
-  const semua = await api("GET", `/?${P}&level=campaign&sinyal=SEMUA`);
-  assert.equal(semua.json.jumlahTeratribusi.leadUnik - biasa.json.jumlahTeratribusi.leadUnik, 1);
-  assert.equal(biasa.json.atribusi.sinyalDipakai.join(), "CTWA_AD");
-  assert.equal(semua.json.rekonsiliasi.ok, true);
+  const sesudah = await api("GET", `/?${P}&level=campaign`);
+  assert.deepEqual(sesudah.json.jumlahTeratribusi, sebelum.json.jumlahTeratribusi, "audit tidak mengubah angka atribusi");
+  assert.equal(sesudah.json.atribusi.sinyalDipakai.join(), "CTWA_AD");
+  assert.deepEqual(sesudah.json.audit.adReplyTanpaPenanda, {
+    touch: 1, customerUnik: 1, padaCustomerBaru: 1, masukAtribusi: false, keterangan: sesudah.json.audit.adReplyTanpaPenanda.keterangan,
+  });
+  assert.equal(sesudah.json.cakupan.denganTouchAkuisisi, sebelum.json.cakupan.denganTouchAkuisisi, "customer ini tanpa touch CTWA → tetap 'tanpa touch'");
+  assert.equal(sesudah.json.rekonsiliasi.ok, true);
+  assert.equal((await api("GET", `/?${P}&level=campaign&sinyal=SEMUA`)).status, 400);
+});
+
+test("rentang tanggal WAJIB dan dibatasi 93 hari; /kesehatan: agregat tanpa identitas (rekam, gagal, dipulihkan, pending pemetaan + usia)", async () => {
+  assert.equal((await api("GET", "/")).status, 400, "tanpa dari/sampai");
+  assert.equal((await api("GET", "/?dari=2026-10-01")).status, 400);
+  assert.equal((await api("GET", "/?dari=2026-06-01&sampai=2026-10-10")).status, 400, "lebih dari 93 hari");
+  const h = await api("GET", "/kesehatan");
+  assert.equal(h.status, 200);
+  assert.equal(h.headers.get("cache-control"), "no-store");
+  assert.equal(h.json.captureAktif, true);
+  for (const k of ["direkam", "duplikat", "bukanTouch", "gagal", "fallbackTransaksi", "dipulihkan", "gagalPulih", "tertunda", "usiaTertundaTertuaDetik"]) assert.equal(typeof h.json.proses[k], "number", k);
+  assert.ok(h.json.db.touchTotal >= 1);
+  assert.equal(typeof h.json.db.pendingPemetaan.touch, "number");
+  assert.ok(h.json.db.auditAdReplyTanpaPenanda >= 1);
+  for (const s of ["6285", "Pelanggan", CLID, TEXT_CANARY]) assert.ok(!h.teks.includes(s), `bocor: ${s}`);
+  assert.ok(!/"(phone|name|customerId|messageId)"\s*:/.test(h.teks));
+  assert.equal((await api("GET", "/kesehatan", { token: tokenSales })).status, 403);
+  assert.equal((await api("GET", "/kesehatan", { token: null })).status, 401);
 });

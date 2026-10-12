@@ -1,6 +1,7 @@
 // /api/atribusi/iklan — Fase 2 atribusi CTWA: laporan lead & closing per campaign/ad set/ad, referensi pemetaan Ad ID, ekspor ID. HANYA ADMIN.
 //
-//   GET  /                 ?dari=YYYY-MM-DD&sampai=YYYY-MM-DD&level=campaign|adset|ad&sinyal=CTWA_AD|SEMUA&rincian=0|1   (baca-saja, transaksi READ ONLY)
+//   GET  /                 ?dari=YYYY-MM-DD&sampai=YYYY-MM-DD (WAJIB, maks 93 hari)&level=campaign|adset|ad&rincian=0|1   (baca-saja, transaksi READ ONLY; atribusi utama = CTWA_AD)
+//   GET  /kesehatan        agregat kesehatan capture touch (rekam/gagal/dipulihkan/pending + usia); tanpa identitas (baca-saja)
 //   GET  /referensi        daftar referensi Ad→AdSet→Campaign + Ad ID yang belum terpetakan (baca-saja)
 //   POST /referensi        impor pemetaan tervalidasi dari ekspor Ads Manager. dryRun DEFAULT true. Menulis HANYA ke meta_ad_references/_imports.
 //   GET  /ekspor-id        ?format=json|csv  — satu baris per Ad ID (tanpa data customer) untuk join dengan data spend (Windsor)
@@ -10,6 +11,7 @@ import express from "express";
 import { prisma } from "../db.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
 import { parseParameterIklan, hitungLaporanIklan, eksporIdIklan, ParameterError } from "../services/attribution/iklanReport.js";
+import { hitungKesehatanCapture } from "../services/attribution/captureHealth.js";
 import { barisDariCsv, jalankanImpor, sidikJari, MAKS_BARIS_IMPOR } from "../services/attribution/adReferensi.js";
 
 export const attributionAdsRouter = express.Router();
@@ -35,6 +37,17 @@ attributionAdsRouter.get("/", async (req, res) => {
     return res.status(500).json({ error: "Gagal menghitung laporan atribusi iklan" });
   } finally {
     sedangBerjalan = false;
+  }
+});
+
+attributionAdsRouter.get("/kesehatan", async (_req, res) => {
+  try {
+    const hasil = await hitungKesehatanCapture(prisma);
+    res.set("Cache-Control", "no-store");
+    return res.json(hasil);
+  } catch (err) {
+    console.error("atribusi/iklan/kesehatan error:", err?.code || err?.name || "ERROR");
+    return res.status(500).json({ error: "Gagal memuat kesehatan capture" });
   }
 });
 

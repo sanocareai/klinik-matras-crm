@@ -22,7 +22,7 @@ import { idPesanInti } from "../utils/idPesanWa.js";
 import { cariPesanSudahAda } from "../utils/cariPesanSudahAda.js";
 import { fieldPosterVideo } from "../utils/videoThumb.js";
 import { captureInbound } from "../services/ctwaCapture.js";
-import { rekamTouch } from "../services/attribution/touchCapture.js";
+import { siapkanTouch, simpanPesanDenganTouch } from "../services/attribution/touchCapture.js";
 
 export const webhookRouter = express.Router();
 
@@ -780,26 +780,36 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
     if (!mediaUrl) console.warn("[webhook] Tidak bisa download media untuk id:", externalId, "tipe:", mediaType, "— simpan placeholder:", content);
   }
 
+  // ATRIBUSI FASE 2 — rencana touch iklan (sinkron, tanpa I/O, tidak pernah melempar; null bila flag MATI / bukan sinyal iklan valid).
+  // Touch ditulis ATOMIK bersama Message di bawah: Ad ID hanya ada di payload ini, jadi harus ikut commit dengan pesan (lihat touchCapture.js).
+  const rencanaTouch = siapkanTouch({ payload, event, engine, externalId });
+
   // Simpan pesan — P2002 berarti request concurrent sudah simpan duluan, skip saja
   let inboundMsg;
   try {
     const replyToId = await resolveReplyToId(parsedMedia.quotedExternalId, conversation.id);
-    inboundMsg = await prisma.message.create({
-      data: {
-        conversationId: conversation.id,
-        direction:      "INBOUND",
-        content,
-        mediaType,
-        mediaUrl,
-        externalId,
-        rawType: parsedMedia.rawType || null,
-        replyToId,
-        ...(await fieldPosterVideo(uploadsDir, mediaUrl, mediaType)),
-      },
-      // include replyTo — lihat catatan sama di handleGroupMessage: tanpa ini
-      // efek kutipan cuma muncul setelah reload, bukan live via Socket.IO.
-      include: { replyTo: { select: { id: true, content: true, direction: true, mediaType: true, isRevoked: true } } },
-    });
+    const posterVideo = await fieldPosterVideo(uploadsDir, mediaUrl, mediaType);
+    ({ message: inboundMsg } = await simpanPesanDenganTouch(prisma, {
+      rencana: rencanaTouch,
+      customer,
+      customerSudahAda: !!existingCustomer,
+      buatPesan: (client) => client.message.create({
+        data: {
+          conversationId: conversation.id,
+          direction:      "INBOUND",
+          content,
+          mediaType,
+          mediaUrl,
+          externalId,
+          rawType: parsedMedia.rawType || null,
+          replyToId,
+          ...posterVideo,
+        },
+        // include replyTo — lihat catatan sama di handleGroupMessage: tanpa ini
+        // efek kutipan cuma muncul setelah reload, bukan live via Socket.IO.
+        include: { replyTo: { select: { id: true, content: true, direction: true, mediaType: true, isRevoked: true } } },
+      }),
+    }));
   } catch (e) {
     if (e.code !== "P2002") throw e;
     return "skip-dupe";
@@ -814,12 +824,6 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
   try {
     captureInbound({ payload, event, engine, externalId, isNewCustomer: !existingCustomer });
   } catch { /* observasi bukan jalur kritis */ }
-
-  // ATRIBUSI FASE 2: touch iklan (customer.id + message.id sudah ada di sini). Flag ATRIBUSI_TOUCH_CAPTURE_ENABLED (default MATI); idempoten lewat
-  // kunci dedupe per pesan; TIDAK di-await dan tidak pernah melempar — kegagalan atribusi tidak boleh menggagalkan inbox.
-  try {
-    rekamTouch(prisma, { payload, event, engine, externalId, customer, message: inboundMsg, isNewCustomer: !existingCustomer }).catch(() => {});
-  } catch { /* atribusi bukan jalur kritis */ }
 
   // Pesan masuk baru → unread=true (badge sidebar lama) + unreadCount+1 (badge baru)
   // + isRead=false (belum dibuka lagi)

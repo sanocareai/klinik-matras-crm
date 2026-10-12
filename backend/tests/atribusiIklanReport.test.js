@@ -101,6 +101,69 @@ test("dua jenis lunas dan uang terpisah: LUNAS historis tanpa ledger bukan uang 
   assert.equal(c1.cakupanLedger.persenOrderBerLedger, 50);
 });
 
+test("CLOSING UTAMA = customer dengan order lunas terbukti ledger; terpisah dari customer dengan order, DP, dan lunas menurut CRM", () => {
+  const lap = laporan("campaign");
+  const c1 = grupDari(lap, "52694481763084");
+  // A1 (O1: DP 1 jt lalu pelunasan 3 jt) dan A2 (O2 2 jt) closing; A3 hanya LUNAS historis tanpa ledger → BUKAN closing; A5 spam dikecualikan
+  assert.equal(c1.closingUtama.customerLunasTerbuktiLedger, 2);
+  assert.equal(c1.closingUtama.orderLunasTerbuktiLedger, 2);
+  assert.equal(c1.closingUtama.persenDariLeadSah, 50, "2 dari 4 lead sah");
+  assert.deepEqual(c1.closingUtama.perBulanLunasPertama, { "2026-10": 1, "2026-11": 1 }, "A2 lunas Okt; A1 lunas pada pelunasan 2 Nov");
+  // metrik lain tetap terpisah dan nilainya berbeda dari closing utama
+  assert.equal(c1.customerDenganOrder, 3);
+  assert.equal(c1.lunasMenurutCrm.jumlah, 3);
+  assert.equal(c1.orderPernahDp, 1);
+  assert.notEqual(c1.closingUtama.customerLunasTerbuktiLedger, c1.customerDenganOrder);
+  // total = Σ grup (customer tidak dihitung ganda) dan dibuktikan oleh rekonsiliasi
+  const total = lap.jumlahTeratribusi.closingUtama;
+  assert.equal(total.customerLunasTerbuktiLedger, lap.grup.reduce((s, g) => s + g.closingUtama.customerLunasTerbuktiLedger, 0));
+  assert.equal(total.orderLunasTerbuktiLedger, lap.jumlahTeratribusi.lunasTerbuktiLedger);
+  for (const id of ["closing_utama_grup_vs_total", "closing_utama_order_vs_kohort", "closing_utama_tidak_melebihi_customer_order"]) {
+    assert.equal(lap.rekonsiliasi.cek.find((c) => c.id === id)?.ok, true, id);
+  }
+  assert.ok(lap.definisi.some((d) => d.id === "closing_utama"));
+  // penyebut CPA kelak = closing utama; tetap null
+  assert.equal(lap.biaya.penyebutCpa, "closingUtama.customerLunasTerbuktiLedger");
+  assert.deepEqual([lap.biaya.cpa, lap.biaya.roas], [null, null]);
+});
+
+test("closing utama TIDAK menghitung: customer spam, order PENDING/CANCELLED, DP sebagian, dan LUNAS-CRM tanpa ledger", () => {
+  const cs = [cust("Z1", "2026-10-05T03:00:00Z"), cust("Z2", "2026-10-05T04:00:00Z"), cust("Z3", "2026-10-05T05:00:00Z"), cust("Z4", "2026-10-05T06:00:00Z", { pipelineStage: "SPAM" }), cust("Z5", "2026-10-05T07:00:00Z")];
+  const os = [
+    ord("OZ1", "Z1", "2026-10-06T03:00:00Z", M(2), { status: "PENDING" }),
+    ord("OZ2", "Z2", "2026-10-06T03:00:00Z", M(2), { status: "CANCELLED" }),
+    ord("OZ3", "Z3", "2026-10-06T03:00:00Z", M(2)),                                         // DP 1 jt saja
+    ord("OZ4", "Z4", "2026-10-06T03:00:00Z", M(2)),                                         // spam, dibayar penuh
+    ord("OZ5", "Z5", "2026-10-06T03:00:00Z", M(2), { paymentStatus: "LUNAS", paidAt: D("2026-10-06T05:00:00Z") }),   // LUNAS CRM tanpa ledger
+  ];
+  const ks = [pay("PZ1", "OZ1", "2026-10-06T04:00:00Z", M(2)), pay("PZ2", "OZ2", "2026-10-06T04:00:00Z", M(2)), pay("PZ3", "OZ3", "2026-10-06T04:00:00Z", M(1)), pay("PZ4", "OZ4", "2026-10-06T04:00:00Z", M(2))];
+  const lap = susunLaporanIklan({
+    parameter: { dari: "2026-10-01", sampai: "2026-10-13", level: "campaign", sinyal: "CTWA_AD", rincian: false },
+    asOf: D("2026-11-20T00:00:00Z"), leadBaru: cs,
+    touchAkuisisi: cs.map((c, i) => touch("TZ" + i, c.id, AD1, "2026-10-05T0" + (i + 3) + ":05:00Z")), touchLain: [], referensi: REF,
+    masukan: { customers: cs, orders: os, kontribusi: ks, refunds: [] }, mulaiAtribusiAt: D("2026-10-05T03:05:00Z"),
+  });
+  const g = lap.grup[0];
+  assert.equal(g.closingUtama.customerLunasTerbuktiLedger, 0);
+  assert.equal(g.lunasMenurutCrm.jumlah, 1, "LUNAS CRM tetap tercatat terpisah");
+  assert.equal(g.orderPernahDp, 1);
+  assert.equal(lap.rekonsiliasi.ok, true, JSON.stringify(lap.rekonsiliasi.cek.filter((c) => !c.ok)));
+});
+
+test("AD_REPLY_UNMARKED hanya AUDIT: tidak ada di grup/lead/closing; blok audit dan batasan menyatakannya", () => {
+  const lap = susunLaporanIklan({
+    parameter: { dari: "2026-10-01", sampai: "2026-10-13", level: "campaign", sinyal: "CTWA_AD", rincian: false },
+    asOf: D("2026-11-20T00:00:00Z"), leadBaru: customersRentang, touchAkuisisi, touchLain, referensi: REF,
+    masukan: { customers: customersAtribusi, orders, kontribusi, refunds: [] }, mulaiAtribusiAt: D("2026-10-05T03:05:00Z"),
+    audit: { touch: 3, customerUnik: 2, padaCustomerBaru: 1 },
+  });
+  assert.deepEqual(lap.atribusi.sinyalDipakai, ["CTWA_AD"]);
+  assert.equal(lap.audit.adReplyTanpaPenanda.touch, 3);
+  assert.equal(lap.audit.adReplyTanpaPenanda.masukAtribusi, false);
+  assert.equal(lap.jumlahTeratribusi.leadUnik, 7, "audit tidak menambah lead");
+  assert.ok(lap.batasan.some((b) => /AD_REPLY_UNMARKED hanya audit/.test(b)));
+});
+
 test("tiga tanggal dipisah di `rincian`: lead Okt; order Okt; pembayaran Okt (1 jt) dan Nov (3 jt)", () => {
   const c1 = grupDari(laporan("campaign", { rincian: true }), "52694481763084");
   assert.deepEqual(Object.keys(c1.rincian.perBulanLead), ["2026-10"]);
@@ -125,6 +188,8 @@ test("kematangan 7/30/60: hanya lead berumur ≥ N hari; hasil DALAM N hari; led
   assert.equal(k.hari30.lunasTerbuktiLedger, 2);
   assert.equal(k.hari7.lunasTerbuktiLedger, 1, "hanya O2; O1 baru lunas 28 hari kemudian");
   assert.equal(k.hari7.lunasMenurutCrm, 2, "O2 dan O4 (paidAt tercatat dalam 7 hari); O1 paidAt 2 Nov di luar jendela");
+  assert.equal(k.hari7.customerLunasTerbuktiLedger, 1, "closing utama dalam 7 hari: hanya A2");
+  assert.equal(k.hari30.customerLunasTerbuktiLedger, 2, "A1 dan A2 dalam 30 hari");
 });
 
 test("UNMAPPED: Ad ID tanpa referensi → campaign/ad set null, status UNMAPPED, daftar Ad ID terlihat; tidak ditebak", () => {
@@ -215,13 +280,21 @@ test("respons tidak memuat pengenal: tanpa customerId, order id, nomor, atau kun
   assert.ok(!/"(phone|name|customerId|orderId|ctwaClid)"\s*:/.test(teks));
 });
 
-test("parameter: default 30 hari WIB; validasi tanggal, level, sinyal; maksimum 366 hari; tidak boleh masa depan", () => {
+test("parameter: dari & sampai WAJIB; validasi tanggal, level, sinyal (hanya CTWA_AD); maksimum 93 hari; tidak boleh masa depan", () => {
   const now = D("2026-10-13T05:00:00Z");
-  assert.deepEqual(parseParameterIklan({}, now), { dari: "2026-09-14", sampai: "2026-10-13", level: "campaign", sinyal: "CTWA_AD", rincian: false, hariIni: "2026-10-13" });
-  assert.equal(parseParameterIklan({ dari: "2026-10-01", sampai: "2026-10-13", level: "ad", sinyal: "SEMUA", rincian: "1" }, now).rincian, true);
+  assert.deepEqual(parseParameterIklan({ dari: "2026-10-01", sampai: "2026-10-13" }, now), { dari: "2026-10-01", sampai: "2026-10-13", level: "campaign", sinyal: "CTWA_AD", rincian: false, hariIni: "2026-10-13" });
+  assert.equal(parseParameterIklan({ dari: "2026-10-01", sampai: "2026-10-13", level: "ad", rincian: "1" }, now).rincian, true);
+  // 93 hari inklusif lolos; 94 ditolak
+  assert.equal(parseParameterIklan({ dari: "2026-07-13", sampai: "2026-10-13" }, now).dari, "2026-07-13");
   // 17:30 UTC = 00:30 WIB hari berikutnya
-  assert.equal(parseParameterIklan({}, D("2026-10-13T17:30:00Z")).sampai, "2026-10-14");
-  for (const q of [{ dari: "2026-13-01" }, { dari: "2026-10-14", sampai: "2026-10-13" }, { sampai: "2026-10-14" }, { level: "pixel" }, { sinyal: "x" }, { dari: "2025-01-01", sampai: "2026-10-13" }, { dari: "2026-02-30" }]) {
+  assert.equal(parseParameterIklan({ dari: "2026-10-14", sampai: "2026-10-14" }, D("2026-10-13T17:30:00Z")).sampai, "2026-10-14");
+  for (const q of [
+    {}, { dari: "2026-10-01" }, { sampai: "2026-10-13" },
+    { dari: "2026-13-01", sampai: "2026-10-13" }, { dari: "2026-10-14", sampai: "2026-10-13" }, { dari: "2026-10-01", sampai: "2026-10-14" },
+    { dari: "2026-10-01", sampai: "2026-10-13", level: "pixel" },
+    { dari: "2026-10-01", sampai: "2026-10-13", sinyal: "SEMUA" }, { dari: "2026-10-01", sampai: "2026-10-13", sinyal: "AD_REPLY_UNMARKED" },
+    { dari: "2026-07-12", sampai: "2026-10-13" }, { dari: "2025-01-01", sampai: "2026-10-13" }, { dari: "2026-02-30", sampai: "2026-03-01" },
+  ]) {
     assert.throws(() => parseParameterIklan(q, now), (e) => e instanceof ParameterError && e.statusCode === 400, JSON.stringify(q));
   }
 });

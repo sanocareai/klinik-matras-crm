@@ -1,6 +1,10 @@
 // ATRIBUSI CTWA FASE 2 — laporan lead dan closing per Campaign / Ad Set / Ad. BACA-SAJA (transaksi READ ONLY di sisi DB).
 //
-// Akuisisi (default) = touch CTWA valid PERTAMA pada customer yang BARU saat touch itu (customer_new_at_touch = true), dipilih menurut (touch_at, id).
+// ATRIBUSI UTAMA hanya sinyal CTWA_AD. AD_REPLY_UNMARKED (balasan ke iklan tanpa penanda CTWA) direkam sebagai AUDIT dan dilaporkan di blok `audit`;
+// ia TIDAK pernah masuk lead/closing/grup.
+// Closing UTAMA untuk keputusan biaya = customer yang punya >= 1 order eligible LUNAS TERBUKTI LEDGER (`closingUtama`). Customer dengan order,
+// order pernah DP, dan lunas menurut CRM tetap metrik terpisah (bukan closing utama).
+// Akuisisi = touch CTWA valid PERTAMA pada customer yang BARU saat touch itu (customer_new_at_touch = true), dipilih menurut (touch_at, id).
 // Touch berikutnya dan touch pada customer lama disimpan terpisah (`sentuhanBerikutnya`) — TIDAK mengubah lead customer lama menjadi lead baru
 // dan TIDAK pernah menggeser atribusi lead.
 //
@@ -16,9 +20,12 @@ import { muatMasukanKohort } from "./cohortLoader.js";
 import { susunLaporan } from "./cohortReport.js";
 
 export const LEVEL = Object.freeze(["campaign", "adset", "ad"]);
-export const SINYAL = Object.freeze({ CTWA_AD: ["CTWA_AD"], SEMUA: ["CTWA_AD", "AD_REPLY_UNMARKED"] });
+/** Satu-satunya sinyal atribusi utama. AD_REPLY_UNMARKED hanya audit. */
+export const SINYAL_UTAMA = Object.freeze(["CTWA_AD"]);
+export const SINYAL_AUDIT = "AD_REPLY_UNMARKED";
 export const WINDOW_KEMATANGAN = Object.freeze([7, 30, 60]);
-export const MAKS_HARI = 366;
+/** Batas rentang (hari, inklusif): beban kueri linear terhadap jumlah customer di rentang; lihat docs, bagian Performa. */
+export const MAKS_HARI = 93;
 const DAY = 24 * 3600 * 1000;
 const UNMAPPED = "UNMAPPED";
 const RE_TGL = /^\d{4}-\d{2}-\d{2}$/;
@@ -28,15 +35,15 @@ export class ParameterError extends Error {
 }
 
 const tglValid = (s) => RE_TGL.test(s) && !Number.isNaN(Date.parse(`${s}T00:00:00Z`)) && new Date(`${s}T00:00:00Z`).toISOString().slice(0, 10) === s;
-const geserHari = (ymd, n) => new Date(Date.parse(`${ymd}T00:00:00Z`) + n * DAY).toISOString().slice(0, 10);
 const selisihHari = (a, b) => Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / DAY);
 
-/** Parameter: dari/sampai = hari WIB (YYYY-MM-DD, inklusif, tanggal LEAD); level; sinyal; rincian. Default: 30 hari terakhir WIB. */
+/** Parameter: dari/sampai WAJIB = hari WIB (YYYY-MM-DD, inklusif, tanggal LEAD); level; rincian. Sinyal hanya CTWA_AD (atribusi utama). */
 export function parseParameterIklan(query = {}, now = new Date()) {
   const { year, month, day } = nowPartsWIB(now);
   const hariIni = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-  const sampai = query.sampai ? String(query.sampai) : hariIni;
-  const dari = query.dari ? String(query.dari) : geserHari(sampai, -29);
+  if (!query.dari || !query.sampai) throw new ParameterError("Parameter 'dari' dan 'sampai' (YYYY-MM-DD, hari WIB) wajib diisi");
+  const sampai = String(query.sampai);
+  const dari = String(query.dari);
   if (!tglValid(sampai)) throw new ParameterError("Parameter 'sampai' harus YYYY-MM-DD (hari WIB)");
   if (!tglValid(dari)) throw new ParameterError("Parameter 'dari' harus YYYY-MM-DD (hari WIB)");
   if (dari > sampai) throw new ParameterError("'dari' tidak boleh sesudah 'sampai'");
@@ -45,7 +52,7 @@ export function parseParameterIklan(query = {}, now = new Date()) {
   const level = query.level ? String(query.level) : "campaign";
   if (!LEVEL.includes(level)) throw new ParameterError(`level harus salah satu: ${LEVEL.join(", ")}`);
   const sinyal = query.sinyal ? String(query.sinyal) : "CTWA_AD";
-  if (!SINYAL[sinyal]) throw new ParameterError(`sinyal harus salah satu: ${Object.keys(SINYAL).join(", ")}`);
+  if (sinyal !== "CTWA_AD") throw new ParameterError("sinyal hanya mendukung CTWA_AD (AD_REPLY_UNMARKED hanya audit, tidak masuk atribusi)");
   const rincian = query.rincian === "1" || query.rincian === "true";
   return { dari, sampai, level, sinyal, rincian, hariIni };
 }
@@ -64,7 +71,7 @@ function hitungKematangan({ leadSah, orders, kontribusi, refunds, asOf }) {
 
   const out = {};
   for (const N of WINDOW_KEMATANGAN) {
-    const r = { leadMatang: 0, customerDenganOrder: 0, orderEligible: 0, bookedValue: 0, lunasMenurutCrm: 0, lunasTerbuktiLedger: 0, uangLedger: 0 };
+    const r = { leadMatang: 0, customerDenganOrder: 0, orderEligible: 0, bookedValue: 0, lunasMenurutCrm: 0, lunasTerbuktiLedger: 0, customerLunasTerbuktiLedger: 0, uangLedger: 0 };
     for (const c of leadSah) {
       const lahir = new Date(c.createdAt).getTime();
       if (asOf.getTime() - lahir < N * DAY) continue;
@@ -72,15 +79,17 @@ function hitungKematangan({ leadSah, orders, kontribusi, refunds, asOf }) {
       const akhir = lahir + N * DAY;
       const dalam = (ordPerCust.get(c.id) || []).filter((o) => new Date(o.createdAt).getTime() <= akhir);
       if (dalam.length) r.customerDenganOrder++;
+      let customerLunas = false;
       for (const o of dalam) {
         r.orderEligible++; r.bookedValue += Number(o.value) || 0;
         const k = (kontribPerOrder.get(o.id) || []).filter((x) => new Date(x.createdAt).getTime() <= akhir);
         const rf = (refundPerOrder.get(o.id) || []).filter((x) => new Date(x.approvedAt || x.date).getTime() <= akhir);
         r.uangLedger += k.reduce((s, x) => s + (Number(x.amount) || 0), 0);
         const j = jejakPembayaran(k, o.tagihan != null ? o.tagihan : o.value, rf);
-        if (j.status === "LUNAS") r.lunasTerbuktiLedger++;
+        if (j.status === "LUNAS") { r.lunasTerbuktiLedger++; customerLunas = true; }
         if (o.paymentStatus === "LUNAS" && o.paidAt && new Date(o.paidAt).getTime() !== PAID_AT_BACKFILL_31_AGT.getTime() && new Date(o.paidAt).getTime() <= akhir) r.lunasMenurutCrm++;
       }
+      if (customerLunas) r.customerLunasTerbuktiLedger++;
     }
     out[`hari${N}`] = r;
   }
@@ -88,6 +97,33 @@ function hitungKematangan({ leadSah, orders, kontribusi, refunds, asOf }) {
 }
 
 const jumlahKunci = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
+
+/**
+ * CLOSING UTAMA (keputusan biaya): customer lead sah dengan >= 1 order eligible yang ledger valid-nya menutup SELURUH tagihan (jejakPembayaran.status = LUNAS).
+ * Predikat order eligible identik dengan buildCohort. Tanggal closing customer = hari WIB lunas terbukti PERTAMA di antara order-ordernya.
+ * Bukan "customer dengan order" (itu tidak menjamin bayar), bukan DP, dan bukan status LUNAS tersimpan (lunas menurut CRM).
+ */
+function hitungClosingUtama({ customers, orders, kontribusi, refunds }) {
+  const leadSah = new Set(customers.filter((c) => !alasanBukanLead(c)).map((c) => c.id));
+  const kontribPerOrder = new Map();
+  for (const k of kontribusi) (kontribPerOrder.get(k.orderId) || kontribPerOrder.set(k.orderId, []).get(k.orderId)).push(k);
+  const refundPerOrder = new Map();
+  for (const r of refunds) if (r.status === "DISETUJUI") (refundPerOrder.get(r.orderId) || refundPerOrder.set(r.orderId, []).get(r.orderId)).push(r);
+  const perCustomer = new Map();     // customerId -> hariLunas pertama (YYYY-MM-DD WIB)
+  let orderLunas = 0;
+  for (const o of orders) {
+    if (!leadSah.has(o.customerId) || o.penjualanKaryawanId || ORDER_EXCLUDED_STATUS.includes(o.status)) continue;
+    const j = jejakPembayaran(kontribPerOrder.get(o.id) || [], o.tagihan != null ? o.tagihan : o.value, refundPerOrder.get(o.id) || []);
+    if (j.status !== "LUNAS") continue;
+    orderLunas++;
+    const hari = j.hariLunas;
+    const lama = perCustomer.get(o.customerId);
+    if (!lama || hari < lama) perCustomer.set(o.customerId, hari);
+  }
+  const perBulan = {};
+  for (const hari of perCustomer.values()) { const b = hari.slice(0, 7); perBulan[b] = (perBulan[b] || 0) + 1; }
+  return { customerLunasTerbuktiLedger: perCustomer.size, orderLunasTerbuktiLedger: orderLunas, perBulanLunasPertama: perBulan };
+}
 
 /**
  * MURNI. Menyusun laporan dari masukan yang sudah dimuat.
@@ -100,9 +136,10 @@ const jumlahKunci = (arr, f) => arr.reduce((s, x) => s + f(x), 0);
  * @param {Map}   p.referensi       adId → {adSetId,campaignId,adName,adSetName,campaignName,syncedAt,source}
  * @param {object} p.masukan        {customers(+transitions),orders,kontribusi,refunds} hanya untuk customer teratribusi
  * @param {Date|null} p.mulaiAtribusiAt  touch_at paling awal di tabel (null = belum ada touch)
+ * @param {{touch:number,customerUnik:number,padaCustomerBaru:number}|null} [p.audit]  ringkasan AD_REPLY_UNMARKED (tidak masuk atribusi)
  * @param {object} [p.meta]
  */
-export function susunLaporanIklan({ parameter, asOf, leadBaru, touchAkuisisi, touchLain, referensi, masukan, mulaiAtribusiAt, meta = {} }) {
+export function susunLaporanIklan({ parameter, asOf, leadBaru, touchAkuisisi, touchLain, referensi, masukan, mulaiAtribusiAt, audit = null, meta = {} }) {
   const { level } = parameter;
 
   // 1. akuisisi: touch pertama per customer (touch_at, lalu id)
@@ -172,6 +209,7 @@ export function susunLaporanIklan({ parameter, asOf, leadBaru, touchAkuisisi, to
     const leadSah = sm.customers.filter((c) => !alasanBukanLead(c));
     const adsSet = grupAds.get(k) || new Set();
     const sent = sentuhanPerGrup.get(k);
+    const closing = hitungClosingUtama({ customers: sm.customers, orders: sm.orders, kontribusi: sm.kontribusi, refunds: sm.refunds });
     grup.push({
       kunci: k,
       level,
@@ -180,6 +218,13 @@ export function susunLaporanIklan({ parameter, asOf, leadBaru, touchAkuisisi, to
       lead: {
         unik: cids.length, spam, bukanSpam: cids.length - spam, leadSah: t.leads,
         dikecualikan: { SPAM: spam, B2B_DIRECT: per.B2B_DIRECT?.customers || 0, INTERNAL_STAFF: per.INTERNAL_STAFF?.customers || 0, PROFIL_KARYAWAN: per.PROFIL_KARYAWAN?.customers || 0 },
+      },
+      closingUtama: {
+        definisi: "customer dengan >= 1 order eligible lunas terbukti ledger",
+        customerLunasTerbuktiLedger: closing.customerLunasTerbuktiLedger,
+        persenDariLeadSah: t.leads > 0 ? Math.round((closing.customerLunasTerbuktiLedger / t.leads) * 1000) / 10 : null,
+        orderLunasTerbuktiLedger: closing.orderLunasTerbuktiLedger,
+        perBulanLunasPertama: closing.perBulanLunasPertama,
       },
       pernahDitandaiProspek: { berTanggal: t.pernahDitandaiProspekBerTanggal, tanpaTanggal: t.pernahDitandaiProspekTanpaTanggal },
       customerDenganOrder: t.customerDenganOrder,
@@ -206,6 +251,7 @@ export function susunLaporanIklan({ parameter, asOf, leadBaru, touchAkuisisi, to
   const smAll = subMasukan(semuaCids);
   const hAll = buildCohort({ customers: smAll.customers, orders: smAll.orders, kontribusi: smAll.kontribusi, refunds: smAll.refunds });
   const tAll = hAll.total;
+  const closingAll = hitungClosingUtama({ customers: smAll.customers, orders: smAll.orders, kontribusi: smAll.kontribusi, refunds: smAll.refunds });
 
   const cek = [];
   const tambah = (id, a, b, ket) => cek.push({ id, ok: a === b, a, b, ket });
@@ -217,6 +263,9 @@ export function susunLaporanIklan({ parameter, asOf, leadBaru, touchAkuisisi, to
   tambah("booked_grup_vs_total", jumlahKunci(grup, (g) => g.bookedValue), tAll.nilaiOrder, "Σ booked value = gabungan");
   tambah("lunas_crm_grup_vs_total", jumlahKunci(grup, (g) => g.lunasMenurutCrm.jumlah), tAll.lunasMenurutCrm.jumlah, "Σ lunas menurut CRM = gabungan");
   tambah("lunas_ledger_grup_vs_total", jumlahKunci(grup, (g) => g.lunasTerbuktiLedger.jumlah), tAll.lunasTerbuktiLedger.jumlah, "Σ lunas terbukti ledger = gabungan");
+  tambah("closing_utama_grup_vs_total", jumlahKunci(grup, (g) => g.closingUtama.customerLunasTerbuktiLedger), closingAll.customerLunasTerbuktiLedger, "Σ closing utama (customer lunas terbukti ledger) grup = gabungan (customer tidak dihitung ganda)");
+  tambah("closing_utama_order_vs_kohort", closingAll.orderLunasTerbuktiLedger, tAll.lunasTerbuktiLedger.jumlah, "order lunas terbukti ledger di balik closing utama = lunasTerbuktiLedger kohort Fase 1 (definisi tunggal)");
+  tambah("closing_utama_tidak_melebihi_customer_order", closingAll.customerLunasTerbuktiLedger <= tAll.customerDenganOrder ? 1 : 0, 1, "closing utama <= customer dengan order");
   tambah("uang_grup_vs_total", jumlahKunci(grup, (g) => g.uangLedger), tAll.uangLedger, "Σ uang ledger = gabungan (pembayaran tidak dihitung ganda)");
   tambah("kohort_internal_grup", grup.every((g) => g._cohort.rekonsiliasi.ok) ? 1 : 0, 1, "Rekonsiliasi internal Fase 1 lolos untuk setiap grup");
   tambah("kohort_internal_total", hAll.rekonsiliasi.ok ? 1 : 0, 1, "Rekonsiliasi internal Fase 1 lolos untuk gabungan");
@@ -274,10 +323,10 @@ export function susunLaporanIklan({ parameter, asOf, leadBaru, touchAkuisisi, to
     versi: 1,
     dihitungPada: new Date(asOf).toISOString(),
     zonaWaktu: "Asia/Jakarta (UTC+7); semua hari WIB",
-    rentangLead: { dari: parameter.dari, sampai: parameter.sampai, level, sinyal: parameter.sinyal },
+    rentangLead: { dari: parameter.dari, sampai: parameter.sampai, level, sinyal: "CTWA_AD", maksHari: MAKS_HARI },
     atribusi: {
       aturanAkuisisi: "touch CTWA valid PERTAMA pada customer yang baru saat touch itu; touch berikutnya dan pada customer lama dilaporkan terpisah (sentuhanBerikutnya)",
-      sinyalDipakai: SINYAL[parameter.sinyal],
+      sinyalDipakai: [...SINYAL_UTAMA],
       attributionStartAt: mulaiAtribusiAt ? new Date(mulaiAtribusiAt).toISOString() : null,
       attributionStartWib: mulaiAtribusiAt ? wibStr(mulaiAtribusiAt) : null,
       historis: "TIDAK ADA — lead sebelum touch tersimpan tidak diatribusikan; berkas capture Fase 0 tidak memuat customer ID",
@@ -286,25 +335,39 @@ export function susunLaporanIklan({ parameter, asOf, leadBaru, touchAkuisisi, to
     cakupan,
     grup: bersih,
     jumlahTeratribusi: {
-      leadUnik: akuisisi.size, leadSah: tAll.leads, customerDenganOrder: tAll.customerDenganOrder, orderEligible: tAll.orders,
+      leadUnik: akuisisi.size, leadSah: tAll.leads,
+      closingUtama: { customerLunasTerbuktiLedger: closingAll.customerLunasTerbuktiLedger, orderLunasTerbuktiLedger: closingAll.orderLunasTerbuktiLedger, perBulanLunasPertama: closingAll.perBulanLunasPertama },
+      customerDenganOrder: tAll.customerDenganOrder, orderEligible: tAll.orders,
       orderPernahDp: tAll.orderPernahDp, lunasMenurutCrm: tAll.lunasMenurutCrm.jumlah, lunasTerbuktiLedger: tAll.lunasTerbuktiLedger.jumlah,
       buktiPelunasan: tAll.buktiPelunasan, bookedValue: tAll.nilaiOrder, uangLedger: tAll.uangLedger, refundDisetujui: tAll.refundDisetujui, uangBersihLedger: tAll.uangBersihLedger,
     },
     tidakTerpetakan: { adIds: [...unm.values()].sort((a, b) => b.leadAkuisisi - a.leadAkuisisi).map((u) => ({ adId: u.adId, leadAkuisisi: u.leadAkuisisi, pertamaWib: wibStr(u.pertama), terakhirWib: wibStr(u.terakhir) })) },
-    biaya: { status: "BELUM_TERHUBUNG", cpa: null, roas: null, alasan: "tidak ada integrasi spend Meta yang sah dikonfigurasi; ekspor ID tersedia untuk join dengan Windsor", ekspor: "/api/atribusi/iklan/ekspor-id" },
+    biaya: {
+      status: "BELUM_TERHUBUNG", cpa: null, roas: null,
+      alasan: "tidak ada integrasi spend Meta yang sah dikonfigurasi; ekspor ID tersedia untuk join dengan Windsor",
+      penyebutCpa: "closingUtama.customerLunasTerbuktiLedger",
+      syarat: "CPA/ROAS hanya boleh dihitung setelah spend per Campaign ID dan tanggal direkonsiliasi (ID + tanggal harus cocok dengan Ads Manager)",
+      ekspor: "/api/atribusi/iklan/ekspor-id",
+    },
+    audit: {
+      adReplyTanpaPenanda: { ...(audit || { touch: 0, customerUnik: 0, padaCustomerBaru: 0 }), masukAtribusi: false, keterangan: "balasan ke iklan tanpa penanda CTWA (mis. Status WhatsApp); direkam sebagai audit, tidak dihitung sebagai lead/closing iklan" },
+    },
     rekonsiliasi: { ok: cek.every((c) => c.ok), cek },
     peringatan,
     definisi: [
+      { id: "closing_utama", label: "Closing utama (keputusan biaya)", status: "SIAP", definisi: "Customer lead sah yang memiliki >= 1 order eligible lunas TERBUKTI LEDGER (ledger valid − refund disetujui >= tagihan > 0).", tanggal: "hari WIB lunas terbukti pertama customer (perBulanLunasPertama); kohort tetap menurut tanggal lead", catatan: ["Terpisah dari customerDenganOrder, orderPernahDp, dan lunasMenurutCrm.", "Satuan customer; order ada di orderLunasTerbuktiLedger.", "Histori sebelum ledger terisi tidak dapat menjadi closing utama (lihat cakupanLedger)."] },
       ...METRICS.filter((m) => ["unique_lead", "pernah_ditandai_prospek", "customer_dengan_order", "order", "nilai_order", "lunas_menurut_crm", "lunas_terbukti_ledger", "bukti_pelunasan", "uang_ledger", "cakupan_ledger", "order_dengan_dp"].includes(m.id))
         .map(({ id, label, status, definisi, tanggal, catatan }) => ({ id, label, status, definisi, tanggal, catatan })),
       { id: "akuisisi_iklan", label: "Akuisisi iklan", status: "SIAP", definisi: "Customer yang BARU saat pesan bersinyal iklan valid pertamanya diproses; Ad ID = sourceID pada webhook. Satu customer = satu grup.", tanggal: "Customer.createdAt (hari WIB) menentukan kohort", catatan: ["Customer lama yang klik iklan tidak menjadi lead baru; touch-nya dilaporkan terpisah."] },
       { id: "kematangan", label: "Kematangan kohort 7/30/60 hari", status: "SIAP", definisi: "Hasil (order eligible, lunas CRM, lunas ledger, uang ledger) yang terjadi DALAM N hari sejak tanggal lead, hanya untuk lead berumur ≥ N hari; ledger dinilai pada akhir jendela.", tanggal: "tanggal lead + N hari", catatan: ["Membandingkan grup tanpa bias umur kohort."] },
-      { id: "biaya", label: "CPA / ROAS", status: "BELUM_ADA_DATA", definisi: "Null: spend Meta belum terhubung dan direkonsiliasi.", tanggal: "—", catatan: [] },
+      { id: "biaya", label: "CPA / ROAS", status: "BELUM_ADA_DATA", definisi: "Null: spend per Campaign ID dan tanggal belum terhubung dan direkonsiliasi. Penyebut CPA kelak = closing utama.", tanggal: "—", catatan: [] },
     ],
     batasan: [
       "Atribusi hanya untuk lead yang masuk SETELAH capture touch aktif; tidak ada atribusi historis.",
       "Ad ID adalah sourceID yang diverifikasi cocok dengan Ad ID Meta untuk 6 iklan awal; iklan baru wajib dipetakan lewat impor referensi (tanpa perubahan kode).",
       "Ad Set/Campaign berasal dari referensi terkini (label nama = snapshot); tidak pernah ditebak dari kemiripan nama atau angka.",
+      "Atribusi utama hanya sinyal CTWA_AD; AD_REPLY_UNMARKED hanya audit.",
+      "Closing utama = customer dengan order lunas terbukti ledger; customer dengan order, order pernah DP, dan lunas menurut CRM adalah metrik terpisah.",
       "Lunas menurut CRM dan lunas terbukti ledger adalah dua metrik berbeda; uang diterima hanya dari ledger valid; booked value bukan uang.",
       "Tanggal lead, tanggal order, dan tanggal pembayaran dipisah (blok `rincian`).",
     ],
@@ -317,7 +380,7 @@ export function susunLaporanIklan({ parameter, asOf, leadBaru, touchAkuisisi, to
 export async function hitungLaporanIklan(db, parameter, { now = new Date(), timeoutMs = 25_000 } = {}) {
   const dari = startOfDayWIB(parameter.dari);
   const sampai = endOfDayExclusiveWIB(parameter.sampai);
-  const evidence = SINYAL[parameter.sinyal];
+  const evidence = [...SINYAL_UTAMA];
   const tglDari = new Date(`${parameter.dari}T00:00:00.000Z`);
   const tglSampai = new Date(`${parameter.sampai}T00:00:00.000Z`);
 
@@ -349,12 +412,21 @@ export async function hitungLaporanIklan(db, parameter, { now = new Date(), time
     const referensi = new Map(refRows.map((r) => [r.adId, r]));
 
     const agg = await tx.attributionTouch.aggregate({ _min: { touchAt: true }, _count: { _all: true } });
+    const auditRaw = await tx.attributionTouch.findMany({
+      where: { evidenceSource: SINYAL_AUDIT, touchDateWib: { gte: tglDari, lte: tglSampai } },
+      select: { customerId: true, customerNewAtTouch: true },
+    });
+    const audit = {
+      touch: auditRaw.length,
+      customerUnik: new Set(auditRaw.map((t) => t.customerId)).size,
+      padaCustomerBaru: auditRaw.filter((t) => t.customerNewAtTouch).length,
+    };
     const masukanMentah = await muatMasukanKohort(tx, { customerIds: [...pernah] });
     const { meta, ...masukan } = masukanMentah;
 
     return susunLaporanIklan({
       parameter, asOf: now, leadBaru, touchAkuisisi: akuisisi, touchLain, referensi, masukan,
-      mulaiAtribusiAt: agg._min.touchAt, meta: { fase1: { gate: meta.gate }, catatan: { totalTouchTersimpan: agg._count._all } },
+      mulaiAtribusiAt: agg._min.touchAt, audit, meta: { fase1: { gate: meta.gate }, catatan: { totalTouchTersimpan: agg._count._all } },
     });
   }, { timeout: timeoutMs + 5_000, maxWait: 5_000 });
 }
