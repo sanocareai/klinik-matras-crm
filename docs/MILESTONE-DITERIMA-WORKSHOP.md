@@ -68,5 +68,30 @@ Dua keadaan tampilan khusus, **bukan tebakan**:
 
 **Tes**: unit murni (`backend/tests/workshopMilestone.test.js`, `frontend/tests/workshopMilestoneLabels.test.js`), integrasi HTTP di DB sekali-pakai (`workshopMilestone.integration.test.js`: 10 unit skenario bukti, filter, hitungan, kartu, work-orders, Dalam Pengiriman, read-only). Tes lama yang artinya SENGAJA berubah diperbarui (`productionSimplifikasiSlice1`, empat tes frontend).
 
-## 5. Fase 2 — belum
-Order-level status global (Sales/Pipeline/laporan), template notifikasi, mobile + MCP, KPI yang mau dipisah "diterima vs diproses", dan keputusan produk atas bucket Sales "Diproses".
+## 5. Fase 2 — diimplementasikan (12 Okt 2026)
+
+Urutan kanonis 7 status: **Menunggu Dijemput · Pengambilan · Diterima di Workshop · Diproses · Siap Kirim · Dalam Pengiriman · Terkirim**. "Menunggu Dijemput" vs "Pengambilan" dibedakan oleh Job pickup yang sedang berjalan (EN_ROUTE/ARRIVED) — `UnitStatus` tetap `AWAITING_PICKUP` sepanjang itu.
+
+### 5.1 Status tingkat order (`orderMilestoneService`, `orderRollupOf`)
+- Semua unit aktif sama → status itu. Berbeda → unit aktif yang PALING tertinggal, dengan rincian ("Diterima di Workshop · 2 dari 3 unit", "lainnya: 1 unit Diproses").
+- Unit batal tidak ikut penyebut. Order tidak pernah tampil Siap Kirim/Terkirim selagi ada unit aktif yang tertinggal. Tanpa enum "Campuran".
+- Order tanpa unit / order sewa (`SEWA_*`) tidak dikarang: `legacy: true`, label dari `Order.status` tersimpan.
+- `BELUM_BAYAR` bukan blocker dan bukan sumbu status global (modul tidak membaca status pembayaran; dijaga tes).
+- Dipasang: `GET /orders` (`milestone`), `GET /customers/:id` (order), `GET /pipeline/order-board` (kartu) + `/pipeline/board` (`latestOrderMilestone`), `GET /armada/jobs` (`orderMilestone`), antrean Gudang (`globalStatus` per unit), MCP (`statusGlobal`), Unit 360, mobile `OrdersScreen`. Field status lama TIDAK diubah/dihapus.
+
+### 5.2 Notifikasi
+- "Unit sampai bengkel" sebelumnya dipicu `POST /armada/jobs/:id/complete` (pickup selesai) — SALAH. Sekarang hanya command **Terima Unit di Workshop** (`acceptUnitCustody` INBOUND / `confirmUnitArrival` tanpa custody), SEKALI per transisi (replay Idempotency-Key tidak memicu lagi), plus event outbox `production.unit.received-workshop` dengan `dedupeKey` unik per handoff/Run.
+- `DELIVERY_NOTIF_AKTIF` tetap `false` (dijaga tes). Tes memakai hook spy (`custodyHooks`), tidak ada pesan nyata.
+- Belum diubah: notifikasi lain (produksi dimulai, produksi selesai/menunggu Gudang, delivery dimulai) — tetap seperti semula; belum ada pemicu idempoten baru.
+
+### 5.3 KPI waktu alur (`workshopKpi`, `workshopTimelineService`)
+Tujuh timestamp sumber → enam durasi, dihitung HANYA bila kedua timestamp ada dan berurutan; selain itu "Data waktu belum tersedia" (tidak ada timestamp dibuat, histori tak diubah):
+pickup selesai (`Job PICKUP COMPLETED.completedAt`) → diterima workshop (custody INBOUND `acceptedAt` / fase INTAKE konfirmasi petugas) → produksi mulai (operasi non-SKIPPED pertama / log tahap V1 START) → produksi selesai (custody FINISHED_GOODS `offeredAt`, fallback fase HANDOFF) → barang jadi diterima Gudang (FINISHED_GOODS `acceptedAt`) → delivery mulai (`DeliveryExecutionEvent JOB_STARTED`) → terkirim (`Job DELIVERY COMPLETED.completedAt`).
+Dipasang: Unit 360 (`timeline`, bagian "Waktu alur") dan `GET /production-v2/reports/milestone-durations?from=&to=` (n, rata-rata, median, `missing`).
+Unit lahir di workshop tidak punya pickup → durasi 1 tidak tersedia (bukan dikarang).
+
+### 5.4 Belum / sengaja tidak diubah
+- Laporan Sales/CRM (`analytics`, `RingkasanTab`) tetap menghitung per `Order.status` tersimpan karena itu dasar omset; bukan milestone.
+- Bucket Sales "Diproses" (PENDING+PICKUP+PROCESSING) dan filter status order tidak diubah (keputusan produk); badge milestone ditambahkan di samping.
+- driver-mobile (app native, jalur OTA terpisah) belum memakai `orderMilestone`.
+- Kolom papan Pipeline tetap menurut `Order.status` tersimpan.
