@@ -8,6 +8,10 @@
 // mendapat keputusan eksplisit — IKUT pindah ke penerima (pemilik order = penerima, alasan wajib, diaudit) atau TETAP (pemilik order dikunci ke `dari`,
 // diaudit). Setelah ini tidak ada order yang kreditnya bergeser tanpa jejak. Tanpa keputusan (klien lama / takeover) = TETAP: aman, tidak mengubah angka.
 // Mengunci order yang kreditnya sudah ke `dari` TIDAK mengubah angka laporan hari ini; hanya mencegah geser di masa depan.
+//
+// Berlaku untuk SETIAP pemegang lama — termasuk Sales yang sudah NONAKTIF dan Admin/leader (revisi 11 Okt 2026 malam). Laporan per-sales hanya menghitung
+// Sales aktif, jadi order milik pemegang nonaktif/Admin hari ini tidak masuk angka siapa pun; tanpa penguncian, begitu chat-nya ditransfer order lama itu
+// (mis. 24 order lunas Juli–Agustus milik Mila/Farhan, Rp61 juta) diam-diam menjadi kredit penerima — termasuk di laporan periode yang sudah lewat.
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import { tetapkanPemilikSales } from "../services/salesOwner.js";
 
@@ -21,10 +25,10 @@ async function salesAktif(db, userId) {
 
 /**
  * Order yang kreditnya SEKARANG ada pada `dariUserId` dan akan terpengaruh bila percakapan pelanggan ini berpindah.
- * Kosong bila `dariUserId` bukan Sales aktif (tidak ada kredit Sales yang bisa "tertukar").
+ * Kosong hanya bila percakapan belum punya pemegang (tidak ada pihak yang kreditnya bisa "tertukar").
  */
 export async function orderTerdampak(db, { customerId, dariUserId }) {
-  if (!customerId || !(await salesAktif(db, dariUserId))) return [];
+  if (!customerId || !dariUserId) return [];
   const rows = await db.order.findMany({
     where: {
       customerId, status: { not: "CANCELLED" }, penjualanKaryawanId: null, staffSellerId: null,
