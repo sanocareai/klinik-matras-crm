@@ -867,3 +867,117 @@ test("koreksi (lapis layanan, tanpa middleware HTTP): kunci sama + isi sama = re
   assert.equal((await unitDi(order.id)).filter((u) => u.status !== "CANCELLED").length, 2);
   assert.equal(await testPrisma.pkrItemRevision.count({ where: { orderId: order.id } }), 2);
 });
+
+// ═══ 16. Bukti sebelum rilis: order non-PKR tak berubah, PKR lama kompatibel, sisa terlihat setelah kirim sebagian ═══
+test("order CRM NON-PKR: job Delivery tetap dibuat seperti sebelumnya (per unit siap, tanpa gerbang semua-unit-siap); unit berikut ditambahkan ke job UNSCHEDULED yang sama", async () => {
+  const customer = await testPrisma.customer.create({ data: { name: "Pelanggan Biasa" } });
+  const order = await testPrisma.order.create({ data: { customerId: customer.id, value: 1_500_000, deliveryAddress: "Jl. Kenanga 3", deliveryCity: "Depok" } });
+  assert.equal(order.penjualanKaryawanId, null);
+  const u1 = await testPrisma.unit.create({ data: { unitCode: `NONPKR-${randomUUID().slice(0, 8)}-U1`, orderId: order.id, seq: 1, status: "READY_FOR_DELIVERY" } });
+  const u2 = await testPrisma.unit.create({ data: { unitCode: `NONPKR-${randomUUID().slice(0, 8)}-U2`, orderId: order.id, seq: 2, status: "IN_PRODUCTION" } });
+  const jobKirim = () => testPrisma.job.findMany({ where: { orderId: order.id, type: "DELIVERY" }, include: { units: true } });
+
+  // Unit 1 siap, unit 2 belum -> job langsung dibuat (perilaku lama; TIDAK menunggu unit lain)
+  await testPrisma.$transaction((tx) => suggestDeliveryJob(tx, u1.id));
+  const a = await jobKirim();
+  assert.equal(a.length, 1, "order non-PKR tidak kena gerbang semua-unit-siap");
+  assert.equal(a[0].status, "UNSCHEDULED"); assert.equal(a[0].addressText, "Jl. Kenanga 3, Depok");
+  assert.deepEqual(a[0].units.map((x) => x.unitId), [u1.id]);
+
+  // Panggilan ulang untuk unit yang sama tidak menggandakan
+  await testPrisma.$transaction((tx) => suggestDeliveryJob(tx, u1.id));
+  assert.equal((await jobKirim()).length, 1);
+
+  // Unit 2 siap belakangan -> bergabung ke job UNSCHEDULED yang sama (bukan job kedua)
+  await testPrisma.unit.update({ where: { id: u2.id }, data: { status: "READY_FOR_DELIVERY" } });
+  await testPrisma.$transaction((tx) => suggestDeliveryJob(tx, u2.id));
+  const b = await jobKirim();
+  assert.equal(b.length, 1);
+  assert.deepEqual(b[0].units.map((x) => x.unitId).sort(), [u1.id, u2.id].sort());
+  // Order non-PKR tak punya jejak pengiriman sebagian
+  assert.equal(await testPrisma.pkrPengirimanSebagian.count({ where: { orderId: order.id } }), 0);
+});
+
+test("PKR LAMA tanpa pkr_order_items (order dari jalur lama): terbaca lewat item virtual, kirim memakai gerbang satu-job, tabel baru tetap kosong, koreksi item ditolak dengan arahan", async () => {
+  const w = await siapkan();
+  const p = await catat(w, { kategori: "BARU", jumlahUnit: 2, merk: "Sano", ukuran: "160 x 200", perluDikirim: true, ...ALAMAT });
+  const order = await testPrisma.order.findFirst({ where: { penjualanKaryawanId: p.id } });
+  assert.equal(await testPrisma.pkrOrderItem.count(), 0, "tidak ada baris item (data lama)");
+  assert.equal(await testPrisma.pkrOrderItemUnit.count(), 0);
+  assert.equal(await testPrisma.pkrItemRevision.count(), 0, "tidak ada backfill revisi");
+
+  // Terbaca: GET detail memuat item virtual + sinkron order; tidak error
+  const baca = await w.finance.c.get(`${BASE}/${p.id}`);
+  assert.equal(baca.status, 200, JSON.stringify(baca.body));
+  assert.equal(baca.body.sinkron.order.modeItem, false);
+  assert.equal(baca.body.sinkron.items.length, 1); assert.equal(baca.body.sinkron.items[0].virtual, true);
+  assert.equal(baca.body.sinkron.items[0].unit.length, 2);
+
+  // Delivery: semua unit yang dikirim harus siap lebih dulu, lalu SATU job
+  const unit = await unitDi(order.id);
+  await testPrisma.unit.update({ where: { id: unit[0].id }, data: { status: "READY_FOR_DELIVERY" } });
+  await testPrisma.$transaction((tx) => suggestDeliveryJob(tx, unit[0].id));
+  assert.equal(await testPrisma.job.count({ where: { orderId: order.id, type: "DELIVERY" } }), 0, "menunggu unit lain yang dikirim");
+  await testPrisma.unit.update({ where: { id: unit[1].id }, data: { status: "READY_FOR_DELIVERY" } });
+  await testPrisma.$transaction((tx) => suggestDeliveryJob(tx, unit[1].id));
+  const jobs = await testPrisma.job.findMany({ where: { orderId: order.id, type: "DELIVERY" }, include: { units: true } });
+  assert.equal(jobs.length, 1); assert.equal(jobs[0].units.length, 2);
+
+  // Koreksi Item menolak order lama dengan arahan (4xx, bukan 500) dan tidak menulis apa pun
+  const k = await w.finance.c.post(`${BASE}/${p.id}/koreksi-item`, { operasi: [{ op: "ubah", no: 1, jumlah: 3 }], expectedRevision: 1, alasan: "Coba koreksi order lama" }, kunci());
+  assert.ok(k.status >= 400 && k.status < 500, JSON.stringify(k.body));
+  assert.equal(await testPrisma.pkrItemRevision.count(), 0);
+  // PKR lama murni (tanpa order) tetap terbaca
+  const lama = await pkrLama(w, "PKR-01102026-009");
+  const bacaLama = await w.finance.c.get(`${BASE}/${lama.id}`);
+  assert.equal(bacaLama.status, 200, JSON.stringify(bacaLama.body));
+});
+
+test("setelah pengiriman sebagian: unit SISA tetap terdaftar di layar Delivery dengan aksi eksplisit berikutnya; tidak ada job otomatis/ganda; hilang hanya setelah semua unit di job", async () => {
+  const w = await siapkan();
+  const dispatcher = await (async () => { const u = await createTestUser({ roles: ["DISPATCHER"] }); return { id: u.user.id, c: makeClient(server.baseUrl, u.token) }; })();
+  const p = await catat(w, { items: [KASUR, DIVAN, { ...DIVAN, produkNama: "Divan Kecil", lebar: 120 }], ...ALAMAT });
+  const order = await testPrisma.order.findFirst({ where: { penjualanKaryawanId: p.id } });
+  const unit = await unitDi(order.id);
+  const jumlahJob = () => testPrisma.job.count({ where: { orderId: order.id, type: "DELIVERY" } });
+  const barisku = async () => (await dispatcher.c.get(ARMADA)).body.menunggu.find((m) => m.orderId === order.id);
+
+  // Sebelum pengiriman sebagian: dua siap, satu menunggu -> terdaftar (tanpa job)
+  for (const u of unit.slice(0, 2)) await testPrisma.unit.update({ where: { id: u.id }, data: { status: "READY_FOR_DELIVERY" } });
+  for (const u of unit.slice(0, 2)) await testPrisma.$transaction((tx) => suggestDeliveryJob(tx, u.id));
+  assert.equal(await jumlahJob(), 0);
+  assert.ok(await barisku());
+
+  // Kirim sebagian pertama (kasur + divan)
+  const k1 = await dispatcher.c.post(`${ARMADA}/${order.id}/kirim-sebagian`, { unitIds: [unit[0].id, unit[1].id], alasan: "Berangkat dulu dua unit" }, kunci());
+  assert.equal(k1.status, 201, JSON.stringify(k1.body));
+  assert.equal(await jumlahJob(), 1);
+
+  // SETELAH itu: order tetap terdaftar, menampilkan unit sisa (belum siap) dan menyebut aksi eksplisit; tidak ada job baru otomatis
+  const sesudah = await barisku();
+  assert.ok(sesudah, "order dengan unit sisa tidak boleh hilang dari layar Delivery setelah pengiriman sebagian");
+  assert.deepEqual(sesudah.sisa.map((u) => [u.unitCode, u.siap]), [[unit[2].unitCode, false]]);
+  assert.equal(sesudah.ringkas.sudahDalamJob, 2); assert.equal(sesudah.ringkas.sisa, 1);
+  assert.equal(sesudah.bisaKirimSebagian, false, "unit sisa belum siap -> aksi belum aktif");
+  assert.match(sesudah.petunjuk, /Tidak ada job kedua otomatis/);
+  const detail = await dispatcher.c.get(`${ARMADA}/${order.id}`);
+  assert.equal(detail.body.perluTindakan, true);
+  assert.equal(await jumlahJob(), 1, "melihat daftar/detail tidak membuat job");
+
+  // Unit sisa siap: tetap TIDAK ada job otomatis; barisnya kini menawarkan aksi eksplisit (bisaKirimSebagian)
+  await testPrisma.unit.update({ where: { id: unit[2].id }, data: { status: "READY_FOR_DELIVERY" } });
+  await testPrisma.$transaction((tx) => suggestDeliveryJob(tx, unit[2].id));
+  await testPrisma.$transaction((tx) => suggestDeliveryJob(tx, unit[2].id));
+  assert.equal(await jumlahJob(), 1, "tidak ada job otomatis kedua / ganda");
+  const siap = await barisku();
+  assert.ok(siap); assert.deepEqual(siap.sisa.map((u) => [u.unitCode, u.siap]), [[unit[2].unitCode, true]]);
+  assert.equal(siap.bisaKirimSebagian, true);
+  assert.match(siap.petunjuk, /Kirim sebagian/);
+
+  // Aksi eksplisit kedua -> job kedua berisi hanya unit sisa; setelah itu order tidak lagi terdaftar
+  const k2 = await dispatcher.c.post(`${ARMADA}/${order.id}/kirim-sebagian`, { unitIds: [unit[2].id], alasan: "Divan kecil menyusul" }, kunci());
+  assert.equal(k2.status, 201, JSON.stringify(k2.body));
+  assert.equal(await jumlahJob(), 2);
+  assert.equal(await barisku(), undefined, "semua unit sudah di job -> tidak ada yang tersisa");
+  assert.equal((await testPrisma.jobUnit.groupBy({ by: ["unitId"], _count: { _all: true }, where: { job: { orderId: order.id, type: "DELIVERY" } } })).every((g) => g._count._all === 1), true);
+});

@@ -98,34 +98,57 @@ export async function bacaPengirimanOrder(db, orderId) {
   const jobs = await db.job.findMany({ where: { orderId, ...JOB_KIRIM_HIDUP }, select: { id: true, status: true, createdAt: true, units: { select: { unitId: true } } }, orderBy: { createdAt: "asc" } });
   const riwayat = await db.pkrPengirimanSebagian.findMany({ where: { orderId }, orderBy: { createdAt: "desc" }, take: 10 });
   const dibatalkan = order.status === "CANCELLED";
+  // Unit yang dikirim tetapi belum berada di job pengiriman mana pun = sisa. Setelah ada job (pengiriman sebagian ATAU job gabungan yang kemudian ketambahan unit susulan),
+  // sisa TIDAK pernah dibuatkan job otomatis — hanya lewat aksi eksplisit Kirim sebagian.
+  const sisa = unit.filter((u) => !u.jobId);
+  const perluTindakan = !dibatalkan && sisa.length > 0 && (sudahDalamJob.length > 0 || (bisaDipilih.length > 0 && menunggu.length > 0));
+  const kodeMenunggu = menunggu.map((u) => u.unitCode).join(", ");
+  const kodeSiap = bisaDipilih.map((u) => u.unitCode).join(", ");
+  let petunjuk;
+  if (dibatalkan) petunjuk = "Order dibatalkan.";
+  else if (sisa.length === 0) petunjuk = unit.length === 0 ? "Tidak ada unit yang perlu dikirim." : "Seluruh unit yang dikirim sudah punya job pengiriman.";
+  else if (sudahDalamJob.length > 0) {
+    // Sudah ada job: tidak ada job kedua otomatis; sisa dikirim lewat aksi eksplisit begitu siap.
+    petunjuk = bisaDipilih.length > 0
+      ? `${sudahDalamJob.length} unit sudah di job. Sisa siap kirim: ${kodeSiap}${menunggu.length ? ` (${menunggu.length} unit lain masih menunggu: ${kodeMenunggu})` : ""}. Tidak ada job kedua otomatis — pakai Kirim sebagian untuk pengiriman berikutnya.`
+      : `${sudahDalamJob.length} unit sudah di job. Menunggu ${menunggu.length} unit lain siap (${kodeMenunggu}). Tidak ada job kedua otomatis — begitu siap, pakai Kirim sebagian untuk pengiriman berikutnya.`;
+  } else if (menunggu.length > 0) {
+    petunjuk = `Menunggu ${menunggu.length} unit lain siap (${kodeMenunggu}). Job pengiriman dibuat otomatis begitu semua siap; bila perlu berangkat dulu, pakai Kirim sebagian.`;
+  } else petunjuk = "Semua unit siap — job gabungan dibuat otomatis.";
   return {
     orderId: order.id, nomorOrder: order.orderNumber, nomorPkr: order.penjualanKaryawan?.nomor ?? null, statusOrder: order.status,
     unit, diambilSendiri: diambil, jobHidup: jobs.map((j) => ({ id: j.id, status: j.status, jumlahUnit: j.units.length })),
-    ringkas: { dikirim: unit.length, siap: unit.filter((u) => u.siap).length, menunggu: menunggu.length, sudahDalamJob: sudahDalamJob.length },
-    // Aksi eksplisit tersedia bila ada unit siap yang belum di job DAN masih ada yang menunggu (kalau tak ada yang menunggu, job gabungan terbentuk otomatis).
+    ringkas: { dikirim: unit.length, siap: unit.filter((u) => u.siap).length, menunggu: menunggu.length, sudahDalamJob: sudahDalamJob.length, sisa: sisa.length },
+    // Unit yang belum di job (siap atau masih menunggu) — dasar tampilan "unit tersisa" di layar Delivery.
+    sisa: sisa.map((u) => ({ id: u.id, unitCode: u.unitCode, siap: u.siap, itemNama: u.itemNama })),
+    // Aksi eksplisit tersedia bila ada unit siap yang belum di job (dan order tidak dibatalkan).
     bisaKirimSebagian: !dibatalkan && bisaDipilih.length > 0,
     sebagian: bisaDipilih.length > 0 && menunggu.length > 0,
-    petunjuk: dibatalkan ? "Order dibatalkan."
-      : menunggu.length > 0 ? `Menunggu ${menunggu.length} unit lain siap (${menunggu.map((u) => u.unitCode).join(", ")}). Job pengiriman dibuat otomatis begitu semua siap; bila perlu berangkat dulu, pakai Kirim sebagian.`
-      : sudahDalamJob.length > 0 ? "Seluruh unit yang dikirim sudah punya job pengiriman." : "Semua unit siap — job gabungan dibuat otomatis.",
+    perluTindakan,
+    petunjuk,
     riwayatSebagian: riwayat.map((r) => ({ id: r.id, jobId: r.jobId, unit: r.unitCodes, ditunda: r.unitDitunda, alasan: r.reason, waktu: r.createdAt })),
   };
 }
 
-/** Daftar order PKR yang punya unit siap tetapi menunggu unit lain (belum ada job): untuk layar Delivery. */
+/**
+ * Daftar order PKR yang butuh tindakan eksplisit di Delivery: (a) ada unit siap tetapi order menunggu unit lain dan belum punya job, atau (b) sudah punya job
+ * (pengiriman sebagian / unit susulan) dan MASIH ada unit yang dikirim tetapi belum di job — sisa tidak dibuatkan job otomatis, jadi harus tetap terlihat.
+ */
 export async function daftarMenunggu(db) {
   const orders = await db.order.findMany({
     where: {
       penjualanKaryawanId: { not: null }, status: { notIn: ["CANCELLED", "DELIVERED"] },
-      units: { some: { status: "READY_FOR_DELIVERY" } },
-      jobs: { none: JOB_KIRIM_HIDUP },
+      OR: [
+        { units: { some: { status: "READY_FOR_DELIVERY" } }, jobs: { none: JOB_KIRIM_HIDUP } },
+        { jobs: { some: JOB_KIRIM_HIDUP } },
+      ],
     },
     select: { id: true }, take: 200, orderBy: { createdAt: "desc" },
   });
   const hasil = [];
   for (const o of orders) {
     const d = await bacaPengirimanOrder(db, o.id);
-    if (d.sebagian) hasil.push({ orderId: d.orderId, nomorOrder: d.nomorOrder, nomorPkr: d.nomorPkr, ringkas: d.ringkas, petunjuk: d.petunjuk });
+    if (d.perluTindakan) hasil.push({ orderId: d.orderId, nomorOrder: d.nomorOrder, nomorPkr: d.nomorPkr, ringkas: d.ringkas, sisa: d.sisa, bisaKirimSebagian: d.bisaKirimSebagian, petunjuk: d.petunjuk });
   }
   return hasil;
 }

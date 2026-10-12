@@ -231,3 +231,37 @@ test("pemasangan: Koreksi item (modal, pratinjau dampak, alasan, Idempotency-Key
   assert.match(form, /data-testid="komponen-set"/);
   assert.match(form, /koreksi = mode === "koreksi"/);
 });
+
+test("Delivery setelah pengiriman sebagian: baris menampilkan unit SISA + aksi eksplisit berikutnya; aksi nonaktif bila sisa belum siap", async () => {
+  const { ringkasBarisPengiriman } = await import("../src/features/armada/pkrPengirimanLogic.js");
+  // Setelah kirim sebagian pertama: 2 unit di job, 1 sisa belum siap
+  const menunggu = ringkasBarisPengiriman({
+    ringkas: { dikirim: 3, siap: 2, menunggu: 1, sudahDalamJob: 2, sisa: 1 },
+    sisa: [{ id: "u3", unitCode: "MIX-01-U3", siap: false }], bisaKirimSebagian: false,
+  });
+  assert.equal(menunggu.sudahDalamJob, 2);
+  assert.equal(menunggu.teksSisa, "Sisa unit: MIX-01-U3 (belum siap)");
+  assert.equal(menunggu.labelAksi, "Kirim sisa…");
+  assert.equal(menunggu.aksiAktif, false);
+  // Sisa sudah siap: aksi eksplisit aktif
+  const siap = ringkasBarisPengiriman({
+    ringkas: { dikirim: 3, siap: 3, menunggu: 0, sudahDalamJob: 2, sisa: 1 },
+    sisa: [{ id: "u3", unitCode: "MIX-01-U3", siap: true }], bisaKirimSebagian: true,
+  });
+  assert.equal(siap.teksSisa, "Sisa unit: MIX-01-U3 (siap kirim)");
+  assert.equal(siap.aksiAktif, true);
+  // Belum ada job sama sekali (sebagian siap): label awal "Kirim sebagian…"
+  const awal = ringkasBarisPengiriman({ ringkas: { dikirim: 3, siap: 2, menunggu: 1, sudahDalamJob: 0, sisa: 3 }, sisa: [{ unitCode: "A", siap: true }, { unitCode: "B", siap: true }, { unitCode: "C", siap: false }], bisaKirimSebagian: true });
+  assert.equal(awal.labelAksi, "Kirim sebagian…");
+  assert.equal(awal.aksiAktif, true);
+  // Respons kosong/tak lengkap tidak melempar
+  assert.deepEqual(ringkasBarisPengiriman({}).sisa, []);
+  assert.equal(ringkasBarisPengiriman({}).aksiAktif, false);
+
+  // Pemasangan: panel memakai logika ini; aksi hanya dari tombol (tidak ada pemanggilan kirim di efek)
+  const panel = baca("../src/features/armada/components/PkrPengirimanPanel.jsx");
+  assert.match(panel, /ringkasBarisPengiriman\(o\)/);
+  assert.match(panel, /data-testid="pkr-menunggu-sisa"/);
+  assert.match(panel, /disabled=\{!r\.aksiAktif\}/);
+  assert.doesNotMatch(panel, /useEffect\(\(\) => \{[^}]*kirimSebagianPkr/);
+});

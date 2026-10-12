@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Field } from "@/components/ui/field.jsx";
+import { ringkasBarisPengiriman } from "../pkrPengirimanLogic.js";
 
 // DELIVERY — order Penjualan Karyawan yang unitnya sebagian sudah siap kirim tetapi menunggu unit lain.
 // Aturan (keputusan Owner): job pengiriman dibuat OTOMATIS hanya setelah SEMUA unit yang dikirim siap, dan hanya SATU. Pengiriman sebagian = aksi eksplisit di sini:
@@ -98,17 +99,29 @@ export default function PkrPengirimanPanel({ className = "" }) {
     <>
       {daftar.length > 0 && (
         <Card className={`space-y-2 p-3 ${className}`} data-testid="pkr-menunggu-panel">
-          <p className="m-0 flex items-center gap-2 text-[13px] font-semibold text-ink"><PackageCheck size={15} /> Order Penjualan Karyawan menunggu unit lain ({daftar.length})</p>
+          <p className="m-0 flex items-center gap-2 text-[13px] font-semibold text-ink"><PackageCheck size={15} /> Order Penjualan Karyawan — unit belum terkirim ({daftar.length})</p>
           <ul className="m-0 list-none space-y-1.5 p-0">
-            {daftar.map((o) => (
-              <li key={o.orderId} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-inset px-3 py-2 text-[12.5px]" data-testid="pkr-menunggu-baris">
-                <span className="min-w-0">
-                  <span className="font-mono font-semibold text-ink">{o.nomorOrder}</span>
-                  <span className="ml-2 text-ink2">{o.ringkas.siap} dari {o.ringkas.dikirim} unit siap · menunggu {o.ringkas.menunggu}</span>
-                </span>
-                <Button size="sm" variant="neutral" onClick={() => setAktif(o.orderId)} className="max-sm:min-h-11" data-testid="buka-kirim-sebagian">Kirim sebagian…</Button>
-              </li>
-            ))}
+            {daftar.map((o) => {
+              const r = ringkasBarisPengiriman(o);
+              return (
+                <li key={o.orderId} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-inset px-3 py-2 text-[12.5px]" data-testid="pkr-menunggu-baris">
+                  <span className="min-w-0 space-y-0.5">
+                    <span className="block">
+                      <span className="font-mono font-semibold text-ink">{o.nomorOrder}</span>
+                      <span className="ml-2 text-ink2">{r.sudahDalamJob > 0 ? `${r.sudahDalamJob} unit sudah di job · ` : ""}{o.ringkas.siap} dari {o.ringkas.dikirim} unit siap · menunggu {o.ringkas.menunggu}</span>
+                    </span>
+                    {r.teksSisa && <span className="block text-ink2" data-testid="pkr-menunggu-sisa">{r.teksSisa}</span>}
+                  </span>
+                  <Button
+                    size="sm" variant="neutral" disabled={!r.aksiAktif} onClick={() => setAktif(o.orderId)}
+                    title={r.aksiAktif ? undefined : "Belum ada unit sisa yang siap kirim"}
+                    className="max-sm:min-h-11" data-testid="buka-kirim-sebagian"
+                  >
+                    {r.labelAksi}
+                  </Button>
+                </li>
+              );
+            })}
           </ul>
         </Card>
       )}
