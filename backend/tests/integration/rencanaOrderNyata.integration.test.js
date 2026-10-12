@@ -266,7 +266,8 @@ test("PENGECUALIAN: progres V1, Siap Kirim/Terkirim, belum diambil, di luar coho
   const r = await schedule(v1.unit, op); assert.equal(r.status, 422); assert.equal(r.body.code, "RENCANA_HAS_V1_PROGRESS");
   assert.equal(await testPrisma.productionRun.count({ where: { unitId: v1.unit.id } }), 0, "progres V1 tidak disentuh, tidak ada Run");
   assert.equal(await testPrisma.unitStageLog.count({ where: { unitId: v1.unit.id } }), 1, "riwayat V1 utuh");
-  const pk = await w.lead.api.get(`${V2}/backlog?status=PENGAMBILAN`); assert.equal(itemOf(pk.body, pickup.unit).rencana.action, "WAIT_PICKUP");
+  // urutan kanonis: unit belum dijemput (tanpa job pickup berjalan) ada di tab Menunggu Dijemput, bukan Pengambilan
+  const pk = await w.lead.api.get(`${V2}/backlog?status=MENUNGGU_DIJEMPUT`); assert.equal(itemOf(pk.body, pickup.unit).rencana.action, "WAIT_PICKUP");
   const rp = await schedule(pickup.unit, op); assert.equal(rp.status, 409); assert.equal(rp.body.code, "RENCANA_WAIT_PICKUP");
   for (const [x, code, status] of [[ready, "RENCANA_UNIT_FINISHED", 422], [delivered, "RENCANA_UNIT_FINISHED", 422], [spam, "RENCANA_INTERNAL_OR_SPAM", 422], [staff, "RENCANA_INTERNAL_OR_SPAM", 422], [out, "RENCANA_UNIT_NOT_ACTIVATED", 503]]) {
     const r = await schedule(x.unit, op); assert.equal(r.status, status, `${x.unit.unitCode}: ${JSON.stringify(r.body)}`); assert.equal(r.body.code, code);

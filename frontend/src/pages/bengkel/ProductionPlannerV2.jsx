@@ -69,7 +69,7 @@ function RunDrawer({ item, refs, onClose, onSchedule, onConfirmArrival, onChange
         </ol>
         <UnitPhotoPanel unitId={item.unit.id} photoUrl={item.unit.photoUrl} canUpload={canRoute} onUploaded={() => onChanged("Foto identitas unit disimpan.")} />
         <div className="flex flex-wrap gap-2">
-          {item.bucket === "DALAM_PERJALANAN" && onConfirmArrival && <Button size="sm" data-mutates onClick={() => onConfirmArrival(item)}><Truck size={14} aria-hidden /> Unit Tiba di Workshop</Button>}
+          {item.bucket === "DALAM_PERJALANAN" && onConfirmArrival && <Button size="sm" data-mutates onClick={() => onConfirmArrival(item)}><Truck size={14} aria-hidden /> Terima Unit di Workshop</Button>}
           <Button size="sm" data-mutates onClick={() => onSchedule(item)}><CalendarDays size={14} aria-hidden /> {item.plan?.stationCode ? "Pindah / Ubah Jadwal" : "Jadwalkan"}</Button>
           {item.plan && <Button size="sm" variant="secondary" asChild><Link to={`/bengkel/production-v2/laporan/${item.runId}`}><FileText size={14} aria-hidden /> Laporan</Link></Button>}
           <Button size="sm" variant="neutral" asChild><Link to={unitDetailPath(item.unit.id)}>Buka Unit 360</Link></Button>
@@ -80,7 +80,7 @@ function RunDrawer({ item, refs, onClose, onSchedule, onConfirmArrival, onChange
 }
 
 function ArrivalButton({ item, onConfirm }) {
-  return <Button size="sm" variant="secondary" data-mutates className="min-h-[44px] w-full" onClick={() => onConfirm(item)}><Truck size={13} aria-hidden /> Unit Tiba di Workshop</Button>;
+  return <Button size="sm" variant="secondary" data-mutates className="min-h-[44px] w-full" onClick={() => onConfirm(item)}><Truck size={13} aria-hidden /> Terima Unit di Workshop</Button>;
 }
 
 function renderCard(item, { openOverview, setArrival, today, tomorrow }) {
@@ -120,7 +120,7 @@ export default function ProductionPlannerV2() {
   const [mobileCol, setMobileCol] = useState(null);
   const [drawer, setDrawer] = useState(null);
   const [schedule, setSchedule] = useState(null);
-  // Slice 2: "Unit Tiba di Workshop" = SATU aksi, tanpa pilihan lokasi (lokasi workshop bawaan dari Pengaturan Admin). Belum dikonfigurasi -> pesan kebutuhan konfigurasi untuk Admin; tidak ada tiba palsu.
+  // Slice 2: "Terima Unit di Workshop" = SATU aksi, tanpa pilihan lokasi (lokasi workshop bawaan dari Pengaturan Admin). Belum dikonfigurasi -> pesan kebutuhan konfigurasi untuk Admin; tidak ada tiba palsu.
   const [arrivalBusy, setArrivalBusy] = useState(false);
   const setArrival = async (item) => {
     if (arrivalBusy) return;

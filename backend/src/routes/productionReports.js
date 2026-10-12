@@ -12,6 +12,9 @@ import { DATE_BASES, DOC_FILTERS, GRANULARITY, METRICS, MIN_SAMPLE, QC_FILTERS, 
 import { PRODUCTION_READER_MODE, loadV2Flags, resolveProductionReaderState } from "../services/v2FeatureFlags.js";
 import { buildReportContext, drillReport, mySummary, operatorListDoc, operatorsDoc, stationListDoc, stationsDoc, summaryReport, unitDetailDoc, unitsDoc, warehouseDoc } from "../services/productionReportingService.js";
 import { buildPdf, buildXlsx, exportFileName } from "../services/productionReportExport.js";
+import { aggregateDurations } from "../lib/domain/workshopKpi.js";
+import { loadWorkshopTimelines } from "../services/workshopTimelineService.js";
+import { parsePeriod } from "../lib/domain/productionMetrics.js";
 
 export const productionReportsRouter = express.Router();
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -64,6 +67,21 @@ const send = (res, r) => {
   if (r.notFound) return res.status(404).json({ error: "Laporan tidak ditemukan atau di luar cohort", code: "REPORT_NOT_FOUND" });
   return res.json({ readerMode: "COHORT", ...strip(r.doc) });
 };
+
+// GET /reports/milestone-durations?from=&to= — enam durasi alur milestone (pickup→diterima workshop, diterima→mulai produksi, durasi produksi, produksi selesai→diterima Gudang,
+// siap kirim→delivery mulai, durasi delivery). Dihitung HANYA bila kedua timestamp sumber ada; unit tanpa data dihitung di `missing` (tampil "Data waktu belum tersedia").
+// Satu durasi masuk periode bila timestamp AKHIR-nya jatuh di periode. BACA-SAJA; cohort reader seperti laporan lain.
+productionReportsRouter.get("/milestone-durations", async (req, res) => {
+  try {
+    if (!caps(req.user).full) return deny(res);
+    const unitIds = await readerCohort();
+    if (!unitIds) return res.json(OFF({ durations: [] }));
+    const period = parsePeriod({ from: req.query.from, to: req.query.to });
+    const timelines = [...(await loadWorkshopTimelines(prisma, unitIds)).values()];
+    const inRange = (iso) => !!iso && new Date(iso) >= period.start && new Date(iso) < period.endExclusive;
+    res.json({ readerMode: "COHORT", period: { from: period.from, to: period.to }, units: timelines.length, durations: aggregateDurations(timelines, { within: inRange }) });
+  } catch (err) { handleErr(err, res); }
+});
 
 productionReportsRouter.get("/meta", async (req, res) => {
   try {

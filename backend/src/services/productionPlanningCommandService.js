@@ -204,6 +204,14 @@ async function assertNoBlockingMaterialIssue(tx, planId) {
 
 // Diekspor: dipakai ulang oleh productionMaterialIssueCommandService.js (P4) untuk mengunci+memuat plan di
 // dalam TRANSAKSI YANG SAMA dengan command-nya sendiri (mis. batal sebelum pick -> releaseReservationsInTx).
+/**
+ * Penulis TUNGGAL kolom cornerOperatorId rencana (command owner — lihat audit-planning-writers). Dipanggil productionCornerService.setCornerOperator di dalam transaksi yang
+ * sudah mengunci rencana + run dan memeriksa revisi. HANYA cornerOperatorId + revisi + commandId: Meja, tanggal, target, PIC Meja, urutan, work center tidak disentuh.
+ */
+export async function writeCornerOperatorInTx(tx, { planId, cornerOperatorId, revision, commandId }) {
+  return tx.productionRunPlan.update({ where: { id: planId }, data: { cornerOperatorId, revision, commandId } });
+}
+
 export async function loadPlanForWrite(tx, planId) {
   await lockRowForUpdate(tx, "production_run_plans_v2", planId);
   const plan = await tx.productionRunPlan.findUnique({

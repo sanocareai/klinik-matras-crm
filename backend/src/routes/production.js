@@ -30,6 +30,9 @@ import { listV1WorkerQueue } from "../services/v1WorkerQueue.js";
 import { bukanAdminOwner } from "../services/productionRencanaService.js";
 import { notifyReadyForDelivery } from "../services/customerNotifications.js";
 import { DISPLAY_STATUS_UNIT_FILTER, displayStatusCountsOf, displayStatusOfOrder, displayStatusOfUnit, physicalPresenceOf, priorityDisplay } from "../lib/domain/productionDisplay.js";
+import { GLOBAL_STATUS, GLOBAL_STATUS_FLOW, milestoneOf } from "../lib/domain/workshopMilestone.js";
+import { countByGlobalStatus, loadMilestoneEvidence, unitWhereForGlobalStatuses } from "../services/workshopMilestoneEvidence.js";
+const UNIT_STATUS_VALUES = Object.freeze(["AWAITING_PICKUP", "IN_TRANSIT_IN", "RECEIVED", "IN_PRODUCTION", "READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD", "IN_TRANSIT_OUT", "DELIVERED", "CANCELLED"]); // = enum UnitStatus (schema.prisma)
 import { loadOpenComplaintsByUnit } from "../services/productionComplaints.js";
 import { PKR_ORDER_SELECT, PKR_UNIT_ITEM_SELECT, rujukanPkrDariOrder, pesanPkrBelumLengkap } from "../services/pkrProduksiGuard.js";
 
@@ -376,9 +379,17 @@ productionRouter.get("/work-orders", requirePermission(P.UNIT_READ), async (req,
     // displayStatus boleh daftar dipisah koma (mis. PENGAMBILAN,DIPROSES,SIAP_KIRIM untuk "Aktif" = semua kecuali Terkirim).
     const displayFilter = String(req.query.displayStatus || "").toUpperCase().split(",").filter((k) => k in DISPLAY_STATUS_UNIT_FILTER);
     const displayUnitStatuses = displayFilter.length ? [...new Set(displayFilter.flatMap((k) => DISPLAY_STATUS_UNIT_FILTER[k]))] : null;
+    // Milestone global (Pengambilan · Diterima di Workshop · Diproses · Siap Kirim · Dalam Pengiriman · Terkirim [· Dibatalkan]) — filter BERBASIS BUKTI di server
+    // (lib/domain/workshopMilestone.js). Pickup selesai tanpa bukti terima tetap Pengambilan. Parameter lama displayStatus tidak berubah artinya.
+    const globalKeys = String(req.query.globalStatus || "").toUpperCase().split(",").filter((k) => k in GLOBAL_STATUS);
+    const globalWhere = globalKeys.length && !status ? unitWhereForGlobalStatuses(globalKeys) : null;
+    // statusIn = daftar status unit TERSIMPAN (mentah) dipisah koma — untuk pemanggil yang butuh himpunan teknis (mis. unit di luar papan = RECEIVED,IN_PRODUCTION).
+    const statusIn = String(req.query.statusIn || "").toUpperCase().split(",").filter((k) => UNIT_STATUS_VALUES.includes(k));
     const where = {
       ...(status && { status }),
       ...(displayUnitStatuses && !status ? { status: { in: displayUnitStatuses } } : {}),
+      ...(statusIn.length && !status && !displayUnitStatuses ? { status: { in: statusIn } } : {}),
+      ...(globalWhere ? { AND: [globalWhere] } : {}),
       ...(req.query.real === "1" ? { order: { status: { not: "CANCELLED" }, customer: { pipelineStage: { not: "SPAM" }, isInternalStaff: false } } } : {}),
       ...(serviceLine && { serviceLine }),
       ...(q?.trim() && {
@@ -434,8 +445,19 @@ productionRouter.get("/work-orders", requirePermission(P.UNIT_READ), async (req,
     const readerState = resolveProductionReaderState(await loadV2Flags(prisma));
     const v2Units = readerState.mode === PRODUCTION_READER_MODE.OFF ? new Set() : new Set(readerState.unitIds);
     const complaintsByUnit = await loadOpenComplaintsByUnit(prisma, units.map((u) => ({ id: u.id, orderId: u.orderId })));
+    // Bukti milestone per unit (batch; tanpa N+1) + jadwal aktif (meja) untuk sumbu "status jadwal".
+    const [milestoneEvidence, plannedRows] = await Promise.all([
+      loadMilestoneEvidence(prisma, unitIds),
+      unitIds.length ? prisma.productionRun.findMany({
+        where: { unitId: { in: unitIds }, status: { notIn: ["COMPLETED", "CANCELLED"] }, plan: { is: { stationCode: { not: null }, status: { not: "CANCELLED" } } } },
+        select: { unitId: true },
+      }) : [],
+    ]);
+    const scheduledUnitIds = new Set(plannedRows.map((r) => r.unitId));
     const unitsWithStatus = units.map((u) => {
       const prio = priorityDisplay({ stored: u.priority, complaintCases: complaintsByUnit.get(u.id) || [] });
+      const ev = milestoneEvidence.get(u.id) || { receivedBasis: null, started: false, pickupCompleted: false };
+      const milestone = milestoneOf({ unitStatus: u.status, ...ev, scheduled: scheduledUnitIds.has(u.id) });
       const lastLog = lastLogByUnitId[u.id] || null;
       const blocker = blockerByUnitId[u.id] || null;
       const assignment = assignmentByUnitId[u.id] || null;
@@ -448,7 +470,9 @@ productionRouter.get("/work-orders", requirePermission(P.UNIT_READ), async (req,
         penjualanKaryawan: rujukanPkrDariOrder(u.order, { unit: u }),
         // Kosakata sederhana (slice 1): status order/unit, keberadaan fisik, prioritas Normal·Tinggi·Komplain (Komplain dari ComplaintCase resmi). Enum mentah tetap ada di atas.
         orderStatusDisplay: displayStatusOfOrder(u.order?.status), unitStatusDisplay: displayStatusOfUnit(u.status),
-        presence: physicalPresenceOf({ unitStatus: u.status, runStatus: null, runOrigin: null, inboundAccepted: false }),
+        presence: physicalPresenceOf({ unitStatus: u.status, runStatus: null, runOrigin: null, inboundAccepted: ev.receivedBasis === "CUSTODY", staffConfirmed: ev.receivedBasis === "STAFF_CONFIRMED" }),
+        // Milestone global berbasis bukti + dasar bukti + status jadwal (keempat sumbu dipisah). Menunggu bahan tidak dihitung di daftar ini (butuh BOM/Material Issue per Run) -> tidak ditebak.
+        globalStatus: milestone.globalStatus, receivedBasis: milestone.receivedBasis, receivedBasisLabel: milestone.receivedBasisLabel, scheduleStatus: milestone.scheduleStatus,
         priorityDisplay: { key: prio.key, label: prio.label, rank: prio.rank, complaintCases: prio.complaintCases },
         productionStatusReason: describeProductionStatus(productionStatus, lastLog, blocker),
         // Work Center/Assigned To (Slice 4O) — dari StageAssignment tahap
@@ -483,6 +507,9 @@ productionRouter.get("/work-orders", requirePermission(P.UNIT_READ), async (req,
       statusCounts: statusCounts.map((s) => ({ status: s.status, count: s._count._all })),
       // Hitungan per status TAMPILAN (Pengambilan/Diproses/Siap Kirim/Terkirim) dari hitungan di atas — sumber sama, satu kosakata.
       displayStatusCounts: displayStatusCountsOf(statusCounts.map((s) => ({ status: s.status, count: s._count._all }))),
+      // Hitungan per status GLOBAL (milestone) — dari bukti, bukan dari status tersimpan; urutan mengikuti GLOBAL_STATUS_FLOW (Dibatalkan tidak ikut).
+      globalStatusCounts: await countByGlobalStatus(prisma, {}),
+      globalStatusFlow: GLOBAL_STATUS_FLOW,
       page, pageSize, total: totalMatching, hasMore: (page - 1) * pageSize + units.length < totalMatching,
     });
   } catch (err) {

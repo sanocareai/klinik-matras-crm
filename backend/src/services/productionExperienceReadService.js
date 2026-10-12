@@ -20,6 +20,7 @@ import { signUnitPhotoUrlIfAny, signUnitPhotoUrlsBulk } from "../routes/producti
 import { arrivalConfirmedByStaff, delayReasonOfBlock, displayStatusOfOrder, displayStatusOfUnit, isFinishedUnitStatus, physicalPresenceOf, priorityDisplay } from "../lib/domain/productionDisplay.js";
 import { loadOpenComplaintsByUnit } from "./productionComplaints.js";
 import { PKR_ORDER_SELECT, PKR_UNIT_ITEM_SELECT, rujukanPkrDariOrder } from "./pkrProduksiGuard.js";
+import { milestoneOf, receivedBasisOf } from "../lib/domain/workshopMilestone.js";
 
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
 export const COMPLAINT_LABEL = Object.freeze({
@@ -159,6 +160,23 @@ export function cornerAndLifecycleOf(run, ctx) {
   return { corner, lifecycle };
 }
 
+/**
+ * Milestone global + status jadwal untuk satu Run (read-model; lib/domain/workshopMilestone.js). Bukti terima HANYA dari tiga command resmi: custody INBOUND ACCEPTED,
+ * konfirmasi petugas (fase INTAKE baku), atau Run lahir di workshop — status pickup selesai tidak pernah dihitung. "Dimulai" = operasi non-lewati / bukti langkah non-lewati.
+ * @param {Array<{code:string}>} warnings hasil warningsOf (BAHAN_BELUM / KEKURANGAN = menunggu bahan; sumber yang sama dengan peringatan kartu)
+ */
+export function milestoneOfRun(run, ctx, warnings = []) {
+  const receivedBasis = receivedBasisOf({
+    inboundAccepted: (run.custodyHandoffs || []).some((h) => h.direction === "INBOUND" && h.status === "ACCEPTED"),
+    staffConfirmed: arrivalConfirmedByStaff(run.phases),
+    bornInWorkshop: run.origin === "WORKSHOP_BORN",
+  });
+  const started = (run.operations || []).some((o) => o.status !== "SKIPPED") || (ctx.evidence || []).some((e) => !isSkippedEvidence(e));
+  const scheduled = !!run.plan?.stationCode && run.plan.status !== "CANCELLED";
+  const materialWaiting = warnings.some((w) => w.code === "BAHAN_BELUM" || w.code === "KEKURANGAN");
+  return milestoneOf({ unitStatus: run.unit?.status, receivedBasis, started, scheduled, materialWaiting });
+}
+
 export function toRunView(run, ctx, { now = new Date(), photoUrl = null, complaints = [] } = {}) {
   const shortage = ctx.openShortage;
   const materialStatus = materialStatusOf(run.plan, ctx.material, shortage);
@@ -171,6 +189,8 @@ export function toRunView(run, ctx, { now = new Date(), photoUrl = null, complai
   const bucket = andonBucketOf({ next, started, buildTrack: !!ctx.state?.buildTrack });
   const prio = priorityDisplay({ stored: run.plan?.priority ?? 0, complaintCases: complaints });
   const inboundAccepted = run.custodyHandoffs.some((h) => h.direction === "INBOUND" && h.status === "ACCEPTED") || arrivalConfirmedByStaff(run.phases);
+  const warnings = warningsOf(run, ctx, materialStatus);
+  const milestone = milestoneOfRun(run, ctx, warnings);
   return {
     runId: run.id, revision: run.revision, status: run.status, currentPhase: run.currentPhase, origin: run.origin,
     track: ctx.state?.buildTrack ? "BUILD" : "RESTORATION", // BUILD = pesanan BARU/custom (Pengerjaan Pesanan); RESTORATION = jalur lama
@@ -185,6 +205,8 @@ export function toRunView(run, ctx, { now = new Date(), photoUrl = null, complai
     orderStatus: displayStatusOfOrder(run.unit.order?.status) || null,
     unitStatus: displayStatusOfUnit(run.unit.status) || null,
     presence: physicalPresenceOf({ unitStatus: run.unit.status, runStatus: run.status, runOrigin: run.origin, inboundAccepted }),
+    // Milestone global (Pengambilan · Diterima di Workshop · Diproses · Siap Kirim · Dalam Pengiriman · Terkirim) + dasar bukti + status jadwal — sumbu terpisah dari tahap (next/bucket).
+    globalStatus: milestone.globalStatus, receivedBasis: milestone.receivedBasis, receivedBasisLabel: milestone.receivedBasisLabel, scheduleStatus: milestone.scheduleStatus,
     priority: { key: prio.key, label: prio.label, rank: prio.rank, complaintCases: prio.complaintCases },
     unit: { id: run.unit.id, orderId: run.unit.orderId, unitCode: run.unit.unitCode, merk: run.unit.merk, ukuran: run.unit.ukuran, status: run.unit.status, service: run.unit.service ? { code: run.unit.service.code, label: run.unit.service.labelId } : null, photoUrl },
     customer: customerOf(run),
@@ -214,6 +236,8 @@ export function toRunView(run, ctx, { now = new Date(), photoUrl = null, complai
     adaptation: run.adaptationPolicy ? { policy: run.adaptationPolicy } : null,
     qcGatePolicy: run.qcGatePolicyVersion || null, // Fase 2: NULL = run lama (gerbang QC sebelum bongkar tidak berlaku)
     ...cornerAndLifecycleOf(run, ctx), // Fase 5: corner (status jujur) + lifecycle (status siklus yang sama di semua layar)
+    // Keputusan Corner Lead (jalur pengerjaan): diperlukan/tidak + alasan + PEMUTUS (nama diisi viewsOf, batch). null = belum diputuskan / jalur tanpa keputusan eksplisit.
+    cornerDecision: ctx.buildSetting?.cornerRequired != null ? { required: ctx.buildSetting.cornerRequired, reason: ctx.buildSetting.cornerReason ?? null, decidedById: ctx.buildSetting.updatedById ?? null, decidedAt: ctx.buildSetting.updatedAt ?? null, decidedBy: null } : null,
     steps,
     activeOp: op ? { stageLabel: op.stageLabel, status: op.status, startedAt: op.startedAt, delayKind: op.delayKind ?? null, delayNote: op.delayNote ?? null } : null,
     timer: {
@@ -224,7 +248,7 @@ export function toRunView(run, ctx, { now = new Date(), photoUrl = null, complai
     },
     materialStatus,
     indicators: indicatorsOf(run, ctx, materialStatus),
-    warnings: warningsOf(run, ctx, materialStatus),
+    warnings,
     shortage: shortage ? { id: shortage.id, revision: shortage.revision, items: shortage.items, note: shortage.note, reportedAt: shortage.reportedAt } : null,
     qc: ctx.latestInspection ? { version: ctx.latestInspection.version, result: ctx.latestInspection.result, at: ctx.latestInspection.inspectedAt } : null,
   };
@@ -238,6 +262,11 @@ export async function viewsOf(prisma, runs, opts) {
   const complaintsByUnit = await loadOpenComplaintsByUnit(prisma, runs.map((r) => ({ id: r.unitId, orderId: r.unit?.orderId ?? null })));
   const views = [];
   for (const run of runs) views.push(toRunView(run, await loadStepContext(prisma, run), { ...opts, photoUrl: photoByUnit.get(run.unitId) ?? null, complaints: complaintsByUnit.get(run.unitId) || [] }));
+  const deciderIds = [...new Set(views.map((v) => v.cornerDecision?.decidedById).filter(Boolean))];
+  if (deciderIds.length) {
+    const names = new Map((await prisma.user.findMany({ where: { id: { in: deciderIds } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
+    for (const v of views) if (v.cornerDecision?.decidedById) v.cornerDecision.decidedBy = names.get(v.cornerDecision.decidedById) ?? null;
+  }
   return views;
 }
 

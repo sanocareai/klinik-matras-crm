@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button.jsx";
 import { UnitPhoto } from "@/features/production/UnitCard.jsx";
 import { priorityMeta } from "@/features/production/unitCardModel.js";
 import PkrRujukan from "@/features/production/PkrRujukan.jsx";
-import { presenceTone, priorityOf, salesServicesText, statusTone } from "@/features/production/productionLabels.js";
+import { presenceTone, priorityOf, receivedBasisText, salesServicesText, scheduleStatusText, statusOf, statusTone } from "@/features/production/productionLabels.js";
 
 // Kartu ringkas backlog untuk unit yang BELUM punya kartu rencana penuh (order nyata tanpa Run). Satu bahasa visual dengan PlanCard. Aksi berikutnya SELALU jelas dan datang dari server
 // (`item.rencana`): ONBOARD_SCHEDULE = tombol Jadwalkan + handle seret (sama persis dengan kartu lain; Run dibuka di transaksi yang sama dengan penjadwalan), selain itu penjelasan
@@ -23,6 +23,9 @@ export default function BacklogCard({ item, onOpen, onSchedule = null, handle = 
   const pr = priorityOf({ priority: c.priority });
   const meta = priorityMeta(pr.key === "COMPLAINT" ? 3 : pr.key === "HIGH" ? 1 : 0);
   const Icon = NOTE_ICON[r?.action] || Info;
+  // Milestone global dari server (berbasis bukti); sumbu jadwal & posisi fisik terpisah dari status global.
+  const st = statusOf({ globalStatus: c.globalStatus, unitStatusDisplay: c.unitStatus });
+  const jadwal = scheduleStatusText(c); const dasar = receivedBasisText(c);
   return (
     <article data-testid="backlog-card" data-unit-code={c.unit.unitCode} data-priority={pr.key} data-rencana-action={r?.action || undefined} data-drag-card={draggable ? "" : undefined}
       className={`relative w-full min-w-0 shrink-0 overflow-hidden rounded-card bg-surface shadow-sm ${dragging ? "opacity-40" : ""}`}>
@@ -39,9 +42,11 @@ export default function BacklogCard({ item, onOpen, onSchedule = null, handle = 
           <PkrRujukan pkr={c.penjualanKaryawan} />
           <span className="flex flex-wrap items-center gap-1.5">
             {meta.icon && <span data-testid="priority-tag" className={`inline-flex items-center rounded-chip px-2 py-0.5 text-[11.5px] font-bold uppercase tracking-wide ${meta.badgeClass}`}>{pr.label}</span>}
-            <Badge variant={statusTone(c.unitStatus?.key)} data-testid="status-badge">{c.unitStatus?.label || "—"}</Badge>
+            <Badge variant={statusTone(st.key)} data-testid="status-badge" data-global-status={st.key}>{st.label || "—"}</Badge>
             {c.presence?.label && <Badge variant={presenceTone(c.presence)} data-testid="presence-badge">{c.presence.label}</Badge>}
+            {jadwal && <Badge variant="neutral" data-testid="schedule-badge">{jadwal}</Badge>}
           </span>
+          {(st.detail || dasar) && <span data-testid="status-detail" className="block text-[12px] text-ink3">{[st.detail, dasar].filter(Boolean).join(" · ")}</span>}
           {c.photoNote && <span data-testid="photo-note" data-photo-status={c.photoNote.status} className="flex items-start gap-1 text-[12px] text-ink3"><Info size={12} className="mt-0.5 shrink-0" aria-hidden />{c.photoNote.text}</span>}
         </span>
       </button>

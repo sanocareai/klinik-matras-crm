@@ -14,7 +14,7 @@ export const OFF_BOARD_PAGE_SIZE = 200;
 export function useV1Units() {
   const [state, setState] = useState({ units: null, total: 0, hasMore: false });
   const demo = isDemoActive();
-  const load = useCallback(() => api.getWorkOrders({ displayStatus: "DIPROSES", real: "1", pageSize: String(OFF_BOARD_PAGE_SIZE) })
+  const load = useCallback(() => api.getWorkOrders({ statusIn: "RECEIVED,IN_PRODUCTION", real: "1", pageSize: String(OFF_BOARD_PAGE_SIZE) })
     .then((d) => setState({ units: d.units || [], total: d.total ?? (d.units || []).length, hasMore: !!d.hasMore }))
     .catch(() => setState({ units: [], total: 0, hasMore: false })), []);
   useEffect(() => { if (!demo) load(); }, [demo, load]);

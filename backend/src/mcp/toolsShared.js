@@ -93,8 +93,10 @@ export function ringkasPelanggan(c, unmask) {
   };
 }
 
-export function ringkasOrder(o) {
+// `milestone` = hasil loadOrderMilestones (status global tingkat order). Field `status` lama TETAP (kompatibel); `statusGlobal` = sumber baru untuk ditampilkan/dijelaskan.
+export function ringkasOrder(o, milestone = null) {
   return {
+    ...(milestone ? { statusGlobal: { status: milestone.label, ringkasan: milestone.summary, rincianProgres: milestone.progressText, unitLebihMaju: milestone.aheadText, jumlahUnitAktif: milestone.total, dariStatusTersimpan: milestone.legacy } } : {}),
     id: o.id,
     nomorOrder: o.orderNumber,
     pelangganId: o.customerId,
