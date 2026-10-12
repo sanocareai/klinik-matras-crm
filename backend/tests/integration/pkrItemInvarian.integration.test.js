@@ -415,3 +415,21 @@ test("sapuan kebocoran: tak satu pun endpoint GET (Produksi/Delivery/Gudang/CRM/
   }
   assert.deepEqual(dibuka, [], `export Finance terbuka bagi peran operasional: ${dibuka.join("; ")}`);
 });
+
+// ═══ 10. Uji perilaku rehearsal skrip rilis (SQL yang SAMA) ═══
+test("uji perilaku rehearsal pada skrip rilis: blok SQL yang dijalankan di DB hasil restore menolak 14 data salah, meloloskan 5 data benar, lalu dibatalkan semua", async () => {
+  const { readFileSync } = await import("node:fs");
+  const skrip = readFileSync(new URL("../../../scripts/release-pkr-item-penjualan-pemenuhan.sh", import.meta.url), "utf8").replace(/\r\n/g, "\n");
+  const m = /<<'UJISQL'\n([\s\S]*?)\nUJISQL\n/.exec(skrip);
+  assert.ok(m, "blok UJISQL tidak ditemukan di skrip rilis");
+  const w = await siapkan();
+  await catat(w, [KASUR, DIVAN]); // contoh baris untuk blok uji (Order + PKR + kategori katalog)
+  const sebelum = { baris: await testPrisma.finPenjualanKaryawanItem.count(), item: await testPrisma.pkrOrderItem.count(), revisi: await testPrisma.pkrItemRevision.count() };
+  await assert.rejects(() => testPrisma.$executeRawUnsafe(m[1]), (e) => {
+    const pesan = String(e.message);
+    assert.ok(!/TIDAK_DITOLAK/.test(pesan), `ada data salah yang lolos: ${pesan.slice(0, 300)}`);
+    assert.match(pesan, /ROLLBACK_UJI tolak=14 lolos=5 lewat=0/);
+    return true;
+  });
+  assert.deepEqual({ baris: await testPrisma.finPenjualanKaryawanItem.count(), item: await testPrisma.pkrOrderItem.count(), revisi: await testPrisma.pkrItemRevision.count() }, sebelum, "blok uji dibatalkan seluruhnya");
+});

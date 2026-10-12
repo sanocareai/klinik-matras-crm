@@ -58,7 +58,7 @@ CREATE INDEX "pkr_order_items_sale_item_id_idx" ON "pkr_order_items"("sale_item_
 CREATE UNIQUE INDEX "pkr_order_items_sale_component_key" ON "pkr_order_items"("sale_item_id", "component_seq");
 ALTER TABLE "pkr_order_items" ADD CONSTRAINT "pkr_order_items_fulfillment_chk" CHECK ("fulfillment" IS NULL OR "fulfillment" IN ('PRODUKSI_BARU', 'SERVICE_PICKUP'));
 ALTER TABLE "pkr_order_items" ADD CONSTRAINT "pkr_order_items_tautan_chk"
-  CHECK ("sale_item_id" IS NULL OR ("component_seq" >= 1 AND "component_qty" >= 1 AND "fulfillment" IS NOT NULL));
+  CHECK ("sale_item_id" IS NULL OR ("component_seq" IS NOT NULL AND "component_seq" >= 1 AND "component_qty" IS NOT NULL AND "component_qty" >= 1 AND "fulfillment" IS NOT NULL));
 
 -- ── jejak audit sisi Finance ────────────────────────────────────────────────────────────────────────
 ALTER TABLE "pkr_item_revisions" ADD COLUMN "finance_before" JSONB;
