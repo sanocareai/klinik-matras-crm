@@ -14,7 +14,7 @@ import { cn } from "@/lib/utils.js";
 import { formatTanggal, formatDurasiDetik } from "@/utils/formatDate.js";
 import { UnitOverviewDrawer } from "@/features/production/UnitOverviewDrawer.jsx";
 import PkrRujukan from "@/features/production/PkrRujukan.jsx";
-import { DELAY_TITLE, DISPLAY_STATUS_TABS, presenceTone, priorityOf, salesServicesText, statusOf } from "@/features/production/productionLabels.js";
+import { DELAY_TITLE, GLOBAL_STATUS_ACTIVE_KEYS, GLOBAL_STATUS_TABS, presenceTone, priorityOf, receivedBasisText, salesServicesText, scheduleStatusText, statusOf } from "@/features/production/productionLabels.js";
 
 // "Elapsed" per baris (Production Core Slice 3P) — STATIS per-muat, BUKAN ticking langsung (timer LIVE ada di Detail Unit).
 function elapsedSejak(iso) {
@@ -23,13 +23,13 @@ function elapsedSejak(iso) {
 }
 
 // Order Produksi (daftar unit) — simplifikasi Production slice 1. Satu kosakata status: Pengambilan · Diproses · Siap Kirim · Terkirim.
-// Filter status dan PAGINASI dilakukan di SERVER (work-orders?displayStatus=&q=&page=&pageSize=) — tidak berhenti di 500 unit; "Muat lagi" menambah halaman.
+// Filter status (milestone global, berbasis bukti) dan PAGINASI dilakukan di SERVER (work-orders?globalStatus=&q=&page=&pageSize=) — tidak berhenti di 500 unit; "Muat lagi" menambah halaman.
 // Tanpa label/filter sumber (V1/V2) dan tanpa filter lini teknis: hanya Layanan Sales. Histori (Terkirim) tetap utuh di tab "Riwayat"/"Semua".
 //
 // ⚠️ KOLOM TAHAP bisa kosong untuk unit lama yang belum pernah masuk alur tahap (di-backfill dari Order): itu jujur, bukan bug — tidak diisi dengan tebakan.
 export const ORDER_SCOPES = Object.freeze([{ key: "aktif", label: "Aktif" }, { key: "semua", label: "Semua" }, { key: "riwayat", label: "Riwayat" }]);
 const PAGE_SIZE = 50;
-const ACTIVE_KEYS = ["PENGAMBILAN", "DIPROSES", "SIAP_KIRIM"];
+const ACTIVE_KEYS = GLOBAL_STATUS_ACTIVE_KEYS; // Pengambilan · Diterima di Workshop · Diproses · Siap Kirim · Dalam Pengiriman (semua kecuali Terkirim)
 
 // `scope`: "aktif" = semua status kecuali Terkirim, "semua" = seluruhnya, "riwayat" = hanya Terkirim. Tab status rinci ("" = semua dalam lingkup) dikendalikan di sini.
 // `unitId`/`onUnitChange`: unit yang dibuka di drawer Unit 360 dikendalikan pemanggil (?unit= di URL).
@@ -37,7 +37,7 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
   const [tab, setTab] = useState(scope === "riwayat" ? "TERKIRIM" : initialStatus);
   const firstScope = useRef(true);
   useEffect(() => { if (firstScope.current) { firstScope.current = false; return; } setTab(scope === "riwayat" ? "TERKIRIM" : ""); }, [scope]);
-  const tabsShown = scope === "riwayat" ? [] : scope === "aktif" ? DISPLAY_STATUS_TABS.filter((t) => t.key !== "TERKIRIM") : DISPLAY_STATUS_TABS;
+  const tabsShown = scope === "riwayat" ? [] : scope === "aktif" ? GLOBAL_STATUS_TABS.filter((t) => t.key !== "TERKIRIM") : GLOBAL_STATUS_TABS;
   const [cari, setCari] = useState("");
   const [qDebounced, setQDebounced] = useState("");
   const [rows, setRows] = useState(null);
@@ -63,10 +63,10 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
     const id = ++reqRef.current;
     setLoading(true); setError("");
     try {
-      const d = await api.getWorkOrders({ displayStatus: displayParam, q: qDebounced || undefined, page: String(page), pageSize: String(PAGE_SIZE) });
+      const d = await api.getWorkOrders({ globalStatus: displayParam, q: qDebounced || undefined, page: String(page), pageSize: String(PAGE_SIZE) });
       if (id !== reqRef.current) return;
       setRows((prev) => (append && prev ? prev.concat(d.units || []) : d.units || []));
-      setMeta({ total: d.total ?? (d.units || []).length, hasMore: !!d.hasMore, page, counts: d.displayStatusCounts || {} });
+      setMeta({ total: d.total ?? (d.units || []).length, hasMore: !!d.hasMore, page, counts: d.globalStatusCounts || {} });
     } catch (e) { if (id === reqRef.current) setError(e.message); } finally { if (id === reqRef.current) setLoading(false); }
   }, [displayParam, qDebounced]);
   useEffect(() => { fetchPage(1, { append: false }); }, [fetchPage]); // filter/pencarian berubah -> halaman 1
@@ -77,15 +77,15 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
     (async () => {
       try {
         let acc = []; let last = null;
-        for (let p = 1; p <= pages; p += 1) { last = await api.getWorkOrders({ displayStatus: displayParam, q: qDebounced || undefined, page: String(p), pageSize: String(PAGE_SIZE) }); acc = acc.concat(last.units || []); if (!last.hasMore) break; }
+        for (let p = 1; p <= pages; p += 1) { last = await api.getWorkOrders({ globalStatus: displayParam, q: qDebounced || undefined, page: String(p), pageSize: String(PAGE_SIZE) }); acc = acc.concat(last.units || []); if (!last.hasMore) break; }
         if (id !== reqRef.current) return;
-        setRows(acc); setMeta({ total: last?.total ?? acc.length, hasMore: !!last?.hasMore, page: Math.max(1, Math.ceil(acc.length / PAGE_SIZE)), counts: last?.displayStatusCounts || {} });
+        setRows(acc); setMeta({ total: last?.total ?? acc.length, hasMore: !!last?.hasMore, page: Math.max(1, Math.ceil(acc.length / PAGE_SIZE)), counts: last?.globalStatusCounts || {} });
       } catch (e) { if (id === reqRef.current) setError(e.message); } finally { if (id === reqRef.current) setLoading(false); }
     })();
   }, [meta.page, displayParam, qDebounced]);
 
-  const countOf = (key) => (key === "" ? (scope === "aktif" ? ACTIVE_KEYS : DISPLAY_STATUS_TABS.map((t) => t.key)).reduce((n, k) => n + (meta.counts[k] || 0), 0) : meta.counts[key] ?? 0);
-  const scopeCount = (key) => (key === "aktif" ? ACTIVE_KEYS.reduce((n, k) => n + (meta.counts[k] || 0), 0) : key === "riwayat" ? meta.counts.TERKIRIM || 0 : DISPLAY_STATUS_TABS.reduce((n, t) => n + (meta.counts[t.key] || 0), 0));
+  const countOf = (key) => (key === "" ? (scope === "aktif" ? ACTIVE_KEYS : GLOBAL_STATUS_TABS.map((t) => t.key)).reduce((n, k) => n + (meta.counts[k] || 0), 0) : meta.counts[key] ?? 0);
+  const scopeCount = (key) => (key === "aktif" ? ACTIVE_KEYS.reduce((n, k) => n + (meta.counts[k] || 0), 0) : key === "riwayat" ? meta.counts.TERKIRIM || 0 : GLOBAL_STATUS_TABS.reduce((n, t) => n + (meta.counts[t.key] || 0), 0));
 
   const kosong = !loading && rows && rows.length === 0;
   const subtitle = scope === "riwayat" ? "Unit yang sudah terkirim ke pelanggan." : scope === "aktif" ? "Unit yang masih berjalan — belum terkirim. Klik baris untuk membuka Unit 360." : scope === "semua" ? "Seluruh unit, termasuk yang sudah terkirim. Klik baris untuk membuka Unit 360." : "Seluruh unit kasur beserta status dan tahap pengerjaannya.";
@@ -173,7 +173,8 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
                           <TD truncate className="text-ink2" data-testid="sales-services">{salesServicesText((u.order?.items || []).map((i) => i.layananName).filter(Boolean))}</TD>
                           <TD>
                             <Badge variant={st.tone} data-testid="status-badge">{st.label}</Badge>
-                            {st.detail && <span className="block text-[10px] text-ink3">{st.detail}</span>}
+                            {(st.detail || receivedBasisText(u)) && <span className="block text-[10px] text-ink3" data-testid="status-detail">{[st.detail, receivedBasisText(u)].filter(Boolean).join(" · ")}</span>}
+                            {scheduleStatusText(u) && <span className="block text-[10px] text-ink3" data-testid="schedule-status">{scheduleStatusText(u)}</span>}
                             {u.presence?.key === "NOT_ARRIVED" && <span className="block text-[10px] font-semibold text-orange">{u.presence.label}</span>}
                             {u.productionStatus === "BLOCKED" && <Badge variant="red" className="mt-0.5">{DELAY_TITLE}</Badge>}
                           </TD>

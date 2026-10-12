@@ -18,37 +18,53 @@ import { classifyUnitRow, cohortStatesOf } from "./productionRencanaService.js";
 import { loadV2Flags } from "./v2FeatureFlags.js";
 import { PKR_ORDER_SELECT, PKR_UNIT_ITEM_SELECT, rujukanPkrDariOrder } from "./pkrProduksiGuard.js";
 import { kategoriUnit, produkUnit, statusOrderEfektif } from "../lib/domain/unitKategori.js";
+import { milestoneOf } from "../lib/domain/workshopMilestone.js";
+import { WHERE_PICKUP_DONE_NOT_RECEIVED, WHERE_PICKUP_IN_PROGRESS, WHERE_WAITING_PICKUP, loadMilestoneEvidence, unitWhereForGlobalStatus } from "./workshopMilestoneEvidence.js";
 
-export const BACKLOG_STATUSES = Object.freeze(["DIPROSES", "PENGAMBILAN"]);
-const UNIT_STATUS_FOR = Object.freeze({ DIPROSES: ["RECEIVED", "IN_PRODUCTION"], PENGAMBILAN: ["AWAITING_PICKUP", "IN_TRANSIT_IN"] });
-const ORDER_STATUS_FOR = Object.freeze({ DIPROSES: ["PROCESSING"], PENGAMBILAN: ["PENDING", "PICKUP"] });
+// Tab backlog = milestone global berbasis BUKTI (lib/domain/workshopMilestone.js): Pengambilan · Diterima di Workshop · Diproses. "SEMUA" bukan status — ia hanya penyaring
+// "semua unit order Diproses (unit sudah dijemput atau lahir di workshop)", yaitu himpunan lama "Diproses" sebelum milestone dipisah; tiap kartu tetap membawa status globalnya sendiri.
+export const BACKLOG_STATUSES = Object.freeze(["SEMUA", "MENUNGGU_DIJEMPUT", "PENGAMBILAN", "DITERIMA_WORKSHOP", "DIPROSES"]);
+export const BACKLOG_STATUS_DEFAULT = "SEMUA";
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
 export const BACKLOG_MAX_CANDIDATES = 20_000;
 export const BACKLOG_PAGE_SIZE_DEFAULT = 25;
 export const BACKLOG_PAGE_SIZE_MAX = 100;
 
 export function parseBacklogQuery(raw = {}) {
-  const status = BACKLOG_STATUSES.includes(String(raw.status || "").toUpperCase()) ? String(raw.status).toUpperCase() : "DIPROSES";
+  const status = BACKLOG_STATUSES.includes(String(raw.status || "").toUpperCase()) ? String(raw.status).toUpperCase() : BACKLOG_STATUS_DEFAULT;
   const pageSize = Math.min(Math.max(parseInt(raw.pageSize, 10) || BACKLOG_PAGE_SIZE_DEFAULT, 1), BACKLOG_PAGE_SIZE_MAX);
   const page = Math.max(parseInt(raw.page, 10) || 1, 1);
   const q = String(raw.q || "").trim().slice(0, 80);
   return { status, page, pageSize, q };
 }
 
+const REAL_CUSTOMER = Object.freeze({ customer: { pipelineStage: { not: "SPAM" }, isInternalStaff: false } });
+// Bagian status (unit + order) per tab. Tingkat ORDER tetap seperti sebelumnya: pickup berjalan = order PENDING/PICKUP; unit sudah di workshop = order PROCESSING.
+function statusClause(status) {
+  switch (status) {
+    case "MENUNGGU_DIJEMPUT": return { AND: [WHERE_WAITING_PICKUP, { order: { status: { in: ["PENDING", "PICKUP"] } } }] };
+    case "PENGAMBILAN": return { OR: [
+      { AND: [WHERE_PICKUP_IN_PROGRESS, { order: { status: { in: ["PENDING", "PICKUP"] } } }] },
+      { AND: [WHERE_PICKUP_DONE_NOT_RECEIVED, { order: { status: "PROCESSING" } }] },
+    ] };
+    case "DITERIMA_WORKSHOP":
+    case "DIPROSES": return { AND: [unitWhereForGlobalStatus(status), { order: { status: "PROCESSING" } }] };
+    default: return { AND: [{ status: { in: ["RECEIVED", "IN_PRODUCTION"] } }, { order: { status: "PROCESSING" } }] }; // SEMUA
+  }
+}
 function whereFor(status, q) {
   return {
-    status: { in: UNIT_STATUS_FOR[status] },
-    order: {
-      status: { in: ORDER_STATUS_FOR[status] },
-      customer: { pipelineStage: { not: "SPAM" }, isInternalStaff: false },
-    },
-    // Belum dijadwalkan = tidak punya rencana aktif yang sudah menempel ke meja.
-    NOT: { productionRunsV2: { some: { status: { notIn: TERMINAL_RUN }, plan: { is: { stationCode: { not: null }, status: { not: "CANCELLED" } } } } } },
-    ...(q ? { OR: [
-      { unitCode: { contains: q, mode: "insensitive" } },
-      { order: { orderNumber: { contains: q, mode: "insensitive" } } },
-      { order: { customer: { name: { contains: q, mode: "insensitive" } } } },
-    ] } : {}),
+    AND: [
+      statusClause(status),
+      { order: REAL_CUSTOMER },
+      // Belum dijadwalkan = tidak punya rencana aktif yang sudah menempel ke meja.
+      { NOT: { productionRunsV2: { some: { status: { notIn: TERMINAL_RUN }, plan: { is: { stationCode: { not: null }, status: { not: "CANCELLED" } } } } } } },
+      ...(q ? [{ OR: [
+        { unitCode: { contains: q, mode: "insensitive" } },
+        { order: { orderNumber: { contains: q, mode: "insensitive" } } },
+        { order: { customer: { name: { contains: q, mode: "insensitive" } } } },
+      ] }] : []),
+    ],
   };
 }
 
@@ -61,7 +77,7 @@ function statesFrom({ states, cohortUnitIds }) {
   return { reader: cohort, writer: cohort };
 }
 
-export async function listBacklog(prisma, { cohortUnitIds = null, states = null, status = "DIPROSES", page = 1, pageSize = BACKLOG_PAGE_SIZE_DEFAULT, q = "", now = new Date(), canActivate = false } = {}) {
+export async function listBacklog(prisma, { cohortUnitIds = null, states = null, status = BACKLOG_STATUS_DEFAULT, page = 1, pageSize = BACKLOG_PAGE_SIZE_DEFAULT, q = "", now = new Date(), canActivate = false } = {}) {
   const where = whereFor(status, q);
   const st = states || (cohortUnitIds ? statesFrom({ cohortUnitIds }) : cohortStatesOf(await loadV2Flags(prisma)));
   const cohort = new Set([...st.reader.unitIds].filter((id) => st.writer.unitIds.has(id))); // Run + jadwal butuh reader DAN writer
@@ -114,6 +130,7 @@ export async function listBacklog(prisma, { cohortUnitIds = null, states = null,
     const runs = await loadRuns(prisma, { id: { in: schedulableRunIds } });
     for (const v of await viewsOf(prisma, runs, { now })) viewByRun.set(v.runId, v);
   }
+  const evidenceById = await loadMilestoneEvidence(prisma, pageIds); // bukti terima/mulai per unit (batch) — tanpa menebak dari status pickup
   const photos = await signUnitPhotoUrlsBulk(prisma, pageIds);
   const noPhotoIds = pageIds.filter((id) => !photos.get(id));
   const photoDiag = noPhotoIds.length ? await diagnoseUnitPhotosBulk(prisma, noPhotoIds) : new Map();
@@ -126,6 +143,9 @@ export async function listBacklog(prisma, { cohortUnitIds = null, states = null,
     // Order Penjualan Karyawan: rujukan tampil di kartu TANPA bergantung flag V2 (dihitung dari order, bukan dari Run); belum lengkap = tidak boleh dijadwalkan walau sudah punya Run.
     const pkr = rujukanPkrDariOrder(u.order, { unit: u });
     const pkrBlokir = !!pkr && !pkr.lengkap;
+    const ev = evidenceById.get(u.id) || { receivedBasis: null, started: false, pickupCompleted: false };
+    // Backlog = belum menempel ke meja -> status jadwal selalu "Belum dijadwalkan"; keempat sumbu dipisah (status global ≠ status jadwal ≠ keberadaan fisik ≠ tahap).
+    const milestone = milestoneOf({ unitStatus: u.status, ...ev, scheduled: false });
     return {
       unitId: u.id, schedulable: !!view && !pkrBlokir, view: pkrBlokir ? null : view,
       // Aksi berikutnya yang JELAS per kartu (server = otoritas): SCHEDULE | ONBOARD_SCHEDULE (Jadwalkan membuka Run) | AWAIT_ACTIVATION | WAIT_PICKUP | EXCEPTION.
@@ -143,7 +163,8 @@ export async function listBacklog(prisma, { cohortUnitIds = null, states = null,
         unit: { id: u.id, unitCode: u.unitCode, merk: u.merk, ukuran: u.ukuran, photoUrl: photos.get(u.id) ?? null },
         customer: { name: u.order?.customer?.name ?? null, orderNumber: u.order?.orderNumber ?? null, salesServices: (u.order?.items || []).map((i) => i.layananName).filter(Boolean) },
         orderStatus: displayStatusOfOrder(u.order?.status), unitStatus: displayStatusOfUnit(u.status),
-        presence: physicalPresenceOf({ unitStatus: u.status, runStatus: run?.status ?? null, runOrigin: run?.origin ?? null, inboundAccepted: !!run?.custodyHandoffs?.some((h) => h.direction === "INBOUND" && h.status === "ACCEPTED") }),
+        globalStatus: milestone.globalStatus, receivedBasis: milestone.receivedBasis, receivedBasisLabel: milestone.receivedBasisLabel, scheduleStatus: milestone.scheduleStatus,
+        presence: physicalPresenceOf({ unitStatus: u.status, runStatus: run?.status ?? null, runOrigin: run?.origin ?? null, inboundAccepted: ev.receivedBasis === "CUSTODY" || !!run?.custodyHandoffs?.some((h) => h.direction === "INBOUND" && h.status === "ACCEPTED"), staffConfirmed: ev.receivedBasis === "STAFF_CONFIRMED" }),
         priority: { key: prio.key, label: prio.label, rank: prio.rank, complaintCases: prio.complaintCases },
       },
     };

@@ -126,6 +126,10 @@ export function PlanCard({ view, seq = null, today, tomorrow, onOpen, handle = n
             {presence && <Row label="Posisi" testid="row-presence"><span className={presence.key === "NOT_ARRIVED" ? "font-semibold text-orange" : ""}>{presence.label}</span></Row>}
             <Row label="Tahap" testid="row-stage">{stageText(view)}</Row>
             <Row label="Bahan" testid="row-material">{mat ? <Badge variant={mat.tone}>{mat.label}</Badge> : <span className="text-ink3">—</span>}</Row>
+            {view.corner?.status === "TIDAK_BERLAKU" && view.cornerDecision?.required === false && (
+              <Row label="Corner" testid="row-corner-na"><span>Tidak diperlukan{(view.cornerDecision.reason || view.corner.reason) ? ` — ${view.cornerDecision.reason || view.corner.reason}` : ""}</span>
+                {view.cornerDecision.decidedBy && <span className="block text-[12px] text-ink3">Diputuskan {view.cornerDecision.decidedBy}</span>}</Row>
+            )}
             <Row label="Target" testid="row-target">
               {plan?.productionDate ? (
                 <span className="inline-flex flex-wrap items-center gap-1.5">

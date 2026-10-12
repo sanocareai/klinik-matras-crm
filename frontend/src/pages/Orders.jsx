@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { api } from "../api.js";
 import { Card } from "@/components/ui/card.jsx";
+import { OrderMilestoneBadge } from "@/components/OrderMilestoneBadge.jsx";
 import {
   formatRupiah, formatRupiahShort,
   ORDER_STATUS_LABELS, ORDER_STATUS_BUCKET_LABELS, orderStatusBucket, orderStatusesForCategory, PAYMENT_STATUS_LABELS, PAYMENT_STATUSES,
@@ -341,6 +342,7 @@ function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageC
           ada label baru lagi nanti. */}
       <div className="mt-2 flex flex-col gap-1.5">
         <StatusSelect order={order} onChange={onStatusChange} className="w-full" />
+        <OrderMilestoneBadge milestone={order.milestone} />
         <PipelineStageSelect order={order} onChange={onStageChange} className="w-full" />
       </div>
 
@@ -1407,6 +1409,7 @@ export default function Orders() {
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5">
                         <StatusSelect order={o} onChange={handleStatusChange} />
+                        <OrderMilestoneBadge milestone={o.milestone} className="mt-1" />
                         {bolehDibukaLagiUntukPengiriman(o) && (
                           <button
                             type="button" disabled={reopeningId === o.id}

@@ -136,7 +136,7 @@ export function waitCopy(next) {
   switch (next?.wait) {
     // P9A (One-Location Production Intake) — unit sudah "Masuk Produksi"
     // (pickup berhasil) tapi belum dikonfirmasi tiba di workshop; tahap
-    // produksi tidak bisa dimulai sampai tombol "Unit Tiba di Workshop" di
+    // produksi tidak bisa dimulai sampai tombol "Terima Unit di Workshop" di
     // kartu Planner diklik (server menegakkan ulang, bukan cuma UI).
     case "PENDING_ARRIVAL": return { title: "Menunggu konfirmasi kedatangan", text: "Unit sudah masuk produksi (pickup berhasil) tapi belum dikonfirmasi tiba di workshop. Konfirmasi kedatangan dulu di Rencana Produksi sebelum tahap ini bisa dimulai." };
     case "AWAITING_QC": return { title: "Menunggu QC", text: "Petugas QC akan menguji unit ini. Anda bisa lanjut ke unit lain." };

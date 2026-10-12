@@ -67,11 +67,11 @@ export const PRESENCE = Object.freeze({
 // INTAKE oleh confirmUnitArrival (unitCustodyCommandService) — kolom yang sudah ada, tanpa migrasi. Hanya ini (selain custody ACCEPTED / WORKSHOP_BORN) yang membuktikan tiba.
 export const ARRIVAL_NO_CUSTODY_REASON = "Kedatangan dikonfirmasi petugas (tanpa custody)";
 export const arrivalConfirmedByStaff = (phases) => (phases || []).some((p) => p.phase === "INTAKE" && p.reason === ARRIVAL_NO_CUSTODY_REASON);
-export function physicalPresenceOf({ unitStatus, runStatus = null, runOrigin = null, inboundAccepted = false }) {
+export function physicalPresenceOf({ unitStatus, runStatus = null, runOrigin = null, inboundAccepted = false, staffConfirmed = false }) {
   const s = UNIT_STATUS_MAP[unitStatus]?.[0];
   if (runStatus === "PENDING_ARRIVAL" || unitStatus === "AWAITING_PICKUP" || unitStatus === "IN_TRANSIT_IN") return { ...PRESENCE.NOT_ARRIVED, confirmed: false };
   if (unitStatus === "IN_TRANSIT_OUT" || s === "TERKIRIM") return { ...PRESENCE.LEFT_WORKSHOP, confirmed: true };
-  if (inboundAccepted || runOrigin === "WORKSHOP_BORN") return { ...PRESENCE.ARRIVED_CONFIRMED, confirmed: true };
+  if (inboundAccepted || staffConfirmed || runOrigin === "WORKSHOP_BORN") return { ...PRESENCE.ARRIVED_CONFIRMED, confirmed: true };
   return { ...PRESENCE.AT_WORKSHOP_UNCONFIRMED, confirmed: false };
 }
 

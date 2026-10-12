@@ -116,6 +116,10 @@ function OrderRow({ order, tokens, styles, onRefresh, onDeleted, onEdit, onExpan
               {order.daysInStatusPerkiraan ? "*" : ""}
             </Text>
           </View>
+          {/* Status global (milestone berbasis bukti, dari server): unit tertinggal + rincian. Field status lama tetap dipakai filter/tab. */}
+          {order.milestone && !order.milestone.legacy && order.milestone.summary ? (
+            <Text style={styles.daysText} numberOfLines={2} testID="order-milestone">{order.milestone.summary}{order.milestone.mixed && order.milestone.aheadText ? ` · Lainnya: ${order.milestone.aheadText}` : ""}</Text>
+          ) : null}
         </View>
         <PressableScale
           style={[styles.chatBtn, !order.conversationId && { opacity: 0.35 }]}

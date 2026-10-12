@@ -1,4 +1,5 @@
 import { saveAs } from "file-saver";
+import { FORMAT_RUPIAH, FORMAT_TANGGAL, aturCetak, keTanggal } from "./excelCommon.js";
 
 // Export Order "advanced" (7 Okt 2026, permintaan owner): file Excel berwarna dengan filter, panel beku,
 // format angka/tanggal asli, sheet Ringkasan & Komplain Aktif. ExcelJS (~1MB) dimuat HANYA saat tombol
@@ -33,20 +34,14 @@ const LEBAR_TETAP = {
   "Tgl Kirim Komplain": 14, "Link Lokasi": 18, Dibuat: 12,
 };
 
-function keTanggal(v) {
-  if (!v) return null;
-  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(v));
-  return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])) : null;
-}
-
 function isiSel(cell, nama, nilai) {
   if (KOLOM_TANGGAL.has(nama)) {
     const d = keTanggal(nilai);
     cell.value = d;
-    if (d) cell.numFmt = "yyyy-mm-dd";
+    if (d) cell.numFmt = FORMAT_TANGGAL;
   } else if (KOLOM_RUPIAH.has(nama) && nilai !== "" && nilai != null) {
     cell.value = Number(nilai);
-    cell.numFmt = '"Rp" #,##0;[Red]-"Rp" #,##0';
+    cell.numFmt = FORMAT_RUPIAH;
   } else if (KOLOM_ANGKA.has(nama) && nilai !== "" && nilai != null) {
     cell.value = Number(nilai);
     cell.numFmt = "0";
@@ -69,11 +64,6 @@ function gayaHeader(ws, jumlahKolom) {
 
 function aturLebar(ws, headers) {
   headers.forEach((h, i) => { ws.getColumn(i + 1).width = LEBAR_TETAP[h] || Math.min(Math.max(h.length + 4, 12), 30); });
-}
-
-function aturCetak(ws) {
-  ws.pageSetup = { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 };
-  ws.pageSetup.printTitlesRow = "1:1";
 }
 
 /** Sheet "Order": 1 baris per order, berwarna, dengan filter dan panel beku. */

@@ -49,6 +49,7 @@ import { emitNewMessage, emitConversationUpdate } from "../socket.js";
 import { maskAccountNumber } from "../utils/maskAccount.js";
 import { assertOrderUnitsNotV2Owned } from "../services/productionRunGuards.js";
 import { atribusiOrderWhere } from "../services/salesOwner.js";
+import { loadOrderMilestones } from "../services/orderMilestoneService.js";
 
 export const orderRouter = express.Router();
 orderRouter.use(requireAuth);
@@ -1494,6 +1495,10 @@ orderRouter.get("/", async (req, res) => {
       const ringkas = await ringkasOrderPkr(prisma, idPkr, { izinNominal: hasPermission(req.user, P.FINANCE_READ) });
       for (const it of items) if (it.penjualanKaryawanId) it.penjualanKaryawan = ringkas.get(it.penjualanKaryawanId) ?? null;
     }
+
+    // Milestone global tingkat ORDER (Fase 2): unit aktif yang paling tertinggal + rincian progres; read-model berbasis bukti, Order.status lama TETAP ada di atas.
+    const orderMilestones = await loadOrderMilestones(prisma, items);
+    for (const it of items) it.milestone = orderMilestones.get(it.id) ?? null;
 
     // Ringkasan per status untuk header papan — dihitung di server supaya UI
     // tidak perlu memuat SELURUH order hanya untuk menghitung jumlah kolom.

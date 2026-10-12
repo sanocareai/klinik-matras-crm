@@ -10,7 +10,7 @@ import { ProgressBar } from "@/components/ui/progress.jsx";
 import { formatRupiah } from "@/utils/format.js";
 import { formatTanggal } from "@/utils/formatDate.js";
 import { friendlyError } from "@/features/production/experience.js";
-import { DELAY_TITLE, SKIP_LABEL, delayKindText, delayStatusText, presenceTone, priorityOf, progressText, resumeInfo, statusOf } from "@/features/production/productionLabels.js";
+import { DELAY_TITLE, SKIP_LABEL, delayKindText, delayStatusText, presenceTone, priorityOf, progressText, receivedBasisText, resumeInfo, scheduleStatusText, statusOf } from "@/features/production/productionLabels.js";
 import { UnitPhotoThumb } from "@/features/production/UnitPhotoThumb.jsx";
 import { DOC_SOURCE_BADGE, DOC_SOURCE_LABEL, DOC_STATUS } from "@/features/production/documentation.js";
 import { DiagnosisWizard, diagnosisCtaLabel, hasLocalDraft } from "@/features/production/DiagnosisWizard.jsx";
@@ -77,14 +77,36 @@ function V2Owners({ d }) {
   );
 }
 
+// KPI waktu alur (pickup → diterima → produksi → Gudang → delivery). Durasi hanya bila kedua timestamp sumber tercatat; selain itu "Data waktu belum tersedia" (tidak ditebak).
+function WaktuAlur({ timeline }) {
+  if (!timeline?.durations?.length) return null;
+  const at = Object.fromEntries((timeline.timestamps || []).map((t) => [t.key, t.at]));
+  return (
+    <div data-testid="waktu-alur" className="space-y-1.5">
+      <h4 className="m-0 text-[12.5px] font-bold text-ink2">Waktu alur</h4>
+      <dl className="m-0 grid grid-cols-1 gap-x-4 gap-y-1 text-[12.5px] sm:grid-cols-2">
+        {timeline.durations.map((x) => (
+          <div key={x.key} className="flex items-baseline justify-between gap-2" data-testid={`waktu-${x.key}`} data-available={x.available ? "1" : "0"}>
+            <dt className="text-ink3">{x.label}</dt>
+            <dd className={`m-0 font-semibold ${x.available ? "text-ink" : "text-ink3"}`}>{x.text}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="m-0 text-[11px] text-ink3">{(timeline.timestamps || []).filter((t) => t.at).length} dari {(timeline.timestamps || []).length} titik waktu tercatat{at.productionFinishedAt && !at.warehouseAcceptedAt ? " · barang jadi belum diterima Gudang" : ""}.</p>
+    </div>
+  );
+}
+
 function Ringkasan({ d }) {
   return (
     <div className="space-y-3">
       <dl className="m-0 grid grid-cols-2 gap-2 text-[12.5px] sm:grid-cols-3">
         <Field label="Merk & Ukuran" value={[d.identity.merk, d.identity.ukuran].filter(Boolean).join(" ")} />
         <Field label="Status order" value={d.identity.orderStatus?.label || statusOf({ status: d.identity.status }).label} />
-        <Field label="Status unit" value={statusOf({ unitStatusDisplay: d.identity.unitStatus, status: d.identity.status }).label} />
-        <Field label="Posisi unit" value={d.identity.presence?.label} />
+        {/* Empat sumbu TERPISAH: status global (milestone berbasis bukti) · keberadaan fisik · tahap produksi (bucket) · status jadwal. */}
+        <Field label="Status global" value={(() => { const g = statusOf({ globalStatus: d.identity.globalStatus, unitStatusDisplay: d.identity.unitStatus, status: d.identity.status }); return g.detail ? `${g.label} — ${g.detail}` : g.label; })()} />
+        <Field label="Posisi unit" value={[d.identity.presence?.label, receivedBasisText(d.identity)].filter(Boolean).join(" · ")} />
+        <Field label="Status jadwal" value={scheduleStatusText(d.identity)} />
         <Field label="Meja / Workshop" value={d.identity.station.label} />
         <Field label="PIC Meja" value={d.identity.pic.table} />
         <Field label="PIC Corner" value={d.identity.pic.corner} />
@@ -101,6 +123,7 @@ function Ringkasan({ d }) {
         {d.identity.target.late && <Badge variant="red">Terlambat</Badge>}
       </div>
       <V2Owners d={d} />
+      <WaktuAlur timeline={d.timeline} />
       {d.production?.cornerView && d.production.runId && (d.production.cornerView.status.status !== "BELUM_SAMPAI" || d.production.cornerView.request.fabricChangeRequested) && <CornerRequestCard cornerView={d.production.cornerView} />}
       <OrderField label="Keluhan Customer" field={d.salesContext.complaints} format={bdArr} />
       <OrderField label="Layanan Sales" field={d.salesContext.salesServices} format={bdArr} />

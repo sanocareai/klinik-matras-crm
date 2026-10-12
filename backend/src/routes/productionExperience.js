@@ -4,7 +4,7 @@
 // menyembunyikan aksi. Pesan berbahasa Indonesia.
 import express from "express";
 import { requireAuth } from "../middleware/auth.js";
-import { hasPermission, requireAnyPermission, requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
+import { hasPermission, requireAnyPermission, requirePermission, rolesOf, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
 import { createProductionPlan, listPlanScheduleHistory, reorderStationPlans, scheduleProductionPlan, setStationDayPic } from "../services/productionPlanningCommandService.js";
 import { cohortStatesOf, getPlanningRefs, listRencanaEligibility, planAndScheduleUnit } from "../services/productionRencanaService.js";
@@ -32,7 +32,10 @@ import { productionTargetsRouter } from "./productionTargets.js";
 import { productionUnitPhotoUploadRouter } from "./productionUnitPhoto.js";
 import { PRODUCTION_READER_MODE, loadV2Flags, resolveProductionReaderState } from "../services/v2FeatureFlags.js";
 import { UUID_RE, isUnitV2ExecutionOwned, findV1Drift } from "../services/unitV2Ownership.js";
-import { BOARD_DEFAULTS } from "../lib/domain/productionBoard.js";
+import { BOARD_DEFAULTS, todayWib } from "../lib/domain/productionBoard.js";
+import { normalizeExportQuery } from "../lib/domain/productionRencanaExport.js";
+import { buildRencanaExport } from "../services/productionRencanaExportService.js";
+import { getCornerBoard, setCornerOperator } from "../services/productionCornerService.js";
 
 export const productionExperienceRouter = express.Router();
 productionExperienceRouter.use(requireAuth);
@@ -84,6 +87,41 @@ productionExperienceRouter.get("/backlog", requireAnyPermission(...READ_PERMS), 
     const states = cohortStatesOf(await loadV2Flags(prisma));
     const readerOn = states.reader.mode !== PRODUCTION_READER_MODE.OFF && states.reader.unitIds.size > 0;
     res.json({ readerMode: readerOn ? "COHORT" : "OFF", ...(await listBacklog(prisma, { states, canActivate: hasPermission(req.user, P.PRODUCTION_SETTINGS_WRITE), ...parseBacklogQuery(req.query) })) });
+  } catch (err) { handleErr(err, res); }
+});
+
+// POST /api/production-v2/rencana/export — data untuk export Excel Rencana Produksi (snapshot BACA-SAJA; POST hanya agar daftar kartu terlihat bisa dikirim di body — tidak ada tulis).
+// Data dari server yang sama dengan papan (toRunView). Nilai order HANYA untuk ADMIN/OWNER yang memintanya; peran lain yang meminta -> 403 dan tidak ada data harga yang dimuat.
+productionExperienceRouter.post("/rencana/export", requireAnyPermission(...READ_PERMS), async (req, res) => {
+  try {
+    const wantValue = req.body?.includeValue === true || req.body?.includeValue === "true";
+    const canValue = rolesOf(req.user).some((r) => r === "ADMIN" || r === "OWNER");
+    if (wantValue && !canValue) return res.status(403).json({ error: "Nilai order hanya dapat disertakan oleh Admin atau Owner", code: "EXPORT_VALUE_FORBIDDEN" });
+    const query = normalizeExportQuery(req.body || {}, { today: todayWib(), stations: BOARD_DEFAULTS.stations });
+    const cohortUnitIds = await readerCohort();
+    const data = await buildRencanaExport(prisma, { cohortUnitIds, query, canIncludeValue: canValue });
+    res.set("Cache-Control", "no-store");
+    res.json({ readerMode: cohortUnitIds ? "COHORT" : "OFF", ...data });
+  } catch (err) { handleErr(err, res); }
+});
+
+// GET /api/production-v2/corner-board — tampilan Corner di Rencana Produksi (BACA-SAJA): empat kelompok dari cornerStatusOf + hambatan/aktor/QC/permintaan Sales dari SATU
+// read-model server. Tanpa urutan/kapasitas/target Corner (belum ada kontrak). Cohort reader seperti papan lain.
+productionExperienceRouter.get("/corner-board", requireAnyPermission(...READ_PERMS), async (req, res) => {
+  try {
+    const unitIds = await readerCohort();
+    if (!unitIds) return inert(res, { groups: [], notApplicable: 0 });
+    res.json({ readerMode: "COHORT", ...(await getCornerBoard(prisma, { unitIds })) });
+  } catch (err) { handleErr(err, res); }
+});
+
+// POST /api/production-v2/runs/:runId/corner-operator { operatorId, expectedRevision } — Tetapkan/Ganti PIC Corner. HANYA cornerOperatorId (bukan jadwal ulang). Idempotency-Key wajib;
+// expectedRevision = revisi RENCANA (409 PLAN_REVISION_CONFLICT bila berubah). Pekerjaan Corner yang sudah berjalan tidak dialihkan (409 CORNER_WORK_STARTED).
+productionExperienceRouter.post("/runs/:runId/corner-operator", requirePermission(P.PRODUCTION_ASSIGNMENT_WRITE), async (req, res) => {
+  try {
+    res.json(await setCornerOperator(prisma, {
+      runId: req.params.runId, operatorId: req.body?.operatorId, expectedRevision: req.body?.expectedRevision, actorId: req.user.id, idempotencyKey: idem(req),
+    }));
   } catch (err) { handleErr(err, res); }
 });
 

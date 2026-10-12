@@ -33,7 +33,7 @@ import { sendMedia, sendText } from "../services/wahaClient.js";
 import { sendWithSessionFallback, resolveSendTarget } from "./conversations.js";
 import { buildMessagePreview } from "../utils/messagePreview.js";
 import { emitNewMessage, emitConversationUpdate } from "../socket.js";
-import { notifyDriverEnRoute, notifyUnitReceived, notifyDelivered, sendCustomerText } from "../services/customerNotifications.js";
+import { notifyDriverEnRoute, notifyDelivered, sendCustomerText } from "../services/customerNotifications.js";
 import { notifyDriverJobAssigned, notifyDriverRouteChanged, notifyProductionRevisionReady, notifySalesJobFailed, notifySalesJobRescheduled, notifyComplaintCaseOwnerChanged } from "../services/pushNotifications.js";
 import {
   openOrAdvanceCase, closeCaseOnJobComplete, cancelCase, RescheduleCaseError,
@@ -51,6 +51,7 @@ import { pastikanNominalPembayaranLapangan } from "../services/finance/nominalPe
 import { verifikasiPembayaran } from "../services/finance/pembayaran.js";
 import { skopPembayaran, orderMilikSalesWhere, paymentMilikSalesWhere } from "../services/finance/skopPembayaran.js";
 import { syncOrderStatusForUnits, syncRouteCompletionStatus } from "../services/orderStatusSync.js";
+import { loadOrderMilestones } from "../services/orderMilestoneService.js";
 import { ACTIVE_JOB_STATUSES, ELIGIBLE_ORDER_STATUS, STALE_UNSCHEDULED_JOB, isJobVisibleToDriverApp, VISIBLE_ROUTE_STATUSES_FOR_DRIVER_APP } from "../services/jobStatus.js";
 import { geocodeAddress, routeLegs, routePath, DEPOT, buildRouteMapsUrl } from "../services/maps.js";
 import { buildRouteSheetImage } from "../services/routeSheetImage.js";
@@ -1431,7 +1432,10 @@ armadaRouter.get("/jobs", requirePermission(P.JOB_READ), async (req, res) => {
       take: Math.min(Number(take) || 200, 500),
     });
 
-    res.json({ jobs });
+    // Status global (milestone) tingkat ORDER untuk tiap job — kosakata yang sama dengan Sales/Produksi; order.status lama TETAP ada (kompatibel).
+    const orderRefs = [...new Map(jobs.filter((j) => j.orderId).map((j) => [j.orderId, { id: j.orderId, status: j.order?.status }])).values()];
+    const jobMilestones = orderRefs.length ? await loadOrderMilestones(prisma, orderRefs) : new Map();
+    res.json({ jobs: jobs.map((j) => (j.orderId ? { ...j, orderMilestone: jobMilestones.get(j.orderId) ?? null } : j)) });
   } catch (err) {
     handleErr(err, res);
   }
@@ -5668,15 +5672,12 @@ armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_
         .catch((err) => console.error("[jobs/:id/complete] notifyComplaintCaseOwnerChanged gagal:", err.message));
     }
 
-    // FR-N trigger 2 & 4/4: "Unit sampai bengkel" (PICKUP) / "Terkirim"
-    // (DELIVERY) — ke CUSTOMER, beda dari notifyDriverGroup di atas yang
-    // ke grup ops internal.
+    // FR-N trigger 4/4: "Terkirim" (DELIVERY) — ke CUSTOMER, beda dari notifyDriverGroup di atas yang ke grup ops internal.
+    // "Unit sampai bengkel" TIDAK dipicu di sini: pickup selesai belum berarti diterima workshop. Pemicunya hanya command "Terima Unit di Workshop"
+    // (unitCustodyCommandService.acceptUnitCustody / confirmUnitArrival -> notifyUnitReceivedAtWorkshop), sekali per transisi.
     const customer = full.units[0]?.unit?.order?.customer;
     const orderNumber = full.units[0]?.unit?.order?.orderNumber;
-    if (!replayed && customer) {
-      if (owned.type === "PICKUP") notifyUnitReceived(orderNumber, customer.id, customer.name);
-      else notifyDelivered(orderNumber, customer.id, customer.name);
-    }
+    if (!replayed && customer && owned.type !== "PICKUP") notifyDelivered(orderNumber, customer.id, customer.name);
 
     res.set("Idempotency-Replayed", replayed ? "true" : "false").json(full);
   } catch (err) {
