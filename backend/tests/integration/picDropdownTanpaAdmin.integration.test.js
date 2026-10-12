@@ -57,3 +57,21 @@ test("PIC dropdown: bila SATU-SATUNYA profil adalah ADMIN, daftar kosong dengan 
   assert.equal(r.body.operators.length, 0);
   assert.ok(r.body.problems.some((p) => /^NO_PIC/.test(p.code)), JSON.stringify(r.body.problems));
 });
+
+test("GET /api/production/operators: ?pilihan=1 (dropdown PIC V1/Planner) tanpa ADMIN/OWNER; tanpa parameter = daftar penuh untuk halaman Operator (profil admin tetap terlihat)", async () => {
+  const lead = await operator(["PRODUCTION_LEAD"], { profile: false });
+  const worker = await operator(["PRODUCTION_WORKER"]);
+  const adminPic = await operator(["ADMIN", "PRODUCTION_WORKER", "WAREHOUSE"]);
+  const ownerPic = await operator(["OWNER"]);
+  const api = makeClient(server.baseUrl, lead.token);
+  const pilihan = await api.get("/api/production/operators?pilihan=1");
+  assert.equal(pilihan.status, 200, JSON.stringify(pilihan.body));
+  const idsP = pilihan.body.operators.map((o) => o.user.id);
+  assert.ok(idsP.includes(worker.user.id));
+  assert.ok(!idsP.includes(adminPic.user.id) && !idsP.includes(ownerPic.user.id), "ADMIN/OWNER tidak ditawarkan di dropdown");
+  const penuh = await api.get("/api/production/operators");
+  assert.equal(penuh.status, 200);
+  const idsF = penuh.body.operators.map((o) => o.user.id);
+  assert.ok(idsF.includes(adminPic.user.id) && idsF.includes(ownerPic.user.id), "halaman Operator tetap menampilkan seluruh profil");
+  assert.ok(idsF.includes(worker.user.id));
+});

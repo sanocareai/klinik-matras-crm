@@ -53,7 +53,7 @@ export default function UnitV1Stage({ data, roles, onData, onChanged }) {
   }
   async function openAssign() {
     setAssign((a) => ({ ...a, open: true }));
-    if (!assign.refs) { try { const [w, o] = await Promise.all([api.getWorkCenters(), api.getProductionOperators()]); setAssign((a) => ({ ...a, refs: { wcs: w.workCenters || [], ops: (o.operators || []).filter((x) => x.active) } })); } catch (e) { setMsg({ kind: "error", text: e.message }); } }
+    if (!assign.refs) { try { const [w, o] = await Promise.all([api.getWorkCenters(), api.getProductionOperatorChoices()]); setAssign((a) => ({ ...a, refs: { wcs: w.workCenters || [], ops: (o.operators || []).filter((x) => x.active) } })); } catch (e) { setMsg({ kind: "error", text: e.message }); } }
   }
   const stage = cur?.stage; const photoNeeded = needsPhotoOf(st);
   const label = stage?.labelId;

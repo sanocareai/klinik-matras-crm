@@ -27,6 +27,7 @@ import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
 import { PRODUCTION_READER_MODE, loadV2Flags, resolveProductionReaderState } from "../services/v2FeatureFlags.js";
 import { prisma } from "../db.js";
 import { listV1WorkerQueue } from "../services/v1WorkerQueue.js";
+import { bukanAdminOwner } from "../services/productionRencanaService.js";
 import { notifyReadyForDelivery } from "../services/customerNotifications.js";
 import { DISPLAY_STATUS_UNIT_FILTER, displayStatusCountsOf, displayStatusOfOrder, displayStatusOfUnit, physicalPresenceOf, priorityDisplay } from "../lib/domain/productionDisplay.js";
 import { loadOpenComplaintsByUnit } from "../services/productionComplaints.js";
@@ -1021,7 +1022,11 @@ productionRouter.patch("/work-centers/:id", requirePermission(P.WORK_CENTER_WRIT
 // aktif di sini).
 productionRouter.get("/operators", requirePermission(P.PRODUCTION_OPERATOR_READ), async (req, res) => {
   try {
+    // ?pilihan=1 = untuk DROPDOWN pilihan PIC (penugasan tahap V1, Planner V2): akun ADMIN/OWNER tidak ditawarkan (keputusan Owner 11 Okt 2026). Tanpa parameter = daftar penuh
+    // untuk halaman Operator (kelola profil) — profil ADMIN tetap terlihat di sana dan tidak dihapus.
+    const hanyaPilihan = ["1", "true"].includes(String(req.query.pilihan || ""));
     const operators = await prisma.productionOperator.findMany({
+      ...(hanyaPilihan ? { where: { user: bukanAdminOwner } } : {}),
       include: {
         user: { select: { id: true, name: true, email: true, active: true } },
         primaryWorkCenter: { select: { id: true, name: true } },

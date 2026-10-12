@@ -158,7 +158,7 @@ export default function ProductionPlannerV2() {
     if (!canRoute) return;
     Promise.all([
       api.getWorkCenters().catch(() => ({ workCenters: [] })),
-      api.getProductionOperators().catch(() => ({ operators: [] })),
+      api.getProductionOperatorChoices().catch(() => ({ operators: [] })),
       api.getServiceCatalog().catch(() => ({ services: [] })),
     ]).then(([w, o, s]) => setRefs({
       workCenters: (w.workCenters || []).filter((x) => x.active !== false),
