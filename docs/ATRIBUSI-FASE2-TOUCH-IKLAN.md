@@ -1,161 +1,149 @@
 # Atribusi CTWA Fase 2 — Touch iklan (Ad ID) dan laporan lead/closing per ad, ad set, campaign
 
-Status: **kode + migrasi aditif, BELUM deploy/push/merge.** Dibangun dari baseline live `187795f1`.
-Capture touch **default MATI** (`ATRIBUSI_TOUCH_CAPTURE_ENABLED` harus persis `"true"`).
+Status: **kode + migrasi aditif + skrip rilis bergerbang; BELUM deploy/push/merge.** Dibangun dari baseline live `187795f1`.
+Capture touch **default MATI** (`ATRIBUSI_TOUCH_CAPTURE_ENABLED` harus persis `"true"`). Skrip rilis TIDAK menyalakannya.
 
 ## 1. Apa yang berubah
 
 | Area | Berkas | Sifat |
 |---|---|---|
-| Migrasi | `backend/prisma/migrations/20261107090000_atribusi_touch_iklan/migration.sql` | 3 tabel BARU, tanpa mengubah tabel lama |
-| Skema | `backend/prisma/schema.prisma` | +3 model, +3 relasi balik (hanya tambahan) |
-| Capture | `backend/src/services/attribution/touchCapture.js` | baru; dipanggil dari `webhooks.js` (satu blok, tidak di-await, tidak pernah melempar) |
-| Referensi | `backend/src/services/attribution/adReferensi.js` | impor tervalidasi (CSV Ads Manager / JSON), dry-run default |
+| Migrasi | `backend/prisma/migrations/20261107090000_atribusi_touch_iklan/migration.sql` | 3 tabel BARU kosong; tanpa mengubah tabel lama; tanpa backfill |
+| Skema | `backend/prisma/schema.prisma` | hanya penambahan (3 model + relasi balik) |
+| Capture | `backend/src/services/attribution/touchCapture.js` | touch ATOMIK bersama `Message` (lihat §2) |
+| Kesehatan | `backend/src/services/attribution/captureHealth.js` | agregat tanpa identitas |
+| Referensi | `backend/src/services/attribution/adReferensi.js` | impor tervalidasi, dry-run default |
 | Laporan | `backend/src/services/attribution/iklanReport.js` | transaksi `READ ONLY`, rekonsiliasi bawaan |
 | Rute | `backend/src/routes/attributionAds.js` → `/api/atribusi/iklan` | ADMIN saja |
-| Loader | `backend/src/services/attribution/cohortLoader.js` | + opsi `customerIds` (aditif; jalur lama tak berubah) |
+| Webhook | `backend/src/routes/webhooks.js` | `Message.create` lewat `simpanPesanDenganTouch` |
+| Rilis | `scripts/release-atribusi-iklan.sh` | bergerbang; rollback kode tanpa DROP |
 | Dashboard lama | — | **tidak diubah** |
 
-Tabel baru:
+Tabel baru: `attribution_touches` (append-only; Ad ID string; UTC + hari WIB di-CHECK; dedupe key UNIQUE; tanpa nomor/nama/chat/clid mentah/payload),
+`meta_ad_references` (Ad → Ad Set → Campaign; ID = kunci, nama = label), `meta_ad_reference_imports` (jejak impor).
 
-- `attribution_touches` — append-only. `customer_id`, `message_id` (opsional), `ad_id` (teks, `^[0-9]{5,32}$`), snapshot `ad_set_id`/`campaign_id`
-  (null bila belum terpetakan), `mapping_status_at_touch` (`MAPPED|UNMAPPED`), `touch_at` (UTC) + `touch_date_wib` (tanggal WIB; CHECK = `touch_at + 7 jam`),
-  `evidence_source` (`CTWA_AD|AD_REPLY_UNMARKED`), `source_type='ad'`, `entry_point_source/app`, `ctwa_clid_hash` (16 hex HMAC), `customer_new_at_touch`,
-  `dedupe_key` UNIQUE, `capture_version`. **Tidak ada** kolom nomor, nama, isi chat, clid mentah, atau payload.
-- `meta_ad_references` — kunci `ad_id` → `ad_set_id` → `campaign_id` (ID = kunci; nama = label snapshot), `source` (`ADS_MANAGER_EXPORT|MARKETING_API|MANUAL`), `synced_at`.
-- `meta_ad_reference_imports` — jejak setiap impor (sha256 berkas, jumlah baris, siapa).
+## 2. Mekanisme capture: durable dan idempoten (menutup loss window)
 
-## 2. Alur
+**Masalah (ditemukan Mesa):** Ad ID hanya ada di payload webhook. Bila touch ditulis SETELAH `Message.create` sebagai operasi terpisah, proses yang mati di antaranya
+meninggalkan `Message` tanpa touch yang tidak dapat dipulihkan: webhook di-ack `200` sebelum diproses (WAHA tidak mengirim ulang), retry yang ada dibuang oleh
+`cariPesanSudahAda` sebelum handler, dan DB tidak menyimpan sinyal untuk direkonstruksi.
 
-1. Webhook WAHA (`message` / `message.any`) → pesan inbound disimpan seperti biasa (customer + Message ada).
-2. `rekamTouch` membaca `contextInfo.externalAdReply.sourceID` + `sourceType=ad` + penanda iklan (`conversionSource` / `entryPointConversionSource`).
-   Ad ID **hanya** dari `sourceID`; tidak pernah dari URL postingan. `sourceID` harus numerik 5–32 digit.
-3. Menulis satu baris `attribution_touches` dengan kunci dedupe `msg:` + sha256(id pesan inti) — event ganda (`message` + `message.any`), retry WAHA,
-   dan prefix `true_/false_` menghasilkan kunci yang sama → satu touch.
-4. Pencarian `meta_ad_references`: ada → snapshot ad set/campaign; tidak ada → `UNMAPPED` dengan nol ID turunan.
-5. Kegagalan di langkah 2–4 hanya menaikkan penghitung internal dan mencetak **kode** (tanpa pesan galat); inbox tidak terpengaruh.
+**Pilihan:** touch ditulis dalam **transaksi yang sama** dengan `Message.create` (`simpanPesanDenganTouch`). Alternatif ditolak:
 
-Laporan memakai referensi **terkini** (bukan snapshot) sehingga Ad ID yang dipetakan belakangan otomatis berpindah dari `UNMAPPED` ke campaign-nya.
+| Opsi | Menutup crash tanpa webhook ulang? | Alasan ditolak |
+|---|---|---|
+| Perbaiki `skip-dupe` saja | Tidak | retry dibuang sebelum handler; sinyal tidak ada di DB |
+| Tabel outbox + worker pemulih | Hanya bila sinyal ditulis atomik dengan pesan | baris atomik itu sudah *adalah* touch; outbox menambah state/worker tanpa manfaat |
+| Intent write-ahead + rekonsiliator | Ya | intent untuk pesan yang tak pernah tersimpan; perlu pembersih; lebih kompleks |
+| **Satu transaksi (dipilih)** | **Ya, struktural** | transaksi menahan koneksi beberapa ms, hanya untuk pesan CTWA |
 
-## 3. Aturan atribusi
+Akibat: tidak ada keadaan "Message ada, touch belum" yang dapat dicapai oleh kematian proses. Mati sebelum commit → tidak ada Message maupun touch;
+mati sesudah commit → keduanya ada, tepat satu (kunci dedupe UNIQUE; event `message`+`message.any`+retry menghasilkan satu baris).
 
-- **Akuisisi** = touch CTWA valid *pertama* pada customer yang *baru saat touch itu* (`customer_new_at_touch=true`, urut `touch_at, id`). Satu customer = tepat satu grup.
-- Touch berikutnya dan touch pada customer lama dilaporkan terpisah (`sentuhanBerikutnya`), **tidak** mengubah customer lama menjadi lead baru.
-- Customer yang sudah ada sebelum capture aktif tidak punya touch akuisisi → masuk `tanpaTouch` / `leadLegacyMetaAdsTanpaTouch`; tidak ditebak.
-- `AD_REPLY_UNMARKED` (iklan tanpa penanda CTWA) direkam tetapi **tidak** dihitung kecuali `sinyal=SEMUA`.
-- Tidak ada atribusi historis: berkas Fase 0 tidak memuat customer ID. `attributionStartAt` = touch tertua tersimpan; rentang sebelum itu diberi peringatan `RENTANG_SEBELUM_ATRIBUSI`.
+**Atribusi tidak boleh menggagalkan inbox:**
+1. Pesan tanpa sinyal iklan valid (atau flag MATI) tidak memakai transaksi sama sekali (jalur lama persis).
+2. Insert touch berada di dalam `SAVEPOINT`; ditolak DB → `ROLLBACK TO SAVEPOINT`, pesan tetap commit (terhitung `gagal`).
+3. Transaksi bermasalah (P2028/P2034/savepoint tak pulih) → pesan dibuat ulang tanpa transaksi, lalu touch dicoba sekali di luar jalur kritis (`dipulihkan` / `gagalPulih`).
+4. Galat dari pesan sendiri (mis. P2002 = sudah ada) dilempar apa adanya → pemanggil `skip-dupe`, seperti sebelumnya.
+
+**`customerNewAtTouch`** kini dihitung dari keadaan DB, bukan `!existingCustomer`: baru dibuat oleh pemrosesan ini, atau dibuat ≤ 2 jam dan belum punya pesan apa pun
+(customer yang sempat terbentuk sebelum proses mati tidak salah menjadi "customer lama" saat retry).
+
+**Observabilitas (agregat, tanpa identitas):** `GET /api/atribusi/iklan/kesehatan` — `proses`: direkam, duplikat, bukanTouch, gagal, fallbackTransaksi, dipulihkan,
+gagalPulih, tertunda (+usia tertua detik), terakhirGagalAt (per proses; 0 saat restart); `db`: touch total/24 jam/7 hari, touch tertua/terbaru, kesegaran referensi,
+`pendingPemetaan` (touch dengan Ad ID tanpa referensi + usia tertua). Log hanya KODE galat.
+
+## 3. Aturan atribusi dan definisi yang dikunci
+
+- **Atribusi utama hanya `CTWA_AD`.** `AD_REPLY_UNMARKED` direkam sebagai **audit** (blok `audit`), tidak pernah masuk lead/closing/grup; `sinyal=SEMUA` → 400.
+- **Akuisisi** = touch CTWA valid *pertama* pada customer yang baru saat touch itu. Touch berikutnya/customer lama = `sentuhanBerikutnya` (bukan lead baru).
+- **Closing utama (keputusan biaya)** = **customer yang memiliki ≥ 1 order eligible lunas TERBUKTI LEDGER** (`closingUtama.customerLunasTerbuktiLedger`).
+  `customerDenganOrder`, `orderPernahDp`, dan `lunasMenurutCrm` tetap metrik terpisah; LUNAS historis tanpa ledger dan LUNAS-CRM berledger kurang BUKAN closing utama.
+- **CPA/ROAS = `null`** (`penyebutCpa: closingUtama.customerLunasTerbuktiLedger`) sampai spend per Campaign ID dan tanggal direkonsiliasi.
+- Tidak ada atribusi historis (1–9 Okt tidak diisi dari URL kreatif/berkas Fase 0); `attributionStartAt` + peringatan `RENTANG_SEBELUM_ATRIBUSI`.
+- Enam Ad ID terverifikasi = fixture tes, bukan daftar permanen; iklan baru dipetakan lewat impor referensi tanpa perubahan kode.
 
 ## 4. Endpoint (semua ADMIN, `Cache-Control: no-store`)
 
 | Metode & jalur | Fungsi |
 |---|---|
-| `GET /api/atribusi/iklan?dari=YYYY-MM-DD&sampai=YYYY-MM-DD&level=campaign\|adset\|ad&sinyal=CTWA_AD\|SEMUA&rincian=1` | laporan; tanggal = hari WIB; maks 366 hari; satu perhitungan sekaligus (429) |
+| `GET /api/atribusi/iklan?dari=&sampai=&level=campaign\|adset\|ad&rincian=1` | laporan; **`dari` dan `sampai` WAJIB** (hari WIB), maks **93 hari**; satu perhitungan sekaligus (429) |
+| `GET /api/atribusi/iklan/kesehatan` | agregat kesehatan capture (§2) |
 | `GET /api/atribusi/iklan/referensi` | ringkasan referensi + Ad ID tak terpetakan |
-| `POST /api/atribusi/iklan/referensi` | impor `{csv}` atau `{rows}`; **`dryRun` default true**; `izinkanKoreksi` default false |
-| `GET /api/atribusi/iklan/ekspor-id[?format=csv]` | daftar ID (tanpa PII) untuk join dengan Windsor |
+| `POST /api/atribusi/iklan/referensi` | impor `{csv}` / `{rows}`; `dryRun` default true; konflik tidak menimpa |
+| `GET /api/atribusi/iklan/ekspor-id[?format=csv]` | daftar ID tanpa data customer, untuk join dengan data spend |
 
 ## 5. Definisi metrik
 
-Semua definisi Fase 1 dipakai ulang (`cohortDefinitions.js`); yang baru hanya pengelompokan per Ad/AdSet/Campaign.
-
-| Metrik (kunci respons) | Definisi | Tanggal pemisah |
+| Metrik (kunci respons) | Definisi | Tanggal |
 |---|---|---|
-| `lead.unik` | customer akuisisi iklan (touch akuisisi di grup itu) dengan `Customer.createdAt` di rentang | tanggal lead (hari WIB) |
-| `lead.spam` / `bukanSpam` / `leadSah` | `SPAM` / bukan spam / bukan SPAM, B2B_DIRECT, staf internal, profil karyawan | — |
-| `pernahDitandaiProspek` | pernah stage PROSPECT/TRANSACTION/REVIEWED (penilaian manual; bukan "qualified"); `tanpaTanggal` = tanpa riwayat transisi | `PipelineTransition.createdAt` |
-| `customerDenganOrder` | customer lead sah dengan ≥ 1 order eligible (satuan customer) | order |
-| `orderEligible` | order bukan CANCELLED/PENDING, bukan penjualan karyawan, milik lead sah | `Order.createdAt` (WIB) |
-| `bookedValue` | Σ `Order.value` eligible (tanpa ongkir) — **bukan uang** | tanggal order |
+| `lead.unik` / `spam` / `bukanSpam` / `leadSah` | customer akuisisi iklan dengan `createdAt` di rentang; sah = bukan SPAM/B2B/staf/profil karyawan | `Customer.createdAt` (WIB) |
+| `closingUtama.customerLunasTerbuktiLedger` | **customer** lead sah dengan ≥ 1 order eligible lunas terbukti ledger | hari lunas terbukti pertama (`perBulanLunasPertama`) |
+| `closingUtama.orderLunasTerbuktiLedger` | order di balik closing utama (= `lunasTerbuktiLedger` kohort) | hari payment pelunas |
+| `customerDenganOrder` | customer lead sah dengan ≥ 1 order eligible (bukan closing) | `Order.createdAt` |
+| `orderEligible` / `bookedValue` | order bukan CANCELLED/PENDING/penjualan karyawan; Σ `Order.value` — bukan uang | `Order.createdAt` |
 | `orderPernahDp` / `orderDpSaatIniLedger` | pembayaran ledger pertama < tagihan / ledger bersih di antara 0 dan tagihan | hari payment pertama |
-| `lunasMenurutCrm` | `paymentStatus = LUNAS` tersimpan (jumlah, nilai, `tanggalTidakPasti` untuk backfill 31 Agt) | `Order.paidAt` |
-| `lunasTerbuktiLedger` | ledger valid − refund disetujui ≥ tagihan (value + ongkir) > 0 | hari payment pelunas |
-| `buktiPelunasan` | partisi LUNAS CRM: `lunasTerbuktiLedger` / `lunasTanpaLedger` / `konflikLunasTersimpanLedgerTidakCukup` (+ `kekuranganRupiahKonflik`) | — |
-| `uangLedger` / `refundDisetujui` / `uangBersihLedger` | Σ kontribusi payment valid (bukan dibatalkan, alokasi-sadar), refund disetujui | `Payment.createdAt`, `approvedAt` |
-| `cakupanLedger` | berapa order eligible yang punya payment di ledger | — |
-| `kematangan.hari7/30/60` | hasil yang terjadi dalam N hari sejak tanggal lead, hanya lead berumur ≥ N hari | lead + N hari |
-| `sentuhanBerikutnya` | touch bukan-akuisisi (customer lama / touch kedua dst) pada Ad di grup itu | tanggal touch |
-| `biaya.cpa` / `roas` | **null** — spend Meta belum terhubung/direkonsiliasi (`status: BELUM_TERHUBUNG`) | — |
+| `lunasMenurutCrm` | `paymentStatus = LUNAS` tersimpan (indikator operasional) | `Order.paidAt` |
+| `lunasTerbuktiLedger` / `buktiPelunasan` | ledger valid − refund disetujui ≥ tagihan; partisi terbukti/tanpa ledger/konflik | hari payment pelunas |
+| `uangLedger` / `refundDisetujui` / `uangBersihLedger` | Σ payment valid (bukan dibatalkan, alokasi-sadar) | `Payment.createdAt` |
+| `kematangan.hari7/30/60` | hasil DALAM N hari sejak tanggal lead, hanya lead berumur ≥ N hari (termasuk `customerLunasTerbuktiLedger`) | lead + N hari |
+| `audit.adReplyTanpaPenanda` | touch `AD_REPLY_UNMARKED` (audit; `masukAtribusi:false`) | tanggal touch |
+| `biaya.cpa` / `roas` | `null` | — |
 
-Tiga tanggal dipisah di blok `rincian` (`perBulanLead`, `perBulanOrder`, `perBulanPembayaran`) — DP September dan pelunasan Oktober jatuh di bulan masing-masing.
-Order LUNAS historis tanpa ledger **tidak** pernah dihitung sebagai uang diterima.
+Rekonsiliasi bawaan (16 pemeriksaan): Σ grup = gabungan untuk lead, customer, order, booked, lunas CRM, lunas ledger, closing utama, uang; closing utama ≤ customer dengan order;
+order di balik closing = `lunasTerbuktiLedger` kohort Fase 1.
 
-## 6. Contoh respons (data sintetis dari tes integrasi; dipangkas)
-
-```json
-{
-  "versi": 1,
-  "zonaWaktu": "Asia/Jakarta (UTC+7); semua hari WIB",
-  "rentangLead": { "dari": "2026-09-25", "sampai": "2026-10-10", "level": "campaign", "sinyal": "CTWA_AD" },
-  "atribusi": { "attributionStartWib": "2026-09-29 10:01", "historis": "TIDAK ADA — lead sebelum touch tersimpan tidak diatribusikan; ..." },
-  "cakupan": { "leadBaruDalamRentang": 8, "leadSahDalamRentang": 7, "denganTouchAkuisisi": 7, "terpetakan": 6,
-               "tidakTerpetakan": 1, "tanpaTouch": 1, "persenDenganTouch": 87.5, "persenTerpetakanDariTouch": 85.7 },
-  "grup": [
-    { "kunci": "52694481763084", "status": "MAPPED", "campaign": { "id": "52694481763084", "nama": "Jabo IG Oktober" },
-      "lead": { "unik": 3, "spam": 1, "bukanSpam": 2, "leadSah": 2 },
-      "customerDenganOrder": 2, "orderEligible": 3, "orderPernahDp": 2,
-      "lunasMenurutCrm": { "jumlah": 2, "nilai": 6000000 }, "lunasTerbuktiLedger": { "jumlah": 2, "nilai": 6000000 },
-      "bookedValue": 7500000, "uangLedger": 6750000,
-      "sentuhanBerikutnya": { "touch": 2, "customerUnik": 2, "padaCustomerBaru": 0, "padaCustomerLama": 2 },
-      "biaya": { "status": "BELUM_TERHUBUNG", "cpa": null, "roas": null } },
-    { "kunci": "52689735916884", "status": "MAPPED", "campaign": { "id": "52689735916884", "nama": "IG gabungan lama" },
-      "lead": { "unik": 2, "leadSah": 2 }, "orderEligible": 1, "bookedValue": 3000000,
-      "lunasMenurutCrm": { "jumlah": 1, "nilai": 3000000 }, "lunasTerbuktiLedger": { "jumlah": 0, "nilai": 0 },
-      "buktiPelunasan": { "lunasTanpaLedger": 1 }, "uangLedger": 0 },
-    { "kunci": "UNMAPPED", "status": "UNMAPPED", "campaign": null, "adSet": null, "lead": { "unik": 1 } }
-  ],
-  "tidakTerpetakan": { "adIds": [ { "adId": "52699999999999", "leadAkuisisi": 1, "pertamaWib": "2026-10-02 10:01" } ] },
-  "biaya": { "status": "BELUM_TERHUBUNG", "cpa": null, "roas": null, "ekspor": "/api/atribusi/iklan/ekspor-id" },
-  "rekonsiliasi": { "ok": true }
-}
-```
-
-Respons tidak memuat nomor, nama, customerId, orderId, clid, atau isi chat (diperiksa otomatis oleh tes).
-
-## 7. Validasi
+## 6. Validasi
 
 | Lapis | Hasil |
 |---|---|
-| Unit (builder touch, dedupe, parser/validator CSV, rencana impor, mesin laporan) | 29/29 |
-| Integrasi PostgreSQL sekali pakai (migrasi dari nol, webhook asli, HTTP) | 14/14, stabil 3× berturut-turut |
-| Suite unit penuh vs baseline `187795f1` | kegagalan identik (5 bawaan: P5 pagar, audit statis outbound, 2 compose staging, COVERAGE TAB Finance); 2 pin sha256 skrip rilis Fase 0/1 diperbarui sadar (lihat §10) |
-| Performa (disposable, data sintetis, 1× dan 10× volume produksi 12 Okt 2026) | 1×: 57–451 ms (90 hari, level ad); 10×: 319–2.704 ms; kueri touch sendiri 0,8–44 ms |
+| Unit (builder touch, atomik via db palsu, impor referensi, laporan, skrip rilis) | 82 (`atribusiTouchReferensi` 15, `atribusiTouchAtomik` 10, `atribusiIklanReport` 17, `releaseAtribusiIklan` 12, + Fase 0/1 terkait) |
+| Integrasi PostgreSQL sekali pakai (migrasi dari nol) | `atribusiIklan` 17/17, `atribusiTouchCrash` 11/11, `releaseAtribusiIklan` 2/2 |
+| Crash SIGKILL pada tiap statement transaksi pesan (proses terpisah, router asli) | stmt:1..5 dan after-commit: tidak pernah Message tanpa touch; proses baru memulihkan TEPAT satu touch; customer lama / Ad ID belum terpetakan / flag MATI / dua event bersamaan |
+| Fallback | trigger DB menolak insert (Message tetap commit); P2028/P2034 → dipulihkan atau gagalPulih |
 
-Kasus yang dibuktikan: dua event bersamaan + retry = 1 Message & 1 touch; customer lama = touch terpisah tanpa mengubah customer; tanpa `sourceID`/`sourceType≠ad`
-= 0 touch dan Ad ID tidak dikarang dari URL; kegagalan penulisan touch tidak menggagalkan inbox dan log tanpa nomor; CHECK DB menolak Ad ID bukan digit, pemetaan
-tidak konsisten, tanggal WIB tidak cocok; impor: dry-run default, ADMIN saja, konflik tidak menimpa, notasi ilmiah (`5.2E+13`) ditolak, `MARKETING_API` ditolak;
-Ad ID baru dipetakan tanpa perubahan kode; level campaign/ad set/ad menjumlah identik; DP→lunas lintas bulan; payment batal + pengganti; LUNAS historis tanpa ledger;
-konflik LUNAS-ledger-kurang; spam dikecualikan dari closing; transaksi laporan ditolak Postgres bila menulis (`read-only`).
+**Performa** (data sintetis pada satu PostgreSQL lokal; 15 pengulangan + pemanasan; volume produksi 12 Okt 2026 = 9.657 customer, 693 order, 299 payment):
 
-## 8. Rollout (setiap langkah butuh keputusan Owner; tidak ada yang dijalankan di sini)
+| Skala | Lead di rentang 93 hari | p50 | p95 | Rentang 7 hari p95 | Waktu kueri DB (total) |
+|---|---|---|---|---|---|
+| 1× | 3.360 | 360 ms | 634 ms | 87 ms | 78 ms |
+| 3× | 10.086 | 989 ms | 1.107 ms | 141 ms | 215 ms |
+| 10× | 33.618 | 3,2 s | 3,7 s | 326 ms | 753 ms |
 
-1. Rilis kode dengan **flag MATI** — migrasi aditif; perilaku webhook tidak berubah (verifikasi: 0 baris `attribution_touches` setelah beberapa jam).
-2. Impor referensi: `POST /referensi` dengan `dryRun` (default) → tinjau → ulangi `dryRun:false`. Sumber: ekspor Ads Manager (kolom Ad ID/Ad set ID/Campaign ID sebagai **teks**).
-   Enam pemetaan yang diverifikasi Mesa adalah fixture tes, bukan daftar permanen.
-3. Owner mengubah env `ATRIBUSI_TOUCH_CAPTURE_ENABLED=true` + recreate backend (di luar cakupan sesi ini).
-4. Pantau 24–48 jam: `GET /api/atribusi/iklan` (rekonsiliasi `ok`, `tidakTerpetakan.adIds`), jumlah touch ≈ inbound CTWA_AD baru.
-5. Setiap iklan baru → ekspor `ekspor-id`/impor referensi lagi.
+Linear terhadap jumlah lead di rentang; kueri touch sendiri ≤ 44 ms pada 10×; sisanya komputasi kohort Node. Seq Scan dipilih planner (tabel kecil/rentang lebar); indeks
+`(customer_id, touch_at)`, `(ad_id, touch_at)`, `touch_date_wib`, `dedupe_key` tersedia. Batas 93 hari menjaga p95 < 4 s sampai 10× volume.
+Batas data uji: sintetis, satu instance lokal, tanpa trafik bersamaan; angka produksi nyata perlu dikonfirmasi pada `--verify-only` sesudah flag menyala.
 
-## 9. Rollback
+## 7. Rilis (skrip `scripts/release-atribusi-iklan.sh`)
 
-- Cepat (perilaku): ubah flag ke bukan `"true"` + recreate backend → capture berhenti; data tetap; laporan tetap dapat dibaca.
-- Kode: rollback image ke tag pra-rilis (kode lama mengabaikan tabel baru; migrasi aditif sehingga tidak perlu di-undo).
-- Data: tabel baru tidak dibaca oleh kode lama; `DROP` hanya bila Owner memutuskan (tidak diperlukan untuk rollback).
+Gerbang berurutan: kunci deploy → disk ≥ 5 GiB → sumber (bundle git, tanpa push) + ancestry + allowlist + pin sha256 (kode, skema, migrasi) + pemindai DDL (+33 mutan) →
+audit produksi (baseline = release aktif, flag MATI, objek rilis belum ada) → backup + checksum → release dir + build image → **rehearsal pada restore backup nyata**
+(migrasi, struktur, 15 penolakan constraint/4 baris sah, sidik jari tabel lama identik, dihapus) → migrasi aditif produksi → switch SATU kali → verifikasi baca-saja
+(RBAC, rentang wajib, rekonsiliasi, CPA/ROAS null, privasi, flag MATI, 0 touch, smoke inbox dari log + hitungan Message, 0 galat webhook).
 
-## 10. Risiko dan batasan jujur
+Perintah (review; **tidak dijalankan di sini**): lihat kepala skrip. Mode: `--preflight-only`, rilis, `--verify-only`, `--rollback`.
 
-1. **Touch hilang bila proses mati** di antara simpan pesan dan simpan touch (penulisan sengaja di luar jalur kritis). Retry WAHA tidak membuat ulang touch karena pesan sudah ada.
-   Dampak: undercount kecil, tidak pernah overcount. Dipantau lewat selisih jumlah touch vs inbound CTWA_AD.
-2. **Tidak ada atribusi historis**; 20 dari 283 observasi Fase 0 (customer lama tanpa `sourceID`) tidak akan pernah bertouch.
-3. **Referensi dapat basi**: iklan baru tampil `UNMAPPED` sampai referensi diimpor. Tidak ada kredensial Marketing API di repo/env → sinkron otomatis tidak dibangun.
-4. **Pin skrip rilis Fase 0/1**: `release-ctwa-capture-flag-off.sh` (webhooks.js) dan `release-atribusi-kohort.sh` (index.js, cohortLoader.js) dipin per berkas; kedua skrip
-   di-repin setelah perubahan ditinjau. Allowlist keduanya tetap menolak `schema.prisma` dan migrasi, jadi tidak dapat dipakai merilis Fase 2.
-5. CPA/ROAS tidak diklaim (spend belum terhubung).
-6. Performa linear terhadap jumlah customer di rentang (beban utama = loader kohort Fase 1, bukan kueri touch); rentang ≤ 366 hari.
+**Menyalakan flag** (Owner, terpisah): urutan yang disarankan — (1) rilis dengan flag MATI; (2) impor referensi dry-run → commit; (3) ubah `backend/.env` + recreate backend;
+(4) `--verify-only` + pantau `/kesehatan` 24–48 jam.
 
-## 11. Keputusan bisnis yang tertunda (butuh Owner)
+**Rollback:** `bash /tmp/atri2.sh <DEPLOY_SHA> <BASE_SHA> --rollback` — hanya kode (tag image sebelum rilis, recreate dari release sebelumnya); `.env` tidak disentuh;
+**tiga tabel tidak dihapus** (kode lama mengabaikannya; touch yang sudah terekam tetap utuh); gerbang menolak bila release aktif bukan kandidat. Migrasi aditif tidak perlu di-undo.
 
-| Keputusan | Opsi | Rekomendasi (berbasis data) |
-|---|---|---|
-| Apakah `AD_REPLY_UNMARKED` dihitung sebagai touch iklan | A: hanya `CTWA_AD` (default); B: `SEMUA` | **A**. Di capture Fase 0 hanya 8 observasi (2 pada customer baru); menghitungnya menaikkan lead tanpa bukti penanda iklan. `sinyal=SEMUA` tersedia untuk perbandingan. |
-| Kapan CPA/ROAS boleh diklaim | A: tunggu integrasi spend Meta + rekonsiliasi; B: join manual di Windsor lewat `ekspor-id` | **B sebagai jembatan**, A sebagai target; angka tetap `null` di CRM sampai spend direkonsiliasi. |
-| Makna "closing" di laporan iklan | A: `lunasMenurutCrm`; B: `lunasTerbuktiLedger` | **Tampilkan keduanya** (sudah); gunakan `lunasTerbuktiLedger` untuk keputusan uang dan `lunasMenurutCrm` hanya sebagai indikator operasional sampai cakupan ledger histori memadai. |
+## 8. Risiko sisa dan batasan jujur
+
+1. **Ack-before-process (sudah ada sebelum Fase 2):** `res.sendStatus(200)` di awal handler → proses mati sebelum commit kehilangan pesan itu seluruhnya (tak ada retry WAHA);
+   tak ada atribusi yang dapat mengatasinya. Mengubah ke ack-setelah-simpan adalah keputusan inbox terpisah (bukan bagian rilis ini).
+2. **Insert touch ditolak DB di dalam transaksi** (constraint/trigger/disk) → pesan commit tanpa touch, tercatat `gagal`, tidak diulang. Tidak dapat terjadi karena kematian proses; praktis
+   hanya bila skema berubah di luar rilis.
+3. **Tidak ada atribusi historis:** pesan yang tersimpan sebelum flag menyala, dan pesan hasil sinkron riwayat (`autoSyncHistory`), tidak punya touch (disengaja).
+4. **Referensi dapat basi:** iklan baru tampil `UNMAPPED` sampai referensi diimpor; tidak ada kredensial Marketing API di sistem ini.
+5. **Pin skrip rilis Fase 0/1** (`release-ctwa-capture-flag-off.sh`: webhooks.js; `release-atribusi-kohort.sh`: index.js, cohortLoader.js) di-repin setelah perubahan ditinjau;
+   allowlist keduanya tetap menolak skema/migrasi sehingga tidak dapat merilis Fase 2.
+6. Performa linear terhadap lead di rentang (batas 93 hari); pertumbuhan ±100 customer/hari → 10× volume ±2,5 tahun.
+
+## 9. Keputusan Owner (tertunda)
+
+| Keputusan | Rekomendasi |
+|---|---|
+| Menyalakan flag capture touch (setelah rilis + impor referensi) | ya, setelah `--verify-only` lulus dan pemetaan enam iklan terisi |
+| Sumber spend untuk CPA/ROAS | jembatan: join manual di Windsor lewat `ekspor-id`; target: spend per Campaign ID + tanggal direkonsiliasi, penyebut = closing utama |
+| Ack webhook sesudah simpan (menutup kehilangan pesan saat crash) | evaluasi terpisah: dampak ke WAHA retry/duplikat harus diukur dulu |
