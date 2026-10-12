@@ -3,6 +3,7 @@
 # Kode lama TIDAK memahami data yang dilahirkan fitur ini:
 #   - bukti transfer refund (fin_refund_evidences) dan relasi eksplisit dokumen <-> bukti (fin_refund_evidence_links): kode lama tidak menampilkannya, tidak memeliharanya saat koreksi
 #     (dokumen pengganti dibuat TANPA relasi bukti — bukti yang sudah dilampirkan terputus dari versi terbaru) dan tidak menyajikan berkasnya;
+#     (termasuk bukti yang DILAMPIRKAN SUSULAN lewat "Lampirkan Bukti" tanpa koreksi: baris bukti + tautan bertambah, jurnal/saldo tidak — kode lama tidak menampilkannya);
 #   - nomor referensi transfer (fin_refunds.transfer_reference): kode lama tidak membawanya ke dokumen pengganti;
 #   - koreksi refund ber-biaya-admin yang dibuat SESUDAH migrasi ini terpasang: dibuat lewat alur baru (pemeriksaan biaya admin ganda + konfirmasi Admin + revisi optimistis); kode lama
 #     menyalin biaya admin tanpa pemeriksaan itu, sehingga koreksi berikutnya lewat kode lama dapat mencatat biaya dua kali.
