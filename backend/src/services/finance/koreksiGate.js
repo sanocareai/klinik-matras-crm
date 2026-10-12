@@ -267,7 +267,29 @@ export async function riwayatVersi(db, jenis, id) {
       return { id: vid, nomor: r?.[cfg.nomor] ?? null, nomorVersi: i + 1, terbaru: i === ids.length - 1, status: r?.status ?? null, nominal: r ? moneyToNumber(r.amount) : null };
     });
   }
-  return { dokumen: { jenis, id, nomor: doc[cfg.nomor] }, versi, jurnal, ...(rantai ? { rantai } : {}) };
+  // Refund: rincian TIAP versi (nominal, biaya admin, total keluar, rekening, referensi, bukti, pelaku, alasan) — tanpa URL berkas (URL bertanda-tangan hanya di GET /refunds/:id/bukti).
+  let versiRefund = null;
+  if (cfg.model === "finRefund") {
+    const rows = await db.finRefund.findMany({
+      where: { id: { in: ids } },
+      include: { cashAccount: { select: { name: true } }, createdBy: { select: { name: true } }, approvedBy: { select: { name: true } }, evidenceLinks: { include: { evidence: { select: { originalName: true, mimeType: true } } }, orderBy: { createdAt: "asc" } } },
+    });
+    versiRefund = ids.map((vid, i) => {
+      const r = rows.find((x) => x.id === vid);
+      if (!r) return null;
+      const biaya = moneyToNumber(r.transferFeeAmount ?? 0);
+      return {
+        id: r.id, nomor: r.refundNumber, nomorVersi: i + 1, status: r.status, tanggal: r.date, nominal: moneyToNumber(r.amount), biayaAdmin: biaya, totalKeluar: moneyToNumber(r.amount) + biaya,
+        rekening: r.cashAccount?.name ?? null, metode: r.paymentMethod, referensi: r.transferReference ?? null, alasanRefund: r.reason,
+        dibuatOleh: r.createdBy?.name ?? null, disetujuiOleh: r.approvedBy?.name ?? null, dibuatPada: r.createdAt, disetujuiPada: r.approvedAt,
+        alasanKoreksi: r.status === "DIBATALKAN" && /^Dikoreksi — /.test(r.rejectReason ?? "") ? r.rejectReason.replace(/^Dikoreksi — /, "") : null,
+        lampiranLama: r.attachmentUrl ? true : false,
+        bukti: r.evidenceLinks.map((l) => ({ nama: l.evidence.originalName, tipe: l.evidence.mimeType, origin: l.origin })),
+        jumlahBukti: r.evidenceLinks.length + (r.attachmentUrl ? 1 : 0),
+      };
+    }).filter(Boolean);
+  }
+  return { dokumen: { jenis, id, nomor: doc[cfg.nomor] }, versi, jurnal, ...(rantai ? { rantai } : {}), ...(versiRefund ? { versiRefund } : {}) };
 }
 
 /** Nomor jurnal yang dibalik & yang menjadi pengganti pada koreksi ini — disimpan di log audit supaya dokumen & jurnal saling tertaut. */

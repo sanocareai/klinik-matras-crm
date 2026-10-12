@@ -25,7 +25,9 @@ import { saldoBukuRekening, pandanganCutoff } from "./rekonSnapshot.js";
 import { siapkanJenisTagihan, pastikanAmanDisetujui, JENIS_TAGIHAN } from "./jenisTagihan.js";
 import { postSupplierBill, KEY as SUPPLIER_KEY } from "./posting/supplier.js";
 import { postRefund, sisaBisaDirefund, pendapatanSudahDiakui, KEY as ORDER_KEY } from "./posting/orderRevenue.js";
-import { SYSTEM_KEYS } from "./accounts.js";
+import { SYSTEM_KEYS, resolveAccount, AccountError } from "./accounts.js";
+import { bacaPermintaanBukti, rencanakanBukti, lampirkanBukti, ringkasRencana } from "./refundBukti.js";
+import { deteksiBiayaAdminGanda } from "./refundBiayaGanda.js";
 import { getVerificationGate } from "./settings.js";
 import { hitungBiayaTransfer } from "./transferFee.js";
 import { recomputeOrderPaymentStatus } from "../paymentLedger.js";
@@ -456,6 +458,7 @@ function normalisasiKoreksiRefund(body) {
     p.cashAccountId = idUuid(body.cashAccountId, "Rekening");
   }
   for (const k of ["paymentMethod", "transferFeeType", "transferFeeAmount"]) if (body[k] !== undefined) p[k] = body[k];
+  if (body.transferReference !== undefined) p.transferReference = teks(body.transferReference, 120, "Nomor referensi transfer");
   if (body.alasanRefund !== undefined) {
     const t = teks(body.alasanRefund, 500, "Alasan refund");
     if (!t) throw new KoreksiError("Alasan refund wajib diisi", 400, "ALASAN_REFUND_WAJIB");
@@ -468,9 +471,16 @@ function normalisasiKoreksiRefund(body) {
 export async function koreksiRefund(tx, { refundId, body, alasan, userId, preview = false }) {
   const reason = alasanWajib(alasan);
   const perubahan = normalisasiKoreksiRefund(body || {});
+  const permintaanBukti = bacaPermintaanBukti(body?.bukti);
   if (Object.keys(perubahan).length === 0) throw new KoreksiError("Tidak ada perubahan yang dikirim", 400, "TANPA_PERUBAHAN");
 
   const lama = await cariRefund(tx, refundId);
+  // REVISI OPTIMISTIS (alur baru: dikirim bersama `bukti`): dokumen yang dilihat pengguna harus masih persis yang sekarang (setelah baris dikunci).
+  if (body?.bukti !== undefined && !preview) {
+    const harapan = body?.expectedUpdatedAt ? new Date(body.expectedUpdatedAt).getTime() : NaN;
+    if (!Number.isFinite(harapan)) throw new KoreksiError("expectedUpdatedAt wajib dikirim (waktu terakhir dokumen refund yang Anda lihat)", 400, "REVISI_WAJIB");
+    if (harapan !== new Date(lama.updatedAt).getTime()) throw new KoreksiError("Refund ini sudah berubah sejak Anda membukanya. Muat ulang lalu ulangi koreksi.", 409, "REVISI_BERUBAH");
+  }
   await lockRowForUpdate(tx, '"Order"', lama.orderId, { cast: null }); // urutan kunci sama dengan approve/cancel refund: refund → order
   await kunciBarisJurnal(tx, "REFUND", refundId);
   // Kunci baris rekonsiliasi bank untuk rekening lama & baru (urut id): POST /bank-statements/:id/complete mengunci baris statement yang sama, jadi
@@ -496,7 +506,8 @@ export async function koreksiRefund(tx, { refundId, body, alasan, userId, previe
     });
   }
   const nilai = { amount: perubahan.amount ?? lama.amount, date: perubahan.date ?? lama.date, reason: perubahan.reason ?? lama.reason, cashAccountId: cashBaru };
-  const beda = ["amount", "date", "reason", "cashAccountId"].some((k) => !sama(k, lama[k], nilai[k]))
+  const referensiBaru = perubahan.transferReference !== undefined ? perubahan.transferReference : (lama.transferReference ?? null);
+  const beda = ["amount", "date", "reason", "cashAccountId"].some((k) => !sama(k, lama[k], nilai[k])) || (lama.transferReference ?? null) !== (referensiBaru ?? null)
     || !toMoney(lama.transferFeeAmount).equals(biaya.transferFeeAmount) || (lama.paymentMethod ?? null) !== (biaya.paymentMethod ?? null) || (lama.transferFeeType ?? null) !== (biaya.transferFeeType ?? null);
   if (!beda) throw new KoreksiError("Tidak ada perubahan yang dikirim", 400, "TANPA_PERUBAHAN");
 
@@ -506,6 +517,25 @@ export async function koreksiRefund(tx, { refundId, body, alasan, userId, previe
     where: { status: "SELESAI", cashAccountId: cashBaru, periodStart: { lte: nilai.date }, periodEnd: { gte: nilai.date } }, select: { id: true },
   });
   if (rekonBaru) throw tolak("Periode Rekonsiliasi Bank untuk rekening dan tanggal tujuan sudah SELESAI.", "Pilih tanggal/rekening lain atau buka kembali rekonsiliasinya (Admin).", 409, "PERIODE_REKON_SELESAI");
+
+  if (toMoney(biaya.transferFeeAmount).greaterThan(0)) {
+    try { await resolveAccount(tx, SYSTEM_KEYS.BEBAN_ADMIN_BANK); } catch (e) {
+      if (e instanceof AccountError) throw tolak("Akun Beban Administrasi Bank belum dipetakan atau nonaktif di Bagan Akun (kunci sistem BEBAN_ADMIN_BANK), sehingga biaya admin tidak bisa dicatat.", "Buka Finance › Bagan Akun › Pasang Akun Bawaan (atau aktifkan akunnya), lalu ulangi koreksi.", 409, "AKUN_BIAYA_ADMIN_BELUM_ADA");
+      throw e;
+    }
+  }
+  // Bukti transfer: dokumen pengganti WAJIB punya minimal satu bukti (menguncinya sampai commit/rollback).
+  const rencanaBukti = await rencanakanBukti(tx, { lama, permintaan: permintaanBukti, userId });
+  // Potensi biaya admin ganda: hanya MENUNJUKKAN kandidat (tidak menebak/menghapus). Kecocokan KUAT butuh konfirmasi eksplisit Admin untuk menyimpan.
+  const gandaBiaya = await deteksiBiayaAdminGanda(tx, { cashAccountId: cashBaru, tanggal: nilai.date, biaya: biaya.transferFeeAmount, referensi: referensiBaru });
+  // Konfirmasi hanya diminta bila koreksi ini MENAMBAH eksposur: biaya admin/rekening/tanggal berbeda dari dokumen lama. Biaya yang sama persis sudah ada di jurnal lama
+  // (dibalik lalu diposting ulang) — tetap ditampilkan sebagai peringatan, tetapi tidak menghalangi koreksi nominal/alasan/bukti.
+  const eksposurBaru = toMoney(biaya.transferFeeAmount).greaterThan(0)
+    && (!toMoney(lama.transferFeeAmount).equals(biaya.transferFeeAmount) || cashBaru !== lama.cashAccountId || hari(nilai.date) !== hari(lama.date));
+  const perluKonfirmasi = gandaBiaya.kuat && eksposurBaru;
+  if (!preview && perluKonfirmasi && body?.konfirmasiBiayaGanda !== true) {
+    throw tolak(`Biaya admin ${rupiah(moneyToNumber(biaya.transferFeeAmount))} ini kemungkinan sudah dicatat di ${gandaBiaya.temuan.filter((t) => t.tingkat === "KUAT").map((t) => t.jurnal).join(", ")} (rekening, nominal, dan tanggal/referensi cocok).`, "Periksa jurnal itu. Bila memang bukan duplikat, ulangi dengan konfirmasi eksplisit; bila duplikat, kosongkan biaya admin refund ini.", 409, "BIAYA_ADMIN_GANDA");
+  }
 
   const sumberLama = [{ source: "REFUND", sourceId: lama.id }];
   const sebelum = await snapshotJurnal(tx, sumberLama);
@@ -535,17 +565,25 @@ export async function koreksiRefund(tx, { refundId, body, alasan, userId, previe
     data: {
       refundNumber: await generateDocumentNumber(tx, "RFD", nilai.date), orderId: lama.orderId, date: nilai.date, amount: nilai.amount, reason: nilai.reason,
       cashAccountId: cashBaru, paymentMethod: biaya.paymentMethod, transferFeeType: biaya.transferFeeType, transferFeeAmount: biaya.transferFeeAmount,
-      attachmentUrl: lama.attachmentUrl, status: "DISETUJUI", approvedAt: new Date(), approvedById: userId, createdById: lama.createdById, replacesRefundId: lama.id,
+      attachmentUrl: rencanaBukti.lampiranDibawa, transferReference: referensiBaru, status: "DISETUJUI", approvedAt: new Date(), approvedById: userId, createdById: lama.createdById, replacesRefundId: lama.id,
     },
   });
+  await lampirkanBukti(tx, { refundBaruId: baru.id, rencana: rencanaBukti, userId });
   await postRefund(tx, { refundId: baru.id, userId });
   await recomputeOrderPaymentStatus(tx, lama.orderId);
   const ordSesudah = await tx.order.findUnique({ where: { id: lama.orderId }, select: { paymentStatus: true, paidAt: true } });
 
   const sumber = [...sumberLama, { source: "REFUND", sourceId: baru.id }];
   const tampilRek = async (id) => (id === lama.cashAccountId ? lama.cashAccount.name : rek.name);
-  const a = { nominal: moneyToNumber(lama.amount), tanggal: hari(lama.date), rekeningSumber: lama.cashAccount.name, metode: lama.paymentMethod, biayaTransfer: moneyToNumber(lama.transferFeeAmount), alasanRefund: lama.reason };
-  const d = { nominal: moneyToNumber(nilai.amount), tanggal: hari(nilai.date), rekeningSumber: await tampilRek(cashBaru), metode: biaya.paymentMethod, biayaTransfer: moneyToNumber(biaya.transferFeeAmount), alasanRefund: nilai.reason };
+  const a = {
+    nominal: moneyToNumber(lama.amount), tanggal: hari(lama.date), rekeningSumber: lama.cashAccount.name, metode: lama.paymentMethod, biayaTransfer: moneyToNumber(lama.transferFeeAmount),
+    totalKeluar: moneyToNumber(toMoney(lama.amount).plus(toMoney(lama.transferFeeAmount))), referensiTransfer: lama.transferReference ?? null, alasanRefund: lama.reason,
+  };
+  const d = {
+    nominal: moneyToNumber(nilai.amount), tanggal: hari(nilai.date), rekeningSumber: await tampilRek(cashBaru), metode: biaya.paymentMethod, biayaTransfer: moneyToNumber(biaya.transferFeeAmount),
+    totalKeluar: moneyToNumber(toMoney(nilai.amount).plus(toMoney(biaya.transferFeeAmount))), referensiTransfer: referensiBaru ?? null, alasanRefund: nilai.reason,
+  };
+  const ringkasBukti = ringkasRencana(rencanaBukti);
   const before = {}; const after = {};
   for (const k of Object.keys(d)) if (String(a[k]) !== String(d[k])) { before[k] = a[k]; after[k] = d[k]; }
 
@@ -564,11 +602,22 @@ export async function koreksiRefund(tx, { refundId, body, alasan, userId, previe
 
   if (preview) {
     const data = await susunPratinjau(tx, { sebelum, sources: sumber, perubahan: { before, after } });
-    throw new PratinjauKoreksi({ ...data, dampakStatus, periodeRekon });
+    const refundRingkas = {
+      dokumenLama: lama.refundNumber, dokumenPengganti: baru.refundNumber, jurnalDibalik: data.jurnalDibalik?.map((j) => j.nomor) ?? [], jurnalPengganti: data.jurnalPengganti?.map((j) => j.nomor) ?? [],
+      nominalLama: a.nominal, nominalBaru: d.nominal, biayaAdminLama: a.biayaTransfer, biayaAdminBaru: d.biayaTransfer, totalKeluarLama: a.totalKeluar, totalKeluarBaru: d.totalKeluar,
+      rekeningLama: a.rekeningSumber, rekeningBaru: d.rekeningSumber, tanggalLama: a.tanggal, tanggalBaru: d.tanggal, referensiLama: a.referensiTransfer, referensiBaru: d.referensiTransfer,
+      bukti: ringkasBukti,
+      peringatan: gandaBiaya.temuan.map((t) => ({ ...t, pesan: `Biaya admin ${rupiah(t.nominal)} yang sama sudah tercatat di jurnal ${t.jurnal} (${t.tanggal}; ${t.alasan}). ${eksposurBaru ? "Periksa sebelum menyimpan agar biaya tidak tercatat dua kali." : "Biaya admin refund ini tidak berubah dari dokumen lama; periksa jurnal itu bila belum pernah dicek."}` })),
+      eksposurBaru, perluKonfirmasi,
+    };
+    throw new PratinjauKoreksi({ ...data, dampakStatus, periodeRekon, refund: refundRingkas });
   }
 
   const tautan = await tautanJurnal(tx, sebelum, sumber);
-  const meta = { refundNumber: lama.refundNumber, reason, before, after, ...tautan };
+  const meta = {
+    refundNumber: lama.refundNumber, reason, before, after, ...tautan, bukti: ringkasBukti, biayaAdmin: d.biayaTransfer, totalKeluar: d.totalKeluar,
+    ...(gandaBiaya.ada ? { dugaanBiayaGanda: gandaBiaya.temuan.map((t) => ({ jurnal: t.jurnal, tingkat: t.tingkat })), konfirmasiBiayaGanda: body?.konfirmasiBiayaGanda === true } : {}),
+  };
   await recordActivity(tx, { entityType: ENTITY_TYPES.FIN_REFUND, entityId: lama.id, eventType: EVENT_TYPES.DOCUMENT_CORRECTED, actorId: userId, metadata: { aksi: "koreksi_refund", digantiOleh: baru.id, nomorPengganti: baru.refundNumber, ...meta } });
   await recordActivity(tx, { entityType: ENTITY_TYPES.FIN_REFUND, entityId: baru.id, eventType: EVENT_TYPES.DOCUMENT_CORRECTED, actorId: userId, metadata: { aksi: "koreksi_refund", menggantikan: lama.id, nomorLama: lama.refundNumber, ...meta } });
   for (const pr of periodeRekon) {

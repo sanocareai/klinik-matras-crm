@@ -134,7 +134,7 @@ test("Mode id: piutangIds & refundIds (baris yang tampil setelah filter klien) â
   assert.equal(s.total["Sisa Tagihan (Rp)"], 1_500_000 + 2_000_000);
   const sr = bacaSheet(r.wb, "Refund");
   assert.deepEqual(sr.baris.map((b) => b["No. Refund"]), [c.r2.refundNumber, c.r1.refundNumber], "urutan mengikuti refundIds");
-  assert.equal(sr.total["Nominal (Rp)"], 300_000, "total hanya refund Disetujui pada baris yang diekspor");
+  assert.equal(sr.total["Nominal Refund (Rp)"], 300_000, "total hanya refund Disetujui pada baris yang diekspor");
   assert.equal(rf.length, 3);
   const ws = r.wb.getWorksheet("Ringkasan Umur");
   assert.equal(ws.getCell("C7").value, ar.total, "kartu ringkasan = seluruh piutang, tidak ikut filter");
@@ -155,15 +155,15 @@ test("Refund = data layar: baris & urutan, nominal/biaya/total keluar (ANGKA), s
   const r = await unduhExport(server.baseUrl, c.admin.token, "piutang-refund", { periode: { to: SAMPAI } });
   const s = bacaSheet(r.wb, "Refund");
   assert.deepEqual(s.baris.map((b) => b["No. Refund"]), rf.map((x) => x.refundNumber), "urutan = layar (terbaru dulu)");
-  assert.deepEqual(s.baris.map((b) => b["Nominal (Rp)"]), rf.map((x) => x.amount));
-  for (const b of s.baris) assert.equal(typeof b["Nominal (Rp)"], "number");
+  assert.deepEqual(s.baris.map((b) => b["Nominal Refund (Rp)"]), rf.map((x) => x.amount));
+  for (const b of s.baris) assert.equal(typeof b["Nominal Refund (Rp)"], "number");
   const b1 = s.baris.find((b) => b["No. Refund"] === c.r1.refundNumber);
   assert.equal(b1["Status"], "Disetujui");
-  assert.equal(b1["Biaya Transfer (Rp)"], 2500);
-  assert.equal(b1["Total Keluar Rekening (Rp)"], 302_500);
+  assert.equal(b1["Biaya Admin (Rp)"], 2500);
+  assert.equal(b1["Total Keluar (Rp)"], 302_500);
   assert.equal(b1["Cara Bayar"], "Transfer");
   assert.equal(b1["Metode Transfer"], "BI-FAST");
-  assert.equal(b1["Rekening Sumber"], "SANOBANK Kemal");
+  assert.equal(b1["Rekening"], "SANOBANK Kemal");
   assert.equal(b1["Alasan Refund"], "Kasur tidak sesuai");
   assert.equal(b1["Diajukan Oleh"], c.admin.user.name);
   assert.equal(b1["Diputuskan Oleh (setuju/tolak)"], c.admin.user.name);
@@ -171,9 +171,9 @@ test("Refund = data layar: baris & urutan, nominal/biaya/total keluar (ANGKA), s
   assert.ok(b1["Tanggal & Jam Diajukan"] instanceof Date);
   assert.equal(s.baris.find((b) => b["No. Refund"] === c.r2.refundNumber)["Status"], "Menunggu Persetujuan");
   assert.equal(s.baris.find((b) => b["No. Refund"] === c.r3.refundNumber)["Status"], "Ditolak");
-  assert.equal(s.total["Nominal (Rp)"], 300_000);
-  assert.equal(s.total["Biaya Transfer (Rp)"], 2500);
-  assert.equal(s.total["Total Keluar Rekening (Rp)"], 302_500);
+  assert.equal(s.total["Nominal Refund (Rp)"], 300_000);
+  assert.equal(s.total["Biaya Admin (Rp)"], 2500);
+  assert.equal(s.total["Total Keluar (Rp)"], 302_500);
   assert.match(String(s.total["No. Refund"]), /^TOTAL disetujui \(1 refund\)/);
   // Admin melihat kolom sensitif.
   assert.equal(b1["Tautan Lampiran"], "/media/finance-receipts/lampiran-1.jpg");

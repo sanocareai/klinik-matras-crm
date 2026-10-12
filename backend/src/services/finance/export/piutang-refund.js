@@ -12,6 +12,7 @@ import { ambilDaftarRefund } from "../refundRead.js";
 import { moneyToNumber } from "../money.js";
 import { susunLabelFilter, tanggalIndonesiaPendek } from "./excel.js";
 import { labelStatus, labelCaraBayar, labelMetodeTransfer } from "./label.js";
+import { jumlahBuktiBatch } from "../refundBukti.js";
 
 const BATAS = 50_001; // 1 lebih dari MAKS_BARIS supaya excel.js menolak dengan pesan jelas, bukan memotong diam-diam
 const jumlah = (rows, key) => rows.reduce((a, r) => a + (Number(r[key]) || 0), 0);
@@ -47,12 +48,13 @@ async function ambil(db, { filter, periode, filterLabel }) {
 
   // ── Refund ──
   const refundMentah = await ambilDaftarRefund(db, { ids: refundIds }, { take: BATAS });
+  const jumlahBukti = await jumlahBuktiBatch(db, refundMentah);
   const barisRefund = refundMentah.map((r) => {
     const nominal = moneyToNumber(r.amount);
     const biaya = moneyToNumber(r.transferFeeAmount ?? 0);
     return {
       nomor: r.refundNumber, tanggal: r.date, order: r.order?.orderNumber || "", pelanggan: r.order?.customer?.name || "",
-      alasan: r.reason || "", nominal, biaya, totalKeluar: nominal + biaya,
+      alasan: r.reason || "", nominal, biaya, totalKeluar: nominal + biaya, referensi: r.transferReference || "", jumlahBukti: jumlahBukti.get(r.id) ?? 0,
       cara: labelCaraBayar(r.paymentMethod), metodeTransfer: labelMetodeTransfer(r.transferFeeType), rekening: r.cashAccount?.name || "",
       status: labelStatus(r.status), disetujui: r.status === "DISETUJUI", diajukan: r.createdBy?.name || "", waktuDiajukan: r.createdAt,
       penyetuju: r.approvedBy?.name || "", waktuDisetujui: r.approvedAt || null,
@@ -98,10 +100,11 @@ async function ambil(db, { filter, periode, filterLabel }) {
           { key: "nomor", header: "No. Refund", tipe: "teks", lebar: 20 }, { key: "tanggal", header: "Tanggal", tipe: "tanggal" },
           { key: "order", header: "No. Order", tipe: "teks", lebar: 20 }, { key: "pelanggan", header: "Pelanggan", tipe: "teks", lebar: 26 },
           { key: "alasan", header: "Alasan Refund", tipe: "teks", lebar: 36 },
-          { key: "nominal", header: "Nominal (Rp)", tipe: "uang" }, { key: "biaya", header: "Biaya Transfer (Rp)", tipe: "uang" },
-          { key: "totalKeluar", header: "Total Keluar Rekening (Rp)", tipe: "uang" },
+          { key: "nominal", header: "Nominal Refund (Rp)", tipe: "uang" }, { key: "biaya", header: "Biaya Admin (Rp)", tipe: "uang" },
+          { key: "totalKeluar", header: "Total Keluar (Rp)", tipe: "uang" },
           { key: "cara", header: "Cara Bayar", tipe: "teks", lebar: 12 }, { key: "metodeTransfer", header: "Metode Transfer", tipe: "teks", lebar: 16 },
-          { key: "rekening", header: "Rekening Sumber", tipe: "teks", lebar: 22 }, { key: "status", header: "Status", tipe: "teks", lebar: 20 },
+          { key: "rekening", header: "Rekening", tipe: "teks", lebar: 22 }, { key: "referensi", header: "Referensi", tipe: "teks", lebar: 22 }, { key: "jumlahBukti", header: "Jumlah Bukti", tipe: "angka" },
+          { key: "status", header: "Status", tipe: "teks", lebar: 20 },
           { key: "diajukan", header: "Diajukan Oleh", tipe: "teks", lebar: 18 }, { key: "waktuDiajukan", header: "Tanggal & Jam Diajukan", tipe: "waktu" },
           { key: "penyetuju", header: "Diputuskan Oleh (setuju/tolak)", tipe: "teks", lebar: 18 }, { key: "waktuDisetujui", header: "Tanggal & Jam Keputusan", tipe: "waktu" },
           { key: "menggantikan", header: "Menggantikan Refund", tipe: "teks", lebar: 20 }, { key: "digantiOleh", header: "Diganti Oleh Refund", tipe: "teks", lebar: 20 },
@@ -110,7 +113,7 @@ async function ambil(db, { filter, periode, filterLabel }) {
         ],
         baris: barisRefund,
         total: { label: `TOTAL disetujui (${disetujui.length} refund)`, nilai: { nominal: jumlah(disetujui, "nominal"), biaya: jumlah(disetujui, "biaya"), totalKeluar: jumlah(disetujui, "totalKeluar") } },
-        catatan: ["Baris TOTAL hanya menghitung refund berstatus Disetujui (uang benar-benar keluar). Menunggu persetujuan, Ditolak, dan Dibatalkan/diganti tidak dihitung."],
+        catatan: ["Baris TOTAL hanya menghitung refund berstatus Disetujui (uang benar-benar keluar). Menunggu persetujuan, Ditolak, dan Dibatalkan/diganti tidak dihitung.", "Nominal Refund = yang diterima pelanggan. Biaya Admin = biaya bank (beban perusahaan, bukan pengurang refund). Total Keluar = Nominal Refund + Biaya Admin = uang keluar dari rekening."],
       },
       {
         nama: "Ringkasan Umur", judul: "Ringkasan Umur Piutang",

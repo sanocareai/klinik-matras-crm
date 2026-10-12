@@ -570,6 +570,8 @@ model User {
   finPaymentAllocations                  FinPaymentAllocation[]          @relation("FinPaymentAllocationCreator")
   finRefundsCreated                      FinRefund[]                     @relation("FinRefundCreator")
   finRefundsApproved                     FinRefund[]                     @relation("FinRefundApprover")
+  finRefundEvidencesUploaded             FinRefundEvidence[]             @relation("FinRefundEvidenceUploader")
+  finRefundEvidenceLinksCreated          FinRefundEvidenceLink[]         @relation("FinRefundEvidenceLinkCreator")
   finExpensesCreated                     FinExpense[]                    @relation("FinExpenseCreator")
   finExpensesApproved                    FinExpense[]                    @relation("FinExpenseApprover")
   finExpensesPaid                        FinExpense[]                    @relation("FinExpensePayer")
@@ -7844,9 +7846,51 @@ model FinRefund {
   replaces         FinRefund? @relation("FinRefundVersi", fields: [replacesRefundId], references: [id], onDelete: Restrict)
   replacedBy       FinRefund? @relation("FinRefundVersi")
 
+  // ── Koreksi Refund: referensi transfer + bukti (Okt 2026) ──
+  transferReference String? @map("transfer_reference") @db.VarChar(120)
+  evidenceLinks     FinRefundEvidenceLink[]
+
   @@index([orderId])
   @@index([status])
   @@map("fin_refunds")
+}
+
+// Berkas bukti transfer refund (JPG/PNG/WEBP/PDF, maks 8 MB). Disimpan di folder khusus (services/finance/refundBukti.js), TIDAK pernah disajikan statis.
+// STAGED = diunggah, belum dipakai dokumen (dibersihkan bila tak dipakai); DIGUNAKAN = tertaut ke dokumen dan tidak pernah berubah/terhapus (trigger DB).
+model FinRefundEvidence {
+  id           String    @id @default(uuid()) @db.Uuid
+  storedName   String    @unique @map("stored_name") @db.VarChar(64)
+  originalName String    @map("original_name") @db.VarChar(120)
+  mimeType     String    @map("mime_type") @db.VarChar(40)
+  sizeBytes    Int       @map("size_bytes")
+  sha256       String    @db.VarChar(64)
+  status       String    @default("STAGED") @db.VarChar(12)
+  uploadedById String?   @map("uploaded_by_id")
+  uploadedBy   User?     @relation("FinRefundEvidenceUploader", fields: [uploadedById], references: [id], onDelete: SetNull)
+  createdAt    DateTime  @default(now()) @map("created_at")
+  attachedAt   DateTime? @map("attached_at")
+
+  links FinRefundEvidenceLink[]
+
+  @@index([status, createdAt])
+  @@map("fin_refund_evidences")
+}
+
+// Relasi EKSPLISIT dokumen refund <-> bukti yang dipakainya. Append-only: bukti dokumen lama tetap melekat ke dokumen lama; dokumen pengganti punya tautan sendiri.
+model FinRefundEvidenceLink {
+  id          String            @id @default(uuid()) @db.Uuid
+  refundId    String            @map("refund_id") @db.Uuid
+  refund      FinRefund         @relation(fields: [refundId], references: [id], onDelete: Restrict)
+  evidenceId  String            @map("evidence_id") @db.Uuid
+  evidence    FinRefundEvidence @relation(fields: [evidenceId], references: [id], onDelete: Restrict)
+  origin      String            @db.VarChar(8)
+  createdById String?           @map("created_by_id")
+  createdBy   User?             @relation("FinRefundEvidenceLinkCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime          @default(now()) @map("created_at")
+
+  @@unique([refundId, evidenceId])
+  @@index([evidenceId])
+  @@map("fin_refund_evidence_links")
 }
 
 // ── PENGELUARAN ──────────────────────────────────────────────────────────

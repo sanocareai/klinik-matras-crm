@@ -30,6 +30,7 @@ import { fileURLToPath } from "node:url";
 import { RECEIPTS_DIR, RECEIPTS_URL_PREFIX } from "../services/finance/receipts.js";
 import { FILE_PATTERN, MEDIA_SIGN_TTL_SECONDS, signFile, verifyFileSignature } from "../lib/mediaSigning.js";
 import { createLimiter } from "../lib/rateLimit.js";
+import { POLA_NAMA as POLA_NAMA_BUKTI_REFUND, tandaTanganSah as tandaTanganBuktiRefund, pathBukti as pathBuktiRefund, TIPE_BERKAS as TIPE_BUKTI_REFUND } from "../services/finance/refundBukti.js";
 
 /** Nama file utama dari nama thumbnail (`abc_t.jpg` → `abc.jpg`). */
 function fileUtama(file) {
@@ -109,6 +110,34 @@ const handler = (req, res) => {
 // Path lama (di-mount di /media/finance-receipts pada index.js).
 export const financeReceiptsLegacyPathRouter = express.Router();
 financeReceiptsLegacyPathRouter.get("/:file", handler);
+
+// ── Bukti transfer REFUND (Koreksi Refund): TIDAK statis. Hanya URL bertanda-tangan 5 menit (label kunci sendiri) atau Bearer + FINANCE_READ,
+// dan hanya berkas yang terdaftar di fin_refund_evidences. Berkas di folder khusus (services/finance/refundBukti.js), tidak tercampur nota.
+financeReceiptsLegacyPathRouter.get("/refund-bukti/:file", (req, res) => {
+  (async () => {
+    const file = String(req.params.file);
+    if (!POLA_NAMA_BUKTI_REFUND.test(file)) return res.status(404).json({ error: "Bukti tidak ditemukan" });
+    if (req.query.sig) {
+      if (!tandaTanganBuktiRefund(file, req.query.exp, req.query.sig)) return res.status(403).json({ error: "Tautan bukti tidak valid atau sudah kedaluwarsa" });
+    } else {
+      const user = await authenticateBearer(req);
+      if (!user) return res.status(401).json({ error: "Belum login" });
+      if (!hasPermission(user, P.FINANCE_READ)) return res.status(403).json({ error: "Anda tidak punya akses untuk melihat bukti ini" });
+    }
+    const terdaftar = await prisma.finRefundEvidence.findUnique({ where: { storedName: file }, select: { id: true } });
+    const abs = pathBuktiRefund(file);
+    if (!terdaftar || !fs.existsSync(abs)) return res.status(404).json({ error: "Bukti tidak ditemukan" });
+    res.setHeader("Content-Type", TIPE_BUKTI_REFUND[file.split(".").pop()]);
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Content-Security-Policy", "default-src 'none'; sandbox"); // berkas bukti tidak boleh menjalankan apa pun di origin aplikasi
+    res.setHeader("Content-Disposition", "inline");
+    res.setHeader("Cache-Control", "private, max-age=60");
+    fs.createReadStream(abs).on("error", () => res.destroy()).pipe(res);
+  })().catch((err) => {
+    console.error("[financeMedia] refund-bukti:", err);
+    if (!res.headersSent) res.status(500).json({ error: "Terjadi kesalahan di server" });
+  });
+});
 
 // ── Bukti pembayaran pelanggan (/media/payment-proofs, diunggah sales/driver) ─────────────────────────────
 // File statis publik /media/payment-proofs DIPERTAHANKAN untuk web CRM (belum dimigrasi). Untuk klien native tersedia jalur

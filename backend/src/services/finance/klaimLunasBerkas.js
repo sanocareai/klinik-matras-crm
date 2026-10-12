@@ -53,7 +53,8 @@ export function bersihkanNamaAsli(nama) {
  * Validasi + simpan satu berkas. `berkas` = { buffer, originalname } (hasil multer memoryStorage).
  * Mengembalikan metadata untuk baris OrderPaymentClaimEvidence. Menulis ke disk HANYA setelah semua pemeriksaan lolos.
  */
-export function simpanBerkas(berkas) {
+// `dir` opsional: modul lain (bukti transfer refund) memakai validasi + penyimpanan yang SAMA di folder miliknya sendiri.
+export function simpanBerkas(berkas, { dir = KLAIM_DIR } = {}) {
   if (!berkas?.buffer?.length) throw new BerkasError("Berkas bukti wajib diisi", 400, "BERKAS_KOSONG");
   if (berkas.buffer.length > MAKS_UKURAN_BYTE) {
     throw new BerkasError(`Ukuran berkas maksimal ${MAKS_UKURAN_BYTE / 1024 / 1024} MB`, 413, "BERKAS_TERLALU_BESAR");
@@ -61,8 +62,8 @@ export function simpanBerkas(berkas) {
   const tipe = deteksiTipe(berkas.buffer);
   if (!tipe) throw new BerkasError("Jenis berkas tidak diizinkan. Gunakan foto (JPG, PNG, WEBP) atau PDF.", 415, "TIPE_TIDAK_DIIZINKAN");
   const storedName = `${randomBytes(16).toString("hex")}.${tipe.ext}`;
-  fs.mkdirSync(KLAIM_DIR, { recursive: true });
-  fs.writeFileSync(path.join(KLAIM_DIR, storedName), berkas.buffer, { flag: "wx" });
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, storedName), berkas.buffer, { flag: "wx" });
   return {
     storedName,
     originalName: bersihkanNamaAsli(berkas.originalname),
@@ -72,17 +73,17 @@ export function simpanBerkas(berkas) {
   };
 }
 
-export const pathBerkas = (storedName) => path.join(KLAIM_DIR, storedName);
+export const pathBerkas = (storedName, dir = KLAIM_DIR) => path.join(dir, storedName);
 
 /** Server mengonfirmasi berkas benar-benar tersimpan (ada di disk dengan ukuran yang tercatat). */
-export function berkasTersimpan(storedName, sizeBytes) {
+export function berkasTersimpan(storedName, sizeBytes, dir = KLAIM_DIR) {
   if (!POLA_NAMA.test(storedName)) return false;
-  try { return fs.statSync(pathBerkas(storedName)).size === sizeBytes; } catch { return false; }
+  try { return fs.statSync(pathBerkas(storedName, dir)).size === sizeBytes; } catch { return false; }
 }
 
-export function hapusBerkasDisk(storedName) {
+export function hapusBerkasDisk(storedName, dir = KLAIM_DIR) {
   if (!POLA_NAMA.test(storedName)) return;
-  try { fs.unlinkSync(pathBerkas(storedName)); } catch { /* sudah tidak ada — tidak apa-apa */ }
+  try { fs.unlinkSync(pathBerkas(storedName, dir)); } catch { /* sudah tidak ada — tidak apa-apa */ }
 }
 
 /** URL bertanda-tangan (berumur pendek) untuk satu berkas bukti — dikirim ke UI yang berhak melihatnya. */

@@ -243,7 +243,7 @@ async function refundDisetujui(ctx, { nominalBayar = 2_000_000, nominalRefund = 
   const payment = await testPrisma.payment.create({ data: { orderId: order.id, amount: nominalBayar, method: "CASH", recordedById: ctx.admin.user.id } });
   await testPrisma.$transaction((tx) => postPaymentReceived(tx, { paymentId: payment.id, userId: ctx.admin.user.id }));
   if (diakui) await testPrisma.$transaction((tx) => postRevenueRecognition(tx, { orderId: order.id, userId: ctx.admin.user.id }));
-  const r = await ctx.a.post("/api/finance/refunds", { orderId: order.id, date: "2026-09-22", amount: nominalRefund, reason: "Kasur tidak sesuai", cashAccountId: ctx.bank.id });
+  const r = await ctx.a.post("/api/finance/refunds", { orderId: order.id, date: "2026-09-22", amount: nominalRefund, reason: "Kasur tidak sesuai", cashAccountId: ctx.bank.id, attachmentUrl: `/media/finance-receipts/${"a".repeat(40)}.jpg` }); // bukti lama (lampiran) — koreksi mewajibkan minimal satu bukti
   assert.equal(r.status, 201, JSON.stringify(r.body));
   const ap = await ctx.a.post(`/api/finance/refunds/${r.body.id}/approve`, {});
   assert.equal(ap.status, 200, JSON.stringify(ap.body));

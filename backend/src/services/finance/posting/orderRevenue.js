@@ -436,7 +436,7 @@ export async function postRefund(tx, { refundId, userId = null }) {
     where: { id: refundId },
     select: {
       id: true, refundNumber: true, orderId: true, amount: true, date: true, reason: true,
-      cashAccountId: true, transferFeeAmount: true,
+      cashAccountId: true, transferFeeAmount: true, transferReference: true,
       cashAccount: { select: { id: true, name: true, accountId: true } },
       order: { select: { id: true, orderNumber: true, customerId: true } },
     },
@@ -457,7 +457,7 @@ export async function postRefund(tx, { refundId, userId = null }) {
 
   const { entry, created } = await postJournal(tx, {
     date: refund.date,
-    description: `Refund ${refund.refundNumber} — order ${refund.order?.orderNumber || refund.orderId}: ${refund.reason}`,
+    description: `Refund ${refund.refundNumber} — order ${refund.order?.orderNumber || refund.orderId}: ${refund.reason}${refund.transferReference ? ` [Ref ${refund.transferReference}]` : ""}`,
     source: "REFUND",
     sourceId: refundId,
     idempotencyKey: KEY.refund(refundId),

@@ -83,6 +83,7 @@ import { sinkronStatusDariFinExpense } from "../services/expenseSubmission/servi
 import { blokirKoreksiBatch, menuKoreksi } from "../services/finance/koreksiPembayaran.js";
 import { ambilDaftarPembayaran } from "../services/finance/customerPaymentRead.js";
 import { ambilDaftarRefund, refundInclude } from "../services/finance/refundRead.js";
+import { unggahBukti, hapusBuktiStaged, buktiDokumen, jumlahBuktiBatch, BerkasError, MAKS_UKURAN_MB } from "../services/finance/refundBukti.js";
 import {
   blokirKoreksiTagihanBatch, blokirKoreksiRefundBatch, menuKoreksiDokumen, editInfoTagihan, koreksiTagihan, editInfoRefund, koreksiRefund,
 } from "../services/finance/koreksiLanjutan.js";
@@ -2048,12 +2049,49 @@ financeTxRouter.post("/customer-payments/:id/allocations", requirePermission(P.F
 
 // refundInclude & query daftar ada di services/finance/refundRead.js — dipakai bersama Export Excel (Piutang & Refund).
 
+// ── Bukti transfer refund (Koreksi Refund) ──────────────────────────────────────────────────────────────
+// Unggah dulu (STAGED), baru dirujuk koreksi. Berkas divalidasi dari ISI (bukan ekstensi), maks 8 MB, JPG/PNG/WEBP/PDF; hanya Finance Admin yang mengunggah.
+const uploadBuktiRefund = multer({ storage: multer.memoryStorage(), limits: { fileSize: (MAKS_UKURAN_MB + 1) * 1024 * 1024, files: 1 } });
+financeTxRouter.post("/refunds/bukti/upload", requirePermission(P.FINANCE_ADMIN),
+  (req, res, next) => uploadBuktiRefund.single("berkas")(req, res, (e) => {
+    if (!e) return next();
+    const pesan = e.code === "LIMIT_FILE_SIZE" ? `Ukuran berkas maksimal ${MAKS_UKURAN_MB} MB` : "Unggahan tidak valid";
+    return res.status(e.code === "LIMIT_FILE_SIZE" ? 413 : 400).json({ error: pesan, code: e.code === "LIMIT_FILE_SIZE" ? "BERKAS_TERLALU_BESAR" : "UNGGAHAN_TIDAK_VALID" });
+  }),
+  async (req, res) => {
+    try {
+      const bukti = await unggahBukti(prisma, { berkas: req.file, userId: req.user.id });
+      res.status(201).json({ bukti });
+    } catch (e) {
+      if (e instanceof BerkasError) return res.status(e.statusCode).json({ error: e.message, code: e.code });
+      handleFinanceError(e, res);
+    }
+  });
+
+financeTxRouter.delete("/refunds/bukti/:id", requirePermission(P.FINANCE_ADMIN), async (req, res) => {
+  try {
+    res.json(await hapusBuktiStaged(prisma, { id: req.params.id, userId: req.user.id }));
+  } catch (e) {
+    if (e instanceof BerkasError) return res.status(e.statusCode).json({ error: e.message, code: e.code });
+    handleFinanceError(e, res);
+  }
+});
+
+financeTxRouter.get("/refunds/:id/bukti", requirePermission(P.FINANCE_READ), async (req, res) => {
+  try {
+    const r = await prisma.finRefund.findUnique({ where: { id: req.params.id }, select: { id: true, attachmentUrl: true, refundNumber: true, transferReference: true, updatedAt: true } });
+    if (!r) throw err("Refund tidak ditemukan", 404);
+    res.json({ refundId: r.id, nomor: r.refundNumber, transferReference: r.transferReference, updatedAt: r.updatedAt, ...(await buktiDokumen(prisma, r)) });
+  } catch (e) { handleFinanceError(e, res); }
+});
+
 financeTxRouter.get("/refunds", requirePermission(P.FINANCE_READ), async (req, res) => {
   try {
     const refunds = await ambilDaftarRefund(prisma, { status: req.query.status }, { take: 200 });
     const blokir = await blokirKoreksiRefundBatch(prisma, refunds.map((r) => r.id));
+    const jumlahBukti = await jumlahBuktiBatch(prisma, refunds);
     const punyaIzin = hasPermission(req.user, P.FINANCE_ADMIN);
-    res.json({ refunds: refunds.map((r) => ({ ...r, amount: moneyToNumber(r.amount), transferFeeAmount: moneyToNumber(r.transferFeeAmount ?? 0), ...ringkasBiaya(r), koreksi: menuKoreksiDokumen(blokir.get(r.id), { punyaIzin }) })) });
+    res.json({ refunds: refunds.map((r) => ({ ...r, amount: moneyToNumber(r.amount), transferFeeAmount: moneyToNumber(r.transferFeeAmount ?? 0), jumlahBukti: jumlahBukti.get(r.id) ?? 0, ...ringkasBiaya(r), koreksi: menuKoreksiDokumen(blokir.get(r.id), { punyaIzin }) })) });
   } catch (e) {
     handleFinanceError(e, res);
   }
@@ -2062,6 +2100,7 @@ financeTxRouter.get("/refunds", requirePermission(P.FINANCE_READ), async (req, r
 financeTxRouter.post("/refunds", requirePermission(P.FINANCE_POST), async (req, res) => {
   try {
     const { orderId, date, amount, reason, cashAccountId, attachmentUrl } = req.body;
+    const transferReference = String(req.body.transferReference ?? "").trim().slice(0, 120) || null;
     if (!orderId) throw err("Order wajib dipilih");
     if (!reason?.trim()) throw err("Alasan refund wajib diisi");
     if (!cashAccountId) throw err("Rekening sumber pengembalian wajib dipilih");
@@ -2094,6 +2133,7 @@ financeTxRouter.post("/refunds", requirePermission(P.FINANCE_POST), async (req, 
         transferFeeType: biaya.transferFeeType,
         transferFeeAmount: biaya.transferFeeAmount,
         attachmentUrl: attachmentUrl || null,
+        transferReference,
         status: "MENUNGGU_APPROVAL",
         createdById: req.user.id,
       },

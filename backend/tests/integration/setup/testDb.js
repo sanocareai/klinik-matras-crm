@@ -51,6 +51,7 @@ const TABLES_TO_TRUNCATE = [
   "fin_bank_statement_lines", "fin_bank_statements", "fin_recon_snapshots", "fin_recon_exception_reviews",
   "fin_inventory_opening_lines", "fin_inventory_openings",
   "fin_supplier_payment_allocations", "fin_supplier_payments", "fin_supplier_bills",
+  "fin_refund_evidence_links", "fin_refund_evidences", // bukti transfer refund (relasi + berkas): dibersihkan eksplisit
   "fin_payment_allocations", "fin_refunds", "fin_expenses",
   // "Terapkan Uang Muka" (D-XXX, 22 September 2026) — WAJIB sebelum
   // fin_purchases: FK advance_purchase_id/target_purchase_id menunjuk ke
