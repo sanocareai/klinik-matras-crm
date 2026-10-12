@@ -27,6 +27,7 @@ import { usePlanDrag } from "@/features/production/usePlanDrag.js";
 import { ScheduleModal } from "@/features/production/ScheduleModals.jsx";
 import { MEJA, backlogOf, mattressInfo, mejaLabel, viewOfOnboardCard } from "@/features/production/unitCardModel.js";
 import RencanaActivationModal from "@/features/production/RencanaActivationModal.jsx";
+import RencanaExportButton from "@/features/production/RencanaExportButton.jsx";
 import { hasManualOrder, moveStep } from "@/features/production/stationOrder.js";
 import { rolesOf } from "@/lib/roles.js";
 
@@ -495,6 +496,9 @@ export default function ProductionRencanaWorkspace() {
   const reader = cc?.readerMode ?? board?.readerMode;
 
   const fmtLong = (d) => formatTanggal(d);
+  // Kartu yang sedang terlihat (untuk Export Excel "hanya kartu terlihat"): id dari state layar; data barisnya tetap dimuat ulang dari server.
+  const exportVisibleRunIds = useMemo(() => [...new Set([...stations.flatMap((s) => s.items.map((v) => v.runId)), ...bl.items.filter((i) => i.view?.runId).map((i) => i.view.runId)].filter(Boolean))], [stations, bl.items]);
+  const exportVisibleUnitIds = useMemo(() => [...new Set(bl.items.filter((i) => !i.view?.runId).map((i) => i.card?.unit?.id || i.unitId).filter(Boolean))], [bl.items]);
 
   // SEMUA perubahan jadwal (seret-lepas MAUPUN tombol Jadwalkan/Pindahkan/▲▼) lewat command yang sama. TIDAK optimistic: kartu baru berpindah
   // setelah server menjawab dan papan dimuat ulang. Bila gagal (409 revisi/isi meja berubah/meja penuh/403), papan dimuat ulang dari server
@@ -661,6 +665,7 @@ export default function ProductionRencanaWorkspace() {
             <Button variant="neutral" size="sm" className="min-h-[40px]" onClick={() => setDate(today)}>Hari Ini</Button>
             <Button variant="neutral" size="sm" className="min-h-[40px]" onClick={() => setDate(tomorrow)}>Besok (H-1)</Button>
             <Button variant="neutral" size="sm" className="min-h-[40px]" onClick={load} disabled={loading}><RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Muat Ulang</Button>
+            {!bl.demo && reader !== "OFF" && <RencanaExportButton date={date} dateLabel={fmtLong(date)} stations={cfg?.stations || MEJA} visibleRunIds={exportVisibleRunIds} visibleUnitIds={exportVisibleUnitIds} disabled={loading} onDone={setNotice} />}
           </div>
         } />
       <PageBody>
