@@ -11,6 +11,8 @@ import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
 import { computeStockSnapshot } from "../services/inventoryLedger.js";
+import { wajibUuid } from "../lib/uuidParam.js";
+import { pesanServerAman } from "../lib/galatServerAman.js";
 
 export const replenishmentRouter = express.Router();
 replenishmentRouter.use(requireAuth);
@@ -23,7 +25,7 @@ function handleErr(err, res) {
   if (err.code === "P2002") return res.status(409).json({ error: "Nomor request sudah dipakai" });
   if (err.code === "P2025") return res.status(404).json({ error: "Data tidak ditemukan" });
   console.error("Replenishment error:", err);
-  return res.status(500).json({ error: "Server error: " + err.message });
+  return res.status(500).json({ error: pesanServerAman(err) });
 }
 
 const SOURCES = ["MINIMUM_STOCK_RULE", "REORDER_POINT", "PRODUCTION_FORECAST", "SALES_DEMAND", "MANUAL_REQUEST", "LOCATION_REFILL"];
@@ -94,7 +96,7 @@ replenishmentRouter.get("/", requirePermission(P.INVENTORY_READ), async (req, re
   }
 });
 
-replenishmentRouter.get("/:id", requirePermission(P.INVENTORY_READ), async (req, res) => {
+replenishmentRouter.get("/:id", requirePermission(P.INVENTORY_READ), wajibUuid(), async (req, res) => {
   try {
     const request = await prisma.replenishmentRequest.findUnique({ where: { id: req.params.id }, include: requestInclude });
     if (!request) return res.status(404).json({ error: "Replenishment request tidak ditemukan" });
@@ -153,7 +155,7 @@ replenishmentRouter.post("/", requirePermission(P.INVENTORY_WRITE), async (req, 
 // PATCH /api/inventory/replenishment/:id
 // Header (termasuk edit quantity/supplier — "Review quantity"/"Assign
 // Supplier" dari spesifikasi) + transisi DRAFT..ORDERED satu langkah.
-replenishmentRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+replenishmentRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
   try {
     const existing = await prisma.replenishmentRequest.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: "Replenishment request tidak ditemukan" });
@@ -201,7 +203,7 @@ replenishmentRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), async (r
 // "Link to Goods Receipt" — menandai barang benar-benar tiba. Wajib
 // ORDERED. TIDAK menulis stock_movements sendiri (GoodsReceipt yang sudah
 // menulisnya lewat putaway-nya sendiri).
-replenishmentRouter.post("/:id/link-receipt", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+replenishmentRouter.post("/:id/link-receipt", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
   try {
     const request = await prisma.replenishmentRequest.findUnique({ where: { id: req.params.id } });
     if (!request) return res.status(404).json({ error: "Replenishment request tidak ditemukan" });
@@ -223,7 +225,7 @@ replenishmentRouter.post("/:id/link-receipt", requirePermission(P.INVENTORY_WRIT
 });
 
 // PATCH /api/inventory/replenishment/:id/reject { reason }
-replenishmentRouter.patch("/:id/reject", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+replenishmentRouter.patch("/:id/reject", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
   try {
     const request = await prisma.replenishmentRequest.findUnique({ where: { id: req.params.id } });
     if (!request) return res.status(404).json({ error: "Replenishment request tidak ditemukan" });

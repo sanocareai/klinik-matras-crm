@@ -11,6 +11,8 @@ import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js"
 import { prisma } from "../db.js";
 import { postStockMovement, lockRowForUpdate } from "../services/inventoryLedger.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
+import { wajibUuid } from "../lib/uuidParam.js";
+import { pesanServerAman } from "../lib/galatServerAman.js";
 
 export const damagedStockRouter = express.Router();
 damagedStockRouter.use(requireAuth);
@@ -23,7 +25,7 @@ function handleErr(err, res) {
   if (err.code === "P2002") return res.status(409).json({ error: "Nomor record sudah dipakai" });
   if (err.code === "P2025") return res.status(404).json({ error: "Data tidak ditemukan" });
   console.error("Damaged stock error:", err);
-  return res.status(500).json({ error: "Server error: " + err.message });
+  return res.status(500).json({ error: pesanServerAman(err) });
 }
 
 const DAMAGE_CATEGORIES = [
@@ -62,7 +64,7 @@ damagedStockRouter.get("/", requirePermission(P.INVENTORY_READ), async (req, res
   }
 });
 
-damagedStockRouter.get("/:id", requirePermission(P.INVENTORY_READ), async (req, res) => {
+damagedStockRouter.get("/:id", requirePermission(P.INVENTORY_READ), wajibUuid(), async (req, res) => {
   try {
     const record = await prisma.damagedStockRecord.findUnique({ where: { id: req.params.id }, include: recordInclude });
     if (!record) return res.status(404).json({ error: "Record tidak ditemukan" });
@@ -100,7 +102,7 @@ damagedStockRouter.post("/", requirePermission(P.INVENTORY_WRITE), async (req, r
 });
 
 // PATCH /api/inventory/damaged-stock/:id/inspect — "Request Inspection".
-damagedStockRouter.patch("/:id/inspect", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+damagedStockRouter.patch("/:id/inspect", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
   try {
     const record = await prisma.damagedStockRecord.findUnique({ where: { id: req.params.id } });
     if (!record) return res.status(404).json({ error: "Record tidak ditemukan" });
@@ -119,7 +121,7 @@ damagedStockRouter.patch("/:id/inspect", requirePermission(P.INVENTORY_WRITE), a
 // POST /api/inventory/damaged-stock/:id/resolve { resolution, resolutionNote? }
 // SATU-SATUNYA jalan record ini menulis ledger — dan hanya untuk dua dari
 // empat resolusi (lihat catatan di schema.prisma).
-damagedStockRouter.post("/:id/resolve", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+damagedStockRouter.post("/:id/resolve", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
   try {
     const preCheck = await prisma.damagedStockRecord.findUnique({ where: { id: req.params.id } });
     if (!preCheck) return res.status(404).json({ error: "Record tidak ditemukan" });

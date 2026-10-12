@@ -10,6 +10,7 @@ import { wajibIdempotencyKey } from "../middleware/idempotency.js";
 import { aktorDariSesi, bentukBarangAkanDatang, catatKedatanganPO, daftarBarangAkanDatang, jalankanKoreksiKedatangan, pastikanDrafPenerimaan, WORKSPACE } from "../services/finance/kedatangan.js";
 import { galatKedatangan, terimaBukti, wajibKunciKecualiPratinjau } from "./barangAkanDatang.js";
 import { prisma } from "../db.js";
+import { wajibUuid } from "../lib/uuidParam.js";
 const POLA_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 import { handleFinanceError } from "./finance.js";
 import { bentukPO, daftarPO, daftarRiwayat, buatPO, ubahDraf, setujuiPO, batalkanPO, revisiJumlah } from "../services/finance/purchaseOrder.js";
@@ -88,7 +89,7 @@ purchaseOrderFinanceRouter.patch("/faktur/:billId", requirePermission(P.FINANCE_
   } catch (e) { handleFinanceError(e, res); }
 });
 
-purchaseOrderFinanceRouter.get("/:id/penagihan", requirePermission(P.FINANCE_READ), async (req, res) => {
+purchaseOrderFinanceRouter.get("/:id/penagihan", requirePermission(P.FINANCE_READ), wajibUuid(), async (req, res) => {
   try {
     const v = await pandanganPenagihan(prisma, req.params.id);
     if (!v) return res.status(404).json({ error: "PO tidak ditemukan" });
@@ -104,7 +105,7 @@ purchaseOrderFinanceRouter.post("/:id/faktur", requirePermission(P.FINANCE_POST)
 });
 
 // PDF Purchase Order (sistem dokumen SANSS yang sama dengan invoice). Hanya Finance (memuat harga & nilai). Murni baca: tidak mengubah PO, stok, atau jurnal.
-purchaseOrderFinanceRouter.get("/:id/pdf", requirePermission(P.FINANCE_READ), async (req, res) => {
+purchaseOrderFinanceRouter.get("/:id/pdf", requirePermission(P.FINANCE_READ), async (req, res) => { // sudah memvalidasi UUID sendiri (404, kontrak lama dikunci tes) — tidak memakai wajibUuid
   try {
     if (!POLA_UUID.test(req.params.id)) return res.status(404).json({ error: "PO tidak ditemukan" });
     const view = await bangunViewPO(prisma, req.params.id);
@@ -139,7 +140,7 @@ purchaseOrderFinanceRouter.post("/:id/draf-penerimaan", requirePermission(P.FINA
   } catch (e) { galatKedatangan(e, res); }
 });
 
-purchaseOrderFinanceRouter.get("/:id", requirePermission(P.FINANCE_READ), async (req, res) => {
+purchaseOrderFinanceRouter.get("/:id", requirePermission(P.FINANCE_READ), wajibUuid(), async (req, res) => {
   try {
     const po = await bentukPO(prisma, req.params.id, { harga: true });
     if (!po) return res.status(404).json({ error: "PO tidak ditemukan" });
@@ -205,7 +206,7 @@ purchaseOrderGudangRouter.get("/", requirePermission(P.INVENTORY_READ), async (r
   } catch (e) { handleFinanceError(e, res); }
 });
 
-purchaseOrderGudangRouter.get("/:id", requirePermission(P.INVENTORY_READ), async (req, res) => {
+purchaseOrderGudangRouter.get("/:id", requirePermission(P.INVENTORY_READ), wajibUuid(), async (req, res) => {
   try {
     const po = await bentukPO(prisma, req.params.id, { harga: false });
     // Draf belum menjadi komitmen: tidak ditampilkan ke Gudang.

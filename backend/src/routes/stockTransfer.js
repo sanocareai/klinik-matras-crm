@@ -12,6 +12,8 @@ import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js"
 import { prisma } from "../db.js";
 import { postStockMovement, lockRowForUpdate } from "../services/inventoryLedger.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
+import { wajibUuid } from "../lib/uuidParam.js";
+import { pesanServerAman } from "../lib/galatServerAman.js";
 
 export const stockTransferRouter = express.Router();
 stockTransferRouter.use(requireAuth);
@@ -24,7 +26,7 @@ function handleErr(err, res) {
   if (err.code === "P2002") return res.status(409).json({ error: "Nomor transfer sudah dipakai" });
   if (err.code === "P2025") return res.status(404).json({ error: "Data tidak ditemukan" });
   console.error("Stock transfer error:", err);
-  return res.status(500).json({ error: "Server error: " + err.message });
+  return res.status(500).json({ error: pesanServerAman(err) });
 }
 
 const TRANSFER_TYPES = [
@@ -81,7 +83,7 @@ stockTransferRouter.get("/", requirePermission(P.INVENTORY_READ), async (req, re
   }
 });
 
-stockTransferRouter.get("/:id", requirePermission(P.INVENTORY_READ), async (req, res) => {
+stockTransferRouter.get("/:id", requirePermission(P.INVENTORY_READ), wajibUuid(), async (req, res) => {
   try {
     const transfer = await prisma.stockTransfer.findUnique({ where: { id: req.params.id }, include: transferInclude });
     if (!transfer) return res.status(404).json({ error: "Stock transfer tidak ditemukan" });
@@ -133,7 +135,7 @@ stockTransferRouter.post("/", requirePermission(P.INVENTORY_WRITE), async (req, 
 });
 
 // PATCH /api/inventory/transfers/:id — header + transisi DRAFT..PICKED.
-stockTransferRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+stockTransferRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
   try {
     const preCheck = await prisma.stockTransfer.findUnique({ where: { id: req.params.id } });
     if (!preCheck) return res.status(404).json({ error: "Stock transfer tidak ditemukan" });
@@ -182,7 +184,7 @@ stockTransferRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), async (r
 // POST /api/inventory/transfers/:id/dispatch
 // Wajib status PICKED. Validasi shortage terhadap saldo ledger BERJALAN di
 // dalam transaksi yang sama, sama pola dengan POST /material-issues/:id/issue.
-stockTransferRouter.post("/:id/dispatch", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+stockTransferRouter.post("/:id/dispatch", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
   try {
     const preCheck = await prisma.stockTransfer.findUnique({ where: { id: req.params.id } });
     if (!preCheck) return res.status(404).json({ error: "Stock transfer tidak ditemukan" });
@@ -220,7 +222,7 @@ stockTransferRouter.post("/:id/dispatch", requirePermission(P.INVENTORY_WRITE), 
 // POST /api/inventory/transfers/:id/receive { lines?: [{lineId, qtyReceived}] }
 // Wajib status IN_TRANSIT. qtyReceived default ke qtySent — override per
 // baris untuk kasus barang susut/rusak di perjalanan.
-stockTransferRouter.post("/:id/receive", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+stockTransferRouter.post("/:id/receive", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
   try {
     const preCheck = await prisma.stockTransfer.findUnique({ where: { id: req.params.id } });
     if (!preCheck) return res.status(404).json({ error: "Stock transfer tidak ditemukan" });
@@ -268,7 +270,7 @@ stockTransferRouter.post("/:id/receive", requirePermission(P.INVENTORY_WRITE), a
 // PATCH /api/inventory/transfers/:id/cancel { reason }
 // Hanya sebelum IN_TRANSIT — begitu barang dikirim, tidak ada "batal" tanpa
 // alur retur fisik, itu di luar cakupan endpoint ini.
-stockTransferRouter.patch("/:id/cancel", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+stockTransferRouter.patch("/:id/cancel", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
   try {
     const preCheck = await prisma.stockTransfer.findUnique({ where: { id: req.params.id } });
     if (!preCheck) return res.status(404).json({ error: "Stock transfer tidak ditemukan" });

@@ -84,6 +84,7 @@ import { blokirKoreksiBatch, menuKoreksi } from "../services/finance/koreksiPemb
 import { ambilDaftarPembayaran } from "../services/finance/customerPaymentRead.js";
 import { ambilDaftarRefund, refundInclude } from "../services/finance/refundRead.js";
 import { unggahBukti, hapusBuktiStaged, bersihkanBuktiStaged, lampirkanBuktiSaja, buktiDokumen, jumlahBuktiBatch, BerkasError, MAKS_UKURAN_MB } from "../services/finance/refundBukti.js";
+import { wajibUuid } from "../lib/uuidParam.js";
 import {
   blokirKoreksiTagihanBatch, blokirKoreksiRefundBatch, menuKoreksiDokumen, editInfoTagihan, koreksiTagihan, editInfoRefund, koreksiRefund,
 } from "../services/finance/koreksiLanjutan.js";
@@ -1017,7 +1018,7 @@ financeTxRouter.post("/purchases/:id/koreksi", requirePermission(P.FINANCE_ADMIN
 
 /** Daftar DP eligible untuk diterapkan ke SATU pembelian tujuan (dipakai picker UI). */
 financeTxRouter.get("/purchases/:id/advance-eligible",
-  requireAnyPermission(P.FINANCE_READ, P.FINANCE_POST),
+  requireAnyPermission(P.FINANCE_READ, P.FINANCE_POST), wajibUuid(),
   async (req, res) => {
     try {
       const target = await prisma.finPurchase.findUnique({
@@ -1034,7 +1035,7 @@ financeTxRouter.get("/purchases/:id/advance-eligible",
 
 /** Ringkasan + histori penerapan DP untuk SATU pembelian (sisi sumber DP maupun sisi penerima). */
 financeTxRouter.get("/purchases/:id/advance-summary",
-  requireAnyPermission(P.FINANCE_READ, P.FINANCE_EXPENSE_SUBMIT),
+  requireAnyPermission(P.FINANCE_READ, P.FINANCE_EXPENSE_SUBMIT), wajibUuid(),
   async (req, res) => {
     try {
       const p = await prisma.finPurchase.findUnique({

@@ -11,6 +11,8 @@ import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js"
 import { prisma } from "../db.js";
 import { postStockMovement, lockRowForUpdate } from "../services/inventoryLedger.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
+import { wajibUuid } from "../lib/uuidParam.js";
+import { pesanServerAman } from "../lib/galatServerAman.js";
 
 export const stockCountRouter = express.Router();
 stockCountRouter.use(requireAuth);
@@ -23,7 +25,7 @@ function handleErr(err, res) {
   if (err.code === "P2002") return res.status(409).json({ error: "Nomor count sudah dipakai" });
   if (err.code === "P2025") return res.status(404).json({ error: "Data tidak ditemukan" });
   console.error("Stock count error:", err);
-  return res.status(500).json({ error: "Server error: " + err.message });
+  return res.status(500).json({ error: pesanServerAman(err) });
 }
 
 const COUNT_TYPES = ["CYCLE_COUNT", "FULL_STOCK_OPNAME"];
@@ -58,7 +60,7 @@ stockCountRouter.get("/", requirePermission(P.INVENTORY_READ), async (req, res) 
   }
 });
 
-stockCountRouter.get("/:id", requirePermission(P.INVENTORY_READ), async (req, res) => {
+stockCountRouter.get("/:id", requirePermission(P.INVENTORY_READ), wajibUuid(), async (req, res) => {
   try {
     const count = await prisma.stockCount.findUnique({ where: { id: req.params.id }, include: countInclude });
     if (!count) return res.status(404).json({ error: "Stock count tidak ditemukan" });
@@ -107,7 +109,7 @@ stockCountRouter.post("/", requirePermission(P.INVENTORY_WRITE), async (req, res
 // (status berjalan lewat /start, /submit, /recount, /complete — masing-masing
 // punya efek samping menulis ledger atau snapshot yang tidak cocok dengan
 // PATCH generik satu-status-maju seperti dokumen lain).
-stockCountRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+stockCountRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
   try {
     const existing = await prisma.stockCount.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: "Stock count tidak ditemukan" });
@@ -131,7 +133,7 @@ stockCountRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), async (req,
 // POST /api/inventory/stock-counts/:id/start
 // SCHEDULED → IN_PROGRESS. Snapshot systemQty SEKALI dari saldo ledger
 // BERJALAN — baseline blind count, tidak dihitung ulang setelah ini.
-stockCountRouter.post("/:id/start", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+stockCountRouter.post("/:id/start", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
   try {
     const preCheck = await prisma.stockCount.findUnique({ where: { id: req.params.id } });
     if (!preCheck) return res.status(404).json({ error: "Stock count tidak ditemukan" });
@@ -162,7 +164,7 @@ stockCountRouter.post("/:id/start", requirePermission(P.INVENTORY_WRITE), async 
 // PATCH /api/inventory/stock-counts/:id/lines/:lineId
 // Isi hasil hitung fisik (countedQty) selama IN_PROGRESS, atau alasan
 // selisih (reason) selama IN_PROGRESS/WAITING_REVIEW.
-stockCountRouter.patch("/:id/lines/:lineId", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+stockCountRouter.patch("/:id/lines/:lineId", requirePermission(P.INVENTORY_WRITE), wajibUuid("id", "lineId"), async (req, res) => {
   try {
     const count = await prisma.stockCount.findUnique({ where: { id: req.params.id } });
     if (!count) return res.status(404).json({ error: "Stock count tidak ditemukan" });
@@ -192,7 +194,7 @@ stockCountRouter.patch("/:id/lines/:lineId", requirePermission(P.INVENTORY_WRITE
 // POST /api/inventory/stock-counts/:id/submit
 // IN_PROGRESS → WAITING_REVIEW. Wajib SEMUA baris sudah punya countedQty —
 // count yang setengah jadi tidak bisa masuk review.
-stockCountRouter.post("/:id/submit", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+stockCountRouter.post("/:id/submit", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
   try {
     const count = await prisma.stockCount.findUnique({ where: { id: req.params.id }, include: countInclude });
     if (!count) return res.status(404).json({ error: "Stock count tidak ditemukan" });
@@ -215,7 +217,7 @@ stockCountRouter.post("/:id/submit", requirePermission(P.INVENTORY_WRITE), async
 // POST /api/inventory/stock-counts/:id/recount
 // WAITING_REVIEW → IN_PROGRESS. systemQty TIDAK di-snapshot ulang — baseline
 // tetap dari Start Count pertama.
-stockCountRouter.post("/:id/recount", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+stockCountRouter.post("/:id/recount", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
   try {
     const count = await prisma.stockCount.findUnique({ where: { id: req.params.id } });
     if (!count) return res.status(404).json({ error: "Stock count tidak ditemukan" });
@@ -236,7 +238,7 @@ stockCountRouter.post("/:id/recount", requirePermission(P.INVENTORY_WRITE), asyn
 // WAITING_REVIEW. Untuk tiap baris dengan countedQty ≠ systemQty, WAJIB
 // reason terisi, lalu tulis SATU StockMovement ADJUSTMENT (qty = selisih).
 // Baris tanpa selisih dilewati — tidak ada yang perlu disesuaikan.
-stockCountRouter.post("/:id/complete", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+stockCountRouter.post("/:id/complete", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
   try {
     const preCheck = await prisma.stockCount.findUnique({ where: { id: req.params.id } });
     if (!preCheck) return res.status(404).json({ error: "Stock count tidak ditemukan" });
@@ -278,7 +280,7 @@ stockCountRouter.post("/:id/complete", requirePermission(P.INVENTORY_WRITE), asy
 });
 
 // PATCH /api/inventory/stock-counts/:id/cancel { reason }
-stockCountRouter.patch("/:id/cancel", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+stockCountRouter.patch("/:id/cancel", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
   try {
     const count = await prisma.stockCount.findUnique({ where: { id: req.params.id } });
     if (!count) return res.status(404).json({ error: "Stock count tidak ditemukan" });
