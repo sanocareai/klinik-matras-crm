@@ -23,7 +23,8 @@ import { api } from "@/api.js";
 import { NominalDenganBiaya, nominalTeks } from "@/features/finance/biayaAdminTampil.jsx";
 import CaraBayarTransfer from "@/features/finance/CaraBayarTransfer.jsx";
 import { BIAYA_KOSONG, denganBiaya, biayaTransferLengkap, bodyBiayaTransfer } from "@/features/finance/biayaTransfer.js";
-import { RiwayatVersiDialog, KoreksiDialog, InfoDialog } from "@/features/finance/KoreksiAman.jsx";
+import { RiwayatVersiDialog, InfoDialog } from "@/features/finance/KoreksiAman.jsx";
+import KoreksiRefundDialog from "@/features/finance/KoreksiRefundDialog.jsx";
 import { aksiRefund as matriksRefund } from "@/features/finance/matriksAksi.js";
 import { KenapaBeda } from "@/features/finance/kontrak.jsx";
 import { bentukItemMenu, adminSaatIni } from "@/features/finance/aksiMenu.jsx";
@@ -387,15 +388,8 @@ export default function FinanceReceivables() {
         />
       )}
       {koreksiUntuk && (
-        <KoreksiDialog
-          tanpaPin
-          jenis="refunds" doc={koreksiUntuk} nomor={koreksiUntuk.refundNumber} judulRingkas={`Refund disetujui · order ${koreksiUntuk.order?.orderNumber || ""} · ${formatUang(koreksiUntuk.amount)}`}
-          kolom={[
-            { kunci: "amount", label: "Nominal refund", tipe: "uang", wajib: true },
-            { kunci: "date", label: "Tanggal refund", tipe: "tanggal", wajib: true },
-            { kunci: "cashAccountId", label: "Rekening sumber pengembalian", tipe: "pilih", opsi: rekening.map((x) => ({ id: x.id, name: x.name })), wajib: true },
-          ]}
-          awal={{ amount: Number(koreksiUntuk.amount) || 0, date: String(koreksiUntuk.date || "").slice(0, 10), cashAccountId: koreksiUntuk.cashAccountId || "" }}
+        <KoreksiRefundDialog
+          refund={koreksiUntuk} rekening={rekening}
           onClose={() => setKoreksiUntuk(null)} onSaved={() => { setKoreksiUntuk(null); muat(); }}
         />
       )}

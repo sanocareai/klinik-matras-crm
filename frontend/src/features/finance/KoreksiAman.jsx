@@ -209,7 +209,7 @@ export async function kirimKoreksi({ minta, jenis, id, body }) {
 export const LABEL_FIELD = {
   date: "Tanggal", amount: "Nominal", description: "Keterangan", categoryId: "Kategori", division: "Divisi",
   cashAccountId: "Rekening", payeeName: "Penerima", reimburseToId: "Penalang", paymentMethod: "Cara bayar",
-  transferFeeType: "Metode transfer", transferFeeAmount: "Biaya transfer", fromAccountId: "Dari rekening",
+  transferFeeType: "Metode transfer", transferFeeAmount: "Biaya admin bank", fromAccountId: "Dari rekening",
   toAccountId: "Ke rekening", feeAmount: "Biaya admin", reference: "Referensi", notes: "Catatan",
   accountId: "Akun pendapatan", attachmentUrl: "Lampiran", receiptUrl: "Bukti", supplierId: "Supplier", mode: "Cara bayar",
   // Pembayaran masuk (B3.7)
@@ -217,10 +217,12 @@ export const LABEL_FIELD = {
   referenceNumber: "Nomor referensi", internalNote: "Keterangan internal", proofPhotoUrl: "Bukti",
   // Tagihan supplier & refund (B3.8)
   supplierRef: "Nomor faktur supplier", dueDate: "Jatuh tempo", billDate: "Tanggal tagihan", jatuhTempo: "Jatuh tempo", nominal: "Nominal",
-  keterangan: "Keterangan", jenis: "Jenis tagihan", kategoriBiaya: "Kategori biaya", kategoriAset: "Kategori aset", biayaTransfer: "Biaya transfer",
+  keterangan: "Keterangan", jenis: "Jenis tagihan", kategoriBiaya: "Kategori biaya", kategoriAset: "Kategori aset", biayaTransfer: "Biaya admin bank",
   alasanRefund: "Alasan refund", reason: "Alasan refund", rekeningSumber: "Rekening sumber",
+  // Koreksi Refund: biaya admin bank, total keluar, referensi transfer
+  totalKeluar: "Total keluar rekening", referensiTransfer: "Referensi transfer", transferReference: "Referensi transfer",
 };
-const FIELD_UANG = new Set(["amount", "feeAmount", "transferFeeAmount", "nominal", "biayaTransfer"]);
+const FIELD_UANG = new Set(["amount", "feeAmount", "transferFeeAmount", "nominal", "biayaTransfer", "totalKeluar"]);
 const FIELD_TANGGAL = new Set(["date", "tanggal", "jatuhTempo", "dueDate", "billDate"]);
 
 /** Tampilkan nilai; `resolusi(field, nilai)` (opsional) menerjemahkan id -> nama. */
@@ -355,6 +357,32 @@ export function RiwayatVersiDialog({ jenis, id, nomor, onClose, resolusi }) {
                       {v.nominal != null && <span className="tabular-nums">{formatUang(v.nominal)}</span>}
                       <Badge variant={v.terbaru ? "green" : "neutral"}>{v.terbaru ? "Terbaru" : "Diganti"}</Badge>
                     </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {data.versiRefund?.length > 0 && (
+            <div data-testid="rincian-versi-refund">
+              <div className="mb-1 text-[12px] font-medium uppercase tracking-[0.05em] text-ink3">Rincian tiap versi refund</div>
+              <div className="space-y-1.5">
+                {data.versiRefund.map((v) => (
+                  <div key={v.id} className="rounded-lg bg-inset px-3 py-2 text-[12.5px]">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span><span className="font-mono">{v.nomor}</span> <span className="text-ink3">· versi {v.nomorVersi}</span></span>
+                      <Badge variant={v.status === "DISETUJUI" ? "green" : "neutral"}>{v.status === "DISETUJUI" ? "Berlaku" : v.status === "DIBATALKAN" ? "Diganti" : v.status}</Badge>
+                    </div>
+                    <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5">
+                      <dt className="text-ink3">Nominal refund</dt><dd className="tabular-nums">{formatUang(v.nominal)}</dd>
+                      <dt className="text-ink3">Biaya admin bank</dt><dd className="tabular-nums">{formatUang(v.biayaAdmin)}</dd>
+                      <dt className="text-ink3">Total keluar</dt><dd className="font-medium tabular-nums">{formatUang(v.totalKeluar)}</dd>
+                      <dt className="text-ink3">Rekening</dt><dd>{v.rekening || "—"}</dd>
+                      <dt className="text-ink3">Tanggal</dt><dd>{tanggalPendek(v.tanggal)}</dd>
+                      <dt className="text-ink3">Referensi</dt><dd className="break-all">{v.referensi || "—"}</dd>
+                      <dt className="text-ink3">Bukti</dt><dd>{v.jumlahBukti} berkas{v.bukti?.length ? ` (${v.bukti.map((b) => b.nama).join(", ")})` : v.lampiranLama ? " (lampiran lama)" : ""}</dd>
+                      <dt className="text-ink3">Dibuat</dt><dd>{v.dibuatOleh || "—"} · {tanggalJam(v.dibuatPada)}</dd>
+                      {v.alasanKoreksi && (<><dt className="text-ink3">Diganti karena</dt><dd>{v.alasanKoreksi}</dd></>)}
+                    </dl>
                   </div>
                 ))}
               </div>

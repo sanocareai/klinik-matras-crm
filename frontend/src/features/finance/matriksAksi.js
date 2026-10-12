@@ -126,7 +126,7 @@ export function aksiRefund(r, { admin = false } = {}) {
   if (r.status === "DISETUJUI") {
     return [
       ok("info", "edit", "Edit Informasi", { hint: "Alasan refund & lampiran. Tanpa jurnal." }),
-      itemKoreksi(r, admin, "Koreksi Refund", "Nominal, tanggal, rekening, biaya transfer. Jurnal lama dibalik & refund pengganti dibuat (tanpa PIN)."),
+      itemKoreksi(r, admin, "Koreksi Refund", "Nominal, tanggal, rekening, biaya admin bank, referensi, dan bukti transfer. Jurnal lama dibalik & refund pengganti dibuat (tanpa PIN)."),
       riwayat(),
       izinAdmin(admin, ok("batalkan", "catatUlang", "Batalkan & Ajukan Ulang", { destructive: true, konfirmasi: true })),
     ];

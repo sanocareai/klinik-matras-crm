@@ -1754,6 +1754,10 @@ export const api = {
     }),
   getRiwayatPembayaran: (id) => request(`/finance/pembayaran/${id}/riwayat`),
   editFinanceRefund: (id, data) => request(`/finance/refunds/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  // Koreksi Refund: bukti transfer (unggah dulu = "belum dipakai", lalu dirujuk koreksi; hapus = batal pakai). Berkas hanya lewat URL bertanda-tangan 5 menit.
+  uploadBuktiRefund: (file) => { const fd = new FormData(); fd.append("berkas", file); return requestFormData("/finance/refunds/bukti/upload", fd); },
+  hapusBuktiRefund: (id) => request(`/finance/refunds/bukti/${id}`, { method: "DELETE" }),
+  getBuktiRefund: (id) => request(`/finance/refunds/${id}/bukti`),
   cancelFinanceRefund: (id, reason) => request(`/finance/refunds/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
   editFinanceBill: (id, data) => request(`/finance/bills/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   cancelFinanceBill: (id, reason) => request(`/finance/bills/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
