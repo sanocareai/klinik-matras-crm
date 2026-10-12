@@ -1,6 +1,7 @@
 import React from "react";
 import { AlertTriangle, CheckCircle2, Route } from "lucide-react";
 import { Badge } from "@/components/ui/badge.jsx";
+import { formatUang } from "@/features/finance/shared.jsx";
 
 // Pratinjau SERVER sebelum "Catat Penjualan" / "Buat Order CRM": apa yang AKAN dibuat (order, item, unit, job pickup, job pengiriman) dan yang TIDAK dibuat (uang). Tanpa nominal.
 // `data` = respons POST /finance/penjualan-karyawan/order-crm/pratinjau. Produk tanpa pemetaan rute Produksi DIBLOKIR di sini (valid:false) dengan arah tindakan untuk Admin.
@@ -30,13 +31,41 @@ function RuteBaris({ rute, jenisKerja }) {
   return <p className="m-0 mt-1 flex items-center gap-1.5 text-[12px] text-ink3" data-testid="pratinjau-rute"><Route size={12} className="shrink-0" /> {teks}</p>;
 }
 
+/** Bagian KEUANGAN pratinjau terpadu (hanya muncul di layar Finance): total dari baris yang sama + catatan bahwa order operasional tidak membawa uang. */
+function RingkasKeuangan({ k }) {
+  return (
+    <div className="space-y-2 rounded-lg border border-line px-3 py-2.5" data-testid="pratinjau-keuangan">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <p className="m-0 text-[12.5px] font-semibold text-ink">Tagihan penjualan</p>
+        <p className="m-0 text-[15px] font-semibold tabular-nums text-ink" data-testid="pratinjau-total">{formatUang(k.total)}</p>
+      </div>
+      <ul className="m-0 list-none space-y-0.5 p-0 text-[12.5px] text-ink2">
+        {k.baris.map((b) => (
+          <li key={b.no} className="flex items-baseline justify-between gap-3"><span className="min-w-0">{b.no}. {b.nama}{b.jumlah !== 1 ? ` × ${b.jumlah}` : ""}</span><span className="tabular-nums">{formatUang(b.subtotal)}</span></li>
+        ))}
+      </ul>
+      <p className="m-0 text-[12px] text-ink3">{k.catatan}</p>
+    </div>
+  );
+}
+
 export function PratinjauOrderPkr({ data, className = "" }) {
   if (!data) return null;
   if (!data.valid) return <GalatPratinjau galat={data.galat} className={className} />;
   const d = data;
+  // Pratinjau terpadu tanpa pekerjaan Produksi/Pickup: hanya tagihan Finance, tanpa order.
+  if (!d.order) {
+    return (
+      <div className={`space-y-3 ${className}`} data-testid="pratinjau-order">
+        {d.keuangan && <RingkasKeuangan k={d.keuangan} />}
+        <p role="status" className="m-0 rounded-lg bg-inset px-3 py-2 text-[12.5px] text-ink2" data-testid="pratinjau-tanpa-order">{d.tanpaOrder}</p>
+      </div>
+    );
+  }
   const kategori = d.order.kategoriLabel || d.order.kategori;
   return (
     <div className={`space-y-3 ${className}`} data-testid="pratinjau-order">
+      {d.keuangan && <RingkasKeuangan k={d.keuangan} />}
       {d.sudahAdaOrder && (
         <p role="status" className="rounded-lg bg-orangebg px-3 py-2 text-[12.5px] text-orange" data-testid="pratinjau-sudah-ada">
           Penjualan ini sudah punya order {d.sudahAdaOrder.nomor}. Tidak ada order baru yang dibuat; gunakan “Lengkapi spesifikasi” untuk mengubah.
@@ -67,6 +96,11 @@ export function PratinjauOrderPkr({ data, className = "" }) {
         ))}
       </ul>
 
+      {d.nonProduksi?.length > 0 && (
+        <p className="m-0 text-[12.5px] text-ink2" data-testid="pratinjau-non-produksi">
+          Tanpa unit Produksi: {d.nonProduksi.map((n) => `${n.nama}${n.jumlah !== 1 ? ` × ${n.jumlah}` : ""} (${n.pemenuhan === "AMBIL_STOK" ? "ambil dari stok" : "tanpa operasional"})`).join(", ")}.
+        </p>
+      )}
       <div className={`rounded-lg px-3 py-2 text-[12.5px] ${d.produksi.lengkap ? "bg-greenbg text-green" : "bg-orangebg text-orange"}`} data-testid="pratinjau-produksi">
         <strong>{d.produksi.status}.</strong>{" "}
         {d.produksi.lengkap ? "Semua data item dan pilihan kirim sudah terisi." : `Data yang kurang: ${d.produksi.kurang.join("; ")}. Order tetap dibuat; item yang belum lengkap tidak bisa dijadwalkan sampai dilengkapi (item lain tidak ikut tertahan).`}
@@ -131,6 +165,37 @@ export function PratinjauKoreksi({ data, className = "" }) {
         <p className="m-0 mb-1 flex items-center gap-1.5 font-semibold text-ink"><CheckCircle2 size={13} /> Tidak disentuh oleh koreksi ini</p>
         <p className="m-0">{d.tidakDibuat.join(" · ")}. Nominal tetap di Penjualan Karyawan.</p>
       </div>
+    </div>
+  );
+}
+
+/** Pratinjau dampak KOREKSI BARIS PENJUALAN (respons POST …/koreksi-baris/pratinjau): dampak Finance (total, jurnal) + dampak operasional. Hanya di layar Finance. */
+export function PratinjauKoreksiBaris({ data, className = "" }) {
+  if (!data) return null;
+  if (!data.valid) return <GalatPratinjau galat={data.galat} className={className} />;
+  const k = data.dampak.keuangan;
+  const arah = k.selisih > 0 ? "naik" : k.selisih < 0 ? "turun" : "tetap";
+  return (
+    <div className={`space-y-3 ${className}`} data-testid="pratinjau-koreksi-baris">
+      <div className="space-y-2 rounded-lg border border-line px-3 py-2.5" data-testid="koreksi-keuangan">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <p className="m-0 text-[12.5px] font-semibold text-ink">Dampak tagihan (Finance)</p>
+          <p className="m-0 text-[13px] tabular-nums text-ink" data-testid="koreksi-total">
+            {formatUang(k.totalSebelum)} → <strong>{formatUang(k.totalSesudah)}</strong> <span className="text-ink3">({arah}{k.selisih !== 0 ? ` ${formatUang(Math.abs(k.selisih))}` : ""})</span>
+          </p>
+        </div>
+        <ul className="m-0 list-none space-y-0.5 p-0 text-[12.5px] text-ink2">
+          {k.baris.map((b, n) => (
+            <li key={`${b.jenis}-${n}`}>
+              {b.jenis === "tambah" && `+ ${b.nama} × ${b.jumlah} = ${formatUang(b.subtotal)}`}
+              {b.jenis === "hapus" && `− Item ${b.no}: ${b.nama} (${formatUang(b.subtotal)} dihapus)`}
+              {b.jenis === "ubah" && `Item ${b.no}: ${b.nama} — jumlah ${b.jumlah.sebelum} → ${b.jumlah.sesudah}, harga ${formatUang(b.harga.sebelum)} → ${formatUang(b.harga.sesudah)}, subtotal ${formatUang(b.subtotal.sebelum)} → ${formatUang(b.subtotal.sesudah)}`}
+            </li>
+          ))}
+        </ul>
+        <p className="m-0 text-[12px] text-ink3" data-testid="koreksi-jurnal">{k.jurnal} Dibayar {formatUang(k.terbayar)}; sisa tagihan setelah koreksi {formatUang(k.sisaSesudah)}.</p>
+      </div>
+      <PratinjauKoreksi data={data} />
     </div>
   );
 }

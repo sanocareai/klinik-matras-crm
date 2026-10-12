@@ -1807,6 +1807,8 @@ export const api = {
   simpanKomposisiPkr: (data) => request("/finance/penjualan-karyawan/katalog-item/komposisi", { method: "PUT", body: JSON.stringify(data) }),
   // Koreksi item (sebelum unit dijadwalkan/diproses): pratinjau dampak tidak menulis; terapkan = alasan + expectedRevision + Idempotency-Key (satu kunci per niat koreksi).
   pratinjauKoreksiItemPkr: (id, data) => request(`/finance/penjualan-karyawan/${id}/koreksi-item/pratinjau`, { method: "POST", body: JSON.stringify(data) }),
+  pratinjauKoreksiBarisPkr: (id, data) => request(`/finance/penjualan-karyawan/${id}/koreksi-baris/pratinjau`, { method: "POST", body: JSON.stringify(data) }),
+  koreksiBarisPkr: (id, data, idempotencyKey) => request(`/finance/penjualan-karyawan/${id}/koreksi-baris`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey || mutationKey("pkr-koreksi-baris") }, body: JSON.stringify(data) }),
   koreksiItemPkr: (id, data, idempotencyKey) => request(`/finance/penjualan-karyawan/${id}/koreksi-item`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey || mutationKey("pkr-koreksi") }, body: JSON.stringify(data) }),
   // Delivery: order PKR menunggu unit lain + aksi eksplisit Kirim sebagian.
   getPkrPengirimanMenunggu: () => request("/armada/pkr-pengiriman"),

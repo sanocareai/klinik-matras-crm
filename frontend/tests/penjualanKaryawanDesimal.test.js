@@ -39,9 +39,11 @@ test("totalItems: kasus layar Owner (6 item, HARDPAD 1,6) = Rp1.965.500; total =
 });
 
 test("Form: kolom jumlah menerima pecahan (teks + inputMode desimal), mengirim string bertitik, dan tombol simpan bergantung normalisasi", () => {
-  const src = baca("src/pages/finance/FinancePenjualanKaryawan.jsx");
-  assert.match(src, /normalisasiJumlah\(i\.quantity\) !== null/);
-  assert.match(src, /quantity: normalisasiJumlah\(i\.quantity\)/);
-  assert.match(src, /type="text" inputMode="decimal" value=\{it\.quantity\}/);
-  assert.doesNotMatch(src, /type="number" min=\{1\} value=\{it\.quantity\}/, "input jumlah bukan lagi number min=1 (menolak pecahan)");
+  // Sejak daftar item terpadu (Item Penjualan & Pemenuhan), kolom jumlah ada di PkrItemPenjualanForm dan logikanya di pkrItemLogic.
+  const form = baca("src/features/finance/PkrItemPenjualanForm.jsx");
+  const logika = baca("src/features/finance/pkrItemLogic.js");
+  assert.match(logika, /normalisasiJumlah\(i\.jumlah\) === null/);
+  assert.match(logika, /o\.jumlah = normalisasiJumlah\(i\.jumlah\)/);
+  assert.match(form, /type="text" inputMode="decimal" value=\{i\.jumlah\}/);
+  assert.doesNotMatch(form, /type="number" min=\{1\} value=\{i\.jumlah\}/, "input jumlah bukan lagi number min=1 (menolak pecahan)");
 });

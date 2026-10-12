@@ -15,10 +15,10 @@ import {
 // memakai bidang bentuk kategorinya sendiri. Mode "baru": kategori & jumlah bisa diisi; mode "lengkapi": kategori & jumlah terkunci (struktur berubah lewat Koreksi Item);
 // mode "koreksi": jumlah boleh diubah dan item boleh dihapus (diteruskan ke pratinjau dampak + alasan).
 
-const AREA = "min-h-[72px] w-full rounded-lg bg-surface px-2.5 py-2 text-sm leading-normal text-ink outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent/40 max-sm:min-h-[96px]";
+export const AREA = "min-h-[72px] w-full rounded-lg bg-surface px-2.5 py-2 text-sm leading-normal text-ink outline-none transition-colors focus-visible:ring-2 focus-visible:ring-accent/40 max-sm:min-h-[96px]";
 
 /** Bidang kontekstual satu item/komponen: produk (pilih/ketik), dimensi, spesifikasi. `nilai` memakai kunci produkId/produkNama/panjang/lebar/tebal/tinggi/spesifikasi. */
-function BidangItem({ bentuk, produk, nilai, set, label, terkunci = false, uji = "item" }) {
+export function BidangItem({ bentuk, produk, nilai, set, label, terkunci = false, uji = "item" }) {
   if (!bentuk) return null;
   return (
     <>
@@ -61,7 +61,7 @@ function BidangItem({ bentuk, produk, nilai, set, label, terkunci = false, uji =
 }
 
 /** Satu komponen set: judul "Komponen n · Kasur Baru ×1", bidang bentuk kategorinya, dan pilihan kirim (ikut Set / dikirim / diambil sendiri). */
-function KartuKomponen({ entri, nilai, katalog, onChange, no, idx }) {
+export function KartuKomponen({ entri, nilai, katalog, onChange, no, idx }) {
   const set = (k, v) => onChange({ ...nilai, [k]: v });
   return (
     <div className="space-y-3 rounded-lg border border-line bg-inset p-3" data-testid="komponen-set" data-komponen={entri.kategoriKode}>

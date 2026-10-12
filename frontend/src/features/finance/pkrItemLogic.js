@@ -4,6 +4,8 @@
 // Admin dan himpunan field per bentuk ada di backend (lib/domain/pkrItem.js). Di sini hanya bentuk state form, body API, dan validasi ringan; server tetap otoritas (pratinjau +
 // pembuatan memakai fungsi yang sama).
 
+import { normalisasiJumlah, subtotalSen } from "./penjualanKaryawanLogic.js";
+
 export const MAKS_ITEM = 20;
 export const MAKS_UNIT = 20;
 
@@ -64,7 +66,7 @@ export const bentukKomponen = (katalog, entri) => katalog?.bentuk?.[entri?.bentu
 /** Produk yang boleh dipilih untuk komponen: produk kategori komponen. */
 export const produkKomponen = (katalog, entri) => daftarKategori(katalog).find((k) => k.kode === entri?.kategoriKode)?.produk ?? [];
 
-const angkaTeks = (v) => String(v ?? "").trim().replace(",", ".");
+export const angkaTeks = (v) => String(v ?? "").trim().replace(",", ".");
 const angkaValid = (v) => v === "" || /^\d+(\.\d{1,2})?$/.test(angkaTeks(v));
 
 /** Total unit produksi. Bundel: jumlah set × jumlah komponen per set (butuh katalog). */
@@ -127,7 +129,7 @@ function bodyFieldItem(i, bentuk, o) {
   return o;
 }
 
-function bodyItem(i, katalog, { struktur }) {
+export function bodyItem(i, katalog, { struktur }) {
   const o = {};
   if (struktur) { o.kategori = i.kategori; o.jumlah = Number(i.jumlah) || 1; }
   if (itemBundel(katalog, i)) {
@@ -266,3 +268,155 @@ export function ringkasItemsTeks(items) {
 
 export const LABEL_JENIS_KERJA = { BARU: "Produk baru (langsung di workshop)", LAYANAN: "Service/upgrade (barang diambil dulu)" };
 export const LABEL_KATEGORI_ORDER = { BARU: "Produk baru", LAYANAN: "Service/Upgrade", CAMPURAN: "Campuran", SEWA: "Sewa" };
+
+// ── Item Penjualan & Pemenuhan (satu daftar: harga + operasional) ─────────────────────────────────────
+// Satu baris = penjualan (jumlah, harga) + pemenuhan (Produksi Baru / Service-Pickup / Ambil dari Stok / Tanpa Operasional) + bidang kontekstual kategori. Definisi pemenuhan datang dari
+// server (katalog.pemenuhan). Tanpa daftar kedua: tidak ada lagi "Item yang dijual" dan "Order untuk Produksi dan Delivery" terpisah.
+
+export const itemPenjualanBaru = () => ({ ...itemBaru(), pemenuhan: "", nama: "", harga: "" });
+export const penjualanKosong = () => ({ items: [itemPenjualanBaru()], alamat: "", kota: "", tanggalKirim: "" });
+
+export const infoPemenuhan = (katalog, kode) => (katalog?.pemenuhan ?? []).find((p) => p.kode === kode) ?? null;
+/** Pemenuhan ini melahirkan unit (Produksi/Pickup)? Item tanpa unit tidak punya ukuran/dikirim. */
+export const punyaUnitPemenuhan = (katalog, kode) => Boolean(infoPemenuhan(katalog, kode)?.unit);
+
+/** Kategori yang boleh dipilih untuk pemenuhan: Produksi Baru -> kategori produk baru; Service/Pickup -> Service/Upgrade; stok/tanpa operasional -> semua kategori non-set (opsional). */
+export function kategoriUntukPemenuhan(katalog, kode) {
+  const semua = daftarKategori(katalog);
+  const info = infoPemenuhan(katalog, kode);
+  if (!info) return [];
+  if (info.unit) return semua.filter((k) => k.jenisKerja === info.jenisKerja);
+  return semua.filter((k) => !k.bundel);
+}
+
+/** Ganti pemenuhan: kategori yang tidak cocok dilepas; item tanpa unit membuang isian ukuran/kirim/komponen. */
+export function ubahPemenuhanItem(katalog, item, kode) {
+  const info = infoPemenuhan(katalog, kode);
+  let baru = { ...item, pemenuhan: kode };
+  const cocok = kategoriUntukPemenuhan(katalog, kode).some((k) => k.kode === item.kategori);
+  if (item.kategori && !cocok) baru = ubahKategoriItem(katalog, { ...baru }, "");
+  if (info && !info.unit) {
+    baru = { ...baru, kirim: "", panjang: "", lebar: "", tebal: "", tinggi: "", komponen: [] };
+    if (!baru.jumlah || !normalisasiJumlah(baru.jumlah)) baru.jumlah = "1";
+  } else if (!Number.isInteger(Number(baru.jumlah))) baru.jumlah = "1";
+  return baru;
+}
+
+/** Nama yang akan tampil di tagihan (sama dengan aturan server): produk katalog / ketikan; kategori bila bentuknya tidak mewajibkan produk. */
+export function namaItemPenjualan(katalog, i) {
+  if (!punyaUnitPemenuhan(katalog, i.pemenuhan)) return String(i.nama ?? "").trim();
+  const kat = cariKategori(katalog, i.kategori);
+  if (kat?.bundel) {
+    const p = i.produkId ? kat.produk.find((x) => x.id === i.produkId) : null;
+    return p?.nama ?? kat.nama;
+  }
+  const produk = i.produkId ? produkKategori(katalog, i).find((x) => x.id === i.produkId) : null;
+  const diketik = produk?.nama ?? String(i.produkNama ?? "").trim();
+  if (diketik) return diketik;
+  return bentukItem(katalog, i)?.produk?.wajib ? "" : kat?.nama ?? "";
+}
+
+export const subtotalPenjualan = (i) => subtotalSen(i.jumlah, i.harga) / 100;
+/** Total form (pratinjau) — angka resmi dihitung server. */
+export const totalPenjualan = (items) => (items || []).reduce((a, i) => a + subtotalSen(i.jumlah, i.harga), 0) / 100;
+
+/** Galat ringan (null = boleh ditinjau). Server tetap otoritas atas semua aturan. */
+export function galatItemPenjualan(items, katalog) {
+  if (!items.length) return "Tambahkan minimal satu item penjualan";
+  for (const [idx, i] of items.entries()) {
+    const no = idx + 1;
+    const info = infoPemenuhan(katalog, i.pemenuhan);
+    if (!info) return `Item ${no}: pilih cara pemenuhan`;
+    if (normalisasiJumlah(i.jumlah) === null) return `Item ${no}: jumlah tidak valid`;
+    if (!(Number(i.harga) > 0)) return `Item ${no}: harga satuan wajib diisi`;
+    if (info.unit) {
+      if (!cariKategori(katalog, i.kategori)) return `Item ${no}: pilih kategori`;
+      if (!namaItemPenjualan(katalog, i)) return `Item ${no}: ${bentukItem(katalog, i)?.produk?.label ?? "nama produk"} wajib diisi (jadi nama item di tagihan)`;
+      const g = galatItems([i], katalog);
+      if (g) return g.replace(/^Item 1/, `Item ${no}`);
+    } else if (String(i.nama ?? "").trim().length < 2) {
+      return `Item ${no}: nama item wajib diisi`;
+    }
+  }
+  const unit = totalUnitItems(items.filter((i) => punyaUnitPemenuhan(katalog, i.pemenuhan)), katalog);
+  if (unit > MAKS_UNIT) return `Total jumlah unit ${unit} melebihi batas ${MAKS_UNIT} per order`;
+  return null;
+}
+
+/** Satu item -> body API terpadu. Jumlah item tanpa unit boleh pecahan (dikirim sebagai teks bertitik). Harga sebagai angka. */
+export function bodyItemPenjualan(i, katalog) {
+  const unit = punyaUnitPemenuhan(katalog, i.pemenuhan);
+  const o = { pemenuhan: i.pemenuhan, harga: Number(i.harga) };
+  if (unit) return { ...bodyItem(i, katalog, { struktur: true }), ...o };
+  o.jumlah = normalisasiJumlah(i.jumlah);
+  o.nama = String(i.nama ?? "").trim();
+  if (i.kategori) o.kategori = i.kategori;
+  if (String(i.spesifikasi ?? "").trim()) o.spesifikasi = String(i.spesifikasi).trim();
+  return o;
+}
+
+/** Body POST PKR: SATU daftar item + logistik (alamat/kota/tanggal hanya bila ada item dikirim). */
+export function bodyPenjualanTerpadu(f, katalog) {
+  const items = f.items.map((i) => bodyItemPenjualan(i, katalog));
+  const orderCrm = {};
+  const t = (v) => String(v ?? "").trim();
+  if (adaItemDikirim(f.items.filter((i) => punyaUnitPemenuhan(katalog, i.pemenuhan)), katalog)) {
+    if (t(f.alamat)) orderCrm.alamat = t(f.alamat);
+    if (t(f.kota)) orderCrm.kota = t(f.kota);
+    if (t(f.tanggalKirim)) orderCrm.tanggalKirim = t(f.tanggalKirim);
+  }
+  return { items, orderCrm };
+}
+
+/** Ringkas satu baris untuk daftar/ringkasan: "Kasur Sano ×2 · Produksi Baru". */
+export function ringkasBarisPenjualan(b) {
+  return `${b.name}${Number(b.quantity) !== 1 ? ` ×${b.quantity}` : ""}${b.pemenuhanLabel ? ` · ${b.pemenuhanLabel}` : ""}`;
+}
+
+// ── Koreksi baris penjualan (Finance + operasional atomik) ───────────────────────────────────────────
+const UNIT_BELUM_MULAI = ["AWAITING_PICKUP", "RECEIVED", "CANCELLED"];
+/** Form koreksi dari PKR (baris) + ringkasan operasional (sinkron.items bertautan lewat saleItemId). Baris lama (tanpa pemenuhan) tidak ikut — tak bisa dikoreksi di sini. */
+export function formKoreksiBaris(penjualan) {
+  const op = penjualan?.sinkron?.items ?? [];
+  const baris = (penjualan?.items ?? []).filter((b) => b.terpadu).map((b) => {
+    const komponen = op.filter((x) => x.saleItemId === b.id);
+    return {
+      id: b.id, no: (b.sortOrder ?? 0) + 1, nama: b.name, pemenuhan: b.pemenuhan, pemenuhanLabel: b.pemenuhanLabel, unit: komponen.length > 0,
+      set: komponen.some((x) => x.bundel), jumlah: String(b.quantity), harga: String(b.unitPrice), kirim: b.perluDikirim === true ? "ya" : b.perluDikirim === false ? "tidak" : "",
+      terkunci: komponen.some((x) => (x.unit ?? []).some((u) => !UNIT_BELUM_MULAI.includes(u.status))), hapus: false,
+      awal: { nama: b.name, jumlah: String(b.quantity), harga: String(b.unitPrice), perluDikirim: b.perluDikirim ?? null },
+    };
+  });
+  return { baris, baru: [], alasan: "", revisi: penjualan?.sinkron?.order?.revisi ?? null };
+}
+
+/** Operasi koreksi dari selisih form dengan nilai awal; hanya yang berubah dikirim. Baris yang terkunci hanya boleh berubah HARGA. */
+export function operasiKoreksiBaris(f, katalog) {
+  const ops = [];
+  for (const b of f.baris) {
+    if (b.hapus) { ops.push({ op: "hapus", no: b.no }); continue; }
+    const o = { op: "ubah", no: b.no };
+    let beda = false;
+    if (Number(b.harga) !== Number(b.awal.harga)) { o.harga = Number(b.harga); beda = true; }
+    if (Number(normalisasiJumlah(b.jumlah) ?? NaN) !== Number(b.awal.jumlah)) { o.jumlah = b.unit ? Number(b.jumlah) : normalisasiJumlah(b.jumlah); beda = true; }
+    const kirim = b.kirim === "ya" ? true : b.kirim === "tidak" ? false : null;
+    if (b.unit && kirim !== (b.awal.perluDikirim ?? null)) { o.perluDikirim = kirim; beda = true; }
+    if (!b.unit && String(b.nama ?? "").trim() !== String(b.awal.nama ?? "").trim()) { o.nama = String(b.nama).trim(); beda = true; }
+    if (beda) ops.push(o);
+  }
+  for (const n of f.baru) ops.push({ op: "tambah", item: bodyItemPenjualan(n, katalog) });
+  return ops;
+}
+
+export function galatKoreksiBaris(f, katalog) {
+  for (const b of f.baris.filter((x) => !x.hapus)) {
+    if (!(Number(b.harga) > 0)) return `Item ${b.no}: harga satuan wajib diisi`;
+    if (normalisasiJumlah(b.jumlah) === null) return `Item ${b.no}: jumlah tidak valid`;
+    if (b.unit && (!Number.isInteger(Number(b.jumlah)) || Number(b.jumlah) < 1 || Number(b.jumlah) > MAKS_UNIT)) return `Item ${b.no}: jumlah harus bilangan bulat 1–${MAKS_UNIT}`;
+    if (!b.unit && String(b.nama ?? "").trim().length < 2) return `Item ${b.no}: nama item wajib diisi`;
+  }
+  if (f.baru.length) { const g = galatItemPenjualan(f.baru, katalog); if (g) return g; }
+  if (f.baris.every((b) => b.hapus) && f.baru.length === 0) return "Koreksi ini menghapus semua item — batalkan penjualan bila memang batal";
+  if (operasiKoreksiBaris(f, katalog).length === 0) return "Belum ada perubahan";
+  return null;
+}

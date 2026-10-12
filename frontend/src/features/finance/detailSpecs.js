@@ -152,7 +152,7 @@ export function specPenjualanKaryawan(p, { badge, aksi } = {}) {
     ],
     bagian: [
       { judul: "Penjualan", baris: [["Tanggal", tanggalPendek(p.date)], ["Karyawan penjual", nama(p.seller)], ["Pembeli", p.buyerName], ["Sudah dibayar", uang(p.terbayar)], ["Catatan", p.notes]] },
-      { judul: `Item (${(p.items || []).length})`, baris: (p.items || []).map((i) => [i.name, `${i.quantity} × ${formatUang(i.unitPrice)} = ${formatUang(i.subtotal)}`]) },
+      { judul: `Item (${(p.items || []).length})`, baris: (p.items || []).map((i) => [i.name, `${i.quantity} × ${formatUang(i.unitPrice)} = ${formatUang(i.subtotal)}${i.pemenuhanLabel ? ` · ${i.pemenuhanLabel}` : ""}`]) },
       ...(bayar.length > 0 ? [{ judul: `Pembayaran (${bayar.length})`, baris: bayar.map((x, i) => [`${i + 1}. ${tanggalPendek(x.date)}`, `${formatUang(x.amount)} · ${LABEL_METODE_PJK[x.method] || x.method}${x.cashAccount ? ` ke ${x.cashAccount.name}` : ""}${x.notes ? ` — ${x.notes}` : ""}`]) }] : []),
       ...(p.sinkron ? [{
         judul: "Order CRM, Produksi, Delivery",

@@ -22,13 +22,14 @@ import { CardList, RowCard } from "@/features/finance/cards.jsx";
 import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
 import { specPenjualanKaryawan } from "@/features/finance/detailSpecs.js";
 import { adminSaatIni } from "@/features/finance/aksiMenu.jsx";
-import { totalItems, normalisasiJumlah, metodeButuhRekening, LABEL_METODE_PJK } from "@/features/finance/penjualanKaryawanLogic.js";
+import { metodeButuhRekening, LABEL_METODE_PJK } from "@/features/finance/penjualanKaryawanLogic.js";
 import { resetSaatBuka } from "@/features/finance/resetSaatBuka.jsx";
 import { RingkasOrderCrm, ModalOrderCrm, useKatalogPkr } from "@/features/finance/PkrOrderCrm.jsx";
 import { ModalKoreksiItem } from "@/features/finance/PkrKoreksiItem.jsx";
+import { ModalKoreksiBaris } from "@/features/finance/PkrKoreksiBaris.jsx";
 import { aksiOrderCrm } from "@/features/finance/pkrOrderCrmLogic.js";
-import { orderCrmItemKosong, bodyOrderCrmItem, galatItems } from "@/features/finance/pkrItemLogic.js";
-import { FormItemProduksi } from "@/features/finance/PkrItemForm.jsx";
+import { penjualanKosong, bodyPenjualanTerpadu, galatItemPenjualan, totalPenjualan } from "@/features/finance/pkrItemLogic.js";
+import { FormItemPenjualan } from "@/features/finance/PkrItemPenjualanForm.jsx";
 import { PratinjauOrderPkr } from "@/features/finance/PkrPratinjau.jsx";
 
 // PENJUALAN KARYAWAN — dicatat MANUAL oleh Finance. Karyawan non-Sales menjual ke kerabat. Sejak sinkronisasi Order CRM (Okt 2026), setiap penjualan otomatis melahirkan SATU order operasional
@@ -45,6 +46,7 @@ const STATUS_TAB = [
 ];
 const VARIAN = { BELUM_BAYAR: "orange", SEBAGIAN: "orange", LUNAS: "green", DIBATALKAN: "neutral" };
 
+const terpadu = (p) => (p?.items ?? []).some((i) => i.terpadu);
 const hariIniISO = () => new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
 const StatusPenjualan = ({ p }) => <Badge variant={VARIAN[p.statusTampil] || "neutral"}>{p.statusLabel}</Badge>;
 
@@ -107,7 +109,8 @@ export default function FinancePenjualanKaryawan() {
       { label: "Riwayat pembayaran", onClick: () => setRiwayatId(p.id) },
       { label: "Buat/Tautkan Order CRM", hidden: !ac.buat, onClick: () => setOrderCrmUntuk({ p, mode: "buat" }) },
       { label: "Lengkapi spesifikasi order", hidden: !ac.lengkapi, onClick: () => setOrderCrmUntuk({ p, mode: "lengkapi" }) },
-      { label: "Koreksi item order", hint: "Tambah/hapus item atau ubah jumlah (sebelum dijadwalkan)", hidden: !ac.koreksi, onClick: () => setKoreksiUntuk(p) },
+      { label: "Koreksi item penjualan", hint: "Jumlah, harga, tambah/hapus item — Finance dan Produksi berubah bersama", hidden: !ac.koreksi || !terpadu(p), onClick: () => setKoreksiUntuk(p) },
+      { label: "Koreksi item order", hint: "Tambah/hapus item atau ubah jumlah (sebelum dijadwalkan)", hidden: !ac.koreksi || terpadu(p), onClick: () => setKoreksiUntuk(p) },
       {
         label: "Batalkan penjualan", destructive: true, hidden: !admin || p.statusTampil === "DIBATALKAN",
         onClick: () => {
@@ -292,12 +295,19 @@ export default function FinancePenjualanKaryawan() {
           await muat({ diam: true });
         }}
       />
-      {koreksiUntuk && (
-        <ModalKoreksiItem
-          key={`${koreksiUntuk.id}-koreksi`} penjualan={koreksiUntuk} onClose={() => setKoreksiUntuk(null)}
-          onSelesai={async () => { setKoreksiUntuk(null); await muat({ diam: true }); }}
-        />
-      )}
+      {koreksiUntuk && (terpadu(koreksiUntuk)
+        ? (
+          <ModalKoreksiBaris
+            key={`${koreksiUntuk.id}-koreksi-baris`} penjualan={koreksiUntuk} onClose={() => setKoreksiUntuk(null)}
+            onSelesai={async () => { setKoreksiUntuk(null); await muat({ diam: true }); }}
+          />
+        )
+        : (
+          <ModalKoreksiItem
+            key={`${koreksiUntuk.id}-koreksi`} penjualan={koreksiUntuk} onClose={() => setKoreksiUntuk(null)}
+            onSelesai={async () => { setKoreksiUntuk(null); await muat({ diam: true }); }}
+          />
+        ))}
       <PanelDetail spec={panelRincian} onClose={() => setPanelRincian(null)} />
     </HalamanFinance>
   );
@@ -362,7 +372,7 @@ function BarisBayar({ b, onChange, rek, st, muat, onHapus, cutoff }) {
 }
 
 function ModalPenjualanBaruIsi({ open, onClose, aksi, cutoff }) {
-  const kosong = () => ({ date: hariIniISO(), sellerId: "", buyerName: "", notes: "", items: [{ name: "", quantity: 1, unitPrice: "" }], pembayaran: [], orderCrm: orderCrmItemKosong() });
+  const kosong = () => ({ date: hariIniISO(), sellerId: "", buyerName: "", notes: "", pembayaran: [], daftar: penjualanKosong() });
   const [f, setF] = useState(kosong);
   const [langkah, setLangkah] = useState("isi"); // "isi" -> "tinjau" (pratinjau server order produksi) -> catat
   const [pra, setPra] = useState(null);
@@ -381,24 +391,23 @@ function ModalPenjualanBaruIsi({ open, onClose, aksi, cutoff }) {
     api.getKaryawanPenjualanKaryawan().then((r) => setKaryawan(r.karyawan || [])).catch((e) => setGalatKar(e.message || "Gagal memuat daftar karyawan"));
   }, [open]);
 
-  const total = totalItems(f.items);
+  const total = totalPenjualan(f.daftar.items);
   const bayarTotal = f.pembayaran.reduce((a, b) => a + (Number(b.amount) || 0), 0);
-  const itemsValid = f.items.length > 0 && f.items.every((i) => i.name.trim() && normalisasiJumlah(i.quantity) !== null && Number(i.unitPrice) > 0);
   const bayarValid = f.pembayaran.every((b) => Number(b.amount) > 0 && (!rekeningWajib(b, cutoff) || b.cashAccountId));
-  const galatItem = galatItems(f.orderCrm.items, katalog);
-  const valid = f.sellerId && f.buyerName.trim().length >= 2 && itemsValid && bayarValid && bayarTotal <= total && !galatItem && !!katalog;
+  const galatItem = katalog ? galatItemPenjualan(f.daftar.items, katalog) : null;
+  const valid = f.sellerId && f.buyerName.trim().length >= 2 && bayarValid && bayarTotal <= total && !galatItem && !!katalog;
+  // SATU daftar item -> pratinjau server (total + dampak operasional) -> catat. Tidak ada daftar kedua.
   async function tinjau() {
     setGalatPra("");
-    try { setPra(await api.pratinjauOrderCrmPkr({ orderCrm: bodyOrderCrmItem(f.orderCrm, katalog) })); setLangkah("tinjau"); }
+    try { setPra(await api.pratinjauOrderCrmPkr(bodyPenjualanTerpadu(f.daftar, katalog))); setLangkah("tinjau"); }
     catch (e) { setGalatPra(e.message || "Gagal membuat pratinjau"); }
   }
-  const setItem = (i, patch) => set("items", f.items.map((it, n) => (n === i ? { ...it, ...patch } : it)));
 
   return (
     <Modal
       open={open} onOpenChange={(v) => !v && onClose()}
       title="Catat Penjualan Karyawan"
-      description="Nominal, piutang, dan jurnal dicatat di sini. Otomatis dibuat satu order CRM operasional (unit produksi + pengiriman) tanpa uang."
+      description="Satu daftar item untuk tagihan dan pemenuhan. Nominal, piutang, dan jurnal dicatat di sini; pekerjaan Produksi/Pickup otomatis menjadi satu order CRM operasional tanpa uang."
       className="w-[680px]"
       footer={(
         <>
@@ -411,9 +420,8 @@ function ModalPenjualanBaruIsi({ open, onClose, aksi, cutoff }) {
             disabled={!valid || !pra?.valid}
             onClick={() => aksi(() => api.createPenjualanKaryawan({
               date: f.date, sellerId: f.sellerId, buyerName: f.buyerName.trim(), notes: f.notes.trim() || undefined,
-              items: f.items.map((i) => ({ name: i.name.trim(), quantity: normalisasiJumlah(i.quantity), unitPrice: Number(i.unitPrice) })), // jumlah dikirim sebagai teks bertitik ("1.6")
+              ...bodyPenjualanTerpadu(f.daftar, katalog), // items (penjualan + pemenuhan) + orderCrm (alamat/kota/tanggal kirim)
               pembayaran: f.pembayaran.map(bodyBayar),
-              orderCrm: bodyOrderCrmItem(f.orderCrm, katalog),
             }))}
           >Catat Penjualan</TombolAksi>}
         </>
@@ -422,7 +430,7 @@ function ModalPenjualanBaruIsi({ open, onClose, aksi, cutoff }) {
       {langkah === "tinjau" && (
         <div className="space-y-3" data-testid="langkah-tinjau">
           <div className="rounded-lg bg-inset px-3 py-2 text-[12.5px] text-ink2">
-            <strong className="text-ink">{f.buyerName.trim()}</strong> · {formatUang(total)} · {f.items.length} baris tagihan. Periksa order produksi di bawah, lalu catat.
+            <strong className="text-ink">{f.buyerName.trim()}</strong> · {formatUang(total)} · {f.daftar.items.length} item. Periksa tagihan dan order operasional di bawah, lalu catat.
           </div>
           <PratinjauOrderPkr data={pra} />
         </div>
@@ -442,20 +450,10 @@ function ModalPenjualanBaruIsi({ open, onClose, aksi, cutoff }) {
           <Input value={f.buyerName} onChange={(e) => set("buyerName", e.target.value)} placeholder="mis. Bu Ani (kerabat)" />
         </Field>
 
-        <div className="space-y-2">
-          <p className="text-[13px] font-semibold text-ink">Item yang dijual</p>
-          {f.items.map((it, i) => (
-            <div key={i} className="grid grid-cols-[1fr_72px_140px_auto] items-end gap-2 max-sm:grid-cols-2">
-              <Field label={i === 0 ? "Nama item" : undefined} className="max-sm:col-span-2"><Input value={it.name} onChange={(e) => setItem(i, { name: e.target.value })} placeholder="mis. Kasur Sano 160×200" /></Field>
-              <Field label={i === 0 ? "Jumlah" : undefined}><Input type="text" inputMode="decimal" value={it.quantity} aria-invalid={normalisasiJumlah(it.quantity) === null} title="Boleh pecahan, mis. 1,6 (maks 3 angka di belakang koma)" onChange={(e) => setItem(i, { quantity: e.target.value })} /></Field>
-              <Field label={i === 0 ? "Harga satuan" : undefined}><InputUang value={it.unitPrice} onChange={(v) => setItem(i, { unitPrice: v })} /></Field>
-              <Button size="sm" variant="neutral" disabled={f.items.length === 1} aria-label="Hapus item" onClick={() => set("items", f.items.filter((_, n) => n !== i))}><Trash2 size={13} /></Button>
-            </div>
-          ))}
-          <div className="flex items-center justify-between">
-            <Button size="sm" variant="neutral" onClick={() => set("items", [...f.items, { name: "", quantity: 1, unitPrice: "" }])}><Plus size={13} /> Tambah item</Button>
-            <p className="text-[13px] text-ink2">Total: <strong className="text-ink" data-testid="total-penjualan">{formatUang(total)}</strong></p>
-          </div>
+        <div className="space-y-2" data-testid="bagian-item-penjualan">
+          <p className="text-[13px] font-semibold text-ink">Item Penjualan &amp; Pemenuhan</p>
+          <p className="text-[12px] text-ink3">Satu daftar untuk tagihan dan pekerjaan: tiap item memuat harga, ukuran/spesifikasi, cara pemenuhan, dan dikirim atau diambil sendiri. Produksi, Pickup, dan Delivery dibuat dari baris yang sama — tidak perlu mengisi dua kali. Data teknis boleh dikosongkan dulu: order tetap dibuat “Perlu dilengkapi”.</p>
+          <FormItemPenjualan katalog={katalog} nilai={f.daftar} onChange={(v) => set("daftar", v)} memuat={memuatKatalog} galatMuat={galatKatalog} />
         </div>
 
         <div className="space-y-2">
@@ -475,12 +473,6 @@ function ModalPenjualanBaruIsi({ open, onClose, aksi, cutoff }) {
               Dibayar {formatUang(bayarTotal)} · sisa tagihan {formatUang(Math.max(total - bayarTotal, 0))}{bayarTotal > total ? " — melebihi total penjualan" : ""}
             </p>
           )}
-        </div>
-
-        <div className="space-y-2 rounded-lg bg-inset p-3" data-testid="bagian-order-crm">
-          <p className="text-[13px] font-semibold text-ink">Order untuk Produksi dan Delivery</p>
-          <p className="text-[12px] text-ink3">Satu penjualan bisa berisi beberapa item (mis. kasur + divan + sandaran) — semuanya satu order dan satu PKR. Boleh dikosongkan dulu: order tetap dibuat “Perlu dilengkapi”; Produksi baru bisa mulai setelah data tiap item dan pilihan kirim terisi.</p>
-          <FormItemProduksi katalog={katalog} nilai={f.orderCrm} onChange={(v) => set("orderCrm", v)} mode="baru" memuat={memuatKatalog} galatMuat={galatKatalog} />
         </div>
 
         <Field label="Catatan"><Input value={f.notes} onChange={(e) => set("notes", e.target.value)} /></Field>

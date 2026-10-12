@@ -95,9 +95,10 @@ test("lengkapi: form dari ringkasan server (kategori & jumlah terkunci), body pe
 
 test("pemasangan: halaman PKR memakai daftar item + langkah pratinjau; katalog dibaca dari server; tab Admin; rujukan Produksi memuat item", () => {
   const fin = baca("../src/pages/finance/FinancePenjualanKaryawan.jsx");
-  assert.match(fin, /Order untuk Produksi dan Delivery/);
-  assert.match(fin, /<FormItemProduksi katalog=\{katalog\}/);
-  assert.match(fin, /orderCrm: bodyOrderCrmItem\(f\.orderCrm, katalog\)/);
+  // Daftar terpadu: tidak ada lagi bagian "Order untuk Produksi dan Delivery" terpisah — satu daftar Item Penjualan & Pemenuhan.
+  assert.match(fin, /Item Penjualan &amp; Pemenuhan/);
+  assert.match(fin, /<FormItemPenjualan katalog=\{katalog\}/);
+  assert.match(fin, /\.\.\.bodyPenjualanTerpadu\(f\.daftar, katalog\)/);
   assert.match(fin, /api\.pratinjauOrderCrmPkr\(/);
   assert.match(fin, /data-testid="tinjau-order"/);
   assert.match(fin, /<PratinjauOrderPkr data=\{pra\} \/>/);
