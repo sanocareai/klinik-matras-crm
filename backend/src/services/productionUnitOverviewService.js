@@ -13,6 +13,7 @@
 // kebocoran antar-unit bersaudara (lihat resolveUnitPhoto yang sudah menolak atribusi job multi-unit).
 import { COMPLAINT_LABEL, RUN_VIEW_INCLUDE, STYLE_LABEL, VERDICT_LABEL, customerOf, indicatorsOf, latestOf, materialStatusOf, milestoneOfRun, minutesBetween, nameOf, stepStatuses, warningsOf, cornerAndLifecycleOf } from "./productionExperienceReadService.js";
 import { milestoneOf, receivedBasisOf } from "../lib/domain/workshopMilestone.js";
+import { loadWorkshopTimelines } from "./workshopTimelineService.js";
 import { PKR_ORDER_SELECT, rujukanPkrDariOrder } from "./pkrProduksiGuard.js";
 import { loadCornerView, loadStepContext } from "./productionStepCommandService.js";
 import { buildRunDocumentation, documentationBuckets } from "./productionDocumentationRead.js";
@@ -274,6 +275,8 @@ export async function getUnitOverview(prisma, unitId, opsi = {}) {
   const o = await prisma.order.findUnique({ where: { id: orderId }, select: PKR_ORDER_SELECT });
   const r = rujukanPkrDariOrder(o);
   if (r) hasil.identity.penjualanKaryawan = r; // bentuk SAMA dengan kartu daftar Produksi (rujukanPkrDariOrder)
+  // KPI waktu alur milestone (pickup → diterima → produksi → Gudang → delivery): hanya dari timestamp yang tercatat; sisanya "Data waktu belum tersedia".
+  if (hasil.identity?.unitId) hasil.timeline = (await loadWorkshopTimelines(prisma, [hasil.identity.unitId])).get(hasil.identity.unitId) ?? null;
   return hasil;
 }
 

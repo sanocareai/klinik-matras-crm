@@ -4,6 +4,7 @@ import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
+import { OrderMilestoneBadge } from "@/components/OrderMilestoneBadge.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import { WorkspaceHero } from "@/components/ui/workspace-hero.jsx";
@@ -402,6 +403,7 @@ export default function ArmadaOrders() {
                     <TD>{KATEGORI_LABELS[o.category] || o.category}</TD>
                     <TD onClick={(e) => e.stopPropagation()}>
                       <StatusSelect order={o} onChange={handleStatusChange} />
+                      <OrderMilestoneBadge milestone={o.milestone} className="mt-1" />
                     </TD>
                     <TD><ProduksiChip stage={o.productionStage} /></TD>
                     <TD>

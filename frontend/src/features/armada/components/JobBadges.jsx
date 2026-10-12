@@ -15,6 +15,7 @@ import {
 import { formatTanggalPendek } from "@/utils/formatDate.js";
 import { ORDER_STATUS_LABELS, orderStatusVariant, waLinkFromPhone } from "@/utils/format.js";
 import { REVISION_STATUS } from "../revisionStatus.js";
+import { statusTone } from "@/features/production/productionLabels.js";
 
 // ─── Badge Sales Person & Estimasi Durasi (D-043, 2 September 2026) ──────────
 // Laporan owner: dispatcher perlu tahu SIAPA sales pemilik order (buat
@@ -375,6 +376,15 @@ const ORDER_STATUS_ICON = {
 };
 
 export function OrderStatusBadge({ job, className }) {
+  // Status global tingkat order (milestone, berbasis bukti, dari server): unit tertinggal + rincian. Tanpa itu (payload lama) -> badge status order lama.
+  const m = job?.orderMilestone;
+  if (m && !m.legacy && m.label) {
+    return (
+      <Badge variant={statusTone(m.key)} className={cn("shrink-0", className)} data-testid="order-milestone" title={m.aheadText ? `Lainnya: ${m.aheadText}` : undefined}>
+        {m.mixed ? m.summary : m.label}
+      </Badge>
+    );
+  }
   const status = orderStatusOf(job);
   if (!status) return null;
   const Ikon = ORDER_STATUS_ICON[status];

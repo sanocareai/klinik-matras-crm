@@ -4,6 +4,7 @@ import Avatar from "@/components/Avatar.jsx";
 import { Menu, MenuItem, MenuLabel } from "@/components/ui/menu.jsx";
 import { formatRupiah, STAGE_LABELS, ORDER_STATUS_LABELS } from "@/utils/format.js";
 import { cn } from "@/lib/utils.js";
+import { OrderMilestoneBadge } from "@/components/OrderMilestoneBadge.jsx";
 
 // Nada warna status order — hijau hanya untuk yang benar-benar selesai
 // (DELIVERED), oranye untuk yang masih menunggu tindakan, merah untuk batal.
@@ -197,7 +198,8 @@ export default function KanbanCard({
           buka profil satu per satu untuk tahu pekerjaannya sampai mana. */}
       {(card.latestOrderStatus || card.orderCount > 0) && (
         <div className="mt-1.5 flex items-center gap-1.5">
-          {card.latestOrderStatus && (
+          {card.latestOrderMilestone && !card.latestOrderMilestone.legacy && <OrderMilestoneBadge milestone={card.latestOrderMilestone} showAhead={false} />}
+          {card.latestOrderStatus && !(card.latestOrderMilestone && !card.latestOrderMilestone.legacy) && (
             <span className={cn(
               "rounded-chip px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
               ORDER_STATUS_TONE[card.latestOrderStatus] || "bg-inset text-ink2"

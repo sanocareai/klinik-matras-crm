@@ -17,11 +17,22 @@ import { assertNoPendingReturnsInTx } from "./productionMaterialReturnService.js
 import { assertPhasesReadyForHandoffDecision, assertRunPhasesTerminal, transitionPhases } from "./productionPhaseLifecycle.js";
 import { defaultAdaptationPolicy, defaultQcGatePolicy, requireWorkshopDefaultLocation } from "./productionSettingsService.js";
 import { ARRIVAL_NO_CUSTODY_REASON } from "../lib/domain/productionDisplay.js";
+import { notifyUnitReceivedAtWorkshop } from "./customerNotifications.js";
+import { globalStatusMapFor } from "./workshopMilestoneEvidence.js";
 import {
   isProductionWriterEnabledFor, loadV2Flags, productionWriterEnabledForUnit, resolveProductionWriterState,
 } from "./v2FeatureFlags.js";
 
 export const CUSTODY_DIRECTION = Object.freeze({ INBOUND: "INBOUND", RETURN: "RETURN", FINISHED_GOODS: "FINISHED_GOODS" });
+/**
+ * Hook efek samping SETELAH transaksi commit (best-effort; tidak pernah menggagalkan command). Diganti di tes agar tidak ada pesan nyata.
+ * unitReceivedAtWorkshop dipanggil TEPAT SEKALI per transisi penerimaan (bukan pada replay Idempotency-Key, bukan pada pickup selesai).
+ */
+export const custodyHooks = { unitReceivedAtWorkshop: (unitId) => notifyUnitReceivedAtWorkshop(unitId) };
+function fireUnitReceived(result) {
+  if (!result || result.replayed || !(result.direction === "INBOUND" || result.custody === false)) return;
+  Promise.resolve().then(() => custodyHooks.unitReceivedAtWorkshop(result.unitId)).catch((err) => console.error("[custody] hook unitReceivedAtWorkshop gagal:", err.message));
+}
 const ACTIVE_STATUSES = ["OFFERED", "ACCEPTED"];
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
 
@@ -426,7 +437,7 @@ async function decide(prisma, { handoffId, actorId, idempotencyKey, expectedRevi
 
 export async function acceptUnitCustody(prisma, { handoffId, actorId, idempotencyKey, expectedRevision, locationId }) {
   if (!locationId) throw custodyError("Lokasi penyimpanan wajib dipilih", 400, "CUSTODY_LOCATION_REQUIRED");
-  return decide(prisma, {
+  const result = await decide(prisma, {
     handoffId, actorId, idempotencyKey, expectedRevision, commandType: "ACCEPT_CUSTODY", payload: { locationId },
     apply: async (tx, { handoff, actorId: actor }) => {
       const location = await tx.storageLocation.findUnique({ where: { id: locationId } });
@@ -464,6 +475,14 @@ export async function acceptUnitCustody(prisma, { handoffId, actorId, idempotenc
           metadata: { unitCode: handoff.unit.unitCode, runId: finishedRun.id, locationCode: location.code },
         });
       }
+      if (handoff.direction === "INBOUND") {
+        // Transisi resmi "Diterima di Workshop" (milestone global): satu event per handoff — dedupeKey unik menjamin tidak ganda walau command diulang.
+        await outbox(tx, {
+          domain: "PRODUCTION", eventType: "production.unit.received-workshop", aggregateType: "Unit", aggregateId: handoff.unitId, revision,
+          dedupeKey: `unit-received-workshop:${handoff.id}`,
+          payload: { unitId: handoff.unitId, orderId: handoff.unit.orderId, basis: "CUSTODY", handoffId: handoff.id, productionRunId: run?.id ?? null, occurredAt: now.toISOString(), actorId: actor || null },
+        });
+      }
       await outbox(tx, {
         eventType: "warehouse.custody.accepted", aggregateId: handoff.id, revision, dedupeKey: `warehouse-custody-accepted:${handoff.id}:${revision}`,
         payload: { handoffId: handoff.id, unitId: handoff.unitId, orderId: handoff.unit.orderId, direction: handoff.direction, locationId, productionRunId: run?.id ?? null, revision, occurredAt: now.toISOString(), actorId: actor || null },
@@ -472,13 +491,15 @@ export async function acceptUnitCustody(prisma, { handoffId, actorId, idempotenc
         entityType: "unit", entityId: handoff.unitId, eventType: EVENT_TYPES.CUSTODY_ACCEPTED, actorId: actor || null,
         metadata: { unitCode: handoff.unit.unitCode, direction: handoff.direction, handoffId: handoff.id, locationCode: location.code },
       });
-      return { handoffId: handoff.id, unitId: handoff.unitId, status: "ACCEPTED", revision, locationId, productionRunId: run?.id ?? handoff.productionRunId ?? null, ...(finishedRun ? { runStatus: "COMPLETED", runRevision: completedRunRevision, unitStatus: "READY_FOR_DELIVERY" } : {}) };
+      return { handoffId: handoff.id, unitId: handoff.unitId, status: "ACCEPTED", revision, locationId, productionRunId: run?.id ?? handoff.productionRunId ?? null, direction: handoff.direction, ...(finishedRun ? { runStatus: "COMPLETED", runRevision: completedRunRevision, unitStatus: "READY_FOR_DELIVERY" } : {}) };
     },
   });
+  fireUnitReceived(result);
+  return result;
 }
 
 // ---------------------------------------------------------------------------
-// P9A — "Unit Tiba di Workshop" (Production, BUKAN Gudang). Pembungkus TIPIS
+// P9A — "Terima Unit di Workshop" (Production, BUKAN Gudang). Pembungkus TIPIS
 // di atas acceptUnitCustody: sama persis kuncinya (handoff -> unit -> run),
 // idempotensinya, dan atomisitasnya (custody ACCEPTED + run PENDING_ARRIVAL->
 // ACTIVE dalam SATU transaksi) — TIDAK ADA logika baru diduplikasi. Bedanya
@@ -539,7 +560,7 @@ async function confirmArrivalWithoutCustody(prisma, { unitId, actorId, idempoten
   }
   if (!pending) return null;
   const resolvedLocationId = locationId || (await requireWorkshopDefaultLocation(prisma)).id;
-  return prisma.$transaction(async (tx) => {
+  const done = await prisma.$transaction(async (tx) => {
     await lockRowForUpdate(tx, "units", unitId);
     await lockUnitOwnership(tx, unitId);
     const run = await tx.productionRun.findFirst({ where: { unitId, status: "PENDING_ARRIVAL" } });
@@ -562,9 +583,16 @@ async function confirmArrivalWithoutCustody(prisma, { unitId, actorId, idempoten
       metadata: { unitCode: unit.unitCode, runId: opened.id, locationCode: location.code },
     });
     const response = { unitId, status: "ACCEPTED", revision: opened.revision, locationId: location.id, productionRunId: opened.id, custody: false };
+    await outbox(tx, {
+      domain: "PRODUCTION", eventType: "production.unit.received-workshop", aggregateType: "Unit", aggregateId: unitId, revision: opened.revision,
+      dedupeKey: `unit-received-workshop:${unitId}:run:${opened.id}`,
+      payload: { unitId, basis: "STAFF_CONFIRMED", productionRunId: opened.id, occurredAt: new Date().toISOString(), actorId: actorId || null },
+    });
     await finishCommand(tx, command, opened.revision, response);
     return { replayed: false, ...response };
   });
+  fireUnitReceived(done);
+  return done;
 }
 
 // Slice 2 (flow adaptasi) — penutupan run TANPA custody barang jadi. OWNERSHIP: penutupan run (COMPLETED) dan pelepasan unit ke Delivery (READY_FOR_DELIVERY) tetap hanya milik service ini
@@ -723,13 +751,16 @@ export async function listCustodyHandoffs(prisma, { status = "OFFERED", directio
     orderBy: isHistory ? [{ updatedAt: "desc" }, { id: "desc" }] : [{ offeredAt: "asc" }, { id: "asc" }],
     take: Math.min(Math.max(Number(limit) || 100, 1), 200),
     include: {
-      unit: { select: { id: true, unitCode: true, merk: true, ukuran: true, order: { select: { orderNumber: true } } } },
+      unit: { select: { id: true, unitCode: true, status: true, merk: true, ukuran: true, order: { select: { orderNumber: true } } } },
       location: { select: { id: true, code: true, zone: true, locationType: true } },
       deliveryJob: { select: { id: true, type: true, status: true } },
       productionRun: { select: { id: true, revision: true, status: true, currentPhase: true } },
     },
   });
+  // Status global unit (milestone berbasis bukti) — kosakata yang sama dengan Sales/Produksi/Unit 360; antrean Gudang tidak menurunkannya sendiri.
+  const globals = await globalStatusMapFor(prisma, rows.map((r) => ({ id: r.unit.id, status: r.unit.status })));
   return rows.map((row) => ({
+    globalStatus: globals.get(row.unit.id) ?? null,
     id: row.id, revision: row.revision, status: row.status, direction: row.direction, offeredAt: row.offeredAt,
     acceptedAt: row.acceptedAt, rejectedAt: row.rejectedAt, cancelledAt: row.cancelledAt, reason: row.reason,
     unit: { id: row.unit.id, unitCode: row.unit.unitCode, merk: row.unit.merk, ukuran: row.unit.ukuran, orderNumber: row.unit.order?.orderNumber ?? null },

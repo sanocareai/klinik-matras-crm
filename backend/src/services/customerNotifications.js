@@ -137,12 +137,24 @@ export const notifyDriverEnRoute = wrapDelivery(async (job, customerId, customer
   await sendCustomerText(customerId, text);
 }, "driverEnRoute");
 
-// 2. Unit sampai bengkel — dikirim saat job PICKUP selesai.
+// 2. Unit sampai bengkel — dikirim HANYA oleh command penerimaan workshop yang sah ("Terima Unit di Workshop": custody INBOUND diterima atau konfirmasi kedatangan petugas),
+// SEKALI per transisi (lihat unitCustodyCommandService: pemanggil memastikan bukan replay). Pickup selesai (Job PICKUP COMPLETED) TIDAK PERNAH memicu pesan ini — unit baru
+// "dalam perjalanan/menunggu diterima", bukan "sudah sampai". Sebelum 12 Okt 2026 pemicunya salah: POST /armada/jobs/:id/complete.
 // NONAKTIF SEMENTARA — lihat DELIVERY_NOTIF_AKTIF di atas.
 export const notifyUnitReceived = wrapDelivery(async (orderNumber, customerId, customerName) => {
   const text = `Halo ${customerName || ""}, kasur Anda (*${orderNumber}*) sudah sampai dengan selamat di bengkel Sano Care. Tim kami akan segera mulai pengerjaan.\n\nTerima kasih atas kepercayaannya.`;
   await sendCustomerText(customerId, text);
 }, "unitReceived");
+
+/** Memuat order/pelanggan dari unitId lalu memanggil notifyUnitReceived. Best-effort (tidak pernah melempar). Tidak mengirim apa pun selagi DELIVERY_NOTIF_AKTIF=false. */
+export async function notifyUnitReceivedAtWorkshop(unitId) {
+  try {
+    if (!DELIVERY_NOTIF_AKTIF || !unitId) return;
+    const unit = await prisma.unit.findUnique({ where: { id: unitId }, select: { order: { select: { orderNumber: true, customer: { select: { id: true, name: true } } } } } });
+    const o = unit?.order; if (!o?.customer) return;
+    await notifyUnitReceived(o.orderNumber, o.customer.id, o.customer.name);
+  } catch (err) { console.error("[customerNotifications:unitReceivedAtWorkshop] gagal:", err.message); }
+}
 
 // 3. Siap dikirim — dikirim saat sebuah unit menuntaskan SELURUH tahap
 // (status → READY_FOR_DELIVERY). Untuk order banyak unit (hotel, D-006)

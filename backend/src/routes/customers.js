@@ -10,6 +10,7 @@ import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
 import { siapkanNotesUkuran, formatUkuranKasur } from "../lib/ukuranKasur.js";
 import { ukuranCustomWajibSejak } from "../services/ukuranWajib.js";
 import { buatFileVCard } from "../services/vcard.js";
+import { loadOrderMilestones } from "../services/orderMilestoneService.js";
 
 export const customerRouter = express.Router();
 customerRouter.use(requireAuth);
@@ -474,6 +475,10 @@ customerRouter.get("/:id", async (req, res) => {
   // pernahSakit — sama pola dgn GET / list (lihat catatan di sana): dibaca
   // dari Order.healthStatus, bukan Customer.healthStatus.
   const pernahSakit = customer.orders.some((o) => o.healthStatus === "SAKIT");
+
+  // Status global tingkat ORDER (milestone, berbasis bukti) — field Order.status lama tetap ada (kompatibel); UI baru memakai `milestone`.
+  const orderMilestones = await loadOrderMilestones(prisma, orders);
+  for (const o of orders) o.milestone = orderMilestones.get(o.id) ?? null;
 
   res.json({ ...customer, orders, allKeluhan, pernahKomplain: riwayatKomplain.length > 0, riwayatKomplain, pernahSakit });
 });

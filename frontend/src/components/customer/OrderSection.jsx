@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { api } from "../../api.js";
 import OrderTimelineDrawer from "../../features/orders/OrderTimelineDrawer.jsx";
+import { OrderMilestoneBadge } from "@/components/OrderMilestoneBadge.jsx";
 import { BadgeDropdown } from "@/components/ui/badge-dropdown.jsx";
 import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 // D-118 (redesign input order, laporan owner: "tanggalnya pun juga") —
@@ -809,6 +810,7 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
           <span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 6, ...ORDER_STATUS_BADGE[order.status] }}>
             {statusBadgeLabel(order.status)}
           </span>
+          <OrderMilestoneBadge milestone={order.milestone} />
           {editing && !statusBayarDiResi ? (
             <BadgeDropdown
               value={paymentStatus}
@@ -2506,6 +2508,7 @@ export default function OrderSection({ customer, onUpdate, initialOrderId = null
                         <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6, ...badge }}>
                           {statusBadgeLabel(o.status)}
                         </span>
+                        <OrderMilestoneBadge milestone={o.milestone} showAhead={false} className="mt-1" />
                       </td>
                       <td style={{ padding: "10px 8px", textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
                         <button

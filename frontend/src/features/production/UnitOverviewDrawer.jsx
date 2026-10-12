@@ -77,6 +77,26 @@ function V2Owners({ d }) {
   );
 }
 
+// KPI waktu alur (pickup → diterima → produksi → Gudang → delivery). Durasi hanya bila kedua timestamp sumber tercatat; selain itu "Data waktu belum tersedia" (tidak ditebak).
+function WaktuAlur({ timeline }) {
+  if (!timeline?.durations?.length) return null;
+  const at = Object.fromEntries((timeline.timestamps || []).map((t) => [t.key, t.at]));
+  return (
+    <div data-testid="waktu-alur" className="space-y-1.5">
+      <h4 className="m-0 text-[12.5px] font-bold text-ink2">Waktu alur</h4>
+      <dl className="m-0 grid grid-cols-1 gap-x-4 gap-y-1 text-[12.5px] sm:grid-cols-2">
+        {timeline.durations.map((x) => (
+          <div key={x.key} className="flex items-baseline justify-between gap-2" data-testid={`waktu-${x.key}`} data-available={x.available ? "1" : "0"}>
+            <dt className="text-ink3">{x.label}</dt>
+            <dd className={`m-0 font-semibold ${x.available ? "text-ink" : "text-ink3"}`}>{x.text}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="m-0 text-[11px] text-ink3">{(timeline.timestamps || []).filter((t) => t.at).length} dari {(timeline.timestamps || []).length} titik waktu tercatat{at.productionFinishedAt && !at.warehouseAcceptedAt ? " · barang jadi belum diterima Gudang" : ""}.</p>
+    </div>
+  );
+}
+
 function Ringkasan({ d }) {
   return (
     <div className="space-y-3">
@@ -103,6 +123,7 @@ function Ringkasan({ d }) {
         {d.identity.target.late && <Badge variant="red">Terlambat</Badge>}
       </div>
       <V2Owners d={d} />
+      <WaktuAlur timeline={d.timeline} />
       {d.production?.cornerView && d.production.runId && (d.production.cornerView.status.status !== "BELUM_SAMPAI" || d.production.cornerView.request.fabricChangeRequested) && <CornerRequestCard cornerView={d.production.cornerView} />}
       <OrderField label="Keluhan Customer" field={d.salesContext.complaints} format={bdArr} />
       <OrderField label="Layanan Sales" field={d.salesContext.salesServices} format={bdArr} />

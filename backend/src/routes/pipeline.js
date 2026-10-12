@@ -4,6 +4,7 @@ import { requireAuth } from "../middleware/auth.js";
 // Batas hari WIB — WAJIB, jangan `new Date(from)` polos (lihat CLAUDE.md §11
 // & catatan panjang di utils/wib.js — container backend jalan di UTC).
 import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
+import { loadOrderMilestones } from "../services/orderMilestoneService.js";
 
 export const pipelineRouter = express.Router();
 pipelineRouter.use(requireAuth);
@@ -45,6 +46,10 @@ pipelineRouter.get("/board", async (req, res) => {
     const board = {};
     STAGES.forEach((s) => { board[s] = []; });
 
+    // Status global tingkat order (milestone) untuk order TERBARU tiap pelanggan — satu batch untuk seluruh papan.
+    const latestOf = (os) => (os.length ? os.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0] : null);
+    const latestOrders = customers.map((c) => latestOf(c.orders)).filter(Boolean);
+    const latestMs = await loadOrderMilestones(prisma, latestOrders);
     customers.forEach(({ orders, conversations, ...c }) => {
       const stage = c.pipelineStage || "NEW";
       const daysSince = Math.floor((now - new Date(c.updatedAt).getTime()) / 86_400_000);
@@ -75,6 +80,8 @@ pipelineRouter.get("/board", async (req, res) => {
         latestOrderStatus: orders.length
           ? orders.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0].status
           : null,
+        // Status global (milestone) order terbaru: unit tertinggal + rincian; latestOrderStatus lama tetap untuk kompatibilitas.
+        latestOrderMilestone: latestOf(orders) ? latestMs.get(latestOf(orders).id) ?? null : null,
       });
     });
 
@@ -123,10 +130,12 @@ pipelineRouter.get("/order-board", async (req, res) => {
     const now = Date.now();
     const board = {};
     ORDER_BOARD_STATUSES.forEach((st) => { board[st] = []; });
+    const milestones = await loadOrderMilestones(prisma, orders);
     for (const { customer, ...o } of orders) {
       if (!board[o.status]) board[o.status] = [];
       board[o.status].push({
         ...o,
+        milestone: milestones.get(o.id) ?? null, // status global tingkat order; kolom papan TETAP menurut Order.status tersimpan (kompatibel)
         daysSince: Math.floor((now - new Date(o.updatedAt).getTime()) / 86_400_000),
         customerId: customer.id,
         customerName: customer.name,

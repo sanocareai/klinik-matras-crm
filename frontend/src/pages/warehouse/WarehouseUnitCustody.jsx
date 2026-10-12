@@ -5,6 +5,7 @@ import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
+import { UnitGlobalStatusBadge } from "@/components/OrderMilestoneBadge.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { LOCATION_TYPE_REAL } from "@/features/warehouse/inventoryReal.js";
@@ -33,6 +34,7 @@ function CustodyCard({ item, onAccept, onReject }) {
             {item.unit.orderNumber ? `Order ${item.unit.orderNumber}` : "Tanpa nomor order"}
             {item.unit.merk ? ` · ${item.unit.merk}` : ""}
           </p>
+          <UnitGlobalStatusBadge globalStatus={item.globalStatus} className="mt-1" />
         </div>
         <Badge variant={badge.variant}>{badge.label}</Badge>
       </div>

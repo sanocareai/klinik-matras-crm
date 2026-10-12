@@ -24,6 +24,7 @@ import { loadCustomerContext, buildCustomerIntelligence } from "../services/inte
 // Batas tanggal WIB — WAJIB. Container backend jalan di UTC; `new Date(y,m,d)`
 // menggeser seluruh jendela laporan 7 jam (lihat utils/wib.js & CLAUDE.md §11).
 import { startOfMonthWIB, endOfMonthExclusiveWIB, nowPartsWIB } from "../utils/wib.js";
+import { loadOrderMilestones } from "../services/orderMilestoneService.js";
 // Helper bersama dengan toolsChat.js & toolsTraffic.js — lihat toolsShared.js.
 import {
   PIPELINE_STAGES, ORDER_STATUS, ORDER_CATEGORY, PAYMENT_STATUS, LEAD_SOURCE,
@@ -186,10 +187,11 @@ export function registerReadOnlyTools(server) {
       }
 
       const unmask = args.unmask === true;
+      const orderMs = await loadOrderMilestones(prisma, c.orders);
       return hasil({
         ...ringkasPelanggan(c, unmask),
         intelligence,
-        order: c.orders.map(ringkasOrder),
+        order: (() => c.orders.map((o) => ringkasOrder(o, orderMs.get(o.id))))(),
         // Riwayat keluhan dirangkum dari semua order (bukan field terpisah di
         // Customer) — ini sengaja, lihat CLAUDE.md §7D.
         riwayatKeluhan: c.orders
@@ -274,12 +276,13 @@ export function registerReadOnlyTools(server) {
         }),
       ]);
 
+      const orderMs = await loadOrderMilestones(prisma, rows);
       return hasil({
         total,
         totalNilai: agregat._sum.value ?? 0,
         ditampilkan: rows.length,
         offset: args.offset ?? 0,
-        order: rows.map(ringkasOrder),
+        order: rows.map((o) => ringkasOrder(o, orderMs.get(o.id))),
       });
     },
   );
@@ -321,7 +324,7 @@ export function registerReadOnlyTools(server) {
       if (!o) return hasil({ error: "Order tidak ditemukan." });
 
       return hasil({
-        ...ringkasOrder(o),
+        ...ringkasOrder(o, (await loadOrderMilestones(prisma, [o])).get(o.id)),
         pelanggan: ringkasPelanggan(o.customer, args.unmask === true),
         riwayatStatus: o.statusTransitions.map((t) => ({
           dari: t.fromStatus,
