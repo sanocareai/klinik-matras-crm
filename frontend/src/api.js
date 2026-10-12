@@ -939,7 +939,7 @@ export const api = {
   createWorkCenter: (data) => request("/production/work-centers", { method: "POST", body: JSON.stringify(data) }),
   updateWorkCenter: (id, data) => request(`/production/work-centers/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   getProductionOperators: () => request("/production/operators"),
-  getProductionOperatorChoices: () => request("/production/operators?pilihan=1"), // dropdown PIC: tanpa ADMIN/OWNER
+  getProductionOperatorChoices: (opts = {}) => request(`/production/operators?pilihan=1${opts.lane ? `&lane=${encodeURIComponent(opts.lane)}` : ""}${opts.stageId ? `&stageId=${encodeURIComponent(opts.stageId)}` : ""}`), // dropdown PIC: tanpa ADMIN/OWNER; lane=TABLE|CORNER atau stageId (lini diturunkan server dari tahap) menyaring per lini
   createProductionOperator: (data) => request("/production/operators", { method: "POST", body: JSON.stringify(data) }),
   updateProductionOperator: (id, data) => request(`/production/operators/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   setOperatorSkills: (id, skills) => request(`/production/operators/${id}/skills`, { method: "PUT", body: JSON.stringify({ skills }) }),

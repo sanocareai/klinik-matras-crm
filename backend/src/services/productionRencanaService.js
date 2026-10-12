@@ -24,6 +24,7 @@ import { assertIdempotencyKey, createProductionPlanInTx, scheduleProductionPlanI
 import { offerUnitCustody, openPendingArrivalIntakeV2InTx } from "./unitCustodyCommandService.js";
 import { BORN_CATEGORIES, BORN_UNIT_STATUSES, registerWorkshopBornRunInTx } from "./productionWorkshopExecutionCommandService.js";
 import { confirmBuildCornerInTx, normalizeCornerInput } from "./productionBuildCommandService.js";
+import { WORK_LANES, hasLane, lanesOf } from "../lib/domain/productionLanes.js";
 
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
 const hash = (value) => createHash("sha256").update(JSON.stringify(value ?? null)).digest("hex");
@@ -209,7 +210,7 @@ export async function getPlanningRefs(prisma, { canRegisterOperator = false } = 
     prisma.workCenter.findMany({ where: { active: true }, select: { id: true, code: true, name: true }, orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
     prisma.productionOperator.findMany({
       where: { active: true, user: { active: true, ...bukanAdminOwner } },
-      select: { id: true, employeeCode: true, primaryWorkCenterId: true, user: { select: { id: true, name: true } }, primaryWorkCenter: { select: { id: true, name: true } } },
+      select: { id: true, employeeCode: true, workLanes: true, primaryWorkCenterId: true, user: { select: { id: true, name: true } }, primaryWorkCenter: { select: { id: true, name: true } } },
       orderBy: { createdAt: "asc" },
     }),
     prisma.user.findMany({
@@ -227,9 +228,16 @@ export async function getPlanningRefs(prisma, { canRegisterOperator = false } = 
   } else if (operators.length < 2) {
     problems.push({ code: "ONLY_ONE_PIC", message: `Baru ${operators.length} PIC terdaftar${candidates.length ? `; ${candidates.length} akun produksi lain belum didaftarkan` : ""}. PIC Corner opsional memakai daftar yang sama.`, link: LINKS.operators, linkLabel: "Kelola Operators", severity: "info" });
   }
+  // PIC Meja Bongkar dan PIC Corner & Finishing dipilih dari daftar TERPISAH (operator.workLanes, bermula kosong, ditetapkan Admin di Pengaturan Operator). Tidak ada tebakan berbasis nama.
+  if (operators.length > 0 && !operators.some((o) => hasLane(o, WORK_LANES.TABLE))) {
+    problems.push({ code: "NO_TABLE_PIC", message: "Belum ada operator berlini Meja Bongkar — PIC meja belum bisa dipilih. Admin menetapkan lini operator di Pengaturan Operator.", link: LINKS.operators, linkLabel: "Buka Operator" });
+  }
+  if (operators.length > 0 && !operators.some((o) => hasLane(o, WORK_LANES.CORNER))) {
+    problems.push({ code: "NO_CORNER_PIC", severity: "info", message: "Belum ada operator berlini Corner & Finishing — PIC Corner belum bisa dipilih (PIC Corner tidak otomatis memakai PIC meja). Admin menetapkan lini operator di Pengaturan Operator.", link: LINKS.operators, linkLabel: "Buka Operator" });
+  }
   return {
     workCenters,
-    operators: operators.map((o) => ({ id: o.id, name: o.user.name, userId: o.user.id, employeeCode: o.employeeCode, primaryWorkCenterId: o.primaryWorkCenterId, primaryWorkCenterName: o.primaryWorkCenter?.name ?? null })),
+    operators: operators.map((o) => ({ id: o.id, name: o.user.name, userId: o.user.id, employeeCode: o.employeeCode, workLanes: lanesOf(o), primaryWorkCenterId: o.primaryWorkCenterId, primaryWorkCenterName: o.primaryWorkCenter?.name ?? null })),
     candidates: candidates.map((c) => ({ userId: c.id, name: c.name, roles: c.roles.map((r) => r.role).filter((r) => PRODUCTION_PIC_ROLES.includes(r)) })),
     problems, links: LINKS, canRegisterOperator,
     // Pemetaan area kerja: workshop bawaan = work center utama PIC bila ada, kalau tidak workshop pertama. Server tidak memilih diam-diam — hanya saran awal formulir.

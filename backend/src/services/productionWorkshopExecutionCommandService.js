@@ -175,7 +175,8 @@ export async function loadMaterialFacts(tx, plan) {
 
 // PIC Corner (P8): tahap pasca-QC dikerjakan operator Corner bila rencana menugaskannya; work center Corner default ke work center rencana.
 export function assertAssignedCornerOperator(plan, operator, workCenterId) {
-  if (!plan.cornerOperatorId) return assertAssignedOperator(plan, operator, workCenterId);
+  // PIC Corner = penugasan TERPISAH dari PIC Meja: kosong => tolak (jangan jatuh ke PIC Meja). Admin/Owner tetap bisa lewat jalur override (mayExecuteAnyUnit).
+  if (!plan.cornerOperatorId) throw workError("PIC Corner belum ditetapkan untuk unit ini. Minta Lead/Admin menetapkan PIC Corner di Rencana Produksi.", 409, "CORNER_OPERATOR_REQUIRED");
   if (!operator || !operator.active || operator.id !== plan.cornerOperatorId) {
     throw workError("Anda bukan PIC Corner yang ditugaskan pada rencana ini", 403, "WORKSHOP_OPERATOR_MISMATCH");
   }
@@ -405,7 +406,8 @@ export async function applyStartInTx(tx, { run, prepared, actorId, now = new Dat
   const runId = run.id;
   await viaEngine(() => startStageInTx(tx, run.unitId, { actorId, allowRerunOfLastStage: true }));
   const sequence = (run.operations.at(-1)?.sequence ?? 0) + 1;
-  const operatorId = isPostQc && run.plan.cornerOperatorId ? run.plan.cornerOperatorId : run.plan.operatorId;
+  // Tahap Corner dicatat atas PIC Corner; tanpa PIC Corner (hanya mungkin lewat override Admin/Owner) operatorId snapshot KOSONG — bukan PIC Meja.
+  const operatorId = isPostQc ? (run.plan.cornerOperatorId ?? null) : run.plan.operatorId;
   const workCenterId = isPostQc && run.plan.cornerOperatorId ? (run.plan.cornerWorkCenterId || run.plan.workCenterId) : run.plan.workCenterId;
   const operation = await tx.productionOperationRun.create({
     data: {

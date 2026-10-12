@@ -27,7 +27,10 @@ import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
 import { PRODUCTION_READER_MODE, loadV2Flags, resolveProductionReaderState } from "../services/v2FeatureFlags.js";
 import { prisma } from "../db.js";
 import { listV1WorkerQueue } from "../services/v1WorkerQueue.js";
+import { laneOfStage } from "../lib/domain/v1WorkerQueue.js";
 import { bukanAdminOwner } from "../services/productionRencanaService.js";
+import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
+import { WORK_LANE_VALUES, laneLabel, lanesOf, normalizeWorkLanes } from "../lib/domain/productionLanes.js";
 import { notifyReadyForDelivery } from "../services/customerNotifications.js";
 import { DISPLAY_STATUS_UNIT_FILTER, displayStatusCountsOf, displayStatusOfOrder, displayStatusOfUnit, physicalPresenceOf, priorityDisplay } from "../lib/domain/productionDisplay.js";
 import { GLOBAL_STATUS, GLOBAL_STATUS_FLOW, milestoneOf } from "../lib/domain/workshopMilestone.js";
@@ -1055,8 +1058,18 @@ productionRouter.get("/operators", requirePermission(P.PRODUCTION_OPERATOR_READ)
     // ?pilihan=1 = untuk DROPDOWN pilihan PIC (penugasan tahap V1, Planner V2): akun ADMIN/OWNER tidak ditawarkan (keputusan Owner 11 Okt 2026). Tanpa parameter = daftar penuh
     // untuk halaman Operator (kelola profil) — profil ADMIN tetap terlihat di sana dan tidak dihapus.
     const hanyaPilihan = ["1", "true"].includes(String(req.query.pilihan || ""));
+    // ?lane=TABLE|CORNER = dropdown PIC per lini (Meja Bongkar / Corner & Finishing): hanya operator yang dicentang Admin untuk lini itu, aktif, bukan ADMIN/OWNER. Tanpa tebakan berbasis nama.
+    let lane = req.query.lane === undefined || req.query.lane === "" ? null : String(req.query.lane);
+    if (lane && !WORK_LANE_VALUES.includes(lane)) return res.status(400).json({ error: `lane harus salah satu dari: ${WORK_LANE_VALUES.join(", ")}` });
+    // ?stageId= (penugasan tahap V1 di Unit 360): lini diturunkan SERVER dari tahap (laneOfStage) — tahap Meja => daftar Meja Bongkar, tahap Corner/Finish => daftar Corner & Finishing, gerbang QC => tidak difilter lini.
+    if (!lane && req.query.stageId) {
+      const stage = await prisma.routingStage.findUnique({ where: { id: String(req.query.stageId) }, select: { id: true, code: true, phase: true, sequence: true, requiresQc: true, labelId: true } });
+      if (!stage) return res.status(404).json({ error: "Tahap tidak ditemukan" });
+      const derived = laneOfStage(stage);
+      if (WORK_LANE_VALUES.includes(derived)) lane = derived;
+    }
     const operators = await prisma.productionOperator.findMany({
-      ...(hanyaPilihan ? { where: { user: bukanAdminOwner } } : {}),
+      ...(lane ? { where: { active: true, workLanes: { has: lane }, user: { AND: [bukanAdminOwner, { active: true }] } } } : hanyaPilihan ? { where: { user: bukanAdminOwner } } : {}),
       include: {
         user: { select: { id: true, name: true, email: true, active: true } },
         primaryWorkCenter: { select: { id: true, name: true } },
@@ -1081,6 +1094,7 @@ productionRouter.get("/operators", requirePermission(P.PRODUCTION_OPERATOR_READ)
     }
 
     res.json({
+      lane,
       operators: operators.map((o) => {
         const active = activeAssignmentByOperator[o.id];
         return {
@@ -1100,12 +1114,15 @@ productionRouter.post("/operators", requirePermission(P.PRODUCTION_OPERATOR_WRIT
   try {
     const { userId, primaryWorkCenterId, employeeCode } = req.body;
     if (!userId) return res.status(400).json({ error: "userId wajib diisi" });
+    // workLanes opsional; default KOSONG (Admin menetapkan lini eksplisit). Nilai di luar TABLE/CORNER ditolak, bukan ditebak.
+    const lanes = req.body.workLanes === undefined ? [] : normalizeWorkLanes(req.body.workLanes);
+    if (!lanes) return res.status(400).json({ error: `workLanes harus array berisi ${WORK_LANE_VALUES.join(" / ")}` });
 
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) return res.status(404).json({ error: "User tidak ditemukan" });
 
     const operator = await prisma.productionOperator.create({
-      data: { userId, primaryWorkCenterId: primaryWorkCenterId || null, employeeCode: employeeCode?.trim() || null },
+      data: { userId, primaryWorkCenterId: primaryWorkCenterId || null, employeeCode: employeeCode?.trim() || null, workLanes: lanes },
       include: { user: { select: { id: true, name: true } }, primaryWorkCenter: true },
     });
     res.status(201).json(operator);
@@ -1122,10 +1139,31 @@ productionRouter.patch("/operators/:id", requirePermission(P.PRODUCTION_OPERATOR
     if (active !== undefined) data.active = !!active;
     if (primaryWorkCenterId !== undefined) data.primaryWorkCenterId = primaryWorkCenterId || null;
     if (employeeCode !== undefined) data.employeeCode = employeeCode?.trim() || null;
+    // Lini PIC (Meja Bongkar / Corner & Finishing): penetapan EKSPLISIT oleh Admin. Tidak mengubah penugasan yang sudah ada di rencana/tahap — hanya siapa yang boleh DITAWARKAN/DITETAPKAN berikutnya.
+    if (req.body.workLanes !== undefined) {
+      const lanes = normalizeWorkLanes(req.body.workLanes);
+      if (!lanes) return res.status(400).json({ error: `workLanes harus array berisi ${WORK_LANE_VALUES.join(" / ")}` });
+      data.workLanes = lanes;
+    }
 
-    const operator = await prisma.productionOperator.update({
-      where: { id: req.params.id }, data,
-      include: { user: { select: { id: true, name: true } }, primaryWorkCenter: true },
+    const operator = await prisma.$transaction(async (tx) => {
+      const before = data.workLanes ? await tx.productionOperator.findUnique({ where: { id: req.params.id }, select: { workLanes: true } }) : null;
+      const updated = await tx.productionOperator.update({
+        where: { id: req.params.id }, data,
+        include: { user: { select: { id: true, name: true } }, primaryWorkCenter: true },
+      });
+      if (before) {
+        const from = lanesOf(before);
+        const changed = from.join(",") !== lanesOf(updated).join(",");
+        if (changed) {
+          const to = lanesOf(updated).map(laneLabel).join(", ") || "tidak ada lini";
+          await recordActivity(tx, {
+            entityType: ENTITY_TYPES.PRODUCTION_SETTING, entityId: `operator-lanes:${updated.id}`, eventType: EVENT_TYPES.PRODUCTION_SETTING_CHANGED, actorId: req.user?.id || null,
+            metadata: { key: `operator-lanes:${updated.id}`, label: `Lini PIC operator ${updated.user.name}`, from: from.map(laneLabel).join(", ") || "tidak ada lini", to, operatorId: updated.id },
+          });
+        }
+      }
+      return updated;
     });
     res.json(operator);
   } catch (err) {

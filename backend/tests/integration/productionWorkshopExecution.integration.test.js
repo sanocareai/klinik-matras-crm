@@ -29,8 +29,8 @@ async function world() {
   const [planner, other, gudang] = await Promise.all([createTestUser({ roles: ["PRODUCTION_LEAD"] }), createTestUser({ roles: ["PRODUCTION_LEAD"] }), createTestUser({ roles: ["WAREHOUSE"] })]);
   const workCenter = await testPrisma.workCenter.create({ data: { code: `WC-P5-${++seq}`, name: "Workshop P5" } });
   const otherCenter = await testPrisma.workCenter.create({ data: { code: `WC-P5-${++seq}`, name: "Workshop Lain" } });
-  const operator = await testPrisma.productionOperator.create({ data: { userId: planner.user.id } });
-  const otherOperator = await testPrisma.productionOperator.create({ data: { userId: other.user.id } });
+  const operator = await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: planner.user.id } });
+  const otherOperator = await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: other.user.id } });
   const c = (u) => ({ ...u, api: makeClient(server.baseUrl, u.token) });
   const service = await testPrisma.serviceCatalog.findFirstOrThrow({ orderBy: { sortOrder: "asc" } });
   return { op: c(planner), other: c(other), gudang: c(gudang), workCenter, otherCenter, operator, otherOperator, service, wc: workCenter.id };

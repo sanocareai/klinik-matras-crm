@@ -30,7 +30,7 @@ async function setCohort(...unitIds) { for (const k of [V2_FLAGS.PRODUCTION_WRIT
 async function world() {
   const [lead, admin, owner, sales, wh, driver] = await Promise.all(["PRODUCTION_LEAD", "ADMIN", "OWNER", "SALES", "WAREHOUSE", "DRIVER"].map((r) => createTestUser({ roles: [r] })));
   const workCenter = await testPrisma.workCenter.create({ data: { code: `WC-RX-${++seq}`, name: "Workshop RX" } });
-  const operator = await testPrisma.productionOperator.create({ data: { userId: lead.user.id, primaryWorkCenterId: workCenter.id } });
+  const operator = await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: lead.user.id, primaryWorkCenterId: workCenter.id } });
   const warehouse = await testPrisma.warehouse.create({ data: { code: `WH-RX-${++seq}`, name: "Gudang RX" } });
   const rcv = await testPrisma.storageLocation.create({ data: { warehouseId: warehouse.id, zone: "RCV", locationType: "RECEIVING_AREA", code: `RCV-RX-${++seq}` } });
   const c = (u) => ({ ...u, api: makeClient(server.baseUrl, u.token) });

@@ -31,6 +31,7 @@ import RencanaExportButton from "@/features/production/RencanaExportButton.jsx";
 import RencanaCornerView from "@/features/production/RencanaCornerView.jsx";
 import { hasManualOrder, moveStep } from "@/features/production/stationOrder.js";
 import { rolesOf } from "@/lib/roles.js";
+import { LANE, laneOptions, optionText } from "@/features/production/picLanes.js";
 
 // Rencana Produksi (P9 UX Realignment) — PLANNER harian seperti Route Planner Delivery: panel backlog "Belum
 // Dijadwalkan" di kiri + area jadwal per Meja 1–4 (kapasitas 3 unit/meja, target 12/hari) untuk tanggal terpilih.
@@ -92,12 +93,12 @@ function AssignSection({ target, refs, onSaved, onError }) {
         </label>
         <label className="text-[11.5px] text-ink3">PIC meja
           <select className={field} value={form.operatorId} onChange={(e) => set({ operatorId: e.target.value })}>
-            <option value="">{plan?.operator?.name ? `Tetap: ${plan.operator.name}` : "Ikuti PIC bawaan Meja"}</option>{refs.operators.map((o) => <option key={o.id} value={o.id}>{o.name || o.user?.name || o.employeeCode}</option>)}
+            <option value="">{plan?.operator?.name ? `Tetap: ${plan.operator.name}` : "Ikuti PIC bawaan Meja"}</option>{laneOptions(refs.operators, LANE.TABLE, plan?.operator).map((o) => <option key={o.id} value={o.id}>{optionText(o, LANE.TABLE)}</option>)}
           </select>
         </label>
-        <label className="text-[11.5px] text-ink3">PIC Corner — opsional
+        <label className="text-[11.5px] text-ink3">PIC Corner & Finishing — opsional
           <select className={field} value={form.cornerOperatorId} onChange={(e) => set({ cornerOperatorId: e.target.value })}>
-            <option value="">Sama dengan PIC meja</option>{refs.operators.map((o) => <option key={o.id} value={o.id}>{o.name || o.user?.name || o.employeeCode}</option>)}
+            <option value="">Belum ditetapkan</option>{laneOptions(refs.operators, LANE.CORNER, plan?.cornerOperator).map((o) => <option key={o.id} value={o.id}>{optionText(o, LANE.CORNER)}</option>)}
           </select>
         </label>
       </div>
@@ -305,13 +306,14 @@ const ACTION_BTN = "min-h-[44px] border border-line bg-inset text-ink hover:bg-h
 // PIC bawaan Meja untuk tanggal papan. Memilih PIC TIDAK membuat akun/operator: daftar = profil operator aktif. Daftar kosong dijelaskan, tidak disembunyikan.
 function StationPicPicker({ station, refs, busy, onSet }) {
   const pic = station.defaultPic;
-  const operators = refs.operators || [];
-  const stale = pic && !pic.active && !operators.some((o) => o.id === pic.operatorId);
+  const allOperators = refs.operators || [];
+  const operators = laneOptions(allOperators, LANE.TABLE, pic?.active && pic?.operatorId ? { id: pic.operatorId, name: pic.name } : null).map((o) => ({ id: o.id, name: optionText(o, LANE.TABLE) }));
+  const stale = pic && !pic.active && !allOperators.some((o) => o.id === pic.operatorId);
   if (refs.forbidden) return <p className="m-0 truncate text-[11.5px] text-ink3">{station.operatorNames?.length ? `PIC ${station.operatorNames.join(", ")}` : "PIC belum ada"}</p>;
   if (refs.loaded && operators.length === 0) {
     return (
       <p data-testid="station-pic-empty" className="m-0 text-[11.5px] text-orange">
-        Belum ada PIC terdaftar. <Link to="/bengkel/pengaturan?tab=operator" className="font-semibold underline">Daftarkan PIC di Pengaturan › Operator</Link>
+        {allOperators.length ? "Belum ada operator berlini Meja Bongkar." : "Belum ada PIC terdaftar."} <Link to="/bengkel/pengaturan?tab=operator" className="font-semibold underline">{allOperators.length ? "Tetapkan lini di Pengaturan › Operator" : "Daftarkan PIC di Pengaturan › Operator"}</Link>
       </p>
     );
   }

@@ -35,6 +35,8 @@ test("getPlanningRefs: operator dan kandidat memakai filter yang SAMA; profil no
 
 test("route /api/production/operators: ?pilihan=1 menerapkan filter; tanpa parameter daftar penuh (halaman Operator)", () => {
   assert.match(ROUTE, /const hanyaPilihan = \["1", "true"\]\.includes\(String\(req\.query\.pilihan \|\| ""\)\);/);
-  assert.match(ROUTE, /\.\.\.\(hanyaPilihan \? \{ where: \{ user: bukanAdminOwner \} \} : \{\}\),/);
+  // ?pilihan=1 saja = filter ADMIN/OWNER; ?lane/?stageId (pemisahan PIC Meja/Corner) menambah lini + aktif, tetap tanpa ADMIN/OWNER. Tanpa parameter = daftar penuh.
+  assert.match(ROUTE, /: hanyaPilihan \? \{ where: \{ user: bukanAdminOwner \} \} : \{\}\),/);
+  assert.match(ROUTE, /\? \{ where: \{ active: true, workLanes: \{ has: lane \}, user: \{ AND: \[bukanAdminOwner, \{ active: true \}\] \} \} \}/);
   assert.match(ROUTE, /import \{ bukanAdminOwner \} from "\.\.\/services\/productionRencanaService\.js";/);
 });

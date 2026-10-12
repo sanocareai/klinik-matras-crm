@@ -17,7 +17,8 @@ import { loadRuns, viewsOf, RUN_VIEW_INCLUDE, cornerAndLifecycleOf } from "./pro
 import { assertExpectedRevision, assertIdempotencyKey, loadStepContext } from "./productionStepCommandService.js";
 import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState } from "./v2FeatureFlags.js";
 import { bukanAdminOwner } from "./productionRencanaService.js";
-import { writeCornerOperatorInTx } from "./productionPlanningCommandService.js";
+import { assertOperatorLane, writeCornerOperatorInTx } from "./productionPlanningCommandService.js";
+import { WORK_LANES } from "../lib/domain/productionLanes.js";
 
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
 export const CORNER_DONE_WINDOW_DAYS = 7;
@@ -136,9 +137,11 @@ export async function setCornerOperator(prisma, { runId, operatorId, expectedRev
 
     const operator = await tx.productionOperator.findFirst({
       where: { id: operatorId, active: true, user: { AND: [bukanAdminOwner, { active: true }] } },
-      select: { id: true, user: { select: { name: true } } },
+      select: { id: true, workLanes: true, user: { select: { name: true } } },
     });
     if (!operator) throw cornerError("PIC Corner tidak valid: operator harus aktif dan bukan akun Admin/Owner", 422, "CORNER_OPERATOR_INVALID");
+    // PIC Corner & PIC Meja penugasan terpisah: hanya operator berlini Corner & Finishing (Pengaturan Operator). Tanpa perubahan (PIC sama) tidak dicek ulang — replay/no-op tetap aman.
+    if (plan.cornerOperatorId !== operatorId) assertOperatorLane(operator, WORK_LANES.CORNER, { message: "PIC Corner harus operator berlini Corner & Finishing (atur di Pengaturan Operator)", code: "CORNER_OPERATOR_LANE_INVALID" });
 
     const previous = plan.cornerOperatorId ? await tx.productionOperator.findUnique({ where: { id: plan.cornerOperatorId }, select: { id: true, user: { select: { name: true } } } }) : null;
     const command = await tx.v2Command.create({ data: { domain: "PRODUCTION", actorId: actor, idempotencyKey, commandType: "SET_CORNER_OPERATOR", aggregateType: "ProductionRunPlan", aggregateId: plan.id, expectedRevision: revisionExpected, requestHash } });

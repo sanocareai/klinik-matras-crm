@@ -20,8 +20,8 @@ export async function buildFixture() {
   const moduleStage = (await testPrisma.serviceCatalogModule.findMany({ where: { serviceId: service.id }, include: { stage: true }, orderBy: { sequence: "asc" } }))[0]?.stage;
   const wc = await testPrisma.workCenter.create({ data: { code: `WC-P11-${++seq}-${Date.now()}`, name: "Workshop P11" } });
   const mejaUsers = []; const cornerUsers = [];
-  for (const n of ["Andi", "Sari", "Budi", "Rina"]) { const u = await createTestUser({ roles: ["PRODUCTION_WORKER"] }); await testPrisma.user.update({ where: { id: u.user.id }, data: { name: n } }); mejaUsers.push({ ...u, op: await testPrisma.productionOperator.create({ data: { userId: u.user.id, primaryWorkCenterId: wc.id } }), name: n }); }
-  for (const n of ["Tika", "Yudi"]) { const u = await createTestUser({ roles: ["PRODUCTION_WORKER"] }); await testPrisma.user.update({ where: { id: u.user.id }, data: { name: n } }); cornerUsers.push({ ...u, op: await testPrisma.productionOperator.create({ data: { userId: u.user.id, primaryWorkCenterId: wc.id } }), name: n }); }
+  for (const n of ["Andi", "Sari", "Budi", "Rina"]) { const u = await createTestUser({ roles: ["PRODUCTION_WORKER"] }); await testPrisma.user.update({ where: { id: u.user.id }, data: { name: n } }); mejaUsers.push({ ...u, op: await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: u.user.id, primaryWorkCenterId: wc.id } }), name: n }); }
+  for (const n of ["Tika", "Yudi"]) { const u = await createTestUser({ roles: ["PRODUCTION_WORKER"] }); await testPrisma.user.update({ where: { id: u.user.id }, data: { name: n } }); cornerUsers.push({ ...u, op: await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: u.user.id, primaryWorkCenterId: wc.id } }), name: n }); }
   const mats = [await createTestMaterial({ name: "Busa P11", unit: "SHEET" }), await createTestMaterial({ name: "Per P11", unit: "PCS" })];
 
   const specs = [];

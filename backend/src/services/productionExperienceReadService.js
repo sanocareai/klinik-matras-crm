@@ -517,8 +517,8 @@ export async function getRunCard(prisma, runId, { unitIds, now = new Date() } = 
 }
 
 // ---------------------------------------------------------------------------
-// Antrean pekerja: PIC Table = rencana dengan operator = saya; PIC Corner = rencana dengan PIC Corner = saya (atau operator meja bila
-// Corner tidak ditugaskan) yang sudah melewati tahap 9. Satu kartu aktif per unit; urut prioritas lalu target mulai.
+// Antrean pekerja: PIC Table = rencana dengan operator = saya; PIC Corner = rencana dengan PIC Corner = saya yang sudah melewati tahap 9.
+// PIC Corner TIDAK jatuh ke PIC Meja: rencana tanpa PIC Corner tidak muncul di antrean Corner siapa pun (terlihat sebagai "PIC Corner belum ditetapkan" di Rencana/papan Corner). Satu kartu aktif per unit; urut prioritas lalu target mulai.
 // ---------------------------------------------------------------------------
 // all=true (ADMIN/OWNER dengan PRODUCTION_EXECUTE_ANY, keputusan owner 4 Okt 2026): antrean SEMUA PIC pada lane itu, bukan hanya milik sendiri.
 export async function listWorkerQueue(prisma, { unitIds, userId, lane, all = false, now = new Date() }) {
@@ -527,7 +527,7 @@ export async function listWorkerQueue(prisma, { unitIds, userId, lane, all = fal
   const planWhere = all
     ? { operatorId: { not: null } }
     : lane === "CORNER"
-      ? { OR: [{ cornerOperatorId: operator.id }, { cornerOperatorId: null, operatorId: operator.id }] }
+      ? { cornerOperatorId: operator.id }
       : { operatorId: operator.id };
   const runs = await loadRuns(prisma, {
     unitId: { in: unitIds }, status: { notIn: TERMINAL_RUN },
