@@ -1,4 +1,5 @@
 import React from "react";
+import { Link } from "react-router-dom";
 import { Activity, ArrowLeft, Briefcase, Camera, ClipboardCheck, CloudUpload, Layers, Package, RefreshCw, User, WifiOff } from "lucide-react";
 import ThemeToggle from "@/components/ThemeToggle.jsx";
 import { useOnline } from "@/components/StandaloneShell.jsx";
@@ -9,7 +10,9 @@ import "./worker-app.css";
 // P12D: kerangka yang SAMA dipakai Aplikasi Dokumentasi lewat prop `tabs` (default = tab Meja/Corner; perilaku Meja/Corner tidak berubah).
 const ICONS = { Briefcase, Package, Activity, User, Layers, Camera, CloudUpload, ClipboardCheck };
 
-export default function WorkerAppShell({ title, subtitle, tab, onTab, badges = {}, tabs = NAV_TABS, onRefresh, refreshing = false, onBack = null, children, hideNav = false, actionPad = false }) {
+// exitTo: tujuan "Kembali ke SANSS" (desktop) untuk peran yang punya akses workspace (Admin/Owner/Kepala Produksi) — tampil di header layar tab (bukan di dalam detail pekerjaan, yang punya onBack).
+// Pekerja lantai murni tidak mendapat tombol ini (tidak punya workspace). onLeave = penjaga keluar (mis. draf foto belum terkirim).
+export default function WorkerAppShell({ title, subtitle, tab, onTab, badges = {}, tabs = NAV_TABS, onRefresh, refreshing = false, onBack = null, exitTo = null, onLeave = null, children, hideNav = false, actionPad = false }) {
   const online = useOnline();
   return (
     <div className="wa" data-testid="worker-app">
@@ -17,6 +20,9 @@ export default function WorkerAppShell({ title, subtitle, tab, onTab, badges = {
         <div className="mx-auto flex max-w-[1200px] items-center gap-2 px-3 py-2 md:px-6">
           {onBack ? (
             <button type="button" onClick={onBack} aria-label="Kembali ke daftar pekerjaan" data-testid="worker-back" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-btn text-ink2 hover:bg-hovertint"><ArrowLeft size={21} aria-hidden /></button>
+          ) : exitTo ? (
+            <Link to={exitTo} onClick={(e) => { if (onLeave && !onLeave()) e.preventDefault(); }} aria-label="Kembali ke SANSS (desktop)" title="Kembali ke SANSS (desktop)" data-testid="worker-exit"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-btn text-ink2 hover:bg-hovertint"><ArrowLeft size={20} aria-hidden /></Link>
           ) : (
             <span aria-hidden className="ml-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-[11px] bg-[#0B2454] text-[15px] font-extrabold text-white">S</span>
           )}
