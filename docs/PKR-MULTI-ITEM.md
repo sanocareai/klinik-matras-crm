@@ -30,6 +30,8 @@ Tambah/hapus item, ubah jumlah/ukuran/spesifikasi/dikirim-diambil **sebelum unit
 
 Pilih unit siap, alasan (≥5), `Idempotency-Key`; ditolak bila unit sudah di job pengiriman (`UNIT_SUDAH_DI_JOB`) atau belum siap. Tercatat di `pkr_pengiriman_sebagian` + riwayat aktivitas.
 
+Setelah pengiriman sebagian, order TETAP tampil di panel Delivery selama masih ada unit yang dikirim tetapi belum di job: daftar unit sisa (siap/belum siap), label "Kirim sisa…", aksi aktif hanya bila ada sisa yang siap. Sisa tidak pernah dibuatkan job otomatis (tidak ada job kedua otomatis, tidak ada job ganda); order hilang dari panel hanya setelah semua unit yang dikirim berada di job. Order CRM non-PKR tidak terpengaruh: job dibuat per unit siap seperti semula.
+
 ## Rilis & rollback
 
 `scripts/release-pkr-multi-item.sh` (fail-closed, 3 migrasi aditif dipin + pemindai DDL + rehearsal pada restore) dan `scripts/rollback-guard-pkr-multi-item.sh`. Kode lama gagal membaca enum `CAMPURAN` — rollback hanya aman bila belum ada item/order CAMPURAN/revisi/pengiriman sebagian.
