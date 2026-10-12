@@ -19,8 +19,16 @@ import { PILIH_TAGIHAN, tagihanOrder, resiBaru } from "./tagihanOrder.js";
 import { STATUS_PENGAKUAN } from "./posting/orderRevenue.js";
 import { tanggalCutoff, sebelumCutoff, tampilCutoff } from "./cutoff.js";
 import { catatanLaporan } from "./reports.js";
+import { orderTanggalLunasBeda } from "./piutangTanggalLunas.js";
 
 /** Kunci idempoten jurnal penyesuaian pengakuan pendapatan (scripts/penyesuaianPengakuanPendapatan.js): "<prefix><orderId>:<tagihan>". Ikut dihitung sebagai "diakui". */
+// "2026-10-06" → "6 Okt 2026" (hari kalender WIB apa adanya; tanpa konversi zona).
+const BULAN_PENDEK = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+function hariIndonesia(iso) {
+  const m = /^(d{4})-(d{2})-(d{2})$/.exec(String(iso));
+  return m ? `${Number(m[3])} ${BULAN_PENDEK[Number(m[2]) - 1]} ${m[1]}` : String(iso);
+}
+
 export const PREFIX_KUNCI_PENYESUAIAN = "PENYESUAIAN_PENGAKUAN:";
 
 export const KATEGORI_PIUTANG = Object.freeze({
@@ -120,6 +128,21 @@ async function keringananLunas(db, saldoPerOrder) {
   };
 }
 
+// Alasan di luar saldo ledger (urutan prioritas ALASAN UTAMA satu order = urutan di bawah; kategori ledger lebih dulu).
+const ALASAN_LAIN = Object.freeze({
+  SUDAH_DISERAHKAN_BELUM_DIAKUI: { label: "Sudah diserahkan, belum tercatat di buku" },
+  KERINGANAN_BELUM_DI_BUKU: { label: "Lunas keringanan, uang belum diterima & belum tercatat di buku" },
+  TANGGAL_LUNAS_BEDA: { label: "Tanggal lunas berbeda dari tanggal pembayaran yang melunasi" },
+});
+export const URUTAN_ALASAN = Object.freeze({
+  ORDER_DIBATALKAN: KATEGORI_PIUTANG_LABEL("ORDER_DIBATALKAN"), NILAI_BEDA_PENGAKUAN: KATEGORI_PIUTANG_LABEL("NILAI_BEDA_PENGAKUAN"),
+  PAYMENT_BELUM_MENUTUP: KATEGORI_PIUTANG_LABEL("PAYMENT_BELUM_MENUTUP"), LUNAS_TANPA_PAYMENT: KATEGORI_PIUTANG_LABEL("LUNAS_TANPA_PAYMENT"),
+  KREDIT_LAINNYA: KATEGORI_PIUTANG_LABEL("KREDIT_LAINNYA"),
+  SUDAH_DISERAHKAN_BELUM_DIAKUI: ALASAN_LAIN.SUDAH_DISERAHKAN_BELUM_DIAKUI.label, KERINGANAN_BELUM_DI_BUKU: ALASAN_LAIN.KERINGANAN_BELUM_DI_BUKU.label,
+  TANGGAL_LUNAS_BEDA: ALASAN_LAIN.TANGGAL_LUNAS_BEDA.label,
+});
+function KATEGORI_PIUTANG_LABEL(k) { return KATEGORI_PIUTANG[k].label; }
+
 const kosongAngka = () => Object.fromEntries(Object.keys(KATEGORI_PIUTANG).map((k) => [k, { jumlah: 0, total: 0 }]));
 
 export async function diagnosisPiutang(db, { to: batas = todayBookDateWIB() } = {}) {
@@ -128,7 +151,7 @@ export async function diagnosisPiutang(db, { to: batas = todayBookDateWIB() } = 
   const cutoff = await tanggalCutoff(db);
   const cutoffTeks = tampilCutoff(cutoff);
   const catatan = await catatanLaporan(db);
-  const kosong = { perTanggal: to, neraca: 0, rekonsiliasi: { perKategori: kosongAngka(), selisih: 0 }, perluTindakan: { jumlah: 0, perSumber: { ledger: { jumlah: 0, total: 0 }, sudahDiserahBelumDiakui: { jumlah: 0, total: 0 }, keringananBelumDiBuku: { jumlah: 0, total: 0 } } }, baris: [], belumDiakui: { jumlah: 0, total: 0, perStatus: [], sudahDiserahBelumDiakui: [] }, keringananLunas: { jumlah: 0, totalSisa: 0, totalBelumDiBuku: 0, totalSudahDiBuku: 0, totalBelumDiserahkan: 0, baris: [] }, kategori: KATEGORI_PIUTANG, catatan };
+  const kosong = { perTanggal: to, neraca: 0, rekonsiliasi: { perKategori: kosongAngka(), selisih: 0 }, perluTindakan: { jumlah: 0, perSumber: { ledger: { jumlah: 0, total: 0 }, sudahDiserahBelumDiakui: { jumlah: 0, total: 0 }, keringananBelumDiBuku: { jumlah: 0, total: 0 }, tanggalLunasBeda: { jumlah: 0, total: 0, dikecualikanPengecualianOwner: 0, diperiksa: 0 } }, perAlasan: {} }, perluTindakanOrder: [], alasanTindakan: {}, baris: [], belumDiakui: { jumlah: 0, total: 0, perStatus: [], sudahDiserahBelumDiakui: [] }, keringananLunas: { jumlah: 0, totalSisa: 0, totalBelumDiBuku: 0, totalSudahDiBuku: 0, totalBelumDiserahkan: 0, baris: [] }, kategori: KATEGORI_PIUTANG, catatan };
   if (!akun) return kosong;
 
   const grouped = await db.finJournalLine.groupBy({
@@ -214,13 +237,58 @@ export async function diagnosisPiutang(db, { to: batas = todayBookDateWIB() } = 
   const barisTindakan = baris.filter((b) => b.kategori !== "TAGIHAN_SAH");
   const keringananBelumDiBuku = (keringanan?.baris ?? []).filter((b) => b.posisiBuku === "BELUM_DI_BUKU");
   const sudahDiserah = belum.filter((k) => STATUS_PENGAKUAN.includes(k.status));
+  // Kategori keempat (tanggal lunas ≠ tanggal pembayaran yang melunasi) — read-model terpisah (piutangTanggalLunas.js); tidak ikut rekonsiliasi saldo.
+  const tglBeda = await orderTanggalLunasBeda(db, { to });
+
+  // SATU order = SATU entri "perlu tindakan" walau punya beberapa masalah: alasan digabung per orderId, urut prioritas; alasanUtama = yang pertama.
+  const peta = new Map();
+  const tambah = (orderId, info, alasan) => {
+    const e = peta.get(orderId) ?? { orderId, ...info, alasan: [] };
+    if (!e.orderNumber && info.orderNumber) Object.assign(e, { orderNumber: info.orderNumber, customerName: info.customerName, salesName: info.salesName ?? e.salesName });
+    if (e.nilai == null && info.nilai != null) e.nilai = info.nilai;
+    if (!e.alasan.some((a) => a.kode === alasan.kode)) e.alasan.push(alasan);
+    peta.set(orderId, e);
+  };
+  for (const b of barisTindakan) {
+    tambah(b.orderId, { orderNumber: b.orderNumber, customerName: b.customerName, salesName: b.salesName, nilai: b.saldoPiutang, saldoPiutang: b.saldoPiutang },
+      { kode: b.kategori, label: KATEGORI_PIUTANG[b.kategori].label, tingkat: KATEGORI_PIUTANG[b.kategori].tingkat, penjelasan: b.penjelasan, tindakan: b.tindakan });
+  }
+  for (const k of sudahDiserah) {
+    tambah(k.id, { orderNumber: k.orderNumber, customerName: k.customer?.name ?? "—", salesName: null, nilai: tagihanOrder(k) },
+      { kode: "SUDAH_DISERAHKAN_BELUM_DIAKUI", label: ALASAN_LAIN.SUDAH_DISERAHKAN_BELUM_DIAKUI.label, tingkat: "periksa",
+        penjelasan: `Order berstatus ${k.status} tetapi pendapatannya belum diakui, jadi belum menjadi piutang di buku.`,
+        tindakan: "Periksa nilai order dan akui pendapatan lewat alur yang berlaku." });
+  }
+  for (const b of keringananBelumDiBuku) {
+    tambah(b.orderId, { orderNumber: b.orderNumber, customerName: b.customerName, salesName: b.salesName ?? null, nilai: b.sisaTagihan },
+      { kode: "KERINGANAN_BELUM_DI_BUKU", label: ALASAN_LAIN.KERINGANAN_BELUM_DI_BUKU.label, tingkat: "periksa",
+        penjelasan: b.alasan || "Dihitung lunas (Pengecualian Tgl Lunas) tetapi uang pelanggan belum diterima dan belum tercatat di buku.",
+        tindakan: "Tetap tagihan ke pelanggan; catat pembayaran saat uang diterima." });
+  }
+  for (const t of tglBeda.baris) {
+    tambah(t.orderId, { orderNumber: t.orderNumber, customerName: t.customerName, salesName: t.salesName, nilai: t.nilai },
+      { kode: "TANGGAL_LUNAS_BEDA", label: ALASAN_LAIN.TANGGAL_LUNAS_BEDA.label, tingkat: "periksa",
+        penjelasan: `Tanggal lunas di CRM ${hariIndonesia(t.tanggalLunasCrm)} berbeda dari tanggal pembayaran yang melunasi ${hariIndonesia(t.tanggalPembayaranMelunasi)} (selisih ${Math.abs(t.selisihHari)} hari).`,
+        tindakan: "Periksa tanggal lunas order. Bila keliru, perbaiki lewat alur resmi (koreksi pembayaran / Pengecualian Tgl Lunas) — sistem tidak mengubah tanggal otomatis.",
+        tanggalLunasCrm: t.tanggalLunasCrm, tanggalPembayaranMelunasi: t.tanggalPembayaranMelunasi, selisihHari: t.selisihHari });
+  }
+  const urutKode = Object.keys(URUTAN_ALASAN);
+  const perluTindakanOrder = [...peta.values()]
+    .map((e) => ({ ...e, alasan: e.alasan.sort((a, b) => urutKode.indexOf(a.kode) - urutKode.indexOf(b.kode)) }))
+    .map((e) => ({ ...e, alasanUtama: e.alasan[0].kode }))
+    .sort((a, b) => urutKode.indexOf(a.alasanUtama) - urutKode.indexOf(b.alasanUtama) || Math.abs(b.nilai ?? 0) - Math.abs(a.nilai ?? 0));
+  const perAlasan = {};
+  for (const e of perluTindakanOrder) for (const a of e.alasan) perAlasan[a.kode] = (perAlasan[a.kode] ?? 0) + 1;
   const perluTindakan = {
-    jumlah: barisTindakan.length + sudahDiserah.length + keringananBelumDiBuku.length,
+    // jumlah = ORDER UNIK (satu order dengan beberapa alasan dihitung sekali); perSumber/perAlasan menghitung per sumber/alasan.
+    jumlah: perluTindakanOrder.length,
     perSumber: {
       ledger: { jumlah: barisTindakan.length, total: barisTindakan.reduce((s, r) => s + r.saldoPiutang, 0) },
       sudahDiserahBelumDiakui: { jumlah: sudahDiserah.length, total: sudahDiserah.reduce((s, k) => s + tagihanOrder(k), 0) },
       keringananBelumDiBuku: { jumlah: keringananBelumDiBuku.length, total: keringananBelumDiBuku.reduce((s, b) => s + (b.sisaTagihan ?? 0), 0) },
+      tanggalLunasBeda: { jumlah: tglBeda.baris.length, total: tglBeda.baris.reduce((s, r) => s + (r.nilai ?? 0), 0), dikecualikanPengecualianOwner: tglBeda.dikecualikanOwner, diperiksa: tglBeda.diperiksa },
     },
+    perAlasan,
   };
 
   return {
@@ -228,6 +296,8 @@ export async function diagnosisPiutang(db, { to: batas = todayBookDateWIB() } = 
     neraca,
     rekonsiliasi: { perKategori, selisih: Math.round((neraca - totalKategori) * 100) / 100 },
     perluTindakan,
+    perluTindakanOrder,
+    alasanTindakan: URUTAN_ALASAN,
     baris,
     belumDiakui: {
       jumlah: belum.length,

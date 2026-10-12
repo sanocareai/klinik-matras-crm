@@ -256,7 +256,9 @@ test("diagnosis: perluTindakan (aditif) = baris selain Tagihan sah + sudah diser
   assert.equal(d.body.perluTindakan.perSumber.ledger.jumlah, nonSah);
   assert.equal(d.body.perluTindakan.perSumber.sudahDiserahBelumDiakui.jumlah, d.body.belumDiakui.sudahDiserahBelumDiakui.length);
   assert.equal(d.body.perluTindakan.perSumber.sudahDiserahBelumDiakui.jumlah, 1);
-  assert.equal(d.body.perluTindakan.jumlah, d.body.perluTindakan.perSumber.ledger.jumlah + d.body.perluTindakan.perSumber.sudahDiserahBelumDiakui.jumlah + d.body.perluTindakan.perSumber.keringananBelumDiBuku.jumlah);
+  // jumlah = ORDER UNIK; pada data ini tiap order hanya punya satu alasan sehingga sama dengan jumlah per sumber
+  assert.equal(d.body.perluTindakan.jumlah, d.body.perluTindakanOrder.length);
+  assert.equal(d.body.perluTindakan.jumlah, d.body.perluTindakan.perSumber.ledger.jumlah + d.body.perluTindakan.perSumber.sudahDiserahBelumDiakui.jumlah + d.body.perluTindakan.perSumber.keringananBelumDiBuku.jumlah + d.body.perluTindakan.perSumber.tanggalLunasBeda.jumlah);
   assert.ok(d.body.perluTindakan.jumlah >= 3);
   // saldo neraca & rekonsiliasi tetap cocok
   assert.equal(d.body.rekonsiliasi.selisih, 0);
@@ -284,4 +286,101 @@ test("detail order piutang: invoice, pembayaran (aktif + batal), jurnal akun Piu
   assert.equal((await a.get("/api/finance/reports/receivables/order/tidak-ada")).status, 404);
   assert.equal((await s.get(`/api/finance/reports/receivables/order/${o.id}`)).status, 403);
   void p;
+});
+
+// ── Perlu Tindakan: kategori "Tanggal lunas berbeda dari tanggal pembayaran yang melunasi" (read-model server) ────────────────────────────────────
+async function lunasDenganTanggal(ctx, nama, { value = 1_000_000, bayarPada, paidAt, nilaiBayar = value }) {
+  const o = await ctx.kelola(nama, { value, paymentStatus: "LUNAS" });
+  await ctx.diakui(o);
+  await ctx.bayar(o, nilaiBayar, { verifikasi: true, createdAt: new Date(bayarPada) });
+  if (paidAt) await testPrisma.order.update({ where: { id: o.id }, data: { paidAt: new Date(paidAt) } });
+  return o;
+}
+
+test("tanggal lunas ≠ tanggal pembayaran melunasi: terdeteksi; sama = tidak; batas hari WIB benar; paidAt & Payment TIDAK diubah; piutang & jurnal tidak berubah", async () => {
+  const ctx = await siapkan();
+  const { a } = ctx;
+  const beda = await lunasDenganTanggal(ctx, "Beda Tanggal", { bayarPada: "2026-10-05T03:00:00Z", paidAt: "2026-10-08T03:00:00Z" });
+  const sama = await lunasDenganTanggal(ctx, "Tanggal Sama", { bayarPada: "2026-10-05T03:00:00Z", paidAt: "2026-10-05T09:00:00Z" });
+  // WIB: bayar 2026-10-10T17:30Z = 11 Okt 00:30 WIB; paidAt 2026-10-11T03:00Z = 11 Okt WIB → SAMA hari WIB (beda bila dibaca UTC)
+  const batasSama = await lunasDenganTanggal(ctx, "Batas WIB Sama", { bayarPada: "2026-10-10T17:30:00Z", paidAt: "2026-10-11T03:00:00Z" });
+  // paidAt 2026-10-10T16:00Z = 10 Okt 23:00 WIB; bayar 11 Okt 00:30 WIB → beda 1 hari
+  const batasBeda = await lunasDenganTanggal(ctx, "Batas WIB Beda", { bayarPada: "2026-10-10T17:30:00Z", paidAt: "2026-10-10T16:00:00Z" });
+  // timestamp backfill 31 Agt 2026 bukan tanggal sungguhan → tidak dituduh
+  const backfill = await lunasDenganTanggal(ctx, "Backfill", { bayarPada: "2026-08-20T03:00:00Z", paidAt: "2026-08-31T05:35:57.201Z" });
+
+  const sebelumUmur = await a.get("/api/finance/reports/receivables?to=2026-10-31");
+  const sebelumDb = {
+    paidAt: (await testPrisma.order.findMany({ where: { id: { in: [beda.id, sama.id, batasSama.id, batasBeda.id, backfill.id] } }, orderBy: { id: "asc" }, select: { id: true, paidAt: true } })).map((o) => [o.id, o.paidAt?.toISOString()]),
+    payments: await testPrisma.payment.count(), jurnal: await testPrisma.finJournalEntry.count(),
+  };
+  const d = await a.get("/api/finance/reports/receivables/diagnosis?to=2026-10-31");
+  assert.equal(d.status, 200);
+  const ids = d.body.perluTindakanOrder.filter((e) => e.alasan.some((x) => x.kode === "TANGGAL_LUNAS_BEDA")).map((e) => e.orderNumber).sort();
+  assert.deepEqual(ids, [beda.orderNumber, batasBeda.orderNumber].sort());
+  const e = d.body.perluTindakanOrder.find((x) => x.orderId === beda.id);
+  const al = e.alasan.find((x) => x.kode === "TANGGAL_LUNAS_BEDA");
+  assert.equal(al.label, "Tanggal lunas berbeda dari tanggal pembayaran yang melunasi");
+  assert.deepEqual([al.tanggalLunasCrm, al.tanggalPembayaranMelunasi, al.selisihHari], ["2026-10-08", "2026-10-05", 3]);
+  const eb = d.body.perluTindakanOrder.find((x) => x.orderId === batasBeda.id).alasan.find((x) => x.kode === "TANGGAL_LUNAS_BEDA");
+  assert.deepEqual([eb.tanggalLunasCrm, eb.tanggalPembayaranMelunasi, eb.selisihHari], ["2026-10-10", "2026-10-11", -1]);
+  assert.equal(d.body.perluTindakan.perSumber.tanggalLunasBeda.jumlah, 2);
+
+  // TIDAK mengubah apa pun: paidAt, Payment, jurnal, daftar piutang
+  const sesudahDb = {
+    paidAt: (await testPrisma.order.findMany({ where: { id: { in: [beda.id, sama.id, batasSama.id, batasBeda.id, backfill.id] } }, orderBy: { id: "asc" }, select: { id: true, paidAt: true } })).map((o) => [o.id, o.paidAt?.toISOString()]),
+    payments: await testPrisma.payment.count(), jurnal: await testPrisma.finJournalEntry.count(),
+  };
+  assert.deepEqual(sesudahDb, sebelumDb);
+  const sesudahUmur = await a.get("/api/finance/reports/receivables?to=2026-10-31");
+  assert.deepEqual(sesudahUmur.body.baris, sebelumUmur.body.baris, "daftar Piutang tetap berdasarkan ledger");
+  assert.equal(sesudahUmur.body.total, sebelumUmur.body.total);
+});
+
+test("tanggal lunas dikunci Pengecualian Owner TIDAK masuk Perlu Tindakan (dilaporkan terpisah); pengecualian yang dicabut kembali terdeteksi", async () => {
+  const ctx = await siapkan();
+  const { a, admin } = ctx;
+  const o = await lunasDenganTanggal(ctx, "Dikunci Owner", { bayarPada: "2026-10-05T03:00:00Z", paidAt: "2026-10-09T03:00:00Z" });
+  const pe = await testPrisma.orderPaidAtPengecualian.create({ data: { orderId: o.id, paidAtDikunci: new Date("2026-10-09T03:00:00Z"), alasan: "Keputusan Owner target", createdById: admin.user.id } });
+  let d = await a.get("/api/finance/reports/receivables/diagnosis?to=2026-10-31");
+  assert.equal(d.body.perluTindakanOrder.some((e) => e.orderId === o.id), false);
+  assert.equal(d.body.perluTindakan.perSumber.tanggalLunasBeda.dikecualikanPengecualianOwner, 1);
+  await testPrisma.orderPaidAtPengecualian.update({ where: { id: pe.id }, data: { dicabutAt: new Date() } });
+  d = await a.get("/api/finance/reports/receivables/diagnosis?to=2026-10-31");
+  assert.equal(d.body.perluTindakanOrder.some((e) => e.orderId === o.id), true);
+});
+
+test("satu order = satu entri Perlu Tindakan walau punya beberapa masalah; semua alasan tercantum; jumlah = order unik", async () => {
+  const ctx = await siapkan();
+  const { kelola, diakui, bayar, a } = ctx;
+  // Kasus Stanley: payment historis terverifikasi tanpa jurnal (PAYMENT_BELUM_MENUTUP) DAN paidAt berbeda dari tanggal pembayaran → dua alasan, satu order
+  const ganda = await kelola("Dua Masalah", { value: 1_500_000, paymentStatus: "LUNAS" });
+  await bayar(ganda, 1_500_000, { jurnal: false, verifikasi: true, createdAt: new Date("2026-09-10T05:00:00Z") });
+  await diakui(ganda);
+  await testPrisma.order.update({ where: { id: ganda.id }, data: { paidAt: new Date("2026-09-20T05:00:00Z") } });
+  // Order dengan satu masalah saja
+  const satu = await kelola("Satu Masalah", { value: 3_000_000, paymentStatus: "LUNAS" });
+  await diakui(satu);
+  const d = await a.get("/api/finance/reports/receivables/diagnosis?to=2026-10-31");
+  const entriGanda = d.body.perluTindakanOrder.filter((e) => e.orderId === ganda.id);
+  assert.equal(entriGanda.length, 1, "order muncul sekali");
+  assert.deepEqual(entriGanda[0].alasan.map((x) => x.kode), ["PAYMENT_BELUM_MENUTUP", "TANGGAL_LUNAS_BEDA"], "semua alasan, urut prioritas");
+  assert.equal(entriGanda[0].alasanUtama, "PAYMENT_BELUM_MENUTUP");
+  const semuaId = d.body.perluTindakanOrder.map((e) => e.orderId);
+  assert.equal(new Set(semuaId).size, semuaId.length, "tidak ada order ganda");
+  assert.equal(d.body.perluTindakan.jumlah, semuaId.length);
+  assert.equal(d.body.perluTindakan.perAlasan.TANGGAL_LUNAS_BEDA, 1);
+  assert.equal(d.body.perluTindakan.perAlasan.PAYMENT_BELUM_MENUTUP, 1);
+  assert.equal(d.body.rekonsiliasi.selisih, 0, "rekonsiliasi saldo tidak terpengaruh kategori baru");
+});
+
+test("cutoff WIB posisi: jurnal bertanggal posisi ikut, sesudahnya tidak; paidAt sesudah posisi tidak dihitung kategori tanggal lunas", async () => {
+  const ctx = await siapkan();
+  const { a } = ctx;
+  const o = await lunasDenganTanggal(ctx, "Sesudah Posisi", { bayarPada: "2026-10-05T03:00:00Z", paidAt: "2026-10-20T03:00:00Z" });
+  const awal = await a.get("/api/finance/reports/receivables/diagnosis?to=2026-10-10");
+  const punyaTglBeda = (r) => r.body.perluTindakanOrder.some((e) => e.orderId === o.id && e.alasan.some((x) => x.kode === "TANGGAL_LUNAS_BEDA"));
+  assert.equal(punyaTglBeda(awal), false, "paidAt 20 Okt belum terjadi pada posisi 10 Okt (kategori tanggal lunas tidak dihitung)");
+  const akhir = await a.get("/api/finance/reports/receivables/diagnosis?to=2026-10-20");
+  assert.equal(punyaTglBeda(akhir), true, "paidAt tepat pada hari posisi ikut (inklusif)");
 });

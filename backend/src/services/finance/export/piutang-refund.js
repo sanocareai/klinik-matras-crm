@@ -69,6 +69,7 @@ async function ambil(db, { filter, periode, filterLabel }) {
     { ket: "Ditandai Lunas oleh sales (tidak dihitung piutang; menunggu verifikasi finance)", jumlah: ar.menungguVerifikasi?.jumlah ?? 0, nominal: ar.menungguVerifikasi?.total ?? 0 },
   ];
 
+  const posisiTeks = tanggalIndonesiaPendek(ar.perTanggal instanceof Date ? ar.perTanggal.toISOString().slice(0, 10) : ar.perTanggal);
   return {
     nama: "Piutang & Refund",
     periodeLabel: `Piutang per ${tanggalIndonesiaPendek(ar.perTanggal instanceof Date ? ar.perTanggal.toISOString().slice(0, 10) : ar.perTanggal)}`,
@@ -88,6 +89,7 @@ async function ambil(db, { filter, periode, filterLabel }) {
         catatan: [
           "Piutang dihitung dari saldo akun Piutang Usaha per order di buku besar. Order yang belum diserahkan tidak muncul (uangnya masih uang muka).",
           "Umur dihitung dari jatuh tempo invoice bila ada; bila tidak, dari tanggal order (kolom Acuan Umur). Umur 0 = belum jatuh tempo.",
+          `Cutoff posisi: saldo buku besar sampai ${posisiTeks} (WIB, inklusif). Ini posisi saldo piutang, BUKAN filter transaksi periode — transaksi sesudah tanggal itu tidak ikut.`,
         ],
       },
       {
