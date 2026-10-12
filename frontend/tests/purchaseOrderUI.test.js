@@ -86,7 +86,7 @@ test("pemasangan: rute, menu Finance, dan fungsi API Purchase Order terdaftar", 
   const reg = baca("../src/routes/pageRegistry.jsx");
   assert.match(reg, /const FinancePurchaseOrders = lazy\(\(\) => import\("\.\.\/pages\/finance\/FinancePurchaseOrders\.jsx"\)\)/);
   assert.match(reg, /path: "\/finance\/purchase-orders", render: \(\) => <FinancePurchaseOrders \/>/);
-  assert.match(baca("../src/components/Layout.jsx"), /to: "\/finance\/purchase-orders", label: "Purchase Order"/);
+  assert.match(baca("../src/lib/financeHubs.js"), /label: "Purchase Order", to: "\/finance\/purchase-orders"/); // menu Finance = hub
   const api = baca("../src/api.js");
   for (const fn of ["getPurchaseOrders", "getPurchaseOrder", "createPurchaseOrder", "updatePurchaseOrder", "approvePurchaseOrder", "cancelPurchaseOrder", "revisiJumlahPurchaseOrder", "getGudangPurchaseOrders"]) {
     assert.match(api, new RegExp(`${fn}:`), fn);

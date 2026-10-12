@@ -43,7 +43,7 @@ test("Pembatalan lewat alasan wajib (reversal resmi)", () => {
 
 test("Rute, menu sidebar, dan API terdaftar", () => {
   assert.match(baca("routes/pageRegistry.jsx"), /path: "\/finance\/uang-muka"/);
-  assert.match(baca("components/Layout.jsx"), /to: "\/finance\/uang-muka"[^}]*Uang Muka Operasional/);
+  assert.match(baca("lib/financeHubs.js"), /label: "Uang Muka Operasional", to: "\/finance\/uang-muka"/); // menu Finance = hub
   const api = baca("api.js");
   for (const fn of ["getUangMuka", "berikanUangMuka", "pertanggungjawabanUangMuka", "kembalikanUangMuka", "batalkanUangMuka", "getUangMukaAktifPengajuan"]) {
     assert.ok(api.includes(`${fn}:`), fn);

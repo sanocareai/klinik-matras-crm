@@ -4,6 +4,7 @@ import { rolesOf } from "../lib/roles.js";
 import { splitPathQuery } from "../lib/splitPathQuery.js";
 import { tabPathFor } from "../lib/legacyProductionRoutes.js";
 import { DemoPage } from "../features/production/demo/DemoControls.jsx";
+import FinanceHubFrame from "../features/finance/FinanceHubFrame.jsx";
 
 // D-143 (9 September 2026) — SATU SUMBER KEBENARAN untuk daftar halaman.
 // Sebelumnya seluruh ~55 lazy import + <Route> ditulis langsung di App.jsx.
@@ -189,7 +190,7 @@ export function RouteFallback() {
 // dioper langsung sebagai prop JSX di App.jsx. Path & props PERSIS sama,
 // cuma sumbernya dipindah ke sini. Path redirect ("/", "/armada",
 // "/warehouse", "*") SENGAJA tidak ada di sini — lihat resolveEntryPath.
-export const PAGES = [
+const PAGES_DASAR = [
   { path: "/portal",      render: () => <Portal /> },
   { path: "/portal/:key", render: (ctx) => <DivisionPage user={ctx.user} /> },
   { path: "/bengkel/materials", render: () => <ProductionMaterialUsage /> },
@@ -298,3 +299,9 @@ export const PAGES = [
   { path: "/copilot",     render: () => <CoPilot /> },
   { path: "/notifications", render: () => <Notifications /> },
 ];
+
+// Hub Finance (Okt 2026): halaman Finance yang termasuk sebuah hub dibungkus bilah tab hub (lib/financeHubs.js). Path, props, dan izin halaman TIDAK berubah —
+// bilah hanya navigasi; halaman di luar hub (atau satu-satunya item hub) dirender apa adanya oleh FinanceHubFrame.
+export const PAGES = PAGES_DASAR.map((p) => (
+  p.path.startsWith("/finance/") ? { ...p, render: (ctx) => <FinanceHubFrame>{p.render(ctx)}</FinanceHubFrame> } : p
+));

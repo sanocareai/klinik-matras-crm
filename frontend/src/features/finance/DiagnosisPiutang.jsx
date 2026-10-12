@@ -8,19 +8,25 @@ import { barisRekonsiliasi, saringDiagnosis, teksUmurPengakuan, VARIAN_TINGKAT, 
 
 // DIAGNOSIS PIUTANG — menjelaskan kenapa saldo Piutang Usaha (neraca) sebesar itu: tiap order bersaldo masuk satu kategori dengan alasan + tindakan,
 // dan semua kategori menjumlah kembali ke saldo neraca. Hanya membaca; tidak ada tombol yang mengubah data.
-export default function DiagnosisPiutang() {
-  const [data, setData] = useState(null);
-  const [error, setError] = useState(null);
+// Props opsional (layar Piutang yang didesain ulang memuat diagnosis SEKALI untuk kartu, strip, tab Perlu Tindakan, dan tab ini): `data` (undefined = muat sendiri
+// seperti sebelumnya), `galat`, `onReload`.
+export default function DiagnosisPiutang({ data: dataLuar, galat: galatLuar = null, onReload = null }) {
+  const dikendalikan = dataLuar !== undefined;
+  const [dataSendiri, setData] = useState(null);
+  const [errorSendiri, setError] = useState(null);
+  const data = dikendalikan ? dataLuar : dataSendiri;
+  const error = dikendalikan ? galatLuar : errorSendiri;
   const [kategori, setKategori] = useState("");
   const [semua, setSemua] = useState(false);
   const [lihatBelumDiakui, setLihatBelumDiakui] = useState(false);
   const [lihatKeringanan, setLihatKeringanan] = useState(true);
 
   const muat = useCallback(async () => {
+    if (dikendalikan) { onReload?.(); return; }
     setError(null);
     try { setData(await api.getFinancePiutangDiagnosis()); } catch (e) { setError(e.message || "Gagal memuat diagnosis piutang"); }
-  }, []);
-  useEffect(() => { muat(); }, [muat]);
+  }, [dikendalikan, onReload]);
+  useEffect(() => { if (!dikendalikan) muat(); }, [muat, dikendalikan]);
 
   const rek = useMemo(() => barisRekonsiliasi(data), [data]);
   const daftar = useMemo(() => saringDiagnosis(data?.baris, { hanyaTindakan: !semua, kategori }), [data, semua, kategori]);

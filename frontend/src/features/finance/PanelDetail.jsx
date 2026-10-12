@@ -75,10 +75,15 @@ export function PanelDetail({ spec, onClose }) {
                     {b.judul && <h3 className="mb-1.5 text-[10.5px] font-bold uppercase tracking-wide text-ink3">{b.judul}</h3>}
                     <dl className="divide-y divide-line rounded-lg border border-line">
                       {b.baris.map(([label, nilai], j) => (
-                        <div key={label ?? j} className="grid grid-cols-[120px_1fr] gap-3 px-3 py-2 text-[13px]">
-                          <dt className="text-ink3">{label}</dt>
-                          <dd className="min-w-0 break-words text-ink">{nilai}</dd>
-                        </div>
+                        // label "" = baris selebar penuh (daftar bersarang: pembayaran, jurnal, riwayat) tanpa kolom label.
+                        label === ""
+                          ? <div key={j} className="px-3 py-2 text-[13px]"><dd className="m-0 min-w-0 break-words text-ink">{nilai}</dd></div>
+                          : (
+                            <div key={label ?? j} className="grid grid-cols-[120px_1fr] gap-3 px-3 py-2 text-[13px]">
+                              <dt className="text-ink3">{label}</dt>
+                              <dd className="min-w-0 break-words text-ink">{nilai}</dd>
+                            </div>
+                          )
                       ))}
                     </dl>
                   </section>

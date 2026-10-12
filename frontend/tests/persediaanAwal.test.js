@@ -52,7 +52,7 @@ test("Halaman memakai PIN step-up, pratinjau, alasan wajib, dan terdaftar di men
   for (const s of ["usePinStepUp", "getPersediaanAwalPratinjau", "Pratinjau saja — belum ada jurnal yang dibuat", "Alasan posting (wajib)", "Periksa sebagai Finance", "Periksa sebagai Gudang", "Laporan pengecualian"]) assert.ok(p.includes(s), s);
   assert.doesNotMatch(p, /referenceUnitCost/, "harga referensi master tidak dipakai sebagai nilai");
   const layout = baca("components/Layout.jsx");
-  assert.match(layout, /Tutup Stok & Persediaan Awal/);
+  assert.match(baca("lib/financeHubs.js"), /Persediaan Awal & Tutup Stok/); // menu Finance = hub
   assert.match(layout, /Opname Cutover Persediaan/);
   assert.match(baca("routes/pageRegistry.jsx"), /\/finance\/persediaan-awal/);
 });

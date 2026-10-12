@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useUrlTab } from "@/lib/useUrlTab.js";
 import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
 import { specOtomatis } from "@/features/finance/detailSpecs.js";
 import { Plus, ArrowLeftRight, TrendingUp, Wallet, Pencil, Trash2, History, Ban, ListOrdered } from "lucide-react";
@@ -47,7 +48,7 @@ const TAB = [
 
 export default function FinanceCash() {
   const [panelRincian, setPanelRincian] = useState(null); // panel detail samping (klik baris)
-  const [tab, setTab] = useState("rekening");
+  const [tab, setTab] = useUrlTab(["rekening", "mutasi", "transfer", "pemasukan"], "rekening"); // ?tab= (deep-link hub Kas & Bank)
   const [periode, setPeriode] = useState(periodeDefault);
   const [rekening, setRekening] = useState(null);
   const [transfers, setTransfers] = useState([]);
