@@ -44,6 +44,7 @@ import { PERMISSIONS as P } from "../constants/permissions.js";
 import { hasPermission } from "../middleware/authorize.js";
 import { decideV1StageActor } from "../lib/domain/v1StageActor.js";
 import { BUILD_CATEGORIES, BUILD_STAGE_CODE, classifyProduct } from "../lib/domain/productionBuildTrack.js";
+import { unitKategoriIn, produkUnit } from "../lib/domain/unitKategori.js";
 
 // Isolation SERIALIZABLE untuk keempat perintah eksekusi inti (START/PAUSE/
 // RESUME/COMPLETE, Production Core Slice 3I) — pola "baca state tahap
@@ -114,7 +115,7 @@ export async function assertV1StageActorInTx(tx, unitId, { actorId, stageId = nu
  */
 export async function unitUsesBuildTrack(client, unitId) {
   if (!unitId) return false;
-  return !!(await client.productionRun.findFirst({ where: { unitId, origin: "WORKSHOP_BORN", unit: { order: { category: { in: [...BUILD_CATEGORIES] } } } }, select: { id: true } }));
+  return !!(await client.productionRun.findFirst({ where: { unitId, origin: "WORKSHOP_BORN", unit: unitKategoriIn([...BUILD_CATEGORIES]) }, select: { id: true } }));
 }
 
 /** Versi BULK (satu query) untuk pemanggil yang menyaring banyak unit: himpunan id unit yang memakai jalur pengerjaan. */
@@ -130,11 +131,11 @@ export async function buildTrackUnits(client, unitIds) {
   const out = new Map();
   if (!ids.length) return out;
   const rows = await client.productionRun.findMany({
-    where: { unitId: { in: ids }, origin: "WORKSHOP_BORN", unit: { order: { category: { in: [...BUILD_CATEGORIES] } } } },
-    select: { unitId: true, unit: { select: { order: { select: { productLine: true, productType: true } } } }, buildSetting: { select: { cornerRequired: true, cornerReason: true, materialOperatorId: true } } },
+    where: { unitId: { in: ids }, origin: "WORKSHOP_BORN", unit: unitKategoriIn([...BUILD_CATEGORIES]) },
+    select: { unitId: true, unit: { select: { productLine: true, productType: true, order: { select: { productLine: true, productType: true } } } }, buildSetting: { select: { cornerRequired: true, cornerReason: true, materialOperatorId: true } } },
     orderBy: { createdAt: "desc" }, distinct: ["unitId"],
   });
-  for (const r of rows) out.set(r.unitId, { ...classifyProduct(r.unit?.order || {}), cornerRequired: r.buildSetting?.cornerRequired ?? null, cornerReason: r.buildSetting?.cornerReason ?? null, materialOperatorId: r.buildSetting?.materialOperatorId ?? null });
+  for (const r of rows) out.set(r.unitId, { ...classifyProduct(produkUnit(r.unit, r.unit?.order)), cornerRequired: r.buildSetting?.cornerRequired ?? null, cornerReason: r.buildSetting?.cornerReason ?? null, materialOperatorId: r.buildSetting?.materialOperatorId ?? null });
   return out;
 }
 
@@ -423,8 +424,8 @@ export async function resolveNextStageForUnits(units) {
 }
 
 // Gerbang Order Penjualan Karyawan: order dari PKR yang spesifikasi produksinya belum lengkap ("Perlu dilengkapi") TIDAK boleh mulai dikerjakan. Order biasa lolos tanpa efek.
-async function pastikanSpesifikasiPkrLengkap(tx, orderId) {
-  const pesan = await pesanPkrBelumLengkap(tx, orderId, "Produksi belum boleh dimulai atau direkam");
+async function pastikanSpesifikasiPkrLengkap(tx, orderId, unitId = null) {
+  const pesan = await pesanPkrBelumLengkap(tx, orderId, "Produksi belum boleh dimulai atau direkam", { unitId }); // kelengkapan ITEM unit ini (order multi-item)
   if (pesan) throw new StageTransitionError(pesan);
 }
 
@@ -447,7 +448,7 @@ export async function startStage(unitId, { actorId, requireAssignedOperator = fa
 // resolveCurrentTarget() menyebutnya DONE karena lastLog COMPLETE, padahal run V2 sedang memproses ulang. Pemanggil menjamin fase PROCESS run aktif.
 export async function startStageInTx(tx, unitId, { actorId, allowRerunOfLastStage = false } = {}) {
   const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId } });
-  await pastikanSpesifikasiPkrLengkap(tx, unit.orderId);
+  await pastikanSpesifikasiPkrLengkap(tx, unit.orderId, unit.id);
   const path = await pathForUnit(tx, unit);
   const { stage: targetStage, state } = await resolveCurrentTarget(tx, unit, path);
 
@@ -539,7 +540,7 @@ export async function recordStageDone(unitId, { actorId, photoUrls = [], note, r
     await assertNotV2ExecutionOwned(tx, unitId, "selesai tahap", actorId);
     if (requireAssignedOperator) await assertV1StageActorInTx(tx, unitId, { actorId });
     const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId } });
-    await pastikanSpesifikasiPkrLengkap(tx, unit.orderId); // mencatat tahap selesai (jalur retrospektif) juga dianggap memulai produksi
+    await pastikanSpesifikasiPkrLengkap(tx, unit.orderId, unit.id); // mencatat tahap selesai (jalur retrospektif) juga dianggap memulai produksi
     const path = await pathForUnit(tx, unit);
     const { stage, state } = await resolveCurrentTarget(tx, unit, path);
 

@@ -89,7 +89,7 @@ const CATEGORY_OPTIONS = [
   { value: "SEWA",    icon: CalendarClock, iconTheme: { base: "#f97316", light: "#fdba74", glow: "rgba(249,115,22,0.55)" }, label: "Sewa",         sub: "Sewa produk" },
 ];
 
-const CATEGORY_LABELS = { LAYANAN: "Service/Upgrade", BARU: "Baru", SEWA: "Sewa" };
+const CATEGORY_LABELS = { LAYANAN: "Service/Upgrade", BARU: "Baru", SEWA: "Sewa", CAMPURAN: "Campuran" };
 const CATEGORY_BADGE  = {
   LAYANAN: { bg: "#ede9fe", color: "#5b21b6" },
   BARU:    { bg: "#dcfce7", color: "#166534" },

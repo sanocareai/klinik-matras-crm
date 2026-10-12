@@ -14,6 +14,13 @@ export default function PkrRujukan({ pkr, rinci = false, className = "" }) {
       {t.karyawan && <span data-testid="pkr-karyawan" className="min-w-0 truncate text-[12px] text-ink2">{t.karyawan}</span>}
       <Badge variant="neutral" data-testid="pkr-kirim">{t.kirim}</Badge>
       {t.perluDilengkapi && <Badge variant="orange" data-testid="pkr-perlu-dilengkapi">Perlu dilengkapi</Badge>}
+      {rinci && t.items?.length > 0 && (
+        <ul className="m-0 basis-full list-none space-y-0.5 p-0 text-[12px] text-ink2" data-testid="pkr-item">
+          {t.items.map((i) => (
+            <li key={i.no}>Item {i.no}: <span className="text-ink">{i.teks}</span>{i.ukuran ? ` · ${i.ukuran}` : ""} · {i.kirim}{i.kurang ? <span className="text-orange"> — kurang: {i.kurang}</span> : null}</li>
+          ))}
+        </ul>
+      )}
       {rinci && t.perluDilengkapi && t.kurangTeks && <span data-testid="pkr-kurang" className="basis-full text-[12px] text-orange">Data yang kurang: {t.kurangTeks}. Lengkapi di Finance › Penjualan Karyawan.</span>}
     </span>
   );

@@ -30,6 +30,8 @@ import { pastikanKaryawanNonSales } from "../services/penjualanKaryawan.js";
 import { handleFinanceError } from "./finance.js";
 import { lockRowForUpdate } from "../services/inventoryLedger.js";
 import { buatAtauTautkanOrder, lengkapiSpesifikasi, batalkanOrderBersamaPkr, rapikanAgregatCustomer, ringkasOrderPkr, dryRunPkrTanpaOrder } from "../services/penjualanKaryawanOrder.js";
+import { muatKatalogItem, pratinjauItems, buatKategori, ubahKategori, buatProduk, ubahProduk, simpanKomposisi } from "../services/penjualanKaryawanItem.js";
+import { pratinjauKoreksi, terapkanKoreksi } from "../services/penjualanKaryawanKoreksi.js";
 
 export const financePenjualanKaryawanRouter = express.Router();
 const BASE = "/penjualan-karyawan";
@@ -117,6 +119,69 @@ financePenjualanKaryawanRouter.get(`${BASE}/order-crm/dry-run`, requirePermissio
   try {
     const daftar = await dryRunPkrTanpaOrder(prisma);
     res.json({ jumlah: daftar.length, daftar, catatan: "Hanya pratinjau. Tidak ada order, unit, job, pembayaran, atau jurnal yang dibuat. Buat per dokumen lewat 'Buat/Tautkan Order CRM'." });
+  } catch (e) { handleFinanceError(e, res); }
+});
+
+// ─── KATALOG ITEM PRODUKSI + PRATINJAU ORDER (multi-item) ────────────────────────────────────────────────────────────
+// Katalog = data yang dikelola Admin (izin khusus pkr_catalog:manage — Owner/Admin; peran biasa hanya membaca/memilih); form membaca yang AKTIF + definisi bentuk isian. Pratinjau hanya MEMBACA: apa yang akan dibuat (unit, pickup, pengiriman,
+// kelengkapan) dengan fungsi yang sama dengan pembuatan — masukan salah dikembalikan sebagai { valid:false, galat } supaya layar menampilkannya, bukan error HTTP.
+financePenjualanKaryawanRouter.get(`${BASE}/katalog-item`, requirePermission(P.FINANCE_READ), async (_req, res) => {
+  try { res.json(await muatKatalogItem(prisma)); } catch (e) { handleFinanceError(e, res); }
+});
+financePenjualanKaryawanRouter.get(`${BASE}/katalog-item/kelola`, requirePermission(P.PKR_CATALOG_MANAGE), async (_req, res) => {
+  try { res.json(await muatKatalogItem(prisma, { semua: true })); } catch (e) { handleFinanceError(e, res); }
+});
+financePenjualanKaryawanRouter.post(`${BASE}/katalog-item/kategori`, requirePermission(P.PKR_CATALOG_MANAGE), async (req, res) => {
+  try {
+    const c = await prisma.$transaction((tx) => buatKategori(tx, { ...(req.body || {}), userId: req.user.id }));
+    res.status(201).json(c);
+  } catch (e) { handleFinanceError(e, res); }
+});
+financePenjualanKaryawanRouter.patch(`${BASE}/katalog-item/kategori/:id`, requirePermission(P.PKR_CATALOG_MANAGE), async (req, res) => {
+  try { res.json(await prisma.$transaction((tx) => ubahKategori(tx, { ...(req.body || {}), id: req.params.id, userId: req.user.id }))); } catch (e) { handleFinanceError(e, res); }
+});
+financePenjualanKaryawanRouter.post(`${BASE}/katalog-item/produk`, requirePermission(P.PKR_CATALOG_MANAGE), async (req, res) => {
+  try {
+    const p = await prisma.$transaction((tx) => buatProduk(tx, { ...(req.body || {}), userId: req.user.id }));
+    res.status(201).json(p);
+  } catch (e) { handleFinanceError(e, res); }
+});
+financePenjualanKaryawanRouter.patch(`${BASE}/katalog-item/produk/:id`, requirePermission(P.PKR_CATALOG_MANAGE), async (req, res) => {
+  try { res.json(await prisma.$transaction((tx) => ubahProduk(tx, { ...(req.body || {}), id: req.params.id, userId: req.user.id }))); } catch (e) { handleFinanceError(e, res); }
+});
+// Komposisi bundel (Set Kasur Lengkap = Kasur + Divan + Sandaran, dst). Mengganti SELURUH komposisi kategori (atau satu produknya) sekaligus, dengan audit sebelum/sesudah.
+financePenjualanKaryawanRouter.put(`${BASE}/katalog-item/komposisi`, requirePermission(P.PKR_CATALOG_MANAGE), async (req, res) => {
+  try {
+    const { kategoriId, produkId, komponen } = req.body || {};
+    const hasil = await prisma.$transaction((tx) => simpanKomposisi(tx, { kategoriId, produkId: produkId || null, komponen, userId: req.user.id }));
+    res.json({ ...hasil, katalog: await muatKatalogItem(prisma, { semua: true }) });
+  } catch (e) { handleFinanceError(e, res); }
+});
+financePenjualanKaryawanRouter.post(`${BASE}/order-crm/pratinjau`, requirePermission(P.FINANCE_POST), async (req, res) => {
+  try {
+    const o = req.body?.orderCrm ?? req.body?.spesifikasi ?? {};
+    res.json(await pratinjauItems(prisma, { penjualanId: req.body?.penjualanId || null, items: o.items, alamat: typeof o.alamat === "string" && o.alamat.trim() ? o.alamat.trim() : null }));
+  } catch (e) { handleFinanceError(e, res); }
+});
+
+// ─── KOREKSI ITEM (sebelum unit dijadwalkan/diproses) ────────────────────────────────────────────────────────────────
+// Pratinjau dampak = fungsi hitung yang SAMA dengan penerapan (tanpa menulis). Penerapan: alasan wajib, expectedRevision wajib (revisi optimistis), Idempotency-Key WAJIB,
+// satu transaksi atomik, audit sebelum/sesudah di buku revisi. Item yang unitnya sudah dijadwalkan/diproses diblokir dengan arahan pembatalan resmi.
+financePenjualanKaryawanRouter.post(`${BASE}/:id/koreksi-item/pratinjau`, requirePermission(P.FINANCE_POST), async (req, res) => {
+  try {
+    res.json(await pratinjauKoreksi(prisma, { penjualanId: req.params.id, operasi: req.body?.operasi, expectedRevision: req.body?.expectedRevision ?? null }));
+  } catch (e) { handleFinanceError(e, res); }
+});
+
+financePenjualanKaryawanRouter.post(`${BASE}/:id/koreksi-item`, requirePermission(P.FINANCE_POST), async (req, res) => {
+  try {
+    const hasil = await prisma.$transaction((tx) => terapkanKoreksi(tx, {
+      penjualanId: req.params.id, operasi: req.body?.operasi, expectedRevision: req.body?.expectedRevision, alasan: req.body?.alasan,
+      idempotencyKey: req.headers["idempotency-key"], userId: req.user.id,
+    }), { timeout: 30000, maxWait: 10000 });
+    if (!hasil.replayed) await rapikanAgregatCustomer(hasil.customerId);
+    const sinkron = await ringkasOrderPkr(prisma, [req.params.id]);
+    res.status(hasil.replayed ? 200 : 201).json({ ...hasil, sinkron: sinkron.get(req.params.id) ?? null });
   } catch (e) { handleFinanceError(e, res); }
 });
 

@@ -113,7 +113,7 @@ function statusQueryParam(fStatus) {
   return (fStatus && fStatus !== "PROCESSING") ? fStatus : undefined;
 }
 
-const KATEGORI_LABELS = { LAYANAN: "Layanan", SEWA: "Sewa", BARU: "Baru" };
+const KATEGORI_LABELS = { LAYANAN: "Layanan", SEWA: "Sewa", BARU: "Baru", CAMPURAN: "Campuran" };
 
 // D-030 (20 Agustus 2026) — filter Kategori/Pembayaran/Sales/Promo dulu
 // semuanya <select> abu-abu identik, tidak bisa dipindai sekilas mana

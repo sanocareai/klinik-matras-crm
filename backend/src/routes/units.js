@@ -30,7 +30,7 @@ import { priorityDisplay } from "../lib/domain/productionDisplay.js";
 import { loadOpenComplaintsByUnit } from "../services/productionComplaints.js";
 import { prisma } from "../db.js";
 import { signUnitPhotoUrlsBulk } from "./productionUnitPhoto.js";
-import { PKR_ORDER_SELECT, rujukanPkrDariOrder } from "../services/pkrProduksiGuard.js";
+import { PKR_ORDER_SELECT, PKR_UNIT_ITEM_SELECT, rujukanPkrDariOrder } from "../services/pkrProduksiGuard.js";
 import { explainProductionServiceForUnit } from "../services/productionSettingsService.js";
 
 export const unitRouter = express.Router();
@@ -435,6 +435,7 @@ unitRouter.get("/:id/timeline", requirePermission(P.UNIT_READ), async (req, res)
       include: {
         service: true,
         currentStage: true,
+        ...PKR_UNIT_ITEM_SELECT,
         // items: HANYA nama layanan (Layanan Dipesan Sales, read-only untuk drawer unit non-V2) — tanpa harga; dikeluarkan dari payload di bawah.
         order: { select: { id: true, orderNumber: true, status: true, notes: true, ...PKR_ORDER_SELECT, customer: { select: { id: true, name: true, phone: true, assignedSales: { select: { name: true } } } }, items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } } } },
         qcFitTests: { include: { stage: { select: { id: true, labelId: true } }, testedBy: { select: { id: true, name: true } } }, orderBy: { createdAt: "desc" } },
@@ -570,7 +571,7 @@ unitRouter.get("/:id/timeline", requirePermission(P.UNIT_READ), async (req, res)
     res.json({
       unit: { ...unit, order: unit.order ? orderBase : unit.order },
       // Rujukan Penjualan Karyawan (null untuk order biasa) — sama dengan yang ditampilkan Unit 360 V2 dan daftar Produksi.
-      penjualanKaryawan: rujukanPkrDariOrder(unit.order),
+      penjualanKaryawan: rujukanPkrDariOrder(unit.order, { unit }),
       priorityDisplay: { key: prioDisplay.key, label: prioDisplay.label, rank: prioDisplay.rank, complaintCases: prioDisplay.complaintCases },
       salesContext,
       // Layanan Dipesan (Sales) — order-scoped, READ-ONLY; TERPISAH dari Layanan Teknis Produksi (unit.service, ditetapkan Produksi).

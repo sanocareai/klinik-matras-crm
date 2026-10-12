@@ -1794,7 +1794,24 @@ export const api = {
   // Sinkronisasi Order CRM (PKR lama: dry-run + aksi eksplisit per dokumen; lengkapi spesifikasi/alamat). Order hanya dokumen operasional — tanpa uang.
   getPenjualanKaryawanOrderCrmDryRun: () => request("/finance/penjualan-karyawan/order-crm/dry-run"),
   buatOrderCrmPenjualanKaryawan: (id, spesifikasi, orderId) => request(`/finance/penjualan-karyawan/${id}/order-crm`, { method: "POST", body: JSON.stringify({ spesifikasi, ...(orderId && { orderId }) }) }),
+  // Katalog item produksi PKR (kategori/produk dikelola Admin) + pratinjau order multi-item
+  getPkrKatalogItem: () => request("/finance/penjualan-karyawan/katalog-item"),
+  getPkrKatalogKelola: () => request("/finance/penjualan-karyawan/katalog-item/kelola"),
+  pratinjauOrderCrmPkr: (data) => request("/finance/penjualan-karyawan/order-crm/pratinjau", { method: "POST", body: JSON.stringify(data) }),
+  buatKategoriPkr: (data) => request("/finance/penjualan-karyawan/katalog-item/kategori", { method: "POST", body: JSON.stringify(data) }),
+  ubahKategoriPkr: (id, data) => request(`/finance/penjualan-karyawan/katalog-item/kategori/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
+  buatProdukPkr: (data) => request("/finance/penjualan-karyawan/katalog-item/produk", { method: "POST", body: JSON.stringify(data) }),
+  ubahProdukPkr: (id, data) => request(`/finance/penjualan-karyawan/katalog-item/produk/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   lengkapiOrderCrmPenjualanKaryawan: (id, data) => request(`/finance/penjualan-karyawan/${id}/order-crm`, { method: "PUT", body: JSON.stringify(data) }),
+  // Komposisi bundel katalog (izin pkr_catalog:manage). Mengganti SELURUH komposisi kategori (atau satu produk bila produkId diisi).
+  simpanKomposisiPkr: (data) => request("/finance/penjualan-karyawan/katalog-item/komposisi", { method: "PUT", body: JSON.stringify(data) }),
+  // Koreksi item (sebelum unit dijadwalkan/diproses): pratinjau dampak tidak menulis; terapkan = alasan + expectedRevision + Idempotency-Key (satu kunci per niat koreksi).
+  pratinjauKoreksiItemPkr: (id, data) => request(`/finance/penjualan-karyawan/${id}/koreksi-item/pratinjau`, { method: "POST", body: JSON.stringify(data) }),
+  koreksiItemPkr: (id, data, idempotencyKey) => request(`/finance/penjualan-karyawan/${id}/koreksi-item`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey || mutationKey("pkr-koreksi") }, body: JSON.stringify(data) }),
+  // Delivery: order PKR menunggu unit lain + aksi eksplisit Kirim sebagian.
+  getPkrPengirimanMenunggu: () => request("/armada/pkr-pengiriman"),
+  getPkrPengirimanOrder: (orderId) => request(`/armada/pkr-pengiriman/${orderId}`),
+  kirimSebagianPkr: (orderId, data, idempotencyKey) => request(`/armada/pkr-pengiriman/${orderId}/kirim-sebagian`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey || mutationKey("pkr-kirim-sebagian") }, body: JSON.stringify(data) }),
   // Verifikasi penerimaan order yang ditandai LUNAS sales tanpa catatan pembayaran
   getFinanceLunasBelumDicatat: () => request("/finance/penerimaan/lunas-belum-dicatat"),
   verifikasiPenerimaan: (data) => request("/finance/penerimaan/verifikasi", { method: "POST", body: JSON.stringify(data) }),

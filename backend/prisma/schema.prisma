@@ -163,6 +163,7 @@ enum OrderCategory {
   LAYANAN // Upgrade/Service/Ganti Kain
   SEWA // Sewa
   BARU // Baru
+  CAMPURAN // Order PKR multi-item yang memuat BARU dan LAYANAN sekaligus (kategori/rute unit ada di units.work_category)
 }
 
 // Lini Produk (29 Agustus 2026) — sumbu TERPISAH dari OrderCategory. Sebelum
@@ -1230,6 +1231,9 @@ model Order {
   // baris jurnal ber-order_id order ini. Lihat services/penjualanKaryawanOrder.js.
   penjualanKaryawanId   String?       @unique @map("penjualan_karyawan_id") @db.Uuid
   penjualanKaryawan     FinPenjualanKaryawan? @relation("OrderPenjualanKaryawan", fields: [penjualanKaryawanId], references: [id], onDelete: Restrict)
+  pkrItems            PkrOrderItem[]
+  pkrItemRevisions    PkrItemRevision[]
+  pkrPengirimanSebagian PkrPengirimanSebagian[]
   // Apakah barang perlu DIKIRIM (true), diambil sendiri (false), atau belum ditentukan (NULL → spesifikasi "Perlu dilengkapi"). Hanya bermakna untuk order PKR.
   pkrPerluDikirim       Boolean?      @map("pkr_perlu_dikirim")
   // dpTarget (2 Sep 2026) — nominal DP yang DISEPAKATI dengan customer,
@@ -1758,6 +1762,15 @@ model Unit {
   productionRouteId String?          @map("production_route_id") @db.Uuid
   productionRoute   ProductionRoute? @relation(fields: [productionRouteId], references: [id], onDelete: Restrict)
 
+  // Item produksi Penjualan Karyawan yang melahirkan unit ini (null untuk unit non-PKR / PKR satu-spesifikasi lama).
+  pkrItemUnit PkrOrderItemUnit?
+
+  // Kategori & rute EFEKTIF per unit (Okt 2026, PKR multi-item). NULL = ikut Order (semua unit lama). Diisi hanya untuk unit yang dilahirkan item PKR, supaya order CAMPURAN
+  // dirutekan per item. Pembaca Produksi memakai lib/domain/unitKategori.js (unit dulu, order sebagai cadangan) — jangan membaca Order.category langsung untuk keputusan Produksi.
+  workCategory OrderCategory? @map("work_category")
+  productLine  ProductLine?   @map("product_line")
+  productType  ProductType?   @map("product_type")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -1863,6 +1876,8 @@ model ServiceCatalog {
   serviceLine ServiceLine @map("service_line")
   active      Boolean     @default(true)
   sortOrder   Int         @default(0) @map("sort_order")
+  pkrProducts PkrItemProduct[]
+  pkrCategories PkrItemCategory[] @relation("PkrCategoryService")
   createdAt   DateTime    @default(now()) @map("created_at")
 
   modules          ServiceCatalogModule[]
@@ -2570,6 +2585,8 @@ model Job {
   @@index([podStatus])
   @@index([complaintCaseId])
   @@index([rescheduleCaseId])
+  pkrPengirimanSebagian PkrPengirimanSebagian[]
+
   @@map("jobs")
 }
 
@@ -8488,6 +8505,10 @@ model FinPenjualanKaryawan {
   payments FinPenjualanKaryawanPayment[]
   // Order CRM operasional hasil sinkronisasi (0 atau 1; kunci UNIQUE ada di Order.penjualanKaryawanId).
   orderCrm Order? @relation("OrderPenjualanKaryawan")
+  // Item produksi multi-item pada order itu (kosong untuk PKR lama / order satu-spesifikasi).
+  itemProduksi PkrOrderItem[]
+  revisiItem   PkrItemRevision[]
+  pengirimanSebagian PkrPengirimanSebagian[]
 
   @@index([sellerId, status])
   @@index([date])
@@ -10509,4 +10530,177 @@ model FinSupplierCreditApplication {
   @@index([creditId])
   @@index([billId])
   @@map("fin_supplier_credit_applications")
+}
+
+// ─── PENJUALAN KARYAWAN — ORDER MULTI-ITEM (Okt 2026) ────────────────────────────────────────────────────────────
+// Katalog item produksi yang dikelola Admin + item pada order PKR. Aditif: order PKR lama (tanpa baris di sini) tetap terbaca. Tidak memuat uang.
+
+/// Kategori item (Kasur Baru, Service/Upgrade, Divan/Box, Sandaran, Set Lengkap, Custom). `shape` memilih himpunan field kontekstual (KASUR|SERVICE|DIVAN|SANDARAN|SET|CUSTOM);
+/// `workKind` (BARU|LAYANAN) menentukan jalur unit (langsung di workshop vs perlu diambil dulu).
+model PkrItemCategory {
+  id        String   @id @default(uuid()) @db.Uuid
+  code      String   @unique @db.VarChar(40)
+  name      String   @db.VarChar(100)
+  shape     String   @db.VarChar(20)
+  workKind  String   @map("work_kind") @db.VarChar(10)
+  active    Boolean  @default(true)
+  sortOrder Int      @default(0) @map("sort_order")
+  // Pemetaan rute Produksi bawaan kategori (produk bisa menimpa). Kosong = belum dipetakan -> item dengan produk/kategori ini DIBLOKIR saat pratinjau & pembuatan.
+  productLine         ProductLine? @map("product_line")
+  productType         ProductType? @map("product_type")
+  productionServiceId String?      @map("production_service_id") @db.Uuid
+  productionService   ServiceCatalog? @relation("PkrCategoryService", fields: [productionServiceId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  products PkrItemProduct[]
+  items    PkrOrderItem[]
+  komposisi        PkrBundleComponent[] @relation("PkrBundleKategori")
+  komponenDari     PkrBundleComponent[] @relation("PkrBundleKomponenKategori")
+
+  @@index([active, sortOrder])
+  @@map("pkr_item_categories")
+}
+
+/// Produk/varian di bawah satu kategori. productionServiceId OPSIONAL: bila diisi Admin, unit item layanan lahir dengan layanan produksi itu (tidak ada pilihan kedua di Produksi).
+model PkrItemProduct {
+  id                  String   @id @default(uuid()) @db.Uuid
+  categoryId          String   @map("category_id") @db.Uuid
+  category            PkrItemCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  code                String   @unique @db.VarChar(60)
+  name                String   @db.VarChar(160)
+  productionServiceId String?  @map("production_service_id") @db.Uuid
+  productionService   ServiceCatalog? @relation(fields: [productionServiceId], references: [id], onDelete: SetNull)
+  productLine         ProductLine? @map("product_line")
+  productType         ProductType? @map("product_type")
+  active              Boolean  @default(true)
+  sortOrder           Int      @default(0) @map("sort_order")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  items PkrOrderItem[]
+  komposisi    PkrBundleComponent[] @relation("PkrBundleProduk")
+  komponenDari PkrBundleComponent[] @relation("PkrBundleKomponenProduk")
+
+  @@index([categoryId, active, sortOrder])
+  @@map("pkr_item_products")
+}
+
+/// Satu item produksi pada order PKR. Kategori/produk disalin sebagai SNAPSHOT (nama katalog boleh berubah tanpa mengubah dokumen lama).
+model PkrOrderItem {
+  id            String   @id @default(uuid()) @db.Uuid
+  penjualanId   String   @map("penjualan_id") @db.Uuid
+  penjualan     FinPenjualanKaryawan @relation(fields: [penjualanId], references: [id], onDelete: Restrict)
+  orderId       String   @map("order_id")
+  order         Order    @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  seq           Int
+  categoryId    String   @map("category_id") @db.Uuid
+  category      PkrItemCategory @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  productId     String?  @map("product_id") @db.Uuid
+  product       PkrItemProduct? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  categoryCode  String   @map("category_code") @db.VarChar(40)
+  categoryName  String   @map("category_name") @db.VarChar(100)
+  shape         String   @db.VarChar(20)
+  workKind      String   @map("work_kind") @db.VarChar(10)
+  productName   String?  @map("product_name") @db.VarChar(160)
+  qty           Int
+  lengthCm      Decimal? @map("length_cm") @db.Decimal(7, 1)
+  widthCm       Decimal? @map("width_cm") @db.Decimal(7, 1)
+  thicknessCm   Decimal? @map("thickness_cm") @db.Decimal(7, 1)
+  heightCm      Decimal? @map("height_cm") @db.Decimal(7, 1)
+  specNotes     String?  @map("spec_notes") @db.VarChar(1000)
+  perluDikirim  Boolean? @map("perlu_dikirim")
+  // Asal bundel (Set Kasur Lengkap dipecah jadi komponen operasional) dan penghapusan lunak lewat Koreksi Item (baris tak pernah dihapus fisik).
+  bundleNo           Int?      @map("bundle_no")
+  bundleCategoryCode String?   @map("bundle_category_code") @db.VarChar(40)
+  bundleName         String?   @map("bundle_name") @db.VarChar(160)
+  removedAt          DateTime? @map("removed_at")
+  removedById        String?   @map("removed_by_id")
+  removedReason      String?   @map("removed_reason") @db.VarChar(500)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  units PkrOrderItemUnit[]
+
+  @@unique([orderId, seq])
+  @@index([penjualanId])
+  @@map("pkr_order_items")
+}
+
+/// Komposisi bundel katalog (mis. Set Kasur Lengkap = Kasur + Divan + Sandaran). Dipecah menjadi komponen operasional saat order dibuat. bundleProductId NULL = komposisi bawaan
+/// kategori; baris dengan bundleProductId menimpa untuk produk/varian itu. Dikelola Admin (izin pkr_catalog:manage).
+model PkrBundleComponent {
+  id                  String   @id @default(uuid()) @db.Uuid
+  bundleCategoryId    String   @map("bundle_category_id") @db.Uuid
+  bundleCategory      PkrItemCategory @relation("PkrBundleKategori", fields: [bundleCategoryId], references: [id], onDelete: Restrict)
+  bundleProductId     String?  @map("bundle_product_id") @db.Uuid
+  bundleProduct       PkrItemProduct? @relation("PkrBundleProduk", fields: [bundleProductId], references: [id], onDelete: Restrict)
+  componentCategoryId String   @map("component_category_id") @db.Uuid
+  componentCategory   PkrItemCategory @relation("PkrBundleKomponenKategori", fields: [componentCategoryId], references: [id], onDelete: Restrict)
+  componentProductId  String?  @map("component_product_id") @db.Uuid
+  componentProduct    PkrItemProduct? @relation("PkrBundleKomponenProduk", fields: [componentProductId], references: [id], onDelete: Restrict)
+  qty                 Int      @default(1)
+  sortOrder           Int      @default(0) @map("sort_order")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@index([bundleCategoryId, sortOrder])
+  @@map("pkr_bundle_components")
+}
+
+/// Buku besar revisi himpunan item order PKR (append-only, trigger DB). Revisi terbesar = token konkurensi optimistis; unik (order, revision) menjaga di tingkat basis data.
+model PkrItemRevision {
+  id             String   @id @default(uuid()) @db.Uuid
+  orderId        String   @map("order_id")
+  order          Order    @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  penjualanId    String   @map("penjualan_id") @db.Uuid
+  penjualan      FinPenjualanKaryawan @relation(fields: [penjualanId], references: [id], onDelete: Restrict)
+  revision       Int
+  kind           String   @db.VarChar(20)
+  reason         String?  @db.VarChar(500)
+  beforeItems    Json?    @map("before_items")
+  afterItems     Json     @map("after_items")
+  impact         Json?
+  actorId        String?  @map("actor_id")
+  idempotencyKey String?  @map("idempotency_key") @db.VarChar(128)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@unique([orderId, revision])
+  @@index([penjualanId])
+  @@map("pkr_item_revisions")
+}
+
+/// Catatan aksi eksplisit "kirim sebagian" untuk order PKR: unit dipilih, alasan, pelaku, kunci idempotensi (unik per order).
+model PkrPengirimanSebagian {
+  id             String   @id @default(uuid()) @db.Uuid
+  orderId        String   @map("order_id")
+  order          Order    @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  penjualanId    String   @map("penjualan_id") @db.Uuid
+  penjualan      FinPenjualanKaryawan @relation(fields: [penjualanId], references: [id], onDelete: Restrict)
+  jobId          String   @map("job_id") @db.Uuid
+  job            Job      @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  unitIds        Json     @map("unit_ids")
+  unitCodes      Json     @map("unit_codes")
+  unitDitunda    Json     @map("unit_ditunda")
+  reason         String   @db.VarChar(500)
+  actorId        String?  @map("actor_id")
+  idempotencyKey String   @map("idempotency_key") @db.VarChar(128)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@unique([orderId, idempotencyKey])
+  @@index([orderId])
+  @@map("pkr_pengiriman_sebagian")
+}
+
+/// Tautan item → unit yang dilahirkannya (satu unit milik tepat satu item).
+model PkrOrderItemUnit {
+  id        String   @id @default(uuid()) @db.Uuid
+  itemId    String   @map("item_id") @db.Uuid
+  item      PkrOrderItem @relation(fields: [itemId], references: [id], onDelete: Restrict)
+  unitId    String   @unique @map("unit_id") @db.Uuid
+  unit      Unit     @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([itemId])
+  @@map("pkr_order_item_units")
 }

@@ -39,6 +39,7 @@ import { cancelOrderDeliveryJobs } from "../services/deliveryJobCancellationServ
 import { hitungDiskonPromo, periksaBatasDiskon } from "../services/diskonPromo.js";
 import { blokirBilaOrderPkr } from "../services/pkrGuard.js";
 import { ringkasOrderPkr } from "../services/penjualanKaryawanOrder.js";
+import { bacaNotesOrder } from "../lib/domain/pkrSpesifikasi.js";
 import { V2_FLAGS } from "../services/v2FeatureFlags.js";
 import { ACTIVE_JOB_STATUSES } from "../services/jobStatus.js";
 import { sendText, sendMedia, isPlaceholderGroupJid } from "../services/wahaClient.js";
@@ -82,6 +83,23 @@ orderRouter.patch("/:id", async (req, res, next) => {
     const kena = FIELD_UANG.filter((k) => b[k] !== undefined);
     if (kena.length && (await blokirBilaOrderPkr(prisma, res, req.params.id, `Mengubah ${kena.join(", ")}`))) return;
     if (b.status === "CANCELLED" && (await blokirBilaOrderPkr(prisma, res, req.params.id, "Pembatalan order langsung"))) return;
+    // Kategori / lini / jenis produk order PKR MENGIKUTI item (kategori order diturunkan dari item; rute Produksi per unit). Mengubahnya dari CRM akan mengacaukan turunan itu.
+    if ((b.category !== undefined || b.productLine !== undefined || b.productType !== undefined)
+      && (await blokirBilaOrderPkr(prisma, res, req.params.id, "Mengubah kategori/lini/jenis produk order (mengikuti item; ubah lewat Koreksi item di Finance › Penjualan Karyawan)"))) return;
+    // Order PKR multi-item: spesifikasi item dikelola di Finance › Penjualan Karyawan (tabel pkr_order_items; Order.notes.pkrItems hanya cerminannya). Edit catatan dari CRM tidak boleh
+    // menghapus/menimpa daftar item atau menulis merk/ukuran tingkat order yang bertentangan — penjaga ini mempertahankan cerminan dan membuang kunci merk/ukuran lama.
+    if (typeof b.notes === "string") {
+      const lama = await prisma.order.findUnique({ where: { id: req.params.id }, select: { penjualanKaryawanId: true, notes: true } });
+      const cermin = lama?.penjualanKaryawanId ? bacaNotesOrder(lama.notes).pkrItems : null;
+      if (Array.isArray(cermin) && cermin.length) {
+        const masuk = bacaNotesOrder(b.notes);
+        if (!b.notes.trim().startsWith("{") || Object.keys(masuk).length === 0 && b.notes.trim() !== "{}") {
+          return res.status(409).json({ error: "Catatan order Penjualan Karyawan berformat terstruktur. Ubah spesifikasi item di Finance › Penjualan Karyawan.", code: "NOTES_PKR_TERSTRUKTUR" });
+        }
+        for (const k of ["merkKasur", "ukuranKasur", "ukuranLebarCm", "ukuranPanjangCm"]) delete masuk[k];
+        req.body.notes = JSON.stringify({ ...masuk, pkrItems: cermin });
+      }
+    }
     next();
   } catch (e) { next(e); }
 });

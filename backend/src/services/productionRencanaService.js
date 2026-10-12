@@ -13,7 +13,8 @@ import { createHash } from "node:crypto";
 import { recordActivity, EVENT_TYPES } from "../lib/activityLog.js";
 import { lockRowForUpdate } from "./inventoryLedger.js";
 import { UUID_RE, lockUnitOwnership } from "./unitV2Ownership.js";
-import { PKR_ORDER_SELECT, rujukanPkrDariOrder } from "./pkrProduksiGuard.js";
+import { PKR_ORDER_SELECT, PKR_UNIT_ITEM_SELECT, rujukanPkrDariOrder } from "./pkrProduksiGuard.js";
+import { kategoriUnit, statusOrderEfektif } from "../lib/domain/unitKategori.js";
 import { BOARD_DEFAULTS, formatProductionDate, normalizeScheduleInput } from "../lib/domain/productionBoard.js";
 import { RENCANA_ACTION, activatableOnDrop, classifyRencanaUnit } from "../lib/domain/productionRencana.js";
 import {
@@ -30,7 +31,7 @@ const rencanaError = (message, statusCode, code, details) => Object.assign(new E
 
 // Kolom Unit yang dibutuhkan klasifikasi — dipakai backlog (bulk), command (satu unit), dan daftar eligibility.
 export const RENCANA_UNIT_SELECT = {
-  id: true, unitCode: true, status: true, currentStageId: true,
+  id: true, unitCode: true, status: true, currentStageId: true, workCategory: true, productLine: true, productType: true, ...PKR_UNIT_ITEM_SELECT,
   order: { select: { id: true, orderNumber: true, status: true, category: true, ...PKR_ORDER_SELECT, customer: { select: { name: true, pipelineStage: true, isInternalStaff: true } } } },
   _count: { select: { stageLogs: true, productionRunsV2: true } }, // productionRunsV2 = SEMUA Run (juga yang sudah selesai/dibatalkan) — dipakai gerbang aktivasi saat Jadwalkan
   productionRunsV2: { where: { status: { notIn: TERMINAL_RUN } }, select: { id: true, status: true, plan: { select: { id: true, stationCode: true, status: true } } }, take: 1, orderBy: { createdAt: "desc" } },
@@ -41,10 +42,10 @@ export function cohortStatesOf(flags) {
 }
 
 export function classifyUnitRow(row, { reader, writer }) {
-  const pkr = rujukanPkrDariOrder(row.order); // order Penjualan Karyawan: spesifikasi belum lengkap = tidak boleh direncanakan
+  const pkr = rujukanPkrDariOrder(row.order, { unit: row }); // order Penjualan Karyawan: ITEM unit ini belum lengkap = tidak boleh direncanakan (item lain tidak ikut tertahan)
   return classifyRencanaUnit({
     pkrKurang: pkr && !pkr.lengkap ? { nomor: pkr.nomor, kurang: pkr.kurang } : null,
-    unitStatus: row.status, orderStatus: row.order?.status, customerStage: row.order?.customer?.pipelineStage ?? null, isInternalStaff: !!row.order?.customer?.isInternalStaff,
+    unitStatus: row.status, orderStatus: statusOrderEfektif(row.order, row), customerStage: row.order?.customer?.pipelineStage ?? null, isInternalStaff: !!row.order?.customer?.isInternalStaff,
     hasActiveRun: row.productionRunsV2.length > 0, stageLogCount: row._count?.stageLogs ?? 0, hasCurrentStage: !!row.currentStageId,
     readerEnabled: isProductionReaderEnabledFor(reader, row.id), writerEnabled: isProductionWriterEnabledFor(writer, row.id),
   });
@@ -68,7 +69,7 @@ export async function openRencanaRunInTx(tx, { unitId, actorId = null, idempoten
   // Unit BARU/SEWA tanpa pickup/custody/riwayat V1 = LAHIR di workshop (jalur resmi P5: Run WORKSHOP_BORN, sudah di workshop — tidak ada "kedatangan" yang perlu dikonfirmasi).
   const anyPickup = await tx.jobUnit.count({ where: { unitId, job: { type: "PICKUP" } } });
   const anyInbound = await tx.unitCustodyHandoff.count({ where: { unitId, direction: "INBOUND" } });
-  if (BORN_CATEGORIES.includes(row.order?.category) && BORN_UNIT_STATUSES.includes(row.status) && !anyPickup && !anyInbound && idempotencyKey) {
+  if (BORN_CATEGORIES.includes(kategoriUnit(row, row.order)) && BORN_UNIT_STATUSES.includes(row.status) && !anyPickup && !anyInbound && idempotencyKey) {
     const born = await registerWorkshopBornRunInTx(tx, { unitId, actorId, idempotencyKey: `${idempotencyKey}:born` });
     await recordActivity(tx, {
       entityType: "unit", entityId: unitId, eventType: EVENT_TYPES.PRODUCTION_RUN_ONBOARDED_RENCANA, actorId: actorId || null,

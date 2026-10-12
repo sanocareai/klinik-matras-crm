@@ -22,7 +22,7 @@ import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
 
 export const PIPELINE_STAGES = ["NEW", "PROSPECT", "TRANSACTION", "REVIEWED", "SPAM"];
 export const ORDER_STATUS = ["PENDING", "PICKUP", "PROCESSING", "READY", "DELIVERED", "CANCELLED"];
-export const ORDER_CATEGORY = ["LAYANAN", "SEWA", "BARU"];
+export const ORDER_CATEGORY = ["LAYANAN", "SEWA", "BARU", "CAMPURAN"]; // CAMPURAN = order PKR multi-item (produk baru + service), Okt 2026
 export const PAYMENT_STATUS = ["BELUM_BAYAR", "DP", "LUNAS"];
 export const LEAD_SOURCE = [
   "META_ADS", "GOOGLE_ADS", "TIKTOK_ADS", "WEBSITE_ORGANIC", "INSTAGRAM",

@@ -1,4 +1,5 @@
 import { executeDeliveryCrossBoundaryCommand } from "./deliveryCrossBoundaryCommandService.js";
+import { gerbangJobOtomatis, buatJobKirimGabungan } from "./pkrPengirimanSebagian.js";
 
 // Integrasi Fase 1 (lanjutan D-006) — jembatan Produksi -> Armada.
 //
@@ -46,6 +47,11 @@ export async function suggestDeliveryJob(tx, unitId) {
   if (!unit) return;
   // Order Penjualan Karyawan: job pengiriman hanya bila memang perlu dikirim. Diambil sendiri / belum ditentukan = tidak ada job (tidak menggandakan atau membuat job yang tidak perlu).
   if (unit.order?.penjualanKaryawanId && unit.order.pkrPerluDikirim !== true) return;
+  // Order PKR multi-item: pilihan kirim PER ITEM. Unit milik item yang diambil sendiri / belum ditentukan tidak ikut job pengiriman; item yang dikirim bergabung ke job order yang SAMA.
+  if (unit.order?.penjualanKaryawanId) {
+    const tautan = await tx.pkrOrderItemUnit.findUnique({ where: { unitId }, select: { item: { select: { perluDikirim: true } } } });
+    if (tautan && tautan.item.perluDikirim !== true) return;
+  }
 
   // Jaring pengaman: unit ini sudah pernah dimasukkan ke job DELIVERY
   // mana pun sebelumnya (mis. QC rework yang membuat unit "ready" dua
@@ -56,6 +62,14 @@ export async function suggestDeliveryJob(tx, unitId) {
     select: { id: true },
   });
   if (already) return;
+
+  // Order Penjualan Karyawan (keputusan Owner): Delivery MENUNGGU seluruh unit yang dikirim siap, lalu membuat SATU job gabungan. Tidak ada job kedua otomatis dan unit yang baru siap
+  // tidak disisipkan ke job yang sudah ada — pengiriman sebagian hanya lewat aksi eksplisit (services/pkrPengirimanSebagian.js#kirimSebagian).
+  if (unit.order?.penjualanKaryawanId) {
+    const gerbang = await gerbangJobOtomatis(tx, unit.orderId);
+    if (!gerbang.boleh) return;
+    return buatJobKirimGabungan(tx, { orderId: unit.orderId, unitIds: gerbang.unitIds, alamat: alamatDariOrder(unit.order) });
+  }
 
   const existing = await tx.job.findFirst({
     where: { orderId: unit.orderId, type: "DELIVERY", status: "UNSCHEDULED" },

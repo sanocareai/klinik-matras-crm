@@ -144,7 +144,7 @@ test("tab hub sesuai keputusan: Order Produksi, Biaya Produksi, Komplain & Revis
   assert.deepEqual([...src("pages", "bengkel", "ProductionWorkOrders.jsx").matchAll(/\{ key: "(\w+)", label: "(\w+)" \}/g)].filter((m) => ["aktif", "semua", "riwayat"].includes(m[1])).map((m) => m[2]), ["Aktif", "Semua", "Riwayat"]);
   assert.deepEqual([...src("pages", "bengkel", "ProductionCostHub.jsx").matchAll(/label: "([^"]+)"/g)].map((m) => m[1]).slice(0, 3), ["Pengajuan", "Status Pengajuan", "Laporan"]);
   assert.deepEqual([...src("pages", "bengkel", "ProductionComplaintsHub.jsx").matchAll(/label: "([^"]+)"/g)].map((m) => m[1]).slice(0, 3), ["Kasus Aktif", "Revisi Unit", "Riwayat"]);
-  assert.deepEqual(SETTINGS_TABS.map((t) => t.label), ["Area Kerja", "Operator & PIC", "Layanan & Tahapan", "Alur Kerja", "Target Produksi", "Tampilan"]);
+  assert.deepEqual(SETTINGS_TABS.map((t) => t.label), ["Area Kerja", "Operator & PIC", "Layanan & Tahapan", "Alur Kerja", "Katalog Item PKR", "Target Produksi", "Tampilan"]);
   assert.deepEqual(KPI_TABS.map((t) => t.label), ["Ringkasan KPI", "Produksi", "Meja", "PIC", "Gudang", "Laporan Unit", "Export"]);
   assert.deepEqual(tabsFor({ summary: true, stations: true, operators: true, units: true, warehouse: true }).map((t) => t.label), KPI_TABS.map((t) => t.label));
 });
@@ -172,9 +172,9 @@ test("Order Produksi: scope aktif menyembunyikan Terkirim, riwayat hanya Terkiri
 // ---------------------------------------------------------------- Pengaturan ---------------------------------------------------------------
 test("Pengaturan: ADMIN/OWNER semua tab; Production Lead sesuai izin bawaan; peran lain tidak melihat menu maupun tab", () => {
   const keys = (roles) => settingsTabsFor(roles).map((t) => t.key);
-  const ALL = ["area-kerja", "operator", "layanan", "alur-kerja", "target", "tampilan"];
+  const ALL = ["area-kerja", "operator", "layanan", "alur-kerja", "katalog-item", "target", "tampilan"];
   assert.deepEqual(keys(["ADMIN"]), ALL); assert.deepEqual(keys(["OWNER"]), ALL);
-  assert.deepEqual(keys(["PRODUCTION_LEAD"]), ALL, "Lead memegang work_center/operator/route/report:read bawaan");
+  assert.deepEqual(keys(["PRODUCTION_LEAD"]), ALL.filter((k) => k !== "katalog-item"), "Lead memegang work_center/operator/route/report:read bawaan; katalog item PKR hanya Admin/Owner");
   for (const r of ["PRODUCTION_WORKER", "QC_LEAD", "WAREHOUSE", "PRODUCTION_DOCUMENTER", "SALES", "FINANCE", "DRIVER"]) { assert.deepEqual(keys([r]), [], r); assert.equal(canOpenSettings([r]), false, r); }
   assert.equal(canWriteTarget(["ADMIN"]), true); assert.equal(canWriteTarget(["OWNER"]), true); assert.equal(canWriteTarget(["PRODUCTION_LEAD"]), false, "Lead hanya melihat riwayat target");
   const page = strip(src("pages", "bengkel", "ProductionSettings.jsx"));

@@ -244,7 +244,7 @@ async function buildNoRunOverview(prisma, unit, { canSeeValue }) {
 // sama persis dengan yang sudah datang lewat run.unit.order (RUN_VIEW_INCLUDE), diukur nyata: 4 query
 // SQL duplikat per request (diagnostik P9C audit N+1/query-count, 30 Sep 2026).
 const UNIT_FULL_SELECT = {
-  id: true, unitCode: true, orderId: true, serviceId: true, status: true, priority: true, merk: true, ukuran: true,
+  id: true, unitCode: true, orderId: true, serviceId: true, status: true, priority: true, merk: true, ukuran: true, workCategory: true, productLine: true, productType: true,
   service: { select: { code: true, labelId: true } },
   order: {
     select: {
@@ -355,7 +355,7 @@ async function getUnitOverviewDasar(prisma, unitId, { unitIds, canSeeValue = fal
       weightKg: orderScopedField(customer.weightKg), weightEntries: orderScopedField(customer.weightEntries),
       salesServices: orderScopedField(customer.salesServices),
       promiseDate: orderScopedField(customer.promiseDate), category: orderScopedField(customer.category),
-      productLine: orderScopedField(orderExtra?.productLine ?? null), productType: orderScopedField(orderExtra?.productType ?? null),
+      productLine: orderScopedField(run.unit.productLine ?? orderExtra?.productLine ?? null), productType: orderScopedField(run.unit.productType ?? orderExtra?.productType ?? null),
       dataGaps,
     },
     // Jalur pengerjaan (BARU/custom): layanan teknis & Diagnosis TIDAK BERLAKU — spesifikasi + layanan Sales (salesContext) adalah acuan.

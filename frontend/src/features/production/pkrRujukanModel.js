@@ -10,6 +10,7 @@ export function rujukanDariRingkas(p) {
     perluDikirim: s?.perluDikirim ?? null,
     kirimLabel: s?.perluDikirim === true ? "Dikirim" : s?.perluDikirim === false ? "Ambil sendiri" : "Belum ditentukan",
     lengkap: s ? !!s.lengkap : false, kurang: s?.kurang ?? [],
+    ...(p.order?.modeItem && p.items?.length ? { items: p.items.map((i) => ({ no: i.no, kategori: i.kategoriNama, produk: i.produk, jumlah: i.jumlah, ukuran: i.ukuran, kirim: i.perluDikirim, kurang: i.kurang })) } : {}),
   };
 }
 
@@ -25,5 +26,12 @@ export function tampilRujukanPkr(r) {
     perluDilengkapi,
     kurangTeks: perluDilengkapi && r.kurang?.length ? r.kurang.join(", ") : "",
     ringkas: [r.nomor, r.karyawan].filter(Boolean).join(" · "),
+    // Order multi-item: satu baris per item ("Kasur Baru ×1 — 200 × 160 × 20 cm"). Kunci HANYA ada untuk order multi-item (order lama satu-spesifikasi: bentuk lama persis).
+    ...(r.items?.length ? {
+      items: r.items.map((i) => ({
+        no: i.no, teks: `${i.produk || i.kategori}${i.jumlah > 1 ? ` ×${i.jumlah}` : ""}`, ukuran: i.ukuran || "", kirim: i.kirim === true ? "Dikirim" : i.kirim === false ? "Ambil sendiri" : "Belum ditentukan",
+        kurang: (i.kurang || []).join(", "),
+      })),
+    } : {}),
   };
 }

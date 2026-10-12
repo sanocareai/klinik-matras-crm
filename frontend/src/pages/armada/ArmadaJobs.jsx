@@ -13,6 +13,7 @@ import { rolesOf } from "@/lib/roles.js";
 import Armada from "@/pages/Armada.jsx";
 import StatusBadge from "@/features/armada/components/StatusBadge.jsx";
 import DeliveryPageHero from "@/features/armada/components/DeliveryPageHero.jsx";
+import PkrPengirimanPanel from "@/features/armada/components/PkrPengirimanPanel.jsx";
 import JobDetailDrawer from "@/features/armada/components/JobDetailDrawer.jsx";
 import QuickChatModal from "@/features/armada/components/QuickChatModal.jsx";
 import ExternalCourierBadge from "@/features/armada/components/ExternalCourierBadge.jsx";
@@ -345,6 +346,8 @@ export default function ArmadaJobs() {
         />
 
       <PageBody>
+          {/* Order Penjualan Karyawan: job gabungan menunggu SEMUA unit yang dikirim siap; kirim sebagian = aksi eksplisit */}
+          <PkrPengirimanPanel />
           {/* Tab */}
           <div role="tablist" aria-label="Saring jenis job" className="flex flex-wrap gap-1 border-b border-line pb-2">
             {TABS.map((t) => (

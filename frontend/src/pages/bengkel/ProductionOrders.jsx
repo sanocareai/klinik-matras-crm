@@ -40,7 +40,7 @@ import { rujukanDariRingkas } from "@/features/production/pkrRujukanModel.js";
 // ini kemungkinan besar perlu ikut diubah — belum diekstrak jadi satu
 // komponen bersama supaya tidak menyentuh file yang sedang aktif dikerjakan
 // sesi lain di waktu yang sama (lihat catatan commit).
-const KATEGORI_LABELS = { LAYANAN: "Layanan", SEWA: "Sewa", BARU: "Baru" };
+const KATEGORI_LABELS = { LAYANAN: "Layanan", SEWA: "Sewa", BARU: "Baru", CAMPURAN: "Campuran" };
 
 const KATEGORI_OPTIONS = [
   { value: "LAYANAN", label: "Layanan" },

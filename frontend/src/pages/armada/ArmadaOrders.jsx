@@ -60,7 +60,7 @@ import { StatusSelect } from "@/features/orders/StatusSelect.jsx";
 //    warna status yang sama dipakai Orders.jsx Sales CRM, otomatis ikut
 //    tema kaca terang/gelap Delivery Hub (dh-table, lihat delivery-dark/
 //    light.css) alih-alih tabel polos sebelumnya.
-const KATEGORI_LABELS = { LAYANAN: "Layanan", SEWA: "Sewa", BARU: "Baru" };
+const KATEGORI_LABELS = { LAYANAN: "Layanan", SEWA: "Sewa", BARU: "Baru", CAMPURAN: "Campuran" };
 
 const KATEGORI_OPTIONS = [
   { value: "LAYANAN", label: "Layanan" },
