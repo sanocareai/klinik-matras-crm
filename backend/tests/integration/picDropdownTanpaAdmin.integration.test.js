@@ -75,3 +75,27 @@ test("GET /api/production/operators: ?pilihan=1 (dropdown PIC V1/Planner) tanpa 
   assert.ok(idsF.includes(adminPic.user.id) && idsF.includes(ownerPic.user.id), "halaman Operator tetap menampilkan seluruh profil");
   assert.ok(idsF.includes(worker.user.id));
 });
+
+test("permission: /production/operators (penuh dan ?pilihan=1) dan /production-v2/planning/refs ditolak untuk peran tanpa izin dan tanpa login; ADMIN melihat daftar penuh tetapi dropdown tanpa ADMIN/OWNER", async () => {
+  const admin = await operator(["ADMIN", "PRODUCTION_WORKER"]);
+  const worker = await operator(["PRODUCTION_WORKER"]);
+  const sales = await operator(["SALES"], { profile: false });
+  const anon = makeClient(server.baseUrl, null);
+  for (const url of ["/api/production/operators", "/api/production/operators?pilihan=1", `${V2}/planning/refs`]) {
+    assert.equal((await anon.get(url)).status, 401, `anonim ${url}`);
+    assert.equal((await makeClient(server.baseUrl, sales.token).get(url)).status, 403, `SALES ${url}`);
+  }
+  // ADMIN: daftar penuh memuat profil admin; dropdown (pilihan & planning/refs) tidak
+  const a = makeClient(server.baseUrl, admin.token);
+  const penuh = await a.get("/api/production/operators");
+  assert.equal(penuh.status, 200);
+  assert.ok(penuh.body.operators.some((o) => o.user.id === admin.user.id), "Admin bisa mengelola profil admin di halaman Operator");
+  const pilihan = await a.get("/api/production/operators?pilihan=1");
+  assert.equal(pilihan.status, 200);
+  assert.ok(!pilihan.body.operators.some((o) => o.user.id === admin.user.id));
+  assert.ok(pilihan.body.operators.some((o) => o.user.id === worker.user.id));
+  const refs = await a.get(`${V2}/planning/refs`);
+  assert.equal(refs.status, 200, JSON.stringify(refs.body));
+  assert.ok(!refs.body.operators.some((o) => o.userId === admin.user.id));
+  assert.ok(refs.body.operators.some((o) => o.userId === worker.user.id));
+});
