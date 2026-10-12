@@ -22,6 +22,8 @@ import { postMaterialIssueCost } from "../services/finance/posting/inventory.js"
 import { JournalError } from "../services/finance/journal.js";
 import { AccountError } from "../services/finance/accounts.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
+import { wajibUuid } from "../lib/uuidParam.js";
+import { pesanServerAman } from "../lib/galatServerAman.js";
 
 export const materialIssueRouter = express.Router();
 materialIssueRouter.use(requireAuth);
@@ -44,7 +46,7 @@ function handleErr(err, res) {
   if (err.code === "P2002") return res.status(409).json({ error: "Nomor issue sudah dipakai" });
   if (err.code === "P2025") return res.status(404).json({ error: "Data tidak ditemukan" });
   console.error("Material issue error:", err);
-  return res.status(500).json({ error: "Server error: " + err.message });
+  return res.status(500).json({ error: pesanServerAman(err) });
 }
 
 // COMPLAINT_REWORK (D-116, 11 September 2026) — material yang dibutuhkan
@@ -118,7 +120,7 @@ materialIssueRouter.get("/", requirePermission(P.INVENTORY_READ), async (req, re
   }
 });
 
-materialIssueRouter.get("/:id", requirePermission(P.INVENTORY_READ), async (req, res) => {
+materialIssueRouter.get("/:id", requirePermission(P.INVENTORY_READ), wajibUuid(), async (req, res) => {
   try {
     const issue = await prisma.materialIssue.findUnique({ where: { id: req.params.id }, include: issueInclude });
     if (!issue) return res.status(404).json({ error: "Material issue tidak ditemukan" });
@@ -210,7 +212,7 @@ materialIssueRouter.post("/", requirePermission(P.INVENTORY_WRITE), async (req, 
 // approvedBy/approvedAt OTOMATIS — bukan field yang dikirim klien, supaya
 // tidak ada yang bisa "menyetujui atas nama orang lain" lewat body request.
 // { sourceReference?, department?, requiredDate?, priority?, notes?, status? }
-materialIssueRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+materialIssueRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
   try {
     const preCheck = await prisma.materialIssue.findUnique({ where: { id: req.params.id } });
     if (!preCheck) return res.status(404).json({ error: "Material issue tidak ditemukan" });
@@ -282,7 +284,7 @@ materialIssueRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), async (r
 // SENGAJA tidak bisa diubah di sini — itu Reserved yang sudah dikomit saat
 // approval; kalau kebutuhannya berubah, batalkan lalu ajukan ulang, supaya
 // riwayat permintaan asli tidak diam-diam ditimpa.
-materialIssueRouter.patch("/:id/lines/:lineId", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+materialIssueRouter.patch("/:id/lines/:lineId", requirePermission(P.INVENTORY_WRITE), wajibUuid("id", "lineId"), async (req, res) => {
   try {
     const issue = await prisma.materialIssue.findUnique({ where: { id: req.params.id } });
     if (!issue) return res.status(404).json({ error: "Material issue tidak ditemukan" });
@@ -319,7 +321,7 @@ materialIssueRouter.patch("/:id/lines/:lineId", requirePermission(P.INVENTORY_WR
 // issue YANG SAMA) dan tiap material yang disentuh (lock di dalam
 // postStockMovement() — cegah race lintas dokumen berbeda yang menyentuh
 // material sama). Keduanya WAJIB, satu tidak menggantikan yang lain.
-materialIssueRouter.post("/:id/issue", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+materialIssueRouter.post("/:id/issue", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
   try {
     const preCheck = await prisma.materialIssue.findUnique({ where: { id: req.params.id } });
     if (!preCheck) return res.status(404).json({ error: "Material issue tidak ditemukan" });
@@ -375,7 +377,7 @@ materialIssueRouter.post("/:id/issue", requirePermission(P.INVENTORY_WRITE), asy
 });
 
 // PATCH /api/inventory/material-issues/:id/cancel { reason }
-materialIssueRouter.patch("/:id/cancel", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+materialIssueRouter.patch("/:id/cancel", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
   try {
     const preCheck = await prisma.materialIssue.findUnique({ where: { id: req.params.id } });
     if (!preCheck) return res.status(404).json({ error: "Material issue tidak ditemukan" });

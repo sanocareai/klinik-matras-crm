@@ -10,6 +10,8 @@ import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js"
 import { prisma } from "../db.js";
 import { postStockMovement, lockRowForUpdate } from "../services/inventoryLedger.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
+import { wajibUuid } from "../lib/uuidParam.js";
+import { pesanServerAman } from "../lib/galatServerAman.js";
 
 export const returnRecordRouter = express.Router();
 returnRecordRouter.use(requireAuth);
@@ -22,7 +24,7 @@ function handleErr(err, res) {
   if (err.code === "P2002") return res.status(409).json({ error: "Nomor retur sudah dipakai" });
   if (err.code === "P2025") return res.status(404).json({ error: "Data tidak ditemukan" });
   console.error("Return record error:", err);
-  return res.status(500).json({ error: "Server error: " + err.message });
+  return res.status(500).json({ error: pesanServerAman(err) });
 }
 
 const RETURN_TYPES = ["CUSTOMER_RETURN", "DELIVERY_RETURN", "PRODUCTION_RETURN", "SUPPLIER_RETURN"];
@@ -56,7 +58,7 @@ returnRecordRouter.get("/", requirePermission(P.INVENTORY_READ), async (req, res
   }
 });
 
-returnRecordRouter.get("/:id", requirePermission(P.INVENTORY_READ), async (req, res) => {
+returnRecordRouter.get("/:id", requirePermission(P.INVENTORY_READ), wajibUuid(), async (req, res) => {
   try {
     const record = await prisma.returnRecord.findUnique({ where: { id: req.params.id }, include: recordInclude });
     if (!record) return res.status(404).json({ error: "Retur tidak ditemukan" });
@@ -95,7 +97,7 @@ returnRecordRouter.post("/", requirePermission(P.INVENTORY_WRITE), async (req, r
 
 // PATCH /api/inventory/returns/:id — transisi CREATED → RECEIVED → INSPECTION
 // (COMPLETED hanya lewat /complete, karena menulis ledger). { status?, inspectionNote? }
-returnRecordRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+returnRecordRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
   try {
     const existing = await prisma.returnRecord.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: "Retur tidak ditemukan" });
@@ -131,7 +133,7 @@ returnRecordRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), async (re
 // POST /api/inventory/returns/:id/complete { resolution }
 // SATU-SATUNYA jalan retur ini menulis ledger — dan hanya untuk
 // RETURN_TO_AVAILABLE.
-returnRecordRouter.post("/:id/complete", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+returnRecordRouter.post("/:id/complete", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
   try {
     const preCheck = await prisma.returnRecord.findUnique({ where: { id: req.params.id } });
     if (!preCheck) return res.status(404).json({ error: "Retur tidak ditemukan" });
@@ -170,7 +172,7 @@ returnRecordRouter.post("/:id/complete", requirePermission(P.INVENTORY_WRITE), a
 });
 
 // PATCH /api/inventory/returns/:id/cancel { reason }
-returnRecordRouter.patch("/:id/cancel", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+returnRecordRouter.patch("/:id/cancel", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
   try {
     const record = await prisma.returnRecord.findUnique({ where: { id: req.params.id } });
     if (!record) return res.status(404).json({ error: "Retur tidak ditemukan" });

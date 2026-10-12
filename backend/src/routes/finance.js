@@ -58,6 +58,7 @@ import { detailPiutangOrder } from "../services/finance/piutangDetail.js";
 // customer lewat WA/PDF. Menyalin rumusnya ke sini = dua dokumen ke
 // customer yang sama saling bertentangan begitu salah satunya diubah.
 import { hitungNominal, statusEfektif, hariLewatTempo } from "../services/invoice.js";
+import { pesanServerAman } from "../lib/galatServerAman.js";
 
 export const financeRouter = express.Router();
 financeRouter.use(requireAuth);
@@ -81,7 +82,7 @@ export function handleFinanceError(err, res) {
   if (err?.code === "P2025") return res.status(404).json({ error: "Data tidak ditemukan" });
   if (adalahGalatInfraDb(err)) return kirimGalatInfraDb(res, err, "[finance]");
   console.error("[finance]", err);
-  return res.status(500).json({ error: "Server error: " + err.message });
+  return res.status(500).json({ error: pesanServerAman(err) });
 }
 
 /**
