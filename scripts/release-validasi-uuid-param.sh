@@ -16,7 +16,7 @@ umask 077
 DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 [[ "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 1 harus SHA rilis 40 karakter" >&2; exit 1; }
 [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 2 harus SHA release aktif (baseline) 40 karakter" >&2; exit 1; }
-CAND_BRANCH="${CAND_BRANCH:-fix/validasi-uuid-param-id-v2}"
+CAND_BRANCH="${CAND_BRANCH:-fix/validasi-uuid-param-id-v3}"
 # Berkas yang BOLEH berbeda dari baseline: EKSPLISIT path persis. Prisma/package/frontend/migrasi tidak boleh ikut.
 ALLOWED_RE='^(backend/src/lib/galatServerAman\.js|backend/src/lib/uuidParam\.js|backend/src/routes/armada\.js|backend/src/routes/damagedStock\.js|backend/src/routes/finance\.js|backend/src/routes/financeTransactions\.js|backend/src/routes/goodsReceipt\.js|backend/src/routes/materialIssue\.js|backend/src/routes/production\.js|backend/src/routes/productionExperience\.js|backend/src/routes/purchaseOrders\.js|backend/src/routes/replenishment\.js|backend/src/routes/returnRecord\.js|backend/src/routes/stockAdjustment\.js|backend/src/routes/stockCount\.js|backend/src/routes/stockTransfer\.js|backend/src/services/productionPlanningCommandService\.js|backend/tests/integration/validasiUuidParam\.integration\.test\.js|backend/tests/validasiUuidParam\.test\.js|scripts/release-validasi-uuid-param\.sh)$'
 BACKEND_SRC_EXPECT="backend/src/lib/galatServerAman.js backend/src/lib/uuidParam.js backend/src/routes/armada.js backend/src/routes/damagedStock.js backend/src/routes/finance.js backend/src/routes/financeTransactions.js backend/src/routes/goodsReceipt.js backend/src/routes/materialIssue.js backend/src/routes/production.js backend/src/routes/productionExperience.js backend/src/routes/purchaseOrders.js backend/src/routes/replenishment.js backend/src/routes/returnRecord.js backend/src/routes/stockAdjustment.js backend/src/routes/stockCount.js backend/src/routes/stockTransfer.js backend/src/services/productionPlanningCommandService.js"
@@ -86,14 +86,16 @@ sg fetch -q --depth=400 origin "+refs/heads/${CAND_BRANCH}:refs/remotes/origin/c
 [ "$(sg rev-parse refs/remotes/origin/cand)" = "$DEPLOY_SHA" ] || die "origin/${CAND_BRANCH} bukan SHA rilis; kandidat bergeser"
 sg cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null || die "baseline ${BASE_SHA:0:8} tidak ada di repo sumber"
 sg merge-base --is-ancestor "$BASE_SHA" "$DEPLOY_SHA" || die "baseline ${BASE_SHA:0:8} BUKAN leluhur kandidat ${DEPLOY_SHORT}"
-[ "$(sg rev-parse refs/remotes/origin/main)" = "$BASE_SHA" ] || die "origin/main (${BASE_SHA:0:8} diharapkan) sudah bergeser — gabungkan lineage terbaru lalu ulangi tes/preflight"
+MAIN_SHA="$(sg rev-parse refs/remotes/origin/main)"
+sg merge-base --is-ancestor "$MAIN_SHA" "$BASE_SHA" || die "origin/main (${MAIN_SHA:0:8}) BUKAN leluhur baseline ${BASE_SHA:0:8} — main memuat pekerjaan yang tidak ada di release aktif; gabungkan lineage terbaru lalu ulangi tes/preflight"
+sg merge-base --is-ancestor "$MAIN_SHA" "$DEPLOY_SHA" || die "origin/main (${MAIN_SHA:0:8}) BUKAN leluhur kandidat — fast-forward main tidak akan mungkin"
 CHANGED="$(sg diff --name-only "$BASE_SHA" "$DEPLOY_SHA" | LC_ALL=C sort)"
 [ -n "$CHANGED" ] || die "kandidat identik dengan baseline (tidak ada perubahan)"
 LUAR="$(printf '%s\n' "$CHANGED" | grep -Ev "$ALLOWED_RE" || true)"
 [ -z "$LUAR" ] || { printf '%s\n' "$LUAR" | sed 's/^/        /'; die "ada berkas di LUAR allowlist eksplisit yang berbeda dari baseline — berhenti"; }
 [ "$(printf '%s\n' "$CHANGED" | grep -E '^backend/src/' | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')" = "$BACKEND_SRC_EXPECT" ] || die "daftar berkas backend/src yang berubah tidak sama dengan yang diaudit"
 ! printf '%s\n' "$CHANGED" | grep -qE '^(backend/prisma/|frontend/)|package(-lock)?\.json$|^docker-compose|Dockerfile' || die "prisma/frontend/dependensi/compose berubah — rilis ini harus backend-saja tanpa migrasi"
-ok "kandidat ${DEPLOY_SHORT} turunan baseline ${BASE_SHA:0:8} dan origin/main = baseline; $(printf '%s\n' "$CHANGED" | wc -l) berkas, semua dalam allowlist; backend/src = $(printf '%s\n' "$BACKEND_SRC_EXPECT" | wc -w) berkas yang diaudit; tanpa prisma/frontend/dependensi"
+ok "kandidat ${DEPLOY_SHORT} turunan baseline ${BASE_SHA:0:8}; origin/main (${MAIN_SHA:0:8}) leluhur baseline dan kandidat (fast-forward mungkin); $(printf '%s\n' "$CHANGED" | wc -l) berkas, semua dalam allowlist; backend/src = $(printf '%s\n' "$BACKEND_SRC_EXPECT" | wc -w) berkas yang diaudit; tanpa prisma/frontend/dependensi"
 
 PHASE="2-audit-produksi"; say "2. Audit produksi aktif (baca-saja)"
 CID_OLD="$(docker ps -q --filter "label=com.docker.compose.project=${PROJECT}" --filter "label=com.docker.compose.service=backend")"
@@ -154,7 +156,7 @@ ok "restore backup ke DB sementara berhasil: tabel kunci cocok (selisih hanya tr
 
 PHASE="4-release-dir"; say "4. Release dir ${NEW_DIR} (git archive; dist frontend disalin dari release aktif; release aktif tidak disentuh)"
 [ "$(sg ls-remote origin "refs/heads/${CAND_BRANCH}" | cut -f1)" = "$DEPLOY_SHA" ] || die "kandidat berubah selama backup"
-[ "$(sg ls-remote origin "refs/heads/main" | cut -f1)" = "$BASE_SHA" ] || die "origin/main bergeser selama backup"
+[ "$(sg ls-remote origin "refs/heads/main" | cut -f1)" = "$MAIN_SHA" ] || die "origin/main bergeser selama backup"
 [ "$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$CID_OLD")" = "$PREV_DIR" ] || die "release aktif berubah selama backup"
 mkdir "$NEW_DIR" || die "gagal membuat ${NEW_DIR}"
 sg archive "$DEPLOY_SHA" | tar -x -C "$NEW_DIR" --exclude='frontend/dist' || die "git archive gagal"
