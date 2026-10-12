@@ -105,7 +105,7 @@ purchaseOrderFinanceRouter.post("/:id/faktur", requirePermission(P.FINANCE_POST)
 });
 
 // PDF Purchase Order (sistem dokumen SANSS yang sama dengan invoice). Hanya Finance (memuat harga & nilai). Murni baca: tidak mengubah PO, stok, atau jurnal.
-purchaseOrderFinanceRouter.get("/:id/pdf", requirePermission(P.FINANCE_READ), wajibUuid(), async (req, res) => {
+purchaseOrderFinanceRouter.get("/:id/pdf", requirePermission(P.FINANCE_READ), async (req, res) => { // sudah memvalidasi UUID sendiri (404, kontrak lama dikunci tes) — tidak memakai wajibUuid
   try {
     if (!POLA_UUID.test(req.params.id)) return res.status(404).json({ error: "PO tidak ditemukan" });
     const view = await bangunViewPO(prisma, req.params.id);

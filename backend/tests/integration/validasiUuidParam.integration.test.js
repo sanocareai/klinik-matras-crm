@@ -77,7 +77,6 @@ const SAUDARA = [
   ...["PATCH /:id", "POST /:id/link-receipt", "PATCH /:id/reject"].map((r) => [r.split(" ")[0], `/api/inventory/replenishment${r.split(" ")[1]}`, [P.INVENTORY_WRITE]]),
   ["GET", "/api/finance/purchase-orders/:id", [P.FINANCE_READ]],
   ["GET", "/api/finance/purchase-orders/:id/penagihan", [P.FINANCE_READ]],
-  ["GET", "/api/finance/purchase-orders/:id/pdf", [P.FINANCE_READ]],
   ["GET", "/api/finance/purchases/:id/advance-eligible", [P.FINANCE_READ, P.FINANCE_POST]],
 ];
 
