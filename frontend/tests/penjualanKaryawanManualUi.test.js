@@ -24,7 +24,7 @@ test("Potong gaji tidak memakai rekening; tunai/transfer memakai rekening", () =
 
 test("Terpasang: rute, menu Finance, API, dan penyusun panel detail", () => {
   assert.match(baca("src/routes/pageRegistry.jsx"), /path: "\/finance\/penjualan-karyawan", render: \(\) => <FinancePenjualanKaryawan \/>/);
-  assert.match(baca("src/components/Layout.jsx"), /to: "\/finance\/penjualan-karyawan", label: "Penjualan Karyawan"/);
+  assert.match(baca("src/lib/financeHubs.js"), /label: "Penjualan Karyawan", to: "\/finance\/penjualan-karyawan"/); // menu Finance = hub
   const api = baca("src/api.js");
   for (const m of ["getPenjualanKaryawanFinance", "createPenjualanKaryawan", "catatPembayaranPenjualanKaryawan", "batalPembayaranPenjualanKaryawan", "batalPenjualanKaryawan"]) assert.match(api, new RegExp(m), m);
   assert.match(baca("src/features/finance/detailSpecs.js"), /export function specPenjualanKaryawan/);

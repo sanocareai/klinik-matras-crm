@@ -2,7 +2,15 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
 import { specOtomatis } from "@/features/finance/detailSpecs.js";
 import { useNavigate } from "react-router-dom";
-import { Undo2, Plus, Pencil, History, Ban } from "lucide-react";
+import { Undo2, HelpCircle, SlidersHorizontal, Search, X } from "lucide-react";
+import * as Dialog from "@radix-ui/react-dialog";
+import { useUrlTab } from "@/lib/useUrlTab.js";
+import { specDetailPiutang } from "@/features/finance/PiutangDetail.jsx";
+import {
+  TAB_PIUTANG, TAB_PIUTANG_KUNCI, STATUS_BAYAR_OPSI, LABEL_STATUS_BAYAR, URUT_OPSI, UMUR_OPSI, barisUntukTab, saringPiutang, jumlahFilterAktif,
+  ringkasDiagnosis, kelompokPerluTindakan, alasanOrder, labelScopeExport, teksNominal, periodeBawaanPiutang,
+} from "@/features/finance/piutangLogic.js";
+import { VARIAN_TINGKAT } from "@/features/finance/diagnosisPiutangLogic.js";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -23,7 +31,7 @@ import DatePicker from "@/components/ui/date-picker.jsx";
 import OrderPicker from "@/features/finance/OrderPicker.jsx";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi,
-  StatusBadge, Pilihan, InputUang, tanggalPendek, LABEL_STATUS,
+  StatusBadge, Pilihan, InputUang, tanggalPendek, LABEL_STATUS, PeriodePicker, periodeDefault,
 } from "@/features/finance/shared.jsx";
 import FilterBar, { cocok } from "@/features/finance/FilterBar.jsx";
 import DiagnosisPiutang from "@/features/finance/DiagnosisPiutang.jsx";
@@ -62,51 +70,56 @@ function aksiRefund(r, { aksi, setEditUntuk, setVersiUntuk, setInfoUntuk, setKor
   return { primary: null, items };
 }
 
-// Nominal bisa dicari sebagai "150000" maupun "150.000".
-function teksNominal(x) {
-  const n = Math.round(Number(x));
-  if (!Number.isFinite(n)) return "";
-  return `${n} ${n.toLocaleString("id-ID")}`;
-}
-
-function bucketUmur(hari) {
-  if (!(hari > 0)) return "belum";
-  if (hari <= 30) return "1_30";
-  if (hari <= 60) return "31_60";
-  return "60_plus";
-}
-
-// PIUTANG — siapa berutang ke kita, berapa, dan sudah lewat berapa lama.
+// PIUTANG & REFUND — siapa berutang ke kita, berapa, dan sudah lewat berapa lama.
 //
-// ⚠️ ANGKA DI SINI BUKAN "nilai order dikurangi pembayaran". Piutang
-// dihitung dari SALDO AKUN Piutang Usaha per order di buku besar, dan itu
-// berarti order yang BELUM DISERAHKAN tidak muncul sama sekali — uang yang
-// sudah dibayar untuk order yang belum jadi adalah UANG MUKA (kewajiban
-// kita), bukan tagihan ke customer. Perbedaan ini yang membuat total
-// piutang di halaman ini bisa lebih kecil dari "sisa tagihan" versi CRM,
-// dan angka di sinilah yang benar secara akuntansi.
-
+// ⚠️ ANGKA DI SINI BUKAN "nilai order dikurangi pembayaran". Piutang dihitung dari SALDO AKUN Piutang Usaha per order di buku besar, jadi order yang BELUM
+// DISERAHKAN tidak muncul — uang yang sudah dibayar untuk order yang belum jadi adalah UANG MUKA (kewajiban kita), bukan tagihan ke customer.
+//
+// Desain ulang (Okt 2026): daftar piutang tampil di layar pertama; diagnosis/penjelasan panjang pindah ke tab & drawer bantuan. TIDAK ada rumus yang berubah:
+// semua kartu, tab, badge, drawer, dan Export membaca read-model server yang sama (umurPiutang + diagnosisPiutang); klien hanya menyaring/mengurutkan/melabeli.
 export default function FinanceReceivables() {
-  const [panelRincian, setPanelRincian] = useState(null); // panel detail samping (klik baris)
+  const navigate = useNavigate();
+  const [panelRefund, setPanelRefund] = useState(null); // drawer detail refund (spec otomatis); piutang memakai detail order (terpilih)
+  const [terpilih, setTerpilih] = useState(null); // baris piutang yang drawer-nya terbuka
+  const [detail, setDetail] = useState({ id: null, data: null, galat: "", memuat: false });
   const [data, setData] = useState(null);
+  const [diag, setDiag] = useState(undefined); // undefined = belum dimuat; null = gagal
+  const [diagGalat, setDiagGalat] = useState(null);
   const [refunds, setRefunds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [pesan, setPesan] = useState(null);
-  const [filterEmber, setFilterEmber] = useState("");
   const [modalRefund, setModalRefund] = useState(false);
   const [editUntuk, setEditUntuk] = useState(null);
   const [versiUntuk, setVersiUntuk] = useState(null);
   const [infoUntuk, setInfoUntuk] = useState(null);
   const [koreksiUntuk, setKoreksiUntuk] = useState(null);
   const [rekening, setRekening] = useState([]);
+  // POSISI saldo (tanggal WIB, bawaan HARI INI): saldo buku besar sampai tanggal itu. BUKAN filter transaksi periode — jatuh tempo & ≤7 hari relatif ke posisi ini.
+  const [posisi, setPosisi] = useState(() => periodeBawaanPiutang().to);
+  const [bantuan, setBantuan] = useState(false);
+  const [lembarFilter, setLembarFilter] = useState(false);
+  const [tab, setTab] = useUrlTab(TAB_PIUTANG_KUNCI, "daftar");
+
+  const [q, setQ] = useState("");
+  const [fStatus, setFStatus] = useState("");
+  const [fUmur, setFUmur] = useState("");
+  const [fSales, setFSales] = useState("");
+  const [urut, setUrut] = useState("sisa");
+  const [qRefund, setQRefund] = useState("");
+  const [fStatusRefund, setFStatusRefund] = useState("");
+
+  const muatDiagnosis = useCallback(async () => {
+    setDiagGalat(null);
+    try { setDiag(await api.getFinancePiutangDiagnosis({ to: posisi })); } catch (e) { setDiag(null); setDiagGalat(e.message || "Gagal memuat diagnosis piutang"); }
+  }, [posisi]);
 
   const muat = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const [ar, rf, rk] = await Promise.all([
-        api.getFinanceReceivables(),
+        api.getFinanceReceivables({ to: posisi }),
         api.getFinanceRefunds(),
         api.getFinanceCashAccounts(),
       ]);
@@ -118,7 +131,8 @@ export default function FinanceReceivables() {
     } finally {
       setLoading(false);
     }
-  }, []);
+    muatDiagnosis(); // tidak menahan daftar: kartu "Perlu Tindakan" & strip menyusul bila diagnosis lambat/gagal
+  }, [posisi, muatDiagnosis]);
 
   useEffect(() => { muat(); }, [muat]);
 
@@ -132,65 +146,88 @@ export default function FinanceReceivables() {
     }
   }
 
-  const navigate = useNavigate();
-  const barisEmber = (data?.baris || []).filter((b) => !filterEmber || b.ember === filterEmber);
+  // Detail order untuk drawer.
+  const bukaDetail = useCallback(async (row) => {
+    setTerpilih(row);
+    setDetail({ id: row.orderId, data: null, galat: "", memuat: true });
+    try {
+      const d = await api.getFinancePiutangOrder(row.orderId, { to: posisi });
+      setDetail((s) => (s.id === row.orderId ? { id: row.orderId, data: d, galat: "", memuat: false } : s));
+    } catch (e) {
+      setDetail((s) => (s.id === row.orderId ? { id: row.orderId, data: null, galat: e.message || "Gagal memuat rincian order", memuat: false } : s));
+    }
+  }, [posisi]);
+  const tutupDetail = () => { setTerpilih(null); setDetail({ id: null, data: null, galat: "", memuat: false }); };
+
+  const semuaBaris = data?.baris || [];
+  const daftarSales = useMemo(() => [...new Set(semuaBaris.map((b) => b.salesName).filter(Boolean))].sort((a, b) => a.localeCompare(b, "id")), [semuaBaris]);
+  const barisTab = useMemo(() => barisUntukTab(semuaBaris, tab), [semuaBaris, tab]);
+  const baris = useMemo(() => saringPiutang(barisTab, { q, status: fStatus, umur: fUmur, sales: fSales, urut }), [barisTab, q, fStatus, fUmur, fSales, urut]);
+  const jt = data?.jatuhTempo ?? { lewat: { jumlah: 0, total: 0 }, tujuhHari: { jumlah: 0, total: 0 } };
+  const ringkasDiag = useMemo(() => ringkasDiagnosis(diag), [diag]);
+  const kelompok = useMemo(() => kelompokPerluTindakan(diag), [diag]);
   const refundMenunggu = refunds.filter((r) => r.status === "MENUNGGU_APPROVAL");
-
-  const [q, setQ] = useState("");
-  const [fSales, setFSales] = useState("");
-  const [fUmur, setFUmur] = useState("");
-  const [fAcuan, setFAcuan] = useState("");
-  const [qRefund, setQRefund] = useState("");
-  const [fStatusRefund, setFStatusRefund] = useState("");
-
-  const daftarSales = useMemo(
-    () => [...new Set((data?.baris || []).map((b) => b.salesName).filter(Boolean))].sort((a, b) => a.localeCompare(b, "id")),
-    [data],
-  );
-  const baris = useMemo(() => barisEmber.filter((b) =>
-    (!fSales || b.salesName === fSales)
-    && (!fUmur || bucketUmur(b.hariLewat) === fUmur)
-    && (!fAcuan || (b.sumberJatuhTempo === "invoice" ? "invoice" : "order") === fAcuan)
-    && cocok(q, b.orderNumber, b.invoiceNumber, b.customerName, b.salesName, teksNominal(b.sisaTagihan), teksNominal(b.nilaiOrder), b.dueDate ? tanggalPendek(b.dueDate) : "", b.dueDate),
-  ), [barisEmber, q, fSales, fUmur, fAcuan]);
-
   const statusRefund = useMemo(() => [...new Set(refunds.map((r) => r.status).filter(Boolean))], [refunds]);
   const refundTampil = useMemo(() => refunds.filter((r) =>
     (!fStatusRefund || r.status === fStatusRefund)
     && cocok(qRefund, r.refundNumber, r.order?.orderNumber, r.order?.customer?.name, r.reason, teksNominal(r.amount)),
   ), [refunds, qRefund, fStatusRefund]);
+  const filterAktif = Boolean(q.trim() || fStatus || fUmur || fSales || urut !== "sisa");
+  const resetFilter = () => { setQ(""); setFStatus(""); setFUmur(""); setFSales(""); setUrut("sisa"); };
 
-  // EXPORT EXCEL — persis yang tampil: piutang & refund sama-sama disaring di klien, jadi kirim id baris yang tampil (urutan layar).
-  // Server memuat ulang lewat fungsi baca yang sama dengan layar (umurPiutang & daftar refund).
+  // EXPORT EXCEL — persis yang tampil: id baris yang TAMPIL (urutan layar); server memuat ulang lewat fungsi baca yang sama dengan layar.
+  // Label menjelaskan tab & filter aktif supaya berkas tidak ambigu (apa yang diekspor, dari tab mana, pada posisi tanggal berapa).
   function ambilBodyExport() {
-    const labelEmber = (data?.ember || []).find((e) => e.key === filterEmber)?.label;
+    const refundSemua = tab === "refund" ? refundTampil : refunds;
+    const piutangIds = (tab === "daftar" || tab === "jatuh-tempo" ? baris : semuaBaris).map((b) => b.orderId);
     return {
-      filter: { piutangIds: baris.map((b) => b.orderId), refundIds: refundTampil.map((r) => r.id) },
+      periode: { to: posisi },
+      filter: { piutangIds, refundIds: refundSemua.map((r) => r.id) },
       filterLabel: labelFilterAktif([
-        ["Umur (kartu)", labelEmber],
+        ...labelScopeExport(tab, { jumlahTampil: baris.length, jumlahTotal: semuaBaris.length, filterAktif, posisiTeks: tanggalPendek(posisi) }),
+        ["Status bayar", fStatus && LABEL_STATUS_BAYAR[fStatus]],
+        ["Kelompok umur", UMUR_OPSI.find(([k]) => k === fUmur)?.[1]],
         ["Sales", fSales],
-        ["Umur", { belum: "Belum jatuh tempo", "1_30": "1–30 hari", "31_60": "31–60 hari", "60_plus": "> 60 hari" }[fUmur]],
-        ["Acuan", { invoice: "Invoice", order: "Tanggal order" }[fAcuan]],
+        ["Urut", URUT_OPSI.find(([k]) => k === urut)?.[1]],
         ["Cari piutang", q.trim()],
-        ["Status refund", fStatusRefund && (LABEL_STATUS[fStatusRefund] || fStatusRefund)],
-        ["Cari refund", qRefund.trim()],
+        ["Status refund", tab === "refund" && fStatusRefund && (LABEL_STATUS[fStatusRefund] || fStatusRefund)],
+        ["Cari refund", tab === "refund" && qRefund.trim()],
+        ["Posisi per", tanggalPendek(posisi)],
       ]),
     };
   }
 
+  const tampilBaris = tab === "daftar" || tab === "jatuh-tempo";
+  const filterTerlihat = tampilBaris;
+  const hitungTab = { daftar: semuaBaris.length, "jatuh-tempo": jt.lewat.jumlah, "perlu-tindakan": diag ? diag.perluTindakan?.jumlah ?? 0 : null, refund: refundMenunggu.length || null, diagnosis: null };
+
+  const specDrawer = terpilih
+    ? specDetailPiutang(terpilih, detail.data, {
+      memuat: detail.memuat, galat: detail.galat,
+      onCobaLagi: () => bukaDetail(terpilih),
+      onBukaVerifikasi: () => navigate("/finance/payments"),
+      onBukaInvoice: () => navigate("/finance/invoices"),
+      alasan: alasanOrder(diag, terpilih.orderId),
+    })
+    : panelRefund;
+  const panelRincian = specDrawer;
+
   return (
     <HalamanFinance
-      title="Piutang Pelanggan"
-      subtitle="Tagihan atas order yang sudah diserahkan tapi belum lunas, dikelompokkan menurut umurnya."
+      title="Piutang & Refund"
+      subtitle={`Posisi per ${tanggalPendek(posisi)} (WIB) — saldo piutang di buku besar, bukan filter transaksi.`}
       loading={loading}
       error={error}
       onRetry={muat}
       actions={(
         <div className="flex flex-wrap items-center justify-end gap-2">
+          <label className="flex items-center gap-2 text-[12px] font-semibold text-ink2" data-testid="posisi-piutang">
+            <span className="max-sm:hidden">Posisi per</span>
+            <DatePicker placeholder="Pilih tanggal" value={posisi} onChange={(v) => v && setPosisi(v)} />
+          </label>
+          <Button size="sm" variant="tertiary" onClick={() => setBantuan(true)} data-testid="bantuan-piutang" aria-label="Bagaimana angka ini dihitung?" title="Bagaimana angka ini dihitung?" className="max-sm:min-h-11 max-sm:px-2.5"><HelpCircle size={14} /> <span className="max-sm:hidden">Bagaimana angka ini dihitung?</span></Button>
           <TombolExportExcel modul="piutang-refund" disabled={loading} ambilBody={ambilBodyExport} />
-          <Button size="sm" onClick={() => setModalRefund(true)}>
-            <Undo2 size={14} /> Ajukan Refund
-          </Button>
+          <Button size="sm" onClick={() => setModalRefund(true)} title="Ajukan Refund" data-testid="ajukan-refund" className="max-sm:min-h-11 max-sm:min-w-11 max-sm:px-0"><Undo2 size={14} /> <span className="max-sm:sr-only">Ajukan Refund</span></Button>
         </div>
       )}
     >
@@ -203,201 +240,137 @@ export default function FinanceReceivables() {
         </Card>
       )}
 
-      {(data?.menungguVerifikasi?.jumlah ?? 0) > 0 && (
-        <Card className="bg-accentbg">
-          <CardContent className="flex flex-wrap items-center justify-between gap-3 py-3">
-            <p className="text-[13px] leading-relaxed text-ink">
-              <strong>{data.menungguVerifikasi.jumlah} order ({formatUang(data.menungguVerifikasi.total)})</strong> sudah
-              ditandai <strong>Lunas</strong> oleh sales dan <strong>tidak dihitung sebagai piutang</strong> di bawah — belum
-              selesai dicatat finance (pembayaran + bukti); sebagian belum punya catatan pembayaran sama sekali. Angka ini masih tercatat di Piutang Usaha pada neraca sampai diverifikasi.
-              Penyebab per order ada di kartu “Diagnosis Piutang” di bawah.
-            </p>
-            <Button size="sm" onClick={() => navigate("/finance/payments")}>Buka antrean verifikasi</Button>
-          </CardContent>
-        </Card>
-      )}
-
-      <Penjelasan>
-        Piutang dihitung dari saldo akun <strong>Piutang Usaha</strong> per order di buku besar — bukan dari
-        “nilai order dikurangi pembayaran”. Akibatnya order yang <strong>belum diserahkan</strong> tidak muncul
-        di sini sama sekali: uang yang sudah dibayar untuk order itu masih berstatus <strong>uang muka</strong>
-        {" "}(kewajiban kita ke customer), belum jadi tagihan.
-      </Penjelasan>
-
-      <DiagnosisPiutang />
-
-      {/* Ember umur — dipakai juga sebagai filter, jadi angka & daftarnya tidak terpisah. */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-        <KartuAngka
-          label="Total Piutang" metrik="piutang_usaha" value={formatUang(data?.total ?? 0)}
-          sub={`${data?.baris?.length ?? 0} order`}
-          onClick={() => setFilterEmber("")}
-          info="Total tagihan yang belum lunas dari order yang SUDAH diserahkan ke pelanggan. Klik untuk menghapus filter umur di bawah."
+      {/* Empat kartu ringkas — semua dari kontrak server (umurPiutang.total/jatuhTempo, diagnosis.perluTindakan). */}
+      <div className="flex gap-2 overflow-x-auto pb-1 max-sm:-mx-4 max-sm:px-4 sm:grid sm:grid-cols-2 sm:overflow-visible lg:grid-cols-4" data-testid="kartu-piutang">
+        <KartuRingkas
+          label="Total Piutang Aktif" value={formatUang(data?.total ?? 0)} sub={`${semuaBaris.length} order`}
+          onClick={() => { setTab("daftar"); resetFilter(); }}
+          info="Saldo akun Piutang Usaha per order yang benar-benar terbuka di buku besar (order yang sudah diserahkan dan belum lunas)."
         />
-        {(data?.ember || []).map((e) => {
-          const nilai = data.ringkasan?.[e.key] ?? 0;
-          return (
-            <KartuAngka
-              key={e.key}
-              label={e.label}
-              value={formatUang(nilai)}
-              tone={e.key === "90_plus" && nilai > 0 ? "red" : e.key === "61_90" && nilai > 0 ? "orange" : "default"}
-              sub={filterEmber === e.key ? "sedang difilter" : undefined}
-              onClick={() => setFilterEmber(filterEmber === e.key ? "" : e.key)}
-              info="Piutang dikelompokkan menurut sudah berapa lama lewat jatuh tempo. Semakin ke kanan (90+ hari), semakin berisiko tidak tertagih — klik untuk menyaring daftar di bawah."
-            />
-          );
-        })}
+        <KartuRingkas
+          label="Jatuh Tempo" value={formatUang(jt.lewat.total)} sub={`${jt.lewat.jumlah} order lewat jatuh tempo`} tone={jt.lewat.total > 0 ? "red" : "default"}
+          onClick={() => setTab("jatuh-tempo")}
+          info="Piutang yang sudah lewat jatuh tempo (jatuh tempo invoice; kalau tidak ada, dari tanggal order)."
+        />
+        <KartuRingkas
+          label="Jatuh Tempo ≤7 Hari" value={formatUang(jt.tujuhHari.total)} sub={`${jt.tujuhHari.jumlah} order`} tone={jt.tujuhHari.total > 0 ? "orange" : "default"}
+          onClick={() => { setTab("daftar"); setFUmur("tujuh_hari"); }}
+          info="Piutang yang jatuh tempo hari ini sampai 7 hari ke depan."
+        />
+        <KartuRingkas
+          label="Perlu Tindakan" value={diag ? `${diag.perluTindakan?.jumlah ?? 0} order` : diagGalat ? "—" : "…"}
+          sub={diagGalat ? "diagnosis gagal dimuat" : "perlu penjelasan / koreksi"} tone={(diag?.perluTindakan?.jumlah ?? 0) > 0 ? "orange" : "default"}
+          onClick={() => setTab("perlu-tindakan")}
+          info="Order yang saldo/statusnya tidak sesuai tagihan sah — lunas di CRM tanpa Payment, belum tercatat di buku, saldo kredit, dll. Rinciannya di tab Perlu Tindakan."
+        />
       </div>
 
-      <KenapaBeda metrik={["piutang_usaha", "refund_diberikan", "uang_masuk_terverifikasi", "uang_muka_pelanggan"]} />
+      {/* Strip diagnosis ringkas (hanya di tab bawaan): penjelasan panjang dipindah ke tab Diagnosis. */}
+      {tab === "daftar" && (ringkasDiag || (data?.menungguVerifikasi?.jumlah ?? 0) > 0) && (
+        <div className={cn("flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg px-3 py-1.5 text-[12.5px] text-ink", ringkasDiag && !ringkasDiag.cocok ? "bg-orangebg" : "bg-inset")} data-testid="strip-diagnosis">
+          {ringkasDiag && <Badge variant={ringkasDiag.cocok ? "green" : "orange"}>{ringkasDiag.cocok ? "Saldo buku cocok" : "Saldo buku tidak cocok"}</Badge>}
+          {ringkasDiag && <span>{ringkasDiag.perluTindakan} order perlu tindakan</span>}
+          {(data?.menungguVerifikasi?.jumlah ?? 0) > 0 && (
+            <span data-testid="catatan-menunggu-verifikasi" className="max-sm:hidden">
+              · {data.menungguVerifikasi.jumlah} order lunas di CRM menunggu verifikasi ({formatUang(data.menungguVerifikasi.total)}, tidak dihitung piutang){" "}
+              <button type="button" className="font-semibold text-accent hover:underline" onClick={() => navigate("/finance/payments")}>Buka verifikasi</button>
+            </span>
+          )}
+          <button type="button" className="ml-auto font-semibold text-accent hover:underline max-sm:min-h-11" onClick={() => setTab("diagnosis")}>Lihat diagnosis</button>
+        </div>
+      )}
 
-      <FilterBar
-        q={q} onQ={setQ}
-        placeholder="Cari order, invoice, pelanggan, nominal…"
-        filters={[
-          { key: "sales", label: "Sales", value: fSales, onChange: setFSales, options: daftarSales.map((s) => [s, s]) },
-          { key: "umur", label: "Umur", value: fUmur, onChange: setFUmur, options: [["belum", "Belum jatuh tempo"], ["1_30", "1–30 hari"], ["31_60", "31–60 hari"], ["60_plus", "> 60 hari"]] },
-          { key: "acuan", label: "Acuan", value: fAcuan, onChange: setFAcuan, options: [["invoice", "Invoice"], ["order", "Tanggal order"]] },
-        ]}
-        ringkasan={`${baris.length} piutang${baris.length !== barisEmber.length ? ` dari ${barisEmber.length}` : ""}`}
-        onReset={() => { setQ(""); setFSales(""); setFUmur(""); setFAcuan(""); }}
-      />
+      {/* Tab sticky */}
+      <div className="sticky top-0 z-30 -mx-1 bg-background/95 px-1 backdrop-blur-sm" data-testid="tab-piutang">
+        <div role="tablist" aria-label="Bagian Piutang & Refund" className="flex gap-1 overflow-x-auto border-b border-line">
+          {TAB_PIUTANG.map((t) => {
+            const aktif = tab === t.key;
+            const n = hitungTab[t.key];
+            return (
+              <button
+                key={t.key} type="button" role="tab" id={`tab-piutang-${t.key}`} aria-selected={aktif} data-testid={`tab-${t.key}`} onClick={() => setTab(t.key)}
+                className={cn("-mb-px inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2.5 text-[13px] font-semibold max-sm:min-h-11", aktif ? "border-accent text-accent" : "border-transparent text-ink3 hover:text-ink")}
+              >
+                {t.label}
+                {n != null && n > 0 && <span className="rounded-full bg-inset px-1.5 text-[10.5px] font-bold tabular-nums text-ink2">{n}</span>}
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
-      <Card className="overflow-hidden">
-        <JudulKartu
-          title={<>
-            {baris.length} order belum lunas
-            {filterEmber && <Button size="sm" variant="tertiary" className="ml-2" onClick={() => setFilterEmber("")}>hapus filter</Button>}
-          </>}
-          description="Umur dihitung dari jatuh tempo invoice kalau ada; kalau tidak, dari tanggal order —
-            dan kolom “Acuan” menyebutkan yang mana, bukan menyamarkannya."
-          info="Order dengan umur piutang lebih dari 60 hari (badge oranye/merah) sebaiknya segera ditindaklanjuti — semakin lama menunggak, semakin kecil peluang tertagih penuh."
+      {/* Filter sticky (Daftar Piutang & Jatuh Tempo) */}
+      {filterTerlihat && (
+        <BarFilterPiutang
+          q={q} onQ={setQ} status={fStatus} onStatus={setFStatus} umur={fUmur} onUmur={setFUmur} sales={fSales} onSales={setFSales} urut={urut} onUrut={setUrut}
+          daftarSales={daftarSales} jumlah={baris.length} total={barisTab.length} onReset={resetFilter} onBukaLembar={() => setLembarFilter(true)}
         />
-        {baris.length === 0 ? (
-          <CardContent><p className="py-6 text-center text-[13px] text-ink3">{barisEmber.length > 0 ? "Tidak ada piutang yang cocok dengan pencarian/filter." : "Tidak ada piutang terbuka."}</p></CardContent>
-        ) : (
-          <TableWrap className="dh-table">
-            <Table fixed>
-              <THead>
-                <TR>
-                  <TH sticky width={132}>Order</TH>
-                  <TH width={120} hideBelow="wide">Invoice</TH>
-                  <TH>Pelanggan</TH>
-                  <TH width={110} hideBelow="wide">Sales</TH>
-                  <TH numeric width={116} hideBelow="wide">Nilai Order</TH>
-                  <TH numeric width={124}>Sisa Tagihan</TH>
-                  <TH width={100}>Jatuh Tempo</TH>
-                  <TH width={100} hideBelow="wide">Acuan</TH>
-                  <TH numeric width={92}>Umur</TH>
-                </TR>
-              </THead>
-              <TBody>
-                {baris.map((b) => (
-                  <TR key={b.orderId} {...klikBuka(() => setPanelRincian(specOtomatis(b)))}>
-                    <TD sticky className="font-medium">{b.orderNumber || "—"}</TD>
-                    <TD hideBelow="wide" className="font-mono text-[12px]">{b.invoiceNumber || "—"}</TD>
-                    <TD truncate>{b.customerName}</TD>
-                    <TD hideBelow="wide" truncate className="text-[12px] text-ink2">{b.salesName || "—"}</TD>
-                    <TD hideBelow="wide" numeric><Uang value={b.nilaiOrder} /></TD>
-                    <TD numeric><Uang value={b.sisaTagihan} className="font-bold" /></TD>
-                    <TD className="whitespace-nowrap">{tanggalPendek(b.dueDate)}</TD>
-                    <TD hideBelow="wide" className="text-[12px] text-ink3">
-                      {b.sumberJatuhTempo === "invoice" ? "invoice" : "tanggal order"}
-                    </TD>
-                    <TD numeric>
-                      {b.hariLewat > 0
-                        ? <Badge variant={b.hariLewat > 60 ? "red" : b.hariLewat > 30 ? "orange" : "neutral"}>{b.hariLewat} hari</Badge>
-                        : <span className="text-ink3">belum</span>}
-                    </TD>
-                  </TR>
-                ))}
-              </TBody>
-            </Table>
-          </TableWrap>
-        )}
-      </Card>
+      )}
 
-      {/* ── Refund ── */}
-      <FilterBar
-        q={qRefund} onQ={setQRefund}
-        placeholder="Cari nomor, order, pelanggan…"
-        filters={[
-          { key: "status", label: "Status", value: fStatusRefund, onChange: setFStatusRefund, options: statusRefund.map((s) => [s, LABEL_STATUS[s] || s]) },
-        ]}
-        ringkasan={`${refundTampil.length} refund${refundTampil.length !== refunds.length ? ` dari ${refunds.length}` : ""}`}
-        onReset={() => { setQRefund(""); setFStatusRefund(""); }}
-      />
-
-      <Card className="overflow-hidden">
-        <JudulKartu
-          title="Refund ke Pelanggan"
-          description={<>
-            Pengembalian uang yang BENAR-BENAR pernah diterima. Berbeda dari membatalkan entri pembayaran
-            (itu untuk salah input — uangnya tidak pernah masuk).
-            {refundMenunggu.length > 0 && ` ${refundMenunggu.length} menunggu persetujuan.`}
-          </>}
-          info="Sistem otomatis menolak refund yang nilainya melebihi uang yang pernah benar-benar diterima untuk order itu — jadi tidak mungkin 'mengeluarkan' uang yang sebenarnya belum pernah masuk."
+      {tampilBaris && (
+        <DaftarPiutang
+          baris={baris} adaData={barisTab.length > 0} tab={tab} onBuka={bukaDetail}
+          onVerifikasi={() => navigate("/finance/payments")} onInvoice={() => navigate("/finance/invoices")}
         />
-        {refundTampil.length === 0 ? (
-          <CardContent><p className="py-6 text-center text-[13px] text-ink3">{refunds.length > 0 ? "Tidak ada refund yang cocok dengan pencarian/filter." : "Belum ada refund."}</p></CardContent>
-        ) : (
-          <>
-          <TableWrap className={cn("dh-table", TABLE_VIEW_CLASS)}>
-            <Table fixed>
-              <THead>
-                <TR>
-                  <TH sticky width={124}>Nomor</TH><TH width={78}>Tanggal</TH>
-                  <TH width={128} hideBelow="2xl">Order</TH><TH width={140}>Pelanggan</TH><TH>Alasan</TH>
-                  <TH numeric width={108}>Nominal</TH><TH width={116}>Status</TH><TH width={AKSI_COL_WIDTH}>Aksi</TH>
-                </TR>
-              </THead>
-              <TBody>
-                {refundTampil.map((r) => {
-                  const a = aksiRefund(r, { aksi, setEditUntuk, setVersiUntuk, setInfoUntuk, setKoreksiUntuk });
-                  return (
-                  <TR key={r.id} {...klikBuka(() => setPanelRincian(specOtomatis(r)))}>
-                    <TD sticky className="font-mono text-[12px]">{r.refundNumber}</TD>
-                    <TD className="whitespace-nowrap text-[12px]">{tanggalPendek(r.date)}</TD>
-                    <TD hideBelow="2xl" truncate className="font-medium">{r.order?.orderNumber || "—"}</TD>
-                    <TD truncate>{r.order?.customer?.name || "—"}</TD>
-                    <TD truncate>{r.reason}</TD>
-                    <TD numeric><NominalDenganBiaya d={r} /></TD>
-                    <TD><StatusBadge status={r.status} /></TD>
-                    <TD>
-                      <RowActions primary={a.primary} items={a.items} />
-                    </TD>
-                  </TR>
-                  );
-                })}
-              </TBody>
-            </Table>
-          </TableWrap>
+      )}
 
-          <CardList className={CARD_VIEW_CLASS}>
-            {refundTampil.map((r) => {
-              const a = aksiRefund(r, { aksi, setEditUntuk, setVersiUntuk, setInfoUntuk, setKoreksiUntuk });
-              return (
-                <RowCard
-                  key={r.id}
-                  onClick={() => setPanelRincian(specOtomatis(r))}
-                  title={r.refundNumber}
-                  status={<StatusBadge status={r.status} />}
-                  subtitle={r.order?.customer?.name || "—"}
-                  fields={[
-                    { label: "Tanggal", value: tanggalPendek(r.date) },
-                    { label: "Nominal", value: nominalTeks(r) },
-                    { label: "Order", value: r.order?.orderNumber },
-                    { label: "Alasan", value: r.reason, span: true },
-                  ]}
-                  actions={<RowActions primary={a.primary} items={a.items} />}
-                />
-              );
-            })}
-          </CardList>
-          </>
-        )}
-      </Card>
+      {tab === "perlu-tindakan" && (
+        <PerluTindakan diag={diag} galat={diagGalat} kelompok={kelompok} onBuka={(b) => b.orderId && bukaDetail({
+          orderId: b.orderId, orderNumber: b.orderNumber, customerName: b.customerName, salesName: b.salesName, sisaTagihan: b.nilai, nilaiOrder: b.nilai,
+          tagihanDiakui: null, sudahDilunasi: null, hariLewat: 0, dueDate: null, statusBayar: null,
+        })} />
+      )}
+
+      {tab === "refund" && (
+        <section className="space-y-3" data-testid="panel-refund">
+          <FilterBar
+            q={qRefund} onQ={setQRefund}
+            placeholder="Cari nomor, order, pelanggan…"
+            filters={[{ key: "status", label: "Status", value: fStatusRefund, onChange: setFStatusRefund, options: statusRefund.map((s) => [s, LABEL_STATUS[s] || s]) }]}
+            ringkasan={`${refundTampil.length} refund${refundTampil.length !== refunds.length ? ` dari ${refunds.length}` : ""}`}
+            onReset={() => { setQRefund(""); setFStatusRefund(""); }}
+          />
+          <DaftarRefund
+            refunds={refunds} refundTampil={refundTampil} refundMenunggu={refundMenunggu}
+            aksiBaris={(r) => aksiRefund(r, { aksi, setEditUntuk, setVersiUntuk, setInfoUntuk, setKoreksiUntuk })} onBuka={(r) => setPanelRefund(specOtomatis(r))}
+          />
+        </section>
+      )}
+
+      {tab === "diagnosis" && (
+        <section className="space-y-3" data-testid="panel-diagnosis">
+          <Penjelasan>
+            Piutang dihitung dari saldo akun <strong>Piutang Usaha</strong> per order di buku besar — bukan dari “nilai order dikurangi pembayaran”. Akibatnya order yang
+            <strong> belum diserahkan</strong> tidak muncul di daftar: uang yang sudah dibayar untuk order itu masih berstatus <strong>uang muka</strong> (kewajiban kita ke customer).
+          </Penjelasan>
+          <DiagnosisPiutang data={diag === undefined ? null : diag} galat={diagGalat} onReload={muatDiagnosis} />
+          <KenapaBeda metrik={["piutang_usaha", "refund_diberikan", "uang_masuk_terverifikasi", "uang_muka_pelanggan"]} />
+        </section>
+      )}
+
+      {/* Drawer bantuan: cara angka dihitung */}
+      <Modal
+        open={bantuan} onOpenChange={setBantuan} title="Bagaimana angka ini dihitung?"
+        description="Semua angka di halaman ini dibaca dari server — layar tidak menghitung ulang."
+        footer={<Button variant="neutral" onClick={() => setBantuan(false)} className="max-sm:min-h-11 max-sm:px-4">Tutup</Button>}
+      >
+        <div className="space-y-3 text-[13px] leading-relaxed text-ink2" data-testid="isi-bantuan">
+          <p className="m-0"><strong className="text-ink">Total Piutang Aktif</strong> = jumlah saldo akun Piutang Usaha per order yang masih terbuka (positif) di buku besar, order yang sudah diserahkan dan belum lunas.</p>
+          <p className="m-0"><strong className="text-ink">Posisi per tanggal</strong> = saldo buku besar sampai tanggal itu (WIB, inklusif); bawaannya hari ini. Ini <em>bukan</em> filter transaksi periode — tidak ada rentang tanggal transaksi di halaman ini.</p>
+          <p className="m-0"><strong className="text-ink">Jatuh Tempo</strong> = bagian piutang yang sudah lewat jatuh tempo. Acuan: jatuh tempo invoice; bila tidak ada, tanggal order (kolom Umur menyebutkan).</p>
+          <p className="m-0"><strong className="text-ink">Jatuh Tempo ≤7 Hari</strong> = jatuh tempo hari ini sampai 7 hari ke depan.</p>
+          <p className="m-0"><strong className="text-ink">Perlu Tindakan</strong> = order yang saldonya bukan tagihan sah (lunas di CRM tanpa Payment, belum tercatat di buku, saldo kredit, nilai berubah setelah diakui, dst).</p>
+          <p className="m-0">Order yang <strong className="text-ink">belum diserahkan</strong> tidak masuk piutang: uang yang sudah dibayar masih <strong className="text-ink">uang muka</strong> (kewajiban kepada pelanggan).</p>
+          <KenapaBeda metrik={["piutang_usaha", "refund_diberikan", "uang_masuk_terverifikasi", "uang_muka_pelanggan"]} />
+        </div>
+      </Modal>
+
+      {/* Bottom sheet filter (mobile) */}
+      <LembarFilter
+        open={lembarFilter} onClose={() => setLembarFilter(false)}
+        status={fStatus} onStatus={setFStatus} umur={fUmur} onUmur={setFUmur} sales={fSales} onSales={setFSales} urut={urut} onUrut={setUrut}
+        daftarSales={daftarSales} onReset={resetFilter} jumlah={baris.length}
+      />
 
       {editUntuk && (
         <ModalEditRefund
@@ -434,8 +407,294 @@ export default function FinanceReceivables() {
         piutang={data?.baris || []}
         onSubmit={(d) => aksi(() => api.createFinanceRefund(d))}
       />
-      <PanelDetail spec={panelRincian} onClose={() => setPanelRincian(null)} />
+      <PanelDetail spec={panelRincian} onClose={() => { tutupDetail(); setPanelRefund(null); }} />
     </HalamanFinance>
+  );
+}
+
+// Kartu ringkas padat (≈72px) supaya Daftar Piutang tampil di layar pertama. Nilai dari server; klik = pindah tab/filter.
+function KartuRingkas({ label, value, sub, tone = "default", onClick, info }) {
+  const warna = tone === "red" ? "text-red" : tone === "orange" ? "text-orange" : "text-ink";
+  return (
+    <button type="button" onClick={onClick} title={info} className="min-w-0 rounded-xl border border-line bg-surface px-3 py-2 text-left transition-colors hover:bg-hovertint max-sm:min-h-[44px] max-sm:w-[170px] max-sm:shrink-0">
+      <span className="block truncate text-[11px] font-semibold uppercase tracking-wide text-ink3">{label}</span>
+      <span className={cn("block truncate text-[17px] font-bold leading-tight tabular-nums", warna)}>{value}</span>
+      <span className="block truncate text-[11.5px] text-ink3">{sub}</span>
+    </button>
+  );
+}
+
+// ── Bar filter sticky ────────────────────────────────────────────────────────────────────────────
+function PilihFilter({ label, value, onChange, opsi, kosongLabel, className }) {
+  return (
+    <label className={cn("flex min-w-0 flex-col gap-1 text-[11px] font-semibold uppercase tracking-wide text-ink3", className)}>
+      {label}
+      <Pilihan value={value} onChange={onChange} className="text-[13px] font-normal normal-case tracking-normal">
+        <option value="">{kosongLabel}</option>
+        {opsi.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+      </Pilihan>
+    </label>
+  );
+}
+
+function BarFilterPiutang({ q, onQ, status, onStatus, umur, onUmur, sales, onSales, urut, onUrut, daftarSales, jumlah, total, onReset, onBukaLembar }) {
+  const n = jumlahFilterAktif({ status, umur, sales, urut });
+  const aktif = Boolean(q.trim()) || n > 0;
+  return (
+    <div className="fin-glass sticky top-[46px] z-20 space-y-1 px-3 py-2" data-testid="filter-piutang">
+      <div className="flex items-center gap-2">
+        <div className="fin-search min-w-0 flex-1 sm:max-w-[380px]">
+          <Search size={16} className="shrink-0 text-ink3" aria-hidden="true" />
+          <input type="search" value={q} onChange={(e) => onQ(e.target.value)} placeholder="Cari order / pelanggan…" aria-label="Cari order atau pelanggan" enterKeyHint="search" autoComplete="off" data-testid="cari-piutang" />
+        </div>
+        <Button size="sm" variant="neutral" onClick={onBukaLembar} className="sm:hidden max-sm:min-h-11" data-testid="buka-filter">
+          <SlidersHorizontal size={14} /> Filter{n > 0 ? ` (${n})` : ""}
+        </Button>
+        <div className="hidden min-w-0 flex-1 items-end gap-2 sm:flex">
+          <PilihFilter label="Status" value={status} onChange={onStatus} opsi={STATUS_BAYAR_OPSI} kosongLabel="Semua status" className="w-[150px]" />
+          <PilihFilter label="Kelompok umur" value={umur} onChange={onUmur} opsi={UMUR_OPSI} kosongLabel="Semua umur" className="w-[170px]" />
+          <PilihFilter label="Sales" value={sales} onChange={onSales} opsi={daftarSales.map((s) => [s, s])} kosongLabel="Semua sales" className="w-[150px]" />
+          <PilihFilter label="Urutkan" value={urut} onChange={onUrut} opsi={URUT_OPSI} kosongLabel="Sisa terbesar" className="w-[150px]" />
+        </div>
+      </div>
+      <div className="flex items-center justify-between gap-2 text-[11.5px] leading-none text-ink3">
+        <span data-testid="ringkas-filter">{jumlah} piutang{jumlah !== total ? ` dari ${total}` : ""}</span>
+        {aktif && <button type="button" className="font-semibold text-accent hover:underline max-sm:min-h-11" onClick={onReset}>Reset filter</button>}
+      </div>
+    </div>
+  );
+}
+
+function LembarFilter({ open, onClose, status, onStatus, umur, onUmur, sales, onSales, urut, onUrut, daftarSales, onReset, jumlah }) {
+  return (
+    <Dialog.Root open={open} onOpenChange={(o) => !o && onClose()}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-[200] bg-black/30 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
+        <Dialog.Content
+          aria-describedby={undefined}
+          className="fixed inset-x-0 bottom-0 z-[201] flex max-h-[85vh] flex-col rounded-t-2xl bg-surface p-4 shadow-2xl outline-none data-[state=open]:animate-in data-[state=open]:slide-in-from-bottom"
+          data-testid="lembar-filter"
+        >
+          <div className="mb-3 flex items-center justify-between">
+            <Dialog.Title className="text-[15px] font-bold text-ink">Filter piutang</Dialog.Title>
+            <Dialog.Close aria-label="Tutup" className="flex h-10 w-10 items-center justify-center rounded-lg text-ink3 hover:bg-hovertint"><X size={16} /></Dialog.Close>
+          </div>
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pb-2">
+            <PilihFilter label="Status pembayaran" value={status} onChange={onStatus} opsi={STATUS_BAYAR_OPSI} kosongLabel="Semua status" />
+            <PilihFilter label="Kelompok umur" value={umur} onChange={onUmur} opsi={UMUR_OPSI} kosongLabel="Semua umur" />
+            <PilihFilter label="Sales" value={sales} onChange={onSales} opsi={daftarSales.map((s) => [s, s])} kosongLabel="Semua sales" />
+            <PilihFilter label="Urutkan" value={urut} onChange={onUrut} opsi={URUT_OPSI} kosongLabel="Sisa terbesar" />
+          </div>
+          <div className="mt-2 flex gap-2">
+            <Button variant="neutral" className="min-h-11 flex-1" onClick={onReset}>Reset</Button>
+            <Button className="min-h-11 flex-1" onClick={onClose}>Lihat {jumlah} piutang</Button>
+          </div>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
+// ── Daftar piutang: tabel (desktop) + kartu ringkas (mobile) ──────────────────────────────────────────────────────────
+function BadgeUmur({ b }) {
+  if (b.hariLewat > 0) return <Badge variant={b.hariLewat > 60 ? "red" : b.hariLewat > 30 ? "orange" : "neutral"}>{b.hariLewat} hari</Badge>;
+  if (b.hariLewat >= -7) return <Badge variant="orange">{b.hariLewat === 0 ? "hari ini" : `${Math.abs(b.hariLewat)} hr lagi`}</Badge>;
+  return <span className="text-ink3">belum</span>;
+}
+const BadgeStatus = ({ status }) => <Badge variant={status === "DIBAYAR_SEBAGIAN" ? "accent" : "neutral"}>{LABEL_STATUS_BAYAR[status] || "—"}</Badge>;
+
+function DaftarPiutang({ baris, adaData, tab, onBuka, onVerifikasi, onInvoice }) {
+  if (baris.length === 0) {
+    return (
+      <Card><CardContent><p className="py-8 text-center text-[13px] text-ink3" data-testid="piutang-kosong">
+        {adaData ? "Tidak ada piutang yang cocok dengan pencarian/filter." : tab === "jatuh-tempo" ? "Tidak ada piutang yang lewat jatuh tempo." : "Tidak ada piutang terbuka."}
+      </p></CardContent></Card>
+    );
+  }
+  return (
+    <>
+      <Card className={cn("overflow-hidden", TABLE_VIEW_CLASS)} data-testid="tabel-piutang">
+        <TableWrap className="dh-table">
+          <Table fixed>
+            <THead>
+              <TR>
+                <TH sticky>Order / Pelanggan</TH>
+                <TH width={92} hideBelow="wide">Tanggal</TH>
+                <TH numeric width={124} hideBelow="wide">Total Tagihan</TH>
+                <TH numeric width={124} hideBelow="wide">Sudah Dibayar</TH>
+                <TH numeric width={130}>Sisa</TH>
+                <TH width={96}>Umur</TH>
+                <TH width={124}>Status</TH>
+                <TH width={AKSI_COL_WIDTH}>Aksi</TH>
+              </TR>
+            </THead>
+            <TBody>
+              {baris.map((b) => (
+                <TR key={b.orderId} {...klikBuka(() => onBuka(b))} data-testid="baris-piutang">
+                  <TD sticky>
+                    <div className="min-w-0">
+                      <div className="truncate font-semibold text-ink">{b.orderNumber || "—"}</div>
+                      <div className="truncate text-[12px] text-ink2">{b.customerName}{b.salesName ? ` · ${b.salesName}` : ""}</div>
+                    </div>
+                  </TD>
+                  <TD hideBelow="wide" className="whitespace-nowrap text-[12px]">{b.tanggalOrder ? tanggalPendek(b.tanggalOrder) : "—"}</TD>
+                  <TD hideBelow="wide" numeric><Uang value={b.tagihanDiakui} /></TD>
+                  <TD hideBelow="wide" numeric><Uang value={b.sudahDilunasi} nolSebagaiStrip /></TD>
+                  <TD numeric><Uang value={b.sisaTagihan} className="font-bold" /></TD>
+                  <TD><BadgeUmur b={b} /></TD>
+                  <TD><BadgeStatus status={b.statusBayar} /></TD>
+                  <TD>
+                    <RowActions
+                      primary={{ label: "Detail", variant: "neutral", title: "Buka rincian order", onClick: () => onBuka(b) }}
+                      items={[
+                        { label: "Buka verifikasi pembayaran", onClick: onVerifikasi },
+                        { label: "Buka invoice", onClick: onInvoice },
+                      ]}
+                    />
+                  </TD>
+                </TR>
+              ))}
+            </TBody>
+          </Table>
+        </TableWrap>
+      </Card>
+
+      <ul className={cn("m-0 list-none space-y-2 p-0", CARD_VIEW_CLASS)} data-testid="kartu-daftar-piutang">
+        {baris.map((b) => (
+          <li key={b.orderId}>
+            <button
+              type="button" onClick={() => onBuka(b)} data-testid="kartu-piutang-baris"
+              className="w-full rounded-xl border border-line bg-surface p-3 text-left transition-colors hover:bg-hovertint max-sm:min-h-[44px]"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="m-0 truncate text-[13px] font-semibold text-ink">{b.customerName}</p>
+                  <p className="m-0 truncate font-mono text-[11.5px] text-ink3">{b.orderNumber || "—"}{b.salesName ? ` · ${b.salesName}` : ""}</p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="m-0 text-[10px] font-semibold uppercase tracking-wide text-ink3">Sisa tagihan</p>
+                  <p className="m-0 text-[17px] font-bold tabular-nums text-ink">{formatUang(b.sisaTagihan)}</p>
+                </div>
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <BadgeStatus status={b.statusBayar} />
+                <BadgeUmur b={b} />
+                <span className="text-[11.5px] text-ink3">{b.tanggalOrder ? tanggalPendek(b.tanggalOrder) : ""}{b.tagihanDiakui != null ? ` · tagihan ${formatUang(b.tagihanDiakui)}` : ""}</span>
+              </div>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+// ── Perlu Tindakan ──────────────────────────────────────────────────────────────────────────────────────────────────────────
+function PerluTindakan({ diag, galat, kelompok, onBuka }) {
+  if (galat) return <Card className="bg-redbg"><CardContent className="py-3"><p className="m-0 text-[13px] text-ink">{galat}</p></CardContent></Card>;
+  if (diag === undefined) return <Card><CardContent><p className="py-6 text-center text-[13px] text-ink3">Memuat daftar tindakan…</p></CardContent></Card>;
+  if (!diag || kelompok.length === 0) {
+    return <Card><CardContent><p className="py-8 text-center text-[13px] text-ink3" data-testid="tindakan-kosong">Tidak ada order yang perlu tindakan — semua saldo adalah tagihan sah.</p></CardContent></Card>;
+  }
+  return (
+    <div className="space-y-4" data-testid="panel-perlu-tindakan">
+      <p className="m-0 text-[12.5px] text-ink3">Order di bawah ini <strong>bukan piutang normal</strong>: tidak dicampur di Daftar Piutang. Penjelasan dan tindakan dari diagnosis server.</p>
+      {kelompok.map((g) => (
+        <Card key={g.kode} className="overflow-hidden" data-testid={`kelompok-${g.kode}`}>
+          <JudulKartu title={<>{g.label} <Badge variant={VARIAN_TINGKAT[g.tingkat] ?? "neutral"}>{g.baris.length} order</Badge></>} />
+          <CardContent className="space-y-2">
+            {g.baris.map((b) => (
+              <button
+                key={`${g.kode}-${b.orderId}`} type="button" disabled={!b.orderId} onClick={() => onBuka(b)}
+                className="w-full rounded-lg border border-line p-3 text-left hover:bg-hovertint max-sm:min-h-[44px]" data-testid="baris-tindakan"
+              >
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="m-0 text-[13px] font-medium text-ink">{b.orderNumber || "—"} · {b.customerName}</p>
+                    {b.salesName && <p className="m-0 text-[12px] text-ink3">{b.salesName}</p>}
+                    {b.alasanLain > 0 && <p className="m-0 mt-0.5 text-[12px] font-semibold text-orange" data-testid="alasan-lain">+{b.alasanLain} alasan lain — buka untuk melihat semua</p>}
+                  </div>
+                  <Uang value={b.nilai} className="text-[14px] font-bold" />
+                </div>
+                <p className="m-0 mt-1.5 text-[12.5px] leading-relaxed text-ink2">{b.penjelasan}</p>
+                <p className="m-0 mt-1 text-[12.5px] leading-relaxed text-ink"><strong>Tindakan:</strong> {b.tindakan}</p>
+              </button>
+            ))}
+          </CardContent>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+// ── Refund (tabel + kartu mobile) ────────────────────────────────────────────────────────────────────────────────────────
+function DaftarRefund({ refunds, refundTampil, refundMenunggu, aksiBaris, onBuka }) {
+  return (
+    <Card className="overflow-hidden">
+      <JudulKartu
+        title="Refund ke Pelanggan"
+        description={<>
+          Pengembalian uang yang BENAR-BENAR pernah diterima. Berbeda dari membatalkan entri pembayaran (itu untuk salah input — uangnya tidak pernah masuk).
+          {refundMenunggu.length > 0 && ` ${refundMenunggu.length} menunggu persetujuan.`}
+        </>}
+        info="Sistem otomatis menolak refund yang nilainya melebihi uang yang pernah benar-benar diterima untuk order itu — jadi tidak mungkin 'mengeluarkan' uang yang sebenarnya belum pernah masuk."
+      />
+      {refundTampil.length === 0 ? (
+        <CardContent><p className="py-6 text-center text-[13px] text-ink3">{refunds.length > 0 ? "Tidak ada refund yang cocok dengan pencarian/filter." : "Belum ada refund."}</p></CardContent>
+      ) : (
+        <>
+          <TableWrap className={cn("dh-table", TABLE_VIEW_CLASS)}>
+            <Table fixed>
+              <THead>
+                <TR>
+                  <TH sticky width={124}>Nomor</TH><TH width={78}>Tanggal</TH>
+                  <TH width={128} hideBelow="2xl">Order</TH><TH width={140}>Pelanggan</TH><TH>Alasan</TH>
+                  <TH numeric width={108}>Nominal</TH><TH width={116}>Status</TH><TH width={AKSI_COL_WIDTH}>Aksi</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {refundTampil.map((r) => {
+                  const a = aksiBaris(r);
+                  return (
+                    <TR key={r.id} {...klikBuka(() => onBuka(r))}>
+                      <TD sticky className="font-mono text-[12px]">{r.refundNumber}</TD>
+                      <TD className="whitespace-nowrap text-[12px]">{tanggalPendek(r.date)}</TD>
+                      <TD hideBelow="2xl" truncate className="font-medium">{r.order?.orderNumber || "—"}</TD>
+                      <TD truncate>{r.order?.customer?.name || "—"}</TD>
+                      <TD truncate>{r.reason}</TD>
+                      <TD numeric><NominalDenganBiaya d={r} /></TD>
+                      <TD><StatusBadge status={r.status} /></TD>
+                      <TD><RowActions primary={a.primary} items={a.items} /></TD>
+                    </TR>
+                  );
+                })}
+              </TBody>
+            </Table>
+          </TableWrap>
+          <CardList className={CARD_VIEW_CLASS}>
+            {refundTampil.map((r) => {
+              const a = aksiBaris(r);
+              return (
+                <RowCard
+                  key={r.id}
+                  onClick={() => onBuka(r)}
+                  title={r.refundNumber}
+                  status={<StatusBadge status={r.status} />}
+                  subtitle={r.order?.customer?.name || "—"}
+                  fields={[
+                    { label: "Tanggal", value: tanggalPendek(r.date) },
+                    { label: "Nominal", value: nominalTeks(r) },
+                    { label: "Order", value: r.order?.orderNumber },
+                    { label: "Alasan", value: r.reason, span: true },
+                  ]}
+                  actions={<RowActions primary={a.primary} items={a.items} />}
+                />
+              );
+            })}
+          </CardList>
+        </>
+      )}
+    </Card>
   );
 }
 

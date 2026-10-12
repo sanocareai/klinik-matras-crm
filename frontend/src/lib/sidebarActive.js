@@ -37,6 +37,8 @@ export function searchParamsSatisfy(requiredSearch, currentSearch) {
 // untuk mendeteksi "saudara" berquery yang lebih spesifik berbagi pathname
 // yang sama, supaya item TANPA query tahu kapan harus mengalah.
 export function isSidebarItemActive(item, siblings, currentPathname, currentSearch) {
+  // Item hub (mis. hub Finance): aktif untuk SEMUA halaman di bawahnya — aturan ada di item (aktifJika), bukan pencocokan pathname tunggal.
+  if (typeof item.aktifJika === "function") return Boolean(item.aktifJika(currentPathname, currentSearch));
   const { base, search } = splitPathQuery(item.to);
   if (base !== currentPathname) return false;
   if (search) return searchParamsSatisfy(search, currentSearch);

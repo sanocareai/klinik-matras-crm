@@ -38,7 +38,7 @@ test("setiap halaman Finance: punya panel detail (klik baris), detail sendiri, a
   for (const f of PANEL) {
     const s = baca(path.join(halaman, f));
     assert.match(s, /<PanelDetail spec=\{panelRincian\}/, `${f}: PanelDetail tidak dipasang`);
-    assert.match(s, /klikBuka\(\(\) => setPanelRincian\(/, `${f}: baris tabel belum bisa diklik (klikBuka)`);
+    assert.match(s, /klikBuka\(\(\) => (setPanelRincian|onBuka)\(/, `${f}: baris tabel belum bisa diklik (klikBuka)`);
   }
   assert.match(baca(path.join(halaman, "FinancePayments.jsx")), /klikBuka\(\(\) => bukaDialog\("detail", p\)\)/, "Pembayaran: klik baris harus membuka detail");
   assert.match(baca(path.join(akar, "src/features/finance/KoreksiPembayaran.jsx")), /<PanelDetail spec=\{specPembayaran\(/, "Detail Pembayaran harus panel samping");

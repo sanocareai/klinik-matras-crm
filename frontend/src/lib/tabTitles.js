@@ -12,6 +12,7 @@
 //      query mentah ("Order Produksi?Tab=Work Order&Status=DELIVERED"),
 //      bug nyata yang ditemukan lewat QA visual.
 import { splitPathQuery, canonicalizeTabPath } from "./splitPathQuery.js";
+import { cariItemHub } from "./financeHubs.js";
 
 const RESOURCE_LABELS = {
   units: "Unit",
@@ -49,7 +50,12 @@ function looksLikeId(seg) {
 }
 
 export function titleFromPath(rawPath) {
-  const { base } = splitPathQuery(rawPath);
+  const { base, search } = splitPathQuery(rawPath);
+  // Halaman Finance: judul tab = label hub Indonesia (lib/financeHubs.js), bukan segmen path berbahasa Inggris ("Receivables" → "Piutang & Refund").
+  if (base.startsWith("/finance/")) {
+    const hit = cariItemHub(base, search || "");
+    if (hit) return hit.item.label;
+  }
   const parts = base.split("/").filter(Boolean);
   const divisionSeg = parts[0];
   let seg = parts.pop() || "portal";

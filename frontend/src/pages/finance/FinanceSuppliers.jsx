@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useUrlTab } from "@/lib/useUrlTab.js";
 import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
 import { specOtomatis } from "@/features/finance/detailSpecs.js";
 import { Plus, Building2, FileText, Banknote, Pencil, History, Ban, CheckCircle2, CalendarClock } from "lucide-react";
@@ -113,7 +114,7 @@ export default function FinanceSuppliers() {
   const [panelRincian, setPanelRincian] = useState(null); // panel detail samping (klik baris)
   // Tier tabel Tagihan dari lebar CONTAINER (bukan viewport) — lihat features/finance/tierTagihan.js.
   const [tableRef, tier] = useContainerTier(tierTagihan);
-  const [tab, setTab] = useState("tagihan");
+  const [tab, setTab] = useUrlTab(["tagihan", "aging", "pembayaran", "supplier"], "tagihan"); // ?tab= (deep-link hub Pembelian & Supplier)
   const [suppliers, setSuppliers] = useState([]);
   const [bills, setBills] = useState([]);
   const [editUntuk, setEditUntuk] = useState(null);

@@ -5,6 +5,7 @@ import { formatTanggalIndo } from "../utils/format.js";
 import { CommandPalette } from "@/components/ui/command-palette.jsx";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/menu.jsx";
 import { DIVISION_CONTENT } from "@/features/portal/divisionContent.js";
+import { cariItemHub } from "@/lib/financeHubs.js";
 import { useNotificationStore, badgeText } from "@/features/notifications/notificationStore.js";
 import Avatar from "./Avatar.jsx";
 import ThemeToggle from "./ThemeToggle.jsx";
@@ -97,6 +98,14 @@ const ROUTE_LABELS = {
   "/warehouse/kpi":             ["Gudang", "KPI Gudang"],
 };
 
+// Breadcrumb Finance dari definisi hub (lib/financeHubs.js): ["Finance", hub, tab] — Indonesia, tanpa path mentah ("finance/receivables").
+function labelFinance(pathname, search) {
+  if (!pathname.startsWith("/finance/")) return null;
+  const hit = cariItemHub(pathname, search || "");
+  if (!hit) return null;
+  return ["Finance", hit.hub.label, ...(hit.item.label !== hit.hub.label ? [hit.item.label] : [])];
+}
+
 // Wave 1.1: search dominan + profil chip.
 //
 // ⚠️ prop `unreadCount` SUDAH DIHAPUS dari komponen ini (2 Agustus 2026).
@@ -108,7 +117,7 @@ const ROUTE_LABELS = {
 // punya drawer sidebar (saat ini: /portal). Default true supaya semua pemanggil
 // lama berperilaku persis seperti sebelumnya.
 export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, user, onLogout, hideNotifBell = false }) {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const navigate = useNavigate();
   const [paletteOpen, setPaletteOpen] = useState(false);
 
@@ -127,7 +136,7 @@ export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, user
   // 2 Agustus 2026 remah "Main Hub" HARUS bisa diklik. `to` null = teks biasa.
   const crumbs = commandCenterTitle
     ? [{ text: "Main Hub", to: "/portal" }, { text: commandCenterTitle, to: null }]
-    : (ROUTE_LABELS[pathname] || [pathname.replace("/", "")]).map((text, i, arr) => ({
+    : (labelFinance(pathname, search) || ROUTE_LABELS[pathname] || [pathname.replace("/", "")]).map((text, i, arr) => ({
         text,
         // Halaman di DALAM sebuah workspace: remah pertama jadi jalan pulang
         // ke Main Hub. Remah terakhir (halaman sekarang) tidak pernah link.

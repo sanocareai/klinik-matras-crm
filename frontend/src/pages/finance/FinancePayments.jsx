@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useUrlTab } from "@/lib/useUrlTab.js";
 import { ShieldCheck, Image as ImageIcon, Split, Eye, PenLine, FileEdit, History } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -81,7 +82,7 @@ const LABEL_JENIS = { DP: "DP", CICILAN: "Cicilan", PELUNASAN: "Pelunasan" };
 const SEMUA_PERIODE = { from: "2000-01-01", to: "2100-01-01" };
 
 export default function FinancePayments() {
-  const [tab, setTab] = useState("perlu");
+  const [tab, setTab] = useUrlTab(["perlu", "lunas_crm", "terverifikasi", "dibatalkan"], "perlu"); // ?tab= (deep-link hub Penjualan & Piutang)
   const [periode, setPeriode] = useState(periodeDefault);
   const [data, setData] = useState(null);
   const [semuaPeriode, setSemuaPeriode] = useState([]);

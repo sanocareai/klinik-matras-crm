@@ -62,7 +62,7 @@ test("teksQty & teksSumber: kuantitas 4 desimal; sumber lot menyebut PO/penerima
 
 test("pemasangan: rute Finance, menu, API, dan Unit 360 tab Bahan memakai komponen yang sama", () => {
   assert.match(baca("../src/routes/pageRegistry.jsx"), /path: "\/finance\/biaya-bahan", render: \(\) => <FinanceBiayaBahan \/>/);
-  assert.ok(baca("../src/components/Layout.jsx").includes('to: "/finance/biaya-bahan", label: "Biaya Bahan per Unit"'));
+  assert.ok(baca("../src/lib/financeHubs.js").includes('label: "Biaya Bahan per Unit", to: "/finance/biaya-bahan"')); // menu Finance = hub (lib/financeHubs.js)
   const api = baca("../src/api.js");
   for (const fn of ["getBiayaBahanUnits", "getBiayaBahanUnit", "getJejakBahanUnit"]) assert.ok(api.includes(`${fn}:`), fn);
   assert.ok(api.includes("/units/${unitId}/jejak-bahan"));

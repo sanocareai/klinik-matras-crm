@@ -39,8 +39,8 @@ export default function SidebarNavSection({
         label={item.label}
         Icon={item.Icon}
         isAI={item.to === "/copilot"}
-        showBadge={!!(item.badge && badgeCount > 0)}
-        badgeCount={badgeCount}
+        showBadge={item.badgeN != null ? item.badgeN > 0 : !!(item.badge && badgeCount > 0)}
+        badgeCount={item.badgeN ?? badgeCount}
         collapsed={collapsed}
         onNavigate={onNavigate}
         active={isSidebarItemActive(item, allDivisionItems, pathname, search)}

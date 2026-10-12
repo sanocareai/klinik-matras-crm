@@ -568,7 +568,7 @@ export async function umurPiutang(db, { to: batas = todayBookDateWIB() } = {}) {
   });
   // Bentuk respons kosong SAMA dengan yang berisi (total + ringkasan berupa angka): klien (web & mobile)
   // tidak boleh menebak-nebak kunci yang hilang saat belum ada piutang.
-  if (!akunPiutang) return { perTanggal: to, baris: [], ringkasan: ringkasanKosongAngka(), total: 0, ember: EMBER_UMUR, menungguVerifikasi: { jumlah: 0, total: 0 }, dibatalkan: { jumlah: 0, total: 0 }, catatan: await catatanLaporan(db) };
+  if (!akunPiutang) return { perTanggal: to, baris: [], ringkasan: ringkasanKosongAngka(), total: 0, ember: EMBER_UMUR, jatuhTempo: { lewat: { jumlah: 0, total: 0 }, tujuhHari: { jumlah: 0, total: 0 } }, menungguVerifikasi: { jumlah: 0, total: 0 }, dibatalkan: { jumlah: 0, total: 0 }, catatan: await catatanLaporan(db) };
 
   const grouped = await db.finJournalLine.groupBy({
     by: ["orderId"],
@@ -581,11 +581,11 @@ export async function umurPiutang(db, { to: batas = todayBookDateWIB() } = {}) {
   });
 
   const bersaldo = grouped
-    .map((g) => ({ orderId: g.orderId, saldo: toMoney(g._sum.debit || 0).minus(toMoney(g._sum.credit || 0)) }))
+    .map((g) => ({ orderId: g.orderId, saldo: toMoney(g._sum.debit || 0).minus(toMoney(g._sum.credit || 0)), debit: toMoney(g._sum.debit || 0), kredit: toMoney(g._sum.credit || 0) }))
     .filter((g) => g.saldo.greaterThan(0));
 
   if (bersaldo.length === 0) {
-    return { perTanggal: to, baris: [], ringkasan: ringkasanKosongAngka(), total: 0, ember: EMBER_UMUR, menungguVerifikasi: { jumlah: 0, total: 0 }, dibatalkan: { jumlah: 0, total: 0 }, catatan: await catatanLaporan(db) };
+    return { perTanggal: to, baris: [], ringkasan: ringkasanKosongAngka(), total: 0, ember: EMBER_UMUR, jatuhTempo: { lewat: { jumlah: 0, total: 0 }, tujuhHari: { jumlah: 0, total: 0 } }, menungguVerifikasi: { jumlah: 0, total: 0 }, dibatalkan: { jumlah: 0, total: 0 }, catatan: await catatanLaporan(db) };
   }
 
   const orders = await db.order.findMany({
@@ -626,6 +626,12 @@ export async function umurPiutang(db, { to: batas = todayBookDateWIB() } = {}) {
       salesName: o?.customer?.assignedSales?.name || null,
       nilaiOrder: o?.value || 0,
       sisaTagihan: moneyToNumber(b.saldo),
+      // Aditif (Okt 2026) — dari SALDO LEDGER yang sama dengan sisaTagihan: tagihan diakui = Σ debit akun Piutang Usaha order ini, sudah dilunasi = Σ kredit.
+      // sisaTagihan = tagihanDiakui − sudahDilunasi. statusBayar diturunkan di sini supaya layar tidak menebak dari nominal.
+      tagihanDiakui: moneyToNumber(b.debit),
+      sudahDilunasi: moneyToNumber(b.kredit),
+      statusBayar: b.kredit.greaterThan(0) ? "DIBAYAR_SEBAGIAN" : "BELUM_BAYAR",
+      tanggalOrder: o?.createdAt || null,
       dueDate,
       sumberJatuhTempo: dueDate ? "invoice" : "tanggal_order",
       hariLewat,
@@ -634,11 +640,17 @@ export async function umurPiutang(db, { to: batas = todayBookDateWIB() } = {}) {
     };
   }).sort((a, b) => b.hariLewat - a.hariLewat);
 
+  // Ringkas jatuh tempo (aditif, Okt 2026) — dari baris yang SAMA (satu sumber): lewat = hariLewat > 0; dalam 7 hari = jatuh tempo hari ini s.d. 7 hari ke depan.
+  // Kartu layar Piutang membaca angka ini langsung (klien tidak menjumlah ulang).
+  const lewatJt = baris.filter((b) => b.hariLewat > 0);
+  const tujuhHari = baris.filter((b) => b.hariLewat <= 0 && b.hariLewat >= -7);
+  const jumlahDanTotal = (arr) => ({ jumlah: arr.length, total: moneyToNumber(arr.length ? sumMoney(arr.map((b) => b.sisaTagihan)) : ZERO) });
   return {
     perTanggal: to,
     baris,
     ringkasan: Object.fromEntries(Object.entries(ringkasan).map(([k, v]) => [k, moneyToNumber(v)])),
     total: moneyToNumber(baris.length ? sumMoney(baris.map((b) => b.sisaTagihan)) : ZERO),
+    jatuhTempo: { lewat: jumlahDanTotal(lewatJt), tujuhHari: jumlahDanTotal(tujuhHari) },
     menungguVerifikasi,
     dibatalkan,
     ember: EMBER_UMUR,

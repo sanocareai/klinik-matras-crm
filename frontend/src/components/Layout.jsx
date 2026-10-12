@@ -35,6 +35,8 @@ import { isAdminUser, rolesOf } from "@/lib/roles.js";
 import SidebarPromo from "@/features/settings/SidebarPromo.jsx";
 import { Menu, MenuItem, MenuLabel, MenuSeparator } from "@/components/ui/menu.jsx";
 import { cn } from "@/lib/utils.js";
+import { FINANCE_HUBS, hubAktif, badgeHub } from "@/lib/financeHubs.js";
+import { useAntreanFinance } from "@/lib/financeAntrean.js";
 
 // ─── SIDEBAR PER DIVISI (1 Agustus 2026, Gilang) ─────────────────────────────
 // SEBELUMNYA satu NAV_SECTIONS statis dipakai di SETIAP halaman — masuk ke
@@ -71,6 +73,30 @@ const DIVISION_ACCENT = {
   bg: "bg-blue-50",
   dot: "bg-blue-700",
 };
+
+// Ikon hub Finance (nama di lib/financeHubs.js → komponen lucide). Hub = satu entri sidebar; aktif untuk semua halaman di bawahnya.
+const FINANCE_HUB_IKON = {
+  dashboard: LayoutDashboard, pemasukan: TrendingUp, pengeluaran: Receipt, pembelian: ShoppingCart, kas: Wallet,
+  karyawan: UserRound, persediaan: Boxes, pembukuan: BookOpen, laporan: BarChart3, pengaturan: Settings,
+};
+function financeHubNavItems() {
+  return FINANCE_HUBS.map((h) => ({
+    to: h.items[0].to, label: h.label, Icon: FINANCE_HUB_IKON[h.ikon], hubKey: h.key,
+    aktifJika: (pathname, search) => hubAktif(pathname, search) === h.key,
+  }));
+}
+// Badge pekerjaan per hub dari antrean server (tanpa hitungan baru): item hub diberi badgeN bila ada yang menunggu.
+function denganBadgeFinance(sections, antrean) {
+  if (!antrean) return sections;
+  return sections.map((sec) => ({
+    ...sec,
+    items: sec.items.map((i) => {
+      const hub = FINANCE_HUBS.find((h) => h.key === i.hubKey);
+      const n = hub ? badgeHub(hub, antrean) : null;
+      return n ? { ...i, badgeN: n } : i;
+    }),
+  }));
+}
 
 const DIVISIONS = {
   growth: {
@@ -455,59 +481,10 @@ const DIVISIONS = {
     accent: {
       ...DIVISION_ACCENT,
     },
+    // Okt 2026 — sidebar Finance = 10 HUB (lib/financeHubs.js); tiap hub membuka rute lama pertamanya dan menampilkan bilah tab hub di halaman
+    // (features/finance/FinanceHubFrame.jsx). Semua rute lama tetap hidup & deep-link-nya menyorot hub + tab yang benar.
     sections: [
-      {
-        section: "OPERASIONAL",
-        items: [
-          { to: "/finance/dashboard", label: "Ringkasan",              Icon: LayoutDashboard },
-          { to: "/finance/pemasukan", label: "Pemasukan",              Icon: TrendingUp },
-          { to: "/finance/payments",  label: "Pembayaran & Verifikasi", Icon: Banknote },
-          { to: "/finance/cash",      label: "Kas & Bank",             Icon: Wallet },
-          { to: "/finance/expenses",  label: "Pengeluaran",            Icon: Receipt },
-          // C2 — semua pengajuan divisi (Produksi, Gudang, Marketing, Management, HR-GA) dalam satu hub
-          { to: "/finance/pengajuan-divisi", label: "Pengajuan Biaya Divisi", Icon: Receipt, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "APPROVER"] },
-          { to: "/finance/purchases", label: "Pembelian",              Icon: ShoppingCart },
-          { to: "/finance/kasbon",    label: "Kasbon",                 Icon: HandCoins },
-          { to: "/finance/penjualan-karyawan", label: "Penjualan Karyawan", Icon: UserRound },
-          { to: "/finance/pengecualian-lunas", label: "Pengecualian Tgl Lunas", Icon: ShieldCheck },
-          { to: "/finance/uang-muka", label: "Uang Muka Operasional",  Icon: PiggyBank },
-        ],
-      },
-      {
-        section: "PIUTANG & UTANG",
-        items: [
-          { to: "/finance/invoices",    label: "Invoice & Jatuh Tempo", Icon: FileSpreadsheet },
-          { to: "/finance/receivables", label: "Piutang & Refund",      Icon: Users },
-          { to: "/finance/suppliers",   label: "Supplier & Utang", Icon: Building2 },
-          { to: "/finance/purchase-orders", label: "Purchase Order", Icon: ClipboardList },
-          { to: "/finance/retur-supplier", label: "Retur & Debit Note", Icon: Undo2 },
-          { to: "/finance/biaya-bahan", label: "Biaya Bahan per Unit", Icon: Boxes },
-        ],
-      },
-      {
-        section: "PEMBUKUAN",
-        items: [
-          { to: "/finance/journal",        label: "Jurnal Umum",       Icon: FileSpreadsheet },
-          { to: "/finance/ledger",         label: "Buku Besar",        Icon: BookOpen },
-          { to: "/finance/reconciliation", label: "Rekonsiliasi Bank", Icon: ScaleIcon },
-          { to: "/finance/persediaan-awal", label: "Tutup Stok & Persediaan Awal", Icon: ClipboardCheck },
-        ],
-      },
-      {
-        section: "LAPORAN",
-        items: [
-          { to: "/finance/reports", label: "Laporan Keuangan", Icon: BarChart3 },
-          // Fase 2 — biaya per divisi (aktual, kas keluar, komitmen, anggaran). Server menegakkan sakelar & izin.
-          { to: "/finance/laporan-divisi", label: "Laporan Divisi", Icon: BarChart3 },
-        ],
-      },
-      {
-        section: "PENGATURAN FINANCE",
-        items: [
-          { to: "/finance/accounts", label: "Bagan Akun", Icon: ListTree },
-          { to: "/finance/settings", label: "Pengaturan", Icon: Settings },
-        ],
-      },
+      { section: "MENU FINANCE", items: financeHubNavItems() },
     ],
   },
   // Workspace B2B/Non-CRM (D-115, 11 September 2026) — order vendor/korporat
@@ -897,6 +874,8 @@ export default function Layout({ user, onLogout }) {
     };
   }, [divisionBase, divisionKey, user, driverOnly, divisiSaya]);
 
+  // Antrean Finance (angka server) untuk badge hub — hanya dimuat saat workspace Finance aktif.
+  const antreanFinance = useAntreanFinance(divisionKey === "finance" && !onHub);
   const [unreadCount, setUnreadCount] = useState(0);
   const [toast, setToast]             = useState(null); // { customerName, preview, conversationId }
   const [mobileOpen, setMobileOpen]   = useState(false);
@@ -1194,7 +1173,7 @@ export default function Layout({ user, onLogout }) {
               di deklarasi state-nya). */}
           <LayoutGroup>
           {(() => {
-            const sectionsVisible = visibleSections(onHub ? HUB_SECTIONS : division.sections, isAdmin);
+            const sectionsVisible = visibleSections(onHub ? HUB_SECTIONS : (divisionKey === "finance" ? denganBadgeFinance(division.sections, antreanFinance) : division.sections), isAdmin);
             // P8.2 (UI Polish) — seluruh item yang TAMPIL saat ini (lintas
             // section), dipakai lib/sidebarActive.js untuk mendeteksi
             // "saudara" berquery yang lebih spesifik berbagi pathname sama

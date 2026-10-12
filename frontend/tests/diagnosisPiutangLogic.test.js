@@ -60,7 +60,7 @@ test("layar memakai endpoint & komponen diagnosis (tidak menghitung saldo di kli
   const api = fs.readFileSync(path.join(dir, "../src/api.js"), "utf8");
   assert.match(api, /getFinancePiutangDiagnosis[^\n]*receivables\/diagnosis/);
   const halaman = fs.readFileSync(path.join(dir, "../src/pages/finance/FinanceReceivables.jsx"), "utf8");
-  assert.match(halaman, /<DiagnosisPiutang \/>/);
+  assert.match(halaman, /<DiagnosisPiutang data=\{diag === undefined \? null : diag\}/); // dimuat sekali oleh layar (tab Diagnosis), komponen yang sama
   const komponen = fs.readFileSync(path.join(dir, "../src/features/finance/DiagnosisPiutang.jsx"), "utf8");
   assert.doesNotMatch(komponen, /api\.(post|put|patch|delete|create|update)/i, "komponen ini hanya membaca");
 });

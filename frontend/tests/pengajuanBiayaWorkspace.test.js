@@ -120,7 +120,9 @@ test("C2: menu — Marketing di Growth (SALES), Management di All Teams, hub sem
   const layout = baca("components/Layout.jsx");
   assert.match(layout, /to: "\/marketing\/pengajuan-biaya", label: "Pengajuan Biaya"[^}]*bolehPeran: \["ADMIN", "OWNER", "FINANCE", "APPROVER"\], bolehDivisi: \["MARKETING"\]/); // C2.1: SALES bukan otomatis Marketing
   assert.match(layout, /to: "\/kendali\/pengajuan-biaya", label: "Pengajuan Biaya"[^}]*bolehPeran: \["ADMIN", "OWNER", "FINANCE", "APPROVER"\]/);
-  assert.match(layout, /to: "\/finance\/pengajuan-divisi", label: "Pengajuan Biaya Divisi"[^}]*bolehPeran: \["ADMIN", "OWNER", "FINANCE", "APPROVER"\]/);
+  // menu Finance = hub (lib/financeHubs.js): item Pengajuan Biaya Divisi dengan gerbang peran yang sama
+  assert.match(baca("lib/financeHubs.js"), /label: "Pengajuan Biaya Divisi", to: "\/finance\/pengajuan-divisi", bolehPeran: PERAN_PENGAJUAN/);
+  assert.match(baca("lib/financeHubs.js"), /PERAN_PENGAJUAN = \["ADMIN", "OWNER", "FINANCE", "APPROVER"\]/);
   assert.doesNotMatch(layout, /\/marketing\/pengajuan-biaya[^}]*"PRODUCTION_LEAD"/);
   assert.match(layout, /\["bengkel", "warehouse", "growth", "kendali", "finance"\]\.includes\(divisionKey\)/);
 });

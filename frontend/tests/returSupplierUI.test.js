@@ -71,8 +71,8 @@ test("pemasangan: Gudang tanpa nilai rupiah; Finance memegang debit note & saldo
   for (const f of ["buatReturGudang", "keluarkanReturGudang", "setujuiDebitNote", "terapkanSaldoKredit", "batalDebitNote", "batalPemakaianKredit"]) assert.match(api, new RegExp(`${f}:[^\\n]*Idempotency-Key`));
   assert.match(baca("../src/routes/pageRegistry.jsx"), /"\/warehouse\/retur-supplier"/);
   assert.match(baca("../src/routes/pageRegistry.jsx"), /"\/finance\/retur-supplier"/);
-  assert.match(baca("../src/components/Layout.jsx"), /Retur Supplier/);
-  assert.match(baca("../src/components/Layout.jsx"), /Retur & Debit Note/);
+  assert.match(baca("../src/lib/financeHubs.js"), /Retur & Debit Note/); // menu Finance = hub
+  assert.match(baca("../src/lib/financeHubs.js"), /\/finance\/retur-supplier/);
   assert.match(baca("../src/features/warehouse/inventoryReal.js"), /SUPPLIER_RETURN/);
 });
 
