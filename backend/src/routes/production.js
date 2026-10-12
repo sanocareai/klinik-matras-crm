@@ -32,6 +32,8 @@ import { notifyReadyForDelivery } from "../services/customerNotifications.js";
 import { DISPLAY_STATUS_UNIT_FILTER, displayStatusCountsOf, displayStatusOfOrder, displayStatusOfUnit, physicalPresenceOf, priorityDisplay } from "../lib/domain/productionDisplay.js";
 import { GLOBAL_STATUS, GLOBAL_STATUS_FLOW, milestoneOf } from "../lib/domain/workshopMilestone.js";
 import { countByGlobalStatus, loadMilestoneEvidence, unitWhereForGlobalStatuses } from "../services/workshopMilestoneEvidence.js";
+import { wajibUuid } from "../lib/uuidParam.js";
+import { pesanServerAman } from "../lib/galatServerAman.js";
 const UNIT_STATUS_VALUES = Object.freeze(["AWAITING_PICKUP", "IN_TRANSIT_IN", "RECEIVED", "IN_PRODUCTION", "READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD", "IN_TRANSIT_OUT", "DELIVERED", "CANCELLED"]); // = enum UnitStatus (schema.prisma)
 import { loadOpenComplaintsByUnit } from "../services/productionComplaints.js";
 import { PKR_ORDER_SELECT, PKR_UNIT_ITEM_SELECT, rujukanPkrDariOrder, pesanPkrBelumLengkap } from "../services/pkrProduksiGuard.js";
@@ -42,7 +44,7 @@ productionRouter.use(requireAuth);
 function handleErr(err, res) {
   if (err instanceof StageTransitionError) return res.status(err.statusCode).json({ error: err.message, ...(typeof err.code === "string" && /^UNIT_/.test(err.code) ? { code: err.code } : {}) });
   console.error("Production error:", err);
-  return res.status(500).json({ error: "Server error: " + err.message });
+  return res.status(500).json({ error: pesanServerAman(err) });
 }
 
 // Tanggal target disimpan sebagai DATE polos (hari kerja, bukan instant).
@@ -982,7 +984,7 @@ productionRouter.get("/work-centers", requirePermission(P.WORK_CENTER_READ), asy
 
 // GET /api/production/work-centers/:id — drawer detail ringan (Slice 4L),
 // TANPA chart kapasitas apa pun.
-productionRouter.get("/work-centers/:id", requirePermission(P.WORK_CENTER_READ), async (req, res) => {
+productionRouter.get("/work-centers/:id", requirePermission(P.WORK_CENTER_READ), wajibUuid(), async (req, res) => {
   try {
     const workCenter = await prisma.workCenter.findUnique({ where: { id: req.params.id } });
     if (!workCenter) return res.status(404).json({ error: "Work Center tidak ditemukan" });
@@ -1023,7 +1025,7 @@ productionRouter.post("/work-centers", requirePermission(P.WORK_CENTER_WRITE), a
 // code SENGAJA TIDAK bisa diedit di sini (identitas tetap, sama pola
 // dengan ServiceCatalog.code/RoutingStage.code — kode dipakai referensi
 // stabil, bukan label tampilan).
-productionRouter.patch("/work-centers/:id", requirePermission(P.WORK_CENTER_WRITE), async (req, res) => {
+productionRouter.patch("/work-centers/:id", requirePermission(P.WORK_CENTER_WRITE), wajibUuid(), async (req, res) => {
   try {
     const { name, description, active, standardDailyMinutes, notes, sortOrder } = req.body;
     const data = {};

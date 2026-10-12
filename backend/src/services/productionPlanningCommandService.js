@@ -491,6 +491,9 @@ export async function setStationDayPic(prisma, { actorId, productionDate, statio
 
 // Riwayat jadwal & target sebuah rencana (append-only), terbaru dulu. Nama aktor diselesaikan dari tabel pengguna; tidak ada data lain yang dibuka.
 export async function listPlanScheduleHistory(prisma, { planId }) {
+  // Plan yang tidak ada = 404 (bukan 200 dengan daftar kosong yang tak bisa dibedakan dari plan yang belum pernah dijadwalkan ulang).
+  const plan = await prisma.productionRunPlan.findUnique({ where: { id: planId }, select: { id: true } });
+  if (!plan) throw planError("Rencana produksi tidak ditemukan", 404, "PLAN_NOT_FOUND");
   const rows = await prisma.productionPlanScheduleEvent.findMany({ where: { planId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 100 });
   const ids = [...new Set(rows.map((r) => r.actorId).filter(Boolean))];
   const users = ids.length ? await prisma.user.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } }) : [];

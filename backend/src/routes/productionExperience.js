@@ -36,6 +36,7 @@ import { BOARD_DEFAULTS, todayWib } from "../lib/domain/productionBoard.js";
 import { normalizeExportQuery } from "../lib/domain/productionRencanaExport.js";
 import { buildRencanaExport } from "../services/productionRencanaExportService.js";
 import { getCornerBoard, setCornerOperator } from "../services/productionCornerService.js";
+import { wajibUuid } from "../lib/uuidParam.js";
 
 export const productionExperienceRouter = express.Router();
 productionExperienceRouter.use(requireAuth);
@@ -317,7 +318,7 @@ productionExperienceRouter.put("/stations/:code/pic", requirePermission(P.PRODUC
 });
 
 // GET /api/production-v2/plans/:id/schedule-history — riwayat jadwal & target (append-only), terbaru dulu. Baca-saja.
-productionExperienceRouter.get("/plans/:id/schedule-history", requirePermission(P.UNIT_READ), async (req, res) => {
+productionExperienceRouter.get("/plans/:id/schedule-history", requirePermission(P.UNIT_READ), wajibUuid(), async (req, res) => {
   try { res.json(await listPlanScheduleHistory(prisma, { planId: req.params.id })); } catch (err) { handleErr(err, res); }
 });
 
