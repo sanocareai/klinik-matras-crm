@@ -6,6 +6,7 @@ import DocDetail from "@/features/production/docApp/DocDetail.jsx";
 import { DocAkun, DrafTab, KameraTab, UnitTab } from "@/features/production/docApp/DocTabs.jsx";
 import { DOC_NAV_TABS, docFriendlyError, docGroupOf, docTabOf } from "@/features/production/documentation.js";
 import WorkerAppShell from "@/features/production/workerApp/WorkerAppShell.jsx";
+import { exitPathFor } from "@/features/production/workerApp/Tabs.jsx";
 import { rolesOf } from "@/lib/roles.js";
 
 // Aplikasi Dokumentasi (P10B, desain modern P12D) — mode aplikasi mobile-first/PWA, kerangka & komponen yang SAMA dengan Aplikasi Meja/Corner.
@@ -74,7 +75,7 @@ export default function ProductionDocumentation({ user: userProp = null, onLogou
 
   return (
     <WorkerAppShell tabs={DOC_NAV_TABS} title={title} subtitle={subtitle} tab={tab} onTab={setTab} badges={badges} hideNav={detailOpen} actionPad={detailOpen}
-      onBack={detailOpen ? closeRun : null} onRefresh={() => { setLoading(true); load(); }} refreshing={loading}>
+      onBack={detailOpen ? closeRun : null} exitTo={exitPathFor(roles, pathname)} onLeave={drafts.confirmLeave} onRefresh={() => { setLoading(true); load(); }} refreshing={loading}>
       {flash && <div role="status" className="mb-3 rounded-btn bg-greenbg px-3 py-3 text-[13.5px] font-semibold text-green" data-testid="flash">{flash}</div>}
       {drafts.lastSent && <div role="status" className="mb-3 rounded-btn bg-greenbg px-3 py-3 text-[13.5px] font-semibold text-green" data-testid="sent-note" key={drafts.lastSent.at}>{drafts.lastSent.count} foto {drafts.lastSent.corrected ? "koreksi " : ""}terkirim{drafts.lastSent.label ? ` ke ${drafts.lastSent.label}` : ""}{drafts.lastSent.unitCode ? ` (${drafts.lastSent.unitCode})` : ""}.</div>}
       {error && <div role="alert" className="mb-3 rounded-btn bg-redbg px-3 py-3 text-[13.5px] text-red" data-testid="queue-error">{error}</div>}
