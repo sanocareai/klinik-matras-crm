@@ -74,16 +74,17 @@ const dariOrder = (items, order) => items.find((i) => i.tautan?.order?.nomor ===
 
 // ── unit murni: turunan status pembayaran ───────────────────────────────────────────────────────────────────────
 
+// `orderCredits: []` = kontrak PILIH_TAGIHAN (Nota Kredit aktif; kosong = tanpa potongan) — objek tanpa relasi itu melempar di mode strict.
 test("tentukanStatusBayar: Belum dibayar / Sebagian / Lunas / Perlu verifikasi + rekening belum diketahui (murni)", () => {
   const p = (amount, { verif = true, rek = "R1", batal = false } = {}) => ({ amount, cancelledAt: batal ? new Date() : null, cashAccountId: rek, verifications: verif ? [{ id: "v" }] : [] });
-  assert.equal(tentukanStatusBayar({ value: 1000, paymentStatus: "BELUM_BAYAR", payments: [] }).kode, "BELUM_DIBAYAR");
-  assert.equal(tentukanStatusBayar({ value: 1000, paymentStatus: "DP", payments: [p(400)] }).kode, "SEBAGIAN");
-  assert.equal(tentukanStatusBayar({ value: 1000, paymentStatus: "LUNAS", payments: [p(1000)] }).kode, "LUNAS");
-  assert.equal(tentukanStatusBayar({ value: 1000, paymentStatus: "LUNAS", payments: [] }).kode, "PERLU_VERIFIKASI", "klaim Sales tanpa pembayaran");
-  assert.equal(tentukanStatusBayar({ value: 1000, paymentStatus: "LUNAS", payments: [p(400)] }).kode, "PERLU_VERIFIKASI", "klaim lunas, tercatat kurang");
-  assert.equal(tentukanStatusBayar({ value: 1000, paymentStatus: "DP", payments: [p(500, { verif: false })] }).kode, "PERLU_VERIFIKASI", "pembayaran belum diverifikasi");
-  assert.equal(tentukanStatusBayar({ value: 1000, paymentStatus: "BELUM_BAYAR", payments: [p(1000, { batal: true })] }).kode, "BELUM_DIBAYAR", "pembayaran dibatalkan tidak dihitung");
-  const tanpaRek = tentukanStatusBayar({ value: 1000, paymentStatus: "LUNAS", payments: [p(1000, { rek: null })] });
+  assert.equal(tentukanStatusBayar({ value: 1000, orderCredits: [], paymentStatus: "BELUM_BAYAR", payments: [] }).kode, "BELUM_DIBAYAR");
+  assert.equal(tentukanStatusBayar({ value: 1000, orderCredits: [], paymentStatus: "DP", payments: [p(400)] }).kode, "SEBAGIAN");
+  assert.equal(tentukanStatusBayar({ value: 1000, orderCredits: [], paymentStatus: "LUNAS", payments: [p(1000)] }).kode, "LUNAS");
+  assert.equal(tentukanStatusBayar({ value: 1000, orderCredits: [], paymentStatus: "LUNAS", payments: [] }).kode, "PERLU_VERIFIKASI", "klaim Sales tanpa pembayaran");
+  assert.equal(tentukanStatusBayar({ value: 1000, orderCredits: [], paymentStatus: "LUNAS", payments: [p(400)] }).kode, "PERLU_VERIFIKASI", "klaim lunas, tercatat kurang");
+  assert.equal(tentukanStatusBayar({ value: 1000, orderCredits: [], paymentStatus: "DP", payments: [p(500, { verif: false })] }).kode, "PERLU_VERIFIKASI", "pembayaran belum diverifikasi");
+  assert.equal(tentukanStatusBayar({ value: 1000, orderCredits: [], paymentStatus: "BELUM_BAYAR", payments: [p(1000, { batal: true })] }).kode, "BELUM_DIBAYAR", "pembayaran dibatalkan tidak dihitung");
+  const tanpaRek = tentukanStatusBayar({ value: 1000, orderCredits: [], paymentStatus: "LUNAS", payments: [p(1000, { rek: null })] });
   assert.equal(tanpaRek.kode, "LUNAS");
   assert.equal(tanpaRek.rekeningBelumDiketahui, true);
 });
