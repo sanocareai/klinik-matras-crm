@@ -3,6 +3,7 @@
 // view Command Center yang sudah dikirim server — modul ini hanya MENERJEMAHKAN, tidak menghitung KPI sendiri.
 import { bucketLabelOf, stepOf } from "@/features/production/experience.js";
 import { PRODUCT_TYPE_LABELS } from "@/utils/format.js";
+import { teksUkuranDariNotes } from "@/utils/ukuranKasur.js";
 import { rankOfView } from "@/features/production/productionLabels.js";
 
 // Prioritas pengguna: Normal · Tinggi · Komplain. Argumen = PERINGKAT (rankOfView): 3 = Komplain (ComplaintCase resmi dari server), 1/2 = Tinggi (nilai lama Mendesak tampil Tinggi), 0 = Normal.
@@ -74,8 +75,8 @@ export function viewOfOnboardCard(item) {
   return {
     runId: `unit:${c.unit.id}`, onboardUnitId: c.unit.id, plan: null,
     suggestedPriority: c.priority?.key === "NORMAL" ? 0 : 1,
-    unit: { id: c.unit.id, unitCode: c.unit.unitCode, merk: c.unit.merk ?? null, ukuran: c.unit.ukuran ?? null, photoUrl: c.unit.photoUrl ?? null },
-    customer: { name: c.customer?.name ?? null, orderNumber: c.customer?.orderNumber ?? null, salesServices: c.customer?.salesServices || [] },
+    unit: { id: c.unit.id, unitCode: c.unit.unitCode, merk: c.unit.merk ?? null, ukuran: c.unit.ukuran || teksUkuranDariNotes(c.customer?.request) || null, photoUrl: c.unit.photoUrl ?? null },
+    customer: { name: c.customer?.name ?? null, orderNumber: c.customer?.orderNumber ?? null, salesServices: c.customer?.salesServices || [], request: c.customer?.request ?? null },
     priority: c.priority, unitStatus: c.unitStatus, orderStatus: c.orderStatus, presence: c.presence, bucket: null, next: null, progress: null,
     activatable: !!item.rencana?.activatable, // belum diaktifkan tetapi boleh diaktifkan otomatis saat dijadwalkan (ADMIN/OWNER; server = otoritas)
     build: item.rencana?.build ?? null, // jalur Pengerjaan Pesanan: modal Jadwalkan menanyakan "Corner diperlukan?" (null = bukan jalur ini)

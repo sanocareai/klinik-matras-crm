@@ -86,8 +86,13 @@ test("AKAR #1 foto: pickup single-unit tampil di kartu order nyata (di luar coho
   const multi = await mkReal({ photo: "multi", extra: 2 });
   const noPhoto = await mkReal({ photo: "none" });
   const noJob = await mkReal({ photo: "nojob" });
+  // Ukuran di kartu: dari catatan order Sales (customer.request) bila ukuran unit kosong — server hanya meneruskan catatan, tidak menebak ukuran.
+  const CATATAN = JSON.stringify({ ukuranKasur: "Ukuran Custom", ukuranLebarCm: 145, ukuranPanjangCm: 205 });
+  await testPrisma.order.update({ where: { id: single.order.id }, data: { notes: CATATAN } });
   const b = await backlog("?pageSize=100");
   assert.equal(b.total, 6);
+  assert.equal(itemOf(b, single.unit).card.customer.request, CATATAN, "catatan order Sales diteruskan sebagai customer.request");
+  assert.equal(itemOf(b, noJob.unit).card.customer.request, null, "order tanpa catatan = null (bukan string kosong/tebakan)");
   const s = itemOf(b, single.unit);
   assert.ok(s.card.unit.photoUrl?.startsWith(`/media/unit-photo/${single.unit.id}?`), "foto pickup single-unit tampil lewat URL bertanda tangan resolver resmi");
   assert.equal(s.card.photoNote, null);
