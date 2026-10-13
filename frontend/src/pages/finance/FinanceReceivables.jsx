@@ -26,6 +26,8 @@ import { BIAYA_KOSONG, denganBiaya, biayaTransferLengkap, bodyBiayaTransfer } fr
 import { RiwayatVersiDialog, InfoDialog } from "@/features/finance/KoreksiAman.jsx";
 import KoreksiRefundDialog from "@/features/finance/KoreksiRefundDialog.jsx";
 import LampirkanBuktiDialog from "@/features/finance/LampirkanBuktiDialog.jsx";
+import { BuatNotaKreditDialog } from "@/features/finance/NotaKreditDialog.jsx";
+import RiwayatNotaKredit from "@/features/finance/RiwayatNotaKredit.jsx";
 import { bisaLampirBukti } from "@/features/finance/refundKoreksiLogic.js";
 import { aksiRefund as matriksRefund } from "@/features/finance/matriksAksi.js";
 import { KenapaBeda } from "@/features/finance/kontrak.jsx";
@@ -45,12 +47,13 @@ import { resetSaatBuka } from "@/features/finance/resetSaatBuka.jsx";
 
 // Refund: belum disetujui = Edit bebas (belum ada jurnal); sudah disetujui = jurnal sudah ada, JANGAN diubah —
 // pilihannya Batalkan (jurnal dibalik resmi, status bayar order dihitung ulang) lalu ajukan ulang dengan data yang benar.
-function aksiRefund(r, { aksi, setEditUntuk, setVersiUntuk, setInfoUntuk, setKoreksiUntuk, setLampirUntuk }) {
+function aksiRefund(r, { aksi, setEditUntuk, setVersiUntuk, setInfoUntuk, setKoreksiUntuk, setLampirUntuk, setNotaUntuk }) {
   const items = bentukItemMenu(matriksRefund(r, { admin: adminSaatIni() }), {
     edit: () => setEditUntuk(r),
     info: () => setInfoUntuk(r),
     koreksi: () => setKoreksiUntuk(r),
     lampirkan: () => setLampirUntuk(r),
+    notaKredit: () => setNotaUntuk({ orderId: r.orderId || r.order?.id, refundId: r.id }),
     versi: () => setVersiUntuk(r),
     tolak: () => {
       const alasan = window.prompt("Alasan penolakan refund:");
@@ -99,6 +102,8 @@ export default function FinanceReceivables() {
   const [infoUntuk, setInfoUntuk] = useState(null);
   const [koreksiUntuk, setKoreksiUntuk] = useState(null);
   const [lampirUntuk, setLampirUntuk] = useState(null); // refund yang sedang diberi bukti tanpa koreksi
+  const [notaUntuk, setNotaUntuk] = useState(null); // { orderId, refundId? } — dialog Buat Nota Kredit
+  const [notaTik, setNotaTik] = useState(0); // naik setiap nota dibuat/dibatalkan → riwayat nota di drawer dimuat ulang
   const [rekening, setRekening] = useState([]);
   // POSISI saldo (tanggal WIB, bawaan HARI INI): saldo buku besar sampai tanggal itu. BUKAN filter transaksi periode — jatuh tempo & ≤7 hari relatif ke posisi ini.
   const [posisi, setPosisi] = useState(() => periodeBawaanPiutang().to);
@@ -213,6 +218,7 @@ export default function FinanceReceivables() {
       onBukaVerifikasi: () => navigate("/finance/payments"),
       onBukaInvoice: () => navigate("/finance/invoices"),
       alasan: alasanOrder(diag, terpilih.orderId),
+      nodeNotaKredit: <RiwayatNotaKredit orderId={terpilih.orderId} refreshKey={notaTik} onBuat={() => setNotaUntuk({ orderId: terpilih.orderId, refundId: null })} onChanged={() => { setNotaTik((n) => n + 1); muat(); }} />,
     })
     : panelRefund;
   const panelRincian = specDrawer;
@@ -337,7 +343,7 @@ export default function FinanceReceivables() {
           />
           <DaftarRefund
             refunds={refunds} refundTampil={refundTampil} refundMenunggu={refundMenunggu}
-            aksiBaris={(r) => aksiRefund(r, { aksi, setEditUntuk, setVersiUntuk, setInfoUntuk, setKoreksiUntuk, setLampirUntuk })} onBuka={(r) => setPanelRefund(specOtomatis(r, { aksi: bisaLampirBukti(r) && adminSaatIni() ? (<Button variant="neutral" onClick={() => setLampirUntuk(r)} data-testid="lampirkan-dari-detail" className="max-sm:min-h-11 max-sm:px-4"><Paperclip size={14} />Lampirkan Bukti</Button>) : undefined }))}
+            aksiBaris={(r) => aksiRefund(r, { aksi, setEditUntuk, setVersiUntuk, setInfoUntuk, setKoreksiUntuk, setLampirUntuk, setNotaUntuk })} onBuka={(r) => setPanelRefund(specOtomatis(r, { aksi: bisaLampirBukti(r) && adminSaatIni() ? (<Button variant="neutral" onClick={() => setLampirUntuk(r)} data-testid="lampirkan-dari-detail" className="max-sm:min-h-11 max-sm:px-4"><Paperclip size={14} />Lampirkan Bukti</Button>) : undefined }))}
           />
         </section>
       )}
@@ -407,6 +413,13 @@ export default function FinanceReceivables() {
         <RiwayatVersiDialog
           jenis="refunds" id={versiUntuk.id} nomor={versiUntuk.refundNumber} onClose={() => setVersiUntuk(null)}
           onLampirBukti={adminSaatIni() ? (v) => { setVersiUntuk(null); setLampirUntuk({ id: v.id, refundNumber: v.nomor, amount: v.nominal, transferFeeAmount: v.biayaAdmin, cashAccount: { name: v.rekening }, status: v.status, replacedBy: v.diganti ? { refundNumber: v.diganti } : null }); } : undefined}
+        />
+      )}
+      {notaUntuk && (
+        <BuatNotaKreditDialog
+          orderId={notaUntuk.orderId} refundAwal={notaUntuk.refundId}
+          onClose={() => setNotaUntuk(null)}
+          onSaved={() => { setNotaUntuk(null); setNotaTik((n) => n + 1); setPanelRefund(null); muat(); }}
         />
       )}
       <ModalRefund

@@ -128,6 +128,10 @@ export function aksiRefund(r, { admin = false } = {}) {
       ok("info", "edit", "Edit Informasi", { hint: "Alasan refund & lampiran. Tanpa jurnal." }),
       itemKoreksi(r, admin, "Koreksi Refund", "Nominal, tanggal, rekening, biaya admin bank, referensi, dan bukti transfer. Jurnal lama dibalik & refund pengganti dibuat (tanpa PIN)."),
       izinAdmin(admin, ok("lampirkan", "lampirkan", "Lampirkan Bukti", { hint: "Tambah bukti transfer saja. Jurnal, saldo, dan nominal tidak berubah." })),
+      // Nota Kredit: mengakui refund ini sebagai potongan atas tagihan (tanpa jurnal baru). Kelayakan akhir (refund = potongan, belum tertaut) diperiksa server di dialog.
+      r.notaKredit
+        ? tidak("notaKredit", "notaKredit", "Buat Nota Kredit", `Sudah tertaut nota kredit ${r.notaKredit} — batalkan nota itu dulu bila ingin menggantinya`)
+        : izinAdmin(admin, ok("notaKredit", "notaKredit", "Buat Nota Kredit", { hint: "Akui refund ini sebagai potongan atas tagihan (tanpa jurnal baru) atau catat keringanan." })),
       riwayat(),
       izinAdmin(admin, ok("batalkan", "catatUlang", "Batalkan & Ajukan Ulang", { destructive: true, konfirmasi: true })),
     ];
