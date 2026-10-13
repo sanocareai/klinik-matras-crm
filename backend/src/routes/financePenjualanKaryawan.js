@@ -29,7 +29,8 @@ import { penjualanInclude, bentukPenjualan, hitungItems, ambilDaftar, ringkasanP
 import { pastikanKaryawanNonSales } from "../services/penjualanKaryawan.js";
 import { handleFinanceError } from "./finance.js";
 import { lockRowForUpdate } from "../services/inventoryLedger.js";
-import { buatAtauTautkanOrder, lengkapiSpesifikasi, batalkanOrderBersamaPkr, rapikanAgregatCustomer, ringkasOrderPkr, dryRunPkrTanpaOrder } from "../services/penjualanKaryawanOrder.js";
+import { buatAtauTautkanOrder, lengkapiSpesifikasi, batalkanOrderBersamaPkr, rapikanAgregatCustomer, ringkasOrderPkr, dryRunPkrTanpaOrder, pratinjauPembatalan, PkrOrderError } from "../services/penjualanKaryawanOrder.js";
+import { kemampuanKoreksiPkr, pratinjauKoreksiOrder, terapkanKoreksiOrder } from "../services/penjualanKaryawanKoreksiOrder.js";
 import { muatKatalogItem, pratinjauItems, buatKategori, ubahKategori, buatProduk, ubahProduk, simpanKomposisi } from "../services/penjualanKaryawanItem.js";
 import { pratinjauKoreksi, terapkanKoreksi } from "../services/penjualanKaryawanKoreksi.js";
 import { siapkanTerpadu, tulisBarisPenjualan, pratinjauTerpadu } from "../services/penjualanKaryawanTerpadu.js";
@@ -213,6 +214,32 @@ financePenjualanKaryawanRouter.post(`${BASE}/:id/koreksi-baris`, requirePermissi
   } catch (e) { handleFinanceError(e, res); }
 });
 
+// ─── KOREKSI DATA ORDER (alamat, kota, tanggal kirim, catatan permintaan customer; format lama: merk/ukuran/dikirim) + MATRIKS KEMAMPUAN ─────────────────────────────────
+// Kemampuan = sumber kebenaran server untuk layar: field apa yang masih bisa dikoreksi, lewat jalur apa, dan bila terkunci kenapa. Tidak menyembunyikan batasan format lama.
+financePenjualanKaryawanRouter.get(`${BASE}/:id/kemampuan-koreksi`, requirePermission(P.FINANCE_READ), async (req, res) => {
+  try { res.json(await kemampuanKoreksiPkr(prisma, req.params.id)); } catch (e) { handleFinanceError(e, res); }
+});
+financePenjualanKaryawanRouter.post(`${BASE}/:id/koreksi-order/pratinjau`, requirePermission(P.FINANCE_POST), async (req, res) => {
+  try {
+    res.json(await pratinjauKoreksiOrder(prisma, { penjualanId: req.params.id, perubahan: req.body?.perubahan, expectedRevision: req.body?.expectedRevision ?? null }));
+  } catch (e) { handleFinanceError(e, res); }
+});
+financePenjualanKaryawanRouter.post(`${BASE}/:id/koreksi-order`, requirePermission(P.FINANCE_POST), async (req, res) => {
+  try {
+    const hasil = await prisma.$transaction((tx) => terapkanKoreksiOrder(tx, {
+      penjualanId: req.params.id, perubahan: req.body?.perubahan, expectedRevision: req.body?.expectedRevision, alasan: req.body?.alasan,
+      idempotencyKey: req.headers["idempotency-key"], userId: req.user.id,
+    }), { timeout: 30000, maxWait: 10000 });
+    const sinkron = await ringkasOrderPkr(prisma, [req.params.id]);
+    res.status(hasil.replayed ? 200 : 201).json({ ...hasil, sinkron: sinkron.get(req.params.id) ?? null });
+  } catch (e) { handleFinanceError(e, res); }
+});
+
+// Pratinjau pembatalan (baca-saja): hambatan berkode + pembayaran aktif + apa yang akan terjadi. Dipakai modal pembatalan SEBELUM pengguna mengirim.
+financePenjualanKaryawanRouter.get(`${BASE}/:id/pembatalan`, requirePermission(P.FINANCE_READ), async (req, res) => {
+  try { res.json(await pratinjauPembatalan(prisma, req.params.id)); } catch (e) { handleFinanceError(e, res); }
+});
+
 financePenjualanKaryawanRouter.get(`${BASE}/:id`, requirePermission(P.FINANCE_READ), async (req, res) => {
   try {
     const p = await prisma.finPenjualanKaryawan.findUnique({ where: { id: req.params.id }, include: penjualanInclude });
@@ -330,15 +357,20 @@ financePenjualanKaryawanRouter.post(`${BASE}/:id/pembayaran/:pid/batal`, require
 // ─── BATALKAN PENJUALAN ──────────────────────────────────────────────────
 financePenjualanKaryawanRouter.post(`${BASE}/:id/batal`, requirePermission(P.FINANCE_ADMIN), async (req, res) => {
   try {
-    const reason = req.body?.reason?.trim();
+    const reason = String(req.body?.reason ?? "").trim().replace(/s+/g, " ");
     if (!reason) throw err("Alasan pembatalan wajib diisi");
+    // Kontrak server tetap "tidak kosong" (klien lama); modal Finance menegakkan minimal 5 karakter di sisi layar.
+    if (reason.length > 500) throw err("Alasan pembatalan maksimal 500 karakter");
     let customerOrder = null;
     await prisma.$transaction(async (tx) => {
       await lockRowForUpdate(tx, '"fin_penjualan_karyawan"', req.params.id);
+      // Pemeriksaan di bawah kunci memakai fungsi YANG SAMA dengan pratinjau: yang diblokir = yang dijelaskan modal. Tidak ada pembayaran yang dibatalkan/dikembalikan otomatis.
+      const pv = await pratinjauPembatalan(tx, req.params.id);
+      if (!pv.boleh) {
+        const sudah = pv.hambatan.find((h) => h.kode === "SUDAH_DIBATALKAN");
+        throw new PkrOrderError(sudah ? "Penjualan ini sudah dibatalkan" : `Penjualan ${pv.nomor} belum bisa dibatalkan. ${pv.hambatan.map((h) => h.pesan).join(" ")}`, 409, pv.hambatan[0].kode, { hambatan: pv.hambatan, pembayaranAktif: pv.pembayaranAktif });
+      }
       const p = await tx.finPenjualanKaryawan.findUnique({ where: { id: req.params.id }, include: { payments: { where: { cancelledAt: null } } } });
-      if (!p) throw err("Penjualan karyawan tidak ditemukan", 404);
-      if (p.status === "DIBATALKAN") throw err("Penjualan ini sudah dibatalkan", 409);
-      if (p.payments.length > 0) throw err("Penjualan ini sudah ada pembayarannya — batalkan pembayarannya dulu", 409);
       // Order CRM: belum diproses → ikut dibatalkan lewat jalur baku (unit CANCELLED, job dibatalkan, riwayat tetap). Produksi/Delivery sudah berjalan → pembatalan DIBLOKIR (409), tidak ada yang berubah.
       customerOrder = await batalkanOrderBersamaPkr(tx, { penjualanId: p.id, userId: req.user.id, alasan: reason });
       const entry = await entriPenjualanAktif(tx, p.id); // jurnal asli, atau pengganti terakhir bila nilai pernah dikoreksi

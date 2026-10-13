@@ -60,6 +60,37 @@ export function varianDelivery(kode) {
 }
 export const VARIAN_BAYAR_PKR = { BELUM_BAYAR: "red", SEBAGIAN: "orange", LUNAS: "green", DIBATALKAN: "neutral" };
 
+
+
+/**
+ * Ringkasan unit satu order PKR untuk daftar Order (Sales/CRM): nomor Order CRM, jumlah unit AKTIF, kode unit (ringkas U1, U2…), dan status tiap unit — status hanya dirinci bila
+ * unit-unitnya berbeda (sama = satu label untuk semua). Unit dibatalkan dihitung terpisah. Data dari server (`pkr.units`); null bila bukan order PKR / belum ada unit.
+ */
+export function ringkasUnitPkr(pkr) {
+  const units = Array.isArray(pkr?.units) ? pkr.units : [];
+  if (!pkr?.order || units.length === 0) return null;
+  const pendek = (kode) => String(kode ?? "").replace(/^.*-(U\d+)$/, "$1");
+  const aktif = units.filter((u) => u.status !== "CANCELLED");
+  const dibatalkan = units.length - aktif.length;
+  const labelUnik = new Set(aktif.map((u) => u.status));
+  // Dikelompokkan per status (urutan kemunculan pertama): "Menunggu produksi: U1, U3 · Sedang diproduksi: U2" — jauh lebih pendek daripada label per unit.
+  const kelompok = [];
+  for (const u of aktif) {
+    const label = u.label || u.status;
+    const g = kelompok.find((x) => x.status === u.status);
+    if (g) g.kode.push(pendek(u.kode)); else kelompok.push({ status: u.status, label, kode: [pendek(u.kode)] });
+  }
+  return {
+    nomorOrder: pkr.order.nomor ?? null,
+    jumlah: aktif.length,
+    dibatalkan,
+    kode: aktif.map((u) => ({ kode: u.kode, pendek: pendek(u.kode), status: u.status, label: u.label || u.status })),
+    kelompok,
+    statusSama: labelUnik.size <= 1,
+    labelSama: labelUnik.size === 1 ? (aktif[0].label || aktif[0].status) : null,
+  };
+}
+
 /** Ada order CRM aktif/terbuat untuk PKR ini? */
 export const adaOrderCrm = (sinkron) => !!sinkron?.order;
 /** Teks "kurang" spesifikasi untuk tooltip/pesan. */

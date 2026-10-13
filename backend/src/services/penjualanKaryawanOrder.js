@@ -31,7 +31,6 @@ import { toMoney, sumMoney, moneyToNumber, ZERO } from "./finance/money.js";
 import {
   siapkanItems, lahirkanItemDanUnit, ubahItemOrder, susunCerminan, kunciHimpunan, productLineDariItems, itemDariRow, ITEM_AKTIF,
 } from "./penjualanKaryawanItem.js";
-import { revisiTerakhir } from "./pkrItemRevisi.js";
 import { kategoriOrderDariItems, perluDikirimDariItems, itemVirtualLama } from "../lib/domain/pkrItem.js";
 
 import { PkrOrderError, tolakJikaOrderPkr } from "./pkrGuard.js";
@@ -226,7 +225,7 @@ const alamatGabung = (o) => [o?.deliveryAddress, o?.deliveryCity].filter(Boolean
  * Lengkapi atau ubah spesifikasi + logistik order PKR. Merk/ukuran hanya boleh berubah selama belum ada unit yang mulai dikerjakan Produksi. Alamat disinkronkan ke job yang masih
  * bisa diubah (alamat job yang sama dengan alamat order lama atau kosong; ubahan manual dispatcher tidak ditimpa). Setiap perubahan diaudit (sebelum/sesudah).
  */
-export async function lengkapiSpesifikasi(tx, { penjualanId, userId = null, masukan = {} }) {
+export async function lengkapiSpesifikasi(tx, { penjualanId, userId = null, masukan = {}, tanpaAudit = false }) {
   const pkr = await muatPkr(tx, penjualanId);
   if (!pkr.orderCrm) throw gagal(`${pkr.nomor} belum punya order CRM — buat dulu`, 409, "BELUM_ADA_ORDER");
   await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', pkr.orderCrm.id);
@@ -301,7 +300,8 @@ export async function lengkapiSpesifikasi(tx, { penjualanId, userId = null, masu
   }
   // Order ditandai perlu dikirim padahal unit sudah siap kirim: buat kerangka job lewat jalur baku (idempoten).
   if (perubahan.perluDikirim?.sesudah === true || hasilItem?.perluKirimBaru) await ensureDeliveryJobForOrder(tx, diperbarui);
-  await catatAudit(tx, { pkr, orderId: order.id, userId, aksi: "dilengkapi", metadata: { perubahan, jobDisinkron, lengkapSesudah: bacaSpesifikasiPkr(diperbarui).lengkap } });
+  // tanpaAudit: dipanggil dari koreksi data order (penuliskan SATU jejak "order_dikoreksi" lengkap dengan alasan + revisi) — tidak ganda.
+  if (!tanpaAudit) await catatAudit(tx, { pkr, orderId: order.id, userId, aksi: "dilengkapi", metadata: { perubahan, jobDisinkron, lengkapSesudah: bacaSpesifikasiPkr(diperbarui).lengkap } });
   return { orderId: order.id, perubahan, jobDisinkron, spesifikasi: bacaSpesifikasiPkr(diperbarui) };
 }
 
@@ -400,6 +400,11 @@ export async function ringkasOrderPkr(db, penjualanIds, { izinNominal = true } =
     },
   });
   const hasil = new Map();
+  const orderIds = pkrs.map((p) => p.orderCrm?.id).filter(Boolean);
+  const revisiPerOrder = new Map();
+  if (orderIds.length) {
+    for (const r of await db.pkrItemRevision.groupBy({ by: ["orderId"], where: { orderId: { in: orderIds } }, _max: { revision: true } })) revisiPerOrder.set(r.orderId, r._max.revision ?? 0);
+  }
   for (const p of pkrs) {
     const total = toMoney(p.total);
     const terbayar = p.payments.length ? sumMoney(p.payments.map((x) => x.amount)) : ZERO;
@@ -412,7 +417,7 @@ export async function ringkasOrderPkr(db, penjualanIds, { izinNominal = true } =
     const spek = bacaSpesifikasiPkr(o);
     const modeItem = o.pkrItems.length > 0;
     const unitPerItem = (r) => r.units.map((x) => ({ kode: x.unit.unitCode, status: x.unit.status, label: LABEL_UNIT[x.unit.status] || x.unit.status }));
-    const revisi = modeItem ? await revisiTerakhir(db, o.id) : 0;
+    const revisi = revisiPerOrder.get(o.id) ?? 0; // SEMUA format (termasuk lama): koreksi data order juga menaikkan revisi
     const bentukItem = (i, extra = {}) => ({
       no: i.no, kategori: i.kategoriCode, kategoriNama: i.kategoriNama, bentuk: i.bentuk, jenisKerja: i.jenisKerja, produkId: i.produkId ?? null, produk: i.produkNama ?? null, jumlah: i.jumlah, ukuran: i.ukuranLabel || null,
       panjang: i.panjang ?? null, lebar: i.lebar ?? null, tebal: i.tebal ?? null, tinggi: i.tinggi ?? null, spesifikasi: i.spesifikasi ?? null,
@@ -434,6 +439,47 @@ export async function ringkasOrderPkr(db, penjualanIds, { izinNominal = true } =
     });
   }
   return hasil;
+}
+
+/**
+ * Pratinjau pembatalan PKR (baca-saja): daftar hambatan BERKODE + ringkasan pembayaran aktif, supaya layar bisa menjelaskan SEBELUM pengguna mengirim.
+ * Pembayaran TIDAK pernah dibatalkan/dikembalikan otomatis oleh pembatalan PKR: Finance menanganinya lebih dulu lewat Riwayat Pembayaran.
+ * Dipakai juga di dalam transaksi pembatalan (di bawah kunci) sehingga yang diblokir sama dengan yang dipratinjau.
+ */
+export async function pratinjauPembatalan(db, penjualanId) {
+  const p = await db.finPenjualanKaryawan.findUnique({
+    where: { id: penjualanId },
+    select: { id: true, nomor: true, status: true, total: true, buyerName: true, payments: { where: { cancelledAt: null }, select: { amount: true } }, orderCrm: { select: { id: true, orderNumber: true, status: true } } },
+  });
+  if (!p) throw gagal("Penjualan karyawan tidak ditemukan", 404, "PKR_TIDAK_ADA");
+  const hambatan = [];
+  const bayarN = p.payments.length;
+  const bayarTotal = bayarN ? sumMoney(p.payments.map((x) => x.amount)) : ZERO;
+  if (p.status === "DIBATALKAN") hambatan.push({ kode: "SUDAH_DIBATALKAN", pesan: `${p.nomor} sudah dibatalkan.`, tindakan: null });
+  if (bayarN > 0 && p.status !== "DIBATALKAN") {
+    hambatan.push({
+      kode: "PEMBAYARAN_AKTIF", tindakan: "RIWAYAT_PEMBAYARAN",
+      pesan: `Sudah ada ${bayarN} pembayaran aktif (total ${moneyToNumber(bayarTotal).toLocaleString("id-ID")}). Pembayaran TIDAK dibatalkan atau dikembalikan otomatis oleh pembatalan penjualan — Finance menanganinya lebih dulu lewat Riwayat Pembayaran (batalkan pembayaran yang salah, atau proses pengembalian dana sesuai prosedur), baru penjualan ini bisa dibatalkan.`,
+    });
+  }
+  const o = p.orderCrm;
+  if (o && o.status !== "CANCELLED" && p.status !== "DIBATALKAN") {
+    for (const pesan of await hambatanPembatalan(db, o.id)) {
+      hambatan.push({ kode: "PRODUKSI_DELIVERY_BERJALAN", tindakan: "ALUR_ORDER", pesan: `${pesan}. Gunakan alur pembatalan resmi order (Kendali/Admin) — order, unit, job, dan jurnal tidak dihapus.` });
+    }
+  }
+  return {
+    penjualanId: p.id, nomor: p.nomor, statusPkr: p.status, pembeli: p.buyerName,
+    total: moneyToNumber(toMoney(p.total)),
+    pembayaranAktif: { jumlah: bayarN, total: moneyToNumber(bayarTotal) },
+    order: o ? { id: o.id, nomor: o.orderNumber, status: o.status } : null,
+    boleh: hambatan.length === 0, hambatan,
+    akanTerjadi: hambatan.length ? [] : [
+      "Jurnal penjualan dibalik (riwayat jurnal tetap tersimpan).",
+      o && o.status !== "CANCELLED" ? `Order CRM ${o.orderNumber} dan semua unitnya dibatalkan; job yang belum berjalan dibatalkan.` : "Tidak ada order CRM yang perlu dibatalkan.",
+      "Tidak ada pembayaran yang diubah (memang tidak ada pembayaran aktif).",
+    ],
+  };
 }
 
 /** Dry-run PKR lama: dokumen AKTIF yang belum punya order CRM (tidak menulis apa pun). */

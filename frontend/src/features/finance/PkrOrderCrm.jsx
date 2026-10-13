@@ -9,6 +9,7 @@ import { Pilihan, TombolAksi } from "@/features/finance/shared.jsx";
 import {
   KATEGORI_PKR_OPSI, KIRIM_OPSI, orderCrmKosong, orderCrmDariSinkron, galatOrderCrm, bodyOrderCrm,
   VARIAN_PRODUKSI, varianDelivery, VARIAN_BAYAR_PKR, teksKurang,
+  ringkasUnitPkr,
 } from "@/features/finance/pkrOrderCrmLogic.js";
 import {
   orderCrmItemKosong, bodyOrderCrmItem, galatItems, formLengkapiDariSinkron, bodyLengkapiItem, galatLengkapiItem, ringkasItemsTeks,
@@ -152,6 +153,27 @@ export function BadgeBayarPkr({ pkr }) {
   const p = pkr?.pembayaran;
   if (!p) return null;
   return <Badge variant={VARIAN_BAYAR_PKR[p.status] || "neutral"} title="Status pembayaran dibaca dari Penjualan Karyawan di Finance" data-testid="bayar-pkr">{p.label}</Badge>;
+}
+
+/**
+ * Order CRM hasil PKR di daftar Order: nomor order, jumlah unit, kode unit, dan status tiap unit bila berbeda. Satu order dengan N unit — bukan N resi.
+ * Sumber: ringkasan sinkron dari server (pkr.order, pkr.units).
+ */
+export function RingkasUnitOrderPkr({ pkr, className = "", tanpaNomor = false }) {
+  const r = ringkasUnitPkr(pkr);
+  if (!r) return null;
+  const daftar = `${r.jumlah} unit: ${r.kode.map((u) => u.pendek).join(", ")}${r.dibatalkan > 0 ? ` (+${r.dibatalkan} dibatalkan)` : ""}`;
+  return (
+    <span className={`block whitespace-normal break-words font-sans text-[11px] leading-snug text-ink2 ${className}`} data-testid="order-pkr-unit" title={r.kode.map((u) => `${u.kode} — ${u.label}`).join("\n")}>
+      <span className="block" data-testid="order-pkr-ringkas">
+        {tanpaNomor ? null : <><span className="font-semibold text-ink">Order CRM </span><span className="font-mono text-ink">{r.nomorOrder}</span>{" · "}</>}
+        <span className="font-medium text-ink">{daftar}</span>
+      </span>
+      {r.jumlah > 0 && (r.statusSama
+        ? <span className="block text-ink3" data-testid="order-pkr-status">{r.jumlah > 1 ? "Semua unit: " : ""}{r.labelSama}</span>
+        : <span className="block text-ink3" data-testid="order-pkr-status">{r.kelompok.map((g) => `${g.label}: ${g.kode.join(", ")}`).join(" · ")}</span>)}
+    </span>
+  );
 }
 
 /** Label kecil di kartu/baris order CRM: "Penjualan Karyawan · PKR-… · Perlu dilengkapi". */

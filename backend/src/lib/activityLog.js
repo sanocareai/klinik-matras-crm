@@ -573,6 +573,7 @@ export function formatActivitySentence(event) {
         case "dilengkapi": return `Spesifikasi/logistik order Penjualan Karyawan${ref} diperbarui: ${Object.keys(m.perubahan || {}).join(", ") || "—"}`;
         case "dibatalkan": return `Order Penjualan Karyawan${ref} dibatalkan bersama PKR — ${m.alasan || "tanpa alasan"}`;
         case "dikoreksi": return `Item order Penjualan Karyawan${ref} dikoreksi (revisi ${m.revisi ?? "?"}): ${m.ringkas || "—"} — ${m.alasan || "tanpa alasan"}`;
+        case "order_dikoreksi": return `Data order Penjualan Karyawan${ref} dikoreksi (revisi ${m.revisi ?? "?"}): ${m.ringkas || "—"} — ${m.alasan || "tanpa alasan"}`;
         case "pengiriman_sebagian": return `Pengiriman sebagian order Penjualan Karyawan${ref}: ${(m.unit || []).join(", ") || "—"} — ${m.alasan || "tanpa alasan"}`;
         default: return `Sinkronisasi Penjualan Karyawan${ref}`;
       }

@@ -31,7 +31,7 @@ import { opsiStatusBayar, lunasDicegat, PESAN_LUNAS_BUTUH_PEMBAYARAN } from "@/f
 import { useKlaimLunasAktif } from "@/features/klaim/useKlaimLunasAktif.js";
 import OrderTimelineDrawer from "../features/orders/OrderTimelineDrawer.jsx";
 import ReadinessBadge from "../features/orders/ReadinessBadge.jsx";
-import { LabelOrderPkr, BadgeBayarPkr } from "../features/finance/PkrOrderCrm.jsx";
+import { LabelOrderPkr, BadgeBayarPkr, RingkasUnitOrderPkr } from "../features/finance/PkrOrderCrm.jsx";
 import { JOB_STATUS_REAL } from "../features/armada/jobStatus.js";
 import { REVISION_STATUS } from "../features/armada/revisionStatus.js";
 
@@ -322,13 +322,20 @@ function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageC
             {order.orderNumber || "tanpa ID"}
           </p>
           {order.staffSeller && <p className="mt-0.5 truncate text-[10px] font-semibold text-accent" data-testid="label-penjualan-karyawan">Penjualan Karyawan · {order.staffSeller.name}</p>}
-          <LabelOrderPkr pkr={order.penjualanKaryawan} className="mt-0.5" />
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
           {order.penjualanKaryawan ? <BadgeBayarPkr pkr={order.penjualanKaryawan} /> : <PaymentStatusSelect order={order} onChange={onPaymentChange} locked={paymentLocked} />}
           <ReadinessBadge order={order} />
         </div>
       </div>
+
+      {/* Order dari Penjualan Karyawan: label PKR + ringkasan unit memakai LEBAR PENUH kartu (di kolom nama ia terjepit ±45px dan tidak terbaca). */}
+      {order.penjualanKaryawan && (
+        <div className="mt-2 space-y-1 rounded-lg bg-inset px-2 py-1.5" data-testid="order-pkr-blok">
+          <LabelOrderPkr pkr={order.penjualanKaryawan} />
+          <RingkasUnitOrderPkr pkr={order.penjualanKaryawan} />
+        </div>
+      )}
 
       {/* BUG YANG DIPERBAIKI (26 Agustus 2026): dua select ini dulu SEJAJAR
           (flex-1 + flex-1), memaksa lebar SAMA RATA berapa pun panjang
@@ -1370,6 +1377,7 @@ export default function Orders() {
                         {o.orderNumber || "—"}
                         {o.staffSeller && <span className="mt-0.5 block whitespace-normal font-sans text-[10px] font-semibold text-accent" data-testid="label-penjualan-karyawan">Penjualan Karyawan · {o.staffSeller.name}</span>}
                         <LabelOrderPkr pkr={o.penjualanKaryawan} className="mt-0.5" />
+                        <RingkasUnitOrderPkr pkr={o.penjualanKaryawan} className="mt-1" tanpaNomor />
                       </td>
                       <td className="px-3 py-2.5">
                         <div className="flex items-center gap-2">
