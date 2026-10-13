@@ -32,6 +32,7 @@ import {
   siapkanItems, lahirkanItemDanUnit, ubahItemOrder, susunCerminan, kunciHimpunan, productLineDariItems, itemDariRow, ITEM_AKTIF,
 } from "./penjualanKaryawanItem.js";
 import { revisiTerakhir } from "./pkrItemRevisi.js";
+import { LABEL_UNIT, LABEL_JOB, susunBarisUnitPkr } from "../lib/domain/pkrUnitBaris.js";
 import { kategoriOrderDariItems, perluDikirimDariItems, itemVirtualLama } from "../lib/domain/pkrItem.js";
 
 import { PkrOrderError, tolakJikaOrderPkr } from "./pkrGuard.js";
@@ -356,14 +357,6 @@ export async function rapikanAgregatCustomer(customerId) { if (customerId) await
 // ── BACA ─────────────────────────────────────────────────────────────────────────────────────────────
 
 const LABEL_ORDER = { PENDING: "Menunggu", PICKUP: "Pengambilan", PROCESSING: "Diproses", READY: "Siap kirim", DELIVERED: "Selesai", CANCELLED: "Dibatalkan" };
-const LABEL_UNIT = {
-  AWAITING_PICKUP: "Menunggu pengambilan", IN_TRANSIT_IN: "Dalam perjalanan ke workshop", RECEIVED: "Menunggu produksi", IN_PRODUCTION: "Sedang diproduksi",
-  READY_FOR_DELIVERY: "Produksi selesai", READY_ON_CUSTOMER_HOLD: "Produksi selesai (ditahan)", IN_TRANSIT_OUT: "Dalam pengiriman", DELIVERED: "Selesai", CANCELLED: "Dibatalkan",
-};
-const LABEL_JOB = {
-  UNSCHEDULED: "Job dibuat, belum dijadwalkan", SCHEDULED: "Terjadwal", ASSIGNED: "Terjadwal (driver ditetapkan)", EN_ROUTE: "Dalam perjalanan", ARRIVED: "Tiba di lokasi",
-  COMPLETED: "Terkirim", FAILED: "Gagal — perlu dijadwalkan ulang", RESCHEDULED: "Dijadwalkan ulang",
-};
 const LABEL_PEMBAYARAN = { DIBATALKAN: "Dibatalkan", LUNAS: "Lunas", SEBAGIAN: "Dibayar sebagian", BELUM_BAYAR: "Belum dibayar" };
 
 function statusProduksi(order, units, spek) {
@@ -396,7 +389,11 @@ export async function ringkasOrderPkr(db, penjualanIds, { izinNominal = true } =
     include: {
       seller: { select: { id: true, name: true } },
       payments: { where: { cancelledAt: null }, select: { amount: true } },
-      orderCrm: { include: { pkrItems: { where: ITEM_AKTIF, orderBy: { seq: "asc" }, include: { units: { select: { unit: { select: { unitCode: true, status: true } } } } } }, units: { orderBy: { seq: "asc" }, select: { id: true, unitCode: true, status: true, currentStageId: true, merk: true, ukuran: true } }, jobs: { orderBy: { createdAt: "asc" }, select: { id: true, type: true, status: true } } } },
+      orderCrm: { include: { pkrItems: { where: ITEM_AKTIF, orderBy: { seq: "asc" }, include: { units: { select: { unit: { select: { unitCode: true, status: true } } } } } }, units: { orderBy: { seq: "asc" }, select: { id: true, unitCode: true, seq: true, status: true, currentStageId: true, merk: true, ukuran: true, productionDueAt: true, currentStage: { select: { labelId: true } },
+          // Rencana produksi V2 terbaru + job pengiriman yang menaungi unit (representasi multi-unit Order CRM).
+          productionRunsV2: { where: { status: { not: "CANCELLED" } }, orderBy: { createdAt: "desc" }, take: 1, select: { status: true, plan: { select: { status: true, productionDate: true, targetDate: true, stationCode: true, operator: { select: { user: { select: { name: true } } } }, cornerOperator: { select: { user: { select: { name: true } } } } } } } },
+          jobUnits: { select: { job: { select: { id: true, type: true, status: true, scheduledDate: true, createdAt: true } } } } } },
+      jobs: { orderBy: { createdAt: "asc" }, select: { id: true, type: true, status: true, scheduledDate: true, createdAt: true, units: { select: { unitId: true } } } } } },
     },
   });
   const hasil = new Map();
@@ -423,11 +420,13 @@ export async function ringkasOrderPkr(db, penjualanIds, { izinNominal = true } =
       ? o.pkrItems.map((r) => bentukItem({ ...itemDariRow(r), kurang: (spek.items?.find((x) => x.no === r.seq)?.kurang) ?? [] }, { unit: unitPerItem(r), virtual: false, saleItemId: r.saleItemId ?? null, komponenSeq: r.componentSeq ?? null, pemenuhan: r.fulfillment ?? null }))
       : itemVirtualLama({ kategori: o.category, merk: spek.merk, ukuran: spek.ukuran, jumlahUnit: o.units.filter((u) => u.status !== "CANCELLED").length, perluDikirim: o.pkrPerluDikirim })
         .map((i) => bentukItem({ ...i, kurang: spek.kurang }, { unit: o.units.map((u) => ({ kode: u.unitCode, status: u.status, label: LABEL_UNIT[u.status] || u.status })), virtual: true }));
+    const unitBaris = susunBarisUnitPkr({ order: { status: o.status, pkrPerluDikirim: o.pkrPerluDikirim }, units: o.units, items, jobsOrder: o.jobs.map((j) => ({ ...j, unitIds: j.units.map((x) => x.unitId) })) });
     hasil.set(p.id, {
       penjualanId: p.id, nomor: p.nomor, statusPkr: p.status, penjual: p.seller, pembeli: p.buyerName, pembayaran,
       order: { id: o.id, nomor: o.orderNumber, status: o.status, statusLabel: LABEL_ORDER[o.status] || o.status, kategori: o.category, spesifikasi: spek, modeItem, revisi, nonProduksi: bacaNotesOrder(o.notes).pkrNonProduksi ?? [] },
       items,
       units: o.units.map((u) => ({ id: u.id, kode: u.unitCode, status: u.status, label: LABEL_UNIT[u.status] || u.status, merk: u.merk, ukuran: u.ukuran })),
+      unitBaris: unitBaris.baris, ringkasUnit: unitBaris.ringkas,
       produksi: statusProduksi(o, o.units, spek),
       delivery: statusDelivery(o, o.jobs, o.units),
       jobs: o.jobs.map((j) => ({ id: j.id, tipe: j.type, status: j.status, label: LABEL_JOB[j.status] || j.status })),

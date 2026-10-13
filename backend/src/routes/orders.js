@@ -1132,6 +1132,8 @@ orderRouter.post("/:id/payments/:paymentId/cancel", async (req, res) => {
   }
 });
 
+const UNIT_STATUS_VALID = ["AWAITING_PICKUP", "IN_TRANSIT_IN", "RECEIVED", "IN_PRODUCTION", "READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD", "IN_TRANSIT_OUT", "DELIVERED", "CANCELLED"];
+
 // ── GET /api/orders — DAFTAR order (order-centric) ────────────────────────
 // Sebelumnya TIDAK ADA endpoint daftar order sama sekali: order hanya bisa
 // dibuat/diedit lewat profil customer, jadi pertanyaan operasional paling
@@ -1144,7 +1146,7 @@ orderRouter.post("/:id/payments/:paymentId/cancel", async (req, res) => {
 // customer-nya (?conv=<id>) — sama seperti kartu Kanban Pipeline.
 orderRouter.get("/", async (req, res) => {
   try {
-    const { status, category, paymentStatus, search, from, to, hasComplaint, salesId, promoId, pipelineStage, hideFinished, hasConfirmedDate, sortBy, includeActiveComplaint, penjualan, staffSellerId } = req.query;
+    const { status, category, paymentStatus, search, from, to, hasComplaint, salesId, promoId, pipelineStage, hideFinished, hasConfirmedDate, sortBy, includeActiveComplaint, penjualan, staffSellerId, unitStatus } = req.query;
     // BUG YANG DIPERBAIKI (1 September 2026, ditemukan owner lewat audit
     // export Excel — "krusial banget, butuh keakuratan tinggi"): batas
     // atas SEBELUMNYA cuma 500, sementara Export Excel di Orders.jsx
@@ -1185,6 +1187,8 @@ orderRouter.get("/", async (req, res) => {
       ...(from && to && { createdAt: { gte: startOfDayWIB(from), lt: endOfDayExclusiveWIB(to) } }),
       ...(Object.keys(customerWhere).length > 0 && { customer: customerWhere }),
       ...(promoId && { promoId }),
+      // ?unitStatus=<UnitStatus> (Okt 2026): saringan memakai STATUS UNIT — order tampil bila SALAH SATU unit aktifnya berstatus itu (order multi-unit Penjualan Karyawan).
+      ...(unitStatus && UNIT_STATUS_VALID.includes(String(unitStatus)) && { units: { some: { status: String(unitStatus) } } }),
       // Penjualan Karyawan (1 Okt 2026): ?penjualan=KARYAWAN (order yang dijual karyawan non-Sales) | TIM_SALES (selain itu); ?staffSellerId=<karyawan> untuk satu karyawan.
       ...(penjualan === "KARYAWAN" && { staffSellerId: { not: null } }),
       ...(penjualan === "TIM_SALES" && { staffSellerId: null }),
@@ -1222,6 +1226,10 @@ orderRouter.get("/", async (req, res) => {
               { orderNumber: { contains: search, mode: "insensitive" } },
               { customer: { name:  { contains: search, mode: "insensitive" } } },
               { customer: { phone: { contains: search } } },
+              // Order multi-unit Penjualan Karyawan (Okt 2026): cari juga lewat nomor unit, nomor PKR, dan nama pembeli PKR.
+              { units: { some: { unitCode: { contains: search, mode: "insensitive" } } } },
+              { penjualanKaryawan: { is: { nomor: { contains: search, mode: "insensitive" } } } },
+              { penjualanKaryawan: { is: { buyerName: { contains: search, mode: "insensitive" } } } },
             ],
           });
         }
