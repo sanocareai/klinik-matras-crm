@@ -492,6 +492,9 @@ export async function koreksiRefund(tx, { refundId, body, alasan, userId, previe
   );
   const blokir = (await blokirKoreksiRefundBatch(tx, [refundId])).get(refundId);
   if (blokir) throw tolak(blokir.alasan, blokir.arah, 409, blokir.kode);
+  // Refund yang ditautkan ke nota kredit aktif tidak boleh digantikan diam-diam (tautan akan menunjuk dokumen yang sudah dibatalkan): batalkan nota dulu.
+  const notaTertaut = await tx.finOrderCredit.count({ where: { refundId, status: "AKTIF" } });
+  if (notaTertaut > 0) throw tolak(`Refund ini ditautkan ke ${notaTertaut} nota kredit aktif.`, "Batalkan nota kredit yang tertaut dulu, lalu koreksi refund.", 409, "NOTA_KREDIT_TERTAUT");
 
   const metodeBaru = perubahan.paymentMethod !== undefined ? perubahan.paymentMethod : lama.paymentMethod;
   const cashBaru = perubahan.cashAccountId ?? lama.cashAccountId;
