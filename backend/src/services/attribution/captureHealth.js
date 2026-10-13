@@ -8,7 +8,7 @@
 // "Pending" di desain atomik berarti dua hal yang berbeda dan dilaporkan terpisah:
 //   proses.tertunda      : penulisan susulan (fallback) yang sedang berjalan — normalnya 0;
 //   db.pendingPemetaan   : touch yang Ad ID-nya belum punya referensi (butuh impor pemetaan) — ini yang perlu tindakan manusia.
-import { _getTouchStats, isTouchCaptureOn, TOUCH_FLAG, JENDELA_CUSTOMER_BARU_MS } from "./touchCapture.js";
+import { _getTouchStats, isTouchCaptureOn, TOUCH_FLAG } from "./touchCapture.js";
 
 const JAM = 3600 * 1000;
 
@@ -23,7 +23,9 @@ export async function hitungKesehatanCapture(db, { now = new Date(), timeoutMs =
              count(*) FILTER (WHERE created_at >= ${s24})::int AS jam24,
              count(*) FILTER (WHERE created_at >= ${s7})::int AS hari7,
              count(*) FILTER (WHERE evidence_source = 'AD_REPLY_UNMARKED')::int AS audit_tanpa_penanda,
-             count(*) FILTER (WHERE evidence_source = 'CTWA_AD' AND customer_new_at_touch)::int AS akuisisi_ctwa,
+             count(*) FILTER (WHERE evidence_source = 'CTWA_AD' AND customer_status_at_touch = 'NEW')::int AS akuisisi_ctwa,
+             count(*) FILTER (WHERE customer_status_at_touch = 'EXISTING')::int AS status_existing,
+             count(*) FILTER (WHERE customer_status_at_touch = 'UNKNOWN')::int AS status_unknown,
              min(touch_at) AS tertua, max(touch_at) AS terbaru
         FROM attribution_touches`;
     const [u] = await tx.$queryRaw`
@@ -43,18 +45,19 @@ export async function hitungKesehatanCapture(db, { now = new Date(), timeoutMs =
     captureAktif: isTouchCaptureOn(),
     flag: TOUCH_FLAG,
     mekanisme: "atomik: touch ditulis dalam transaksi yang sama dengan Message (SAVEPOINT); fallback tanpa transaksi + percobaan susulan",
-    jendelaCustomerBaruMenit: Math.round(JENDELA_CUSTOMER_BARU_MS / 60000),
+    statusCustomer: "NEW hanya dari bukti kausal (webhook membuat customer / clid cocok); tanpa bukti = UNKNOWN",
     proses: {
       catatan: "penghitung per proses; kembali ke 0 saat backend restart",
       direkam: proses.direkam, duplikat: proses.duplikat, bukanTouch: proses.bukanTouch,
       gagal: proses.gagal,
       fallbackTransaksi: proses.fallbackTransaksi, dipulihkan: proses.dipulihkan, gagalPulih: proses.gagalPulih,
+      statusNew: proses.statusNew, statusExisting: proses.statusExisting, statusUnknown: proses.statusUnknown,
       tertunda: proses.tertunda, usiaTertundaTertuaDetik: Math.round(proses.usiaTertundaTertuaMs / 1000),
       terakhirGagalAt: proses.terakhirGagalAt,
     },
     db: {
       touchTotal: baris.t.total, touch24Jam: baris.t.jam24, touch7Hari: baris.t.hari7,
-      akuisisiCtwa: baris.t.akuisisi_ctwa, auditAdReplyTanpaPenanda: baris.t.audit_tanpa_penanda,
+      akuisisiCtwa: baris.t.akuisisi_ctwa, statusCustomer: { new: baris.t.akuisisi_ctwa, existing: baris.t.status_existing, unknown: baris.t.status_unknown }, auditAdReplyTanpaPenanda: baris.t.audit_tanpa_penanda,
       touchTertua: baris.t.tertua ? new Date(baris.t.tertua).toISOString() : null,
       touchTerbaru: baris.t.terbaru ? new Date(baris.t.terbaru).toISOString() : null,
       usiaTouchTerbaruJam: usiaJam(baris.t.terbaru),

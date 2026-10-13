@@ -42,9 +42,9 @@ TAG_KODE="atri2"
 FLAG_NAME="ATRIBUSI_TOUCH_CAPTURE_ENABLED"
 
 # Migrasi aditif yang SUDAH diaudit: nama:sha256 isi (LF). Perubahan sekecil apa pun = berhenti sampai diaudit ulang dan pin diperbarui.
-MIGS="20261107090000_atribusi_touch_iklan:b0f115c2f645f1a8b09e51603b9f4d5e4648e056c0f9111c82b90435fe8354f7"
+MIGS="20261107090000_atribusi_touch_iklan:6df8640b8045113a0012ee1c2a817c3cecd34f7a12becc1cd59b86777f3dc03f"
 # Hasil pemindai untuk migrasi di atas. Selisih = berhenti.
-SCAN_EXPECT='{"total":13,"create_table":3,"create_index":6,"fk":4,"check":12}'
+SCAN_EXPECT='{"total":13,"create_table":3,"create_index":6,"fk":4,"check":13}'
 # Hanya berkas ini yang BOLEH berbeda dari baseline (path persis; paket/compose/Dockerfile/frontend/Finance/Production = berhenti).
 ALLOWED_RE='^(backend/prisma/migrations/20261107090000_atribusi_touch_iklan/migration\.sql|backend/prisma/schema\.prisma|backend/src/index\.js|backend/src/routes/(attributionAds|webhooks)\.js|backend/src/services/attribution/(adReferensi|captureHealth|cohortLoader|iklanReport|touchCapture)\.js|backend/tests/(atribusiIklanReport|atribusiTouchAtomik|atribusiTouchReferensi|releaseAtribusiIklan)\.test\.js|backend/tests/fixtures/metaAdsFixture\.js|backend/tests/integration/(atribusiIklan|atribusiTouchCrash|releaseAtribusiIklan)\.integration\.test\.js|backend/tests/integration/helpers/(atribusiCrashChild\.mjs|ctwaPayload\.js)|backend/tests/integration/perf/atribusiIklan\.perf\.manual\.test\.js|docs/ATRIBUSI-FASE2-TOUCH-IKLAN\.md|scripts/(release-atribusi-iklan|release-atribusi-kohort|release-ctwa-capture-flag-off)\.sh)$'
 # Berkas backend/src yang berubah HARUS tepat daftar ini.
@@ -53,13 +53,13 @@ BACKEND_SRC_EXPECT="backend/src/index.js backend/src/routes/attributionAds.js ba
 declare -A PINS=(
   ["backend/src/index.js"]="5fec0d94fdfdebaa09c5b00a8c3239a3d06d86b90fa15df1a8617b59bc01ad01"
   ["backend/src/routes/attributionAds.js"]="c3dfafa620ad36111bedb795bd2b3573dd887eb45b487a26c7165d2a406c86ed"
-  ["backend/src/routes/webhooks.js"]="e7a6c4c791337bb9974bdf952a8461604d8c3cce47780b92162ff0a838d40eb0"
+  ["backend/src/routes/webhooks.js"]="2e87e63edf4ed6c5088c61cb1eaffe4489f79df3575417fd44ab4c5ebc28f5e8"
   ["backend/src/services/attribution/adReferensi.js"]="0ea832f4177eee974edf4222318ef7b05831b5f80f5e3634c8f97dea64f494dc"
-  ["backend/src/services/attribution/captureHealth.js"]="f3c2726f704eb9857500e80b0dbcb043b5219eacc52ecb8b3e970b1931209465"
+  ["backend/src/services/attribution/captureHealth.js"]="931c04278ea097affc1051fc53e251d43220eb3501f07e71efd615df28120b31"
   ["backend/src/services/attribution/cohortLoader.js"]="03d54a1feb5a64d5f1fd5b9a3ced908d58e0ba38e7dcce519a745dfb0cb3a57b"
-  ["backend/src/services/attribution/iklanReport.js"]="dfc5f9c85a88ccdefb7e3e8558b79825e03435c2fcc44a967ce309b9476212b6"
-  ["backend/src/services/attribution/touchCapture.js"]="9e924b58bff5b56ec674aaf95c88a8c43a913682a97ec6309b849d8e41396b77"
-  ["backend/prisma/schema.prisma"]="dbcf1ff9710657244d154fc4cf206bb311b12a4904d92dddef6690e9be9cb58e"
+  ["backend/src/services/attribution/iklanReport.js"]="67250a173d32564fd8ec68cd2df0ea30451b52ce413eb840f452c753de0ded51"
+  ["backend/src/services/attribution/touchCapture.js"]="8ccaa9b1729106b3f812f4a18dcfdf4cfc1b67140e9747025ca2d4ad634117b8"
+  ["backend/prisma/schema.prisma"]="f176793d53c6c5af46ca59c5d8d90470bda824ca862770a477ccf28592f50ea5"
 )
 
 say()  { printf '\n\033[1m== %s\033[0m\n' "$*"; }
@@ -241,10 +241,10 @@ const TABEL = {
     kolom: ['"id" UUID NOT NULL', '"customer_id" TEXT NOT NULL', '"message_id" TEXT', '"ad_id" VARCHAR(32) NOT NULL', '"ad_set_id" VARCHAR(32)', '"campaign_id" VARCHAR(32)',
       '"mapping_status_at_touch" VARCHAR(10) NOT NULL', '"touch_at" TIMESTAMP(3) NOT NULL', '"touch_date_wib" DATE NOT NULL', '"provider_ts" TIMESTAMP(3)',
       '"evidence_source" VARCHAR(24) NOT NULL', '"source_type" VARCHAR(16) NOT NULL', '"entry_point_source" VARCHAR(32)', '"entry_point_app" VARCHAR(32)',
-      '"ctwa_clid_hash" VARCHAR(16)', '"customer_new_at_touch" BOOLEAN NOT NULL', '"dedupe_key" VARCHAR(64) NOT NULL', '"capture_version" SMALLINT NOT NULL DEFAULT 1',
+      '"ctwa_clid_hash" VARCHAR(16)', '"customer_status_at_touch" VARCHAR(8) NOT NULL', '"customer_basis_at_touch" VARCHAR(24) NOT NULL', '"dedupe_key" VARCHAR(64) NOT NULL', '"capture_version" SMALLINT NOT NULL DEFAULT 1',
       '"created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP'],
     constraint: ["attribution_touches_pkey", "attribution_touches_ad_id_check", "attribution_touches_parent_ids_check", "attribution_touches_mapping_check",
-      "attribution_touches_evidence_check", "attribution_touches_source_type_check", "attribution_touches_clid_hash_check", "attribution_touches_date_wib_check"],
+      "attribution_touches_evidence_check", "attribution_touches_source_type_check", "attribution_touches_customer_status_check", "attribution_touches_clid_hash_check", "attribution_touches_date_wib_check"],
   },
 };
 const INDEKS = new Map([
@@ -330,7 +330,7 @@ uji_negatif_pemindai() {
   harus_ditolak "kolom nomor telepon ditambahkan ke touch" "$(printf '%s\n' "$ALL_SQL" | sed 's/    "capture_version" SMALLINT NOT NULL DEFAULT 1,/    "capture_version" SMALLINT NOT NULL DEFAULT 1,\n    "phone" TEXT,/')"
   harus_ditolak "kolom clid mentah ditambahkan" "$(printf '%s\n' "$ALL_SQL" | sed 's/    "ctwa_clid_hash" VARCHAR(16),/    "ctwa_clid_hash" VARCHAR(16),\n    "ctwa_clid" TEXT,/')"
   harus_ditolak "kolom payload mentah ditambahkan" "$(printf '%s\n' "$ALL_SQL" | sed 's/    "dedupe_key" VARCHAR(64) NOT NULL,/    "dedupe_key" VARCHAR(64) NOT NULL,\n    "payload" JSONB,/')"
-  harus_ditolak "kolom hilang" "$(printf '%s\n' "$ALL_SQL" | grep -v '"customer_new_at_touch" BOOLEAN NOT NULL,')"
+  harus_ditolak "kolom hilang" "$(printf '%s\n' "$ALL_SQL" | grep -v '"customer_status_at_touch" VARCHAR(8) NOT NULL,')"
   harus_ditolak "tipe kolom diubah (ad_id jadi BIGINT)" "$(printf '%s\n' "$ALL_SQL" | sed '0,/"ad_id" VARCHAR(32) NOT NULL,/s//"ad_id" BIGINT NOT NULL,/')"
   harus_ditolak "default liar" "$(printf '%s\n' "$ALL_SQL" | sed "s/DEFAULT CURRENT_TIMESTAMP/DEFAULT now()/")"
   harus_ditolak "CHECK Ad ID dibuang" "$(printf '%s\n' "$ALL_SQL" | grep -v 'attribution_touches_ad_id_check')"
@@ -369,37 +369,43 @@ BEGIN
   SELECT id INTO cid FROM "Customer" LIMIT 1;
   IF cid IS NULL THEN RAISE EXCEPTION 'ROLLBACK_UJI tolak=0 lolos=0 (tidak ada customer contoh)'; END IF;
   -- touch: bentuk Ad ID, sumber bukti, tipe sumber, konsistensi pemetaan, tanggal WIB, hash clid
-  BEGIN INSERT INTO attribution_touches (id, customer_id, ad_id, mapping_status_at_touch, touch_at, touch_date_wib, evidence_source, source_type, customer_new_at_touch, dedupe_key)
-        VALUES (gen_random_uuid(), cid, 'abc', 'UNMAPPED', '2026-10-05 03:00:00', '2026-10-05', 'CTWA_AD', 'ad', true, 'u1'); RAISE EXCEPTION 'TIDAK_DITOLAK_ad_id';
+  BEGIN INSERT INTO attribution_touches (id, customer_id, ad_id, mapping_status_at_touch, touch_at, touch_date_wib, evidence_source, source_type, customer_status_at_touch, customer_basis_at_touch, dedupe_key)
+        VALUES (gen_random_uuid(), cid, 'abc', 'UNMAPPED', '2026-10-05 03:00:00', '2026-10-05', 'CTWA_AD', 'ad', 'NEW', 'WEBHOOK_MEMBUAT', 'u1'); RAISE EXCEPTION 'TIDAK_DITOLAK_ad_id';
   EXCEPTION WHEN check_violation THEN tolak := tolak + 1; END;
-  BEGIN INSERT INTO attribution_touches (id, customer_id, ad_id, mapping_status_at_touch, touch_at, touch_date_wib, evidence_source, source_type, customer_new_at_touch, dedupe_key)
-        VALUES (gen_random_uuid(), cid, '52694481763484', 'UNMAPPED', '2026-10-05 03:00:00', '2026-10-05', 'TEBAKAN_NAMA', 'ad', true, 'u2'); RAISE EXCEPTION 'TIDAK_DITOLAK_evidence';
+  BEGIN INSERT INTO attribution_touches (id, customer_id, ad_id, mapping_status_at_touch, touch_at, touch_date_wib, evidence_source, source_type, customer_status_at_touch, customer_basis_at_touch, dedupe_key)
+        VALUES (gen_random_uuid(), cid, '52694481763484', 'UNMAPPED', '2026-10-05 03:00:00', '2026-10-05', 'TEBAKAN_NAMA', 'ad', 'NEW', 'WEBHOOK_MEMBUAT', 'u2'); RAISE EXCEPTION 'TIDAK_DITOLAK_evidence';
   EXCEPTION WHEN check_violation THEN tolak := tolak + 1; END;
-  BEGIN INSERT INTO attribution_touches (id, customer_id, ad_id, mapping_status_at_touch, touch_at, touch_date_wib, evidence_source, source_type, customer_new_at_touch, dedupe_key)
-        VALUES (gen_random_uuid(), cid, '52694481763484', 'UNMAPPED', '2026-10-05 03:00:00', '2026-10-05', 'CTWA_AD', 'post', true, 'u3'); RAISE EXCEPTION 'TIDAK_DITOLAK_source_type';
+  BEGIN INSERT INTO attribution_touches (id, customer_id, ad_id, mapping_status_at_touch, touch_at, touch_date_wib, evidence_source, source_type, customer_status_at_touch, customer_basis_at_touch, dedupe_key)
+        VALUES (gen_random_uuid(), cid, '52694481763484', 'UNMAPPED', '2026-10-05 03:00:00', '2026-10-05', 'CTWA_AD', 'post', 'NEW', 'WEBHOOK_MEMBUAT', 'u3'); RAISE EXCEPTION 'TIDAK_DITOLAK_source_type';
   EXCEPTION WHEN check_violation THEN tolak := tolak + 1; END;
-  BEGIN INSERT INTO attribution_touches (id, customer_id, ad_id, ad_set_id, mapping_status_at_touch, touch_at, touch_date_wib, evidence_source, source_type, customer_new_at_touch, dedupe_key)
-        VALUES (gen_random_uuid(), cid, '52694481763484', '52694481763284', 'MAPPED', '2026-10-05 03:00:00', '2026-10-05', 'CTWA_AD', 'ad', true, 'u4'); RAISE EXCEPTION 'TIDAK_DITOLAK_mapped_tanpa_campaign';
+  BEGIN INSERT INTO attribution_touches (id, customer_id, ad_id, ad_set_id, mapping_status_at_touch, touch_at, touch_date_wib, evidence_source, source_type, customer_status_at_touch, customer_basis_at_touch, dedupe_key)
+        VALUES (gen_random_uuid(), cid, '52694481763484', '52694481763284', 'MAPPED', '2026-10-05 03:00:00', '2026-10-05', 'CTWA_AD', 'ad', 'NEW', 'WEBHOOK_MEMBUAT', 'u4'); RAISE EXCEPTION 'TIDAK_DITOLAK_mapped_tanpa_campaign';
   EXCEPTION WHEN check_violation THEN tolak := tolak + 1; END;
-  BEGIN INSERT INTO attribution_touches (id, customer_id, ad_id, campaign_id, mapping_status_at_touch, touch_at, touch_date_wib, evidence_source, source_type, customer_new_at_touch, dedupe_key)
-        VALUES (gen_random_uuid(), cid, '52694481763484', '52694481763084', 'UNMAPPED', '2026-10-05 03:00:00', '2026-10-05', 'CTWA_AD', 'ad', true, 'u5'); RAISE EXCEPTION 'TIDAK_DITOLAK_unmapped_berisi_id';
+  BEGIN INSERT INTO attribution_touches (id, customer_id, ad_id, campaign_id, mapping_status_at_touch, touch_at, touch_date_wib, evidence_source, source_type, customer_status_at_touch, customer_basis_at_touch, dedupe_key)
+        VALUES (gen_random_uuid(), cid, '52694481763484', '52694481763084', 'UNMAPPED', '2026-10-05 03:00:00', '2026-10-05', 'CTWA_AD', 'ad', 'NEW', 'WEBHOOK_MEMBUAT', 'u5'); RAISE EXCEPTION 'TIDAK_DITOLAK_unmapped_berisi_id';
   EXCEPTION WHEN check_violation THEN tolak := tolak + 1; END;
-  BEGIN INSERT INTO attribution_touches (id, customer_id, ad_id, mapping_status_at_touch, touch_at, touch_date_wib, evidence_source, source_type, customer_new_at_touch, dedupe_key)
-        VALUES (gen_random_uuid(), cid, '52694481763484', 'UNMAPPED', '2026-10-05 18:00:00', '2026-10-05', 'CTWA_AD', 'ad', true, 'u6'); RAISE EXCEPTION 'TIDAK_DITOLAK_tanggal_wib';
+  BEGIN INSERT INTO attribution_touches (id, customer_id, ad_id, mapping_status_at_touch, touch_at, touch_date_wib, evidence_source, source_type, customer_status_at_touch, customer_basis_at_touch, dedupe_key)
+        VALUES (gen_random_uuid(), cid, '52694481763484', 'UNMAPPED', '2026-10-05 18:00:00', '2026-10-05', 'CTWA_AD', 'ad', 'NEW', 'WEBHOOK_MEMBUAT', 'u6'); RAISE EXCEPTION 'TIDAK_DITOLAK_tanggal_wib';
   EXCEPTION WHEN check_violation THEN tolak := tolak + 1; END;
-  BEGIN INSERT INTO attribution_touches (id, customer_id, ad_id, mapping_status_at_touch, touch_at, touch_date_wib, evidence_source, source_type, ctwa_clid_hash, customer_new_at_touch, dedupe_key)
-        VALUES (gen_random_uuid(), cid, '52694481763484', 'UNMAPPED', '2026-10-05 03:00:00', '2026-10-05', 'CTWA_AD', 'ad', 'AfhKBK8ZBWyKw3p4', true, 'u7'); RAISE EXCEPTION 'TIDAK_DITOLAK_clid_mentah';
+  BEGIN INSERT INTO attribution_touches (id, customer_id, ad_id, mapping_status_at_touch, touch_at, touch_date_wib, evidence_source, source_type, ctwa_clid_hash, customer_status_at_touch, customer_basis_at_touch, dedupe_key)
+        VALUES (gen_random_uuid(), cid, '52694481763484', 'UNMAPPED', '2026-10-05 03:00:00', '2026-10-05', 'CTWA_AD', 'ad', 'AfhKBK8ZBWyKw3p4', 'NEW', 'WEBHOOK_MEMBUAT', 'u7'); RAISE EXCEPTION 'TIDAK_DITOLAK_clid_mentah';
+  EXCEPTION WHEN check_violation THEN tolak := tolak + 1; END;
+  BEGIN INSERT INTO attribution_touches (id, customer_id, ad_id, mapping_status_at_touch, touch_at, touch_date_wib, evidence_source, source_type, customer_status_at_touch, customer_basis_at_touch, dedupe_key)
+        VALUES (gen_random_uuid(), cid, '52694481763484', 'UNMAPPED', '2026-10-05 03:00:00', '2026-10-05', 'CTWA_AD', 'ad', 'NEW', 'TANPA_BUKTI', 'u9'); RAISE EXCEPTION 'TIDAK_DITOLAK_new_tanpa_bukti';
+  EXCEPTION WHEN check_violation THEN tolak := tolak + 1; END;
+  BEGIN INSERT INTO attribution_touches (id, customer_id, ad_id, mapping_status_at_touch, touch_at, touch_date_wib, evidence_source, source_type, customer_status_at_touch, customer_basis_at_touch, dedupe_key)
+        VALUES (gen_random_uuid(), cid, '52694481763484', 'UNMAPPED', '2026-10-05 03:00:00', '2026-10-05', 'CTWA_AD', 'ad', 'UNKNOWN', 'WEBHOOK_MEMBUAT', 'u10'); RAISE EXCEPTION 'TIDAK_DITOLAK_unknown_berbukti';
   EXCEPTION WHEN check_violation THEN tolak := tolak + 1; END;
   -- baris sah, dedupe unik, FK customer
-  INSERT INTO attribution_touches (id, customer_id, ad_id, mapping_status_at_touch, touch_at, touch_date_wib, evidence_source, source_type, customer_new_at_touch, dedupe_key)
-    VALUES (gen_random_uuid(), cid, '52694481763484', 'UNMAPPED', '2026-10-05 03:00:00', '2026-10-05', 'CTWA_AD', 'ad', true, 'uji-sah-1'); lolos := lolos + 1;
-  INSERT INTO attribution_touches (id, customer_id, ad_id, ad_set_id, campaign_id, mapping_status_at_touch, touch_at, touch_date_wib, evidence_source, source_type, customer_new_at_touch, dedupe_key)
-    VALUES (gen_random_uuid(), cid, '52694481763484', '52694481763284', '52694481763084', 'MAPPED', '2026-10-05 18:00:00', '2026-10-06', 'CTWA_AD', 'ad', false, 'uji-sah-2'); lolos := lolos + 1;
-  BEGIN INSERT INTO attribution_touches (id, customer_id, ad_id, mapping_status_at_touch, touch_at, touch_date_wib, evidence_source, source_type, customer_new_at_touch, dedupe_key)
-        VALUES (gen_random_uuid(), cid, '52694481763484', 'UNMAPPED', '2026-10-05 03:00:00', '2026-10-05', 'CTWA_AD', 'ad', true, 'uji-sah-1'); RAISE EXCEPTION 'TIDAK_DITOLAK_dedupe';
+  INSERT INTO attribution_touches (id, customer_id, ad_id, mapping_status_at_touch, touch_at, touch_date_wib, evidence_source, source_type, customer_status_at_touch, customer_basis_at_touch, dedupe_key)
+    VALUES (gen_random_uuid(), cid, '52694481763484', 'UNMAPPED', '2026-10-05 03:00:00', '2026-10-05', 'CTWA_AD', 'ad', 'NEW', 'WEBHOOK_MEMBUAT', 'uji-sah-1'); lolos := lolos + 1;
+  INSERT INTO attribution_touches (id, customer_id, ad_id, ad_set_id, campaign_id, mapping_status_at_touch, touch_at, touch_date_wib, evidence_source, source_type, customer_status_at_touch, customer_basis_at_touch, dedupe_key)
+    VALUES (gen_random_uuid(), cid, '52694481763484', '52694481763284', '52694481763084', 'MAPPED', '2026-10-05 18:00:00', '2026-10-06', 'CTWA_AD', 'ad', 'EXISTING', 'RIWAYAT_PESAN', 'uji-sah-2'); lolos := lolos + 1;
+  BEGIN INSERT INTO attribution_touches (id, customer_id, ad_id, mapping_status_at_touch, touch_at, touch_date_wib, evidence_source, source_type, customer_status_at_touch, customer_basis_at_touch, dedupe_key)
+        VALUES (gen_random_uuid(), cid, '52694481763484', 'UNMAPPED', '2026-10-05 03:00:00', '2026-10-05', 'CTWA_AD', 'ad', 'NEW', 'WEBHOOK_MEMBUAT', 'uji-sah-1'); RAISE EXCEPTION 'TIDAK_DITOLAK_dedupe';
   EXCEPTION WHEN unique_violation THEN tolak := tolak + 1; END;
-  BEGIN INSERT INTO attribution_touches (id, customer_id, ad_id, mapping_status_at_touch, touch_at, touch_date_wib, evidence_source, source_type, customer_new_at_touch, dedupe_key)
-        VALUES (gen_random_uuid(), 'tidak-ada-customer', '52694481763484', 'UNMAPPED', '2026-10-05 03:00:00', '2026-10-05', 'CTWA_AD', 'ad', true, 'u8'); RAISE EXCEPTION 'TIDAK_DITOLAK_fk_customer';
+  BEGIN INSERT INTO attribution_touches (id, customer_id, ad_id, mapping_status_at_touch, touch_at, touch_date_wib, evidence_source, source_type, customer_status_at_touch, customer_basis_at_touch, dedupe_key)
+        VALUES (gen_random_uuid(), 'tidak-ada-customer', '52694481763484', 'UNMAPPED', '2026-10-05 03:00:00', '2026-10-05', 'CTWA_AD', 'ad', 'NEW', 'WEBHOOK_MEMBUAT', 'u8'); RAISE EXCEPTION 'TIDAK_DITOLAK_fk_customer';
   EXCEPTION WHEN foreign_key_violation THEN tolak := tolak + 1; END;
   -- referensi Ad -> Ad Set -> Campaign
   BEGIN INSERT INTO meta_ad_references (ad_id, ad_set_id, campaign_id, source, synced_at, updated_at) VALUES ('5.2E+13', '52694481763284', '52694481763084', 'MANUAL', now(), now()); RAISE EXCEPTION 'TIDAK_DITOLAK_notasi_ilmiah';
@@ -593,7 +599,7 @@ done
 SCAN="$BK_DIR/scan-migrasi.mjs"; printf '%s\n' "$SCAN_JS" > "$SCAN"
 HASIL_SCAN="$(printf '%s\n' "$ALL_SQL" | sql_bersih | node "$SCAN")" || die "migrasi memuat pernyataan di luar daftar putih yang diaudit"
 [ "$HASIL_SCAN" = "$SCAN_EXPECT" ] || die "hitungan pernyataan migrasi BERBEDA dari yang diaudit: ${HASIL_SCAN}"
-ok "migrasi: DDL aditif (3 tabel baru, 6 indeks, 4 FK, 12 CHECK bernama); tanpa ALTER/DROP/INSERT/UPDATE/DELETE/GRANT/fungsi/trigger"
+ok "migrasi: DDL aditif (3 tabel baru, 6 indeks, 4 FK, 13 CHECK bernama); tanpa ALTER/DROP/INSERT/UPDATE/DELETE/GRANT/fungsi/trigger"
 uji_negatif_pemindai
 ! sg grep -nE "ATRIBUSI_TOUCH_CAPTURE_ENABLED[[:space:]]*=" "$DEPLOY_SHA" -- backend/src >/dev/null 2>&1 || die "kode runtime menetapkan ${FLAG_NAME} (hanya boleh membaca)"
 ok "kandidat ${DEPLOY_SHORT} turunan baseline ${BASE_SHORT}; $(printf '%s\n' "$CHANGED" | wc -l) berkas dalam allowlist + 1 migrasi aditif"
@@ -713,16 +719,16 @@ dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="postgresql://${DB_USER}:${
 dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="postgresql://${DB_USER}:${REH_PW}@postgres:5432/${REH_DB}" backend npx prisma migrate status </dev/null 2>&1 | grep -i 'up to date' >/dev/null || die "migrate status rehearsal tidak 'up to date'"
 [ "$(RPSQL "select count(*) from information_schema.tables where table_schema='public' and table_name in ('attribution_touches','meta_ad_references','meta_ad_reference_imports')")" = "3" ] || die "3 tabel atribusi tidak terpasang di rehearsal"
 for T in attribution_touches meta_ad_references meta_ad_reference_imports; do [ "$(RPSQL "select count(*) from $T")" = "0" ] || die "tabel baru $T TIDAK kosong setelah migrasi (backfill tidak diizinkan)"; done
-[ "$(RPSQL "select count(*) from pg_constraint where conrelid in ('attribution_touches'::regclass,'meta_ad_references'::regclass,'meta_ad_reference_imports'::regclass) and contype='c'")" = "12" ] || die "jumlah CHECK pada tabel baru bukan 12"
+[ "$(RPSQL "select count(*) from pg_constraint where conrelid in ('attribution_touches'::regclass,'meta_ad_references'::regclass,'meta_ad_reference_imports'::regclass) and contype='c'")" = "13" ] || die "jumlah CHECK pada tabel baru bukan 13"
 [ "$(RPSQL "select count(*) from pg_indexes where tablename in ('attribution_touches','meta_ad_references')")" = "8" ] || die "jumlah indeks (pkey + 6) pada tabel baru bukan 8"
-ok "3 tabel baru kosong; 12 CHECK; 8 indeks (termasuk pkey); migrate status up to date"
+ok "3 tabel baru kosong; 13 CHECK; 8 indeks (termasuk pkey); migrate status up to date"
 UJI_OUT="$(printf '%s\n' "$UJI_SQL" | dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d "$REH_DB" -X -q -v ON_ERROR_STOP=0 2>&1 || true)"
 printf '%s\n' "$UJI_OUT" > "$BK_DIR/uji-perilaku.out"
 printf '%s\n' "$UJI_OUT" | grep -q 'ROLLBACK_UJI' || { printf '%s\n' "$UJI_OUT"; die "uji perilaku tidak selesai sampai rollback yang diharapkan"; }
 printf '%s\n' "$UJI_OUT" | grep -Eq 'TIDAK_DITOLAK' && { printf '%s\n' "$UJI_OUT"; die "perilaku constraint SALAH (ada data salah yang lolos)"; }
 UJI_TOLAK="$(printf '%s\n' "$UJI_OUT" | sed -n 's/.*ROLLBACK_UJI tolak=\([0-9]*\) lolos=\([0-9]*\).*/\1/p' | sed -n 1p)"
 UJI_LOLOS="$(printf '%s\n' "$UJI_OUT" | sed -n 's/.*ROLLBACK_UJI tolak=\([0-9]*\) lolos=\([0-9]*\).*/\2/p' | sed -n 1p)"
-[ -n "$UJI_TOLAK" ] && [ "$UJI_TOLAK" -ge 15 ] || { printf '%s\n' "$UJI_OUT"; die "uji perilaku: penolakan terbukti terlalu sedikit (${UJI_TOLAK:-?}; minimal 15)"; }
+[ -n "$UJI_TOLAK" ] && [ "$UJI_TOLAK" -ge 17 ] || { printf '%s\n' "$UJI_OUT"; die "uji perilaku: penolakan terbukti terlalu sedikit (${UJI_TOLAK:-?}; minimal 17)"; }
 [ -n "$UJI_LOLOS" ] && [ "$UJI_LOLOS" -ge 4 ] || { printf '%s\n' "$UJI_OUT"; die "uji perilaku: data benar yang lolos terlalu sedikit (${UJI_LOLOS:-?}; minimal 4)"; }
 ok "perilaku terbukti di DB rehearsal: tolak=${UJI_TOLAK} lolos=${UJI_LOLOS} — Ad ID/bukti/tipe/pemetaan/tanggal WIB/clid mentah/dedupe/FK/hierarki ditolak bila salah; semuanya dibatalkan"
 RPSQL "$FP_SQL" | LC_ALL=C sort > "$BK_DIR/fp-reh-sesudah.txt" || die "sidik jari rehearsal sesudah gagal"

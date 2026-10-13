@@ -61,13 +61,15 @@ test("referensi: satu Ad ID terpetakan (untuk membedakan MAPPED / UNMAPPED pada 
   await testPrisma.metaAdReference.create({ data: { adId: AD_PETA, adSetId: "52694481763284", campaignId: "52694481763084", source: "MANUAL", syncedAt: new Date() } });
 });
 
-// Urutan statement di dalam transaksi pesan CTWA: 1 message.create · 2 SAVEPOINT · 3 baca referensi · 4 insert touch · 5 RELEASE SAVEPOINT · (commit)
+// Urutan statement di dalam transaksi pesan CTWA: 1 kunci customer · 2 hitung pesan · 3 message.create · 4 SAVEPOINT · 5 baca referensi · 6 insert touch · 7 RELEASE SAVEPOINT · (commit)
 const TITIK = [
-  ["stmt:1", "tepat setelah INSERT Message (sebelum touch)"],
-  ["stmt:2", "setelah SAVEPOINT"],
-  ["stmt:3", "setelah membaca referensi"],
-  ["stmt:4", "setelah INSERT touch (belum RELEASE/commit)"],
-  ["stmt:5", "setelah RELEASE SAVEPOINT (belum commit)"],
+  ["stmt:1", "setelah kunci customer (belum ada Message)"],
+  ["stmt:2", "setelah hitung pesan sebelumnya"],
+  ["stmt:3", "tepat setelah INSERT Message (sebelum touch)"],
+  ["stmt:4", "setelah SAVEPOINT"],
+  ["stmt:5", "setelah membaca referensi"],
+  ["stmt:6", "setelah INSERT touch (belum RELEASE/commit)"],
+  ["stmt:7", "setelah RELEASE SAVEPOINT (belum commit)"],
   ["after-commit", "tepat setelah COMMIT (sebelum respons)"],
 ];
 
@@ -104,7 +106,8 @@ for (const [titik, ket] of TITIK) {
     assert.equal(t2.length, 1, "TEPAT satu touch");
     assert.equal(t2[0].adId, AD_PETA);
     assert.equal(t2[0].mappingStatusAtTouch, "MAPPED");
-    assert.equal(t2[0].customerNewAtTouch, true, "customer yang sempat terbentuk sebelum kematian tetap akuisisi baru");
+    assert.equal(t2[0].customerStatusAtTouch, "NEW", "customer yang sempat terbentuk sebelum kematian tetap akuisisi baru — dibuktikan clid yang sama (CLID_COCOK) atau pembuatan oleh webhook ini");
+    assert.ok(["WEBHOOK_MEMBUAT", "CLID_COCOK"].includes(t2[0].customerBasisAtTouch));
 
     // 4. event ulang berikutnya dan DUA event bersamaan: tetap satu
     await Promise.all([kirim(port2, "message", p), kirim(port2, "message.any", p), kirim(port2, "message.any", p)]);
@@ -115,7 +118,7 @@ for (const [titik, ket] of TITIK) {
   });
 }
 
-test("customer LAMA + crash sebelum commit: setelah proses baru, touch ada dengan customerNewAtTouch=false (bukan lead baru)", async () => {
+test("customer LAMA + crash sebelum commit: setelah proses baru, touch ada dengan status EXISTING (bukan lead baru)", async () => {
   const phone = phoneBaru();
   // customer lama: dibuat 10 hari lalu dengan riwayat pesan
   const cust = await testPrisma.customer.create({ data: { name: "Pelanggan Lama", phone, leadSource: "WHATSAPP_DIRECT", createdAt: new Date(Date.now() - 10 * 86_400_000) } });
@@ -123,7 +126,7 @@ test("customer LAMA + crash sebelum commit: setelah proses baru, touch ada denga
   await testPrisma.message.create({ data: { conversationId: conv.id, direction: "INBOUND", content: "pesan lama", externalId: `false_${phone}@c.us_3EB0OLDMSG${nomor}`, createdAt: new Date(Date.now() - 10 * 86_400_000) } });
 
   const p = gowsPayload({ phone, msgId: `3EB0CRASHOLD${nomor}`, ad: AD_PETA });
-  const a = mulaiAnak({ crashAt: "stmt:3" });
+  const a = mulaiAnak({ crashAt: "stmt:5" });
   await kirim(await a.siap, "message", p);
   await a.selesai;
   assert.match(a.keluaran(), /CRASH_POINT/, "proses harus mati di titik yang dituju");
@@ -134,7 +137,7 @@ test("customer LAMA + crash sebelum commit: setelah proses baru, touch ada denga
   assert.equal(await kirim(await b.siap, "message", p), 200);
   assert.ok(await tunggu(async () => (await touchUntuk(phone)).length === 1));
   const [t] = await touchUntuk(phone);
-  assert.equal(t.customerNewAtTouch, false);
+  assert.deepEqual([t.customerStatusAtTouch, t.customerBasisAtTouch], ["EXISTING", "RIWAYAT_PESAN"]);
   assert.equal(await testPrisma.customer.count({ where: { phone } }), 1);
   const sesudah = await testPrisma.customer.findUnique({ where: { id: cust.id }, select: { createdAt: true } });
   assert.equal(sesudah.createdAt.getTime(), cust.createdAt.getTime(), "customer lama tidak berubah");
@@ -144,7 +147,7 @@ test("customer LAMA + crash sebelum commit: setelah proses baru, touch ada denga
 test("Ad ID BELUM terpetakan + crash: touch UNMAPPED tersimpan sekali dengan ad set/campaign null (tidak ditebak)", async () => {
   const phone = phoneBaru();
   const p = gowsPayload({ phone, msgId: `3EB0CRASHUNM${nomor}`, ad: AD_BARU });
-  const a = mulaiAnak({ crashAt: "stmt:4" });
+  const a = mulaiAnak({ crashAt: "stmt:6" });
   await kirim(await a.siap, "message", p);
   await a.selesai;
   assert.match(a.keluaran(), /CRASH_POINT/, "proses harus mati di titik yang dituju");

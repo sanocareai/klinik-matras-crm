@@ -6,6 +6,7 @@
 --                                    APPEND-ONLY. Tanpa isi chat, nomor, nama, payload mentah, atau clid mentah (hanya hash 16 hex).
 --                                    ad_id = string digit (bukan angka) — ID Meta melebihi presisi aman bila diperlakukan numerik di klien.
 --                                    ad_set_id/campaign_id = SNAPSHOT saat touch (NULL = belum terpetakan saat itu); laporan memakai referensi TERKINI.
+--                                    customer_status_at_touch = NEW | EXISTING | UNKNOWN + customer_basis_at_touch = bukti kausal (tanpa bukti = UNKNOWN, bukan NEW).
 --                                    touch_at = UTC (konvensi seluruh kolom waktu); touch_date_wib = hari kalender WIB (UTC+7), dijaga CHECK.
 --   meta_ad_references             : relasi Ad ID → Ad Set ID → Campaign ID yang dapat diperbarui. ID adalah kunci; nama = label snapshot.
 --   meta_ad_reference_imports      : log setiap impor pemetaan (sumber, sidik jari berkas, hitungan) — tanpa isi berkas.
@@ -64,7 +65,8 @@ CREATE TABLE "attribution_touches" (
     "entry_point_source" VARCHAR(32),
     "entry_point_app" VARCHAR(32),
     "ctwa_clid_hash" VARCHAR(16),
-    "customer_new_at_touch" BOOLEAN NOT NULL,
+    "customer_status_at_touch" VARCHAR(8) NOT NULL,
+    "customer_basis_at_touch" VARCHAR(24) NOT NULL,
     "dedupe_key" VARCHAR(64) NOT NULL,
     "capture_version" SMALLINT NOT NULL DEFAULT 1,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -80,6 +82,11 @@ CREATE TABLE "attribution_touches" (
     ),
     CONSTRAINT "attribution_touches_evidence_check" CHECK ("evidence_source" IN ('CTWA_AD', 'AD_REPLY_UNMARKED')),
     CONSTRAINT "attribution_touches_source_type_check" CHECK ("source_type" = 'ad'),
+    CONSTRAINT "attribution_touches_customer_status_check" CHECK (
+        ("customer_status_at_touch" = 'NEW' AND "customer_basis_at_touch" IN ('WEBHOOK_MEMBUAT', 'CLID_COCOK'))
+        OR ("customer_status_at_touch" = 'EXISTING' AND "customer_basis_at_touch" = 'RIWAYAT_PESAN')
+        OR ("customer_status_at_touch" = 'UNKNOWN' AND "customer_basis_at_touch" IN ('TANPA_BUKTI', 'TIDAK_KONSISTEN'))
+    ),
     CONSTRAINT "attribution_touches_clid_hash_check" CHECK ("ctwa_clid_hash" IS NULL OR "ctwa_clid_hash" ~ '^[0-9a-f]{16}$'),
     CONSTRAINT "attribution_touches_date_wib_check" CHECK ("touch_date_wib" = (("touch_at" + INTERVAL '7 hours')::date))
 );

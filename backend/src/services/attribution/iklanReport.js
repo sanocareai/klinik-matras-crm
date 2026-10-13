@@ -4,7 +4,7 @@
 // ia TIDAK pernah masuk lead/closing/grup.
 // Closing UTAMA untuk keputusan biaya = customer yang punya >= 1 order eligible LUNAS TERBUKTI LEDGER (`closingUtama`). Customer dengan order,
 // order pernah DP, dan lunas menurut CRM tetap metrik terpisah (bukan closing utama).
-// Akuisisi = touch CTWA valid PERTAMA pada customer yang BARU saat touch itu (customer_new_at_touch = true), dipilih menurut (touch_at, id).
+// Akuisisi = touch CTWA valid PERTAMA pada customer yang BARU saat touch itu (customer_status_at_touch = NEW, bukti kausal), dipilih menurut (touch_at, id).
 // Touch berikutnya dan touch pada customer lama disimpan terpisah (`sentuhanBerikutnya`) — TIDAK mengubah lead customer lama menjadi lead baru
 // dan TIDAK pernah menggeser atribusi lead.
 //
@@ -192,9 +192,9 @@ export function susunLaporanIklan({ parameter, asOf, leadBaru, touchAkuisisi, to
   const sentuhanPerGrup = new Map();
   for (const t of touchLain) {
     const k = kunciGrup(t.adId);
-    const g = sentuhanPerGrup.get(k) || sentuhanPerGrup.set(k, { touch: 0, customer: new Set(), customerLama: 0, customerBaru: 0 }).get(k);
+    const g = sentuhanPerGrup.get(k) || sentuhanPerGrup.set(k, { touch: 0, customer: new Set(), customerLama: 0, customerBaru: 0, customerTidakDiketahui: 0 }).get(k);
     g.touch++; g.customer.add(t.customerId);
-    t.customerNewAtTouch ? g.customerBaru++ : g.customerLama++;
+    if (t.customerStatusAtTouch === "NEW") g.customerBaru++; else if (t.customerStatusAtTouch === "EXISTING") g.customerLama++; else g.customerTidakDiketahui++;
   }
 
   const grup = [];
@@ -238,7 +238,7 @@ export function susunLaporanIklan({ parameter, asOf, leadBaru, touchAkuisisi, to
       uangLedger: t.uangLedger, refundDisetujui: t.refundDisetujui, uangBersihLedger: t.uangBersihLedger,
       cakupanLedger: { orderBerLedger: t.orderBerLedger, orderEligible: t.orders, persenOrderBerLedger: t.orders > 0 ? Math.round((t.orderBerLedger / t.orders) * 1000) / 10 : null },
       kematangan: hitungKematangan({ leadSah, orders: sm.orders, kontribusi: sm.kontribusi, refunds: sm.refunds, asOf }),
-      sentuhanBerikutnya: sent ? { touch: sent.touch, customerUnik: sent.customer.size, padaCustomerBaru: sent.customerBaru, padaCustomerLama: sent.customerLama } : { touch: 0, customerUnik: 0, padaCustomerBaru: 0, padaCustomerLama: 0 },
+      sentuhanBerikutnya: sent ? { touch: sent.touch, customerUnik: sent.customer.size, padaCustomerBaru: sent.customerBaru, padaCustomerLama: sent.customerLama, padaCustomerTidakDiketahui: sent.customerTidakDiketahui } : { touch: 0, customerUnik: 0, padaCustomerBaru: 0, padaCustomerLama: 0, padaCustomerTidakDiketahui: 0 },
       biaya: { status: "BELUM_TERHUBUNG", cpa: null, roas: null },
       ...(parameter.rincian ? { rincian: { perBulanLead: h.perBulanLead, perBulanOrder: h.perBulanOrder, perBulanPembayaran: h.perBulanPembayaran } } : {}),
       _cohort: h,
@@ -275,6 +275,7 @@ export function susunLaporanIklan({ parameter, asOf, leadBaru, touchAkuisisi, to
   let mapped = 0, unmapped = 0;
   for (const t of akuisisi.values()) (refOf(t.adId) ? mapped++ : unmapped++);
   const tanpa = leadBaru.filter((c) => !adaTouch.has(c.id));
+  const unknownCust = new Set(touchLain.filter((t) => t.customerStatusAtTouch === "UNKNOWN").map((t) => t.customerId));
   const metaTanpaTouch = tanpa.filter((c) => c.leadSource === "META_ADS").length;
   const leadSahAll = leadBaru.filter((c) => !alasanBukanLead(c)).length;
   const cakupan = {
@@ -285,6 +286,8 @@ export function susunLaporanIklan({ parameter, asOf, leadBaru, touchAkuisisi, to
     persenDenganTouch: leadBaru.length > 0 ? Math.round((akuisisi.size / leadBaru.length) * 1000) / 10 : null,
     persenTerpetakanDariTouch: akuisisi.size > 0 ? Math.round((mapped / akuisisi.size) * 1000) / 10 : null,
     leadLegacyMetaAdsTanpaTouch: metaTanpaTouch,
+    // dari "tanpaTouch": lead baru yang punya touch iklan TETAPI statusnya UNKNOWN (tidak ada bukti kausal bahwa webhook yang membuat customer) — tidak dihitung lead iklan
+    leadBaruTouchTanpaBukti: tanpa.filter((c) => unknownCust.has(c.id)).length,
   };
   tambah("cakupan_lead_lengkap", cakupan.denganTouchAkuisisi + cakupan.tanpaTouch, cakupan.leadBaruDalamRentang, "lead dengan touch + tanpa touch = semua lead baru di rentang");
   tambah("cakupan_mapped_unmapped", mapped + unmapped, akuisisi.size, "terpetakan + tidak terpetakan = customer dengan touch akuisisi");
@@ -310,6 +313,7 @@ export function susunLaporanIklan({ parameter, asOf, leadBaru, touchAkuisisi, to
   const mulaiHari = mulaiAtribusiAt ? hariWIB(mulaiAtribusiAt) : null;
   if (!mulaiAtribusiAt) w("ATRIBUSI_BELUM_MULAI", "Belum ada touch tersimpan (capture touch OFF atau belum ada sinyal iklan). Tidak ada atribusi campaign/ad untuk periode mana pun.");
   else if (parameter.dari < mulaiHari) w("RENTANG_SEBELUM_ATRIBUSI", `Rentang dimulai sebelum atribusi tersimpan (${mulaiHari} WIB). Lead sebelum tanggal itu TIDAK memiliki touch dan tidak dapat diatribusikan ke iklan (tidak ada backfill).`, { attributionStartDate: mulaiHari });
+  if (cakupan.leadBaruTouchTanpaBukti > 0) w("TOUCH_TANPA_BUKTI_AKUISISI", `${cakupan.leadBaruTouchTanpaBukti} lead baru punya touch iklan tetapi TANPA bukti kausal bahwa webhook yang membuat customer-nya (dibuat manual / jalur lain / tidak terbukti): TIDAK dihitung sebagai lead iklan.`, { jumlah: cakupan.leadBaruTouchTanpaBukti });
   if (cakupan.tanpaTouch > 0) w("LEAD_TANPA_TOUCH", `${cakupan.tanpaTouch} dari ${cakupan.leadBaruDalamRentang} lead baru di rentang tidak memiliki touch akuisisi (organik, non-iklan, atau iklan tanpa sourceID). Total grup di bawah BUKAN total lead.`, { jumlah: cakupan.tanpaTouch, legacyMetaAds: metaTanpaTouch });
   if (unmapped > 0) w("AD_ID_TIDAK_TERPETAKAN", `${unmapped} lead memiliki Ad ID yang belum terpetakan ke Ad Set/Campaign (${unm.size} Ad ID). Mereka dilaporkan sebagai UNMAPPED; impor pemetaan dari Ads Manager untuk menutupnya.`, { adIds: unm.size, lead: unmapped });
   const belumMatang = leadBaru.filter((c) => asOf.getTime() - new Date(c.createdAt).getTime() < 60 * DAY).length;
@@ -393,7 +397,7 @@ export async function hitungLaporanIklan(db, parameter, { now = new Date(), time
       select: { id: true, createdAt: true, pipelineStage: true, leadSource: true, isInternalStaff: true, staffUserId: true },
     });
     const akuisisi = await tx.attributionTouch.findMany({
-      where: { customerNewAtTouch: true, evidenceSource: { in: evidence }, customer: { createdAt: { gte: dari, lt: sampai } } },
+      where: { customerStatusAtTouch: "NEW", evidenceSource: { in: evidence }, customer: { createdAt: { gte: dari, lt: sampai } } },
       select: { id: true, customerId: true, adId: true, touchAt: true, evidenceSource: true, entryPointApp: true },
       orderBy: [{ touchAt: "asc" }, { id: "asc" }],
     });
@@ -403,7 +407,7 @@ export async function hitungLaporanIklan(db, parameter, { now = new Date(), time
     for (const t of akuisisi) if (!pernah.has(t.customerId)) { pernah.add(t.customerId); terpilih.add(t.id); }
     const lainRaw = await tx.attributionTouch.findMany({
       where: { evidenceSource: { in: evidence }, touchDateWib: { gte: tglDari, lte: tglSampai } },
-      select: { id: true, customerId: true, adId: true, touchAt: true, customerNewAtTouch: true },
+      select: { id: true, customerId: true, adId: true, touchAt: true, customerStatusAtTouch: true },
     });
     const touchLain = lainRaw.filter((t) => !terpilih.has(t.id));
 
@@ -414,12 +418,12 @@ export async function hitungLaporanIklan(db, parameter, { now = new Date(), time
     const agg = await tx.attributionTouch.aggregate({ _min: { touchAt: true }, _count: { _all: true } });
     const auditRaw = await tx.attributionTouch.findMany({
       where: { evidenceSource: SINYAL_AUDIT, touchDateWib: { gte: tglDari, lte: tglSampai } },
-      select: { customerId: true, customerNewAtTouch: true },
+      select: { customerId: true, customerStatusAtTouch: true },
     });
     const audit = {
       touch: auditRaw.length,
       customerUnik: new Set(auditRaw.map((t) => t.customerId)).size,
-      padaCustomerBaru: auditRaw.filter((t) => t.customerNewAtTouch).length,
+      padaCustomerBaru: auditRaw.filter((t) => t.customerStatusAtTouch === "NEW").length,
     };
     const masukanMentah = await muatMasukanKohort(tx, { customerIds: [...pernah] });
     const { meta, ...masukan } = masukanMentah;

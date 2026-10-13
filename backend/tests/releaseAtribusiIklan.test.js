@@ -145,7 +145,7 @@ test("pemindai DDL: menerima migrasi asli (hitungan persis) dan menolak SEMUA mu
   const jalan = (file) => spawnSync("bash", [scriptPath, A, B], { encoding: "utf8", timeout: 120_000, env: { ...process.env, ATRI2_SCAN_SELFTEST_FILE: posix(file) } });
   const r = jalan(migrasiPath);
   assert.equal(r.status, 0, r.stdout + r.stderr);
-  assert.match(r.stdout, /SCAN_OK \{"total":13,"create_table":3,"create_index":6,"fk":4,"check":12\}/);
+  assert.match(r.stdout, /SCAN_OK \{"total":13,"create_table":3,"create_index":6,"fk":4,"check":13\}/);
   const n = Number(/uji negatif pemindai: (\d+) mutan/.exec(r.stdout)?.[1]);
   assert.ok(n >= 30, `mutan ${n}`);
   // selundupkan satu UPDATE ke tabel lama

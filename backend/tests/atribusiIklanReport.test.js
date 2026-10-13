@@ -16,7 +16,7 @@ const REF = new Map([
 const cust = (id, createdAt, o = {}) => ({ id, createdAt: D(createdAt), pipelineStage: "NEW", leadSource: "META_ADS", isInternalStaff: false, staffUserId: null, transitions: [], ...o });
 const ord = (id, customerId, createdAt, value, o = {}) => ({ id, customerId, createdAt: D(createdAt), value, tagihan: value, status: "PROCESSING", penjualanKaryawanId: null, paymentStatus: "BELUM_BAYAR", paidAt: null, ...o });
 const pay = (id, orderId, createdAt, amount) => ({ id, orderId, createdAt: D(createdAt), amount });
-const touch = (id, customerId, adId, touchAt, o = {}) => ({ id, customerId, adId, touchAt: D(touchAt), evidenceSource: "CTWA_AD", entryPointApp: "instagram", customerNewAtTouch: true, ...o });
+const touch = (id, customerId, adId, touchAt, o = {}) => ({ id, customerId, adId, touchAt: D(touchAt), evidenceSource: "CTWA_AD", entryPointApp: "instagram", customerStatusAtTouch: "NEW", customerBasisAtTouch: "WEBHOOK_MEMBUAT", ...o });
 
 const customersRentang = [
   cust("A1", "2026-10-05T03:00:00Z", { pipelineStage: "PROSPECT", transitions: [{ toStage: "PROSPECT", createdAt: D("2026-10-06T03:00:00Z") }] }),
@@ -51,8 +51,8 @@ const touchAkuisisi = [
   touch("T9", "A9", AD3, "2026-10-13T03:05:00Z"),
 ];
 const touchLain = [
-  touch("T6b", "A6", AD1, "2026-10-12T02:00:00Z", { customerNewAtTouch: false }),   // touch berikutnya customer yang sama
-  touch("T7", "A7", AD1, "2026-10-10T04:00:00Z", { customerNewAtTouch: false }),    // customer LAMA (dibuat September)
+  touch("T6b", "A6", AD1, "2026-10-12T02:00:00Z", { customerStatusAtTouch: "EXISTING", customerBasisAtTouch: "RIWAYAT_PESAN" }),   // touch berikutnya customer yang sama
+  touch("T7", "A7", AD1, "2026-10-10T04:00:00Z", { customerStatusAtTouch: "EXISTING", customerBasisAtTouch: "RIWAYAT_PESAN" }),    // customer LAMA (dibuat September)
 ];
 const customersAtribusi = ["A1", "A2", "A3", "A4", "A5", "A6", "A9"].map((id) => customersRentang.find((c) => c.id === id));
 
@@ -75,7 +75,7 @@ test("akuisisi = touch pertama customer baru; satu customer tepat satu grup; tou
   assert.equal(grupDari(lap, "52696131903884").lead.unik, 1);
   assert.equal(lap.jumlahTeratribusi.leadUnik, 7);
   // touch berikutnya: A6 (AD1) + A7 customer lama (AD1) → campaign C1; BUKAN lead
-  assert.deepEqual(c1.sentuhanBerikutnya, { touch: 2, customerUnik: 2, padaCustomerBaru: 0, padaCustomerLama: 2 });
+  assert.deepEqual(c1.sentuhanBerikutnya, { touch: 2, customerUnik: 2, padaCustomerBaru: 0, padaCustomerLama: 2, padaCustomerTidakDiketahui: 0 });
   assert.equal(lap.rekonsiliasi.ok, true, JSON.stringify(lap.rekonsiliasi.cek.filter((c) => !c.ok)));
 });
 
@@ -297,4 +297,27 @@ test("parameter: dari & sampai WAJIB; validasi tanggal, level, sinyal (hanya CTW
   ]) {
     assert.throws(() => parseParameterIklan(q, now), (e) => e instanceof ParameterError && e.statusCode === 400, JSON.stringify(q));
   }
+});
+
+test("touch UNKNOWN (customer dibuat manual / tanpa bukti): TIDAK jadi lead iklan, jumlah touch tetap, dipisah di sentuhan dan cakupan, ada peringatan", () => {
+  const dasar = laporan("campaign");
+  // A8 (organik, dibuat di rentang) kini punya touch iklan berstatus UNKNOWN; A7 customer lama punya satu touch UNKNOWN juga
+  const unk = [
+    touch("TU1", "A8", AD1, "2026-10-12T04:00:00Z", { customerStatusAtTouch: "UNKNOWN", customerBasisAtTouch: "TANPA_BUKTI" }),
+    touch("TU2", "A7", AD2, "2026-10-12T05:00:00Z", { customerStatusAtTouch: "UNKNOWN", customerBasisAtTouch: "TANPA_BUKTI" }),
+  ];
+  const lap = susunLaporanIklan({
+    parameter: { dari: "2026-10-01", sampai: "2026-10-13", level: "campaign", sinyal: "CTWA_AD", rincian: false },
+    asOf: D("2026-11-20T00:00:00Z"), leadBaru: customersRentang, touchAkuisisi, touchLain: [...touchLain, ...unk], referensi: REF,
+    masukan: { customers: customersAtribusi, orders, kontribusi, refunds: [] }, mulaiAtribusiAt: D("2026-10-05T03:05:00Z"),
+  });
+  assert.deepEqual(lap.jumlahTeratribusi, dasar.jumlahTeratribusi, "lead/closing/uang TIDAK berubah oleh touch UNKNOWN");
+  assert.equal(lap.cakupan.denganTouchAkuisisi, dasar.cakupan.denganTouchAkuisisi);
+  assert.equal(lap.cakupan.leadBaruTouchTanpaBukti, 1, "A8 punya touch tetapi tanpa bukti akuisisi");
+  assert.equal(lap.cakupan.tanpaTouch, dasar.cakupan.tanpaTouch, "tetap termasuk 'tanpa touch akuisisi' (invarian cakupan terjaga)");
+  const total = lap.grup.reduce((s, g) => s + g.sentuhanBerikutnya.touch, 0);
+  assert.equal(total, dasar.grup.reduce((s, g) => s + g.sentuhanBerikutnya.touch, 0) + 2, "dua touch UNKNOWN terhitung sebagai sentuhan (jumlah touch tidak hilang)");
+  assert.equal(lap.grup.reduce((s, g) => s + g.sentuhanBerikutnya.padaCustomerTidakDiketahui, 0), 2);
+  assert.ok(lap.peringatan.some((w) => w.kode === "TOUCH_TANPA_BUKTI_AKUISISI"));
+  assert.equal(lap.rekonsiliasi.ok, true, JSON.stringify(lap.rekonsiliasi.cek.filter((c) => !c.ok)));
 });

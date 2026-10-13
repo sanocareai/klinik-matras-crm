@@ -80,7 +80,7 @@ test("smoke rilis dengan DATA (nama/telepon/touch/order/pembayaran): respons tet
   const at = new Date();
   await testPrisma.attributionTouch.create({ data: {
     customerId: c.id, adId: "52694481763484", touchAt: at, touchDateWib: new Date(new Date(at.getTime() + 7 * 3600e3).toISOString().slice(0, 10) + "T00:00:00Z"),
-    mappingStatusAtTouch: "UNMAPPED", evidenceSource: "CTWA_AD", sourceType: "ad", customerNewAtTouch: true, dedupeKey: "smoke:1",
+    mappingStatusAtTouch: "UNMAPPED", evidenceSource: "CTWA_AD", sourceType: "ad", customerStatusAtTouch: "NEW", customerBasisAtTouch: "WEBHOOK_MEMBUAT", dedupeKey: "smoke:1",
   } });
   process.env.ATRIBUSI_TOUCH_CAPTURE_ENABLED = "true";
   try {
@@ -114,7 +114,7 @@ const stringBash = (nama) => {
   return m[1].replace(/\\"/g, '"');
 };
 
-test("UJI_SQL rehearsal: pada DB hasil migrasi menghasilkan ROLLBACK_UJI dengan >= 15 penolakan dan >= 4 baris sah, tanpa TIDAK_DITOLAK; semuanya dibatalkan", async () => {
+test("UJI_SQL rehearsal: pada DB hasil migrasi menghasilkan ROLLBACK_UJI dengan >= 17 penolakan dan >= 4 baris sah, tanpa TIDAK_DITOLAK; semuanya dibatalkan", async () => {
   await testPrisma.customer.create({ data: { name: "Contoh Rehearsal", phone: "6285399900011" } });
   const sebelum = await hitungTabel();
   let pesan = "";
@@ -122,7 +122,7 @@ test("UJI_SQL rehearsal: pada DB hasil migrasi menghasilkan ROLLBACK_UJI dengan 
   assert.match(pesan, /ROLLBACK_UJI tolak=(\d+) lolos=(\d+)/, pesan.slice(0, 400));
   assert.ok(!/TIDAK_DITOLAK/.test(pesan), pesan.slice(0, 400));
   const [, tolak, lolos] = /ROLLBACK_UJI tolak=(\d+) lolos=(\d+)/.exec(pesan);
-  assert.ok(Number(tolak) >= 15, `tolak=${tolak}`);
+  assert.ok(Number(tolak) >= 17, `tolak=${tolak}`);
   assert.ok(Number(lolos) >= 4, `lolos=${lolos}`);
   assert.deepEqual(await hitungTabel(), sebelum, "uji perilaku seluruhnya dibatalkan");
 });

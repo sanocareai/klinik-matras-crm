@@ -2,7 +2,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import crypto from "node:crypto";
-import { bangunTouch, rekamTouch, kunciDedupe, _getTouchStats, _resetTouchStats } from "../src/services/attribution/touchCapture.js";
+import { bangunTouch, siapkanTouch, simpanPesanDenganTouch, kunciDedupe, _getTouchStats, _resetTouchStats } from "../src/services/attribution/touchCapture.js";
 import { buildObservation } from "../src/services/ctwaCapture.js";
 import { barisDariCsv, rencanaImpor, validasiBaris, jalankanImpor, parseCsv } from "../src/services/attribution/adReferensi.js";
 import { ENAM_PEMETAAN, csvAdsManager, barisJson } from "./fixtures/metaAdsFixture.js";
@@ -32,15 +32,15 @@ function payload({ msgId = "3EB0UNIT0001", ad = "52694481763484", sourceType = "
 // ── bangunTouch ────────────────────────────────────────────────────────────────────────────────────────────────────────
 test("touch valid: Ad ID = sourceID persis sebagai STRING; bukan dari URL; clid hanya hash 16 hex yang SAMA dengan hash capture Fase 0", () => {
   const p = payload();
-  const b = bangunTouch(p, { externalId: p.id, isNewCustomer: true, event: "message", engine: "GOWS", salt: SALT });
+  const b = bangunTouch(p, { externalId: p.id, event: "message", engine: "GOWS", salt: SALT });
   assert.equal(b.valid, true);
   assert.equal(b.touch.adId, "52694481763484");
   assert.equal(typeof b.touch.adId, "string");
   assert.equal(b.touch.evidenceSource, "CTWA_AD");
-  assert.equal(b.touch.customerNewAtTouch, true);
+  assert.ok(!("customerNewAtTouch" in b.touch) && !("customerStatusAtTouch" in b.touch), "status customer BUKAN urusan builder: ditentukan dari bukti kausal saat penyimpanan");
   assert.equal(b.touch.entryPointApp, "instagram");
   assert.match(b.touch.ctwaClidHash, /^[0-9a-f]{16}$/);
-  const obs = buildObservation(p, { event: "message", engine: "GOWS", externalId: p.id, isNewCustomer: true, salt: SALT });
+  const obs = buildObservation(p, { event: "message", engine: "GOWS", externalId: p.id, salt: SALT });
   assert.equal(b.touch.ctwaClidHash, obs.ctwaClid.hash, "hash dapat dijoin dengan JSONL Fase 0");
   const teks = JSON.stringify(b.touch);
   for (const s of [CLID, TEKS, NAMA, PHONE, "@c.us", "instagram.com", "DcgquCfg3_4"]) assert.ok(!teks.includes(s), `bocor di touch: ${s}`);
@@ -48,19 +48,19 @@ test("touch valid: Ad ID = sourceID persis sebagai STRING; bukan dari URL; clid 
 
 test("tanpa salt valid: touch tetap valid tetapi hash clid null (tidak pernah menyimpan clid, tidak memakai salt tebakan)", () => {
   const p = payload();
-  const b = bangunTouch(p, { externalId: p.id, isNewCustomer: true, salt: null });
+  const b = bangunTouch(p, { externalId: p.id, salt: null });
   assert.equal(b.valid, true);
   assert.equal(b.touch.ctwaClidHash, null);
 });
 
 test("Ad ID TIDAK PERNAH disimpulkan dari URL postingan: tanpa sourceID = bukan touch", () => {
   const p = payload({ ad: null });
-  const b = bangunTouch(p, { externalId: p.id, isNewCustomer: true, salt: SALT });
+  const b = bangunTouch(p, { externalId: p.id, salt: SALT });
   assert.deepEqual([b.valid, b.alasan], [false, "TANPA_SOURCE_ID"]);
 });
 
 test("sourceID bukan digit / sourceType bukan ad / bukan sinyal iklan / tanpa id pesan → ditolak dengan alasan", () => {
-  const alasan = (p, ext = p.id) => bangunTouch(p, { externalId: ext, isNewCustomer: true, salt: SALT }).alasan;
+  const alasan = (p, ext = p.id) => bangunTouch(p, { externalId: ext, salt: SALT }).alasan;
   assert.equal(alasan(payload({ ad: "act_12345678" })), "TANPA_SOURCE_ID");
   assert.equal(alasan(payload({ ad: "1.2E+13" })), "TANPA_SOURCE_ID");
   assert.equal(alasan(payload({ sourceType: "post" })), "SOURCE_TYPE_BUKAN_AD");
@@ -72,10 +72,9 @@ test("sourceID bukan digit / sourceType bukan ad / bukan sinyal iklan / tanpa id
 
 test("AD_REPLY_UNMARKED (balasan iklan tanpa clid/penanda) valid dengan evidenceSource sendiri", () => {
   const p = payload({ penanda: false, clid: null, url: "https://wa.me/wamo/xyz" });
-  const b = bangunTouch(p, { externalId: p.id, isNewCustomer: false, salt: SALT });
+  const b = bangunTouch(p, { externalId: p.id, salt: SALT });
   assert.equal(b.valid, true);
   assert.equal(b.touch.evidenceSource, "AD_REPLY_UNMARKED");
-  assert.equal(b.touch.customerNewAtTouch, false);
 });
 
 test("kunci dedupe: event message dan message.any, bentuk ID berbeda, dan retry = kunci SAMA; pesan lain beda", () => {
@@ -89,71 +88,70 @@ test("kunci dedupe: event message dan message.any, bentuk ID berbeda, dan retry 
   assert.ok(!a.includes(inti), "ID pesan tidak disimpan polos");
 });
 
-// ── rekamTouch dengan db palsu ──────────────────────────────────────────────────────────────────────────────────────────────
+// ── penyimpanan touch (simpanPesanDenganTouch) dengan db palsu ──────────────────────────────────────────────────────────────
 function dbPalsu({ ref = null, createError = null } = {}) {
   const dibuat = [];
-  return {
-    dibuat,
+  const klien = () => ({
+    $queryRaw: async () => [],
+    $executeRawUnsafe: async () => {},
+    message: { count: async () => 0, create: async () => ({ id: "msg-1", createdAt: dbPalsu.waktu }) },
     metaAdReference: { findUnique: async ({ where }) => (ref && ref.adId === where.adId ? ref : null) },
     attributionTouch: { create: async ({ data }) => { if (createError) throw createError; dibuat.push(data); return data; } },
-  };
+  });
+  return { dibuat, ...klien(), $transaction: async (fn) => fn(klien()) };
 }
-const argTouch = (o = {}) => {
-  const p = payload(o);
-  return { payload: p, event: "message", engine: "GOWS", externalId: p.id, customer: { id: "cust-1" }, message: { id: "msg-1", createdAt: new Date("2026-10-12T05:00:00Z") }, isNewCustomer: true };
-};
+dbPalsu.waktu = new Date("2026-10-12T05:00:00Z");
+const buatPesan = (c) => c.message.create({});
+const jalan = (db, o = {}, rencana) => simpanPesanDenganTouch(db, { rencana: rencana ?? siapkanTouch({ payload: payload(o), event: "message", engine: "GOWS", externalId: payload(o).id }), buatPesan, customer: { id: "cust-1", createdAt: new Date() }, customerSudahAda: false, mulaiProses: new Date(Date.now() - 1000), tunggu: true });
 
-test("rekamTouch: flag MATI (default) → tidak menyentuh DB sama sekali", async () => {
+test("flag MATI (default; hanya persis \"true\" menyalakan) → siapkanTouch null, DB tidak disentuh untuk touch", async () => {
   delete process.env.ATRIBUSI_TOUCH_CAPTURE_ENABLED;
   const db = dbPalsu();
-  assert.deepEqual(await rekamTouch(db, argTouch()), { status: "OFF" });
+  assert.equal(siapkanTouch({ payload: payload(), event: "message", engine: "GOWS", externalId: payload().id }), null);
+  const r = await jalan(db, {}, null);
+  assert.equal(r.touch.status, "TANPA_TOUCH");
   assert.equal(db.dibuat.length, 0);
-  process.env.ATRIBUSI_TOUCH_CAPTURE_ENABLED = "TRUE";   // hanya persis "true"
-  assert.deepEqual(await rekamTouch(db, argTouch()), { status: "OFF" });
+  process.env.ATRIBUSI_TOUCH_CAPTURE_ENABLED = "TRUE";
+  assert.equal(siapkanTouch({ payload: payload(), event: "message", engine: "GOWS", externalId: payload().id }), null);
+  delete process.env.ATRIBUSI_TOUCH_CAPTURE_ENABLED;
 });
 
-test("rekamTouch: terpetakan → snapshot ad set/campaign; tidak terpetakan → null + UNMAPPED; waktu WIB eksplisit", async () => {
+test("terpetakan → snapshot ad set/campaign; tidak terpetakan → null + UNMAPPED; hari WIB eksplisit (18:00 UTC = hari berikutnya)", async () => {
   process.env.ATRIBUSI_TOUCH_CAPTURE_ENABLED = "true";
   process.env.CTWA_CAPTURE_HASH_SALT = SALT;
   _resetTouchStats();
-  const ref = { adId: "52694481763484", adSetId: "52694481763284", campaignId: "52694481763084" };
-  const db1 = dbPalsu({ ref });
-  const r1 = await rekamTouch(db1, argTouch());
-  assert.deepEqual([r1.status, r1.mapped], ["REKAM", true]);
-  assert.equal(db1.dibuat[0].adSetId, "52694481763284");
-  assert.equal(db1.dibuat[0].campaignId, "52694481763084");
-  assert.equal(db1.dibuat[0].mappingStatusAtTouch, "MAPPED");
-  assert.equal(db1.dibuat[0].touchDateWib.toISOString(), "2026-10-12T00:00:00.000Z");
-
-  const db2 = dbPalsu();
-  const r2 = await rekamTouch(db2, argTouch({ ad: "52699999999999" }));
-  assert.deepEqual([r2.status, r2.mapped], ["REKAM", false]);
-  assert.equal(db2.dibuat[0].adSetId, null);
-  assert.equal(db2.dibuat[0].campaignId, null);
-  assert.equal(db2.dibuat[0].mappingStatusAtTouch, "UNMAPPED");
-  // touch pukul 18:00 UTC = 01:00 WIB hari BERIKUTNYA
-  const db3 = dbPalsu();
-  const a = argTouch(); a.message.createdAt = new Date("2026-10-12T18:00:00Z");
-  await rekamTouch(db3, a);
-  assert.equal(db3.dibuat[0].touchDateWib.toISOString(), "2026-10-13T00:00:00.000Z");
-  delete process.env.ATRIBUSI_TOUCH_CAPTURE_ENABLED;
+  try {
+    const db1 = dbPalsu({ ref: { adId: "52694481763484", adSetId: "52694481763284", campaignId: "52694481763084" } });
+    const r1 = await jalan(db1);
+    assert.equal(r1.touch.status, "REKAM");
+    assert.deepEqual([db1.dibuat[0].adSetId, db1.dibuat[0].campaignId, db1.dibuat[0].mappingStatusAtTouch], ["52694481763284", "52694481763084", "MAPPED"]);
+    assert.equal(db1.dibuat[0].touchDateWib.toISOString(), "2026-10-12T00:00:00.000Z");
+    const db2 = dbPalsu();
+    await jalan(db2, { ad: "52699999999999" });
+    assert.deepEqual([db2.dibuat[0].adSetId, db2.dibuat[0].campaignId, db2.dibuat[0].mappingStatusAtTouch], [null, null, "UNMAPPED"]);
+    const db3 = dbPalsu();
+    dbPalsu.waktu = new Date("2026-10-12T18:00:00Z");
+    await jalan(db3);
+    dbPalsu.waktu = new Date("2026-10-12T05:00:00Z");
+    assert.equal(db3.dibuat[0].touchDateWib.toISOString(), "2026-10-13T00:00:00.000Z");
+  } finally { delete process.env.ATRIBUSI_TOUCH_CAPTURE_ENABLED; }
 });
 
-test("rekamTouch: duplikat (P2002) → DUPLIKAT; galat DB → GAGAL tanpa melempar; bukan touch → BUKAN_TOUCH", async () => {
+test("duplikat (P2002) → DUPLIKAT; galat DB → GAGAL tanpa melempar dan tanpa pesan galat di log; bukan touch → tidak ada rencana", async () => {
   process.env.ATRIBUSI_TOUCH_CAPTURE_ENABLED = "true";
   _resetTouchStats();
-  const dup = Object.assign(new Error("Unique constraint failed on dedupe_key"), { code: "P2002" });
-  assert.equal((await rekamTouch(dbPalsu({ createError: dup }), argTouch())).status, "DUPLIKAT");
-  const boom = Object.assign(new Error("connection reset NOMOR 6285100000009"), { code: "P1001" });
-  const warn = console.warn; const baris = []; console.warn = (...a) => baris.push(a.join(" "));
-  try { assert.equal((await rekamTouch(dbPalsu({ createError: boom }), argTouch())).status, "GAGAL"); } finally { console.warn = warn; }
-  assert.ok(baris.every((l) => !l.includes("6285100000009")), "pesan error tidak boleh masuk log");
-  assert.match(baris.join("\n"), /atribusi-touch.*P1001/);
-  assert.equal((await rekamTouch(dbPalsu(), argTouch({ ad: null }))).status, "BUKAN_TOUCH");
-  assert.equal((await rekamTouch({ metaAdReference: { findUnique: async () => { throw new Error("x"); } } }, argTouch())).status, "GAGAL");
-  const s = _getTouchStats();
-  assert.deepEqual([s.duplikat, s.gagal, s.bukanTouch], [1, 2, 1]);
-  delete process.env.ATRIBUSI_TOUCH_CAPTURE_ENABLED;
+  try {
+    const dup = Object.assign(new Error("Unique constraint failed on dedupe_key"), { code: "P2002" });
+    assert.equal((await jalan(dbPalsu({ createError: dup }))).touch.status, "DUPLIKAT");
+    const boom = Object.assign(new Error("connection reset NOMOR 6285100000009"), { code: "P1001" });
+    const warn = console.warn; const baris = []; console.warn = (...a) => baris.push(a.join(" "));
+    try { assert.equal((await jalan(dbPalsu({ createError: boom }))).touch.status, "GAGAL"); } finally { console.warn = warn; }
+    assert.ok(baris.every((l) => !l.includes("6285100000009")), "pesan error tidak boleh masuk log");
+    assert.match(baris.join(" | "), /atribusi-touch.*P1001/);
+    assert.equal(siapkanTouch({ payload: payload({ ad: null }), event: "message", engine: "GOWS", externalId: payload().id }), null);
+    const st = _getTouchStats();
+    assert.deepEqual([st.duplikat, st.gagal, st.bukanTouch], [1, 1, 1]);
+  } finally { delete process.env.ATRIBUSI_TOUCH_CAPTURE_ENABLED; }
 });
 
 // ── referensi / impor ──────────────────────────────────────────────────────────────────────────────────────────────────────

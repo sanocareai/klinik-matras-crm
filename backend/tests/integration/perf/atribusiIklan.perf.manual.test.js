@@ -51,9 +51,9 @@ async function semai(k) {
   const wib = (d) => new Date(new Date(d.getTime() + 7 * 3600e3).toISOString().slice(0, 10) + "T00:00:00Z");
   const t = (c, ms, o) => { const at = new Date(c.createdAt.getTime() + ms); return { customerId: c.id, touchAt: at, touchDateWib: wib(at), mappingStatusAtTouch: "UNMAPPED", sourceType: "ad", dedupeKey: `perf:${n++}`, ...o }; };
   custs.forEach((c, i) => {
-    if (i % 20 < 7) touches.push(t(c, 60_000, { adId: adIds[i % 24], evidenceSource: "CTWA_AD", customerNewAtTouch: true }));
-    if (i % 20 === 3) touches.push(t(c, 3 * HARI, { adId: adIds[(i + 5) % 24], evidenceSource: "CTWA_AD", customerNewAtTouch: false }));
-    if (i % 100 === 9) touches.push(t(c, 120_000, { adId: adIds[(i + 1) % 24], evidenceSource: "AD_REPLY_UNMARKED", customerNewAtTouch: true }));
+    if (i % 20 < 7) touches.push(t(c, 60_000, { adId: adIds[i % 24], evidenceSource: "CTWA_AD", customerStatusAtTouch: "NEW", customerBasisAtTouch: "WEBHOOK_MEMBUAT" }));
+    if (i % 20 === 3) touches.push(t(c, 3 * HARI, { adId: adIds[(i + 5) % 24], evidenceSource: "CTWA_AD", customerStatusAtTouch: "EXISTING", customerBasisAtTouch: "RIWAYAT_PESAN" }));
+    if (i % 100 === 9) touches.push(t(c, 120_000, { adId: adIds[(i + 1) % 24], evidenceSource: "AD_REPLY_UNMARKED", customerStatusAtTouch: "NEW", customerBasisAtTouch: "WEBHOOK_MEMBUAT" }));
   });
   for (const b of potong(touches, 5000)) await testPrisma.attributionTouch.createMany({ data: b });
   await testPrisma.$executeRawUnsafe("ANALYZE");

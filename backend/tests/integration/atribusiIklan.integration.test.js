@@ -108,7 +108,7 @@ test("flag MATI (default): inbox normal, customer ber-ctwa_clid seperti sebelumn
   assert.equal(c.ctwaClid, CLID);
 });
 
-test("flag NYALA: customer baru → 1 touch (Ad ID string, UNMAPPED, customerNewAtTouch=true); tabel tanpa PII / clid mentah / isi chat", async () => {
+test("flag NYALA: customer baru → 1 touch (Ad ID string, UNMAPPED, status NEW/WEBHOOK_MEMBUAT); tabel tanpa PII / clid mentah / isi chat", async () => {
   process.env.ATRIBUSI_TOUCH_CAPTURE_ENABLED = "true";
   _resetTouchStats();
   const PH = "6285200000002";
@@ -124,7 +124,7 @@ test("flag NYALA: customer baru → 1 touch (Ad ID string, UNMAPPED, customerNew
   assert.equal(typeof t.adId, "string");
   assert.equal(t.mappingStatusAtTouch, "UNMAPPED");
   assert.deepEqual([t.adSetId, t.campaignId], [null, null]);
-  assert.equal(t.customerNewAtTouch, true);
+  assert.deepEqual([t.customerStatusAtTouch, t.customerBasisAtTouch], ["NEW", "WEBHOOK_MEMBUAT"]);
   assert.equal(t.evidenceSource, "CTWA_AD");
   assert.equal(t.entryPointApp, "instagram");
   assert.match(t.ctwaClidHash, /^[0-9a-f]{16}$/);
@@ -154,7 +154,7 @@ test("event `message` + `message.any` BERSAMAAN + retry untuk pesan yang sama = 
   assert.equal(new Set(dedupe.map((x) => x.dedupeKey)).size, dedupe.length);
 });
 
-test("customer LAMA yang kembali lewat iklan lain: touch BARU terpisah (customerNewAtTouch=false); lead/createdAt customer tidak berubah", async () => {
+test("customer LAMA yang kembali lewat iklan lain: touch BARU terpisah (status EXISTING/RIWAYAT_PESAN); lead/createdAt customer tidak berubah", async () => {
   const PH = "6285200000002";                                   // sudah ada dari tes flag nyala
   const sebelum = await testPrisma.customer.findUnique({ where: { phone: PH }, select: { id: true, createdAt: true, leadSource: true } });
   const nCust = await testPrisma.customer.count();
@@ -162,7 +162,7 @@ test("customer LAMA yang kembali lewat iklan lain: touch BARU terpisah (customer
   await post("message", p);
   assert.ok(await settle(async () => (await touchCount({ customerId: sebelum.id })) === 2));
   const ts = await testPrisma.attributionTouch.findMany({ where: { customerId: sebelum.id }, orderBy: { touchAt: "asc" } });
-  assert.deepEqual(ts.map((t) => [t.adId, t.customerNewAtTouch]), [[AD1, true], [AD2, false]]);
+  assert.deepEqual(ts.map((t) => [t.adId, t.customerStatusAtTouch, t.customerBasisAtTouch]), [[AD1, "NEW", "WEBHOOK_MEMBUAT"], [AD2, "EXISTING", "RIWAYAT_PESAN"]]);
   const sesudah = await testPrisma.customer.findUnique({ where: { phone: PH }, select: { id: true, createdAt: true, leadSource: true } });
   assert.deepEqual(sesudah, sebelum);
   assert.equal(await testPrisma.customer.count(), nCust);
@@ -232,7 +232,7 @@ test("transaksi pesan bermasalah (P2028): Message disimpan tanpa transaksi, touc
     assert.deepEqual([s.fallbackTransaksi, s.dipulihkan, s.gagalPulih, s.tertunda], [1, 1, 0, 0]);
     const [t] = await testPrisma.attributionTouch.findMany({ where: { customer: { phone: PH } } });
     assert.equal(t.adId, AD2);
-    assert.equal(t.customerNewAtTouch, true);
+    assert.equal(t.customerStatusAtTouch, "NEW");
   } finally { prisma.$transaction = asli; }
 });
 
@@ -265,19 +265,23 @@ test("transaksi bermasalah DAN percobaan susulan gagal: inbox tetap tersimpan; g
 
 test("constraint DB: Ad ID bukan digit, pemetaan tidak konsisten, tanggal WIB tidak cocok, sumber tak dikenal → ditolak", async () => {
   const c = await testPrisma.customer.findFirst({ select: { id: true } });
-  const dasar = { customer_id: c.id, ad_id: AD3, touch_at: "2026-10-05T03:00:00Z", touch_date_wib: "2026-10-05", evidence_source: "CTWA_AD", source_type: "ad", mapping_status_at_touch: "UNMAPPED", customer_new_at_touch: true };
+  const dasar = { customer_id: c.id, ad_id: AD3, touch_at: "2026-10-05T03:00:00Z", touch_date_wib: "2026-10-05", evidence_source: "CTWA_AD", source_type: "ad", mapping_status_at_touch: "UNMAPPED", customer_status_at_touch: "NEW", customer_basis_at_touch: "WEBHOOK_MEMBUAT" };
   const masuk = (o, key) => testPrisma.$executeRawUnsafe(
-    `insert into attribution_touches (id, customer_id, ad_id, ad_set_id, campaign_id, mapping_status_at_touch, touch_at, touch_date_wib, evidence_source, source_type, customer_new_at_touch, dedupe_key)
-     values (gen_random_uuid(), $1, $2, $3, $4, $5, $6::timestamp, $7::date, $8, $9, $10, $11)`,
-    o.customer_id, o.ad_id, o.ad_set_id ?? null, o.campaign_id ?? null, o.mapping_status_at_touch, o.touch_at, o.touch_date_wib, o.evidence_source, o.source_type, o.customer_new_at_touch, key);
+    `insert into attribution_touches (id, customer_id, ad_id, ad_set_id, campaign_id, mapping_status_at_touch, touch_at, touch_date_wib, evidence_source, source_type, customer_status_at_touch, customer_basis_at_touch, dedupe_key)
+     values (gen_random_uuid(), $1, $2, $3, $4, $5, $6::timestamp, $7::date, $8, $9, $10, $11, $12)`,
+    o.customer_id, o.ad_id, o.ad_set_id ?? null, o.campaign_id ?? null, o.mapping_status_at_touch, o.touch_at, o.touch_date_wib, o.evidence_source, o.source_type, o.customer_status_at_touch, o.customer_basis_at_touch, key);
   await masuk(dasar, "uji:ok-1");                                                           // baris sah
   await assert.rejects(masuk({ ...dasar, ad_id: "abc12345" }, "uji:2"), /attribution_touches_ad_id_check/);
   await assert.rejects(masuk({ ...dasar, mapping_status_at_touch: "MAPPED" }, "uji:3"), /attribution_touches_mapping_check/);
   await assert.rejects(masuk({ ...dasar, touch_date_wib: "2026-10-06" }, "uji:4"), /attribution_touches_date_wib_check/);
   await assert.rejects(masuk({ ...dasar, evidence_source: "TEBAKAN_NAMA" }, "uji:5"), /attribution_touches_evidence_check/);
   await assert.rejects(masuk({ ...dasar, touch_at: "2026-10-05T18:00:00Z", touch_date_wib: "2026-10-05" }, "uji:6"), /attribution_touches_date_wib_check/, "18:00 UTC = 01:00 WIB hari berikutnya");
+  await assert.rejects(masuk({ ...dasar, customer_status_at_touch: "NEW", customer_basis_at_touch: "TANPA_BUKTI" }, "uji:7"), /attribution_touches_customer_status_check/, "NEW tanpa basis kausal ditolak");
+  await assert.rejects(masuk({ ...dasar, customer_status_at_touch: "UNKNOWN", customer_basis_at_touch: "WEBHOOK_MEMBUAT" }, "uji:8"), /attribution_touches_customer_status_check/, "UNKNOWN berbasis bukti kausal ditolak");
+  await assert.rejects(masuk({ ...dasar, customer_status_at_touch: "MAYBE" }, "uji:9"), /attribution_touches_customer_status_check/);
+  await masuk({ ...dasar, customer_status_at_touch: "UNKNOWN", customer_basis_at_touch: "TANPA_BUKTI" }, "uji:ok-2");
   await assert.rejects(masuk(dasar, "uji:ok-1"), /dedupe_key/);
-  await testPrisma.attributionTouch.deleteMany({ where: { dedupeKey: "uji:ok-1" } });
+  await testPrisma.attributionTouch.deleteMany({ where: { dedupeKey: { in: ["uji:ok-1", "uji:ok-2"] } } });
   await assert.rejects(testPrisma.$executeRawUnsafe(`insert into meta_ad_references (ad_id, ad_set_id, campaign_id, source, synced_at, updated_at) values ('5.2E+13','52694481763284','52694481763084','MANUAL', now(), now())`), /meta_ad_references_ids_check/);
 });
 
@@ -337,7 +341,7 @@ async function benihLaporan() {
     const at = T(touchAt);
     return testPrisma.attributionTouch.create({ data: {
       customerId, adId, touchAt: at, touchDateWib: T(new Date(at.getTime() + 7 * 3600e3).toISOString().slice(0, 10) + "T00:00:00Z"),
-      mappingStatusAtTouch: "UNMAPPED", evidenceSource: "CTWA_AD", sourceType: "ad", customerNewAtTouch: true, dedupeKey: `uji:${++urutanTouch}`, ...o,
+      mappingStatusAtTouch: "UNMAPPED", evidenceSource: "CTWA_AD", sourceType: "ad", customerStatusAtTouch: "NEW", customerBasisAtTouch: "WEBHOOK_MEMBUAT", dedupeKey: `uji:${++urutanTouch}`, ...o,
     } });
   };
 
@@ -370,7 +374,7 @@ async function benihLaporan() {
   await cust("6285300000006", "2026-10-04T03:00:00Z");
   // C7: customer LAMA (September awal) mengklik iklan lagi → touch terpisah, bukan lead
   const c7 = await cust("6285300000007", "2026-09-01T03:00:00Z");
-  await sentuh(c7.id, AD1, "2026-10-05T03:00:00Z", { customerNewAtTouch: false });
+  await sentuh(c7.id, AD1, "2026-10-05T03:00:00Z", { customerStatusAtTouch: "EXISTING", customerBasisAtTouch: "RIWAYAT_PESAN" });
   // C8: status LUNAS tetapi ledger hanya menutup Rp2 jt dari tagihan Rp2,2 jt (value + ongkir): KONFLIK
   const c8 = await cust("6285300000008", "2026-10-05T03:00:00Z");
   const o8 = await order(c8.id, "2026-10-06T03:00:00Z", M(2), { ongkir: 200_000, paymentStatus: "LUNAS", paidAt: T("2026-10-06T05:00:00Z") });
@@ -379,7 +383,7 @@ async function benihLaporan() {
   // C9: multi-touch: akuisisi AD2 lebih dulu; touch AD1 sesudahnya (customer sudah lama) → hanya touch berikutnya
   const c9 = await cust("6285300000009", "2026-10-07T03:00:00Z");
   await sentuh(c9.id, AD2, "2026-10-07T03:01:00Z");
-  await sentuh(c9.id, AD1, "2026-10-08T03:00:00Z", { customerNewAtTouch: false });
+  await sentuh(c9.id, AD1, "2026-10-08T03:00:00Z", { customerStatusAtTouch: "EXISTING", customerBasisAtTouch: "RIWAYAT_PESAN" });
   return { c1, c2, c3, c4, c5, c8, c9 };
 }
 const P = "dari=2026-09-25&sampai=2026-10-10";
@@ -446,7 +450,7 @@ test("laporan end-to-end per CAMPAIGN: lead, spam, closing, dua jenis lunas, uan
   assert.deepEqual(j.tidakTerpetakan.adIds.map((x) => x.adId), [AD9]);
 
   // multi-touch & customer lama: touch berikutnya terpisah, lead tidak berpindah
-  assert.deepEqual(g1.sentuhanBerikutnya, { touch: 2, customerUnik: 2, padaCustomerBaru: 0, padaCustomerLama: 2 }, "C7 (lama) dan C9 (touch kedua)");
+  assert.deepEqual(g1.sentuhanBerikutnya, { touch: 2, customerUnik: 2, padaCustomerBaru: 0, padaCustomerLama: 2, padaCustomerTidakDiketahui: 0 }, "C7 (lama) dan C9 (touch kedua)");
   // cakupan jujur: C6 organik tanpa touch; C7 bukan lead baru di rentang? (dibuat 1 Sep < 25 Sep)
   assert.equal(j.cakupan.denganTouchAkuisisi, 7);
   assert.equal(j.cakupan.tanpaTouch, 1);
@@ -540,7 +544,7 @@ test("AD_REPLY_UNMARKED hanya AUDIT: direkam, muncul di blok audit, TIDAK menamb
   const c = await testPrisma.customer.create({ data: { name: "Pelanggan Uji", phone: "6285300000099", createdAt: T("2026-10-08T03:00:00Z"), leadSource: "META_ADS" } });
   await testPrisma.attributionTouch.create({ data: {
     customerId: c.id, adId: AD3, touchAt: T("2026-10-08T03:01:00Z"), touchDateWib: T("2026-10-08T00:00:00Z"), mappingStatusAtTouch: "UNMAPPED",
-    evidenceSource: "AD_REPLY_UNMARKED", sourceType: "ad", customerNewAtTouch: true, dedupeKey: "uji:unmarked-1",
+    evidenceSource: "AD_REPLY_UNMARKED", sourceType: "ad", customerStatusAtTouch: "NEW", customerBasisAtTouch: "WEBHOOK_MEMBUAT", dedupeKey: "uji:unmarked-1",
   } });
   const sesudah = await api("GET", `/?${P}&level=campaign`);
   assert.deepEqual(sesudah.json.jumlahTeratribusi, sebelum.json.jumlahTeratribusi, "audit tidak mengubah angka atribusi");

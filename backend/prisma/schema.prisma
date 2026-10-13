@@ -10807,7 +10807,8 @@ model AttributionTouch {
   entryPointSource     String?   @map("entry_point_source") @db.VarChar(32)
   entryPointApp        String?   @map("entry_point_app") @db.VarChar(32)
   ctwaClidHash         String?   @map("ctwa_clid_hash") @db.VarChar(16)
-  customerNewAtTouch   Boolean   @map("customer_new_at_touch")
+  customerStatusAtTouch String   @map("customer_status_at_touch") @db.VarChar(8)
+  customerBasisAtTouch String    @map("customer_basis_at_touch") @db.VarChar(24)
   dedupeKey            String    @unique @map("dedupe_key") @db.VarChar(64)
   captureVersion       Int       @default(1) @map("capture_version") @db.SmallInt
   createdAt            DateTime  @default(now()) @map("created_at")

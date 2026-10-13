@@ -479,6 +479,7 @@ async function handleGroupMessage(payload, groupJid, externalId, sessionName) {
 // "message.any" (fromMe:false). Return "saved" kalau berhasil, "skip-dupe"
 // kalau race condition P2002 kejar duluan disimpan request lain.
 async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, mediaInfo, externalId, sessionName, event, engine }) {
+  const mulaiProses = new Date();   // bukti kausal atribusi: ada/tidaknya baris Customer SEBELUM handler ini mulai (lihat services/attribution/touchCapture.js)
   // Deteksi sumber lead (3 lapis) — hanya untuk customer BARU
   const existingCustomer = await prisma.customer.findUnique({ where: { phone } });
 
@@ -793,6 +794,7 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
       rencana: rencanaTouch,
       customer,
       customerSudahAda: !!existingCustomer,
+      mulaiProses,
       buatPesan: (client) => client.message.create({
         data: {
           conversationId: conversation.id,
