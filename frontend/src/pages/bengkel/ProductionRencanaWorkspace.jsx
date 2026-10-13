@@ -641,7 +641,9 @@ export default function ProductionRencanaWorkspace() {
       default: break; // noop
     }
   };
-  const { drag, start: onHandleDown } = usePlanDrag({ enabled: !busy && reader !== "OFF", resolve: resolveDrop, onDrop: handleDrop });
+  // Seret HANYA setelah data papan siap: kolom Meja sudah dirender dari daftar bawaan sebelum board dimuat, dan melepas kartu di jeda itu ditolak
+  // "Meja tujuan tidak ditemukan" (intermiten di jaringan lambat — ditemukan lewat gate seret sentuh 390px).
+  const { drag, start: onHandleDown } = usePlanDrag({ enabled: !busy && !loading && !!board && reader !== "OFF", resolve: resolveDrop, onDrop: handleDrop });
 
   // Kelola Rencana (BOM/reservasi, P3) — dibuka dari dalam Unit 360, aksi tulis lama tidak berubah.
   async function openManageFor(unitId) {

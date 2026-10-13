@@ -157,3 +157,8 @@ test("aktivasi saat Jadwalkan: penanda dari server (bukan tebakan peran di brows
   assert.equal(aktif.activatable, true); assert.equal(aktif.onboardUnitId, "u-9"); assert.equal(aktif.plan, null);
   assert.equal(toView({ card: card("u-8"), rencana: { action: "AWAIT_ACTIVATION", activatable: false } }).activatable, false);
 });
+
+test("seret hanya aktif setelah data papan siap (bukan saat kolom Meja masih dirender dari daftar bawaan) — mencegah 'Meja tujuan tidak ditemukan' intermiten di HP", () => {
+  assert.match(RENCANA, /usePlanDrag\(\{ enabled: !busy && !loading && !!board && reader !== "OFF"/);
+  assert.match(fs.readFileSync(path.join(__dirname, "..", "src", "features", "production", "planDnd.js"), "utf8"), /Meja tujuan tidak ditemukan\. Muat ulang halaman\./, "penolakan server-state tetap ada sebagai pengaman terakhir");
+});
