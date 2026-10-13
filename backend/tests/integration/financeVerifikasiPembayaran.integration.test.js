@@ -131,7 +131,7 @@ test("Jenis pembayaran (DP / Cicilan / Pelunasan) dihitung server dari urutan pe
   const customer = await testPrisma.customer.create({ data: { name: "Jenis" } });
   const buat = (value, ongkir) => testPrisma.order.create({ data: { customerId: customer.id, value, ...(ongkir && { ongkir }), category: "BARU", orderNumber: `NEW-JNS-${String(++n).padStart(3, "0")}`, status: "PENDING" } });
   const bayar = (order, amount, menit) => testPrisma.payment.create({ data: { orderId: order.id, amount, method: "TRANSFER", recordedById: w.sales.id, createdAt: new Date(Date.UTC(2026, 8, 20, 5, menit)) } });
-  const sel = { id: true, orderId: true, order: { select: { value: true, ongkir: true, groupId: true, group: { select: { id: true, source: true, anchorOrderId: true } } } } };
+  const sel = { id: true, orderId: true, order: { select: { value: true, ongkir: true, groupId: true, orderCredits: { where: { status: "AKTIF" }, select: { amount: true } }, group: { select: { id: true, source: true, anchorOrderId: true } } } } };
   const jenisDari = async (ids) => jenisUntuk(testPrisma, await testPrisma.payment.findMany({ where: { id: { in: ids } }, select: sel }));
 
   const o1 = await buat(2_600_000);                                 // Handry: DP 1,6 jt lalu pelunasan 1 jt
