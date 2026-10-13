@@ -19,7 +19,7 @@ const DIEKSPOR = {
   "FinanceKasbon.jsx": ["kasbon"],
   "FinanceUangMuka.jsx": ["uang-muka"],
   "FinanceReceivables.jsx": ["piutang-refund"],
-  "FinanceSuppliers.jsx": ["supplier-utang"],
+  "FinanceSuppliers.jsx": ["supplier-utang", "uang-muka-supplier"],
   "FinanceReconciliation.jsx": ["rekonsiliasi"],
   "FinanceJournal.jsx": ["jurnal-umum"],
   "FinanceLedger.jsx": ["buku-besar"],

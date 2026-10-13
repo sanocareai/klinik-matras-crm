@@ -17,6 +17,7 @@ import { bentukPO, daftarPO, daftarRiwayat, buatPO, ubahDraf, setujuiPO, batalka
 import { bangunViewPO, namaBerkasPO } from "../services/finance/purchaseOrderDocument.js";
 import { renderPurchaseOrderPdf } from "../services/purchaseOrderPdf.js";
 import { pratinjauDuplikat, daftarKatalog, bacaAsalSku, perbaikiSku } from "../services/finance/skuBaru.js";
+import { daftarUangMuka, daftarPenerapan, ringkasUangMukaSupplier, ringkasanKeuanganPO, bayarUangMukaPO, kandidatUntukFaktur, terapkanKeFaktur, batalkanPenerapan } from "../services/finance/uangMukaSupplier.js";
 import { pandanganPenagihan, buatTagihanDariPO, ubahTagihanPO, evaluasiTagihanPO } from "../services/finance/purchaseOrderBill.js";
 
 // ── Finance ──────────────────────────────────────────────────────────────
@@ -46,6 +47,41 @@ purchaseOrderFinanceRouter.post("/penerimaan/:receiptId/koreksi-kedatangan", req
     const rec = await prisma.goodsReceipt.findUnique({ where: { id: hasil.receiptId }, select: { purchaseOrderId: true } });
     res.json({ ...hasil, kedatangan: await bentukBarangAkanDatang(prisma, rec.purchaseOrderId, { finance: true }) });
   } catch (e) { galatKedatangan(e, res); }
+});
+
+// ── UANG MUKA SUPPLIER (Okt 2026; rute statis SEBELUM /:id). Memakai DP yang sudah ada (FinPurchase UANG_MUKA_PEMBELIAN) — lihat services/finance/uangMukaSupplier.js.
+// Baca = finance:read. Bayar uang muka & terapkan ke faktur = finance:post + Idempotency-Key. Batalkan penerapan = finance:admin. Gudang TIDAK punya akses ke rute ini (semua finance:*).
+purchaseOrderFinanceRouter.get("/uang-muka", requirePermission(P.FINANCE_READ), async (req, res) => {
+  try {
+    const { supplierId, purchaseOrderId, status } = req.query;
+    res.json({ uangMuka: await daftarUangMuka(prisma, { supplierId: POLA_UUID.test(String(supplierId ?? "")) ? supplierId : null, purchaseOrderId: POLA_UUID.test(String(purchaseOrderId ?? "")) ? purchaseOrderId : null, belumDiterapkan: req.query.belumDiterapkan === "1", status: status || null }) });
+  } catch (e) { handleFinanceError(e, res); }
+});
+purchaseOrderFinanceRouter.get("/uang-muka/ringkasan-supplier", requirePermission(P.FINANCE_READ), async (req, res) => {
+  try { res.json(await ringkasUangMukaSupplier(prisma, { supplierId: POLA_UUID.test(String(req.query.supplierId ?? "")) ? req.query.supplierId : null })); } catch (e) { handleFinanceError(e, res); }
+});
+purchaseOrderFinanceRouter.get("/uang-muka/penerapan", requirePermission(P.FINANCE_READ), async (req, res) => {
+  try { res.json({ penerapan: await daftarPenerapan(prisma, { supplierId: POLA_UUID.test(String(req.query.supplierId ?? "")) ? req.query.supplierId : null }) }); } catch (e) { handleFinanceError(e, res); }
+});
+purchaseOrderFinanceRouter.get("/uang-muka/faktur/:billId/kandidat", requirePermission(P.FINANCE_READ), wajibUuid("billId"), async (req, res) => {
+  try { res.json(await kandidatUntukFaktur(prisma, req.params.billId)); } catch (e) { handleFinanceError(e, res); }
+});
+purchaseOrderFinanceRouter.post("/uang-muka/terapkan", requirePermission(P.FINANCE_POST), wajibIdempotencyKey, async (req, res) => {
+  try {
+    const b = req.body ?? {};
+    for (const [k, v] of [["advanceId", b.advanceId], ["billId", b.billId]]) if (!POLA_UUID.test(String(v ?? ""))) return res.status(400).json({ code: "ID_TIDAK_VALID", message: "ID tidak valid." });
+    const hasil = await prisma.$transaction((tx) => terapkanKeFaktur(tx, {
+      advanceId: b.advanceId, billId: b.billId, amount: b.amount, idempotencyKey: req.get("Idempotency-Key"), konfirmasi: b.konfirmasi, konfirmasiBedaPO: b.konfirmasiBedaPO === true,
+      sisaFakturDilihat: b.sisaFakturDilihat, catatan: b.catatan, userId: req.user.id,
+    }), { timeout: 20000 });
+    res.status(hasil.replay ? 200 : 201).json({ id: hasil.application.id, status: hasil.application.status, jumlah: Number(hasil.application.amount), uangMukaId: hasil.application.advancePurchaseId, fakturId: hasil.application.billId, replay: hasil.replay });
+  } catch (e) { handleFinanceError(e, res); }
+});
+purchaseOrderFinanceRouter.post("/uang-muka/penerapan/:id/batal", requirePermission(P.FINANCE_ADMIN), wajibUuid(), wajibIdempotencyKey, async (req, res) => {
+  try {
+    const hasil = await prisma.$transaction((tx) => batalkanPenerapan(tx, { applicationId: req.params.id, reason: req.body?.reason, userId: req.user.id }), { timeout: 20000 });
+    res.json({ ok: true, id: hasil.id });
+  } catch (e) { handleFinanceError(e, res); }
 });
 
 // ── SKU baru dari PO + Katalog Supplier (rute statis SEBELUM /:id). Membuat/memperbaiki SKU = finance:admin; membaca katalog = finance:read.
@@ -144,7 +180,22 @@ purchaseOrderFinanceRouter.get("/:id", requirePermission(P.FINANCE_READ), wajibU
   try {
     const po = await bentukPO(prisma, req.params.id, { harga: true });
     if (!po) return res.status(404).json({ error: "PO tidak ditemukan" });
-    res.json({ ...po, riwayat: await daftarRiwayat(prisma, po.id), kedatangan: await bentukBarangAkanDatang(prisma, po.id, { finance: true }) });
+    res.json({ ...po, riwayat: await daftarRiwayat(prisma, po.id), kedatangan: await bentukBarangAkanDatang(prisma, po.id, { finance: true }), keuangan: await ringkasanKeuanganPO(prisma, po.id) });
+  } catch (e) { handleFinanceError(e, res); }
+});
+
+// Uang muka SATU PO: daftar DP + penerapan + ringkasan keuangan (baca) dan "Bayar Uang Muka" (tulis, satu langkah).
+purchaseOrderFinanceRouter.get("/:id/uang-muka", requirePermission(P.FINANCE_READ), wajibUuid(), async (req, res) => {
+  try {
+    const k = await ringkasanKeuanganPO(prisma, req.params.id);
+    if (!k) return res.status(404).json({ error: "PO tidak ditemukan" });
+    res.json(k);
+  } catch (e) { handleFinanceError(e, res); }
+});
+purchaseOrderFinanceRouter.post("/:id/uang-muka", requirePermission(P.FINANCE_POST), wajibUuid(), wajibIdempotencyKey, async (req, res) => {
+  try {
+    const hasil = await prisma.$transaction((tx) => bayarUangMukaPO(tx, { poId: req.params.id, body: req.body, userId: req.user.id, bolehAdmin: hasPermission(req.user, P.FINANCE_ADMIN) }), { timeout: 20000 });
+    res.status(201).json({ ...hasil, keuangan: await ringkasanKeuanganPO(prisma, req.params.id) });
   } catch (e) { handleFinanceError(e, res); }
 });
 

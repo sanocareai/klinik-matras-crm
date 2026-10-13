@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useUrlTab } from "@/lib/useUrlTab.js";
 import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
 import { specOtomatis } from "@/features/finance/detailSpecs.js";
-import { Plus, Building2, FileText, Banknote, Pencil, History, Ban, CheckCircle2, CalendarClock } from "lucide-react";
+import { Plus, Building2, FileText, Banknote, Pencil, History, Ban, CheckCircle2, CalendarClock, Wallet } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -35,12 +35,14 @@ import { CardList, RowCard } from "@/features/finance/cards.jsx";
 import PilihJenisTagihan, { bodyJenis, jenisLengkap } from "@/features/finance/JenisTagihan.jsx";
 import { resetSaatBuka } from "@/features/finance/resetSaatBuka.jsx";
 import JadwalAgingUtang from "@/features/finance/JadwalAgingUtang.jsx";
+import { TabelUangMukaSupplier } from "@/features/finance/UangMukaSupplierTabel.jsx";
+import { ModalTerapkanUangMuka } from "@/features/finance/UangMukaPO.jsx";
 import TerminFaktur from "@/features/finance/TerminFaktur.jsx";
 import { daftarPilihanTermin, payloadTerminSupplier, bodyTermin, galatTermin, TERMIN_AWAL, bolehMencatatFinance } from "@/features/finance/terminLogic.js";
 
 // Tagihan: belum disetujui = Edit bebas (belum ada jurnal). Sudah disetujui = jurnal sudah ada, JANGAN diubah —
 // Batalkan (jurnal dibalik; diblokir server kalau sudah ada pembayaran aktif) lalu catat ulang.
-function aksiTagihan(b, { aksi, setEditUntuk, setVersiUntuk, setInfoUntuk, setKoreksiUntuk }) {
+function aksiTagihan(b, { aksi, setEditUntuk, setVersiUntuk, setInfoUntuk, setKoreksiUntuk, setUangMukaUntuk, supplierAdaUangMuka }) {
   // Isi menu dari matriks aksi (features/finance/matriksAksi.js): tindakan yang tidak tersedia tetap tampil dengan alasannya.
   const items = bentukItemMenu(matriksTagihan(b, { admin: adminSaatIni() }), {
     edit: () => setEditUntuk(b),
@@ -56,6 +58,10 @@ function aksiTagihan(b, { aksi, setEditUntuk, setVersiUntuk, setInfoUntuk, setKo
       if (alasan?.trim()) return aksi(() => api.cancelFinanceBill(b.id, alasan.trim()));
     },
   });
+  // Uang muka supplier: tawarkan penerapan bila supplier punya saldo uang muka & faktur masih bersisa. Tetap dikonfirmasi Finance di dialog.
+  if (["DISETUJUI", "DIBAYAR_SEBAGIAN"].includes(b.status) && supplierAdaUangMuka?.has(b.supplierId) && b.sisa > 0) {
+    items.unshift({ key: "uang-muka", label: "Terapkan Uang Muka", icon: Wallet, hint: "Kurangi sisa utang faktur dengan uang muka supplier yang belum diterapkan.", onClick: () => setUangMukaUntuk(b) });
+  }
   if (["DRAFT", "MENUNGGU_APPROVAL"].includes(b.status)) {
     return {
       primary: {
@@ -129,6 +135,8 @@ export default function FinanceSuppliers() {
   const [kategoriBeli, setKategoriBeli] = useState([]);
   const [metodeInfo, setMetodeInfo] = useState(null);
   const [rekening, setRekening] = useState([]);
+  const [uangMuka, setUangMuka] = useState(null); // ringkasan uang muka per supplier (server)
+  const [uangMukaUntuk, setUangMukaUntuk] = useState(null); // faktur yang akan diberi uang muka
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [pesan, setPesan] = useState(null);
@@ -147,11 +155,13 @@ export default function FinanceSuppliers() {
   const [fStatusS, setFStatusS] = useState("");
   const [fUtang, setFUtang] = useState("");
 
+  const supplierAdaUangMuka = useMemo(() => new Set((uangMuka?.suppliers || []).filter((s) => s.uangMukaBelumDiterapkan > 0).map((s) => s.supplierId)), [uangMuka]);
+
   const muat = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [s, b, p, ag, ub, k, r, kb, mi] = await Promise.all([
+      const [s, b, p, ag, ub, k, r, kb, mi, um] = await Promise.all([
         api.getFinanceSuppliers({ includeInactive: "1" }), // nonaktif ikut dimuat supaya bisa difilter & diaktifkan lagi; pilihan tagihan/bayar hanya yang aktif
         api.getFinanceBills(),
         api.getFinanceSupplierPayments(),
@@ -161,6 +171,7 @@ export default function FinanceSuppliers() {
         api.getFinanceCashAccounts().catch(() => ({ accounts: [] })),
         api.getFinancePurchaseCategories().catch(() => ({ categories: [] })),
         api.getFinanceInventoryMethod().catch(() => null),
+        api.getUangMukaSupplierRingkasan().catch(() => null),
       ]);
       setSuppliers(s.suppliers);
       setBills(b.bills);
@@ -170,6 +181,7 @@ export default function FinanceSuppliers() {
       setKategori(k.categories);
       setKategoriBeli(kb.categories || []);
       setMetodeInfo(mi);
+      setUangMuka(um);
       setRekening((r.accounts || []).filter((a) => a.active));
     } catch (e) {
       setError(e.message || "Gagal memuat data supplier");
@@ -262,6 +274,7 @@ export default function FinanceSuppliers() {
             {tab === "supplier" ? "Supplier Baru" : tab === "pembayaran" ? "Catat Pembayaran" : "Tagihan Baru"}
           </Button>}
           {tab === "aging" && <Button size="sm" onClick={() => setModal("bayar")}><Banknote size={14} /> Catat Pembayaran</Button>}
+          {tab === "supplier" && <TombolExportExcel modul="uang-muka-supplier" label="Export Uang Muka" ambilBody={() => ({ filter: {} })} />}
         </>
       )}
     >
@@ -274,10 +287,10 @@ export default function FinanceSuppliers() {
         </Card>
       )}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5" data-testid="kartu-supplier-utang">
         <KartuAngka
           label="Total Utang Usaha" metrik="utang_supplier" value={formatUang(aging?.total ?? 0)} sub={`${aging?.baris?.length ?? 0} tagihan terbuka`}
-          info="Total tagihan yang sudah disetujui tapi belum lunas dibayar ke supplier."
+          info="Sisa utang faktur yang sudah DISETUJUI dan belum lunas (setelah uang muka diterapkan). Sisa PO yang belum ditagih bukan utang."
         />
         <KartuAngka
           label="Lewat Jatuh Tempo" value={formatUang(lewatTempo.reduce((s, b) => s + b.sisa, 0))}
@@ -287,6 +300,11 @@ export default function FinanceSuppliers() {
         <KartuAngka
           label="Menunggu Persetujuan" value={menunggu.length} tone={menunggu.length > 0 ? "orange" : "default"}
           info="Tagihan yang sudah diinput tapi belum disetujui — belum tercatat sebagai utang sampai disetujui."
+        />
+        <KartuAngka
+          label="Uang Muka Supplier Belum Diterapkan" value={formatUang(uangMuka?.kartu?.uangMukaBelumDiterapkan ?? 0)} tone={(uangMuka?.kartu?.uangMukaBelumDiterapkan ?? 0) > 0 ? "orange" : "default"}
+          sub={`${(uangMuka?.suppliers || []).filter((s) => s.uangMukaBelumDiterapkan > 0).length} supplier · aset, bukan utang`}
+          info="Uang muka yang sudah dibayar ke supplier sebelum barang datang dan belum dipakai mengurangi faktur. Ini ASET (bukan stok, bukan biaya) dan TIDAK mengurangi Total Utang Usaha sampai diterapkan ke faktur."
         />
         <KartuAngka
           label="Penerimaan Belum Ditagih" value={unbilled.length}
@@ -368,7 +386,7 @@ export default function FinanceSuppliers() {
                 </THead>
                 <TBody>
                   {billsTampil.map((b) => {
-                    const a = aksiTagihan(b, { aksi, setEditUntuk, setVersiUntuk, setInfoUntuk, setKoreksiUntuk });
+                    const a = aksiTagihan(b, { aksi, setEditUntuk, setVersiUntuk, setInfoUntuk, setKoreksiUntuk, setUangMukaUntuk, supplierAdaUangMuka });
                     const kedua = teksKedua(b, tier);
                     return (
                     <TR key={b.id} {...klikBuka(() => setPanelRincian(specOtomatis(b)))}>
@@ -409,7 +427,7 @@ export default function FinanceSuppliers() {
             {tier === "card" && (
             <CardList>
               {billsTampil.map((b) => {
-                const a = aksiTagihan(b, { aksi, setEditUntuk, setVersiUntuk, setInfoUntuk, setKoreksiUntuk });
+                const a = aksiTagihan(b, { aksi, setEditUntuk, setVersiUntuk, setInfoUntuk, setKoreksiUntuk, setUangMukaUntuk, supplierAdaUangMuka });
                 return (
                   <RowCard
                     key={b.id}
@@ -502,6 +520,7 @@ export default function FinanceSuppliers() {
 
       {tab === "supplier" && (
         <>
+        <TabelUangMukaSupplier data={uangMuka} />
         <FilterBar
           q={qS} onQ={setQS}
           placeholder="Cari kode, nama, kontak, bank…"
@@ -618,6 +637,7 @@ export default function FinanceSuppliers() {
       )}
       {versiPay && <RiwayatVersiDialog jenis="supplier-payments" id={versiPay.id} nomor={versiPay.paymentNumber} onClose={() => setVersiPay(null)} />}
       {versiUntuk && <RiwayatVersiDialog jenis="bills" id={versiUntuk.id} nomor={versiUntuk.billNumber} onClose={() => setVersiUntuk(null)} />}
+      {uangMukaUntuk && <ModalTerapkanUangMuka billId={uangMukaUntuk.id} nomorFaktur={uangMukaUntuk.supplierRef || uangMukaUntuk.billNumber} onClose={() => setUangMukaUntuk(null)} onSaved={async () => { setUangMukaUntuk(null); await muat(); }} />}
       <ModalBayarSupplier
         open={modal === "bayar"} onClose={() => setModal(null)}
         suppliers={suppliersAktif} bills={bills} rekening={rekening}
