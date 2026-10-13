@@ -46,7 +46,7 @@ MIGS="20261107090000_atribusi_touch_iklan:6df8640b8045113a0012ee1c2a817c3cecd34f
 # Hasil pemindai untuk migrasi di atas. Selisih = berhenti.
 SCAN_EXPECT='{"total":13,"create_table":3,"create_index":6,"fk":4,"check":13}'
 # Hanya berkas ini yang BOLEH berbeda dari baseline (path persis; paket/compose/Dockerfile/frontend/Finance/Production = berhenti).
-ALLOWED_RE='^(backend/prisma/migrations/20261107090000_atribusi_touch_iklan/migration\.sql|backend/prisma/schema\.prisma|backend/src/index\.js|backend/src/routes/(attributionAds|webhooks)\.js|backend/src/services/attribution/(adReferensi|captureHealth|cohortLoader|iklanReport|touchCapture)\.js|backend/tests/(atribusiIklanReport|atribusiTouchAtomik|atribusiTouchReferensi|releaseAtribusiIklan)\.test\.js|backend/tests/fixtures/metaAdsFixture\.js|backend/tests/integration/(atribusiIklan|atribusiTouchCrash|releaseAtribusiIklan)\.integration\.test\.js|backend/tests/integration/helpers/(atribusiCrashChild\.mjs|ctwaPayload\.js)|backend/tests/integration/perf/atribusiIklan\.perf\.manual\.test\.js|docs/ATRIBUSI-FASE2-TOUCH-IKLAN\.md|scripts/(release-atribusi-iklan|release-atribusi-kohort|release-ctwa-capture-flag-off)\.sh)$'
+ALLOWED_RE='^(backend/prisma/migrations/20261107090000_atribusi_touch_iklan/migration\.sql|backend/prisma/schema\.prisma|backend/src/index\.js|backend/src/routes/(attributionAds|webhooks)\.js|backend/src/services/attribution/(adReferensi|captureHealth|cohortLoader|iklanReport|touchCapture)\.js|backend/tests/(atribusiIklanReport|atribusiTouchAtomik|atribusiTouchReferensi|auditSumberLead|releaseAtribusiIklan)\.test\.js|backend/tests/fixtures/metaAdsFixture\.js|backend/tests/integration/(atribusiIklan|atribusiStatusCustomer|atribusiTouchCrash|releaseAtribusiIklan)\.integration\.test\.js|backend/tests/integration/helpers/(atribusiCrashChild\.mjs|ctwaPayload\.js)|backend/tests/integration/perf/atribusiIklan\.perf\.manual\.test\.js|backend/scripts/audit-sumber-lead\.sql|docs/(ATRIBUSI-FASE2-TOUCH-IKLAN|ATRIBUSI-AUDIT-OTHER-KLASIFIKASI)\.md|scripts/(release-atribusi-iklan|release-atribusi-kohort|release-ctwa-capture-flag-off)\.sh)$'
 # Berkas backend/src yang berubah HARUS tepat daftar ini.
 BACKEND_SRC_EXPECT="backend/src/index.js backend/src/routes/attributionAds.js backend/src/routes/webhooks.js backend/src/services/attribution/adReferensi.js backend/src/services/attribution/captureHealth.js backend/src/services/attribution/cohortLoader.js backend/src/services/attribution/iklanReport.js backend/src/services/attribution/touchCapture.js"
 # Pin sha256 (teks LF) berkas RUNTIME. Isi berbeda dari pin = berhenti sampai ditinjau ulang.
@@ -59,7 +59,7 @@ declare -A PINS=(
   ["backend/src/services/attribution/cohortLoader.js"]="03d54a1feb5a64d5f1fd5b9a3ced908d58e0ba38e7dcce519a745dfb0cb3a57b"
   ["backend/src/services/attribution/iklanReport.js"]="67250a173d32564fd8ec68cd2df0ea30451b52ce413eb840f452c753de0ded51"
   ["backend/src/services/attribution/touchCapture.js"]="8ccaa9b1729106b3f812f4a18dcfdf4cfc1b67140e9747025ca2d4ad634117b8"
-  ["backend/prisma/schema.prisma"]="f176793d53c6c5af46ca59c5d8d90470bda824ca862770a477ccf28592f50ea5"
+  ["backend/prisma/schema.prisma"]="0541d66e4148a2e92d0d60d3e2caddfe0d9e63b07753530bf12851c8eaebc03d"
 )
 
 say()  { printf '\n\033[1m== %s\033[0m\n' "$*"; }
