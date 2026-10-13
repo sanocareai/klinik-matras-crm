@@ -627,6 +627,14 @@ ok "health sehat; bundel publik = dist release aktif (${PREV_INDEX})"
 [ "$(psql_live -At -c "select count(*) from _prisma_migrations where finished_at is null and rolled_back_at is null")" = "0" ] || die "ada migration menggantung"
 MIG_SEBELUM="$(psql_live -At -c "select count(*) from _prisma_migrations where finished_at is not null and rolled_back_at is null")"
 for m in $MIG_LIST; do [ "$(psql_live -At -c "select count(*) from _prisma_migrations where migration_name='${m}'")" = "0" ] || die "migrasi ${m} SUDAH tercatat di produksi (tidak diharapkan)"; done
+# Himpunan migrasi: yang terpasang di produksi HARUS seluruhnya ada di kandidat (live bisa bergerak dari baseline); yang belum terpasang HARUS tepat milik rilis ini.
+CAND_MIGS="$(sg ls-tree --name-only "${DEPLOY_SHA}" backend/prisma/migrations/ | sed 's#.*/##' | grep -E '^[0-9]{14}_' | LC_ALL=C sort)"
+PROD_MIGS="$(psql_live -At -c "select migration_name from _prisma_migrations where finished_at is not null and rolled_back_at is null order by 1" | LC_ALL=C sort)"
+SOLO_PROD="$(comm -13 <(printf '%s\n' "$CAND_MIGS") <(printf '%s\n' "$PROD_MIGS") || true)"
+[ -z "$SOLO_PROD" ] || { printf '%s\n' "$SOLO_PROD" | sed 's/^/        /'; die "produksi memiliki migrasi yang TIDAK ada di kandidat — bawa kandidat ke baseline terbaru"; }
+SOLO_CAND="$(comm -23 <(printf '%s\n' "$CAND_MIGS") <(printf '%s\n' "$PROD_MIGS") || true)"
+[ "$(printf '%s\n' "$SOLO_CAND" | tr -d ' ')" = "$(printf '%s\n' $MIG_LIST | LC_ALL=C sort | tr -d ' ')" ] || { printf '%s\n' "$SOLO_CAND" | sed 's/^/        /'; die "migrasi yang belum terpasang bukan tepat migrasi rilis ini"; }
+ok "migrasi: terpasang di produksi ($(printf '%s\n' "$PROD_MIGS" | grep -c .)) ⊆ kandidat; belum terpasang = tepat migrasi rilis ini"
 for T in '"Customer"' '"Message"' '"Order"' '"User"'; do
   [ "$(psql_live -At -c "select count(*) from information_schema.tables where table_schema='public' and table_name=$(printf '%s' "$T" | tr '"' "'")")" = "1" ] || die "tabel $T belum ada di produksi (prasyarat)"
 done
