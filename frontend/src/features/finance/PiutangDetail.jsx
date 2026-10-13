@@ -7,7 +7,7 @@ import { LABEL_STATUS_BAYAR } from "@/features/finance/piutangLogic.js";
 // Spec drawer detail satu order piutang (dipakai PanelDetail). Angka tagihan = baris daftar yang SAMA (server); invoice, pembayaran, jurnal, riwayat dari
 // GET /finance/reports/receivables/order/:orderId. Tidak menghitung ulang apa pun; hanya menampilkan dan menyediakan tautan ke tindakan yang sudah ada.
 const SUMBER_JURNAL = {
-  PENGAKUAN_PENDAPATAN: "Pengakuan pendapatan", PEMBAYARAN_DITERIMA: "Pembayaran diterima", REVERSAL: "Jurnal balik", REFUND: "Refund",
+  PENGAKUAN_PENDAPATAN: "Pengakuan pendapatan", PEMBAYARAN_DITERIMA: "Pembayaran diterima", REVERSAL: "Jurnal balik", REFUND: "Refund", NOTA_KREDIT_ORDER: "Nota kredit",
 };
 const labelSumber = (s) => SUMBER_JURNAL[s] || String(s || "").replace(/_/g, " ").toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
 const METODE = { TUNAI: "Tunai", TRANSFER: "Transfer", QRIS: "QRIS", KARTU: "Kartu", DEBIT: "Kartu debit", KREDIT: "Kartu kredit" };
@@ -22,7 +22,7 @@ function Daftar({ items, kosong }) {
  * @param detail  respons detail order (atau null selagi dimuat)
  * @param opsi    { memuat, galat, onBukaVerifikasi, onBukaInvoice, onCobaLagi }
  */
-export function specDetailPiutang(row, detail, { memuat = false, galat = "", onBukaVerifikasi, onBukaInvoice, onCobaLagi, alasan = [] } = {}) {
+export function specDetailPiutang(row, detail, { memuat = false, galat = "", onBukaVerifikasi, onBukaInvoice, onCobaLagi, alasan = [], nodeNotaKredit = null } = {}) {
   const t = detail?.tagihan ?? row;
   const statusBayar = row.statusBayar ? <Badge variant={row.statusBayar === "DIBAYAR_SEBAGIAN" ? "accent" : "neutral"}>{LABEL_STATUS_BAYAR[row.statusBayar] || row.statusBayar}</Badge> : null;
   const bagian = [
@@ -100,6 +100,8 @@ export function specDetailPiutang(row, detail, { memuat = false, galat = "", onB
         />
       )]],
     });
+    // Nota Kredit/Keringanan (pengurang tagihan) — komponen memuat datanya sendiri dari server.
+    if (nodeNotaKredit) bagian.push({ judul: "Nota Kredit", baris: [["", nodeNotaKredit]] });
     bagian.push({
       judul: `Riwayat (${detail.riwayat.length}${detail.terpotong?.riwayat ? "+" : ""})`,
       baris: [["", (

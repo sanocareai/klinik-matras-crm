@@ -1761,6 +1761,12 @@ export const api = {
   // "Lampirkan Bukti" tanpa koreksi: hanya menambah bukti (append-only); Idempotency-Key dipakai ulang oleh dialog selama isi sama.
   lampirkanBuktiRefund: (id, data, idempotencyKey = null) => request(`/finance/refunds/${id}/lampirkan-bukti`, { method: "POST", body: JSON.stringify(data), headers: { "Idempotency-Key": idempotencyKey || mutationKey("lampir-bukti") } }),
   cancelFinanceRefund: (id, reason) => request(`/finance/refunds/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
+  // Nota Kredit/Keringanan order: pengurang TAGIHAN (bukan refund). Pratinjau = hitungan server (tanpa menulis); simpan membawa token revisi + Idempotency-Key.
+  getNotaKreditOrder: (orderId) => request(`/finance/orders/${orderId}/nota-kredit`),
+  pratinjauNotaKredit: (orderId, params = {}) => request(`/finance/orders/${orderId}/nota-kredit/pratinjau${qsFinance(params)}`),
+  buatNotaKredit: (orderId, data, idempotencyKey = null) => request(`/finance/orders/${orderId}/nota-kredit`, { method: "POST", body: JSON.stringify(data), headers: { "Idempotency-Key": idempotencyKey || mutationKey("nota-kredit") } }),
+  pratinjauBatalNotaKredit: (id) => request(`/finance/nota-kredit/${id}/pratinjau-batal`),
+  batalNotaKredit: (id, data, idempotencyKey = null) => request(`/finance/nota-kredit/${id}/batal`, { method: "POST", body: JSON.stringify(data), headers: { "Idempotency-Key": idempotencyKey || mutationKey("batal-nota-kredit") } }),
   editFinanceBill: (id, data) => request(`/finance/bills/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   cancelFinanceBill: (id, reason) => request(`/finance/bills/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
   editUangMuka: (id, data) => request(`/finance/uang-muka/${id}`, { method: "PATCH", body: JSON.stringify(data) }),

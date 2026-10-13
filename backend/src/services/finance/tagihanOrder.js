@@ -9,10 +9,14 @@
 //                    invoice menagih value + ongkir dan jurnal pengakuan pendapatan mengakui ongkir → order tampil "Lunas" dengan piutang ongkir
 //                    menggantung (mis. RES-21092026-128, Rp200.000). Komisi sales tetap berbasis Order.value (ongkir bukan omzet sales).
 //   tagihanResi    = Σ tagihanOrder child aktif (bukan CANCELLED) = Total Resi.
+//
+// NOTA KREDIT / KERINGANAN (Okt 2026): tagihan BERSIH = value + ongkir ditagih − Σ nota kredit AKTIF (FinOrderCredit). Potongan harga yang sah adalah DOKUMEN pengurang tagihan, bukan refund:
+// refund hanya mengembalikan uang (mengurangi pembayaran bersih). Order yang dimuat tanpa relasi `orderCredits` dianggap tanpa nota (perilaku lama).
 
 export const PILIH_TAGIHAN = {
   id: true, value: true, ongkir: true, status: true, groupId: true,
   group: { select: { id: true, source: true, anchorOrderId: true } },
+  orderCredits: { where: { status: "AKTIF" }, select: { amount: true } },
 };
 
 const rp = (n) => Number(n) || 0;
@@ -31,8 +35,18 @@ export function ongkirDitagih(order, grup = null) {
   return rp(order.ongkir);
 }
 
-export function tagihanOrder(order, grup = null) {
+/** Σ nota kredit/keringanan AKTIF pada order (0 bila relasi tidak dimuat). */
+export function kreditOrder(order) {
+  return (order?.orderCredits ?? []).reduce((s, c) => s + rp(c.amount), 0);
+}
+
+/** Tagihan KOTOR sebelum nota kredit: value + ongkir ditagih. */
+export function tagihanKotorOrder(order, grup = null) {
   return rp(order.value) + ongkirDitagih(order, grup);
+}
+
+export function tagihanOrder(order, grup = null) {
+  return Math.max(0, tagihanKotorOrder(order, grup) - kreditOrder(order));
 }
 
 export function dasarStatusBayar(order, grup = null) {

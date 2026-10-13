@@ -570,6 +570,8 @@ model User {
   finPaymentAllocations                  FinPaymentAllocation[]          @relation("FinPaymentAllocationCreator")
   finRefundsCreated                      FinRefund[]                     @relation("FinRefundCreator")
   finRefundsApproved                     FinRefund[]                     @relation("FinRefundApprover")
+  finOrderCreditsCreated                 FinOrderCredit[]                @relation("FinOrderCreditCreator")
+  finOrderCreditsCancelled               FinOrderCredit[]                @relation("FinOrderCreditCanceller")
   finRefundEvidencesUploaded             FinRefundEvidence[]             @relation("FinRefundEvidenceUploader")
   finRefundEvidenceLinksCreated          FinRefundEvidenceLink[]         @relation("FinRefundEvidenceLinkCreator")
   finExpensesCreated                     FinExpense[]                    @relation("FinExpenseCreator")
@@ -1392,6 +1394,7 @@ model Order {
   finJournalLines       FinJournalLine[]       @relation("FinJournalLineOrder")
   finPaymentAllocations FinPaymentAllocation[]
   finRefunds            FinRefund[]
+  orderCredits          FinOrderCredit[]
   finExpenses           FinExpense[]           @relation("FinExpenseOrder")
   expenseSubmissions    ExpenseSubmission[]
 
@@ -6979,6 +6982,7 @@ enum FinJournalSource {
   PEMAKAIAN_BAHAN // HPP dari stock ledger (ISSUE/WASTE) - TIDAK menggandakan pergerakan stok
   PENERIMAAN_BAHAN // nilai persediaan dari goods receipt (putaway)
   KASBON // uang muka gaji karyawan - Piutang Karyawan (1-1350), lihat posting/kasbon.js
+  NOTA_KREDIT_ORDER // FinOrderCredit — Nota Kredit/Keringanan atas tagihan order yang SUDAH diakui (Dr Retur & Potongan Penjualan / Cr Piutang + Uang Muka Pelanggan); lihat posting/notaKredit.js
   TERAPKAN_UANG_MUKA // FinPurchaseAdvanceApplication — DP pembelian (FinPurchase kategori UANG_MUKA_PEMBELIAN) diterapkan mengurangi Utang Usaha pembelian mode UTANG lain, dari supplier yang sama. Lihat posting/purchaseAdvance.js.
   // Penyesuaian SEMENTARA rekonsiliasi bank — saldo riil bank terkonfirmasi
   // lebih tinggi dari buku, sumber dananya belum teridentifikasi (butuh
@@ -7049,6 +7053,8 @@ model FinJournalEntry {
 
   advanceApplication         FinPurchaseAdvanceApplication? @relation("FinPurchaseAdvanceApplicationJournal")
   advanceApplicationReversal FinPurchaseAdvanceApplication? @relation("FinPurchaseAdvanceApplicationReversalJournal")
+  orderCredit                FinOrderCredit?                @relation("FinOrderCreditJournal")
+  orderCreditReversal        FinOrderCredit?                @relation("FinOrderCreditReversalJournal")
 
   @@index([date, status]) // laporan per periode
   @@index([source, sourceId]) // "jurnal dari transaksi ini mana"
@@ -7807,6 +7813,50 @@ enum FinRefundStatus {
   DIBATALKAN
 }
 
+// ── NOTA KREDIT / KERINGANAN ORDER (Okt 2026) ────────────────────────────────────────────────────────────────────────
+// Dokumen yang MENGURANGI TAGIHAN order (potongan harga / keringanan yang sah) — terpisah dari refund (yang hanya mengembalikan UANG). Tagihan bersih = value + ongkir − Σ nota AKTIF;
+// status Lunas/DP dihitung dari tagihan bersih vs pembayaran bersih (Payment terverifikasi − refund disetujui). Nota yang menempel ke refund (refund_id) TIDAK menjurnal: jurnal refund
+// itu sudah mendebet Retur & Potongan Penjualan; nota hanya mengakui bahwa refund tersebut adalah potongan atas tagihan (bukan pembatalan penerimaan). Nota mandiri menjurnal
+// Dr Retur & Potongan / Cr Piutang (sisa piutang order) + Cr Uang Muka Pelanggan (sisanya, bila order sudah terbayar penuh). Tidak pernah diedit/dihapus: pembatalan = status DIBATALKAN + jurnal balik.
+model FinOrderCredit {
+  id           String @id @default(uuid()) @db.Uuid
+  creditNumber String @unique @map("credit_number") // NK-DDMMYYYY-NNN
+
+  orderId String @map("order_id")
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Restrict)
+
+  amount Decimal @db.Decimal(18, 2)
+  reason String
+  kind   String  @default("POTONGAN_HARGA") @db.VarChar(30) // POTONGAN_HARGA | KERINGANAN
+  // Tanggal efektif nota (tanggal buku jurnal untuk nota mandiri; tanggal pengakuan untuk nota tertaut-refund yang tanpa jurnal).
+  creditDate DateTime @map("credit_date") @db.Date
+
+  refundId String?    @map("refund_id") @db.Uuid
+  refund   FinRefund? @relation(fields: [refundId], references: [id], onDelete: Restrict)
+
+  journalId String?          @unique @map("journal_id") @db.Uuid
+  journal   FinJournalEntry? @relation("FinOrderCreditJournal", fields: [journalId], references: [id], onDelete: Restrict)
+
+  reversalJournalId String?          @unique @map("reversal_journal_id") @db.Uuid
+  reversalJournal   FinJournalEntry? @relation("FinOrderCreditReversalJournal", fields: [reversalJournalId], references: [id], onDelete: SetNull)
+
+  status         String @default("AKTIF") @db.VarChar(20) // AKTIF | DIBATALKAN
+  idempotencyKey String @unique @map("idempotency_key")
+
+  createdById String?  @map("created_by")
+  createdBy   User?    @relation("FinOrderCreditCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  cancelledById String?   @map("cancelled_by")
+  cancelledBy   User?     @relation("FinOrderCreditCanceller", fields: [cancelledById], references: [id], onDelete: SetNull)
+  cancelledAt   DateTime? @map("cancelled_at")
+  cancelReason  String?   @map("cancel_reason")
+
+  @@index([orderId, status])
+  @@index([refundId])
+  @@map("fin_order_credits")
+}
+
 model FinRefund {
   id           String @id @default(uuid()) @db.Uuid
   refundNumber String @unique @map("refund_number") // RFD-DDMMYYYY-NNN
@@ -7852,6 +7902,7 @@ model FinRefund {
   // ── Koreksi Refund: referensi transfer + bukti (Okt 2026) ──
   transferReference String? @map("transfer_reference") @db.VarChar(120)
   evidenceLinks     FinRefundEvidenceLink[]
+  orderCredits      FinOrderCredit[]
 
   @@index([orderId])
   @@index([status])

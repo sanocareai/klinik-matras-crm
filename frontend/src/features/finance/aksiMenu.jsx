@@ -1,10 +1,10 @@
-import { Pencil, History, Ban, Undo2, RefreshCw, ShieldAlert, Paperclip } from "lucide-react";
+import { Pencil, History, Ban, Undo2, RefreshCw, ShieldAlert, Paperclip, FileMinus } from "lucide-react";
 import { adalahAdminKeuangan } from "@/features/finance/matriksAksi.js";
 
 // Jembatan deskriptor matriks aksi (matriksAksi.js) -> item RowActions. Item yang tidak aktif TETAP tampil dengan alasan
 // (Bahasa Indonesia) yang terlihat langsung di menu — tooltip tidak ada di layar sentuh, jadi alasan tidak boleh hanya di `title`.
 
-const IKON = { edit: Pencil, koreksi: Pencil, riwayat: History, batal: Ban, catatUlang: RefreshCw, kembali: Undo2, tolak: ShieldAlert, lampirkan: Paperclip };
+const IKON = { edit: Pencil, koreksi: Pencil, riwayat: History, batal: Ban, catatUlang: RefreshCw, kembali: Undo2, tolak: ShieldAlert, lampirkan: Paperclip, notaKredit: FileMinus };
 
 /** Admin keuangan menurut akun yang sedang login (cerminan; server tetap menjaga). */
 export function adminSaatIni() {
