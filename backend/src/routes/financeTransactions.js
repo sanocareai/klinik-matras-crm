@@ -75,6 +75,7 @@ import { purchaseInclude, bentukPurchase, ambilDaftarPembelian } from "../servic
 // Dipanggil di SETIAP transisi status FinExpense, DI DALAM transaksi yang
 // sama dengan perubahan status itu (lihat services/expenseSubmission/service.js).
 import { hitungBiayaTransfer, siapkanPerubahanBiaya, ringkasBiaya, pastikanTanpaBiayaSebelumBayar } from "../services/finance/transferFee.js";
+import { buatNotaKredit, batalkanNotaKredit, daftarNotaKredit, ringkasanStatusBayar } from "../services/finance/notaKredit.js";
 import { batalkanPertanggungjawabanPengeluaran } from "../services/finance/operationalAdvance.js";
 import {
   pastikanStepUp, pastikanBelumDirekonsiliasi, snapshotJurnal, susunPratinjau, tautanJurnal, PratinjauKoreksi,
@@ -2742,6 +2743,42 @@ financeTxRouter.patch("/refunds/:id", requirePermission(P.FINANCE_POST), async (
 });
 
 // Batalkan refund yang SUDAH disetujui/diposting — reversal resmi; status bayar order dihitung ulang.
+// ── NOTA KREDIT / KERINGANAN ORDER (Okt 2026) ────────────────────────────────────────────────────────────────────────
+// Dokumen pengurang TAGIHAN (potongan harga yang sah) — terpisah dari refund. Lihat services/finance/notaKredit.js untuk definisi & skenario A/B/C/D.
+// Baca = finance:read. Buat/batalkan = finance:admin + Idempotency-Key. orderId bertipe cuid (bukan UUID).
+financeTxRouter.get("/orders/:orderId/nota-kredit", requirePermission(P.FINANCE_READ), async (req, res) => {
+  try {
+    const ringkasan = await ringkasanStatusBayar(prisma, req.params.orderId);
+    if (!ringkasan) throw err("Order tidak ditemukan", 404);
+    res.json({ ringkasan, notaKredit: await daftarNotaKredit(prisma, req.params.orderId) });
+  } catch (e) { handleFinanceError(e, res); }
+});
+
+financeTxRouter.post("/orders/:orderId/nota-kredit", requirePermission(P.FINANCE_ADMIN), wajibIdempotencyKey, async (req, res) => {
+  try {
+    const b = req.body ?? {};
+    if (b.refundId !== undefined && b.refundId !== null && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(b.refundId))) {
+      return res.status(400).json({ code: "ID_TIDAK_VALID", message: "ID tidak valid." });
+    }
+    const hasil = await prisma.$transaction((tx) => buatNotaKredit(tx, {
+      orderId: req.params.orderId, amount: b.amount, reason: b.reason, kind: b.kind || "POTONGAN_HARGA", refundId: b.refundId ?? null,
+      idempotencyKey: req.get("Idempotency-Key"), userId: req.user.id,
+    }), { timeout: 20000 });
+    res.status(hasil.replay ? 200 : 201).json({
+      id: hasil.credit.id, nomor: hasil.credit.creditNumber, jumlah: moneyToNumber(hasil.credit.amount), status: hasil.credit.status, replay: hasil.replay,
+      ...(hasil.sebelum && { sebelum: hasil.sebelum, sesudah: hasil.sesudah }),
+      ringkasan: await ringkasanStatusBayar(prisma, req.params.orderId),
+    });
+  } catch (e) { handleFinanceError(e, res); }
+});
+
+financeTxRouter.post("/nota-kredit/:id/batal", requirePermission(P.FINANCE_ADMIN), wajibUuid(), wajibIdempotencyKey, async (req, res) => {
+  try {
+    const hasil = await prisma.$transaction((tx) => batalkanNotaKredit(tx, { id: req.params.id, reason: req.body?.reason, userId: req.user.id }), { timeout: 20000 });
+    res.json({ ok: true, id: hasil.id, sebelum: hasil.sebelum, sesudah: hasil.sesudah });
+  } catch (e) { handleFinanceError(e, res); }
+});
+
 financeTxRouter.post("/refunds/:id/cancel", requirePermission(P.FINANCE_ADMIN), async (req, res) => {
   try {
     const reason = req.body?.reason?.trim();
@@ -2753,6 +2790,9 @@ financeTxRouter.post("/refunds/:id/cancel", requirePermission(P.FINANCE_ADMIN), 
       if (r.status === "DIBATALKAN") throw err("Refund ini sudah dibatalkan", 409);
       if (r.status !== "DISETUJUI") throw err(`Refund berstatus ${r.status} — belum diposting. Gunakan Tolak, bukan Batalkan.`, 409);
       await lockRowForUpdate(tx, '"Order"', r.orderId, { cast: null });
+      // Nota kredit AKTIF yang tertaut refund ini mengakui refund tersebut sebagai potongan atas tagihan: batalkan nota itu dulu (status bayar dihitung ulang), baru refund.
+      const notaTertaut = await tx.finOrderCredit.count({ where: { refundId: r.id, status: "AKTIF" } });
+      if (notaTertaut > 0) throw err(`Refund ini ditautkan ke ${notaTertaut} nota kredit aktif — batalkan nota kredit itu dulu sebelum membatalkan refund.`, 409);
       await pastikanBelumDirekonsiliasi(tx, [{ source: "REFUND", sourceId: r.id }]);
       await balikkanJurnalAktif(tx, { keyPrefix: ORDER_KEY.refund(r.id), alasan: `Refund ${r.refundNumber} dibatalkan — ${reason}`, userId: req.user.id });
       const updated = await tx.finRefund.update({ where: { id: r.id }, data: { status: "DIBATALKAN", rejectReason: reason } });
