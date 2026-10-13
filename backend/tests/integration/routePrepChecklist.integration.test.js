@@ -401,6 +401,82 @@ test("checklist lingkup STOP terikat satu order/stop; harus job milik rute yang 
   assert.equal(salahJob.status, 400, JSON.stringify(salahJob.body));
 });
 
+// ── Item checklist STOP jadi orphan (bug nyata 13 Oktober 2026, laporan
+// owner: stop Wannih di-reschedule/dilepas dari rute RTE-141026-02, item
+// checklist STOP-nya ["DIVAN WANNIH...", "KAKI DIVAN..."] jadi menunjuk job
+// yang sudah tidak anggota rute ini lagi) ──────────────────────────────────
+
+test("item STOP yang jobId-nya sudah orphan (job dilepas dari rute) TETAP bisa diedit konten & diarsip/dihapus — validasi job<->rute hanya berlaku kalau jobId memang diubah", async () => {
+  const f = await fixtureRoute({ jobCount: 2 });
+  const buat = await tambahItem(f.dispatcherApi, f.route.id, { title: "Foto kondisi Wannih", scope: "STOP", jobId: f.jobs[0].id, required: true, photoRequired: true });
+  assert.equal(buat.status, 201, JSON.stringify(buat.body));
+  const itemId = buat.body.item.id;
+
+  // Simulasikan stop Wannih dilepas dari rute (reschedule) TANPA lewat
+  // endpoint membership — mengisolasi tes ini murni ke PATCH item, bukan ikut
+  // menguji pembersihan otomatis (itu dites terpisah di bawah).
+  await testPrisma.job.update({ where: { id: f.jobs[0].id }, data: { routeId: null } });
+
+  // SEBELUM perbaikan: dua baris di bawah ini sama-sama 400 "Order/stop tidak
+  // ditemukan di rute ini" walau tidak satu pun benar-benar menyentuh jobId.
+  const editKonten = await f.dispatcherApi.patch(`${CHK(f.route.id)}/items/${itemId}`, { detail: "tetap bawa plastik pembungkus" });
+  assert.equal(editKonten.status, 200, JSON.stringify(editKonten.body));
+  assert.equal(editKonten.body.item.detail, "tetap bawa plastik pembungkus");
+
+  const arsip = await f.dispatcherApi.patch(`${CHK(f.route.id)}/items/${itemId}`, { archived: true });
+  assert.equal(arsip.status, 200, JSON.stringify(arsip.body));
+  assert.ok(arsip.body.item.archivedAt, "item harus berhasil diarsipkan walau jobId-nya sudah orphan");
+});
+
+test("item STOP orphan: mengubah jobId secara EKSPLISIT ke job yang bukan anggota rute ini tetap ditolak (validasi tidak dilemahkan, hanya tidak dipaksakan kalau tidak relevan)", async () => {
+  const f = await fixtureRoute({ jobCount: 2 });
+  const buat = await tambahItem(f.dispatcherApi, f.route.id, { title: "Foto kondisi Wannih", scope: "STOP", jobId: f.jobs[0].id, required: true });
+  const itemId = buat.body.item.id;
+
+  const orderAsliF0 = await testPrisma.order.findUniqueOrThrow({ where: { id: f.jobs[0].orderId } });
+  const orderLuar = await testPrisma.order.create({
+    data: { customerId: orderAsliF0.customerId, orderNumber: `LUAR-${++seq}`, value: 1, category: "LAYANAN", status: "DELIVERED" },
+  });
+  const jobLuar = await testPrisma.job.create({ data: { type: "DELIVERY", orderId: orderLuar.id, status: "ASSIGNED", sequence: 1 } });
+
+  const gantiJobSalah = await f.dispatcherApi.patch(`${CHK(f.route.id)}/items/${itemId}`, { jobId: jobLuar.id });
+  assert.equal(gantiJobSalah.status, 400, JSON.stringify(gantiJobSalah.body));
+});
+
+test("stop dilepas dari rute lewat PATCH /routes/:id/jobs otomatis mengarsipkan item checklist STOP miliknya — tidak tersisa jadi syarat wajib hantu saat rute diterbitkan", async () => {
+  const f = await fixtureRoute({ jobCount: 2 });
+  // Ganti rute jadi DRAFT supaya endpoint membership tidak butuh `reason`.
+  await testPrisma.route.update({ where: { id: f.route.id }, data: { status: "DRAFT" } });
+
+  const itemWannih = await tambahItem(f.dispatcherApi, f.route.id, { title: "DIVAN WANNIH UK. 180", scope: "STOP", jobId: f.jobs[0].id, required: true });
+  assert.equal(itemWannih.status, 201, JSON.stringify(itemWannih.body));
+  const itemRute = await tambahItem(f.dispatcherApi, f.route.id, { title: "Bukti Kelengkapan tambahan", scope: "ROUTE", required: true });
+  assert.equal(itemRute.status, 201);
+
+  // Lepas stop Wannih (f.jobs[0]) dari rute — hanya f.jobs[1] yang tersisa.
+  const edit = await f.dispatcherApi.patch(`/api/armada/routes/${f.route.id}/jobs`, { jobIds: [f.jobs[1].id] });
+  assert.equal(edit.status, 200, JSON.stringify(edit.body));
+
+  const diDb = await testPrisma.routePrepChecklistItem.findUniqueOrThrow({ where: { id: itemWannih.body.item.id } });
+  assert.ok(diDb.archivedAt, "item STOP milik stop yang dilepas harus otomatis terarsip");
+
+  const terkini = await f.dispatcherApi.get(CHK(f.route.id));
+  assert.ok(!terkini.body.items.some((i) => i.id === itemWannih.body.item.id), "item yang sudah terarsip tidak lagi muncul di daftar checklist aktif");
+  assert.ok(terkini.body.items.some((i) => i.id === itemRute.body.item.id), "item scope ROUTE tidak ikut terarsip — tidak terikat satu stop");
+
+  // Kembalikan rute ke PUBLISHED (disederhanakan langsung lewat DB — alur
+  // publish sungguhan sudah dites terpisah di tempat lain, bukan fokus tes
+  // ini) supaya bukti efek nyata bisa dicek: gerbang start TIDAK LAGI
+  // menagih item hantu milik stop yang sudah tidak ada.
+  await testPrisma.route.update({ where: { id: f.route.id }, data: { status: "PUBLISHED", publishedAt: new Date() } });
+  const k = await kirimKelengkapan(f.driver.token, f.route.id);
+  assert.equal(k.status, 201, JSON.stringify(k.body));
+  const proofRute = await kirimBukti(f.driver.token, f.route.id, itemRute.body.item.id);
+  assert.equal(proofRute.status, 201, JSON.stringify(proofRute.body));
+  const mulai = await startRoute(f.driverApi, f.route.id);
+  assert.equal(mulai.status, 200, JSON.stringify(mulai.body));
+});
+
 // ── Audit keamanan bukti foto (review gate, 7 Okt 2026) ─────────────────────
 // Akses lintas driver untuk BACA (GET), bukan cuma kirim bukti (sudah dites
 // di atas), dan "peminjaman bukti" (evidence borrowing) — mencoba memakai
