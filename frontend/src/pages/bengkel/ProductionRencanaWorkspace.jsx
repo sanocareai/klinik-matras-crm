@@ -311,11 +311,7 @@ function StationPicPicker({ station, refs, busy, onSet }) {
   const stale = pic && !pic.active && !allOperators.some((o) => o.id === pic.operatorId);
   if (refs.forbidden) return <p className="m-0 truncate text-[11.5px] text-ink3">{station.operatorNames?.length ? `PIC ${station.operatorNames.join(", ")}` : "PIC belum ada"}</p>;
   if (refs.loaded && operators.length === 0) {
-    return (
-      <p data-testid="station-pic-empty" className="m-0 text-[11.5px] text-orange">
-        {allOperators.length ? "Belum ada operator berlini Meja Bongkar." : "Belum ada PIC terdaftar."} <Link to="/bengkel/pengaturan?tab=operator" className="font-semibold underline">{allOperators.length ? "Tetapkan lini di Pengaturan › Operator" : "Daftarkan PIC di Pengaturan › Operator"}</Link>
-      </p>
-    );
+    return <p data-testid="station-pic-empty" className="m-0 text-[11.5px] text-ink3">PIC belum tersedia</p>;
   }
   return (
     <label className="block text-[11px] font-semibold uppercase tracking-wide text-ink3">PIC {station.label}
@@ -396,11 +392,9 @@ function MejaColumn({ station, drag, saving, onOpen, onMove, onReorder, onUnsche
         );
       })}
       {valid && insertAt === seen && <InsertLine />}
-      {Array.from({ length: slots }).map((_, i) => (
-        <div key={i} data-testid="meja-slot" className={`flex min-h-[72px] items-center justify-center rounded-card border-2 border-dashed px-2 text-center text-[11.5px] ${valid ? "border-accent bg-accentbg/40 text-accent" : "border-line text-ink3"}`}>
-          {valid ? `Lepas di sini → ${station.label}` : hasDraggable ? `+ Seret unit (⋮⋮) ke ${station.label}, atau pakai tombol Jadwalkan` : `${station.label} kosong — belum ada unit yang bisa dijadwalkan`}
-        </div>
-      ))}
+      {slots > 0 && <div data-testid="meja-slot" className={`flex min-h-[56px] items-center justify-center rounded-card border-2 border-dashed px-2 text-center text-[11.5px] ${valid ? "border-accent bg-accentbg/40 text-accent" : "border-line text-ink3"}`}>
+        {valid ? `Lepas di sini → ${station.label}` : hasDraggable ? `Seret ke ${station.label} · ${slots} tempat tersedia` : `${station.label} kosong — belum ada unit yang bisa dijadwalkan`}
+      </div>}
       {saving && <p className="sr-only" role="status">Menyimpan…</p>}
     </section>
   );
@@ -647,7 +641,9 @@ export default function ProductionRencanaWorkspace() {
       default: break; // noop
     }
   };
-  const { drag, start: onHandleDown } = usePlanDrag({ enabled: !busy && reader !== "OFF", resolve: resolveDrop, onDrop: handleDrop });
+  // Seret HANYA setelah data papan siap: kolom Meja sudah dirender dari daftar bawaan sebelum board dimuat, dan melepas kartu di jeda itu ditolak
+  // "Meja tujuan tidak ditemukan" (intermiten di jaringan lambat — ditemukan lewat gate seret sentuh 390px).
+  const { drag, start: onHandleDown } = usePlanDrag({ enabled: !busy && !loading && !!board && reader !== "OFF", resolve: resolveDrop, onDrop: handleDrop });
 
   // Kelola Rencana (BOM/reservasi, P3) — dibuka dari dalam Unit 360, aksi tulis lama tidak berubah.
   async function openManageFor(unitId) {
@@ -713,10 +709,10 @@ export default function ProductionRencanaWorkspace() {
                 </div>
                 {!bl.demo && (
                   <div className="space-y-2 px-1" data-testid="backlog-filters">
-                    <div role="tablist" aria-label="Saring status backlog" className="flex gap-1.5">
+                    <div role="tablist" aria-label="Saring status backlog" className="flex flex-wrap gap-1.5">
                       {BACKLOG_STATUS_TABS.map((t) => (
                         <button key={t.key} type="button" role="tab" aria-selected={bl.status === t.key} data-testid={`backlog-status-${t.key}`} onClick={() => bl.setStatus(t.key)}
-                          className={`min-h-[36px] rounded-chip px-3 text-[12.5px] font-semibold ${bl.status === t.key ? "bg-accent text-white" : "bg-surface text-ink2"}`}>
+                          className={`min-h-[40px] rounded-chip px-3 text-[12.5px] font-semibold ${bl.status === t.key ? "bg-accent text-white" : "bg-surface text-ink2"}`}>
                           {t.label}<span className="ml-1 tabular-nums opacity-80">{bl.counts?.[t.key] ?? 0}</span>
                         </button>
                       ))}
@@ -751,11 +747,18 @@ export default function ProductionRencanaWorkspace() {
               )}
               </div>
 
+              <div className="flex min-w-0 flex-col gap-3" data-testid="meja-panel">
+              {refs.loaded && !refs.forbidden && !refs.operators?.some((o) => laneOptions([o], LANE.TABLE).length > 0) && (
+                <p data-testid="meja-pic-warning" role="note" className="m-0 rounded-card border border-orange/30 bg-orangebg px-3 py-2 text-[12px] text-orange">
+                  {refs.operators?.length ? "Belum ada operator berlini Meja Bongkar." : "Belum ada PIC terdaftar."} <Link to="/bengkel/pengaturan?tab=operator" className="font-semibold text-orange underline">{refs.operators?.length ? "Tetapkan lini di Pengaturan › Operator" : "Daftarkan PIC di Pengaturan › Operator"}</Link>
+                </p>
+              )}
               <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2" data-testid="meja-grid">
                 {(stations.length ? stations : (cfg?.stations || MEJA).map((code) => ({ code, label: mejaLabel(code), capacity: 3, count: 0, items: [], operatorNames: [] }))).map((s) => (
                   <MejaColumn key={s.code} station={s} drag={drag} saving={!!saving} onHandleDown={onHandleDown} refs={refs} onSetPic={setStationPic}
                     onOpen={openOverview} onMove={(v, code) => setSchedule({ ...v, presetStation: code })} onReorder={reorderStation} onUnschedule={unschedule} busy={busy} today={today} tomorrow={tomorrow} hasDraggable={hasDraggable} />
                 ))}
+              </div>
               </div>
             </div>
             </>)}

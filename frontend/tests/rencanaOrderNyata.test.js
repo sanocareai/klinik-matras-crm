@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { teksUkuranDariNotes } from "../src/utils/ukuranKasur.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const read = (...p) => fs.readFileSync(path.join(__dirname, "..", "src", ...p), "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
@@ -13,13 +14,14 @@ const BACKLOG_CARD = read("features", "production", "BacklogCard.jsx");
 const SCHEDULE = read("features", "production", "ScheduleModals.jsx");
 const ACTIVATION = read("features", "production", "RencanaActivationModal.jsx");
 const MODEL_SRC = read("features", "production", "unitCardModel.js");
+const BACKLOG_SRC = fs.readFileSync(path.join(__dirname, "..", "..", "backend", "src", "services", "productionBacklog.js"), "utf8");
 const API = read("api.js");
 const USE_BACKLOG = read("features", "production", "useBacklog.js");
 
 function loadOnboardView() {
   const fnSrc = MODEL_SRC.slice(MODEL_SRC.indexOf("export function viewOfOnboardCard"));
   const body = fnSrc.slice(0, fnSrc.indexOf("\n}\n") + 3).replace(/^export /, "");
-  return new Function(`${body}\nreturn viewOfOnboardCard;`)();
+  return new Function("teksUkuranDariNotes", `${body}\nreturn viewOfOnboardCard;`)(teksUkuranDariNotes);
 }
 const item = (priorityKey = "NORMAL") => ({
   unitId: "u-1", schedulable: false, view: null, rencana: { action: "ONBOARD_SCHEDULE", onboardable: true },
@@ -34,6 +36,9 @@ test("view sintetis kartu order nyata: runId sintetis + onboardUnitId, TANPA pla
   assert.equal(v.unit.unitCode, "U-1"); assert.equal(v.unit.photoUrl, "/media/unit-photo/u-1"); assert.deepEqual(v.customer.salesServices, ["Ganti Kain"]);
   assert.equal(v.presence.key, "NOT_ARRIVED", "kehadiran fisik TIDAK dipalsukan");
   assert.equal(f(item("HIGH")).suggestedPriority, 1); assert.equal(f(item("COMPLAINT")).suggestedPriority, 1);
+  const orderSize = item(); orderSize.card.unit.ukuran = null;
+  orderSize.card.customer.request = JSON.stringify({ ukuranKasur: "Ukuran Custom", ukuranLebarCm: 145, ukuranPanjangCm: 205 });
+  assert.equal(f(orderSize).unit.ukuran, "145 × 205 cm (Custom)");
   assert.equal(f({ card: null }), null);
 });
 
@@ -49,8 +54,36 @@ test("kartu backlog: instruksi lama 'Belum bisa dijadwalkan' dihapus; aksi berik
   assert.match(BACKLOG_CARD, /Langkah berikutnya/);
   assert.match(BACKLOG_CARD, /data-testid="photo-note"/, "penjelasan foto kosong ditampilkan");
   // kartu non-onboardable tidak punya tombol jadwal di cabangnya
-  const nonBranch = BACKLOG_CARD.slice(BACKLOG_CARD.indexOf(") : r ? ("));
-  assert.doesNotMatch(nonBranch.slice(0, nonBranch.indexOf(") : null}")), /Jadwalkan|handle/);
+  // Setelah penyederhanaan kartu: cabang `draggable ? <Button …> : <p …>` — tombol hanya di cabang draggable; cabang lain hanya teks "Langkah berikutnya" tanpa Jadwalkan/handle.
+  const awal = BACKLOG_CARD.indexOf("{draggable ? <Button");
+  assert.ok(awal > 0, "cabang tombol Jadwalkan ditemukan");
+  assert.equal((BACKLOG_CARD.match(/data-testid="backlog-schedule"/g) || []).length, 1, "tombol Jadwalkan hanya satu, di cabang draggable");
+  const nonBranch = BACKLOG_CARD.slice(BACKLOG_CARD.indexOf(" : <p ", awal));
+  assert.ok(nonBranch.length > 10 && nonBranch.indexOf("</p>") > 0, "cabang non-draggable ditemukan");
+  assert.doesNotMatch(nonBranch.slice(0, nonBranch.indexOf("</p>")), /Jadwalkan|handle|onSchedule/);
+});
+
+test("kartu ringkas menampilkan ukuran unit asli dan aktivasi yang tetap butuh konfirmasi; peringatan PIC cukup sekali per papan", () => {
+  assert.match(BACKLOG_CARD, /formatUkuranLabel\(c\.unit\.ukuran\) \|\| teksUkuranDariNotes\(c\.customer\.request\)/, "ukuran mengikuti unit lalu catatan order Sales");
+  assert.match(BACKLOG_SRC, /notes: true/);
+  assert.match(BACKLOG_SRC, /request: u\.order\?\.notes \?\? null/);
+  assert.match(MODEL_SRC, /request: c\.customer\?\.request \?\? null/, "kartu yang diseret membawa sumber ukuran yang sama");
+  assert.match(BACKLOG_CARD, /Ukuran belum dicatat/, "data kosong tidak ditebak dari layanan");
+  assert.match(BACKLOG_CARD, /data-testid="backlog-size"/);
+  assert.match(BACKLOG_CARD, /Perlu aktivasi/);
+  assert.match(BACKLOG_CARD, /Aktifkan & Jadwalkan/);
+  assert.match(RENCANA, /data-testid="meja-pic-warning"/);
+  assert.equal((RENCANA.match(/Tetapkan lini di Pengaturan › Operator/g) || []).length, 1);
+  assert.match(RENCANA, /slots > 0 && <div data-testid="meja-slot"/, "satu area lepas per meja kosong");
+  // Regresi yang ditemukan lewat browser: peringatan PIC yang menjadi sibling grid dua kolom menempati kolom kanan dan mendorong papan Meja ke kolom 340px.
+  // Peringatan dan grid Meja HARUS satu pembungkus kolom kanan.
+  const panel = RENCANA.slice(RENCANA.indexOf('data-testid="meja-panel"'));
+  assert.ok(panel.indexOf('data-testid="meja-pic-warning"') > 0 && panel.indexOf('data-testid="meja-pic-warning"') < panel.indexOf('data-testid="meja-grid"'), "peringatan di atas grid Meja, di dalam pembungkus yang sama");
+  // Teks penting tidak terpotong: nama pelanggan & kode·order membungkus (bukan elipsis), tab status membungkus dan >= 40px.
+  assert.doesNotMatch(BACKLOG_CARD, /truncate[^"]*text-\[14px\] font-bold/, "nama pelanggan tidak di-truncate");
+  assert.match(BACKLOG_CARD, /break-words text-\[14px\] font-bold leading-tight text-ink \[overflow-wrap:anywhere\]/);
+  assert.match(RENCANA, /aria-label="Saring status backlog" className="flex flex-wrap gap-1\.5"/);
+  assert.match(RENCANA, /min-h-\[40px\] rounded-chip px-3 text-\[12\.5px\] font-semibold/);
 });
 
 test("halaman Rencana: kartu order nyata memakai Jadwalkan + seret yang SAMA; slot Meja tidak menyuruh menyeret bila tidak ada yang bisa diseret", () => {
@@ -123,4 +156,9 @@ test("aktivasi saat Jadwalkan: penanda dari server (bukan tebakan peran di brows
   const aktif = toView({ card: card("u-9"), rencana: { action: "AWAIT_ACTIVATION", activatable: true } });
   assert.equal(aktif.activatable, true); assert.equal(aktif.onboardUnitId, "u-9"); assert.equal(aktif.plan, null);
   assert.equal(toView({ card: card("u-8"), rencana: { action: "AWAIT_ACTIVATION", activatable: false } }).activatable, false);
+});
+
+test("seret hanya aktif setelah data papan siap (bukan saat kolom Meja masih dirender dari daftar bawaan) — mencegah 'Meja tujuan tidak ditemukan' intermiten di HP", () => {
+  assert.match(RENCANA, /usePlanDrag\(\{ enabled: !busy && !loading && !!board && reader !== "OFF"/);
+  assert.match(fs.readFileSync(path.join(__dirname, "..", "src", "features", "production", "planDnd.js"), "utf8"), /Meja tujuan tidak ditemukan\. Muat ulang halaman\./, "penolakan server-state tetap ada sebagai pengaman terakhir");
 });

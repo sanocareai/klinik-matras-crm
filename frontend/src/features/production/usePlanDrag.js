@@ -6,8 +6,17 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { dragMoved } from "@/features/production/planDnd.js";
 
-const EDGE_PX = 90; // jarak dari tepi area gulir yang memicu gulir otomatis
-const SCROLL_STEP = 16;
+export const EDGE_PX = 90; // jarak dari tepi area gulir yang memicu gulir otomatis
+// Kecepatan gulir otomatis PROGRESIF menurut kedalaman jari di zona tepi: di batas zona = SCROLL_MIN px/frame (halus, bisa membidik), di tepi layar = SCROLL_MAX px/frame.
+// Tetap 16 px/frame membuat seret backlog -> Meja di HP (backlog satu kolom ±6000px) butuh ±6 detik menahan jari; dengan progresif ±2 detik.
+export const SCROLL_MIN = 16;
+export const SCROLL_MAX = 64;
+export function autoScrollDelta(y, top, bottom) {
+  const langkah = (kedalaman) => Math.round(SCROLL_MIN + (SCROLL_MAX - SCROLL_MIN) * Math.min(1, Math.max(0, kedalaman) / EDGE_PX));
+  if (y < top + EDGE_PX) return -langkah(top + EDGE_PX - y);
+  if (y > bottom - EDGE_PX) return langkah(y - (bottom - EDGE_PX));
+  return 0;
+}
 
 // Area gulir halaman = kontainer terluar yang benar-benar bisa digulir (di aplikasi ini .page-body, BUKAN window). Tanpa ini gulir otomatis
 // tidak bergerak sama sekali di layar yang lebih pendek dari halaman (tablet/HP) — ditemukan lewat QA sentuh.
@@ -52,9 +61,9 @@ export function usePlanDrag({ enabled = true, resolve, onDrop }) {
     const r = s.scroller ? s.scroller.getBoundingClientRect() : { top: 0, bottom: window.innerHeight };
     const top = Math.max(r.top, 0); const bottom = Math.min(r.bottom, window.innerHeight);
     const by = (dy) => (s.scroller ? s.scroller.scrollBy(0, dy) : window.scrollBy(0, dy));
-    if (y < top + EDGE_PX) by(-SCROLL_STEP);
-    else if (y > bottom - EDGE_PX) by(SCROLL_STEP);
-    else { s.raf = requestAnimationFrame(tick); return; }
+    const dy = autoScrollDelta(y, top, bottom);
+    if (dy === 0) { s.raf = requestAnimationFrame(tick); return; }
+    by(dy);
     update(s.last.x, s.last.y); // posisi sasaran berubah karena gulir
     s.raf = requestAnimationFrame(tick);
   }, [update]);
