@@ -45,8 +45,17 @@ mati sesudah commit → keduanya ada, tepat satu (kunci dedupe UNIQUE; event `me
 3. Transaksi bermasalah (P2028/P2034/savepoint tak pulih) → pesan dibuat ulang tanpa transaksi, lalu touch dicoba sekali di luar jalur kritis (`dipulihkan` / `gagalPulih`).
 4. Galat dari pesan sendiri (mis. P2002 = sudah ada) dilempar apa adanya → pemanggil `skip-dupe`, seperti sebelumnya.
 
-**`customerNewAtTouch`** kini dihitung dari keadaan DB, bukan `!existingCustomer`: baru dibuat oleh pemrosesan ini, atau dibuat ≤ 2 jam dan belum punya pesan apa pun
-(customer yang sempat terbentuk sebelum proses mati tidak salah menjadi "customer lama" saat retry).
+**Status customer pada touch** (`customer_status_at_touch` + `customer_basis_at_touch`) memakai BUKTI KAUSAL, bukan heuristik waktu. Tanpa bukti = `UNKNOWN`, bukan `NEW`:
+
+| Status / basis | Bukti | Efek pada laporan |
+|---|---|---|
+| NEW / WEBHOOK_MEMBUAT | tidak ada baris Customer saat handler webhook ini mulai (webhook yang membuat) dan belum ada pesan lain | lead iklan baru |
+| NEW / CLID_COCOK | customer sudah ada tanpa pesan, tetapi `Customer.ctwa_clid` = clid payload ini (hanya jalur create webhook yang menulis clid) — mis. retry sesudah proses mati antara upsert customer dan commit pesan | lead iklan baru |
+| EXISTING / RIWAYAT_PESAN | customer sudah punya pesan (masuk/keluar) | sentuhan berikutnya (bukan lead) |
+| UNKNOWN / TANPA_BUKTI | customer sudah ada tanpa pesan dan tanpa clid cocok (dibuat manual / mulai-chat / B2B / jalur lain) | touch tercatat, TIDAK jadi lead iklan; `TOUCH_TANPA_BUKTI_AKUISISI` |
+| UNKNOWN / TIDAK_KONSISTEN | "baru" tetapi `createdAt` jauh sebelum handler mulai, atau penentuan gagal | sama |
+
+Jalur pembuat Customer yang diaudit: webhook inbound (`upsert`, satu-satunya yang mengisi `ctwa_clid`), webhook keluar fromMe (`upsert`, tanpa clid), `POST /customers` (manual), `POST /conversations/mulai-chat`, `POST /b2b/orders`, profil karyawan (PKR). Status TIDAK mengubah jumlah touch. Pesan paralel milik customer yang sama diserialkan oleh kunci baris customer (`FOR UPDATE`) di dalam transaksi pesan: tepat satu pemenang NEW.
 
 **Observabilitas (agregat, tanpa identitas):** `GET /api/atribusi/iklan/kesehatan` — `proses`: direkam, duplikat, bukanTouch, gagal, fallbackTransaksi, dipulihkan,
 gagalPulih, tertunda (+usia tertua detik), terakhirGagalAt (per proses; 0 saat restart); `db`: touch total/24 jam/7 hari, touch tertua/terbaru, kesegaran referensi,
@@ -97,7 +106,7 @@ order di balik closing = `lunasTerbuktiLedger` kohort Fase 1.
 | Lapis | Hasil |
 |---|---|
 | Unit (builder touch, atomik via db palsu, impor referensi, laporan, skrip rilis) | 82 (`atribusiTouchReferensi` 15, `atribusiTouchAtomik` 10, `atribusiIklanReport` 17, `releaseAtribusiIklan` 12, + Fase 0/1 terkait) |
-| Integrasi PostgreSQL sekali pakai (migrasi dari nol) | `atribusiIklan` 17/17, `atribusiTouchCrash` 11/11, `releaseAtribusiIklan` 4/4 (SMOKE_JS asli + UJI_SQL rehearsal 15 tolak/4 lolos pada DB termigrasi) |
+| Integrasi PostgreSQL sekali pakai (migrasi dari nol) | `atribusiIklan` 17/17, `atribusiStatusCustomer` 8/8, `atribusiTouchCrash` 13/13 (7 titik statement + after-commit), `releaseAtribusiIklan` 4/4 (SMOKE_JS asli + UJI_SQL rehearsal 15 tolak/4 lolos pada DB termigrasi) |
 | Crash SIGKILL pada tiap statement transaksi pesan (proses terpisah, router asli) | stmt:1..5 dan after-commit: tidak pernah Message tanpa touch; proses baru memulihkan TEPAT satu touch; customer lama / Ad ID belum terpetakan / flag MATI / dua event bersamaan |
 | Fallback | trigger DB menolak insert (Message tetap commit); P2028/P2034 → dipulihkan atau gagalPulih |
 
