@@ -67,6 +67,7 @@ import { postJournal, recordPostingGap, findEntryByKey, todayBookDateWIB, STATUS
 import { resolveAccount, revenueSystemKeyForOrder, SYSTEM_KEYS, AccountError } from "../accounts.js";
 import { resolveCashAccountForPayment } from "../settings.js";
 import { toMoney, sumMoney, minMoney, ZERO } from "../money.js";
+import { saldoPiutangOrder } from "./notaKredit.js";
 import { paidForOrder } from "../allocation.js";
 import { barisBiayaAdmin } from "../transferFee.js";
 import { tanggalCutoff, sebelumCutoff, tampilCutoff } from "../cutoff.js";
@@ -430,6 +431,15 @@ export async function sisaBisaDirefund(tx, orderId, gate = { enabled: false }) {
  *                     pendapatan, supaya pendapatan BRUTO periode itu tidak
  *                     diubah surut — laporan yang sudah dibaca tetap utuh,
  *                     dan retur terlihat sebagai angka tersendiri)
+ *
+ * KELEBIHAN BAYAR (Okt 2026): kalau pendapatan sudah diakui TETAPI order masih
+ * punya saldo Uang Muka Pelanggan (pelanggan membayar lebih dari tagihan —
+ * kelebihan itu sengaja tetap berdiri sebagai kewajiban, lihat pengakuan
+ * pendapatan), bagian refund yang mengembalikan kelebihan itu mendebet
+ * Uang Muka Pelanggan DULU (maksimal sebesar saldonya), baru sisanya ke
+ * Retur & Potongan. Tanpa ini, refund kelebihan bayar mengurangi pendapatan
+ * (Retur didebet) dan meninggalkan kewajiban palsu di 2-1200 — padahal uangnya
+ * sudah dikembalikan. Refund yang BUKAN kelebihan bayar tidak berubah.
  */
 export async function postRefund(tx, { refundId, userId = null }) {
   const refund = await tx.finRefund.findUnique({
@@ -447,10 +457,23 @@ export async function postRefund(tx, { refundId, userId = null }) {
   if (sudahAda) return { posted: true, entry: sudahAda, created: false };
 
   const diakui = await pendapatanSudahDiakui(tx, refund.orderId);
-  const akunLawan = await resolveAccount(
-    tx,
-    diakui ? SYSTEM_KEYS.RETUR_PENJUALAN : SYSTEM_KEYS.UANG_MUKA_PELANGGAN
-  );
+  const nominalRefund = toMoney(refund.amount);
+  const akunUangMuka = await resolveAccount(tx, SYSTEM_KEYS.UANG_MUKA_PELANGGAN);
+  // Urutan debit untuk order yang pendapatannya SUDAH diakui (kelebihan bayar = uang pelanggan yang memang masih milik pelanggan):
+  //   1) saldo Uang Muka Pelanggan (dibayar sebelum diserahkan, lebih dari tagihan),
+  //   2) saldo KREDIT Piutang order (dibayar sesudah diserahkan, lebih dari tagihan),
+  //   3) sisanya Retur & Potongan (potongan harga sungguhan).
+  let keUangMuka = nominalRefund;
+  let kePiutang = ZERO;
+  if (diakui) {
+    keUangMuka = minMoney(nominalRefund, await hitungUangMukaOrder(tx, refund.orderId));
+    const saldoPiutang = await saldoPiutangOrder(tx, refund.orderId); // negatif = pelanggan membayar melebihi piutang
+    const kreditPiutang = saldoPiutang.isNegative() ? saldoPiutang.negated() : ZERO;
+    kePiutang = minMoney(nominalRefund.minus(keUangMuka), kreditPiutang);
+  }
+  const keRetur = nominalRefund.minus(keUangMuka).minus(kePiutang);
+  const akunPiutang = kePiutang.greaterThan(0) ? await resolveAccount(tx, SYSTEM_KEYS.PIUTANG_USAHA) : null;
+  const akunRetur = keRetur.greaterThan(0) ? await resolveAccount(tx, SYSTEM_KEYS.RETUR_PENJUALAN) : null;
   // Biaya admin transfer refund = beban perusahaan, BUKAN pengurang refund ke pelanggan.
   const biayaAdmin = toMoney(refund.transferFeeAmount || 0);
   const barisAdmin = await barisBiayaAdmin(tx, { fee: biayaAdmin, cashAccount: refund.cashAccount });
@@ -463,13 +486,27 @@ export async function postRefund(tx, { refundId, userId = null }) {
     idempotencyKey: KEY.refund(refundId),
     userId,
     lines: [
-      {
-        accountId: akunLawan.id,
-        debit: toMoney(refund.amount),
-        description: diakui ? "Retur penjualan" : "Pengembalian uang muka pelanggan",
+      ...(keUangMuka.greaterThan(0) ? [{
+        accountId: akunUangMuka.id,
+        debit: keUangMuka,
+        description: diakui ? "Pengembalian kelebihan bayar pelanggan" : "Pengembalian uang muka pelanggan",
         orderId: refund.orderId,
         customerId: refund.order?.customerId || null,
-      },
+      }] : []),
+      ...(akunPiutang ? [{
+        accountId: akunPiutang.id,
+        debit: kePiutang,
+        description: "Pengembalian kelebihan bayar pelanggan (kredit piutang order)",
+        orderId: refund.orderId,
+        customerId: refund.order?.customerId || null,
+      }] : []),
+      ...(akunRetur ? [{
+        accountId: akunRetur.id,
+        debit: keRetur,
+        description: "Retur penjualan",
+        orderId: refund.orderId,
+        customerId: refund.order?.customerId || null,
+      }] : []),
       {
         accountId: refund.cashAccount.accountId,
         credit: toMoney(refund.amount).plus(biayaAdmin),

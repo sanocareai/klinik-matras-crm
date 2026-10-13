@@ -372,7 +372,7 @@ export async function blokirKoreksiRefundBatch(db, ids) {
   });
   const entries = await db.finJournalEntry.findMany({
     where: { source: "REFUND", sourceId: { in: ids }, status: "POSTED", idempotencyKey: { startsWith: "REFUND:" } },
-    select: { id: true, sourceId: true, date: true, lines: { select: { id: true, accountId: true, cashAccountId: true, debit: true, orderId: true } } },
+    select: { id: true, sourceId: true, date: true, createdAt: true, lines: { select: { id: true, accountId: true, cashAccountId: true, debit: true, orderId: true } } },
   });
   const cocok = await barisTercocok(db, entries.flatMap((e) => e.lines.map((l) => l.id)));
   const kasIds = [...new Set(entries.flatMap((e) => e.lines.map((l) => l.cashAccountId)).filter(Boolean))];
@@ -402,11 +402,25 @@ export async function blokirKoreksiRefundBatch(db, ids) {
       continue;
     }
     // Akun lawan jurnal lama vs yang berlaku sekarang (bergantung pengakuan pendapatan order). Beda = ambigu.
+    // Jurnal refund bisa BERCABANG (kelebihan bayar → Dr Uang Muka, sisanya Dr Retur): kumpulkan SEMUA akun debit lawan, bukan yang pertama.
     const diakui = await pendapatanSudahDiakui(db, r.orderId);
-    const akunSekarang = diakui ? akunRetur?.id : akunUM?.id;
     const akunLawan = [akunUM?.id, akunRetur?.id].filter(Boolean);
-    const akunLama = aktif.flatMap((e) => e.lines).find((l) => l.orderId === r.orderId && akunLawan.includes(l.accountId) && toMoney(l.debit).greaterThan(0))?.accountId;
-    if (akunLama && akunSekarang && akunLama !== akunSekarang) {
+    const akunLamaSet = new Set(aktif.flatMap((e) => e.lines).filter((l) => l.orderId === r.orderId && akunLawan.includes(l.accountId) && toMoney(l.debit).greaterThan(0)).map((l) => l.accountId));
+    let berubah = false;
+    if (akunLamaSet.size > 0) {
+      if (!diakui) berubah = Boolean(akunRetur?.id) && akunLamaSet.has(akunRetur.id); // pengakuan dibatalkan sejak refund dibukukan
+      else if (!akunLamaSet.has(akunRetur?.id)) {
+        // Hanya Dr Uang Muka padahal pendapatan sudah diakui: SAH bila pengakuan sudah ada SEBELUM refund dibukukan (kelebihan bayar),
+        // ambigu bila pendapatan baru diakui sesudahnya (pembagian Uang Muka/Piutang bergeser).
+        const pengakuan = await db.finJournalEntry.findFirst({
+          where: { idempotencyKey: { startsWith: ORDER_KEY.revenue(r.orderId) }, status: { in: ["POSTED", "REVERSED"] } },
+          orderBy: { createdAt: "asc" }, select: { createdAt: true },
+        });
+        const tertuaRefund = aktif.reduce((m, e) => (m && m < e.createdAt ? m : e.createdAt), null);
+        berubah = !(pengakuan && tertuaRefund && pengakuan.createdAt <= tertuaRefund);
+      }
+    }
+    if (berubah) {
       set("PENGAKUAN_PENDAPATAN_BERUBAH", "Status pengakuan pendapatan order ini berubah sejak refund dibukukan (akun lawan lama ≠ yang berlaku sekarang), sehingga membaliknya bisa merusak pembagian Uang Muka/Piutang order itu.", "Koreksi lewat Jurnal Umum resmi oleh Admin (jangan Batalkan lalu ajukan ulang — pembagian Uang Muka/Piutang tidak disesuaikan otomatis).");
       continue;
     }
