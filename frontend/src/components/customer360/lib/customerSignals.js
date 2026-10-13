@@ -1,4 +1,4 @@
-import { formatRupiahShort } from "../../../utils/format.js";
+import { formatRupiahShort, nilaiBersihOrder } from "../../../utils/format.js";
 
 // Sinyal pelanggan diturunkan dari data yang SUDAH ADA (customer detail +
 // conversations). Pure function — dasar untuk Health Score, Sano Insight, dan
@@ -6,7 +6,7 @@ import { formatRupiahShort } from "../../../utils/format.js";
 export function deriveCustomerSignals(customer, conversations = []) {
   const orders = customer?.orders || [];
   const orderCount = orders.length;
-  const orderValue = orders.reduce((s, o) => s + (o.value || 0), 0);
+  const orderValue = orders.reduce((s, o) => s + nilaiBersihOrder(o), 0);
   const complaintsCount = customer?.riwayatKomplain?.length || orders.filter((o) => o.hasComplaint).length;
 
   // Pesan terakhir di seluruh percakapan (untuk recency + arah).

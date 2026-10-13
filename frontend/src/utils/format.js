@@ -15,6 +15,9 @@ export function formatRupiah(n) {
   return "Rp" + (n || 0).toLocaleString("id-ID");
 }
 
+// NILAI BERSIH ORDER (Okt 2026): definisi di utils/nilaiBersih.js (murni, bisa dites di Node); di-re-export di sini supaya impor lama dari format.js tetap satu pintu.
+export { nilaiBersihOrder, notaKreditOrder } from "./nilaiBersih.js";
+
 // Singkatan untuk ruang terbatas (dashboard KPI card, chart)
 export function formatRupiahShort(n) {
   const v = n || 0;

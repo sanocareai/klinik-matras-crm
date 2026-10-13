@@ -13,7 +13,7 @@ import { TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows, TableEmp
 import Avatar from "@/components/Avatar.jsx";
 import {
   formatRupiah, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS,
-  paymentStatusVariant,
+  paymentStatusVariant, nilaiBersihOrder,
 } from "@/utils/format.js";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
 import { JOB_STATUS_REAL } from "@/features/armada/jobStatus.js";
@@ -335,7 +335,7 @@ export default function ProductionOrders() {
                         </Badge>
                       )}
                     </TD>
-                    <TD numeric>{o.penjualanKaryawan ? <span className="font-normal text-ink3" title="Nominal dikelola di Finance › Penjualan Karyawan">di Finance</span> : formatRupiah(o.value || 0)}</TD>
+                    <TD numeric>{o.penjualanKaryawan ? <span className="font-normal text-ink3" title="Nominal dikelola di Finance › Penjualan Karyawan">di Finance</span> : formatRupiah(nilaiBersihOrder(o))}</TD>
                     <TD>{formatTanggalPendek(o.createdAt)}</TD>
                   </TR>
                 ))

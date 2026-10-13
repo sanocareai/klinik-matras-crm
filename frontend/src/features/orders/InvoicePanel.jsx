@@ -89,6 +89,7 @@ function buatTeksInvoice(v) {
     baris.push(`Diskon ${nominal.diskonPersen}%${nominal.promoCode ? ` (${nominal.promoCode})` : ""}: -${rp(nominal.nilaiDiskon)}`);
   }
   if (nominal.ongkir) baris.push(`Ongkir: ${rp(nominal.ongkir)}`);
+  if (nominal.notaKredit > 0) baris.push(`Potongan (Nota Kredit): -${rp(nominal.notaKredit)}`);
   if (nominal.modeDP) {
     // Invoice DP: headline = DP yang diminta sekarang; total order hanya info (sama dengan PDF).
     baris.push(``, `*TAGIHAN DP: ${rp(nominal.dpTarget)}*`, `(Total keseluruhan order: ${rp(nominal.totalTagihan)})`);
@@ -500,6 +501,7 @@ export default function InvoicePanel({ orderId, onChanged }) {
           </>
         ) : null}
         {nominal.ongkir > 0 && <BarisUang label={resiTampil ? "Ongkir Tambahan" : "Ongkir"} value={formatRupiah(nominal.ongkir)} />}
+        {nominal.notaKredit > 0 && <BarisUang label="Potongan (Nota Kredit)" value={`−${formatRupiah(nominal.notaKredit)}`} tone="green" />}
 
         {/* PEMILIH JENIS TAGIHAN (6 Okt 2026) — dulu tidak ada pilihan sama sekali: DP muncul "otomatis" hanya bila ada DP disepakati DAN sudah ada
             pembayaran. Sekarang Sales memilih dokumen yang mau ditagihkan: Total/Pelunasan atau DP (uang muka). */}

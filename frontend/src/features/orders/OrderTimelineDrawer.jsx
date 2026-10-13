@@ -17,11 +17,9 @@ import KlaimLunasPanel from "@/features/klaim/KlaimLunasPanel.jsx";
 import { useKlaimLunasAktif } from "@/features/klaim/useKlaimLunasAktif.js";
 import { lunasDicegat, PESAN_LUNAS_BUTUH_PEMBAYARAN } from "@/features/klaim/klaimLunasLogic.js";
 import { api } from "../../api.js";
-import {
-  formatRupiah, ORDER_STATUS_LABELS,
+import { formatRupiah, ORDER_STATUS_LABELS,
   HEALTH_LABELS, HEALTH_COMPLAINT_LABELS, parseOrderNotes, buildOrderNotes, promoLabel,
-  PRODUCT_LINE_LABELS, PRODUCT_TYPE_LABELS,
-} from "../../utils/format.js";
+  PRODUCT_LINE_LABELS, PRODUCT_TYPE_LABELS, nilaiBersihOrder, notaKreditOrder } from "../../utils/format.js";
 import { formatTanggal } from "../../utils/formatDate.js";
 import { Skeleton } from "@/components/ui/skeleton.jsx";
 import DatePicker from "@/components/ui/date-picker.jsx";
@@ -312,6 +310,18 @@ function DetailPesananSection({ order, onChanged }) {
               <span className="text-[11px] font-bold uppercase tracking-wide text-ink3">Total</span>
               <span className="text-[14px] font-bold tabular-nums text-accent">{formatRupiah(order.value || 0)}</span>
             </div>
+            {notaKreditOrder(order) > 0 && (
+              <>
+                <div className="flex items-baseline justify-between pt-1" data-testid="drawer-nota-kredit">
+                  <span className="text-[11px] font-semibold uppercase tracking-wide text-ink3">Potongan (Nota Kredit)</span>
+                  <span className="text-[12.5px] font-semibold tabular-nums text-green">−{formatRupiah(notaKreditOrder(order))}</span>
+                </div>
+                <div className="flex items-baseline justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wide text-ink3">Nilai bersih</span>
+                  <span className="text-[14px] font-bold tabular-nums text-accent" data-testid="drawer-nilai-bersih">{formatRupiah(nilaiBersihOrder(order))}</span>
+                </div>
+              </>
+            )}
           </div>
         ) : (
           <p className="text-[12.5px] text-ink3">Belum ada item layanan tercatat.</p>
@@ -550,7 +560,7 @@ function PaymentTab({ order, onRecorded, canEditLunas }) {
   // dihitung — konsisten dengan recomputeOrderPaymentStatus() di backend.
   const paidLokal = (payments || []).filter((p) => !p.cancelledAt).reduce((n, p) => n + p.amount, 0);
   const paid = resi ? resi.untukOrder.dibayar : paidLokal;
-  const outstanding = resi ? resi.untukOrder.sisa : Math.max((order.value || 0) - paidLokal, 0);
+  const outstanding = resi ? resi.untukOrder.sisa : Math.max(nilaiBersihOrder(order) - paidLokal, 0); // tagihan BERSIH (Nota Kredit aktif sudah dikurangkan)
   const dpKurang = order.dpTarget ? Math.max(order.dpTarget - paid, 0) : 0;
 
   return (
@@ -1170,7 +1180,7 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
               />
             </div>
             {[
-              { l: "Nilai", v: formatRupiah(o.value || 0) },
+              { l: "Nilai", v: formatRupiah(nilaiBersihOrder(o)) },
               { l: "Lama di status", v: `${o.daysInStatus} hari${o.daysInStatusPerkiraan ? "*" : ""}` },
             ].map((k) => (
               <div key={k.l} className="rounded-xl bg-surface p-2.5 shadow-card">

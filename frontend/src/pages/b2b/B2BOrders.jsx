@@ -11,10 +11,8 @@ import { TH } from "@/components/ui/table.jsx";
 import { BadgeDropdown } from "@/components/ui/badge-dropdown.jsx";
 import { badgeVariants } from "@/components/ui/badge.jsx";
 import Avatar from "@/components/Avatar.jsx";
-import {
-  formatRupiah, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS, PAYMENT_STATUSES,
-  PRODUCT_TYPE_LABELS, parseOrderNotes,
-} from "@/utils/format.js";
+import { formatRupiah, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS, PAYMENT_STATUSES,
+  PRODUCT_TYPE_LABELS, parseOrderNotes, nilaiBersihOrder } from "@/utils/format.js";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
 import { StatusSelect } from "@/features/orders/StatusSelect.jsx";
 import OrderTimelineDrawer from "@/features/orders/OrderTimelineDrawer.jsx";
@@ -324,8 +322,8 @@ export default function B2BOrders() {
   const summary = useMemo(() => {
     const list = orders || [];
     const aktif = list.filter((o) => o.status !== "CANCELLED");
-    const nilai = aktif.reduce((s, o) => s + (o.value || 0), 0);
-    const belumLunas = aktif.filter((o) => o.paymentStatus !== "LUNAS").reduce((s, o) => s + (o.value || 0), 0);
+    const nilai = aktif.reduce((s, o) => s + nilaiBersihOrder(o), 0);
+    const belumLunas = aktif.filter((o) => o.paymentStatus !== "LUNAS").reduce((s, o) => s + nilaiBersihOrder(o), 0);
     return { total: aktif.length, nilai, belumLunas };
   }, [orders]);
 
@@ -437,7 +435,7 @@ export default function B2BOrders() {
                         <PaymentStatusSelect order={o} onChange={handlePaymentChange} />
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5 text-right font-bold tabular-nums text-ink">
-                        {formatRupiah(o.value || 0)}
+                        {formatRupiah(nilaiBersihOrder(o))}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5 text-[11px] text-ink3">
                         {o.createdAt ? formatTanggalPendek(o.createdAt) : "—"}

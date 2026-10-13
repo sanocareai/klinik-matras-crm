@@ -3,9 +3,7 @@ import { AlertTriangle, ShoppingCart } from "lucide-react";
 import { Card } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
-import {
-  formatRupiah, orderStatusVariant, PAYMENT_STATUS_LABELS, paymentStatusVariant,
-} from "@/utils/format.js";
+import { formatRupiah, orderStatusVariant, PAYMENT_STATUS_LABELS, paymentStatusVariant, nilaiBersihOrder } from "@/utils/format.js";
 // Helper dipakai bersama tab Order (OrderHistoryList) — lihat orderSummary.js.
 // `customer.orders` (dari GET /customers/:id) sudah terurut updatedAt desc,
 // jadi order paling relevan = yang PERTAMA yang statusnya belum terminal.
@@ -55,7 +53,7 @@ export default function ActiveOrderCard({ customer, onOpenOrder, onCreateOrder, 
         </div>
       </div>
       <p className="mt-1.5 text-[13px] font-semibold text-ink">{productSummary(order)}</p>
-      <p className="mt-0.5 text-lg font-bold text-ink">{formatRupiah(order.value)}</p>
+      <p className="mt-0.5 text-lg font-bold text-ink">{formatRupiah(nilaiBersihOrder(order))}</p>
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-ink3">
         <Badge variant={paymentStatusVariant(order.paymentStatus)}>{PAYMENT_STATUS_LABELS[order.paymentStatus] || order.paymentStatus}</Badge>
         <span>Estimasi Kirim: {formatTanggalPendek(deliveryDate) || "Belum dijadwalkan"}</span>

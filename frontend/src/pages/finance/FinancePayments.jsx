@@ -25,6 +25,7 @@ import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
 import { BuktiBanyak, daftarBukti } from "@/features/finance/BuktiThumb.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
 import { klikBuka } from "@/features/finance/PanelDetail.jsx";
+import { nilaiBersihOrder } from "@/utils/format.js";
 import { DetailPembayaranDialog, EditInfoDialog, KoreksiPembayaranDialog, RiwayatPembayaranDialog, VerifikasiDialog } from "@/features/finance/KoreksiPembayaran.jsx";
 
 // Aksi PALING RELEVAN jadi tombol utama; "Bagi pembayaran" masuk menu
@@ -493,7 +494,7 @@ function ModalAlokasi({ payment, onClose, onSaved, onError }) {
                   id: payment.orderId,
                   orderNumber: payment.order.orderNumber,
                   customerName: payment.order.customer?.name,
-                  value: payment.order.value,
+                  value: nilaiBersihOrder(payment.order),
                   paymentStatus: payment.order.paymentStatus,
                 }] : []}
                 saranLabel="Order asal pembayaran ini"

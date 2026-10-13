@@ -614,6 +614,15 @@ export default function SalesReportTab({ report, targetReport, grossTotalPerusah
                       </td>
                       <td className="py-2 text-right font-semibold tabular-nums text-ink">
                         {formatRupiah(o.value)}
+                        {o.notaKredit > 0 && (
+                          <span
+                            className="mt-0.5 block text-[10.5px] font-medium text-ink3"
+                            data-testid="lunas-detail-nota"
+                            title={`Nilai order ${formatRupiah(o.nilaiKotor)} dikurangi Nota Kredit ${formatRupiah(o.notaKredit)} — nilai bersih inilah yang masuk Lunas/komisi`}
+                          >
+                            {formatRupiah(o.nilaiKotor)} − nota {formatRupiah(o.notaKredit)}
+                          </span>
+                        )}
                       </td>
                     </tr>
                   ))}

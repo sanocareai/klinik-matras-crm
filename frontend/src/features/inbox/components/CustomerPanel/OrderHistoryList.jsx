@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { AlertTriangle, Plus, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
-import { formatRupiah, orderStatusVariant, paymentStatusVariant, PAYMENT_STATUS_LABELS } from "@/utils/format.js";
+import { formatRupiah, orderStatusVariant, paymentStatusVariant, PAYMENT_STATUS_LABELS, nilaiBersihOrder } from "@/utils/format.js";
 import { statusLabel, productSummary, formatTanggalPendek } from "./orderSummary.js";
 import BuatResiModal from "@/features/resi/BuatResiModal.jsx";
 import { useResiAktif } from "@/features/resi/useResiAktif.js";
@@ -55,7 +55,7 @@ export default function OrderHistoryList({ customer, onOpenOrder, onCreateOrder,
             <span className="flex min-w-0 items-center gap-1.5">
               <span className="truncate font-mono text-[11px] font-bold text-ink3">{o.orderNumber || "—"}</span>
               {o.hasComplaint && <AlertTriangle size={12} className="shrink-0 text-red" title="Ada komplain" />}
-              <span className="ml-auto shrink-0 text-[12.5px] font-semibold text-ink">{formatRupiah(o.value)}</span>
+              <span className="ml-auto shrink-0 text-[12.5px] font-semibold text-ink">{formatRupiah(nilaiBersihOrder(o))}</span>
             </span>
             <span className="truncate text-[12px] text-ink2">{productSummary(o)}</span>
             <span className="flex flex-wrap items-center gap-1.5">

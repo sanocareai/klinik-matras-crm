@@ -8,13 +8,11 @@ import {
 import { api } from "../api.js";
 import { Card } from "@/components/ui/card.jsx";
 import { OrderMilestoneBadge } from "@/components/OrderMilestoneBadge.jsx";
-import {
-  formatRupiah, formatRupiahShort,
+import { formatRupiah, formatRupiahShort,
   ORDER_STATUS_LABELS, ORDER_STATUS_BUCKET_LABELS, orderStatusBucket, orderStatusesForCategory, PAYMENT_STATUS_LABELS, PAYMENT_STATUSES,
   PIPELINE_STAGES, STAGE_LABELS, stageVariant,
   HEALTH_LABELS, HEALTH_COMPLAINT_LABELS, parseOrderNotes,
-  PRODUCT_LINE_LABELS, PRODUCT_TYPE_LABELS, PRICE_ITEM_KIND_LABELS,
-} from "../utils/format.js";
+  PRODUCT_LINE_LABELS, PRODUCT_TYPE_LABELS, PRICE_ITEM_KIND_LABELS, nilaiBersihOrder, notaKreditOrder } from "../utils/format.js";
 import { formatTanggalPendek } from "../utils/formatDate.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -348,7 +346,7 @@ function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageC
 
       <div className="mt-2 flex items-center justify-between gap-2">
         <span className="text-[13px] font-bold tabular-nums text-ink">
-          {formatRupiah(order.value || 0)}
+          {formatRupiah(nilaiBersihOrder(order))}
         </span>
         <span className="shrink-0 rounded-chip bg-inset px-1.5 py-0.5 text-[10px] font-semibold text-ink2">
           {KATEGORI_LABELS[order.category] || order.category}
@@ -595,7 +593,7 @@ export default function Orders() {
     pipelineStage:(o) => STAGE_LABELS[o.pipelineStage] || o.pipelineStage || "",
     daysInStatus: (o) => o.daysInStatus || 0,
     paymentStatus:(o) => PAYMENT_STATUS_LABELS[o.paymentStatus] || o.paymentStatus || "",
-    value:        (o) => o.value || 0,
+    value:        (o) => nilaiBersihOrder(o),
     assignedSales:(o) => namaSalesKredit(o),
     promo:        (o) => o.promo?.name || "",
     createdAt:    (o) => o.createdAt ? new Date(o.createdAt).getTime() : 0,
@@ -625,7 +623,7 @@ export default function Orders() {
     for (const o of items) {
       if (!map[o.status]) map[o.status] = { count: 0, value: 0 };
       map[o.status].count++;
-      map[o.status].value += o.value || 0;
+      map[o.status].value += nilaiBersihOrder(o);
     }
     return map;
   }, [items]);
@@ -655,9 +653,9 @@ export default function Orders() {
   // sama sekali — dipakai di sini, `itemsAktif` cuma fallback kalau API
   // lama (belum ada field ini) atau belum sempat dimuat.
   const totalOrderAktif = data?.summary?.totalOrderAktif ?? itemsAktif.length;
-  const totalNilai  = data?.summary?.nilaiOrderAktif ?? itemsAktif.reduce((s, o) => s + (o.value || 0), 0);
+  const totalNilai  = data?.summary?.nilaiOrderAktif ?? itemsAktif.reduce((s, o) => s + nilaiBersihOrder(o), 0);
   const belumLunas  = data?.summary?.belumLunas ?? itemsAktif.filter((o) => o.paymentStatus !== "LUNAS")
-                           .reduce((s, o) => s + (o.value || 0), 0);
+                           .reduce((s, o) => s + nilaiBersihOrder(o), 0);
   // Lunas (1 September 2026, permintaan owner) — TETAP live/status-sekarang,
   // pola SAMA dengan Belum Lunas di atas (bukan basis terkunci ala Laporan
   // Sales — satu halaman sengaja pakai SATU logika, biar tidak menambah
@@ -918,7 +916,9 @@ export default function Orders() {
         // ── Nilai & harga ────────────────────────────────────────────────
         // Angka dibiarkan NUMBER supaya bisa di-SUM di Excel (lihat catatan
         // di utils/exportLaporan.js soal uang sebagai teks).
-        Nilai: o.value || 0,
+        Nilai: nilaiBersihOrder(o), // BERSIH dari Nota Kredit aktif (Okt 2026)
+        "Nilai Kotor (item)": o.value || 0,
+        "Nota Kredit": notaKreditOrder(o),
         "Ada Nego Di Bawah Standard": orderItems.some((it) => it.standardPrice != null)
           ? (belowStandardCount > 0 ? `Ya (${belowStandardCount})` : "Tidak")
           : "",
@@ -1271,7 +1271,7 @@ export default function Orders() {
             })().map(({ status, kolom }) => {
               const mandekKolom = kolom.filter(isMandek).length;
               const labelMap = fKategori === "SEWA" ? ORDER_STATUS_LABELS : ORDER_STATUS_BUCKET_LABELS;
-              const nilaiKolom = kolom.reduce((s, o) => s + (o.value || 0), 0);
+              const nilaiKolom = kolom.reduce((s, o) => s + nilaiBersihOrder(o), 0);
               return (
                 // min-w/max-w + flex-1 (D-103) — sama fix dengan Pipeline.jsx:
                 // lebar tetap (272px shrink-0) tidak ikut melebar saat window
@@ -1435,7 +1435,7 @@ export default function Orders() {
                         {o.penjualanKaryawan ? <BadgeBayarPkr pkr={o.penjualanKaryawan} /> : <PaymentStatusSelect order={o} onChange={handlePaymentChange} locked={o.paymentStatus === "LUNAS" && !canEditLunas} />}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5 text-right font-bold tabular-nums text-ink">
-                        {o.penjualanKaryawan ? <span className="font-normal text-ink3" title="Nominal dikelola di Finance › Penjualan Karyawan">di Finance</span> : formatRupiah(o.value || 0)}
+                        {o.penjualanKaryawan ? <span className="font-normal text-ink3" title="Nominal dikelola di Finance › Penjualan Karyawan">di Finance</span> : formatRupiah(nilaiBersihOrder(o))}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5">
                         {o.promo ? (

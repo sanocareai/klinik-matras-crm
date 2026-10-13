@@ -12,10 +12,8 @@ import DateRangePicker from "@/components/DateRangePicker.jsx";
 import { makeRange, toApiParams } from "@/lib/dateRange.js";
 import { TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows, TableEmptyRow } from "@/components/ui/table.jsx";
 import Avatar from "@/components/Avatar.jsx";
-import {
-  formatRupiah, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS,
-  paymentStatusVariant,
-} from "@/utils/format.js";
+import { formatRupiah, ORDER_STATUS_LABELS, PAYMENT_STATUS_LABELS,
+  paymentStatusVariant, nilaiBersihOrder } from "@/utils/format.js";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
 import { cn } from "@/lib/utils.js";
 import { JOB_STATUS_REAL } from "@/features/armada/jobStatus.js";
@@ -431,7 +429,7 @@ export default function ArmadaOrders() {
                         {PAYMENT_STATUS_LABELS[o.paymentStatus] || o.paymentStatus}
                       </Badge>
                     </TD>
-                    <TD numeric>{formatRupiah(o.value || 0)}</TD>
+                    <TD numeric>{formatRupiah(nilaiBersihOrder(o))}</TD>
                     <TD>{formatTanggalPendek(o.createdAt)}</TD>
                   </TR>
                 ))

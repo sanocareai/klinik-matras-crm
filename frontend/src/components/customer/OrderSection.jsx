@@ -19,15 +19,13 @@ import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 // yang sudah ada (className-nya sendiri sudah "...shadow-popover", lihat
 // date-picker.jsx), jadi tidak perlu CSS baru sama sekali di sini.
 import DatePicker from "@/components/ui/date-picker.jsx";
-import {
-  formatRupiah, ORDER_STATUS_LABELS, ORDER_STATUSES, orderStatusesForCategory,
+import { formatRupiah, ORDER_STATUS_LABELS, ORDER_STATUSES, orderStatusesForCategory,
   ORDER_STATUS_BUCKET_LABELS, orderStatusBucket,
   PAYMENT_STATUS_LABELS, PAYMENT_STATUS_BADGE, PAYMENT_STATUSES, KOTA_LIST,
   HEALTH_COMPLAINT_LABELS, HEALTH_COMPLAINT_OPTIONS,
   parseOrderNotes, buildOrderNotes, promoLabel, hargaSebelumDiskonPromo,
   PRODUCT_LINE_LABELS, PRODUCT_LINE_ICONS, PRODUCT_TYPES_BY_LINE, PRODUCT_TYPE_LABELS, PRICE_ITEM_KIND_LABELS,
-  jenisProdukOptions, resolveVariantKey, UKURAN_VARIANT_KEY,
-} from "../../utils/format.js";
+  jenisProdukOptions, resolveVariantKey, UKURAN_VARIANT_KEY, nilaiBersihOrder, notaKreditOrder } from "../../utils/format.js";
 import { isAdminUser } from "../../lib/roles.js";
 import KlaimLunasPanel from "../../features/klaim/KlaimLunasPanel.jsx";
 import { opsiStatusBayar } from "../../features/klaim/klaimLunasLogic.js";
@@ -277,6 +275,7 @@ function buildWaMessage(order, customer, actorName) {
 
   const layanan     = (order.items || []).map((i) => i.layananName).join(", ") || "-";
   const finalBiaya  = order.value || 0;
+  const notaKredit  = notaKreditOrder(order); // potongan resmi (Nota Kredit/Keringanan aktif) — baris tambahan, Total tetap nilai item
   // Biaya SEBELUM diskon — dihitung mundur dari final harga, HANYA untuk
   // tampilan pesan WA (bukan disimpan). Kalau promo tidak punya
   // discountPercent (mis. promo bonus item), tidak ada cara menghitung
@@ -307,6 +306,7 @@ function buildWaMessage(order, customer, actorName) {
     `Harga Awal: ${formatRpWa(biayaAwal)}`,
     `Diskon: ${order.promo ? order.promo.code : "-"}`,
     `*Total: ${formatRpWa(finalBiaya)}*`,
+    ...(notaKredit > 0 ? [`Potongan (Nota Kredit): -${formatRpWa(notaKredit)}`, `*Total bersih: ${formatRpWa(Math.max(0, finalBiaya - notaKredit))}*`] : []),
     `Ongkir: ${formatRpWa(order.ongkir)}`,
     `Ongkir Klaim Garansi: ${formatRpWa(order.ongkirKlaimGaransi)}`,
     ``,
@@ -1411,6 +1411,18 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
               <span>Total</span>
               <span>{formatRupiah(order.value)}</span>
             </div>
+            {notaKreditOrder(order) > 0 && (
+              <>
+                <div data-testid="order-nota-kredit" style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginTop: 2, color: "var(--success, #16a34a)" }}>
+                  <span>Potongan (Nota Kredit)</span>
+                  <span>−{formatRupiah(notaKreditOrder(order))}</span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, fontWeight: 700, marginTop: 2 }}>
+                  <span>Nilai bersih</span>
+                  <span data-testid="order-nilai-bersih">{formatRupiah(nilaiBersihOrder(order))}</span>
+                </div>
+              </>
+            )}
           </div>
         ) : null
       )}
@@ -1419,7 +1431,8 @@ function OrderDetail({ order, customer, customerId, onRefresh, onDelete, orderOp
       {!isLayanan && order.value > 0 && (
         <div style={{ marginBottom: 8 }}>
           <span style={metaLabel}>Nilai</span>
-          <span style={{ fontSize: 14, fontWeight: 700, color: "var(--primary)" }}>{formatRupiah(order.value)}</span>
+          <span style={{ fontSize: 14, fontWeight: 700, color: "var(--primary)" }}>{formatRupiah(nilaiBersihOrder(order))}</span>
+          {notaKreditOrder(order) > 0 && <span style={{ fontSize: 11, marginLeft: 6 }} className="text-muted">(setelah potongan Nota Kredit {formatRupiah(notaKreditOrder(order))})</span>}
         </div>
       )}
 
@@ -2424,7 +2437,7 @@ export default function OrderSection({ customer, onUpdate, initialOrderId = null
     }
   }
 
-  const totalValue = customer.orders.reduce((s, o) => s + o.value, 0);
+  const totalValue = customer.orders.reduce((s, o) => s + nilaiBersihOrder(o), 0);
 
   return (
     <div>
@@ -2503,7 +2516,7 @@ export default function OrderSection({ customer, onUpdate, initialOrderId = null
                           )}
                         </div>
                       </td>
-                      <td style={{ padding: "10px 12px", fontWeight: 700 }}>{formatRupiah(o.value)}</td>
+                      <td style={{ padding: "10px 12px", fontWeight: 700 }}>{formatRupiah(nilaiBersihOrder(o))}</td>
                       <td style={{ padding: "10px 12px" }}>
                         <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6, ...badge }}>
                           {statusBadgeLabel(o.status)}

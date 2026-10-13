@@ -123,6 +123,7 @@ export function specDetailPiutang(row, detail, { memuat = false, galat = "", onB
       ["Sudah dibayar", formatUang(t.sudahDilunasi ?? row.sudahDilunasi ?? 0), "hijau"],
       ["Sisa tagihan", formatUang(row.sisaTagihan), "merah"],
       ["Nilai order (CRM)", formatUang(row.nilaiOrder)],
+      ...((row.notaKredit ?? t.notaKredit ?? 0) > 0 ? [["Potongan Nota Kredit", formatUang(row.notaKredit ?? t.notaKredit), "hijau"]] : []),
     ],
     bagian,
     catatan: "Angka tagihan dihitung dari saldo akun Piutang Usaha per order di buku besar (sama dengan daftar). Tindakan koreksi dilakukan di halaman asalnya.",

@@ -1,4 +1,4 @@
-import { formatRupiahShort, ORDER_STATUS_LABELS } from "../../../utils/format.js";
+import { formatRupiahShort, ORDER_STATUS_LABELS, nilaiBersihOrder } from "../../../utils/format.js";
 
 // Adapter timeline CLIENT-SIDE — gabung event dari data yang SUDAH ADA
 // (order, catatan, komplain, pesan) jadi satu daftar terurut. Pesan DI-CAP
@@ -14,7 +14,7 @@ export function buildTimeline({ orders = [], notes = [], conversations = [] }) {
     events.push({
       id: `order-${o.id}`, type: "order", date: o.createdAt,
       title: `Order ${o.orderNumber || ""}`.trim(),
-      detail: `${ORDER_STATUS_LABELS[o.status] || o.status} · ${formatRupiahShort(o.value || 0)}`,
+      detail: `${ORDER_STATUS_LABELS[o.status] || o.status} · ${formatRupiahShort(nilaiBersihOrder(o))}`,
     });
     if (o.hasComplaint) {
       events.push({
