@@ -159,7 +159,7 @@ test("Pratinjau: TAGIHAN = sisa tiap child; DP = dpTarget tiap child (Σ = DP 30
 });
 
 test("Unit murni hitungAlokasiResi: largest-remainder — Σ tepat = nominal untuk banyak kombinasi; baris 0 dibuang; tanpa alokasi melebihi sisa", () => {
-  const mk = (id, value, dpTarget = 0, ongkir = 0, status = "PENDING") => ({ id, value, ongkir, dpTarget, status, orderNumber: id });
+  const mk = (id, value, dpTarget = 0, ongkir = 0, status = "PENDING") => ({ id, value, ongkir, dpTarget, status, orderNumber: id, orderCredits: [] });
   const anak = [mk("a", 1_000_000, 315_000, 50_000), mk("b", 500_000, 150_000), mk("c", 250_001, 75_000)];
   const kosong = new Map();
   for (const nominal of [1, 2, 3, 7, 99, 1_000, 123_457, 999_999, 1_800_000, 1_800_001]) {
