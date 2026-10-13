@@ -1,3 +1,4 @@
+import { PILIH_KREDIT, nilaiBersih } from "./orderNilaiBersih.js";
 // ─── OUTGOING WEBHOOK DISPATCHER (untuk n8n / tool otomasi eksternal) ────────
 //
 // TUJUAN: kirim event penting CRM ke luar tanpa membebani UI. Ini jalur
@@ -108,7 +109,7 @@ export async function dispatchLeadWon(prisma, { customerId, fromStage, changedBy
         assignedSales: { select: { id: true, name: true, email: true } },
         orders: {
           where: { status: { not: "CANCELLED" } },
-          select: { id: true, orderNumber: true, value: true, category: true, status: true, createdAt: true },
+          select: { id: true, orderNumber: true, value: true, category: true, status: true, createdAt: true, ...PILIH_KREDIT },
           orderBy: { createdAt: "desc" },
         },
       },
@@ -121,7 +122,7 @@ export async function dispatchLeadWon(prisma, { customerId, fromStage, changedBy
     const { orders, assignedSales, ...detail } = customer;
     // Order CANCELLED sudah difilter di query — nilai ini konsisten dengan
     // "Total Nilai Order" di Laporan.
-    const totalValue = orders.reduce((s, o) => s + (o.value || 0), 0);
+    const totalValue = orders.reduce((s, o) => s + nilaiBersih(o), 0); // BERSIH dari Nota Kredit aktif (Okt 2026) — dikirim ke n8n
     const latest = orders[0] || null;
 
     const aktor = changedById
@@ -135,7 +136,7 @@ export async function dispatchLeadWon(prisma, { customerId, fromStage, changedBy
         totalValue,
         orderCount: orders.length,
         latestOrderNumber: latest?.orderNumber || null,
-        latestOrderValue: latest?.value ?? null,
+        latestOrderValue: latest ? nilaiBersih(latest) : null,
         latestOrderCategory: latest?.category || null,
       },
       changedBy: aktor,

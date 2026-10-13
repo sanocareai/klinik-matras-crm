@@ -21,6 +21,7 @@ import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js"
 import { createOrderForCustomer } from "../services/orderCreation.js";
 import { syncCustomerOrderAggregate } from "../services/customerOrderAggregate.js";
 
+import { PILIH_KREDIT } from "../services/orderNilaiBersih.js";
 export const b2bRouter = express.Router();
 b2bRouter.use(requireAuth);
 
@@ -38,6 +39,7 @@ b2bRouter.get("/orders", requirePermission(P.B2B_READ), async (req, res) => {
         items: { orderBy: { sortOrder: "asc" } },
         customer: { select: { id: true, name: true, phone: true, city: true, tags: true, assignedSalesId: true } },
         promo: { select: { id: true, code: true, name: true } },
+        ...PILIH_KREDIT, // Nota Kredit aktif (Okt 2026) — nilai bersih di daftar order B2B
       },
       orderBy: { createdAt: "desc" },
       take: 300,

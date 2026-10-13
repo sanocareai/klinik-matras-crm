@@ -105,7 +105,11 @@ export function ringkasOrder(o, milestone = null) {
     statusDikunciManual: o.statusLocked,
     statusPembayaran: o.paymentStatus,
     kategori: o.category,
-    nilai: o.value,
+    // NILAI BERSIH (Okt 2026): `nilai` = Order.value − Nota Kredit/Keringanan aktif (dasar target/komisi). `nilaiKotor` = Order.value mentah (sebelum potongan).
+    // Pemanggil WAJIB memuat PILIH_KREDIT (orderCredits) pada order; tanpa itu notaKredit dianggap 0.
+    nilai: Math.max(0, (Number(o.value) || 0) - (o.orderCredits ?? []).reduce((s, c) => s + (Math.round(Number(c.amount)) || 0), 0)),
+    nilaiKotor: o.value,
+    notaKredit: (o.orderCredits ?? []).reduce((s, c) => s + (Math.round(Number(c.amount)) || 0), 0),
     jumlah: o.quantity,
     catatan: o.notes,
     adaKomplain: o.hasComplaint,

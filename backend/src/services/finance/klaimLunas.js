@@ -22,6 +22,7 @@ import { fileURLToPath } from "node:url";
 import { prisma } from "../../db.js";
 import { kunciKanonis } from "./urutanKunci.js";
 import { PILIH_TAGIHAN, dasarStatusBayar } from "./tagihanOrder.js";
+import { nilaiBersih } from "../orderNilaiBersih.js";
 import { paidForOrder } from "./allocation.js";
 import { getVerificationGate, getSettingRaw, parseBool, SETTING_KEYS } from "./settings.js";
 import { tanggalCutoff, tanggalWIB } from "./cutoff.js";
@@ -394,7 +395,7 @@ async function bentukUntukFinance(db, k) {
     ...bentukKlaim(k),
     order: {
       id: order.id, orderNumber: order.orderNumber, customerName: order.customer?.name ?? "—", salesName: order.customer?.assignedSales?.name ?? null,
-      status: order.status, paymentStatus: order.paymentStatus, nilai: order.value, tagihan, dibayar, sisa,
+      status: order.status, paymentStatus: order.paymentStatus, nilai: nilaiBersih(order), tagihan, dibayar, sisa,
     },
     ...(resi && { resiInfo: resi }),
     peringatan,

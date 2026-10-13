@@ -11,6 +11,7 @@ import { siapkanNotesUkuran, formatUkuranKasur } from "../lib/ukuranKasur.js";
 import { ukuranCustomWajibSejak } from "../services/ukuranWajib.js";
 import { buatFileVCard } from "../services/vcard.js";
 import { loadOrderMilestones } from "../services/orderMilestoneService.js";
+import { PILIH_KREDIT } from "../services/orderNilaiBersih.js";
 
 export const customerRouter = express.Router();
 customerRouter.use(requireAuth);
@@ -296,6 +297,7 @@ customerRouter.get("/", async (req, res) => {
           include: {
             items:         { orderBy: { sortOrder: "asc" } },
             weightEntries: { orderBy: { sortOrder: "asc" } },
+            ...PILIH_KREDIT,
           },
           orderBy: { updatedAt: "desc" },
         })
@@ -398,6 +400,7 @@ customerRouter.get("/:id", async (req, res) => {
           items:         { orderBy: { sortOrder: "asc" } },
           weightEntries: { orderBy: { sortOrder: "asc" } },
           promo:         { select: { id: true, code: true, name: true, discountPercent: true, maxDiscountAmount: true } }, // D-026 (+batas diskon 8 Okt 2026)
+          ...PILIH_KREDIT, // Nota Kredit aktif (Okt 2026) — UI menampilkan potongan & nilai bersih
           // D-036 (30 Agustus 2026) — sama dengan GET /api/orders (routes/
           // orders.js), supaya OrderSection.jsx di drawer Pelanggan bisa
           // menampilkan status Delivery yang SAMA PERSIS dengan halaman

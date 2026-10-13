@@ -12,6 +12,7 @@ import { getActiveProvider } from "../services/replyAssistant/providers/index.js
 import { canAccessCustomer } from "../services/replyAssistant/scope.js";
 import { loadConfig, dailyLimitFor } from "../services/replyAssistant/config.js";
 
+import { PILIH_KREDIT } from "../services/orderNilaiBersih.js";
 export const replyAssistantRouter = express.Router();
 replyAssistantRouter.use(requireAuth);
 
@@ -33,7 +34,7 @@ const CONV_SELECT = {
   customer: {
     select: {
       id: true, name: true, phone: true, pipelineStage: true, assignedSalesId: true,
-      orders: { select: { value: true, status: true, hasComplaint: true, createdAt: true } },
+      orders: { select: { value: true, status: true, hasComplaint: true, createdAt: true, ...PILIH_KREDIT } },
     },
   },
   messages: { orderBy: { createdAt: "desc" }, take: 10, select: { direction: true, content: true, createdAt: true } },

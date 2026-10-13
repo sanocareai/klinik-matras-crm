@@ -34,6 +34,7 @@ import { bukukanPembayaran } from "./finance/hooks.js";
 import { getSettingRaw, parseBool, SETTING_KEYS } from "./finance/settings.js";
 import { moneyToNumber } from "./finance/money.js";
 import { tagihanOrder, ongkirDitagih } from "./finance/tagihanOrder.js";
+import { PILIH_KREDIT, nilaiBersih } from "./orderNilaiBersih.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 
 export const TIPE_BAYAR = Object.freeze({ DP: "DP", TAGIHAN: "TAGIHAN" });
@@ -117,7 +118,7 @@ export function hitungAlokasiResi({ anak, dibayar, tipe = TIPE_BAYAR.TAGIHAN, no
 
 // ── pemuatan + penguncian ─────────────────────────────────────────────────────────────────────────────────────────
 
-const PILIH_ANAK = { id: true, orderNumber: true, customerId: true, groupId: true, status: true, value: true, ongkir: true, dpTarget: true, paymentStatus: true, paidAt: true };
+const PILIH_ANAK = { id: true, orderNumber: true, customerId: true, groupId: true, status: true, value: true, ongkir: true, dpTarget: true, paymentStatus: true, paidAt: true, ...PILIH_KREDIT };
 const PILIH_GRUP = {
   id: true, source: true, customerId: true, anchorOrderId: true, dpPersen: true, dpTarget: true, ongkirTambahan: true, createdAt: true,
   lunasDiklaimPada: true, lunasDiklaimOlehId: true, lunasDiklaimOleh: { select: { name: true } },
@@ -174,7 +175,7 @@ export function rincianAnak(aktif, dibayar, grup) {
     const sudah = Number(dibayar.get(o.id)) || 0;
     return {
       orderId: o.id, orderNumber: o.orderNumber, status: o.status, paymentStatus: o.paymentStatus, anchor: o.id === grup.anchorOrderId,
-      nilai: Number(o.value) || 0, ongkir: ongkirDitagih(o, grup), tagihan, dibayar: sudah, sisa: Math.max(tagihan - sudah, 0), dpTarget: o.dpTarget ?? null,
+      nilai: nilaiBersih(o), ongkir: ongkirDitagih(o, grup), tagihan, dibayar: sudah, sisa: Math.max(tagihan - sudah, 0), dpTarget: o.dpTarget ?? null,
     };
   });
 }
@@ -195,7 +196,7 @@ export async function validasiAlokasiResi(db, { grup, alokasi, nominalPayment })
   }
   if (!Number.isInteger(nominalPayment) || nominalPayment <= 0) tolak("Nominal pembayaran harus bilangan bulat lebih dari 0", "NOMINAL_TIDAK_VALID", 400);
 
-  const orders = await db.order.findMany({ where: { id: { in: ids } }, select: { id: true, groupId: true, customerId: true, status: true, value: true, ongkir: true } });
+  const orders = await db.order.findMany({ where: { id: { in: ids } }, select: { id: true, groupId: true, customerId: true, status: true, value: true, ongkir: true, ...PILIH_KREDIT } });
   if (orders.length !== ids.length) tolak("Ada order alokasi yang tidak ditemukan", "ORDER_TIDAK_ADA", 404);
   const peta = new Map(orders.map((o) => [o.id, o]));
   for (const a of alokasi) {

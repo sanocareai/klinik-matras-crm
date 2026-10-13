@@ -1,4 +1,5 @@
 import { prisma } from "../db.js";
+import { aggregateBersih } from "./orderNilaiBersih.js";
 
 // Sinkronkan Customer.orderCount/orderValue (denormalized, lihat komentar
 // panjang di schema.prisma) dari SUMBER KEBENARAN (tabel Order). WAJIB
@@ -15,7 +16,8 @@ import { prisma } from "../db.js";
 // diam-diam salah).
 export async function syncCustomerOrderAggregate(customerId) {
   if (!customerId) return;
-  const agg = await prisma.order.aggregate({
+  // NILAI BERSIH (Okt 2026): Customer.orderValue = Σ (value − Nota Kredit aktif). Wajib dipanggil ulang saat nota dibuat/dibatalkan (services/finance/notaKredit.js).
+  const agg = await aggregateBersih(prisma, {
     where: { customerId, status: { not: "CANCELLED" } },
     _count: { _all: true },
     _sum: { value: true },

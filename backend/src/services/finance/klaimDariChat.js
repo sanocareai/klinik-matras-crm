@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import { buatDraft, lampirkanBukti, klaimUntukOrder, KlaimError } from "./klaimLunas.js";
 import { simpanBerkas, hapusBerkasDisk, deteksiTipe, MAKS_UKURAN_BYTE } from "./klaimLunasBerkas.js";
 import { tanggalWIB } from "./cutoff.js";
+import { PILIH_KREDIT, nilaiBersih } from "../orderNilaiBersih.js";
 
 /** Folder unggahan chat (sama dengan routes/conversations.js → backend/uploads). */
 export const UPLOADS_DIR = process.env.CHAT_UPLOADS_DIR
@@ -63,13 +64,13 @@ export async function kandidatOrderDariPesan(db, { messageId, user }, deps = {})
   const order = await db.order.findMany({
     where: { customerId: pesan.conversation.customerId, status: { not: "CANCELLED" }, value: { gt: 0 } },
     orderBy: { createdAt: "desc" }, take: 8,
-    select: { id: true, orderNumber: true, category: true, status: true, paymentStatus: true, value: true, createdAt: true },
+    select: { id: true, orderNumber: true, category: true, status: true, paymentStatus: true, value: true, createdAt: true, ...PILIH_KREDIT },
   });
   const daftar = [];
   for (const o of order) {
     const info = await ambilKlaim(db, { orderId: o.id, user, lihatSemua: false });
     daftar.push({
-      id: o.id, orderNumber: o.orderNumber, category: o.category, status: o.status, paymentStatus: o.paymentStatus, value: o.value, createdAt: o.createdAt,
+      id: o.id, orderNumber: o.orderNumber, category: o.category, status: o.status, paymentStatus: o.paymentStatus, value: nilaiBersih(o), createdAt: o.createdAt,
       tagihan: info.tagihan, dibayar: info.dibayar, sisa: info.sisa,
       bolehDiklaim: info.bolehDiklaim, alasanTidakBisa: info.alasanTidakBisa, klaimAktifId: info.klaimAktifId,
     });

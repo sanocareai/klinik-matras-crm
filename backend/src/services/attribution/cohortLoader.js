@@ -9,6 +9,7 @@
 import { startOfDayWIB, endOfDayExclusiveWIB } from "../../utils/wib.js";
 import { kontribusiPembayaranOrders, isPaymentCounted } from "../finance/allocation.js";
 import { PILIH_TAGIHAN, dasarStatusBayar } from "../finance/tagihanOrder.js";
+import { nilaiBersih } from "../orderNilaiBersih.js";
 import { getVerificationGate } from "../finance/settings.js";
 import { STAGE_PROSPEK_ATAU_LANJUT } from "./cohortDefinitions.js";
 import { buildCohort } from "./cohort.js";
@@ -53,7 +54,7 @@ export async function muatMasukanKohort(db, { leadFrom, leadTo } = {}) {
     }));
   }
   const orders = ordersRaw.map((o) => ({
-    id: o.id, customerId: o.customerId, createdAt: o.createdAt, status: o.status, value: o.value,
+    id: o.id, customerId: o.customerId, createdAt: o.createdAt, status: o.status, value: nilaiBersih(o), // BERSIH dari Nota Kredit aktif (Okt 2026)
     tagihan: dasarStatusBayar(o), paymentStatus: o.paymentStatus, paidAt: o.paidAt, penjualanKaryawanId: o.penjualanKaryawanId,
   }));
   const orderIds = orders.map((o) => o.id);

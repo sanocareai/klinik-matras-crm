@@ -293,6 +293,7 @@ export function renderInvoicePdf(view) {
       nominal.diskonPersen ? `-${formatRupiah(nominal.nilaiDiskon)}` : "–"
     );
     if (nominal.ongkir > 0) barisTotal("Ongkir", formatRupiah(nominal.ongkir));
+    if (nominal.notaKredit > 0) barisTotal("Potongan (Nota Kredit)", `-${formatRupiah(nominal.notaKredit)}`);
     doc.moveTo(bawahKananX, yr + 3).lineTo(bawahKananX + bawahKananW, yr + 3).dash(2, { space: 2 }).strokeColor(GARIS).stroke();
     doc.undash();
     yr += 12;

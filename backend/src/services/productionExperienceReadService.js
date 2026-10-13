@@ -13,6 +13,7 @@ import { cornerStatusOf } from "../lib/domain/productionCorner.js";
 import { lifecycleStatusOf } from "../lib/domain/productionLifecycle.js";
 import { buildRunDocumentation, buildRunSequence, documentationBuckets } from "./productionDocumentationRead.js";
 import { sourceOfStep } from "../lib/domain/productionDocumentation.js";
+import { PILIH_KREDIT, nilaiBersih } from "./orderNilaiBersih.js";
 import { BUILD_NA_REASON, BUILD_STAGE_LABEL, NON_KASUR_NA_REASON, stepLabelFor } from "../lib/domain/productionBuildTrack.js";
 import { listEligibleUnitsForPlanning } from "./productionPlanningCommandService.js";
 import { signEvidenceUrl } from "../routes/productionEvidenceMedia.js";
@@ -404,8 +405,8 @@ export async function getProductionCommandCenter(prisma, { unitIds, now = new Da
   if (canSeeValue) {
     const orderIds = [...new Set(views.map((v) => v.unit.orderId).filter(Boolean))];
     if (orderIds.length) {
-      const orders = await prisma.order.findMany({ where: { id: { in: orderIds } }, select: { id: true, value: true } });
-      valueByOrderId = new Map(orders.map((o) => [o.id, Number(o.value ?? 0)]));
+      const orders = await prisma.order.findMany({ where: { id: { in: orderIds } }, select: { id: true, value: true, ...PILIH_KREDIT } });
+      valueByOrderId = new Map(orders.map((o) => [o.id, nilaiBersih(o)]));
     }
   }
   const withValue = (v) => (canSeeValue ? { ...v, orderValue: valueByOrderId.get(v.unit.orderId) ?? null } : v);

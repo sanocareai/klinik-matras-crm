@@ -6,6 +6,7 @@ import { nextBestAction } from "./nextBestAction.js";
 import { generateInsight } from "./insight.js";
 import { ENGINE_VERSION, THRESHOLDS as T } from "./weights.js";
 
+import { PILIH_KREDIT } from "../orderNilaiBersih.js";
 // ═══ SANO INTELLIGENCE ENGINE — orchestrator + data loaders ═══════════════════
 // buildCustomerIntelligence = PURE (dari ctx). load* = SATU-SATUNYA akses prisma.
 
@@ -37,7 +38,7 @@ export function buildCustomerIntelligence(ctx) {
 const CUSTOMER_SELECT = {
   id: true, name: true, phone: true, pipelineStage: true, assignedSalesId: true, createdAt: true,
   assignedSales: { select: { name: true } },
-  orders: { select: { value: true, status: true, hasComplaint: true, createdAt: true } },
+  orders: { select: { value: true, status: true, hasComplaint: true, createdAt: true, ...PILIH_KREDIT } },
   conversations: {
     where: { type: "INDIVIDUAL" }, orderBy: { lastMessageAt: "desc" }, take: 3,
     select: {

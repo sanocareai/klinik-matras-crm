@@ -4,6 +4,7 @@
 // manual di order (routes/orders.js) TIDAK menyentuh paidAt. Status bayar, Payment, jurnal, dan saldo TIDAK terpengaruh sama sekali — hanya tanggal yang menentukan bulan
 // order dihitung lunas (target/insentif Sales, rekonsiliasi Sales–Finance). Riwayat tidak pernah dihapus: mencabut hanya mengisi dicabutAt (+ pencabut + alasan).
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
+import { PILIH_KREDIT, nilaiBersih } from "./orderNilaiBersih.js";
 
 export class PengecualianError extends Error {
   constructor(message, statusCode = 400, code = "PENGECUALIAN_PAIDAT") { super(message); this.statusCode = statusCode; this.code = code; }
@@ -67,12 +68,12 @@ export async function daftarPengecualian(db, { aktif, q, take = 500 } = {}) {
     },
     orderBy: { createdAt: "desc" }, take,
     include: {
-      order: { select: { id: true, orderNumber: true, value: true, paymentStatus: true, paidAt: true, customer: { select: { name: true } } } },
+      order: { select: { id: true, orderNumber: true, value: true, paymentStatus: true, paidAt: true, ...PILIH_KREDIT, customer: { select: { name: true } } } },
       createdBy: { select: { id: true, name: true } }, dicabutBy: { select: { id: true, name: true } },
     },
   });
   return rows.map((r) => ({
-    id: r.id, order: { id: r.order.id, nomor: r.order.orderNumber, pelanggan: r.order.customer?.name ?? null, nilai: r.order.value, statusBayar: r.order.paymentStatus, paidAtSekarang: r.order.paidAt },
+    id: r.id, order: { id: r.order.id, nomor: r.order.orderNumber, pelanggan: r.order.customer?.name ?? null, nilai: nilaiBersih(r.order), statusBayar: r.order.paymentStatus, paidAtSekarang: r.order.paidAt },
     paidAtDikunci: r.paidAtDikunci, paidAtAsli: r.paidAtAsli, alasan: r.alasan, aktif: !r.dicabutAt,
     dibuatOleh: r.createdBy?.name ?? null, dibuatPada: r.createdAt, dicabutOleh: r.dicabutBy?.name ?? null, dicabutPada: r.dicabutAt, alasanDicabut: r.alasanDicabut,
     // penjaga bekerja bila paidAt order masih sama dengan yang dikunci; berbeda = ada yang mengubah di luar sistem (harus nol)

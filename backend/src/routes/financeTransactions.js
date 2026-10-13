@@ -76,6 +76,7 @@ import { purchaseInclude, bentukPurchase, ambilDaftarPembelian } from "../servic
 // sama dengan perubahan status itu (lihat services/expenseSubmission/service.js).
 import { hitungBiayaTransfer, siapkanPerubahanBiaya, ringkasBiaya, pastikanTanpaBiayaSebelumBayar } from "../services/finance/transferFee.js";
 import { buatNotaKredit, batalkanNotaKredit, daftarNotaKredit, ringkasanStatusBayar, pratinjauNotaKredit, pratinjauBatalNotaKredit, kandidatRefund, revisiOrder } from "../services/finance/notaKredit.js";
+import { syncCustomerOrderAggregate } from "../services/customerOrderAggregate.js";
 import { batalkanPertanggungjawabanPengeluaran } from "../services/finance/operationalAdvance.js";
 import {
   pastikanStepUp, pastikanBelumDirekonsiliasi, snapshotJurnal, susunPratinjau, tautanJurnal, PratinjauKoreksi,
@@ -2751,6 +2752,13 @@ financeTxRouter.patch("/refunds/:id", requirePermission(P.FINANCE_POST), async (
 const UUID_POLA = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const adaRefundIdBurukNota = (v) => v !== undefined && v !== null && v !== "" && !UUID_POLA.test(String(v));
 const tolakIdBuruk = (res) => res.status(400).json({ code: "ID_TIDAK_VALID", message: "ID tidak valid." });
+// Gagal sinkron TIDAK menggagalkan nota yang sudah commit: dicatat, dan sinkron berikutnya (order apa pun milik pelanggan itu) memperbaikinya.
+async function sinkronNilaiPelangganDariOrder(orderId) {
+  try {
+    const o = await prisma.order.findUnique({ where: { id: orderId }, select: { customerId: true } });
+    if (o?.customerId) await syncCustomerOrderAggregate(o.customerId);
+  } catch (e) { console.error("[nota-kredit] gagal sinkron Customer.orderValue:", e.message); }
+}
 const paramNota = (q) => ({ amount: q.amount, kind: q.kind || "POTONGAN_HARGA", refundId: q.refundId || null, date: q.date || null, reason: q.reason || "pratinjau", expectedRevisi: q.revisi || null });
 
 financeTxRouter.get("/orders/:orderId/nota-kredit", requirePermission(P.FINANCE_READ), async (req, res) => {
@@ -2783,6 +2791,8 @@ financeTxRouter.post("/orders/:orderId/nota-kredit", requirePermission(P.FINANCE
       orderId: req.params.orderId, amount: b.amount, reason: b.reason, kind: b.kind || "POTONGAN_HARGA", refundId: b.refundId || null, date: b.date || null,
       expectedRevisi: b.revisi || null, idempotencyKey: req.get("Idempotency-Key"), userId: req.user.id,
     }), { timeout: 20000 });
+    // Customer.orderValue adalah angka TURUNAN yang disimpan (urutan/filter daftar pelanggan) — hitung ulang SETELAH commit (nilai bersih berubah).
+    if (!hasil.replay) await sinkronNilaiPelangganDariOrder(req.params.orderId);
     res.status(hasil.replay ? 200 : 201).json({
       id: hasil.credit.id, nomor: hasil.credit.creditNumber, jumlah: moneyToNumber(hasil.credit.amount), status: hasil.credit.status, replay: hasil.replay,
       ...(hasil.sebelum && { sebelum: hasil.sebelum, sesudah: hasil.sesudah, sumber: hasil.sumber, jurnal: hasil.jurnal }),
@@ -2804,6 +2814,7 @@ financeTxRouter.get("/nota-kredit/:id/pratinjau-batal", requirePermission(P.FINA
 financeTxRouter.post("/nota-kredit/:id/batal", requirePermission(P.FINANCE_ADMIN), wajibUuid(), wajibIdempotencyKey, async (req, res) => {
   try {
     const hasil = await prisma.$transaction((tx) => batalkanNotaKredit(tx, { id: req.params.id, reason: req.body?.reason, expectedRevisi: req.body?.revisi || null, userId: req.user.id }), { timeout: 20000 });
+    await sinkronNilaiPelangganDariOrder(hasil.orderId);
     res.json({ ok: true, id: hasil.id, sebelum: hasil.sebelum, sesudah: hasil.sesudah, jurnalDibalik: hasil.jurnalDibalik });
   } catch (e) { handleFinanceError(e, res); }
 });

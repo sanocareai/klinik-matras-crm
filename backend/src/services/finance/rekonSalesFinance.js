@@ -14,6 +14,7 @@
 
 import { startOfDayWIB, endOfDayExclusiveWIB } from "../../utils/wib.js";
 import { ongkirDitagih, tagihanOrder } from "./tagihanOrder.js";
+import { PILIH_KREDIT, nilaiBersih, kreditDariRelasi } from "../orderNilaiBersih.js";
 
 const OMSET_EXCLUDED_STATUS = ["CANCELLED", "PENDING"]; // sama dengan analytics.js
 const STATUS_REFUND_AKTIF_TIDAK = ["DITOLAK", "DIBATALKAN"];
@@ -102,7 +103,7 @@ export async function rekonSalesFinance(db, { from, to, denganDetail = false } =
 
   // ── Order lunas-periode (L) — definisi Sales ──
   const selectOrder = {
-    id: true, orderNumber: true, value: true, ongkir: true, status: true, paymentStatus: true, paidAt: true, groupId: true, salesOwnerId: true, staffSeller: { select: { name: true } },
+    id: true, orderNumber: true, value: true, ongkir: true, status: true, paymentStatus: true, paidAt: true, groupId: true, salesOwnerId: true, staffSeller: { select: { name: true } }, ...PILIH_KREDIT,
     group: { select: { id: true, source: true, anchorOrderId: true } },
     customer: { select: { id: true, name: true, pipelineStage: true, assignedSales: { select: { name: true } } } },
   };
@@ -188,7 +189,7 @@ export async function rekonSalesFinance(db, { from, to, denganDetail = false } =
     const f = fin.get(o.id) ?? { tercatat: 0, terverifikasi: 0, menunggu: 0, tglBayar: null };
     const totalTagihan = rp(t);
     return {
-      orderId: o.id, nomor: o.orderNumber, pelanggan: o.customer.name, sales: namaSalesOrder(o), status: o.status, statusBayar: o.paymentStatus, nilaiJasa: rp(o.value), ongkir: rp(ongkirDitagih(o, o.group ?? null)), totalTagihan,
+      orderId: o.id, nomor: o.orderNumber, pelanggan: o.customer.name, sales: namaSalesOrder(o), status: o.status, statusBayar: o.paymentStatus, nilaiJasa: rp(nilaiBersih(o)), notaKredit: rp(kreditDariRelasi(o)), ongkir: rp(ongkirDitagih(o, o.group ?? null)), totalTagihan,
       paymentTercatat: rp(f.tercatat), paymentTerverifikasi: rp(f.terverifikasi), paymentMenunggu: rp(f.menunggu),
       kurangLebih: rp(f.terverifikasi - totalTagihan), // negatif = kekurangan, positif = kelebihan (dari Payment terverifikasi terhadap total tagihan)
       tanggalBayar: tglWib(f.tglBayar), tanggalLunas: tglWib(o.paidAt),
@@ -232,7 +233,7 @@ export async function rekonSalesFinance(db, { from, to, denganDetail = false } =
   let nilaiSalesKartu = 0;
   for (const o of ordersL) {
     const info = infoOrder(o);
-    const nilai = rp(o.value);
+    const nilai = rp(nilaiBersih(o)); // BERSIH dari Nota Kredit aktif — sama dengan angka "Lunas" di Laporan Sales (Okt 2026)
     totalNilaiL += nilai;
     const inPeriode = masuk.get(o.id)?.jumlah ?? 0;
     const sebelum = pra.get(o.id)?.jumlah ?? 0;

@@ -58,6 +58,7 @@ import { detailPiutangOrder } from "../services/finance/piutangDetail.js";
 // customer lewat WA/PDF. Menyalin rumusnya ke sini = dua dokumen ke
 // customer yang sama saling bertentangan begitu salah satunya diubah.
 import { hitungNominal, statusEfektif, hariLewatTempo } from "../services/invoice.js";
+import { PILIH_KREDIT } from "../services/orderNilaiBersih.js";
 import { pesanServerAman } from "../lib/galatServerAman.js";
 
 export const financeRouter = express.Router();
@@ -797,6 +798,7 @@ financeRouter.get("/invoices", requirePermission(P.FINANCE_READ), async (req, re
             // cancelledAt: null — entri yang dibatalkan tidak ikut dihitung
             // DAN tidak ditampilkan, persis seperti di buildInvoiceView().
             payments: { where: { cancelledAt: null }, select: { amount: true } },
+            ...PILIH_KREDIT,
             customer: { select: { id: true, name: true, assignedSales: { select: { name: true } } } },
           },
         },
@@ -809,6 +811,7 @@ financeRouter.get("/invoices", requirePermission(P.FINANCE_READ), async (req, re
               include: {
                 promo: { select: { code: true, discountPercent: true } },
                 payments: { where: { cancelledAt: null }, select: { amount: true } },
+                ...PILIH_KREDIT,
               },
             },
           },

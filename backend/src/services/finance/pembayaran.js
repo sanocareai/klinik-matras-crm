@@ -31,6 +31,7 @@ import { batalkanJurnalPembayaran, bukukanPembayaran } from "./hooks.js";
 import { tanggalCutoff, sebelumCutoff } from "./cutoff.js";
 import { findEntryByKey } from "./journal.js";
 import { dasarStatusBayar } from "./tagihanOrder.js";
+import { PILIH_KREDIT, nilaiBersih } from "../orderNilaiBersih.js";
 import { KEY as KEY_ORDER } from "./posting/orderRevenue.js";
 import { toMoney, ZERO } from "./money.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../../lib/activityLog.js";
@@ -136,7 +137,7 @@ export const INCLUDE_LIST = {
   cancelledBy: { select: { id: true, name: true } },
   verifications: { select: { id: true, createdAt: true, verifiedBy: { select: { id: true, name: true } } } },
   finAllocations: { select: { id: true, orderId: true, amount: true } },
-  order: { select: { id: true, orderNumber: true, value: true, paymentStatus: true, customer: { select: { id: true, name: true } } } },
+  order: { select: { id: true, orderNumber: true, value: true, paymentStatus: true, ...PILIH_KREDIT, customer: { select: { id: true, name: true } } } },
   job: { select: { id: true, type: true } },
 };
 
@@ -190,7 +191,7 @@ function normalisasi(p, status, jenis, user) {
     jenis: jenis ?? null,
     dicatatPada: iso(p.createdAt),
     tanggal: tanggalWIB(p.createdAt),
-    order: p.order ? { id: p.order.id, nomor: p.order.orderNumber, nilai: uang(p.order.value), statusBayar: p.order.paymentStatus } : null,
+    order: p.order ? { id: p.order.id, nomor: p.order.orderNumber, nilai: uang(nilaiBersih(p.order)), statusBayar: p.order.paymentStatus } : null,
     pelanggan: orang(p.order?.customer),
     rekening: p.cashAccount ? { id: p.cashAccount.id, name: p.cashAccount.name } : null,
     pencatat: orang(p.recordedBy),
@@ -377,7 +378,7 @@ function bangunPeringatan({ p, status, tagihan, kembar }) {
 
 export async function detailPembayaran(db, user, id) {
   if (!UUID.test(String(id))) return null;
-  const p = await db.payment.findUnique({ where: { id }, include: { ...INCLUDE_LIST, order: { select: { id: true, orderNumber: true, value: true, paymentStatus: true, status: true, customer: { select: { id: true, name: true } }, invoice: { select: { invoiceNumber: true, lifecycleStatus: true, dueDate: true, cancelledAt: true } } } } } });
+  const p = await db.payment.findUnique({ where: { id }, include: { ...INCLUDE_LIST, order: { select: { id: true, orderNumber: true, value: true, paymentStatus: true, status: true, ...PILIH_KREDIT, customer: { select: { id: true, name: true } }, invoice: { select: { invoiceNumber: true, lifecycleStatus: true, dueDate: true, cancelledAt: true } } } } } });
   if (!p) return null;
   const ditolak = await idDitolak(db, [p.id]);
   const status = statusDari(p, ditolak);

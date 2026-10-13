@@ -1,4 +1,5 @@
 import { THRESHOLDS as T } from "./weights.js";
+import { nilaiBersih } from "../orderNilaiBersih.js";
 import { detectIntents } from "./replyReadiness.js";
 
 // Signal detector — PURE. Menurunkan sinyal dari data yang SUDAH ADA (customer +
@@ -10,7 +11,7 @@ export function detectSignals(ctx) {
   const orders = customer.orders || [];
 
   const orderCount = orders.length;
-  const orderValue = orders.reduce((s, o) => s + (o.value || 0), 0);
+  const orderValue = orders.reduce((s, o) => s + nilaiBersih(o), 0); // BERSIH dari Nota Kredit aktif (Okt 2026)
   const lastOrder = orders.reduce((a, o) => (!a || new Date(o.createdAt) > new Date(a.createdAt) ? o : a), null);
   const lastOrderDaysAgo = lastOrder ? Math.floor((Date.now() - new Date(lastOrder.createdAt).getTime()) / 86_400_000) : null;
   const complaintsOpen = customer.riwayatKomplain?.length || orders.filter((o) => o.hasComplaint).length;

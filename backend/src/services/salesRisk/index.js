@@ -17,6 +17,7 @@ import { detectSalesRiskSignals } from "./signals.js";
 import { buildSalesRisk } from "./riskScore.js";
 import { THRESHOLDS as INTEL_THRESHOLDS } from "../intelligence/weights.js";
 
+import { PILIH_KREDIT } from "../orderNilaiBersih.js";
 export const DEFAULT_CANDIDATE_LIMIT = 3000; // sama jaring pengaman dgn staleLeadAlertJob.js
 
 // Select MILIK Sales Risk Engine — pre-filter kandidat SAMA persis dgn
@@ -40,7 +41,7 @@ export async function loadSalesRiskCandidates(prisma, { limit } = {}) {
     select: {
       id: true, name: true, phone: true, pipelineStage: true, assignedSalesId: true,
       assignedSales: { select: { name: true } },
-      orders: { select: { value: true, status: true } },
+      orders: { select: { value: true, status: true, ...PILIH_KREDIT } },
       conversations: {
         where: { type: "INDIVIDUAL" }, orderBy: { lastMessageAt: "desc" }, take: 3,
         select: {

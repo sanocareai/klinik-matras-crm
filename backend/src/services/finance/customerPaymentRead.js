@@ -2,6 +2,7 @@
 // (services/finance/export/pembayaran.js), supaya baris & angka di berkas Excel tidak mungkin berbeda dari yang tampil di layar. Murni baca.
 
 import { startOfDayWIB, endOfDayExclusiveWIB } from "../../utils/wib.js";
+import { PILIH_KREDIT } from "../orderNilaiBersih.js";
 
 /** Kolom yang dibaca untuk daftar (layar memakai semuanya; export memilih yang perlu). */
 export const paymentSelect = {
@@ -18,6 +19,7 @@ export const paymentSelect = {
       id: true, orderNumber: true, value: true, paymentStatus: true,
       // ongkir + grup: label DP/Cicilan/Pelunasan memakai nilai tagihan yang SAMA dengan status bayar (tagihanOrder.js).
       ongkir: true, groupId: true, group: { select: { id: true, source: true, anchorOrderId: true } },
+      ...PILIH_KREDIT, // Nota Kredit aktif: label DP/Cicilan/Pelunasan memakai tagihan BERSIH
       customer: { select: { id: true, name: true } },
     },
   },

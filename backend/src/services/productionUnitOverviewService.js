@@ -25,6 +25,7 @@ import { STEP_BY_NO, isSkippedEvidence } from "../lib/domain/productionSteps.js"
 import { signEvidenceUrl } from "../routes/productionEvidenceMedia.js";
 import { signUnitPhotoUrlIfAny } from "../routes/productionUnitPhoto.js";
 import { getDiagnosisState } from "./productionDiagnosisCommandService.js";
+import { PILIH_KREDIT, nilaiBersih } from "./orderNilaiBersih.js";
 
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
 
@@ -243,7 +244,7 @@ async function buildNoRunOverview(prisma, unit, { canSeeValue }) {
     activity: await loadActivity(prisma, { unit, run: null, ctx: null, pickup }),
     warnings,
     permissions: { canSeeValue },
-    ...(canSeeValue ? { orderValue: order?.value ?? null } : {}),
+    ...(canSeeValue ? { orderValue: order ? nilaiBersih(order) : null } : {}),
   };
 }
 
@@ -258,7 +259,7 @@ const UNIT_FULL_SELECT = {
   order: {
     select: {
       orderNumber: true, status: true, category: true, productLine: true, productType: true, beratBadan: true, notes: true,
-      complaintCategory: true, customerPromiseDate: true, value: true,
+      complaintCategory: true, customerPromiseDate: true, value: true, ...PILIH_KREDIT,
       weightEntries: { select: { label: true, beratKg: true }, orderBy: { sortOrder: "asc" } },
       items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } },
       customer: { select: { name: true, city: true, assignedSales: { select: { name: true } } } },
@@ -304,7 +305,7 @@ async function getUnitOverviewDasar(prisma, unitId, { unitIds, canSeeValue = fal
   // menambah field di sana akan membesarkan payload SEMUA pemanggil) — ambil 3 field itu saja secara terpisah,
   // BUKAN unit lengkap lagi.
   const orderExtra = run.unit.orderId
-    ? await prisma.order.findUnique({ where: { id: run.unit.orderId }, select: { productLine: true, productType: true, value: true } })
+    ? await prisma.order.findUnique({ where: { id: run.unit.orderId }, select: { productLine: true, productType: true, value: true, ...PILIH_KREDIT } })
     : null;
 
   const ctx = await loadStepContext(prisma, run);
@@ -420,6 +421,6 @@ async function getUnitOverviewDasar(prisma, unitId, { unitIds, canSeeValue = fal
     activity: await loadActivity(prisma, { unit: run.unit, run, ctx, pickup }),
     warnings,
     permissions: { canSeeValue },
-    ...(canSeeValue ? { orderValue: orderExtra?.value ?? null } : {}),
+    ...(canSeeValue ? { orderValue: orderExtra ? nilaiBersih(orderExtra) : null } : {}),
   };
 }

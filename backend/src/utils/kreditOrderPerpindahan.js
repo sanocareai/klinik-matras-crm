@@ -14,6 +14,7 @@
 // (mis. 24 order lunas Juli–Agustus milik Mila/Farhan, Rp61 juta) diam-diam menjadi kredit penerima — termasuk di laporan periode yang sudah lewat.
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import { tetapkanPemilikSales } from "../services/salesOwner.js";
+import { PILIH_KREDIT, nilaiBersih } from "../services/orderNilaiBersih.js";
 
 export const ALASAN_KUNCI = "Dikunci ke pemegang sebelumnya saat percakapan berpindah tangan (kredit closing tidak ikut berpindah)";
 
@@ -34,11 +35,11 @@ export async function orderTerdampak(db, { customerId, dariUserId }) {
       customerId, status: { not: "CANCELLED" }, penjualanKaryawanId: null, staffSellerId: null,
       OR: [{ salesOwnerId: dariUserId }, { salesOwnerId: null }],
     },
-    select: { id: true, orderNumber: true, value: true, status: true, paymentStatus: true, paidAt: true, salesOwnerId: true, createdAt: true },
+    select: { id: true, orderNumber: true, value: true, status: true, paymentStatus: true, paidAt: true, salesOwnerId: true, createdAt: true, ...PILIH_KREDIT },
     orderBy: { createdAt: "desc" },
   });
   return rows.map((o) => ({
-    id: o.id, orderNumber: o.orderNumber, value: o.value, status: o.status, paymentStatus: o.paymentStatus, paidAt: o.paidAt,
+    id: o.id, orderNumber: o.orderNumber, value: nilaiBersih(o), status: o.status, paymentStatus: o.paymentStatus, paidAt: o.paidAt,
     createdAt: o.createdAt,
     sumber: o.salesOwnerId ? "PEMILIK_ORDER" : "PEMEGANG_PERCAKAPAN",
     // Saran bawaan: order yang BELUM lunas ikut (komisi belum dihitung); yang sudah lunas tetap (komisi sudah terhitung di pemegang lama).

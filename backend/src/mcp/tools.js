@@ -16,6 +16,8 @@
 
 import { z } from "zod";
 import { prisma } from "../db.js";
+// NILAI BERSIH (Okt 2026): semua rupiah order di tool MCP = Order.value − Nota Kredit aktif (services/orderNilaiBersih.js, hanya BACA).
+import { aggregateBersih, groupByBersih, PILIH_KREDIT } from "../services/orderNilaiBersih.js";
 import { maskPhone } from "./security.js";
 // Mesin intelligence rule-based yang SUDAH ADA (Health/Priority/Opportunity +
 // Next Best Action). Deterministik, tanpa LLM, tanpa biaya token — dan angkanya
@@ -138,6 +140,7 @@ export function registerReadOnlyTools(server) {
             include: {
               items: { orderBy: { sortOrder: "asc" } },
               weightEntries: { orderBy: { sortOrder: "asc" } },
+              ...PILIH_KREDIT,
             },
           },
           notes: {
@@ -263,12 +266,13 @@ export function registerReadOnlyTools(server) {
 
       const [total, agregat, rows] = await Promise.all([
         prisma.order.count({ where }),
-        prisma.order.aggregate({ where, _sum: { value: true } }),
+        aggregateBersih(prisma, { where, _sum: { value: true } }),
         prisma.order.findMany({
           where,
           include: {
             customer: { select: { id: true, name: true } },
             items: { orderBy: { sortOrder: "asc" } },
+            ...PILIH_KREDIT,
           },
           orderBy: { createdAt: "desc" },
           take,
@@ -313,6 +317,7 @@ export function registerReadOnlyTools(server) {
           customer: { include: { assignedSales: { select: { id: true, name: true } } } },
           items: { orderBy: { sortOrder: "asc" } },
           weightEntries: { orderBy: { sortOrder: "asc" } },
+          ...PILIH_KREDIT,
           statusTransitions: {
             orderBy: { createdAt: "desc" },
             take: 50,
@@ -358,10 +363,10 @@ export function registerReadOnlyTools(server) {
       const tanpaBatal = { ...periode, status: { not: "CANCELLED" } };
 
       const [agregat, perStatus, perKategori, perBayar, pelangganBaru] = await Promise.all([
-        prisma.order.aggregate({ where: tanpaBatal, _sum: { value: true }, _count: true, _avg: { value: true } }),
-        prisma.order.groupBy({ by: ["status"], where: periode, _count: true, _sum: { value: true } }),
-        prisma.order.groupBy({ by: ["category"], where: tanpaBatal, _count: true, _sum: { value: true } }),
-        prisma.order.groupBy({ by: ["paymentStatus"], where: tanpaBatal, _count: true, _sum: { value: true } }),
+        aggregateBersih(prisma, { where: tanpaBatal, _sum: { value: true }, _count: true, _avg: { value: true } }),
+        groupByBersih(prisma, { by: ["status"], where: periode, _count: true, _sum: { value: true } }),
+        groupByBersih(prisma, { by: ["category"], where: tanpaBatal, _count: true, _sum: { value: true } }),
+        groupByBersih(prisma, { by: ["paymentStatus"], where: tanpaBatal, _count: true, _sum: { value: true } }),
         prisma.customer.count({ where: { ...periodeCustomer, staffUserId: null } }),
       ]);
 
@@ -546,7 +551,7 @@ export function registerReadOnlyTools(server) {
       const baris = await Promise.all(
         salesUsers.map(async (u) => {
           const [order, pelangganBaru] = await Promise.all([
-            prisma.order.aggregate({
+            aggregateBersih(prisma, {
               where: {
                 customer: { assignedSalesId: u.id },
                 status: { not: "CANCELLED" },
@@ -853,8 +858,8 @@ export function registerReadOnlyTools(server) {
       ] = await Promise.all([
         prisma.customer.count(),
         prisma.order.count({ where: { status: { not: "CANCELLED" }, penjualanKaryawanId: null } }),
-        prisma.order.aggregate({ where: { status: { not: "CANCELLED" }, penjualanKaryawanId: null }, _sum: { value: true } }),
-        prisma.order.aggregate({
+        aggregateBersih(prisma, { where: { status: { not: "CANCELLED" }, penjualanKaryawanId: null }, _sum: { value: true } }),
+        aggregateBersih(prisma, {
           where: { status: { not: "CANCELLED" }, penjualanKaryawanId: null, createdAt: { gte: awalBulan, lt: akhirBulan } },
           _sum: { value: true },
           _count: true,

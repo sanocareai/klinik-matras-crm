@@ -9,6 +9,9 @@
 // export) — lihat juga tests/integration/setup/bootstrapTestDb.js yang
 // mengasumsikan urutan eksekusi ini.
 import "dotenv/config"; // ambil JWT_SECRET dkk dari backend/.env yang sudah ada
+// KONTRAK NILAI BERSIH (Okt 2026): order yang masuk ke tagihanOrder/dasarStatusBayar tanpa relasi orderCredits (select tidak lengkap) → LEMPAR galat di tes,
+// bukan diam-diam menghitung tagihan kotor. Di produksi hanya peringatan log. Lihat services/finance/tagihanOrder.js#kreditOrder.
+process.env.NILAI_BERSIH_STRICT = "1";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";

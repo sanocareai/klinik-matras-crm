@@ -24,6 +24,7 @@ import { STATUS_DIHITUNG, todayBookDateWIB } from "./journal.js";
 import { toMoney, sumMoney, ZERO, moneyToNumber } from "./money.js";
 import { SETTING_KEYS, getSettingRaw } from "./settings.js";
 import { bacaAgingUtang } from "./agingUtang.js";
+import { potonganNotaKreditPiutang } from "./notaKreditPiutang.js";
 
 // Tipe akun yang masuk LABA RUGI vs NERACA.
 const TIPE_LABA_RUGI = ["PENDAPATAN", "BEBAN_POKOK", "BEBAN"];
@@ -597,6 +598,8 @@ export async function umurPiutang(db, { to: batas = todayBookDateWIB() } = {}) {
     },
   });
   const byId = new Map(orders.map((o) => [o.id, o]));
+  // Nota Kredit MANDIRI (Cr Piutang) per posisi tanggal: BUKAN pembayaran — dikeluarkan dari "sudah dibayar" dan ditampilkan sebagai potongan sendiri (Okt 2026).
+  const potongan = await potonganNotaKreditPiutang(db, bersaldo.map((b) => b.orderId), to);
 
   const batal = bersaldo.filter((b) => byId.get(b.orderId)?.status === "CANCELLED");
   const dibatalkan = { jumlah: batal.length, total: moneyToNumber(batal.length ? sumMoney(batal.map((b) => b.saldo)) : ZERO) };
@@ -628,9 +631,12 @@ export async function umurPiutang(db, { to: batas = todayBookDateWIB() } = {}) {
       sisaTagihan: moneyToNumber(b.saldo),
       // Aditif (Okt 2026) — dari SALDO LEDGER yang sama dengan sisaTagihan: tagihan diakui = Σ debit akun Piutang Usaha order ini, sudah dilunasi = Σ kredit.
       // sisaTagihan = tagihanDiakui − sudahDilunasi. statusBayar diturunkan di sini supaya layar tidak menebak dari nominal.
-      tagihanDiakui: moneyToNumber(b.debit),
-      sudahDilunasi: moneyToNumber(b.kredit),
-      statusBayar: b.kredit.greaterThan(0) ? "DIBAYAR_SEBAGIAN" : "BELUM_BAYAR",
+      // tagihanDiakui/sudahDilunasi: potongan Nota Kredit mandiri dikeluarkan dari keduanya (sisaTagihan TIDAK berubah) — supaya "sudah dibayar" murni uang diterima
+      // dan order yang HANYA dapat potongan tidak berlabel "Dibayar sebagian".
+      tagihanDiakui: moneyToNumber(b.debit.minus(potongan.get(b.orderId) ?? ZERO)),
+      sudahDilunasi: moneyToNumber(b.kredit.minus(potongan.get(b.orderId) ?? ZERO)),
+      notaKredit: moneyToNumber(potongan.get(b.orderId) ?? ZERO),
+      statusBayar: b.kredit.minus(potongan.get(b.orderId) ?? ZERO).greaterThan(0) ? "DIBAYAR_SEBAGIAN" : "BELUM_BAYAR",
       tanggalOrder: o?.createdAt || null,
       dueDate,
       sumberJatuhTempo: dueDate ? "invoice" : "tanggal_order",

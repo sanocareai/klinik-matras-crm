@@ -29,6 +29,7 @@
 //    saling bertentangan.
 
 import { prisma } from "../db.js";
+import { PILIH_KREDIT, kreditDariRelasi } from "./orderNilaiBersih.js";
 import { tolakJikaOrderPkr } from "./pkrGuard.js";
 import { kontribusiPembayaranOrder } from "./finance/allocation.js";
 import { formatUkuranKasur } from "../lib/ukuranKasur.js";
@@ -192,6 +193,9 @@ export function tentukanJenisTagihan({ dpTarget, dibayar, dibayarTidakRinci = fa
 // (beserta items/promo) dan daftar payment-nya.
 export function hitungNominal(order, payments = [], { jenis = null } = {}) {
   const totalLayanan = order.value || 0; // = SUM(items.harga), harga FINAL
+  // NOTA KREDIT/KERINGANAN AKTIF (Okt 2026): potongan resmi atas tagihan. Order yang dimuat tanpa relasi orderCredits dianggap tanpa nota (perilaku lama) —
+  // pemanggil WAJIB menyertakan PILIH_KREDIT (dijaga tes nilaiBersihSelectContract).
+  const notaKredit = kreditDariRelasi(order);
   const ongkir = order.ongkir || 0;
   const ongkirKlaimGaransi = order.ongkirKlaimGaransi || 0;
 
@@ -205,7 +209,7 @@ export function hitungNominal(order, payments = [], { jenis = null } = {}) {
   // SENGAJA tidak dijumlahkan ke tagihan: itu ongkir yang ditanggung untuk
   // klaim garansi (biaya kami, bukan tagihan customer) — ditampilkan
   // terpisah supaya tetap terlihat, tidak diam-diam masuk total.
-  const totalTagihan = totalLayanan + ongkir;
+  const totalTagihan = Math.max(0, totalLayanan + ongkir - notaKredit);
 
   // ⚠️ LEDGER KOSONG BUKAN BERARTI BELUM BAYAR (ditemukan saat uji ke data
   // production, 31 Agustus 2026). Tabel `payments` di production masih NOL
@@ -275,6 +279,8 @@ export function hitungNominal(order, payments = [], { jenis = null } = {}) {
     promoCode: order.promo?.code || null,
     ongkir,
     ongkirKlaimGaransi,
+    // Potongan resmi (Nota Kredit/Keringanan) — sudah dikurangkan dari totalTagihan; ditampilkan sebagai baris tersendiri di dokumen.
+    notaKredit,
     totalTagihan,
     dibayar,
     sisa,
@@ -355,6 +361,7 @@ async function buildSingleOrderView(orderId, { userId = null, autoCreate = true,
         },
       },
       invoice: { include: { createdBy: { select: { id: true, name: true } } } },
+      ...PILIH_KREDIT,
     },
   });
   if (!order) return null;
@@ -536,6 +543,7 @@ export async function buildCombinedInvoiceView(primaryInvoiceId, opts = {}) {
     promoCode: promoCodeSet.size === 1 ? [...promoCodeSet][0] : null,
     ongkir: jumlah((n) => n.ongkir),
     ongkirKlaimGaransi: jumlah((n) => n.ongkirKlaimGaransi),
+    notaKredit: jumlah((n) => n.notaKredit),
     totalTagihan,
     dibayar,
     sisa: Math.max(totalTagihan - dibayar, 0),

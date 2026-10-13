@@ -68,6 +68,7 @@ const { userRouter } = await import("../../../src/routes/users.js");
 const { armadaRouter } = await import("../../../src/routes/armada.js");
 const { orderRouter } = await import("../../../src/routes/orders.js");
 const { promoRouter } = await import("../../../src/routes/promos.js");
+const { customerRouter } = await import("../../../src/routes/customers.js"); // detail pelanggan memuat order + nota kredit (tes nilai bersih)
 const { resiRouter } = await import("../../../src/routes/resi.js");
 const { kendaliRouter } = await import("../../../src/routes/kendali.js");
 // incentiveSnapshotRouter (24 September 2026) — sama pola dengan armadaRouter
@@ -160,6 +161,7 @@ export function buildTestApp() {
   app.use("/api/armada", incentivePayoutRouter);
   app.use("/api/orders", orderRouter);
   app.use("/api/promos", promoRouter);
+  app.use("/api/customers", customerRouter);
   app.use("/api/resi", resiRouter);
   app.use("/api/kendali", kendaliRouter);
   app.use("/api/delivery-control", deliveryControlRouter);

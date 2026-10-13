@@ -16,6 +16,7 @@
 import { STATUS_DIHITUNG, todayBookDateWIB } from "./journal.js";
 import { toMoney, moneyToNumber } from "./money.js";
 import { PILIH_TAGIHAN, tagihanOrder, resiBaru } from "./tagihanOrder.js";
+import { PILIH_KREDIT } from "../orderNilaiBersih.js";
 import { STATUS_PENGAKUAN } from "./posting/orderRevenue.js";
 import { tanggalCutoff, sebelumCutoff, tampilCutoff } from "./cutoff.js";
 import { catatanLaporan } from "./reports.js";
@@ -220,7 +221,7 @@ export async function diagnosisPiutang(db, { to: batas = todayBookDateWIB() } = 
   // Order yang BELUM punya pengakuan pendapatan sama sekali — bukan piutang menurut buku (belum diserahkan); yang sudah diserahkan tapi belum diakui perlu dicek.
   const kandidat = await db.order.findMany({
     where: { paymentStatus: { in: ["BELUM_BAYAR", "DP"] }, status: { not: "CANCELLED" }, penjualanKaryawanId: null }, // order Penjualan Karyawan: tidak punya pengakuan/piutang order (dikelola PKR)
-    select: { id: true, orderNumber: true, status: true, value: true, ongkir: true, groupId: true, group: { select: { id: true, source: true, anchorOrderId: true } }, customer: { select: { name: true } } },
+    select: { id: true, orderNumber: true, status: true, value: true, ongkir: true, groupId: true, ...PILIH_KREDIT, group: { select: { id: true, source: true, anchorOrderId: true } }, customer: { select: { name: true } } },
   });
   const sudahDiakui = new Set((await db.finJournalEntry.findMany({ where: { source: "PENGAKUAN_PENDAPATAN", status: "POSTED", sourceId: { in: kandidat.map((k) => k.id) } }, select: { sourceId: true } })).map((e) => e.sourceId));
   const belum = kandidat.filter((k) => !sudahDiakui.has(k.id));

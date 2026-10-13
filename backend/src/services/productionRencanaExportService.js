@@ -9,6 +9,7 @@ import { loadOpenComplaintsByUnit } from "./productionComplaints.js";
 import { COMPLAINT_LABEL, loadRuns, viewsOf } from "./productionExperienceReadService.js";
 import { globalStatusMapFor } from "./workshopMilestoneEvidence.js";
 import { produkUnit } from "../lib/domain/unitKategori.js";
+import { PILIH_KREDIT, nilaiBersih } from "./orderNilaiBersih.js";
 
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
 const CHUNK = 25; const PARALLEL = 4;
@@ -78,7 +79,7 @@ export async function buildRencanaExport(prisma, { cohortUnitIds, query, canIncl
 
   // 4) Nilai order — hanya bila diizinkan DAN diminta
   const orderIds = [...new Set([...views.map((v) => runById.get(v.runId)?.unit?.orderId), ...unitRows.map((u) => u.orderId)].filter(Boolean))];
-  const valueByOrder = includeValue && orderIds.length ? new Map((await prisma.order.findMany({ where: { id: { in: orderIds } }, select: { id: true, value: true } })).map((o) => [o.id, o.value])) : new Map();
+  const valueByOrder = includeValue && orderIds.length ? new Map((await prisma.order.findMany({ where: { id: { in: orderIds } }, select: { id: true, value: true, ...PILIH_KREDIT } })).map((o) => [o.id, nilaiBersih(o)])) : new Map();
 
   const rows = [];
   for (const v of views) {

@@ -11,6 +11,7 @@ import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { rolesOf } from "../middleware/authorize.js";
 import { normalisasiBatasDiskon } from "../services/diskonPromo.js";
+import { groupByBersih } from "../services/orderNilaiBersih.js";
 
 export const promoRouter = express.Router();
 promoRouter.use(requireAuth);
@@ -46,7 +47,7 @@ promoRouter.get("/", async (req, res) => {
     // Omzet per promo — CANCELLED dikecualikan, konsisten dengan seluruh
     // endpoint lain (Pipeline, GET /orders) yang tidak menghitung deal batal
     // sebagai nilai berjalan.
-    const sums = await prisma.order.groupBy({
+    const sums = await groupByBersih(prisma, {
       by: ["promoId"],
       where: { promoId: { not: null }, status: { not: "CANCELLED" } },
       _sum: { value: true },

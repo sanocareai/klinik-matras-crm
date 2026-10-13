@@ -296,7 +296,7 @@ export async function batalkanNotaKredit(tx, { id, reason, expectedRevisi = null
     entityType: ENTITY_TYPES.ORDER, entityId: c.orderId, eventType: EVENT_TYPES.DOCUMENT_CANCELLED, actorId: userId,
     metadata: { aksi: "nota_kredit_dibatalkan", nomor: c.creditNumber, jumlah: toMoney(c.amount).toFixed(2), alasan, sebelum, sesudah },
   });
-  return { id, sebelum, sesudah, jurnalDibalik: Boolean(reversalJournalId) };
+  return { id, orderId: c.orderId, sebelum, sesudah, jurnalDibalik: Boolean(reversalJournalId) };
 }
 
 export { STATUS_DIHITUNG };

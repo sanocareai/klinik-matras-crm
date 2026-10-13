@@ -5,6 +5,7 @@ import { requireAuth } from "../middleware/auth.js";
 // & catatan panjang di utils/wib.js — container backend jalan di UTC).
 import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
 import { loadOrderMilestones } from "../services/orderMilestoneService.js";
+import { PILIH_KREDIT, nilaiBersih } from "../services/orderNilaiBersih.js";
 
 export const pipelineRouter = express.Router();
 pipelineRouter.use(requireAuth);
@@ -24,7 +25,7 @@ pipelineRouter.get("/board", async (req, res) => {
     const customers = await prisma.customer.findMany({
       where,
       include: {
-        orders: true,
+        orders: { include: PILIH_KREDIT }, // nilai kolom/kartu = BERSIH dari Nota Kredit aktif (Okt 2026)
         assignedSales: { select: { id: true, name: true } },
         // `id` percakapan terakhir dipilih supaya kartu Kanban bisa deep-link
         // langsung ke chat customer (?conv=<id>) — sebelumnya kartu tidak
@@ -61,8 +62,8 @@ pipelineRouter.get("/board", async (req, res) => {
       // Nilai kartu/kolom = order PASTI saja: PENDING ("Menunggu", belum pasti,
       // keputusan Owner 30 Sep 2026) tidak dihitung, sama dengan Laporan.
       // Nilainya tetap dikirim terpisah (pendingValue) untuk ditampilkan.
-      const totalValue = ordersAktif.reduce((sum, o) => sum + (o.status === "PENDING" ? 0 : o.value), 0);
-      const pendingValue = ordersAktif.reduce((sum, o) => sum + (o.status === "PENDING" ? o.value : 0), 0);
+      const totalValue = ordersAktif.reduce((sum, o) => sum + (o.status === "PENDING" ? 0 : nilaiBersih(o)), 0);
+      const pendingValue = ordersAktif.reduce((sum, o) => sum + (o.status === "PENDING" ? nilaiBersih(o) : 0), 0);
       const conv = conversations?.[0] || null;
       if (!board[stage]) board[stage] = [];
       board[stage].push({
@@ -113,7 +114,7 @@ pipelineRouter.get("/order-board", async (req, res) => {
       where: { ...createdAt, penjualanKaryawanId: null, customer: { pipelineStage: { not: "SPAM" } } }, // order Penjualan Karyawan bukan deal Sales
       select: {
         id: true, orderNumber: true, status: true, value: true, category: true,
-        paymentStatus: true, createdAt: true, updatedAt: true,
+        paymentStatus: true, createdAt: true, updatedAt: true, ...PILIH_KREDIT,
         customer: {
           select: {
             id: true, name: true, phone: true, city: true, assignedSalesId: true,
@@ -133,8 +134,11 @@ pipelineRouter.get("/order-board", async (req, res) => {
     const milestones = await loadOrderMilestones(prisma, orders);
     for (const { customer, ...o } of orders) {
       if (!board[o.status]) board[o.status] = [];
+      const { orderCredits, ...oo } = o;
       board[o.status].push({
-        ...o,
+        ...oo,
+        value: nilaiBersih(o), // kartu papan order = nilai BERSIH; `nilaiKotor` = Order.value mentah
+        nilaiKotor: o.value,
         milestone: milestones.get(o.id) ?? null, // status global tingkat order; kolom papan TETAP menurut Order.status tersimpan (kompatibel)
         daysSince: Math.floor((now - new Date(o.updatedAt).getTime()) / 86_400_000),
         customerId: customer.id,

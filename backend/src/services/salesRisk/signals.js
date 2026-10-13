@@ -6,6 +6,7 @@
 // (detectSignals) — engine ini punya definisi sendiri utk "neglect"/"waiting"
 // yang SENGAJA beda filosofi (lihat weights.js).
 import { KEYWORDS, THRESHOLDS as INTEL_THRESHOLDS } from "../intelligence/weights.js";
+import { nilaiBersih } from "../orderNilaiBersih.js";
 // detectIntents/BOOKING_READINESS_PATTERN TIDAK DIPAKAI LAGI di sini (29
 // Agustus 2026) — diganti klasifikasi LLM, lihat detectBuyingIntent di bawah.
 
@@ -159,7 +160,7 @@ function detectPipeline(customer, lastMessageAt) {
 // tambahan) — exclude CANCELLED, konvensi sama dgn customerOrderAggregate.js.
 function detectCustomerValue(customer) {
   const orders = (customer.orders || []).filter((o) => o.status !== "CANCELLED");
-  const orderValue = orders.reduce((s, o) => s + (o.value || 0), 0);
+  const orderValue = orders.reduce((s, o) => s + nilaiBersih(o), 0); // BERSIH dari Nota Kredit aktif (Okt 2026)
   const orderCount = orders.length;
   return { orderValue, orderCount };
 }

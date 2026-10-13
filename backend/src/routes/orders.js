@@ -50,6 +50,8 @@ import { maskAccountNumber } from "../utils/maskAccount.js";
 import { assertOrderUnitsNotV2Owned } from "../services/productionRunGuards.js";
 import { atribusiOrderWhere } from "../services/salesOwner.js";
 import { loadOrderMilestones } from "../services/orderMilestoneService.js";
+// NILAI BERSIH (Okt 2026): KPI/ringkasan uang di daftar order = Order.value − Nota Kredit aktif (services/orderNilaiBersih.js). Jangan menjumlah Order.value mentah.
+import { aggregateBersih, groupByBersih, PILIH_KREDIT } from "../services/orderNilaiBersih.js";
 
 export const orderRouter = express.Router();
 orderRouter.use(requireAuth);
@@ -706,7 +708,7 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
         await syncOrderStatus(tx, updated.id);
         return tx.order.findUniqueOrThrow({
           where: { id: updated.id },
-          include: { items: { orderBy: { sortOrder: "asc" } }, weightEntries: { orderBy: { sortOrder: "asc" } } },
+          include: { items: { orderBy: { sortOrder: "asc" } }, weightEntries: { orderBy: { sortOrder: "asc" } }, ...PILIH_KREDIT },
         });
       }
 
@@ -797,7 +799,7 @@ orderRouter.post("/:id/reopen-for-delivery", requirePermission(P.ORDER_WRITE), a
 
     const fresh = await prisma.order.findUniqueOrThrow({
       where: { id: order.id },
-      include: { items: { orderBy: { sortOrder: "asc" } }, weightEntries: { orderBy: { sortOrder: "asc" } } },
+      include: { items: { orderBy: { sortOrder: "asc" } }, weightEntries: { orderBy: { sortOrder: "asc" } }, ...PILIH_KREDIT },
     });
     await syncCustomerOrderAggregate(order.customerId);
     res.json(fresh);
@@ -924,7 +926,7 @@ orderRouter.post("/:id/reopen-for-pickup", requirePermission(P.ORDER_WRITE), asy
 
     const fresh = await prisma.order.findUniqueOrThrow({
       where: { id: order.id },
-      include: { items: { orderBy: { sortOrder: "asc" } }, weightEntries: { orderBy: { sortOrder: "asc" } } },
+      include: { items: { orderBy: { sortOrder: "asc" } }, weightEntries: { orderBy: { sortOrder: "asc" } }, ...PILIH_KREDIT },
     });
     await syncCustomerOrderAggregate(order.customerId);
     res.json(fresh);
@@ -1303,6 +1305,8 @@ orderRouter.get("/", async (req, res) => {
         // D-026 — cukup id/code/name untuk chip di tabel, tidak perlu round
         // trip terpisah tiap baris.
         promo: { select: { id: true, code: true, name: true, discountPercent: true, maxDiscountAmount: true } },
+        // Nota Kredit aktif (Okt 2026): potongan resmi atas tagihan — UI menampilkan "Nilai bersih" = value − Σ amount.
+        ...PILIH_KREDIT,
         // D-036 (30 Agustus 2026) — supaya Sales CRM bisa lihat status
         // Delivery TANPA pindah halaman ("masing-masing divisi tau order A
         // sudah di tahap mana"). Cuma field ringkas, bukan seluruh job
@@ -1502,7 +1506,7 @@ orderRouter.get("/", async (req, res) => {
 
     // Ringkasan per status untuk header papan — dihitung di server supaya UI
     // tidak perlu memuat SELURUH order hanya untuk menghitung jumlah kolom.
-    const perStatus = await prisma.order.groupBy({
+    const perStatus = await groupByBersih(prisma, {
       by: ["status"],
       where: { ...where, status: undefined },
       _count: { _all: true }, _sum: { value: true },
@@ -1523,11 +1527,11 @@ orderRouter.get("/", async (req, res) => {
     // tertimpa — dua kondisi digabung, bukan saling mengganti.
     const [aktifAgg, belumLunasAgg] = await Promise.all([
       // KPI = penjualan CRM: order operasional Penjualan Karyawan (nominal di Finance) tidak ikut dihitung.
-      prisma.order.aggregate({
+      aggregateBersih(prisma, {
         where: { AND: [where, { status: { not: "CANCELLED" }, penjualanKaryawanId: null }] },
         _count: { _all: true }, _sum: { value: true },
       }),
-      prisma.order.aggregate({
+      aggregateBersih(prisma, {
         where: { AND: [where, { status: { not: "CANCELLED" }, paymentStatus: { not: "LUNAS" }, penjualanKaryawanId: null }] },
         _sum: { value: true },
       }),
@@ -2138,6 +2142,7 @@ function buildWaMessage(order, customer, actorName) {
 
   const layanan    = (order.items || []).map((i) => i.layananName).join(", ") || "-";
   const finalBiaya = order.value || 0;
+  const notaKredit = (order.orderCredits ?? []).reduce((s, c) => s + (Math.round(Number(c.amount)) || 0), 0);
   const biayaAwal = hitungDiskonPromo({ totalFinal: finalBiaya, promo: order.promo }).hargaSebelumDiskon;
   const alamatLengkap = `${order.deliveryAddress || "-"}${order.deliveryCity ? `, ${order.deliveryCity}` : ""}`;
 
@@ -2164,6 +2169,7 @@ function buildWaMessage(order, customer, actorName) {
     `Harga Awal: ${formatRpWa(biayaAwal)}`,
     `Diskon: ${order.promo ? order.promo.code : "-"}`,
     `*Total: ${formatRpWa(finalBiaya)}*`,
+    ...(notaKredit > 0 ? [`Potongan (Nota Kredit): -${formatRpWa(notaKredit)}`, `*Total bersih: ${formatRpWa(Math.max(0, finalBiaya - notaKredit))}*`] : []),
     `Ongkir: ${formatRpWa(order.ongkir)}`,
     `Ongkir Klaim Garansi: ${formatRpWa(order.ongkirKlaimGaransi)}`,
     ``,
@@ -2191,6 +2197,7 @@ orderRouter.post("/:id/send-wa-summary", async (req, res) => {
         items: { orderBy: { sortOrder: "asc" } },
         weightEntries: { orderBy: { sortOrder: "asc" } },
         promo: { select: { code: true, discountPercent: true, maxDiscountAmount: true } },
+        ...PILIH_KREDIT,
       },
     });
     if (!order) return res.status(404).json({ error: "Order tidak ditemukan" });
@@ -2396,7 +2403,7 @@ async function checkCancelBlockers(orderId, db = prisma) {
     } else {
       const siblingLunas = await db.order.findMany({
         where: { groupId: order.groupId, status: { not: "CANCELLED" }, paymentStatus: "LUNAS", value: { gt: 0 } },
-        select: { id: true, groupId: true, value: true, ongkir: true },
+        select: { id: true, groupId: true, value: true, ongkir: true, ...PILIH_KREDIT },
       });
       for (const s of siblingLunas) {
         const dibayar = moneyToNumber(await paidForOrder(db, s.id, { enabled: false }));

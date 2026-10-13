@@ -44,7 +44,7 @@ declare -A PINS=(
   ["backend/src/routes/attributionCohort.js"]="dc332e106ed5727067ff6eaa52e66427cda8ac6b9bf4f2ec9fa78f7bc0c453d3"
   ["backend/src/services/attribution/cohort.js"]="c74d0f45feeba0baac178a23fc0c635bb608cc074f87b6ba11a883ede53eb495"
   ["backend/src/services/attribution/cohortDefinitions.js"]="3f6589c364f20dcb6717c77bd009fda64ccae4375621ade2bd225f721e442a53"
-  ["backend/src/services/attribution/cohortLoader.js"]="11360a9434e0294ac358f7bb4d0cfe01f153c1c5c50eaab24e93d37dd76ebac8"
+  ["backend/src/services/attribution/cohortLoader.js"]="153054a65609a251c111096c09011d992bf66f7c37944f1ba4675f58f99ad359"
   ["backend/src/services/attribution/cohortReport.js"]="c5b35ed938ba983f09baec8915dbe7acfcae7ebcc621f9ea22139dc48536c979"
 )
 

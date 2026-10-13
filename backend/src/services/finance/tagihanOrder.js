@@ -35,8 +35,26 @@ export function ongkirDitagih(order, grup = null) {
   return rp(order.ongkir);
 }
 
-/** Σ nota kredit/keringanan AKTIF pada order (0 bila relasi tidak dimuat). */
+const SUDAH_DIPERINGATI = new Set();
+/**
+ * KONTRAK: setiap order yang masuk ke tagihanOrder/dasarStatusBayar WAJIB dimuat dengan ...PILIH_TAGIHAN (memuat relasi orderCredits). Order tanpa relasi itu
+ * diam-diam dianggap tanpa Nota Kredit → tagihan KOTOR → status bayar/sisa/komisi salah (kelas bug kasus Sofyan, Okt 2026).
+ *   • NILAI_BERSIH_STRICT=1 (di-set tes integrasi) → LEMPAR galat supaya select yang tidak lengkap ketahuan di tes.
+ *   • produksi → peringatan SEKALI per pemanggil di log (tidak mematikan layanan), dihitung tanpa nota.
+ */
+function kreditTidakDimuat() {
+  const jejak = (new Error().stack || "").split(String.fromCharCode(10)).slice(3, 7).map((x) => x.trim().replace(/^at /, "")).join(" <- ");
+  if (process.env.NILAI_BERSIH_STRICT === "1") {
+    throw new Error(`tagihanOrder/dasarStatusBayar dipanggil pada order TANPA relasi orderCredits (Nota Kredit tidak terhitung) — pakai ...PILIH_TAGIHAN pada select. Pemanggil: ${jejak}`);
+  }
+  if (SUDAH_DIPERINGATI.has(jejak)) return;
+  SUDAH_DIPERINGATI.add(jejak);
+  console.warn(`[tagihanOrder] order tanpa relasi orderCredits — Nota Kredit TIDAK terhitung. Pemanggil: ${jejak}`);
+}
+
+/** Σ nota kredit/keringanan AKTIF pada order. Order tanpa relasi `orderCredits` = pelanggaran kontrak PILIH_TAGIHAN (lihat kreditTidakDimuat). */
 export function kreditOrder(order) {
+  if (order && order.orderCredits === undefined) kreditTidakDimuat();
   return (order?.orderCredits ?? []).reduce((s, c) => s + rp(c.amount), 0);
 }
 

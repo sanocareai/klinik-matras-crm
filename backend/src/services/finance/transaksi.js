@@ -19,6 +19,7 @@ import { bangunLampiran, bangunRiwayat } from "./approvals.js";
 import { daftarKaryawanKasbon } from "./karyawan.js";
 import { getVerificationGate } from "./settings.js";
 import { paidForOrder } from "./allocation.js";
+import { PILIH_KREDIT, nilaiBersih, kreditDariRelasi } from "../orderNilaiBersih.js";
 import { ringkasanDp, daftarDpEligible, alasanTidakEligible } from "./purchaseAdvanceRead.js";
 
 export const MODUL_LIST = ["pengeluaran", "pembelian", "kasbon", "pemasukan", "piutang", "refund", "supplier", "tagihan", "pembayaran-supplier"];
@@ -495,7 +496,7 @@ async function detailPiutang(db, user, orderId) {
   const order = await db.order.findUnique({
     where: { id: orderId },
     select: {
-      id: true, orderNumber: true, value: true, status: true, paymentStatus: true, createdAt: true, customerId: true,
+      id: true, orderNumber: true, value: true, status: true, paymentStatus: true, createdAt: true, customerId: true, ...PILIH_KREDIT,
       customer: { select: { id: true, name: true, phone: true } }, invoice: { select: { invoiceNumber: true, dueDate: true, lifecycleStatus: true } },
     },
   });
@@ -521,11 +522,12 @@ async function detailPiutang(db, user, orderId) {
     aksiAlokasi: aksi(punyaPost && !p.cancelledAt, !punyaPost ? "Akun Anda tidak boleh mengatur alokasi pembayaran." : "Pembayaran yang dibatalkan tidak bisa dialokasikan.", `/finance/customer-payments/${p.id}/allocations`, { perlu: ["alokasi"] }),
   }));
   return {
-    kunci: `piutang:${orderId}`, id: orderId, modul: "piutang", nomor: order.invoice?.invoiceNumber ?? order.orderNumber ?? "—", judul: order.customer?.name ?? "—", nominal: uang(order.value),
+    kunci: `piutang:${orderId}`, id: orderId, modul: "piutang", nomor: order.invoice?.invoiceNumber ?? order.orderNumber ?? "—", judul: order.customer?.name ?? "—", nominal: uang(nilaiBersih(order)),
     sisa: baris ? uang(baris.sisaTagihan) : uang(0), umurHari: baris?.hariLewat ?? null, jatuhTempo: tgl(baris?.dueDate ?? order.invoice?.dueDate), ember: baris?.ember ?? null,
     ...statusInfo(baris && baris.hariLewat > 0 ? "LEWAT_TEMPO" : "BERJALAN"), aksi: {}, persetujuan: null,
     bagian: [
       bagian("Tagihan", [B("Order", order.orderNumber), B("Status order", order.status), B("Status bayar di CRM", order.paymentStatus), B("Nilai order", uang(order.value), "uang"),
+        ...(kreditDariRelasi(order) > 0 ? [B("Nota Kredit/Keringanan aktif", uang(kreditDariRelasi(order)), "uang"), B("Nilai bersih", uang(nilaiBersih(order)), "uang")] : []),
         B("Uang diterima (menurut server)", uang(terbayar), "uang"), B("Sisa piutang (buku besar)", baris ? uang(baris.sisaTagihan) : uang(0), "uang")]),
       bagian("Jatuh tempo", [B("Invoice", order.invoice?.invoiceNumber), B("Status invoice", order.invoice?.lifecycleStatus), B("Jatuh tempo", tgl(baris?.dueDate ?? order.invoice?.dueDate), "tanggal"),
         B("Acuan umur", baris ? (baris.sumberJatuhTempo === "invoice" ? "Jatuh tempo invoice" : "Tanggal order (invoice belum punya jatuh tempo)") : null),
@@ -720,13 +722,13 @@ export async function cariOrderRefund(db, q) {
   if (kata.length < 2) return [];
   const orders = await db.order.findMany({
     where: { status: { not: "CANCELLED" }, penjualanKaryawanId: null, OR: [{ orderNumber: { contains: kata, mode: "insensitive" } }, { customer: { name: { contains: kata, mode: "insensitive" } } }] },
-    orderBy: { createdAt: "desc" }, take: 15, select: { id: true, orderNumber: true, value: true, customer: { select: { name: true } } },
+    orderBy: { createdAt: "desc" }, take: 15, select: { id: true, orderNumber: true, value: true, ...PILIH_KREDIT, customer: { select: { name: true } } },
   });
   const gate = await getVerificationGate(db);
   const hasil = [];
   for (const o of orders) {
     const sisa = await paidForOrder(db, o.id, gate);
-    hasil.push({ id: o.id, nomor: o.orderNumber, pelanggan: o.customer?.name ?? "—", nilai: uang(o.value), sisaBisaDirefund: uang(sisa) });
+    hasil.push({ id: o.id, nomor: o.orderNumber, pelanggan: o.customer?.name ?? "—", nilai: uang(nilaiBersih(o)), sisaBisaDirefund: uang(sisa) });
   }
   return hasil;
 }
