@@ -2491,10 +2491,39 @@ armadaRouter.patch("/routes/:id/jobs", requirePermission(P.ROUTE_WRITE), async (
 
     const projectRouteMembershipV1 = async (tx) => {
       // Lepas dulu job lama milik rute ini yang TIDAK ada di daftar baru.
+      const jobDilepas = await tx.job.findMany({
+        where: { routeId: route.id, id: { notIn: jobIds } },
+        select: { id: true },
+      });
       await tx.job.updateMany({
         where: { routeId: route.id, id: { notIn: jobIds } },
         data: { routeId: null, sequence: null },
       });
+      // Arsipkan item checklist STOP (13 Oktober 2026, laporan owner: stop
+      // Wannih di-reschedule/dilepas dari rute, item checklist-nya jadi
+      // orphan — jobId lama tidak lagi anggota rute ini, tapi tetap
+      // required:true & tidak pernah ikut tersaring di evaluateChecklistGate
+      // [cuma mengecek routeId/archivedAt/required, TIDAK pernah mengecek
+      // jobId-nya masih valid] -> gerbang "Mulai Perjalanan" rute ini akan
+      // SELAMANYA menagih bukti utk stop yang sudah tidak ada). Dulu juga
+      // item ini jadi TIDAK BISA diedit/diarsip manual sama sekali lewat PATCH
+      // item (lihat catatan di endpoint itu) — sekarang dibereskan otomatis
+      // persis di titik stop dilepas, jadi admin tidak perlu tahu/ingat
+      // membersihkannya manual.
+      if (jobDilepas.length > 0) {
+        const arsip = await tx.routePrepChecklistItem.updateMany({
+          where: { routeId: route.id, scope: "STOP", jobId: { in: jobDilepas.map((j) => j.id) }, archivedAt: null },
+          data: { archivedAt: new Date(), revision: { increment: 1 }, updatedById: req.user.id },
+        });
+        if (arsip.count > 0) {
+          await tx.route.update({ where: { id: route.id }, data: { prepChecklistRevision: { increment: arsip.count } } });
+          await recordActivity(tx, {
+            entityType: ENTITY_TYPES.ROUTE_PREP_CHECKLIST, entityId: route.id,
+            eventType: EVENT_TYPES.CHECKLIST_ITEM_ARCHIVED, actorId: req.user.id,
+            metadata: { reason: "Stop dilepas dari rute (edit anggota/reschedule)", archivedCount: arsip.count },
+          });
+        }
+      }
       // Status job yang SUDAH tuntas (dipakai 2 guard di bawah) — dicek
       // SEKALI di sini, bukan tebak-tebak per baris (6 September 2026, kasus
       // ganti PIC darurat/kecelakaan mid-rute).
@@ -5112,7 +5141,18 @@ armadaRouter.patch("/routes/:id/prep-checklist/items/:itemId", requirePermission
       const CONTENT_FIELDS = ["title", "detail", "quantity", "scope", "jobId", "required", "photoRequired"];
       const final = { ...item, ...patch };
       assertScopeJobConsistency(final);
-      if (final.scope === "STOP" && final.jobId) {
+      // Validasi job<->rute HANYA kalau request ini benar-benar MENGUBAH
+      // jobId/scope (bug nyata 13 Oktober 2026, laporan owner: stop Wannih
+      // di-reschedule/dilepas dari rute 141026-02, item checklist STOP-nya
+      // jadi orphan — jobId lama kini milik rute lain/dilepas. SEBELUM ini,
+      // `final` dipakai, yaitu jobId item yang TERSIMPAN digabung dgn patch
+      // — jadi WALAU request ini cuma arsip/ubah judul (patch.jobId tetap
+      // undefined), validasi tetap jalan ulang terhadap jobId LAMA yang
+      // sudah tidak valid lagi, dan SELALU gagal -> admin tidak bisa lagi
+      // mengedit ATAUPUN mengarsip/hapus item yang sudah orphan ini sama
+      // sekali. Re-validasi cukup & tepat kalau klien memang mengirim
+      // jobId baru (link ke stop lain) — bukan setiap kali item disentuh.
+      if (patch.jobId !== undefined && final.scope === "STOP" && final.jobId) {
         const job = await tx.job.findUnique({ where: { id: final.jobId } });
         if (!job || job.routeId !== route.id) throw new ArmadaError("Order/stop tidak ditemukan di rute ini");
       }
