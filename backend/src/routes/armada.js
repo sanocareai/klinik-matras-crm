@@ -74,6 +74,8 @@ import { discardDeliveryJobDraft, executeDeliveryJobCommand } from "../services/
 import { executeDeliveryExecutionCommand } from "../services/deliveryExecutionCommandService.js";
 import { executeDeliveryJobBatchCommand } from "../services/deliveryJobBatchCommandService.js";
 import { V2_FLAGS, deliveryWriterDecision, loadV2Flags } from "../services/v2FeatureFlags.js";
+import { wajibUuid } from "../lib/uuidParam.js";
+import { pesanServerAman } from "../lib/galatServerAman.js";
 import {
   normalizeChecklistItemFields,
   assertScopeJobConsistency,
@@ -227,7 +229,7 @@ function handleErr(err, res) {
   }
   if (err.code === "P2025") return res.status(404).json({ error: "Data tidak ditemukan" });
   console.error("Armada error:", err);
-  return res.status(500).json({ error: "Server error: " + err.message });
+  return res.status(500).json({ error: pesanServerAman(err) });
 }
 
 // DIAKTIFKAN KEMBALI (8 Oktober 2026, keputusan owner): setiap driver
@@ -2226,7 +2228,7 @@ armadaRouter.get("/incentive-summary", requireAnyPermission(P.JOB_READ, P.JOB_OW
   }
 });
 
-armadaRouter.get("/routes/:id", requirePermission(P.JOB_READ), async (req, res) => {
+armadaRouter.get("/routes/:id", requirePermission(P.JOB_READ), wajibUuid(), async (req, res) => {
   try {
     const route = await prisma.route.findUnique({ where: { id: req.params.id }, include: routeInclude });
     if (!route) return res.status(404).json({ error: "Rute tidak ditemukan" });
@@ -2926,7 +2928,7 @@ armadaRouter.post("/routes/:id/test-broadcast", requirePermission(P.ROUTE_WRITE)
 // manual) — TERPISAH dari kirim-otomatis-ke-grup di publish/edit di atas,
 // yang keduanya juga memanggil buildRouteMapsUrl() yang SAMA (satu sumber
 // kebenaran, bukan dua cara membangun URL yang bisa diam-diam beda).
-armadaRouter.get("/routes/:id/maps-link", requirePermission(P.JOB_READ), async (req, res) => {
+armadaRouter.get("/routes/:id/maps-link", requirePermission(P.JOB_READ), wajibUuid(), async (req, res) => {
   try {
     // order.locationUrl (7 September 2026) — dipakai ensureJobsGeocoded() di
     // bawah. Query ini SEBELUMNYA cuma `jobs: true` (tanpa order sama
@@ -2958,7 +2960,7 @@ armadaRouter.get("/routes/:id/maps-link", requirePermission(P.JOB_READ), async (
 // Beda dari /maps-link di atas (khusus dispatcher, SELALU auto-generate
 // untuk preview sebelum tempel manual) — endpoint ini menghormati link
 // manual, dan driver/helper yang mengerjakan rute ini juga boleh akses.
-armadaRouter.get("/routes/:id/map", requireAnyPermission(P.JOB_READ, P.JOB_OWN_READ), async (req, res) => {
+armadaRouter.get("/routes/:id/map", requireAnyPermission(P.JOB_READ, P.JOB_OWN_READ), wajibUuid(), async (req, res) => {
   try {
     const route = await prisma.route.findUnique({
       where: { id: req.params.id },
@@ -4114,7 +4116,7 @@ armadaRouter.post("/push/unsubscribe", requireAuth, async (req, res) => {
 // requireAnyPermission meloloskan siapa saja yang punya JOB_READ (dispatcher/
 // admin, lihat langsung SEMUA job) ATAU JOB_OWN_READ (driver/helper, masih
 // disaring lebih lanjut oleh `milikSaya` di bawah).
-armadaRouter.get("/jobs/:id", requireAnyPermission(P.JOB_READ, P.JOB_OWN_READ), async (req, res) => {
+armadaRouter.get("/jobs/:id", requireAnyPermission(P.JOB_READ, P.JOB_OWN_READ), wajibUuid(), async (req, res) => {
   try {
     const job = await prisma.job.findUniqueOrThrow({ where: { id: req.params.id }, include: jobInclude });
     // Driver/helper TANPA JOB_READ penuh hanya boleh lihat job miliknya
@@ -4826,7 +4828,7 @@ armadaRouter.get("/route-path", requireAnyPermission(P.JOB_READ, P.JOB_OWN_READ)
 // panjang di services/routeTracking.js untuk batas kejujuran fitur ini —
 // SEMUA angka di sini WAJIB ditandai "Estimasi" oleh pemanggil (frontend),
 // TIDAK PERNAH disajikan sebagai tagihan pasti.
-armadaRouter.get("/routes/:id/route-trace", requirePermission(P.JOB_READ), async (req, res) => {
+armadaRouter.get("/routes/:id/route-trace", requirePermission(P.JOB_READ), wajibUuid(), async (req, res) => {
   try {
     const route = await prisma.route.findUnique({ where: { id: req.params.id }, select: { id: true } });
     if (!route) return res.status(404).json({ error: "Rute tidak ditemukan" });
@@ -4939,7 +4941,7 @@ async function loadOwnedRoute(tx, req, routeId) {
 // GET /api/armada/routes/:id/prep-checklist — daftar item + status bukti
 // terkini per item (dibaca admin utk progres/bukti driver, dan driver utk
 // halaman Persiapan Perjalanan).
-armadaRouter.get("/routes/:id/prep-checklist", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_WRITE), async (req, res) => {
+armadaRouter.get("/routes/:id/prep-checklist", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_WRITE), wajibUuid(), async (req, res) => {
   try {
     const route = await loadOwnedRoute(prisma, req, req.params.id);
     const items = await prisma.routePrepChecklistItem.findMany({
@@ -5218,7 +5220,7 @@ armadaRouter.post(
 // ── Histori waktu rute & stop (fase 2, 7 Okt 2026) ───────────────────────
 // Sumber = ledger eksekusi yang sudah ada (delivery_execution_events); lihat services/deliveryTimeline.js. Bahasa Indonesia + WIB disusun di server supaya
 // web admin, Driver Web, dan Driver App menampilkan hal yang SAMA. Durasi hanya bila timestamp tersedia; histori lama tanpa bukti = "Tidak tersedia".
-armadaRouter.get("/routes/:id/timeline", requireAnyPermission(P.JOB_READ, P.JOB_OWN_READ, P.JOB_OWN_WRITE), async (req, res) => {
+armadaRouter.get("/routes/:id/timeline", requireAnyPermission(P.JOB_READ, P.JOB_OWN_READ, P.JOB_OWN_WRITE), wajibUuid(), async (req, res) => {
   try {
     const route = await prisma.route.findUnique({ where: { id: req.params.id }, select: { id: true, code: true, status: true, startedAt: true, completedAt: true, driverId: true, helperId: true } });
     if (!route) throw new ArmadaError("Rute tidak ditemukan", 404);

@@ -44,8 +44,8 @@ async function world() {
     createTestUser({ roles: ["DRIVER"] }),
   ]);
   const workCenter = await testPrisma.workCenter.create({ data: { code: `WC-P8-${++seq}`, name: "Workshop Utama" } });
-  const nadyaOp = await testPrisma.productionOperator.create({ data: { userId: nadya.user.id, primaryWorkCenterId: workCenter.id } });
-  const cornerOp = await testPrisma.productionOperator.create({ data: { userId: corner.user.id, primaryWorkCenterId: workCenter.id } });
+  const nadyaOp = await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: nadya.user.id, primaryWorkCenterId: workCenter.id } });
+  const cornerOp = await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: corner.user.id, primaryWorkCenterId: workCenter.id } });
   const warehouse = await testPrisma.warehouse.create({ data: { code: `WH-P8-${++seq}`, name: "Gudang P8" } });
   const loc = (zone, locationType) => testPrisma.storageLocation.create({ data: { warehouseId: warehouse.id, zone, locationType, code: `${zone}-P8-${++seq}` } });
   const [rcv, fg] = [await loc("RCV", "RECEIVING_AREA"), await loc("FG", "FINISHED_GOODS_AREA")];
@@ -475,7 +475,7 @@ test("Fase 3 LAYANAN: PIC Bahan ditugaskan per pekerjaan; pemakaian aktual hanya
   const w = await world();
   const febriU = await createTestUser({ roles: ["PRODUCTION_WORKER"] });
   const febri = { ...febriU, api: makeClient(server.baseUrl, febriU.token) };
-  const febriOp = await testPrisma.productionOperator.create({ data: { userId: febri.user.id, primaryWorkCenterId: w.wc } });
+  const febriOp = await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: febri.user.id, primaryWorkCenterId: w.wc } });
   const { unit, run } = await acceptedUnit(w);
   const planned = await planOnBoard(w, run.id, { station: "TABLE_1", corner: false });
   await throughIntake(w, run.id);
@@ -557,8 +557,8 @@ test("Fase 3 LAYANAN: PIC Bahan mengisi & merevisi BOM rencana lewat command pla
   const w = await world();
   const febriU = await createTestUser({ roles: ["PRODUCTION_WORKER"] }); const febri = { ...febriU, api: makeClient(server.baseUrl, febriU.token) };
   const ferdyU = await createTestUser({ roles: ["PRODUCTION_WORKER"] }); const ferdy = { ...ferdyU, api: makeClient(server.baseUrl, ferdyU.token) };
-  const febriOp = await testPrisma.productionOperator.create({ data: { userId: febri.user.id, primaryWorkCenterId: w.wc } });
-  await testPrisma.productionOperator.create({ data: { userId: ferdy.user.id, primaryWorkCenterId: w.wc } });
+  const febriOp = await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: febri.user.id, primaryWorkCenterId: w.wc } });
+  await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: ferdy.user.id, primaryWorkCenterId: w.wc } });
   const adminU = await createTestUser({ roles: ["ADMIN"] }); const admin = { ...adminU, api: makeClient(server.baseUrl, adminU.token) };
   const { unit, run } = await acceptedUnit(w);
   const planned = await planOnBoard(w, run.id, { station: "TABLE_1", corner: false });
@@ -788,7 +788,7 @@ const QP = "/api/production-planning/qc/runs";
 const AFTER_FOUNDATION_ONLY = { foundation: { action: "REPLACE", system: "BONNELL", material: { kind: "MANUAL", text: "Pocket spring 25 cm" } }, layers: [] };
 async function picBahan(w, runId) {
   const u = await createTestUser({ roles: ["PRODUCTION_WORKER"] }); const pic = { ...u, api: makeClient(server.baseUrl, u.token) };
-  const op = await testPrisma.productionOperator.create({ data: { userId: pic.user.id, primaryWorkCenterId: w.wc } });
+  const op = await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: pic.user.id, primaryWorkCenterId: w.wc } });
   ok(await w.lead.api.post(`${V2}/runs/${runId}/build/material-operator`, { operatorId: op.id, expectedRevision: (await card(w, runId)).revision }, key("pic-as")));
   return pic;
 }
@@ -993,7 +993,7 @@ async function reworkScenario({ target, kindService = "UPG_FONDASI_LAPISAN" }) {
 
   // permintaan bahan rework: hanya PIC Bahan yang DITUGASKAN
   const ferdyU = await createTestUser({ roles: ["PRODUCTION_WORKER"] }); const ferdy = { ...ferdyU, api: makeClient(server.baseUrl, ferdyU.token) };
-  await testPrisma.productionOperator.create({ data: { userId: ferdy.user.id, primaryWorkCenterId: w.wc } });
+  await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: ferdy.user.id, primaryWorkCenterId: w.wc } });
   const lines = fondasiRework ? [{ materialId: w.fondasi.id, qty: 1 }, { materialId: w.lapisan.id, qty: 2 }] : [{ materialId: w.lapisan.id, qty: 2 }];
   c = await card(w, run.id);
   for (const [who, tag] of [[w.lead, "lead"], [w.nadya, "gudang-meja"], [ferdy, "pic-lain"], [w.qc, "qc"]]) {

@@ -5,7 +5,7 @@ import { api } from "@/api.js";
 import { friendlyError } from "@/features/production/experience.js";
 import JobDetail from "@/features/production/workerApp/JobDetail.jsx";
 import WorkerAppShell from "@/features/production/workerApp/WorkerAppShell.jsx";
-import { AkunTab, AktivitasTab, BahanTab, KerjaTab } from "@/features/production/workerApp/Tabs.jsx";
+import { AkunTab, AktivitasTab, BahanTab, KerjaTab, exitPathFor } from "@/features/production/workerApp/Tabs.jsx";
 import { ShortageSheet } from "@/features/production/workerApp/workerSheets.jsx";
 import useWorkerJobs from "@/features/production/workerApp/useWorkerJobs.js";
 import { HANDOFF_TITLE, handoffNotice, modeOfLane, tabOf } from "@/features/production/workerApp/workerAppModel.js";
@@ -67,7 +67,7 @@ export default function WorkerLane({ lane = "TABLE", user: userProp = null, onLo
 
   return (
     <WorkerAppShell title={title} subtitle={subtitle} tab={tab} onTab={setTab} badges={badges} hideNav={detailOpen} actionPad={detailOpen}
-      onBack={detailOpen ? closeJob : null} onRefresh={reload} refreshing={loading || reportBusy}>
+      onBack={detailOpen ? closeJob : null} exitTo={exitPathFor(roles, pathname)} onRefresh={reload} refreshing={loading || reportBusy}>
       {handoff && (
         <div role="alert" data-testid="handoff-notice" className="mb-3 flex items-start gap-3 rounded-btn bg-orangebg px-3 py-3 text-[13.5px] text-orange">
           <div className="min-w-0 flex-1"><p className="m-0 font-bold">{handoff.title}</p><p className="m-0 mt-0.5">{handoff.text}</p></div>

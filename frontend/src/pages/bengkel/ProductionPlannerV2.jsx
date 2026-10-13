@@ -51,7 +51,7 @@ function RunDrawer({ item, refs, onClose, onSchedule, onConfirmArrival, onChange
             ["Layanan Sales", salesServicesText(c.salesServices)], ["Merk & ukuran", [item.unit.merk, item.unit.ukuran].filter(Boolean).join(" ") || "—"],
             ["Berat badan", c.weightKg ? `${c.weightKg} kg${c.weightEntries?.length > 1 ? ` (+${c.weightEntries.length - 1})` : ""}` : "—"], ["Posisi tidur", c.sleepPosition || "Belum dicatat Sales"],
             ["Keluhan", c.complaints?.join(", ") || "—"], ["Request", c.request || "—"],
-            ["PIC meja", item.plan?.operator?.name || "—"], ["PIC Corner", item.plan?.cornerOperator?.name || (item.plan?.operator ? "Sama dengan PIC meja" : "—")],
+            ["PIC meja", item.plan?.operator?.name || "—"], ["PIC Corner", item.plan?.cornerOperator?.name || (item.plan?.operator ? "Belum ditetapkan" : "—")],
             ["Waktu berjalan", formatMinutes(item.timer.elapsedMinutes)],
           ].map(([k, v]) => <div key={k} className="rounded-btn bg-inset px-3 py-2"><dt className="m-0 text-ink3">{k}</dt><dd className="m-0 font-semibold text-ink">{v}</dd></div>)}
         </dl>

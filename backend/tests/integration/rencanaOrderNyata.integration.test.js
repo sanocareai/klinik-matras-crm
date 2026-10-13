@@ -51,7 +51,7 @@ async function world() {
 async function mkOperator(role = "PRODUCTION_WORKER", { active = true } = {}) {
   const u = await createTestUser({ roles: [role] });
   await testPrisma.userRole.create({ data: { userId: u.user.id, role } });
-  const op = await testPrisma.productionOperator.create({ data: { userId: u.user.id, primaryWorkCenterId: w.wc.id, active } });
+  const op = await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: u.user.id, primaryWorkCenterId: w.wc.id, active } });
   return { ...u, op };
 }
 
@@ -137,10 +137,17 @@ test("AKAR #3 PIC: referensi dari server — kosong SELALU ada alasan + tautan; 
   const reg = await w.lead.api.post("/api/production/operators", { userId: cand.user.id, primaryWorkCenterId: w.wc.id }); assert.equal(reg.status, 201);
   r = await w.lead.api.get(`${V2}/planning/refs`);
   assert.deepEqual(r.body.operators.map((o) => o.userId), [cand.user.id]); assert.equal(r.body.operators[0].name, cand.user.name); assert.equal(r.body.candidates.length, 0);
-  assert.ok(r.body.problems.every((p) => p.severity === "info"), "tidak ada masalah blok lagi; hanya catatan info");
+  // Pemisahan PIC: operator yang baru didaftarkan BELUM punya lini => belum ada PIC Meja yang bisa dipilih (masalah penghalang, dengan tautan) sampai Admin menetapkan lini; PIC Corner hanya catatan.
+  const noTable = r.body.problems.find((p) => p.code === "NO_TABLE_PIC");
+  assert.ok(noTable && noTable.severity !== "info" && noTable.link === "/bengkel/pengaturan?tab=operator", "belum ada operator berlini Meja Bongkar -> alasan + tautan");
+  assert.equal(r.body.problems.find((p) => p.code === "NO_CORNER_PIC")?.severity, "info");
+  const lanesSet = await w.lead.api.patch(`/api/production/operators/${reg.body.id}`, { workLanes: ["TABLE", "CORNER"] }); assert.equal(lanesSet.status, 200, JSON.stringify(lanesSet.body));
+  r = await w.lead.api.get(`${V2}/planning/refs`);
+  assert.deepEqual(r.body.operators[0].workLanes, ["TABLE", "CORNER"]);
+  assert.ok(r.body.problems.every((p) => p.severity === "info"), "tidak ada masalah blok lagi setelah lini ditetapkan; hanya catatan info");
   // operator nonaktif / akun nonaktif tidak muncul sebagai PIC
   await mkOperator("PRODUCTION_WORKER", { active: false });
-  const gone = await createTestUser({ roles: ["PRODUCTION_WORKER"] }); await testPrisma.productionOperator.create({ data: { userId: gone.user.id, active: true } }); await testPrisma.user.update({ where: { id: gone.user.id }, data: { active: false } });
+  const gone = await createTestUser({ roles: ["PRODUCTION_WORKER"] }); await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: gone.user.id, active: true } }); await testPrisma.user.update({ where: { id: gone.user.id }, data: { active: false } });
   assert.equal((await w.lead.api.get(`${V2}/planning/refs`)).body.operators.length, 1);
   // tanpa workshop aktif
   await testPrisma.workCenter.updateMany({ data: { active: false } });

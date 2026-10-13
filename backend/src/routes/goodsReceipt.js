@@ -24,6 +24,8 @@ import { AccountError } from "../services/finance/accounts.js";
 // Fase 1 integrasi Finance→Gudang: penerimaan boleh bersumber dari PO bahan baku (services/finance/purchaseOrder.js). PO tidak
 // pernah menulis stok; yang dilakukan di sini hanya MEMBACA PO untuk mengisi dokumen, membatasi jumlah baik, dan menilai stok.
 import { siapkanPenerimaanDariPO, validasiBarisPenerimaanPO, periksaPutaway, selesaiPutaway, bentukPO } from "../services/finance/purchaseOrder.js";
+import { wajibUuid } from "../lib/uuidParam.js";
+import { pesanServerAman } from "../lib/galatServerAman.js";
 
 export const goodsReceiptRouter = express.Router();
 goodsReceiptRouter.use(requireAuth);
@@ -36,7 +38,7 @@ function handleErr(err, res) {
   if (err.code === "P2002") return res.status(409).json({ error: "Nomor receipt sudah dipakai" });
   if (err.code === "P2025") return res.status(404).json({ error: "Data tidak ditemukan" });
   console.error("Goods receipt error:", err);
-  return res.status(500).json({ error: "Server error: " + err.message });
+  return res.status(500).json({ error: pesanServerAman(err) });
 }
 
 const SOURCE_TYPES = [
@@ -87,7 +89,7 @@ goodsReceiptRouter.get("/", requirePermission(P.INVENTORY_READ), async (req, res
   }
 });
 
-goodsReceiptRouter.get("/:id", requirePermission(P.INVENTORY_READ), async (req, res) => {
+goodsReceiptRouter.get("/:id", requirePermission(P.INVENTORY_READ), wajibUuid(), async (req, res) => {
   try {
     const receipt = await prisma.goodsReceipt.findUnique({ where: { id: req.params.id }, include: receiptInclude });
     if (!receipt) return res.status(404).json({ error: "Goods receipt tidak ditemukan" });
@@ -156,7 +158,7 @@ goodsReceiptRouter.post("/", requirePermission(P.INVENTORY_WRITE), async (req, r
 // PATCH /api/inventory/goods-receipts/:id
 // Header fields + transisi status MAJU satu langkah pada satu waktu.
 // { sourceReference?, supplier?, expectedDate?, receivedDate?, deliveryNote?, notes?, status? }
-goodsReceiptRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+goodsReceiptRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
   try {
     const existing = await prisma.goodsReceipt.findUnique({ where: { id: req.params.id } });
     if (!existing) return res.status(404).json({ error: "Goods receipt tidak ditemukan" });
@@ -204,7 +206,7 @@ goodsReceiptRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), async (re
 
 // PATCH /api/inventory/goods-receipts/:id/lines/:lineId
 // Isi hasil kedatangan/inspeksi per baris. { receivedQty?, acceptedQty?, rejectedQty?, condition?, notes? }
-goodsReceiptRouter.patch("/:id/lines/:lineId", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+goodsReceiptRouter.patch("/:id/lines/:lineId", requirePermission(P.INVENTORY_WRITE), wajibUuid("id", "lineId"), async (req, res) => {
   try {
     const receipt = await prisma.goodsReceipt.findUnique({ where: { id: req.params.id } });
     if (!receipt) return res.status(404).json({ error: "Goods receipt tidak ditemukan" });
@@ -262,7 +264,7 @@ goodsReceiptRouter.patch("/:id/lines/:lineId", requirePermission(P.INVENTORY_WRI
 // receipt, goodsReceiptId menempel) — lalu menutup receipt jadi COMPLETED.
 // Dibungkus transaksi: kalau satu baris gagal, tidak ada ledger yang
 // setengah tertulis.
-goodsReceiptRouter.post("/:id/putaway", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+goodsReceiptRouter.post("/:id/putaway", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
   try {
     const preCheck = await prisma.goodsReceipt.findUnique({ where: { id: req.params.id } });
     if (!preCheck) return res.status(404).json({ error: "Goods receipt tidak ditemukan" });
@@ -333,7 +335,7 @@ goodsReceiptRouter.post("/:id/putaway", requirePermission(P.INVENTORY_WRITE), as
 });
 
 // PATCH /api/inventory/goods-receipts/:id/reject { reason }
-goodsReceiptRouter.patch("/:id/reject", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+goodsReceiptRouter.patch("/:id/reject", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
   try {
     const preCheck = await prisma.goodsReceipt.findUnique({ where: { id: req.params.id } });
     if (!preCheck) return res.status(404).json({ error: "Goods receipt tidak ditemukan" });

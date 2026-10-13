@@ -2264,6 +2264,9 @@ model ProductionOperator {
   // kosong sampai ada kebutuhan nyata, BUKAN diisi tebakan).
   employeeCode String? @map("employee_code")
 
+  // Lini kerja yang boleh dijadikan PIC: "TABLE" (Meja Bongkar) dan/atau "CORNER" (Corner & Finishing). BERMULA KOSONG — ditetapkan eksplisit Admin lewat Pengaturan Operator (bukan migration berbasis nama). PIC Bahan tidak memakai kolom ini.
+  workLanes String[] @default([]) @map("work_lanes")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 

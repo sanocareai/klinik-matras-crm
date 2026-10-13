@@ -53,7 +53,7 @@ export default function UnitV1Stage({ data, roles, onData, onChanged }) {
   }
   async function openAssign() {
     setAssign((a) => ({ ...a, open: true }));
-    if (!assign.refs) { try { const [w, o] = await Promise.all([api.getWorkCenters(), api.getProductionOperatorChoices()]); setAssign((a) => ({ ...a, refs: { wcs: w.workCenters || [], ops: (o.operators || []).filter((x) => x.active) } })); } catch (e) { setMsg({ kind: "error", text: e.message }); } }
+    if (!assign.refs) { try { const [w, o] = await Promise.all([api.getWorkCenters(), api.getProductionOperatorChoices({ stageId: cur?.stage?.id })]); setAssign((a) => ({ ...a, refs: { wcs: w.workCenters || [], ops: (o.operators || []).filter((x) => x.active), lane: o.lane || null } })); } catch (e) { setMsg({ kind: "error", text: e.message }); } }
   }
   const stage = cur?.stage; const photoNeeded = needsPhotoOf(st);
   const label = stage?.labelId;
@@ -121,7 +121,7 @@ export default function UnitV1Stage({ data, roles, onData, onChanged }) {
           {!assign.open ? <Button size="sm" variant="secondary" className="w-full" data-testid="v1-assign-open" onClick={openAssign}>Tugaskan work center / operator</Button> : (
             <div className="space-y-2">
               <label className="block text-[11.5px] font-semibold text-ink2">Work center<select data-testid="v1-assign-wc-select" className={`${INPUT} mt-1`} value={assign.wc} onChange={(e) => setAssign({ ...assign, wc: e.target.value })}><option value="">— Tidak ditugaskan —</option>{(assign.refs?.wcs || []).map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}</select></label>
-              <label className="block text-[11.5px] font-semibold text-ink2">Operator<select data-testid="v1-assign-op-select" className={`${INPUT} mt-1`} value={assign.op} onChange={(e) => setAssign({ ...assign, op: e.target.value })}><option value="">— Tidak ditugaskan —</option>{(assign.refs?.ops || []).map((o) => <option key={o.id} value={o.id}>{o.user?.name}</option>)}</select></label>
+              <label className="block text-[11.5px] font-semibold text-ink2">Operator<select data-testid="v1-assign-op-select" className={`${INPUT} mt-1`} value={assign.op} onChange={(e) => setAssign({ ...assign, op: e.target.value })}><option value="">— Tidak ditugaskan —</option>{(assign.refs?.ops || []).map((o) => <option key={o.id} value={o.id}>{o.user?.name}</option>)}{data.assignedOperator?.id && !(assign.refs?.ops || []).some((o) => o.id === data.assignedOperator.id) && <option value={data.assignedOperator.id}>{data.assignedOperator.name} (belum berlini {assign.refs?.lane === "CORNER" ? "Corner & Finishing" : "Meja Bongkar"})</option>}</select>{assign.refs?.lane && <span data-testid="v1-assign-lane" className="mt-1 block text-[11px] font-normal text-ink3">Hanya operator berlini {assign.refs.lane === "CORNER" ? "Corner & Finishing" : "Meja Bongkar"} untuk tahap ini.</span>}</label>
               <div className="flex gap-2"><Button size="sm" variant="ghost" className="flex-1" onClick={() => setAssign({ ...assign, open: false })}>Batal</Button>
                 <Button size="sm" className="flex-1" data-testid="v1-assign-save" disabled={busy} onClick={() => run(async () => { await api.assignUnitStage(unit.id, stage.id, { workCenterId: assign.wc || null, operatorId: assign.op || null }); setAssign({ ...assign, open: false }); }, "Penugasan tersimpan.")}>Simpan</Button></div>
             </div>

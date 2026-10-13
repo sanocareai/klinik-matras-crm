@@ -170,6 +170,9 @@ export function AktivitasTab({ jobs, onOpen }) {
 
 // ---------------------------------------------------------------- Akun
 const ROLE_LABEL = { PRODUCTION_WORKER: "Operator Produksi", PRODUCTION_LEAD: "Production Lead", QC_LEAD: "QC", WAREHOUSE: "Gudang", PRODUCTION_DOCUMENTER: "Dokumenter", ADMIN: "Admin", OWNER: "Owner" };
+/** Tujuan tombol "Kembali ke SANSS" di header Aplikasi Meja/Corner/QC/Dokumentasi: hanya peran dengan akses workspace; null untuk pekerja lantai. */
+export const exitPathFor = (roles, pathname) => ((roles || []).some((r) => ["ADMIN", "OWNER", "PRODUCTION_LEAD"].includes(r)) ? (lastActiveTabPath(pathname) || "/portal") : null);
+
 export function AkunTab({ user, roles, lane, pathname, onLogout, navigate, currentKey = null, extra = null, onLeave = null }) {
   const modes = allowedModes(roles);
   const desktopOk = roles.some((r) => ["ADMIN", "OWNER", "PRODUCTION_LEAD"].includes(r));

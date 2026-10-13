@@ -13,6 +13,8 @@ import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js"
 import { prisma } from "../db.js";
 import { postStockMovement, lockRowForUpdate } from "../services/inventoryLedger.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
+import { wajibUuid } from "../lib/uuidParam.js";
+import { pesanServerAman } from "../lib/galatServerAman.js";
 
 export const stockAdjustmentRouter = express.Router();
 stockAdjustmentRouter.use(requireAuth);
@@ -25,7 +27,7 @@ function handleErr(err, res) {
   if (err.code === "P2002") return res.status(409).json({ error: "Nomor adjustment sudah dipakai" });
   if (err.code === "P2025") return res.status(404).json({ error: "Data tidak ditemukan" });
   console.error("Stock adjustment error:", err);
-  return res.status(500).json({ error: "Server error: " + err.message });
+  return res.status(500).json({ error: pesanServerAman(err) });
 }
 
 const ADJUSTMENT_TYPES = [
@@ -62,7 +64,7 @@ stockAdjustmentRouter.get("/", requirePermission(P.INVENTORY_READ), async (req, 
   }
 });
 
-stockAdjustmentRouter.get("/:id", requirePermission(P.INVENTORY_READ), async (req, res) => {
+stockAdjustmentRouter.get("/:id", requirePermission(P.INVENTORY_READ), wajibUuid(), async (req, res) => {
   try {
     const request = await prisma.stockAdjustmentRequest.findUnique({ where: { id: req.params.id }, include: requestInclude });
     if (!request) return res.status(404).json({ error: "Adjustment request tidak ditemukan" });
@@ -108,7 +110,7 @@ stockAdjustmentRouter.post("/", requirePermission(P.INVENTORY_WRITE), async (req
 // PATCH /api/inventory/adjustments/:id — transisi DRAFT → WAITING_APPROVAL →
 // APPROVED (POSTED hanya lewat /post, karena menulis ledger).
 // { status?, reason?, notes? }
-stockAdjustmentRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+stockAdjustmentRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
   try {
     const preCheck = await prisma.stockAdjustmentRequest.findUnique({ where: { id: req.params.id } });
     if (!preCheck) return res.status(404).json({ error: "Adjustment request tidak ditemukan" });
@@ -168,7 +170,7 @@ stockAdjustmentRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), async 
 // berjenjang), posting delta lama itu bisa mendorong saldo ke negatif tanpa
 // terdeteksi. postStockMovement() sekarang mengunci material & mengecek
 // ulang saldo BERJALAN persis sebelum menulis, bukan beforeQty basi.
-stockAdjustmentRouter.post("/:id/post", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+stockAdjustmentRouter.post("/:id/post", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
   try {
     const preCheck = await prisma.stockAdjustmentRequest.findUnique({ where: { id: req.params.id } });
     if (!preCheck) return res.status(404).json({ error: "Adjustment request tidak ditemukan" });
@@ -202,7 +204,7 @@ stockAdjustmentRouter.post("/:id/post", requirePermission(P.INVENTORY_WRITE), as
 });
 
 // PATCH /api/inventory/adjustments/:id/cancel { reason }
-stockAdjustmentRouter.patch("/:id/cancel", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+stockAdjustmentRouter.patch("/:id/cancel", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
   try {
     const request = await prisma.stockAdjustmentRequest.findUnique({ where: { id: req.params.id } });
     if (!request) return res.status(404).json({ error: "Adjustment request tidak ditemukan" });

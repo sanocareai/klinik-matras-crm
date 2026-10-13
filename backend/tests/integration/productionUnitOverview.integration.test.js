@@ -34,8 +34,8 @@ async function world() {
     createTestUser({ roles: ["QC_LEAD"] }), createTestUser({ roles: ["WAREHOUSE"] }), createTestUser({ roles: ["DRIVER"] }),
   ]);
   const workCenter = await testPrisma.workCenter.create({ data: { code: `WC-P9C-${++seq}`, name: "Workshop P9C" } });
-  const nadyaOp = await testPrisma.productionOperator.create({ data: { userId: nadya.user.id, primaryWorkCenterId: workCenter.id } });
-  const cornerOp = await testPrisma.productionOperator.create({ data: { userId: corner.user.id, primaryWorkCenterId: workCenter.id } });
+  const nadyaOp = await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: nadya.user.id, primaryWorkCenterId: workCenter.id } });
+  const cornerOp = await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: corner.user.id, primaryWorkCenterId: workCenter.id } });
   const warehouse = await testPrisma.warehouse.create({ data: { code: `WH-P9C-${++seq}`, name: "Gudang P9C" } });
   const rcv = await testPrisma.storageLocation.create({ data: { warehouseId: warehouse.id, zone: "RCV", locationType: "RECEIVING_AREA", code: `RCV-P9C-${++seq}` } });
   const service = await testPrisma.serviceCatalog.findFirstOrThrow({ where: { code: "UPG_FONDASI_LAPISAN" } });

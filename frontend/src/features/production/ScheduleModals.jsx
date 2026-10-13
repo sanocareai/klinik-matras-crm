@@ -7,6 +7,7 @@ import { PRIORITIES, friendlyError, stationCapacity } from "@/features/productio
 import { mejaLabel as stationLabel } from "@/features/production/unitCardModel.js";
 import { priorityOf, rankOfView } from "@/features/production/productionLabels.js";
 import { cornerBodyOf, needsCornerChoice } from "@/features/production/unitCardModel.js";
+import { LANE, laneOptions, optionText } from "@/features/production/picLanes.js";
 
 // P9 UX Realignment — modal jadwal & konfirmasi kedatangan dipindah dari ProductionPlannerV2.jsx supaya dipakai BERSAMA
 // Status Produksi (jalan pintas dari Unit 360) dan Rencana Produksi (fallback tombol Jadwalkan/Pindahkan untuk drag-drop).
@@ -238,14 +239,16 @@ export function ScheduleModal({ target, board, date, refs, onClose, onDone, onRe
         <label className="text-[12.5px] text-ink3">PIC meja (bongkar & restorasi)
           <select data-testid="schedule-pic" className={field} value={form.operatorId} onChange={(e) => set({ operatorId: e.target.value })}>
             <option value="">{picDefault?.active ? `Ikuti PIC ${stationLabel(form.stationCode)}: ${picDefault.name} (bawaan)` : plan?.operator?.name ? `Tetap: ${plan.operator.name}` : "— pilih —"}</option>
-            {refs.operators.map((o) => <option key={o.id} value={o.id}>{o.name || o.user?.name || o.employeeCode}</option>)}
+            {laneOptions(refs.operators, LANE.TABLE, plan?.operator).map((o) => <option key={o.id} value={o.id}>{optionText(o, LANE.TABLE)}</option>)}
           </select>
           {form.operatorId && picDefault?.active && form.operatorId !== picDefault.operatorId && <span data-testid="pic-override" className="mt-1 block text-[11.5px] text-orange">Berbeda dari PIC bawaan meja — hanya untuk order ini.</span>}
         </label>
-        <label className="text-[12.5px] text-ink3">PIC Corner (jahit) — opsional
-          <select className={field} value={form.cornerOperatorId} onChange={(e) => set({ cornerOperatorId: e.target.value })}>
-            <option value="">Sama dengan PIC meja</option>{refs.operators.map((o) => <option key={o.id} value={o.id}>{o.name || o.user?.name || o.employeeCode}</option>)}
+        <label className="text-[12.5px] text-ink3">PIC Corner & Finishing — opsional
+          <select data-testid="schedule-corner-pic" className={field} value={form.cornerOperatorId} onChange={(e) => set({ cornerOperatorId: e.target.value })}>
+            <option value="">Belum ditetapkan</option>
+            {laneOptions(refs.operators, LANE.CORNER, plan?.cornerOperator).map((o) => <option key={o.id} value={o.id}>{optionText(o, LANE.CORNER)}</option>)}
           </select>
+          {!form.cornerOperatorId && !plan?.cornerOperator?.id && <span data-testid="corner-pic-unset" className="mt-1 block text-[11.5px] text-ink3">PIC Corner terpisah dari PIC meja — tidak otomatis memakai PIC meja. Bisa ditetapkan nanti dari tab Corner.</span>}
         </label>
         <div data-testid="schedule-target" className="space-y-1.5 rounded-btn border border-line px-3 py-2 sm:col-span-2">
           <p className="m-0 text-[12.5px] font-semibold text-ink2">Target produksi</p>

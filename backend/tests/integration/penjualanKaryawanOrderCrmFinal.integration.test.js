@@ -111,7 +111,7 @@ async function siapkanRencana() {
   const workCenter = await testPrisma.workCenter.create({ data: { code: `WC-PKR-${randomUUID().slice(0, 6)}`, name: "Workshop Utama" } });
   const u = await createTestUser({ roles: ["PRODUCTION_WORKER"] });
   await testPrisma.userRole.create({ data: { userId: u.user.id, role: "PRODUCTION_WORKER" } });
-  const operator = await testPrisma.productionOperator.create({ data: { userId: u.user.id, primaryWorkCenterId: workCenter.id, active: true } });
+  const operator = await testPrisma.productionOperator.create({ data: { workLanes: ["TABLE", "CORNER"], userId: u.user.id, primaryWorkCenterId: workCenter.id, active: true } });
   const lead = await createTestUser({ roles: ["PRODUCTION_LEAD"] });
   return { workCenter, operator, lead: makeClient(server.baseUrl, lead.token) };
 }
