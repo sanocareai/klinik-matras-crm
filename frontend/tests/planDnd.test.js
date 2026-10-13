@@ -261,3 +261,23 @@ test("tipografi kartu: nama customer 16px; label ≥ 12px; nilai 13–14px; badg
   assert.match(plan, /w-\[72px\] shrink-0 text-\[12px\] font-semibold text-ink3/, "label baris 12px");
   assert.match(plan, /clamp="line-clamp-3" title=\{sales/); assert.match(plan, /clamp="line-clamp-4" title=\{note/); assert.match(plan, /clamp="line-clamp-2" title=\{kasurParts/);
 });
+
+test("gulir otomatis PROGRESIF: halus di batas zona tepi, cepat di tepi layar, nol di tengah; simetris atas/bawah (seret sentuh di HP dengan backlog ±6000px)", () => {
+  const baris = HOOK.split("\n");
+  const awal = baris.findIndex((l) => l.startsWith("export const EDGE_PX"));
+  const akhir = baris.findIndex((l, i) => i > awal && l === "}" && baris.slice(awal, i + 1).join("\n").includes("export function autoScrollDelta"));
+  assert.ok(awal >= 0 && akhir > awal, "blok konstanta + autoScrollDelta ditemukan");
+  const src = baris.slice(awal, akhir + 1).join("\n").replace(/export /g, "");
+  const { EDGE_PX, SCROLL_MIN, SCROLL_MAX, autoScrollDelta } = new Function(`${src}\nreturn { EDGE_PX, SCROLL_MIN, SCROLL_MAX, autoScrollDelta };`)();
+  const top = 60, bottom = 844;
+  assert.equal(autoScrollDelta(400, top, bottom), 0, "di tengah layar tidak menggulir");
+  assert.equal(autoScrollDelta(bottom - EDGE_PX, top, bottom), 0, "tepat di batas zona belum menggulir");
+  assert.equal(autoScrollDelta(bottom - EDGE_PX + 1, top, bottom), SCROLL_MIN + Math.round((SCROLL_MAX - SCROLL_MIN) / EDGE_PX), "baru masuk zona = pelan");
+  assert.equal(autoScrollDelta(bottom, top, bottom), SCROLL_MAX, "di tepi bawah = paling cepat");
+  assert.equal(autoScrollDelta(bottom + 40, top, bottom), SCROLL_MAX, "melewati tepi tidak melebihi batas atas kecepatan");
+  assert.equal(autoScrollDelta(top, top, bottom), -SCROLL_MAX, "di tepi atas = paling cepat, ke atas");
+  assert.equal(autoScrollDelta(top + EDGE_PX - 1, top, bottom), -(SCROLL_MIN + Math.round((SCROLL_MAX - SCROLL_MIN) / EDGE_PX)), "simetris di zona atas");
+  let prev = 0; for (let y = bottom - EDGE_PX; y <= bottom; y += 5) { const d = autoScrollDelta(y, top, bottom); assert.ok(d >= prev, "monoton naik makin dalam"); prev = d; }
+  assert.ok(SCROLL_MAX * 60 * 2 >= 6000, "6000px dapat ditempuh dalam <= 2 detik pada 60 fps");
+  assert.match(HOOK, /const dy = autoScrollDelta\(y, top, bottom\);/);
+});
