@@ -15,7 +15,9 @@ const ICON = {
 export default function ReadinessBadge({ order, className }) {
   const ukuranCustomWajibSejak = useUkuranCustomWajibSejak();
   const hasil = evaluateReadiness(order, { ukuranCustomWajibSejak });
-  if (!hasil) return null;
+  // Order operasional Penjualan Karyawan: nilai Rp0, tanpa sales pemegang, pembeli = karyawan — "kelengkapan data Sales" tidak berlaku
+  // (kelengkapan produksi ada di status "Perlu dilengkapi" pada label PKR). Menampilkan blocker Sales di sini menyesatkan.
+  if (!hasil || order?.penjualanKaryawan) return null;
 
   const meta = READINESS_META[hasil.state];
   const Icon = ICON[hasil.state];

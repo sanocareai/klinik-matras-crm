@@ -30,6 +30,10 @@ import { useKlaimLunasAktif } from "@/features/klaim/useKlaimLunasAktif.js";
 import OrderTimelineDrawer from "../features/orders/OrderTimelineDrawer.jsx";
 import ReadinessBadge from "../features/orders/ReadinessBadge.jsx";
 import { LabelOrderPkr, BadgeBayarPkr } from "../features/finance/PkrOrderCrm.jsx";
+import { DaftarUnitPkr, SubBarisUnitPkr, TombolPerluasUnit, RingkasUnitPkr } from "../features/orders/PkrUnitBaris.jsx";
+import { UNIT_STATUS_OPSI, punyaUnitPkr } from "../features/orders/pkrUnitLogic.js";
+import { UnitOverviewDrawer } from "@/features/production/UnitOverviewDrawer.jsx";
+import { useOpenParam } from "@/hooks/useHubParam.js";
 import { JOB_STATUS_REAL } from "../features/armada/jobStatus.js";
 import { REVISION_STATUS } from "../features/armada/revisionStatus.js";
 
@@ -298,7 +302,7 @@ function bolehDibukaLagiUntukPengiriman(order) {
   return order.status === "DELIVERED" && order.category !== "SEWA" && !order.deliveryJob;
 }
 
-function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageChange, onPaymentChange, paymentLocked, onReopenForDelivery, reopeningId }) {
+function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageChange, onPaymentChange, paymentLocked, onReopenForDelivery, reopeningId, onBukaUnit }) {
   const mandek = isMandek(order);
   const nama = order.customerName || order.customerPhone || "Tanpa nama";
   // D-030 (revisi 20 Agustus 2026): SELURUH kartu bisa diklik untuk buka
@@ -338,6 +342,7 @@ function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageC
           tiap select dapat lebar PENUH kartu (~246px) — aman untuk label
           sepanjang apa pun yang realistis, tidak perlu hitung ulang kalau
           ada label baru lagi nanti. */}
+      {punyaUnitPkr(order) && <DaftarUnitPkr pkr={order.penjualanKaryawan} onBuka={onBukaUnit} className="mt-2" />}
       <div className="mt-2 flex flex-col gap-1.5">
         <StatusSelect order={order} onChange={onStatusChange} className="w-full" />
         <OrderMilestoneBadge milestone={order.milestone} />
@@ -493,6 +498,9 @@ export default function Orders() {
   const [fPenjual, setFPenjual] = useState(""); // "" semua | TIM_SALES | KARYAWAN (Penjualan Karyawan, di luar tim Sales)
   const [fPromo, setFPromo]   = useState("");
   const [fPipeline, setFPipeline] = useState("");
+  const [fStatusUnit, setFStatusUnit] = useState(""); // saringan memakai STATUS UNIT (order multi-unit Penjualan Karyawan)
+  const [unitTerbuka, setUnitTerbuka] = useState(() => new Set()); // id order yang sub-baris unitnya diperluas (tabel desktop)
+  const [unitId, setUnitId] = useOpenParam("unit"); // ?unit=<id> → Unit 360 terbuka (muat ulang / tautan langsung aman)
   const [promos, setPromos]   = useState([]);
   const [hanyaMandek, setHanyaMandek] = useState(false);
   const [timelineOrder, setTimelineOrder] = useState(null);
@@ -550,6 +558,7 @@ export default function Orders() {
         promoId: fPromo || undefined,
         pipelineStage: fPipeline || undefined,
         penjualan: fPenjual || undefined,
+        unitStatus: fStatusUnit || undefined,
         ...toApiParams(range),
       });
       setData(res);
@@ -559,7 +568,7 @@ export default function Orders() {
     } finally {
       setLoading(false);
     }
-  }, [debounced, fStatus, fKategori, fBayar, fSales, fPromo, fPipeline, fPenjual, range]);
+  }, [debounced, fStatus, fKategori, fBayar, fSales, fPromo, fPipeline, fPenjual, fStatusUnit, range]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -576,6 +585,15 @@ export default function Orders() {
     if (order) setTimelineOrder(order);
     setSearchParams((prev) => { prev.delete("id"); return prev; }, { replace: true });
   }, [searchParams, data, setSearchParams]);
+
+  // Sub-baris unit (Penjualan Karyawan): buka/tutup di tabel desktop; klik unit → Unit 360 (drawer rincian order ditutup dulu agar tidak bertumpuk).
+  function toggleUnit(orderId) {
+    setUnitTerbuka((prev) => { const n = new Set(prev); if (n.has(orderId)) n.delete(orderId); else n.add(orderId); return n; });
+  }
+  function bukaUnit(id) {
+    setTimelineOrder(null); setTimelineTab(null);
+    setUnitId(id);
+  }
 
   function gantiView(v) {
     setView(v);
@@ -711,7 +729,7 @@ export default function Orders() {
   // dari badge itu yang menandai riwayat SEPANJANG WAKTU pelanggannya.
   const complaintCount = itemsAktif.filter((o) => o.hasComplaint).length;
   const complaintRate = itemsAktif.length > 0 ? Math.round((complaintCount / itemsAktif.length) * 1000) / 10 : null;
-  const adaFilter = !!(debounced || fStatus || fKategori || fBayar || fSales || fPromo || fPipeline || fPenjual || hanyaMandek);
+  const adaFilter = !!(debounced || fStatus || fStatusUnit || fKategori || fBayar || fSales || fPromo || fPipeline || fPenjual || hanyaMandek);
 
   function bukaChat(order) {
     if (order.conversationId) navigate(`/inbox?conv=${order.conversationId}`);
@@ -810,6 +828,7 @@ export default function Orders() {
         promoId: fPromo || undefined,
         pipelineStage: fPipeline || undefined,
         penjualan: fPenjual || undefined,
+        unitStatus: fStatusUnit || undefined,
         includeActiveComplaint: fStatus === "PROCESSING" && sertakanKomplain ? "true" : undefined,
         limit: 5000,
         ...toApiParams(range),
@@ -1047,7 +1066,7 @@ export default function Orders() {
               <Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink3" />
               <input
                 type="search" value={cari} onChange={(e) => setCari(e.target.value)}
-                placeholder="Cari ID, nama, HP…"
+                placeholder="Cari ID, unit, PKR, nama, HP…"
                 aria-label="Cari order"
                 className="h-8 w-64 rounded-lg bg-surface pl-8 pr-7 text-[13px] text-ink placeholder:text-ink3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40"
               />
@@ -1069,6 +1088,13 @@ export default function Orders() {
               }))}
               placeholder="Semua Status"
               ariaLabel="Filter status order"
+            />
+            <FilterDropdown
+              icon={FILTER_TONE.status.icon} activeColor={FILTER_TONE.status.hex}
+              value={fStatusUnit} onChange={setFStatusUnit}
+              options={UNIT_STATUS_OPSI}
+              placeholder="Semua Status Unit"
+              ariaLabel="Filter status unit produksi"
             />
             <FilterDropdown
               icon={FILTER_TONE.kategori.icon} activeColor={FILTER_TONE.kategori.hex}
@@ -1194,7 +1220,7 @@ export default function Orders() {
           <p className="mb-3 text-xs text-ink3">
             {items.length.toLocaleString("id-ID")} order cocok dengan filter ·{" "}
             <button type="button"
-              onClick={() => { setCari(""); setFStatus(""); setFKategori(""); setFBayar(""); setFSales(""); setFPromo(""); setFPipeline(""); setHanyaMandek(false); }}
+              onClick={() => { setCari(""); setFStatus(""); setFStatusUnit(""); setFKategori(""); setFBayar(""); setFSales(""); setFPromo(""); setFPipeline(""); setHanyaMandek(false); }}
               className="font-semibold text-accent hover:underline">
               Reset filter
             </button>
@@ -1301,7 +1327,7 @@ export default function Orders() {
                   </div>
                   <div className="flex max-h-[calc(100vh-420px)] min-h-24 flex-1 flex-col gap-2 overflow-y-auto pr-0.5">
                     {kolom.map((o) => (
-                      <OrderCard key={o.id} order={o} onOpenChat={bukaChat} onOpenTimeline={setTimelineOrder} onStatusChange={handleStatusChange} onStageChange={handleStageChange} onPaymentChange={handlePaymentChange} paymentLocked={o.paymentStatus === "LUNAS" && !canEditLunas} onReopenForDelivery={handleReopenForDelivery} reopeningId={reopeningId} />
+                      <OrderCard key={o.id} order={o} onOpenChat={bukaChat} onOpenTimeline={setTimelineOrder} onStatusChange={handleStatusChange} onStageChange={handleStageChange} onPaymentChange={handlePaymentChange} paymentLocked={o.paymentStatus === "LUNAS" && !canEditLunas} onReopenForDelivery={handleReopenForDelivery} reopeningId={reopeningId} onBukaUnit={bukaUnit} />
                     ))}
                     {kolom.length === 0 && (
                       <div className="flex min-h-16 items-center justify-center rounded-xl border-dashed border-line px-2 py-3 text-center text-[11px] text-ink3">
@@ -1361,8 +1387,8 @@ export default function Orders() {
                   const layananProduk = (o.items || []).map((it) => it.layananName).filter(Boolean).join(", ")
                     || PRODUCT_TYPE_LABELS[o.productType] || "";
                   return (
+                    <React.Fragment key={o.id}>
                     <tr
-                      key={o.id}
                       onClick={() => setTimelineOrder(o)}
                       className="cursor-pointer border-b border-line last:border-0 hover:bg-hovertint"
                     >
@@ -1370,6 +1396,12 @@ export default function Orders() {
                         {o.orderNumber || "—"}
                         {o.staffSeller && <span className="mt-0.5 block whitespace-normal font-sans text-[10px] font-semibold text-accent" data-testid="label-penjualan-karyawan">Penjualan Karyawan · {o.staffSeller.name}</span>}
                         <LabelOrderPkr pkr={o.penjualanKaryawan} className="mt-0.5" />
+                        {punyaUnitPkr(o) && (
+                          <div className="mt-1 whitespace-normal font-sans">
+                            <RingkasUnitPkr pkr={o.penjualanKaryawan} />
+                            <TombolPerluasUnit order={o} terbuka={unitTerbuka.has(o.id)} onToggle={toggleUnit} />
+                          </div>
+                        )}
                       </td>
                       <td className="px-3 py-2.5">
                         <div className="flex items-center gap-2">
@@ -1471,6 +1503,14 @@ export default function Orders() {
                         </div>
                       </td>
                     </tr>
+                    {punyaUnitPkr(o) && unitTerbuka.has(o.id) && (
+                      <tr className="border-b border-line bg-inset/40">
+                        <td colSpan={15} className="px-3 py-2">
+                          <div className="overflow-x-auto"><SubBarisUnitPkr pkr={o.penjualanKaryawan} onBuka={bukaUnit} /></div>
+                        </td>
+                      </tr>
+                    )}
+                    </React.Fragment>
                   );
                 })}
               </tbody>
@@ -1496,7 +1536,9 @@ export default function Orders() {
         onOpenChat={bukaChat}
         onPaymentRecorded={load}
         canEditLunas={canEditLunas}
+        onBukaUnit={bukaUnit}
       />
+      {unitId && <UnitOverviewDrawer unitId={unitId} onClose={() => setUnitId(null)} onChanged={load} />}
     </PageContainer>
   );
 }

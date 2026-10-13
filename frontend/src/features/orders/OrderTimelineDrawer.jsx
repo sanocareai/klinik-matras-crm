@@ -1,4 +1,7 @@
 import { formatUkuranKasur } from "@/utils/ukuranKasur.js";
+import { DaftarUnitPkr } from "./PkrUnitBaris.jsx";
+import { punyaUnitPkr } from "./pkrUnitLogic.js";
+import { BadgeBayarPkr } from "@/features/finance/PkrOrderCrm.jsx";
 import React, { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
@@ -1030,7 +1033,7 @@ const TONE = {
 // (bukan dihapus dari signature) supaya ProductionOrders.jsx/ArmadaOrders.jsx
 // yang masih mengirimnya tidak perlu ikut diubah — cuma jadi no-op di sini.
 // `tabAwal` (opsional): buka langsung di tab itu ("pembayaran" | "dokumentasi") — jalan pintas dari badge pembayaran di daftar order.
-export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaymentRecorded, canEditLunas = false, canEditStatus: _canEditStatus = false, tabAwal = null }) {
+export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaymentRecorded, canEditLunas = false, canEditStatus: _canEditStatus = false, tabAwal = null, onBukaUnit }) {
   const klaimGateAktifDrawer = useKlaimLunasAktif() === true;
   const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(false);
@@ -1172,15 +1175,20 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
             </div>
             <div className="rounded-xl bg-surface p-2.5 shadow-card">
               <p className="text-[10px] font-medium uppercase tracking-wide text-ink3">Pembayaran</p>
-              <PaymentStatusSelect
-                order={o}
-                onChange={handlePaymentStatusChange}
-                locked={o.paymentStatus === "LUNAS" && !canEditLunas}
-                className="mt-1"
-              />
+              {o.penjualanKaryawan ? (
+                // Order Penjualan Karyawan: status bayar dibaca dari ledger PKR di Finance, bukan kolom Order.
+                <div className="mt-1"><BadgeBayarPkr pkr={o.penjualanKaryawan} /></div>
+              ) : (
+                <PaymentStatusSelect
+                  order={o}
+                  onChange={handlePaymentStatusChange}
+                  locked={o.paymentStatus === "LUNAS" && !canEditLunas}
+                  className="mt-1"
+                />
+              )}
             </div>
             {[
-              { l: "Nilai", v: formatRupiah(nilaiBersihOrder(o)) },
+              { l: "Nilai", v: o.penjualanKaryawan ? "Di Finance (Penjualan Karyawan)" : formatRupiah(nilaiBersihOrder(o)) },
               { l: "Lama di status", v: `${o.daysInStatus} hari${o.daysInStatusPerkiraan ? "*" : ""}` },
             ].map((k) => (
               <div key={k.l} className="rounded-xl bg-surface p-2.5 shadow-card">
@@ -1190,9 +1198,18 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
             ))}
           </div>
 
-          <div className="mt-3">
-            <ReadinessPanel order={o} onOpenChat={(ord) => { onOpenChat(ord); onClose(); }} />
-          </div>
+          {!o.penjualanKaryawan && (
+            <div className="mt-3">
+              <ReadinessPanel order={o} onOpenChat={(ord) => { onOpenChat(ord); onClose(); }} />
+            </div>
+          )}
+
+          {punyaUnitPkr(o) && (
+            <section className="mt-3 rounded-xl bg-surface p-2.5 shadow-card" aria-label="Unit produksi" data-testid="drawer-unit-pkr">
+              <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-ink3">Unit produksi</p>
+              <DaftarUnitPkr pkr={o.penjualanKaryawan} onBuka={onBukaUnit} />
+            </section>
+          )}
 
           <div className="mt-3">
             <DetailPesananSection order={o} onChanged={onPaymentRecorded} />
