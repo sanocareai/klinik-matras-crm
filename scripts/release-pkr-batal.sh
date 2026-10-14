@@ -248,9 +248,12 @@ MAPS_KEY="$(sed -n 's/^VITE_GOOGLE_MAPS_JS_KEY=//p' "$PERSIST/frontend/.env" | t
 for s1 in "Pembayaran harus ditangani Finance dahulu" "Buka Riwayat Pembayaran" "Produksi atau pengiriman sudah berjalan" "Yang akan terjadi" "Alasan pembatalan"; do [ -n "$(grep -lF "$s1" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat teks fitur: ${s1}"; done
 for s2 in "Mode rute Produksi" "Menunggu penentuan alur Produksi" "Konfirmasi kesiapan fisik" "Edit Data Customer" "Lengkapi Data Customer" "Riwayat Perubahan" "Customer & penerima" "Dijual oleh" "Buat Nota Kredit" "Nilai bersih" "Unit Produksi" "Item Penjualan & Pemenuhan" "Piutang & Refund" "Katalog Item PKR" "Kirim sebagian" "Penjualan Karyawan" "Koreksi Order" "Tambah Pesanan Customer" "Gabungkan Order Duplikat" "Histori dari order lama" "Barang yang dibawa"; do [ -n "$(grep -lF "$s2" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru kehilangan teks fitur lama: ${s2}"; done
 [ -z "$(grep -lF "Hitung Kas" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru memuat Hitung Kas (halamannya belum ada)"
-! grep -lF "Alasan membatalkan" "$NEW_DIR"/frontend/dist/assets/*.js >/dev/null 2>&1 || die "dist baru masih memuat teks window.prompt lama ('Alasan membatalkan ...')"
+# Hanya dua kalimat prompt PKR yang dihapus rilis ini (halaman Finance lain di luar lingkup masih memakai window.prompt dengan kalimat serupa).
+for s3 in "pembayaran yang sudah ada harus dibatalkan dulu" "Alasan membatalkan pembayaran ini? Jurnalnya akan dibalik:"; do
+  ! grep -lF "$s3" "$NEW_DIR"/frontend/dist/assets/*.js >/dev/null 2>&1 || die "dist baru masih memuat kalimat window.prompt PKR lama: ${s3}"
+done
 [ "$NEW_INDEX" != "$PREV_INDEX" ] || die "frontend berubah tetapi bundel baru identik dengan lama (tidak diharapkan)"
-ok "dist baru ${NEW_INDEX} (lama ${PREV_INDEX}); teks fitur baru + 21 teks fitur lama ada; teks prompt lama hilang"
+ok "dist baru ${NEW_INDEX} (lama ${PREV_INDEX}); teks fitur baru + 21 teks fitur lama ada; dua kalimat prompt PKR lama hilang"
 
 PHASE="4c-aset-lama"; say "4c. Bawa aset ber-hash dari dist release aktif (tab terbuka saat deploy tetap bisa memuat chunk lama)"
 OLD_ASSETS="$BK_DIR/aset-lama.txt"; : > "$OLD_ASSETS"
