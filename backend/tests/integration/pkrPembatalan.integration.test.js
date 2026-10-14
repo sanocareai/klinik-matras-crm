@@ -163,6 +163,17 @@ test("MODE TRANSISI + MANIFEST: kesiapan fisik terkonfirmasi atau unit sudah dim
   assert.match(pb.body.hambatan.map((x) => x.pesan).join(" "), /U3 sudah dikonfirmasi dimuat/);
 });
 
+test("id tak dikenal: pratinjau 404 dan batal 404 tanpa menulis apa pun (dipakai smoke rilis)", async () => {
+  const w = await siapkan();
+  const nol = "00000000-0000-4000-8000-000000000000";
+  const j0 = await jejak();
+  assert.equal((await w.finance.c.get(`${BASE}/${nol}/pembatalan`)).status, 404);
+  assert.equal((await w.admin.c.post(`${BASE}/${nol}/batal`, { reason: "uji id tak dikenal" }, kunci())).status, 404);
+  assert.equal((await w.admin.c.post(`${BASE}/${nol}/batal`, { reason: "   " }, kunci())).status, 400);
+  assert.equal((await w.admin.c.post(`${BASE}/${nol}/batal`, { reason: "uji tanpa kunci" })).status, 404, "tanpa Idempotency-Key tetap tidak menyentuh data");
+  assert.deepEqual(await jejak(), j0);
+});
+
 test("replay Idempotency-Key = satu pembalikan; dua pembatal paralel = tepat satu berhasil; peran Sales tak boleh membaca/membatalkan", async () => {
   const w = await siapkan();
   const p = await catat(w);
