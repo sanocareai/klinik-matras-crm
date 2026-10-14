@@ -323,6 +323,7 @@ function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageC
         <Avatar name={nama} src={order.profilePictureUrl} size="sm" />
         <div className="min-w-0 flex-1">
           <p className="truncate text-[13px] font-semibold leading-tight text-ink">{nama}</p>
+          {order.penjualanKaryawan && order.customerPhone && <p className="mt-0.5 truncate text-[10.5px] tabular-nums text-ink3" data-testid="hp-customer-pkr">{order.customerPhone}</p>}
           <p className="mt-0.5 truncate font-mono text-[10px] text-ink3">
             {order.orderNumber || "tanpa ID"}
           </p>
