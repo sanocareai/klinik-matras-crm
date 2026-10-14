@@ -10,6 +10,7 @@ import { api } from "@/api.js";
 import { compressImage } from "@/utils/compressImage.js";
 import { Card } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
+import { ManifestRute } from "@/features/armada/components/ManifestBlock.jsx";
 
 function ItemRow({ item, routeId, onUploaded }) {
   const [busy, setBusy] = useState(false);
@@ -210,7 +211,7 @@ function KelengkapanSection({ routeId, kelengkapan, locked, onSubmitted }) {
 // TETAP yang menegakkan gerbang sesungguhnya. Panel SELALU dirender (tidak
 // lagi return null kalau item admin kosong) — Bukti Kelengkapan selalu wajib
 // terlepas dari apakah admin menyusun item checklist untuk rute ini.
-export default function RoutePrepChecklistDriverPanel({ routeId, onReadyChange }) {
+export default function RoutePrepChecklistDriverPanel({ routeId, onReadyChange, jobs = [] }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
@@ -256,6 +257,7 @@ export default function RoutePrepChecklistDriverPanel({ routeId, onReadyChange }
       {belum > 0 && (
         <p className="mt-1 text-[11px] font-medium text-orange">{belum} item wajib belum lengkap — lengkapi sebelum berangkat.</p>
       )}
+      <ManifestRute jobs={jobs} className="mt-2" />
       <div className="mt-2 space-y-2">
         <KelengkapanSection routeId={routeId} kelengkapan={data.kelengkapan} locked={Boolean(data.lockedAt)} onSubmitted={load} />
         {data.items.map((item) => (

@@ -52,6 +52,8 @@ export async function performSubmit(jobId, action, payload, photoFiles = [], sig
   if (action === "complete") {
     return api.completeArmadaJob(jobId, {
       proofPhotoUrls, signatureUrl, recipientName: payload.recipientName, note: payload.note, location: payload.location,
+      // Pengecualian resmi gerbang unit (14 Okt 2026): alasan ≥5 huruf, dicatat server sebagai audit UNIT_LOAD_EXCEPTION.
+      ...(payload.pengecualianUnit && { pengecualianUnit: payload.pengecualianUnit }),
     }, idempotencyKey, timeOpts);
   }
   if (action === "fail") {

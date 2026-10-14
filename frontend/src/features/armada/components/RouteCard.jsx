@@ -6,6 +6,7 @@ import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import Avatar from "@/components/Avatar.jsx";
 import StatusBadge from "./StatusBadge.jsx";
 import { ROUTE_STATUS_REAL, effectiveRouteStatus } from "../vehicleStatus.js";
+import { ManifestChip } from "@/features/armada/components/ManifestBlock.jsx";
 import { customerOf, orderOf, mapsUrl, unitCountOf, jobAccentBarStyle, hasJobAccentBar, conversationIdOf, customerPhoneOf, salesPersonOf } from "../jobStatus.js";
 import { RentalBadge, ConfirmedTimeBadge, CityBadge, OrderStatusBadge, MapsLinkMissingBadge, SalesBadge, RevisionBadge, ComplaintBadge } from "./JobBadges.jsx";
 import ExternalCourierBadge from "./ExternalCourierBadge.jsx";
@@ -1023,12 +1024,13 @@ export default function RouteCard({
                         ukuran dari parseOrderNotes, lihat orderSummary.js)
                         — bukan implementasi kedua yang bisa diam-diam
                         beda. */}
-                    {orderOf(j) && productSummary(orderOf(j)) && (
+                    {/* Manifest (14 Okt 2026): jumlah UNIT tertaut + produk per baris — BUKAN ringkasan kategori order. Tanpa manifest (payload lama) jatuh ke ringkasan lama. */}
+                    {j.manifest && j.manifest.unit > 0 ? <ManifestChip job={j} /> : (orderOf(j) && productSummary(orderOf(j)) && (
                       <span className="inline-flex w-fit max-w-full items-center gap-1 truncate rounded-md border border-line bg-surface px-1.5 py-px text-[11px] font-semibold text-ink2">
                         <BedDouble size={11} className="shrink-0 text-ink3" />
                         <span className="truncate">{productSummary(orderOf(j))}</span>
                       </span>
-                    )}
+                    ))}
                     <span className="flex items-start gap-1 text-[12px] text-ink2">
                       <MapPinned size={12} className="mt-px shrink-0 text-ink3" />
                       <span className="min-w-0 flex-1 truncate">{j.addressText || "Alamat belum diisi"}</span>

@@ -24,6 +24,8 @@ import { usePushSubscription } from "../hooks/usePushSubscription.js";
 import { useMyJobs } from "@/features/armada/hooks/useMyJobs.js";
 import { mapsUrl } from "@/features/armada/jobStatus.js";
 import { SalesBadge, ProductBadge } from "@/features/armada/components/JobBadges.jsx";
+import { ManifestBlock } from "@/features/armada/components/ManifestBlock.jsx";
+import MuatBarangPanel from "@/features/armada/components/MuatBarangPanel.jsx";
 import RoutePrepChecklistDriverPanel from "@/features/armada/components/RoutePrepChecklistDriverPanel.jsx";
 import RouteTimelinePanel from "@/features/armada/components/RouteTimelinePanel.jsx";
 import { ISSUE_STATUS } from "@/features/armada/issueStatus.js";
@@ -270,6 +272,7 @@ function JobCard({ job, onChanged, onQueued, pending }) {
   const [note, setNote] = useState("");
   const [failReason, setFailReason] = useState("");
   const [recipientName, setRecipientName] = useState("");
+  const [alasanPengecualian, setAlasanPengecualian] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   // Lapor Revisi (18 September 2026) — lihat catatan panjang di backend
@@ -293,6 +296,7 @@ function JobCard({ job, onChanged, onQueued, pending }) {
     setNote("");
     setFailReason("");
     setRecipientName("");
+    setAlasanPengecualian("");
   }
 
   async function run(action, payload, files, sig) {
@@ -362,13 +366,21 @@ function JobCard({ job, onChanged, onQueued, pending }) {
         </div>
       )}
 
-      <div className="mt-2 flex flex-wrap gap-1">
-        {job.units.map((ju) => (
-          <span key={ju.id} className="rounded bg-inset px-1.5 py-0.5 font-mono text-[10px] text-ink2">
-            {ju.unit.unitCode}
-          </span>
-        ))}
-      </div>
+      {/* Manifest barang (14 Okt 2026): jumlah unit/jenis produk/Unit ID dari server — bukan "1 kasur" dari ringkasan order. Kode lama tetap sebagai cadangan bila payload belum membawa manifest. */}
+      {job.manifest ? (
+        <>
+          <ManifestBlock job={job} className="mt-2" bukaAwal={false} />
+          <MuatBarangPanel job={job} onChanged={onChanged} className="mt-2" />
+        </>
+      ) : (
+        <div className="mt-2 flex flex-wrap gap-1">
+          {job.units.map((ju) => (
+            <span key={ju.id} className="rounded bg-inset px-1.5 py-0.5 font-mono text-[10px] text-ink2">
+              {ju.unit.unitCode}
+            </span>
+          ))}
+        </div>
+      )}
 
       <div className="mt-2 space-y-1 text-xs text-ink2">
         {customer?.phone && (
@@ -482,11 +494,21 @@ function JobCard({ job, onChanged, onQueued, pending }) {
             value={note} onChange={(e) => setNote(e.target.value)} placeholder="Catatan (opsional)"
             className="h-14 w-full rounded-lg border border-border p-2 text-xs outline-none focus:border-accent"
           />
+          {job.type === "DELIVERY" && job.manifest?.muat && job.manifest.muat.total > 0 && !job.manifest.muat.lengkap && (
+            <div className="space-y-1.5 rounded-lg bg-orangebg px-3 py-2 text-xs text-orange" data-testid="pengecualian-unit">
+              <p className="m-0 font-semibold">{job.manifest.muat.label} — belum lengkap.</p>
+              <p className="m-0">Konfirmasi semua unit dimuat dulu. Bila memang tidak bisa dikonfirmasi, tulis alasan pengecualian (min. 5 huruf); alasan dicatat untuk audit.</p>
+              <input
+                value={alasanPengecualian} onChange={(e) => setAlasanPengecualian(e.target.value)} placeholder="Alasan pengecualian (opsional bila sudah dikonfirmasi)"
+                className="h-11 w-full rounded-lg border border-border bg-surface px-3 text-xs text-ink outline-none focus:border-accent" aria-label="Alasan pengecualian unit"
+              />
+            </div>
+          )}
           <div className="flex gap-2">
             <Button variant="neutral" className="h-11 flex-1 text-xs" onClick={() => setMode("idle")}>Batal</Button>
             <Button
               className="h-11 flex-1 text-xs" disabled={busy || photos.length === 0 || !recipientName.trim()}
-              onClick={() => run("complete", { note, recipientName: recipientName.trim() }, photos, signatureBlob)}
+              onClick={() => run("complete", { note, recipientName: recipientName.trim(), ...(alasanPengecualian.trim().length >= 5 && { pengecualianUnit: { alasan: alasanPengecualian.trim() } }) }, photos, signatureBlob)}
             >
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Simpan"}
             </Button>
@@ -598,7 +620,7 @@ function SyncBar({ queueCount, syncing, offline, onSyncNow }) {
 // terima tetap wajib per stop). Online-only (sama seperti aksi lain saat
 // pertama ditekan — bedanya ini tidak diantre offline, driver di bengkel
 // umumnya masih ada sinyal; kalau gagal, pesan error apa adanya).
-function RouteStartBanner({ route, assignedCount, sampleJobId, onChanged }) {
+function RouteStartBanner({ route, assignedCount, sampleJobId, onChanged, jobs = [] }) {
   const [mode, setMode] = useState("idle"); // idle | starting
   const [photos, setPhotos] = useState([]);
   const [busy, setBusy] = useState(false);
@@ -670,7 +692,7 @@ function RouteStartBanner({ route, assignedCount, sampleJobId, onChanged }) {
         Buka Rute di Google Maps
       </button>
 
-      {assignedCount > 0 && <RoutePrepChecklistDriverPanel routeId={route.id} onReadyChange={setChecklistReady} />}
+      {assignedCount > 0 && <RoutePrepChecklistDriverPanel routeId={route.id} onReadyChange={setChecklistReady} jobs={jobs} />}
 
       {/* Histori Waktu (fase 2) — dibuka atas permintaan driver; isi disusun server (WIB, Indonesia). */}
       <details className="mt-2" data-testid="driver-route-timeline">
@@ -714,7 +736,8 @@ function groupRoutes(jobs) {
   for (const j of jobs) {
     if (!j.route || j.status === "COMPLETED" || j.status === "FAILED") continue;
     let r = byId.get(j.route.id);
-    if (!r) { r = { route: j.route, assignedCount: 0, sampleJobId: null }; byId.set(j.route.id, r); }
+    if (!r) { r = { route: j.route, assignedCount: 0, sampleJobId: null, jobs: [] }; byId.set(j.route.id, r); }
+    r.jobs.push(j);
     if (j.status === "ASSIGNED") {
       r.assignedCount += 1;
       if (!r.sampleJobId) r.sampleJobId = j.id;
@@ -932,7 +955,7 @@ function FocusedJobList({ jobs, focusIndex, setFocusIndex, showHistory, setShowH
       {routeGroups.map((r) => (
         <RouteStartBanner
           key={r.route.id} route={r.route} assignedCount={r.assignedCount}
-          sampleJobId={r.sampleJobId} onChanged={onChanged}
+          sampleJobId={r.sampleJobId} onChanged={onChanged} jobs={r.jobs}
         />
       ))}
 

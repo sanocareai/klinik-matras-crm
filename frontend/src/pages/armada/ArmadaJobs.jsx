@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { ManifestChip } from "@/features/armada/components/ManifestBlock.jsx";
 import { useSearchParams } from "react-router-dom";
 import { RefreshCw, LayoutGrid, List as ListIcon, CalendarDays, User, Navigation, Lock, PackageCheck, MessageCircle, MapPinned, Clock, BedDouble, CalendarCheck2, ArrowUpDown } from "lucide-react";
 import { api } from "@/api.js";
@@ -625,7 +626,8 @@ export default function ArmadaJobs() {
                           <Avatar name={nama} size="sm" gradient className="mt-px h-7 w-7 shrink-0 text-[10px]" />
                           <div className="flex min-w-0 flex-1 flex-col gap-1">
                             <span className="truncate text-[13.5px] font-bold text-ink">{nama}</span>
-                            {orderOf(j) && productSummary(orderOf(j)) && (
+                            {j.manifest && j.manifest.unit > 0 && <ManifestChip job={j} />}
+                            {!(j.manifest && j.manifest.unit > 0) && orderOf(j) && productSummary(orderOf(j)) && (
                               <span className="inline-flex w-fit max-w-full items-center gap-1 truncate rounded-md border border-line bg-surface px-1.5 py-px text-[11px] font-semibold text-ink2">
                                 <BedDouble size={11} className="shrink-0 text-ink3" />
                                 <span className="truncate">{productSummary(orderOf(j))}</span>

@@ -307,6 +307,11 @@ export function hasJobAccentBar(job) {
 // SAMA dengan customerOf/orderNumberOf — job.order langsung dulu, jatuh ke
 // jalur berlapis units[].unit.order kalau job.order belum ke-load.
 export function salesPersonOf(job) {
+  // Order Penjualan Karyawan: pemegang order = karyawan PENJUAL (bukan Sales pemilik lead customer lama, mis. "Rifki" pada PKR Indra). Badge menampilkan "Dijual oleh <penjual>".
+  const penjual = job?.manifest?.sumber?.penjual
+    || job?.order?.penjualanKaryawan?.seller?.name
+    || job?.units?.[0]?.unit?.order?.penjualanKaryawan?.seller?.name;
+  if (penjual) return penjual;
   return (
     job?.order?.customer?.assignedSales?.name ||
     job?.units?.[0]?.unit?.order?.customer?.assignedSales?.name ||

@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
+import { ManifestChip } from "@/features/armada/components/ManifestBlock.jsx";
 import { Package, MapPinned, PackageCheck, Search, X, Clock, MessageCircle, BedDouble, Route as RouteIcon, ChevronDown } from "lucide-react";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
@@ -275,12 +276,12 @@ function JobRow({ j, draggingId, onDragStart, onDragEnd, onOpenJob, draftRoutes,
         <Avatar name={customerOf(j) || "?"} size="sm" gradient className="mt-px h-7 w-7 shrink-0 text-[10px]" />
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <span className="truncate text-[13.5px] font-bold text-ink">{customerOf(j) || "Tanpa nama"}</span>
-          {orderOf(j) && productSummary(orderOf(j)) && (
+          {j.manifest && j.manifest.unit > 0 ? <ManifestChip job={j} /> : (orderOf(j) && productSummary(orderOf(j)) && (
             <span className="inline-flex w-fit max-w-full items-center gap-1 truncate rounded-md border border-line bg-surface px-1.5 py-px text-[11px] font-semibold text-ink2">
               <BedDouble size={11} className="shrink-0 text-ink3" />
               <span className="truncate">{productSummary(orderOf(j))}</span>
             </span>
-          )}
+          ))}
           <span className="flex items-start gap-1 text-[12px] text-ink2">
             <MapPinned size={12} className="mt-px shrink-0 text-ink3" />
             <span className="min-w-0 flex-1 truncate">{j.addressText || "Alamat belum diisi"}</span>

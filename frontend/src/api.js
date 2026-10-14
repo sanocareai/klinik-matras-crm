@@ -1859,6 +1859,10 @@ export const api = {
   // Pembeli aktual (Okt 2026): cari customer lewat nomor (baca-saja), dry-run relasi legacy, koreksi data customer/penerima/alamat/catatan, dan riwayat perubahan.
   cariPembeliPenjualanKaryawan: (telepon) => request(`/finance/penjualan-karyawan/pembeli/cari${buildQuery({ telepon })}`),
   getDryRunPembeliPkr: () => request("/finance/penjualan-karyawan/pembeli/dry-run"),
+  getKandidatDuplikatOrder: (orderId) => request(`/orders/${orderId}/kandidat-duplikat`),
+  pratinjauGabungOrder: (utama, duplikat) => request(`/orders/gabung/pratinjau?utama=${encodeURIComponent(utama)}&duplikat=${encodeURIComponent(duplikat)}`),
+  gabungkanOrder: (data, idempotencyKey) => request("/orders/gabung", { method: "POST", headers: { "Idempotency-Key": idempotencyKey || mutationKey("gabung-order") }, body: JSON.stringify(data) }),
+  konfirmasiMuatUnit: (jobId, data = { semua: true }) => request(`/armada/jobs/${jobId}/unit-load`, { method: "POST", headers: { "Idempotency-Key": mutationKey("unit-load") }, body: JSON.stringify(data) }),
   getKemampuanKoreksiOrder: (id) => request(`/finance/penjualan-karyawan/${id}/koreksi-order`),
   pratinjauKoreksiOrderPkr: (id, data) => request(`/finance/penjualan-karyawan/${id}/koreksi-order/pratinjau`, { method: "POST", body: JSON.stringify(data) }),
   koreksiOrderPkr: (id, data, idempotencyKey) => request(`/finance/penjualan-karyawan/${id}/koreksi-order`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey || mutationKey("pkr-order") }, body: JSON.stringify(data) }),

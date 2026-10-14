@@ -9,6 +9,7 @@ import { api } from "@/api.js";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { customerOf, orderOf } from "../jobStatus.js";
+import { ManifestRute } from "./ManifestBlock.jsx";
 
 const KOSONG_FORM = { title: "", detail: "", quantity: "", scope: "ROUTE", jobId: "", required: true, photoRequired: true };
 
@@ -168,6 +169,7 @@ export default function RoutePrepChecklistAdminModal({ route, open, onOpenChange
           )}
           {err && <p className="text-xs text-red">{err}</p>}
 
+          <ManifestRute jobs={route.jobs} />
           <div className="space-y-2">
             {data.items.length === 0 ? (
               <p className="text-xs text-ink3">Belum ada item checklist untuk rute ini.</p>

@@ -42,6 +42,65 @@ export function ringkasUnitTeks(ringkas) {
   return hasil;
 }
 
+const PRODUKSI_SELESAI = ["READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD", "IN_TRANSIT_OUT", "DELIVERED"];
+
+/** "100x200" / "100 x 200" / "100 × 200 cm" → "100 × 200 cm"; selain itu apa adanya. */
+export function rapikanUkuran(v) {
+  const t = String(v ?? "").trim();
+  if (!t) return "";
+  const m = /^(\d+(?:[.,]\d+)?)\s*[xX×*]\s*(\d+(?:[.,]\d+)?)(?:\s*[xX×*]\s*(\d+(?:[.,]\d+)?))?\s*(?:cm)?$/.exec(t);
+  if (!m) return t;
+  return `${[m[1], m[2], m[3]].filter(Boolean).join(" × ")} cm`;
+}
+
+/** Ringkasan induk SATU baris: "1 item • 3 unit • 3 siap • 0 terkirim" (dihitung dari unit nyata). */
+export function ringkasIndukTeks(pkr) {
+  const r = pkr?.ringkasUnit;
+  if (!r || !(r.total > 0)) return null;
+  const kunci = new Set((pkr.unitBaris || []).map((b) => b.item?.no ?? b.item?.nama));
+  const item = Math.max(1, kunci.size);
+  return `${item} item • ${r.total} unit • ${r.siap ?? 0} siap • ${r.terkirim ?? 0} terkirim`;
+}
+
+/** Kelompok produk dari unit: [{ nama, qty, ukuran }] (identik digabung; urutan kemunculan). */
+export function kelompokProduk(pkr) {
+  const peta = new Map();
+  for (const b of pkr?.unitBaris || []) {
+    const nama = b.item?.nama || b.merk || "Item produksi";
+    const ukuran = rapikanUkuran(b.ukuran);
+    const k = JSON.stringify([nama, ukuran]);
+    const g = peta.get(k) ?? { nama, ukuran, qty: 0 };
+    g.qty += 1;
+    peta.set(k, g);
+  }
+  return [...peta.values()];
+}
+
+/** Produk utama: "3× Kasur Sorong 3in1 custom" (+ "; 1× Divan Laci"; lebih dari dua jenis → "+N jenis lain"). */
+export function produkUtamaTeks(pkr) {
+  const g = kelompokProduk(pkr);
+  if (g.length === 0) return null;
+  const tampil = g.slice(0, 2).map((x) => `${x.qty}× ${x.nama}`).join("; ");
+  return g.length > 2 ? `${tampil} +${g.length - 2} jenis lain` : tampil;
+}
+
+/** Ukuran utama: satu ukuran seragam → "100 × 200 cm"; beragam → "Beragam (lihat unit)". */
+export function ukuranUtamaTeks(pkr) {
+  const u = [...new Set(kelompokProduk(pkr).map((x) => x.ukuran).filter(Boolean))];
+  if (u.length === 0) return null;
+  return u.length === 1 ? u[0] : "Beragam (lihat unit)";
+}
+
+/** Status dipisah: Produksi "3/3 selesai" TIDAK menyamarkan Delivery "0/3 terkirim". */
+export function statusTerpisah(pkr) {
+  const baris = (pkr?.unitBaris || []);
+  const total = baris.length;
+  if (total === 0) return null;
+  const selesai = baris.filter((b) => PRODUKSI_SELESAI.includes(b.produksi?.kode)).length;
+  const terkirim = baris.filter((b) => b.produksi?.kode === "DELIVERED").length;
+  return { total, produksiSelesai: selesai, terkirim, produksi: `Produksi ${selesai}/${total} selesai`, delivery: `Delivery ${terkirim}/${total} terkirim` };
+}
+
 /** Teks rencana satu unit: "Target 14 Okt · PIC Budi" atau "Belum dijadwalkan". */
 export function rencanaUnitTeks(rencana) {
   if (!rencana) return "Belum dijadwalkan";

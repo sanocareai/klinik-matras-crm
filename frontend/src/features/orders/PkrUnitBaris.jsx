@@ -1,8 +1,9 @@
 import React from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge.jsx";
+import PanelIdentitasPkr from "@/features/orders/PanelIdentitasPkr.jsx";
 import {
-  unitBarisOrder, ringkasUnitTeks, rencanaUnitTeks, ukuranSpesifikasiTeks, VARIAN_PRODUKSI_UNIT, varianDeliveryUnit, labelUnit,
+  unitBarisOrder, ringkasUnitTeks, ringkasIndukTeks, rencanaUnitTeks, ukuranSpesifikasiTeks, rapikanUkuran, VARIAN_PRODUKSI_UNIT, varianDeliveryUnit, labelUnit,
 } from "@/features/orders/pkrUnitLogic.js";
 
 // REPRESENTASI MULTI-UNIT Order CRM Penjualan Karyawan. Satu PKR = SATU order induk; tiap unit produksi (U1, U2, …) hanya SUB-BARIS di bawahnya —
@@ -13,13 +14,11 @@ const stop = (e) => e.stopPropagation();
 
 /** Ringkasan induk satu baris teks: "3 Unit Produksi · Dijadwalkan 0/3 · Sedang diproduksi 0/3 · Siap 3/3 · Terkirim 0/3". */
 export function RingkasUnitPkr({ pkr, className = "" }) {
-  const potongan = ringkasUnitTeks(pkr?.ringkasUnit);
-  if (potongan.length === 0) return null;
+  // Satu baris: "1 item • 3 unit • 3 siap • 0 terkirim" (14 Okt 2026) — rincian per tahap ada di sub-baris unit, tidak diulang di sini.
+  const ringkas = ringkasIndukTeks(pkr);
+  if (!ringkas) return null;
   return (
-    <p className={`m-0 whitespace-normal text-[11px] leading-snug text-ink3 ${className}`} data-testid="pkr-unit-ringkas">
-      <span className="font-semibold text-ink2">{potongan[0]}</span>
-      {potongan.slice(1).map((t) => <span key={t}> · {t}</span>)}
-    </p>
+    <p className={`m-0 whitespace-normal text-[11px] font-semibold leading-snug text-ink2 ${className}`} data-testid="pkr-unit-ringkas">{ringkas}</p>
   );
 }
 
@@ -96,8 +95,8 @@ export function SubBarisUnitPkr({ pkr, onBuka }) {
   const baris = pkr?.unitBaris || [];
   if (baris.length === 0) return null;
   return (
-    <div className="space-y-1 py-1" data-testid="pkr-unit-subbaris" onClick={stop}>
-      <RingkasUnitPkr pkr={pkr} className="px-2" />
+    <div className="space-y-2 py-1" data-testid="pkr-unit-subbaris" onClick={stop}>
+      <PanelIdentitasPkr pkr={pkr} />
       <div role="table" aria-label="Unit produksi order" className="min-w-[760px]">
         <div role="row" className={`${KOLOM} px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-ink3`}>
           <span role="columnheader">Unit</span><span role="columnheader">Item</span><span role="columnheader">Ukuran &amp; spesifikasi</span>
@@ -116,7 +115,7 @@ export function SubBarisUnitPkr({ pkr, onBuka }) {
               <span className="block text-[10.5px] text-ink3">{u.urutanLabel}</span>
             </span>
             <span role="cell" className="min-w-0 whitespace-normal break-words font-semibold text-ink">{u.item?.nama}</span>
-            <span role="cell" className="min-w-0 whitespace-normal break-words">{ukuranSpesifikasiTeks(u)}</span>
+            <span role="cell" className="min-w-0 whitespace-normal break-words">{ukuranSpesifikasiTeks({ ...u, ukuran: rapikanUkuran(u.ukuran) })}</span>
             <span role="cell" className="min-w-0"><BadgeProduksi u={u} /></span>
             <span role="cell" className="min-w-0 whitespace-normal text-ink3">{rencanaUnitTeks(u.rencana)}</span>
             <span role="cell" className="min-w-0 space-y-0.5">

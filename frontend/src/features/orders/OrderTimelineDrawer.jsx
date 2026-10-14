@@ -1,6 +1,7 @@
 import { formatUkuranKasur } from "@/utils/ukuranKasur.js";
 import { DaftarUnitPkr } from "./PkrUnitBaris.jsx";
 import RincianPkr from "./RincianPkr.jsx";
+import { GabungOrderDialog } from "./GabungOrderDialog.jsx";
 import { punyaUnitPkr } from "./pkrUnitLogic.js";
 import { BadgeBayarPkr } from "@/features/finance/PkrOrderCrm.jsx";
 import React, { useEffect, useState } from "react";
@@ -8,8 +9,10 @@ import { AnimatePresence, motion } from "framer-motion";
 import {
   X, Clock, MessageSquare, Timer, Camera, ImageOff, Send, Loader2, CheckCircle2,
   Wallet, PackageCheck, Wrench, Truck, PenTool, Hash,
-  Bed, HeartPulse, Tag, FileText, Ban, ShieldCheck,
+  Bed, HeartPulse, Tag, FileText, Ban, ShieldCheck, AlertTriangle,
 } from "lucide-react";
+import { Button } from "@/components/ui/button.jsx";
+import { isAdminUser } from "@/lib/roles.js";
 import RiwayatRevisiKendala from "@/features/armada/components/RiwayatRevisiKendala.jsx";
 import ComplaintCaseDrawer from "@/features/complaints/ComplaintCaseDrawer.jsx";
 import InvoicePanel from "./InvoicePanel.jsx";
@@ -1116,6 +1119,9 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
   const [frozen, setFrozen] = useState(order);
   if (order && order !== frozen) setFrozen(order);
   const o = order || frozen;
+  // Gabungkan Order Duplikat: hanya Admin/Owner (cek lewat isAdminUser — multi-role, bukan user.role langsung) dan hanya untuk order yang belum digabungkan ke order lain.
+  const [gabungBuka, setGabungBuka] = useState(false);
+  const bolehGabung = Boolean(o && !o.digabungKe && (() => { try { return isAdminUser(JSON.parse(localStorage.getItem("user") || "null")); } catch { return false; } })());
 
   return (
     <AnimatePresence>
@@ -1205,6 +1211,31 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
             </div>
           )}
 
+          {o.digabungKe && (
+            <p className="mt-3 flex items-start gap-2 rounded-xl bg-orangebg px-3 py-2 text-[12.5px] text-orange" role="status" data-testid="banner-digabung">
+              <AlertTriangle size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
+              <span>Order ini telah digabungkan ke <strong className="font-mono">{o.digabungKe.nomor}</strong> (histori/rujukan, bukan pesanan aktif).</span>
+            </p>
+          )}
+          {(o.riwayatOrderLama?.length ?? 0) > 0 && (
+            <section className="mt-3 rounded-xl bg-surface p-2.5 shadow-card" aria-label="Histori dari order lama" data-testid="histori-order-lama">
+              <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-ink3">Histori dari order lama</p>
+              <ul className="m-0 list-none space-y-1 p-0 text-[12px] text-ink2">
+                {o.riwayatOrderLama.map((h) => (
+                  <li key={h.id}>
+                    <span className="font-mono font-semibold text-ink">{h.nomor}</span> · digabungkan {String(h.pada).slice(0, 10)}
+                    {h.job.length > 0 && <span className="text-ink3"> · {h.job.map((j) => `${j.tipe === "DELIVERY" ? "Pengiriman" : "Pengambilan"} ${j.status}${j.rute ? ` (${j.rute})` : ""}`).join("; ")}</span>}
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+          {bolehGabung && (
+            <div className="mt-3">
+              <Button size="sm" variant="neutral" onClick={() => setGabungBuka(true)} data-testid="aksi-gabung-order">Gabungkan Order Duplikat</Button>
+            </div>
+          )}
+          {gabungBuka && <GabungOrderDialog order={o} onClose={() => setGabungBuka(false)} onSelesai={() => { setGabungBuka(false); onClose?.(); }} />}
           {o.penjualanKaryawan?.identitas && <RincianPkr pkr={o.penjualanKaryawan} bolehEdit={Boolean(onEditCustomerPkr)} onEdit={() => onEditCustomerPkr?.(o)} />}
           {punyaUnitPkr(o) && (
             <section className="mt-3 rounded-xl bg-surface p-2.5 shadow-card" aria-label="Unit produksi" data-testid="drawer-unit-pkr">

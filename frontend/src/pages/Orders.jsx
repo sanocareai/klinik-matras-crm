@@ -34,6 +34,7 @@ import SumberPkr from "../features/orders/SumberPkr.jsx";
 import { ModalEditCustomerPkr } from "@/features/finance/PkrEditCustomer.jsx";
 import { bolehKoreksiPembeliPkr } from "@/features/finance/pkrPembeliLogic.js";
 import { DaftarUnitPkr, SubBarisUnitPkr, TombolPerluasUnit, RingkasUnitPkr } from "../features/orders/PkrUnitBaris.jsx";
+import { produkUtamaTeks, ukuranUtamaTeks, statusTerpisah } from "../features/orders/pkrUnitLogic.js";
 import { UNIT_STATUS_OPSI, punyaUnitPkr } from "../features/orders/pkrUnitLogic.js";
 import { UnitOverviewDrawer } from "@/features/production/UnitOverviewDrawer.jsx";
 import { useOpenParam } from "@/hooks/useHubParam.js";
@@ -328,7 +329,7 @@ function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageC
             {order.orderNumber || "tanpa ID"}
           </p>
           {order.staffSeller && <p className="mt-0.5 truncate text-[10px] font-semibold text-accent" data-testid="label-penjualan-karyawan">Penjualan Karyawan · {order.staffSeller.name}</p>}
-          <SumberPkr pkr={order.penjualanKaryawan} className="mt-0.5" />
+          <SumberPkr pkr={order.penjualanKaryawan} mode="chip" className="mt-0.5" />
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
           {order.penjualanKaryawan ? <BadgeBayarPkr pkr={order.penjualanKaryawan} /> : <PaymentStatusSelect order={order} onChange={onPaymentChange} locked={paymentLocked} />}
@@ -1400,7 +1401,7 @@ export default function Orders() {
                       <td className="whitespace-nowrap px-3 py-2.5 font-mono text-[11px] text-ink2">
                         {o.orderNumber || "—"}
                         {o.staffSeller && <span className="mt-0.5 block whitespace-normal font-sans text-[10px] font-semibold text-accent" data-testid="label-penjualan-karyawan">Penjualan Karyawan · {o.staffSeller.name}</span>}
-                        <SumberPkr pkr={o.penjualanKaryawan} className="mt-0.5" onLengkapi={bolehKoreksiPembeliPkr(currentUser()) ? () => setEditPkr(o) : null} />
+                        <SumberPkr pkr={o.penjualanKaryawan} mode="chip" className="mt-0.5" onLengkapi={bolehKoreksiPembeliPkr(currentUser()) ? () => setEditPkr(o) : null} />
                         {punyaUnitPkr(o) && (
                           <div className="mt-1 whitespace-normal font-sans">
                             <RingkasUnitPkr pkr={o.penjualanKaryawan} />
@@ -1436,17 +1437,29 @@ export default function Orders() {
                         {KATEGORI_LABELS[o.category] || o.category}
                       </td>
                       <td className="max-w-52 px-3 py-2.5">
-                        {layananProduk ? (
+                        {punyaUnitPkr(o) && produkUtamaTeks(o.penjualanKaryawan) ? (
+                          <span className="block truncate text-[12.5px] font-semibold text-ink" title={produkUtamaTeks(o.penjualanKaryawan)} data-testid="produk-utama-pkr">{produkUtamaTeks(o.penjualanKaryawan)}</span>
+                        ) : layananProduk ? (
                           <span className="block truncate text-[12.5px] text-ink2" title={layananProduk}>{layananProduk}</span>
                         ) : <span className="text-ink3">—</span>}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5 text-[12.5px] text-ink2">
-                        {formatUkuranKasur(info) || <span className="text-ink3">—</span>}
-                        {info.merkKasur && <span className="text-ink3"> · {info.merkKasur}</span>}
+                        {punyaUnitPkr(o) && ukuranUtamaTeks(o.penjualanKaryawan)
+                          ? <span data-testid="ukuran-utama-pkr">{ukuranUtamaTeks(o.penjualanKaryawan)}</span>
+                          : (<>
+                            {formatUkuranKasur(info) || <span className="text-ink3">—</span>}
+                            {info.merkKasur && <span className="text-ink3"> · {info.merkKasur}</span>}
+                          </>)}
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5">
                         <StatusSelect order={o} onChange={handleStatusChange} />
                         <OrderMilestoneBadge milestone={o.milestone} className="mt-1" />
+                        {punyaUnitPkr(o) && statusTerpisah(o.penjualanKaryawan) && (
+                          <p className="m-0 mt-1 space-y-0 font-sans text-[10.5px] leading-snug text-ink3" data-testid="status-terpisah-pkr">
+                            <span className="block">{statusTerpisah(o.penjualanKaryawan).produksi}</span>
+                            <span className="block">{statusTerpisah(o.penjualanKaryawan).delivery}</span>
+                          </p>
+                        )}
                         {bolehDibukaLagiUntukPengiriman(o) && (
                           <button
                             type="button" disabled={reopeningId === o.id}

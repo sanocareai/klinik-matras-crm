@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { produkRingkasKartu } from "@/features/armada/manifest.js";
 import { useNavigate } from "react-router-dom";
 import * as DropdownMenu from "@radix-ui/react-dropdown-menu";
 import {
@@ -664,7 +665,7 @@ export default function ArmadaDashboard() {
                   const hari = hariMenunggu(j.createdAt);
                   const nama = customerOf(j) || "Tanpa nama";
                   const order = orderOf(j);
-                  const produk = order ? productSummary(order) : null;
+                  const produk = (j.manifest && j.manifest.unit > 0 ? `${j.manifest.unit} unit · ${produkRingkasKartu(j)}` : null) || (order ? productSummary(order) : null);
                   return (
                     <li
                       key={j.id}

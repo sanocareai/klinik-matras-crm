@@ -5,11 +5,27 @@ import { modelSumberPkr, barisSumberPkr } from "@/features/orders/pkrSumberModel
 
 // Badge + dropdown RINGKAS sumber Penjualan Karyawan: "Penjualan Karyawan · Dijual oleh Kemal" → buka: nomor PKR, karyawan penjual, customer, penerima, item/unit, pembayaran.
 // Inline (bukan popover absolut) supaya tidak terpotong tabel/kartu dan tidak memenuhi kartu saat tertutup. Tanpa nominal.
-export default function SumberPkr({ pkr, className = "", onLengkapi = null }) {
+export default function SumberPkr({ pkr, className = "", onLengkapi = null, mode = "penuh" }) {
   const m = modelSumberPkr(pkr);
   const [buka, setBuka] = useState(false);
   const idPanel = useId();
   if (!m) return null;
+  if (mode === "chip") {
+    // Mode ringkas (baris tabel): badge saja; identitas lengkap ada di bagian diperluas (PanelIdentitasPkr) supaya tidak menimpa foto/nama customer.
+    return (
+      <div className={`min-w-0 font-sans ${className}`} data-testid="sumber-pkr" onClick={(e) => e.stopPropagation()}>
+        <span className="inline-flex max-w-full items-center rounded-btn bg-accentbg px-1.5 py-0.5 text-left text-[10.5px] font-semibold leading-snug text-accent" data-testid="sumber-pkr-chip">
+          <span className="min-w-0 whitespace-normal break-words">Penjualan Karyawan · {m.ringkas}</span>
+        </span>
+        {m.legacy && (
+          <span className="mt-1 flex flex-wrap items-center gap-1">
+            <Badge variant="orange" data-testid="badge-customer-belum-lengkap">Data customer belum lengkap</Badge>
+            {onLengkapi && <button type="button" onClick={onLengkapi} className="text-[10.5px] font-semibold text-accent underline" data-testid="lengkapi-customer">Lengkapi/Tautkan Customer</button>}
+          </span>
+        )}
+      </div>
+    );
+  }
   const Ikon = buka ? ChevronDown : ChevronRight;
   return (
     <div className={`min-w-0 font-sans ${className}`} data-testid="sumber-pkr" onClick={(e) => e.stopPropagation()}>

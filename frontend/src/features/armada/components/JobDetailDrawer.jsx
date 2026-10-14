@@ -13,6 +13,7 @@ import ChipPilih from "./ChipPilih.jsx";
 import PasteUploadZone from "./PasteUploadZone.jsx";
 import DateTimePicker from "@/components/ui/date-time-picker.jsx";
 import { CustomerProfileCard } from "./JobBadges.jsx";
+import { ManifestBlock } from "./ManifestBlock.jsx";
 import ExternalCourierBadge from "./ExternalCourierBadge.jsx";
 import RiwayatRevisiKendala from "./RiwayatRevisiKendala.jsx";
 import ComplaintCaseDrawer from "@/features/complaints/ComplaintCaseDrawer.jsx";
@@ -738,6 +739,7 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
                     Person"/"Kontak" yang lama, lihat komentar CustomerProfileCard
                     di JobBadges.jsx untuk alasannya. */}
                 <CustomerProfileCard job={job} className="mb-3" />
+                <ManifestBlock job={job} className="mb-3" />
 
                 {job.complaintCase && (
                   <button

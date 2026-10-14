@@ -30,16 +30,17 @@ import { statusTone } from "@/features/production/productionLabels.js";
 export function SalesBadge({ job, className }) {
   const nama = salesPersonOf(job);
   if (!nama) return null;
+  const pkr = Boolean(job?.manifest?.sumber || job?.order?.penjualanKaryawan || job?.units?.[0]?.unit?.order?.penjualanKaryawan);
   return (
     <span
-      title={`Sales: ${nama}`}
+      title={pkr ? `Penjualan Karyawan — dijual oleh ${nama}` : `Sales: ${nama}`}
       className={cn(
         "inline-flex max-w-full items-center gap-1.5 rounded-full bg-inset py-1 pl-1 pr-2.5 text-[11px] font-medium text-ink2",
         className
       )}
     >
       <Avatar name={nama} size="sm" gradient className="h-4 w-4 text-[8px]" />
-      <span className="truncate">{nama}</span>
+      <span className="truncate">{pkr ? `Dijual oleh ${nama}` : nama}</span>
     </span>
   );
 }
