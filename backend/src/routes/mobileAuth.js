@@ -26,6 +26,7 @@ import { capabilitiesFor } from "../services/capabilities.js";
 import { loadRoles, gerbangLogin } from "./auth.js";
 import { avatarUpload, processAvatarUpload } from "./users.js";
 import { createLimiter, clientIp } from "../lib/rateLimit.js";
+import { cariUserUntukLogin } from "../lib/loginEmail.js";
 import { fcmConfigured } from "../services/fcmTransport.js";
 import { KATEGORI_NOTIF, bacaPreferensi, financePushEnabled } from "../services/financeNotifications.js";
 import {
@@ -82,7 +83,7 @@ mobileRouter.post("/auth/login", async (req, res) => {
     const gerbang = gerbangLogin(req, res, email);
     if (!gerbang) return;
 
-    const user = await prisma.user.findUnique({ where: { email: String(email).trim() } });
+    const user = await cariUserUntukLogin(prisma, String(email));
     if (!user) { gerbang.gagal(); return fail(res, 401, "Email atau password salah"); }
     const valid = await bcrypt.compare(String(password), user.passwordHash);
     if (!valid) { gerbang.gagal(); return fail(res, 401, "Email atau password salah"); }

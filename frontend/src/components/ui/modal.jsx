@@ -18,6 +18,11 @@ export function Modal({
   className,
   showClose = true,
   contentProps = {},
+  // true = portal ke <body>, TIDAK ke .app-shell. Wajib untuk dialog yang muncul tepat saat halaman pemilik
+  // .app-shell dibongkar (App.jsx "Sesi Berakhir": Layout diganti Login pada commit yang sama) — container
+  // yang dipilih saat render sudah terlepas ketika portal dipasang, sehingga dialog tak terlihat tetapi
+  // Radix tetap mengunci body (pointer-events:none, #root aria-hidden) dan form di baliknya tak bisa dipakai.
+  portalToBody = false,
 }) {
   // Portal TANPA `container` (default Radix) menaruh modal langsung di
   // <body>, DI LUAR `.app-shell.glass-division` — akibatnya SELURUH CSS kaca
@@ -31,7 +36,7 @@ export function Modal({
   // `overflow:hidden`-nya juga tidak meng-clip fixed descendant) — kalau
   // tidak ketemu (halaman tanpa shell, mis. Login), Radix jatuh balik ke
   // document.body seperti semula, jadi tidak ada regresi di luar shell.
-  const glassContainer = typeof document !== "undefined" ? document.querySelector(".app-shell") : undefined;
+  const glassContainer = !portalToBody && typeof document !== "undefined" ? document.querySelector(".app-shell") : undefined;
   return (
     <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal container={glassContainer}>

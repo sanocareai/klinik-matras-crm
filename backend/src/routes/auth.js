@@ -7,6 +7,7 @@ import { portalsFor } from "../middleware/authorize.js";
 import { capabilitiesFor } from "../services/capabilities.js";
 import { divisiEfektif, muatDivisiPengguna } from "../services/expenseSubmission/access.js";
 import { createFailureLimiter, clientIp, tooMany } from "../lib/rateLimit.js";
+import { cariUserUntukLogin } from "../lib/loginEmail.js";
 
 export const authRouter = express.Router();
 
@@ -72,7 +73,7 @@ authRouter.post("/login", async (req, res) => {
     const gerbang = gerbangLogin(req, res, email);
     if (!gerbang) return;
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await cariUserUntukLogin(prisma, email);
     if (!user) { gerbang.gagal(); return res.status(401).json({ error: "Email atau password salah" }); }
 
     const valid = await bcrypt.compare(password, user.passwordHash);

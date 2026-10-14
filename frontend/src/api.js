@@ -23,18 +23,33 @@ function authHeaders() {
 // Sesi geser: backend menyertakan token baru di header X-Refreshed-Token
 // begitu sisa umur token menipis (middleware/auth.js). Disimpan diam-diam —
 // user aktif tidak pernah kena kadaluarsa 7 hari di tengah kerja.
-function adoptRefreshedToken(res) {
+//
+// `tokenKirim` = token yang dibawa request itu SAAT DIKIRIM. Token geser hanya diterima bila token itu
+// MASIH token aktif: respons terlambat dari sesi lama (mis. 200 yang baru sampai setelah pengguna login
+// ulang) tidak boleh menimpa token sesi baru. Request tanpa token tidak pernah sah membawa token geser.
+function adoptRefreshedToken(res, tokenKirim = null) {
   const baru = res.headers.get("X-Refreshed-Token");
-  if (baru) {
+  if (baru && tokenKirim && tokenKirim === bacaToken()) {
     try { localStorage.setItem("token", baru); } catch {}
   }
 }
 
-// Dipanggil saat server balas 401 — tampilkan modal "sesi berakhir" di App.jsx
-// tanpa hard reload (tidak kehilangan state UI, sales tidak kaget)
-function handleUnauthorized() {
-  localStorage.removeItem("token");
+function bacaToken() {
+  try { return localStorage.getItem("token"); } catch { return null; }
+}
+
+// Dipanggil saat request TERAUTENTIKASI dibalas 401 — tampilkan modal "sesi berakhir" di App.jsx
+// tanpa hard reload (tidak kehilangan state UI, sales tidak kaget).
+//
+// `tokenKirim` = token yang dibawa request itu SAAT DIKIRIM. 401 hanya membatalkan sesi bila token
+// itu masih token aktif. Respons terlambat dari request yang berangkat dengan token lama (atau tanpa
+// token) TIDAK boleh menghapus token login yang baru saja berhasil lalu membuka dialog "Sesi Berakhir"
+// di atas form. Kembalian: true bila sesi memang dibatalkan.
+function handleUnauthorized(tokenKirim = null) {
+  if ((tokenKirim ?? null) !== bacaToken()) return false;
+  try { localStorage.removeItem("token"); } catch {}
   window.dispatchEvent(new CustomEvent("auth-error"));
+  return true;
 }
 
 // Saat backend di-restart (deploy/maintenance) nginx membalas 502/503/504 atau
@@ -60,26 +75,30 @@ async function fetchDenganUlang(url, init) {
   }
 }
 
+// `publik: true` = endpoint tanpa sesi (login): tidak membawa token lama, dan 401-nya berarti "kredensial
+// salah" — dilaporkan ke pemanggil sebagai galat biasa, BUKAN sesi berakhir (tanpa event auth-error).
 async function request(path, options = {}) {
   // P12A Mode Demo: bacaan data Production dilayani dataset sintetis; metode non-GET ditolak SEBELUM jaringan.
   const demo = demoGate(path, options.method || "GET");
   if (demo) return demo;
+  const { publik = false, ...init } = options;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const tokenKirim = publik ? null : bacaToken();
 
   try {
     const res = await fetchDenganUlang(`${BASE}${path}`, {
-      ...options,
+      ...init,
       signal: controller.signal,
       headers: {
         "Content-Type": "application/json",
-        ...authHeaders(),
-        ...options.headers,
+        ...(publik ? {} : authHeaders()),
+        ...init.headers,
       },
     });
-    adoptRefreshedToken(res);
-    if (res.status === 401) {
-      handleUnauthorized();
+    if (!publik) adoptRefreshedToken(res, tokenKirim);
+    if (res.status === 401 && !publik) {
+      handleUnauthorized(tokenKirim);
       throw new Error("Sesi berakhir, silakan login kembali");
     }
     if (!res.ok) {
@@ -131,7 +150,7 @@ function uploadWithProgress(path, formData, onProgress) {
     xhr.onload = () => {
       let body = null;
       try { body = JSON.parse(xhr.responseText); } catch { /* bukan JSON */ }
-      if (xhr.status === 401) { handleUnauthorized(); reject(Object.assign(new Error("Sesi berakhir, silakan login kembali"), { status: 401 })); return; }
+      if (xhr.status === 401) { handleUnauthorized(token); reject(Object.assign(new Error("Sesi berakhir, silakan login kembali"), { status: 401 })); return; }
       if (xhr.status < 200 || xhr.status >= 300) { reject(Object.assign(new Error(body?.error || "Unggahan gagal"), { status: xhr.status, code: body?.code })); return; }
       resolve(body);
     };
@@ -145,6 +164,7 @@ async function requestFormData(path, formData, method = "POST", extraHeaders = {
   const demo = demoBlock("Unggah berkas"); if (demo) return demo;
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const tokenKirim = bacaToken();
 
   try {
     const res = await fetch(`${BASE}${path}`, {
@@ -153,9 +173,9 @@ async function requestFormData(path, formData, method = "POST", extraHeaders = {
       headers: { ...authHeaders(), ...extraHeaders },
       body: formData,
     });
-    adoptRefreshedToken(res);
+    adoptRefreshedToken(res, tokenKirim);
     if (res.status === 401) {
-      handleUnauthorized();
+      handleUnauthorized(tokenKirim);
       throw new Error("Sesi berakhir, silakan login kembali");
     }
     if (!res.ok) {
@@ -184,8 +204,9 @@ function buildQuery(params) {
 
 export const api = {
   // Auth
+  // publik: tanpa token lama; 401 = kredensial salah (galat biasa), 429 = batas percobaan — keduanya tidak menyentuh sesi.
   login: (email, password) =>
-    request("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
+    request("/auth/login", { method: "POST", publik: true, body: JSON.stringify({ email, password }) }),
 
   // Satu angka HIDUP per workspace untuk kartu di halaman Portal (SANSS).
   getPortalSummary: () => request("/auth/portal-summary"),
@@ -886,9 +907,10 @@ export const api = {
   // Export = berkas (bukan JSON): server membangun Excel/PDF dari dokumen laporan yang sama dengan layar.
   exportProductionReport: async (qs) => {
     const demo = demoBlock("Export"); if (demo) return demo; // demo TIDAK pernah menghasilkan export production
+    const tokenKirim = bacaToken();
     const res = await fetch(`${BASE}/production-v2/reports/export?${qs}`, { headers: { ...authHeaders() } });
-    adoptRefreshedToken(res);
-    if (res.status === 401) { handleUnauthorized(); throw new Error("Sesi berakhir, silakan login kembali"); }
+    adoptRefreshedToken(res, tokenKirim);
+    if (res.status === 401) { handleUnauthorized(tokenKirim); throw new Error("Sesi berakhir, silakan login kembali"); }
     if (!res.ok) {
       let msg = "Gagal mengekspor laporan";
       try { msg = (await res.json()).error || msg; } catch { /* respons bukan JSON */ }
@@ -1098,10 +1120,11 @@ export const api = {
   // manual dengan header Bearer, bukan <a href> polos yang tidak bisa
   // membawa header otorisasi.
   exportCustomersVCard: async (params) => {
+    const tokenKirim = bacaToken();
     const res = await fetch(BASE + "/customers/export/vcard" + buildQuery(params), {
       headers: authHeaders(),
     });
-    if (res.status === 401) { handleUnauthorized(); throw new Error("Sesi berakhir, silakan login kembali"); }
+    if (res.status === 401) { handleUnauthorized(tokenKirim); throw new Error("Sesi berakhir, silakan login kembali"); }
     if (!res.ok) {
       let msg = "Gagal mengekspor kontak";
       try { msg = (await res.json()).error || msg; } catch {}
@@ -1189,8 +1212,9 @@ export const api = {
   // di-fetch manual dengan header Bearer, <a href> polos tidak bisa membawa
   // otorisasi (endpoint ini dijaga requireAuth di backend).
   getOrderInvoicePdf: async (orderId, jenis) => {
+    const tokenKirim = bacaToken();
     const res = await fetch(BASE + `/orders/${orderId}/invoice/pdf${jenis ? `?jenis=${jenis}` : ""}`, { headers: authHeaders() });
-    if (res.status === 401) { handleUnauthorized(); throw new Error("Sesi berakhir, silakan login kembali"); }
+    if (res.status === 401) { handleUnauthorized(tokenKirim); throw new Error("Sesi berakhir, silakan login kembali"); }
     if (!res.ok) {
       let msg = "Gagal membuat PDF invoice";
       try { msg = (await res.json()).error || msg; } catch {}
@@ -1202,8 +1226,9 @@ export const api = {
   },
   // Kartu Garansi E-Warranty (2 Sep 2026) — lihat services/warranty.js.
   getOrderWarrantyPdf: async (orderId, years) => {
+    const tokenKirim = bacaToken();
     const res = await fetch(BASE + `/orders/${orderId}/warranty/pdf?years=${years}`, { headers: authHeaders() });
-    if (res.status === 401) { handleUnauthorized(); throw new Error("Sesi berakhir, silakan login kembali"); }
+    if (res.status === 401) { handleUnauthorized(tokenKirim); throw new Error("Sesi berakhir, silakan login kembali"); }
     if (!res.ok) {
       let msg = "Gagal membuat PDF kartu garansi";
       try { msg = (await res.json()).error || msg; } catch {}
@@ -1707,13 +1732,14 @@ export const api = {
   // B3.9 Export Excel Finance — respons berupa BERKAS (bukan JSON), jadi tidak lewat request(). Server membangun .xlsx
   // (izin, WIB, angka Excel, anti-formula-injection); klien hanya mengirim filter/periode/ids yang sedang aktif di layar.
   exportFinanceExcel: async (modul, body) => {
+    const tokenKirim = bacaToken();
     const res = await fetch(`${BASE}/finance/export/${encodeURIComponent(modul)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", ...authHeaders() },
       body: JSON.stringify(body || {}),
     });
-    adoptRefreshedToken(res);
-    if (res.status === 401) { handleUnauthorized(); throw new Error("Sesi berakhir, silakan login kembali"); }
+    adoptRefreshedToken(res, tokenKirim);
+    if (res.status === 401) { handleUnauthorized(tokenKirim); throw new Error("Sesi berakhir, silakan login kembali"); }
     if (!res.ok) {
       let msg = "Gagal mengekspor ke Excel";
       try { msg = (await res.json()).error || msg; } catch { /* respons bukan JSON */ }
@@ -1733,9 +1759,10 @@ export const api = {
   hapusAnggaranDivisi: (id) => request(`/laporan-divisi/anggaran/${id}`, { method: "DELETE" }),
   getLaporanDivisiDryRun: (params = {}) => request(`/laporan-divisi/dry-run${qsFinance(params)}`),
   exportLaporanDivisi: async (body) => {
+    const tokenKirim = bacaToken();
     const res = await fetch(`${BASE}/laporan-divisi/export`, { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(body || {}) });
-    adoptRefreshedToken(res);
-    if (res.status === 401) { handleUnauthorized(); throw new Error("Sesi berakhir, silakan login kembali"); }
+    adoptRefreshedToken(res, tokenKirim);
+    if (res.status === 401) { handleUnauthorized(tokenKirim); throw new Error("Sesi berakhir, silakan login kembali"); }
     if (!res.ok) { let msg = "Gagal mengekspor ke Excel"; try { msg = (await res.json()).error || msg; } catch { /* bukan JSON */ } throw new Error(msg); }
     const cd = res.headers.get("Content-Disposition") || "";
     return { blob: await res.blob(), namaFile: cd.match(/filename="([^"]+)"/)?.[1] || "Finance_Laporan_Divisi.xlsx" };
@@ -1948,8 +1975,9 @@ export const api = {
   createFakturPurchaseOrder: (id, data, idempotencyKey = mutationKey("fak")) => request(`/finance/purchase-orders/${id}/faktur`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   // PDF Purchase Order (sistem dokumen SANSS yang sama dengan invoice). File, bukan JSON: di-fetch manual dengan Bearer (pola getOrderInvoicePdf).
   getPurchaseOrderPdf: async (id) => {
+    const tokenKirim = bacaToken();
     const res = await fetch(BASE + `/finance/purchase-orders/${id}/pdf`, { headers: authHeaders() });
-    if (res.status === 401) { handleUnauthorized(); throw new Error("Sesi berakhir, silakan login kembali"); }
+    if (res.status === 401) { handleUnauthorized(tokenKirim); throw new Error("Sesi berakhir, silakan login kembali"); }
     if (!res.ok) {
       let msg = "Gagal membuat PDF Purchase Order";
       try { msg = (await res.json()).error || msg; } catch {}
@@ -2063,8 +2091,9 @@ export const api = {
   tinjauExceptionRekon: (data) => request("/finance/rekon/perlu-ditinjau/tinjau", { method: "POST", body: JSON.stringify(data) }),
   getBukuJurnalDetail: (id) => request(`/finance/buku/jurnal/${id}`),
   eksporAuditRekon: async (id) => {
+    const tokenKirim = bacaToken();
     const res = await fetch(`${BASE}/finance/bank-statements/${id}/ekspor-audit`, { headers: authHeaders() });
-    if (res.status === 401) { handleUnauthorized(); throw new Error("Sesi berakhir, silakan login kembali"); }
+    if (res.status === 401) { handleUnauthorized(tokenKirim); throw new Error("Sesi berakhir, silakan login kembali"); }
     if (!res.ok) { let msg = "Gagal mengekspor ringkasan audit"; try { msg = (await res.json()).error || msg; } catch {} throw new Error(msg); }
     const namaFile = (res.headers.get("Content-Disposition") || "").match(/filename="([^"]+)"/)?.[1] || "audit-rekon.csv";
     return { blob: await res.blob(), namaFile };

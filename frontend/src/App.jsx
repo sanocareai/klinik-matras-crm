@@ -66,12 +66,17 @@ export default function App() {
     setSessionExpired(false);
   }
 
-  // Tangkap event 401 dari api.js — tampilkan modal tanpa hard reload
+  // Tangkap event 401 dari api.js — tampilkan modal tanpa hard reload.
+  // Hanya didengar SELAMA ada sesi: tanpa user, layar login sudah tampil dan dialog "Sesi Berakhir"
+  // tidak boleh menutupi form-nya (laporan 14 Okt 2026: email/password tidak bisa diketik). api.js
+  // sendiri sudah hanya mengirim event ini untuk request terautentikasi dengan token yang masih aktif.
+  const adaSesi = Boolean(user);
   useEffect(() => {
+    if (!adaSesi) return;
     const handler = () => setSessionExpired(true);
     window.addEventListener("auth-error", handler);
     return () => window.removeEventListener("auth-error", handler);
-  }, []);
+  }, [adaSesi]);
 
   // BUG FIX — tombol "Login Kembali" SEBELUMNYA cuma setSessionExpired(false),
   // yang cuma menyembunyikan modal (Login sudah tampil di baliknya via
@@ -139,6 +144,7 @@ export default function App() {
           open={sessionExpired}
           onOpenChange={() => {}}
           showClose={false}
+          portalToBody
           className="w-[340px] text-center"
         >
           <div className="mb-3 text-[40px]">⏰</div>
