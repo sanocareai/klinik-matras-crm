@@ -48,5 +48,6 @@ export function teksLengkap(job) {
     out.push(`${b.bundel ? "  " : ""}Unit: ${(b.unitLabel ?? []).join(", ")}`);
   }
   if (m.sumber) out.push(`Sumber: ${m.sumber.label}`);
+  if (m.sumber?.picLead) out.push(`PIC lead: ${m.sumber.picLead}`);
   return out;
 }

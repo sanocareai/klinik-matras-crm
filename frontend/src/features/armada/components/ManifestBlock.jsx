@@ -68,6 +68,7 @@ export function ManifestBlock({ job, className, bukaAwal = true, judul = "Barang
             );
           })}
           {m.sumber && <p className="m-0 text-[12px] text-ink2" data-testid="manifest-sumber">Sumber: {m.sumber.label}</p>}
+          {m.sumber?.picLead && <p className="m-0 text-[12px] text-ink3" data-testid="manifest-pic-lead">PIC lead: {m.sumber.picLead}</p>}
         </div>
       )}
     </section>

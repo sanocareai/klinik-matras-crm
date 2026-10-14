@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Loader2, PackageCheck } from "lucide-react";
-import { api } from "@/api.js";
+import { submitOrQueue } from "@/utils/submitJobAction.js";
 import { Button } from "@/components/ui/button.jsx";
 import { manifestOf } from "@/features/armada/manifest.js";
 
@@ -22,7 +22,12 @@ export default function MuatBarangPanel({ job, onChanged, className = "" }) {
   const bisa = bolehKonfirmasiMuat(job);
   async function konfirmasi() {
     setBusy(true); setErr("");
-    try { await api.konfirmasiMuatUnit(job.id, { semua: true }); await onChanged?.(); } catch (e) { setErr(e.message || "Gagal menyimpan konfirmasi muat"); } finally { setBusy(false); }
+    try {
+      // Offline: tersimpan di antrean dan dikirim otomatis saat online (replay aman — konfirmasi muat idempoten di server).
+      const { queued } = await submitOrQueue(job.id, "unit-load", { semua: true });
+      if (queued) setErr("Tersimpan offline — akan dikirim otomatis saat online.");
+      await onChanged?.();
+    } catch (e) { setErr(e.message || "Gagal menyimpan konfirmasi muat"); } finally { setBusy(false); }
   }
   return (
     <div className={`rounded-lg border px-3 py-2 ${lengkap ? "border-line bg-greenbg" : "border-line bg-inset"} ${className}`} data-testid="muat-barang">

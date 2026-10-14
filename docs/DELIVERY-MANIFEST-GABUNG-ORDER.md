@@ -35,7 +35,7 @@ dipakai sebagai jumlah barang.
 | Aturan | Implementasi |
 |---|---|
 | Progres muat "Barang dimuat 3/3 unit" | tabel `job_unit_loads` (unik per job+unit → klik ulang/replay tidak menggandakan); `POST /armada/jobs/:id/unit-load` |
-| Driver tidak bisa menyelesaikan bila ada unit belum dikonfirmasi | gerbang di `POST /jobs/:id/complete` → 409 `UNIT_BELUM_DIKONFIRMASI`; **aktif bila `DELIVERY_UNIT_CONFIRM_REQUIRED=1`** (default MATI sampai app driver mengirim konfirmasi) |
+| Driver tidak bisa menyelesaikan bila ada unit belum dikonfirmasi | gerbang di `POST /jobs/:id/complete` → 409 `UNIT_BELUM_DIKONFIRMASI`; **tiga mode lewat `DELIVERY_UNIT_CONFIRM_REQUIRED`: MATI (default) / `capable` / `strict`** — lihat bagian 8 |
 | Pengecualian resmi | `pengecualianUnit.alasan` ≥ 5 huruf → dicatat `DeliveryExecutionEvent` aksi `UNIT_LOAD_EXCEPTION` tepat sekali (idempoten) |
 | Replay tidak menggandakan unit/job | kunci unik + Idempotency-Key; diuji (tes 4, 5, 7, 8) |
 | Tambahan pesanan sebelum Delivery mulai | masuk job gabungan lewat kebijakan owner yang ada; setelah rute jalan **tidak** disisipkan diam-diam — manifest menandai `tambahanBelumMasuk` |
@@ -56,30 +56,32 @@ gabungkan. Endpoint: `GET /orders/:id/kandidat-duplikat`, `GET /orders/gabung/pr
   "Histori dari order lama" (job/rute/POD lama tetap terbaca).
 * KPI/omzet/analitik **tidak disentuh** (tidak ada angka yang berlipat atau berubah karena penggabungan).
 
-## 5. Audit produksi baca-saja — Indra (14 Okt 2026)
+## 5. Audit produksi baca-saja — Indra (14 Okt 2026) — KOREKSI
 
 Dijalankan lewat `psql` dengan `default_transaction_read_only=on`; tidak ada perubahan.
 
-| | NEW-11102026-023 (resmi) | NEW-01092026-001 (manual) |
+**Dua order Indra adalah TRANSAKSI BERBEDA. Jangan digabungkan, disembunyikan, atau diubah datanya.**
+
+| | NEW-11102026-023 (resmi) | NEW-01092026-001 (transaksi lain) |
 |---|---|---|
-| Dibuat | 11 Okt 2026 | **1 Sep 2026** (40 hari SEBELUM PKR) |
+| Dibuat | 11 Okt 2026 | 1 Sep 2026, 40 hari SEBELUM PKR |
 | PKR | PKR-11102026-005, penjual **Kemal** | bukan PKR |
-| Unit | 3 (U1–U3, READY_FOR_DELIVERY) | 1 (merk "Sano", "Ukuran Custom", DELIVERED) |
+| Unit | 3 (U1–U3, READY_FOR_DELIVERY) | 1 (merk Sano, "Ukuran Custom", DELIVERED) |
 | Nilai / bayar | Rp0 di CRM · 0 payment · BELUM_BAYAR | Rp1.100.000 · 1 payment TRANSFER 8 Sep · **LUNAS** |
-| Job | 1 DELIVERY SCHEDULED, ada rute | 1 **PICKUP** COMPLETED 3–4 Sep, ada rute, 0 foto bukti |
-| Catatan | "Rangka: …, alamat blm ada" | "Sales : Kemal — Dikirim 2 Sep" |
+| Job | 1 DELIVERY terjadwal, ada rute | 1 **PICKUP** selesai 3–4 Sep, ada rute |
 
-Customer Indra: `assignedSales` = **Rifki** (pemilik lead), 2 order total.
+Customer Indra: `assignedSales` = **Rifki** (PIC lead), 2 order total.
 
-**Kesimpulan:** NEW-01092026-001 **bukan** workaround/duplikat dari PKR Oktober — transaksi terpisah lebih awal (1 unit, merk
-Sano, LUNAS Rp1,1 jt, job PICKUP). Mesin penggabungan akan memblokirnya sendiri (bukti barang serupa tidak terpenuhi → `BUKTI_KURANG`)
-dan menampilkan peringatan "dibuat 40 hari sebelum order resmi" + "job duplikat hanya PICKUP". **Jangan terapkan penggabungan Indra
-sebelum Owner memastikan ada order duplikat yang sebenarnya.** Fix tampilan Delivery (manifest 3 unit) berdiri sendiri — tidak butuh
-penggabungan.
+Keputusan: tidak ada penggabungan, tidak ada penyembunyian, tidak ada koreksi data untuk Indra. Perbaikan untuk Indra hanya TAMPILAN
+(manifest 1 stop • 3 unit • 1 jenis produk; "dijual oleh Kemal"; Rifki hanya sebagai "PIC lead").
+
+### Mesin Gabungkan Order Duplikat — dipertahankan hanya untuk bukti KUAT
+* Kandidat hanya muncul bila customer/HP sama **dan** barang serupa **dan** konteks PKR (order utama PKR, duplikat bukan PKR). Order lain milik customer yang sama TIDAK ditawarkan.
+* Kasus Indra nyata diuji (tes 11): bukan kandidat, pratinjau `bolehDigabung=false` (`BUKTI_KURANG`) + peringatan "dibuat 40 hari sebelum" dan "hanya PICKUP", POST ditolak 409, data identik sebelum/sesudah.
+* Smoke rilis menjalankan dry-run baca-saja atas pasangan Indra dan mewajibkan hasil `bolehDigabung=false`.
 
 ### Rifki vs Kemal
-* "Rifki" pada kolom Sales = `Customer.assignedSales` (pemilik lead customer Indra), bukan penjual transaksi.
-* Untuk order PKR kini yang tampil **"Dijual oleh Kemal"**; PIC Delivery tidak pernah disebut "Sales".
+"Rifki" = `Customer.assignedSales` (pemilik lead), bukan penjual transaksi. Order PKR: "Dijual oleh Kemal"; Rifki hanya boleh tampil berlabel "PIC lead".
 
 ## 6. Risiko & rollback
 
@@ -87,12 +89,38 @@ penggabungan.
 * Gerbang muat unit **default mati** (env `DELIVERY_UNIT_CONFIRM_REQUIRED`) → tidak ada perubahan perilaku driver sampai dinyalakan.
 * Rollback kode: jalankan `scripts/rollback-guard-delivery-manifest.sh` (baca-saja). Menolak bila sudah ada `order_merges`/`job_unit_loads`
   (kode lama akan menampilkan order digabung sebagai pesanan aktif kedua). Migrasi dibiarkan terpasang.
-* Skrip rilis fail-closed (release-dir, backup + restore-verify, pemindai DDL) **belum dibuat** — wajib dibuat sebelum deploy.
-* Aplikasi RN driver (driver-mobile/delivery-control) belum diubah: payload manifest sudah tersedia, tetapi tampilan RN dan
-  pengiriman konfirmasi muat menyusul sebelum gerbang dinyalakan.
+* Skrip rilis fail-closed dan aplikasi RN: lihat bagian 8 dan 9. Fitur operasional baru dianggap selesai setelah gerbang `strict` aktif.
 
 ## 7. Tes
 * `backend/tests/deliveryManifest.test.js` (10) — builder murni.
-* `backend/tests/integration/deliveryManifestGabung.integration.test.js` (10) — PostgreSQL sungguhan.
-* `frontend/tests/deliveryManifestGabungUI.test.js` (7).
+* `backend/tests/integration/deliveryManifestGabung.integration.test.js` (11, termasuk kasus Indra nyata) — PostgreSQL sungguhan.
+* `backend/tests/integration/deliveryUnitLoadGate.integration.test.js` (8) — mode MATI/KAPABEL/KETAT, 3/3, 2/3, pengecualian, klien lama vs baru, V2.
+* `frontend/tests/deliveryManifestGabungUI.test.js` (7); `driver-mobile/src/lib/unitLoadOffline.test.js` (8, offline/replay/gerbang); `packages/delivery-shared/test/manifest.test.js` (2); `delivery-control` uiSource (1).
 * QA browser 1440/390 terang/gelap pada DB lokal (bukan produksi).
+
+## 8. Aplikasi RN (driver-mobile, delivery-control) dan jalur snapshot V2
+
+* Backend: snapshot Driver V2 (`/armada/v2/me/snapshot`, jalur app RN) kini membawa unit lengkap + progres muat dan router V2 menempelkan manifest yang SAMA dengan `/armada/*` (tes integrasi: V1 = V2).
+* **driver-mobile**: kartu job menampilkan manifest (qty, nama, ukuran, U1/U2/U3, sumber, PIC lead), checklist muat per unit / "Semua dimuat", form Selesai dengan alasan pengecualian, dan manifest per stop di Persiapan Perjalanan. Konfirmasi muat lewat antrean eksekusi offline (aksi `unit-load`): digabung per job, urut sebelum Selesai, idempoten di server, dibuang otomatis bila job sudah selesai.
+* **delivery-control**: detail rute dan detail masalah menampilkan manifest dan progres muat (baca-saja) lewat modul bersama `@sano/delivery-shared`.
+* Klien mengumumkan kemampuan dengan header `X-Capability: unit-load` (web dan driver-mobile baru).
+
+### Rilis OTA RN — langkah dan gerbang versi
+Kedua app memakai `runtimeVersion: appVersion`, jadi perubahan JS-only (tanpa modul native baru) dapat OTA ke versi terpasang yang sama:
+1. Pastikan versi terpasang di HP: driver-mobile `1.0.0` (channel `production`), delivery-control `0.1.0` (channel `control-production`). Bila `app.json`/`app.config.js` versi diubah, OTA TIDAK menjangkau build lama — butuh APK baru.
+2. Deploy server + web DULU (skrip `release-delivery-manifest.sh`); gerbang tetap MATI.
+3. Terbitkan OTA setelah server live: `cd driver-mobile && eas update --channel production --message "manifest barang + checklist muat"`; `cd delivery-control && eas update --channel control-production --message "manifest barang di detail rute"`. Jangan OTA dari branch yang bukan hasil merge ke main.
+4. Verifikasi di HP uji: kartu job menampilkan "1 stop • 3 unit • 1 jenis produk"; app sudah menarik update (restart sekali).
+5. **Fitur operasional BELUM selesai selama gerbang masih MATI.** Selesai = mode `strict` aktif dan sinyal klien lama nol.
+
+### Cara menyalakan gerbang dengan aman (env `DELIVERY_UNIT_CONFIRM_REQUIRED`)
+| Nilai | Mode | Perilaku |
+|---|---|---|
+| kosong / `0` | MATI (default) | tidak ditegakkan |
+| `capable` | KAPABEL | ditegakkan HANYA untuk klien ber-header `X-Capability: unit-load`; klien lama tetap bisa menyelesaikan dan tercatat `UNIT_LOAD_LEGACY_CLIENT` |
+| `1` / `strict` | KETAT | ditegakkan untuk semua driver (klien lama akan terkunci) |
+
+Urutan: (a) rilis server+web, (b) OTA RN, (c) set `capable` lalu recreate backend (`docker compose up -d --force-recreate backend` — env dibaca saat start), (d) pantau beberapa hari: `select count(*) from delivery_execution_events where action='UNIT_LOAD_LEGACY_CLIENT' and created_at > now() - interval '3 days'` harus 0 dan `UNIT_LOAD_EXCEPTION` wajar, (e) baru `strict`. Rollback gerbang: kosongkan env + recreate backend (data konfirmasi tetap). Cek status tanpa mengubah apa pun: `GET /api/armada/unit-load/config`.
+
+## 9. Rilis
+Skrip: `scripts/release-delivery-manifest.sh` (dibangkitkan dari template terbukti; pin 2 migrasi + diff schema.prisma, pemindai DDL + uji negatif, backup + restore nyata, rehearsal + uji perilaku constraint/trigger, build frontend di release dir, smoke baca-saja, guard rollback). Baseline WAJIB dicek ulang sebelum jalan (`--preflight-only` menolak bila release aktif bergeser).

@@ -93,6 +93,8 @@ async function request(path, options = {}) {
       headers: {
         "Content-Type": "application/json",
         ...(publik ? {} : authHeaders()),
+        // Kemampuan klien (14 Okt 2026): web ini punya checklist muat unit — server menegakkan gerbang hanya untuk klien yang mengumumkan ini.
+        "X-Capability": "unit-load",
         ...init.headers,
       },
     });
@@ -1862,6 +1864,7 @@ export const api = {
   getKandidatDuplikatOrder: (orderId) => request(`/orders/${orderId}/kandidat-duplikat`),
   pratinjauGabungOrder: (utama, duplikat) => request(`/orders/gabung/pratinjau?utama=${encodeURIComponent(utama)}&duplikat=${encodeURIComponent(duplikat)}`),
   gabungkanOrder: (data, idempotencyKey) => request("/orders/gabung", { method: "POST", headers: { "Idempotency-Key": idempotencyKey || mutationKey("gabung-order") }, body: JSON.stringify(data) }),
+  getUnitLoadConfig: () => request("/armada/unit-load/config"),
   konfirmasiMuatUnit: (jobId, data = { semua: true }) => request(`/armada/jobs/${jobId}/unit-load`, { method: "POST", headers: { "Idempotency-Key": mutationKey("unit-load") }, body: JSON.stringify(data) }),
   getKemampuanKoreksiOrder: (id) => request(`/finance/penjualan-karyawan/${id}/koreksi-order`),
   pratinjauKoreksiOrderPkr: (id, data) => request(`/finance/penjualan-karyawan/${id}/koreksi-order/pratinjau`, { method: "POST", body: JSON.stringify(data) }),

@@ -98,7 +98,9 @@ test("Driver App web: manifest + checklist muat + pengecualian resmi dikirim ke 
   assert.match(baca("features/armada/components/RoutePrepChecklistDriverPanel.jsx"), /<ManifestRute jobs=\{jobs\}/);
   assert.match(baca("features/armada/components/RoutePrepChecklistAdminModal.jsx"), /<ManifestRute jobs=\{route\.jobs\}/);
   const muat = baca("features/armada/components/MuatBarangPanel.jsx");
-  assert.match(muat, /konfirmasiMuatUnit\(job\.id, \{ semua: true \}\)/);
+  assert.match(muat, /submitOrQueue\(job\.id, "unit-load", \{ semua: true \}\)/);
+  assert.match(sub, /action === "unit-load"/);
+  assert.match(baca("api.js"), /"X-Capability": "unit-load"/);
   // manifest tidak boleh memuat harga di layar driver
   assert.doesNotMatch(baca("features/armada/components/ManifestBlock.jsx"), /formatRupiah|\.price\b|\.harga\b|\.value\b/);
 });

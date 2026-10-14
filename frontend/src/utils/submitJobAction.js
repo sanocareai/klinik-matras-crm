@@ -42,6 +42,11 @@ export async function performSubmit(jobId, action, payload, photoFiles = [], sig
     return api.arriveArmadaJob(jobId, { proofPhotoUrls: arrivalPhotoUrls, location: payload.location }, idempotencyKey, timeOpts);
   }
 
+  // Konfirmasi muat unit (14 Okt 2026): idempoten di server (unik per job+unit) — aman diputar ulang dari antrean offline.
+  if (action === "unit-load") {
+    return api.konfirmasiMuatUnit(jobId, payload.semua ? { semua: true } : { unitIds: payload.unitIds ?? [] });
+  }
+
   const proofPhotoUrls = await uploadBlobs(jobId, photoFiles);
   let signatureUrl = null;
   if (signatureBlob) {

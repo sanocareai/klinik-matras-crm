@@ -369,7 +369,7 @@ function JobCard({ job, onChanged, onQueued, pending }) {
       {/* Manifest barang (14 Okt 2026): jumlah unit/jenis produk/Unit ID dari server — bukan "1 kasur" dari ringkasan order. Kode lama tetap sebagai cadangan bila payload belum membawa manifest. */}
       {job.manifest ? (
         <>
-          <ManifestBlock job={job} className="mt-2" bukaAwal={false} />
+          <ManifestBlock job={job} className="mt-2" bukaAwal />
           <MuatBarangPanel job={job} onChanged={onChanged} className="mt-2" />
         </>
       ) : (
