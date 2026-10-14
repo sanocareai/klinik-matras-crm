@@ -14,13 +14,16 @@ pipelineRouter.use(requireAuth);
 // stage. `from`/`to` (opsional) memfilter Customer.createdAt — TANPA filter,
 // papan menampilkan SEMUA pelanggan di tiap stage (perilaku lama, dipakai
 // kalau frontend tidak mengirim tanggal sama sekali).
+// Pembeli aktual Penjualan Karyawan bukan lead Sales. `leadSource: { not }` di Prisma ikut membuang baris NULL — maka NULL ditulis eksplisit supaya pelanggan tanpa sumber tetap tampil.
+const BUKAN_PKR = [{ leadSource: null }, { leadSource: { not: "PENJUALAN_KARYAWAN" } }];
+
 pipelineRouter.get("/board", async (req, res) => {
   try {
     const { from, to } = req.query;
     // staffUserId: null — profil internal karyawan (Penjualan Karyawan → Order CRM) bukan lead Sales, tidak masuk papan pipeline.
     const where = (from && to)
-      ? { createdAt: { gte: startOfDayWIB(from), lt: endOfDayExclusiveWIB(to) }, staffUserId: null, leadSource: { not: "PENJUALAN_KARYAWAN" } }
-      : { staffUserId: null, leadSource: { not: "PENJUALAN_KARYAWAN" } };
+      ? { createdAt: { gte: startOfDayWIB(from), lt: endOfDayExclusiveWIB(to) }, staffUserId: null, OR: BUKAN_PKR }
+      : { staffUserId: null, OR: BUKAN_PKR };
 
     const customers = await prisma.customer.findMany({
       where,

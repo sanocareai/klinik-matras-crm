@@ -367,7 +367,7 @@ export function registerReadOnlyTools(server) {
         groupByBersih(prisma, { by: ["status"], where: periode, _count: true, _sum: { value: true } }),
         groupByBersih(prisma, { by: ["category"], where: tanpaBatal, _count: true, _sum: { value: true } }),
         groupByBersih(prisma, { by: ["paymentStatus"], where: tanpaBatal, _count: true, _sum: { value: true } }),
-        prisma.customer.count({ where: { ...periodeCustomer, staffUserId: null, leadSource: { not: "PENJUALAN_KARYAWAN" } } }),
+        prisma.customer.count({ where: { ...periodeCustomer, staffUserId: null, OR: [{ leadSource: null }, { leadSource: { not: "PENJUALAN_KARYAWAN" } }] } }),
       ]);
 
       return hasil({
