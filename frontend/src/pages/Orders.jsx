@@ -29,7 +29,10 @@ import { opsiStatusBayar, lunasDicegat, PESAN_LUNAS_BUTUH_PEMBAYARAN } from "@/f
 import { useKlaimLunasAktif } from "@/features/klaim/useKlaimLunasAktif.js";
 import OrderTimelineDrawer from "../features/orders/OrderTimelineDrawer.jsx";
 import ReadinessBadge from "../features/orders/ReadinessBadge.jsx";
-import { LabelOrderPkr, BadgeBayarPkr } from "../features/finance/PkrOrderCrm.jsx";
+import { BadgeBayarPkr } from "../features/finance/PkrOrderCrm.jsx";
+import SumberPkr from "../features/orders/SumberPkr.jsx";
+import { ModalEditCustomerPkr } from "@/features/finance/PkrEditCustomer.jsx";
+import { bolehKoreksiPembeliPkr } from "@/features/finance/pkrPembeliLogic.js";
 import { DaftarUnitPkr, SubBarisUnitPkr, TombolPerluasUnit, RingkasUnitPkr } from "../features/orders/PkrUnitBaris.jsx";
 import { UNIT_STATUS_OPSI, punyaUnitPkr } from "../features/orders/pkrUnitLogic.js";
 import { UnitOverviewDrawer } from "@/features/production/UnitOverviewDrawer.jsx";
@@ -324,7 +327,7 @@ function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageC
             {order.orderNumber || "tanpa ID"}
           </p>
           {order.staffSeller && <p className="mt-0.5 truncate text-[10px] font-semibold text-accent" data-testid="label-penjualan-karyawan">Penjualan Karyawan · {order.staffSeller.name}</p>}
-          <LabelOrderPkr pkr={order.penjualanKaryawan} className="mt-0.5" />
+          <SumberPkr pkr={order.penjualanKaryawan} className="mt-0.5" />
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
           {order.penjualanKaryawan ? <BadgeBayarPkr pkr={order.penjualanKaryawan} /> : <PaymentStatusSelect order={order} onChange={onPaymentChange} locked={paymentLocked} />}
@@ -500,6 +503,7 @@ export default function Orders() {
   const [fPipeline, setFPipeline] = useState("");
   const [fStatusUnit, setFStatusUnit] = useState(""); // saringan memakai STATUS UNIT (order multi-unit Penjualan Karyawan)
   const [unitTerbuka, setUnitTerbuka] = useState(() => new Set()); // id order yang sub-baris unitnya diperluas (tabel desktop)
+  const [editPkr, setEditPkr] = useState(null); // order PKR yang data customernya diedit/dilengkapi dari CRM
   const [unitId, setUnitId] = useOpenParam("unit"); // ?unit=<id> → Unit 360 terbuka (muat ulang / tautan langsung aman)
   const [promos, setPromos]   = useState([]);
   const [hanyaMandek, setHanyaMandek] = useState(false);
@@ -1395,7 +1399,7 @@ export default function Orders() {
                       <td className="whitespace-nowrap px-3 py-2.5 font-mono text-[11px] text-ink2">
                         {o.orderNumber || "—"}
                         {o.staffSeller && <span className="mt-0.5 block whitespace-normal font-sans text-[10px] font-semibold text-accent" data-testid="label-penjualan-karyawan">Penjualan Karyawan · {o.staffSeller.name}</span>}
-                        <LabelOrderPkr pkr={o.penjualanKaryawan} className="mt-0.5" />
+                        <SumberPkr pkr={o.penjualanKaryawan} className="mt-0.5" onLengkapi={bolehKoreksiPembeliPkr(currentUser()) ? () => setEditPkr(o) : null} />
                         {punyaUnitPkr(o) && (
                           <div className="mt-1 whitespace-normal font-sans">
                             <RingkasUnitPkr pkr={o.penjualanKaryawan} />
@@ -1537,7 +1541,15 @@ export default function Orders() {
         onPaymentRecorded={load}
         canEditLunas={canEditLunas}
         onBukaUnit={bukaUnit}
+        onEditCustomerPkr={bolehKoreksiPembeliPkr(currentUser()) ? (ord) => { setTimelineOrder(null); setTimelineTab(null); setEditPkr(ord); } : null}
       />
+      {editPkr?.penjualanKaryawan && (
+        <ModalEditCustomerPkr
+          key={`${editPkr.id}-edit-pkr`} via="order" orderId={editPkr.id}
+          penjualan={{ id: editPkr.penjualanKaryawan.penjualanId, nomor: editPkr.penjualanKaryawan.nomor, sinkron: editPkr.penjualanKaryawan }}
+          onClose={() => setEditPkr(null)} onSelesai={async () => { setEditPkr(null); await load(); }}
+        />
+      )}
       {unitId && <UnitOverviewDrawer unitId={unitId} onClose={() => setUnitId(null)} onChanged={load} />}
     </PageContainer>
   );

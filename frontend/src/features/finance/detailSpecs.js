@@ -142,31 +142,51 @@ export function specPengecualianLunas(p, { badge, aksi } = {}) {
   };
 }
 
-export function specPenjualanKaryawan(p, { badge, aksi } = {}) {
+/**
+ * Rincian PKR: Ringkasan Keuangan → Customer & Kontak → Alamat & Maps → Keluhan & Catatan → Item Penjualan → Unit Produksi → Delivery → Pembayaran → Jejak Perubahan.
+ * Identitas dibaca dari `p.sinkron.identitas` (read-model kanonis server): customer/pembeli ≠ karyawan penjual ≠ penerima. Order legacy ditandai "Data customer belum lengkap".
+ */
+export function specPenjualanKaryawan(p, { badge, aksi, onRiwayat } = {}) {
   const bayar = (p.payments || []).filter((x) => !x.cancelledAt);
+  const sk = p.sinkron || null;
+  const id = sk?.identitas || null;
+  const link = (url) => (url ? React.createElement("a", { href: url, target: "_blank", rel: "noreferrer noopener", className: "break-all font-semibold text-accent underline" }, "Buka di Google Maps ↗") : null);
+  const unitLabel = (u) => `${u.kode} (${u.label})`;
+  const customerBaris = id
+    ? [
+      ["Customer/pembeli", id.customer?.nama ? `${id.customer.nama}${id.legacy ? " — data customer belum lengkap" : ""}` : null],
+      ["Nomor WhatsApp", id.legacy ? "Belum diisi — lengkapi lewat Edit Data Customer" : id.customer?.telepon],
+      ["Karyawan penjual", id.karyawanPenjual?.nama ? `${id.karyawanPenjual.nama} (sumber transaksi)` : nama(p.seller)],
+      ["Penerima", id.penerima?.berbeda ? `${id.penerima.nama || "—"}${id.penerima.telepon ? ` · ${id.penerima.telepon}` : ""}` : id.legacy ? null : "Sama dengan pembeli"],
+      ["Sumber", "Penjualan Karyawan"],
+    ]
+    : [["Pembeli", p.buyerName], ["Karyawan penjual", nama(p.seller)]];
+  const deliveryBaris = sk?.order
+    ? [["Status Delivery", sk.delivery?.label], ["Kirim/ambil", sk.items?.[0]?.kirimLabel], ["Jadwal", id?.waktu?.kirim], ["Pickup", id?.waktu?.pickup]]
+    : [];
   return {
-    judul: p.nomor, subjudul: `Penjualan ${p.seller?.name || "karyawan"} → ${p.buyerName}`, badge, aksi,
+    judul: p.nomor, subjudul: `Dijual oleh ${p.seller?.name || "karyawan"} → ${id?.customer?.nama || p.buyerName}`, badge, aksi,
     ringkas: [
       ["Total penjualan", formatUang(p.total)],
       ["Sisa tagihan ke karyawan", formatUang(p.sisa ?? 0), Number(p.sisa) > 0 ? "oranye" : "hijau"],
     ],
     bagian: [
-      { judul: "Penjualan", baris: [["Tanggal", tanggalPendek(p.date)], ["Karyawan penjual", nama(p.seller)], ["Pembeli", p.buyerName], ["Sudah dibayar", uang(p.terbayar)], ["Catatan", p.notes]] },
-      { judul: `Item (${(p.items || []).length})`, baris: (p.items || []).map((i) => [i.name, `${i.quantity} × ${formatUang(i.unitPrice)} = ${formatUang(i.subtotal)}${i.pemenuhanLabel ? ` · ${i.pemenuhanLabel}` : ""}`]) },
-      ...(bayar.length > 0 ? [{ judul: `Pembayaran (${bayar.length})`, baris: bayar.map((x, i) => [`${i + 1}. ${tanggalPendek(x.date)}`, `${formatUang(x.amount)} · ${LABEL_METODE_PJK[x.method] || x.method}${x.cashAccount ? ` ke ${x.cashAccount.name}` : ""}${x.notes ? ` — ${x.notes}` : ""}`]) }] : []),
-      ...(p.sinkron ? [{
-        judul: "Order CRM, Produksi, Delivery",
-        baris: p.sinkron.order
-          ? [
-            ["Order CRM", p.sinkron.order.nomor], ["Status order", p.sinkron.order.statusLabel],
-            ["Spesifikasi", p.sinkron.order.spesifikasi.lengkap ? "Lengkap" : `Perlu dilengkapi: ${p.sinkron.order.spesifikasi.kurang.join(", ")}`],
-            ["Unit", (p.sinkron.units || []).map((u) => `${u.kode} (${u.label})`).join(", ")],
-            ["Produksi", p.sinkron.produksi?.label], ["Delivery", p.sinkron.delivery?.label],
-            ["Pembayaran", `${p.sinkron.pembayaran.label} — dibaca dari penjualan ini, bukan dari order`],
-          ]
-          : [["Order CRM", "Belum ada. Gunakan “Buat/Tautkan Order CRM”."]],
+      { judul: "Ringkasan keuangan", baris: [["Tanggal", tanggalPendek(p.date)], ["Total", uang(p.total)], ["Sudah dibayar", uang(p.terbayar)], ["Sisa tagihan", uang(p.sisa)], ["Catatan transaksi", p.notes]] },
+      { judul: "Customer & kontak", baris: customerBaris },
+      { judul: "Alamat & Maps", baris: id ? [["Alamat", [id.alamat?.teks, id.alamat?.kota].filter(Boolean).join(", ") || null], ["Patokan", id.alamat?.patokan], ["Google Maps", link(id.alamat?.lokasiUrl)]] : [] },
+      { judul: "Keluhan & catatan", baris: id ? [["Keluhan", id.catatan?.keluhan], ["Catatan umum", id.catatan?.order], ["Catatan Produksi", id.catatan?.produksi], ["Catatan Delivery", id.catatan?.delivery]] : [] },
+      { judul: `Item penjualan (${(p.items || []).length})`, baris: (p.items || []).map((i) => [i.name, `${i.quantity} × ${formatUang(i.unitPrice)} = ${formatUang(i.subtotal)}${i.pemenuhanLabel ? ` · ${i.pemenuhanLabel}` : ""}`]) },
+      ...(sk?.unitBaris?.length ? [{
+        judul: `Unit produksi (${sk.ringkasUnit?.total ?? sk.unitBaris.length})`,
+        baris: [
+          ["Ringkasan", sk.ringkasUnit ? `Dijadwalkan ${sk.ringkasUnit.dijadwalkan}/${sk.ringkasUnit.total} · Diproduksi ${sk.ringkasUnit.sedangDiproduksi}/${sk.ringkasUnit.total} · Siap ${sk.ringkasUnit.siap}/${sk.ringkasUnit.total} · Terkirim ${sk.ringkasUnit.terkirim}/${sk.ringkasUnit.total}` : null],
+          ...sk.unitBaris.slice(0, 12).map((u) => [u.kode, `${u.item?.nama || "Item"} · ${u.produksi?.label}${["READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD", "IN_TRANSIT_OUT", "DELIVERED"].includes(u.produksi?.kode) ? " · spesifikasi saat diproduksi (terkunci)" : ""}`]),
+          ...(sk.unitBaris.length > 12 ? [["", `… dan ${sk.unitBaris.length - 12} unit lain (lihat Order CRM)`]] : []),
+        ],
       }] : []),
-      { judul: "Jejak", baris: [["Dibuat oleh", nama(p.createdBy)], ["Dibuat pada", TAMPIL_TANGGAL(p.createdAt)], ["Dibatalkan", p.cancelledAt ? `${TAMPIL_TANGGAL(p.cancelledAt)}${p.cancelReason ? ` — ${p.cancelReason}` : ""}` : null]] },
+      ...(sk?.order ? [{ judul: "Order CRM & Delivery", baris: [["Order CRM", sk.order.nomor], ["Status order", sk.order.statusLabel], ["Spesifikasi", sk.order.spesifikasi.lengkap ? "Lengkap" : `Perlu dilengkapi: ${sk.order.spesifikasi.kurang.join(", ")}`], ["Produksi", sk.produksi?.label], ...deliveryBaris] }] : [{ judul: "Order CRM & Delivery", baris: [["Order CRM", "Belum ada. Gunakan “Buat/Tautkan Order CRM”."]] }]),
+      ...(bayar.length > 0 ? [{ judul: `Pembayaran (${bayar.length})`, baris: bayar.map((x, i) => [`${i + 1}. ${tanggalPendek(x.date)}`, `${formatUang(x.amount)} · ${LABEL_METODE_PJK[x.method] || x.method}${x.cashAccount ? ` · ke ${x.cashAccount.name}` : ""}${x.notes ? ` · ${x.notes}` : ""}`]) }] : []),
+      { judul: "Jejak perubahan", baris: [["Dibuat oleh", nama(p.createdBy)], ["Dibuat pada", TAMPIL_TANGGAL(p.createdAt)], ["Dibatalkan", p.cancelledAt ? `${TAMPIL_TANGGAL(p.cancelledAt)}${p.cancelReason ? ` — ${p.cancelReason}` : ""}` : null], ["Riwayat lengkap", onRiwayat ? React.createElement("button", { type: "button", onClick: onRiwayat, className: "font-semibold text-accent underline" }, "Buka Riwayat Perubahan") : null]] },
     ],
   };
 }

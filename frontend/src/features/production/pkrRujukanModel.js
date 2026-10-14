@@ -6,7 +6,7 @@ export function rujukanDariRingkas(p) {
   if (!p?.nomor) return null;
   const s = p.order?.spesifikasi || null;
   return {
-    penjualanId: p.penjualanId ?? null, nomor: p.nomor, karyawan: p.penjual?.name ?? null, pembeli: p.pembeli ?? null,
+    penjualanId: p.penjualanId ?? null, nomor: p.nomor, karyawan: p.penjual?.name ?? null, pembeli: p.identitas?.customer?.nama ?? p.pembeli ?? null, ...(p.identitas && { identitas: p.identitas }),
     perluDikirim: s?.perluDikirim ?? null,
     kirimLabel: s?.perluDikirim === true ? "Dikirim" : s?.perluDikirim === false ? "Ambil sendiri" : "Belum ditentukan",
     lengkap: s ? !!s.lengkap : false, kurang: s?.kurang ?? [],
@@ -22,6 +22,13 @@ export function tampilRujukanPkr(r) {
     badge: "Penjualan Karyawan",
     nomor: r.nomor,
     karyawan: r.karyawan || null,
+    // Identitas customer kanonis (hanya bila server mengirim `identitas`): pembeli (bukan karyawan penjual), penanda data legacy, penerima bila berbeda, catatan. Tanpa nominal.
+    ...(r.identitas ? {
+      pembeli: r.identitas.customer?.nama ?? r.pembeli ?? null,
+      legacy: Boolean(r.identitas.legacy),
+      penerimaBeda: r.identitas.penerima?.berbeda ? { nama: r.identitas.penerima.nama ?? null, telepon: r.identitas.penerima.telepon ?? null } : null,
+      catatan: { produksi: r.identitas.catatan?.produksi ?? null, delivery: r.identitas.catatan?.delivery ?? null, keluhan: r.identitas.catatan?.keluhan ?? null },
+    } : {}),
     kirim: r.kirimLabel || (r.perluDikirim === true ? "Dikirim" : r.perluDikirim === false ? "Ambil sendiri" : "Belum ditentukan"),
     perluDilengkapi,
     kurangTeks: perluDilengkapi && r.kurang?.length ? r.kurang.join(", ") : "",

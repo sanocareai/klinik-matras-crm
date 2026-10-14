@@ -599,15 +599,26 @@ export default function JobDetailDrawer({ jobId, onClose, onChanged }) {
           <div className="flex shrink-0 items-start gap-2 border-b border-line px-4 py-3">
             <div className="min-w-0 flex-1">
               <Dialog.Title className="truncate text-[15px] font-bold text-ink">
-                {job ? customerOf(job) || "Detail Job" : "Detail Job"}
+                {job ? job.penjualanKaryawan?.identitas?.customer?.nama || customerOf(job) || "Detail Job" : "Detail Job"}
               </Dialog.Title>
               {job && (
                 <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11.5px] text-ink3">
                   {orderNumberOf(job)} · {JOB_TYPE_REAL[job.type]?.label || job.type}
                   {job.penjualanKaryawan && (
-                    <span className="font-semibold text-accent" data-testid="job-rujukan-pkr">Penjualan Karyawan · {job.penjualanKaryawan.nomor}{job.penjualanKaryawan.penjual ? ` (${job.penjualanKaryawan.penjual})` : ""}</span>
+                    <span className="font-semibold text-accent" data-testid="job-rujukan-pkr">Penjualan Karyawan · {job.penjualanKaryawan.nomor}{job.penjualanKaryawan.penjual ? ` · Dijual oleh ${job.penjualanKaryawan.penjual}` : ""}</span>
                   )}
                 </p>
+              )}
+              {job?.penjualanKaryawan?.identitas && (
+                <div className="mt-1 space-y-0.5 text-[11.5px] text-ink2" data-testid="job-identitas-pkr">
+                  {job.penjualanKaryawan.identitas.legacy && <p className="m-0 font-semibold text-orange">Data customer belum lengkap (pembeli dari catatan PKR)</p>}
+                  {(job.penjualanKaryawan.identitas.penerima?.nama || job.penjualanKaryawan.identitas.penerima?.telepon) && (
+                    <p className="m-0">Penerima: <strong className="text-ink">{job.penjualanKaryawan.identitas.penerima.nama || job.penjualanKaryawan.identitas.customer?.nama}</strong>{job.penjualanKaryawan.identitas.penerima.telepon ? ` · ${job.penjualanKaryawan.identitas.penerima.telepon}` : ""}</p>
+                  )}
+                  {job.penjualanKaryawan.identitas.alamat?.patokan && <p className="m-0">Patokan: {job.penjualanKaryawan.identitas.alamat.patokan}</p>}
+                  {job.penjualanKaryawan.identitas.alamat?.lokasiUrl && <p className="m-0"><a href={job.penjualanKaryawan.identitas.alamat.lokasiUrl} target="_blank" rel="noreferrer noopener" className="font-semibold text-accent underline">Buka Google Maps ↗</a></p>}
+                  {job.penjualanKaryawan.identitas.catatan?.delivery && <p className="m-0">Catatan Delivery: {job.penjualanKaryawan.identitas.catatan.delivery}</p>}
+                </div>
               )}
             </div>
             {job && <StatusBadge map={JOB_STATUS_REAL} value={job.status} className="shrink-0" />}

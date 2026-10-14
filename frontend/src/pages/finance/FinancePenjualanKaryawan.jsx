@@ -28,7 +28,13 @@ import { RingkasOrderCrm, ModalOrderCrm, useKatalogPkr } from "@/features/financ
 import { ModalKoreksiItem } from "@/features/finance/PkrKoreksiItem.jsx";
 import { ModalKoreksiBaris } from "@/features/finance/PkrKoreksiBaris.jsx";
 import { aksiOrderCrm } from "@/features/finance/pkrOrderCrmLogic.js";
-import { penjualanKosong, bodyPenjualanTerpadu, galatItemPenjualan, totalPenjualan } from "@/features/finance/pkrItemLogic.js";
+import { penjualanKosong, bodyPenjualanTerpadu, galatItemPenjualan, totalPenjualan, totalUnitItems, adaItemDikirim, punyaUnitPemenuhan } from "@/features/finance/pkrItemLogic.js";
+import {
+  LANGKAH_PKR, pembeliKosong, galatCustomer, galatAlamat, galatKebutuhan, bodyPembeli, ringkasCustomerPratinjau, belumLengkap,
+} from "@/features/finance/pkrPembeliLogic.js";
+import { BagianCustomerPenerima, BagianAlamatLokasi, BagianKebutuhan } from "@/features/finance/PkrPembeliForm.jsx";
+import { tampilNomor } from "@/utils/nomorTelepon.js";
+import { ModalEditCustomerPkr, ModalRiwayatPkr } from "@/features/finance/PkrEditCustomer.jsx";
 import { FormItemPenjualan } from "@/features/finance/PkrItemPenjualanForm.jsx";
 import { PratinjauOrderPkr } from "@/features/finance/PkrPratinjau.jsx";
 
@@ -69,6 +75,8 @@ export default function FinancePenjualanKaryawan() {
   const [panelRincian, setPanelRincian] = useState(null);
   const [orderCrmUntuk, setOrderCrmUntuk] = useState(null); // { p, mode: "buat" | "lengkapi" }
   const [koreksiUntuk, setKoreksiUntuk] = useState(null); // penjualan yang item-nya dikoreksi
+  const [editCustomerUntuk, setEditCustomerUntuk] = useState(null); // penjualan yang data customernya diedit/dilengkapi
+  const [riwayatPkrUntuk, setRiwayatPkrUntuk] = useState(null); // penjualan yang riwayat perubahannya dibuka
   const admin = adminSaatIni();
 
   const muat = useCallback(async (opsi) => {
@@ -107,6 +115,8 @@ export default function FinancePenjualanKaryawan() {
     const ac = aksiOrderCrm(p);
     const items = [
       { label: "Riwayat pembayaran", onClick: () => setRiwayatId(p.id) },
+      { label: p.sinkron?.identitas?.legacy ? "Lengkapi Data Customer" : "Edit Data Customer", hint: "Nama, nomor, penerima, alamat, Maps, keluhan, catatan — tanpa jurnal", hidden: !p.sinkron?.order || p.statusTampil === "DIBATALKAN", onClick: () => setEditCustomerUntuk(p) },
+      { label: "Riwayat Perubahan", onClick: () => setRiwayatPkrUntuk(p) },
       { label: "Buat/Tautkan Order CRM", hidden: !ac.buat, onClick: () => setOrderCrmUntuk({ p, mode: "buat" }) },
       { label: "Lengkapi spesifikasi order", hidden: !ac.lengkapi, onClick: () => setOrderCrmUntuk({ p, mode: "lengkapi" }) },
       { label: "Koreksi item penjualan", hint: "Jumlah, harga, tambah/hapus item — Finance dan Produksi berubah bersama", hidden: !ac.koreksi || !terpadu(p), onClick: () => setKoreksiUntuk(p) },
@@ -121,7 +131,21 @@ export default function FinancePenjualanKaryawan() {
     ];
     return { primary: bisaBayar ? { label: "Bayar", variant: "secondary", title: "Catat pembayaran", onClick: () => setBayarUntuk(p) } : null, items };
   }
-  const specBaris = (p) => specPenjualanKaryawan(p, { badge: <StatusPenjualan p={p} /> });
+  // Panel rincian: tombol aksi LENGKET di bawah (footer panel). Mode lihat → tombol edit → dialog → pratinjau → simpan; pembayaran tidak diedit dari sini (alur Bayar/Koreksi resmi).
+  const specBaris = (p) => {
+    const ac = aksiOrderCrm(p);
+    const batal = p.statusTampil === "DIBATALKAN";
+    const tutup = (fn) => () => { setPanelRincian(null); fn(); };
+    const aksiPanel = (
+      <>
+        <Button size="sm" variant="neutral" disabled={!p.sinkron?.order || batal} onClick={tutup(() => setEditCustomerUntuk(p))} data-testid="aksi-edit-customer" className="max-sm:min-h-11">{p.sinkron?.identitas?.legacy ? "Lengkapi Data Customer" : "Edit Data Customer"}</Button>
+        <Button size="sm" variant="neutral" disabled={!ac.koreksi || batal} onClick={tutup(() => setKoreksiUntuk(p))} data-testid="aksi-koreksi-item" className="max-sm:min-h-11">Koreksi Item &amp; Pemenuhan</Button>
+        <Button size="sm" variant="neutral" disabled={!terpadu(p) || batal} title={terpadu(p) ? "Harga/jumlah memakai koreksi Finance (jurnal delta resmi)" : "Hanya untuk penjualan terpadu"} onClick={tutup(() => setKoreksiUntuk(p))} data-testid="aksi-koreksi-nilai" className="max-sm:min-h-11">Koreksi Nilai</Button>
+        <Button size="sm" variant="neutral" onClick={tutup(() => setRiwayatPkrUntuk(p))} data-testid="aksi-riwayat" className="max-sm:min-h-11">Riwayat Perubahan</Button>
+      </>
+    );
+    return specPenjualanKaryawan(p, { badge: <StatusPenjualan p={p} />, aksi: aksiPanel, onRiwayat: () => { setPanelRincian(null); setRiwayatPkrUntuk(p); } });
+  };
 
   return (
     <HalamanFinance
@@ -308,6 +332,13 @@ export default function FinancePenjualanKaryawan() {
             onSelesai={async () => { setKoreksiUntuk(null); await muat({ diam: true }); }}
           />
         ))}
+      {editCustomerUntuk && (
+        <ModalEditCustomerPkr
+          key={`${editCustomerUntuk.id}-edit-customer`} penjualan={editCustomerUntuk} onClose={() => setEditCustomerUntuk(null)}
+          onSelesai={async () => { setEditCustomerUntuk(null); await muat({ diam: true }); }}
+        />
+      )}
+      {riwayatPkrUntuk && <ModalRiwayatPkr penjualan={riwayatPkrUntuk} onClose={() => setRiwayatPkrUntuk(null)} />}
       <PanelDetail spec={panelRincian} onClose={() => setPanelRincian(null)} />
     </HalamanFinance>
   );
@@ -371,22 +402,27 @@ function BarisBayar({ b, onChange, rek, st, muat, onHapus, cutoff }) {
   );
 }
 
+// WIZARD "CATAT PENJUALAN" — 7 langkah, urutan field SAMA dengan input Order CRM Inbox: Transaksi → Customer & penerima → Alamat & lokasi → Keluhan & kebutuhan → Item →
+// Pembayaran awal → Pratinjau. Satu transaksi atomik di server (PKR + jurnal + Customer + Order + Unit + Job + pembayaran, atau tidak sama sekali) dan idempoten.
 function ModalPenjualanBaruIsi({ open, onClose, aksi, cutoff }) {
-  const kosong = () => ({ date: hariIniISO(), sellerId: "", buyerName: "", notes: "", pembayaran: [], daftar: penjualanKosong() });
+  const kosong = () => ({ date: hariIniISO(), sellerId: "", buyerName: "", notes: "", pembayaran: [], daftar: penjualanKosong(), pembeli: pembeliKosong() });
   const [f, setF] = useState(kosong);
-  const [langkah, setLangkah] = useState("isi"); // "isi" -> "tinjau" (pratinjau server order produksi) -> catat
+  const [idx, setIdx] = useState(0); // indeks LANGKAH_PKR
   const [pra, setPra] = useState(null);
   const [galatPra, setGalatPra] = useState("");
+  const [memuatPra, setMemuatPra] = useState(false);
   const { katalog, memuat: memuatKatalog, galat: galatKatalog } = useKatalogPkr(open);
   const [karyawan, setKaryawan] = useState([]);
   const [galatKar, setGalatKar] = useState(null);
   const { rek, st, muat } = useRekening(open);
-  const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
+  const set = (k, v) => setF((s0) => ({ ...s0, [k]: v }));
+  const setP = (k, v) => setF((s0) => ({ ...s0, pembeli: { ...s0.pembeli, [k]: v } }));
+  const setDaftar = (k, v) => setF((s0) => ({ ...s0, daftar: { ...s0.daftar, [k]: v } }));
 
   useEffect(() => {
     if (!open) return;
     setF(kosong());
-    setLangkah("isi"); setPra(null); setGalatPra("");
+    setIdx(0); setPra(null); setGalatPra("");
     setGalatKar(null);
     api.getKaryawanPenjualanKaryawan().then((r) => setKaryawan(r.karyawan || [])).catch((e) => setGalatKar(e.message || "Gagal memuat daftar karyawan"));
   }, [open]);
@@ -395,72 +431,119 @@ function ModalPenjualanBaruIsi({ open, onClose, aksi, cutoff }) {
   const bayarTotal = f.pembayaran.reduce((a, b) => a + (Number(b.amount) || 0), 0);
   const bayarValid = f.pembayaran.every((b) => Number(b.amount) > 0 && (!rekeningWajib(b, cutoff) || b.cashAccountId));
   const galatItem = katalog ? galatItemPenjualan(f.daftar.items, katalog) : null;
-  const valid = f.sellerId && f.buyerName.trim().length >= 2 && bayarValid && bayarTotal <= total && !galatItem && !!katalog;
-  // SATU daftar item -> pratinjau server (total + dampak operasional) -> catat. Tidak ada daftar kedua.
-  async function tinjau() {
+  const perluAlamat = katalog ? adaItemDikirim(f.daftar.items.filter((i) => punyaUnitPemenuhan(katalog, i.pemenuhan)), katalog) : false;
+  const jumlahUnit = katalog ? totalUnitItems(f.daftar.items.filter((i) => punyaUnitPemenuhan(katalog, i.pemenuhan)), katalog) : 0;
+  const kode = LANGKAH_PKR[idx].kode;
+
+  // Galat per langkah — tombol "Lanjut" hanya aktif bila langkah ini valid; galat tampil dekat isian.
+  const galatLangkah = (k) => {
+    if (k === "transaksi") return f.sellerId ? null : "Pilih karyawan penjual";
+    if (k === "customer") return galatCustomer(f);
+    if (k === "alamat") return galatAlamat(f, { perluAlamat });
+    if (k === "kebutuhan") return galatKebutuhan(f);
+    if (k === "item") return !katalog ? "Memuat katalog item…" : galatItem;
+    if (k === "bayar") return !bayarValid ? "Lengkapi nominal dan rekening setiap pembayaran" : bayarTotal > total ? "Pembayaran melebihi total penjualan" : null;
+    return null;
+  };
+  const semuaValid = LANGKAH_PKR.slice(0, 6).every((l) => !galatLangkah(l.kode));
+  const galatSaatIni = galatLangkah(kode);
+
+  const bodyLengkap = () => {
+    const tb = bodyPenjualanTerpadu(f.daftar, katalog);
+    const bp = bodyPembeli(f);
+    return {
+      date: f.date, sellerId: f.sellerId, buyerName: f.buyerName.trim(), notes: f.notes.trim() || undefined,
+      items: tb.items, orderCrm: { ...tb.orderCrm, ...bp.orderCrmEkstra }, pembeli: bp.pembeli,
+      pembayaran: f.pembayaran.map(bodyBayar),
+    };
+  };
+
+  async function keLangkah(n) {
     setGalatPra("");
-    try { setPra(await api.pratinjauOrderCrmPkr(bodyPenjualanTerpadu(f.daftar, katalog))); setLangkah("tinjau"); }
-    catch (e) { setGalatPra(e.message || "Gagal membuat pratinjau"); }
+    if (LANGKAH_PKR[n].kode === "pratinjau") {
+      setMemuatPra(true);
+      try {
+        const tb = bodyPenjualanTerpadu(f.daftar, katalog);
+        setPra(await api.pratinjauOrderCrmPkr({ items: tb.items, orderCrm: { ...tb.orderCrm, ...bodyPembeli(f).orderCrmEkstra } }));
+        setIdx(n);
+      } catch (e) { setGalatPra(e.message || "Gagal membuat pratinjau"); } finally { setMemuatPra(false); }
+      return;
+    }
+    setIdx(n);
   }
+
+  const cust = ringkasCustomerPratinjau(f);
+  const kurang = belumLengkap(f, { perluAlamat });
+  const sisa = Math.max(total - bayarTotal, 0);
 
   return (
     <Modal
       open={open} onOpenChange={(v) => !v && onClose()}
       title="Catat Penjualan Karyawan"
-      description="Satu daftar item untuk tagihan dan pemenuhan. Nominal, piutang, dan jurnal dicatat di sini; pekerjaan Produksi/Pickup otomatis menjadi satu order CRM operasional tanpa uang."
-      className="w-[680px]"
+      description="Satu alur untuk transaksi, customer, alamat, item, dan pembayaran. Nominal dan piutang dicatat di sini; pekerjaan Produksi/Pickup/Delivery otomatis menjadi satu order CRM tanpa uang."
+      className="w-[760px] max-sm:!h-full max-sm:!max-h-full max-sm:!w-full max-sm:!max-w-full max-sm:!rounded-none"
       footer={(
         <>
-          {(galatPra || (langkah === "isi" && galatItem)) && <p role="alert" className="mr-auto rounded-lg bg-orangebg px-3 py-2 text-[12.5px] text-orange" data-testid="galat-item">{galatPra || galatItem}</p>}
-          {langkah === "tinjau"
-            ? <Button variant="neutral" onClick={() => setLangkah("isi")} className="max-sm:min-h-11 max-sm:px-4">Kembali ubah</Button>
-            : <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>}
-          {langkah === "isi" && <TombolAksi disabled={!valid} onClick={tinjau} data-testid="tinjau-order">Tinjau Order</TombolAksi>}
-          {langkah === "tinjau" && <TombolAksi
-            disabled={!valid || !pra?.valid}
-            onClick={() => aksi(() => api.createPenjualanKaryawan({
-              date: f.date, sellerId: f.sellerId, buyerName: f.buyerName.trim(), notes: f.notes.trim() || undefined,
-              ...bodyPenjualanTerpadu(f.daftar, katalog), // items (penjualan + pemenuhan) + orderCrm (alamat/kota/tanggal kirim)
-              pembayaran: f.pembayaran.map(bodyBayar),
-            }))}
-          >Catat Penjualan</TombolAksi>}
+          {(galatPra || galatSaatIni) && <p role="alert" className="mr-auto rounded-lg bg-orangebg px-3 py-2 text-[12.5px] text-orange" data-testid="galat-langkah">{galatPra || galatSaatIni}</p>}
+          {idx === 0
+            ? <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
+            : <Button variant="neutral" onClick={() => { setPra(null); setIdx(idx - 1); }} className="max-sm:min-h-11 max-sm:px-4" data-testid="langkah-kembali">Kembali</Button>}
+          {kode !== "pratinjau" && kode !== "bayar" && <TombolAksi disabled={!!galatSaatIni || memuatPra} onClick={() => keLangkah(idx + 1)} data-testid="langkah-lanjut">Lanjut</TombolAksi>}
+          {kode === "bayar" && <TombolAksi disabled={!!galatSaatIni || memuatPra || !semuaValid} onClick={() => keLangkah(idx + 1)} data-testid="tinjau-order">{memuatPra ? "Menyiapkan pratinjau…" : "Tinjau Penjualan"}</TombolAksi>}
+          {kode === "pratinjau" && <TombolAksi disabled={!semuaValid || !pra?.valid} onClick={() => aksi(() => api.createPenjualanKaryawan(bodyLengkap()))} data-testid="catat-penjualan">Catat Penjualan</TombolAksi>}
         </>
       )}
     >
-      {langkah === "tinjau" && (
-        <div className="space-y-3" data-testid="langkah-tinjau">
-          <div className="rounded-lg bg-inset px-3 py-2 text-[12.5px] text-ink2">
-            <strong className="text-ink">{f.buyerName.trim()}</strong> · {formatUang(total)} · {f.daftar.items.length} item. Periksa tagihan dan order operasional di bawah, lalu catat.
+      <nav aria-label="Langkah pencatatan" className="mb-4" data-testid="langkah-pkr">
+        <p className="m-0 text-[12px] font-semibold text-ink3">Langkah {idx + 1} dari {LANGKAH_PKR.length}</p>
+        <ol className="m-0 mt-1.5 flex list-none flex-wrap gap-1.5 p-0">
+          {LANGKAH_PKR.map((l, n) => (
+            <li key={l.kode}>
+              <button
+                type="button" onClick={() => n < idx && setIdx(n)} disabled={n > idx} aria-current={n === idx ? "step" : undefined}
+                className={cn("rounded-full px-2.5 py-1 text-[11.5px] font-semibold", n === idx ? "bg-accent text-white" : n < idx ? "bg-accentbg text-accent" : "bg-inset text-ink3")}
+              >{n + 1}. {l.label}</button>
+            </li>
+          ))}
+        </ol>
+      </nav>
+
+      {kode === "transaksi" && (
+        <div className="space-y-4" data-testid="langkah-transaksi">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="Tanggal penjualan"><DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.date} onChange={(v) => set("date", v)} /></Field>
+            <Field label="Karyawan penjual" required hint={galatKar ? undefined : "Akun aktif non-Sales; dialah yang menanggung tagihannya (bukan customer)"}>
+              <Pilihan value={f.sellerId} onChange={(v) => set("sellerId", v)} aria-label="Karyawan penjual">
+                <option value="">— pilih karyawan —</option>
+                {karyawan.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
+              </Pilihan>
+              {galatKar && <p className="mt-1 text-[12px] text-red">{galatKar}</p>}
+            </Field>
           </div>
-          <PratinjauOrderPkr data={pra} />
+          <Field label="Sumber transaksi"><Input value="Penjualan Karyawan" readOnly aria-label="Sumber transaksi" /></Field>
+          <Field label="Catatan transaksi" hint="Opsional — catatan Finance (bukan untuk Produksi/Delivery)"><Input value={f.notes} onChange={(e) => set("notes", e.target.value)} aria-label="Catatan transaksi" /></Field>
         </div>
       )}
-      <div className={cn("space-y-4", langkah === "tinjau" && "hidden")}>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label="Tanggal penjualan"><DatePicker block placeholder="Pilih tanggal" clearLabel="Kosongkan" value={f.date} onChange={(v) => set("date", v)} /></Field>
-          <Field label="Karyawan penjual" required hint={galatKar ? undefined : "Akun aktif non-Sales; dialah yang menanggung tagihannya"}>
-            <Pilihan value={f.sellerId} onChange={(v) => set("sellerId", v)}>
-              <option value="">— pilih karyawan —</option>
-              {karyawan.map((k) => <option key={k.id} value={k.id}>{k.name}</option>)}
-            </Pilihan>
-            {galatKar && <p className="mt-1 text-[12px] text-red">{galatKar}</p>}
-          </Field>
-        </div>
-        <Field label="Nama pembeli" required hint="Kerabat/pembeli — teks bebas, bukan data pelanggan CRM">
-          <Input value={f.buyerName} onChange={(e) => set("buyerName", e.target.value)} placeholder="mis. Bu Ani (kerabat)" />
-        </Field>
 
+      {kode === "customer" && <BagianCustomerPenerima f={f} setBuyer={(v) => set("buyerName", v)} setP={setP} />}
+      {kode === "alamat" && <BagianAlamatLokasi daftar={f.daftar} setDaftar={setDaftar} pembeli={f.pembeli} setP={setP} perluAlamat={perluAlamat} />}
+      {kode === "kebutuhan" && <BagianKebutuhan pembeli={f.pembeli} setP={setP} />}
+
+      {kode === "item" && (
         <div className="space-y-2" data-testid="bagian-item-penjualan">
           <p className="text-[13px] font-semibold text-ink">Item Penjualan &amp; Pemenuhan</p>
-          <p className="text-[12px] text-ink3">Satu daftar untuk tagihan dan pekerjaan: tiap item memuat harga, ukuran/spesifikasi, cara pemenuhan, dan dikirim atau diambil sendiri. Produksi, Pickup, dan Delivery dibuat dari baris yang sama — tidak perlu mengisi dua kali. Data teknis boleh dikosongkan dulu: order tetap dibuat “Perlu dilengkapi”.</p>
-          <FormItemPenjualan katalog={katalog} nilai={f.daftar} onChange={(v) => set("daftar", v)} memuat={memuatKatalog} galatMuat={galatKatalog} />
+          <p className="text-[12px] text-ink3">Satu daftar untuk tagihan dan pekerjaan: tiap item memuat harga, jumlah (bisa belasan hingga puluhan unit), ukuran/spesifikasi, cara pemenuhan, dan dikirim atau diambil sendiri. Produksi, Pickup, dan Delivery dibuat dari baris yang sama — tidak ada input ganda.</p>
+          <FormItemPenjualan katalog={katalog} nilai={f.daftar} onChange={(v) => set("daftar", v)} memuat={memuatKatalog} galatMuat={galatKatalog} sembunyikanLogistik />
         </div>
+      )}
 
-        <div className="space-y-2">
+      {kode === "bayar" && (
+        <div className="space-y-2" data-testid="langkah-bayar">
           <div className="flex items-center justify-between">
             <p className="text-[13px] font-semibold text-ink">Pembayaran yang sudah diterima <span className="font-normal text-ink3">(opsional)</span></p>
             <Button size="sm" variant="neutral" onClick={() => set("pembayaran", [...f.pembayaran, BAYAR_KOSONG()])}><Plus size={13} /> Tambah pembayaran</Button>
           </div>
+          {f.pembayaran.length === 0 && <p className="text-[12.5px] text-ink3">Belum ada pembayaran awal. Pembayaran berikutnya dicatat dari daftar (tombol Bayar).</p>}
           {f.pembayaran.map((b, i) => (
             <BarisBayar
               key={i} b={b} rek={rek} st={st} muat={muat} cutoff={cutoff}
@@ -468,15 +551,31 @@ function ModalPenjualanBaruIsi({ open, onClose, aksi, cutoff }) {
               onHapus={() => set("pembayaran", f.pembayaran.filter((_, n) => n !== i))}
             />
           ))}
-          {f.pembayaran.length > 0 && (
-            <p className={cn("text-[12.5px]", bayarTotal > total ? "text-red" : "text-ink2")}>
-              Dibayar {formatUang(bayarTotal)} · sisa tagihan {formatUang(Math.max(total - bayarTotal, 0))}{bayarTotal > total ? " — melebihi total penjualan" : ""}
-            </p>
+          <p className={cn("text-[12.5px]", bayarTotal > total ? "text-red" : "text-ink2")}>
+            Total {formatUang(total)} · dibayar {formatUang(bayarTotal)} · sisa tagihan {formatUang(sisa)}{bayarTotal > total ? " — melebihi total penjualan" : ""}
+          </p>
+        </div>
+      )}
+
+      {kode === "pratinjau" && (
+        <div className="space-y-3" data-testid="langkah-tinjau">
+          <section className="space-y-1.5 rounded-lg bg-inset px-3 py-2.5 text-[12.5px] text-ink2" data-testid="pratinjau-customer">
+            <p className="m-0 text-[10.5px] font-bold uppercase tracking-wide text-ink3">Customer &amp; penerima</p>
+            <p className="m-0"><strong className="text-ink">{cust.nama}</strong>{cust.telepon ? ` · ${tampilNomor(cust.telepon)}` : cust.pembeliAdalahKaryawan ? " · pembeli adalah karyawan penjual" : ""}</p>
+            <p className="m-0">Sumber: {cust.sumber} · dijual oleh <strong className="text-ink">{karyawan.find((k) => k.id === f.sellerId)?.name || "—"}</strong></p>
+            <p className="m-0">Penerima: {cust.penerima.samaDenganPembeli ? "sama dengan pembeli" : `${cust.penerima.nama}${cust.penerima.telepon ? ` · ${cust.penerima.telepon}` : ""}`}</p>
+            {(cust.alamat || cust.kota) && <p className="m-0">Alamat: {[cust.alamat, cust.kota].filter(Boolean).join(", ")}{cust.patokan ? ` (${cust.patokan})` : ""}</p>}
+            {cust.lokasiUrl && <p className="m-0 break-all">Maps: {cust.lokasiUrl}</p>}
+          </section>
+          <div className="rounded-lg bg-inset px-3 py-2 text-[12.5px] text-ink2" data-testid="pratinjau-ringkas">
+            <strong className="text-ink">{formatUang(total)}</strong> · {f.daftar.items.length} item · {jumlahUnit} unit produksi · dibayar {formatUang(bayarTotal)} · sisa {formatUang(sisa)}
+          </div>
+          <PratinjauOrderPkr data={pra} />
+          {kurang.length > 0 && (
+            <p className="m-0 rounded-lg bg-orangebg px-3 py-2 text-[12.5px] text-orange" data-testid="pratinjau-belum-lengkap">Belum lengkap (boleh dilengkapi nanti lewat Edit Data Customer): {kurang.join(", ")}.</p>
           )}
         </div>
-
-        <Field label="Catatan"><Input value={f.notes} onChange={(e) => set("notes", e.target.value)} /></Field>
-      </div>
+      )}
     </Modal>
   );
 }

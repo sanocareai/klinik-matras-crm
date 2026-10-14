@@ -29,7 +29,7 @@ export function orderCrmDariSinkron(sinkron) {
 export function galatOrderCrm(f, { baru = true } = {}) {
   if (baru) {
     const n = Number(f.jumlahUnit);
-    if (!Number.isInteger(n) || n < 1 || n > 20) return "Jumlah unit harus bilangan bulat 1–20";
+    if (!Number.isInteger(n) || n < 1 || n > 200) return "Jumlah unit harus bilangan bulat 1–200";
   }
   if (f.tanggalKirim && !/^\d{4}-\d{2}-\d{2}$/.test(f.tanggalKirim)) return "Tanggal kirim tidak valid";
   return null;

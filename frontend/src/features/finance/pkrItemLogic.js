@@ -7,7 +7,8 @@
 import { normalisasiJumlah, subtotalSen } from "./penjualanKaryawanLogic.js";
 
 export const MAKS_ITEM = 20;
-export const MAKS_UNIT = 20;
+// Cermin backend/src/lib/domain/pkrItem.js#MAKS_UNIT_ORDER dan DB CHECK pkr_order_items_qty_chk (penjualan karyawan lazim 1 jenis barang dalam jumlah puluhan).
+export const MAKS_UNIT = 200;
 
 let urut = 0;
 export const kunciBaris = () => `item-${Date.now().toString(36)}-${(urut++).toString(36)}`;

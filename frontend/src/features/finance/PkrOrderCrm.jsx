@@ -61,7 +61,7 @@ export function FormOrderCrm({ nilai, onChange, baru = true, terkunciSpek = fals
               {KATEGORI_PKR_OPSI.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
             </Pilihan>
           </Field>
-          <Field label="Jumlah unit kasur"><Input type="number" min="1" max="20" inputMode="numeric" value={nilai.jumlahUnit} onChange={(e) => set("jumlahUnit", e.target.value)} aria-label="Jumlah unit" /></Field>
+          <Field label="Jumlah unit kasur"><Input type="number" min="1" max="200" inputMode="numeric" value={nilai.jumlahUnit} onChange={(e) => set("jumlahUnit", e.target.value)} aria-label="Jumlah unit" /></Field>
         </div>
       )}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

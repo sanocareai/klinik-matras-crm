@@ -1,5 +1,6 @@
 import { formatUkuranKasur } from "@/utils/ukuranKasur.js";
 import { DaftarUnitPkr } from "./PkrUnitBaris.jsx";
+import RincianPkr from "./RincianPkr.jsx";
 import { punyaUnitPkr } from "./pkrUnitLogic.js";
 import { BadgeBayarPkr } from "@/features/finance/PkrOrderCrm.jsx";
 import React, { useEffect, useState } from "react";
@@ -1033,7 +1034,7 @@ const TONE = {
 // (bukan dihapus dari signature) supaya ProductionOrders.jsx/ArmadaOrders.jsx
 // yang masih mengirimnya tidak perlu ikut diubah — cuma jadi no-op di sini.
 // `tabAwal` (opsional): buka langsung di tab itu ("pembayaran" | "dokumentasi") — jalan pintas dari badge pembayaran di daftar order.
-export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaymentRecorded, canEditLunas = false, canEditStatus: _canEditStatus = false, tabAwal = null, onBukaUnit }) {
+export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaymentRecorded, canEditLunas = false, canEditStatus: _canEditStatus = false, tabAwal = null, onBukaUnit, onEditCustomerPkr = null }) {
   const klaimGateAktifDrawer = useKlaimLunasAktif() === true;
   const [data, setData]       = useState(null);
   const [loading, setLoading] = useState(false);
@@ -1204,6 +1205,7 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
             </div>
           )}
 
+          {o.penjualanKaryawan?.identitas && <RincianPkr pkr={o.penjualanKaryawan} bolehEdit={Boolean(onEditCustomerPkr)} onEdit={() => onEditCustomerPkr?.(o)} />}
           {punyaUnitPkr(o) && (
             <section className="mt-3 rounded-xl bg-surface p-2.5 shadow-card" aria-label="Unit produksi" data-testid="drawer-unit-pkr">
               <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-ink3">Unit produksi</p>

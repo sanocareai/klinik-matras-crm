@@ -1829,6 +1829,15 @@ export const api = {
   pratinjauKoreksiBarisPkr: (id, data) => request(`/finance/penjualan-karyawan/${id}/koreksi-baris/pratinjau`, { method: "POST", body: JSON.stringify(data) }),
   koreksiBarisPkr: (id, data, idempotencyKey) => request(`/finance/penjualan-karyawan/${id}/koreksi-baris`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey || mutationKey("pkr-koreksi-baris") }, body: JSON.stringify(data) }),
   koreksiItemPkr: (id, data, idempotencyKey) => request(`/finance/penjualan-karyawan/${id}/koreksi-item`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey || mutationKey("pkr-koreksi") }, body: JSON.stringify(data) }),
+  // Pembeli aktual (Okt 2026): cari customer lewat nomor (baca-saja), dry-run relasi legacy, koreksi data customer/penerima/alamat/catatan, dan riwayat perubahan.
+  cariPembeliPenjualanKaryawan: (telepon) => request(`/finance/penjualan-karyawan/pembeli/cari${buildQuery({ telepon })}`),
+  getDryRunPembeliPkr: () => request("/finance/penjualan-karyawan/pembeli/dry-run"),
+  pratinjauKoreksiPembeliPkr: (id, data) => request(`/finance/penjualan-karyawan/${id}/koreksi-pembeli/pratinjau`, { method: "POST", body: JSON.stringify(data) }),
+  koreksiPembeliPkr: (id, data, idempotencyKey) => request(`/finance/penjualan-karyawan/${id}/koreksi-pembeli`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey || mutationKey("pkr-pembeli") }, body: JSON.stringify(data) }),
+  getRiwayatPenjualanKaryawan: (id) => request(`/finance/penjualan-karyawan/${id}/riwayat`),
+  // Jalur sempit per workspace (Produksi: catatan Produksi; Delivery: penerima/alamat/catatan Delivery) — layanan SAMA dengan jalur Finance, kolom dibatasi server.
+  pratinjauKoreksiPembeliOrder: (orderId, data) => request(`/orders/${orderId}/pkr/koreksi-pembeli/pratinjau`, { method: "POST", body: JSON.stringify(data) }),
+  koreksiPembeliOrder: (orderId, data, idempotencyKey) => request(`/orders/${orderId}/pkr/koreksi-pembeli`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey || mutationKey("pkr-pembeli") }, body: JSON.stringify(data) }),
   // Delivery: order PKR menunggu unit lain + aksi eksplisit Kirim sebagian.
   getPkrPengirimanMenunggu: () => request("/armada/pkr-pengiriman"),
   getPkrPengirimanOrder: (orderId) => request(`/armada/pkr-pengiriman/${orderId}`),

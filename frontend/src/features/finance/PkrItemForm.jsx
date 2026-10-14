@@ -127,7 +127,7 @@ function KartuItem({ i, no, katalog, onChange, onHapus, mode, bisaHapus }) {
               hint={strukturTerkunci ? "Jumlah berubah lewat “Koreksi item” (alasan wajib)." : bundel ? "Tiap set menghasilkan unit per komponen." : "Satu unit produksi per jumlah."}
             >
               <Input
-                type="number" min="1" max="20" inputMode="numeric" value={i.jumlah} disabled={strukturTerkunci || terkunciSpek}
+                type="number" min="1" max="200" inputMode="numeric" value={i.jumlah} disabled={strukturTerkunci || terkunciSpek}
                 onChange={(e) => set("jumlah", e.target.value)} aria-label={`Jumlah item ${no}`} data-testid="item-jumlah"
               />
             </Field>
