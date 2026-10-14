@@ -1859,6 +1859,9 @@ export const api = {
   // Pembeli aktual (Okt 2026): cari customer lewat nomor (baca-saja), dry-run relasi legacy, koreksi data customer/penerima/alamat/catatan, dan riwayat perubahan.
   cariPembeliPenjualanKaryawan: (telepon) => request(`/finance/penjualan-karyawan/pembeli/cari${buildQuery({ telepon })}`),
   getDryRunPembeliPkr: () => request("/finance/penjualan-karyawan/pembeli/dry-run"),
+  getKemampuanKoreksiOrder: (id) => request(`/finance/penjualan-karyawan/${id}/koreksi-order`),
+  pratinjauKoreksiOrderPkr: (id, data) => request(`/finance/penjualan-karyawan/${id}/koreksi-order/pratinjau`, { method: "POST", body: JSON.stringify(data) }),
+  koreksiOrderPkr: (id, data, idempotencyKey) => request(`/finance/penjualan-karyawan/${id}/koreksi-order`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey || mutationKey("pkr-order") }, body: JSON.stringify(data) }),
   pratinjauKoreksiPembeliPkr: (id, data) => request(`/finance/penjualan-karyawan/${id}/koreksi-pembeli/pratinjau`, { method: "POST", body: JSON.stringify(data) }),
   koreksiPembeliPkr: (id, data, idempotencyKey) => request(`/finance/penjualan-karyawan/${id}/koreksi-pembeli`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey || mutationKey("pkr-pembeli") }, body: JSON.stringify(data) }),
   getRiwayatPenjualanKaryawan: (id) => request(`/finance/penjualan-karyawan/${id}/riwayat`),

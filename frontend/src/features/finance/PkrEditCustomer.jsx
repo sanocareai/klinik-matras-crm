@@ -156,7 +156,7 @@ export function ModalRiwayatPkr({ penjualan, onClose }) {
           {data.revisi.map((r) => (
             <li key={r.revisi} className="rounded-lg border border-line p-3 text-[12.5px]">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <strong className="text-ink">#{r.revisi} · {r.label}</strong>
+                <strong className="text-ink">#{r.revisi} · {r.label}{r.dampak === "ADMINISTRATIF_SETELAH_PRODUKSI" && <Badge variant="accent" className="ml-1.5">Administratif — snapshot lama tersimpan</Badge>}</strong>
                 <span className="text-ink3">{waktu(r.waktu)}{r.pelaku?.nama ? ` · ${r.pelaku.nama}` : ""}</span>
               </div>
               {r.alasan && <p className="m-0 mt-1 text-ink2">Alasan: {r.alasan}</p>}

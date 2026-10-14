@@ -27,6 +27,7 @@ import { resetSaatBuka } from "@/features/finance/resetSaatBuka.jsx";
 import { RingkasOrderCrm, ModalOrderCrm, useKatalogPkr } from "@/features/finance/PkrOrderCrm.jsx";
 import { ModalKoreksiItem } from "@/features/finance/PkrKoreksiItem.jsx";
 import { ModalKoreksiBaris } from "@/features/finance/PkrKoreksiBaris.jsx";
+import { ModalKoreksiOrderPkr } from "@/features/finance/KoreksiOrderPkr.jsx";
 import { aksiOrderCrm } from "@/features/finance/pkrOrderCrmLogic.js";
 import { penjualanKosong, bodyPenjualanTerpadu, galatItemPenjualan, totalPenjualan, totalUnitItems, adaItemDikirim, punyaUnitPemenuhan } from "@/features/finance/pkrItemLogic.js";
 import {
@@ -75,6 +76,7 @@ export default function FinancePenjualanKaryawan() {
   const [panelRincian, setPanelRincian] = useState(null);
   const [orderCrmUntuk, setOrderCrmUntuk] = useState(null); // { p, mode: "buat" | "lengkapi" }
   const [koreksiUntuk, setKoreksiUntuk] = useState(null); // penjualan yang item-nya dikoreksi
+  const [koreksiOrderUntuk, setKoreksiOrderUntuk] = useState(null); // { p, jenis } — Koreksi Order resmi (perbaikan salah input / tambahan permintaan)
   const [editCustomerUntuk, setEditCustomerUntuk] = useState(null); // penjualan yang data customernya diedit/dilengkapi
   const [riwayatPkrUntuk, setRiwayatPkrUntuk] = useState(null); // penjualan yang riwayat perubahannya dibuka
   const admin = adminSaatIni();
@@ -110,24 +112,26 @@ export default function FinancePenjualanKaryawan() {
   const ringkasan = data?.ringkasan;
   const riwayat = daftar.find((p) => p.id === riwayatId) || null;
 
+  function batalkanPenjualan(p) {
+    const alasan = window.prompt(`Alasan membatalkan ${p.nomor}? Jurnalnya akan dibalik (pembayaran yang sudah ada harus dibatalkan dulu).`);
+    if (alasan?.trim()) return aksi(() => api.batalPenjualanKaryawan(p.id, alasan.trim()));
+    return undefined;
+  }
+
   function aksiBaris(p) {
     const bisaBayar = p.statusTampil === "BELUM_BAYAR" || p.statusTampil === "SEBAGIAN";
     const ac = aksiOrderCrm(p);
     const items = [
       { label: "Riwayat pembayaran", onClick: () => setRiwayatId(p.id) },
+      { label: "Koreksi Order", hint: "Perbaiki data salah input (customer, alamat, spesifikasi, nilai) — dampak ditampilkan dulu", hidden: !p.sinkron?.order || p.statusTampil === "DIBATALKAN", onClick: () => setKoreksiOrderUntuk({ p, jenis: "PERBAIKAN" }) },
+      { label: "Tambah Pesanan Customer", hint: "Customer menambah produk/jumlah/layanan — item & unit baru, nilai delta", hidden: !p.sinkron?.order || p.statusTampil === "DIBATALKAN", onClick: () => setKoreksiOrderUntuk({ p, jenis: "TAMBAHAN" }) },
       { label: p.sinkron?.identitas?.legacy ? "Lengkapi Data Customer" : "Edit Data Customer", hint: "Nama, nomor, penerima, alamat, Maps, keluhan, catatan — tanpa jurnal", hidden: !p.sinkron?.order || p.statusTampil === "DIBATALKAN", onClick: () => setEditCustomerUntuk(p) },
       { label: "Riwayat Perubahan", onClick: () => setRiwayatPkrUntuk(p) },
       { label: "Buat/Tautkan Order CRM", hidden: !ac.buat, onClick: () => setOrderCrmUntuk({ p, mode: "buat" }) },
-      { label: "Lengkapi spesifikasi order", hidden: !ac.lengkapi, onClick: () => setOrderCrmUntuk({ p, mode: "lengkapi" }) },
+      { label: "Lengkapi spesifikasi order", hint: "Hanya untuk data awal yang masih kosong — koreksi lewat Koreksi Order", hidden: !ac.lengkapi || p.sinkron?.order?.spesifikasi?.lengkap === true, onClick: () => setOrderCrmUntuk({ p, mode: "lengkapi" }) },
       { label: "Koreksi item penjualan", hint: "Jumlah, harga, tambah/hapus item — Finance dan Produksi berubah bersama", hidden: !ac.koreksi || !terpadu(p), onClick: () => setKoreksiUntuk(p) },
       { label: "Koreksi item order", hint: "Tambah/hapus item atau ubah jumlah (sebelum dijadwalkan)", hidden: !ac.koreksi || terpadu(p), onClick: () => setKoreksiUntuk(p) },
-      {
-        label: "Batalkan penjualan", destructive: true, hidden: !admin || p.statusTampil === "DIBATALKAN",
-        onClick: () => {
-          const alasan = window.prompt(`Alasan membatalkan ${p.nomor}? Jurnalnya akan dibalik (pembayaran yang sudah ada harus dibatalkan dulu).`);
-          if (alasan?.trim()) return aksi(() => api.batalPenjualanKaryawan(p.id, alasan.trim()));
-        },
-      },
+      { label: "Batalkan penjualan", destructive: true, hidden: !admin || p.statusTampil === "DIBATALKAN", onClick: () => batalkanPenjualan(p) },
     ];
     return { primary: bisaBayar ? { label: "Bayar", variant: "secondary", title: "Catat pembayaran", onClick: () => setBayarUntuk(p) } : null, items };
   }
@@ -138,10 +142,15 @@ export default function FinancePenjualanKaryawan() {
     const tutup = (fn) => () => { setPanelRincian(null); fn(); };
     const aksiPanel = (
       <>
+        <Button size="sm" variant="secondary" disabled={!p.sinkron?.order || batal} onClick={tutup(() => setKoreksiOrderUntuk({ p, jenis: "PERBAIKAN" }))} data-testid="aksi-koreksi-order" className="max-sm:min-h-11">Koreksi Order</Button>
         <Button size="sm" variant="neutral" disabled={!p.sinkron?.order || batal} onClick={tutup(() => setEditCustomerUntuk(p))} data-testid="aksi-edit-customer" className="max-sm:min-h-11">{p.sinkron?.identitas?.legacy ? "Lengkapi Data Customer" : "Edit Data Customer"}</Button>
-        <Button size="sm" variant="neutral" disabled={!ac.koreksi || batal} onClick={tutup(() => setKoreksiUntuk(p))} data-testid="aksi-koreksi-item" className="max-sm:min-h-11">Koreksi Item &amp; Pemenuhan</Button>
-        <Button size="sm" variant="neutral" disabled={!terpadu(p) || batal} title={terpadu(p) ? "Harga/jumlah memakai koreksi Finance (jurnal delta resmi)" : "Hanya untuk penjualan terpadu"} onClick={tutup(() => setKoreksiUntuk(p))} data-testid="aksi-koreksi-nilai" className="max-sm:min-h-11">Koreksi Nilai</Button>
+        <Button size="sm" variant="neutral" disabled={!p.sinkron?.order || batal} onClick={tutup(() => setKoreksiOrderUntuk({ p, jenis: "TAMBAHAN" }))} data-testid="aksi-tambah-pesanan" className="max-sm:min-h-11">Tambah Pesanan Customer</Button>
+        <Button size="sm" variant="neutral" disabled={!ac.koreksi || batal} title={ac.koreksi ? "Jumlah, produk, ukuran per item (harga dan unit berubah bersama)" : "Order lama tanpa daftar item: gunakan Koreksi Order"} onClick={tutup(() => setKoreksiUntuk(p))} data-testid="aksi-koreksi-item" className="max-sm:min-h-11">Koreksi Item &amp; Pemenuhan</Button>
+        <Button size="sm" variant="neutral" disabled={!p.sinkron?.order || batal} title="Harga memakai dokumen koreksi: jurnal delta resmi, Payment lama tidak berubah" onClick={tutup(() => setKoreksiOrderUntuk({ p, jenis: "PERBAIKAN" }))} data-testid="aksi-koreksi-nilai" className="max-sm:min-h-11">Koreksi Nilai</Button>
         <Button size="sm" variant="neutral" onClick={tutup(() => setRiwayatPkrUntuk(p))} data-testid="aksi-riwayat" className="max-sm:min-h-11">Riwayat Perubahan</Button>
+        {admin && !batal && (
+          <Button size="sm" variant="neutral" onClick={tutup(() => batalkanPenjualan(p))} data-testid="aksi-batalkan" className="max-sm:min-h-11 text-red">Batalkan Penjualan</Button>
+        )}
       </>
     );
     return specPenjualanKaryawan(p, { badge: <StatusPenjualan p={p} />, aksi: aksiPanel, onRiwayat: () => { setPanelRincian(null); setRiwayatPkrUntuk(p); } });
@@ -319,6 +328,14 @@ export default function FinancePenjualanKaryawan() {
           await muat({ diam: true });
         }}
       />
+      {koreksiOrderUntuk && (
+        <ModalKoreksiOrderPkr
+          key={`${koreksiOrderUntuk.p.id}-${koreksiOrderUntuk.jenis}-koreksi-order`} penjualan={koreksiOrderUntuk.p} jenisAwal={koreksiOrderUntuk.jenis}
+          onClose={() => setKoreksiOrderUntuk(null)}
+          onSelesai={async () => { setKoreksiOrderUntuk(null); await muat({ diam: true }); }}
+          onBukaKoreksiItem={terpadu(koreksiOrderUntuk.p) ? () => { const p = koreksiOrderUntuk.p; setKoreksiOrderUntuk(null); setKoreksiUntuk(p); } : null}
+        />
+      )}
       {koreksiUntuk && (terpadu(koreksiUntuk)
         ? (
           <ModalKoreksiBaris
