@@ -253,7 +253,6 @@ ORD_PKR_N="$(psql_live -At -c "select count(*) from \"Order\" where penjualan_ka
 PKR_ITEM_N="$(psql_live -At -c "select count(*) from pkr_order_items")"
 LEGACY_N="$(psql_live -At -c "select count(*) from \"Order\" o join \"Customer\" c on c.id = o.\"customerId\" where o.penjualan_karyawan_id is not null and c.staff_user_id is not null")"
 for v in "$PKR_N" "$ORD_PKR_N" "$PKR_ITEM_N" "$LEGACY_N"; do [[ "$v" =~ ^[0-9]+$ ]] || die "audit awal bukan angka: '$v'"; done
-[ "$PKR_ITEM_N" -gt 0 ] || die "tidak ada pkr_order_items di produksi: uji perilaku rehearsal butuh contoh baris — berhenti"
 ok "prasyarat skema terpenuhi; PKR=${PKR_N}, order PKR=${ORD_PKR_N} (legacy menunjuk profil karyawan: ${LEGACY_N}) — dibiarkan apa adanya, tanpa backfill"
 # GARIS DASAR invarian (dibandingkan sesudah rilis; yang dijaga = TIDAK BERTAMBAH oleh rilis ini).
 SQL_TIDAK_SEIMBANG="select count(*)::int from (select e.id from fin_journal_entries e join fin_journal_lines l on l.entry_id = e.id group by e.id having sum(l.debit) <> sum(l.credit)) x"
@@ -397,26 +396,32 @@ ok "nilai enum terpasang; 5 kolom Order baru semuanya NULL; CHECK qty 200 dan je
 cat > "$BK_DIR/uji-perilaku.sql" <<'UJISQL'
 DO $t$
 DECLARE
-  o text; pk uuid; cu text; it uuid; rev int; tolak int := 0; lolos int := 0;
+  o text; cu text; c record; tolak int := 0; lolos int := 0;
 BEGIN
-  SELECT id, penjualan_karyawan_id INTO o, pk FROM "Order" WHERE penjualan_karyawan_id IS NOT NULL ORDER BY id LIMIT 1;
+  SELECT id INTO o FROM "Order" ORDER BY id LIMIT 1;
   SELECT id INTO cu FROM "Customer" ORDER BY id LIMIT 1;
-  SELECT id INTO it FROM pkr_order_items ORDER BY id LIMIT 1;
-  IF o IS NULL OR pk IS NULL OR cu IS NULL OR it IS NULL THEN RAISE EXCEPTION 'ROLLBACK_UJI tolak=0 lolos=0 (tidak ada contoh order PKR/customer/item)'; END IF;
-  SELECT COALESCE(MAX(revision), 0) + 1 INTO rev FROM pkr_item_revisions WHERE order_id = o;
+  IF o IS NULL OR cu IS NULL THEN RAISE EXCEPTION 'ROLLBACK_UJI tolak=0 lolos=0 (tidak ada contoh Order/Customer)'; END IF;
   -- (1) nilai enum baru dapat dipakai
   UPDATE "Customer" SET "leadSource" = 'PENJUALAN_KARYAWAN' WHERE id = cu; lolos := lolos + 1;
   -- (2) kolom penerima/catatan tersimpan
   UPDATE "Order" SET recipient_name = 'Penerima Uji', recipient_phone = '6281200000000', delivery_landmark = 'Patokan', production_note = 'Catatan P', delivery_note = 'Catatan D' WHERE id = o; lolos := lolos + 1;
-  -- (3) jumlah per item sampai 200 sah; 201 dan 0 DITOLAK
-  UPDATE pkr_order_items SET qty = 200 WHERE id = it; lolos := lolos + 1;
-  BEGIN UPDATE pkr_order_items SET qty = 201 WHERE id = it; RAISE EXCEPTION 'TIDAK_DITOLAK_qty_201';
+  -- (3) CHECK jumlah per item diuji pada SALINAN sementara yang membawa CHECK asli (tanpa FK/trigger/baris produksi): 200 sah; 201 dan 0 DITOLAK
+  CREATE TEMP TABLE uji_item (LIKE pkr_order_items INCLUDING CONSTRAINTS) ON COMMIT DROP;
+  FOR c IN SELECT attname FROM pg_attribute WHERE attrelid = 'uji_item'::regclass AND attnum > 0 AND NOT attisdropped LOOP
+    EXECUTE format('ALTER TABLE uji_item ALTER COLUMN %I DROP NOT NULL', c.attname);
+  END LOOP;
+  INSERT INTO uji_item (id, qty) VALUES (gen_random_uuid(), 200); lolos := lolos + 1;
+  BEGIN INSERT INTO uji_item (id, qty) VALUES (gen_random_uuid(), 201); RAISE EXCEPTION 'TIDAK_DITOLAK_qty_201';
   EXCEPTION WHEN check_violation THEN tolak := tolak + 1; END;
-  BEGIN UPDATE pkr_order_items SET qty = 0 WHERE id = it; RAISE EXCEPTION 'TIDAK_DITOLAK_qty_0';
+  BEGIN INSERT INTO uji_item (id, qty) VALUES (gen_random_uuid(), 0); RAISE EXCEPTION 'TIDAK_DITOLAK_qty_0';
   EXCEPTION WHEN check_violation THEN tolak := tolak + 1; END;
-  -- (4) jenis revisi PEMBELI sah (INSERT: buku revisi append-only); jenis liar DITOLAK
-  INSERT INTO pkr_item_revisions (id, order_id, penjualan_id, revision, kind, after_items) VALUES (gen_random_uuid(), o, pk, rev, 'PEMBELI', '[]'::jsonb); lolos := lolos + 1;
-  BEGIN INSERT INTO pkr_item_revisions (id, order_id, penjualan_id, revision, kind, after_items) VALUES (gen_random_uuid(), o, pk, rev + 1, 'LIAR', '[]'::jsonb); RAISE EXCEPTION 'TIDAK_DITOLAK_kind_liar';
+  -- (4) jenis revisi: PEMBELI sah; jenis liar DITOLAK (salinan sementara yang membawa CHECK asli)
+  CREATE TEMP TABLE uji_rev (LIKE pkr_item_revisions INCLUDING CONSTRAINTS) ON COMMIT DROP;
+  FOR c IN SELECT attname FROM pg_attribute WHERE attrelid = 'uji_rev'::regclass AND attnum > 0 AND NOT attisdropped LOOP
+    EXECUTE format('ALTER TABLE uji_rev ALTER COLUMN %I DROP NOT NULL', c.attname);
+  END LOOP;
+  INSERT INTO uji_rev (id, kind) VALUES (gen_random_uuid(), 'PEMBELI'); lolos := lolos + 1;
+  BEGIN INSERT INTO uji_rev (id, kind) VALUES (gen_random_uuid(), 'LIAR'); RAISE EXCEPTION 'TIDAK_DITOLAK_kind_liar';
   EXCEPTION WHEN check_violation THEN tolak := tolak + 1; END;
   RAISE EXCEPTION 'ROLLBACK_UJI tolak=% lolos=%', tolak, lolos;
 END $t$;
