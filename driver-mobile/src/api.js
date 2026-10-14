@@ -328,7 +328,8 @@ export const api = {
     request(`/armada/jobs/${jobId}/unit-load`, { method: "POST", headers: execHeaders(idempotencyKey, meta), body: JSON.stringify(data) }),
   // Mode gerbang + apakah klien ini ditegakkan (tanpa data bisnis).
   getUnitLoadConfig: () => request("/armada/unit-load/config"),
-  recordJobPayment: (jobId, data) => request(`/armada/jobs/${jobId}/payment`, { method: "POST", body: JSON.stringify(data) }),
+  // recordJobPayment DIHAPUS (6 Okt 2026) — Catat Pembayaran tidak lagi
+  // tersedia di app driver, lihat catatan di components/JobCard.js.
   // Lapor revisi di lokasi (18 September 2026) — port dari frontend/src/api.js,
   // lihat catatan panjang di backend routes/armada.js POST /jobs/:id/report-revision.
   reportRevision: (jobId, data) => request(`/armada/jobs/${jobId}/report-revision`, { method: "POST", body: JSON.stringify(data) }),
