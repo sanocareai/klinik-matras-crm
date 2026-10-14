@@ -18,6 +18,9 @@ import { api } from "../api";
 import { useTheme } from "../hooks/useTheme";
 import { createIdempotencyKey } from "../lib/executionCore";
 import { checklistSiapBerangkat, hitungItemBelum } from "../lib/prepChecklistStatus";
+import { useMyJobs } from "../hooks/useMyJobs";
+import ManifestSection from "../components/ManifestSection";
+import { useExecutionSync } from "../context/ExecutionSyncContext";
 
 async function ambilDanKompresFoto() {
   const perm = await ImagePicker.requestCameraPermissionsAsync();
@@ -175,6 +178,11 @@ export default function PersiapanPerjalananScreen({ route, navigation }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+  // Barang yang harus dibawa per stop (manifest dari unit tertaut job) — dibaca dari data job yang SAMA dipakai daftar job (V1/V2).
+  const { data: jobsData } = useMyJobs();
+  const { queue } = useExecutionSync();
+  const jobsRute = ((jobsData?.jobs) || []).filter((j) => (j.routeId === routeId || j.route?.id === routeId) && j.type === "DELIVERY" && j.manifest)
+    .sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0));
 
   const load = useCallback(async () => {
     setErr("");
@@ -212,6 +220,19 @@ export default function PersiapanPerjalananScreen({ route, navigation }) {
         <View style={styles.center}><Text style={styles.err}>{err}</Text></View>
       ) : (
         <ScrollView contentContainerStyle={styles.list}>
+          {jobsRute.length > 0 && (
+            <View style={styles.card} testID="manifest-rute">
+              <Text style={styles.title}>
+                Barang yang dibawa · {jobsRute.length} stop • {jobsRute.reduce((n, j) => n + (j.manifest.unit || 0), 0)} unit
+              </Text>
+              {jobsRute.map((j, i) => (
+                <View key={j.id}>
+                  <Text style={styles.meta}>Stop {j.sequence ?? i + 1} — {j.order?.customer?.name || j.units?.[0]?.unit?.order?.customer?.name || "Stop"}</Text>
+                  <ManifestSection job={j} queue={queue} />
+                </View>
+              ))}
+            </View>
+          )}
           <KelengkapanCard routeId={routeId} kelengkapan={data.kelengkapan} locked={Boolean(data.lockedAt)} onSubmitted={load} />
           {data.items.map((item) => <ItemCard key={item.id} item={item} routeId={routeId} onUploaded={load} />)}
         </ScrollView>

@@ -217,3 +217,13 @@ test("Foto driver: Avatar memakai foto server dengan inisial hanya fallback; lay
   // tanpa permintaan foto per pengguna
   for (const f of ["ui.js", "screens/KruScreen.js", "screens/PerformaScreen.js", "screens/TrackingScreen.js"]) assert.doesNotMatch(baca(f), /users\/\$\{|\/users\/[^"]*avatar/, f);
 });
+
+test("Detail rute & masalah menampilkan manifest dari server (qty, nama, ukuran, Unit, muat, sumber) tanpa harga", () => {
+  const rute = baca("screens/RuteDetailScreen.js");
+  for (const k of ["manifestJob(j)", "teksBarisManifest(b)", "labelUnitBaris(b)", "progresMuatServer(j)", "sumberManifest(j)", "ringkasManifestRute(jobs)"]) assert.ok(rute.includes(k), k);
+  assert.match(rute, /PIC lead/);
+  assert.doesNotMatch(rute, /formatRupiah|\.price|\.harga|\.value\b/);
+  const masalah = baca("screens/MasalahDetailScreen.js");
+  assert.match(masalah, /label="Barang"/);
+  assert.match(masalah, /label="Muat"/);
+});

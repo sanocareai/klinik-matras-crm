@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { JOB_TYPE, gabungKru, jobStatusInfo, newIdempotencyKey, tanggalWIBPlus, tautanPeta, validasiReschedule } from "@sano/delivery-shared";
+import { JOB_TYPE, gabungKru, jobStatusInfo, newIdempotencyKey, tanggalWIBPlus, tautanPeta, validasiReschedule, manifestJob, teksBarisManifest, labelUnitBaris, progresMuatServer, sumberManifest } from "@sano/delivery-shared";
 import { operasionalApi } from "../client";
 import { useSession } from "../SessionContext";
 import { tanggalWIB, waktuWIB } from "../format";
@@ -74,6 +74,11 @@ export default function MasalahDetailScreen({ route, navigation }) {
             <View>
               <Row icon="user" label="Pelanggan" value={job.order?.customer?.name} />
               <Row icon="hash" label="Order" value={job.order?.orderNumber} />
+              {manifestJob(job) && <Row icon="box" label="Barang" value={`${job.manifest.ringkas}
+${(job.manifest.baris || []).map((b) => `${teksBarisManifest(b)} (${labelUnitBaris(b)})`).join("
+")}`} />}
+              {!!progresMuatServer(job) && <Row icon="checkCircle" label="Muat" value={progresMuatServer(job).label} />}
+              {!!sumberManifest(job) && <Row icon="user" label="Sumber" value={sumberManifest(job).label + (sumberManifest(job).picLead ? ` · PIC lead: ${sumberManifest(job).picLead}` : "")} />}
               <Row icon="truck" label="Jenis" value={JOB_TYPE[job.type] || job.type} />
               <Row icon="calendar" label="Jadwal" value={job.scheduledDate ? tanggalWIB(job.scheduledDate) : "Belum dijadwalkan"} />
               <Row icon="users" label="Driver" value={job.driver?.name || "-"} />

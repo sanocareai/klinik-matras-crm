@@ -92,6 +92,8 @@ async function request(path, options = {}) {
         "Content-Type": "application/json",
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(deviceId ? { "X-Device-Id": deviceId } : {}),
+        // Kemampuan klien (14 Okt 2026): build ini punya checklist muat unit — server menegakkan gerbang HANYA untuk klien yang mengumumkan ini (mode "capable").
+        "X-Capability": "unit-load",
         ...options.headers,
       },
     });
@@ -321,6 +323,11 @@ export const api = {
   arriveArmadaJob: (jobId, data = {}, idempotencyKey, meta = {}) => request(`/armada/jobs/${jobId}/arrive`, { method: "POST", headers: execHeaders(idempotencyKey, meta), body: JSON.stringify(executionMeta(data, meta)) }),
   completeArmadaJob: (jobId, data, idempotencyKey, meta = {}) => request(`/armada/jobs/${jobId}/complete`, { method: "POST", headers: execHeaders(idempotencyKey, meta), body: JSON.stringify(executionMeta(data, meta)) }),
   failArmadaJob: (jobId, data, idempotencyKey, meta = {}) => request(`/armada/jobs/${jobId}/fail`, { method: "POST", headers: execHeaders(idempotencyKey, meta), body: JSON.stringify(executionMeta(data, meta)) }),
+  // Konfirmasi MUAT unit (idempoten di server: unik per job+unit). data = { semua: true } atau { unitIds: [...] }.
+  konfirmasiMuatUnit: (jobId, data = { semua: true }, idempotencyKey, meta = {}) =>
+    request(`/armada/jobs/${jobId}/unit-load`, { method: "POST", headers: execHeaders(idempotencyKey, meta), body: JSON.stringify(data) }),
+  // Mode gerbang + apakah klien ini ditegakkan (tanpa data bisnis).
+  getUnitLoadConfig: () => request("/armada/unit-load/config"),
   recordJobPayment: (jobId, data) => request(`/armada/jobs/${jobId}/payment`, { method: "POST", body: JSON.stringify(data) }),
   // Lapor revisi di lokasi (18 September 2026) — port dari frontend/src/api.js,
   // lihat catatan panjang di backend routes/armada.js POST /jobs/:id/report-revision.

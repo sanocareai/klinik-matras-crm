@@ -4,3 +4,4 @@ export * from "./session.js";
 export * from "./biayaArmada/index.js";
 export * from "./operasional/domain.js";
 export * from "./operasional/api.js";
+export * from "./operasional/manifest.js";

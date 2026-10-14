@@ -49,10 +49,12 @@ export function isJobActionSatisfied(action, status) {
   if (action === "arrive") return status === "ARRIVED" || JOB_SETTLED_STATUSES.includes(status);
   if (action === "complete") return status === "COMPLETED";
   if (action === "fail") return status === "FAILED" || status === "RESCHEDULED";
+  // Konfirmasi muat tidak bermakna lagi bila job sudah selesai/gagal/dijadwal ulang — aman dibuang dari antrean.
+  if (action === "unit-load") return JOB_SETTLED_STATUSES.includes(status);
   return false;
 }
 
-const ACTION_LABEL = { start: "Mulai", arrive: "Tiba", complete: "Selesai", fail: "Gagal" };
+const ACTION_LABEL = { start: "Mulai", arrive: "Tiba", complete: "Selesai", fail: "Gagal", "unit-load": "Konfirmasi muat" };
 
 // Alasan yang bisa dibaca manusia ketika status server TIDAK sesuai target
 // aksi — dipakai sebagai lastError item blocked. Selalu dari PERBANDINGAN
@@ -87,6 +89,9 @@ export function isRouteStartSatisfied(status) {
 export function classifyExecutionError(error) {
   const status = error?.status;
   const message = String(error?.message || error || "");
+  // Gerbang muat unit: penyelesaian ditolak karena ada unit belum dikonfirmasi — BUKAN konflik status; jalan keluarnya
+  // konfirmasi muat atau pengecualian beralasan, jadi blokir dengan pesan server (menyebut unit yang belum).
+  if (status === 409 && error?.code === "UNIT_BELUM_DIKONFIRMASI") return { kind: "block", reason: message };
   if (status === 409) {
     if (message.includes("sedang diproses di perangkat lain")) return { kind: "retry" };
     if (message.includes("Idempotency-Key sudah dipakai")) return { kind: "block", reason: message };

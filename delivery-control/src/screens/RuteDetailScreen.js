@@ -1,7 +1,10 @@
 import React from "react";
 import { Linking, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { JOB_TYPE, jobStatusInfo, ringkasRute, routeStatusInfo, tautanPeta } from "@sano/delivery-shared";
+import {
+  JOB_TYPE, jobStatusInfo, ringkasRute, routeStatusInfo, tautanPeta,
+  manifestJob, teksBarisManifest, labelUnitBaris, progresMuatServer, sumberManifest, ringkasManifestRute,
+} from "@sano/delivery-shared";
 import { operasionalApi } from "../client";
 import { useMuat } from "../useMuat";
 import { tanggalWIB, waktuWIB } from "../format";
@@ -25,6 +28,7 @@ export default function RuteDetailScreen({ route, navigation }) {
   const info = routeStatusInfo(r.status);
   const rk = ringkasRute(r);
   const jobs = [...(r.jobs || [])].sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0));
+  const rm = ringkasManifestRute(jobs);
 
   return (
     <SafeAreaView style={[s.root, { backgroundColor: t.bg }]} edges={["bottom"]}>
@@ -39,6 +43,7 @@ export default function RuteDetailScreen({ route, navigation }) {
           </View>
           <ProgressBar value={rk.stop ? (rk.selesai / rk.stop) * 100 : 0} />
           <Text style={{ color: t.ink2, fontSize: 13 }}>{rk.selesai} selesai · {rk.gagal} gagal · {rk.sisa} tersisa dari {rk.stop} stop</Text>
+          {rm.unit > 0 && <Text style={{ color: t.ink2, fontSize: 13 }} testID="manifest-rute-ringkas">Barang: {rm.stop} stop • {rm.unit} unit</Text>}
         </View>
 
         <Section title="Kru & kendaraan" icon="users">
@@ -70,6 +75,26 @@ export default function RuteDetailScreen({ route, navigation }) {
                   </View>
                   <Text style={{ color: t.ink2, fontSize: 12 }}>{JOB_TYPE[j.type] || j.type} · {j.order?.orderNumber || "-"}{j.timeWindow ? ` · ${j.timeWindow}` : ""}</Text>
                   {!!j.addressText && <Text style={{ color: t.ink3, fontSize: 12 }} numberOfLines={2}>{j.addressText}</Text>}
+                  {manifestJob(j) && (
+                    <View style={[s.manifest, { backgroundColor: t.surface2 || t.bg, borderColor: t.border }]} testID={`manifest-${j.id}`}>
+                      <Text style={[type.overline, { color: t.ink3 }]}>BARANG YANG DIBAWA</Text>
+                      <Text style={{ color: t.ink, fontSize: 13, fontWeight: "700" }}>{j.manifest.ringkas}</Text>
+                      {(j.manifest.baris || []).map((b, bi) => (
+                        <View key={`${b.nama}-${bi}`} style={{ gap: 2 }}>
+                          {!!b.bundel && (bi === 0 || j.manifest.baris[bi - 1]?.bundel?.no !== b.bundel.no) && (
+                            <Text style={{ color: t.ink3, fontSize: 11, fontWeight: "700" }}>SET {String(b.bundel.nama).toUpperCase()}</Text>
+                          )}
+                          <Text style={{ color: t.ink, fontSize: 13, fontWeight: "600" }}>{teksBarisManifest(b)}</Text>
+                          <Text style={{ color: t.ink2, fontSize: 12 }}>Unit: {labelUnitBaris(b)}</Text>
+                        </View>
+                      ))}
+                      {(() => { const mu = progresMuatServer(j); return mu ? (
+                        <Text style={{ color: mu.lengkap ? t.green : t.ink2, fontSize: 12, fontWeight: "700" }}>{mu.label}</Text>
+                      ) : null; })()}
+                      {!!sumberManifest(j) && <Text style={{ color: t.ink2, fontSize: 12 }}>Sumber: {sumberManifest(j).label}</Text>}
+                      {!!sumberManifest(j)?.picLead && <Text style={{ color: t.ink3, fontSize: 12 }}>PIC lead: {sumberManifest(j).picLead}</Text>}
+                    </View>
+                  )}
                   {!!j.completedAt && <Text style={{ color: t.green, fontSize: 12 }}>Selesai {waktuWIB(j.completedAt)}</Text>}
                   {j.status === "FAILED" && !!j.failureReason && <Text style={{ color: t.red, fontSize: 12 }}>Gagal: {j.failureReason}</Text>}
                   {!!peta && (
@@ -95,4 +120,5 @@ const s = StyleSheet.create({
   row: { flexDirection: "row", alignItems: "center", gap: 8 },
   stop: { flexDirection: "row", gap: 12, paddingVertical: 12 },
   seq: { width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  manifest: { gap: 4, padding: 10, borderRadius: radius.md ?? 10, borderWidth: 1, marginTop: 4 },
 });

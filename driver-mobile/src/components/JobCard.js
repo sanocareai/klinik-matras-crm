@@ -10,6 +10,9 @@ import { View, Text, Pressable, TextInput, StyleSheet, Linking } from "react-nat
 import { MapPin, Phone, Loader2, Home, AlertTriangle } from "lucide-react-native";
 import PhotoCapture from "./PhotoCapture";
 import PaymentSection from "./PaymentSection";
+import ManifestSection from "./ManifestSection";
+import { useUnitLoadGate } from "../hooks/useUnitLoadGate";
+import { izinSelesai, progresMuatEfektif } from "../lib/manifestView";
 import JobProgressStepper from "./JobProgressStepper";
 import { performSubmit } from "../lib/submitJobAction";
 import { customerOf, customerPhoneOf, orderNumberOf, jobLabelOf, mapsUrl, waLinkFromPhone, estJamUntukTampilan, JOB_STATUS_REAL, COMPLAINT_CATEGORY_LABEL, produkLabelOf, salesPersonOf } from "../lib/jobHelpers";
@@ -37,7 +40,10 @@ const FAIL_REASONS_DELIVERY = [
 export default function JobCard({ job, onChanged }) {
   const theme = useTheme();
   const { markOnlineLocally } = useAuth();
-  const { submit, pendingForJob, checkStatus, discard } = useExecutionSync();
+  const { submit, checkStatus, discard, queue } = useExecutionSync();
+  const gerbangAktif = useUnitLoadGate();
+  const [alasanPengecualian, setAlasanPengecualian] = useState("");
+  const [muatBusy, setMuatBusy] = useState(false);
   const [checking, setChecking] = useState(false);
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const STATUS_TONE = useMemo(() => ({
@@ -73,6 +79,7 @@ export default function JobCard({ job, onChanged }) {
     setBusy(false);
     setErr("");
     setRevisionSubmitted(false);
+    setAlasanPengecualian("");
   }
 
   const nama = customerOf(job) || "Tanpa nama";
@@ -89,7 +96,12 @@ export default function JobCard({ job, onChanged }) {
   const sales = salesPersonOf(job);
   const failReasons = job.type === "PICKUP" ? FAIL_REASONS_PICKUP : FAIL_REASONS_DELIVERY;
   const statusInfo = JOB_STATUS_REAL[job.status] || { label: job.status };
-  const pending = pendingForJob(job.id);
+  // Konfirmasi muat (unit-load) TIDAK dihitung sebagai aksi status yang menunggu — jangan menyembunyikan tombol Tiba/Selesai saat offline;
+  // kalau ia ditolak server, pesannya tampil sendiri di bawah manifest.
+  const pending = (queue || []).find((it) => it.jobId === job.id && it.action !== "unit-load") || null;
+  const muatBlocked = (queue || []).find((it) => it.jobId === job.id && it.action === "unit-load" && it.blocked) || null;
+  const izin = izinSelesai({ job, queue, gerbangAktif, alasan: alasanPengecualian });
+  const progresMuat = progresMuatEfektif(job, queue);
   const kota = job.order?.deliveryCity || job.order?.customer?.city || "";
 
   function resetForm() {
@@ -98,7 +110,29 @@ export default function JobCard({ job, onChanged }) {
     setNote("");
     setFailReason("");
     setRecipientName("");
+    setAlasanPengecualian("");
     setErr("");
+  }
+
+  // Konfirmasi muat: lewat antrean eksekusi yang sama (offline-safe, digabung per job, replay idempoten di server).
+  async function konfirmasiMuat(data) {
+    setMuatBusy(true);
+    setErr("");
+    try {
+      await submit({
+        jobId: job.id,
+        action: "unit-load",
+        payload: data,
+        photos: [],
+        readerMode: job._v2 ? "V2" : "V1",
+        baseRevision: job._v2?.jobRevision ?? null,
+      });
+      onChanged();
+    } catch (e) {
+      setErr(e.message || "Gagal menyimpan konfirmasi muat");
+    } finally {
+      setMuatBusy(false);
+    }
   }
 
   async function run(action, payload) {
@@ -196,6 +230,17 @@ export default function JobCard({ job, onChanged }) {
       )}
 
       <JobProgressStepper status={job.status} theme={theme} />
+
+      {/* Manifest barang + checklist muat (14 Okt 2026): qty, nama produk, ukuran, U1/U2/U3 dari unit tertaut job; progres = server ∪ antrean offline. */}
+      <ManifestSection job={job} queue={queue} onKonfirmasi={konfirmasiMuat} busy={muatBusy} gerbangAktif={gerbangAktif} />
+      {muatBlocked ? (
+        <View style={[styles.complaintBanner, { backgroundColor: theme.ORANGE + "1A" }]}>
+          <Text style={[styles.complaintBannerText, { color: theme.ORANGE }]}>Konfirmasi muat ditolak server: {muatBlocked.lastError}</Text>
+          <Pressable style={[styles.dangerBtn, { marginTop: 8 }]} onPress={() => discard(muatBlocked.idempotencyKey)}>
+            <Text style={styles.primaryBtnText}>Buang &amp; Ulangi Konfirmasi</Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       {estJam && <Text style={styles.detailLine}>🕗 {estJam}</Text>}
       {job.addressText ? <Text style={styles.detailLine} numberOfLines={2}>📍 {job.addressText}</Text> : null}
@@ -316,14 +361,37 @@ export default function JobCard({ job, onChanged }) {
             onChangeText={setNote}
             multiline
           />
+          {/* Gerbang muat unit: tampil hanya bila server menegakkannya untuk perangkat ini DAN masih ada unit belum dikonfirmasi. */}
+          {gerbangAktif && job.type === "DELIVERY" && progresMuat && progresMuat.total > 0 && !progresMuat.lengkap && (
+            <View style={[styles.complaintBanner, { backgroundColor: theme.ORANGE + "1A" }]} testID="pengecualian-unit">
+              <Text style={[styles.complaintBannerText, { color: theme.ORANGE }]}>
+                {progresMuat.label} — belum lengkap ({progresMuat.belum.map((u) => u.label).join(", ")}).
+              </Text>
+              <Text style={[styles.detailLine, { marginTop: 4 }]}>
+                Konfirmasi semua unit dimuat di atas. Bila memang tidak bisa, tulis alasan pengecualian (minimal 5 huruf) — dicatat untuk audit.
+              </Text>
+              <TextInput
+                style={styles.singleInput}
+                placeholder="Alasan pengecualian"
+                placeholderTextColor={theme.INK3}
+                value={alasanPengecualian}
+                onChangeText={setAlasanPengecualian}
+                accessibilityLabel="Alasan pengecualian unit"
+              />
+            </View>
+          )}
           <View style={styles.btnRow}>
             <Pressable style={[styles.secondaryBtn, { flex: 1 }]} onPress={resetForm} disabled={busy}>
               <Text style={styles.secondaryBtnText}>Batal</Text>
             </Pressable>
             <Pressable
-              style={[styles.primaryBtn, { flex: 1.4 }, (busy || photos.length === 0 || !recipientName.trim()) && styles.disabled]}
-              disabled={busy || photos.length === 0 || !recipientName.trim()}
-              onPress={() => run("complete", { note, recipientName: recipientName.trim() })}
+              style={[styles.primaryBtn, { flex: 1.4 }, (busy || photos.length === 0 || !recipientName.trim() || !izin.boleh) && styles.disabled]}
+              disabled={busy || photos.length === 0 || !recipientName.trim() || !izin.boleh}
+              onPress={() => run("complete", {
+                note,
+                recipientName: recipientName.trim(),
+                ...(izin.pakaiPengecualian ? { pengecualianUnit: { alasan: izin.alasan } } : {}),
+              })}
             >
               {busy ? <Loader2 size={14} color="#FFFFFF" /> : <Text style={styles.primaryBtnText}>Tandai Selesai</Text>}
             </Pressable>

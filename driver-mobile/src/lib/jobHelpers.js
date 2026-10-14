@@ -1,3 +1,4 @@
+import { produkRingkasKartu, labelPenjualPkr } from "./manifestView.js";
 // Port dari frontend/src/features/armada/jobStatus.js — HANYA fungsi
 // pembaca data job yang dipakai layar driver (bukan seluruh file, banyak
 // yang khusus dispatcher/Route Planner/dst yang tidak relevan di sini).
@@ -123,6 +124,9 @@ function parseOrderNotes(notes) {
 // / productSummary (frontend orderSummary.js) — logika SEWA-selalu-pakai-
 // brand (D-170) sama, jangan duplikasi aturan lagi di tempat keempat.
 export function produkLabelOf(job) {
+  // Manifest server (14 Okt 2026): "3× Kasur Sorong 3in1 Custom — 100 × 200 cm" dari unit tertaut job — bukan ringkasan kategori order.
+  const dariManifest = produkRingkasKartu(job);
+  if (dariManifest) return `${job.manifest.unit} unit · ${dariManifest}`;
   const order = job?.order || job?.units?.[0]?.unit?.order;
   if (!order) return null;
   const { ukuranKasur, merkKasur } = parseOrderNotes(order.notes);
@@ -138,6 +142,9 @@ export function produkLabelOf(job) {
 // Sales yang pegang order ini — port dari jobStatus.js#salesPersonOf, sama
 // laporan owner dengan serviceLabelOf di atas.
 export function salesPersonOf(job) {
+  // Order Penjualan Karyawan: yang tampil PENJUAL transaksi ("Dijual oleh Kemal"), bukan pemilik lead customer.
+  const penjualPkr = labelPenjualPkr(job);
+  if (penjualPkr) return penjualPkr;
   return (
     job?.order?.customer?.assignedSales?.name ||
     job?.units?.[0]?.unit?.order?.customer?.assignedSales?.name ||

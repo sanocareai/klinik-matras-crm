@@ -118,7 +118,21 @@ export function createExecutionQueue({ storage, fs, api: client }) {
       // di audit code review). Foto pada percobaan kedua tidak pernah
       // di-stage ke disk (dibuang begitu saja) — entri pertama sudah
       // membawa foto yang sama, form belum berubah antar dua tap.
-      if (existing) return existing;
+      if (existing && action === "unit-load") {
+        // Konfirmasi muat berikutnya DIGABUNG ke entri yang masih menunggu (union unitIds / semua) — tidak ada entri ganda, idempotencyKey tetap.
+        if (!existing.blocked) {
+          const semua = Boolean(existing.payload?.semua || payload?.semua);
+          const unitIds = [...new Set([...(existing.payload?.unitIds ?? []), ...(payload?.unitIds ?? [])])];
+          const merged = { ...existing, payload: { ...existing.payload, semua, unitIds } };
+          await writeQueue(userId, queue.map((e) => (e.idempotencyKey === existing.idempotencyKey ? merged : e)));
+          return merged;
+        }
+        // Entri sebelumnya blocked (konflik): buang dan buat baru dari konfirmasi terbaru.
+        const idx = queue.findIndex((e) => e.idempotencyKey === existing.idempotencyKey);
+        queue.splice(idx, 1);
+      } else if (existing) {
+        return existing;
+      }
 
       const idempotencyKey = createIdempotencyKey(userId.slice(0, 8));
       const staged = await stagePhotos(userId, idempotencyKey, photos);
@@ -169,6 +183,10 @@ export function createExecutionQueue({ storage, fs, api: client }) {
     if (item.action === "route-start") {
       return client.startRoute(item.routeId, { proofPhotoUrls: item.uploadedUrls }, item.idempotencyKey, meta);
     }
+    if (item.action === "unit-load") {
+      const data = item.payload?.semua ? { semua: true } : { unitIds: item.payload?.unitIds ?? [] };
+      return client.konfirmasiMuatUnit(item.jobId, data, item.idempotencyKey, meta);
+    }
     if (item.action === "start") return client.startArmadaJob(item.jobId, { proofPhotoUrls: item.uploadedUrls }, item.idempotencyKey, meta);
     if (item.action === "arrive") return client.arriveArmadaJob(item.jobId, locationPayload, item.idempotencyKey, meta);
     if (item.action === "complete") {
@@ -178,6 +196,8 @@ export function createExecutionQueue({ storage, fs, api: client }) {
           proofPhotoUrls: item.uploadedUrls,
           recipientName: item.payload.recipientName,
           note: item.payload.note,
+          // Pengecualian resmi gerbang muat unit: { alasan } ≥ 5 huruf; server mencatat audit UNIT_LOAD_EXCEPTION tepat sekali.
+          ...(item.payload.pengecualianUnit ? { pengecualianUnit: item.payload.pengecualianUnit } : {}),
           ...locationPayload,
         },
         item.idempotencyKey,
