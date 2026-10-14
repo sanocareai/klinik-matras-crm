@@ -22,6 +22,8 @@
 
 import sharp from "sharp";
 import { parseOrderNotesForInvoice, produkLineLabel } from "./invoice.js";
+import { manifestJob } from "./deliveryManifestAttach.js";
+import { teksSelManifest } from "../lib/domain/deliveryManifest.js";
 
 const KOLOM = [
   { key: "no", label: "No", width: 36, align: "center" },
@@ -39,9 +41,12 @@ const KOLOM = [
   // — order.customer.assignedSales SUDAH ikut jobInclude (dipakai badge
   // SalesBadge di app), nol perubahan query, cuma belum pernah tampil di
   // gambar tabel ini.
-  { key: "sales", label: "Sales", width: 110 },
+  // Untuk order Penjualan Karyawan kolom ini memuat KARYAWAN PENJUAL ("Dijual: Kemal"), bukan Sales pemilik lead customer (14 Okt 2026, audit Indra: "Rifki" = assignedSales customer lama).
+  { key: "sales", label: "Sales / Penjual", width: 130 },
   { key: "phone", label: "No. HP", width: 130 },
-  { key: "produk", label: "Produk & Ukuran", width: 190 },
+  // Produk & Ukuran dibentuk dari MANIFEST unit tertaut ("3× Kasur … — 100 × 200 cm (U1, U2, U3)"), bukan ringkasan kategori order.
+  { key: "unit", label: "Jml Unit", width: 70, align: "center" },
+  { key: "produk", label: "Produk & Ukuran", width: 270 },
   { key: "alamat", label: "Alamat", width: 320 },
   // Kota (13 September 2026, permintaan owner: "ketika terbitkan jalur >
   // generate image, boleh tambah 1 kolom kota customer") — Order.deliveryCity
@@ -127,7 +132,8 @@ export async function buildRouteSheetImage(route) {
   const baris = jobs.map((j, idx) => {
     const order = j.order || j.units?.[0]?.unit?.order;
     const customer = order?.customer?.name || "Tanpa nama";
-    const sales = order?.customer?.assignedSales?.name || "-";
+    const penjualPkr = order?.penjualanKaryawan?.seller?.name || null;
+    const sales = penjualPkr ? `Dijual: ${penjualPkr}` : (order?.customer?.assignedSales?.name || "-");
     const phone = order?.customer?.phone || "-";
     const tipe = j.type === "PICKUP" ? "PENGAMBILAN" : "PENGIRIMAN";
     const alamat = j.addressText?.trim() || "(alamat belum diisi)";
@@ -144,11 +150,15 @@ export async function buildRouteSheetImage(route) {
       }
       produk = bagian.join(" · ");
     }
+    // Manifest unit tertaut MENGGANTIKAN ringkasan kategori bila job punya unit (sumber kebenaran = unit job).
+    const manifest = manifestJob(j);
+    if (manifest.unit > 0) produk = teksSelManifest(manifest);
+    const unit = manifest.unit > 0 ? String(manifest.unit) : "-";
 
     const resi = order?.orderNumber || "-";
     const kota = order?.deliveryCity || "-";
 
-    return { no: String(idx + 1), resi, tipe, tipeRaw: j.type, kategori: order?.category || null, customer, sales, phone, produk, alamat, kota, estimasi };
+    return { no: String(idx + 1), resi, tipe, tipeRaw: j.type, kategori: order?.category || null, customer, sales, phone, unit, produk, alamat, kota, estimasi };
   });
 
   // Hitung tinggi tiap baris dari kolom PALING BANYAK wrap (biasanya Alamat

@@ -468,6 +468,8 @@ model User {
   jobsAsDriver               Job[]                    @relation("JobDriver")
   jobsCompleted              Job[]                    @relation("JobCompletedBy")
   deliveryExecutionEvents    DeliveryExecutionEvent[] @relation("DeliveryExecutionActor")
+  jobUnitLoadsConfirmed      JobUnitLoad[]            @relation("JobUnitLoadConfirmer")
+  orderMerges                OrderMerge[]             @relation("OrderMergeActor")
   jobsAsHelper               Job[]                    @relation("JobHelper")
   jobPositionPings           JobPositionPing[]        @relation("JobPositionPingDriver")
   jobIssueLogsCreated        JobIssueLog[]            @relation("JobIssueLogCreator")
@@ -1192,6 +1194,26 @@ model RiskClassificationFeedback {
   @@index([customerId])
 }
 
+// Buku penggabungan order duplikat (append-only di DB). Satu order hanya bisa digabung SEKALI (unik duplicate_order_id); replay lewat idempotency_key.
+model OrderMerge {
+  id               String   @id @default(uuid()) @db.Uuid
+  primaryOrderId   String   @map("primary_order_id")
+  primaryOrder     Order    @relation("OrderMergePrimary", fields: [primaryOrderId], references: [id], onDelete: Restrict)
+  duplicateOrderId String   @unique @map("duplicate_order_id")
+  duplicateOrder   Order    @relation("OrderMergeDuplicate", fields: [duplicateOrderId], references: [id], onDelete: Restrict)
+  actorId          String?  @map("actor_id")
+  actor            User?    @relation("OrderMergeActor", fields: [actorId], references: [id], onDelete: SetNull)
+  reason           String   @db.VarChar(500)
+  idempotencyKey   String   @unique @map("idempotency_key") @db.VarChar(128)
+  before           Json
+  after            Json
+  evidence         Json?
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([primaryOrderId])
+  @@map("order_merges")
+}
+
 model Order {
   id                    String        @id @default(cuid())
   customerId            String
@@ -1237,6 +1259,15 @@ model Order {
   // delivery); nominal, pembayaran, piutang, dan jurnal tetap di PKR. UNIQUE = satu PKR paling banyak satu order (dan sebaliknya). Trigger DB menolak payments / invoices /
   // baris jurnal ber-order_id order ini. Lihat services/penjualanKaryawanOrder.js.
   penjualanKaryawanId   String?       @unique @map("penjualan_karyawan_id") @db.Uuid
+  // PENGGABUNGAN ORDER DUPLIKAT (14 Okt 2026): order ini DIGABUNGKAN ke order utama (relasi, bukan penghapusan). NULL = order aktif biasa. Unit/job/POD/Payment/invoice/jurnal TIDAK dipindah.
+  mergedIntoOrderId String?   @map("merged_into_order_id")
+  mergedInto        Order?    @relation("OrderMerge", fields: [mergedIntoOrderId], references: [id], onDelete: Restrict)
+  mergedFrom        Order[]   @relation("OrderMerge")
+  mergedAt          DateTime? @map("merged_at")
+  mergedById        String?   @map("merged_by_id")
+  mergeReason       String?   @map("merge_reason") @db.VarChar(500)
+  mergeAsPrimary    OrderMerge[] @relation("OrderMergePrimary")
+  mergeAsDuplicate  OrderMerge?  @relation("OrderMergeDuplicate")
   penjualanKaryawan     FinPenjualanKaryawan? @relation("OrderPenjualanKaryawan", fields: [penjualanKaryawanId], references: [id], onDelete: Restrict)
   pkrItems            PkrOrderItem[]
   pkrItemRevisions    PkrItemRevision[]
@@ -1792,6 +1823,7 @@ model Unit {
 
   stageLogs         UnitStageLog[]
   jobUnits          JobUnit[]
+  jobLoads          JobUnitLoad[]
   qcFitTests        QcFitTest[]
   productionTargets ProductionTarget[]
   stockMovements    StockMovement[]
@@ -2585,6 +2617,7 @@ model Job {
   issueLogs       JobIssueLog[]
   rescheduleCases RescheduleCase[]         @relation("RescheduleCaseOriginJob")
   executionEvents DeliveryExecutionEvent[]
+  unitLoads       JobUnitLoad[]
 
   expenseSubmissions ExpenseSubmission[]
   deliveryStateV2    DeliveryJobState?
@@ -4236,6 +4269,23 @@ model JobUnit {
   @@unique([jobId, unitId])
   @@index([unitId])
   @@map("job_units")
+}
+
+// Konfirmasi MUAT unit per job (14 Okt 2026, manifest Delivery): satu baris = satu unit job yang sudah dikonfirmasi dibawa. Unik (job, unit) → klik ulang tidak menggandakan.
+// Progres "Barang dimuat 3/3 unit" dibaca dari sini; penyelesaian pengiriman memeriksa kelengkapannya (atau pengecualian resmi dengan alasan + audit).
+model JobUnitLoad {
+  id            String   @id @default(uuid()) @db.Uuid
+  jobId         String   @map("job_id") @db.Uuid
+  job           Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  unitId        String   @map("unit_id") @db.Uuid
+  unit          Unit     @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  confirmedById String?  @map("confirmed_by_id")
+  confirmedBy   User?    @relation("JobUnitLoadConfirmer", fields: [confirmedById], references: [id], onDelete: SetNull)
+  confirmedAt   DateTime @default(now()) @map("confirmed_at")
+
+  @@unique([jobId, unitId])
+  @@index([unitId])
+  @@map("job_unit_loads")
 }
 
 // Pembayaran tunai ke driver (D-011). APPEND-ONLY (CLAUDE.md sano-hub §"Dua

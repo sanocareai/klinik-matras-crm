@@ -56,6 +56,9 @@ import { ACTIVE_JOB_STATUSES, ELIGIBLE_ORDER_STATUS, STALE_UNSCHEDULED_JOB, isJo
 import { geocodeAddress, routeLegs, routePath, DEPOT, buildRouteMapsUrl } from "../services/maps.js";
 import { buildRouteSheetImage } from "../services/routeSheetImage.js";
 import { produkLineLabel, parseOrderNotesForInvoice } from "../services/invoice.js";
+import { tempelManifest, manifestJob } from "../services/deliveryManifestAttach.js";
+import { teksManifest, teksSelManifest } from "../lib/domain/deliveryManifest.js";
+import { konfirmasiMuat, progresMuat, periksaGerbangSelesai } from "../services/deliveryUnitLoad.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import {
   SETTLED_JOB_STATUSES,
@@ -87,6 +90,13 @@ import {
 
 export const armadaRouter = express.Router();
 armadaRouter.use(requireAuth);
+// Manifest barang (14 Okt 2026): SETIAP job pada respons API Armada membawa `manifest` { stop, unit, jenisProduk, ringkas, baris[], sumber } yang dibangun dari unit TERTAUT ke job
+// (bukan ringkasan kategori order). Satu titik supaya web, rute, driver app, dan pesan grup memakai angka yang sama. Tanpa harga/nilai/pembayaran.
+armadaRouter.use((_req, res, next) => {
+  const kirim = res.json.bind(res);
+  res.json = (body) => kirim(tempelManifest(body));
+  next();
+});
 
 function deliveryV2IdempotencyKey(req, prefix) {
   return String(req.get("Idempotency-Key") || req.body?.idempotencyKey || `${prefix}:${randomUUID()}`);
@@ -566,7 +576,7 @@ function formatRouteWaMessage(route, mapsUrl, label = "") {
       // owner: "bagus jika ditempatkan dibawah nama customer") — SEBELUMNYA
       // baris paling bawah tiap stop, sekarang langsung di bawah nama biar
       // driver tahu barang apa duluan sebelum baca detail jam/catatan/alamat.
-      `🛏️${produkUntukBroadcast(order)}`,
+      ...baris_manifest(j, order),
       `🕗EST Jam: ${estJamUntukBroadcast(j.timeWindow)}`,
       `🗒️Catatan: ${j.accessNotes?.trim() || ""}`,
       `📍Alamat: ${alamat}`,
@@ -614,7 +624,7 @@ function formatExternalCourierWaMessage(jobs, date) {
       "",
       `${idx + 1}. ${emoji}${nama} - ${tipe}`,
       `📦${order?.orderNumber || "-"} · ${EXTERNAL_COURIER_STATUS_LABEL[j.status] || j.status}`,
-      `🛏️${produkUntukBroadcast(order)}`,
+      ...baris_manifest(j, order),
       `🕗EST Jam: ${estJamUntukBroadcast(j.timeWindow) || "-"}`,
       `🗒️Catatan: ${j.accessNotes?.trim() || ""}`,
       `📍Alamat: ${alamat}`,
@@ -636,9 +646,21 @@ const EXTERNAL_COURIER_JOB_SELECT = {
   id: true, type: true, status: true, addressText: true, timeWindow: true, accessNotes: true,
   lat: true, lng: true,
   externalCourierRef: true, externalCourierCost: true,
+  // units (14 Okt 2026) — unit tertaut + item PKR: dasar MANIFEST yang sama dengan rute biasa (tanpa harga).
+  units: {
+    select: {
+      unit: {
+        select: {
+          id: true, unitCode: true, seq: true, status: true, merk: true, ukuran: true,
+          pkrItemUnit: { select: { item: { select: { seq: true, categoryName: true, shape: true, workKind: true, productName: true, qty: true, specNotes: true, lengthCm: true, widthCm: true, thicknessCm: true, heightCm: true, bundleNo: true, bundleName: true, componentSeq: true } } } },
+        },
+      },
+    },
+  },
   order: {
     select: {
       orderNumber: true, productLine: true, notes: true, locationUrl: true,
+      penjualanKaryawan: { select: { nomor: true, seller: { select: { name: true } } } },
       // deliveryCity (13 September 2026) — kolom "Kota" baru di
       // buildRouteSheetImage, ditambahkan di sini juga supaya laporan
       // kurir eksternal tetap identik dengan laporan rute biasa (lihat
@@ -754,6 +776,16 @@ function estJamUntukBroadcast(timeWindow) {
 // frontend (ada "cm"/parens): plain spasi, tanpa pemisah, sesuai contoh
 // persis yang diminta. Reuse produkLineLabel()/parseOrderNotesForInvoice()
 // yang sudah ada, bukan bikin parser Order.notes ketiga.
+// Baris barang per stop untuk pesan grup (14 Okt 2026): "1 stop • 3 unit • 1 jenis produk", "3× Kasur … — 100 × 200 cm", "Unit: U1, U2, U3", "Sumber: Penjualan Karyawan — dijual oleh Kemal".
+// Bila job tidak punya unit tertaut (data lama), jatuh ke label ringkasan order seperti sebelumnya.
+function baris_manifest(job, order) {
+  try {
+    const m = manifestJob(job);
+    if (m.unit > 0) return teksManifest(m).map((t, i) => (i === 0 ? `🛏️${t}` : t));
+  } catch { /* jatuh ke label lama */ }
+  return [`🛏️${produkUntukBroadcast(order)}`];
+}
+
 function produkUntukBroadcast(order) {
   if (!order) return "-";
   const { ukuranKasur } = parseOrderNotesForInvoice(order.notes);
@@ -862,6 +894,12 @@ const jobInclude = {
   order: {
     select: {
       id: true, orderNumber: true, status: true,
+      // penjualanKaryawan (14 Okt 2026) — SUMBER order PKR untuk manifest Delivery ("Dijual oleh <karyawan>"); BUKAN Sales lead. Tanpa nominal.
+      penjualanKaryawan: { select: { id: true, nomor: true, seller: { select: { id: true, name: true } } } },
+      // mergedInto (14 Okt 2026) — order ini DIGABUNGKAN ke order utama (histori); drawer menampilkan banner "Histori dari order lama".
+      mergedIntoOrderId: true, mergedInto: { select: { id: true, orderNumber: true } },
+      // units (14 Okt 2026) — sinyal "tambahan pesanan belum masuk job" pada manifest (unit aktif order yang tidak tertaut ke job DELIVERY mana pun).
+      units: { select: { id: true, unitCode: true, seq: true, status: true, jobUnits: { select: { job: { select: { id: true, type: true } } } } }, orderBy: { seq: "asc" } },
       // statusLocked (6 September 2026) — dipakai StatusSelect.jsx (D-086)
       // supaya JobDetailDrawer bisa menampilkan ikon 🔒 yang sama kalau
       // status order ini sedang di-override manual, konsisten dengan
@@ -938,9 +976,21 @@ const jobInclude = {
     include: {
       unit: {
         include: {
+          // pkrItemUnit (14 Okt 2026) — item PKR yang melahirkan unit ini: dasar MANIFEST barang (qty per produk, ukuran, set/bundel). Tanpa harga.
+          pkrItemUnit: {
+            select: {
+              item: {
+                select: {
+                  seq: true, categoryName: true, shape: true, workKind: true, productName: true, qty: true, specNotes: true,
+                  lengthCm: true, widthCm: true, thicknessCm: true, heightCm: true, bundleNo: true, bundleName: true, componentSeq: true,
+                },
+              },
+            },
+          },
           order: {
             select: {
               id: true, orderNumber: true,
+              penjualanKaryawan: { select: { id: true, nomor: true, seller: { select: { id: true, name: true } } } },
               // status — dipakai DeliveryTimeline.jsx di JobDetailDrawer
               // (30 Agustus 2026) supaya drawer bisa menampilkan tahap Order
               // (Menunggu/Pengambilan/dst), bukan cuma status Job itu sendiri.
@@ -1004,6 +1054,8 @@ const jobInclude = {
     orderBy: { createdAt: "asc" },
     include: { createdBy: { select: { id: true, name: true } } },
   },
+  // unitLoads (14 Okt 2026) — unit job yang sudah dikonfirmasi dimuat; dasar progres manifest "Barang dimuat 3/3 unit".
+  unitLoads: { select: { unitId: true, confirmedAt: true, confirmedById: true } },
 };
 
 function deriveStatus(hasDriver, hasDate) {
@@ -1321,6 +1373,8 @@ armadaRouter.get("/jobs", requirePermission(P.JOB_READ), async (req, res) => {
     const jobs = await prisma.job.findMany({
       where: {
         cancellationV2: null,
+        // Order duplikat yang sudah DIGABUNGKAN: job yang sudah SELESAI/GAGAL-nya adalah histori (tampil di order utama sebagai "Histori dari order lama"), bukan pekerjaan aktif.
+        // ?riwayat=1 menampilkannya. Job AKTIF tetap tampil (itu pekerjaan nyata; penggabungan memblokir dua job aktif sekaligus).
         ...(type && { type }),
         ...(status && { status }),
         // orderStatus (6 September 2026, laporan owner: "filter disini
@@ -1351,7 +1405,7 @@ armadaRouter.get("/jobs", requirePermission(P.JOB_READ), async (req, res) => {
         // dikondisikan ke `status` yang diminta pemanggil — bahkan yang
         // eksplisit minta status=UNSCHEDULED (persis kasus Dashboard) tetap
         // harus menyaring ini, itu SUMBER bug-nya.
-        NOT: STALE_UNSCHEDULED_JOB,
+        NOT: [STALE_UNSCHEDULED_JOB, ...(req.query.riwayat === "1" ? [] : [{ AND: [{ status: { in: ["COMPLETED", "FAILED"] } }, { order: { mergedIntoOrderId: { not: null } } }] }])],
         ...(cari && {
           OR: [
             { addressText: { contains: cari, mode: "insensitive" } },
@@ -1379,6 +1433,11 @@ armadaRouter.get("/jobs", requirePermission(P.JOB_READ), async (req, res) => {
         order: {
           select: {
             id: true, orderNumber: true, deliveryCity: true, category: true,
+            // Manifest Delivery (14 Okt 2026): endpoint ini meng-override select order, jadi sumber PKR + relasi gabung + unit order
+            // (sinyal "tambahan pesanan belum masuk job") WAJIB ikut di sini — bukan otomatis dari jobInclude.
+            penjualanKaryawan: { select: { id: true, nomor: true, seller: { select: { id: true, name: true } } } },
+            mergedIntoOrderId: true, mergedInto: { select: { id: true, orderNumber: true } },
+            units: { select: { id: true, unitCode: true, seq: true, status: true, jobUnits: { select: { job: { select: { id: true, type: true } } } } }, orderBy: { seq: "asc" } },
             // status (6 September 2026) — laporan owner: Jadwal & Penugasan
             // perlu tampilkan status ORDER (Siap Kirim/Pengambilan/dst),
             // bukan cuma status Job. Dipakai OrderStatusBadge (JobBadges.jsx).
@@ -5500,6 +5559,23 @@ armadaRouter.post("/jobs/:id/arrive", requireAnyPermission(P.JOB_WRITE, P.JOB_OW
   }
 });
 
+// POST /api/armada/jobs/:id/unit-load  { unitIds?: uuid[], semua?: boolean }
+// Konfirmasi MUAT unit per job ("Barang dimuat 3/3 unit"). Idempoten (unik per job+unit): klik ulang tidak menggandakan. Hanya unit tertaut ke job ini.
+armadaRouter.post("/jobs/:id/unit-load", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_WRITE), async (req, res) => {
+  try {
+    const owned = await loadOwnedJob(req);
+    const progres = await konfirmasiMuat(prisma, { jobId: owned.id, unitIds: req.body?.unitIds ?? null, semua: req.body?.semua === true, userId: req.user.id });
+    res.json({ jobId: owned.id, muat: progres });
+  } catch (err) { handleErr(err, res); }
+});
+
+armadaRouter.get("/jobs/:id/unit-load", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_WRITE), async (req, res) => {
+  try {
+    const job = await loadOwnedJob(req);
+    res.json({ jobId: job.id, muat: await progresMuat(prisma, job.id) });
+  } catch (err) { handleErr(err, res); }
+});
+
 // POST /api/armada/jobs/:id/complete
 // { proofPhotoUrls, signatureUrl?, completedAt?, driverId?, helperId?, note? }
 // FR-D-03/FR-D-04: foto kondisi (pickup) / penempatan (delivery) — WAJIB.
@@ -5539,6 +5615,20 @@ armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_
     const isValidUrl = (u) => typeof u === "string" && u.startsWith("/media/job-photos/");
     const { signatureUrl, driverId, helperId } = req.body;
     if (signatureUrl != null && !isValidUrl(signatureUrl)) throw new ArmadaError("URL tanda tangan tidak valid");
+
+    // GERBANG UNIT (14 Okt 2026): driver tidak boleh menutup pengiriman bila ada unit job yang belum dikonfirmasi dimuat, kecuali PENGECUALIAN resmi (alasan ≥5 + audit).
+    // Aktif bila DELIVERY_UNIT_CONFIRM_REQUIRED=1 (default mati sampai aplikasi driver mengirim konfirmasi muat); Admin/dispatcher (JOB_WRITE) input manual tidak terkena.
+    const gerbang = await periksaGerbangSelesai(prisma, { job: owned, pengecualian: req.body.pengecualianUnit, istimewa: hasPermission(req.user, P.JOB_WRITE) });
+    if (gerbang.perlu && gerbang.pengecualian) {
+      try {
+        await prisma.deliveryExecutionEvent.create({
+          data: {
+            idempotencyKey: `${idempotencyKey}:unit-load-exception`, action: "UNIT_LOAD_EXCEPTION", actorId: req.user.id, jobId: owned.id, routeId: owned.routeId ?? null,
+            payload: { alasan: gerbang.pengecualian.alasan, unitBelumDikonfirmasi: gerbang.pengecualian.belum, dimuat: gerbang.progres.dimuat, total: gerbang.progres.total },
+          },
+        });
+      } catch (e) { if (e?.code !== "P2002") throw e; }
+    }
 
     // Eksekusi lapangan selalu memakai waktu server; koreksi historis admin
     // tetap tersedia melalui endpoint edit POD yang terpisah dan teraudit.
@@ -6560,3 +6650,6 @@ armadaRouter.get("/reports/summary", requirePermission(P.JOB_READ), async (req, 
 
 // Order Penjualan Karyawan: job pengiriman gabungan + kirim sebagian eksplisit (Okt 2026) — router terpisah (routes/armadaPkrPengiriman.js), dipasang di sini supaya bootstrap index.js tidak berubah.
 armadaRouter.use(armadaPkrPengirimanRouter);
+
+// Diekspor untuk tes (manifest pada pesan grup).
+export { formatRouteWaMessage };

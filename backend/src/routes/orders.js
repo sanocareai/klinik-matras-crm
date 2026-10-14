@@ -52,6 +52,7 @@ import { maskAccountNumber } from "../utils/maskAccount.js";
 import { assertOrderUnitsNotV2Owned } from "../services/productionRunGuards.js";
 import { atribusiOrderWhere } from "../services/salesOwner.js";
 import { loadOrderMilestones } from "../services/orderMilestoneService.js";
+import { pratinjauGabung, terapkanGabung, kandidatDuplikat, relasiGabungUntuk, OrderMergeError } from "../services/orderMerge.js";
 // NILAI BERSIH (Okt 2026): KPI/ringkasan uang di daftar order = Order.value − Nota Kredit aktif (services/orderNilaiBersih.js). Jangan menjumlah Order.value mentah.
 import { aggregateBersih, groupByBersih, PILIH_KREDIT } from "../services/orderNilaiBersih.js";
 
@@ -1183,6 +1184,41 @@ orderRouter.post("/:id/pkr/koreksi-pembeli", async (req, res) => {
   } catch (err) { res.status(err.statusCode || 500).json({ error: err.statusCode ? err.message : "Terjadi kesalahan di server", ...(err.code && typeof err.code === "string" && { code: err.code }), ...(err.extra && typeof err.extra === "object" && err.extra) }); }
 });
 
+// ── GABUNGKAN ORDER DUPLIKAT (Admin/Owner) — lihat services/orderMerge.js ──────────────────────────────────────────────────
+// Pratinjau baca-saja; penerapan butuh alasan ≥5, Idempotency-Key, dan sidik jari pratinjau. Tidak ada DELETE/pemindahan unit/job/payment.
+const hanyaAdminGabung = (req, res) => {
+  if (rolesOf(req.user).some((r) => r === "ADMIN" || r === "OWNER")) return true;
+  res.status(403).json({ error: "Hanya Admin/Owner yang dapat menggabungkan order duplikat" });
+  return false;
+};
+const galatGabung = (err, res) => {
+  if (err instanceof OrderMergeError) return res.status(err.statusCode).json({ error: err.message, ...(err.code && { code: err.code }), ...(err.extra ?? {}) });
+  console.error("order gabung error:", err);
+  return res.status(500).json({ error: "Terjadi kesalahan di server" });
+};
+orderRouter.get("/gabung/pratinjau", async (req, res) => {
+  try {
+    if (!hanyaAdminGabung(req, res)) return;
+    res.json(await pratinjauGabung(prisma, { utama: req.query.utama, duplikat: req.query.duplikat }));
+  } catch (err) { galatGabung(err, res); }
+});
+orderRouter.get("/:id/kandidat-duplikat", async (req, res) => {
+  try {
+    if (!hanyaAdminGabung(req, res)) return;
+    res.json(await kandidatDuplikat(prisma, { orderId: req.params.id }));
+  } catch (err) { galatGabung(err, res); }
+});
+orderRouter.post("/gabung", async (req, res) => {
+  try {
+    if (!hanyaAdminGabung(req, res)) return;
+    const { utama, duplikat, alasan, sidikJari } = req.body || {};
+    const hasil = await prisma.$transaction((tx) => terapkanGabung(tx, {
+      utama, duplikat, alasan, sidikJari, idempotencyKey: req.headers["idempotency-key"], userId: req.user.id,
+    }), { timeout: 30000, maxWait: 10000 });
+    res.status(hasil.replayed ? 200 : 201).json(hasil);
+  } catch (err) { galatGabung(err, res); }
+});
+
 // ── GET /api/orders — DAFTAR order (order-centric) ────────────────────────
 // Sebelumnya TIDAK ADA endpoint daftar order sama sekali: order hanya bisa
 // dibuat/diedit lewat profil customer, jadi pertanyaan operasional paling
@@ -1230,6 +1266,8 @@ orderRouter.get("/", async (req, res) => {
     // hanya karena tanggal `createdAt`-nya sudah lewat dari jendela waktu.
     const where = {
       ...(status ? { status } : hideFinished === "true" ? { status: { notIn: ["DELIVERED", "CANCELLED"] } } : {}),
+      // Order duplikat yang sudah DIGABUNGKAN bukan pesanan aktif kedua (14 Okt 2026); tetap bisa dilihat dengan ?termasukDigabung=1 dan ditemukan lewat nomor lama (pencarian → order utama).
+      ...(req.query.termasukDigabung !== "1" && { mergedIntoOrderId: null }),
       ...(category      && { category }),
       ...(paymentStatus && { paymentStatus }),
       ...(hasComplaint === "true" && { hasComplaint: true }),
@@ -1273,6 +1311,8 @@ orderRouter.get("/", async (req, res) => {
           andClauses.push({
             OR: [
               { orderNumber: { contains: search, mode: "insensitive" } },
+              // Nomor order LAMA yang sudah digabung → menemukan order UTAMA-nya.
+              { mergedFrom: { some: { orderNumber: { contains: search, mode: "insensitive" } } } },
               { customer: { name:  { contains: search, mode: "insensitive" } } },
               { customer: { phone: { contains: search } } },
               // Order multi-unit Penjualan Karyawan (Okt 2026): cari juga lewat nomor unit, nomor PKR, dan nama pembeli PKR.
@@ -1599,6 +1639,11 @@ orderRouter.get("/", async (req, res) => {
     // unbounded. Ditemukan lewat pertanyaan owner "kenapa beda". Dua agregat
     // di bawah TIDAK terkena `limit` sama sekali (SELECT SUM/COUNT langsung,
     // bukan ambil semua baris) — pola sama dengan `perStatus` di atas. Pakai
+    // Relasi penggabungan (14 Okt 2026): order duplikat → order utama (banner) dan order utama → "Histori dari order lama" (job/rute/POD lama tetap bisa dibuka).
+    {
+      const relasi = await relasiGabungUntuk(prisma, items.map((i) => i.id));
+      for (const it of items) { it.digabungKe = relasi.keUtama.get(it.id) ?? null; it.riwayatOrderLama = relasi.dariLama.get(it.id) ?? []; }
+    }
     // `AND: [where, ...]` (bukan spread `{...where, status:...}`) supaya
     // filter status yang SUDAH dipilih user (kalau ada) tidak diam-diam
     // tertimpa — dua kondisi digabung, bukan saling mengganti.
