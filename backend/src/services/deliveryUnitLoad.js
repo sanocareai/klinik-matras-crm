@@ -3,6 +3,8 @@
 //   • Hanya unit yang TERTAUT ke job (job_units) dan belum CANCELLED yang bisa dikonfirmasi; unit lain ditolak.
 //   • Penyelesaian pengiriman oleh driver memeriksa kelengkapan (bila DELIVERY_UNIT_CONFIRM_REQUIRED=1) atau memakai PENGECUALIAN resmi (alasan ≥5 + audit).
 //   • Tidak mengubah status unit/job; hanya mencatat fakta muat.
+import { periksaUnitSiapKirim } from "./deliverySiapFisik.js";
+
 const STATUS_BOLEH = ["SCHEDULED", "ASSIGNED", "EN_ROUTE", "ARRIVED"];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -57,6 +59,14 @@ export async function konfirmasiMuat(db, { jobId, unitIds = null, semua = false,
     target = [...new Set(unitIds)];
   }
   if (target.length === 0) throw new UnitLoadError("Job ini belum punya unit tertaut", 409, "TANPA_UNIT");
+  // Periksa unit FISIK yang dipilih: status Produksi siap ATAU kesiapan fisik terkonfirmasi (order PKR). Unit lain tidak ikut dimuat diam-diam.
+  const siap = await periksaUnitSiapKirim(db, { jobId, unitIds: target });
+  if (!siap.ok) {
+    throw new UnitLoadError(
+      `Unit ${siap.belum.map((u) => u.unitCode).join(", ")} belum siap kirim (belum ditandai siap oleh Produksi dan belum ada konfirmasi kesiapan fisik). Konfirmasi kesiapan fisik dulu, atau kirim sebagian lewat alur resmi tanpa unit itu.`,
+      409, "UNIT_BELUM_SIAP_FISIK", { unitBelumSiap: siap.belum.map((u) => u.unitCode) },
+    );
+  }
   await db.jobUnitLoad.createMany({ data: target.map((unitId) => ({ jobId, unitId, confirmedById: userId })), skipDuplicates: true });
   return progresMuat(db, jobId);
 }

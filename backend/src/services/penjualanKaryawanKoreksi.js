@@ -25,6 +25,7 @@ import {
   itemDariRow, siapkanItems, susunCerminan, productLineDariItems, lahirkanItemRows, lahirkanUnitItem, rencanaUnit, ringkasItemPratinjau, ITEM_AKTIF,
 } from "./penjualanKaryawanItem.js";
 import { revisiTerakhir, snapshotItems, tulisRevisi } from "./pkrItemRevisi.js";
+import { ruteBelumDipetakanBoleh } from "./produksiRuteMode.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const gagal = (m, s = 400, c = null, e = null) => new PkrOrderError(m, s, c, e);
@@ -178,7 +179,7 @@ export async function hitungKoreksi(tx, { penjualanId, operasi, expectedRevision
     k.baru.ukuranLabel = baru.ukuranLabel;
     if (k.produkBerubah) {
       const { rute } = await ruteBaris(tx, k.row, produkIdBaru);
-      if (!rute.ok) throw gagal(`Item ${op.no}: ${rute.pesan}`, 422, rute.kode);
+      if (!rute.ok && !(await ruteBelumDipetakanBoleh(tx))) throw gagal(`Item ${op.no}: ${rute.pesan}`, 422, rute.kode);
       if (k.row.workKind === "LAYANAN" && k.unitAktif.some((u) => (u.serviceId ?? null) !== (rute.serviceId ?? null))) {
         throw gagal(`Item ${op.no}: produk baru memakai layanan produksi yang berbeda. Hapus item ini lalu tambahkan item baru.`, 409, "LAYANAN_BERBEDA");
       }
@@ -349,7 +350,7 @@ export async function terapkanKoreksi(tx, { penjualanId, operasi, expectedRevisi
     }
     if (k.tambahUnit > 0) {
       const { rute } = await ruteBaris(tx, k.row, b.produkId ?? null);
-      if (!rute.ok) throw gagal(`Item ${k.row.seq}: ${rute.pesan}`, 422, rute.kode);
+      if (!rute.ok && !(await ruteBelumDipetakanBoleh(tx))) throw gagal(`Item ${k.row.seq}: ${rute.pesan}`, 422, rute.kode);
       await lahirkanUnitItem(tx, {
         orderId, rowId: k.row.id, userId, jumlah: k.tambahUnit,
         it: { ...b, jenisKerja: k.row.workKind, productLine: rute.productLine ?? null, productType: rute.productType ?? null, productionServiceId: k.row.workKind === "LAYANAN" ? (rute.serviceId ?? null) : null },

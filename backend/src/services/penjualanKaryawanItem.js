@@ -20,6 +20,7 @@ import {
   BENTUK, MAKS_ITEM, ItemPkrError, normalisasiItem, validasiHimpunan, kategoriOrderDariItems, perluDikirimDariItems, peringatanHimpunan, cerminanItem,
   deskripsiUnit, kelengkapanItems, kunciDuplikat, ukuranLabel, pecahBundel, pemetaanRute,
 } from "../lib/domain/pkrItem.js";
+import { bacaModeRute, MODE_RUTE, ruteBelumDipetakanBoleh } from "./produksiRuteMode.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const gagal = (m, s = 400, c = null, e = null) => new PkrOrderError(m, s, c, e);
@@ -114,7 +115,9 @@ export async function muatKomposisi(db, kategoriId, produkId = null) {
  * Melempar ItemPkrError (400).
  * @param {{ izinNonaktif?: boolean, periksaRute?: boolean, noAwal?: number, validasi?: boolean, bundelAwal?: number }} [opsi]
  */
-export async function siapkanItems(db, raw, { izinNonaktif = false, periksaRute = true, noAwal = 1, validasi = true, bundelAwal = 0 } = {}) {
+export async function siapkanItems(db, raw, { izinNonaktif = false, periksaRute = true, noAwal = 1, validasi = true, bundelAwal = 0, modeRute = null } = {}) {
+  // Mode transisi (services/produksiRuteMode.js): item tanpa rute Produksi TIDAK ditolak — ditandai item.rute.ok=false ("Menunggu penentuan alur Produksi"). Mode KETAT = perilaku lama.
+  const transisi = periksaRute ? (modeRute ?? await bacaModeRute(db)) === MODE_RUTE.TRANSISI : true;
   if (!Array.isArray(raw) || raw.length === 0) throw new ItemPkrError("Tambahkan minimal satu item produksi", "ITEM_KOSONG");
   if (raw.length > MAKS_ITEM) throw new ItemPkrError(`Maksimal ${MAKS_ITEM} item produksi per penjualan`, "ITEM_TERLALU_BANYAK");
   raw.forEach((r, i) => { if (!r || typeof r !== "object" || Array.isArray(r)) throw new ItemPkrError(`Item ${i + 1}: isian tidak valid`); });
@@ -196,7 +199,7 @@ export async function siapkanItems(db, raw, { izinNonaktif = false, periksaRute 
     if (!rute.ok) gagalRute.push({ no, produk: item.produkNama || item.kategoriNama, kode: rute.kode, pesan: rute.pesan });
     return item;
   });
-  if (periksaRute && gagalRute.length) {
+  if (periksaRute && !transisi && gagalRute.length) {
     const sisa = gagalRute.length - 1;
     throw new ItemPkrError(`Item ${gagalRute[0].no}: ${gagalRute[0].pesan}${sisa > 0 ? ` (dan ${sisa} item lain belum dipetakan)` : ""}`, gagalRute[0].kode, { rute: gagalRute, aksi: "Pengaturan Produksi › Katalog Item PKR" });
   }
@@ -227,7 +230,7 @@ export function ringkasItemPratinjau(i, rencana) {
     no: i.no, kategori: i.kategoriCode, kategoriNama: i.kategoriNama, bentuk: i.bentuk, jenisKerja: i.jenisKerja, produk: i.produkNama, jumlah: i.jumlah, ukuran: i.ukuranLabel || null,
     spesifikasi: i.spesifikasi, perluDikirim: i.perluDikirim, kirimLabel: LABEL_KIRIM(i.perluDikirim), kurang: i.kurang,
     bundel: i.bundleNo != null ? { no: i.bundleNo, nama: i.bundleName ?? null, kode: i.bundleCategoryCode ?? null } : null,
-    rute: i.rute ? ringkasRute(i.rute) : null,
+    rute: i.rute ? ringkasRute(i.rute) : null, menungguAlur: !!(i.rute && i.rute.ok === false),
     layananProduksiOtomatis: !!i.productionServiceId, unit: rencana?.find((r) => r.no === i.no) ?? null,
   };
 }
@@ -427,7 +430,7 @@ export async function ubahItemOrder(tx, { order, masukan, userId = null }) {
     if (produkBerubah) {
       const kategoriRow = await tx.pkrItemCategory.findUnique({ where: { id: row.categoryId } });
       const rute = pemetaanRute({ kategori: kategoriUntukRute(kategoriRow), produk: produk && produkUntukRute(produk), jenisKerja: row.workKind }, classifyProduct);
-      if (!rute.ok) throw gagal(`Item ${row.seq}: ${rute.pesan}`, 422, rute.kode);
+      if (!rute.ok && !(await ruteBelumDipetakanBoleh(tx))) throw gagal(`Item ${row.seq}: ${rute.pesan}`, 422, rute.kode);
       if (row.workKind === "LAYANAN" && unitAktif.some((u) => (u.serviceId ?? null) !== (rute.serviceId ?? null))) {
         throw gagal(`Item ${row.seq}: produk baru memakai layanan produksi yang berbeda. Hapus item ini lalu tambahkan item baru lewat Koreksi Item.`, 409, "LAYANAN_BERBEDA");
       }

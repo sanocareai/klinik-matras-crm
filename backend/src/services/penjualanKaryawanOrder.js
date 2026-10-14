@@ -39,6 +39,8 @@ import { customerAktualUntukPkr } from "./penjualanKaryawanPembeli.js";
 import { MAKS_UNIT_ORDER, kategoriOrderDariItems, perluDikirimDariItems, itemVirtualLama } from "../lib/domain/pkrItem.js";
 
 import { PkrOrderError, tolakJikaOrderPkr } from "./pkrGuard.js";
+import { unitMenungguAlur } from "./produksiRuteTerapkan.js";
+import { bacaSiapFisik } from "./deliverySiapFisik.js";
 export { PkrOrderError, tolakJikaOrderPkr };
 const gagal = (m, s = 400, c = null, e = null) => new PkrOrderError(m, s, c, e);
 
@@ -427,7 +429,7 @@ export async function ringkasOrderPkr(db, penjualanIds, { izinNominal = true, iz
     include: {
       seller: { select: { id: true, name: true } },
       payments: { where: { cancelledAt: null }, select: { amount: true } },
-      orderCrm: { include: { customer: { select: { id: true, name: true, phone: true, staffUserId: true, leadSource: true } }, pkrItems: { where: ITEM_AKTIF, orderBy: { seq: "asc" }, include: { units: { select: { unit: { select: { unitCode: true, status: true } } } } } }, units: { orderBy: { seq: "asc" }, select: { id: true, unitCode: true, seq: true, status: true, currentStageId: true, merk: true, ukuran: true, productionDueAt: true, currentStage: { select: { labelId: true } },
+      orderCrm: { include: { customer: { select: { id: true, name: true, phone: true, staffUserId: true, leadSource: true } }, pkrItems: { where: ITEM_AKTIF, orderBy: { seq: "asc" }, include: { units: { select: { unit: { select: { unitCode: true, status: true } } } } } }, units: { orderBy: { seq: "asc" }, select: { id: true, unitCode: true, seq: true, status: true, currentStageId: true, productLine: true, productType: true, serviceId: true, workCategory: true, merk: true, ukuran: true, productionDueAt: true, currentStage: { select: { labelId: true } },
           // Rencana produksi V2 terbaru + job pengiriman yang menaungi unit (representasi multi-unit Order CRM).
           productionRunsV2: { where: { status: { not: "CANCELLED" } }, orderBy: { createdAt: "desc" }, take: 1, select: { status: true, plan: { select: { status: true, productionDate: true, targetDate: true, stationCode: true, operator: { select: { user: { select: { name: true } } } }, cornerOperator: { select: { user: { select: { name: true } } } } } } } },
           jobUnits: { select: { job: { select: { id: true, type: true, status: true, scheduledDate: true, createdAt: true } } } } } },
@@ -459,6 +461,8 @@ export async function ringkasOrderPkr(db, penjualanIds, { izinNominal = true, iz
       ? o.pkrItems.map((r) => bentukItem({ ...itemDariRow(r), kurang: (spek.items?.find((x) => x.no === r.seq)?.kurang) ?? [] }, { unit: unitPerItem(r), virtual: false, saleItemId: r.saleItemId ?? null, komponenSeq: r.componentSeq ?? null, pemenuhan: r.fulfillment ?? null }))
       : itemVirtualLama({ kategori: o.category, merk: spek.merk, ukuran: spek.ukuran, jumlahUnit: o.units.filter((u) => u.status !== "CANCELLED").length, perluDikirim: o.pkrPerluDikirim })
         .map((i) => bentukItem({ ...i, kurang: spek.kurang }, { unit: o.units.map((u) => ({ kode: u.unitCode, status: u.status, label: LABEL_UNIT[u.status] || u.status })), virtual: true }));
+    // Alur Produksi per unit: TURUNAN dari data unit (bukan kolom baru). "Menunggu penentuan alur Produksi" = rute belum dipetakan; kesiapan FISIK = konfirmasi Delivery/Admin Produksi (mode transisi).
+    const siapFisik = await bacaSiapFisik(db, o.units.map((u) => u.id));
     const unitBaris = susunBarisUnitPkr({ order: { status: o.status, pkrPerluDikirim: o.pkrPerluDikirim }, units: o.units, items, jobsOrder: o.jobs.map((j) => ({ ...j, unitIds: j.units.map((x) => x.unitId) })) });
     hasil.set(p.id, {
       penjualanId: p.id, nomor: p.nomor, statusPkr: p.status, penjual: p.seller, pembeli: p.buyerName, pembayaran,
@@ -466,7 +470,16 @@ export async function ringkasOrderPkr(db, penjualanIds, { izinNominal = true, iz
       order: { id: o.id, nomor: o.orderNumber, status: o.status, statusLabel: LABEL_ORDER[o.status] || o.status, kategori: o.category, spesifikasi: spek, modeItem, revisi, nonProduksi: bacaNotesOrder(o.notes).pkrNonProduksi ?? [] },
       items,
       units: o.units.map((u) => ({ id: u.id, kode: u.unitCode, status: u.status, label: LABEL_UNIT[u.status] || u.status, merk: u.merk, ukuran: u.ukuran })),
-      unitBaris: unitBaris.baris, ringkasUnit: unitBaris.ringkas,
+      unitBaris: unitBaris.baris.map((b) => {
+        const u = o.units.find((x) => x.id === b.id);
+        const menunggu = u ? unitMenungguAlur(u, o, b.item?.jenisKerja ?? null) : false;
+        return {
+          ...b,
+          alur: { status: menunggu ? "MENUNGGU_ALUR" : "JELAS", label: menunggu ? "Menunggu penentuan alur Produksi" : "Alur Produksi jelas", tindakan: menunggu ? "Admin Produksi memetakan rute di Pengaturan Produksi › Katalog Item PKR, lalu menerapkannya ke unit." : null },
+          kesiapanFisik: u && siapFisik.has(u.id) ? { dikonfirmasi: true, label: "Siap fisik (dikonfirmasi) — status Produksi belum ditandai siap" } : { dikonfirmasi: false, label: null },
+        };
+      }),
+      ringkasUnit: { ...unitBaris.ringkas, menungguAlur: unitBaris.baris.filter((b) => { const u = o.units.find((x) => x.id === b.id); return u && unitMenungguAlur(u, o, b.item?.jenisKerja ?? null); }).length, siapFisik: o.units.filter((u) => siapFisik.has(u.id)).length },
       produksi: statusProduksi(o, o.units, spek),
       delivery: statusDelivery(o, o.jobs, o.units),
       jobs: o.jobs.map((j) => ({ id: j.id, tipe: j.type, status: j.status, label: LABEL_JOB[j.status] || j.status })),

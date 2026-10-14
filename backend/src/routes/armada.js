@@ -58,7 +58,9 @@ import { buildRouteSheetImage } from "../services/routeSheetImage.js";
 import { produkLineLabel, parseOrderNotesForInvoice } from "../services/invoice.js";
 import { tempelManifest, manifestJob } from "../services/deliveryManifestAttach.js";
 import { teksManifest, teksSelManifest } from "../lib/domain/deliveryManifest.js";
-import { konfirmasiMuat, progresMuat, periksaGerbangSelesai, modeGerbangUnit, klienMampuKonfirmasi } from "../services/deliveryUnitLoad.js";
+import { konfirmasiMuat, progresMuat, periksaGerbangSelesai, modeGerbangUnit, klienMampuKonfirmasi, UnitLoadError } from "../services/deliveryUnitLoad.js";
+import { bacaSiapFisik, nilaiSiap, periksaUnitSiapKirim } from "../services/deliverySiapFisik.js";
+import { catatKesiapanFisik, KesiapanFisikError } from "../services/deliveryKesiapanFisik.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import {
   SETTLED_JOB_STATUSES,
@@ -3786,9 +3788,13 @@ armadaRouter.get("/board", requirePermission(P.JOB_READ), async (req, res) => {
     ).map((ju) => ju.unitId);
 
     const eligibleStatus = type === "PICKUP" ? ["AWAITING_PICKUP"] : ["READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD"];
+    // Unit yang siap FISIK (mode transisi) ikut tersedia untuk pengiriman walau status Produksi belum READY.
+    const idSiapFisik = type === "DELIVERY"
+      ? [...(await bacaSiapFisik(prisma, (await prisma.unit.findMany({ where: { status: { notIn: ["CANCELLED", "DELIVERED", "IN_TRANSIT_OUT"] }, order: { penjualanKaryawanId: { not: null } } }, select: { id: true }, take: 500 })).map((u) => u.id)))]
+      : [];
     const available = await prisma.unit.findMany({
       where: {
-        status: { in: eligibleStatus },
+        OR: [{ status: { in: eligibleStatus } }, ...(idSiapFisik.length ? [{ id: { in: idSiapFisik } }] : [])],
         id: { notIn: alreadyBookedUnitIds },
         order: { status: { in: ELIGIBLE_ORDER_STATUS[type] } },
       },
@@ -4244,7 +4250,9 @@ armadaRouter.post("/jobs", requirePermission(P.JOB_WRITE), async (req, res) => {
     if (orderIds.size > 1) throw new ArmadaError("Semua unit dalam satu job harus dari order yang sama");
 
     const expectedStatus = type === "PICKUP" ? ["AWAITING_PICKUP"] : ["READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD"];
-    const wrongStatus = units.find((u) => !expectedStatus.includes(u.status));
+    // Pengiriman unit PKR yang belum ditandai siap Produksi: boleh bila kesiapan FISIK dikonfirmasi (mode transisi).
+    const siapFisikUnit = type === "DELIVERY" ? await bacaSiapFisik(prisma, units.map((u) => u.id)) : new Set();
+    const wrongStatus = units.find((u) => !expectedStatus.includes(u.status) && !(type === "DELIVERY" && nilaiSiap(u, siapFisikUnit).siap));
     if (wrongStatus) {
       throw new ArmadaError(
         `Unit ${wrongStatus.unitCode} berstatus ${wrongStatus.status}, tidak bisa dijadwalkan untuk ${type === "PICKUP" ? "pengambilan" : "pengiriman"}`
@@ -5569,6 +5577,21 @@ armadaRouter.post("/jobs/:id/unit-load", requireAnyPermission(P.JOB_WRITE, P.JOB
   } catch (err) { handleErr(err, res); }
 });
 
+// POST /api/armada/orders/:orderId/kesiapan-fisik { unitIds, alasan, bukti? } + Idempotency-Key
+// Konfirmasi kesiapan FISIK unit (pengecualian operasional mode transisi): Admin Produksi/dispatcher berwenang; alasan wajib; diaudit; TIDAK mengubah status/tahap Produksi.
+armadaRouter.post("/orders/:orderId/kesiapan-fisik", requireAnyPermission(P.JOB_WRITE, P.PKR_CATALOG_MANAGE), async (req, res) => {
+  try {
+    const hasil = await prisma.$transaction((tx) => catatKesiapanFisik(tx, {
+      orderId: req.params.orderId, unitIds: req.body?.unitIds, alasan: req.body?.alasan, bukti: req.body?.bukti ?? null,
+      idempotencyKey: req.get("Idempotency-Key"), userId: req.user.id,
+    }));
+    res.status(hasil.replayed ? 200 : 201).json(hasil);
+  } catch (err) {
+    if (err instanceof KesiapanFisikError) return res.status(err.statusCode).json({ error: err.message, code: err.code, ...(err.extra ?? {}) });
+    handleErr(err, res);
+  }
+});
+
 // GET /api/armada/unit-load/config — mode gerbang saat ini + apakah klien PEMANGGIL ikut ditegakkan (untuk smoke/ops; tanpa data bisnis).
 armadaRouter.get("/unit-load/config", requireAnyPermission(P.JOB_READ, P.JOB_OWN_READ), (req, res) => {
   const mode = modeGerbangUnit();
@@ -5625,6 +5648,13 @@ armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_
 
     // GERBANG UNIT (14 Okt 2026): driver tidak boleh menutup pengiriman bila ada unit job yang belum dikonfirmasi dimuat, kecuali PENGECUALIAN resmi (alasan ≥5 + audit).
     // Aktif bila DELIVERY_UNIT_CONFIRM_REQUIRED=1 (default mati sampai aplikasi driver mengirim konfirmasi muat); Admin/dispatcher (JOB_WRITE) input manual tidak terkena.
+    // Unit FISIK pada job order PKR harus siap kirim (status Produksi atau kesiapan fisik terkonfirmasi) sebelum diserahkan. Input manual admin/dispatcher (JOB_WRITE) tidak terkena.
+    if (!hasPermission(req.user, P.JOB_WRITE)) {
+      const siapKirim = await periksaUnitSiapKirim(prisma, { jobId: owned.id });
+      if (!siapKirim.ok) {
+        throw new UnitLoadError(`Unit ${siapKirim.belum.map((u) => u.unitCode).join(", ")} belum siap kirim — belum ditandai siap oleh Produksi dan belum ada konfirmasi kesiapan fisik. Hubungi Admin Produksi/dispatcher; pengiriman sebagian lewat alur resmi.`, 409, "UNIT_BELUM_SIAP_FISIK", { unitBelumSiap: siapKirim.belum.map((u) => u.unitCode) });
+      }
+    }
     const gerbang = await periksaGerbangSelesai(prisma, { job: owned, pengecualian: req.body.pengecualianUnit, istimewa: hasPermission(req.user, P.JOB_WRITE), klienMampu: klienMampuKonfirmasi(req) });
     if (gerbang.klienLama) {
       // Sinyal kesiapan beralih ke mode KETAT: ada klien lama yang menutup pengiriman dengan unit belum terkonfirmasi. Nol sinyal dalam beberapa hari = aman.

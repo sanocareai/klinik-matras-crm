@@ -475,7 +475,8 @@ test("produk yang dipetakan Admin ke layanan produksi: unit item lahir dengan la
   const bad = await w.admin.c.patch(`${BASE}/katalog-item/produk/${polos.body.id}`, { layananProduksiId: randomUUID() });
   assert.equal(bad.status, 404);
 
-  // Kategori tanpa layanan bawaan + produk tanpa layanan -> DIBLOKIR di pratinjau dan pembuatan
+  // Kategori tanpa layanan bawaan + produk tanpa layanan -> DIBLOKIR di pratinjau dan pembuatan (mode rute KETAT; default TRANSISI menyimpannya — lihat pkrRuteTransisi.integration.test.js)
+  await testPrisma.finSetting.upsert({ where: { key: "PRODUKSI_RUTE_MODE" }, create: { key: "PRODUKSI_RUTE_MODE", value: "KETAT" }, update: { value: "KETAT" } });
   await testPrisma.pkrItemCategory.update({ where: { code: "SERVICE_UPGRADE" }, data: { productionServiceId: null } });
   const blok = await w.finance.c.post(`${BASE}/order-crm/pratinjau`, { orderCrm: { items: [{ kategori: "SERVICE_UPGRADE", produkId: polos.body.id, jumlah: 1, panjang: 200, lebar: 160, perluDikirim: true }], ...ALAMAT } });
   assert.equal(blok.body.valid, false); assert.equal(blok.body.galat.kode, "RUTE_LAYANAN_BELUM_DIPETAKAN");
@@ -519,8 +520,9 @@ test("PATCH order dari CRM: cerminan item di notes dipertahankan; merk/ukuran ti
 });
 
 // ═══ 12. Pemetaan rute Produksi: produk aktif tanpa pemetaan DIBLOKIR ═══
-test("rute: produk/kategori tanpa pemetaan diblokir di pratinjau DAN pembuatan (pesan Indonesia + arah tindakan); setelah Admin memetakan, lolos; tidak ada yang tertulis saat diblokir", async () => {
+test("rute: produk/kategori tanpa pemetaan diblokir di pratinjau DAN pembuatan (pesan Indonesia + arah tindakan); setelah Admin memetakan, lolos; tidak ada yang tertulis saat diblokir [mode KETAT]", async () => {
   const w = await siapkan();
+  await testPrisma.finSetting.upsert({ where: { key: "PRODUKSI_RUTE_MODE" }, create: { key: "PRODUKSI_RUTE_MODE", value: "KETAT" }, update: { value: "KETAT" } });
   await testPrisma.pkrItemCategory.update({ where: { code: "KASUR_BARU" }, data: { productType: null } }); // lini KASUR saja belum cukup
   const kat = await testPrisma.pkrItemCategory.findUnique({ where: { code: "KASUR_BARU" } });
   const prod = await w.admin.c.post(`${BASE}/katalog-item/produk`, { kategoriId: kat.id, kode: "KSR_BELUM", nama: "Matras Custom TP" });

@@ -232,6 +232,15 @@ export function peringatanHimpunan(items) {
       pesan: "Order ini CAMPURAN: Service/Upgrade (barang lama diambil dulu) dan produk baru. Tiap item berjalan sendiri — item produk baru langsung di workshop tanpa menunggu pengambilan item service; Delivery menunggu seluruh unit yang dikirim siap lalu membuat SATU job.",
     });
   }
+  // Mode transisi: item tanpa rute Produksi tetap disimpan — beri tahu sebab + tindakan berikutnya (bukan galat).
+  for (const i of items) {
+    if (i.rute && i.rute.ok === false) {
+      w.push({
+        kode: "MENUNGGU_ALUR_PRODUKSI", item: i.no,
+        pesan: `Item ${i.no}: Menunggu penentuan alur Produksi — ${String(i.rute.pesan ?? "Rute Produksi belum dipetakan.").replace(/s*Buka Pengaturan Produksi.*$/, "")} Item, harga, dan unit tetap tersimpan. Tindakan berikutnya: Admin Produksi memetakan rute di Pengaturan Produksi › Katalog Item PKR lalu menerapkannya ke unit yang belum mulai.`,
+      });
+    }
+  }
   return w;
 }
 

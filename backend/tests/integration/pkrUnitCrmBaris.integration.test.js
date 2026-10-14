@@ -64,7 +64,7 @@ test("1 PKR 3 unit = 1 order induk dengan 3 sub-baris unit unik; tiap unit lengk
     assert.equal(u.kirim.label, "Dikirim");
     assert.equal(u.delivery.kode, "MENUNGGU_PRODUKSI");
   }
-  assert.deepEqual(pk.ringkasUnit, { total: 3, dibatalkan: 0, dijadwalkan: 0, sedangDiproduksi: 0, siap: 0, dalamPengiriman: 0, terkirim: 0 });
+  assert.deepEqual(pk.ringkasUnit, { total: 3, dibatalkan: 0, dijadwalkan: 0, sedangDiproduksi: 0, siap: 0, dalamPengiriman: 0, terkirim: 0, menungguAlur: 3, siapFisik: 0 }); // fixture tidak memetakan jenis kasur → unit "menunggu alur" (mode transisi), bukan galat
   // unit di DB = unit di baris (Production membaca Unit ID yang sama)
   const unitDb = await testPrisma.unit.findMany({ where: { orderId: induk[0].id }, orderBy: { seq: "asc" } });
   assert.deepEqual(unitDb.map((u) => u.id), pk.unitBaris.map((u) => u.id));

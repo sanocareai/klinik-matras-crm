@@ -17,7 +17,7 @@ import express from "express";
 import { randomUUID } from "node:crypto";
 import { requireAuth } from "../middleware/auth.js";
 import { idempotency } from "../middleware/idempotency.js";
-import { requirePermission, PERMISSIONS as P, rolesOf } from "../middleware/authorize.js";
+import { requirePermission, requireAnyPermission, PERMISSIONS as P, rolesOf } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import { reverseJournal, generateDocumentNumber, toBookDate, todayBookDateWIB, findEntryByKey } from "../services/finance/journal.js";
@@ -38,6 +38,8 @@ import { adaModeTerpadu } from "../lib/domain/pkrPenjualanItem.js";
 import { cariCustomerTelepon } from "../services/penjualanKaryawanPembeli.js";
 import { pratinjauKoreksiPembeli, terapkanKoreksiPembeli, dryRunPembeliLegacy, riwayatPerubahanPkr } from "../services/penjualanKaryawanPembeliKoreksi.js";
 import { kemampuanKoreksiOrder, pratinjauKoreksiOrder, terapkanKoreksiOrder } from "../services/penjualanKaryawanKoreksiOrder.js";
+import { infoModeRute, ubahModeRute, ModeRuteError } from "../services/produksiRuteMode.js";
+import { daftarMenungguAlur, pratinjauTerapkanAlur, terapkanAlur, RuteTerapkanError } from "../services/produksiRuteTerapkan.js";
 
 export const financePenjualanKaryawanRouter = express.Router();
 const BASE = "/penjualan-karyawan";
@@ -172,6 +174,27 @@ financePenjualanKaryawanRouter.put(`${BASE}/katalog-item/komposisi`, requirePerm
     const hasil = await prisma.$transaction((tx) => simpanKomposisi(tx, { kategoriId, produkId: produkId || null, komponen, userId: req.user.id }));
     res.json({ ...hasil, katalog: await muatKatalogItem(prisma, { semua: true }) });
   } catch (e) { handleFinanceError(e, res); }
+});
+// ─── MODE RUTE PRODUKSI (transisi) + "Menunggu penentuan alur Produksi" ─────────────────────────────────────────────────────
+// Mode TRANSISI (default) mengizinkan item tanpa rute Produksi tersimpan; KETAT = perilaku lama. Mengubah mode TIDAK mengubah dokumen/unit/status lama. Pengelola: pkr_catalog:manage.
+const galatRute = (e, res) => {
+  if (e instanceof ModeRuteError || e instanceof RuteTerapkanError) return res.status(e.statusCode).json({ error: e.message, code: e.code, ...(e.extra ?? {}) });
+  return handleFinanceError(e, res);
+};
+financePenjualanKaryawanRouter.get(`${BASE}/rute-produksi/mode`, requireAnyPermission(P.FINANCE_READ, P.PKR_CATALOG_MANAGE), async (_req, res) => {
+  try { res.json(await infoModeRute(prisma)); } catch (e) { galatRute(e, res); }
+});
+financePenjualanKaryawanRouter.put(`${BASE}/rute-produksi/mode`, requirePermission(P.PKR_CATALOG_MANAGE), async (req, res) => {
+  try { res.json({ ...(await prisma.$transaction((tx) => ubahModeRute(tx, { mode: req.body?.mode, alasan: req.body?.alasan, userId: req.user.id }))), info: await infoModeRute(prisma) }); } catch (e) { galatRute(e, res); }
+});
+financePenjualanKaryawanRouter.get(`${BASE}/rute-produksi/menunggu`, requirePermission(P.PKR_CATALOG_MANAGE), async (_req, res) => {
+  try { res.json({ order: await daftarMenungguAlur(prisma) }); } catch (e) { galatRute(e, res); }
+});
+financePenjualanKaryawanRouter.post(`${BASE}/rute-produksi/pratinjau`, requirePermission(P.PKR_CATALOG_MANAGE), async (req, res) => {
+  try { res.json(await pratinjauTerapkanAlur(prisma, { orderId: req.body?.orderId })); } catch (e) { galatRute(e, res); }
+});
+financePenjualanKaryawanRouter.post(`${BASE}/rute-produksi/terapkan`, requirePermission(P.PKR_CATALOG_MANAGE), async (req, res) => {
+  try { res.json(await prisma.$transaction((tx) => terapkanAlur(tx, { orderId: req.body?.orderId, userId: req.user.id, alasan: req.body?.alasan }))); } catch (e) { galatRute(e, res); }
 });
 financePenjualanKaryawanRouter.post(`${BASE}/order-crm/pratinjau`, requirePermission(P.FINANCE_POST), async (req, res) => {
   try {

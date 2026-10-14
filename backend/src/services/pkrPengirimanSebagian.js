@@ -10,6 +10,8 @@
 import { executeDeliveryCrossBoundaryCommand } from "./deliveryCrossBoundaryCommandService.js";
 import { PkrOrderError } from "./pkrGuard.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
+import { bacaSiapFisik, nilaiSiap } from "./deliverySiapFisik.js";
+import { bacaModeRute, MODE_RUTE } from "./produksiRuteMode.js";
 
 const gagal = (m, s = 400, c = null, e = null) => new PkrOrderError(m, s, c, e);
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -40,6 +42,8 @@ export async function unitYangDikirim(db, orderId) {
     },
   });
   if (!order || !order.penjualanKaryawanId) return { order: null, unit: [] };
+  // Siap = status Produksi (READY_*) ATAU konfirmasi kesiapan FISIK (mode transisi; services/deliverySiapFisik.js). Unit tanpa dasar siap tidak pernah ikut job diam-diam.
+  const siapFisik = await bacaSiapFisik(db, order.units.map((u) => u.id));
   const modeItem = order.pkrItems.length > 0;
   const dikirimItem = new Map(); // unitId -> item
   if (modeItem) for (const it of order.pkrItems) for (const x of it.units) dikirimItem.set(x.unitId, it);
@@ -51,7 +55,7 @@ export async function unitYangDikirim(db, orderId) {
     if (!dikirim) continue;
     const job = u.jobUnits.map((j) => j.job).find((j) => j.type === "DELIVERY" && !(j.status === "FAILED" && j.cancellationV2));
     unit.push({
-      id: u.id, unitCode: u.unitCode, status: u.status, siap: u.status === "READY_FOR_DELIVERY",
+      id: u.id, unitCode: u.unitCode, status: u.status, siap: nilaiSiap(u, siapFisik).siap, dasarSiap: nilaiSiap(u, siapFisik).dasar,
       itemNo: item?.seq ?? null, itemNama: item ? (item.productName || item.categoryName) : null, jobId: job?.id ?? null, jobStatus: job?.status ?? null,
     });
   }
@@ -98,6 +102,9 @@ export async function bacaPengirimanOrder(db, orderId) {
   const jobs = await db.job.findMany({ where: { orderId, ...JOB_KIRIM_HIDUP }, select: { id: true, status: true, createdAt: true, units: { select: { unitId: true } } }, orderBy: { createdAt: "asc" } });
   const riwayat = await db.pkrPengirimanSebagian.findMany({ where: { orderId }, orderBy: { createdAt: "desc" }, take: 10 });
   const dibatalkan = order.status === "CANCELLED";
+  // Konfirmasi kesiapan FISIK (pengecualian operasional mode transisi): ditawarkan bila ada unit dikirim yang belum siap dan belum di job.
+  const modeRute = await bacaModeRute(db);
+  const bisaKonfirmasiFisik = modeRute === MODE_RUTE.TRANSISI && !dibatalkan && menunggu.length > 0;
   // Unit yang dikirim tetapi belum berada di job pengiriman mana pun = sisa. Setelah ada job (pengiriman sebagian ATAU job gabungan yang kemudian ketambahan unit susulan),
   // sisa TIDAK pernah dibuatkan job otomatis — hanya lewat aksi eksplisit Kirim sebagian.
   const sisa = unit.filter((u) => !u.jobId);
@@ -116,11 +123,11 @@ export async function bacaPengirimanOrder(db, orderId) {
     petunjuk = `Menunggu ${menunggu.length} unit lain siap (${kodeMenunggu}). Job pengiriman dibuat otomatis begitu semua siap; bila perlu berangkat dulu, pakai Kirim sebagian.`;
   } else petunjuk = "Semua unit siap — job gabungan dibuat otomatis.";
   return {
-    orderId: order.id, nomorOrder: order.orderNumber, nomorPkr: order.penjualanKaryawan?.nomor ?? null, statusOrder: order.status,
+    orderId: order.id, nomorOrder: order.orderNumber, nomorPkr: order.penjualanKaryawan?.nomor ?? null, statusOrder: order.status, modeRute, bisaKonfirmasiFisik,
     unit, diambilSendiri: diambil, jobHidup: jobs.map((j) => ({ id: j.id, status: j.status, jumlahUnit: j.units.length })),
     ringkas: { dikirim: unit.length, siap: unit.filter((u) => u.siap).length, menunggu: menunggu.length, sudahDalamJob: sudahDalamJob.length, sisa: sisa.length },
     // Unit yang belum di job (siap atau masih menunggu) — dasar tampilan "unit tersisa" di layar Delivery.
-    sisa: sisa.map((u) => ({ id: u.id, unitCode: u.unitCode, siap: u.siap, itemNama: u.itemNama })),
+    sisa: sisa.map((u) => ({ id: u.id, unitCode: u.unitCode, siap: u.siap, dasarSiap: u.dasarSiap ?? null, status: u.status, itemNama: u.itemNama })),
     // Aksi eksplisit tersedia bila ada unit siap yang belum di job (dan order tidak dibatalkan).
     bisaKirimSebagian: !dibatalkan && bisaDipilih.length > 0,
     sebagian: bisaDipilih.length > 0 && menunggu.length > 0,
@@ -141,6 +148,8 @@ export async function daftarMenunggu(db) {
       OR: [
         { units: { some: { status: "READY_FOR_DELIVERY" } }, jobs: { none: JOB_KIRIM_HIDUP } },
         { jobs: { some: JOB_KIRIM_HIDUP } },
+        // Mode transisi: order yang unitnya belum siap menurut Produksi tetap bisa dikonfirmasi siap-fisik oleh Delivery/Admin Produksi.
+        { jobs: { none: JOB_KIRIM_HIDUP }, units: { some: { status: { notIn: ["READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD", "IN_TRANSIT_OUT", "DELIVERED", "CANCELLED"] } } } },
       ],
     },
     select: { id: true }, take: 200, orderBy: { createdAt: "desc" },
@@ -148,7 +157,7 @@ export async function daftarMenunggu(db) {
   const hasil = [];
   for (const o of orders) {
     const d = await bacaPengirimanOrder(db, o.id);
-    if (d.perluTindakan) hasil.push({ orderId: d.orderId, nomorOrder: d.nomorOrder, nomorPkr: d.nomorPkr, ringkas: d.ringkas, sisa: d.sisa, bisaKirimSebagian: d.bisaKirimSebagian, petunjuk: d.petunjuk });
+    if (d.perluTindakan || d.bisaKonfirmasiFisik) hasil.push({ orderId: d.orderId, nomorOrder: d.nomorOrder, nomorPkr: d.nomorPkr, bisaKonfirmasiFisik: d.bisaKonfirmasiFisik, ringkas: d.ringkas, sisa: d.sisa, bisaKirimSebagian: d.bisaKirimSebagian, petunjuk: d.petunjuk });
   }
   return hasil;
 }
