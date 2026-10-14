@@ -22,6 +22,7 @@ import { siapkanTerpadu, dataBaris } from "./penjualanKaryawanTerpadu.js";
 import { ItemPkrError } from "../lib/domain/pkrItem.js";
 import { PenjualanItemError, punyaUnit } from "../lib/domain/pkrPenjualanItem.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
+import { revisiTerakhir, tulisRevisi } from "./pkrItemRevisi.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const POLA_KUNCI = /^[A-Za-z0-9_\-:.]{8,128}$/;
@@ -87,7 +88,17 @@ async function rencanakan(tx, { pkr, rows, operasi }) {
     if (op.op === "tambah") { tambahRaw.push(op.item); continue; }
     const b = byNo.get(op.no);
     if (!b) throw gagal(`Item ${op.no} tidak ditemukan atau sudah dihapus`, 404, "ITEM_TIDAK_ADA");
-    if (b.fulfillment == null) throw gagal(`Item ${op.no} berasal dari catatan lama (tanpa data pemenuhan) — tidak bisa dikoreksi di sini. Batalkan lalu catat ulang bila perlu.`, 409, "KOREKSI_ORDER_LAMA");
+    if (b.fulfillment == null) {
+      // Catatan lama (tanpa data pemenuhan): HANYA harga yang dikoreksi di sini — sisi Finance saja, tidak ada item operasional yang disentuh.
+      const asing = Object.keys(op).filter((k) => !["op", "no", "harga"].includes(k));
+      if (op.op !== "ubah" || op.harga === undefined || asing.length) {
+        throw gagal(`Item ${op.no} berasal dari catatan lama — hanya HARGA yang bisa dikoreksi di sini. Untuk pekerjaan tambahan gunakan "Tambah Pesanan Customer"; koreksi lain lewat "Koreksi Order".`, 409, "KOREKSI_ORDER_LAMA");
+      }
+      const ul = ubahBaris.get(b.id) ?? { baris: b, perubahan: {} };
+      ul.perubahan.harga = op.harga;
+      ubahBaris.set(b.id, ul);
+      continue;
+    }
     if (dihapus.has(b.id)) throw gagal(`Item ${op.no} sudah ditandai dihapus pada permintaan yang sama`, 400, "OPERASI_BERTENTANGAN");
     const baris = rowsBaris(b);
     const set = baris.some((r) => r.bundleNo != null);
@@ -150,7 +161,8 @@ async function rencanakan(tx, { pkr, rows, operasi }) {
   const totalLama = toMoney(pkr.total);
   const terbayar = pkr.payments.length ? sumMoney(pkr.payments.map((p) => p.amount)) : toMoney(0);
   if (totalBaru.lessThan(terbayar)) {
-    throw gagal(`Total baru Rp${Number(totalBaru).toLocaleString("id-ID")} lebih kecil dari pembayaran yang sudah diterima Rp${Number(terbayar).toLocaleString("id-ID")}. Batalkan pembayarannya dulu (atau koreksi lebih kecil).`, 409, "TOTAL_DI_BAWAH_PEMBAYARAN");
+    throw gagal(`Total baru Rp${Number(totalBaru).toLocaleString("id-ID")} lebih kecil dari pembayaran yang sudah diterima Rp${Number(terbayar).toLocaleString("id-ID")}. Penjualan akan kelebihan bayar Rp${Number(terbayar.minus(totalBaru)).toLocaleString("id-ID")}. Selesaikan lewat Koreksi Pembayaran / Refund resmi (kas tidak dikeluarkan otomatis), lalu ulangi koreksi nilai.`, 409, "TOTAL_DI_BAWAH_PEMBAYARAN",
+      { kelebihanBayar: moneyToNumber(terbayar.minus(totalBaru)), totalBaru: moneyToNumber(totalBaru), terbayar: moneyToNumber(terbayar), petunjuk: "Gunakan Koreksi Pembayaran / Refund resmi; sistem tidak mengeluarkan kas otomatis." });
   }
   const barisSesudah = akhir.map((a, i) => ({ id: a.id, baru: a.baru, nama: a.name, jumlah: Number(hitung.items[i].quantity), harga: moneyToNumber(hitung.items[i].unitPrice), subtotal: moneyToNumber(hitung.items[i].subtotal) }));
   return { pkr, rows, opsOperasional, ubahBaris, hapusBaris, tambah, totalLama, totalBaru, terbayar, barisSesudah, hitung };
@@ -180,6 +192,13 @@ export async function pratinjauKoreksiBaris(db, { penjualanId, operasi, expected
     return await db.$transaction(async (tx) => {
       const { pkr, rows } = await muat(tx, penjualanId, { kunci: false });
       const r = await rencanakan(tx, { pkr, rows, operasi });
+      if (rows.length === 0) {
+        // Order lama (tanpa daftar item): tidak ada dampak operasional — hanya sisi Finance.
+        if (r.opsOperasional.length > 0) throw gagal(`${pkr.nomor} order lama: tambah item lewat "Tambah Pesanan Customer" (order dicatat sebagai pesanan awal lebih dulu).`, 409, "KOREKSI_ORDER_LAMA");
+        const rv = await revisiTerakhir(tx, pkr.orderCrm.id);
+        if (expectedRevision !== null && Number(expectedRevision) !== rv) throw gagal("Order ini sudah diubah orang lain atau di layar lain. Muat ulang lalu periksa dampaknya sebelum mengirim lagi.", 409, "REVISI_BERUBAH", { revisiSaatIni: rv, revisiDikirim: Number(expectedRevision) });
+        return { valid: true, revisi: rv, nomor: pkr.nomor, order: { id: pkr.orderCrm.id, nomor: pkr.orderCrm.orderNumber }, dampak: { item: { ditambah: [], dihapus: [], diubah: [] }, unit: { dibuat: 0, dibatalkan: [] }, keuangan: dampakKeuangan(r) } };
+      }
       const h = await hitungKoreksi(tx, { penjualanId, operasi: r.opsOperasional, expectedRevision, kunci: false, viaBaris: true, izinTanpaPerubahan: true });
       return { valid: true, revisi: h.revisiSekarang, nomor: pkr.nomor, order: { id: h.order.id, nomor: h.order.orderNumber }, dampak: { ...h.impact, keuangan: dampakKeuangan(r) } };
     });
@@ -192,7 +211,7 @@ export async function pratinjauKoreksiBaris(db, { penjualanId, operasi, expected
 }
 
 /** Terapkan koreksi baris penjualan. Dipanggil di DALAM transaksi pemanggil (atomik). */
-export async function terapkanKoreksiBaris(tx, { penjualanId, operasi, expectedRevision, alasan, idempotencyKey, userId = null }) {
+export async function terapkanKoreksiBaris(tx, { penjualanId, operasi, expectedRevision, alasan, idempotencyKey, userId = null, kind = "DIKOREKSI" }) {
   if (!idempotencyKey || !POLA_KUNCI.test(String(idempotencyKey))) throw gagal("Header Idempotency-Key wajib (8–128 karakter) untuk koreksi item", 428, "IDEMPOTENCY_KEY_REQUIRED");
   const teksAlasan = String(alasan ?? "").trim().replace(/\s+/g, " ");
   if (teksAlasan.length < 5) throw gagal("Alasan koreksi wajib diisi (minimal 5 karakter)", 400, "ALASAN_WAJIB");
@@ -256,8 +275,27 @@ export async function terapkanKoreksiBaris(tx, { penjualanId, operasi, expectedR
     return { before: sebelumFinance, after: { total: moneyToNumber(r.totalBaru), baris: sesudahBaris.map(snapBaris) } };
   };
 
+  if (rows.length === 0) {
+    // ORDER LAMA (tanpa daftar item): tidak ada item operasional yang berubah — hanya sisi Finance (harga) + satu baris buku revisi jenis NILAI. Tidak menyentuh Order/Unit/Job/Payment.
+    if (r.opsOperasional.length > 0) throw gagal(`${pkr.nomor} order lama: tambah item lewat "Tambah Pesanan Customer" (order dicatat sebagai pesanan awal lebih dulu).`, 409, "KOREKSI_ORDER_LAMA");
+    if (expectedRevision === undefined || expectedRevision === null || !Number.isInteger(Number(expectedRevision)) || Number(expectedRevision) < 0) throw gagal("Revisi yang Anda lihat (expectedRevision) wajib dikirim — buka pratinjau dampak dulu", 400, "REVISI_WAJIB");
+    const orderId = pkr.orderCrm.id;
+    await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', orderId);
+    const jejak = await sisiFinance(tx);
+    const keu = dampakKeuangan(r);
+    const rev = await tulisRevisi(tx, {
+      orderId, penjualanId: pkr.id, kind: "NILAI", reason: teksAlasan, before: [], after: [], impact: { hashPermintaan, keuangan: keu, berubah: totalBerubah },
+      userId, idempotencyKey: String(idempotencyKey), expected: Number(expectedRevision), financeBefore: jejak.before, financeAfter: jejak.after,
+    });
+    await recordActivity(tx, {
+      entityType: ENTITY_TYPES.FIN_PENJUALAN_KARYAWAN, entityId: pkr.id, eventType: EVENT_TYPES.DOCUMENT_POSTED, actorId: userId,
+      metadata: { aksi: "koreksi_nilai_order_lama", nomor: pkr.nomor, alasan: teksAlasan, totalSebelum: String(r.totalLama), totalSesudah: String(r.totalBaru), revisi: rev.revision },
+    });
+    return { replayed: false, revisi: rev.revision, nomor: pkr.nomor, orderId, dampak: { item: { ditambah: [], dihapus: [], diubah: [] }, unit: { dibuat: 0, dibatalkan: [] }, keuangan: keu }, keuangan: keu };
+  }
+
   const hasil = await terapkanKoreksi(tx, {
-    penjualanId, operasi: r.opsOperasional, expectedRevision, alasan: teksAlasan, idempotencyKey, userId,
+    penjualanId, operasi: r.opsOperasional, expectedRevision, alasan: teksAlasan, idempotencyKey, userId, kind,
     viaBaris: true, finance: sisiFinance, hashPermintaanLuar: hashPermintaan,
     // Ledger operasional hanya menyimpan fakta TANPA angka uang (angkanya ada di finance_before/finance_after).
     dampakTambahan: { berubah: totalBerubah, jurnalDiposting: totalBerubah, baris: r.barisSesudah.length },

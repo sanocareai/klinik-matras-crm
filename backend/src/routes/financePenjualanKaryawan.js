@@ -37,6 +37,7 @@ import { pratinjauKoreksiBaris, terapkanKoreksiBaris } from "../services/penjual
 import { adaModeTerpadu } from "../lib/domain/pkrPenjualanItem.js";
 import { cariCustomerTelepon } from "../services/penjualanKaryawanPembeli.js";
 import { pratinjauKoreksiPembeli, terapkanKoreksiPembeli, dryRunPembeliLegacy, riwayatPerubahanPkr } from "../services/penjualanKaryawanPembeliKoreksi.js";
+import { kemampuanKoreksiOrder, pratinjauKoreksiOrder, terapkanKoreksiOrder } from "../services/penjualanKaryawanKoreksiOrder.js";
 
 export const financePenjualanKaryawanRouter = express.Router();
 const BASE = "/penjualan-karyawan";
@@ -237,6 +238,32 @@ financePenjualanKaryawanRouter.post(`${BASE}/:id/koreksi-pembeli`, requirePermis
   try {
     const { alasan, expectedRevision, ...masukan } = req.body || {};
     const hasil = await prisma.$transaction((tx) => terapkanKoreksiPembeli(tx, {
+      penjualanId: req.params.id, masukan, expectedRevision, alasan, idempotencyKey: req.headers["idempotency-key"], userId: req.user.id,
+    }), { timeout: 30000, maxWait: 10000 });
+    if (!hasil.replayed) for (const cid of hasil.customerIds ?? []) await rapikanAgregatCustomer(cid);
+    const lengkap = await prisma.finPenjualanKaryawan.findUnique({ where: { id: req.params.id }, include: penjualanInclude });
+    const sinkron = await ringkasOrderPkr(prisma, [req.params.id]);
+    res.status(hasil.replayed ? 200 : 201).json({ ...hasil, penjualan: bentukPenjualan(lengkap), sinkron: sinkron.get(req.params.id) ?? null });
+  } catch (e) { handleFinanceError(e, res); }
+});
+
+// ─── KOREKSI ORDER PKR (satu pintu resmi: PERBAIKAN salah input / TAMBAHAN permintaan customer; matriks progres ditegakkan server) ─────────────────────────
+// GET = keadaan + matriks kemampuan (baca-saja). Pratinjau = terapkan di transaksi yang DIBATALKAN (fungsi hitung yang sama). Alasan + Idempotency-Key + expectedRevision wajib.
+financePenjualanKaryawanRouter.get(`${BASE}/:id/koreksi-order`, requirePermission(P.FINANCE_READ), async (req, res) => {
+  try { res.json(await kemampuanKoreksiOrder(prisma, req.params.id)); } catch (e) { handleFinanceError(e, res); }
+});
+
+financePenjualanKaryawanRouter.post(`${BASE}/:id/koreksi-order/pratinjau`, requirePermission(P.FINANCE_POST), async (req, res) => {
+  try {
+    const { alasan, expectedRevision, ...masukan } = req.body || {};
+    res.json(await pratinjauKoreksiOrder(prisma, { penjualanId: req.params.id, masukan, expectedRevision: expectedRevision ?? null, alasan, userId: req.user.id }));
+  } catch (e) { handleFinanceError(e, res); }
+});
+
+financePenjualanKaryawanRouter.post(`${BASE}/:id/koreksi-order`, requirePermission(P.FINANCE_POST), async (req, res) => {
+  try {
+    const { alasan, expectedRevision, ...masukan } = req.body || {};
+    const hasil = await prisma.$transaction((tx) => terapkanKoreksiOrder(tx, {
       penjualanId: req.params.id, masukan, expectedRevision, alasan, idempotencyKey: req.headers["idempotency-key"], userId: req.user.id,
     }), { timeout: 30000, maxWait: 10000 });
     if (!hasil.replayed) for (const cid of hasil.customerIds ?? []) await rapikanAgregatCustomer(cid);

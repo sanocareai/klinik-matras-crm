@@ -265,7 +265,7 @@ const alamatGabung = (o) => [o?.deliveryAddress, o?.deliveryCity].filter(Boolean
  * Lengkapi atau ubah spesifikasi + logistik order PKR. Merk/ukuran hanya boleh berubah selama belum ada unit yang mulai dikerjakan Produksi. Alamat disinkronkan ke job yang masih
  * bisa diubah (alamat job yang sama dengan alamat order lama atau kosong; ubahan manual dispatcher tidak ditimpa). Setiap perubahan diaudit (sebelum/sesudah).
  */
-export async function lengkapiSpesifikasi(tx, { penjualanId, userId = null, masukan = {} }) {
+export async function lengkapiSpesifikasi(tx, { penjualanId, userId = null, masukan = {}, izinSetelahProduksi = false }) {
   const pkr = await muatPkr(tx, penjualanId);
   if (!pkr.orderCrm) throw gagal(`${pkr.nomor} belum punya order CRM — buat dulu`, 409, "BELUM_ADA_ORDER");
   await tx.$queryRawUnsafe('SELECT id FROM "Order" WHERE id = $1 FOR UPDATE', pkr.orderCrm.id);
@@ -286,12 +286,12 @@ export async function lengkapiSpesifikasi(tx, { penjualanId, userId = null, masu
   const info = bacaNotesOrder(order.notes);
   const info2 = { ...info };
   if (spek.merk !== undefined && spek.merk !== sebelumSpek.merk) {
-    if (unitMulai.length) throw gagal("Merk tidak bisa diubah: Produksi sudah mulai mengerjakan unit", 409);
+    if (unitMulai.length && !izinSetelahProduksi) throw gagal("Merk tidak bisa diubah: Produksi sudah mulai mengerjakan unit", 409);
     if (spek.merk) info2.merkKasur = spek.merk; else delete info2.merkKasur;
     catat("merk", sebelumSpek.merk, spek.merk);
   }
   if (spek.ukuran !== undefined && spek.ukuran !== sebelumSpek.ukuran) {
-    if (unitMulai.length) throw gagal("Ukuran tidak bisa diubah: Produksi sudah mulai mengerjakan unit", 409);
+    if (unitMulai.length && !izinSetelahProduksi) throw gagal("Ukuran tidak bisa diubah: Produksi sudah mulai mengerjakan unit", 409);
     if (spek.ukuran) info2.ukuranKasur = spek.ukuran; else delete info2.ukuranKasur;
     catat("ukuran", sebelumSpek.ukuran, spek.ukuran);
   }

@@ -284,7 +284,7 @@ function ringkasTeks(impact) {
 /**
  * Terapkan koreksi. Dipanggil di DALAM transaksi pemanggil (atomik). Mengembalikan hasil replay bila Idempotency-Key yang sama dengan isi yang sama sudah diterapkan.
  */
-export async function terapkanKoreksi(tx, { penjualanId, operasi, expectedRevision, alasan, idempotencyKey, userId = null, viaBaris = false, finance = null, hashPermintaanLuar = null, dampakTambahan = null }) {
+export async function terapkanKoreksi(tx, { penjualanId, operasi, expectedRevision, alasan, idempotencyKey, userId = null, viaBaris = false, finance = null, hashPermintaanLuar = null, dampakTambahan = null, kind = "DIKOREKSI" }) {
   if (!idempotencyKey || !POLA_KUNCI.test(String(idempotencyKey))) {
     throw gagal("Header Idempotency-Key wajib (8–128 karakter) untuk koreksi item", 428, "IDEMPOTENCY_KEY_REQUIRED");
   }
@@ -391,7 +391,7 @@ export async function terapkanKoreksi(tx, { penjualanId, operasi, expectedRevisi
   const sesudah = await snapshotItems(tx, orderId);
   const dampak = { ...h.impact, hashPermintaan, ringkas: ringkasTeks(h.impact), kategoriOrder: { sebelum: h.order.category, sesudah: dataOrder.category }, ...(dampakTambahan && { keuangan: dampakTambahan }) };
   const rev = await tulisRevisi(tx, {
-    orderId, penjualanId: pkr.id, kind: "DIKOREKSI", reason: teksAlasan, before: sebelum, after: sesudah, impact: dampak, userId, idempotencyKey: String(idempotencyKey),
+    orderId, penjualanId: pkr.id, kind, reason: teksAlasan, before: sebelum, after: sesudah, impact: dampak, userId, idempotencyKey: String(idempotencyKey),
     expected: Number(expectedRevision), ...(jejakFinance && { financeBefore: jejakFinance.before, financeAfter: jejakFinance.after }),
   });
   const meta = { aksi: "dikoreksi", nomorPkr: pkr.nomor, penjualanId: pkr.id, orderId, revisi: rev.revision, alasan: teksAlasan, ringkas: ringkasTeks(h.impact), kategoriSebelum: h.order.category, kategoriSesudah: dataOrder.category };

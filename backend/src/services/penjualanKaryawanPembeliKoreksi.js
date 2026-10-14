@@ -313,12 +313,31 @@ export async function riwayatPerubahanPkr(db, penjualanId, { izinFinance = false
   const revisi = pkr.orderCrm ? await db.pkrItemRevision.findMany({ where: { orderId: pkr.orderCrm.id }, orderBy: { revision: "desc" }, take: batas }) : [];
   const aktor = await db.user.findMany({ where: { id: { in: [...new Set(revisi.map((r) => r.actorId).filter(Boolean))] } }, select: { id: true, name: true } });
   const nama = new Map(aktor.map((a) => [a.id, a.name]));
-  const label = { DIBUAT: "Order dibuat", DILENGKAPI: "Spesifikasi dilengkapi", DIKOREKSI: "Item dikoreksi", PEMBELI: "Data customer/kontak dikoreksi", KOREKSI_BARIS: "Baris penjualan dikoreksi" };
+  const label = {
+    DIBUAT: "Order dibuat", DILENGKAPI: "Spesifikasi dilengkapi", DIKOREKSI: "Item dikoreksi", PEMBELI: "Data customer/kontak dikoreksi", KOREKSI_BARIS: "Baris penjualan dikoreksi",
+    ORDER_ADMIN: "Perbaikan data order", TAMBAHAN: "Tambahan pesanan", ADOPSI: "Order lama dicatat sebagai pesanan awal", NILAI: "Koreksi nilai",
+  };
+  const LABEL_KOLOM = { merk: "Merk", ukuran: "Ukuran", perluDikirim: "Dikirim/diambil", alamat: "Alamat", kota: "Kota", tanggalKirim: "Tanggal kirim" };
+  // Bentuk seragam [{ kolom, label, sebelum, sesudah }] untuk semua jenis revisi (layar riwayat membaca satu bentuk).
+  const seragam = (r) => {
+    const p = r.impact?.perubahan;
+    if (Array.isArray(p) && p.length && p.every((x) => x && typeof x === "object" && "kolom" in x)) return p;
+    const hasil = [];
+    if (p && !Array.isArray(p) && typeof p === "object") {
+      for (const [k, v] of Object.entries(p)) if (v && typeof v === "object" && "sebelum" in v) hasil.push({ kolom: k, label: LABEL_KOLOM[k] ?? k, sebelum: v.sebelum ?? null, sesudah: v.sesudah ?? null });
+    } else if (Array.isArray(p)) {
+      for (const it of p) for (const [k, v] of Object.entries(it.perubahan ?? {})) hasil.push({ kolom: `item${it.no}.${k}`, label: `Item ${it.no} · ${k}`, sebelum: v?.sebelum ?? null, sesudah: v?.sesudah ?? null });
+    }
+    if (r.kind === "TAMBAHAN") for (const it of r.impact?.item?.ditambah ?? []) hasil.push({ kolom: `tambah.${it.no}`, label: `Item ${it.no} (tambahan)`, sebelum: null, sesudah: `${it.produk ?? it.kategori} ×${it.jumlah}` });
+    if (r.kind === "ADOPSI") hasil.push({ kolom: "adopsi", label: "Pesanan awal", sebelum: null, sesudah: `${r.impact?.adopsi?.jumlah ?? 0} unit ditautkan: ${(r.impact?.adopsi?.unit ?? []).join(", ")}` });
+    if (izinFinance && r.financeBefore && r.financeAfter && r.financeBefore.total !== r.financeAfter.total) { const rp = (n) => `Rp${Number(n).toLocaleString("id-ID")}`; hasil.push({ kolom: "total", label: "Total penjualan", sebelum: rp(r.financeBefore.total), sesudah: rp(r.financeAfter.total) }); }
+    return hasil.length ? hasil : (r.impact?.perubahan ?? null);
+  };
   return {
     nomor: pkr.nomor, orderNumber: pkr.orderCrm?.orderNumber ?? null,
     revisi: revisi.map((r) => ({
       revisi: r.revision, jenis: r.kind, label: label[r.kind] ?? r.kind, alasan: r.reason, pelaku: r.actorId ? { id: r.actorId, nama: nama.get(r.actorId) ?? null } : null, waktu: r.createdAt.toISOString(),
-      perubahan: r.impact?.perubahan ?? null, dampak: r.impact?.dampak ?? null,
+      perubahan: seragam(r), dampak: r.impact?.dampak ?? r.impact?.mode ?? null,
       ...(izinFinance && r.financeBefore ? { financeBefore: r.financeBefore, financeAfter: r.financeAfter } : {}),
     })),
   };
