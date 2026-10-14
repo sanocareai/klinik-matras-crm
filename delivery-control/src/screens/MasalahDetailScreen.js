@@ -75,8 +75,7 @@ export default function MasalahDetailScreen({ route, navigation }) {
               <Row icon="user" label="Pelanggan" value={job.order?.customer?.name} />
               <Row icon="hash" label="Order" value={job.order?.orderNumber} />
               {manifestJob(job) && <Row icon="box" label="Barang" value={`${job.manifest.ringkas}
-${(job.manifest.baris || []).map((b) => `${teksBarisManifest(b)} (${labelUnitBaris(b)})`).join("
-")}`} />}
+${(job.manifest.baris || []).map((b) => `${teksBarisManifest(b)} (${labelUnitBaris(b)})`).join("\n")}`} />}
               {!!progresMuatServer(job) && <Row icon="checkCircle" label="Muat" value={progresMuatServer(job).label} />}
               {!!sumberManifest(job) && <Row icon="user" label="Sumber" value={sumberManifest(job).label + (sumberManifest(job).picLead ? ` · PIC lead: ${sumberManifest(job).picLead}` : "")} />}
               <Row icon="truck" label="Jenis" value={JOB_TYPE[job.type] || job.type} />
