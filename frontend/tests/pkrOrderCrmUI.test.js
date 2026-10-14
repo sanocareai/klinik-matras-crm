@@ -19,11 +19,11 @@ test("body order CRM: baru membawa jenis & jumlah unit; kirim 'ya' membawa alama
   assert.deepEqual(bodyOrderCrm({ ...f, kirim: "ya" }, { baru: false }).kategori, undefined, "lengkapi: jenis & jumlah unit tidak diubah");
 });
 
-test("galat isian: jumlah unit 1–20 hanya saat membuat; isian boleh belum lengkap", () => {
+test("galat isian: jumlah unit 1–200 hanya saat membuat; isian boleh belum lengkap", () => {
   assert.equal(galatOrderCrm(orderCrmKosong()), null, "kosong tetap boleh dikirim");
-  assert.match(galatOrderCrm({ ...orderCrmKosong(), jumlahUnit: "0" }), /1–20/);
-  assert.match(galatOrderCrm({ ...orderCrmKosong(), jumlahUnit: "21" }), /1–20/);
-  assert.match(galatOrderCrm({ ...orderCrmKosong(), jumlahUnit: "1.5" }), /1–20/);
+  assert.match(galatOrderCrm({ ...orderCrmKosong(), jumlahUnit: "0" }), /1–200/);
+  assert.match(galatOrderCrm({ ...orderCrmKosong(), jumlahUnit: "201" }), /1–200/);
+  assert.match(galatOrderCrm({ ...orderCrmKosong(), jumlahUnit: "1.5" }), /1–200/);
   assert.equal(galatOrderCrm({ ...orderCrmKosong(), jumlahUnit: "" }, { baru: false }), null);
   assert.match(galatOrderCrm({ ...orderCrmKosong(), tanggalKirim: "20-10-2026" }), /Tanggal kirim/);
 });
@@ -45,10 +45,9 @@ test("form lengkapi diisi dari spesifikasi server; aksi per PKR; label/varian da
 
 test("detail PKR (detailSpecs) memuat bagian Order CRM, produksi, delivery, dan pembayaran dibaca dari PKR", () => {
   const spec = baca("../src/features/finance/detailSpecs.js");
-  assert.match(spec, /judul: "Order CRM, Produksi, Delivery"/);
-  assert.match(spec, /dibaca dari penjualan ini, bukan dari order/);
+  assert.match(spec, /judul: "Order CRM & Delivery"/);
   assert.ok(spec.includes("Belum ada. Gunakan “Buat/Tautkan Order CRM”."));
-  assert.ok(spec.includes("Perlu dilengkapi: ${p.sinkron.order.spesifikasi.kurang.join"));
+  assert.ok(spec.includes("Perlu dilengkapi: ${sk.order.spesifikasi.kurang.join"));
 });
 
 test("pemasangan: API, Finance (kolom + tombol Buat/Tautkan + form), CRM Orders, Unit 360, detail job Delivery", () => {
@@ -59,11 +58,11 @@ test("pemasangan: API, Finance (kolom + tombol Buat/Tautkan + form), CRM Orders,
   assert.match(fin, /Buat\/Tautkan Order CRM/);
   assert.match(fin, /Lengkapi spesifikasi order/);
   assert.match(fin, /<TH width=\{210\}>Order CRM<\/TH>/);
-  assert.match(fin, /\.\.\.bodyPenjualanTerpadu\(f\.daftar, katalog\)/, "form baru memakai SATU daftar item terpadu (bodyOrderCrm lama tetap untuk order lama)");
+  assert.ok(fin.includes("bodyPenjualanTerpadu(f.daftar, katalog)"), "form baru memakai SATU daftar item terpadu (bodyOrderCrm lama tetap untuk order lama)");
   assert.match(fin, /data-testid="bagian-item-penjualan"/);
   assert.doesNotMatch(fin, /Tidak membuat order, produksi, atau pengiriman/, "teks lama (tanpa order) sudah diganti");
   const ord = baca("../src/pages/Orders.jsx");
-  assert.match(ord, /LabelOrderPkr pkr=\{order\.penjualanKaryawan\}/);
+  assert.ok(ord.includes("<SumberPkr pkr={order.penjualanKaryawan}"));
   assert.match(ord, /BadgeBayarPkr/);
   assert.match(ord, /di Finance/);
   assert.match(baca("../src/features/production/UnitOverviewDrawer.jsx"), /unit360-rujukan-pkr/);

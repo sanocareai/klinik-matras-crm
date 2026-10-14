@@ -88,7 +88,7 @@ test("galat ringan: pemenuhan, kategori, harga, nama wajib; kekurangan ukuran bu
   assert.match(galatItemPenjualan([stok(), kasur({ panjang: "dua ratus" })], KATALOG), /^Item 2: Panjang/, "nomor item = nomor baris sebenarnya");
   assert.equal(galatItemPenjualan([kasur({ panjang: "", lebar: "", tebal: "" })], KATALOG), null, "ukuran boleh dikosongkan dulu");
   assert.equal(galatItemPenjualan([kasur(), stok()], KATALOG), null);
-  assert.match(galatItemPenjualan([kasur({ jumlah: "15" }), kasur({ jumlah: "10", produkNama: "Lain" })], KATALOG), /melebihi batas 20/);
+  assert.match(galatItemPenjualan([kasur({ jumlah: "150" }), kasur({ jumlah: "60", produkNama: "Lain" })], KATALOG), /melebihi batas 200/);
 });
 
 test("body API terpadu: satu daftar membawa harga + pemenuhan + ukuran; item tanpa unit hanya nama/jumlah/harga; alamat hanya bila ada yang dikirim", () => {
@@ -160,8 +160,8 @@ test("pemasangan: pembuatan penjualan memakai SATU daftar (FormItemPenjualan); b
   assert.doesNotMatch(baru, /Order untuk Produksi dan Delivery/);
   assert.doesNotMatch(baru, /Item yang dijual/);
   assert.doesNotMatch(baru, /orderCrm: bodyOrderCrmItem/);
-  assert.match(baru, /\.\.\.bodyPenjualanTerpadu\(f\.daftar, katalog\)/);
-  assert.match(baru, /api\.pratinjauOrderCrmPkr\(bodyPenjualanTerpadu\(f\.daftar, katalog\)\)/);
+  assert.ok(baru.includes("bodyPenjualanTerpadu(f.daftar, katalog)"));
+  assert.ok(baru.includes("api.pratinjauOrderCrmPkr({ items: tb.items, orderCrm:"));
   assert.match(halaman, /<ModalKoreksiBaris/);
   assert.match(halaman, /hidden: !ac\.koreksi \|\| !terpadu\(p\)/);
   const api = baca("../src/api.js");

@@ -57,13 +57,13 @@ test("body pembuatan: hanya field relevan; alamat hanya bila ada item yang dikir
   assert.deepEqual(belum.items[0], { kategori: "KASUR_BARU", jumlah: 1 }, "belum ditentukan = tanpa perluDikirim (server menilai 'Perlu dilengkapi')");
 });
 
-test("galat ringan: kategori, jumlah 1–20, angka cm, total unit, custom wajib spesifikasi; kekurangan data bukan galat", () => {
+test("galat ringan: kategori, jumlah 1–200, angka cm, total unit, custom wajib spesifikasi; kekurangan data bukan galat", () => {
   assert.match(galatItems([], KATALOG), /minimal satu item/);
   assert.match(galatItems([itemBaru("")], KATALOG), /Item 1: pilih kategori/);
-  assert.match(galatItems([{ ...itemBaru("KASUR_BARU"), jumlah: "0" }], KATALOG), /1–20/);
-  assert.match(galatItems([{ ...itemBaru("KASUR_BARU"), jumlah: "1.5" }], KATALOG), /1–20/);
+  assert.match(galatItems([{ ...itemBaru("KASUR_BARU"), jumlah: "0" }], KATALOG), /1–200/);
+  assert.match(galatItems([{ ...itemBaru("KASUR_BARU"), jumlah: "1.5" }], KATALOG), /1–200/);
   assert.match(galatItems([{ ...itemBaru("KASUR_BARU"), panjang: "abc" }], KATALOG), /Panjang harus berupa angka dalam cm/);
-  assert.match(galatItems([{ ...itemBaru("KASUR_BARU"), jumlah: "20" }, { ...itemBaru("SANDARAN"), jumlah: "1" }], KATALOG), /melebihi batas 20/);
+  assert.match(galatItems([{ ...itemBaru("KASUR_BARU"), jumlah: "200" }, { ...itemBaru("SANDARAN"), jumlah: "1" }], KATALOG), /melebihi batas 200/);
   assert.match(galatItems([itemBaru("CUSTOM_LAINNYA")], KATALOG), /wajib diisi spesifikasi/);
   assert.equal(galatItems([{ ...itemBaru("CUSTOM_LAINNYA"), spesifikasi: "Sofa bed lipat 3 posisi" }], KATALOG), null);
   assert.equal(galatItems([itemBaru("KASUR_BARU"), itemBaru("DIVAN_BOX")], KATALOG), null, "kosong tapi sah: order 'Perlu dilengkapi'");
@@ -98,11 +98,11 @@ test("pemasangan: halaman PKR memakai daftar item + langkah pratinjau; katalog d
   // Daftar terpadu: tidak ada lagi bagian "Order untuk Produksi dan Delivery" terpisah — satu daftar Item Penjualan & Pemenuhan.
   assert.match(fin, /Item Penjualan &amp; Pemenuhan/);
   assert.match(fin, /<FormItemPenjualan katalog=\{katalog\}/);
-  assert.match(fin, /\.\.\.bodyPenjualanTerpadu\(f\.daftar, katalog\)/);
+  assert.ok(fin.includes("bodyPenjualanTerpadu(f.daftar, katalog)"));
   assert.match(fin, /api\.pratinjauOrderCrmPkr\(/);
   assert.match(fin, /data-testid="tinjau-order"/);
   assert.match(fin, /<PratinjauOrderPkr data=\{pra\} \/>/);
-  assert.match(fin, /disabled=\{!valid \|\| !pra\?\.valid\}/, "Catat Penjualan hanya setelah pratinjau valid");
+  assert.ok(fin.includes("disabled={!semuaValid || !pra?.valid}"), "Catat Penjualan hanya setelah pratinjau valid");
   const form = baca("../src/features/finance/PkrItemForm.jsx");
   assert.match(form, /Tambah Item Produksi/);
   assert.match(form, /katalog\.bentuk|bentukItem\(katalog/);
@@ -167,7 +167,7 @@ test("bundel: galat ringan per komponen (angka cm), komposisi kosong menahan; to
   assert.match(galatItems([salah], KATALOG_SET), /Item 1 · Divan\/Box: Panjang/);
   const tanpaKomposisi = { ...KATALOG_SET, kategori: KATALOG_SET.kategori.map((k) => (k.kode === "SET_LENGKAP" ? { ...k, komposisi: [], produk: [] } : k)) };
   assert.match(galatItems([ubahKategoriItem(tanpaKomposisi, itemBaru(), "SET_LENGKAP")], tanpaKomposisi), /belum punya komposisi/);
-  assert.match(galatItems([{ ...it, jumlah: "7" }], KATALOG_SET), /Total jumlah unit 21 melebihi batas 20/);
+  assert.match(galatItems([{ ...it, jumlah: "67" }], KATALOG_SET), /Total jumlah unit 201 melebihi batas 200/);
 });
 
 const SINKRON_KOREKSI = {
@@ -199,7 +199,7 @@ test("koreksi: form dari ringkasan server; operasi hanya berisi yang berubah (ub
   assert.equal(galatKoreksi(g, KATALOG), null);
   assert.equal(totalUnitKoreksi(g, KATALOG), 3, "kasur ×2 + sandaran ×1 (divan dihapus)");
   assert.match(galatKoreksi({ ...g, items: [{ ...g.items[0], jumlah: "0" }, g.items[1]] }, KATALOG), /Item 1: jumlah/);
-  assert.match(galatKoreksi({ ...g, items: [{ ...g.items[0], jumlah: "19" }, g.items[1]], baru: [{ ...g.baru[0], jumlah: "5" }] }, KATALOG), /melebihi batas 20/);
+  assert.match(galatKoreksi({ ...g, items: [{ ...g.items[0], jumlah: "199" }, g.items[1]], baru: [{ ...g.baru[0], jumlah: "5" }] }, KATALOG), /melebihi batas 200/);
   // kirim -> diambil sendiri, spesifikasi dikosongkan
   const h = { ...f, items: [{ ...f.items[0], kirim: "tidak", spesifikasi: "" }, f.items[1]] };
   assert.deepEqual(operasiKoreksi(h, KATALOG), [{ op: "ubah", no: 1, spesifikasi: "", perluDikirim: false }]);
