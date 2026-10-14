@@ -155,7 +155,8 @@ SQL_TIDAK_SEIMBANG="select count(*)::int from (select e.id from fin_journal_entr
 SQL_GANDA="select count(*)::int from (select source_id from fin_journal_entries where source::text = 'REFUND' and status::text = 'POSTED' group by source_id having count(*) > 1) x"
 BASE_TIDAK_SEIMBANG="$(psql_live -At -c "$SQL_TIDAK_SEIMBANG")"; BASE_GANDA="$(psql_live -At -c "$SQL_GANDA")"
 for v in "$BASE_TIDAK_SEIMBANG" "$BASE_GANDA"; do [[ "$v" =~ ^[0-9]+$ ]] || die "garis dasar invarian bukan angka: '$v'"; done
-printf 'BASE_TIDAK_SEIMBANG=%s\nBASE_GANDA=%s\nORDER_N=%s\nJOB_N=%s\nPKR_N=%s\nEVT_N=%s\nINDRA_SEBELUM=%s\n' "$BASE_TIDAK_SEIMBANG" "$BASE_GANDA" "$ORDER_N" "$JOB_N" "$PKR_N" "$EVT_N" "$INDRA_SEBELUM" > "$BK_DIR/garis-dasar.env"
+printf 'BASE_TIDAK_SEIMBANG=%q\nBASE_GANDA=%q\nORDER_N=%q\nJOB_N=%q\nPKR_N=%q\nEVT_N=%q\nINDRA_SEBELUM=%q\n' "$BASE_TIDAK_SEIMBANG" "$BASE_GANDA" "$ORDER_N" "$JOB_N" "$PKR_N" "$EVT_N" "$INDRA_SEBELUM" > "$BK_DIR/garis-dasar.env"
+( set -e; . "$BK_DIR/garis-dasar.env"; [ "$INDRA_SEBELUM" = "$INDRA_EXPECT" ] ) || die "garis-dasar.env tidak aman di-source / nilai Indra tidak kembali utuh"
 ok "garis dasar: jurnal tidak seimbang = ${BASE_TIDAK_SEIMBANG}; refund dengan >1 jurnal berlaku = ${BASE_GANDA}"
 # SIDIK JARI TABEL (seluruh isi baris, jsonb): dibandingkan antara produksi dan restore pada rehearsal (membuktikan backup/restore + rilis tanpa tulisan data).
 FP_SQL="select 'order', count(*), md5(coalesce(string_agg(to_jsonb(x)::text, '|' order by x.id),'')) from \"Order\" x
