@@ -280,7 +280,7 @@ REH_PW="$(sed -n 's/^DATABASE_URL=\"\?postgresql:\/\/[^:]*:\([^@]*\)@.*/\1/p' "$
 dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="postgresql://${DB_USER}:${REH_PW}@postgres:5432/${REH_DB}" backend npx prisma migrate status </dev/null 2>&1 | grep -i 'up to date' >/dev/null || { reh_drop; die "migrate status rehearsal (image baru) TIDAK 'up to date' — rilis ini harus tanpa migrasi"; }
 ok "image baru: tidak ada migrasi pending pada hasil restore (rilis TANPA migrasi terbukti)"
 # SQL penanda yang AKAN dijalankan di produksi diuji dulu di DB rehearsal, di dalam transaksi yang DIBATALKAN.
-MK_OUT="$(dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d "$REH_DB" -X -At -q -v ON_ERROR_STOP=1 <<MKSQL 2>&1 </dev/null || true
+MK_OUT="$(dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d "$REH_DB" -X -At -q -v ON_ERROR_STOP=1 <<MKSQL 2>&1 || true
 BEGIN;
 ${MARKER_SQL};
 SELECT 'ADA=' || count(*) || ';NILAI=' || coalesce(max(value), '') FROM fin_settings WHERE key = '${MARKER_KEY}';
