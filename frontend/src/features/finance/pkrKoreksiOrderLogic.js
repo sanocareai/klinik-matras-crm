@@ -2,6 +2,7 @@
 // Aturan sebenarnya ditegakkan SERVER (penjualanKaryawanKoreksiOrder.js); layar hanya menampilkannya jujur: field terkunci selalu membawa ALASAN dan TINDAKAN yang benar.
 import { formEditDariIdentitas, bodyKoreksiPembeli, adaPerubahanKoreksi, galatFormEdit } from "./pkrPembeliLogic.js";
 import { bodyItemPenjualan, galatItemPenjualan, itemPenjualanBaru, totalPenjualan } from "./pkrItemLogic.js";
+import { peringatanAlur } from "./pkrRuteLogic.js";
 
 export const JENIS_KOREKSI = Object.freeze({
   PERBAIKAN: { kode: "PERBAIKAN", label: "Perbaiki data yang salah input", hint: "Data di SANSS salah; pekerjaan fisik mengikuti data yang benar." },
@@ -117,8 +118,11 @@ export const perluKonfirmasiAdministratif = (kemampuan, body) => Boolean(body?.s
 
 /** Ringkas dampak dari pratinjau server menjadi tiga area (Finance, Produksi, Delivery) + peringatan. */
 export function ringkasDampak(pra, kemampuan) {
-  const hasil = { finance: [], produksi: [], delivery: [], customer: [], peringatan: [], tidakDibuat: ["Order baru", "Payment baru", "Invoice", "Pendapatan CRM"] };
+  const hasil = { finance: [], produksi: [], delivery: [], customer: [], peringatan: [], menungguAlur: [], tidakDibuat: ["Order baru", "Payment baru", "Invoice", "Pendapatan CRM"] };
   if (!pra?.valid) return hasil;
+  // "Menunggu penentuan alur Produksi" (mode transisi): dikumpulkan dari peringatan MANA PUN pada hasil pratinjau; ditampilkan sebagai blok sendiri, bukan galat.
+  const kumpul = (x) => { for (const w of peringatanAlur(x)) if (!hasil.menungguAlur.includes(w)) hasil.menungguAlur.push(w); };
+  kumpul(pra.peringatan); for (const b of pra.bagian ?? []) { kumpul(b.peringatan); kumpul(b.dampak?.peringatan); kumpul(b.dampak?.item?.peringatan); }
   for (const b of pra.bagian ?? []) {
     if (b.jenis === "PEMBELI") {
       for (const p of b.perubahan ?? []) hasil.customer.push({ label: p.label, sebelum: p.sebelum, sesudah: p.sesudah });

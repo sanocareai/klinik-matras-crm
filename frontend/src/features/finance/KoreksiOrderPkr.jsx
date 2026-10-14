@@ -319,6 +319,12 @@ export function ModalKoreksiOrderPkr({ penjualan, jenisAwal = "PERBAIKAN", onClo
                       {dampak.delivery.length === 0 ? <p className="m-0 text-ink3">Tidak ada perubahan job pengiriman.</p> : <ul className="m-0 list-none space-y-0.5 p-0">{dampak.delivery.map((t, i) => <li key={i}>{t}</li>)}</ul>}
                     </div>
                   </div>
+                  {dampak.menungguAlur.length > 0 && (
+                    <div role="status" className="space-y-1 rounded-lg bg-orangebg p-3 text-[12.5px] text-orange" data-testid="menunggu-alur">
+                      <p className="m-0 font-semibold">Menunggu penentuan alur Produksi</p>
+                      <ul className="m-0 list-none space-y-1 p-0">{dampak.menungguAlur.map((t, i) => <li key={i}>• {t}</li>)}</ul>
+                    </div>
+                  )}
                   {dampak.peringatan.length > 0 && (
                     <ul className="m-0 list-none space-y-1 rounded-lg bg-orangebg p-3 text-[12.5px] text-orange" data-testid="peringatan-dampak">
                       {dampak.peringatan.map((t, i) => <li key={i}>• {t}</li>)}

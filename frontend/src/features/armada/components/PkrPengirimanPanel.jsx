@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Field } from "@/components/ui/field.jsx";
 import { ringkasBarisPengiriman } from "../pkrPengirimanLogic.js";
+import { galatKesiapanFisik } from "@/features/finance/pkrRuteLogic.js";
 
 // DELIVERY — order Penjualan Karyawan yang unitnya sebagian sudah siap kirim tetapi menunggu unit lain.
 // Aturan (keputusan Owner): job pengiriman dibuat OTOMATIS hanya setelah SEMUA unit yang dikirim siap, dan hanya SATU. Pengiriman sebagian = aksi eksplisit di sini:
@@ -86,15 +87,86 @@ export function ModalKirimSebagian({ orderId, onClose, onSelesai }) {
   );
 }
 
+const kunciFisik = () => (globalThis.crypto?.randomUUID ? `pkr-fisik-${globalThis.crypto.randomUUID()}` : `pkr-fisik-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`);
+
+/**
+ * KONFIRMASI KESIAPAN FISIK (pengecualian operasional mode transisi): unit yang NYATA sudah jadi tetapi progres digital Produksi belum ada. Hanya unit yang dipilih; alasan wajib;
+ * tercatat (pelaku, waktu, alasan, bukti). TIDAK mengubah tahap Produksi, jurnal, atau stok, dan tidak menyatakan semua unit selesai. Unit lain tetap terlihat sebagai sisa.
+ */
+export function ModalKesiapanFisik({ orderId, onClose, onSelesai }) {
+  const [d, setD] = useState(null);
+  const [pilih, setPilih] = useState([]);
+  const [alasan, setAlasan] = useState(""); const [bukti, setBukti] = useState("");
+  const [galat, setGalat] = useState(""); const [sibuk, setSibuk] = useState(false);
+  const kunci = useRef(kunciFisik());
+  useEffect(() => {
+    let batal = false;
+    api.getPkrPengirimanOrder(orderId).then((r) => { if (!batal) setD(r); }).catch((e) => { if (!batal) setGalat(e.message || "Gagal memuat unit order"); });
+    return () => { batal = true; };
+  }, [orderId]);
+  if (!orderId) return null;
+  const belumSiap = (d?.unit ?? []).filter((u) => !u.siap && !u.jobId);
+  const toggle = (id) => setPilih((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
+  const g = galatKesiapanFisik({ unitIds: pilih, alasan });
+  async function kirim() {
+    setGalat(""); setSibuk(true);
+    try { await api.konfirmasiKesiapanFisik(orderId, { unitIds: pilih, alasan: alasan.trim(), ...(bukti.trim() && { bukti: bukti.trim() }) }, kunci.current); await onSelesai?.(); }
+    catch (e) { setGalat(e.message || "Gagal menyimpan konfirmasi kesiapan fisik"); } finally { setSibuk(false); }
+  }
+  return (
+    <Modal
+      open onOpenChange={(v) => !v && onClose()}
+      title={`Konfirmasi kesiapan fisik — ${d?.nomorOrder || "order PKR"}`}
+      description="Pengecualian operasional selama alur Produksi belum lengkap: tandai HANYA unit yang nyata sudah jadi. Status dan tahap Produksi tidak diubah."
+      className="w-[560px]"
+      footer={(
+        <div className="flex w-full flex-col gap-2">
+          {galat && <p role="alert" className="rounded-lg bg-orangebg px-3 py-2 text-[12.5px] text-orange" data-testid="kesiapan-fisik-galat">{galat}</p>}
+          <div className="flex justify-end gap-2">
+            <Button variant="neutral" onClick={onClose} className="max-sm:min-h-11 max-sm:px-4">Batal</Button>
+            <Button disabled={sibuk || !!g} onClick={kirim} className="max-sm:min-h-11 max-sm:px-4" data-testid="aksi-kesiapan-fisik">Konfirmasi Siap Fisik</Button>
+          </div>
+        </div>
+      )}
+    >
+      {!d && !galat && <p className="text-[12.5px] text-ink3" role="status">Memuat unit…</p>}
+      {d && (
+        <div className="space-y-4" data-testid="kesiapan-fisik-isi">
+          {!d.bisaKonfirmasiFisik && <p className="m-0 rounded-lg bg-orangebg px-3 py-2 text-[12.5px] text-orange">Konfirmasi kesiapan fisik tidak tersedia: mode rute Produksi {d.modeRute === "KETAT" ? "KETAT (hanya status Produksi yang berlaku)" : "—"} atau tidak ada unit yang menunggu.</p>}
+          <ul className="m-0 list-none space-y-1.5 p-0">
+            {d.unit.map((u) => {
+              const bisa = !u.siap && !u.jobId && d.bisaKonfirmasiFisik;
+              return (
+                <li key={u.id} className="flex items-center gap-3 rounded-lg border border-line px-3 py-2 text-[12.5px]">
+                  <input type="checkbox" className="h-4 w-4 shrink-0 max-sm:h-5 max-sm:w-5" checked={pilih.includes(u.id)} disabled={!bisa} onChange={() => toggle(u.id)} aria-label={`Pilih unit ${u.unitCode}`} data-testid="pilih-unit-fisik" />
+                  <span className="min-w-0 flex-1"><span className="font-mono text-[12px] font-semibold text-ink">{u.unitCode}</span>{u.itemNama ? <span className="ml-2 text-ink2">{u.itemNama}</span> : null}</span>
+                  {u.jobId ? <Badge variant="neutral">Sudah di job</Badge> : u.siap ? <Badge variant={u.dasarSiap === "FISIK" ? "accent" : "green"}>{u.dasarSiap === "FISIK" ? "Siap fisik" : "Siap kirim"}</Badge> : <Badge variant="orange">Belum siap</Badge>}
+                </li>
+              );
+            })}
+          </ul>
+          <Field label="Alasan konfirmasi" required hint="Wajib (minimal 5 karakter). Tercatat bersama nama Anda dan waktu.">
+            <textarea className={AREA} value={alasan} maxLength={500} onChange={(e) => setAlasan(e.target.value)} aria-label="Alasan kesiapan fisik" data-testid="kesiapan-fisik-alasan" />
+          </Field>
+          <Field label="Bukti (opsional)" hint="mis. foto di grup Produksi, nomor catatan">
+            <input className="h-10 w-full rounded-lg bg-surface px-2.5 text-sm text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/40" value={bukti} maxLength={300} onChange={(e) => setBukti(e.target.value)} aria-label="Bukti kesiapan fisik" />
+          </Field>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 /** Panel ringkas di halaman Job Delivery: order PKR yang menunggu unit lain. Tidak tampil bila kosong atau pengguna tidak berhak (403 diam-diam). */
 export default function PkrPengirimanPanel({ className = "" }) {
   const [daftar, setDaftar] = useState([]);
   const [aktif, setAktif] = useState(null);
+  const [fisik, setFisik] = useState(null);
   const muat = useCallback(async () => {
     try { const r = await api.getPkrPengirimanMenunggu(); setDaftar(r.menunggu || []); } catch { setDaftar([]); }
   }, []);
   useEffect(() => { muat(); }, [muat]);
-  if (!daftar.length && !aktif) return null;
+  if (!daftar.length && !aktif && !fisik) return null;
   return (
     <>
       {daftar.length > 0 && (
@@ -112,6 +184,9 @@ export default function PkrPengirimanPanel({ className = "" }) {
                     </span>
                     {r.teksSisa && <span className="block text-ink2" data-testid="pkr-menunggu-sisa">{r.teksSisa}</span>}
                   </span>
+                  {o.bisaKonfirmasiFisik && (
+                    <Button size="sm" variant="neutral" onClick={() => setFisik(o.orderId)} className="max-sm:min-h-11" data-testid="buka-kesiapan-fisik">Konfirmasi kesiapan fisik…</Button>
+                  )}
                   <Button
                     size="sm" variant="neutral" disabled={!r.aksiAktif} onClick={() => setAktif(o.orderId)}
                     title={r.aksiAktif ? undefined : "Belum ada unit sisa yang siap kirim"}
@@ -125,6 +200,7 @@ export default function PkrPengirimanPanel({ className = "" }) {
           </ul>
         </Card>
       )}
+      {fisik && <ModalKesiapanFisik orderId={fisik} onClose={() => setFisik(null)} onSelesai={async () => { setFisik(null); await muat(); }} />}
       {aktif && <ModalKirimSebagian orderId={aktif} onClose={() => setAktif(null)} onSelesai={async () => { setAktif(null); await muat(); }} />}
     </>
   );

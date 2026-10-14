@@ -9,6 +9,7 @@ import { Field } from "@/components/ui/field.jsx";
 import { Input } from "@/components/ui/input.jsx";
 import { Pilihan } from "@/features/finance/shared.jsx";
 import { rolesOf } from "@/lib/roles.js";
+import RuteProduksiPanel from "@/features/finance/RuteProduksiPanel.jsx";
 
 // Pengaturan Produksi › Katalog Item PKR. Kategori + produk/varian untuk "Order untuk Produksi dan Delivery" pada Penjualan Karyawan. Admin/Owner (izin pkr_catalog:manage di server)
 // mengelola; bentuk isian per kategori (kasur: P×L×T, divan: ukuran + tipe, …) ditetapkan KODE dan hanya dipilih di sini. PEMETAAN RUTE PRODUKSI (lini + jenis produk untuk produk baru,
@@ -142,16 +143,18 @@ export default function PkrKatalogItem() {
 
   return (
     <PageContainer>
-      <PageHeader title="Katalog Item PKR" subtitle="Kategori, produk/varian, pemetaan rute Produksi, dan komposisi set untuk order produksi Penjualan Karyawan. Produk yang belum dipetakan tidak bisa dipakai di order." />
+      <PageHeader title="Katalog Item PKR" subtitle="Kategori, produk/varian, pemetaan rute Produksi, dan komposisi set untuk order produksi Penjualan Karyawan. Produk yang belum dipetakan berstatus Menunggu penentuan alur Produksi selama mode transisi (lihat Mode rute Produksi di bawah); di mode ketat produk itu tidak bisa dipakai di order." />
       <PageBody>
         {galat && <div role="alert" className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{galat}</div>}
         {info && <div role="status" className="rounded-btn bg-greenbg px-3 py-2.5 text-[12.5px] text-green">{info}</div>}
         {!bisaTulis && k && <p className="m-0 text-[12px] text-ink3" data-testid="katalog-readonly">Hanya Admin/Owner yang dapat mengubah katalog; Anda dapat melihatnya.</p>}
         {!k && !galat && <p className="text-[12.5px] text-ink3" role="status">Memuat katalog…</p>}
 
+        <RuteProduksiPanel bisaTulis={bisaTulis} />
+
         {k && belum.length > 0 && (
           <div role="status" className="space-y-1 rounded-btn bg-orangebg px-3 py-2.5 text-[12.5px] text-orange" data-testid="belum-dipetakan">
-            <p className="m-0 flex items-center gap-2 font-semibold"><AlertTriangle size={14} /> {belum.length} produk/kategori aktif belum dipetakan ke rute Produksi — order yang memakainya diblokir.</p>
+            <p className="m-0 flex items-center gap-2 font-semibold"><AlertTriangle size={14} /> {belum.length} produk/kategori aktif belum dipetakan ke rute Produksi — item yang memakainya berstatus "Menunggu penentuan alur Produksi" (mode transisi) atau ditolak (mode ketat).</p>
             <ul className="m-0 list-disc pl-8">
               {belum.slice(0, 12).map((b) => <li key={`${b.tipe}-${b.kode}`}>{b.tipe === "KATEGORI" ? "Kategori" : "Produk"} {b.nama}{b.kategori ? ` (${b.kategori})` : ""}</li>)}
             </ul>

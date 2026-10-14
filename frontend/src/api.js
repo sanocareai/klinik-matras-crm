@@ -1847,6 +1847,14 @@ export const api = {
   getPkrKatalogKelola: () => request("/finance/penjualan-karyawan/katalog-item/kelola"),
   pratinjauOrderCrmPkr: (data) => request("/finance/penjualan-karyawan/order-crm/pratinjau", { method: "POST", body: JSON.stringify(data) }),
   buatKategoriPkr: (data) => request("/finance/penjualan-karyawan/katalog-item/kategori", { method: "POST", body: JSON.stringify(data) }),
+  // Mode rute Produksi (transisi/ketat), unit "Menunggu penentuan alur Produksi", dan penerapan pemetaan kemudian.
+  getPkrRuteMode: () => request("/finance/penjualan-karyawan/rute-produksi/mode"),
+  ubahPkrRuteMode: (data) => request("/finance/penjualan-karyawan/rute-produksi/mode", { method: "PUT", body: JSON.stringify(data) }),
+  getPkrRuteMenunggu: () => request("/finance/penjualan-karyawan/rute-produksi/menunggu"),
+  pratinjauPkrRute: (orderId) => request("/finance/penjualan-karyawan/rute-produksi/pratinjau", { method: "POST", body: JSON.stringify({ orderId }) }),
+  terapkanPkrRute: (data) => request("/finance/penjualan-karyawan/rute-produksi/terapkan", { method: "POST", body: JSON.stringify(data) }),
+  // Konfirmasi kesiapan FISIK unit (pengecualian operasional Delivery, mode transisi).
+  konfirmasiKesiapanFisik: (orderId, data, idempotencyKey) => request(`/armada/orders/${orderId}/kesiapan-fisik`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey || mutationKey("kesiapan-fisik") }, body: JSON.stringify(data) }),
   ubahKategoriPkr: (id, data) => request(`/finance/penjualan-karyawan/katalog-item/kategori/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   buatProdukPkr: (data) => request("/finance/penjualan-karyawan/katalog-item/produk", { method: "POST", body: JSON.stringify(data) }),
   ubahProdukPkr: (id, data) => request(`/finance/penjualan-karyawan/katalog-item/produk/${id}`, { method: "PATCH", body: JSON.stringify(data) }),

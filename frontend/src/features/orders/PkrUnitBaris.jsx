@@ -2,6 +2,7 @@ import React from "react";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge.jsx";
 import PanelIdentitasPkr from "@/features/orders/PanelIdentitasPkr.jsx";
+import { statusAlurUnit, labelSiapFisik } from "@/features/finance/pkrRuteLogic.js";
 import {
   unitBarisOrder, ringkasUnitTeks, ringkasIndukTeks, rencanaUnitTeks, ukuranSpesifikasiTeks, rapikanUkuran, VARIAN_PRODUKSI_UNIT, varianDeliveryUnit, labelUnit,
 } from "@/features/orders/pkrUnitLogic.js";
@@ -42,10 +43,17 @@ export function TombolPerluasUnit({ order, terbuka, onToggle }) {
 }
 
 function BadgeProduksi({ u }) {
+  // Mode transisi: tampilkan SEBAB + tindakan (bukan sekadar "gagal"): alur belum dipetakan / siap fisik dikonfirmasi — status Produksi di atasnya tetap apa adanya.
+  const alur = statusAlurUnit(u);
+  const fisik = labelSiapFisik(u);
   return (
-    <Badge variant={VARIAN_PRODUKSI_UNIT[u.produksi?.kode] || "neutral"} title={u.produksi?.tahap ? `Tahap: ${u.produksi.tahap}` : undefined}>
-      {u.produksi?.label}{u.produksi?.tahap && u.produksi.kode === "IN_PRODUCTION" ? ` · ${u.produksi.tahap}` : ""}
-    </Badge>
+    <span className="inline-flex max-w-full flex-wrap items-center gap-1">
+      <Badge variant={VARIAN_PRODUKSI_UNIT[u.produksi?.kode] || "neutral"} title={u.produksi?.tahap ? `Tahap: ${u.produksi.tahap}` : undefined}>
+        {u.produksi?.label}{u.produksi?.tahap && u.produksi.kode === "IN_PRODUCTION" ? ` · ${u.produksi.tahap}` : ""}
+      </Badge>
+      {alur.menunggu && <Badge variant="orange" title={alur.tindakan || undefined} data-testid="badge-menunggu-alur">{alur.label}</Badge>}
+      {fisik && <Badge variant="accent" title={fisik} data-testid="badge-siap-fisik">Siap fisik (dikonfirmasi)</Badge>}
+    </span>
   );
 }
 
