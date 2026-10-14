@@ -79,7 +79,11 @@ export function bangunManifest(job, alat = {}) {
 
   const pkr = order?.penjualanKaryawan ?? null;
   const penjual = teks(pkr?.seller?.name);
-  const sumber = pkr ? { jenis: "PENJUALAN_KARYAWAN", penjual: penjual || null, label: `Penjualan Karyawan${penjual ? ` — dijual oleh ${penjual}` : ""}` } : null;
+  // picLead = pemilik lead customer (Customer.assignedSales) — BUKAN penjual transaksi; hanya ditampilkan bila berbeda, dengan label "PIC lead".
+  const picLeadRaw = teks(order?.customer?.assignedSales?.name);
+  const sumber = pkr
+    ? { jenis: "PENJUALAN_KARYAWAN", penjual: penjual || null, picLead: picLeadRaw && picLeadRaw !== penjual ? picLeadRaw : null, label: `Penjualan Karyawan${penjual ? ` — dijual oleh ${penjual}` : ""}` }
+    : null;
 
   // Tambahan pesanan yang BELUM masuk job ini: unit aktif satu order yang tidak tertaut ke job DELIVERY mana pun, selagi job belum berjalan. Hanya SINYAL (kebijakan Owner: unit
   // baru tidak disisipkan diam-diam ke job yang sudah dikomit; masuk lewat aksi eksplisit Kirim Sebagian/Gabung).
@@ -126,6 +130,7 @@ export function teksManifest(m, { denganRingkas = true } = {}) {
   }
   if (!m.baris.length && !adaSet) out.push("(belum ada unit tertaut pada job ini)");
   if (m.sumber) out.push(`Sumber: ${m.sumber.label}`);
+  if (m.sumber?.picLead) out.push(`PIC lead: ${m.sumber.picLead}`);
   return out;
 }
 

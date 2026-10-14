@@ -1,4 +1,5 @@
 import { decodeDriverCursor, encodeDriverCursor } from "./driverFeedV2.js";
+import { MANIFEST_UNIT_SELECT, MANIFEST_ORDER_EXTRA, MANIFEST_UNIT_LOADS } from "./deliveryManifestInclude.js";
 import {
   DRIVER_ACTIVE_ROUTE_STATUSES_V2,
   deliveryV2Checksum,
@@ -25,6 +26,8 @@ const DRIVER_V2_JOB_INCLUDE = {
       pickupConfirmedDate: true, deliveryConfirmedDate: true,
       deliveryAddress: true, deliveryCity: true, locationUrl: true,
       productLine: true, productType: true, notes: true,
+      // Manifest barang (14 Okt 2026): sumber PKR + unit order — dibaca builder manifest yang ditempel router V2.
+      ...MANIFEST_ORDER_EXTRA,
       items: { select: { layananName: true }, orderBy: { sortOrder: "asc" }, take: 1 },
       customer: {
         select: {
@@ -34,7 +37,9 @@ const DRIVER_V2_JOB_INCLUDE = {
       },
     },
   },
-  units: { select: { unitId: true, unit: { select: { id: true } } } },
+  // unit lengkap (kode/seq/merk/ukuran + item PKR) = dasar manifest di aplikasi driver; unitLoads = progres "Barang dimuat x/y".
+  units: { select: { unitId: true, unit: { select: MANIFEST_UNIT_SELECT } } },
+  unitLoads: MANIFEST_UNIT_LOADS,
 };
 
 function boundedLimit(value, fallback = 50, max = 100) {

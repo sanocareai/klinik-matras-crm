@@ -66,6 +66,8 @@ const { userRouter } = await import("../../../src/routes/users.js");
 // dipakai produksi, bukan tiruan — sama filosofi dengan router lain di file
 // ini.
 const { armadaRouter } = await import("../../../src/routes/armada.js");
+// deliveryV2Router (14 Okt 2026) — snapshot Driver V2 (jalur aplikasi RN); dipakai tes manifest/gerbang muat.
+const { deliveryV2Router } = await import("../../../src/routes/deliveryV2.js");
 const { orderRouter } = await import("../../../src/routes/orders.js");
 const { promoRouter } = await import("../../../src/routes/promos.js");
 const { customerRouter } = await import("../../../src/routes/customers.js"); // detail pelanggan memuat order + nota kredit (tes nilai bersih)
@@ -157,6 +159,7 @@ export function buildTestApp() {
   app.use("/api/users", userRouter);
   app.use("/api/mobile", mobileRouter);
   app.use("/api/armada", armadaRouter);
+  app.use("/api/armada", deliveryV2Router);
   app.use("/api/armada", incentiveSnapshotRouter);
   app.use("/api/armada", incentivePayoutRouter);
   app.use("/api/orders", orderRouter);

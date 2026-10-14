@@ -58,7 +58,7 @@ import { buildRouteSheetImage } from "../services/routeSheetImage.js";
 import { produkLineLabel, parseOrderNotesForInvoice } from "../services/invoice.js";
 import { tempelManifest, manifestJob } from "../services/deliveryManifestAttach.js";
 import { teksManifest, teksSelManifest } from "../lib/domain/deliveryManifest.js";
-import { konfirmasiMuat, progresMuat, periksaGerbangSelesai } from "../services/deliveryUnitLoad.js";
+import { konfirmasiMuat, progresMuat, periksaGerbangSelesai, modeGerbangUnit, klienMampuKonfirmasi } from "../services/deliveryUnitLoad.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import {
   SETTLED_JOB_STATUSES,
@@ -5569,6 +5569,13 @@ armadaRouter.post("/jobs/:id/unit-load", requireAnyPermission(P.JOB_WRITE, P.JOB
   } catch (err) { handleErr(err, res); }
 });
 
+// GET /api/armada/unit-load/config — mode gerbang saat ini + apakah klien PEMANGGIL ikut ditegakkan (untuk smoke/ops; tanpa data bisnis).
+armadaRouter.get("/unit-load/config", requireAnyPermission(P.JOB_READ, P.JOB_OWN_READ), (req, res) => {
+  const mode = modeGerbangUnit();
+  const mampu = klienMampuKonfirmasi(req);
+  res.json({ mode, klienMampu: mampu, ditegakkanUntukKlienIni: mode === "KETAT" || (mode === "KAPABEL" && mampu) });
+});
+
 armadaRouter.get("/jobs/:id/unit-load", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_WRITE), async (req, res) => {
   try {
     const job = await loadOwnedJob(req);
@@ -5618,7 +5625,18 @@ armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_
 
     // GERBANG UNIT (14 Okt 2026): driver tidak boleh menutup pengiriman bila ada unit job yang belum dikonfirmasi dimuat, kecuali PENGECUALIAN resmi (alasan ≥5 + audit).
     // Aktif bila DELIVERY_UNIT_CONFIRM_REQUIRED=1 (default mati sampai aplikasi driver mengirim konfirmasi muat); Admin/dispatcher (JOB_WRITE) input manual tidak terkena.
-    const gerbang = await periksaGerbangSelesai(prisma, { job: owned, pengecualian: req.body.pengecualianUnit, istimewa: hasPermission(req.user, P.JOB_WRITE) });
+    const gerbang = await periksaGerbangSelesai(prisma, { job: owned, pengecualian: req.body.pengecualianUnit, istimewa: hasPermission(req.user, P.JOB_WRITE), klienMampu: klienMampuKonfirmasi(req) });
+    if (gerbang.klienLama) {
+      // Sinyal kesiapan beralih ke mode KETAT: ada klien lama yang menutup pengiriman dengan unit belum terkonfirmasi. Nol sinyal dalam beberapa hari = aman.
+      try {
+        await prisma.deliveryExecutionEvent.create({
+          data: {
+            idempotencyKey: `${idempotencyKey}:unit-load-legacy`, action: "UNIT_LOAD_LEGACY_CLIENT", actorId: req.user.id, jobId: owned.id, routeId: owned.routeId ?? null,
+            payload: { dimuat: gerbang.progres.dimuat, total: gerbang.progres.total, userAgent: String(req.get("user-agent") ?? "").slice(0, 120) },
+          },
+        });
+      } catch (e) { if (e?.code !== "P2002") throw e; }
+    }
     if (gerbang.perlu && gerbang.pengecualian) {
       try {
         await prisma.deliveryExecutionEvent.create({

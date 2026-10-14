@@ -283,3 +283,31 @@ test("10. Order non-PKR dan Koreksi Order/Tambah Pesanan tidak menggandakan job/
   assert.equal(j.manifest.unit, 3);
   assert.equal(JSON.stringify(await testPrisma.order.findUnique({ where: { id: ob.id } })), biasaSebelum, "order non-PKR tidak berubah");
 });
+
+test("11. KASUS INDRA NYATA: dua order transaksi BERBEDA (1 unit Sano custom LUNAS + 3 unit Sorong) → bukan kandidat, pratinjau menolak, POST ditolak, data tidak berubah", async () => {
+  const w = await siapkan();
+  const { order } = await buatIndra(w);
+  // order lama gaya produksi: dibuat 40 hari sebelum PKR, merk Sano, ukuran custom, LUNAS, job PICKUP selesai
+  const o = await testPrisma.order.create({ data: { customerId: order.customerId, orderNumber: "NEW-01092026-001", status: "DELIVERED", category: "BARU", quantity: 1, value: 1_100_000, paymentStatus: "LUNAS", createdAt: new Date("2026-09-01T03:00:00Z") } });
+  const u = await testPrisma.unit.create({ data: { orderId: o.id, unitCode: "NEW-01092026-001-U1", seq: 1, merk: "Sano", ukuran: "Ukuran Custom", status: "DELIVERED" } });
+  const j = await testPrisma.job.create({ data: { type: "PICKUP", orderId: o.id, status: "COMPLETED", completedAt: new Date("2026-09-04T05:00:00Z") } });
+  await testPrisma.jobUnit.create({ data: { jobId: j.id, unitId: u.id } });
+  const sebelum = JSON.stringify(await jejak());
+  const kandidat = await w.admin.c.get(`/api/orders/${order.id}/kandidat-duplikat`);
+  assert.equal(kandidat.status, 200);
+  assert.equal(kandidat.body.kandidat.length, 0, "bukti tidak kuat → tidak ditawarkan");
+  const pra = await w.admin.c.get(`/api/orders/gabung/pratinjau?utama=${order.id}&duplikat=${o.id}`);
+  assert.equal(pra.status, 200);
+  assert.equal(pra.body.bolehDigabung, false);
+  assert.ok(pra.body.hambatan.some((h) => h.kode === "BUKTI_KURANG"));
+  assert.ok(pra.body.peringatan.some((t) => /hari SEBELUM order resmi/.test(t)), "peringatan transaksi terpisah");
+  assert.ok(pra.body.peringatan.some((t) => /hanya Pengambilan/.test(t)));
+  const paksa = await w.admin.c.post("/api/orders/gabung", { utama: order.id, duplikat: o.id, alasan: "Dipaksa walau berbeda", sidikJari: pra.body.sidikJari }, kunci());
+  assert.equal(paksa.status, 409);
+  assert.equal(JSON.stringify(await jejak()), sebelum, "tidak ada data berubah");
+  assert.equal((await testPrisma.order.findUnique({ where: { id: o.id } })).mergedIntoOrderId, null);
+  assert.equal(await testPrisma.orderMerge.count(), 0);
+  // kedua order tetap tampil sebagai pesanan aktif masing-masing
+  const daftar = (await w.admin.c.get("/api/orders?limit=100")).body.items;
+  assert.ok(daftar.some((x) => x.id === order.id) && daftar.some((x) => x.id === o.id));
+});

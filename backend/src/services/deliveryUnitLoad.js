@@ -10,7 +10,22 @@ export class UnitLoadError extends Error {
   constructor(message, statusCode = 400, code = null, extra = null) { super(message); this.name = "UnitLoadError"; this.statusCode = statusCode; this.code = code; if (extra) this.extra = extra; }
 }
 
-export const wajibKonfirmasiUnit = () => String(process.env.DELIVERY_UNIT_CONFIRM_REQUIRED ?? "") === "1";
+/**
+ * Mode gerbang (env DELIVERY_UNIT_CONFIRM_REQUIRED):
+ *   kosong/0  → MATI    : tidak ada penegakan (default).
+ *   capable   → KAPABEL : ditegakkan HANYA untuk klien yang mengumumkan kemampuan konfirmasi muat (header X-Capability: unit-load — web & RN baru).
+ *                         Klien lama (belum OTA) tetap bisa menyelesaikan; penyelesaian tanpa konfirmasi dari klien lama dicatat sebagai sinyal.
+ *   1/strict  → KETAT   : ditegakkan untuk SEMUA driver. Hanya setelah sinyal klien lama nol — klien lama akan terkunci.
+ */
+export function modeGerbangUnit(env = process.env) {
+  const v = String(env.DELIVERY_UNIT_CONFIRM_REQUIRED ?? "").trim().toLowerCase();
+  if (v === "1" || v === "strict" || v === "ketat" || v === "true") return "KETAT";
+  if (v === "capable" || v === "kapabel") return "KAPABEL";
+  return "MATI";
+}
+export const wajibKonfirmasiUnit = () => modeGerbangUnit() !== "MATI";
+/** Klien mengumumkan kemampuan konfirmasi muat lewat header "X-Capability" (daftar dipisah koma). */
+export const klienMampuKonfirmasi = (req) => /(^|[\s,;])unit-load([\s,;]|$)/i.test(String(req?.get?.("x-capability") ?? req?.headers?.["x-capability"] ?? ""));
 
 async function unitJob(db, jobId) {
   const rows = await db.jobUnit.findMany({ where: { jobId, unit: { status: { not: "CANCELLED" } } }, select: { unitId: true, unit: { select: { unitCode: true, seq: true } } }, orderBy: { unit: { seq: "asc" } } });
@@ -50,10 +65,12 @@ export async function konfirmasiMuat(db, { jobId, unitIds = null, semua = false,
  * Gerbang penyelesaian pengiriman. Mengembalikan { perlu:false } bila lolos; melempar 409 UNIT_BELUM_DIKONFIRMASI bila ada unit belum dimuat dan tidak ada pengecualian sah.
  * `pengecualian` = { alasan } (≥5 karakter). Pengecualian dikembalikan sebagai { perlu:true, pengecualian:{alasan, belum[]} } untuk dicatat pemanggil sebagai audit.
  */
-export async function periksaGerbangSelesai(db, { job, pengecualian = null, istimewa = false }) {
-  if (job.type !== "DELIVERY" || istimewa || !wajibKonfirmasiUnit()) return { perlu: false };
+export async function periksaGerbangSelesai(db, { job, pengecualian = null, istimewa = false, klienMampu = false, mode = modeGerbangUnit() }) {
+  if (job.type !== "DELIVERY" || istimewa || mode === "MATI") return { perlu: false };
   const p = await progresMuat(db, job.id);
   if (p.total === 0 || p.lengkap) return { perlu: false, progres: p };
+  // Mode KAPABEL: klien lama tidak ditolak (belum punya layar konfirmasi) — kembalikan sinyal untuk dicatat.
+  if (mode === "KAPABEL" && !klienMampu) return { perlu: false, progres: p, klienLama: true };
   const alasan = String(pengecualian?.alasan ?? "").trim().replace(/\s+/g, " ");
   if (alasan.length >= 5) return { perlu: true, progres: p, pengecualian: { alasan: alasan.slice(0, 500), belum: p.belum.map((u) => u.label) } };
   throw new UnitLoadError(

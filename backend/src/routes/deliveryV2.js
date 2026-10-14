@@ -2,6 +2,7 @@ import express from "express";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
+import { tempelManifest } from "../services/deliveryManifestAttach.js";
 import {
   acknowledgeDriverCursor,
   readDriverDelta,
@@ -17,6 +18,12 @@ import {
 
 export const deliveryV2Router = express.Router();
 deliveryV2Router.use(requireAuth);
+// Manifest barang (14 Okt 2026): jalur V2 (aplikasi RN) memakai builder yang SAMA dengan /armada/* — angka sama di web, WA, sheet, dan driver.
+deliveryV2Router.use((req, res, next) => {
+  const kirim = res.json.bind(res);
+  res.json = (body) => kirim(tempelManifest(body));
+  next();
+});
 
 async function requireDriverV2Reader(req, res, next) {
   try {

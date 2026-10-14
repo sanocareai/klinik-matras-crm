@@ -174,7 +174,7 @@ export async function terapkanGabung(tx, { utama, duplikat, alasan, idempotencyK
   return { replayed: false, penggabunganId: baris.id, utama: ida.orderNumber, duplikat: idb.orderNumber, sebelum, sesudah };
 }
 
-/** Kandidat duplikat untuk satu order utama: order lain customer/HP sama yang belum digabung & bukan PKR. Hanya daftar bukti; tidak ada penerapan otomatis. */
+/** Kandidat duplikat untuk satu order utama: order lain customer/HP sama yang belum digabung & bukan PKR, DAN buktinya kuat. Hanya daftar bukti; tidak ada penerapan otomatis. */
 export async function kandidatDuplikat(db, { orderId }) {
   const o = await muatOrder(db, orderId);
   if (!o) throw gagal("Order tidak ditemukan", 404);
@@ -189,6 +189,8 @@ export async function kandidatDuplikat(db, { orderId }) {
   const hasil = [];
   for (const l of lain) {
     const a = await analisisGabung(db, { utama: o.id, duplikat: l.id });
+    // Hanya pasangan dengan bukti duplikat KUAT yang ditawarkan (customer/HP sama + barang serupa + konteks PKR). Order lain milik customer yang sama = transaksi berbeda, tidak diusulkan.
+    if (!a.cukup) continue;
     hasil.push({ duplikat: a.duplikat, bukti: a.bukti, cukup: a.cukup, bolehDigabung: a.bolehDigabung, hambatan: a.hambatan.map((h) => h.kode) });
   }
   return { utama: o.orderNumber, kandidat: hasil };
