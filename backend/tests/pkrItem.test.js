@@ -74,7 +74,7 @@ test("himpunan: kosong, duplikat persis (gabungkan via jumlah), batas total unit
   assert.deepEqual(validasiHimpunan([a, beda]), { totalUnit: 2 });
   const besar = item("KASUR", { jumlah: MAKS_UNIT_ORDER, produkNama: "X" }, 1);
   const lagi = item("DIVAN", { jumlah: 1, produkNama: "Y" }, 2);
-  assert.throws(() => validasiHimpunan([besar, lagi]), /Total jumlah unit 21 melebihi batas 20/);
+  assert.throws(() => validasiHimpunan([besar, lagi]), /Total jumlah unit 201 melebihi batas 200/);
 });
 
 test("turunan tingkat order: kategori (semua BARU -> BARU; semua LAYANAN -> LAYANAN; campuran -> CAMPURAN), dikirim (ada true -> true; semua false -> false; selain itu null), peringatan campuran", () => {
@@ -162,7 +162,7 @@ test("bundel: komponen dihilangkan -> semua komponen kosong (order boleh dibuat,
   assert.throws(() => pecahBundel({ jumlah: 1, komponen: [{}] }, KOMPOSISI), (e) => e.code === "KOMPONEN_BUNDEL_TIDAK_SESUAI");
   assert.throws(() => pecahBundel({ jumlah: 1, komponen: [{ kategori: "DIVAN_BOX" }, {}, {}] }, KOMPOSISI), (e) => e.code === "KOMPONEN_BUNDEL_TIDAK_SESUAI");
   assert.throws(() => pecahBundel({ jumlah: 0 }, KOMPOSISI), /Jumlah set/);
-  assert.throws(() => pecahBundel({ jumlah: 21 }, KOMPOSISI), /Jumlah set/);
+  assert.throws(() => pecahBundel({ jumlah: 201 }, KOMPOSISI), /Jumlah set/);
 });
 
 test("bundel: dua set identik ditolak (gabungkan lewat Jumlah set); komponen set tidak dianggap duplikat dengan item mandiri yang sama", () => {

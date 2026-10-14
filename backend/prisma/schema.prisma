@@ -114,6 +114,9 @@ enum LeadSource {
   // lewat workspace B2B (routes/b2b.js), BUKAN "OTHER" — supaya bisa
   // disaring terpisah di Dashboard/Laporan sumber lead, jujur soal asalnya.
   B2B_DIRECT
+  // Customer AKTUAL yang lahir dari Penjualan Karyawan (Okt 2026) — pembeli/penerima sebenarnya (mis. Bpk. Indra), BUKAN karyawan penjual dan bukan lead Sales.
+  // Dikecualikan dari funnel/lead/pipeline/komisi Sales seperti B2B_DIRECT, tetapi tampil di daftar Pelanggan dengan sumber ini supaya laporan bisa memisahkannya.
+  PENJUALAN_KARYAWAN
   // Deprecated — jangan digunakan di kode baru, dijaga untuk kompatibilitas data lama
   ADS
   WEBSITE
@@ -1359,6 +1362,14 @@ model Order {
   // pesan WA (gampang hilang begitu chat discroll), sekarang jadi field
   // sendiri supaya selalu ketemu dari Order-nya langsung.
   locationUrl String? @map("location_url")
+
+  // PENJUALAN KARYAWAN → CUSTOMER AKTUAL (Okt 2026): identitas PENERIMA/pemenuhan yang boleh berbeda dari pembeli (Order.customerId), plus catatan per divisi.
+  // Semuanya OPSIONAL dan hanya diisi order PKR; order biasa tetap NULL. Tidak ada nominal di sini — nominal PKR hanya di ledger Finance.
+  recipientName    String? @map("recipient_name")
+  recipientPhone   String? @map("recipient_phone")
+  deliveryLandmark String? @map("delivery_landmark") // patokan lokasi (mis. "depan minimarket, pagar hitam")
+  productionNote   String? @map("production_note") // catatan untuk Produksi
+  deliveryNote     String? @map("delivery_note") // catatan untuk Delivery/Driver
 
   // D-026 (20 Agustus 2026) — tracking kampanye promo (mis. "Merdeka dari
   // Sakit Pinggang", diskon hingga 17%). SENGAJA cuma PENANDA, bukan mesin

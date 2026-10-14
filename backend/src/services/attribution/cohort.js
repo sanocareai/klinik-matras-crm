@@ -28,6 +28,7 @@ const jum = (obj, f) => Object.values(obj).reduce((s, x) => s + f(x), 0);
 export function alasanBukanLead(c) {
   if (c.pipelineStage === "SPAM") return "SPAM";
   if (c.leadSource === "B2B_DIRECT") return "B2B_DIRECT";
+  if (c.leadSource === "PENJUALAN_KARYAWAN") return "PENJUALAN_KARYAWAN";
   if (c.isInternalStaff) return "INTERNAL_STAFF";
   if (c.staffUserId) return "PROFIL_KARYAWAN";
   return null;

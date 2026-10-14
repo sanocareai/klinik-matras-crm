@@ -24,6 +24,7 @@ export const PAID_AT_BACKFILL_31_AGT = new Date("2026-08-31T05:35:57.201Z");
 export const LEAD_EXCLUSION = Object.freeze({
   SPAM: "pipelineStage = SPAM (sama dengan custWhereKonversi di analytics.js)",
   B2B_DIRECT: "leadSource = B2B_DIRECT (sama dengan custWhereFunnel)",
+  PENJUALAN_KARYAWAN: "leadSource = PENJUALAN_KARYAWAN (pembeli aktual Penjualan Karyawan, bukan lead Sales)",
   INTERNAL_STAFF: "isInternalStaff = true (nomor tim sendiri)",
   PROFIL_KARYAWAN: "staffUserId terisi (profil internal Penjualan Karyawan)",
 });

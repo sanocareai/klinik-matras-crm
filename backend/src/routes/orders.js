@@ -39,6 +39,8 @@ import { cancelOrderDeliveryJobs } from "../services/deliveryJobCancellationServ
 import { hitungDiskonPromo, periksaBatasDiskon } from "../services/diskonPromo.js";
 import { blokirBilaOrderPkr } from "../services/pkrGuard.js";
 import { ringkasOrderPkr } from "../services/penjualanKaryawanOrder.js";
+import { proyeksiIdentitas } from "../lib/domain/pkrIdentitas.js";
+import { pratinjauKoreksiPembeli, terapkanKoreksiPembeli, KOLOM_IZIN } from "../services/penjualanKaryawanPembeliKoreksi.js";
 import { bacaNotesOrder } from "../lib/domain/pkrSpesifikasi.js";
 import { V2_FLAGS } from "../services/v2FeatureFlags.js";
 import { ACTIVE_JOB_STATUSES } from "../services/jobStatus.js";
@@ -94,8 +96,17 @@ orderRouter.patch("/:id", async (req, res, next) => {
     if (typeof b.notes === "string") {
       const lama = await prisma.order.findUnique({ where: { id: req.params.id }, select: { penjualanKaryawanId: true, notes: true } });
       const cermin = lama?.penjualanKaryawanId ? bacaNotesOrder(lama.notes).pkrItems : null;
+      // Kunci identitas PKR (rujukan PKR, snapshot pembeli, penanda "pembeli adalah karyawan") TIDAK boleh hilang karena edit catatan dari CRM — kalau hilang,
+      // order yang sah bisa tampak sebagai data legacy. Dipertahankan dari notes lama untuk SEMUA order PKR.
+      if (lama?.penjualanKaryawanId && b.notes.trim().startsWith("{")) {
+        const lamaNotes = bacaNotesOrder(lama.notes);
+        const baru = bacaNotesOrder(b.notes);
+        let berubah = false;
+        for (const k of ["pkrNomor", "pembeliPkr", "pembeliKaryawan", "pkrNonProduksi"]) if (lamaNotes[k] !== undefined && baru[k] === undefined) { baru[k] = lamaNotes[k]; berubah = true; }
+        if (berubah) req.body.notes = JSON.stringify(baru);
+      }
       if (Array.isArray(cermin) && cermin.length) {
-        const masuk = bacaNotesOrder(b.notes);
+        const masuk = bacaNotesOrder(req.body.notes);
         if (!b.notes.trim().startsWith("{") || Object.keys(masuk).length === 0 && b.notes.trim() !== "{}") {
           return res.status(409).json({ error: "Catatan order Penjualan Karyawan berformat terstruktur. Ubah spesifikasi item di Finance › Penjualan Karyawan.", code: "NOTES_PKR_TERSTRUKTUR" });
         }
@@ -1134,6 +1145,44 @@ orderRouter.post("/:id/payments/:paymentId/cancel", async (req, res) => {
 
 const UNIT_STATUS_VALID = ["AWAITING_PICKUP", "IN_TRANSIT_IN", "RECEIVED", "IN_PRODUCTION", "READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD", "IN_TRANSIT_OUT", "DELIVERED", "CANCELLED"];
 
+// ── Koreksi data pembeli/penerima/alamat/catatan order PKR dari workspace Produksi/Delivery (jalur sempit) ────────────────────
+// Finance/Admin (FINANCE_POST) = semua kolom; Delivery (JOB_WRITE) = penerima/alamat/Maps/patokan/catatan Delivery; Produksi (UNIT_STAGE_WRITE) = catatan Produksi saja.
+// Layanan yang sama dengan jalur Finance (pratinjau + alasan + Idempotency-Key + revisi optimistis + audit); kolom di luar izin → 403. Tidak ada harga/jurnal/order baru.
+function kolomIzinPkr(user) {
+  if (hasPermission(user, P.FINANCE_POST)) return { kolom: null };
+  const set = new Set();
+  if (hasPermission(user, P.JOB_WRITE)) KOLOM_IZIN.DELIVERY.forEach((k) => set.add(k));
+  if (hasPermission(user, P.UNIT_STAGE_WRITE)) KOLOM_IZIN.PRODUKSI.forEach((k) => set.add(k));
+  return set.size ? { kolom: [...set] } : null;
+}
+async function pkrIdDariOrder(orderId) {
+  const o = await prisma.order.findUnique({ where: { id: orderId }, select: { penjualanKaryawanId: true } });
+  return o?.penjualanKaryawanId ?? null;
+}
+orderRouter.post("/:id/pkr/koreksi-pembeli/pratinjau", async (req, res) => {
+  try {
+    const izin = kolomIzinPkr(req.user);
+    if (!izin) return res.status(403).json({ error: "Peran Anda tidak boleh mengoreksi data pembeli/pengiriman order Penjualan Karyawan" });
+    const pkrId = await pkrIdDariOrder(req.params.id);
+    if (!pkrId) return res.status(404).json({ error: "Order ini bukan order Penjualan Karyawan" });
+    res.json(await pratinjauKoreksiPembeli(prisma, { penjualanId: pkrId, masukan: req.body || {}, kolomIzin: izin.kolom }));
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.statusCode ? err.message : "Terjadi kesalahan di server", ...(err.code && typeof err.code === "string" && { code: err.code }) }); }
+});
+orderRouter.post("/:id/pkr/koreksi-pembeli", async (req, res) => {
+  try {
+    const izin = kolomIzinPkr(req.user);
+    if (!izin) return res.status(403).json({ error: "Peran Anda tidak boleh mengoreksi data pembeli/pengiriman order Penjualan Karyawan" });
+    const pkrId = await pkrIdDariOrder(req.params.id);
+    if (!pkrId) return res.status(404).json({ error: "Order ini bukan order Penjualan Karyawan" });
+    const { alasan, expectedRevision, ...masukan } = req.body || {};
+    const hasil = await prisma.$transaction((tx) => terapkanKoreksiPembeli(tx, {
+      penjualanId: pkrId, masukan, expectedRevision, alasan, idempotencyKey: req.headers["idempotency-key"], userId: req.user.id, kolomIzin: izin.kolom,
+    }), { timeout: 30000, maxWait: 10000 });
+    if (!hasil.replayed) for (const cid of hasil.customerIds ?? []) await syncCustomerOrderAggregate(cid);
+    res.status(hasil.replayed ? 200 : 201).json(hasil);
+  } catch (err) { res.status(err.statusCode || 500).json({ error: err.statusCode ? err.message : "Terjadi kesalahan di server", ...(err.code && typeof err.code === "string" && { code: err.code }), ...(err.extra && typeof err.extra === "object" && err.extra) }); }
+});
+
 // ── GET /api/orders — DAFTAR order (order-centric) ────────────────────────
 // Sebelumnya TIDAK ADA endpoint daftar order sama sekali: order hanya bisa
 // dibuat/diedit lewat profil customer, jadi pertanyaan operasional paling
@@ -1230,6 +1279,10 @@ orderRouter.get("/", async (req, res) => {
               { units: { some: { unitCode: { contains: search, mode: "insensitive" } } } },
               { penjualanKaryawan: { is: { nomor: { contains: search, mode: "insensitive" } } } },
               { penjualanKaryawan: { is: { buyerName: { contains: search, mode: "insensitive" } } } },
+              // Karyawan penjual (mis. "Kemal") dan penerima pemenuhan ikut dicari — konteksnya beda dari nama customer/pembeli.
+              { penjualanKaryawan: { is: { seller: { name: { contains: search, mode: "insensitive" } } } } },
+              { recipientName: { contains: search, mode: "insensitive" } },
+              { recipientPhone: { contains: search } },
             ],
           });
         }
@@ -1504,8 +1557,24 @@ orderRouter.get("/", async (req, res) => {
     // Penjualan Karyawan: lampirkan ringkasan (nomor PKR, status bayar dari LEDGER PKR, spesifikasi, produksi, delivery). Nominal hanya untuk yang berizin Finance.
     const idPkr = items.filter((i) => i.penjualanKaryawanId).map((i) => i.penjualanKaryawanId);
     if (idPkr.length) {
-      const ringkas = await ringkasOrderPkr(prisma, idPkr, { izinNominal: hasPermission(req.user, P.FINANCE_READ) });
+      const ringkas = await ringkasOrderPkr(prisma, idPkr, {
+        izinNominal: hasPermission(req.user, P.FINANCE_READ),
+        // Status pembayaran PKR = informasi harga: hanya peran berizin harga/Finance. Produksi/Gudang/Driver tidak menerimanya.
+        izinPembayaran: hasPermission(req.user, P.FINANCE_READ) || hasPermission(req.user, P.ORDER_PRICE_READ),
+      });
       for (const it of items) if (it.penjualanKaryawanId) it.penjualanKaryawan = ringkas.get(it.penjualanKaryawanId) ?? null;
+      // Identitas customer KANONIS (lib/domain/pkrIdentitas.js): kolom Pelanggan = pembeli sebenarnya, BUKAN karyawan penjual. Order legacy (masih profil karyawan) memakai
+      // snapshot nama pembeli PKR + penanda "Data customer belum lengkap"; nomor telepon profil karyawan tidak ditampilkan sebagai nomor pembeli.
+      for (const it of items) {
+        const id = it.penjualanKaryawan?.identitas;
+        if (!id) continue;
+        it.customerName = id.customer.nama ?? it.customerName;
+        if (id.legacy) it.customerPhone = null;
+      }
+      // Privasi per audiens: peran tanpa izin harga/Finance menerima proyeksi sesuai kebutuhan kerja (Produksi: tanpa telepon/alamat; Delivery: tanpa keluhan/catatan Produksi).
+      const lihatPenuh = hasPermission(req.user, P.FINANCE_READ) || hasPermission(req.user, P.ORDER_PRICE_READ);
+      const audiens = lihatPenuh ? "CRM" : rolesOf(req.user).some((r) => ["DISPATCHER", "DRIVER", "HELPER"].includes(r)) ? "DELIVERY" : "PRODUKSI";
+      if (audiens !== "CRM") for (const it of items) if (it.penjualanKaryawan?.identitas) it.penjualanKaryawan.identitas = proyeksiIdentitas(it.penjualanKaryawan.identitas, audiens);
     }
 
     // Milestone global tingkat ORDER (Fase 2): unit aktif yang paling tertinggal + rincian progres; read-model berbasis bukti, Order.status lama TETAP ada di atas.

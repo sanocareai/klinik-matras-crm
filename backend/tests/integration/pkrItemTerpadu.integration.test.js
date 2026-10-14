@@ -303,7 +303,7 @@ test("koreksi baris ATOMIK: salah satu bagian gagal -> tidak ada yang berubah (t
   const a = await w.finance.c.post(`${BASE}/${p.id}/koreksi-baris`, { operasi: [{ op: "ubah", no: 1, harga: 9_000_000 }, { op: "ubah", no: 9, jumlah: 2 }], expectedRevision: 1, alasan: "Uji atomik bagian A" }, kunci());
   assert.equal(a.status, 404);
   // (b) harga valid + jumlah menembus batas unit -> gagal di bagian operasional SESUDAH Finance berubah di memori transaksi
-  const b = await w.finance.c.post(`${BASE}/${p.id}/koreksi-baris`, { operasi: [{ op: "ubah", no: 1, harga: 9_000_000, jumlah: 25 }], expectedRevision: 1, alasan: "Uji atomik bagian B" }, kunci());
+  const b = await w.finance.c.post(`${BASE}/${p.id}/koreksi-baris`, { operasi: [{ op: "ubah", no: 1, harga: 9_000_000, jumlah: 250 }], expectedRevision: 1, alasan: "Uji atomik bagian B" }, kunci());
   assert.ok(b.status >= 400, JSON.stringify(b.body));
   // (c) pembayaran aktif melebihi total baru
   const bayar = await w.finance.c.post(`${BASE}/${p.id}/pembayaran`, { method: "TRANSFER", amount: 5_000_000, date: "2026-10-03", cashAccountId: w.bank.id }, kunci());

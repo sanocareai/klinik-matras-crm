@@ -11,11 +11,12 @@
 // Modul ini sengaja kecil: hanya membaca order dan mengembalikan pesan; pemanggil melempar galat sesuai jenisnya (StageTransitionError, planError, rencanaError).
 import { bacaSpesifikasiPkr, PESAN_SPEK_BELUM_LENGKAP } from "../lib/domain/pkrSpesifikasi.js";
 import { bacaItemsDariNotes, kelengkapanItem } from "../lib/domain/pkrItem.js";
+import { identitasPkr, proyeksiIdentitas } from "../lib/domain/pkrIdentitas.js";
 
 /** Kolom Order yang dibutuhkan untuk menilai kelengkapan + menampilkan rujukan PKR. Dipakai ulang oleh select bacaan (backlog, daftar, Unit 360). */
 export const PKR_ORDER_SELECT = Object.freeze({
-  penjualanKaryawanId: true, notes: true, pkrPerluDikirim: true, deliveryAddress: true, deliveryCity: true,
-  penjualanKaryawan: { select: { nomor: true, buyerName: true, seller: { select: { id: true, name: true } } } },
+  penjualanKaryawanId: true, customerId: true, notes: true, pkrPerluDikirim: true, deliveryAddress: true, deliveryCity: true, productionNote: true,
+  penjualanKaryawan: { select: { nomor: true, buyerName: true, seller: { select: { id: true, name: true, customerInternal: { select: { id: true } } } } } },
 });
 
 /** Relasi Unit -> item PKR (untuk kelengkapan per item). Tambahkan ke select unit di pembaca yang menilai kelengkapan per unit. */
@@ -39,6 +40,12 @@ export function kelengkapanUntukUnit(order, unit = null) {
   return { lengkap: spek.lengkap, kurang: spek.kurang, perluDikirim: spek.perluDikirim, perItem: false };
 }
 
+/** Nama customer + status legacy dari baris Order (customer boleh tidak dimuat → jatuh ke snapshot pembeli PKR). */
+function identitasMinim(order) {
+  const id = identitasPkr(order);
+  return { customerNama: id?.customer?.nama ?? order.penjualanKaryawan?.buyerName ?? null, legacy: Boolean(id?.legacy) };
+}
+
 /**
  * Rujukan PKR ringkas dari baris Order (select PKR_ORDER_SELECT). null untuk order biasa. TIDAK membawa nominal.
  * `unit` (opsional, dengan PKR_UNIT_ITEM_SELECT) = nilai kelengkapan untuk unit itu (per item); tanpa unit = seluruh order.
@@ -50,7 +57,8 @@ export function rujukanPkrDariOrder(order, { unit = null } = {}) {
   const u = kelengkapanUntukUnit(order, unit);
   return {
     penjualanId: order.penjualanKaryawanId, nomor: order.penjualanKaryawan?.nomor ?? null, karyawan: order.penjualanKaryawan?.seller?.name ?? null,
-    pembeli: order.penjualanKaryawan?.buyerName ?? null, perluDikirim: u.perluDikirim,
+    // Identitas customer kanonis (lib/domain/pkrIdentitas.js): legacy → snapshot pembeli PKR; selain itu nama Customer aktual bila dimuat. Proyeksi PRODUKSI: tanpa telepon/alamat.
+    pembeli: identitasMinim(order).customerNama, identitas: proyeksiIdentitas(identitasPkr(order), "PRODUKSI"), perluDikirim: u.perluDikirim,
     kirimLabel: u.perluDikirim === true ? "Dikirim" : u.perluDikirim === false ? "Ambil sendiri" : "Belum ditentukan",
     lengkap: u.lengkap, kurang: u.kurang, perItem: u.perItem, lengkapOrder: spek.lengkap,
     // Order multi-item: ringkasan item (dari cerminan Order.notes.pkrItems). null untuk order lama satu-spesifikasi.

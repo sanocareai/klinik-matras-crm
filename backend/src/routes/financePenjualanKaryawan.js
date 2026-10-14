@@ -35,6 +35,8 @@ import { pratinjauKoreksi, terapkanKoreksi } from "../services/penjualanKaryawan
 import { siapkanTerpadu, tulisBarisPenjualan, pratinjauTerpadu } from "../services/penjualanKaryawanTerpadu.js";
 import { pratinjauKoreksiBaris, terapkanKoreksiBaris } from "../services/penjualanKaryawanKoreksiBaris.js";
 import { adaModeTerpadu } from "../lib/domain/pkrPenjualanItem.js";
+import { cariCustomerTelepon } from "../services/penjualanKaryawanPembeli.js";
+import { pratinjauKoreksiPembeli, terapkanKoreksiPembeli, dryRunPembeliLegacy, riwayatPerubahanPkr } from "../services/penjualanKaryawanPembeliKoreksi.js";
 
 export const financePenjualanKaryawanRouter = express.Router();
 const BASE = "/penjualan-karyawan";
@@ -125,6 +127,16 @@ financePenjualanKaryawanRouter.get(`${BASE}/order-crm/dry-run`, requirePermissio
   } catch (e) { handleFinanceError(e, res); }
 });
 
+// ─── PEMBELI AKTUAL (Okt 2026): cari customer lewat nomor + dry-run relasi legacy ──────────────────────────────────────────
+// Lookup HANYA membaca. Dedupe customer satu-satunya lewat nomor telepon ternormalisasi (nama sama bukan bukti orang yang sama).
+financePenjualanKaryawanRouter.get(`${BASE}/pembeli/cari`, requirePermission(P.FINANCE_POST), async (req, res) => {
+  try { res.json(await cariCustomerTelepon(prisma, req.query.telepon)); } catch (e) { handleFinanceError(e, res); }
+});
+// Dry-run (baca-saja): order PKR yang masih menunjuk profil internal karyawan + data apa yang tersedia/kosong. TIDAK ada backfill otomatis.
+financePenjualanKaryawanRouter.get(`${BASE}/pembeli/dry-run`, requirePermission(P.FINANCE_READ), async (req, res) => {
+  try { res.json(await dryRunPembeliLegacy(prisma, { batas: Math.min(Math.max(parseInt(req.query.limit, 10) || 500, 1), 2000) })); } catch (e) { handleFinanceError(e, res); }
+});
+
 // ─── KATALOG ITEM PRODUKSI + PRATINJAU ORDER (multi-item) ────────────────────────────────────────────────────────────
 // Katalog = data yang dikelola Admin (izin khusus pkr_catalog:manage — Owner/Admin; peran biasa hanya membaca/memilih); form membaca yang AKTIF + definisi bentuk isian. Pratinjau hanya MEMBACA: apa yang akan dibuat (unit, pickup, pengiriman,
 // kelengkapan) dengan fungsi yang sama dengan pembuatan — masukan salah dikembalikan sebagai { valid:false, galat } supaya layar menampilkannya, bukan error HTTP.
@@ -213,6 +225,32 @@ financePenjualanKaryawanRouter.post(`${BASE}/:id/koreksi-baris`, requirePermissi
   } catch (e) { handleFinanceError(e, res); }
 });
 
+// ─── KOREKSI PEMBELI / KONTAK / ALAMAT / CATATAN + LENGKAPI-TAUTKAN CUSTOMER (order legacy) ────────────────────────────────────
+// Tidak membuat Order/Unit/Job/Payment/invoice/jurnal. Pratinjau = fungsi hitung yang SAMA dengan penerapan. Alasan + Idempotency-Key + expectedRevision wajib.
+financePenjualanKaryawanRouter.post(`${BASE}/:id/koreksi-pembeli/pratinjau`, requirePermission(P.FINANCE_POST), async (req, res) => {
+  try {
+    res.json(await pratinjauKoreksiPembeli(prisma, { penjualanId: req.params.id, masukan: req.body || {} }));
+  } catch (e) { handleFinanceError(e, res); }
+});
+
+financePenjualanKaryawanRouter.post(`${BASE}/:id/koreksi-pembeli`, requirePermission(P.FINANCE_POST), async (req, res) => {
+  try {
+    const { alasan, expectedRevision, ...masukan } = req.body || {};
+    const hasil = await prisma.$transaction((tx) => terapkanKoreksiPembeli(tx, {
+      penjualanId: req.params.id, masukan, expectedRevision, alasan, idempotencyKey: req.headers["idempotency-key"], userId: req.user.id,
+    }), { timeout: 30000, maxWait: 10000 });
+    if (!hasil.replayed) for (const cid of hasil.customerIds ?? []) await rapikanAgregatCustomer(cid);
+    const lengkap = await prisma.finPenjualanKaryawan.findUnique({ where: { id: req.params.id }, include: penjualanInclude });
+    const sinkron = await ringkasOrderPkr(prisma, [req.params.id]);
+    res.status(hasil.replayed ? 200 : 201).json({ ...hasil, penjualan: bentukPenjualan(lengkap), sinkron: sinkron.get(req.params.id) ?? null });
+  } catch (e) { handleFinanceError(e, res); }
+});
+
+// Riwayat perubahan (sebelum/sesudah, pelaku, alasan). Baris Finance (nama/harga) hanya untuk yang berizin Finance.
+financePenjualanKaryawanRouter.get(`${BASE}/:id/riwayat`, requirePermission(P.FINANCE_READ), async (req, res) => {
+  try { res.json(await riwayatPerubahanPkr(prisma, req.params.id, { izinFinance: true })); } catch (e) { handleFinanceError(e, res); }
+});
+
 financePenjualanKaryawanRouter.get(`${BASE}/:id`, requirePermission(P.FINANCE_READ), async (req, res) => {
   try {
     const p = await prisma.finPenjualanKaryawan.findUnique({ where: { id: req.params.id }, include: penjualanInclude });
@@ -257,11 +295,14 @@ financePenjualanKaryawanRouter.post(BASE, requirePermission(P.FINANCE_POST), asy
         metadata: { aksi: "dicatat", seller: seller.name, buyerName: pembeli, total: String(totalDok), jumlahItem: terpadu ? s.baris.length : baris.length, ...(terpadu && { terpadu: true }) },
       });
       // PKR aktif = "disetujui" (tidak ada langkah persetujuan terpisah): lahirkan SATU order CRM operasional (+ unit) di transaksi yang sama. Gagal di mana pun = PKR, jurnal, dan order batal bersama.
-      if (!terpadu) await buatAtauTautkanOrder(tx, { penjualanId: id, userId: req.user.id, spesifikasi: req.body?.orderCrm, sumber: "dibuat" });
+      if (!terpadu) await buatAtauTautkanOrder(tx, { penjualanId: id, userId: req.user.id, spesifikasi: req.body?.orderCrm, sumber: "dibuat", pembeli: req.body?.pembeli ?? null, pemenuhan: req.body?.orderCrm ?? null });
       else if (s.opItems.length) {
         // Hanya alamat/kota/tanggal kirim dari orderCrm; daftar item operasional = turunan baris penjualan yang sama. Tanpa item Produksi/Pickup, Order CRM tidak dibuat.
         const { alamat, kota, tanggalKirim } = req.body?.orderCrm ?? {};
-        await buatAtauTautkanOrder(tx, { penjualanId: id, userId: req.user.id, spesifikasi: { alamat, kota, tanggalKirim }, sumber: "dibuat", itemsSiap: s.opItems, nonProduksi: s.nonProduksi });
+        await buatAtauTautkanOrder(tx, {
+          penjualanId: id, userId: req.user.id, spesifikasi: { alamat, kota, tanggalKirim }, sumber: "dibuat", itemsSiap: s.opItems, nonProduksi: s.nonProduksi,
+          pembeli: req.body?.pembeli ?? null, pemenuhan: req.body?.orderCrm ?? null,
+        });
       }
       for (const b of bayar) await catatPembayaran(tx, id, b, req.user.id);
       return id;
@@ -278,6 +319,7 @@ financePenjualanKaryawanRouter.post(`${BASE}/:id/order-crm`, requirePermission(P
   try {
     const hasil = await prisma.$transaction((tx) => buatAtauTautkanOrder(tx, {
       penjualanId: req.params.id, userId: req.user.id, spesifikasi: req.body?.spesifikasi ?? req.body?.orderCrm, orderId: req.body?.orderId || null, sumber: "dibuat_lama",
+      pembeli: req.body?.pembeli ?? null, pemenuhan: req.body?.spesifikasi ?? req.body?.orderCrm ?? null,
     }), { timeout: 30000, maxWait: 10000 });
     const sinkron = await ringkasOrderPkr(prisma, [req.params.id]);
     res.status(hasil.dibuat ? 201 : 200).json({ ...hasil, sinkron: sinkron.get(req.params.id) ?? null });

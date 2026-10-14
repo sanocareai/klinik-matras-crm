@@ -9,7 +9,9 @@
 
 export const JENIS_KERJA = Object.freeze({ BARU: "BARU", LAYANAN: "LAYANAN" });
 export const MAKS_ITEM = 20;
-export const MAKS_UNIT_ORDER = 20; // sama dengan batas lama jumlah unit satu order PKR
+// Penjualan karyawan lazim 1 jenis barang dalam jumlah banyak (3, belasan, puluhan) — batas dinaikkan dari 20 menjadi 200 unit per order/item (Okt 2026).
+// Cermin: DB CHECK pkr_order_items_qty_chk (migrasi 20261109090200) dan frontend/src/features/finance/pkrItemLogic.js#MAKS_UNIT. Ubah KETIGANYA bersama.
+export const MAKS_UNIT_ORDER = 200;
 export const MAKS_DIMENSI_CM = 1000;
 export const SPEK_MIN_CUSTOM = 5;
 export const SPEK_MAKS = 1000;

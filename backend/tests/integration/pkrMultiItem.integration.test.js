@@ -197,8 +197,8 @@ test("validasi: duplikat persis, custom tanpa spesifikasi, kategori/produk tidak
   await tolak({ items: [{ kategori: "CUSTOM_LAINNYA", jumlah: 1 }] }, "SPESIFIKASI_CUSTOM_WAJIB");
   await tolak({ items: [{ kategori: "TIDAK_ADA", jumlah: 1 }] }, "KATEGORI_WAJIB");
   await tolak({ items: [] }, "ITEM_KOSONG");
-  await tolak({ items: [{ ...KASUR, jumlah: 21 }] }, "ITEM_PKR_TIDAK_VALID", /Jumlah harus bilangan bulat 1–20/);
-  await tolak({ items: [{ ...KASUR, jumlah: 20 }, DIVAN] }, "UNIT_TERLALU_BANYAK", /melebihi batas 20/);
+  await tolak({ items: [{ ...KASUR, jumlah: 201 }] }, "ITEM_PKR_TIDAK_VALID", /Jumlah harus bilangan bulat 1–200/);
+  await tolak({ items: [{ ...KASUR, jumlah: 200 }, DIVAN] }, "UNIT_TERLALU_BANYAK", /melebihi batas 200/);
   await tolak({ items: [{ ...SANDARAN, panjang: 200 }] }, "ITEM_PKR_TIDAK_VALID", /Panjang tidak dipakai untuk sandaran/);
   await tolak({ items: [{ ...KASUR, lebar: "-3" }] }, "ITEM_PKR_TIDAK_VALID");
   await tolak({ items: [KASUR], merk: "Sano" }, "SPEK_CAMPUR", /tidak bisa dipakai bersama daftar item/);
@@ -771,7 +771,7 @@ test("koreksi: order lama (tanpa daftar item) ditolak dengan arahan; hasil akhir
   assert.equal(semua.status, 409); assert.equal(semua.body.code, "SEMUA_ITEM_DIHAPUS");
   const dup = await KOREKSI(w, p.id, { operasi: [{ op: "tambah", item: KASUR }], expectedRevision: 1, alasan: "Tambah kasur sama" });
   assert.equal(dup.status, 400); assert.equal(dup.body.code, "ITEM_DUPLIKAT");
-  const banyak = await KOREKSI(w, p.id, { operasi: [{ op: "ubah", no: 1, jumlah: 21 }], expectedRevision: 1, alasan: "Terlalu banyak" });
+  const banyak = await KOREKSI(w, p.id, { operasi: [{ op: "ubah", no: 1, jumlah: 201 }], expectedRevision: 1, alasan: "Terlalu banyak" });
   assert.equal(banyak.status, 400);
   const kat = await KOREKSI(w, p.id, { operasi: [{ op: "ubah", no: 1, kategori: "DIVAN_BOX" }], expectedRevision: 1, alasan: "Ganti kategori" });
   assert.equal(kat.status, 409); assert.equal(kat.body.code, "KATEGORI_TIDAK_BISA_DIUBAH");

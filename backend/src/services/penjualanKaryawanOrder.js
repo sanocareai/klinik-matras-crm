@@ -33,7 +33,10 @@ import {
 } from "./penjualanKaryawanItem.js";
 import { revisiTerakhir } from "./pkrItemRevisi.js";
 import { LABEL_UNIT, LABEL_JOB, susunBarisUnitPkr } from "../lib/domain/pkrUnitBaris.js";
-import { kategoriOrderDariItems, perluDikirimDariItems, itemVirtualLama } from "../lib/domain/pkrItem.js";
+import { bacaPembeli, bacaPemenuhan } from "../lib/domain/pkrPembeli.js";
+import { identitasPkr, proyeksiIdentitas, PKR_IDENTITAS_SELECT } from "../lib/domain/pkrIdentitas.js";
+import { customerAktualUntukPkr } from "./penjualanKaryawanPembeli.js";
+import { MAKS_UNIT_ORDER, kategoriOrderDariItems, perluDikirimDariItems, itemVirtualLama } from "../lib/domain/pkrItem.js";
 
 import { PkrOrderError, tolakJikaOrderPkr } from "./pkrGuard.js";
 export { PkrOrderError, tolakJikaOrderPkr };
@@ -67,7 +70,7 @@ export function normalisasiSpesifikasi(m = {}) {
   let jumlahUnit;
   if (o.jumlahUnit !== undefined && o.jumlahUnit !== null && o.jumlahUnit !== "") {
     jumlahUnit = Number(o.jumlahUnit);
-    if (!Number.isInteger(jumlahUnit) || jumlahUnit < 1 || jumlahUnit > 20) throw gagal("Jumlah unit harus bilangan bulat 1–20");
+    if (!Number.isInteger(jumlahUnit) || jumlahUnit < 1 || jumlahUnit > MAKS_UNIT_ORDER) throw gagal(`Jumlah unit harus bilangan bulat 1–${MAKS_UNIT_ORDER}`);
   }
   let perluDikirim;
   if (o.perluDikirim !== undefined && o.perluDikirim !== null && o.perluDikirim !== "") {
@@ -83,13 +86,18 @@ export function normalisasiSpesifikasi(m = {}) {
   };
 }
 
-const susunNotes = ({ merk, ukuran, pkr, catatan }) => JSON.stringify({
-  ...(merk && { merkKasur: merk }), ...(ukuran && { ukuranKasur: ukuran }),
+// Keluhan/catatan order + penanda "pembeli adalah karyawan" (jalur eksplisit; tanpa penanda ini profil karyawan dianggap data legacy).
+const ekstraNotes = (e = {}) => ({
+  ...(e.keluhan && { keluhanCustomer: e.keluhan }), ...(e.catatanOrder && { catatanOrder: e.catatanOrder }), ...(e.pembeliKaryawan && { pembeliKaryawan: true }),
+});
+
+const susunNotes = ({ merk, ukuran, pkr, catatan, ekstra }) => JSON.stringify({
+  ...(merk && { merkKasur: merk }), ...(ukuran && { ukuranKasur: ukuran }), ...ekstraNotes(ekstra),
   pkrNomor: pkr.nomor, pembeliPkr: pkr.buyerName, catatan: `Penjualan Karyawan ${pkr.nomor} — penjual ${pkr.seller.name}, pembeli ${pkr.buyerName}${catatan ? `. ${catatan}` : ""}`,
 });
 
-const susunNotesItems = ({ items, pkr, catatan, nonProduksi = [] }) => JSON.stringify({
-  pkrItems: susunCerminan(items),
+const susunNotesItems = ({ items, pkr, catatan, nonProduksi = [], ekstra }) => JSON.stringify({
+  pkrItems: susunCerminan(items), ...ekstraNotes(ekstra),
   // Item penjualan tanpa unit (Ambil dari Stok / Tanpa Operasional): nama + jumlah + cara pemenuhan, TANPA harga — supaya Gudang/CRM tahu apa yang dijual bersama pekerjaan ini.
   ...(nonProduksi.length && { pkrNonProduksi: nonProduksi }),
   pkrNomor: pkr.nomor, pembeliPkr: pkr.buyerName, catatan: `Penjualan Karyawan ${pkr.nomor} — penjual ${pkr.seller.name}, pembeli ${pkr.buyerName}${catatan ? `. ${catatan}` : ""}`,
@@ -114,6 +122,28 @@ export async function profilCustomerKaryawan(tx, sellerId) {
   return { customer, baru: true };
 }
 
+/**
+ * Customer pemilik order: pembeli AKTUAL (dikenali lewat nomor) atau profil internal karyawan (jalur eksplisit "Pembeli adalah karyawan" / klien lama tanpa `pembeli`).
+ * Dipanggil di dalam transaksi pemanggil (kunci PKR sudah dipegang).
+ */
+async function customerUntukPkr(tx, pkr, pembeli, { kota = null, userId = null } = {}) {
+  if (pembeli.mode === "AKTUAL") {
+    const r = await customerAktualUntukPkr(tx, { nama: pkr.buyerName, telepon: pembeli.telepon, kota, userId });
+    return { customer: r.customer, mode: "AKTUAL", customerBaru: r.dibuat, namaBeda: r.namaBeda };
+  }
+  const { customer } = await profilCustomerKaryawan(tx, pkr.sellerId);
+  return { customer, mode: pembeli.mode, customerBaru: false, namaBeda: null };
+}
+
+// Bagian pemenuhan yang dipetakan ke KOLOM order yang SAMA dengan order Sales (locationUrl, pickupEstimate, deliveryEstimate) + kolom penerima/catatan baru.
+const bodyPemenuhan = (f) => ({
+  ...(f.lokasiUrl && { locationUrl: f.lokasiUrl }), ...(f.waktuPickup && { pickupEstimate: f.waktuPickup }), ...(f.waktuKirim && { deliveryEstimate: f.waktuKirim }),
+});
+const dataPemenuhan = (f) => ({
+  ...(f.penerima?.nama && { recipientName: f.penerima.nama }), ...(f.penerima?.telepon && { recipientPhone: f.penerima.telepon }),
+  ...(f.patokan && { deliveryLandmark: f.patokan }), ...(f.catatanProduksi && { productionNote: f.catatanProduksi }), ...(f.catatanDelivery && { deliveryNote: f.catatanDelivery }),
+});
+
 async function muatPkr(tx, penjualanId) {
   await lockRowForUpdate(tx, '"fin_penjualan_karyawan"', penjualanId);
   const pkr = await tx.finPenjualanKaryawan.findUnique({
@@ -130,9 +160,13 @@ async function muatPkr(tx, penjualanId) {
  * Buat SATU order CRM untuk PKR (atau tautkan order kosong yang sudah ada). Dipanggil di DALAM transaksi pemanggil. Idempoten: bila PKR sudah punya order, mengembalikannya (`dibuat:false`).
  * `orderId` (opsional) menautkan order yang SUDAH ada — hanya bila benar-benar kosong secara keuangan (tanpa nilai, item, pembayaran, invoice, atau tautan lain).
  */
-export async function buatAtauTautkanOrder(tx, { penjualanId, userId = null, spesifikasi = {}, orderId = null, sumber = "dibuat", itemsSiap = null, nonProduksi = [] }) {
+export async function buatAtauTautkanOrder(tx, { penjualanId, userId = null, spesifikasi = {}, orderId = null, sumber = "dibuat", itemsSiap = null, nonProduksi = [], pembeli = null, pemenuhan = null }) {
   const pkr = await muatPkr(tx, penjualanId);
   const spek = normalisasiSpesifikasi(spesifikasi);
+  // Validasi masukan pembeli/pemenuhan SEBELUM menulis apa pun (nomor, link Maps, penerima).
+  const pmb = bacaPembeli(pembeli);
+  const pem = bacaPemenuhan(pemenuhan ?? spesifikasi);
+  const ekstra = { keluhan: pem.keluhan, catatanOrder: pem.catatanOrder, pembeliKaryawan: pmb.mode === "KARYAWAN" };
   // Jalur TERPADU: item operasional sudah disiapkan dari baris penjualan yang sama (penjualanKaryawanTerpadu.js) — tidak ada daftar item kedua.
   if (itemsSiap) spek.items = itemsSiap;
   if (pkr.orderCrm) {
@@ -151,17 +185,17 @@ export async function buatAtauTautkanOrder(tx, { penjualanId, userId = null, spe
   if (spek.items !== undefined) {
     if (orderId) throw gagal("Daftar item tidak bisa dipakai untuk menautkan order yang sudah ada — buat order baru atau tautkan tanpa daftar item", 400, "ITEM_TIDAK_UNTUK_TAUTAN");
     const items = itemsSiap ?? await siapkanItems(tx, spek.items);
-    const { customer } = await profilCustomerKaryawan(tx, pkr.sellerId);
+    const { customer, mode, customerBaru, namaBeda } = await customerUntukPkr(tx, pkr, pmb, { kota: spek.kota, userId });
     const totalUnit = items.reduce((a, i) => a + i.jumlah, 0);
     const kategoriOrder = kategoriOrderDariItems(items);
     const order = await createOrderForCustomer(customer.id, {
       category: kategoriOrder, unitCount: 0, quantity: totalUnit, productLine: productLineDariItems(items),
-      notes: susunNotesItems({ items, pkr, catatan: pkr.notes, nonProduksi }),
+      notes: susunNotesItems({ items, pkr, catatan: pkr.notes, nonProduksi, ekstra }),
       ...(spek.alamat && { deliveryAddress: spek.alamat }), ...(spek.kota && { deliveryCity: spek.kota }),
-      ...(spek.tanggalKirim && { deliveryConfirmedDate: spek.tanggalKirim }),
+      ...(spek.tanggalKirim && { deliveryConfirmedDate: spek.tanggalKirim }), ...bodyPemenuhan(pem),
     }, userId, {
       tx, tanpaInvoice: true,
-      dataTambahan: { salesOwnerId: null, penjualanKaryawanId: pkr.id, pkrPerluDikirim: perluDikirimDariItems(items) },
+      dataTambahan: { salesOwnerId: null, penjualanKaryawanId: pkr.id, pkrPerluDikirim: perluDikirimDariItems(items), ...dataPemenuhan(pem) },
     });
     const lahir = await lahirkanItemDanUnit(tx, { pkrId: pkr.id, orderId: order.id, items, userId });
     const akhir = await tx.order.findUnique({ where: { id: order.id }, select: { notes: true, deliveryAddress: true, deliveryCity: true, pkrPerluDikirim: true } });
@@ -171,9 +205,10 @@ export async function buatAtauTautkanOrder(tx, { penjualanId, userId = null, spe
         orderNumber: order.orderNumber, kategori: kategoriOrder, jumlahUnit: totalUnit, unit: lahir.flatMap((x) => x.unit),
         item: items.map((i) => ({ no: i.no, kategori: i.kategoriCode, produk: i.produkNama, jumlah: i.jumlah, kirim: i.perluDikirim, ...(i.bundleNo != null && { set: i.bundleNo }) })),
         spesifikasi: bacaSpesifikasiPkr(akhir).lengkap ? "lengkap" : "perlu dilengkapi",
+        pembeli: { mode, customerId: customer.id, customerBaru, ...(namaBeda && { namaCustomerTersimpan: namaBeda }), penerimaBerbeda: Boolean(pem.penerima?.nama) },
       },
     });
-    return { orderId: order.id, orderNumber: order.orderNumber, dibuat: true, nomor: pkr.nomor, customerId: customer.id, item: lahir };
+    return { orderId: order.id, orderNumber: order.orderNumber, dibuat: true, nomor: pkr.nomor, customerId: customer.id, customerBaru, namaBeda, item: lahir };
   }
 
   if (orderId) {
@@ -196,21 +231,24 @@ export async function buatAtauTautkanOrder(tx, { penjualanId, userId = null, spe
   const kategori = spek.kategori ?? "BARU";
   const jumlahUnit = spek.jumlahUnit ?? 1;
   // Pemilik order = profil Customer internal karyawan penjual (satu per karyawan, dipakai ulang). Tanpa nomor/IG, tanpa sales, ditandai tag. Tidak ada percakapan/pipeline sales.
-  const { customer } = await profilCustomerKaryawan(tx, pkr.sellerId);
+  const { customer, mode, customerBaru, namaBeda } = await customerUntukPkr(tx, pkr, pmb, { kota: spek.kota, userId });
   const order = await createOrderForCustomer(customer.id, {
     category: kategori, unitCount: jumlahUnit, quantity: jumlahUnit,
-    notes: susunNotes({ merk: spek.merk, ukuran: spek.ukuran, pkr, catatan: pkr.notes }),
+    notes: susunNotes({ merk: spek.merk, ukuran: spek.ukuran, pkr, catatan: pkr.notes, ekstra }),
     ...(spek.alamat && { deliveryAddress: spek.alamat }), ...(spek.kota && { deliveryCity: spek.kota }),
-    ...(spek.tanggalKirim && { deliveryConfirmedDate: spek.tanggalKirim }),
+    ...(spek.tanggalKirim && { deliveryConfirmedDate: spek.tanggalKirim }), ...bodyPemenuhan(pem),
   }, userId, {
     tx, tanpaInvoice: true,
-    dataTambahan: { salesOwnerId: null, penjualanKaryawanId: pkr.id, pkrPerluDikirim: spek.perluDikirim ?? null },
+    dataTambahan: { salesOwnerId: null, penjualanKaryawanId: pkr.id, pkrPerluDikirim: spek.perluDikirim ?? null, ...dataPemenuhan(pem) },
   });
   await catatAudit(tx, {
     pkr, orderId: order.id, userId, aksi: sumber,
-    metadata: { orderNumber: order.orderNumber, kategori, jumlahUnit, unit: (order.units || []).map((u) => u.unitCode), spesifikasi: bacaSpesifikasiPkr(order).lengkap ? "lengkap" : "perlu dilengkapi" },
+    metadata: {
+      orderNumber: order.orderNumber, kategori, jumlahUnit, unit: (order.units || []).map((u) => u.unitCode), spesifikasi: bacaSpesifikasiPkr(order).lengkap ? "lengkap" : "perlu dilengkapi",
+      pembeli: { mode, customerId: customer.id, customerBaru, ...(namaBeda && { namaCustomerTersimpan: namaBeda }), penerimaBerbeda: Boolean(pem.penerima?.nama) },
+    },
   });
-  return { orderId: order.id, orderNumber: order.orderNumber, dibuat: true, nomor: pkr.nomor, customerId: customer.id };
+  return { orderId: order.id, orderNumber: order.orderNumber, dibuat: true, nomor: pkr.nomor, customerId: customer.id, customerBaru, namaBeda };
 }
 
 async function catatAudit(tx, { pkr, orderId, userId, aksi, metadata = {} }) {
@@ -382,14 +420,14 @@ function statusDelivery(order, jobs, units) {
  * Ringkasan sinkronisasi per PKR untuk layar Finance/CRM: order, spesifikasi, unit, produksi, delivery, dan status pembayaran DARI LEDGER PKR (bukan dari Order).
  * `izinNominal=false` membuang total/terbayar/sisa (tampilan Sales/Produksi/Delivery).
  */
-export async function ringkasOrderPkr(db, penjualanIds, { izinNominal = true } = {}) {
+export async function ringkasOrderPkr(db, penjualanIds, { izinNominal = true, izinPembayaran = izinNominal } = {}) {
   if (!penjualanIds.length) return new Map();
   const pkrs = await db.finPenjualanKaryawan.findMany({
     where: { id: { in: penjualanIds } },
     include: {
       seller: { select: { id: true, name: true } },
       payments: { where: { cancelledAt: null }, select: { amount: true } },
-      orderCrm: { include: { pkrItems: { where: ITEM_AKTIF, orderBy: { seq: "asc" }, include: { units: { select: { unit: { select: { unitCode: true, status: true } } } } } }, units: { orderBy: { seq: "asc" }, select: { id: true, unitCode: true, seq: true, status: true, currentStageId: true, merk: true, ukuran: true, productionDueAt: true, currentStage: { select: { labelId: true } },
+      orderCrm: { include: { customer: { select: { id: true, name: true, phone: true, staffUserId: true, leadSource: true } }, pkrItems: { where: ITEM_AKTIF, orderBy: { seq: "asc" }, include: { units: { select: { unit: { select: { unitCode: true, status: true } } } } } }, units: { orderBy: { seq: "asc" }, select: { id: true, unitCode: true, seq: true, status: true, currentStageId: true, merk: true, ukuran: true, productionDueAt: true, currentStage: { select: { labelId: true } },
           // Rencana produksi V2 terbaru + job pengiriman yang menaungi unit (representasi multi-unit Order CRM).
           productionRunsV2: { where: { status: { not: "CANCELLED" } }, orderBy: { createdAt: "desc" }, take: 1, select: { status: true, plan: { select: { status: true, productionDate: true, targetDate: true, stationCode: true, operator: { select: { user: { select: { name: true } } } }, cornerOperator: { select: { user: { select: { name: true } } } } } } } },
           jobUnits: { select: { job: { select: { id: true, type: true, status: true, scheduledDate: true, createdAt: true } } } } } },
@@ -403,7 +441,8 @@ export async function ringkasOrderPkr(db, penjualanIds, { izinNominal = true } =
     const batal = p.status === "DIBATALKAN";
     const sisa = batal ? ZERO : total.minus(terbayar);
     const statusBayar = batal ? "DIBATALKAN" : sisa.lessThanOrEqualTo(0) ? "LUNAS" : terbayar.greaterThan(0) ? "SEBAGIAN" : "BELUM_BAYAR";
-    const pembayaran = { status: statusBayar, label: LABEL_PEMBAYARAN[statusBayar], sumber: "Penjualan Karyawan (Finance)", ...(izinNominal && { total: moneyToNumber(total), terbayar: moneyToNumber(batal ? ZERO : terbayar), sisa: moneyToNumber(sisa) }) };
+    // Status pembayaran PKR hanya untuk yang berizin harga (Finance/Sales/Admin). Produksi/Gudang/Driver TIDAK menerimanya sama sekali (null).
+    const pembayaran = !izinPembayaran ? null : { status: statusBayar, label: LABEL_PEMBAYARAN[statusBayar], sumber: "Penjualan Karyawan (Finance)", ...(izinNominal && { total: moneyToNumber(total), terbayar: moneyToNumber(batal ? ZERO : terbayar), sisa: moneyToNumber(sisa) }) };
     const o = p.orderCrm;
     if (!o) { hasil.set(p.id, { penjualanId: p.id, nomor: p.nomor, statusPkr: p.status, penjual: p.seller, pembeli: p.buyerName, pembayaran, order: null }); continue; }
     const spek = bacaSpesifikasiPkr(o);
@@ -423,6 +462,7 @@ export async function ringkasOrderPkr(db, penjualanIds, { izinNominal = true } =
     const unitBaris = susunBarisUnitPkr({ order: { status: o.status, pkrPerluDikirim: o.pkrPerluDikirim }, units: o.units, items, jobsOrder: o.jobs.map((j) => ({ ...j, unitIds: j.units.map((x) => x.unitId) })) });
     hasil.set(p.id, {
       penjualanId: p.id, nomor: p.nomor, statusPkr: p.status, penjual: p.seller, pembeli: p.buyerName, pembayaran,
+      identitas: identitasPkr({ ...o, penjualanKaryawan: { nomor: p.nomor, buyerName: p.buyerName, seller: p.seller } }),
       order: { id: o.id, nomor: o.orderNumber, status: o.status, statusLabel: LABEL_ORDER[o.status] || o.status, kategori: o.category, spesifikasi: spek, modeItem, revisi, nonProduksi: bacaNotesOrder(o.notes).pkrNonProduksi ?? [] },
       items,
       units: o.units.map((u) => ({ id: u.id, kode: u.unitCode, status: u.status, label: LABEL_UNIT[u.status] || u.status, merk: u.merk, ukuran: u.ukuran })),
@@ -448,6 +488,13 @@ export async function dryRunPkrTanpaOrder(db, { batas = 200 } = {}) {
 export async function rujukanPkrPerOrder(db, orderIds) {
   const ids = [...new Set((orderIds || []).filter(Boolean))];
   if (!ids.length) return new Map();
-  const rows = await db.order.findMany({ where: { id: { in: ids }, penjualanKaryawanId: { not: null } }, select: { id: true, pkrPerluDikirim: true, penjualanKaryawan: { select: { id: true, nomor: true, buyerName: true, seller: { select: { name: true } } } } } });
-  return new Map(rows.map((r) => [r.id, { penjualanId: r.penjualanKaryawan.id, nomor: r.penjualanKaryawan.nomor, penjual: r.penjualanKaryawan.seller.name, perluDikirim: r.pkrPerluDikirim }]));
+  const rows = await db.order.findMany({ where: { id: { in: ids }, penjualanKaryawanId: { not: null } }, select: { ...PKR_IDENTITAS_SELECT, id: true, pkrPerluDikirim: true } });
+  // Proyeksi DELIVERY: nama/telepon penerima, alamat, Maps, patokan, catatan Delivery — tanpa nominal, tanpa keluhan/catatan Produksi.
+  return new Map(rows.map((r) => {
+    const id = identitasPkr(r);
+    return [r.id, {
+      penjualanId: r.penjualanKaryawanId, nomor: r.penjualanKaryawan.nomor, penjual: r.penjualanKaryawan.seller.name, perluDikirim: r.pkrPerluDikirim,
+      pembeli: id.customer.nama, identitas: proyeksiIdentitas(id, "DELIVERY"),
+    }];
+  }));
 }
