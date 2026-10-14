@@ -201,7 +201,7 @@ harus_ditolak "fungsi liar" "$(tambah_stmt 'CREATE FUNCTION "evil"() RETURNS tri
 harus_ditolak "trigger dimatikan" "$(tambah_stmt 'ALTER TABLE "pkr_item_revisions" DISABLE TRIGGER ALL;')"
 [ "$NEG" -ge 20 ] || die "uji negatif pemindai hanya ${NEG} mutan (minimal 20)"
 ok "uji negatif pemindai: ${NEG} mutan migrasi (DROP/UPDATE/DELETE/INSERT/TRUNCATE/ALTER COLUMN/RENAME/jenis liar/CHECK longgar/constraint lain/tabel-indeks-FK baru/GRANT/trigger/fungsi) SEMUANYA ditolak"
-ok "kandidat ${DEPLOY_SHORT} turunan baseline ${BASE_SHA:0:8} dan origin/main ${MAIN_SHA:0:8}; $(printf '%s\n' "$CHANGED" | wc -l) berkas dalam allowlist eksplisit (termasuk 4 migrasi aditif)"
+ok "kandidat ${DEPLOY_SHORT} turunan baseline ${BASE_SHA:0:8} dan origin/main ${MAIN_SHA:0:8}; $(printf '%s\n' "$CHANGED" | wc -l) berkas dalam allowlist eksplisit (termasuk 1 migrasi aditif)"
 
 PHASE="2-audit-produksi"; say "2. Audit produksi aktif (baca-saja)"
 CID_OLD="$(docker ps -q --filter "label=com.docker.compose.project=${PROJECT}" --filter "label=com.docker.compose.service=backend")"
