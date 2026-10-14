@@ -351,7 +351,7 @@ export async function lengkapiSpesifikasi(tx, { penjualanId, userId = null, masu
 /** Hambatan pembatalan: Produksi atau Delivery sudah berjalan. Daftar kosong = aman dibatalkan lewat jalur baku. */
 export async function hambatanPembatalan(tx, orderId) {
   const [units, jobs, revisi, order] = await Promise.all([
-    tx.unit.findMany({ where: { orderId, status: { not: "CANCELLED" } }, select: { unitCode: true, status: true, currentStageId: true } }),
+    tx.unit.findMany({ where: { orderId, status: { not: "CANCELLED" } }, select: { id: true, unitCode: true, status: true, currentStageId: true } }),
     tx.job.findMany({ where: { orderId, status: { in: STATUS_JOB_BERJALAN } }, select: { type: true, status: true } }),
     tx.scopeRevision.count({ where: { orderId } }),
     tx.order.findUnique({ where: { id: orderId }, select: { status: true } }),
@@ -359,10 +359,63 @@ export async function hambatanPembatalan(tx, orderId) {
   const h = [];
   const mulai = units.filter((u) => u.currentStageId != null || !STATUS_UNIT_AWAL.includes(u.status));
   if (mulai.length) h.push(`Produksi atau pengiriman sudah berjalan pada unit ${mulai.map((u) => u.unitCode).join(", ")}`);
+  // Mode rute transisi + manifest Delivery: unit bisa sudah SIAP/DIMUAT secara fisik sementara status Produksinya masih awal (kesiapan fisik dicatat sebagai event, bukan status).
+  // Barang yang sudah ada/dimuat tidak boleh "hilang" lewat pembatalan PKR — arahkan ke alur resmi, sama seperti Produksi berjalan.
+  const idAwal = units.filter((u) => !mulai.includes(u)).map((u) => u.id);
+  if (idAwal.length) {
+    const fisik = await bacaSiapFisik(tx, idAwal);
+    const fisikAwal = units.filter((u) => fisik.has(u.id) && !mulai.includes(u));
+    if (fisikAwal.length) h.push(`Kesiapan fisik sudah dikonfirmasi pada unit ${fisikAwal.map((u) => u.unitCode).join(", ")} (barang sudah ada)`);
+    const dimuat = await tx.jobUnitLoad.findMany({ where: { unitId: { in: idAwal } }, select: { unitId: true } });
+    const idDimuat = new Set(dimuat.map((x) => x.unitId));
+    const unitDimuat = units.filter((u) => idDimuat.has(u.id) && !mulai.includes(u));
+    if (unitDimuat.length) h.push(`Unit ${unitDimuat.map((u) => u.unitCode).join(", ")} sudah dikonfirmasi dimuat pada job Delivery`);
+  }
   if (jobs.length) h.push(`${jobs.length} job Delivery sudah berjalan (${[...new Set(jobs.map((j) => j.status))].join(", ")})`);
   if (revisi > 0) h.push(`${revisi} revisi lingkup kerja`);
   if (order?.status === "DELIVERED") h.push("order sudah selesai");
   return h;
+}
+
+/**
+ * Pratinjau pembatalan PKR (baca-saja): hambatan BERKODE + ringkasan pembayaran aktif, supaya layar menjelaskan SEBELUM pengguna mengirim.
+ * Pembayaran TIDAK pernah dibatalkan/dikembalikan otomatis oleh pembatalan PKR: Finance menanganinya lebih dulu lewat Riwayat Pembayaran.
+ * Dipakai juga di dalam transaksi pembatalan (di bawah kunci) sehingga yang diblokir = yang dipratinjau.
+ */
+export async function pratinjauPembatalan(db, penjualanId) {
+  const p = await db.finPenjualanKaryawan.findUnique({
+    where: { id: penjualanId },
+    select: { id: true, nomor: true, status: true, total: true, buyerName: true, payments: { where: { cancelledAt: null }, select: { amount: true } }, orderCrm: { select: { id: true, orderNumber: true, status: true } } },
+  });
+  if (!p) throw gagal("Penjualan karyawan tidak ditemukan", 404, "PKR_TIDAK_ADA");
+  const hambatan = [];
+  const bayarN = p.payments.length;
+  const bayarTotal = bayarN ? sumMoney(p.payments.map((x) => x.amount)) : ZERO;
+  if (p.status === "DIBATALKAN") hambatan.push({ kode: "SUDAH_DIBATALKAN", pesan: `${p.nomor} sudah dibatalkan.`, tindakan: null });
+  if (bayarN > 0 && p.status !== "DIBATALKAN") {
+    hambatan.push({
+      kode: "PEMBAYARAN_AKTIF", tindakan: "RIWAYAT_PEMBAYARAN",
+      pesan: `Sudah ada ${bayarN} pembayaran aktif (total Rp${moneyToNumber(bayarTotal).toLocaleString("id-ID")}). Pembayaran TIDAK dibatalkan atau dikembalikan otomatis oleh pembatalan penjualan — Finance menanganinya lebih dulu lewat Riwayat Pembayaran (batalkan pembayaran yang salah, atau proses pengembalian dana sesuai prosedur), baru penjualan ini bisa dibatalkan.`,
+    });
+  }
+  const o = p.orderCrm;
+  if (o && o.status !== "CANCELLED" && p.status !== "DIBATALKAN") {
+    for (const pesan of await hambatanPembatalan(db, o.id)) {
+      hambatan.push({ kode: "PRODUKSI_DELIVERY_BERJALAN", tindakan: "ALUR_ORDER", pesan: `${pesan}. Gunakan alur pembatalan resmi order (Kendali/Admin) — order, unit, job, dan jurnal tidak dihapus.` });
+    }
+  }
+  return {
+    penjualanId: p.id, nomor: p.nomor, statusPkr: p.status, pembeli: p.buyerName,
+    total: moneyToNumber(toMoney(p.total)),
+    pembayaranAktif: { jumlah: bayarN, total: moneyToNumber(bayarTotal) },
+    order: o ? { id: o.id, nomor: o.orderNumber, status: o.status } : null,
+    boleh: hambatan.length === 0, hambatan,
+    akanTerjadi: hambatan.length ? [] : [
+      "Jurnal penjualan dibalik (riwayat jurnal tetap tersimpan).",
+      o && o.status !== "CANCELLED" ? `Order CRM ${o.orderNumber} dan semua unitnya dibatalkan; job yang belum berjalan dibatalkan.` : "Tidak ada order CRM yang perlu dibatalkan.",
+      "Tidak ada pembayaran yang diubah (memang tidak ada pembayaran aktif).",
+    ],
+  };
 }
 
 /**

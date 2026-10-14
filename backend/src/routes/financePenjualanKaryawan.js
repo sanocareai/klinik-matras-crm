@@ -29,7 +29,7 @@ import { penjualanInclude, bentukPenjualan, hitungItems, ambilDaftar, ringkasanP
 import { pastikanKaryawanNonSales } from "../services/penjualanKaryawan.js";
 import { handleFinanceError } from "./finance.js";
 import { lockRowForUpdate } from "../services/inventoryLedger.js";
-import { buatAtauTautkanOrder, lengkapiSpesifikasi, batalkanOrderBersamaPkr, rapikanAgregatCustomer, ringkasOrderPkr, dryRunPkrTanpaOrder } from "../services/penjualanKaryawanOrder.js";
+import { buatAtauTautkanOrder, lengkapiSpesifikasi, batalkanOrderBersamaPkr, rapikanAgregatCustomer, ringkasOrderPkr, dryRunPkrTanpaOrder, pratinjauPembatalan, PkrOrderError } from "../services/penjualanKaryawanOrder.js";
 import { muatKatalogItem, pratinjauItems, buatKategori, ubahKategori, buatProduk, ubahProduk, simpanKomposisi } from "../services/penjualanKaryawanItem.js";
 import { pratinjauKoreksi, terapkanKoreksi } from "../services/penjualanKaryawanKoreksi.js";
 import { siapkanTerpadu, tulisBarisPenjualan, pratinjauTerpadu } from "../services/penjualanKaryawanTerpadu.js";
@@ -297,6 +297,11 @@ financePenjualanKaryawanRouter.post(`${BASE}/:id/koreksi-order`, requirePermissi
 });
 
 // Riwayat perubahan (sebelum/sesudah, pelaku, alasan). Baris Finance (nama/harga) hanya untuk yang berizin Finance.
+// Pratinjau pembatalan (baca-saja): hambatan berkode + pembayaran aktif + apa yang akan terjadi. Dipakai modal pembatalan SEBELUM pengguna mengirim.
+financePenjualanKaryawanRouter.get(`${BASE}/:id/pembatalan`, requirePermission(P.FINANCE_READ), async (req, res) => {
+  try { res.json(await pratinjauPembatalan(prisma, req.params.id)); } catch (e) { handleFinanceError(e, res); }
+});
+
 financePenjualanKaryawanRouter.get(`${BASE}/:id/riwayat`, requirePermission(P.FINANCE_READ), async (req, res) => {
   try { res.json(await riwayatPerubahanPkr(prisma, req.params.id, { izinFinance: true })); } catch (e) { handleFinanceError(e, res); }
 });
@@ -422,15 +427,22 @@ financePenjualanKaryawanRouter.post(`${BASE}/:id/pembayaran/:pid/batal`, require
 // ─── BATALKAN PENJUALAN ──────────────────────────────────────────────────
 financePenjualanKaryawanRouter.post(`${BASE}/:id/batal`, requirePermission(P.FINANCE_ADMIN), async (req, res) => {
   try {
-    const reason = req.body?.reason?.trim();
+    const reason = String(req.body?.reason ?? "").trim().replace(/\s+/g, " ");
     if (!reason) throw err("Alasan pembatalan wajib diisi");
+    if (reason.length > 500) throw err("Alasan pembatalan maksimal 500 karakter");
     let customerOrder = null;
     await prisma.$transaction(async (tx) => {
       await lockRowForUpdate(tx, '"fin_penjualan_karyawan"', req.params.id);
+      // Pemeriksaan di bawah kunci memakai fungsi YANG SAMA dengan pratinjau: yang diblokir = yang dijelaskan modal. Tidak ada pembayaran yang dibatalkan/dikembalikan otomatis.
+      const pv = await pratinjauPembatalan(tx, req.params.id);
+      if (!pv.boleh) {
+        const sudah = pv.hambatan.find((h) => h.kode === "SUDAH_DIBATALKAN");
+        throw new PkrOrderError(
+          sudah ? "Penjualan ini sudah dibatalkan" : `Penjualan ${pv.nomor} belum bisa dibatalkan. ${pv.hambatan.map((h) => h.pesan).join(" ")}`,
+          409, pv.hambatan[0].kode, { hambatan: pv.hambatan, pembayaranAktif: pv.pembayaranAktif },
+        );
+      }
       const p = await tx.finPenjualanKaryawan.findUnique({ where: { id: req.params.id }, include: { payments: { where: { cancelledAt: null } } } });
-      if (!p) throw err("Penjualan karyawan tidak ditemukan", 404);
-      if (p.status === "DIBATALKAN") throw err("Penjualan ini sudah dibatalkan", 409);
-      if (p.payments.length > 0) throw err("Penjualan ini sudah ada pembayarannya — batalkan pembayarannya dulu", 409);
       // Order CRM: belum diproses → ikut dibatalkan lewat jalur baku (unit CANCELLED, job dibatalkan, riwayat tetap). Produksi/Delivery sudah berjalan → pembatalan DIBLOKIR (409), tidak ada yang berubah.
       customerOrder = await batalkanOrderBersamaPkr(tx, { penjualanId: p.id, userId: req.user.id, alasan: reason });
       const entry = await entriPenjualanAktif(tx, p.id); // jurnal asli, atau pengganti terakhir bila nilai pernah dikoreksi

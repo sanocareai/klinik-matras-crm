@@ -28,6 +28,7 @@ import { RingkasOrderCrm, ModalOrderCrm, useKatalogPkr } from "@/features/financ
 import { ModalKoreksiItem } from "@/features/finance/PkrKoreksiItem.jsx";
 import { ModalKoreksiBaris } from "@/features/finance/PkrKoreksiBaris.jsx";
 import { ModalKoreksiOrderPkr } from "@/features/finance/KoreksiOrderPkr.jsx";
+import { ModalBatalPkr, ModalAlasan } from "@/features/finance/PkrBatalModal.jsx";
 import { aksiOrderCrm } from "@/features/finance/pkrOrderCrmLogic.js";
 import { penjualanKosong, bodyPenjualanTerpadu, galatItemPenjualan, totalPenjualan, totalUnitItems, adaItemDikirim, punyaUnitPemenuhan } from "@/features/finance/pkrItemLogic.js";
 import {
@@ -79,6 +80,8 @@ export default function FinancePenjualanKaryawan() {
   const [koreksiOrderUntuk, setKoreksiOrderUntuk] = useState(null); // { p, jenis } — Koreksi Order resmi (perbaikan salah input / tambahan permintaan)
   const [editCustomerUntuk, setEditCustomerUntuk] = useState(null); // penjualan yang data customernya diedit/dilengkapi
   const [riwayatPkrUntuk, setRiwayatPkrUntuk] = useState(null); // penjualan yang riwayat perubahannya dibuka
+  const [batalUntuk, setBatalUntuk] = useState(null); // penjualan yang akan dibatalkan (modal: pratinjau server + alasan)
+  const [batalBayarUntuk, setBatalBayarUntuk] = useState(null); // { penjualan, pay } pembayaran yang akan dibatalkan (modal alasan)
   const admin = adminSaatIni();
 
   const muat = useCallback(async (opsi) => {
@@ -112,12 +115,6 @@ export default function FinancePenjualanKaryawan() {
   const ringkasan = data?.ringkasan;
   const riwayat = daftar.find((p) => p.id === riwayatId) || null;
 
-  function batalkanPenjualan(p) {
-    const alasan = window.prompt(`Alasan membatalkan ${p.nomor}? Jurnalnya akan dibalik (pembayaran yang sudah ada harus dibatalkan dulu).`);
-    if (alasan?.trim()) return aksi(() => api.batalPenjualanKaryawan(p.id, alasan.trim()));
-    return undefined;
-  }
-
   function aksiBaris(p) {
     const bisaBayar = p.statusTampil === "BELUM_BAYAR" || p.statusTampil === "SEBAGIAN";
     const ac = aksiOrderCrm(p);
@@ -131,7 +128,7 @@ export default function FinancePenjualanKaryawan() {
       { label: "Lengkapi spesifikasi order", hint: "Hanya untuk data awal yang masih kosong — koreksi lewat Koreksi Order", hidden: !ac.lengkapi || p.sinkron?.order?.spesifikasi?.lengkap === true, onClick: () => setOrderCrmUntuk({ p, mode: "lengkapi" }) },
       { label: "Koreksi item penjualan", hint: "Jumlah, harga, tambah/hapus item — Finance dan Produksi berubah bersama", hidden: !ac.koreksi || !terpadu(p), onClick: () => setKoreksiUntuk(p) },
       { label: "Koreksi item order", hint: "Tambah/hapus item atau ubah jumlah (sebelum dijadwalkan)", hidden: !ac.koreksi || terpadu(p), onClick: () => setKoreksiUntuk(p) },
-      { label: "Batalkan penjualan", destructive: true, hidden: !admin || p.statusTampil === "DIBATALKAN", onClick: () => batalkanPenjualan(p) },
+      { label: "Batalkan penjualan", destructive: true, hidden: !admin || p.statusTampil === "DIBATALKAN", onClick: () => setBatalUntuk(p) },
     ];
     return { primary: bisaBayar ? { label: "Bayar", variant: "secondary", title: "Catat pembayaran", onClick: () => setBayarUntuk(p) } : null, items };
   }
@@ -313,11 +310,28 @@ export default function FinancePenjualanKaryawan() {
       <ModalBayar cutoff={data?.cutoff} target={bayarUntuk} onClose={() => setBayarUntuk(null)} onSubmit={(d) => aksi(() => api.catatPembayaranPenjualanKaryawan(bayarUntuk.id, d))} />
       <ModalRiwayat
         penjualan={riwayat} onClose={() => setRiwayatId(null)} admin={admin}
-        onBatal={(pay) => {
-          const alasan = window.prompt("Alasan membatalkan pembayaran ini? Jurnalnya akan dibalik:");
-          if (alasan?.trim()) return aksi(() => api.batalPembayaranPenjualanKaryawan(riwayat.id, pay.id, alasan.trim()));
-        }}
+        onBatal={(pay) => setBatalBayarUntuk({ penjualan: riwayat, pay })}
       />
+      {batalBayarUntuk && (
+        <ModalAlasan
+          judul={`Batalkan pembayaran — ${batalBayarUntuk.penjualan.nomor}`}
+          deskripsi="Jurnal pembayaran ini dibalik dan sisa tagihan bertambah kembali. Uang TIDAK dikembalikan otomatis — proses pengembalian dana mengikuti prosedur Finance."
+          tombol="Batalkan Pembayaran"
+          onClose={() => setBatalBayarUntuk(null)}
+          onSubmit={async (alasan) => {
+            await api.batalPembayaranPenjualanKaryawan(batalBayarUntuk.penjualan.id, batalBayarUntuk.pay.id, alasan);
+            setBatalBayarUntuk(null);
+            await muat({ diam: true });
+          }}
+        />
+      )}
+      {batalUntuk && (
+        <ModalBatalPkr
+          penjualan={batalUntuk} onClose={() => setBatalUntuk(null)}
+          onBukaRiwayat={(id) => { setBatalUntuk(null); setRiwayatId(id); }}
+          onSelesai={async () => { setBatalUntuk(null); setPesan(null); await muat({ diam: true }); }}
+        />
+      )}
       <ModalOrderCrm
         key={orderCrmUntuk ? `${orderCrmUntuk.p.id}-${orderCrmUntuk.mode}` : "tutup"}
         penjualan={orderCrmUntuk?.p || null} mode={orderCrmUntuk?.mode} onClose={() => setOrderCrmUntuk(null)}

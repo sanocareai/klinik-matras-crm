@@ -1838,7 +1838,9 @@ export const api = {
   createPenjualanKaryawan: (data) => request("/finance/penjualan-karyawan", { method: "POST", body: JSON.stringify(data) }),
   catatPembayaranPenjualanKaryawan: (id, data) => request(`/finance/penjualan-karyawan/${id}/pembayaran`, { method: "POST", body: JSON.stringify(data) }),
   batalPembayaranPenjualanKaryawan: (id, pid, reason) => request(`/finance/penjualan-karyawan/${id}/pembayaran/${pid}/batal`, { method: "POST", body: JSON.stringify({ reason }) }),
-  batalPenjualanKaryawan: (id, reason) => request(`/finance/penjualan-karyawan/${id}/batal`, { method: "POST", body: JSON.stringify({ reason }) }),
+  batalPenjualanKaryawan: (id, reason, idempotencyKey) => request(`/finance/penjualan-karyawan/${id}/batal`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey || mutationKey("pkr-batal") }, body: JSON.stringify({ reason }) }),
+  // Pratinjau pembatalan (baca-saja): hambatan berkode + pembayaran aktif + apa yang akan terjadi. Pembayaran TIDAK dibatalkan/dikembalikan otomatis.
+  pratinjauPembatalanPkr: (id) => request(`/finance/penjualan-karyawan/${id}/pembatalan`),
   // Sinkronisasi Order CRM (PKR lama: dry-run + aksi eksplisit per dokumen; lengkapi spesifikasi/alamat). Order hanya dokumen operasional — tanpa uang.
   getPenjualanKaryawanOrderCrmDryRun: () => request("/finance/penjualan-karyawan/order-crm/dry-run"),
   buatOrderCrmPenjualanKaryawan: (id, spesifikasi, orderId) => request(`/finance/penjualan-karyawan/${id}/order-crm`, { method: "POST", body: JSON.stringify({ spesifikasi, ...(orderId && { orderId }) }) }),
