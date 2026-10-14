@@ -25,12 +25,31 @@ export function nilaiSiap(unit, siapFisik) {
 }
 
 /**
+ * ATURAN TRANSISI (job lama): pemeriksaan unit fisik hanya berlaku untuk job yang DIBUAT SETELAH penanda ini (fin_settings, ditulis skrip rilis saat deploy).
+ * Job yang sudah ada sebelum aturan diperkenalkan (terjadwal/berjalan) TIDAK pernah gagal muat/POD karena konfirmasi yang baru dikenal. Penanda belum ada = aturan belum berlaku
+ * (aman: tidak menolak apa pun). Nilai = waktu ISO; baca dengan bacaBerlakuSejak().
+ */
+export const KUNCI_BERLAKU_SEJAK = "PRODUKSI_SIAP_FISIK_BERLAKU_SEJAK";
+export async function bacaBerlakuSejak(db) {
+  try {
+    const r = await db.finSetting.findUnique({ where: { key: KUNCI_BERLAKU_SEJAK } });
+    const t = r?.value ? new Date(r.value) : null;
+    return t && Number.isFinite(t.getTime()) ? t : null;
+  } catch { return null; }
+}
+
+/**
  * Periksa unit FISIK pada sebuah job sebelum dimuat/diserahkan (dipanggil konfirmasi muat dan penyelesaian). Order PKR saja.
  * Unit tanpa dasar siap (status Produksi atau konfirmasi fisik) → 409 UNIT_BELUM_SIAP_FISIK + daftar unit. Pengiriman sebagian lewat alur resmi, bukan diam-diam.
+ * Job LAMA (dibuat sebelum penanda berlaku, atau penanda belum ada) dikecualikan: `{ ok:true, warisan:true }`. `abaikanWarisan` = simulasi tanpa pengecualian (untuk audit).
  */
-export async function periksaUnitSiapKirim(db, { jobId, unitIds = null }) {
-  const job = await db.job.findUnique({ where: { id: jobId }, select: { id: true, type: true, order: { select: { penjualanKaryawanId: true } }, units: { select: { unitId: true, unit: { select: { id: true, unitCode: true, status: true } } } } } });
+export async function periksaUnitSiapKirim(db, { jobId, unitIds = null, abaikanWarisan = false }) {
+  const job = await db.job.findUnique({ where: { id: jobId }, select: { id: true, type: true, createdAt: true, order: { select: { penjualanKaryawanId: true } }, units: { select: { unitId: true, unit: { select: { id: true, unitCode: true, status: true } } } } } });
   if (!job || job.type !== "DELIVERY" || !job.order?.penjualanKaryawanId) return { ok: true, belum: [] };
+  if (!abaikanWarisan) {
+    const sejak = await bacaBerlakuSejak(db);
+    if (!sejak || job.createdAt < sejak) return { ok: true, belum: [], warisan: true };
+  }
   const target = job.units.map((x) => x.unit).filter((u) => u.status !== "CANCELLED" && (!unitIds || unitIds.includes(u.id)));
   const fisik = await bacaSiapFisik(db, target.map((u) => u.id));
   // Unit yang sudah berangkat/terkirim tidak dinilai lagi; selain itu harus siap.

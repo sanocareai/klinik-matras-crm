@@ -47,6 +47,7 @@ const badan = (w, orderCrm, extra = {}) => ({ date: "2026-10-11", sellerId: w.se
 const catat = async (w, orderCrm, key = kunci()) => { const r = await w.finance.c.post(BASE, badan(w, orderCrm), key); assert.equal(r.status, 201, JSON.stringify(r.body)); return r.body; };
 const orderDari = (pkrId) => testPrisma.order.findFirst({ where: { penjualanKaryawanId: pkrId } });
 const unitDi = (orderId) => testPrisma.unit.findMany({ where: { orderId }, orderBy: { seq: "asc" } });
+const setBerlaku = (iso) => testPrisma.finSetting.upsert({ where: { key: "PRODUKSI_SIAP_FISIK_BERLAKU_SEJAK" }, create: { key: "PRODUKSI_SIAP_FISIK_BERLAKU_SEJAK", value: iso }, update: { value: iso } });
 const setMode = (m) => testPrisma.finSetting.upsert({ where: { key: "PRODUKSI_RUTE_MODE" }, create: { key: "PRODUKSI_RUTE_MODE", value: m }, update: { value: m } });
 const jejak = async () => ({
   jurnal: await testPrisma.finJournalEntry.count(), payment: await testPrisma.payment.count(), invoice: await testPrisma.invoice.count(), stok: await testPrisma.stockMovement.count(),
@@ -218,6 +219,7 @@ test("6. Kesiapan FISIK: unit belum siap tidak ikut job/muat/POD; konfirmasi (al
 
 test("7. Muat & POD memeriksa unit FISIK: unit tanpa dasar siap ditolak (UNIT_BELUM_SIAP_FISIK); setelah konfirmasi fisik lolos; mode KETAT mengabaikan konfirmasi fisik", async () => {
   const w = await siapkan();
+  await setBerlaku("2000-01-01T00:00:00.000Z"); // aturan unit fisik berlaku untuk job yang dibuat setelah penanda
   const a = await catat(w, { items: [KASUR], ...ALAMAT });
   const order = await orderDari(a.id);
   const unit = await unitDi(order.id);
@@ -250,6 +252,45 @@ test("7. Muat & POD memeriksa unit FISIK: unit tanpa dasar siap ditolak (UNIT_BE
   const lolos = await w.driver.c.post(`/api/armada/jobs/${job.id}/complete`, pod, kunci());
   assert.ok([200, 201].includes(lolos.status), JSON.stringify(lolos.body));
   assert.equal((await testPrisma.job.findUnique({ where: { id: job.id } })).status, "COMPLETED");
+});
+
+test("9. JOB LAMA tidak gagal muat/POD oleh aturan baru: tanpa penanda atau dibuat SEBELUM penanda = dikecualikan; hanya job yang dibuat SETELAH penanda ditegakkan", async () => {
+  const w = await siapkan();
+  const a = await catat(w, { items: [KASUR], ...ALAMAT });
+  const order = await orderDari(a.id);
+  const unit = await unitDi(order.id);
+  for (const u of unit) await testPrisma.unit.update({ where: { id: u.id }, data: { status: "READY_FOR_DELIVERY" } });
+  for (const u of unit) await testPrisma.$transaction((tx) => suggestDeliveryJob(tx, u.id));
+  const job = await testPrisma.job.findFirst({ where: { orderId: order.id, type: "DELIVERY" } });
+  assert.ok(job);
+  // keadaan job LAMA yang berjalan: salah satu unit kembali ke produksi (rework) setelah job dibuat — di aturan lama POD tetap lolos
+  await testPrisma.unit.update({ where: { id: unit[2].id }, data: { status: "IN_PRODUCTION" } });
+  await testPrisma.job.update({ where: { id: job.id }, data: { driverId: w.driver.id, status: "ARRIVED", arrivedAt: new Date(), scheduledDate: new Date("2026-10-15T00:00:00Z") } });
+  // (a) penanda belum ada → aturan belum berlaku
+  const muatA = await w.driver.c.post(`/api/armada/jobs/${job.id}/unit-load`, { semua: true });
+  assert.equal(muatA.status, 200, "tanpa penanda: job lama tidak gagal muat: " + JSON.stringify(muatA.body));
+  // (b) penanda di MASA DEPAN (job dibuat sebelum penanda) → tetap dikecualikan
+  await setBerlaku(new Date(Date.now() + 3600_000).toISOString());
+  assert.equal((await w.driver.c.post(`/api/armada/jobs/${job.id}/unit-load`, { semua: true })).status, 200);
+  // (c) simulasi audit (abaikanWarisan): memang akan terdampak — inilah yang dilindungi pengecualian
+  const { periksaUnitSiapKirim } = await import("../../src/services/deliverySiapFisik.js");
+  const sim = await periksaUnitSiapKirim(testPrisma, { jobId: job.id, abaikanWarisan: true });
+  assert.equal(sim.ok, false); assert.deepEqual(sim.belum.map((u) => u.unitCode), [unit[2].unitCode]);
+  const pod = { proofPhotoUrls: ["/media/job-photos/pod.jpg"], recipientName: "Pak Indra" };
+  const selesai = await w.driver.c.post(`/api/armada/jobs/${job.id}/complete`, pod, kunci());
+  assert.ok([200, 201].includes(selesai.status), "job lama tidak gagal POD: " + JSON.stringify(selesai.body));
+  assert.equal((await testPrisma.job.findUnique({ where: { id: job.id } })).status, "COMPLETED");
+  // (d) job yang dibuat SETELAH penanda → ditegakkan
+  await setBerlaku("2000-01-01T00:00:00.000Z");
+  const order2 = await orderDari((await catat(w, { items: [{ ...KASUR, jumlah: 1 }], ...ALAMAT }, kunci())).id);
+  const [u2] = await unitDi(order2.id);
+  await testPrisma.unit.update({ where: { id: u2.id }, data: { status: "READY_FOR_DELIVERY" } });
+  await testPrisma.$transaction((tx) => suggestDeliveryJob(tx, u2.id));
+  const job2 = await testPrisma.job.findFirst({ where: { orderId: order2.id, type: "DELIVERY" } });
+  await testPrisma.unit.update({ where: { id: u2.id }, data: { status: "IN_PRODUCTION" } });
+  await testPrisma.job.update({ where: { id: job2.id }, data: { driverId: w.driver.id, status: "ARRIVED", arrivedAt: new Date(), scheduledDate: new Date("2026-10-15T00:00:00Z") } });
+  const blok = await w.driver.c.post(`/api/armada/jobs/${job2.id}/unit-load`, { semua: true });
+  assert.equal(blok.status, 409); assert.equal(blok.body.code, "UNIT_BELUM_SIAP_FISIK");
 });
 
 test("8. Order BIASA (non-PKR) tidak berubah: tetap diproses lewat jalur lama; konfirmasi fisik ditolak; muat/POD tidak terkena pemeriksaan unit fisik", async () => {

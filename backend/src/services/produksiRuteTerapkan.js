@@ -22,6 +22,8 @@ const untukProduk = (p) => ({ id: p.id, name: p.name, productLine: p.productLine
 
 /** Apakah SATU unit sedang menunggu alur? Murni (dipakai juga oleh read model). */
 export function unitMenungguAlur(unit, order, workKind = null) {
+  // Unit yang SUDAH selesai diproduksi/berangkat/terkirim/batal bukan lagi "menunggu alur" (rutenya tidak lagi menentukan apa pun) — jangan menempelkan label yang menyesatkan.
+  if (["READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD", "IN_TRANSIT_OUT", "DELIVERED", "CANCELLED"].includes(unit.status)) return false;
   const jenis = workKind ?? unit.workCategory ?? order?.category ?? null;
   if (jenis === "LAYANAN") return !unit.serviceId;
   const { productLine, productType } = produkUnit(unit, order);
