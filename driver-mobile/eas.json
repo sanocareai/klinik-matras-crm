@@ -21,6 +21,16 @@
         "buildType": "apk"
       },
       "channel": "apk"
+    },
+    "qa-manifest": {
+      "distribution": "internal",
+      "channel": "qa-manifest-local-only",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_QA_SERVER_FIELD": "1"
+      }
     }
   },
   "submit": {

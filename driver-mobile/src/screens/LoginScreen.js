@@ -12,6 +12,11 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../hooks/useTheme";
 
+// BUILD QA SAJA (profil EAS "qa-manifest" menyetel EXPO_PUBLIC_QA_SERVER_FIELD=1): kolom server supaya HP uji bisa menunjuk backend lokal lewat tunnel HTTPS.
+// Build produksi/preview TIDAK menyetel env ini, jadi kolom tidak pernah tampil dan perilaku login tidak berubah.
+const QA_SERVER_FIELD = process.env.EXPO_PUBLIC_QA_SERVER_FIELD === "1";
+const QA_SERVER_DEFAULT = process.env.EXPO_PUBLIC_QA_SERVER_URL || "";
+
 export default function LoginScreen() {
   const { login } = useAuth();
   const theme = useTheme();
@@ -20,16 +25,21 @@ export default function LoginScreen() {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [qaServer, setQaServer] = useState(QA_SERVER_DEFAULT);
 
   async function handleLogin() {
     if (!email.trim() || !password) {
       setError("Email dan password wajib diisi");
       return;
     }
+    if (QA_SERVER_FIELD && !qaServer.trim().toLowerCase().startsWith("https://")) {
+      setError("Server QA wajib berupa alamat https:// (tunnel ke backend QA)");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
-      await login(email, password);
+      await login(email, password, QA_SERVER_FIELD ? qaServer.trim() : undefined);
     } catch (err) {
       setError(err.message || "Gagal login");
     } finally {
@@ -48,6 +58,23 @@ export default function LoginScreen() {
         <Text style={styles.subtitle}>Masuk untuk mulai kerja</Text>
 
         <View style={styles.card}>
+          {QA_SERVER_FIELD ? (
+            <>
+              <Text style={[styles.label, { color: "#b45309" }]}>BUILD QA — Server uji (bukan produksi)</Text>
+              <TextInput
+                style={styles.input}
+                value={qaServer}
+                onChangeText={setQaServer}
+                placeholder="https://xxxx.ngrok-free.app"
+                placeholderTextColor={theme.INK2}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="url"
+                editable={!busy}
+              />
+              <View style={{ height: 14 }} />
+            </>
+          ) : null}
           <Text style={styles.label}>Email</Text>
           <TextInput
             style={styles.input}
