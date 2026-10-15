@@ -1,18 +1,24 @@
 // Stock Count / Stock Opname — Warehouse Tahap 5.
 //
-// v1 POST /inventory/movements/adjustment (satu langkah) TIDAK diubah. Ini
-// dokumen di depannya untuk sesi hitung terjadwal, banyak item sekaligus,
-// dengan blind count opsional. Lihat catatan panjang di schema.prisma di
+// v1 POST /inventory/movements/adjustment (satu langkah) DITUTUP untuk semua peran
+// (Okt 2026, pemisahan tugas). Stock Count = dokumen untuk sesi hitung terjadwal,
+// banyak item sekaligus, dengan blind count opsional; selisihnya hanya diselesaikan
+// penyetuju yang bukan pembuat/penugas/pengisi hitungan. Lihat catatan panjang di schema.prisma di
 // atas model StockCount.
 
 import express from "express";
 import { requireAuth } from "../middleware/auth.js";
-import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
+import { requirePermission, requireAnyPermission, hasPermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
 import { postStockMovement, lockRowForUpdate } from "../services/inventoryLedger.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import { wajibUuid } from "../lib/uuidParam.js";
 import { pesanServerAman } from "../lib/galatServerAman.js";
+import { wajibPenyetujuPenyesuaian, wajibBukanPihakPengaju } from "../services/inventorySegregation.js";
+
+// Penanda pelaku di activity_events (eventType DOCUMENT_EDITED) — dipakai complete untuk memisahkan pengisi/penyerah hitungan dari penyetuju.
+const AKSI_ISI_HITUNGAN = "HASIL_HITUNG_DIISI";
+const AKSI_SERAHKAN_HITUNGAN = "HITUNGAN_DISERAHKAN";
 
 export const stockCountRouter = express.Router();
 stockCountRouter.use(requireAuth);
@@ -176,14 +182,22 @@ stockCountRouter.patch("/:id/lines/:lineId", requirePermission(P.INVENTORY_WRITE
 
     const { countedQty, reason, notes } = req.body;
     const toNum = (v) => (v === undefined ? undefined : v === "" || v === null ? null : Number(v));
-    const updated = await prisma.stockCountLine.update({
-      where: { id: line.id },
-      data: {
-        ...(countedQty !== undefined && { countedQty: toNum(countedQty) }),
-        ...(reason !== undefined && { reason: reason || null }),
-        ...(notes !== undefined && { notes: notes || null }),
-      },
-      include: { material: { select: { id: true, code: true, name: true, unit: true } } },
+    const updated = await prisma.$transaction(async (tx) => {
+      const u = await tx.stockCountLine.update({
+        where: { id: line.id },
+        data: {
+          ...(countedQty !== undefined && { countedQty: toNum(countedQty) }),
+          ...(reason !== undefined && { reason: reason || null }),
+          ...(notes !== undefined && { notes: notes || null }),
+        },
+        include: { material: { select: { id: true, code: true, name: true, unit: true } } },
+      });
+      // Pelaku pengisi hasil hitung dicatat (tabel baris tak punya kolom pelaku): penyelesai selisih tidak boleh termasuk di dalamnya.
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.STOCK_COUNT, entityId: count.id, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: req.user.id,
+        metadata: { aksi: AKSI_ISI_HITUNGAN, countNumber: count.countNumber, lineId: line.id },
+      });
+      return u;
     });
     res.json(updated);
   } catch (err) {
@@ -203,10 +217,17 @@ stockCountRouter.post("/:id/submit", requirePermission(P.INVENTORY_WRITE), wajib
     if (belumDihitung.length > 0) {
       throw new CountError(`${belumDihitung.length} item belum diisi hasil hitungnya`);
     }
-    const updated = await prisma.stockCount.update({
-      where: { id: count.id },
-      data: { status: "WAITING_REVIEW", submittedAt: new Date() },
-      include: countInclude,
+    const updated = await prisma.$transaction(async (tx) => {
+      const u = await tx.stockCount.update({
+        where: { id: count.id },
+        data: { status: "WAITING_REVIEW", submittedAt: new Date() },
+        include: countInclude,
+      });
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.STOCK_COUNT, entityId: count.id, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: req.user.id,
+        metadata: { aksi: AKSI_SERAHKAN_HITUNGAN, countNumber: count.countNumber },
+      });
+      return u;
     });
     res.json(updated);
   } catch (err) {
@@ -238,7 +259,7 @@ stockCountRouter.post("/:id/recount", requirePermission(P.INVENTORY_WRITE), waji
 // WAITING_REVIEW. Untuk tiap baris dengan countedQty ≠ systemQty, WAJIB
 // reason terisi, lalu tulis SATU StockMovement ADJUSTMENT (qty = selisih).
 // Baris tanpa selisih dilewati — tidak ada yang perlu disesuaikan.
-stockCountRouter.post("/:id/complete", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
+stockCountRouter.post("/:id/complete", requireAnyPermission(P.INVENTORY_WRITE, P.INVENTORY_ADJUSTMENT_APPROVE), wajibUuid(), async (req, res) => {
   try {
     const preCheck = await prisma.stockCount.findUnique({ where: { id: req.params.id } });
     if (!preCheck) return res.status(404).json({ error: "Stock count tidak ditemukan" });
@@ -251,6 +272,19 @@ stockCountRouter.post("/:id/complete", requirePermission(P.INVENTORY_WRITE), waj
       const berselisih = count.lines.filter((l) => Number(l.countedQty) !== Number(l.systemQty));
       for (const l of berselisih) {
         if (!l.reason?.trim()) throw new CountError(`Alasan wajib diisi untuk selisih pada ${l.material.code}`);
+      }
+      // Pemisahan tugas: selisih = penulisan ADJUSTMENT ke ledger → penyetuju khusus, bukan pembuat/penugas hitungan.
+      if (berselisih.length === 0 && !hasPermission(req.user, P.INVENTORY_WRITE)) {
+        throw new CountError("Hitungan tanpa selisih diselesaikan oleh pemegang akses gudang", 403);
+      }
+      if (berselisih.length > 0) {
+        wajibPenyetujuPenyesuaian(req.user);
+        const pelakuHitung = await tx.activityEvent.findMany({
+          where: { entityType: ENTITY_TYPES.STOCK_COUNT, entityId: count.id, eventType: EVENT_TYPES.DOCUMENT_EDITED },
+          select: { actorId: true, metadata: true },
+        });
+        const pengisi = pelakuHitung.filter((e) => [AKSI_ISI_HITUNGAN, AKSI_SERAHKAN_HITUNGAN].includes(e.metadata?.aksi)).map((e) => e.actorId);
+        wajibBukanPihakPengaju(req.user, [count.createdById, count.assignedToId, ...pengisi], { label: "pembuat/penugas/pengisi hitungan" });
       }
 
       for (const line of berselisih) {

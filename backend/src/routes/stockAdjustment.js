@@ -1,20 +1,21 @@
 // Stock Adjustment (review-gated) — Warehouse Tahap 6.
 //
 // Beda dengan POST /inventory/movements/adjustment (satu langkah, langsung
-// tertulis — TIDAK diubah, tetap dipakai Stock Count Tahap 5 & koreksi
-// cepat Gudang.jsx): ini WAJIB approval sebelum ledger tersentuh. Lihat
+// tertulis — DITUTUP Okt 2026 untuk semua peran, menjawab 409): ini WAJIB
+// approval orang lain (pengaju != penyetuju) sebelum ledger tersentuh. Lihat
 // catatan panjang di schema.prisma di atas model StockAdjustmentRequest —
 // SEMUA request wajib approval tanpa kecuali (tidak ada kolom harga untuk
 // membedakan "tinggi/rendah nilai" secara jujur).
 
 import express from "express";
 import { requireAuth } from "../middleware/auth.js";
-import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
+import { requirePermission, requireAnyPermission, hasPermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
 import { postStockMovement, lockRowForUpdate } from "../services/inventoryLedger.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import { wajibUuid } from "../lib/uuidParam.js";
 import { pesanServerAman } from "../lib/galatServerAman.js";
+import { wajibPenyetujuPenyesuaian, wajibBukanPihakPengaju } from "../services/inventorySegregation.js";
 
 export const stockAdjustmentRouter = express.Router();
 stockAdjustmentRouter.use(requireAuth);
@@ -110,8 +111,12 @@ stockAdjustmentRouter.post("/", requirePermission(P.INVENTORY_WRITE), async (req
 // PATCH /api/inventory/adjustments/:id — transisi DRAFT → WAITING_APPROVAL →
 // APPROVED (POSTED hanya lewat /post, karena menulis ledger).
 // { status?, reason?, notes? }
-stockAdjustmentRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
+stockAdjustmentRouter.patch("/:id", requireAnyPermission(P.INVENTORY_WRITE, P.INVENTORY_ADJUSTMENT_APPROVE), wajibUuid(), async (req, res) => {
   try {
+    // Penyetuju murni (mis. Finance) hanya boleh memutuskan persetujuan; mengubah isi/mengajukan tetap hak penulis (INVENTORY_WRITE).
+    if (!hasPermission(req.user, P.INVENTORY_WRITE) && req.body.status !== "APPROVED") {
+      throw new AdjustmentError("Peran penyetuju hanya dapat menyetujui request", 403);
+    }
     const preCheck = await prisma.stockAdjustmentRequest.findUnique({ where: { id: req.params.id } });
     if (!preCheck) return res.status(404).json({ error: "Adjustment request tidak ditemukan" });
     const { status, reason, notes } = req.body;
@@ -138,6 +143,8 @@ stockAdjustmentRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), wajibU
         }
         data.status = status;
         if (status === "APPROVED") {
+          wajibPenyetujuPenyesuaian(req.user);
+          wajibBukanPihakPengaju(req.user, [existing.requestedById], { label: "pemohon" });
           data.approvedById = req.user.id;
           data.approvedAt = new Date();
         }
@@ -179,6 +186,10 @@ stockAdjustmentRouter.post("/:id/post", requirePermission(P.INVENTORY_WRITE), wa
       await lockRowForUpdate(tx, "stock_adjustment_requests", preCheck.id);
       const request = await tx.stockAdjustmentRequest.findUnique({ where: { id: preCheck.id }, include: requestInclude });
       if (request.status !== "APPROVED") throw new AdjustmentError("Hanya request berstatus Approved yang bisa diposting");
+      // Pertahanan berlapis: data lama/diubah langsung di DB tidak boleh lolos dengan pemohon = penyetuju.
+      if (!request.approvedById || request.approvedById === request.requestedById) {
+        throw new AdjustmentError("Request tidak memiliki persetujuan orang lain — tidak dapat diposting", 403);
+      }
 
       await postStockMovement(tx, {
         materialId: request.materialId, type: "ADJUSTMENT", qty: request.adjustmentQty,

@@ -285,28 +285,12 @@ inventoryRouter.post("/movements/waste", requirePermission(P.INVENTORY_WRITE), a
 // dengan kode lokasi lain) dan mencatatnya sebagai satu baris ADJUSTMENT
 // (±) — bukan qty mentah, supaya tidak salah tanda saat variance negatif
 // (fisik lebih sedikit dari sistem, kasus paling umum).
-inventoryRouter.post("/movements/adjustment", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
-  try {
-    const { materialId, location, reason, note } = req.body;
-    if (!reason?.trim()) throw new InventoryError("Alasan wajib diisi untuk penyesuaian stok opname");
-    await assertMaterialActive(materialId);
-    const actualQty = Number(req.body.actualQty);
-    if (!Number.isFinite(actualQty) || actualQty < 0) {
-      throw new InventoryError("Hasil hitung fisik wajib angka 0 atau lebih");
-    }
-
-    const movement = await prisma.$transaction(async (tx) => {
-      const balance = await lockMaterialBalance(tx, materialId);
-      const variance = actualQty - balance;
-      if (Math.abs(variance) < 1e-6) throw new InventoryError("Tidak ada selisih — hasil hitung sama dengan catatan sistem");
-      const created = await postStockMovement(tx, {
-        materialId, type: "ADJUSTMENT", qty: variance, location: location || "GUDANG_UTAMA",
-        reason: reason.trim(), note, createdById: req.user.id,
-      });
-      return { ...created, previousBalance: balance, actualQty };
-    });
-    res.status(201).json(movement);
-  } catch (err) {
-    handleErr(err, res);
-  }
+inventoryRouter.post("/movements/adjustment", requirePermission(P.INVENTORY_WRITE), (req, res) => {
+  // DITUTUP untuk SEMUA peran (Okt 2026, pemisahan tugas): satu orang tidak boleh menghitung selisih dan sekaligus menuliskannya ke ledger
+  // tanpa dokumen dan tanpa orang kedua. Jalur resmi: Stock Adjustment (ajukan -> setujui orang lain -> posting) atau Stock Count (hitung ->
+  // selesaikan oleh penyetuju yang bukan pembuat/penugas/pengisi hitungan). Tidak ada penulisan ledger di sini.
+  res.status(409).json({
+    error: "Koreksi stok satu langkah sudah ditutup. Ajukan lewat Stock Adjustment (disetujui orang lain) atau gunakan Stock Count.",
+    code: "SATU_LANGKAH_DITUTUP",
+  });
 });
