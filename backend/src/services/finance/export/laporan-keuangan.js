@@ -50,7 +50,7 @@ async function ambil(db, { periode, filter, filterLabel, bolehSensitif }) {
   ];
   const NAMA_KELAS = Object.fromEntries(d.jembatan.komponen.map((k) => [k.kunci, k.keterangan]));
   const rincianOrder = d.jembatan.detailOrder.map((o) => ({
-    kelas: o.kelas, nomor: o.nomor, kategori: o.kategori, status: o.status, statusBayar: o.statusBayar, pelanggan: o.pelanggan, nilai: o.nilai, ongkir: o.ongkir,
+    kelas: o.kelas, nomor: o.nomor, kategori: o.kategori, status: o.status, statusBayar: o.statusBayar, pelanggan: o.pelanggan, nilai: o.nilai, notaKredit: o.notaKredit, nilaiKotor: o.nilaiKotor, ongkir: o.ongkir,
     tanggalOrder: o.tanggalOrder, tanggalLunas: o.tanggalLunas ?? "", tanggalSerah: o.tanggalSerah ?? "", tanggalJurnal: o.tanggalJurnal.join(", "), jurnal: o.jurnalPeriode.join(", "), akun: o.akun.join(", "),
     bruto: o.bruto, retur: o.retur, neto: o.neto, tanggalBeda: YA(o.tanggalBeda), alasan: o.alasan || NAMA_KELAS[o.kelas] || "",
   }));
@@ -102,7 +102,7 @@ async function ambil(db, { periode, filter, filterLabel, bolehSensitif }) {
       { nama: "Jembatan Pendapatan", judul: "Jembatan Omzet Sales (Lunas) → Pendapatan Bersih Finance", kolom: [{ key: "bagian", header: "Bagian", tipe: "teks", lebar: 18 }, { key: "langkah", header: "Langkah", tipe: "teks", lebar: 66 }, { key: "order", header: "Order/Jurnal", tipe: "angka" }, { key: "nominal", header: "Nominal (Rp)", tipe: "uang" }, { key: "temuan", header: "Penanda", tipe: "teks", lebar: 18 }, KOLOM_KETERANGAN], baris: jembatan, catatan: catatanUmum },
       { nama: "Rincian Order Jembatan", judul: "Order per Komponen Jembatan", kolom: [
         { key: "kelas", header: "Komponen", tipe: "teks", lebar: 34 }, { key: "nomor", header: "No. Order", tipe: "teks", lebar: 20 }, { key: "kategori", header: "Kategori", tipe: "teks" }, { key: "status", header: "Status", tipe: "teks" }, { key: "statusBayar", header: "Status bayar", tipe: "teks" },
-        { key: "pelanggan", header: "Pelanggan", tipe: "teks", lebar: 24 }, { key: "nilai", header: "Nilai Order (Rp)", tipe: "uang" }, { key: "ongkir", header: "Ongkir (Rp)", tipe: "uang" },
+        { key: "pelanggan", header: "Pelanggan", tipe: "teks", lebar: 24 }, { key: "nilai", header: "Nilai Bersih Order (Rp)", tipe: "uang" }, { key: "notaKredit", header: "Nota Kredit aktif (Rp)", tipe: "uang" }, { key: "nilaiKotor", header: "Nilai Kotor Order (Rp)", tipe: "uang" }, { key: "ongkir", header: "Ongkir (Rp)", tipe: "uang" },
         { key: "tanggalOrder", header: "Tgl order", tipe: "teks" }, { key: "tanggalLunas", header: "Tgl lunas", tipe: "teks" }, { key: "tanggalSerah", header: "Tgl serah", tipe: "teks" }, { key: "tanggalJurnal", header: "Tgl jurnal", tipe: "teks", lebar: 22 },
         { key: "jurnal", header: "No. jurnal", tipe: "teks", lebar: 26 }, { key: "akun", header: "Akun", tipe: "teks" }, { key: "bruto", header: "Bruto (Rp)", tipe: "uang" }, { key: "retur", header: "Retur (Rp)", tipe: "uang" }, { key: "neto", header: "Neto (Rp)", tipe: "uang" },
         { key: "tanggalBeda", header: "Tgl jurnal ≠ tgl serah", tipe: "teks" }, { key: "alasan", header: "Alasan/keterangan", tipe: "teks", lebar: 60 },

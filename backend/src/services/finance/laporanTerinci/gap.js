@@ -13,8 +13,12 @@ import { sumMoney, moneyToNumber, toMoney } from "../money.js";
 import { startOfDayWIB, endOfDayExclusiveWIB } from "../../../utils/wib.js";
 import { tanggalWIB } from "../cutoff.js";
 import { STATUS_PENGAKUAN } from "../posting/orderRevenue.js";
+import { nilaiBersihPerOrder } from "../../orderNilaiBersih.js";
 
 const rp = (d) => moneyToNumber(d);
+// Baris order + nilaiBersih/notaKredit. nilaiKotor = Order.value mentah, SENGAJA dipakai untuk "pendapatan yang belum diakui" karena ledger mengakui nilai KOTOR
+// (Nota Kredit tercatat terpisah di 4-2100); `nilai` yang ditampilkan ke pembaca adalah nilai BERSIH (angka yang sama dengan Sales).
+const denganNilaiBersih = async (tx, rows) => (await nilaiBersihPerOrder(tx, rows)).map((o) => ({ ...o, nilaiKotor: o.value }));
 const JENIS_LABEL = Object.freeze({
   BELUM_BERHARGA: "Order belum punya harga", PKR_OPERASIONAL_RP0: "Order operasional PKR Rp0 (bukan kekurangan harga)", LAINNYA: "Gap pembukuan lain",
   DISERAHKAN_BELUM_DIAKUI: "Diserahkan, tidak pernah diakui, tanpa gap",
@@ -28,7 +32,7 @@ export async function hitungGap(tx, { fromStr, toStr, catatan }) {
     customer: { select: { name: true } }, _count: { select: { items: true, units: true } },
   };
   const [orders, bayar, jobs] = await Promise.all([
-    idOrder.length ? tx.order.findMany({ where: { id: { in: idOrder } }, select: selectOrder }) : [],
+    idOrder.length ? tx.order.findMany({ where: { id: { in: idOrder } }, select: selectOrder }).then((r) => denganNilaiBersih(tx, r)) : [],
     idOrder.length ? tx.payment.findMany({ where: { orderId: { in: idOrder }, cancelledAt: null }, select: { orderId: true, amount: true, verifications: { select: { id: true } } } }) : [],
     idOrder.length ? tx.job.findMany({ where: { orderId: { in: idOrder }, type: "DELIVERY", status: "COMPLETED" }, select: { orderId: true, completedAt: true } }) : [],
   ]);
@@ -43,7 +47,7 @@ export async function hitungGap(tx, { fromStr, toStr, catatan }) {
     let jenis = "LAINNYA";
     if (o) {
       if (o.penjualanKaryawanId) jenis = "PKR_OPERASIONAL_RP0";
-      else if (g.reason === "NILAI_ORDER_NOL" && rp(toMoney(o.value)) === 0) jenis = "BELUM_BERHARGA";
+      else if (g.reason === "NILAI_ORDER_NOL" && rp(toMoney(o.nilaiKotor)) === 0) jenis = "BELUM_BERHARGA";
     }
     const terverifikasi = o ? rp(verifikasi.get(o.id) ?? toMoney(0)) : 0;
     const lunasTanpaBayar = !!o && o.paymentStatus === "LUNAS" && terverifikasi === 0;
@@ -58,7 +62,7 @@ export async function hitungGap(tx, { fromStr, toStr, catatan }) {
       no: i + 1, gapId: g.id, sumber: g.source, sumberId: g.sourceId, alasanKode: g.reason, detailSistem: g.detail, tanggalGap: tanggalWIB(g.createdAt),
       jenis, jenisLabel: JENIS_LABEL[jenis], tindakan, dampak,
       order: o ? {
-        nomor: o.orderNumber, kategori: o.category, status: o.status, statusBayar: o.paymentStatus, pelanggan: o.customer?.name ?? "", nilai: rp(toMoney(o.value)), ongkir: rp(toMoney(o.ongkir ?? 0)),
+        nomor: o.orderNumber, kategori: o.category, status: o.status, statusBayar: o.paymentStatus, pelanggan: o.customer?.name ?? "", nilai: rp(toMoney(o.nilaiBersih)), notaKredit: rp(toMoney(o.notaKredit)), nilaiKotor: rp(toMoney(o.nilaiKotor)), ongkir: rp(toMoney(o.ongkir ?? 0)),
         jumlahItem: o._count.items, jumlahUnit: o._count.units, tanggalOrder: tanggalWIB(o.createdAt), tanggalLunas: o.paidAt ? tanggalWIB(o.paidAt) : null, tanggalSerah: serah.get(o.id) ?? null,
         pembayaranTerverifikasi: terverifikasi, jumlahPembayaran: nBayar.get(o.id) ?? 0, lunasTanpaPembayaran: lunasTanpaBayar,
       } : null,
@@ -74,7 +78,7 @@ export async function hitungGap(tx, { fromStr, toStr, catatan }) {
       OR: [{ paidAt: { gte: mulai, lt: selesai } }, { jobs: { some: { type: "DELIVERY", status: "COMPLETED", completedAt: { gte: mulai, lt: selesai } } } }],
     },
     select: selectOrder,
-  });
+  }).then((r) => denganNilaiBersih(tx, r));
   const idK = kandidat.map((o) => o.id);
   const [akui, akuiLine, jobK] = await Promise.all([
     idK.length ? tx.finJournalEntry.findMany({ where: { sourceId: { in: idK }, status: { in: STATUS_DIHITUNG }, OR: [{ source: "PENGAKUAN_PENDAPATAN" }, { idempotencyKey: { startsWith: "PENGAKUAN_PENDAPATAN:" } }] }, select: { sourceId: true } }) : [],
@@ -85,11 +89,11 @@ export async function hitungGap(tx, { fromStr, toStr, catatan }) {
   const adaGap = new Set(gaps.map((g) => g.sourceId));
   const serahK = new Map();
   for (const j of jobK) { if (!j.completedAt) continue; const t = tanggalWIB(j.completedAt); if (!serahK.has(j.orderId) || t > serahK.get(j.orderId)) serahK.set(j.orderId, t); }
-  const tanpaGap = kandidat.filter((o) => !sudah.has(o.id) && !adaGap.has(o.id) && rp(toMoney(o.value)) + rp(toMoney(o.ongkir ?? 0)) > 0).map((o) => ({
-    nomor: o.orderNumber, kategori: o.category, status: o.status, statusBayar: o.paymentStatus, pelanggan: o.customer?.name ?? "", nilai: rp(toMoney(o.value)), ongkir: rp(toMoney(o.ongkir ?? 0)),
+  const tanpaGap = kandidat.filter((o) => !sudah.has(o.id) && !adaGap.has(o.id) && rp(toMoney(o.nilaiKotor)) + rp(toMoney(o.ongkir ?? 0)) > 0).map((o) => ({
+    nomor: o.orderNumber, kategori: o.category, status: o.status, statusBayar: o.paymentStatus, pelanggan: o.customer?.name ?? "", nilai: rp(toMoney(o.nilaiBersih)), notaKredit: rp(toMoney(o.notaKredit)), nilaiKotor: rp(toMoney(o.nilaiKotor)), ongkir: rp(toMoney(o.ongkir ?? 0)),
     tanggalLunas: o.paidAt ? tanggalWIB(o.paidAt) : null, tanggalSerah: serahK.get(o.id) ?? null, jenis: "DISERAHKAN_BELUM_DIAKUI", jenisLabel: JENIS_LABEL.DISERAHKAN_BELUM_DIAKUI,
     tindakan: "Selidiki kenapa hook pengakuan tidak jalan (order dibuat langsung berstatus diserahkan / sebelum cutoff). Pengakuan harus lewat jurnal terkendali dengan tanggal yang disetujui Owner — bukan dari laporan ini.",
-    dampak: `Pendapatan kurang ${rp(toMoney(o.value)) + rp(toMoney(o.ongkir ?? 0))} bila order ini memang sah; uang yang sudah masuk berdiri sebagai Uang Muka Pelanggan.`,
+    dampak: `Pendapatan kurang ${rp(toMoney(o.nilaiKotor)) + rp(toMoney(o.ongkir ?? 0))} (nilai kotor + ongkir; Nota Kredit tercatat terpisah sebagai Retur & Potongan) bila order ini memang sah; uang yang sudah masuk berdiri sebagai Uang Muka Pelanggan.`,
   }));
 
   return {

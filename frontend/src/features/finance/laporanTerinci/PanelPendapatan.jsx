@@ -19,7 +19,7 @@ export function PanelJembatan({ data }) {
       deskripsi="Omzet Sales dihitung saat order Lunas; pendapatan Finance saat order diserahkan. Setiap order masuk tepat satu komponen — angka tidak dipaksa sama."
       info="Dua angka memakai dasar tanggal yang berbeda. Jembatan ini menguraikan selisihnya order demi order; residual harus Rp0.">
       <div className="grid gap-3 sm:grid-cols-2">
-        <KartuAngka label="Omzet Sales (order Lunas)" value={formatUang(omzet?.nominal)} sub={`${omzet?.jumlahOrder ?? 0} order Lunas pada periode`} metrik="nilai_order_lunas_perusahaan" />
+        <KartuAngka label="Omzet Sales (setelah Nota Kredit)" value={formatUang(omzet?.nominal)} sub={`${omzet?.jumlahOrder ?? 0} order Lunas pada periode · nilai bersih`} metrik="nilai_order_lunas_perusahaan" />
         <KartuAngka label="Pendapatan bersih Finance" value={formatUang(bersih?.nominal)} sub="Basis tanggal buku (diserahkan)" metrik="jembatan_omzet_pendapatan" />
       </div>
       <div className={cn("flex flex-wrap items-center gap-2 rounded-xl px-3 py-2 text-[12.5px]", nol ? "bg-greenbg text-green" : "bg-redbg text-red")} data-testid="jembatan-residual">

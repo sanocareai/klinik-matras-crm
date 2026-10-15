@@ -1,7 +1,8 @@
 // JEMBATAN OMZET SALES (LUNAS) → PENDAPATAN BERSIH FINANCE (BACA-SAJA).
 //
 // Dua angka yang berbeda DASARNYA, bukan salah hitung:
-//   Omzet Sales  = Σ Order.value order yang menjadi LUNAS pada periode (paidAt WIB) — definisi kartu "Nilai ... Lunas" (analytics.js / rekonSalesFinance.js).
+//   Omzet Sales  = Σ NILAI BERSIH order yang menjadi LUNAS pada periode (paidAt WIB): Order.value − Nota Kredit aktif (orderNilaiBersih.js) — definisi kartu "Nilai ... Lunas"
+//                  yang sama dengan dashboard Sales/komisi. Nota Kredit ditampilkan sebagai LANGKAH EKSPLISIT saat jembatan kembali ke nilai kotor ledger.
 //   Pendapatan   = jurnal buku besar (akrual): diakui saat order DISERAHKAN, bukan saat lunas (posting/orderRevenue.js).
 // Jembatan ini mengelompokkan SETIAP order & baris jurnal pendapatan ke tepat satu komponen, lalu memeriksa dua residual yang WAJIB Rp0:
 //   residual Sales   = omzet (agregat database) − Σ nilai order empat kelas Lunas-periode;
@@ -23,6 +24,7 @@ import { sumMoney, moneyToNumber, toMoney } from "../money.js";
 import { startOfDayWIB, endOfDayExclusiveWIB } from "../../../utils/wib.js";
 import { tanggalWIB } from "../cutoff.js";
 import { STATUS_PENGAKUAN } from "../posting/orderRevenue.js";
+import { aggregateBersih, nilaiBersihPerOrder } from "../../orderNilaiBersih.js";
 
 export const KELAS = Object.freeze({
   LUNAS_DIAKUI: "LUNAS_DIAKUI",
@@ -69,15 +71,16 @@ export async function hitungJembatan(tx, { fromStr, toStr, baris, ringkasan }) {
 
   const [lunas, omzetDb] = await Promise.all([
     tx.order.findMany({ where: whereLunas, select: selectOrder }),
-    tx.order.aggregate({ where: whereLunas, _sum: { value: true }, _count: { _all: true } }),
+    aggregateBersih(tx, { where: whereLunas, _sum: { value: true }, _count: { _all: true } }),
   ]);
 
   const barisPend = baris.filter((r) => r.akunTipe === "PENDAPATAN");
   const idLunas = new Set(lunas.map((o) => o.id));
   const idJurnal = [...new Set(barisPend.map((r) => r.orderId).filter(Boolean))];
   const idLain = idJurnal.filter((id) => !idLunas.has(id));
-  const lain = idLain.length ? await tx.order.findMany({ where: { id: { in: idLain } }, select: selectOrder }) : [];
-  const orders = new Map([...lunas, ...lain].map((o) => [o.id, o]));
+  const lainMentah = idLain.length ? await tx.order.findMany({ where: { id: { in: idLain } }, select: selectOrder }) : [];
+  // Nota Kredit aktif per order → nilaiBersih (dipakai omzet Sales) dan notaKredit (langkah eksplisit jembatan).
+  const orders = new Map((await nilaiBersihPerOrder(tx, [...lunas, ...lainMentah])).map((o) => [o.id, o]));
   const semuaId = [...orders.keys()];
 
   // Pengakuan KAPAN PUN (termasuk piutang awal SALDO_AWAL) + tanggal serah dari job selesai — hanya untuk order yang relevan.
@@ -130,7 +133,7 @@ export async function hitungJembatan(tx, { fromStr, toStr, baris, ringkasan }) {
     if (!kelas) continue;
     detail.push({
       kelas, orderId: o.id, nomor: o.orderNumber, kategori: o.category, status: o.status, statusBayar: o.paymentStatus, pelanggan: o.customer?.name ?? "",
-      nilai: lunasP ? rp(dec(o.value)) : rp(dec(o.value)), ongkir: rp(dec(o.ongkir)), lunasPeriode: lunasP,
+      nilai: rp(dec(o.nilaiBersih)), notaKredit: rp(dec(o.notaKredit)), nilaiKotor: o.value, ongkir: rp(dec(o.ongkir)), lunasPeriode: lunasP,
       tanggalOrder: tanggalWIB(o.createdAt), tanggalLunas: o.paidAt ? tanggalWIB(o.paidAt) : null, tanggalSerah: serah.get(o.id) ?? null,
       jurnalPeriode: [...new Set(rows.map((r) => r.nomorJurnal))],
       tanggalJurnal: [...new Set(rows.map((r) => r.tanggal))], akun: [...new Set(rows.map((r) => r.akunKode))],
@@ -143,7 +146,7 @@ export async function hitungJembatan(tx, { fromStr, toStr, baris, ringkasan }) {
   }
   const dari = (kelas) => detail.filter((d) => d.kelas === kelas);
   const jml = (arr, f) => rp(sumMoney(arr.map(f)));
-  const komp = (kelas, extra = {}) => { const a = dari(kelas); return { kunci: kelas, jumlahOrder: a.length, nilaiOrder: jml(a, (d) => d.nilai), bruto: jml(a, (d) => d.bruto), neto: jml(a, (d) => d.neto), keterangan: KETERANGAN[kelas], orders: a, ...extra }; };
+  const komp = (kelas, extra = {}) => { const a = dari(kelas); return { kunci: kelas, jumlahOrder: a.length, nilaiOrder: jml(a, (d) => d.nilai), notaKredit: jml(a, (d) => d.notaKredit), bruto: jml(a, (d) => d.bruto), neto: jml(a, (d) => d.neto), keterangan: KETERANGAN[kelas], orders: a, ...extra }; };
   const A = komp(KELAS.LUNAS_DIAKUI); const B = komp(KELAS.LUNAS_DIAKUI_SEBELUM); const C = komp(KELAS.LUNAS_BELUM_DISERAHKAN); const D = komp(KELAS.LUNAS_DISERAHKAN_BELUM_DIAKUI);
   const E = komp(KELAS.DIAKUI_LUNAS_LAIN); const F = komp(KELAS.DIAKUI_BELUM_LUNAS); const H = komp(KELAS.PEMBALIK_PENGAKUAN_LAMA); const X = komp(KELAS.LAIN_TERTAUT);
 
@@ -157,7 +160,9 @@ export async function hitungJembatan(tx, { fromStr, toStr, baris, ringkasan }) {
   // Baris order tertaut PKR (order CRM operasional) masuk LAIN_TERTAUT; jangan terhitung ganda dengan PKR.
   const ongkirA = jml(A.orders, (d) => d.ongkirDiakui);
   const nilaiA = A.nilaiOrder;
-  const selisihA = rp(dec(A.bruto).minus(dec(nilaiA)).minus(dec(ongkirA)));
+  // Ledger mengakui nilai KOTOR (Dr Piutang / Cr Pendapatan); Nota Kredit muncul terpisah di 4-2100. Jadi dari nilai bersih Sales ke bruto ledger ada langkah "+ Nota Kredit".
+  const notaKreditA = A.notaKredit;
+  const selisihA = rp(dec(A.bruto).minus(dec(nilaiA)).minus(dec(notaKreditA)).minus(dec(ongkirA)));
 
   const omzet = rp(dec(omzetDb._sum.value ?? 0));
   const residualSales = rp(dec(omzet).minus(dec(A.nilaiOrder + B.nilaiOrder + C.nilaiOrder + D.nilaiOrder)));
@@ -170,11 +175,12 @@ export async function hitungJembatan(tx, { fromStr, toStr, baris, ringkasan }) {
 
   const manualRows = barisPend.filter((r) => r.sumber === "MANUAL");
   const langkah = [
-    { kunci: "omzet", label: "Omzet Sales: nilai order yang menjadi Lunas pada periode", tanda: 0, nominal: omzet, jumlahOrder: omzetDb._count._all, keterangan: "Σ Order.value, paidAt WIB di periode, status bukan Batal/Pending, pelanggan bukan Spam (nilai layanan, tanpa ongkir).", bagian: "SALES" },
+    { kunci: "omzet", label: "Omzet Sales: nilai bersih order yang menjadi Lunas pada periode (setelah Nota Kredit)", tanda: 0, nominal: omzet, jumlahOrder: omzetDb._count._all, keterangan: "Σ (Order.value − Nota Kredit aktif), paidAt WIB di periode, status bukan Batal/Pending, pelanggan bukan Spam (nilai layanan, tanpa ongkir). Sama dengan angka Sales/komisi.", bagian: "SALES" },
     { kunci: C.kunci, label: "− Lunas, belum diserahkan", tanda: -1, nominal: -C.nilaiOrder, jumlahOrder: C.jumlahOrder, keterangan: C.keterangan, bagian: "SALES" },
     { kunci: D.kunci, label: "− Lunas & diserahkan, tidak pernah diakui", tanda: -1, nominal: -D.nilaiOrder, jumlahOrder: D.jumlahOrder, keterangan: D.keterangan, bagian: "SALES", temuan: D.jumlahOrder > 0 },
     { kunci: B.kunci, label: "− Lunas, pendapatannya sudah diakui sebelum periode", tanda: -1, nominal: -B.nilaiOrder, jumlahOrder: B.jumlahOrder, keterangan: B.keterangan, bagian: "SALES" },
     { kunci: "nilai_diakui", label: "= Nilai order Lunas periode ini yang diakui sebagai pendapatan", tanda: 0, nominal: nilaiA, jumlahOrder: A.jumlahOrder, keterangan: "Subtotal; setara kelas \"Lunas & diakui\".", bagian: "SALES", subtotal: true },
+    { kunci: "nota_kredit", label: "+ Nota Kredit aktif pada order tersebut (kembali ke nilai kotor; potongannya tampil di Retur & Potongan)", tanda: 1, nominal: notaKreditA, jumlahOrder: A.orders.filter((d) => d.notaKredit !== 0).length, keterangan: "Ledger mengakui pendapatan sebesar nilai kotor order; Nota Kredit mengurangi omzet Sales tetapi dicatat sebagai potongan (4-2100), bukan mengurangi pengakuan.", bagian: "LEDGER" },
     { kunci: "ongkir", label: "+ Ongkos kirim yang diakui (4-1900)", tanda: 1, nominal: ongkirA, jumlahOrder: A.orders.filter((d) => d.ongkirDiakui !== 0).length, keterangan: "Ongkir bukan Order.value, tetapi pendapatan di buku besar.", bagian: "LEDGER" },
     { kunci: "selisih_nilai", label: "± Selisih nilai order vs jurnal (penyesuaian)", tanda: 1, nominal: selisihA, jumlahOrder: A.orders.filter((d) => d.manual !== 0).length, keterangan: "Jurnal penyesuaian nilai/ pembulatan pada order kelas ini; 0 bila nilai order sama dengan pengakuan.", bagian: "LEDGER" },
     { kunci: "bruto_A", label: "= Bruto ledger dari order Lunas & diakui periode ini", tanda: 0, nominal: A.bruto, jumlahOrder: A.jumlahOrder, keterangan: "Subtotal ledger kelas pertama.", bagian: "LEDGER", subtotal: true },
@@ -197,6 +203,7 @@ export async function hitungJembatan(tx, { fromStr, toStr, baris, ringkasan }) {
     detailOrder: detail,
     residual: { sales: residualSales, bruto: residualBruto, retur: residualRetur, bersih: residualBersih, nol },
     memo: {
+      notaKreditOmzetLunas: rp(sumMoney([A, B, C, D].map((k) => dec(k.notaKredit)))),
       penyesuaianManualNeto: rp(sumMoney(manualRows.filter(kredit).map((r) => r.efek))) - rp(sumMoney(manualRows.filter((r) => !kredit(r)).map((r) => -r.efek))),
       jurnalManual: [...new Set(manualRows.map((r) => r.nomorJurnal))],
       pengakuanTanggalBeda: detail.filter((d) => d.tanggalBeda).length,

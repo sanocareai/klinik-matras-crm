@@ -287,3 +287,40 @@ test("TANPA DATA: periode kosong → kartu nol, status TIDAK_BERLAKU, daftar kos
   await terinci(w.f); await w.f.get(`/api/finance/reports/income-statement/drilldown?${Q}&metrik=pendapatan`); await unduhExport(server.baseUrl, w.fin.token, "laporan-keuangan", { periode: { from: FROM, to: TO } });
   assert.equal(await rowsHash(), s2);
 });
+
+test("NILAI BERSIH (kasus Sofyan Rp200.000): omzet Sales = nilai setelah Nota Kredit; Nota Kredit tampil sebagai langkah eksplisit; residual Rp0; sama dengan agregat Sales", async () => {
+  const w = await dunia();
+  // Order Rp4.300.000 dibayar Rp4.100.000, diserahkan & diakui kotor Rp4.300.000; Owner memberi potongan Rp200.000 (Nota Kredit mandiri) → LUNAS.
+  const s = await buatOrder(w, { nilai: 4_300_000, bayar: 4_100_000, bayarTgl: "2026-10-05", serah: "2026-10-06", akui: "2026-10-06", nama: "Sofyan" });
+  const { buatNotaKredit, revisiOrder } = await import("../../src/services/finance/notaKredit.js");
+  await testPrisma.$transaction(async (tx) => buatNotaKredit(tx, {
+    orderId: s.o.id, amount: 200_000, reason: "Potongan harga uji kasus Sofyan", idempotencyKey: `nk-uji-${s.o.id}`, userId: w.admin.user.id,
+    expectedRevisi: await revisiOrder(tx, s.o.id), date: "2026-10-10",
+  }));
+  const body = (await terinci(w.f)).body;
+  const j = body.jembatan;
+  const L = Object.fromEntries(j.langkah.map((l) => [l.kunci, l]));
+  assert.deepEqual(j.residual, { sales: 0, bruto: 0, retur: 0, bersih: 0, nol: true }, "residual tetap Rp0");
+  assert.equal(L.omzet.nominal, 4_100_000, "omzet Sales = nilai SETELAH Nota Kredit (bukan Rp4.300.000 kotor)");
+  assert.equal(L.nilai_diakui.nominal, 4_100_000);
+  assert.equal(L.nota_kredit.nominal, 200_000, "Nota Kredit = langkah eksplisit kembali ke nilai kotor ledger");
+  assert.equal(L.nota_kredit.jumlahOrder, 1);
+  assert.equal(L.bruto_A.nominal, 4_300_000);
+  assert.equal(L.selisih_nilai.nominal, 0, "tidak ada selisih tak terjelaskan");
+  assert.equal(L.retur.nominal, -200_000, "potongan tetap tampil sebagai Retur & Potongan di ledger");
+  assert.equal(L.bersih.nominal, 4_100_000, "pendapatan bersih Finance = omzet bersih Sales (order ini)");
+  const baris = j.detailOrder.find((x) => x.nomor === s.o.orderNumber);
+  assert.deepEqual([baris.nilai, baris.nilaiKotor, baris.notaKredit], [4_100_000, 4_300_000, 200_000]);
+  assert.equal(j.memo.notaKreditOmzetLunas, 200_000);
+  // Sama dengan agregat yang dipakai Sales/komisi (aggregateBersih), bukan hitungan sendiri.
+  const { aggregateBersih } = await import("../../src/services/orderNilaiBersih.js");
+  const sales = await aggregateBersih(testPrisma, { where: { paidAt: { gte: WIB("2026-10-01", 0), lt: WIB("2026-10-16", 0) }, status: { notIn: ["CANCELLED", "PENDING"] } }, _sum: { value: true } });
+  assert.equal(sales._sum.value, L.omzet.nominal);
+  // Excel: kolom nilai bersih, nota kredit, nilai kotor pada rincian order jembatan.
+  const x = await unduhExport(server.baseUrl, w.fin.token, "laporan-keuangan", { periode: { from: FROM, to: TO } });
+  assert.equal(x.status, 200, JSON.stringify(x.json));
+  const sh = bacaSheet(x.wb, "Rincian Order Jembatan");
+  const r = sh.baris.find((row) => row["No. Order"] === s.o.orderNumber);
+  assert.ok(r, "baris order Sofyan ada di Excel");
+  assert.equal(r["Nilai Bersih Order (Rp)"], 4_100_000); assert.equal(r["Nota Kredit aktif (Rp)"], 200_000); assert.equal(r["Nilai Kotor Order (Rp)"], 4_300_000);
+});
