@@ -143,7 +143,7 @@ Omzet penjualan yang diakui di buku besar (saat order diserahkan), dikurangi ret
 | Tidak termasuk | Uang masuk/DP (kewajiban sampai diserahkan); Pemasukan lain di luar order; Modal & pinjaman |
 | Pasangan rekonsiliasi | Uang Masuk Terverifikasi; Piutang Usaha; Uang Muka Pelanggan |
 | Tampil di | Dashboard; Pemasukan; Laporan Keuangan (Laba Rugi) |
-| Export | pemasukan |
+| Export | pemasukan, laporan-keuangan |
 
 ### Piutang Usaha (`piutang_usaha`)
 
@@ -665,4 +665,52 @@ Pendapatan bersih dikurangi HPP dan beban operasional menurut jurnal pada period
 | Tidak termasuk | Aset/persediaan, kasbon, uang muka, pembayaran utang |
 | Pasangan rekonsiliasi | Pendapatan Diakui; Beban Diakui |
 | Tampil di | Dashboard; Laporan Keuangan |
-| Export | — |
+| Export | laporan-keuangan |
+
+### Laba Kotor (`laba_kotor`)
+
+Pendapatan bersih dikurangi beban pokok (HPP) menurut jurnal. Margin hanya final bila konsumsi bahan periode itu bernilai; selama belum, layar menandainya "HPP bahan belum lengkap — margin belum final" tanpa mengubah angka.
+
+| | |
+|---|---|
+| Rumus | pendapatan bersih − beban pokok |
+| Sumber | jurnal akun pendapatan dan beban pokok |
+| Status dihitung | terposting |
+| Basis tanggal | Tanggal buku (jurnal) |
+| Termasuk | Pembelian bahan manual yang dibebankan; Pemakaian bahan yang dibukukan; Upah & overhead produksi |
+| Tidak termasuk | Estimasi biaya bahan (hanya informasi, tidak masuk laba); Penerimaan bahan (persediaan, bukan HPP); Biaya bahan yang belum dapat dibuktikan |
+| Pasangan rekonsiliasi | Pendapatan Diakui; Beban Pokok (HPP) Terbukukan; Laba Bersih Sementara |
+| Tampil di | Laporan Keuangan (Laba Rugi) |
+| Export | laporan-keuangan |
+
+### Beban Pokok (HPP) Terbukukan (`beban_pokok_terbukukan`)
+
+Beban pokok yang benar-benar ada di jurnal pada periode: bahan, upah, overhead, susut, dan selisih. Dipisah dari biaya yang belum dapat dibuktikan (nominal kosong, bukan Rp0) dan estimasi informatif (tidak masuk laba).
+
+| | |
+|---|---|
+| Rumus | Σ debit − kredit akun beban pokok |
+| Sumber | jurnal akun beban pokok |
+| Status dihitung | terposting |
+| Basis tanggal | Tanggal buku (jurnal) |
+| Termasuk | Pembelian bahan manual (dibebankan saat beli); Pemakaian bahan perpetual; Pembalik jurnal (termasuk pembalik periode lain, ditandai) |
+| Tidak termasuk | Estimasi harga referensi; Biaya bahan tanpa harga/tanpa catatan pemakaian |
+| Pasangan rekonsiliasi | Laba Kotor; Biaya Bahan Bersih per Unit |
+| Tampil di | Laporan Keuangan (Laba Rugi) |
+| Export | laporan-keuangan |
+
+### Jembatan Omzet Sales → Pendapatan Finance (`jembatan_omzet_pendapatan`)
+
+Penjelasan selisih antara omzet order yang menjadi Lunas (basis tanggal lunas, Sales) dan pendapatan bersih di buku besar (basis diserahkan/akrual). Setiap order dikelompokkan ke satu komponen dan dua residual wajib Rp0.
+
+| | |
+|---|---|
+| Rumus | omzet Lunas − belum diserahkan − tak pernah diakui − diakui sebelum + ongkir/penyesuaian + diakui periode lain + piutang − pembalik + PKR − retur = pendapatan bersih |
+| Sumber | tabel Order + jurnal pendapatan |
+| Status dihitung | lunas dan terposting |
+| Basis tanggal | Tanggal buku (jurnal) |
+| Termasuk | Order Lunas periode ini; Order diakui periode ini yang lunas di periode lain; Penjualan Karyawan (ditampilkan terpisah) |
+| Tidak termasuk | Uang masuk (basis tanggal pembayaran); Order batal/pending/spam |
+| Pasangan rekonsiliasi | Pendapatan Diakui; Nilai Order yang Menjadi Lunas — Total Perusahaan |
+| Tampil di | Laporan Keuangan (Laba Rugi) |
+| Export | laporan-keuangan |

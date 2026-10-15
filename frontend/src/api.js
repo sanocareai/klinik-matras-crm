@@ -1681,6 +1681,9 @@ export const api = {
   // Laporan
   getFinanceTrialBalance: (params = {}) => request(`/finance/reports/trial-balance${qsFinance(params)}`),
   getFinanceIncomeStatement: (params = {}) => request(`/finance/reports/income-statement${qsFinance(params)}`),
+  // Laporan Keuangan terinci (baca-saja, satu snapshot): jembatan pendapatan, PKR, HPP & penanda mutu, beban per divisi, gap + drilldown kartu sampai jurnal.
+  getFinanceLaporanTerinci: (params = {}) => request(`/finance/reports/income-statement/terinci${qsFinance(params)}`),
+  getFinanceLaporanDrilldown: (params = {}) => request(`/finance/reports/income-statement/drilldown${qsFinance(params)}`),
   getFinanceBalanceSheet: (params = {}) => request(`/finance/reports/balance-sheet${qsFinance(params)}`),
   getFinanceCashFlow: (params = {}) => request(`/finance/reports/cash-flow${qsFinance(params)}`),
   getFinanceLedger: (accountId, params = {}) => request(`/finance/reports/ledger/${accountId}${qsFinance(params)}`),
