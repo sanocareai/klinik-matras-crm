@@ -9,6 +9,7 @@
 //   • Pratinjau = fungsi hitung yang SAMA dengan penerapan (tanpa menulis); penerapan butuh alasan ≥5, Idempotency-Key, kunci baris, dan sidik jari pratinjau (revisi optimistis).
 import { createHash } from "node:crypto";
 import { lockRowForUpdate } from "./inventoryLedger.js";
+import { PILIH_KREDIT, nilaiBersih, kreditDariRelasi } from "./orderNilaiBersih.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 
 const POLA_KUNCI = /^[A-Za-z0-9_\-:.]{8,128}$/;
@@ -32,6 +33,7 @@ const SELECT_ORDER = {
     orderBy: { createdAt: "asc" },
   },
   payments: { select: { id: true, amount: true, method: true, createdAt: true } },
+  ...PILIH_KREDIT, // Nota Kredit aktif: `nilai` yang ditampilkan = nilai BERSIH (konsisten dengan Sales/komisi)
 };
 
 async function muatOrder(db, nomorAtauId) {
@@ -51,7 +53,7 @@ async function hitungJejakKeuangan(db, orderId) {
 }
 
 const ringkasOrder = (o, keu) => ({
-  id: o.id, nomor: o.orderNumber, status: o.status, kategori: o.category, nilai: o.value, dibuat: o.createdAt.toISOString(),
+  id: o.id, nomor: o.orderNumber, status: o.status, kategori: o.category, nilai: nilaiBersih(o), nilaiKotor: o.value, notaKredit: kreditDariRelasi(o), dibuat: o.createdAt.toISOString(),
   customer: { id: o.customer?.id ?? null, nama: o.customer?.name ?? null, telepon: o.customer?.phone ?? null, salesLead: o.customer?.assignedSales?.name ?? null },
   pkr: o.penjualanKaryawan ? { nomor: o.penjualanKaryawan.nomor, penjual: o.penjualanKaryawan.seller?.name ?? null, status: o.penjualanKaryawan.status } : null,
   unit: o.units.map((u) => ({ kode: u.unitCode, status: u.status, merk: u.merk, ukuran: u.ukuran })),

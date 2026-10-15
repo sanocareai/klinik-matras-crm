@@ -22,7 +22,7 @@ Endpoint (izin `finance:read`; uraian akun sensitif hanya `finance:admin`):
 ## Definisi
 * **Cutoff** = waktu pembacaan (WIB & UTC) + tanggal buku jurnal terakhir; dicetak di layar dan di kepala sheet Excel.
 * **Periode** = tanggal buku jurnal (WIB), inklusif; status jurnal POSTED + REVERSED.
-* **Omzet Sales (Lunas)** = Σ `Order.value`, `paidAt` WIB di periode, status bukan Batal/Pending, pelanggan bukan Spam.
+* **Omzet Sales (Lunas)** = Σ nilai BERSIH order (`Order.value` − Nota Kredit aktif, `orderNilaiBersih.js`), `paidAt` WIB di periode, status bukan Batal/Pending, pelanggan bukan Spam. Sama dengan angka Sales/komisi. Ledger mengakui nilai KOTOR; Nota Kredit tampil sebagai langkah eksplisit `nota_kredit` (+) pada jembatan dan sebagai Retur & Potongan (4-2100) di sisi ledger. Residual tetap Rp0.
 * **Pendapatan** diakui saat order diserahkan; **PKR** saat dokumen dibuat (4-1250) — keduanya ditampilkan terpisah.
 * **Status mutu margin**: `TIDAK_BERLAKU` (tak ada unit terkirim) · `BELUM_LENGKAP` (konsumsi bahan periode belum bernilai / tak semua unit terkirim punya pemakaian bernilai → layar: "HPP bahan belum lengkap — margin belum final") · `LENGKAP`.
 
