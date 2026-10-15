@@ -19,7 +19,7 @@ import { adalahGalatInfraDb, kirimGalatInfraDb } from "../lib/dbInfraError.js";
 import express from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { idempotency } from "../middleware/idempotency.js";
-import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
+import { requirePermission, hasPermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import {
@@ -49,6 +49,7 @@ import {
 import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
 import { ambilDaftarJurnal, bentukJurnal } from "../services/finance/jurnalRead.js";
 import { diagnosisPiutang } from "../services/finance/piutangDiagnosis.js";
+import { bacaLaporanTerinci, drilldownMetrik } from "../services/finance/laporanTerinci/index.js";
 import { detailPiutangOrder } from "../services/finance/piutangDetail.js";
 // hitungNominal & statusEfektif DIPAKAI ULANG dari services/invoice.js —
 // BUKAN dihitung ulang di sini. Itu satu-satunya tempat arti nominal
@@ -1065,6 +1066,30 @@ financeRouter.get("/reports/trial-balance", requirePermission(P.FINANCE_READ), a
   try {
     const { from, to } = rentangDariQuery(req.query);
     res.json(await neracaSaldo(prisma, { from, to }));
+  } catch (err) {
+    handleFinanceError(err, res);
+  }
+});
+
+// LAPORAN KEUANGAN TERINCI (read-model baca-saja): kartu + jembatan pendapatan + PKR + HPP/penanda mutu + beban per divisi + gap, satu snapshot.
+// Rumus & angka kartu TIDAK berubah (labaRugi() yang sama). Rincian jurnal diambil lewat /drilldown supaya halaman utama tetap ringan.
+financeRouter.get("/reports/income-statement/terinci", requirePermission(P.FINANCE_READ), async (req, res) => {
+  try {
+    const { fromStr, toStr } = rentangDariQuery(req.query);
+    res.json(await bacaLaporanTerinci(prisma, { fromStr, toStr, bolehSensitif: hasPermission(req.user, P.FINANCE_ADMIN) }));
+  } catch (err) {
+    handleFinanceError(err, res);
+  }
+});
+
+financeRouter.get("/reports/income-statement/drilldown", requirePermission(P.FINANCE_READ), async (req, res) => {
+  try {
+    const { fromStr, toStr } = rentangDariQuery(req.query);
+    const teks = (v) => (typeof v === "string" && v.length > 0 && v.length <= 80 ? v : null);
+    res.json(await drilldownMetrik(prisma, {
+      fromStr, toStr, metrik: String(req.query.metrik || ""), akun: teks(req.query.akun), divisi: teks(req.query.divisi), sumber: teks(req.query.sumber), q: teks(req.query.q),
+      bolehSensitif: hasPermission(req.user, P.FINANCE_ADMIN),
+    }));
   } catch (err) {
     handleFinanceError(err, res);
   }

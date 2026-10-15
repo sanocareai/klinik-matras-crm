@@ -85,7 +85,7 @@ export const METRIK = Object.freeze([
     "Omzet penjualan yang diakui di buku besar (saat order diserahkan), dikurangi retur & potongan. Bukan uang masuk: order bisa diakui sebelum dibayar (piutang) atau dibayar sebelum diakui (uang muka).",
     "Σ kredit − debit akun pendapatan order (Layanan/Produk/Sewa/Ongkir) − Retur & Potongan", "jurnal PENGAKUAN_PENDAPATAN + pembalikan/refund/retur", "terposting", "TGL_BUKU",
     ["Pengakuan pendapatan order", "Ongkir yang diakui"], ["Uang masuk/DP (kewajiban sampai diserahkan)", "Pemasukan lain di luar order", "Modal & pinjaman"],
-    ["uang_masuk_terverifikasi", "piutang_usaha", "uang_muka_pelanggan"], ["Dashboard", "Pemasukan", "Laporan Keuangan (Laba Rugi)"], ["pemasukan"]),
+    ["uang_masuk_terverifikasi", "piutang_usaha", "uang_muka_pelanggan"], ["Dashboard", "Pemasukan", "Laporan Keuangan (Laba Rugi)"], ["pemasukan", "laporan-keuangan"]),
   m("piutang_usaha", "Piutang Usaha", "PELANGGAN",
     "Sisa tagihan pelanggan yang sudah diakui sebagai pendapatan tetapi belum dibayar, menurut saldo akun Piutang Usaha. Posisi per tanggal, bukan arus.",
     "Σ debit − kredit akun Piutang Usaha sampai tanggal posisi", "jurnal akun 1-xxxx Piutang Usaha", "terposting", "POSISI",
@@ -227,7 +227,23 @@ export const METRIK = Object.freeze([
   m("laba_bersih_sementara", "Laba Bersih Sementara", "LAPORAN",
     "Pendapatan bersih dikurangi HPP dan beban operasional menurut jurnal pada periode. 'Sementara' karena belum semua pengakuan/penyesuaian periode ditutup.",
     "pendapatan bersih − beban pokok − beban operasional", "jurnal akun pendapatan, HPP, beban", "terposting", "TGL_BUKU",
-    ["Semua beban yang diakui periode"], ["Aset/persediaan, kasbon, uang muka, pembayaran utang"], ["pendapatan_diakui", "beban_diakui"], ["Dashboard", "Laporan Keuangan"], []),
+    ["Semua beban yang diakui periode"], ["Aset/persediaan, kasbon, uang muka, pembayaran utang"], ["pendapatan_diakui", "beban_diakui"], ["Dashboard", "Laporan Keuangan"], ["laporan-keuangan"]),
+
+  m("laba_kotor", "Laba Kotor", "LAPORAN",
+    "Pendapatan bersih dikurangi beban pokok (HPP) menurut jurnal. Margin hanya final bila konsumsi bahan periode itu bernilai; selama belum, layar menandainya \"HPP bahan belum lengkap — margin belum final\" tanpa mengubah angka.",
+    "pendapatan bersih − beban pokok", "jurnal akun pendapatan dan beban pokok", "terposting", "TGL_BUKU",
+    ["Pembelian bahan manual yang dibebankan", "Pemakaian bahan yang dibukukan", "Upah & overhead produksi"], ["Estimasi biaya bahan (hanya informasi, tidak masuk laba)", "Penerimaan bahan (persediaan, bukan HPP)", "Biaya bahan yang belum dapat dibuktikan"],
+    ["pendapatan_diakui", "beban_pokok_terbukukan", "laba_bersih_sementara"], ["Laporan Keuangan (Laba Rugi)"], ["laporan-keuangan"]),
+  m("beban_pokok_terbukukan", "Beban Pokok (HPP) Terbukukan", "LAPORAN",
+    "Beban pokok yang benar-benar ada di jurnal pada periode: bahan, upah, overhead, susut, dan selisih. Dipisah dari biaya yang belum dapat dibuktikan (nominal kosong, bukan Rp0) dan estimasi informatif (tidak masuk laba).",
+    "Σ debit − kredit akun beban pokok", "jurnal akun beban pokok", "terposting", "TGL_BUKU",
+    ["Pembelian bahan manual (dibebankan saat beli)", "Pemakaian bahan perpetual", "Pembalik jurnal (termasuk pembalik periode lain, ditandai)"], ["Estimasi harga referensi", "Biaya bahan tanpa harga/tanpa catatan pemakaian"],
+    ["laba_kotor", "biaya_bahan_unit_bersih"], ["Laporan Keuangan (Laba Rugi)"], ["laporan-keuangan"]),
+  m("jembatan_omzet_pendapatan", "Jembatan Omzet Sales → Pendapatan Finance", "LAPORAN",
+    "Penjelasan selisih antara omzet order yang menjadi Lunas (basis tanggal lunas, Sales) dan pendapatan bersih di buku besar (basis diserahkan/akrual). Setiap order dikelompokkan ke satu komponen dan dua residual wajib Rp0.",
+    "omzet Lunas − belum diserahkan − tak pernah diakui − diakui sebelum + ongkir/penyesuaian + diakui periode lain + piutang − pembalik + PKR − retur = pendapatan bersih", "tabel Order + jurnal pendapatan", "lunas dan terposting", "TGL_BUKU",
+    ["Order Lunas periode ini", "Order diakui periode ini yang lunas di periode lain", "Penjualan Karyawan (ditampilkan terpisah)"], ["Uang masuk (basis tanggal pembayaran)", "Order batal/pending/spam"],
+    ["pendapatan_diakui", "nilai_order_lunas_perusahaan"], ["Laporan Keuangan (Laba Rugi)"], ["laporan-keuangan"]),
 ]);
 
 const PETA = new Map(METRIK.map((x) => [x.kunci, x]));
