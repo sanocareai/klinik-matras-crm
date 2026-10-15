@@ -131,3 +131,68 @@ test("cutover perpetual berlaku tetapi persediaan awal belum diposting: gap PERS
   assert.equal(gaps.length, 1);
   assert.equal(gaps[0].reason, "PERSEDIAAN_AWAL_BELUM_DIPOSTING");
 });
+
+test("RETUR membalik nilai KELUAR unit itu (bukan rata-rata hari retur): harga bergeser setelah pemakaian, retur tetap pada biaya asal; biaya unit = Σ jurnal unit", async () => {
+  const w = await dunia();
+  const m = await createTestMaterial({ code: "BHN-RETUR-K5", unit: "KG" });
+  await terima(m.id, 10, 40_000);
+  const pakai = await w.p.post(`/api/units/${w.unit.id}/materials`, { materialId: m.id, qty: 4 }); // 4 × 40.000 = 160.000
+  assert.equal(pakai.status, 201, JSON.stringify(pakai.body));
+  await terima(m.id, 10, 60_000); // rata-rata berjalan kini 50.000 — BUKAN harga yang harus dipakai membalik
+  const balik = await w.p.post(`/api/units/${w.unit.id}/materials`, { materialId: m.id, qty: -1 });
+  assert.equal(balik.status, 201, JSON.stringify(balik.body));
+  const e = await jurnalDari(`PEMAKAIAN_BAHAN_MOVEMENT:${balik.body.id}`);
+  assert.equal(nilai(e, "BEBAN_POKOK_BAHAN", "credit"), 40_000, "membalik pada biaya keluar 40.000, bukan 50.000");
+  assert.equal(nilai(e, "PERSEDIAAN_BAHAN", "debit"), 40_000);
+  const v = await testPrisma.finStockMovementValuation.findFirst({ where: { movementId: balik.body.id } });
+  assert.equal(v.basisMethod, "BALIK_NILAI_ISSUE_UNIT");
+  assert.equal(Number(v.value), -40_000);
+  // stok–jurnal–HPP per unit konsisten: Σ baris jurnal ber-unit (beban pokok) = nilai bersih jejak unit = Σ nilai beku
+  const baris = await testPrisma.finJournalLine.findMany({ where: { unitId: w.unit.id, account: { systemKey: "BEBAN_POKOK_BAHAN" } }, select: { debit: true, credit: true } });
+  const bebanUnit = baris.reduce((a, l) => a + Number(l.debit) - Number(l.credit), 0);
+  assert.equal(bebanUnit, 120_000);
+  const jejak = (await w.f.get(`/api/finance/biaya-bahan/unit/${w.unit.id}`)).body;
+  assert.equal(jejak.ringkasan.nilaiBersih, bebanUnit, "jejak biaya unit = jurnal HPP unit");
+  const beku = await testPrisma.finStockMovementValuation.findMany({ where: { unitId: w.unit.id } });
+  assert.equal(beku.reduce((a, r) => a + Number(r.value), 0), bebanUnit);
+});
+
+test("PARALEL & REPLAY: enam pemakaian bersamaan = enam jurnal tepat sekali; posting ulang/retry/sinkronisasi tidak menggandakan; saldo stok = Σ ledger; Σ jurnal = Σ nilai beku", async () => {
+  const w = await dunia();
+  const m = await createTestMaterial({ code: "BHN-PARALEL-K5", unit: "KG" });
+  await terima(m.id, 100, 12_000);
+  const hasil = await Promise.all(Array.from({ length: 6 }, (_, i) => w.p.post(`/api/units/${w.unit.id}/materials`, { materialId: m.id, qty: i + 1 })));
+  for (const r of hasil) assert.equal(r.status, 201, JSON.stringify(r.body));
+  const ids = hasil.map((r) => r.body.id);
+  const entri = await testPrisma.finJournalEntry.findMany({ where: { idempotencyKey: { in: ids.map((id) => `PEMAKAIAN_BAHAN_MOVEMENT:${id}`) } }, include: { lines: true } });
+  assert.equal(entri.length, 6, "satu jurnal per pergerakan, tidak kurang tidak lebih");
+  const total = entri.reduce((a, e) => a + e.lines.filter((l) => Number(l.debit) > 0 && l.unitId === w.unit.id).reduce((x, l) => x + Number(l.debit), 0), 0);
+  assert.equal(total, (1 + 2 + 3 + 4 + 5 + 6) * 12_000);
+  const beku = await testPrisma.finStockMovementValuation.findMany({ where: { movementId: { in: ids } } });
+  assert.equal(beku.length, 6, "satu nilai beku per pergerakan");
+  assert.equal(beku.reduce((a, r) => a + Number(r.value), 0), total);
+  const saldo = await testPrisma.stockMovement.aggregate({ where: { materialId: m.id }, _sum: { qty: true } });
+  assert.equal(Number(saldo._sum.qty), 100 - 21);
+  // replay: helper dipanggil ulang + sinkronisasi massal + semua jurnal seimbang
+  const { bukukanNilaiPergerakanBaru } = await import("../../src/services/finance/posting/inventory.js");
+  for (const id of ids) await testPrisma.$transaction((tx) => bukukanNilaiPergerakanBaru(tx, { id, type: "ISSUE" }));
+  await w.f.post("/api/finance/sync/pemakaian-bahan", {});
+  assert.equal(await testPrisma.finJournalEntry.count({ where: { source: "PEMAKAIAN_BAHAN" } }), 6);
+  const tak = await testPrisma.$queryRaw`select count(*)::int n from (select entry_id from fin_journal_lines group by entry_id having sum(debit) <> sum(credit)) x`;
+  assert.equal(tak[0].n, 0, "semua jurnal seimbang");
+});
+
+test("WASTE bertaut unit memakai akun Beban Susut (bukan Beban Pokok) dan tidak masuk biaya persediaan unit; tanpa unit tetap dijurnal", async () => {
+  const w = await dunia();
+  const m = await createTestMaterial({ code: "BHN-WASTE-K5", unit: "KG" });
+  await terima(m.id, 10, 20_000);
+  const a = await w.g.post("/api/inventory/movements/waste", { materialId: m.id, unitId: w.unit.id, qty: 1, reason: "salah potong" });
+  const b = await w.g.post("/api/inventory/movements/waste", { materialId: m.id, qty: 2, reason: "tumpah" });
+  assert.equal(a.status, 201, JSON.stringify(a.body)); assert.equal(b.status, 201, JSON.stringify(b.body));
+  const ea = await jurnalDari(`PEMAKAIAN_BAHAN_MOVEMENT:${a.body.id}`); const eb = await jurnalDari(`PEMAKAIAN_BAHAN_MOVEMENT:${b.body.id}`);
+  assert.equal(nilai(ea, "BEBAN_SUSUT_BAHAN", "debit"), 20_000); assert.equal(nilai(ea, "BEBAN_POKOK_BAHAN", "debit"), 0);
+  assert.equal(nilai(eb, "BEBAN_SUSUT_BAHAN", "debit"), 40_000);
+  const jejak = (await w.f.get(`/api/finance/biaya-bahan/unit/${w.unit.id}`)).body;
+  assert.equal(jejak.ringkasan.nilaiBersih ?? 0, 0, "waste tidak masuk biaya persediaan unit");
+  assert.equal(jejak.ringkasan.totalWaste, 20_000);
+});

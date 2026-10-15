@@ -133,6 +133,34 @@ export async function dasarHargaRataRata(tx, materialId, { asOf } = {}) {
   };
 }
 
+/**
+ * Harga BALIK untuk RETURN bertaut unit: retur sisa dari produksi membalik nilai yang SAMA dengan yang dibebankan saat bahan keluar ke unit itu (standar rata-rata bergerak:
+ * barang kembali ke gudang pada biaya keluarnya), BUKAN harga rata-rata hari retur yang bisa sudah bergeser. Dasarnya = pemakaian (ISSUE) berharga yang sudah DIBEKUKAN untuk
+ * unit + bahan itu sampai waktu retur (rata-rata tertimbang atas nilai beku). Mengembalikan null bila unit itu belum punya pemakaian berharga — pemanggil jatuh ke
+ * rata-rata penerimaan seperti biasa (atau gap TANPA_HARGA bila itu juga tidak ada). Tidak pernah memakai harga referensi/karangan.
+ * Bentuk hasil kompatibel dengan dasarHargaRataRata (+ asalIssue untuk jejak).
+ */
+export async function dasarHargaBalikUnit(tx, { materialId, unitId, asOf }) {
+  if (!materialId || !unitId || typeof tx?.finStockMovementValuation?.findMany !== "function") return null;
+  const rows = await tx.finStockMovementValuation.findMany({
+    where: {
+      materialId, unitId, movementType: "ISSUE", status: "DINILAI", value: { not: null },
+      ...(asOf && { movement: { createdAt: { lte: asOf } } }),
+    },
+    select: { movementId: true, qty: true, value: true },
+    orderBy: [{ valuedAt: "asc" }, { id: "asc" }],
+  });
+  const berharga = rows.filter((r) => new Decimal(String(r.qty)).abs().greaterThan(0) && new Decimal(String(r.value)).greaterThan(0));
+  if (berharga.length === 0) return null;
+  const totalQty = berharga.reduce((a, r) => a.plus(new Decimal(String(r.qty)).abs()), ZERO);
+  const totalNilai = berharga.reduce((a, r) => a.plus(new Decimal(String(r.value))), ZERO);
+  if (totalQty.isZero()) return null;
+  return {
+    harga: totalNilai.dividedBy(totalQty), totalQty, totalNilai, sumber: [], opening: null, asOf: asOf ?? null,
+    asalIssue: berharga.map((r) => ({ movementId: r.movementId, qty: String(new Decimal(String(r.qty)).abs()), nilai: String(r.value) })),
+  };
+}
+
 // Jenis pergerakan yang MENGURANGI persediaan dan akun beban tujuannya.
 // ISSUE (ke produksi) = harga pokok. WASTE = susut. ADJUSTMENT = selisih
 // opname, satu-satunya yang bisa dua arah.
@@ -181,6 +209,7 @@ async function bukukanPergerakan(tx, {
     select: {
       id: true, type: true, qty: true, unitId: true, createdAt: true,
       material: { select: { id: true, code: true, name: true } },
+      valuation: { select: { status: true, value: true } },
     },
   });
   if (movements.length === 0) return { posted: false, reason: "tidak_ada_pergerakan" };
@@ -192,13 +221,22 @@ async function bukukanPergerakan(tx, {
   for (const m of movements) {
     // asOf = createdAt movement ITU SENDIRI — lihat komentar panjang di
     // hargaRataRata soal kenapa ini wajib, bukan opsional.
-    const harga = await hargaRataRata(tx, m.material.id, { asOf: m.createdAt });
-    if (harga == null) {
-      tanpaHarga.push(m);
-      continue;
-    }
     const qty = new Decimal(String(m.qty));
-    const nilai = toMoney(qty.times(harga).abs());
+    // Nilai yang SUDAH dibekukan saat pergerakan ditulis (jejak biaya per unit) adalah sumber tunggal: jurnal HPP = nilai beku, jadi stok–jurnal–HPP per unit tidak
+    // mungkin berbeda. Tanpa nilai beku (pergerakan tanpa unit / historis) → hitung dari dasar harga seperti sebelumnya.
+    let nilai;
+    if (m.valuation?.status === "DINILAI" && m.valuation.value != null) {
+      nilai = toMoney(new Decimal(String(m.valuation.value)).abs());
+    } else {
+      let harga = null;
+      if (m.type === "RETURN" && m.unitId) harga = (await dasarHargaBalikUnit(tx, { materialId: m.material.id, unitId: m.unitId, asOf: m.createdAt }))?.harga ?? null;
+      if (harga == null) harga = await hargaRataRata(tx, m.material.id, { asOf: m.createdAt });
+      if (harga == null) {
+        tanpaHarga.push(m);
+        continue;
+      }
+      nilai = toMoney(qty.times(harga).abs());
+    }
     if (nilai.isZero()) continue;
     const baris = { movement: m, nilai, akunKey: AKUN_PER_TIPE[m.type] || SYSTEM_KEYS.SELISIH_STOK };
     if (qty.greaterThan(0)) persediaanNaik.push(baris);
@@ -325,14 +363,14 @@ export async function postStockMovementCost(tx, { movementId, userId = null }) {
   const m = await tx.stockMovement.findUnique({
     where: { id: movementId },
     select: {
-      id: true, type: true, createdAt: true, materialIssueId: true, goodsReceiptId: true,
+      id: true, type: true, createdAt: true, materialIssueId: true, goodsReceiptId: true, stockCountId: true, stockAdjustmentRequestId: true,
       material: { select: { code: true, name: true } },
     },
   });
   if (!m) throw new Error(`Stock movement ${movementId} tidak ditemukan`);
   // Baris yang punya dokumen induk dibukukan lewat dokumennya — kalau ikut
   // dibukukan di sini juga, nilainya dobel.
-  if (m.materialIssueId || m.goodsReceiptId) return { posted: false, reason: "punya_dokumen_induk" };
+  if (m.materialIssueId || m.goodsReceiptId || m.stockCountId || m.stockAdjustmentRequestId) return { posted: false, reason: "punya_dokumen_induk" };
   if (!AKUN_PER_TIPE[m.type]) return { posted: false, reason: "tipe_tidak_dinilai" };
 
   return bukukanPergerakan(tx, {

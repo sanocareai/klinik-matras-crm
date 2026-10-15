@@ -10,7 +10,7 @@
 //   5. Retur mengurangi biaya HANYA saat Gudang menerimanya (baris RETURN di ledger). Retur yang masih PENDING dilaporkan sebagai BELUM_FINAL.
 //   6. Catatan pemakaian PIC (production_step_evidence_v2.payload.materials) hanya DIBACA sebagai pembanding fisik; tidak pernah menjadi stok/jurnal kedua.
 //   7. Unit tidak menyimpan total biaya; semuanya dihitung dari ledger + pembekuan.
-import { dasarHargaRataRata } from "./posting/inventory.js";
+import { dasarHargaRataRata, dasarHargaBalikUnit } from "./posting/inventory.js";
 import { Decimal, ZERO, toMoney, moneyToNumber } from "./money.js";
 
 const JENIS_BIAYA = { ISSUE: "PEMAKAIAN", RETURN: "RETUR", WASTE: "SUSUT", ADJUSTMENT: "PENYESUAIAN" };
@@ -55,13 +55,17 @@ export async function catatValuasiPergerakan(tx, mov) {
   await tx.$executeRawUnsafe("SAVEPOINT sp_valuasi_pergerakan");
   try {
     const qty = d(mov.qty);
-    const dasar = await dasarHargaRataRata(tx, mov.materialId, { asOf: mov.createdAt });
+    // RETURN bertaut unit membalik biaya keluarnya (nilai beku pemakaian unit itu); selain itu / tanpa pemakaian berharga → rata-rata penerimaan.
+    let dasar = mov.type === "RETURN" ? await dasarHargaBalikUnit(tx, { materialId: mov.materialId, unitId: mov.unitId, asOf: mov.createdAt }) : null;
+    const metode = dasar ? "BALIK_NILAI_ISSUE_UNIT" : "RATA_RATA_TERTIMBANG";
+    if (!dasar) dasar = await dasarHargaRataRata(tx, mov.materialId, { asOf: mov.createdAt });
     let data;
     if (dasar.harga == null) {
       data = { status: "TANPA_HARGA", unitCostBasis: null, value: null, basis: { asOf: mov.createdAt ? new Date(mov.createdAt).toISOString() : null, alasan: "Material belum punya harga perolehan saat pergerakan ini diposting" } };
     } else {
       const mutlak = toMoney(qty.abs().times(dasar.harga));
-      data = { status: "DINILAI", unitCostBasis: dasar.harga, value: qty.isNegative() ? mutlak : mutlak.negated(), basis: await rincianDasar(tx, dasar) };
+      const rincian = await rincianDasar(tx, dasar);
+      data = { status: "DINILAI", unitCostBasis: dasar.harga, value: qty.isNegative() ? mutlak : mutlak.negated(), basisMethod: metode, basis: dasar.asalIssue ? { ...rincian, metode, asalIssue: dasar.asalIssue } : rincian };
     }
     const baris = await tx.finStockMovementValuation.create({
       data: { movementId: mov.id, materialId: mov.materialId, unitId: mov.unitId, movementType: mov.type, costKind: JENIS_BIAYA[mov.type], qty, ...data },
