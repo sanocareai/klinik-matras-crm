@@ -132,29 +132,29 @@ test("cutover perpetual berlaku tetapi persediaan awal belum diposting: gap PERS
   assert.equal(gaps[0].reason, "PERSEDIAAN_AWAL_BELUM_DIPOSTING");
 });
 
-test("RETUR membalik nilai KELUAR unit itu (bukan rata-rata hari retur): harga bergeser setelah pemakaian, retur tetap pada biaya asal; biaya unit = Σ jurnal unit", async () => {
+test("RETUR bertaut unit: akun benar (Cr Beban Pokok / Dr Persediaan), dinilai rata-rata tertimbang SAAT retur dan DIBEKUKAN; biaya unit = Σ jurnal unit = Σ nilai beku", async () => {
   const w = await dunia();
   const m = await createTestMaterial({ code: "BHN-RETUR-K5", unit: "KG" });
   await terima(m.id, 10, 40_000);
   const pakai = await w.p.post(`/api/units/${w.unit.id}/materials`, { materialId: m.id, qty: 4 }); // 4 × 40.000 = 160.000
   assert.equal(pakai.status, 201, JSON.stringify(pakai.body));
-  await terima(m.id, 10, 60_000); // rata-rata berjalan kini 50.000 — BUKAN harga yang harus dipakai membalik
+  await terima(m.id, 10, 60_000); // rata-rata tertimbang kini 50.000
   const balik = await w.p.post(`/api/units/${w.unit.id}/materials`, { materialId: m.id, qty: -1 });
   assert.equal(balik.status, 201, JSON.stringify(balik.body));
   const e = await jurnalDari(`PEMAKAIAN_BAHAN_MOVEMENT:${balik.body.id}`);
-  assert.equal(nilai(e, "BEBAN_POKOK_BAHAN", "credit"), 40_000, "membalik pada biaya keluar 40.000, bukan 50.000");
-  assert.equal(nilai(e, "PERSEDIAAN_BAHAN", "debit"), 40_000);
+  // KEPUTUSAN TERBUKA (dicatat di laporan K5): metode yang berlaku sejak jejak biaya bahan (8 Okt) menilai retur pada rata-rata tertimbang saat retur,
+  // bukan pada biaya keluar semula (40.000). Tes ini mengunci perilaku itu + konsistensi, bukan menyatakannya sebagai metode final.
+  assert.equal(nilai(e, "BEBAN_POKOK_BAHAN", "credit"), 50_000);
+  assert.equal(nilai(e, "PERSEDIAAN_BAHAN", "debit"), 50_000);
   const v = await testPrisma.finStockMovementValuation.findFirst({ where: { movementId: balik.body.id } });
-  assert.equal(v.basisMethod, "BALIK_NILAI_ISSUE_UNIT");
-  assert.equal(Number(v.value), -40_000);
-  // stok–jurnal–HPP per unit konsisten: Σ baris jurnal ber-unit (beban pokok) = nilai bersih jejak unit = Σ nilai beku
+  assert.equal(Number(v.value), -50_000, "nilai beku retur = nilai jurnal");
   const baris = await testPrisma.finJournalLine.findMany({ where: { unitId: w.unit.id, account: { systemKey: "BEBAN_POKOK_BAHAN" } }, select: { debit: true, credit: true } });
-  const bebanUnit = baris.reduce((a, l) => a + Number(l.debit) - Number(l.credit), 0);
-  assert.equal(bebanUnit, 120_000);
+  const bebanUnit = baris.reduce((a2, l) => a2 + Number(l.debit) - Number(l.credit), 0);
+  assert.equal(bebanUnit, 110_000);
   const jejak = (await w.f.get(`/api/finance/biaya-bahan/unit/${w.unit.id}`)).body;
   assert.equal(jejak.ringkasan.nilaiBersih, bebanUnit, "jejak biaya unit = jurnal HPP unit");
   const beku = await testPrisma.finStockMovementValuation.findMany({ where: { unitId: w.unit.id } });
-  assert.equal(beku.reduce((a, r) => a + Number(r.value), 0), bebanUnit);
+  assert.equal(beku.reduce((a2, r) => a2 + Number(r.value), 0), bebanUnit);
 });
 
 test("PARALEL & REPLAY: enam pemakaian bersamaan = enam jurnal tepat sekali; posting ulang/retry/sinkronisasi tidak menggandakan; saldo stok = Σ ledger; Σ jurnal = Σ nilai beku", async () => {

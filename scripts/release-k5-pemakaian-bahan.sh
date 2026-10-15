@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # RILIS K5 — PENCATATAN BERNILAI PEMAKAIAN BAHAN LEPAS (HPP): BACKEND SAJA, TANPA migrasi, TANPA frontend/dependensi, TANPA backfill/perubahan data lama. FAIL-CLOSED.
 #   POST /units/:id/materials, POST /inventory/movements/issue|return|waste, penerimaan Retur Produksi kini membukukan nilai (Dr Beban Pokok|Susut / Cr Persediaan) di transaksi yang SAMA,
-#   atau gap TANPA_HARGA_PEROLEHAN / PERSEDIAAN_AWAL_BELUM_DIPOSTING (tanpa jurnal Rp0). Retur bertaut unit membalik nilai KELUAR unit itu. Jurnal = nilai beku jejak biaya unit.
+#   atau gap TANPA_HARGA_PEROLEHAN / PERSEDIAAN_AWAL_BELUM_DIPOSTING (tanpa jurnal Rp0). Jurnal = nilai beku jejak biaya unit (bila ada). Metode retur TIDAK diubah (rata-rata saat retur).
 #   254 ISSUE historis TIDAK diberi harga/jurnal; Material.referenceUnitCost tidak dipakai; ADJUSTMENT/opname tidak termasuk.
 # Workflow RELEASE-DIRECTORY di atas release aktif (BASE_SHA); dist frontend DISALIN dari release aktif. Sebelum switch: backup + gzip + RESTORE nyata ke DB sementara.
-# Verifikasi pasca-rilis BACA-SAJA (smoke tanpa penulisan): historis tidak berubah, pagar jenis/dokumen induk, harga balik tidak mengarang.
+# Verifikasi pasca-rilis BACA-SAJA (smoke tanpa penulisan): historis tidak berubah, pagar jenis/dokumen induk.
 #
 #   cat scripts/release-k5-pemakaian-bahan.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/k5pb.sh'
 #   ssh ubuntu@43.133.152.6 'bash /tmp/k5pb.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'      # DRY-RUN: produksi TIDAK diubah
@@ -20,8 +20,8 @@ DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 2 harus SHA release aktif (baseline) 40 karakter" >&2; exit 1; }
 CAND_BRANCH="${CAND_BRANCH:-feat/finance-k5-pencatatan-bahan}"
 # Berkas yang BOLEH berbeda dari baseline: EKSPLISIT path persis. Prisma/package/frontend/migrasi tidak boleh ikut.
-ALLOWED_RE='^(backend/src/routes/inventory\.js|backend/src/routes/units\.js|backend/src/services/finance/posting/inventory\.js|backend/src/services/finance/biayaBahan\.js|backend/src/services/productionMaterialReturnService\.js|backend/tests/integration/pemakaianBahanLepas\.integration\.test\.js|backend/tests/integration/biayaBahanUnit\.integration\.test\.js|scripts/release-k5-pemakaian-bahan\.sh)$'
-BACKEND_SRC_EXPECT="backend/src/routes/inventory.js backend/src/routes/units.js backend/src/services/finance/biayaBahan.js backend/src/services/finance/posting/inventory.js backend/src/services/productionMaterialReturnService.js"
+ALLOWED_RE='^(backend/src/routes/inventory\.js|backend/src/routes/units\.js|backend/src/services/finance/posting/inventory\.js|backend/src/services/productionMaterialReturnService\.js|backend/tests/pemakaianBahanLepas\.test\.js|backend/tests/integration/pemakaianBahanLepas\.integration\.test\.js|backend/tests/integration/biayaBahanUnit\.integration\.test\.js|scripts/release-k5-pemakaian-bahan\.sh)$'
+BACKEND_SRC_EXPECT="backend/src/routes/inventory.js backend/src/routes/units.js backend/src/services/finance/posting/inventory.js backend/src/services/productionMaterialReturnService.js"
 PUBLIC_URL="https://app.sanomatrassehat.com"
 INTERNAL_URL="http://127.0.0.1:4000"
 REPO_URL="https://github.com/sanocareai/klinik-matras-crm.git"
@@ -224,7 +224,7 @@ if (MODE === "before") {
   process.exit(0);
 }
 const sebelum = JSON.parse(process.env.BEFORE_JSON || "{}");
-rec("modul posting memuat bukukanNilaiPergerakanBaru dan dasarHargaBalikUnit", typeof inv.bukukanNilaiPergerakanBaru === "function" && typeof inv.dasarHargaBalikUnit === "function");
+rec("modul posting memuat bukukanNilaiPergerakanBaru", typeof inv.bukukanNilaiPergerakanBaru === "function");
 // Pagar jenis: ADJUSTMENT/TRANSFER/RECEIPT tidak pernah disentuh jalur lepas.
 const adj = await inv.bukukanNilaiPergerakanBaru({}, { id: "x", type: "ADJUSTMENT" });
 rec("ADJUSTMENT tidak dibukukan oleh jalur lepas", adj.posted === false && adj.reason === "bukan_jalur_lepas");
@@ -232,14 +232,6 @@ rec("ADJUSTMENT tidak dibukukan oleh jalur lepas", adj.posted === false && adj.r
 const txPalsu = { stockMovement: { findUnique: async () => ({ id: "x", type: "ISSUE", createdAt: new Date(), materialIssueId: "doc", goodsReceiptId: null, stockCountId: null, stockAdjustmentRequestId: null, material: { code: "?", name: "?" } }) } };
 const induk = await inv.bukukanNilaiPergerakanBaru(txPalsu, { id: "x", type: "ISSUE" });
 rec("pergerakan berdokumen induk tidak dibukukan ganda (punya_dokumen_induk)", induk.posted === false && induk.reason === "punya_dokumen_induk");
-// Harga balik unit dibaca dari nilai beku: unit tanpa pemakaian berharga → null (tidak mengarang harga).
-const u = await prisma.$queryRawUnsafe(`select unit_id::text id, material_id::text mid from fin_stock_movement_valuations where movement_type = 'ISSUE' and status = 'DINILAI' limit 1`);
-if (u[0]) {
-  const b = await inv.dasarHargaBalikUnit(prisma, { materialId: u[0].mid, unitId: u[0].id, asOf: new Date() });
-  rec("dasarHargaBalikUnit membaca nilai beku unit (harga > 0)", b && Number(b.harga) > 0);
-} else lewati("dasarHargaBalikUnit pada unit bernilai beku", "belum ada pemakaian bernilai beku di produksi (tabel valuasi kosong) — wajar sebelum pemakaian baru");
-const tanpa = await inv.dasarHargaBalikUnit(prisma, { materialId: "00000000-0000-0000-0000-000000000000", unitId: "00000000-0000-0000-0000-000000000000", asOf: new Date() });
-rec("unit/bahan tanpa pemakaian berharga → null (tidak mengarang harga)", tanpa === null);
 // Historis tidak disentuh.
 for (const k of ["issueTanpaDokumen", "issueTanpaJurnalNilai"]) {
   rec(`historis tidak berubah: ${k} (${sebelum[k]} -> ${kini[k]})`, kini[k] >= sebelum[k], "tidak ada backfill: jumlah tidak boleh berkurang");
