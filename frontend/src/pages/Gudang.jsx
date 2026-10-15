@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { WorkspaceHero } from "@/components/ui/workspace-hero.jsx";
+import { hitungSelisihPengajuan, PESAN_DIAJUKAN } from "@/features/warehouse/penyesuaianLogic.js";
 
 // GUDANG — Inventory v1 (Phase 3, PRD §8). Scope disepakati dengan Gilang
 // 1 Agustus 2026: katalog material + ledger + goods receipt + issue manual
@@ -40,7 +41,7 @@ const MOVEMENT_TYPES = [
   { value: "issue", label: "Keluar ke Unit", icon: ArrowUpFromLine },
   { value: "return", label: "Retur", icon: RotateCcw },
   { value: "waste", label: "Buang", icon: Trash2 },
-  { value: "adjustment", label: "Stock Opname", icon: Scale },
+  { value: "adjustment", label: "Ajukan Penyesuaian", icon: Scale },
 ];
 const MOVEMENT_LABEL = Object.fromEntries(MOVEMENT_TYPES.map((m) => [m.value.toUpperCase(), m.label]));
 MOVEMENT_LABEL.RECEIPT = "Terima"; MOVEMENT_LABEL.ISSUE = "Keluar"; MOVEMENT_LABEL.RETURN = "Retur";
@@ -225,18 +226,24 @@ function MovementModal({ open, onClose, material, onSaved }) {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [diajukan, setDiajukan] = useState("");
 
   function reset() {
+    setDiajukan("");
     setType("receipt"); setQty(""); setUnitCost(""); setSupplier(""); setBatchNumber("");
     setUnitCode(""); setReason(""); setNote(""); setErr("");
   }
   function handleClose() { reset(); onClose(); }
+  function tutupDiajukan() { reset(); onSaved(); }
 
   async function handleSubmit(e) {
     e.preventDefault();
     setErr("");
     const qtyNum = Number(qty);
-    if (!qtyNum || qtyNum <= 0) { setErr(type === "adjustment" ? "Hasil hitung fisik wajib diisi" : "Jumlah wajib diisi"); return; }
+    if (type === "adjustment") {
+      // Hasil hitung fisik boleh 0 (nol fisik), tetapi kolom kosong bukan nol.
+      if (String(qty).trim() === "" || !Number.isFinite(qtyNum) || qtyNum < 0) { setErr("Hasil hitung fisik wajib diisi (0 atau lebih)"); return; }
+    } else if (!qtyNum || qtyNum <= 0) { setErr("Jumlah wajib diisi"); return; }
     if ((type === "waste" || type === "adjustment") && !reason.trim()) {
       setErr("Alasan wajib diisi"); return;
     }
@@ -260,7 +267,16 @@ function MovementModal({ open, onClose, material, onSaved }) {
         const unitId = unitCode.trim() ? await resolveUnitId(unitCode) : undefined;
         await api.wasteStock({ materialId: material.materialId, qty: qtyNum, reason: reason.trim(), unitId, note: note || undefined });
       } else if (type === "adjustment") {
-        await api.adjustStock({ materialId: material.materialId, actualQty: qtyNum, reason: reason.trim(), note: note || undefined });
+        // Pengajuan → persetujuan ORANG LAIN (Owner/Finance) → posting. Tidak ada penulisan ledger dari sini.
+        const h = hitungSelisihPengajuan(material.balance, qty);
+        if (!h.ok) { setErr(h.pesan); setBusy(false); return; }
+        const req = await api.createAdjustmentRequest({
+          materialId: material.materialId, adjustmentType: "COUNT_DIFFERENCE", adjustmentQty: h.selisih,
+          reason: reason.trim(), notes: note || undefined,
+        });
+        await api.updateAdjustmentRequest(req.id, { status: "WAITING_APPROVAL" });
+        setDiajukan(`${req.adjustmentNumber}: ${PESAN_DIAJUKAN}`);
+        return; // modal tetap terbuka menampilkan konfirmasi; muat ulang saat ditutup (onSaved menutup modal induk)
       }
       reset();
       onSaved();
@@ -272,6 +288,15 @@ function MovementModal({ open, onClose, material, onSaved }) {
   }
 
   if (!material) return null;
+
+  if (diajukan) {
+    return (
+      <Modal open={open} onOpenChange={tutupDiajukan} title={`Penyesuaian diajukan — ${material.code}`}>
+        <p className="rounded-btn bg-greenbg px-3 py-2.5 text-[13px] text-ink" data-testid="penyesuaian-diajukan">{diajukan}</p>
+        <div className="mt-3 flex justify-end"><Button type="button" onClick={tutupDiajukan} data-testid="tutup-diajukan">Tutup</Button></div>
+      </Modal>
+    );
+  }
 
   return (
     <Modal open={open} onOpenChange={handleClose} title={`Catat Pergerakan — ${material.code}`}
@@ -324,6 +349,10 @@ function MovementModal({ open, onClose, material, onSaved }) {
           </div>
         )}
 
+        {type === "adjustment" && (
+          <p className="rounded-btn bg-orangebg px-3 py-2 text-[12px] text-ink2">Tidak mengubah stok langsung: diajukan, disetujui Owner/Finance (orang lain), lalu diposting petugas Gudang.</p>
+        )}
+
         {(type === "waste" || type === "adjustment") && (
           <div>
             <label className="mb-1 block text-[13px] font-medium text-ink2">Alasan (wajib)</label>
@@ -342,7 +371,7 @@ function MovementModal({ open, onClose, material, onSaved }) {
         {err && <p className="text-[13px] text-red">{err}</p>}
         <div className="mt-2 flex justify-end gap-2">
           <Button type="button" variant="neutral" onClick={handleClose}>Batal</Button>
-          <Button type="submit" disabled={busy}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Simpan"}</Button>
+          <Button type="submit" disabled={busy}>{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : type === "adjustment" ? "Ajukan" : "Simpan"}</Button>
         </div>
       </form>
     </Modal>

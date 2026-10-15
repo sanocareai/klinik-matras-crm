@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
-# RILIS PEMISAHAN TUGAS ADJUSTMENT STOK + ALAT OPNAME — BACKEND SAJA, TANPA migrasi, TANPA frontend/dependensi, TANPA perubahan data. FAIL-CLOSED.
+# RILIS PEMISAHAN TUGAS ADJUSTMENT STOK + ALAT OPNAME — BACKEND + WEB (halaman Gudang & Stock Adjustment), TANPA migrasi, TANPA dependensi baru, TANPA perubahan data. FAIL-CLOSED.
 #   • Permission baru inventory:adjustment_approve (OWNER, FINANCE); pengaju != penyetuju; koreksi satu-langkah /movements/adjustment DITUTUP untuk semua peran (409 SATU_LANGKAH_DITUTUP);
 #     Stock Count dengan selisih hanya diselesaikan penyetuju yang bukan pembuat/penugas/pengisi hitungan; post menolak request tanpa persetujuan orang lain.
+#   • UI Gudang 'Penyesuaian' = pengajuan -> persetujuan orang lain -> posting (tidak lagi memanggil koreksi satu langkah); Stock Adjustment menampilkan tombol sesuai role.
 #   • Alat opname DRY-RUN: services/opnameCutover.js, services/opnameLembar.js, scripts/opname-preview.mjs (transaksi READ ONLY, tanpa mode apply).
-# Workflow RELEASE-DIRECTORY di atas release aktif (BASE_SHA); dist frontend DISALIN dari release aktif. Sebelum switch: backup + gzip + RESTORE nyata ke DB sementara.
+# Workflow RELEASE-DIRECTORY di atas release aktif (BASE_SHA); dist frontend DIBANGUN di release dir (aset lama dibawa). Sebelum switch: backup + gzip + RESTORE nyata ke DB sementara.
 # Verifikasi pasca-rilis BACA-SAJA: tidak ada transaksi/QA/unggahan di produksi; token uji dicetak dari akun yang sudah ada (tidak membuat akun).
 #
 #   cat scripts/release-pemisahan-tugas-opname.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/sod.sh'
 #   ssh ubuntu@43.133.152.6 'bash /tmp/sod.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'      # DRY-RUN: produksi TIDAK diubah
 #   ssh ubuntu@43.133.152.6 'nohup bash /tmp/sod.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/sod.out 2>&1 < /dev/null &'   # unggah & jalankan TERPISAH
 #
-# ROLLBACK: tanpa migrasi & tanpa perubahan data -> rollback kode aman kapan saja (tag image rollback-pre-sod-<sha8>). Tidak ada guard data yang diperlukan.
+# ROLLBACK: tanpa migrasi & tanpa perubahan data -> rollback kode aman kapan saja: recreate backend dari release dir sebelumnya mengembalikan backend DAN web lama sekaligus (dist ikut release dir) (tag image rollback-pre-sod-<sha8>). Tidak ada guard data yang diperlukan.
 #   Efek perilaku yang ikut kembali bila dirollback: koreksi satu-langkah terbuka lagi dan satu akun inventory:write bisa ajukan+setujui+posting sendirian.
 set -Eeuo pipefail
 umask 077
@@ -20,8 +21,9 @@ DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 2 harus SHA release aktif (baseline) 40 karakter" >&2; exit 1; }
 CAND_BRANCH="${CAND_BRANCH:-feat/stok-pemisahan-tugas-cutover-opname}"
 # Berkas yang BOLEH berbeda dari baseline: EKSPLISIT path persis. Prisma/package/frontend/migrasi tidak boleh ikut.
-ALLOWED_RE='^(backend/src/constants/permissions\.js|backend/src/routes/inventory\.js|backend/src/routes/stockAdjustment\.js|backend/src/routes/stockCount\.js|backend/src/services/inventorySegregation\.js|backend/src/services/opnameCutover\.js|backend/src/services/opnameLembar\.js|backend/scripts/opname-preview\.mjs|backend/tests/opnameCutover\.test\.js|backend/tests/integration/documentFlows\.integration\.test\.js|backend/tests/integration/opnameCutover\.integration\.test\.js|backend/tests/integration/stokAdjustmentSegregasi\.integration\.test\.js|backend/tests/integration/stokRekonsiliasi\.integration\.test\.js|backend/tests/integration/setup/rekonStokRunner\.js|docs/RUNBOOK-CUTOVER-OPNAME-PERSEDIAAN\.md|scripts/release-pemisahan-tugas-opname\.sh)$'
+ALLOWED_RE='^(backend/src/constants/permissions\.js|backend/src/routes/inventory\.js|backend/src/routes/stockAdjustment\.js|backend/src/routes/stockCount\.js|backend/src/services/inventorySegregation\.js|backend/src/services/opnameCutover\.js|backend/src/services/opnameLembar\.js|backend/scripts/opname-preview\.mjs|backend/tests/opnameCutover\.test\.js|backend/tests/integration/documentFlows\.integration\.test\.js|backend/tests/integration/opnameCutover\.integration\.test\.js|backend/tests/integration/stokAdjustmentSegregasi\.integration\.test\.js|backend/tests/integration/stokRekonsiliasi\.integration\.test\.js|backend/tests/integration/stokPenyesuaianAlurUI\.integration\.test\.js|backend/tests/integration/setup/rekonStokRunner\.js|frontend/src/api\.js|frontend/src/pages/Gudang\.jsx|frontend/src/features/warehouse/components/AdjustmentsTab\.jsx|frontend/src/features/warehouse/penyesuaianLogic\.js|frontend/tests/penyesuaianStok\.test\.js|docs/RUNBOOK-CUTOVER-OPNAME-PERSEDIAAN\.md|scripts/release-pemisahan-tugas-opname\.sh)$'
 BACKEND_SRC_EXPECT="backend/src/constants/permissions.js backend/src/routes/inventory.js backend/src/routes/stockAdjustment.js backend/src/routes/stockCount.js backend/src/services/inventorySegregation.js backend/src/services/opnameCutover.js backend/src/services/opnameLembar.js"
+FRONTEND_SRC_EXPECT="frontend/src/api.js frontend/src/features/warehouse/components/AdjustmentsTab.jsx frontend/src/features/warehouse/penyesuaianLogic.js frontend/src/pages/Gudang.jsx"
 PUBLIC_URL="https://app.sanomatrassehat.com"
 INTERNAL_URL="http://127.0.0.1:4000"
 REPO_URL="https://github.com/sanocareai/klinik-matras-crm.git"
@@ -104,7 +106,9 @@ CHANGED="$(sg diff --name-only "$BASE_SHA" "$DEPLOY_SHA" | LC_ALL=C sort)"
 LUAR="$(printf '%s\n' "$CHANGED" | grep -Ev "$ALLOWED_RE" | { grep -Fvx -f <(printf '%s\n' "$MAIN_FILES") || true; } || true)"
 [ -z "$LUAR" ] || { printf '%s\n' "$LUAR" | sed 's/^/        /'; die "ada berkas di LUAR allowlist eksplisit yang berbeda dari baseline — berhenti"; }
 [ "$(printf '%s\n' "$CHANGED" | grep -E '^backend/src/' | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')" = "$BACKEND_SRC_EXPECT" ] || die "daftar berkas backend/src yang berubah tidak sama dengan yang diaudit"
-! printf '%s\n' "$CHANGED" | grep -qE '^(backend/prisma/|frontend/)|package(-lock)?\.json$|^docker-compose|Dockerfile' || die "prisma/frontend/dependensi/compose berubah — rilis ini harus backend-saja tanpa migrasi"
+! printf '%s\n' "$CHANGED" | grep -qE '^backend/prisma/|package(-lock)?\.json$|^docker-compose|Dockerfile' || die "prisma/dependensi/compose berubah — rilis ini tanpa migrasi dan tanpa dependensi baru"
+! printf '%s\n' "$CHANGED" | grep -q '^frontend/dist/' || die "kandidat memuat frontend/dist — dist dibangun saat rilis, bukan di-commit"
+[ "$(printf '%s\n' "$CHANGED" | grep -E '^frontend/src/' | LC_ALL=C sort | tr '\n' ' ' | sed 's/ $//')" = "$FRONTEND_SRC_EXPECT" ] || die "frontend/src yang berubah bukan tepat daftar yang diaudit: ${FRONTEND_SRC_EXPECT}"
 ok "kandidat ${DEPLOY_SHORT} turunan baseline ${BASE_SHA:0:8}; origin/main (${MAIN_SHA:0:8}) leluhur kandidat (fast-forward mungkin; selisih terhadap baseline hanya scripts/docs bila ada); $(printf '%s\n' "$CHANGED" | wc -l) berkas, semua dalam allowlist; backend/src = $(printf '%s\n' "$BACKEND_SRC_EXPECT" | wc -w) berkas yang diaudit; tanpa prisma/frontend/dependensi"
 
 PHASE="2-audit-produksi"; say "2. Audit produksi aktif (baca-saja)"
@@ -133,8 +137,18 @@ SNAP_SQL="select 'jurnal', count(*), md5(coalesce(string_agg(e.id::text||e.statu
 psql_live -At -c "$SNAP_SQL" > "$BK_DIR/snap-sebelum.txt" || die "snapshot sebelum gagal"
 [ "$(wc -l < "$BK_DIR/snap-sebelum.txt")" -ge 25 ] || die "snapshot sebelum tidak lengkap"
 ok "snapshot sebelum tersimpan ($(wc -l < "$BK_DIR/snap-sebelum.txt") kelompok): jurnal, saldo akun/rekening, stok, PO, penerimaan, Payment, order, job, route, dokumen Gudang, work center, plan v2, flag, pengaturan"
+say "2b. Sumber node_modules frontend (package.json identik dengan kandidat)"
+LOCK_NEW="$BK_DIR/pkg-baru.json"; sg show "${DEPLOY_SHA}:frontend/package.json" > "$LOCK_NEW"
+NM_SRC=""
+for d in "$PREV_DIR" "$RELEASES"/*/; do
+  d="${d%/}"
+  if [ -d "$d/frontend/node_modules" ] && [ -f "$d/frontend/package.json" ] && cmp -s <(tr -d '\r' < "$d/frontend/package.json") <(tr -d '\r' < "$LOCK_NEW"); then NM_SRC="$d/frontend/node_modules"; break; fi
+done
+[ -n "$NM_SRC" ] || die "tidak ada release dengan frontend/node_modules dan package.json identik"
+NM_KB="$(du -sk "$NM_SRC" | cut -f1)"
+ok "node_modules build dari ${NM_SRC}"
 DB_BYTES="$(psql_live -At -c "select pg_database_size('${DB_NAME}')")"; AVAIL_KB="$(df -Pk "$HOME" | awk 'NR==2{print $4}')"
-[ "$AVAIL_KB" -ge $(( DB_BYTES / 1024 * 3 + 2 * 1024 * 1024 )) ] || die "ruang disk kurang"
+[ "$AVAIL_KB" -ge $(( DB_BYTES / 1024 * 3 + NM_KB + 2 * 1024 * 1024 )) ] || die "ruang disk kurang"
 ok "ruang disk cukup"
 if [ "$PREFLIGHT_ONLY" = "1" ]; then say "Preflight selesai (--preflight-only): produksi TIDAK diubah"; trap - EXIT; exit 0; fi
 
@@ -164,7 +178,7 @@ done
 reh_drop
 ok "restore backup ke DB sementara berhasil: tabel kunci cocok (selisih hanya transaksi baru sesudah backup); DB sementara dihapus"
 
-PHASE="4-release-dir"; say "4. Release dir ${NEW_DIR} (git archive; dist frontend disalin dari release aktif; release aktif tidak disentuh)"
+PHASE="4-release-dir"; say "4. Release dir ${NEW_DIR} (git archive; release aktif tidak disentuh)"
 [ "$(sg ls-remote origin "refs/heads/${CAND_BRANCH}" | cut -f1)" = "$DEPLOY_SHA" ] || die "kandidat berubah selama backup"
 [ "$(sg ls-remote origin "refs/heads/main" | cut -f1)" = "$MAIN_SHA" ] || die "origin/main bergeser selama backup"
 [ "$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$CID_OLD")" = "$PREV_DIR" ] || die "release aktif berubah selama backup"
@@ -178,9 +192,35 @@ ln -s "$PERSIST/frontend/.env" "$NEW_DIR/frontend/.env"; [ -r "$NEW_DIR/frontend
 if grep -l $'\r' "$NEW_DIR/backend/Dockerfile" "$NEW_DIR/docker-compose.yml" "$NEW_DIR/docker-compose.release.yml" >/dev/null 2>&1; then die "berkas Docker/compose mengandung CRLF"; fi
 diff -q <(tr -d '\r' < "$PREV_DIR/docker-compose.release.yml") <(tr -d '\r' < "$NEW_DIR/docker-compose.release.yml") >/dev/null || die "docker-compose.release.yml berbeda dari release aktif"
 diff -q <(tr -d '\r' < "$PREV_DIR/docker-compose.yml") <(tr -d '\r' < "$NEW_DIR/docker-compose.yml") >/dev/null || die "docker-compose.yml berbeda dari release aktif"
-cp -a "$PREV_DIR/frontend/dist" "$NEW_DIR/frontend/dist" || die "gagal menyalin dist dari release aktif"
-cmp -s "$PREV_DIR/frontend/dist/index.html" "$NEW_DIR/frontend/dist/index.html" || die "index.html hasil salinan berbeda"
-ok "release dir dibuat; compose identik; dist = salinan release aktif (${PREV_INDEX}); aset lama otomatis terbawa"
+cp -a "$NM_SRC" "$NEW_DIR/frontend/node_modules" || die "gagal menyalin node_modules frontend"
+ok "release dir dibuat; compose identik"
+
+say "4b. Build frontend di release dir (dist BARU; dist aktif tidak disentuh)"
+install -m 600 "$PERSIST/frontend/.env" "$NEW_DIR/frontend/.env" || die "gagal menyalin frontend/.env"
+( cd "$NEW_DIR/frontend" && npm run build ) > "$BK_DIR/build-frontend.log" 2>&1 || { rm -f "$NEW_DIR/frontend/.env"; tail -n 25 "$BK_DIR/build-frontend.log"; die "build frontend gagal (produksi tidak berubah)"; }
+rm -f "$NEW_DIR/frontend/.env"
+NEW_INDEX="$(grep -o 'index-[A-Za-z0-9_-]*\.js' "$NEW_DIR/frontend/dist/index.html" | sed -n 1p)"
+[ -n "$NEW_INDEX" ] && [ -f "$NEW_DIR/frontend/dist/assets/$NEW_INDEX" ] || die "hasil build frontend tidak valid"
+MAPS_KEY="$(sed -n 's/^VITE_GOOGLE_MAPS_JS_KEY=//p' "$PERSIST/frontend/.env" | tr -d '\r"'"'"' ')"
+[ -n "$(grep -lF "$MAPS_KEY" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat VITE_GOOGLE_MAPS_JS_KEY"
+# Fitur rilis ini + fitur rilis sebelumnya (jangan sampai hilang dari bundel).
+for s1 in "Ajukan Penyesuaian" "Tidak mengubah stok langsung" "Penyesuaian diajukan" "Menunggu persetujuan Owner atau Finance" "Post Adjustment"; do [ -n "$(grep -lF -- "$s1" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat teks fitur baru: ${s1}"; done
+for s2 in "Jembatan Omzet Sales" "Gap Pembukuan — daftar pemeriksaan" "Export Excel (filter ini)" "Edit Data Customer" "Buat Nota Kredit" "Koreksi Order" "Item Penjualan & Pemenuhan" "Katalog Item PKR" "Mode rute Produksi" "Opname Cutover Persediaan"; do [ -n "$(grep -lF "$s2" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru kehilangan teks fitur lama: ${s2}"; done
+[ -z "$(grep -lF "movements/adjustment" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru masih memanggil /movements/adjustment (koreksi satu langkah)"
+[ "$NEW_INDEX" != "$PREV_INDEX" ] || die "frontend berubah tetapi bundel baru identik dengan lama (tidak diharapkan)"
+ok "dist baru ${NEW_INDEX} (lama ${PREV_INDEX}); teks fitur baru + fitur lama ada; tidak memanggil koreksi satu langkah"
+
+PHASE="4c-aset-lama"; say "4c. Bawa aset ber-hash dari dist release aktif (tab terbuka saat deploy tetap bisa memuat chunk lama)"
+OLD_ASSETS="$BK_DIR/aset-lama.txt"; : > "$OLD_ASSETS"
+n=0
+for f in "$PREV_DIR"/frontend/dist/assets/*; do
+  [ -f "$f" ] || continue; b="$(basename "$f")"
+  [ -e "$NEW_DIR/frontend/dist/assets/$b" ] && continue
+  cp -p "$f" "$NEW_DIR/frontend/dist/assets/$b" && { printf '%s\n' "$b" >> "$OLD_ASSETS"; n=$((n+1)); }
+done
+find "$NEW_DIR/frontend/dist/assets" -type f -mtime +21 -delete
+ok "${n} aset lama dibawa ke dist baru; index.html baru tetap hanya merujuk aset baru"
+[ -n "$(grep -o 'index-[A-Za-z0-9_-]*\.js' "$NEW_DIR/frontend/dist/index.html" | sed -n 1p)" ] && [ -f "$NEW_DIR/frontend/dist/assets/$NEW_INDEX" ] || die "index/bundel baru rusak setelah membawa aset lama"
 
 PHASE="5-build-image"; say "5. Build image backend baru (backend lama tetap melayani)"
 ROLLBACK_TAG="${IMG_NAME%%:*}:rollback-pre-sod-${DEPLOY_SHORT}"
@@ -292,7 +332,7 @@ ok "backend baru sehat (image ${NEW_IMG_ID:7:12}, release ${DEPLOY_SHORT})"
 
 PHASE="8-verifikasi"; say "8. Verifikasi pasca-rilis (baca-saja)"
 curl -fsS --max-time 15 "${PUBLIC_URL}/api/health" | grep '"ok":true' >/dev/null || die "healthcheck publik gagal"; ok "publik 200"
-[ "$(curl -fsS --max-time 15 "${PUBLIC_URL}/" | grep -o 'index-[A-Za-z0-9_-]*\.js' | sed -n 1p)" = "$PREV_INDEX" ] || die "bundel publik berubah (frontend tidak boleh berubah)"; ok "bundel web publik tidak berubah (${PREV_INDEX})"
+[ "$(curl -fsS --max-time 15 "${PUBLIC_URL}/" | grep -o 'index-[A-Za-z0-9_-]*\.js' | sed -n 1p)" = "$NEW_INDEX" ] || die "bundel publik BUKAN dist baru (${NEW_INDEX})"; ok "bundel web publik = dist baru ${NEW_INDEX}"
 for f in $BACKEND_SRC_EXPECT; do
   want="$(sg show "${DEPLOY_SHA}:${f}" | tr -d '\r' | sha256sum | cut -d' ' -f1)"
   have="$(docker exec "$CID_NEW" sh -c "cat /app/${f#backend/}" | tr -d '\r' | sha256sum | cut -d' ' -f1)"
