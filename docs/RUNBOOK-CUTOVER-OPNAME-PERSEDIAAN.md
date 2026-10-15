@@ -60,7 +60,7 @@ Pengaturan Finance masih `inventory_perpetual_cutover_date = 2026-10-01` dan ada
 Buka `Rekonsiliasi-Gudang-Finance-TERTUTUP.xlsx` › *Keputusan per barang*, filter kolom *Temuan otomatis* berisi `[MASTER]`, `NEGATIF`, atau `NONAKTIF`. Perbaiki master/satuan **sebelum** hitung; jangan menghitung dalam satuan yang berbeda dari master.
 
 ### 3.3 Dokumen tertunda (jangan dihitung ganda)
-Per 15 Okt 06:15 UTC: GR-091026-01 (DRAFT, tanpa baris), GR-091026-02 (siap putaway, tanpa baris), **GR-151026-01 (SCHEDULED, PT ESA BUMINDO — PO yang sama dengan GR-091026-02: risiko GR ganda untuk LEM-I-SR-1037-13-KG 10 CAN; salah satunya harus dibatalkan Gudang)**, GR-141026-01 (siap putaway, 7 baris; KAI-001 diterima 12 tetapi diterima baik baru 8 → keputusan Gudang, lihat `Checklist-Gudang-GR-141026-01.md`), PO terkait. Untuk tiap dokumen pilih **satu**:
+Saat cut-off 14 Okt: GR-091026-01 (DRAFT, tanpa baris), GR-091026-02 (siap putaway, tanpa baris), GR-141026-01 (siap putaway, 7 baris), PO terkait. Untuk tiap dokumen pilih **satu**:
 - Putaway/selesaikan **sebelum** hitung → barang masuk ledger dan dihitung di rak; atau
 - Biarkan tertunda → barang dihitung **hanya** di kolom *GR sudah datang, belum diposting*.
 
@@ -69,7 +69,6 @@ Material Issue berstatus APPROVED/READY_TO_PICK/PICKED: posting Issue sebelum hi
 ### 3.4 Zona, label, jendela
 - Bagi gudang per zona (kode lokasi sistem: RAW-MATERIAL, RECEIVING, WIP, QUARANTINE, DAMAGED, RETURN, FINISHED-GOODS, DISPATCH). Tiap zona dihitung dalam satu sesi ≤ 12 jam.
 - Pasang label "SUDAH DIHITUNG — tanggal/jam/inisial".
-- **Pembatasan jalur cepat (disiapkan, belum aktif):** pengaturan `inventory_opname_window` (JSON `{"mulai":"…Z","selesai":"…Z","catatan":"…"}` di `fin_settings`) menutup `/movements/receipt|issue|return|waste` (409 `JENDELA_OPNAME_AKTIF`) HANYA di dalam jendela itu. Tanpa baris/di luar jendela: tidak ada perubahan. Dokumen resmi (GR, Material Issue, Transfer, Retur, Stock Adjustment/Count) tidak diblokir. Audit 15 Okt: **tidak ada satu pun** pergerakan jalur cepat oleh pengguna sepanjang riwayat ledger (semua pergerakan pengguna = 6 RECEIPT lewat GR; 254 ISSUE impor 31 Agu–7 Sep) — menutupnya tidak mengubah kebiasaan harian. Aktivasi: Tech menulis baris itu atas persetujuan Owner (tidak ada UI); hapus baris setelah adjustment diposting.
 - **Pembekuan** (disarankan): tidak ada penerimaan, Issue, transfer, atau adjustment dari mulai hitung hingga adjustment diposting. Bila tidak bisa dibekukan, **setiap** pergerakan dicatat di sheet *Log pergerakan jendela* (dokumen, material, qty, waktu, apakah efeknya sudah ada di jumlah yang dihitung).
 - Catat nomor dokumen terakhir sebelum hitung di sheet *Sesi*.
 
