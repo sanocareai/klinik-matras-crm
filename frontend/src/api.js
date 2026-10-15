@@ -572,7 +572,6 @@ export const api = {
   issueStock: (data) => request("/inventory/movements/issue", { method: "POST", body: JSON.stringify(data) }),
   returnStock: (data) => request("/inventory/movements/return", { method: "POST", body: JSON.stringify(data) }),
   wasteStock: (data) => request("/inventory/movements/waste", { method: "POST", body: JSON.stringify(data) }),
-  adjustStock: (data) => request("/inventory/movements/adjustment", { method: "POST", body: JSON.stringify(data) }),
 
   // Goods Receipt (Warehouse Tahap 2B)
   getGoodsReceipts: (params = {}) => {

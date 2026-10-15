@@ -32,6 +32,12 @@ async function client() {
   return makeClient(server.baseUrl, token);
 }
 
+// Penyetuju penyesuaian stok = OWNER/FINANCE yang BUKAN pemohon (pemisahan tugas, Okt 2026).
+async function penyetujuClient() {
+  const { token } = await createTestUser({ roles: ["OWNER"] });
+  return makeClient(server.baseUrl, token);
+}
+
 async function balanceOf(materialId) {
   const rows = await testPrisma.stockMovement.findMany({ where: { materialId } });
   return rows.reduce((s, r) => s + Number(r.qty), 0);
@@ -258,7 +264,9 @@ test("Stock Count: start snapshot systemQty, complete menulis ADJUSTMENT sebesar
   const submit = await api.post(`/api/inventory/stock-counts/${scId}/submit`, {});
   assert.equal(submit.status, 200);
 
-  const complete = await api.post(`/api/inventory/stock-counts/${scId}/complete`, {});
+  // Pemisahan tugas (Okt 2026): selisih hanya dapat diselesaikan penyetuju (OWNER/FINANCE) yang BUKAN pembuat hitungan.
+  const penyetuju = makeClient(server.baseUrl, (await createTestUser({ roles: ["OWNER"] })).token);
+  const complete = await penyetuju.post(`/api/inventory/stock-counts/${scId}/complete`, {});
   assert.equal(complete.status, 200, JSON.stringify(complete.body));
   assert.equal(await balanceOf(material.id), 7);
 
@@ -279,9 +287,10 @@ test("Stock Count: complete KEDUA KALINYA ditolak (double posting ADJUSTMENT)", 
   await api.patch(`/api/inventory/stock-counts/${scId}/lines/${start.body.lines[0].id}`, { countedQty: 2, reason: "hilang" });
   await api.post(`/api/inventory/stock-counts/${scId}/submit`, {});
 
-  const first = await api.post(`/api/inventory/stock-counts/${scId}/complete`, {});
+  const penyetuju = makeClient(server.baseUrl, (await createTestUser({ roles: ["OWNER"] })).token);
+  const first = await penyetuju.post(`/api/inventory/stock-counts/${scId}/complete`, {});
   assert.equal(first.status, 200);
-  const second = await api.post(`/api/inventory/stock-counts/${scId}/complete`, {});
+  const second = await penyetuju.post(`/api/inventory/stock-counts/${scId}/complete`, {});
   assert.equal(second.status, 400);
 
   const adjustments = await testPrisma.stockMovement.count({ where: { materialId: material.id, type: "ADJUSTMENT" } });
@@ -388,7 +397,9 @@ test("Stock Adjustment: post menulis ADJUSTMENT berdasarkan SALDO TERKINI, bukan
   await testPrisma.stockMovement.create({ data: { materialId: material.id, type: "RECEIPT", qty: 20 } });
 
   await api.patch(`/api/inventory/adjustments/${adjId}`, { status: "WAITING_APPROVAL" });
-  await api.patch(`/api/inventory/adjustments/${adjId}`, { status: "APPROVED" });
+  const penyetuju = await penyetujuClient();
+  const setuju = await penyetuju.patch(`/api/inventory/adjustments/${adjId}`, { status: "APPROVED" });
+  assert.equal(setuju.status, 200, JSON.stringify(setuju.body));
   const post = await api.post(`/api/inventory/adjustments/${adjId}/post`, {});
   assert.equal(post.status, 200, JSON.stringify(post.body));
 
@@ -411,7 +422,9 @@ test("Stock Adjustment: post ditolak kalau adjustmentQty basi akan mendorong sal
   await testPrisma.stockMovement.create({ data: { materialId: material.id, type: "ISSUE", qty: -9 } });
 
   await api.patch(`/api/inventory/adjustments/${adjId}`, { status: "WAITING_APPROVAL" });
-  await api.patch(`/api/inventory/adjustments/${adjId}`, { status: "APPROVED" });
+  const penyetuju = await penyetujuClient();
+  const setuju = await penyetuju.patch(`/api/inventory/adjustments/${adjId}`, { status: "APPROVED" });
+  assert.equal(setuju.status, 200, JSON.stringify(setuju.body));
   const post = await api.post(`/api/inventory/adjustments/${adjId}/post`, {});
   assert.equal(post.status, 400, "harus ditolak — 10-9-8 = -7, negatif");
   assert.equal(await balanceOf(material.id), 1, "saldo cuma boleh mencerminkan RECEIPT+ISSUE yang sudah sah, ADJUSTMENT yang ditolak tidak ikut tertulis");
@@ -426,7 +439,9 @@ test("Stock Adjustment: post KEDUA KALINYA ditolak (double posting)", async () =
   });
   const adjId = create.body.id;
   await api.patch(`/api/inventory/adjustments/${adjId}`, { status: "WAITING_APPROVAL" });
-  await api.patch(`/api/inventory/adjustments/${adjId}`, { status: "APPROVED" });
+  const penyetuju = await penyetujuClient();
+  const setuju = await penyetuju.patch(`/api/inventory/adjustments/${adjId}`, { status: "APPROVED" });
+  assert.equal(setuju.status, 200, JSON.stringify(setuju.body));
   const first = await api.post(`/api/inventory/adjustments/${adjId}/post`, {});
   assert.equal(first.status, 200);
   const second = await api.post(`/api/inventory/adjustments/${adjId}/post`, {});

@@ -14,6 +14,11 @@ import StatusBadge from "./StatusBadge.jsx";
 import {
   ADJUSTMENT_TYPE_REAL, ADJUSTMENT_STATUS_REAL, ADJUSTMENT_FORWARD_FLOW,
 } from "../inventoryReal.js";
+import { aksiPermintaan } from "../penyesuaianLogic.js";
+
+function pengguna() {
+  try { return JSON.parse(localStorage.getItem("user")) || {}; } catch { return {}; }
+}
 
 // Stock Adjustment (review-gated) — beda dengan koreksi satu-langkah yang
 // sudah ada sejak v1 (dipakai Stock Count Tahap 5 & Gudang.jsx). Wajib
@@ -116,6 +121,8 @@ function DetailDrawer({ request, onClose, onChanged }) {
   const currentIdx = ADJUSTMENT_FORWARD_FLOW.indexOf(status);
   const nextStatus = ADJUSTMENT_FORWARD_FLOW[currentIdx + 1];
   const afterQty = request.beforeQty + request.adjustmentQty;
+  const u = pengguna();
+  const aksi = aksiPermintaan({ status, roles: u.roles || [], userId: u.id, requestedById: request.requestedById ?? request.requestedBy?.id });
 
   async function majukan() {
     setBusy(true); setError("");
@@ -181,14 +188,15 @@ function DetailDrawer({ request, onClose, onChanged }) {
                 </div>
               ) : (
                 <div className="flex gap-2">
-                  <Button variant="ghost" size="sm" onClick={() => setCancelling(true)}><XCircle size={14} /> Cancel</Button>
-                  {status === "APPROVED" ? (
+                  {aksi.batalkan && <Button variant="ghost" size="sm" onClick={() => setCancelling(true)}><XCircle size={14} /> Cancel</Button>}
+                  {aksi.catatan && <p className="ml-1 self-center text-[11.5px] text-ink3" data-testid="catatan-aksi">{aksi.catatan}</p>}
+                  {aksi.posting ? (
                     <Button size="sm" className="ml-auto" onClick={posting} disabled={busy}>
                       {busy ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Post Adjustment
                     </Button>
-                  ) : nextStatus ? (
+                  ) : (aksi.majukan || aksi.setujui) && nextStatus ? (
                     <Button size="sm" className="ml-auto" onClick={majukan} disabled={busy}>
-                      {busy ? <Loader2 size={14} className="animate-spin" /> : <ArrowRight size={14} />} Advance to {ADJUSTMENT_STATUS_REAL[nextStatus]?.label}
+                      {busy ? <Loader2 size={14} className="animate-spin" /> : <ArrowRight size={14} />} {aksi.setujui ? "Setujui" : "Ajukan"} → {ADJUSTMENT_STATUS_REAL[nextStatus]?.label}
                     </Button>
                   ) : null}
                 </div>
