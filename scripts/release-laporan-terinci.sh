@@ -281,7 +281,7 @@ REH_PW="$(sed -n 's/^DATABASE_URL=\"\?postgresql:\/\/[^:]*:\([^@]*\)@.*/\1/p' "$
 dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="postgresql://${DB_USER}:${REH_PW}@postgres:5432/${REH_DB}" backend npx prisma migrate status </dev/null 2>&1 | grep -i 'up to date' >/dev/null || { reh_drop; die "migrate status rehearsal (image baru) TIDAK 'up to date' — rilis ini harus tanpa migrasi"; }
 ok "image baru: tidak ada migrasi pending pada hasil restore (rilis TANPA migrasi terbukti)"
 # Kode BARU dijalankan terhadap data RESTORE: ringkasan terinci = Laba Rugi lama, kartu = drilldown, kontrol parity & residual jembatan = OK untuk empat periode.
-dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="postgresql://${DB_USER}:${REH_PW}@postgres:5432/${REH_DB}" backend node --input-type=module - <<'REHNODE' > "$BK_DIR/rehearsal-laporan.log" 2>&1 || { cat "$BK_DIR/rehearsal-laporan.log"; reh_drop; die "pratinjau pembatalan terhadap data restore GAGAL"; }
+dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="postgresql://${DB_USER}:${REH_PW}@postgres:5432/${REH_DB}" backend node --input-type=module - <<'REHNODE' > "$BK_DIR/rehearsal-laporan.log" 2>&1 || { cat "$BK_DIR/rehearsal-laporan.log"; reh_drop; die "laporan terinci terhadap data restore GAGAL (lihat rehearsal-laporan.log)"; }
 import { createRequire } from "node:module";
 const { PrismaClient } = createRequire(process.cwd() + "/")("@prisma/client");
 const prisma = new PrismaClient();

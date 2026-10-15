@@ -58,7 +58,7 @@ export async function hitungGap(tx, { fromStr, toStr, catatan }) {
       no: i + 1, gapId: g.id, sumber: g.source, sumberId: g.sourceId, alasanKode: g.reason, detailSistem: g.detail, tanggalGap: tanggalWIB(g.createdAt),
       jenis, jenisLabel: JENIS_LABEL[jenis], tindakan, dampak,
       order: o ? {
-        nomor: o.orderNumber, kategori: o.category, status: o.status, statusBayar: o.paymentStatus, pelanggan: o.customer?.name ?? "", nilai: rp(toMoney(o.value)), ongkir: rp(toMoney(o.ongkir)),
+        nomor: o.orderNumber, kategori: o.category, status: o.status, statusBayar: o.paymentStatus, pelanggan: o.customer?.name ?? "", nilai: rp(toMoney(o.value)), ongkir: rp(toMoney(o.ongkir ?? 0)),
         jumlahItem: o._count.items, jumlahUnit: o._count.units, tanggalOrder: tanggalWIB(o.createdAt), tanggalLunas: o.paidAt ? tanggalWIB(o.paidAt) : null, tanggalSerah: serah.get(o.id) ?? null,
         pembayaranTerverifikasi: terverifikasi, jumlahPembayaran: nBayar.get(o.id) ?? 0, lunasTanpaPembayaran: lunasTanpaBayar,
       } : null,
@@ -85,11 +85,11 @@ export async function hitungGap(tx, { fromStr, toStr, catatan }) {
   const adaGap = new Set(gaps.map((g) => g.sourceId));
   const serahK = new Map();
   for (const j of jobK) { if (!j.completedAt) continue; const t = tanggalWIB(j.completedAt); if (!serahK.has(j.orderId) || t > serahK.get(j.orderId)) serahK.set(j.orderId, t); }
-  const tanpaGap = kandidat.filter((o) => !sudah.has(o.id) && !adaGap.has(o.id) && rp(toMoney(o.value)) + rp(toMoney(o.ongkir)) > 0).map((o) => ({
-    nomor: o.orderNumber, kategori: o.category, status: o.status, statusBayar: o.paymentStatus, pelanggan: o.customer?.name ?? "", nilai: rp(toMoney(o.value)), ongkir: rp(toMoney(o.ongkir)),
+  const tanpaGap = kandidat.filter((o) => !sudah.has(o.id) && !adaGap.has(o.id) && rp(toMoney(o.value)) + rp(toMoney(o.ongkir ?? 0)) > 0).map((o) => ({
+    nomor: o.orderNumber, kategori: o.category, status: o.status, statusBayar: o.paymentStatus, pelanggan: o.customer?.name ?? "", nilai: rp(toMoney(o.value)), ongkir: rp(toMoney(o.ongkir ?? 0)),
     tanggalLunas: o.paidAt ? tanggalWIB(o.paidAt) : null, tanggalSerah: serahK.get(o.id) ?? null, jenis: "DISERAHKAN_BELUM_DIAKUI", jenisLabel: JENIS_LABEL.DISERAHKAN_BELUM_DIAKUI,
     tindakan: "Selidiki kenapa hook pengakuan tidak jalan (order dibuat langsung berstatus diserahkan / sebelum cutoff). Pengakuan harus lewat jurnal terkendali dengan tanggal yang disetujui Owner — bukan dari laporan ini.",
-    dampak: `Pendapatan kurang ${rp(toMoney(o.value)) + rp(toMoney(o.ongkir))} bila order ini memang sah; uang yang sudah masuk berdiri sebagai Uang Muka Pelanggan.`,
+    dampak: `Pendapatan kurang ${rp(toMoney(o.value)) + rp(toMoney(o.ongkir ?? 0))} bila order ini memang sah; uang yang sudah masuk berdiri sebagai Uang Muka Pelanggan.`,
   }));
 
   return {

@@ -38,7 +38,7 @@ async function dunia() {
 }
 
 /** Order + (opsional) pembayaran terverifikasi + (opsional) pengakuan + job serah + unit. */
-async function buatOrder(w, { nilai, ongkir = 0, status = "DELIVERED", kategori = "LAYANAN", bayar = null, bayarTgl = null, akui = null, serah = null, nama = "Pelanggan Uji", unit = 1, pkrId = null }) {
+async function buatOrder(w, { nilai, ongkir = null, status = "DELIVERED", kategori = "LAYANAN", bayar = null, bayarTgl = null, akui = null, serah = null, nama = "Pelanggan Uji", unit = 1, pkrId = null }) {
   seq += 1;
   const c = await testPrisma.customer.create({ data: { phone: `62812${String(Date.now()).slice(-6)}${seq}`, name: `${nama} ${seq}`, pipelineStage: "TRANSACTION" } });
   const o = await testPrisma.order.create({ data: { customerId: c.id, value: nilai, ongkir, category: kategori, status, orderNumber: `${kategori === "SEWA" ? "SWS" : "RES"}-UJI-${String(seq).padStart(3, "0")}`, penjualanKaryawanId: pkrId } });
@@ -79,8 +79,8 @@ async function skenario(w) {
   h.F = await buatOrder(w, { nilai: 900_000, serah: "2026-10-08", akui: "2026-10-08" });                                                                              // diakui P, belum lunas
   h.H = await buatOrder(w, { nilai: 600_000, status: "CANCELLED", serah: "2026-09-30", akui: "2026-09-30" });                                                         // pengakuan lama dibalik di P
   await testPrisma.$transaction((tx) => reverseJournal(tx, { entryId: h.H.entri.id, date: D("2026-10-06"), reason: "Order dibatalkan (uji)", userId: w.admin.user.id }));
-  // Gap resmi: order nilai Rp0 sudah diserahkan → NILAI_ORDER_NOL (BELUM_BERHARGA)
-  h.G = await buatOrder(w, { nilai: 0, serah: "2026-10-09", akui: "2026-10-09" });
+  // Gap resmi: order nilai Rp0 sudah diserahkan → NILAI_ORDER_NOL (BELUM_BERHARGA) // ongkir NULL seperti di produksi (kolom nullable) — regresi bug yang ditangkap rehearsal rilis
+  h.G = await buatOrder(w, { nilai: 0, ongkir: null, serah: "2026-10-09", akui: "2026-10-09" });
   // PKR: dokumen Rp3.000.000 + order CRM operasional bernilai Rp0 dengan gap PKR (hanya untuk pembeda jenis)
   const pkr = await testPrisma.finPenjualanKaryawan.create({ data: { nomor: "PKR-10102026-001", date: D("2026-10-10"), sellerId: w.sales.user.id, buyerName: "Kerabat Uji", total: 3_000_000, status: "AKTIF",
     items: { create: [{ name: "Kasur Uji", quantity: 1, unitPrice: 3_000_000, sortOrder: 0 }] } } });
