@@ -48,6 +48,9 @@ export const PERMISSIONS = {
   SCOPE_REVISION_DECIDE: "scope_revision:decide",   // sales & admin
   INVENTORY_READ: "inventory:read",
   INVENTORY_WRITE: "inventory:write",
+  // Pemisahan tugas penyesuaian stok (Okt 2026): MENYETUJUI penyesuaian (Stock Adjustment APPROVED, Stock Count dengan selisih, koreksi
+  // satu-langkah) dipegang peran PENYETUJU yang berbeda dari penulis ledger (INVENTORY_WRITE). Pemohon tidak pernah boleh menyetujui permintaannya sendiri.
+  INVENTORY_ADJUSTMENT_APPROVE: "inventory:adjustment_approve",
   // Catat bahan baku dipakai untuk SATU unit spesifik (busa/lem/kain saat
   // mengerjakan tahap). SENGAJA dipisah dari INVENTORY_WRITE — lantai
   // produksi tidak butuh (dan tidak boleh) akses goods receipt/stock
@@ -297,7 +300,7 @@ export const ROLE_PERMISSIONS = {
   // otomatis TIDAK kebagian tanpa perlu disentuh sama sekali. Permission-
   // nya = ADMIN penuh + B2B_READ/WRITE — role ini TIDAK PERNAH mengurangi
   // apa pun, cuma menambah.
-  OWNER: [...ADMIN_PERMS, P.B2B_READ, P.B2B_WRITE],
+  OWNER: [...ADMIN_PERMS, P.B2B_READ, P.B2B_WRITE, P.INVENTORY_ADJUSTMENT_APPROVE],
 
   SALES: [
     P.CUSTOMER_READ, P.CUSTOMER_WRITE, P.CUSTOMER_PII_READ,
@@ -462,6 +465,8 @@ export const ROLE_PERMISSIONS = {
     // Melihat nilai persediaan & dokumen gudang yang jadi dasar tagihan
     // supplier — BACA SAJA, finance tidak pernah menulis pergerakan stok.
     P.INVENTORY_READ,
+    // Penyetuju penyesuaian stok (Okt 2026): Finance MENYETUJUI, tidak pernah menulis ledger sendiri (tidak memegang INVENTORY_WRITE).
+    P.INVENTORY_ADJUSTMENT_APPROVE,
     // Snapshot Insentif (24 September 2026) — Finance MEMBUAT draft &
     // MEREVIEW ("Finance review, Owner approval" — spec eksplisit), TAPI
     // SENGAJA TIDAK dapat INCENTIVE_SNAPSHOT_APPROVE — persetujuan akhir

@@ -127,10 +127,15 @@ export async function postStockMovement(tx, {
 
   const balance = await lockMaterialBalance(tx, materialId);
   const resultBalance = balance + qtyNum;
-  if (resultBalance < -EPSILON) {
+  // Invarian "stok fisik tidak bisa minus" hanya berlaku untuk pergerakan yang MENGURANGI stok (qty < 0). Penambahan (RECEIPT, RETURN, ADJUSTMENT +, TRANSFER masuk) TIDAK
+  // PERNAH ditolak karena saldo awal minus: saldo minus warisan (mis. impor pemakaian historis tanpa penerimaan) bukan alasan menahan barang yang benar-benar datang,
+  // dan penerimaan justru memperkecil minusnya. Kasus nyata 15 Okt 2026: GR-141026-01, LIST-WIBING-ABU saldo -388,5 + 5 ROLL ditolak "tersedia -388.5, butuh 5".
+  // Minus warisan diselesaikan lewat stok opname/penyesuaian resmi — bukan dengan menolak penerimaan, dan bukan dengan menyentuh saldo diam-diam di sini.
+  if (qtyNum < 0 && resultBalance < -EPSILON) {
     const material = await tx.material.findUnique({ where: { id: materialId }, select: { code: true } });
     throw new LedgerError(
       `Stok ${material?.code || materialId} tidak cukup — tersedia ${balance}, butuh ${Math.abs(qtyNum)}`
+      + (balance < -EPSILON ? " (saldo catatan sudah minus: selesaikan lewat stok opname/penyesuaian sebelum mengeluarkan stok)" : "")
     );
   }
 
