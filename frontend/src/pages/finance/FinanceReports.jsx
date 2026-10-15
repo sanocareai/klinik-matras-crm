@@ -8,6 +8,12 @@ import { TableWrap, Table, THead, TBody, TR, TH, TD } from "@/components/ui/tabl
 import { api } from "@/api.js";
 import { formatRupiahShort } from "@/utils/format.js";
 import { KenapaBeda } from "@/features/finance/kontrak.jsx";
+import TombolExportExcel from "@/features/finance/ExportExcel.jsx";
+import DrilldownKartu from "@/features/finance/laporanTerinci/DrilldownKartu.jsx";
+import { PanelJembatan, PanelPkr } from "@/features/finance/laporanTerinci/PanelPendapatan.jsx";
+import { PanelHpp, PanelBeban } from "@/features/finance/laporanTerinci/PanelHppBeban.jsx";
+import { PanelGap } from "@/features/finance/laporanTerinci/PanelGap.jsx";
+import { SEKSI, penandaMutu, formatCutoff, ringkasKontrol, bodyExport, bisaDrilldown } from "@/features/finance/laporanTerinci/logic.js";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, CatatanLaporan, Penjelasan,
   PeriodePicker, periodeDefault, tanggalPendek, LABEL_TIPE_AKUN,
@@ -34,6 +40,9 @@ export default function FinanceReports() {
   const [tab, setTab] = useState("labarugi");
   const [periode, setPeriode] = useState(periodeDefault);
   const [data, setData] = useState({});
+  const [terinci, setTerinci] = useState(null);
+  const [terinciGalat, setTerinciGalat] = useState("");
+  const [drill, setDrill] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -48,6 +57,9 @@ export default function FinanceReports() {
         api.getFinanceTrialBalance(periode),
       ]);
       setData({ labarugi: lr, neraca: nrc, aruskas: ak, neracasaldo: ns });
+      // Laporan terinci dibaca terpisah: bila gagal, laporan baku di atas tetap tampil (halaman cukup menampilkan galatnya).
+      try { setTerinci(await api.getFinanceLaporanTerinci(periode)); setTerinciGalat(""); }
+      catch (e) { setTerinci(null); setTerinciGalat(e.message || "Gagal memuat rincian laporan"); }
     } catch (e) {
       setError(e.message || "Gagal memuat laporan keuangan");
     } finally {
@@ -66,9 +78,15 @@ export default function FinanceReports() {
       loading={loading}
       error={error}
       onRetry={muat}
-      actions={<PeriodePicker from={periode.from} to={periode.to} onChange={setPeriode} />}
+      actions={(
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {tab === "labarugi" && <TombolExportExcel modul="laporan-keuangan" label="Export Excel" disabled={!terinci} ambilBody={() => bodyExport(periode, { cutoff: terinci?.cutoff })} />}
+          <PeriodePicker from={periode.from} to={periode.to} onChange={setPeriode} />
+        </div>
+      )}
     >
       {aktif && <CatatanLaporan catatan={aktif.catatan} />}
+      {tab === "labarugi" && <InfoCutoff terinci={terinci} galat={terinciGalat} />}
 
       <div className="flex flex-wrap gap-2">
         {TAB.map((t) => (
@@ -81,7 +99,8 @@ export default function FinanceReports() {
         {TAB.find((t) => t.key === tab)?.penjelasan}
       </p>
 
-      {tab === "labarugi" && data.labarugi && <LabaRugi d={data.labarugi} />}
+      {tab === "labarugi" && data.labarugi && <LabaRugi d={data.labarugi} terinci={terinci} onBuka={(m) => setDrill(m)} />}
+      {drill && terinci && <DrilldownKartu metrik={drill} periode={periode} cutoff={terinci.cutoff} onClose={() => setDrill(null)} />}
       {tab === "neraca" && data.neraca && <Neraca d={data.neraca} />}
       {tab === "aruskas" && data.aruskas && <ArusKas d={data.aruskas} />}
       {tab === "neracasaldo" && data.neracasaldo && <NeracaSaldo d={data.neracasaldo} />}
@@ -89,31 +108,72 @@ export default function FinanceReports() {
   );
 }
 
-function LabaRugi({ d }) {
+function InfoCutoff({ terinci, galat }) {
+  if (galat) return <p role="alert" className="text-[12.5px] text-red" data-testid="terinci-galat">Rincian laporan belum dapat dimuat: {galat}</p>;
+  if (!terinci) return null;
+  const k = ringkasKontrol(terinci.kontrol);
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-[12px] text-ink3" data-testid="info-cutoff">
+      <span>{formatCutoff(terinci.cutoff)}</span>
+      <Badge variant={k.ok ? "green" : "red"} title={k.gagal.join("; ")}>{k.ok ? `Kontrol parity ${k.jumlah}/${k.jumlah} OK` : `${k.gagal.length} kontrol parity gagal`}</Badge>
+    </div>
+  );
+}
+
+function LabaRugi({ d, terinci, onBuka }) {
   const r = d.ringkasan;
+  const [seksi, setSeksi] = useState("laporan");
+  const bisa = bisaDrilldown(terinci);
+  const buka = (m) => (bisa ? () => onBuka(m) : undefined);
+  const mutu = terinci ? penandaMutu(terinci.hpp) : null;
   return (
     <>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:grid sm:grid-cols-2 sm:gap-4 sm:overflow-visible lg:grid-cols-3 min-[1400px]:grid-cols-5 [&>*]:max-sm:min-w-[78%] [&>*]:max-sm:shrink-0 [&>*]:max-sm:snap-start" data-testid="kartu-laba-rugi">
         <KartuAngka
-          label="Pendapatan Bersih" metrik="pendapatan_diakui" value={formatUang(r.pendapatanBersih)}
+          label="Pendapatan Bersih" metrik="pendapatan_diakui" value={formatUang(r.pendapatanBersih)} onClick={buka("pendapatan")}
+          sub={bisa ? "Klik untuk rincian akun → jurnal" : undefined}
           info="Pendapatan kotor dikurangi retur & potongan. Hanya dari order yang SUDAH diserahkan ke pelanggan — DP untuk order yang belum diserahkan tidak dihitung sebagai pendapatan."
         />
         <KartuAngka
-          label="Laba Kotor" value={formatUang(r.labaKotor)} sub={r.marginKotor != null ? `Margin ${r.marginKotor.toFixed(1)}%` : undefined}
+          label="Beban Pokok (HPP)" metrik="beban_pokok_terbukukan" value={formatUang(r.bebanPokok)} onClick={buka("hpp")}
+          sub={bisa ? "Klik untuk rincian" : undefined} info="Beban pokok yang benar-benar terbukukan di jurnal."
+        />
+        <KartuAngka
+          label="Laba Kotor" metrik="laba_kotor" value={formatUang(r.labaKotor)} onClick={buka("laba_kotor")}
+          sub={r.marginKotor != null ? `Margin ${r.marginKotor.toFixed(1)}%` : undefined}
+          catatan={mutu && mutu.kunci !== "TIDAK_BERLAKU" ? <Badge variant={mutu.varian} data-testid="penanda-mutu-margin" className="whitespace-normal normal-case leading-snug tracking-normal">{mutu.label}</Badge> : null}
           info="Pendapatan bersih dikurangi beban pokok (harga bahan/produksi) — untung sebelum dipotong biaya operasional kantor."
         />
         <KartuAngka
-          label="Beban Operasional" value={formatUang(r.bebanOperasional)}
+          label="Beban Operasional" metrik="beban_diakui" value={formatUang(r.bebanOperasional)} onClick={buka("beban_operasional")}
+          sub={bisa ? "Klik untuk rincian per akun/divisi" : undefined}
           info="Biaya menjalankan bisnis di luar produksi langsung — gaji, sewa, listrik, dan sejenisnya."
         />
         <KartuAngka
-          label="Laba Bersih" metrik="laba_bersih_sementara" value={formatUang(r.labaBersih)}
+          label="Laba Bersih" metrik="laba_bersih_sementara" value={formatUang(r.labaBersih)} onClick={buka("laba_bersih")}
           tone={r.labaBersih < 0 ? "red" : "default"}
           sub={r.marginBersih != null ? `Margin ${r.marginBersih.toFixed(1)}%` : undefined}
           info="Angka paling bawah — untung/rugi sesungguhnya setelah SEMUA beban dikurangkan. Ini yang biasanya dimaksud saat orang bertanya 'untung berapa bulan ini'."
         />
       </div>
 
+      {terinci && (
+        <nav aria-label="Rincian laporan" className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" data-testid="seksi-laporan">
+          {SEKSI.map((x) => (
+            <Button key={x.key} size="sm" variant={seksi === x.key ? "secondary" : "neutral"} onClick={() => setSeksi(x.key)} className="shrink-0 max-sm:min-h-11" aria-pressed={seksi === x.key} data-testid={`seksi-${x.key}`}>
+              {x.label}{x.key === "gap" && terinci.gap.jumlahTerbuka > 0 ? ` (${terinci.gap.jumlahTerbuka})` : ""}
+            </Button>
+          ))}
+        </nav>
+      )}
+
+      {terinci && seksi === "jembatan" && <PanelJembatan data={terinci} />}
+      {terinci && seksi === "pkr" && <PanelPkr data={terinci} />}
+      {terinci && seksi === "hpp" && <PanelHpp data={terinci} />}
+      {terinci && seksi === "divisi" && <PanelBeban data={terinci} />}
+      {terinci && seksi === "gap" && <PanelGap data={terinci} />}
+      {(!terinci || seksi === "laporan") && (
+        <>
       <Penjelasan>
         Pendapatan di sini diakui saat order <strong>diserahkan ke customer</strong>, bukan saat uangnya masuk.
         DP untuk order yang belum diserahkan TIDAK muncul di laporan ini — ia berdiri sebagai kewajiban
@@ -138,6 +198,8 @@ function LabaRugi({ d }) {
           </Table>
         </TableWrap>
       </Card>
+        </>
+      )}
     </>
   );
 }

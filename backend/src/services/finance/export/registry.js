@@ -27,7 +27,8 @@ import pencocokanBank from "./pencocokan-bank.js";
 import rekonsiliasiRekening from "./rekonsiliasi-rekening.js";
 import biayaBahan from "./biaya-bahan.js";
 import agingUtang from "./aging-utang.js";
+import laporanKeuangan from "./laporan-keuangan.js";
 
 export const MODUL_EXPORT = Object.freeze(
-  Object.fromEntries([kasbon, pemasukan, pembayaran, pengeluaran, pembelian, uangMuka, piutangRefund, supplierUtang, rekonsiliasi, jurnalUmum, bukuBesar, rekonSalesFinance, mutasiRekening, mutasiBank, pencocokanBank, rekonsiliasiRekening, biayaBahan, agingUtang].map((m) => [m.kunci, m])),
+  Object.fromEntries([kasbon, pemasukan, pembayaran, pengeluaran, pembelian, uangMuka, piutangRefund, supplierUtang, rekonsiliasi, jurnalUmum, bukuBesar, rekonSalesFinance, mutasiRekening, mutasiBank, pencocokanBank, rekonsiliasiRekening, biayaBahan, agingUtang, laporanKeuangan].map((m) => [m.kunci, m])),
 );

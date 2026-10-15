@@ -131,6 +131,36 @@ test("postStockMovement: RECEIPT (selalu positif) tidak pernah ditolak invariant
   assert.equal(calls.create.length, 1);
 });
 
+test("postStockMovement: RECEIPT pada saldo awal MINUS lolos walau hasil akhir masih minus (GR-141026-01: -388.5 + 5)", async () => {
+  const { tx, calls } = makeTx({ balance: -388.5 });
+  const r = await postStockMovement(tx, { materialId: "m-1", type: "RECEIPT", qty: 5 });
+  assert.equal(calls.create.length, 1);
+  assert.equal(r.qty, 5);
+});
+
+test("postStockMovement: penambahan (RETURN, ADJUSTMENT +, TRANSFER masuk) pada saldo minus lolos; qty tidak diubah/dibulatkan", async () => {
+  for (const [type, qty] of [["RETURN", 1], ["ADJUSTMENT", 400], ["TRANSFER", 2.5]]) {
+    const { tx, calls } = makeTx({ balance: -388.5 });
+    const r = await postStockMovement(tx, { materialId: "m-1", type, qty });
+    assert.equal(calls.create.length, 1, type);
+    assert.equal(r.qty, qty);
+  }
+});
+
+test("postStockMovement: pengeluaran pada saldo yang SUDAH minus tetap ditolak, pesan menyebut tersedia/butuh dan arahan opname", async () => {
+  const { tx, calls } = makeTx({ balance: -388.5 });
+  await assert.rejects(
+    () => postStockMovement(tx, { materialId: "m-1", type: "ISSUE", qty: -1 }),
+    (e) => /tidak cukup — tersedia -388.5, butuh 1/.test(e.message) && /opname/.test(e.message),
+  );
+  assert.equal(calls.create.length, 0);
+});
+
+test("postStockMovement: pengeluaran pada saldo positif yang kurang: pesan lama tanpa arahan opname", async () => {
+  const { tx } = makeTx({ balance: 2 });
+  await assert.rejects(() => postStockMovement(tx, { materialId: "m-1", type: "ISSUE", qty: -3 }), (e) => /tersedia 2, butuh 3/.test(e.message) && !/opname/.test(e.message));
+});
+
 test("postStockMovement: pesan error menyebut kode material, bukan UUID mentah", async () => {
   const { tx } = makeTx({ balance: 1 });
   await assert.rejects(
