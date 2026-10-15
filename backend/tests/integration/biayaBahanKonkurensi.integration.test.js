@@ -9,6 +9,7 @@ import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestUser, createTestMaterial, createTestUnit, seedBalance } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
+import { tulisPergerakanLedger as tulis } from "./setup/ledgerHelper.js";
 import { bawaSampaiSiap } from "./setup/kedatangan.js";
 import { ensureDefaultChartOfAccounts } from "../../src/services/finance/accounts.js";
 import { SETTING_KEYS } from "../../src/services/finance/settings.js";
@@ -144,7 +145,7 @@ test("retur diterima paralel + replay Idempotency-Key: stok bertambah dan biaya 
   assert.equal(await saldo(w.lem.id), 4);
 
   // waste tidak menambah stok; dilaporkan terpisah
-  assert.equal((await w.g.post("/api/inventory/movements/waste", { materialId: w.lem.id, qty: 1, reason: "Potong salah", unitId: w.unit.id })).status, 201);
+  assert.equal((await tulis({ materialId: w.lem.id, type: "WASTE", qty: -1, reason: "Potong salah", unitId: w.unit.id })).status, 201);
   assert.equal(await saldo(w.lem.id), 3, "waste mengurangi stok, tidak menambah");
 
   // retur diminta Produksi (PENDING) — belum mengubah stok maupun biaya
@@ -194,8 +195,8 @@ test("export Excel Biaya Bahan: total berkas = total layar, angka numerik, sel k
   assert.equal((await simpanKeStok(w, await penerimaanSiap(w, po, { baik: 10 }))).status, 200);
   const mi = await issueSiap(w, 5);
   assert.equal((await w.g.post(`/api/inventory/material-issues/${mi.id}/issue`, {})).status, 200);
-  assert.equal((await w.g.post("/api/inventory/movements/waste", { materialId: w.lem.id, qty: 1, reason: "Potong salah", unitId: w.unit.id })).status, 201);
-  assert.equal((await w.g.post("/api/inventory/movements/return", { materialId: w.lem.id, qty: 2, unitId: w.unit.id, note: "Sisa kembali" })).status, 201);
+  assert.equal((await tulis({ materialId: w.lem.id, type: "WASTE", qty: -1, reason: "Potong salah", unitId: w.unit.id })).status, 201);
+  assert.equal((await tulis({ materialId: w.lem.id, type: "RETURN", qty: 2, unitId: w.unit.id, note: "Sisa kembali" })).status, 201);
   await seedBalance(tanpaHarga.id, 5);
   const m2 = await w.g.post("/api/inventory/material-issues", { sourceType: "PRODUCTION_WORK_ORDER", unitId: w.unit.id, lines: [{ materialId: tanpaHarga.id, requestedQty: 1 }] });
   for (const st of ["WAITING_APPROVAL", "APPROVED", "READY_TO_PICK", "PICKED"]) await w.g.patch(`/api/inventory/material-issues/${m2.body.id}`, { status: st });
@@ -244,7 +245,7 @@ test("export Excel Biaya Bahan: total berkas = total layar, angka numerik, sel k
 
 test("penerimaan tanpa PO tetap bisa disimpan ke stok (jalur lama utuh) tetapi pemakaiannya ditandai TANPA_PO — bukan sumber biaya lengkap", async () => {
   const w = await dunia();
-  assert.equal((await w.g.post("/api/inventory/movements/receipt", { materialId: w.lem.id, qty: 5, unitCost: 20_000, supplier: "Toko Lama" })).status, 201);
+  assert.equal((await tulis({ materialId: w.lem.id, type: "RECEIPT", qty: 5, unitCost: 20_000, supplier: "Toko Lama" })).status, 201);
   const mi = await issueSiap(w, 2);
   assert.equal((await w.g.post(`/api/inventory/material-issues/${mi.id}/issue`, {})).status, 200);
   const j = (await w.f.get(`/api/finance/biaya-bahan/unit/${w.unit.id}`)).body;

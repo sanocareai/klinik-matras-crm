@@ -86,3 +86,27 @@ test("regresi: label tombol 'Ajukan' hanya di MovementModal (AddMaterialModal ti
   assert.doesNotMatch(g.slice(awalAdd, awalMove), /type === "adjustment"/);
   assert.match(g.slice(awalMove), /type === "adjustment" \? "Ajukan" : "Simpan"/);
 });
+
+test("jalur cepat terima/retur/buang dihapus dari UI dan api.js; hanya issue + pengajuan penyesuaian di modal Gudang", () => {
+  const g = baca("../src/pages/Gudang.jsx");
+  const api = baca("../src/api.js");
+  assert.doesNotMatch(api, /\breceiveStock\b|\breturnStock\b|\bwasteStock\b|movements\/(receipt|return|waste)/);
+  assert.doesNotMatch(g, /\breceiveStock\b|\breturnStock\b|\bwasteStock\b/);
+  assert.match(api, /issueStock/);
+  const awal = g.indexOf("const MOVEMENT_TYPES = [");
+  const akhir = g.indexOf("];", awal);
+  const tipe = g.slice(awal, akhir);
+  assert.doesNotMatch(tipe, /"receipt"|"return"|"waste"/);
+  assert.match(tipe, /"issue"/); assert.match(tipe, /"adjustment"/);
+  assert.match(g, /Barang masuk, retur, dan barang rusak\/buang dicatat lewat dokumen resmi/);
+});
+
+test("Stock Count UI: pergerakan selama sesi ditandai eksplisit; Complete menunggu semua tanda", () => {
+  const d = baca("../src/features/warehouse/components/StockCountDetailDrawer.jsx");
+  const api = baca("../src/api.js");
+  assert.match(api, /tandaiPergerakanSesi/);
+  assert.match(d, /pergerakanSesi/);
+  assert.match(d, /Sudah masuk hitungan fisik/); assert.match(d, /Belum masuk hitungan/);
+  assert.match(d, /belumDitandai/);
+  assert.match(d, /data-testid="pergerakan-sesi"/);
+});

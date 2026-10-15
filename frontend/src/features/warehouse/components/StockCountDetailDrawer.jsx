@@ -20,6 +20,7 @@ export default function StockCountDetailDrawer({ countId, onClose, onChanged }) 
   const [lineEdits, setLineEdits] = useState({});
   const [cancelling, setCancelling] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
+  const [menandai, setMenandai] = useState(null);
 
   const load = () => {
     if (!countId) return;
@@ -84,6 +85,19 @@ export default function StockCountDetailDrawer({ countId, onClose, onChanged }) 
       setError(e.message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function tandai(movementId, tercermin) {
+    setMenandai(movementId);
+    setError("");
+    try {
+      await api.tandaiPergerakanSesi(countId, movementId, tercermin);
+      load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setMenandai(null);
     }
   }
 
@@ -202,6 +216,32 @@ export default function StockCountDetailDrawer({ countId, onClose, onChanged }) 
                     })}
                   </div>
 
+                  {count.pergerakanSesi?.length > 0 && (
+                    <div className="mt-3 rounded-btn border-l-[3px] border-orange bg-orangebg px-3 py-2.5" data-testid="pergerakan-sesi">
+                      <p className="text-[12px] font-bold text-ink">Pergerakan stok selama sesi hitung</p>
+                      <p className="mt-0.5 text-[11.5px] text-ink2">
+                        Snapshot saldo direkam {count.sesi?.snapshotPada ? new Date(count.sesi.snapshotPada).toLocaleString("id-ID") : "saat Start"}. Tandai satu per satu apakah barang ini SUDAH ikut terhitung di fisik — sistem tidak menebak.
+                      </p>
+                      <ul className="mt-2 space-y-2">
+                        {count.pergerakanSesi.map((p) => {
+                          const bisaTandai = status === "IN_PROGRESS" || status === "WAITING_REVIEW";
+                          const mat = count.lines.find((l) => l.materialId === p.materialId)?.material;
+                          return (
+                            <li key={p.id} className="rounded-btn bg-surface px-2.5 py-2 text-[12px]">
+                              <p className="font-semibold text-ink">{mat?.code} · {p.type} {p.qty > 0 ? "+" : ""}{p.qty} {UNIT_LABEL[mat?.unit] || ""}</p>
+                              <p className="text-[11px] text-ink3">{new Date(p.at).toLocaleString("id-ID")}{p.dokumen ? ` · ${p.dokumen}` : ""}{p.note ? ` · ${p.note}` : ""}</p>
+                              <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                                <Button size="sm" variant={p.tanda === "SUDAH_TERHITUNG" ? "primary" : "secondary"} disabled={!bisaTandai || menandai === p.id} onClick={() => tandai(p.id, true)}>Sudah masuk hitungan fisik</Button>
+                                <Button size="sm" variant={p.tanda === "BELUM_TERHITUNG" ? "primary" : "secondary"} disabled={!bisaTandai || menandai === p.id} onClick={() => tandai(p.id, false)}>Belum masuk hitungan</Button>
+                                {p.tanda === null && <span className="text-[11px] font-semibold text-red">belum ditandai</span>}
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  )}
+
                   {(status === "IN_PROGRESS" || status === "WAITING_REVIEW") && Object.keys(lineEdits).length > 0 && (
                     <Button variant="secondary" size="sm" className="mt-2" onClick={simpanBaris} disabled={busy}>
                       {busy ? <Loader2 size={14} className="animate-spin" /> : null} Simpan Perubahan Baris
@@ -251,7 +291,10 @@ export default function StockCountDetailDrawer({ countId, onClose, onChanged }) 
                       <Button variant="secondary" size="sm" onClick={() => jalankan("recount", api.recountStockCount)} disabled={busy}>
                         {busy ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />} Recount
                       </Button>
-                      <Button size="sm" className="ml-auto" onClick={() => jalankan("complete", api.completeStockCount)} disabled={busy}>
+                      {count.sesi?.belumDitandai > 0 && (
+                        <p className="self-center text-[11.5px] text-red" data-testid="belum-ditandai">{count.sesi.belumDitandai} pergerakan belum ditandai</p>
+                      )}
+                      <Button size="sm" className="ml-auto" onClick={() => jalankan("complete", api.completeStockCount)} disabled={busy || count.sesi?.belumDitandai > 0}>
                         {busy ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Complete Count
                       </Button>
                     </>

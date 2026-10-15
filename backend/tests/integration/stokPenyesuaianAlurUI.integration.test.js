@@ -6,7 +6,7 @@ import "./setup/env.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { testPrisma, truncateAll } from "./setup/testDb.js";
-import { createTestMaterial, createTestUser, seedBalance } from "./setup/fixtures.js";
+import { createTestMaterial, createTestUser, createTestUnit, seedBalance } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
 
@@ -95,8 +95,9 @@ test("saldo catatan MINUS (kasus LIST-WIBING-ABU): penyesuaian naik ke hasil hit
   assert.equal((await nadya.c.post(`/api/inventory/adjustments/${id}/post`, {})).status, 200);
   assert.equal(await saldo(m.id), 5);
   const m2 = await createTestMaterial(); await seedBalance(m2.id, -3);
-  const waste = await nadya.c.post("/api/inventory/movements/waste", { materialId: m2.id, qty: 1, reason: "uji" });
-  assert.equal(waste.status, 400); assert.match(waste.body.error, /tidak cukup/);
+  const { unit } = await createTestUnit();
+  const issue = await nadya.c.post("/api/inventory/movements/issue", { materialId: m2.id, qty: 1, unitId: unit.id });
+  assert.equal(issue.status, 400); assert.match(issue.body.error, /tidak cukup/);
   assert.equal(await saldo(m2.id), -3);
 });
 

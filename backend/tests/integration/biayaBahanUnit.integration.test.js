@@ -9,6 +9,7 @@ import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestUser, createTestMaterial, createTestUnit, seedBalance } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
+import { tulisPergerakanLedger as tulis } from "./setup/ledgerHelper.js";
 import { bawaSampaiSiap, catatTibaResmi } from "./setup/kedatangan.js";
 import { ensureDefaultChartOfAccounts } from "../../src/services/finance/accounts.js";
 import { SETTING_KEYS } from "../../src/services/finance/settings.js";
@@ -103,16 +104,16 @@ test("satu unit: penerimaan parsial PO, beberapa Material Issue, waste, retur, f
   // 6. Waste 1 KG dan retur 2 KG (retur diterima Gudang → mengurangi biaya). Rata-rata kini ikut penerimaan mundur → dibekukan dari dasar saat itu.
   //    Untuk angka bulat, hapus pengaruh penerimaan mundur pada contoh angka: pakai unit KEDUA material agar contoh tetap deterministik.
   await testPrisma.stockMovement.deleteMany({ where: { note: "bertanggal mundur" } });
-  const waste = await w.g.post("/api/inventory/movements/waste", { materialId: w.lem.id, qty: 1, reason: "Potong salah ukuran", unitId: w.unit.id });
+  const waste = await tulis({ materialId: w.lem.id, type: "WASTE", qty: -1, reason: "Potong salah ukuran", unitId: w.unit.id });
   assert.equal(waste.status, 201, JSON.stringify(waste.body));
-  const retur = await w.g.post("/api/inventory/movements/return", { materialId: w.lem.id, qty: 2, unitId: w.unit.id, note: "Sisa kembali" });
+  const retur = await tulis({ materialId: w.lem.id, type: "RETURN", qty: 2, unitId: w.unit.id, note: "Sisa kembali" });
   assert.equal(retur.status, 201, JSON.stringify(retur.body));
 
   // 7. TANPA_HARGA: bahan tanpa harga perolehan di-issue.
   await seedBalance(matB.id, 10);
   await issueKeUnit(w, matB.id, 2);
   // 8. TANPA PO: penerimaan cepat dengan harga tanpa PO, lalu di-issue.
-  assert.equal((await w.g.post("/api/inventory/movements/receipt", { materialId: matC.id, qty: 5, unitCost: 20_000, supplier: "Toko Lama" })).status, 201);
+  assert.equal((await tulis({ materialId: matC.id, type: "RECEIPT", qty: 5, unitCost: 20_000, supplier: "Toko Lama" })).status, 201);
   await issueKeUnit(w, matC.id, 1);
 
   // 9. Faktur atas PO1 untuk penerimaan 1 (6 KG) @44.000 → selisih harga faktur DIPISAH dari biaya persediaan.
@@ -270,7 +271,7 @@ test("retur PENDING belum mengurangi biaya; setelah Gudang menerima (RETURN di l
   assert.equal(j.statusBiaya, "BELUM_FINAL");
   assert.ok(j.belumFinal.some((x) => x.jenis === "RETUR_BELUM_DITERIMA"));
   // Gudang menerima: RETURN di ledger (jalur sah) → biaya turun 1 × 43.290
-  assert.equal((await w.g.post("/api/inventory/movements/return", { materialId: w.lem.id, qty: 1, unitId: w.unit.id })).status, 201);
+  assert.equal((await tulis({ materialId: w.lem.id, type: "RETURN", qty: 1, unitId: w.unit.id })).status, 201);
   await testPrisma.productionMaterialReturn.update({ where: { id: pend.id }, data: { status: "RECEIVED", receivedQty: 1 } });
   j = await jejak(w);
   assert.equal(j.ringkasan.biayaPersediaan.nilai, 129_870);
@@ -383,9 +384,9 @@ test("transaksi paralel pada unit yang sama: dua waste + satu retur bersamaan �
   const w = await dunia();
   await seedBalance(w.lem.id, 10, { unitCost: 40_000 });
   const hasil = await Promise.all([
-    w.g.post("/api/inventory/movements/waste", { materialId: w.lem.id, qty: 1, reason: "paralel A", unitId: w.unit.id }),
-    w.g.post("/api/inventory/movements/waste", { materialId: w.lem.id, qty: 2, reason: "paralel B", unitId: w.unit.id }),
-    w.g.post("/api/inventory/movements/return", { materialId: w.lem.id, qty: 1, unitId: w.unit.id }),
+    tulis({ materialId: w.lem.id, type: "WASTE", qty: -1, reason: "paralel A", unitId: w.unit.id }),
+    tulis({ materialId: w.lem.id, type: "WASTE", qty: -2, reason: "paralel B", unitId: w.unit.id }),
+    tulis({ materialId: w.lem.id, type: "RETURN", qty: 1, unitId: w.unit.id }),
   ]);
   assert.deepEqual(hasil.map((r) => r.status), [201, 201, 201]);
   assert.equal(await testPrisma.finStockMovementValuation.count(), 3);

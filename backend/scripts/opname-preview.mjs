@@ -1,6 +1,7 @@
 // PRATINJAU SELISIH OPNAME FISIK — DRY-RUN MURNI (tidak ada mode apply; tidak menulis stok, jurnal, atau dokumen apa pun).
 //
-//   docker compose exec backend node scripts/opname-preview.mjs --file /tmp/Lembar-Opname-terisi.xlsx --out /tmp/preview-opname [--cutoff "2026-10-31 23:59"] [--saldo-1400-sampai 2026-10-31]
+//   docker compose exec backend node scripts/opname-preview.mjs --file /tmp/Lembar-Opname-terisi.xlsx --out /tmp/preview-opname [--cutoff "2026-10-31 23:59"] [--saldo-1400-sampai 2026-10-31] [--stock-count CC-311026]
+//   --stock-count: tanda 'sudah/belum masuk hitungan fisik' yang dibuat penghitung di aplikasi (Stock Count) ikut dibaca sebagai log pergerakan jendela.
 //
 // Membaca lembar hitung (sheet "Hitung"; opsional "Log pergerakan jendela" dan "Harga Finance"), membandingkan terhadap ledger PADA WAKTU HITUNG yang sama,
 // dan menulis preview.json + preview.xlsx. Seluruh akses DB berada dalam SATU transaksi READ ONLY (SET TRANSACTION READ ONLY) — menulis akan ditolak Postgres.
@@ -9,8 +10,9 @@ import fs from "node:fs";
 import path from "node:path";
 import ExcelJS from "exceljs";
 import { prisma } from "../src/db.js";
+import { muatPergerakanSesi } from "../src/services/pergerakanSesiHitung.js";
 import {
-  KOLOM_HITUNG, normalisasiBaris, normalisasiLog, normalisasiHarga, hitungPreview, muatLedger, muatMaterials, muatDokumenTertunda, muatSaldoBuku1400, parseWaktuWIB, LEVEL,
+  KOLOM_HITUNG, normalisasiBaris, normalisasiLog, normalisasiHarga, hitungPreview, muatLedger, KOLOM_LOG, muatMaterials, muatDokumenTertunda, muatSaldoBuku1400, parseWaktuWIB, LEVEL,
 } from "../src/services/opnameCutover.js";
 
 const arg = (n, d = null) => { const i = process.argv.indexOf(n); return i >= 0 ? process.argv[i + 1] : d; };
@@ -62,7 +64,24 @@ const hasil = await prisma.$transaction(async (tx) => {
   const pending = await muatDokumenTertunda(tx);
   const tglBuku = arg("--saldo-1400-sampai");
   const saldo1400 = tglBuku ? await muatSaldoBuku1400(tx, tglBuku) : null;
-  const prev = hitungPreview({ materials, baris, ledger, cutoff, logJendela, hargaFinance: harga, pending, saldoBuku1400: saldo1400 });
+  // Tanda dari sesi Stock Count di aplikasi (bila diminta): pergerakan sesi + tanda eksplisit penghitung → baris log. Yang belum ditandai dibiarkan kosong (→ BLOCKER, tidak menebak).
+  let logGabungan = logJendela;
+  const sc = arg("--stock-count");
+  if (sc) {
+    const count = await tx.stockCount.findFirst({
+      where: /^[0-9a-f-]{36}$/i.test(sc) ? { id: sc } : { countNumber: sc },
+      include: { lines: { include: { material: { select: { code: true } } } } },
+    });
+    if (!count) throw new Error("Stock Count tidak ditemukan: " + sc);
+    const kodePer = new Map(count.lines.map((l) => [l.materialId, l.material.code]));
+    const { pergerakan } = await muatPergerakanSesi(tx, count, { sampai });
+    const tambahan = pergerakan.map((p) => ({
+      [KOLOM_LOG.dokumen]: p.id, [KOLOM_LOG.kode]: kodePer.get(p.materialId), [KOLOM_LOG.qty]: p.qty, [KOLOM_LOG.waktu]: p.at,
+      [KOLOM_LOG.tercermin]: p.tanda === "SUDAH_TERHITUNG" ? "YA" : p.tanda === "BELUM_TERHITUNG" ? "TIDAK" : "", [KOLOM_LOG.pencatat]: "Stock Count " + count.countNumber,
+    }));
+    logGabungan = [...logJendela, ...normalisasiLog(tambahan)];
+  }
+  const prev = hitungPreview({ materials, baris, ledger, cutoff, logJendela: logGabungan, hargaFinance: harga, pending, saldoBuku1400: saldo1400 });
   const [{ now }] = await tx.$queryRaw`SELECT now() AS now`;
   return { ...prev, meta: { dibuat: now, file: path.basename(FILE), cutoff: cutoff.toISOString(), sampaiLedger: sampai.toISOString(), barisHitung: baris.length, barisLog: logJendela.length, barisHarga: harga.size, readOnly: true } };
 }, { timeout: 120_000 });

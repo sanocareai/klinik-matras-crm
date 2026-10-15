@@ -15,6 +15,8 @@ import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js
 import { wajibUuid } from "../lib/uuidParam.js";
 import { pesanServerAman } from "../lib/galatServerAman.js";
 import { wajibPenyetujuPenyesuaian, wajibBukanPihakPengaju } from "../services/inventorySegregation.js";
+import { muatPergerakanSesi, selisihTersesuaikan, AKSI_TANDA_PERGERAKAN } from "../services/pergerakanSesiHitung.js";
+import { lockMaterialBalance } from "../services/inventoryLedger.js";
 
 // Penanda pelaku di activity_events (eventType DOCUMENT_EDITED) — dipakai complete untuk memisahkan pengisi/penyerah hitungan dari penyetuju.
 const AKSI_ISI_HITUNGAN = "HASIL_HITUNG_DIISI";
@@ -27,7 +29,10 @@ class CountError extends Error {
   constructor(message, statusCode = 400) { super(message); this.statusCode = statusCode; }
 }
 function handleErr(err, res) {
-  if (typeof err.statusCode === "number") return res.status(err.statusCode).json({ error: err.message });
+  if (typeof err.statusCode === "number") {
+    const kode = typeof err.code === "string" && /^[A-Z][A-Z0-9_]{2,40}$/.test(err.code) ? { code: err.code } : {};
+    return res.status(err.statusCode).json({ error: err.message, ...kode });
+  }
   if (err.code === "P2002") return res.status(409).json({ error: "Nomor count sudah dipakai" });
   if (err.code === "P2025") return res.status(404).json({ error: "Data tidak ditemukan" });
   console.error("Stock count error:", err);
@@ -70,7 +75,13 @@ stockCountRouter.get("/:id", requirePermission(P.INVENTORY_READ), wajibUuid(), a
   try {
     const count = await prisma.stockCount.findUnique({ where: { id: req.params.id }, include: countInclude });
     if (!count) return res.status(404).json({ error: "Stock count tidak ditemukan" });
-    res.json(count);
+    // Snapshot saldo (systemQty per baris) + waktu mulai direkam saat Start; pergerakan ledger sesudahnya ditampilkan agar penghitung menandainya.
+    const { pergerakan } = await muatPergerakanSesi(prisma, count);
+    res.json({
+      ...count,
+      sesi: { snapshotPada: count.startedAt, belumDitandai: pergerakan.filter((p) => p.tanda === null).length },
+      pergerakanSesi: pergerakan,
+    });
   } catch (err) {
     handleErr(err, res);
   }
@@ -269,7 +280,17 @@ stockCountRouter.post("/:id/complete", requireAnyPermission(P.INVENTORY_WRITE, P
       const count = await tx.stockCount.findUnique({ where: { id: preCheck.id }, include: countInclude });
       if (count.status !== "WAITING_REVIEW") throw new CountError("Hanya count berstatus Waiting Review yang bisa diselesaikan");
 
-      const berselisih = count.lines.filter((l) => Number(l.countedQty) !== Number(l.systemQty));
+      // Kunci material (urut id) SEBELUM membaca pergerakan sesi, supaya tidak ada pergerakan menyelip antara pemeriksaan dan penulisan.
+      for (const id of [...new Set(count.lines.map((l) => l.materialId))].sort()) await lockMaterialBalance(tx, id);
+      const { pergerakan } = await muatPergerakanSesi(tx, count, { sampai: new Date() });
+      const { baris: hasilBaris, belumDitandai } = selisihTersesuaikan(count.lines, pergerakan);
+      if (belumDitandai.length > 0) {
+        const e = new CountError(`${belumDitandai.length} pergerakan selama sesi hitung belum ditandai (sudah/belum masuk hitungan fisik). Tandai satu per satu — sistem tidak menebak.`, 409);
+        e.code = "PERGERAKAN_SESI_BELUM_DITANDAI";
+        throw e;
+      }
+      const selisihPerBaris = new Map(hasilBaris.map((h) => [h.lineId, h]));
+      const berselisih = count.lines.filter((l) => selisihPerBaris.get(l.id).berselisih);
       for (const l of berselisih) {
         if (!l.reason?.trim()) throw new CountError(`Alasan wajib diisi untuk selisih pada ${l.material.code}`);
       }
@@ -283,12 +304,12 @@ stockCountRouter.post("/:id/complete", requireAnyPermission(P.INVENTORY_WRITE, P
           where: { entityType: ENTITY_TYPES.STOCK_COUNT, entityId: count.id, eventType: EVENT_TYPES.DOCUMENT_EDITED },
           select: { actorId: true, metadata: true },
         });
-        const pengisi = pelakuHitung.filter((e) => [AKSI_ISI_HITUNGAN, AKSI_SERAHKAN_HITUNGAN].includes(e.metadata?.aksi)).map((e) => e.actorId);
+        const pengisi = pelakuHitung.filter((e) => [AKSI_ISI_HITUNGAN, AKSI_SERAHKAN_HITUNGAN, AKSI_TANDA_PERGERAKAN].includes(e.metadata?.aksi)).map((e) => e.actorId);
         wajibBukanPihakPengaju(req.user, [count.createdById, count.assignedToId, ...pengisi], { label: "pembuat/penugas/pengisi hitungan" });
       }
 
       for (const line of berselisih) {
-        const variance = Number(line.countedQty) - Number(line.systemQty);
+        const variance = selisihPerBaris.get(line.id).selisih;
         await postStockMovement(tx, {
           materialId: line.materialId, type: "ADJUSTMENT", qty: variance,
           reason: line.reason.trim(), note: `Stock Count ${count.countNumber}`,
@@ -303,11 +324,35 @@ stockCountRouter.post("/:id/complete", requireAnyPermission(P.INVENTORY_WRITE, P
       await recordActivity(tx, {
         entityType: ENTITY_TYPES.STOCK_COUNT, entityId: count.id,
         eventType: EVENT_TYPES.DOCUMENT_POSTED, actorId: req.user.id,
-        metadata: { countNumber: count.countNumber, varianceLines: berselisih.length },
+        metadata: { countNumber: count.countNumber, varianceLines: berselisih.length, pergerakanSesi: pergerakan.length },
       });
       return updated;
     });
     res.json(result);
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// POST /api/inventory/stock-counts/:id/pergerakan/:movementId/tanda { tercermin: true|false }
+// Penghitung menyatakan apakah pergerakan yang terjadi SELAMA sesi sudah ikut terhitung di fisik. Wajib boolean eksplisit — tidak ada nilai bawaan.
+stockCountRouter.post("/:id/pergerakan/:movementId/tanda", requirePermission(P.INVENTORY_WRITE), wajibUuid("id", "movementId"), async (req, res) => {
+  try {
+    if (typeof req.body?.tercermin !== "boolean") throw new CountError("Tanda wajib eksplisit: tercermin = true (sudah masuk hitungan fisik) atau false (belum)");
+    const result = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, "stock_counts", req.params.id);
+      const count = await tx.stockCount.findUnique({ where: { id: req.params.id }, include: countInclude });
+      if (!count) throw new CountError("Stock count tidak ditemukan", 404);
+      if (!["IN_PROGRESS", "WAITING_REVIEW"].includes(count.status)) throw new CountError(`Count berstatus ${count.status} tidak bisa menandai pergerakan`);
+      const { pergerakan } = await muatPergerakanSesi(tx, count, { sampai: new Date() });
+      if (!pergerakan.some((p) => p.id === req.params.movementId)) throw new CountError("Pergerakan itu bukan bagian dari sesi hitung ini", 404);
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.STOCK_COUNT, entityId: count.id, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: req.user.id,
+        metadata: { aksi: AKSI_TANDA_PERGERAKAN, countNumber: count.countNumber, movementId: req.params.movementId, tercermin: req.body.tercermin },
+      });
+      return (await muatPergerakanSesi(tx, count, { sampai: new Date() })).pergerakan;
+    });
+    res.json({ pergerakanSesi: result, belumDitandai: result.filter((p) => p.tanda === null).length });
   } catch (err) {
     handleErr(err, res);
   }

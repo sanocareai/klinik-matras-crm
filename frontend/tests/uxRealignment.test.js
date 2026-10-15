@@ -225,12 +225,14 @@ test("Sandbox#9 QC: pemilih bahan rework memakai pencarian produksi (bukan /inve
   assert.match(QC, /<MaterialPicker value=\{row\.materialId\}/);
 });
 
-test("Sandbox#10 Gudang: retur & waste bisa ditautkan ke unit (unitId) supaya Sisa/Waste muncul di Unit 360", () => {
+test("Sandbox#10 (diperbarui Okt 2026): Gudang — retur/buang/terima langsung DITUTUP; modal hanya Keluar ke Unit (tautan unit) + pengajuan; arahan ke dokumen resmi", () => {
   const G = read("pages", "Gudang.jsx");
-  assert.ok(G.includes("api.returnStock({ materialId: material.materialId, qty: qtyNum, unitId,"));
-  assert.ok(G.includes("api.wasteStock({ materialId: material.materialId, qty: qtyNum, reason: reason.trim(), unitId,"));
+  assert.ok(!/api\.(returnStock|wasteStock|receiveStock)\(/.test(G), "modal tidak lagi memanggil jalur cepat yang ditutup");
+  assert.ok(G.includes("api.issueStock({ materialId: material.materialId, qty: qtyNum, unitId,"));
   assert.ok(G.includes("r?.unit?.id ?? r?.id"), "by-code mengembalikan { unit: { id } } — baca unit.id bertingkat");
-  assert.ok(G.includes('type === "issue" || type === "return" || type === "waste"'));
+  assert.ok(G.includes('type === "issue" && ('));
+  assert.ok(G.includes("arahan-dokumen-resmi"));
+  assert.ok(G.includes('navigate("/warehouse/goods-receipt")'));
 });
 
 // Revisi kartu Rencana Produksi (2 Okt 2026): layanan cukup dari Sales (tanpa Layanan Teknis), + jenis/merk/ukuran kasur,

@@ -568,10 +568,7 @@ export const api = {
     const qs = new URLSearchParams(params).toString();
     return request(`/inventory/movements${qs ? `?${qs}` : ""}`);
   },
-  receiveStock: (data) => request("/inventory/movements/receipt", { method: "POST", body: JSON.stringify(data) }),
   issueStock: (data) => request("/inventory/movements/issue", { method: "POST", body: JSON.stringify(data) }),
-  returnStock: (data) => request("/inventory/movements/return", { method: "POST", body: JSON.stringify(data) }),
-  wasteStock: (data) => request("/inventory/movements/waste", { method: "POST", body: JSON.stringify(data) }),
 
   // Goods Receipt (Warehouse Tahap 2B)
   getGoodsReceipts: (params = {}) => {
@@ -708,6 +705,9 @@ export const api = {
   submitStockCount: (id) => request(`/inventory/stock-counts/${id}/submit`, { method: "POST" }),
   recountStockCount: (id) => request(`/inventory/stock-counts/${id}/recount`, { method: "POST" }),
   completeStockCount: (id) => request(`/inventory/stock-counts/${id}/complete`, { method: "POST" }),
+  // Tanda eksplisit: tercermin=true (sudah masuk hitungan fisik) / false (belum). Tidak ada nilai bawaan.
+  tandaiPergerakanSesi: (countId, movementId, tercermin) =>
+    request(`/inventory/stock-counts/${countId}/pergerakan/${movementId}/tanda`, { method: "POST", body: JSON.stringify({ tercermin }) }),
   cancelStockCount: (id, reason) => request(`/inventory/stock-counts/${id}/cancel`, { method: "PATCH", body: JSON.stringify({ reason }) }),
 
   // Damaged Stock (Warehouse Tahap 6)
