@@ -260,7 +260,7 @@ export function HalamanFinance({ title, subtitle, actions, loading, error, onRet
  * `metrik` (Fase 1 — Kontrak Angka): kunci metrik di kontrak server (services/finance/kontrakMetrik.js). Bila diberikan, tooltip berisi definisi, rumus, basis tanggal, dan
  * yang tidak termasuk DARI KONTRAK, plus chip basis tanggal tampil di kartu. `info` hanya cadangan selama kontrak belum termuat / kunci tidak dikenal.
  */
-export function KartuAngka({ label, value, sub, tone = "default", onClick, info, metrik }) {
+export function KartuAngka({ label, value, sub, tone = "default", onClick, info, metrik, catatan }) {
   const kontrak = useKontrak();
   const m = metrik ? kontrak?.peta.get(metrik) : null;
   const isi = (
@@ -279,6 +279,7 @@ export function KartuAngka({ label, value, sub, tone = "default", onClick, info,
       </p>
       {sub && <p className="mt-1 text-[12px] text-ink3">{sub}</p>}
       {m && <ChipBasis label={m.basisLabel} />}
+      {catatan && <div className="mt-2">{catatan}</div>}
     </>
   );
   const kelas = cn(
