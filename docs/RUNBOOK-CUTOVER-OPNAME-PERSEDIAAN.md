@@ -85,10 +85,10 @@ Tujuan: membuktikan pola yang sama sebelum seluruh material. Pilihan (alasan len
 |---|---|---|
 | A. Aktif dipakai, dokumen bersih (6) | KAIN-LAVA-B-GRADE, KAIN-TABENG-HIKARON-IVONNA-247-SILVER, BUSA-SOFT-FOAM-35SS-SKY-160X200X2, PE-ENCASEMENT-195X14X4-MBB, COT-001, BUSA-ROLL-HR-FOAM-120X1CM-N37 | alur penuh, selisih terhadap ledger saat hitung |
 | B. Stok diam (2) | SAKURA-HITAM-6CM, SUDUT-GOLD | saldo lama tanpa pemakaian |
-| C. GR tiba belum diposting | LIST-WIBING-ABU | kolom GR terpisah |
-| D. Ledger negatif | LEM-I-SR-1037-13-KG | fisik dihitung apa adanya |
+| C. GR tiba belum diposting | LIST-WIBING-ABU | kolom GR terpisah; **jebakan satuan**: master ROLL, pemakaian lama dalam METER → ledger −388,5 (hitung dalam ROLL) |
+| D. Ledger negatif | LEM-I-SR-1037-13-KG | fisik dihitung apa adanya; **jebakan satuan**: master CAN (kaleng 13 KG), bukan KG |
 | E. Ledger nol tetapi dipakai | BUSA-REBONDED-OLYMPIC-160X200X2-D50 | `NOL_FISIK` eksplisit |
-| F. Punya nilai buku Finance | BUSA-ROLL-HR-FOAM-120X1CM-N44 | rekonsiliasi nilai terpisah |
+| F. Punya nilai buku Finance | BUSA-ROLL-HR-FOAM-120X1CM-N44 | rekonsiliasi nilai terpisah (Rp9.961.200 dari GR-091026-03); baseline ledger ≠ QTY AUG file lama |
 
 Langkah: hitung → isi lembar → jalankan preview (bagian 6) → Gudang + Finance meninjau.
 **Pilot lulus** bila: tidak ada BLOCKER; semua nol fisik punya bukti & pemeriksa; pergerakan jendela terpetakan; kolom GR/Issue sesuai dokumen; Finance dapat menetapkan harga dari dokumen untuk material berstok; waktu hitung per material tercatat. Selisih besar **tidak** menggagalkan pilot — ia dibahas, bukan dihapus.
