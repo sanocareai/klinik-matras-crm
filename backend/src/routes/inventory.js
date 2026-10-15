@@ -15,6 +15,7 @@ import { requirePermission, requireAnyPermission, PERMISSIONS as P } from "../mi
 import { prisma } from "../db.js";
 import { postStockMovement, computeStockSnapshot, lockMaterialBalance } from "../services/inventoryLedger.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
+import { tolakBilaJendelaOpname } from "../services/jendelaOpname.js";
 
 export const inventoryRouter = express.Router();
 inventoryRouter.use(requireAuth);
@@ -23,7 +24,11 @@ class InventoryError extends Error {
   constructor(message, statusCode = 400) { super(message); this.statusCode = statusCode; }
 }
 function handleErr(err, res) {
-  if (typeof err.statusCode === "number") return res.status(err.statusCode).json({ error: err.message });
+  if (typeof err.statusCode === "number") {
+    // kode mesin (mis. JENDELA_OPNAME_AKTIF, BUKAN_PENYETUJU) ikut dikirim bila ada — pesan tetap di `error`
+    const kode = typeof err.code === "string" && /^[A-Z][A-Z0-9_]{2,40}$/.test(err.code) ? { code: err.code } : {};
+    return res.status(err.statusCode).json({ error: err.message, ...kode });
+  }
   if (err.code === "P2002") return res.status(409).json({ error: "Kode material sudah dipakai" });
   if (err.code === "P2025") return res.status(404).json({ error: "Data tidak ditemukan" });
   console.error("Inventory error:", err);
@@ -206,6 +211,7 @@ async function assertMaterialActive(materialId) {
 // FR-I-01: goods receipt — qty, unit cost, supplier, batch.
 inventoryRouter.post("/movements/receipt", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
   try {
+    await tolakBilaJendelaOpname(prisma, "penerimaan jalur cepat");
     const { materialId, location, unitCost, supplier, batchNumber, note } = req.body;
     await assertMaterialActive(materialId);
     const qty = parseQty(req.body.qty);
@@ -223,6 +229,7 @@ inventoryRouter.post("/movements/receipt", requirePermission(P.INVENTORY_WRITE),
 // FR-P-08: material issue ke unit — mengurangi stok, tercatat qty aktual.
 inventoryRouter.post("/movements/issue", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
   try {
+    await tolakBilaJendelaOpname(prisma, "pengeluaran jalur cepat");
     const { materialId, unitId, location, note } = req.body;
     if (!unitId) throw new InventoryError("Unit tujuan wajib diisi untuk issue material");
     await assertMaterialActive(materialId);
@@ -242,6 +249,7 @@ inventoryRouter.post("/movements/issue", requirePermission(P.INVENTORY_WRITE), a
 // Sisa material kembali ke gudang (mis. issue kelebihan, unit dibatalkan).
 inventoryRouter.post("/movements/return", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
   try {
+    await tolakBilaJendelaOpname(prisma, "retur jalur cepat");
     const { materialId, unitId, location, note } = req.body;
     await assertMaterialActive(materialId);
     const qty = parseQty(req.body.qty);
@@ -262,6 +270,7 @@ inventoryRouter.post("/movements/return", requirePermission(P.INVENTORY_WRITE), 
 // seperti pemakaian & retur normal.
 inventoryRouter.post("/movements/waste", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
   try {
+    await tolakBilaJendelaOpname(prisma, "pembuangan jalur cepat");
     const { materialId, reason, location, unitId, note } = req.body;
     if (!reason?.trim()) throw new InventoryError("Alasan wajib diisi untuk material terbuang");
     await assertMaterialActive(materialId);
