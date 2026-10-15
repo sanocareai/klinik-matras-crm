@@ -25,6 +25,7 @@ import { mapRouteStagesToVisualization } from "../lib/domain/productionRouting.j
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import { tryProvisionUnitRoute, changeUnitRoute, assignStage } from "../services/productionRouting.js";
 import { postStockMovement } from "../services/inventoryLedger.js";
+import { bukukanNilaiPergerakanBaru } from "../services/finance/posting/inventory.js";
 import { guardV1UnitWrite, UnitConflictError, UUID_RE } from "../services/unitV2Ownership.js";
 import { priorityDisplay } from "../lib/domain/productionDisplay.js";
 import { loadOpenComplaintsByUnit } from "../services/productionComplaints.js";
@@ -686,10 +687,13 @@ unitRouter.post("/:id/materials", requirePermission(P.UNIT_MATERIAL_WRITE), asyn
 
     const movement = await prisma.$transaction(async (tx) => {
       await guardV1UnitWrite(tx, unit.id, { what: "pemakaian bahan", actorId: req.user.id }); // kunci unit -> kepemilikan -> tulis, satu transaksi
-      return postStockMovement(tx, {
+      const mv = await postStockMovement(tx, {
         materialId, type, qty: ledgerQty, unitId: unit.id,
         note: note || null, createdById: req.user.id,
       });
+      // HPP: nilai pemakaian/koreksi dibukukan di transaksi yang sama (atau gap terlihat) — jalur ini dulu menulis stok tanpa jejak nilai sama sekali.
+      await bukukanNilaiPergerakanBaru(tx, mv, { userId: req.user.id });
+      return mv;
     });
     res.status(201).json(movement);
   } catch (err) {

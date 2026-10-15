@@ -28,7 +28,7 @@
 // pengeluaran — memaksa FIFO berarti mengarang pasangan "keluar ini dari
 // lot yang mana", yang justru melanggar aturan 2.
 
-import { postJournal, recordPostingGap, resolvePostingGap, findEntryByKey } from "../journal.js";
+import { postJournal, recordPostingGap, resolvePostingGap, findEntryByKey, JournalError } from "../journal.js";
 import { statusCutoverUntuk, pembukaAktif, awalCutover } from "../persediaanAwal.js";
 import { ambilKebijakanPersediaan } from "../inventoryMethod.js";
 import { resolveAccount, SYSTEM_KEYS, AccountError } from "../accounts.js";
@@ -345,6 +345,37 @@ export async function postStockMovementCost(tx, { movementId, userId = null }) {
     userId,
     gapLabel: `Pergerakan stok ${m.material.code}`,
   });
+}
+
+/**
+ * Pintu pencatatan nilai untuk pergerakan stok LEPAS yang BARU saja ditulis (pemakaian/retur/susut tanpa dokumen Material Issue):
+ * POST /units/:id/materials, POST /inventory/movements/issue|return|waste, penerimaan Retur Produksi.
+ *
+ * Sebelum fungsi ini jalur-jalur itu menulis stok TANPA jurnal & TANPA gap — pemakaian bahan lantai produksi lenyap dari HPP secara diam-diam
+ * (254 baris ISSUE Agustus–September 2026). Sekarang nilainya dibukukan di transaksi yang SAMA, atau gap TANPA_HARGA_PEROLEHAN /
+ * PERSEDIAAN_AWAL_BELUM_DIPOSTING lahir dan tampil di Finance. Tidak ada angka karangan: harga hanya dari penerimaan berharga
+ * (rata-rata tertimbang sampai createdAt pergerakan), bukan Material.referenceUnitCost.
+ *
+ * HANYA dipanggil untuk pergerakan yang baru dibuat. Pergerakan historis tidak pernah disentuh fungsi ini (tidak ada pemindai massal).
+ * ADJUSTMENT sengaja tidak masuk (selisih opname punya alur dokumen sendiri). Error "data finance belum siap" tidak menggagalkan perintah Gudang.
+ */
+export async function bukukanNilaiPergerakanBaru(tx, movement, { userId = null } = {}) {
+  if (!movement?.id || !["ISSUE", "RETURN", "WASTE"].includes(movement.type)) return { posted: false, reason: "bukan_jalur_lepas" };
+  const savepoint = typeof tx?.$executeRawUnsafe === "function";
+  if (savepoint) await tx.$executeRawUnsafe("SAVEPOINT sp_nilai_pergerakan_baru");
+  try {
+    const hasil = await postStockMovementCost(tx, { movementId: movement.id, userId });
+    if (savepoint) await tx.$executeRawUnsafe("RELEASE SAVEPOINT sp_nilai_pergerakan_baru");
+    return hasil;
+  } catch (e) {
+    if (savepoint) {
+      await tx.$executeRawUnsafe("ROLLBACK TO SAVEPOINT sp_nilai_pergerakan_baru");
+      await tx.$executeRawUnsafe("RELEASE SAVEPOINT sp_nilai_pergerakan_baru");
+    }
+    if (!(e instanceof JournalError) && !(e instanceof AccountError)) throw e;
+    console.error("[hpp] pembukuan nilai pergerakan baru ditunda (perintah Gudang tetap berjalan):", movement.id, e?.message);
+    return { posted: false, gap: true, reason: "pembukuan_ditunda" };
+  }
 }
 
 /** Selisih hasil stock opname — satu jurnal per sesi StockCount. */

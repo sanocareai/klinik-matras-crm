@@ -138,7 +138,7 @@ test("satu unit: penerimaan parsial PO, beberapa Material Issue, waste, retur, f
   assert.deepEqual(lem.pergerakan[1].sumber.map((s) => [s.poNumber, s.qty, s.unitCost]), [[po1.poNumber, 6, H1], [po2.poNumber, 4, H2]]);
   assert.deepEqual([lem.diserahkan, lem.dipakaiPIC, lem.waste, lem.retur, lem.sisaDiUnit], [8, 5, 1, 2, 0], "diserahkan 3+5, PIC 4+1, waste 1, retur 2, sisa 0");
   assert.deepEqual(lem.pemakaianPIC.map((p) => [p.stepNo, p.qty, p.oleh]), [[6, 4, w.prod.user.name], [7, 1, w.prod.user.name]]);
-  assert.deepEqual(lem.pergerakan.map((r) => r.jurnal), ["TERBUKU", "TERBUKU", "BELUM_DIJURNAL", "BELUM_DIJURNAL"], "issue lewat dokumen sudah dijurnal; waste/retur cepat belum (jalur sinkron Finance)");
+  assert.deepEqual(lem.pergerakan.map((r) => r.jurnal), ["TERBUKU", "TERBUKU", "TERBUKU", "TERBUKU"], "K5: waste/retur cepat kini dijurnal di transaksi yang sama (dulu BELUM_DIJURNAL diam-diam)");
 
   // TANPA_HARGA bukan Rp0
   const b = bahanDari(j, "BHN-TANPA-HARGA").pergerakan[0];
