@@ -11,6 +11,7 @@ import PerformaTimTab from "@/features/laporan/components/PerformaTimTab.jsx";
 import PipelineTab from "@/features/laporan/components/PipelineTab.jsx";
 import SalesReportTab from "@/features/laporan/components/SalesReportTab.jsx";
 import TrafficTab from "@/features/laporan/components/TrafficTab.jsx";
+import IklanCampaignTab from "@/features/laporan/components/IklanCampaignTab.jsx";
 // Lazy — lihat catatan yang sama di Customers.jsx: workbook export (xlsx +
 // file-saver, ~285KB) dynamic-import di titik pakai, bukan static di atas.
 
@@ -22,7 +23,8 @@ import TrafficTab from "@/features/laporan/components/TrafficTab.jsx";
 // "Sales" ditaruh persis setelah "Ringkasan" (25 Agustus 2026, permintaan
 // owner) — laporan sales (fokus penjualan) jadi tab kedua yang paling sering
 // dibuka, bukan di ujung.
-const TABS = ["Ringkasan", "Sales", "Traffic", "Performa Tim", "Pipeline"];
+// "Iklan" (Okt 2026): laporan CRM per campaign dari touch Ad ID (/api/atribusi/iklan); memuat datanya sendiri, tidak ikut rentang halaman ini.
+const TABS = ["Ringkasan", "Sales", "Traffic", "Iklan", "Performa Tim", "Pipeline"];
 
 // Sufiks nama file export. Preset "Semua" tidak punya from/to, jadi jangan
 // sampai jadi "laporan-null-null.xlsx".
@@ -162,9 +164,11 @@ export default function Laporan() {
           <button className="btn btn-ghost btn-sm" onClick={loadData} disabled={loading}>
             <RefreshCw size={14} /> Refresh
           </button>
-          <button className="btn btn-ghost btn-sm" onClick={handleExport} disabled={loading || exporting}>
-            <Download size={14} /> {exporting ? "Menyiapkan…" : `Export ${tab}`}
-          </button>
+          {tab !== "Iklan" && (
+            <button className="btn btn-ghost btn-sm" onClick={handleExport} disabled={loading || exporting}>
+              <Download size={14} /> {exporting ? "Menyiapkan…" : `Export ${tab}`}
+            </button>
+          )}
           <DateRangePicker value={range} onChange={setRange} />
         </div>
       </div>
@@ -203,6 +207,10 @@ export default function Laporan() {
 
               <TabsContent value="Traffic">
                 <TrafficTab traffic={traffic} sourceDetail={sourceDetail} rangeParams={toApiParams(range)} />
+              </TabsContent>
+
+              <TabsContent value="Iklan">
+                <IklanCampaignTab />
               </TabsContent>
 
               <TabsContent value="Performa Tim">
