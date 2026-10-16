@@ -310,3 +310,62 @@ test("adapter: paginasi mengikuti paging.next sampai habis", async () => {
   const d = await tarikInsights({ akun: AKUN, token: "t", dari: "2026-10-10", sampai: "2026-10-16", fetchFn: f, tidurFn: tanpaTidur });
   assert.deepEqual(d.map((x) => x.ad_id), [AD1, AD2]);
 });
+
+// ───────────── Fase 3.1: rentang sebelum/awal atribusi ─────────────
+import { ketidaksebandingan, EVALUASI_TIDAK_SEBANDING } from "../src/services/attribution/biayaKpi.js";
+test("ketidaksebandingan: sebelum hari awal atribusi, hari awal (parsial), sesudahnya; tanpa touch sama sekali = sebelum atribusi", () => {
+  assert.equal(ketidaksebandingan({ dari: "2026-10-15", mulaiHari: "2026-10-16" }), "SEBELUM_ATRIBUSI");
+  assert.equal(ketidaksebandingan({ dari: "2026-10-16", mulaiHari: "2026-10-16" }), "HARI_ATRIBUSI_PARSIAL");
+  assert.equal(ketidaksebandingan({ dari: "2026-10-17", mulaiHari: "2026-10-16" }), null);
+  assert.equal(ketidaksebandingan({ dari: "2026-10-17", mulaiHari: null }), "SEBELUM_ATRIBUSI");
+});
+test("sebelum atribusi: spend + konversasi platform tampil; CPL/CPA/ROAS null dengan alasan SEBELUM_ATRIBUSI; evaluasi TIDAK_DAPAT_DIEVALUASI_SEBELUM_ATRIBUSI walau target diisi; lead 0 bukan 'belum ada konversi'", () => {
+  const target = normalisasiTarget({ maxCpl: 1, minAcquisitionLeads: 1 });
+  const b = hitungBiayaBaris({ baris: baris({ lead: { unik: 0, spam: 0, bukanSpam: 0, leadSah: 0 }, customerDenganOrder: 0, closingUtama: { customerLunasTerbuktiLedger: 0 }, pernahDitandaiProspek: { jumlah: 0 } }), spend: spend(468546, { platformConversations: 42 }), konteks: kon({ tidakSebanding: "SEBELUM_ATRIBUSI", target }) });
+  assert.equal(b.status, "SEBELUM_ATRIBUSI");
+  assert.deepEqual([b.spend, b.platformConversations], [468546, 42]);
+  assert.deepEqual([b.cpl, b.costPerQualifiedLead, b.costPerCustomerOrder, b.cpa, b.bookedRoas, b.cashRoas], [null, null, null, null, null, null]);
+  assert.ok(Object.values(b.alasanNull).every((a) => a === "SEBELUM_ATRIBUSI"));
+  assert.equal(b.evaluasi.status, EVALUASI_TIDAK_SEBANDING.SEBELUM_ATRIBUSI);
+  assert.equal(b.evaluasi.status, "TIDAK_DAPAT_DIEVALUASI_SEBELUM_ATRIBUSI");
+  assert.match(b.catatanPembanding, /BUKAN performa nol/);
+  const p = hitungBiayaBaris({ baris: baris(), spend: spend(1000), konteks: kon({ tidakSebanding: "HARI_ATRIBUSI_PARSIAL" }) });
+  assert.deepEqual([p.status, p.cpl, p.evaluasi.status], ["HARI_ATRIBUSI_PARSIAL", null, "TIDAK_DAPAT_DIEVALUASI_HARI_ATRIBUSI_PARSIAL"]);
+  // sumber belum terhubung tetap BELUM_TERHUBUNG (tidak ada spend untuk dibandingkan)
+  assert.equal(hitungBiayaBaris({ baris: baris(), spend: null, konteks: kon({ sumberTerhubung: false, tidakSebanding: "SEBELUM_ATRIBUSI" }) }).status, "BELUM_TERHUBUNG");
+});
+test("terapkanBiaya sebelum atribusi: peringatan, total tanpa CPL/CPA, rekonsiliasi spend tetap OK, baris Rp0 dengan konversasi platform diterima, reach tidak dijumlah", () => {
+  const ref = new Map([[AD1, { adId: AD1, adSetId: SET1, campaignId: CAMP1 }], [AD2, { adId: AD2, adSetId: SET2, campaignId: CAMP2 }]]);
+  const lap = laporanDasar([]);
+  lap.rentangLead.dari = "2026-10-15"; lap.rentangLead.sampai = "2026-10-15";
+  terapkanBiaya(lap, { spendPerAd: [{ adId: AD1, spend: 100, platformConversations: 3, hariAdaSpend: 1 }, { adId: AD2, spend: 0, platformConversations: 1, hariAdaSpend: 1 }], referensi: ref, kesegaran: kes(), target: normalisasiTarget(null), mulaiHari: "2026-10-16" });
+  assert.ok(lap.peringatan.some((w) => w.kode === "BIAYA_SEBELUM_ATRIBUSI"));
+  assert.equal(lap.biaya.status, "SEBELUM_ATRIBUSI");
+  assert.deepEqual([lap.biaya.spendTotal, lap.biaya.cpl, lap.biaya.cpa, lap.biaya.bookedRoas, lap.biaya.evaluasi.status], [100, null, null, null, "TIDAK_DAPAT_DIEVALUASI_SEBELUM_ATRIBUSI"]);
+  const g2 = lap.grup.find((g) => g.kunci === CAMP2);
+  assert.deepEqual([g2.biaya.spend, g2.biaya.platformConversations], [0, 1], "spend Rp0 dengan percakapan platform > 0 diterima apa adanya");
+  assert.equal(lap.rekonsiliasi.ok, true);
+  assert.ok(!JSON.stringify(lap).toLowerCase().includes("reach"), "laporan tidak menampilkan reach (non-additive)");
+  const ok = laporanDasar([]); ok.rentangLead.dari = "2026-10-17"; ok.rentangLead.sampai = "2026-10-17";
+  terapkanBiaya(ok, { spendPerAd: [{ adId: AD1, spend: 100, hariAdaSpend: 1 }], referensi: ref, kesegaran: kes(), target: normalisasiTarget(null), mulaiHari: "2026-10-16" });
+  assert.ok(!ok.peringatan.some((w) => /ATRIBUSI/.test(w.kode)), "sesudah hari atribusi: sebanding");
+});
+
+import { WINDSOR_20261015, CONTROL_TOTAL, CONTROL_CAMPAIGN, csvWindsor } from "./fixtures/windsorSpend20261015.js";
+test("dataset Windsor 15 Okt: Σ baris Ad = control total akun untuk spend/impressions/clicks/link clicks/percakapan/first reply/koneksi baru; reach TIDAK; per campaign cocok; CSV valid di importer", () => {
+  const sum = (k) => WINDSOR_20261015.reduce((s, r) => s + r[k], 0);
+  assert.deepEqual([sum("spend"), sum("impressions"), sum("clicks"), sum("link_clicks"), sum("conv"), sum("first_reply"), sum("new_conn")],
+    [CONTROL_TOTAL.spend, CONTROL_TOTAL.impressions, CONTROL_TOTAL.clicks, CONTROL_TOTAL.link_clicks, CONTROL_TOTAL.conversation_started_7d, CONTROL_TOTAL.first_reply, CONTROL_TOTAL.new_messaging_connections]);
+  assert.notEqual(sum("reach"), CONTROL_TOTAL.reach, "reach non-additive: Σ reach Ad (63725) ≠ reach akun (60020)");
+  for (const [c, v] of Object.entries(CONTROL_CAMPAIGN)) {
+    const r = WINDSOR_20261015.filter((x) => x.campaign_id === c);
+    assert.deepEqual([r.reduce((s, x) => s + x.spend, 0), r.reduce((s, x) => s + x.impressions, 0), r.reduce((s, x) => s + x.link_clicks, 0), r.reduce((s, x) => s + x.conv, 0)], [v.spend, v.impressions, v.link_clicks, v.conversations], c);
+  }
+  const p = barisSpendDariCsv(csvWindsor());
+  assert.equal(p.galat, null);
+  const hasil = rencanaSpend(p.baris, { ctx: { accountId: "2081614415911241", mataUangKolom: p.mataUangKolom } });
+  assert.deepEqual([hasil.baru.length, hasil.ditolak.length, hasil.konflik.length], [10, 0, 0]);
+  const nol = hasil.baru.filter((r) => r.spend === 0);
+  assert.deepEqual(nol.map((r) => r.platformConversations).sort(), [0, 1], "baris Rp0: satu dengan percakapan 1 diterima");
+  assert.ok(hasil.baru.every((r) => r.currency === "IDR" && typeof r.adId === "string"));
+});

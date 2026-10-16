@@ -89,7 +89,7 @@ export function ringkasCakupan(lap) {
 }
 
 /** Peringatan yang selalu ditonjolkan (coverage gap), urut dari yang paling penting. */
-const URUT_PERINGATAN = ["REKONSILIASI_GAGAL", "ATRIBUSI_BELUM_MULAI", "RENTANG_SEBELUM_ATRIBUSI", "AD_ID_TIDAK_TERPETAKAN", "TOUCH_TANPA_BUKTI_AKUISISI", "LEAD_TANPA_TOUCH", "KOHORT_BELUM_MATANG", "BIAYA_BELUM_TERHUBUNG"];
+const URUT_PERINGATAN = ["REKONSILIASI_GAGAL", "ATRIBUSI_BELUM_MULAI", "RENTANG_SEBELUM_ATRIBUSI", "BIAYA_SEBELUM_ATRIBUSI", "BIAYA_HARI_ATRIBUSI_PARSIAL", "AD_ID_TIDAK_TERPETAKAN", "TOUCH_TANPA_BUKTI_AKUISISI", "LEAD_TANPA_TOUCH", "KOHORT_BELUM_MATANG", "BIAYA_BELUM_TERHUBUNG"];
 export function peringatanUrut(lap) {
   const w = [...(lap?.peringatan || [])];
   const idx = (k) => { const i = URUT_PERINGATAN.indexOf(k); return i < 0 ? 99 : i; };
@@ -122,9 +122,11 @@ export const STATUS_BIAYA_LABEL = {
   DATA_TERLAMBAT: { teks: "Data terlambat", tip: "Spend terbaru tertinggal; rentang meminta hari yang belum ada datanya.", nada: "peringatan" },
   TANPA_SPEND_DI_RENTANG: { teks: "Tanpa spend di rentang", tip: "Tidak ada baris spend untuk entitas ini pada rentang yang dipilih.", nada: "netral" },
   SIAP_DIEVALUASI: { teks: "Siap dievaluasi", tip: "Spend, mapping, dan kematangan memenuhi syarat; evaluasi mengikuti target ADMIN bila diisi.", nada: "baik" },
+  SEBELUM_ATRIBUSI: { teks: "Sebelum atribusi", tip: "Rentang dimulai sebelum atribusi touch tersimpan. Spend tampil untuk audit; CPL/CPA/ROAS CRM tidak dihitung dan 0 lead bukan performa nol.", nada: "peringatan" },
+  HARI_ATRIBUSI_PARSIAL: { teks: "Hari atribusi parsial", tip: "Rentang dimulai pada hari awal atribusi (touch baru ada sejak jam awal). Gunakan rentang yang dimulai hari berikutnya.", nada: "peringatan" },
 };
-export const ALASAN_NULL_LABEL = { BELUM_ADA_KONVERSI: "belum ada konversi", BELUM_ADA_SPEND: "belum ada spend", SPEND_NOL: "spend Rp0" };
-export const EVALUASI_LABEL = { DATA_KURANG: "Data kurang", PANTAU: "Pantau", BAIK: "Baik", PERLU_REVIEW: "Perlu review" };
+export const ALASAN_NULL_LABEL = { BELUM_ADA_KONVERSI: "belum ada konversi", BELUM_ADA_SPEND: "belum ada spend", SPEND_NOL: "spend Rp0", SEBELUM_ATRIBUSI: "sebelum atribusi", HARI_ATRIBUSI_PARSIAL: "hari atribusi parsial" };
+export const EVALUASI_LABEL = { DATA_KURANG: "Data kurang", PANTAU: "Pantau", BAIK: "Baik", PERLU_REVIEW: "Perlu review", TIDAK_DAPAT_DIEVALUASI_SEBELUM_ATRIBUSI: "Tidak dapat dievaluasi (sebelum atribusi)", TIDAK_DAPAT_DIEVALUASI_HARI_ATRIBUSI_PARSIAL: "Tidak dapat dievaluasi (hari atribusi parsial)" };
 
 /** Sel angka biaya: null tetap "—" dengan alasan; TIDAK ada nol palsu. */
 export function selBiaya(nilai, alasan, { rupiah = true, desimal = false } = {}) {
