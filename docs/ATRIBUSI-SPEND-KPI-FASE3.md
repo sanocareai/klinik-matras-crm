@@ -43,3 +43,9 @@ Status baris: `BELUM_TERHUBUNG`, `DATA_BELUM_MATANG`, `BELUM_ADA_KONVERSI`, `MAP
 
 ## Rilis
 `scripts/release-atribusi-spend.sh` (bergerbang: backup + restore rehearsal, pin sha256, pemindai DDL 35 mutan, build web, migrasi aditif, switch tunggal, verifikasi). Sinkronisasi spend OFF; `.env` tidak diubah. Rollback = kode saja (`--rollback`), semua tabel tetap.
+
+## Fase 3.1 — dataset Windsor 15 Okt 2026 (validasi pipeline)
+- Akun `2081614415911241`, Asia/Jakarta, IDR, satu hari penuh. Sumber enum `WINDSOR_API`. Fixture uji: `backend/tests/fixtures/windsorSpend20261015.js`. Header "conversation_started_7d" dipetakan ke kontrak importer ("Messaging conversations started") tanpa mengubah nilai.
+- **Reach non-additive.** Reach disimpan per baris Ad dari sumber hanya sebagai atribut; sistem **tidak pernah menjumlahkan reach** ke campaign/ad set/akun dan tidak menampilkannya pada laporan/ringkasan spend. Σ reach baris Ad (63.725) ≠ reach akun (60.020). Rekonsiliasi memakai spend, impressions, clicks, link clicks, dan aksi percakapan (aditif).
+- **Baris Rp0 dengan aksi percakapan > 0 diterima** (attribution lag Meta); spend tidak dikarang.
+- **Rentang sebelum atribusi** (`dari` < hari WIB touch pertama): spend + percakapan platform tampil untuk audit; CPL/CPA/ROAS berbasis CRM `null` (alasan `SEBELUM_ATRIBUSI`); lead 0 bukan performa nol; status baris `SEBELUM_ATRIBUSI`; evaluasi `TIDAK_DAPAT_DIEVALUASI_SEBELUM_ATRIBUSI` walau target diisi; peringatan `RENTANG_SEBELUM_ATRIBUSI` + `BIAYA_SEBELUM_ATRIBUSI`. `dari` = hari awal atribusi → `HARI_ATRIBUSI_PARSIAL` (`TIDAK_DAPAT_DIEVALUASI_HARI_ATRIBUSI_PARSIAL`).

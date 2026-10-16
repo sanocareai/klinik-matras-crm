@@ -22,7 +22,27 @@ export const STATUS_BIAYA = Object.freeze({
   DATA_TERLAMBAT: "DATA_TERLAMBAT",
   TANPA_SPEND_DI_RENTANG: "TANPA_SPEND_DI_RENTANG",
   SIAP_DIEVALUASI: "SIAP_DIEVALUASI",
+  // Rentang yang dimulai SEBELUM (atau pada hari parsial) awal atribusi: spend tercatat untuk audit, tetapi lead/closing berbasis touch belum sebanding.
+  SEBELUM_ATRIBUSI: "SEBELUM_ATRIBUSI",
+  HARI_ATRIBUSI_PARSIAL: "HARI_ATRIBUSI_PARSIAL",
 });
+export const EVALUASI_TIDAK_SEBANDING = Object.freeze({
+  SEBELUM_ATRIBUSI: "TIDAK_DAPAT_DIEVALUASI_SEBELUM_ATRIBUSI",
+  HARI_ATRIBUSI_PARSIAL: "TIDAK_DAPAT_DIEVALUASI_HARI_ATRIBUSI_PARSIAL",
+});
+
+/**
+ * Apakah rentang laporan sebanding dengan data atribusi? `mulaiHari` = hari WIB (YYYY-MM-DD) touch pertama tersimpan (null = belum ada touch).
+ * dari < mulaiHari  -> SEBELUM_ATRIBUSI (lead pada hari itu tidak punya touch: 0 lead BUKAN performa nol).
+ * dari = mulaiHari  -> HARI_ATRIBUSI_PARSIAL (touch baru ada sejak jam awal atribusi; spend hari itu penuh).
+ * Mengembalikan null bila sebanding.
+ */
+export function ketidaksebandingan({ dari, mulaiHari }) {
+  if (!mulaiHari) return "SEBELUM_ATRIBUSI";
+  if (dari < mulaiHari) return "SEBELUM_ATRIBUSI";
+  if (dari === mulaiHari) return "HARI_ATRIBUSI_PARSIAL";
+  return null;
+}
 export const EVALUASI = Object.freeze({ DATA_KURANG: "DATA_KURANG", PANTAU: "PANTAU", BAIK: "BAIK", PERLU_REVIEW: "PERLU_REVIEW" });
 export const BATAS_TERLAMBAT_HARI = 2;      // spend terbaru boleh tertinggal sampai 2 hari WIB dari hari ini
 export const UMUR_MATANG_BAWAAN_HARI = 30;  // hanya untuk label kematangan bila target umur kohort belum diisi (BUKAN target mutu)
@@ -117,6 +137,7 @@ export function evaluasiTarget({ target, statusBiaya, metrik, lead, spamSharePer
  */
 export function hitungBiayaBaris({ baris, spend, konteks }) {
   const { sumberTerhubung, kesegaran, target } = konteks;
+  const tidakSebanding = sumberTerhubung ? (konteks.tidakSebanding ?? null) : null;
   const lead = baris.lead?.unik ?? 0;
   const qualified = baris.pernahDitandaiProspek?.jumlah ?? 0;
   const custOrder = baris.customerDenganOrder ?? 0;
@@ -140,6 +161,10 @@ export function hitungBiayaBaris({ baris, spend, konteks }) {
     bookedRoas: S === null ? "BELUM_ADA_SPEND" : S > 0 ? null : "SPEND_NOL", cashRoas: S === null ? "BELUM_ADA_SPEND" : S > 0 ? null : "SPEND_NOL",
   };
   for (const k of Object.keys(metrik)) if (metrik[k] !== null) alasan[k] = null;
+  // sebelum/awal atribusi: tidak ada CPL/CPA/ROAS berbasis CRM (denominator lead tanpa touch bukan "nol performa"); spend dan konversasi platform tetap tampil
+  if (tidakSebanding) {
+    for (const k of Object.keys(metrik)) { metrik[k] = null; alasan[k === "cpaClosing" ? "cpa" : k] = tidakSebanding; }
+  }
 
   // kematangan: semua lead sah harus berumur >= umur jendela
   const kunciMatang = kunciKematangan(target.minCohortAgeDays);
@@ -149,6 +174,7 @@ export function hitungBiayaBaris({ baris, spend, konteks }) {
 
   let status;
   if (!sumberTerhubung) status = STATUS_BIAYA.BELUM_TERHUBUNG;
+  else if (tidakSebanding) status = STATUS_BIAYA[tidakSebanding];
   else if (unmappedAtauUnknown) status = STATUS_BIAYA.MAPPING_BELUM_ADA;
   else if (kesegaran.terlambat) status = STATUS_BIAYA.DATA_TERLAMBAT;
   else if (S === null) status = STATUS_BIAYA.TANPA_SPEND_DI_RENTANG;
@@ -156,7 +182,9 @@ export function hitungBiayaBaris({ baris, spend, konteks }) {
   else if (!matang) status = STATUS_BIAYA.DATA_BELUM_MATANG;
   else status = STATUS_BIAYA.SIAP_DIEVALUASI;
 
-  const evaluasi = evaluasiTarget({ target, statusBiaya: status, metrik, lead, spamSharePercent: spamShare, closings: closing });
+  const evaluasi = tidakSebanding
+    ? { status: EVALUASI_TIDAK_SEBANDING[tidakSebanding], alasan: tidakSebanding, pelanggaran: [] }
+    : evaluasiTarget({ target, statusBiaya: status, metrik, lead, spamSharePercent: spamShare, closings: closing });
   return {
     status,
     spend: S,
@@ -168,6 +196,7 @@ export function hitungBiayaBaris({ baris, spend, konteks }) {
     cpl: metrik.cpl, costPerQualifiedLead: metrik.costPerQualifiedLead, costPerCustomerOrder: metrik.costPerCustomerOrder, cpa: metrik.cpaClosing,
     bookedRoas: metrik.bookedRoas, cashRoas: metrik.cashRoas,
     alasanNull: alasan,
+    ...(tidakSebanding ? { catatanPembanding: "Rentang dimulai sebelum/pada hari awal atribusi: lead berbasis touch belum sebanding dengan spend. 0 lead di sini BUKAN performa nol; CPL/CPA/ROAS CRM tidak dihitung." } : {}),
     penyebut: { acquisitionLead: lead, qualifiedLead: qualified, customerDenganOrder: custOrder, closingUtama: closing, bookedValue: booked, uangBersihLedger: cash },
     spamSharePercent: spamShare,
     kematangan: { jendela: kunciMatang, leadMatang, leadSah, matang },
@@ -202,7 +231,7 @@ export function barisKosong({ level, kunci, ref }) {
  * Mengubah `laporan.grup[*].biaya`, menambah baris kosong untuk entitas yang hanya punya spend, mengisi `laporan.biaya` (ringkasan) dan peringatan.
  * Mengembalikan laporan yang sama (dimutasi).
  */
-export function terapkanBiaya(laporan, { spendPerAd, referensi, kesegaran, target, hariIni, ringkasanImport = null }) {
+export function terapkanBiaya(laporan, { spendPerAd, referensi, kesegaran, target, hariIni, ringkasanImport = null, mulaiHari = undefined }) {
   const level = laporan.rentangLead.level;
   const filter = laporan.rentangLead.filter || null;
   const sumberTerhubung = (spendPerAd?.length ?? 0) > 0 || !!(kesegaran && kesegaran.tersedia);
@@ -245,7 +274,9 @@ export function terapkanBiaya(laporan, { spendPerAd, referensi, kesegaran, targe
     laporan.grup.push(kosong);
   }
 
-  const konteks = { sumberTerhubung, kesegaran, target };
+  // mulaiHari undefined = tidak diketahui pemanggil (tes lama) -> dianggap sebanding
+  const tidakSebanding = mulaiHari === undefined ? null : ketidaksebandingan({ dari: laporan.rentangLead.dari, mulaiHari });
+  const konteks = { sumberTerhubung, kesegaran, target, tidakSebanding };
   for (const g of laporan.grup) {
     const a = g.status === "UNKNOWN" ? null : perKunci.get(g.kunci) || null;
     g.biaya = hitungBiayaBaris({ baris: g, spend: a ? { spend: a.spend, platformConversations: a.platformConversations, impressions: a.impressions, linkClicks: a.linkClicks, hariAdaSpend: a.hariAdaSpend } : null, konteks });
@@ -282,6 +313,8 @@ export function terapkanBiaya(laporan, { spendPerAd, referensi, kesegaran, targe
   laporan.peringatan = laporan.peringatan.filter((x) => x.kode !== "BIAYA_BELUM_TERHUBUNG");
   if (!sumberTerhubung) w("BIAYA_BELUM_TERHUBUNG", "Spend Meta belum ada di sistem (impor CSV Ads Manager atau sinkronisasi API belum berjalan): biaya, CPL, CPA, dan ROAS sengaja null.");
   else {
+    if (tidakSebanding === "SEBELUM_ATRIBUSI") w("BIAYA_SEBELUM_ATRIBUSI", "Rentang dimulai sebelum atribusi tersimpan: spend dan percakapan platform ditampilkan untuk audit, tetapi CPL/CPA/ROAS berbasis CRM TIDAK dihitung dan lead 0 bukan performa nol (status evaluasi: TIDAK_DAPAT_DIEVALUASI_SEBELUM_ATRIBUSI).");
+    if (tidakSebanding === "HARI_ATRIBUSI_PARSIAL") w("BIAYA_HARI_ATRIBUSI_PARSIAL", "Rentang dimulai pada hari awal atribusi (touch baru ada sejak jam awal): spend hari itu penuh sedangkan lead berbasis touch parsial. CPL/CPA/ROAS CRM tidak dihitung; gunakan rentang yang dimulai hari berikutnya.");
     if (kesegaran.terlambat) w("SPEND_TERLAMBAT", `Spend terakhir tanggal ${kesegaran.terakhirTanggal} (tertinggal ${kesegaran.tertinggalHari} hari WIB); rentang meminta hari yang belum ada datanya.`, { terakhirTanggal: kesegaran.terakhirTanggal });
     if (spendTidakTerpetakan > 0) w("SPEND_UNMAPPED", `Ada spend Rp${spendTidakTerpetakan.toLocaleString("id-ID")} pada ${adIdTidakTerpetakan.size} Ad ID yang belum punya referensi Ad → Ad Set → Campaign (SPEND_UNMAPPED). Impor pemetaan untuk menutupnya.`, { adIds: adIdTidakTerpetakan.size, spend: spendTidakTerpetakan });
     if (laporan.biaya.status === STATUS_BIAYA.DATA_BELUM_MATANG) w("BIAYA_KOHORT_BELUM_MATANG", "Sebagian lead belum cukup umur: closing dan revenue masih bertambah. Jangan menilai CPA/ROAS sebelum matang.");
