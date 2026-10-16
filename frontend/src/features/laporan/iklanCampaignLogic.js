@@ -89,7 +89,7 @@ export function ringkasCakupan(lap) {
 }
 
 /** Peringatan yang selalu ditonjolkan (coverage gap), urut dari yang paling penting. */
-const URUT_PERINGATAN = ["REKONSILIASI_GAGAL", "ATRIBUSI_BELUM_MULAI", "RENTANG_SEBELUM_ATRIBUSI", "AD_ID_TIDAK_TERPETAKAN", "TOUCH_TANPA_BUKTI_AKUISISI", "LEAD_TANPA_TOUCH", "KOHORT_BELUM_MATANG", "BIAYA_BELUM_TERHUBUNG"];
+const URUT_PERINGATAN = ["REKONSILIASI_GAGAL", "ATRIBUSI_BELUM_MULAI", "RENTANG_SEBELUM_ATRIBUSI", "BIAYA_SEBELUM_ATRIBUSI", "BIAYA_HARI_ATRIBUSI_PARSIAL", "AD_ID_TIDAK_TERPETAKAN", "TOUCH_TANPA_BUKTI_AKUISISI", "LEAD_TANPA_TOUCH", "KOHORT_BELUM_MATANG", "BIAYA_BELUM_TERHUBUNG"];
 export function peringatanUrut(lap) {
   const w = [...(lap?.peringatan || [])];
   const idx = (k) => { const i = URUT_PERINGATAN.indexOf(k); return i < 0 ? 99 : i; };
@@ -110,3 +110,87 @@ export function jejak(level, nama) {
   if (level === "ad") out.push({ level: "ad", label: nama?.adSet || "Ad Set" });
   return out;
 }
+
+// ═══ FASE 3: biaya, KPI, target ═══════════════════════════════════════════════════════════════════════════════════════════════
+// Semua angka biaya datang dari server (baris.biaya). Klien TIDAK menghitung CPL/CPA/ROAS dan tidak pernah mengubah null menjadi 0.
+
+export const STATUS_BIAYA_LABEL = {
+  BELUM_TERHUBUNG: { teks: "Belum tersambung", tip: "Spend Meta belum ada di sistem (impor CSV atau sinkronisasi API belum berjalan).", nada: "netral" },
+  DATA_BELUM_MATANG: { teks: "Data belum matang", tip: "Sebagian lead belum cukup umur; closing dan revenue masih bertambah.", nada: "peringatan" },
+  BELUM_ADA_KONVERSI: { teks: "Belum ada konversi", tip: "Ada spend tetapi belum ada lead/closing sebagai penyebut.", nada: "netral" },
+  MAPPING_BELUM_ADA: { teks: "Mapping belum ada", tip: "Ad ID belum punya referensi Ad → Ad Set → Campaign (atau lead UNKNOWN).", nada: "peringatan" },
+  DATA_TERLAMBAT: { teks: "Data terlambat", tip: "Spend terbaru tertinggal; rentang meminta hari yang belum ada datanya.", nada: "peringatan" },
+  TANPA_SPEND_DI_RENTANG: { teks: "Tanpa spend di rentang", tip: "Tidak ada baris spend untuk entitas ini pada rentang yang dipilih.", nada: "netral" },
+  SIAP_DIEVALUASI: { teks: "Siap dievaluasi", tip: "Spend, mapping, dan kematangan memenuhi syarat; evaluasi mengikuti target ADMIN bila diisi.", nada: "baik" },
+  SEBELUM_ATRIBUSI: { teks: "Sebelum atribusi", tip: "Rentang dimulai sebelum atribusi touch tersimpan. Spend tampil untuk audit; CPL/CPA/ROAS CRM tidak dihitung dan 0 lead bukan performa nol.", nada: "peringatan" },
+  HARI_ATRIBUSI_PARSIAL: { teks: "Hari atribusi parsial", tip: "Rentang dimulai pada hari awal atribusi (touch baru ada sejak jam awal). Gunakan rentang yang dimulai hari berikutnya.", nada: "peringatan" },
+};
+export const ALASAN_NULL_LABEL = { BELUM_ADA_KONVERSI: "belum ada konversi", BELUM_ADA_SPEND: "belum ada spend", SPEND_NOL: "spend Rp0", SEBELUM_ATRIBUSI: "sebelum atribusi", HARI_ATRIBUSI_PARSIAL: "hari atribusi parsial" };
+export const EVALUASI_LABEL = { DATA_KURANG: "Data kurang", PANTAU: "Pantau", BAIK: "Baik", PERLU_REVIEW: "Perlu review", TIDAK_DAPAT_DIEVALUASI_SEBELUM_ATRIBUSI: "Tidak dapat dievaluasi (sebelum atribusi)", TIDAK_DAPAT_DIEVALUASI_HARI_ATRIBUSI_PARSIAL: "Tidak dapat dievaluasi (hari atribusi parsial)" };
+
+/** Sel angka biaya: null tetap "—" dengan alasan; TIDAK ada nol palsu. */
+export function selBiaya(nilai, alasan, { rupiah = true, desimal = false } = {}) {
+  if (nilai === null || nilai === undefined) return { teks: "—", alasan: ALASAN_NULL_LABEL[alasan] || (alasan ? String(alasan).toLowerCase() : null), kosong: true };
+  const n = Number(nilai);
+  const teks = rupiah ? "Rp" + Math.round(n).toLocaleString("id-ID") : n.toLocaleString("id-ID", { minimumFractionDigits: desimal ? 2 : 0, maximumFractionDigits: 2 }) + (desimal ? "×" : "");
+  return { teks, alasan: null, kosong: false };
+}
+
+/** Baris biaya untuk tabel. Warna HANYA bila evaluasi (target ADMIN) tersedia; tanpa target nada = null. */
+export function barisBiaya(g) {
+  const b = g?.biaya;
+  if (!b) return null;
+  const st = STATUS_BIAYA_LABEL[b.status] || { teks: String(b.status || "—"), tip: "", nada: "netral" };
+  const al = b.alasanNull || {};
+  const ev = b.evaluasi?.status ?? null;
+  return {
+    status: b.status, statusTeks: st.teks, statusTip: st.tip, nada: st.nada,
+    spend: b.spend === null || b.spend === undefined ? { teks: "—", alasan: null, kosong: true } : selBiaya(b.spend, null),
+    konversasiPlatform: b.platformConversations ?? null,
+    cpl: selBiaya(b.cpl, al.cpl), cplQualified: selBiaya(b.costPerQualifiedLead, al.costPerQualifiedLead),
+    cplOrder: selBiaya(b.costPerCustomerOrder, al.costPerCustomerOrder), cpa: selBiaya(b.cpa, al.cpa),
+    bookedRoas: selBiaya(b.bookedRoas, al.bookedRoas, { rupiah: false, desimal: true }), cashRoas: selBiaya(b.cashRoas, al.cashRoas, { rupiah: false, desimal: true }),
+    evaluasi: ev, evaluasiTeks: ev ? EVALUASI_LABEL[ev] : null, evaluasiNada: ev === "BAIK" ? "baik" : ev === "PERLU_REVIEW" ? "buruk" : ev === "PANTAU" ? "peringatan" : ev ? "netral" : null,
+    pelanggaran: b.evaluasi?.pelanggaran || [],
+    kesegaran: b.kesegaranSpend || null, matang: b.kematangan?.matang ?? null,
+  };
+}
+
+/** Status biaya tingkat laporan (menggantikan versi Fase 2): tersambung bila server menyatakan sumber spend terhubung. */
+export function statusBiayaLaporan(lap) {
+  const b = lap?.biaya;
+  const tersambung = !!b?.sumber?.terhubung;
+  return {
+    tersambung, status: b?.status ?? "BELUM_TERHUBUNG", teks: tersambung ? (STATUS_BIAYA_LABEL[b.status]?.teks || b.status) : "Belum tersambung",
+    alasan: b?.alasan ?? null, opsi: b?.opsiIntegrasi ?? [], spendTotal: tersambung ? b.spendTotal : null, spendTidakTerpetakan: b?.spendTidakTerpetakan ?? 0,
+    terakhirTanggal: b?.sumber?.terakhirTanggal ?? null, tertinggalHari: b?.sumber?.tertinggalHari ?? null, terlambat: !!b?.sumber?.terlambat,
+    targetDiatur: !!b?.targetDiatur, definisi: b?.definisiKpi ?? null,
+  };
+}
+
+export const KOLOM_TARGET = [
+  { k: "maxCpl", label: "Maks. CPL acquisition (Rp)", rupiah: true }, { k: "maxCostPerQualifiedLead", label: "Maks. cost per qualified lead (Rp)", rupiah: true },
+  { k: "maxCostPerCustomerOrder", label: "Maks. cost per customer ber-order (Rp)", rupiah: true }, { k: "maxCpaClosing", label: "Maks. CPA closing utama (Rp)", rupiah: true },
+  { k: "minBookedRoas", label: "Min. booked ROAS (×)" }, { k: "minCashRoas", label: "Min. cash ROAS (×)" },
+  { k: "minAcquisitionLeads", label: "Min. jumlah acquisition lead", int: true }, { k: "minClosings", label: "Min. jumlah closing", int: true },
+  { k: "minCohortAgeDays", label: "Min. umur kohort (hari)", int: true }, { k: "maxSpamSharePercent", label: "Maks. share spam (%)" },
+];
+
+/** Form target → body PUT (kosong = null; salah = galat). */
+export function bodyTarget(nilai) {
+  const body = {};
+  for (const { k, int, rupiah } of KOLOM_TARGET) {
+    const v = nilai?.[k];
+    if (v === undefined) continue;
+    if (v === null || String(v).trim() === "") { body[k] = null; continue; }
+    const mentah = String(v).trim();
+    const n = Number(rupiah ? mentah.replace(/\./g, "").replace(",", ".") : mentah.replace(",", "."));   // titik = pemisah ribuan hanya pada kolom rupiah
+    if (!Number.isFinite(n) || n < 0) return { galat: `${k}: angka ≥ 0 atau kosong` };
+    if (int && !Number.isInteger(n)) return { galat: `${k}: bilangan bulat` };
+    body[k] = n;
+  }
+  if (Object.keys(body).length === 0) return { galat: "Tidak ada perubahan" };
+  return { body };
+}
+
+export const NADA_KELAS = { baik: "text-green", buruk: "text-red", peringatan: "text-orange", netral: "text-ink3" };

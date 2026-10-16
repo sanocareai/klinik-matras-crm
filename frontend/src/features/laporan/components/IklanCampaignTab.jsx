@@ -7,7 +7,8 @@ import { Card, CardContent } from "@/components/ui/card.jsx";
 import { makeRange, formatRangeText } from "@/lib/dateRange.js";
 import { formatRupiah } from "@/utils/format.js";
 import { cn } from "@/lib/utils.js";
-import { kueriIklan, drilldown, barisTabel, ringkasCakupan, peringatanUrut, statusBiaya, jejak, formatPersen, UMUR, LEVELS } from "../iklanCampaignLogic.js";
+import { kueriIklan, drilldown, barisTabel, ringkasCakupan, peringatanUrut, statusBiayaLaporan, barisBiaya, jejak, formatPersen, UMUR, LEVELS, NADA_KELAS } from "../iklanCampaignLogic.js";
+import { ImporSpend, PanelTarget, PanelMonitor } from "./IklanBiayaPanel.jsx";
 
 // ═══ LAPORAN IKLAN PER CAMPAIGN (ADMIN) ═════════════════════════════════════════════════════════════════════════════════════════
 // Sumber: GET /api/atribusi/iklan (baca-saja). Satu customer baru = satu campaign akuisisi (touch CTWA pertama yang sah dan terbukti kausal).
@@ -33,8 +34,25 @@ const Th = ({ children, tip, className }) => (
     <span className="inline-flex items-center justify-end gap-1">{children}{tip && <InfoTooltip text={tip} />}</span>
   </th>
 );
+const SelBiaya = ({ s }) => <Td className={s.kosong ? "text-ink3" : ""} title={s.alasan || undefined}>{s.teks}{s.alasan && <span className="block text-[10px] font-normal">{s.alasan}</span>}</Td>;
+function barisBiayaTotal(lap, kunci, roas = false) {
+  const v = lap.biaya?.[kunci];
+  if (v == null) return { teks: "—", alasan: lap.biaya?.alasanNull?.[kunci === "cpa" ? "cpa" : kunci] ? String(lap.biaya.alasanNull[kunci]).toLowerCase().replace(/_/g, " ") : null, kosong: true };
+  return roas ? { teks: Number(v).toLocaleString("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "×", alasan: null, kosong: false } : { teks: rupiahBulat(v), alasan: null, kosong: false };
+}
 const Td = ({ children, className }) => <td className={cn("px-3 py-2 text-right align-top tabular-nums text-[13px] text-ink", className)}>{children}</td>;
 const angka = (n) => (n == null ? "—" : Number(n).toLocaleString("id-ID"));
+const rupiahBulat = (n) => (n == null ? "—" : "Rp" + Math.round(Number(n)).toLocaleString("id-ID"));
+const TIP_BIAYA = {
+  spend: "Spend Meta pada tanggal delivery WIB dalam rentang, dari tabel spend harian (satu sumber per hari+Ad). Nama hanya label; kunci = ID.",
+  konv: "Hasil percakapan versi Meta (messaging conversations started). BUKAN lead CRM; tidak dipakai sebagai penyebut biaya.",
+  cpl: "Spend ÷ acquisition lead (customer baru dengan touch pertama terbukti). Penyebut 0 → —.",
+  cplq: "Spend ÷ lead yang pernah ditandai PROSPECT (manual oleh sales).",
+  cplo: "Spend ÷ customer unik dengan ≥ 1 order eligible (bukan jumlah order).",
+  cpa: "CPA utama: spend ÷ closing utama (customer lunas terbukti ledger). Bukan CPA versi Meta.",
+  roasb: "Booked ROAS: nilai order eligible ÷ spend. Belum tentu uang diterima.",
+  roasc: "Cash ROAS: pembayaran ledger valid dikurangi refund ÷ spend.",
+};
 
 export default function IklanCampaignTab() {
   const [range, setRange] = useState(() => makeRange("last_7_days"));
@@ -45,6 +63,7 @@ export default function IklanCampaignTab() {
   const [memuat, setMemuat] = useState(false);
   const [galat, setGalat] = useState(null);
   const [lihatPeringatan, setLihatPeringatan] = useState(true);
+  const [panel, setPanel] = useState(null);   // null | "spend" | "target" | "monitor"
 
   const muat = useCallback(async () => {
     setMemuat(true); setGalat(null);
@@ -57,9 +76,9 @@ export default function IklanCampaignTab() {
   }, [range, level, jalur.campaignId, jalur.adSetId]);
   useEffect(() => { muat(); }, [muat]);
 
-  const baris = useMemo(() => (lap?.grup || []).map((g) => ({ g, b: barisTabel(g, umur) })), [lap, umur]);
+  const baris = useMemo(() => (lap?.grup || []).map((g) => ({ g, b: barisTabel(g, umur), c: barisBiaya(g) })), [lap, umur]);
   const cakupan = useMemo(() => ringkasCakupan(lap), [lap]);
-  const biaya = statusBiaya(lap);
+  const biaya = statusBiayaLaporan(lap);
   const peringatan = useMemo(() => peringatanUrut(lap), [lap]);
 
   function turun(g) {
@@ -119,7 +138,10 @@ export default function IklanCampaignTab() {
             <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-[12.5px]">
               <span>Atribusi tersimpan sejak: <b>{lap.atribusi.attributionStartWib ? `${lap.atribusi.attributionStartWib} WIB` : "belum ada touch"}</b></span>
               <span>Rekonsiliasi: <b className={lap.rekonsiliasi.ok ? "text-green" : "text-red"}>{lap.rekonsiliasi.ok ? `OK (${lap.rekonsiliasi.cek.length} pemeriksaan)` : "GAGAL — jangan pakai angka ini"}</b></span>
-              <span>Biaya / CPA / ROAS: <b className="text-orange">{biaya.teks}</b></span>
+              <span>Biaya / CPL / CPA / ROAS: <b className={biaya.tersambung ? "text-ink" : "text-orange"}>{biaya.teks}</b></span>
+              {biaya.tersambung && <span>Spend rentang: <b>{rupiahBulat(biaya.spendTotal)}</b> · terakhir {biaya.terakhirTanggal} WIB{biaya.terlambat ? " (TERLAMBAT)" : ""}</span>}
+              {biaya.tersambung && biaya.spendTidakTerpetakan > 0 && <span className="text-orange">Spend tanpa mapping: <b>{rupiahBulat(biaya.spendTidakTerpetakan)}</b></span>}
+              {biaya.tersambung && !biaya.targetDiatur && <span className="t-secondary">Target KPI belum diisi — tanpa evaluasi/warna</span>}
               {lap.rentangLead.bawaan && <span className="t-secondary">Rentang bawaan {lap.rentangLead.hariBawaan} hari terakhir</span>}
             </div>
             {cakupan && (
@@ -173,12 +195,20 @@ export default function IklanCampaignTab() {
                   <Th tip={TIP.uang}>Uang ledger</Th>
                   <Th tip={TIP.reaktivasi}>Reaktivasi</Th>
                   <Th tip={TIP.assisted}>Assisted</Th>
-                  <Th tip="Biaya iklan per campaign belum tersambung; CPA dan ROAS tidak dihitung.">Biaya / CPA</Th>
+                  <Th tip={TIP_BIAYA.spend}>Spend</Th>
+                  <Th tip={TIP_BIAYA.konv}>Konv. platform</Th>
+                  <Th tip={TIP_BIAYA.cpl}>CPL</Th>
+                  <Th tip={TIP_BIAYA.cplq}>Cost / qualified</Th>
+                  <Th tip={TIP_BIAYA.cplo}>Cost / cust. order</Th>
+                  <Th tip={TIP_BIAYA.cpa}>CPA closing</Th>
+                  <Th tip={TIP_BIAYA.roasb}>Booked ROAS</Th>
+                  <Th tip={TIP_BIAYA.roasc}>Cash ROAS</Th>
+                  <Th tip="Status data biaya baris ini dan (bila target ADMIN diisi) evaluasi. Tidak ada warna tanpa target.">Status biaya</Th>
                 </tr>
               </thead>
               <tbody>
-                {baris.length === 0 && <tr><td colSpan={13} className="px-3 py-10 text-center text-sm text-ink3">Belum ada lead dengan touch iklan di rentang ini. {lap?.atribusi?.attributionStartWib ? "" : "Capture touch belum menyala atau belum ada sinyal iklan tersimpan."}</td></tr>}
-                {baris.map(({ g, b }) => (
+                {baris.length === 0 && <tr><td colSpan={21} className="px-3 py-10 text-center text-sm text-ink3">Belum ada lead dengan touch iklan di rentang ini. {lap?.atribusi?.attributionStartWib ? "" : "Capture touch belum menyala atau belum ada sinyal iklan tersimpan."}</td></tr>}
+                {baris.map(({ g, b, c }) => (
                   <tr key={b.kunci} className={cn("border-b border-line/60", !b.kredit || g.status === "UNMAPPED" ? "bg-inset/50" : "", b.bisaDrilldown && "cursor-pointer hover:bg-inset")} onClick={() => b.bisaDrilldown && turun(g)}>
                     <td className="px-3 py-2 text-left align-top">
                       <p className="flex items-center gap-1.5 font-medium text-ink">
@@ -199,7 +229,13 @@ export default function IklanCampaignTab() {
                     <Td>{formatRupiah(b.uangLedger)}{b.cakupanLedger != null && <span className="block text-[10px] text-ink3">ledger {formatPersen(b.cakupanLedger)} order</span>}</Td>
                     <Td>{angka(b.reaktivasi.touch)} <span className="text-ink3">({angka(b.reaktivasi.customerUnik)} cust.)</span></Td>
                     <Td>{angka(b.assisted.touch)} <span className="text-ink3">({angka(b.assisted.customerUnik)} cust.)</span></Td>
-                    <Td className="text-ink3">belum tersambung</Td>
+                    <Td>{c.spend.teks}{c.kesegaran?.terlambat && <span className="block text-[10px] text-orange">terlambat</span>}</Td>
+                    <Td>{angka(c.konversasiPlatform)}</Td>
+                    <SelBiaya s={c.cpl} /><SelBiaya s={c.cplQualified} /><SelBiaya s={c.cplOrder} /><SelBiaya s={c.cpa} /><SelBiaya s={c.bookedRoas} /><SelBiaya s={c.cashRoas} />
+                    <Td className="text-left" title={c.statusTip}>
+                      <span className={cn("text-[11.5px] font-semibold", NADA_KELAS[c.nada])}>{c.statusTeks}</span>
+                      {c.evaluasiTeks && <span className={cn("block text-[11px] font-semibold", NADA_KELAS[c.evaluasiNada])}>{c.evaluasiTeks}{c.pelanggaran.length > 0 && " (" + c.pelanggaran.map((p) => p.metrik).join(", ") + ")"}</span>}
+                    </Td>
                   </tr>
                 ))}
               </tbody>
@@ -212,7 +248,8 @@ export default function IklanCampaignTab() {
                     {umur === "semua" && <Td>{angka(total.orderPernahDp)}</Td>}
                     {umur === "semua" && <Td>{angka(total.customerLunasMenurutCrm)}</Td>}
                     <Td>{angka(total.closingUtama.customerLunasTerbuktiLedger)}</Td>
-                    <Td>{formatRupiah(total.bookedValue)}</Td><Td>{formatRupiah(total.uangLedger)}</Td><Td>—</Td><Td>—</Td><Td>—</Td>
+                    <Td>{formatRupiah(total.bookedValue)}</Td><Td>{formatRupiah(total.uangLedger)}</Td><Td>—</Td><Td>—</Td>
+                    <Td>{lap.biaya.spend == null ? "—" : rupiahBulat(lap.biaya.spend)}</Td><Td>—</Td><SelBiaya s={barisBiayaTotal(lap, "cpl")} /><SelBiaya s={barisBiayaTotal(lap, "costPerQualifiedLead")} /><SelBiaya s={barisBiayaTotal(lap, "costPerCustomerOrder")} /><SelBiaya s={barisBiayaTotal(lap, "cpa")} /><SelBiaya s={barisBiayaTotal(lap, "bookedRoas", true)} /><SelBiaya s={barisBiayaTotal(lap, "cashRoas", true)} /><Td>—</Td>
                   </tr>
                 </tfoot>
               )}
@@ -230,6 +267,15 @@ export default function IklanCampaignTab() {
           </CardContent>
         </Card>
       )}
+      <div className="flex flex-wrap items-center gap-2">
+        {[["spend", "Impor spend"], ["target", "Target KPI"], ["monitor", "Monitoring"]].map(([id, label]) => (
+          <button key={id} className={cn("btn btn-sm", panel === id ? "" : "btn-ghost")} onClick={() => setPanel((p) => (p === id ? null : id))}>{label}</button>
+        ))}
+      </div>
+      {panel === "spend" && <ImporSpend onSelesai={muat} />}
+      {panel === "target" && <PanelTarget onSimpan={muat} />}
+      {panel === "monitor" && <PanelMonitor />}
+      {biaya.tersambung && biaya.definisi && <p className="t-secondary text-[11.5px]">{biaya.definisi.ringkas} {biaya.definisi.reaktivasi} {biaya.definisi.kohort}</p>}
       <p className="t-secondary text-[11.5px]">Level yang tersedia: {LEVELS.join(" → ")}. Nama kreatif/campaign hanya label; join memakai ID. Tidak ada kredit dari URL postingan, teks chat, atau waktu pesan.</p>
     </div>
   );

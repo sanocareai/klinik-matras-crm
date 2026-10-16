@@ -19,6 +19,8 @@ import { ORDER_EXCLUDED_STATUS, PAID_AT_BACKFILL_31_AGT, METRICS } from "./cohor
 import { muatMasukanKohort } from "./cohortLoader.js";
 // Baris order dari muatMasukanKohort sudah membawa value = nilaiBersih (Okt 2026); memanggil nilaiBersih(o) di sini hanya mengembalikannya (tanpa orderCredits = tanpa potongan kedua).
 import { nilaiBersih } from "../orderNilaiBersih.js";
+import { muatSpendPerAd } from "./spend.js";
+import { terapkanBiaya, kesegaranSpend, normalisasiTarget } from "./biayaKpi.js";
 import { susunLaporan } from "./cohortReport.js";
 
 export const LEVEL = Object.freeze(["campaign", "adset", "ad"]);
@@ -534,10 +536,21 @@ export async function hitungLaporanIklan(db, parameter, { now = new Date(), time
     const masukanMentah = await muatMasukanKohort(tx, { customerIds: [...pernah, ...idsLead] });
     const { meta, ...masukan } = masukanMentah;
 
-    return susunLaporanIklan({
+    const laporan = susunLaporanIklan({
       parameter, asOf: now, leadBaru, touchAkuisisi: akuisisi, touchLain, touchLeadLain, referensi, masukan,
       mulaiAtribusiAt: agg._min.touchAt, audit, meta: { fase1: { gate: meta.gate }, catatan: { totalTouchTersimpan: agg._count._all } },
     });
+    // Fase 3: spend harian (READ ONLY, satu sumber per tanggal+akun+Ad) + target KPI ADMIN → biaya/CPL/CPA/ROAS per baris. Tidak mengubah angka atribusi.
+    const { spendPerAd, kesegaranMentah } = await muatSpendPerAd(tx, { dari: parameter.dari, sampai: parameter.sampai });
+    const idsSpendBaru = spendPerAd.map((x) => x.adId).filter((id) => !referensi.has(id));
+    if (idsSpendBaru.length) for (const r of await tx.metaAdReference.findMany({ where: { adId: { in: idsSpendBaru } } })) referensi.set(r.adId, r);
+    const targetRow = await tx.attributionKpiTarget.findUnique({ where: { id: 1 } });
+    const hariIni = hariWIB(now);
+    const kesegaran = kesegaranSpend({ ...kesegaranMentah, hariIni, sampai: parameter.sampai });
+    return terapkanBiaya(laporan, { spendPerAd, referensi, kesegaran, mulaiHari: agg._min.touchAt ? hariWIB(agg._min.touchAt) : null, target: normalisasiTarget(targetRow ? {
+      maxCpl: targetRow.maxCpl, maxCostPerQualifiedLead: targetRow.maxCostPerQualifiedLead, maxCostPerCustomerOrder: targetRow.maxCostPerCustomerOrder, maxCpaClosing: targetRow.maxCpaClosing,
+      minBookedRoas: targetRow.minBookedRoas, minCashRoas: targetRow.minCashRoas, minAcquisitionLeads: targetRow.minAcquisitionLeads, minClosings: targetRow.minClosings,
+      minCohortAgeDays: targetRow.minCohortAgeDays, maxSpamSharePercent: targetRow.maxSpamSharePercent } : null), hariIni });
   }, { timeout: timeoutMs + 5_000, maxWait: 5_000 });
 }
 
