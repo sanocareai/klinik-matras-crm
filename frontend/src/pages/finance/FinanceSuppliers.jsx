@@ -305,7 +305,7 @@ export default function FinanceSuppliers() {
           info="Tagihan yang sudah diinput tapi belum disetujui — belum tercatat sebagai utang sampai disetujui."
         />
         <KartuAngka
-          label="Uang Muka Supplier Belum Diterapkan" value={formatUang(uangMuka?.kartu?.uangMukaBelumDiterapkan ?? 0)} tone={(uangMuka?.kartu?.uangMukaBelumDiterapkan ?? 0) > 0 ? "orange" : "default"}
+          label="Uang Muka Supplier Belum Diterapkan" metrik="uang_muka_supplier_belum_diterapkan" value={formatUang(uangMuka?.kartu?.uangMukaBelumDiterapkan ?? 0)} tone={(uangMuka?.kartu?.uangMukaBelumDiterapkan ?? 0) > 0 ? "orange" : "default"}
           sub={`${(uangMuka?.suppliers || []).filter((s) => s.uangMukaBelumDiterapkan > 0).length} supplier · aset, bukan utang`}
           info="Uang muka yang sudah dibayar ke supplier sebelum barang datang dan belum dipakai mengurangi faktur. Ini ASET (bukan stok, bukan biaya) dan TIDAK mengurangi Total Utang Usaha sampai diterapkan ke faktur."
         />

@@ -97,6 +97,7 @@ export function hitungStatusEmpat(p) {
   else kodeUtang = "LUNAS";
   const rincianUtang = [];
   if (kodeUtang === "BELUM_ADA") rincianUtang.push("Utang baru ada setelah faktur disetujui. Pembayaran di muka dan sisa komitmen PO bukan utang.");
+  if (kodeUtang === "LUNAS" && dibayarAtasFaktur <= NOL) rincianUtang.push("Sisa utang faktur Rp0: tertutup oleh uang muka yang diterapkan (belum ada pembayaran kas atas faktur).");
   if (tepat(p.uangMukaBelumDiterapkan) > NOL) rincianUtang.push("Ada uang muka yang belum diterapkan: terapkan ke faktur agar sisa utang berkurang.");
 
   // ── 4. Pembayaran ──

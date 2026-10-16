@@ -28,7 +28,7 @@ function Angka({ label, nilai, definisi, tebal = false, tone = null, testid, tek
       <dt className="flex items-center gap-1 text-[11.5px] text-ink3" title={definisi}>
         <span>{label}</span>
         {definisi && (
-          <button type="button" onClick={() => setBuka((v) => !v)} aria-expanded={buka} aria-label={`Arti ${label}`} className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-ink3 hover:text-ink max-sm:h-8 max-sm:w-8">
+          <button type="button" onClick={() => setBuka((v) => !v)} aria-expanded={buka} aria-label={`Arti ${label}`} className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-ink3 hover:text-ink max-sm:-my-3.5 max-sm:-mr-2 max-sm:h-11 max-sm:w-11">
             <Info size={12} aria-hidden="true" />
           </button>
         )}
