@@ -27,11 +27,15 @@ test("pergerakan berdokumen induk (Material Issue, penerimaan, opname, penyesuai
   }
 });
 
-test("kabel pintu: units /materials, inventory issue/return/waste, dan penerimaan retur produksi memanggil jalur nilai di transaksi yang sama setelah postStockMovement", () => {
+test("kabel pintu: units /materials, inventory issue, dan penerimaan retur produksi memanggil jalur nilai di transaksi yang sama setelah postStockMovement", () => {
   const units = tanpaKomentar(baca("routes/units.js"));
   assert.equal((units.match(/bukukanNilaiPergerakanBaru\(tx,/g) || []).length, 1);
   const inv = tanpaKomentar(baca("routes/inventory.js"));
-  assert.equal((inv.match(/bukukanNilaiPergerakanBaru\(tx,/g) || []).length, 3, "issue, return, waste");
+  assert.equal((inv.match(/bukukanNilaiPergerakanBaru\(tx,/g) || []).length, 1, "hanya issue; return/waste/receipt cepat sudah ditutup 410");
+  for (const jalur of ["receipt", "return", "waste"]) {
+    const dari = baca("routes/inventory.js").indexOf(`"/movements/${jalur}"`);
+    assert.ok(dari > 0 && baca("routes/inventory.js").slice(dari, dari + 1200).includes("JALUR_CEPAT_DITUTUP"), `${jalur} ditutup permanen`);
+  }
   assert.ok(!/type: "ADJUSTMENT"[\s\S]{0,200}bukukanNilaiPergerakanBaru/.test(inv), "adjustment/opname tidak lewat jalur lepas");
   const retur = tanpaKomentar(baca("services/productionMaterialReturnService.js"));
   assert.equal((retur.match(/bukukanNilaiPergerakanBaru\(tx,/g) || []).length, 1);

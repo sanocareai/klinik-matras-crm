@@ -451,18 +451,16 @@ test("Stock Adjustment: post KEDUA KALINYA ditolak (double posting)", async () =
 
 // ─────────────────────────── Jalur cepat (quick movements) ────────────────────────────
 
-test("Quick path: POST /movements/waste dengan unitId tersimpan & mengurangi saldo", async () => {
+test("Jalur cepat /movements/waste DITUTUP permanen (410, tanpa movement); pembuangan resmi lewat Damaged Stock tetap berjalan (diuji di atas)", async () => {
   const api = await client();
   const material = await createTestMaterial();
   await testPrisma.stockMovement.create({ data: { materialId: material.id, type: "RECEIPT", qty: 10 } });
   const { unit } = await createTestUnit();
-
-  const res = await api.post("/api/inventory/movements/waste", {
-    materialId: material.id, qty: 2, reason: "sobek saat dipotong", unitId: unit.id,
-  });
-  assert.equal(res.status, 201, JSON.stringify(res.body));
-  assert.equal(res.body.unitId, unit.id);
-  assert.equal(await balanceOf(material.id), 8);
+  const res = await api.post("/api/inventory/movements/waste", { materialId: material.id, qty: 2, reason: "sobek saat dipotong", unitId: unit.id });
+  assert.equal(res.status, 410, JSON.stringify(res.body));
+  assert.equal(res.body.code, "JALUR_CEPAT_DITUTUP");
+  assert.match(res.body.error, /Barang Rusak/);
+  assert.equal(await balanceOf(material.id), 10);
 });
 
 test("Quick path: POST /units/:id/materials (jalur cepat produksi) TIDAK BISA mendorong saldo negatif", async () => {

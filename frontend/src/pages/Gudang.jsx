@@ -37,10 +37,7 @@ const UNIT_LABEL = { PCS: "pcs", METER: "meter", M3: "m³", SHEET: "lembar", SPO
 const ALL_UNITS = Object.keys(UNIT_LABEL);
 
 const MOVEMENT_TYPES = [
-  { value: "receipt", label: "Terima", icon: ArrowDownToLine },
   { value: "issue", label: "Keluar ke Unit", icon: ArrowUpFromLine },
-  { value: "return", label: "Retur", icon: RotateCcw },
-  { value: "waste", label: "Buang", icon: Trash2 },
   { value: "adjustment", label: "Ajukan Penyesuaian", icon: Scale },
 ];
 const MOVEMENT_LABEL = Object.fromEntries(MOVEMENT_TYPES.map((m) => [m.value.toUpperCase(), m.label]));
@@ -216,11 +213,9 @@ export async function resolveUnitId(code) {
 
 // ── Modal Catat Pergerakan ───────────────────────────────────────────────
 function MovementModal({ open, onClose, material, onSaved }) {
-  const [type, setType] = useState("receipt");
+  const navigate = useNavigate();
+  const [type, setType] = useState("issue");
   const [qty, setQty] = useState("");
-  const [unitCost, setUnitCost] = useState("");
-  const [supplier, setSupplier] = useState("");
-  const [batchNumber, setBatchNumber] = useState("");
   const [unitCode, setUnitCode] = useState("");
   const [reason, setReason] = useState("");
   const [note, setNote] = useState("");
@@ -230,7 +225,7 @@ function MovementModal({ open, onClose, material, onSaved }) {
 
   function reset() {
     setDiajukan("");
-    setType("receipt"); setQty(""); setUnitCost(""); setSupplier(""); setBatchNumber("");
+    setType("issue"); setQty("");
     setUnitCode(""); setReason(""); setNote(""); setErr("");
   }
   function handleClose() { reset(); onClose(); }
@@ -244,28 +239,15 @@ function MovementModal({ open, onClose, material, onSaved }) {
       // Hasil hitung fisik boleh 0 (nol fisik), tetapi kolom kosong bukan nol.
       if (String(qty).trim() === "" || !Number.isFinite(qtyNum) || qtyNum < 0) { setErr("Hasil hitung fisik wajib diisi (0 atau lebih)"); return; }
     } else if (!qtyNum || qtyNum <= 0) { setErr("Jumlah wajib diisi"); return; }
-    if ((type === "waste" || type === "adjustment") && !reason.trim()) {
+    if (type === "adjustment" && !reason.trim()) {
       setErr("Alasan wajib diisi"); return;
     }
     setBusy(true);
     try {
-      if (type === "receipt") {
-        await api.receiveStock({
-          materialId: material.materialId, qty: qtyNum,
-          unitCost: unitCost ? Number(unitCost) : undefined, supplier: supplier || undefined,
-          batchNumber: batchNumber || undefined, note: note || undefined,
-        });
-      } else if (type === "issue") {
+      if (type === "issue") {
         if (!unitCode.trim()) { setErr("Kode unit wajib diisi"); setBusy(false); return; }
         const unitId = await resolveUnitId(unitCode);
         await api.issueStock({ materialId: material.materialId, qty: qtyNum, unitId, note: note || undefined });
-      } else if (type === "return") {
-        // Kode unit OPSIONAL: bila diisi, sisa yang dikembalikan tertaut ke unit itu dan muncul di Unit 360 > Bahan (kolom Sisa/Retur).
-        const unitId = unitCode.trim() ? await resolveUnitId(unitCode) : undefined;
-        await api.returnStock({ materialId: material.materialId, qty: qtyNum, unitId, note: note || undefined });
-      } else if (type === "waste") {
-        const unitId = unitCode.trim() ? await resolveUnitId(unitCode) : undefined;
-        await api.wasteStock({ materialId: material.materialId, qty: qtyNum, reason: reason.trim(), unitId, note: note || undefined });
       } else if (type === "adjustment") {
         // Pengajuan → persetujuan ORANG LAIN (Owner/Finance) → posting. Tidak ada penulisan ledger dari sini.
         const h = hitungSelisihPengajuan(material.balance, qty);
@@ -302,7 +284,7 @@ function MovementModal({ open, onClose, material, onSaved }) {
     <Modal open={open} onOpenChange={handleClose} title={`Catat Pergerakan — ${material.code}`}
       description={`Saldo sekarang: ${formatQty(material.balance, material.unit)}`}>
       <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-        <div className="grid grid-cols-5 gap-1">
+        <div className="grid grid-cols-2 gap-1">
           {MOVEMENT_TYPES.map((m) => (
             <button key={m.value} type="button" onClick={() => { setType(m.value); setErr(""); }}
               className={`flex flex-col items-center gap-1 rounded-btn border-2 px-1 py-2 text-[11px] font-medium ${
@@ -313,6 +295,14 @@ function MovementModal({ open, onClose, material, onSaved }) {
           ))}
         </div>
 
+        <div className="rounded-btn bg-orangebg px-3 py-2.5 text-[12px] text-ink2" data-testid="arahan-dokumen-resmi">
+          <p className="font-semibold text-ink">Barang masuk, retur, dan barang rusak/buang dicatat lewat dokumen resmi — bukan dari sini.</p>
+          <div className="mt-1.5 flex flex-wrap gap-1.5">
+            <button type="button" className="rounded-btn border border-border bg-surface px-2 py-1 text-[11.5px] font-medium text-accent" onClick={() => { handleClose(); navigate("/warehouse/goods-receipt"); }}>Penerimaan Barang</button>
+            <button type="button" className="rounded-btn border border-border bg-surface px-2 py-1 text-[11.5px] font-medium text-accent" onClick={() => { handleClose(); navigate("/warehouse/adjustments"); }}>Retur &amp; Barang Rusak</button>
+          </div>
+        </div>
+
         <div>
           <label className="mb-1 block text-[13px] font-medium text-ink2">
             {type === "adjustment" ? "Hasil hitung fisik" : "Jumlah"} ({UNIT_LABEL[material.unit]})
@@ -321,29 +311,9 @@ function MovementModal({ open, onClose, material, onSaved }) {
             className="h-10 w-full rounded-btn border border-border px-3 text-sm outline-none focus:border-accent" />
         </div>
 
-        {type === "receipt" && (
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="mb-1 block text-[13px] font-medium text-ink2">Harga/satuan (Rp, opsional)</label>
-              <input type="number" value={unitCost} onChange={(e) => setUnitCost(e.target.value)}
-                className="h-10 w-full rounded-btn border border-border px-3 text-sm outline-none focus:border-accent" />
-            </div>
-            <div>
-              <label className="mb-1 block text-[13px] font-medium text-ink2">Supplier (opsional)</label>
-              <input value={supplier} onChange={(e) => setSupplier(e.target.value)}
-                className="h-10 w-full rounded-btn border border-border px-3 text-sm outline-none focus:border-accent" />
-            </div>
-            <div className="col-span-2">
-              <label className="mb-1 block text-[13px] font-medium text-ink2">No. Batch (opsional)</label>
-              <input value={batchNumber} onChange={(e) => setBatchNumber(e.target.value)}
-                className="h-10 w-full rounded-btn border border-border px-3 text-sm outline-none focus:border-accent" />
-            </div>
-          </div>
-        )}
-
-        {(type === "issue" || type === "return" || type === "waste") && (
+        {type === "issue" && (
           <div>
-            <label className="mb-1 block text-[13px] font-medium text-ink2">Kode Unit{type === "issue" ? "" : " (opsional — tautkan ke unit agar tampil di Unit 360)"}</label>
+            <label className="mb-1 block text-[13px] font-medium text-ink2">Kode Unit</label>
             <input value={unitCode} onChange={(e) => setUnitCode(e.target.value)} placeholder="RES-07072026-001-U2"
               className="h-10 w-full rounded-btn border border-border px-3 text-sm font-mono outline-none focus:border-accent" />
           </div>
@@ -353,11 +323,11 @@ function MovementModal({ open, onClose, material, onSaved }) {
           <p className="rounded-btn bg-orangebg px-3 py-2 text-[12px] text-ink2">Tidak mengubah stok langsung: diajukan, disetujui Owner/Finance (orang lain), lalu diposting petugas Gudang.</p>
         )}
 
-        {(type === "waste" || type === "adjustment") && (
+        {type === "adjustment" && (
           <div>
             <label className="mb-1 block text-[13px] font-medium text-ink2">Alasan (wajib)</label>
             <input value={reason} onChange={(e) => setReason(e.target.value)}
-              placeholder={type === "waste" ? "mis. Sobek saat potong" : "mis. Stock opname bulanan"}
+              placeholder="mis. Stock opname bulanan"
               className="h-10 w-full rounded-btn border border-border px-3 text-sm outline-none focus:border-accent" />
           </div>
         )}

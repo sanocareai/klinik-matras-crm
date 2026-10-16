@@ -1,6 +1,7 @@
 // PRATINJAU SELISIH OPNAME FISIK — DRY-RUN MURNI (tidak ada mode apply; tidak menulis stok, jurnal, atau dokumen apa pun).
 //
-//   docker compose exec backend node scripts/opname-preview.mjs --file /tmp/Lembar-Opname-terisi.xlsx --out /tmp/preview-opname [--cutoff "2026-10-31 23:59"] [--saldo-1400-sampai 2026-10-31]
+//   docker compose exec backend node scripts/opname-preview.mjs --file /tmp/Lembar-Opname-terisi.xlsx --out /tmp/preview-opname [--cutoff "2026-10-31 23:59"] [--saldo-1400-sampai 2026-10-31] [--stock-count CC-311026]
+//   --stock-count: tanda 'sudah/belum masuk hitungan fisik' yang dibuat penghitung di aplikasi (Stock Count) ikut dibaca sebagai log pergerakan jendela.
 //
 // Membaca lembar hitung (sheet "Hitung"; opsional "Log pergerakan jendela" dan "Harga Finance"), membandingkan terhadap ledger PADA WAKTU HITUNG yang sama,
 // dan menulis preview.json + preview.xlsx. Seluruh akses DB berada dalam SATU transaksi READ ONLY (SET TRANSACTION READ ONLY) — menulis akan ditolak Postgres.
@@ -9,8 +10,9 @@ import fs from "node:fs";
 import path from "node:path";
 import ExcelJS from "exceljs";
 import { prisma } from "../src/db.js";
+import { muatPergerakanSesi } from "../src/services/pergerakanSesiHitung.js";
 import {
-  KOLOM_HITUNG, normalisasiBaris, normalisasiLog, normalisasiHarga, hitungPreview, muatLedger, muatMaterials, muatDokumenTertunda, muatSaldoBuku1400, parseWaktuWIB, LEVEL,
+  KOLOM_HITUNG, normalisasiBaris, normalisasiLog, normalisasiHarga, hitungPreview, muatLedger, KOLOM_LOG, gabungStockCount, muatMaterials, muatDokumenTertunda, muatSaldoBuku1400, parseWaktuWIB, LEVEL,
 } from "../src/services/opnameCutover.js";
 
 const arg = (n, d = null) => { const i = process.argv.indexOf(n); return i >= 0 ? process.argv[i + 1] : d; };
@@ -19,7 +21,8 @@ if (process.argv.includes("--apply") || process.argv.includes("--post")) {
   process.exit(2);
 }
 const FILE = arg("--file"); const OUT = arg("--out", "./preview-opname");
-if (!FILE || !fs.existsSync(FILE)) { console.error("Pakai: --file <lembar-terisi.xlsx> [--out dir] [--cutoff 'YYYY-MM-DD HH:mm' (WIB)] [--saldo-1400-sampai YYYY-MM-DD]"); process.exit(1); }
+const STOCK_COUNT = arg("--stock-count");
+if ((!FILE && !STOCK_COUNT) || (FILE && !fs.existsSync(FILE))) { console.error("Pakai: --file <lembar-terisi.xlsx> [--out dir] [--cutoff 'YYYY-MM-DD HH:mm' (WIB)] [--saldo-1400-sampai YYYY-MM-DD]"); process.exit(1); }
 
 const nilaiSel = (c) => {
   const v = c?.value; if (v === null || v === undefined) return null;
@@ -43,13 +46,28 @@ function bacaSheet(ws, judulWajib) {
 }
 
 const wb = new ExcelJS.Workbook();
-await wb.xlsx.readFile(FILE);
-const lembar = bacaSheet(wb.getWorksheet("Hitung"), KOLOM_HITUNG.materialId);
-if (!lembar.length) { console.error('Sheet "Hitung" kosong atau tak punya kolom "Material ID".'); process.exit(1); }
-const baris = lembar.map((r) => normalisasiBaris(r, r.__baris));
-const logJendela = normalisasiLog(bacaSheet(wb.getWorksheet("Log pergerakan jendela"), "Dokumen / ID movement"));
-const harga = normalisasiHarga(bacaSheet(wb.getWorksheet("Harga Finance"), "Kode material"));
+if (FILE) await wb.xlsx.readFile(FILE);
+const lembar = FILE ? bacaSheet(wb.getWorksheet("Hitung"), KOLOM_HITUNG.materialId) : [];
+if (FILE && !lembar.length && !STOCK_COUNT) { console.error('Sheet "Hitung" kosong atau tak punya kolom "Material ID".'); process.exit(1); }
+let baris = lembar.map((r) => normalisasiBaris(r, r.__baris));
+const logJendela = FILE ? normalisasiLog(bacaSheet(wb.getWorksheet("Log pergerakan jendela"), "Dokumen / ID movement")) : [];
+const harga = FILE ? normalisasiHarga(bacaSheet(wb.getWorksheet("Harga Finance"), "Kode material")) : new Map();
 
+// Hasil hitung yang diinput Gudang di aplikasi (Stock Count) digabung SEBELUM menentukan jendela waktu.
+let countDipakai = null; let selesaiPerLine = new Map();
+if (STOCK_COUNT) {
+  const info = await prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe("SET TRANSACTION READ ONLY");
+    const count = await tx.stockCount.findFirst({ where: /^[0-9a-f-]{36}$/i.test(STOCK_COUNT) ? { id: STOCK_COUNT } : { countNumber: STOCK_COUNT }, include: { lines: { include: { material: { select: { code: true, unit: true } } } } } });
+    if (!count) throw new Error("Stock Count tidak ditemukan: " + STOCK_COUNT);
+    const ev = await tx.activityEvent.findMany({ where: { entityType: "stock_count", entityId: count.id, eventType: "DOCUMENT_EDITED" }, select: { metadata: true, createdAt: true }, orderBy: { createdAt: "asc" } });
+    const per = new Map();
+    for (const e of ev) if (e.metadata?.aksi === "HASIL_HITUNG_DIISI" && e.metadata.lineId && "countedQtyBaru" in e.metadata) per.set(e.metadata.lineId, e.createdAt);
+    return { count, per };
+  });
+  countDipakai = info.count; selesaiPerLine = info.per;
+  baris = gabungStockCount(baris, { count: countDipakai, selesaiPerLine });
+}
 const tertinggi = baris.map((b) => b.selesai).filter((d) => d instanceof Date && !Number.isNaN(d.getTime())).sort((a, b) => b - a)[0] || new Date();
 const cutoff = arg("--cutoff") ? parseWaktuWIB(arg("--cutoff")) : tertinggi;
 const sampai = new Date(Math.max(+cutoff, +tertinggi));
@@ -62,9 +80,26 @@ const hasil = await prisma.$transaction(async (tx) => {
   const pending = await muatDokumenTertunda(tx);
   const tglBuku = arg("--saldo-1400-sampai");
   const saldo1400 = tglBuku ? await muatSaldoBuku1400(tx, tglBuku) : null;
-  const prev = hitungPreview({ materials, baris, ledger, cutoff, logJendela, hargaFinance: harga, pending, saldoBuku1400: saldo1400 });
+  // Tanda dari sesi Stock Count di aplikasi (bila diminta): pergerakan sesi + tanda eksplisit penghitung → baris log. Yang belum ditandai dibiarkan kosong (→ BLOCKER, tidak menebak).
+  let logGabungan = logJendela;
+  const sc = arg("--stock-count");
+  if (sc) {
+    const count = await tx.stockCount.findFirst({
+      where: /^[0-9a-f-]{36}$/i.test(sc) ? { id: sc } : { countNumber: sc },
+      include: { lines: { include: { material: { select: { code: true } } } } },
+    });
+    if (!count) throw new Error("Stock Count tidak ditemukan: " + sc);
+    const kodePer = new Map(count.lines.map((l) => [l.materialId, l.material.code]));
+    const { pergerakan } = await muatPergerakanSesi(tx, count, { sampai });
+    const tambahan = pergerakan.map((p) => ({
+      [KOLOM_LOG.dokumen]: p.id, [KOLOM_LOG.kode]: kodePer.get(p.materialId), [KOLOM_LOG.qty]: p.qty, [KOLOM_LOG.waktu]: p.at,
+      [KOLOM_LOG.tercermin]: p.tanda === "SUDAH_TERHITUNG" ? "YA" : p.tanda === "BELUM_TERHITUNG" ? "TIDAK" : "", [KOLOM_LOG.pencatat]: "Stock Count " + count.countNumber,
+    }));
+    logGabungan = [...logJendela, ...normalisasiLog(tambahan)];
+  }
+  const prev = hitungPreview({ materials, baris, ledger, cutoff, logJendela: logGabungan, hargaFinance: harga, pending, saldoBuku1400: saldo1400 });
   const [{ now }] = await tx.$queryRaw`SELECT now() AS now`;
-  return { ...prev, meta: { dibuat: now, file: path.basename(FILE), cutoff: cutoff.toISOString(), sampaiLedger: sampai.toISOString(), barisHitung: baris.length, barisLog: logJendela.length, barisHarga: harga.size, readOnly: true } };
+  return { ...prev, meta: { dibuat: now, file: FILE ? path.basename(FILE) : '(hanya Stock Count)', stockCount: countDipakai ? countDipakai.countNumber : null, cutoff: cutoff.toISOString(), sampaiLedger: sampai.toISOString(), barisHitung: baris.length, barisLog: logJendela.length, barisHarga: harga.size, readOnly: true } };
 }, { timeout: 120_000 });
 
 fs.mkdirSync(OUT, { recursive: true });

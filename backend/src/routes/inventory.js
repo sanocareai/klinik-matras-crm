@@ -24,7 +24,11 @@ class InventoryError extends Error {
   constructor(message, statusCode = 400) { super(message); this.statusCode = statusCode; }
 }
 function handleErr(err, res) {
-  if (typeof err.statusCode === "number") return res.status(err.statusCode).json({ error: err.message });
+  if (typeof err.statusCode === "number") {
+    // kode mesin (mis. JALUR_CEPAT_DITUTUP, SATU_LANGKAH_DITUTUP, BUKAN_PENYETUJU) ikut dikirim bila ada — pesan tetap di `error`
+    const kode = typeof err.code === "string" && /^[A-Z][A-Z0-9_]{2,40}$/.test(err.code) ? { code: err.code } : {};
+    return res.status(err.statusCode).json({ error: err.message, ...kode });
+  }
   if (err.code === "P2002") return res.status(409).json({ error: "Kode material sudah dipakai" });
   if (err.code === "P2025") return res.status(404).json({ error: "Data tidak ditemukan" });
   console.error("Inventory error:", err);
@@ -205,19 +209,13 @@ async function assertMaterialActive(materialId) {
 
 // POST /api/inventory/movements/receipt { materialId, qty, location?, unitCost?, supplier?, batchNumber?, note? }
 // FR-I-01: goods receipt — qty, unit cost, supplier, batch.
-inventoryRouter.post("/movements/receipt", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
-  try {
-    const { materialId, location, unitCost, supplier, batchNumber, note } = req.body;
-    await assertMaterialActive(materialId);
-    const qty = parseQty(req.body.qty);
-    const movement = await prisma.$transaction((tx) => postStockMovement(tx, {
-      materialId, type: "RECEIPT", qty, location,
-      unitCost, supplier, batchNumber, note, createdById: req.user.id,
-    }));
-    res.status(201).json(movement);
-  } catch (err) {
-    handleErr(err, res);
-  }
+inventoryRouter.post("/movements/receipt", requirePermission(P.INVENTORY_WRITE), (req, res) => {
+  // DITUTUP PERMANEN (Okt 2026): penerimaan stok langsung tanpa dokumen tidak pernah dipakai alur resmi maupun integrasi mana pun (audit pemanggil: hanya modal
+  // Gudang.jsx lama, 0 pemakaian sepanjang riwayat ledger). Tidak ada penulisan ledger/jurnal di sini; semua jalur resmi tetap berfungsi.
+  res.status(410).json({
+    error: "Penerimaan stok langsung sudah ditutup permanen. Catat barang masuk lewat Penerimaan Barang (GR) di menu Gudang → Penerimaan Barang agar tercatat dengan dokumen, pemeriksaan jumlah diterima baik, dan jurnal persediaan.",
+    code: "JALUR_CEPAT_DITUTUP",
+  });
 });
 
 // POST /api/inventory/movements/issue { materialId, qty, unitId, location?, note? }
@@ -245,22 +243,13 @@ inventoryRouter.post("/movements/issue", requirePermission(P.INVENTORY_WRITE), a
 
 // POST /api/inventory/movements/return { materialId, qty, location?, unitId?, note? }
 // Sisa material kembali ke gudang (mis. issue kelebihan, unit dibatalkan).
-inventoryRouter.post("/movements/return", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
-  try {
-    const { materialId, unitId, location, note } = req.body;
-    await assertMaterialActive(materialId);
-    const qty = parseQty(req.body.qty);
-    const movement = await prisma.$transaction(async (tx) => {
-      const mv = await postStockMovement(tx, {
-        materialId, type: "RETURN", qty, unitId, location, note, createdById: req.user.id,
-      });
-      await bukukanNilaiPergerakanBaru(tx, mv, { userId: req.user.id }); // HPP berkurang dibukukan atau gap terlihat
-      return mv;
-    });
-    res.status(201).json(movement);
-  } catch (err) {
-    handleErr(err, res);
-  }
+inventoryRouter.post("/movements/return", requirePermission(P.INVENTORY_WRITE), (req, res) => {
+  // DITUTUP PERMANEN (Okt 2026): retur stok langsung tanpa dokumen tidak pernah dipakai alur resmi maupun integrasi mana pun (audit pemanggil: hanya modal
+  // Gudang.jsx lama, 0 pemakaian sepanjang riwayat ledger). Tidak ada penulisan ledger/jurnal di sini; semua jalur resmi tetap berfungsi.
+  res.status(410).json({
+    error: "Retur stok langsung sudah ditutup permanen. Catat pengembalian lewat dokumen Retur resmi (Gudang → Barang Rusak & Retur → Returns) atau Pengembalian Bahan dari Produksi, supaya ada dokumen, pemeriksaan, dan keputusan penyelesaian.",
+    code: "JALUR_CEPAT_DITUTUP",
+  });
 });
 
 // POST /api/inventory/movements/waste { materialId, qty, reason, location?, unitId?, note? }
@@ -269,23 +258,13 @@ inventoryRouter.post("/movements/return", requirePermission(P.INVENTORY_WRITE), 
 // /movements/return: bahan yang terbuang SAAT dipakai mengerjakan unit
 // tertentu (rusak/salah potong) bisa ditelusuri balik ke unit itu, sama
 // seperti pemakaian & retur normal.
-inventoryRouter.post("/movements/waste", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
-  try {
-    const { materialId, reason, location, unitId, note } = req.body;
-    if (!reason?.trim()) throw new InventoryError("Alasan wajib diisi untuk material terbuang");
-    await assertMaterialActive(materialId);
-    const qty = parseQty(req.body.qty);
-    const movement = await prisma.$transaction(async (tx) => {
-      const mv = await postStockMovement(tx, {
-        materialId, type: "WASTE", qty: -qty, reason: reason.trim(), location, unitId, note, createdById: req.user.id,
-      });
-      await bukukanNilaiPergerakanBaru(tx, mv, { userId: req.user.id }); // susut dibukukan atau gap terlihat
-      return mv;
-    });
-    res.status(201).json(movement);
-  } catch (err) {
-    handleErr(err, res);
-  }
+inventoryRouter.post("/movements/waste", requirePermission(P.INVENTORY_WRITE), (req, res) => {
+  // DITUTUP PERMANEN (Okt 2026): pembuangan stok langsung tanpa dokumen tidak pernah dipakai alur resmi maupun integrasi mana pun (audit pemanggil: hanya modal
+  // Gudang.jsx lama, 0 pemakaian sepanjang riwayat ledger). Tidak ada penulisan ledger/jurnal di sini; semua jalur resmi tetap berfungsi.
+  res.status(410).json({
+    error: "Pembuangan stok langsung sudah ditutup permanen. Laporkan lewat Barang Rusak (Gudang → Barang Rusak & Retur → Damaged Stock → Report Damage), lalu putuskan penyelesaian DISPOSE agar ada dokumen, alasan, dan pemeriksa.",
+    code: "JALUR_CEPAT_DITUTUP",
+  });
 });
 
 // POST /api/inventory/movements/adjustment { materialId, actualQty, location?, reason, note? }

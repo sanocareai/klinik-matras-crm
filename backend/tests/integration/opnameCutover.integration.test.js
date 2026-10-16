@@ -12,6 +12,9 @@ import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestMaterial } from "./setup/fixtures.js";
 import { muatLedger, muatDokumenTertunda, muatSaldoBuku1400, muatMaterials, KOLOM_HITUNG, KOLOM_LOG, KOLOM_HARGA } from "../../src/services/opnameCutover.js";
 import { TEST_DATABASE_URL } from "./setup/env.js";
+import { createTestUser } from "./setup/fixtures.js";
+import { buildTestApp, startTestServer } from "./setup/testApp.js";
+import { makeClient } from "./setup/httpClient.js";
 
 test.before(async () => { await truncateAll(); });
 test.after(async () => { await truncateAll(); await testPrisma.$disconnect(); });
@@ -90,4 +93,50 @@ test("CLI opname-preview.mjs: xlsx terisi → preview.json; selisih terhadap led
 
   const tolak = spawnSync(process.execPath, ["scripts/opname-preview.mjs", "--file", file, "--apply"], { cwd: path.resolve(import.meta.dirname, "../.."), env: { ...process.env, DATABASE_URL: TEST_DATABASE_URL }, encoding: "utf8" });
   assert.equal(tolak.status, 2);
+});
+
+test("preview membaca tanda sesi Stock Count (--stock-count): belum ditandai → BLOCKER; ditandai YA/TIDAK → ledger pembanding menyesuaikan, tanpa menulis", async () => {
+  const server = await startTestServer(buildTestApp());
+  try {
+    const gudang = await createTestUser({ roles: ["WAREHOUSE"] });
+    const c = makeClient(server.baseUrl, gudang.token);
+    const m = await createTestMaterial();
+    await testPrisma.stockMovement.create({ data: { materialId: m.id, type: "RECEIPT", qty: 100, createdAt: new Date(Date.now() - 3600_000), note: "awal" } });
+    const cr = await c.post("/api/inventory/stock-counts", { countType: "CYCLE_COUNT", countMethod: "BY_ITEM", lines: [{ materialId: m.id }] });
+    const st = await c.post(`/api/inventory/stock-counts/${cr.body.id}/start`, {});
+    const mulai = new Date(st.body.startedAt);
+    const mv = await testPrisma.stockMovement.create({ data: { materialId: m.id, type: "ISSUE", qty: -10, note: "pemakaian selama sesi" } });
+    const wib = (d) => new Date(d.getTime() + 7 * 3600_000).toISOString().slice(0, 16).replace("T", " ");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opname-sc-"));
+    const file = path.join(dir, "terisi.xlsx");
+    const wb = new ExcelJS.Workbook();
+    const h = wb.addWorksheet("Hitung");
+    const K = Object.values(KOLOM_HITUNG);
+    h.addRow(K);
+    const baris = (o) => K.map((k) => o[k] ?? null);
+    h.addRow(baris({ [KOLOM_HITUNG.materialId]: m.id, [KOLOM_HITUNG.kode]: m.code, [KOLOM_HITUNG.satuan]: m.unit, [KOLOM_HITUNG.lokasi]: "RAW-MATERIAL", [KOLOM_HITUNG.status]: "DIHITUNG", [KOLOM_HITUNG.qtyRak]: 90,
+      [KOLOM_HITUNG.mulai]: wib(new Date(mulai.getTime() - 120_000)), [KOLOM_HITUNG.selesai]: wib(new Date(Date.now() + 180_000)), [KOLOM_HITUNG.penghitung]: "Andi", [KOLOM_HITUNG.pemeriksa]: "Budi", [KOLOM_HITUNG.bukti]: "FOTO-1" }));
+    await wb.xlsx.writeFile(file);
+    const sebelum = await testPrisma.stockMovement.count();
+    const jalankan = (out) => spawnSync(process.execPath, ["scripts/opname-preview.mjs", "--file", file, "--out", out, "--stock-count", cr.body.countNumber], {
+      cwd: path.resolve(import.meta.dirname, "../.."), env: { ...process.env, DATABASE_URL: TEST_DATABASE_URL }, encoding: "utf8",
+    });
+    const r1 = jalankan(path.join(dir, "o1"));
+    assert.equal(r1.status, 0, r1.stderr + r1.stdout);
+    const p1 = JSON.parse(fs.readFileSync(path.join(dir, "o1", "preview.json"), "utf8")).materials.find((x) => x.materialId === m.id);
+    assert.equal(p1.statusAkhir, "PERLU_HITUNG_ULANG");
+    assert.ok(p1.isu.some((i) => i.kode === "LOG_TANPA_KEPUTUSAN"), "belum ditandai tidak ditebak");
+    // penghitung menandai di aplikasi: fisik 90 sudah memuat issue -10 → SESUAI
+    assert.equal((await c.post(`/api/inventory/stock-counts/${cr.body.id}/pergerakan/${mv.id}/tanda`, { tercermin: true })).status, 200);
+    const r2 = jalankan(path.join(dir, "o2"));
+    assert.equal(r2.status, 0, r2.stderr + r2.stdout);
+    const p2 = JSON.parse(fs.readFileSync(path.join(dir, "o2", "preview.json"), "utf8")).materials.find((x) => x.materialId === m.id);
+    assert.equal(p2.ledgerSaatHitung, 90); assert.equal(p2.delta, 0); assert.equal(p2.kelas, "SESUAI");
+    // tanda diganti: belum masuk → pembanding 100, fisik 90 → selisih −10
+    assert.equal((await c.post(`/api/inventory/stock-counts/${cr.body.id}/pergerakan/${mv.id}/tanda`, { tercermin: false })).status, 200);
+    const r3 = jalankan(path.join(dir, "o3"));
+    const p3 = JSON.parse(fs.readFileSync(path.join(dir, "o3", "preview.json"), "utf8")).materials.find((x) => x.materialId === m.id);
+    assert.equal(p3.ledgerSaatHitung, 100); assert.equal(p3.delta, -10);
+    assert.equal(await testPrisma.stockMovement.count(), sebelum, "preview tidak menulis movement");
+  } finally { await server.close(); }
 });

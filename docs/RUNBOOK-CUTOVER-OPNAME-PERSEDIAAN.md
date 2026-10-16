@@ -69,7 +69,9 @@ Material Issue berstatus APPROVED/READY_TO_PICK/PICKED: posting Issue sebelum hi
 ### 3.4 Zona, label, jendela
 - Bagi gudang per zona (kode lokasi sistem: RAW-MATERIAL, RECEIVING, WIP, QUARANTINE, DAMAGED, RETURN, FINISHED-GOODS, DISPATCH). Tiap zona dihitung dalam satu sesi ≤ 12 jam.
 - Pasang label "SUDAH DIHITUNG — tanggal/jam/inisial".
-- **Pembekuan** (disarankan): tidak ada penerimaan, Issue, transfer, atau adjustment dari mulai hitung hingga adjustment diposting. Bila tidak bisa dibekukan, **setiap** pergerakan dicatat di sheet *Log pergerakan jendela* (dokumen, material, qty, waktu, apakah efeknya sudah ada di jumlah yang dihitung).
+- **Pembekuan** (disarankan): tidak ada penerimaan, Issue, transfer, atau adjustment dari mulai hitung hingga adjustment diposting. Bila tidak bisa dibekukan, **setiap** pergerakan yang terjadi selama hitung ditandai penghitung: sudah atau belum masuk hitungan fisik.
+  - **Di aplikasi (Stock Count):** saat Start, sistem merekam snapshot saldo dan waktu mulai (tanpa pengaturan apa pun). Detail count menampilkan pergerakan ledger sesudahnya; penghitung menandai tiap pergerakan *Sudah masuk hitungan fisik* / *Belum masuk hitungan*. Sistem tidak menebak: Complete ditolak (409) selama ada yang belum ditandai. Selisih = hitung − (snapshot + pergerakan yang ditandai sudah masuk).
+  - **Di lembar Excel:** sheet *Log pergerakan jendela* (dokumen, material, qty, waktu, YA/TIDAK). Preview dapat membaca tanda aplikasi dengan `--stock-count <No. Count>`.
 - Catat nomor dokumen terakhir sebelum hitung di sheet *Sesi*.
 
 ### 3.5 Lembar
@@ -133,7 +135,7 @@ Cara membaca *Status akhir* per material:
 
 BLOCKER umum: `KOSONG_BUKAN_NOL`, `NOL_HARUS_EKSPLISIT`, `NOL_TANPA_BUKTI`, `PEMERIKSA_SAMA_DENGAN_PENGHITUNG`, `WAKTU_TIDAK_LENGKAP`, `SATUAN_BEDA`, `PERGERAKAN_JENDELA_TAK_TERCATAT`, `LOG_TANPA_KEPUTUSAN`, `DUPLIKAT_LOKASI`, `SELISIH_TANPA_BUKTI`, `CUTOFF_SEBELUM_SELESAI`.
 
-*Pergerakan di jendela & jalur cepat* menampilkan pergerakan **tanpa dokumen** (RECEIPT/RETURN/WASTE lewat jalur cepat) — periksa satu per satu; itu satu-satunya cara stok berubah tanpa pengaju/penyetuju yang terpisah.
+*Pergerakan di jendela* menampilkan pergerakan ledger selama hitung beserta tanda penghitung. Jalur cepat penerimaan/retur/buang sudah **ditutup permanen** (410), sehingga setiap pergerakan baru berdokumen dan berpelaku.
 
 ### 6.1 Rekonsiliasi nilai (terpisah)
 Isi sheet *Harga Finance* (kode, harga per satuan, sumber FAKTUR/TAGIHAN/PEMBELIAN/LAINNYA, nomor dokumen; LAINNYA wajib keterangan). Preview menghitung nilai **hanya** untuk material berharga sah dan menandai `NILAI_BELUM_DITETAPKAN` untuk sisanya. Penyesuaian jurnal = nilai fisik − saldo 1-1400 (formula yang sama dengan modul Tutup Stok). Per 14 Okt: saldo 1-1400 = Rp25.558.000 (6 baris GR 9 & 13 Okt), tabel penilaian kosong, snapshot 0 baris — penyesuaian awal akan ≈ seluruh nilai fisik.
@@ -176,7 +178,7 @@ Preflight memeriksa: leluhur & allowlist berkas, release aktif = baseline, healt
 2. **Penyetuju adjustment** (rekomendasi: OWNER dan FINANCE, berbeda orang dari pengaju) dan akun yang diberi peran WAREHOUSE tambahan.
 3. **Perlakuan pembelian tanpa GR** (pembelian langsung PUR-*, tagihan tanpa penerimaan): GR retroaktif (jejak per dokumen) vs ditutup lewat selisih opname; reklas 5-1150 → 1-1400 oleh Finance bila GR retroaktif.
 4. **Pemakaian lama tidak direkonstruksi**: setuju bahwa 242 order Jan–Sep tidak diposting ulang; biaya bahan periode itu mengikuti opname.
-5. (Opsional) Jalur cepat `/movements/receipt|return|waste` — tetap terbuka bagi pemegang `inventory:write`; apakah dibatasi ke penyetuju atau diarahkan lewat GR/Return resmi.
+5. (Selesai) Jalur cepat `/movements/receipt|return|waste` ditutup permanen: audit pemanggil hanya modal Gudang lama, 0 pemakaian di ledger. Penerimaan lewat GR, retur lewat Retur resmi/Pengembalian Bahan Produksi, buang lewat Barang Rusak (DISPOSE). `/movements/issue` (Keluar ke Unit) dipertahankan.
 
 ## 10. Yang tidak boleh dilakukan
 - Menyalin QTY SEP dari file lama ke lembar hitung atau ke Stock Count.
