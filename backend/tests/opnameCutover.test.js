@@ -120,3 +120,24 @@ test("jalur cepat (pergerakan tanpa dokumen) setelah hitung dilaporkan; cut-off 
   const awal = prev([row()], ledger, { cutoff: T("08:00") });
   assert.ok(kode(awal.materials[0]).includes("CUTOFF_SEBELUM_SELESAI"));
 });
+
+import { gabungStockCount } from "../src/services/opnameCutover.js";
+test("gabungStockCount: angka & waktu dari Stock Count; lembar tidak ditimpa; konflik → BLOCKER; baris baru tanpa metadata tidak ditebak", () => {
+  const count = { startedAt: new Date("2026-10-31T01:00:00Z"), submittedAt: new Date("2026-10-31T03:00:00Z"), lines: [
+    { id: "l1", materialId: "m1", countedQty: 18, material: { code: "KAIN-A", unit: "METER" } },
+    { id: "l2", materialId: "m2", countedQty: 0, material: { code: "BUSA-B", unit: "SHEET" } },
+    { id: "l3", materialId: "m3", countedQty: null, material: { code: "X", unit: "PCS" } },
+  ] };
+  const selesai = new Map([["l1", new Date("2026-10-31T02:00:00Z")]]);
+  const lembarKosong = row({ [KOLOM_HITUNG.qtyRak]: "", [KOLOM_HITUNG.status]: "", [KOLOM_HITUNG.mulai]: "", [KOLOM_HITUNG.selesai]: "" });
+  const hasil = gabungStockCount([lembarKosong], { count, selesaiPerLine: selesai });
+  assert.equal(hasil[0].qtyRak, 18); assert.equal(hasil[0].status, "DIHITUNG"); assert.equal(+hasil[0].selesai, +selesai.get("l1")); assert.equal(+hasil[0].mulai, +count.startedAt);
+  assert.equal(hasil[0].pemeriksa, "Budi", "metadata lembar dipertahankan");
+  const baru = hasil.find((b) => b.materialId === "m2");
+  assert.equal(baru.status, "NOL_FISIK"); assert.equal(baru.qtyRak, 0); assert.equal(baru.lokasi, ""); assert.equal(baru.penghitung, ""); assert.equal(baru.pemeriksa, "");
+  assert.ok(!hasil.some((b) => b.materialId === "m3"), "baris yang belum diisi tidak dibuat");
+  const konflik = gabungStockCount([row({ [KOLOM_HITUNG.qtyRak]: 20 })], { count, selesaiPerLine: selesai });
+  assert.equal(konflik[0].qtyRak, 20, "tidak ditimpa"); assert.deepEqual(konflik[0].konflikStockCount, { lembar: 20, sistem: 18 });
+  const p = prev([konflik[0]], { m1: [mv("a", "m1", 20, T("07:00"))] });
+  assert.ok(kode(p.materials[0]).includes("HITUNG_BEDA_STOCK_COUNT"));
+});

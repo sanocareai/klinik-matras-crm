@@ -12,7 +12,7 @@ import ExcelJS from "exceljs";
 import { prisma } from "../src/db.js";
 import { muatPergerakanSesi } from "../src/services/pergerakanSesiHitung.js";
 import {
-  KOLOM_HITUNG, normalisasiBaris, normalisasiLog, normalisasiHarga, hitungPreview, muatLedger, KOLOM_LOG, muatMaterials, muatDokumenTertunda, muatSaldoBuku1400, parseWaktuWIB, LEVEL,
+  KOLOM_HITUNG, normalisasiBaris, normalisasiLog, normalisasiHarga, hitungPreview, muatLedger, KOLOM_LOG, gabungStockCount, muatMaterials, muatDokumenTertunda, muatSaldoBuku1400, parseWaktuWIB, LEVEL,
 } from "../src/services/opnameCutover.js";
 
 const arg = (n, d = null) => { const i = process.argv.indexOf(n); return i >= 0 ? process.argv[i + 1] : d; };
@@ -21,7 +21,8 @@ if (process.argv.includes("--apply") || process.argv.includes("--post")) {
   process.exit(2);
 }
 const FILE = arg("--file"); const OUT = arg("--out", "./preview-opname");
-if (!FILE || !fs.existsSync(FILE)) { console.error("Pakai: --file <lembar-terisi.xlsx> [--out dir] [--cutoff 'YYYY-MM-DD HH:mm' (WIB)] [--saldo-1400-sampai YYYY-MM-DD]"); process.exit(1); }
+const STOCK_COUNT = arg("--stock-count");
+if ((!FILE && !STOCK_COUNT) || (FILE && !fs.existsSync(FILE))) { console.error("Pakai: --file <lembar-terisi.xlsx> [--out dir] [--cutoff 'YYYY-MM-DD HH:mm' (WIB)] [--saldo-1400-sampai YYYY-MM-DD]"); process.exit(1); }
 
 const nilaiSel = (c) => {
   const v = c?.value; if (v === null || v === undefined) return null;
@@ -45,13 +46,28 @@ function bacaSheet(ws, judulWajib) {
 }
 
 const wb = new ExcelJS.Workbook();
-await wb.xlsx.readFile(FILE);
-const lembar = bacaSheet(wb.getWorksheet("Hitung"), KOLOM_HITUNG.materialId);
-if (!lembar.length) { console.error('Sheet "Hitung" kosong atau tak punya kolom "Material ID".'); process.exit(1); }
-const baris = lembar.map((r) => normalisasiBaris(r, r.__baris));
-const logJendela = normalisasiLog(bacaSheet(wb.getWorksheet("Log pergerakan jendela"), "Dokumen / ID movement"));
-const harga = normalisasiHarga(bacaSheet(wb.getWorksheet("Harga Finance"), "Kode material"));
+if (FILE) await wb.xlsx.readFile(FILE);
+const lembar = FILE ? bacaSheet(wb.getWorksheet("Hitung"), KOLOM_HITUNG.materialId) : [];
+if (FILE && !lembar.length && !STOCK_COUNT) { console.error('Sheet "Hitung" kosong atau tak punya kolom "Material ID".'); process.exit(1); }
+let baris = lembar.map((r) => normalisasiBaris(r, r.__baris));
+const logJendela = FILE ? normalisasiLog(bacaSheet(wb.getWorksheet("Log pergerakan jendela"), "Dokumen / ID movement")) : [];
+const harga = FILE ? normalisasiHarga(bacaSheet(wb.getWorksheet("Harga Finance"), "Kode material")) : new Map();
 
+// Hasil hitung yang diinput Gudang di aplikasi (Stock Count) digabung SEBELUM menentukan jendela waktu.
+let countDipakai = null; let selesaiPerLine = new Map();
+if (STOCK_COUNT) {
+  const info = await prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe("SET TRANSACTION READ ONLY");
+    const count = await tx.stockCount.findFirst({ where: /^[0-9a-f-]{36}$/i.test(STOCK_COUNT) ? { id: STOCK_COUNT } : { countNumber: STOCK_COUNT }, include: { lines: { include: { material: { select: { code: true, unit: true } } } } } });
+    if (!count) throw new Error("Stock Count tidak ditemukan: " + STOCK_COUNT);
+    const ev = await tx.activityEvent.findMany({ where: { entityType: "stock_count", entityId: count.id, eventType: "DOCUMENT_EDITED" }, select: { metadata: true, createdAt: true }, orderBy: { createdAt: "asc" } });
+    const per = new Map();
+    for (const e of ev) if (e.metadata?.aksi === "HASIL_HITUNG_DIISI" && e.metadata.lineId && "countedQtyBaru" in e.metadata) per.set(e.metadata.lineId, e.createdAt);
+    return { count, per };
+  });
+  countDipakai = info.count; selesaiPerLine = info.per;
+  baris = gabungStockCount(baris, { count: countDipakai, selesaiPerLine });
+}
 const tertinggi = baris.map((b) => b.selesai).filter((d) => d instanceof Date && !Number.isNaN(d.getTime())).sort((a, b) => b - a)[0] || new Date();
 const cutoff = arg("--cutoff") ? parseWaktuWIB(arg("--cutoff")) : tertinggi;
 const sampai = new Date(Math.max(+cutoff, +tertinggi));
@@ -83,7 +99,7 @@ const hasil = await prisma.$transaction(async (tx) => {
   }
   const prev = hitungPreview({ materials, baris, ledger, cutoff, logJendela: logGabungan, hargaFinance: harga, pending, saldoBuku1400: saldo1400 });
   const [{ now }] = await tx.$queryRaw`SELECT now() AS now`;
-  return { ...prev, meta: { dibuat: now, file: path.basename(FILE), cutoff: cutoff.toISOString(), sampaiLedger: sampai.toISOString(), barisHitung: baris.length, barisLog: logJendela.length, barisHarga: harga.size, readOnly: true } };
+  return { ...prev, meta: { dibuat: now, file: FILE ? path.basename(FILE) : '(hanya Stock Count)', stockCount: countDipakai ? countDipakai.countNumber : null, cutoff: cutoff.toISOString(), sampaiLedger: sampai.toISOString(), barisHitung: baris.length, barisLog: logJendela.length, barisHarga: harga.size, readOnly: true } };
 }, { timeout: 120_000 });
 
 fs.mkdirSync(OUT, { recursive: true });
