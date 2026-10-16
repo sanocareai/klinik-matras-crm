@@ -135,6 +135,7 @@ export function UnitCard({
         {presence && <Badge variant={presenceTone(presence)} data-testid="presence-badge">{presence.label}</Badge>}
       </div>
       {view.lifecycle && <div className="flex flex-wrap items-center gap-1.5"><LifecycleBadge lifecycle={view.lifecycle} /></div>}
+      {view.deliveryRelease && <div role="status" data-testid="pf-kartu-badge" className="rounded-btn bg-orangebg px-2.5 py-1.5 text-[11.5px] font-semibold text-orange">{view.deliveryRelease.label}</div>}
       <div className="flex flex-wrap items-center gap-1.5">
         <Badge variant={st.badge}>{st.label}</Badge>
         {view.next?.stepNo && <span className="text-[13px] font-medium text-ink2">{stageText(view)}</span>}

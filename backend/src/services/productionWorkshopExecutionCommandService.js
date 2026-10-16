@@ -138,13 +138,16 @@ export const RUN_INCLUDE = {
 };
 
 // Urutan kunci: unit (sama dengan custody) -> run. Mencegah siklus dengan openProductionIntakeV2 (unit lalu run).
-export async function loadRunForWrite(tx, runId) {
+// allowReleased: hanya command penutupan administratif (Selesaikan Produksi / Konfirmasi Barang Jadi) dan pelepasan itu sendiri; command tahap/bahan/QC pada Run yang unitnya SUDAH dilepas
+// lewat pengecualian pemeriksaan fisik ditolak (409) — unit sudah di jalur pengiriman, tahap tidak boleh berjalan lagi di belakangnya.
+export async function loadRunForWrite(tx, runId, { allowReleased = false } = {}) {
   const pre = await tx.productionRun.findUnique({ where: { id: runId }, select: { unitId: true } });
   if (!pre) throw workError("Pekerjaan produksi tidak ditemukan", 404, "WORKSHOP_RUN_NOT_FOUND");
   await lockRowForUpdate(tx, "units", pre.unitId);
   await lockRowForUpdate(tx, "production_runs_v2", runId);
   const run = await tx.productionRun.findUnique({ where: { id: runId }, include: RUN_INCLUDE });
   if (TERMINAL_RUN.includes(run.status)) throw workError("Pekerjaan produksi sudah selesai/dibatalkan", 409, "WORKSHOP_RUN_TERMINAL");
+  if (run.deliveryReleasedAt && !allowReleased) throw workError("Unit pekerjaan ini sudah dilepas untuk pengiriman lewat pengecualian pemeriksaan fisik — Run belum ditutup. Tutup Run lewat Selesaikan Produksi / Konfirmasi Barang Jadi; tahap tidak dilanjutkan lagi.", 409, "RUN_RELEASED_FOR_DELIVERY", { releasedAt: run.deliveryReleasedAt });
   await assertNoV1Drift(tx, { runId, unitId: run.unitId }); // rollback writer OFF -> aksi V1 -> writer ON: berhenti sampai direkonsiliasi (productionRunGuards.js)
   // P9A (One-Location Production Intake) — unit sudah "Masuk Produksi" (pickup
   // berhasil, kartu tampil di board) TAPI belum dikonfirmasi tiba secara fisik
@@ -621,7 +624,9 @@ export function finishBlockersOf(run, { openShortage = false, exceptionOpen = fa
   if (run.status === "PENDING_ARRIVAL") out.push({ code: "PENDING_ARRIVAL", text: "Unit belum dikonfirmasi tiba di workshop" });
   else if (TERMINAL_RUN.includes(run.status)) out.push({ code: "RUN_TERMINAL", text: "Production Run sudah selesai/dibatalkan" });
   if (!run.plan || run.plan.status === "CANCELLED") out.push({ code: "NO_PLAN", text: "Rencana produksi belum ditugaskan (operator/workshop)" });
-  if (!["RECEIVED", "IN_PRODUCTION"].includes(run.unit?.status)) out.push({ code: "UNIT_NOT_IN_PRODUCTION", text: `Unit berstatus ${run.unit?.status}; bukan pekerjaan workshop` });
+  // Run yang unitnya sudah DILEPAS untuk pengiriman lewat pengecualian boleh ditutup administratif walau unit sudah siap kirim/berangkat/terkirim (kecuali dibatalkan).
+  const unitOk = ["RECEIVED", "IN_PRODUCTION"].includes(run.unit?.status) || (!!run.deliveryReleasedAt && ["READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD", "IN_TRANSIT_OUT", "DELIVERED"].includes(run.unit?.status));
+  if (!unitOk) out.push({ code: "UNIT_NOT_IN_PRODUCTION", text: `Unit berstatus ${run.unit?.status}; bukan pekerjaan workshop` });
   if (activeOperation(run)) out.push({ code: "ACTIVE_OPERATION", text: "Ada tahap yang sedang berjalan atau ditunda — selesaikan atau lanjutkan dulu" });
   if (openShortage) out.push({ code: "OPEN_SHORTAGE", text: "Menunggu bahan dari Gudang — selesaikan masalah bahan dulu" });
   if (exceptionOpen) out.push({ code: "EXCEPTION_OPEN", text: "Ada konflik data yang harus diselesaikan Production Lead" });

@@ -21,6 +21,7 @@ import { isOutsideV2 } from "@/features/production/unit360Availability.js";
 import UnitOrderFallback from "@/features/production/UnitOrderFallback.jsx";
 import PkrRujukan from "@/features/production/PkrRujukan.jsx";
 import KonfirmasiBarangJadi from "@/features/production/KonfirmasiBarangJadi.jsx";
+import { PelepasanUnit360 } from "@/features/production/PelepasanPengecualianFisik.jsx";
 import { ComponentNotesPanel } from "@/features/production/componentNotes/ComponentNotesPanel.jsx";
 import JejakBiayaBahan from "@/features/finance/JejakBiayaBahan.jsx";
 
@@ -236,7 +237,7 @@ function AdaptationPanel({ d, canApply, onApplied }) {
   );
 }
 
-function Proses({ d, onOpenDiagnosis, canApplyAdaptation = false, onChanged }) {
+function Proses({ d, onOpenDiagnosis, canApplyAdaptation = false, isAdminOwner = false, onChanged }) {
   if (!d.production.runId) return <p className="text-[12.5px] text-ink3">Unit belum masuk proses produksi (belum ada pekerjaan produksi yang dibuka).</p>;
   return (
     <div className="space-y-3">
@@ -245,6 +246,7 @@ function Proses({ d, onOpenDiagnosis, canApplyAdaptation = false, onChanged }) {
         <span data-testid="overview-progress" className="shrink-0 text-[11px] text-ink3 tabular-nums">{progressText(d.production.progress)}</span>
       </div>
       <AdaptationPanel d={d} canApply={canApplyAdaptation} onApplied={() => onChanged?.()} />
+      <PelepasanUnit360 d={d} isAdmin={isAdminOwner} onDone={() => onChanged?.()} />
       <KonfirmasiBarangJadi d={d} canConfirm={canApplyAdaptation} onDone={() => onChanged?.()} />
       <ol className="m-0 grid list-none grid-cols-1 gap-1 p-0 sm:grid-cols-2">
         {d.production.steps.map((s) => (
@@ -561,7 +563,7 @@ export function UnitOverviewDrawer({ unitId, onClose, onManage, manageLabel = "K
               {tab === "ringkasan" && <Ringkasan d={data} />}
               {tab === "pekerjaan" && (
                 <div className="space-y-3">
-                  <Proses d={data} onOpenDiagnosis={() => setShowDiagnosis(true)} canApplyAdaptation={rolesOf(currentUserLocal()).some((r) => ["ADMIN", "OWNER", "PRODUCTION_LEAD"].includes(r))} onChanged={() => { reload(); onChanged?.(); }} />
+                  <Proses d={data} onOpenDiagnosis={() => setShowDiagnosis(true)} canApplyAdaptation={rolesOf(currentUserLocal()).some((r) => ["ADMIN", "OWNER", "PRODUCTION_LEAD"].includes(r))} isAdminOwner={rolesOf(currentUserLocal()).some((r) => ["ADMIN", "OWNER"].includes(r))} onChanged={() => { reload(); onChanged?.(); }} />
                   {v1Workable && <div data-testid="pekerjaan-actions"><UnitOrderFallback v2View data={v1Work.data} error={v1Work.error} loading={v1Work.loading} roles={rolesOf(currentUserLocal())} onData={(t) => setV1Work({ data: t, error: "", loading: false })} onChanged={() => { reload(); onChanged?.(); }} /></div>}
                 </div>
               )}

@@ -158,7 +158,8 @@ export function cornerAndLifecycleOf(run, ctx) {
     runStatus: run.status, currentPhase: run.currentPhase, unitStatus: run.unit?.status, next: ctx.next, latestQcResult: ctx.latestInspection?.result ?? null, cornerStatus: corner,
     adaptation: !!run.adaptationPolicy, handoffStatus: (run.custodyHandoffs || []).filter((h) => h.direction === "FINISHED_GOODS").at(-1)?.status ?? null, started: (run.operations?.length ?? 0) > 0 || ctx.evidence.length > 0,
   });
-  return { corner, lifecycle };
+  // Pelepasan unit lewat pengecualian pemeriksaan fisik: SATU sumber untuk semua layar (papan, kartu, Unit 360, laporan) — Run belum ditutup tetapi unit sudah di jalur pengiriman.
+  return { corner, lifecycle, deliveryRelease: run.deliveryReleasedAt ? { releasedAt: run.deliveryReleasedAt, locationCode: run.deliveryRelease?.location?.code ?? null, reason: run.deliveryRelease?.reason ?? null, inspectorName: run.deliveryRelease?.inspector?.name ?? null, releasedByName: run.deliveryRelease?.releasedBy?.name ?? null, stepsRecorded: run.deliveryRelease?.stepsRecorded ?? [], label: "Run belum ditutup — unit dilepas untuk pengiriman lewat pengecualian" } : null };
 }
 
 /**

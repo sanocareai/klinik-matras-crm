@@ -223,6 +223,8 @@ export const EVENT_TYPES = Object.freeze({
   PRODUCTION_BUILD_MATERIALS_RECORDED: "PRODUCTION_BUILD_MATERIALS_RECORDED",
   PRODUCTION_QC_NOT_PERFORMED: "PRODUCTION_QC_NOT_PERFORMED",
   PRODUCTION_FINISHED_ADAPTATION: "PRODUCTION_FINISHED_ADAPTATION",
+  // Unit dilepas untuk pengiriman lewat PENGECUALIAN pemeriksaan fisik (Admin/Owner); Run & tahap TIDAK ditutup — lihat productionStepCommandService.js#releaseUnitForDelivery.
+  PRODUCTION_DELIVERY_RELEASED: "PRODUCTION_DELIVERY_RELEASED",
   PRODUCTION_ADAPTATION_APPLIED: "PRODUCTION_ADAPTATION_APPLIED",
   PRODUCTION_QC_GATE_APPLIED: "PRODUCTION_QC_GATE_APPLIED",
   PRODUCTION_WORK_DELAYED: "PRODUCTION_WORK_DELAYED",
@@ -508,6 +510,8 @@ export function formatActivitySentence(event) {
       return `Tahap ${(metadata.stepNos || []).join(", ") || "—"} (${metadata.stageLabel || "—"}) unit ${metadata.unitCode || "—"} DILEWATI — ${metadata.reason || "Adaptasi sistem"} (bukan dikerjakan; tanpa foto/hasil uji)`;
     case EVENT_TYPES.PRODUCTION_QC_NOT_PERFORMED:
       return `QC unit ${metadata.unitCode || "—"} TIDAK DILAKUKAN — ${metadata.reason || "Adaptasi sistem"} (bukan lulus/di-waive)`;
+    case EVENT_TYPES.PRODUCTION_DELIVERY_RELEASED:
+      return `Unit ${metadata.unitCode || "—"} DILEPAS untuk pengiriman lewat pengecualian pemeriksaan fisik (lokasi ${metadata.locationCode || "—"}; pemeriksa ${metadata.inspectorName || "—"}) — Run produksi belum ditutup. Alasan: ${metadata.reason || "—"}`;
     case EVENT_TYPES.PRODUCTION_FINISHED_ADAPTATION:
       return `Produksi unit ${metadata.unitCode || "—"} diselesaikan (mode adaptasi): ${metadata.skippedCount ?? 0} tahap dilewati, QC tidak dilakukan, unit Siap Kirim tanpa penerimaan barang jadi Gudang`;
     case EVENT_TYPES.PRODUCTION_ADAPTATION_APPLIED:

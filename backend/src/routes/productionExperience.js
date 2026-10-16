@@ -9,7 +9,7 @@ import { prisma } from "../db.js";
 import { createProductionPlan, listPlanScheduleHistory, reorderStationPlans, scheduleProductionPlan, setStationDayPic } from "../services/productionPlanningCommandService.js";
 import { cohortStatesOf, getPlanningRefs, listRencanaEligibility, planAndScheduleUnit } from "../services/productionRencanaService.js";
 import {
-  applyAdaptationPolicy, applyQcGatePolicy, confirmFinishedGoods, delayProductionWork, finishProduction, previewFinishProduction, recordProductionStep, reportMaterialShortage, resolveMaterialShortage, skipProductionStep,
+  applyAdaptationPolicy, applyQcGatePolicy, confirmFinishedGoods, delayProductionWork, finishProduction, previewDeliveryRelease, previewFinishProduction, recordProductionStep, releaseUnitForDelivery, reportMaterialShortage, resolveMaterialShortage, skipProductionStep,
 } from "../services/productionStepCommandService.js";
 import { resumeWork } from "../services/productionResumeService.js";
 import { confirmBuildCorner, recordBuildMaterials, requestBuildReworkMaterial, setBuildMaterialOperator, setBuildPlannedBOM } from "../services/productionBuildCommandService.js";
@@ -411,6 +411,26 @@ productionExperienceRouter.post("/runs/:runId/confirm-finished-goods", requirePe
     res.json(await confirmFinishedGoods(prisma, {
       runId: req.params.runId, actorId: req.user.id, supervisor, idempotencyKey: idem(req), expectedRevision: req.body?.expectedRevision,
       unitCode: req.body?.unitCode, locationId: req.body?.locationId, reason: req.body?.reason, physicalVerified: req.body?.physicalVerified, workCenterId: req.body?.workCenterId,
+    }));
+  } catch (err) { handleErr(err, res); }
+});
+
+// ---- Tandai Siap Kirim berdasarkan pemeriksaan fisik (PENGECUALIAN Admin/Owner; Run Produksi TIDAK ditutup) ------------------------------------------------------------------------
+// GET  /api/production-v2/units/:unitId/delivery-release — pratinjau baca-saja (keadaan, penghalang, lokasi fisik sah, calon pemeriksa, unit lain pada order, job pengiriman). Hanya Admin/Owner.
+// POST /api/production-v2/units/:unitId/delivery-release { expectedRevision, unitCode, locationId, reason, inspectorUserId?, physicalVerified: true } — Idempotency-Key wajib. Hanya Admin/Owner.
+const isReleaseAdmin = (user) => rolesOf(user).some((r) => ["ADMIN", "OWNER"].includes(r));
+productionExperienceRouter.get("/units/:unitId/delivery-release", requirePermission(P.UNIT_STAGE_WRITE), async (req, res) => {
+  try {
+    if (!UUID_RE.test(String(req.params.unitId))) return res.status(400).json({ error: "ID unit tidak valid", code: "ID_INVALID" });
+    if (!isReleaseAdmin(req.user)) return res.status(403).json({ error: "Hanya Admin atau Owner yang dapat menandai Siap Kirim berdasarkan pemeriksaan fisik", code: "RELEASE_FORBIDDEN" });
+    res.json(await previewDeliveryRelease(prisma, { unitId: req.params.unitId }));
+  } catch (err) { handleErr(err, res); }
+});
+productionExperienceRouter.post("/units/:unitId/delivery-release", requirePermission(P.UNIT_STAGE_WRITE), async (req, res) => {
+  try {
+    res.json(await releaseUnitForDelivery(prisma, {
+      unitId: req.params.unitId, actorId: req.user.id, canRelease: isReleaseAdmin(req.user), idempotencyKey: idem(req), expectedRevision: req.body?.expectedRevision,
+      unitCode: req.body?.unitCode, locationId: req.body?.locationId, reason: req.body?.reason, inspectorUserId: req.body?.inspectorUserId ?? null, physicalVerified: req.body?.physicalVerified,
     }));
   } catch (err) { handleErr(err, res); }
 });

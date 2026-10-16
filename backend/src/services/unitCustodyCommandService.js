@@ -12,7 +12,7 @@ import { recordActivity, EVENT_TYPES } from "../lib/activityLog.js";
 import { lockRowForUpdate } from "./inventoryLedger.js";
 import { lockUnitOwnership } from "./unitV2Ownership.js";
 import { isUnitPathDoneInTx, markUnitReadyForDeliveryInTx } from "./unitStageEngine.js";
-import { assertNoOpenRunException, assertRunConsistent } from "./productionRunGuards.js";
+import { assertNoOpenRunException, assertRunConsistent, isDeliveryReleased } from "./productionRunGuards.js";
 import { assertNoPendingReturnsInTx } from "./productionMaterialReturnService.js";
 import { assertPhasesReadyForHandoffDecision, assertRunPhasesTerminal, transitionPhases } from "./productionPhaseLifecycle.js";
 import { defaultAdaptationPolicy, defaultQcGatePolicy, requireWorkshopDefaultLocation } from "./productionSettingsService.js";
@@ -605,20 +605,23 @@ export async function completeAdaptationRunInTx(tx, { runId, actorId = null, now
   if (run.adaptationPolicy !== "ADAPTATION_V1") throw custodyError("Penutupan tanpa penerimaan barang jadi hanya untuk run mode adaptasi", 409, "ADAPTATION_NOT_ENABLED");
   if (run.status !== "ACTIVE") throw custodyError("Pekerjaan produksi tidak aktif", 409, "CUSTODY_RUN_NOT_ACTIVE", { status: run.status });
   assertRunConsistent(run, run.unit);
-  await assertNoOpenRunException(tx, run.id);
+  await assertNoOpenRunException(tx, run.id, { allowReleased: true }); // Run yang unitnya sudah dilepas lewat pengecualian boleh ditutup administratif
   for (const phase of ["QC", "HANDOFF"]) {
     if (run.phases.find((p) => p.phase === phase)?.status === "COMPLETED") throw custodyError(`Fase ${phase} tidak boleh COMPLETED pada penutupan adaptasi`, 409, "ADAPTATION_PHASE_INVALID");
   }
   await assertRunPhasesTerminal(tx, run.id, { requireHandoffCompleted: false });
   const revision = run.revision + 1;
   await tx.productionRun.update({ where: { id: run.id }, data: { status: "COMPLETED", completedAt: now, revision } });
-  await markUnitReadyForDeliveryInTx(tx, run.unitId);
+  // Unit yang SUDAH dilepas untuk pengiriman lewat pengecualian pemeriksaan fisik: penutupan Run bersifat administratif — status unit, order, lokasi dan job pengiriman TIDAK disentuh
+  // (tidak ada job ganda, status tidak mundur/maju). Selain itu unit dilepas ke Delivery di sini (jalur normal).
+  const sudahDilepas = isDeliveryReleased(run);
+  if (!sudahDilepas) await markUnitReadyForDeliveryInTx(tx, run.unitId);
   await outbox(tx, {
     domain: "PRODUCTION", eventType: "production.run.completed", aggregateType: "ProductionRun", aggregateId: run.id, revision,
     dedupeKey: `production-run-completed:${run.id}:${revision}`,
-    payload: { runId: run.id, unitId: run.unitId, completionKind: "ADAPTATION", policy: run.adaptationPolicy, revision, occurredAt: now.toISOString(), actorId },
+    payload: { runId: run.id, unitId: run.unitId, completionKind: "ADAPTATION", policy: run.adaptationPolicy, revision, occurredAt: now.toISOString(), actorId, ...(sudahDilepas ? { closedAfterDeliveryRelease: true } : {}) },
   });
-  return { runId: run.id, revision, unitStatus: "READY_FOR_DELIVERY" };
+  return { runId: run.id, revision, unitStatus: sudahDilepas ? run.unit.status : "READY_FOR_DELIVERY", closedAfterDeliveryRelease: sudahDilepas };
 }
 
 export async function rejectUnitCustody(prisma, { handoffId, actorId, idempotencyKey, expectedRevision, reason }) {

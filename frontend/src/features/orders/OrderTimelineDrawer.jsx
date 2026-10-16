@@ -19,6 +19,7 @@ import InvoicePanel from "./InvoicePanel.jsx";
 import WarrantyPanel from "./WarrantyPanel.jsx";
 import ReadinessPanel from "./ReadinessPanel.jsx";
 import { StatusSelect } from "./StatusSelect.jsx";
+import { PelepasanOrderPanel } from "@/features/production/PelepasanPengecualianFisik.jsx";
 import { PaymentStatusSelect } from "./PaymentStatusSelect.jsx";
 import KlaimLunasPanel from "@/features/klaim/KlaimLunasPanel.jsx";
 import { useKlaimLunasAktif } from "@/features/klaim/useKlaimLunasAktif.js";
@@ -1121,6 +1122,8 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
   const o = order || frozen;
   // Gabungkan Order Duplikat: hanya Admin/Owner (cek lewat isAdminUser — multi-role, bukan user.role langsung) dan hanya untuk order yang belum digabungkan ke order lain.
   const [gabungBuka, setGabungBuka] = useState(false);
+  // Tandai Siap Kirim berdasarkan pemeriksaan fisik (pengecualian): hanya Admin/Owner; server menegakkan ulang.
+  const bolehPelepasan = Boolean(o && (() => { try { return isAdminUser(JSON.parse(localStorage.getItem("user") || "null")); } catch { return false; } })());
   const bolehGabung = Boolean(o && !o.digabungKe && (() => { try { return isAdminUser(JSON.parse(localStorage.getItem("user") || "null")); } catch { return false; } })());
 
   return (
@@ -1204,6 +1207,8 @@ export default function OrderTimelineDrawer({ order, onClose, onOpenChat, onPaym
               </div>
             ))}
           </div>
+
+          <div className="mt-3"><PelepasanOrderPanel order={o} isAdmin={bolehPelepasan} onDone={() => onPaymentRecorded?.()} /></div>
 
           {!o.penjualanKaryawan && (
             <div className="mt-3">
