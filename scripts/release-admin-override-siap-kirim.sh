@@ -9,6 +9,7 @@
 #
 #   cat scripts/release-admin-override-siap-kirim.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/ao1.sh'
 #   ssh ubuntu@43.133.152.6 'bash /tmp/ao1.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/ao1.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rehearsal-only'     # backup NYATA + restore ke DB sementara + migrasi + uji CHECK; TANPA build/release dir/migrasi produksi/switch
 #   ssh ubuntu@43.133.152.6 'nohup bash /tmp/ao1.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/ao1.out 2>&1 < /dev/null &'   # upload & jalankan TERPISAH
 #
 # ROLLBACK: kode aman di-rollback HANYA bila belum ada Run yang di-override. Periksa dulu dengan scripts/rollback-guard-admin-override-siap-kirim.sh (baca-saja).
@@ -45,7 +46,8 @@ PERSIST="$HOME/klinik-matras"
 SRC="$HOME/release-src/klinik-matras.git"
 NEW_DIR="$RELEASES/$DEPLOY_SHORT"
 PREFLIGHT_ONLY=0
-for a in "$@"; do [ "$a" = "--preflight-only" ] && PREFLIGHT_ONLY=1; done
+REHEARSAL_ONLY=0
+for a in "$@"; do [ "$a" = "--preflight-only" ] && PREFLIGHT_ONLY=1; [ "$a" = "--rehearsal-only" ] && REHEARSAL_ONLY=1; done
 TS="$(date +%Y%m%d_%H%M%S)"
 BK_DIR="$HOME/release-backups/admin-override-${DEPLOY_SHORT}-${TS}"
 PHASE="init"; BACKUP_FILE=""; ROLLBACK_TAG=""; PREV_DIR=""; PREV_IMG_ID=""; IMG_NAME=""
@@ -294,6 +296,10 @@ case "$RIKA_STATUS" in
   IN_PRODUCTION|RECEIVED) ok "kasus Rika ${RIKA_UNIT} sebelum rilis: ${RIKA_SEBELUM} (belum Siap Kirim, sesuai diagnosis)";;
   *) warn "kasus Rika ${RIKA_UNIT} berstatus ${RIKA_STATUS} — TIDAK sesuai diagnosis (IN_PRODUCTION); rilis tetap aman (hanya dibaca), tetapi laporkan keadaan ini: ${RIKA_SEBELUM}";;
 esac
+# SAKLAR override (production_admin_override_siap_kirim): sebelum rilis TIDAK BOLEH aktif (bawaan OFF/fail-closed). Aktif sebelum rilis = ada yang menyalakan lebih dulu -> berhenti.
+SAKLAR_AKTIF="$(psql_live -At -c "select count(*) from v2_feature_flags where key = 'production_admin_override_siap_kirim' and enabled = true")"
+[ "$SAKLAR_AKTIF" = "0" ] || die "saklar production_admin_override_siap_kirim SUDAH aktif di produksi sebelum rilis — berhenti"
+ok "saklar production_admin_override_siap_kirim: tidak aktif di produksi (baris=$(psql_live -At -c "select count(*) from v2_feature_flags where key = 'production_admin_override_siap_kirim'")); bawaan OFF/fail-closed tetap setelah rilis"
 # GARIS DASAR invarian (dibandingkan sesudah rilis; yang dijaga = TIDAK BERTAMBAH oleh rilis ini).
 SQL_TIDAK_SEIMBANG="select count(*)::int from (select e.id from fin_journal_entries e join fin_journal_lines l on l.entry_id = e.id group by e.id having sum(l.debit) <> sum(l.credit)) x"
 BASE_TIDAK_SEIMBANG="$(psql_live -At -c "$SQL_TIDAK_SEIMBANG")"
@@ -364,6 +370,73 @@ gzip -dc "${BACKUP_FILE}.partial" | tail -n 5 | grep 'PostgreSQL database dump c
 mv "${BACKUP_FILE}.partial" "$BACKUP_FILE"
 ( cd "$(dirname "$BACKUP_FILE")" && sha256sum "$(basename "$BACKUP_FILE")" > "$(basename "$BACKUP_FILE").sha256" && sha256sum -c "$(basename "$BACKUP_FILE").sha256" >/dev/null ) || die "checksum backup gagal"
 ok "backup: ${BACKUP_FILE} ($(du -h "$BACKUP_FILE" | cut -f1)); sha256 $(cut -d' ' -f1 "${BACKUP_FILE}.sha256")"
+
+if [ "$REHEARSAL_ONLY" = "1" ]; then
+  # MODE --rehearsal-only: backup NYATA + restore ke DB sementara + migrasi (SQL dari git) + uji CHECK + sidik jari; TANPA build image, TANPA release dir, TANPA migrasi/switch produksi. DB sementara selalu dihapus.
+  PHASE="3b-rehearsal-saja"; say "3b. REHEARSAL SAJA: restore backup NYATA ke DB sementara, terapkan migrasi (SQL dari git, bukan dari produksi), uji CHECK, bandingkan sidik jari (produksi tidak diubah)"
+  REH_DB="rehearsal_ao_${TS}"
+  dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d postgres -v ON_ERROR_STOP=1 -X -q -c "CREATE DATABASE \"${REH_DB}\"" </dev/null || die "gagal membuat DB rehearsal"
+  reh_drop() { dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d postgres -X -q -c "DROP DATABASE IF EXISTS \"${REH_DB}\"" </dev/null >/dev/null 2>&1 || true; }
+  gzip -dc "$BACKUP_FILE" | dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d "$REH_DB" -v ON_ERROR_STOP=0 -X -q > "$BK_DIR/restore-rehearsal.log" 2>&1 || true
+  RPSQL() { dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d "$REH_DB" -X -At -q -c "$1" </dev/null; }
+  psql_live -At -c "$FP_BEKU_SQL" | LC_ALL=C sort > "$BK_DIR/fp-prod-beku.txt" || { reh_drop; die "sidik jari dokumen beku produksi gagal"; }
+  cmp -s "$BK_DIR/data-sebelum.txt" "$BK_DIR/fp-prod-beku.txt" || { diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/fp-prod-beku.txt" || true; reh_drop; die "dokumen pembanding beku BERUBAH selama backup (produksi)"; }
+  RPSQL "$FP_BEKU_SQL" | LC_ALL=C sort > "$BK_DIR/fp-reh-beku.txt" || { reh_drop; die "sidik jari dokumen beku rehearsal gagal"; }
+  cmp -s "$BK_DIR/data-sebelum.txt" "$BK_DIR/fp-reh-beku.txt" || { diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/fp-reh-beku.txt" || true; reh_drop; die "hasil RESTORE berbeda dari dokumen beku produksi (backup/restore bermasalah)"; }
+  [ "$(RPSQL "$RIKA_SQL")" = "$RIKA_SEBELUM" ] || { reh_drop; die "keadaan Rika pada hasil RESTORE berbeda dari produksi"; }
+  RPSQL "$FP_SQL" | LC_ALL=C sort > "$BK_DIR/fp-reh-sebelum.txt" || { reh_drop; die "sidik jari penuh rehearsal gagal"; }
+  [ "$(grep -c . "$BK_DIR/fp-reh-sebelum.txt")" = "$FP_N" ] || { reh_drop; die "sidik jari penuh rehearsal tidak ${FP_N} tabel"; }
+  ok "restore nyata IDENTIK dengan dokumen beku produksi; keadaan Rika identik"
+  # Migrasi pending (menurut git kandidat vs terpasang di produksi) HARUS tepat migrasi rilis ini.
+  PEND_SAJA="$(comm -23 <(sg ls-tree --name-only "$DEPLOY_SHA" backend/prisma/migrations/ | sed 's|.*/||' | grep -E '^[0-9]{14}_' | LC_ALL=C sort) <(psql_live -At -c "select migration_name from _prisma_migrations where finished_at is not null and rolled_back_at is null order by 1" | LC_ALL=C sort) || true)"
+  [ "$(printf '%s\n' "$PEND_SAJA" | tr -d ' ')" = "$(printf '%s\n' $MIG_LIST | LC_ALL=C sort | tr -d ' ')" ] || { reh_drop; die "migrasi pending bukan tepat migrasi rilis ini: $(printf '%s' "$PEND_SAJA" | tr '\n' ' ')"; }
+  ok "migrasi pending untuk rilis ini = tepat:${MIG_LIST}"
+  for e in $MIGS; do
+    sg show "${DEPLOY_SHA}:backend/prisma/migrations/${e%%:*}/migration.sql" | tr -d '\r' | dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d "$REH_DB" -v ON_ERROR_STOP=1 -X -q > "$BK_DIR/migrate-rehearsal.log" 2>&1 || { tail -n 10 "$BK_DIR/migrate-rehearsal.log"; reh_drop; die "migrasi ${e%%:*} GAGAL pada DB rehearsal"; }
+  done
+  ok "migrasi diterapkan pada DB rehearsal (hasil restore); produksi tidak disentuh"
+  # Struktur: 2 kolom baru ada, SEMUA baris Run tetap NULL (tanpa backfill), CHECK terpasang.
+  [ "$(RPSQL "select count(*) from information_schema.columns where table_schema='public' and table_name='production_runs_v2' and column_name in ('delivery_released_at','delivery_release')")" = "2" ] || { reh_drop; die "2 kolom override tidak terbentuk"; }
+  [ "$(RPSQL "select count(*) from production_runs_v2 where delivery_released_at is not null or delivery_release is not null")" = "0" ] || { reh_drop; die "ada Run ber-override setelah migrasi (backfill tidak diharapkan)"; }
+  [ "$(RPSQL "select count(*) from pg_constraint where conname = 'production_runs_v2_delivery_release_pair_chk'")" = "1" ] || { reh_drop; die "CHECK pasangan kolom override tidak terpasang"; }
+  ok "struktur: 2 kolom override ada, semua Run tetap NULL (tanpa backfill), CHECK pasangan terpasang"
+  # UJI PERILAKU (hanya DB rehearsal, SELURUHNYA dibatalkan): memakai baris NYATA hasil restore dalam satu blok yang di-RAISE di akhir.
+cat > "$BK_DIR/uji-perilaku.sql" <<'UJISQL'
+DO $t$
+DECLARE r uuid; tolak int := 0; lolos int := 0;
+BEGIN
+  SELECT id INTO r FROM production_runs_v2 ORDER BY id LIMIT 1;
+  IF r IS NULL THEN RAISE EXCEPTION 'DATA_CONTOH_KURANG'; END IF;
+  -- yang SAH: keduanya terisi bersamaan; lalu keduanya kosong bersamaan
+  UPDATE production_runs_v2 SET delivery_released_at = now(), delivery_release = '{"kind":"ADMIN_OVERRIDE"}'::jsonb WHERE id = r; lolos := lolos + 1;
+  UPDATE production_runs_v2 SET delivery_released_at = NULL, delivery_release = NULL WHERE id = r; lolos := lolos + 1;
+  -- yang HARUS DITOLAK: setengah terisi (rekam audit tidak boleh setengah)
+  BEGIN UPDATE production_runs_v2 SET delivery_released_at = now() WHERE id = r; RAISE EXCEPTION 'TIDAK_DITOLAK_waktu_tanpa_rekam';
+  EXCEPTION WHEN check_violation THEN tolak := tolak + 1; END;
+  BEGIN UPDATE production_runs_v2 SET delivery_release = '{"kind":"ADMIN_OVERRIDE"}'::jsonb WHERE id = r; RAISE EXCEPTION 'TIDAK_DITOLAK_rekam_tanpa_waktu';
+  EXCEPTION WHEN check_violation THEN tolak := tolak + 1; END;
+  RAISE EXCEPTION 'ROLLBACK_UJI tolak=% lolos=%', tolak, lolos;
+END $t$;
+UJISQL
+UJI_OUT="$(dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d "$REH_DB" -X -q -v ON_ERROR_STOP=0 < "$BK_DIR/uji-perilaku.sql" 2>&1 || true)"
+printf '%s\n' "$UJI_OUT" > "$BK_DIR/uji-perilaku.out"
+printf '%s\n' "$UJI_OUT" | grep -q 'DATA_CONTOH_KURANG' && { printf '%s\n' "$UJI_OUT"; reh_drop; die "uji perilaku: data contoh di hasil restore kurang (butuh >=1 run)"; }
+printf '%s\n' "$UJI_OUT" | grep -q 'ROLLBACK_UJI' || { printf '%s\n' "$UJI_OUT"; reh_drop; die "uji perilaku tidak selesai sampai rollback yang diharapkan"; }
+printf '%s\n' "$UJI_OUT" | grep -Eq 'TIDAK_DITOLAK' && { printf '%s\n' "$UJI_OUT"; reh_drop; die "perilaku CHECK SALAH (ada data setengah yang lolos)"; }
+UJI_TOLAK="$(printf '%s\n' "$UJI_OUT" | sed -n 's/.*ROLLBACK_UJI tolak=\([0-9]*\) lolos=\([0-9]*\).*/\1/p' | sed -n 1p)"
+UJI_LOLOS="$(printf '%s\n' "$UJI_OUT" | sed -n 's/.*ROLLBACK_UJI tolak=\([0-9]*\) lolos=\([0-9]*\).*/\2/p' | sed -n 1p)"
+[ -n "$UJI_TOLAK" ] && [ "$UJI_TOLAK" = "2" ] || { printf '%s\n' "$UJI_OUT"; reh_drop; die "uji perilaku: penolakan terbukti ${UJI_TOLAK:-?} (harus 2)"; }
+[ -n "$UJI_LOLOS" ] && [ "$UJI_LOLOS" = "2" ] || { printf '%s\n' "$UJI_OUT"; reh_drop; die "uji perilaku: data benar yang lolos ${UJI_LOLOS:-?} (harus 2)"; }
+ok "perilaku CHECK terbukti di DB rehearsal: tolak=${UJI_TOLAK} lolos=${UJI_LOLOS} — keduanya terisi/kosong bersamaan lolos; waktu tanpa rekam dan rekam tanpa waktu ditolak; seluruh uji dibatalkan"
+
+  RPSQL "$FP_SQL" | LC_ALL=C sort > "$BK_DIR/fp-reh-sesudah.txt" || { reh_drop; die "sidik jari rehearsal sesudah gagal"; }
+  cmp -s "$BK_DIR/fp-reh-sebelum.txt" "$BK_DIR/fp-reh-sesudah.txt" || { diff "$BK_DIR/fp-reh-sebelum.txt" "$BK_DIR/fp-reh-sesudah.txt" || true; reh_drop; die "migrasi/uji rehearsal MENGUBAH isi tabel lama"; }
+  [ "$(RPSQL "select count(*) from production_runs_v2 where delivery_released_at is not null or delivery_release is not null")" = "0" ] || { reh_drop; die "data uji rehearsal tidak dibatalkan"; }
+  [ "$(RPSQL "$RIKA_SQL")" = "$RIKA_SEBELUM" ] || { reh_drop; die "keadaan Rika pada DB rehearsal BERUBAH oleh migrasi/uji"; }
+  reh_drop
+  ok "rehearsal lulus: isi ${FP_N} tabel IDENTIK sebelum vs sesudah migrasi + uji CHECK; DB sementara dihapus; PRODUKSI TIDAK DIUBAH (tanpa build, tanpa release dir, tanpa migrasi, tanpa switch)"
+  trap - EXIT; exit 0
+fi
 
 PHASE="4-release-dir"; say "4. Release dir ${NEW_DIR} (git archive; release aktif tidak disentuh)"
 [ "$(sg ls-remote origin "refs/heads/${CAND_BRANCH}" | cut -f1)" = "$DEPLOY_SHA" ] || die "kandidat berubah selama backup"
