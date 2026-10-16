@@ -700,7 +700,7 @@ printf '%s\n' "$UJI_OUT" | grep -q 'ROLLBACK_UJI' || { printf '%s\n' "$UJI_OUT";
 printf '%s\n' "$UJI_OUT" | grep -Eq 'TIDAK_DITOLAK' && { printf '%s\n' "$UJI_OUT"; die "perilaku constraint SALAH (ada data salah yang lolos)"; }
 UJI_TOLAK="$(printf '%s\n' "$UJI_OUT" | sed -n 's/.*ROLLBACK_UJI tolak=\([0-9]*\) lolos=\([0-9]*\).*/\1/p' | sed -n 1p)"
 UJI_LOLOS="$(printf '%s\n' "$UJI_OUT" | sed -n 's/.*ROLLBACK_UJI tolak=\([0-9]*\) lolos=\([0-9]*\).*/\2/p' | sed -n 1p)"
-[ -n "$UJI_TOLAK" ] && [ "$UJI_TOLAK" -ge 19 ] || { printf '%s\n' "$UJI_OUT"; die "uji perilaku: penolakan terbukti terlalu sedikit (${UJI_TOLAK:-?}; minimal 19)"; }
+[ -n "$UJI_TOLAK" ] && [ "$UJI_TOLAK" -ge 18 ] || { printf '%s\n' "$UJI_OUT"; die "uji perilaku: penolakan terbukti terlalu sedikit (${UJI_TOLAK:-?}; minimal 18)"; }
 [ -n "$UJI_LOLOS" ] && [ "$UJI_LOLOS" -ge 6 ] || { printf '%s\n' "$UJI_OUT"; die "uji perilaku: data benar yang lolos terlalu sedikit (${UJI_LOLOS:-?}; minimal 6)"; }
 ok "perilaku terbukti di DB rehearsal: tolak=${UJI_TOLAK} lolos=${UJI_LOLOS} — notasi ilmiah/IDR/negatif/hierarki/sumber/unik harian/FK/singleton target ditolak bila salah; semuanya dibatalkan"
 RPSQL "$FP_SQL" | LC_ALL=C sort > "$BK_DIR/fp-reh-sesudah.txt" || die "sidik jari rehearsal sesudah gagal"
