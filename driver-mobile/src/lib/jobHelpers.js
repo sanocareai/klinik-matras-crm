@@ -47,6 +47,18 @@ function titleCaseNama(s) {
   return s.replace(/\w\S*/g, (t) => t.charAt(0).toUpperCase() + t.slice(1).toLowerCase());
 }
 
+// "Siap Kirim — override Admin (pencatatan produksi belum selesai)" (16 Okt 2026): unit ditetapkan Admin/Owner siap untuk proses pengiriman saat Production Run masih berjalan. DIHITUNG SERVER
+// (job.overrideAdmin = unit ber-override + lokasi pengambilan; /armada/my-jobs V1 dan snapshot V2). Keputusan Admin, BUKAN hasil pemeriksaan/QC: app tidak pernah mengklaim pemeriksaan fisik atau QC.
+// Mengembalikan null bila job tidak punya unit ber-override (job biasa, atau server lama tanpa field ini).
+export function overrideAdminInfo(job) {
+  const unit = Array.isArray(job?.overrideAdmin) ? job.overrideAdmin.filter((o) => o && o.unitCode) : [];
+  if (unit.length === 0) return null;
+  return {
+    judul: "Siap Kirim — override Admin (pencatatan produksi belum selesai)",
+    baris: unit.map((o) => ({ kunci: String(o.unitId ?? o.unitCode), teks: o.unitCode + ": ambil di " + (o.pickupLocationCode ? o.pickupLocationCode : "lokasi belum tercatat") })),
+  };
+}
+
 export function customerOf(job) {
   return titleCaseNama(
     job?.order?.customer?.name || job?.units?.[0]?.unit?.order?.customer?.name || null

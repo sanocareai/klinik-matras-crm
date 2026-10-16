@@ -15,7 +15,7 @@ import { useUnitLoadGate } from "../hooks/useUnitLoadGate";
 import { izinSelesai, progresMuatEfektif } from "../lib/manifestView";
 import JobProgressStepper from "./JobProgressStepper";
 import { performSubmit } from "../lib/submitJobAction";
-import { customerOf, customerPhoneOf, orderNumberOf, jobLabelOf, mapsUrl, waLinkFromPhone, estJamUntukTampilan, JOB_STATUS_REAL, COMPLAINT_CATEGORY_LABEL, produkLabelOf, salesPersonOf } from "../lib/jobHelpers";
+import { customerOf, customerPhoneOf, orderNumberOf, jobLabelOf, mapsUrl, waLinkFromPhone, estJamUntukTampilan, JOB_STATUS_REAL, COMPLAINT_CATEGORY_LABEL, produkLabelOf, salesPersonOf, overrideAdminInfo } from "../lib/jobHelpers";
 import { Package, User as UserIcon } from "lucide-react-native";
 import { useTheme } from "../hooks/useTheme";
 import { useAuth } from "../context/AuthContext";
@@ -86,6 +86,7 @@ export default function JobCard({ job, onChanged }) {
   const phone = customerPhoneOf(job);
   const waLink = waLinkFromPhone(phone);
   const maps = mapsUrl(job);
+  const overrideInfo = overrideAdminInfo(job);
   const estJam = estJamUntukTampilan(job.timeWindow);
   // Nama sales & label layanan/produk (17 September 2026, laporan owner:
   // "tambah nama sales, keterangan produk setiap card seperti di web route
@@ -242,6 +243,14 @@ export default function JobCard({ job, onChanged }) {
         </View>
       ) : null}
 
+      {overrideInfo ? (
+        <View style={[styles.complaintBanner, { backgroundColor: theme.ORANGE + "1A" }]} testID="override-admin-banner">
+          <Text style={[styles.complaintBannerText, { color: theme.ORANGE }]}>{overrideInfo.judul}</Text>
+          {overrideInfo.baris.map((o) => (
+            <Text key={o.kunci} style={[styles.detailLine, { marginTop: 2 }]}>📦 {o.teks}</Text>
+          ))}
+        </View>
+      ) : null}
       {estJam && <Text style={styles.detailLine}>🕗 {estJam}</Text>}
       {job.addressText ? <Text style={styles.detailLine} numberOfLines={2}>📍 {job.addressText}</Text> : null}
       {kota ? <Text style={styles.detailLine}>Kota: {kota}</Text> : null}
