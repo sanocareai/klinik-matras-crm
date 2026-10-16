@@ -13,6 +13,7 @@ import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import * as PT from "./setup/preTeardown.js";
 import { makeClient } from "./setup/httpClient.js";
 import { V2_FLAGS } from "../../src/services/v2FeatureFlags.js";
+import { buildDeliveryRouteSnapshot, DELIVERY_V2_ROUTE_INCLUDE, deliveryJobSource, deliveryV2Checksum } from "../../src/services/deliveryV2Snapshot.js";
 
 let server;
 let seq = 0;
@@ -607,4 +608,74 @@ test("P14. Penanda override dibawa juga oleh snapshot V2 Driver (cohort) dengan 
   assert.equal(jobs[0].overrideAdmin.length, 1); assert.equal(jobs[0].overrideAdmin[0].pickupLocationCode, w.fg.code); assert.match(jobs[0].labelOverrideAdmin, /override Admin/);
   const src = (await import("node:fs")).readFileSync(new URL("../../src/services/driverSnapshotV2.js", import.meta.url), "utf8");
   assert.match(src, /tandaiJobOverrideAdmin\(prisma, items\.flatMap\(\(item\) => item\.jobs\)\)/, "snapshot V2 Driver menandai job override");
+});
+
+// ───────────────────────── Driver V2 lewat HTTP dengan unit yang BENAR-BENAR ber-override (jalur app Driver RN) ─────────────────────────
+// Bukan pengganti uji HP nyata: ini membuktikan kontrak server (payload snapshot V2 + /my-jobs V1) yang akan dibaca app.
+async function aktifkanDriverV2() {
+  for (const k of [V2_FLAGS.DELIVERY_ROUTE_WRITER, V2_FLAGS.DELIVERY_EXECUTION_WRITER, V2_FLAGS.DRIVER_SNAPSHOT_READER]) {
+    await testPrisma.v2FeatureFlag.upsert({ where: { key: k }, create: { key: k, enabled: true, scope: "GLOBAL", config: {}, reason: "uji Driver V2 override" }, update: { enabled: true, scope: "GLOBAL", config: {} } });
+  }
+}
+// Job hasil override (dibuat suggestDeliveryJob) dipasang ke rute TERBIT milik driver + keadaan V2 (job/rute/publikasi) seperti seed uji Driver V2 yang ada.
+async function terbitkanJobDiV2(w, jobId) {
+  const route = await testPrisma.route.create({ data: { code: `AO-V2-${Date.now()}-${++seq}`, date: new Date("2026-10-20T00:00:00.000Z"), status: "PUBLISHED", publishedAt: new Date(), driverId: w.driver.user.id } });
+  const job = await testPrisma.job.update({ where: { id: jobId }, data: { routeId: route.id, driverId: w.driver.user.id, status: "ASSIGNED", sequence: 1, scheduledDate: new Date("2026-10-20T00:00:00.000Z") } });
+  await testPrisma.deliveryJobState.create({ data: { jobId: job.id, jobRevision: 1, currentStatus: job.status, sourceChecksum: deliveryV2Checksum(deliveryJobSource(job)), migrationSource: "TEST_BASELINE" } });
+  const fullRoute = await testPrisma.route.findUniqueOrThrow({ where: { id: route.id }, include: DELIVERY_V2_ROUTE_INCLUDE });
+  const snapshot = buildDeliveryRouteSnapshot(fullRoute, { routeRevision: 1, publicationVersion: 1 });
+  const checksum = deliveryV2Checksum(snapshot);
+  await testPrisma.deliveryRouteState.create({ data: { routeId: route.id, routeRevision: 1, currentPublicationVersion: 1, lifecycleStatus: route.status, draftSnapshot: snapshot, draftChecksum: checksum, sourceChecksum: checksum, migrationSource: "TEST_BASELINE" } });
+  await testPrisma.routePublication.create({
+    data: { routeId: route.id, publicationVersion: 1, routeRevision: 1, status: "ACTIVE", snapshot, checksum, migrationBaseline: true,
+      assignments: { create: [{ jobId: job.id, sequence: 1, driverId: w.driver.user.id, status: "ACTIVE", sourceChecksum: deliveryV2Checksum(snapshot.stops[0]) }] } },
+  });
+  return { route, job };
+}
+
+test("P15. DRIVER V2 via HTTP: unit yang benar-benar ber-override tampil di /armada/v2/me/snapshot dengan penanda jujur + lokasi pengambilan + status unit; parity dengan /my-jobs V1; job biasa tanpa penanda", async () => {
+  const w = await world(); const adm = await admin();
+  const A = await rikaLike(w);
+  const rel = await release(w, adm, A.unit, A.run); assert.equal(rel.status, 200, JSON.stringify(rel.body));
+  const jobId = (await jobDeliveryUnit(A.unit.id))[0].jobId;
+  await aktifkanDriverV2(); await terbitkanJobDiV2(w, jobId);
+
+  const v2 = await w.driver.api.get(`${ARM}/v2/me/snapshot`);
+  assert.equal(v2.status, 200, JSON.stringify(v2.body)); assert.equal(v2.body.mode, "FULL_SNAPSHOT");
+  const jobV2 = v2.body.items.flatMap((i) => i.jobs).find((j) => j.id === jobId);
+  assert.ok(jobV2, "job override MUNCUL di snapshot V2 Driver");
+  assert.equal(jobV2.overrideAdmin.length, 1); assert.equal(jobV2.overrideAdmin[0].unitCode, A.unit.unitCode); assert.equal(jobV2.overrideAdmin[0].pickupLocationCode, w.fg.code);
+  assert.equal(jobV2.overrideAdmin[0].decidedByName, adm.user.name); assert.equal(jobV2.overrideAdmin[0].runStatus, "ACTIVE");
+  assert.equal(jobV2.labelOverrideAdmin, "Siap Kirim — override Admin (pencatatan produksi belum selesai)");
+  assert.equal(jobV2.units[0].unit.status, "READY_FOR_DELIVERY", "status unit jujur: Siap Kirim"); // lokasi pengambilan yang dibaca app = overrideAdmin[].pickupLocationCode (select unit manifest V2 memang tidak memuat storageLocation)
+  assert.doesNotMatch(JSON.stringify({ o: jobV2.overrideAdmin, l: jobV2.labelOverrideAdmin }), /diperiksa|pemeriksa|inspector|QC lulus|lulus QC/i, "tanpa klaim pemeriksaan/QC");
+  // parity V1
+  const v1 = ok(await w.driver.api.get(`${ARM}/my-jobs`)); const jobV1 = v1.jobs.find((j) => j.id === jobId);
+  assert.ok(jobV1, "job override muncul di /my-jobs V1");
+  assert.deepEqual(jobV1.overrideAdmin.map((o) => [o.unitCode, o.pickupLocationCode]), jobV2.overrideAdmin.map((o) => [o.unitCode, o.pickupLocationCode]), "V1 = V2");
+  assert.equal(jobV1.labelOverrideAdmin, jobV2.labelOverrideAdmin);
+});
+
+test("P16. FAIL-SOFT di Driver V2 via HTTP: bila penanda override gagal dibaca, job TETAP muncul (status unit tetap benar) tanpa penanda; pulih setelah galat hilang", async () => {
+  const w = await world(); const adm = await admin();
+  const A = await rikaLike(w);
+  assert.equal((await release(w, adm, A.unit, A.run)).status, 200);
+  const jobId = (await jobDeliveryUnit(A.unit.id))[0].jobId;
+  await aktifkanDriverV2(); await terbitkanJobDiV2(w, jobId);
+  // Rusak SEMENTARA sumber penanda (kolom dinamai ulang -> kueri production_runs_v2 gagal); jalur snapshot/Driver tidak membaca tabel itu selain untuk penanda.
+  await testPrisma.$executeRawUnsafe('ALTER TABLE production_runs_v2 RENAME COLUMN delivery_released_at TO delivery_released_at_rusak');
+  try {
+    const v2 = await w.driver.api.get(`${ARM}/v2/me/snapshot`);
+    assert.equal(v2.status, 200, "snapshot V2 tidak boleh gagal hanya karena penanda tidak terbaca: " + JSON.stringify(v2.body));
+    const jobV2 = v2.body.items.flatMap((i) => i.jobs).find((j) => j.id === jobId);
+    assert.ok(jobV2, "job TETAP muncul di snapshot V2");
+    assert.deepEqual(jobV2.overrideAdmin, []); assert.equal(jobV2.labelOverrideAdmin, null);
+    assert.equal(jobV2.units[0].unit.status, "READY_FOR_DELIVERY", "status unit tetap benar walau penanda gagal");
+    const v1 = await w.driver.api.get(`${ARM}/my-jobs`);
+    assert.equal(v1.status, 200, "/my-jobs V1 tidak boleh gagal: " + JSON.stringify(v1.body)); assert.ok(v1.body.jobs.some((j) => j.id === jobId), "job TETAP muncul di /my-jobs");
+  } finally {
+    await testPrisma.$executeRawUnsafe('ALTER TABLE production_runs_v2 RENAME COLUMN delivery_released_at_rusak TO delivery_released_at');
+  }
+  const pulih = await w.driver.api.get(`${ARM}/v2/me/snapshot`);
+  assert.equal(pulih.status, 200); assert.equal(pulih.body.items.flatMap((i) => i.jobs).find((j) => j.id === jobId).overrideAdmin.length, 1, "penanda kembali setelah galat hilang");
 });
