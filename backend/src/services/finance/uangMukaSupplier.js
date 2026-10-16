@@ -12,6 +12,8 @@ import { toMoney, sumMoney, moneyToNumber, ZERO } from "./money.js";
 import { generateDocumentNumber, reverseJournal, toBookDate } from "./journal.js";
 import { postPurchaseApproved } from "./posting/purchase.js";
 import { postUangMukaDiterapkanKeFaktur } from "./posting/uangMukaSupplier.js";
+import { hitungProgresPO } from "./progresPO.js";
+import { hitungStatusEmpat, KALIMAT_SIMPAN_KE_STOK } from "./statusEmpatPO.js";
 import { recomputeBillStatus } from "./posting/supplier.js";
 import { hitungBiayaTransfer } from "./transferFee.js";
 import { pastikanBelumDirekonsiliasi } from "./koreksiGate.js";
@@ -32,6 +34,8 @@ const uang = (d) => moneyToNumber(d);
 
 /** Definisi tiap angka — dikirim server supaya semua layar (kartu, detail, tooltip, Excel) memakai arti yang sama. */
 export const DEFINISI_KEUANGAN_PO = Object.freeze([
+  { kunci: "totalFakturDisetujui", label: "Total faktur disetujui", definisi: "Σ faktur supplier atas PO ini yang sudah DISETUJUI Finance. Faktur draf/menunggu persetujuan belum dihitung; Simpan ke Stok tidak menyetujui faktur." },
+  { kunci: "sudahDibayar", label: "Sudah dibayar", definisi: "Kas yang benar-benar keluar ke supplier untuk PO ini: uang muka + pembayaran atas faktur. Penerapan uang muka ke faktur bukan kas keluar kedua. Biaya admin bank tidak termasuk." },
   { kunci: "nilaiPO", label: "Nilai PO", definisi: "Total komitmen pembelian pada PO (jumlah dipesan × harga satuan). Bukan utang." },
   { kunci: "uangMukaDibayar", label: "Uang muka dibayar", definisi: "Total uang muka yang sudah dibayar ke supplier untuk PO ini (tidak termasuk biaya admin bank). Aset: Uang Muka Supplier. Bukan stok, bukan biaya, bukan utang." },
   { kunci: "sudahDitagih", label: "Sudah ditagih", definisi: "Total nilai faktur supplier atas PO ini yang sudah DISETUJUI. Faktur belum disetujui tidak dihitung." },
@@ -159,13 +163,21 @@ export async function daftarPenerapan(db, { billId = null, purchaseOrderId = nul
 export async function ringkasanKeuanganPO(db, poId) {
   const po = await db.finPurchaseOrder.findUnique({ where: { id: poId }, select: { id: true, status: true, supplierId: true } });
   if (!po) return null;
-  const [nilai, dps, faktur] = await Promise.all([
+  const [nilai, dps, faktur, fakturSemua, alokasiBayar, progresMap] = await Promise.all([
     nilaiPO(db, poId),
     db.finPurchase.findMany({ where: dpWhere({ purchaseOrderId: poId, status: "DIBAYAR" }), orderBy: [{ date: "asc" }, { createdAt: "asc" }], include: dpInclude }),
     db.finSupplierBill.findMany({
       where: { purchaseOrderId: poId, status: { in: STATUS_FAKTUR_AKTIF } },
       select: { id: true, billNumber: true, supplierRef: true, status: true, amount: true, creditApplied: true, allocations: { where: { payment: { cancelledAt: null } }, select: { amount: true } } },
     }),
+    db.finSupplierBill.findMany({ where: { purchaseOrderId: poId }, select: { id: true, status: true } }),
+    // Riwayat pembayaran atas faktur PO ini (termasuk yang dibatalkan, ditandai) — satu sumber dengan tab Pembayaran di Supplier & Utang.
+    db.finSupplierPaymentAllocation.findMany({
+      where: { bill: { purchaseOrderId: poId } },
+      orderBy: [{ payment: { date: "asc" } }, { createdAt: "asc" }],
+      select: { amount: true, bill: { select: { id: true, billNumber: true, supplierRef: true } }, payment: { select: { id: true, paymentNumber: true, date: true, paymentMethod: true, reference: true, cancelledAt: true, cashAccount: { select: { name: true } } } } },
+    }),
+    hitungProgresPO(db, poId),
   ]);
   const peta = await saldoDpMap(db, dps.map((d) => d.id));
   const uangMukaDibayar = sumMoney(dps.map((d) => d.amount));
@@ -184,8 +196,29 @@ export async function ringkasanKeuanganPO(db, poId) {
   const sisaKomitmen = mentah.isNegative() ? ZERO : mentah;
   const kelebihan = mentah.isNegative() ? mentah.negated() : ZERO;
   const dibatalkanAdaUangMuka = po.status === "DIBATALKAN" && belumDiterapkan.greaterThan(0);
+  const statusEmpat = hitungStatusEmpat({
+    statusPO: po.status, barang: [...progresMap.values()], nilaiPO: nilai, fakturSemua,
+    sudahDitagih: uang(sudahDitagih), utangTercatat: uang(utangTercatat), sisaUtang: uang(sisaUtang),
+    uangMukaDibayar: uang(uangMukaDibayar), uangMukaBelumDiterapkan: uang(belumDiterapkan), dibayarAtasFaktur: uang(dibayar),
+  });
+  const riwayatPembayaran = [
+    ...dps.map((d) => ({
+      jenis: "UANG_MUKA", nomor: d.purchaseNumber, tanggal: d.date, jumlah: uang(d.amount), rekening: d.cashAccount?.name ?? null, metode: d.paymentMethod ?? null,
+      referensi: d.paymentReference ?? null, faktur: null, dibatalkan: false, tautan: { halaman: "pembelian", cari: d.purchaseNumber },
+    })),
+    ...alokasiBayar.map((a) => ({
+      jenis: "PEMBAYARAN_FAKTUR", nomor: a.payment.paymentNumber, tanggal: a.payment.date, jumlah: uang(a.amount), rekening: a.payment.cashAccount?.name ?? null, metode: a.payment.paymentMethod ?? null,
+      referensi: a.payment.reference ?? null, faktur: { id: a.bill.id, nomor: a.bill.supplierRef || a.bill.billNumber }, dibatalkan: !!a.payment.cancelledAt, tautan: { halaman: "pembayaran", cari: a.payment.paymentNumber },
+    })),
+  ].sort((x, y) => String(x.tanggal).localeCompare(String(y.tanggal)) || (x.jenis === y.jenis ? 0 : x.jenis === "UANG_MUKA" ? -1 : 1) || x.nomor.localeCompare(y.nomor)); // tanggal sama: uang muka lebih dulu (urutan logis alur)
   return {
     nilaiPO: nilai,
+    // Total ringkas yang diminta Finance: nilai PO, faktur disetujui, sudah dibayar (kas keluar: uang muka + pembayaran atas faktur), sisa utang.
+    totalFakturDisetujui: uang(sudahDitagih),
+    sudahDibayar: statusEmpat.sudahDibayar,
+    statusEmpat: { barang: statusEmpat.barang, faktur: statusEmpat.faktur, utang: statusEmpat.utang, pembayaran: statusEmpat.pembayaran },
+    petunjukSimpanKeStok: KALIMAT_SIMPAN_KE_STOK,
+    riwayatPembayaran,
     uangMukaDibayar: uang(uangMukaDibayar),
     sudahDitagih: uang(sudahDitagih),
     uangMukaDiterapkan: uang(diterapkanKeFakturPO),

@@ -124,7 +124,7 @@ test("PO 6 jt + uang muka 4 jt, barang belum datang: bank −4 jt, Dr Uang Muka 
   const d = await keu(w, po);
   assert.deepEqual([d.totalDipesan, d.totalDatang, d.totalBelumDatang, d.totalDiterima, d.totalDitagih], [6_000_000, 0, 6_000_000, 0, 0], "barang datang Rp0, masuk stok Rp0, ditagih Rp0");
   assert.equal(d.keuangan.sisaKomitmen, 2_000_000); assert.equal(d.keuangan.utangTercatat, 0);
-  assert.deepEqual(d.keuangan.definisi.map((x) => x.kunci), ["nilaiPO", "uangMukaDibayar", "sudahDitagih", "uangMukaDiterapkan", "uangMukaBelumDiterapkan", "utangTercatat", "dibayarAtasFaktur", "sisaUtang", "sisaKomitmen"]);
+  assert.deepEqual(d.keuangan.definisi.map((x) => x.kunci), ["totalFakturDisetujui", "sudahDibayar", "nilaiPO", "uangMukaDibayar", "sudahDitagih", "uangMukaDiterapkan", "uangMukaBelumDiterapkan", "utangTercatat", "dibayarAtasFaktur", "sisaUtang", "sisaKomitmen"]);
   assert.ok(d.keuangan.definisi.every((x) => x.definisi.length > 20), "tiap angka punya definisi (tooltip)");
   assert.match(d.keuangan.definisi.find((x) => x.kunci === "sisaKomitmen").definisi, /BUKAN utang/);
   assert.equal(d.riwayat.some((e) => e.type === "UANG_MUKA_DIBAYAR"), true);
