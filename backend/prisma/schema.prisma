@@ -5241,6 +5241,7 @@ enum MaterialCategory {
 
 model Material {
   supplierReturnLines SupplierReturnLine[]
+  riwayatReferensi    StokRiwayatReferensi[]
   id          String       @id @default(uuid()) @db.Uuid
   code        String       @unique // mis. "FOAM-HR-D44-5CM", "FABRIC-KNIT-QUILT"
   name        String
@@ -10953,4 +10954,67 @@ model PkrOrderItemUnit {
 
   @@index([itemId])
   @@map("pkr_order_item_units")
+}
+
+// ─── RIWAYAT REFERENSI HISTORIS DARI FILE (Okt 2026) ────────────────────────
+//
+// CATATAN REFERENSI, BUKAN TRANSAKSI. Tabel ini menyimpan apa yang tertulis di file Gudang (rekap pemakaian per order, log pembelian) agar bisa DILIHAT di SANSS
+// per order dan Material ID. Ia TIDAK pernah menulis/mengubah stock_movements, saldo, GR, Material Issue, adjustment, atau jurnal, dan tidak ada kode yang membaca tabel ini
+// untuk menghitung saldo. Tanggal pemakaian SENGAJA kosong (tanggal_pemakaian selalu NULL): tanggal di file adalah tanggal ORDER, label bulan (SEP/OKT) tidak terbukti.
+// Append-only: trigger menolak DELETE dan UPDATE selain membalik aktif=false saat ada revisi baru (riwayat revisi tetap).
+model StokRiwayatImpor {
+  id              String   @id @default(uuid()) @db.Uuid
+  waktuImpor      DateTime @default(now()) @map("waktu_impor")
+  diimporOleh     String?  @map("diimpor_oleh")
+  berkasPemakaian String?  @map("berkas_pemakaian")
+  hashPemakaian   String?  @map("hash_pemakaian")
+  berkasPembelian String?  @map("berkas_pembelian")
+  hashPembelian   String?  @map("hash_pembelian")
+  hashAlias       String?  @map("hash_alias")
+  hashKonten      String   @map("hash_konten")
+  mulaiT0         DateTime? @map("mulai_t0")
+  ringkasan       Json
+  baris           StokRiwayatReferensi[]
+
+  @@index([waktuImpor])
+  @@map("stok_riwayat_impor")
+}
+
+model StokRiwayatReferensi {
+  id               String           @id @default(uuid()) @db.Uuid
+  imporId          String           @map("impor_id") @db.Uuid
+  impor            StokRiwayatImpor @relation(fields: [imporId], references: [id], onDelete: Restrict)
+  kunci            String
+  revisi           Int              @default(1)
+  aktif            Boolean          @default(true)
+  kontenHash       String           @map("konten_hash")
+  jenis            String // PEMAKAIAN_ORDER | PENERIMAAN_TERBUKTI_TANPA_GR
+  materialId       String?          @map("material_id") @db.Uuid
+  material         Material?        @relation(fields: [materialId], references: [id], onDelete: Restrict)
+  namaDiFile       String           @map("nama_di_file")
+  nomorOrder       String?          @map("nomor_order")
+  jumlah           Decimal?         @db.Decimal(14, 3) // NULL = jumlah di file tidak terbaca (antrean ANGKA_TIDAK_VALID); bukan nol
+  satuanFile       String           @map("satuan_file")
+  satuanMaster     String?          @map("satuan_master")
+  tanggalOrder     DateTime?        @map("tanggal_order") @db.Date
+  tanggalPemakaian DateTime?        @map("tanggal_pemakaian") @db.Date // SELALU NULL: tidak ada bukti tanggal pemakaian
+  tanggalKirim     DateTime?        @map("tanggal_kirim") @db.Date // hanya PENERIMAAN: tanggal kirim AKTUAL dari log pembelian
+  suratJalan       String?          @map("surat_jalan")
+  vendor           String?
+  labelBulanFile   String?          @map("label_bulan_file") // mentah dari file, BUKAN bukti waktu
+  sumberFile       String           @map("sumber_file")
+  sumberBaris      Int[]            @map("sumber_baris")
+  statusVerifikasi String           @map("status_verifikasi") // BELUM_DIVERIFIKASI | SUDAH_ADA_DI_RESMI | ADA_DOKUMEN_RESMI_BELUM_DIPOSTING | PERLU_PEMERIKSAAN | PERLU_PENYELESAIAN
+  antrean          String? // null = bukan antrean; TANPA_PASANGAN | PEMETAAN_PERLU_KONFIRMASI | NAMA_MASTER_GANDA | SATUAN_BEDA | SATUAN_CAMPUR | ANGKA_TIDAK_VALID
+  alasanBlocker    String[]         @map("alasan_blocker")
+  peringatan       String[]
+  dokumenResmi     Json?            @map("dokumen_resmi")
+  dibuatPada       DateTime         @default(now()) @map("dibuat_pada")
+
+  @@unique([kunci, revisi])
+  @@index([materialId])
+  @@index([nomorOrder])
+  @@index([aktif, statusVerifikasi])
+  @@index([aktif, antrean])
+  @@map("stok_riwayat_referensi")
 }

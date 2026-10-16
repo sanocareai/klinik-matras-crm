@@ -14,8 +14,13 @@ export function dariDump(dir) {
   const pendingFull = tabel("pending").map((p) => ({ jenis: p.jenis, dok: p.dok, status: p.status, materialCode: p.material_code, qty: Number(p.q3 || p.q2 || p.q1) || null }));
   const pending = pendingFull.map((p) => ({ materialCode: p.materialCode, dok: p.dok, status: p.status }));
   const locations = tabel("locations").map((l) => ({ code: l.code, zone: l.zone, locationType: l.location_type, active: l.active === "t" }));
+  const ada = (n) => fs.existsSync(path.join(dir, `out_${n}.csv`));
+  const num = (v) => (v === "" || v == null ? null : Number(v));
+  const grLines = ada("gr_detail") ? tabel("gr_detail").map((g) => ({ receiptNumber: g.receipt_number, status: g.status, arrivedDate: g.arrived || null, receivedDate: g.received || null, suratJalan: g.surat_jalan, buktiFoto: Number(g.bukti_foto), materialCode: g.material_code, orderedQty: num(g.ordered_qty), receivedQty: num(g.received_qty), acceptedQty: num(g.accepted_qty), poNumber: g.po_number })) : [];
+  const issueLedger = ada("issue_ledger") ? tabel("issue_ledger").map((x) => ({ materialCode: x.material_code, qty: Number(x.qty), unitCode: x.unit_code, note: x.note, createdAt: new Date(x.created_at) })) : [];
+  const poLines = ada("po_lines") ? tabel("po_lines").map((p) => ({ poNumber: p.po_number, status: p.status, supplier: p.supplier, materialCode: p.material_code, qty: Number(p.qty), unit: p.unit })) : [];
   const stempel = fs.existsSync(path.join(dir, "_stempel.txt")) ? fs.readFileSync(path.join(dir, "_stempel.txt"), "utf8").trim() : "";
-  return { materials, ledger, pending, pendingFull, locations, stempel };
+  return { materials, ledger, pending, pendingFull, locations, grLines, issueLedger, poLines, stempel };
 }
 
 export async function dariDb() {
@@ -35,7 +40,13 @@ export async function dariDb() {
     }
     const pendingFull = await muatDokumenTertunda(tx);
     const locs = await tx.storageLocation.findMany({ select: { code: true, zone: true, locationType: true, active: true } });
-    return { materials, ledger, pendingFull, pending: pendingFull.map((p) => ({ materialCode: p.materialCode, dok: p.dok, status: p.status })), locations: locs.map((l) => ({ code: l.code, zone: l.zone, locationType: String(l.locationType), active: l.active })) };
+    const grRaw = await tx.$queryRaw`SELECT g.receipt_number AS "receiptNumber", g.status::text AS status, to_char(g.arrived_date,'YYYY-MM-DD') AS "arrivedDate", to_char(g.received_date,'YYYY-MM-DD') AS "receivedDate", COALESCE(g.delivery_note,'') AS "suratJalan", COALESCE(array_length(g.arrival_proof_urls,1),0)::int AS "buktiFoto", m.code AS "materialCode", l.ordered_qty::float AS "orderedQty", l.received_qty::float AS "receivedQty", l.accepted_qty::float AS "acceptedQty", COALESCE(po.po_number,'') AS "poNumber" FROM goods_receipt_lines l JOIN goods_receipts g ON g.id=l.goods_receipt_id JOIN materials m ON m.id=l.material_id LEFT JOIN fin_purchase_orders po ON po.id=g.purchase_order_id ORDER BY g.created_at, m.code`;
+    const issRaw = await tx.$queryRaw`SELECT m.code AS "materialCode", sm.qty::float AS qty, COALESCE(u.unit_code,'') AS "unitCode", COALESCE(sm.note,'') AS note, sm.created_at AS "createdAt" FROM stock_movements sm JOIN materials m ON m.id=sm.material_id LEFT JOIN units u ON u.id=sm.unit_id WHERE sm.type='ISSUE' ORDER BY sm.created_at`;
+    const poRaw = await tx.$queryRaw`SELECT po.po_number AS "poNumber", po.status::text AS status, COALESCE(s.name,'') AS supplier, m.code AS "materialCode", l.qty::float AS qty, l.unit FROM fin_purchase_order_lines l JOIN fin_purchase_orders po ON po.id=l.purchase_order_id JOIN materials m ON m.id=l.material_id LEFT JOIN fin_suppliers s ON s.id=po.supplier_id ORDER BY po.created_at`;
+    const grLines = grRaw.map((g) => ({ ...g, arrivedDate: g.arrivedDate || null, receivedDate: g.receivedDate || null }));
+    const issueLedger = issRaw.map((x) => ({ ...x, createdAt: new Date(x.createdAt) }));
+    const poLines = poRaw;
+    return { grLines, issueLedger, poLines, materials, ledger, pendingFull, pending: pendingFull.map((p) => ({ materialCode: p.materialCode, dok: p.dok, status: p.status })), locations: locs.map((l) => ({ code: l.code, zone: l.zone, locationType: String(l.locationType), active: l.active })) };
   }, { timeout: 60_000 });
   await prisma.$disconnect();
   return { ...r, stempel: `db ${new Date().toISOString()}` };

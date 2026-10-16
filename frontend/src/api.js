@@ -711,6 +711,13 @@ export const api = {
     request(`/inventory/stock-counts/${countId}/pergerakan/${movementId}/tanda`, { method: "POST", body: JSON.stringify({ tercermin }) }),
   // Pemeriksa = akun LAIN yang memeriksa hasil hitung yang sudah diserahkan; identitas dari login, bukan nama ketikan.
   periksaHitungan: (countId, catatan) => request(`/inventory/stock-counts/${countId}/periksa`, { method: "POST", body: JSON.stringify({ catatan }) }),
+  // Riwayat referensi historis dari file (catatan REFERENSI; bukan transaksi/saldo)
+  getRiwayatReferensi: (params = {}) => { const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== "" && v != null)).toString(); return request(`/inventory/riwayat-referensi${qs ? `?${qs}` : ""}`); },
+  getRiwayatReferensiRingkasan: () => request("/inventory/riwayat-referensi/ringkasan"),
+  getRiwayatReferensiMaterial: (materialId) => request(`/inventory/riwayat-referensi/material/${materialId}`),
+  pratinjauRiwayatReferensi: (body) => request("/inventory/riwayat-referensi/pratinjau", { method: "POST", body: JSON.stringify(body) }),
+  segarkanRiwayatReferensi: () => request("/inventory/riwayat-referensi/segarkan", { method: "POST", body: JSON.stringify({ konfirmasi: true }) }),
+  imporRiwayatReferensi: (body) => request("/inventory/riwayat-referensi/impor", { method: "POST", body: JSON.stringify(body) }),
   cancelStockCount: (id, reason) => request(`/inventory/stock-counts/${id}/cancel`, { method: "PATCH", body: JSON.stringify({ reason }) }),
 
   // Damaged Stock (Warehouse Tahap 6)
