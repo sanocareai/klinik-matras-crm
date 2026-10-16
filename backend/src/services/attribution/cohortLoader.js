@@ -19,19 +19,26 @@ const potong = (arr, n = UKURAN_CHUNK) => { const o = []; for (let i = 0; i < ar
 
 /**
  * @param {object} db  PrismaClient (hanya dibaca)
- * @param {{leadFrom?: string, leadTo?: string}} [rentang]  YYYY-MM-DD (hari WIB, inklusif). Kosong = semua customer.
+ * @param {{leadFrom?: string, leadTo?: string, customerIds?: string[]}} [rentang]  YYYY-MM-DD (hari WIB, inklusif). Kosong = semua customer.
+ *   `customerIds` (Fase 2 atribusi): hanya customer itu (tanpa filter tanggal) — aturan uang/tagihan/refund TETAP yang sama.
  */
-export async function muatMasukanKohort(db, { leadFrom, leadTo } = {}) {
-  const whereCust = {};
-  if (leadFrom || leadTo) {
-    whereCust.createdAt = {};
-    if (leadFrom) whereCust.createdAt.gte = startOfDayWIB(leadFrom);
-    if (leadTo) whereCust.createdAt.lt = endOfDayExclusiveWIB(leadTo);
+export async function muatMasukanKohort(db, { leadFrom, leadTo, customerIds } = {}) {
+  const select = { id: true, createdAt: true, pipelineStage: true, leadSource: true, isInternalStaff: true, staffUserId: true };
+  let customers;
+  if (Array.isArray(customerIds)) {
+    customers = [];
+    for (const part of potong([...new Set(customerIds)])) {
+      customers.push(...await db.customer.findMany({ where: { id: { in: part } }, select }));
+    }
+  } else {
+    const whereCust = {};
+    if (leadFrom || leadTo) {
+      whereCust.createdAt = {};
+      if (leadFrom) whereCust.createdAt.gte = startOfDayWIB(leadFrom);
+      if (leadTo) whereCust.createdAt.lt = endOfDayExclusiveWIB(leadTo);
+    }
+    customers = await db.customer.findMany({ where: whereCust, select });
   }
-  const customers = await db.customer.findMany({
-    where: whereCust,
-    select: { id: true, createdAt: true, pipelineStage: true, leadSource: true, isInternalStaff: true, staffUserId: true },
-  });
   const ids = customers.map((c) => c.id);
 
   const transisi = [];

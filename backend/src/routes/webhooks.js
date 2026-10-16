@@ -22,6 +22,7 @@ import { idPesanInti } from "../utils/idPesanWa.js";
 import { cariPesanSudahAda } from "../utils/cariPesanSudahAda.js";
 import { fieldPosterVideo } from "../utils/videoThumb.js";
 import { captureInbound } from "../services/ctwaCapture.js";
+import { siapkanTouch, simpanPesanDenganTouch } from "../services/attribution/touchCapture.js";
 
 export const webhookRouter = express.Router();
 
@@ -478,6 +479,7 @@ async function handleGroupMessage(payload, groupJid, externalId, sessionName) {
 // "message.any" (fromMe:false). Return "saved" kalau berhasil, "skip-dupe"
 // kalau race condition P2002 kejar duluan disimpan request lain.
 async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, mediaInfo, externalId, sessionName, event, engine }) {
+  const mulaiProses = new Date();   // bukti kausal atribusi: ada/tidaknya baris Customer SEBELUM handler ini mulai (lihat services/attribution/touchCapture.js)
   // Deteksi sumber lead (3 lapis) — hanya untuk customer BARU
   const existingCustomer = await prisma.customer.findUnique({ where: { phone } });
 
@@ -779,26 +781,37 @@ async function handleInboundMessage({ payload, phone, pushName, text, hasMedia, 
     if (!mediaUrl) console.warn("[webhook] Tidak bisa download media untuk id:", externalId, "tipe:", mediaType, "— simpan placeholder:", content);
   }
 
+  // ATRIBUSI FASE 2 — rencana touch iklan (sinkron, tanpa I/O, tidak pernah melempar; null bila flag MATI / bukan sinyal iklan valid).
+  // Touch ditulis ATOMIK bersama Message di bawah: Ad ID hanya ada di payload ini, jadi harus ikut commit dengan pesan (lihat touchCapture.js).
+  const rencanaTouch = siapkanTouch({ payload, event, engine, externalId });
+
   // Simpan pesan — P2002 berarti request concurrent sudah simpan duluan, skip saja
   let inboundMsg;
   try {
     const replyToId = await resolveReplyToId(parsedMedia.quotedExternalId, conversation.id);
-    inboundMsg = await prisma.message.create({
-      data: {
-        conversationId: conversation.id,
-        direction:      "INBOUND",
-        content,
-        mediaType,
-        mediaUrl,
-        externalId,
-        rawType: parsedMedia.rawType || null,
-        replyToId,
-        ...(await fieldPosterVideo(uploadsDir, mediaUrl, mediaType)),
-      },
-      // include replyTo — lihat catatan sama di handleGroupMessage: tanpa ini
-      // efek kutipan cuma muncul setelah reload, bukan live via Socket.IO.
-      include: { replyTo: { select: { id: true, content: true, direction: true, mediaType: true, isRevoked: true } } },
-    });
+    const posterVideo = await fieldPosterVideo(uploadsDir, mediaUrl, mediaType);
+    ({ message: inboundMsg } = await simpanPesanDenganTouch(prisma, {
+      rencana: rencanaTouch,
+      customer,
+      customerSudahAda: !!existingCustomer,
+      mulaiProses,
+      buatPesan: (client) => client.message.create({
+        data: {
+          conversationId: conversation.id,
+          direction:      "INBOUND",
+          content,
+          mediaType,
+          mediaUrl,
+          externalId,
+          rawType: parsedMedia.rawType || null,
+          replyToId,
+          ...posterVideo,
+        },
+        // include replyTo — lihat catatan sama di handleGroupMessage: tanpa ini
+        // efek kutipan cuma muncul setelah reload, bukan live via Socket.IO.
+        include: { replyTo: { select: { id: true, content: true, direction: true, mediaType: true, isRevoked: true } } },
+      }),
+    }));
   } catch (e) {
     if (e.code !== "P2002") throw e;
     return "skip-dupe";
