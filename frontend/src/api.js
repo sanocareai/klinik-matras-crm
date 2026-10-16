@@ -1354,6 +1354,8 @@ export const api = {
   // Rincian per iklan/kreatif spesifik (bukan cuma per platform) — lihat
   // catatan panjang di backend/src/routes/analytics.js.
   getLeadSourceDetail: (params) => request("/analytics/lead-source-detail" + buildQuery(params)),
+  // Atribusi iklan per campaign (ADMIN, baca-saja). dari/sampai kosong = 7 hari terakhir (bawaan server).
+  getAtribusiIklan: (params) => request("/atribusi/iklan" + buildQuery(params)),
   getSalesPerformance: (params) => request("/analytics/sales-performance" + buildQuery(params)),
   // AI Conversation Quality Scorer (26 Agustus 2026) — pelengkap
   // audit_balasan_sales, laporan TERPISAH utk validasi manual dulu.
