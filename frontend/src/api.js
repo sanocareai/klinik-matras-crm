@@ -854,7 +854,7 @@ export const api = {
   getProductionV2FinishedGoodsLocations: (runId) => request(`/production-v2/runs/${runId}/confirm-finished-goods/locations`),
   confirmProductionV2FinishedGoods: (runId, data = {}, idempotencyKey = mutationKey("kbj")) =>
     request(`/production-v2/runs/${runId}/confirm-finished-goods`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
-  // Tandai Siap Kirim berdasarkan pemeriksaan fisik (PENGECUALIAN Admin/Owner; Run Produksi TIDAK ditutup): pratinjau baca-saja + perintah (alasan, kode unit, lokasi, pemeriksa, verifikasi fisik wajib).
+  // Admin override: Siap Kirim saat pencatatan produksi belum selesai (Admin/Owner; Run Produksi TIDAK ditutup; keputusan Admin, bukan hasil pemeriksaan): pratinjau baca-saja + perintah (alasan, kode unit, lokasi pengambilan, konfirmasi override wajib).
   getOrderUnitsList: (orderId) => request(`/orders/${orderId}/units`),
   getProductionV2DeliveryRelease: (unitId) => request(`/production-v2/units/${unitId}/delivery-release`),
   releaseProductionV2UnitForDelivery: (unitId, data = {}, idempotencyKey = mutationKey("pf")) =>

@@ -242,6 +242,14 @@ export default function JobCard({ job, onChanged }) {
         </View>
       ) : null}
 
+      {Array.isArray(job.overrideAdmin) && job.overrideAdmin.length > 0 ? (
+        <View style={[styles.complaintBanner, { backgroundColor: theme.ORANGE + "1A" }]} testID="override-admin-banner">
+          <Text style={[styles.complaintBannerText, { color: theme.ORANGE }]}>Siap Kirim — override Admin (pencatatan produksi belum selesai)</Text>
+          {job.overrideAdmin.map((o) => (
+            <Text key={o.unitId} style={[styles.detailLine, { marginTop: 2 }]}>📦 {o.unitCode}: ambil di {o.pickupLocationCode || "lokasi belum tercatat"}</Text>
+          ))}
+        </View>
+      ) : null}
       {estJam && <Text style={styles.detailLine}>🕗 {estJam}</Text>}
       {job.addressText ? <Text style={styles.detailLine} numberOfLines={2}>📍 {job.addressText}</Text> : null}
       {kota ? <Text style={styles.detailLine}>Kota: {kota}</Text> : null}

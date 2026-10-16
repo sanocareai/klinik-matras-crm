@@ -612,7 +612,7 @@ export async function completeAdaptationRunInTx(tx, { runId, actorId = null, now
   await assertRunPhasesTerminal(tx, run.id, { requireHandoffCompleted: false });
   const revision = run.revision + 1;
   await tx.productionRun.update({ where: { id: run.id }, data: { status: "COMPLETED", completedAt: now, revision } });
-  // Unit yang SUDAH dilepas untuk pengiriman lewat pengecualian pemeriksaan fisik: penutupan Run bersifat administratif — status unit, order, lokasi dan job pengiriman TIDAK disentuh
+  // Unit yang SUDAH dilepas untuk pengiriman lewat Admin override Siap Kirim: penutupan Run bersifat administratif — status unit, order, lokasi dan job pengiriman TIDAK disentuh
   // (tidak ada job ganda, status tidak mundur/maju). Selain itu unit dilepas ke Delivery di sini (jalur normal).
   const sudahDilepas = isDeliveryReleased(run);
   if (!sudahDilepas) await markUnitReadyForDeliveryInTx(tx, run.unitId);

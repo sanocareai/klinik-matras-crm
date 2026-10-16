@@ -1,6 +1,6 @@
-// PELEPASAN UNIT UNTUK PENGIRIMAN LEWAT PENGECUALIAN PEMERIKSAAN FISIK (16 Okt 2026, kasus RES-03102026-018-U1) — HTTP + PostgreSQL nyata.
+// ADMIN OVERRIDE: SIAP KIRIM SAAT PENCATATAN PRODUKSI BELUM SELESAI (16 Okt 2026, kasus RES-03102026-018-U1) — HTTP + PostgreSQL nyata. Keputusan Admin/Owner, BUKAN klaim pemeriksaan/QC.
 // Keadaan Rika direplikasi: run adaptasi AKTIF, tahap 1–5 + gerbang QC dilewati, tahap 9 tercatat, tahap Corner 10–12 TIDAK dicatat, unit IN_PRODUCTION.
-// Dikunci: izin Admin/Owner, validasi wajib, Run/tahap TIDAK diubah, tanpa QC/foto/custody/stok palsu, status unit/order/job/Route Planner konsisten, multi-unit per unit, replay, konkurensi,
+// Dikunci: izin Admin/Owner, validasi wajib (alasan, kode unit, lokasi pengambilan sah, konfirmasi override; TANPA pemeriksa/centang pemeriksaan fisik), tidak ada klaim pemeriksaan/QC di rekam/aktivitas/respons, penanda jujur di Route Planner & app Driver, Run/tahap TIDAK diubah, tanpa QC/foto/custody/stok palsu, status unit/order/job/Route Planner konsisten, multi-unit per unit, replay, konkurensi,
 // rollback transaksi, penutupan Run kemudian tanpa job ganda, penolakan command tahap pada Run yang sudah dilepas.
 import "./setup/env.js";
 import "./setup/productionEvidenceTmpEnv.js";
@@ -169,9 +169,9 @@ const hitung = async (unitId, runId) => ({
 });
 
 
-// ──────────────────────────────── PENGECUALIAN "Tandai Siap Kirim berdasarkan pemeriksaan fisik" ────────────────────────────────
+// ──────────────────────────────── ADMIN OVERRIDE "Siap Kirim saat pencatatan produksi belum selesai" ────────────────────────────────
 const REL = (unitId) => `${V2}/units/${unitId}/delivery-release`;
-const relBody = (w, unit, rev, over = {}) => ({ expectedRevision: rev, unitCode: unit.unitCode, locationId: w.fg.id, reason: "Barang sudah dilihat langsung di area barang jadi, tahap belum dicatat", physicalVerified: true, ...over });
+const relBody = (w, unit, rev, over = {}) => ({ expectedRevision: rev, unitCode: unit.unitCode, locationId: w.fg.id, reason: "Owner menetapkan siap kirim; pencatatan Run produksi masih dalam pengembangan", adminOverrideConfirmed: true, ...over });
 async function release(w, who, unit, run, { tag = `rel-${++seq}`, rev, ...over } = {}) {
   const expectedRevision = rev ?? (await card(w, run.id)).revision;
   return who.api.post(REL(unit.id), relBody(w, unit, expectedRevision, over), key(tag));
@@ -198,14 +198,14 @@ test("P1. KASUS RIKA: Admin melepas unit — unit/order Siap Kirim, Run & tahap 
   const pv = ok(await adm.api.get(REL(unit.id)));
   assert.equal(pv.eligible, true, JSON.stringify(pv.blockers)); assert.equal(pv.run.id, run.id); assert.equal(pv.unit.status, "IN_PRODUCTION"); assert.equal(pv.order.status, "PROCESSING");
   assert.ok(pv.locations.some((l) => l.id === w.fg.id)); assert.ok(pv.locations.every((l) => ["FINISHED_GOODS_AREA", "DISPATCH_AREA"].includes(l.locationType)), "hanya lokasi barang jadi/dispatch");
-  assert.ok(pv.inspectors.some((i) => i.id === adm.user.id) || pv.inspectors.length >= 1);
+  assert.equal(pv.inspectors, undefined, "tidak ada daftar pemeriksa"); assert.match(pv.decision, /Admin menetapkan unit siap untuk proses pengiriman saat pencatatan produksi belum selesai/);
   assert.deepEqual(pv.siblings.map((s) => s.thisUnit), [true]);
 
   const sebelumRun = await snapRun(run.id); const sebelumLain = await efekLain(unit.id, run.id);
   const revSebelum = (await card(w, run.id)).revision;
   const res = await release(w, adm, unit, run);
   assert.equal(res.status, 200, JSON.stringify(res.body));
-  assert.equal(res.body.unitStatus, "READY_FOR_DELIVERY"); assert.equal(res.body.orderStatus, "READY"); assert.equal(res.body.runDitutup, false); assert.equal(res.body.revision, revSebelum + 1);
+  assert.equal(res.body.unitStatus, "READY_FOR_DELIVERY"); assert.equal(res.body.orderStatus, "READY"); assert.equal(res.body.runDitutup, false); assert.equal(res.body.pickupLocation.code, w.fg.code); assert.equal(res.body.decidedBy.id, adm.user.id); assert.equal(res.body.inspector, undefined); assert.equal(res.body.revision, revSebelum + 1);
   assert.deepEqual([res.body.qc, res.body.handoffGudang, res.body.stok], ["TIDAK_DIBUAT", "TIDAK_DIBUAT", "TIDAK_BERGERAK"]);
   assert.equal(res.body.deliveryJobs.length, 1);
 
@@ -213,16 +213,22 @@ test("P1. KASUS RIKA: Admin melepas unit — unit/order Siap Kirim, Run & tahap 
   assert.deepEqual(await snapRun(run.id), sebelumRun, "Run/fase/operasi/bukti tidak berubah");
   assert.deepEqual(await efekLain(unit.id, run.id), sebelumLain, "tidak ada custody barang jadi/stok/QC");
   const r = await testPrisma.productionRun.findUniqueOrThrow({ where: { id: run.id } });
-  assert.equal(r.status, "ACTIVE"); assert.ok(r.deliveryReleasedAt); assert.equal(r.deliveryRelease.location.code, w.fg.code); assert.equal(r.deliveryRelease.inspector.id, adm.user.id);
-  assert.equal(r.deliveryRelease.releasedBy.id, adm.user.id); assert.equal(r.deliveryRelease.unitStatusBefore, "IN_PRODUCTION"); assert.equal(r.deliveryRelease.physicalVerified, true);
-  assert.match(r.deliveryRelease.reason, /dilihat langsung/); assert.ok([1, 3, 4, 5, 9].every((n) => r.deliveryRelease.stepsRecorded.includes(n)), "rekam memuat tahap yang SUDAH tercatat saat pelepasan"); assert.ok(!r.deliveryRelease.stepsRecorded.some((n) => n >= 10), "tahap 10–12 tidak pernah dicatat");
+  assert.equal(r.status, "ACTIVE"); assert.ok(r.deliveryReleasedAt); assert.equal(r.deliveryRelease.kind, "ADMIN_OVERRIDE"); assert.equal(r.deliveryRelease.version, 2); assert.equal(r.deliveryRelease.pickupLocation.code, w.fg.code);
+  assert.equal(r.deliveryRelease.decidedBy.id, adm.user.id); assert.ok(r.deliveryRelease.decidedAt); assert.equal(r.deliveryRelease.adminOverrideConfirmed, true);
+  assert.deepEqual([r.deliveryRelease.unit.statusBefore, r.deliveryRelease.unit.statusAfter], ["IN_PRODUCTION", "READY_FOR_DELIVERY"]); assert.deepEqual([r.deliveryRelease.order.statusBefore, r.deliveryRelease.order.statusAfter], ["PROCESSING", "READY"]);
+  assert.equal(r.deliveryRelease.run.id, run.id); assert.equal(r.deliveryRelease.run.status, "ACTIVE");
+  assert.match(r.deliveryRelease.reason, /pencatatan Run produksi masih dalam pengembangan/); assert.ok([1, 3, 4, 5, 9].every((n) => r.deliveryRelease.run.stepsRecorded.includes(n)), "rekam memuat tahap yang SUDAH tercatat saat override"); assert.ok(!r.deliveryRelease.run.stepsRecorded.some((n) => n >= 10), "tahap 10–12 tidak pernah dicatat");
+  // TIDAK ADA klaim pemeriksaan fisik/QC yang tersimpan di rekam, aktivitas, maupun respons.
+  for (const [nama, obj] of [["rekam", r.deliveryRelease], ["respons", res.body]]) { const txt = JSON.stringify(obj); assert.doesNotMatch(txt, /inspector|physicalVerified|diperiksa|pemeriksa(?!an)/i, `${nama} tanpa klaim pemeriksa`); }
   const u = await testPrisma.unit.findUniqueOrThrow({ where: { id: unit.id } });
   assert.equal(u.status, "READY_FOR_DELIVERY"); assert.equal(u.storageLocation, w.fg.code);
   assert.equal((await testPrisma.order.findUniqueOrThrow({ where: { id: unit.orderId } })).status, "READY");
   const jobs = await jobDeliveryUnit(unit.id); assert.equal(jobs.length, 1);
   assert.equal(await aktivitasRilis(unit.id), 1); assert.equal(await outboxRilis(run.id), 1);
   const act = await testPrisma.activityEvent.findFirstOrThrow({ where: { entityType: "unit", entityId: unit.id, eventType: "PRODUCTION_DELIVERY_RELEASED" } });
-  assert.equal(act.actorId, adm.user.id); assert.equal(act.metadata.locationCode, w.fg.code);
+  assert.equal(act.actorId, adm.user.id); assert.equal(act.metadata.locationCode, w.fg.code); assert.equal(act.metadata.kind, "ADMIN_OVERRIDE"); assert.equal(act.metadata.unitStatusBefore, "IN_PRODUCTION"); assert.equal(act.metadata.unitStatusAfter, "READY_FOR_DELIVERY"); assert.equal(act.metadata.orderStatusAfter, "READY"); assert.equal(act.metadata.runId, run.id);
+  assert.doesNotMatch(JSON.stringify(act.metadata), /inspector|physicalVerified|diperiksa/i);
+  const { formatActivitySentence } = await import("../../src/lib/activityLog.js"); assert.match(formatActivitySentence({ eventType: "PRODUCTION_DELIVERY_RELEASED", metadata: act.metadata }), /Admin override: unit .* ditetapkan Siap Kirim oleh/);
 
   // Route Planner: kini unit siap biasa (bukan "menunggu"): kandidat biasa, job tanpa label, dapat diterbitkan.
   const board = ok(await pl.api.get(`${ARM}/board?type=DELIVERY&date=${TGL}`));
@@ -235,12 +241,12 @@ test("P1. KASUS RIKA: Admin melepas unit — unit/order Siap Kirim, Run & tahap 
 
   // Pratinjau & kartu Produksi menandai "Run belum ditutup".
   const ov = ok(await adm.api.get(`${V2}/units/${unit.id}/overview`));
-  assert.ok(ov.production.deliveryRelease, "Unit 360 menampilkan pelepasan lewat pengecualian"); assert.match(ov.production.deliveryRelease.label, /Run belum ditutup — unit dilepas untuk pengiriman lewat pengecualian/);
+  assert.ok(ov.production.deliveryRelease, "Unit 360 menampilkan Admin override"); assert.match(ov.production.deliveryRelease.label, /Admin override: Siap Kirim — pencatatan produksi belum selesai \(Run belum ditutup\)/); assert.equal(ov.production.deliveryRelease.pickupLocationCode, w.fg.code); assert.equal(ov.production.deliveryRelease.decidedByName, adm.user.name);
   assert.equal(ov.production.runStatus, "ACTIVE");
   const kartu = await card(w, run.id); assert.ok(kartu.deliveryRelease);
 });
 
-test("P2. Izin & validasi: hanya Admin/Owner; alasan, kode unit, lokasi sah, verifikasi fisik, kunci idempotensi, revisi — semua ditegakkan SERVER dan tidak menulis apa pun saat ditolak", async () => {
+test("P2. Izin & validasi: hanya Admin/Owner; alasan, kode unit, lokasi pengambilan sah, konfirmasi override, kunci idempotensi, revisi — semua ditegakkan SERVER dan tidak menulis apa pun saat ditolak", async () => {
   const w = await world(); const adm = await admin(); const pl = await planner();
   const { unit, run } = await rikaLike(w);
   const rev = (await card(w, run.id)).revision;
@@ -260,7 +266,8 @@ test("P2. Izin & validasi: hanya Admin/Owner; alasan, kode unit, lokasi sah, ver
   await tidakBerubah("izin");
 
   const kasus = [
-    ["verifikasi tidak dicentang", { physicalVerified: false }, 400, "RELEASE_VERIFY_REQUIRED"],
+    ["konfirmasi override tidak dicentang", { adminOverrideConfirmed: false }, 400, "RELEASE_OVERRIDE_CONFIRM_REQUIRED"],
+    ["klaim lama physicalVerified TIDAK menggantikan konfirmasi override", { adminOverrideConfirmed: undefined, physicalVerified: true }, 400, "RELEASE_OVERRIDE_CONFIRM_REQUIRED"],
     ["alasan pendek", { reason: "sudah" }, 400, "RELEASE_REASON_REQUIRED"],
     ["alasan terlalu panjang", { reason: "x".repeat(501) }, 400, "RELEASE_REASON_TOO_LONG"],
     ["kode unit tidak diketik", { unitCode: "" }, 400, "RELEASE_UNIT_CODE_REQUIRED"],
@@ -275,17 +282,13 @@ test("P2. Izin & validasi: hanya Admin/Owner; alasan, kode unit, lokasi sah, ver
   const lokasiSalah = await release(w, adm, unit, run, { rev, locationId: w.rcv.id });
   assert.ok([409, 422].includes(lokasiSalah.status), `lokasi penerimaan bukan area barang jadi: ${lokasiSalah.status} ${JSON.stringify(lokasiSalah.body)}`); assert.match(String(lokasiSalah.body.code), /^CUSTODY_LOCATION/);
   const tanpaKunci = await adm.api.post(REL(unit.id), relBody(w, unit, rev), {}); assert.equal(tanpaKunci.status, 400); assert.equal(tanpaKunci.body.code, "IDEMPOTENCY_KEY_INVALID");
-  const pemeriksaGaib = await release(w, adm, unit, run, { rev, inspectorUserId: "user-tidak-ada-123" }); assert.equal(pemeriksaGaib.status, 409); assert.equal(pemeriksaGaib.body.code, "RELEASE_INSPECTOR_INVALID");
-  const nonaktif = await createTestUser({ roles: ["PRODUCTION_LEAD"] }); await testPrisma.user.update({ where: { id: nonaktif.user.id }, data: { active: false } });
-  assert.equal((await release(w, adm, unit, run, { rev, inspectorUserId: nonaktif.user.id })).body.code, "RELEASE_INSPECTOR_INVALID");
-  const driverSbgPemeriksa = await release(w, adm, unit, run, { rev, inspectorUserId: w.driver.user.id }); assert.equal(driverSbgPemeriksa.body.code, "RELEASE_INSPECTOR_INVALID", "pemeriksa harus petugas produksi/gudang/Admin/Owner");
   await tidakBerubah("validasi");
 
-  // Pemeriksa dipilih (Production Lead) tercatat sebagai pemeriksa; pelaku tetap Admin.
+  // Isian pemeriksa lama diabaikan (tidak ada pemeriksa): rekam hanya memuat pelaku override.
   const oke = await release(w, adm, unit, run, { rev, inspectorUserId: w.lead.user.id }); assert.equal(oke.status, 200, JSON.stringify(oke.body));
-  assert.equal(oke.body.inspector.id, w.lead.user.id);
+  assert.equal(oke.body.decidedBy.id, adm.user.id);
   const rec = (await testPrisma.productionRun.findUniqueOrThrow({ where: { id: run.id } })).deliveryRelease;
-  assert.equal(rec.inspector.id, w.lead.user.id); assert.equal(rec.releasedBy.id, adm.user.id);
+  assert.equal(rec.decidedBy.id, adm.user.id); assert.equal(rec.inspector, undefined); assert.doesNotMatch(JSON.stringify(rec), new RegExp(w.lead.user.id), "pemeriksa kiriman klien tidak tersimpan");
 });
 
 test("P3. Penghalang: unit sudah siap, order batal, Run bukan adaptasi, tahap sedang berjalan, tanpa Run, sudah dilepas — semua 409 berkode tanpa menulis", async () => {
@@ -452,12 +455,48 @@ test("P9. Setelah dilepas unit boleh berangkat/terkirim: penutupan Run tetap adm
 test("P10. Dropdown status Sales ke READY tetap ditolak untuk unit yang dipegang V2 — pesan menunjuk jalur pengecualian Admin; rilis pengecualian membuat order READY konsisten di Sales", async () => {
   const w = await world(); const adm = await admin();
   const { unit, run } = await rikaLike(w);
-  const tolak = await adm.api.patch(`/api/orders/${unit.orderId}`, { status: "READY", statusOverrideNote: "uji pengecualian Sales" });
+  const tolak = await adm.api.patch(`/api/orders/${unit.orderId}`, { status: "READY", statusOverrideNote: "uji override Admin Sales" });
   assert.equal(tolak.status, 409, JSON.stringify(tolak.body)); assert.match(tolak.body.error, /sedang dalam proses Production V2/);
-  assert.match(tolak.body.error, /Tandai Siap Kirim berdasarkan pemeriksaan fisik/);
+  assert.match(tolak.body.error, /Admin override: Siap Kirim saat pencatatan produksi belum selesai/);
   assert.equal(await unitStatus(unit.id), "IN_PRODUCTION");
   assert.equal((await release(w, adm, unit, run)).status, 200);
   const order = await testPrisma.order.findUniqueOrThrow({ where: { id: unit.orderId }, include: { units: true } });
   assert.equal(order.status, "READY"); assert.ok(order.units.every((u) => u.status === "READY_FOR_DELIVERY"));
   assert.equal((await testPrisma.orderStatusTransition.count({ where: { orderId: unit.orderId, toStatus: "READY" } })), 1, "riwayat status order tercatat");
+});
+
+test("P11. Route Planner & app Driver: unit override tampil JUJUR — 'override Admin' + lokasi pengambilan, tanpa klaim pemeriksaan/QC; Driver hanya melihatnya setelah rute terbit", async () => {
+  const w = await world(); const adm = await admin(); const pl = await planner();
+  const { unit, run } = await rikaLike(w);
+  const draf = ok2(await pl.api.post(`${ARM}/jobs`, { type: "DELIVERY", unitIds: [unit.id], scheduledDate: TGL, menungguKonfirmasi: true }));
+  const rute = ok2(await pl.api.post(`${ARM}/routes`, { date: TGL, driverId: w.driver.user.id }));
+  assert.equal((await pl.api.patch(`${ARM}/routes/${rute.id}/jobs`, { jobIds: [draf.id] })).status, 200);
+  // Sebelum override: berlabel menunggu, tanpa penanda override.
+  const sebelum = ok(await pl.api.get(`${ARM}/routes/${rute.id}`)).jobs.find((x) => x.id === draf.id);
+  assert.deepEqual(sebelum.overrideAdmin, []); assert.equal(sebelum.labelOverrideAdmin, null); assert.equal(sebelum.labelMenunggu, "Menunggu konfirmasi siap kirim");
+  assert.equal((await release(w, adm, unit, run)).status, 200);
+  // Setelah override: label menunggu hilang, penanda override jujur + lokasi pengambilan; semua jalur baca (rute, daftar rute, papan, detail job).
+  const cek = (job, tempat) => {
+    if (job.menungguKonfirmasi !== undefined) assert.deepEqual(job.menungguKonfirmasi, [], `${tempat}: tidak menunggu`); // detail job & app Driver tidak membawa daftar menunggu (hanya papan/rute)
+    assert.equal(job.overrideAdmin.length, 1, `${tempat}: satu unit override`); assert.equal(job.overrideAdmin[0].unitCode, unit.unitCode);
+    assert.equal(job.overrideAdmin[0].pickupLocationCode, w.fg.code, `${tempat}: lokasi pengambilan`); assert.equal(job.overrideAdmin[0].decidedByName, adm.user.name); assert.equal(job.overrideAdmin[0].runStatus, "ACTIVE");
+    assert.match(job.labelOverrideAdmin, /^Siap Kirim — override Admin \(pencatatan produksi belum selesai\)$/);
+    assert.doesNotMatch(JSON.stringify({ o: job.overrideAdmin, l: job.labelOverrideAdmin }), /diperiksa|pemeriksa|inspector|QC lulus|lulus QC/i, `${tempat}: tanpa klaim pemeriksaan/QC`);
+    assert.equal(job.units[0].unit.storageLocation, w.fg.code, `${tempat}: unit.storageLocation = lokasi pengambilan`); assert.equal(job.units[0].unit.status, "READY_FOR_DELIVERY");
+  };
+  cek(ok(await pl.api.get(`${ARM}/routes/${rute.id}`)).jobs.find((x) => x.id === draf.id), "rute");
+  cek(ok(await pl.api.get(`${ARM}/routes`)).routes.find((r) => r.id === rute.id).jobs.find((x) => x.id === draf.id), "daftar rute");
+  cek(ok(await pl.api.get(`${ARM}/board?type=DELIVERY&date=${TGL}`)).jobs.find((x) => x.id === draf.id), "papan");
+  cek(ok(await pl.api.get(`${ARM}/jobs/${draf.id}`)), "detail job");
+  // Driver: sebelum terbit tidak melihat; sesudah terbit melihat dengan penanda yang sama.
+  const sblmTerbit = ok(await w.driver.api.get(`${ARM}/my-jobs`));
+  assert.ok(!sblmTerbit.jobs.some((j) => j.id === draf.id), "rute DRAFT tidak terlihat driver");
+  assert.equal((await pl.api.post(`${ARM}/routes/${rute.id}/publish`, {})).status, 200);
+  const sesudah = ok(await w.driver.api.get(`${ARM}/my-jobs`));
+  const jobDriver = sesudah.jobs.find((j) => j.id === draf.id); assert.ok(jobDriver, "driver melihat job setelah rute terbit");
+  cek(jobDriver, "driver");
+  // Job biasa (bukan override) tidak membawa penanda.
+  const w2 = await world(); const r2 = await rikaLike(w2);
+  const d2 = ok2(await pl.api.post(`${ARM}/jobs`, { type: "DELIVERY", unitIds: [r2.unit.id], scheduledDate: TGL, menungguKonfirmasi: true }));
+  const j2 = ok(await pl.api.get(`${ARM}/jobs/${d2.id}`)); assert.deepEqual(j2.overrideAdmin, []); assert.equal(j2.labelOverrideAdmin, null);
 });

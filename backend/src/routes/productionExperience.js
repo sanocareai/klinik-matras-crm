@@ -415,14 +415,15 @@ productionExperienceRouter.post("/runs/:runId/confirm-finished-goods", requirePe
   } catch (err) { handleErr(err, res); }
 });
 
-// ---- Tandai Siap Kirim berdasarkan pemeriksaan fisik (PENGECUALIAN Admin/Owner; Run Produksi TIDAK ditutup) ------------------------------------------------------------------------
-// GET  /api/production-v2/units/:unitId/delivery-release — pratinjau baca-saja (keadaan, penghalang, lokasi fisik sah, calon pemeriksa, unit lain pada order, job pengiriman). Hanya Admin/Owner.
-// POST /api/production-v2/units/:unitId/delivery-release { expectedRevision, unitCode, locationId, reason, inspectorUserId?, physicalVerified: true } — Idempotency-Key wajib. Hanya Admin/Owner.
+// ---- Admin override: Siap Kirim saat pencatatan produksi belum selesai (Admin/Owner; Run Produksi TIDAK ditutup) --------------------------------------------------------------------
+// Keputusan Admin, BUKAN hasil pemeriksaan: tidak ada klaim pemeriksaan fisik/QC yang disimpan.
+// GET  /api/production-v2/units/:unitId/delivery-release — pratinjau baca-saja (keadaan, penghalang, lokasi pengambilan sah, unit lain pada order, job pengiriman). Hanya Admin/Owner.
+// POST /api/production-v2/units/:unitId/delivery-release { expectedRevision, unitCode, locationId, reason, adminOverrideConfirmed: true } — Idempotency-Key wajib. Hanya Admin/Owner.
 const isReleaseAdmin = (user) => rolesOf(user).some((r) => ["ADMIN", "OWNER"].includes(r));
 productionExperienceRouter.get("/units/:unitId/delivery-release", requirePermission(P.UNIT_STAGE_WRITE), async (req, res) => {
   try {
     if (!UUID_RE.test(String(req.params.unitId))) return res.status(400).json({ error: "ID unit tidak valid", code: "ID_INVALID" });
-    if (!isReleaseAdmin(req.user)) return res.status(403).json({ error: "Hanya Admin atau Owner yang dapat menandai Siap Kirim berdasarkan pemeriksaan fisik", code: "RELEASE_FORBIDDEN" });
+    if (!isReleaseAdmin(req.user)) return res.status(403).json({ error: "Hanya Admin atau Owner yang dapat memakai Admin override Siap Kirim", code: "RELEASE_FORBIDDEN" });
     res.json(await previewDeliveryRelease(prisma, { unitId: req.params.unitId }));
   } catch (err) { handleErr(err, res); }
 });
@@ -430,7 +431,7 @@ productionExperienceRouter.post("/units/:unitId/delivery-release", requirePermis
   try {
     res.json(await releaseUnitForDelivery(prisma, {
       unitId: req.params.unitId, actorId: req.user.id, canRelease: isReleaseAdmin(req.user), idempotencyKey: idem(req), expectedRevision: req.body?.expectedRevision,
-      unitCode: req.body?.unitCode, locationId: req.body?.locationId, reason: req.body?.reason, inspectorUserId: req.body?.inspectorUserId ?? null, physicalVerified: req.body?.physicalVerified,
+      unitCode: req.body?.unitCode, locationId: req.body?.locationId, reason: req.body?.reason, adminOverrideConfirmed: req.body?.adminOverrideConfirmed,
     }));
   } catch (err) { handleErr(err, res); }
 });

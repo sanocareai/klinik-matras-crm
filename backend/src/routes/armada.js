@@ -61,6 +61,7 @@ import { teksManifest, teksSelManifest } from "../lib/domain/deliveryManifest.js
 import { konfirmasiMuat, progresMuat, periksaGerbangSelesai, modeGerbangUnit, klienMampuKonfirmasi, UnitLoadError } from "../services/deliveryUnitLoad.js";
 import { bacaSiapFisik, nilaiSiap, periksaUnitSiapKirim } from "../services/deliverySiapFisik.js";
 import { catatKesiapanFisik, KesiapanFisikError } from "../services/deliveryKesiapanFisik.js";
+import { tandaiJobOverrideAdmin } from "../services/deliveryOverrideAdmin.js";
 import { tandaiJobMenunggu, pastikanJobSiapDispatch, validasiPenempatanDraf, STATUS_BISA_DITEMPATKAN_DRAF, STATUS_ORDER_SAH_DRAF } from "../services/deliveryMenungguKonfirmasi.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import {
@@ -2220,6 +2221,7 @@ armadaRouter.get("/routes", requirePermission(P.JOB_READ), async (req, res) => {
       ...(skip && { skip: Number(skip) }),
     });
     await tandaiJobMenunggu(prisma, routes.flatMap((r) => r.jobs ?? []));
+    await tandaiJobOverrideAdmin(prisma, routes.flatMap((r) => r.jobs ?? []));
     res.json({ routes });
   } catch (err) {
     handleErr(err, res);
@@ -2296,6 +2298,7 @@ armadaRouter.get("/routes/:id", requirePermission(P.JOB_READ), wajibUuid(), asyn
     const route = await prisma.route.findUnique({ where: { id: req.params.id }, include: routeInclude });
     if (!route) return res.status(404).json({ error: "Rute tidak ditemukan" });
     await tandaiJobMenunggu(prisma, route.jobs ?? []);
+    await tandaiJobOverrideAdmin(prisma, route.jobs ?? []);
     res.json(route);
   } catch (err) {
     handleErr(err, res);
@@ -3815,6 +3818,7 @@ armadaRouter.get("/board", requirePermission(P.JOB_READ), async (req, res) => {
     });
 
     await tandaiJobMenunggu(prisma, jobs);
+    await tandaiJobOverrideAdmin(prisma, jobs);
     // Kandidat DRAF (opt-in ?termasukMenunggu=1): unit yang masih dikerjakan Produksi dan sah ditempatkan sebagai job draf "Menunggu konfirmasi siap kirim".
     // Tidak mengubah `available` (klien lama tidak pernah menjadwalkannya); status unit tidak berubah.
     let availableMenunggu = [];
@@ -4092,6 +4096,7 @@ armadaRouter.get("/my-jobs", requirePermission(P.JOB_OWN_READ), async (req, res)
     // filter ini tetap dijalankan ke SEMUA union supaya satu aturan yang
     // sama berlaku konsisten, bukan 2 jalur logic yang bisa diam-diam beda.)
     const jobs = jobsMentah.filter(isJobVisibleToDriverApp);
+    await tandaiJobOverrideAdmin(prisma, jobs); // penanda jujur "override Admin" + lokasi pengambilan untuk app Driver (tanpa klaim pemeriksaan/QC)
 
     // Snapshot rute (22 September 2026, permintaan: "backend mengembalikan
     // satu snapshot: route, drivers, ordered stops, status, revision, dan
@@ -4239,6 +4244,7 @@ armadaRouter.post("/push/unsubscribe", requireAuth, async (req, res) => {
 armadaRouter.get("/jobs/:id", requireAnyPermission(P.JOB_READ, P.JOB_OWN_READ), wajibUuid(), async (req, res) => {
   try {
     const job = await prisma.job.findUniqueOrThrow({ where: { id: req.params.id }, include: jobInclude });
+    await tandaiJobOverrideAdmin(prisma, [job]);
     // Driver/helper TANPA JOB_READ penuh hanya boleh lihat job miliknya
     // sendiri (D-037: driver ATAU helper). Dispatcher/admin (punya
     // JOB_READ) lolos tanpa cek ini.

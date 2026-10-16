@@ -37,7 +37,7 @@ export function guardError(message, statusCode, code, details) {
 }
 
 // run: { status, currentPhase, revision }, unit: { status }. Mengembalikan null bila konsisten.
-// Unit yang DILEPAS untuk pengiriman lewat pengecualian pemeriksaan fisik (run.deliveryReleasedAt terisi) sengaja berstatus siap kirim/berangkat/terkirim sementara Run belum ditutup:
+// Unit yang DILEPAS untuk pengiriman lewat Admin override Siap Kirim (run.deliveryReleasedAt terisi) sengaja berstatus siap kirim/berangkat/terkirim sementara Run belum ditutup:
 // itu BUKAN konflik V1 (dicatat eksplisit oleh command pelepasan). Pembatalan unit tetap konflik.
 export const DELIVERY_RELEASE_UNIT_STATUSES = Object.freeze(["READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD", "IN_TRANSIT_OUT", "DELIVERED"]);
 export const isDeliveryReleased = (run) => !!run?.deliveryReleasedAt;
@@ -66,7 +66,7 @@ export async function assertNoOpenRunException(tx, runId, { allowReleased = fals
   if (!allowReleased) {
     const released = await tx.productionRun.findUnique({ where: { id: runId }, select: { deliveryReleasedAt: true } });
     if (released?.deliveryReleasedAt) {
-      throw guardError("Unit pekerjaan ini sudah dilepas untuk pengiriman lewat pengecualian pemeriksaan fisik — Run belum ditutup. Tutup Run lewat Selesaikan Produksi / Konfirmasi Barang Jadi; tahap tidak dilanjutkan lagi.", 409, "RUN_RELEASED_FOR_DELIVERY", { releasedAt: released.deliveryReleasedAt });
+      throw guardError("Unit pekerjaan ini sudah dilepas untuk pengiriman lewat Admin override Siap Kirim — Run belum ditutup. Tutup Run lewat Selesaikan Produksi / Konfirmasi Barang Jadi; tahap tidak dilanjutkan lagi.", 409, "RUN_RELEASED_FOR_DELIVERY", { releasedAt: released.deliveryReleasedAt });
     }
   }
   const open = await tx.productionRunException.findFirst({ where: { runId, status: "OPEN" }, select: { id: true, kind: true } });
@@ -112,7 +112,7 @@ export async function assertOrderUnitsNotV2Owned(tx, orderId, actionLabel) {
   if (owned.size === 0) return;
   const codes = units.filter((unit) => owned.has(unit.id)).map((unit) => unit.unitCode).join(", ");
   throw guardError(
-    `${actionLabel} ditolak: unit ${codes} sedang dalam proses Production V2. Selesaikan lewat antrean QC/Gudang, atau batalkan Production Run-nya lebih dulu (Production Lead). Bila barang fisik sudah jadi, Admin/Owner dapat memakai \"Tandai Siap Kirim berdasarkan pemeriksaan fisik\".`,
+    `${actionLabel} ditolak: unit ${codes} sedang dalam proses Production V2. Selesaikan lewat antrean QC/Gudang, atau batalkan Production Run-nya lebih dulu (Production Lead). Bila unit perlu masuk pengiriman sementara pencatatan produksi belum selesai, Admin/Owner dapat memakai \"Admin override: Siap Kirim saat pencatatan produksi belum selesai\".`,
     409, "PRODUCTION_V2_OWNED", { unitCodes: codes.split(", ") },
   );
 }

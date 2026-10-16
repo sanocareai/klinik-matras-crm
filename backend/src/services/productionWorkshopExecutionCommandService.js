@@ -139,7 +139,7 @@ export const RUN_INCLUDE = {
 
 // Urutan kunci: unit (sama dengan custody) -> run. Mencegah siklus dengan openProductionIntakeV2 (unit lalu run).
 // allowReleased: hanya command penutupan administratif (Selesaikan Produksi / Konfirmasi Barang Jadi) dan pelepasan itu sendiri; command tahap/bahan/QC pada Run yang unitnya SUDAH dilepas
-// lewat pengecualian pemeriksaan fisik ditolak (409) — unit sudah di jalur pengiriman, tahap tidak boleh berjalan lagi di belakangnya.
+// lewat Admin override Siap Kirim ditolak (409) — unit sudah di jalur pengiriman, tahap tidak boleh berjalan lagi di belakangnya.
 export async function loadRunForWrite(tx, runId, { allowReleased = false } = {}) {
   const pre = await tx.productionRun.findUnique({ where: { id: runId }, select: { unitId: true } });
   if (!pre) throw workError("Pekerjaan produksi tidak ditemukan", 404, "WORKSHOP_RUN_NOT_FOUND");
@@ -147,7 +147,7 @@ export async function loadRunForWrite(tx, runId, { allowReleased = false } = {})
   await lockRowForUpdate(tx, "production_runs_v2", runId);
   const run = await tx.productionRun.findUnique({ where: { id: runId }, include: RUN_INCLUDE });
   if (TERMINAL_RUN.includes(run.status)) throw workError("Pekerjaan produksi sudah selesai/dibatalkan", 409, "WORKSHOP_RUN_TERMINAL");
-  if (run.deliveryReleasedAt && !allowReleased) throw workError("Unit pekerjaan ini sudah dilepas untuk pengiriman lewat pengecualian pemeriksaan fisik — Run belum ditutup. Tutup Run lewat Selesaikan Produksi / Konfirmasi Barang Jadi; tahap tidak dilanjutkan lagi.", 409, "RUN_RELEASED_FOR_DELIVERY", { releasedAt: run.deliveryReleasedAt });
+  if (run.deliveryReleasedAt && !allowReleased) throw workError("Unit pekerjaan ini sudah dilepas untuk pengiriman lewat Admin override Siap Kirim — Run belum ditutup. Tutup Run lewat Selesaikan Produksi / Konfirmasi Barang Jadi; tahap tidak dilanjutkan lagi.", 409, "RUN_RELEASED_FOR_DELIVERY", { releasedAt: run.deliveryReleasedAt });
   await assertNoV1Drift(tx, { runId, unitId: run.unitId }); // rollback writer OFF -> aksi V1 -> writer ON: berhenti sampai direkonsiliasi (productionRunGuards.js)
   // P9A (One-Location Production Intake) — unit sudah "Masuk Produksi" (pickup
   // berhasil, kartu tampil di board) TAPI belum dikonfirmasi tiba secara fisik

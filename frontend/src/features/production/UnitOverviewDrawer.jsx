@@ -21,7 +21,7 @@ import { isOutsideV2 } from "@/features/production/unit360Availability.js";
 import UnitOrderFallback from "@/features/production/UnitOrderFallback.jsx";
 import PkrRujukan from "@/features/production/PkrRujukan.jsx";
 import KonfirmasiBarangJadi from "@/features/production/KonfirmasiBarangJadi.jsx";
-import { PelepasanUnit360 } from "@/features/production/PelepasanPengecualianFisik.jsx";
+import { AdminOverrideUnit360 } from "@/features/production/AdminOverrideSiapKirim.jsx";
 import { ComponentNotesPanel } from "@/features/production/componentNotes/ComponentNotesPanel.jsx";
 import JejakBiayaBahan from "@/features/finance/JejakBiayaBahan.jsx";
 
@@ -246,7 +246,7 @@ function Proses({ d, onOpenDiagnosis, canApplyAdaptation = false, isAdminOwner =
         <span data-testid="overview-progress" className="shrink-0 text-[11px] text-ink3 tabular-nums">{progressText(d.production.progress)}</span>
       </div>
       <AdaptationPanel d={d} canApply={canApplyAdaptation} onApplied={() => onChanged?.()} />
-      <PelepasanUnit360 d={d} isAdmin={isAdminOwner} onDone={() => onChanged?.()} />
+      <AdminOverrideUnit360 d={d} isAdmin={isAdminOwner} onDone={() => onChanged?.()} />
       <KonfirmasiBarangJadi d={d} canConfirm={canApplyAdaptation} onDone={() => onChanged?.()} />
       <ol className="m-0 grid list-none grid-cols-1 gap-1 p-0 sm:grid-cols-2">
         {d.production.steps.map((s) => (
