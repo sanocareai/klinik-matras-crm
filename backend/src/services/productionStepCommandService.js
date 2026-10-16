@@ -40,6 +40,7 @@ import { loadAssemblyFacts, loadPreTeardownFacts } from "./productionComponentNo
 import { buildCornerRequest, cornerStatusOf } from "../lib/domain/productionCorner.js";
 import { assertLocationAllowed } from "./unitCustodyCommandService.js";
 import { syncOrderStatus } from "./orderStatusSync.js";
+import { assertAdminOverrideAllowed, readAdminOverrideSwitch } from "./adminOverrideSwitch.js";
 import { suggestDeliveryJob } from "./deliveryHandoff.js";
 
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
@@ -1028,6 +1029,7 @@ export async function previewDeliveryRelease(prisma, { unitId }) {
   if (!unit) throw stepError("Unit tidak ditemukan", 404, "UNIT_NOT_FOUND");
   const run = await prisma.productionRun.findFirst({ where: { unitId, status: { notIn: TERMINAL_RUN } }, orderBy: { createdAt: "desc" }, include: RUN_INCLUDE });
   const blockers = releaseBlockersOf({ run, unit, order: unit.order });
+  const saklar = await readAdminOverrideSwitch(prisma);
   const [locations, siblings, jobs, closedRun] = await Promise.all([
     prisma.storageLocation.findMany({
       where: { active: true, locationType: { in: ["FINISHED_GOODS_AREA", "DISPATCH_AREA"] } },
@@ -1043,6 +1045,9 @@ export async function previewDeliveryRelease(prisma, { unitId }) {
     run: run ? { id: run.id, status: run.status, revision: run.revision, adaptation: isAdaptationRun(run), currentPhase: run.currentPhase ?? null, released: !!run.deliveryReleasedAt } : null,
     eligible: blockers.length === 0, blockers,
     decision: ADMIN_OVERRIDE_DECISION,
+    // Saklar: override BARU hanya bila aktif (dan unit termasuk daftar bila dibatasi). Tampilan WAJIB menonaktifkan tombol bila overrideAktif=false.
+    overrideAktif: saklar.enabled && (saklar.unitCodes.length === 0 || saklar.unitCodes.includes(unit.unitCode)),
+    saklar: { enabled: saklar.enabled, unitCodes: saklar.unitCodes, reason: saklar.reason, updatedAt: saklar.updatedAt },
     release: run?.deliveryRelease ?? closedRun?.deliveryRelease ?? null,
     locations,
     siblings: siblings.map((s) => ({ unitCode: s.unitCode, status: s.status, thisUnit: s.id === unit.id })),
@@ -1076,6 +1081,8 @@ export async function releaseUnitForDelivery(prisma, { unitId, actorId, canRelea
     const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId }, select: { id: true, unitCode: true, status: true, storageLocation: true, orderId: true } });
     const order = await tx.order.findUnique({ where: { id: unit.orderId }, select: { id: true, orderNumber: true, status: true, mergedIntoOrderId: true } });
     if (unit.unitCode !== kode) throw stepError("Kode unit yang diketik tidak sama dengan unit ini", 409, "RELEASE_UNIT_CODE_MISMATCH");
+    // SAKLAR (fail-closed): override BARU hanya bila diaktifkan Owner/Admin (opsional dibatasi daftar unit). Replay override yang sudah terjadi dijawab SEBELUM titik ini (tidak membuat apa pun yang baru).
+    await assertAdminOverrideAllowed(tx, unit.unitCode);
     const blockers = releaseBlockersOf({ run, unit, order });
     if (blockers.length) throw stepError(`Unit belum bisa ditetapkan Siap Kirim: ${blockers[0].text}`, 409, `RELEASE_${blockers[0].code}`, { blockers });
     assertRunRevision(run, revisionExpected);

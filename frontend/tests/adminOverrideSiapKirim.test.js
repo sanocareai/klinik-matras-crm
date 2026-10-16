@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { AO_JUDUL, AO_LABEL_RUN_BELUM_DITUTUP, AO_PERNYATAAN, aoBolehAdmin, aoBolehKirim, aoKunciBaru, aoUnitBisaDiOverride } from "../src/features/production/adminOverrideSiapKirimLogic.js";
+import { AO_JUDUL, AO_LABEL_RUN_BELUM_DITUTUP, AO_PERNYATAAN, aoAlasanSaklarValid, aoBolehAdmin, aoBolehKirim, aoKunciBaru, aoParseKodeUnit, aoRingkasSaklar, aoSaklarMengizinkan, aoUnitBisaDiOverride } from "../src/features/production/adminOverrideSiapKirimLogic.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const read = (...p) => fs.readFileSync(path.join(__dirname, "..", ...p), "utf8");
@@ -22,9 +22,9 @@ test("aoUnitBisaDiOverride: hanya unit yang masih dikerjakan Produksi (bukan sia
 });
 
 test("aoBolehKirim: pratinjau layak + kode diketik ulang persis + lokasi pengambilan + alasan >= 10 + pernyataan override; TANPA pemeriksa/centang pemeriksaan fisik", () => {
-  const ok = { eligible: true, kodeDiketik: " RES-1-U1 ", kodeUnit: "RES-1-U1", locationId: "loc", alasan: "owner menetapkan siap kirim", konfirmasi: true, sibuk: false };
+  const ok = { eligible: true, aktif: true, kodeDiketik: " RES-1-U1 ", kodeUnit: "RES-1-U1", locationId: "loc", alasan: "owner menetapkan siap kirim", konfirmasi: true, sibuk: false };
   assert.equal(aoBolehKirim(ok), true);
-  for (const o of [{ eligible: false }, { kodeDiketik: "RES-1-U2" }, { kodeDiketik: "" }, { locationId: "" }, { alasan: "sudah" }, { alasan: "x".repeat(501) }, { konfirmasi: false }, { sibuk: true }]) assert.equal(aoBolehKirim({ ...ok, ...o }), false, JSON.stringify(o));
+  for (const o of [{ eligible: false }, { aktif: false }, { aktif: undefined }, { kodeDiketik: "RES-1-U2" }, { kodeDiketik: "" }, { locationId: "" }, { alasan: "sudah" }, { alasan: "x".repeat(501) }, { konfirmasi: false }, { sibuk: true }]) assert.equal(aoBolehKirim({ ...ok, ...o }), false, JSON.stringify(o));
 });
 
 test("aoKunciBaru: unik dan sesuai pola Idempotency-Key server", () => {
@@ -47,7 +47,6 @@ const API = src("api.js");
 const BADGES = src("features", "armada", "components", "JobBadges.jsx");
 const RUTE = src("features", "armada", "components", "RouteCard.jsx");
 const UNROUTED = src("features", "armada", "components", "UnroutedJobsPanel.jsx");
-const DRIVER = read("..", "driver-mobile", "src", "components", "JobCard.js");
 
 test("dialog: pratinjau server dulu; kode diketik ulang; lokasi pengambilan; alasan; pernyataan override; TANPA pemeriksa dan TANPA centang pemeriksaan fisik; galat server tampil; kunci diganti setelah galat; tanpa window.prompt", () => {
   assert.match(DIALOG, /api\.getProductionV2DeliveryRelease\(/); assert.match(DIALOG, /api\.releaseProductionV2UnitForDelivery\(/);
@@ -58,12 +57,10 @@ test("dialog: pratinjau server dulu; kode diketik ulang; lokasi pengambilan; ala
   assert.match(DIALOG, /Lokasi pengambilan/); assert.match(DIALOG, /Unit lain pada order ini TIDAK ikut ditetapkan/); assert.match(DIALOG, /Tidak ada klaim pemeriksaan fisik atau QC/);
 });
 
-test("Route Planner: badge jujur 'override Admin' + lokasi pengambilan di kartu rute dan panel job; app Driver menampilkan unit + lokasi pengambilan", () => {
+test("Route Planner: badge jujur 'override Admin' + lokasi pengambilan di kartu rute dan panel job; app Driver di branch OTA terpisah", () => {
   assert.match(BADGES, /export function OverrideAdminBadge/); assert.match(BADGES, /Siap Kirim — override Admin \(pencatatan produksi belum selesai\)/); assert.match(BADGES, /data-testid="badge-override-admin"/);
   assert.doesNotMatch(BADGES.slice(BADGES.indexOf("export function OverrideAdminBadge"), BADGES.indexOf("export function OverrideAdminBadge") + 900), /diperiksa|pemeriksaan|QC lulus/i);
   assert.match(RUTE, /<OverrideAdminBadge job=\{j\} \/>/); assert.match(UNROUTED, /<OverrideAdminBadge job=\{j\} \/>/);
-  assert.match(DRIVER, /job\.overrideAdmin/); assert.match(DRIVER, /override-admin-banner/); assert.match(DRIVER, /ambil di \{o\.pickupLocationCode/);
-  assert.doesNotMatch(DRIVER.slice(DRIVER.indexOf("override-admin-banner") - 200, DRIVER.indexOf("override-admin-banner") + 700), /diperiksa|pemeriksaan|QC lulus/i);
 });
 
 test("pintu masuk: Unit 360 (tab Pekerjaan) dan drawer order di Sales, hanya Admin/Owner; label Produksi di kartu papan dan banner", () => {
@@ -72,4 +69,22 @@ test("pintu masuk: Unit 360 (tab Pekerjaan) dan drawer order di Sales, hanya Adm
   assert.match(DIALOG, /data-testid="ao-banner"/); assert.match(KARTU, /view\.deliveryRelease/); assert.match(KARTU, /data-testid="ao-kartu-badge"/);
   assert.match(API, /getProductionV2DeliveryRelease: \(unitId\) => request\(`\/production-v2\/units\/\$\{unitId\}\/delivery-release`\)/);
   assert.match(API, /releaseProductionV2UnitForDelivery: .*"Idempotency-Key": idempotencyKey/s);
+});
+
+test("saklar: tombol dialog mati bila server bilang override tidak aktif; parse kode unit; alasan saklar; label ringkas", () => {
+  assert.equal(aoSaklarMengizinkan({ overrideAktif: true }), true);
+  for (const pv of [null, undefined, {}, { overrideAktif: false }, { overrideAktif: "true" }]) assert.equal(aoSaklarMengizinkan(pv), false, JSON.stringify(pv));
+  assert.deepEqual(aoParseKodeUnit(" A-U1, B-U2\nA-U1 ,, "), ["A-U1", "B-U2"]); assert.deepEqual(aoParseKodeUnit(""), []); assert.equal(aoParseKodeUnit(Array.from({ length: 80 }, (_, i) => "K" + i).join(",")).length, 50);
+  assert.equal(aoAlasanSaklarValid("pendek"), false); assert.equal(aoAlasanSaklarValid("menghentikan override baru"), true); assert.equal(aoAlasanSaklarValid("x".repeat(301)), false);
+  assert.deepEqual(aoRingkasSaklar(null), { aktif: false, label: "Nonaktif" }); assert.deepEqual(aoRingkasSaklar({ enabled: false }), { aktif: false, label: "Nonaktif" });
+  assert.equal(aoRingkasSaklar({ enabled: true, unitCodes: [] }).label, "Aktif — semua unit yang memenuhi syarat"); assert.match(aoRingkasSaklar({ enabled: true, unitCodes: ["A-U1"] }).label, /dibatasi: A-U1/);
+});
+
+test("UI saklar: dialog menampilkan blok saklar mati; kartu Pengaturan Produksi (hanya yang boleh menulis) memuat saklar+laporan dengan tindakan aman; API saklar/laporan terdaftar", () => {
+  const SAKLAR = src("features", "production", "AdminOverrideSaklarCard.jsx"); const PENGATURAN = src("pages", "bengkel", "ProductionWorkflowSettings.jsx");
+  assert.match(DIALOG, /data-testid="ao-saklar-mati"/); assert.match(DIALOG, /aktif: aoSaklarMengizinkan\(pv\)/);
+  for (const id of ["ao-saklar-card", "ao-saklar-status", "ao-saklar-unit", "ao-saklar-alasan", "ao-saklar-aktifkan", "ao-saklar-hentikan", "ao-laporan", "ao-laporan-baris"]) assert.match(SAKLAR, new RegExp(`data-testid="${id}"`), id);
+  assert.match(SAKLAR, /unit yang sudah dilepas, Run, dan audit tidak berubah/); assert.doesNotMatch(SAKLAR, /window\.(prompt|confirm|alert)/);
+  assert.match(PENGATURAN, /\{canWrite && <AdminOverrideSaklarCard canWrite=\{canWrite\} \/>\}/);
+  assert.match(API, /getAdminOverrideSwitch: \(\) => request\("\/production-v2\/admin-override\/switch"\)/); assert.match(API, /setAdminOverrideSwitch: \(data\) => request\("\/production-v2\/admin-override\/switch", \{ method: "PUT"/); assert.match(API, /getAdminOverrideReport/);
 });

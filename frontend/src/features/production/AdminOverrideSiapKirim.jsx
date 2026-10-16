@@ -5,7 +5,7 @@ import { Modal } from "@/components/ui/modal.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { friendlyError } from "@/features/production/experience.js";
 import { KBJ_ALASAN_MIN } from "@/features/production/konfirmasiBarangJadiLogic.js";
-import { AO_JUDUL, AO_LABEL_RUN_BELUM_DITUTUP, AO_PERNYATAAN, aoBolehKirim, aoKunciBaru, aoUnitBisaDiOverride } from "@/features/production/adminOverrideSiapKirimLogic.js";
+import { AO_JUDUL, AO_LABEL_RUN_BELUM_DITUTUP, AO_PERNYATAAN, aoBolehKirim, aoKunciBaru, aoSaklarMengizinkan, aoUnitBisaDiOverride } from "@/features/production/adminOverrideSiapKirimLogic.js";
 
 // ADMIN OVERRIDE: SIAP KIRIM SAAT PENCATATAN PRODUKSI BELUM SELESAI — keputusan Admin/Owner per unit. Pencatatan Production Run masih dalam pengembangan, jadi unit yang ditetapkan siap
 // untuk proses pengiriman perlu bisa masuk Route Planner walau Run masih ACTIVE. Run/tahap Produksi dibiarkan (tidak ditutup, tidak diubah); QC/foto/serah terima Gudang/stok TIDAK dibuat.
@@ -28,7 +28,7 @@ export function AdminOverrideDialog({ unitId, onClose, onDone }) {
   }, [unitId]);
 
   const kode = pv?.unit?.unitCode ?? "";
-  const bolehKirim = aoBolehKirim({ eligible: pv?.eligible, kodeDiketik, kodeUnit: kode, locationId, alasan, konfirmasi, sibuk });
+  const bolehKirim = aoBolehKirim({ eligible: pv?.eligible, aktif: aoSaklarMengizinkan(pv), kodeDiketik, kodeUnit: kode, locationId, alasan, konfirmasi, sibuk });
   // Muat ulang induk HANYA saat dialog ditutup supaya hasil sempat terbaca (panel induk bisa hilang begitu unit Siap Kirim).
   const tutup = () => { onClose(); if (hasil) onDone?.(); };
   async function kirim() {
@@ -74,6 +74,12 @@ export function AdminOverrideDialog({ unitId, onClose, onDone }) {
             </div>
           ) : (
             <>
+              {!aoSaklarMengizinkan(pv) && (
+                <div className="rounded-lg bg-orangebg px-3 py-2 text-orange" data-testid="ao-saklar-mati">
+                  <p className="m-0 font-semibold">Admin override belum diaktifkan</p>
+                  <p className="m-0 mt-0.5">{pv?.saklar?.enabled ? `Override sedang dibatasi untuk unit tertentu (${(pv.saklar.unitCodes ?? []).join(", ")}); unit ini belum termasuk.` : "Owner/Admin mengaktifkannya di Pengaturan Produksi › Alur Kerja. Tidak ada yang berubah sebelum itu."}</p>
+                </div>
+              )}
               {!pv.eligible && (
                 <div className="rounded-lg bg-orangebg px-3 py-2 text-orange" data-testid="ao-penghalang">
                   <p className="m-0 font-semibold">Belum bisa ditetapkan Siap Kirim</p>

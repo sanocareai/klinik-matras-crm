@@ -855,6 +855,9 @@ export const api = {
   confirmProductionV2FinishedGoods: (runId, data = {}, idempotencyKey = mutationKey("kbj")) =>
     request(`/production-v2/runs/${runId}/confirm-finished-goods`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   // Admin override: Siap Kirim saat pencatatan produksi belum selesai (Admin/Owner; Run Produksi TIDAK ditutup; keputusan Admin, bukan hasil pemeriksaan): pratinjau baca-saja + perintah (alasan, kode unit, lokasi pengambilan, konfirmasi override wajib).
+  getAdminOverrideSwitch: () => request("/production-v2/admin-override/switch"),
+  setAdminOverrideSwitch: (data) => request("/production-v2/admin-override/switch", { method: "PUT", body: JSON.stringify(data) }),
+  getAdminOverrideReport: () => request("/production-v2/admin-override/report"),
   getOrderUnitsList: (orderId) => request(`/orders/${orderId}/units`),
   getProductionV2DeliveryRelease: (unitId) => request(`/production-v2/units/${unitId}/delivery-release`),
   releaseProductionV2UnitForDelivery: (unitId, data = {}, idempotencyKey = mutationKey("pf")) =>

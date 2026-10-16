@@ -140,8 +140,11 @@ const TGL = "2026-10-20";
 const ok2 = (res) => { assert.ok([200, 201].includes(res.status), JSON.stringify(res.body)); return res.body; };
 // Run adaptasi AKTIF: tahap 1–5 dilewati (Adaptasi sistem), gerbang QC dicatat tidak dilakukan pada tahap 9; tahap Corner 10–12 TIDAK dicatat -> unit tetap IN_PRODUCTION.
 let stasiunSeq = 0;
-async function rikaLike(w) {
+const SAKLAR = "production_admin_override_siap_kirim";
+const setSaklar = (enabled, unitCodes = []) => testPrisma.v2FeatureFlag.upsert({ where: { key: SAKLAR }, create: { key: SAKLAR, enabled, scope: "GLOBAL", config: { unitCodes }, reason: "uji saklar override" }, update: { enabled, config: { unitCodes } } });
+async function rikaLike(w, { tanpaSaklar = false } = {}) {
   await enableAdaptationDefault();
+  if (!tanpaSaklar) await setSaklar(true); // saklar override fail-closed: uji lain mengaktifkannya; uji saklar memakai tanpaSaklar
   const { unit, run } = await acceptedUnit(w);
   await planOnBoard(w, run.id, { station: `TABLE_${1 + (stasiunSeq++ % 4)}` });
   for (const n of [1, 3, 4, 5]) ok(await w.nadya.api.post(`${V2}/runs/${run.id}/steps/${n}/skip`, { expectedRevision: (await card(w, run.id)).revision, workCenterId: w.wc }, key(`rk-sk-${n}-${++seq}`)));
@@ -499,4 +502,109 @@ test("P11. Route Planner & app Driver: unit override tampil JUJUR — 'override 
   const w2 = await world(); const r2 = await rikaLike(w2);
   const d2 = ok2(await pl.api.post(`${ARM}/jobs`, { type: "DELIVERY", unitIds: [r2.unit.id], scheduledDate: TGL, menungguKonfirmasi: true }));
   const j2 = ok(await pl.api.get(`${ARM}/jobs/${d2.id}`)); assert.deepEqual(j2.overrideAdmin, []); assert.equal(j2.labelOverrideAdmin, null);
+});
+
+const SW = `${V2}/admin-override/switch`;
+const RAP = `${V2}/admin-override/report`;
+
+test("P12. SAKLAR fail-closed: tanpa baris/nonaktif = override BARU ditolak (409 ADMIN_OVERRIDE_DISABLED) tanpa menulis; daftar putih kanari; hanya Admin/Owner mengubah (alasan wajib, tercatat); replay tetap dijawab", async () => {
+  const w = await world(); const adm = await admin(); const pl = await planner();
+  const a = await rikaLike(w, { tanpaSaklar: true }); const b = await rikaLike(w, { tanpaSaklar: true });
+  await testPrisma.v2FeatureFlag.deleteMany({ where: { key: SAKLAR } });
+  // 1) tanpa baris saklar: pratinjau menyatakan tidak aktif; POST ditolak tanpa tulisan
+  const pv = ok(await adm.api.get(REL(a.unit.id))); assert.equal(pv.overrideAktif, false); assert.equal(pv.saklar.enabled, false);
+  const tolak = await release(w, adm, a.unit, a.run); assert.equal(tolak.status, 409, JSON.stringify(tolak.body)); assert.equal(tolak.body.code, "ADMIN_OVERRIDE_DISABLED");
+  assert.equal(await unitStatus(a.unit.id), "IN_PRODUCTION"); assert.equal((await testPrisma.productionRun.findUniqueOrThrow({ where: { id: a.run.id } })).deliveryReleasedAt, null); assert.equal((await jobDeliveryUnit(a.unit.id)).length, 0);
+  // 2) hanya Admin/Owner mengubah saklar; alasan wajib
+  for (const [nama, who] of [["Production Lead", w.lead], ["Dispatcher", pl], ["Driver", w.driver]]) {
+    assert.equal((await who.api.put(SW, { enabled: true, reason: "mengaktifkan override untuk uji" })).status, 403, nama);
+    assert.equal((await who.api.get(SW)).status, 403, `${nama} baca saklar`); assert.equal((await who.api.get(RAP)).status, 403, `${nama} laporan`);
+  }
+  const tanpaAlasan = await adm.api.put(SW, { enabled: true, reason: "pendek" }); assert.equal(tanpaAlasan.status, 400); assert.equal(tanpaAlasan.body.code, "ADMIN_OVERRIDE_SWITCH_REASON_REQUIRED");
+  assert.equal((await adm.api.put(SW, { enabled: "ya", reason: "mengaktifkan override untuk uji" })).status, 400);
+  // 3) daftar putih kanari: hanya unit A
+  const hid = ok(await adm.api.put(SW, { enabled: true, unitCodes: [a.unit.unitCode], reason: "kanari hanya unit Rika pengganti uji" })); assert.deepEqual(hid.unitCodes, [a.unit.unitCode]); assert.equal(hid.enabled, true);
+  const pvB = ok(await adm.api.get(REL(b.unit.id))); assert.equal(pvB.overrideAktif, false, "unit B di luar daftar putih");
+  const tolakB = await release(w, adm, b.unit, b.run); assert.equal(tolakB.status, 409); assert.equal(tolakB.body.code, "ADMIN_OVERRIDE_UNIT_NOT_ALLOWED");
+  assert.equal(await unitStatus(b.unit.id), "IN_PRODUCTION");
+  const pvA = ok(await adm.api.get(REL(a.unit.id))); assert.equal(pvA.overrideAktif, true);
+  const tagA = `sw-a-${++seq}`; const revA = (await card(w, a.run.id)).revision;
+  const okA = await adm.api.post(REL(a.unit.id), relBody(w, a.unit, revA), key(tagA)); assert.equal(okA.status, 200, JSON.stringify(okA.body));
+  // 4) matikan saklar: unit A yang sudah dilepas TIDAK berubah; audit utuh; override baru ditolak; REPLAY kunci lama tetap dijawab (bukan override baru)
+  const ambil = async () => ({ unit: await testPrisma.unit.findUniqueOrThrow({ where: { id: a.unit.id } }), run: await testPrisma.productionRun.findUniqueOrThrow({ where: { id: a.run.id } }), jobs: (await jobDeliveryUnit(a.unit.id)).length, act: await aktivitasRilis(a.unit.id), ob: await outboxRilis(a.run.id) });
+  const ringkas = (x) => ({ st: x.unit.status, loc: x.unit.storageLocation, rel: x.run.deliveryRelease, at: x.run.deliveryReleasedAt, rev: x.run.revision, jobs: x.jobs, act: x.act, ob: x.ob });
+  const sebelum = await ambil();
+  const mati = ok(await adm.api.put(SW, { enabled: false, reason: "menghentikan override baru karena ada masalah" })); assert.equal(mati.enabled, false);
+  const sesudah = await ambil();
+  assert.deepEqual(ringkas(sesudah), ringkas(sebelum), "mematikan saklar TIDAK mengubah unit yang sudah dilepas atau audit");
+  assert.equal(sesudah.unit.status, "READY_FOR_DELIVERY");
+  const replay = await adm.api.post(REL(a.unit.id), relBody(w, a.unit, revA), key(tagA)); assert.equal(replay.status, 200, JSON.stringify(replay.body)); assert.equal(replay.body.replayed, true);
+  const baru = await release(w, adm, b.unit, b.run); assert.equal(baru.status, 409); assert.equal(baru.body.code, "ADMIN_OVERRIDE_DISABLED");
+  // 5) perubahan saklar tercatat (2 perubahan sah; yang ditolak tidak) dengan pelaku + alasan
+  const log = await testPrisma.activityEvent.findMany({ where: { entityType: "production_setting", entityId: SAKLAR, eventType: "PRODUCTION_SETTING_CHANGED" }, orderBy: { createdAt: "asc" } });
+  assert.equal(log.length, 2); assert.equal(log[0].actorId, adm.user.id); assert.match(log[0].metadata.reason, /kanari/); assert.equal(log[1].metadata.to, "NONAKTIF"); assert.match(log[1].metadata.from, /^AKTIF/);
+  // 6) penutupan administratif Run tetap berjalan walau saklar mati (bukan override baru)
+  const tutup = await w.lead.api.post(`${V2}/runs/${a.run.id}/confirm-finished-goods`, { expectedRevision: (await card(w, a.run.id)).revision, unitCode: a.unit.unitCode, reason: "Tutup Run administratif saat saklar override mati", physicalVerified: true, workCenterId: w.wc }, key(`sw-tutup-${++seq}`));
+  assert.equal(tutup.status, 200, JSON.stringify(tutup.body)); assert.equal(await unitStatus(a.unit.id), "READY_FOR_DELIVERY"); assert.equal((await jobDeliveryUnit(a.unit.id)).length, 1);
+});
+
+test("P13. PROSEDUR job/rute yang telanjur terbentuk (tanpa rollback kode): laporan → keluarkan/hapus job per keadaan → unit tetap Siap Kirim, audit utuh, bisa direncanakan ulang tanpa job ganda; job berjalan tidak boleh dihapus", async () => {
+  const w = await world(); const adm = await admin(); const pl = await planner();
+  const A = await rikaLike(w); const B = await rikaLike(w); const C = await rikaLike(w);
+  for (const x of [A, B, C]) assert.equal((await release(w, adm, x.unit, x.run)).status, 200);
+  // Tiga keadaan: A = rute TERBIT + driver (belum jalan); B = rute DRAFT; C = job EN_ROUTE (driver sedang jalan; disimulasikan lewat DB)
+  const jobA = (await jobDeliveryUnit(A.unit.id))[0].jobId; const jobB = (await jobDeliveryUnit(B.unit.id))[0].jobId; const jobC = (await jobDeliveryUnit(C.unit.id))[0].jobId;
+  const ruteA = ok2(await pl.api.post(`${ARM}/routes`, { date: TGL, driverId: w.driver.user.id }));
+  assert.equal((await pl.api.patch(`${ARM}/routes/${ruteA.id}/jobs`, { jobIds: [jobA] })).status, 200); assert.equal((await pl.api.post(`${ARM}/routes/${ruteA.id}/publish`, {})).status, 200);
+  const ruteB = ok2(await pl.api.post(`${ARM}/routes`, { date: TGL }));
+  assert.equal((await pl.api.patch(`${ARM}/routes/${ruteB.id}/jobs`, { jobIds: [jobB] })).status, 200);
+  await testPrisma.job.update({ where: { id: jobC }, data: { status: "EN_ROUTE", driverId: w.driver.user.id } });
+  // 1) Hentikan override baru, lalu BACA laporan: tiap keadaan terklasifikasi dengan tindakan aman
+  ok(await adm.api.put(SW, { enabled: false, reason: "menghentikan override baru; menangani job telanjur" }));
+  const rap = ok(await adm.api.get(RAP)); assert.equal(rap.saklar.enabled, false); assert.equal(rap.ringkas.total, 3);
+  const per = Object.fromEntries(rap.items.map((i) => [i.unit.unitCode, i.jobs[0]]));
+  assert.equal(per[A.unit.unitCode].kode, "RUTE_TERBIT_BELUM_JALAN"); assert.equal(per[B.unit.unitCode].kode, "RUTE_DRAFT"); assert.equal(per[C.unit.unitCode].kode, "SEDANG_BERJALAN");
+  assert.match(per[C.unit.unitCode].tindakan, /JANGAN dihapus/); assert.equal(rap.ringkas.jobSedangBerjalan, 1); assert.ok(rap.items.every((i) => i.runBelumDitutup));
+  const snap = async (x) => ({ u: await testPrisma.unit.findUniqueOrThrow({ where: { id: x.unit.id } }), r: await testPrisma.productionRun.findUniqueOrThrow({ where: { id: x.run.id } }) });
+  const sebelum = { A: await snap(A), B: await snap(B), C: await snap(C) };
+  // 2) job BERJALAN tidak bisa dihapus
+  const hapusC = await pl.api.delete(`${ARM}/jobs/${jobC}`); assert.equal(hapusC.status, 400, JSON.stringify(hapusC.body)); assert.match(hapusC.body.error, /EN_ROUTE/);
+  assert.equal((await jobDeliveryUnit(C.unit.id)).length, 1);
+  // 3) B (rute draf): keluarkan job dari rute lalu hapus job; A (rute terbit belum jalan): batalkan rute lalu hapus job
+  assert.equal((await pl.api.patch(`${ARM}/routes/${ruteB.id}/jobs`, { jobIds: [] })).status, 200);
+  assert.equal((await testPrisma.job.findUniqueOrThrow({ where: { id: jobB } })).routeId, null);
+  ok(await pl.api.delete(`${ARM}/jobs/${jobB}`));
+  const batalA = await pl.api.patch(`${ARM}/routes/${ruteA.id}/cancel`, {}); assert.equal(batalA.status, 200, JSON.stringify(batalA.body));
+  const hapusA = await pl.api.delete(`${ARM}/jobs/${jobA}`); assert.equal(hapusA.status, 200, JSON.stringify(hapusA.body));
+  assert.equal((await jobDeliveryUnit(A.unit.id)).length, 0); assert.equal((await jobDeliveryUnit(B.unit.id)).length, 0);
+  // 4) unit dan audit TIDAK berubah oleh penanganan job/rute
+  for (const [nama, x] of [["A", A], ["B", B], ["C", C]]) {
+    const s = await snap(x);
+    assert.equal(s.u.status, "READY_FOR_DELIVERY", `${nama}: status unit tetap`); assert.equal(s.u.storageLocation, sebelum[nama].u.storageLocation, `${nama}: lokasi tetap`);
+    assert.deepEqual(s.r.deliveryRelease, sebelum[nama].r.deliveryRelease, `${nama}: rekam audit utuh`); assert.equal(s.r.revision, sebelum[nama].r.revision, `${nama}: revisi Run tetap`); assert.equal(s.r.status, "ACTIVE");
+    assert.equal(await aktivitasRilis(x.unit.id), 1, `${nama}: aktivitas audit utuh`); assert.equal(await outboxRilis(x.run.id), 1, `${nama}: outbox audit utuh`);
+  }
+  // 5) laporan sesudah penanganan: A dan B tanpa job (kembali kandidat biasa); C tetap berjalan
+  const rap2 = ok(await adm.api.get(RAP)); const por = Object.fromEntries(rap2.items.map((i) => [i.unit.unitCode, i]));
+  assert.equal(por[A.unit.unitCode].tanpaJob.kode, "TANPA_JOB"); assert.equal(por[B.unit.unitCode].tanpaJob.kode, "TANPA_JOB"); assert.equal(por[C.unit.unitCode].jobs[0].kode, "SEDANG_BERJALAN");
+  // 6) A kembali KANDIDAT BIASA (Siap Kirim, bukan 'menunggu'): bisa dijadwalkan ulang normal → tepat SATU job; override ulang ditolak
+  const papan = ok(await pl.api.get(`${ARM}/board?type=DELIVERY&date=${TGL}`)); assert.ok(papan.available.some((u) => u.id === A.unit.id), "unit A kembali kandidat siap-kirim biasa");
+  const baru = ok2(await pl.api.post(`${ARM}/jobs`, { type: "DELIVERY", unitIds: [A.unit.id], scheduledDate: TGL })); assert.equal((await jobDeliveryUnit(A.unit.id)).length, 1);
+  assert.equal((await release(w, adm, A.unit, A.run, { tag: `p13-ulang-${++seq}` })).status, 409, "override ulang ditolak (sudah di-override / saklar mati)");
+  // 7) penutupan administratif Run belakangan: tidak membuat job baru, tidak mengubah status
+  const tutup = await w.lead.api.post(`${V2}/runs/${A.run.id}/confirm-finished-goods`, { expectedRevision: (await card(w, A.run.id)).revision, unitCode: A.unit.unitCode, reason: "Tutup Run administratif setelah job diulang", physicalVerified: true, workCenterId: w.wc }, key(`p13-tutup-${++seq}`));
+  assert.equal(tutup.status, 200, JSON.stringify(tutup.body)); assert.equal(await unitStatus(A.unit.id), "READY_FOR_DELIVERY");
+  const jobsA = await jobDeliveryUnit(A.unit.id); assert.equal(jobsA.length, 1); assert.equal(jobsA[0].jobId, baru.id, "hanya job hasil jadwal ulang; Run ditutup tidak membuat job ganda");
+});
+
+test("P14. Penanda override dibawa juga oleh snapshot V2 Driver (cohort) dengan lokasi pengambilan yang sama; job biasa tanpa penanda", async () => {
+  const { tandaiJobOverrideAdmin } = await import("../../src/services/deliveryOverrideAdmin.js");
+  const w = await world(); const adm = await admin(); const pl = await planner();
+  const A = await rikaLike(w);
+  const draf = ok2(await pl.api.post(`${ARM}/jobs`, { type: "DELIVERY", unitIds: [A.unit.id], scheduledDate: TGL, menungguKonfirmasi: true }));
+  assert.equal((await release(w, adm, A.unit, A.run)).status, 200);
+  const jobs = [{ id: draf.id }]; await tandaiJobOverrideAdmin(testPrisma, jobs);
+  assert.equal(jobs[0].overrideAdmin.length, 1); assert.equal(jobs[0].overrideAdmin[0].pickupLocationCode, w.fg.code); assert.match(jobs[0].labelOverrideAdmin, /override Admin/);
+  const src = (await import("node:fs")).readFileSync(new URL("../../src/services/driverSnapshotV2.js", import.meta.url), "utf8");
+  assert.match(src, /tandaiJobOverrideAdmin\(prisma, items\.flatMap\(\(item\) => item\.jobs\)\)/, "snapshot V2 Driver menandai job override");
 });

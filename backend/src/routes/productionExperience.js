@@ -31,6 +31,7 @@ import { productionReportsRouter } from "./productionReports.js";
 import { productionTargetsRouter } from "./productionTargets.js";
 import { productionUnitPhotoUploadRouter } from "./productionUnitPhoto.js";
 import { PRODUCTION_READER_MODE, loadV2Flags, resolveProductionReaderState } from "../services/v2FeatureFlags.js";
+import { adminOverrideReport, readAdminOverrideSwitch, setAdminOverrideSwitch } from "../services/adminOverrideSwitch.js";
 import { UUID_RE, isUnitV2ExecutionOwned, findV1Drift } from "../services/unitV2Ownership.js";
 import { BOARD_DEFAULTS, todayWib } from "../lib/domain/productionBoard.js";
 import { normalizeExportQuery } from "../lib/domain/productionRencanaExport.js";
@@ -433,6 +434,27 @@ productionExperienceRouter.post("/units/:unitId/delivery-release", requirePermis
       unitId: req.params.unitId, actorId: req.user.id, canRelease: isReleaseAdmin(req.user), idempotencyKey: idem(req), expectedRevision: req.body?.expectedRevision,
       unitCode: req.body?.unitCode, locationId: req.body?.locationId, reason: req.body?.reason, adminOverrideConfirmed: req.body?.adminOverrideConfirmed,
     }));
+  } catch (err) { handleErr(err, res); }
+});
+
+// Saklar + laporan Admin override (Admin/Owner). Saklar = kill switch override BARU (fail-closed; tidak mengubah unit/Run/audit yang sudah ada). Laporan = daftar override + job/rute terkait + tindakan aman.
+// GET /api/production-v2/admin-override/switch · PUT /api/production-v2/admin-override/switch { enabled, unitCodes?, reason } · GET /api/production-v2/admin-override/report
+productionExperienceRouter.get("/admin-override/switch", requirePermission(P.UNIT_STAGE_WRITE), async (req, res) => {
+  try {
+    if (!isReleaseAdmin(req.user)) return res.status(403).json({ error: "Hanya Admin atau Owner", code: "RELEASE_FORBIDDEN" });
+    res.json(await readAdminOverrideSwitch(prisma));
+  } catch (err) { handleErr(err, res); }
+});
+productionExperienceRouter.put("/admin-override/switch", requirePermission(P.UNIT_STAGE_WRITE), async (req, res) => {
+  try {
+    if (!isReleaseAdmin(req.user)) return res.status(403).json({ error: "Hanya Admin atau Owner", code: "RELEASE_FORBIDDEN" });
+    res.json(await setAdminOverrideSwitch(prisma, { actorId: req.user.id, enabled: req.body?.enabled, unitCodes: req.body?.unitCodes ?? [], reason: req.body?.reason }));
+  } catch (err) { handleErr(err, res); }
+});
+productionExperienceRouter.get("/admin-override/report", requirePermission(P.UNIT_STAGE_WRITE), async (req, res) => {
+  try {
+    if (!isReleaseAdmin(req.user)) return res.status(403).json({ error: "Hanya Admin atau Owner", code: "RELEASE_FORBIDDEN" });
+    res.json(await adminOverrideReport(prisma, { limit: req.query.limit }));
   } catch (err) { handleErr(err, res); }
 });
 
