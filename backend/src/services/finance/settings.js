@@ -83,14 +83,22 @@ export const SETTING_KEYS = Object.freeze({
   // REKONSILIASI BANK V2 (15 Okt 2026) — SAKELAR ROLLOUT, DEFAULT MATI. MATI = impor rekening koran, pencocokan, pengecualian, opname kas, dan penyelesaian periode ditolak 403 di server.
   // Mutasi Buku per rekening & laporan exception (baca-saja) TIDAK memakai sakelar ini. Sakelar tidak pernah mengubah jurnal/saldo buku.
   BANK_RECONCILIATION_V2_ACTIVE: "bank_reconciliation_v2_active",
-  // POSTING DOKUMEN STOK RESMI (Stock Count/Adjustment/Damaged Stock, Okt 2026) — SAKELAR ROLLOUT, DEFAULT MATI. MATI = endpoint posting/pembalikan menolak 409; pratinjau (baca-saja) tetap jalan.
-  // STOK_RESMI_POSTING_SEJAK = tanggal (YYYY-MM-DD) mulai dokumen boleh dijurnal; KOSONG = tidak ada dokumen yang boleh diposting walau sakelar nyala. Dokumen sebelum tanggal ini ditolak (tanpa jurnal mundur).
+  // POSTING DOKUMEN STOK RESMI (Okt 2026) — TIGA SAKELAR ROLLOUT TERPISAH, SEMUA DEFAULT MATI: Stock Count (opname), Stock Adjustment (penyesuaian), Damaged Stock DISPOSE (rusak).
+  // MATI = endpoint posting DAN pembalikan jenis itu menolak 409 tanpa menulis apa pun; pratinjau (baca-saja) tetap jalan. Return Record / Retur ke Supplier / Konversi / baseline migrasi TIDAK punya sakelar (ditolak permanen).
+  // *_SEJAK = tanggal (YYYY-MM-DD) mulai dokumen jenis itu boleh dijurnal; KOSONG = tidak ada dokumen yang boleh diposting walau sakelar nyala. Dokumen sebelum tanggal ini ditolak (tanpa jurnal mundur).
   // Sakelar hanya membuka jalur posting yang dipanggil Finance secara eksplisit; tidak ada pintu Gudang yang memposting otomatis.
-  STOK_RESMI_POSTING_AKTIF: "stok_resmi_posting_aktif",
-  STOK_RESMI_POSTING_SEJAK: "stok_resmi_posting_sejak",
+  STOK_RESMI_OPNAME_AKTIF: "stok_resmi_opname_aktif",
+  STOK_RESMI_OPNAME_SEJAK: "stok_resmi_opname_sejak",
+  STOK_RESMI_PENYESUAIAN_AKTIF: "stok_resmi_penyesuaian_aktif",
+  STOK_RESMI_PENYESUAIAN_SEJAK: "stok_resmi_penyesuaian_sejak",
+  STOK_RESMI_RUSAK_AKTIF: "stok_resmi_rusak_aktif",
+  STOK_RESMI_RUSAK_SEJAK: "stok_resmi_rusak_sejak",
 });
+/** Kunci sakelar stok resmi untuk validasi PATCH /settings (boolean vs tanggal). */
+export const STOK_RESMI_KUNCI_AKTIF = [SETTING_KEYS.STOK_RESMI_OPNAME_AKTIF, SETTING_KEYS.STOK_RESMI_PENYESUAIAN_AKTIF, SETTING_KEYS.STOK_RESMI_RUSAK_AKTIF];
+export const STOK_RESMI_KUNCI_SEJAK = [SETTING_KEYS.STOK_RESMI_OPNAME_SEJAK, SETTING_KEYS.STOK_RESMI_PENYESUAIAN_SEJAK, SETTING_KEYS.STOK_RESMI_RUSAK_SEJAK];
 
-const DEFAULTS = Object.freeze({
+export const DEFAULTS = Object.freeze({
   // DEFAULT FALSE — DISENGAJA, dan ini keputusan migrasi yang penting.
   //
   // Perilaku hari ini: SEMUA payment (terverifikasi atau belum) menentukan
@@ -127,8 +135,12 @@ const DEFAULTS = Object.freeze({
   [SETTING_KEYS.UKURAN_CUSTOM_WAJIB]: "false",
   [SETTING_KEYS.UKURAN_CUSTOM_WAJIB_SEJAK]: "",
   [SETTING_KEYS.BANK_RECONCILIATION_V2_ACTIVE]: "false",
-  [SETTING_KEYS.STOK_RESMI_POSTING_AKTIF]: "false",
-  [SETTING_KEYS.STOK_RESMI_POSTING_SEJAK]: "",
+  [SETTING_KEYS.STOK_RESMI_OPNAME_AKTIF]: "false",
+  [SETTING_KEYS.STOK_RESMI_OPNAME_SEJAK]: "",
+  [SETTING_KEYS.STOK_RESMI_PENYESUAIAN_AKTIF]: "false",
+  [SETTING_KEYS.STOK_RESMI_PENYESUAIAN_SEJAK]: "",
+  [SETTING_KEYS.STOK_RESMI_RUSAK_AKTIF]: "false",
+  [SETTING_KEYS.STOK_RESMI_RUSAK_SEJAK]: "",
 });
 
 // Payment.method → kunci pengaturan rekening tujuannya. SATU tempat, supaya

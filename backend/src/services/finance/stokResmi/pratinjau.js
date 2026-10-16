@@ -7,7 +7,7 @@ import { dasarHargaRataRata } from "../posting/inventory.js";
 import { statusCutoverUntuk, saldoPersediaanSampai, kunciWIB } from "../persediaanAwal.js";
 import { getSettingRaw, parseBool, SETTING_KEYS } from "../settings.js";
 import { muatDokumen } from "./dokumen.js";
-import { JENIS, KODE, PESAN, SEMUA_JENIS, StokResmiError } from "./matriks.js";
+import { JENIS, KODE, PESAN, SEMUA_JENIS, SAKELAR, StokResmiError } from "./matriks.js";
 
 const rp = (d) => moneyToNumber(d);
 const info = (kode, extra = {}) => ({ kode, pesan: PESAN[kode], ...extra });
@@ -30,11 +30,14 @@ export async function pemakaianPicPembanding(db, materialIds, dari, sampai) {
     .filter((x) => x.belumTercatat > 0);
 }
 
-/** Pengaturan sakelar + tanggal mulai (dibaca sekali). */
-export async function bacaPengaturanPosting(db) {
+/** Sakelar + tanggal mulai UNTUK SATU JENIS dokumen (dibaca sekali; baca-saja). Jenis tanpa sakelar (Return Record) = tidak pernah aktif. */
+export async function bacaPengaturanPosting(db, jenis) {
+  const s = SAKELAR[jenis];
+  if (!s) return { aktif: false, sejak: null, kunci: null, tanpaSakelar: true };
   return {
-    aktif: parseBool(await getSettingRaw(db, SETTING_KEYS.STOK_RESMI_POSTING_AKTIF)),
-    sejak: (await getSettingRaw(db, SETTING_KEYS.STOK_RESMI_POSTING_SEJAK)) || null,
+    aktif: parseBool(await getSettingRaw(db, s.aktif)),
+    sejak: (await getSettingRaw(db, s.sejak)) || null,
+    kunci: { aktif: s.aktif, sejak: s.sejak },
   };
 }
 
@@ -57,7 +60,7 @@ export async function pratinjau(db, jenis, id, { resolusi = null, sekarang = new
   if (!SEMUA_JENIS.includes(jenis)) throw new StokResmiError(`Jenis dokumen tidak dikenal: ${jenis}`, 400, "JENIS_TIDAK_DIKENAL");
   const d = await muatDokumen(db, jenis, id, { resolusi, sekarang });
   if (!d) throw new StokResmiError("Dokumen tidak ditemukan", 404, "DOKUMEN_TIDAK_ADA");
-  const set = pengaturan ?? await bacaPengaturanPosting(db);
+  const set = pengaturan ?? await bacaPengaturanPosting(db, jenis);
   const { penolakan, catatan } = evaluasiAturan(d, set);
   const peringatan = [...catatan];
 

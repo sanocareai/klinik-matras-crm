@@ -41,7 +41,7 @@ Mesin: `bukukanPergerakan` (sama dengan Material Issue) — satu jurnal per doku
 | Damaged REWORK/RESTORE | tidak ada pergerakan | — | — | — | — | tidak ada jurnal |
 | Return Record RETURN_TO_AVAILABLE | **asal barang tak terbukti** (nilai perolehan barang retur tidak ada) | — | — | — | — | **DITOLAK** |
 
-Aturan keras (semuanya diuji): sakelar `stok_resmi_posting_aktif` DEFAULT MATI **dan** `stok_resmi_posting_sejak` wajib terisi; dokumen harus final; dokumen sebelum tanggal mulai ditolak; baseline migrasi ditolak; tanpa harga → gap `TANPA_HARGA_PEROLEHAN` (bukan Rp0); harga referensi Excel tidak dipakai; cutover `tertutup` → tidak dijurnal (sudah tercakup persediaan awal), `tunggu_pembuka` → gap, bukan jurnal negatif; periode tertutup → rollback penuh.
+Aturan keras (semuanya diuji): sakelar PER JENIS (`stok_resmi_opname_aktif/_sejak` (Stock Count), `stok_resmi_penyesuaian_aktif/_sejak` (Stock Adjustment), `stok_resmi_rusak_aktif/_sejak` (Damaged DISPOSE)) semuanya DEFAULT MATI **dan** tanggal mulai jenis itu wajib terisi; dokumen harus final; dokumen sebelum tanggal mulai ditolak; baseline migrasi ditolak; tanpa harga → gap `TANPA_HARGA_PEROLEHAN` (bukan Rp0); harga referensi Excel tidak dipakai; cutover `tertutup` → tidak dijurnal (sudah tercakup persediaan awal), `tunggu_pembuka` → gap, bukan jurnal negatif; periode tertutup → rollback penuh.
 
 ## 4. Pemisahan: selisih hitung fisik ≠ pemakaian bahan per order
 
@@ -58,7 +58,8 @@ Aturan keras (semuanya diuji): sakelar `stok_resmi_posting_aktif` DEFAULT MATI *
 - `POST /api/finance/stok-resmi/:jenis/:id/posting` | `/pembalikan` (finance:admin, `alasan` ≥ 5 karakter) — **mati selama sakelar MATI**
 - Tidak ada pintu Gudang yang memanggil modul ini: **tidak ada posting otomatis baru**; stok & jurnal produksi tidak diubah.
 - Perubahan kecil di `posting/inventory.js`: parameter opsional `akunKeyUntuk` (perilaku lama identik; tes K5/Opname hijau).
-- Dua pengaturan baru di `fin_settings` (tanpa migrasi): `stok_resmi_posting_aktif` (default `false`), `stok_resmi_posting_sejak` (default kosong), divalidasi di `PATCH /api/finance/settings`.
+- Enam pengaturan baru di `fin_settings` (tanpa migrasi), tiga sakelar per jenis + tanggal mulai masing-masing: `stok_resmi_opname_aktif/_sejak` (Stock Count), `stok_resmi_penyesuaian_aktif/_sejak` (Stock Adjustment), `stok_resmi_rusak_aktif/_sejak` (Damaged DISPOSE). Default `false` / kosong; divalidasi di `PATCH /api/finance/settings` (tanggal kalender valid). **Return Record tidak punya sakelar** (ditolak permanen), begitu pula Retur ke Supplier, Konversi, dan baseline migrasi. Sakelar mati menolak posting DAN pembalikan jenis itu (409) sebelum kunci/tulis apa pun.
+- Pratinjau berjalan dalam transaksi Postgres `READ ONLY` (jaminan di level database), diuji 24 panggilan paralel tanpa perubahan satu baris pun di tabel mana pun. Izin: pratinjau/matriks = finance:read (ADMIN, OWNER, FINANCE, ACCOUNTANT, APPROVER); posting/pembalikan = finance:admin (ADMIN, OWNER) saja.
 
 Tes (DB terisolasi): `stokResmi.integration.test.js` 16 tes — pratinjau tidak menulis & = baris jurnal; arah debit/kredit; sakelar/tanggal/final; penolakan (Return, Retur Supplier, Konversi, baseline); tanpa harga; idempoten + 6 permintaan paralel = 1 jurnal; reversal final; atomik (rollback jurnal+gap+aktivitas); periode tertutup; cutover tunggu pembuka; isolasi (ledger stok & ISSUE historis tak berubah); izin; validasi pengaturan. `stokResmi.test.js` 6 tes murni.
 
@@ -79,13 +80,13 @@ Tes (DB terisolasi): `stokResmi.integration.test.js` 16 tes — pratinjau tidak 
 3. Bila selisih tampak sebagai "pemakaian belum tercatat" → selesaikan dulu di Produksi (Material Issue), lalu lihat pratinjau ulang.
 4. Finance (finance:admin) memposting dengan alasan tertulis; jurnal agregat, tercatat di log aktivitas. Koreksi = reversal + dokumen baru (final; tidak diposting ulang diam-diam).
 
-**E. Urutan aktivasi tiap jenis dokumen** (`stok_resmi_posting_sejak` = tanggal cutover; QA setiap tahap):
+**E. Urutan aktivasi tiap jenis dokumen** (tiap jenis punya sakelar + tanggal mulai sendiri = tanggal cutover; QA setiap tahap):
 1. Stock Count (selisih opname pertama pasca-PSA) → verifikasi saldo 1-1400 = nilai stok.
 2. Stock Adjustment POSITIVE/NEGATIVE/COUNT_DIFFERENCE/OTHER/DATA_CORRECTION.
 3. Damaged Stock DISPOSE + Adjustment DAMAGE/EXPIRY (Beban Susut).
 4. Ditunda sampai aturan bisnis ada: Return Record (butuh asal & nilai perolehan), Retur ke Supplier (Debit Note), Konversi (pasangan keluar-masuk).
 
-*Catatan teknis:* sakelar saat ini satu untuk semua jenis; pemilahan per jenis cukup lewat aturan penolakan yang ada. Bila Owner ingin sakelar per jenis, itu perubahan kecil tambahan.
+*Catatan teknis:* sakelar kini per jenis (Stock Count / Adjustment / Damaged DISPOSE), semuanya MATI saat rilis. Adjustment tipe DAMAGE/EXPIRY mengikuti sakelar Adjustment (bukan sakelar Damaged).
 
 ## 7. Risiko terhadap rekonsiliasi stok
 

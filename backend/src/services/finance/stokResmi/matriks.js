@@ -125,6 +125,16 @@ export function akunBebanUntuk(jenis, doc) {
   return "SELISIH_STOK";
 }
 
+import { SETTING_KEYS } from "../settings.js";
+
+/** Sakelar per jenis dokumen. RETURN_RECORD sengaja TANPA sakelar: ditolak permanen (asal & nilai perolehan barang retur tidak terbukti). */
+export const SAKELAR = Object.freeze({
+  STOCK_COUNT: { aktif: SETTING_KEYS.STOK_RESMI_OPNAME_AKTIF, sejak: SETTING_KEYS.STOK_RESMI_OPNAME_SEJAK, nama: "Stock Count (opname)" },
+  STOCK_ADJUSTMENT: { aktif: SETTING_KEYS.STOK_RESMI_PENYESUAIAN_AKTIF, sejak: SETTING_KEYS.STOK_RESMI_PENYESUAIAN_SEJAK, nama: "Stock Adjustment" },
+  DAMAGED_STOCK: { aktif: SETTING_KEYS.STOK_RESMI_RUSAK_AKTIF, sejak: SETTING_KEYS.STOK_RESMI_RUSAK_SEJAK, nama: "Damaged Stock (DISPOSE)" },
+  RETURN_RECORD: null,
+});
+
 export class StokResmiError extends Error {
   constructor(message, statusCode = 400, code = null, detail = null) {
     super(message); this.name = "StokResmiError"; this.statusCode = statusCode; if (code) this.code = code; if (detail) this.extra = { detail };

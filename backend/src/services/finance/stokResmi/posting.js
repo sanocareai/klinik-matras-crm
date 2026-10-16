@@ -25,8 +25,16 @@ async function kunciDokumen(tx, jenis, id) {
 export async function postDokumenStok(tx, { jenis, id, userId, alasan }) {
   if (!String(alasan ?? "").trim() || String(alasan).trim().length < 5) throw new StokResmiError("Alasan posting wajib diisi (minimal 5 karakter).", 400, "ALASAN_WAJIB");
   if (!JENIS[jenis]) throw new StokResmiError(`Jenis dokumen tidak dikenal: ${jenis}`, 400, "JENIS_TIDAK_DIKENAL");
+  // Sakelar jenis ini diperiksa PERTAMA dan murni baca: MATI = tolak 409 sebelum kunci/tulis apa pun (tanpa jurnal, gap, aktivitas, ataupun perubahan stok).
+  const pengaturan = await bacaPengaturanPosting(tx, jenis);
+  const d0 = pengaturan.aktif ? null : await muatDokumen(tx, jenis, id);
+  if (!pengaturan.aktif) {
+    if (!d0) throw new StokResmiError("Dokumen tidak ditemukan", 404, "DOKUMEN_TIDAK_ADA");
+    const { penolakan: p0 } = evaluasiAturan(d0, pengaturan, { untukPosting: true });
+    const pertama = p0[0];
+    throw new StokResmiError(pertama.pesan, pertama.kode === KODE.FITUR_BELUM_AKTIF ? 409 : 422, pertama.kode, p0);
+  }
   await kunciDokumen(tx, jenis, id);
-  const pengaturan = await bacaPengaturanPosting(tx);
   const d = await muatDokumen(tx, jenis, id);
   if (!d) throw new StokResmiError("Dokumen tidak ditemukan", 404, "DOKUMEN_TIDAK_ADA");
 
@@ -59,9 +67,9 @@ export async function postDokumenStok(tx, { jenis, id, userId, alasan }) {
 export async function balikDokumenStok(tx, { jenis, id, userId, alasan }) {
   if (!String(alasan ?? "").trim() || String(alasan).trim().length < 5) throw new StokResmiError("Alasan pembalikan wajib diisi (minimal 5 karakter).", 400, "ALASAN_WAJIB");
   if (!JENIS[jenis]) throw new StokResmiError(`Jenis dokumen tidak dikenal: ${jenis}`, 400, "JENIS_TIDAK_DIKENAL");
+  const pengaturan = await bacaPengaturanPosting(tx, jenis);
+  if (!pengaturan.aktif) throw new StokResmiError(PESAN[KODE.FITUR_BELUM_AKTIF], 409, KODE.FITUR_BELUM_AKTIF); // MATI = tolak sebelum kunci/tulis apa pun
   await kunciDokumen(tx, jenis, id);
-  const pengaturan = await bacaPengaturanPosting(tx);
-  if (!pengaturan.aktif) throw new StokResmiError(PESAN[KODE.FITUR_BELUM_AKTIF], 409, KODE.FITUR_BELUM_AKTIF);
   const d = await muatDokumen(tx, jenis, id);
   if (!d) throw new StokResmiError("Dokumen tidak ditemukan", 404, "DOKUMEN_TIDAK_ADA");
   const entry = await findEntryByKey(tx, d.kunci);

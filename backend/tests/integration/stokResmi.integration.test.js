@@ -10,7 +10,7 @@ import { createTestUser, createTestMaterial } from "./setup/fixtures.js";
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
 import { ensureDefaultChartOfAccounts } from "../../src/services/finance/accounts.js";
-import { SETTING_KEYS } from "../../src/services/finance/settings.js";
+import { SETTING_KEYS, DEFAULTS } from "../../src/services/finance/settings.js";
 import { pratinjau, postDokumenStok, balikDokumenStok } from "../../src/services/finance/stokResmi/index.js";
 
 let server;
@@ -18,12 +18,14 @@ test.before(async () => { await truncateAll(); server = await startTestServer(bu
 test.afterEach(async () => { await truncateAll(); });
 test.after(async () => { await truncateAll(); await server.close(); await testPrisma.$disconnect(); });
 
+const KUNCI_AKTIF = [SETTING_KEYS.STOK_RESMI_OPNAME_AKTIF, SETTING_KEYS.STOK_RESMI_PENYESUAIAN_AKTIF, SETTING_KEYS.STOK_RESMI_RUSAK_AKTIF];
+const KUNCI_SEJAK = [SETTING_KEYS.STOK_RESMI_OPNAME_SEJAK, SETTING_KEYS.STOK_RESMI_PENYESUAIAN_SEJAK, SETTING_KEYS.STOK_RESMI_RUSAK_SEJAK];
 const set = (key, value) => testPrisma.finSetting.upsert({ where: { key }, update: { value }, create: { key, value } });
 async function dunia({ aktif = true, sejak = "2020-01-01", cutover = "" } = {}) {
   await testPrisma.$transaction((tx) => ensureDefaultChartOfAccounts(tx));
   await set(SETTING_KEYS.INVENTORY_CUTOVER_DATE, cutover);
-  await set(SETTING_KEYS.STOK_RESMI_POSTING_AKTIF, aktif ? "true" : "false");
-  await set(SETTING_KEYS.STOK_RESMI_POSTING_SEJAK, sejak);
+  for (const k of KUNCI_AKTIF) await set(k, aktif ? "true" : "false");
+  for (const k of KUNCI_SEJAK) await set(k, sejak);
   const admin = await createTestUser({ roles: ["ADMIN"] });
   const fin = await createTestUser({ roles: ["FINANCE"] });
   const gudang = await createTestUser({ roles: ["WAREHOUSE"] });
@@ -118,11 +120,11 @@ test("sakelar MATI (default): posting 409 FITUR_BELUM_AKTIF tanpa jurnal; tangga
   assert.equal(p.status, 200); assert.equal(p.body.siapDiposting, false);
   assert.ok(p.body.peringatan.some((x) => x.kode === "FITUR_BELUM_AKTIF"));
 
-  await set(SETTING_KEYS.STOK_RESMI_POSTING_AKTIF, "true"); await set(SETTING_KEYS.STOK_RESMI_POSTING_SEJAK, "");
+  await set(SETTING_KEYS.STOK_RESMI_OPNAME_AKTIF, "true"); await set(SETTING_KEYS.STOK_RESMI_OPNAME_SEJAK, "");
   const k = await mati.a.post(`/api/finance/stok-resmi/STOCK_COUNT/${c.id}/posting`, { alasan: "uji tanggal kosong" });
   assert.equal(k.status, 422); assert.equal(k.body.code, "TANGGAL_AKTIVASI_BELUM_DIISI");
 
-  await set(SETTING_KEYS.STOK_RESMI_POSTING_SEJAK, "2026-10-01"); // dokumen 30 Sep → sebelum tanggal mulai
+  await set(SETTING_KEYS.STOK_RESMI_OPNAME_SEJAK, "2026-10-01"); // dokumen 30 Sep → sebelum tanggal mulai
   const k2 = await mati.a.post(`/api/finance/stok-resmi/STOCK_COUNT/${c.id}/posting`, { alasan: "uji periode" });
   assert.equal(k2.status, 422); assert.equal(k2.body.code, "DI_LUAR_PERIODE_AKTIVASI");
   assert.equal(await testPrisma.finJournalEntry.count(), 0);
@@ -305,13 +307,27 @@ test("pembatasan izin: Gudang tidak boleh pratinjau/posting; Finance boleh prati
   assert.equal(await testPrisma.finJournalEntry.count(), 0);
 });
 
-test("pengaturan: PATCH /settings memvalidasi sakelar & tanggal mulai; default sakelar = MATI", async () => {
+test("pengaturan: tiga sakelar per jenis, SEMUA default mati + tanpa tanggal; PATCH memvalidasi nilai & tanggal (kalender valid)", async () => {
   const w = await dunia({ aktif: false, sejak: "" });
+  for (const k of KUNCI_AKTIF) assert.equal(DEFAULTS[k], "false", k);
+  for (const k of KUNCI_SEJAK) assert.equal(DEFAULTS[k], "", k);
+  assert.equal(Object.keys(DEFAULTS).filter((k) => k.startsWith("stok_resmi_")).length, 6);
+  await testPrisma.finSetting.deleteMany({ where: { key: { startsWith: "stok_resmi_" } } }); // tanpa baris sama sekali = default
   const s = await w.a.get("/api/finance/settings");
   assert.equal(s.status, 200);
-  assert.equal(String(s.body.settings?.[SETTING_KEYS.STOK_RESMI_POSTING_AKTIF] ?? s.body[SETTING_KEYS.STOK_RESMI_POSTING_AKTIF] ?? "false"), "false");
-  assert.equal((await w.a.patch("/api/finance/settings", { [SETTING_KEYS.STOK_RESMI_POSTING_AKTIF]: "mungkin" })).status, 400);
-  assert.equal((await w.a.patch("/api/finance/settings", { [SETTING_KEYS.STOK_RESMI_POSTING_SEJAK]: "1 Oktober" })).status, 400);
+  const baca = (k) => String(s.body.settings?.[k] ?? s.body[k]);
+  for (const k of KUNCI_AKTIF) assert.equal(baca(k), "false", k);
+  for (const k of KUNCI_SEJAK) assert.equal(baca(k), "", k);
+  for (const k of KUNCI_AKTIF) assert.equal((await w.a.patch("/api/finance/settings", { settings: { [k]: "mungkin" } })).status, 400, k);
+  for (const k of KUNCI_SEJAK) {
+    assert.equal((await w.a.patch("/api/finance/settings", { settings: { [k]: "1 Oktober" } })).status, 400, k);
+    assert.equal((await w.a.patch("/api/finance/settings", { settings: { [k]: "2026-13-45" } })).status, 400, k);
+    assert.equal((await w.a.patch("/api/finance/settings", { settings: { [k]: "2026-02-31" } })).status, 400, k);
+    assert.equal((await w.a.patch("/api/finance/settings", { settings: { [k]: "2026-10-16" } })).status, 200, k);
+    assert.equal((await w.a.patch("/api/finance/settings", { settings: { [k]: "" } })).status, 200, k);
+    assert.equal((await testPrisma.finSetting.findUnique({ where: { key: k } })).value, "", k);
+  }
+  assert.equal((await w.f.patch("/api/finance/settings", { settings: { [KUNCI_AKTIF[0]]: "true" } })).status, 403, "Finance biasa tidak boleh menyalakan sakelar");
 });
 
 test("matriks jurnal: GET /stok-resmi/matriks memuat 6 aksi dan menandai yang DITOLAK", async () => {
@@ -322,12 +338,116 @@ test("matriks jurnal: GET /stok-resmi/matriks memuat 6 aksi dan menandai yang DI
   assert.equal(r.body.matriks.filter((x) => x.posting === "DITOLAK").length, 3, JSON.stringify(r.body.matriks.map((x) => [x.jenis, x.aksi, x.posting])));
 });
 
-test("pembalikan tanpa sakelar aktif ditolak 409 (tidak ada jalur belakang untuk memanipulasi jurnal saat fitur mati)", async () => {
+test("sakelar PER JENIS: menyalakan satu jenis tidak membuka jenis lain; tanggal mulai per jenis; Return Record tidak punya sakelar", async () => {
   const w = await dunia({ aktif: false });
+  const m = await createTestMaterial({ code: "BHN-PERJENIS", unit: "KG" });
+  await terima(m.id, 20, 10_000);
+  await set(SETTING_KEYS.STOK_RESMI_OPNAME_AKTIF, "true"); await set(SETTING_KEYS.STOK_RESMI_OPNAME_SEJAK, "2020-01-01");
+  const { c } = await hitungSelesai(m.id, -1);
+  const { r } = await penyesuaianPosted(m.id, -1);
+  const { r: d } = await rusakSelesai(m.id, 1, "DISPOSE");
+  const rr = await testPrisma.returnRecord.create({ data: { returnNumber: "RTN-010126-07", returnType: "CUSTOMER_RETURN", materialId: m.id, qty: 1, status: "COMPLETED", resolution: "RETURN_TO_AVAILABLE", completedAt: new Date("2026-09-30T05:00:00Z") } });
+  await testPrisma.stockMovement.create({ data: { materialId: m.id, type: "RETURN", qty: 1, returnRecordId: rr.id, createdAt: new Date("2026-09-30T05:00:00Z") } });
+  assert.equal((await w.a.post(`/api/finance/stok-resmi/STOCK_COUNT/${c.id}/posting`, { alasan: "opname boleh" })).status, 201);
+  const adj = await w.a.post(`/api/finance/stok-resmi/STOCK_ADJUSTMENT/${r.id}/posting`, { alasan: "penyesuaian belum" });
+  assert.equal(adj.status, 409); assert.equal(adj.body.code, "FITUR_BELUM_AKTIF");
+  const dm = await w.a.post(`/api/finance/stok-resmi/DAMAGED_STOCK/${d.id}/posting`, { alasan: "rusak belum" });
+  assert.equal(dm.status, 409); assert.equal(dm.body.code, "FITUR_BELUM_AKTIF");
+  await set(SETTING_KEYS.STOK_RESMI_PENYESUAIAN_AKTIF, "true"); await set(SETTING_KEYS.STOK_RESMI_PENYESUAIAN_SEJAK, "2026-10-01");
+  assert.equal((await w.a.post(`/api/finance/stok-resmi/STOCK_ADJUSTMENT/${r.id}/posting`, { alasan: "tanggal mulai setelah dokumen" })).body.code, "DI_LUAR_PERIODE_AKTIVASI");
+  assert.equal((await w.a.post(`/api/finance/stok-resmi/DAMAGED_STOCK/${d.id}/posting`, { alasan: "rusak masih mati" })).body.code, "FITUR_BELUM_AKTIF");
+  for (const k of KUNCI_AKTIF) await set(k, "true");
+  for (const k of KUNCI_SEJAK) await set(k, "2020-01-01");
+  const rt = await w.a.post(`/api/finance/stok-resmi/RETURN_RECORD/${rr.id}/posting`, { alasan: "retur tetap ditolak" });
+  assert.equal(rt.status, 422); assert.equal(rt.body.code, "ASAL_RETUR_TIDAK_TERBUKTI");
+  const rb = await w.a.post(`/api/finance/stok-resmi/RETURN_RECORD/${rr.id}/pembalikan`, { alasan: "retur tetap ditolak" });
+  assert.equal(rb.status, 409);
+  assert.equal(await testPrisma.finJournalEntry.count(), 1, "hanya jurnal opname");
+});
+
+test("SAKELAR MATI menolak SETIAP endpoint posting & pembalikan di SEMUA jenis dan kondisi dokumen — nol perubahan stok, jurnal, gap, aktivitas bisnis", async () => {
+  const w = await dunia({ aktif: false });
+  const m = await createTestMaterial({ code: "BHN-MATI-SEMUA", unit: "KG" });
+  await terima(m.id, 30, 10_000);
+  const { c } = await hitungSelesai(m.id, -1);
+  const { c: bl } = await hitungSelesai(m.id, +5, { nomor: "BASELINE-0002", notes: "Backfill saldo pembuka dari migrasi" });
+  const { r } = await penyesuaianPosted(m.id, -1);
+  const { r: cv } = await penyesuaianPosted(m.id, -1, { tipe: "CONVERSION", nomor: "ADJ-010126-05" });
+  const { r: d } = await rusakSelesai(m.id, 1, "DISPOSE");
+  const { r: ds } = await rusakSelesai(m.id, 1, "RETURN_TO_SUPPLIER", { nomor: "DMG-010126-05" });
+  const rr = await testPrisma.returnRecord.create({ data: { returnNumber: "RTN-010126-05", returnType: "CUSTOMER_RETURN", materialId: m.id, qty: 1, status: "COMPLETED", resolution: "RETURN_TO_AVAILABLE", completedAt: new Date("2026-09-30T05:00:00Z") } });
+  await testPrisma.stockMovement.create({ data: { materialId: m.id, type: "RETURN", qty: 1, returnRecordId: rr.id, createdAt: new Date("2026-09-30T05:00:00Z") } });
+  const dok = [["STOCK_COUNT", c.id], ["STOCK_COUNT", bl.id], ["STOCK_ADJUSTMENT", r.id], ["STOCK_ADJUSTMENT", cv.id], ["DAMAGED_STOCK", d.id], ["DAMAGED_STOCK", ds.id], ["RETURN_RECORD", rr.id]];
+  const potret = async () => ({ ...(await hitung()), stok: await testPrisma.stockMovement.findMany({ orderBy: { id: "asc" } }) });
+  const sebelum = await potret();
+  for (const klien of [w.a, w.f]) for (const [jenis, id] of dok) {
+    for (const aksi of ["posting", "pembalikan"]) {
+      const x = await klien.post(`/api/finance/stok-resmi/${jenis}/${id}/${aksi}`, { alasan: "uji sakelar mati semua" });
+      assert.ok([403, 409, 422].includes(x.status), `${jenis} ${aksi}: ${x.status} ${JSON.stringify(x.body)}`);
+    }
+  }
+  assert.deepEqual(await potret(), sebelum, "tidak ada satu pun perubahan stok/jurnal/gap/aktivitas");
+  for (const [jenis, id] of dok) {
+    await assert.rejects(testPrisma.$transaction((tx) => postDokumenStok(tx, { jenis, id, userId: null, alasan: "langsung mati" })), (e) => [409, 422].includes(e.statusCode));
+    await assert.rejects(testPrisma.$transaction((tx) => balikDokumenStok(tx, { jenis, id, userId: null, alasan: "langsung mati" })), (e) => e.statusCode === 409);
+  }
+  assert.deepEqual(await potret(), sebelum);
+});
+
+test("PRATINJAU benar-benar baca-saja: 24 panggilan paralel di semua jenis/kondisi tidak mengubah satu baris pun di tabel mana pun; transaksi READ ONLY menolak tulis di level Postgres", async () => {
+  const w = await dunia({ aktif: true });
+  const m = await createTestMaterial({ code: "BHN-RO", unit: "KG" });
+  await terima(m.id, 30, 10_000);
+  const { c } = await hitungSelesai(m.id, -2);
+  const { c: bl } = await hitungSelesai(m.id, +5, { nomor: "BASELINE-0003", notes: "Backfill saldo pembuka dari migrasi" });
+  const sedang = await testPrisma.stockCount.create({ data: { countNumber: "CC-010126-08", countType: "CYCLE_COUNT", countMethod: "BY_ITEM", status: "WAITING_REVIEW", startedAt: new Date("2026-09-30T01:00:00Z"), lines: { create: [{ materialId: m.id, systemQty: 30, countedQty: 27 }] } } });
+  const { r } = await penyesuaianPosted(m.id, -1);
+  const { r: d } = await rusakSelesai(m.id, 1, "DISPOSE");
+  const rr = await testPrisma.returnRecord.create({ data: { returnNumber: "RTN-010126-08", returnType: "CUSTOMER_RETURN", materialId: m.id, qty: 1, status: "COMPLETED", resolution: "RETURN_TO_AVAILABLE", completedAt: new Date("2026-09-30T05:00:00Z") } });
+  const dok = [["STOCK_COUNT", c.id], ["STOCK_COUNT", bl.id], ["STOCK_COUNT", sedang.id], ["STOCK_ADJUSTMENT", r.id], ["DAMAGED_STOCK", d.id], ["RETURN_RECORD", rr.id]];
+  const tabel = (await testPrisma.$queryRawUnsafe("select table_name from information_schema.tables where table_schema='public' and table_type='BASE TABLE' and table_name <> '_prisma_migrations' order by 1")).map((x) => x.table_name);
+  const potret = async () => { const o = {}; for (const t of tabel) o[t] = (await testPrisma.$queryRawUnsafe(`select count(*)::int n, coalesce(md5(string_agg(x::text, '|' order by x::text)),'') h from "${t}" x`))[0]; return o; };
+  const sebelum = await potret();
+  const hasil = await Promise.all(Array.from({ length: 4 }, () => dok.map(([jenis, id]) => w.f.get(`/api/finance/stok-resmi/${jenis}/${id}/pratinjau`))).flat());
+  assert.ok(hasil.every((h) => h.status === 200), JSON.stringify(hasil.map((h) => h.status)));
+  assert.deepEqual(await potret(), sebelum, "pratinjau paralel tidak mengubah satu baris pun di tabel mana pun");
+  await assert.rejects(testPrisma.$transaction(async (tx) => { await tx.$executeRawUnsafe("SET TRANSACTION READ ONLY"); await tx.finSetting.create({ data: { key: "uji_ro", value: "x" } }); }), /read-only|READ ONLY/i);
+  for (const [jenis, id] of dok) {
+    const p = await testPrisma.$transaction(async (tx) => { await tx.$executeRawUnsafe("SET TRANSACTION READ ONLY"); return pratinjau(tx, jenis, id, {}); });
+    assert.ok(p.status, jenis);
+  }
+});
+
+test("izin: pratinjau = finance:read (ADMIN/OWNER/FINANCE/ACCOUNTANT/APPROVER); posting & pembalikan = finance:admin saja (ADMIN/OWNER); peran lain 403 dan tidak menulis", async () => {
+  await dunia({ aktif: true });
+  const m = await createTestMaterial({ code: "BHN-IZIN2", unit: "KG" });
+  await terima(m.id, 10, 10_000);
+  const { c } = await hitungSelesai(m.id, -1);
+  const url = `/api/finance/stok-resmi/STOCK_COUNT/${c.id}`;
+  const klien = async (role) => makeClient(server.baseUrl, (await createTestUser({ roles: [role] })).token);
+  for (const role of ["ADMIN", "OWNER", "FINANCE", "ACCOUNTANT", "APPROVER"]) assert.equal((await (await klien(role)).get(`${url}/pratinjau`)).status, 200, role);
+  for (const role of ["SALES", "WAREHOUSE", "PRODUCTION_LEAD", "QC_LEAD", "DISPATCHER", "DRIVER", "PRODUCTION_WORKER"]) {
+    const k = await klien(role);
+    assert.equal((await k.get(`${url}/pratinjau`)).status, 403, role);
+    assert.equal((await k.get("/api/finance/stok-resmi/matriks")).status, 403, role);
+  }
+  for (const role of ["FINANCE", "ACCOUNTANT", "APPROVER", "SALES", "WAREHOUSE", "PRODUCTION_LEAD"]) {
+    const k = await klien(role);
+    assert.equal((await k.post(`${url}/posting`, { alasan: "tanpa izin admin" })).status, 403, role);
+    assert.equal((await k.post(`${url}/pembalikan`, { alasan: "tanpa izin admin" })).status, 403, role);
+  }
+  assert.equal(await testPrisma.finJournalEntry.count(), 0);
+  assert.equal((await (await klien("OWNER")).post(`${url}/posting`, { alasan: "owner boleh" })).status, 201);
+});
+
+test("pembalikan tanpa sakelar jenisnya ditolak 409 (tidak ada jalur belakang saat fitur mati); sakelar jenis lain tidak membantu", async () => {
+  const w = await dunia({ aktif: true });
   const m = await createTestMaterial({ code: "BHN-REVOFF", unit: "KG" });
   await terima(m.id, 10, 10_000);
   const { c } = await hitungSelesai(m.id, -1);
-  const r = await w.a.post(`/api/finance/stok-resmi/STOCK_COUNT/${c.id}/pembalikan`, { alasan: "sakelar mati" });
+  assert.equal((await w.a.post(`/api/finance/stok-resmi/STOCK_COUNT/${c.id}/posting`, { alasan: "posting lalu matikan" })).status, 201);
+  await set(SETTING_KEYS.STOK_RESMI_OPNAME_AKTIF, "false");
+  const r = await w.a.post(`/api/finance/stok-resmi/STOCK_COUNT/${c.id}/pembalikan`, { alasan: "sakelar opname mati" });
   assert.equal(r.status, 409); assert.equal(r.body.code, "FITUR_BELUM_AKTIF");
-  void balikDokumenStok;
+  assert.equal((await jurnalDari(`SELISIH_OPNAME:${c.id}`)).status, "POSTED");
 });
