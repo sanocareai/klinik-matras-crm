@@ -1356,6 +1356,12 @@ export const api = {
   getLeadSourceDetail: (params) => request("/analytics/lead-source-detail" + buildQuery(params)),
   // Atribusi iklan per campaign (ADMIN, baca-saja). dari/sampai kosong = 7 hari terakhir (bawaan server).
   getAtribusiIklan: (params) => request("/atribusi/iklan" + buildQuery(params)),
+  // Fase 3 (Okt 2026): spend harian per Ad ID, target KPI, monitoring (ADMIN). Impor spend dryRun-default; sistem tidak mengubah iklan/budget.
+  getAtribusiSpend: (params) => request("/atribusi/iklan/spend" + buildQuery(params)),
+  importAtribusiSpend: (data) => request("/atribusi/iklan/spend", { method: "POST", body: JSON.stringify(data) }),
+  getAtribusiTarget: () => request("/atribusi/iklan/target"),
+  putAtribusiTarget: (data) => request("/atribusi/iklan/target", { method: "PUT", body: JSON.stringify(data) }),
+  getAtribusiMonitor: () => request("/atribusi/iklan/monitor"),
   getSalesPerformance: (params) => request("/analytics/sales-performance" + buildQuery(params)),
   // AI Conversation Quality Scorer (26 Agustus 2026) — pelengkap
   // audit_balasan_sales, laporan TERPISAH utk validasi manual dulu.

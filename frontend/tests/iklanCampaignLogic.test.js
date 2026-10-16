@@ -96,3 +96,44 @@ test("jejak drilldown dan format persen", () => {
   assert.equal(formatPersen(null), "—");
   assert.equal(formatPersen(12.5), "12,5%");
 });
+
+import { selBiaya, barisBiaya, statusBiayaLaporan, bodyTarget, STATUS_BIAYA_LABEL } from "../src/features/laporan/iklanCampaignLogic.js";
+
+test("selBiaya: null tetap '—' dengan alasan (tidak pernah nol palsu); angka diformat Rupiah/ROAS", () => {
+  assert.deepEqual(selBiaya(null, "BELUM_ADA_KONVERSI"), { teks: "—", alasan: "belum ada konversi", kosong: true });
+  assert.equal(selBiaya(undefined, "BELUM_ADA_SPEND").teks, "—");
+  assert.equal(selBiaya(0, null).teks, "Rp0", "nol sungguhan (mis. CPL Rp0) tetap ditampilkan apa adanya");
+  assert.equal(selBiaya(125000, null).teks, "Rp125.000");
+  assert.equal(selBiaya(6, null, { rupiah: false, desimal: true }).teks, "6,00×");
+});
+
+test("barisBiaya: status dan evaluasi; tanpa target tidak ada evaluasi/warna; spend null tetap null", () => {
+  const g = { biaya: { status: "SIAP_DIEVALUASI", spend: 900000, platformConversations: 10, cpl: 300000, costPerQualifiedLead: null, costPerCustomerOrder: 450000, cpa: 450000, bookedRoas: 8.33, cashRoas: 7.5, alasanNull: { costPerQualifiedLead: "BELUM_ADA_KONVERSI" }, evaluasi: { status: null, pelanggaran: [] }, kematangan: { matang: true } } };
+  const c = barisBiaya(g);
+  assert.equal(c.statusTeks, "Siap dievaluasi");
+  assert.equal(c.evaluasi, null);
+  assert.equal(c.evaluasiNada, null);
+  assert.equal(c.cplQualified.alasan, "belum ada konversi");
+  assert.equal(c.spend.teks, "Rp900.000");
+  const kosong = barisBiaya({ biaya: { status: "BELUM_TERHUBUNG", spend: null, cpl: null, cpa: null, bookedRoas: null, cashRoas: null, alasanNull: { cpl: "BELUM_ADA_SPEND" }, evaluasi: { status: null, pelanggaran: [] } } });
+  assert.deepEqual([kosong.spend.teks, kosong.cpl.teks, kosong.cpa.teks, kosong.statusTeks], ["—", "—", "—", "Belum tersambung"]);
+  const ev = barisBiaya({ biaya: { ...g.biaya, evaluasi: { status: "PERLU_REVIEW", pelanggaran: [{ metrik: "cpl" }] } } });
+  assert.deepEqual([ev.evaluasiTeks, ev.evaluasiNada], ["Perlu review", "buruk"]);
+  assert.equal(barisBiaya({}), null);
+  for (const k of ["BELUM_TERHUBUNG", "DATA_BELUM_MATANG", "BELUM_ADA_KONVERSI", "MAPPING_BELUM_ADA", "DATA_TERLAMBAT", "SIAP_DIEVALUASI"]) assert.ok(STATUS_BIAYA_LABEL[k], k);
+});
+
+test("statusBiayaLaporan: tersambung hanya bila server menyatakan sumber terhubung", () => {
+  assert.equal(statusBiayaLaporan({ biaya: { status: "BELUM_TERHUBUNG", cpa: null } }).tersambung, false);
+  const s = statusBiayaLaporan({ biaya: { status: "SIAP_DIEVALUASI", sumber: { terhubung: true, terakhirTanggal: "2026-10-16", terlambat: false }, spendTotal: 1000, targetDiatur: false } });
+  assert.deepEqual([s.tersambung, s.spendTotal, s.targetDiatur], [true, 1000, false]);
+  assert.equal(statusBiayaLaporan(null).teks, "Belum tersambung");
+});
+
+test("bodyTarget: kosong→null; titik ribuan hanya untuk kolom rupiah; negatif/pecahan int/format salah ditolak", () => {
+  assert.deepEqual(bodyTarget({ maxCpl: "1.500.000", maxSpamSharePercent: "12.5", minClosings: "3", minBookedRoas: "" }).body, { maxCpl: 1500000, maxSpamSharePercent: 12.5, minClosings: 3, minBookedRoas: null });
+  assert.ok(bodyTarget({ maxCpl: "-1" }).galat);
+  assert.ok(bodyTarget({ minClosings: "1,5" }).galat);
+  assert.ok(bodyTarget({ maxCpl: "abc" }).galat);
+  assert.ok(bodyTarget({}).galat);
+});
