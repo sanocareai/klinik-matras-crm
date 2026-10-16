@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Plus, ShoppingCart, Pencil, Wallet, History, Ban } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -145,7 +146,8 @@ export default function FinancePurchases() {
   const [status, setStatus] = useState("");
   // Pencarian & filter — dikirim ke SERVER (bukan disaring di browser) supaya
   // hasilnya mencakup seluruh periode, bukan cuma 300 baris yang termuat.
-  const [q, setQ] = useState("");
+  const [spCari] = useSearchParams(); // ?cari= : tautan dalam (mis. dari detail PO) membuka daftar dengan pencarian terisi
+  const [q, setQ] = useState(spCari.get("cari") || "");
   const [fKategori, setFKategori] = useState("");
   const [fDivisi, setFDivisi] = useState("");
   const [fMode, setFMode] = useState("");

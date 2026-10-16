@@ -20,6 +20,7 @@ import { rolesOf } from "@/lib/roles.js";
 import { isOutsideV2 } from "@/features/production/unit360Availability.js";
 import UnitOrderFallback from "@/features/production/UnitOrderFallback.jsx";
 import PkrRujukan from "@/features/production/PkrRujukan.jsx";
+import KonfirmasiBarangJadi from "@/features/production/KonfirmasiBarangJadi.jsx";
 import { ComponentNotesPanel } from "@/features/production/componentNotes/ComponentNotesPanel.jsx";
 import JejakBiayaBahan from "@/features/finance/JejakBiayaBahan.jsx";
 
@@ -244,6 +245,7 @@ function Proses({ d, onOpenDiagnosis, canApplyAdaptation = false, onChanged }) {
         <span data-testid="overview-progress" className="shrink-0 text-[11px] text-ink3 tabular-nums">{progressText(d.production.progress)}</span>
       </div>
       <AdaptationPanel d={d} canApply={canApplyAdaptation} onApplied={() => onChanged?.()} />
+      <KonfirmasiBarangJadi d={d} canConfirm={canApplyAdaptation} onDone={() => onChanged?.()} />
       <ol className="m-0 grid list-none grid-cols-1 gap-1 p-0 sm:grid-cols-2">
         {d.production.steps.map((s) => (
           <li key={s.no} className={`flex min-h-[44px] items-center gap-2 rounded-btn px-3 py-2 text-[12.5px] ${s.status === "DONE" ? "bg-greenbg text-green" : s.status === "CURRENT" ? "bg-accentbg font-semibold text-accent" : s.status === "WAITING" ? "bg-orangebg text-orange" : s.status === "NA" ? "text-ink3 line-through" : "bg-inset text-ink3"}`}>

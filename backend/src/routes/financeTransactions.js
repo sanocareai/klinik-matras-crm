@@ -827,7 +827,7 @@ financeTxRouter.post("/purchases/:id/cancel", requirePermission(P.FINANCE_ADMIN)
       // secara akuntansi. Batalkan/reversal penerapan DP-nya dulu.
       const aplikasiAktif = await tx.finPurchaseAdvanceApplication.count({
         where: { status: "ACTIVE", OR: [{ advancePurchaseId: p.id }, { targetPurchaseId: p.id }] },
-      });
+      }) + await tx.finSupplierBillAdvanceApplication.count({ where: { status: "ACTIVE", advancePurchaseId: p.id } }); // + penerapan uang muka ke FAKTUR supplier
       if (aplikasiAktif > 0) {
         throw err(
           `Pembelian ini masih terkait ${aplikasiAktif} penerapan uang muka yang aktif — batalkan penerapannya dulu (lihat Riwayat Penerapan DP) sebelum membatalkan pembelian ini`,
@@ -944,6 +944,10 @@ financeTxRouter.post("/purchases/:id/koreksi", requirePermission(P.FINANCE_ADMIN
 
       const perubahan = bedaDenganAsli(p, await siapkanPerubahanPurchase(tx, req.body, p.mode, p));
       if (Object.keys(perubahan).length === 0) throw err("Tidak ada perubahan yang dikirim");
+      // Uang muka yang terikat ke PO: supplier & kategori bagian dari tautan PO — mengubahnya membuat DP "yatim". Batalkan lalu bayar ulang dari PO.
+      if (p.purchaseOrderId && ((perubahan.supplierId !== undefined && perubahan.supplierId !== p.supplierId) || (perubahan.categoryId !== undefined && perubahan.categoryId !== p.categoryId))) {
+        throw err("Uang muka ini terikat ke sebuah PO — supplier dan kategorinya tidak bisa diubah lewat koreksi. Batalkan lalu bayar ulang dari PO.", 409);
+      }
       const menyentuhJurnal = Object.keys(perubahan).some((k) => FIELD_JURNAL.has(k));
 
       if (menyentuhJurnal) {
@@ -955,7 +959,7 @@ financeTxRouter.post("/purchases/:id/koreksi", requirePermission(P.FINANCE_ADMIN
         // DP-nya dulu sebelum koreksi field yang mempengaruhi jurnal.
         const aplikasiAktif = await tx.finPurchaseAdvanceApplication.count({
           where: { status: "ACTIVE", OR: [{ advancePurchaseId: p.id }, { targetPurchaseId: p.id }] },
-        });
+        }) + await tx.finSupplierBillAdvanceApplication.count({ where: { status: "ACTIVE", advancePurchaseId: p.id } }); // + penerapan uang muka ke FAKTUR supplier
         if (aplikasiAktif > 0) {
           throw err(
             `Pembelian ini masih terkait ${aplikasiAktif} penerapan uang muka yang aktif — batalkan penerapannya dulu sebelum koreksi yang mengubah nominal/kategori/dll`,

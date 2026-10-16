@@ -38,6 +38,7 @@ import { buildApplicableSteps, classifyProduct, pathHasBuildStage } from "../lib
 import { kategoriUnitDb, produkUnitDb } from "./unitKategoriDb.js";
 import { loadAssemblyFacts, loadPreTeardownFacts } from "./productionComponentNoteService.js";
 import { buildCornerRequest, cornerStatusOf } from "../lib/domain/productionCorner.js";
+import { assertLocationAllowed } from "./unitCustodyCommandService.js";
 
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
@@ -889,6 +890,89 @@ export async function finishProduction(prisma, { runId, actorId, idempotencyKey,
     const response = {
       runId: run.id, revision: result.revision, completed: true, unitStatus: result.unitStatus, skippedSteps: written, skippedStages: result.skipped.map((s) => ({ code: s.code, label: s.label })),
       qc: (await tx.qualityInspection.count({ where: { runId: run.id, result: { not: "PENDING" } } })) > 0 ? "SUDAH_DILAKUKAN" : "TIDAK_DILAKUKAN", handoffGudang: "TIDAK_DIWAJIBKAN",
+    };
+    await finishCommand(tx, command, result.revision, response);
+    return { replayed: false, ...response };
+  }, { timeout: 30_000 });
+}
+
+// KONFIRMASI BARANG JADI (mode adaptasi) — pekerjaan fisik SUDAH selesai tetapi pencatatan tahap Meja/Corner tertinggal (kasus RES-03102026-018-U1).
+// Memakai jalur resmi YANG SAMA dengan "Selesaikan Produksi" (applyAdaptationFinishInTx): tahap tersisa dicatat DILEWATI secara eksplisit (bukan dikerjakan, tanpa foto/hasil uji), QC
+// "tidak dilakukan" (bukan lulus), fase QC/HANDOFF NOT_APPLICABLE, TANPA custody barang jadi/serah terima Gudang, TANPA gerakan stok, lalu unit Siap Kirim lewat engine yang sama
+// (saran job Delivery idempoten). Bedanya dari Selesaikan Produksi: pelaku boleh PETUGAS BERWENANG (Production Lead / Admin / Owner) selain PIC yang ditugaskan, dan WAJIB:
+// kode unit diketik ulang (identitas), lokasi barang jadi yang SAH (area barang jadi / dispatch — aturan custody resmi), alasan >= 10 karakter, dan pernyataan verifikasi fisik.
+// Server mencatat pelaku + peran + waktu + lokasi + alasan di aktivitas unit dan outbox. Retur sisa bahan tetap wajib (tidak dilewati diam-diam).
+export async function confirmFinishedGoods(prisma, { runId, actorId, supervisor = false, idempotencyKey, expectedRevision, unitCode, locationId, reason, physicalVerified, workCenterId = null }) {
+  if (!runId) throw stepError("runId wajib diisi", 400, "STEP_RUN_REQUIRED");
+  assertIdempotencyKey(idempotencyKey);
+  const revisionExpected = assertExpectedRevision(expectedRevision);
+  if (physicalVerified !== true) throw stepError("Pernyataan verifikasi fisik wajib dicentang: barang sudah dilihat dan benar-benar selesai", 400, "CONFIRM_FG_VERIFY_REQUIRED");
+  const alasan = String(reason ?? "").trim().replace(/\s+/g, " ");
+  if (alasan.length < 10) throw stepError("Alasan konfirmasi barang jadi wajib diisi (minimal 10 karakter)", 400, "CONFIRM_FG_REASON_REQUIRED");
+  if (alasan.length > 500) throw stepError("Alasan maksimal 500 karakter", 400, "CONFIRM_FG_REASON_TOO_LONG");
+  const kode = String(unitCode ?? "").trim();
+  if (!kode) throw stepError("Ketik ulang kode unit untuk memastikan unit yang dikonfirmasi benar", 400, "CONFIRM_FG_UNIT_CODE_REQUIRED");
+  if (!locationId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(locationId))) throw stepError("Lokasi barang jadi wajib dipilih", 400, "CONFIRM_FG_LOCATION_REQUIRED");
+  const actor = actorId || "SYSTEM";
+  const requestHash = hash({ commandType: "CONFIRM_FINISHED_GOODS", runId, expectedRevision: revisionExpected, unitCode: kode, locationId, reason: alasan, workCenterId: workCenterId || null });
+
+  return prisma.$transaction(async (tx) => {
+    const replay = await findReplay(tx, actor, idempotencyKey, requestHash);
+    if (replay) return replay;
+    const run = await loadRunForWrite(tx, runId);
+    await assertWriterEnabledForUnit(tx, run.unitId);
+    if (!isAdaptationRun(run)) throw stepError("Konfirmasi barang jadi hanya untuk pekerjaan dengan mode adaptasi. Pekerjaan alur lengkap diselesaikan lewat tahap 12 dan penerimaan Gudang.", 409, "CONFIRM_FG_NOT_ADAPTATION");
+    if (run.unit?.unitCode !== kode) throw stepError("Kode unit yang diketik tidak sama dengan unit pekerjaan ini", 409, "CONFIRM_FG_UNIT_CODE_MISMATCH");
+    const ctx = await loadStepContext(tx, run);
+    const blockers = finishBlockersOf(run, { openShortage: !!ctx.openShortage, exceptionOpen: !!ctx.state.exceptionOpen });
+    if (blockers.length) throw stepError(`Barang jadi belum bisa dikonfirmasi: ${blockers[0].text}`, 409, `CONFIRM_FG_${blockers[0].code}`, { blockers });
+    const order = await tx.order.findUnique({ where: { id: run.unit.orderId }, select: { orderNumber: true, status: true } });
+    if (!order || ["CANCELLED", "DELIVERED"].includes(order.status)) throw stepError(`Order ${order?.orderNumber ?? ""} berstatus ${order?.status ?? "tidak ditemukan"} — barang jadi tidak dapat dikonfirmasi`, 409, "CONFIRM_FG_ORDER_STATUS");
+    const location = await tx.storageLocation.findUnique({ where: { id: locationId } });
+    assertLocationAllowed("FINISHED_GOODS", location);
+    if (!supervisor) await authorizeFinishOperator(tx, run, actorId, workCenterId);
+    assertRunRevision(run, revisionExpected);
+    await assertNoOpenRunException(tx, run.id);
+
+    await createLeftoverReturnsInTx(tx, { run, actorId, commandId: null });
+    const pending = await tx.productionMaterialReturn.findMany({ where: { runId, status: "PENDING" }, select: { qty: true, material: { select: { code: true, name: true, unit: true } } } });
+    if (pending.length) {
+      return {
+        replayed: false, runId, revision: run.revision, completed: false, waitingFor: "GUDANG_RETUR",
+        message: `Sisa bahan harus diterima Gudang dulu (${pending.map((p) => `${p.material.code} ${Number(p.qty)}`).join(", ")}). Setelah retur diterima, konfirmasi lagi.`,
+        pendingReturns: pending.map((r) => ({ code: r.material.code, name: r.material.name, unit: r.material.unit ?? null, qty: Number(r.qty) })),
+      };
+    }
+
+    const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "CONFIRM_FINISHED_GOODS", aggregateId: runId, requestHash, expectedRevision: revisionExpected });
+    const now = new Date();
+    const result = await applyAdaptationFinishInTx(tx, { run, actorId, now });
+    const applicable = applicableStepsFor(ctx.split, ctx.state?.productFlow ?? "KASUR");
+    const written = [];
+    for (const no of applicable) {
+      if (ctx.evidence.some((e) => e.stepNo === no)) continue;
+      written.push((await writeSkippedEvidence(tx, { run, stepNo: no, actorId, commandId: command.id, note: "Konfirmasi barang jadi" })).stepNo);
+    }
+    // Proyeksi lokasi legacy dari StorageLocation kanonis (sama dengan penerimaan custody): locationId tetap sumber kebenaran; teks hanya disalin di sini.
+    await tx.unit.update({ where: { id: run.unitId }, data: { storageLocation: location.code } });
+    const konfirmasi = { unitCode: run.unit.unitCode, orderNumber: order.orderNumber, locationId: location.id, locationCode: location.code, reason: alasan, actorId: actorId || null, bySupervisor: !!supervisor, confirmedAt: now.toISOString(), skippedSteps: written, skippedStages: result.skipped.map((s) => s.code) };
+    await outbox(tx, {
+      eventType: "production.finished.adaptation", aggregateId: run.id, revision: result.revision, dedupeKey: `production-finished-adaptation:${run.id}:${result.revision}`,
+      payload: { runId: run.id, unitId: run.unitId, policy: ADAPTATION_POLICY, skippedStages: result.skipped.map((s) => s.code), skippedSteps: written, qcNotPerformed: result.qcNotPerformed, confirmedFinishedGoods: konfirmasi, revision: result.revision, occurredAt: now.toISOString() },
+    });
+    if (result.qcNotPerformed) {
+      await recordActivity(tx, { entityType: "unit", entityId: run.unitId, eventType: EVENT_TYPES.PRODUCTION_QC_NOT_PERFORMED, actorId: actorId || null, metadata: { unitCode: run.unit.unitCode, runId: run.id, reason: SKIP_REASON } });
+    }
+    if (written.length) {
+      await recordActivity(tx, { entityType: "unit", entityId: run.unitId, eventType: EVENT_TYPES.PRODUCTION_STEP_SKIPPED, actorId: actorId || null, metadata: { unitCode: run.unit.unitCode, runId: run.id, stepNos: written, stageLabel: "Konfirmasi barang jadi", reason: SKIP_REASON } });
+    }
+    await recordActivity(tx, {
+      entityType: "unit", entityId: run.unitId, eventType: EVENT_TYPES.PRODUCTION_FINISHED_ADAPTATION, actorId: actorId || null,
+      metadata: { unitCode: run.unit.unitCode, runId: run.id, skippedCount: written.length, skippedStages: result.skipped.map((s) => s.label), konfirmasiBarangJadi: konfirmasi },
+    });
+    const response = {
+      runId: run.id, revision: result.revision, completed: true, unitStatus: result.unitStatus, skippedSteps: written, skippedStages: result.skipped.map((s) => ({ code: s.code, label: s.label })),
+      qc: "TIDAK_DILAKUKAN", handoffGudang: "TIDAK_DIWAJIBKAN", lokasi: { id: location.id, code: location.code }, konfirmasi: { reason: alasan, confirmedAt: konfirmasi.confirmedAt, bySupervisor: !!supervisor },
     };
     await finishCommand(tx, command, result.revision, response);
     return { replayed: false, ...response };

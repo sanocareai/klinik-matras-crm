@@ -8,7 +8,7 @@ import StatusBadge from "./StatusBadge.jsx";
 import { ROUTE_STATUS_REAL, effectiveRouteStatus } from "../vehicleStatus.js";
 import { ManifestChip } from "@/features/armada/components/ManifestBlock.jsx";
 import { customerOf, orderOf, mapsUrl, unitCountOf, jobAccentBarStyle, hasJobAccentBar, conversationIdOf, customerPhoneOf, salesPersonOf } from "../jobStatus.js";
-import { RentalBadge, ConfirmedTimeBadge, CityBadge, OrderStatusBadge, MapsLinkMissingBadge, SalesBadge, RevisionBadge, ComplaintBadge } from "./JobBadges.jsx";
+import { MenungguKonfirmasiBadge, RentalBadge, ConfirmedTimeBadge, CityBadge, OrderStatusBadge, MapsLinkMissingBadge, SalesBadge, RevisionBadge, ComplaintBadge } from "./JobBadges.jsx";
 import ExternalCourierBadge from "./ExternalCourierBadge.jsx";
 import { productSummary } from "@/features/inbox/components/CustomerPanel/orderSummary.js";
 import { formatTanggal } from "@/utils/formatDate.js";
@@ -884,6 +884,7 @@ export default function RouteCard({
                         hasJobAccentBar di style={} atas. OrderStatusBadge
                         SATU-SATUNYA badge status teks di kartu ini. */}
                     <OrderStatusBadge job={j} />
+                    <MenungguKonfirmasiBadge job={j} />
                     <RentalBadge job={j} />
                     <RevisionBadge job={j} />
                     <ComplaintBadge job={j} />
@@ -1111,8 +1112,9 @@ export default function RouteCard({
           <button
             type="button"
             onClick={() => jalankan(() => onPublish(route))}
-            disabled={busy || jobs.length === 0 || !route.driverId}
-            title={!route.driverId ? "Pilih driver dulu" : jobs.length === 0 ? "Tambahkan job dulu" : "Terbitkan ke driver"}
+            disabled={busy || jobs.length === 0 || !route.driverId || jobs.some((j) => (j.menungguKonfirmasi?.length ?? 0) > 0)}
+            title={!route.driverId ? "Pilih driver dulu" : jobs.length === 0 ? "Tambahkan job dulu" : jobs.some((j) => (j.menungguKonfirmasi?.length ?? 0) > 0) ? "Menunggu konfirmasi siap kirim — setiap unit harus siap sebelum diterbitkan" : "Terbitkan ke driver"}
+            data-testid="rute-terbitkan"
             className="ml-auto flex h-8 flex-1 max-w-[160px] items-center justify-center gap-1.5 rounded-btn bg-accent text-[12px] font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
           >
             {busy ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />} Terbitkan
