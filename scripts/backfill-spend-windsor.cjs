@@ -13,7 +13,8 @@
 "use strict";
 
 const AWAL = "2026-10-01", AKHIR = "2026-10-14", ZONA = "Asia/Jakarta", MATA_UANG = "IDR", SUMBER = "WINDSOR_API";
-const WAJIB = ["date", "account_id", "currency", "campaign_id", "adset_id", "ad_id", "spend", "impressions", "link_clicks", "messaging conversations started"];
+// nama kolom dinormalisasi: huruf kecil, spasi -> "_" ("Link clicks" == link_clicks; "Messaging conversations started" == messaging_conversations_started)
+const WAJIB = ["date", "account_id", "currency", "campaign_id", "adset_id", "ad_id", "spend", "impressions", "link_clicks", "messaging_conversations_started"];
 const ID_RE = /^\d{5,32}$/, SPEND_RE = /^\d{1,13}(\.\d{1,2})?$/, INT_RE = /^\d{1,15}$/, TGL_RE = /^\d{4}-\d{2}-\d{2}$/;
 const rp = (x) => Math.round((Number(x) || 0) * 100) / 100;
 
@@ -47,7 +48,7 @@ function periksaCsv(csv, { akun = null } = {}) {
   const galat = [];
   const t = parseCsv(csv);
   if (t.length < 2) return { galat: ["CSV_KOSONG"], baris: [], agregat: null };
-  const kepala = t[0].map((h) => h.trim().toLowerCase());
+  const kepala = t[0].map((h) => h.trim().toLowerCase().replace(/\s+/g, "_"));
   for (const w of WAJIB) if (!kepala.includes(w)) galat.push(`KOLOM_WAJIB_HILANG:${w}`);
   if (galat.length) return { galat, baris: [], agregat: null };
   const idx = (n) => kepala.indexOf(n);
@@ -74,9 +75,9 @@ function periksaCsv(csv, { akun = null } = {}) {
     if (/[eE][+-]?\d/.test(sp)) return tolak("SPEND_NOTASI_ILMIAH");
     if (!SPEND_RE.test(sp)) return tolak("SPEND_FORMAT_TIDAK_DIKENAL");
     const ang = {};
-    for (const [k, n] of [["impressions", "impressions"], ["link_clicks", "link_clicks"], ["konv", "messaging conversations started"]]) {
-      const x = v(n); if (x === "") return tolak(`${n.toUpperCase().replace(/ /g, "_")}_KOSONG`);
-      if (!INT_RE.test(x)) return tolak(`${n.toUpperCase().replace(/ /g, "_")}_TIDAK_VALID`);
+    for (const [k, n] of [["impressions", "impressions"], ["link_clicks", "link_clicks"], ["konv", "messaging_conversations_started"]]) {
+      const x = v(n); if (x === "") return tolak(`${n.toUpperCase()}_KOSONG`);
+      if (!INT_RE.test(x)) return tolak(`${n.toUpperCase()}_TIDAK_VALID`);
       ang[k] = Number(x);
     }
     const kunci = `${tgl}|${akunBaris}|${v("ad_id")}`;
@@ -92,7 +93,8 @@ function periksaCsv(csv, { akun = null } = {}) {
     if ((ad2set.get(b.ad) ?? b.adset) !== b.adset) galat.push(`AD_${b.ad}_DI_DUA_AD_SET`);
     ad2set.set(b.ad, b.adset);
   }
-  return { galat: [...new Set(galat)], baris, agregat: agregatkan(baris) };
+  const agr = agregatkan(baris); agr.akunId = baris[0]?.akun ?? null;
+  return { galat: [...new Set(galat)], baris, agregat: agr };
 }
 
 /** Agregat aditif per hari, campaign×hari, ad set×hari, ad×hari, dan akun. (reach sengaja tidak ada.) */
@@ -111,13 +113,40 @@ function agregatkan(baris) {
 }
 
 const FIELD = ["spend", "impressions", "link_clicks", "conversations"];
+
+/** Ubah control total format Windsor { accountId, timezone, currency, totals, perDay[], perCampaignDay[], expectedRows } ke bentuk internal { akun, zona, mata_uang, harian }. Bentuk internal dibiarkan. */
+function normalisasiKontrol(k) {
+  if (!k || typeof k !== "object" || k.harian || !Array.isArray(k.perDay)) return k;
+  const harian = {};
+  for (const d of k.perDay) harian[d.date] = { spend: d.spend, impressions: d.impressions, link_clicks: d.linkClicks, conversations: d.messagingConversationsStarted, campaign: {} };
+  for (const c of k.perCampaignDay || []) {
+    if (!harian[c.date]) harian[c.date] = { spend: null, impressions: null, link_clicks: null, conversations: null, campaign: {} };
+    harian[c.date].campaign[c.campaignId] = { spend: c.spend, impressions: c.impressions, link_clicks: c.linkClicks, conversations: c.messagingConversationsStarted };
+  }
+  return { akun: k.accountId, zona: k.timezone, mata_uang: k.currency, harian, totals: k.totals ?? null, expectedRows: k.expectedRows ?? null, dateFrom: k.dateFrom, dateTo: k.dateTo };
+}
+
+/** Periksa total periode (totals) dan jumlah baris (expectedRows) terhadap CSV. */
+function periksaTotalPeriode(agregat, nBaris, kontrol) {
+  const out = [];
+  if (kontrol.expectedRows != null && kontrol.expectedRows !== nBaris) out.push(`jumlah baris CSV ${nBaris} ≠ expectedRows ${kontrol.expectedRows}`);
+  const t = kontrol.totals;
+  if (t) {
+    const peta = [["spend", "spend", agregat.akun.spend], ["impressions", "impressions", agregat.akun.impressions], ["linkClicks", "link_clicks", agregat.akun.link_clicks], ["messagingConversationsStarted", "conversations", agregat.akun.conversations]];
+    for (const [kk, , v] of peta) if (t[kk] != null && rp(t[kk]) !== rp(v)) out.push(`total periode ${kk}: CSV=${v} kontrol=${t[kk]} selisih=${rp(v - t[kk])}`);
+  }
+  return out;
+}
 /**
  * Bandingkan agregat CSV dengan control total Mesa. kontrol = { akun, zona, mata_uang, harian: { "2026-10-01": { spend, impressions, link_clicks, conversations, campaign: { "<id>": {…} } }, … } }.
  * Lengkap = 14 hari terisi, semua angka bukan null. Hasil: { lengkap, cocok, selisih:[…] }.
  */
-function bandingkanKontrol(agregat, kontrol) {
+function bandingkanKontrol(agregat, kontrol0, nBaris = null) {
+  const kontrol = normalisasiKontrol(kontrol0);
   const selisih = []; let lengkap = true;
   if (!kontrol || typeof kontrol !== "object" || !kontrol.harian) return { lengkap: false, cocok: false, selisih: ["KONTROL_TOTAL_TIDAK_ADA"] };
+  if (kontrol.akun && agregat.akunId && String(kontrol.akun) !== String(agregat.akunId)) selisih.push(`akun kontrol ${kontrol.akun} ≠ akun CSV ${agregat.akunId}`);
+  if (nBaris != null) selisih.push(...periksaTotalPeriode(agregat, nBaris, kontrol));
   if (kontrol.zona !== ZONA) selisih.push(`zona kontrol '${kontrol.zona}' ≠ ${ZONA}`);
   if (kontrol.mata_uang !== MATA_UANG) selisih.push(`mata uang kontrol '${kontrol.mata_uang}' ≠ ${MATA_UANG}`);
   const angka = (x) => typeof x === "number" && Number.isFinite(x) && x >= 0;
@@ -141,14 +170,14 @@ function bandingkanKontrol(agregat, kontrol) {
   }
   return { lengkap, cocok: lengkap && selisih.length === 0, selisih };
 }
-const totalKontrol = (kontrol) => rp(hariRentang().reduce((s, h) => s + (kontrol?.harian?.[h]?.spend ?? 0), 0));
+const totalKontrol = (kontrol0) => { const kontrol = normalisasiKontrol(kontrol0); return rp(hariRentang().reduce((s, h) => s + (kontrol?.harian?.[h]?.spend ?? 0), 0)); };
 
 /** Perintah CLI --payload: gabungkan CSV + kontrol menjadi satu JSON untuk stdin container. */
 function bangunPayload(fs, csvPath, kontrolPath) {
   return JSON.stringify({ csv: fs.readFileSync(csvPath, "utf8"), kontrol: JSON.parse(fs.readFileSync(kontrolPath, "utf8")) });
 }
 
-module.exports = { hariRentang, parseCsv, periksaCsv, agregatkan, bandingkanKontrol, totalKontrol, bangunPayload, AWAL, AKHIR, ZONA, MATA_UANG, SUMBER };
+module.exports = { hariRentang, parseCsv, periksaCsv, agregatkan, bandingkanKontrol, normalisasiKontrol, totalKontrol, bangunPayload, AWAL, AKHIR, ZONA, MATA_UANG, SUMBER };
 
 // ────────────────────────── eksekusi (hanya bila BACKFILL_MODE diset; dijalankan di DALAM container backend) ──────────────────────────
 async function utama() {
@@ -162,7 +191,7 @@ async function utama() {
   const out = { mode: MODE, akun: akunId, gerbang: {} };
   const cek = periksaCsv(csv, { akun: akunId });
   out.csv = { galat: cek.galat, baris: cek.baris.length, hari: Object.keys(cek.agregat?.harian || {}).length };
-  const kb = cek.agregat ? bandingkanKontrol(cek.agregat, kontrol) : { lengkap: false, cocok: false, selisih: ["CSV_TIDAK_VALID"] };
+  const kb = cek.agregat ? bandingkanKontrol(cek.agregat, kontrol, cek.baris.length) : { lengkap: false, cocok: false, selisih: ["CSV_TIDAK_VALID"] };
   out.kontrol = { lengkap: kb.lengkap, cocok: kb.cocok, selisih: kb.selisih.slice(0, 50), totalSpendKontrol: totalKontrol(kontrol) };
   out.gerbang = { csvValid: cek.galat.length === 0, kontrolLengkap: kb.lengkap, kontrolCocok: kb.cocok };
   const adm = await prisma.user.findFirst({ where: { active: true, role: "ADMIN" } });
@@ -203,7 +232,7 @@ async function utama() {
     out.rekonPerHari = hariRentang().map((h) => {
       const r = db.filter((x) => x.d === h);
       const per = (k) => { const m = new Map(); for (const x of r) m.set(x[k], rp((m.get(x[k]) || 0) + Number(x.sp))); return [...m.values()].reduce((s, v) => rp(s + v), 0); };
-      const kh = kontrol?.harian?.[h];
+      const kh = normalisasiKontrol(kontrol)?.harian?.[h];
       return { hari: h, ad: per("a"), adSet: per("s"), campaign: per("c"), akunDb: jumlah(r, "sp"), akunKontrol: kh ? kh.spend : null, selisih: kh ? rp(jumlah(r, "sp") - kh.spend) : null, konversasi: jumlah(r, "kv"), biayaPerKonversasi: Number(jumlah(r, "kv")) > 0 ? rp(jumlah(r, "sp") / jumlah(r, "kv")) : null };
     });
     out.spendUnmapped = (await prisma.$queryRawUnsafe(`select s.ad_id a, sum(s.spend)::text sp from meta_ad_daily_spend s left join meta_ad_references r on r.ad_id = s.ad_id where s.date_wib between '${AWAL}' and '${AKHIR}' and r.ad_id is null group by 1`));
@@ -227,7 +256,7 @@ if (process.argv[2] === "--payload") {
   const fs = require("fs");
   const csv = fs.readFileSync(process.argv[3], "utf8"), kontrol = JSON.parse(fs.readFileSync(process.argv[4], "utf8"));
   const c = periksaCsv(csv, { akun: process.argv[5] || null });
-  const kb = c.agregat ? bandingkanKontrol(c.agregat, kontrol) : { lengkap: false, cocok: false, selisih: ["CSV_TIDAK_VALID"] };
+  const kb = c.agregat ? bandingkanKontrol(c.agregat, kontrol, c.baris.length) : { lengkap: false, cocok: false, selisih: ["CSV_TIDAK_VALID"] };
   console.log(JSON.stringify({ csvGalat: c.galat.slice(0, 50), baris: c.baris.length, kontrolLengkap: kb.lengkap, kontrolCocok: kb.cocok, selisih: kb.selisih.slice(0, 50), totalSpendCsv: c.agregat?.akun.spend ?? null, totalSpendKontrol: totalKontrol(kontrol) }, null, 1));
   process.exit(c.galat.length === 0 && kb.cocok ? 0 : 1);
 } else if (process.env.BACKFILL_MODE) {
