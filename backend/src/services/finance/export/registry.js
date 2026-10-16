@@ -31,5 +31,5 @@ import laporanKeuangan from "./laporan-keuangan.js";
 import uangMukaSupplier from "./uang-muka-supplier.js";
 
 export const MODUL_EXPORT = Object.freeze(
-  Object.fromEntries([kasbon, pemasukan, pembayaran, pengeluaran, pembelian, uangMuka, piutangRefund, supplierUtang, rekonsiliasi, jurnalUmum, bukuBesar, rekonSalesFinance, mutasiRekening, mutasiBank, pencocokanBank, rekonsiliasiRekening, biayaBahan, agingUtang, laporanKeuangan].map((m) => [m.kunci, m, uangMukaSupplier])),
+  Object.fromEntries([kasbon, pemasukan, pembayaran, pengeluaran, pembelian, uangMuka, piutangRefund, supplierUtang, rekonsiliasi, jurnalUmum, bukuBesar, rekonSalesFinance, mutasiRekening, mutasiBank, pencocokanBank, rekonsiliasiRekening, biayaBahan, agingUtang, laporanKeuangan, uangMukaSupplier].map((m) => [m.kunci, m])),
 );
