@@ -1799,6 +1799,21 @@ export const api = {
       headers: { ...(data.preview ? {} : { "Idempotency-Key": idempotencyKey || mutationKey("bayar-koreksi") }), ...(stepUp ? { "X-Finance-Stepup": stepUp } : {}) },
     }),
   getRiwayatPembayaran: (id) => request(`/finance/pembayaran/${id}/riwayat`),
+  // KOREKSI PER DOKUMEN (Okt 2026): pengakuan pendapatan terkendali, harga order Rp0, keputusan atribusi divisi. Tulis = PIN step-up + Idempotency-Key (kecuali pratinjau).
+  getKoreksiPengakuan: (kelas = "") => request(`/finance/koreksi/pengakuan${kelas ? `?kelas=${encodeURIComponent(kelas)}` : ""}`),
+  getKoreksiPengakuanDetail: (orderId) => request(`/finance/koreksi/pengakuan/${encodeURIComponent(orderId)}`),
+  kirimKoreksiPengakuan: (orderId, aksi, data, { stepUp = null, idempotencyKey = null } = {}) =>
+    request(`/finance/koreksi/pengakuan/${encodeURIComponent(orderId)}/${aksi}`, {
+      method: "POST", body: JSON.stringify(data),
+      headers: { ...(data?.preview ? {} : { "Idempotency-Key": idempotencyKey || mutationKey("koreksi-pengakuan") }), ...(stepUp ? { "X-Finance-Stepup": stepUp } : {}) },
+    }),
+  getKoreksiAtribusi: (from, to) => request(`/finance/koreksi/atribusi?from=${from}&to=${to}`),
+  getKoreksiAtribusiDetail: (modul, id, scope = "") => request(`/finance/koreksi/atribusi/${modul}/${id}${scope ? `?scope=${encodeURIComponent(scope)}` : ""}`),
+  kirimKeputusanAtribusi: (modul, id, data, { cabut = false, stepUp = null, idempotencyKey = null } = {}) =>
+    request(`/finance/koreksi/atribusi/${modul}/${id}${cabut ? "/cabut" : ""}`, {
+      method: "POST", body: JSON.stringify(data),
+      headers: { "Idempotency-Key": idempotencyKey || mutationKey("keputusan-atribusi"), ...(stepUp ? { "X-Finance-Stepup": stepUp } : {}) },
+    }),
   editFinanceRefund: (id, data) => request(`/finance/refunds/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   // Koreksi Refund: bukti transfer (unggah dulu = "belum dipakai", lalu dirujuk koreksi; hapus = batal pakai). Berkas hanya lewat URL bertanda-tangan 5 menit.
   uploadBuktiRefund: (file) => { const fd = new FormData(); fd.append("berkas", file); return requestFormData("/finance/refunds/bukti/upload", fd); },

@@ -24,6 +24,7 @@ const REGISTRI_KOTOR_DISENGAJA = {
   "services/finance/posting/orderRevenue.js": "pengakuan pendapatan HARUS kotor (Dr Piutang / Cr Pendapatan); potongan dicatat terpisah via Retur & Potongan",
   "services/finance/rekonsiliasi2026.js": "usulan pengakuan pendapatan untuk order BELUM diakui; Nota Kredit hanya boleh pada order yang sudah diakui",
   "services/finance/legacyPendapatan.js": "rekonsiliasi pendapatan legacy sebelum sistem (historis)",
+  "services/finance/koreksiDokumen/pengakuan.js": "koreksi pengakuan pendapatan: ledger mengakui nilai KOTOR (sama dengan posting/orderRevenue.js); Nota Kredit tercatat terpisah di 4-2100. Nilai bersih ditampilkan lewat nilaiBersihPerOrder",
   "services/resiBackfill.js": "backfill harga resi dari kolom value mentah (alat sekali jalan)",
   "services/scopeRevision.js": "revisi lingkup: delta harga terhadap item order (kotor by design)",
   "services/finance/penerimaanOrder.js": "guard value > 0 (order sudah dihargai); tagihan memakai dasarStatusBayar",
