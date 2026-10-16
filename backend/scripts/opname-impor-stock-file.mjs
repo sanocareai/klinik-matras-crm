@@ -17,39 +17,7 @@ if (!CSV) { console.error("Pakai: --csv <file> (--dump <folder> | --db) [--out d
 const wib = (s) => { if (!s) return null; const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/); if (!m) throw new Error(`Format waktu "${s}" harus YYYY-MM-DD HH:mm (WIB)`); return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4] - 7, +m[5])); };
 
 // ---------- sumber data ----------
-function dariDump(dir) {
-  const tabel = (n) => { const r = parseCsvText(fs.readFileSync(path.join(dir, `out_${n}.csv`), "utf8")); const h = r[0]; return r.slice(1).filter((x) => x.length > 1).map((x) => Object.fromEntries(h.map((k, i) => [k, x[i]]))); };
-  const materials = tabel("materials").map((m) => ({ id: m.id, code: m.code, name: m.name, unit: m.unit, active: m.active === "t" }));
-  const idPer = new Map(materials.map((m) => [m.code, m.id])); const ledger = new Map();
-  for (const x of tabel("mov_all")) {
-    const id = idPer.get(x.material_code); if (!id) continue;
-    (ledger.get(id) || ledger.set(id, []).get(id)).push({ id: x.id, type: x.type, qty: Number(x.qty), createdAt: new Date(x.created_at), dokumen: x.dokumen, grArrivedDate: x.gr_arrived || null, jalur: x.jalur });
-  }
-  const pending = tabel("pending").map((p) => ({ materialCode: p.material_code, dok: p.dok, status: p.status }));
-  const stempel = fs.existsSync(path.join(dir, "_stempel.txt")) ? fs.readFileSync(path.join(dir, "_stempel.txt"), "utf8").trim() : "";
-  return { materials, ledger, pending, stempel };
-}
-async function dariDb() {
-  const { prisma } = await import("../src/db.js");
-  const { muatDokumenTertunda } = await import("../src/services/opnameCutover.js");
-  const r = await prisma.$transaction(async (tx) => {
-    await tx.$executeRawUnsafe("SET TRANSACTION READ ONLY");
-    const materials = (await tx.material.findMany({ select: { id: true, code: true, name: true, unit: true, active: true } })).map((m) => ({ ...m, unit: String(m.unit) }));
-    const mv = await tx.stockMovement.findMany({ select: { id: true, materialId: true, type: true, qty: true, createdAt: true, goodsReceipt: { select: { receiptNumber: true, arrivedDate: true } }, materialIssueId: true, stockCountId: true, stockAdjustmentRequestId: true, unitId: true }, orderBy: { createdAt: "asc" } });
-    const ledger = new Map();
-    for (const x of mv) {
-      (ledger.get(x.materialId) || ledger.set(x.materialId, []).get(x.materialId)).push({
-        id: x.id, type: x.type, qty: Number(x.qty), createdAt: x.createdAt, dokumen: x.goodsReceipt?.receiptNumber || null,
-        grArrivedDate: x.goodsReceipt?.arrivedDate ? x.goodsReceipt.arrivedDate.toISOString().slice(0, 10) : null,
-        jalur: x.goodsReceipt ? "GR" : x.materialIssueId ? "ISSUE_DOK" : x.stockCountId ? "COUNT" : x.stockAdjustmentRequestId ? "ADJ_DOK" : x.unitId ? "UNIT_LEPAS" : "TANPA_DOKUMEN",
-      });
-    }
-    const pending = (await muatDokumenTertunda(tx)).map((p) => ({ materialCode: p.materialCode, dok: p.dok, status: p.status }));
-    return { materials, ledger, pending };
-  }, { timeout: 60_000 });
-  await prisma.$disconnect();
-  return { ...r, stempel: `db ${new Date().toISOString()}` };
-}
+import { dariDump, dariDb } from "./lib/muatDataStok.mjs";
 
 const data = arg("--dump") ? dariDump(arg("--dump")) : process.argv.includes("--db") ? await dariDb() : (console.error("Pilih --dump <folder> atau --db"), process.exit(1));
 const alias = new Map();

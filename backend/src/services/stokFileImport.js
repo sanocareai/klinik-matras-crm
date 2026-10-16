@@ -72,7 +72,7 @@ export function bacaStockCsv(text) {
     baris.push({
       baris: i + 1, kode: g(r, "kode"), nama: g(r, "nama"), jenis: g(r, "jenis"), barang: g(r, "barang"), vendor: g(r, "vendor"), satuanPrimer: g(r, "satuan"), satuanSepMentah: g(r, "satuanSep"),
       qtySep: parseAngkaId(g(r, "qtySep")), sisaSep: parseAngkaId(g(r, "sisaSep")), selisihSep: parseAngkaId(g(r, "selisihSep")), masukSep: parseAngkaId(g(r, "masukSep")), keluarSep: parseAngkaId(g(r, "keluarSep")),
-      masukOkt: parseAngkaId(g(r, "masukOkt")), keluarOkt: parseAngkaId(g(r, "keluarOkt")), sisaOkt: parseAngkaId(g(r, "sisaOkt")), qtyOkt: parseAngkaId(g(r, "qtyOkt")),
+      masukOkt: parseAngkaId(g(r, "masukOkt")), keluarOkt: parseAngkaId(g(r, "keluarOkt")), sisaOkt: parseAngkaId(g(r, "sisaOkt")), qtyOkt: parseAngkaId(g(r, "qtyOkt")), satuanOktMentah: g(r, "satuanOkt"),
       hargaInfo: g(r, "hargaSep"), // INFORMASI SAJA — bukan nilai buku
     });
   }
