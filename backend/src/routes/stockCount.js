@@ -15,7 +15,7 @@ import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js
 import { wajibUuid } from "../lib/uuidParam.js";
 import { pesanServerAman } from "../lib/galatServerAman.js";
 import { wajibPenyetujuPenyesuaian, wajibBukanPihakPengaju } from "../services/inventorySegregation.js";
-import { muatPergerakanSesi, selisihTersesuaikan, AKSI_TANDA_PERGERAKAN } from "../services/pergerakanSesiHitung.js";
+import { muatPergerakanSesi, selisihTersesuaikan, AKSI_TANDA_PERGERAKAN, AKSI_TANDA_DIRESET } from "../services/pergerakanSesiHitung.js";
 import { lockMaterialBalance } from "../services/inventoryLedger.js";
 
 // Penanda pelaku di activity_events (eventType DOCUMENT_EDITED) — dipakai complete untuk memisahkan pengisi/penyerah hitungan dari penyetuju.
@@ -160,6 +160,9 @@ stockCountRouter.post("/:id/start", requirePermission(P.INVENTORY_WRITE), wajibU
       const count = await tx.stockCount.findUnique({ where: { id: preCheck.id }, include: countInclude });
       if (count.status !== "SCHEDULED") throw new CountError("Hanya count berstatus Scheduled yang bisa dimulai");
 
+      // Kunci material (urut id) SEBELUM membaca saldo: pergerakan yang sedang diposting selesai dulu (masuk snapshot), yang menyusul menunggu sampai Start commit
+      // sehingga bercap waktu SESUDAH startedAt (masuk daftar pergerakan sesi). Tanpa kunci, pergerakan di sela baca-saldo dan startedAt hilang dari keduanya.
+      for (const id of [...new Set(count.lines.map((l) => l.materialId))].sort()) await lockMaterialBalance(tx, id);
       for (const line of count.lines) {
         const [{ balance }] = await tx.$queryRaw`
           SELECT COALESCE(SUM(qty), 0)::float AS balance FROM stock_movements WHERE material_id = ${line.materialId}::uuid
@@ -193,6 +196,7 @@ stockCountRouter.patch("/:id/lines/:lineId", requirePermission(P.INVENTORY_WRITE
 
     const { countedQty, reason, notes } = req.body;
     const toNum = (v) => (v === undefined ? undefined : v === "" || v === null ? null : Number(v));
+    const qtyBerubah = countedQty !== undefined && toNum(countedQty) !== (line.countedQty == null ? null : Number(line.countedQty));
     const updated = await prisma.$transaction(async (tx) => {
       const u = await tx.stockCountLine.update({
         where: { id: line.id },
@@ -206,8 +210,14 @@ stockCountRouter.patch("/:id/lines/:lineId", requirePermission(P.INVENTORY_WRITE
       // Pelaku pengisi hasil hitung dicatat (tabel baris tak punya kolom pelaku): penyelesai selisih tidak boleh termasuk di dalamnya.
       await recordActivity(tx, {
         entityType: ENTITY_TYPES.STOCK_COUNT, entityId: count.id, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: req.user.id,
-        metadata: { aksi: AKSI_ISI_HITUNGAN, countNumber: count.countNumber, lineId: line.id },
+        metadata: { aksi: AKSI_ISI_HITUNGAN, countNumber: count.countNumber, lineId: line.id, ...(countedQty !== undefined && { countedQtyBaru: toNum(countedQty) }) },
       });
+      if (qtyBerubah) {
+        await recordActivity(tx, {
+          entityType: ENTITY_TYPES.STOCK_COUNT, entityId: count.id, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: req.user.id,
+          metadata: { aksi: AKSI_TANDA_DIRESET, countNumber: count.countNumber, materialId: line.materialId, alasan: "hasil hitung diubah — tanda pergerakan material ini harus diulang" },
+        });
+      }
       return u;
     });
     res.json(updated);
@@ -254,10 +264,14 @@ stockCountRouter.post("/:id/recount", requirePermission(P.INVENTORY_WRITE), waji
     const count = await prisma.stockCount.findUnique({ where: { id: req.params.id } });
     if (!count) return res.status(404).json({ error: "Stock count tidak ditemukan" });
     if (count.status !== "WAITING_REVIEW") throw new CountError("Hanya count berstatus Waiting Review yang bisa dihitung ulang");
-    const updated = await prisma.stockCount.update({
-      where: { id: count.id },
-      data: { status: "IN_PROGRESS" },
-      include: countInclude,
+    const updated = await prisma.$transaction(async (tx) => {
+      const u = await tx.stockCount.update({ where: { id: count.id }, data: { status: "IN_PROGRESS" }, include: countInclude });
+      // Hitung ulang = fisik baru; tanda lama bisa basi (fisik baru mungkin sudah memuat pergerakan yang tadinya "belum") → semua tanda direset.
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.STOCK_COUNT, entityId: count.id, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: req.user.id,
+        metadata: { aksi: AKSI_TANDA_DIRESET, countNumber: count.countNumber, materialId: null, alasan: "hitung ulang" },
+      });
+      return u;
     });
     res.json(updated);
   } catch (err) {

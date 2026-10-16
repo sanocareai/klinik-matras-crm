@@ -14,6 +14,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, requireAnyPermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
 import { postStockMovement, computeStockSnapshot, lockMaterialBalance } from "../services/inventoryLedger.js";
+import { bukukanNilaiPergerakanBaru } from "../services/finance/posting/inventory.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 
 export const inventoryRouter = express.Router();
@@ -227,9 +228,13 @@ inventoryRouter.post("/movements/issue", requirePermission(P.INVENTORY_WRITE), a
     const unit = await prisma.unit.findUnique({ where: { id: unitId }, select: { id: true } });
     if (!unit) throw new InventoryError("Unit tidak ditemukan", 404);
     const qty = parseQty(req.body.qty);
-    const movement = await prisma.$transaction((tx) => postStockMovement(tx, {
-      materialId, type: "ISSUE", qty: -qty, unitId, location, note, createdById: req.user.id,
-    }));
+    const movement = await prisma.$transaction(async (tx) => {
+      const mv = await postStockMovement(tx, {
+        materialId, type: "ISSUE", qty: -qty, unitId, location, note, createdById: req.user.id,
+      });
+      await bukukanNilaiPergerakanBaru(tx, mv, { userId: req.user.id }); // HPP dibukukan atau gap terlihat (jalur ini dulu tanpa jejak nilai)
+      return mv;
+    });
     res.status(201).json(movement);
   } catch (err) {
     handleErr(err, res);

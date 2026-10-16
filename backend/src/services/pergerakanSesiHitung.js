@@ -11,6 +11,8 @@
 import { ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 
 export const AKSI_TANDA_PERGERAKAN = "PERGERAKAN_SESI_DITANDAI";
+// Tanda menjadi BASI bila hasil hitung material itu diubah/dihitung ulang sesudahnya (fisik yang baru bisa sudah memuat pergerakan yang tadinya "belum"): reset menghapus tanda.
+export const AKSI_TANDA_DIRESET = "TANDA_DIRESET";
 const EPS = 1e-6;
 const r4 = (x) => Math.round(x * 10000) / 10000;
 
@@ -33,8 +35,14 @@ export async function muatPergerakanSesi(db, count, { sampai = null } = {}) {
     where: { entityType: ENTITY_TYPES.STOCK_COUNT, entityId: count.id, eventType: EVENT_TYPES.DOCUMENT_EDITED },
     select: { actorId: true, metadata: true, createdAt: true }, orderBy: { createdAt: "asc" },
   });
+  const materialPerMov = new Map(rows.map((m) => [m.id, m.materialId]));
   const tandaPerId = new Map();
   for (const e of events) {
+    if (e.metadata?.aksi === AKSI_TANDA_DIRESET) {
+      // reset (semua material, atau satu material): tanda yang dibuat SEBELUM reset tidak berlaku lagi
+      for (const [mid] of [...tandaPerId]) if (!e.metadata.materialId || materialPerMov.get(mid) === e.metadata.materialId) tandaPerId.delete(mid);
+      continue;
+    }
     if (e.metadata?.aksi !== AKSI_TANDA_PERGERAKAN || typeof e.metadata.movementId !== "string" || typeof e.metadata.tercermin !== "boolean") continue;
     tandaPerId.set(e.metadata.movementId, { tercermin: e.metadata.tercermin, oleh: e.actorId, pada: e.createdAt });
   }

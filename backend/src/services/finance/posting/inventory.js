@@ -28,7 +28,7 @@
 // pengeluaran — memaksa FIFO berarti mengarang pasangan "keluar ini dari
 // lot yang mana", yang justru melanggar aturan 2.
 
-import { postJournal, recordPostingGap, resolvePostingGap, findEntryByKey } from "../journal.js";
+import { postJournal, recordPostingGap, resolvePostingGap, findEntryByKey, JournalError } from "../journal.js";
 import { statusCutoverUntuk, pembukaAktif, awalCutover } from "../persediaanAwal.js";
 import { ambilKebijakanPersediaan } from "../inventoryMethod.js";
 import { resolveAccount, SYSTEM_KEYS, AccountError } from "../accounts.js";
@@ -181,6 +181,7 @@ async function bukukanPergerakan(tx, {
     select: {
       id: true, type: true, qty: true, unitId: true, createdAt: true,
       material: { select: { id: true, code: true, name: true } },
+      valuation: { select: { status: true, value: true } },
     },
   });
   if (movements.length === 0) return { posted: false, reason: "tidak_ada_pergerakan" };
@@ -192,13 +193,20 @@ async function bukukanPergerakan(tx, {
   for (const m of movements) {
     // asOf = createdAt movement ITU SENDIRI — lihat komentar panjang di
     // hargaRataRata soal kenapa ini wajib, bukan opsional.
-    const harga = await hargaRataRata(tx, m.material.id, { asOf: m.createdAt });
-    if (harga == null) {
-      tanpaHarga.push(m);
-      continue;
-    }
     const qty = new Decimal(String(m.qty));
-    const nilai = toMoney(qty.times(harga).abs());
+    // Nilai yang SUDAH dibekukan saat pergerakan ditulis (jejak biaya per unit) adalah sumber tunggal: jurnal HPP = nilai beku, jadi stok–jurnal–HPP per unit tidak
+    // mungkin berbeda. Tanpa nilai beku (pergerakan tanpa unit / historis) → hitung dari dasar harga seperti sebelumnya.
+    let nilai;
+    if (m.valuation?.status === "DINILAI" && m.valuation.value != null) {
+      nilai = toMoney(new Decimal(String(m.valuation.value)).abs());
+    } else {
+      const harga = await hargaRataRata(tx, m.material.id, { asOf: m.createdAt });
+      if (harga == null) {
+        tanpaHarga.push(m);
+        continue;
+      }
+      nilai = toMoney(qty.times(harga).abs());
+    }
     if (nilai.isZero()) continue;
     const baris = { movement: m, nilai, akunKey: AKUN_PER_TIPE[m.type] || SYSTEM_KEYS.SELISIH_STOK };
     if (qty.greaterThan(0)) persediaanNaik.push(baris);
@@ -325,14 +333,14 @@ export async function postStockMovementCost(tx, { movementId, userId = null }) {
   const m = await tx.stockMovement.findUnique({
     where: { id: movementId },
     select: {
-      id: true, type: true, createdAt: true, materialIssueId: true, goodsReceiptId: true,
+      id: true, type: true, createdAt: true, materialIssueId: true, goodsReceiptId: true, stockCountId: true, stockAdjustmentRequestId: true,
       material: { select: { code: true, name: true } },
     },
   });
   if (!m) throw new Error(`Stock movement ${movementId} tidak ditemukan`);
   // Baris yang punya dokumen induk dibukukan lewat dokumennya — kalau ikut
   // dibukukan di sini juga, nilainya dobel.
-  if (m.materialIssueId || m.goodsReceiptId) return { posted: false, reason: "punya_dokumen_induk" };
+  if (m.materialIssueId || m.goodsReceiptId || m.stockCountId || m.stockAdjustmentRequestId) return { posted: false, reason: "punya_dokumen_induk" };
   if (!AKUN_PER_TIPE[m.type]) return { posted: false, reason: "tipe_tidak_dinilai" };
 
   return bukukanPergerakan(tx, {
@@ -345,6 +353,37 @@ export async function postStockMovementCost(tx, { movementId, userId = null }) {
     userId,
     gapLabel: `Pergerakan stok ${m.material.code}`,
   });
+}
+
+/**
+ * Pintu pencatatan nilai untuk pergerakan stok LEPAS yang BARU saja ditulis (pemakaian/retur/susut tanpa dokumen Material Issue):
+ * POST /units/:id/materials, POST /inventory/movements/issue|return|waste, penerimaan Retur Produksi.
+ *
+ * Sebelum fungsi ini jalur-jalur itu menulis stok TANPA jurnal & TANPA gap — pemakaian bahan lantai produksi lenyap dari HPP secara diam-diam
+ * (254 baris ISSUE Agustus–September 2026). Sekarang nilainya dibukukan di transaksi yang SAMA, atau gap TANPA_HARGA_PEROLEHAN /
+ * PERSEDIAAN_AWAL_BELUM_DIPOSTING lahir dan tampil di Finance. Tidak ada angka karangan: harga hanya dari penerimaan berharga
+ * (rata-rata tertimbang sampai createdAt pergerakan), bukan Material.referenceUnitCost.
+ *
+ * HANYA dipanggil untuk pergerakan yang baru dibuat. Pergerakan historis tidak pernah disentuh fungsi ini (tidak ada pemindai massal).
+ * ADJUSTMENT sengaja tidak masuk (selisih opname punya alur dokumen sendiri). Error "data finance belum siap" tidak menggagalkan perintah Gudang.
+ */
+export async function bukukanNilaiPergerakanBaru(tx, movement, { userId = null } = {}) {
+  if (!movement?.id || !["ISSUE", "RETURN", "WASTE"].includes(movement.type)) return { posted: false, reason: "bukan_jalur_lepas" };
+  const savepoint = typeof tx?.$executeRawUnsafe === "function";
+  if (savepoint) await tx.$executeRawUnsafe("SAVEPOINT sp_nilai_pergerakan_baru");
+  try {
+    const hasil = await postStockMovementCost(tx, { movementId: movement.id, userId });
+    if (savepoint) await tx.$executeRawUnsafe("RELEASE SAVEPOINT sp_nilai_pergerakan_baru");
+    return hasil;
+  } catch (e) {
+    if (savepoint) {
+      await tx.$executeRawUnsafe("ROLLBACK TO SAVEPOINT sp_nilai_pergerakan_baru");
+      await tx.$executeRawUnsafe("RELEASE SAVEPOINT sp_nilai_pergerakan_baru");
+    }
+    if (!(e instanceof JournalError) && !(e instanceof AccountError)) throw e;
+    console.error("[hpp] pembukuan nilai pergerakan baru ditunda (perintah Gudang tetap berjalan):", movement.id, e?.message);
+    return { posted: false, gap: true, reason: "pembukuan_ditunda" };
+  }
 }
 
 /** Selisih hasil stock opname — satu jurnal per sesi StockCount. */
