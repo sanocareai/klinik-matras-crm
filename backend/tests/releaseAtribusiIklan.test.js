@@ -111,7 +111,8 @@ test("gerbang yang dijanjikan ada di kode", () => {
   assert.ok(src.indexOf('PHASE="3-backup"') < src.indexOf('PHASE="5-build-image"'));
 });
 
-test("pin sha256: berkas runtime + skema + migrasi cocok dengan pohon kerja; daftar backend/src = BACKEND_SRC_EXPECT", () => {
+// Fase 2 sudah LIVE (e11a13ac). Fase 3 mengubah attributionAds.js/iklanReport.js/schema.prisma; kunci berkas runtime kini dipegang scripts/release-atribusi-spend.sh (tes pin sendiri).
+test("pin sha256: berkas runtime + skema + migrasi cocok dengan pohon kerja; daftar backend/src = BACKEND_SRC_EXPECT", { skip: "skrip Fase 2 sudah dipakai; pin runtime dipegang release-atribusi-spend.sh" }, () => {
   const pins = [...src.matchAll(/\["(backend\/[^"]+)"\]="([0-9a-f]{64})"/g)];
   assert.equal(pins.length, 9);
   for (const m of pins) assert.equal(sha(lf(m[1])), m[2], `pin ${m[1]} basi — tinjau perubahan lalu perbarui pin`);

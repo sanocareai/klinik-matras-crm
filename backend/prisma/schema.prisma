@@ -11030,3 +11030,116 @@ model MetaAdReferenceImport {
 
   @@map("meta_ad_reference_imports")
 }
+
+// ── ATRIBUSI META ADS FASE 3 (Okt 2026): spend harian per Ad ID, audit impor, target KPI, status alarm. Lihat migrasi 20261201090000. ──
+// ID = string digit (kunci); nama = label. Mata uang hanya IDR. Tanpa token / respons mentah Meta / data pelanggan.
+model MetaSpendImport {
+  id             String   @id @default(uuid()) @db.Uuid
+  source         String   @db.VarChar(24) // ADS_MANAGER_CSV | META_MARKETING_API | WINDSOR_API
+  accountId      String   @map("account_id") @db.VarChar(32)
+  fileName       String?  @map("file_name") @db.VarChar(120)
+  contentSha256  String   @map("content_sha256") @db.VarChar(64)
+  dateFrom       DateTime? @map("date_from") @db.Date
+  dateTo         DateTime? @map("date_to") @db.Date
+  accountTimezone String? @map("account_timezone") @db.VarChar(40)
+  rowsTotal      Int      @map("rows_total")
+  rowsAccepted   Int      @map("rows_accepted")
+  rowsRejected   Int      @map("rows_rejected")
+  rowsNew        Int      @map("rows_new")
+  rowsUpdated    Int      @map("rows_updated")
+  rowsUnchanged  Int      @map("rows_unchanged")
+  spendTotal     Decimal  @map("spend_total") @db.Decimal(18, 2)
+  declaredTotal  Decimal? @map("declared_total") @db.Decimal(18, 2)
+  createdById    String?  @map("created_by_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  spendRows MetaAdDailySpend[]
+
+  @@map("meta_spend_imports")
+}
+
+model MetaAdDailySpend {
+  id                   String   @id @default(uuid()) @db.Uuid
+  dateWib              DateTime @map("date_wib") @db.Date
+  accountId            String   @map("account_id") @db.VarChar(32)
+  campaignId           String   @map("campaign_id") @db.VarChar(32)
+  adSetId              String   @map("ad_set_id") @db.VarChar(32)
+  adId                 String   @map("ad_id") @db.VarChar(32)
+  campaignName         String?  @map("campaign_name") @db.VarChar(200)
+  adSetName            String?  @map("ad_set_name") @db.VarChar(200)
+  adName               String?  @map("ad_name") @db.VarChar(200)
+  currency             String   @db.VarChar(3)
+  spend                Decimal  @db.Decimal(18, 2)
+  impressions          BigInt?
+  reach                BigInt?
+  linkClicks           BigInt?  @map("link_clicks")
+  platformConversations Int?    @map("platform_conversations")
+  platformResultType   String?  @map("platform_result_type") @db.VarChar(80)
+  source               String   @db.VarChar(24)
+  accountTimezone      String?  @map("account_timezone") @db.VarChar(40)
+  sourceUpdatedAt      DateTime? @map("source_updated_at")
+  importedAt           DateTime @map("imported_at")
+  importId             String   @map("import_id") @db.Uuid
+  import               MetaSpendImport @relation(fields: [importId], references: [id], onDelete: Restrict)
+  rowChecksum          String   @map("row_checksum") @db.VarChar(64)
+  revision             Int      @default(1)
+  createdAt            DateTime @default(now()) @map("created_at")
+  updatedAt            DateTime @updatedAt @map("updated_at")
+
+  revisions MetaAdSpendRevision[]
+
+  @@unique([dateWib, accountId, adId, source], map: "meta_ad_daily_spend_key")
+  @@index([dateWib])
+  @@index([adId, dateWib])
+  @@index([campaignId, dateWib])
+  @@map("meta_ad_daily_spend")
+}
+
+model MetaAdSpendRevision {
+  id                        String   @id @default(uuid()) @db.Uuid
+  spendId                   String   @map("spend_id") @db.Uuid
+  spend                     MetaAdDailySpend @relation(fields: [spendId], references: [id], onDelete: Restrict)
+  revision                  Int
+  prevSpend                 Decimal  @map("prev_spend") @db.Decimal(18, 2)
+  prevImpressions           BigInt?  @map("prev_impressions")
+  prevReach                 BigInt?  @map("prev_reach")
+  prevLinkClicks            BigInt?  @map("prev_link_clicks")
+  prevPlatformConversations Int?     @map("prev_platform_conversations")
+  prevChecksum              String   @map("prev_checksum") @db.VarChar(64)
+  prevImportId              String   @map("prev_import_id") @db.Uuid
+  prevImportedAt            DateTime @map("prev_imported_at")
+  revisedAt                 DateTime @default(now()) @map("revised_at")
+  newImportId               String   @map("new_import_id") @db.Uuid
+
+  @@index([spendId])
+  @@map("meta_ad_spend_revisions")
+}
+
+model AttributionKpiTarget {
+  id                       Int      @id @default(1) @db.SmallInt
+  maxCpl                   Decimal? @map("max_cpl") @db.Decimal(18, 2)
+  maxCostPerQualifiedLead  Decimal? @map("max_cost_per_qualified_lead") @db.Decimal(18, 2)
+  maxCostPerCustomerOrder  Decimal? @map("max_cost_per_customer_order") @db.Decimal(18, 2)
+  maxCpaClosing            Decimal? @map("max_cpa_closing") @db.Decimal(18, 2)
+  minBookedRoas            Decimal? @map("min_booked_roas") @db.Decimal(10, 2)
+  minCashRoas              Decimal? @map("min_cash_roas") @db.Decimal(10, 2)
+  minAcquisitionLeads      Int?     @map("min_acquisition_leads")
+  minClosings              Int?     @map("min_closings")
+  minCohortAgeDays         Int?     @map("min_cohort_age_days")
+  maxSpamSharePercent      Decimal? @map("max_spam_share_percent") @db.Decimal(5, 2)
+  updatedById              String?  @map("updated_by_id")
+  updatedAt                DateTime @default(now()) @map("updated_at")
+
+  @@map("attribution_kpi_targets")
+}
+
+model AttributionAlertState {
+  key            String    @id @db.VarChar(64)
+  status         String    @db.VarChar(8) // OK | WARN | CRIT
+  since          DateTime
+  lastNotifiedAt DateTime? @map("last_notified_at")
+  detail         String?   @db.VarChar(200)
+  updatedAt      DateTime  @map("updated_at")
+
+  @@map("attribution_alert_state")
+}

@@ -12,10 +12,12 @@ import { prisma } from "../db.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
 import { parseParameterIklan, hitungLaporanIklan, eksporIdIklan, ParameterError } from "../services/attribution/iklanReport.js";
 import { hitungKesehatanCapture } from "../services/attribution/captureHealth.js";
+import { pasangRuteSpend } from "./attributionSpend.js";
 import { barisDariCsv, jalankanImpor, sidikJari, MAKS_BARIS_IMPOR } from "../services/attribution/adReferensi.js";
 
 export const attributionAdsRouter = express.Router();
 attributionAdsRouter.use(requireAuth, requireAdmin);
+pasangRuteSpend(attributionAdsRouter);   // Fase 3: /spend, /target, /monitor
 
 let sedangBerjalan = false;   // satu perhitungan laporan sekaligus per proses
 
