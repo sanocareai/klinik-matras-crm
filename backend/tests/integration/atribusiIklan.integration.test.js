@@ -909,7 +909,13 @@ test("WINDSOR 15 Okt: laporan sebelum atribusi — spend tersedia, CPL/CPA/ROAS 
     assert.equal(g.biaya.evaluasi.status, "TIDAK_DAPAT_DIEVALUASI_SEBELUM_ATRIBUSI");
     assert.deepEqual([g.biaya.cpl, g.biaya.cpa, g.biaya.costPerQualifiedLead, g.biaya.costPerCustomerOrder], [null, null, null, null]);
     assert.equal(g.biaya.platformConversations, CONTROL_CAMPAIGN[g.kunci].conversations);
+    assert.equal(g.biaya.impressions, CONTROL_CAMPAIGN[g.kunci].impressions);
+    assert.equal(g.biaya.linkClicks, CONTROL_CAMPAIGN[g.kunci].link_clicks);
+    const kv = CONTROL_CAMPAIGN[g.kunci].conversations;
+    assert.equal(g.biaya.costPerPlatformConversation, kv > 0 ? Math.round((CONTROL_CAMPAIGN[g.kunci].spend / kv) * 100) / 100 : null, "biaya per percakapan platform tersedia walau sebelum atribusi");
   }
+  assert.deepEqual([j.biaya.platformConversations, j.biaya.impressions, j.biaya.linkClicks], [CONTROL_TOTAL.conversation_started_7d, CONTROL_TOTAL.impressions, CONTROL_TOTAL.link_clicks], "total = Σ metrik aditif");
+  assert.equal(j.biaya.costPerPlatformConversation, Math.round((CONTROL_TOTAL.spend / CONTROL_TOTAL.conversation_started_7d) * 100) / 100);
   assert.ok(spendCamp["52696128518884"] === 0 && j.grup.find((g) => g.kunci === "52696131903884").biaya.platformConversations === 1, "campaign Rp0 dengan percakapan tetap tampil");
   assert.ok(!r.teks.toLowerCase().includes("reach"));
   const parsial = await api("GET", "/?dari=2026-10-16&sampai=2026-10-16&level=campaign");
@@ -922,4 +928,52 @@ test("WINDSOR 15 Okt: laporan sebelum atribusi — spend tersedia, CPL/CPA/ROAS 
   assert.ok(!sebanding.json.peringatan.some((w) => /SEBELUM_ATRIBUSI|HARI_ATRIBUSI_PARSIAL/.test(w.kode)));
   assert.equal(sebanding.json.biaya.status, "BELUM_ADA_KONVERSI");
   await testPrisma.attributionKpiTarget.deleteMany({});
+});
+
+// ══════════════════ Backfill 1–14 Okt (SEBELUM atribusi): data SINTETIS uji, bukan data Meta ══════════════════
+test("BACKFILL 1–14 Okt (sintetis): dry-run/commit/ulang idempoten; Rp0 diterima; notasi ilmiah & negatif ditolak; setiap hari SEBELUM_ATRIBUSI, CPL/CPA/ROAS null, biaya per percakapan platform tampil; reach tidak dijumlah", async () => {
+  await bersihSpend(); await pastikanReferensi();
+  await testPrisma.attributionTouch.deleteMany({});
+  const c0 = await testPrisma.customer.create({ data: { name: "Mulai Atribusi", phone: "6285300000098", leadSource: "META_ADS" } });
+  await testPrisma.attributionTouch.create({ data: { customerId: c0.id, adId: AD1, touchAt: T("2026-10-16T10:25:43Z"), touchDateWib: T("2026-10-16T00:00:00Z"), mappingStatusAtTouch: "UNMAPPED", evidenceSource: "CTWA_AD", sourceType: "ad", customerStatusAtTouch: "EXISTING", customerBasisAtTouch: "RIWAYAT_PESAN", dedupeKey: "mulai-backfill-uji" } });
+  const hari = Array.from({ length: 14 }, (_, i) => "2026-10-" + String(i + 1).padStart(2, "0"));
+  const kolom = "date,account_id,currency,timezone,campaign_id,adset_id,ad_id,spend,impressions,reach,link_clicks,Messaging conversations started";
+  const rows = [];
+  hari.forEach((h, i) => { rows.push(`${h},${AKUN},IDR,Asia/Jakarta,${HIER[AD1][0]},${HIER[AD1][1]},${AD1},${100000 + i * 1000},${1000 + i},${900 + i},${10 + i},${i % 4}`); rows.push(`${h},${AKUN},IDR,Asia/Jakarta,${HIER[AD2][0]},${HIER[AD2][1]},${AD2},${i === 3 ? 0 : 50000},${i === 3 ? 0 : 500},${i === 3 ? 0 : 450},${i === 3 ? 0 : 5},${i === 3 ? 1 : 2}`); });
+  const csv = [kolom, ...rows].join("\n");
+  const total = hari.reduce((s, _, i) => s + 100000 + i * 1000 + (i === 3 ? 0 : 50000), 0);
+  const body = { csv, accountId: AKUN, sumber: "WINDSOR_API", zonaWaktuAkun: "Asia/Jakarta", totalSumber: String(total) };
+  const dry = await spendPost({ ...body, dryRun: true });
+  assert.deepEqual([dry.status, dry.json.ringkasan.baru, dry.json.ringkasan.ditolak, dry.json.ringkasan.konflik, dry.json.ringkasan.adIdTidakTerpetakan], [200, 28, 0, 0, 0]);
+  assert.equal(dry.json.rekonsiliasi.cocok, true);
+  assert.equal(await testPrisma.metaAdDailySpend.count(), 0);
+  await spendPost({ ...body, dryRun: false });
+  const ulang = await spendPost({ ...body, dryRun: false });
+  assert.deepEqual([ulang.json.ringkasan.baru, ulang.json.ringkasan.berubah, ulang.json.ringkasan.tidakBerubah], [0, 0, 28]);
+  assert.equal(await testPrisma.metaAdDailySpend.count(), 28);
+  // penolakan
+  const buruk = await spendPost({ csv: [kolom, `2026-10-02,${AKUN},IDR,Asia/Jakarta,${HIER[AD1][0]},${HIER[AD1][1]},${AD1},1.0E+5,1,1,1,1`, `2026-10-02,${AKUN},IDR,Asia/Jakarta,${HIER[AD2][0]},${HIER[AD2][1]},${AD2},-5,1,1,1,1`].join("\n"), accountId: AKUN, sumber: "WINDSOR_API" });
+  assert.deepEqual(buruk.json.ditolak.map((x) => x.alasan).sort(), ["SPEND_NEGATIF", "SPEND_NOTASI_ILMIAH"]);
+  // setiap hari: sebelum atribusi
+  for (const [i, h] of hari.entries()) {
+    const r = await api("GET", `/?dari=${h}&sampai=${h}&level=campaign`);
+    assert.equal(r.status, 200, h);
+    const j = r.json;
+    assert.equal(j.rekonsiliasi.ok, true, h);
+    assert.equal(j.biaya.status, "SEBELUM_ATRIBUSI", h);
+    assert.equal(j.biaya.evaluasi.status, "TIDAK_DAPAT_DIEVALUASI_SEBELUM_ATRIBUSI", h);
+    assert.deepEqual([j.biaya.cpl, j.biaya.cpa, j.biaya.bookedRoas, j.biaya.cashRoas], [null, null, null, null], h);
+    assert.ok(j.grup.every((g) => g.biaya.cpl === null && g.biaya.cpa === null));
+    assert.equal(j.biaya.spendTotal, 100000 + i * 1000 + (i === 3 ? 0 : 50000), h);
+    assert.ok(j.biaya.costPerPlatformConversation === null || typeof j.biaya.costPerPlatformConversation === "number");
+    assert.ok(!r.teks.toLowerCase().includes("reach"), "reach tidak ditampilkan " + h);
+  }
+  const hari4 = (await api("GET", "/?dari=2026-10-04&sampai=2026-10-04&level=campaign")).json;   // hari ke-4 (i=3): campaign AD2 spend Rp0 dengan percakapan 1
+  const c2 = hari4.grup.find((g) => g.kunci === HIER[AD2][0]);
+  assert.deepEqual([c2.biaya.spend, c2.biaya.platformConversations, c2.biaya.costPerPlatformConversation], [0, 1, 0]);
+  // rentang 1–14 sekaligus tetap sebelum atribusi; rentang yang menyentuh 16 Okt (hari parsial) tidak memberi CPL/CPA
+  const semua = (await api("GET", "/?dari=2026-10-01&sampai=2026-10-14&level=ad")).json;
+  assert.equal(semua.biaya.status, "SEBELUM_ATRIBUSI");
+  assert.equal(semua.biaya.spendTotal, total);
+  await bersihSpend();
 });

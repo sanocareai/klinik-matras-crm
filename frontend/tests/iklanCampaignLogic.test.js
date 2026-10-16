@@ -137,3 +137,10 @@ test("bodyTarget: kosong→null; titik ribuan hanya untuk kolom rupiah; negatif/
   assert.ok(bodyTarget({ maxCpl: "abc" }).galat);
   assert.ok(bodyTarget({}).galat);
 });
+
+test("barisBiaya: biaya per percakapan platform + impresi/klik tampil juga sebelum atribusi; CPL/CPA tetap kosong", () => {
+  const c = barisBiaya({ biaya: { status: "SEBELUM_ATRIBUSI", spend: 468546, platformConversations: 42, impressions: 28342, linkClicks: 214, costPerPlatformConversation: 11155.86, cpl: null, cpa: null, bookedRoas: null, cashRoas: null, alasanNull: { cpl: "SEBELUM_ATRIBUSI", cpa: "SEBELUM_ATRIBUSI" }, evaluasi: { status: "TIDAK_DAPAT_DIEVALUASI_SEBELUM_ATRIBUSI", pelanggaran: [] } } });
+  assert.deepEqual([c.biayaPerKonversasi.teks, c.impresi, c.klikTautan, c.cpl.teks, c.cpl.alasan], ["Rp11.156", 28342, 214, "—", "sebelum atribusi"]);
+  assert.equal(c.evaluasiTeks, "Tidak dapat dievaluasi (sebelum atribusi)");
+  assert.equal(c.evaluasiNada, "netral");
+});

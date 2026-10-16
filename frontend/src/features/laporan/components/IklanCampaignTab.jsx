@@ -46,6 +46,7 @@ const rupiahBulat = (n) => (n == null ? "—" : "Rp" + Math.round(Number(n)).toL
 const TIP_BIAYA = {
   spend: "Spend Meta pada tanggal delivery WIB dalam rentang, dari tabel spend harian (satu sumber per hari+Ad). Nama hanya label; kunci = ID.",
   konv: "Hasil percakapan versi Meta (messaging conversations started). BUKAN lead CRM; tidak dipakai sebagai penyebut biaya.",
+  biayaKonv: "Metrik PLATFORM: spend ÷ percakapan versi Meta. Boleh dibaca juga untuk tanggal sebelum atribusi. BUKAN CPL/CPA CRM.",
   cpl: "Spend ÷ acquisition lead (customer baru dengan touch pertama terbukti). Penyebut 0 → —.",
   cplq: "Spend ÷ lead yang pernah ditandai PROSPECT (manual oleh sales).",
   cplo: "Spend ÷ customer unik dengan ≥ 1 order eligible (bukan jumlah order).",
@@ -170,7 +171,7 @@ export default function IklanCampaignTab() {
             <button className="flex items-center gap-2 text-left text-[13px] font-semibold" onClick={() => setLihatPeringatan((v) => !v)}>
               <AlertTriangle size={15} className="text-orange" /> {peringatan.length} catatan cakupan data {lihatPeringatan ? "(sembunyikan)" : "(tampilkan)"}
             </button>
-            {lihatPeringatan && <ul className="flex flex-col gap-1 text-[12.5px] text-ink2">{peringatan.map((w) => <li key={w.kode + (w.asal || "")}>• {w.pesan}</li>)}</ul>}
+            {lihatPeringatan && <ul className="flex flex-col gap-1 text-[12.5px] text-ink2">{peringatan.map((w) => <li key={w.kode + (w.asal || "")} className="list-disc ml-4 break-words">{w.pesan}</li>)}</ul>}
           </CardContent>
         </Card>
       )}
@@ -183,7 +184,7 @@ export default function IklanCampaignTab() {
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr className="border-b border-line">
-                  <th className="px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-ink3">{level === "campaign" ? "Campaign" : level === "adset" ? "Ad Set" : "Ad"}</th>
+                  <th className="min-w-[150px] bg-surface md:sticky md:left-0 md:z-10 md:min-w-[220px] px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-ink3">{level === "campaign" ? "Campaign" : level === "adset" ? "Ad Set" : "Ad"}</th>
                   <Th tip={TIP.lead}>Lead baru</Th>
                   <Th tip="Spam vs bukan spam dari lead baru.">Spam / Bukan</Th>
                   <Th tip={TIP.prospek}>Prospek (manual)</Th>
@@ -197,6 +198,7 @@ export default function IklanCampaignTab() {
                   <Th tip={TIP.assisted}>Assisted</Th>
                   <Th tip={TIP_BIAYA.spend}>Spend</Th>
                   <Th tip={TIP_BIAYA.konv}>Konv. platform</Th>
+                  <Th tip={TIP_BIAYA.biayaKonv}>Biaya / konv. platform</Th>
                   <Th tip={TIP_BIAYA.cpl}>CPL</Th>
                   <Th tip={TIP_BIAYA.cplq}>Cost / qualified</Th>
                   <Th tip={TIP_BIAYA.cplo}>Cost / cust. order</Th>
@@ -207,10 +209,10 @@ export default function IklanCampaignTab() {
                 </tr>
               </thead>
               <tbody>
-                {baris.length === 0 && <tr><td colSpan={21} className="px-3 py-10 text-center text-sm text-ink3">Belum ada lead dengan touch iklan di rentang ini. {lap?.atribusi?.attributionStartWib ? "" : "Capture touch belum menyala atau belum ada sinyal iklan tersimpan."}</td></tr>}
+                {lap && baris.length === 0 && <tr><td colSpan={22} className="px-3 py-10 text-center text-sm text-ink3">Belum ada lead dengan touch iklan di rentang ini. {lap?.atribusi?.attributionStartWib ? "" : "Capture touch belum menyala atau belum ada sinyal iklan tersimpan."}</td></tr>}
                 {baris.map(({ g, b, c }) => (
                   <tr key={b.kunci} className={cn("border-b border-line/60", !b.kredit || g.status === "UNMAPPED" ? "bg-inset/50" : "", b.bisaDrilldown && "cursor-pointer hover:bg-inset")} onClick={() => b.bisaDrilldown && turun(g)}>
-                    <td className="px-3 py-2 text-left align-top">
+                    <td className="min-w-[150px] bg-surface md:sticky md:left-0 md:z-10 md:min-w-[220px] px-3 py-2 text-left align-top">
                       <p className="flex items-center gap-1.5 font-medium text-ink">
                         {b.label.judul}
                         {g.status !== "MAPPED" && <span className="rounded-btn bg-orangebg px-1.5 py-0.5 text-[10px] font-semibold text-orange">{g.status}</span>}
@@ -230,7 +232,8 @@ export default function IklanCampaignTab() {
                     <Td>{angka(b.reaktivasi.touch)} <span className="text-ink3">({angka(b.reaktivasi.customerUnik)} cust.)</span></Td>
                     <Td>{angka(b.assisted.touch)} <span className="text-ink3">({angka(b.assisted.customerUnik)} cust.)</span></Td>
                     <Td>{c.spend.teks}{c.kesegaran?.terlambat && <span className="block text-[10px] text-orange">terlambat</span>}</Td>
-                    <Td>{angka(c.konversasiPlatform)}</Td>
+                    <Td>{angka(c.konversasiPlatform)}{(c.impresi != null || c.klikTautan != null) && <span className="block text-[10px] text-ink3">{angka(c.impresi)} tayang · {angka(c.klikTautan)} klik</span>}</Td>
+                    <SelBiaya s={c.biayaPerKonversasi} />
                     <SelBiaya s={c.cpl} /><SelBiaya s={c.cplQualified} /><SelBiaya s={c.cplOrder} /><SelBiaya s={c.cpa} /><SelBiaya s={c.bookedRoas} /><SelBiaya s={c.cashRoas} />
                     <Td className="text-left" title={c.statusTip}>
                       <span className={cn("text-[11.5px] font-semibold", NADA_KELAS[c.nada])}>{c.statusTeks}</span>
@@ -242,14 +245,14 @@ export default function IklanCampaignTab() {
               {total && baris.length > 0 && (
                 <tfoot>
                   <tr className="border-t border-line font-semibold">
-                    <td className="px-3 py-2 text-left text-[12px]">Akuisisi terbukti (tanpa baris UNKNOWN)</td>
+                    <td className="min-w-[150px] bg-surface md:sticky md:left-0 md:z-10 md:min-w-[220px] px-3 py-2 text-left text-[12px]">Akuisisi terbukti (tanpa baris UNKNOWN)</td>
                     <Td>{angka(total.leadUnik)}</Td><Td>—</Td><Td>—</Td>
                     <Td>{angka(total.customerDenganOrder)} <span className="text-ink3">({angka(total.orderEligible)})</span></Td>
                     {umur === "semua" && <Td>{angka(total.orderPernahDp)}</Td>}
                     {umur === "semua" && <Td>{angka(total.customerLunasMenurutCrm)}</Td>}
                     <Td>{angka(total.closingUtama.customerLunasTerbuktiLedger)}</Td>
                     <Td>{formatRupiah(total.bookedValue)}</Td><Td>{formatRupiah(total.uangLedger)}</Td><Td>—</Td><Td>—</Td>
-                    <Td>{lap.biaya.spend == null ? "—" : rupiahBulat(lap.biaya.spend)}</Td><Td>—</Td><SelBiaya s={barisBiayaTotal(lap, "cpl")} /><SelBiaya s={barisBiayaTotal(lap, "costPerQualifiedLead")} /><SelBiaya s={barisBiayaTotal(lap, "costPerCustomerOrder")} /><SelBiaya s={barisBiayaTotal(lap, "cpa")} /><SelBiaya s={barisBiayaTotal(lap, "bookedRoas", true)} /><SelBiaya s={barisBiayaTotal(lap, "cashRoas", true)} /><Td>—</Td>
+                    <Td>{lap.biaya.spend == null ? "—" : rupiahBulat(lap.biaya.spend)}</Td><Td>{angka(lap.biaya.platformConversations)}</Td><SelBiaya s={barisBiayaTotal(lap, "costPerPlatformConversation")} /><SelBiaya s={barisBiayaTotal(lap, "cpl")} /><SelBiaya s={barisBiayaTotal(lap, "costPerQualifiedLead")} /><SelBiaya s={barisBiayaTotal(lap, "costPerCustomerOrder")} /><SelBiaya s={barisBiayaTotal(lap, "cpa")} /><SelBiaya s={barisBiayaTotal(lap, "bookedRoas", true)} /><SelBiaya s={barisBiayaTotal(lap, "cashRoas", true)} /><Td>—</Td>
                   </tr>
                 </tfoot>
               )}
