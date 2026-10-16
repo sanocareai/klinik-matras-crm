@@ -17,6 +17,7 @@ import { pesanServerAman } from "../lib/galatServerAman.js";
 import { wajibPenyetujuPenyesuaian, wajibBukanPihakPengaju } from "../services/inventorySegregation.js";
 import { muatPergerakanSesi, selisihTersesuaikan, AKSI_TANDA_PERGERAKAN, AKSI_TANDA_DIRESET } from "../services/pergerakanSesiHitung.js";
 import { lockMaterialBalance } from "../services/inventoryLedger.js";
+import { muatIdentitasHitung, AKSI_PERIKSA_HITUNGAN } from "../services/identitasHitung.js";
 
 // Penanda pelaku di activity_events (eventType DOCUMENT_EDITED) — dipakai complete untuk memisahkan pengisi/penyerah hitungan dari penyetuju.
 const AKSI_ISI_HITUNGAN = "HASIL_HITUNG_DIISI";
@@ -77,8 +78,10 @@ stockCountRouter.get("/:id", requirePermission(P.INVENTORY_READ), wajibUuid(), a
     if (!count) return res.status(404).json({ error: "Stock count tidak ditemukan" });
     // Snapshot saldo (systemQty per baris) + waktu mulai direkam saat Start; pergerakan ledger sesudahnya ditampilkan agar penghitung menandainya.
     const { pergerakan } = await muatPergerakanSesi(prisma, count);
+    const identitas = await muatIdentitasHitung(prisma, count);
     res.json({
       ...count,
+      identitas,
       sesi: { snapshotPada: count.startedAt, belumDitandai: pergerakan.filter((p) => p.tanda === null).length },
       pergerakanSesi: pergerakan,
     });
@@ -303,6 +306,16 @@ stockCountRouter.post("/:id/complete", requireAnyPermission(P.INVENTORY_WRITE, P
         e.code = "PERGERAKAN_SESI_BELUM_DITANDAI";
         throw e;
       }
+      // Opname Penuh (cutover): hasil hitung WAJIB diperiksa akun lain, dan pemeriksa tidak boleh menjadi penyetuju. Cycle Count rutin tidak dikenai syarat ini.
+      if (count.countType === "FULL_STOCK_OPNAME") {
+        const { pemeriksaIds } = await muatIdentitasHitung(tx, count);
+        if (pemeriksaIds.length === 0) {
+          const e = new CountError("Opname Penuh belum diperiksa. Satu petugas lain (bukan penghitung) harus memeriksa hasil hitung lewat tombol \"Saya memeriksa hitungan ini\" setelah hitungan diserahkan; pemeriksaan batal bila angka diubah.", 409);
+          e.code = "PEMERIKSA_BELUM_ADA";
+          throw e;
+        }
+        wajibBukanPihakPengaju(req.user, pemeriksaIds, { label: "pemeriksa hitungan" });
+      }
       const selisihPerBaris = new Map(hasilBaris.map((h) => [h.lineId, h]));
       const berselisih = count.lines.filter((l) => selisihPerBaris.get(l.id).berselisih);
       for (const l of berselisih) {
@@ -343,6 +356,35 @@ stockCountRouter.post("/:id/complete", requireAnyPermission(P.INVENTORY_WRITE, P
       return updated;
     });
     res.json(result);
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// POST /api/inventory/stock-counts/:id/periksa { catatan? }
+// Petugas LAIN (bukan penghitung/penugas) menyatakan telah memeriksa hasil hitung yang sudah diserahkan. Identitas = akun yang login. Batal otomatis bila angka diubah/hitung ulang.
+stockCountRouter.post("/:id/periksa", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
+  try {
+    const catatan = typeof req.body?.catatan === "string" ? req.body.catatan.trim().slice(0, 500) : "";
+    const result = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, "stock_counts", req.params.id);
+      const count = await tx.stockCount.findUnique({ where: { id: req.params.id }, include: countInclude });
+      if (!count) throw new CountError("Stock count tidak ditemukan", 404);
+      if (count.status !== "WAITING_REVIEW") throw new CountError("Hanya hitungan yang sudah diserahkan (Waiting Review) yang bisa diperiksa");
+      if (count.lines.some((l) => l.countedQty == null)) throw new CountError("Masih ada item yang belum diisi hasil hitungnya");
+      const sebelum = await muatIdentitasHitung(tx, count);
+      if (req.user.id === count.assignedToId || sebelum.penghitung.some((p) => p.id === req.user.id)) {
+        const e = new CountError("Anda adalah penghitung/penugas hitungan ini — pemeriksa harus petugas lain", 403);
+        e.code = "PEMERIKSA_SAMA_DENGAN_PENGHITUNG";
+        throw e;
+      }
+      await recordActivity(tx, {
+        entityType: ENTITY_TYPES.STOCK_COUNT, entityId: count.id, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: req.user.id,
+        metadata: { aksi: AKSI_PERIKSA_HITUNGAN, countNumber: count.countNumber, ...(catatan && { catatan }) },
+      });
+      return muatIdentitasHitung(tx, count);
+    });
+    res.json({ identitas: result });
   } catch (err) {
     handleErr(err, res);
   }
