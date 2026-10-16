@@ -14,6 +14,7 @@
 import { createHash } from "node:crypto";
 import { recordActivity, EVENT_TYPES } from "../lib/activityLog.js";
 import { lockRowForUpdate, postStockMovement } from "./inventoryLedger.js";
+import { bukukanNilaiPergerakanBaru } from "./finance/posting/inventory.js";
 import { isProductionWriterEnabledFor, loadV2Flags, resolveProductionWriterState } from "./v2FeatureFlags.js";
 
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
@@ -136,6 +137,8 @@ export async function receiveMaterialReturn(prisma, { returnId, actorId, idempot
     const movement = await postStockMovement(tx, {
       materialId: row.materialId, type: "RETURN", qty: receivedQty, unitId: row.unitId, note: `Retur sisa produksi ${row.run.unit.unitCode}${cleanNote ? ` — ${cleanNote}` : ""}`, createdById: actorId || null,
     });
+    // HPP: retur sisa produksi mengurangi beban pokok — dibukukan di transaksi yang sama (atau gap terlihat), nilainya tidak lagi hilang dari buku.
+    await bukukanNilaiPergerakanBaru(tx, movement, { userId: actorId || null });
     const revision = row.revision + 1;
     const now = new Date();
     await tx.productionMaterialReturn.update({ where: { id: returnId }, data: { status: "RECEIVED", revision, receivedById: actorId || null, receivedAt: now, receivedQty, note: cleanNote, commandId: command.id } });

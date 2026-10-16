@@ -206,6 +206,7 @@ export function hitungPreview({ materials, baris, ledger, cutoff = null, logJend
     qtyField("Jumlah di rak", b.qtyRak); qtyField("Staging Issue", b.qtyStaging); qtyField("GR belum diposting", b.qtyGrFisik);
     qtyField("Dalam perjalanan", b.qtyPerjalanan); qtyField("Sisa di produksi", b.qtyProduksi); qtyField("Milik customer", b.qtyCustomer);
 
+    if (b.konflikStockCount) add(LEVEL.BLOCKER, "HITUNG_BEDA_STOCK_COUNT", `Lembar berisi ${b.konflikStockCount.lembar} tetapi Stock Count mencatat ${b.konflikStockCount.sistem} — samakan (hitung ulang atau koreksi salah satu); angka tidak dipilih otomatis.`);
     if (b.status === STATUS_HITUNG.DIHITUNG) {
       if (b.qtyRak === null) add(LEVEL.BLOCKER, "KOSONG_BUKAN_NOL", "Status DIHITUNG tetapi jumlah di rak kosong. Kolom kosong bukan nol — isi angka, atau tulis NOL_FISIK bila memang tidak ada.");
       else if (b.qtyRak === 0) add(LEVEL.BLOCKER, "NOL_HARUS_EKSPLISIT", "Jumlah 0 harus dicatat sebagai status NOL_FISIK (dengan pemeriksa dan bukti), bukan DIHITUNG.");
@@ -400,4 +401,41 @@ export async function muatSaldoBuku1400(db, sampaiTanggal) {
     FROM fin_journal_lines l JOIN fin_journal_entries e ON e.id=l.entry_id JOIN fin_accounts a ON a.id=l.account_id
     WHERE a.code='1-1400' AND e.status IN ('POSTED','REVERSED') AND e.date <= ${sampaiTanggal}::date`;
   return r[0]?.saldo ?? 0;
+}
+
+/**
+ * Menggabungkan hasil hitung yang SUDAH diinput Gudang di aplikasi (Stock Count) ke baris lembar. Murni.
+ *  • Lembar menyimpan bukti, pemeriksa, penghitung, lokasi, dan kolom terpisah; Stock Count menyimpan angka hitung dan waktunya.
+ *  • Isian lembar yang sudah ada TIDAK ditimpa: bila angka berbeda dari Stock Count → baris diberi konflik (BLOCKER), tidak dipilih otomatis.
+ *  • Material yang ada di Stock Count tetapi belum punya baris lembar → baris baru yang HANYA berisi angka/waktu dari Stock Count; metadata lain
+ *    (lokasi, penghitung, pemeriksa, bukti) dibiarkan kosong sehingga muncul sebagai BLOCKER sampai Gudang melengkapinya. Tidak ada nama/angka yang ditebak.
+ * @param count { startedAt, submittedAt, lines:[{id, materialId, countedQty, material:{code, unit}}] }
+ * @param selesaiPerLine Map(lineId → Date waktu angka terakhir diinput)
+ */
+export function gabungStockCount(baris, { count, selesaiPerLine = new Map() }) {
+  const out = baris.map((b) => ({ ...b }));
+  let nomor = 0;
+  for (const line of count.lines) {
+    if (line.countedQty === null || line.countedQty === undefined) continue;
+    const qty = Number(line.countedQty);
+    const selesai = selesaiPerLine.get(line.id) || count.submittedAt || null;
+    const status = qty === 0 ? STATUS_HITUNG.NOL_FISIK : STATUS_HITUNG.DIHITUNG;
+    const ada = out.filter((b) => b.materialId === line.materialId || (b.kode && b.kode === line.material.code));
+    if (ada.length === 0) {
+      out.push(normalisasiBaris({}, --nomor)); const b = out[out.length - 1];
+      Object.assign(b, { materialId: line.materialId, kode: line.material.code, satuan: String(line.material.unit).toUpperCase(), status, qtyRak: qty, mulai: count.startedAt ? new Date(count.startedAt) : null, selesai: selesai ? new Date(selesai) : null });
+      continue;
+    }
+    for (const b of ada) {
+      if (b.qtyRak !== null && b.qtyRak !== undefined && !Number.isNaN(b.qtyRak)) {
+        if (Math.abs(b.qtyRak - qty) > EPS && (ada.length === 1)) b.konflikStockCount = { lembar: b.qtyRak, sistem: qty };
+        continue;
+      }
+      if (ada.length > 1) continue; // beberapa lokasi: angka per lokasi harus dari lembar, bukan dari total Stock Count
+      b.qtyRak = qty; b.status = status;
+      if (!b.mulai && count.startedAt) b.mulai = new Date(count.startedAt);
+      if (!b.selesai && selesai) b.selesai = new Date(selesai);
+    }
+  }
+  return out;
 }
