@@ -211,7 +211,9 @@ export async function batalkanPO(tx, { id, reason, userId, bolehBatalkanDisetuju
     }
   }
   await tx.finPurchaseOrder.update({ where: { id: po.id }, data: { status: "DIBATALKAN", cancelledAt: new Date(), cancelReason: alasan } });
-  await catat(tx, po, "DIBATALKAN", userId, { note: alasan, metadata: { statusSebelumnya: po.status } });
+  // Uang muka yang sudah dibayar untuk PO ini TIDAK dihapus/dibalik oleh pembatalan PO (kas keluar nyata): dicatat di riwayat dan ditampilkan sebagai "perlu dikembalikan atau dialihkan".
+  const dp = await tx.finPurchase.aggregate({ where: { purchaseOrderId: po.id, status: "DIBAYAR", category: { code: "UANG_MUKA_PEMBELIAN" } }, _sum: { amount: true }, _count: true });
+  await catat(tx, po, "DIBATALKAN", userId, { note: alasan, metadata: { statusSebelumnya: po.status, ...(dp._count > 0 && { uangMukaDibayar: String(dp._sum.amount), jumlahUangMuka: dp._count, peringatan: "Uang muka perlu dikembalikan atau dialihkan" }) } });
   return po.id;
 }
 
@@ -452,6 +454,9 @@ function bentukBaris(l, q, { harga, progres }) {
       nilaiDiterima: nilaiK(k(q.diterimaBaik)),
       nilaiDitagih: nilaiK(k(q.ditagih)),
       nilaiBelumMasukStok: progres ? nilaiK(k(progres.belumMasukStok)) : 0,
+      // Kelompok "Pemenuhan barang" (nilai menurut harga PO): barang yang SUDAH TIBA secara fisik (termasuk yang ditolak) dan yang belum datang. Murni baca dari progres.
+      nilaiDatang: progres ? nilaiK(k(progres.datang)) : 0,
+      nilaiBelumDatang: progres ? nilaiK(k(progres.belumDatang)) : 0,
       // Retur Supplier untuk kredit (menurut harga PO, sama dengan nilai masuk stok): bruto − retur = diterima bersih dari PO.
       nilaiDiretur: progres ? nilaiK(k(progres.diretur)) : 0,
       nilaiDiterimaBersih: progres ? nilaiK(k(progres.diterimaBersih)) : 0,
@@ -487,7 +492,7 @@ export async function bentukPO(tx, id, { harga = true, denganPenerimaan = true }
     progres: ringkasProgresPO(lines.map((l) => ({ satuan: l.satuan, ...l.progres }))), progresDefinisi: DEFINISI_PROGRES,
     // Termin hanya untuk Finance (Gudang tidak melihat harga/utang). Snapshot dokumen — tidak berubah bila master supplier diubah.
     ...(harga && { termin: po.termType ? { jenis: po.termType, hari: po.termDays, label: labelTermin(po.termType, po.termDays), sumber: po.termSource, alasan: po.termOverrideReason, olehId: po.termSetById, pada: po.termSetAt } : null }),
-    ...(harga && { totalDipesan: total("nilaiDipesan"), totalDiterima: total("nilaiDiterima"), totalDitagih: total("nilaiDitagih"), totalBelumMasukStok: total("nilaiBelumMasukStok"), totalDiretur: total("nilaiDiretur"), totalDiterimaBersih: total("nilaiDiterimaBersih") }),
+    ...(harga && { totalDipesan: total("nilaiDipesan"), totalDiterima: total("nilaiDiterima"), totalDitagih: total("nilaiDitagih"), totalBelumMasukStok: total("nilaiBelumMasukStok"), totalDatang: total("nilaiDatang"), totalBelumDatang: total("nilaiBelumDatang"), totalDiretur: total("nilaiDiretur"), totalDiterimaBersih: total("nilaiDiterimaBersih") }),
   };
 
   if (denganPenerimaan) {

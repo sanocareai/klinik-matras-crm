@@ -590,6 +590,8 @@ model User {
   finExpensesReceiptVerified             FinExpense[]                    @relation("FinExpenseReceiptVerifier")
   finPurchasesReceiptVerified            FinPurchase[]                   @relation("FinPurchaseReceiptVerifier")
   finPurchaseAdvanceApplicationsCreated  FinPurchaseAdvanceApplication[] @relation("FinPurchaseAdvanceApplicationCreator")
+  finBillAdvanceApplicationsCreated      FinSupplierBillAdvanceApplication[] @relation("FinBillAdvanceApplicationCreator")
+  finBillAdvanceApplicationsReversed     FinSupplierBillAdvanceApplication[] @relation("FinBillAdvanceApplicationReverser")
   expenseSubmissionsRequested            ExpenseSubmission[]             @relation("ExpenseSubmissionRequester")
   expenseSubmissionsRevisionRequested    ExpenseSubmission[]             @relation("ExpenseSubmissionRevisionRequester")
   expenseSubmissionsPic                  ExpenseSubmission[]             @relation("ExpenseSubmissionPic")
@@ -7116,6 +7118,8 @@ model FinJournalEntry {
   advanceApplicationReversal FinPurchaseAdvanceApplication? @relation("FinPurchaseAdvanceApplicationReversalJournal")
   orderCredit                FinOrderCredit?                @relation("FinOrderCreditJournal")
   orderCreditReversal        FinOrderCredit?                @relation("FinOrderCreditReversalJournal")
+  billAdvanceApplication         FinSupplierBillAdvanceApplication? @relation("FinBillAdvanceApplicationJournal")
+  billAdvanceApplicationReversal FinSupplierBillAdvanceApplication? @relation("FinBillAdvanceApplicationReversalJournal")
 
   @@index([date, status]) // laporan per periode
   @@index([source, sourceId]) // "jurnal dari transaksi ini mana"
@@ -7542,6 +7546,8 @@ model FinSupplierBill {
   creditApplied        Decimal                       @default(0) @map("credit_applied") @db.Decimal(18, 2)
   debitNoteLines       FinSupplierDebitNoteLine[]
   creditApplications   FinSupplierCreditApplication[]
+  // Uang Muka Supplier yang DITERAPKAN ke faktur ini (jurnal Dr Utang Usaha / Cr Uang Muka). Nilainya juga masuk creditApplied (satu angka pengurang sisa utang untuk semua pembaca).
+  advanceApplications  FinSupplierBillAdvanceApplication[] @relation("FinBillAdvanceApplicationTarget")
 
   @@index([supplierId, status])
   @@index([dueDate])
@@ -7602,6 +7608,7 @@ model FinPurchaseOrder {
   events   FinPurchaseOrderEvent[]
   receipts GoodsReceipt[]
   bills    FinSupplierBill[]
+  advances FinPurchase[] @relation("FinPurchaseOrderAdvance")
 
   @@index([supplierId, status])
   @@index([status])
@@ -8219,11 +8226,22 @@ model FinPurchase {
   advanceApplicationsAsSource FinPurchaseAdvanceApplication[] @relation("FinPurchaseAdvanceApplicationSource")
   advanceApplicationsAsTarget FinPurchaseAdvanceApplication[] @relation("FinPurchaseAdvanceApplicationTarget")
 
+  // Uang Muka Supplier atas PO (Okt 2026) — dipakai kalau baris ini adalah DP (kategori UANG_MUKA_PEMBELIAN) untuk SATU PO disetujui. NULL = pembelian/DP biasa (tidak berubah).
+  // DP ini menjurnal Dr Uang Muka Supplier (1-1500) / Cr Kas-Bank (+ biaya admin) lewat alur LANGSUNG yang sudah ada; PO sendiri TIDAK menulis jurnal/stok/utang.
+  // paymentReference = nomor referensi transfer; advanceOverPoReason = alasan Admin Finance bila total DP aktif melampaui nilai PO (kelebihan = Kredit Supplier, bukan refund kas).
+  purchaseOrderId     String?           @map("purchase_order_id") @db.Uuid
+  purchaseOrder       FinPurchaseOrder? @relation("FinPurchaseOrderAdvance", fields: [purchaseOrderId], references: [id], onDelete: Restrict)
+  paymentReference    String?           @map("payment_reference") @db.VarChar(120)
+  advanceOverPoReason String?           @map("advance_over_po_reason")
+  // Penerapan DP ini ke FAKTUR supplier (mengurangi sisa utang faktur; tabel terpisah dari penerapan ke pembelian di atas).
+  billAdvanceApplications FinSupplierBillAdvanceApplication[] @relation("FinBillAdvanceApplicationSource")
+
   @@index([status, date])
   @@index([categoryId, date])
   @@index([division, date])
   @@index([reimburseToId, status])
   @@index([receiptUrl])
+  @@index([purchaseOrderId])
   @@map("fin_purchases")
 }
 
@@ -8293,6 +8311,45 @@ model FinPurchaseAdvanceApplication {
   @@index([advancePurchaseId, status])
   @@index([targetPurchaseId, status])
   @@map("fin_purchase_advance_applications")
+}
+
+// "Terapkan Uang Muka ke Faktur Supplier" (Okt 2026). SATU baris = satu penerapan sebagian/penuh dari SATU DP (FinPurchase kategori UANG_MUKA_PEMBELIAN, DIBAYAR) ke SATU faktur supplier
+// (FinSupplierBill DISETUJUI/DIBAYAR_SEBAGIAN, supplier sama). Jurnal: Dr Utang Usaha / Cr Uang Muka Supplier (1-1500); nilai yang sama menambah fin_supplier_bills.credit_applied
+// (satu pengurang sisa utang untuk aging, kartu, supplier, export). Tidak pernah diedit/dihapus — pembatalan lewat reverseJournal (status REVERSED). Idempotency-Key unik (replay/paralel aman).
+model FinSupplierBillAdvanceApplication {
+  id String @id @default(uuid()) @db.Uuid
+
+  advancePurchaseId String      @map("advance_purchase_id") @db.Uuid
+  advancePurchase   FinPurchase @relation("FinBillAdvanceApplicationSource", fields: [advancePurchaseId], references: [id], onDelete: Restrict)
+
+  billId String          @map("bill_id") @db.Uuid
+  bill   FinSupplierBill @relation("FinBillAdvanceApplicationTarget", fields: [billId], references: [id], onDelete: Restrict)
+
+  amount Decimal @db.Decimal(18, 2)
+
+  journalId String          @unique @map("journal_id") @db.Uuid
+  journal   FinJournalEntry @relation("FinBillAdvanceApplicationJournal", fields: [journalId], references: [id], onDelete: Restrict)
+
+  reversalJournalId String?          @unique @map("reversal_journal_id") @db.Uuid
+  reversalJournal   FinJournalEntry? @relation("FinBillAdvanceApplicationReversalJournal", fields: [reversalJournalId], references: [id], onDelete: SetNull)
+
+  status FinAdvanceApplicationStatus @default(ACTIVE)
+
+  idempotencyKey String @unique @map("idempotency_key")
+  note           String?
+
+  createdById String?  @map("created_by")
+  createdBy   User?    @relation("FinBillAdvanceApplicationCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  reversedById  String?   @map("reversed_by")
+  reversedBy    User?     @relation("FinBillAdvanceApplicationReverser", fields: [reversedById], references: [id], onDelete: SetNull)
+  reversedAt    DateTime? @map("reversed_at")
+  reverseReason String?   @map("reverse_reason")
+
+  @@index([advancePurchaseId, status])
+  @@index([billId, status])
+  @@map("fin_supplier_bill_advance_applications")
 }
 
 // Pemasukan NON-ORDER (penjualan aset bekas, bunga bank, klaim asuransi,

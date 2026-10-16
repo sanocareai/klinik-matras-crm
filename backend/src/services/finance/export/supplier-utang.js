@@ -10,6 +10,7 @@ import { PERMISSIONS as P } from "../../../middleware/authorize.js";
 import { rentangDariQuery } from "../../../routes/finance.js";
 import { todayBookDateWIB } from "../journal.js";
 import { umurUtang } from "../reports.js";
+import { ringkasUangMukaSupplier } from "../uangMukaSupplier.js";
 import { ambilDaftarTagihan, bentukBill, ambilDaftarPembayaranSupplier, ambilDaftarSupplier, ambilPenerimaanBelumDitagih } from "../supplierRead.js";
 import { susunLabelFilter, labelPeriode } from "./excel.js";
 import { labelCaraBayar, labelMetodeTransfer } from "./label.js";
@@ -137,7 +138,7 @@ function sheetSupplier(suppliers) {
 }
 
 /** Kartu ringkasan di kepala halaman + sebaran umur utang (angka dari umurUtang — sama dengan yang dipakai kartu di layar). */
-function sheetRingkasan({ aging, tagihanLayar, penerimaan }) {
+function sheetRingkasan({ aging, tagihanLayar, penerimaan, uangMuka }) {
   const lewat = aging.baris.filter((b) => b.hariLewat > 0);
   const menunggu = tagihanLayar.filter((b) => b.status === "MENUNGGU_APPROVAL");
   const baris = [
@@ -145,6 +146,7 @@ function sheetRingkasan({ aging, tagihanLayar, penerimaan }) {
     { indikator: "Lewat Jatuh Tempo", jumlah: lewat.length, nilai: lewat.reduce((s, b) => s + b.sisa, 0) },
     { indikator: "Tagihan Menunggu Persetujuan (belum menjadi utang)", jumlah: menunggu.length, nilai: null },
     { indikator: "Penerimaan Barang Belum Ditagih", jumlah: penerimaan.length, nilai: null },
+    { indikator: "Uang Muka Supplier Belum Diterapkan (aset, bukan pengurang utang aktif sampai diterapkan ke faktur)", jumlah: uangMuka.suppliers.filter((s) => s.uangMukaBelumDiterapkan > 0).length, nilai: uangMuka.kartu.uangMukaBelumDiterapkan },
     ...(aging.ember || []).map((e) => ({
       indikator: `Umur utang: ${e.label}`,
       jumlah: aging.baris.filter((b) => b.ember === e.key).length, nilai: aging.ringkasan?.[e.key] ?? 0,
@@ -191,10 +193,11 @@ async function ambil(db, { filter, periode, ids, filterLabel }) {
   const rentang = rentangDariQuery({ from: periode.from ?? filter.from, to: periode.to ?? filter.to });
 
   // Kartu & Umur Utang: query yang sama dengan layar (GET /reports/payables tanpa parameter; GET /bills bawaan untuk hitungan "menunggu").
-  const [aging, tagihanLayarMentah, penerimaan] = await Promise.all([
+  const [aging, tagihanLayarMentah, penerimaan, uangMuka] = await Promise.all([
     umurUtang(db, { to: rentangDariQuery({}).to }),
     ambilDaftarTagihan(db, {}, { take: 300 }),
     ambilPenerimaanBelumDitagih(db),
+    ringkasUangMukaSupplier(db),
   ]);
 
   let sheets;
@@ -215,7 +218,7 @@ async function ambil(db, { filter, periode, ids, filterLabel }) {
     sheets = [sheetSupplier(suppliers)];
     label = susunLabelFilter([["Tab", "Master Supplier"], ["Baris", ids ? "sesuai baris yang tampil di layar" : ""]]);
   }
-  sheets.push(sheetRingkasan({ aging, tagihanLayar: tagihanLayarMentah, penerimaan }), sheetUmurUtang(aging));
+  sheets.push(sheetRingkasan({ aging, tagihanLayar: tagihanLayarMentah, penerimaan, uangMuka }), sheetUmurUtang(aging));
 
   return { nama: "Supplier & Utang", filterLabel: filterLabel || label, ...(periodeLabel ? { periodeLabel } : {}), sheets };
 }
