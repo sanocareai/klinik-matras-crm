@@ -9,7 +9,7 @@ import { prisma } from "../db.js";
 import { createProductionPlan, listPlanScheduleHistory, reorderStationPlans, scheduleProductionPlan, setStationDayPic } from "../services/productionPlanningCommandService.js";
 import { cohortStatesOf, getPlanningRefs, listRencanaEligibility, planAndScheduleUnit } from "../services/productionRencanaService.js";
 import {
-  applyAdaptationPolicy, applyQcGatePolicy, delayProductionWork, finishProduction, previewFinishProduction, recordProductionStep, reportMaterialShortage, resolveMaterialShortage, skipProductionStep,
+  applyAdaptationPolicy, applyQcGatePolicy, confirmFinishedGoods, delayProductionWork, finishProduction, previewFinishProduction, recordProductionStep, reportMaterialShortage, resolveMaterialShortage, skipProductionStep,
 } from "../services/productionStepCommandService.js";
 import { resumeWork } from "../services/productionResumeService.js";
 import { confirmBuildCorner, recordBuildMaterials, requestBuildReworkMaterial, setBuildMaterialOperator, setBuildPlannedBOM } from "../services/productionBuildCommandService.js";
@@ -385,6 +385,33 @@ productionExperienceRouter.post("/runs/:runId/finish", requirePermission(P.UNIT_
   try {
     if (req.body?.confirm !== true) return res.status(400).json({ error: "Konfirmasi eksplisit diperlukan sebelum produksi diselesaikan", code: "FINISH_CONFIRM_REQUIRED" });
     res.json(await finishProduction(prisma, { runId: req.params.runId, actorId: req.user.id, idempotencyKey: idem(req), expectedRevision: req.body?.expectedRevision, workCenterId: req.body?.workCenterId, media: req.body?.media, note: req.body?.note }));
+  } catch (err) { handleErr(err, res); }
+});
+
+// GET /api/production-v2/runs/:runId/confirm-finished-goods/locations — lokasi barang jadi yang SAH (area barang jadi / dispatch, aktif; aturan custody FINISHED_GOODS). BACA-SAJA.
+productionExperienceRouter.get("/runs/:runId/confirm-finished-goods/locations", requireAnyPermission(...READ_PERMS), async (req, res) => {
+  try {
+    if (!(await assertRunInCohort(res, req.params.runId))) return;
+    const lokasi = await prisma.storageLocation.findMany({
+      where: { active: true, locationType: { in: ["FINISHED_GOODS_AREA", "DISPATCH_AREA"] } },
+      select: { id: true, code: true, zone: true, locationType: true, warehouse: { select: { code: true, name: true } } },
+      orderBy: [{ code: "asc" }],
+      take: 100,
+    });
+    res.json({ locations: lokasi });
+  } catch (err) { handleErr(err, res); }
+});
+
+// POST /api/production-v2/runs/:runId/confirm-finished-goods { expectedRevision, unitCode, locationId, reason, physicalVerified: true, workCenterId? } — Konfirmasi Barang Jadi (mode adaptasi):
+// pekerjaan fisik selesai tetapi pencatatan tahap tertinggal. Petugas berwenang (Production Lead/Admin/Owner) atau PIC yang ditugaskan; alasan + kode unit + lokasi + verifikasi fisik WAJIB.
+// Jalur resmi yang sama dengan Selesaikan Produksi: tahap tersisa DILEWATI eksplisit, QC tidak dilakukan, tanpa custody/stok/serah terima palsu; unit Siap Kirim lewat engine yang sama.
+productionExperienceRouter.post("/runs/:runId/confirm-finished-goods", requirePermission(P.UNIT_STAGE_WRITE), async (req, res) => {
+  try {
+    const supervisor = rolesOf(req.user).some((r) => ["ADMIN", "OWNER", "PRODUCTION_LEAD"].includes(r));
+    res.json(await confirmFinishedGoods(prisma, {
+      runId: req.params.runId, actorId: req.user.id, supervisor, idempotencyKey: idem(req), expectedRevision: req.body?.expectedRevision,
+      unitCode: req.body?.unitCode, locationId: req.body?.locationId, reason: req.body?.reason, physicalVerified: req.body?.physicalVerified, workCenterId: req.body?.workCenterId,
+    }));
   } catch (err) { handleErr(err, res); }
 });
 

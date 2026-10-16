@@ -101,7 +101,7 @@ Langkah: hitung → isi lembar → jalankan preview (bagian 6) → Gudang + Fina
 2. **Hitung buta.** Dua orang per zona; satu menghitung, satu mencatat. Tidak boleh melihat saldo sistem atau file lama.
 3. **Pisahkan saat menghitung:** rak milik SANO · staging Issue · GR tiba belum diposting · dalam perjalanan · sisa di lantai produksi · milik customer. Barang yang tidak jelas kepemilikannya → kolom *Catatan*, jangan ditebak.
 4. **Nol fisik:** cari di semua lokasi, foto rak/label kosong, isi status `NOL_FISIK`, angka 0, bukti; pemeriksa menandatangani.
-5. **Pemeriksa** menghitung ulang atau menyaksikan; isi nama. Selisih ke ledger bukan urusan penghitung.
+5. **Pemeriksa** menghitung ulang atau menyaksikan, lalu menekan **Saya memeriksa hitungan ini** pada Stock Count jenis **Opname Penuh** (setelah Submit). Identitas penghitung & pemeriksa = akun yang login (jejak aplikasi), bukan nama ketikan; pemeriksa ≠ penghitung/penugas; pemeriksaan batal bila angka diubah/Recount. **Complete Opname Penuh ditolak (409 PEMERIKSA_BELUM_ADA) tanpa pemeriksa, dan pemeriksa tidak boleh menjadi penyetuju.** Selisih ke ledger bukan urusan penghitung.
 6. **Waktu** mulai & selesai per baris (WIB). Lebih dari 12 jam → pecah.
 7. **Log jendela.** Setiap pergerakan selama jendela dicatat segera; satu orang pemegang.
 8. **Penutupan sesi.** Sheet *Sesi* lengkap, lembar dikumpulkan dalam satu berkas, foto bukti diberi nomor.
