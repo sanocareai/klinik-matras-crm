@@ -88,7 +88,7 @@ test("empat status PO: urutan tetap (barang, faktur, utang, pembayaran), varian 
 
 test("pemasangan layar empat status: panel di detail PO, anchor ke faktur & riwayat pembayaran, ?cari= di Supplier & Pembelian, petunjuk di drawer Gudang; tanpa hitung ulang uang di frontend", () => {
   const po = baca("../src/pages/finance/FinancePurchaseOrders.jsx");
-  assert.match(po, /<StatusEmpatPO po=\{po\} \/>/); assert.match(po, /<RiwayatPembayaranPO po=\{po\} \/>/); assert.match(po, /id="seksi-faktur"/);
+  assert.match(po, /<StatusEmpatPO po=\{po\}/); assert.match(po, /<RiwayatPembayaranPO po=\{po\} \/>/); assert.match(po, /id="seksi-faktur"/);
   const um = baca("../src/features/finance/UangMukaPO.jsx");
   for (const t of ["1. Progres barang", "2. Faktur supplier", "3. Utang", "4. Pembayaran"]) assert.ok(um.includes(t) || baca("../src/features/finance/uangMukaLogic.js").includes(t), t);
   for (const t of ["Total PO", "Faktur disetujui", "Sudah dibayar", "Sisa utang", "Lihat faktur di PO ini", "Lihat riwayat pembayaran", "Riwayat pembayaran ke supplier atas PO ini"]) assert.ok(um.includes(t), t);
@@ -103,4 +103,11 @@ test("rincian pembayaran & utang dipisah: uang muka dibayar, uang muka dialokasi
   const um = baca("../src/features/finance/UangMukaPO.jsx");
   for (const t of ['data-testid="rincian-pembayaran-po"', 'testid="r-uang-muka-dibayar"', 'testid="r-uang-muka-dialokasikan"', 'testid="r-pembayaran-faktur"', 'testid="r-sisa-utang"', "Uang muka dialokasikan ke faktur", "Pembayaran faktur (kas)", "Total kas keluar", "bukan kas keluar kedua"]) assert.ok(um.includes(t), t);
   assert.doesNotMatch(um, /Sudah dibayar atas faktur|"Uang muka diterapkan"/, "istilah lama diganti agar tidak membingungkan");
+});
+
+test("aksi pembayaran awal mudah ditemukan: tombol di kartu Pembayaran (hanya bila server mengizinkan), catatan PO draf, sisa belum dibayar di rincian", () => {
+  const um = baca("../src/features/finance/UangMukaPO.jsx");
+  for (const t of ["onBayarUangMuka && k.bolehBayarUangMuka", 'data-testid="bayar-uang-muka-status"', 'testid="r-sisa-belum-dibayar"', "Sisa belum dibayar"]) assert.ok(um.includes(t), t);
+  const po = baca("../src/pages/finance/FinancePurchaseOrders.jsx");
+  for (const t of ["<StatusEmpatPO po={po} onBayarUangMuka={onBayarUangMuka} />", 'data-testid="draf-belum-bisa-dibayar"', "tidak perlu menunggu barang datang, Simpan ke Stok, atau faktur supplier"]) assert.ok(po.includes(t), t);
 });

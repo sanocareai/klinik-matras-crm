@@ -45,7 +45,7 @@ const defServer = (daftar, kunci) => (daftar || []).find((d) => d.kunci === kunc
  * EMPAT STATUS TERPISAH (progres barang · faktur · utang · pembayaran) + total ringkas (nilai PO, faktur disetujui, sudah dibayar, sisa utang) + petunjuk Simpan ke Stok.
  * Semua kode/label/angka dari server (po.keuangan.statusEmpat, totalFakturDisetujui, sudahDibayar, sisaUtang); layar ini tidak menghitung ulang.
  */
-export function StatusEmpatPO({ po }) {
+export function StatusEmpatPO({ po, onBayarUangMuka = null }) {
   const k = po.keuangan;
   if (!k?.statusEmpat) return null;
   const tautanFaktur = (po.faktur || []).filter((f) => !["DITOLAK", "DIBATALKAN"].includes(f.status));
@@ -75,6 +75,9 @@ export function StatusEmpatPO({ po }) {
                   {tautanFaktur.map((f) => <Link key={f.id} to={tautanKeuangan("tagihan", f.billNumber)} className="rounded-md bg-inset px-1.5 py-0.5 font-mono text-[11.5px] text-ink2 hover:text-ink max-sm:inline-flex max-sm:min-h-11 max-sm:items-center">{f.supplierRef || f.billNumber}</Link>)}
                 </div>
               )}
+              {u.kunci === "pembayaran" && onBayarUangMuka && k.bolehBayarUangMuka && (
+                <Button size="sm" onClick={onBayarUangMuka} data-testid="bayar-uang-muka-status" className="mt-2 max-sm:min-h-11 max-sm:px-4"><Wallet size={13} aria-hidden="true" /> Bayar Uang Muka</Button>
+              )}
               {u.kunci === "pembayaran" && (k.riwayatPembayaran || []).length > 0 && (
                 <a href="#seksi-riwayat-pembayaran" className="mt-2 inline-block text-[12px] font-semibold text-accent max-sm:inline-flex max-sm:min-h-11 max-sm:items-center" data-testid="tautan-riwayat-pembayaran">Lihat riwayat pembayaran ({k.riwayatPembayaran.length})</a>
               )}
@@ -87,11 +90,12 @@ export function StatusEmpatPO({ po }) {
       </dl>
       <div className="rounded-lg border border-line p-3" data-testid="rincian-pembayaran-po">
         <h4 className="m-0 mb-2 text-[11px] font-bold uppercase tracking-wide text-ink3">Rincian pembayaran &amp; utang (dipisah)</h4>
-        <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-3 lg:grid-cols-4">
+        <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-3 lg:grid-cols-3 xl:grid-cols-5">
           <Angka testid="r-uang-muka-dibayar" label="Uang muka dibayar" nilai={k.uangMukaDibayar} definisi={defServer(k.definisi, "uangMukaDibayar")} />
           <Angka testid="r-uang-muka-dialokasikan" label="Uang muka dialokasikan ke faktur" nilai={k.uangMukaDiterapkan} definisi={defServer(k.definisi, "uangMukaDiterapkan")} />
           <Angka testid="r-pembayaran-faktur" label="Pembayaran faktur (kas)" nilai={k.dibayarAtasFaktur} definisi={defServer(k.definisi, "dibayarAtasFaktur")} />
           <Angka testid="r-sisa-utang" label="Sisa utang" nilai={k.sisaUtang} definisi={defServer(k.definisi, "sisaUtang")} tebal />
+          <Angka testid="r-sisa-belum-dibayar" label="Sisa belum dibayar" nilai={k.sisaKomitmen} definisi={defServer(k.definisi, "sisaKomitmen")} tebal tone={k.sisaKomitmen > 0 ? "orange" : null} />
         </dl>
         {k.uangMukaBelumDiterapkan > 0 && <p className="m-0 mt-2 text-[12px] text-orange" data-testid="r-uang-muka-menggantung">Uang muka belum dialokasikan: {formatUang(k.uangMukaBelumDiterapkan)}.</p>}
         <p className="m-0 mt-2 text-[11.5px] text-ink3">Total kas keluar = uang muka dibayar + pembayaran faktur. Mengalokasikan uang muka ke faktur mengurangi sisa utang, bukan kas keluar kedua.</p>

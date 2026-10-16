@@ -633,6 +633,7 @@ function ModalDetailPO({ id, onClose, onChanged, onUbah }) {
         {!po ? <p className="py-6 text-[13px] text-ink3">Memuat…</p> : (
           <IsiDetail
             po={po} segar={segar}
+            onBayarUangMuka={() => setBayarUm(true)}
             onUbahFaktur={(billId) => setFaktur({ editBillId: billId })}
             onSetujuiFaktur={setSetujuiFaktur}
             onTolakFaktur={setTolakFaktur}
@@ -689,7 +690,7 @@ function ModalDetailPO({ id, onClose, onChanged, onUbah }) {
   );
 }
 
-function IsiDetail({ po, segar, onUbahFaktur, onSetujuiFaktur, onTolakFaktur, onTerapkanUangMuka, onBatalkanPenerapan, admin, onGalat, onSegarkan }) {
+function IsiDetail({ po, segar, onBayarUangMuka, onUbahFaktur, onSetujuiFaktur, onTolakFaktur, onTerapkanUangMuka, onBatalkanPenerapan, admin, onGalat, onSegarkan }) {
   const barisLaku = po.status !== "DRAFT";
   return (
     <div className="space-y-4">
@@ -701,7 +702,8 @@ function IsiDetail({ po, segar, onUbahFaktur, onSetujuiFaktur, onTolakFaktur, on
       <p className="m-0 text-[12.5px] text-ink2" data-testid="termin-po">Termin pembayaran: <strong className="text-ink">{po.termin ? teksTermin({ label: po.termin.label, sumber: po.termin.sumber }) : "belum ditetapkan"}</strong>{po.termin?.alasan ? ` — diganti: ${po.termin.alasan}` : ""}</p>
       {po.status === "DIBATALKAN" && <p className="rounded-lg bg-redbg px-3 py-2 text-[12.5px] text-red">Dibatalkan {tglJam(po.cancelledAt)} — {po.cancelReason}</p>}
       <PeringatanUangMukaPO po={po} />
-      {po.status !== "DRAFT" && <StatusEmpatPO po={po} />}
+      {po.status === "DRAFT" && <p className="m-0 rounded-lg border border-line px-3 py-2 text-[12.5px] text-ink2" data-testid="draf-belum-bisa-dibayar">PO masih draf — setujui PO dulu. Uang muka baru bisa dibayar setelah PO disetujui; tidak perlu menunggu barang datang, Simpan ke Stok, atau faktur supplier.</p>}
+      {po.status !== "DRAFT" && <StatusEmpatPO po={po} onBayarUangMuka={onBayarUangMuka} />}
       {po.status !== "DRAFT" && <PanelKelompokPO po={po} />}
 
       <section>

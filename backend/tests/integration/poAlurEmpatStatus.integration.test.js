@@ -285,3 +285,70 @@ test("TRANSFER AWAL PENUH (Rp6 jt = nilai PO) tanpa faktur disetujui: total kas 
   assert.deepEqual([d.keuangan.uangMukaDibayar, d.keuangan.uangMukaDiterapkan, d.keuangan.dibayarAtasFaktur, d.keuangan.sisaUtang, d.keuangan.sudahDibayar], [6_000_000, 6_000_000, 0, 0, 6_000_000]);
   await bukuSeimbang();
 });
+
+test("AKUN FINANCE SAJA: buat PO → draf TIDAK bisa dibayar → setujui → transfer Rp4 jt + bukti TANPA aksi Gudang/Produksi (stok 0, utang 0, GRNI 0, 'Baru uang muka', total kas keluar 4 jt, sisa belum dibayar 2 jt) → Gudang terima & simpan → faktur 6 jt dicatat & disetujui Finance → alokasi 4 jt → sisa utang 2 jt", async () => {
+  const w = await dunia();
+  const finSaja = makeClient(server.baseUrl, (await createTestUser({ roles: ["FINANCE"] })).token); // SATU akun, hanya peran FINANCE
+  const c = await finSaja.post("/api/finance/purchase-orders", { supplierId: w.supplier.id, orderDate: geser(-20), lines: [{ materialId: w.busa.id, qty: 100, unitPrice: H }] });
+  assert.equal(c.status, 201, JSON.stringify(c.body));
+  // draf belum boleh dibayar
+  const draf = await finSaja.post(`/api/finance/purchase-orders/${c.body.id}/uang-muka`, { amount: 4_000_000, date: hariIni(), cashAccountId: w.bank.id, receiptUrl: BUKTI }, kunci());
+  assert.ok([400, 409, 422].includes(draf.status), `draf harus ditolak: ${draf.status} ${JSON.stringify(draf.body)}`);
+  assert.match(String(draf.body.error || draf.body.message), /draf|setujui/i);
+  assert.equal(await testPrisma.finPurchase.count(), 0, "tidak ada dokumen uang muka dari PO draf");
+  const dDraf = (await finSaja.get(`/api/finance/purchase-orders/${c.body.id}`)).body;
+  assert.equal(dDraf.keuangan.bolehBayarUangMuka, false);
+  const ap = await finSaja.post(`/api/finance/purchase-orders/${c.body.id}/approve`, {});
+  assert.equal(ap.status, 200, JSON.stringify(ap.body));
+  const po = ap.body;
+  let d = (await finSaja.get(`/api/finance/purchase-orders/${po.id}`)).body;
+  assert.equal(d.keuangan.bolehBayarUangMuka, true);
+
+  // tanpa bukti ditolak; dengan bukti: transfer
+  const tanpaBukti = await finSaja.post(`/api/finance/purchase-orders/${po.id}/uang-muka`, { amount: 4_000_000, date: hariIni(), cashAccountId: w.bank.id }, kunci());
+  assert.equal(tanpaBukti.status, 422, JSON.stringify(tanpaBukti.body));
+  const dp = await finSaja.post(`/api/finance/purchase-orders/${po.id}/uang-muka`, { amount: 4_000_000, date: hariIni(), cashAccountId: w.bank.id, receiptUrl: BUKTI, reference: "TRF-FIN-1" }, kunci());
+  assert.equal(dp.status, 201, JSON.stringify(dp.body));
+  d = (await finSaja.get(`/api/finance/purchase-orders/${po.id}`)).body;
+  assert.equal(d.keuangan.statusEmpat.pembayaran.label, "Baru uang muka");
+  assert.deepEqual([d.keuangan.uangMukaDibayar, d.keuangan.sudahDibayar, d.keuangan.sisaKomitmen, d.keuangan.sisaUtang, d.keuangan.sudahDitagih], [4_000_000, 4_000_000, 2_000_000, 0, 0]);
+  assert.equal(await stokTotal(), 0); assert.equal(await testPrisma.stockMovement.count(), 0, "tidak ada pergerakan stok");
+  assert.equal(await testPrisma.goodsReceipt.count(), 0, "tidak ada penerimaan Gudang");
+  assert.equal(await testPrisma.finSupplierBill.count(), 0, "tidak ada faktur");
+  assert.equal(await saldo(SYSTEM_KEYS.UTANG_BELUM_DITAGIH), 0); assert.equal(await saldo(SYSTEM_KEYS.UTANG_USAHA), 0); assert.equal(await saldo(SYSTEM_KEYS.PERSEDIAAN_BAHAN), 0);
+  assert.equal(await saldo(SYSTEM_KEYS.UANG_MUKA_PEMBELIAN), 4_000_000);
+
+  // izin: Gudang dan Sales tidak bisa membayar; replay kunci sama = satu dokumen
+  assert.equal((await w.g.post(`/api/finance/purchase-orders/${po.id}/uang-muka`, { amount: 1_000_000, date: hariIni(), cashAccountId: w.bank.id, receiptUrl: BUKTI }, kunci())).status, 403);
+  const kk = kunci();
+  const r1 = await finSaja.post(`/api/finance/purchase-orders/${po.id}/uang-muka`, { amount: 500_000, date: hariIni(), cashAccountId: w.bank.id, receiptUrl: BUKTI }, kk);
+  const r2 = await finSaja.post(`/api/finance/purchase-orders/${po.id}/uang-muka`, { amount: 500_000, date: hariIni(), cashAccountId: w.bank.id, receiptUrl: BUKTI }, kk);
+  assert.equal(r1.status, 201, JSON.stringify(r1.body)); assert.ok([200, 201].includes(r2.status), JSON.stringify(r2.body));
+  assert.equal(await testPrisma.finPurchase.count({ where: { purchaseOrderId: po.id } }), 2, "replay tidak membuat dokumen ketiga");
+  // batalkan uang muka tambahan 500rb lewat jalur resmi (pembatalan dokumen pembelian)
+  const dp2 = await testPrisma.finPurchase.findFirst({ where: { purchaseOrderId: po.id, amount: 500_000 } });
+  const bt = await w.a.post(`/api/finance/purchases/${dp2.id}/cancel`, { reason: "Salah nominal, dibatalkan resmi" }, kunci());
+  assert.ok([200, 201].includes(bt.status), `pembatalan resmi: ${bt.status} ${JSON.stringify(bt.body)}`);
+  d = (await finSaja.get(`/api/finance/purchase-orders/${po.id}`)).body;
+  assert.equal(d.keuangan.uangMukaDibayar, 4_000_000, "uang muka batal tidak dihitung");
+  assert.equal(await saldo(SYSTEM_KEYS.UANG_MUKA_PEMBELIAN), 4_000_000);
+
+  // Gudang menerima dan menyimpan (aksi Gudang MEMANG diperlukan hanya untuk barang)
+  await terimaDanSimpan(w, po, 100);
+  assert.equal(await stokTotal(), 100);
+  d = (await finSaja.get(`/api/finance/purchase-orders/${po.id}`)).body;
+  assert.deepEqual([d.keuangan.statusEmpat.barang.kode, d.keuangan.statusEmpat.faktur.kode, d.keuangan.statusEmpat.pembayaran.kode], ["LENGKAP", "BELUM_ADA", "UANG_MUKA_SAJA"]);
+  // faktur dicatat dan disetujui oleh akun Finance yang SAMA
+  const f = await finSaja.post(`/api/finance/purchase-orders/${po.id}/faktur`, { supplierRef: ref(), billDate: geser(-1), lines: [{ purchaseOrderLineId: po.lines[0].id, qty: 100, unitPrice: H }] });
+  assert.equal(f.status, 201, JSON.stringify(f.body));
+  const setuju = await finSaja.post(`/api/finance/bills/${f.body.billId}/approve`, {});
+  assert.equal(setuju.status, 200, `Finance menyetujui faktur sendiri: ${JSON.stringify(setuju.body)}`);
+  d = (await finSaja.get(`/api/finance/purchase-orders/${po.id}`)).body;
+  assert.equal(d.keuangan.statusEmpat.pembayaran.kode, "UANG_MUKA_SAJA", "belum Lunas: uang muka masih menggantung");
+  const tr = await finSaja.post("/api/finance/purchase-orders/uang-muka/terapkan", { advanceId: dp.body.dp, billId: f.body.billId, amount: 4_000_000, konfirmasi: true }, kunci());
+  assert.equal(tr.status, 201, JSON.stringify(tr.body));
+  d = (await finSaja.get(`/api/finance/purchase-orders/${po.id}`)).body;
+  assert.deepEqual(total(d), [6_000_000, 6_000_000, 4_000_000, 2_000_000]);
+  assert.equal(d.keuangan.statusEmpat.utang.kode, "ADA_UTANG"); assert.notEqual(d.keuangan.statusEmpat.pembayaran.kode, "LUNAS");
+  await bukuSeimbang();
+});
