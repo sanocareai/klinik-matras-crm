@@ -59,7 +59,7 @@ declare -A PINS=(
   ["backend/src/services/attribution/cohortLoader.js"]="901231a40f7ce80e30cc306fb682b94cb2c28d9dde1e193d5e429eb15d0d295d"
   ["backend/src/services/attribution/iklanReport.js"]="780e8f4ab6a7bf5960f9fe381b750ffc3a19504973cc225e3b01bd6a1dc22db7"
   ["backend/src/services/attribution/touchCapture.js"]="8ccaa9b1729106b3f812f4a18dcfdf4cfc1b67140e9747025ca2d4ad634117b8"
-  ["backend/prisma/schema.prisma"]="636504b708e1dd75d570768bd87ba4865f25a27028dd3b8bc562bce18897834d"
+  ["backend/prisma/schema.prisma"]="1ad4b43bfa35460778f329dbdc4dab3e0c91293efa4abc6d2a88e923b3459b53"
 )
 
 say()  { printf '\n\033[1m== %s\033[0m\n' "$*"; }
