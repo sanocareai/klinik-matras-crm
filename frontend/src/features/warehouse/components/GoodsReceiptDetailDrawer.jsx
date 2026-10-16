@@ -303,7 +303,8 @@ export default function GoodsReceiptDetailDrawer({ receiptId, onClose, onChanged
                   </div>
                 </div>
               ) : (
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
+                  {status === "READY_FOR_PUTAWAY" && <p className="m-0 w-full text-[11.5px] leading-snug text-ink3" data-testid="petunjuk-simpan-ke-stok-gudang">Simpan ke Stok hanya menambah stok. Faktur supplier dicatat dan disetujui Finance secara terpisah — bukan dari tombol ini.</p>}
                   <Button variant="ghost" size="sm" onClick={() => setRejecting(true)}>
                     <XCircle size={14} /> Tolak
                   </Button>

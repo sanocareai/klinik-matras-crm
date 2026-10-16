@@ -1,6 +1,7 @@
 // Logika murni layar Purchase Order bahan baku (tanpa React) — supaya aturan tampilan bisa dites tanpa browser.
 // Angka kuantitas (dipesan, diterima baik, ditolak, belum diterima, ditagih) SELALU dari server; di sini hanya pemformatan dan validasi isian.
 
+import { kalimatEventUangMuka } from "./uangMukaLogic.js";
 import { bodyTermin } from "./terminLogic.js";
 import { UNIT_LABEL } from "../warehouse/inventoryReal.js";
 import { pendamping0, pendampingDariPO, bodyPendamping, galatPendamping } from "../kedatangan/kedatanganLogic.js";
@@ -242,6 +243,8 @@ export function aksiPO(po) {
 /** Kalimat riwayat untuk tampilan (aktor + waktu ditampilkan terpisah oleh UI). */
 export function kalimatEvent(e) {
   const m = e.metadata || {};
+  const um = kalimatEventUangMuka(e);
+  if (um) return um;
   switch (e.type) {
     case "DIBUAT": return m.skuBaru?.length ? `PO dibuat · ${m.skuBaru.length} barang baru: ${m.skuBaru.map((s) => s.kode).join(", ")}` : NAMA_EVENT_PO.DIBUAT;
     case "DIUBAH": return m.skuBaru?.length ? `Draf diubah · ${m.skuBaru.length} barang baru: ${m.skuBaru.map((s) => s.kode).join(", ")}` : NAMA_EVENT_PO.DIUBAH;
