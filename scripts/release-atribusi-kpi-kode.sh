@@ -154,8 +154,13 @@ verify_live() {
     [ "$(val SB_SPEND_TOTAL)" = "$(val SPEND_TOTAL_DB | sed 's/\.00$//')" ] || warn "spend total hari pertama ($(val SB_SPEND_TOTAL)) ≠ total DB ($(val SPEND_TOTAL_DB)) — wajar bila ada spend hari lain"
   else warn "$(val SB_DILEWATI)"; fi
   local sesudah; sesudah="$(psql_live -At -c "$estado_sql")"
-  [ "$sesudah" = "$ESTADO_BEFORE" ] || { [ "$MODE" = "verify" ] && warn "keadaan data berubah sejak rilis (sah bila ada impor/touch baru): ${sesudah}" || die "keadaan data BERUBAH selama rilis (sebelum=${ESTADO_BEFORE} sesudah=${sesudah})"; }
-  ok "data tidak ditulis rilis: spend|revisi|impor|touch|referensi|target = ${sesudah}"
+  # touch BOLEH bertambah (capture aktif menerima pesan CTWA nyata selama rilis) tetapi tidak boleh berkurang; semua lainnya HARUS persis sama
+  
+  local tb ta; tb="$(printf '%s' "$ESTADO_BEFORE" | cut -d'|' -f4)"; ta="$(printf '%s' "$sesudah" | cut -d'|' -f4)"
+  local lain_b lain_a; lain_b="$(printf '%s' "$ESTADO_BEFORE" | cut -d'|' -f1-3,5-)"; lain_a="$(printf '%s' "$sesudah" | cut -d'|' -f1-3,5-)"
+  angka_ok "$tb" && angka_ok "$ta" && [ "$ta" -ge "$tb" ] || die "touch BERKURANG (sebelum=${tb} sesudah=${ta})"
+  [ "$lain_a" = "$lain_b" ] || { [ "$MODE" = "verify" ] && warn "spend/revisi/impor/referensi/target berubah sejak rilis (sah bila ada impor baru): ${lain_a}" || die "data BERUBAH selama rilis (sebelum=${lain_b} sesudah=${lain_a})"; }
+  ok "data tidak ditulis rilis: spend|revisi|impor|referensi|target identik (${lain_a}); touch ${tb} -> ${ta} (tambahan sah dari capture aktif)"
   return 0
 }
 
