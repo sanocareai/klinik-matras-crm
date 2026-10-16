@@ -160,15 +160,24 @@ export function PelepasanUnit360({ d, isAdmin, onDone }) {
 }
 
 // Panel di Sales (drawer order): daftar unit order yang masih dikerjakan Produksi + tombol per unit. Hanya Admin/Owner; tidak tampil bila tidak ada unit yang memenuhi syarat.
+// Daftar order (Sales) tidak membawa unit: dimuat sendiri lewat GET /orders/:id/units (hanya untuk Admin/Owner dan order yang belum terkirim/batal).
 export function PelepasanOrderPanel({ order, isAdmin, onDone }) {
-  const unit = (order?.units ?? []).filter(pfUnitBisaDilepas);
+  const [unitMuat, setUnitMuat] = useState(null); const [versi, setVersi] = useState(0);
+  const orderId = order?.id; const orderStatus = order?.status;
+  useEffect(() => {
+    if (!isAdmin || !orderId || Array.isArray(order?.units) || ["DELIVERED", "CANCELLED"].includes(orderStatus)) { setUnitMuat(null); return undefined; }
+    let batal = false;
+    api.getOrderUnitsList(orderId).then((r) => { if (!batal) setUnitMuat(Array.isArray(r) ? r : []); }).catch(() => { if (!batal) setUnitMuat([]); });
+    return () => { batal = true; };
+  }, [isAdmin, orderId, orderStatus, versi]);
+  const unit = (Array.isArray(order?.units) ? order.units : (unitMuat ?? [])).filter(pfUnitBisaDilepas);
   if (!isAdmin || unit.length === 0) return null;
   return (
     <div data-testid="pf-order-panel" className="rounded-xl border border-line bg-surface p-3 text-[12.5px]">
       <p className="m-0 font-semibold text-ink">Barang fisik sudah jadi, tapi status Produksi belum?</p>
       <p className="m-0 mt-0.5 text-ink3">Dropdown status ditolak selama Production Run masih berjalan. Admin/Owner dapat menandai unit Siap Kirim berdasarkan pemeriksaan fisik — Run Produksi tidak diubah.</p>
       <div className="mt-2 flex flex-wrap gap-2">
-        {unit.map((u, i) => <PelepasanUnitTombol key={u.id} unitId={u.id} unitStatus={u.status} isAdmin={isAdmin} onDone={onDone} label={unit.length > 1 ? `Unit ${i + 1}: Tandai Siap Kirim (pemeriksaan fisik)` : undefined} />)}
+        {unit.map((u, i) => <PelepasanUnitTombol key={u.id} unitId={u.id} unitStatus={u.status} isAdmin={isAdmin} onDone={() => { setVersi((v) => v + 1); onDone?.(); }} label={unit.length > 1 ? `Unit ${i + 1}: Tandai Siap Kirim (pemeriksaan fisik)` : undefined} />)}
       </div>
     </div>
   );

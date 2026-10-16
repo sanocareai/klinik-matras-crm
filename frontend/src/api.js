@@ -855,6 +855,7 @@ export const api = {
   confirmProductionV2FinishedGoods: (runId, data = {}, idempotencyKey = mutationKey("kbj")) =>
     request(`/production-v2/runs/${runId}/confirm-finished-goods`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
   // Tandai Siap Kirim berdasarkan pemeriksaan fisik (PENGECUALIAN Admin/Owner; Run Produksi TIDAK ditutup): pratinjau baca-saja + perintah (alasan, kode unit, lokasi, pemeriksa, verifikasi fisik wajib).
+  getOrderUnitsList: (orderId) => request(`/orders/${orderId}/units`),
   getProductionV2DeliveryRelease: (unitId) => request(`/production-v2/units/${unitId}/delivery-release`),
   releaseProductionV2UnitForDelivery: (unitId, data = {}, idempotencyKey = mutationKey("pf")) =>
     request(`/production-v2/units/${unitId}/delivery-release`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(data) }),
