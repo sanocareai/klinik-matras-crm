@@ -214,7 +214,7 @@ rec("tanpa token → 401", (await get("/api/atribusi/iklan")).s === 401);
 if (sales) rec("SALES → 403", (await get("/api/atribusi/iklan", tok(sales))).s === 403); else console.log("  SKIP  SALES 403 — tidak ada akun SALES aktif");
 const a = await get("/api/atribusi/iklan?level=campaign", tok(adm));
 rec("ADMIN → 200, default 7 hari, rekonsiliasi OK, CPA/ROAS null", a.s === 200 && a.j?.rentangLead?.bawaan === true && a.j?.rekonsiliasi?.ok === true && a.j?.biaya?.cpa === null && a.j?.biaya?.roas === null, `${a.s}`);
-const d = await get("/api/atribusi/iklan?level=ad&campaignId=1", tok(adm));
+const d = await get("/api/atribusi/iklan?level=ad&campaignId=12345678901234", tok(adm));
 rec("drilldown parameter valid → 200 (kosong, bukan galat)", d.s === 200 && Array.isArray(d.j?.grup));
 rec("parameter salah → 400", (await get("/api/atribusi/iklan?level=xx", tok(adm))).s === 400);
 await prisma.$disconnect(); console.log("SMOKE_HASIL fail=" + fail); process.exit(fail ? 1 : 0);
