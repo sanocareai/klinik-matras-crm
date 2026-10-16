@@ -59,7 +59,7 @@ test("allowlist: hanya berkas Fase 3.1; prisma/paket/compose/campaign automation
 test("gerbang kunci ada: baseline, disk, backup, pin, himpunan migrasi sama, data tidak berubah, reach tidak tampil, rollback tanpa hapus data", () => {
   for (const [re, nama] of [
     [/BUKAN baseline \$\{BASE_SHORT\}; produksi bergeser/, "baseline"], [/MIN_FREE_KB=\$\(\(5 \* 1024 \* 1024\)\)/, "disk"], [/pg_dump -U/, "pg_dump"], [/sha256sum -c /, "checksum"],
-    [/himpunan migrasi kandidat ≠ produksi/, "tanpa migrasi"], [/prisma\/paket\/Docker\/dist\/\.env berubah/, "tanpa skema"], [/keadaan data BERUBAH selama rilis/, "data tidak ditulis"],
+    [/himpunan migrasi kandidat ≠ produksi/, "tanpa migrasi"], [/prisma\/paket\/Docker\/dist\/\.env berubah/, "tanpa skema"], [/data BERUBAH selama rilis/, "data tidak ditulis"], [/touch BERKURANG/, "touch tidak berkurang"],
     [/laporan memuat reach/, "reach"], [/SEBELUM_ATRIBUSI/, "status sebelum atribusi"], [/TIDAK_DAPAT_DIEVALUASI_SEBELUM_ATRIBUSI/, "evaluasi"], [/CPL\/CPA\/ROAS CRM harus null sebelum atribusi/, "null"],
     [/\$\{FLAG_SYNC\}=true/, "sync OFF"], [/migrate status \(image baru\) TIDAK 'up to date'/, "migrate status"], [/MODE=rollback/, "rollback"], [/tidak dihapus/, "rollback tanpa hapus"],
   ]) assert.ok(re.test(src), `gerbang hilang: ${nama}`);
