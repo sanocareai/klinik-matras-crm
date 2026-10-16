@@ -21,7 +21,7 @@ const dirMig = fs.readdirSync(path.join(root, "backend/prisma/migrations")).filt
 const migName = dirMig.find((n) => n.endsWith("_stok_riwayat_referensi"));
 const migRel = `backend/prisma/migrations/${migName}/migration.sql`;
 const berkasUji = ["backend/prisma/schema.prisma", migRel, "backend/src/routes/riwayatReferensi.js", "frontend/src/features/warehouse/components/RiwayatReferensiTab.jsx", "scripts/lib/smoke-riwayat-referensi.mjs", "scripts/gen-release-riwayat-referensi.cjs"];
-const masukan = (o = {}) => ({ templateSrc: baca("scripts/release-identitas-pemeriksa-hitung.sh"), berkasList: berkasUji, migName, migSql: baca(migRel), smokeSrc: baca("scripts/lib/smoke-riwayat-referensi.mjs"), ...o });
+const masukan = (o = {}) => ({ templateSrc: baca("scripts/release-identitas-pemeriksa-hitung.sh"), berkasList: berkasUji, migName, migSql: baca(migRel), smokeSrc: baca("scripts/lib/smoke-riwayat-referensi.mjs"), restoreBersihSrc: baca("scripts/templates/restore-bersih.sh.part"), ...o });
 
 test("generator berbasis repo: tepat satu migrasi *_stok_riwayat_referensi, namanya SESUDAH semua migrasi lain (urutan aman)", () => {
   assert.ok(migName, "migrasi riwayat referensi ada");
@@ -106,7 +106,7 @@ test("BATAS KERJA: fitur Riwayat Referensi tidak membaca/menulis Finance (PO, pe
 // ───────── MODE REHEARSAL-ONLY: tidak punya jalur tulis ke produksi ─────────
 const { bangkitkanRehearsal } = require(path.join(root, "scripts/gen-release-riwayat-referensi.cjs"));
 const rehTersimpan = baca("scripts/rehearsal-riwayat-referensi.sh");
-const rehBangkit = () => bangkitkanRehearsal({ tplSrc: baca("scripts/templates/rehearsal-riwayat-referensi.sh.tpl"), fullScript: bangkitkan(masukan()).script, migName, migSha: createHash("sha256").update(baca(migRel)).digest("hex"), smokeSrc: baca("scripts/lib/smoke-riwayat-referensi.mjs"), candBranch: "feat/stok-mulai-catat-rekon-okt" });
+const rehBangkit = () => bangkitkanRehearsal({ tplSrc: baca("scripts/templates/rehearsal-riwayat-referensi.sh.tpl"), fullScript: bangkitkan(masukan()).script, migName, migSha: createHash("sha256").update(baca(migRel)).digest("hex"), smokeSrc: baca("scripts/lib/smoke-riwayat-referensi.mjs"), katalogSql: baca("scripts/templates/rehearsal-katalog.sql"), hitungSql: baca("scripts/templates/rehearsal-hitung-baris.sql"), candBranch: "feat/stok-mulai-catat-rekon-okt" });
 // baris kode: tanpa komentar dan tanpa pesan (say/ok/die/echo) — pola terlarang diperiksa pada perintah yang benar-benar dijalankan
 const barisKode = (t) => t.split("\n").filter((l) => !l.trim().startsWith("#") && !/^\s*(say|ok|die)\b/.test(l) && !/\|\| die |&& die |; die |\{ die |then die /.test(l.replace(/"[^"]*"/g, '""')) || /^\s*(docker|psql|live_ro|rpsql|RPSQL|ROK|RTOLAK|sg|gzip|rm|mkdir|mv|cp|cat)\b/.test(l)).join("\n");
 
@@ -150,4 +150,38 @@ test("rehearsal-only: urutan — audit live baca-saja → backup → restore sem
   assert.match(rehTersimpan, /Applying migration[^\n]*\n?[^\n]*TEPAT \$\{MIG_LIST\}|menerapkan sesuatu selain TEPAT/);
   assert.match(rehTersimpan, /env produksi TIDAK dimuat/); assert.match(rehTersimpan, /rr-server\.mjs/);
   assert.ok((rehTersimpan.match(/SELECT|select/g) || []).length > 5);
+});
+
+// ───────── RESTORE HARUS BERSIH (tidak ada error yang diabaikan) ─────────
+test("restore: skrip rilis penuh TIDAK lagi mengabaikan error restore (exit code + jumlah error); tidak ada '|| true' pada psql restore", () => {
+  const { script } = bangkitkan(masukan());
+  assert.equal((script.match(/RESTORE_RC=\$\?/g) || []).length, 2, "kedua restore (3b dan 5c) diperiksa");
+  assert.equal((script.match(/restore ke DB sementara TIDAK bersih/g) || []).length, 2);
+  assert.doesNotMatch(script, /ON_ERROR_STOP=0 -X -q > "\$BK_DIR\/restore-(rehearsal|mig)\.log" 2>&1 \|\| true/);
+  assert.throws(() => bangkitkan(masukan({ restoreBersihSrc: "tanpa penanda" })), /restore-bersih/);
+});
+
+test("rehearsal-only: restore diperiksa ketat (exit code, error, warning), role dibuat dari produksi, log disimpan, itemisasi penyebab/perintah/objek, data COPY tidak pernah ditampilkan", () => {
+  const t = rehTersimpan;
+  assert.match(t, /PHASE="4a-role"/); assert.match(t, /CREATE ROLE \\"\$\{r\}\\" NOLOGIN/); assert.doesNotMatch(t.replace(/#.*$/gm, ""), /PASSWORD '|ENCRYPTED PASSWORD|rolpassword|pg_authid|pg_shadow/i, "tidak menyalin rahasia role");
+  assert.match(t, /RR_DIAGNOSA_TANPA_ROLE/); assert.match(t, /-v ON_ERROR_STOP=0 -X -q -f \/tmp\/live\.sql/); assert.match(t, /RESTORE_RC=\$\?/);
+  assert.match(t, /\[ "\$\{ERR_ANY:-0\}" != "0" \] \|\| \[ "\$RESTORE_RC" != "0" \] \|\| \[ "\$\{WARN_N:-0\}" != "0" \]/, "gerbang: error, exit code, atau warning menggagalkan");
+  assert.match(t, /restore TIDAK bersih/); assert.match(t, /tidak ada pengecualian yang diterima diam-diam/);
+  assert.match(t, /LOGDIR="\$HOME\/rehearsal-rr-logs\//); assert.match(t, /RESTORE_LOG="\$LOGDIR\/restore\.log"/); assert.match(t, /baris data COPY TIDAK pernah ditampilkan/);
+  assert.match(t, /ROLE_TIDAK_ADA/); assert.match(t, /IZIN/); assert.match(t, /OBJEK_TIDAK_ADA/);
+  const cleanup = t.slice(t.indexOf("cleanup() {"), t.indexOf("trap cleanup EXIT"));
+  assert.doesNotMatch(cleanup, /rm -rf[^\n]*LOGDIR/, "cleanup tidak menghapus log");
+  assert.match(cleanup, /cp "\$x" "\$LOGDIR"/);
+});
+
+test("rehearsal-only: objek/izin dibuktikan pulih sesuai sumber (katalog + izin efektif + jumlah baris) dan migrasi hanya menambah objek stok_riwayat_*", () => {
+  const t = rehTersimpan; const kat = baca("scripts/templates/rehearsal-katalog.sql");
+  for (const k of ["'relasi'", "'kolom'", "'indeks'", "'constraint'", "'trigger'", "'fungsi'", "'enum'", "'ekstensi'", "'role'", "'default-acl'", "'izin-tabel'", "'izin-fungsi'", "'izin-skema'", "'tampilan'", "'skema'", "'db'"]) assert.ok(kat.includes(k), "katalog memuat " + k);
+  assert.match(kat, /relacl/); assert.match(kat, /pg_get_userbyid/); assert.match(kat, /has_table_privilege/); assert.match(kat, /pg_get_triggerdef/); assert.match(kat, /pg_get_functiondef/); assert.match(kat, /pg_get_constraintdef/);
+  assert.doesNotMatch(kat.replace(/--.*$/gm, "").replace(/'[^']*'/g, "''"), /\b(insert|update|delete|drop|alter|create|grant|revoke|truncate)\b/i, "SQL katalog murni SELECT");
+  assert.doesNotMatch(baca("scripts/templates/rehearsal-hitung-baris.sql").replace(/--.*$/gm, "").replace(/'[^']*'/g, "''"), /\b(insert|update|delete|drop|alter|create|grant|revoke|truncate)\b/i);
+  assert.match(t, /katalog restore BERBEDA dari produksi/); assert.match(t, /jumlah baris restore tidak sesuai sumber/); assert.match(t, /DI-LUAR-RENTANG/);
+  assert.match(t, /PHASE="6d-katalog-sesudah-migrasi"/); assert.match(t, /migrasi menambah objek di luar stok_riwayat_\*/); assert.match(t, /objek lama BERUBAH\/HILANG oleh migrasi/);
+  const pos = (x) => t.indexOf(x); assert.ok(pos('PHASE="4a-role"') < pos('PHASE="4-restore"') && pos('PHASE="4-restore"') < pos('PHASE="4b-kontrol-restore"') && pos('PHASE="4b-kontrol-restore"') < pos('PHASE="4c-objek-dan-izin"') && pos('PHASE="4c-objek-dan-izin"') < pos('PHASE="5-build-image"') && pos('PHASE="6c-kontrol-sesudah"') < pos('PHASE="6d-katalog-sesudah-migrasi"') && pos('PHASE="6d-katalog-sesudah-migrasi"') < pos('PHASE="7-smoke"'));
+  assert.match(t, /live_ro_f "\$WORK\/katalog\.sql"/);
 });

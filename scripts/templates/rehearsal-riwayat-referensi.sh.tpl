@@ -30,6 +30,7 @@ RELEASES="$HOME/releases/klinik-matras"
 SRC="$HOME/release-src/klinik-matras.git"
 TS="$(date +%Y%m%d_%H%M%S)"
 WORK="$HOME/rehearsal-rr/${DEPLOY_SHORT}-${TS}"
+LOGDIR="$HOME/rehearsal-rr-logs/${DEPLOY_SHORT}-${TS}"   # log restore disimpan SAMPAI DITINJAU (tidak dihapus oleh cleanup); mode 700/600
 RR_NET="rr-reh-net-${TS}"; RR_PG="rr-reh-pg-${TS}"; RR_API="rr-reh-api-${TS}"; RR_VOL="rr-reh-vol-${TS}"; RR_IMG="rr-reh-image:${DEPLOY_SHORT}-${TS}"
 REH_PW="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"
 REH_URL="postgresql://${DB_USER}:${REH_PW}@${RR_PG}:5432/${DB_NAME}"
@@ -43,6 +44,7 @@ die()  { printf '\n\033[31mSTOP: %s\033[0m\n' "$*" >&2; exit 1; }
 sg()   { git --git-dir="$SRC" "$@"; }
 # SATU-SATUNYA jalur ke produksi: baca-saja di tingkat database (menolak semua tulis, termasuk tabel sementara).
 live_ro() { docker exec -i -e PGOPTIONS='-c default_transaction_read_only=on' "$LIVE_PG" psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 -X -q "$@" </dev/null; }
+live_ro_f() { docker exec -i -e PGOPTIONS='-c default_transaction_read_only=on' "$LIVE_PG" psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 -X -At -F'|' -q -f - < "$1"; }
 # Postgres SEMENTARA (hasil restore).
 rpsql() { docker exec -i "$RR_PG" psql -U "$DB_USER" -d "$DB_NAME" -X -At -q -c "$1" </dev/null; }
 RPSQL() { rpsql "$1"; }
@@ -55,6 +57,8 @@ cleanup() {
   docker network rm "$RR_NET" >/dev/null 2>&1 || true
   docker volume rm "$RR_VOL" >/dev/null 2>&1 || true
   docker rmi "$RR_IMG" >/dev/null 2>&1 || true
+  # simpan artefak diagnosis (hanya ringkasan/katalog/hitungan; BUKAN dump) ke direktori log sebelum direktori kerja dihapus
+  for x in "$WORK"/*.txt "$WORK"/*.tsv; do [ -f "$x" ] && cp "$x" "$LOGDIR"/ 2>/dev/null || true; done; chmod -R go-rwx "$LOGDIR" 2>/dev/null || true
   rm -rf "$WORK" 2>/dev/null || true
   if [ $rc -ne 0 ]; then echo; echo "REHEARSAL GAGAL pada fase ${PHASE}. Produksi TIDAK disentuh (akses hanya baca-saja). Semua sumber daya sementara rr-reh-* dihapus." >&2; fi
   exit $rc
@@ -70,7 +74,7 @@ done
 exec 9>/tmp/release-rr-rehearsal.lock; flock -n 9 || die "rehearsal ini sudah berjalan"
 OTHER="$(pgrep -af 'release-[a-z0-9-]+\.sh|docker compose .*(up|build)|docker build|prisma migrate' | grep -v "rr-reh\|rr.reh\|release-rr-rehearsal\|pgrep\|node src/index.js" || true)"
 [ -z "$OTHER" ] || { printf '%s\n' "$OTHER" | sed 's/^/        /'; die "ada proses deploy/build/migrasi lain yang berjalan"; }
-mkdir -p "$WORK" "$HOME/release-src"
+mkdir -p "$WORK" "$HOME/release-src"; mkdir -p -m 700 "$HOME/rehearsal-rr-logs" "$LOGDIR"
 ok "tidak ada deploy lain; direktori kerja sementara ${WORK}"
 
 PHASE="1-sumber"; say "1. Sumber kandidat (baca-saja) dan gerbang migrasi"
@@ -116,13 +120,22 @@ DB_BYTES="$(live_ro -At -c "select pg_database_size('${DB_NAME}')")"; AVAIL_KB="
 [ "$AVAIL_KB" -ge $(( DB_BYTES / 1024 * 4 + 3 * 1024 * 1024 )) ] || die "ruang disk kurang (butuh ≈ 4× ukuran DB + 3 GiB; tersedia ${AVAIL_KB} KiB; DB ${DB_BYTES} byte)"
 ok "ruang disk cukup (DB $(( DB_BYTES / 1048576 )) MiB; tersedia $(( AVAIL_KB / 1024 )) MiB)"
 @@SNAP_SQL_LINE@@
+cat > "$WORK/katalog.sql" <<'KATALOGSQL'
+@@KATALOG_SQL@@
+KATALOGSQL
+cat > "$WORK/hitung.sql" <<'HITUNGSQL'
+@@HITUNG_SQL@@
+HITUNGSQL
 
 PHASE="3-backup"; say "3. Backup produksi TERBARU (pg_dump baca-saja) + checksum"
+live_ro_f "$WORK/hitung.sql" | LC_ALL=C sort > "$WORK/hitung-live-sebelum.txt" || die "hitung baris live (sebelum dump) gagal"
 docker exec -e PGOPTIONS='-c default_transaction_read_only=on' "$LIVE_PG" pg_dump -U "$DB_USER" "$DB_NAME" </dev/null | gzip > "${DUMP}.partial" || die "pg_dump gagal"
 gzip -t "${DUMP}.partial" || die "arsip backup rusak"
 gzip -dc "${DUMP}.partial" | tail -n 5 | grep 'PostgreSQL database dump complete' >/dev/null || die "dump tidak lengkap"
 [ "$(stat -c %s "${DUMP}.partial")" -gt 1024 ] || die "file backup terlalu kecil"
 mv "${DUMP}.partial" "$DUMP"; DUMP_SHA="$(sha256sum "$DUMP" | cut -d' ' -f1)"
+live_ro_f "$WORK/hitung.sql" | LC_ALL=C sort > "$WORK/hitung-live-sesudah.txt" || die "hitung baris live (sesudah dump) gagal"
+live_ro_f "$WORK/katalog.sql" | LC_ALL=C sort > "$WORK/katalog-live.txt" || die "katalog live gagal"
 live_ro -At -c "$SNAP_SQL" > "$WORK/snap-live.txt" || die "snapshot live gagal"
 LC_ALL=C sort -o "$WORK/snap-live.txt" "$WORK/snap-live.txt"  # urutan UNION ALL tidak dijamin — bandingkan terurut
 [ "$(wc -l < "$WORK/snap-live.txt")" -ge 25 ] || die "snapshot live tidak lengkap"
@@ -136,12 +149,58 @@ for i in $(seq 1 60); do docker exec "$RR_PG" pg_isready -U "$DB_USER" -d "$DB_N
 sleep 3
 [ "$(docker inspect -f '{{len .NetworkSettings.Networks}}' "$RR_PG")" = "1" ] || die "Postgres sementara terhubung ke lebih dari satu jaringan"
 [ -z "$(docker port "$RR_PG")" ] || die "Postgres sementara memublikasikan port"
-gzip -dc "$DUMP" | docker exec -i "$RR_PG" psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=0 -X -q > "$WORK/restore.log" 2>&1 || true
-ERR_RESTORE="$(grep -c 'ERROR' "$WORK/restore.log" || true)"; [ "${ERR_RESTORE:-0}" = "0" ] || { echo "  INFO  ${ERR_RESTORE} baris ERROR saat restore (5 pertama):"; grep 'ERROR' "$WORK/restore.log" | head -n 5 | sed 's/^/        /'; }
+PHASE="4a-role"; say "4a. Role yang dirujuk dump dibuat di Postgres sementara (NOLOGIN, tanpa kata sandi — tidak ada rahasia yang disalin)"
+live_ro -At -c "select rolname from pg_roles where rolname !~ '^pg_' and rolname <> '${DB_USER}' order by 1" > "$WORK/roles.txt" || die "gagal membaca daftar role produksi"
+if [ "${RR_DIAGNOSA_TANPA_ROLE:-0}" = "1" ]; then
+  echo "  INFO  MODE DIAGNOSA (RR_DIAGNOSA_TANPA_ROLE=1): role TIDAK dibuat — restore diharapkan menghasilkan error role; skrip mengitemkan lalu berhenti di gerbang restore"
+else
+  while IFS= read -r r; do
+    [ -n "$r" ] || continue
+    [[ "$r" =~ ^[a-z_][a-z0-9_]*$ ]] || die "nama role tidak biasa (periksa manual): ${r}"
+    docker exec -i "$RR_PG" psql -U "$DB_USER" -d "$DB_NAME" -X -q -v ON_ERROR_STOP=1 -c "CREATE ROLE \"${r}\" NOLOGIN" </dev/null >/dev/null || die "gagal membuat role ${r}"
+  done < "$WORK/roles.txt"
+fi
+ok "role non-sistem di produksi selain ${DB_USER}: $(tr '\n' ' ' < "$WORK/roles.txt")(dibuat NOLOGIN di Postgres sementara)"
+
+PHASE="4-restore"; say "4. Restore backup ke Postgres sementara — log LENGKAP disimpan; error APA PUN menggagalkan rehearsal"
+gzip -dc "$DUMP" > "$WORK/live.sql" || die "gagal mengekstrak dump"
+docker cp "$WORK/live.sql" "$RR_PG":/tmp/live.sql || die "gagal menyalin dump ke Postgres sementara"
+RESTORE_LOG="$LOGDIR/restore.log"
+set +e
+docker exec -i "$RR_PG" psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=0 -X -q -f /tmp/live.sql > "$RESTORE_LOG" 2>&1 </dev/null
+RESTORE_RC=$?
+set -e
+chmod 600 "$RESTORE_LOG"
+ERR_N="$(grep -cE '^psql:[^:]*:[0-9]+: ERROR:' "$RESTORE_LOG" || true)"; ERR_ANY="$(grep -ciE 'ERROR:|FATAL|PANIC|^psql: error' "$RESTORE_LOG" || true)"; WARN_N="$(grep -ci 'WARNING:' "$RESTORE_LOG" || true)"
+echo "  INFO  restore: exit code psql=${RESTORE_RC}; baris ERROR=${ERR_N}; semua baris galat (ERROR/FATAL/PANIC)=${ERR_ANY}; WARNING=${WARN_N}; log lengkap: ${RESTORE_LOG} (mode 600; berisi pesan galat, bukan data)"
+if [ "${ERR_ANY:-0}" != "0" ] || [ "$RESTORE_RC" != "0" ] || [ "${WARN_N:-0}" != "0" ]; then
+  # itemisasi: penyebab, perintah, objek. Teks pernyataan hanya ditampilkan bila diawali kata kunci SQL (baris data COPY TIDAK pernah ditampilkan).
+  grep -E '^psql:[^:]*:[0-9]+: ERROR:' "$RESTORE_LOG" | sed -E 's/^psql:[^:]*:([0-9]+): ERROR:  (.*)$/\1\t\2/' > "$WORK/err.tsv" || true
+  cut -f1 "$WORK/err.tsv" | LC_ALL=C sort -u > "$WORK/err-nomor.txt"
+  awk 'NR==FNR{w[$1]=1;next} (FNR in w){print FNR "\t" substr($0,1,300)}' "$WORK/err-nomor.txt" "$WORK/live.sql" > "$WORK/err-stmt.tsv"
+  awk -F'\t' 'NR==FNR{s[$1]=$2;next}{print $1 "\t" $2 "\t" s[$1]}' "$WORK/err-stmt.tsv" "$WORK/err.tsv" > "$WORK/err-gabung.tsv"
+  awk -F'\t' '{
+      msg=$2; st=$3; cause="LAIN";
+      if (msg ~ /^role ".*" does not exist/) cause="ROLE_TIDAK_ADA";
+      else if (msg ~ /permission denied|must be owner|must be superuser|must have/) cause="IZIN";
+      else if (msg ~ /already exists/) cause="SUDAH_ADA";
+      else if (msg ~ /does not exist/) cause="OBJEK_TIDAK_ADA";
+      else if (msg ~ /syntax error/) cause="SINTAKS";
+      if (st ~ /^(ALTER|CREATE|GRANT|REVOKE|COMMENT|DROP|SET|SELECT|COPY|INSERT|DELETE|UPDATE|TRUNCATE) /) { split(st, p, " "); cmd=p[1] " " p[2]; obj=(p[3] != "" ? p[3] : "-") " " (p[4] != "" ? p[4] : ""); }
+      else { cmd="(baris data/lanjutan; tidak ditampilkan)"; obj="-"; }
+      print cause "\t" cmd "\t" obj "\t" msg }' "$WORK/err-gabung.tsv" > "$LOGDIR/restore-itemisasi.tsv"
+  chmod 600 "$LOGDIR/restore-itemisasi.tsv"
+  echo "  INFO  rincian error menurut PENYEBAB:"; cut -f1 "$LOGDIR/restore-itemisasi.tsv" | LC_ALL=C sort | uniq -c | sed 's/^/        /'
+  echo "  INFO  menurut PENYEBAB x PERINTAH:"; cut -f1,2 "$LOGDIR/restore-itemisasi.tsv" | LC_ALL=C sort | uniq -c | sed 's/^/        /'
+  echo "  INFO  galat selain role/izin (harus kosong bila hanya masalah role):"; awk -F'\t' '$1!="ROLE_TIDAK_ADA" && $1!="IZIN"' "$LOGDIR/restore-itemisasi.tsv" | head -n 20 | sed 's/^/        /'
+  echo "  INFO  pesan WARNING unik:"; grep -i 'WARNING:' "$RESTORE_LOG" | sed 's/^[^W]*WARNING:  //' | LC_ALL=C sort | uniq -c | head -n 10 | sed 's/^/        /'
+  echo "  INFO  rincian per objek: ${LOGDIR}/restore-itemisasi.tsv"
+  die "restore TIDAK bersih (exit=${RESTORE_RC}, error=${ERR_ANY}, warning=${WARN_N}) — rehearsal ditolak; tidak ada pengecualian yang diterima diam-diam"
+fi
 [ "$(RPSQL "select count(*) from _prisma_migrations where finished_at is not null and rolled_back_at is null")" -ge "$MIG_N" ] || die "migrasi pada restore kurang dari produksi"
 RPSQL "select migration_name from _prisma_migrations where finished_at is not null and rolled_back_at is null order by 1" | LC_ALL=C sort -u > "$WORK/applied-restore.txt"
-comm -3 "$WORK/applied-restore.txt" <(LC_ALL=C sort -u "$WORK/applied.txt") | grep -q . && echo "  INFO  daftar migrasi restore berbeda dari yang dibaca di live (migrasi baru di sela?):" || true
-ok "restore selesai di ${RR_PG} (jaringan internal ${RR_NET}, 1 jaringan, tanpa port)"
+cmp -s "$WORK/applied-restore.txt" <(LC_ALL=C sort -u "$WORK/applied.txt") || die "daftar migrasi restore berbeda dari yang dibaca di produksi"
+ok "restore BERSIH: exit code 0, 0 error, 0 warning; ${MIG_N} migrasi sama; jaringan internal ${RR_NET} (1 jaringan, tanpa port)"
 
 PHASE="4b-kontrol-restore"; say "4b. Kontrol 26 kelompok: restore vs live (tepat setelah dump)"
 RPSQL "$SNAP_SQL" > "$WORK/snap-sebelum.txt" || die "snapshot restore (sebelum) gagal"
@@ -155,6 +214,23 @@ else
   done < "$WORK/snap-live.txt"
   ok "selisih live vs restore hanya penambahan di live sejak dump"
 fi
+
+PHASE="4c-objek-dan-izin"; say "4c. Objek penting + kepemilikan + izin pulih SESUAI SUMBER (katalog restore vs produksi) dan jumlah baris tiap tabel"
+RKAT() { docker exec -i "$RR_PG" psql -U "$DB_USER" -d "$DB_NAME" -X -At -F'|' -q -v ON_ERROR_STOP=1 -f - < "$1"; }
+RKAT "$WORK/katalog.sql" | LC_ALL=C sort > "$WORK/katalog-restore.txt" || die "katalog restore gagal"
+[ "$(wc -l < "$WORK/katalog-live.txt")" -ge 500 ] || die "katalog produksi tidak lengkap ($(wc -l < "$WORK/katalog-live.txt") baris)"
+if ! cmp -s "$WORK/katalog-live.txt" "$WORK/katalog-restore.txt"; then
+  diff "$WORK/katalog-live.txt" "$WORK/katalog-restore.txt" | head -n 40 | sed 's/^/        /'
+  die "katalog restore BERBEDA dari produksi (objek/pemilik/izin tidak pulih sesuai sumber)"
+fi
+for k in relasi kolom indeks constraint trigger fungsi enum ekstensi role izin-tabel izin-fungsi izin-skema default-acl; do printf '        %-12s %s\n' "$k" "$(awk -F'|' -v k="$k" '$1==k' "$WORK/katalog-live.txt" | wc -l)"; done
+ok "katalog IDENTIK ($(wc -l < "$WORK/katalog-live.txt") baris): tabel, kolom, indeks, constraint, trigger, fungsi, enum, ekstensi, role, pemilik, ACL, dan izin efektif per role (tabel/fungsi/skema)"
+rpsql_f() { docker exec -i "$RR_PG" psql -U "$DB_USER" -d "$DB_NAME" -X -At -q -v ON_ERROR_STOP=1 -f - < "$1"; }
+rpsql_f "$WORK/hitung.sql" | LC_ALL=C sort > "$WORK/hitung-restore.txt" || die "hitung baris restore gagal"
+[ "$(wc -l < "$WORK/hitung-restore.txt")" = "$(wc -l < "$WORK/hitung-live-sebelum.txt")" ] || die "jumlah tabel restore berbeda dari produksi"
+awk -F'|' 'FILENAME==ARGV[1]{b[$1]=$2;next} FILENAME==ARGV[2]{a[$1]=$2;next} {t=$1; r=$2; lo=(b[t]<a[t]?b[t]:a[t]); hi=(b[t]<a[t]?a[t]:b[t]); if (b[t]==a[t]) { if (r!=b[t]) {print "BEDA-TETAP " t " live=" b[t] " restore=" r; bad++} } else if (r<lo || r>hi) {print "DI-LUAR-RENTANG " t " live=" b[t] ".." a[t] " restore=" r; bad++} else { print "TUMBUH " t " live=" b[t] ".." a[t] " restore=" r } } END{exit bad>0}' "$WORK/hitung-live-sebelum.txt" "$WORK/hitung-live-sesudah.txt" "$WORK/hitung-restore.txt" > "$WORK/hitung-banding.txt" || { cat "$WORK/hitung-banding.txt" | head -n 30 | sed 's/^/        /'; die "jumlah baris restore tidak sesuai sumber"; }
+TUMBUH="$(grep -c '^TUMBUH' "$WORK/hitung-banding.txt" || true)"
+ok "jumlah baris $(wc -l < "$WORK/hitung-restore.txt") tabel: tabel yang tidak berubah di produksi selama dump identik; ${TUMBUH} tabel tumbuh selama dump tetap di dalam rentang [sebelum, sesudah]"
 
 PHASE="5-build-image"; say "5. Build image kandidat dengan tag SEMENTARA (tidak menyentuh nama image produksi; backend produksi tidak disentuh)"
 sg archive "$DEPLOY_SHA" backend | tar -x -C "$WORK" || die "git archive gagal"
@@ -195,6 +271,16 @@ LC_ALL=C sort -o "$WORK/snap-sesudah-migrasi.txt" "$WORK/snap-sesudah-migrasi.tx
 cmp -s "$WORK/snap-sebelum.txt" "$WORK/snap-sesudah-migrasi.txt" || { diff "$WORK/snap-sebelum.txt" "$WORK/snap-sesudah-migrasi.txt" | head -n 20; die "kontrol data BERUBAH setelah migrasi"; }
 ok "SELURUH $(wc -l < "$WORK/snap-sesudah-migrasi.txt") kelompok data IDENTIK sebelum vs sesudah migrasi"
 
+PHASE="6d-katalog-sesudah-migrasi"; say "6d. Katalog sesudah migrasi: HANYA objek stok_riwayat_* yang bertambah; pemilik/izin objek lama tak berubah"
+RKAT "$WORK/katalog.sql" | LC_ALL=C sort > "$WORK/katalog-sesudah.txt" || die "katalog sesudah migrasi gagal"
+diff "$WORK/katalog-restore.txt" "$WORK/katalog-sesudah.txt" > "$WORK/katalog-selisih.txt" || true
+if grep -E '^<' "$WORK/katalog-selisih.txt" | grep -q .; then grep -E '^<' "$WORK/katalog-selisih.txt" | head -n 10 | sed 's/^/        /'; die "objek lama BERUBAH/HILANG oleh migrasi"; fi
+LUAR="$(grep -E '^>' "$WORK/katalog-selisih.txt" | grep -v 'stok_riwayat' || true)"
+[ -z "$LUAR" ] || { printf '%s\n' "$LUAR" | head -n 10 | sed 's/^/        /'; die "migrasi menambah objek di luar stok_riwayat_*"; }
+echo "  INFO  objek baru menurut jenis:"; grep -E '^>' "$WORK/katalog-selisih.txt" | sed 's/^> //' | cut -d'|' -f1 | LC_ALL=C sort | uniq -c | sed 's/^/        /'
+[ "$(grep -E '^> relasi\|stok_riwayat_(referensi|impor)\|r:klinik:' "$WORK/katalog-selisih.txt" | wc -l)" = "2" ] || die "2 tabel baru tidak dimiliki ${DB_USER}"
+ok "katalog sesudah migrasi: hanya penambahan objek stok_riwayat_* (tabel, kolom, indeks, constraint, trigger, fungsi); tidak ada objek lama yang berubah"
+
 PHASE="7-smoke"; say "7. Smoke baca-saja terhadap hasil restore (router Riwayat Referensi saja di image kandidat; tanpa scheduler/WhatsApp/webhook; env produksi TIDAK dimuat)"
 docker create --name "$RR_API" --network "$RR_NET" -e DATABASE_URL="$REH_URL" -e JWT_SECRET="$JWT_REH" -e NODE_ENV=production "$RR_IMG" node /app/rr-server.mjs >/dev/null || die "gagal membuat container smoke"
 cat > "$WORK/rr-server.mjs" <<'SERVER'
@@ -223,4 +309,4 @@ live_ro -At -c "select migration_name from _prisma_migrations where finished_at 
 curl -fsS --max-time 8 http://127.0.0.1:4000/api/health | grep '"ok":true' >/dev/null || die "health produksi tidak ok"
 ok "produksi: container/image/StartedAt sama, release aktif sama, ${MIG_N} migrasi sama, tabel baru TIDAK ada di produksi, health ok"
 
-say "REHEARSAL LULUS — kandidat ${DEPLOY_SHORT} di atas live ${BASE_SHA:0:8}; produksi tidak berubah; sumber daya sementara dihapus"
+say "REHEARSAL LULUS — kandidat ${DEPLOY_SHORT} di atas live ${BASE_SHA:0:8}; restore bersih; katalog/izin/jumlah baris sesuai sumber; produksi tidak berubah; sumber daya sementara dihapus; log restore: ${LOGDIR}"

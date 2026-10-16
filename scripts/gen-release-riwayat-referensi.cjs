@@ -22,6 +22,9 @@ const SMOKE = "scripts/lib/smoke-riwayat-referensi.mjs";
 const OUT_REL = "scripts/release-riwayat-referensi.sh";
 const REH_REL = "scripts/rehearsal-riwayat-referensi.sh";
 const REH_TPL = "scripts/templates/rehearsal-riwayat-referensi.sh.tpl";
+const REH_KATALOG = "scripts/templates/rehearsal-katalog.sql";
+const REH_HITUNG = "scripts/templates/rehearsal-hitung-baris.sql";
+const RESTORE_BERSIH = "scripts/templates/restore-bersih.sh.part";
 const SERVER_JS = [
   'import express from "express";',
   'import { riwayatReferensiRouter } from "/app/src/routes/riwayatReferensi.js";',
@@ -35,7 +38,7 @@ const lf = (t) => t.replace(/\r\n/g, "\n");
 const must = (c, m) => { if (!c) throw new Error("templat/masukan tak cocok: " + m); };
 
 /** Murni: tidak menyentuh git/disk. Mengembalikan { script, ringkasan }. */
-function bangkitkan({ templateSrc, berkasList, migName, migSql, smokeSrc }) {
+function bangkitkan({ templateSrc, berkasList, migName, migSql, smokeSrc, restoreBersihSrc }) {
   let s = lf(templateSrc); smokeSrc = lf(smokeSrc);
   const swap = (a, b) => { must(s.includes(a), a.slice(0, 80)); s = s.replace(a, () => b); };
   const swapLine = (prefix, b) => { const Ls = s.split("\n"); const i = Ls.findIndex((l) => l.startsWith(prefix)); must(i >= 0, prefix); Ls[i] = b; s = Ls.join("\n"); };
@@ -196,12 +199,17 @@ swap(`[ "$MIG_SESUDAH" = "$MIG_SEBELUM" ] || die "jumlah migrasi berubah (\${MIG
 ok "migrasi terpasang tetap \${MIG_SESUDAH} (tanpa migrasi)"`, `[ "$MIG_SESUDAH" = "$(( MIG_SEBELUM + 1 ))" ] || die "jumlah migrasi bukan sebelum + 1 (\${MIG_SEBELUM} -> \${MIG_SESUDAH})"
 ok "migrasi terpasang \${MIG_SESUDAH} = sebelum + 1"`);
   swap('berkas yang diaudit; tanpa prisma/frontend/dependensi"', 'berkas yang diaudit; frontend/src = $(printf "%s" "$FRONTEND_SRC_EXPECT" | wc -w) berkas yang diaudit; prisma = schema.prisma + tepat 1 migrasi ${MIG_LIST} (pin sha256); tanpa perubahan dependensi/compose/Dockerfile"');
+  // restore ke DB sementara TIDAK boleh mengabaikan error (sebelumnya "|| true"): exit code + jumlah error wajib bersih
+  must(typeof restoreBersihSrc === "string" && restoreBersihSrc.includes("@@LOG@@"), "potongan restore-bersih tidak ada");
+  for (const log of ["restore-rehearsal.log", "restore-mig.log"]) {
+    swap(`gzip -dc "$BACKUP_FILE" | dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d "$REH_DB" -v ON_ERROR_STOP=0 -X -q > "$BK_DIR/${log}" 2>&1 || true`, lf(restoreBersihSrc).trimEnd().split("@@LOG@@").join(log));
+  }
   s = s.replace("# RILIS RIWAYAT REFERENSI HISTORIS", `# (dibangkitkan oleh scripts/gen-release-riwayat-referensi.cjs; templat ${TEMPLAT} sha256 ${templateSha.slice(0, 12)}…; JANGAN edit manual — ubah generator lalu bangkitkan ulang)\n# RILIS RIWAYAT REFERENSI HISTORIS`);
   return { script: s, ringkasan: { berkas: berkas.length, backendSrc: backendSrc.length, frontendSrc: frontendSrc.length, migName, migSha, templateSha } };
 }
 
 /** Murni. Menurunkan skrip REHEARSAL-ONLY dari templat + potongan skrip rilis (SNAP_SQL, blok uji constraint) agar keduanya selalu konsisten. */
-function bangkitkanRehearsal({ tplSrc, fullScript, migName, migSha, smokeSrc, candBranch }) {
+function bangkitkanRehearsal({ tplSrc, fullScript, migName, migSha, smokeSrc, candBranch, katalogSql, hitungSql }) {
   let t = lf(tplSrc); const full = lf(fullScript);
   const snap = full.split("\n").find((l) => l.startsWith("SNAP_SQL=")); must(!!snap, "SNAP_SQL tidak ada di skrip rilis");
   const a = full.indexOf('ROK "insert into stok_riwayat_impor'); const bMark = full.indexOf('ok "perilaku constraint terbukti'); must(a > 0 && bMark > a, "blok uji constraint tidak ditemukan");
@@ -209,6 +217,8 @@ function bangkitkanRehearsal({ tplSrc, fullScript, migName, migSha, smokeSrc, ca
   const isi = (k, v) => { must(t.includes(k), "placeholder " + k); t = t.split(k).join(v); };
   isi("@@CAND_BRANCH@@", candBranch); isi("@@MIG_LIST@@", migName); isi("@@MIG_SHA@@", migSha);
   isi("@@SNAP_SQL_LINE@@", snap); isi("@@UJI_BLOK@@", uji); isi("@@SERVER_JS@@", SERVER_JS); isi("@@SMOKE@@", lf(smokeSrc).trimEnd());
+  isi("@@KATALOG_SQL@@", lf(katalogSql).trimEnd()); isi("@@HITUNG_SQL@@", lf(hitungSql).trimEnd());
+  must(!lf(katalogSql).includes("KATALOGSQL") && !lf(hitungSql).includes("HITUNGSQL"), "SQL mengandung penanda heredoc");
   must(!/@@[A-Z_]+@@/.test(t), "placeholder tersisa");
   return t;
 }
@@ -229,10 +239,10 @@ function main() {
   must(migDir.length === 1, `harus tepat 1 migrasi *${SUFIKS_MIGRASI}, ditemukan: ${migDir.join(",") || "tidak ada"}`);
   const { list, ref, belumGabung } = berkasBerbeda(base);
   let hasil = bangkitkan({
-    templateSrc: fs.readFileSync(path.join(REPO, TEMPLAT), "utf8"), berkasList: list, migName: migDir[0],
+    templateSrc: fs.readFileSync(path.join(REPO, TEMPLAT), "utf8"), restoreBersihSrc: fs.readFileSync(path.join(REPO, RESTORE_BERSIH), "utf8"), berkasList: list, migName: migDir[0],
     migSql: fs.readFileSync(path.join(REPO, "backend/prisma/migrations", migDir[0], "migration.sql"), "utf8"), smokeSrc: fs.readFileSync(path.join(REPO, SMOKE), "utf8"),
   });
-  const rehearsal = bangkitkanRehearsal({ tplSrc: fs.readFileSync(path.join(REPO, REH_TPL), "utf8"), fullScript: hasil.script, migName: hasil.ringkasan.migName, migSha: hasil.ringkasan.migSha, smokeSrc: fs.readFileSync(path.join(REPO, SMOKE), "utf8"), candBranch: process.env.CAND_BRANCH || "feat/stok-mulai-catat-rekon-okt" });
+  const rehearsal = bangkitkanRehearsal({ tplSrc: fs.readFileSync(path.join(REPO, REH_TPL), "utf8"), fullScript: hasil.script, migName: hasil.ringkasan.migName, migSha: hasil.ringkasan.migSha, smokeSrc: fs.readFileSync(path.join(REPO, SMOKE), "utf8"), katalogSql: fs.readFileSync(path.join(REPO, REH_KATALOG), "utf8"), hitungSql: fs.readFileSync(path.join(REPO, REH_HITUNG), "utf8"), candBranch: process.env.CAND_BRANCH || "feat/stok-mulai-catat-rekon-okt" });
   const keluar = path.join(REPO, OUT_REL); const keluarReh = path.join(REPO, REH_REL);
   if (belumGabung) console.error(`PERINGATAN: HEAD belum memuat ${base}; daftar berkas dihitung dari merge-base ${ref.slice(0, 8)}. Gabungkan ${base}, commit, lalu bangkitkan ulang sebelum rilis.`);
   if (cek) {
