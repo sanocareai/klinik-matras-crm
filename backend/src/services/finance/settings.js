@@ -83,6 +83,11 @@ export const SETTING_KEYS = Object.freeze({
   // REKONSILIASI BANK V2 (15 Okt 2026) — SAKELAR ROLLOUT, DEFAULT MATI. MATI = impor rekening koran, pencocokan, pengecualian, opname kas, dan penyelesaian periode ditolak 403 di server.
   // Mutasi Buku per rekening & laporan exception (baca-saja) TIDAK memakai sakelar ini. Sakelar tidak pernah mengubah jurnal/saldo buku.
   BANK_RECONCILIATION_V2_ACTIVE: "bank_reconciliation_v2_active",
+  // POSTING DOKUMEN STOK RESMI (Stock Count/Adjustment/Damaged Stock, Okt 2026) — SAKELAR ROLLOUT, DEFAULT MATI. MATI = endpoint posting/pembalikan menolak 409; pratinjau (baca-saja) tetap jalan.
+  // STOK_RESMI_POSTING_SEJAK = tanggal (YYYY-MM-DD) mulai dokumen boleh dijurnal; KOSONG = tidak ada dokumen yang boleh diposting walau sakelar nyala. Dokumen sebelum tanggal ini ditolak (tanpa jurnal mundur).
+  // Sakelar hanya membuka jalur posting yang dipanggil Finance secara eksplisit; tidak ada pintu Gudang yang memposting otomatis.
+  STOK_RESMI_POSTING_AKTIF: "stok_resmi_posting_aktif",
+  STOK_RESMI_POSTING_SEJAK: "stok_resmi_posting_sejak",
 });
 
 const DEFAULTS = Object.freeze({
@@ -122,6 +127,8 @@ const DEFAULTS = Object.freeze({
   [SETTING_KEYS.UKURAN_CUSTOM_WAJIB]: "false",
   [SETTING_KEYS.UKURAN_CUSTOM_WAJIB_SEJAK]: "",
   [SETTING_KEYS.BANK_RECONCILIATION_V2_ACTIVE]: "false",
+  [SETTING_KEYS.STOK_RESMI_POSTING_AKTIF]: "false",
+  [SETTING_KEYS.STOK_RESMI_POSTING_SEJAK]: "",
 });
 
 // Payment.method → kunci pengaturan rekening tujuannya. SATU tempat, supaya

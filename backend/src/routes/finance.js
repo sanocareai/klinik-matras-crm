@@ -50,6 +50,7 @@ import { startOfDayWIB, endOfDayExclusiveWIB } from "../utils/wib.js";
 import { ambilDaftarJurnal, bentukJurnal } from "../services/finance/jurnalRead.js";
 import { diagnosisPiutang } from "../services/finance/piutangDiagnosis.js";
 import { bacaLaporanTerinci, drilldownMetrik } from "../services/finance/laporanTerinci/index.js";
+import { pratinjau as pratinjauStokResmi, postDokumenStok, balikDokumenStok, MATRIKS as MATRIKS_STOK_RESMI, SEMUA_JENIS as JENIS_STOK_RESMI } from "../services/finance/stokResmi/index.js";
 import { detailPiutangOrder } from "../services/finance/piutangDetail.js";
 // hitungNominal & statusEfektif DIPAKAI ULANG dari services/invoice.js —
 // BUKAN dihitung ulang di sini. Itu satu-satunya tempat arti nominal
@@ -1018,6 +1019,12 @@ financeRouter.patch("/settings", requirePermission(P.FINANCE_ADMIN), async (req,
         if (key === SETTING_KEYS.LAPORAN_DIVISI_AKTIF && !["true", "false"].includes(String(value))) {
           throw Object.assign(new Error("Nilai Laporan Divisi aktif harus true atau false"), { statusCode: 400 });
         }
+        if (key === SETTING_KEYS.STOK_RESMI_POSTING_AKTIF && !["true", "false"].includes(String(value))) {
+          throw Object.assign(new Error("Nilai posting dokumen stok resmi harus true atau false"), { statusCode: 400 });
+        }
+        if (key === SETTING_KEYS.STOK_RESMI_POSTING_SEJAK && String(value) !== "" && !/^d{4}-d{2}-d{2}$/.test(String(value))) {
+          throw Object.assign(new Error("Tanggal mulai posting dokumen stok resmi harus YYYY-MM-DD (atau kosong)"), { statusCode: 400 });
+        }
         if (key === SETTING_KEYS.BANK_RECONCILIATION_V2_ACTIVE && !["true", "false"].includes(String(value))) {
           throw Object.assign(new Error("Nilai Rekonsiliasi Bank V2 harus true atau false"), { statusCode: 400 });
         }
@@ -1412,6 +1419,39 @@ financeRouter.post("/sync/:sumber", requirePermission(P.FINANCE_POST), async (re
   } catch (err) {
     handleFinanceError(err, res);
   }
+});
+
+// ── DOKUMEN STOK RESMI → JURNAL (Okt 2026): pratinjau BACA-SAJA + posting/pembalikan TERKUNCI (sakelar stok_resmi_posting_aktif DEFAULT MATI). Tidak ada pintu Gudang yang memanggil ini.
+// Lihat services/finance/stokResmi/* dan docs/AUDIT-PERGERAKAN-STOK-RESMI.md.
+const POLA_UUID_STOK = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function paramStokResmi(req, res) {
+  const jenis = String(req.params.jenis || "").toUpperCase().replace(/-/g, "_");
+  if (!JENIS_STOK_RESMI.includes(jenis) || !POLA_UUID_STOK.test(String(req.params.id || ""))) { res.status(400).json({ error: "Jenis atau ID dokumen tidak valid", code: "PARAM_TIDAK_VALID" }); return null; }
+  return { jenis, id: req.params.id };
+}
+financeRouter.get("/stok-resmi/matriks", requirePermission(P.FINANCE_READ), (req, res) => {
+  res.json({ matriks: MATRIKS_STOK_RESMI, jenis: JENIS_STOK_RESMI });
+});
+financeRouter.get("/stok-resmi/:jenis/:id/pratinjau", requirePermission(P.FINANCE_READ), async (req, res) => {
+  try {
+    const p = paramStokResmi(req, res); if (!p) return;
+    const resolusi = typeof req.query.resolusi === "string" ? req.query.resolusi.toUpperCase() : null;
+    res.json(await pratinjauStokResmi(prisma, p.jenis, p.id, { resolusi }));
+  } catch (err) { handleFinanceError(err, res); }
+});
+financeRouter.post("/stok-resmi/:jenis/:id/posting", requirePermission(P.FINANCE_ADMIN), async (req, res) => {
+  try {
+    const p = paramStokResmi(req, res); if (!p) return;
+    const hasil = await prisma.$transaction((tx) => postDokumenStok(tx, { ...p, userId: req.user.id, alasan: req.body?.alasan }), { timeout: 20000 });
+    res.status(hasil.dibuat ? 201 : 200).json({ status: hasil.status, dibuat: hasil.dibuat, gap: hasil.gap, nomorJurnal: hasil.entry?.entryNumber ?? null });
+  } catch (err) { handleFinanceError(err, res); }
+});
+financeRouter.post("/stok-resmi/:jenis/:id/pembalikan", requirePermission(P.FINANCE_ADMIN), async (req, res) => {
+  try {
+    const p = paramStokResmi(req, res); if (!p) return;
+    const hasil = await prisma.$transaction((tx) => balikDokumenStok(tx, { ...p, userId: req.user.id, alasan: req.body?.alasan }), { timeout: 20000 });
+    res.status(hasil.dibuat ? 201 : 200).json({ status: hasil.status, dibuat: hasil.dibuat, nomorJurnal: hasil.entry?.entryNumber ?? null, nomorJurnalBalik: hasil.jurnalBalik?.entryNumber ?? null });
+  } catch (err) { handleFinanceError(err, res); }
 });
 
 export default financeRouter;
