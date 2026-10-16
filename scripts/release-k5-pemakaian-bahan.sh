@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # RILIS K5 — PENCATATAN BERNILAI PEMAKAIAN BAHAN LEPAS (HPP): BACKEND SAJA, TANPA migrasi, TANPA frontend/dependensi, TANPA backfill/perubahan data lama. FAIL-CLOSED.
-#   POST /units/:id/materials, POST /inventory/movements/issue|return|waste, penerimaan Retur Produksi kini membukukan nilai (Dr Beban Pokok|Susut / Cr Persediaan) di transaksi yang SAMA,
+#   Pintu resmi POST /units/:id/materials, POST /inventory/movements/issue dan penerimaan Retur Produksi kini membukukan nilai (Dr Beban Pokok|Susut / Cr Persediaan) di transaksi yang SAMA,
 #   atau gap TANPA_HARGA_PEROLEHAN / PERSEDIAAN_AWAL_BELUM_DIPOSTING (tanpa jurnal Rp0). Jurnal = nilai beku jejak biaya unit (bila ada). Metode retur TIDAK diubah (rata-rata saat retur).
-#   254 ISSUE historis TIDAK diberi harga/jurnal; Material.referenceUnitCost tidak dipakai; ADJUSTMENT/opname tidak termasuk.
+#   Jalur cepat receipt/return/waste (410, rilis Opname) TIDAK disentuh. 254 ISSUE historis TIDAK diberi harga/jurnal; Material.referenceUnitCost tidak dipakai; ADJUSTMENT/opname tidak termasuk.
 # Workflow RELEASE-DIRECTORY di atas release aktif (BASE_SHA); dist frontend DISALIN dari release aktif. Sebelum switch: backup + gzip + RESTORE nyata ke DB sementara.
 # Verifikasi pasca-rilis BACA-SAJA (smoke tanpa penulisan): historis tidak berubah, pagar jenis/dokumen induk.
 #
