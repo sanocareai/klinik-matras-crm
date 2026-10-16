@@ -179,13 +179,14 @@ test("SAPUAN kombinasi: 12 material dengan 0–3 pergerakan acak (deterministik)
 });
 
 test("preview (--stock-count) dan posting Complete menghasilkan selisih yang SAMA untuk skenario campuran YA/TIDAK", async () => {
-  const gudang = await akun(["WAREHOUSE"]); const owner = await akun(["OWNER"]);
+  const gudang = await akun(["WAREHOUSE"]); const owner = await akun(["OWNER"]); const pemeriksa = await akun(["WAREHOUSE"]);
   const m = await createTestMaterial(); await seedBalance(m.id, 30);
   const s = await mulaiSesi(gudang, [m.id]);
   const ya = await gerak(m.id, -4, "sudah terhitung"); const tidak = await gerak(m.id, 6, "belum terhitung");
   await isi(gudang, s, m.id, 24, "fisik 24");               // pembanding = 30 + (−4) = 26 → selisih −2
   await kirim(gudang, s);
   await tandai(gudang, s, ya.id, true); await tandai(gudang, s, tidak.id, false);
+  assert.equal((await pemeriksa.c.post(`/api/inventory/stock-counts/${s.id}/periksa`, {})).status, 200);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "opname-sesi-"));
   const file = path.join(dir, "bukti.xlsx");
   const wb = new ExcelJS.Workbook(); const h = wb.addWorksheet("Hitung"); const K = Object.values(KOLOM_HITUNG); h.addRow(K);
@@ -203,6 +204,9 @@ test("preview (--stock-count) dan posting Complete menghasilkan selisih yang SAM
   assert.equal(p.fisikMilikSano, 24);
   assert.equal(p.delta, -2, JSON.stringify(p.isu));
   assert.ok(!p.isu.some((i) => i.level === "BLOCKER"), JSON.stringify(p.isu));
+  assert.deepEqual(p.penghitung, [gudang.user.name], "penghitung = akun yang login, bukan nama di lembar");
+  assert.deepEqual(p.pemeriksa, [pemeriksa.user.name], "pemeriksa = akun yang menekan Periksa");
+  assert.ok(p.isu.some((i) => i.kode === "NAMA_LEMBAR_BEDA_APLIKASI" && i.level === "PERINGATAN"));
   assert.equal((await owner.c.post(`/api/inventory/stock-counts/${s.id}/complete`, {})).status, 200);
   const adj = await testPrisma.stockMovement.findFirst({ where: { stockCountId: s.id, type: "ADJUSTMENT" } });
   assert.equal(Number(adj.qty), p.delta, "preview = yang diposting");
@@ -219,6 +223,8 @@ test("preview --stock-count tanpa lembar: angka & waktu dari Stock Count, metada
   const p = JSON.parse(fs.readFileSync(path.join(dir, "preview.json"), "utf8")).materials.find((x) => x.materialId === m.id);
   assert.equal(p.fisikMilikSano, 9);
   const kode = p.isu.map((i) => i.kode);
-  for (const k of ["LOKASI_KOSONG", "PENGHITUNG_KOSONG", "PEMERIKSA_KOSONG"]) assert.ok(kode.includes(k), k);
+  for (const k of ["LOKASI_KOSONG", "PEMERIKSA_KOSONG"]) assert.ok(kode.includes(k), k);
+  assert.ok(!kode.includes("PENGHITUNG_KOSONG"), "penghitung diturunkan dari akun yang memasukkan angka");
+  assert.deepEqual(p.penghitung, [gudang.user.name]);
   assert.equal(p.statusAkhir, "PERLU_HITUNG_ULANG");
 });

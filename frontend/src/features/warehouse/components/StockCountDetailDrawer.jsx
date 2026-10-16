@@ -21,6 +21,7 @@ export default function StockCountDetailDrawer({ countId, onClose, onChanged }) 
   const [cancelling, setCancelling] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [menandai, setMenandai] = useState(null);
+  const [memeriksa, setMemeriksa] = useState(false);
 
   const load = () => {
     if (!countId) return;
@@ -98,6 +99,19 @@ export default function StockCountDetailDrawer({ countId, onClose, onChanged }) 
       setError(e.message);
     } finally {
       setMenandai(null);
+    }
+  }
+
+  async function periksa() {
+    setMemeriksa(true);
+    setError("");
+    try {
+      await api.periksaHitungan(countId);
+      load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setMemeriksa(false);
     }
   }
 
@@ -215,6 +229,26 @@ export default function StockCountDetailDrawer({ countId, onClose, onChanged }) 
                       );
                     })}
                   </div>
+
+                  {["IN_PROGRESS", "WAITING_REVIEW", "COMPLETED"].includes(status) && (
+                    <div className="mt-3 rounded-btn border-l-[3px] border-accent bg-accentbg px-3 py-2.5" data-testid="identitas-hitungan">
+                      <p className="text-[12px] font-bold text-ink">Petugas hitungan</p>
+                      <p className="mt-0.5 text-[11.5px] text-ink2" data-testid="penghitung-hitungan">
+                        Dihitung oleh: {count.identitas?.penghitung?.length ? count.identitas.penghitung.map((p) => p.nama).join(", ") : "belum ada angka dimasukkan"}
+                      </p>
+                      <p className="text-[11.5px] text-ink2" data-testid="pemeriksa-hitungan">
+                        Diperiksa oleh: {count.identitas?.pemeriksa?.length ? count.identitas.pemeriksa.map((p) => p.nama).join(", ") : "belum diperiksa"}
+                      </p>
+                      {status === "WAITING_REVIEW" && (
+                        <>
+                          <p className="mt-1 text-[11px] text-ink3">Pemeriksa harus petugas lain dari penghitung. Pemeriksaan batal bila angka diubah atau hitungan diulang.</p>
+                          <Button variant="secondary" size="sm" className="mt-1.5" onClick={periksa} disabled={memeriksa || busy} data-testid="btn-periksa-hitungan">
+                            {memeriksa ? <Loader2 size={14} className="animate-spin" /> : <CheckCircle2 size={14} />} Saya memeriksa hitungan ini
+                          </Button>
+                        </>
+                      )}
+                    </div>
+                  )}
 
                   {count.pergerakanSesi?.length > 0 && (
                     <div className="mt-3 rounded-btn border-l-[3px] border-orange bg-orangebg px-3 py-2.5" data-testid="pergerakan-sesi">

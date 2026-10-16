@@ -709,6 +709,8 @@ export const api = {
   // Tanda eksplisit: tercermin=true (sudah masuk hitungan fisik) / false (belum). Tidak ada nilai bawaan.
   tandaiPergerakanSesi: (countId, movementId, tercermin) =>
     request(`/inventory/stock-counts/${countId}/pergerakan/${movementId}/tanda`, { method: "POST", body: JSON.stringify({ tercermin }) }),
+  // Pemeriksa = akun LAIN yang memeriksa hasil hitung yang sudah diserahkan; identitas dari login, bukan nama ketikan.
+  periksaHitungan: (countId, catatan) => request(`/inventory/stock-counts/${countId}/periksa`, { method: "POST", body: JSON.stringify({ catatan }) }),
   cancelStockCount: (id, reason) => request(`/inventory/stock-counts/${id}/cancel`, { method: "PATCH", body: JSON.stringify({ reason }) }),
 
   // Damaged Stock (Warehouse Tahap 6)
