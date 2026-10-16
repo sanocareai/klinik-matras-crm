@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useUrlTab } from "@/lib/useUrlTab.js";
 import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
 import { specOtomatis } from "@/features/finance/detailSpecs.js";
@@ -143,11 +144,13 @@ export default function FinanceSuppliers() {
   const [modal, setModal] = useState(null);
   const [editSupplier, setEditSupplier] = useState(null); // baris supplier yang sedang diedit (modal Edit Supplier)
   // Pencarian & filter per tab (sisi-klien) — state tiap tab terpisah.
-  const [qB, setQB] = useState("");
+  const [spCari] = useSearchParams(); // ?cari= : tautan dalam (mis. dari detail PO) membuka daftar dengan pencarian terisi
+  const cariAwal = spCari.get("cari") || "";
+  const [qB, setQB] = useState(cariAwal);
   const [fSupB, setFSupB] = useState("");
   const [fStatusB, setFStatusB] = useState("");
   const [fTempo, setFTempo] = useState("");
-  const [qP, setQP] = useState("");
+  const [qP, setQP] = useState(cariAwal);
   const [fSupP, setFSupP] = useState("");
   const [fRek, setFRek] = useState("");
   const [fStatusP, setFStatusP] = useState("");

@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { statusMelebihi, kesiapanBayarUangMuka, bodyBayarUangMuka, kesiapanTerapkan, bodyTerapkanUangMuka, kalimatEventUangMuka, KALIMAT_UANG_MUKA } from "../src/features/finance/uangMukaLogic.js";
+import { statusMelebihi, kesiapanBayarUangMuka, bodyBayarUangMuka, kesiapanTerapkan, bodyTerapkanUangMuka, kalimatEventUangMuka, KALIMAT_UANG_MUKA, URUTAN_STATUS_EMPAT, varianStatusEmpat, tautanKeuangan, KALIMAT_SIMPAN_KE_STOK } from "../src/features/finance/uangMukaLogic.js";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const baca = (p) => fs.readFileSync(path.join(dir, p), "utf8");
@@ -75,4 +75,26 @@ test("pemasangan: api, PO (tombol Bayar Uang Muka, dua kelompok, tooltip, pering
   const sup = baca("../src/pages/finance/FinanceSuppliers.jsx");
   assert.match(sup, /Uang Muka Supplier Belum Diterapkan/); assert.match(sup, /<TabelUangMukaSupplier/); assert.match(sup, /modul="uang-muka-supplier"/); assert.match(sup, /label: "Terapkan Uang Muka"/); assert.match(sup, /<ModalTerapkanUangMuka/);
   assert.match(sup, /Sisa utang faktur yang sudah DISETUJUI/, "kartu Utang Aktif hanya faktur disetujui");
+});
+
+test("empat status PO: urutan tetap (barang, faktur, utang, pembayaran), varian per kode, tautan dalam ke Supplier & Utang/Pembelian, kalimat petunjuk Simpan ke Stok", () => {
+  assert.deepEqual(URUTAN_STATUS_EMPAT.map((u) => u.kunci), ["barang", "faktur", "utang", "pembayaran"]);
+  assert.equal(varianStatusEmpat("utang", "LUNAS"), "green"); assert.equal(varianStatusEmpat("faktur", "MENUNGGU_PERSETUJUAN"), "orange"); assert.equal(varianStatusEmpat("pembayaran", "KODE_BARU"), "neutral");
+  assert.equal(tautanKeuangan("tagihan", "BILL-1 A"), "/finance/suppliers?tab=tagihan&cari=BILL-1%20A");
+  assert.equal(tautanKeuangan("pembayaran", "PAYOUT-1"), "/finance/suppliers?tab=pembayaran&cari=PAYOUT-1");
+  assert.equal(tautanKeuangan("pembelian", "PUR-1"), "/finance/purchases?cari=PUR-1");
+  assert.match(KALIMAT_SIMPAN_KE_STOK, /Simpan ke Stok hanya menambah stok dan tidak menyetujui faktur\. Catat Faktur dan Setujui tetap aksi Finance yang terpisah\./);
+});
+
+test("pemasangan layar empat status: panel di detail PO, anchor ke faktur & riwayat pembayaran, ?cari= di Supplier & Pembelian, petunjuk di drawer Gudang; tanpa hitung ulang uang di frontend", () => {
+  const po = baca("../src/pages/finance/FinancePurchaseOrders.jsx");
+  assert.match(po, /<StatusEmpatPO po=\{po\} \/>/); assert.match(po, /<RiwayatPembayaranPO po=\{po\} \/>/); assert.match(po, /id="seksi-faktur"/);
+  const um = baca("../src/features/finance/UangMukaPO.jsx");
+  for (const t of ["1. Progres barang", "2. Faktur supplier", "3. Utang", "4. Pembayaran"]) assert.ok(um.includes(t) || baca("../src/features/finance/uangMukaLogic.js").includes(t), t);
+  for (const t of ["Total PO", "Faktur disetujui", "Sudah dibayar", "Sisa utang", "Lihat faktur di PO ini", "Lihat riwayat pembayaran", "Riwayat pembayaran ke supplier atas PO ini"]) assert.ok(um.includes(t), t);
+  assert.match(um, /id="seksi-riwayat-pembayaran"/); assert.match(um, /data-testid="petunjuk-simpan-ke-stok"/);
+  assert.doesNotMatch(um.split("export function StatusEmpatPO")[1].split("export function RiwayatPembayaranPO")[0], /\.reduce\(|Number\(k\./, "angka dari server, tidak dijumlah di frontend");
+  assert.match(baca("../src/pages/finance/FinanceSuppliers.jsx"), /spCari\.get\("cari"\)/); assert.match(baca("../src/pages/finance/FinancePurchases.jsx"), /spCari\.get\("cari"\)/);
+  const drawer = baca("../src/features/warehouse/components/GoodsReceiptDetailDrawer.jsx");
+  assert.match(drawer, /petunjuk-simpan-ke-stok-gudang/); assert.match(drawer, /Faktur supplier dicatat dan disetujui Finance secara terpisah/);
 });

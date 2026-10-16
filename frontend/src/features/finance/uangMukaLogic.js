@@ -56,6 +56,32 @@ export function bodyTerapkanUangMuka({ uangMuka, billId, nominal, sisaFaktur, ko
   };
 }
 
+// ── Empat status PO (progres barang, faktur, utang, pembayaran) — kode & label datang dari server; di sini hanya pemetaan tampilan & tautan. ──
+export const URUTAN_STATUS_EMPAT = Object.freeze([
+  { kunci: "barang", judul: "1. Progres barang", sub: "Tiba & masuk stok" },
+  { kunci: "faktur", judul: "2. Faktur supplier", sub: "Dicatat & disetujui Finance" },
+  { kunci: "utang", judul: "3. Utang", sub: "Lahir saat faktur disetujui" },
+  { kunci: "pembayaran", judul: "4. Pembayaran", sub: "Kas keluar ke supplier" },
+]);
+const VARIAN_PER_KODE = {
+  barang: { PO_DRAFT: "neutral", PO_DIBATALKAN: "neutral", BELUM_DATANG: "neutral", DATANG_SEBAGIAN: "accent", LENGKAP: "green" },
+  faktur: { BELUM_ADA: "neutral", MENUNGGU_PERSETUJUAN: "orange", DISETUJUI_SEBAGIAN: "accent", DISETUJUI_LENGKAP: "green" },
+  utang: { BELUM_ADA: "neutral", ADA_UTANG: "orange", LUNAS: "green" },
+  pembayaran: { BELUM_ADA: "neutral", UANG_MUKA_SAJA: "accent", DIBAYAR_SEBAGIAN: "accent", LUNAS: "green", KELEBIHAN: "orange" },
+};
+export function varianStatusEmpat(kunci, kode) { return VARIAN_PER_KODE[kunci]?.[kode] ?? "neutral"; }
+
+/** Tautan dalam ke Supplier & Utang (tab Tagihan/Pembayaran) atau Pembelian, dengan pencarian terisi (?cari=). */
+export function tautanKeuangan(halaman, cari) {
+  const q = encodeURIComponent(String(cari ?? ""));
+  if (halaman === "pembayaran") return `/finance/suppliers?tab=pembayaran&cari=${q}`;
+  if (halaman === "tagihan") return `/finance/suppliers?tab=tagihan&cari=${q}`;
+  return `/finance/purchases?cari=${q}`;
+}
+
+export const LABEL_JENIS_PEMBAYARAN = { UANG_MUKA: "Uang muka", PEMBAYARAN_FAKTUR: "Pembayaran faktur" };
+export const KALIMAT_SIMPAN_KE_STOK = "Simpan ke Stok hanya menambah stok dan tidak menyetujui faktur. Catat Faktur dan Setujui tetap aksi Finance yang terpisah.";
+
 /** Kalimat riwayat PO untuk kejadian uang muka (metadata dari server). */
 export function kalimatEventUangMuka(e) {
   const m = e?.metadata || {};

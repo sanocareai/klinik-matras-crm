@@ -63,13 +63,13 @@ test("setiap halaman Finance: punya tombol export modul yang benar atau tercantu
   for (const f of Object.keys(TIDAK_DIEKSPOR)) assert.doesNotMatch(baca(path.join(halaman, f)), /<TombolExportExcel/, `${f}: tercantum tidak diekspor tetapi punya tombol — perbarui daftar & dokumen`);
 });
 
-test("setiap modul yang dipanggil tombol ada di registri backend; 19 modul semuanya punya tombol; dokumen coverage memuat tiap modul & halaman", () => {
+test("setiap modul yang dipanggil tombol ada di registri backend; 20 modul semuanya punya tombol; dokumen coverage memuat tiap modul & halaman", () => {
   const modulBackend = fs.readdirSync(exportDir).filter((f) => f.endsWith(".js") && !["excel.js", "registry.js", "label.js"].includes(f)).map((f) => f.replace(/\.js$/, ""));
   const dipakai = new Set([...Object.values(DIEKSPOR).flat(), ...Object.values(DIEKSPOR_DI_FITUR).flat()]);
   for (const [f, moduls] of Object.entries(DIEKSPOR_DI_FITUR)) for (const m of moduls) assert.match(baca(path.join(akar, "frontend", f)), new RegExp(`<TombolExportExcel[^>]*modul="${m}"`, "s"), `${f}: tombol export modul "${m}" tidak ada`);
   for (const m of dipakai) assert.ok(modulBackend.includes(m), `modul "${m}" dipanggil halaman tetapi tidak ada di backend/src/services/finance/export`);
   for (const m of modulBackend) assert.ok(dipakai.has(m), `modul backend "${m}" tidak punya tombol di halaman mana pun`);
-  assert.equal(modulBackend.length, 19);
+  assert.equal(modulBackend.length, 20);
   const doc = baca(path.join(akar, "docs/FINANCE-EXPORT-COVERAGE.md"));
   for (const m of modulBackend) assert.ok(doc.includes(`\`${m}\``), `dokumen coverage belum memuat modul ${m}`);
 });

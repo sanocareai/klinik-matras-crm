@@ -14,7 +14,7 @@ import { api } from "@/api.js";
 import JejakBiayaPO from "@/features/finance/JejakBiayaPO.jsx";
 import TerminFaktur from "@/features/finance/TerminFaktur.jsx";
 import { adalahAdminKeuangan } from "@/features/finance/matriksAksi.js";
-import { PanelKelompokPO, PeringatanUangMukaPO, DaftarUangMukaPO, ModalBayarUangMuka, ModalTerapkanUangMuka } from "@/features/finance/UangMukaPO.jsx";
+import { StatusEmpatPO, RiwayatPembayaranPO, PanelKelompokPO, PeringatanUangMukaPO, DaftarUangMukaPO, ModalBayarUangMuka, ModalTerapkanUangMuka } from "@/features/finance/UangMukaPO.jsx";
 import { TERMIN_AWAL, galatTermin, teksTermin } from "@/features/finance/terminLogic.js";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi, Pilihan, InputUang, tanggalPendek,
@@ -701,6 +701,7 @@ function IsiDetail({ po, segar, onUbahFaktur, onSetujuiFaktur, onTolakFaktur, on
       <p className="m-0 text-[12.5px] text-ink2" data-testid="termin-po">Termin pembayaran: <strong className="text-ink">{po.termin ? teksTermin({ label: po.termin.label, sumber: po.termin.sumber }) : "belum ditetapkan"}</strong>{po.termin?.alasan ? ` — diganti: ${po.termin.alasan}` : ""}</p>
       {po.status === "DIBATALKAN" && <p className="rounded-lg bg-redbg px-3 py-2 text-[12.5px] text-red">Dibatalkan {tglJam(po.cancelledAt)} — {po.cancelReason}</p>}
       <PeringatanUangMukaPO po={po} />
+      {po.status !== "DRAFT" && <StatusEmpatPO po={po} />}
       {po.status !== "DRAFT" && <PanelKelompokPO po={po} />}
 
       <section>
@@ -800,7 +801,7 @@ function IsiDetail({ po, segar, onUbahFaktur, onSetujuiFaktur, onTolakFaktur, on
 
       <DaftarUangMukaPO po={po} admin={admin} onBatalkan={onBatalkanPenerapan} />
 
-      <section data-testid="seksi-faktur">
+      <section id="seksi-faktur" data-testid="seksi-faktur">
         <h4 className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ink3">Faktur supplier atas PO ini</h4>
         {(po.faktur || []).length === 0 ? (
           <p className="text-[12.5px] text-ink3">{["DISETUJUI", "DITERIMA_SEBAGIAN", "SELESAI"].includes(po.status) ? "Belum ada faktur. Klik “Catat faktur” setelah faktur supplier diterima." : "Faktur bisa dicatat setelah PO disetujui."}</p>
@@ -813,6 +814,8 @@ function IsiDetail({ po, segar, onUbahFaktur, onSetujuiFaktur, onTolakFaktur, on
         )}
         <p className="mt-1.5 text-[11.5px] text-ink3">Faktur dan pembayarannya tidak menambah stok. Jumlah yang menagih lebih dari barang baik yang belum ditagih akan <strong>tertahan</strong>; beda harga wajib tinjauan Finance (tanpa toleransi otomatis).</p>
       </section>
+
+      <RiwayatPembayaranPO po={po} />
 
       {po.status !== "DRAFT" && (po.penerimaan || []).length > 0 && (
         <section>

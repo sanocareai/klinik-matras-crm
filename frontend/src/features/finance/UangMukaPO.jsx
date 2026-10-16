@@ -12,7 +12,8 @@ import { api } from "@/api.js";
 import { Uang, formatUang, TombolAksi, Pilihan, InputUang, PemilihBukti, tanggalPendek } from "@/features/finance/shared.jsx";
 import CaraBayarTransfer from "@/features/finance/CaraBayarTransfer.jsx";
 import { BIAYA_KOSONG, biayaTransferLengkap } from "@/features/finance/biayaTransfer.js";
-import { KALIMAT_UANG_MUKA, statusMelebihi, kesiapanBayarUangMuka, bodyBayarUangMuka, kesiapanTerapkan, bodyTerapkanUangMuka } from "@/features/finance/uangMukaLogic.js";
+import { Link } from "react-router-dom";
+import { URUTAN_STATUS_EMPAT, varianStatusEmpat, tautanKeuangan, LABEL_JENIS_PEMBAYARAN, KALIMAT_SIMPAN_KE_STOK, KALIMAT_UANG_MUKA, statusMelebihi, kesiapanBayarUangMuka, bodyBayarUangMuka, kesiapanTerapkan, bodyTerapkanUangMuka } from "@/features/finance/uangMukaLogic.js";
 
 // UANG MUKA SUPPLIER sebelum barang datang (Okt 2026). Semua angka datang dari server (po.keuangan, po.total*); layar ini hanya menampilkan, memberi tooltip definisi, dan mengirim aksi.
 
@@ -39,6 +40,99 @@ function Angka({ label, nilai, definisi, tebal = false, tone = null, testid, tek
 }
 
 const defServer = (daftar, kunci) => (daftar || []).find((d) => d.kunci === kunci)?.definisi;
+
+/**
+ * EMPAT STATUS TERPISAH (progres barang · faktur · utang · pembayaran) + total ringkas (nilai PO, faktur disetujui, sudah dibayar, sisa utang) + petunjuk Simpan ke Stok.
+ * Semua kode/label/angka dari server (po.keuangan.statusEmpat, totalFakturDisetujui, sudahDibayar, sisaUtang); layar ini tidak menghitung ulang.
+ */
+export function StatusEmpatPO({ po }) {
+  const k = po.keuangan;
+  if (!k?.statusEmpat) return null;
+  const tautanFaktur = (po.faktur || []).filter((f) => !["DITOLAK", "DIBATALKAN"].includes(f.status));
+  const total = [
+    { kunci: "total-po", label: "Total PO", nilai: k.nilaiPO, definisi: defServer(k.definisi, "nilaiPO") },
+    { kunci: "total-faktur", label: "Faktur disetujui", nilai: k.totalFakturDisetujui, definisi: defServer(k.definisi, "totalFakturDisetujui") },
+    { kunci: "total-dibayar", label: "Sudah dibayar", nilai: k.sudahDibayar, definisi: defServer(k.definisi, "sudahDibayar") },
+    { kunci: "total-sisa-utang", label: "Sisa utang", nilai: k.sisaUtang, definisi: defServer(k.definisi, "sisaUtang"), tebal: true },
+  ];
+  return (
+    <section className="space-y-3" data-testid="status-empat-po" aria-label="Empat status PO">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {URUTAN_STATUS_EMPAT.map((u) => {
+          const st = k.statusEmpat[u.kunci];
+          return (
+            <div key={u.kunci} className="min-w-0 rounded-lg border border-line p-3" data-testid={`status-${u.kunci}`} data-kode={st.kode}>
+              <div className="text-[11px] font-bold uppercase tracking-wide text-ink3">{u.judul}</div>
+              <div className="mt-1.5 flex flex-wrap items-center gap-2">
+                <Badge variant={varianStatusEmpat(u.kunci, st.kode)}>{st.label}</Badge>
+                {u.kunci === "faktur" && st.jumlah?.semua > 0 && <span className="text-[11.5px] text-ink3">{st.jumlah.disetujui} disetujui{st.jumlah.menunggu > 0 ? ` · ${st.jumlah.menunggu} menunggu` : ""}</span>}
+              </div>
+              <p className="m-0 mt-1 text-[11.5px] text-ink3">{u.sub}</p>
+              {st.rincian?.length > 0 && <ul className="m-0 mt-2 list-none space-y-1 p-0">{st.rincian.map((t, i) => <li key={i} className="text-[11.5px] leading-snug text-ink2">{t}</li>)}</ul>}
+              {u.kunci === "faktur" && tautanFaktur.length > 0 && (
+                <div className="mt-2 flex flex-wrap items-center gap-1.5" data-testid="tautan-faktur">
+                  <a href="#seksi-faktur" className="text-[12px] font-semibold text-accent max-sm:inline-flex max-sm:min-h-11 max-sm:items-center">Lihat faktur di PO ini</a>
+                  {tautanFaktur.map((f) => <Link key={f.id} to={tautanKeuangan("tagihan", f.billNumber)} className="rounded-md bg-inset px-1.5 py-0.5 font-mono text-[11.5px] text-ink2 hover:text-ink max-sm:inline-flex max-sm:min-h-11 max-sm:items-center">{f.supplierRef || f.billNumber}</Link>)}
+                </div>
+              )}
+              {u.kunci === "pembayaran" && (k.riwayatPembayaran || []).length > 0 && (
+                <a href="#seksi-riwayat-pembayaran" className="mt-2 inline-block text-[12px] font-semibold text-accent max-sm:inline-flex max-sm:min-h-11 max-sm:items-center" data-testid="tautan-riwayat-pembayaran">Lihat riwayat pembayaran ({k.riwayatPembayaran.length})</a>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-3 rounded-lg bg-inset px-3 py-2.5 lg:grid-cols-4" data-testid="total-ringkas-po">
+        {total.map((t) => <Angka key={t.kunci} testid={t.kunci} label={t.label} nilai={t.nilai} definisi={t.definisi} tebal={t.tebal} />)}
+      </dl>
+      <p className="m-0 flex items-start gap-1.5 rounded-lg border border-line px-3 py-2 text-[12px] text-ink2" data-testid="petunjuk-simpan-ke-stok" role="note">
+        <Info size={13} className="mt-0.5 shrink-0 text-ink3" aria-hidden="true" /><span>{k.petunjukSimpanKeStok || KALIMAT_SIMPAN_KE_STOK}</span>
+      </p>
+    </section>
+  );
+}
+
+const tautanBarisPembayaran = (d) => tautanKeuangan(d.tautan?.halaman, d.tautan?.cari ?? d.nomor);
+
+/** Riwayat pembayaran PO: uang muka + pembayaran atas faktur (kas keluar). Penerapan uang muka ke faktur ada di daftar uang muka, bukan baris kas. */
+export function RiwayatPembayaranPO({ po }) {
+  const daftar = po.keuangan?.riwayatPembayaran || [];
+  if (daftar.length === 0) return null;
+  return (
+    <section id="seksi-riwayat-pembayaran" data-testid="seksi-riwayat-pembayaran">
+      <h4 className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ink3">Riwayat pembayaran ke supplier atas PO ini</h4>
+      <TableWrap className="hidden md:block">
+        <Table>
+          <THead><TR><TH>Dokumen</TH><TH>Jenis</TH><TH>Tanggal</TH><TH>Rekening</TH><TH>Faktur</TH><TH numeric>Jumlah</TH><TH>Referensi</TH></TR></THead>
+          <TBody>
+            {daftar.map((d) => (
+              <TR key={d.jenis + d.nomor + (d.faktur?.id || "")} className={d.dibatalkan ? "opacity-60" : ""}>
+                <TD><Link to={tautanBarisPembayaran(d)} className="font-mono text-[12px] font-semibold text-accent">{d.nomor}</Link>{d.dibatalkan && <Badge variant="neutral" className="ml-1.5">Dibatalkan</Badge>}</TD>
+                <TD>{LABEL_JENIS_PEMBAYARAN[d.jenis] || d.jenis}</TD>
+                <TD>{tanggalPendek(String(d.tanggal).slice(0, 10))}</TD><TD>{d.rekening || "—"}</TD><TD>{d.faktur?.nomor || "—"}</TD>
+                <TD numeric><Uang value={d.jumlah} /></TD><TD>{d.referensi || "—"}</TD>
+              </TR>
+            ))}
+          </TBody>
+        </Table>
+      </TableWrap>
+      <ul className="list-none space-y-2 p-0 md:hidden">
+        {daftar.map((d) => (
+          <li key={d.jenis + d.nomor + (d.faktur?.id || "")} className={cn("rounded-lg border border-line p-2.5 text-[12.5px]", d.dibatalkan && "opacity-60")}>
+            <div className="flex flex-wrap items-center gap-2">
+              <Link to={tautanBarisPembayaran(d)} className="font-mono text-[12px] font-semibold text-accent max-sm:inline-flex max-sm:min-h-11 max-sm:items-center">{d.nomor}</Link>
+              <span className="text-ink3">{tanggalPendek(String(d.tanggal).slice(0, 10))}</span>
+              {d.dibatalkan && <Badge variant="neutral">Dibatalkan</Badge>}
+              <span className="ml-auto tabular-nums text-ink">{formatUang(d.jumlah)}</span>
+            </div>
+            <p className="m-0 mt-1 text-ink2">{LABEL_JENIS_PEMBAYARAN[d.jenis] || d.jenis}{d.faktur ? ` · faktur ${d.faktur.nomor}` : ""} · {d.rekening || "—"}{d.referensi ? ` · ${d.referensi}` : ""}</p>
+          </li>
+        ))}
+      </ul>
+      <p className="mt-1.5 text-[11.5px] text-ink3">“Sudah dibayar” = uang muka + pembayaran atas faktur. Menerapkan uang muka ke faktur mengurangi sisa utang, bukan kas keluar kedua.</p>
+    </section>
+  );
+}
 
 /** Dua kelompok yang jelas: A. Pemenuhan barang (nilai menurut harga PO) dan B. Keuangan. Tidak mencampur "sisa komitmen PO" dengan "utang tercatat". */
 export function PanelKelompokPO({ po }) {
