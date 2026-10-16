@@ -52,7 +52,7 @@ export function StatusEmpatPO({ po }) {
   const total = [
     { kunci: "total-po", label: "Total PO", nilai: k.nilaiPO, definisi: defServer(k.definisi, "nilaiPO") },
     { kunci: "total-faktur", label: "Faktur disetujui", nilai: k.totalFakturDisetujui, definisi: defServer(k.definisi, "totalFakturDisetujui") },
-    { kunci: "total-dibayar", label: "Sudah dibayar", nilai: k.sudahDibayar, definisi: defServer(k.definisi, "sudahDibayar") },
+    { kunci: "total-dibayar", label: "Total kas keluar", nilai: k.sudahDibayar, definisi: defServer(k.definisi, "sudahDibayar") },
     { kunci: "total-sisa-utang", label: "Sisa utang", nilai: k.sisaUtang, definisi: defServer(k.definisi, "sisaUtang"), tebal: true },
   ];
   return (
@@ -85,6 +85,17 @@ export function StatusEmpatPO({ po }) {
       <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-3 rounded-lg bg-inset px-3 py-2.5 lg:grid-cols-4" data-testid="total-ringkas-po">
         {total.map((t) => <Angka key={t.kunci} testid={t.kunci} label={t.label} nilai={t.nilai} definisi={t.definisi} tebal={t.tebal} />)}
       </dl>
+      <div className="rounded-lg border border-line p-3" data-testid="rincian-pembayaran-po">
+        <h4 className="m-0 mb-2 text-[11px] font-bold uppercase tracking-wide text-ink3">Rincian pembayaran &amp; utang (dipisah)</h4>
+        <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-3 lg:grid-cols-4">
+          <Angka testid="r-uang-muka-dibayar" label="Uang muka dibayar" nilai={k.uangMukaDibayar} definisi={defServer(k.definisi, "uangMukaDibayar")} />
+          <Angka testid="r-uang-muka-dialokasikan" label="Uang muka dialokasikan ke faktur" nilai={k.uangMukaDiterapkan} definisi={defServer(k.definisi, "uangMukaDiterapkan")} />
+          <Angka testid="r-pembayaran-faktur" label="Pembayaran faktur (kas)" nilai={k.dibayarAtasFaktur} definisi={defServer(k.definisi, "dibayarAtasFaktur")} />
+          <Angka testid="r-sisa-utang" label="Sisa utang" nilai={k.sisaUtang} definisi={defServer(k.definisi, "sisaUtang")} tebal />
+        </dl>
+        {k.uangMukaBelumDiterapkan > 0 && <p className="m-0 mt-2 text-[12px] text-orange" data-testid="r-uang-muka-menggantung">Uang muka belum dialokasikan: {formatUang(k.uangMukaBelumDiterapkan)}.</p>}
+        <p className="m-0 mt-2 text-[11.5px] text-ink3">Total kas keluar = uang muka dibayar + pembayaran faktur. Mengalokasikan uang muka ke faktur mengurangi sisa utang, bukan kas keluar kedua.</p>
+      </div>
       <p className="m-0 flex items-start gap-1.5 rounded-lg border border-line px-3 py-2 text-[12px] text-ink2" data-testid="petunjuk-simpan-ke-stok" role="note">
         <Info size={13} className="mt-0.5 shrink-0 text-ink3" aria-hidden="true" /><span>{k.petunjukSimpanKeStok || KALIMAT_SIMPAN_KE_STOK}</span>
       </p>
@@ -158,10 +169,10 @@ export function PanelKelompokPO({ po }) {
             <Angka testid="k-nilai-po" label="Nilai PO" nilai={k.nilaiPO} definisi={defServer(k.definisi, "nilaiPO")} />
             <Angka testid="k-uang-muka" label="Uang muka dibayar" nilai={k.uangMukaDibayar} definisi={defServer(k.definisi, "uangMukaDibayar")} tebal />
             <Angka testid="k-ditagih" label="Sudah ditagih" nilai={k.sudahDitagih} definisi={defServer(k.definisi, "sudahDitagih")} />
-            <Angka testid="k-diterapkan" label="Uang muka diterapkan" nilai={k.uangMukaDiterapkan} definisi={defServer(k.definisi, "uangMukaDiterapkan")} />
+            <Angka testid="k-diterapkan" label="Uang muka dialokasikan ke faktur" nilai={k.uangMukaDiterapkan} definisi={defServer(k.definisi, "uangMukaDiterapkan")} />
             <Angka testid="k-belum-diterapkan" label="Uang muka belum diterapkan" nilai={k.uangMukaBelumDiterapkan} definisi={defServer(k.definisi, "uangMukaBelumDiterapkan")} tone={k.uangMukaBelumDiterapkan > 0 ? "orange" : null} />
             <Angka testid="k-utang" label="Utang tercatat" nilai={k.utangTercatat} definisi={defServer(k.definisi, "utangTercatat")} />
-            <Angka testid="k-dibayar" label="Sudah dibayar atas faktur" nilai={k.dibayarAtasFaktur} definisi={defServer(k.definisi, "dibayarAtasFaktur")} />
+            <Angka testid="k-dibayar" label="Pembayaran faktur" nilai={k.dibayarAtasFaktur} definisi={defServer(k.definisi, "dibayarAtasFaktur")} />
             <Angka testid="k-sisa-utang" label="Sisa utang" nilai={k.sisaUtang} definisi={defServer(k.definisi, "sisaUtang")} tebal />
             <Angka testid="k-sisa-komitmen" label="Sisa komitmen PO" nilai={k.sisaKomitmen} definisi={defServer(k.definisi, "sisaKomitmen")} tebal tone="orange" />
           </dl>

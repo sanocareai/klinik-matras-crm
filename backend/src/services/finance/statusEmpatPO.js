@@ -104,11 +104,17 @@ export function hitungStatusEmpat(p) {
   let kodePembayaran;
   if (sudahDibayar <= NOL) kodePembayaran = "BELUM_ADA";
   else if (nilaiPO > NOL && sudahDibayar > nilaiPO + NOL) kodePembayaran = "KELEBIHAN";
-  else if (kodeUtang === "LUNAS" && tepat(p.uangMukaBelumDiterapkan) <= NOL) kodePembayaran = "LUNAS";
+  // "Lunas" HANYA bila faktur sudah disetujui lengkap (menutup nilai PO), tidak ada sisa utang, dan tidak ada uang muka menggantung. Transfer awal (uang muka) ikut total kas keluar
+  // tetapi PO tanpa faktur disetujui TIDAK PERNAH berlabel Lunas, sekalipun uang muka sudah sebesar nilai PO.
+  else if (kodeUtang === "LUNAS" && kodeFaktur === "DISETUJUI_LENGKAP" && tepat(p.uangMukaBelumDiterapkan) <= NOL) kodePembayaran = "LUNAS";
   else if (dibayarAtasFaktur <= NOL) kodePembayaran = "UANG_MUKA_SAJA";
   else kodePembayaran = "DIBAYAR_SEBAGIAN";
   const rincianPembayaran = [];
   if (kodePembayaran === "UANG_MUKA_SAJA") rincianPembayaran.push("Baru uang muka (aset). Tidak menambah stok, tidak membuat utang faktur.");
+  if (kodePembayaran !== "LUNAS" && kodePembayaran !== "KELEBIHAN" && nilaiPO > NOL && sudahDibayar + NOL >= nilaiPO && kodeFaktur !== "DISETUJUI_LENGKAP") {
+    rincianPembayaran.push("Total kas keluar sudah sebesar nilai PO, tetapi belum ada faktur disetujui yang menutupnya — belum Lunas.");
+  }
+  if (kodeUtang === "LUNAS" && kodeFaktur !== "DISETUJUI_LENGKAP") rincianPembayaran.push("Faktur yang sudah disetujui sudah tertutup, tetapi sebagian PO belum difakturkan — belum Lunas.");
   if (kodePembayaran === "KELEBIHAN") rincianPembayaran.push("Total kas keluar melebihi nilai PO — kelebihan menjadi Kredit Supplier, tanpa refund kas otomatis.");
 
   return {

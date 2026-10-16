@@ -66,7 +66,7 @@ test("pemasangan: api, PO (tombol Bayar Uang Muka, dua kelompok, tooltip, pering
   const api = baca("../src/api.js");
   assert.match(api, /bayarUangMukaPO: \(poId, data, idempotencyKey\)/); assert.match(api, /\/uang-muka\/terapkan/); assert.match(api, /penerapan\/\$\{id\}\/batal/); assert.match(api, /getUangMukaSupplierRingkasan/);
   const um = baca("../src/features/finance/UangMukaPO.jsx");
-  for (const t of ["A. Pemenuhan barang", "B. Keuangan", "Nilai PO", "Uang muka dibayar", "Sudah ditagih", "Uang muka diterapkan", "Utang tercatat", "Sudah dibayar atas faktur", "Sisa utang", "Sisa komitmen PO", "Datang fisik", "Belum datang", "Diterima bersih dari PO", "Masuk stok", "Uang muka perlu dikembalikan atau dialihkan", "Bayar Uang Muka", "Terapkan Uang Muka", "Bukti transfer"]) assert.ok(um.includes(t), t);
+  for (const t of ["A. Pemenuhan barang", "B. Keuangan", "Nilai PO", "Uang muka dibayar", "Sudah ditagih", "Uang muka dialokasikan ke faktur", "Utang tercatat", "Pembayaran faktur", "Sisa utang", "Sisa komitmen PO", "Datang fisik", "Belum datang", "Diterima bersih dari PO", "Masuk stok", "Uang muka perlu dikembalikan atau dialihkan", "Bayar Uang Muka", "Terapkan Uang Muka", "Bukti transfer"]) assert.ok(um.includes(t), t);
   assert.match(um, /title=\{definisi\}/); assert.match(um, /aria-label=\{`Arti \$\{label\}`\}/, "definisi bisa dibuka di layar sentuh");
   assert.doesNotMatch(um, /Sisa Utang"[^<]*sisaKomitmen|\bsisaKomitmen\b[^\n]{0,60}"Sisa utang"/, "sisa komitmen tidak diberi label utang");
   assert.doesNotMatch(um, /\b(Upload|Cancel|Save|Loading|Retry|Delete|Submit|Pay)\b/);
@@ -97,4 +97,10 @@ test("pemasangan layar empat status: panel di detail PO, anchor ke faktur & riwa
   assert.match(baca("../src/pages/finance/FinanceSuppliers.jsx"), /spCari\.get\("cari"\)/); assert.match(baca("../src/pages/finance/FinancePurchases.jsx"), /spCari\.get\("cari"\)/);
   const drawer = baca("../src/features/warehouse/components/GoodsReceiptDetailDrawer.jsx");
   assert.match(drawer, /petunjuk-simpan-ke-stok-gudang/); assert.match(drawer, /Faktur supplier dicatat dan disetujui Finance secara terpisah/);
+});
+
+test("rincian pembayaran & utang dipisah: uang muka dibayar, uang muka dialokasikan ke faktur, pembayaran faktur (kas), sisa utang; total kas keluar = uang muka + pembayaran faktur", () => {
+  const um = baca("../src/features/finance/UangMukaPO.jsx");
+  for (const t of ['data-testid="rincian-pembayaran-po"', 'testid="r-uang-muka-dibayar"', 'testid="r-uang-muka-dialokasikan"', 'testid="r-pembayaran-faktur"', 'testid="r-sisa-utang"', "Uang muka dialokasikan ke faktur", "Pembayaran faktur (kas)", "Total kas keluar", "bukan kas keluar kedua"]) assert.ok(um.includes(t), t);
+  assert.doesNotMatch(um, /Sudah dibayar atas faktur|"Uang muka diterapkan"/, "istilah lama diganti agar tidak membingungkan");
 });

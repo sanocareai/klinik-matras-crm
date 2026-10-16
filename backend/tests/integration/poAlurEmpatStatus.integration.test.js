@@ -259,3 +259,29 @@ test("KEDATANGAN BERTAHAP + DUA FAKTUR + DUA UANG MUKA: tiap tahap status benar;
   assert.deepEqual(total(d), [6_000_000, 6_000_000, 6_000_000, 0]);
   await bukuSeimbang();
 });
+
+test("TRANSFER AWAL PENUH (Rp6 jt = nilai PO) tanpa faktur disetujui: total kas keluar Rp6 jt, stok 0, TIDAK berlabel Lunas; barang disimpan + faktur menunggu persetujuan pun belum Lunas; rincian pembayaran terpisah", async () => {
+  const w = await dunia();
+  const po = await poDisetujui(w);
+  assert.equal((await bayarDP(w, po, 6_000_000)).status, 201);
+  let d = await detail(w, po);
+  assert.deepEqual(kode(d), { barang: "BELUM_DATANG", faktur: "BELUM_ADA", utang: "BELUM_ADA", pembayaran: "UANG_MUKA_SAJA" });
+  assert.deepEqual(total(d), [6_000_000, 0, 6_000_000, 0], "kas keluar 6 jt masuk total, sisa utang 0 karena belum ada faktur");
+  assert.equal(d.keuangan.statusEmpat.pembayaran.label, "Baru uang muka");
+  assert.ok(d.keuangan.statusEmpat.pembayaran.rincian.some((t) => /belum Lunas/.test(t)));
+  assert.deepEqual([d.keuangan.uangMukaDibayar, d.keuangan.uangMukaDiterapkan, d.keuangan.dibayarAtasFaktur, d.keuangan.sisaUtang, d.keuangan.uangMukaBelumDiterapkan], [6_000_000, 0, 0, 0, 6_000_000], "empat angka terpisah");
+  assert.equal(await stokTotal(), 0);
+  await terimaDanSimpan(w, po, 100);
+  const billId = await catatFaktur(w, po, 100);
+  d = await detail(w, po);
+  assert.deepEqual(kode(d), { barang: "LENGKAP", faktur: "MENUNGGU_PERSETUJUAN", utang: "BELUM_ADA", pembayaran: "UANG_MUKA_SAJA" });
+  assert.notEqual(d.keuangan.statusEmpat.pembayaran.kode, "LUNAS");
+  // disetujui + uang muka dialokasikan penuh → baru Lunas
+  assert.equal((await w.ap.post(`/api/finance/bills/${billId}/approve`, {})).status, 200);
+  const um = await testPrisma.finPurchase.findFirst({ where: { purchaseOrderId: po.id } });
+  assert.equal((await terapkan(w, um.id, billId, 6_000_000)).status, 201);
+  d = await detail(w, po);
+  assert.deepEqual(kode(d), { barang: "LENGKAP", faktur: "DISETUJUI_LENGKAP", utang: "LUNAS", pembayaran: "LUNAS" });
+  assert.deepEqual([d.keuangan.uangMukaDibayar, d.keuangan.uangMukaDiterapkan, d.keuangan.dibayarAtasFaktur, d.keuangan.sisaUtang, d.keuangan.sudahDibayar], [6_000_000, 6_000_000, 0, 0, 6_000_000]);
+  await bukuSeimbang();
+});

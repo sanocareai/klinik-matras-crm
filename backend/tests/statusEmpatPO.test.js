@@ -77,3 +77,17 @@ test("kalimat petunjuk memuat pesan Owner; tidak ada kode status yang menyiratka
   const src = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "../src/services/finance/statusEmpatPO.js"), "utf8");
   assert.ok(!/stockMovement|prisma|tx\./.test(src.replace(/\/\/.*$/gm, "")), "fungsi murni: tanpa akses DB");
 });
+
+test("PO tanpa faktur disetujui TIDAK PERNAH berlabel Lunas — walau transfer awal sebesar nilai PO; faktur sebagian yang sudah tertutup juga bukan Lunas", () => {
+  const penuh = hitungStatusEmpat({ ...dasar, uangMukaDibayar: 6_000_000, uangMukaBelumDiterapkan: 6_000_000 });
+  assert.equal(penuh.pembayaran.kode, "UANG_MUKA_SAJA"); assert.equal(penuh.sudahDibayar, 6_000_000);
+  assert.ok(penuh.pembayaran.rincian.some((t) => /belum ada faktur disetujui yang menutupnya — belum Lunas/.test(t)));
+  const menunggu = hitungStatusEmpat({ ...dasar, fakturSemua: [{ status: "MENUNGGU_APPROVAL" }], uangMukaDibayar: 6_000_000, uangMukaBelumDiterapkan: 6_000_000 });
+  assert.notEqual(menunggu.pembayaran.kode, "LUNAS");
+  const sebagianTertutup = hitungStatusEmpat({ ...dasar, fakturSemua: [{ status: "LUNAS" }], sudahDitagih: 3_600_000, utangTercatat: 0, sisaUtang: 0, uangMukaDibayar: 3_600_000, dibayarAtasFaktur: 0, uangMukaBelumDiterapkan: 0 });
+  assert.equal(sebagianTertutup.faktur.kode, "DISETUJUI_SEBAGIAN");
+  assert.notEqual(sebagianTertutup.pembayaran.kode, "LUNAS");
+  assert.ok(sebagianTertutup.pembayaran.rincian.some((t) => /sebagian PO belum difakturkan — belum Lunas/.test(t)));
+  const lunas = hitungStatusEmpat({ ...dasar, fakturSemua: [{ status: "LUNAS" }], sudahDitagih: 6_000_000, utangTercatat: 2_000_000, sisaUtang: 0, uangMukaDibayar: 4_000_000, dibayarAtasFaktur: 2_000_000 });
+  assert.equal(lunas.pembayaran.kode, "LUNAS");
+});

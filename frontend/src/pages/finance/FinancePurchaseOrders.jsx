@@ -933,7 +933,7 @@ function KartuFaktur({ fk, ringkas, adaUangMuka, segar, onUbah, onSetujui, onTol
       {ringkas && ["DISETUJUI", "DIBAYAR_SEBAGIAN", "LUNAS"].includes(fk.status) && (
         <dl className="m-0 mt-2 grid grid-cols-2 gap-x-3 gap-y-1 rounded-lg bg-inset px-2.5 py-2 text-[12px] sm:grid-cols-5" data-testid="uang-faktur">
           <div><dt className="text-ink3">Nilai faktur</dt><dd className="ml-0 tabular-nums">{formatUang(ringkas.nilai)}</dd></div>
-          <div><dt className="text-ink3">Uang muka diterapkan</dt><dd className="ml-0 tabular-nums">{formatUang(ringkas.uangMukaDiterapkan)}</dd></div>
+          <div><dt className="text-ink3">Uang muka dialokasikan</dt><dd className="ml-0 tabular-nums">{formatUang(ringkas.uangMukaDiterapkan)}</dd></div>
           <div><dt className="text-ink3">Kredit lain (Debit Note)</dt><dd className="ml-0 tabular-nums">{formatUang(ringkas.pengurangLain)}</dd></div>
           <div><dt className="text-ink3">Dibayar</dt><dd className="ml-0 tabular-nums">{formatUang(ringkas.dibayar)}</dd></div>
           <div><dt className="text-ink3">Sisa utang</dt><dd className="ml-0 font-semibold tabular-nums text-ink">{formatUang(ringkas.sisa)}</dd></div>

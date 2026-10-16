@@ -39,10 +39,10 @@ export const DEFINISI_KEUANGAN_PO = Object.freeze([
   { kunci: "nilaiPO", label: "Nilai PO", definisi: "Total komitmen pembelian pada PO (jumlah dipesan × harga satuan). Bukan utang." },
   { kunci: "uangMukaDibayar", label: "Uang muka dibayar", definisi: "Total uang muka yang sudah dibayar ke supplier untuk PO ini (tidak termasuk biaya admin bank). Aset: Uang Muka Supplier. Bukan stok, bukan biaya, bukan utang." },
   { kunci: "sudahDitagih", label: "Sudah ditagih", definisi: "Total nilai faktur supplier atas PO ini yang sudah DISETUJUI. Faktur belum disetujui tidak dihitung." },
-  { kunci: "uangMukaDiterapkan", label: "Uang muka diterapkan", definisi: "Bagian uang muka yang sudah dipakai mengurangi utang faktur atas PO ini (Dr Utang Usaha / Cr Uang Muka)." },
+  { kunci: "uangMukaDiterapkan", label: "Uang muka dialokasikan ke faktur", definisi: "Bagian uang muka yang sudah dipakai mengurangi utang faktur atas PO ini (Dr Utang Usaha / Cr Uang Muka)." },
   { kunci: "uangMukaBelumDiterapkan", label: "Uang muka belum diterapkan", definisi: "Uang muka yang sudah dibayar tetapi belum dipakai mengurangi faktur mana pun. Tetap aset; kelebihan di atas faktur menjadi Kredit Supplier (tidak ada refund kas otomatis)." },
   { kunci: "utangTercatat", label: "Utang tercatat", definisi: "Nilai faktur disetujui dikurangi uang muka yang diterapkan dan kredit lain (Debit Note). Utang baru ada setelah faktur disetujui." },
-  { kunci: "dibayarAtasFaktur", label: "Sudah dibayar atas faktur", definisi: "Pembayaran kas ke supplier yang dialokasikan ke faktur PO ini (bukan uang muka)." },
+  { kunci: "dibayarAtasFaktur", label: "Pembayaran faktur", definisi: "Pembayaran kas ke supplier yang dialokasikan ke faktur PO ini (bukan uang muka)." },
   { kunci: "sisaUtang", label: "Sisa utang", definisi: "Utang tercatat dikurangi pembayaran atas faktur. Sama dengan angka di Supplier & Utang dan aging." },
   { kunci: "sisaKomitmen", label: "Sisa komitmen PO", definisi: "Nilai PO dikurangi uang muka dibayar dan pembayaran atas faktur: yang masih akan dibayar untuk PO ini. BUKAN utang — belum ada faktur." },
 ]);
