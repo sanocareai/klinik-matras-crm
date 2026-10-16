@@ -19,6 +19,7 @@ import { customerRouter }   from "./routes/customers.js";
 import { b2bRouter }        from "./routes/b2b.js";
 import { analyticsRouter }  from "./routes/analytics.js";
 import { attributionCohortRouter } from "./routes/attributionCohort.js";
+import { attributionAdsRouter } from "./routes/attributionAds.js";
 import { salesFinanceRouter } from "./routes/salesFinance.js";
 import { laporanDivisiRouter } from "./routes/laporanDivisi.js";
 import { klaimLunasRouter, klaimLunasFilePathRouter } from "./routes/klaimLunas.js";
@@ -221,6 +222,7 @@ app.use("/api/conversations", conversationRouter);
 app.use("/api/customers",    customerRouter);
 app.use("/api/b2b",          b2bRouter);
 app.use("/api/analytics",    analyticsRouter);
+app.use("/api/atribusi/iklan", attributionAdsRouter); // Fase 2 atribusi: lead & closing per campaign/ad set/ad, referensi Ad ID, ekspor ID; hanya ADMIN
 app.use("/api/atribusi/kohort", attributionCohortRouter); // Fase 1 atribusi: kohort lead→order→pembayaran, baca-saja, hanya ADMIN
 app.use("/api/sales-finance", salesFinanceRouter);
 app.use("/api/klaim-lunas",  klaimLunasRouter);

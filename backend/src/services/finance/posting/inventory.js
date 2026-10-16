@@ -154,8 +154,8 @@ const AKUN_PER_TIPE = {
  *
  * @param movementWhere  filter Prisma untuk stock_movements dokumen itu
  */
-async function bukukanPergerakan(tx, {
-  movementWhere, source, sourceId, idempotencyKey, description, date, userId = null, gapLabel,
+export async function bukukanPergerakan(tx, {
+  movementWhere, source, sourceId, idempotencyKey, description, date, userId = null, gapLabel, akunKeyUntuk = null,
 }) {
   const sudahAda = await findEntryByKey(tx, idempotencyKey);
   if (sudahAda) return { posted: true, entry: sudahAda, created: false };
@@ -208,7 +208,8 @@ async function bukukanPergerakan(tx, {
       nilai = toMoney(qty.times(harga).abs());
     }
     if (nilai.isZero()) continue;
-    const baris = { movement: m, nilai, akunKey: AKUN_PER_TIPE[m.type] || SYSTEM_KEYS.SELISIH_STOK };
+    // akunKeyUntuk (opsional, dipakai posting dokumen stok resmi): pemetaan akun per pergerakan yang lebih spesifik dari tipe (mis. penyesuaian DAMAGE/EXPIRY = susut). Tanpa itu perilaku lama.
+    const baris = { movement: m, nilai, akunKey: (akunKeyUntuk && akunKeyUntuk(m)) || AKUN_PER_TIPE[m.type] || SYSTEM_KEYS.SELISIH_STOK };
     if (qty.greaterThan(0)) persediaanNaik.push(baris);
     else persediaanTurun.push(baris);
   }
