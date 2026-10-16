@@ -427,6 +427,19 @@ export function ProductBadge({ job, className }) {
   );
 }
 
+// "Menunggu konfirmasi siap kirim" (16 Okt 2026): job DELIVERY draf yang masih punya unit dikerjakan Produksi. Dihitung SERVER (job.menungguKonfirmasi = daftar unit yang menunggu,
+// per unit); tampil hanya bila ada. Bukan kesiapan: job ini tidak bisa diterbitkan/dijalankan sampai setiap unitnya siap.
+export function MenungguKonfirmasiBadge({ job, className }) {
+  const unit = Array.isArray(job?.menungguKonfirmasi) ? job.menungguKonfirmasi : [];
+  if (unit.length === 0) return null;
+  const kode = unit.map((u) => String(u.unitCode ?? "").replace(/^.*-(U\d+)$/, "$1")).join(", ");
+  return (
+    <Badge variant="orange" className={cn("max-w-full whitespace-normal", className)} data-testid="badge-menunggu-konfirmasi" title={`Unit belum siap kirim: ${unit.map((u) => u.unitCode).join(", ")}`}>
+      <Hourglass size={11} aria-hidden="true" className="shrink-0" /> Menunggu konfirmasi siap kirim · {kode}
+    </Badge>
+  );
+}
+
 // Baris gabungan dua badge di atas, dipakai kalau keduanya wajar tampil
 // berdampingan (kartu Route Planner) — return null total kalau dua-duanya
 // kosong, supaya tidak menyisakan baris kosong ber-gap di layout flex.

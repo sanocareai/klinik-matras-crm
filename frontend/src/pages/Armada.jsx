@@ -315,19 +315,22 @@ function JobCard({ job, drivers, vehicles, helpers, onChanged }) {
 // jadi SATU SKEMA PENUGASAN sejak D-077.
 
 // ── Panel pilih unit untuk job baru ──────────────────────────────────────
-function CreateJobPanel({ type, available, date, onCreated, onClose }) {
+function CreateJobPanel({ type, available, menunggu = [], date, onCreated, onClose }) {
   const [selected, setSelected] = useState(new Set());
   const [busy, setBusy] = useState(false);
+  const [draf, setDraf] = useState(false); // true = tempatkan unit yang MASIH dikerjakan Produksi sebagai job draf "Menunggu konfirmasi siap kirim"
+  const [galat, setGalat] = useState("");
+  const daftar = draf ? menunggu : available;
 
   // Dikelompokkan per ORDER — job tidak boleh mencampur unit lintas-order
   // (PRD §5.2), jadi pemilihan dikunci per-order: pilih order dulu, baru
   // sub-unit di dalamnya.
-  const byOrder = available.reduce((acc, u) => {
+  const byOrder = daftar.reduce((acc, u) => {
     const key = u.order?.orderNumber || u.order?.id || "—";
     (acc[key] = acc[key] || []).push(u);
     return acc;
   }, {});
-  const selectedOrder = selected.size > 0 ? available.find((u) => selected.has(u.id))?.order?.orderNumber : null;
+  const selectedOrder = selected.size > 0 ? daftar.find((u) => selected.has(u.id))?.order?.orderNumber : null;
 
   function toggle(unit) {
     const orderNo = unit.order?.orderNumber;
@@ -347,10 +350,12 @@ function CreateJobPanel({ type, available, date, onCreated, onClose }) {
   }
 
   async function save() {
-    setBusy(true);
+    setBusy(true); setGalat("");
     try {
-      await api.createArmadaJob({ type, unitIds: [...selected], scheduledDate: date });
+      await api.createArmadaJob({ type, unitIds: [...selected], scheduledDate: date, ...(draf ? { menungguKonfirmasi: true } : {}) });
       onCreated();
+    } catch (e) {
+      setGalat(e?.message || "Gagal membuat job");
     } finally {
       setBusy(false);
     }
@@ -365,15 +370,28 @@ function CreateJobPanel({ type, available, date, onCreated, onClose }) {
         <button onClick={onClose} className="text-ink2 hover:text-ink"><X className="h-4 w-4" /></button>
       </div>
 
+      {type === "DELIVERY" && menunggu.length > 0 && (
+        <div className="mb-3 flex gap-1 rounded-lg bg-inset p-1 text-[12px] font-semibold" role="tablist" data-testid="tab-kandidat">
+          <button type="button" role="tab" aria-selected={!draf} onClick={() => { setDraf(false); setSelected(new Set()); }} className={`flex-1 rounded-md px-2 py-1.5 ${!draf ? "bg-base text-ink shadow-card" : "text-ink2"}`}>Siap dikirim ({available.length})</button>
+          <button type="button" role="tab" aria-selected={draf} onClick={() => { setDraf(true); setSelected(new Set()); }} data-testid="tab-menunggu" className={`flex-1 rounded-md px-2 py-1.5 ${draf ? "bg-base text-ink shadow-card" : "text-ink2"}`}>Menunggu konfirmasi ({menunggu.length})</button>
+        </div>
+      )}
+      {draf && (
+        <p className="mb-2 rounded-lg bg-orangebg px-3 py-2 text-[11.5px] text-orange" data-testid="catatan-draf">
+          Unit ini masih dikerjakan Produksi. Ditempatkan sebagai <b>draf — Menunggu konfirmasi siap kirim</b>: status unit tidak berubah, tanpa driver, dan tidak bisa diterbitkan
+          sampai produksi diselesaikan atau barang jadi dikonfirmasi.
+        </p>
+      )}
+
       {selectedOrder && (
         <p className="mb-2 text-[11px] text-ink3">
           Order terpilih: <b>{selectedOrder}</b> — satu job hanya boleh dari satu order.
         </p>
       )}
 
-      {available.length === 0 ? (
+      {daftar.length === 0 ? (
         <p className="py-4 text-center text-sm text-ink2">
-          Tidak ada unit yang {type === "PICKUP" ? "menunggu pengambilan" : "siap dikirim"}.
+          Tidak ada unit yang {draf ? "menunggu konfirmasi siap kirim" : type === "PICKUP" ? "menunggu pengambilan" : "siap dikirim"}.
         </p>
       ) : (
         <div className="max-h-80 space-y-3 overflow-y-auto">
@@ -398,8 +416,9 @@ function CreateJobPanel({ type, available, date, onCreated, onClose }) {
         </div>
       )}
 
-      <Button className="mt-3 h-11 w-full" disabled={busy || selected.size === 0} onClick={save}>
-        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : `Buat Job ${selected.size} unit`}
+      {galat && <p role="alert" data-testid="galat-buat-job" className="mt-2 rounded-lg bg-redbg px-3 py-2 text-[12px] text-red">{galat}</p>}
+      <Button className="mt-3 h-11 w-full" disabled={busy || selected.size === 0} onClick={save} data-testid="buat-job">
+        {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : draf ? `Tempatkan ${selected.size} unit sebagai draf` : `Buat Job ${selected.size} unit`}
       </Button>
     </Card>
   );
@@ -501,7 +520,7 @@ export default function Armada() {
 
   const load = useCallback(async () => {
     try {
-      const [b, d, v, h] = await Promise.all([api.getArmadaBoard(type, date), api.getDrivers(), api.getVehicles(), api.getHelpers()]);
+      const [b, d, v, h] = await Promise.all([api.getArmadaBoard(type, date, { termasukMenunggu: type === "DELIVERY" }), api.getDrivers(), api.getVehicles(), api.getHelpers()]);
       setBoard(b);
       setDrivers(d);
       setVehicles((v.vehicles || []).filter((x) => x.active));
@@ -615,7 +634,7 @@ export default function Armada() {
         <>
           {creating && (
             <CreateJobPanel
-              type={type} available={board.available} date={date}
+              type={type} available={board.available} menunggu={board.availableMenunggu ?? []} date={date}
               onClose={() => setCreating(false)}
               onCreated={() => { setCreating(false); load(); }}
             />
