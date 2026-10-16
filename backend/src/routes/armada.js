@@ -61,6 +61,7 @@ import { teksManifest, teksSelManifest } from "../lib/domain/deliveryManifest.js
 import { konfirmasiMuat, progresMuat, periksaGerbangSelesai, modeGerbangUnit, klienMampuKonfirmasi, UnitLoadError } from "../services/deliveryUnitLoad.js";
 import { bacaSiapFisik, nilaiSiap, periksaUnitSiapKirim } from "../services/deliverySiapFisik.js";
 import { catatKesiapanFisik, KesiapanFisikError } from "../services/deliveryKesiapanFisik.js";
+import { tandaiJobMenunggu, pastikanJobSiapDispatch, validasiPenempatanDraf, STATUS_BISA_DITEMPATKAN_DRAF, STATUS_ORDER_SAH_DRAF } from "../services/deliveryMenungguKonfirmasi.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import {
   SETTLED_JOB_STATUSES,
@@ -234,7 +235,7 @@ class ArmadaError extends Error {
 function handleErr(err, res) {
   if (err instanceof ArmadaError) return res.status(err.statusCode).json({ error: err.message, ...(typeof err.code === "string" && { code: err.code }) });
   // `code` ikut dikirim bila galat membawanya (mis. NominalPembayaranError) supaya klien bisa meminta konfirmasi, bukan sekadar menampilkan pesan.
-  if (Number.isInteger(err?.statusCode)) return res.status(err.statusCode).json({ error: err.message, ...(err.code && typeof err.code === "string" && { code: err.code }) });
+  if (Number.isInteger(err?.statusCode)) return res.status(err.statusCode).json({ error: err.message, ...(err.extra && typeof err.extra === "object" ? err.extra : {}), ...(err.code && typeof err.code === "string" && { code: err.code }) });
   if (adalahGalatInfraDb(err)) return kirimGalatInfraDb(res, err, "[armada]");
   if (err?.code === "P2010" && err?.meta?.code === "55P03") {
     return res.status(409).json({ error: "Aksi sedang diproses di perangkat lain. Muat ulang status lalu coba lagi." });
@@ -2218,6 +2219,7 @@ armadaRouter.get("/routes", requirePermission(P.JOB_READ), async (req, res) => {
       ...(take && { take: Number(take) }),
       ...(skip && { skip: Number(skip) }),
     });
+    await tandaiJobMenunggu(prisma, routes.flatMap((r) => r.jobs ?? []));
     res.json({ routes });
   } catch (err) {
     handleErr(err, res);
@@ -2293,6 +2295,7 @@ armadaRouter.get("/routes/:id", requirePermission(P.JOB_READ), wajibUuid(), asyn
   try {
     const route = await prisma.route.findUnique({ where: { id: req.params.id }, include: routeInclude });
     if (!route) return res.status(404).json({ error: "Rute tidak ditemukan" });
+    await tandaiJobMenunggu(prisma, route.jobs ?? []);
     res.json(route);
   } catch (err) {
     handleErr(err, res);
@@ -2534,6 +2537,11 @@ armadaRouter.patch("/routes/:id/jobs", requirePermission(P.ROUTE_WRITE), async (
     }
 
     const jobIds = Array.isArray(req.body.jobIds) ? req.body.jobIds : [];
+    // Menambah job yang MASIH menunggu konfirmasi siap kirim ke rute yang sudah diterbitkan/selesai = dispatch: ditolak (di rute DRAFT tetap boleh sebagai rencana).
+    if (editingPublished || editingCompleted) {
+      const anggotaIds = new Set(anggotaLama.map((j) => j.id));
+      await pastikanJobSiapDispatch(prisma, jobIds.filter((id) => !anggotaIds.has(id)), { aksi: "ditambahkan ke rute yang sudah diterbitkan" });
+    }
     // Job yang ditarik dari route lain ikut dihitung: route asal di luar cohort -> 409 (bukan drift diam-diam).
     const useV2RouteWriter = await deliveryWriterMode(V2_FLAGS.DELIVERY_ROUTE_WRITER, { routeId: route.id, jobIds: Array.isArray(req.body.jobIds) ? req.body.jobIds : [] });
     if (useV2RouteWriter && jobIds.length > 0) {
@@ -2776,6 +2784,8 @@ armadaRouter.post("/routes/:id/publish", requirePermission(P.ROUTE_WRITE), async
     if (route.status !== "DRAFT") throw new ArmadaError("Rute ini sudah diterbitkan");
     if (route.jobs.length === 0) throw new ArmadaError("Rute belum punya job — tambahkan job dulu sebelum menerbitkan");
     if (!route.driverId) throw new ArmadaError("Rute belum punya driver");
+    // Job draf yang masih MENUNGGU KONFIRMASI SIAP KIRIM (unit belum siap) tidak boleh diterbitkan — dinilai per unit, 409 menyebut unitnya.
+    await pastikanJobSiapDispatch(prisma, route.jobs.map((j) => j.id), { aksi: "diterbitkan" });
 
     // Estimasi jarak/durasi — best-effort, SAMA pola dengan GET /route/summary:
     // gagal geocode TIDAK BOLEH menggagalkan publish, cuma legsError terisi.
@@ -3804,7 +3814,23 @@ armadaRouter.get("/board", requirePermission(P.JOB_READ), async (req, res) => {
       orderBy: { createdAt: "asc" },
     });
 
-    res.json({ date: date || null, type, jobs, available });
+    await tandaiJobMenunggu(prisma, jobs);
+    // Kandidat DRAF (opt-in ?termasukMenunggu=1): unit yang masih dikerjakan Produksi dan sah ditempatkan sebagai job draf "Menunggu konfirmasi siap kirim".
+    // Tidak mengubah `available` (klien lama tidak pernah menjadwalkannya); status unit tidak berubah.
+    let availableMenunggu = [];
+    if (type === "DELIVERY" && req.query.termasukMenunggu === "1") {
+      availableMenunggu = await prisma.unit.findMany({
+        where: {
+          status: { in: [...STATUS_BISA_DITEMPATKAN_DRAF] },
+          id: { notIn: alreadyBookedUnitIds },
+          order: { status: { in: [...STATUS_ORDER_SAH_DRAF] } },
+        },
+        include: { order: { select: { id: true, orderNumber: true, customer: { select: { id: true, name: true, phone: true } } } } },
+        orderBy: { createdAt: "asc" },
+        take: 300,
+      });
+    }
+    res.json({ date: date || null, type, jobs, available, availableMenunggu });
   } catch (err) {
     handleErr(err, res);
   }
@@ -4250,9 +4276,17 @@ armadaRouter.post("/jobs", requirePermission(P.JOB_WRITE), async (req, res) => {
     if (orderIds.size > 1) throw new ArmadaError("Semua unit dalam satu job harus dari order yang sama");
 
     const expectedStatus = type === "PICKUP" ? ["AWAITING_PICKUP"] : ["READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD"];
+    // Penempatan DRAF "Menunggu konfirmasi siap kirim": hanya DELIVERY, hanya unit yang masih dikerjakan Produksi, TANPA driver/helper/kendaraan (tidak otomatis boleh dispatch).
+    // Status unit TIDAK berubah. Unit batal/terkirim/sudah di job aktif ditolak (tidak ada job ganda). Tidak mencampur unit siap dan unit menunggu dalam satu permintaan.
+    const draf = req.body.menungguKonfirmasi === true;
+    if (draf) {
+      if (type !== "DELIVERY") throw new ArmadaError("Penempatan draf menunggu konfirmasi hanya untuk pengiriman (DELIVERY)");
+      if (driverId || helperId || vehicleId) throw new ArmadaError("Job draf menunggu konfirmasi siap kirim tidak boleh diberi driver/helper/kendaraan");
+      await validasiPenempatanDraf(prisma, units);
+    }
     // Pengiriman unit PKR yang belum ditandai siap Produksi: boleh bila kesiapan FISIK dikonfirmasi (mode transisi).
     const siapFisikUnit = type === "DELIVERY" ? await bacaSiapFisik(prisma, units.map((u) => u.id)) : new Set();
-    const wrongStatus = units.find((u) => !expectedStatus.includes(u.status) && !(type === "DELIVERY" && nilaiSiap(u, siapFisikUnit).siap));
+    const wrongStatus = draf ? null : units.find((u) => !expectedStatus.includes(u.status) && !(type === "DELIVERY" && nilaiSiap(u, siapFisikUnit).siap));
     if (wrongStatus) {
       throw new ArmadaError(
         `Unit ${wrongStatus.unitCode} berstatus ${wrongStatus.status}, tidak bisa dijadwalkan untuk ${type === "PICKUP" ? "pengambilan" : "pengiriman"}`
@@ -4261,7 +4295,8 @@ armadaRouter.post("/jobs", requirePermission(P.JOB_WRITE), async (req, res) => {
     // Validasi server-side, BUKAN cuma filter tampilan GET /board — kalau
     // cuma disaring di daftar "available", unitId tetap bisa dikirim
     // langsung lewat API dan lolos (lihat catatan ELIGIBLE_ORDER_STATUS).
-    const wrongOrderStatus = units.find((u) => !ELIGIBLE_ORDER_STATUS[type].includes(u.order.status));
+    // Draf: status order sudah divalidasi oleh validasiPenempatanDraf (PROCESSING/READY); job biasa tetap mensyaratkan ELIGIBLE_ORDER_STATUS.
+    const wrongOrderStatus = draf ? null : units.find((u) => !ELIGIBLE_ORDER_STATUS[type].includes(u.order.status));
     if (wrongOrderStatus) {
       throw new ArmadaError(
         `Unit ${wrongOrderStatus.unitCode} order-nya berstatus ${wrongOrderStatus.order.status}, tidak bisa dijadwalkan untuk ${type === "PICKUP" ? "pengambilan" : "pengiriman"}`
@@ -4384,6 +4419,7 @@ armadaRouter.patch("/jobs/:id", requirePermission(P.JOB_WRITE), async (req, res)
 
     const nextDriverId = driverId !== undefined ? driverId : existing.driverId;
     const nextDate = scheduledDate !== undefined ? data.scheduledDate : existing.scheduledDate;
+    if (nextDriverId && nextDriverId !== existing.driverId) await pastikanJobSiapDispatch(prisma, [existing.id], { aksi: "diberi driver" });
     data.status = deriveStatus(!!nextDriverId, !!nextDate);
 
     // Reschedule PROAKTIF wajib alasan (9 September 2026, D-110) — sebelum
@@ -4962,6 +4998,12 @@ armadaRouter.post("/jobs/:id/start", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN
       const replay = await findExecutionReplay(tx, idempotencyKey, req.user.id, "JOB_STARTED", { jobId: job.id });
       if (replay) return { replayed: true, job };
       validateJobTransition("START", job.status);
+      // Job pengiriman yang BELUM DIDISPATCH (lepas atau di rute DRAFT) tidak boleh dijalankan selama ada unit yang menunggu konfirmasi siap kirim. Rute PUBLISHED tidak dinilai ulang di sini
+      // (penerbitan sudah digerbang; unit yang mundur karena rework pada rute berjalan ditangani alur muat/POD).
+      if (job.type === "DELIVERY") {
+        const rt = job.routeId ? await tx.route.findUnique({ where: { id: job.routeId }, select: { status: true } }) : null;
+        if (!rt || rt.status === "DRAFT") await pastikanJobSiapDispatch(tx, [job.id], { aksi: "dijalankan" });
+      }
       await tx.job.update({
         where: { id: job.id },
         data: { status: "EN_ROUTE", ...(startPhotoUrls.length > 0 && { startPhotoUrls }) },

@@ -6,18 +6,19 @@ Status: **persiapan selesai; hitung fisik BELUM dilakukan.** Tidak ada angka fis
 ## 1. Orang (diisi Gudang; tidak boleh diwakilkan Tech)
 | Peran | Tugas | Syarat |
 |---|---|---|
-| Petugas A — penghitung | membuat Stock Count, menghitung buta, menginput angka di aplikasi | nama asli petugas |
-| Petugas B — pemeriksa | menghitung ulang/menyaksikan, mengisi nama di lembar | **orang lain dari A** |
+| Petugas A — penghitung | membuat Stock Count, menghitung buta, menginput angka di aplikasi | akun login A (nama dibaca dari akun, bukan ketikan) |
+| Petugas B — pemeriksa | menghitung ulang/menyaksikan, lalu menekan **Saya memeriksa hitungan ini** di aplikasi setelah Submit | akun login B, **orang lain dari A** (akun penugas juga tidak sah) |
 | Penanda pergerakan | satu orang (A atau B) menandai pergerakan selama sesi | tanda dibuat sadar, per pergerakan |
 | Penyetuju (Owner/Finance) | hanya dibutuhkan bila nanti ada Complete — **bukan bagian pilot** | orang lain dari A, B, penanda |
 
 ## 2. Langkah di aplikasi (dikerjakan Gudang)
-1. **Gudang → Stock Opname → Schedule Count**: jenis *Cycle Count*, metode *By Item*, *Blind count* tetap menyala, *Assigned To* = Petugas A. Tambahkan 12 bahan (cari lewat kode — daftar di `Lembar-Hitung-PILOT.xlsx` › Hitung; Material ID tertera).
+1. **Gudang → Stock Opname → Schedule Count**: jenis **Opname Penuh** (wajib — hanya jenis ini yang mensyaratkan pemeriksa sebelum Complete), metode *By Item*, *Blind count* tetap menyala, *Assigned To* = Petugas A. Tambahkan 12 bahan (cari lewat kode — daftar di `Lembar-Hitung-PILOT.xlsx` › Hitung; Material ID tertera).
 2. **Start Count** — sistem merekam snapshot saldo dan waktu mulai. Mulai dari sini setiap pergerakan ledger pada 12 bahan akan tampil di detail count.
 3. Hitung fisik per bahan (lokasi per lokasi). Input angka di kolom *Counted* di aplikasi **atau** minta A menyalin ke lembar; angka di aplikasi dibaca preview. **Angka 0 hanya bila memang dicari dan kosong** (status NOL_FISIK + foto di lembar).
-4. Isi **Lembar-Hitung-PILOT.xlsx** (sheet *Hitung*): Lokasi, Penghitung, Pemeriksa, Bukti (nomor foto/form), dan kolom terpisah (GR sudah datang belum diposting, dalam perjalanan, sisa di lantai produksi, milik customer). Sheet *Sesi*: tanggal, jam, nomor dokumen terakhir.
+4. Isi **Lembar-Hitung-PILOT.xlsx** (sheet *Hitung*): Lokasi, Bukti (nomor foto/form), waktu mulai/selesai per bahan bila dicatat (Penghitung/Pemeriksa di lembar TIDAK dipakai — nama diambil dari akun yang login di aplikasi; nama lembar yang berbeda hanya jadi peringatan), dan kolom terpisah (GR sudah datang belum diposting, dalam perjalanan, sisa di lantai produksi, milik customer). Sheet *Sesi*: tanggal, jam, nomor dokumen terakhir.
 5. Bila ada pergerakan ledger selama sesi (GR diposting, Issue, retur, dll.), buka detail count dan **tandai satu per satu**: *Sudah masuk hitungan fisik* atau *Belum masuk hitungan*. Sistem tidak menebak; Complete ditolak selama ada yang belum ditandai. Mengubah angka hitung atau *Recount* **mereset** tanda material itu — tandai ulang.
-6. **Submit Count** (→ Waiting Review). **Berhenti di sini.**
+6. **Submit Count** (→ Waiting Review).
+7. **Petugas B** membuka detail count dan menekan **Saya memeriksa hitungan ini** (blok *Petugas hitungan* menampilkan Dihitung oleh / Diperiksa oleh). Pemeriksaan **batal otomatis** bila angka diubah atau Recount — tekan lagi setelah Submit ulang. **Berhenti di sini** (Complete tidak dilakukan di pilot).
 
 ## 3. Preview (Tech, baca-saja)
 ```bash

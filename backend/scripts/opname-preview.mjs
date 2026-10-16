@@ -11,6 +11,7 @@ import path from "node:path";
 import ExcelJS from "exceljs";
 import { prisma } from "../src/db.js";
 import { muatPergerakanSesi } from "../src/services/pergerakanSesiHitung.js";
+import { muatIdentitasHitung } from "../src/services/identitasHitung.js";
 import {
   KOLOM_HITUNG, normalisasiBaris, normalisasiLog, normalisasiHarga, hitungPreview, muatLedger, KOLOM_LOG, gabungStockCount, muatMaterials, muatDokumenTertunda, muatSaldoBuku1400, parseWaktuWIB, LEVEL,
 } from "../src/services/opnameCutover.js";
@@ -63,10 +64,11 @@ if (STOCK_COUNT) {
     const ev = await tx.activityEvent.findMany({ where: { entityType: "stock_count", entityId: count.id, eventType: "DOCUMENT_EDITED" }, select: { metadata: true, createdAt: true }, orderBy: { createdAt: "asc" } });
     const per = new Map();
     for (const e of ev) if (e.metadata?.aksi === "HASIL_HITUNG_DIISI" && e.metadata.lineId && "countedQtyBaru" in e.metadata) per.set(e.metadata.lineId, e.createdAt);
-    return { count, per };
+    const identitas = await muatIdentitasHitung(tx, count);
+    return { count, per, identitas };
   });
   countDipakai = info.count; selesaiPerLine = info.per;
-  baris = gabungStockCount(baris, { count: countDipakai, selesaiPerLine });
+  baris = gabungStockCount(baris, { count: countDipakai, selesaiPerLine, identitas: info.identitas });
 }
 const tertinggi = baris.map((b) => b.selesai).filter((d) => d instanceof Date && !Number.isNaN(d.getTime())).sort((a, b) => b - a)[0] || new Date();
 const cutoff = arg("--cutoff") ? parseWaktuWIB(arg("--cutoff")) : tertinggi;

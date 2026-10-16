@@ -218,9 +218,15 @@ export function hitungPreview({ materials, baris, ledger, cutoff = null, logJend
     const dihitung = b.status === STATUS_HITUNG.DIHITUNG || b.status === STATUS_HITUNG.NOL_FISIK;
     if (dihitung) {
       if (!b.lokasi) add(LEVEL.BLOCKER, "LOKASI_KOSONG", "Lokasi hitung wajib diisi.");
-      if (!b.penghitung) add(LEVEL.BLOCKER, "PENGHITUNG_KOSONG", "Nama penghitung wajib.");
-      if (!b.pemeriksa) add(LEVEL.BLOCKER, "PEMERIKSA_KOSONG", "Nama pemeriksa wajib.");
-      if (b.penghitung && b.pemeriksa && b.penghitung.toLowerCase() === b.pemeriksa.toLowerCase()) add(LEVEL.BLOCKER, "PEMERIKSA_SAMA_DENGAN_PENGHITUNG", "Pemeriksa harus orang lain dari penghitung.");
+      const dariAplikasi = "penghitungLembar" in b; // identitas dari akun login di Stock Count, bukan nama ketikan
+      if (!b.penghitung) add(LEVEL.BLOCKER, "PENGHITUNG_KOSONG", dariAplikasi ? "Belum ada akun yang memasukkan angka hitung baris ini di aplikasi." : "Nama penghitung wajib.");
+      if (!b.pemeriksa) add(LEVEL.BLOCKER, "PEMERIKSA_KOSONG", dariAplikasi ? "Belum ada pemeriksa: petugas LAIN harus menekan \"Saya memeriksa hitungan ini\" di Stock Count setelah hitungan diserahkan (batal bila angka diubah)." : "Nama pemeriksa wajib.");
+      if (dariAplikasi) {
+        const beda = (a, c) => a && c && String(a).trim().toLowerCase() !== String(c).trim().toLowerCase();
+        if (beda(b.penghitungLembar, b.penghitung) || beda(b.pemeriksaLembar, b.pemeriksa)) add(LEVEL.PERINGATAN, "NAMA_LEMBAR_BEDA_APLIKASI", `Nama di lembar (penghitung "${b.penghitungLembar || "-"}", pemeriksa "${b.pemeriksaLembar || "-"}") berbeda dari akun di aplikasi (penghitung "${b.penghitung}", pemeriksa "${b.pemeriksa}"). Yang dipakai: akun di aplikasi.`);
+      }
+      // Identitas dari aplikasi: pemisahan penghitung ≠ pemeriksa sudah dijamin per akun (id) oleh server — membandingkan nama tampilan akan salah menolak dua orang bernama sama.
+      if (!("penghitungLembar" in b) && b.penghitung && b.pemeriksa && b.penghitung.toLowerCase() === b.pemeriksa.toLowerCase()) add(LEVEL.BLOCKER, "PEMERIKSA_SAMA_DENGAN_PENGHITUNG", "Pemeriksa harus orang lain dari penghitung.");
       if (!ok(b.mulai) || !ok(b.selesai)) add(LEVEL.BLOCKER, "WAKTU_TIDAK_LENGKAP", "Waktu mulai dan selesai hitung wajib (format 2026-10-31 08:15, dianggap WIB).");
       else {
         if (b.selesai < b.mulai) add(LEVEL.BLOCKER, "SELESAI_SEBELUM_MULAI", "Waktu selesai lebih awal dari mulai.");
@@ -412,7 +418,7 @@ export async function muatSaldoBuku1400(db, sampaiTanggal) {
  * @param count { startedAt, submittedAt, lines:[{id, materialId, countedQty, material:{code, unit}}] }
  * @param selesaiPerLine Map(lineId → Date waktu angka terakhir diinput)
  */
-export function gabungStockCount(baris, { count, selesaiPerLine = new Map() }) {
+export function gabungStockCount(baris, { count, selesaiPerLine = new Map(), identitas = null }) {
   const out = baris.map((b) => ({ ...b }));
   let nomor = 0;
   for (const line of count.lines) {
@@ -435,6 +441,19 @@ export function gabungStockCount(baris, { count, selesaiPerLine = new Map() }) {
       b.qtyRak = qty; b.status = status;
       if (!b.mulai && count.startedAt) b.mulai = new Date(count.startedAt);
       if (!b.selesai && selesai) b.selesai = new Date(selesai);
+    }
+  }
+  // Identitas dari jejak aplikasi (akun yang login) MENGGANTIKAN nama yang diketik di lembar: penghitung per baris, pemeriksa = akun lain yang memeriksa hasil yang diserahkan.
+  if (identitas) {
+    const lineIdPerMaterial = new Map(count.lines.map((l) => [l.materialId, l.id]));
+    const semuaPenghitung = (identitas.penghitung || []).map((p) => p.nama);
+    const pemeriksa = (identitas.pemeriksa || []).map((p) => p.nama).join(", ");
+    for (const b of out) {
+      const lid = lineIdPerMaterial.get(b.materialId) || count.lines.find((l) => b.kode && l.material.code === b.kode)?.id;
+      if (!lid) continue;
+      const namaBaris = (identitas.penghitungPerBaris?.[lid] || semuaPenghitung).join(", ");
+      b.penghitungLembar = b.penghitung || null; b.pemeriksaLembar = b.pemeriksa || null;
+      b.penghitung = namaBaris || ""; b.pemeriksa = pemeriksa || "";
     }
   }
   return out;
