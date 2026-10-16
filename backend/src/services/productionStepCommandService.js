@@ -38,10 +38,8 @@ import { buildApplicableSteps, classifyProduct, pathHasBuildStage } from "../lib
 import { kategoriUnitDb, produkUnitDb } from "./unitKategoriDb.js";
 import { loadAssemblyFacts, loadPreTeardownFacts } from "./productionComponentNoteService.js";
 import { buildCornerRequest, cornerStatusOf } from "../lib/domain/productionCorner.js";
-import { assertLocationAllowed } from "./unitCustodyCommandService.js";
-import { syncOrderStatus } from "./orderStatusSync.js";
+import { applyAdminOverrideReleaseInTx, assertLocationAllowed, setUnitStorageLocationInTx } from "./unitCustodyCommandService.js";
 import { assertAdminOverrideAllowed, readAdminOverrideSwitch } from "./adminOverrideSwitch.js";
-import { suggestDeliveryJob } from "./deliveryHandoff.js";
 
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
@@ -964,7 +962,7 @@ export async function confirmFinishedGoods(prisma, { runId, actorId, supervisor 
     }
     // Proyeksi lokasi legacy dari StorageLocation kanonis (sama dengan penerimaan custody): locationId tetap sumber kebenaran; teks hanya disalin di sini.
     // (Run yang unitnya sudah dilepas lewat Admin override: lokasi fisik dari pelepasan itu TIDAK ditimpa.)
-    if (location) await tx.unit.update({ where: { id: run.unitId }, data: { storageLocation: location.code } });
+    if (location) await setUnitStorageLocationInTx(tx, run.unitId, location.code);
     const konfirmasi = { unitCode: run.unit.unitCode, orderNumber: order.orderNumber, locationId: location?.id ?? null, locationCode: location?.code ?? null, closedAfterDeliveryRelease: dilepas, reason: alasan, actorId: actorId || null, bySupervisor: !!supervisor, confirmedAt: now.toISOString(), skippedSteps: written, skippedStages: result.skipped.map((s) => s.code) };
     await outbox(tx, {
       eventType: "production.finished.adaptation", aggregateId: run.id, revision: result.revision, dedupeKey: `production-finished-adaptation:${run.id}:${result.revision}`,
@@ -1096,34 +1094,30 @@ export async function releaseUnitForDelivery(prisma, { unitId, actorId, canRelea
     const now = new Date();
     const ctx = await loadStepContext(tx, run);
     const revision = run.revision + 1;
-    await tx.unit.update({ where: { id: unit.id }, data: { status: "READY_FOR_DELIVERY", storageLocation: location.code } });
-    await syncOrderStatus(tx, unit.orderId);
-    await suggestDeliveryJob(tx, unit.id);
-    const orderSesudah = await tx.order.findUnique({ where: { id: unit.orderId }, select: { status: true } });
-    const rekam = {
-      version: 2, kind: "ADMIN_OVERRIDE", decision: ADMIN_OVERRIDE_DECISION,
-      decidedBy: { id: decidedBy.id, name: decidedBy.name, role: decidedBy.role }, decidedAt: now.toISOString(), reason: alasan, adminOverrideConfirmed: true,
-      pickupLocation: { id: location.id, code: location.code },
-      unit: { id: unit.id, code: unit.unitCode, statusBefore: unit.status, statusAfter: "READY_FOR_DELIVERY", storageLocationBefore: unit.storageLocation ?? null },
-      order: { id: order.id, number: order.orderNumber, statusBefore: order.status, statusAfter: orderSesudah?.status ?? null },
-      run: { id: run.id, status: run.status, revisionBefore: run.revision, currentPhase: run.currentPhase ?? null, stepsRecorded: [...new Set(ctx.evidence.map((e) => e.stepNo))].sort((x, y) => x - y) },
-      note: "Keputusan override Admin. Run dan tahap Produksi sengaja TIDAK ditutup/diubah; tidak ada QC, foto, serah terima Gudang, atau stok yang dibuat; tidak ada klaim pemeriksaan fisik/QC.",
-    };
-    // SATU update: kolom penanda + rekam harus terisi bersamaan (CHECK database production_runs_v2_delivery_release_pair_chk).
-    await tx.productionRun.update({ where: { id: run.id }, data: { deliveryReleasedAt: now, deliveryRelease: rekam, revision } });
-    const jobs = await tx.job.findMany({ where: { type: "DELIVERY", units: { some: { unitId: unit.id } } }, select: { id: true, status: true, routeId: true } });
+    const { rekam, orderStatusAfter, jobs } = await applyAdminOverrideReleaseInTx(tx, {
+      run, unit, location, now, revision,
+      buildRecord: ({ orderStatusAfter: orderSesudah }) => ({
+        version: 2, kind: "ADMIN_OVERRIDE", decision: ADMIN_OVERRIDE_DECISION,
+        decidedBy: { id: decidedBy.id, name: decidedBy.name, role: decidedBy.role }, decidedAt: now.toISOString(), reason: alasan, adminOverrideConfirmed: true,
+        pickupLocation: { id: location.id, code: location.code },
+        unit: { id: unit.id, code: unit.unitCode, statusBefore: unit.status, statusAfter: "READY_FOR_DELIVERY", storageLocationBefore: unit.storageLocation ?? null },
+        order: { id: order.id, number: order.orderNumber, statusBefore: order.status, statusAfter: orderSesudah },
+        run: { id: run.id, status: run.status, revisionBefore: run.revision, currentPhase: run.currentPhase ?? null, stepsRecorded: [...new Set(ctx.evidence.map((e) => e.stepNo))].sort((x, y) => x - y) },
+        note: "Keputusan override Admin. Run dan tahap Produksi sengaja TIDAK ditutup/diubah; tidak ada QC, foto, serah terima Gudang, atau stok yang dibuat; tidak ada klaim pemeriksaan fisik/QC.",
+      }),
+    });
     await outbox(tx, {
       eventType: "production.run.delivery_released", aggregateId: run.id, revision, dedupeKey: `production-run-delivery-released:${run.id}`,
       payload: { runId: run.id, unitId: unit.id, unitCode: unit.unitCode, orderId: order.id, override: rekam, jobIds: jobs.map((j) => j.id), revision, occurredAt: now.toISOString(), actorId: actorId || null },
     });
     const meta = {
       kind: "ADMIN_OVERRIDE", unitCode: unit.unitCode, orderNumber: order.orderNumber, runId: run.id, locationCode: location.code, deciderName: decidedBy.name, reason: alasan,
-      unitStatusBefore: unit.status, unitStatusAfter: "READY_FOR_DELIVERY", orderStatusBefore: order.status, orderStatusAfter: orderSesudah?.status ?? null,
+      unitStatusBefore: unit.status, unitStatusAfter: "READY_FOR_DELIVERY", orderStatusBefore: order.status, orderStatusAfter,
     };
     await recordActivity(tx, { entityType: "unit", entityId: unit.id, eventType: EVENT_TYPES.PRODUCTION_DELIVERY_RELEASED, actorId: actorId || null, metadata: meta });
     await recordActivity(tx, { entityType: "order", entityId: order.id, eventType: EVENT_TYPES.PRODUCTION_DELIVERY_RELEASED, actorId: actorId || null, metadata: meta });
     const response = {
-      runId: run.id, revision, unitId: unit.id, unitStatus: "READY_FOR_DELIVERY", orderStatus: orderSesudah?.status ?? null, runStatus: run.status,
+      runId: run.id, revision, unitId: unit.id, unitStatus: "READY_FOR_DELIVERY", orderStatus: orderStatusAfter, runStatus: run.status,
       pickupLocation: { id: location.id, code: location.code }, decidedBy: { id: decidedBy.id, name: decidedBy.name }, decidedAt: now.toISOString(), decision: ADMIN_OVERRIDE_DECISION,
       deliveryJobs: jobs.map((j) => ({ id: j.id, status: j.status, routeId: j.routeId })),
       runDitutup: false, qc: "TIDAK_DIBUAT", handoffGudang: "TIDAK_DIBUAT", stok: "TIDAK_BERGERAK",
