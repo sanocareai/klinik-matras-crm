@@ -21,15 +21,15 @@ DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 2 harus SHA release aktif (baseline) 40 karakter" >&2; exit 1; }
 CAND_BRANCH="${CAND_BRANCH:-feat/lepas-pengiriman-pengecualian-fisik}"
 # Migrasi aditif yang SUDAH diaudit: nama:sha256 isi (LF). Perubahan sekecil apa pun = berhenti sampai diaudit ulang dan pin diperbarui.
-MIGS="20261116100000_production_delivery_release:c5e6afc321791b2a6636eebec4c3bfcc4d1da51625c147fe7091cd076ba099d8"
+MIGS="20261201100000_production_admin_override_siap_kirim:c5e6afc321791b2a6636eebec4c3bfcc4d1da51625c147fe7091cd076ba099d8"
 # Hasil pemindai untuk migrasi di atas (jumlah per jenis pernyataan). Selisih = berhenti.
 SCAN_EXPECT='{"total":3,"kolom":2,"check":1}'
 # Diff schema.prisma antara baseline dan kandidat (U0, tanpa baris index dan tanpa nomor baris hunk) yang SUDAH diaudit: sha256. Selisih = berhenti.
 SCHEMA_DIFF_SHA="ad2e5f9b0dd6720475b46e619306bc0b88b8b5e7e66d5fa5ca8958fdf0a0a2d8"
 # Berkas yang BOLEH berbeda dari baseline: EKSPLISIT path persis (+ skrip rilis ini + guard rollback). Apa pun di luar daftar = berhenti.
-ALLOWED_RE='^(backend/prisma/migrations/20261116100000_production_delivery_release/migration\.sql|backend/prisma/schema\.prisma|backend/src/lib/activityLog\.js|backend/src/routes/armada\.js|backend/src/routes/productionExperience\.js|backend/src/services/deliveryOverrideAdmin\.js|backend/src/services/productionExperienceReadService\.js|backend/src/services/productionRunGuards\.js|backend/src/services/productionStepCommandService\.js|backend/src/services/productionWorkshopExecutionCommandService\.js|backend/src/services/unitCustodyCommandService\.js|backend/tests/integration/adminOverrideSiapKirim\.integration\.test\.js|frontend/src/api\.js|frontend/src/features/armada/components/(JobBadges|RouteCard|UnroutedJobsPanel)\.jsx|frontend/src/features/orders/OrderTimelineDrawer\.jsx|frontend/src/features/production/(AdminOverrideSiapKirim|UnitOverviewDrawer)\.jsx|frontend/src/features/production/UnitCard\.jsx|frontend/src/features/production/adminOverrideSiapKirimLogic\.js|frontend/tests/adminOverrideSiapKirim\.test\.js|driver-mobile/src/components/JobCard\.js|scripts/release-konfirmasi-barang-jadi\.sh|scripts/release-admin-override-siap-kirim\.sh|scripts/rollback-guard-admin-override-siap-kirim\.sh)$'
-BACKEND_SRC_EXPECT="backend/src/lib/activityLog.js backend/src/routes/armada.js backend/src/routes/productionExperience.js backend/src/services/deliveryOverrideAdmin.js backend/src/services/productionExperienceReadService.js backend/src/services/productionRunGuards.js backend/src/services/productionStepCommandService.js backend/src/services/productionWorkshopExecutionCommandService.js backend/src/services/unitCustodyCommandService.js"
-FRONTEND_SRC_EXPECT="frontend/src/api.js frontend/src/features/armada/components/JobBadges.jsx frontend/src/features/armada/components/RouteCard.jsx frontend/src/features/armada/components/UnroutedJobsPanel.jsx frontend/src/features/orders/OrderTimelineDrawer.jsx frontend/src/features/production/AdminOverrideSiapKirim.jsx frontend/src/features/production/UnitCard.jsx frontend/src/features/production/UnitOverviewDrawer.jsx frontend/src/features/production/adminOverrideSiapKirimLogic.js"
+ALLOWED_RE='^(backend/prisma/migrations/20261201100000_production_admin_override_siap_kirim/migration\.sql|backend/prisma/schema\.prisma|backend/src/lib/activityLog\.js|backend/src/routes/armada\.js|backend/src/routes/productionExperience\.js|backend/src/services/adminOverrideSwitch\.js|backend/src/services/deliveryOverrideAdmin\.js|backend/src/services/driverSnapshotV2\.js|backend/src/services/productionExperienceReadService\.js|backend/src/services/productionRunGuards\.js|backend/src/services/productionStepCommandService\.js|backend/src/services/productionWorkshopExecutionCommandService\.js|backend/src/services/unitCustodyCommandService\.js|backend/tests/integration/adminOverrideSiapKirim\.integration\.test\.js|frontend/src/api\.js|frontend/src/features/armada/components/(JobBadges|RouteCard|UnroutedJobsPanel)\.jsx|frontend/src/features/orders/OrderTimelineDrawer\.jsx|frontend/src/features/production/(AdminOverrideSiapKirim|UnitOverviewDrawer)\.jsx|frontend/src/features/production/UnitCard\.jsx|frontend/src/features/production/adminOverrideSiapKirimLogic\.js|frontend/tests/adminOverrideSiapKirim\.test\.js|docs/RUNBOOK-ADMIN-OVERRIDE-SIAP-KIRIM\.md|frontend/src/pages/bengkel/ProductionWorkflowSettings\.jsx|frontend/src/features/production/AdminOverrideSaklarCard\.jsx|scripts/release-konfirmasi-barang-jadi\.sh|scripts/release-admin-override-siap-kirim\.sh|scripts/rollback-guard-admin-override-siap-kirim\.sh)$'
+BACKEND_SRC_EXPECT="backend/src/lib/activityLog.js backend/src/routes/armada.js backend/src/routes/productionExperience.js backend/src/services/adminOverrideSwitch.js backend/src/services/deliveryOverrideAdmin.js backend/src/services/driverSnapshotV2.js backend/src/services/productionExperienceReadService.js backend/src/services/productionRunGuards.js backend/src/services/productionStepCommandService.js backend/src/services/productionWorkshopExecutionCommandService.js backend/src/services/unitCustodyCommandService.js"
+FRONTEND_SRC_EXPECT="frontend/src/api.js frontend/src/features/armada/components/JobBadges.jsx frontend/src/features/armada/components/RouteCard.jsx frontend/src/features/armada/components/UnroutedJobsPanel.jsx frontend/src/features/orders/OrderTimelineDrawer.jsx frontend/src/features/production/AdminOverrideSaklarCard.jsx frontend/src/features/production/AdminOverrideSiapKirim.jsx frontend/src/features/production/UnitCard.jsx frontend/src/features/production/UnitOverviewDrawer.jsx frontend/src/features/production/adminOverrideSiapKirimLogic.js frontend/src/pages/bengkel/ProductionWorkflowSettings.jsx"
 # Hotfix Stock Count + penutupan jalur cepat opname: harus ada di kandidat DAN berkasnya identik dengan baseline (rilis ini tidak boleh menyentuhnya).
 HOTFIX_STOCK_COUNT="b5268e1f7d8e1a15a251106dee0a136898ee5ce1"
 GUARD_UNCHANGED="backend/src/routes/stockCount.js backend/src/services/opnameCutover.js backend/src/services/opnameMatriks.js backend/src/services/pergerakanSesiHitung.js backend/src/services/finance/journal.js backend/src/middleware/authorize.js backend/src/middleware/auth.js"
@@ -107,11 +107,11 @@ sg fetch -q --depth=400 origin "+refs/heads/${CAND_BRANCH}:refs/remotes/origin/c
 sg cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null || die "baseline ${BASE_SHA:0:8} tidak ada di repo sumber"
 sg merge-base --is-ancestor "$BASE_SHA" "$DEPLOY_SHA" || die "baseline ${BASE_SHA:0:8} BUKAN leluhur kandidat ${DEPLOY_SHORT}"
 MAIN_SHA="$(sg rev-parse refs/remotes/origin/main)"
-# MAIN_LEBIH_MAJU: main boleh memuat commit di atas release aktif asalkan selisih BASE..MAIN hanya scripts/ dan docs/ (tidak ada kode aplikasi/prisma/frontend). Berkas itu ikut diizinkan (bukan bagian audit rilis ini).
+# MAIN_LEBIH_MAJU: main boleh memuat commit di atas release aktif asalkan selisih BASE..MAIN hanya scripts/, docs/, dan tes skrip rilis (backend/tests/release*.test.js) (tidak ada kode aplikasi/prisma/frontend). Berkas itu ikut diizinkan (bukan bagian audit rilis ini).
 MAIN_FILES=""
 if ! sg merge-base --is-ancestor "$MAIN_SHA" "$BASE_SHA"; then
   sg merge-base --is-ancestor "$BASE_SHA" "$MAIN_SHA" || die "origin/main (${MAIN_SHA:0:8}) dan baseline ${BASE_SHA:0:8} bercabang — gabungkan lineage terbaru lalu ulangi tes/preflight"
-  MAIN_EXTRA="$(sg diff --name-only "$BASE_SHA" "$MAIN_SHA" | grep -Ev '^(scripts/|docs/)' || true)"
+  MAIN_EXTRA="$(sg diff --name-only "$BASE_SHA" "$MAIN_SHA" | grep -Ev '^(scripts/|docs/|backend/tests/release[A-Za-z0-9]+\.test\.js$)' || true)"
   [ -z "$MAIN_EXTRA" ] || { printf '%s\n' "$MAIN_EXTRA" | sed 's/^/        /'; die "origin/main memuat perubahan kode yang tidak ada di release aktif — berhenti"; }
   MAIN_FILES="$(sg diff --name-only "$BASE_SHA" "$MAIN_SHA")"
   warn "origin/main (${MAIN_SHA:0:8}) lebih maju dari baseline hanya pada scripts/docs ($(printf '%s\n' "$MAIN_FILES" | wc -l) berkas) — ikut diizinkan"
@@ -232,7 +232,7 @@ harus_ditolak "trigger liar" "$(tambah_stmt 'CREATE TRIGGER trg_evil BEFORE DELE
 harus_ditolak "pernyataan ganda" "$(tambah_stmt 'ALTER TABLE "production_runs_v2" ADD COLUMN "delivery_release" JSONB;')"
 [ "$NEG" -ge 28 ] || die "uji negatif pemindai hanya ${NEG} mutan (minimal 28)"
 ok "uji negatif pemindai: ${NEG} mutan migrasi (DROP/UPDATE/DELETE/INSERT/TRUNCATE/ALTER COLUMN/RENAME/kolom liar/NOT NULL/DEFAULT/tipe diubah/tabel-indeks-FK liar/CHECK longgar/GRANT/fungsi-trigger liar) SEMUANYA ditolak"
-[ "$(printf '%s\n' "$CHANGED" | grep -E '^driver-mobile/' | tr '\n' ' ' | sed 's/ $//')" = "driver-mobile/src/components/JobCard.js" ] || die "driver-mobile yang berubah bukan tepat JobCard.js (OTA RN TIDAK diterbitkan rilis ini)"
+! printf '%s\n' "$CHANGED" | grep -q '^driver-mobile/' || die "driver-mobile berubah — rilis ini TIDAK membawa app Driver (OTA dari branch ota/driver-override-siap-kirim-on-20261015, terpisah)"
 sg merge-base --is-ancestor "$HOTFIX_STOCK_COUNT" "$DEPLOY_SHA" || die "hotfix Stock Count ${HOTFIX_STOCK_COUNT:0:8} BUKAN leluhur kandidat — rilis akan menghilangkannya; gabungkan live terbaru dulu"
 sg merge-base --is-ancestor "$HOTFIX_STOCK_COUNT" "$BASE_SHA" || die "hotfix Stock Count ${HOTFIX_STOCK_COUNT:0:8} belum ada di baseline live ${BASE_SHA:0:8} — baseline bukan yang diharapkan"
 for f in $GUARD_UNCHANGED; do
@@ -388,7 +388,7 @@ NEW_INDEX="$(grep -o 'index-[A-Za-z0-9_-]*\.js' "$NEW_DIR/frontend/dist/index.ht
 MAPS_KEY="$(sed -n 's/^VITE_GOOGLE_MAPS_JS_KEY=//p' "$PERSIST/frontend/.env" | tr -d '\r"'"'"' ')"
 [ -n "$(grep -lF "$MAPS_KEY" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat VITE_GOOGLE_MAPS_JS_KEY"
 # Fitur rilis ini + fitur rilis sebelumnya (jangan sampai hilang dari bundel). Teks LAMA diverifikasi ada di dist release aktif (kalau tidak ada, skrip ini yang salah, bukan kandidat).
-for s1 in "Admin override: Siap Kirim saat pencatatan produksi belum selesai" "Siap Kirim — override Admin (pencatatan produksi belum selesai)" "Lokasi pengambilan" "keputusan override Admin, bukan hasil pemeriksaan atau QC" "Unit lain pada order ini TIDAK ikut ditetapkan" "Tetapkan Siap Kirim (override)"; do [ -n "$(grep -lF "$s1" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat teks fitur: ${s1}"; done
+for s1 in "Admin override: Siap Kirim saat pencatatan produksi belum selesai" "Siap Kirim — override Admin (pencatatan produksi belum selesai)" "Lokasi pengambilan" "keputusan override Admin, bukan hasil pemeriksaan atau QC" "Unit lain pada order ini TIDAK ikut ditetapkan" "Tetapkan Siap Kirim (override)" "Admin override belum diaktifkan" "Hentikan override baru" "Aktifkan override"; do [ -n "$(grep -lF "$s1" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat teks fitur: ${s1}"; done
 for s2 in "Konfirmasi Barang Jadi" "Menunggu konfirmasi siap kirim" "Konfirmasi kesiapan fisik" "Mode rute Produksi" "Menunggu penentuan alur Produksi" "Buat Rute" "Checklist Persiapan Perjalanan" "Histori Waktu" "Selesaikan Produksi" "Rencana Produksi" "Uang muka dialokasikan ke faktur"; do
   [ -n "$(grep -lF "$s2" "$PREV_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "[skrip] teks lama '${s2}' tidak ada di dist release aktif — perbaiki daftar teks pembanding"
   [ -n "$(grep -lF "$s2" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru KEHILANGAN teks fitur lama: ${s2}"
@@ -636,8 +636,23 @@ const o5 = (await api("POST", OV, tA, { expectedRevision: 1, adminOverrideConfir
 rec("Admin override POST: tanpa Idempotency-Key → 400/428 (tidak menulis)", o5 === 400 || o5 === 428, String(o5));
 const o6 = await api("POST", OV, tA, { expectedRevision: 1, unitCode: "X", locationId: nol, reason: "uji smoke unit tak ada", adminOverrideConfirmed: true }, { "Idempotency-Key": "smoke-ao-nol-0001" });
 rec("Admin override POST: unit tak dikenal → 409 RELEASE_NO_ACTIVE_RUN (tanpa menyentuh data)", o6.status === 409 && o6.json?.code === "RELEASE_NO_ACTIVE_RUN", o6.status + " " + o6.json?.code);
+// ── Saklar Admin override (BACA-SAJA): bawaan NONAKTIF (fail-closed); hanya Admin/Owner membaca; laporan kosong ──
+const SWITCH = "/api/production-v2/admin-override/switch";
+const swAnon = (await api("GET", SWITCH, null)).status;
+rec("saklar override GET: tanpa token → 401", swAnon === 401, String(swAnon));
+if (bukanAdmin) {
+  const swLead = (await api("GET", SWITCH, tokenUntuk(bukanAdmin))).status;
+  const swPut = await api("PUT", SWITCH, tokenUntuk(bukanAdmin), { enabled: true, reason: "uji smoke bukan admin tanpa efek" });
+  rec("saklar override: Production Lead GET/PUT → 403 (tidak mengubah saklar)", swLead === 403 && swPut.status === 403, swLead + "," + swPut.status);
+} else skip("saklar override 403 untuk non-Admin", "tidak ada akun aktif Production Lead murni");
+const swAdm = await api("GET", SWITCH, tA);
+rec("saklar override NONAKTIF bawaan di produksi (fail-closed; belum diaktifkan siapa pun)", swAdm.status === 200 && swAdm.json?.enabled === false, swAdm.status + " enabled=" + swAdm.json?.enabled + " configured=" + swAdm.json?.configured);
+const rapAdm = await api("GET", "/api/production-v2/admin-override/report", tA);
+rec("laporan override: 200 dan kosong (belum ada override)", rapAdm.status === 200 && rapAdm.json?.ringkas?.total === 0, rapAdm.status + " total=" + rapAdm.json?.ringkas?.total);
+const kunciAktif = await hitungSql("select count(*)::int n from v2_feature_flags where key = 'production_admin_override_siap_kirim' and enabled = true");
+rec("tidak ada baris saklar override yang aktif di produksi", kunciAktif === 0, String(kunciAktif));
 const SAH = new Set([400, 401, 403, 404, 409, 428]);
-rec("semua " + tulis.length + " pemanggilan tulis ditolak/galat sebelum menyentuh data: smoke TIDAK menulis data produksi", tulis.length >= 12 && tulis.every((b) => SAH.has(b.status)), tulis.map((b) => b.n + "=" + b.status).join("; "));
+rec("semua " + tulis.length + " pemanggilan tulis ditolak/galat sebelum menyentuh data: smoke TIDAK menulis data produksi", tulis.length >= 13 && tulis.every((b) => SAH.has(b.status)), tulis.map((b) => b.n + "=" + b.status).join("; "));
 
 // ── Papan Delivery: kandidat draf (opt-in) — baca-saja ──
 const papanAnon = (await api("GET", "/api/armada/board?type=DELIVERY&termasukMenunggu=1", null)).status;
