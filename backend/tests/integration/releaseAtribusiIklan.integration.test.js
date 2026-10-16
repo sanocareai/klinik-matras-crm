@@ -57,7 +57,8 @@ test("smoke rilis pada keadaan KOSONG (tepat setelah rilis, flag MATI): kunci be
   const sebelum = await hitungTabel();
   const { v, status, stdout, stderr } = await jalankanSmoke();
   assert.equal(status, 0, (stdout + stderr).slice(-800));
-  assert.deepEqual([v.STATUS_NOAUTH, v.STATUS_SALES, v.STATUS_TANPA_RENTANG, v.STATUS_PARAM_SALAH, v.STATUS_SINYAL_SEMUA, v.STATUS_ADMIN], ["401", "403", "400", "400", "400", "200"]);
+  assert.deepEqual([v.STATUS_NOAUTH, v.STATUS_SALES, v.STATUS_TANPA_RENTANG, v.STATUS_PARAM_SALAH, v.STATUS_SINYAL_SEMUA, v.STATUS_ADMIN], ["401", "403", "200", "400", "400", "200"]);
+  assert.equal(v.STATUS_SEBELAH_SAJA, "400");
   assert.equal(v.CACHE, "no-store");
   assert.equal(v.REKON_OK, "true");
   assert.equal(v.CPA_ROAS_NULL, "true");

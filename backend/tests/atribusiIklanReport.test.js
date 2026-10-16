@@ -280,16 +280,16 @@ test("respons tidak memuat pengenal: tanpa customerId, order id, nomor, atau kun
   assert.ok(!/"(phone|name|customerId|orderId|ctwaClid)"\s*:/.test(teks));
 });
 
-test("parameter: dari & sampai WAJIB; validasi tanggal, level, sinyal (hanya CTWA_AD); maksimum 93 hari; tidak boleh masa depan", () => {
+test("parameter: dari & sampai berpasangan; validasi tanggal, level, sinyal (hanya CTWA_AD); maksimum 93 hari; tidak boleh masa depan", () => {
   const now = D("2026-10-13T05:00:00Z");
-  assert.deepEqual(parseParameterIklan({ dari: "2026-10-01", sampai: "2026-10-13" }, now), { dari: "2026-10-01", sampai: "2026-10-13", level: "campaign", sinyal: "CTWA_AD", rincian: false, hariIni: "2026-10-13" });
+  assert.deepEqual(parseParameterIklan({ dari: "2026-10-01", sampai: "2026-10-13" }, now), { dari: "2026-10-01", sampai: "2026-10-13", level: "campaign", sinyal: "CTWA_AD", rincian: false, hariIni: "2026-10-13", bawaan: false, filter: null });
   assert.equal(parseParameterIklan({ dari: "2026-10-01", sampai: "2026-10-13", level: "ad", rincian: "1" }, now).rincian, true);
   // 93 hari inklusif lolos; 94 ditolak
   assert.equal(parseParameterIklan({ dari: "2026-07-13", sampai: "2026-10-13" }, now).dari, "2026-07-13");
   // 17:30 UTC = 00:30 WIB hari berikutnya
   assert.equal(parseParameterIklan({ dari: "2026-10-14", sampai: "2026-10-14" }, D("2026-10-13T17:30:00Z")).sampai, "2026-10-14");
   for (const q of [
-    {}, { dari: "2026-10-01" }, { sampai: "2026-10-13" },
+    { dari: "2026-10-01" }, { sampai: "2026-10-13" },
     { dari: "2026-13-01", sampai: "2026-10-13" }, { dari: "2026-10-14", sampai: "2026-10-13" }, { dari: "2026-10-01", sampai: "2026-10-14" },
     { dari: "2026-10-01", sampai: "2026-10-13", level: "pixel" },
     { dari: "2026-10-01", sampai: "2026-10-13", sinyal: "SEMUA" }, { dari: "2026-10-01", sampai: "2026-10-13", sinyal: "AD_REPLY_UNMARKED" },
@@ -299,25 +299,100 @@ test("parameter: dari & sampai WAJIB; validasi tanggal, level, sinyal (hanya CTW
   }
 });
 
-test("touch UNKNOWN (customer dibuat manual / tanpa bukti): TIDAK jadi lead iklan, jumlah touch tetap, dipisah di sentuhan dan cakupan, ada peringatan", () => {
-  const dasar = laporan("campaign");
-  // A8 (organik, dibuat di rentang) kini punya touch iklan berstatus UNKNOWN; A7 customer lama punya satu touch UNKNOWN juga
-  const unk = [
-    touch("TU1", "A8", AD1, "2026-10-12T04:00:00Z", { customerStatusAtTouch: "UNKNOWN", customerBasisAtTouch: "TANPA_BUKTI" }),
-    touch("TU2", "A7", AD2, "2026-10-12T05:00:00Z", { customerStatusAtTouch: "UNKNOWN", customerBasisAtTouch: "TANPA_BUKTI" }),
-  ];
-  const lap = susunLaporanIklan({
-    parameter: { dari: "2026-10-01", sampai: "2026-10-13", level: "campaign", sinyal: "CTWA_AD", rincian: false },
-    asOf: D("2026-11-20T00:00:00Z"), leadBaru: customersRentang, touchAkuisisi, touchLain: [...touchLain, ...unk], referensi: REF,
-    masukan: { customers: customersAtribusi, orders, kontribusi, refunds: [] }, mulaiAtribusiAt: D("2026-10-05T03:05:00Z"),
-  });
-  assert.deepEqual(lap.jumlahTeratribusi, dasar.jumlahTeratribusi, "lead/closing/uang TIDAK berubah oleh touch UNKNOWN");
-  assert.equal(lap.cakupan.denganTouchAkuisisi, dasar.cakupan.denganTouchAkuisisi);
-  assert.equal(lap.cakupan.leadBaruTouchTanpaBukti, 1, "A8 punya touch tetapi tanpa bukti akuisisi");
-  assert.equal(lap.cakupan.tanpaTouch, dasar.cakupan.tanpaTouch, "tetap termasuk 'tanpa touch akuisisi' (invarian cakupan terjaga)");
-  const total = lap.grup.reduce((s, g) => s + g.sentuhanBerikutnya.touch, 0);
-  assert.equal(total, dasar.grup.reduce((s, g) => s + g.sentuhanBerikutnya.touch, 0) + 2, "dua touch UNKNOWN terhitung sebagai sentuhan (jumlah touch tidak hilang)");
-  assert.equal(lap.grup.reduce((s, g) => s + g.sentuhanBerikutnya.padaCustomerTidakDiketahui, 0), 2);
+const lapor = (o = {}) => susunLaporanIklan({
+  parameter: { dari: "2026-10-01", sampai: "2026-10-13", level: "campaign", sinyal: "CTWA_AD", rincian: false, ...(o.parameter || {}) },
+  asOf: D("2026-11-20T00:00:00Z"), leadBaru: customersRentang, touchAkuisisi, touchLain: o.touchLain ?? touchLain, touchLeadLain: o.touchLeadLain ?? [], referensi: o.referensi || REF,
+  masukan: { customers: o.customers ?? customersAtribusi, orders, kontribusi, refunds: [] }, mulaiAtribusiAt: D("2026-10-05T03:05:00Z"),
+});
+const CAMP1 = "52694481763084", CAMP2 = "52696131903884";
+const A8 = () => customersRentang.find((c) => c.id === "A8");
+
+test("baris UNKNOWN: lead baru bertouch iklan TANPA bukti kausal tampil sebagai baris sendiri, TIDAK dikreditkan ke campaign, dan tidak masuk jumlahTeratribusi", () => {
+  const dasar = lapor();
+  const tu = touch("TU1", "A8", AD1, "2026-10-12T04:00:00Z", { customerStatusAtTouch: "UNKNOWN", customerBasisAtTouch: "TANPA_BUKTI" });
+  const lap = lapor({ touchLeadLain: [tu], touchLain: [...touchLain, tu], customers: [...customersAtribusi, A8()] });
+  assert.deepEqual(lap.jumlahTeratribusi, dasar.jumlahTeratribusi, "lead/closing/uang akuisisi terbukti TIDAK berubah oleh UNKNOWN");
+  const u = lap.grup.find((g) => g.kunci === "UNKNOWN");
+  assert.deepEqual([u.status, u.kreditCampaign, u.lead.unik, u.campaign], ["UNKNOWN", false, 1, null]);
+  assert.equal(lap.jumlahTercakup.leadUnik, dasar.jumlahTeratribusi.leadUnik + 1);
+  assert.equal(lap.grup.reduce((s, g) => s + g.lead.unik, 0), lap.jumlahTercakup.leadUnik, "Σ campaign + UNMAPPED + UNKNOWN = tercakup");
+  assert.equal(lap.cakupan.leadBaruTouchTanpaBukti, 1);
+  assert.equal(lap.cakupan.tanpaTouch, dasar.cakupan.tanpaTouch - 1);
+  assert.equal(lap.cakupan.denganTouchAkuisisi + lap.cakupan.leadBaruTouchTanpaBukti + lap.cakupan.leadBaruTouchPadaCustomerSudahAda + lap.cakupan.tanpaTouch, lap.cakupan.leadBaruDalamRentang);
+  const r = lap.rekonMetaAds;
+  assert.equal(r.akuisisiTerbukti + r.touchTanpaBukti + r.touchPadaCustomerSudahAda + r.tanpaTouchIklan, r.metaAdsCrmLeadBaru);
+  assert.equal(r.metaAdsCrmLeadBaru, customersRentang.filter((c) => c.leadSource === "META_ADS").length);
+  assert.equal(r.touchTanpaBukti, 1);
   assert.ok(lap.peringatan.some((w) => w.kode === "TOUCH_TANPA_BUKTI_AKUISISI"));
   assert.equal(lap.rekonsiliasi.ok, true, JSON.stringify(lap.rekonsiliasi.cek.filter((c) => !c.ok)));
+  assert.equal(grupDari(lap, CAMP1).touchTanpaBukti.touch, 1, "touch UNKNOWN tidak hilang: terlihat pada campaign yang disentuh");
+});
+
+test("lead baru yang SUDAH ada sebelum touch (EXISTING saja, mis. sales menghubungi duluan): bukan lead iklan, bukan UNKNOWN; hanya terhitung di cakupan dan reaktivasi", () => {
+  const te = touch("TE1", "A8", AD1, "2026-10-12T04:00:00Z", { customerStatusAtTouch: "EXISTING", customerBasisAtTouch: "RIWAYAT_PESAN" });
+  const dasar = lapor();
+  const lap = lapor({ touchLeadLain: [te], touchLain: [...touchLain, te], customers: [...customersAtribusi, A8()] });
+  assert.equal(lap.grup.find((g) => g.kunci === "UNKNOWN"), undefined);
+  assert.equal(lap.cakupan.leadBaruTouchPadaCustomerSudahAda, 1);
+  assert.equal(lap.cakupan.tanpaTouch, dasar.cakupan.tanpaTouch - 1);
+  assert.equal(lap.jumlahTercakup.leadUnik, dasar.jumlahTeratribusi.leadUnik);
+  assert.equal(grupDari(lap, CAMP1).reaktivasi.touch, grupDari(dasar, CAMP1).reaktivasi.touch + 1);
+  assert.equal(lap.rekonsiliasi.ok, true, JSON.stringify(lap.rekonsiliasi.cek.filter((c) => !c.ok)));
+});
+
+test("multi-touch lintas campaign: kredit TETAP pada touch pertama yang sah; campaign lain hanya mendapat 'assisted' (tanpa unique lead/closing)", () => {
+  const dasar = lapor();
+  const t2 = touch("T2b", "A2", AD3, "2026-10-08T03:00:00Z");   // A2 diakuisisi lewat AD1 (CAMP1); touch NEW kedua lewat AD3 (CAMP2)
+  const lap = lapor({ touchLain: [...touchLain, t2] });
+  const c1 = grupDari(lap, CAMP1), c2 = grupDari(lap, CAMP2);
+  assert.equal(c1.lead.unik, grupDari(dasar, CAMP1).lead.unik, "CAMP1 tetap memegang kredit lead A2");
+  assert.equal(c2.lead.unik, grupDari(dasar, CAMP2).lead.unik, "CAMP2 TIDAK menambah unique lead");
+  assert.deepEqual(c2.closingUtama, grupDari(dasar, CAMP2).closingUtama);
+  assert.deepEqual(c2.assisted, { touch: 1, customerUnik: 1 });
+  assert.deepEqual(c2.reaktivasi, { touch: 0, customerUnik: 0 });
+  assert.deepEqual(lap.jumlahTeratribusi, dasar.jumlahTeratribusi, "total tidak berubah");
+});
+
+test("reaktivasi: customer LAMA yang klik iklan lain tidak menjadi lead baru; touch dihitung terpisah pada campaign yang disentuh", () => {
+  const dasar = lapor();
+  const tr = touch("TR1", "A7", AD3, "2026-10-09T03:00:00Z", { customerStatusAtTouch: "EXISTING", customerBasisAtTouch: "RIWAYAT_PESAN" });
+  const lap = lapor({ touchLain: [...touchLain, tr] });
+  const c2 = grupDari(lap, CAMP2);
+  assert.deepEqual(c2.reaktivasi, { touch: 1, customerUnik: 1 });
+  assert.equal(c2.lead.unik, grupDari(dasar, CAMP2).lead.unik);
+  assert.deepEqual(lap.jumlahTeratribusi, dasar.jumlahTeratribusi);
+});
+
+test("customer lunas menurut CRM (customer, bukan order) terpisah dari closing utama dan dari order pernah DP", () => {
+  const c1 = grupDari(lapor(), CAMP1);
+  assert.equal(c1.customerLunasMenurutCrm, 3, "A1, A2, A3 punya order berstatus LUNAS tersimpan");
+  assert.equal(c1.closingUtama.customerLunasTerbuktiLedger, 2, "A3 LUNAS historis tanpa ledger BUKAN closing utama");
+  assert.equal(c1.pernahDitandaiProspek.jumlah, c1.pernahDitandaiProspek.berTanggal + c1.pernahDitandaiProspek.tanpaTanggal);
+});
+
+test("drilldown: filter campaignId membatasi akuisisi, touch, dan rekonsiliasi; UNKNOWN dan cakupan tidak ditampilkan; jumlah konsisten", () => {
+  const tu = touch("TU1", "A8", AD1, "2026-10-12T04:00:00Z", { customerStatusAtTouch: "UNKNOWN", customerBasisAtTouch: "TANPA_BUKTI" });
+  const baku = { touchLeadLain: [tu], touchLain: [...touchLain, tu], customers: [...customersAtribusi, A8()] };
+  const penuh = lapor({ parameter: { level: "adset" }, ...baku });
+  const f = lapor({ parameter: { level: "adset", filter: { campaignId: CAMP1, adSetId: null } }, ...baku });
+  assert.ok(f.grup.length > 0 && f.grup.every((g) => g.campaign?.id === CAMP1), "hanya ad set milik CAMP1");
+  assert.ok(!f.grup.some((g) => g.kunci === "UNKNOWN" || g.kunci === "UNMAPPED"));
+  assert.equal(f.cakupan, null);
+  assert.equal(f.rekonMetaAds, null);
+  assert.equal(f.jumlahTeratribusi.leadUnik, penuh.grup.filter((g) => g.campaign?.id === CAMP1).reduce((s, g) => s + g.lead.unik, 0));
+  assert.equal(f.rekonsiliasi.ok, true, JSON.stringify(f.rekonsiliasi.cek.filter((c) => !c.ok)));
+  assert.deepEqual(f.rentangLead.filter, { campaignId: CAMP1, adSetId: null });
+});
+
+test("parameter: dari & sampai kosong = 7 hari terakhir termasuk hari ini (bawaan); sebelah saja = 400; filter drilldown divalidasi", () => {
+  const now = D("2026-10-13T05:00:00Z");
+  const b = parseParameterIklan({}, now);
+  assert.deepEqual([b.dari, b.sampai, b.bawaan, b.filter], ["2026-10-07", "2026-10-13", true, null]);
+  assert.equal(parseParameterIklan({ dari: "2026-10-01", sampai: "2026-10-13" }, now).bawaan, false);
+  for (const q of [{ dari: "2026-10-01" }, { sampai: "2026-10-13" }]) assert.throws(() => parseParameterIklan(q, now), (e) => e instanceof ParameterError && e.statusCode === 400);
+  const ok = parseParameterIklan({ level: "ad", campaignId: "52694481763084", adSetId: "52694481763284" }, now);
+  assert.deepEqual(ok.filter, { campaignId: "52694481763084", adSetId: "52694481763284" });
+  for (const q of [
+    { level: "campaign", campaignId: "52694481763084" }, { level: "adset", adSetId: "52694481763284" }, { level: "ad", campaignId: "abc" }, { level: "ad", adSetId: "5.2E+13" },
+  ]) assert.throws(() => parseParameterIklan(q, now), (e) => e instanceof ParameterError && e.statusCode === 400, JSON.stringify(q));
 });

@@ -46,7 +46,7 @@ MIGS="20261107090000_atribusi_touch_iklan:6df8640b8045113a0012ee1c2a817c3cecd34f
 # Hasil pemindai untuk migrasi di atas. Selisih = berhenti.
 SCAN_EXPECT='{"total":13,"create_table":3,"create_index":6,"fk":4,"check":13}'
 # Hanya berkas ini yang BOLEH berbeda dari baseline (path persis; paket/compose/Dockerfile/frontend/Finance/Production = berhenti).
-ALLOWED_RE='^(backend/prisma/migrations/20261107090000_atribusi_touch_iklan/migration\.sql|backend/prisma/schema\.prisma|backend/src/index\.js|backend/src/routes/(attributionAds|webhooks)\.js|backend/src/services/attribution/(adReferensi|captureHealth|cohortLoader|iklanReport|touchCapture)\.js|backend/tests/(atribusiIklanReport|atribusiTouchAtomik|atribusiTouchReferensi|auditSumberLead|releaseAtribusiIklan)\.test\.js|backend/tests/fixtures/metaAdsFixture\.js|backend/tests/integration/(atribusiIklan|atribusiStatusCustomer|atribusiTouchCrash|releaseAtribusiIklan)\.integration\.test\.js|backend/tests/integration/helpers/(atribusiCrashChild\.mjs|ctwaPayload\.js)|backend/tests/integration/perf/atribusiIklan\.perf\.manual\.test\.js|backend/scripts/audit-sumber-lead\.sql|docs/(ATRIBUSI-FASE2-TOUCH-IKLAN|ATRIBUSI-AUDIT-OTHER-KLASIFIKASI)\.md|scripts/(release-atribusi-iklan|release-atribusi-kohort|release-ctwa-capture-flag-off)\.sh)$'
+ALLOWED_RE='^(backend/prisma/migrations/20261107090000_atribusi_touch_iklan/migration\.sql|backend/prisma/schema\.prisma|backend/src/index\.js|backend/src/routes/(attributionAds|webhooks)\.js|backend/src/services/attribution/(adReferensi|captureHealth|cohortLoader|iklanReport|touchCapture)\.js|backend/tests/(atribusiIklanReport|atribusiTouchAtomik|atribusiTouchReferensi|auditSumberLead|releaseAtribusiIklan)\.test\.js|backend/tests/fixtures/metaAdsFixture\.js|backend/tests/integration/(atribusiIklan|atribusiStatusCustomer|atribusiTouchCrash|releaseAtribusiIklan)\.integration\.test\.js|backend/tests/integration/helpers/(atribusiCrashChild\.mjs|ctwaPayload\.js)|backend/tests/integration/perf/atribusiIklan\.perf\.manual\.test\.js|backend/scripts/audit-sumber-lead\.sql|docs/(ATRIBUSI-FASE2-TOUCH-IKLAN|ATRIBUSI-AUDIT-OTHER-KLASIFIKASI|ATRIBUSI-LAPORAN-IKLAN-CAMPAIGN)\.md|scripts/(release-atribusi-iklan|release-atribusi-kohort|release-ctwa-capture-flag-off)\.sh)$'
 # Berkas backend/src yang berubah HARUS tepat daftar ini.
 BACKEND_SRC_EXPECT="backend/src/index.js backend/src/routes/attributionAds.js backend/src/routes/webhooks.js backend/src/services/attribution/adReferensi.js backend/src/services/attribution/captureHealth.js backend/src/services/attribution/cohortLoader.js backend/src/services/attribution/iklanReport.js backend/src/services/attribution/touchCapture.js"
 # Pin sha256 (teks LF) berkas RUNTIME. Isi berbeda dari pin = berhenti sampai ditinjau ulang.
@@ -56,10 +56,10 @@ declare -A PINS=(
   ["backend/src/routes/webhooks.js"]="2e87e63edf4ed6c5088c61cb1eaffe4489f79df3575417fd44ab4c5ebc28f5e8"
   ["backend/src/services/attribution/adReferensi.js"]="0ea832f4177eee974edf4222318ef7b05831b5f80f5e3634c8f97dea64f494dc"
   ["backend/src/services/attribution/captureHealth.js"]="931c04278ea097affc1051fc53e251d43220eb3501f07e71efd615df28120b31"
-  ["backend/src/services/attribution/cohortLoader.js"]="03d54a1feb5a64d5f1fd5b9a3ced908d58e0ba38e7dcce519a745dfb0cb3a57b"
-  ["backend/src/services/attribution/iklanReport.js"]="67250a173d32564fd8ec68cd2df0ea30451b52ce413eb840f452c753de0ded51"
+  ["backend/src/services/attribution/cohortLoader.js"]="901231a40f7ce80e30cc306fb682b94cb2c28d9dde1e193d5e429eb15d0d295d"
+  ["backend/src/services/attribution/iklanReport.js"]="780e8f4ab6a7bf5960f9fe381b750ffc3a19504973cc225e3b01bd6a1dc22db7"
   ["backend/src/services/attribution/touchCapture.js"]="8ccaa9b1729106b3f812f4a18dcfdf4cfc1b67140e9747025ca2d4ad634117b8"
-  ["backend/prisma/schema.prisma"]="0541d66e4148a2e92d0d60d3e2caddfe0d9e63b07753530bf12851c8eaebc03d"
+  ["backend/prisma/schema.prisma"]="636504b708e1dd75d570768bd87ba4865f25a27028dd3b8bc562bce18897834d"
 )
 
 say()  { printf '\n\033[1m== %s\033[0m\n' "$*"; }
@@ -175,12 +175,13 @@ const TERLARANG = /"(phone|name|customerId|messageId|orderId|ctwaClid|leadSource
   const base = "/api/atribusi/iklan";
   const noAuth = await get(`${base}?${q}`);
   const sales = await get(`${base}?${q}`, tS);
-  const tanpaRentang = await get(base, tA);
+  const tanpaRentang = await get(base, tA);                  // bawaan 7 hari: 200
+  const sebelah = await get(`${base}?sampai=${wib(0)}`, tA);   // hanya salah satu: 400
   const bad = await get(`${base}?dari=2026-13-01&sampai=2026-13-02`, tA);
   const semua = await get(`${base}?${q}&sinyal=SEMUA`, tA);
   const r = await get(`${base}?${q}&level=campaign`, tA);
   console.log("STATUS_NOAUTH=" + noAuth.status); console.log("STATUS_SALES=" + sales.status);
-  console.log("STATUS_TANPA_RENTANG=" + tanpaRentang.status); console.log("STATUS_PARAM_SALAH=" + bad.status); console.log("STATUS_SINYAL_SEMUA=" + semua.status);
+  console.log("STATUS_TANPA_RENTANG=" + tanpaRentang.status); console.log("STATUS_SEBELAH_SAJA=" + sebelah.status); console.log("STATUS_PARAM_SALAH=" + bad.status); console.log("STATUS_SINYAL_SEMUA=" + semua.status);
   console.log("STATUS_ADMIN=" + r.status); console.log("CACHE=" + (r.headers["cache-control"] || ""));
   if (r.status !== 200) { console.log("ERROR=admin status " + r.status); process.exit(3); }
   const j = JSON.parse(r.body);
@@ -475,12 +476,13 @@ verify_live() {
   val() { printf '%s\n' "$out" | sed -n "s/^$1=//p" | head -1; }
   [ "$(val STATUS_NOAUTH)" = "401" ] || die "tanpa token harus 401 (dapat $(val STATUS_NOAUTH))"
   [ "$(val STATUS_SALES)" = "403" ] || die "token SALES harus 403 (dapat $(val STATUS_SALES))"
-  [ "$(val STATUS_TANPA_RENTANG)" = "400" ] || die "tanpa dari/sampai harus 400 (dapat $(val STATUS_TANPA_RENTANG))"
+  [ "$(val STATUS_TANPA_RENTANG)" = "200" ] || die "tanpa dari/sampai harus 200 (bawaan 7 hari; dapat $(val STATUS_TANPA_RENTANG))"
+  [ "$(val STATUS_SEBELAH_SAJA)" = "400" ] || die "hanya salah satu dari dari/sampai harus 400 (dapat $(val STATUS_SEBELAH_SAJA))"
   [ "$(val STATUS_PARAM_SALAH)" = "400" ] || die "parameter salah harus 400 (dapat $(val STATUS_PARAM_SALAH))"
   [ "$(val STATUS_SINYAL_SEMUA)" = "400" ] || die "sinyal=SEMUA harus 400 — AD_REPLY_UNMARKED hanya audit (dapat $(val STATUS_SINYAL_SEMUA))"
   [ "$(val STATUS_ADMIN)" = "200" ] || die "ADMIN harus 200 (dapat $(val STATUS_ADMIN))"
   [ "$(val CACHE)" = "no-store" ] || die "Cache-Control harus no-store"
-  ok "RBAC: tanpa token 401, SALES 403, tanpa rentang 400, parameter salah 400, sinyal=SEMUA 400, ADMIN 200; no-store"
+  ok "RBAC: tanpa token 401, SALES 403, tanpa rentang 200 (bawaan 7 hari), sebelah saja 400, parameter salah 400, sinyal=SEMUA 400, ADMIN 200; no-store"
   [ "$(val REKON_OK)" = "true" ] || die "rekonsiliasi internal GAGAL: $(val REKON_GAGAL)"; ok "rekonsiliasi internal OK ($(val REKON_CEK) pemeriksaan)"
   [ "$(val CPA_ROAS_NULL)" = "true" ] || die "CPA/ROAS harus null (spend belum terhubung)"; ok "CPA/ROAS = null"
   [ "$(val SINYAL)" = "CTWA_AD" ] && [ "$(val AUDIT_MASUK_ATRIBUSI)" = "false" ] || die "atribusi utama harus hanya CTWA_AD dan audit tidak masuk atribusi"

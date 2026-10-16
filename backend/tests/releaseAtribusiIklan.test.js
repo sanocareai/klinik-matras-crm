@@ -100,7 +100,7 @@ test("gerbang yang dijanjikan ada di kode", () => {
     [/flag \$\{FLAG_NAME\} SUDAH menyala di produksi/, "flag sudah menyala = berhenti"], [/rilis ini harus flag MATI/, "flag MATI saat rilis"],
     [/migrasi\/uji rehearsal MENGUBAH isi tabel lama/, "rehearsal tidak mengubah tabel lama"], [/skema tabel lama BERUBAH oleh migrasi/, "skema tabel lama"],
     [/\.env berubah setelah rilis/, "hash .env sesudah"], [/capture CTWA Fase 0 tidak tersentuh/, "capture Fase 0 tidak tersentuh"],
-    [/STATUS_NOAUTH/, "smoke 401"], [/STATUS_SALES/, "smoke 403"], [/STATUS_TANPA_RENTANG/, "smoke rentang wajib"], [/STATUS_SINYAL_SEMUA/, "smoke sinyal"], [/STATUS_ADMIN/, "smoke ADMIN 200"],
+    [/STATUS_NOAUTH/, "smoke 401"], [/STATUS_SALES/, "smoke 403"], [/STATUS_TANPA_RENTANG/, "smoke rentang bawaan"], [/STATUS_SEBELAH_SAJA/, "smoke sebelah saja 400"], [/STATUS_SINYAL_SEMUA/, "smoke sinyal"], [/STATUS_ADMIN/, "smoke ADMIN 200"],
     [/CPA_ROAS_NULL/, "CPA/ROAS null"], [/KES_CAPTURE_AKTIF/, "kesehatan capture"], [/Gagal proses webhook WAHA/, "galat webhook"], [/inbox hidup/, "smoke inbox baca-saja"],
     [/MODE=rollback/, "mode rollback"], [/tabel atribusi tidak lengkap setelah rollback/, "rollback tidak menghapus tabel"], [/rollback-pre-\$\{TAG_KODE\}-\$\{DEPLOY_SHORT\}/, "tag image rollback"],
   ];

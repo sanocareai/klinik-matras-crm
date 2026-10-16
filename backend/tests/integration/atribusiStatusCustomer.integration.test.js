@@ -144,10 +144,54 @@ test("laporan: hanya NEW menjadi lead iklan; UNKNOWN dan EXISTING dipisah; jumla
     "lead iklan = customer unik dengan touch NEW");
   assert.ok(j.cakupan.leadBaruTouchTanpaBukti >= 2, "customer manual/tidak terbukti terlihat terpisah");
   assert.ok(j.peringatan.some((w) => w.kode === "TOUCH_TANPA_BUKTI_AKUISISI"));
-  const sent = j.grup.reduce((s, g) => s + g.sentuhanBerikutnya.touch + g.lead.unik, 0);
-  assert.ok(sent <= total, "tidak ada touch yang dihitung ganda");
+  // baris UNKNOWN nyata: B (manual) dan F (clid berbeda) — tidak dikreditkan, tidak masuk jumlahTeratribusi
+  const unk = j.grup.find((g) => g.kunci === "UNKNOWN");
+  assert.deepEqual([unk.status, unk.kreditCampaign, unk.lead.unik], ["UNKNOWN", false, 2]);
+  assert.equal(j.jumlahTercakup.leadUnik, j.jumlahTeratribusi.leadUnik + 2);
+  assert.equal(j.grup.reduce((s, g) => s + g.lead.unik, 0), j.jumlahTercakup.leadUnik, "Σ semua baris = tercakup (tidak ada customer di dua baris)");
+  assert.ok(j.grup.reduce((s, g) => s + g.lead.unik, 0) <= total, "customer baris ≤ jumlah touch");
   assert.equal(j.rekonsiliasi.ok, true, JSON.stringify(j.rekonsiliasi.cek.filter((c) => !c.ok)));
   const k = await (await fetch(`${server.baseUrl}/api/atribusi/iklan/kesehatan`, { headers: { Authorization: `Bearer ${token}` } })).json();
   assert.equal(k.db.touchTotal, total);
   assert.deepEqual(k.db.statusCustomer, { new: baru, existing: await testPrisma.attributionTouch.count({ where: { customerStatusAtTouch: "EXISTING" } }), unknown });
+});
+
+test("laporan per campaign + drilldown ad set → ad lewat HTTP: baris campaign + UNMAPPED + UNKNOWN = tercakup; filter konsisten; read-only; default 7 hari", async () => {
+  const AD2 = "52689767293284";
+  await testPrisma.metaAdReference.createMany({ data: [
+    { adId: AD, adSetId: "52694481763284", campaignId: "52694481763084", adName: "Teardown Untuk Ibu", campaignName: "Jabo IG Oktober", source: "MANUAL", syncedAt: new Date() },
+    { adId: AD2, adSetId: "52689767293084", campaignId: "52689735916884", campaignName: "IG gabungan lama", source: "MANUAL", syncedAt: new Date() },
+  ] });
+  const get = async (q) => (await (await fetch(`${server.baseUrl}/api/atribusi/iklan?${q}`, { headers: { Authorization: `Bearer ${token}` } })).json());
+  const sebelum = { t: await testPrisma.attributionTouch.count(), c: await testPrisma.customer.count(), m: await testPrisma.message.count(), r: await testPrisma.metaAdReference.count() };
+  const camp = await get("level=campaign");                                    // tanpa dari/sampai = 7 hari bawaan
+  assert.equal(camp.rentangLead.bawaan, true);
+  assert.equal(camp.rekonsiliasi.ok, true, JSON.stringify(camp.rekonsiliasi.cek.filter((c) => !c.ok)));
+  const jumlahLead = camp.grup.reduce((s, g) => s + g.lead.unik, 0);
+  assert.equal(jumlahLead, camp.jumlahTercakup.leadUnik, "Σ baris campaign + UNMAPPED + UNKNOWN = tercakup");
+  const unk = camp.grup.find((g) => g.kunci === "UNKNOWN");
+  assert.equal(unk.lead.unik, 2);
+  assert.ok(!camp.grup.some((g) => g.kunci === "UNMAPPED"), "semua Ad ID uji sudah terpetakan");
+  const dipetakan = camp.grup.filter((g) => g.status === "MAPPED");
+  assert.equal(dipetakan.reduce((s, g) => s + g.lead.unik, 0), camp.jumlahTeratribusi.leadUnik);
+  assert.equal(dipetakan.length >= 1, true);
+  // rekonsiliasi terhadap SELURUH label META_ADS CRM
+  const rm = camp.rekonMetaAds;
+  assert.equal(rm.akuisisiTerbukti + rm.touchTanpaBukti + rm.touchPadaCustomerSudahAda + rm.tanpaTouchIklan, rm.metaAdsCrmLeadBaru);
+
+  const grupTerbesar = dipetakan.sort((a, b) => b.lead.unik - a.lead.unik)[0];
+  const adset = await get(`level=adset&campaignId=${grupTerbesar.campaign.id}`);
+  assert.ok(adset.grup.length >= 1 && adset.grup.every((g) => g.campaign.id === grupTerbesar.campaign.id));
+  assert.equal(adset.jumlahTeratribusi.leadUnik, grupTerbesar.lead.unik, "drilldown ad set = angka campaign yang sama");
+  assert.equal(adset.rekonsiliasi.ok, true);
+  assert.equal(adset.cakupan, null);
+  const ad = await get(`level=ad&campaignId=${grupTerbesar.campaign.id}&adSetId=${adset.grup[0].adSet.id}`);
+  assert.ok(ad.grup.every((g) => g.adSet.id === adset.grup[0].adSet.id));
+  assert.equal(ad.jumlahTeratribusi.leadUnik, adset.grup[0].lead.unik);
+  // filter yang tidak cocok → kosong (tidak ada tebakan), bukan galat
+  const kosong = await get("level=adset&campaignId=11111111111111");
+  assert.equal(kosong.grup.length, 0);
+  assert.equal(kosong.jumlahTeratribusi.leadUnik, 0);
+  assert.equal((await fetch(`${server.baseUrl}/api/atribusi/iklan?level=campaign&campaignId=${grupTerbesar.campaign.id}`, { headers: { Authorization: `Bearer ${token}` } })).status, 400);
+  assert.deepEqual({ t: await testPrisma.attributionTouch.count(), c: await testPrisma.customer.count(), m: await testPrisma.message.count(), r: await testPrisma.metaAdReference.count() }, sebelum, "laporan tidak menulis apa pun");
 });

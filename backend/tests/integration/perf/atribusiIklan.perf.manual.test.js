@@ -85,6 +85,7 @@ for (const k of SKALA) {
         const waktu = []; let j;
         for (let r = 0; r < RUNS; r++) { const t0 = process.hrtime.bigint(); j = await hitungLaporanIklan(klien, p, { now: NOW, timeoutMs: 60_000 }); waktu.push(Number(process.hrtime.bigint() - t0) / 1e6); }
         assert.equal(j.rekonsiliasi.ok, true, JSON.stringify(j.rekonsiliasi.cek.filter((x) => !x.ok)));
+        console.error(`[perf] ${k}x hari=${c.hari} level=${c.level} rincian=${c.rincian} p50=${bulat(persen(waktu, 50))}ms`);
         out.hasil.push({ hari: c.hari, level: c.level, rincian: c.rincian, leadUnik: j.jumlahTeratribusi.leadUnik, grup: j.jumlahGrup, p50_ms: bulat(persen(waktu, 50)), p95_ms: bulat(persen(waktu, 95)), maks_ms: bulat(Math.max(...waktu)) });
       }
       // rincian per kueri untuk satu eksekusi rentang terpanjang / level ad

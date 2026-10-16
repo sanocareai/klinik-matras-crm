@@ -557,8 +557,12 @@ test("AD_REPLY_UNMARKED hanya AUDIT: direkam, muncul di blok audit, TIDAK menamb
   assert.equal((await api("GET", `/?${P}&level=campaign&sinyal=SEMUA`)).status, 400);
 });
 
-test("rentang tanggal WAJIB dan dibatasi 93 hari; /kesehatan: agregat tanpa identitas (rekam, gagal, dipulihkan, pending pemetaan + usia)", async () => {
-  assert.equal((await api("GET", "/")).status, 400, "tanpa dari/sampai");
+test("rentang: kosong = 7 hari bawaan; sebelah saja 400; dibatasi 93 hari; /kesehatan: agregat tanpa identitas (rekam, gagal, dipulihkan, pending pemetaan + usia)", async () => {
+  const bawaan = await api("GET", "/");
+  assert.equal(bawaan.status, 200, "tanpa dari/sampai = 7 hari terakhir");
+  assert.equal(bawaan.json.rentangLead.bawaan, true);
+  assert.equal(bawaan.json.rentangLead.hariBawaan, 7);
+  assert.equal((await api("GET", "/?sampai=2026-10-10")).status, 400, "sebelah saja");
   assert.equal((await api("GET", "/?dari=2026-10-01")).status, 400);
   assert.equal((await api("GET", "/?dari=2026-06-01&sampai=2026-10-10")).status, 400, "lebih dari 93 hari");
   const h = await api("GET", "/kesehatan");
