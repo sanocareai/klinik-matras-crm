@@ -89,6 +89,7 @@ import { materialIssueRouter } from "./routes/materialIssue.js";
 import { complaintsRouter } from "./routes/complaints.js";
 import { stockTransferRouter } from "./routes/stockTransfer.js";
 import { stockCountRouter } from "./routes/stockCount.js";
+import { riwayatReferensiRouter } from "./routes/riwayatReferensi.js";
 import { damagedStockRouter } from "./routes/damagedStock.js";
 import { returnRecordRouter } from "./routes/returnRecord.js";
 import { unitCustodyRouter } from "./routes/unitCustody.js";
@@ -295,6 +296,7 @@ app.use("/api/finance/biaya-bahan", biayaBahanFinanceRouter);
 app.use("/api/inventory/material-issues", materialIssueRouter);
 app.use("/api/inventory/transfers", stockTransferRouter);
 app.use("/api/inventory/stock-counts", stockCountRouter);
+app.use("/api/inventory/riwayat-referensi", riwayatReferensiRouter); // catatan REFERENSI historis dari file (bukan transaksi/saldo); tulis hanya tabel referensi
 app.use("/api/inventory/damaged-stock", damagedStockRouter);
 app.use("/api/inventory/returns", returnRecordRouter);
 app.use("/api/inventory/unit-custody", unitCustodyRouter);

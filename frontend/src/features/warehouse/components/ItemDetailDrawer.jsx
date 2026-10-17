@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { X, Pencil, Loader2, History, TriangleAlert } from "lucide-react";
 import { api } from "@/api.js";
+import RiwayatReferensiBahan from "./RiwayatReferensiBahan.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import StatusBadge from "./StatusBadge.jsx";
 import {
@@ -211,6 +212,8 @@ export default function ItemDetailDrawer({ item, onClose, onEdit, onChanged }) {
                 </ul>
               )}
             </div>
+
+            <RiwayatReferensiBahan materialId={materialId} />
 
             <p className="mt-4 border-t border-line pt-3 text-[10.5px] leading-relaxed text-ink3">
               Lokasi rak/bin, batch &amp; lot, tanggal kedaluwarsa, dan stok
