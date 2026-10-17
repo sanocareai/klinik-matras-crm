@@ -25,6 +25,7 @@ import { AccountError } from "../services/finance/accounts.js";
 // pernah menulis stok; yang dilakukan di sini hanya MEMBACA PO untuk mengisi dokumen, membatasi jumlah baik, dan menilai stok.
 import { siapkanPenerimaanDariPO, validasiBarisPenerimaanPO, periksaPutaway, selesaiPutaway, bentukPO } from "../services/finance/purchaseOrder.js";
 import { catatPerubahanDraf } from "../lib/jejakPerubahan.js";
+import { tampilanPenerimaan, penghalangBatalJadwal } from "../services/penerimaanStatus.js";
 import { wajibUuid } from "../lib/uuidParam.js";
 import { pesanServerAman } from "../lib/galatServerAman.js";
 
@@ -35,7 +36,7 @@ class ReceiptError extends Error {
   constructor(message, statusCode = 400) { super(message); this.statusCode = statusCode; }
 }
 function handleErr(err, res) {
-  if (typeof err.statusCode === "number") return res.status(err.statusCode).json({ error: err.message });
+  if (typeof err.statusCode === "number") return res.status(err.statusCode).json({ error: err.message, ...(typeof err.code === "string" && { code: err.code }) });
   if (err.code === "P2002") return res.status(409).json({ error: "Nomor receipt sudah dipakai" });
   if (err.code === "P2025") return res.status(404).json({ error: "Data tidak ditemukan" });
   console.error("Goods receipt error:", err);
@@ -84,7 +85,7 @@ goodsReceiptRouter.get("/", requirePermission(P.INVENTORY_READ), async (req, res
       include: receiptInclude,
       orderBy: [{ createdAt: "desc" }],
     });
-    res.json({ receipts });
+    res.json({ receipts: receipts.map((r) => ({ ...r, tampilan: tampilanPenerimaan(r) })) });
   } catch (err) {
     handleErr(err, res);
   }
@@ -94,7 +95,7 @@ goodsReceiptRouter.get("/:id", requirePermission(P.INVENTORY_READ), wajibUuid(),
   try {
     const receipt = await prisma.goodsReceipt.findUnique({ where: { id: req.params.id }, include: receiptInclude });
     if (!receipt) return res.status(404).json({ error: "Goods receipt tidak ditemukan" });
-    res.json(await denganRingkasanPO(receipt));
+    res.json({ ...(await denganRingkasanPO(receipt)), tampilan: tampilanPenerimaan(receipt) });
   } catch (err) {
     handleErr(err, res);
   }
@@ -204,7 +205,7 @@ goodsReceiptRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), wajibUuid
       await catatPerubahanDraf(tx, { entityType: ENTITY_TYPES.GOODS_RECEIPT, entityId: u.id, actorId: req.user.id, nomor: u.receiptNumber, lama: existing, data });
       return u;
     });
-    res.json(receipt);
+    res.json({ ...receipt, tampilan: tampilanPenerimaan(receipt) });
   } catch (err) {
     handleErr(err, res);
   }
@@ -262,6 +263,53 @@ goodsReceiptRouter.patch("/:id/lines/:lineId", requirePermission(P.INVENTORY_WRI
   } catch (err) {
     handleErr(err, res);
   }
+});
+
+// POST /api/inventory/goods-receipts/:id/kembali-draft   { alasan? }
+// Jadwal yang SALAH dikembalikan ke Draf (hanya Terjadwal, barang belum dicatat tiba, belum ada jumlah/pergerakan stok). Tercatat sebelum–sesudah. Tidak menyentuh stok/PO/Finance.
+goodsReceiptRouter.post("/:id/kembali-draft", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
+  try {
+    const alasan = String(req.body?.alasan ?? "").trim().slice(0, 300);
+    const hasil = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, "goods_receipts", req.params.id);
+      const r = await tx.goodsReceipt.findUnique({ where: { id: req.params.id }, include: receiptInclude });
+      if (!r) throw new ReceiptError("Penerimaan tidak ditemukan", 404);
+      if (r.status === "DRAFT") return r; // sudah Draf: hasil sama (aman diulang)
+      if (r.status !== "SCHEDULED") throw new ReceiptError(`Hanya penerimaan yang masih Terjadwal yang bisa dikembalikan ke Draf (sekarang: ${tampilanPenerimaan(r).label}).`, 409);
+      const halang = penghalangBatalJadwal(r, await tx.stockMovement.count({ where: { goodsReceiptId: r.id } }));
+      if (halang) { const e = new ReceiptError(halang.pesan, 409); e.code = halang.kode; throw e; }
+      const u = await tx.goodsReceipt.update({ where: { id: r.id }, data: { status: "DRAFT" }, include: receiptInclude });
+      await recordActivity(tx, { entityType: ENTITY_TYPES.GOODS_RECEIPT, entityId: r.id, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: req.user.id, metadata: { aksi: "KEMBALI_KE_DRAF", nomor: r.receiptNumber, sebelum: { status: "SCHEDULED" }, sesudah: { status: "DRAFT" }, alasan: alasan || null } });
+      return u;
+    });
+    res.json({ ...hasil, tampilan: tampilanPenerimaan(hasil) });
+  } catch (err) { handleErr(err, res); }
+});
+
+// POST /api/inventory/goods-receipts/:id/batalkan-jadwal   { alasan }
+// Membatalkan penerimaan yang BELUM berpengaruh apa pun (Draf/Terjadwal, barang belum dicatat tiba, tanpa jumlah/pergerakan). Dokumen tidak dihapus: berstatus Dibatalkan beserta alasan dan pelaku.
+// Beda dengan Tolak barang (barang sudah tiba lalu ditolak). PO tidak berubah; jadwal baru dapat dibuat dari PO.
+goodsReceiptRouter.post("/:id/batalkan-jadwal", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
+  try {
+    const alasan = String(req.body?.alasan ?? "").trim();
+    if (alasan.length < 3 || alasan.length > 300) throw new ReceiptError("Alasan pembatalan wajib diisi (3–300 karakter)", 400);
+    const hasil = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, "goods_receipts", req.params.id);
+      const r = await tx.goodsReceipt.findUnique({ where: { id: req.params.id }, include: receiptInclude });
+      if (!r) throw new ReceiptError("Penerimaan tidak ditemukan", 404);
+      if (r.status === "REJECTED") return { ...r, _ulang: true }; // sudah dibatalkan/ditolak: hasil sama
+      if (!["DRAFT", "SCHEDULED"].includes(r.status)) throw new ReceiptError(`Penerimaan berstatus ${tampilanPenerimaan(r).label} tidak bisa dibatalkan dari sini. ${r.status === "COMPLETED" ? "Pakai Koreksi." : "Pakai Tolak barang bila barang memang ditolak."}`, 409);
+      const halang = penghalangBatalJadwal(r, await tx.stockMovement.count({ where: { goodsReceiptId: r.id } }));
+      if (halang) { const e = new ReceiptError(halang.pesan, 409); e.code = halang.kode; throw e; }
+      const dipakaiPengganti = await tx.goodsReceiptLine.count({ where: { replacementForLine: { goodsReceiptId: r.id }, goodsReceipt: { status: { not: "REJECTED" } } } });
+      if (dipakaiPengganti > 0) throw new ReceiptError("Penerimaan ini sudah punya pengiriman pengganti yang tercatat — tidak bisa dibatalkan.", 409);
+      const u = await tx.goodsReceipt.update({ where: { id: r.id }, data: { status: "REJECTED", notes: [r.notes, `Dibatalkan sebelum barang tiba: ${alasan}`].filter(Boolean).join(" — ") }, include: receiptInclude });
+      await recordActivity(tx, { entityType: ENTITY_TYPES.GOODS_RECEIPT, entityId: r.id, eventType: EVENT_TYPES.DOCUMENT_CANCELLED, actorId: req.user.id, metadata: { aksi: "JADWAL_DIBATALKAN", nomor: r.receiptNumber, sebelum: { status: r.status }, sesudah: { status: "REJECTED", tampil: "Dibatalkan" }, alasan } });
+      return u;
+    });
+    const { _ulang, ...dok } = hasil;
+    res.json({ ...dok, ulang: !!_ulang, tampilan: tampilanPenerimaan(dok) });
+  } catch (err) { handleErr(err, res); }
 });
 
 // POST /api/inventory/goods-receipts/:id/putaway

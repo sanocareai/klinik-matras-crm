@@ -582,6 +582,10 @@ export const api = {
   updateGoodsReceiptLine: (id, lineId, data) =>
     request(`/inventory/goods-receipts/${id}/lines/${lineId}`, { method: "PATCH", body: JSON.stringify(data) }),
   putawayGoodsReceipt: (id, data = {}) => request(`/inventory/goods-receipts/${id}/putaway`, { method: "POST", body: JSON.stringify(data) }),
+  kembaliDraftGoodsReceipt: (id, alasan) => request(`/inventory/goods-receipts/${id}/kembali-draft`, { method: "POST", body: JSON.stringify({ alasan }) }),
+  batalkanJadwalGoodsReceipt: (id, alasan) => request(`/inventory/goods-receipts/${id}/batalkan-jadwal`, { method: "POST", body: JSON.stringify({ alasan }) }),
+  getBerandaGudang: () => request("/inventory/beranda"),
+  getStokLokasi: () => request("/inventory/beranda/stok"),
   rejectGoodsReceipt: (id, reason) => request(`/inventory/goods-receipts/${id}/reject`, { method: "PATCH", body: JSON.stringify({ reason }) }),
 
   // Material Issue (Warehouse Tahap 3)

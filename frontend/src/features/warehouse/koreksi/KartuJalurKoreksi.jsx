@@ -12,9 +12,11 @@ const IKON = { edit: Pencil, koreksi: Undo2, alur: Route, blokir: Lock, final: C
  * kartu ini hanya menampilkan dan menyediakan tombol aksi yang sesuai — TIDAK ada tombol "Edit" umum untuk semua status.
  * @param aksi  { KOREKSI_PENERIMAAN?: fn, KOREKSI_KEDATANGAN?: fn } — penangan tombol yang didukung layar pemanggil
  * @param versi nilai yang berubah saat dokumen dimuat ulang (mis. status/updatedAt) agar kartu ikut menyegarkan
+ * @param ringkas hanya tampil bila RELEVAN (dokumen sudah memengaruhi stok / alur resmi / diblokir) dan tertutup sebagai satu baris; draf (sudah punya aksi di halaman) dan dokumen final tidak menampilkan kartu
  */
-export default function KartuJalurKoreksi({ tipe, id, versi, aksi = {} }) {
+export default function KartuJalurKoreksi({ tipe, id, versi, aksi = {}, ringkas = false }) {
   const [data, setData] = useState(null);
+  const [terbuka, setTerbuka] = useState(!ringkas);
   const [galat, setGalat] = useState("");
   useEffect(() => {
     if (!id) return undefined;
@@ -25,6 +27,7 @@ export default function KartuJalurKoreksi({ tipe, id, versi, aksi = {} }) {
 
   if (galat) return <p className="mt-3 text-[11.5px] text-ink3" data-testid="jalur-galat">Jalur koreksi tidak bisa dimuat: {galat}</p>;
   if (!data) return <p className="mt-3 flex items-center gap-1.5 text-[11.5px] text-ink3"><Loader2 size={12} className="animate-spin" /> Memuat jalur koreksi…</p>;
+  if (ringkas && (data.jalur === "EDIT_DRAF" || data.jalur === "FINAL")) return null;
   const t = JALUR_TAMPIL[data.jalur] ?? JALUR_TAMPIL.DIBLOKIR; const Ikon = IKON[t.ikon] ?? Route;
   const tombol = (data.tindakan ?? []).filter((x) => typeof aksi[x.kode] === "function");
   return (
@@ -33,7 +36,9 @@ export default function KartuJalurKoreksi({ tipe, id, versi, aksi = {} }) {
         <Ikon size={14} className="text-ink3" />
         <h4 className="m-0 text-[11px] font-bold uppercase tracking-wide text-ink3">Koreksi kesalahan input</h4>
         <Badge variant={t.warna} data-testid="jalur-label">{t.label}</Badge>
+        {ringkas && <button type="button" onClick={() => setTerbuka((v) => !v)} aria-expanded={terbuka} className="ml-auto text-[12px] font-semibold text-accent max-sm:min-h-11" data-testid="jalur-toggle">{terbuka ? "Tutup" : "Perlu memperbaiki? Lihat caranya"}</button>}
       </div>
+      {!terbuka ? <p className="mt-1 text-[12px] text-ink2" data-testid="jalur-judul-ringkas">{data.judul}</p> : <>
       <p className="mt-1.5 text-[12.5px] font-semibold text-ink" data-testid="jalur-judul">{data.judul}</p>
       <p className="mt-0.5 text-[11.5px] leading-snug text-ink2" data-testid="jalur-penjelasan">{data.penjelasan}</p>
       {data.langkah?.length > 0 && (
@@ -67,6 +72,7 @@ export default function KartuJalurKoreksi({ tipe, id, versi, aksi = {} }) {
           </ul>
         </div>
       )}
+      </>}
     </section>
   );
 }

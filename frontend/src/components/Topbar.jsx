@@ -79,7 +79,7 @@ const ROUTE_LABELS = {
   "/bengkel/materials":        ["Produksi", "Bahan Produksi"],
 
   "/warehouse/antrean-produksi": ["Gudang", "Antrean Produksi"],
-  "/warehouse/dashboard":       ["Gudang", "Dashboard"],
+  "/warehouse/dashboard":       ["Gudang", "Beranda"],
   "/warehouse/unit-custody":    ["Gudang", "Penerimaan Unit"],
   "/warehouse/material-pickup": ["Gudang", "Permintaan Bahan"],
   "/warehouse/finished-goods":  ["Gudang", "Terima Barang Jadi"],
@@ -136,7 +136,7 @@ export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, user
   // 2 Agustus 2026 remah "Main Hub" HARUS bisa diklik. `to` null = teks biasa.
   const crumbs = commandCenterTitle
     ? [{ text: "Main Hub", to: "/portal" }, { text: commandCenterTitle, to: null }]
-    : (labelFinance(pathname, search) || ROUTE_LABELS[pathname] || [pathname.replace("/", "")]).map((text, i, arr) => ({
+    : (labelFinance(pathname, search) || ROUTE_LABELS[pathname] || (pathname.startsWith("/warehouse/goods-receipt/") ? ["Gudang", "Penerimaan Barang", "Detail"] : null) || [pathname.replace("/", "")]).map((text, i, arr) => ({
         text,
         // Halaman di DALAM sebuah workspace: remah pertama jadi jalan pulang
         // ke Main Hub. Remah terakhir (halaman sekarang) tidak pernah link.

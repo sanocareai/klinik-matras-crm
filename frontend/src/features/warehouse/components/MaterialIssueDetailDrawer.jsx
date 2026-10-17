@@ -134,7 +134,7 @@ export default function MaterialIssueDetailDrawer({ issueId, onClose, onChanged 
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-            <KartuJalurKoreksi tipe="MATERIAL_ISSUE" id={issueId} versi={issue?.status} />
+            <KartuJalurKoreksi tipe="MATERIAL_ISSUE" id={issueId} versi={issue?.status} ringkas />
             {loading && (
               <p className="flex items-center gap-1.5 py-6 text-[12.5px] text-ink3">
                 <Loader2 size={14} className="animate-spin" /> Memuat…

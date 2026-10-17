@@ -124,7 +124,7 @@ export default function StockTransferDetailDrawer({ transferId, onClose, onChang
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-            <KartuJalurKoreksi tipe="STOCK_TRANSFER" id={transferId} versi={transfer?.status} />
+            <KartuJalurKoreksi tipe="STOCK_TRANSFER" id={transferId} versi={transfer?.status} ringkas />
             {loading && (
               <p className="flex items-center gap-1.5 py-6 text-[12.5px] text-ink3">
                 <Loader2 size={14} className="animate-spin" /> Memuat…

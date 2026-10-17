@@ -16,6 +16,8 @@ import { cariItemHub } from "./financeHubs.js";
 
 const RESOURCE_LABELS = {
   units: "Unit",
+  // Halaman detail Penerimaan Barang (Tahap 1 UX Gudang): /warehouse/goods-receipt/<id> → tab "Penerimaan" (bukan "Goods Receipt").
+  "goods-receipt": "Penerimaan",
 };
 
 // P9B.1 — segmen path yang tidak title-case rapi dengan aturan umum di bawah (huruf/angka bercampur, singkatan
@@ -64,6 +66,8 @@ export function titleFromPath(rawPath) {
     seg = RESOURCE_LABELS[resource] || resource;
   }
   const rawLast = seg.toLowerCase();
+  // Menu Gudang bernama "Beranda" (bukan Dashboard) agar tidak terkesan ada dua dashboard.
+  if (divisionSeg === "warehouse" && rawLast === "dashboard") return "Gudang · Beranda";
   if (SEGMENT_LABEL_OVERRIDE[rawLast]) return SEGMENT_LABEL_OVERRIDE[rawLast];
   const label = seg.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
   if (AMBIGUOUS_SEGMENTS.has(rawLast) && divisionSeg && DIVISION_LABELS[divisionSeg] && parts.length + 1 > 0 && divisionSeg !== rawLast) {

@@ -30,8 +30,11 @@ export function jalurDokumen(tipe, doc = {}) {
   const s = String(doc.status ?? "");
   switch (tipe) {
     case TIPE.GOODS_RECEIPT: {
-      if (s === "REJECTED") return hasil(JALUR.FINAL, "Penerimaan ditolak", "Dokumen berakhir tanpa menambah stok. Jika penolakan keliru, buat Penerimaan Baru.", langkah("Buat Penerimaan Baru dari Barang Akan Datang (PO) atau Penerimaan Baru."));
-      if (s !== "COMPLETED") return hasil(JALUR.EDIT_DRAF, "Boleh diedit (belum masuk stok)", "Penerimaan belum disimpan ke stok. Isian boleh diperbaiki sesuai izin; tiap perubahan tercatat sebelum–sesudah.", langkah("Ubah isian di detail penerimaan (tanggal, surat jalan, jumlah, kondisi)."), { pengaruh: { stok: false, produksi: false, finance: !!doc.purchaseOrderId } });
+      if (s === "REJECTED") return hasil(JALUR.FINAL, "Penerimaan ditolak atau dibatalkan", "Dokumen berakhir tanpa menambah stok (dibatalkan sebelum barang tiba, atau barang tiba lalu ditolak). Jika keliru, buat Penerimaan Baru dari PO.", langkah("Buat jadwal/penerimaan baru dari Barang Akan Datang (PO) atau Penerimaan Baru."));
+      if (s !== "COMPLETED") return hasil(JALUR.EDIT_DRAF, "Boleh diedit (belum masuk stok)", "Penerimaan belum disimpan ke stok. Isian boleh diperbaiki sesuai izin; tiap perubahan tercatat sebelum–sesudah.", langkah(
+        s === "DRAFT" || s === "SCHEDULED" ? "Ubah jadwal kedatangan langsung di detail penerimaan." : "Ubah isian di detail penerimaan (tanggal, surat jalan, jumlah, kondisi).",
+        s === "SCHEDULED" ? "Salah jadwalkan? Kembalikan ke Draf, atau Batalkan penerimaan (alasan singkat) selama barang belum dicatat tiba." : "Salah buat? Batalkan penerimaan (alasan singkat) selama belum ada barang tiba.",
+      ), { pengaruh: { stok: false, produksi: false, finance: !!doc.purchaseOrderId } });
       if (doc.purchaseOrderId) return hasil(JALUR.ALUR_RESMI, "Sudah masuk stok — dari PO: pakai Koreksi Kedatangan (resmi)", "Penerimaan dari PO terhubung ke progres PO, jadwal termin, tagihan, dan jurnal persediaan. Koreksi jumlah baik dan data kedatangan memakai satu pintu resmi yang sudah ada: wajib alasan, pratinjau dampak (progres PO, termin, jurnal), pergerakan pembalik + pengganti bertaut. Diblokir otomatis bila bahan sudah dipakai/dipindah/dihitung opname, ada retur supplier aktif, atau faktur disetujui mengklaim baris itu.", langkah(
         "Tekan “Koreksi Kedatangan (resmi)” di detail penerimaan ini (membuka form yang sama dengan Barang Akan Datang).",
         "Isi nilai baru + alasan, tekan Lihat Dampak; jika tidak diblokir, simpan.",
