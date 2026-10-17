@@ -91,12 +91,12 @@ export default function WarehouseInventory() {
           </details>
         )}
 
-        <div role="tablist" aria-label="Saring kategori bahan" className="flex flex-wrap gap-1 border-b border-line pb-2">
+        <div role="tablist" aria-label="Saring kategori bahan" className="flex gap-1 overflow-x-auto border-b border-line pb-2 md:flex-wrap">
           {TABS.map((t) => (
             <button key={t.key} role="tab" aria-selected={tab === t.key} onClick={() => setTab(t.key)}
-              className={cn("rounded-chip px-3 py-1.5 text-[12.5px] font-semibold transition-colors max-sm:min-h-11", tab === t.key ? "bg-accentbg text-accent" : "text-ink3 hover:bg-hovertint hover:text-ink2")}>{t.label}</button>
+              className={cn("shrink-0 whitespace-nowrap rounded-chip px-3 py-1.5 text-[12.5px] font-semibold transition-colors max-sm:min-h-11", tab === t.key ? "bg-accentbg text-accent" : "text-ink3 hover:bg-hovertint hover:text-ink2")}>{t.label}</button>
           ))}
-          {terfilter && <span className="ml-auto self-center text-[11.5px] text-ink3" data-testid="jumlah-tampil">{terfilter.length} bahan tampil</span>}
+          {terfilter && <span className="ml-auto shrink-0 self-center whitespace-nowrap pl-2 text-[11.5px] text-ink3" data-testid="jumlah-tampil">{terfilter.length} bahan tampil</span>}
         </div>
 
         {error && <div role="alert" className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{error}</div>}
@@ -130,8 +130,9 @@ export default function WarehouseInventory() {
                   <li key={r.materialId}>
                     <button type="button" onClick={() => setSelected(stok?.get(r.materialId) ?? null)} data-testid="baris-stok" data-kode={r.kode}
                       className="w-full px-4 py-3 text-left transition-colors hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset max-sm:min-h-11">
-                      <div className="flex items-center gap-2"><span className="min-w-0 text-[12.5px] font-semibold text-ink [overflow-wrap:anywhere]">{r.kode}</span><Badge variant={warnaKeadaan(r.keadaan)} className="ml-auto shrink-0">{r.keadaanLabel}</Badge></div>
+                      <div className="text-[12.5px] font-semibold text-ink [overflow-wrap:anywhere]">{r.kode}</div>
                       <div className="mt-0.5 text-[13px] text-ink">{r.nama}</div>
+                      <div className="mt-1"><Badge variant={warnaKeadaan(r.keadaan)} className="h-auto whitespace-normal text-left leading-tight">{r.keadaanLabel}</Badge></div>
                       <div className="mt-1 text-[11.5px] text-ink2">Saldo <SaldoSel r={r} inline /> · minimum {teksBatasMinimum(r)}</div>
                       <div className="mt-0.5 text-[11px] text-ink3">{r.sumberAngka?.teks ?? "Belum ada catatan pergerakan stok"}</div>
                       {riwayatLokasi(r) && <div className="mt-0.5 text-[11px] text-ink3" data-testid="riwayat-lokasi">{riwayatLokasi(r).teks} — riwayat, bukan lokasi stok saat ini</div>}
