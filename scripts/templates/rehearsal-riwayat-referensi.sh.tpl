@@ -223,13 +223,13 @@ RKAT "$WORK/katalog.sql" | LC_ALL=C sort > "$WORK/katalog-restore.txt" || die "k
 # identik setelah normalisasi cast/kurung/spasi; setiap konstrain yang terdampak diitemkan. Selisih jenis lain (objek, pemilik, izin, kolom, indeks, trigger, fungsi, dll.) menggagalkan.
 norm_cek() { awk -F'|' 'BEGIN{OFS="|"} $1=="constraint" && $3 ~ /^c:/ { v=$3; gsub(/::[a-z_]+( [a-z_]+)?(\[\])?/, "", v); gsub(/[() ]/, "", v); $3=v } {print}' "$1"; }
 if ! cmp -s "$WORK/katalog-live.txt" "$WORK/katalog-restore.txt"; then
-  diff "$WORK/katalog-live.txt" "$WORK/katalog-restore.txt" | grep -E '^[<>]' | cut -d'|' -f1 | sed 's/^. //' | LC_ALL=C sort | uniq -c | sed 's/^/        selisih mentah menurut jenis: /'
+  diff "$WORK/katalog-live.txt" "$WORK/katalog-restore.txt" | grep -E '^[<>]' | cut -d'|' -f1 | sed 's/^. //' | LC_ALL=C sort | uniq -c | sed 's/^/        selisih mentah menurut jenis: /' || true  # diff keluar 1 bila ada selisih; pipefail tidak boleh mematikan skrip
   norm_cek "$WORK/katalog-live.txt" > "$WORK/katalog-live.norm"; norm_cek "$WORK/katalog-restore.txt" > "$WORK/katalog-restore.norm"
   if ! cmp -s "$WORK/katalog-live.norm" "$WORK/katalog-restore.norm"; then
     diff "$WORK/katalog-live.norm" "$WORK/katalog-restore.norm" | head -n 40 | cut -c1-200 | sed 's/^/        /'
     die "katalog restore BERBEDA dari produksi (objek/pemilik/izin tidak pulih sesuai sumber)"
   fi
-  diff "$WORK/katalog-live.txt" "$WORK/katalog-restore.txt" | grep -E '^< constraint' | cut -d'|' -f2 | LC_ALL=C sort -u > "$LOGDIR/pengecualian-bentuk-check.txt"
+  diff "$WORK/katalog-live.txt" "$WORK/katalog-restore.txt" | grep -E '^< constraint' | cut -d'|' -f2 | LC_ALL=C sort -u > "$LOGDIR/pengecualian-bentuk-check.txt" || true
   chmod 600 "$LOGDIR/pengecualian-bentuk-check.txt"
   echo "  INFO  PENGECUALIAN TERITEM: $(wc -l < "$LOGDIR/pengecualian-bentuk-check.txt") CHECK constraint berbeda HANYA pada bentuk teks deparse (cast ARRAY), setara setelah normalisasi; daftar: $LOGDIR/pengecualian-bentuk-check.txt"
   sed 's/^/        - /' "$LOGDIR/pengecualian-bentuk-check.txt"
