@@ -718,7 +718,7 @@ else {
 // Target uji penolakan: order yang LOLOS validasi (agar penolakan memang datang dari PIN step-up, bukan dari validasi data); bila tidak ada, order pertama mana pun.
 const target = calon ?? D.daftar[0] ?? semuaKelas.flatMap((y) => y?.daftar ?? [])[0];
 if (target) {
-  const uAkui = `${P0}/${target.orderId}/akui`; const body = { dasarTanggal: "KEPUTUSAN_OWNER", tanggal: hariIni, buktiReferensi: "smoke penolakan", alasan: "smoke penolakan rilis (harus ditolak)" };
+  const uAkui = `${P0}/${target.orderId}/akui`; const body = { dasarTanggal: "KEPUTUSAN_OWNER", tanggal: hariIni, buktiReferensi: "smoke penolakan", alasan: "smoke penolakan rilis (harus ditolak)", akuiPraCutoff: true };
   rec("tulis tanpa token 401; SALES 403", (await api("POST", uAkui, null, body, { "Idempotency-Key": "smoke-kd-anon-0001" })).status === 401 && (await api("POST", uAkui, tS, body, { "Idempotency-Key": "smoke-kd-sales-001" })).status === 403);
   if (tF) rec("Finance biasa (bukan Admin/Owner): pratinjau baca 200 tetapi menulis 403", (await api("GET", `${P0}/${target.orderId}`, tF)).status === 200 && (await api("POST", uAkui, tF, body, { "Idempotency-Key": "smoke-kd-fin-00001" })).status === 403 && (await api("POST", `${P0}/${target.orderId}/balik`, tF, { alasan: "smoke" }, { "Idempotency-Key": "smoke-kd-fin-00002" })).status === 403);
   else skip("izin Finance biasa", "tidak ada akun FINANCE murni aktif (diuji di tes integrasi)");
