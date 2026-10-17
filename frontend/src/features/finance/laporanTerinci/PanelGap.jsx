@@ -6,7 +6,7 @@ import { KartuPanel, KotakAngka, KotakCatatan } from "./ui.jsx";
 import { tanggalPanjang } from "./logic.js";
 
 // DAFTAR PEMERIKSAAN GAP PEMBUKUAN — bukan antrean perbaikan: tidak ada tombol yang memposting jurnal dari sini.
-export function PanelGap({ data }) {
+export function PanelGap({ data, onKoreksi }) {
   const g = data.gap;
   return (
     <KartuPanel testid="panel-gap" judul="Gap Pembukuan — daftar pemeriksaan" deskripsi="Transaksi yang belum bisa dibukukan, satu per satu, dengan pembeda antara order yang benar-benar belum berharga dan order operasional PKR Rp0.">
@@ -15,7 +15,7 @@ export function PanelGap({ data }) {
         {g.ringkasanJenis.map((r) => <KotakAngka key={r.jenis} label={r.label} nilai={String(r.jumlah)} />)}
         <KotakAngka label="Diserahkan tanpa gap" nilai={String(g.tanpaGap.length)} tone={g.tanpaGap.length ? "orange" : undefined} sub="tidak diakui & tidak tercatat gap" />
       </div>
-      <KotakCatatan>{g.catatan}</KotakCatatan>
+      <KotakCatatan>{g.catatan}{onKoreksi && <> Perbaikan dilakukan per dokumen di <button type="button" onClick={onKoreksi} className="font-semibold underline" data-testid="ke-koreksi">Koreksi Dokumen</button> (bukti, pratinjau jurnal, PIN).</>}</KotakCatatan>
       {g.daftar.length === 0 && g.tanpaGap.length === 0 && <p className="py-4 text-center text-[13px] text-ink3" data-testid="gap-kosong">Tidak ada transaksi yang perlu diperiksa.</p>}
       {g.daftar.length > 0 && (
         <ul className="m-0 list-none space-y-1.5 p-0" data-testid="daftar-gap">

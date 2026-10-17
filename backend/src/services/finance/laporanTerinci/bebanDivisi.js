@@ -41,7 +41,7 @@ export function hitungBebanDivisi(baris, ringkasan) {
     nominal: rp(sumMoney(konflikRows.map((r) => r.nilai))),
     penjelasan: "Dokumen memuat bukti divisi yang saling bertentangan (mis. divisi tertulis di dokumen ≠ pemetaan kategori). Angka mengikuti prioritas aturan atribusi; kandidat lain ditampilkan untuk diputuskan manusia.",
     baris: konflikRows.map((r) => ({
-      id: r.id, nomorJurnal: r.nomorJurnal, tanggal: r.tanggal, sumber: r.sumber, akunKode: r.akunKode, akunNama: r.akunNama, nilai: r.nilai, dokumen: r.dokumen?.nomor ?? null,
+      id: r.id, nomorJurnal: r.nomorJurnal, tanggal: r.tanggal, sumber: r.sumber, akunKode: r.akunKode, akunNama: r.akunNama, nilai: r.nilai, dokumen: r.dokumen?.nomor ?? null, dokumenModul: r.dokumen?.modul ?? null, dokumenId: r.dokumenId ?? null,
       deskripsi: r.deskripsi, divisiTerpilih: r.divisi, divisiTerpilihLabel: r.divisiLabel, kandidat: r.konflik, kandidatLabel: r.konflik.map(labelDivisi), tahap: r.tahap, aturan: r.aturan,
     })),
   };

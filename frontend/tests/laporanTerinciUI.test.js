@@ -19,9 +19,9 @@ test("penanda mutu margin: BELUM_LENGKAP memakai kalimat baku; LENGKAP hijau & f
   assert.equal(penandaMutu({ status: "ENTAH" }).final, false); assert.equal(penandaMutu(null).final, false);
 });
 
-test("lima kartu, enam seksi, tiga tab drilldown — urutan dan label stabil", () => {
+test("lima kartu, tujuh seksi, tiga tab drilldown — urutan dan label stabil", () => {
   assert.deepEqual(METRIK_KARTU, ["pendapatan", "hpp", "laba_kotor", "beban_operasional", "laba_bersih"]);
-  assert.deepEqual(SEKSI.map((s) => s.key), ["laporan", "jembatan", "pkr", "hpp", "divisi", "gap"]);
+  assert.deepEqual(SEKSI.map((s) => s.key), ["laporan", "jembatan", "pkr", "hpp", "divisi", "gap", "koreksi"]);
   assert.deepEqual(TAB_DRILLDOWN.map((t) => t.key), ["akun", "jurnal", "divisi"]);
   assert.equal(LABEL_METRIK.hpp, "Beban Pokok (HPP)");
 });

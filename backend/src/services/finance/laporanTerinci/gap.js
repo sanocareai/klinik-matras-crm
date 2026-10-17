@@ -59,7 +59,7 @@ export async function hitungGap(tx, { fromStr, toStr, catatan }) {
       : jenis === "PKR_OPERASIONAL_RP0" ? { pendapatan: "Tidak ada (sudah di PKR).", hpp: "Tidak.", beban: "Tidak.", labaRugi: "Tidak ada pengaruh.", neraca: "Tidak ada." }
         : { pendapatan: "Tergantung sumber.", hpp: "Tergantung sumber.", beban: "Tergantung sumber.", labaRugi: "Lihat detail.", neraca: "Lihat detail." };
     return {
-      no: i + 1, gapId: g.id, sumber: g.source, sumberId: g.sourceId, alasanKode: g.reason, detailSistem: g.detail, tanggalGap: tanggalWIB(g.createdAt),
+      no: i + 1, gapId: g.id, orderId: o?.id ?? null, sumber: g.source, sumberId: g.sourceId, alasanKode: g.reason, detailSistem: g.detail, tanggalGap: tanggalWIB(g.createdAt),
       jenis, jenisLabel: JENIS_LABEL[jenis], tindakan, dampak,
       order: o ? {
         nomor: o.orderNumber, kategori: o.category, status: o.status, statusBayar: o.paymentStatus, pelanggan: o.customer?.name ?? "", nilai: rp(toMoney(o.nilaiBersih)), notaKredit: rp(toMoney(o.notaKredit)), nilaiKotor: rp(toMoney(o.nilaiKotor)), ongkir: rp(toMoney(o.ongkir ?? 0)),
@@ -90,6 +90,7 @@ export async function hitungGap(tx, { fromStr, toStr, catatan }) {
   const serahK = new Map();
   for (const j of jobK) { if (!j.completedAt) continue; const t = tanggalWIB(j.completedAt); if (!serahK.has(j.orderId) || t > serahK.get(j.orderId)) serahK.set(j.orderId, t); }
   const tanpaGap = kandidat.filter((o) => !sudah.has(o.id) && !adaGap.has(o.id) && rp(toMoney(o.nilaiKotor)) + rp(toMoney(o.ongkir ?? 0)) > 0).map((o) => ({
+    orderId: o.id,
     nomor: o.orderNumber, kategori: o.category, status: o.status, statusBayar: o.paymentStatus, pelanggan: o.customer?.name ?? "", nilai: rp(toMoney(o.nilaiBersih)), notaKredit: rp(toMoney(o.notaKredit)), nilaiKotor: rp(toMoney(o.nilaiKotor)), ongkir: rp(toMoney(o.ongkir ?? 0)),
     tanggalLunas: o.paidAt ? tanggalWIB(o.paidAt) : null, tanggalSerah: serahK.get(o.id) ?? null, jenis: "DISERAHKAN_BELUM_DIAKUI", jenisLabel: JENIS_LABEL.DISERAHKAN_BELUM_DIAKUI,
     tindakan: "Selidiki kenapa hook pengakuan tidak jalan (order dibuat langsung berstatus diserahkan / sebelum cutoff). Pengakuan harus lewat jurnal terkendali dengan tanggal yang disetujui Owner — bukan dari laporan ini.",

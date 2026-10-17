@@ -321,6 +321,8 @@ enum HealthComplaintCategory {
 }
 
 model User {
+  attributionDecisionsMade    FinAttributionDecision[] @relation("FinAttributionDecisionDecider")
+  attributionDecisionsRevoked FinAttributionDecision[] @relation("FinAttributionDecisionRevoker")
   // PIN step-up untuk KOREKSI FINANSIAL (24 Sep 2026): 6 digit, disimpan bcrypt. Salah 5x = terkunci 15 menit.
   financePinHash        String?   @map("finance_pin_hash")
   financePinFailed      Int       @default(0) @map("finance_pin_failed")
@@ -11146,4 +11148,33 @@ model AttributionAlertState {
   updatedAt      DateTime  @map("updated_at")
 
   @@map("attribution_alert_state")
+}
+
+// KEPUTUSAN ATRIBUSI DIVISI per DOKUMEN (Okt 2026) — menyelesaikan KONFLIK BUKTI di Laporan Divisi/Beban per Divisi (divisi tertulis di dokumen ≠ pemetaan kategori).
+// Append-only: keputusan baru menggantikan yang lama dengan MENCABUT baris lama (revokedAt) — riwayat sebelum/sesudah tetap utuh. Hanya satu keputusan AKTIF per dokumen (unique parsial).
+// Tidak menyentuh jurnal, saldo, maupun dokumen sumber: hanya mengubah divisi mana yang dipilih saat bukti saling bertentangan. Keputusan hanya berlaku bila scope-nya masih termasuk kandidat konflik.
+model FinAttributionDecision {
+  id String @id @default(uuid()) @db.Uuid
+
+  module         String @db.VarChar(24) // "pengeluaran" | "pembelian"
+  documentId     String @map("document_id") @db.Uuid
+  documentNumber String? @map("document_number") @db.VarChar(60)
+
+  decidedScope  String @map("decided_scope") @db.VarChar(32) // kode scope divisi (laporanDivisi/divisi.js)
+  previousScope String @map("previous_scope") @db.VarChar(32) // scope yang dipakai laporan SEBELUM keputusan (hasil prioritas aturan)
+  candidates    Json // daftar scope kandidat saat keputusan diambil
+  reason        String
+
+  decidedById String?  @map("decided_by")
+  decidedBy   User?    @relation("FinAttributionDecisionDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedAt   DateTime @default(now()) @map("decided_at")
+
+  revokedAt    DateTime? @map("revoked_at")
+  revokedById  String?   @map("revoked_by")
+  revokedBy    User?     @relation("FinAttributionDecisionRevoker", fields: [revokedById], references: [id], onDelete: SetNull)
+  revokeReason String?   @map("revoke_reason")
+
+  @@index([module, documentId])
+  @@index([revokedAt])
+  @@map("fin_attribution_decisions")
 }
