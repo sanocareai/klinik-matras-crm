@@ -13,7 +13,7 @@ export const PENYEBAB_LABEL = Object.freeze({
 
 export const TAHAN_LABEL = Object.freeze({
   SUDAH_DIAKUI: "Sudah diakui", PENJUALAN_KARYAWAN: "Order operasional PKR", ORDER_DIGABUNG: "Order digabung", STATUS_BELUM_DISERAHKAN: "Belum diserahkan", NILAI_ORDER_NOL: "Nilai Rp0",
-  LUNAS_TANPA_PEMBAYARAN: "Lunas tanpa pembayaran", DISERAHKAN_SEBELUM_CUTOFF: "Diserahkan sebelum cutoff", SERAH_TIDAK_TERBUKTI: "Penyerahan tidak terbukti",
+  LUNAS_TANPA_PEMBAYARAN: "Lunas tanpa pembayaran", PENGAKUAN_DIBALIK_SENGAJA: "Pengakuan sebelumnya dibalik", DISERAHKAN_SEBELUM_CUTOFF: "Diserahkan sebelum cutoff", SERAH_TIDAK_TERBUKTI: "Penyerahan tidak terbukti",
 });
 
 /** Dasar tanggal yang BERBUKTI dan tersedia; Keputusan Owner selalu ada tetapi butuh bukti referensi. */
@@ -47,12 +47,14 @@ export function susunBodyAkui(detail, f) {
     if ((f.alasan || "").trim().length < 10) return "Alasan minimal 10 karakter";
     if (f.dasarTanggal === "KEPUTUSAN_OWNER" && (f.buktiReferensi || "").trim().length < 8) return "Bukti referensi Keputusan Owner minimal 8 karakter";
     if (detail.praCutoff && !f.akuiPraCutoff) return "Order diserahkan sebelum cutoff: centang persetujuan eksplisit";
+    if (detail.tahan?.some((t) => t.kode === "PENGAKUAN_DIBALIK_SENGAJA") && !f.akuiSetelahDibalik) return "Pengakuan sebelumnya sengaja dibalik: centang persetujuan eksplisit setelah alasan pembalikan diselesaikan";
     return null;
   })();
   const body = {
     dasarTanggal: f.dasarTanggal, tanggal: f.tanggal, alasan: (f.alasan || "").trim(),
     ...(f.dasarTanggal === "KEPUTUSAN_OWNER" ? { buktiReferensi: (f.buktiReferensi || "").trim() } : {}),
     ...(f.akuiPraCutoff ? { akuiPraCutoff: true } : {}),
+    ...(f.akuiSetelahDibalik ? { akuiSetelahDibalik: true } : {}),
   };
   return { body, galat };
 }
