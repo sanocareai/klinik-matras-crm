@@ -125,7 +125,7 @@ export default function WarehouseInventory() {
                   </TBody>
                 </Table>
               </TableWrap>
-              <ul className="divide-y divide-line md:hidden">
+              <ul className="m-0 list-none divide-y divide-line p-0 md:hidden">
                 {!loading && terfilter?.map((r) => (
                   <li key={r.materialId}>
                     <button type="button" onClick={() => setSelected(stok?.get(r.materialId) ?? null)} data-testid="baris-stok" data-kode={r.kode}

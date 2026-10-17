@@ -113,7 +113,7 @@ export default function WarehouseGoodsReceipt() {
                   </TBody>
                 </Table>
               </TableWrap>
-              <ul className="divide-y divide-line md:hidden">
+              <ul className="m-0 list-none divide-y divide-line p-0 md:hidden">
                 {!loading && terfilter?.map((r) => {
                   const i = identitasPenerimaan(r);
                   return (
