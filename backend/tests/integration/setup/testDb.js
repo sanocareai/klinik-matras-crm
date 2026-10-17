@@ -21,6 +21,7 @@ export const testPrisma = new PrismaClient({ transactionOptions: { maxWait: 15_0
 // error jelas dari FK constraint yang masih menunjuk baris lama, alih-alih
 // diam-diam meninggalkan sampah lintas test run.
 const TABLES_TO_TRUNCATE = [
+  "warehouse_corrections",
   "stok_riwayat_referensi",
   "stok_riwayat_impor",
   "activity_events",

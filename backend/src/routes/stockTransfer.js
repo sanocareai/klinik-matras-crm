@@ -12,6 +12,7 @@ import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js"
 import { prisma } from "../db.js";
 import { postStockMovement, lockRowForUpdate } from "../services/inventoryLedger.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
+import { catatPerubahanDraf } from "../lib/jejakPerubahan.js";
 import { wajibUuid } from "../lib/uuidParam.js";
 import { pesanServerAman } from "../lib/galatServerAman.js";
 
@@ -166,6 +167,7 @@ stockTransferRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), wajibUui
       }
 
       const updated = await tx.stockTransfer.update({ where: { id: preCheck.id }, data, include: transferInclude });
+      await catatPerubahanDraf(tx, { entityType: ENTITY_TYPES.STOCK_TRANSFER, entityId: updated.id, actorId: req.user.id, nomor: updated.transferNumber, lama: existing, data });
       if (status === "APPROVED") {
         await recordActivity(tx, {
           entityType: ENTITY_TYPES.STOCK_TRANSFER, entityId: updated.id,

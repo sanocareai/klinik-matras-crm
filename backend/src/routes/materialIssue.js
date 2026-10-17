@@ -22,6 +22,7 @@ import { postMaterialIssueCost } from "../services/finance/posting/inventory.js"
 import { JournalError } from "../services/finance/journal.js";
 import { AccountError } from "../services/finance/accounts.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
+import { catatPerubahanDraf } from "../lib/jejakPerubahan.js";
 import { wajibUuid } from "../lib/uuidParam.js";
 import { pesanServerAman } from "../lib/galatServerAman.js";
 
@@ -264,6 +265,7 @@ materialIssueRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), wajibUui
       }
 
       const updated = await tx.materialIssue.update({ where: { id: preCheck.id }, data, include: issueInclude });
+      await catatPerubahanDraf(tx, { entityType: ENTITY_TYPES.MATERIAL_ISSUE, entityId: updated.id, actorId: req.user.id, nomor: updated.issueNumber, lama: existing, data });
       if (status === "APPROVED") {
         await recordActivity(tx, {
           entityType: ENTITY_TYPES.MATERIAL_ISSUE, entityId: updated.id,
@@ -296,13 +298,14 @@ materialIssueRouter.patch("/:id/lines/:lineId", requirePermission(P.INVENTORY_WR
     if (!line) return res.status(404).json({ error: "Baris item tidak ditemukan" });
 
     const { sourceLocation, notes } = req.body;
-    const updated = await prisma.materialIssueLine.update({
-      where: { id: line.id },
-      data: {
-        ...(sourceLocation !== undefined && { sourceLocation: sourceLocation || null }),
-        ...(notes !== undefined && { notes: notes || null }),
-      },
-      include: { material: { select: { id: true, code: true, name: true, unit: true } } },
+    const dataBaris = {
+      ...(sourceLocation !== undefined && { sourceLocation: sourceLocation || null }),
+      ...(notes !== undefined && { notes: notes || null }),
+    };
+    const updated = await prisma.$transaction(async (tx) => {
+      const u = await tx.materialIssueLine.update({ where: { id: line.id }, data: dataBaris, include: { material: { select: { id: true, code: true, name: true, unit: true } } } });
+      await catatPerubahanDraf(tx, { entityType: ENTITY_TYPES.MATERIAL_ISSUE, entityId: issue.id, actorId: req.user.id, nomor: issue.issueNumber, lama: line, data: dataBaris, bagian: `baris ${u.material.code}` });
+      return u;
     });
     res.json(updated);
   } catch (err) {

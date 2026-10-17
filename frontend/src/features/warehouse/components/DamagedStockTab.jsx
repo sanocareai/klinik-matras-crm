@@ -14,6 +14,7 @@ import StatusBadge from "./StatusBadge.jsx";
 import {
   DAMAGE_CATEGORY_REAL, DAMAGED_STATUS_REAL, DAMAGED_RESOLUTION_REAL,
 } from "../inventoryReal.js";
+import KartuJalurKoreksi from "@/features/warehouse/koreksi/KartuJalurKoreksi.jsx";
 
 // Damaged Stock — cuma resolusi RETURN_TO_SUPPLIER & DISPOSE yang menulis
 // ledger (WASTE). Lihat catatan panjang di schema.prisma & routes/damagedStock.js.
@@ -127,6 +128,7 @@ function DetailDrawer({ record, onClose, onChanged }) {
             <Dialog.Close className="ml-auto flex h-8 w-8 items-center justify-center rounded-lg text-ink3 hover:bg-hovertint hover:text-ink"><X size={16} /></Dialog.Close>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+            <KartuJalurKoreksi tipe="DAMAGED_STOCK" id={record.id} versi={record.status} />
             <p className="text-[13px] font-semibold text-ink">{record.material.code}</p>
             <p className="text-[11.5px] text-ink2">{record.material.name}</p>
             <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[12px]">

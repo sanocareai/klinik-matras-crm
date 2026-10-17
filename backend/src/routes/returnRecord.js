@@ -10,6 +10,7 @@ import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js"
 import { prisma } from "../db.js";
 import { postStockMovement, lockRowForUpdate } from "../services/inventoryLedger.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
+import { catatPerubahanDraf } from "../lib/jejakPerubahan.js";
 import { wajibUuid } from "../lib/uuidParam.js";
 import { pesanServerAman } from "../lib/galatServerAman.js";
 
@@ -123,7 +124,11 @@ returnRecordRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), wajibUuid
       if (status === "INSPECTION") data.inspectedAt = new Date();
     }
 
-    const record = await prisma.returnRecord.update({ where: { id: req.params.id }, data, include: recordInclude });
+    const record = await prisma.$transaction(async (tx) => {
+      const u = await tx.returnRecord.update({ where: { id: req.params.id }, data, include: recordInclude });
+      await catatPerubahanDraf(tx, { entityType: ENTITY_TYPES.RETURN_RECORD, entityId: u.id, actorId: req.user.id, nomor: u.returnNumber, lama: existing, data });
+      return u;
+    });
     res.json(record);
   } catch (err) {
     handleErr(err, res);

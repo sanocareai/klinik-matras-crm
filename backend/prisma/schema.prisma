@@ -642,6 +642,9 @@ model User {
   morningPriorityRequested MorningPriorityRequest[] @relation("MorningPriorityRequestedBy")
   morningPriorityDecided   MorningPriorityRequest[] @relation("MorningPriorityDecidedBy")
   metaAdReferenceImports MetaAdReferenceImport[] @relation("MetaAdReferenceImportCreator")
+
+  warehouseCorrectionsRequested WarehouseCorrection[] @relation("WarehouseCorrectionRequester")
+  warehouseCorrectionsDecided   WarehouseCorrection[] @relation("WarehouseCorrectionDecider")
 }
 
 // Role JAMAK per user — permission bersifat ADITIF (D-010). Satu orang bisa
@@ -5427,6 +5430,16 @@ model StockMovement {
   stockAdjustmentRequestId String?                 @map("stock_adjustment_request_id") @db.Uuid
   stockAdjustmentRequest   StockAdjustmentRequest? @relation(fields: [stockAdjustmentRequestId], references: [id], onDelete: SetNull)
 
+  // KOREKSI DOKUMEN GUDANG (Okt 2026) — pergerakan ini dihasilkan oleh koreksi bertaut (WarehouseCorrection) dan MENUNJUK pergerakan asal yang dikoreksi.
+  // Pergerakan asal TIDAK diubah/dihapus; koreksi = pergerakan baru berlawanan tanda (pembalik) atau selisih. NULL pada seluruh pergerakan lama.
+  correctionId       String?              @map("correction_id") @db.Uuid
+  correction         WarehouseCorrection? @relation(fields: [correctionId], references: [id], onDelete: Restrict)
+  correctsMovementId String?              @map("corrects_movement_id") @db.Uuid
+  correctsMovement   StockMovement?       @relation("MovementCorrection", fields: [correctsMovementId], references: [id], onDelete: Restrict)
+  correctedBy        StockMovement[]      @relation("MovementCorrection")
+
+  @@index([correctionId])
+  @@index([correctsMovementId])
   @@index([materialId, createdAt]) // saldo & riwayat per material
   @@index([unitId]) // "material apa saja yang dipakai unit ini"
   @@index([goodsReceiptId])
@@ -11237,4 +11250,36 @@ model FinAttributionDecision {
   @@index([module, documentId])
   @@index([revokedAt])
   @@map("fin_attribution_decisions")
+}
+
+// ─── KOREKSI DOKUMEN GUDANG (Okt 2026) ──────────────────────────────────────────────────────────────────────────────────────────
+// Dokumen yang sudah diposting TIDAK diubah/dihapus diam-diam. Koreksi adalah dokumen sendiri: alasan wajib, nilai sebelum/sesudah, pratinjau dampak, pemohon ≠ penyetuju
+// untuk koreksi yang mengubah stok, dan hasilnya berupa pergerakan pembalik/selisih yang bertaut ke pergerakan asal (stock_movements.corrects_movement_id).
+// Koreksi METADATA (tidak mengubah stok) langsung POSTED oleh pemohon dengan jejak sebelum/sesudah. TIDAK menulis jurnal/pembayaran/tagihan Finance dan tidak menciptakan QC/penerimaan fisik/pemakaian Produksi.
+model WarehouseCorrection {
+  id               String   @id @default(uuid()) @db.Uuid
+  correctionNumber String   @unique @map("correction_number") @db.VarChar(40) // KG-DDMMYY-NN
+  docType          String   @map("doc_type") @db.VarChar(30) // GOODS_RECEIPT (tahap ini); jenis lain diblokir/dialihkan ke alur resmi
+  docId            String   @map("doc_id") @db.Uuid
+  docNumber        String   @map("doc_number") @db.VarChar(60)
+  kind             String   @db.VarChar(20) // METADATA | STOCK
+  status           String   @db.VarChar(20) // PENDING_APPROVAL | POSTED | REJECTED | CANCELLED
+  reason           String
+  changes          Json // { sebelum, sesudah } per bidang/baris
+  preview          Json // dampak saat diajukan (diperiksa ulang saat disetujui)
+  docToken         String   @map("doc_token") @db.VarChar(80) // token keadaan dokumen saat diajukan (cegah koreksi atas keadaan basi)
+  requestedById    String?  @map("requested_by")
+  requestedBy      User?    @relation("WarehouseCorrectionRequester", fields: [requestedById], references: [id], onDelete: SetNull)
+  requestedAt      DateTime @default(now()) @map("requested_at")
+  decidedById      String?  @map("decided_by")
+  decidedBy        User?    @relation("WarehouseCorrectionDecider", fields: [decidedById], references: [id], onDelete: SetNull)
+  decidedAt        DateTime? @map("decided_at")
+  decisionNote     String?  @map("decision_note")
+  idempotencyKey   String   @unique @map("idempotency_key") @db.VarChar(120)
+  result           Json? // id pergerakan yang dihasilkan, saldo sebelum/sesudah
+  movements        StockMovement[]
+
+  @@index([docType, docId, requestedAt])
+  @@index([status, requestedAt])
+  @@map("warehouse_corrections")
 }

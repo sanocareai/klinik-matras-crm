@@ -13,6 +13,7 @@ import { requirePermission, requireAnyPermission, hasPermission, PERMISSIONS as 
 import { prisma } from "../db.js";
 import { postStockMovement, lockRowForUpdate } from "../services/inventoryLedger.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
+import { catatPerubahanDraf } from "../lib/jejakPerubahan.js";
 import { wajibUuid } from "../lib/uuidParam.js";
 import { pesanServerAman } from "../lib/galatServerAman.js";
 import { wajibPenyetujuPenyesuaian, wajibBukanPihakPengaju } from "../services/inventorySegregation.js";
@@ -151,6 +152,7 @@ stockAdjustmentRouter.patch("/:id", requireAnyPermission(P.INVENTORY_WRITE, P.IN
       }
 
       const updated = await tx.stockAdjustmentRequest.update({ where: { id: preCheck.id }, data, include: requestInclude });
+      await catatPerubahanDraf(tx, { entityType: ENTITY_TYPES.STOCK_ADJUSTMENT, entityId: updated.id, actorId: req.user.id, nomor: updated.adjustmentNumber, lama: existing, data });
       if (status === "APPROVED") {
         await recordActivity(tx, {
           entityType: ENTITY_TYPES.STOCK_ADJUSTMENT, entityId: updated.id,

@@ -7,6 +7,7 @@ import StatusBadge from "./StatusBadge.jsx";
 import {
   ISSUE_STATUS_REAL, ISSUE_SOURCE_REAL, ISSUE_PRIORITY_REAL, ISSUE_FORWARD_FLOW, UNIT_LABEL,
 } from "../inventoryReal.js";
+import KartuJalurKoreksi from "@/features/warehouse/koreksi/KartuJalurKoreksi.jsx";
 
 // Detail Material Issue — picking lalu Confirm Issue. Confirm Issue adalah
 // SATU-SATUNYA titik yang menulis baris stock_movements ISSUE nyata (lihat
@@ -133,6 +134,7 @@ export default function MaterialIssueDetailDrawer({ issueId, onClose, onChanged 
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+            <KartuJalurKoreksi tipe="MATERIAL_ISSUE" id={issueId} versi={issue?.status} />
             {loading && (
               <p className="flex items-center gap-1.5 py-6 text-[12.5px] text-ink3">
                 <Loader2 size={14} className="animate-spin" /> Memuat…

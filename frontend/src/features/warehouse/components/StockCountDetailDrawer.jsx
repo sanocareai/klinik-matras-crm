@@ -5,6 +5,7 @@ import { api } from "@/api.js";
 import { Button } from "@/components/ui/button.jsx";
 import StatusBadge from "./StatusBadge.jsx";
 import { COUNT_STATUS_REAL, COUNT_TYPE_REAL, COUNT_METHOD_REAL, UNIT_LABEL } from "../inventoryReal.js";
+import KartuJalurKoreksi from "@/features/warehouse/koreksi/KartuJalurKoreksi.jsx";
 
 // Detail Stock Count — Start Count (snapshot systemQty) → isi countedQty
 // per baris (blind: systemQty disembunyikan) → Submit Count → review
@@ -148,6 +149,7 @@ export default function StockCountDetailDrawer({ countId, onClose, onChanged }) 
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+            <KartuJalurKoreksi tipe="STOCK_COUNT" id={countId} versi={count?.status} />
             {loading && (
               <p className="flex items-center gap-1.5 py-6 text-[12.5px] text-ink3">
                 <Loader2 size={14} className="animate-spin" /> Memuat…

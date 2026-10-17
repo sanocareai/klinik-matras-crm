@@ -713,6 +713,16 @@ export const api = {
   periksaHitungan: (countId, catatan) => request(`/inventory/stock-counts/${countId}/periksa`, { method: "POST", body: JSON.stringify({ catatan }) }),
   // Riwayat referensi historis dari file (catatan REFERENSI; bukan transaksi/saldo)
   getRiwayatReferensi: (params = {}) => { const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== "" && v != null)).toString(); return request(`/inventory/riwayat-referensi${qs ? `?${qs}` : ""}`); },
+  // Koreksi Gudang (Okt 2026): cakupan per menu, jalur per dokumen, koreksi Penerimaan yang sudah masuk stok (bertaut; pemohon ≠ penyetuju bila mengubah stok)
+  getKoreksiCakupan: () => request("/inventory/koreksi/cakupan"),
+  getJalurKoreksi: (tipe, id) => request(`/inventory/koreksi/dokumen/${tipe}/${id}`),
+  getKeadaanKoreksiGR: (id) => request(`/inventory/koreksi/goods-receipts/${id}/keadaan`),
+  pratinjauKoreksiGR: (id, perubahan) => request(`/inventory/koreksi/goods-receipts/${id}/pratinjau`, { method: "POST", body: JSON.stringify({ perubahan }) }),
+  ajukanKoreksiGR: (id, data, key = mutationKey("koreksi-gr")) => request(`/inventory/koreksi/goods-receipts/${id}/ajukan`, { method: "POST", headers: { "Idempotency-Key": key }, body: JSON.stringify(data) }),
+  getDaftarKoreksiGudang: (params = {}) => { const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== "" && v != null)).toString(); return request(`/inventory/koreksi${qs ? `?${qs}` : ""}`); },
+  setujuiKoreksiGudang: (id, catatan) => request(`/inventory/koreksi/${id}/setujui`, { method: "POST", body: JSON.stringify({ catatan }) }),
+  tolakKoreksiGudang: (id, catatan) => request(`/inventory/koreksi/${id}/tolak`, { method: "POST", body: JSON.stringify({ catatan }) }),
+  batalKoreksiGudang: (id, catatan) => request(`/inventory/koreksi/${id}/batal`, { method: "POST", body: JSON.stringify({ catatan }) }),
   getRiwayatReferensiRingkasan: () => request("/inventory/riwayat-referensi/ringkasan"),
   getRiwayatReferensiMaterial: (materialId) => request(`/inventory/riwayat-referensi/material/${materialId}`),
   pratinjauRiwayatReferensi: (body) => request("/inventory/riwayat-referensi/pratinjau", { method: "POST", body: JSON.stringify(body) }),

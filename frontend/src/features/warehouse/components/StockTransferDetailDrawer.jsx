@@ -7,6 +7,7 @@ import StatusBadge from "./StatusBadge.jsx";
 import {
   TRANSFER_STATUS_REAL, TRANSFER_TYPE_REAL, TRANSFER_FORWARD_FLOW, UNIT_LABEL,
 } from "../inventoryReal.js";
+import KartuJalurKoreksi from "@/features/warehouse/koreksi/KartuJalurKoreksi.jsx";
 
 // Detail Stock Transfer — Confirm Dispatch lalu Confirm Receipt. Dua-duanya
 // menulis baris ledger nyata (lihat catatan panjang di schema.prisma &
@@ -123,6 +124,7 @@ export default function StockTransferDetailDrawer({ transferId, onClose, onChang
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+            <KartuJalurKoreksi tipe="STOCK_TRANSFER" id={transferId} versi={transfer?.status} />
             {loading && (
               <p className="flex items-center gap-1.5 py-6 text-[12.5px] text-ink3">
                 <Loader2 size={14} className="animate-spin" /> Memuat…

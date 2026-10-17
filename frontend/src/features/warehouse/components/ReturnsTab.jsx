@@ -14,6 +14,7 @@ import StatusBadge from "./StatusBadge.jsx";
 import {
   RETURN_TYPE_REAL, RETURN_STATUS_REAL, RETURN_RESOLUTION_REAL, RETURN_FORWARD_FLOW,
 } from "../inventoryReal.js";
+import KartuJalurKoreksi from "@/features/warehouse/koreksi/KartuJalurKoreksi.jsx";
 
 // Returns — cuma resolusi RETURN_TO_AVAILABLE yang menulis ledger (RETURN,
 // positif). Lihat catatan panjang di schema.prisma & routes/returnRecord.js.
@@ -157,6 +158,7 @@ function DetailDrawer({ record, onClose, onChanged }) {
             <Dialog.Close className="ml-auto flex h-8 w-8 items-center justify-center rounded-lg text-ink3 hover:bg-hovertint hover:text-ink"><X size={16} /></Dialog.Close>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+            <KartuJalurKoreksi tipe="RETURN_RECORD" id={record.id} versi={record.status} />
             <p className="text-[13px] font-semibold text-ink">{record.material.code}</p>
             <p className="text-[11.5px] text-ink2">{record.material.name}</p>
             <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 text-[12px]">

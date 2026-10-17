@@ -24,6 +24,7 @@ import { AccountError } from "../services/finance/accounts.js";
 // Fase 1 integrasi Finance→Gudang: penerimaan boleh bersumber dari PO bahan baku (services/finance/purchaseOrder.js). PO tidak
 // pernah menulis stok; yang dilakukan di sini hanya MEMBACA PO untuk mengisi dokumen, membatasi jumlah baik, dan menilai stok.
 import { siapkanPenerimaanDariPO, validasiBarisPenerimaanPO, periksaPutaway, selesaiPutaway, bentukPO } from "../services/finance/purchaseOrder.js";
+import { catatPerubahanDraf } from "../lib/jejakPerubahan.js";
 import { wajibUuid } from "../lib/uuidParam.js";
 import { pesanServerAman } from "../lib/galatServerAman.js";
 
@@ -197,7 +198,12 @@ goodsReceiptRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), wajibUuid
       data.status = status;
     }
 
-    const receipt = await prisma.goodsReceipt.update({ where: { id: req.params.id }, data, include: receiptInclude });
+    // Draf boleh diedit, tetapi SETIAP perubahan meninggalkan jejak sebelum–sesudah (siapa/kapan/apa).
+    const receipt = await prisma.$transaction(async (tx) => {
+      const u = await tx.goodsReceipt.update({ where: { id: req.params.id }, data, include: receiptInclude });
+      await catatPerubahanDraf(tx, { entityType: ENTITY_TYPES.GOODS_RECEIPT, entityId: u.id, actorId: req.user.id, nomor: u.receiptNumber, lama: existing, data });
+      return u;
+    });
     res.json(receipt);
   } catch (err) {
     handleErr(err, res);
@@ -240,16 +246,17 @@ goodsReceiptRouter.patch("/:id/lines/:lineId", requirePermission(P.INVENTORY_WRI
         },
       });
     }
-    const updated = await prisma.goodsReceiptLine.update({
-      where: { id: line.id },
-      data: {
-        ...(receivedQty !== undefined && { receivedQty: toNum(receivedQty) }),
-        ...(acceptedQty !== undefined && { acceptedQty: toNum(acceptedQty) }),
-        ...(rejectedQty !== undefined && { rejectedQty: toNum(rejectedQty) }),
-        ...(condition !== undefined && { condition: condition || null }),
-        ...(notes !== undefined && { notes: notes || null }),
-      },
-      include: { material: { select: { id: true, code: true, name: true, unit: true } } },
+    const dataBaris = {
+      ...(receivedQty !== undefined && { receivedQty: toNum(receivedQty) }),
+      ...(acceptedQty !== undefined && { acceptedQty: toNum(acceptedQty) }),
+      ...(rejectedQty !== undefined && { rejectedQty: toNum(rejectedQty) }),
+      ...(condition !== undefined && { condition: condition || null }),
+      ...(notes !== undefined && { notes: notes || null }),
+    };
+    const updated = await prisma.$transaction(async (tx) => {
+      const u = await tx.goodsReceiptLine.update({ where: { id: line.id }, data: dataBaris, include: { material: { select: { id: true, code: true, name: true, unit: true } } } });
+      await catatPerubahanDraf(tx, { entityType: ENTITY_TYPES.GOODS_RECEIPT, entityId: receipt.id, actorId: req.user.id, nomor: receipt.receiptNumber, lama: line, data: dataBaris, bagian: `baris ${u.material.code}` });
+      return u;
     });
     res.json(updated);
   } catch (err) {
