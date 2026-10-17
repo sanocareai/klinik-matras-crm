@@ -145,6 +145,24 @@ test("TANPA BUKTI: status DELIVERED saja tidak cukup; pratinjau dan simpan ditol
   assert.equal(ev, null);
 });
 
+test("SEWA DIKIRIM TANPA BUKTI SERAH (kasus SWS-16102026-003): job UNSCHEDULED → pratinjau & simpan ditolak walau Keputusan Owner + akuiPraCutoff; tanpa jurnal/audit/perubahan data", async () => {
+  const w = await dunia();
+  const { o } = await buatOrder(w, { nilai: 200_000, status: "SEWA_DIKIRIM", kategori: "SEWA" });
+  await testPrisma.job.create({ data: { type: "DELIVERY", orderId: o.id, status: "UNSCHEDULED" } });
+  const det = (await w.f.get(url(o.id))).body;
+  assert.equal(det.bisaDiproses, false);
+  assert.ok(det.tahan.some((t) => t.kode === "SERAH_TIDAK_TERBUKTI"));
+  assert.equal(det.pilihanTanggal.find((p) => p.dasar === "KEPUTUSAN_OWNER").tersedia, false);
+  const sebelum = await potret();
+  const body = akuiBody({ dasarTanggal: "KEPUTUSAN_OWNER", buktiReferensi: "Keputusan Owner 17 Okt", tanggal: "2026-10-16", akuiPraCutoff: true });
+  const pr = await w.a.post(url(o.id, "/akui"), { ...body, preview: true });
+  assert.equal(pr.status, 422, JSON.stringify(pr.body)); assert.equal(pr.body.code, "SERAH_TIDAK_TERBUKTI");
+  const sv = await w.a.post(url(o.id, "/akui"), body, IK());
+  assert.equal(sv.status, 422, JSON.stringify(sv.body)); assert.equal(sv.body.code, "SERAH_TIDAK_TERBUKTI");
+  assert.deepEqual(await potret(), sebelum, "penolakan tidak menulis apa pun (jurnal, audit, gap, data lain)");
+  assert.equal((await jurnalPengakuan(o.id)).length, 0);
+});
+
 test("PRA-CUTOFF: diserahkan sebelum buku besar mulai → ditahan; hanya Keputusan Owner + akuiPraCutoff + tanggal ≥ cutoff", async () => {
   const w = await dunia();
   const { o } = await buatOrder(w, { nilai: 1_190_000, serah: "2026-09-10", transisi: "2026-09-10" });
