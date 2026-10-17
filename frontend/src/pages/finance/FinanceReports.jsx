@@ -13,6 +13,7 @@ import DrilldownKartu from "@/features/finance/laporanTerinci/DrilldownKartu.jsx
 import { PanelJembatan, PanelPkr } from "@/features/finance/laporanTerinci/PanelPendapatan.jsx";
 import { PanelHpp, PanelBeban } from "@/features/finance/laporanTerinci/PanelHppBeban.jsx";
 import { PanelGap } from "@/features/finance/laporanTerinci/PanelGap.jsx";
+import KoreksiDokumen from "@/features/finance/koreksiDokumen/KoreksiDokumen.jsx";
 import { SEKSI, penandaMutu, formatCutoff, ringkasKontrol, bodyExport, bisaDrilldown } from "@/features/finance/laporanTerinci/logic.js";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, CatatanLaporan, Penjelasan,
@@ -99,7 +100,7 @@ export default function FinanceReports() {
         {TAB.find((t) => t.key === tab)?.penjelasan}
       </p>
 
-      {tab === "labarugi" && data.labarugi && <LabaRugi d={data.labarugi} terinci={terinci} onBuka={(m) => setDrill(m)} />}
+      {tab === "labarugi" && data.labarugi && <LabaRugi d={data.labarugi} terinci={terinci} onBuka={(m) => setDrill(m)} periode={periode} onMuatUlang={muat} />}
       {drill && terinci && <DrilldownKartu metrik={drill} periode={periode} cutoff={terinci.cutoff} onClose={() => setDrill(null)} />}
       {tab === "neraca" && data.neraca && <Neraca d={data.neraca} />}
       {tab === "aruskas" && data.aruskas && <ArusKas d={data.aruskas} />}
@@ -120,7 +121,7 @@ function InfoCutoff({ terinci, galat }) {
   );
 }
 
-function LabaRugi({ d, terinci, onBuka }) {
+function LabaRugi({ d, terinci, onBuka, periode, onMuatUlang }) {
   const r = d.ringkasan;
   const [seksi, setSeksi] = useState("laporan");
   const bisa = bisaDrilldown(terinci);
@@ -171,7 +172,8 @@ function LabaRugi({ d, terinci, onBuka }) {
       {terinci && seksi === "pkr" && <PanelPkr data={terinci} />}
       {terinci && seksi === "hpp" && <PanelHpp data={terinci} />}
       {terinci && seksi === "divisi" && <PanelBeban data={terinci} />}
-      {terinci && seksi === "gap" && <PanelGap data={terinci} />}
+      {terinci && seksi === "gap" && <PanelGap data={terinci} onKoreksi={() => setSeksi("koreksi")} />}
+      {terinci && seksi === "koreksi" && <KoreksiDokumen periode={periode} onSelesai={onMuatUlang} />}
       {(!terinci || seksi === "laporan") && (
         <>
       <Penjelasan>

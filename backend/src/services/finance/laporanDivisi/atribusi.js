@@ -22,7 +22,7 @@ const POLA_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}
 const idsValid = (a) => uniq(a).filter((x) => POLA_UUID.test(x));
 
 /** Putuskan scope dari kandidat berprioritas. null = tidak ada bukti sama sekali (bukan UMUM). */
-function putuskan({ eksplisit, relasi, relasiLabel, kategori, kategoriLabel, umum }) {
+function putuskan({ eksplisit, relasi, relasiLabel, kategori, kategoriLabel, umum, keputusan = null }) {
   const kandidat = [];
   if (eksplisit && eksplisit !== "SHARED") kandidat.push({ scope: eksplisit, tahap: TAHAP.EKSPLISIT, aturan: "Divisi tertulis pada dokumen" });
   if (relasi && relasi !== "SHARED") kandidat.push({ scope: relasi, tahap: TAHAP.RELASI, aturan: relasiLabel || "Relasi dokumen sumber" });
@@ -30,12 +30,21 @@ function putuskan({ eksplisit, relasi, relasiLabel, kategori, kategoriLabel, umu
   const beda = uniq(kandidat.map((k) => k.scope));
   if (kandidat.length > 0) {
     const k = kandidat[0];
+    // KEPUTUSAN per dokumen (tabel fin_attribution_decisions): hanya berlaku bila bukti MEMANG bertentangan dan scope terputus masih salah satu kandidat.
+    // Keputusan basi (dokumen berubah sehingga tidak lagi bertentangan / scope bukan kandidat) diabaikan — aturan prioritas biasa yang jalan.
+    if (keputusan && beda.length > 1 && beda.includes(keputusan.scope)) {
+      return {
+        scope: keputusan.scope, tahap: TAHAP.EKSPLISIT, konflik: [],
+        aturan: `Keputusan Finance/Owner atas bukti yang bertentangan (${beda.join(" vs ")}); aturan prioritas akan memilih ${k.scope}`,
+        keputusan: { id: keputusan.id, scope: keputusan.scope, sebelum: k.scope },
+      };
+    }
     return { scope: k.scope, tahap: k.tahap, aturan: k.aturan, konflik: beda.length > 1 ? beda : [] };
   }
   if (umum || eksplisit === "SHARED" || relasi === "SHARED" || kategori === "SHARED") return { scope: "SHARED", tahap: TAHAP.SHARED, aturan: "Biaya bersama (divisi UMUM/kantor) — belum ada alokasi resmi", konflik: [] };
   return null;
 }
-const dariPutusan = (p, fallback) => (p ? { bagian: [{ scope: p.scope, bobot: 1 }], tahap: p.tahap, aturan: p.aturan, konflik: p.konflik } : fallback);
+const dariPutusan = (p, fallback) => (p ? { bagian: [{ scope: p.scope, bobot: 1 }], tahap: p.tahap, aturan: p.aturan, konflik: p.konflik, ...(p.keputusan ? { keputusan: p.keputusan } : {}) } : fallback);
 
 // ── aturan per jenis dokumen (dipakai atribusiEntri DAN komitmen) ─────────────────────────────────────────────────────
 export function atribusiPengeluaran(d) {
@@ -43,7 +52,7 @@ export function atribusiPengeluaran(d) {
     eksplisit: d.division !== "UMUM" ? peta(d.division) : null,
     relasi: d.submission ? peta(d.submission.division) : null, relasiLabel: `Pengajuan biaya ${d.submission?.submissionNumber ?? ""} (workspace pemohon)`,
     kategori: peta(d.category.division), kategoriLabel: `Kategori ${d.category.code} → divisi terkonfigurasi`,
-    umum: d.division === "UMUM",
+    umum: d.division === "UMUM", keputusan: d.keputusanAtribusi ?? null,
   });
   return {
     ...satu(TIDAK_TERKLASIFIKASI, TAHAP.TIDAK, "Pengeluaran tanpa bukti divisi"), ...dariPutusan(p, tidak("Pengeluaran tanpa bukti divisi")),
@@ -52,7 +61,7 @@ export function atribusiPengeluaran(d) {
   };
 }
 export function atribusiPembelian(d) {
-  const p = putuskan({ eksplisit: d.division !== "UMUM" ? peta(d.division) : null, kategori: KATEGORI_PEMBELIAN_DIVISI[d.category.code] ?? null, kategoriLabel: `Kategori pembelian ${d.category.code} → divisi terkonfigurasi`, umum: d.division === "UMUM" });
+  const p = putuskan({ eksplisit: d.division !== "UMUM" ? peta(d.division) : null, kategori: KATEGORI_PEMBELIAN_DIVISI[d.category.code] ?? null, kategoriLabel: `Kategori pembelian ${d.category.code} → divisi terkonfigurasi`, umum: d.division === "UMUM", keputusan: d.keputusanAtribusi ?? null });
   return {
     ...tidak("Pembelian tanpa bukti divisi"), ...dariPutusan(p, tidak("Pembelian tanpa bukti divisi")),
     dokumen: { modul: "pembelian", id: d.id, nomor: d.purchaseNumber }, kategori: { kode: d.category.code, nama: d.category.name }, status: d.status,
@@ -72,6 +81,18 @@ const SEL_EXP = { id: true, expenseNumber: true, status: true, division: true, c
 const SEL_BELI = { id: true, purchaseNumber: true, status: true, division: true, category: { select: { code: true, name: true } } };
 const SEL_BILL = { id: true, billNumber: true, billType: true, status: true, expenseCategoryId: true, purchaseCategory: { select: { code: true, name: true } } };
 export const SELEKTOR = { SEL_EXP, SEL_BELI, SEL_BILL };
+
+/** Keputusan atribusi AKTIF (belum dicabut) per dokumen → Map<"modul:id", keputusan>. Tabel/klien tanpa model ini (stub tes lama) = tanpa keputusan. */
+export async function muatKeputusanAtribusi(db, { pengeluaran = [], pembelian = [] }) {
+  const ids = (a) => idsValid(a);
+  const exp = ids(pengeluaran); const beli = ids(pembelian);
+  if (!db.finAttributionDecision?.findMany || (!exp.length && !beli.length)) return new Map();
+  const rows = await db.finAttributionDecision.findMany({
+    where: { revokedAt: null, OR: [...(exp.length ? [{ module: "pengeluaran", documentId: { in: exp } }] : []), ...(beli.length ? [{ module: "pembelian", documentId: { in: beli } }] : [])] },
+    select: { id: true, module: true, documentId: true, decidedScope: true },
+  });
+  return new Map(rows.map((r) => [`${r.module}:${r.documentId}`, { id: r.id, scope: r.decidedScope }]));
+}
 
 async function muatKategoriTagihan(db, bills) {
   const ids = uniq(bills.map((b) => b.expenseCategoryId));
@@ -116,6 +137,9 @@ export async function atribusiEntri(db, entries) {
     db.finExpenseCategory.findMany({ where: { autoMapKey: { not: null } }, select: { autoMapKey: true, code: true, name: true, division: true } }),
   ]);
   const katOtomatis = new Map(katAuto.map((k) => [k.autoMapKey, k]));
+  const putusan = await muatKeputusanAtribusi(db, { pengeluaran: expenses.map((x) => x.id), pembelian: purchases.map((x) => x.id) });
+  for (const x of expenses) x.keputusanAtribusi = putusan.get(`pengeluaran:${x.id}`) ?? null;
+  for (const x of purchases) x.keputusanAtribusi = putusan.get(`pembelian:${x.id}`) ?? null;
 
   // tagihan yang dibayar lewat pembayaran supplier (alokasi) dimuat juga
   const idBillBayar = idsValid(supPays.flatMap((p) => p.allocations.map((a) => a.billId))).filter((id) => !bills0.some((b) => b.id === id));
@@ -216,9 +240,10 @@ export async function atribusiEntri(db, entries) {
  */
 export async function atribusiDokumenKomitmen(db, { expenses = [], purchases = [], bills = [] }) {
   const katBill = await muatKategoriTagihan(db, bills);
+  const putusan = await muatKeputusanAtribusi(db, { pengeluaran: expenses.map((x) => x.id), pembelian: purchases.map((x) => x.id) });
   return {
-    pengeluaran: new Map(expenses.map((d) => [d.id, atribusiPengeluaran(d)])),
-    pembelian: new Map(purchases.map((d) => [d.id, atribusiPembelian(d)])),
+    pengeluaran: new Map(expenses.map((d) => [d.id, atribusiPengeluaran({ ...d, keputusanAtribusi: putusan.get(`pengeluaran:${d.id}`) ?? null })])),
+    pembelian: new Map(purchases.map((d) => [d.id, atribusiPembelian({ ...d, keputusanAtribusi: putusan.get(`pembelian:${d.id}`) ?? null })])),
     tagihan: new Map(bills.map((b) => [b.id, atribusiTagihan(b, b.expenseCategoryId ? katBill.get(b.expenseCategoryId) ?? null : null)])),
   };
 }

@@ -107,7 +107,7 @@ export async function muatBarisLabaRugi(tx, { from, to, bolehSensitif = false })
         debit: moneyToNumber(debitBagian[i]), credit: moneyToNumber(kreditBagian[i]),
         nilai: moneyToNumber(nilaiBagian[i]), efek: moneyToNumber(efekBagian[i]),
         orderId: l.orderId ?? null, orderNomor: l.order?.orderNumber ?? null, unitId: l.unitId ?? null,
-        dokumen, sourceId: e.sourceId ?? null,
+        dokumen, dokumenId: at?.dokumen?.id ?? null, keputusan: at?.keputusan ?? null, sourceId: e.sourceId ?? null,
         deskripsi: sensitif && !bolehSensitif ? "(rincian sensitif — hanya Finance Admin)" : (e.description || l.description || "").slice(0, 220),
         membalik: e.reversalOf ? { nomor: e.reversalOf.entryNumber, tanggal: tgl(e.reversalOf.date), sumber: e.reversalOf.source } : null,
         divisi: b.scope, divisiLabel: labelDivisi(b.scope), tahap: at?.tahap ?? "TIDAK_TERKLASIFIKASI", aturan: at?.aturan ?? "", konflik: at?.konflik ?? [], bobot: b.bobot,

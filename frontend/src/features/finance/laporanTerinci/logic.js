@@ -13,6 +13,7 @@ export const SEKSI = Object.freeze([
   { key: "hpp", label: "HPP & Mutu Margin" },
   { key: "divisi", label: "Beban per Divisi" },
   { key: "gap", label: "Gap Pembukuan" },
+  { key: "koreksi", label: "Koreksi Dokumen" },
 ]);
 
 export const TAB_DRILLDOWN = Object.freeze([
