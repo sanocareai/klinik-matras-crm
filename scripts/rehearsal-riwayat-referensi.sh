@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # REHEARSAL-ONLY RIWAYAT REFERENSI — TIDAK PUNYA JALUR TULIS KE PRODUKSI. (dibangkitkan oleh scripts/gen-release-riwayat-referensi.cjs dari scripts/templates/rehearsal-riwayat-referensi.sh.tpl; JANGAN edit manual)
 #
-# Membuktikan migrasi 20261202090000_stok_riwayat_referensi pada SALINAN NYATA data produksi, terisolasi:
+# Membuktikan migrasi 20261218090000_stok_riwayat_referensi pada SALINAN NYATA data produksi, terisolasi:
 #   backup produksi TERBARU (pg_dump, baca-saja) → dipulihkan ke container Postgres SEMENTARA di jaringan Docker sendiri (tanpa port, tanpa akses ke jaringan produksi)
 #   → image kandidat dibangun dengan tag sementara (TIDAK memakai/retag nama image produksi) → verifier riwayat migrasi → snapshot 26 kelompok SEBELUM
 #   → prisma migrate deploy HANYA ke Postgres sementara → uji tabel + constraint + trigger → snapshot SESUDAH (harus identik) → smoke terhadap hasil restore (router saja, tanpa scheduler/WA)
@@ -22,7 +22,7 @@ DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 [[ "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 1 harus SHA kandidat 40 karakter" >&2; exit 1; }
 [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 2 harus SHA release aktif (live) 40 karakter" >&2; exit 1; }
 CAND_BRANCH="${CAND_BRANCH:-feat/stok-mulai-catat-rekon-okt}"
-MIG_LIST="20261202090000_stok_riwayat_referensi"; MIG_SHA="86f852d7da01c2512b7efd3f2bf4f1039cea91230f3ed8fb382db43163b79795"
+MIG_LIST="20261218090000_stok_riwayat_referensi"; MIG_SHA="86f852d7da01c2512b7efd3f2bf4f1039cea91230f3ed8fb382db43163b79795"
 REPO_URL="https://github.com/sanocareai/klinik-matras-crm.git"
 PROJECT="klinik-matras"; DB_USER="klinik"; DB_NAME="klinik_matras"
 DEPLOY_SHORT="${DEPLOY_SHA:0:8}"
