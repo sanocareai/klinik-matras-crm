@@ -31,11 +31,11 @@ DEPLOY_SHORT="${DEPLOY_SHA:0:8}"; BASE_SHORT="${BASE_SHA:0:8}"; NEW_DIR="$RELEAS
 TS="$(date +%Y%m%d_%H%M%S)"; BK_DIR="$HOME/release-backups/${TAG_KODE}-${DEPLOY_SHORT}-${TS}"
 ROLLBACK_TAG="klinik-matras-backend:rollback-pre-${TAG_KODE}-${DEPLOY_SHORT}"
 
-ALLOWED_RE='^(backend/src/services/attribution/(biayaKpi|iklanReport)\.js|backend/tests/(atribusiSpendKpi|releaseAtribusiSpend|releaseAtribusiKpiKode)\.test\.js|backend/tests/fixtures/windsorSpend20261015\.js|backend/tests/integration/atribusiIklan\.integration\.test\.js|frontend/src/features/laporan/iklanCampaignLogic\.js|docs/ATRIBUSI-SPEND-KPI-FASE3\.md|scripts/(release-atribusi-kpi-kode|release-atribusi-spend)\.sh)$'
-BACKEND_SRC_EXPECT="backend/src/services/attribution/biayaKpi.js backend/src/services/attribution/iklanReport.js"
-FRONTEND_SRC_EXPECT="frontend/src/features/laporan/iklanCampaignLogic.js"
+ALLOWED_RE='^(backend/src/services/attribution/biayaKpi\.js|backend/tests/(atribusiSpendKpi|releaseAtribusiSpend|releaseAtribusiKpiKode|backfillSpendWindsor)\.test\.js|backend/tests/fixtures/windsorSpend20261015\.js|backend/tests/integration/atribusiIklan\.integration\.test\.js|frontend/src/features/laporan/(iklanCampaignLogic\.js|components/IklanCampaignTab\.jsx)|frontend/tests/iklanCampaignLogic\.test\.js|docs/(ATRIBUSI-SPEND-KPI-FASE3|BACKFILL-SPEND-WINDSOR-1-14-OKT)\.md|docs/templates/windsor-(spend-ad-harian\.template\.csv|kontrol-total-1-14okt\.template\.json)|scripts/(release-atribusi-kpi-kode|release-atribusi-spend|atribusi-monitor-cron|backfill-spend-windsor)\.(sh|cjs))$'
+BACKEND_SRC_EXPECT="backend/src/services/attribution/biayaKpi.js"
+FRONTEND_SRC_EXPECT="frontend/src/features/laporan/components/IklanCampaignTab.jsx frontend/src/features/laporan/iklanCampaignLogic.js"
 declare -A PINS=(
-  ["backend/src/services/attribution/biayaKpi.js"]="02fa8837eaae840774f9908a94df13d309e5fa39e5145105953f0a87096e40ae"
+  ["backend/src/services/attribution/biayaKpi.js"]="b4dd5ed9fcdc9a0399f73650bf88cb4f9db74d6e5e689c2d541657b45cc7eb61"
   ["backend/src/services/attribution/iklanReport.js"]="fb59ee657aa4fe08a3c2e289db2259f20c4d21bb940c8c39352c8f8820ccb9dd"
 )
 
@@ -281,7 +281,7 @@ NEW_INDEX="$(grep -o 'index-[A-Za-z0-9_-]*\.js' "$NEW_DIR/frontend/dist/index.ht
 [ -n "$NEW_INDEX" ] && [ -f "$NEW_DIR/frontend/dist/assets/$NEW_INDEX" ] || die "hasil build web tidak valid"; [ "$NEW_INDEX" != "$PREV_INDEX" ] || die "bundel baru identik dengan lama"
 MAPS_KEY="$(sed -n 's/^VITE_GOOGLE_MAPS_JS_KEY=//p' "$PERSIST/frontend/.env" | tr -d '\r"'"'"' ')"
 [ -n "$(grep -lF "$MAPS_KEY" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat VITE_GOOGLE_MAPS_JS_KEY"
-for s1 in "Tidak dapat dievaluasi (sebelum atribusi)" "Sebelum atribusi"; do [ -n "$(grep -lF "$s1" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat teks baru: ${s1}"; done
+for s1 in "Biaya / konv. platform" "Tidak dapat dievaluasi (sebelum atribusi)" "Sebelum atribusi"; do [ -n "$(grep -lF "$s1" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat teks baru: ${s1}"; done
 for s2 in "Impor spend harian (CSV Ads Manager)" "Target KPI (diisi Owner)" "Cost / qualified" "Atribusi tersimpan sejak" "Konfirmasi Barang Jadi" "Rencana Produksi" "Uang Muka"; do
   [ -n "$(grep -lF "$s2" "$PREV_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "[skrip] teks lama '${s2}' tidak ada di dist aktif"
   [ -n "$(grep -lF "$s2" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru KEHILANGAN teks fitur: ${s2}"

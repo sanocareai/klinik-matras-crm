@@ -182,6 +182,9 @@ export function hitungBiayaBaris({ baris, spend, konteks }) {
   else if (!matang) status = STATUS_BIAYA.DATA_BELUM_MATANG;
   else status = STATUS_BIAYA.SIAP_DIEVALUASI;
 
+  const konvPlat = spend ? (spend.platformConversations ?? null) : null;
+  const costPerKonversasiPlatform = S !== null && konvPlat !== null && konvPlat > 0 ? n2(S / konvPlat) : null;
+  alasan.costPerPlatformConversation = costPerKonversasiPlatform !== null ? null : S === null ? "BELUM_ADA_SPEND" : "BELUM_ADA_PERCAKAPAN_PLATFORM";
   const evaluasi = tidakSebanding
     ? { status: EVALUASI_TIDAK_SEBANDING[tidakSebanding], alasan: tidakSebanding, pelanggaran: [] }
     : evaluasiTarget({ target, statusBiaya: status, metrik, lead, spamSharePercent: spamShare, closings: closing });
@@ -189,6 +192,8 @@ export function hitungBiayaBaris({ baris, spend, konteks }) {
     status,
     spend: S,
     platformConversations: spend ? (spend.platformConversations ?? null) : null,
+    // METRIK PLATFORM (aditif, tersedia juga sebelum atribusi): spend ÷ percakapan versi Meta. BUKAN CPL/CPA CRM.
+    costPerPlatformConversation: costPerKonversasiPlatform,
     platformConversationsCatatan: "hasil percakapan versi Meta; BUKAN lead CRM",
     impressions: spend ? (spend.impressions ?? null) : null,
     linkClicks: spend ? (spend.linkClicks ?? null) : null,
@@ -289,7 +294,9 @@ export function terapkanBiaya(laporan, { spendPerAd, referensi, kesegaran, targe
   const spendTotal = filter ? spendDalamFilter : rp([...perKunci.values()].reduce((s, a) => s + a.spend, 0));
   const t = laporan.jumlahTeratribusi;
   const totalBaris = { lead: { unik: t.leadUnik, spam: laporan.grup.reduce((s, g) => s + (g.status === "UNKNOWN" ? 0 : g.lead.spam), 0), leadSah: t.leadSah }, pernahDitandaiProspek: { jumlah: laporan.grup.filter((g) => g.status !== "UNKNOWN").reduce((s, g) => s + g.pernahDitandaiProspek.jumlah, 0) }, customerDenganOrder: t.customerDenganOrder, closingUtama: { customerLunasTerbuktiLedger: t.closingUtama.customerLunasTerbuktiLedger }, bookedValue: t.bookedValue, uangBersihLedger: t.uangBersihLedger, status: "MAPPED", kematangan: laporan.grup.reduce((acc, g) => { for (const k of ["hari7", "hari30", "hari60"]) acc[k] = { leadMatang: (acc[k]?.leadMatang || 0) + (g.status === "UNKNOWN" ? 0 : g.kematangan?.[k]?.leadMatang || 0) }; return acc; }, {}) };
-  const bTotal = hitungBiayaBaris({ baris: totalBaris, spend: perKunci.size ? { spend: spendTotal, hariAdaSpend: 0 } : null, konteks });
+  // metrik aditif (spend, impressions, link clicks, percakapan) dijumlah; reach TIDAK pernah dijumlah (non-additive, tidak disimpan dalam agregat ini)
+  const sumNullable = (k) => { const v = [...perKunci.values()].map((a) => a[k]).filter((x) => x !== null && x !== undefined); return v.length ? v.reduce((p, c) => p + Number(c), 0) : null; };
+  const bTotal = hitungBiayaBaris({ baris: totalBaris, spend: perKunci.size ? { spend: spendTotal, platformConversations: sumNullable("platformConversations"), impressions: sumNullable("impressions"), linkClicks: sumNullable("linkClicks"), hariAdaSpend: 0 } : null, konteks });
   const biayaLama = laporan.biaya || {};
   laporan.biaya = {
     ...(sumberTerhubung ? {} : { alasan: biayaLama.alasan, catatanAdSpendManual: biayaLama.catatanAdSpendManual, opsiIntegrasi: biayaLama.opsiIntegrasi, syarat: biayaLama.syarat, ekspor: biayaLama.ekspor }),

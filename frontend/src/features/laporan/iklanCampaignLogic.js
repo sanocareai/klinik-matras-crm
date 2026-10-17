@@ -147,6 +147,8 @@ export function barisBiaya(g) {
     status: b.status, statusTeks: st.teks, statusTip: st.tip, nada: st.nada,
     spend: b.spend === null || b.spend === undefined ? { teks: "—", alasan: null, kosong: true } : selBiaya(b.spend, null),
     konversasiPlatform: b.platformConversations ?? null,
+    impresi: b.impressions ?? null, klikTautan: b.linkClicks ?? null,
+    biayaPerKonversasi: selBiaya(b.costPerPlatformConversation, al.costPerPlatformConversation),
     cpl: selBiaya(b.cpl, al.cpl), cplQualified: selBiaya(b.costPerQualifiedLead, al.costPerQualifiedLead),
     cplOrder: selBiaya(b.costPerCustomerOrder, al.costPerCustomerOrder), cpa: selBiaya(b.cpa, al.cpa),
     bookedRoas: selBiaya(b.bookedRoas, al.bookedRoas, { rupiah: false, desimal: true }), cashRoas: selBiaya(b.cashRoas, al.cashRoas, { rupiah: false, desimal: true }),

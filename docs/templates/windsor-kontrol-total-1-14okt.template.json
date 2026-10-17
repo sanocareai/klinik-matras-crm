@@ -1,0 +1,109 @@
+{
+  "_petunjuk": "DIISI MESA dari control total Windsor level akun (per hari) dan level campaign (per hari). Semua angka bulat rupiah/ cacah, bukan teks. Hari tanpa data: isi 0 (dan campaign tetap {}). JANGAN mengisi dari tangkapan layar. Contoh isi campaign: \"52597175089484\": {\"spend\":0,\"impressions\":0,\"link_clicks\":0,\"conversations\":0}",
+  "akun": "2081614415911241",
+  "zona": "Asia/Jakarta",
+  "mata_uang": "IDR",
+  "sumber": "Windsor Meta/Facebook",
+  "ditarik_pada": null,
+  "diisi_oleh": null,
+  "harian": {
+    "2026-10-01": {
+      "spend": null,
+      "impressions": null,
+      "link_clicks": null,
+      "conversations": null,
+      "campaign": {}
+    },
+    "2026-10-02": {
+      "spend": null,
+      "impressions": null,
+      "link_clicks": null,
+      "conversations": null,
+      "campaign": {}
+    },
+    "2026-10-03": {
+      "spend": null,
+      "impressions": null,
+      "link_clicks": null,
+      "conversations": null,
+      "campaign": {}
+    },
+    "2026-10-04": {
+      "spend": null,
+      "impressions": null,
+      "link_clicks": null,
+      "conversations": null,
+      "campaign": {}
+    },
+    "2026-10-05": {
+      "spend": null,
+      "impressions": null,
+      "link_clicks": null,
+      "conversations": null,
+      "campaign": {}
+    },
+    "2026-10-06": {
+      "spend": null,
+      "impressions": null,
+      "link_clicks": null,
+      "conversations": null,
+      "campaign": {}
+    },
+    "2026-10-07": {
+      "spend": null,
+      "impressions": null,
+      "link_clicks": null,
+      "conversations": null,
+      "campaign": {}
+    },
+    "2026-10-08": {
+      "spend": null,
+      "impressions": null,
+      "link_clicks": null,
+      "conversations": null,
+      "campaign": {}
+    },
+    "2026-10-09": {
+      "spend": null,
+      "impressions": null,
+      "link_clicks": null,
+      "conversations": null,
+      "campaign": {}
+    },
+    "2026-10-10": {
+      "spend": null,
+      "impressions": null,
+      "link_clicks": null,
+      "conversations": null,
+      "campaign": {}
+    },
+    "2026-10-11": {
+      "spend": null,
+      "impressions": null,
+      "link_clicks": null,
+      "conversations": null,
+      "campaign": {}
+    },
+    "2026-10-12": {
+      "spend": null,
+      "impressions": null,
+      "link_clicks": null,
+      "conversations": null,
+      "campaign": {}
+    },
+    "2026-10-13": {
+      "spend": null,
+      "impressions": null,
+      "link_clicks": null,
+      "conversations": null,
+      "campaign": {}
+    },
+    "2026-10-14": {
+      "spend": null,
+      "impressions": null,
+      "link_clicks": null,
+      "conversations": null,
+      "campaign": {}
+    }
+  }
+}

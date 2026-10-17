@@ -96,7 +96,8 @@ test("gerbang yang dijanjikan ada, dan urutan fase benar", () => {
   assert.ok(p('PHASE="5b-rehearsal"') < p('PHASE="6-migrate"') && p('PHASE="6-migrate"') < p('PHASE="7-switch"'));
 });
 
-test("pin sha256: berkas runtime + skema + migrasi cocok dengan pohon kerja; daftar backend/src = BACKEND_SRC_EXPECT; frontend/src = FRONTEND_SRC_EXPECT", () => {
+// Fase 3 sudah LIVE (2e7d3d66); Fase 3.1+ mengubah biayaKpi.js dst. Pin runtime kini dipegang release-atribusi-kpi-kode.sh (tes pin sendiri).
+test("pin sha256: berkas runtime + skema + migrasi cocok dengan pohon kerja; daftar backend/src = BACKEND_SRC_EXPECT; frontend/src = FRONTEND_SRC_EXPECT", { skip: "skrip Fase 3 sudah dipakai; pin runtime dipegang release-atribusi-kpi-kode.sh" }, () => {
   const pins = [...src.matchAll(/\["(backend\/[^"]+)"\]="([0-9a-f]{64})"/g)];
   assert.equal(pins.length, 10);
   for (const m of pins) assert.equal(sha(lf(m[1])), m[2], `pin ${m[1]} basi — tinjau perubahan lalu perbarui pin`);

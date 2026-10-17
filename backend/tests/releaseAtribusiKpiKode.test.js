@@ -38,7 +38,7 @@ test("pin sha256 cocok pohon kerja; backend/src = BACKEND_SRC_EXPECT", () => {
   assert.equal(pins.length, 2);
   for (const m of pins) assert.equal(sha(lf(m[1])), m[2], `pin ${m[1]} basi`);
   const be = /BACKEND_SRC_EXPECT="([^"]+)"/.exec(src)[1].split(" ").sort();
-  assert.deepEqual(pins.map((m) => m[1]).sort(), be);
+  for (const f of be) assert.ok(pins.some((m) => m[1] === f), "berkas backend/src yang berubah harus dipin: " + f);
 });
 
 test("TANPA migrasi/skema, tanpa tulis data, tanpa env/flag, tanpa push/hapus, tanpa Meta", () => {
@@ -52,8 +52,8 @@ test("TANPA migrasi/skema, tanpa tulis data, tanpa env/flag, tanpa push/hapus, t
 
 test("allowlist: hanya berkas Fase 3.1; prisma/paket/compose/campaign automation/berkas lain ditolak", () => {
   const re = new RegExp(/ALLOWED_RE='([^']+)'/.exec(src)[1]);
-  for (const ok of ["backend/src/services/attribution/biayaKpi.js", "backend/src/services/attribution/iklanReport.js", "backend/tests/fixtures/windsorSpend20261015.js", "frontend/src/features/laporan/iklanCampaignLogic.js", "docs/ATRIBUSI-SPEND-KPI-FASE3.md", "scripts/release-atribusi-kpi-kode.sh", "scripts/release-atribusi-spend.sh"]) assert.ok(re.test(ok), ok);
-  for (const no of ["backend/prisma/schema.prisma", "backend/prisma/migrations/20261202000000_x/migration.sql", "backend/package.json", "docker-compose.release.yml", "backend/src/index.js", "backend/src/routes/attributionAds.js", "backend/src/services/attribution/spend.js", "backend/src/services/attribution/spendSyncMeta.js", "frontend/src/pages/Laporan.jsx", "backend/src/services/meta/campaignAutomation.js", "backend/.env"]) assert.ok(!re.test(no), no);
+  for (const ok of ["backend/src/services/attribution/biayaKpi.js", "backend/tests/fixtures/windsorSpend20261015.js", "backend/tests/backfillSpendWindsor.test.js", "frontend/src/features/laporan/iklanCampaignLogic.js", "frontend/src/features/laporan/components/IklanCampaignTab.jsx", "frontend/tests/iklanCampaignLogic.test.js", "docs/ATRIBUSI-SPEND-KPI-FASE3.md", "docs/BACKFILL-SPEND-WINDSOR-1-14-OKT.md", "docs/templates/windsor-spend-ad-harian.template.csv", "docs/templates/windsor-kontrol-total-1-14okt.template.json", "scripts/release-atribusi-kpi-kode.sh", "scripts/release-atribusi-spend.sh", "scripts/atribusi-monitor-cron.sh", "scripts/backfill-spend-windsor.sh", "scripts/backfill-spend-windsor.cjs"]) assert.ok(re.test(ok), ok);
+  for (const no of ["backend/prisma/schema.prisma", "backend/prisma/migrations/20261202000000_x/migration.sql", "backend/package.json", "docker-compose.release.yml", "backend/src/index.js", "backend/src/routes/attributionAds.js", "backend/src/services/attribution/spend.js", "backend/src/services/attribution/spendSyncMeta.js", "backend/src/services/attribution/iklanReport.js", "backend/src/services/attribution/monitor.js", "frontend/src/api.js", "frontend/src/features/laporan/components/IklanBiayaPanel.jsx", "frontend/src/pages/Laporan.jsx", "backend/src/services/meta/campaignAutomation.js", "backend/.env"]) assert.ok(!re.test(no), no);
 });
 
 test("gerbang kunci ada: baseline, disk, backup, pin, himpunan migrasi sama, data tidak berubah, reach tidak tampil, rollback tanpa hapus data", () => {

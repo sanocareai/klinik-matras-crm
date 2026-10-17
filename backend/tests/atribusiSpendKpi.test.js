@@ -325,7 +325,7 @@ test("sebelum atribusi: spend + konversasi platform tampil; CPL/CPA/ROAS null de
   assert.equal(b.status, "SEBELUM_ATRIBUSI");
   assert.deepEqual([b.spend, b.platformConversations], [468546, 42]);
   assert.deepEqual([b.cpl, b.costPerQualifiedLead, b.costPerCustomerOrder, b.cpa, b.bookedRoas, b.cashRoas], [null, null, null, null, null, null]);
-  assert.ok(Object.values(b.alasanNull).every((a) => a === "SEBELUM_ATRIBUSI"));
+  assert.ok(Object.entries(b.alasanNull).filter(([k]) => k !== "costPerPlatformConversation").every(([, a]) => a === "SEBELUM_ATRIBUSI"));
   assert.equal(b.evaluasi.status, EVALUASI_TIDAK_SEBANDING.SEBELUM_ATRIBUSI);
   assert.equal(b.evaluasi.status, "TIDAK_DAPAT_DIEVALUASI_SEBELUM_ATRIBUSI");
   assert.match(b.catatanPembanding, /BUKAN performa nol/);
@@ -368,4 +368,21 @@ test("dataset Windsor 15 Okt: Σ baris Ad = control total akun untuk spend/impre
   const nol = hasil.baru.filter((r) => r.spend === 0);
   assert.deepEqual(nol.map((r) => r.platformConversations).sort(), [0, 1], "baris Rp0: satu dengan percakapan 1 diterima");
   assert.ok(hasil.baru.every((r) => r.currency === "IDR" && typeof r.adId === "string"));
+});
+
+test("biaya per percakapan platform: metrik PLATFORM aditif, tetap tampil sebelum atribusi; percakapan 0/spend null -> null dengan alasan; total menjumlah impresi/klik/percakapan (bukan reach)", () => {
+  const sb = kon({ tidakSebanding: "SEBELUM_ATRIBUSI" });
+  const b = hitungBiayaBaris({ baris: baris(), spend: spend(468546, { platformConversations: 42, impressions: 28342, linkClicks: 214 }), konteks: sb });
+  assert.equal(b.costPerPlatformConversation, 11155.86);
+  assert.equal(b.cpl, null, "CPL CRM tetap null sebelum atribusi");
+  assert.deepEqual([b.impressions, b.linkClicks], [28342, 214]);
+  const nol = hitungBiayaBaris({ baris: baris(), spend: spend(0, { platformConversations: 1 }), konteks: sb });
+  assert.equal(nol.costPerPlatformConversation, 0, "spend Rp0 dengan percakapan 1 = Rp0 per percakapan (apa adanya)");
+  const tanpaKonv = hitungBiayaBaris({ baris: baris(), spend: spend(1000, { platformConversations: 0 }), konteks: sb });
+  assert.deepEqual([tanpaKonv.costPerPlatformConversation, tanpaKonv.alasanNull.costPerPlatformConversation], [null, "BELUM_ADA_PERCAKAPAN_PLATFORM"]);
+  assert.equal(hitungBiayaBaris({ baris: baris(), spend: null, konteks: kon({ sumberTerhubung: false }) }).alasanNull.costPerPlatformConversation, "BELUM_ADA_SPEND");
+  const ref = new Map([[AD1, { adId: AD1, adSetId: SET1, campaignId: CAMP1 }], [AD2, { adId: AD2, adSetId: SET2, campaignId: CAMP2 }]]);
+  const lap = laporanDasar([]); lap.rentangLead.dari = "2026-10-15"; lap.rentangLead.sampai = "2026-10-15";
+  terapkanBiaya(lap, { spendPerAd: [{ adId: AD1, spend: 300, platformConversations: 3, impressions: 100, linkClicks: 10, hariAdaSpend: 1 }, { adId: AD2, spend: 100, platformConversations: 1, impressions: 50, linkClicks: 5, hariAdaSpend: 1 }], referensi: ref, kesegaran: kes(), target: normalisasiTarget(null), mulaiHari: "2026-10-16" });
+  assert.deepEqual([lap.biaya.platformConversations, lap.biaya.impressions, lap.biaya.linkClicks, lap.biaya.costPerPlatformConversation], [4, 150, 15, 100]);
 });
