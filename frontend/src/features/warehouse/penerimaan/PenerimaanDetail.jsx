@@ -92,6 +92,19 @@ export default function PenerimaanDetail() {
   if (!r) return null;
   const koreksiRelevan = r.status === "COMPLETED";
 
+  // Kartu aksi: tepat di bawah identitas supaya tidak tersembunyi di bawah tabel panjang (layar HP). Bila ada isian pemeriksaan di tabel, kartu tetap di bawah tabel (tombol simpan dekat isiannya).
+  const kartuAksi = (
+    <Card className="space-y-2 p-4" data-testid="kartu-aksi">
+      <h3 className="m-0 text-[11px] font-bold uppercase tracking-wide text-ink3">Yang bisa dilakukan sekarang</h3>
+      {t.status === "READY_FOR_PUTAWAY" && <p className="m-0 text-[11.5px] leading-snug text-ink2">Hanya barang yang dinyatakan baik yang masuk ke stok. Tindakan ini menambah persediaan dan membuat jurnal penerimaan secara otomatis.</p>}
+      {t.status === "READY_FOR_PUTAWAY" && <p className="m-0 text-[11.5px] leading-snug text-ink3" data-testid="petunjuk-simpan-ke-stok-gudang">Simpan ke Stok hanya menambah stok. Faktur supplier dicatat dan disetujui Finance secara terpisah — bukan dari tombol ini.</p>}
+      {aksiLabel.length === 0 ? <p className="m-0 text-[12.5px] text-ink3" data-testid="tanpa-aksi">Tidak ada aksi untuk dokumen ini. {t.penjelasan}</p> : (
+        <AksiDokumen aksi={aksiLabel} spec={SPEC} onJalankan={jalankan} sibuk={sibuk} ikutiVersi={versi} />
+      )}
+      {r.purchaseOrderId && r.status === "SCHEDULED" && <p className="m-0 text-[11.5px] text-ink3">“Catat barang tiba” membuka formulir kedatangan resmi (tanggal tiba, penerima, surat jalan). Menjadwalkan atau membatalkan tidak mengubah PO.</p>}
+    </Card>
+  );
+
   return (
     <PageContainer>
       <PageHeader
@@ -115,10 +128,12 @@ export default function PenerimaanDetail() {
             <div><dt className="text-ink3">Jumlah item</dt><dd className="m-0 font-medium text-ink">{ident.jumlahItem}</dd></div>
             <div><dt className="text-ink3">Tanggal diterima</dt><dd className="m-0 font-medium text-ink">{r.receivedDate ? tanggalPendek(r.receivedDate) : "—"}</dd></div>
           </dl>
-          <AlurPenerimaan tampilan={t} dariPO={!!r.purchaseOrderId} />
+          <AlurPenerimaan tampilan={t} dariPO={!!r.purchaseOrderId} className="pt-2" />
           <p className={`m-0 flex items-start gap-1.5 rounded-btn px-3 py-2 text-[12.5px] leading-snug ${t.pengaruhStok === "SUDAH" ? "bg-greenbg text-green" : "bg-inset text-ink2"}`} data-testid="penjelasan-status"><Info size={14} className="mt-0.5 shrink-0" aria-hidden /><span>{t.penjelasan}</span></p>
           {r.notes && <p className="m-0 text-[12px] text-ink2" data-testid="catatan-dokumen">{r.notes}</p>}
         </Card>
+
+        {!bisaPeriksa && kartuAksi}
 
         {lain.length > 0 && (
           <div className="flex items-start gap-2 rounded-btn border-l-[3px] border-orange bg-orangebg px-3 py-2.5 text-[12.5px] text-ink2" data-testid="penerimaan-lain-po" role="note">
@@ -161,15 +176,7 @@ export default function PenerimaanDetail() {
           {galatDini && <p role="alert" className="m-0 text-[12px] text-red" data-testid="galat-isian">{galatDini}</p>}
         </Card>
 
-        <Card className="space-y-2 p-4" data-testid="kartu-aksi">
-          <h3 className="m-0 text-[11px] font-bold uppercase tracking-wide text-ink3">Yang bisa dilakukan sekarang</h3>
-          {t.status === "READY_FOR_PUTAWAY" && <p className="m-0 text-[11.5px] leading-snug text-ink2">Hanya barang yang dinyatakan baik yang masuk ke stok. Tindakan ini menambah persediaan dan membuat jurnal penerimaan secara otomatis.</p>}
-          {t.status === "READY_FOR_PUTAWAY" && <p className="m-0 text-[11.5px] leading-snug text-ink3" data-testid="petunjuk-simpan-ke-stok-gudang">Simpan ke Stok hanya menambah stok. Faktur supplier dicatat dan disetujui Finance secara terpisah — bukan dari tombol ini.</p>}
-          {aksiLabel.length === 0 ? <p className="m-0 text-[12.5px] text-ink3" data-testid="tanpa-aksi">Tidak ada aksi untuk dokumen ini. {t.penjelasan}</p> : (
-            <AksiDokumen aksi={aksiLabel} spec={SPEC} onJalankan={jalankan} sibuk={sibuk} ikutiVersi={versi} />
-          )}
-          {r.purchaseOrderId && r.status === "SCHEDULED" && <p className="m-0 text-[11.5px] text-ink3">“Catat barang tiba” membuka formulir kedatangan resmi (tanggal tiba, penerima, surat jalan). Menjadwalkan atau membatalkan tidak mengubah PO.</p>}
-        </Card>
+        {bisaPeriksa && kartuAksi}
 
         {(koreksiRelevan || ["ARRIVED", "INSPECTION", "READY_FOR_PUTAWAY"].includes(r.status)) && (
           <KartuJalurKoreksi tipe="GOODS_RECEIPT" id={id} versi={`${r.status}-${versi}`} ringkas aksi={{ KOREKSI_PENERIMAAN: () => setKoreksiGR(true), KOREKSI_KEDATANGAN: async () => { setKoreksiPO(await api.getBarangAkanDatangDetail(r.purchaseOrderId)); } }} />

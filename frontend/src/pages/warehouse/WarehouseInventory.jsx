@@ -61,9 +61,20 @@ export default function WarehouseInventory() {
         }
       />
       <PageBody>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-[220px] flex-1">
+            <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink3" aria-hidden />
+            <Input type="search" value={cari} onChange={(e) => setCari(e.target.value)} placeholder="Cari kode, nama, atau vendor" aria-label="Cari bahan" className="pl-9" autoFocus />
+          </div>
+          <select value={keadaan} onChange={(e) => setKeadaan(e.target.value)} aria-label="Saring keadaan stok" className="h-9 rounded-btn border border-border bg-surface px-2.5 text-[12.5px] text-ink outline-none focus:border-accent max-sm:min-h-11">
+            {FILTER_KEADAAN.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
+          </select>
+          <label className="flex items-center gap-1.5 text-[12px] text-ink2 max-sm:min-h-11"><input type="checkbox" checked={nonaktif} onChange={(e) => setNonaktif(e.target.checked)} /> Tampilkan nonaktif</label>
+        </div>
         {ringkas && (
-          <section aria-label="Ringkasan stok" className="rounded-btn border border-line bg-surface p-3" data-testid="ringkasan-stok">
-            <div className="flex flex-wrap gap-x-5 gap-y-1 text-[12.5px] text-ink2">
+          <details open={typeof window !== "undefined" && !!window.matchMedia?.("(min-width: 768px)").matches} aria-label="Ringkasan stok" className="rounded-btn border border-line bg-surface p-3" data-testid="ringkasan-stok">
+            <summary className="cursor-pointer list-none text-[12.5px] font-semibold text-ink max-sm:flex max-sm:min-h-11 max-sm:items-center md:hidden" data-testid="ringkasan-ringkas">Ringkasan stok · {ringkas.aktif} aktif · {ringkas.belumAdaCatatan} belum ada catatan · {ringkas.minus} minus <span className="font-normal text-ink3">(ketuk untuk rincian)</span></summary>
+            <div className="flex flex-wrap gap-x-5 gap-y-1 text-[12.5px] text-ink2 max-sm:mt-2">
               <span><strong className="text-ink" data-testid="n-terdaftar">{ringkas.terdaftar}</strong> bahan terdaftar</span>
               <span><strong className="text-ink" data-testid="n-aktif">{ringkas.aktif}</strong> aktif{ringkas.nonaktif > 0 && ` (${ringkas.nonaktif} nonaktif disembunyikan)`}</span>
               <span><strong className="text-ink">{ringkas.ada}</strong> ada stok</span>
@@ -77,7 +88,7 @@ export default function WarehouseInventory() {
               <li>• {k.reorder}.</li>
             </ul>
             <p className="m-0 mt-1.5 flex items-start gap-1 text-[11px] text-ink3" data-testid="catatan-sumber"><Info size={12} className="mt-px shrink-0" aria-hidden /> {data.catatan}</p>
-          </section>
+          </details>
         )}
 
         <div role="tablist" aria-label="Saring kategori bahan" className="flex flex-wrap gap-1 border-b border-line pb-2">
@@ -88,16 +99,6 @@ export default function WarehouseInventory() {
           {terfilter && <span className="ml-auto self-center text-[11.5px] text-ink3" data-testid="jumlah-tampil">{terfilter.length} bahan tampil</span>}
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative min-w-[220px] flex-1">
-            <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink3" aria-hidden />
-            <Input type="search" value={cari} onChange={(e) => setCari(e.target.value)} placeholder="Cari kode, nama, atau vendor" aria-label="Cari bahan" className="pl-9" autoFocus />
-          </div>
-          <select value={keadaan} onChange={(e) => setKeadaan(e.target.value)} aria-label="Saring keadaan stok" className="h-9 rounded-btn border border-border bg-surface px-2.5 text-[12.5px] text-ink outline-none focus:border-accent max-sm:min-h-11">
-            {FILTER_KEADAAN.map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}
-          </select>
-          <label className="flex items-center gap-1.5 text-[12px] text-ink2 max-sm:min-h-11"><input type="checkbox" checked={nonaktif} onChange={(e) => setNonaktif(e.target.checked)} /> Tampilkan nonaktif</label>
-        </div>
         {error && <div role="alert" className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{error}</div>}
 
         <Card className="overflow-hidden">
@@ -129,8 +130,8 @@ export default function WarehouseInventory() {
                   <li key={r.materialId}>
                     <button type="button" onClick={() => setSelected(stok?.get(r.materialId) ?? null)} data-testid="baris-stok" data-kode={r.kode}
                       className="w-full px-4 py-3 text-left transition-colors hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset max-sm:min-h-11">
-                      <div className="flex items-center gap-2"><span className="truncate text-[12.5px] font-semibold text-ink">{r.kode}</span><Badge variant={warnaKeadaan(r.keadaan)} className="ml-auto shrink-0">{r.keadaanLabel}</Badge></div>
-                      <div className="mt-0.5 truncate text-[13px] text-ink">{r.nama}</div>
+                      <div className="flex items-center gap-2"><span className="min-w-0 text-[12.5px] font-semibold text-ink [overflow-wrap:anywhere]">{r.kode}</span><Badge variant={warnaKeadaan(r.keadaan)} className="ml-auto shrink-0">{r.keadaanLabel}</Badge></div>
+                      <div className="mt-0.5 text-[13px] text-ink">{r.nama}</div>
                       <div className="mt-1 text-[11.5px] text-ink2">Saldo <SaldoSel r={r} inline /> · minimum {teksBatasMinimum(r)}</div>
                       <div className="mt-0.5 text-[11px] text-ink3">{r.sumberAngka?.teks ?? "Belum ada catatan pergerakan stok"}</div>
                       {riwayatLokasi(r) && <div className="mt-0.5 text-[11px] text-ink3" data-testid="riwayat-lokasi">{riwayatLokasi(r).teks} — riwayat, bukan lokasi stok saat ini</div>}
