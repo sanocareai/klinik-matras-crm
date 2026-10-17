@@ -23,13 +23,47 @@ const migRel = `backend/prisma/migrations/${migName}/migration.sql`;
 const berkasUji = ["backend/prisma/schema.prisma", migRel, "backend/src/routes/riwayatReferensi.js", "frontend/src/features/warehouse/components/RiwayatReferensiTab.jsx", "scripts/lib/smoke-riwayat-referensi.mjs", "scripts/gen-release-riwayat-referensi.cjs"];
 const masukan = (o = {}) => ({ templateSrc: baca("scripts/release-identitas-pemeriksa-hitung.sh"), berkasList: berkasUji, migName, migSql: baca(migRel), smokeSrc: baca("scripts/lib/smoke-riwayat-referensi.mjs"), restoreBersihSrc: baca("scripts/templates/restore-bersih.sh.part"), ...o });
 
-test("generator berbasis repo: tepat satu migrasi *_stok_riwayat_referensi, namanya SESUDAH semua migrasi lain (urutan aman)", () => {
+// INVARIANT URUTAN (berlaku selamanya, tidak bergantung pada migrasi lain yang dirilis sesudahnya):
+//  - PENDAHULU_TERAKHIR = migrasi terakhir yang sudah terpasang di produksi saat rilis ini disiapkan; harus tetap ada di repo;
+//  - migrasi riwayat referensi bernama SESUDAH pendahulu itu dan TIDAK ada migrasi lain yang menyelip di antara keduanya
+//    (menyelip = migrasi lebih tua dari milik kita tetapi belum terpasang → `migrate deploy` akan menerapkannya di luar urutan);
+//  - migrasi yang namanya SESUDAH milik kita adalah rilis berikutnya: sah, dan dijaga oleh gerbang rilis masing-masing
+//    (tepat satu pending terhadap live saat itu), bukan oleh tes ini.
+const PENDAHULU_TERAKHIR = "20261217090000_keputusan_atribusi_divisi";
+// Isi migrasi ini SUDAH terpasang di produksi (checksum Prisma): tidak boleh berubah lagi.
+const MIG_SHA_TERPASANG = "c8c9b07e84e92a997c65d6b65250df0ea2bbd469f83d6e65c6f32969fae7f907";
+
+test("generator berbasis repo: tepat satu migrasi *_stok_riwayat_referensi, berurutan benar terhadap pendahulunya, isinya terkunci (urutan aman)", () => {
   assert.ok(migName, "migrasi riwayat referensi ada");
   assert.equal(dirMig.filter((n) => n.endsWith("_stok_riwayat_referensi")).length, 1);
-  const lain = dirMig.filter((n) => n !== migName).sort();
-  assert.ok(migName > lain[lain.length - 1], `nama migrasi (${migName}) harus lebih baru dari migrasi lain (${lain[lain.length - 1]}) — nama tanggal BUKAN bukti siap rilis, tetapi urutan harus aman`);
+  assert.ok(dirMig.includes(PENDAHULU_TERAKHIR), `pendahulu ${PENDAHULU_TERAKHIR} harus tetap ada di repo`);
+  assert.ok(migName > PENDAHULU_TERAKHIR, `nama migrasi (${migName}) harus lebih baru dari pendahulu terakhir (${PENDAHULU_TERAKHIR})`);
+  const menyelip = dirMig.filter((n) => n > PENDAHULU_TERAKHIR && n < migName);
+  assert.deepEqual(menyelip, [], `tidak boleh ada migrasi yang menyelip di antara pendahulu dan migrasi riwayat referensi: ${menyelip.join(", ")}`);
+  assert.equal(createHash("sha256").update(baca(migRel)).digest("hex"), MIG_SHA_TERPASANG, "isi migrasi riwayat referensi berubah padahal sudah terpasang di produksi");
   const src = baca("scripts/gen-release-riwayat-referensi.cjs");
   assert.doesNotMatch(src, /C:[\\/]+tmp|km-recon-out|pid_main|smoke_rr/i, "generator tidak boleh bergantung pada helper di luar repo");
+});
+
+test("skrip rilis ini tidak bisa keliru dijalankan pada kandidat gabungan: sudah terpasang → ditolak; ada migrasi lain yang pending → ditolak; hanya bila tepat migrasi ini yang pending → lolos", () => {
+  const { script: s } = bangkitkan(masukan());
+  // Gerbang di skrip (teks): migrasi sudah terpasang, himpunan pending, dan urutan terhadap yang terpasang terakhir.
+  assert.match(s, /grep -Fx "\$MIG_LIST" "\$BK_DIR\/applied-sebelum\.txt" >\/dev\/null && die "migrasi \$\{?MIG_LIST\}? SUDAH terpasang sebelum rilis/);
+  assert.match(s, /\[ "\$PENDING" = "\$MIG_LIST" \] \|\| die "migrasi pending bukan TEPAT migrasi rilis ini/);
+  assert.match(s, /\[\[ "\$MIG_LIST" > "\$TERAKHIR" \]\] \|\| die/);
+  // Padanan gerbang itu dijalankan pada keadaan repo sebenarnya (sama dengan `comm -23 kandidat terpasang`).
+  const gerbang = (terpasang) => {
+    const kandidat = [...dirMig].sort(); const sudah = new Set(terpasang);
+    if (sudah.has(migName)) return "SUDAH_TERPASANG";
+    const pending = kandidat.filter((n) => !sudah.has(n));
+    if (pending.join("\n") !== migName) return "PENDING_BUKAN_TEPAT_INI";
+    const terakhir = [...terpasang].sort().pop();
+    return migName > terakhir ? "LOLOS" : "URUTAN_TIDAK_AMAN";
+  };
+  const lebihTua = dirMig.filter((n) => n < migName), lebihBaru = dirMig.filter((n) => n > migName);
+  assert.equal(gerbang(lebihTua), lebihBaru.length === 0 ? "LOLOS" : "PENDING_BUKAN_TEPAT_INI", "pada kandidat yang memuat rilis lain sesudahnya, skrip ini harus menolak");
+  assert.equal(gerbang([...lebihTua, migName]), "SUDAH_TERPASANG", "setelah rilis ini live, skrip ini tidak boleh jalan lagi");
+  assert.equal(gerbang(dirMig.filter((n) => n !== PENDAHULU_TERAKHIR && n < migName)), "PENDING_BUKAN_TEPAT_INI", "pendahulu yang belum terpasang = ditolak");
 });
 
 test("skrip hasil bangkitan: deterministik, sintaks bash valid, LF, pin sha256 migrasi = isi migrasi di repo", { skip: !punyaBash }, () => {
