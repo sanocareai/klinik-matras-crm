@@ -20,6 +20,7 @@ const { financeUtangRouter } = await import("../../../src/routes/financeUtang.js
 const { materialIssueRouter } = await import("../../../src/routes/materialIssue.js");
 const { stockTransferRouter } = await import("../../../src/routes/stockTransfer.js");
 const { stockCountRouter } = await import("../../../src/routes/stockCount.js");
+const { riwayatReferensiRouter } = await import("../../../src/routes/riwayatReferensi.js");
 const { damagedStockRouter } = await import("../../../src/routes/damagedStock.js");
 const { returnRecordRouter } = await import("../../../src/routes/returnRecord.js");
 const { unitCustodyRouter } = await import("../../../src/routes/unitCustody.js");
@@ -117,6 +118,7 @@ export function buildTestApp() {
   app.use("/api/inventory/material-issues", materialIssueRouter);
   app.use("/api/inventory/transfers", stockTransferRouter);
   app.use("/api/inventory/stock-counts", stockCountRouter);
+  app.use("/api/inventory/riwayat-referensi", riwayatReferensiRouter);
   app.use("/api/inventory/damaged-stock", damagedStockRouter);
   app.use("/api/inventory/returns", returnRecordRouter);
   app.use("/api/inventory/unit-custody", unitCustodyRouter);

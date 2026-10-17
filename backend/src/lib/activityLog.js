@@ -33,6 +33,7 @@ export const ENTITY_TYPES = Object.freeze({
   DAMAGED_STOCK: "damaged_stock",
   RETURN_RECORD: "return_record",
   STOCK_ADJUSTMENT: "stock_adjustment",
+  STOK_RIWAYAT_REFERENSI: "stok_riwayat_referensi", // impor catatan referensi historis dari file (bukan transaksi, bukan saldo)
   REPLENISHMENT: "replenishment",
   // Complaint / After-Sales Case lintas divisi (D-116, 11 September 2026) —
   // lihat catatan panjang di schema.prisma model ComplaintCase.

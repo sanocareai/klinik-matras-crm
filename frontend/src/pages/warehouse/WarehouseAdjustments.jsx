@@ -4,6 +4,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs.j
 import DamagedStockTab from "@/features/warehouse/components/DamagedStockTab.jsx";
 import ReturnsTab from "@/features/warehouse/components/ReturnsTab.jsx";
 import AdjustmentsTab from "@/features/warehouse/components/AdjustmentsTab.jsx";
+import RiwayatReferensiTab from "@/features/warehouse/components/RiwayatReferensiTab.jsx";
 
 // Damaged, Return & Adjustment — Warehouse Tahap 6. DATA NYATA.
 //
@@ -26,10 +27,12 @@ export default function WarehouseAdjustments() {
             <TabsTrigger value="damaged">Damaged Stock</TabsTrigger>
             <TabsTrigger value="returns">Returns</TabsTrigger>
             <TabsTrigger value="adjustments">Stock Adjustment</TabsTrigger>
+            <TabsTrigger value="referensi">Riwayat Referensi (bukan transaksi)</TabsTrigger>
           </TabsList>
           <TabsContent value="damaged" className="mt-4"><DamagedStockTab /></TabsContent>
           <TabsContent value="returns" className="mt-4"><ReturnsTab /></TabsContent>
           <TabsContent value="adjustments" className="mt-4"><AdjustmentsTab /></TabsContent>
+          <TabsContent value="referensi" className="mt-4"><RiwayatReferensiTab /></TabsContent>
         </Tabs>
       </PageBody>
     </PageContainer>
