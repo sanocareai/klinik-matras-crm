@@ -101,7 +101,7 @@ export default function WarehouseInventory() {
 
         {error && <div role="alert" className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{error}</div>}
 
-        <Card className="overflow-hidden">
+        <Card className="overflow-hidden p-0">
           {kosong ? (
             <EmptyState icon={Package} title="Tidak ada bahan yang cocok" description="Ubah kata kunci, kategori, atau saringan keadaan stok." />
           ) : (

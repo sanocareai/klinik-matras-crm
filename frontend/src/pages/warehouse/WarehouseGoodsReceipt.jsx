@@ -73,21 +73,21 @@ export default function WarehouseGoodsReceipt() {
           <Link to="/warehouse/barang-akan-datang" className="font-semibold text-accent">PO yang ditunggu ada di Barang Akan Datang</Link>; di sini Anda memeriksa dan memasukkan barang ke stok.
         </nav>
 
-        <div role="tablist" aria-label="Saring tahap penerimaan" className="flex flex-wrap gap-1 border-b border-line pb-2">
+        <div role="tablist" aria-label="Saring tahap penerimaan" className="flex gap-1 overflow-x-auto border-b border-line pb-2 md:flex-wrap">
           {TAHAP_FILTER.map((t) => (
             <button key={t.key} role="tab" aria-selected={tahap === t.key} onClick={() => setSp(t.key ? { tahap: t.key } : {})} data-testid={`tahap-${t.key || "semua"}`}
-              className={cn("flex items-center gap-1.5 rounded-chip px-3 py-1.5 text-[12.5px] font-semibold transition-colors max-sm:min-h-11", tahap === t.key ? "bg-accentbg text-accent" : "text-ink3 hover:bg-hovertint hover:text-ink2")}>
+              className={cn("flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-chip px-3 py-1.5 text-[12.5px] font-semibold transition-colors max-sm:min-h-11", tahap === t.key ? "bg-accentbg text-accent" : "text-ink3 hover:bg-hovertint hover:text-ink2")}>
               {t.label}{rows && <span className="rounded-full bg-inset px-1.5 text-[11px] tabular-nums text-ink2">{hitung[t.key] ?? 0}</span>}
             </button>
           ))}
         </div>
         <div className="relative max-w-md">
           <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink3" aria-hidden />
-          <Input value={cari} onChange={(e) => setCari(e.target.value)} placeholder="Cari no. penerimaan, no. PO, supplier, atau bahan" aria-label="Cari penerimaan" className="pl-9" />
+          <Input value={cari} onChange={(e) => setCari(e.target.value)} placeholder="Cari no. GR, no. PO, supplier, bahan" aria-label="Cari penerimaan" className="pl-9" />
         </div>
         {error && <div role="alert" className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{error}</div>}
 
-        <Card className="overflow-hidden">
+        <Card className="overflow-hidden p-0">
           {kosong ? (
             <EmptyState icon={Inbox} title={cari || tahap ? "Tidak ada penerimaan yang cocok" : "Belum ada Penerimaan Barang"} description={cari || tahap ? "Ubah pencarian atau tahap." : "Penerimaan dari PO, supplier, atau retur akan tampil di sini."} action={<Button size="sm" onClick={() => setFormOpen(true)}><Plus size={14} /> Penerimaan Baru</Button>} />
           ) : (
