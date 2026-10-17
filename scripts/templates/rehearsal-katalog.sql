@@ -32,15 +32,16 @@ select 'enum', t.typname, string_agg(e.enumlabel, ',' order by e.enumsortorder) 
 union all
 select 'default-acl', coalesce(a.defaclrole::regrole::text, '')||':'||a.defaclobjtype::text, coalesce(a.defaclacl::text, '') from pg_default_acl a
 union all
+-- (agregat TIDAK menyertakan objek stok_riwayat_*: objek baru diperiksa terpisah lewat baris 'relasi'/'fungsi' pada fase 6d)
 -- izin efektif per role x tabel (SELECT/INSERT/UPDATE/DELETE) — "izin yang dibutuhkan aplikasi" (role aplikasi dan role baca-saja) pulih sesuai sumber
 select 'izin-tabel', r.rolname,
        md5(string_agg(c.relname||':'||has_table_privilege(r.oid, c.oid, 'SELECT')::text||has_table_privilege(r.oid, c.oid, 'INSERT')::text||has_table_privilege(r.oid, c.oid, 'UPDATE')::text||has_table_privilege(r.oid, c.oid, 'DELETE')::text, ',' order by c.relname))||':'||count(*)::text
   from pg_roles r cross join pg_class c join pg_namespace n on n.oid = c.relnamespace
- where r.rolname !~ '^pg_' and n.nspname = 'public' and c.relkind in ('r', 'p') group by r.rolname
+ where r.rolname !~ '^pg_' and n.nspname = 'public' and c.relkind in ('r', 'p') and c.relname not like 'stok_riwayat_%' group by r.rolname
 union all
 select 'izin-fungsi', r.rolname,
        md5(string_agg(p.proname||'('||pg_get_function_identity_arguments(p.oid)||'):'||has_function_privilege(r.oid, p.oid, 'EXECUTE')::text, ',' order by p.proname, p.oid::text))||':'||count(*)::text
   from pg_roles r cross join pg_proc p
- where r.rolname !~ '^pg_' and p.pronamespace = 'public'::regnamespace and p.prokind in ('f', 'p') group by r.rolname
+ where r.rolname !~ '^pg_' and p.pronamespace = 'public'::regnamespace and p.prokind in ('f', 'p') and p.proname not like 'stok_riwayat_%' group by r.rolname
 union all
 select 'izin-skema', r.rolname, has_schema_privilege(r.oid, 'public', 'USAGE')::text||has_schema_privilege(r.oid, 'public', 'CREATE')::text from pg_roles r where r.rolname !~ '^pg_';

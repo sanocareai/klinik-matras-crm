@@ -235,7 +235,7 @@ if ! cmp -s "$WORK/katalog-live.txt" "$WORK/katalog-restore.txt"; then
   sed 's/^/        - /' "$LOGDIR/pengecualian-bentuk-check.txt"
 fi
 for k in relasi kolom indeks constraint trigger fungsi enum ekstensi role izin-tabel izin-fungsi izin-skema default-acl; do printf '        %-12s %s\n' "$k" "$(awk -F'|' -v k="$k" '$1==k' "$WORK/katalog-live.txt" | wc -l)"; done
-ok "katalog IDENTIK ($(wc -l < "$WORK/katalog-live.txt") baris): tabel, kolom, indeks, constraint, trigger, fungsi, enum, ekstensi, role, pemilik, ACL, dan izin efektif per role (tabel/fungsi/skema)"
+ok "katalog $([ -s "$LOGDIR/pengecualian-bentuk-check.txt" ] && echo "SETARA (satu-satunya pengecualian: $(wc -l < "$LOGDIR/pengecualian-bentuk-check.txt") bentuk teks CHECK, diitemkan di atas)" || echo "IDENTIK") ($(wc -l < "$WORK/katalog-live.txt") baris): tabel, kolom, indeks, constraint, trigger, fungsi, enum, ekstensi, role, pemilik, ACL, dan izin efektif per role (tabel/fungsi/skema)"
 rpsql_f() { docker exec -i "$RR_PG" psql -U "$DB_USER" -d "$DB_NAME" -X -At -q -v ON_ERROR_STOP=1 -f - < "$1"; }
 rpsql_f "$WORK/hitung.sql" | LC_ALL=C sort > "$WORK/hitung-restore.txt" || die "hitung baris restore gagal"
 [ "$(wc -l < "$WORK/hitung-restore.txt")" = "$(wc -l < "$WORK/hitung-live-sebelum.txt")" ] || die "jumlah tabel restore berbeda dari produksi"
@@ -290,6 +290,12 @@ LUAR="$(grep -E '^>' "$WORK/katalog-selisih.txt" | grep -v 'stok_riwayat' || tru
 [ -z "$LUAR" ] || { printf '%s\n' "$LUAR" | head -n 10 | sed 's/^/        /'; die "migrasi menambah objek di luar stok_riwayat_*"; }
 echo "  INFO  objek baru menurut jenis:"; grep -E '^>' "$WORK/katalog-selisih.txt" | sed 's/^> //' | cut -d'|' -f1 | LC_ALL=C sort | uniq -c | sed 's/^/        /'
 [ "$(grep -E '^> relasi\|stok_riwayat_(referensi|impor)\|r:klinik:' "$WORK/katalog-selisih.txt" | wc -l)" = "2" ] || die "2 tabel baru tidak dimiliki ${DB_USER}"
+echo "  INFO  izin/pemilik objek BARU (relasi, termasuk ACL dari default privileges):"; grep -E '^> relasi\|stok_riwayat' "$WORK/katalog-selisih.txt" | sed 's/^> /        /'
+echo "  INFO  izin efektif role pada 2 tabel baru (SELECT/INSERT):"
+for rl in $(awk -F'|' '$1=="role"{print $2}' "$WORK/katalog-restore.txt"); do
+  printf '        %s: ' "$rl"
+  RPSQL "select string_agg(c.relname||'='||has_table_privilege('${rl}', c.oid, 'SELECT')::text||'/'||has_table_privilege('${rl}', c.oid, 'INSERT')::text, ', ' order by c.relname) from pg_class c where c.relname in ('stok_riwayat_referensi','stok_riwayat_impor') and c.relkind='r'"
+done
 ok "katalog sesudah migrasi: hanya penambahan objek stok_riwayat_* (tabel, kolom, indeks, constraint, trigger, fungsi); tidak ada objek lama yang berubah"
 
 PHASE="7-smoke"; say "7. Smoke baca-saja terhadap hasil restore (router Riwayat Referensi saja di image kandidat; tanpa scheduler/WhatsApp/webhook; env produksi TIDAK dimuat)"
