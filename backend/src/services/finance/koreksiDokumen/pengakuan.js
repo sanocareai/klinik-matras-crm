@@ -36,7 +36,7 @@ export const LABEL_DASAR = Object.freeze({
 
 export const KODE_TAHAN = Object.freeze({
   SUDAH_DIAKUI: "SUDAH_DIAKUI", PKR: "PENJUALAN_KARYAWAN", DIGABUNG: "ORDER_DIGABUNG", BELUM_DISERAHKAN: "STATUS_BELUM_DISERAHKAN", NILAI_NOL: "NILAI_ORDER_NOL",
-  LUNAS_TANPA_PEMBAYARAN: "LUNAS_TANPA_PEMBAYARAN", PRA_CUTOFF: "DISERAHKAN_SEBELUM_CUTOFF", SERAH_TIDAK_TERBUKTI: "SERAH_TIDAK_TERBUKTI",
+  LUNAS_TANPA_PEMBAYARAN: "LUNAS_TANPA_PEMBAYARAN", DIBALIK: "PENGAKUAN_DIBALIK_SENGAJA", PRA_CUTOFF: "DISERAHKAN_SEBELUM_CUTOFF", SERAH_TIDAK_TERBUKTI: "SERAH_TIDAK_TERBUKTI",
 });
 export const KELAS = Object.freeze({ PERLU_KEPUTUSAN: "PERLU_KEPUTUSAN", NILAI_NOL: "NILAI_NOL", RIWAYAT_PRA_BUKU: "RIWAYAT_PRA_BUKU", SUDAH_DIAKUI: "SUDAH_DIAKUI", LAIN: "LAIN" });
 
@@ -67,6 +67,11 @@ async function muatBukti(db, ids) {
     db.finPostingGap.findMany({ where: { source: "PENGAKUAN_PENDAPATAN", sourceId: { in: ids }, resolvedAt: null }, select: { id: true, sourceId: true, reason: true, detail: true, createdAt: true } }),
     db.invoice.findMany({ where: { orderId: { in: ids } }, select: { orderId: true, invoiceNumber: true, lifecycleStatus: true } }),
   ]);
+  // Jurnal pembalik pengakuan (alasan pembalikan = bukti bahwa seseorang SENGAJA membatalkan pengakuan).
+  const pembalikRows = entries.length ? await db.finJournalEntry.findMany({ where: { reversalOfId: { in: entries.map((e) => e.id) } }, select: { reversalOfId: true, entryNumber: true, date: true, description: true } }) : [];
+  const orderDariEntri = new Map(entries.map((e) => [e.id, e.sourceId]));
+  const pembalikPerOrder = new Map();
+  for (const x of pembalikRows) { const k = orderDariEntri.get(x.reversalOfId); (pembalikPerOrder.get(k) ?? pembalikPerOrder.set(k, []).get(k)).push({ nomor: x.entryNumber, tanggal: tanggalWIB(x.date), alasan: String(x.description ?? "").replace(/^Pembatalan\s+\S+\s+—\s*/, "") }); }
   const jurnalBayar = payments.length
     ? await db.finJournalEntry.findMany({ where: { idempotencyKey: { in: payments.map((p) => `PEMBAYARAN_ORDER:${p.id}`) }, status: { in: STATUS_DIHITUNG } }, select: { idempotencyKey: true, entryNumber: true, date: true, status: true } })
     : [];
@@ -79,7 +84,7 @@ async function muatBukti(db, ids) {
   for (const o of orders) {
     per.set(o.id, {
       order: o, nilaiBersih: bersih.get(o.id) ?? { nilaiBersih: o.value, notaKredit: 0 }, transisi: T.get(o.id) ?? [], jobs: J.get(o.id) ?? [], pembayaran: P.get(o.id) ?? [], bayarDijurnal,
-      jurnalPengakuan: E.get(o.id) ?? [], adaLinePengakuan: adaLine.has(o.id), gap: G.get(o.id) ?? [], invoice: I.get(o.id) ?? null,
+      jurnalPengakuan: E.get(o.id) ?? [], pembalik: pembalikPerOrder.get(o.id) ?? [], adaLinePengakuan: adaLine.has(o.id), gap: G.get(o.id) ?? [], invoice: I.get(o.id) ?? null,
     });
   }
   return { orders, per };
@@ -121,6 +126,10 @@ export function analisis(b, { cutoff, hariIni, uangMuka = 0 }) {
   if (!STATUS_PENGAKUAN.includes(o.status)) tahan.push({ kode: KODE_TAHAN.BELUM_DISERAHKAN, pesan: `Status order ${o.status} bukan status serah (${STATUS_PENGAKUAN.join("/")}).` });
   if (aktif) tahan.push({ kode: KODE_TAHAN.SUDAH_DIAKUI, pesan: `Pendapatan sudah diakui di jurnal ${aktif.entryNumber} (${tanggalWIB(aktif.date)}).` });
   else if (pernahDiakui && !dibalik) tahan.push({ kode: KODE_TAHAN.SUDAH_DIAKUI, pesan: "Order sudah punya pengakuan/piutang awal di buku besar." });
+  if (dibalik) {
+    const pb = b.pembalik[0];
+    tahan.push({ kode: KODE_TAHAN.DIBALIK, pesan: `Pengakuan sebelumnya SUDAH DIBALIK${pb ? ` (${pb.nomor}, ${pb.tanggal}: "${pb.alasan}")` : ""}. Selesaikan alasan pembalikan itu lebih dulu; mengakui ulang butuh persetujuan eksplisit (akuiSetelahDibalik).`, lunakDenganPersetujuan: true });
+  }
   if (total <= 0) tahan.push({ kode: KODE_TAHAN.NILAI_NOL, pesan: "Nilai order Rp0 (harga belum diisi). Tetapkan harga dari bukti (langkah 'Tetapkan harga'); sistem TIDAK menebak harga." });
   if (o.paymentStatus === "LUNAS" && b.pembayaran.length === 0) {
     tahan.push({ kode: KODE_TAHAN.LUNAS_TANPA_PEMBAYARAN, pesan: "Status Lunas tetapi tidak ada catatan pembayaran. Mengakui pendapatan akan menciptakan piutang untuk uang yang dianggap sudah lunas — selesaikan bukti pembayaran (penuntasan pembayaran historis) lebih dulu." });
@@ -143,7 +152,7 @@ export function analisis(b, { cutoff, hariIni, uangMuka = 0 }) {
     if (o.statusLocked && b.transisi.length > 0 && !(tglBuktiTerawal && tglBuktiTerawal < cutoff)) penyebab.push({ kode: "STATUS_DIATUR_MANUAL", uraian: `Status order dikunci/diatur manual${o.statusOverrideAt ? ` (${tanggalWIB(o.statusOverrideAt)})` : ""}; jalur otomatis berhenti untuk order terkunci dan jalur manual tidak menghasilkan pengakuan.` });
     if (!penyebab.length) penyebab.push({ kode: "TIDAK_TERBUKTI", uraian: "Tidak ada jurnal pengakuan dan tidak ada gap; penyebab tidak dapat dibuktikan dari data (perlu penelusuran log)." });
   }
-  if (dibalik) penyebab.push({ kode: "PENGAKUAN_DIBALIK", uraian: `Pengakuan sebelumnya dibalik (${b.jurnalPengakuan.filter((e) => e.status === "REVERSED").map((e) => e.entryNumber).join(", ")}).` });
+if (dibalik) penyebab.push({ kode: "PENGAKUAN_DIBALIK", uraian: `Pengakuan sebelumnya dibalik (${b.jurnalPengakuan.filter((e) => e.status === "REVERSED").map((e) => e.entryNumber).join(", ")})${b.pembalik[0] ? `; alasan pembalikan: "${b.pembalik[0].alasan}"` : ""}.` });
 
   // PILIHAN TANGGAL (hanya yang berbukti)
   const opsi = [];
@@ -192,8 +201,9 @@ export async function daftarPengakuan(db, { kelas = null } = {}) {
   ]);
   const ids = [...new Set([...diserahkan.map((o) => o.id), ...gapNol.map((g) => g.sourceId)])];
   // hanya yang belum punya pengakuan/line pengakuan dimuat penuh → filter cepat lewat jurnal
-  const diakui = ids.length ? await db.finJournalEntry.findMany({ where: { sourceId: { in: ids }, OR: [{ source: "PENGAKUAN_PENDAPATAN" }, { idempotencyKey: { startsWith: "PENGAKUAN_PENDAPATAN:" } }], status: { in: STATUS_DIHITUNG } }, select: { sourceId: true } }) : [];
-  const diakuiLine = ids.length ? await db.finJournalLine.findMany({ where: { orderId: { in: ids }, entry: { status: { in: STATUS_DIHITUNG }, OR: [{ source: "PENGAKUAN_PENDAPATAN" }, { idempotencyKey: { startsWith: "PENGAKUAN_PENDAPATAN:" } }] } }, select: { orderId: true } }) : [];
+  // HANYA pengakuan AKTIF (POSTED) yang menyingkirkan order dari daftar. Pengakuan yang sudah DIBALIK (REVERSED) tidak lagi mengakui pendapatan — order tetap tampil (kasus NEW-23092026-040).
+  const diakui = ids.length ? await db.finJournalEntry.findMany({ where: { sourceId: { in: ids }, OR: [{ source: "PENGAKUAN_PENDAPATAN" }, { idempotencyKey: { startsWith: "PENGAKUAN_PENDAPATAN:" } }], status: "POSTED" }, select: { sourceId: true } }) : [];
+  const diakuiLine = ids.length ? await db.finJournalLine.findMany({ where: { orderId: { in: ids }, entry: { status: "POSTED", OR: [{ source: "PENGAKUAN_PENDAPATAN" }, { idempotencyKey: { startsWith: "PENGAKUAN_PENDAPATAN:" } }] } }, select: { orderId: true } }) : [];
   const sudah = new Set([...diakui.map((e) => e.sourceId), ...diakuiLine.map((l) => l.orderId)]);
   const kandidatId = ids.filter((id) => !sudah.has(id));
   const { orders, per } = await muatBukti(db, kandidatId);
@@ -250,6 +260,9 @@ function periksaInput(a, input, ctx) {
     throw new KoreksiError("Keputusan Owner wajib disertai bukti referensi (minimal 8 karakter: nomor dokumen/pesan/kesepakatan).", 400, "BUKTI_REFERENSI_WAJIB");
   }
   const lunak = a.tahan.filter((t) => t.lunakDenganPersetujuan);
+  if (lunak.some((t) => t.kode === KODE_TAHAN.DIBALIK) && input?.akuiSetelahDibalik !== true) {
+    throw new KoreksiError(lunak.find((t) => t.kode === KODE_TAHAN.DIBALIK).pesan, 422, "PERSETUJUAN_SETELAH_DIBALIK_DIPERLUKAN");
+  }
   if (lunak.some((t) => t.kode === KODE_TAHAN.PRA_CUTOFF) && input?.akuiPraCutoff !== true) {
     throw new KoreksiError(lunak.find((t) => t.kode === KODE_TAHAN.PRA_CUTOFF).pesan + " Kirim akuiPraCutoff=true dengan dasar Keputusan Owner bila memang diputuskan.", 422, "PERSETUJUAN_PRA_CUTOFF_DIPERLUKAN");
   }
@@ -259,7 +272,7 @@ function periksaInput(a, input, ctx) {
   if (lunak.some((t) => t.kode === KODE_TAHAN.SERAH_TIDAK_TERBUKTI) && dasar !== DASAR_TANGGAL.KEPUTUSAN_OWNER) {
     throw new KoreksiError("Penyerahan tidak terbukti: hanya Keputusan Owner + bukti referensi yang dapat dipakai.", 422, "DASAR_HARUS_KEPUTUSAN_OWNER");
   }
-  return { alasan: teksAlasan, dasar, tanggal, bukti, akuiPraCutoff: input?.akuiPraCutoff === true };
+  return { alasan: teksAlasan, dasar, tanggal, bukti, akuiPraCutoff: input?.akuiPraCutoff === true, akuiSetelahDibalik: input?.akuiSetelahDibalik === true };
 }
 
 async function periodeTertutupUntuk(db, tanggal) {
@@ -279,9 +292,9 @@ async function petaAkun(tx, ids) {
 
 /** Dampak ke piutang/pendapatan/uang muka dari jurnal yang BARU dibuat. */
 function dampakDariJurnal(bar) {
-  const net = (key) => bar.filter((b) => b.systemKey === key).reduce((a, b) => a + b.debit - b.kredit, 0);
+  const net = (key) => bar.filter((b) => b.systemKey === key).reduce((a, b) => a + b.debit - b.kredit, 0); // debit − kredit: positif = aset BERTAMBAH (piutang)
   const pendapatan = -bar.filter((b) => ["PENDAPATAN_LAYANAN", "PENDAPATAN_PRODUK", "PENDAPATAN_SEWA", "PENDAPATAN_ONGKIR"].includes(b.systemKey)).reduce((a, b) => a + b.debit - b.kredit, 0);
-  return { pendapatanBertambah: pendapatan, piutangUsahaBerubah: net("PIUTANG_USAHA"), uangMukaPelangganBerubah: net("UANG_MUKA_PELANGGAN") };
+  return { pendapatanBertambah: pendapatan, piutangUsahaBerubah: net("PIUTANG_USAHA"), uangMukaPelangganBerubah: -net("UANG_MUKA_PELANGGAN") /* kewajiban: kredit − debit; negatif = uang muka BERKURANG (dipindah jadi pelunasan) */ };
 }
 
 /**
@@ -331,7 +344,7 @@ export async function pengakuanTerkendali(tx, { orderId, input, userId, preview 
 
   await recordActivity(tx, {
     entityType: ENTITY_TYPES.ORDER, entityId: orderId, eventType: EVENT_TYPES.DOCUMENT_CORRECTED, actorId: userId ?? null,
-    metadata: { aksi: "KOREKSI_PENGAKUAN_PENDAPATAN", nomorOrder: a.nomor, nomorJurnal: hasil.entry.entryNumber, tanggal: v.tanggal, dasarTanggal: v.dasar, buktiReferensi: v.bukti || null, alasan: v.alasan, akuiPraCutoff: v.akuiPraCutoff, penyebab: a.penyebab.map((p) => p.kode), dampak, gapDitutup: gapTerbuka.length },
+    metadata: { aksi: "KOREKSI_PENGAKUAN_PENDAPATAN", nomorOrder: a.nomor, nomorJurnal: hasil.entry.entryNumber, tanggal: v.tanggal, dasarTanggal: v.dasar, buktiReferensi: v.bukti || null, alasan: v.alasan, akuiPraCutoff: v.akuiPraCutoff, akuiSetelahDibalik: v.akuiSetelahDibalik, penyebab: a.penyebab.map((p) => p.kode), dampak, gapDitutup: gapTerbuka.length },
   });
   return { dibuat: true, status: "DIAKUI", nomorJurnal: hasil.entry.entryNumber, ringkasan };
 }

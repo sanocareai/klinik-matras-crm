@@ -93,7 +93,7 @@ function DetailPengakuan({ orderId, onClose, onSelesai }) {
   const { minta, dialogPin } = usePinStepUp();
   const [det, setDet] = useState(null);
   const [galat, setGalat] = useState("");
-  const [f, setF] = useState({ dasarTanggal: "", tanggal: "", alasan: "", buktiReferensi: "", akuiPraCutoff: false });
+  const [f, setF] = useState({ dasarTanggal: "", tanggal: "", alasan: "", buktiReferensi: "", akuiPraCutoff: false, akuiSetelahDibalik: false });
   const [harga, setHarga] = useState({}); const [h, setH] = useState({ buktiHarga: "", alasan: "" });
   const [pratinjau, setPratinjau] = useState(null);
   const [sibuk, setSibuk] = useState(false);
@@ -176,6 +176,12 @@ function DetailPengakuan({ orderId, onClose, onSelesai }) {
                 <label className="flex items-start gap-2 rounded-lg bg-orangebg px-3 py-2 text-orange">
                   <input type="checkbox" checked={f.akuiPraCutoff} onChange={(e) => setF({ ...f, akuiPraCutoff: e.target.checked })} className="mt-0.5" />
                   <span>Saya memutuskan mengakui order yang diserahkan SEBELUM cutoff ini di periode berjalan (menaikkan pendapatan periode tersebut).</span>
+                </label>
+              )}
+              {det.tahan.some((t) => t.kode === "PENGAKUAN_DIBALIK_SENGAJA") && (
+                <label className="flex items-start gap-2 rounded-lg bg-orangebg px-3 py-2 text-orange" data-testid="centang-dibalik">
+                  <input type="checkbox" checked={f.akuiSetelahDibalik} onChange={(e) => setF({ ...f, akuiSetelahDibalik: e.target.checked })} className="mt-0.5" />
+                  <span>Alasan pembalikan sebelumnya sudah saya selesaikan; saya memutuskan mengakui ulang order ini.</span>
                 </label>
               )}
               <Field label="Alasan" required><Input value={f.alasan} onChange={(e) => setF({ ...f, alasan: e.target.value })} /></Field>
