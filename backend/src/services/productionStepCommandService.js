@@ -38,7 +38,8 @@ import { buildApplicableSteps, classifyProduct, pathHasBuildStage } from "../lib
 import { kategoriUnitDb, produkUnitDb } from "./unitKategoriDb.js";
 import { loadAssemblyFacts, loadPreTeardownFacts } from "./productionComponentNoteService.js";
 import { buildCornerRequest, cornerStatusOf } from "../lib/domain/productionCorner.js";
-import { assertLocationAllowed } from "./unitCustodyCommandService.js";
+import { applyAdminOverrideReleaseInTx, assertLocationAllowed, setUnitStorageLocationInTx } from "./unitCustodyCommandService.js";
+import { assertAdminOverrideAllowed, readAdminOverrideSwitch } from "./adminOverrideSwitch.js";
 
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
@@ -838,14 +839,14 @@ export async function finishProduction(prisma, { runId, actorId, idempotencyKey,
     // Ulangan kunci yang sama dijawab dari command tersimpan SEBELUM memuat run (run bisa sudah terminal setelah perintah pertama berhasil).
     const replay = await findReplay(tx, actor, idempotencyKey, requestHash);
     if (replay) return replay;
-    const run = await loadRunForWrite(tx, runId);
+    const run = await loadRunForWrite(tx, runId, { allowReleased: true });
     await assertWriterEnabledForUnit(tx, run.unitId);
     const ctx = await loadStepContext(tx, run);
     const blockers = finishBlockersOf(run, { openShortage: !!ctx.openShortage, exceptionOpen: !!ctx.state.exceptionOpen });
     if (blockers.length) throw stepError(`Produksi belum bisa diselesaikan: ${blockers[0].text}`, 409, `FINISH_${blockers[0].code}`, { blockers });
     await authorizeFinishOperator(tx, run, actorId, workCenterId);
     assertRunRevision(run, revisionExpected);
-    await assertNoOpenRunException(tx, run.id);
+    await assertNoOpenRunException(tx, run.id, { allowReleased: true });
 
     // Retur sisa bahan WAJIB (stok kembali tepat sekali lewat service retur/Gudang). Dibuka lebih dulu; bila masih ada yang PENDING -> berhenti, TANPA menutup lifecycle.
     await createLeftoverReturnsInTx(tx, { run, actorId, commandId: null });
@@ -912,14 +913,15 @@ export async function confirmFinishedGoods(prisma, { runId, actorId, supervisor 
   if (alasan.length > 500) throw stepError("Alasan maksimal 500 karakter", 400, "CONFIRM_FG_REASON_TOO_LONG");
   const kode = String(unitCode ?? "").trim();
   if (!kode) throw stepError("Ketik ulang kode unit untuk memastikan unit yang dikonfirmasi benar", 400, "CONFIRM_FG_UNIT_CODE_REQUIRED");
-  if (!locationId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(locationId))) throw stepError("Lokasi barang jadi wajib dipilih", 400, "CONFIRM_FG_LOCATION_REQUIRED");
+  // Lokasi wajib untuk pelepasan normal; untuk Run yang unitnya SUDAH dilepas lewat Admin override (penutupan administratif) lokasi dikunci dari pelepasan itu dan tidak dikirim.
+  if (locationId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(locationId))) throw stepError("Lokasi barang jadi tidak valid", 400, "CONFIRM_FG_LOCATION_REQUIRED");
   const actor = actorId || "SYSTEM";
   const requestHash = hash({ commandType: "CONFIRM_FINISHED_GOODS", runId, expectedRevision: revisionExpected, unitCode: kode, locationId, reason: alasan, workCenterId: workCenterId || null });
 
   return prisma.$transaction(async (tx) => {
     const replay = await findReplay(tx, actor, idempotencyKey, requestHash);
     if (replay) return replay;
-    const run = await loadRunForWrite(tx, runId);
+    const run = await loadRunForWrite(tx, runId, { allowReleased: true });
     await assertWriterEnabledForUnit(tx, run.unitId);
     if (!isAdaptationRun(run)) throw stepError("Konfirmasi barang jadi hanya untuk pekerjaan dengan mode adaptasi. Pekerjaan alur lengkap diselesaikan lewat tahap 12 dan penerimaan Gudang.", 409, "CONFIRM_FG_NOT_ADAPTATION");
     if (run.unit?.unitCode !== kode) throw stepError("Kode unit yang diketik tidak sama dengan unit pekerjaan ini", 409, "CONFIRM_FG_UNIT_CODE_MISMATCH");
@@ -927,12 +929,17 @@ export async function confirmFinishedGoods(prisma, { runId, actorId, supervisor 
     const blockers = finishBlockersOf(run, { openShortage: !!ctx.openShortage, exceptionOpen: !!ctx.state.exceptionOpen });
     if (blockers.length) throw stepError(`Barang jadi belum bisa dikonfirmasi: ${blockers[0].text}`, 409, `CONFIRM_FG_${blockers[0].code}`, { blockers });
     const order = await tx.order.findUnique({ where: { id: run.unit.orderId }, select: { orderNumber: true, status: true } });
-    if (!order || ["CANCELLED", "DELIVERED"].includes(order.status)) throw stepError(`Order ${order?.orderNumber ?? ""} berstatus ${order?.status ?? "tidak ditemukan"} — barang jadi tidak dapat dikonfirmasi`, 409, "CONFIRM_FG_ORDER_STATUS");
-    const location = await tx.storageLocation.findUnique({ where: { id: locationId } });
-    assertLocationAllowed("FINISHED_GOODS", location);
+    const dilepas = !!run.deliveryReleasedAt;
+    if (!order || (dilepas ? order.status === "CANCELLED" : ["CANCELLED", "DELIVERED"].includes(order.status))) throw stepError(`Order ${order?.orderNumber ?? ""} berstatus ${order?.status ?? "tidak ditemukan"} — barang jadi tidak dapat dikonfirmasi`, 409, "CONFIRM_FG_ORDER_STATUS");
+    let location = null;
+    if (!dilepas) {
+      if (!locationId) throw stepError("Lokasi barang jadi wajib dipilih", 400, "CONFIRM_FG_LOCATION_REQUIRED");
+      location = await tx.storageLocation.findUnique({ where: { id: locationId } });
+      assertLocationAllowed("FINISHED_GOODS", location);
+    }
     if (!supervisor) await authorizeFinishOperator(tx, run, actorId, workCenterId);
     assertRunRevision(run, revisionExpected);
-    await assertNoOpenRunException(tx, run.id);
+    await assertNoOpenRunException(tx, run.id, { allowReleased: true });
 
     await createLeftoverReturnsInTx(tx, { run, actorId, commandId: null });
     const pending = await tx.productionMaterialReturn.findMany({ where: { runId, status: "PENDING" }, select: { qty: true, material: { select: { code: true, name: true, unit: true } } } });
@@ -954,8 +961,9 @@ export async function confirmFinishedGoods(prisma, { runId, actorId, supervisor 
       written.push((await writeSkippedEvidence(tx, { run, stepNo: no, actorId, commandId: command.id, note: "Konfirmasi barang jadi" })).stepNo);
     }
     // Proyeksi lokasi legacy dari StorageLocation kanonis (sama dengan penerimaan custody): locationId tetap sumber kebenaran; teks hanya disalin di sini.
-    await tx.unit.update({ where: { id: run.unitId }, data: { storageLocation: location.code } });
-    const konfirmasi = { unitCode: run.unit.unitCode, orderNumber: order.orderNumber, locationId: location.id, locationCode: location.code, reason: alasan, actorId: actorId || null, bySupervisor: !!supervisor, confirmedAt: now.toISOString(), skippedSteps: written, skippedStages: result.skipped.map((s) => s.code) };
+    // (Run yang unitnya sudah dilepas lewat Admin override: lokasi fisik dari pelepasan itu TIDAK ditimpa.)
+    if (location) await setUnitStorageLocationInTx(tx, run.unitId, location.code);
+    const konfirmasi = { unitCode: run.unit.unitCode, orderNumber: order.orderNumber, locationId: location?.id ?? null, locationCode: location?.code ?? null, closedAfterDeliveryRelease: dilepas, reason: alasan, actorId: actorId || null, bySupervisor: !!supervisor, confirmedAt: now.toISOString(), skippedSteps: written, skippedStages: result.skipped.map((s) => s.code) };
     await outbox(tx, {
       eventType: "production.finished.adaptation", aggregateId: run.id, revision: result.revision, dedupeKey: `production-finished-adaptation:${run.id}:${result.revision}`,
       payload: { runId: run.id, unitId: run.unitId, policy: ADAPTATION_POLICY, skippedStages: result.skipped.map((s) => s.code), skippedSteps: written, qcNotPerformed: result.qcNotPerformed, confirmedFinishedGoods: konfirmasi, revision: result.revision, occurredAt: now.toISOString() },
@@ -972,9 +980,149 @@ export async function confirmFinishedGoods(prisma, { runId, actorId, supervisor 
     });
     const response = {
       runId: run.id, revision: result.revision, completed: true, unitStatus: result.unitStatus, skippedSteps: written, skippedStages: result.skipped.map((s) => ({ code: s.code, label: s.label })),
-      qc: "TIDAK_DILAKUKAN", handoffGudang: "TIDAK_DIWAJIBKAN", lokasi: { id: location.id, code: location.code }, konfirmasi: { reason: alasan, confirmedAt: konfirmasi.confirmedAt, bySupervisor: !!supervisor },
+      qc: "TIDAK_DILAKUKAN", handoffGudang: "TIDAK_DIWAJIBKAN", lokasi: location ? { id: location.id, code: location.code } : null, closedAfterDeliveryRelease: dilepas, konfirmasi: { reason: alasan, confirmedAt: konfirmasi.confirmedAt, bySupervisor: !!supervisor },
     };
     await finishCommand(tx, command, result.revision, response);
+    return { replayed: false, ...response };
+  }, { timeout: 30_000 });
+}
+
+// ---------------------------------------------------------------------------
+// ADMIN OVERRIDE: SIAP KIRIM SAAT PENCATATAN PRODUKSI BELUM SELESAI (16 Okt 2026, kasus RES-03102026-018-U1).
+// Pencatatan Production Run masih dalam pengembangan, sehingga unit yang oleh Admin/Owner DITETAPKAN siap untuk proses pengiriman perlu bisa masuk Route Planner walau Run masih ACTIVE.
+// Ini KEPUTUSAN ADMIN, bukan hasil pemeriksaan: sistem TIDAK menyimpan/menampilkan klaim bahwa pemeriksaan fisik atau QC terjadi.
+//  - TIDAK memanggil finishProduction, TIDAK menutup/mengubah/menghapus Run, tahap, operasi, bukti, fase; TIDAK membuat QC, foto, custody/serah terima Gudang, stok, atau bukti palsu.
+//  - Efek (satu transaksi, idempoten lewat v2_commands): unit READY_FOR_DELIVERY + lokasi pengambilan, order disinkronkan lewat engine yang SAMA (syncOrderStatus), saran job Delivery lewat
+//    engine yang SAMA (suggestDeliveryJob: tanpa job ganda, job draf yang sudah ada dipakai), penanda override + rekam audit pada Run (deliveryReleasedAt/deliveryRelease), revisi Run naik 1
+//    (kunci optimistik: layar basi ditolak), outbox + aktivitas unit/order.
+//  - Setelah dilepas: command tahap/bahan/QC biasa pada Run itu ditolak (409 RUN_RELEASED_FOR_DELIVERY); hanya penutupan administratif (Selesaikan Produksi / Konfirmasi Barang Jadi) yang
+//    boleh — dan penutupan itu TIDAK menyentuh status unit/order/lokasi/job (tidak ada job ganda).
+// ---------------------------------------------------------------------------
+export const ADMIN_OVERRIDE_DECISION = "Admin menetapkan unit siap untuk proses pengiriman saat pencatatan produksi belum selesai";
+const RELEASE_UNIT_STATUSES = ["RECEIVED", "IN_PRODUCTION"];
+const UUID_RE_LOCAL = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// Penghalang override (murni dari keadaan terbaca; dipakai pratinjau DAN command). Urutan = prioritas pesan.
+export function releaseBlockersOf({ run, unit, order }) {
+  const out = [];
+  if (!run) { out.push({ code: "NO_ACTIVE_RUN", text: "Unit ini tidak punya Production Run yang berjalan — jalur ini hanya untuk unit yang masih dipegang Production V2" }); return out; }
+  if (!isAdaptationRun(run)) out.push({ code: "NOT_ADAPTATION", text: "Override hanya untuk Run mode adaptasi. Run alur lengkap diselesaikan lewat tahap 12 dan penerimaan Gudang." });
+  if (run.deliveryReleasedAt) out.push({ code: "ALREADY_RELEASED", text: "Unit ini sudah ditetapkan Siap Kirim lewat Admin override (Run belum ditutup)" });
+  else if (run.status === "PENDING_ARRIVAL") out.push({ code: "PENDING_ARRIVAL", text: "Unit belum dikonfirmasi tiba di workshop" });
+  else if (run.status !== "ACTIVE") out.push({ code: "RUN_STATUS", text: `Production Run berstatus ${run.status}; hanya Run ACTIVE yang bisa di-override` });
+  if (!RELEASE_UNIT_STATUSES.includes(unit?.status)) out.push({ code: "UNIT_STATUS", text: `Unit berstatus ${unit?.status ?? "tidak diketahui"}; hanya unit yang masih dikerjakan Produksi (RECEIVED/IN_PRODUCTION) yang bisa ditetapkan Siap Kirim` });
+  if (!order || order.status === "CANCELLED" || order.status === "DELIVERED" || order.mergedIntoOrderId) {
+    out.push({ code: "ORDER_STATUS", text: `Order ${order?.orderNumber ?? ""} ${order?.mergedIntoOrderId ? "sudah digabungkan ke order lain" : `berstatus ${order?.status ?? "tidak ditemukan"}`} — unit tidak dapat ditetapkan Siap Kirim` });
+  }
+  if (run.operations && activeOperation(run)) out.push({ code: "ACTIVE_OPERATION", text: "Ada tahap yang sedang berjalan atau ditunda — selesaikan atau lanjutkan dulu (Run tidak diubah oleh override)" });
+  return out;
+}
+
+// Pratinjau BACA-SAJA untuk satu unit: keadaan, penghalang, lokasi pengambilan yang sah, nasib unit lain pada order yang sama, job pengiriman yang sudah ada.
+export async function previewDeliveryRelease(prisma, { unitId }) {
+  const unit = await prisma.unit.findUnique({
+    where: { id: unitId },
+    select: { id: true, unitCode: true, status: true, storageLocation: true, orderId: true, order: { select: { id: true, orderNumber: true, status: true, mergedIntoOrderId: true } } },
+  });
+  if (!unit) throw stepError("Unit tidak ditemukan", 404, "UNIT_NOT_FOUND");
+  const run = await prisma.productionRun.findFirst({ where: { unitId, status: { notIn: TERMINAL_RUN } }, orderBy: { createdAt: "desc" }, include: RUN_INCLUDE });
+  const blockers = releaseBlockersOf({ run, unit, order: unit.order });
+  const saklar = await readAdminOverrideSwitch(prisma);
+  const [locations, siblings, jobs, closedRun] = await Promise.all([
+    prisma.storageLocation.findMany({
+      where: { active: true, locationType: { in: ["FINISHED_GOODS_AREA", "DISPATCH_AREA"] } },
+      select: { id: true, code: true, zone: true, locationType: true, warehouse: { select: { code: true, name: true } } }, orderBy: [{ code: "asc" }], take: 100,
+    }),
+    prisma.unit.findMany({ where: { orderId: unit.orderId }, select: { id: true, unitCode: true, status: true }, orderBy: { seq: "asc" } }),
+    prisma.job.findMany({ where: { type: "DELIVERY", units: { some: { unitId } } }, select: { id: true, status: true, routeId: true, route: { select: { id: true, code: true, status: true } } } }),
+    run ? null : prisma.productionRun.findFirst({ where: { unitId, deliveryReleasedAt: { not: null } }, orderBy: { createdAt: "desc" }, select: { id: true, status: true, deliveryReleasedAt: true, deliveryRelease: true } }),
+  ]);
+  return {
+    unit: { id: unit.id, unitCode: unit.unitCode, status: unit.status, storageLocation: unit.storageLocation },
+    order: { id: unit.order.id, orderNumber: unit.order.orderNumber, status: unit.order.status },
+    run: run ? { id: run.id, status: run.status, revision: run.revision, adaptation: isAdaptationRun(run), currentPhase: run.currentPhase ?? null, released: !!run.deliveryReleasedAt } : null,
+    eligible: blockers.length === 0, blockers,
+    decision: ADMIN_OVERRIDE_DECISION,
+    // Saklar: override BARU hanya bila aktif (dan unit termasuk daftar bila dibatasi). Tampilan WAJIB menonaktifkan tombol bila overrideAktif=false.
+    overrideAktif: saklar.enabled && (saklar.unitCodes.length === 0 || saklar.unitCodes.includes(unit.unitCode)),
+    saklar: { enabled: saklar.enabled, unitCodes: saklar.unitCodes, reason: saklar.reason, updatedAt: saklar.updatedAt },
+    release: run?.deliveryRelease ?? closedRun?.deliveryRelease ?? null,
+    locations,
+    siblings: siblings.map((s) => ({ unitCode: s.unitCode, status: s.status, thisUnit: s.id === unit.id })),
+    deliveryJobs: jobs.map((j) => ({ id: j.id, status: j.status, route: j.route ? { id: j.route.id, code: j.route.code, status: j.route.status } : null })),
+    willNot: ["Run, tahap 10–12, operasi, dan bukti tahap TIDAK diubah", "Tidak ada QC, foto, serah terima Gudang, atau pergerakan stok yang dibuat", "Tidak ada klaim bahwa pemeriksaan fisik atau QC terjadi"],
+  };
+}
+
+export async function releaseUnitForDelivery(prisma, { unitId, actorId, canRelease = false, idempotencyKey, expectedRevision, unitCode, locationId, reason, adminOverrideConfirmed }) {
+  if (!unitId || !UUID_RE_LOCAL.test(String(unitId))) throw stepError("unitId tidak valid", 400, "RELEASE_UNIT_REQUIRED");
+  assertIdempotencyKey(idempotencyKey);
+  if (!canRelease) throw stepError("Hanya Admin atau Owner yang dapat memakai Admin override Siap Kirim", 403, "RELEASE_FORBIDDEN");
+  const revisionExpected = assertExpectedRevision(expectedRevision);
+  if (adminOverrideConfirmed !== true) throw stepError("Konfirmasi wajib dicentang: Admin menetapkan unit siap untuk proses pengiriman saat pencatatan produksi belum selesai", 400, "RELEASE_OVERRIDE_CONFIRM_REQUIRED");
+  const alasan = String(reason ?? "").trim().replace(/\s+/g, " ");
+  if (alasan.length < 10) throw stepError("Alasan override wajib diisi (minimal 10 karakter)", 400, "RELEASE_REASON_REQUIRED");
+  if (alasan.length > 500) throw stepError("Alasan maksimal 500 karakter", 400, "RELEASE_REASON_TOO_LONG");
+  const kode = String(unitCode ?? "").trim();
+  if (!kode) throw stepError("Ketik ulang kode unit untuk memastikan unit yang di-override benar", 400, "RELEASE_UNIT_CODE_REQUIRED");
+  if (!locationId || !UUID_RE_LOCAL.test(String(locationId))) throw stepError("Lokasi pengambilan wajib dipilih", 400, "RELEASE_LOCATION_REQUIRED");
+  const actor = actorId || "SYSTEM";
+  const requestHash = hash({ commandType: "RELEASE_UNIT_FOR_DELIVERY", unitId, expectedRevision: revisionExpected, unitCode: kode, locationId, reason: alasan });
+
+  return prisma.$transaction(async (tx) => {
+    const replay = await findReplay(tx, actor, idempotencyKey, requestHash);
+    if (replay) return replay;
+    const pre = await tx.productionRun.findFirst({ where: { unitId, status: { notIn: TERMINAL_RUN } }, orderBy: { createdAt: "desc" }, select: { id: true } });
+    if (!pre) throw stepError("Unit ini tidak punya Production Run yang berjalan — jalur ini hanya untuk unit yang masih dipegang Production V2", 409, "RELEASE_NO_ACTIVE_RUN");
+    const run = await loadRunForWrite(tx, pre.id, { allowReleased: true }); // kunci unit -> run (urutan sama dengan semua command V2)
+    await assertWriterEnabledForUnit(tx, run.unitId);
+    const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId }, select: { id: true, unitCode: true, status: true, storageLocation: true, orderId: true } });
+    const order = await tx.order.findUnique({ where: { id: unit.orderId }, select: { id: true, orderNumber: true, status: true, mergedIntoOrderId: true } });
+    if (unit.unitCode !== kode) throw stepError("Kode unit yang diketik tidak sama dengan unit ini", 409, "RELEASE_UNIT_CODE_MISMATCH");
+    // SAKLAR (fail-closed): override BARU hanya bila diaktifkan Owner/Admin (opsional dibatasi daftar unit). Replay override yang sudah terjadi dijawab SEBELUM titik ini (tidak membuat apa pun yang baru).
+    await assertAdminOverrideAllowed(tx, unit.unitCode);
+    const blockers = releaseBlockersOf({ run, unit, order });
+    if (blockers.length) throw stepError(`Unit belum bisa ditetapkan Siap Kirim: ${blockers[0].text}`, 409, `RELEASE_${blockers[0].code}`, { blockers });
+    assertRunRevision(run, revisionExpected);
+    await assertNoOpenRunException(tx, run.id);
+    const location = await tx.storageLocation.findUnique({ where: { id: locationId } });
+    assertLocationAllowed("FINISHED_GOODS", location);
+    const decidedBy = await tx.user.findUnique({ where: { id: actor }, select: { id: true, name: true, role: true, active: true } });
+    if (!decidedBy || decidedBy.active === false) throw stepError("Akun pelaku tidak aktif atau tidak dikenal", 403, "RELEASE_FORBIDDEN");
+
+    const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "RELEASE_UNIT_FOR_DELIVERY", aggregateId: run.id, requestHash, expectedRevision: revisionExpected });
+    const now = new Date();
+    const ctx = await loadStepContext(tx, run);
+    const revision = run.revision + 1;
+    const { rekam, orderStatusAfter, jobs } = await applyAdminOverrideReleaseInTx(tx, {
+      run, unit, location, now, revision,
+      buildRecord: ({ orderStatusAfter: orderSesudah }) => ({
+        version: 2, kind: "ADMIN_OVERRIDE", decision: ADMIN_OVERRIDE_DECISION,
+        decidedBy: { id: decidedBy.id, name: decidedBy.name, role: decidedBy.role }, decidedAt: now.toISOString(), reason: alasan, adminOverrideConfirmed: true,
+        pickupLocation: { id: location.id, code: location.code },
+        unit: { id: unit.id, code: unit.unitCode, statusBefore: unit.status, statusAfter: "READY_FOR_DELIVERY", storageLocationBefore: unit.storageLocation ?? null },
+        order: { id: order.id, number: order.orderNumber, statusBefore: order.status, statusAfter: orderSesudah },
+        run: { id: run.id, status: run.status, revisionBefore: run.revision, currentPhase: run.currentPhase ?? null, stepsRecorded: [...new Set(ctx.evidence.map((e) => e.stepNo))].sort((x, y) => x - y) },
+        note: "Keputusan override Admin. Run dan tahap Produksi sengaja TIDAK ditutup/diubah; tidak ada QC, foto, serah terima Gudang, atau stok yang dibuat; tidak ada klaim pemeriksaan fisik/QC.",
+      }),
+    });
+    await outbox(tx, {
+      eventType: "production.run.delivery_released", aggregateId: run.id, revision, dedupeKey: `production-run-delivery-released:${run.id}`,
+      payload: { runId: run.id, unitId: unit.id, unitCode: unit.unitCode, orderId: order.id, override: rekam, jobIds: jobs.map((j) => j.id), revision, occurredAt: now.toISOString(), actorId: actorId || null },
+    });
+    const meta = {
+      kind: "ADMIN_OVERRIDE", unitCode: unit.unitCode, orderNumber: order.orderNumber, runId: run.id, locationCode: location.code, deciderName: decidedBy.name, reason: alasan,
+      unitStatusBefore: unit.status, unitStatusAfter: "READY_FOR_DELIVERY", orderStatusBefore: order.status, orderStatusAfter,
+    };
+    await recordActivity(tx, { entityType: "unit", entityId: unit.id, eventType: EVENT_TYPES.PRODUCTION_DELIVERY_RELEASED, actorId: actorId || null, metadata: meta });
+    await recordActivity(tx, { entityType: "order", entityId: order.id, eventType: EVENT_TYPES.PRODUCTION_DELIVERY_RELEASED, actorId: actorId || null, metadata: meta });
+    const response = {
+      runId: run.id, revision, unitId: unit.id, unitStatus: "READY_FOR_DELIVERY", orderStatus: orderStatusAfter, runStatus: run.status,
+      pickupLocation: { id: location.id, code: location.code }, decidedBy: { id: decidedBy.id, name: decidedBy.name }, decidedAt: now.toISOString(), decision: ADMIN_OVERRIDE_DECISION,
+      deliveryJobs: jobs.map((j) => ({ id: j.id, status: j.status, routeId: j.routeId })),
+      runDitutup: false, qc: "TIDAK_DIBUAT", handoffGudang: "TIDAK_DIBUAT", stok: "TIDAK_BERGERAK",
+    };
+    await finishCommand(tx, command, revision, response);
     return { replayed: false, ...response };
   }, { timeout: 30_000 });
 }

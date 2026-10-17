@@ -19,6 +19,7 @@ Tiap order menampilkan: bukti sumber (status, POD, pembayaran, uang muka di buku
 
 Aturan keras:
 - **Tanggal** hanya dari POD, riwayat status serah, atau *Keputusan Owner* (tanggal + bukti referensi + alasan). Tanggal sebelum cutoff buku besar atau di masa depan ditolak.
+- **Bukti serah wajib.** Order tanpa pengiriman selesai maupun riwayat status serah (mis. job masih UNSCHEDULED) ditahan KERAS: pratinjau dan simpan ditolak `422 SERAH_TIDAK_TERBUKTI` walau memakai *Keputusan Owner*. Penyerahan harus dibuktikan dulu lewat alur Delivery; Keputusan Owner hanya menentukan *tanggal buku* untuk order yang SUDAH punya bukti serah (mis. pra-cutoff).
 - **Harga** hanya diisi manusia (item Rp0 saja, wajib bukti). Harga katalog hanya acuan tampilan. Menyimpan harga tidak memposting jurnal.
 - Order **Lunas tanpa catatan pembayaran**, PKR, digabung, atau belum diserahkan ditahan tanpa override.
 - Order diserahkan **sebelum cutoff** hanya bisa diakui lewat Keputusan Owner + persetujuan eksplisit.

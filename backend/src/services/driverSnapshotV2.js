@@ -1,4 +1,5 @@
 import { decodeDriverCursor, encodeDriverCursor } from "./driverFeedV2.js";
+import { tandaiJobOverrideAdmin } from "./deliveryOverrideAdmin.js";
 import { MANIFEST_UNIT_SELECT, MANIFEST_ORDER_EXTRA, MANIFEST_UNIT_LOADS } from "./deliveryManifestInclude.js";
 import {
   DRIVER_ACTIVE_ROUTE_STATUSES_V2,
@@ -295,6 +296,7 @@ export async function readDriverFullSnapshot(prisma, { userId, cursor = null, li
   });
   const hasMore = publications.length > size;
   const items = publications.slice(0, size).map(projectPublicationForDriver);
+  await tandaiJobOverrideAdmin(prisma, items.flatMap((item) => item.jobs)); // penanda jujur "override Admin" + lokasi pengambilan (sama dengan /my-jobs V1)
   const nextSnapshotCursor = hasMore ? encodeDriverCursor({
     mode: "SNAPSHOT",
     userId,

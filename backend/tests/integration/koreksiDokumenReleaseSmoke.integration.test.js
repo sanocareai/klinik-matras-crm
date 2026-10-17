@@ -1,4 +1,4 @@
-// Menjalankan blok REHEARSAL (uji aplikasi pada salinan restore) dan SMOKE dari scripts/release-koreksi-dokumen.sh — kode Node yang sama persis yang akan jalan di produksi — terhadap DB terisolasi
+// Menjalankan blok REHEARSAL (uji aplikasi pada salinan restore) dan SMOKE dari scripts/release-koreksi-bukti-serah.sh — kode Node yang sama persis yang akan jalan di produksi — terhadap DB terisolasi
 // berisi dataset mirip produksi. Tujuan: skrip rilis tidak boleh pertama kali dieksekusi di produksi.
 import "./setup/env.js";
 import test from "node:test";
@@ -17,7 +17,7 @@ import { reverseJournal } from "../../src/services/finance/journal.js";
 import { recomputeOrderPaymentStatus } from "../../src/services/paymentLedger.js";
 
 const backend = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const skrip = fs.readFileSync(path.resolve(backend, "../scripts/release-koreksi-cakupan.sh"), "utf8").replace(/\r\n/g, "\n");
+const skrip = fs.readFileSync(path.resolve(backend, "../scripts/release-koreksi-bukti-serah.sh"), "utf8").replace(/\r\n/g, "\n");
 const blok = (pembuka, penutup) => { const a = skrip.indexOf(pembuka); assert.ok(a > 0, `pembuka ${pembuka} tidak ada`); const mulai = skrip.indexOf("\n", a) + 1; const b = skrip.indexOf(`\n${penutup}\n`, mulai); assert.ok(b > 0, `penutup ${penutup} tidak ada`); return skrip.slice(mulai, b); };
 
 let server;
@@ -67,6 +67,9 @@ async function datasetProduksiMini() {
   const bal = await order(w, { nilai: 2_090_000, bayar: 2_090_000, serah: `${bulanIni}-05`, transisi: `${bulanIni}-05` });
   const pr0 = await testPrisma.$transaction((tx) => postRevenueRecognition(tx, { orderId: bal.id, userId: w.admin.id, date: D(`${bulanIni}-05`) }));
   await testPrisma.$transaction((tx) => reverseJournal(tx, { entryId: pr0.entry.id, reason: "belum ada sumber bank", userId: w.admin.id }));
+  // penyerahan TIDAK terbukti (kasus SWS-16102026-003): hanya job UNSCHEDULED, tanpa riwayat status serah
+  const tb = await order(w, { nilai: 200_000, nomorSufiks: "-TB" });
+  await testPrisma.job.create({ data: { type: "DELIVERY", orderId: tb.id, status: "UNSCHEDULED" } });
   // konflik atribusi: BBM (kategori → Delivery) tetapi dokumen Produksi
   const k = makeClient(server.baseUrl, a.token);
   const kat = await testPrisma.finExpenseCategory.findUnique({ where: { code: "BBM" } });
@@ -93,6 +96,9 @@ test("REHEARSAL (blok skrip rilis): uji aplikasi pada salinan — pengakuan sung
   assert.match(r.out, /PEMERIKSAAN=\d+ gagal=0/);
   assert.ok(!/^GAGAL/m.test(r.out), r.out);
   assert.ok((r.out.match(/^OK /gm) || []).length >= 14, r.out);
+  assert.match(r.out, /RES-SM-\d+-TB: pratinjau dengan Keputusan Owner \+ persetujuan DITOLAK/);
+  assert.match(r.out, /RES-SM-\d+-TB: simpan dengan Keputusan Owner \+ persetujuan DITOLAK/);
+  assert.match(r.out, /RES-SM-\d+-TB: penolakan tidak membuat jurnal, audit, gap, atau keputusan/);
   assert.match(r.out, /pengakuan nyata RES-SM-\d+ .* dibuat/);
   assert.match(r.out, /paralel x4 .*tepat satu jurnal/);
   assert.match(r.out, /periode tertutup menolak/);
@@ -117,6 +123,9 @@ test("SMOKE (blok skrip rilis): izin, penolakan tulis, parity SQL independen ↔
   assert.match(r.out, /PERLU_KEPUTUSAN RES-SM-/);
   assert.match(r.out, /pratinjau pengakuan RES-SM-\d+ \(di-rollback\)/);
   assert.match(r.out, /order dengan pengakuan DIBALIK-saja \(1: RES-SM-\d+\) semuanya tampil/);
+  assert.match(r.out, /RES-SM-\d+-TB: PRATINJAU Keputusan Owner ditolak 422 SERAH_TIDAK_TERBUKTI/);
+  assert.match(r.out, /RES-SM-\d+-TB: SIMPAN Keputusan Owner ditolak 422 SERAH_TIDAK_TERBUKTI/);
+  assert.match(r.out, /RES-SM-\d+-TB: penolakan tidak menambah jurnal, audit, atau gap/);
   assert.match(r.out, /dampak uang muka bertanda KEWAJIBAN/);
   assert.equal(String(await hitung("select count(*)::int n from fin_journal_entries")), sebelum.j, "smoke tidak menulis jurnal (pratinjau di-rollback)");
   assert.equal(await hitung("select count(*)::int n from fin_attribution_decisions"), sebelum.k);
