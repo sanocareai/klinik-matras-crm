@@ -29,3 +29,25 @@ export function saringStok(rows, { tab = "", cari = "", keadaan = "", nonaktif =
     return true;
   });
 }
+
+/**
+ * Tampilan saldo yang membedakan TIGA keadaan yang berbeda artinya:
+ *  • belum diketahui — belum ada catatan pergerakan stok (bukan nol),
+ *  • nol — ada catatan dan hasilnya nol (habis menurut pergerakan),
+ *  • minus — catatan lebih kecil dari nol (perlu dihitung fisik).
+ * @returns {{jenis:"BELUM_DIKETAHUI"|"NOL"|"MINUS"|"ADA", teks:string, keterangan:string}}
+ */
+export function tampilSaldo(r) {
+  if (r.saldo === null || r.saldo === undefined) return { jenis: "BELUM_DIKETAHUI", teks: "belum diketahui", keterangan: "Belum ada catatan pergerakan stok — bukan berarti habis" };
+  if (Number(r.saldo) < 0) return { jenis: "MINUS", teks: angka(r.saldo), keterangan: "Saldo minus — catatan perlu dihitung fisik dan dikoreksi resmi" };
+  if (Number(r.saldo) === 0) return { jenis: "NOL", teks: "0", keterangan: "Nol menurut pergerakan stok" };
+  return { jenis: "ADA", teks: angka(r.saldo), keterangan: "" };
+}
+
+/** Lokasi dari RIWAYAT penerimaan (bukan lokasi stok saat ini — sistem tidak menyimpan saldo per lokasi). null bila tidak ada penerimaan bertanggal. */
+export function riwayatLokasi(r) {
+  const l = r.lokasiTerakhir;
+  if (!l?.lokasi) return null;
+  const tgl = l.waktu ? new Date(l.waktu).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" }) : null;
+  return { lokasi: l.lokasi, tanggal: tgl, teks: `Terakhir diterima di ${l.lokasi}${tgl ? ` (${tgl})` : ""}` };
+}

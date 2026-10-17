@@ -25,11 +25,19 @@ export const AKSI = Object.freeze({
   MAJUKAN: { kode: "MAJUKAN", label: "Lanjut ke tahap berikutnya", jenis: "maju" },
   SIMPAN_KE_STOK: { kode: "SIMPAN_KE_STOK", label: "Simpan ke Stok", jenis: "maju" },
   TOLAK: { kode: "TOLAK", label: "Tolak barang", jenis: "batal" },
+  BATALKAN_TIBA: { kode: "BATALKAN_TIBA", label: "Batalkan catatan tiba", jenis: "batal" },
+  PULIHKAN: { kode: "PULIHKAN", label: "Pulihkan ke Draf", jenis: "maju" },
+  BUAT_ULANG: { kode: "BUAT_ULANG", label: "Buat penerimaan baru dari dokumen ini", jenis: "maju" },
   KOREKSI_KEDATANGAN: { kode: "KOREKSI_KEDATANGAN", label: "Koreksi Kedatangan (resmi)", jenis: "koreksi" },
   KOREKSI_PENERIMAAN: { kode: "KOREKSI_PENERIMAAN", label: "Koreksi penerimaan", jenis: "koreksi" },
 });
 
 const nol = (v) => v === null || v === undefined || Number(v) === 0;
+/** Belum ada hasil pemeriksaan (jumlah baik/ditolak kosong atau nol) — syarat membatalkan catatan tiba yang salah klik. */
+export function belumAdaHasilPemeriksaan(r) {
+  return (r?.lines ?? []).every((l) => nol(l.acceptedQty) && nol(l.rejectedQty));
+}
+
 /** Penerimaan yang tidak pernah berisi barang: belum ada tanggal tiba dan tidak satu pun jumlah terisi. */
 export function tidakPernahBerisi(r) {
   if (r?.arrivedDate || Number(r?.arrivalRevision ?? 0) > 0) return false;
@@ -53,13 +61,13 @@ export function tampilanPenerimaan(r) {
         [AKSI.UBAH_JADWAL, dariPO ? AKSI.CATAT_TIBA : AKSI.TANDAI_TIBA, AKSI.KEMBALI_DRAFT, AKSI.BATALKAN_JADWAL]);
     case "ARRIVED":
       return dasar("TIBA", "Barang tiba — perlu diperiksa", "orange", "Barang sudah tiba, belum diperiksa. Stok belum bertambah. Isi hasil pemeriksaan (baik/ditolak).", "BELUM",
-        [AKSI.ISI_PEMERIKSAAN, AKSI.MAJUKAN, ...(dariPO ? [AKSI.KOREKSI_KEDATANGAN] : []), AKSI.TOLAK]);
+        [AKSI.ISI_PEMERIKSAAN, AKSI.MAJUKAN, ...(dariPO ? [AKSI.KOREKSI_KEDATANGAN] : []), ...(belumAdaHasilPemeriksaan(r) ? [AKSI.BATALKAN_TIBA] : []), AKSI.TOLAK]);
     case "INSPECTION":
       return dasar("DIPERIKSA", "Sedang diperiksa", "orange", "Isi jumlah barang baik dan ditolak per item, lalu lanjutkan ke Siap masuk stok. Stok belum bertambah.", "BELUM",
-        [AKSI.ISI_PEMERIKSAAN, AKSI.MAJUKAN, ...(dariPO ? [AKSI.KOREKSI_KEDATANGAN] : []), AKSI.TOLAK]);
+        [AKSI.ISI_PEMERIKSAAN, AKSI.MAJUKAN, ...(dariPO ? [AKSI.KOREKSI_KEDATANGAN] : []), ...(belumAdaHasilPemeriksaan(r) ? [AKSI.BATALKAN_TIBA] : []), AKSI.TOLAK]);
     case "READY_FOR_PUTAWAY":
       return dasar("SIAP_MASUK_STOK", "Siap masuk stok", "accent", "Hanya barang yang dinyatakan baik yang masuk stok. Stok bertambah saat Simpan ke Stok.", "BELUM",
-        [AKSI.SIMPAN_KE_STOK, AKSI.ISI_PEMERIKSAAN, ...(dariPO ? [AKSI.KOREKSI_KEDATANGAN] : []), AKSI.TOLAK]);
+        [AKSI.SIMPAN_KE_STOK, AKSI.ISI_PEMERIKSAAN, ...(dariPO ? [AKSI.KOREKSI_KEDATANGAN] : []), ...(belumAdaHasilPemeriksaan(r) ? [AKSI.BATALKAN_TIBA] : []), AKSI.TOLAK]);
     case "COMPLETED":
       return dasar("SUDAH_MASUK_STOK", "Sudah masuk stok", "green", dariPO
         ? "Stok sudah bertambah. Catatan tidak dihapus: jika ada salah input, pakai Koreksi Kedatangan (resmi) — dampaknya ditampilkan dulu."
@@ -67,8 +75,8 @@ export function tampilanPenerimaan(r) {
       [dariPO ? AKSI.KOREKSI_KEDATANGAN : AKSI.KOREKSI_PENERIMAAN]);
     case "REJECTED":
       return dibatalkan
-        ? dasar("DIBATALKAN", "Dibatalkan", "neutral", "Penerimaan ini dibatalkan sebelum barang tiba. Tidak memengaruhi stok. Jika masih perlu, buat jadwal baru dari PO.", "TIDAK", [])
-        : dasar("DITOLAK", "Ditolak", "red", "Barang tiba lalu ditolak seluruhnya. Tidak menambah stok.", "TIDAK", []);
+        ? dasar("DIBATALKAN", "Dibatalkan", "neutral", "Penerimaan ini dibatalkan sebelum barang tiba. Tidak memengaruhi stok. Salah batalkan? Pulihkan ke Draf selama belum ada pengaruh apa pun. Atau buat jadwal baru dari PO.", "TIDAK", [AKSI.PULIHKAN])
+        : dasar("DITOLAK", "Ditolak", "red", "Barang tiba lalu ditolak seluruhnya. Tidak menambah stok. Dokumen ini tidak dihapus; bila penolakannya salah atau barang datang lagi, buat penerimaan baru dari dokumen ini (riwayat saling tertaut).", "TIDAK", [AKSI.BUAT_ULANG]);
     default:
       return dasar("TIDAK_DIKENAL", status || "—", "neutral", "Status tidak dikenal.", "TIDAK", []);
   }
@@ -79,5 +87,18 @@ export function penghalangBatalJadwal(r, pergerakan = 0) {
   if (Number(pergerakan) > 0) return { kode: "SUDAH_ADA_PERGERAKAN_STOK", pesan: "Penerimaan ini sudah punya pergerakan stok. Pakai Koreksi (dampaknya ditampilkan dulu), bukan pembatalan." };
   if (r?.arrivedDate || Number(r?.arrivalRevision ?? 0) > 0) return { kode: "BARANG_SUDAH_DICATAT_TIBA", pesan: "Barang sudah dicatat tiba. Jadwal tidak bisa dibatalkan; perbaiki lewat Koreksi Kedatangan atau tolak barang jika memang ditolak." };
   if (!tidakPernahBerisi(r)) return { kode: "SUDAH_ADA_JUMLAH", pesan: "Sudah ada jumlah datang/diterima/ditolak. Jadwal tidak bisa dibatalkan; gunakan Tolak barang atau lanjutkan pemeriksaan." };
+  return null;
+}
+
+/**
+ * Mengapa catatan tiba TIDAK aman dibatalkan di tempat. `ctx` = hitungan dari DB: { pergerakan, faktur, retur, pengganti }. Setiap sebab membawa langkah penyelesaian yang nyata.
+ * null = aman dipulihkan ke Terjadwal. Hasil pemeriksaan (baik/ditolak) yang sudah diisi juga menghalangi: data itu tidak dibuang diam-diam.
+ */
+export function penghalangBatalTiba(r, ctx = {}) {
+  if (Number(ctx.pergerakan ?? 0) > 0) return { kode: "SUDAH_ADA_PERGERAKAN_STOK", pesan: "Penerimaan ini sudah punya pergerakan stok.", langkah: "Pakai Koreksi (dampaknya ditampilkan dulu); catatan stok tidak dihapus." };
+  if (!belumAdaHasilPemeriksaan(r)) return { kode: "SUDAH_ADA_HASIL_PEMERIKSAAN", pesan: "Hasil pemeriksaan (baik/ditolak) sudah diisi, jadi catatan tiba tidak dibatalkan diam-diam.", langkah: "Bila hanya jumlahnya yang salah, pakai Koreksi Kedatangan. Bila seluruh catatan salah: Tolak barang, lalu Buat penerimaan baru dari dokumen yang ditolak (riwayatnya tertaut)." };
+  if (Number(ctx.faktur ?? 0) > 0) return { kode: "SUDAH_ADA_FAKTUR", pesan: "Sudah ada faktur supplier yang menempel pada penerimaan ini (tanggal tiba menentukan jatuh tempo faktur).", langkah: "Minta Finance membatalkan faktur itu lebih dulu, lalu batalkan catatan tiba." };
+  if (Number(ctx.retur ?? 0) > 0) return { kode: "SUDAH_ADA_RETUR", pesan: "Sudah ada Retur Supplier untuk barang pada penerimaan ini.", langkah: "Batalkan atau selesaikan Retur Supplier itu lebih dulu." };
+  if (Number(ctx.pengganti ?? 0) > 0) return { kode: "SUDAH_ADA_PENGGANTI", pesan: "Ada pengiriman pengganti yang menunjuk penerimaan ini.", langkah: "Batalkan atau koreksi penerimaan pengganti itu lebih dulu." };
   return null;
 }

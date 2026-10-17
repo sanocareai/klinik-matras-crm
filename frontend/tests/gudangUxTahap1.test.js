@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { TAHAP_FILTER, filterTahap, hitungPerTahap, identitasPenerimaan, penerimaanLainSamaPO, barisPerItem, kalimatBaris, catatanBaris, galatIsianPemeriksaan, aksiRelevan, aksiUtama, CARA_AKSI } from "../src/features/warehouse/penerimaan/penerimaanLogic.js";
 import { galatPanel } from "../src/features/warehouse/aksi/aksiLogic.js";
-import { saringStok, teksSaldo, teksBatasMinimum, FILTER_KEADAAN } from "../src/features/warehouse/stok/stokLogic.js";
+import { saringStok, teksSaldo, teksBatasMinimum, tampilSaldo, riwayatLokasi, FILTER_KEADAAN } from "../src/features/warehouse/stok/stokLogic.js";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const baca = (rel) => fs.readFileSync(path.join(dir, "../src", rel), "utf8").replace(/\r\n/g, "\n");
@@ -156,4 +156,27 @@ test("Tata letak sempit: target sentuh min-h-11, kartu/daftar bergantian dengan 
   for (const f of ["pages/warehouse/WarehouseGoodsReceipt.jsx", "pages/warehouse/WarehouseInventory.jsx", "features/warehouse/aksi/AksiDokumen.jsx", "features/warehouse/penerimaan/TabelPerItem.jsx"]) assert.match(baca(f), /max-sm:min-h-11/, f);
   assert.match(baca("features/warehouse/penerimaan/TabelPerItem.jsx"), /md:hidden/);
   assert.match(baca("pages/warehouse/WarehouseInventory.jsx"), /md:hidden/);
+});
+
+test("Saldo: belum diketahui, nol, dan minus tampil BERBEDA; lokasi hanya sebagai riwayat penerimaan (bukan lokasi stok saat ini)", () => {
+  assert.equal(tampilSaldo({ saldo: null }).jenis, "BELUM_DIKETAHUI"); assert.equal(tampilSaldo({ saldo: null }).teks, "belum diketahui");
+  assert.equal(tampilSaldo({ saldo: 0 }).jenis, "NOL"); assert.equal(tampilSaldo({ saldo: 0 }).teks, "0");
+  assert.equal(tampilSaldo({ saldo: -388.5 }).jenis, "MINUS"); assert.match(tampilSaldo({ saldo: -388.5 }).keterangan, /dihitung fisik/);
+  assert.equal(tampilSaldo({ saldo: 12 }).jenis, "ADA");
+  assert.equal(riwayatLokasi({ lokasiTerakhir: null }), null);
+  const l = riwayatLokasi({ lokasiTerakhir: { lokasi: "RAK-A1", waktu: "2026-10-12T03:00:00Z" } });
+  assert.match(l.teks, /^Terakhir diterima di RAK-A1/);
+  const s = baca("pages/warehouse/WarehouseInventory.jsx");
+  assert.match(s, /Riwayat penerimaan/); assert.match(s, /bukan lokasi stok saat ini/); assert.doesNotMatch(s, />Lokasi terakhir</); assert.doesNotMatch(s, />Lokasi</);
+  assert.match(s, /sel-riwayat-lokasi/); assert.match(s, /data-jenis=/);
+});
+
+test("Pemulihan dokumen: Batalkan catatan tiba / Pulihkan / Buat penerimaan baru tersedia di halaman detail dengan alasan; jejak dengan tautan; tanpa Hapus/Undo", () => {
+  const d = baca("features/warehouse/penerimaan/PenerimaanDetail.jsx");
+  for (const k of ["BATALKAN_TIBA", "PULIHKAN", "BUAT_ULANG"]) assert.ok(d.includes(`${k}: { panel`), k);
+  for (const m of ["batalkanTibaGoodsReceipt", "pulihkanGoodsReceipt", "buatUlangGoodsReceipt"]) { assert.ok(d.includes(`api.${m}`), m); assert.ok(baca("api.js").includes(`${m}:`), m); }
+  assert.ok(d.includes("navigate(`/warehouse/goods-receipt/${baru.id}`)"));
+  assert.match(d, /data-testid="jejak-dokumen"/); assert.match(d, /tidak dihapus/);
+  assert.doesNotMatch(d, />\s*(Hapus|Undo)\s*</);
+  for (const k of ["BATALKAN_TIBA", "PULIHKAN", "BUAT_ULANG"]) assert.ok(k in CARA_AKSI, k);
 });

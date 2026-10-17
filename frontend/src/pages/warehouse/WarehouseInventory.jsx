@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils.js";
 import ItemDetailDrawer from "@/features/warehouse/components/ItemDetailDrawer.jsx";
 import ItemFormModal from "@/features/warehouse/components/ItemFormModal.jsx";
 import { CATEGORY_REAL } from "@/features/warehouse/inventoryReal.js";
-import { FILTER_KEADAAN, saringStok, teksSaldo, teksBatasMinimum, warnaKeadaan } from "@/features/warehouse/stok/stokLogic.js";
+import { FILTER_KEADAAN, saringStok, teksSaldo, teksBatasMinimum, warnaKeadaan, tampilSaldo, riwayatLokasi } from "@/features/warehouse/stok/stokLogic.js";
 
 // STOK & LOKASI — satu halaman untuk mencari bahan dan membaca saldonya dengan jujur (Okt 2026). Semua angka berasal dari GET /inventory/beranda/stok (ledger pergerakan):
 //  • "—" pada Saldo = BELUM ADA CATATAN stok (belum diketahui), bukan nol. "0" hanya untuk bahan yang punya pergerakan dan hasilnya nol.
@@ -23,6 +23,14 @@ const TABS = [
   { key: "", label: "Semua" }, { key: "RAW_MATERIAL", label: "Bahan Baku" }, { key: "WIP", label: "Setengah Jadi" },
   { key: "FINISHED_GOODS", label: "Barang Jadi" }, { key: "CONSUMABLE", label: "Habis Pakai" }, { key: "none", label: "Tanpa Kategori" },
 ];
+
+function SaldoSel({ r, inline = false }) {
+  const t = tampilSaldo(r);
+  if (t.jenis === "BELUM_DIKETAHUI") return <span className="text-[11.5px] font-medium italic text-ink3">{t.teks}</span>;
+  if (t.jenis === "MINUS") return <span className="font-bold text-red">{t.teks}<span className="ml-1 text-[10.5px] font-semibold uppercase">minus</span></span>;
+  if (t.jenis === "NOL") return <span className="font-semibold text-ink2">0<span className="ml-1 text-[10.5px] font-normal text-ink3">habis</span></span>;
+  return <span className={inline ? "font-semibold text-ink" : "font-semibold text-ink"}>{t.teks}</span>;
+}
 
 export default function WarehouseInventory() {
   const [data, setData] = useState(null); const [stok, setStok] = useState(null);
@@ -99,7 +107,7 @@ export default function WarehouseInventory() {
             <>
               <TableWrap className="hidden md:block">
                 <Table>
-                  <THead><TR><TH>Kode</TH><TH>Nama bahan</TH><TH>Kategori</TH><TH numeric>Saldo</TH><TH numeric>Tersedia</TH><TH>Satuan</TH><TH numeric>Batas minimum</TH><TH>Lokasi terakhir</TH><TH>Keadaan</TH></TR></THead>
+                  <THead><TR><TH>Kode</TH><TH>Nama bahan</TH><TH>Kategori</TH><TH numeric>Saldo</TH><TH numeric>Tersedia</TH><TH>Satuan</TH><TH numeric>Batas minimum</TH><TH title="Riwayat penerimaan, bukan lokasi stok saat ini">Riwayat penerimaan</TH><TH>Keadaan</TH></TR></THead>
                   <TBody>
                     {loading && <TableSkeletonRows rows={8} cols={9} />}
                     {!loading && terfilter?.map((r) => (
@@ -107,11 +115,11 @@ export default function WarehouseInventory() {
                         <TD className="font-semibold text-ink">{r.kode}</TD>
                         <TD truncate>{r.nama}</TD>
                         <TD className="whitespace-nowrap text-ink2">{r.kategori ? CATEGORY_REAL[r.kategori]?.label : <span className="text-ink3">—</span>}</TD>
-                        <TD numeric className={r.saldo === null ? "text-ink3" : r.saldo < 0 ? "font-bold text-red" : "font-semibold text-ink"} data-testid="sel-saldo">{teksSaldo(r)}</TD>
+                        <TD numeric data-testid="sel-saldo" data-jenis={tampilSaldo(r).jenis} title={tampilSaldo(r).keterangan}><SaldoSel r={r} /></TD>
                         <TD numeric className="text-ink2">{r.tersedia === null ? "—" : r.tersedia}</TD>
                         <TD className="text-ink2">{String(r.satuan ?? "").toLowerCase()}</TD>
                         <TD numeric className="text-ink3" data-testid="sel-minimum">{teksBatasMinimum(r)}</TD>
-                        <TD className="whitespace-nowrap text-ink2">{r.lokasiTerakhir ? <span title={r.lokasiTerakhir.catatan}><MapPin size={11} className="mr-0.5 inline text-ink3" aria-hidden />{r.lokasiTerakhir.lokasi}</span> : <span className="text-ink3">—</span>}</TD>
+                        <TD className="whitespace-nowrap text-ink2" data-testid="sel-riwayat-lokasi">{riwayatLokasi(r) ? <span title="Dari riwayat penerimaan. Sistem tidak menyimpan saldo per lokasi, jadi ini bukan lokasi stok saat ini."><MapPin size={11} className="mr-0.5 inline text-ink3" aria-hidden />{riwayatLokasi(r).teks}</span> : <span className="text-ink3">tidak ada riwayat</span>}</TD>
                         <TD><Badge variant={warnaKeadaan(r.keadaan)}>{r.keadaanLabel}</Badge></TD>
                       </TR>
                     ))}
@@ -125,8 +133,9 @@ export default function WarehouseInventory() {
                       className="w-full px-4 py-3 text-left transition-colors hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset max-sm:min-h-11">
                       <div className="flex items-center gap-2"><span className="truncate text-[12.5px] font-semibold text-ink">{r.kode}</span><Badge variant={warnaKeadaan(r.keadaan)} className="ml-auto shrink-0">{r.keadaanLabel}</Badge></div>
                       <div className="mt-0.5 truncate text-[13px] text-ink">{r.nama}</div>
-                      <div className="mt-1 text-[11.5px] text-ink2">Saldo <strong className="text-ink">{teksSaldo(r)}</strong> · minimum {teksBatasMinimum(r)}{r.lokasiTerakhir && ` · lokasi terakhir ${r.lokasiTerakhir.lokasi}`}</div>
+                      <div className="mt-1 text-[11.5px] text-ink2">Saldo <SaldoSel r={r} inline /> · minimum {teksBatasMinimum(r)}</div>
                       <div className="mt-0.5 text-[11px] text-ink3">{r.sumberAngka?.teks ?? "Belum ada catatan pergerakan stok"}</div>
+                      {riwayatLokasi(r) && <div className="mt-0.5 text-[11px] text-ink3" data-testid="riwayat-lokasi">{riwayatLokasi(r).teks} — riwayat, bukan lokasi stok saat ini</div>}
                     </button>
                   </li>
                 ))}

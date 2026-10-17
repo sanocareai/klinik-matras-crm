@@ -274,7 +274,7 @@ function jumlahDatang(v, nomor) {
 }
 
 // Nomor GR-DDMMYY-NN: dihitung di bawah kunci advisory transaksi supaya dua pengiriman tiba bersamaan tidak berebut nomor yang sama.
-async function nomorPenerimaanBaru(tx, sekarang = new Date()) {
+export async function nomorPenerimaanBaru(tx, sekarang = new Date()) {
   await tx.$queryRawUnsafe("SELECT pg_advisory_xact_lock(hashtext($1))::text AS k", "goods-receipt-number");
   const awalHari = new Date(Date.UTC(sekarang.getUTCFullYear(), sekarang.getUTCMonth(), sekarang.getUTCDate()));
   const kode = `GR-${String(sekarang.getUTCDate()).padStart(2, "0")}${String(sekarang.getUTCMonth() + 1).padStart(2, "0")}${String(sekarang.getUTCFullYear()).slice(-2)}`;

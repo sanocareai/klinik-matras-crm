@@ -93,6 +93,7 @@ export function galatIsianPemeriksaan(nilai) {
 /** Aksi → bagaimana UI menangani. `inline`: panel kecil di halaman; `langsung`: satu klik; `dialog`: formulir resmi yang sudah ada. */
 export const CARA_AKSI = Object.freeze({
   UBAH_JADWAL: "inline", KEMBALI_DRAFT: "inline", BATALKAN_JADWAL: "inline", TOLAK: "inline",
+  BATALKAN_TIBA: "inline", PULIHKAN: "inline", BUAT_ULANG: "inline",
   JADWALKAN: "langsung", MAJUKAN: "langsung", SIMPAN_KE_STOK: "langsung", ISI_PEMERIKSAAN: "inline",
   CATAT_TIBA: "dialog", TANDAI_TIBA: "langsung", KOREKSI_KEDATANGAN: "dialog", KOREKSI_PENERIMAAN: "dialog",
 });

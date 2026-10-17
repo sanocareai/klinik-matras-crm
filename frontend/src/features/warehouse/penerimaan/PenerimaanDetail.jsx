@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Loader2, Info, AlertTriangle } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
@@ -32,10 +32,13 @@ const SPEC = {
   KEMBALI_DRAFT: { panel: { judul: "Kembalikan ke Draf?", tombol: "Kembalikan ke Draf", peringatan: "Penerimaan menjadi Draf lagi (belum dijadwalkan). Stok tidak berubah.", bidang: [{ nama: "alasan", label: "Alasan (opsional)", maks: 300 }] } },
   BATALKAN_JADWAL: { panel: { judul: "Batalkan penerimaan ini?", tombol: "Ya, batalkan", peringatan: "Dokumen tidak dihapus: tersimpan sebagai Dibatalkan beserta alasan. PO tidak berubah dan jadwal baru bisa dibuat dari PO.", bidang: [{ nama: "alasan", label: "Alasan pembatalan", wajib: true, min: 3, maks: 300 }] } },
   TOLAK: { panel: { judul: "Tolak barang ini?", tombol: "Tolak penerimaan", peringatan: "Dipakai bila barang sudah tiba lalu ditolak seluruhnya. Tidak menambah stok.", bidang: [{ nama: "alasan", label: "Alasan penolakan", wajib: true, min: 3, maks: 300 }] } },
+  BATALKAN_TIBA: { panel: { judul: "Barang sebenarnya belum tiba?", tombol: "Batalkan catatan tiba", peringatan: "Dokumen kembali Terjadwal. Catatan tiba yang salah tetap tersimpan di riwayat (tidak dihapus) dan stok tidak berubah. Item yang tidak ikut tercatat tiba tidak kembali ke dokumen ini; buat jadwal baru dari PO untuk sisanya.", bidang: [{ nama: "alasan", label: "Alasan", wajib: true, min: 3, maks: 300 }] } },
+  PULIHKAN: { panel: { judul: "Pulihkan penerimaan ini ke Draf?", tombol: "Pulihkan ke Draf", peringatan: "Dokumen aktif lagi sebagai Draf dengan nomor yang sama. Belum ada pengaruh ke stok, jadi aman. Riwayat pembatalan tetap tersimpan.", bidang: [{ nama: "alasan", label: "Alasan (opsional)", maks: 300 }] } },
+  BUAT_ULANG: { panel: { judul: "Buat penerimaan baru dari dokumen ini?", tombol: "Buat penerimaan baru", peringatan: "Dokumen ini tidak diubah dan tidak dihapus. Dibuat dokumen BARU berstatus Draf berisi sisa PO (atau item yang sama bila tanpa PO); kedua dokumen saling tertaut di riwayat.", bidang: [{ nama: "alasan", label: "Alasan membuat ulang", wajib: true, min: 3, maks: 300 }] } },
 };
 
 export default function PenerimaanDetail() {
-  const { id } = useParams();
+  const { id } = useParams(); const navigate = useNavigate();
   const [r, setR] = useState(null); const [semua, setSemua] = useState([]); const [galat, setGalat] = useState(""); const [memuat, setMemuat] = useState(true); const [sibuk, setSibuk] = useState(false);
   const [isian, setIsian] = useState({}); const [versi, setVersi] = useState(0);
   const [tibaPO, setTibaPO] = useState(null); const [koreksiPO, setKoreksiPO] = useState(null); const [koreksiGR, setKoreksiGR] = useState(false);
@@ -67,6 +70,9 @@ export default function PenerimaanDetail() {
       else if (kode === "KEMBALI_DRAFT") await api.kembaliDraftGoodsReceipt(id, v.alasan);
       else if (kode === "BATALKAN_JADWAL") await api.batalkanJadwalGoodsReceipt(id, v.alasan);
       else if (kode === "TOLAK") await api.rejectGoodsReceipt(id, v.alasan);
+      else if (kode === "BATALKAN_TIBA") await api.batalkanTibaGoodsReceipt(id, v.alasan);
+      else if (kode === "PULIHKAN") await api.pulihkanGoodsReceipt(id, v.alasan);
+      else if (kode === "BUAT_ULANG") { const baru = await api.buatUlangGoodsReceipt(id, v.alasan); navigate(`/warehouse/goods-receipt/${baru.id}`); return; }
       else if (kode === "JADWALKAN") await api.updateGoodsReceipt(id, { status: "SCHEDULED" });
       else if (kode === "TANDAI_TIBA" || kode === "MAJUKAN") { if (adaIsian) await simpanIsian(); const urut = ["DRAFT", "SCHEDULED", "ARRIVED", "INSPECTION", "READY_FOR_PUTAWAY"]; await api.updateGoodsReceipt(id, { status: urut[urut.indexOf(r.status) + 1] }); }
       else if (kode === "SIMPAN_KE_STOK") { if (adaIsian) await simpanIsian(); await api.putawayGoodsReceipt(id); }
@@ -171,6 +177,21 @@ export default function PenerimaanDetail() {
 
         {["ARRIVED", "INSPECTION", "READY_FOR_PUTAWAY", "COMPLETED"].includes(r.status) && (
           <Card className="p-4"><h3 className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ink3">Progres bahan ini</h3><JejakPemakaianPenerimaan receiptId={id} status={r.status} /></Card>
+        )}
+        {r.jejak?.length > 0 && (
+          <Card className="p-4" data-testid="jejak-dokumen">
+            <h3 className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ink3">Riwayat dokumen</h3>
+            <ol className="m-0 list-none space-y-1.5 p-0 text-[12.5px]">
+              {r.jejak.map((j) => (
+                <li key={j.id} data-testid="jejak-baris" data-aksi={j.aksi}>
+                  <span className="font-semibold text-ink">{j.teks}</span>
+                  {j.tautan && <> — <Link to={`/warehouse/goods-receipt/${j.tautan.id}`} className="font-semibold text-accent">{j.tautan.nomor}</Link></>}
+                  <span className="text-ink3"> · {j.oleh ?? "—"} · {waktuTeks(j.waktu)}</span>
+                  {j.alasan && <div className="text-[11.5px] text-ink2">Alasan: {j.alasan}</div>}
+                </li>
+              ))}
+            </ol>
+          </Card>
         )}
         {galat && <p role="alert" className="text-[12px] text-red">{galat}</p>}
         <Button variant="ghost" size="sm" onClick={muat} disabled={memuat} className="self-start max-sm:min-h-11" data-testid="muat-ulang">{memuat ? <Loader2 size={14} className="animate-spin" /> : null} Muat ulang</Button>
