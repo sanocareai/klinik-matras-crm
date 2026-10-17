@@ -22,7 +22,7 @@ DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 [[ "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 1 harus SHA kandidat 40 karakter" >&2; exit 1; }
 [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 2 harus SHA release aktif (live) 40 karakter" >&2; exit 1; }
 CAND_BRANCH="${CAND_BRANCH:-feat/stok-mulai-catat-rekon-okt}"
-MIG_LIST="20261218090000_stok_riwayat_referensi"; MIG_SHA="86f852d7da01c2512b7efd3f2bf4f1039cea91230f3ed8fb382db43163b79795"
+MIG_LIST="20261218090000_stok_riwayat_referensi"; MIG_SHA="c8c9b07e84e92a997c65d6b65250df0ea2bbd469f83d6e65c6f32969fae7f907"
 REPO_URL="https://github.com/sanocareai/klinik-matras-crm.git"
 PROJECT="klinik-matras"; DB_USER="klinik"; DB_NAME="klinik_matras"
 DEPLOY_SHORT="${DEPLOY_SHA:0:8}"
@@ -352,13 +352,24 @@ LUAR="$(grep -E '^>' "$WORK/katalog-selisih.txt" | grep -v 'stok_riwayat' || tru
 [ -z "$LUAR" ] || { printf '%s\n' "$LUAR" | head -n 10 | sed 's/^/        /'; die "migrasi menambah objek di luar stok_riwayat_*"; }
 echo "  INFO  objek baru menurut jenis:"; grep -E '^>' "$WORK/katalog-selisih.txt" | sed 's/^> //' | cut -d'|' -f1 | LC_ALL=C sort | uniq -c | sed 's/^/        /'
 [ "$(grep -E '^> relasi\|stok_riwayat_(referensi|impor)\|r:klinik:' "$WORK/katalog-selisih.txt" | wc -l)" = "2" ] || die "2 tabel baru tidak dimiliki ${DB_USER}"
-echo "  INFO  izin/pemilik objek BARU (relasi, termasuk ACL dari default privileges):"; grep -E '^> relasi\|stok_riwayat' "$WORK/katalog-selisih.txt" | sed 's/^> /        /'
-echo "  INFO  izin efektif role pada 2 tabel baru (SELECT/INSERT):"
-for rl in $(awk -F'|' '$1=="role"{print $2}' "$WORK/katalog-restore.txt"); do
-  printf '        %s: ' "$rl"
-  RPSQL "select string_agg(c.relname||'='||has_table_privilege('${rl}', c.oid, 'SELECT')::text||'/'||has_table_privilege('${rl}', c.oid, 'INSERT')::text, ', ' order by c.relname) from pg_class c where c.relname in ('stok_riwayat_referensi','stok_riwayat_impor') and c.relkind='r'"
-done
 ok "katalog sesudah migrasi: hanya penambahan objek stok_riwayat_* (tabel, kolom, indeks, constraint, trigger, fungsi); tidak ada objek lama yang berubah"
+
+PHASE="6e-akses-tabel-baru"; say "6e. Akses ke 2 tabel baru: HANYA pemilik aplikasi (${DB_USER}); role lain (mis. mcp_hub_readonly) TANPA hak apa pun, dan terbukti ditolak"
+ACL_BARU="$(grep -E '^> relasi\|stok_riwayat' "$WORK/katalog-selisih.txt" | cut -d'|' -f2,3 | sed 's/^/        /')"; printf '%s\n' "$ACL_BARU"
+[ "$(grep -E '^> relasi\|stok_riwayat' "$WORK/katalog-selisih.txt" | grep -cF ":${DB_USER}:{${DB_USER}=arwdDxt/${DB_USER}}:")" = "2" ] || die "ACL tabel baru bukan TEPAT {${DB_USER}=arwdDxt/${DB_USER}} (ada hak untuk role lain)"
+[ "$(RPSQL "select count(*) from pg_attribute a join pg_class c on c.oid=a.attrelid where c.relname in ('stok_riwayat_referensi','stok_riwayat_impor') and a.attacl is not null")" = "0" ] || die "ada hak tingkat kolom pada tabel baru"
+for rl in $(awk -F'|' '$1=="role"{print $2}' "$WORK/katalog-restore.txt"); do
+  [ "$rl" = "$DB_USER" ] && continue
+  P="$(RPSQL "select count(*) from pg_class c, unnest(array['SELECT','INSERT','UPDATE','DELETE','TRUNCATE','REFERENCES','TRIGGER']) p where c.relname in ('stok_riwayat_referensi','stok_riwayat_impor') and c.relkind='r' and has_table_privilege('${rl}', c.oid, p)")"
+  [ "$P" = "0" ] || die "role ${rl} punya ${P} hak pada tabel baru (seharusnya 0)"
+  echo "        ${rl}: 0 hak pada kedua tabel baru"
+  # bukti perilaku: sesi SET ROLE ditolak membaca tabel baru, tetapi tabel analitik yang memang dipakai konektor TETAP terbaca (pencabutan tidak melebar)
+  docker exec -i "$RR_PG" psql -U "$DB_USER" -d "$DB_NAME" -X -q -v ON_ERROR_STOP=1 -c "SET ROLE \"${rl}\"; SELECT count(*) FROM stok_riwayat_referensi;" </dev/null >/dev/null 2>&1 && die "role ${rl} MASIH bisa membaca stok_riwayat_referensi"
+  docker exec -i "$RR_PG" psql -U "$DB_USER" -d "$DB_NAME" -X -q -v ON_ERROR_STOP=1 -c "SET ROLE \"${rl}\"; SELECT count(*) FROM stok_riwayat_impor;" </dev/null >/dev/null 2>&1 && die "role ${rl} MASIH bisa membaca stok_riwayat_impor"
+  docker exec -i "$RR_PG" psql -U "$DB_USER" -d "$DB_NAME" -X -q -v ON_ERROR_STOP=1 -c "SET ROLE \"${rl}\"; SELECT count(*) FROM \"Message\"; SELECT count(*) FROM materials;" </dev/null >/dev/null 2>&1 || die "pencabutan melebar: role ${rl} tidak lagi bisa membaca tabel lain yang sah"
+  echo "        ${rl}: SELECT ke 2 tabel baru DITOLAK; SELECT ke tabel lain (Message, materials) tetap berfungsi"
+done
+ok "akses 2 tabel baru terkunci untuk semua role selain ${DB_USER}; hak role lain pada tabel lama tidak berubah (katalog 'izin-tabel' identik)"
 
 PHASE="7-smoke"; say "7. Smoke baca-saja terhadap hasil restore (router Riwayat Referensi saja di image kandidat; tanpa scheduler/WhatsApp/webhook; env produksi TIDAK dimuat)"
 docker create --name "$RR_API" --network "$RR_NET" -e DATABASE_URL="$REH_URL" -e JWT_SECRET="$JWT_REH" -e NODE_ENV=production "$RR_IMG" node /app/rr-server.mjs >/dev/null || die "gagal membuat container smoke"

@@ -245,3 +245,51 @@ test("GERBANG TERPISAH: impor catatan referensi jalan TANPA T0, TANPA cek fisik 
   assert.ok(rows2.every((r) => r.tanggalPemakaian === null && r.peringatan.some((x) => /Tanggal ORDER ≥ T0/.test(x))), "T0 hanya peringatan");
   assert.deepEqual(await snapshot(), awal);
 });
+
+// ───────── akses role baca-saja konektor (mcp_hub_readonly) ─────────
+// Role itu mendapat SELECT otomatis pada tabel baru lewat ALTER DEFAULT PRIVILEGES (docs/MCP-HUB-SERVER.md). Migrasi harus mencabutnya untuk 2 tabel referensi.
+// Tes memutar ulang SQL migrasi pada DB terisolasi: role + default privileges dibuat dulu, kedua tabel (kosong) dijatuhkan lalu dibuat ulang oleh migrasi.
+function pecahPernyataan(sql) { // pemisah ';' di luar blok $$...$$ dan komentar --
+  const keluar = []; let buf = ""; let dolar = false;
+  for (const baris of sql.split("\n")) {
+    if (!dolar && baris.trim().startsWith("--")) continue;
+    buf += baris + "\n";
+    const n = (baris.match(/\$\$/g) || []).length; if (n % 2 === 1) dolar = !dolar;
+    if (!dolar && baris.trimEnd().endsWith(";")) { keluar.push(buf.trim()); buf = ""; }
+  }
+  if (buf.trim()) keluar.push(buf.trim()); return keluar;
+}
+test("migrasi mencabut akses mcp_hub_readonly dari 2 tabel referensi (default privileges tidak membocorkan); pemilik aplikasi tetap bisa memakai tabel", async () => {
+  const fs = await import("node:fs"); const path = await import("node:path"); const { fileURLToPath } = await import("node:url");
+  const dir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../prisma/migrations");
+  const nama = fs.readdirSync(dir).find((n) => n.endsWith("_stok_riwayat_referensi")); const sql = fs.readFileSync(path.join(dir, nama, "migration.sql"), "utf8").replace(/\r\n/g, "\n");
+  const x = (q) => testPrisma.$executeRawUnsafe(q); const baca = (q) => testPrisma.$queryRawUnsafe(q);
+  const punya = async (tabel, hak) => (await baca(`select has_table_privilege('mcp_hub_readonly', '${tabel}', '${hak}') as ok`))[0].ok;
+  const adaRole = (await baca("select count(*)::int as n from pg_roles where rolname = 'mcp_hub_readonly'"))[0].n === 1;
+  const kita = !adaRole; const pemilik = (await baca("select current_user as u"))[0].u;
+  const jatuhkan = async () => { await x('DROP TABLE IF EXISTS "stok_riwayat_referensi" CASCADE'); await x('DROP TABLE IF EXISTS "stok_riwayat_impor" CASCADE'); };
+  const pasang = async () => { for (const p of pecahPernyataan(sql)) await x(p); };
+  try {
+    // (A) tanpa role: migrasi tetap lolos
+    await jatuhkan(); if (adaRole) { /* role sudah ada di klaster ini: lewati skenario A */ } else await pasang();
+    // (B) dengan role + default privileges seperti produksi
+    if (kita) await x("CREATE ROLE mcp_hub_readonly NOLOGIN");
+    await x(`ALTER DEFAULT PRIVILEGES FOR ROLE "${pemilik}" IN SCHEMA public GRANT SELECT ON TABLES TO mcp_hub_readonly`); await x("GRANT USAGE ON SCHEMA public TO mcp_hub_readonly");
+    await jatuhkan();
+    // sanity: SEBELUM pencabutan, default privileges memang membocorkan (membuktikan tes ini peka)
+    const tanpaRevoke = pecahPernyataan(sql).filter((p) => !/^DO\b/i.test(p) || !/REVOKE/i.test(p));
+    for (const p of tanpaRevoke) await x(p);
+    assert.equal(await punya("stok_riwayat_referensi", "SELECT"), true, "tanpa REVOKE, default privileges memberi SELECT (kondisi produksi)"); assert.equal(await punya("stok_riwayat_impor", "SELECT"), true);
+    await jatuhkan(); await pasang();
+    for (const t of ["stok_riwayat_referensi", "stok_riwayat_impor"]) for (const h of ["SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"]) assert.equal(await punya(t, h), false, `${t} ${h} harus dicabut`);
+    assert.equal((await baca(`select count(*)::int as n from pg_attribute a join pg_class c on c.oid = a.attrelid where c.relname in ('stok_riwayat_referensi','stok_riwayat_impor') and a.attacl is not null`))[0].n, 0);
+    const acl = (await baca(`select relname, relacl::text as acl from pg_class where relname in ('stok_riwayat_referensi','stok_riwayat_impor') order by 1`));
+    for (const r of acl) assert.equal(r.acl, `{${pemilik}=arwdDxt/${pemilik}}`, `${r.relname}: hanya pemilik`);
+    // pemilik aplikasi tetap bisa memakai tabel
+    await x("insert into stok_riwayat_impor (id, hash_konten, ringkasan) values ('00000000-0000-4000-8000-0000000000f1','h','{}'::jsonb)");
+  } finally {
+    await jatuhkan(); for (const p of pecahPernyataan(sql)) await x(p); // kembalikan tabel (kosong) untuk tes lain / truncateAll
+    await x(`ALTER DEFAULT PRIVILEGES FOR ROLE "${pemilik}" IN SCHEMA public REVOKE SELECT ON TABLES FROM mcp_hub_readonly`).catch(() => {});
+    if (kita) { await x("REVOKE USAGE ON SCHEMA public FROM mcp_hub_readonly").catch(() => {}); await x("DROP OWNED BY mcp_hub_readonly").catch(() => {}); await x("DROP ROLE IF EXISTS mcp_hub_readonly").catch(() => {}); }
+  }
+});

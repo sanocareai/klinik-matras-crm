@@ -185,3 +185,21 @@ test("rehearsal-only: objek/izin dibuktikan pulih sesuai sumber (katalog + izin 
   const pos = (x) => t.indexOf(x); assert.ok(pos('PHASE="4a-role"') < pos('PHASE="4-restore"') && pos('PHASE="4-restore"') < pos('PHASE="4b-kontrol-restore"') && pos('PHASE="4b-kontrol-restore"') < pos('PHASE="4c-objek-dan-izin"') && pos('PHASE="4c-objek-dan-izin"') < pos('PHASE="5-build-image"') && pos('PHASE="6c-kontrol-sesudah"') < pos('PHASE="6d-katalog-sesudah-migrasi"') && pos('PHASE="6d-katalog-sesudah-migrasi"') < pos('PHASE="7-smoke"'));
   assert.match(t, /live_ro_f "\$WORK\/katalog\.sql"/);
 });
+
+// ───────── akses role konektor (mcp_hub_readonly) ─────────
+test("akses: migrasi mencabut SELECT mcp_hub_readonly HANYA dari 2 tabel baru, bersyarat role ada; rehearsal mewajibkan 0 hak dan menguji SET ROLE", () => {
+  const sql = baca(migRel);
+  assert.match(sql, /IF EXISTS \(SELECT 1 FROM pg_roles WHERE rolname = 'mcp_hub_readonly'\)/);
+  const revokes = sql.split("\n").filter((l) => /^\s*REVOKE\b/i.test(l));
+  assert.equal(revokes.length, 1); assert.match(revokes[0], /REVOKE ALL ON TABLE "stok_riwayat_referensi", "stok_riwayat_impor" FROM "mcp_hub_readonly"/);
+  assert.doesNotMatch(sql, /\bGRANT\b[^\n]*(mcp_hub_readonly|PUBLIC)/i, "migrasi tidak memberi hak ke role lain");
+  const t = rehTersimpan;
+  assert.match(t, /PHASE="6e-akses-tabel-baru"/); assert.match(t, /bukan TEPAT \{\$\{DB_USER\}=arwdDxt\/\$\{DB_USER\}\}/); assert.match(t, /SET ROLE/); assert.match(t, /MASIH bisa membaca stok_riwayat_referensi/);
+  assert.match(t, /pencabutan melebar/); assert.match(t, /attacl is not null/);
+  const pos = (x) => t.indexOf(x); assert.ok(pos('PHASE="6d-katalog-sesudah-migrasi"') < pos('PHASE="6e-akses-tabel-baru"') && pos('PHASE="6e-akses-tabel-baru"') < pos('PHASE="7-smoke"'));
+  // dasar keputusan: konektor hanya memakai model analitik, tidak ada model stok
+  const tools = baca("backend/src/mcpHub/tools.js");
+  assert.doesNotMatch(tools, /stokRiwayat|stok_riwayat|stockMovement|goodsReceipt|material(Issue)?\b/i, "konektor MCP Hub tidak memakai data stok");
+  const dipakai = new Set([...tools.matchAll(/prismaReadOnly\.([a-zA-Z]+)/g)].map((m) => m[1]));
+  assert.deepEqual([...dipakai].sort(), ["conversationQualityScore", "goldStandardExample", "message", "salesQualityWeeklyNarrative", "salesRiskIntentClassification", "staleLeadAlertLog"]);
+});

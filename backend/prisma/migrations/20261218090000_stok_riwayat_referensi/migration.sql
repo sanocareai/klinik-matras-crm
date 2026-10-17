@@ -95,3 +95,14 @@ $$ LANGUAGE plpgsql;
 
 CREATE TRIGGER "stok_riwayat_impor_append_only_trg" BEFORE UPDATE OR DELETE ON "stok_riwayat_impor"
 FOR EACH ROW EXECUTE FUNCTION stok_riwayat_impor_append_only();
+
+-- AKSES BACA: role mcp_hub_readonly (konektor SANO Hub Analytics; hanya memakai tabel analitik percakapan/lead) memperoleh SELECT OTOMATIS pada tabel baru lewat
+-- ALTER DEFAULT PRIVILEGES (docs/MCP-HUB-SERVER.md). Dua tabel ini memuat catatan file Gudang (nama bahan, nomor order, vendor, surat jalan, jumlah) yang BUKAN kebutuhan konektor
+-- itu, jadi hak tersebut dicabut di sini. Hanya bila role-nya ada (lingkungan lokal/CI tidak punya). Role aplikasi (pemilik tabel) tidak terpengaruh.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'mcp_hub_readonly') THEN
+    REVOKE ALL ON TABLE "stok_riwayat_referensi", "stok_riwayat_impor" FROM "mcp_hub_readonly";
+  END IF;
+END
+$$;
