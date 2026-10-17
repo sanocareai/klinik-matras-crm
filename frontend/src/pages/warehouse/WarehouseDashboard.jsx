@@ -31,7 +31,7 @@ function KartuTugas({ t, definisi }) {
         <ul className="m-0 mt-2.5 list-none space-y-1.5 p-0">
           {t.contoh.map((c) => (
             <li key={c.id} className="rounded-btn bg-inset px-2.5 py-1.5 text-[12px]">
-              <div className="flex items-center gap-2"><span className="font-semibold text-ink">{c.judul}</span>{c.status && <Badge variant="neutral" className="ml-auto shrink-0">{c.status}</Badge>}</div>
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1"><span className="whitespace-nowrap font-semibold text-ink">{c.judul}</span>{c.status && <Badge variant="neutral" className="h-auto whitespace-normal text-left leading-tight">{c.status}</Badge>}</div>
               <div className="text-[11.5px] text-ink2">{c.sub}</div>
             </li>
           ))}

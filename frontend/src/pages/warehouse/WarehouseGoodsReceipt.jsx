@@ -23,7 +23,7 @@ function StatusPenerimaan({ r }) {
   const t = r.tampilan;
   return (
     <div className="space-y-0.5">
-      <Badge variant={BADGE[t?.warna] ?? "neutral"} data-testid="status-baris">{t?.label ?? r.status}</Badge>
+      <Badge variant={BADGE[t?.warna] ?? "neutral"} data-testid="status-baris" className="h-auto whitespace-normal text-left leading-tight">{t?.label ?? r.status}</Badge>
       {t?.pengaruhStok === "BELUM" && ["DRAFT", "SCHEDULED"].includes(r.status) && <div className="text-[10.5px] text-ink3">Belum memengaruhi stok</div>}
     </div>
   );
@@ -101,12 +101,12 @@ export default function WarehouseGoodsReceipt() {
                       const i = identitasPenerimaan(r);
                       return (
                         <TR key={r.id} clickable onClick={() => buka(r.id)} data-testid="baris-penerimaan" data-nomor={r.receiptNumber}>
-                          <TD><div className="font-semibold text-ink">{r.receiptNumber}</div><div className="text-[11px] text-ink3">dibuat {i.pembuat ?? "—"} · {tanggalPendek(r.createdAt)}</div></TD>
+                          <TD className="whitespace-nowrap"><div className="font-semibold text-ink">{r.receiptNumber}</div><div className="text-[11px] text-ink3">dibuat {i.pembuat ?? "—"} · {tanggalPendek(r.createdAt)}</div></TD>
                           <TD className="whitespace-nowrap"><span className="font-medium text-ink2">{i.nomorPO ?? "—"}</span> <SumberPO receipt={r} className="ml-1" /></TD>
                           <TD truncate>{r.supplier || "—"}</TD>
                           <TD className="whitespace-nowrap text-ink2">{r.expectedDate ? tanggalPendek(r.expectedDate) : "—"}</TD>
                           <TD numeric>{r.lines.length}</TD>
-                          <TD><StatusPenerimaan r={r} /></TD>
+                          <TD className="min-w-[150px]"><StatusPenerimaan r={r} /></TD>
                         </TR>
                       );
                     })}

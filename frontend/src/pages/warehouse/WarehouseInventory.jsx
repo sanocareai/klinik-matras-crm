@@ -107,20 +107,18 @@ export default function WarehouseInventory() {
             <>
               <TableWrap className="hidden md:block">
                 <Table>
-                  <THead><TR><TH>Kode</TH><TH>Nama bahan</TH><TH>Kategori</TH><TH numeric>Saldo</TH><TH numeric>Tersedia</TH><TH>Satuan</TH><TH numeric>Batas minimum</TH><TH title="Riwayat penerimaan, bukan lokasi stok saat ini">Riwayat penerimaan</TH><TH>Keadaan</TH></TR></THead>
+                  <THead><TR><TH>Bahan</TH><TH numeric>Saldo</TH><TH numeric>Tersedia</TH><TH>Satuan</TH><TH numeric>Batas minimum</TH><TH title="Riwayat penerimaan, bukan lokasi stok saat ini">Riwayat penerimaan</TH><TH>Keadaan</TH></TR></THead>
                   <TBody>
-                    {loading && <TableSkeletonRows rows={8} cols={9} />}
+                    {loading && <TableSkeletonRows rows={8} cols={7} />}
                     {!loading && terfilter?.map((r) => (
                       <TR key={r.materialId} clickable onClick={() => setSelected(stok?.get(r.materialId) ?? null)} data-testid="baris-stok" data-kode={r.kode} title={r.sumberAngka?.teks ?? "Belum ada catatan pergerakan stok untuk bahan ini"}>
-                        <TD className="font-semibold text-ink">{r.kode}</TD>
-                        <TD truncate>{r.nama}</TD>
-                        <TD className="whitespace-nowrap text-ink2">{r.kategori ? CATEGORY_REAL[r.kategori]?.label : <span className="text-ink3">—</span>}</TD>
+                        <TD className="min-w-[220px]"><div className="font-semibold text-ink" data-testid="nama-bahan">{r.nama}</div><div className="text-[11px] text-ink3 [overflow-wrap:anywhere]">{r.kode}{r.kategori ? ` · ${CATEGORY_REAL[r.kategori]?.label}` : ""}</div></TD>
                         <TD numeric data-testid="sel-saldo" data-jenis={tampilSaldo(r).jenis} title={tampilSaldo(r).keterangan}><SaldoSel r={r} /></TD>
                         <TD numeric className="text-ink2">{r.tersedia === null ? "—" : r.tersedia}</TD>
                         <TD className="text-ink2">{String(r.satuan ?? "").toLowerCase()}</TD>
                         <TD numeric className="text-ink3" data-testid="sel-minimum">{teksBatasMinimum(r)}</TD>
                         <TD className="whitespace-nowrap text-ink2" data-testid="sel-riwayat-lokasi">{riwayatLokasi(r) ? <span title="Dari riwayat penerimaan. Sistem tidak menyimpan saldo per lokasi, jadi ini bukan lokasi stok saat ini."><MapPin size={11} className="mr-0.5 inline text-ink3" aria-hidden />{riwayatLokasi(r).teks}</span> : <span className="text-ink3">tidak ada riwayat</span>}</TD>
-                        <TD><Badge variant={warnaKeadaan(r.keadaan)}>{r.keadaanLabel}</Badge></TD>
+                        <TD className="min-w-[140px]"><Badge variant={warnaKeadaan(r.keadaan)} className="h-auto whitespace-normal text-left leading-tight">{r.keadaanLabel}</Badge></TD>
                       </TR>
                     ))}
                   </TBody>
