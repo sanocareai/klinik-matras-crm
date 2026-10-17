@@ -10,6 +10,7 @@ import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
 import { ensureDefaultChartOfAccounts, SYSTEM_KEYS } from "../../src/services/finance/accounts.js";
 import { postPaymentReceived, postRevenueRecognition } from "../../src/services/finance/posting/orderRevenue.js";
+import { reverseJournal } from "../../src/services/finance/journal.js";
 import { recomputeOrderPaymentStatus } from "../../src/services/paymentLedger.js";
 
 let server;
@@ -234,7 +235,7 @@ test("PEMBALIKAN AMAN: balik jurnal hasil koreksi (jurnal balik resmi, dimensi d
   const ulangBalik = await w.a.post(url(o2.id, "/balik"), { alasan: "salah tanggal serah" }, IK());
   assert.equal(ulangBalik.body.status, "TIDAK_ADA_PENGAKUAN_AKTIF", "idempoten");
   // re-akui sesudah dibalik → jurnal baru dengan kunci ber-sufiks
-  const lagi = await w.a.post(url(o2.id, "/akui"), akuiBody({ tanggal: "2026-10-07" }), IK());
+  const lagi = await w.a.post(url(o2.id, "/akui"), akuiBody({ tanggal: "2026-10-07", akuiSetelahDibalik: true }), IK());
   assert.equal(lagi.status, 201, JSON.stringify(lagi.body));
   assert.equal((await jurnalPengakuan(o2.id)).length, 2, "asli (REVERSED) + pengakuan ulang (jurnal balik berkunci lain)");
   // jurnal OTOMATIS (bukan hasil koreksi) tidak boleh dibalik dari jalur ini
@@ -380,4 +381,38 @@ test("MIGRASI ADITIF: indeks unik parsial menolak dua keputusan aktif untuk doku
   const base = { module: "pengeluaran", documentId: e.id, decidedScope: "DELIVERY", previousScope: "PRODUCTION", candidates: ["PRODUCTION", "DELIVERY"], reason: "uji indeks unik parsial" };
   await testPrisma.finAttributionDecision.create({ data: base });
   await assert.rejects(testPrisma.finAttributionDecision.create({ data: base }), /Unique constraint|unique/i);
+});
+
+test("DAMPAK uang muka bertanda KEWAJIBAN: dipindah jadi pelunasan = BERKURANG (negatif); piutang & pendapatan benar arahnya", async () => {
+  const w = await dunia();
+  const { o } = await buatOrder(w, { nilai: 1_500_000, bayar: 1_500_000, bayarTgl: "2026-10-05", serah: "2026-10-06", transisi: "2026-10-06" });
+  const pr = await w.a.post(url(o.id, "/akui"), akuiBody({ preview: true }));
+  assert.equal(pr.status, 200, JSON.stringify(pr.body));
+  assert.equal(pr.body.pratinjau.dampak.pendapatanBertambah, 1_500_000);
+  assert.equal(pr.body.pratinjau.dampak.piutangUsahaBerubah, 0);
+  assert.equal(pr.body.pratinjau.dampak.uangMukaPelangganBerubah, -1_500_000, "uang muka BERKURANG");
+  const tanpaBayar = await buatOrder(w, { nilai: 400_000, serah: "2026-10-07", transisi: "2026-10-07" });
+  const p2 = await w.a.post(url(tanpaBayar.o.id, "/akui"), akuiBody({ preview: true, tanggal: "2026-10-07" }));
+  assert.equal(p2.body.pratinjau.dampak.piutangUsahaBerubah, 400_000); assert.equal(p2.body.pratinjau.dampak.uangMukaPelangganBerubah, 0);
+});
+
+test("PENGAKUAN YANG SUDAH DIBALIK (REVERSED saja) tetap tampil di daftar; butuh persetujuan eksplisit; alasan pembalikan ditampilkan; diakui ulang dengan kunci ULANG (kasus NEW-23092026-040)", async () => {
+  const w = await dunia();
+  const { o } = await buatOrder(w, { nilai: 2_090_000, bayar: 2_090_000, bayarTgl: "2026-10-05", serah: "2026-10-06", transisi: "2026-10-06" });
+  const r = await testPrisma.$transaction((tx) => postRevenueRecognition(tx, { orderId: o.id, userId: w.admin.user.id, date: D("2026-10-06") }));
+  await testPrisma.$transaction((tx) => reverseJournal(tx, { entryId: r.entry.id, reason: "belum ada sumber bank", userId: w.admin.user.id }));
+  assert.equal((await jurnalPengakuan(o.id))[0].status, "REVERSED");
+  const daf = (await w.f.get("/api/finance/koreksi/pengakuan")).body;
+  assert.ok(daf.daftar.some((x) => x.orderId === o.id && x.kelas === "PERLU_KEPUTUSAN" && x.bisaDiproses), "order yang pengakuannya dibalik harus muncul");
+  const det = (await w.f.get(url(o.id))).body;
+  assert.ok(det.tahan.some((t) => t.kode === "PENGAKUAN_DIBALIK_SENGAJA" && /belum ada sumber bank/.test(t.pesan)));
+  assert.ok(det.penyebab.some((p) => p.kode === "PENGAKUAN_DIBALIK" && /belum ada sumber bank/.test(p.uraian)));
+  const tolak = await w.a.post(url(o.id, "/akui"), akuiBody({ tanggal: "2026-10-06" }), IK());
+  assert.equal(tolak.status, 422); assert.equal(tolak.body.code, "PERSETUJUAN_SETELAH_DIBALIK_DIPERLUKAN");
+  const ok = await w.a.post(url(o.id, "/akui"), akuiBody({ tanggal: "2026-10-06", akuiSetelahDibalik: true }), IK());
+  assert.equal(ok.status, 201, JSON.stringify(ok.body));
+  const js = await jurnalPengakuan(o.id);
+  assert.equal(js.filter((e) => e.status === "POSTED" && !e.idempotencyKey.endsWith(`PENGAKUAN_PENDAPATAN:${o.id}`)).length >= 1, true);
+  assert.ok(js.some((e) => e.idempotencyKey.includes(":ULANG:")), "kunci ULANG");
+  assert.equal((await w.f.get("/api/finance/koreksi/pengakuan")).body.daftar.some((x) => x.orderId === o.id), false, "setelah diakui ulang hilang dari daftar");
 });

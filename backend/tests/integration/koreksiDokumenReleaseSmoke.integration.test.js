@@ -13,10 +13,11 @@ import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
 import { ensureDefaultChartOfAccounts, SYSTEM_KEYS } from "../../src/services/finance/accounts.js";
 import { postPaymentReceived, postRevenueRecognition } from "../../src/services/finance/posting/orderRevenue.js";
+import { reverseJournal } from "../../src/services/finance/journal.js";
 import { recomputeOrderPaymentStatus } from "../../src/services/paymentLedger.js";
 
 const backend = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const skrip = fs.readFileSync(path.resolve(backend, "../scripts/release-koreksi-dokumen.sh"), "utf8").replace(/\r\n/g, "\n");
+const skrip = fs.readFileSync(path.resolve(backend, "../scripts/release-koreksi-cakupan.sh"), "utf8").replace(/\r\n/g, "\n");
 const blok = (pembuka, penutup) => { const a = skrip.indexOf(pembuka); assert.ok(a > 0, `pembuka ${pembuka} tidak ada`); const mulai = skrip.indexOf("\n", a) + 1; const b = skrip.indexOf(`\n${penutup}\n`, mulai); assert.ok(b > 0, `penutup ${penutup} tidak ada`); return skrip.slice(mulai, b); };
 
 let server;
@@ -62,6 +63,10 @@ async function datasetProduksiMini() {
   await order(w, { nilai: 500_000, serah: "2026-08-10", transisi: "2026-08-10" });
   const sudah = await order(w, { nilai: 900_000, serah: `${bulanIni}-04` });
   await testPrisma.$transaction((tx) => postRevenueRecognition(tx, { orderId: sudah.id, userId: w.admin.id, date: D(`${bulanIni}-04`) }));
+  // pengakuan yang sudah DIBALIK-saja (kasus NEW-23092026-040): terkirim, dibayar, pengakuan dibalik "belum ada sumber bank"
+  const bal = await order(w, { nilai: 2_090_000, bayar: 2_090_000, serah: `${bulanIni}-05`, transisi: `${bulanIni}-05` });
+  const pr0 = await testPrisma.$transaction((tx) => postRevenueRecognition(tx, { orderId: bal.id, userId: w.admin.id, date: D(`${bulanIni}-05`) }));
+  await testPrisma.$transaction((tx) => reverseJournal(tx, { entryId: pr0.entry.id, reason: "belum ada sumber bank", userId: w.admin.id }));
   // konflik atribusi: BBM (kategori → Delivery) tetapi dokumen Produksi
   const k = makeClient(server.baseUrl, a.token);
   const kat = await testPrisma.finExpenseCategory.findUnique({ where: { code: "BBM" } });
@@ -92,6 +97,7 @@ test("REHEARSAL (blok skrip rilis): uji aplikasi pada salinan — pengakuan sung
   assert.match(r.out, /paralel x4 .*tepat satu jurnal/);
   assert.match(r.out, /periode tertutup menolak/);
   assert.match(r.out, /keputusan: konflik dokumen itu hilang/);
+  assert.match(r.out, /dampak uang muka bertanda kewajiban/);
 });
 
 test("SMOKE (blok skrip rilis): izin, penolakan tulis, parity SQL independen ↔ daftar ↔ laporan ↔ Excel, tanpa jejak tulis", async () => {
@@ -110,6 +116,8 @@ test("SMOKE (blok skrip rilis): izin, penolakan tulis, parity SQL independen ↔
   assert.match(r.out, /DAFTAR YANG MASIH MENUNGGU BUKTI\/KEPUTUSAN OWNER/);
   assert.match(r.out, /PERLU_KEPUTUSAN RES-SM-/);
   assert.match(r.out, /pratinjau pengakuan RES-SM-\d+ \(di-rollback\)/);
+  assert.match(r.out, /order dengan pengakuan DIBALIK-saja \(1: RES-SM-\d+\) semuanya tampil/);
+  assert.match(r.out, /dampak uang muka bertanda KEWAJIBAN/);
   assert.equal(String(await hitung("select count(*)::int n from fin_journal_entries")), sebelum.j, "smoke tidak menulis jurnal (pratinjau di-rollback)");
   assert.equal(await hitung("select count(*)::int n from fin_attribution_decisions"), sebelum.k);
   assert.equal(await hitung("select count(*)::int n from activity_events where metadata->>'aksi' like 'KOREKSI_%' or metadata->>'aksi' like 'KEPUTUSAN_%' or metadata->>'aksi' like 'TETAPKAN_%'"), 0);

@@ -68,3 +68,12 @@ test("sumber: tidak ada tombol/aksi massal; menulis lewat PIN + Idempotency-Key;
   const api = baca("src/api.js");
   assert.ok(api.includes("kirimKoreksiPengakuan") && api.includes("kirimKeputusanAtribusi"));
 });
+
+test("pengakuan yang sudah dibalik: tombol akui butuh persetujuan eksplisit (akuiSetelahDibalik) dan mengirimnya", () => {
+  const d = det({ tahan: [{ kode: "PENGAKUAN_DIBALIK_SENGAJA", pesan: "dibalik", lunakDenganPersetujuan: true }] });
+  const f = { dasarTanggal: "TANGGAL_SERAH_POD", tanggal: "2026-10-06", alasan: "bukti POD terverifikasi" };
+  assert.ok(susunBodyAkui(d, f).galat.includes("dibalik"));
+  const ok = susunBodyAkui(d, { ...f, akuiSetelahDibalik: true });
+  assert.equal(ok.galat, null); assert.equal(ok.body.akuiSetelahDibalik, true);
+  assert.ok(!("akuiSetelahDibalik" in susunBodyAkui(det(), f).body));
+});
