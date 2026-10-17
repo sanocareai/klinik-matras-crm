@@ -8,7 +8,7 @@ import StatusBadge from "./StatusBadge.jsx";
 import { ROUTE_STATUS_REAL, effectiveRouteStatus } from "../vehicleStatus.js";
 import { ManifestChip } from "@/features/armada/components/ManifestBlock.jsx";
 import { customerOf, orderOf, mapsUrl, unitCountOf, jobAccentBarStyle, hasJobAccentBar, conversationIdOf, customerPhoneOf, salesPersonOf } from "../jobStatus.js";
-import { MenungguKonfirmasiBadge, RentalBadge, ConfirmedTimeBadge, CityBadge, OrderStatusBadge, MapsLinkMissingBadge, SalesBadge, RevisionBadge, ComplaintBadge } from "./JobBadges.jsx";
+import { MenungguKonfirmasiBadge, OverrideAdminBadge, RentalBadge, ConfirmedTimeBadge, CityBadge, OrderStatusBadge, MapsLinkMissingBadge, SalesBadge, RevisionBadge, ComplaintBadge } from "./JobBadges.jsx";
 import ExternalCourierBadge from "./ExternalCourierBadge.jsx";
 import { productSummary } from "@/features/inbox/components/CustomerPanel/orderSummary.js";
 import { formatTanggal } from "@/utils/formatDate.js";
@@ -885,6 +885,7 @@ export default function RouteCard({
                         SATU-SATUNYA badge status teks di kartu ini. */}
                     <OrderStatusBadge job={j} />
                     <MenungguKonfirmasiBadge job={j} />
+                    <OverrideAdminBadge job={j} />
                     <RentalBadge job={j} />
                     <RevisionBadge job={j} />
                     <ComplaintBadge job={j} />

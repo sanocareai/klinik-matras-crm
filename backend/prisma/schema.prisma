@@ -9287,6 +9287,10 @@ model ProductionRun {
   migrationRuleVersion String?                  @map("migration_rule_version")
   migrationConfidence  String?                  @map("migration_confidence")
   sourceChecksum       String?                  @map("source_checksum")
+  // Admin override: Siap Kirim saat pencatatan produksi belum selesai (Owner/Admin; 16 Okt 2026, kasus RES-03102026-018-U1): Run & tahap TIDAK ditutup/diubah; unit ditetapkan READY_FOR_DELIVERY.
+  // NULL = tidak pernah di-override. `deliveryRelease` = rekam audit KEPUTUSAN Admin (pelaku, waktu, alasan, lokasi pengambilan, status unit/order sebelum-sesudah, Run); BUKAN klaim pemeriksaan/QC. Tidak pernah dihapus.
+  deliveryReleasedAt   DateTime?                @map("delivery_released_at")
+  deliveryRelease      Json?                    @map("delivery_release")
   startedAt            DateTime?                @map("started_at")
   completedAt          DateTime?                @map("completed_at")
   createdAt            DateTime                 @default(now()) @map("created_at")

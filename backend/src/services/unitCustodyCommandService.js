@@ -11,8 +11,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { recordActivity, EVENT_TYPES } from "../lib/activityLog.js";
 import { lockRowForUpdate } from "./inventoryLedger.js";
 import { lockUnitOwnership } from "./unitV2Ownership.js";
-import { isUnitPathDoneInTx, markUnitReadyForDeliveryInTx } from "./unitStageEngine.js";
-import { assertNoOpenRunException, assertRunConsistent } from "./productionRunGuards.js";
+import { adminOverrideReadyForDeliveryInTx, isUnitPathDoneInTx, markUnitReadyForDeliveryInTx } from "./unitStageEngine.js";
+import { assertNoOpenRunException, assertRunConsistent, isDeliveryReleased } from "./productionRunGuards.js";
 import { assertNoPendingReturnsInTx } from "./productionMaterialReturnService.js";
 import { assertPhasesReadyForHandoffDecision, assertRunPhasesTerminal, transitionPhases } from "./productionPhaseLifecycle.js";
 import { defaultAdaptationPolicy, defaultQcGatePolicy, requireWorkshopDefaultLocation } from "./productionSettingsService.js";
@@ -598,6 +598,24 @@ async function confirmArrivalWithoutCustody(prisma, { unitId, actorId, idempoten
 // Slice 2 (flow adaptasi) — penutupan run TANPA custody barang jadi. OWNERSHIP: penutupan run (COMPLETED) dan pelepasan unit ke Delivery (READY_FOR_DELIVERY) tetap hanya milik service ini
 // (custody) dan P6; command adaptasi (productionStepCommandService/P5) hanya memanggil fungsi ini. Syarat keras: run berkebijakan ADAPTATION_V1, ACTIVE, tidak ada exception terbuka, semua fase terminal
 // (QC & HANDOFF berstatus NOT_APPLICABLE — bukan COMPLETED palsu), seluruh tahap jalur tuntas (markUnitReadyForDeliveryInTx). Tidak membuat custody ACCEPTED; saran job Delivery idempoten (tanpa job ganda).
+// Proyeksi lokasi legacy (teks) dari StorageLocation kanonis, dipakai penutupan administratif (Konfirmasi Barang Jadi). OWNERSHIP: penulisan Unit milik service ini; command P8 hanya memanggilnya.
+export async function setUnitStorageLocationInTx(tx, unitId, locationCode) {
+  await tx.unit.update({ where: { id: unitId }, data: { storageLocation: locationCode } });
+}
+
+// ADMIN OVERRIDE: Siap Kirim saat pencatatan produksi belum selesai. OWNERSHIP: pelepasan unit ke Delivery (READY_FOR_DELIVERY) dan penandaan Run hanya milik service ini (custody); command P8
+// (productionStepCommandService.releaseUnitForDelivery) menangani validasi, idempotensi, rekam audit, outbox, dan aktivitas, lalu memanggil fungsi ini di TRANSAKSI YANG SAMA.
+// Run/tahap/operasi/bukti TIDAK diubah (hanya penanda override + rekam + revisi); tanpa QC/foto/custody/stok. Status order disinkronkan engine yang SAMA; saran job Delivery idempoten (job draf dipakai, tanpa job ganda).
+// `buildRecord({ orderStatusAfter })` membentuk rekam audit setelah status order hasil sinkron diketahui; penanda + rekam ditulis dalam SATU UPDATE (CHECK database pasangan kolom).
+export async function applyAdminOverrideReleaseInTx(tx, { run, unit, location, now = new Date(), revision, buildRecord }) {
+  await adminOverrideReadyForDeliveryInTx(tx, unit.id, { storageLocation: location.code }); // penulisan Unit + sinkron order + saran job = milik stage engine
+  const orderSesudah = await tx.order.findUnique({ where: { id: unit.orderId }, select: { status: true } });
+  const rekam = buildRecord({ orderStatusAfter: orderSesudah?.status ?? null });
+  await tx.productionRun.update({ where: { id: run.id }, data: { deliveryReleasedAt: now, deliveryRelease: rekam, revision } });
+  const jobs = await tx.job.findMany({ where: { type: "DELIVERY", units: { some: { unitId: unit.id } } }, select: { id: true, status: true, routeId: true } });
+  return { rekam, orderStatusAfter: orderSesudah?.status ?? null, jobs };
+}
+
 export async function completeAdaptationRunInTx(tx, { runId, actorId = null, now = new Date() }) {
   await lockRowForUpdate(tx, "production_runs_v2", runId);
   const run = await tx.productionRun.findUnique({ where: { id: runId }, include: { phases: true, unit: { select: { id: true, unitCode: true, orderId: true, status: true } } } });
@@ -605,20 +623,23 @@ export async function completeAdaptationRunInTx(tx, { runId, actorId = null, now
   if (run.adaptationPolicy !== "ADAPTATION_V1") throw custodyError("Penutupan tanpa penerimaan barang jadi hanya untuk run mode adaptasi", 409, "ADAPTATION_NOT_ENABLED");
   if (run.status !== "ACTIVE") throw custodyError("Pekerjaan produksi tidak aktif", 409, "CUSTODY_RUN_NOT_ACTIVE", { status: run.status });
   assertRunConsistent(run, run.unit);
-  await assertNoOpenRunException(tx, run.id);
+  await assertNoOpenRunException(tx, run.id, { allowReleased: true }); // Run yang unitnya sudah dilepas lewat pengecualian boleh ditutup administratif
   for (const phase of ["QC", "HANDOFF"]) {
     if (run.phases.find((p) => p.phase === phase)?.status === "COMPLETED") throw custodyError(`Fase ${phase} tidak boleh COMPLETED pada penutupan adaptasi`, 409, "ADAPTATION_PHASE_INVALID");
   }
   await assertRunPhasesTerminal(tx, run.id, { requireHandoffCompleted: false });
   const revision = run.revision + 1;
   await tx.productionRun.update({ where: { id: run.id }, data: { status: "COMPLETED", completedAt: now, revision } });
-  await markUnitReadyForDeliveryInTx(tx, run.unitId);
+  // Unit yang SUDAH dilepas untuk pengiriman lewat Admin override Siap Kirim: penutupan Run bersifat administratif — status unit, order, lokasi dan job pengiriman TIDAK disentuh
+  // (tidak ada job ganda, status tidak mundur/maju). Selain itu unit dilepas ke Delivery di sini (jalur normal).
+  const sudahDilepas = isDeliveryReleased(run);
+  if (!sudahDilepas) await markUnitReadyForDeliveryInTx(tx, run.unitId);
   await outbox(tx, {
     domain: "PRODUCTION", eventType: "production.run.completed", aggregateType: "ProductionRun", aggregateId: run.id, revision,
     dedupeKey: `production-run-completed:${run.id}:${revision}`,
-    payload: { runId: run.id, unitId: run.unitId, completionKind: "ADAPTATION", policy: run.adaptationPolicy, revision, occurredAt: now.toISOString(), actorId },
+    payload: { runId: run.id, unitId: run.unitId, completionKind: "ADAPTATION", policy: run.adaptationPolicy, revision, occurredAt: now.toISOString(), actorId, ...(sudahDilepas ? { closedAfterDeliveryRelease: true } : {}) },
   });
-  return { runId: run.id, revision, unitStatus: "READY_FOR_DELIVERY" };
+  return { runId: run.id, revision, unitStatus: sudahDilepas ? run.unit.status : "READY_FOR_DELIVERY", closedAfterDeliveryRelease: sudahDilepas };
 }
 
 export async function rejectUnitCustody(prisma, { handoffId, actorId, idempotencyKey, expectedRevision, reason }) {

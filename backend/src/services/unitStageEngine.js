@@ -1176,6 +1176,18 @@ export async function reopenStageBeforeQcInTx(tx, unitId, stageId) {
   return target;
 }
 
+// ADMIN OVERRIDE (Siap Kirim saat pencatatan produksi belum selesai): unit yang masih dikerjakan Produksi DITETAPKAN READY_FOR_DELIVERY oleh Admin/Owner + lokasi pengambilan, order disinkronkan, saran job Delivery
+// (idempoten: job draf yang sudah ada dipakai). Tanpa mencatat tahap/QC/foto/stok. Dipanggil HANYA oleh unitCustodyCommandService.applyAdminOverrideReleaseInTx di transaksi command P8 (guard kepemilikan V2 ditangani command).
+export async function adminOverrideReadyForDeliveryInTx(tx, unitId, { storageLocation }) {
+  const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId } });
+  if (!["RECEIVED", "IN_PRODUCTION"].includes(unit.status)) {
+    throw new StageTransitionError(`Unit berstatus ${unit.status}; Admin override hanya untuk unit yang masih dikerjakan Produksi`, 409);
+  }
+  await tx.unit.update({ where: { id: unitId }, data: { status: "READY_FOR_DELIVERY", storageLocation } });
+  await syncOrderStatus(tx, unit.orderId);
+  await suggestDeliveryJob(tx, unitId);
+}
+
 // Rekonsiliasi override V1 (RESTORE_UNIT_STATUS): kembalikan status unit ke keadaan produksi yang konsisten dengan ledger tahap.
 export async function restoreUnitStatusInTx(tx, unitId) {
   const unit = await tx.unit.findUniqueOrThrow({ where: { id: unitId } });

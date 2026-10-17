@@ -474,7 +474,7 @@ const coba = async (status) => { const u = await prisma.unit.findFirst({ where: 
 const siap = await coba("READY_FOR_DELIVERY"); const batal = await coba("CANCELLED");
 if (siap === null) skip("penempatan draf unit yang sudah siap ditolak", "tidak ada unit READY_FOR_DELIVERY"); else rec("penempatan draf unit yang SUDAH siap kirim ditolak (UNIT_SUDAH_SIAP atau JOB_GANDA bila sudah dijadwalkan)", ["UNIT_SUDAH_SIAP", "JOB_GANDA"].includes(siap), siap);
 if (batal === null) skip("penempatan draf unit batal ditolak", "tidak ada unit CANCELLED"); else rec("penempatan draf unit BATAL ditolak (UNIT_BATAL)", batal === "UNIT_BATAL" || batal === "JOB_GANDA", batal);
-const jobSiap = await prisma.job.findMany({ where: { type: "DELIVERY", status: { notIn: ["COMPLETED", "FAILED", "CANCELLED"] } }, select: { id: true }, take: 50 });
+const jobSiap = await prisma.job.findMany({ where: { type: "DELIVERY", status: { notIn: ["COMPLETED", "FAILED"] } }, select: { id: true }, take: 50 });
 let tertahan = 0; let lolos = 0;
 for (const j of jobSiap) { try { await pastikanJobSiapDispatch(prisma, [j.id], { aksi: "diterbitkan" }); lolos += 1; } catch (e) { if (e.code === "MENUNGGU_KONFIRMASI_SIAP_KIRIM") tertahan += 1; else throw e; } }
 info("job pengiriman aktif diperiksa " + jobSiap.length + ": lolos gerbang=" + lolos + ", tertahan 'menunggu konfirmasi'=" + tertahan);
