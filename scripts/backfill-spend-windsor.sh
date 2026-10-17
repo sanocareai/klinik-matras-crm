@@ -15,4 +15,4 @@ case "$MODE" in cek|dry|commit|verify) ;; *) echo "pakai: $0 <cek|dry|commit|ver
 if [ "$MODE" = "cek" ]; then exec node "$JS" --cek-lokal "$CSV" "$KONTROL" "$AKUN"; fi
 if [ "$MODE" = "commit" ] && [ "${KOMIT:-}" != "YA" ]; then echo "STOP: commit memerlukan KOMIT=YA (setelah dry-run bersih dan control total diberikan Mesa)" >&2; exit 2; fi
 B64="$(base64 -w0 "$JS")"
-node "$JS" --payload "$CSV" "$KONTROL" | ssh "$HOST" "docker exec -i -w /app -e BACKFILL_MODE=${MODE} -e ACCOUNT_ID=${AKUN} -e KOMIT=${KOMIT:-} \$(docker ps -q --filter label=com.docker.compose.service=backend | head -1) node -e \"eval(Buffer.from('${B64}','base64').toString())\""
+node "$JS" --payload "$CSV" "$KONTROL" | ssh "$HOST" "docker exec -i -w /app -e BACKFILL_MODE=${MODE} -e ACCOUNT_ID=${AKUN} -e KOMIT=${KOMIT:-} -e BACKFILL_DARI=${BACKFILL_DARI:-} -e BACKFILL_SAMPAI=${BACKFILL_SAMPAI:-} \$(docker ps -q --filter label=com.docker.compose.service=backend | head -1) node -e \"eval(Buffer.from('${B64}','base64').toString())\""

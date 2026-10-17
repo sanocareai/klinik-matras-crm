@@ -12,7 +12,11 @@
 // Reach TIDAK pernah dijumlah (non-additive) dan tidak diperiksa/ditampilkan sebagai agregat.
 "use strict";
 
-const AWAL = "2026-10-01", AKHIR = "2026-10-14", ZONA = "Asia/Jakarta", MATA_UANG = "IDR", SUMBER = "WINDSOR_API";
+const TGL_ENV = /^\d{4}-\d{2}-\d{2}$/;
+const AWAL = TGL_ENV.test(process.env.BACKFILL_DARI || "") ? process.env.BACKFILL_DARI : "2026-10-01";
+const AKHIR = TGL_ENV.test(process.env.BACKFILL_SAMPAI || "") ? process.env.BACKFILL_SAMPAI : "2026-10-14";
+const HARI_ATRIBUSI = "2026-10-16"; // tanggal WIB attributionStartAt (16 Okt 2026 17:25:43 WIB)
+const ZONA = "Asia/Jakarta", MATA_UANG = "IDR", SUMBER = "WINDSOR_API";
 // nama kolom dinormalisasi: huruf kecil, spasi -> "_" ("Link clicks" == link_clicks; "Messaging conversations started" == messaging_conversations_started)
 const WAJIB = ["date", "account_id", "currency", "campaign_id", "adset_id", "ad_id", "spend", "impressions", "link_clicks", "messaging_conversations_started"];
 const ID_RE = /^\d{5,32}$/, SPEND_RE = /^\d{1,13}(\.\d{1,2})?$/, INT_RE = /^\d{1,15}$/, TGL_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -116,6 +120,13 @@ const FIELD = ["spend", "impressions", "link_clicks", "conversations"];
 
 /** Ubah control total format Windsor { accountId, timezone, currency, totals, perDay[], perCampaignDay[], expectedRows } ke bentuk internal { akun, zona, mata_uang, harian }. Bentuk internal dibiarkan. */
 function normalisasiKontrol(k) {
+  if (k && typeof k === "object" && !k.harian && k.account && Array.isArray(k.campaigns) && k.date) {
+    const a = k.account;
+    const campaign = {};
+    for (const c of k.campaigns) campaign[c.campaign_id] = { spend: c.spend, impressions: c.impressions, link_clicks: c.actions_link_click, conversations: c.actions_onsite_conversion_messaging_conversation_started_7d };
+    const harian = { [k.date]: { spend: a.spend, impressions: a.impressions, link_clicks: a.actions_link_click, conversations: a.actions_onsite_conversion_messaging_conversation_started_7d, campaign } };
+    return { akun: k.accountId, zona: k.timezone, mata_uang: k.currency, harian, totals: { spend: a.spend, impressions: a.impressions, linkClicks: a.actions_link_click, messagingConversationsStarted: a.actions_onsite_conversion_messaging_conversation_started_7d }, expectedRows: k.expectedRows ?? null, dateFrom: k.date, dateTo: k.date };
+  }
   if (!k || typeof k !== "object" || k.harian || !Array.isArray(k.perDay)) return k;
   const harian = {};
   for (const d of k.perDay) harian[d.date] = { spend: d.spend, impressions: d.impressions, link_clicks: d.linkClicks, conversations: d.messagingConversationsStarted, campaign: {} };
@@ -200,12 +211,12 @@ async function utama() {
   const sebelumDB = { spend: await prisma.metaAdDailySpend.count(), impor: await prisma.metaSpendImport.count() };
   out.dbSebelum = sebelumDB;
   if (MODE === "dry" || MODE === "commit") {
-    const body = { csv, accountId: akunId, sumber: SUMBER, zonaWaktuAkun: ZONA, namaBerkas: "windsor-meta-20261001-20261014.csv", ...(kb.lengkap ? { totalSumber: String(totalKontrol(kontrol)) } : {}), dryRun: true };
+    const body = { csv, accountId: akunId, sumber: SUMBER, zonaWaktuAkun: ZONA, namaBerkas: `windsor-meta-${AWAL.replace(/-/g, "")}-${AKHIR.replace(/-/g, "")}.csv`, ...(kb.lengkap ? { totalSumber: String(totalKontrol(kontrol)) } : {}), dryRun: true };
     const dr = await call("/spend", body);
     out.dryRun = { http: dr.s, ringkasan: dr.j.ringkasan, rekonsiliasi: dr.j.rekonsiliasi, perTanggal: dr.j.perTanggal, ditolak: (dr.j.ditolak || []).slice(0, 30), konflik: (dr.j.konflik || []).slice(0, 30), SPEND_UNMAPPED: dr.j.adIdTidakTerpetakan, error: dr.j.error };
     const rs = dr.j.ringkasan || {};
     out.gerbang.dryRunBersih = dr.s === 200 && rs.ditolak === 0 && rs.konflik === 0 && (dr.j.adIdTidakTerpetakan || []).length === 0 && dr.j.rekonsiliasi && dr.j.rekonsiliasi.cocok === true;
-    out.gerbang.semuaHari = Object.keys(cek.agregat?.harian || {}).length === 14;
+    out.gerbang.semuaHari = Object.keys(cek.agregat?.harian || {}).length === hariRentang().length;
     if (MODE === "commit") {
       const siap = out.gerbang.csvValid && out.gerbang.kontrolLengkap && out.gerbang.kontrolCocok && out.gerbang.dryRunBersih && process.env.KOMIT === "YA";
       out.komit = { diizinkan: siap, KOMIT_YA: process.env.KOMIT === "YA" };
@@ -242,7 +253,8 @@ async function utama() {
       const j = r.j;
       out.statusPerHari.push({ hari: h, http: r.s, status: j.biaya?.status, evaluasi: j.biaya?.evaluasi?.status, cplCpaRoasNull: j.biaya ? [j.biaya.cpl, j.biaya.cpa, j.biaya.bookedRoas, j.biaya.cashRoas, ...(j.grup || []).flatMap((g) => [g.biaya.cpl, g.biaya.cpa])].every((x) => x === null) : false, peringatan: (j.peringatan || []).map((w) => w.kode).filter((k) => /ATRIBUSI|SPEND/.test(k)), rekon: j.rekonsiliasi?.ok, spend: j.biaya?.spendTotal ?? null, reachTampil: /reach/i.test(JSON.stringify(j)) });
     }
-    const lulusStatus = out.statusPerHari.every((x) => x.http === 200 && x.status === "SEBELUM_ATRIBUSI" && x.evaluasi === "TIDAK_DAPAT_DIEVALUASI_SEBELUM_ATRIBUSI" && x.cplCpaRoasNull && !x.reachTampil && x.rekon === true);
+    const statusHarapan = (h) => (h < HARI_ATRIBUSI ? "SEBELUM_ATRIBUSI" : h === HARI_ATRIBUSI ? "HARI_ATRIBUSI_PARSIAL" : null);
+    const lulusStatus = out.statusPerHari.every((x) => x.http === 200 && statusHarapan(x.hari) !== null && x.status === statusHarapan(x.hari) && x.evaluasi === "TIDAK_DAPAT_DIEVALUASI_" + statusHarapan(x.hari) && x.cplCpaRoasNull && !x.reachTampil && x.rekon === true);
     out.lulus = { barisSama: beda.length === 0 && db.length === cek.baris.length, perHariSelisihNol: out.rekonPerHari.every((x) => x.selisih === 0 && x.ad === x.akunDb && x.adSet === x.akunDb && x.campaign === x.akunDb), tanpaUnmapped: out.spendUnmapped.length === 0, statusSebelumAtribusi: lulusStatus, kontrolCocok: kb.cocok };
   }
   out.dbSesudah = { spend: await prisma.metaAdDailySpend.count(), impor: await prisma.metaSpendImport.count() };
