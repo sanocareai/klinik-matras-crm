@@ -5,7 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  TAHAP_FILTER_MI, TAHAP_FILTER_ST, filterTahap, hitungPerTahap, teksCariMI, teksCariST, cocokCari, galatJumlah, dampakKeluar, dampakKirim, dampakTerima, adaSelisihTerima, adaKurangStok, kalimatKetersediaan, angka,
+  cakupanBatasMinimum, kalimatCakupanBatasMinimum, TAHAP_FILTER_MI, TAHAP_FILTER_ST, filterTahap, hitungPerTahap, teksCariMI, teksCariST, cocokCari, galatJumlah, dampakKeluar, dampakKirim, dampakTerima, adaSelisihTerima, adaKurangStok, kalimatKetersediaan, angka,
 } from "../src/features/warehouse/dokumen/dokumenLogic.js";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
@@ -95,4 +95,25 @@ test("AksiDokumen mendukung ringkasan dampak, catatan, galat panel, bidang pilih
   const s = baca("features/warehouse/aksi/AksiDokumen.jsx");
   assert.match(s, /panel\.ringkasan/); assert.match(s, /panel\.catatan/); assert.match(s, /panel\.galat/); assert.match(s, /b\.tipe === "pilih"/); assert.match(s, /b\.tipe === "area"/);
   for (const k of ["KONFIRMASI_KELUAR", "KIRIM", "TERIMA", "BUAT_ULANG_TRANSFER"]) assert.ok(s.includes(k), k);
+});
+
+test("filter tahap daftar Gudang memakai useTahapFilter (replaceActivePath), BUKAN setSearchParams — tab workspace memakai lokasi virtual sehingga perubahan query-saja tidak sampai ke halaman", () => {
+  const hook = baca("features/warehouse/dokumen/useTahapFilter.js");
+  assert.match(hook, /replaceActivePath/); assert.match(hook, /useState\(sp\.get\("tahap"\)/);
+  for (const f of ["pages/warehouse/WarehouseMaterialIssue.jsx", "pages/warehouse/WarehouseTransfers.jsx", "pages/warehouse/WarehouseGoodsReceipt.jsx"]) {
+    const s = baca(f);
+    assert.match(s, /useTahapFilter\(\)/, f); assert.doesNotMatch(s, /setSp\(/, `${f}: tidak boleh memakai setSearchParams untuk filter`);
+  }
+});
+
+test("Restok: saran kosong tidak dibaca sebagai stok aman — kalimat memuat cakupan batas minimum; tab berbahasa Indonesia", () => {
+  const rows = [{ aktif: true, batasMinimum: null }, { aktif: true, batasMinimum: 5 }, { aktif: true, batasMinimum: null }, { aktif: false, batasMinimum: null }];
+  const c = cakupanBatasMinimum(rows); assert.deepEqual(c, { total: 3, diatur: 1, belum: 2 });
+  assert.match(kalimatCakupanBatasMinimum(c), /2 dari 3 bahan aktif belum punya batas minimum.*BUKAN bukti semua stok aman/);
+  assert.match(kalimatCakupanBatasMinimum({ total: 5, diatur: 0, belum: 5 }), /belum diatur untuk satu pun dari 5 bahan aktif/);
+  assert.match(kalimatCakupanBatasMinimum({ total: 4, diatur: 4, belum: 0 }), /semua bahan aktif sudah punya batas minimum/); assert.equal(kalimatCakupanBatasMinimum({ total: 0, diatur: 0, belum: 0 }), null);
+  const r = baca("pages/warehouse/WarehouseReplenishment.jsx"); assert.ok(r.includes("kalimatCakupanBatasMinimum(cakupan)")); assert.doesNotMatch(r, /Tidak ada item yang perlu direstok saat ini/);
+  for (const [f, kata] of [["pages/warehouse/WarehouseStockCount.jsx", ["Terjadwal", "Menunggu tinjauan"]], ["pages/warehouse/WarehouseReplenishment.jsx", ["Menunggu persetujuan", "Sudah dipesan"]], ["features/warehouse/components/ReturnsTab.jsx", ["Diterima", "Diperiksa"]], ["features/warehouse/components/DamagedStockTab.jsx", ["Dilaporkan", "Sedang diperiksa"]], ["features/warehouse/components/AdjustmentsTab.jsx", ["Menunggu persetujuan", "Sudah diposting"]]]) {
+    const src = baca(f); for (const k of kata) assert.ok(src.includes(`label: "${k}"`), `${f}: ${k}`); assert.doesNotMatch(src, /label: "(Waiting Approval|Waiting Review|In Progress|Under Inspection|Scheduled|Reported|Resolved)"/, f);
+  }
 });

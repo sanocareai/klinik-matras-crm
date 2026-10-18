@@ -9,14 +9,15 @@ import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows } from "@/components/ui/table.jsx";
 import StockTransferFormModal from "@/features/warehouse/components/StockTransferFormModal.jsx";
 import { TRANSFER_TYPE_REAL } from "@/features/warehouse/inventoryReal.js";
+import { useTahapFilter } from "@/features/warehouse/dokumen/useTahapFilter.js";
 import { FilterTahapDokumen, StatusDokumen, RingkasItem } from "@/features/warehouse/dokumen/FilterTahapDokumen.jsx";
 import { TAHAP_FILTER_ST, cocokCari, filterTahap, hitungPerTahap, tanggalPendek, teksCariST } from "@/features/warehouse/dokumen/dokumenLogic.js";
 
 // TRANSFER STOK — daftar perpindahan barang antar lokasi (Draf → persetujuan → diambil → dalam perjalanan → selesai). Dua langkah menulis stok: Kirim barang (saldo dikurangi) dan Terima barang (saldo bertambah).
 // Status "Dalam perjalanan" berarti saldo SUDAH berkurang di sistem tetapi barang belum diterima di tujuan. Detail dibuka sebagai halaman.
 export default function WarehouseTransfers() {
-  const navigate = useNavigate(); const [sp, setSp] = useSearchParams();
-  const tahap = sp.get("tahap") ?? ""; const [cari, setCari] = useState("");
+  const navigate = useNavigate(); const [sp] = useSearchParams();
+  const [tahap, setTahap] = useTahapFilter(); const [cari, setCari] = useState("");
   const [rows, setRows] = useState(null); const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [formOpen, setFormOpen] = useState(false);
   const buka = (id) => navigate(`/warehouse/transfers/${id}`);
   useEffect(() => { const id = sp.get("buka"); if (id) navigate(`/warehouse/transfers/${id}`, { replace: true }); }, []); // eslint-disable-line react-hooks/exhaustive-deps -- tautan dalam dibaca sekali saat halaman dibuka
@@ -42,8 +43,8 @@ export default function WarehouseTransfers() {
         </>}
       />
       <PageBody>
-        <FilterTahapDokumen filters={TAHAP_FILTER_ST} aktif={tahap} hitung={hitung} onPilih={(k) => setSp(k ? { tahap: k } : {})} cari={cari} onCari={setCari}
-          placeholder="Cari no. transfer, lokasi, bahan" labelCari="Cari transfer stok" labelTab="Saring tahap transfer" />
+        <FilterTahapDokumen filters={TAHAP_FILTER_ST} aktif={tahap} hitung={hitung} onPilih={setTahap} cari={cari} onCari={setCari}
+          placeholder="Cari no., lokasi, bahan" labelCari="Cari transfer stok" labelTab="Saring tahap transfer" />
         {error && <div role="alert" className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{error}</div>}
 
         <Card className="overflow-hidden p-0">

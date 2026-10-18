@@ -20,11 +20,11 @@ import KartuJalurKoreksi from "@/features/warehouse/koreksi/KartuJalurKoreksi.js
 // positif). Lihat catatan panjang di schema.prisma & routes/returnRecord.js.
 const TABS = [
   { key: "",           label: "Semua" },
-  { key: "CREATED",    label: "Created" },
-  { key: "RECEIVED",   label: "Received" },
-  { key: "INSPECTION", label: "Inspection" },
-  { key: "COMPLETED",  label: "Completed" },
-  { key: "CANCELLED",  label: "Cancelled" },
+  { key: "CREATED",    label: "Dicatat" },
+  { key: "RECEIVED",   label: "Diterima" },
+  { key: "INSPECTION", label: "Diperiksa" },
+  { key: "COMPLETED",  label: "Selesai" },
+  { key: "CANCELLED",  label: "Dibatalkan" },
 ];
 
 function FormModal({ open, onClose, onCreated }) {

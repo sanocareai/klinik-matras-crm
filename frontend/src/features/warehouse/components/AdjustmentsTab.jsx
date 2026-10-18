@@ -27,11 +27,11 @@ function pengguna() {
 // schema.prisma & routes/stockAdjustment.js.
 const TABS = [
   { key: "",               label: "Semua" },
-  { key: "DRAFT",          label: "Draft" },
-  { key: "WAITING_APPROVAL",label: "Waiting Approval" },
-  { key: "APPROVED",       label: "Approved" },
-  { key: "POSTED",         label: "Posted" },
-  { key: "CANCELLED",      label: "Cancelled" },
+  { key: "DRAFT",          label: "Draf" },
+  { key: "WAITING_APPROVAL",label: "Menunggu persetujuan" },
+  { key: "APPROVED",       label: "Disetujui" },
+  { key: "POSTED",         label: "Sudah diposting" },
+  { key: "CANCELLED",      label: "Dibatalkan" },
 ];
 
 function FormModal({ open, onClose, onCreated }) {

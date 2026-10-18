@@ -20,11 +20,11 @@ import { COUNT_STATUS_REAL, COUNT_TYPE_REAL } from "@/features/warehouse/invento
 // berselisih — lihat catatan panjang di schema.prisma & routes/stockCount.js.
 const TABS = [
   { key: "",               label: "Semua" },
-  { key: "SCHEDULED",      label: "Scheduled" },
-  { key: "IN_PROGRESS",    label: "In Progress" },
-  { key: "WAITING_REVIEW", label: "Waiting Review" },
-  { key: "COMPLETED",      label: "Completed" },
-  { key: "CANCELLED",      label: "Cancelled" },
+  { key: "SCHEDULED",      label: "Terjadwal" },
+  { key: "IN_PROGRESS",    label: "Sedang dihitung" },
+  { key: "WAITING_REVIEW", label: "Menunggu tinjauan" },
+  { key: "COMPLETED",      label: "Selesai" },
+  { key: "CANCELLED",      label: "Dibatalkan" },
 ];
 
 const tanggal = (s) => new Date(s).toLocaleDateString("id-ID", { day: "numeric", month: "short" });

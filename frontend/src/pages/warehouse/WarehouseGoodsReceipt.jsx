@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows } from "@/components/ui/table.jsx";
 import { cn } from "@/lib/utils.js";
+import { useTahapFilter } from "@/features/warehouse/dokumen/useTahapFilter.js";
 import GoodsReceiptFormModal from "@/features/warehouse/components/GoodsReceiptFormModal.jsx";
 import SumberPO from "@/features/warehouse/components/SumberPO.jsx";
 import { TAHAP_FILTER, filterTahap, hitungPerTahap, identitasPenerimaan, tanggalPendek } from "@/features/warehouse/penerimaan/penerimaanLogic.js";
@@ -31,8 +32,8 @@ function StatusPenerimaan({ r }) {
 
 export default function WarehouseGoodsReceipt() {
   const navigate = useNavigate();
-  const [sp, setSp] = useSearchParams();
-  const tahap = sp.get("tahap") ?? "";
+  const [sp] = useSearchParams();
+  const [tahap, setTahap] = useTahapFilter();
   const [cari, setCari] = useState("");
   const [rows, setRows] = useState(null); const [loading, setLoading] = useState(true); const [error, setError] = useState("");
   const [formOpen, setFormOpen] = useState(false);
@@ -75,7 +76,7 @@ export default function WarehouseGoodsReceipt() {
 
         <div role="tablist" aria-label="Saring tahap penerimaan" className="flex gap-1 overflow-x-auto border-b border-line pb-2 md:flex-wrap">
           {TAHAP_FILTER.map((t) => (
-            <button key={t.key} role="tab" aria-selected={tahap === t.key} onClick={() => setSp(t.key ? { tahap: t.key } : {})} data-testid={`tahap-${t.key || "semua"}`}
+            <button key={t.key} role="tab" aria-selected={tahap === t.key} onClick={() => setTahap(t.key)} data-testid={`tahap-${t.key || "semua"}`}
               className={cn("flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-chip px-3 py-1.5 text-[12.5px] font-semibold transition-colors max-sm:min-h-11", tahap === t.key ? "bg-accentbg text-accent" : "text-ink3 hover:bg-hovertint hover:text-ink2")}>
               {t.label}{rows && <span className="rounded-full bg-inset px-1.5 text-[11px] tabular-nums text-ink2">{hitung[t.key] ?? 0}</span>}
             </button>

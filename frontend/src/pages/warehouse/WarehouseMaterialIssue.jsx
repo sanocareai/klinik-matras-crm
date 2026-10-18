@@ -10,6 +10,7 @@ import { TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows } from "@
 import StatusBadge from "@/features/warehouse/components/StatusBadge.jsx";
 import MaterialIssueFormModal from "@/features/warehouse/components/MaterialIssueFormModal.jsx";
 import { ISSUE_PRIORITY_REAL } from "@/features/warehouse/inventoryReal.js";
+import { useTahapFilter } from "@/features/warehouse/dokumen/useTahapFilter.js";
 import { FilterTahapDokumen, StatusDokumen, RingkasItem } from "@/features/warehouse/dokumen/FilterTahapDokumen.jsx";
 import { TAHAP_FILTER_MI, cocokCari, filterTahap, hitungPerTahap, tanggalPendek, teksCariMI } from "@/features/warehouse/dokumen/dokumenLogic.js";
 
@@ -18,8 +19,8 @@ import { TAHAP_FILTER_MI, cocokCari, filterTahap, hitungPerTahap, tanggalPendek,
 const untukApa = (r) => (r.unit ? <>{r.unit.unitCode}<span className="block text-[10.5px] text-ink3">{r.unit.order?.orderNumber} · {r.unit.order?.customer?.name}</span></> : (r.sourceReference || r.department || <span className="text-ink3">—</span>));
 
 export default function WarehouseMaterialIssue() {
-  const navigate = useNavigate(); const [sp, setSp] = useSearchParams();
-  const tahap = sp.get("tahap") ?? ""; const [cari, setCari] = useState("");
+  const navigate = useNavigate(); const [sp] = useSearchParams();
+  const [tahap, setTahap] = useTahapFilter(); const [cari, setCari] = useState("");
   const [rows, setRows] = useState(null); const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [formOpen, setFormOpen] = useState(false);
   const buka = (id) => navigate(`/warehouse/material-issue/${id}`);
   // Tautan lama "?buka=<id>" (mis. dari jejak biaya bahan) → langsung ke halaman detail.
@@ -46,8 +47,8 @@ export default function WarehouseMaterialIssue() {
         </>}
       />
       <PageBody>
-        <FilterTahapDokumen filters={TAHAP_FILTER_MI} aktif={tahap} hitung={hitung} onPilih={(k) => setSp(k ? { tahap: k } : {})} cari={cari} onCari={setCari}
-          placeholder="Cari no. permintaan, bahan, unit, order, departemen" labelCari="Cari permintaan material" labelTab="Saring tahap permintaan" />
+        <FilterTahapDokumen filters={TAHAP_FILTER_MI} aktif={tahap} hitung={hitung} onPilih={setTahap} cari={cari} onCari={setCari}
+          placeholder="Cari no., bahan, unit, order" labelCari="Cari permintaan material" labelTab="Saring tahap permintaan" />
         {error && <div role="alert" className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{error}</div>}
 
         <Card className="overflow-hidden p-0">

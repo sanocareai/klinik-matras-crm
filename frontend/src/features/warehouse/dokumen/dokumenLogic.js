@@ -82,3 +82,15 @@ export function kalimatKetersediaan(k, satuan = "") {
 
 export const tanggalPendek = (d) => (d ? new Date(d).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" }) : "—");
 export const waktuTeks = (d) => (d ? new Date(d).toLocaleString("id-ID", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—");
+
+/** Cakupan batas minimum bahan aktif (baris dari /inventory/beranda/stok: { aktif, batasMinimum }). Dipakai Restok agar "tidak ada saran" tidak dibaca sebagai "stok aman". */
+export function cakupanBatasMinimum(rows = []) {
+  const aktif = rows.filter((r) => r.aktif !== false); const diatur = aktif.filter((r) => r.batasMinimum !== null && r.batasMinimum !== undefined).length;
+  return { total: aktif.length, diatur, belum: aktif.length - diatur };
+}
+export function kalimatCakupanBatasMinimum(c) {
+  if (!c || c.total === 0) return null;
+  if (c.diatur === 0) return `Tidak ada saran restok karena batas minimum belum diatur untuk satu pun dari ${c.total} bahan aktif. Daftar kosong ini BUKAN bukti stok aman.`;
+  if (c.belum === 0) return "Tidak ada bahan yang perlu direstok saat ini (semua bahan aktif sudah punya batas minimum).";
+  return `Tidak ada saran untuk ${c.diatur} bahan yang punya batas minimum. ${c.belum} dari ${c.total} bahan aktif belum punya batas minimum, jadi tidak pernah muncul di sini — daftar kosong ini BUKAN bukti semua stok aman.`;
+}

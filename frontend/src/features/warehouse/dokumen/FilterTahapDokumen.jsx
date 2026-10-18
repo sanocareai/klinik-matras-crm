@@ -3,6 +3,7 @@ import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { cn } from "@/lib/utils.js";
+import { UNIT_LABEL } from "@/features/warehouse/inventoryReal.js";
 
 const BADGE = { neutral: "neutral", accent: "accent", orange: "orange", green: "green", red: "red" };
 const PENGARUH = { BELUM: "Belum memengaruhi stok", DICADANG: "Stok dicadangkan", BERKURANG: "Saldo sudah dikurangi" };
@@ -42,5 +43,5 @@ export function StatusDokumen({ r }) {
 export function RingkasItem({ lines = [], kunci }) {
   if (!lines.length) return <span className="text-ink3">—</span>;
   const [a, ...sisa] = lines;
-  return <span><span className="font-medium text-ink">{a.material?.name ?? a.material?.code}</span> <span className="text-ink3">· {Number(a[kunci]).toLocaleString("id-ID", { maximumFractionDigits: 4 })}</span>{sisa.length > 0 && <span className="text-ink3"> · +{sisa.length} item lain</span>}</span>;
+  return <span><span className="font-medium text-ink">{a.material?.name ?? a.material?.code}</span> <span className="text-ink3">· {Number(a[kunci]).toLocaleString("id-ID", { maximumFractionDigits: 4 })} {UNIT_LABEL[a.material?.unit] ?? ""}</span>{sisa.length > 0 && <span className="text-ink3"> · +{sisa.length} item lain</span>}</span>;
 }

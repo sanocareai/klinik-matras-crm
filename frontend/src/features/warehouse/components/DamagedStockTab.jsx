@@ -20,9 +20,9 @@ import KartuJalurKoreksi from "@/features/warehouse/koreksi/KartuJalurKoreksi.js
 // ledger (WASTE). Lihat catatan panjang di schema.prisma & routes/damagedStock.js.
 const TABS = [
   { key: "",                label: "Semua" },
-  { key: "REPORTED",        label: "Reported" },
-  { key: "UNDER_INSPECTION",label: "Under Inspection" },
-  { key: "RESOLVED",        label: "Resolved" },
+  { key: "REPORTED",        label: "Dilaporkan" },
+  { key: "UNDER_INSPECTION",label: "Sedang diperiksa" },
+  { key: "RESOLVED",        label: "Selesai ditangani" },
 ];
 
 function FormModal({ open, onClose, onCreated }) {

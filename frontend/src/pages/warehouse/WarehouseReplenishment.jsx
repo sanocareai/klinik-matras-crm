@@ -9,6 +9,7 @@ import {
   TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows,
 } from "@/components/ui/table.jsx";
 import { cn } from "@/lib/utils.js";
+import { cakupanBatasMinimum, kalimatCakupanBatasMinimum } from "@/features/warehouse/dokumen/dokumenLogic.js";
 import { exportToCSV } from "@/utils/export.js";
 import StatusBadge from "@/features/warehouse/components/StatusBadge.jsx";
 import ReplenishmentFormModal from "@/features/warehouse/components/ReplenishmentFormModal.jsx";
@@ -24,16 +25,17 @@ import { REPLENISHMENT_STATUS_REAL, REPLENISHMENT_SOURCE_REAL } from "@/features
 // sebagai section terpisah di atas. Lihat schema.prisma.
 const TABS = [
   { key: "",               label: "Semua" },
-  { key: "DRAFT",          label: "Draft" },
-  { key: "WAITING_APPROVAL",label: "Waiting Approval" },
-  { key: "APPROVED",       label: "Approved" },
-  { key: "ORDERED",        label: "Ordered" },
-  { key: "COMPLETED",      label: "Completed" },
-  { key: "REJECTED",       label: "Rejected" },
+  { key: "DRAFT",          label: "Draf" },
+  { key: "WAITING_APPROVAL",label: "Menunggu persetujuan" },
+  { key: "APPROVED",       label: "Disetujui" },
+  { key: "ORDERED",        label: "Sudah dipesan" },
+  { key: "COMPLETED",      label: "Selesai" },
+  { key: "REJECTED",       label: "Ditolak" },
 ];
 
 export default function WarehouseReplenishment() {
   const [suggestions, setSuggestions] = useState(null);
+  const [cakupan, setCakupan] = useState(null);
   const [tab, setTab] = useState("");
   const [rows, setRows] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -44,6 +46,8 @@ export default function WarehouseReplenishment() {
 
   const loadSuggestions = useCallback(() => {
     api.getReplenishmentSuggestions().then((d) => setSuggestions(d.suggestions)).catch(() => setSuggestions([]));
+    // Cakupan batas minimum: agar "tidak ada saran" tidak dibaca sebagai "stok aman" (bahan tanpa batas minimum tidak pernah disarankan).
+    api.getStokLokasi().then((d) => setCakupan(cakupanBatasMinimum(d.rows ?? []))).catch(() => setCakupan(null));
   }, []);
   const load = useCallback(() => {
     setLoading(true); setError("");
@@ -97,14 +101,14 @@ export default function WarehouseReplenishment() {
       <PageBody>
         <Card>
           <CardHeader>
-            <CardTitle>Suggested</CardTitle>
-            <CardDescription>Item dengan stok tersedia sudah di titik atau di bawah reorder point.</CardDescription>
+            <CardTitle>Saran restok</CardTitle>
+            <CardDescription>Hanya bahan yang punya batas minimum: stok tersedia sudah di titik atau di bawah batas itu.</CardDescription>
           </CardHeader>
           {suggestions === null ? (
             <div className="px-5 pb-5"><div className="h-16 animate-pulse rounded-btn bg-inset" /></div>
           ) : suggestions.length === 0 ? (
             <div className="px-5 pb-5">
-              <p className="text-[12.5px] text-ink3">Tidak ada item yang perlu direstok saat ini.</p>
+              <p className="text-[12.5px] text-ink3" data-testid="saran-kosong">{kalimatCakupanBatasMinimum(cakupan) ?? "Tidak ada saran restok saat ini."}</p>
             </div>
           ) : (
             <ul className="divide-y divide-line">
@@ -113,8 +117,8 @@ export default function WarehouseReplenishment() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-[12.5px] font-semibold text-ink">{s.code} — {s.name}</p>
                     <p className="text-[11px] text-ink3">
-                      Available {s.available} / Reorder Point {s.reorderPoint}
-                      {s.reorderQty != null && ` · Suggested Qty ${s.reorderQty}`}
+                      Tersedia {s.available} / Batas minimum {s.reorderPoint}
+                      {s.reorderQty != null && ` · Saran jumlah ${s.reorderQty}`}
                     </p>
                   </div>
                   <Button size="sm" variant="secondary" onClick={() => buatDariSaran(s)}>Buat Permintaan</Button>
@@ -124,7 +128,7 @@ export default function WarehouseReplenishment() {
           )}
         </Card>
 
-        <div role="tablist" aria-label="Saring status request" className="flex flex-wrap gap-1 border-b border-line pb-2">
+        <div role="tablist" aria-label="Saring status permintaan restok" className="flex flex-wrap gap-1 border-b border-line pb-2">
           {TABS.map((t) => (
             <button key={t.key} role="tab" aria-selected={tab === t.key} onClick={() => setTab(t.key)}
               className={cn("rounded-chip px-3 py-1.5 text-[12.5px] font-semibold transition-colors",
@@ -132,7 +136,7 @@ export default function WarehouseReplenishment() {
               {t.label}
             </button>
           ))}
-          {rows && <span className="ml-auto self-center text-[11.5px] text-ink3">{rows.length} request</span>}
+          {rows && <span className="ml-auto self-center text-[11.5px] text-ink3">{rows.length} permintaan</span>}
         </div>
 
         {error && <div className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{error}</div>}
