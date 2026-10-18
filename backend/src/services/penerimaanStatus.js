@@ -24,17 +24,19 @@ export const PIPELINE = Object.freeze([
 const LABEL_TUJUAN = Object.freeze({ ...Object.fromEntries(PIPELINE.map((p) => [p.kode, p.label])), DIBATALKAN: "Dibatalkan", DITOLAK: "Ditolak" });
 const BERIKUTNYA = Object.freeze({ DRAFT: "Jadwalkan kedatangan", SCHEDULED: "Tunggu barang tiba, lalu catat kedatangan", ARRIVED: "Periksa barang", INSPECTION: "Isi hasil pemeriksaan", READY_FOR_PUTAWAY: "Simpan ke Stok", COMPLETED: "Selesai — tidak ada tindakan", REJECTED: "Tidak ada tindakan" });
 /** Perpindahan status yang sah dari aksi yang tersedia. jenis: maju | mundur | tutup. Aksi non-status (ubah jadwal, isi pemeriksaan, koreksi) tidak termasuk. */
-export function pindahPipeline(status, aksi) {
+export function pindahPipeline(status, aksi, pulihKe = null) {
   const i = PIPELINE.findIndex((p) => p.status === status); const kodeAksi = new Set((aksi ?? []).map((a) => a.kode));
   const tujuan = { JADWALKAN: ["TERJADWAL", "maju"], CATAT_TIBA: ["TIBA", "maju"], TANDAI_TIBA: ["TIBA", "maju"], MAJUKAN: [i >= 0 && i < 4 ? PIPELINE[i + 1].kode : null, "maju"], SIMPAN_KE_STOK: ["STOK", "maju"],
-    KEMBALI_DRAFT: ["DRAF", "mundur"], BATALKAN_TIBA: ["TERJADWAL", "mundur"], PULIHKAN: ["DRAF", "mundur"], BATALKAN_JADWAL: ["DIBATALKAN", "tutup"], TOLAK: ["DITOLAK", "tutup"] };
-  return Object.entries(tujuan).filter(([k, [ke]]) => kodeAksi.has(k) && ke).map(([k, [ke, jenis]]) => ({ kode: k, ke, jenis, label: jenis === "tutup" ? (ke === "DIBATALKAN" ? "Batalkan penerimaan" : "Tolak barang") : `${jenis === "mundur" ? "Kembalikan ke" : "Maju ke"} ${LABEL_TUJUAN[ke]}` }));
+    KEMBALI_DRAFT: ["DRAF", "mundur"], BATALKAN_TIBA: [status === "ARRIVED" ? "TERJADWAL" : null, "mundur"], KEMBALI_TIBA: ["TIBA", "mundur"], KEMBALI_PERIKSA: ["PERIKSA", "mundur"], PULIHKAN: [pulihKe === "SCHEDULED" ? "TERJADWAL" : "DRAF", "mundur"], BATALKAN_JADWAL: ["DIBATALKAN", "tutup"], TOLAK: ["DITOLAK", "tutup"] };
+  return Object.entries(tujuan).filter(([k, [ke]]) => kodeAksi.has(k) && ke).map(([k, [ke, jenis]]) => ({ kode: k, ke, jenis, label: jenis === "tutup" ? (ke === "DIBATALKAN" ? "Batalkan penerimaan" : "Tolak barang") : k === "PULIHKAN" ? `Pulihkan ke ${LABEL_TUJUAN[ke]}` : `${jenis === "mundur" ? "Kembalikan ke" : "Maju ke"} ${LABEL_TUJUAN[ke]}` }));
 }
 
 export const AKSI = Object.freeze({
   UBAH_JADWAL: { kode: "UBAH_JADWAL", label: "Ubah jadwal", jenis: "ubah" },
   JADWALKAN: { kode: "JADWALKAN", label: "Jadwalkan", jenis: "maju" },
   KEMBALI_DRAFT: { kode: "KEMBALI_DRAFT", label: "Kembali ke Draf", jenis: "ubah" },
+  KEMBALI_TIBA: { kode: "KEMBALI_TIBA", label: "Kembali ke Barang tiba", jenis: "ubah" },
+  KEMBALI_PERIKSA: { kode: "KEMBALI_PERIKSA", label: "Kembali ke Pemeriksaan", jenis: "ubah" },
   BATALKAN_JADWAL: { kode: "BATALKAN_JADWAL", label: "Batalkan penerimaan", jenis: "batal" },
   CATAT_TIBA: { kode: "CATAT_TIBA", label: "Catat barang tiba", jenis: "maju" },
   TANDAI_TIBA: { kode: "TANDAI_TIBA", label: "Tandai barang tiba", jenis: "maju" },
@@ -43,7 +45,7 @@ export const AKSI = Object.freeze({
   SIMPAN_KE_STOK: { kode: "SIMPAN_KE_STOK", label: "Simpan ke Stok", jenis: "maju" },
   TOLAK: { kode: "TOLAK", label: "Tolak barang", jenis: "batal" },
   BATALKAN_TIBA: { kode: "BATALKAN_TIBA", label: "Batalkan catatan tiba", jenis: "batal" },
-  PULIHKAN: { kode: "PULIHKAN", label: "Pulihkan ke Draf", jenis: "maju" },
+  PULIHKAN: { kode: "PULIHKAN", label: "Pulihkan", jenis: "maju" }, // label dinamis: "Pulihkan ke Draf/Terjadwal" (lihat r.pulihKe)
   BUAT_ULANG: { kode: "BUAT_ULANG", label: "Buat penerimaan baru dari dokumen ini", jenis: "maju" },
   KOREKSI_KEDATANGAN: { kode: "KOREKSI_KEDATANGAN", label: "Koreksi Kedatangan (resmi)", jenis: "koreksi" },
   KOREKSI_PENERIMAAN: { kode: "KOREKSI_PENERIMAAN", label: "Koreksi penerimaan", jenis: "koreksi" },
@@ -69,8 +71,10 @@ export function tampilanPenerimaan(r) {
   const status = String(r?.status ?? "");
   const dariPO = !!r?.purchaseOrderId;
   const dibatalkan = status === "REJECTED" && tidakPernahBerisi(r);
-  const dasar = (kode, label, warna, penjelasan, pengaruhStok, aksi) => ({ kode, status, label, warna, tahapIndeks: INDEKS_TAHAP[status] ?? null, tahap: TAHAP, pengaruhStok, penjelasan, aksi: aksi.map((a) => ({ ...a })),
-    pipeline: { tahap: PIPELINE.map(({ kode, label }) => ({ kode, label })), indeks: (() => { const k = PIPELINE.findIndex((p) => p.status === status); return k < 0 ? null : k; })(), pindah: pindahPipeline(status, aksi) }, berikutnya: BERIKUTNYA[status] ?? "—" });
+  const dasar = (kode, label, warna, penjelasan, pengaruhStok, aksi) => ({ kode, status, label, warna, tahapIndeks: INDEKS_TAHAP[status] ?? null, tahap: TAHAP, pengaruhStok, penjelasan, aksi: aksi.map((a) => (a.kode === "PULIHKAN" ? { ...a, label: r?.pulihKe === "SCHEDULED" ? "Pulihkan ke Terjadwal" : "Pulihkan ke Draf" } : { ...a })),
+    pipeline: { tahap: PIPELINE.map(({ kode, label }) => ({ kode, label })), indeks: (() => { const k = PIPELINE.findIndex((p) => p.status === status); return k < 0 ? null : k; })(), pindah: pindahPipeline(status, aksi, r?.pulihKe ?? null),
+      // Perpindahan mundur yang SENGAJA tidak ditawarkan beserta sebabnya (supaya pengguna tahu mengapa tidak ada pilihannya).
+      tertahan: status === "ARRIVED" && !belumAdaHasilPemeriksaan(r) ? [{ ke: "TERJADWAL", sebab: "Kembali ke Terjadwal tidak tersedia: hasil pemeriksaan (baik/ditolak) sudah diisi. Kosongkan hasilnya bila barang memang belum diperiksa; bila sudah diperiksa, lanjutkan pemeriksaan." }] : [] }, berikutnya: BERIKUTNYA[status] ?? "—" });
   switch (status) {
     case "DRAFT":
       return dasar("DRAF", "Draf", "neutral", "Belum dijadwalkan. Belum memengaruhi stok. Boleh diubah atau dibatalkan.", "BELUM", [AKSI.UBAH_JADWAL, AKSI.JADWALKAN, AKSI.BATALKAN_JADWAL]);
@@ -82,10 +86,10 @@ export function tampilanPenerimaan(r) {
         [AKSI.ISI_PEMERIKSAAN, AKSI.MAJUKAN, ...(dariPO ? [AKSI.KOREKSI_KEDATANGAN] : []), ...(belumAdaHasilPemeriksaan(r) ? [AKSI.BATALKAN_TIBA] : []), AKSI.TOLAK]);
     case "INSPECTION":
       return dasar("DIPERIKSA", "Sedang diperiksa", "orange", "Isi jumlah barang baik dan ditolak per item, lalu lanjutkan ke Siap masuk stok. Stok belum bertambah.", "BELUM",
-        [AKSI.ISI_PEMERIKSAAN, AKSI.MAJUKAN, ...(dariPO ? [AKSI.KOREKSI_KEDATANGAN] : []), ...(belumAdaHasilPemeriksaan(r) ? [AKSI.BATALKAN_TIBA] : []), AKSI.TOLAK]);
+        [AKSI.ISI_PEMERIKSAAN, AKSI.MAJUKAN, AKSI.KEMBALI_TIBA, ...(dariPO ? [AKSI.KOREKSI_KEDATANGAN] : []), ...(belumAdaHasilPemeriksaan(r) ? [AKSI.BATALKAN_TIBA] : []), AKSI.TOLAK]);
     case "READY_FOR_PUTAWAY":
       return dasar("SIAP_MASUK_STOK", "Siap masuk stok", "accent", "Hanya barang yang dinyatakan baik yang masuk stok. Stok bertambah saat Simpan ke Stok.", "BELUM",
-        [AKSI.SIMPAN_KE_STOK, AKSI.ISI_PEMERIKSAAN, ...(dariPO ? [AKSI.KOREKSI_KEDATANGAN] : []), ...(belumAdaHasilPemeriksaan(r) ? [AKSI.BATALKAN_TIBA] : []), AKSI.TOLAK]);
+        [AKSI.SIMPAN_KE_STOK, AKSI.ISI_PEMERIKSAAN, AKSI.KEMBALI_PERIKSA, ...(dariPO ? [AKSI.KOREKSI_KEDATANGAN] : []), ...(belumAdaHasilPemeriksaan(r) ? [AKSI.BATALKAN_TIBA] : []), AKSI.TOLAK]);
     case "COMPLETED":
       return dasar("SUDAH_MASUK_STOK", "Sudah masuk stok", "green", dariPO
         ? "Stok sudah bertambah. Catatan tidak dihapus: jika ada salah input, pakai Koreksi Kedatangan (resmi) — dampaknya ditampilkan dulu."
@@ -93,7 +97,7 @@ export function tampilanPenerimaan(r) {
       [dariPO ? AKSI.KOREKSI_KEDATANGAN : AKSI.KOREKSI_PENERIMAAN]);
     case "REJECTED":
       return dibatalkan
-        ? dasar("DIBATALKAN", "Dibatalkan", "neutral", "Penerimaan ini dibatalkan sebelum barang tiba. Tidak memengaruhi stok. Salah batalkan? Pulihkan ke Draf selama belum ada pengaruh apa pun. Atau buat jadwal baru dari PO.", "TIDAK", [AKSI.PULIHKAN])
+        ? dasar("DIBATALKAN", "Dibatalkan", "neutral", "Penerimaan ini dibatalkan sebelum barang tiba. Tidak memengaruhi stok. Salah batalkan? Pulihkan ke status terakhir yang aman (Draf atau Terjadwal) selama belum ada pengaruh apa pun. Atau buat jadwal baru dari PO.", "TIDAK", [AKSI.PULIHKAN, AKSI.BUAT_ULANG])
         : dasar("DITOLAK", "Ditolak", "red", "Barang tiba lalu ditolak seluruhnya. Tidak menambah stok. Dokumen ini tidak dihapus; bila penolakannya salah atau barang datang lagi, buat penerimaan baru dari dokumen ini (riwayat saling tertaut).", "TIDAK", [AKSI.BUAT_ULANG]);
     default:
       return dasar("TIDAK_DIKENAL", status || "—", "neutral", "Status tidak dikenal.", "TIDAK", []);

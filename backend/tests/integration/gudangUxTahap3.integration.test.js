@@ -95,3 +95,14 @@ test("Pipeline Penerimaan: dua penerimaan untuk satu PO tetap dua dokumen dengan
   assert.equal(da.tampilan.pipeline.pindah.find((x) => x.kode === "CATAT_TIBA")?.ke, "TIBA", "untuk PO, pindah ke Barang tiba lewat Catat barang tiba (formulir kedatangan resmi)");
   const lst = (await w.g.get(GR)).body.receipts; assert.equal(lst.filter((x) => x.purchaseOrderId === po.id).length, 2); assert.ok(lst.every((x) => x.tampilan.pipeline && typeof x.tampilan.berikutnya === "string"));
 });
+
+test("tabel pemetaan sementara tidak membuat bahan hilang: bahan baru dengan itemGroup yang belum dikenal / kosong otomatis 'Belum dikelompokkan', ikut terhitung, dan dapat dicari", async () => {
+  const w = await dunia();
+  const sebelum = (await w.g.get(STOK)).body.kelompok.kelompok.find((x) => x.kode === "BELUM").total;
+  await bahan("NEW-1", "Aksesori Impor Baru", "GRUP BARU DARI EXCEL"); await bahan("NEW-2", "Bahan Tanpa Grup", null); await bahan("NEW-3", "Busa Rebonded Baru", "REBONDED");
+  const r = (await w.g.get(STOK)).body; const ring = Object.fromEntries(r.kelompok.kelompok.map((x) => [x.kode, x]));
+  assert.equal(ring.BELUM.total, sebelum + 2, "dua bahan baru yang belum dipetakan masuk Belum dikelompokkan"); assert.equal(ring.BUSA.total, 1, "yang dikenal tetap masuk kelompoknya");
+  assert.equal(r.rows.filter((x) => x.aktif).length, r.kelompok.kelompok.reduce((n, x) => n + x.total, 0), "tidak ada bahan aktif yang hilang dari ringkasan kelompok");
+  assert.ok(r.rows.filter((x) => ["NEW-1", "NEW-2"].includes(x.kode)).every((x) => x.kelompok.kode === "BELUM" && x.kelompok.alasan));
+  assert.match(r.rows.find((x) => x.kode === "NEW-1").kelompok.alasan, /belum ada di tabel pemetaan/);
+});

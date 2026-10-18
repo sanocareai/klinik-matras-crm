@@ -30,3 +30,14 @@ console.log("Kelompok turunan (semua/aktif):"); for (const [k, v] of Object.entr
 console.log("itemGroup beda huruf besar/kecil:", huruf.length ? "\n  " + huruf.join("\n  ") : "tidak ada"); console.log("itemGroup belum ada di tabel:", nilaiTakDikenal.join(", ") || "tidak ada");
 console.log(`Perlu keputusan manual: ${belum.length} bahan`); for (const g of laporan.perluKeputusan) console.log(`  [${g.itemGroup}] ${g.jumlah} bahan (${g.aktif} aktif) — ${g.alasan}`);
 console.log(`Nama bertentangan dengan kelompok (hanya ditandai): ${konflik.length}`); for (const k of konflik) console.log(`  ${k.kode} "${k.nama}" grup ${k.itemGroup} → ${k.kelompok}, nama menyiratkan ${k.namaMenyiratkan}`);
+
+// --csv <berkas>: daftar keputusan PER BAHAN (hanya bahan aktif yang belum dikelompokkan) untuk diisi petugas berwenang. Kolom "kelompok_pilihan" dibiarkan kosong — tidak ada usulan yang ditebak dari nama.
+const iCsv = process.argv.indexOf("--csv");
+if (iCsv > 0 && process.argv[iCsv + 1]) {
+  const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const aktifBelum = belum.filter((h) => h.aktif);
+  const kepala = ["kode", "nama", "satuan", "itemGroup_sekarang", "jenis_persediaan", "alasan_belum_dikelompokkan", "kelompok_pilihan (isi: Busa/Kain/Benang/Pegas/Kayu/Lem-Kimia/Aksesori/Lainnya)", "catatan"];
+  const baris = aktifBelum.sort((a, b) => (a.itemGroup ?? "").localeCompare(b.itemGroup ?? "") || a.name.localeCompare(b.name)).map((h) => [h.code, h.name, h.unit, h.itemGroup, h.category, h.k.alasan, "", ""].map(q).join(","));
+  fs.writeFileSync(process.argv[iCsv + 1], "﻿" + [kepala.map(q).join(","), ...baris].join("\r\n") + "\r\n");
+  console.error(`Daftar keputusan: ${aktifBelum.length} bahan aktif → ${process.argv[iCsv + 1]}`);
+}

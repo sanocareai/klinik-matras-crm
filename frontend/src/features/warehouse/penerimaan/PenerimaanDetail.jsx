@@ -29,11 +29,13 @@ const BADGE = { neutral: "neutral", accent: "accent", orange: "orange", green: "
 // Aksi → isian kecil di tempat (tanpa modal).
 const SPEC = {
   UBAH_JADWAL: { panel: { judul: "Ubah jadwal kedatangan", tombol: "Simpan jadwal", peringatan: "Hanya jadwal penerimaan ini (Gudang). Estimasi tiba pada PO tetap milik Finance.", bidang: [{ nama: "tanggal", label: "Jadwal kedatangan baru", tipe: "date", wajib: true }] } },
-  KEMBALI_DRAFT: { panel: { judul: "Kembalikan ke Draf?", tombol: "Kembalikan ke Draf", peringatan: "Penerimaan menjadi Draf lagi (belum dijadwalkan). Stok tidak berubah.", bidang: [{ nama: "alasan", label: "Alasan (opsional)", maks: 300 }] } },
+  KEMBALI_DRAFT: { panel: { judul: "Kembalikan ke Draf?", tombol: "Ya, kembalikan ke Draf", peringatan: "Dari Terjadwal kembali ke Draf (belum dijadwalkan). Stok, jurnal, dan PO tidak berubah. Siapa, kapan, dan alasan tersimpan di riwayat; bisa dijadwalkan lagi kapan saja.", bidang: [{ nama: "alasan", label: "Alasan (wajib, tercatat di riwayat)", wajib: true, min: 3, maks: 300 }] } },
   BATALKAN_JADWAL: { panel: { judul: "Batalkan penerimaan ini?", tombol: "Ya, batalkan", peringatan: "Dokumen tidak dihapus: tersimpan sebagai Dibatalkan beserta alasan. PO tidak berubah dan jadwal baru bisa dibuat dari PO.", bidang: [{ nama: "alasan", label: "Alasan pembatalan", wajib: true, min: 3, maks: 300 }] } },
   TOLAK: { panel: { judul: "Tolak barang ini?", tombol: "Tolak penerimaan", peringatan: "Dipakai bila barang sudah tiba lalu ditolak seluruhnya. Tidak menambah stok.", bidang: [{ nama: "alasan", label: "Alasan penolakan", wajib: true, min: 3, maks: 300 }] } },
-  BATALKAN_TIBA: { panel: { judul: "Barang sebenarnya belum tiba?", tombol: "Batalkan catatan tiba", peringatan: "Dokumen kembali Terjadwal. Catatan tiba yang salah tetap tersimpan di riwayat (tidak dihapus) dan stok tidak berubah. Item yang tidak ikut tercatat tiba tidak kembali ke dokumen ini; buat jadwal baru dari PO untuk sisanya.", bidang: [{ nama: "alasan", label: "Alasan", wajib: true, min: 3, maks: 300 }] } },
-  PULIHKAN: { panel: { judul: "Pulihkan penerimaan ini ke Draf?", tombol: "Pulihkan ke Draf", peringatan: "Dokumen aktif lagi sebagai Draf dengan nomor yang sama. Belum ada pengaruh ke stok, jadi aman. Riwayat pembatalan tetap tersimpan.", bidang: [{ nama: "alasan", label: "Alasan (opsional)", maks: 300 }] } },
+  BATALKAN_TIBA: { panel: { judul: "Barang sebenarnya belum tiba?", tombol: "Ya, kembalikan ke Terjadwal", peringatan: "Dari Barang tiba kembali ke Terjadwal. Catatan tiba yang salah tetap tersimpan di riwayat (tidak dihapus); stok dan jurnal tidak berubah. Hanya bisa selama belum ada hasil pemeriksaan, faktur, atau retur. Item yang tidak ikut tercatat tiba tidak kembali ke dokumen ini; buat jadwal baru dari PO untuk sisanya.", bidang: [{ nama: "alasan", label: "Alasan (wajib, tercatat di riwayat)", wajib: true, min: 3, maks: 300 }] } },
+  PULIHKAN: { panel: { judul: "Pulihkan penerimaan ini?", tombol: "Ya, pulihkan", peringatan: "Dokumen aktif lagi di status terakhir yang aman sebelum dibatalkan (Draf atau Terjadwal) dengan nomor yang sama. Belum ada pengaruh ke stok, jadi aman. Riwayat pembatalan tetap tersimpan.", bidang: [{ nama: "alasan", label: "Alasan (wajib, tercatat di riwayat)", wajib: true, min: 3, maks: 300 }] } },
+  KEMBALI_TIBA: { panel: { judul: "Kembalikan ke Barang tiba?", tombol: "Ya, kembalikan ke Barang tiba", peringatan: "Dari Pemeriksaan kembali ke Barang tiba. Hasil pemeriksaan yang sudah diisi tidak dihapus. Stok dan jurnal tidak berubah. Siapa, kapan, dan alasan tersimpan di riwayat.", bidang: [{ nama: "alasan", label: "Alasan (wajib, tercatat di riwayat)", wajib: true, min: 3, maks: 300 }] } },
+  KEMBALI_PERIKSA: { panel: { judul: "Kembalikan ke Pemeriksaan?", tombol: "Ya, kembalikan ke Pemeriksaan", peringatan: "Dari Siap masuk stok kembali ke Pemeriksaan, selama belum Simpan ke Stok. Jumlah yang sudah diisi tidak dihapus; stok dan jurnal tidak berubah. Siapa, kapan, dan alasan tersimpan di riwayat.", bidang: [{ nama: "alasan", label: "Alasan (wajib, tercatat di riwayat)", wajib: true, min: 3, maks: 300 }] } },
   BUAT_ULANG: { panel: { judul: "Buat penerimaan baru dari dokumen ini?", tombol: "Buat penerimaan baru", peringatan: "Dokumen ini tidak diubah dan tidak dihapus. Dibuat dokumen BARU berstatus Draf berisi sisa PO (atau item yang sama bila tanpa PO); kedua dokumen saling tertaut di riwayat.", bidang: [{ nama: "alasan", label: "Alasan membuat ulang", wajib: true, min: 3, maks: 300 }] } },
 };
 
@@ -43,7 +45,7 @@ const SPEC = {
 export default function PenerimaanDetail({ id: idProp, onTutup, onBerubah, saringan = "" }) {
   const params = useParams(); const id = idProp ?? params.id; const navigate = useNavigate(); const [picu, setPicu] = useState(null);
   const [r, setR] = useState(null); const [semua, setSemua] = useState([]); const [galat, setGalat] = useState(""); const [memuat, setMemuat] = useState(true); const [sibuk, setSibuk] = useState(false);
-  const [isian, setIsian] = useState({}); const [versi, setVersi] = useState(0);
+  const [isian, setIsian] = useState({}); const [versi, setVersi] = useState(0); const [konflik, setKonflik] = useState(""); const [info, setInfo] = useState("");
   const [tibaPO, setTibaPO] = useState(null); const [koreksiPO, setKoreksiPO] = useState(null); const [koreksiGR, setKoreksiGR] = useState(false);
 
   const muat = useCallback(async (kabari = true) => {
@@ -67,23 +69,29 @@ export default function PenerimaanDetail({ id: idProp, onTutup, onBerubah, sarin
   }
   const jalankan = async (kode, v = {}) => {
     if (galatDini && ["SIMPAN_KE_STOK", "MAJUKAN", "ISI_PEMERIKSAAN", "TANDAI_TIBA"].includes(kode)) throw new Error(galatDini); // isian pemeriksaan belum valid
-    setSibuk(true);
+    setSibuk(true); setKonflik(""); setInfo("");
     try {
-      if (kode === "UBAH_JADWAL") await api.updateGoodsReceipt(id, { expectedDate: v.tanggal });
-      else if (kode === "KEMBALI_DRAFT") await api.kembaliDraftGoodsReceipt(id, v.alasan);
+      let hasil = null; // jawaban server (ulang:true = permintaan yang sama sudah dijalankan)
+      if (kode === "UBAH_JADWAL") await api.updateGoodsReceipt(id, { expectedDate: v.tanggal, revisi: r.revisi });
+      else if (kode === "KEMBALI_DRAFT") hasil = await api.mundurGoodsReceipt(id, "DRAFT", v.alasan, r.revisi);
+      else if (kode === "KEMBALI_TIBA") hasil = await api.mundurGoodsReceipt(id, "ARRIVED", v.alasan, r.revisi);
+      else if (kode === "KEMBALI_PERIKSA") hasil = await api.mundurGoodsReceipt(id, "INSPECTION", v.alasan, r.revisi);
       else if (kode === "BATALKAN_JADWAL") await api.batalkanJadwalGoodsReceipt(id, v.alasan);
       else if (kode === "TOLAK") await api.rejectGoodsReceipt(id, v.alasan);
-      else if (kode === "BATALKAN_TIBA") await api.batalkanTibaGoodsReceipt(id, v.alasan);
-      else if (kode === "PULIHKAN") await api.pulihkanGoodsReceipt(id, v.alasan);
+      else if (kode === "BATALKAN_TIBA") hasil = await api.mundurGoodsReceipt(id, "SCHEDULED", v.alasan, r.revisi);
+      else if (kode === "PULIHKAN") hasil = await api.pulihkanGoodsReceipt(id, v.alasan, r.revisi);
       else if (kode === "BUAT_ULANG") { const baru = await api.buatUlangGoodsReceipt(id, v.alasan); navigate(`/warehouse/goods-receipt/${baru.id}${saringan}`, { replace: true }); return; }
-      else if (kode === "JADWALKAN") await api.updateGoodsReceipt(id, { status: "SCHEDULED" });
-      else if (kode === "TANDAI_TIBA" || kode === "MAJUKAN") { if (adaIsian) await simpanIsian(); const urut = ["DRAFT", "SCHEDULED", "ARRIVED", "INSPECTION", "READY_FOR_PUTAWAY"]; await api.updateGoodsReceipt(id, { status: urut[urut.indexOf(r.status) + 1] }); }
+      else if (kode === "JADWALKAN") hasil = await api.updateGoodsReceipt(id, { status: "SCHEDULED", revisi: r.revisi });
+      else if (kode === "TANDAI_TIBA" || kode === "MAJUKAN") { if (adaIsian) await simpanIsian(); const urut = ["DRAFT", "SCHEDULED", "ARRIVED", "INSPECTION", "READY_FOR_PUTAWAY"]; hasil = await api.updateGoodsReceipt(id, { status: urut[urut.indexOf(r.status) + 1], revisi: r.revisi }); }
       else if (kode === "SIMPAN_KE_STOK") { if (adaIsian) await simpanIsian(); await api.putawayGoodsReceipt(id); }
       else if (kode === "ISI_PEMERIKSAAN") { await simpanIsian(); }
       else if (kode === "CATAT_TIBA") { setTibaPO(await api.getBarangAkanDatangDetail(r.purchaseOrderId)); return; }
       else if (kode === "KOREKSI_KEDATANGAN") { setKoreksiPO(await api.getBarangAkanDatangDetail(r.purchaseOrderId)); return; }
       else if (kode === "KOREKSI_PENERIMAAN") { setKoreksiGR(true); return; }
-      await muat();
+      await muat(); if (hasil?.ulang) setInfo("Perpindahan yang sama sudah dijalankan sebelumnya (klik ganda atau pengguna lain); hasilnya sama dan riwayat tidak bertambah.");
+    } catch (e) {
+      if (["REVISI_BASI", "PERPINDAHAN_TIDAK_SAH", "SUDAH_ADA_HASIL_PEMERIKSAAN"].includes(e.code)) { await muat(); setKonflik(e.message); throw Object.assign(new Error(e.message), { diam: true }); } // banner halaman tetap terlihat walau kartu aksi berpindah
+      throw e;
     } finally { setSibuk(false); }
   };
   // Aksi pemeriksaan tampil sebagai tombol simpan isian hanya bila ada isian; selebihnya isian langsung di tabel.
@@ -120,6 +128,18 @@ export default function PenerimaanDetail({ id: idProp, onTutup, onBerubah, sarin
       footer={kartuAksi}
     >
       <div className="space-y-4">
+        {konflik && (
+          <div role="alert" className="flex items-start gap-2 rounded-btn border-l-[3px] border-red bg-redbg px-3 py-2.5 text-[12.5px] text-ink" data-testid="banner-konflik">
+            <span className="flex-1"><strong>Perubahan tidak dijalankan.</strong> {konflik} Dokumen sudah dimuat ulang dengan keadaan terbaru.</span>
+            <button type="button" onClick={() => setKonflik("")} className="shrink-0 text-[12px] font-semibold text-accent max-sm:min-h-11">Tutup</button>
+          </div>
+        )}
+        {info && (
+          <div role="status" className="flex items-start gap-2 rounded-btn border-l-[3px] border-accent bg-accentbg px-3 py-2.5 text-[12.5px] text-ink" data-testid="banner-ulang">
+            <span className="flex-1"><strong>Sudah diproses sebelumnya.</strong> {info}</span>
+            <button type="button" onClick={() => setInfo("")} className="shrink-0 text-[12px] font-semibold text-accent max-sm:min-h-11">Tutup</button>
+          </div>
+        )}
         <Card className="space-y-3 p-4" data-testid="kartu-identitas">
           <div className="flex flex-wrap items-center gap-2"><SumberPO receipt={r} /></div>
           <dl className="m-0 grid grid-cols-2 gap-x-4 gap-y-2 text-[12.5px] sm:grid-cols-4">
@@ -186,11 +206,12 @@ export default function PenerimaanDetail({ id: idProp, onTutup, onBerubah, sarin
         )}
         {r.jejak?.length > 0 && (
           <Card className="p-4" data-testid="jejak-dokumen">
-            <h3 className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ink3">Riwayat dokumen</h3>
+            <h3 className="mb-1.5 text-[11px] font-bold uppercase tracking-wide text-ink3">Riwayat status dan dokumen</h3>
             <ol className="m-0 list-none space-y-1.5 p-0 text-[12.5px]">
               {r.jejak.map((j) => (
                 <li key={j.id} data-testid="jejak-baris" data-aksi={j.aksi}>
                   <span className="font-semibold text-ink">{j.teks}</span>
+                  {j.dari && j.ke && <span className="ml-1 text-ink2" data-testid="jejak-dari-ke">({j.dari} → {j.ke})</span>}
                   {j.tautan && <> — <Link replace to={tautan(j.tautan.id)} className="font-semibold text-accent">{j.tautan.nomor}</Link></>}
                   <span className="text-ink3"> · {j.oleh ?? "—"} · {waktuTeks(j.waktu)}</span>
                   {j.alasan && <div className="text-[11.5px] text-ink2">Alasan: {j.alasan}</div>}

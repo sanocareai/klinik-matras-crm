@@ -177,7 +177,7 @@ test("Saldo: belum diketahui, nol, dan minus tampil BERBEDA; lokasi hanya sebaga
 test("Pemulihan dokumen: Batalkan catatan tiba / Pulihkan / Buat penerimaan baru tersedia di halaman detail dengan alasan; jejak dengan tautan; tanpa Hapus/Undo", () => {
   const d = baca("features/warehouse/penerimaan/PenerimaanDetail.jsx");
   for (const k of ["BATALKAN_TIBA", "PULIHKAN", "BUAT_ULANG"]) assert.ok(d.includes(`${k}: { panel`), k);
-  for (const m of ["batalkanTibaGoodsReceipt", "pulihkanGoodsReceipt", "buatUlangGoodsReceipt"]) { assert.ok(d.includes(`api.${m}`), m); assert.ok(baca("api.js").includes(`${m}:`), m); }
+  for (const m of ["mundurGoodsReceipt", "pulihkanGoodsReceipt", "buatUlangGoodsReceipt"]) { assert.ok(d.includes(`api.${m}`), m); assert.ok(baca("api.js").includes(`${m}:`), m); }
   assert.ok(d.includes("navigate(`/warehouse/goods-receipt/${baru.id}${saringan}`, { replace: true })"));
   assert.match(d, /data-testid="jejak-dokumen"/); assert.match(d, /tidak dihapus/);
   assert.doesNotMatch(d, />\s*(Hapus|Undo)\s*</);

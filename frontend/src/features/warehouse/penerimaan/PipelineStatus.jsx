@@ -44,6 +44,7 @@ export default function PipelineStatus({ tampilan, onPilih, bolehUbah = true, si
           <span className="text-[11.5px] text-ink3" data-testid="pipeline-tanpa-pindah">{bolehUbah ? "Tidak ada perpindahan status untuk tahap ini." : "Akun Anda hanya dapat melihat dokumen ini."}</span>
         )}
       </div>
+      {bolehUbah && (p.tertahan ?? []).map((x) => <p key={x.ke} className="m-0 mt-1 text-[11.5px] text-ink3" data-testid="pipeline-tertahan">{x.sebab}</p>)}
       {buka && pindah.length > 0 && (
         <ul className="m-0 mt-1.5 list-none space-y-1 rounded-btn border border-border bg-inset p-1.5" role="menu" aria-label="Perpindahan status yang sah" data-testid="pipeline-menu">
           {pindah.map((x) => {

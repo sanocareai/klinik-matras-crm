@@ -587,10 +587,12 @@ export const api = {
   updateGoodsReceiptLine: (id, lineId, data) =>
     request(`/inventory/goods-receipts/${id}/lines/${lineId}`, { method: "PATCH", body: JSON.stringify(data) }),
   putawayGoodsReceipt: (id, data = {}) => request(`/inventory/goods-receipts/${id}/putaway`, { method: "POST", body: JSON.stringify(data) }),
-  kembaliDraftGoodsReceipt: (id, alasan) => request(`/inventory/goods-receipts/${id}/kembali-draft`, { method: "POST", body: JSON.stringify({ alasan }) }),
+  kembaliDraftGoodsReceipt: (id, alasan, revisi) => request(`/inventory/goods-receipts/${id}/kembali-draft`, { method: "POST", body: JSON.stringify({ alasan, revisi }) }),
+  // Perpindahan MUNDUR yang sah (Tahap 3): ke = DRAFT | SCHEDULED | ARRIVED | INSPECTION; alasan wajib; revisi = token dokumen yang dilihat pengguna (konflik → 409 REVISI_BASI).
+  mundurGoodsReceipt: (id, ke, alasan, revisi) => request(`/inventory/goods-receipts/${id}/mundur`, { method: "POST", body: JSON.stringify({ ke, alasan, revisi }) }),
   batalkanJadwalGoodsReceipt: (id, alasan) => request(`/inventory/goods-receipts/${id}/batalkan-jadwal`, { method: "POST", body: JSON.stringify({ alasan }) }),
-  batalkanTibaGoodsReceipt: (id, alasan) => request(`/inventory/goods-receipts/${id}/batalkan-tiba`, { method: "POST", body: JSON.stringify({ alasan }) }),
-  pulihkanGoodsReceipt: (id, alasan) => request(`/inventory/goods-receipts/${id}/pulihkan`, { method: "POST", body: JSON.stringify({ alasan }) }),
+  batalkanTibaGoodsReceipt: (id, alasan, revisi) => request(`/inventory/goods-receipts/${id}/batalkan-tiba`, { method: "POST", body: JSON.stringify({ alasan, revisi }) }),
+  pulihkanGoodsReceipt: (id, alasan, revisi) => request(`/inventory/goods-receipts/${id}/pulihkan`, { method: "POST", body: JSON.stringify({ alasan, revisi }) }),
   buatUlangGoodsReceipt: (id, alasan) => request(`/inventory/goods-receipts/${id}/buat-ulang`, { method: "POST", body: JSON.stringify({ alasan }) }),
   getBerandaGudang: () => request("/inventory/beranda"),
   getStokLokasi: () => request("/inventory/beranda/stok"),
