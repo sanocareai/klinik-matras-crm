@@ -22,7 +22,7 @@ for a in "$@"; do case "$a" in --preflight-only) MODE=preflight;; --rollback) MO
 CAND_BRANCH="${CAND_BRANCH:-fix/gudang-pintu-masuk}"
 CAND_REF="refs/remotes/origin/cand-gpm"
 BUNDLE="${BUNDLE:-}"
-ALLOWED_RE='^(frontend/src/components/WorkspaceSwitcher\.jsx|frontend/src/lib/legacyProductionRoutes\.js|frontend/src/lib/sidebarOrder\.js|frontend/src/pages/Gudang\.jsx|frontend/src/routes/pageRegistry\.jsx|frontend/tests/gudangPintuMasuk\.test\.js)$'
+ALLOWED_RE='^(frontend/src/components/WorkspaceSwitcher\.jsx|frontend/src/lib/legacyProductionRoutes\.js|frontend/src/lib/sidebarOrder\.js|frontend/src/pages/Gudang\.jsx|frontend/src/routes/pageRegistry\.jsx|frontend/tests/gudangPintuMasuk\.test\.js|scripts/release-gudang-pintu-masuk\.sh)$'
 FRONTEND_SRC_EXPECT="frontend/src/components/WorkspaceSwitcher.jsx frontend/src/lib/legacyProductionRoutes.js frontend/src/lib/sidebarOrder.js frontend/src/pages/Gudang.jsx frontend/src/routes/pageRegistry.jsx"
 PUBLIC_URL="https://app.sanomatrassehat.com"; INTERNAL_URL="http://127.0.0.1:4000"
 REPO_URL="https://github.com/sanocareai/klinik-matras-crm.git"
