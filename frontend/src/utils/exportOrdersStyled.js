@@ -158,11 +158,11 @@ function buatSheetKomplain(wb, rows, meta) {
   aturCetak(ws);
 }
 
-/** Sheet "Rincian Unit": 1 baris per UNIT produksi (order multi-unit tampil lengkap; order tanpa unit tidak punya baris di sini). */
+/** Sheet "Rekap per Unit": SEMUA order; order multi-unit = 1 baris per UNIT (daftar untuk rekap pemakaian bahan). */
 function buatSheetUnit(wb, rows) {
   if (!rows || rows.length === 0) return;
   const headers = Object.keys(rows[0]);
-  const ws = wb.addWorksheet("Rincian Unit", { views: [{ state: "frozen", xSplit: 4, ySplit: 1 }] });
+  const ws = wb.addWorksheet("Rekap per Unit", { views: [{ state: "frozen", xSplit: 2, ySplit: 1 }] });
   ws.addRow(headers);
   gayaHeader(ws, headers.length);
   rows.forEach((r, i) => {
@@ -173,10 +173,10 @@ function buatSheetUnit(wb, rows) {
       cell.font = { name: "Calibri", size: 11, color: { argb: "FF111111" } };
       if (i % 2) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: WARNA.zebra } };
       cell.border = { bottom: { style: "thin", color: { argb: WARNA.garis } } };
-      cell.alignment = { vertical: "top", wrapText: h === "Spesifikasi" || h === "Produk", horizontal: h === "Unit ke" ? "center" : "left" };
+      cell.alignment = { vertical: "top", wrapText: ["Spesifikasi", "Produk", "Layanan", "Keluhan/Catatan", "Berat Badan"].includes(h), horizontal: h === "Unit ke" ? "center" : "left" };
     });
   });
-  headers.forEach((h, i) => { ws.getColumn(i + 1).width = { "ID Order": 20, Pelanggan: 22, "Sales Person": 14, Unit: 20, "Unit ke": 10, Produk: 30, Merk: 16, Ukuran: 18, Spesifikasi: 34, Pengiriman: 18, "Status Produksi": 22, Tahap: 18, "Status Delivery": 26 }[h] || 14; });
+  headers.forEach((h, i) => { ws.getColumn(i + 1).width = { "ID Order": 20, Unit: 22, "Unit ke": 10, Pelanggan: 22, "Sales Person": 14, Kategori: 12, Produk: 28, "Merk/Model": 16, Ukuran: 18, Spesifikasi: 32, Layanan: 30, "Status Order": 13, "Status Produksi": 22, "Jenis Pekerjaan": 18, "Keluhan/Catatan": 34, "Berat Badan": 18, "Kota Pengiriman": 16, "Estimasi Kirim": 16 }[h] || 14; });
   ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1 + rows.length, column: headers.length } };
   aturCetak(ws);
 }
@@ -361,7 +361,7 @@ function buatSheetRingkasan(wb, rows, meta, headers, info) {
 /**
  * @param {{rows: object[], meta: object[], layanan?: object[], info?: string[], filename?: string}} p
  *   rows  = 1 objek per order (kunci = judul kolom, seperti export lama)
- *   unit  = 1 objek per UNIT produksi (lihat utils/orderUnitExport.js) → sheet "Rincian Unit"
+ *   unit  = baris rekap per UNIT (lihat utils/orderUnitExport.js) → sheet "Rekap per Unit" (semua order; order N unit = N baris)
  *   meta  = paralel dgn rows: { komplain, kategori (LAYANAN|BARU|SEWA), bayar (LUNAS|DP|BELUM_BAYAR), menunggu, dibatalkan }
  */
 export async function exportOrdersStyled({ rows, meta, layanan = [], unit = [], info = [], filename = "order" }) {
@@ -372,10 +372,10 @@ export async function exportOrdersStyled({ rows, meta, layanan = [], unit = [], 
   wb.created = new Date();
 
   const { headers } = buatSheetOrder(wb, rows, meta);
+  buatSheetUnit(wb, unit); // tepat setelah sheet Order: daftar per unit yang disalin admin produksi ke rekap bahan
   buatSheetRingkasan(wb, rows, meta, headers, [...info, `Diexport ${new Date().toLocaleString("id-ID")}`]);
   buatSheetKomplain(wb, rows, meta);
   buatSheetLayanan(wb, layanan);
-  buatSheetUnit(wb, unit);
 
   const buf = await wb.xlsx.writeBuffer();
   saveAs(new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), `${filename}.xlsx`);
