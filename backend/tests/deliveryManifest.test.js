@@ -87,6 +87,26 @@ test("order non-PKR: cadangan memakai data unit; tanpa sumber PKR; label unit da
   assert.equal(teksSelManifest(m), "1× King Koil — 160 × 200 cm (U1)");
 });
 
+// Bug nyata 18 Okt 2026 (laporan owner, order SOFA & LAYANAN RES-18102026-088
+// "Mita"): unit restorasi sofa tanpa merk/item PKR menampilkan "1× Kasur" ke
+// driver padahal ordernya restorasi sofa (ganti kain/busa/rangka) — fallback
+// lama buta terhadap Order.productLine, jatuh langsung ke "Kasur" literal.
+test("order non-PKR lini SOFA tanpa merk unit: cadangan memakai productLine order ('Sofa'), BUKAN 'Kasur'", () => {
+  const order = { id: "o3", category: "LAYANAN", productLine: "SOFA", productType: "SOFA_2_SEATER", notes: null, units: [] };
+  const u = { id: "y1", unitCode: "RES-18102026-088-U1", seq: 1, status: "ASSIGNED", merk: "", ukuran: "" };
+  const m = bangunManifest({ id: "j3", type: "PICKUP", status: "SCHEDULED", order, units: [ju(u)] }, ALAT);
+  assert.equal(m.unit, 1);
+  assert.equal(m.baris[0].nama, "Sofa");
+  assert.equal(teksBarisManifest(m.baris[0]), "1× Sofa");
+});
+
+test("order non-PKR lini DIVAN tanpa merk unit: cadangan memakai productLine order ('Divan')", () => {
+  const order = { id: "o4", category: "BARU", productLine: "DIVAN", notes: null, units: [] };
+  const u = { id: "z1", unitCode: "RES-19102026-001-U1", seq: 1, status: "ASSIGNED", merk: "", ukuran: "" };
+  const m = bangunManifest({ id: "j4", type: "DELIVERY", status: "SCHEDULED", order, units: [ju(u)] }, ALAT);
+  assert.equal(m.baris[0].nama, "Divan");
+});
+
 test("progres muat 'Barang dimuat x/y unit' dari unitLoads; replay data sama tidak menambah hitungan", () => {
   const j = job([unit(1), unit(2), unit(3)], ORDER_PKR, { unitLoads: [{ unitId: "u1" }, { unitId: "u2" }] });
   const m = bangunManifest(j, ALAT);
