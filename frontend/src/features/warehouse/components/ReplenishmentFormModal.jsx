@@ -43,11 +43,11 @@ export default function ReplenishmentFormModal({ open, prefill, onClose, onCreat
     if (!(Number(suggestedQty) > 0)) { setErr("Suggested quantity wajib lebih dari 0"); return; }
     setBusy(true); setErr("");
     try {
-      await api.createReplenishmentRequest({
+      const baru = await api.createReplenishmentRequest({
         source, materialId, suggestedQty, requiredDate: requiredDate || undefined,
         priority, supplier: supplier || undefined, notes: notes || undefined,
       });
-      onCreated(); onClose();
+      onCreated(baru); onClose();
     } catch (e2) { setErr(e2.message); } finally { setBusy(false); }
   }
 

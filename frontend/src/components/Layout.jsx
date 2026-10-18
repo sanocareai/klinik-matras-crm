@@ -262,50 +262,59 @@ const DIVISIONS = {
     accent: {
       ...DIVISION_ACCENT,
     },
+    // Tahap 1 UX Gudang (Okt 2026) — dikelompokkan menurut ALUR KERJA petugas, bukan jenis dokumen:
+    //   HARI INI (Beranda) → PENERIMAAN (PO → jadwal → tiba → periksa → masuk stok) → STOK → PRODUKSI (antrean V2) → KONTROL & BIAYA → LAPORAN.
+    // Semua rute lama tetap hidup (hanya urutan/label menu yang berubah); "Dashboard" kini bernama Beranda agar tidak terkesan ada dua dashboard.
     sections: [
       {
-        section: "OPERASIONAL",
+        section: "HARI INI",
+        items: [
+          { to: "/warehouse/dashboard", label: "Beranda", Icon: LayoutDashboard },
+        ],
+      },
+      {
+        section: "PENERIMAAN BARANG",
+        items: [
+          // PO terintegrasi Finance–Gudang: PO yang akan/sedang datang (data yang sama dengan Finance, TANPA harga) + catat barang tiba.
+          { to: "/warehouse/barang-akan-datang", label: "Barang Akan Datang", Icon: Truck },
+          { to: "/warehouse/goods-receipt",  label: "Penerimaan Barang", Icon: ArrowDownToLine },
+          // Retur Supplier untuk kredit: kondisi + konfirmasi barang keluar (TANPA nilai). Status sama dengan Finance.
+          { to: "/warehouse/retur-supplier", label: "Retur Supplier", Icon: ArrowUpFromLine },
+        ],
+      },
+      {
+        section: "STOK",
+        items: [
+          { to: "/warehouse/inventory", label: "Stok & Lokasi",     Icon: Package },
+          { to: "/warehouse/material-issue", label: "Pengeluaran Material", Icon: ArrowUpFromLine },
+          { to: "/warehouse/transfers",      label: "Transfer Stok",     Icon: ArrowLeftRight },
+          { to: "/warehouse/replenishment", label: "Restok",             Icon: TrendingUp },
+          { to: "/warehouse/adjustments",   label: "Barang Rusak & Retur", Icon: AlertTriangle },
+        ],
+      },
+      {
+        section: "UNTUK PRODUKSI",
         items: [
           // P8 — antrean Gudang untuk Produksi V2 (unit masuk, bahan, kekurangan, barang jadi). Inert bila reader V2 OFF.
           { to: "/warehouse/antrean-produksi", label: "Antrean Produksi", Icon: ClipboardCheck },
-          { to: "/warehouse/dashboard", label: "Dashboard",        Icon: LayoutDashboard },
           // Custody unit V2 (P1–P2): antrean serah-terima Delivery <-> Gudang. Data kosong bila reader V2 belum diaktifkan (fail-closed).
           { to: "/warehouse/unit-custody", label: "Penerimaan Unit", Icon: ClipboardCheck },
-        ],
-      },
-      {
-        section: "TRANSAKSI",
-        items: [
-          // P4 — antrean Pengambilan Bahan Produksi (permintaan dari Planned BOM/reservasi; kosong/inert bila reader V2 OFF).
-          // Produksi hanya MELIHAT status di sini — aksi serahkan bahan tetap milik Gudang (ProductionExperienceReadService, bukan halaman ini).
+          // P4 — antrean Pengambilan Bahan Produksi. Produksi hanya MELIHAT status; aksi serahkan bahan milik Gudang.
           { to: "/warehouse/material-pickup", label: "Permintaan Bahan", Icon: ArrowUpFromLine },
-          // P6 — penerimaan BARANG JADI dari Produksi (lokasi wajib; menerima = run selesai + unit siap kirim). Inert bila reader V2 OFF.
+          // P6 — penerimaan BARANG JADI dari Produksi (lokasi wajib). Inert bila reader V2 OFF.
           { to: "/warehouse/finished-goods", label: "Terima Barang Jadi", Icon: ArrowDownToLine },
-          { to: "/warehouse/inventory", label: "Stok & Lokasi",     Icon: Package },
-          // PO terintegrasi Finance–Gudang: PO yang akan/sedang datang (data yang sama dengan Finance, TANPA harga) + catat barang tiba.
-          { to: "/warehouse/barang-akan-datang", label: "Barang Akan Datang", Icon: Truck },
-          // Retur Supplier untuk kredit: kondisi + konfirmasi barang keluar (TANPA nilai). Status sama dengan Finance.
-          { to: "/warehouse/retur-supplier", label: "Retur Supplier", Icon: ArrowUpFromLine },
-          { to: "/warehouse/goods-receipt",  label: "Penerimaan Barang", Icon: ArrowDownToLine },
-          { to: "/warehouse/material-issue", label: "Pengeluaran Material", Icon: ArrowUpFromLine },
-          { to: "/warehouse/transfers",      label: "Transfer Stok",     Icon: ArrowLeftRight },
-          // C1 — biaya operasional NON-STOK gudang (bongkar muat, kurir, perlengkapan). Hanya WAREHOUSE/Finance/Admin; server menegakkan ulang.
-          { to: "/warehouse/pengajuan-biaya", label: "Pengajuan Biaya", Icon: Receipt, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "APPROVER", "WAREHOUSE"], bolehDivisi: ["WAREHOUSE"] },
-          { to: "/warehouse/laporan-biaya", label: "Laporan Biaya", Icon: BarChart3, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "WAREHOUSE"], bolehDivisi: ["WAREHOUSE"] },
         ],
       },
       {
-        section: "KONTROL STOK",
+        section: "KONTROL & BIAYA",
         items: [
           { to: "/warehouse/stock-count",   label: "Stock Opname",       Icon: Scale },
           { to: "/finance/persediaan-awal", label: "Opname Cutover Persediaan", Icon: ClipboardCheck },
-          { to: "/warehouse/replenishment", label: "Restok",             Icon: TrendingUp },
-          { to: "/warehouse/adjustments",   label: "Barang Rusak & Retur", Icon: AlertTriangle },
-          // Kasus Komplain (D-116, 11 September 2026) — Warehouse melihat
-          // kasus yang butuh Material Requirement (status Menunggu Material).
-          // Halaman dibaca lintas divisi, lihat catatan panjang di section
-          // armada di atas.
+          // Kasus Komplain (D-116) — Warehouse melihat kasus yang butuh Material Requirement; halaman dibaca lintas divisi.
           { to: "/komplain",                label: "Kasus Komplain",     Icon: AlertTriangle },
+          // C1 — biaya operasional NON-STOK gudang. Hanya WAREHOUSE/Finance/Admin; server menegakkan ulang.
+          { to: "/warehouse/pengajuan-biaya", label: "Pengajuan Biaya", Icon: Receipt, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "APPROVER", "WAREHOUSE"], bolehDivisi: ["WAREHOUSE"] },
+          { to: "/warehouse/laporan-biaya", label: "Laporan Biaya", Icon: BarChart3, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "WAREHOUSE"], bolehDivisi: ["WAREHOUSE"] },
         ],
       },
       {

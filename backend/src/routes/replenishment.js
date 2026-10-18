@@ -8,7 +8,10 @@
 
 import express from "express";
 import { requireAuth } from "../middleware/auth.js";
-import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
+import { requirePermission, hasPermission, PERMISSIONS as P } from "../middleware/authorize.js";
+import { tampilanRestok, untukIzin } from "../services/dokumenGudangLain.js";
+import { jejakDokumenGudang } from "../services/dokumenGudang.js";
+import { ENTITY_TYPES } from "../lib/activityLog.js";
 import { prisma } from "../db.js";
 import { computeStockSnapshot } from "../services/inventoryLedger.js";
 import { wajibUuid } from "../lib/uuidParam.js";
@@ -90,7 +93,7 @@ replenishmentRouter.get("/", requirePermission(P.INVENTORY_READ), async (req, re
       include: requestInclude,
       orderBy: [{ createdAt: "desc" }],
     });
-    res.json({ requests });
+    res.json({ requests: requests.map((r) => ({ ...r, tampilan: tampilanRestok(r) })) });
   } catch (err) {
     handleErr(err, res);
   }
@@ -100,7 +103,8 @@ replenishmentRouter.get("/:id", requirePermission(P.INVENTORY_READ), wajibUuid()
   try {
     const request = await prisma.replenishmentRequest.findUnique({ where: { id: req.params.id }, include: requestInclude });
     if (!request) return res.status(404).json({ error: "Replenishment request tidak ditemukan" });
-    res.json(request);
+    const tulis = hasPermission(req.user, P.INVENTORY_WRITE);
+    res.json({ ...request, tampilan: untukIzin(tampilanRestok(request), tulis), izin: { tulis }, jejak: await jejakDokumenGudang(prisma, { entityType: ENTITY_TYPES.REPLENISHMENT, id: request.id, dibuatOleh: request.requestedBy?.name ?? null, dibuatPada: request.createdAt }) });
   } catch (err) {
     handleErr(err, res);
   }

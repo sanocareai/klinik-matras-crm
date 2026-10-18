@@ -18,6 +18,7 @@ import { sinkronJatuhTempoFakturPO } from "./jadwalJatuhTempo.js";
 import { DEFINISI_PROGRES, asalPenggantiTerbuka, hitungProgresPO, ringkasProgresPO } from "./progresPO.js";
 import { hitungKuantitas, hitungUlangStatus } from "./purchaseOrder.js";
 import { buatGalat, pastikanTanpaReturAktifJikaAda, rencanaBaikSesudahStok, terapkanBaikSesudahStok } from "./koreksiPenerimaan.js";
+import { tampilanPenerimaan } from "../penerimaanStatus.js";
 
 export class KedatanganError extends Error {
   constructor(message, statusCode = 400, code = null, arah = null) { super(message); this.name = "KedatanganError"; this.statusCode = statusCode; if (code) this.code = code; if (arah) this.arah = arah; }
@@ -158,6 +159,8 @@ function bentukPenerimaan(r, { po, poLineById, finance, returPerBaris = new Map(
   });
   return {
     id: r.id, nomor: r.receiptNumber, status: r.status, statusLabel: LABEL_PENERIMAAN[r.status] ?? r.status, kosong: penerimaanKosong(r),
+    // Bahasa petugas + aksi relevan per status (satu sumber: services/penerimaanStatus.js) — dipakai Barang Akan Datang untuk menautkan ke halaman penerimaan.
+    tampilan: tampilanPenerimaan({ status: r.status, purchaseOrderId: r.purchaseOrderId ?? po?.id ?? null, arrivedDate: r.arrivedDate, arrivalRevision: r.arrivalRevision, lines: r.lines }),
     tanggalTiba: hariKunci(r.arrivedDate), kedatanganDicatat: !!r.arrivedDate,
     dicatat: r.arrivedDate ? { oleh: r.arrivalRecordedBy?.name ?? null, peran: r.arrivalActorRoles, workspace: r.arrivalWorkspace, pada: r.arrivalRecordedAt } : null,
     penerima: r.arrivalReceiver, catatan: r.arrivalNote, suratJalan: r.deliveryNote || null, bukti: r.arrivalProofUrls ?? [], revisi: r.arrivalRevision,
@@ -271,7 +274,7 @@ function jumlahDatang(v, nomor) {
 }
 
 // Nomor GR-DDMMYY-NN: dihitung di bawah kunci advisory transaksi supaya dua pengiriman tiba bersamaan tidak berebut nomor yang sama.
-async function nomorPenerimaanBaru(tx, sekarang = new Date()) {
+export async function nomorPenerimaanBaru(tx, sekarang = new Date()) {
   await tx.$queryRawUnsafe("SELECT pg_advisory_xact_lock(hashtext($1))::text AS k", "goods-receipt-number");
   const awalHari = new Date(Date.UTC(sekarang.getUTCFullYear(), sekarang.getUTCMonth(), sekarang.getUTCDate()));
   const kode = `GR-${String(sekarang.getUTCDate()).padStart(2, "0")}${String(sekarang.getUTCMonth() + 1).padStart(2, "0")}${String(sekarang.getUTCFullYear()).slice(-2)}`;

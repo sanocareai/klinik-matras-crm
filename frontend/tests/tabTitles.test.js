@@ -23,7 +23,11 @@ test("segmen ID (UUID) memakai nama resource, bukan ID mentah", () => {
 
 test("segmen ambigu (dashboard) diberi prefiks nama divisi", () => {
   assert.equal(titleFromPath("/armada/dashboard"), "Delivery · Dashboard");
-  assert.equal(titleFromPath("/warehouse/dashboard"), "Gudang · Dashboard");
+  // Tahap 1 UX Gudang: menu "Dashboard" Gudang kini bernama Beranda (satu halaman "yang perlu dikerjakan"), judul tab mengikuti.
+  assert.equal(titleFromPath("/warehouse/dashboard"), "Gudang · Beranda");
+  assert.equal(titleFromPath("/warehouse/inventory"), "Stok & Lokasi");
+  assert.equal(titleFromPath("/warehouse/goods-receipt"), "Penerimaan Barang");
+  assert.equal(titleFromPath("/warehouse/goods-receipt/3f2b8c1e-4d5a-4e6f-8a9b-0c1d2e3f4a5b"), "Penerimaan");
 });
 
 test("dua tab dashboard divisi berbeda TIDAK berjudul sama (bug lama)", () => {

@@ -347,7 +347,7 @@ test("replay: issue kedua kali ditolak tanpa stok/valuasi ganda; pembatalan Mate
   await seedBalance(w.lem.id, 10, { unitCost: 40_000 });
   const mi = await issueKeUnit(w, w.lem.id, 3);
   const ulang = await w.g.post(`/api/inventory/material-issues/${mi.id}/issue`, {});
-  assert.ok(ulang.status >= 400 && ulang.status < 500);
+  assert.equal(ulang.status, 200); assert.equal(ulang.body.ulang, true); // UX Tahap 2: retry idempoten — tidak menulis stok/valuasi lagi (dicek di bawah)
   assert.equal(await testPrisma.stockMovement.count({ where: { materialIssueId: mi.id } }), 1);
   assert.equal(await testPrisma.finStockMovementValuation.count(), 1);
 

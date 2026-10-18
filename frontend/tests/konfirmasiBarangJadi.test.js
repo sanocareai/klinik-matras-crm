@@ -55,19 +55,22 @@ test("Unit 360: panel konfirmasi dipasang di tab Pekerjaan untuk peran berwenang
   assert.match(DRAWER, /<KonfirmasiBarangJadi d=\{d\} canConfirm=\{canApplyAdaptation\}/);
 });
 
-test("Route Planner: label 'Menunggu konfirmasi siap kirim' di kartu rute + panel job; Terbitkan dimatikan selama ada unit menunggu", () => {
+test("Route Planner: penanda 'Produksi belum selesai' hanya INFORMASI di kartu rute + panel job; Terbitkan TIDAK dimatikan oleh status produksi (keputusan Owner 18 Okt 2026)", () => {
   assert.match(BADGES, /export function MenungguKonfirmasiBadge/);
-  assert.match(BADGES, /Menunggu konfirmasi siap kirim/);
+  assert.match(BADGES, /Produksi belum selesai/);
+  assert.doesNotMatch(BADGES, /Menunggu konfirmasi siap kirim ·/);
   assert.match(RUTE, /<MenungguKonfirmasiBadge job=\{j\} \/>/);
   assert.match(UNROUTED, /<MenungguKonfirmasiBadge job=\{j\} \/>/);
-  assert.match(RUTE, /jobs\.some\(\(j\) => \(j\.menungguKonfirmasi\?\.length \?\? 0\) > 0\)/);
+  assert.doesNotMatch(RUTE, /jobs\.some\(\(j\) => \(j\.menungguKonfirmasi\?\.length \?\? 0\) > 0\)/, "status produksi tidak boleh menonaktifkan Terbitkan");
   assert.match(RUTE, /data-testid="rute-terbitkan"/);
 });
 
-test("Penjadwalan: kandidat draf opt-in (termasukMenunggu), tab 'Menunggu konfirmasi', job draf dikirim dengan menungguKonfirmasi:true; galat server tampil", () => {
-  assert.match(API, /termasukMenunggu: type === "DELIVERY"|opts\.termasukMenunggu \? "&termasukMenunggu=1"/);
-  assert.match(ARMADA, /menunggu=\{board\.availableMenunggu \?\? \[\]\}/);
-  assert.match(ARMADA, /\.\.\.\(draf \? \{ menungguKonfirmasi: true \} : \{\}\)/);
+test("Penjadwalan: unit yang masih diproduksi ada di daftar biasa (tanpa tab/draf), ditandai 'Produksi belum selesai'; job dikirim biasa; galat server tampil", () => {
+  assert.doesNotMatch(API, /termasukMenunggu/, "tidak ada lagi kandidat draf opt-in");
+  assert.doesNotMatch(ARMADA, /menunggu=\{board\.availableMenunggu/);
+  assert.doesNotMatch(ARMADA, /menungguKonfirmasi: true/);
+  assert.doesNotMatch(ARMADA, /data-testid="tab-menunggu"/);
+  assert.match(ARMADA, /data-testid="unit-produksi-belum-selesai"/);
+  assert.match(ARMADA, /\["RECEIVED", "IN_PRODUCTION"\]\.includes\(u\.status\)/);
   assert.match(ARMADA, /data-testid="galat-buat-job"/);
-  assert.match(ARMADA, /Menunggu konfirmasi siap kirim/);
 });

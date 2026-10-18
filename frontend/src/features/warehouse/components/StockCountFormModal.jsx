@@ -46,12 +46,12 @@ export default function StockCountFormModal({ open, onClose, onCreated }) {
     setBusy(true);
     setErr("");
     try {
-      await api.createStockCount({
+      const baru = await api.createStockCount({
         countType, countMethod, scheduledDate: scheduledDate || undefined,
         blindCount, assignedToId: assignedToId || undefined, notes: notes || undefined,
         lines: valid.map((materialId) => ({ materialId })),
       });
-      onCreated();
+      onCreated(baru);
       onClose();
     } catch (e2) {
       setErr(e2.message);

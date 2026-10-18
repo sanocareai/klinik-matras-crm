@@ -7,7 +7,9 @@ import StatusBadge from "./StatusBadge.jsx";
 import SumberPO from "./SumberPO.jsx";
 import { teksJumlah } from "@/features/finance/purchaseOrderLogic.js";
 import JejakPemakaianPenerimaan from "@/features/warehouse/components/JejakPemakaianPenerimaan.jsx";
-import { ModalCatatKedatangan } from "@/features/kedatangan/PanelKedatangan.jsx";
+import { ModalCatatKedatangan, ModalKoreksiKedatangan } from "@/features/kedatangan/PanelKedatangan.jsx";
+import KartuJalurKoreksi from "@/features/warehouse/koreksi/KartuJalurKoreksi.jsx";
+import KoreksiPenerimaanModal from "@/features/warehouse/koreksi/KoreksiPenerimaanModal.jsx";
 import { LABEL_WORKSPACE, tanggalTeks, waktuTeks } from "@/features/kedatangan/kedatanganLogic.js";
 import {
   RECEIPT_STATUS_REAL, RECEIPT_SOURCE_REAL, RECEIPT_FORWARD_FLOW, UNIT_LABEL,
@@ -31,11 +33,19 @@ export default function GoodsReceiptDetailDrawer({ receiptId, onClose, onChanged
   const [rejecting, setRejecting] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
   const [tibaPO, setTibaPO] = useState(null); // detail PO (Barang Akan Datang) untuk formulir Catat Barang Tiba
+  const [koreksiPO, setKoreksiPO] = useState(null); // detail PO untuk Koreksi Kedatangan (alur RESMI penerimaan dari PO)
+  const [koreksiGR, setKoreksiGR] = useState(false); // dialog Koreksi Penerimaan (tanpa PO, sudah masuk stok)
+  const [versiKoreksi, setVersiKoreksi] = useState(0);
 
   // Barang dari PO dinyatakan tiba lewat Catat Barang Tiba (tanggal tiba, PIC, catatan wajib; aktor dari sesi) — bukan dengan memajukan status.
   async function bukaCatatTiba() {
     setBusy(true); setError("");
     try { setTibaPO(await api.getBarangAkanDatangDetail(receipt.purchaseOrderId)); } catch (e) { setError(e.message); } finally { setBusy(false); }
+  }
+
+  async function bukaKoreksiResmi() {
+    setBusy(true); setError("");
+    try { setKoreksiPO(await api.getBarangAkanDatangDetail(receipt.purchaseOrderId)); } catch (e) { setError(e.message); } finally { setBusy(false); }
   }
 
   const load = () => {
@@ -154,6 +164,7 @@ export default function GoodsReceiptDetailDrawer({ receiptId, onClose, onChanged
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+            <KartuJalurKoreksi tipe="GOODS_RECEIPT" id={receiptId} versi={`${status}-${versiKoreksi}-${receipt?.updatedAt ?? ""}`} aksi={{ KOREKSI_PENERIMAAN: () => setKoreksiGR(true), KOREKSI_KEDATANGAN: bukaKoreksiResmi }} />
             {loading && (
               <p className="flex items-center gap-1.5 py-6 text-[12.5px] text-ink3">
                 <Loader2 size={14} className="animate-spin" /> Memuat…
@@ -328,6 +339,13 @@ export default function GoodsReceiptDetailDrawer({ receiptId, onClose, onChanged
           )}
         </Dialog.Content>
       </Dialog.Portal>
+      {koreksiGR && <KoreksiPenerimaanModal receiptId={receiptId} onClose={() => setKoreksiGR(false)} onDone={() => { setVersiKoreksi((v) => v + 1); load(); onChanged(); }} />}
+      {koreksiPO && (
+        <ModalKoreksiKedatangan
+          po={koreksiPO} receipt={koreksiPO.penerimaan.find((x) => x.id === receiptId) ?? null} workspace="GUDANG"
+          onClose={() => setKoreksiPO(null)} onDone={() => { setKoreksiPO(null); setVersiKoreksi((v) => v + 1); load(); onChanged(); }}
+        />
+      )}
       {tibaPO && (
         <ModalCatatKedatangan
           po={tibaPO} receipt={tibaPO.penerimaan.find((x) => x.id === receiptId) ?? null} workspace="GUDANG"

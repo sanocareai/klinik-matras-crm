@@ -116,6 +116,8 @@ export async function postStockMovement(tx, {
   reason, note, createdById,
   goodsReceiptId, materialIssueId, stockTransferId, stockCountId,
   damagedStockRecordId, returnRecordId, stockAdjustmentRequestId,
+  // Koreksi Dokumen Gudang (Okt 2026): pergerakan hasil koreksi bertaut ke dokumen koreksi dan ke pergerakan asal yang dikoreksi (asal TIDAK diubah).
+  correctionId, correctsMovementId,
 } = {}) {
   if (!tx?.stockMovement) {
     throw new Error("postStockMovement butuh `tx` (klien transaksi Prisma), bukan prisma singleton di luar transaksi");
@@ -159,6 +161,8 @@ export async function postStockMovement(tx, {
       damagedStockRecordId: damagedStockRecordId || null,
       returnRecordId: returnRecordId || null,
       stockAdjustmentRequestId: stockAdjustmentRequestId || null,
+      correctionId: correctionId || null,
+      correctsMovementId: correctsMovementId || null,
     },
     include: { material: { select: { code: true, name: true, unit: true } } },
   });

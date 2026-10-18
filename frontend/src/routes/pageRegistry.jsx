@@ -84,6 +84,9 @@ const Gudang         = lazy(() => import("../pages/Gudang.jsx"));
 const WarehouseDashboard   = lazy(() => import("../pages/warehouse/WarehouseDashboard.jsx"));
 const WarehouseInventory   = lazy(() => import("../pages/warehouse/WarehouseInventory.jsx"));
 const WarehouseGoodsReceipt = lazy(() => import("../pages/warehouse/WarehouseGoodsReceipt.jsx"));
+const PenerimaanDetail = lazy(() => import("../features/warehouse/penerimaan/PenerimaanDetail.jsx"));
+const MaterialIssueDetail = lazy(() => import("../features/warehouse/dokumen/MaterialIssueDetail.jsx"));
+const TransferDetail = lazy(() => import("../features/warehouse/dokumen/TransferDetail.jsx"));
 const WarehouseBarangAkanDatang = lazy(() => import("../pages/warehouse/WarehouseBarangAkanDatang.jsx"));
 const WarehouseReturSupplier = lazy(() => import("../pages/warehouse/WarehouseReturSupplier.jsx"));
 const FinanceReturSupplier = lazy(() => import("../pages/finance/FinanceReturSupplier.jsx"));
@@ -95,6 +98,11 @@ const WarehouseTransfers = lazy(() => import("../pages/warehouse/WarehouseTransf
 const WarehouseStockCount = lazy(() => import("../pages/warehouse/WarehouseStockCount.jsx"));
 const WarehouseAdjustments = lazy(() => import("../pages/warehouse/WarehouseAdjustments.jsx"));
 const WarehouseReplenishment = lazy(() => import("../pages/warehouse/WarehouseReplenishment.jsx"));
+const OpnameDetail = lazy(() => import("../features/warehouse/dokumen/OpnameDetail.jsx"));
+const RestokDetail = lazy(() => import("../features/warehouse/dokumen/RestokDetail.jsx"));
+const RusakDetail = lazy(() => import("../features/warehouse/dokumen/RusakDetail.jsx"));
+const ReturDetail = lazy(() => import("../features/warehouse/dokumen/ReturDetail.jsx"));
+const PenyesuaianDetail = lazy(() => import("../features/warehouse/dokumen/PenyesuaianDetail.jsx"));
 const WarehouseReports = lazy(() => import("../pages/warehouse/WarehouseReports.jsx"));
 // P8 Production Experience V2 (inert bila reader V2 OFF). Aplikasi PIC Table/Corner & Andon TV adalah halaman MANDIRI (App.jsx STANDALONE_PAGES).
 const ProductionPlannerV2 = lazy(() => import("../pages/bengkel/ProductionPlannerV2.jsx"));
@@ -257,6 +265,7 @@ const PAGES_DASAR = [
   { path: "/warehouse/retur-supplier", render: () => <WarehouseReturSupplier /> },
   { path: "/finance/retur-supplier", render: () => <FinanceReturSupplier /> },
   { path: "/warehouse/goods-receipt", render: () => <WarehouseGoodsReceipt /> },
+  { path: "/warehouse/goods-receipt/:id", render: () => <PenerimaanDetail /> },
   { path: "/warehouse/unit-custody", render: () => <WarehouseUnitCustody /> },
   { path: "/bengkel/production-v2", render: () => <DemoPage><ProductionPlannerV2 /></DemoPage> },
   { path: "/bengkel/production-v2/laporan/:runId", render: () => <ProductionReportV2 /> },
@@ -273,10 +282,17 @@ const PAGES_DASAR = [
   { path: "/warehouse/finished-goods", render: () => <WarehouseFinishedGoods /> },
   { path: "/warehouse/material-pickup", render: () => <WarehouseMaterialPickup /> },
   { path: "/warehouse/material-issue", render: () => <WarehouseMaterialIssue /> },
+  { path: "/warehouse/material-issue/:id", render: () => <MaterialIssueDetail /> },
   { path: "/warehouse/transfers", render: () => <WarehouseTransfers /> },
+  { path: "/warehouse/transfers/:id", render: () => <TransferDetail /> },
   { path: "/warehouse/stock-count", render: () => <WarehouseStockCount /> },
+  { path: "/warehouse/stock-count/:id", render: () => <OpnameDetail /> },
   { path: "/warehouse/replenishment", render: () => <WarehouseReplenishment /> },
+  { path: "/warehouse/replenishment/:id", render: () => <RestokDetail /> },
   { path: "/warehouse/adjustments", render: () => <WarehouseAdjustments /> },
+  { path: "/warehouse/adjustments/damaged/:id", render: () => <RusakDetail /> },
+  { path: "/warehouse/adjustments/returns/:id", render: () => <ReturDetail /> },
+  { path: "/warehouse/adjustments/stock/:id", render: () => <PenyesuaianDetail /> },
   { path: "/warehouse/reports", render: () => <WarehouseReports /> },
   { path: "/warehouse/kpi", render: () => <DemoPage><ProductionKpi defaultTab="gudang" /></DemoPage> },
   { path: "/dashboard",   render: (ctx) => <Dashboard user={ctx.user} /> },

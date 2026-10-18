@@ -92,8 +92,8 @@ export default function GoodsReceiptFormModal({ open, onClose, onCreated }) {
     }
     setBusy(true);
     try {
-      await api.createGoodsReceipt(body);
-      onCreated();
+      const dibuat = await api.createGoodsReceipt(body);
+      onCreated(dibuat?.receipt ?? dibuat);
       onClose();
     } catch (e2) {
       setErr(e2.message);

@@ -81,7 +81,8 @@ export function klasifikasiJobOverride(job) {
 export async function adminOverrideReport(prisma, { limit = 200 } = {}) {
   const take = Math.min(Math.max(Number(limit) || 200, 1), 500);
   const runs = await prisma.productionRun.findMany({
-    where: { deliveryReleasedAt: { not: null } }, orderBy: { deliveryReleasedAt: "desc" }, take,
+    // Laporan ini khusus override Admin; pelepasan otomatis karena dispatch (kind DISPATCH_ROUTE_PLANNER) dilaporkan terpisah oleh jumlahnya.
+    where: { deliveryReleasedAt: { not: null }, deliveryRelease: { path: ["kind"], equals: "ADMIN_OVERRIDE" } }, orderBy: { deliveryReleasedAt: "desc" }, take,
     select: {
       id: true, status: true, revision: true, deliveryReleasedAt: true, deliveryRelease: true,
       unit: { select: { id: true, unitCode: true, status: true, storageLocation: true, order: { select: { id: true, orderNumber: true, status: true } } } },

@@ -1,153 +1,89 @@
-import React, { useCallback, useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { ClipboardList, Plus, RefreshCw } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
-import {
-  TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows,
-} from "@/components/ui/table.jsx";
-import { cn } from "@/lib/utils.js";
+import { TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows } from "@/components/ui/table.jsx";
 import StatusBadge from "@/features/warehouse/components/StatusBadge.jsx";
 import MaterialIssueFormModal from "@/features/warehouse/components/MaterialIssueFormModal.jsx";
-import MaterialIssueDetailDrawer from "@/features/warehouse/components/MaterialIssueDetailDrawer.jsx";
-import { ISSUE_STATUS_REAL, ISSUE_PRIORITY_REAL } from "@/features/warehouse/inventoryReal.js";
+import { ISSUE_PRIORITY_REAL } from "@/features/warehouse/inventoryReal.js";
+import { useTahapFilter } from "@/features/warehouse/dokumen/useTahapFilter.js";
+import { FilterTahapDokumen, StatusDokumen, RingkasItem } from "@/features/warehouse/dokumen/FilterTahapDokumen.jsx";
+import { TAHAP_FILTER_MI, cocokCari, filterTahap, hitungPerTahap, tanggalPendek, teksCariMI } from "@/features/warehouse/dokumen/dokumenLogic.js";
 
-// Material Issue — Warehouse Tahap 3. DATA NYATA.
-//
-// Alur REQUEST → APPROVAL → PICKING → ISSUE. Baris ledger stock_movements
-// ISSUE baru ditulis SATU KALI, saat Confirm Issue. Selama status
-// APPROVED..PICKED, requestedQty dihitung sebagai Reserved di Stock &
-// Material — lihat catatan panjang di schema.prisma & routes/materialIssue.js.
-const TABS = [
-  { key: "",                label: "Semua" },
-  { key: "WAITING_APPROVAL",label: "Menunggu Approval" },
-  { key: "APPROVED",        label: "Disetujui" },
-  { key: "READY_TO_PICK",   label: "Siap Diambil" },
-  { key: "PICKED",          label: "Sudah Diambil" },
-  { key: "ISSUED",          label: "Dikeluarkan" },
-  { key: "CANCELLED",       label: "Dibatalkan" },
-];
-
-const tanggal = (s) => new Date(s).toLocaleDateString("id-ID", { day: "numeric", month: "short" });
+// PENGELUARAN MATERIAL — daftar permintaan bahan (Draf → persetujuan → disiapkan → dikeluarkan). Baris menampilkan yang dibutuhkan untuk memilih pekerjaan: nomor, untuk apa/siapa, ringkasan item, kapan dibutuhkan,
+// status beserta dampaknya ke stok. Detail dibuka sebagai halaman. Stok baru berkurang saat Konfirmasi keluar; selama disetujui sampai diambil, jumlah hanya dicadangkan.
+const untukApa = (r) => (r.unit ? <>{r.unit.unitCode}<span className="block text-[10.5px] text-ink3">{r.unit.order?.orderNumber} · {r.unit.order?.customer?.name}</span></> : (r.sourceReference || r.department || <span className="text-ink3">—</span>));
 
 export default function WarehouseMaterialIssue() {
-  const [tab, setTab] = useState("");
-  const [rows, setRows] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [formOpen, setFormOpen] = useState(false);
-  const [selectedId, setSelectedId] = useState(null);
-  const [sp] = useSearchParams();
-  useEffect(() => { const id = sp.get("buka"); if (id) setSelectedId(id); }, []); // eslint-disable-line react-hooks/exhaustive-deps -- tautan dalam dibaca sekali saat halaman dibuka
+  const navigate = useNavigate(); const [sp] = useSearchParams();
+  const [tahap, setTahap] = useTahapFilter(); const [cari, setCari] = useState("");
+  const [rows, setRows] = useState(null); const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [formOpen, setFormOpen] = useState(false);
+  const buka = (id) => navigate(`/warehouse/material-issue/${id}`);
+  // Tautan lama "?buka=<id>" (mis. dari jejak biaya bahan) → langsung ke halaman detail.
+  useEffect(() => { const id = sp.get("buka"); if (id) navigate(`/warehouse/material-issue/${id}`, { replace: true }); }, []); // eslint-disable-line react-hooks/exhaustive-deps -- tautan dalam dibaca sekali saat halaman dibuka
 
   const load = useCallback(() => {
-    setLoading(true);
-    setError("");
-    api.getMaterialIssues({ status: tab || undefined })
-      .then((d) => setRows(d.issues))
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, [tab]);
-
+    setLoading(true); setError("");
+    api.getMaterialIssues({}).then((d) => setRows(d.issues)).catch((e) => setError(e.message)).finally(() => setLoading(false));
+  }, []);
   useEffect(() => { load(); }, [load]);
 
-  const kosong = !loading && rows && rows.length === 0;
+  const hitung = useMemo(() => (rows ? hitungPerTahap(TAHAP_FILTER_MI, rows) : null), [rows]);
+  const terfilter = useMemo(() => (rows ? filterTahap(TAHAP_FILTER_MI, rows, tahap).filter((r) => cocokCari(teksCariMI(r), cari)) : null), [rows, tahap, cari]);
+  const kosong = !loading && terfilter && terfilter.length === 0;
 
   return (
     <PageContainer>
       <PageHeader
         title="Pengeluaran Material"
-        subtitle="Pengeluaran material untuk kebutuhan produksi."
-        actions={
-          <>
-            <Button variant="ghost" size="sm" onClick={load} disabled={loading}>
-              <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Muat Ulang
-            </Button>
-            <Button size="sm" onClick={() => setFormOpen(true)}>
-              <Plus size={14} /> Permintaan Baru
-            </Button>
-          </>
-        }
+        subtitle="Permintaan bahan dari Produksi atau Gudang — dari pengajuan sampai bahan keluar dari stok."
+        actions={<>
+          <Button variant="ghost" size="sm" onClick={load} disabled={loading}><RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Muat Ulang</Button>
+          <Button size="sm" onClick={() => setFormOpen(true)}><Plus size={14} /> Permintaan Baru</Button>
+        </>}
       />
-
       <PageBody>
-        <div role="tablist" aria-label="Saring status issue" className="flex flex-wrap gap-1 border-b border-line pb-2">
-          {TABS.map((t) => (
-            <button
-              key={t.key}
-              role="tab"
-              aria-selected={tab === t.key}
-              onClick={() => setTab(t.key)}
-              className={cn("rounded-chip px-3 py-1.5 text-[12.5px] font-semibold transition-colors",
-                tab === t.key ? "bg-accentbg text-accent" : "text-ink3 hover:bg-hovertint hover:text-ink2")}
-            >
-              {t.label}
-            </button>
-          ))}
-          {rows && <span className="ml-auto self-center text-[11.5px] text-ink3">{rows.length} permintaan</span>}
-        </div>
+        <FilterTahapDokumen filters={TAHAP_FILTER_MI} aktif={tahap} hitung={hitung} onPilih={setTahap} cari={cari} onCari={setCari}
+          placeholder="Cari no., bahan, unit, order" labelCari="Cari permintaan material" labelTab="Saring tahap permintaan" />
+        {error && <div role="alert" className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{error}</div>}
 
-        {error && <div className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{error}</div>}
-
-        <Card className="overflow-hidden">
+        <Card className="overflow-hidden p-0">
           {kosong ? (
-            <EmptyState
-              icon={ClipboardList}
-              title="Belum ada Pengeluaran Material"
-              description="Permintaan material dari Produksi akan tampil di sini."
-              action={<Button size="sm" onClick={() => setFormOpen(true)}><Plus size={14} /> Permintaan Baru</Button>}
-            />
+            <EmptyState icon={ClipboardList} title={cari || tahap ? "Tidak ada permintaan yang cocok" : "Belum ada Pengeluaran Material"} description={cari || tahap ? "Ubah pencarian atau tahap." : "Permintaan bahan akan tampil di sini."}
+              action={!cari && !tahap ? <Button size="sm" onClick={() => setFormOpen(true)}><Plus size={14} /> Permintaan Baru</Button> : undefined} />
           ) : (
             <>
               <TableWrap className="hidden md:block">
                 <Table>
-                  <THead>
-                    <TR>
-                      <TH>No. Issue</TH><TH>Unit Produksi</TH><TH>Departemen</TH><TH>Diminta Oleh</TH>
-                      <TH numeric>Item</TH><TH>Dibutuhkan</TH><TH>Prioritas</TH><TH>Status</TH>
-                    </TR>
-                  </THead>
+                  <THead><TR><TH>Permintaan</TH><TH>Untuk</TH><TH>Item</TH><TH>Dibutuhkan</TH><TH>Prioritas</TH><TH>Status</TH></TR></THead>
                   <TBody>
-                    {loading && <TableSkeletonRows rows={6} cols={8} />}
-                    {!loading && rows?.map((r) => (
-                      <TR key={r.id} clickable onClick={() => setSelectedId(r.id)}>
-                        <TD className="font-semibold text-ink">{r.issueNumber}</TD>
-                        <TD className="text-ink2">
-                          {r.unit
-                            ? <>{r.unit.unitCode}<span className="block text-[10.5px] text-ink3">{r.unit.order?.orderNumber} · {r.unit.order?.customer?.name}</span></>
-                            : (r.sourceReference || <span className="text-ink3">—</span>)}
-                        </TD>
-                        <TD truncate>{r.department || "—"}</TD>
-                        <TD className="text-ink2">{r.requestedBy?.name || "—"}</TD>
-                        <TD numeric>{r.lines.length}</TD>
-                        <TD className="whitespace-nowrap text-ink2">{r.requiredDate ? tanggal(r.requiredDate) : "—"}</TD>
+                    {loading && <TableSkeletonRows rows={6} cols={6} />}
+                    {!loading && terfilter?.map((r) => (
+                      <TR key={r.id} clickable onClick={() => buka(r.id)} data-testid="baris-dokumen" data-nomor={r.issueNumber}>
+                        <TD className="whitespace-nowrap"><div className="font-semibold text-ink">{r.issueNumber}</div><div className="text-[11px] text-ink3">{r.requestedBy?.name ?? "—"} · {tanggalPendek(r.createdAt)}</div></TD>
+                        <TD className="text-ink2">{untukApa(r)}{r.department && r.unit ? <span className="block text-[10.5px] text-ink3">{r.department}</span> : null}</TD>
+                        <TD className="text-[12.5px]"><RingkasItem lines={r.lines} kunci="requestedQty" /></TD>
+                        <TD className="whitespace-nowrap text-ink2">{r.requiredDate ? tanggalPendek(r.requiredDate) : "—"}</TD>
                         <TD><StatusBadge map={ISSUE_PRIORITY_REAL} value={r.priority} /></TD>
-                        <TD><StatusBadge map={ISSUE_STATUS_REAL} value={r.status} /></TD>
+                        <TD className="min-w-[160px]"><StatusDokumen r={r} /></TD>
                       </TR>
                     ))}
                   </TBody>
                 </Table>
               </TableWrap>
-
-              <ul className="divide-y divide-line md:hidden">
-                {!loading && rows?.map((r) => (
+              <ul className="m-0 list-none divide-y divide-line p-0 md:hidden">
+                {!loading && terfilter?.map((r) => (
                   <li key={r.id}>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedId(r.id)}
-                      className="w-full px-4 py-3 text-left transition-colors hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset"
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="text-[12.5px] font-semibold text-ink">{r.issueNumber}</span>
-                        <StatusBadge map={ISSUE_STATUS_REAL} value={r.status} className="ml-auto shrink-0" />
-                      </div>
-                      <div className="mt-0.5 truncate text-[13px] text-ink">{r.department || r.sourceReference || "—"}</div>
-                      <div className="mt-0.5 text-[11px] text-ink2">
-                        {r.lines.length} item{r.requiredDate ? ` · ${tanggal(r.requiredDate)}` : ""}
-                      </div>
+                    <button type="button" onClick={() => buka(r.id)} data-testid="baris-dokumen" data-nomor={r.issueNumber}
+                      className="w-full px-4 py-3 text-left transition-colors hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset max-sm:min-h-11">
+                      <div className="flex items-start gap-2"><span className="text-[13px] font-semibold text-ink">{r.issueNumber}</span><span className="ml-auto shrink-0"><StatusDokumen r={r} /></span></div>
+                      <div className="mt-0.5 text-[12.5px] text-ink">{r.unit ? `${r.unit.unitCode} · ${r.unit.order?.customer?.name ?? ""}` : (r.department || r.sourceReference || "—")}</div>
+                      <div className="mt-0.5 text-[12px]"><RingkasItem lines={r.lines} kunci="requestedQty" /></div>
+                      <div className="mt-0.5 text-[11px] text-ink2">{r.requestedBy?.name ?? "—"} · {tanggalPendek(r.createdAt)}{r.requiredDate ? ` · butuh ${tanggalPendek(r.requiredDate)}` : ""}</div>
                     </button>
                   </li>
                 ))}
@@ -156,9 +92,7 @@ export default function WarehouseMaterialIssue() {
           )}
         </Card>
       </PageBody>
-
-      <MaterialIssueFormModal open={formOpen} onClose={() => setFormOpen(false)} onCreated={load} />
-      <MaterialIssueDetailDrawer issueId={selectedId} onClose={() => setSelectedId(null)} onChanged={load} />
+      <MaterialIssueFormModal open={formOpen} onClose={() => setFormOpen(false)} onCreated={(d) => { load(); if (d?.id) buka(d.id); }} />
     </PageContainer>
   );
 }

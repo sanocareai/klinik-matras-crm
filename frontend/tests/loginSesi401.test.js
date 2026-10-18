@@ -11,6 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
+import { bolehAdopsiTokenGeser, klaimToken } from "../src/lib/tokenGeser.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const src = (rel) => fs.readFileSync(path.join(here, "../src", rel), "utf8");
@@ -39,6 +40,11 @@ function pasangFetch(jawab) {
   };
 }
 const authHeaderDari = (call) => call.headers.Authorization ?? call.headers.authorization ?? null;
+
+// Token berbentuk JWT (tanpa tanda tangan sungguhan — klien hanya membaca klaim id/exp; keabsahan tetap urusan server).
+const b64u = (o) => Buffer.from(JSON.stringify(o)).toString("base64url");
+const jwtPalsu = (exp, id = "u1") => `${b64u({ alg: "HS256", typ: "JWT" })}.${b64u({ id, exp })}.sig`;
+const SEKARANG = 1_800_000_000;
 
 const USER = { id: "u1", name: "Tes", role: "SALES", roles: ["SALES"] };
 let api;
@@ -205,17 +211,18 @@ test("fetch mentah (PDF) berangkat-token-lama lalu 401 terlambat setelah login b
 });
 
 test("token digeser server (X-Refreshed-Token) lalu 401 terlambat dari token sebelumnya: sesi yang masih sah tidak dibatalkan", async () => {
-  localStorage.setItem("token", "T1");
+  const T1 = jwtPalsu(SEKARANG + 100), T2 = jwtPalsu(SEKARANG + 200);
+  localStorage.setItem("token", T1);
   const lambat = tertunda();
   let n = 0;
-  pasangFetch(() => (++n === 1 ? lambat.p : json(200, {}, { "X-Refreshed-Token": "T2" })));
+  pasangFetch(() => (++n === 1 ? lambat.p : json(200, {}, { "X-Refreshed-Token": T2 })));
   const p1 = api.getMyPortals();
   const p1Ditolak = assert.rejects(p1, /Sesi berakhir/);
   await api.getMyPortals(); // respons ini membawa token baru → disimpan
-  assert.equal(localStorage.getItem("token"), "T2");
+  assert.equal(localStorage.getItem("token"), T2);
   lambat.selesai(json(401, { error: "Sesi tidak valid" }));
   await p1Ditolak;
-  assert.equal(localStorage.getItem("token"), "T2");
+  assert.equal(localStorage.getItem("token"), T2);
   assert.equal(authErrorEvents.length, 0);
 });
 
@@ -244,10 +251,11 @@ const JALUR_TOKEN_GESER = [
 
 for (const [nama, panggil] of JALUR_TOKEN_GESER) {
   test(`token geser — ${nama}: sesi aktif tetap menerima token baru`, async () => {
-    localStorage.setItem("token", "T-aktif");
-    pasangFetch(() => json(200, {}, { "X-Refreshed-Token": "T-geser" }));
+    const aktif = jwtPalsu(SEKARANG + 100), geser = jwtPalsu(SEKARANG + 200);
+    localStorage.setItem("token", aktif);
+    pasangFetch(() => json(200, {}, { "X-Refreshed-Token": geser }));
     await panggil();
-    assert.equal(localStorage.getItem("token"), "T-geser");
+    assert.equal(localStorage.getItem("token"), geser);
     assert.equal(authErrorEvents.length, 0);
   });
 
@@ -285,17 +293,63 @@ test("token geser: request yang berangkat TANPA token tidak pernah boleh menyimp
 });
 
 test("token geser: dua request token-sama, geser pertama diterima, header geser kedua dari token usang tidak menimpa", async () => {
-  localStorage.setItem("token", "T1");
+  const T1 = jwtPalsu(SEKARANG + 100), T2 = jwtPalsu(SEKARANG + 200), usang = jwtPalsu(SEKARANG + 50);
+  localStorage.setItem("token", T1);
   const kedua = tertunda();
   let n = 0;
-  pasangFetch(() => (++n === 1 ? json(200, {}, { "X-Refreshed-Token": "T2" }) : kedua.p));
+  pasangFetch(() => (++n === 1 ? json(200, {}, { "X-Refreshed-Token": T2 }) : kedua.p));
   const a = api.getMyPortals();
   const b = api.getMyPortals().catch((e) => e);
   await a;
-  assert.equal(localStorage.getItem("token"), "T2");
-  kedua.selesai(json(200, {}, { "X-Refreshed-Token": "T1-geser-usang" }));
+  assert.equal(localStorage.getItem("token"), T2);
+  kedua.selesai(json(200, {}, { "X-Refreshed-Token": usang }));
   await b;
-  assert.equal(localStorage.getItem("token"), "T2");
+  assert.equal(localStorage.getItem("token"), T2);
+});
+
+// ── token geser LAMA yang diputar ulang cache HTTP (respons 304) — akar "Sesi Berakhir" berulang setelah login (14 Okt 2026) ──
+// Browser menyerahkan ke fetch() respons gabungan dari entri cache lama, lengkap dengan X-Refreshed-Token yang tersimpan dari
+// beberapa hari lalu. Request-nya sendiri sah (berangkat dengan token aktif), jadi pemeriksaan "token-kirim masih aktif" saja lolos.
+for (const [nama, panggil] of JALUR_TOKEN_GESER) {
+  test(`replay cache — ${nama}: token geser LAMA (exp lebih kecil) dari entri cache tidak menimpa token login baru`, async () => {
+    const baru = jwtPalsu(SEKARANG + 7 * 86400), lamaKedaluwarsa = jwtPalsu(SEKARANG - 3600);
+    localStorage.setItem("token", baru);
+    pasangFetch(() => json(200, {}, { "X-Refreshed-Token": lamaKedaluwarsa }));
+    await panggil();
+    assert.equal(localStorage.getItem("token"), baru);
+    assert.equal(authErrorEvents.length, 0);
+  });
+}
+
+test("alur lengkap: login baru → /auth/me ber-304 membawa token geser lama → request berikutnya tetap memakai token login baru dan sesi tidak dibatalkan", async () => {
+  const baru = jwtPalsu(SEKARANG + 7 * 86400), lama = jwtPalsu(SEKARANG - 3600);
+  pasangFetch((url, init) => {
+    const auth = init.headers?.Authorization;
+    if (auth !== `Bearer ${baru}`) return json(401, { error: "Sesi tidak valid, silakan login ulang", code: "TOKEN_INVALID" });
+    return url.endsWith("/auth/me") ? json(200, {}, { "X-Refreshed-Token": lama }) : json(200, []);
+  });
+  localStorage.setItem("token", baru); // Login.jsx menyimpan token hasil login
+  await api.getMyPortals();              // Portal/Layout: dijawab 304 → header geser lama dari cache
+  await api.getMyPortals();              // Layout memanggil lagi
+  await api.getAnalyticsOverview({});    // Dashboard
+  assert.equal(localStorage.getItem("token"), baru);
+  assert.equal(authErrorEvents.length, 0);
+  assert.equal(calls.every((c) => authHeaderDari(c) === `Bearer ${baru}`), true, "semua request memakai token login baru");
+});
+
+test("bolehAdopsiTokenGeser: hanya token yang lebih panjang umurnya, pengguna sama, terbaca; selain itu ditolak", () => {
+  const aktif = jwtPalsu(SEKARANG + 100);
+  assert.equal(bolehAdopsiTokenGeser(aktif, jwtPalsu(SEKARANG + 101)), true);
+  assert.equal(bolehAdopsiTokenGeser(aktif, jwtPalsu(SEKARANG + 100)), false, "exp sama = bukan lebih baru");
+  assert.equal(bolehAdopsiTokenGeser(aktif, jwtPalsu(SEKARANG + 99)), false);
+  assert.equal(bolehAdopsiTokenGeser(aktif, jwtPalsu(SEKARANG + 999, "u2")), false, "pengguna lain");
+  assert.equal(bolehAdopsiTokenGeser(aktif, aktif), false);
+  for (const rusak of [null, undefined, "", "bukan-jwt", "a.b.c", "a.b", `${b64u({})}.${b64u({ id: "u1" })}.s`]) {
+    assert.equal(bolehAdopsiTokenGeser(aktif, rusak), false, String(rusak));
+    assert.equal(bolehAdopsiTokenGeser(rusak, jwtPalsu(SEKARANG + 999)), false, "aktif rusak: " + String(rusak));
+  }
+  assert.equal(klaimToken("bukan-jwt"), null);
+  assert.equal(klaimToken(jwtPalsu(5, "u9")).id, "u9");
 });
 
 // ── pagar kode: App.jsx / Login.jsx / api.js ───────────────────────────────────

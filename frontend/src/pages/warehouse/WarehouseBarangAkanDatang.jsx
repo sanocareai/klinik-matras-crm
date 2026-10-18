@@ -139,11 +139,11 @@ function DetailPO({ id, onClose, onChanged }) {
           </div>
           {po.notes && <p className="m-0 text-[12.5px] text-ink2">{po.notes}</p>}
           {po.status === "DIBATALKAN" && <p className="m-0 rounded-lg bg-redbg px-3 py-2 text-[12.5px] text-red">PO dibatalkan — {po.cancelReason}</p>}
-          <PanelKedatangan po={po} workspace="GUDANG" bolehTulis={po.status !== "DIBATALKAN"} onChanged={async () => { await muat(); await onChanged(); }} />
+          <PanelKedatangan po={po} workspace="GUDANG" ringkas bolehTulis={po.status !== "DIBATALKAN"} ekstraPenerimaan={(r) => <Link to={`/warehouse/goods-receipt/${r.id}`} className="mt-1.5 inline-flex items-center gap-1 text-[12px] font-semibold text-accent max-sm:min-h-11" data-testid="buka-halaman-penerimaan">Buka halaman penerimaan {r.nomor} →</Link>} onChanged={async () => { await muat(); await onChanged(); }} />
           {perluTindakan.length > 0 && (
             <p className="m-0 rounded-lg bg-inset px-3 py-2 text-[12.5px] text-ink2" data-testid="petunjuk-periksa">
-              Pemeriksaan (baik/ditolak) dan <strong>Simpan ke Stok</strong> dilakukan di{" "}
-              <Link to={`/warehouse/goods-receipt?buka=${perluTindakan[0].id}`} className="font-semibold text-accent">Penerimaan Barang</Link>. Stok baru bertambah saat Simpan ke Stok.
+              Pemeriksaan (baik/ditolak) dan <strong>Simpan ke Stok</strong> dilakukan di halaman penerimaan, mis.{" "}
+              <Link to={`/warehouse/goods-receipt/${perluTindakan[0].id}`} className="font-semibold text-accent">{perluTindakan[0].nomor}</Link>. Stok baru bertambah saat Simpan ke Stok.
             </p>
           )}
         </div>

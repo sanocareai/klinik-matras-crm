@@ -20,25 +20,71 @@ import {
 // ── Progres per item ─────────────────────────────────────────────────────
 // Angka & definisi SEMUA dari server (progresPO.js): layar hanya menampilkan. Tidak ada label "Sisa" tanpa arti — tiap kolom punya definisi (tooltip + legenda).
 const WARNA_PROGRES = { belumDatang: "font-semibold text-ink", belumMasukStok: "font-semibold text-ink" };
-export function TabelKuantitas({ lines, definisi = [], finance = false }) {
+// Angka kunci yang selalu tampil di layar sempit (mode ringkas); sisanya di "Rincian". Hanya pilihan TAMPILAN: nilai, label, dan definisi tetap dari server.
+const KUNCI_UTAMA = ["datang", "belumDatang", "masukStok"];
+const KUNCI_PERHATIAN = ["belumDiperiksa", "ditolak", "menungguPengganti", "baikBelumDisimpan"];
+function KolomProgres({ l, kolom, className }) {
+  return (
+    <dl className={className}>
+      {kolom.map((d) => (
+        <div key={d.kunci} title={d.definisi} data-kolom={d.kunci}>
+          <dt className="text-ink3">{d.label}</dt>
+          <dd className={`ml-0 tabular-nums ${Number(l[d.kunci]) > 0 ? (WARNA_PROGRES[d.kunci] ?? "") : "text-ink2"}`}>{jumlahTeks(l[d.kunci])}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+/**
+ * Ringkasan untuk layar sempit: empat sel sejajar (Pesan · Tiba · Belum datang · Masuk stok) + "Dijadwalkan" per penerimaan (nomor GR + jumlahnya; TIDAK dijumlahkan di klien, jadi dua jadwal untuk bahan yang sama
+ * tetap terlihat sebagai dua dokumen) + lencana hanya untuk angka yang perlu perhatian (>0). Label dan angka dari server.
+ */
+function RingkasBaris({ l, definisi, penerimaan = [] }) {
+  const label = (k) => definisi.find((d) => d.kunci === k)?.label ?? k;
+  const perhatian = KUNCI_PERHATIAN.filter((k) => Number(l[k]) > 0);
+  const jadwal = penerimaan.filter((r) => penerimaanBelumTiba(r)).map((r) => ({ nomor: r.nomor, qty: r.lines?.find((x) => x.purchaseOrderLineId === l.id)?.dijadwalkan })).filter((x) => x.qty != null);
+  const sel = [["Pesan", l.dipesan, false], ...KUNCI_UTAMA.map((k) => [label(k), l[k], k === "belumDatang" && Number(l[k]) > 0])];
+  return (
+    <div className="mt-1.5 space-y-1.5" data-testid="ringkas-baris">
+      <dl className="m-0 grid grid-cols-4 gap-1">
+        {sel.map(([nama, nilai, tebal]) => (
+          <div key={nama} className="rounded-md bg-inset px-1.5 py-1 text-center" data-sel={nama}>
+            <dt className="text-[10px] leading-tight text-ink3">{nama}</dt>
+            <dd className={`m-0 text-[13px] tabular-nums ${tebal ? "font-bold text-ink" : "font-semibold text-ink2"}`}>{jumlahTeks(nilai)}</dd>
+          </div>
+        ))}
+      </dl>
+      {jadwal.length > 0 && <div className="text-[11.5px] leading-snug text-ink2" data-testid="dijadwalkan-baris"><span className="text-ink3">Dijadwalkan: </span>{jadwal.map((x, i) => <span key={x.nomor}>{i > 0 ? " · " : ""}<span className="font-medium text-ink">{x.nomor}</span> {jumlahTeks(x.qty)} {l.satuan}</span>)}</div>}
+      {perhatian.length > 0 && <div className="flex flex-wrap gap-1">{perhatian.map((k) => <Badge key={k} variant="orange" className="h-auto whitespace-normal text-left leading-tight">{label(k)} {jumlahTeks(l[k])}</Badge>)}</div>}
+    </div>
+  );
+}
+
+/** @param ringkas  layar sempit: ringkasan satu baris + "Rincian" per item (Gudang). Default false: tampilan penuh lama (Finance tidak berubah). */
+export function TabelKuantitas({ lines, definisi = [], finance = false, ringkas = false, penerimaan = [] }) {
   const kolom = definisi.filter((d) => d.kunci !== "dipesan");
+  const grid = "mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-4";
   return (
     <div className="space-y-2" data-testid="progres-item">
       <ul className="list-none space-y-2 p-0">
         {lines.map((l) => (
           <li key={l.id} className="rounded-lg border border-line p-2.5 text-[12.5px]" data-testid="baris-kuantitas">
             <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-              <span className="font-medium text-ink">{l.kode} — {l.nama}</span>
-              <span className="tabular-nums text-ink2">Dipesan <strong className="text-ink">{jumlahTeks(l.dipesan)} {l.satuan}</strong>{finance && l.hargaSatuan != null ? <> · harga {l.hargaSatuan.toLocaleString("id-ID")}</> : null}</span>
+              <span className="font-medium text-ink [overflow-wrap:anywhere]">{l.kode} — {l.nama}</span>
+              <span className={`tabular-nums text-ink2 ${ringkas ? "max-md:hidden" : ""}`}>Dipesan <strong className="text-ink">{jumlahTeks(l.dipesan)} {l.satuan}</strong>{finance && l.hargaSatuan != null ? <> · harga {l.hargaSatuan.toLocaleString("id-ID")}</> : null}</span>
             </div>
-            <dl className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-4">
-              {kolom.map((d) => (
-                <div key={d.kunci} title={d.definisi} data-kolom={d.kunci}>
-                  <dt className="text-ink3">{d.label}</dt>
-                  <dd className={`ml-0 tabular-nums ${Number(l[d.kunci]) > 0 ? (WARNA_PROGRES[d.kunci] ?? "") : "text-ink2"}`}>{jumlahTeks(l[d.kunci])}</dd>
+            {ringkas ? (
+              <>
+                <div className="md:hidden">
+                  <RingkasBaris l={l} definisi={definisi} penerimaan={penerimaan} />
+                  <details className="mt-1" data-testid="rincian-baris">
+                    <summary className="cursor-pointer text-[12px] font-semibold text-accent max-sm:flex max-sm:min-h-11 max-sm:items-center">Rincian lengkap</summary>
+                    <KolomProgres l={l} kolom={kolom} className={grid} />
+                  </details>
                 </div>
-              ))}
-            </dl>
+                <KolomProgres l={l} kolom={kolom} className={`hidden md:grid ${grid}`} />
+              </>
+            ) : <KolomProgres l={l} kolom={kolom} className={grid} />}
             {l.pendamping && <div className="mt-1.5 border-t border-line pt-1.5"><PendampingSel l={l} /></div>}
           </li>
         ))}
@@ -153,7 +199,7 @@ export function ModalCatatKedatangan({ po, receipt = null, receiptId = null, wor
           <UnggahBukti workspace={workspace} value={f.bukti} onChange={(v) => set("bukti", v)} />
         </div>
         <div>
-          <div className="mb-1.5 text-[12px] font-semibold text-ink2">Barang yang datang</div>
+          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2"><span className="text-[12px] font-semibold text-ink2">Barang yang datang</span>{workspace === "GUDANG" && f.lines.length > 1 && <Button type="button" size="sm" variant="neutral" className="max-sm:min-h-11" data-testid="isi-semua-sisa" onClick={() => f.lines.forEach((l, i) => { if (Number(l.belumDatang) > 0) setBaris(i, { jumlahDatang: String(l.belumDatang) }); })}>Isi semua sesuai sisa PO</Button>}</div>
           <div className="space-y-2">
             {f.lines.map((l, i) => (
               <div key={l.purchaseOrderLineId} className="rounded-lg border border-line p-2.5" data-testid="baris-datang">
@@ -419,7 +465,7 @@ export function KartuPenerimaan({ r, finance, bolehTulis, onCatat, onKoreksi, ek
  * @param bolehTulis  tampilkan tombol catat/koreksi (izin sebenarnya ditegakkan server)
  * @param onChanged   dipanggil setelah catat/koreksi berhasil (muat ulang)
  */
-export default function PanelKedatangan({ po, workspace, bolehTulis = true, onChanged, ekstraPenerimaan = null }) {
+export default function PanelKedatangan({ po, workspace, bolehTulis = true, onChanged, ekstraPenerimaan = null, ringkas = false }) {
   const finance = workspace === "FINANCE";
   const [dialog, setDialog] = useState(null); // { jenis: "catat"|"koreksi", receipt?, receiptId? }
   const [menyiapkan, setMenyiapkan] = useState(false);
@@ -435,9 +481,11 @@ export default function PanelKedatangan({ po, workspace, bolehTulis = true, onCh
     } catch (e) { setGalatSiap(e.message || "Gagal menyiapkan penerimaan"); } finally { setMenyiapkan(false); }
   }
   const urut = useMemo(() => po.penerimaan, [po.penerimaan]);
+  // Mode ringkas (Gudang, HP): pengiriman/penerimaan + aksi utama tampil LEBIH DULU; daftar item di bawahnya. Finance (ringkas=false) tetap: item dulu, lalu pengiriman.
+  const tabel = <TabelKuantitas lines={po.lines} definisi={po.progresDefinisi} finance={finance} ringkas={ringkas} penerimaan={po.penerimaan} />;
   return (
     <div className="space-y-3" data-testid="panel-kedatangan">
-      <TabelKuantitas lines={po.lines} definisi={po.progresDefinisi} finance={finance} />
+      {!ringkas && tabel}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h4 className="m-0 text-[11px] font-bold uppercase tracking-wide text-ink3">Pengiriman &amp; surat jalan ({urut.length})</h4>
         {bolehTulis && bisaMenerima && !adaDraf && <Button size="sm" disabled={menyiapkan} onClick={mulaiCatat} className="max-sm:min-h-11" data-testid="catat-tiba"><PackageCheck size={14} /> {menyiapkan ? "Menyiapkan…" : "Catat Barang Tiba"}</Button>}
@@ -447,6 +495,12 @@ export default function PanelKedatangan({ po, workspace, bolehTulis = true, onCh
         <ul className="list-none space-y-2 p-0">
           {urut.map((r) => <KartuPenerimaan key={r.id} r={r} finance={finance} bolehTulis={bolehTulis} ekstra={ekstraPenerimaan ? ekstraPenerimaan(r) : null} onCatat={(x) => setDialog({ jenis: "catat", receipt: x })} onKoreksi={(x) => setDialog({ jenis: "koreksi", receipt: x })} />)}
         </ul>
+      )}
+      {ringkas && (
+        <div className="space-y-1.5" data-testid="item-po-ringkas">
+          <h4 className="m-0 text-[11px] font-bold uppercase tracking-wide text-ink3">Barang per item ({po.lines.length}) — pesan, dijadwalkan, tiba, sisa</h4>
+          {tabel}
+        </div>
       )}
       {dialog?.jenis === "catat" && (
         <ModalCatatKedatangan po={po} receipt={dialog.receipt ?? null} receiptId={dialog.receiptId ?? null} workspace={workspace} onClose={() => { setDialog(null); onChanged?.(); }} onDone={async (h) => { setDialog(null); await onChanged?.(h); }} />

@@ -117,6 +117,13 @@ warehouseReportsRouter.get("/summary", requirePermission(P.INVENTORY_READ), asyn
       inactive: stockRows.length - activeRows.length,
       pendingGoodsReceipt, pendingMaterialIssue, openDiscrepancy,
     };
+    // Rincian jujur: "stok habis" di atas = available <= 0 (termasuk bahan yang BELUM PERNAH punya pergerakan dan yang bersaldo minus). Field berikut membedakannya.
+    totals.belumAdaCatatan = activeRows.filter((r) => r.lastMovementAt == null).length;
+    totals.nolTerhitung = activeRows.filter((r) => r.lastMovementAt != null && r.balance === 0).length;
+    totals.minus = activeRows.filter((r) => r.balance < 0).length;
+    totals.batasMinimumDiatur = activeRows.filter((r) => r.reorderPoint != null).length;
+    totals.batasMinimumBelumDiatur = activeRows.length - totals.batasMinimumDiatur;
+    totals.terdaftar = stockRows.length;
     totals.inStock = totals.totalItems - totals.outOfStock - totals.lowStock;
 
     const byCategory = byCategoryRaw.map((r) => ({ category: r.category, count: r._count._all }));
@@ -165,12 +172,17 @@ warehouseReportsRouter.get("/summary", requirePermission(P.INVENTORY_READ), asyn
 
     // ── Stock Accuracy — % baris count yang countedQty === systemQty,
     // dari Stock Count yang COMPLETED dalam rentang ──
-    const countLines = countsInRange.flatMap((c) => c.lines).filter((l) => l.systemQty != null && l.countedQty != null);
+    // Stock Count BASELINE (saldo pembuka hasil migrasi/backfill) bukan pengukuran akurasi — angka sistemnya memang belum ada saat dihitung. Dikecualikan agar "akurasi 0,0%" tidak menyesatkan.
+    const bukanBaseline = (c) => !(/BASELINE/i.test(c.countNumber ?? "") || /^Backfill saldo pembuka/i.test(c.notes ?? ""));
+    const hitunganUkur = countsInRange.filter(bukanBaseline);
+    const countLines = hitunganUkur.flatMap((c) => c.lines).filter((l) => l.systemQty != null && l.countedQty != null);
     const accurateLines = countLines.filter((l) => l.systemQty === l.countedQty).length;
     const stockAccuracy = {
       totalCounted: countLines.length,
       accurate: accurateLines,
       percentage: countLines.length ? Math.round((accurateLines / countLines.length) * 1000) / 10 : null,
+      dikecualikanBaseline: countsInRange.length - hitunganUkur.length,
+      sampelCukup: countLines.length >= 30, // di bawah 30 baris, persentase hanya contoh kecil — layar tidak boleh menjadikannya kesimpulan
     };
 
     res.json({

@@ -112,7 +112,7 @@ export async function assertOrderUnitsNotV2Owned(tx, orderId, actionLabel) {
   if (owned.size === 0) return;
   const codes = units.filter((unit) => owned.has(unit.id)).map((unit) => unit.unitCode).join(", ");
   throw guardError(
-    `${actionLabel} ditolak: unit ${codes} sedang dalam proses Production V2. Selesaikan lewat antrean QC/Gudang, atau batalkan Production Run-nya lebih dulu (Production Lead). Bila unit perlu masuk pengiriman sementara pencatatan produksi belum selesai, Admin/Owner dapat memakai \"Admin override: Siap Kirim saat pencatatan produksi belum selesai\".`,
+    `${actionLabel} ditolak: unit ${codes} sedang dalam proses Production V2. Selesaikan lewat antrean QC/Gudang, atau batalkan Production Run-nya lebih dulu (Production Lead). Bila unit perlu dikirim sementara pencatatan produksi belum selesai, masukkan unit itu ke Route Planner (Penjadwalan Pengiriman): status produksi tidak menahan pengiriman, dan statusnya mengikuti pengiriman yang diselesaikan.`,
     409, "PRODUCTION_V2_OWNED", { unitCodes: codes.split(", ") },
   );
 }

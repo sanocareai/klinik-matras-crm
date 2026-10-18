@@ -9,7 +9,8 @@ export async function bacaOverrideAdmin(db, unitIds) {
   const hasil = new Map();
   if (ids.length === 0) return hasil;
   const runs = await db.productionRun.findMany({
-    where: { unitId: { in: ids }, deliveryReleasedAt: { not: null } },
+    // Hanya pelepasan karena keputusan Admin: pelepasan otomatis karena dispatch biasa (kind DISPATCH_ROUTE_PLANNER) BUKAN override dan tidak diberi label itu.
+    where: { unitId: { in: ids }, deliveryReleasedAt: { not: null }, deliveryRelease: { path: ["kind"], equals: "ADMIN_OVERRIDE" } },
     orderBy: { deliveryReleasedAt: "desc" },
     select: { unitId: true, status: true, deliveryReleasedAt: true, deliveryRelease: true, unit: { select: { unitCode: true, storageLocation: true } } },
   });

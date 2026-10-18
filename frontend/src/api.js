@@ -1,6 +1,7 @@
 // VITE_API_BASE kosong = relative URL (untuk web/PWA browser, pakai proxy Vite dev / same-origin prod)
 // VITE_API_BASE diisi = absolute URL (untuk Capacitor APK, perlu tahu alamat server produksi)
 import { demoGate, demoBlock } from "./features/production/demo/demoGate.js";
+import { bolehAdopsiTokenGeser } from "./lib/tokenGeser.js";
 const BASE = (import.meta.env.VITE_API_BASE || "") + "/api";
 const TIMEOUT_MS = 30000; // 30 detik — cegah request hang selamanya
 
@@ -27,9 +28,13 @@ function authHeaders() {
 // `tokenKirim` = token yang dibawa request itu SAAT DIKIRIM. Token geser hanya diterima bila token itu
 // MASIH token aktif: respons terlambat dari sesi lama (mis. 200 yang baru sampai setelah pengguna login
 // ulang) tidak boleh menimpa token sesi baru. Request tanpa token tidak pernah sah membawa token geser.
+//
+// Syarat kedua (lib/tokenGeser.js): token geser harus LEBIH BARU dari token aktif dan milik pengguna yang sama.
+// Respons 304 dari cache HTTP browser membawa header X-Refreshed-Token LAMA dari entri tersimpan; tanpa syarat ini
+// token itu menimpa token login baru dan memicu "Sesi Berakhir" berulang.
 function adoptRefreshedToken(res, tokenKirim = null) {
   const baru = res.headers.get("X-Refreshed-Token");
-  if (baru && tokenKirim && tokenKirim === bacaToken()) {
+  if (baru && tokenKirim && tokenKirim === bacaToken() && bolehAdopsiTokenGeser(tokenKirim, baru)) {
     try { localStorage.setItem("token", baru); } catch {}
   }
 }
@@ -110,7 +115,7 @@ async function request(path, options = {}) {
       let detail;
       // Backend mengirim `details` (jamak) — lihat routes/*.js handleErr(). `j.detail` (tunggal) dipertahankan
       // sebagai fallback bila kelak ada endpoint lama yang memakai ejaan itu; tidak ada yang mengirimnya saat ini.
-      try { const j = JSON.parse(text); msg = j.error || msg; code = j.code; detail = j.details ?? j.detail; } catch {}
+      try { const j = JSON.parse(text); msg = j.error || msg; code = j.code ?? j.kode; detail = j.details ?? j.detail; } catch {}
       // `.status` disertakan (bukan cuma pesan) supaya pemanggil bisa
       // membedakan "diblokir karena ada data terkait" (409) dari error lain
       // tanpa perlu cocokkan teks pesan (rapuh kalau pesannya diubah nanti).
@@ -280,8 +285,8 @@ export const api = {
     }),
 
   // Armada — jadwal pickup & pengiriman (Sano Hub Phase 1)
-  // opts.termasukMenunggu: ikut kirim kandidat DRAF "Menunggu konfirmasi siap kirim" (unit yang masih dikerjakan Produksi) di `availableMenunggu`.
-  getArmadaBoard: (type, date, opts = {}) => request(`/armada/board?type=${type}${date ? `&date=${date}` : ""}${opts.termasukMenunggu ? "&termasukMenunggu=1" : ""}`),
+  // Unit yang masih dikerjakan Produksi sudah termasuk di `available` (status produksi tidak menahan pengiriman); `availableMenunggu` tetap ada (kosong) demi klien lama.
+  getArmadaBoard: (type, date) => request(`/armada/board?type=${type}${date ? `&date=${date}` : ""}`),
 
   // Daftar job berfilter untuk halaman "Jadwal & Penugasan" (Delivery Tahap 2).
   // TERPISAH dari getArmadaBoard — board menjawab "job tipe X tanggal Y +
@@ -582,6 +587,13 @@ export const api = {
   updateGoodsReceiptLine: (id, lineId, data) =>
     request(`/inventory/goods-receipts/${id}/lines/${lineId}`, { method: "PATCH", body: JSON.stringify(data) }),
   putawayGoodsReceipt: (id, data = {}) => request(`/inventory/goods-receipts/${id}/putaway`, { method: "POST", body: JSON.stringify(data) }),
+  kembaliDraftGoodsReceipt: (id, alasan) => request(`/inventory/goods-receipts/${id}/kembali-draft`, { method: "POST", body: JSON.stringify({ alasan }) }),
+  batalkanJadwalGoodsReceipt: (id, alasan) => request(`/inventory/goods-receipts/${id}/batalkan-jadwal`, { method: "POST", body: JSON.stringify({ alasan }) }),
+  batalkanTibaGoodsReceipt: (id, alasan) => request(`/inventory/goods-receipts/${id}/batalkan-tiba`, { method: "POST", body: JSON.stringify({ alasan }) }),
+  pulihkanGoodsReceipt: (id, alasan) => request(`/inventory/goods-receipts/${id}/pulihkan`, { method: "POST", body: JSON.stringify({ alasan }) }),
+  buatUlangGoodsReceipt: (id, alasan) => request(`/inventory/goods-receipts/${id}/buat-ulang`, { method: "POST", body: JSON.stringify({ alasan }) }),
+  getBerandaGudang: () => request("/inventory/beranda"),
+  getStokLokasi: () => request("/inventory/beranda/stok"),
   rejectGoodsReceipt: (id, reason) => request(`/inventory/goods-receipts/${id}/reject`, { method: "PATCH", body: JSON.stringify({ reason }) }),
 
   // Material Issue (Warehouse Tahap 3)
@@ -595,7 +607,10 @@ export const api = {
   updateMaterialIssueLine: (id, lineId, data) =>
     request(`/inventory/material-issues/${id}/lines/${lineId}`, { method: "PATCH", body: JSON.stringify(data) }),
   issueMaterialIssue: (id, data = {}) => request(`/inventory/material-issues/${id}/issue`, { method: "POST", body: JSON.stringify(data) }),
-  cancelMaterialIssue: (id, reason) => request(`/inventory/material-issues/${id}/cancel`, { method: "PATCH", body: JSON.stringify({ reason }) }),
+  cancelMaterialIssue: (id, reason, revisi) => request(`/inventory/material-issues/${id}/cancel`, { method: "PATCH", body: JSON.stringify({ reason, revisi }) }),
+  ubahIsiMaterialIssue: (id, data) => request(`/inventory/material-issues/${id}/isi`, { method: "PUT", body: JSON.stringify(data) }),
+  kembalikanMaterialIssue: (id, alasan, revisi) => request(`/inventory/material-issues/${id}/kembalikan`, { method: "POST", body: JSON.stringify({ alasan, revisi }) }),
+  buatUlangMaterialIssue: (id, alasan) => request(`/inventory/material-issues/${id}/buat-ulang`, { method: "POST", body: JSON.stringify({ alasan }) }),
 
   // Custody unit V2 (Production Workshop + Warehouse V2, P1–P2) — antrean serah-terima Delivery <-> Gudang.
   // Reader/writer diputuskan server (flag production_v2_reader/writer, fail-closed); items kosong bila belum aktif.
@@ -688,9 +703,13 @@ export const api = {
   getStockTransfer: (id) => request(`/inventory/transfers/${id}`),
   createStockTransfer: (data) => request("/inventory/transfers", { method: "POST", body: JSON.stringify(data) }),
   updateStockTransfer: (id, data) => request(`/inventory/transfers/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
-  dispatchStockTransfer: (id) => request(`/inventory/transfers/${id}/dispatch`, { method: "POST" }),
+  dispatchStockTransfer: (id, data = {}) => request(`/inventory/transfers/${id}/dispatch`, { method: "POST", body: JSON.stringify(data) }),
   receiveStockTransfer: (id, data = {}) => request(`/inventory/transfers/${id}/receive`, { method: "POST", body: JSON.stringify(data) }),
-  cancelStockTransfer: (id, reason) => request(`/inventory/transfers/${id}/cancel`, { method: "PATCH", body: JSON.stringify({ reason }) }),
+  cancelStockTransfer: (id, reason, revisi) => request(`/inventory/transfers/${id}/cancel`, { method: "PATCH", body: JSON.stringify({ reason, revisi }) }),
+  ubahIsiStockTransfer: (id, data) => request(`/inventory/transfers/${id}/isi`, { method: "PUT", body: JSON.stringify(data) }),
+  kembalikanStockTransfer: (id, alasan, revisi) => request(`/inventory/transfers/${id}/kembalikan`, { method: "POST", body: JSON.stringify({ alasan, revisi }) }),
+  selesaikanSelisihTransfer: (id, data) => request(`/inventory/transfers/${id}/selisih`, { method: "POST", body: JSON.stringify(data) }),
+  buatUlangStockTransfer: (id, alasan) => request(`/inventory/transfers/${id}/buat-ulang`, { method: "POST", body: JSON.stringify({ alasan }) }),
 
   // Stock Count / Stock Opname (Warehouse Tahap 5)
   getStockCounts: (params = {}) => {
@@ -713,6 +732,16 @@ export const api = {
   periksaHitungan: (countId, catatan) => request(`/inventory/stock-counts/${countId}/periksa`, { method: "POST", body: JSON.stringify({ catatan }) }),
   // Riwayat referensi historis dari file (catatan REFERENSI; bukan transaksi/saldo)
   getRiwayatReferensi: (params = {}) => { const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== "" && v != null)).toString(); return request(`/inventory/riwayat-referensi${qs ? `?${qs}` : ""}`); },
+  // Koreksi Gudang (Okt 2026): cakupan per menu, jalur per dokumen, koreksi Penerimaan yang sudah masuk stok (bertaut; pemohon ≠ penyetuju bila mengubah stok)
+  getKoreksiCakupan: () => request("/inventory/koreksi/cakupan"),
+  getJalurKoreksi: (tipe, id) => request(`/inventory/koreksi/dokumen/${tipe}/${id}`),
+  getKeadaanKoreksiGR: (id) => request(`/inventory/koreksi/goods-receipts/${id}/keadaan`),
+  pratinjauKoreksiGR: (id, perubahan) => request(`/inventory/koreksi/goods-receipts/${id}/pratinjau`, { method: "POST", body: JSON.stringify({ perubahan }) }),
+  ajukanKoreksiGR: (id, data, key = mutationKey("koreksi-gr")) => request(`/inventory/koreksi/goods-receipts/${id}/ajukan`, { method: "POST", headers: { "Idempotency-Key": key }, body: JSON.stringify(data) }),
+  getDaftarKoreksiGudang: (params = {}) => { const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== "" && v != null)).toString(); return request(`/inventory/koreksi${qs ? `?${qs}` : ""}`); },
+  setujuiKoreksiGudang: (id, catatan) => request(`/inventory/koreksi/${id}/setujui`, { method: "POST", body: JSON.stringify({ catatan }) }),
+  tolakKoreksiGudang: (id, catatan) => request(`/inventory/koreksi/${id}/tolak`, { method: "POST", body: JSON.stringify({ catatan }) }),
+  batalKoreksiGudang: (id, catatan) => request(`/inventory/koreksi/${id}/batal`, { method: "POST", body: JSON.stringify({ catatan }) }),
   getRiwayatReferensiRingkasan: () => request("/inventory/riwayat-referensi/ringkasan"),
   getRiwayatReferensiMaterial: (materialId) => request(`/inventory/riwayat-referensi/material/${materialId}`),
   pratinjauRiwayatReferensi: (body) => request("/inventory/riwayat-referensi/pratinjau", { method: "POST", body: JSON.stringify(body) }),

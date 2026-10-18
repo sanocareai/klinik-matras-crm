@@ -119,7 +119,8 @@ test("Material Issue paralel: dua dokumen berbeda keluar bersamaan, klik ganda s
   const c = await issueSiap(w, 2);
   const tengah = await cacah();
   const ganda = await Promise.all([1, 2].map(() => w.g.post(`/api/inventory/material-issues/${c.id}/issue`, {})));
-  assert.deepEqual(ganda.map((r) => r.status).sort(), [200, 400], JSON.stringify(ganda.map((r) => r.body)));
+  assert.deepEqual(ganda.map((r) => r.status), [200, 200], JSON.stringify(ganda.map((r) => r.body)));
+  assert.equal(ganda.filter((r) => r.body.ulang === true).length, 1, "tepat satu permintaan yang benar-benar mengeluarkan; satunya dikenali sebagai ulangan (UX Tahap 2: retry idempoten)");
   const akhir = await cacah();
   assert.equal(akhir.stok - tengah.stok, 1, "dokumen yang diklik dua kali hanya mengeluarkan stok sekali");
   assert.equal(await saldo(w.lem.id), 0);

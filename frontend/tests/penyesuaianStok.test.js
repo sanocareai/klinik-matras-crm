@@ -73,9 +73,9 @@ test("pemasangan: Gudang.jsx tidak memanggil koreksi satu langkah; memakai penga
   assert.match(gudang, /hitungSelisihPengajuan/);
   assert.match(gudang, /label: "Ajukan Penyesuaian"/);
   assert.match(gudang, /penyesuaian-diajukan/);
-  const tab = baca("../src/features/warehouse/components/AdjustmentsTab.jsx");
-  assert.match(tab, /aksiPermintaan\(/);
-  assert.match(tab, /aksi\.posting/);
+  // Tahap 2: tombol Setujui/Posting kini diputuskan SERVER (tampilan.aksi + izin.bisaSetujui/pemohonSama); halaman detail hanya menampilkannya
+  const detail = baca("../src/features/warehouse/dokumen/PenyesuaianDetail.jsx");
+  assert.match(detail, /KartuAksiDokumen/); assert.match(detail, /r\.tampilan/); assert.match(detail, /api\.postAdjustmentRequest\(id\)/); assert.match(detail, /Pemisahan tugas/);
 });
 
 test("regresi: label tombol 'Ajukan' hanya di MovementModal (AddMaterialModal tidak punya variabel `type`)", () => {
@@ -102,7 +102,7 @@ test("jalur cepat terima/retur/buang dihapus dari UI dan api.js; hanya issue + p
 });
 
 test("Stock Count UI: pergerakan selama sesi ditandai eksplisit; Complete menunggu semua tanda", () => {
-  const d = baca("../src/features/warehouse/components/StockCountDetailDrawer.jsx");
+  const d = baca("../src/features/warehouse/dokumen/OpnameDetail.jsx");
   const api = baca("../src/api.js");
   assert.match(api, /tandaiPergerakanSesi/);
   assert.match(d, /pergerakanSesi/);
