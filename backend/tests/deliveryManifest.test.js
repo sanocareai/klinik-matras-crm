@@ -91,13 +91,40 @@ test("order non-PKR: cadangan memakai data unit; tanpa sumber PKR; label unit da
 // "Mita"): unit restorasi sofa tanpa merk/item PKR menampilkan "1× Kasur" ke
 // driver padahal ordernya restorasi sofa (ganti kain/busa/rangka) — fallback
 // lama buta terhadap Order.productLine, jatuh langsung ke "Kasur" literal.
-test("order non-PKR lini SOFA tanpa merk unit: cadangan memakai productLine order ('Sofa'), BUKAN 'Kasur'", () => {
+test("order non-PKR lini SOFA tanpa merk unit: cadangan memakai productType order ('Sofa 2 Seater', LEBIH spesifik dari lini), BUKAN 'Kasur'", () => {
   const order = { id: "o3", category: "LAYANAN", productLine: "SOFA", productType: "SOFA_2_SEATER", notes: null, units: [] };
   const u = { id: "y1", unitCode: "RES-18102026-088-U1", seq: 1, status: "ASSIGNED", merk: "", ukuran: "" };
   const m = bangunManifest({ id: "j3", type: "PICKUP", status: "SCHEDULED", order, units: [ju(u)] }, ALAT);
   assert.equal(m.unit, 1);
+  assert.equal(m.baris[0].nama, "Sofa 2 Seater");
+  assert.equal(teksBarisManifest(m.baris[0]), "1× Sofa 2 Seater");
+});
+
+test("order non-PKR: productType tidak dikenal/kosong -> cadangan turun ke productLine order ('Sofa')", () => {
+  const order = { id: "o3b", category: "LAYANAN", productLine: "SOFA", productType: null, notes: null, units: [] };
+  const u = { id: "y1b", unitCode: "RES-18102026-089-U1", seq: 1, status: "ASSIGNED", merk: "", ukuran: "" };
+  const m = bangunManifest({ id: "j3b", type: "PICKUP", status: "SCHEDULED", order, units: [ju(u)] }, ALAT);
   assert.equal(m.baris[0].nama, "Sofa");
-  assert.equal(teksBarisManifest(m.baris[0]), "1× Sofa");
+});
+
+// Bug nyata 18 Okt 2026 (laporan owner, order RES-14102026-076 "Suyunni"):
+// sales memilih merk "Lainnya" (brand tidak ada di daftar, TANPA field teks
+// bebas pendamping) — unit.merk DAN notes.merkKasur keduanya literal
+// "Lainnya". Driver melihat "1× Lainnya" telanjang, tidak memberi tahu
+// barang apa yang sebenarnya dibawa (seharusnya "Kasur Spring").
+test("order non-PKR: merk unit literal 'Lainnya' (placeholder, bukan nama produk) -> cadangan memakai productType, bukan kata 'Lainnya' itu sendiri", () => {
+  const order = { id: "o5", category: "LAYANAN", productLine: "KASUR", productType: "KASUR_SPRING", notes: JSON.stringify({ merkKasur: "Lainnya", ukuranKasur: "200 × 200 cm (King Besar)" }), units: [] };
+  const u = { id: "w1", unitCode: "RES-14102026-076-U1", seq: 1, status: "ASSIGNED", merk: "Lainnya", ukuran: "200x200 cm (King Besar)" };
+  const m = bangunManifest({ id: "j5", type: "DELIVERY", status: "SCHEDULED", order, units: [ju(u)] }, ALAT);
+  assert.equal(m.baris[0].nama, "Kasur Spring");
+  assert.equal(teksBarisManifest(m.baris[0]), "1× Kasur Spring — 200 × 200 cm (King Besar)");
+});
+
+test("order non-PKR: merk unit sungguhan (bukan 'Lainnya') tetap dipakai apa adanya — penyaringan placeholder tidak melebar ke merk nyata", () => {
+  const order = { id: "o6", category: "LAYANAN", productLine: "KASUR", productType: "KASUR_SPRING", notes: null, units: [] };
+  const u = { id: "v1", unitCode: "RES-01102026-050-U1", seq: 1, status: "ASSIGNED", merk: "King Koil", ukuran: "160x200" };
+  const m = bangunManifest({ id: "j6", type: "DELIVERY", status: "SCHEDULED", order, units: [ju(u)] }, ALAT);
+  assert.equal(m.baris[0].nama, "King Koil");
 });
 
 test("order non-PKR lini DIVAN tanpa merk unit: cadangan memakai productLine order ('Divan')", () => {
