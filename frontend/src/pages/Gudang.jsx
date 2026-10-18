@@ -1,3 +1,5 @@
+// TIDAK DIROUTE lagi (UX Gudang Tahap 2): halaman lama "Warehouse command center" dicabut dari pageRegistry; /gudang dialihkan ke Beranda Gudang (lib/legacyProductionRoutes.js).
+// Berkas dipertahankan hanya karena beberapa tes kontrak membaca teksnya; JANGAN merutekannya lagi.
 import React, { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {

@@ -80,7 +80,6 @@ const FinanceReconciliation = lazy(() => import("../pages/finance/FinanceReconci
 const FinanceSettings       = lazy(() => import("../pages/finance/FinanceSettings.jsx"));
 const B2BOrders       = lazy(() => import("../pages/b2b/B2BOrders.jsx"));
 const ComplaintCases  = lazy(() => import("../pages/ComplaintCases.jsx"));
-const Gudang         = lazy(() => import("../pages/Gudang.jsx"));
 const WarehouseDashboard   = lazy(() => import("../pages/warehouse/WarehouseDashboard.jsx"));
 const WarehouseInventory   = lazy(() => import("../pages/warehouse/WarehouseInventory.jsx"));
 const WarehouseGoodsReceipt = lazy(() => import("../pages/warehouse/WarehouseGoodsReceipt.jsx"));
@@ -258,7 +257,6 @@ const PAGES_DASAR = [
   { path: "/finance/settings",       render: () => <FinanceSettings /> },
   { path: "/b2b",         render: () => <B2BOrders /> },
   { path: "/komplain",    render: () => <ComplaintCases /> },
-  { path: "/gudang",      render: () => <Gudang /> },
   { path: "/warehouse/dashboard", render: () => <WarehouseDashboard /> },
   { path: "/warehouse/inventory", render: () => <WarehouseInventory /> },
   { path: "/warehouse/barang-akan-datang", render: () => <WarehouseBarangAkanDatang /> },
