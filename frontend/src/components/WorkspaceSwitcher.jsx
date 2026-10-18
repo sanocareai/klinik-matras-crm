@@ -29,7 +29,7 @@ export const WORKSPACES = [
   { key: "growth",    label: "Sales CRM & Omnichannel",    to: "/dashboard", Icon: Users,   roles: ["ADMIN", "SALES"] },
   { key: "armada",    label: "Delivery & Fulfillment",     to: "/armada",    Icon: Truck,   roles: ["ADMIN", "DISPATCHER", "DRIVER", "HELPER", "LEADER_DRIVER"] },
   { key: "bengkel",   label: "Production Operations",      to: "/bengkel/ringkasan",   Icon: Wrench,  roles: ["ADMIN", "PRODUCTION_LEAD", "PRODUCTION_WORKER", "QC_LEAD", "PRODUCTION_DOCUMENTER"] },
-  { key: "warehouse", label: "Warehouse & Inventory Control", to: "/gudang", Icon: Package, roles: ["ADMIN", "WAREHOUSE", "PRODUCTION_LEAD"] },
+  { key: "warehouse", label: "Warehouse & Inventory Control", to: "/warehouse/dashboard", Icon: Package, roles: ["ADMIN", "WAREHOUSE", "PRODUCTION_LEAD"] },
   { key: "kendali",   label: "All Teams Dashboard",        to: "/kendali",   Icon: Gauge,   roles: ["ADMIN", "FINANCE"] },
   // Finance & Accounting (D-180, 17 September 2026) — buku besar, kas/bank,
   // piutang/utang, dan laporan keuangan. TERPISAH dari "All Teams Dashboard"

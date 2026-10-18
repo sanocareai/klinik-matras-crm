@@ -66,7 +66,9 @@ const WORKSPACE_ORDER_KEY = "sidebar-order:__workspaces__";
 export function getWorkspaceOrder() {
   try {
     const raw = localStorage.getItem(WORKSPACE_ORDER_KEY);
-    return raw ? JSON.parse(raw) : null;
+    const urutan = raw ? JSON.parse(raw) : null;
+    // Tujuan workspace Gudang berpindah dari /gudang (halaman lama, dicabut) ke Beranda Gudang: urutan buatan pengguna yang masih memuat /gudang tetap berlaku.
+    return Array.isArray(urutan) ? urutan.map((to) => (to === "/gudang" ? "/warehouse/dashboard" : to)) : urutan;
   } catch {
     return null;
   }
