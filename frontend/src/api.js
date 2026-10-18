@@ -115,7 +115,7 @@ async function request(path, options = {}) {
       let detail;
       // Backend mengirim `details` (jamak) — lihat routes/*.js handleErr(). `j.detail` (tunggal) dipertahankan
       // sebagai fallback bila kelak ada endpoint lama yang memakai ejaan itu; tidak ada yang mengirimnya saat ini.
-      try { const j = JSON.parse(text); msg = j.error || msg; code = j.code; detail = j.details ?? j.detail; } catch {}
+      try { const j = JSON.parse(text); msg = j.error || msg; code = j.code ?? j.kode; detail = j.details ?? j.detail; } catch {}
       // `.status` disertakan (bukan cuma pesan) supaya pemanggil bisa
       // membedakan "diblokir karena ada data terkait" (409) dari error lain
       // tanpa perlu cocokkan teks pesan (rapuh kalau pesannya diubah nanti).
@@ -607,7 +607,9 @@ export const api = {
   updateMaterialIssueLine: (id, lineId, data) =>
     request(`/inventory/material-issues/${id}/lines/${lineId}`, { method: "PATCH", body: JSON.stringify(data) }),
   issueMaterialIssue: (id, data = {}) => request(`/inventory/material-issues/${id}/issue`, { method: "POST", body: JSON.stringify(data) }),
-  cancelMaterialIssue: (id, reason) => request(`/inventory/material-issues/${id}/cancel`, { method: "PATCH", body: JSON.stringify({ reason }) }),
+  cancelMaterialIssue: (id, reason, revisi) => request(`/inventory/material-issues/${id}/cancel`, { method: "PATCH", body: JSON.stringify({ reason, revisi }) }),
+  ubahIsiMaterialIssue: (id, data) => request(`/inventory/material-issues/${id}/isi`, { method: "PUT", body: JSON.stringify(data) }),
+  kembalikanMaterialIssue: (id, alasan, revisi) => request(`/inventory/material-issues/${id}/kembalikan`, { method: "POST", body: JSON.stringify({ alasan, revisi }) }),
   buatUlangMaterialIssue: (id, alasan) => request(`/inventory/material-issues/${id}/buat-ulang`, { method: "POST", body: JSON.stringify({ alasan }) }),
 
   // Custody unit V2 (Production Workshop + Warehouse V2, P1–P2) — antrean serah-terima Delivery <-> Gudang.
@@ -701,9 +703,12 @@ export const api = {
   getStockTransfer: (id) => request(`/inventory/transfers/${id}`),
   createStockTransfer: (data) => request("/inventory/transfers", { method: "POST", body: JSON.stringify(data) }),
   updateStockTransfer: (id, data) => request(`/inventory/transfers/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
-  dispatchStockTransfer: (id) => request(`/inventory/transfers/${id}/dispatch`, { method: "POST" }),
+  dispatchStockTransfer: (id, data = {}) => request(`/inventory/transfers/${id}/dispatch`, { method: "POST", body: JSON.stringify(data) }),
   receiveStockTransfer: (id, data = {}) => request(`/inventory/transfers/${id}/receive`, { method: "POST", body: JSON.stringify(data) }),
-  cancelStockTransfer: (id, reason) => request(`/inventory/transfers/${id}/cancel`, { method: "PATCH", body: JSON.stringify({ reason }) }),
+  cancelStockTransfer: (id, reason, revisi) => request(`/inventory/transfers/${id}/cancel`, { method: "PATCH", body: JSON.stringify({ reason, revisi }) }),
+  ubahIsiStockTransfer: (id, data) => request(`/inventory/transfers/${id}/isi`, { method: "PUT", body: JSON.stringify(data) }),
+  kembalikanStockTransfer: (id, alasan, revisi) => request(`/inventory/transfers/${id}/kembalikan`, { method: "POST", body: JSON.stringify({ alasan, revisi }) }),
+  selesaikanSelisihTransfer: (id, data) => request(`/inventory/transfers/${id}/selisih`, { method: "POST", body: JSON.stringify(data) }),
   buatUlangStockTransfer: (id, alasan) => request(`/inventory/transfers/${id}/buat-ulang`, { method: "POST", body: JSON.stringify({ alasan }) }),
 
   // Stock Count / Stock Opname (Warehouse Tahap 5)

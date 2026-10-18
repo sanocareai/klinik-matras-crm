@@ -6,6 +6,10 @@
 
 export const AKSI_DOK = Object.freeze({
   UBAH: { kode: "UBAH", label: "Ubah data", jenis: "ubah" },
+  UBAH_ISI: { kode: "UBAH_ISI", label: "Ubah isi dokumen", jenis: "ubah" },
+  KEMBALIKAN: { kode: "KEMBALIKAN", label: "Kembalikan untuk revisi", jenis: "ubah" },
+  TARIK_KEMBALI: { kode: "KEMBALIKAN", label: "Tarik kembali ke Draf", jenis: "ubah" },
+  SELESAIKAN_SELISIH: { kode: "SELESAIKAN_SELISIH", label: "Selesaikan selisih", jenis: "maju" },
   ATUR_LOKASI: { kode: "ATUR_LOKASI", label: "Simpan lokasi sumber", jenis: "ubah" },
   AJUKAN: { kode: "AJUKAN", label: "Ajukan persetujuan", jenis: "maju" },
   SETUJUI: { kode: "SETUJUI", label: "Setujui", jenis: "maju" },
@@ -39,11 +43,11 @@ export function tampilanMaterialIssue(r) {
   if (r?.productionPlanId) return d("V2", "Dikelola Produksi V2", "neutral", "Permintaan ini dimiliki alur Produksi (Planned BOM/reservasi). Gudang tidak mengubahnya dari sini; ikuti antrean bahan Produksi.", status === "ISSUED" ? "SUDAH" : "DICADANG", []);
   const ubah = AKSI_DOK.UBAH; const batal = AKSI_DOK.BATALKAN;
   switch (status) {
-    case "DRAFT": return d("DRAF", "Draf", "neutral", "Belum diajukan. Belum memengaruhi stok. Data boleh diperbaiki; setelah diajukan, jumlah tidak bisa diubah (batalkan lalu buat permintaan baru).", "BELUM", [AKSI_DOK.AJUKAN, ubah, batal]);
-    case "WAITING_APPROVAL": return d("MENUNGGU", "Menunggu persetujuan", "orange", "Menunggu orang yang berwenang menyetujui. Belum memengaruhi stok; stok baru dicadangkan setelah disetujui.", "BELUM", [AKSI_DOK.SETUJUI, ubah, batal]);
-    case "APPROVED": return d("DISETUJUI", "Disetujui — stok dicadangkan", "accent", "Jumlah yang diminta dicadangkan: saldo belum berkurang, tetapi tidak tersedia untuk permintaan lain. Lanjutkan dengan menyiapkan barang.", "DICADANG", [AKSI_DOK.SIAPKAN, ubah, batal]);
-    case "READY_TO_PICK": return d("SIAP", "Siap diambil", "accent", "Barang siap diambil. Stok masih dicadangkan (saldo belum berkurang). Isi lokasi sumber bila perlu, lalu tandai sudah diambil.", "DICADANG", [AKSI_DOK.TANDAI_DIAMBIL, AKSI_DOK.ATUR_LOKASI, ubah, batal]);
-    case "PICKED": return d("DIAMBIL", "Sudah diambil — tinggal konfirmasi keluar", "accent", "Barang sudah diambil. Stok baru BERKURANG saat Konfirmasi keluar; periksa jumlah keluar tiap item dulu.", "DICADANG", [AKSI_DOK.KONFIRMASI_KELUAR, AKSI_DOK.ATUR_LOKASI, ubah, batal]);
+    case "DRAFT": return d("DRAF", "Draf", "neutral", "Belum diajukan. Belum memengaruhi stok. Bahan, jumlah, dan data boleh diperbaiki; setiap perubahan tercatat di riwayat.", "BELUM", [AKSI_DOK.AJUKAN, AKSI_DOK.UBAH_ISI, batal]);
+    case "WAITING_APPROVAL": return d("MENUNGGU", "Menunggu persetujuan", "orange", "Menunggu orang yang berwenang menyetujui. Belum memengaruhi stok; stok baru dicadangkan setelah disetujui. Bila isinya perlu diubah, tarik kembali ke Draf.", "BELUM", [AKSI_DOK.SETUJUI, AKSI_DOK.TARIK_KEMBALI, ubah, batal]);
+    case "APPROVED": return d("DISETUJUI", "Disetujui — stok dicadangkan", "accent", "Jumlah yang diminta dicadangkan: saldo belum berkurang, tetapi tidak tersedia untuk permintaan lain. Lanjutkan dengan menyiapkan barang. Bila isi perlu direvisi, kembalikan ke Draf: persetujuan lama gugur dan pencadangan dilepas.", "DICADANG", [AKSI_DOK.SIAPKAN, AKSI_DOK.KEMBALIKAN, ubah, batal]);
+    case "READY_TO_PICK": return d("SIAP", "Siap diambil", "accent", "Barang siap diambil. Stok masih dicadangkan (saldo belum berkurang). Isi lokasi sumber bila perlu, lalu tandai sudah diambil. Bila isi perlu direvisi, kembalikan ke Draf (persetujuan lama gugur, pencadangan dilepas).", "DICADANG", [AKSI_DOK.TANDAI_DIAMBIL, AKSI_DOK.ATUR_LOKASI, AKSI_DOK.KEMBALIKAN, ubah, batal]);
+    case "PICKED": return d("DIAMBIL", "Sudah diambil — tinggal konfirmasi keluar", "accent", "Barang sudah diambil. Stok baru BERKURANG saat Konfirmasi keluar; periksa jumlah keluar tiap item dulu. Salah ambil? Kembalikan ke Draf selama belum dikeluarkan (persetujuan lama gugur, pencadangan dilepas).", "DICADANG", [AKSI_DOK.KONFIRMASI_KELUAR, AKSI_DOK.ATUR_LOKASI, AKSI_DOK.KEMBALIKAN, ubah, batal]);
     case "ISSUED": return d("DIKELUARKAN", "Sudah dikeluarkan", "green", "Stok sudah berkurang. Catatan tidak dihapus; bila ada salah input, pakai jalur koreksi resmi di bawah (pengembalian bahan / penyesuaian) — dampaknya ditampilkan dulu.", "SUDAH", []);
     case "CANCELLED": return d("DIBATALKAN", "Dibatalkan", "neutral", "Permintaan dibatalkan; pencadangan stok (bila ada) dilepas. Dokumen tidak dihapus. Bila masih perlu, buat permintaan baru dari dokumen ini.", "TIDAK", [AKSI_DOK.BUAT_ULANG]);
     default: return d("TIDAK_DIKENAL", status || "—", "neutral", "Status tidak dikenal.", "TIDAK", []);
@@ -51,17 +55,21 @@ export function tampilanMaterialIssue(r) {
 }
 
 /** Transfer Stok. @param r { status } */
-export function tampilanTransfer(r) {
+export function tampilanTransfer(r, ctx = {}) {
   const status = String(r?.status ?? "");
   const d = bentuk(TAHAP_ST, IDX_ST, status);
   const ubah = { ...AKSI_DOK.UBAH, label: "Ubah catatan" }; const batal = AKSI_DOK.BATALKAN;
   switch (status) {
-    case "DRAFT": return d("DRAF", "Draf", "neutral", "Belum diajukan. Belum memengaruhi stok. Catatan boleh diperbaiki; item, jumlah, dan lokasi tidak bisa diubah (batalkan lalu buat transfer baru).", "BELUM", [AKSI_DOK.AJUKAN, ubah, batal]);
-    case "WAITING_APPROVAL": return d("MENUNGGU", "Menunggu persetujuan", "orange", "Menunggu persetujuan. Belum memengaruhi stok.", "BELUM", [AKSI_DOK.SETUJUI, ubah, batal]);
-    case "APPROVED": return d("DISETUJUI", "Disetujui", "accent", "Disetujui, belum ada barang yang berpindah. Stok belum berubah. Lanjutkan saat barang sudah diambil.", "BELUM", [AKSI_DOK.TANDAI_DIAMBIL, ubah, batal]);
-    case "PICKED": return d("DIAMBIL", "Sudah diambil — siap dikirim", "accent", "Barang sudah diambil. Stok BERKURANG saat Kirim barang (saldo dikurangi di sistem sampai barang diterima di tujuan).", "BELUM", [AKSI_DOK.KIRIM, ubah, batal]);
-    case "IN_TRANSIT": return d("DALAM_PERJALANAN", "Dalam perjalanan", "orange", "Saldo SUDAH dikurangi di sistem saat dikirim; baru bertambah lagi saat diterima. Selisih jumlah diterima dari yang dikirim tetap hilang dari saldo — catat lewat penyesuaian/Barang Rusak bila perlu. Tidak bisa dibatalkan di sini.", "BERKURANG", [AKSI_DOK.TERIMA]);
-    case "COMPLETED": return d("SELESAI", "Selesai diterima", "green", "Barang sudah diterima dan saldo dibukukan. Catatan tidak dihapus; bila ada salah input, pakai jalur koreksi resmi di bawah.", "SUDAH", []);
+    case "DRAFT": return d("DRAF", "Draf", "neutral", "Belum diajukan. Belum memengaruhi stok. Bahan, jumlah, lokasi, dan catatan boleh diperbaiki; setiap perubahan tercatat di riwayat.", "BELUM", [AKSI_DOK.AJUKAN, AKSI_DOK.UBAH_ISI, batal]);
+    case "WAITING_APPROVAL": return d("MENUNGGU", "Menunggu persetujuan", "orange", "Menunggu persetujuan. Belum memengaruhi stok. Bila isinya perlu diubah, tarik kembali ke Draf.", "BELUM", [AKSI_DOK.SETUJUI, AKSI_DOK.TARIK_KEMBALI, ubah, batal]);
+    case "APPROVED": return d("DISETUJUI", "Disetujui", "accent", "Disetujui, belum ada barang yang berpindah. Stok belum berubah. Lanjutkan saat barang sudah diambil. Bila isi perlu direvisi, kembalikan ke Draf (persetujuan lama gugur).", "BELUM", [AKSI_DOK.TANDAI_DIAMBIL, AKSI_DOK.KEMBALIKAN, ubah, batal]);
+    case "PICKED": return d("DIAMBIL", "Sudah diambil — siap dikirim", "accent", "Barang sudah diambil. Stok BERKURANG saat Kirim barang (saldo dikurangi di sistem sampai barang diterima di tujuan). Salah ambil? Kembalikan ke Draf selama belum dikirim.", "BELUM", [AKSI_DOK.KIRIM, AKSI_DOK.KEMBALIKAN, ubah, batal]);
+    case "IN_TRANSIT": return d("DALAM_PERJALANAN", "Dalam perjalanan", "orange", "Saldo SUDAH dikurangi di sistem saat dikirim; baru bertambah lagi saat diterima. Bila jumlah diterima berbeda dari yang dikirim, penyebab selisih wajib diisi dan selisihnya diselesaikan setelah itu. Tidak bisa dibatalkan di sini.", "BERKURANG", [AKSI_DOK.TERIMA]);
+    case "COMPLETED": {
+      const terbuka = Number(ctx.selisihTerbuka ?? 0);
+      if (terbuka > 0) return d("SELESAI", "Selesai — ada selisih belum diselesaikan", "orange", "Barang diterima, tetapi ada kekurangan dari jumlah yang dikirim. Kekurangan itu sudah hilang dari saldo di sistem dan belum punya penyelesaian. Pilih: barang ditemukan (saldo tujuan ditambah) atau diakui susut/hilang/rusak (tercatat, bukan pemakaian produksi).", "SUDAH", [AKSI_DOK.SELESAIKAN_SELISIH], { selisihTerbuka: terbuka });
+      return d("SELESAI", "Selesai diterima", "green", "Barang sudah diterima dan saldo dibukukan. Catatan tidak dihapus; bila ada salah input, pakai jalur koreksi resmi di bawah.", "SUDAH", [], { selisihTerbuka: 0 });
+    }
     case "CANCELLED": return d("DIBATALKAN", "Dibatalkan", "neutral", "Dibatalkan sebelum barang dikirim. Tidak memengaruhi stok. Dokumen tidak dihapus; bila masih perlu, buat transfer baru dari dokumen ini.", "TIDAK", [AKSI_DOK.BUAT_ULANG_TRANSFER]);
     default: return d("TIDAK_DIKENAL", status || "—", "neutral", "Status tidak dikenal.", "TIDAK", []);
   }
@@ -99,8 +107,11 @@ export async function jejakDokumenGudang(db, { entityType, id, dibuatOleh = null
   for (const e of ev) {
     const m = e.metadata ?? {}; const oleh = pelaku.get(e.actorId) ?? null; let teks = null; let aksi = null; let alasan = null; let tautan = null;
     if (e.eventType === "DOCUMENT_APPROVED") { aksi = "DISETUJUI"; teks = "Disetujui"; }
-    else if (e.eventType === "DOCUMENT_POSTED") { aksi = m.step === "dispatch" ? "DIKIRIM" : m.step === "receive" ? "DITERIMA" : "DIKELUARKAN"; teks = m.step === "dispatch" ? "Barang dikirim (saldo dikurangi)" : m.step === "receive" ? "Barang diterima (saldo dibukukan)" : "Barang dikeluarkan (saldo berkurang)"; }
+    else if (e.eventType === "DOCUMENT_POSTED") { aksi = m.step === "dispatch" ? "DIKIRIM" : m.step === "receive" ? "DITERIMA" : "DIKELUARKAN"; teks = m.step === "dispatch" ? "Barang dikirim (saldo dikurangi)" : m.step === "receive" ? "Barang diterima (saldo dibukukan)" : "Barang dikeluarkan (saldo berkurang)"; if (m.step === "receive" && m.selisih?.length) { teks += ` — selisih: ${m.selisih.map((x) => `${x.kode} dikirim ${x.dikirim}, diterima ${x.diterima}`).join("; ")}`; alasan = m.alasanSelisih ?? null; } }
     else if (e.eventType === "DOCUMENT_CANCELLED") { aksi = "DIBATALKAN"; teks = "Dibatalkan"; alasan = m.reason ?? null; }
+    else if (e.eventType === "DOCUMENT_EDITED" && m.aksi === "DRAF_DIUBAH" && Array.isArray(m.ringkasan)) { aksi = "DIUBAH"; teks = `Isi diubah: ${m.ringkasan.join("; ")}`; }
+    else if (e.eventType === "DOCUMENT_EDITED" && m.aksi === "DIKEMBALIKAN") { aksi = "DIKEMBALIKAN"; teks = `Dikembalikan ke Draf dari "${STATUS_LABEL[m.dariStatus] ?? m.dariStatus}"${m.persetujuanDicabut ? " — persetujuan lama gugur" : ""}${m.reservasiDilepas ? " — pencadangan stok dilepas" : ""}`; alasan = m.alasan ?? null; }
+    else if (e.eventType === "DOCUMENT_EDITED" && m.aksi === "SELISIH_DISELESAIKAN") { aksi = "SELISIH_DISELESAIKAN"; teks = m.jenis === "DITEMUKAN" ? `Selisih ${m.kode} ${m.qty} ditemukan — saldo tujuan ditambah` : `Selisih ${m.kode} ${m.qty} diakui susut/hilang/rusak (tidak ada pergerakan stok; bukan pemakaian produksi)`; alasan = m.alasan ?? null; }
     else if (e.eventType === "DOCUMENT_EDITED" && m.aksi === "DRAF_DIUBAH") { aksi = "DIUBAH"; teks = `Diubah${m.bagian && m.bagian !== "dokumen" ? ` (${m.bagian})` : ""}: ${kalimatPerubahan(m.sebelum, m.sesudah)}`; }
     else if (e.eventType === "DOCUMENT_EDITED" && m.aksi === "DIBUAT_ULANG_DARI") { aksi = "DIBUAT_ULANG_DARI"; teks = "Dibuat ulang dari dokumen lama"; alasan = m.alasan ?? null; tautan = { id: m.dariId, nomor: m.dariNomor }; }
     else if (e.eventType === "DOCUMENT_EDITED" && m.aksi === "DIBUAT_ULANG_MENJADI") { aksi = "DIBUAT_ULANG_MENJADI"; teks = "Dibuatkan dokumen baru"; alasan = m.alasan ?? null; tautan = { id: m.keId, nomor: m.keNomor }; }

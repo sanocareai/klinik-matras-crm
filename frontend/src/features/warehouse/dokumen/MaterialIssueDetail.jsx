@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button.jsx";
 import KartuJalurKoreksi from "@/features/warehouse/koreksi/KartuJalurKoreksi.jsx";
 import AksiDokumen from "@/features/warehouse/aksi/AksiDokumen.jsx";
 import AlurPenerimaan from "@/features/warehouse/penerimaan/AlurPenerimaan.jsx";
+import MaterialIssueFormModal from "@/features/warehouse/components/MaterialIssueFormModal.jsx";
 import { ISSUE_SOURCE_REAL, ISSUE_PRIORITY_REAL, UNIT_LABEL } from "@/features/warehouse/inventoryReal.js";
 import JejakDokumen from "./JejakDokumen.jsx";
 import TabelItemDokumen from "./TabelItemDokumen.jsx";
@@ -26,7 +27,7 @@ const PRIORITAS_OPSI = Object.entries(ISSUE_PRIORITY_REAL).map(([nilai, v]) => (
 export default function MaterialIssueDetail() {
   const { id } = useParams(); const navigate = useNavigate();
   const [r, setR] = useState(null); const [galat, setGalat] = useState(""); const [memuat, setMemuat] = useState(true); const [sibuk, setSibuk] = useState(false);
-  const [lokasi, setLokasi] = useState({}); const [keluar, setKeluar] = useState({}); const [versi, setVersi] = useState(0);
+  const [lokasi, setLokasi] = useState({}); const [keluar, setKeluar] = useState({}); const [versi, setVersi] = useState(0); const [editOpen, setEditOpen] = useState(false);
 
   const muat = useCallback(async () => {
     setMemuat(true); setGalat("");
@@ -46,15 +47,20 @@ export default function MaterialIssueDetail() {
   const simpanLokasi = async () => { await Promise.all(Object.entries(lokasi).map(([lineId, sourceLocation]) => api.updateMaterialIssueLine(id, lineId, { sourceLocation }))); };
   const jalankan = async (kode, v = {}) => {
     if (kode === "KONFIRMASI_KELUAR" && galatKeluar) throw new Error(galatKeluar);
+    if (kode === "UBAH_ISI") { setEditOpen(true); return; }
     setSibuk(true);
     try {
-      if (STATUS_MAJU[kode]) { if (adaLokasi) await simpanLokasi(); await api.updateMaterialIssue(id, { status: STATUS_MAJU[kode] }); }
+      if (STATUS_MAJU[kode]) { if (adaLokasi) await simpanLokasi(); await api.updateMaterialIssue(id, { status: STATUS_MAJU[kode], revisi: r.revisi }); }
       else if (kode === "ATUR_LOKASI") await simpanLokasi();
-      else if (kode === "KONFIRMASI_KELUAR") { if (adaLokasi) await simpanLokasi(); await api.issueMaterialIssue(id, { lines: r.lines.map((l) => ({ lineId: l.id, issuedQty: angka(keluar[l.id]) })) }); }
-      else if (kode === "UBAH") await api.updateMaterialIssue(id, { department: v.department, sourceReference: v.sourceReference, requiredDate: v.requiredDate, priority: v.priority, notes: v.notes });
-      else if (kode === "BATALKAN") await api.cancelMaterialIssue(id, v.alasan);
+      else if (kode === "KONFIRMASI_KELUAR") { if (adaLokasi) await simpanLokasi(); await api.issueMaterialIssue(id, { revisi: r.revisi, lines: r.lines.map((l) => ({ lineId: l.id, issuedQty: angka(keluar[l.id]) })) }); }
+      else if (kode === "UBAH") await api.updateMaterialIssue(id, { department: v.department, sourceReference: v.sourceReference, requiredDate: v.requiredDate, priority: v.priority, notes: v.notes, revisi: r.revisi });
+      else if (kode === "KEMBALIKAN") await api.kembalikanMaterialIssue(id, v.alasan, r.revisi);
+      else if (kode === "BATALKAN") await api.cancelMaterialIssue(id, v.alasan, r.revisi);
       else if (kode === "BUAT_ULANG") { const baru = await api.buatUlangMaterialIssue(id, v.alasan); navigate(`/warehouse/material-issue/${baru.id}`); return; }
       await muat();
+    } catch (e) {
+      if (e.code === "REVISI_BASI" || e.code === "STATUS_TIDAK_SESUAI" || e.code === "KONFLIK_PAYLOAD") await muat(); // tampilkan keadaan terbaru; pesan galat tetap tampil di panel
+      throw e;
     } finally { setSibuk(false); }
   };
 
@@ -64,10 +70,11 @@ export default function MaterialIssueDetail() {
 
   const SPEC = {
     SETUJUI: { panel: { judul: "Setujui permintaan ini?", tombol: "Setujui & cadangkan stok", peringatan: "Jumlah yang diminta dicadangkan: saldo belum berkurang, tetapi tidak tersedia untuk permintaan lain. Jumlah tidak bisa diubah setelah ini.",
-      judulRingkasan: "Stok yang dicadangkan", ringkasan: r.lines.map((l) => `${l.material.code}: ${teksJumlah(l.requestedQty)} ${satuan(l.material.unit)}`), catatan: adaKurangStok(r.ketersediaan) ? "Stok tersedia belum cukup untuk sebagian item. Persetujuan tetap bisa diberikan, tetapi pengeluaran akan gagal bila saldo belum cukup." : undefined, bidang: [] } },
+      judulRingkasan: "Stok yang dicadangkan", ringkasan: r.lines.map((l) => `${l.material.code}: ${teksJumlah(l.requestedQty)} ${satuan(l.material.unit)}`), catatan: [adaKurangStok(r.ketersediaan) ? "Stok tersedia belum cukup untuk sebagian item. Persetujuan tetap bisa diberikan, tetapi pengeluaran akan gagal bila saldo belum cukup." : null, r.izin?.pemohonSama ? "Anda juga pemohon dokumen ini. Aturan izin saat ini memperbolehkannya (belum ada penyetuju kedua untuk transaksi rutin); persetujuan Anda tercatat di riwayat." : null].filter(Boolean).join(" ") || undefined, bidang: [] } },
+    KEMBALIKAN: { panel: { judul: t.aksi.find((a) => a.kode === "KEMBALIKAN")?.label ?? "Kembalikan ke Draf", tombol: "Kembalikan ke Draf", peringatan: r.status === "WAITING_APPROVAL" ? "Dokumen kembali menjadi Draf supaya isinya bisa diubah; belum ada pengaruh ke stok." : "Dokumen kembali menjadi Draf untuk direvisi. Persetujuan lama GUGUR (tetap ada di riwayat) dan pencadangan stok dilepas. Hanya selama belum dikeluarkan.", bidang: [{ nama: "alasan", label: "Alasan revisi", wajib: true, min: 3, maks: 300 }] } },
     KONFIRMASI_KELUAR: { panel: { judul: "Keluarkan barang dari stok?", tombol: "Keluarkan dari stok", peringatan: "Saldo stok berkurang SEKARANG dan tidak bisa dibatalkan dari sini; salah input diperbaiki lewat jalur koreksi resmi.", galat: galatKeluar,
       ringkasan: dampakKeluar(r.lines, keluar, satuan), bidang: [] } },
-    UBAH: { panel: { judul: "Ubah data permintaan", tombol: "Simpan perubahan", peringatan: "Jumlah item tidak bisa diubah setelah dibuat — bila jumlah salah, batalkan lalu buat permintaan baru. Perubahan tercatat di riwayat.", bidang: [
+    UBAH: { panel: { judul: "Ubah data permintaan", tombol: "Simpan perubahan", peringatan: "Mengubah data pengantar (departemen, prioritas, catatan). Untuk mengubah bahan atau jumlah, kembalikan dulu ke Draf. Perubahan tercatat di riwayat.", bidang: [
       { nama: "department", label: "Departemen", maks: 120, awal: r.department ?? "" }, { nama: "sourceReference", label: "Referensi", maks: 160, awal: r.sourceReference ?? "" },
       { nama: "requiredDate", label: "Dibutuhkan tanggal", tipe: "date", awal: r.requiredDate ? String(r.requiredDate).slice(0, 10) : "" }, { nama: "priority", label: "Prioritas", tipe: "pilih", opsi: PRIORITAS_OPSI, awal: r.priority },
       { nama: "notes", label: "Catatan", tipe: "area", maks: 500, awal: r.notes ?? "" }] } },
@@ -140,6 +147,7 @@ export default function MaterialIssueDetail() {
         {galat && <p role="alert" className="text-[12px] text-red">{galat}</p>}
         <Button variant="ghost" size="sm" onClick={muat} disabled={memuat} className="self-start max-sm:min-h-11" data-testid="muat-ulang">{memuat ? <Loader2 size={14} className="animate-spin" /> : null} Muat ulang</Button>
       </PageBody>
+      {editOpen && <MaterialIssueFormModal open dokumen={r} onClose={() => setEditOpen(false)} onSaved={(h) => { setEditOpen(false); muat(); void h; }} />}
     </PageContainer>
   );
 }

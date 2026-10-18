@@ -135,11 +135,11 @@ test("ST: tampilan & aksi per status; Kirim barang menulis SATU movement negatif
   const kirim2 = await w.g.post(`${ST}/${st.id}/dispatch`, {}); assert.equal(kirim2.status, 200); assert.equal(kirim2.body.ulang, true);
   assert.equal(await stok(w.busa.id), 42, "dispatch kedua tidak menulis lagi");
   const baris = kirim.body.lines[0];
-  const terima0 = await w.g.post(`${ST}/${st.id}/receive`, { lines: [{ lineId: baris.id, qtyReceived: 7 }] }); assert.equal(terima0.status, 200, JSON.stringify(terima0.body));
+  const terima0 = await w.g.post(`${ST}/${st.id}/receive`, { lines: [{ lineId: baris.id, qtyReceived: 7 }], alasanSelisih: "Satu lembar rusak di jalan" }); assert.equal(terima0.status, 200, JSON.stringify(terima0.body));
   const terima = { ...terima0, body: (await w.g.get(`${ST}/${st.id}`)).body };
-  assert.equal(terima.body.tampilan.kode, "SELESAI"); assert.deepEqual(terima.body.tampilan.aksi, []);
+  assert.equal(terima.body.tampilan.kode, "SELESAI"); assert.deepEqual(terima.body.tampilan.aksi.map((x) => x.kode), ["SELESAIKAN_SELISIH"], "ada kekurangan 1 yang belum diselesaikan");
   assert.equal(await stok(w.busa.id), 49, "42 + 7: selisih 1 hilang dari saldo"); assert.equal(await jumlahMov(), awal + 2);
-  const terima2 = await w.g.post(`${ST}/${st.id}/receive`, { lines: [{ lineId: baris.id, qtyReceived: 7 }] }); assert.equal(terima2.status, 200); assert.equal(terima2.body.ulang, true);
+  const terima2 = await w.g.post(`${ST}/${st.id}/receive`, { lines: [{ lineId: baris.id, qtyReceived: 7 }], alasanSelisih: "Satu lembar rusak di jalan" }); assert.equal(terima2.status, 200); assert.equal(terima2.body.ulang, true);
   assert.equal(await stok(w.busa.id), 49); assert.equal(await jumlahMov(), awal + 2);
   d = (await w.g.get(`${ST}/${st.id}`)).body; assert.ok(d.jejak.length >= 2); assert.equal(d.lines[0].qtyReceived, 7);
 });

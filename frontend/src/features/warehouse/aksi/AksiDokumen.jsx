@@ -16,8 +16,8 @@ export { galatPanel };
  * @param onJalankan async (kode, nilai) — melempar Error bila gagal (pesan ditampilkan di sini)
  */
 export default function AksiDokumen({ aksi = [], spec = {}, onJalankan, sibuk = false, className, ikutiVersi }) {
-  const [buka, setBuka] = useState(null); const [nilai, setNilai] = useState({}); const [galat, setGalat] = useState(""); const [proses, setProses] = useState(false);
-  useEffect(() => { setBuka(null); setGalat(""); }, [ikutiVersi]);
+  const [buka, setBuka] = useState(null); const [nilai, setNilai] = useState({}); const [galat, setGalat] = useState(""); const [proses, setProses] = useState(false); const [sentuh, setSentuh] = useState(false);
+  useEffect(() => { setBuka(null); setGalat(""); setSentuh(false); }, [ikutiVersi]);
   if (!aksi.length) return null;
   const utama = aksi.find((a) => a.jenis === "maju")?.kode;
   const jalan = async (kode, v = {}) => {
@@ -26,7 +26,7 @@ export default function AksiDokumen({ aksi = [], spec = {}, onJalankan, sibuk = 
   };
   const klik = (a) => {
     const s = spec[a.kode];
-    if (s?.panel) { setBuka(buka === a.kode ? null : a.kode); setGalat(""); setNilai(Object.fromEntries((s.panel.bidang ?? []).map((b) => [b.nama, b.awal ?? ""]))); return; }
+    if (s?.panel) { setBuka(buka === a.kode ? null : a.kode); setGalat(""); setSentuh(false); setNilai(Object.fromEntries((s.panel.bidang ?? []).map((b) => [b.nama, b.awal ?? ""]))); return; }
     if (s?.konfirmasi && !window.confirm(s.konfirmasi)) return;
     jalan(a.kode);
   };
@@ -61,20 +61,21 @@ export default function AksiDokumen({ aksi = [], spec = {}, onJalankan, sibuk = 
           {(panel.bidang ?? []).map((b) => (
             <label key={b.nama} className="block text-[11.5px] text-ink3">{b.label}{b.wajib ? " *" : ""}
               {b.tipe === "pilih" ? (
-                <select value={nilai[b.nama] ?? ""} onChange={(e) => setNilai((n) => ({ ...n, [b.nama]: e.target.value }))} data-testid={`bidang-${b.nama}`}
+                <select value={nilai[b.nama] ?? ""} onChange={(e) => { setSentuh(true); setNilai((n) => ({ ...n, [b.nama]: e.target.value })); }} data-testid={`bidang-${b.nama}`}
                   className="mt-0.5 block w-full rounded-btn border border-border bg-surface px-2.5 py-1.5 text-[13px] text-ink outline-none focus:border-accent max-sm:min-h-11">
                   {(b.opsi ?? []).map((o) => <option key={o.nilai} value={o.nilai}>{o.label}</option>)}
                 </select>
               ) : b.tipe === "area" ? (
-                <textarea rows={3} value={nilai[b.nama] ?? ""} onChange={(e) => setNilai((n) => ({ ...n, [b.nama]: e.target.value }))} maxLength={b.maks} data-testid={`bidang-${b.nama}`}
+                <textarea rows={3} value={nilai[b.nama] ?? ""} onChange={(e) => { setSentuh(true); setNilai((n) => ({ ...n, [b.nama]: e.target.value })); }} maxLength={b.maks} data-testid={`bidang-${b.nama}`}
                   className="mt-0.5 block w-full rounded-btn border border-border bg-surface px-2.5 py-1.5 text-[13px] text-ink outline-none focus:border-accent" />
               ) : (
-                <input type={b.tipe === "date" ? "date" : "text"} value={nilai[b.nama] ?? ""} onChange={(e) => setNilai((n) => ({ ...n, [b.nama]: e.target.value }))} maxLength={b.maks} data-testid={`bidang-${b.nama}`}
+                <input type={b.tipe === "date" ? "date" : "text"} value={nilai[b.nama] ?? ""} onChange={(e) => { setSentuh(true); setNilai((n) => ({ ...n, [b.nama]: e.target.value })); }} maxLength={b.maks} data-testid={`bidang-${b.nama}`}
                   className="mt-0.5 block w-full rounded-btn border border-border bg-surface px-2.5 py-1.5 text-[13px] text-ink outline-none focus:border-accent max-sm:min-h-11" />
               )}
             </label>
           ))}
-          {(galat || (galatIni && (panel.galat || Object.values(nilai).some((x) => String(x).length)))) && <p role="alert" className="m-0 text-[12px] text-red" data-testid="galat-aksi">{galat || galatIni}</p>}
+          {(galat || (galatIni && (panel.galat || sentuh || Object.values(nilai).some((x) => String(x).length)))) && <p role="alert" className="m-0 text-[12px] text-red" data-testid="galat-aksi">{galat || galatIni}</p>}
+          {!galat && galatIni && !panel.galat && !sentuh && !Object.values(nilai).some((x) => String(x).length) && <p className="m-0 text-[11.5px] text-ink3" data-testid="petunjuk-aksi">Lengkapi dulu: {galatIni}</p>}
           <div className="flex justify-end gap-2">
             <Button type="button" size="sm" variant="ghost" onClick={() => setBuka(null)} className="max-sm:min-h-11">Batal</Button>
             <Button type="submit" size="sm" disabled={!!galatIni || disabled} data-testid={`kirim-${buka}`} className="max-sm:min-h-11">{proses ? <Loader2 size={14} className="animate-spin" /> : null} {panel.tombol}</Button>

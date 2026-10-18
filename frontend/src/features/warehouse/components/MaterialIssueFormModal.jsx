@@ -16,7 +16,8 @@ import { ISSUE_SOURCE_REAL, ISSUE_PRIORITY_REAL } from "../inventoryReal.js";
 // Work Order Bengkel) — TIDAK bikin endpoint pencarian unit baru.
 const BARIS_KOSONG = { materialId: "", requestedQty: "" };
 
-export default function MaterialIssueFormModal({ open, onClose, onCreated }) {
+export default function MaterialIssueFormModal({ open, onClose, onCreated, dokumen = null, onSaved }) {
+  const ubah = !!dokumen; // mode UBAH ISI (Draf): sumber permintaan terkunci; simpan lewat PUT /:id/isi dengan revisi dokumen
   const [materials, setMaterials] = useState([]);
   const [sourceType, setSourceType] = useState("PRODUCTION_WORK_ORDER");
   const [unitId, setUnitId] = useState("");
@@ -36,11 +37,18 @@ export default function MaterialIssueFormModal({ open, onClose, onCreated }) {
 
   useEffect(() => {
     if (!open) return;
+    if (dokumen) {
+      setSourceType(dokumen.sourceType); setUnitId(dokumen.unitId || ""); setUnitQuery(""); setUnitResults([]);
+      setUnitLabel(dokumen.unit ? `${dokumen.unit.unitCode} — ${dokumen.unit.order?.orderNumber || "—"} (${dokumen.unit.order?.customer?.name || "—"})` : "");
+      setSourceReference(dokumen.sourceReference || ""); setDepartment(dokumen.department || ""); setRequiredDate(dokumen.requiredDate ? String(dokumen.requiredDate).slice(0, 10) : "");
+      setPriority(dokumen.priority || "NORMAL"); setNotes(dokumen.notes || ""); setLines(dokumen.lines.map((l) => ({ materialId: l.materialId, requestedQty: String(l.requestedQty), sourceLocation: l.sourceLocation, notes: l.notes }))); setErr("");
+    } else {
     setSourceType("PRODUCTION_WORK_ORDER"); setUnitId(""); setUnitLabel(""); setUnitQuery(""); setUnitResults([]);
     setSourceReference(""); setDepartment("");
     setRequiredDate(""); setPriority("NORMAL"); setNotes(""); setLines([{ ...BARIS_KOSONG }]); setErr("");
+    }
     api.getMaterials({ active: "true" }).then(setMaterials).catch(() => {});
-  }, [open]);
+  }, [open, dokumen]);
 
   useEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
@@ -87,6 +95,13 @@ export default function MaterialIssueFormModal({ open, onClose, onCreated }) {
     setBusy(true);
     setErr("");
     try {
+      if (ubah) {
+        const hasil = await api.ubahIsiMaterialIssue(dokumen.id, {
+          revisi: dokumen.revisi, unitId: unitId || null, sourceReference, department, requiredDate: requiredDate || null, priority, notes,
+          lines: valid.map((l) => ({ materialId: l.materialId, requestedQty: l.requestedQty, sourceLocation: l.sourceLocation, notes: l.notes })),
+        });
+        onSaved?.(hasil); onClose(); return;
+      }
       const baru = await api.createMaterialIssue({
         sourceType, unitId: unitId || undefined,
         sourceReference: sourceReference || undefined, department: department || undefined,
@@ -103,13 +118,13 @@ export default function MaterialIssueFormModal({ open, onClose, onCreated }) {
   }
 
   return (
-    <Modal open={open} onOpenChange={(o) => (o ? null : onClose())} title="Permintaan Material Baru" className="w-[560px]">
+    <Modal open={open} onOpenChange={(o) => (o ? null : onClose())} title={ubah ? `Ubah isi ${dokumen.issueNumber}` : "Permintaan Material Baru"} className="w-[560px]">
       <form onSubmit={simpan} className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label htmlFor="mi-source" className="mb-1 block text-[11.5px] font-semibold text-ink2">Sumber Permintaan *</label>
             <select
-              id="mi-source" value={sourceType} onChange={(e) => setSourceType(e.target.value)}
+              id="mi-source" value={sourceType} onChange={(e) => setSourceType(e.target.value)} disabled={ubah}
               className="w-full rounded-btn border border-border bg-surface px-2.5 py-1.5 text-[12.5px] text-ink outline-none focus:border-accent"
             >
               {Object.entries(ISSUE_SOURCE_REAL).map(([k, s]) => <option key={k} value={k}>{s.labelId || s.label}</option>)}
@@ -237,7 +252,7 @@ export default function MaterialIssueFormModal({ open, onClose, onCreated }) {
         <div className="flex justify-end gap-2 border-t border-line pt-3">
           <Button type="button" variant="ghost" size="sm" onClick={onClose}>Batal</Button>
           <Button type="submit" size="sm" disabled={busy}>
-            {busy && <Loader2 size={14} className="animate-spin" />} Ajukan
+            {busy && <Loader2 size={14} className="animate-spin" />} {ubah ? "Simpan perubahan" : "Ajukan"}
           </Button>
         </div>
       </form>
