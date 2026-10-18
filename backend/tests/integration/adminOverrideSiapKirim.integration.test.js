@@ -782,3 +782,32 @@ test("Q4. Unit yang SUDAH siap kirim (Run ditutup lewat alur biasa) tidak diberi
   const tolakOrder = await pl.api.post(`${ARM}/jobs`, { type: "DELIVERY", unitIds: [uP.id], scheduledDate: TGL });
   assert.equal(tolakOrder.status, 409); assert.equal(tolakOrder.body.code, "ORDER_TIDAK_SAH", "order PENDING tetap bukan order yang sah dikirim");
 });
+
+test("Q5. KASUS RIKA PERSIS: unit IN_PRODUCTION masuk rute yang SUDAH SELESAI (Admin + alasan), pengiriman dicatat manual oleh Admin → unit/order Terkirim; Run dilepas otomatis; job lain di rute itu tidak tersentuh", async () => {
+  const w = await world(); const adm = await admin();
+  const { unit, run } = await rikaLike(w, { tanpaSaklar: true });
+  // rute yang sudah SELESAI dengan satu job lain (seperti RTE-161026-02)
+  const rute = await testPrisma.route.create({ data: { code: `RTE-Q5-${++seq}`, date: new Date("2026-10-16T00:00:00.000Z"), status: "COMPLETED", publishedAt: new Date(), startedAt: new Date(), completedAt: new Date(), driverId: w.driver.user.id } });
+  const cust = await testPrisma.customer.create({ data: { name: `Cust ${++seq}` } });
+  const ordLain = await testPrisma.order.create({ data: { customerId: cust.id, orderNumber: `Q5O-${++seq}`, value: 100, category: "LAYANAN", status: "DELIVERED" } });
+  const unitLain = await testPrisma.unit.create({ data: { unitCode: `Q5-LAIN-${++seq}`, orderId: ordLain.id, seq: 1, status: "DELIVERED" } });
+  const jobLain = await testPrisma.job.create({ data: { type: "DELIVERY", orderId: ordLain.id, routeId: rute.id, driverId: w.driver.user.id, status: "COMPLETED", sequence: 1, scheduledDate: new Date("2026-10-16T00:00:00.000Z"), completedAt: new Date() } });
+  await testPrisma.jobUnit.create({ data: { jobId: jobLain.id, unitId: unitLain.id } });
+
+  const job = ok2(await adm.api.post(`${ARM}/jobs`, { type: "DELIVERY", unitIds: [unit.id], scheduledDate: "2026-10-16" }));
+  const taruh = await adm.api.patch(`${ARM}/routes/${rute.id}/jobs`, { jobIds: [jobLain.id, job.id], reason: "Rika terkirim di rute Bandung tetapi produksinya belum selesai sehingga tidak masuk Route Planner" });
+  assert.equal(taruh.status, 200, JSON.stringify(taruh.body));
+  assert.equal((await testPrisma.job.findUniqueOrThrow({ where: { id: job.id } })).routeId, rute.id, "job Rika ada di rute yang sudah selesai");
+  assert.equal((await testPrisma.job.findUniqueOrThrow({ where: { id: jobLain.id } })).status, "COMPLETED", "job lain tidak tersentuh");
+
+  // Admin mencatat pengiriman manual (barang sudah terkirim): driver/jam sesuai laporan
+  await testPrisma.job.update({ where: { id: job.id }, data: { driverId: w.driver.user.id, status: "ARRIVED" } });
+  const sel = await adm.api.post(`${ARM}/jobs/${job.id}/complete`, { proofPhotoUrls: ["/media/job-photos/pod.jpg"], recipientName: "Bu Rika", note: "Input manual Admin: sudah terkirim", location: null, driverId: w.driver.user.id }, key(`q5-c-${++seq}`));
+  assert.equal(sel.status, 200, JSON.stringify(sel.body));
+  assert.equal(await unitStatus(unit.id), "DELIVERED");
+  assert.equal((await testPrisma.order.findUniqueOrThrow({ where: { id: unit.orderId } })).status, "DELIVERED");
+  const r = await runFresh(run.id);
+  assert.equal(r.deliveryRelease.kind, "DISPATCH_ROUTE_PLANNER"); assert.equal(r.deliveryRelease.via, "JOB_COMPLETE"); assert.equal(r.status, "ACTIVE");
+  assert.equal(await hitungAktivitasDispatch(unit.id), 1);
+  assert.equal(await unitStatus(unitLain.id), "DELIVERED");
+});
