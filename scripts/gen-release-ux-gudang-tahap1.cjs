@@ -26,8 +26,8 @@ const GUARD_UNCHANGED = [
   "backend/src/services/finance/journal.js", "backend/src/middleware/authorize.js", "backend/src/middleware/auth.js", "backend/src/constants/permissions.js",
   "backend/src/services/adminOverrideSwitch.js", "backend/src/services/deliveryOverrideAdmin.js", "backend/src/services/productionStepCommandService.js",
 ];
-// Commit live yang wajib leluhur: frontend token geser (10294dcb), Koreksi Gudang (08d62e7d), Produksi override, Riwayat Referensi, bukti serah.
-const LIVE_ANCESTORS_REF = ["10294dcb", "08d62e7d", "799d3e93", "56b87721", "e5a32cd2"];
+// Commit live yang wajib leluhur: manifest Sofa/Divan (20606872), frontend token geser (10294dcb), Koreksi Gudang (08d62e7d), Produksi override, Riwayat Referensi, bukti serah.
+const LIVE_ANCESTORS_REF = ["20606872", "10294dcb", "08d62e7d", "799d3e93", "56b87721", "e5a32cd2"];
 const DIST_BARU = ["Beranda Gudang", "Batalkan catatan tiba", "Pulihkan ke Draf", "Riwayat dokumen", "Riwayat penerimaan", "Yang bisa dilakukan sekarang"];
 const DIST_LAMA = ["Ajukan Koreksi Stok", "Koreksi Penerimaan", "Simpan Koreksi Data", "Konfirmasi Barang Jadi", "Selesaikan Produksi", "Rencana Produksi", "Uang muka dialokasikan ke faktur", "Tetapkan Siap Kirim (override)", "Riwayat referensi dari file (bukan transaksi)", "Simpan ke Stok"];
 
