@@ -56,7 +56,7 @@ test("halaman Beranda & Stok & Lokasi di sidebar adalah halaman baru; Beranda ti
 test("skrip rilis frontend-saja: allowlist tepat enam berkas perbaikan, backend/prisma/package tidak boleh, hitungan data sebelum=sesudah, dist baru tanpa halaman lama", () => {
   const skrip = fs.readFileSync(path.join(dir, "../../scripts/release-gudang-pintu-masuk.sh"), "utf8").replace(/\r\n/g, "\n");
   const re = new RegExp(skrip.match(/^ALLOWED_RE='(.*)'$/m)[1]);
-  for (const f of ["frontend/src/components/WorkspaceSwitcher.jsx", "frontend/src/lib/legacyProductionRoutes.js", "frontend/src/lib/sidebarOrder.js", "frontend/src/pages/Gudang.jsx", "frontend/src/routes/pageRegistry.jsx", "frontend/tests/gudangPintuMasuk.test.js"]) assert.ok(re.test(f), f);
+  for (const f of ["frontend/src/components/WorkspaceSwitcher.jsx", "frontend/src/lib/legacyProductionRoutes.js", "frontend/src/lib/sidebarOrder.js", "frontend/src/pages/Gudang.jsx", "frontend/src/routes/pageRegistry.jsx", "frontend/tests/gudangPintuMasuk.test.js", "scripts/release-gudang-pintu-masuk.sh"]) assert.ok(re.test(f), f);
   for (const f of ["backend/src/routes/materialIssue.js", "backend/prisma/schema.prisma", "frontend/package.json", "frontend/src/api.js", "frontend/dist/index.html", "scripts/release-iklan-tab-frontend.sh"]) assert.ok(!re.test(f), f);
   for (const s of ['die "backend/ di release baru BERBEDA dari release aktif', "dist baru MASIH memuat halaman lama", "hitungan data BERUBAH selama rilis", 'die "image berubah (rilis ini tidak boleh mengganti image)"', "--rollback"]) assert.ok(skrip.includes(s), s);
   assert.doesNotMatch(skrip, /prisma migrate deploy/);
