@@ -70,7 +70,7 @@ export function titleFromPath(rawPath) {
   }
   const rawLast = seg.toLowerCase();
   // Tahap 1 UX Gudang: tab dua menu inti memakai nama menu di sidebar (bukan "Inventory" / "Goods Receipt").
-  if (divisionSeg === "warehouse" && parts.length === 1) { if (rawLast === "inventory") return "Stok & Lokasi"; if (rawLast === "goods-receipt") return "Penerimaan Barang"; if (rawLast === "material-issue") return "Pengeluaran Material"; if (rawLast === "transfers") return "Transfer Stok"; }
+  if (divisionSeg === "warehouse" && parts.length === 1) { if (rawLast === "inventory") return "Stok & Lokasi"; if (rawLast === "goods-receipt") return "Penerimaan Barang"; if (rawLast === "material-issue") return "Pengeluaran Material"; if (rawLast === "transfers") return "Transfer Stok"; if (rawLast === "replenishment") return "Restok"; if (rawLast === "stock-count") return "Stock Opname"; if (rawLast === "adjustments") return "Barang Rusak & Retur"; }
   // Menu Gudang bernama "Beranda" (bukan Dashboard) agar tidak terkesan ada dua dashboard.
   if (divisionSeg === "warehouse" && rawLast === "dashboard") return "Gudang · Beranda";
   if (SEGMENT_LABEL_OVERRIDE[rawLast]) return SEGMENT_LABEL_OVERRIDE[rawLast];

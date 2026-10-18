@@ -25,9 +25,9 @@ export default function WarehouseAdjustments() {
       <PageBody>
         <Tabs value={tab} onValueChange={setTab}>
           <TabsList>
-            <TabsTrigger value="damaged">Damaged Stock</TabsTrigger>
-            <TabsTrigger value="returns">Returns</TabsTrigger>
-            <TabsTrigger value="adjustments">Stock Adjustment</TabsTrigger>
+            <TabsTrigger value="damaged">Barang Rusak</TabsTrigger>
+            <TabsTrigger value="returns">Retur</TabsTrigger>
+            <TabsTrigger value="adjustments">Penyesuaian Stok</TabsTrigger>
             <TabsTrigger value="koreksi">Koreksi Dokumen</TabsTrigger>
             <TabsTrigger value="referensi">Riwayat Referensi (bukan transaksi)</TabsTrigger>
           </TabsList>

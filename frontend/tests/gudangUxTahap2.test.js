@@ -117,3 +117,9 @@ test("Restok: saran kosong tidak dibaca sebagai stok aman — kalimat memuat cak
     const src = baca(f); for (const k of kata) assert.ok(src.includes(`label: "${k}"`), `${f}: ${k}`); assert.doesNotMatch(src, /label: "(Waiting Approval|Waiting Review|In Progress|Under Inspection|Scheduled|Reported|Resolved)"/, f);
   }
 });
+
+test("judul tab workspace & sub-tab Barang Rusak/Retur berbahasa Indonesia", () => {
+  const t = baca("lib/tabTitles.js"); for (const k of ["Restok", "Stock Opname", "Barang Rusak & Retur", "Pengeluaran Material", "Transfer Stok"]) assert.ok(t.includes(`return "${k}"`), k);
+  const a = baca("pages/warehouse/WarehouseAdjustments.jsx"); for (const k of ["Barang Rusak", "Retur", "Penyesuaian Stok"]) assert.ok(a.includes(`>${k}</TabsTrigger>`), k);
+  assert.doesNotMatch(a, />(Damaged Stock|Returns|Stock Adjustment)<\/TabsTrigger>/);
+});
