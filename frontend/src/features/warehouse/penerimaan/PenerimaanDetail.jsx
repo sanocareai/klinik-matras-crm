@@ -102,8 +102,8 @@ export default function PenerimaanDetail({ id: idProp, onTutup, onBerubah, sarin
   const kartuAksi = (
     <div className="space-y-2" data-testid="kartu-aksi">
       <h3 className="m-0 text-[11px] font-bold uppercase tracking-wide text-ink3">Yang bisa dilakukan sekarang</h3>
-      {t.status === "READY_FOR_PUTAWAY" && <p className="m-0 text-[11.5px] leading-snug text-ink2">Hanya barang yang dinyatakan baik yang masuk ke stok. Tindakan ini menambah persediaan dan membuat jurnal penerimaan secara otomatis.</p>}
-      {t.status === "READY_FOR_PUTAWAY" && <p className="m-0 text-[11.5px] leading-snug text-ink3" data-testid="petunjuk-simpan-ke-stok-gudang">Simpan ke Stok hanya menambah stok. Faktur supplier dicatat dan disetujui Finance secara terpisah — bukan dari tombol ini.</p>}
+      {t.status === "READY_FOR_PUTAWAY" && <p className="m-0 text-[11.5px] leading-snug text-ink2 max-sm:hidden">Hanya barang yang dinyatakan baik yang masuk ke stok. Tindakan ini menambah persediaan dan membuat jurnal penerimaan secara otomatis.</p>}
+      {t.status === "READY_FOR_PUTAWAY" && <p className="m-0 text-[11.5px] leading-snug text-ink3 max-sm:hidden" data-testid="petunjuk-simpan-ke-stok-gudang">Simpan ke Stok hanya menambah stok. Faktur supplier dicatat dan disetujui Finance secara terpisah — bukan dari tombol ini.</p>}
       {aksiLabel.length === 0 ? <p className="m-0 text-[12.5px] text-ink3" data-testid="tanpa-aksi">{r.izin?.tulis === false ? "Akun Anda hanya dapat melihat dokumen ini (tidak punya izin mengubah penerimaan)." : <>Tidak ada aksi untuk dokumen ini. {t.penjelasan}</>}</p> : (
         <AksiDokumen aksi={aksiLabel} spec={SPEC} onJalankan={jalankan} sibuk={sibuk} ikutiVersi={versi} picu={picu} />
       )}
