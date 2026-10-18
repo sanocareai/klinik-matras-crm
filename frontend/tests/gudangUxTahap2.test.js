@@ -163,7 +163,13 @@ test("AksiDokumen: muat ulang dokumen menutup panel tetapi tidak menghapus pesan
 
 test("konflik di MI/ST: banner halaman yang stabil (kartu aksi berpindah posisi saat status berubah) — pesan tidak hilang; AksiDokumen tidak menggandakan pesan", () => {
   for (const f of ["features/warehouse/dokumen/MaterialIssueDetail.jsx", "features/warehouse/dokumen/TransferDetail.jsx"]) {
-    const s = baca(f); assert.match(s, /data-testid="banner-konflik"/, f); assert.match(s, /diam: true/, f); assert.match(s, /setKonflik\(""\); setSibuk\(true\)/, f);
+    const s = baca(f); assert.match(s, /data-testid="banner-konflik"/, f); assert.match(s, /diam: true/, f); assert.match(s, /setKonflik\(""\); setInfo\(""\); let hasil = null; setSibuk\(true\)/, f);
   }
   assert.match(baca("features/warehouse/aksi/AksiDokumen.jsx"), /if \(!e\?\.diam\) setGalat/);
+});
+
+test("label sesuai data: tidak ada klaim 'saldo tujuan' (saldo hanya total per bahan); susut menyatakan Finance belum mencatat; retry 200 memunculkan banner 'sudah diproses'", () => {
+  const t = baca("features/warehouse/dokumen/TransferDetail.jsx");
+  assert.doesNotMatch(t, /saldo tujuan|tambah saldo \(/i); assert.match(t, /saldo total bahan bertambah \(dicatat pada/); assert.match(t, /Finance belum mencatat/); assert.match(t, /BELUM dilakukan \(tidak ada jurnal otomatis\)/);
+  for (const f of ["features/warehouse/dokumen/TransferDetail.jsx", "features/warehouse/dokumen/MaterialIssueDetail.jsx"]) { const s = baca(f); assert.match(s, /data-testid="banner-ulang"/, f); assert.match(s, /hasil\?\.ulang/, f); }
 });

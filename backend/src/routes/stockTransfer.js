@@ -413,7 +413,7 @@ stockTransferRouter.post("/:id/kembalikan", requirePermission(P.INVENTORY_WRITE)
 });
 
 // POST /api/inventory/transfers/:id/selisih { lineId, jenis: "DITEMUKAN"|"SUSUT", qty, alasan, kunci, revisi? }
-// Menyelesaikan KEKURANGAN (dikirim − diterima) pada transfer Selesai. DITEMUKAN: saldo tujuan ditambah (satu pergerakan TRANSFER positif bertaut). SUSUT: pengakuan susut/hilang/rusak, TANPA pergerakan stok (saldo sudah berkurang
+// Menyelesaikan KEKURANGAN (dikirim − diterima) pada transfer Selesai. DITEMUKAN: saldo TOTAL bahan ditambah, pergerakan dicatat pada lokasi tujuan (satu pergerakan TRANSFER positif bertaut). SUSUT: pengakuan susut/hilang/rusak, TANPA pergerakan stok (saldo sudah berkurang
 // saat kirim) dan BUKAN pemakaian produksi. `kunci` = kunci permintaan dari klien: kunci sama + isi sama = pengulangan (hasil sama, tanpa efek ganda); kunci sama + isi beda = konflik. Tersimpan sebagai peristiwa append-only.
 stockTransferRouter.post("/:id/selisih", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
   try {

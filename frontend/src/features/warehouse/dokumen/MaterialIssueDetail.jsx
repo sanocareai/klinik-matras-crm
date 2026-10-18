@@ -27,7 +27,7 @@ const PRIORITAS_OPSI = Object.entries(ISSUE_PRIORITY_REAL).map(([nilai, v]) => (
 export default function MaterialIssueDetail() {
   const { id } = useParams(); const navigate = useNavigate();
   const [r, setR] = useState(null); const [galat, setGalat] = useState(""); const [memuat, setMemuat] = useState(true); const [sibuk, setSibuk] = useState(false);
-  const [lokasi, setLokasi] = useState({}); const [keluar, setKeluar] = useState({}); const [versi, setVersi] = useState(0); const [konflik, setKonflik] = useState(""); const [editOpen, setEditOpen] = useState(false);
+  const [lokasi, setLokasi] = useState({}); const [keluar, setKeluar] = useState({}); const [versi, setVersi] = useState(0); const [konflik, setKonflik] = useState(""); const [info, setInfo] = useState(""); const [editOpen, setEditOpen] = useState(false);
 
   const muat = useCallback(async () => {
     setMemuat(true); setGalat("");
@@ -48,16 +48,16 @@ export default function MaterialIssueDetail() {
   const jalankan = async (kode, v = {}) => {
     if (kode === "KONFIRMASI_KELUAR" && galatKeluar) throw new Error(galatKeluar);
     if (kode === "UBAH_ISI") { setEditOpen(true); return; }
-    setKonflik(""); setSibuk(true);
+    setKonflik(""); setInfo(""); let hasil = null; setSibuk(true);
     try {
-      if (STATUS_MAJU[kode]) { if (adaLokasi) await simpanLokasi(); await api.updateMaterialIssue(id, { status: STATUS_MAJU[kode], revisi: r.revisi }); }
+      if (STATUS_MAJU[kode]) { if (adaLokasi) await simpanLokasi(); hasil = await api.updateMaterialIssue(id, { status: STATUS_MAJU[kode], revisi: r.revisi }); }
       else if (kode === "ATUR_LOKASI") await simpanLokasi();
-      else if (kode === "KONFIRMASI_KELUAR") { if (adaLokasi) await simpanLokasi(); await api.issueMaterialIssue(id, { revisi: r.revisi, lines: r.lines.map((l) => ({ lineId: l.id, issuedQty: angka(keluar[l.id]) })) }); }
+      else if (kode === "KONFIRMASI_KELUAR") { if (adaLokasi) await simpanLokasi(); hasil = await api.issueMaterialIssue(id, { revisi: r.revisi, lines: r.lines.map((l) => ({ lineId: l.id, issuedQty: angka(keluar[l.id]) })) }); }
       else if (kode === "UBAH") await api.updateMaterialIssue(id, { department: v.department, sourceReference: v.sourceReference, requiredDate: v.requiredDate, priority: v.priority, notes: v.notes, revisi: r.revisi });
-      else if (kode === "KEMBALIKAN") await api.kembalikanMaterialIssue(id, v.alasan, r.revisi);
-      else if (kode === "BATALKAN") await api.cancelMaterialIssue(id, v.alasan, r.revisi);
+      else if (kode === "KEMBALIKAN") hasil = await api.kembalikanMaterialIssue(id, v.alasan, r.revisi);
+      else if (kode === "BATALKAN") hasil = await api.cancelMaterialIssue(id, v.alasan, r.revisi);
       else if (kode === "BUAT_ULANG") { const baru = await api.buatUlangMaterialIssue(id, v.alasan); navigate(`/warehouse/material-issue/${baru.id}`); return; }
-      await muat();
+      await muat(); if (hasil?.ulang) setInfo("Permintaan yang sama sudah dijalankan; hasilnya sama dan tidak diulang (stok, jurnal, dan riwayat tidak bertambah).");
     } catch (e) {
       if (e.code === "REVISI_BASI" || e.code === "STATUS_TIDAK_SESUAI" || e.code === "KONFLIK_PAYLOAD") await muat(); // tampilkan keadaan terbaru
       if (["REVISI_BASI", "STATUS_TIDAK_SESUAI", "KONFLIK_PAYLOAD"].includes(e.code)) { setKonflik(e.message); throw Object.assign(new Error(e.message), { diam: true }); } // banner halaman tetap terlihat walau kartu aksi berpindah/hilang
@@ -136,6 +136,12 @@ export default function MaterialIssueDetail() {
           <div role="alert" className="flex items-start gap-2 rounded-btn border-l-[3px] border-red bg-redbg px-3 py-2.5 text-[12.5px] text-ink" data-testid="banner-konflik">
             <span className="flex-1"><strong>Aksi tidak dijalankan.</strong> {konflik} Halaman sudah dimuat ulang dengan keadaan terbaru.</span>
             <button type="button" onClick={() => setKonflik("")} className="shrink-0 text-[12px] font-semibold text-accent max-sm:min-h-11">Tutup</button>
+          </div>
+        )}
+        {info && (
+          <div role="status" className="flex items-start gap-2 rounded-btn border-l-[3px] border-accent bg-accentbg px-3 py-2.5 text-[12.5px] text-ink" data-testid="banner-ulang">
+            <span className="flex-1"><strong>Sudah diproses sebelumnya.</strong> {info}</span>
+            <button type="button" onClick={() => setInfo("")} className="shrink-0 text-[12px] font-semibold text-accent max-sm:min-h-11">Tutup</button>
           </div>
         )}
         {!bisaKeluar && !bisaLokasi && kartuAksi}

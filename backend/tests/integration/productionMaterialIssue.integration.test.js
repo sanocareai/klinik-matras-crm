@@ -236,12 +236,19 @@ test("V1 tidak bocor/berubah: antrean V1 tidak memuat issue V2; endpoint V1 meno
     ["patch", `/api/inventory/material-issues/${req.body.issueId}`, { status: "APPROVED" }],
     ["post", `/api/inventory/material-issues/${req.body.issueId}/issue`, {}],
     ["patch", `/api/inventory/material-issues/${req.body.issueId}/cancel`, { reason: "x" }],
+    // UX Gudang Tahap 2: jalur baru (ubah isi, kembalikan ke Draf, buat ulang) juga TIDAK boleh menyentuh dokumen milik Produksi V2
+    ["put", `/api/inventory/material-issues/${req.body.issueId}/isi`, { revisi: "x", lines: [{ materialId: "00000000-0000-0000-0000-000000000000", requestedQty: 1 }] }],
+    ["post", `/api/inventory/material-issues/${req.body.issueId}/kembalikan`, { alasan: "coba kembalikan" }],
+    ["post", `/api/inventory/material-issues/${req.body.issueId}/buat-ulang`, { alasan: "coba buat ulang" }],
   ];
   for (const [method, path, body] of attempts) {
     const res = await w.gudang1.api[method](path, body);
     assert.equal(res.status, 409, `${method} ${path}`);
   }
   assert.equal((await testPrisma.materialIssue.findUniqueOrThrow({ where: { id: req.body.issueId } })).status, "READY_TO_PICK");
+  const det = await w.gudang1.api.get(`/api/inventory/material-issues/${req.body.issueId}`); // detail baca-saja: tampil sebagai milik Produksi V2, tanpa aksi Gudang
+  assert.equal(det.status, 200); assert.equal(det.body.tampilan.kode, "V2"); assert.deepEqual(det.body.tampilan.aksi, []);
+  assert.equal(await testPrisma.materialIssue.count({ where: { id: { not: req.body.issueId } } }), 0, "tidak ada dokumen baru dari buat-ulang");
 });
 
 test("reserved tidak dihitung dua kali: issue V2 READY_TO_PICK tidak menambah reserved V1; reserved V1 + V2 dijumlahkan", async () => {

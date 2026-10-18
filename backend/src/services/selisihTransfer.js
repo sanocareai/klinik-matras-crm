@@ -1,6 +1,6 @@
 // SELISIH TRANSFER STOK (UX Tahap 2) — kekurangan jumlah diterima dari jumlah dikirim. Aturan lama TIDAK diubah: dispatch mengurangi saldo sebesar jumlah dikirim, receive menambah sebesar jumlah diterima, jadi
 // kekurangan sudah hilang dari saldo total. Yang ditambahkan: selisih DIHITUNG dari baris transfer (satu sumber), penyebabnya wajib dicatat saat Terima, dan ada jalur penyelesaian yang tercatat:
-//   • DITEMUKAN — barang ternyata ada / terlambat tiba: saldo tujuan ditambah (satu pergerakan TRANSFER positif bertaut ke transfer);
+//   • DITEMUKAN — barang ternyata ada / terlambat tiba: saldo TOTAL bahan ditambah, pergerakan dicatat pada lokasi tujuan (satu pergerakan TRANSFER positif bertaut ke transfer);
 //   • SUSUT     — diakui susut/hilang/rusak di perjalanan: tercatat saja (TANPA pergerakan stok; saldo sudah berkurang), BUKAN pemakaian produksi (tidak ada ISSUE, tidak ada unit, tidak ada HPP).
 // Penyelesaian disimpan sebagai peristiwa aktivitas (append-only) pada transfer — tanpa perubahan skema. Murni di sini; query hanya di `selisihTransfer`/`saldoTransfer`.
 import { ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";

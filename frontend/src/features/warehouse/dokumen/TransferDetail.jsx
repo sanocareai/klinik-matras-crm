@@ -17,7 +17,7 @@ import KolomJumlah from "./KolomJumlah.jsx";
 import { adaKurangStok, adaSelisihTerima, angka, dampakKirim, dampakTerima, galatJumlah, kalimatKetersediaan, tanggalPendek, teksJumlah, waktuTeks } from "./dokumenLogic.js";
 
 // DETAIL TRANSFER STOK — satu HALAMAN (bukan drawer). Dua langkah yang menulis stok: "Kirim barang" (saldo dikurangi) lalu "Terima barang" (saldo bertambah sebesar jumlah diterima). Kekurangan jumlah diterima dari jumlah dikirim
-// sudah hilang dari saldo; karena itu PENYEBAB selisih wajib diisi saat Terima, selisih terlihat (kartu Selisih), dan diselesaikan lewat "Selesaikan selisih": ditemukan (saldo tujuan ditambah) atau diakui susut/hilang/rusak
+// sudah hilang dari saldo; karena itu PENYEBAB selisih wajib diisi saat Terima, selisih terlihat (kartu Selisih), dan diselesaikan lewat "Selesaikan selisih": ditemukan (saldo TOTAL bahan ditambah) atau diakui susut/hilang/rusak
 // (tercatat, tanpa pergerakan stok, BUKAN pemakaian produksi). Kartu "Perjalanan saldo" menunjukkan saldo sebelum kirim → dalam perjalanan → sesudah terima. Sistem menyimpan saldo TOTAL per bahan, BUKAN saldo per lokasi.
 // Draf boleh diubah isinya (bahan, jumlah, lokasi, catatan); sebelum dikirim dokumen boleh dikembalikan ke Draf untuk revisi (persetujuan lama gugur). Setelah dikirim: tidak ada Undo — koreksi lewat jalur resmi.
 const BADGE = { neutral: "neutral", accent: "accent", orange: "orange", green: "green", red: "red" };
@@ -29,7 +29,7 @@ const kunciBaru = () => `sel-${(globalThis.crypto?.randomUUID?.() ?? `${Date.now
 export default function TransferDetail() {
   const { id } = useParams(); const navigate = useNavigate();
   const [r, setR] = useState(null); const [galat, setGalat] = useState(""); const [memuat, setMemuat] = useState(true); const [sibuk, setSibuk] = useState(false);
-  const [terima, setTerima] = useState({}); const [versi, setVersi] = useState(0); const [konflik, setKonflik] = useState(""); const [editOpen, setEditOpen] = useState(false); const [kunciSelisih, setKunciSelisih] = useState(kunciBaru);
+  const [terima, setTerima] = useState({}); const [versi, setVersi] = useState(0); const [konflik, setKonflik] = useState(""); const [info, setInfo] = useState(""); const [editOpen, setEditOpen] = useState(false); const [kunciSelisih, setKunciSelisih] = useState(kunciBaru);
 
   const muat = useCallback(async () => {
     setMemuat(true); setGalat("");
@@ -48,17 +48,17 @@ export default function TransferDetail() {
   const jalankan = async (kode, v = {}) => {
     if (kode === "UBAH_ISI") { setEditOpen(true); return; }
     if (kode === "TERIMA" && galatTerima) throw new Error(galatTerima);
-    setKonflik(""); setSibuk(true);
+    setKonflik(""); setInfo(""); let hasil = null; setSibuk(true);
     try {
-      if (STATUS_MAJU[kode]) await api.updateStockTransfer(id, { status: STATUS_MAJU[kode], revisi: r.revisi });
-      else if (kode === "KIRIM") await api.dispatchStockTransfer(id, { revisi: r.revisi });
-      else if (kode === "TERIMA") await api.receiveStockTransfer(id, { revisi: r.revisi, ...(adaSelisihTerima(r.lines, terima) && { alasanSelisih: v.alasanSelisih }), lines: r.lines.map((l) => ({ lineId: l.id, qtyReceived: angka(terima[l.id]) })) });
+      if (STATUS_MAJU[kode]) hasil = await api.updateStockTransfer(id, { status: STATUS_MAJU[kode], revisi: r.revisi });
+      else if (kode === "KIRIM") hasil = await api.dispatchStockTransfer(id, { revisi: r.revisi });
+      else if (kode === "TERIMA") hasil = await api.receiveStockTransfer(id, { revisi: r.revisi, ...(adaSelisihTerima(r.lines, terima) && { alasanSelisih: v.alasanSelisih }), lines: r.lines.map((l) => ({ lineId: l.id, qtyReceived: angka(terima[l.id]) })) });
       else if (kode === "UBAH") await api.updateStockTransfer(id, { notes: v.notes, revisi: r.revisi });
-      else if (kode === "KEMBALIKAN") await api.kembalikanStockTransfer(id, v.alasan, r.revisi);
-      else if (kode === "BATALKAN") await api.cancelStockTransfer(id, v.alasan, r.revisi);
-      else if (kode === "SELESAIKAN_SELISIH") { await api.selesaikanSelisihTransfer(id, { lineId: v.lineId, jenis: v.jenis, qty: angka(v.qty), alasan: v.alasan, kunci: kunciSelisih, revisi: r.revisi }); setKunciSelisih(kunciBaru()); }
+      else if (kode === "KEMBALIKAN") hasil = await api.kembalikanStockTransfer(id, v.alasan, r.revisi);
+      else if (kode === "BATALKAN") hasil = await api.cancelStockTransfer(id, v.alasan, r.revisi);
+      else if (kode === "SELESAIKAN_SELISIH") { hasil = await api.selesaikanSelisihTransfer(id, { lineId: v.lineId, jenis: v.jenis, qty: angka(v.qty), alasan: v.alasan, kunci: kunciSelisih, revisi: r.revisi }); setKunciSelisih(kunciBaru()); }
       else if (kode === "BUAT_ULANG_TRANSFER") { const baru = await api.buatUlangStockTransfer(id, v.alasan); navigate(`/warehouse/transfers/${baru.id}`); return; }
-      await muat();
+      await muat(); if (hasil?.ulang) setInfo("Permintaan yang sama sudah dijalankan; hasilnya sama dan tidak diulang (stok, jurnal, dan riwayat tidak bertambah).");
     } catch (e) {
       if (e.code === "REVISI_BASI" || e.code === "STATUS_TIDAK_SESUAI" || e.code === "KONFLIK_PAYLOAD") await muat(); // tampilkan keadaan terbaru
       if (["REVISI_BASI", "STATUS_TIDAK_SESUAI", "KONFLIK_PAYLOAD"].includes(e.code)) { setKonflik(e.message); throw Object.assign(new Error(e.message), { diam: true }); } // banner halaman tetap terlihat walau kartu aksi berpindah/hilang
@@ -70,7 +70,7 @@ export default function TransferDetail() {
   if (galat && !r) return <PageContainer><PageBody><p role="alert" className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{galat}</p><Link to="/warehouse/transfers" className="mt-3 inline-flex items-center gap-1 text-[12.5px] font-semibold text-accent"><ArrowLeft size={13} /> Kembali ke Transfer Stok</Link></PageBody></PageContainer>;
   if (!r) return null;
 
-  const OPSI_JENIS = [{ nilai: "", label: "Pilih penyelesaian…" }, { nilai: "DITEMUKAN", label: `Barang ditemukan / terlambat tiba — tambah saldo (${r.destinationLocation.code})` }, { nilai: "SUSUT", label: "Diakui susut / hilang / rusak — tercatat, saldo tidak berubah" }];
+  const OPSI_JENIS = [{ nilai: "", label: "Pilih penyelesaian…" }, { nilai: "DITEMUKAN", label: `Barang ditemukan / terlambat tiba — saldo total bahan bertambah (dicatat pada ${r.destinationLocation.code})` }, { nilai: "SUSUT", label: "Diakui susut / hilang / rusak — hanya tercatat, saldo tidak berubah, Finance belum mencatat" }];
   const SPEC = {
     SETUJUI: { panel: { judul: "Setujui transfer ini?", tombol: "Setujui", peringatan: "Belum ada barang yang berpindah dan stok belum berubah.", catatan: r.izin?.pemohonSama ? "Anda juga pemohon dokumen ini. Aturan izin saat ini memperbolehkannya (belum ada penyetuju kedua untuk transaksi rutin); persetujuan Anda tercatat di riwayat." : undefined, bidang: [] } },
     KEMBALIKAN: { panel: { judul: t.aksi.find((a) => a.kode === "KEMBALIKAN")?.label ?? "Kembalikan ke Draf", tombol: "Kembalikan ke Draf", peringatan: r.status === "WAITING_APPROVAL" ? "Transfer kembali menjadi Draf supaya isinya bisa diubah; belum ada pengaruh ke stok." : "Transfer kembali menjadi Draf untuk direvisi. Persetujuan lama GUGUR (tetap ada di riwayat). Hanya selama belum dikirim.", bidang: [{ nama: "alasan", label: "Alasan revisi", wajib: true, min: 3, maks: 300 }] } },
@@ -79,7 +79,7 @@ export default function TransferDetail() {
     TERIMA: { panel: { judul: "Terima barang di tujuan?", tombol: "Terima & tambah saldo", peringatan: "Isi jumlah yang benar-benar diterima pada tabel item. Jumlah kurang dari yang dikirim berarti selisih sudah hilang dari saldo; selisih itu tercatat dan wajib diselesaikan setelah ini.", galat: galatTerima,
       ringkasan: dampakTerima(r.lines, terima, satuan), catatan: adaSelisihTerima(r.lines, terima) ? "Ada selisih antara jumlah dikirim dan diterima. Isi penyebabnya; selisih tidak masuk saldo sampai diselesaikan (ditemukan atau diakui susut)." : undefined,
       bidang: adaSelisihTerima(r.lines, terima) ? [{ nama: "alasanSelisih", label: "Penyebab selisih", tipe: "area", wajib: true, min: 3, maks: 300 }] : [] } },
-    SELESAIKAN_SELISIH: { panel: { judul: "Selesaikan selisih transfer", tombol: "Simpan penyelesaian", peringatan: "Ditemukan: saldo tujuan ditambah sebesar jumlah yang ditemukan. Susut/hilang/rusak: hanya tercatat (saldo sudah berkurang saat kirim) dan BUKAN pemakaian produksi. Bisa diselesaikan bertahap; jumlah tidak boleh melebihi sisa selisih.",
+    SELESAIKAN_SELISIH: { panel: { judul: "Selesaikan selisih transfer", tombol: "Simpan penyelesaian", peringatan: "Ditemukan: saldo TOTAL bahan bertambah sebesar jumlah yang ditemukan (sistem tidak menyimpan saldo per lokasi; lokasi tujuan hanya tercatat di pergerakan). Susut/hilang/rusak: hanya tercatat (saldo sudah berkurang saat kirim), BUKAN pemakaian produksi, dan Pencatatan kerugian di Finance BELUM dilakukan (tidak ada jurnal otomatis); Finance perlu menanganinya terpisah. Bisa diselesaikan bertahap; jumlah tidak boleh melebihi sisa selisih.",
       bidang: [{ nama: "lineId", label: "Bahan", tipe: "pilih", wajib: true, awal: selisihBuka[0]?.lineId ?? "", opsi: selisihBuka.map((x) => ({ nilai: x.lineId, label: `${x.kode} — sisa selisih ${teksJumlah(x.sisa)} ${satuan(x.unit)}` })) },
         { nama: "jenis", label: "Penyelesaian", tipe: "pilih", wajib: true, awal: "", opsi: OPSI_JENIS },
         { nama: "qty", label: "Jumlah", wajib: true, awal: selisihBuka[0] ? String(selisihBuka[0].sisa) : "", maks: 20 },
@@ -145,6 +145,12 @@ export default function TransferDetail() {
             <button type="button" onClick={() => setKonflik("")} className="shrink-0 text-[12px] font-semibold text-accent max-sm:min-h-11">Tutup</button>
           </div>
         )}
+        {info && (
+          <div role="status" className="flex items-start gap-2 rounded-btn border-l-[3px] border-accent bg-accentbg px-3 py-2.5 text-[12.5px] text-ink" data-testid="banner-ulang">
+            <span className="flex-1"><strong>Sudah diproses sebelumnya.</strong> {info}</span>
+            <button type="button" onClick={() => setInfo("")} className="shrink-0 text-[12px] font-semibold text-accent max-sm:min-h-11">Tutup</button>
+          </div>
+        )}
         {!bisaTerima && kartuAksi}
 
         <Card className="space-y-3 p-4">
@@ -188,7 +194,7 @@ export default function TransferDetail() {
                     {x.kurang > 0 && (x.sisa > 0 ? <Badge variant="orange">Belum diselesaikan: {teksJumlah(x.sisa)} {satuan(x.unit)}</Badge> : <Badge variant="green">Selesai diselesaikan</Badge>)}
                     {x.lebih > 0 && <Badge variant="neutral">Lebih {teksJumlah(x.lebih)} {satuan(x.unit)} dari yang dikirim (koreksi lewat jalur resmi)</Badge>}</div>
                   <p className="m-0 mt-1 text-ink2">Dikirim {teksJumlah(x.dikirim)} · diterima {teksJumlah(x.diterima)}{x.kurang > 0 ? ` · kurang ${teksJumlah(x.kurang)} (sudah hilang dari saldo)` : ""}</p>
-                  {x.penyelesaian.length > 0 && <ul className="m-0 mt-1 list-none space-y-0.5 p-0 text-[11.5px] text-ink2">{x.penyelesaian.map((p, i) => <li key={p.kunci ?? i}>{p.jenis === "DITEMUKAN" ? "Ditemukan" : "Diakui susut/hilang/rusak"} {teksJumlah(p.qty)} — {p.alasan} <span className="text-ink3">· {waktuTeks(p.waktu)}</span></li>)}</ul>}
+                  {x.penyelesaian.length > 0 && <ul className="m-0 mt-1 list-none space-y-0.5 p-0 text-[11.5px] text-ink2">{x.penyelesaian.map((p, i) => <li key={p.kunci ?? i}>{p.jenis === "DITEMUKAN" ? "Ditemukan" : "Diakui susut/hilang/rusak (Finance belum mencatat)"} {teksJumlah(p.qty)} — {p.alasan} <span className="text-ink3">· {waktuTeks(p.waktu)}</span></li>)}</ul>}
                 </li>
               ))}
             </ul>
