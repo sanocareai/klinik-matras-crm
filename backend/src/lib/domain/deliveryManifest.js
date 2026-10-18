@@ -12,6 +12,12 @@
 import { ukuranLabel } from "./pkrItem.js";
 
 const LABEL_BENTUK = { KASUR: "Kasur", SERVICE: "Service/Upgrade", DIVAN: "Divan", SANDARAN: "Sandaran", SET: "Set", CUSTOM: "Produk custom" };
+// Duplikat kecil PRODUCT_LINE_LABELS (sumber: services/invoice.js,
+// frontend/src/utils/format.js) — SENGAJA disalin, bukan diimpor, mengikuti
+// pola yang sudah dipakai kedua file itu untuk enum kecil & stabil ini
+// (menghindari menarik seluruh services/invoice.js — prisma dkk — hanya
+// untuk tiga label).
+const LABEL_LINI_PRODUK = { KASUR: "Kasur", SOFA: "Sofa", DIVAN: "Divan" };
 const teks = (v) => (v === null || v === undefined ? "" : String(v).replace(/\s+/g, " ").trim());
 const num = (v) => (v === null || v === undefined || v === "" ? null : Number(v));
 
@@ -45,7 +51,13 @@ function deskriptorUnit(unit, order, ukuranOrder, merkOrder) {
     return { nama, ukuran, spesifikasi, bentuk: item.shape, jenisKerja: item.workKind, bundel };
   }
   // Order tanpa item (order lama / non-PKR): data unit lebih dipercaya daripada ringkasan kategori order.
-  const nama = teks(unit?.merk) || teks(merkOrder) || LABEL_BENTUK.KASUR;
+  // Bug nyata 18 Okt 2026 (laporan owner, order SOFA & LAYANAN RES-18102026-088):
+  // unit restorasi sofa TANPA merk/item PKR jatuh ke "Kasur" (fallback lama,
+  // buta terhadap Order.productLine) — driver melihat "1× Kasur" untuk order
+  // yang sebenarnya restorasi sofa (ganti kain/busa/rangka). order.productLine
+  // (KASUR/SOFA/DIVAN) SELALU tersedia terlepas dari PKR/merk unit, jadi
+  // dicoba lebih dulu sebelum jatuh ke "Kasur" sungguhan sebagai tebakan terakhir.
+  const nama = teks(unit?.merk) || teks(merkOrder) || LABEL_LINI_PRODUK[order?.productLine] || LABEL_BENTUK.KASUR;
   const ukuran = ukuranOrder || teks(unit?.ukuran);
   return { nama, ukuran, spesifikasi: "", bentuk: null, jenisKerja: null, bundel: null };
 }
