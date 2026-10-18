@@ -18,8 +18,28 @@ const LABEL_BENTUK = { KASUR: "Kasur", SERVICE: "Service/Upgrade", DIVAN: "Divan
 // (menghindari menarik seluruh services/invoice.js — prisma dkk — hanya
 // untuk tiga label).
 const LABEL_LINI_PRODUK = { KASUR: "Kasur", SOFA: "Sofa", DIVAN: "Divan" };
+// Duplikat kecil PRODUCT_TYPE_LABELS (sumber sama dengan LABEL_LINI_PRODUK di
+// atas) — lebih SPESIFIK daripada lini produk saja ("Kasur Spring", bukan
+// cuma "Kasur"), dicoba lebih dulu sebelum jatuh ke lini produk generik.
+const LABEL_JENIS_PRODUK = {
+  KASUR_SPRING: "Kasur Spring", KASUR_BUSA: "Kasur Busa", MULTIBED: "Multibed",
+  KASUR_2IN1_ATAS: "Kasur 2in1 Atas", KASUR_2IN1_BAWAH: "Kasur 2in1 Bawah",
+  KASUR_SEHAT: "Kasur Sehat", KASUR_2IN1: "Kasur 2in1", KASUR_LAINNYA: "Lainnya",
+  SOFABED: "Sofabed", SOFA_L: "Sofa L", SOFA_1_SEATER: "Sofa 1 Seater",
+  SOFA_2_SEATER: "Sofa 2 Seater", SOFA_3_SEATER: "Sofa 3 Seater",
+  DIVAN_UTAMA: "Divan", DIVAN_SANDARAN: "Sandaran",
+};
 const teks = (v) => (v === null || v === undefined ? "" : String(v).replace(/\s+/g, " ").trim());
 const num = (v) => (v === null || v === undefined || v === "" ? null : Number(v));
+// "Lainnya" di field MERK (bukan jenis produk) berarti "brand tidak ada di
+// daftar/tidak diisi detail" — form order (OrderSection.jsx) memakainya
+// sebagai pilihan dropdown TANPA field teks bebas pendamping (beda dari
+// productType=KASUR_LAINNYA yang punya jenisKasurLainnya). Bug nyata 18 Okt
+// 2026 (laporan owner, order RES-14102026-076 "Suyunni"): driver melihat
+// "1× Lainnya" telanjang — kata itu sendiri tidak memberi tahu driver barang
+// apa yang dibawa. Disaring di sini supaya fallback jatuh ke jenis/lini
+// produk yang sungguh deskriptif, bukan berhenti di placeholder ini.
+const merkBukanPlaceholder = (v) => (/^lainnya$/i.test(v) ? "" : v);
 
 /** Label unit pendek untuk driver: "NEW-11102026-023-U2" → "U2". */
 export function labelUnit(unit) {
@@ -57,7 +77,8 @@ function deskriptorUnit(unit, order, ukuranOrder, merkOrder) {
   // yang sebenarnya restorasi sofa (ganti kain/busa/rangka). order.productLine
   // (KASUR/SOFA/DIVAN) SELALU tersedia terlepas dari PKR/merk unit, jadi
   // dicoba lebih dulu sebelum jatuh ke "Kasur" sungguhan sebagai tebakan terakhir.
-  const nama = teks(unit?.merk) || teks(merkOrder) || LABEL_LINI_PRODUK[order?.productLine] || LABEL_BENTUK.KASUR;
+  const nama = merkBukanPlaceholder(teks(unit?.merk)) || merkBukanPlaceholder(teks(merkOrder))
+    || LABEL_JENIS_PRODUK[order?.productType] || LABEL_LINI_PRODUK[order?.productLine] || LABEL_BENTUK.KASUR;
   const ukuran = ukuranOrder || teks(unit?.ukuran);
   return { nama, ukuran, spesifikasi: "", bentuk: null, jenisKerja: null, bundel: null };
 }
