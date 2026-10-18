@@ -227,6 +227,7 @@ export const EVENT_TYPES = Object.freeze({
   PRODUCTION_FINISHED_ADAPTATION: "PRODUCTION_FINISHED_ADAPTATION",
   // Admin override: unit ditetapkan Siap Kirim saat pencatatan produksi belum selesai (keputusan Admin/Owner; Run & tahap TIDAK ditutup, tanpa klaim pemeriksaan) — lihat productionStepCommandService.js#releaseUnitForDelivery.
   PRODUCTION_DELIVERY_RELEASED: "PRODUCTION_DELIVERY_RELEASED",
+  PRODUCTION_DISPATCHED_BEFORE_DONE: "PRODUCTION_DISPATCHED_BEFORE_DONE", // unit berangkat/terkirim lewat Route Planner saat pencatatan produksi belum selesai (Run diberi penanda dilepas)
   PRODUCTION_ADAPTATION_APPLIED: "PRODUCTION_ADAPTATION_APPLIED",
   PRODUCTION_QC_GATE_APPLIED: "PRODUCTION_QC_GATE_APPLIED",
   PRODUCTION_WORK_DELAYED: "PRODUCTION_WORK_DELAYED",
@@ -514,6 +515,8 @@ export function formatActivitySentence(event) {
       return `QC unit ${metadata.unitCode || "—"} TIDAK DILAKUKAN — ${metadata.reason || "Adaptasi sistem"} (bukan lulus/di-waive)`;
     case EVENT_TYPES.PRODUCTION_DELIVERY_RELEASED:
       return `Admin override: unit ${metadata.unitCode || "—"} ditetapkan Siap Kirim oleh ${metadata.deciderName || "Admin"} saat pencatatan produksi belum selesai (lokasi pengambilan ${metadata.locationCode || "—"}; ${metadata.unitStatusBefore || "—"} → ${metadata.unitStatusAfter || "—"}) — Run produksi belum ditutup. Alasan: ${metadata.reason || "—"}`;
+    case EVENT_TYPES.PRODUCTION_DISPATCHED_BEFORE_DONE:
+      return `Unit ${metadata.unitCode || "—"} ${metadata.via === "JOB_COMPLETE" ? "diselesaikan pengirimannya" : "berangkat"} lewat Route Planner saat pencatatan produksi belum selesai (Run ${metadata.runStatus || "—"}, fase ${metadata.runPhase || "—"}); Run ditandai dilepas untuk pengiriman — bukan hasil pemeriksaan/QC`;
     case EVENT_TYPES.PRODUCTION_FINISHED_ADAPTATION:
       return `Produksi unit ${metadata.unitCode || "—"} diselesaikan (mode adaptasi): ${metadata.skippedCount ?? 0} tahap dilewati, QC tidak dilakukan, unit Siap Kirim tanpa penerimaan barang jadi Gudang`;
     case EVENT_TYPES.PRODUCTION_ADAPTATION_APPLIED:

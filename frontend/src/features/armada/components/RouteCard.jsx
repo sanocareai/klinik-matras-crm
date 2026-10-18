@@ -1113,8 +1113,8 @@ export default function RouteCard({
           <button
             type="button"
             onClick={() => jalankan(() => onPublish(route))}
-            disabled={busy || jobs.length === 0 || !route.driverId || jobs.some((j) => (j.menungguKonfirmasi?.length ?? 0) > 0)}
-            title={!route.driverId ? "Pilih driver dulu" : jobs.length === 0 ? "Tambahkan job dulu" : jobs.some((j) => (j.menungguKonfirmasi?.length ?? 0) > 0) ? "Menunggu konfirmasi siap kirim — setiap unit harus siap sebelum diterbitkan" : "Terbitkan ke driver"}
+            disabled={busy || jobs.length === 0 || !route.driverId}
+            title={!route.driverId ? "Pilih driver dulu" : jobs.length === 0 ? "Tambahkan job dulu" : "Terbitkan ke driver"}
             data-testid="rute-terbitkan"
             className="ml-auto flex h-8 flex-1 max-w-[160px] items-center justify-center gap-1.5 rounded-btn bg-accent text-[12px] font-bold text-white transition-opacity hover:opacity-90 disabled:opacity-40"
           >

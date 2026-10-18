@@ -141,6 +141,14 @@ export function AdminOverrideTombol({ unitId, unitStatus, isAdmin, onDone, label
 // Panel di Unit 360 (tab Pekerjaan): penjelasan singkat + tombol; atau banner jujur bila unit sudah di-override.
 export function AdminOverrideUnit360({ d, isAdmin, onDone }) {
   const rel = d.production?.deliveryRelease ?? null;
+  if (rel && rel.kind === "DISPATCH_ROUTE_PLANNER") {
+    return (
+      <div role="status" data-testid="ao-banner-dispatch" className="rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-orange">
+        <p className="m-0 font-semibold">{rel.label}</p>
+        <p className="m-0 mt-0.5">Unit ini berangkat/terkirim lewat Route Planner saat pencatatan produksinya belum selesai (bukan hasil pemeriksaan/QC dan bukan keputusan override). Tahap yang belum tercatat tidak diubah; Run ditutup administratif lewat Selesaikan Produksi / Konfirmasi Barang Jadi.</p>
+      </div>
+    );
+  }
   if (rel) {
     return (
       <div role="status" data-testid="ao-banner" className="rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-orange">
