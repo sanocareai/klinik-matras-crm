@@ -9,7 +9,7 @@
 
 import express from "express";
 import { requireAuth } from "../middleware/auth.js";
-import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
+import { requirePermission, hasPermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
 import { postStockMovement, lockRowForUpdate } from "../services/inventoryLedger.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
@@ -107,7 +107,10 @@ goodsReceiptRouter.get("/:id", requirePermission(P.INVENTORY_READ), wajibUuid(),
   try {
     const receipt = await prisma.goodsReceipt.findUnique({ where: { id: req.params.id }, include: receiptInclude });
     if (!receipt) return res.status(404).json({ error: "Goods receipt tidak ditemukan" });
-    res.json({ ...(await denganRingkasanPO(receipt)), tampilan: tampilanPenerimaan(receipt), jejak: await jejakDokumen(receipt.id) });
+    // Akun tanpa izin tulis Inventory (hanya melihat) tidak ditawari aksi: server tetap menolak 403, tetapi layar tidak menampilkan tombol yang pasti gagal.
+    const tulis = hasPermission(req.user, P.INVENTORY_WRITE);
+    const tampilan = tampilanPenerimaan(receipt);
+    res.json({ ...(await denganRingkasanPO(receipt)), tampilan: tulis ? tampilan : { ...tampilan, aksi: [] }, izin: { tulis }, jejak: await jejakDokumen(receipt.id) });
   } catch (err) {
     handleErr(err, res);
   }

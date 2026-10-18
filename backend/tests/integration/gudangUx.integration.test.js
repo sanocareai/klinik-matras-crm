@@ -296,3 +296,13 @@ test("DIBATALKAN dapat dipulihkan ke Draf (belum berdampak); Ditolak tidak dipul
   // status lain tidak bisa dibuat ulang
   const jadwal = await grDariPO(w, await poOcean(w)); assert.equal((await w.g.post(`${GR}/${jadwal.id}/buat-ulang`, { alasan: "tidak perlu" })).status, 409);
 });
+
+test("izin: akun hanya-lihat tidak ditawari aksi (izin.tulis=false, aksi kosong) dan server tetap menolak; akun Gudang ditawari aksi", async () => {
+  const w = await dunia(); const po = await poOcean(w); const g = await grDariPO(w, po);
+  const tulis = (await w.g.get(`${GR}/${g.id}`)).body; assert.equal(tulis.izin.tulis, true); assert.ok(tulis.tampilan.aksi.length > 0);
+  const baca = await w.p.get(`${GR}/${g.id}`);
+  if (baca.status === 200) { assert.equal(baca.body.izin.tulis, false); assert.deepEqual(baca.body.tampilan.aksi, []); assert.equal(baca.body.tampilan.kode, "TERJADWAL", "status tetap tampil"); }
+  else assert.equal(baca.status, 403, "tanpa izin baca = ditolak");
+  assert.equal((await w.p.post(`${GR}/${g.id}/batalkan-jadwal`, { alasan: "tidak boleh" })).status, 403);
+  assert.equal((await testPrisma.goodsReceipt.findUnique({ where: { id: g.id } })).status, "SCHEDULED");
+});

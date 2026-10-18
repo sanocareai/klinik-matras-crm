@@ -35,20 +35,33 @@ function KolomProgres({ l, kolom, className }) {
     </dl>
   );
 }
-/** Ringkasan satu baris untuk layar sempit: dipesan · datang · belum datang · masuk stok, plus lencana hanya untuk angka yang perlu perhatian (>0). */
-function RingkasBaris({ l, definisi }) {
+/**
+ * Ringkasan untuk layar sempit: empat sel sejajar (Pesan · Tiba · Belum datang · Masuk stok) + "Dijadwalkan" per penerimaan (nomor GR + jumlahnya; TIDAK dijumlahkan di klien, jadi dua jadwal untuk bahan yang sama
+ * tetap terlihat sebagai dua dokumen) + lencana hanya untuk angka yang perlu perhatian (>0). Label dan angka dari server.
+ */
+function RingkasBaris({ l, definisi, penerimaan = [] }) {
   const label = (k) => definisi.find((d) => d.kunci === k)?.label ?? k;
   const perhatian = KUNCI_PERHATIAN.filter((k) => Number(l[k]) > 0);
+  const jadwal = penerimaan.filter((r) => penerimaanBelumTiba(r)).map((r) => ({ nomor: r.nomor, qty: r.lines?.find((x) => x.purchaseOrderLineId === l.id)?.dijadwalkan })).filter((x) => x.qty != null);
+  const sel = [["Pesan", l.dipesan, false], ...KUNCI_UTAMA.map((k) => [label(k), l[k], k === "belumDatang" && Number(l[k]) > 0])];
   return (
-    <div className="mt-1 space-y-1" data-testid="ringkas-baris">
-      <div className="tabular-nums text-ink2">{KUNCI_UTAMA.map((k, i) => <span key={k}>{i > 0 ? " · " : ""}{label(k)} <strong className="text-ink">{jumlahTeks(l[k])}</strong></span>)} {l.satuan}</div>
+    <div className="mt-1.5 space-y-1.5" data-testid="ringkas-baris">
+      <dl className="m-0 grid grid-cols-4 gap-1">
+        {sel.map(([nama, nilai, tebal]) => (
+          <div key={nama} className="rounded-md bg-inset px-1.5 py-1 text-center" data-sel={nama}>
+            <dt className="text-[10px] leading-tight text-ink3">{nama}</dt>
+            <dd className={`m-0 text-[13px] tabular-nums ${tebal ? "font-bold text-ink" : "font-semibold text-ink2"}`}>{jumlahTeks(nilai)}</dd>
+          </div>
+        ))}
+      </dl>
+      {jadwal.length > 0 && <div className="text-[11.5px] leading-snug text-ink2" data-testid="dijadwalkan-baris"><span className="text-ink3">Dijadwalkan: </span>{jadwal.map((x, i) => <span key={x.nomor}>{i > 0 ? " · " : ""}<span className="font-medium text-ink">{x.nomor}</span> {jumlahTeks(x.qty)} {l.satuan}</span>)}</div>}
       {perhatian.length > 0 && <div className="flex flex-wrap gap-1">{perhatian.map((k) => <Badge key={k} variant="orange" className="h-auto whitespace-normal text-left leading-tight">{label(k)} {jumlahTeks(l[k])}</Badge>)}</div>}
     </div>
   );
 }
 
 /** @param ringkas  layar sempit: ringkasan satu baris + "Rincian" per item (Gudang). Default false: tampilan penuh lama (Finance tidak berubah). */
-export function TabelKuantitas({ lines, definisi = [], finance = false, ringkas = false }) {
+export function TabelKuantitas({ lines, definisi = [], finance = false, ringkas = false, penerimaan = [] }) {
   const kolom = definisi.filter((d) => d.kunci !== "dipesan");
   const grid = "mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1.5 sm:grid-cols-4";
   return (
@@ -58,12 +71,12 @@ export function TabelKuantitas({ lines, definisi = [], finance = false, ringkas 
           <li key={l.id} className="rounded-lg border border-line p-2.5 text-[12.5px]" data-testid="baris-kuantitas">
             <div className="flex flex-wrap items-baseline justify-between gap-x-3">
               <span className="font-medium text-ink [overflow-wrap:anywhere]">{l.kode} — {l.nama}</span>
-              <span className="tabular-nums text-ink2">Dipesan <strong className="text-ink">{jumlahTeks(l.dipesan)} {l.satuan}</strong>{finance && l.hargaSatuan != null ? <> · harga {l.hargaSatuan.toLocaleString("id-ID")}</> : null}</span>
+              <span className={`tabular-nums text-ink2 ${ringkas ? "max-md:hidden" : ""}`}>Dipesan <strong className="text-ink">{jumlahTeks(l.dipesan)} {l.satuan}</strong>{finance && l.hargaSatuan != null ? <> · harga {l.hargaSatuan.toLocaleString("id-ID")}</> : null}</span>
             </div>
             {ringkas ? (
               <>
                 <div className="md:hidden">
-                  <RingkasBaris l={l} definisi={definisi} />
+                  <RingkasBaris l={l} definisi={definisi} penerimaan={penerimaan} />
                   <details className="mt-1" data-testid="rincian-baris">
                     <summary className="cursor-pointer text-[12px] font-semibold text-accent max-sm:flex max-sm:min-h-11 max-sm:items-center">Rincian lengkap</summary>
                     <KolomProgres l={l} kolom={kolom} className={grid} />
@@ -468,9 +481,11 @@ export default function PanelKedatangan({ po, workspace, bolehTulis = true, onCh
     } catch (e) { setGalatSiap(e.message || "Gagal menyiapkan penerimaan"); } finally { setMenyiapkan(false); }
   }
   const urut = useMemo(() => po.penerimaan, [po.penerimaan]);
+  // Mode ringkas (Gudang, HP): pengiriman/penerimaan + aksi utama tampil LEBIH DULU; daftar item di bawahnya. Finance (ringkas=false) tetap: item dulu, lalu pengiriman.
+  const tabel = <TabelKuantitas lines={po.lines} definisi={po.progresDefinisi} finance={finance} ringkas={ringkas} penerimaan={po.penerimaan} />;
   return (
     <div className="space-y-3" data-testid="panel-kedatangan">
-      <TabelKuantitas lines={po.lines} definisi={po.progresDefinisi} finance={finance} ringkas={ringkas} />
+      {!ringkas && tabel}
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h4 className="m-0 text-[11px] font-bold uppercase tracking-wide text-ink3">Pengiriman &amp; surat jalan ({urut.length})</h4>
         {bolehTulis && bisaMenerima && !adaDraf && <Button size="sm" disabled={menyiapkan} onClick={mulaiCatat} className="max-sm:min-h-11" data-testid="catat-tiba"><PackageCheck size={14} /> {menyiapkan ? "Menyiapkan…" : "Catat Barang Tiba"}</Button>}
@@ -480,6 +495,12 @@ export default function PanelKedatangan({ po, workspace, bolehTulis = true, onCh
         <ul className="list-none space-y-2 p-0">
           {urut.map((r) => <KartuPenerimaan key={r.id} r={r} finance={finance} bolehTulis={bolehTulis} ekstra={ekstraPenerimaan ? ekstraPenerimaan(r) : null} onCatat={(x) => setDialog({ jenis: "catat", receipt: x })} onKoreksi={(x) => setDialog({ jenis: "koreksi", receipt: x })} />)}
         </ul>
+      )}
+      {ringkas && (
+        <div className="space-y-1.5" data-testid="item-po-ringkas">
+          <h4 className="m-0 text-[11px] font-bold uppercase tracking-wide text-ink3">Barang per item ({po.lines.length}) — pesan, dijadwalkan, tiba, sisa</h4>
+          {tabel}
+        </div>
       )}
       {dialog?.jenis === "catat" && (
         <ModalCatatKedatangan po={po} receipt={dialog.receipt ?? null} receiptId={dialog.receiptId ?? null} workspace={workspace} onClose={() => { setDialog(null); onChanged?.(); }} onDone={async (h) => { setDialog(null); await onChanged?.(h); }} />
