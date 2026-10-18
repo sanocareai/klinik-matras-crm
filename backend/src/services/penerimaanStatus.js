@@ -14,6 +14,23 @@ export const TAHAP = Object.freeze([
 ]);
 const INDEKS_TAHAP = { DRAFT: 1, SCHEDULED: 1, ARRIVED: 2, INSPECTION: 3, READY_FOR_PUTAWAY: 3, COMPLETED: 4 };
 
+// PIPELINE enam tahap (UX Gudang Tahap 3) — urutan status yang sah bagi petugas: Draf → Terjadwal → Barang tiba → Pemeriksaan → Siap masuk stok → Sudah masuk stok.
+// Kontrol status di layar HANYA menampilkan perpindahan yang disebut server di `tampilan.pipeline.pindah` (turunan dari aksi sah per status). Tidak ada lompatan: tiap perpindahan tetap
+// lewat aksi yang sama (dengan syarat, isian, dan jejak yang sama) — mengganti label tidak pernah mengubah stok atau dokumen terposting.
+export const PIPELINE = Object.freeze([
+  { kode: "DRAF", label: "Draf", status: "DRAFT" }, { kode: "TERJADWAL", label: "Terjadwal", status: "SCHEDULED" }, { kode: "TIBA", label: "Barang tiba", status: "ARRIVED" },
+  { kode: "PERIKSA", label: "Pemeriksaan", status: "INSPECTION" }, { kode: "SIAP", label: "Siap masuk stok", status: "READY_FOR_PUTAWAY" }, { kode: "STOK", label: "Sudah masuk stok", status: "COMPLETED" },
+]);
+const LABEL_TUJUAN = Object.freeze({ ...Object.fromEntries(PIPELINE.map((p) => [p.kode, p.label])), DIBATALKAN: "Dibatalkan", DITOLAK: "Ditolak" });
+const BERIKUTNYA = Object.freeze({ DRAFT: "Jadwalkan kedatangan", SCHEDULED: "Tunggu barang tiba, lalu catat kedatangan", ARRIVED: "Periksa barang", INSPECTION: "Isi hasil pemeriksaan", READY_FOR_PUTAWAY: "Simpan ke Stok", COMPLETED: "Selesai — tidak ada tindakan", REJECTED: "Tidak ada tindakan" });
+/** Perpindahan status yang sah dari aksi yang tersedia. jenis: maju | mundur | tutup. Aksi non-status (ubah jadwal, isi pemeriksaan, koreksi) tidak termasuk. */
+export function pindahPipeline(status, aksi) {
+  const i = PIPELINE.findIndex((p) => p.status === status); const kodeAksi = new Set((aksi ?? []).map((a) => a.kode));
+  const tujuan = { JADWALKAN: ["TERJADWAL", "maju"], CATAT_TIBA: ["TIBA", "maju"], TANDAI_TIBA: ["TIBA", "maju"], MAJUKAN: [i >= 0 && i < 4 ? PIPELINE[i + 1].kode : null, "maju"], SIMPAN_KE_STOK: ["STOK", "maju"],
+    KEMBALI_DRAFT: ["DRAF", "mundur"], BATALKAN_TIBA: ["TERJADWAL", "mundur"], PULIHKAN: ["DRAF", "mundur"], BATALKAN_JADWAL: ["DIBATALKAN", "tutup"], TOLAK: ["DITOLAK", "tutup"] };
+  return Object.entries(tujuan).filter(([k, [ke]]) => kodeAksi.has(k) && ke).map(([k, [ke, jenis]]) => ({ kode: k, ke, jenis, label: jenis === "tutup" ? (ke === "DIBATALKAN" ? "Batalkan penerimaan" : "Tolak barang") : `${jenis === "mundur" ? "Kembalikan ke" : "Maju ke"} ${LABEL_TUJUAN[ke]}` }));
+}
+
 export const AKSI = Object.freeze({
   UBAH_JADWAL: { kode: "UBAH_JADWAL", label: "Ubah jadwal", jenis: "ubah" },
   JADWALKAN: { kode: "JADWALKAN", label: "Jadwalkan", jenis: "maju" },
@@ -52,7 +69,8 @@ export function tampilanPenerimaan(r) {
   const status = String(r?.status ?? "");
   const dariPO = !!r?.purchaseOrderId;
   const dibatalkan = status === "REJECTED" && tidakPernahBerisi(r);
-  const dasar = (kode, label, warna, penjelasan, pengaruhStok, aksi) => ({ kode, status, label, warna, tahapIndeks: INDEKS_TAHAP[status] ?? null, tahap: TAHAP, pengaruhStok, penjelasan, aksi: aksi.map((a) => ({ ...a })) });
+  const dasar = (kode, label, warna, penjelasan, pengaruhStok, aksi) => ({ kode, status, label, warna, tahapIndeks: INDEKS_TAHAP[status] ?? null, tahap: TAHAP, pengaruhStok, penjelasan, aksi: aksi.map((a) => ({ ...a })),
+    pipeline: { tahap: PIPELINE.map(({ kode, label }) => ({ kode, label })), indeks: (() => { const k = PIPELINE.findIndex((p) => p.status === status); return k < 0 ? null : k; })(), pindah: pindahPipeline(status, aksi) }, berikutnya: BERIKUTNYA[status] ?? "—" });
   switch (status) {
     case "DRAFT":
       return dasar("DRAF", "Draf", "neutral", "Belum dijadwalkan. Belum memengaruhi stok. Boleh diubah atau dibatalkan.", "BELUM", [AKSI.UBAH_JADWAL, AKSI.JADWALKAN, AKSI.BATALKAN_JADWAL]);

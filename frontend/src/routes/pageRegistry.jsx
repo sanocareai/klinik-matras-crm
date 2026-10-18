@@ -83,7 +83,6 @@ const ComplaintCases  = lazy(() => import("../pages/ComplaintCases.jsx"));
 const WarehouseDashboard   = lazy(() => import("../pages/warehouse/WarehouseDashboard.jsx"));
 const WarehouseInventory   = lazy(() => import("../pages/warehouse/WarehouseInventory.jsx"));
 const WarehouseGoodsReceipt = lazy(() => import("../pages/warehouse/WarehouseGoodsReceipt.jsx"));
-const PenerimaanDetail = lazy(() => import("../features/warehouse/penerimaan/PenerimaanDetail.jsx"));
 const MaterialIssueDetail = lazy(() => import("../features/warehouse/dokumen/MaterialIssueDetail.jsx"));
 const TransferDetail = lazy(() => import("../features/warehouse/dokumen/TransferDetail.jsx"));
 const WarehouseBarangAkanDatang = lazy(() => import("../pages/warehouse/WarehouseBarangAkanDatang.jsx"));
@@ -259,11 +258,11 @@ const PAGES_DASAR = [
   { path: "/komplain",    render: () => <ComplaintCases /> },
   { path: "/warehouse/dashboard", render: () => <WarehouseDashboard /> },
   { path: "/warehouse/inventory", render: () => <WarehouseInventory /> },
-  { path: "/warehouse/barang-akan-datang", render: () => <WarehouseBarangAkanDatang /> },
+  { path: "/warehouse/barang-akan-datang/:id?", render: () => <WarehouseBarangAkanDatang /> },
   { path: "/warehouse/retur-supplier", render: () => <WarehouseReturSupplier /> },
   { path: "/finance/retur-supplier", render: () => <FinanceReturSupplier /> },
-  { path: "/warehouse/goods-receipt", render: () => <WarehouseGoodsReceipt /> },
-  { path: "/warehouse/goods-receipt/:id", render: () => <PenerimaanDetail /> },
+  // Jendela detail (UX Gudang Tahap 3) = rute yang SAMA dengan daftar (parameter :id opsional) supaya daftar tetap terpasang di belakang jendela.
+  { path: "/warehouse/goods-receipt/:id?", render: () => <WarehouseGoodsReceipt /> },
   { path: "/warehouse/unit-custody", render: () => <WarehouseUnitCustody /> },
   { path: "/bengkel/production-v2", render: () => <DemoPage><ProductionPlannerV2 /></DemoPage> },
   { path: "/bengkel/production-v2/laporan/:runId", render: () => <ProductionReportV2 /> },

@@ -105,7 +105,7 @@ test("pemasangan: halaman Gudang tanpa harga, menu & rute, Finance memakai panel
   const g = baca("../src/pages/warehouse/WarehouseBarangAkanDatang.jsx");
   assert.match(g, /api\.getBarangAkanDatang/); assert.match(g, /workspace="GUDANG"/);
   assert.doesNotMatch(g, /hargaSatuan|nilaiDipesan|totalDipesan|formatUang|Rp\b/, "Gudang tidak menampilkan harga/nilai");
-  assert.match(baca("../src/routes/pageRegistry.jsx"), /"\/warehouse\/barang-akan-datang"/);
+  assert.match(baca("../src/routes/pageRegistry.jsx"), /"\/warehouse\/barang-akan-datang\/:id\?"/); // detail PO = jendela fokus berbasis rute
   assert.match(baca("../src/components/Layout.jsx"), /Barang Akan Datang/);
   assert.match(baca("../src/components/Topbar.jsx"), /Barang Akan Datang/);
   const fin = baca("../src/pages/finance/FinancePurchaseOrders.jsx");

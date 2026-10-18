@@ -1,8 +1,9 @@
-import React from "react";
+import React, { useContext } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils.js";
 import { POPOVER_SURFACE, OVERLAY } from "./surface.jsx";
+import { LapisanTunggalCtx, PanelSatuLapisan } from "./fokus-overlay.jsx";
 
 // Modal aksesibel di atas Radix Dialog (fokus-trap, Esc, aria otomatis).
 // API ringkas & controlled: <Modal open onOpenChange title footer>…</Modal>.
@@ -24,6 +25,9 @@ export function Modal({
   // Radix tetap mengunci body (pointer-events:none, #root aria-hidden) dan form di baliknya tak bisa dipakai.
   portalToBody = false,
 }) {
+  // UX Gudang Tahap 3: di dalam FokusOverlay (detail dokumen), Modal TIDAK membuka dialog kedua — isinya tampil sebagai panel di jendela yang sama (satu lapisan).
+  const lapisan = useContext(LapisanTunggalCtx);
+  if (lapisan?.slot) return open ? <PanelSatuLapisan lapisan={lapisan} title={title} description={description} footer={footer} onOpenChange={onOpenChange} showClose={showClose}>{children}</PanelSatuLapisan> : null;
   // Portal TANPA `container` (default Radix) menaruh modal langsung di
   // <body>, DI LUAR `.app-shell.glass-division` — akibatnya SELURUH CSS kaca
   // untuk field (delivery-dark/-light.css, selector `.glass-division input`

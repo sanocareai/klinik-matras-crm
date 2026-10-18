@@ -18,17 +18,41 @@ export const teksSaldo = (r) => (r.saldo === null || r.saldo === undefined ? "�
 /** "—" = belum diatur (BUKAN nol). */
 export const teksBatasMinimum = (r) => (r.batasMinimum === null || r.batasMinimum === undefined ? "belum diatur" : angka(r.batasMinimum));
 
-export function saringStok(rows, { tab = "", cari = "", keadaan = "", nonaktif = false } = {}) {
-  const q = String(cari).trim().toLowerCase();
+/**
+ * Saring daftar Stok & Lokasi.
+ *  • tab/jenis = jenis persediaan (kategori master: RAW_MATERIAL/WIP/FINISHED_GOODS/CONSUMABLE, atau "none" = tanpa kategori).
+ *  • kelompok  = kelompok bahan operasional (kode dari server: BUSA, KAIN, …, atau "BELUM" = belum dikelompokkan).
+ *  • cari      = kode/nama/vendor. PENCARIAN MENCARI SELURUH BAHAN: bila ada kata kunci, kelompok dan jenis TIDAK menyaring (hasil menampilkan kelompoknya) — lihat `jangkauanCari`.
+ */
+export function saringStok(rows, { tab = "", jenis = "", kelompok = "", cari = "", keadaan = "", nonaktif = false } = {}) {
+  const q = String(cari).trim().toLowerCase(); const j = jenis || tab; const mencari = !!q;
   return rows.filter((r) => {
     if (!nonaktif && !r.aktif) return false;
-    if (tab === "none" && r.kategori) return false;
-    if (tab && tab !== "none" && r.kategori !== tab) return false;
+    if (!mencari) {
+      if (j === "none" && r.kategori) return false;
+      if (j && j !== "none" && r.kategori !== j) return false;
+      if (kelompok && (r.kelompok?.kode ?? "BELUM") !== kelompok) return false;
+    }
     if (keadaan && r.keadaan !== keadaan) return false;
-    if (q && !`${r.kode} ${r.nama} ${r.vendor ?? ""}`.toLowerCase().includes(q)) return false;
+    if (mencari && !`${r.kode} ${r.nama} ${r.vendor ?? ""} ${r.kelompok?.label ?? ""}`.toLowerCase().includes(q)) return false;
     return true;
   });
 }
+
+/** Apakah daftar ditampilkan: hanya bila pengguna memilih kelompok, menyaring keadaan, mencari, atau meminta semua. Layar awal = navigasi kelompok (bukan 358 baris). */
+export const daftarTampil = ({ kelompok = "", cari = "", keadaan = "", jenis = "", semua = "" } = {}) => !!(kelompok || String(cari).trim() || keadaan || jenis || semua);
+/** Kata-kata untuk pengguna tentang cakupan hasil saat ini. */
+export function jangkauanCari({ kelompok = "", cari = "", labelKelompok = "" } = {}) {
+  if (String(cari).trim()) return { mode: "cari", teks: kelompok ? `Mencari di semua kelompok (bukan hanya ${labelKelompok || "kelompok terpilih"}).` : "Mencari di semua kelompok." };
+  if (kelompok) return { mode: "kelompok", teks: `Kelompok ${labelKelompok || kelompok}.` };
+  return { mode: "semua", teks: "Semua kelompok." };
+}
+
+export const FILTER_JENIS = Object.freeze([
+  { key: "", label: "Semua jenis" }, { key: "RAW_MATERIAL", label: "Bahan Baku" }, { key: "WIP", label: "Setengah Jadi" }, { key: "FINISHED_GOODS", label: "Barang Jadi" }, { key: "CONSUMABLE", label: "Habis Pakai" }, { key: "none", label: "Tanpa kategori" },
+]);
+/** Kunci jenis dari server ("NONE") ↔ kunci filter UI ("none"). */
+export const kunciJenis = (kode) => (kode === "NONE" ? "none" : kode);
 
 /**
  * Tampilan saldo yang membedakan TIGA keadaan yang berbeda artinya:

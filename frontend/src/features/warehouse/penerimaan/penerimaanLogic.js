@@ -2,18 +2,29 @@
 // identitas dokumen (nomor penerimaan, nomor PO, supplier, pembuat, tanggal), matriks per item (pesan · dijadwalkan · tiba · diterima · masuk stok), filter tahap, dan peringatan jadwal ganda.
 // Dua penerimaan untuk bahan yang sama TIDAK pernah digabung atau disimpulkan duplikat: hanya ditampilkan berdampingan dengan identitasnya masing-masing.
 
+// PIPELINE enam tahap (UX Gudang Tahap 3), urutan sama dengan server (services/penerimaanStatus.js PIPELINE). Kunci lama (jadwal, belum-masuk-stok, selesai, ditutup) tetap dikenali agar tautan/bookmark lama berfungsi.
+export const TAHAP_PIPELINE = Object.freeze([
+  { key: "DRAF", label: "Draf", statuses: ["DRAFT"] }, { key: "TERJADWAL", label: "Terjadwal", statuses: ["SCHEDULED"] }, { key: "TIBA", label: "Barang tiba", statuses: ["ARRIVED"] },
+  { key: "PERIKSA", label: "Pemeriksaan", statuses: ["INSPECTION"] }, { key: "SIAP", label: "Siap masuk stok", statuses: ["READY_FOR_PUTAWAY"] }, { key: "STOK", label: "Sudah masuk stok", statuses: ["COMPLETED"] },
+]);
+export const TAHAP_TUTUP = Object.freeze({ key: "DITUTUP", label: "Dibatalkan / ditolak", statuses: ["REJECTED"] });
 export const TAHAP_FILTER = Object.freeze([
   { key: "", label: "Semua" },
-  { key: "jadwal", label: "Terjadwal & draf", statuses: ["DRAFT", "SCHEDULED"] },
-  { key: "belum-masuk-stok", label: "Belum masuk stok", statuses: ["ARRIVED", "INSPECTION", "READY_FOR_PUTAWAY"] },
-  { key: "selesai", label: "Sudah masuk stok", statuses: ["COMPLETED"] },
-  { key: "ditutup", label: "Dibatalkan / ditolak", statuses: ["REJECTED"] },
+  ...TAHAP_PIPELINE, TAHAP_TUTUP,
+  { key: "jadwal", label: "Terjadwal & draf", statuses: ["DRAFT", "SCHEDULED"], lama: true },
+  { key: "belum-masuk-stok", label: "Belum masuk stok", statuses: ["ARRIVED", "INSPECTION", "READY_FOR_PUTAWAY"], lama: true },
+  { key: "selesai", label: "Sudah masuk stok", statuses: ["COMPLETED"], lama: true },
+  { key: "ditutup", label: "Dibatalkan / ditolak", statuses: ["REJECTED"], lama: true },
 ]);
 
 export const filterTahap = (rows, key) => {
   const t = TAHAP_FILTER.find((x) => x.key === key);
   return !t || !t.statuses ? rows : rows.filter((r) => t.statuses.includes(r.status));
 };
+/** Cari baris penerimaan: nomor GR, nomor PO, supplier, nomor sumber, kode dan nama bahan. */
+export const cocokCari = (r, q) => { const k = String(q ?? "").trim().toLowerCase(); return !k || [r.receiptNumber, r.purchaseOrder?.poNumber, r.supplier, r.sourceReference, ...(r.lines ?? []).map((l) => `${l.material?.code} ${l.material?.name}`)].join(" ").toLowerCase().includes(k); };
+/** Tindakan berikutnya untuk satu baris (dari server: tampilan.berikutnya) + apakah menunggu tindakan petugas Gudang (badge sidebar/pipeline). */
+export const perluTindakan = (r) => ["DRAFT", "ARRIVED", "INSPECTION", "READY_FOR_PUTAWAY"].includes(r?.status);
 export const hitungPerTahap = (rows) => Object.fromEntries(TAHAP_FILTER.map((t) => [t.key, t.statuses ? rows.filter((r) => t.statuses.includes(r.status)).length : rows.length]));
 
 const tgl = (d) => (d ? String(d).slice(0, 10) : null);

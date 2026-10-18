@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { Inbox, RefreshCw, Search } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
-import { Modal } from "@/components/ui/modal.jsx";
+import { FokusOverlay } from "@/components/ui/fokus-overlay.jsx";
+import { useFilterDaftar, querySaringan } from "@/features/warehouse/dokumen/useFilterDaftar.js";
 import { Input } from "@/components/ui/input.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows } from "@/components/ui/table.jsx";
@@ -19,13 +20,19 @@ import { STATUS_AKAN_DATANG, TAB_AKAN_DATANG, jumlahTeks, tanggalTeks, ringkasKu
 // Angka dan status dihitung server (satu sumber); halaman ini hanya menampilkan.
 const BadgeStatus = ({ kode, label, className }) => <Badge variant={STATUS_AKAN_DATANG[kode]?.variant || "neutral"} className={className}>{label ?? STATUS_AKAN_DATANG[kode]?.label ?? kode}</Badge>;
 
+const PATH = "/warehouse/barang-akan-datang";
+const KUNCI = ["tab", "q"];
+// Detail PO = JENDELA FOKUS berbasis rute (/warehouse/barang-akan-datang/:id): daftar tetap terpasang di belakangnya, saringan dan pencarian ikut di URL, Back/Esc menutup.
 export default function WarehouseBarangAkanDatang() {
-  const [tab, setTab] = useState("");
-  const [q, setQ] = useState("");
+  const navigate = useNavigate(); const { id: bukaId } = useParams(); const jarak = React.useRef(0);
+  const [saring, ubahSaring] = useFilterDaftar(PATH, KUNCI); const tab = saring.tab; const q = saring.q;
+  const setTab = (v) => ubahSaring("tab", v); const setQ = (v) => ubahSaring("q", v);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [bukaId, setBukaId] = useState(null);
+  const saringan = querySaringan(saring, KUNCI);
+  const setBukaId = (rid) => { jarak.current = 1; navigate(`${PATH}/${rid}${saringan}`); };
+  const tutup = () => { if (jarak.current > 0) { const n = jarak.current; jarak.current = 0; navigate(-n); } else navigate(`${PATH}${saringan}`, { replace: true }); };
 
   const muat = useCallback(() => {
     setLoading(true); setError("");
@@ -111,7 +118,7 @@ export default function WarehouseBarangAkanDatang() {
           </>
         )}
       </PageBody>
-      {bukaId && <DetailPO id={bukaId} onClose={() => setBukaId(null)} onChanged={muat} />}
+      {bukaId && <DetailPO id={bukaId} onClose={tutup} onChanged={muat} />}
     </PageContainer>
   );
 }
@@ -125,10 +132,10 @@ function DetailPO({ id, onClose, onChanged }) {
   useEffect(() => { muat(); }, [muat]);
   const perluTindakan = (po?.penerimaan ?? []).filter((r) => ["ARRIVED", "INSPECTION", "READY_FOR_PUTAWAY"].includes(r.status));
   return (
-    <Modal
-      open onOpenChange={(v) => !v && onClose()} className="w-[920px]"
+    <FokusOverlay
+      open onClose={onClose} testid="fokus-po"
       title={po ? po.poNumber : "Memuat PO…"}
-      description={po ? `${po.supplier?.name} · tanggal PO ${tanggalTeks(po.orderDate)}${po.expectedDate ? ` · estimasi tiba ${tanggalTeks(po.expectedDate)}` : ""}` : undefined}
+      subtitle={po ? `${po.supplier?.name} · tanggal PO ${tanggalTeks(po.orderDate)}${po.expectedDate ? ` · estimasi tiba ${tanggalTeks(po.expectedDate)}` : ""}` : undefined}
     >
       {galat && <p role="alert" className="rounded-lg bg-redbg px-3 py-2 text-[12.5px] text-red">{galat}</p>}
       {!po ? (galat ? null : <p className="py-6 text-[13px] text-ink3">Memuat…</p>) : (
@@ -148,6 +155,6 @@ function DetailPO({ id, onClose, onChanged }) {
           )}
         </div>
       )}
-    </Modal>
+    </FokusOverlay>
   );
 }

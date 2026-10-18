@@ -23,7 +23,10 @@ test("filter tahap: Terjadwal & draf mencakup DRAFT dan SCHEDULED; hitungan kons
   assert.equal(filterTahap(rows, "tidak-ada").length, 5);
   const h = hitungPerTahap(rows);
   assert.equal(h[""], 5); assert.equal(h.jadwal, 2); assert.equal(h.selesai, 1); assert.equal(h.ditutup, 1);
-  assert.deepEqual(TAHAP_FILTER.map((t) => t.key), ["", "jadwal", "belum-masuk-stok", "selesai", "ditutup"]);
+  // UX Tahap 3: pipeline enam tahap + kunci lama (jadwal, belum-masuk-stok, selesai, ditutup) tetap dikenali untuk tautan/bookmark lama
+  assert.deepEqual(TAHAP_FILTER.map((t) => t.key), ["", "DRAF", "TERJADWAL", "TIBA", "PERIKSA", "SIAP", "STOK", "DITUTUP", "jadwal", "belum-masuk-stok", "selesai", "ditutup"]);
+  assert.deepEqual(filterTahap(rows, "SIAP").map((r) => r.id), ["e"]); assert.deepEqual(filterTahap(rows, "STOK").map((r) => r.id), ["c"]); assert.deepEqual(filterTahap(rows, "DITUTUP").map((r) => r.id), ["d"]);
+  assert.equal(h.SIAP, 1); assert.equal(h.DRAF + h.TERJADWAL, 2);
 });
 
 test("identitas: dua PO berbeda untuk supplier yang sama tetap dua identitas (tidak digabung, tidak disebut duplikat)", () => {
@@ -112,7 +115,7 @@ test("Navigasi Gudang: dikelompokkan menurut alur, semua rute lama tetap ada, Da
   const s = baca("components/Layout.jsx");
   const w = s.slice(s.indexOf('  warehouse: {\n    label: "Warehouse"'), s.indexOf("// ── DELIVERY & FULFILLMENT"));
   const sections = [...w.matchAll(/section: "([^"]+)"/g)].map((m) => m[1]);
-  assert.deepEqual(sections, ["HARI INI", "PENERIMAAN BARANG", "STOK", "UNTUK PRODUKSI", "KONTROL & BIAYA", "LAPORAN"]);
+  assert.deepEqual(sections, ["Beranda", "Penerimaan", "Stok", "Produksi", "Kontrol", "Laporan"]); // UX Tahap 3: enam kelompok utama
   const rute = [...w.matchAll(/to: "([^"]+)"/g)].map((m) => m[1]);
   for (const r of ["/warehouse/dashboard", "/warehouse/barang-akan-datang", "/warehouse/goods-receipt", "/warehouse/retur-supplier", "/warehouse/inventory", "/warehouse/material-issue", "/warehouse/transfers", "/warehouse/replenishment", "/warehouse/adjustments", "/warehouse/antrean-produksi", "/warehouse/unit-custody", "/warehouse/material-pickup", "/warehouse/finished-goods", "/warehouse/stock-count", "/finance/persediaan-awal", "/komplain", "/warehouse/pengajuan-biaya", "/warehouse/laporan-biaya", "/warehouse/reports", "/warehouse/kpi"]) assert.ok(rute.includes(r), `menu ${r} hilang`);
   assert.equal(new Set(rute).size, rute.length, "tidak ada menu ganda");
@@ -120,9 +123,9 @@ test("Navigasi Gudang: dikelompokkan menurut alur, semua rute lama tetap ada, Da
   assert.match(w, /bolehPeran: \["ADMIN", "OWNER", "FINANCE", "APPROVER", "WAREHOUSE"\]/, "pembatasan peran Pengajuan Biaya tetap");
 });
 
-test("Daftar Penerimaan: identitas lengkap, filter tahap, detail sebagai halaman (bukan drawer), kartu sempit, tautan lama ?buka=", () => {
+test("Daftar Penerimaan: identitas lengkap, pipeline tahap, detail sebagai jendela fokus berbasis rute (bukan drawer/tab baru), kartu sempit, tautan lama ?buka=", () => {
   const s = baca("pages/warehouse/WarehouseGoodsReceipt.jsx");
-  assert.match(s, /navigate\(`\/warehouse\/goods-receipt\/\$\{id\}`/);
+  assert.match(s, /navigate\(`\$\{PATH\}\/\$\{rid\}\$\{saringan\}`\)/); assert.match(s, /PATH = "\/warehouse\/goods-receipt"/); assert.match(s, /<PenerimaanDetail /);
   assert.match(s, /identitasPenerimaan/); assert.match(s, /r\.receiptNumber/); assert.match(s, /No\. PO/); assert.match(s, /Supplier/);
   assert.match(s, /sp\.get\("buka"\)/);
   assert.match(s, /md:hidden/); assert.match(s, /hidden md:block/);
@@ -135,14 +138,14 @@ test("Daftar Penerimaan: identitas lengkap, filter tahap, detail sebagai halaman
 test("Halaman detail Penerimaan: identitas, alur, tabel per item, aksi dari server, koreksi resmi; tanpa Edit/Undo umum", () => {
   const s = baca("features/warehouse/penerimaan/PenerimaanDetail.jsx");
   for (const id of ["kartu-identitas", "id-nomor", "id-po", "id-pembuat", "status-penerimaan", "penjelasan-status", "kartu-aksi"]) assert.match(s, new RegExp(`data-testid="${id}"`), id);
-  assert.match(s, /<AlurPenerimaan/); assert.match(s, /<TabelPerItem/); assert.match(s, /<AksiDokumen/);
+  assert.match(s, /<PipelineStatus/); assert.match(s, /<FokusOverlay/); assert.match(s, /<TabelPerItem/); assert.match(s, /<AksiDokumen/);
   assert.match(s, /KartuJalurKoreksi/); assert.match(s, /ringkas/);
   assert.match(s, /ModalKoreksiKedatangan/); assert.match(s, /KoreksiPenerimaanModal/);
   assert.doesNotMatch(s, />\s*Undo\s*</); assert.doesNotMatch(s, />\s*Hapus\s*</); assert.doesNotMatch(s, /reversal|idempoten/i);
   // aksi hanya muncul dari tampilan.aksi (server), bukan dari status yang ditebak di browser
   assert.match(s, /tampilan/);
   const r = baca("routes/pageRegistry.jsx");
-  assert.match(r, /path: "\/warehouse\/goods-receipt\/:id"/);
+  assert.match(r, /path: "\/warehouse\/goods-receipt\/:id\?"/); // rute yang sama dengan daftar → daftar tetap terpasang di belakang jendela
 });
 
 test("Teks pengguna tidak memuat istilah teknis reversal/idempotensi di layar baru", () => {
@@ -175,7 +178,7 @@ test("Pemulihan dokumen: Batalkan catatan tiba / Pulihkan / Buat penerimaan baru
   const d = baca("features/warehouse/penerimaan/PenerimaanDetail.jsx");
   for (const k of ["BATALKAN_TIBA", "PULIHKAN", "BUAT_ULANG"]) assert.ok(d.includes(`${k}: { panel`), k);
   for (const m of ["batalkanTibaGoodsReceipt", "pulihkanGoodsReceipt", "buatUlangGoodsReceipt"]) { assert.ok(d.includes(`api.${m}`), m); assert.ok(baca("api.js").includes(`${m}:`), m); }
-  assert.ok(d.includes("navigate(`/warehouse/goods-receipt/${baru.id}`)"));
+  assert.ok(d.includes("navigate(`/warehouse/goods-receipt/${baru.id}${saringan}`, { replace: true })"));
   assert.match(d, /data-testid="jejak-dokumen"/); assert.match(d, /tidak dihapus/);
   assert.doesNotMatch(d, />\s*(Hapus|Undo)\s*</);
   for (const k of ["BATALKAN_TIBA", "PULIHKAN", "BUAT_ULANG"]) assert.ok(k in CARA_AKSI, k);

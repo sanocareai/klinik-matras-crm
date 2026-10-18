@@ -20,6 +20,8 @@ import { api } from "../api.js";
 import SidebarNavSection from "./SidebarNavSection.jsx";
 import { applyCustomOrder, getSectionOrder, saveSectionOrder } from "@/lib/sidebarOrder.js";
 import { filterMenuByPermission, visibleSections } from "@/lib/menuVisibility.js";
+import GudangNavGrup, { useAntreanGudang } from "./GudangNavGrup.jsx";
+import { denganBadgeGudang } from "@/lib/gudangNav.js";
 import { PRODUCTION_NAV, sectionIsOpen } from "@/lib/productionNav.js";
 import { loadToggledSections, saveToggledSections } from "@/lib/sidebarSections.js";
 import { useSSE } from "../hooks/useSSE.js";
@@ -262,18 +264,14 @@ const DIVISIONS = {
     accent: {
       ...DIVISION_ACCENT,
     },
-    // Tahap 1 UX Gudang (Okt 2026) — dikelompokkan menurut ALUR KERJA petugas, bukan jenis dokumen:
-    //   HARI INI (Beranda) → PENERIMAAN (PO → jadwal → tiba → periksa → masuk stok) → STOK → PRODUKSI (antrean V2) → KONTROL & BIAYA → LAPORAN.
-    // Semua rute lama tetap hidup (hanya urutan/label menu yang berubah); "Dashboard" kini bernama Beranda agar tidak terkesan ada dua dashboard.
+    // UX Gudang Tahap 3 (Okt 2026) — ENAM kelompok utama menurut alur kerja petugas; menu rinci menjadi anak yang dibuka per kelompok (components/GudangNavGrup.jsx, logika di lib/gudangNav.js).
+    //   Beranda · Penerimaan (PO → jadwal → tiba → periksa → masuk stok) · Stok · Produksi (antrean V2) · Kontrol · Laporan.
+    // Semua rute lama tetap hidup (bookmark, tab tersimpan, izin tidak berubah) — hanya pengelompokan menu. Fitur biaya milik Finance diberi konteks "Diproses Finance" di dalam Kontrol;
+    // "Opname Cutover Persediaan" (halaman Finance) ikut di konteks itu. Badge hanya untuk pekerjaan yang butuh tindakan (lib/gudangNav.js BADGE_ANTREAN).
     sections: [
+      { section: "Beranda", langsung: true, grup: true, Icon: LayoutDashboard, items: [{ to: "/warehouse/dashboard", label: "Beranda", Icon: LayoutDashboard }] },
       {
-        section: "HARI INI",
-        items: [
-          { to: "/warehouse/dashboard", label: "Beranda", Icon: LayoutDashboard },
-        ],
-      },
-      {
-        section: "PENERIMAAN BARANG",
+        section: "Penerimaan", grup: true, Icon: ArrowDownToLine,
         items: [
           // PO terintegrasi Finance–Gudang: PO yang akan/sedang datang (data yang sama dengan Finance, TANPA harga) + catat barang tiba.
           { to: "/warehouse/barang-akan-datang", label: "Barang Akan Datang", Icon: Truck },
@@ -283,17 +281,16 @@ const DIVISIONS = {
         ],
       },
       {
-        section: "STOK",
+        section: "Stok", grup: true, Icon: Package,
         items: [
           { to: "/warehouse/inventory", label: "Stok & Lokasi",     Icon: Package },
           { to: "/warehouse/material-issue", label: "Pengeluaran Material", Icon: ArrowUpFromLine },
           { to: "/warehouse/transfers",      label: "Transfer Stok",     Icon: ArrowLeftRight },
           { to: "/warehouse/replenishment", label: "Restok",             Icon: TrendingUp },
-          { to: "/warehouse/adjustments",   label: "Barang Rusak & Retur", Icon: AlertTriangle },
         ],
       },
       {
-        section: "UNTUK PRODUKSI",
+        section: "Produksi", grup: true, Icon: ClipboardCheck,
         items: [
           // P8 — antrean Gudang untuk Produksi V2 (unit masuk, bahan, kekurangan, barang jadi). Inert bila reader V2 OFF.
           { to: "/warehouse/antrean-produksi", label: "Antrean Produksi", Icon: ClipboardCheck },
@@ -306,19 +303,20 @@ const DIVISIONS = {
         ],
       },
       {
-        section: "KONTROL & BIAYA",
+        section: "Kontrol", grup: true, Icon: Scale,
         items: [
           { to: "/warehouse/stock-count",   label: "Stock Opname",       Icon: Scale },
-          { to: "/finance/persediaan-awal", label: "Opname Cutover Persediaan", Icon: ClipboardCheck },
+          { to: "/warehouse/adjustments",   label: "Barang Rusak & Retur", Icon: AlertTriangle },
           // Kasus Komplain (D-116) — Warehouse melihat kasus yang butuh Material Requirement; halaman dibaca lintas divisi.
           { to: "/komplain",                label: "Kasus Komplain",     Icon: AlertTriangle },
-          // C1 — biaya operasional NON-STOK gudang. Hanya WAREHOUSE/Finance/Admin; server menegakkan ulang.
-          { to: "/warehouse/pengajuan-biaya", label: "Pengajuan Biaya", Icon: Receipt, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "APPROVER", "WAREHOUSE"], bolehDivisi: ["WAREHOUSE"] },
+          // Milik/diproses Finance — diberi konteks (subjudul), bukan menu inti Gudang. Izin dan rute tidak berubah; server menegakkan ulang.
+          { to: "/warehouse/pengajuan-biaya", label: "Pengajuan Biaya", Icon: Receipt, subjudul: "Diproses Finance", bolehPeran: ["ADMIN", "OWNER", "FINANCE", "APPROVER", "WAREHOUSE"], bolehDivisi: ["WAREHOUSE"] },
           { to: "/warehouse/laporan-biaya", label: "Laporan Biaya", Icon: BarChart3, bolehPeran: ["ADMIN", "OWNER", "FINANCE", "WAREHOUSE"], bolehDivisi: ["WAREHOUSE"] },
+          { to: "/finance/persediaan-awal", label: "Opname Cutover Persediaan", Icon: ClipboardCheck },
         ],
       },
       {
-        section: "LAPORAN",
+        section: "Laporan", grup: true, Icon: BarChart3,
         items: [
           { to: "/warehouse/reports", label: "Riwayat Pergerakan", Icon: BarChart3 },
           { to: "/warehouse/kpi",     label: "KPI Gudang",         Icon: Gauge, bolehPeran: ["ADMIN", "OWNER", "PRODUCTION_LEAD", "WAREHOUSE"] },
@@ -885,6 +883,7 @@ export default function Layout({ user, onLogout }) {
 
   // Antrean Finance (angka server) untuk badge hub — hanya dimuat saat workspace Finance aktif.
   const antreanFinance = useAntreanFinance(divisionKey === "finance" && !onHub);
+  const antreanGudang = useAntreanGudang(divisionKey === "warehouse" && !onHub); // badge menu Gudang (jumlah pekerjaan yang butuh tindakan)
   const [unreadCount, setUnreadCount] = useState(0);
   const [toast, setToast]             = useState(null); // { customerName, preview, conversationId }
   const [mobileOpen, setMobileOpen]   = useState(false);
@@ -1190,6 +1189,10 @@ export default function Layout({ user, onLogout }) {
             // (adminOnly/bolehPeran non-admin) sengaja TIDAK ikut — tidak
             // dirender, jadi tidak relevan untuk status aktif visual.
             const allVisibleItems = sectionsVisible.flatMap((s) => s.items);
+            // Gudang (UX Tahap 3): enam kelompok akordeon. Sidebar menyempit (72px) tetap memakai daftar ikon datar di bawah.
+            if (divisionKey === "warehouse" && !onHub && !collapsed && !customizingNav) {
+              return <GudangNavGrup sections={denganBadgeGudang(sectionsVisible, antreanGudang)} pathname={location.pathname} search={location.search} allVisibleItems={allVisibleItems} onNavigate={closeMobileMenu} badgeCount={unreadCount} />;
+            }
             return sectionsVisible.map(({ section, items: itemsTampil, collapsibleDefaultClosed, collapsible, defaultClosed, pinBottom }) => {
               // Production (P12B.2): urutan menu mengikuti spesifikasi tetap — urutan tersimpan dari fitur 'Susun ulang' lama diabaikan.
               const itemsUrut = onHub || divisionKey === "bengkel"
