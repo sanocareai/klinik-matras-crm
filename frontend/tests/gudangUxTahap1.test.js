@@ -180,3 +180,19 @@ test("Pemulihan dokumen: Batalkan catatan tiba / Pulihkan / Buat penerimaan baru
   assert.doesNotMatch(d, />\s*(Hapus|Undo)\s*</);
   for (const k of ["BATALKAN_TIBA", "PULIHKAN", "BUAT_ULANG"]) assert.ok(k in CARA_AKSI, k);
 });
+
+test("Panel PO ringkas (HP): hanya Gudang; Finance tetap tampilan penuh; pengiriman + aksi utama di atas daftar item; identitas GR + pesan/tiba/sisa terbaca", () => {
+  const panel = baca("features/kedatangan/PanelKedatangan.jsx");
+  assert.match(panel, /ringkas = false/, "default = perilaku lama (Finance)");
+  assert.doesNotMatch(baca("pages/finance/FinancePurchaseOrders.jsx").match(/<PanelKedatangan[\s\S]*?\/>/)[0], /ringkas/, "Finance tidak memakai mode ringkas");
+  assert.match(baca("pages/warehouse/WarehouseBarangAkanDatang.jsx"), /<PanelKedatangan po=\{po\} workspace="GUDANG" ringkas/);
+  assert.match(panel, /\{!ringkas && tabel\}/); assert.match(panel, /\{ringkas && \([\s\S]{0,200}item-po-ringkas/);
+  assert.ok(panel.indexOf("{!ringkas && tabel}") < panel.indexOf("data-testid=\"item-po-ringkas\""), "mode ringkas menaruh item SESUDAH pengiriman");
+  for (const s of ["dijadwalkan-baris", "data-sel", "max-md:hidden", "Rincian lengkap", "isi-semua-sisa"]) assert.ok(panel.includes(s), s);
+  assert.match(panel, /workspace === "GUDANG" && f\.lines\.length > 1/, "isi-semua-sisa hanya Gudang");
+});
+
+test("izin hanya-lihat: detail penerimaan menjelaskan dan tidak menampilkan tombol", () => {
+  const d = baca("features/warehouse/penerimaan/PenerimaanDetail.jsx");
+  assert.match(d, /r\.izin\?\.tulis === false/); assert.match(d, /hanya dapat melihat dokumen ini/);
+});
