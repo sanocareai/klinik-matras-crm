@@ -227,6 +227,7 @@ export const EVENT_TYPES = Object.freeze({
   PRODUCTION_FINISHED_ADAPTATION: "PRODUCTION_FINISHED_ADAPTATION",
   // Admin override: unit ditetapkan Siap Kirim saat pencatatan produksi belum selesai (keputusan Admin/Owner; Run & tahap TIDAK ditutup, tanpa klaim pemeriksaan) — lihat productionStepCommandService.js#releaseUnitForDelivery.
   PRODUCTION_DELIVERY_RELEASED: "PRODUCTION_DELIVERY_RELEASED",
+  PRODUCTION_FOLLOWS_ORDER: "PRODUCTION_FOLLOWS_ORDER", // order dibatalkan/ditandai Siap Kirim/Terkirim oleh Sales: Production Run + rencana + permintaan bahan diselaraskan otomatis (siapa, kapan, sebelum–sesudah)
   PRODUCTION_DISPATCHED_BEFORE_DONE: "PRODUCTION_DISPATCHED_BEFORE_DONE", // unit berangkat/terkirim lewat Route Planner saat pencatatan produksi belum selesai (Run diberi penanda dilepas)
   PRODUCTION_ADAPTATION_APPLIED: "PRODUCTION_ADAPTATION_APPLIED",
   PRODUCTION_QC_GATE_APPLIED: "PRODUCTION_QC_GATE_APPLIED",
@@ -515,6 +516,8 @@ export function formatActivitySentence(event) {
       return `QC unit ${metadata.unitCode || "—"} TIDAK DILAKUKAN — ${metadata.reason || "Adaptasi sistem"} (bukan lulus/di-waive)`;
     case EVENT_TYPES.PRODUCTION_DELIVERY_RELEASED:
       return `Admin override: unit ${metadata.unitCode || "—"} ditetapkan Siap Kirim oleh ${metadata.deciderName || "Admin"} saat pencatatan produksi belum selesai (lokasi pengambilan ${metadata.locationCode || "—"}; ${metadata.unitStatusBefore || "—"} → ${metadata.unitStatusAfter || "—"}) — Run produksi belum ditutup. Alasan: ${metadata.reason || "—"}`;
+    case EVENT_TYPES.PRODUCTION_FOLLOWS_ORDER:
+      return ringkasIkutOrder(metadata);
     case EVENT_TYPES.PRODUCTION_DISPATCHED_BEFORE_DONE:
       return `Unit ${metadata.unitCode || "—"} ${metadata.via === "JOB_COMPLETE" ? "diselesaikan pengirimannya" : "berangkat"} lewat Route Planner saat pencatatan produksi belum selesai (Run ${metadata.runStatus || "—"}, fase ${metadata.runPhase || "—"}); Run ditandai dilepas untuk pengiriman — bukan hasil pemeriksaan/QC`;
     case EVENT_TYPES.PRODUCTION_FINISHED_ADAPTATION:
@@ -723,4 +726,20 @@ export function formatActivitySentence(event) {
       // linimasa tidak pernah gagal render gara-gara satu jenis event baru.
       return eventType || "Aktivitas";
   }
+}
+
+// Kalimat riwayat untuk PRODUCTION_FOLLOWS_ORDER (Produksi mengikuti keputusan Sales atas order): satu sumber untuk tab Aktivitas Produksi/Gudang dan linimasa order.
+function ringkasIkutOrder(m) {
+  const unit = m.unitCode || "—";
+  const dari = m.orderStatusBefore ? ` (status order ${m.orderStatusBefore} → ${m.orderStatusAfter || "—"})` : "";
+  if (m.aksi === "CANCEL") {
+    const bagian = [];
+    bagian.push(`Production Run ${m.runStatusBefore || "—"}${m.runPhase ? ` fase ${m.runPhase}` : ""} dibatalkan`);
+    if (m.planDibatalkan) bagian.push(`rencana & ${m.reservasiDilepas ?? 0} reservasi bahan dilepas`);
+    if ((m.issueDibatalkan || []).length) bagian.push(`permintaan bahan ${m.issueDibatalkan.join(", ")} dibatalkan`);
+    const sudah = (m.bahanSudahDiserahkan || []).map((x) => `${x.code} ${x.qty} ${x.unit || ""}`.trim());
+    const peringatan = sudah.length ? `; PERHATIAN Gudang: bahan sudah diserahkan untuk unit ini (${sudah.join(", ")}) — kembalikan lewat Retur Bahan atau Penyesuaian` : "";
+    return `Order dibatalkan Sales${dari} — unit ${unit}: ${bagian.join("; ")}${m.reason ? ` — ${m.reason}` : ""}${peringatan}`;
+  }
+  return `Order diubah Sales ke ${m.orderStatusAfter || "—"}${dari} — unit ${unit}: Production Run ${m.runStatusBefore || "—"} tetap berjalan dan ditandai dilepas untuk pengiriman (bukan hasil pemeriksaan/QC); tutup administratif lewat Selesaikan Produksi${m.reason ? ` — ${m.reason}` : ""}`;
 }

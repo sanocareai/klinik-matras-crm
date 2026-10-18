@@ -23,6 +23,7 @@ import { arrivalConfirmedByStaff, displayStatusOfOrder, displayStatusOfUnit, phy
 import { loadOpenComplaintsByUnit } from "./productionComplaints.js";
 import { STEP_BY_NO, isSkippedEvidence } from "../lib/domain/productionSteps.js";
 import { signEvidenceUrl } from "../routes/productionEvidenceMedia.js";
+import { loadRiwayatUnit } from "./productionRiwayatService.js";
 import { signUnitPhotoUrlIfAny } from "../routes/productionUnitPhoto.js";
 import { getDiagnosisState } from "./productionDiagnosisCommandService.js";
 import { PILIH_KREDIT, nilaiBersih } from "./orderNilaiBersih.js";
@@ -165,27 +166,9 @@ async function loadQc(prisma, runId) {
   }));
 }
 
-async function loadActivity(prisma, { unit, run, ctx, pickup }) {
-  const events = [];
-  if (pickup.exists) {
-    events.push({ at: pickup.offeredAt, kind: "CUSTODY_OFFERED", label: "Unit ditawarkan ke Gudang (pickup selesai)" });
-    if (pickup.acceptedAt) events.push({ at: pickup.acceptedAt, kind: "CUSTODY_ACCEPTED", label: "Diterima Gudang (tiba di workshop)" });
-    if (pickup.rejectedAt) events.push({ at: pickup.rejectedAt, kind: "CUSTODY_REJECTED", label: `Ditolak Gudang${pickup.rejectReason ? `: ${pickup.rejectReason}` : ""}` });
-  }
-  if (run) {
-    const stageLogs = await prisma.unitStageLog.findMany({
-      where: { unitId: unit.id }, orderBy: { createdAt: "asc" },
-      select: { createdAt: true, action: true, note: true, pauseReason: true, blockReason: true, actor: { select: { name: true } }, stage: { select: { labelId: true } } },
-    });
-    for (const log of stageLogs) {
-      events.push({ at: log.createdAt, kind: `STAGE_${log.action}`, label: `${log.stage?.labelId ?? "Tahap"} — ${log.action}${log.note ? `: ${log.note}` : ""}`, actor: log.actor?.name ?? null });
-    }
-    for (const e of ctx.evidence) {
-      events.push({ at: e.createdAt, kind: "EVIDENCE", label: `Bukti tahap ${e.stepNo} (${STEP_BY_NO[e.stepNo]?.label ?? e.stepNo}) tercatat`, actor: null });
-    }
-  }
-  events.sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
-  return events;
+// Riwayat lengkap (Produksi + Gudang + Sales + Pengiriman) dengan nama pelaku dan rincian sebelum–sesudah: services/productionRiwayatService.js (baca-saja).
+async function loadActivity(prisma, { unit, run }) {
+  return loadRiwayatUnit(prisma, { unit, run });
 }
 
 // Overview minimal untuk unit TANPA Run sama sekali (mis. Kadarwati: OFFERED, 0 run) — TIDAK memanggil

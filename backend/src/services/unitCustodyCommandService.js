@@ -622,7 +622,8 @@ export async function applyAdminOverrideReleaseInTx(tx, { run, unit, location, n
 // IN_TRANSIT_OUT/DELIVERED bukan konflik V1, command tahap biasa pada Run itu berhenti (409 RUN_RELEASED_FOR_DELIVERY), dan Run dapat ditutup administratif (Selesaikan Produksi / Konfirmasi Barang Jadi)
 // tanpa menyentuh status unit/order/job. Tidak mengubah tahap/operasi/bukti, tanpa QC/foto/custody/stok. OWNERSHIP: penandaan Run milik service ini; pemanggil (armada) hanya memanggilnya di transaksi
 // yang SAMA dengan perubahan status unit dan HARUS memanggilnya SEBELUM status unit berubah. Idempoten: Run yang sudah dilepas dilewati.
-export async function tandaiRunDilepasKarenaDispatchInTx(tx, { unitIds, jobId = null, actorId = null, via, now = new Date() }) {
+// `kind` default DISPATCH_ROUTE_PLANNER (unit berangkat/terkirim lewat Route Planner); SALES_STATUS_CHANGE dipakai saat Sales mengubah order ke Siap Kirim/Terkirim (services/orderProduksiSelaras.js).
+export async function tandaiRunDilepasKarenaDispatchInTx(tx, { unitIds, jobId = null, actorId = null, via, kind = "DISPATCH_ROUTE_PLANNER", alasan = null, catatAktivitas = true, now = new Date() }) {
   const ids = [...new Set((unitIds ?? []).filter(Boolean))];
   if (ids.length === 0) return [];
   const kandidat = await tx.productionRun.findMany({ where: { unitId: { in: ids }, status: { in: [...RUN_OWNED_STATUSES] }, deliveryReleasedAt: null }, select: { id: true } });
@@ -637,15 +638,17 @@ export async function tandaiRunDilepasKarenaDispatchInTx(tx, { unitIds, jobId = 
     if (!["RECEIVED", "IN_PRODUCTION"].includes(run.unit.status)) continue;
     const revision = run.revision + 1;
     const rekam = {
-      version: 2, kind: "DISPATCH_ROUTE_PLANNER", via, jobId, decidedAt: now.toISOString(), decidedBy: pelaku ? { id: pelaku.id, name: pelaku.name } : null,
+      version: 2, kind, via, jobId, ...(alasan ? { alasan } : {}), decidedAt: now.toISOString(), decidedBy: pelaku ? { id: pelaku.id, name: pelaku.name } : null,
       unit: { id: run.unit.id, code: run.unit.unitCode, statusBefore: run.unit.status }, run: { status: run.status, phase: run.currentPhase ?? null, revisionBefore: run.revision },
-      note: "Unit berangkat/terkirim lewat Route Planner saat pencatatan produksi belum selesai; bukan hasil pemeriksaan/QC dan bukan keputusan override",
+      note: kind === "SALES_STATUS_CHANGE" ? "Order diubah Sales ke Siap Kirim/Terkirim saat pencatatan produksi belum selesai; bukan hasil pemeriksaan/QC dan bukan keputusan override" : "Unit berangkat/terkirim lewat Route Planner saat pencatatan produksi belum selesai; bukan hasil pemeriksaan/QC dan bukan keputusan override",
     };
     await tx.productionRun.update({ where: { id: run.id }, data: { deliveryReleasedAt: now, deliveryRelease: rekam, revision } });
     const meta = { unitCode: run.unit.unitCode, via, jobId, runId: run.id, runStatus: run.status, runPhase: run.currentPhase ?? null, unitStatusBefore: run.unit.status };
-    await recordActivity(tx, { entityType: "unit", entityId: run.unit.id, eventType: EVENT_TYPES.PRODUCTION_DISPATCHED_BEFORE_DONE, actorId: actorId || null, metadata: meta });
-    await recordActivity(tx, { entityType: "order", entityId: run.unit.orderId, eventType: EVENT_TYPES.PRODUCTION_DISPATCHED_BEFORE_DONE, actorId: actorId || null, metadata: meta });
-    dilepas.push({ runId: run.id, unitId: run.unit.id, unitCode: run.unit.unitCode, revision });
+    if (catatAktivitas) {
+      await recordActivity(tx, { entityType: "unit", entityId: run.unit.id, eventType: EVENT_TYPES.PRODUCTION_DISPATCHED_BEFORE_DONE, actorId: actorId || null, metadata: meta });
+      await recordActivity(tx, { entityType: "order", entityId: run.unit.orderId, eventType: EVENT_TYPES.PRODUCTION_DISPATCHED_BEFORE_DONE, actorId: actorId || null, metadata: meta });
+    }
+    dilepas.push({ runId: run.id, unitId: run.unit.id, orderId: run.unit.orderId, unitCode: run.unit.unitCode, revision, runStatus: run.status, runPhase: run.currentPhase ?? null, unitStatusBefore: run.unit.status });
   }
   return dilepas;
 }

@@ -455,17 +455,24 @@ test("P9. Setelah dilepas unit boleh berangkat/terkirim: penutupan Run tetap adm
   assert.equal(sapu3.openedCount, 1, "pembatalan tetap konflik");
 });
 
-test("P10. Dropdown status Sales ke READY tetap ditolak untuk unit yang dipegang V2 — pesan menunjuk jalur pengecualian Admin; rilis pengecualian membuat order READY konsisten di Sales", async () => {
+test("P10. Dropdown status Sales ke READY DITERIMA (aturan 19 Okt 2026): Run dilepas otomatis (SALES_STATUS_CHANGE) dengan jejak pelaku; override Admin tetap membuat order READY konsisten di Sales", async () => {
   const w = await world(); const adm = await admin();
-  const { unit, run } = await rikaLike(w);
-  const tolak = await adm.api.patch(`/api/orders/${unit.orderId}`, { status: "READY", statusOverrideNote: "uji override Admin Sales" });
-  assert.equal(tolak.status, 409, JSON.stringify(tolak.body)); assert.match(tolak.body.error, /sedang dalam proses Production V2/);
-  assert.match(tolak.body.error, /masukkan unit itu ke Route Planner/);
-  assert.equal(await unitStatus(unit.id), "IN_PRODUCTION");
-  assert.equal((await release(w, adm, unit, run)).status, 200);
-  const order = await testPrisma.order.findUniqueOrThrow({ where: { id: unit.orderId }, include: { units: true } });
+  // jalur 1: dropdown Sales
+  const a = await rikaLike(w);
+  const res = await adm.api.patch(`/api/orders/${a.unit.orderId}`, { status: "READY", statusOverrideNote: "Barang sudah jadi di workshop" });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(await unitStatus(a.unit.id), "READY_FOR_DELIVERY");
+  const runA = await runFresh(a.run.id);
+  assert.equal(runA.deliveryRelease.kind, "SALES_STATUS_CHANGE"); assert.equal(runA.deliveryRelease.via, "ORDER_READY"); assert.equal(runA.deliveryRelease.decidedBy.id, adm.user.id); assert.equal(runA.status, "ACTIVE");
+  assert.equal((await testPrisma.order.findUniqueOrThrow({ where: { id: a.unit.orderId } })).status, "READY");
+  assert.equal((await testPrisma.orderStatusTransition.count({ where: { orderId: a.unit.orderId, toStatus: "READY" } })), 1, "riwayat status order tercatat");
+  assert.equal(await testPrisma.activityEvent.count({ where: { entityType: "unit", entityId: a.unit.id, eventType: "PRODUCTION_FOLLOWS_ORDER", actorId: adm.user.id } }), 1, "jejak penyelarasan dengan pelaku");
+  // jalur 2: override Admin pada unit lain tetap berjalan seperti semula
+  const w2 = await world(); const b = await rikaLike(w2);
+  assert.equal((await release(w2, adm, b.unit, b.run)).status, 200);
+  const order = await testPrisma.order.findUniqueOrThrow({ where: { id: b.unit.orderId }, include: { units: true } });
   assert.equal(order.status, "READY"); assert.ok(order.units.every((u) => u.status === "READY_FOR_DELIVERY"));
-  assert.equal((await testPrisma.orderStatusTransition.count({ where: { orderId: unit.orderId, toStatus: "READY" } })), 1, "riwayat status order tercatat");
+  assert.equal((await runFresh(b.run.id)).deliveryRelease.kind, "ADMIN_OVERRIDE");
 });
 
 test("P11. Route Planner & app Driver: unit override tampil JUJUR — 'override Admin' + lokasi pengambilan, tanpa klaim pemeriksaan/QC; Driver hanya melihatnya setelah rute terbit", async () => {

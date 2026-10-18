@@ -183,7 +183,7 @@ export function AdminOverrideOrderPanel({ order, isAdmin, onDone }) {
   return (
     <div data-testid="ao-order-panel" className="rounded-xl border border-line bg-surface p-3 text-[12.5px]">
       <p className="m-0 font-semibold text-ink">Pencatatan produksi belum selesai, tapi unit perlu masuk pengiriman?</p>
-      <p className="m-0 mt-0.5 text-ink3">Dropdown status ditolak selama Production Run masih berjalan. Admin/Owner dapat memakai override per unit — keputusan Admin, bukan hasil pemeriksaan atau QC; Run Produksi tidak diubah.</p>
+      <p className="m-0 mt-0.5 text-ink3">Status order bisa diubah (Batal, Siap Kirim, Terkirim) dan unit bisa langsung masuk Route Planner kapan saja — Produksi mengikuti otomatis dan setiap perubahan tercatat di riwayat dengan nama pelakunya. Admin/Owner juga dapat memakai override Siap Kirim per unit — keputusan Admin, bukan hasil pemeriksaan atau QC.</p>
       <div className="mt-2 flex flex-wrap gap-2">
         {unit.map((u, i) => <AdminOverrideTombol key={u.id} unitId={u.id} unitStatus={u.status} isAdmin={isAdmin} onDone={() => { setVersi((v) => v + 1); onDone?.(); }} label={unit.length > 1 ? `Unit ${i + 1}: Admin override Siap Kirim` : undefined} />)}
       </div>

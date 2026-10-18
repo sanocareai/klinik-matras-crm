@@ -523,26 +523,59 @@ test("kontrak custody yang sama untuk WORKSHOP_BORN (BARU/SEWA) dan unit hasil p
   }
 });
 
-test("pagar Sales: dropdown READY/DELIVERED/CANCELLED, batalkan, dan buka kembali ditolak 409 untuk unit cohort dengan run aktif; unit non-cohort tetap V1", async () => {
+test("Sales fleksibel (19 Okt 2026): dropdown READY/DELIVERED dan Batalkan Order DITERIMA walau Run aktif — Produksi diselaraskan otomatis (Run dilepas atau dibatalkan) dengan jejak pelaku; unit non-cohort tetap V1", async () => {
   const w = await world();
+  const sales = await createTestUser({ roles: ["PRODUCTION_LEAD"] }); // ORDER_WRITE
+  const api = makeClient(server.baseUrl, sales.token);
+  const jejak = (unitId) => testPrisma.activityEvent.findMany({ where: { entityType: "unit", entityId: unitId, eventType: "PRODUCTION_FOLLOWS_ORDER" } });
+
+  // (1) READY dari Sales: Run TIDAK dibatalkan/ditutup; diberi penanda dilepas (SALES_STATUS_CHANGE), unit Siap Kirim, order READY, jejak ada
   const p = await toAwaitingQc(w);
   const orderId = p.unit.orderId;
-  const sales = await createTestUser({ roles: ["PRODUCTION_LEAD"] }); // ORDER_WRITE (jalur override manual V1)
-  const api = makeClient(server.baseUrl, sales.token);
-  const before = await snapshot(p.run.id, p.unit.id);
-  for (const body of [{ status: "READY" }, { status: "DELIVERED", deliveryConfirmedDate: "2026-09-30" }]) {
-    const res = await api.patch(`/api/orders/${orderId}`, body);
-    assert.equal(res.status, 409, `${body.status}: ${JSON.stringify(res.body)}`); assert.match(res.body.error, /Production V2/);
-  }
-  assert.deepEqual(await snapshot(p.run.id, p.unit.id), before, "unit dan run tidak berubah");
-  // Unit yang BELUM mulai dikerjakan (V1 mengizinkan batal): pagar V2 yang menolak, bukan aturan V1.
+  const ready = await api.patch(`/api/orders/${orderId}`, { status: "READY", statusOverrideNote: "Barang sudah jadi, perlu masuk pengiriman" });
+  assert.equal(ready.status, 200, JSON.stringify(ready.body));
+  const runR = await testPrisma.productionRun.findUniqueOrThrow({ where: { id: p.run.id } });
+  assert.ok(runR.deliveryReleasedAt, "Run ditandai dilepas"); assert.equal(runR.deliveryRelease.kind, "SALES_STATUS_CHANGE"); assert.equal(runR.deliveryRelease.via, "ORDER_READY");
+  assert.equal(runR.deliveryRelease.decidedBy.id, sales.user.id); assert.equal(runR.status, "ACTIVE", "Run belum ditutup");
+  assert.equal((await testPrisma.unit.findUniqueOrThrow({ where: { id: p.unit.id } })).status, "READY_FOR_DELIVERY");
+  assert.equal((await testPrisma.order.findUniqueOrThrow({ where: { id: orderId } })).status, "READY");
+  const evR = await jejak(p.unit.id); assert.equal(evR.length, 1); assert.equal(evR[0].actorId, sales.user.id);
+  assert.equal(evR[0].metadata.orderStatusBefore, "PROCESSING"); assert.equal(evR[0].metadata.orderStatusAfter, "READY"); assert.equal(evR[0].metadata.aksi, "READY");
+
+  // (2) Batalkan Order (endpoint) pada unit yang BELUM selesai dikerjakan: Run dibatalkan, unit & order CANCELLED, jejak lengkap
   const fresh = await acceptedUnit();
-  const freshBefore = await snapshot(fresh.run.id, fresh.unit.id);
-  const cancel = await api.post(`/api/orders/${fresh.unit.orderId}/cancel`, { reason: "salah input" });
-  assert.equal(cancel.status, 409, JSON.stringify(cancel.body)); assert.match(cancel.body.error, /Production V2/);
-  const cancelPatch = await api.patch(`/api/orders/${fresh.unit.orderId}`, { status: "CANCELLED" });
-  assert.equal(cancelPatch.status, 409, JSON.stringify(cancelPatch.body)); assert.match(cancelPatch.body.error, /Production V2/);
-  assert.deepEqual(await snapshot(fresh.run.id, fresh.unit.id), freshBefore);
+  const batal = await api.post(`/api/orders/${fresh.unit.orderId}/cancel`, { reason: "Pelanggan membatalkan pesanan" });
+  assert.equal(batal.status, 200, JSON.stringify(batal.body));
+  const runB = await testPrisma.productionRun.findUniqueOrThrow({ where: { id: fresh.run.id } });
+  assert.equal(runB.status, "CANCELLED"); assert.ok(runB.completedAt); assert.equal(runB.revision, fresh.run.revision + 1);
+  assert.equal((await testPrisma.unit.findUniqueOrThrow({ where: { id: fresh.unit.id } })).status, "CANCELLED");
+  assert.equal((await testPrisma.order.findUniqueOrThrow({ where: { id: fresh.unit.orderId } })).status, "CANCELLED");
+  const fasePun = await testPrisma.productionPhaseRun.findMany({ where: { runId: fresh.run.id } });
+  assert.ok(fasePun.every((f) => ["COMPLETED", "NOT_APPLICABLE", "CANCELLED"].includes(f.status)), "tidak ada fase yang menggantung");
+  const evB = await jejak(fresh.unit.id); assert.equal(evB.length, 1);
+  assert.equal(evB[0].actorId, sales.user.id); assert.equal(evB[0].metadata.aksi, "CANCEL"); assert.equal(evB[0].metadata.runStatusBefore, "ACTIVE"); assert.equal(evB[0].metadata.orderStatusAfter, "CANCELLED"); assert.match(evB[0].metadata.reason, /Pelanggan membatalkan/);
+  assert.equal(await testPrisma.activityEvent.count({ where: { entityType: "order", entityId: fresh.unit.orderId, eventType: "PRODUCTION_FOLLOWS_ORDER" } }), 1, "juga tercatat di riwayat order");
+  assert.equal(await testPrisma.activityEvent.count({ where: { entityType: "unit", entityId: fresh.unit.id, eventType: "PRODUCTION_RUN_CANCELLED" } }), 1, "event pembatalan Run milik Produksi ikut tercatat");
+  assert.equal(await testPrisma.stockMovement.count({ where: { unitId: fresh.unit.id } }), 0, "tanpa pergerakan stok otomatis");
+  // idempoten: batalkan ulang tidak menggandakan jejak
+  assert.equal((await api.post(`/api/orders/${fresh.unit.orderId}/cancel`, { reason: "ulang" })).status, 200);
+  assert.equal((await jejak(fresh.unit.id)).length, 1);
+
+  // (3) Batalkan lewat dropdown (PATCH status CANCELLED) pada unit lain: hasil sama
+  const fresh2 = await acceptedUnit();
+  const patch = await api.patch(`/api/orders/${fresh2.unit.orderId}`, { status: "CANCELLED", statusOverrideNote: "Salah input order" });
+  assert.equal(patch.status, 200, JSON.stringify(patch.body));
+  assert.equal((await testPrisma.productionRun.findUniqueOrThrow({ where: { id: fresh2.run.id } })).status, "CANCELLED");
+  assert.equal((await jejak(fresh2.unit.id)).length, 1);
+
+  // (4) DELIVERED dari Sales pada unit yang masih berjalan: Run dilepas (bukan dibatalkan); unit & order Terkirim
+  const p3 = await toAwaitingQc(w);
+  const delivered = await api.patch(`/api/orders/${p3.unit.orderId}`, { status: "DELIVERED", deliveryConfirmedDate: "2026-09-30", statusOverrideNote: "Sudah diterima pelanggan" });
+  assert.equal(delivered.status, 200, JSON.stringify(delivered.body));
+  const run3 = await testPrisma.productionRun.findUniqueOrThrow({ where: { id: p3.run.id } });
+  assert.equal(run3.deliveryRelease.via, "ORDER_DELIVERED"); assert.equal(run3.status, "ACTIVE");
+  assert.equal((await testPrisma.unit.findUniqueOrThrow({ where: { id: p3.unit.id } })).status, "DELIVERED");
+  assert.equal((await jejak(p3.unit.id)).length, 1);
 
   // Non-cohort: perilaku V1 murni (dropdown READY menyamakan status unit seperti biasa).
   const customer = await testPrisma.customer.create({ data: { name: "Pelanggan V1" } });
@@ -551,6 +584,7 @@ test("pagar Sales: dropdown READY/DELIVERED/CANCELLED, batalkan, dan buka kembal
   const ok = await api.patch(`/api/orders/${v1Order.id}`, { status: "READY" });
   assert.equal(ok.status, 200, JSON.stringify(ok.body));
   assert.equal((await testPrisma.unit.findUniqueOrThrow({ where: { id: v1Unit.id } })).status, "READY_FOR_DELIVERY");
+  assert.equal((await jejak(v1Unit.id)).length, 0, "tanpa Run: tidak ada jejak selaras");
 });
 
 test("override V1 (unit diubah manual): command P5/P6/Gudang fail-closed; konflik dicatat sekali; resolusi idempoten (restore/cancel/accept override)", async () => {
@@ -621,13 +655,11 @@ test("override V1 (unit diubah manual): command P5/P6/Gudang fail-closed; konfli
   assert.equal((await testPrisma.unit.findUniqueOrThrow({ where: { id: r.unit.id } })).status, "CANCELLED", "status unit tidak ditimpa");
 });
 
-test("batalkan Production Run (Production Lead): run CANCELLED, exception OPEN ikut selesai; setelahnya Sales boleh membatalkan order", async () => {
+test("batalkan Production Run (Production Lead): run CANCELLED, exception OPEN ikut selesai; Sales juga boleh membatalkan order (aturan 19 Okt 2026: Run diselaraskan otomatis)", async () => {
   const w = await world();
   const p = await acceptedUnit(); // run aktif, unit belum mulai dikerjakan (V1 mengizinkan batal order)
   p.revision = p.run.revision;
   const sales = makeClient(server.baseUrl, (await createTestUser({ roles: ["PRODUCTION_LEAD"] })).token);
-  const blockedCancel = await sales.post(`/api/orders/${p.unit.orderId}/cancel`, { reason: "batal" });
-  assert.equal(blockedCancel.status, 409); assert.match(blockedCancel.body.error, /Production V2/);
   const noReason = await w.op.api.post(`${Q}/${p.run.id}/cancel`, { expectedRevision: p.revision, reason: "" }, key("t12-noreason"));
   assert.equal(noReason.status, 400);
   const cancel = await w.op.api.post(`${Q}/${p.run.id}/cancel`, { expectedRevision: p.revision, reason: "Customer membatalkan pesanan" }, key("t12-cancel"));
@@ -933,38 +965,42 @@ test("rework (QC FAIL) dan penolakan Gudang -> rework tidak pernah menghasilkan 
   assert.ok(phases.every((phase) => TERMINAL.includes(phase.status)), JSON.stringify(phases.map((x) => [x.phase, x.status])));
 });
 
-test("unit non-cohort tetap V1: flag ON dengan config rusak/tanpa cohort tidak memagari Sales dan command V2 ditolak 503; cohort valid memagari hanya unit di dalamnya", async () => {
+test("unit non-cohort tetap V1 untuk COMMAND V2 (503) dan config rusak fail-closed; Sales fleksibel (19 Okt 2026): batalkan order menyelaraskan Run unit cohort MAUPUN non-cohort (tidak ada Run hantu)", async () => {
   const w = await world();
-  const inCohort = await acceptedUnit();      // masuk cohort lewat addCohort
-  const outCohort = await acceptedUnit();     // ditambahkan lalu dikeluarkan dari cohort di bawah
+  const a = await acceptedUnit();      // dalam cohort
+  const b = await acceptedUnit();      // dikeluarkan dari cohort di bawah
+  const c = await acceptedUnit();      // dipakai untuk config rusak
   const sales = makeClient(server.baseUrl, (await createTestUser({ roles: ["PRODUCTION_LEAD"] })).token);
 
-  // Cohort sah berisi keduanya -> keduanya dipagari.
-  assert.equal((await sales.post(`/api/orders/${inCohort.unit.orderId}/cancel`, { reason: "batal" })).status, 409);
-  assert.equal((await sales.post(`/api/orders/${outCohort.unit.orderId}/cancel`, { reason: "batal" })).status, 409);
-
-  // Cohort hanya unit A: unit B kini V1-only (pagar Sales tidak berlaku, command V2 ditolak).
-  await setFlag(V2_FLAGS.PRODUCTION_WRITER, { enabled: true, unitIds: [inCohort.unit.id] });
-  await setFlag(V2_FLAGS.PRODUCTION_READER, { enabled: true, unitIds: [inCohort.unit.id] });
-  const v2OnB = await w.op.api.post(`${Q}/${outCohort.run.id}/cancel`, { expectedRevision: outCohort.run.revision, reason: "coba V2" }, key("nc-b-cancel"));
+  // Cohort hanya unit A: command V2 ke unit B (non-cohort) ditolak 503.
+  await setFlag(V2_FLAGS.PRODUCTION_WRITER, { enabled: true, unitIds: [a.unit.id] });
+  await setFlag(V2_FLAGS.PRODUCTION_READER, { enabled: true, unitIds: [a.unit.id] });
+  const v2OnB = await w.op.api.post(`${Q}/${b.run.id}/cancel`, { expectedRevision: b.run.revision, reason: "coba V2" }, key("nc-b-cancel"));
   assert.equal(v2OnB.status, 503, JSON.stringify(v2OnB.body));
-  assert.equal((await sales.post(`/api/orders/${inCohort.unit.orderId}/cancel`, { reason: "batal" })).status, 409, "unit cohort tetap dipagari");
-  const cancelB = await sales.post(`/api/orders/${outCohort.unit.orderId}/cancel`, { reason: "batal" });
-  assert.equal(cancelB.status, 200, JSON.stringify(cancelB.body));
-  assert.equal((await testPrisma.productionRun.findUniqueOrThrow({ where: { id: outCohort.run.id } })).status, "ACTIVE", "V2 tidak menyentuh unit non-cohort");
 
-  // Config rusak (ON tanpa unitIds / array kosong / UUID invalid / ganda): tidak ada mode GLOBAL — semua unit V1-only.
-  for (const [index, unitIds] of [undefined, [], ["bukan-uuid"], [inCohort.unit.id, inCohort.unit.id]].entries()) {
+  // Sales membatalkan order unit cohort dan non-cohort: keduanya diterima; Run keduanya ikut dibatalkan (non-cohort pun, supaya tidak ada Run aktif untuk unit yang sudah batal).
+  const cancelA = await sales.post(`/api/orders/${a.unit.orderId}/cancel`, { reason: "batal" });
+  assert.equal(cancelA.status, 200, JSON.stringify(cancelA.body));
+  const cancelB = await sales.post(`/api/orders/${b.unit.orderId}/cancel`, { reason: "batal" });
+  assert.equal(cancelB.status, 200, JSON.stringify(cancelB.body));
+  for (const x of [a, b]) {
+    assert.equal((await testPrisma.productionRun.findUniqueOrThrow({ where: { id: x.run.id } })).status, "CANCELLED");
+    assert.equal((await testPrisma.unit.findUniqueOrThrow({ where: { id: x.unit.id } })).status, "CANCELLED");
+  }
+
+  // Config rusak (ON tanpa unitIds / array kosong / UUID invalid / ganda): tidak ada mode GLOBAL — command V2 ditolak 503, reader fail-closed; Sales tetap bisa membatalkan.
+  for (const [index, unitIds] of [undefined, [], ["bukan-uuid"], [c.unit.id, c.unit.id]].entries()) {
     await setFlag(V2_FLAGS.PRODUCTION_WRITER, { enabled: true, unitIds });
     await setFlag(V2_FLAGS.PRODUCTION_READER, { enabled: true, unitIds });
-    const res = await w.op.api.post(`${Q}/${inCohort.run.id}/cancel`, { expectedRevision: inCohort.run.revision, reason: "coba V2" }, key(`nc-a-${index}`));
+    const res = await w.op.api.post(`${Q}/${c.run.id}/cancel`, { expectedRevision: c.run.revision, reason: "coba V2" }, key(`nc-a-${index}`));
     assert.equal(res.status, 503, `unitIds=${JSON.stringify(unitIds)}: ${JSON.stringify(res.body)}`);
     const queue = await w.qc.api.get(`${P}/qc/queue`);
     assert.deepEqual(queue.body.items, [], "reader fail-closed: antrean kosong");
     assert.equal(queue.body.readerMode, "OFF");
   }
-  const orderA = await sales.post(`/api/orders/${inCohort.unit.orderId}/cancel`, { reason: "batal" });
-  assert.equal(orderA.status, 200, JSON.stringify(orderA.body));
+  const orderC = await sales.post(`/api/orders/${c.unit.orderId}/cancel`, { reason: "batal" });
+  assert.equal(orderC.status, 200, JSON.stringify(orderC.body));
+  assert.equal((await testPrisma.productionRun.findUniqueOrThrow({ where: { id: c.run.id } })).status, "CANCELLED");
 });
 
 test("kontrak QC_WRITE (65e7e1f5): ADMIN & OWNER boleh memutus PASS atas nama pengguna penekan; Lead/Gudang/Worker (tanpa QC_WRITE) ditolak tanpa efek", async () => {

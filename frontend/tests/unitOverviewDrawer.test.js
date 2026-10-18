@@ -90,3 +90,17 @@ test("Status Produksi & Rencana Produksi: tidak ada grid-item tanpa min-w-0 di m
   assert.ok(RENCANA_PRODUKSI.includes("className={`flex min-w-0 flex-col gap-2 rounded-card bg-inset p-2.5"));
   assert.match(RENCANA_PRODUKSI, /<div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2" data-testid="meja-grid">/);
 });
+
+// Riwayat lengkap (19 Okt 2026): tab Aktivitas menampilkan SUMBER, NAMA PIC, waktu, dan rincian sebelum → sesudah; filter per sumber; pelaku yang tidak tercatat dinyatakan jujur.
+test("tab Aktivitas: sumber (Produksi/Gudang/Sales/Pengiriman), 'oleh <PIC>', rincian sebelum→sesudah, filter per sumber, pelaku tak tercatat dinyatakan jujur", () => {
+  const src = fs.readFileSync(path.join(__dirname, "..", "src", "features", "production", "UnitOverviewDrawer.jsx"), "utf8");
+  assert.match(src, /const SUMBER_LABEL = \{ PRODUKSI: "Produksi", GUDANG: "Gudang", SALES: "Sales", PENGIRIMAN: "Pengiriman" \}/);
+  assert.match(src, /data-testid="riwayat-unit"/);
+  assert.match(src, /data-testid=\{`riwayat-filter-\$\{k\}`\}/);
+  assert.match(src, /data-testid="riwayat-baris"/);
+  assert.match(src, /oleh \$\{a\.actor\}/);
+  assert.match(src, /pelaku tidak tercatat/);
+  assert.match(src, /data-testid="riwayat-detail"/);
+  assert.match(src, /Sebelum: \{String\(a\.detail\.sebelum/);
+  assert.match(src, /\.slice\(\)\.reverse\(\)/, "terbaru di atas");
+});

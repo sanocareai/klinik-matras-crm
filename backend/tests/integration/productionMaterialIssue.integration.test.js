@@ -349,3 +349,70 @@ test("audit: pick dan cancel bersamaan pada issue yang sama -> tepat satu menang
     assert.equal(await onHand(materials[0].id), 10);
   }
 });
+
+// ───────────────────────── SALES FLEKSIBEL: Batalkan Order saat Produksi/Gudang masih berjalan (keputusan Owner, 19 Okt 2026) ─────────────────────────
+const salesAdmin = async () => { const u = await createTestUser({ roles: ["ADMIN"] }); return { ...u, api: makeClient(server.baseUrl, u.token) }; };
+const jejakUnit = (unitId, eventType) => testPrisma.activityEvent.findMany({ where: { entityType: "unit", entityId: unitId, eventType } });
+const overview = (who, unitId) => who.api.get(`/api/production-v2/units/${unitId}/overview`);
+
+test("S1. ORDER DIBATALKAN saat permintaan bahan READY_TO_PICK: permintaan dibatalkan, reservasi dilepas, rencana & Run dibatalkan, stok utuh; riwayat Gudang+Produksi+Sales memuat NAMA pelaku", async () => {
+  const w = await world(); const adm = await salesAdmin();
+  const { planId, unit, materials } = await reservedPlan(w, [{ qty: 5, stock: 10 }]);
+  const req = await request(w.planner, planId, "s1-req");
+  assert.equal(req.status, 201, JSON.stringify(req.body));
+  const run = await testPrisma.productionRun.findFirstOrThrow({ where: { unitId: unit.id } });
+  const sebelum = await counts();
+
+  const res = await adm.api.patch(`/api/orders/${unit.orderId}`, { status: "CANCELLED", statusOverrideNote: "Pelanggan batal beli" });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal((await testPrisma.order.findUniqueOrThrow({ where: { id: unit.orderId } })).status, "CANCELLED");
+  assert.equal((await testPrisma.unit.findUniqueOrThrow({ where: { id: unit.id } })).status, "CANCELLED");
+  assert.equal((await testPrisma.productionRun.findUniqueOrThrow({ where: { id: run.id } })).status, "CANCELLED");
+  const issue = await testPrisma.materialIssue.findUniqueOrThrow({ where: { id: req.body.issueId } });
+  assert.equal(issue.status, "CANCELLED"); assert.equal(issue.cancelledById, adm.user.id); assert.match(issue.cancelReason, /Pelanggan batal beli/);
+  assert.equal(await testPrisma.materialReservation.count({ where: { planId, status: "ACTIVE" } }), 0, "tidak ada reservasi aktif tersisa");
+  assert.equal((await testPrisma.productionRunPlan.findUniqueOrThrow({ where: { id: planId } })).status, "CANCELLED");
+  assert.equal(await onHand(materials[0].id), 10, "stok TIDAK bergerak");
+  assert.equal((await counts()).movements, sebelum.movements);
+
+  // jejak: dokumen permintaan (Gudang), unit (Produksi), order (Sales) — masing-masing dengan pelaku
+  const evIssue = await testPrisma.activityEvent.findMany({ where: { entityType: "material_issue", entityId: issue.id, eventType: "DOCUMENT_CANCELLED" } });
+  assert.equal(evIssue.length, 1); assert.equal(evIssue[0].actorId, adm.user.id); assert.equal(evIssue[0].metadata.via, "ORDER_CANCELLED");
+  assert.equal((await jejakUnit(unit.id, "PRODUCTION_PLAN_CANCELLED")).length, 1);
+  const ikut = await jejakUnit(unit.id, "PRODUCTION_FOLLOWS_ORDER"); assert.equal(ikut.length, 1);
+  assert.equal(ikut[0].actorId, adm.user.id); assert.deepEqual(ikut[0].metadata.issueDibatalkan, [issue.issueNumber]); assert.equal(ikut[0].metadata.planDibatalkan, true); assert.equal(ikut[0].metadata.orderStatusAfter, "CANCELLED");
+
+  // Unit 360 — tab Aktivitas: riwayat lengkap dengan sumber + nama PIC
+  const ov = await overview(w.planner, unit.id); assert.equal(ov.status, 200, JSON.stringify(ov.body));
+  const riwayat = ov.body.activity;
+  assert.ok(riwayat.every((a) => a.source && a.label && "actor" in a), "setiap baris punya sumber, kalimat, dan pelaku");
+  const baris = (re) => riwayat.find((a) => re.test(a.label));
+  const bOrder = baris(/Order dibatalkan Sales/); assert.ok(bOrder, "baris penyelarasan order"); assert.equal(bOrder.actor, adm.user.name); assert.equal(bOrder.source, "PRODUKSI");
+  const bIssue = riwayat.find((a) => a.source === "GUDANG" && /dibatalkan/.test(a.label)); assert.ok(bIssue, "baris Gudang untuk dokumen permintaan"); assert.equal(bIssue.actor, adm.user.name);
+  const bSales = riwayat.find((a) => a.source === "SALES" && a.kind === "ORDER_STATUS" && a.detail?.sesudah === "CANCELLED"); assert.ok(bSales, "riwayat status order ke CANCELLED (Sales)"); assert.equal(bSales.actor, adm.user.name); assert.ok(bSales.detail.sebelum, "status sebelumnya tercatat");
+  assert.ok(riwayat.some((a) => a.source === "SALES" && a.kind === "ORDER_STATUS" && a.actor === null), "transisi buatan sistem tampil jujur tanpa pelaku (bukan ditebak)");
+  assert.ok(riwayat.some((a) => a.source === "GUDANG" && a.kind === "CUSTODY_ACCEPTED" && a.actor), "custody diterima Gudang beserta penerimanya");
+});
+
+test("S2. ORDER DIBATALKAN setelah bahan SUDAH diserahkan: Run dibatalkan, bahan TIDAK dibalik otomatis (stok utuh), rencana tetap, dan riwayat memperingatkan Gudang untuk retur", async () => {
+  const w = await world(); const adm = await salesAdmin();
+  const { planId, unit, materials } = await reservedPlan(w, [{ qty: 5, stock: 10 }]);
+  const req = await request(w.planner, planId, "s2-req");
+  const picked = await pick(w.gudang1, req.body.issueId, req.body.revision, "s2-pick");
+  assert.equal(picked.status, 200, JSON.stringify(picked.body));
+  assert.equal(await onHand(materials[0].id), 5);
+  const run = await testPrisma.productionRun.findFirstOrThrow({ where: { unitId: unit.id } });
+  const mv = await counts();
+
+  const res = await adm.api.post(`/api/orders/${unit.orderId}/cancel`, { reason: "Pelanggan batal setelah bahan keluar" });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal((await testPrisma.productionRun.findUniqueOrThrow({ where: { id: run.id } })).status, "CANCELLED");
+  assert.equal((await testPrisma.materialIssue.findUniqueOrThrow({ where: { id: req.body.issueId } })).status, "ISSUED", "dokumen yang sudah diserahkan tidak dibatalkan");
+  assert.notEqual((await testPrisma.productionRunPlan.findUniqueOrThrow({ where: { id: planId } })).status, "CANCELLED", "rencana dengan bahan yang sudah keluar tidak dibatalkan");
+  assert.equal(await onHand(materials[0].id), 5, "TIDAK ada pergerakan stok otomatis");
+  assert.equal((await counts()).movements, mv.movements);
+  const ikut = (await jejakUnit(unit.id, "PRODUCTION_FOLLOWS_ORDER"))[0];
+  assert.equal(ikut.metadata.bahanSudahDiserahkan.length, 1); assert.equal(ikut.metadata.bahanSudahDiserahkan[0].qty, 5); assert.equal(ikut.metadata.planDibatalkan, false);
+  const ov = await overview(w.planner, unit.id);
+  const b = ov.body.activity.find((a) => /PERHATIAN Gudang/.test(a.label)); assert.ok(b, "peringatan retur tampil di riwayat"); assert.match(b.label, /Retur Bahan/);
+});

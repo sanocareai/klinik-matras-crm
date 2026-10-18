@@ -449,19 +449,34 @@ function QcHandoff({ d }) {
   );
 }
 
+// Riwayat lengkap (19 Okt 2026): setiap tindakan di Produksi, Gudang, Sales, dan Pengiriman dengan NAMA PIC, waktu, dan rincian sebelum → sesudah bila tercatat. Terbaru di atas; filter per sumber.
+const SUMBER_LABEL = { PRODUKSI: "Produksi", GUDANG: "Gudang", SALES: "Sales", PENGIRIMAN: "Pengiriman" };
 function Aktivitas({ d }) {
-  if (!d.activity.length) return <p className="text-[12.5px] text-ink3">Belum ada aktivitas tercatat.</p>;
+  const [sumber, setSumber] = useState("SEMUA");
+  const semua = d.activity ?? [];
+  if (!semua.length) return <p className="text-[12.5px] text-ink3">Belum ada aktivitas tercatat.</p>;
+  const daftar = (sumber === "SEMUA" ? semua : semua.filter((a) => a.source === sumber)).slice().reverse();
+  const jumlah = (k) => semua.filter((a) => a.source === k).length;
   return (
-    <ol className="m-0 list-none space-y-2 p-0">
-      {d.activity.map((a, i) => (
-        <li key={i} className="flex gap-3 border-l-2 border-line pl-3 text-[12px]">
-          <div className="min-w-0 flex-1">
-            <p className="m-0 break-words text-ink">{a.label}</p>
-            <p className="m-0 text-[11px] text-ink3">{fmtDT(a.at)}{a.actor ? ` · ${a.actor}` : ""}</p>
-          </div>
-        </li>
-      ))}
-    </ol>
+    <div data-testid="riwayat-unit">
+      <div className="mb-2 flex flex-wrap gap-1.5" role="tablist" aria-label="Sumber riwayat">
+        {[["SEMUA", "Semua", semua.length], ...Object.entries(SUMBER_LABEL).map(([k, l]) => [k, l, jumlah(k)])].filter(([k, , n]) => k === "SEMUA" || n > 0).map(([k, l, n]) => (
+          <button key={k} type="button" role="tab" aria-selected={sumber === k} data-testid={`riwayat-filter-${k}`} onClick={() => setSumber(k)}
+            className={`rounded-chip px-2.5 py-1 text-[11.5px] font-semibold ${sumber === k ? "bg-accent text-white" : "bg-inset text-ink2"}`}>{l} ({n})</button>
+        ))}
+      </div>
+      <ol className="m-0 list-none space-y-2 p-0">
+        {daftar.map((a, i) => (
+          <li key={`${a.at}-${i}`} data-testid="riwayat-baris" className="flex gap-3 border-l-2 border-line pl-3 text-[12px]">
+            <div className="min-w-0 flex-1">
+              <p className="m-0 break-words text-ink">{a.source && <span className="mr-1.5 rounded-chip bg-inset px-1.5 py-0.5 text-[10.5px] font-semibold text-ink2">{SUMBER_LABEL[a.source] ?? a.source}</span>}{a.label}{a.dokumen ? ` (${a.dokumen})` : ""}</p>
+              {a.detail && (a.detail.sebelum != null || a.detail.sesudah != null) && <p className="m-0 text-[11px] text-ink3" data-testid="riwayat-detail">Sebelum: {String(a.detail.sebelum ?? "—")} → Sesudah: {String(a.detail.sesudah ?? "—")}</p>}
+              <p className="m-0 text-[11px] text-ink3">{fmtDT(a.at)} · {a.actor ? `oleh ${a.actor}` : "pelaku tidak tercatat"}</p>
+            </div>
+          </li>
+        ))}
+      </ol>
+    </div>
   );
 }
 
