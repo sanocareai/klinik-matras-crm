@@ -18,6 +18,8 @@ import { wajibPenyetujuPenyesuaian, wajibBukanPihakPengaju } from "../services/i
 import { muatPergerakanSesi, selisihTersesuaikan, AKSI_TANDA_PERGERAKAN, AKSI_TANDA_DIRESET } from "../services/pergerakanSesiHitung.js";
 import { lockMaterialBalance } from "../services/inventoryLedger.js";
 import { muatIdentitasHitung, AKSI_PERIKSA_HITUNGAN } from "../services/identitasHitung.js";
+import { tampilanOpname, untukIzin } from "../services/dokumenGudangLain.js";
+import { jejakDokumenGudang } from "../services/dokumenGudang.js";
 
 // Penanda pelaku di activity_events (eventType DOCUMENT_EDITED) — dipakai complete untuk memisahkan pengisi/penyerah hitungan dari penyetuju.
 const AKSI_ISI_HITUNGAN = "HASIL_HITUNG_DIISI";
@@ -66,7 +68,7 @@ stockCountRouter.get("/", requirePermission(P.INVENTORY_READ), async (req, res) 
       include: countInclude,
       orderBy: [{ createdAt: "desc" }],
     });
-    res.json({ counts });
+    res.json({ counts: counts.map((c) => ({ ...c, tampilan: tampilanOpname(c) })) });
   } catch (err) {
     handleErr(err, res);
   }
@@ -79,11 +81,17 @@ stockCountRouter.get("/:id", requirePermission(P.INVENTORY_READ), wajibUuid(), a
     // Snapshot saldo (systemQty per baris) + waktu mulai direkam saat Start; pergerakan ledger sesudahnya ditampilkan agar penghitung menandainya.
     const { pergerakan } = await muatPergerakanSesi(prisma, count);
     const identitas = await muatIdentitasHitung(prisma, count);
+    // UX Tahap 2: status/aksi dalam bahasa petugas; aturan pemisahan tugas TIDAK diubah, hanya dijelaskan (izin.* memberi tahu layar mengapa suatu tombol tidak ada).
+    const tulis = hasPermission(req.user, P.INVENTORY_WRITE); const bisaMenyetujuiSelisih = hasPermission(req.user, P.INVENTORY_ADJUSTMENT_APPROVE);
+    const adaSelisih = count.lines.some((l) => l.systemQty != null && l.countedQty != null && Number(l.countedQty) !== Number(l.systemQty));
+    const bisaPeriksa = !(req.user.id === count.assignedToId || identitas.penghitung.some((p) => p.id === req.user.id));
     res.json({
       ...count,
       identitas,
       sesi: { snapshotPada: count.startedAt, belumDitandai: pergerakan.filter((p) => p.tanda === null).length },
       pergerakanSesi: pergerakan,
+      tampilan: untukIzin(tampilanOpname(count, { adaSelisih, bisaMenyetujuiSelisih, bisaPeriksa }), tulis), izin: { tulis, bisaMenyetujuiSelisih, bisaPeriksa }, adaSelisih,
+      jejak: await jejakDokumenGudang(prisma, { entityType: ENTITY_TYPES.STOCK_COUNT, id: count.id, dibuatOleh: count.createdBy?.name ?? null, dibuatPada: count.createdAt, jenis: "OPNAME" }),
     });
   } catch (err) {
     handleErr(err, res);

@@ -6,7 +6,9 @@
 
 import express from "express";
 import { requireAuth } from "../middleware/auth.js";
-import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
+import { requirePermission, hasPermission, PERMISSIONS as P } from "../middleware/authorize.js";
+import { tampilanRetur, untukIzin } from "../services/dokumenGudangLain.js";
+import { jejakDokumenGudang } from "../services/dokumenGudang.js";
 import { prisma } from "../db.js";
 import { postStockMovement, lockRowForUpdate } from "../services/inventoryLedger.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
@@ -53,7 +55,7 @@ returnRecordRouter.get("/", requirePermission(P.INVENTORY_READ), async (req, res
       include: recordInclude,
       orderBy: [{ createdAt: "desc" }],
     });
-    res.json({ records });
+    res.json({ records: records.map((r) => ({ ...r, tampilan: tampilanRetur(r) })) });
   } catch (err) {
     handleErr(err, res);
   }
@@ -63,7 +65,8 @@ returnRecordRouter.get("/:id", requirePermission(P.INVENTORY_READ), wajibUuid(),
   try {
     const record = await prisma.returnRecord.findUnique({ where: { id: req.params.id }, include: recordInclude });
     if (!record) return res.status(404).json({ error: "Retur tidak ditemukan" });
-    res.json(record);
+    const tulis = hasPermission(req.user, P.INVENTORY_WRITE);
+    res.json({ ...record, tampilan: untukIzin(tampilanRetur(record), tulis), izin: { tulis }, jejak: await jejakDokumenGudang(prisma, { entityType: ENTITY_TYPES.RETURN_RECORD, id: record.id, dibuatOleh: record.createdBy?.name ?? null, dibuatPada: record.createdAt, jenis: "RETUR" }) });
   } catch (err) {
     handleErr(err, res);
   }

@@ -89,7 +89,7 @@ export function ketersediaanBaris(snapshot, baris, { dokumenMencadang = false, k
 }
 
 const FIELD_LABEL = { status: "Status", notes: "Catatan", department: "Departemen", requiredDate: "Dibutuhkan", priority: "Prioritas", sourceReference: "Referensi", unitId: "Unit produksi", sourceLocation: "Lokasi sumber" };
-const STATUS_LABEL = { DRAFT: "Draf", WAITING_APPROVAL: "Menunggu persetujuan", APPROVED: "Disetujui", READY_TO_PICK: "Siap diambil", PICKED: "Sudah diambil", ISSUED: "Dikeluarkan", IN_TRANSIT: "Dalam perjalanan", COMPLETED: "Selesai", CANCELLED: "Dibatalkan" };
+const STATUS_LABEL = { CREATED: "Dicatat", RECEIVED: "Diterima", INSPECTION: "Diperiksa", SCHEDULED: "Terjadwal", IN_PROGRESS: "Sedang dihitung", WAITING_REVIEW: "Menunggu tinjauan", ORDERED: "Dipesan", REJECTED: "Ditolak", POSTED: "Diposting", DRAFT: "Draf", WAITING_APPROVAL: "Menunggu persetujuan", APPROVED: "Disetujui", READY_TO_PICK: "Siap diambil", PICKED: "Sudah diambil", ISSUED: "Dikeluarkan", IN_TRANSIT: "Dalam perjalanan", COMPLETED: "Selesai", CANCELLED: "Dibatalkan" };
 const PRIORITAS = { LOW: "Rendah", NORMAL: "Normal", HIGH: "Tinggi", URGENT: "Mendesak" };
 const nilaiTeks = (k, v) => (v === null || v === undefined || v === "" ? "kosong" : k === "status" ? STATUS_LABEL[v] ?? v : k === "priority" ? PRIORITAS[v] ?? v : k === "requiredDate" ? String(v).slice(0, 10) : String(v));
 
@@ -99,17 +99,28 @@ export function kalimatPerubahan(sebelum = {}, sesudah = {}) {
 }
 
 /** Jejak ringan dokumen (baca-saja) dari log aktivitas + penanda dokumen dibuat. */
-export async function jejakDokumenGudang(db, { entityType, id, dibuatOleh = null, dibuatPada = null, nomor = "" }) {
+const TEKS_JENIS = {
+  OPNAME: { POSTED: ["DISELESAIKAN", "Opname diselesaikan — selisih dibukukan sebagai penyesuaian"], APPROVED: ["DISELESAIKAN", "Opname diselesaikan — tanpa selisih"] },
+  RUSAK: { POSTED: ["DISELESAIKAN", "Diselesaikan — stok berkurang"], APPROVED: ["DISELESAIKAN", "Diselesaikan — hanya dicatat, stok tidak berubah"] },
+  RETUR: { POSTED: ["DISELESAIKAN", "Diselesaikan — barang kembali ke stok tersedia"], APPROVED: ["DISELESAIKAN", "Diselesaikan — hanya dicatat, stok tidak berubah"] },
+  ADJ: { POSTED: ["DIPOSTING", "Diposting ke stok"], APPROVED: ["DISETUJUI", "Disetujui"] },
+};
+const RESOLUSI_TEKS = { RETURN_TO_SUPPLIER: "retur ke supplier", REWORK: "perbaiki ulang", DISPOSE: "dibuang", RESTORE_TO_AVAILABLE: "dikembalikan ke tersedia", RETURN_TO_AVAILABLE: "dikembalikan ke tersedia", QUARANTINE: "karantina", REPLACE_PRODUCT: "ganti produk" };
+export async function jejakDokumenGudang(db, { entityType, id, dibuatOleh = null, dibuatPada = null, nomor = "", jenis = null }) {
   const ev = await db.activityEvent.findMany({ where: { entityType, entityId: id }, orderBy: { createdAt: "asc" }, take: 80 });
   const pelaku = new Map((await db.user.findMany({ where: { id: { in: [...new Set(ev.map((e) => e.actorId).filter(Boolean))] } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
   const baris = [];
   if (dibuatPada) baris.push({ id: "dibuat", aksi: "DIBUAT", teks: "Dokumen dibuat", oleh: dibuatOleh, waktu: dibuatPada, alasan: null, tautan: null });
   for (const e of ev) {
     const m = e.metadata ?? {}; const oleh = pelaku.get(e.actorId) ?? null; let teks = null; let aksi = null; let alasan = null; let tautan = null;
-    if (e.eventType === "DOCUMENT_APPROVED") { aksi = "DISETUJUI"; teks = "Disetujui"; }
+    const tj = jenis ? TEKS_JENIS[jenis] : null;
+    if (tj && (e.eventType === "DOCUMENT_APPROVED" || e.eventType === "DOCUMENT_POSTED")) { const [a, t] = tj[e.eventType === "DOCUMENT_POSTED" ? "POSTED" : "APPROVED"]; aksi = a; teks = `${t}${m.resolution ? ` (${RESOLUSI_TEKS[m.resolution] ?? m.resolution})` : ""}`; }
+    else if (e.eventType === "DOCUMENT_APPROVED") { aksi = "DISETUJUI"; teks = "Disetujui"; }
     else if (e.eventType === "DOCUMENT_POSTED") { aksi = m.step === "dispatch" ? "DIKIRIM" : m.step === "receive" ? "DITERIMA" : "DIKELUARKAN"; teks = m.step === "dispatch" ? "Barang dikirim (saldo dikurangi)" : m.step === "receive" ? "Barang diterima (saldo dibukukan)" : "Barang dikeluarkan (saldo berkurang)"; if (m.step === "receive" && m.selisih?.length) { teks += ` — selisih: ${m.selisih.map((x) => `${x.kode} dikirim ${x.dikirim}, diterima ${x.diterima}`).join("; ")}`; alasan = m.alasanSelisih ?? null; } }
     else if (e.eventType === "DOCUMENT_CANCELLED") { aksi = "DIBATALKAN"; teks = "Dibatalkan"; alasan = m.reason ?? null; }
     else if (e.eventType === "DOCUMENT_EDITED" && m.aksi === "DRAF_DIUBAH" && Array.isArray(m.ringkasan)) { aksi = "DIUBAH"; teks = `Isi diubah: ${m.ringkasan.join("; ")}`; }
+    else if (e.eventType === "DOCUMENT_EDITED" && m.aksi === "HITUNGAN_DISERAHKAN") { aksi = "HITUNGAN_DISERAHKAN"; teks = "Hitungan diserahkan untuk ditinjau"; }
+    else if (e.eventType === "DOCUMENT_EDITED" && m.aksi === "HITUNGAN_DIPERIKSA") { aksi = "HITUNGAN_DIPERIKSA"; teks = "Hitungan diperiksa"; alasan = m.catatan ?? null; }
     else if (e.eventType === "DOCUMENT_EDITED" && m.aksi === "DIKEMBALIKAN") { aksi = "DIKEMBALIKAN"; teks = `Dikembalikan ke Draf dari "${STATUS_LABEL[m.dariStatus] ?? m.dariStatus}"${m.persetujuanDicabut ? " — persetujuan lama gugur" : ""}${m.reservasiDilepas ? " — pencadangan stok dilepas" : ""}`; alasan = m.alasan ?? null; }
     else if (e.eventType === "DOCUMENT_EDITED" && m.aksi === "SELISIH_DISELESAIKAN") { aksi = "SELISIH_DISELESAIKAN"; teks = m.jenis === "DITEMUKAN" ? `Selisih ${m.kode} ${m.qty} ditemukan — saldo tujuan ditambah` : `Selisih ${m.kode} ${m.qty} diakui susut/hilang/rusak (tidak ada pergerakan stok; bukan pemakaian produksi)`; alasan = m.alasan ?? null; }
     else if (e.eventType === "DOCUMENT_EDITED" && m.aksi === "DRAF_DIUBAH") { aksi = "DIUBAH"; teks = `Diubah${m.bagian && m.bagian !== "dokumen" ? ` (${m.bagian})` : ""}: ${kalimatPerubahan(m.sebelum, m.sesudah)}`; }
