@@ -158,7 +158,8 @@ export function cornerAndLifecycleOf(run, ctx) {
     runStatus: run.status, currentPhase: run.currentPhase, unitStatus: run.unit?.status, next: ctx.next, latestQcResult: ctx.latestInspection?.result ?? null, cornerStatus: corner,
     adaptation: !!run.adaptationPolicy, handoffStatus: (run.custodyHandoffs || []).filter((h) => h.direction === "FINISHED_GOODS").at(-1)?.status ?? null, started: (run.operations?.length ?? 0) > 0 || ctx.evidence.length > 0,
   });
-  return { corner, lifecycle };
+  // Admin override Siap Kirim (keputusan Admin, bukan hasil pemeriksaan): SATU sumber untuk semua layar (papan, kartu, Unit 360, laporan) — Run belum ditutup tetapi unit sudah di jalur pengiriman.
+  return { corner, lifecycle, deliveryRelease: run.deliveryReleasedAt ? { releasedAt: run.deliveryReleasedAt, kind: "ADMIN_OVERRIDE", pickupLocationCode: run.deliveryRelease?.pickupLocation?.code ?? null, reason: run.deliveryRelease?.reason ?? null, decidedByName: run.deliveryRelease?.decidedBy?.name ?? null, stepsRecorded: run.deliveryRelease?.run?.stepsRecorded ?? [], label: "Admin override: Siap Kirim — pencatatan produksi belum selesai (Run belum ditutup)" } : null };
 }
 
 /**

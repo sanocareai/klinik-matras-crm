@@ -37,10 +37,16 @@ export function guardError(message, statusCode, code, details) {
 }
 
 // run: { status, currentPhase, revision }, unit: { status }. Mengembalikan null bila konsisten.
+// Unit yang DILEPAS untuk pengiriman lewat Admin override Siap Kirim (run.deliveryReleasedAt terisi) sengaja berstatus siap kirim/berangkat/terkirim sementara Run belum ditutup:
+// itu BUKAN konflik V1 (dicatat eksplisit oleh command pelepasan). Pembatalan unit tetap konflik.
+export const DELIVERY_RELEASE_UNIT_STATUSES = Object.freeze(["READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD", "IN_TRANSIT_OUT", "DELIVERED"]);
+export const isDeliveryReleased = (run) => !!run?.deliveryReleasedAt;
+
 export function detectRunInconsistency({ run, unit }) {
   if (!run || !unit || !RUN_OWNED_STATUSES.includes(run.status)) return null;
   const kind = UNIT_STATUS_KIND[unit.status];
   if (!kind) return null;
+  if (isDeliveryReleased(run) && DELIVERY_RELEASE_UNIT_STATUSES.includes(unit.status)) return null;
   return { kind, unitStatus: unit.status, runPhase: run.currentPhase ?? null, runRevision: run.revision };
 }
 
@@ -54,7 +60,15 @@ export function assertRunConsistent(run, unit) {
   }
 }
 
-export async function assertNoOpenRunException(tx, runId) {
+// Run yang sudah DILEPAS untuk pengiriman lewat pengecualian (deliveryReleasedAt) tidak lagi menerima command tahap/bahan/QC biasa (409 RUN_RELEASED_FOR_DELIVERY): unit sudah di jalur pengiriman,
+// jadi tahap tidak boleh berjalan lagi di belakangnya. Hanya penutupan administratif (Selesaikan Produksi / Konfirmasi Barang Jadi => allowReleased) yang diizinkan.
+export async function assertNoOpenRunException(tx, runId, { allowReleased = false } = {}) {
+  if (!allowReleased) {
+    const released = await tx.productionRun.findUnique({ where: { id: runId }, select: { deliveryReleasedAt: true } });
+    if (released?.deliveryReleasedAt) {
+      throw guardError("Unit pekerjaan ini sudah dilepas untuk pengiriman lewat Admin override Siap Kirim — Run belum ditutup. Tutup Run lewat Selesaikan Produksi / Konfirmasi Barang Jadi; tahap tidak dilanjutkan lagi.", 409, "RUN_RELEASED_FOR_DELIVERY", { releasedAt: released.deliveryReleasedAt });
+    }
+  }
   const open = await tx.productionRunException.findFirst({ where: { runId, status: "OPEN" }, select: { id: true, kind: true } });
   if (open) {
     throw guardError("Pekerjaan produksi ini punya konflik data yang belum diselesaikan — selesaikan dulu sebelum melanjutkan.", 409, "PRODUCTION_RUN_EXCEPTION_OPEN", { exceptionId: open.id, kind: open.kind });
@@ -98,7 +112,7 @@ export async function assertOrderUnitsNotV2Owned(tx, orderId, actionLabel) {
   if (owned.size === 0) return;
   const codes = units.filter((unit) => owned.has(unit.id)).map((unit) => unit.unitCode).join(", ");
   throw guardError(
-    `${actionLabel} ditolak: unit ${codes} sedang dalam proses Production V2. Selesaikan lewat antrean QC/Gudang, atau batalkan Production Run-nya lebih dulu (Production Lead).`,
+    `${actionLabel} ditolak: unit ${codes} sedang dalam proses Production V2. Selesaikan lewat antrean QC/Gudang, atau batalkan Production Run-nya lebih dulu (Production Lead). Bila unit perlu masuk pengiriman sementara pencatatan produksi belum selesai, Admin/Owner dapat memakai \"Admin override: Siap Kirim saat pencatatan produksi belum selesai\".`,
     409, "PRODUCTION_V2_OWNED", { unitCodes: codes.split(", ") },
   );
 }

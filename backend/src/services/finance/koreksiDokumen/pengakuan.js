@@ -141,7 +141,7 @@ export function analisis(b, { cutoff, hariIni, uangMuka = 0 }) {
     tahan.push({ kode: KODE_TAHAN.PRA_CUTOFF, pesan: `Diserahkan ${tglBuktiTerawal}, sebelum cutoff saldo awal (${cutoff}). Pendapatannya tercakup riwayat sebelum buku besar; mengakuinya di periode berjalan menaikkan pendapatan periode itu dan butuh persetujuan eksplisit per dokumen.`, lunakDenganPersetujuan: true });
   }
   if (!buktiSerah && STATUS_PENGAKUAN.includes(o.status)) {
-    tahan.push({ kode: KODE_TAHAN.SERAH_TIDAK_TERBUKTI, pesan: "Tidak ada pengiriman selesai maupun riwayat status serah. Penyerahan tidak terbukti — hanya bisa dengan Keputusan Owner + bukti referensi.", lunakDenganPersetujuan: true });
+    tahan.push({ kode: KODE_TAHAN.SERAH_TIDAK_TERBUKTI, pesan: "Tidak ada pengiriman selesai maupun riwayat status serah. Verifikasi penyerahan nyata melalui alur Delivery dahulu; Keputusan Owner tidak menggantikan bukti serah." });
   }
 
   // PENYEBAB (hanya yang dapat dibuktikan dari data)
@@ -164,7 +164,7 @@ if (dibalik) penyebab.push({ kode: "PENGAKUAN_DIBALIK", uraian: `Pengakuan sebel
   };
   tambah(DASAR_TANGGAL.TANGGAL_SERAH_POD, serah?.tanggal ?? null, serah ? (serah.diverifikasi ? "POD terverifikasi" : "POD belum diverifikasi") : null);
   tambah(DASAR_TANGGAL.TANGGAL_STATUS_DISERAHKAN, statusDiserahkan?.tanggal ?? null, statusDiserahkan ? `Dicatat ${statusDiserahkan.oleh ?? "sistem"}` : null);
-  opsi.push({ dasar: DASAR_TANGGAL.KEPUTUSAN_OWNER, label: LABEL_DASAR.KEPUTUSAN_OWNER, tanggal: null, tersedia: true, alasanTidak: null, catatan: `Pilih tanggal ${cutoff}..${hariIni}; wajib bukti referensi dan alasan.` });
+  opsi.push({ dasar: DASAR_TANGGAL.KEPUTUSAN_OWNER, label: LABEL_DASAR.KEPUTUSAN_OWNER, tanggal: null, tersedia: !!buktiSerah, alasanTidak: buktiSerah ? null : "Penyerahan belum terbukti.", catatan: `Pilih tanggal ${cutoff}..${hariIni}; wajib bukti referensi dan alasan.` });
 
   // KELAS
   let kelas = KELAS.LAIN;
@@ -268,9 +268,6 @@ function periksaInput(a, input, ctx) {
   }
   if (lunak.some((t) => t.kode === KODE_TAHAN.PRA_CUTOFF) && dasar !== DASAR_TANGGAL.KEPUTUSAN_OWNER) {
     throw new KoreksiError("Order yang diserahkan sebelum cutoff hanya bisa diakui dengan dasar Keputusan Owner (tanggal ≥ cutoff).", 422, "DASAR_HARUS_KEPUTUSAN_OWNER");
-  }
-  if (lunak.some((t) => t.kode === KODE_TAHAN.SERAH_TIDAK_TERBUKTI) && dasar !== DASAR_TANGGAL.KEPUTUSAN_OWNER) {
-    throw new KoreksiError("Penyerahan tidak terbukti: hanya Keputusan Owner + bukti referensi yang dapat dipakai.", 422, "DASAR_HARUS_KEPUTUSAN_OWNER");
   }
   return { alasan: teksAlasan, dasar, tanggal, bukti, akuiPraCutoff: input?.akuiPraCutoff === true, akuiSetelahDibalik: input?.akuiSetelahDibalik === true };
 }

@@ -440,6 +440,20 @@ export function MenungguKonfirmasiBadge({ job, className }) {
   );
 }
 
+// "Siap Kirim — override Admin (pencatatan produksi belum selesai)" (16 Okt 2026): unit ditetapkan Admin/Owner siap untuk proses pengiriman saat Production Run masih berjalan. Dihitung SERVER
+// (job.overrideAdmin = unit ber-override + lokasi pengambilan). Keputusan Admin, BUKAN hasil pemeriksaan/QC: badge tidak pernah mengklaim pemeriksaan fisik atau QC.
+export function OverrideAdminBadge({ job, className }) {
+  const unit = Array.isArray(job?.overrideAdmin) ? job.overrideAdmin : [];
+  if (unit.length === 0) return null;
+  const lokasi = [...new Set(unit.map((u) => u.pickupLocationCode).filter(Boolean))].join(", ");
+  return (
+    <Badge variant="orange" className={cn("max-w-full whitespace-normal", className)} data-testid="badge-override-admin"
+      title={`Override Admin: ${unit.map((u) => `${u.unitCode} (diputuskan ${u.decidedByName ?? "Admin"})`).join("; ")}. Run produksi belum ditutup.`}>
+      <PackageCheck size={11} aria-hidden="true" className="shrink-0" /> Siap Kirim — override Admin (pencatatan produksi belum selesai){lokasi ? ` · ambil di ${lokasi}` : ""}
+    </Badge>
+  );
+}
+
 // Baris gabungan dua badge di atas, dipakai kalau keduanya wajar tampil
 // berdampingan (kartu Route Planner) — return null total kalau dua-duanya
 // kosong, supaya tidak menyisakan baris kosong ber-gap di layout flex.

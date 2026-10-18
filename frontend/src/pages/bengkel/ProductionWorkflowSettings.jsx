@@ -4,6 +4,7 @@ import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { friendlyError } from "@/features/production/experience.js";
+import AdminOverrideSaklarCard from "@/features/production/AdminOverrideSaklarCard.jsx";
 
 // Pengaturan Produksi › Alur Kerja (slice 2): lokasi workshop bawaan ("Terima Unit di Workshop" satu aksi), mode adaptasi untuk run BARU, dan pemetaan Layanan Sales → layanan produksi
 // (dipakai Diagnosis agar operator tidak memilih layanan lagi). Menulis hanya ADMIN/OWNER (production_settings:write — server menegakkan); Production Lead hanya melihat.
@@ -76,6 +77,8 @@ export default function ProductionWorkflowSettings() {
             <span className="text-[12px] text-ink3" data-testid="qc-gate-default-state">{s?.qcGateDefault?.enabled ? `Aktif: ${s.qcGateDefault.policy === "QC_GATE_V1" ? "gerbang awal" : "gerbang awal + perakitan"}` : "Nonaktif (kebijakan lama)"}</span>
           </div>
         </Card>
+
+        {canWrite && <AdminOverrideSaklarCard canWrite={canWrite} />}
 
         <Card className="space-y-2 p-4" data-testid="service-mapping-card">
           <div className="flex flex-wrap items-center justify-between gap-2">
