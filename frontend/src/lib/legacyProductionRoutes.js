@@ -1,11 +1,11 @@
-// Rute LAMA tidak lagi punya halaman: Production (P12B.2) dan Gudang ("/gudang", UX Gudang Tahap 2 — halaman 'Warehouse command center' lama dicabut; satu-satunya pintu masuk Gudang adalah Beranda Gudang).
+// Rute LAMA tidak lagi punya halaman: Production (P12B.2) dan Gudang ("/gudang", UX Gudang Tahap 2 — halaman Gudang lama (command center) dicabut; satu-satunya pintu masuk Gudang adalah Beranda Gudang).
 // P12B.2 — rute Production LAMA tidak lagi punya halaman. Setiap URL lama dialihkan ke halaman kanonis baru (bookmark, tab tersimpan,
 // tautan dalam halaman). Murni data (tanpa JSX) supaya diuji `node --test`. Tidak ada database/migration/backend yang dihapus.
 import { splitPathQuery } from "./splitPathQuery.js";
 
 // base-path lama → { to: tujuan kanonis, standalone: tujuan bukan bagian kerangka tab (aplikasi mandiri) }
 export const LEGACY_PRODUCTION_REDIRECTS = Object.freeze({
-  "/gudang": { to: "/warehouse/dashboard", note: "Warehouse command center (lama) → Beranda Gudang" },
+  "/gudang": { to: "/warehouse/dashboard", note: "Halaman Gudang lama (command center) → Beranda Gudang" },
   "/bengkel": { to: "/bengkel/production-v2", note: "Papan Produksi (lama, V1) → Status Produksi" },
   "/bengkel/planning": { to: "/bengkel/rencana-produksi", note: "Rencana Produksi (lama, P3) → Rencana Produksi" },
   "/bengkel/workshop": { to: "/produksi/meja", standalone: true, note: "Antrean Kerja (lama, P5) → Aplikasi Meja" },
