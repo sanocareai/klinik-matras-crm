@@ -727,7 +727,11 @@ if (tanpaTulis) {
 if (tanpaBaca) { const c = (await api("GET", K + "/cakupan", tokenUntuk(tanpaBaca))).status; rec("cakupan akun tanpa izin baca Inventory → 403", c === 403, String(c)); } else skip("cakupan 403", "tidak ada akun aktif tanpa izin baca Inventory");
 const k5 = (await api("POST", `${K}/goods-receipts/${nol}/ajukan`, tB, { perubahan: {}, alasan: "uji smoke tanpa kunci" })).status;
 rec("ajukan tanpa Idempotency-Key → 400/428 (tidak menulis)", k5 === 400 || k5 === 428, String(k5));
-rec("setujui koreksi dengan UUID tidak valid → 400", (await api("POST", `${K}/bukan-uuid/setujui`, tB, {})).status === 400);
+// Izin setujui (INVENTORY_ADJUSTMENT_APPROVE) TIDAK dimiliki ADMIN: pemeriksaan UUID hanya terjangkau oleh akun berizin; tanpa izin = 403 sebelum menyentuh data.
+const penyetuju = cari((r) => punya(r, P.INVENTORY_ADJUSTMENT_APPROVE));
+if (penyetuju) rec("setujui koreksi dengan UUID tidak valid (akun berizin setujui) → 400", (await api("POST", `${K}/bukan-uuid/setujui`, tokenUntuk(penyetuju), {})).status === 400); else skip("setujui UUID 400", "tidak ada akun aktif berizin setujui koreksi");
+const tanpaSetuju = cari((r) => r.every((x) => ROLE_PERMISSIONS[x]) && !punya(r, P.INVENTORY_ADJUSTMENT_APPROVE));
+if (tanpaSetuju) rec("setujui koreksi oleh akun tanpa izin setujui → 403 (sebelum menyentuh data)", (await api("POST", `${K}/${nol}/setujui`, tokenUntuk(tanpaSetuju), {})).status === 403); else skip("setujui 403", "tidak ada akun aktif tanpa izin setujui");
 rec("dokumen: tipe tidak dikenal → 400 TIPE_TIDAK_DIKENAL", (await api("GET", `${K}/dokumen/ASING/${nol}`, tB)).json?.code === "TIPE_TIDAK_DIKENAL");
 rec("dokumen: UUID tidak valid → 400", (await api("GET", `${K}/dokumen/GOODS_RECEIPT/bukan-uuid`, tB)).status === 400);
 rec("dokumen: penerimaan tidak ada → 404", (await api("GET", `${K}/dokumen/GOODS_RECEIPT/${nol}`, tB)).status === 404);
