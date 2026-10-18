@@ -21,12 +21,12 @@ const KOLOM_TANGGAL = new Set([
   "Dibuat", "Tanggal Order",
 ]);
 const KOLOM_RUPIAH = new Set(["Nilai", "Ongkir", "Ongkir Klaim Garansi", "Harga Normal", "Harga Standard", "Harga Final", "Selisih ke Standard"]);
-const KOLOM_ANGKA = new Set(["Hari di Status"]);
-const KOLOM_TENGAH = new Set(["Kategori", "Status", "Pembayaran", "Mandek", "Perkiraan?", "Sudah Lunas?", "Komplain", "Jenis Pekerjaan"]);
-const KOLOM_BUNGKUS = new Set(["Keluhan Komplain", "Keluhan/Catatan", "Alamat Pengiriman", "Layanan", "Ukuran/Konfigurasi", "Kategori Keluhan", "Berat Badan", "Promo"]);
+const KOLOM_ANGKA = new Set(["Hari di Status", "Jumlah Unit"]);
+const KOLOM_TENGAH = new Set(["Jumlah Unit", "Unit ke", "Kategori", "Status", "Pembayaran", "Mandek", "Perkiraan?", "Sudah Lunas?", "Komplain", "Jenis Pekerjaan"]);
+const KOLOM_BUNGKUS = new Set(["Keluhan Komplain", "Keluhan/Catatan", "Alamat Pengiriman", "Layanan", "Produk per Unit", "Ukuran/Konfigurasi", "Kategori Keluhan", "Berat Badan", "Promo"]);
 const LEBAR_TETAP = {
   "ID Order": 20, Pelanggan: 22, "No HP": 16, Kota: 14, "Sales Person": 14, Kategori: 13, "Lini Produk": 14, "Jenis Produk": 16,
-  "Merk/Model": 18, "Ukuran/Konfigurasi": 24, Layanan: 30, Status: 13, "Jenis Pekerjaan": 20, "No Komplain": 20, "Keluhan Komplain": 40,
+  "Merk/Model": 18, "Ukuran/Konfigurasi": 24, Layanan: 30, "Jumlah Unit": 11, "Produk per Unit": 40, Status: 13, "Jenis Pekerjaan": 20, "No Komplain": 20, "Keluhan Komplain": 40,
   "Hari di Status": 11, "Perkiraan?": 10, Mandek: 9, Pembayaran: 14, "Sudah Lunas?": 11, "Tanggal Lunas": 13, Nilai: 15,
   "Ada Nego Di Bawah Standard": 16, Promo: 22, "Cek Batas Diskon": 30, Ongkir: 13, "Ongkir Klaim Garansi": 14, Komplain: 10, "Kondisi Kesehatan": 16,
   "Kategori Keluhan": 24, "Berat Badan": 18, "Keluhan/Catatan": 36, "Kota Pengiriman": 16, "Alamat Pengiriman": 36,
@@ -155,6 +155,29 @@ function buatSheetKomplain(wb, rows, meta) {
   });
   aturLebar(ws, headers);
   ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1 + dipilih.length, column: headers.length } };
+  aturCetak(ws);
+}
+
+/** Sheet "Rincian Unit": 1 baris per UNIT produksi (order multi-unit tampil lengkap; order tanpa unit tidak punya baris di sini). */
+function buatSheetUnit(wb, rows) {
+  if (!rows || rows.length === 0) return;
+  const headers = Object.keys(rows[0]);
+  const ws = wb.addWorksheet("Rincian Unit", { views: [{ state: "frozen", xSplit: 4, ySplit: 1 }] });
+  ws.addRow(headers);
+  gayaHeader(ws, headers.length);
+  rows.forEach((r, i) => {
+    const row = ws.addRow([]);
+    headers.forEach((h, c) => {
+      const cell = row.getCell(c + 1);
+      isiSel(cell, h, r[h]);
+      cell.font = { name: "Calibri", size: 11, color: { argb: "FF111111" } };
+      if (i % 2) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: WARNA.zebra } };
+      cell.border = { bottom: { style: "thin", color: { argb: WARNA.garis } } };
+      cell.alignment = { vertical: "top", wrapText: h === "Spesifikasi" || h === "Produk", horizontal: h === "Unit ke" ? "center" : "left" };
+    });
+  });
+  headers.forEach((h, i) => { ws.getColumn(i + 1).width = { "ID Order": 20, Pelanggan: 22, "Sales Person": 14, Unit: 20, "Unit ke": 10, Produk: 30, Merk: 16, Ukuran: 18, Spesifikasi: 34, Pengiriman: 18, "Status Produksi": 22, Tahap: 18, "Status Delivery": 26 }[h] || 14; });
+  ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1 + rows.length, column: headers.length } };
   aturCetak(ws);
 }
 
@@ -338,9 +361,10 @@ function buatSheetRingkasan(wb, rows, meta, headers, info) {
 /**
  * @param {{rows: object[], meta: object[], layanan?: object[], info?: string[], filename?: string}} p
  *   rows  = 1 objek per order (kunci = judul kolom, seperti export lama)
+ *   unit  = 1 objek per UNIT produksi (lihat utils/orderUnitExport.js) → sheet "Rincian Unit"
  *   meta  = paralel dgn rows: { komplain, kategori (LAYANAN|BARU|SEWA), bayar (LUNAS|DP|BELUM_BAYAR), menunggu, dibatalkan }
  */
-export async function exportOrdersStyled({ rows, meta, layanan = [], info = [], filename = "order" }) {
+export async function exportOrdersStyled({ rows, meta, layanan = [], unit = [], info = [], filename = "order" }) {
   if (!rows || rows.length === 0) throw new Error("Tidak ada order untuk diexport");
   const ExcelJS = (await import("exceljs")).default;
   const wb = new ExcelJS.Workbook();
@@ -351,6 +375,7 @@ export async function exportOrdersStyled({ rows, meta, layanan = [], info = [], 
   buatSheetRingkasan(wb, rows, meta, headers, [...info, `Diexport ${new Date().toLocaleString("id-ID")}`]);
   buatSheetKomplain(wb, rows, meta);
   buatSheetLayanan(wb, layanan);
+  buatSheetUnit(wb, unit);
 
   const buf = await wb.xlsx.writeBuffer();
   saveAs(new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), `${filename}.xlsx`);

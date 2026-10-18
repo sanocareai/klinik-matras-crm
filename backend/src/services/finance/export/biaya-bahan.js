@@ -3,11 +3,12 @@
 // Empat sheet: Ringkasan per Unit, Rincian Pergerakan (jejak per unit), Bahan Tanpa Harga / Belum Final, Retur dan Waste.
 // Nilai kosong = TIDAK DIKETAHUI (sel dibiarkan kosong), bukan Rp0. Total hanya menjumlah baris yang berstatus DINILAI.
 import { PERMISSIONS as P } from "../../../middleware/authorize.js";
-import { bacaJejakUnit, daftarUnitBiaya } from "../biayaBahan.js";
+import { bacaJejakUnit, daftarUnitBiaya, unitSaudaraTanpaPemakaian } from "../biayaBahan.js";
 import { susunLabelFilter } from "./excel.js";
 
 const STATUS = { DINILAI: "Dinilai", TANPA_HARGA: "Tanpa harga", ESTIMASI_HISTORIS: "Belum final (estimasi historis)" };
 const JENIS = { PEMAKAIAN: "Pemakaian", RETUR: "Retur diterima Gudang", SUSUT: "Waste / susut", PENYESUAIAN: "Penyesuaian" };
+const LABEL_SAUDARA = "Belum ada pemakaian bahan";
 const STATUS_BIAYA = { FINAL_MENURUT_HARGA_PO: "Final menurut harga PO", BELUM_FINAL: "Belum final", BELUM_ADA_PEMAKAIAN: "Belum ada pemakaian" };
 const STATUS_FAKTUR = { FAKTUR_LENGKAP: "Faktur lengkap", FAKTUR_SEBAGIAN: "Faktur sebagian", FAKTUR_BELUM_ADA: "Faktur belum ada", TANPA_PO: "Tanpa PO" };
 const jumlah = (rows, key) => rows.reduce((a, r) => a + (Number(r[key]) || 0), 0);
@@ -22,11 +23,19 @@ async function ambil(db, { filter }) {
     if (j) detail.push(j);
   }
 
-  const ringkasan = detail.map((j) => ({
-    unit: j.unit.unitCode, order: j.unit.orderNumber || "", totalBiaya: j.ringkasan.totalBiaya, totalRetur: j.ringkasan.totalRetur,
+  // Order multi-unit: unit lain pada order yang sama yang BELUM punya pemakaian bahan ikut tampil (tanpa nilai) agar tidak terlewat.
+  const { perOrder, saudara } = await unitSaudaraTanpaPemakaian(db, daftar);
+  const unitOrder = (n) => { const p = perOrder.get(n); return p ? `${p.berBahan} dari ${p.total} unit ber-bahan` : ""; };
+  const ringkasanBahan = detail.map((j) => ({
+    unit: j.unit.unitCode, order: j.unit.orderNumber || "", unitOrder: unitOrder(j.unit.orderNumber), totalBiaya: j.ringkasan.totalBiaya, totalRetur: j.ringkasan.totalRetur,
     nilaiBersih: j.ringkasan.nilaiBersih, waste: j.ringkasan.totalWaste, selisihFaktur: j.ringkasan.selisihHargaFaktur?.nilai ?? null,
     tanpaHarga: j.ringkasan.jumlahTanpaHarga, historis: j.ringkasan.jumlahEstimasiHistoris, status: STATUS_BIAYA[j.statusBiaya] || j.statusBiaya,
   }));
+  const ringkasanSaudara = saudara.map((u) => ({
+    unit: u.unitCode, order: u.orderNumber, unitOrder: unitOrder(u.orderNumber), totalBiaya: null, totalRetur: null, nilaiBersih: null, waste: null, selisihFaktur: null,
+    tanpaHarga: null, historis: null, status: LABEL_SAUDARA,
+  }));
+  const ringkasan = [...ringkasanBahan, ...ringkasanSaudara];
 
   const pergerakan = detail.flatMap((j) => j.bahan.flatMap((b) => b.pergerakan.map((r) => ({
     waktu: r.tanggal, unit: j.unit.unitCode, order: j.unit.orderNumber || "", kode: r.kode, bahan: r.nama, jenis: JENIS[r.jenisBiaya] || r.jenisBiaya,
@@ -64,16 +73,18 @@ async function ambil(db, { filter }) {
         nama: "Ringkasan per Unit", judul: "Biaya Bahan per Unit Produksi",
         kolom: [
           { key: "unit", header: "Unit", tipe: "teks", lebar: 16 }, { key: "order", header: "No. Order", tipe: "teks", lebar: 18 },
+          { key: "unitOrder", header: "Unit dalam Order", tipe: "teks", lebar: 22 },
           { key: "totalBiaya", header: "Total Biaya Bahan (Rp)", tipe: "uang" }, { key: "totalRetur", header: "Retur Diterima (Rp)", tipe: "uang" },
           { key: "nilaiBersih", header: "Biaya Bersih (Rp)", tipe: "uang" }, { key: "waste", header: "Waste / Susut (Rp, terpisah)", tipe: "uang" },
           { key: "selisihFaktur", header: "Selisih Harga Faktur (Rp, terpisah)", tipe: "uang" }, { key: "tanpaHarga", header: "Pergerakan Tanpa Harga", tipe: "angka" },
           { key: "historis", header: "Pergerakan Estimasi Historis", tipe: "angka" }, { key: "status", header: "Status Biaya", tipe: "teks", lebar: 24 },
         ],
         baris: ringkasan,
-        total: { label: `TOTAL (${ringkasan.length} unit)`, nilai: { totalBiaya: jumlah(ringkasan, "totalBiaya"), totalRetur: jumlah(ringkasan, "totalRetur"), nilaiBersih: jumlah(ringkasan, "nilaiBersih"), waste: jumlah(ringkasan, "waste"), selisihFaktur: jumlah(ringkasan, "selisihFaktur"), tanpaHarga: jumlah(ringkasan, "tanpaHarga"), historis: jumlah(ringkasan, "historis") } },
+        total: { label: `TOTAL (${ringkasanBahan.length} unit ber-bahan${ringkasanSaudara.length ? `, ${ringkasanSaudara.length} unit lain belum ada pemakaian` : ""})`, nilai: { totalBiaya: jumlah(ringkasan, "totalBiaya"), totalRetur: jumlah(ringkasan, "totalRetur"), nilaiBersih: jumlah(ringkasan, "nilaiBersih"), waste: jumlah(ringkasan, "waste"), selisihFaktur: jumlah(ringkasan, "selisihFaktur"), tanpaHarga: jumlah(ringkasan, "tanpaHarga"), historis: jumlah(ringkasan, "historis") } },
         catatan: [
           "Biaya bersih = total biaya bahan − retur yang sudah diterima Gudang. Waste dan selisih harga faktur ditampilkan terpisah dan tidak masuk biaya bersih.",
           "Sel kosong berarti belum diketahui (bahan tanpa harga atau belum ada pemakaian) — bukan Rp0. Layar menampilkan maksimal 100 unit terbaru; persempit pencarian untuk unit lain.",
+          ringkasanSaudara.length ? `${ringkasanSaudara.length} unit pada order multi-unit belum punya pemakaian bahan tercatat (baris berstatus "${LABEL_SAUDARA}"). Kosong = belum dicatat, bukan Rp0 — cek apakah bahan unit itu terlewat.` : null,
           ringkasan.length === 0 ? catatanKosong : null,
         ].filter(Boolean),
       },

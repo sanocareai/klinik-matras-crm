@@ -55,6 +55,7 @@ function currentUser() {
 import DateRangePicker from "../components/DateRangePicker.jsx";
 import { makeRange, toApiParams } from "../lib/dateRange.js";
 import { namaSalesKredit, keteranganSalesKredit } from "../features/orders/salesKredit.js";
+import { jumlahUnitOrder, produkRingkasOrder, semuaRincianUnit, totalUnitOrders } from "../utils/orderUnitExport.js";
 import PageErrorBoundary from "../components/PageErrorBoundary.jsx";
 
 // ═══ HALAMAN ORDER ════════════════════════════════════════════════════════
@@ -907,6 +908,9 @@ export default function Orders() {
         // detail per layanan. Kosong ("") kalau order ini TIDAK PUNYA item
         // sama sekali (order lama / isian bebas semua).
         Layanan: orderItems.map((it) => it.layananName).filter(Boolean).join(", "),
+        // Jumlah unit produksi order (mis. 3 kasur sejenis = 3) + ringkasan produk per unit. Rincian satu baris per unit ada di sheet "Rincian Unit".
+        "Jumlah Unit": jumlahUnitOrder(o),
+        "Produk per Unit": produkRingkasOrder(o),
 
         // ── Status & fulfillment ─────────────────────────────────────────
         Status: ORDER_STATUS_LABELS[o.status] || o.status,
@@ -1027,19 +1031,21 @@ export default function Orders() {
       menunggu: o.status === "PENDING",
       dibatalkan: o.status === "CANCELLED",
     }));
+    const sheetUnit = semuaRincianUnit(semuaOrder, (o) => ({ pelanggan: o.customerName || "", sales: namaSalesKredit(o) }));
     const info = [
+      `Total unit produksi: ${totalUnitOrders(semuaOrder)} (rincian per unit di sheet "Rincian Unit")`,
       `Periode (tanggal order dibuat): ${range?.from && range?.to ? `${range.from} s/d ${range.to}` : "semua"}`,
       `Filter status: ${fStatus ? (fStatus === "PROCESSING" ? "Diproses" + (sertakanKomplain ? " + komplain/revisi aktif" : "") : ORDER_STATUS_LABELS[fStatus] || fStatus) : "semua"}`,
       `Jumlah order: ${semuaOrder.length}`,
     ];
     try {
       const { exportOrdersStyled } = await import("../utils/exportOrdersStyled.js");
-      await exportOrdersStyled({ rows: sheetOrder, meta, layanan: sheetLayanan, info, filename: "order-" + new Date().toISOString().slice(0, 10) });
+      await exportOrdersStyled({ rows: sheetOrder, meta, layanan: sheetLayanan, unit: sheetUnit, info, filename: "order-" + new Date().toISOString().slice(0, 10) });
     } catch (e) {
       // Cadangan: kalau pembuat file berwarna gagal, tetap serahkan file polos supaya admin produksi tidak buntu.
       console.error("Export berwarna gagal, pakai export polos:", e);
       exportToExcelMultiSheet(
-        [{ name: "Order", data: sheetOrder }, { name: "Rincian Layanan", data: sheetLayanan }],
+        [{ name: "Order", data: sheetOrder }, { name: "Rincian Layanan", data: sheetLayanan }, ...(sheetUnit.length ? [{ name: "Rincian Unit", data: sheetUnit }] : [])],
         "order-" + new Date().toISOString().slice(0, 10)
       );
     }

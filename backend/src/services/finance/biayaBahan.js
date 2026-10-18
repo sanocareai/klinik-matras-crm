@@ -125,6 +125,30 @@ function returUntuk(dokRetur, m) {
 }
 
 /**
+ * Unit SAUDARA tanpa pemakaian bahan: unit lain (tidak dibatalkan) pada order yang SUDAH punya unit berpemakaian. Dipakai export Excel supaya order multi-unit
+ * (mis. 3 kasur satu order) tidak terlihat hanya 1 baris saat bahan baru dicatat untuk sebagian unit — unit yang terlewat tampil jelas, bukan hilang.
+ * BACA-SAJA. Mengembalikan { perOrder: Map(orderNumber -> { total, berBahan }), saudara: [{ unitCode, orderNumber, status }] }.
+ */
+export async function unitSaudaraTanpaPemakaian(db, daftar) {
+  const nomor = [...new Set(daftar.map((u) => u.orderNumber).filter(Boolean))];
+  const perOrder = new Map(); const saudara = [];
+  if (nomor.length === 0) return { perOrder, saudara };
+  const punya = new Set(daftar.map((u) => u.unitId));
+  const semua = await db.unit.findMany({
+    where: { order: { orderNumber: { in: nomor } }, status: { not: "CANCELLED" } },
+    select: { id: true, unitCode: true, seq: true, status: true, order: { select: { orderNumber: true } } },
+    orderBy: [{ seq: "asc" }, { unitCode: "asc" }],
+  });
+  for (const u of semua) {
+    const n = u.order?.orderNumber; if (!n) continue;
+    const p = perOrder.get(n) ?? { total: 0, berBahan: 0 };
+    p.total += 1; if (punya.has(u.id)) p.berBahan += 1; perOrder.set(n, p);
+    if (!punya.has(u.id)) saudara.push({ unitCode: u.unitCode, orderNumber: n, status: u.status });
+  }
+  return { perOrder, saudara };
+}
+
+/**
  * Jejak biaya bahan SATU unit: PO → penerimaan → Material Issue → pemakaian PIC → waste/retur → faktur.
  * `izinHarga=false` membuang semua nominal & harga (tampilan Produksi): kuantitas, status, dan dokumen tetap tampil.
  */
