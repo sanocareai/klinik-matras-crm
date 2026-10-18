@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs.jsx";
 import DamagedStockTab from "@/features/warehouse/components/DamagedStockTab.jsx";
@@ -17,7 +18,8 @@ import KoreksiDokumenTab from "@/features/warehouse/koreksi/KoreksiDokumenTab.js
 // schema.prisma di atas ketiga model untuk konsekuensi & batasan yang
 // diakui sadar (terutama soal saldo yang tidak dipecah per lokasi/status).
 export default function WarehouseAdjustments() {
-  const [tab, setTab] = useState("damaged");
+  const [sp] = useSearchParams();
+  const awal = sp.get("tab"); const [tab, setTab] = useState(["damaged", "returns", "adjustments", "koreksi", "referensi"].includes(awal) ? awal : "damaged"); // tautan kembali dari halaman detail membuka sub-tab yang sesuai
 
   return (
     <PageContainer>

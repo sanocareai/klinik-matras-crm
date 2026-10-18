@@ -21,6 +21,12 @@ const RESOURCE_LABELS = {
   // Tahap 2: /warehouse/material-issue/<id> dan /warehouse/transfers/<id> → tab bernama menu (bukan "Material Issue" / "Transfers").
   "material-issue": "Pengeluaran",
   transfers: "Transfer",
+  // Tahap 2 (pola sederhana): halaman detail Opname, Restok, Barang Rusak, Retur, Penyesuaian.
+  "stock-count": "Opname",
+  replenishment: "Restok",
+  damaged: "Barang Rusak",
+  returns: "Retur",
+  stock: "Penyesuaian",
 };
 
 // P9B.1 — segmen path yang tidak title-case rapi dengan aturan umum di bawah (huruf/angka bercampur, singkatan

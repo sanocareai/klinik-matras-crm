@@ -113,13 +113,45 @@ test("Restok: saran kosong tidak dibaca sebagai stok aman — kalimat memuat cak
   assert.match(kalimatCakupanBatasMinimum({ total: 5, diatur: 0, belum: 5 }), /belum diatur untuk satu pun dari 5 bahan aktif/);
   assert.match(kalimatCakupanBatasMinimum({ total: 4, diatur: 4, belum: 0 }), /semua bahan aktif sudah punya batas minimum/); assert.equal(kalimatCakupanBatasMinimum({ total: 0, diatur: 0, belum: 0 }), null);
   const r = baca("pages/warehouse/WarehouseReplenishment.jsx"); assert.ok(r.includes("kalimatCakupanBatasMinimum(cakupan)")); assert.doesNotMatch(r, /Tidak ada item yang perlu direstok saat ini/);
-  for (const [f, kata] of [["pages/warehouse/WarehouseStockCount.jsx", ["Terjadwal", "Menunggu tinjauan"]], ["pages/warehouse/WarehouseReplenishment.jsx", ["Menunggu persetujuan", "Sudah dipesan"]], ["features/warehouse/components/ReturnsTab.jsx", ["Diterima", "Diperiksa"]], ["features/warehouse/components/DamagedStockTab.jsx", ["Dilaporkan", "Sedang diperiksa"]], ["features/warehouse/components/AdjustmentsTab.jsx", ["Menunggu persetujuan", "Sudah diposting"]]]) {
-    const src = baca(f); for (const k of kata) assert.ok(src.includes(`label: "${k}"`), `${f}: ${k}`); assert.doesNotMatch(src, /label: "(Waiting Approval|Waiting Review|In Progress|Under Inspection|Scheduled|Reported|Resolved)"/, f);
-  }
+  const lab = baca("features/warehouse/dokumen/labelDokumen.js");
+  for (const k of ["Terjadwal", "Sedang dihitung", "Menunggu tinjauan", "Menunggu persetujuan", "Disetujui & dipesan", "Dicatat & diterima", "Diperiksa", "Dilaporkan", "Diposting"]) assert.ok(lab.includes(`"${k}"`), k);
+  assert.doesNotMatch(lab, /"(Waiting Approval|Waiting Review|In Progress|Under Inspection|Scheduled|Reported|Resolved)"/);
+  for (const f of ["pages/warehouse/WarehouseStockCount.jsx", "pages/warehouse/WarehouseReplenishment.jsx", "features/warehouse/components/ReturnsTab.jsx", "features/warehouse/components/DamagedStockTab.jsx", "features/warehouse/components/AdjustmentsTab.jsx"]) { const src = baca(f); assert.match(src, /DaftarSederhana/, f); assert.doesNotMatch(src, /DetailDrawer/, f); assert.match(src, /md:hidden|DaftarSederhana/, f); }
 });
 
 test("judul tab workspace & sub-tab Barang Rusak/Retur berbahasa Indonesia", () => {
   const t = baca("lib/tabTitles.js"); for (const k of ["Restok", "Stock Opname", "Barang Rusak & Retur", "Pengeluaran Material", "Transfer Stok"]) assert.ok(t.includes(`return "${k}"`), k);
   const a = baca("pages/warehouse/WarehouseAdjustments.jsx"); for (const k of ["Barang Rusak", "Retur", "Penyesuaian Stok"]) assert.ok(a.includes(`>${k}</TabsTrigger>`), k);
   assert.doesNotMatch(a, />(Damaged Stock|Returns|Stock Adjustment)<\/TabsTrigger>/);
+});
+
+test("revisi & konflik: semua aksi MI/ST mengirim revisi dokumen; konflik memuat ulang keadaan terbaru; api memuat jalur ubah isi/kembalikan/selisih", () => {
+  const api = baca("api.js");
+  for (const f of ["ubahIsiMaterialIssue", "kembalikanMaterialIssue", "ubahIsiStockTransfer", "kembalikanStockTransfer", "selesaikanSelisihTransfer", "buatUlangMaterialIssue", "buatUlangStockTransfer"]) assert.match(api, new RegExp(`${f}:`), f);
+  assert.match(api, /code = j\.code \?\? j\.kode/, "kode galat server (kode) ikut terbaca");
+  for (const f of ["features/warehouse/dokumen/MaterialIssueDetail.jsx", "features/warehouse/dokumen/TransferDetail.jsx"]) {
+    const s = baca(f);
+    assert.match(s, /revisi: r\.revisi/, `${f}: revisi dikirim`); assert.match(s, /REVISI_BASI/, f); assert.match(s, /KONFLIK_PAYLOAD/, f); assert.match(s, /KEMBALIKAN/, f); assert.match(s, /UBAH_ISI/, f);
+  }
+  assert.match(baca("features/warehouse/components/MaterialIssueFormModal.jsx"), /api\.ubahIsiMaterialIssue\(dokumen\.id, \{\s*revisi: dokumen\.revisi/);
+  assert.match(baca("features/warehouse/components/StockTransferFormModal.jsx"), /api\.ubahIsiStockTransfer\(dokumen\.id, \{ revisi: dokumen\.revisi/);
+});
+
+test("selisih transfer: penyebab wajib saat Terima berselisih; kartu saldo perjalanan & kartu selisih; penyelesaian dengan kunci permintaan; tidak ada klaim pemakaian produksi", () => {
+  const t = baca("features/warehouse/dokumen/TransferDetail.jsx");
+  assert.match(t, /alasanSelisih/); assert.match(t, /data-testid="kartu-saldo-perjalanan"/); assert.match(t, /data-testid="kartu-selisih"/); assert.match(t, /SELESAIKAN_SELISIH/); assert.match(t, /kunci: kunciSelisih/);
+  assert.match(t, /Sebelum kirim/); assert.match(t, /Dalam perjalanan/); assert.match(t, /Sesudah terima/); assert.match(t, /BUKAN pemakaian produksi|bukan pemakaian produksi/i);
+});
+
+test("halaman detail Opname, Restok, Barang Rusak, Retur, Penyesuaian: status/aksi dari server, dampak stok di panel, tanpa tombol Edit umum, route & breadcrumb terdaftar", () => {
+  const halaman = { "OpnameDetail.jsx": ["STOCK_COUNT", "SELESAIKAN_OPNAME", "blind"], "RestokDetail.jsx": ["HUBUNGKAN_PENERIMAAN", "tidak pernah"], "RusakDetail.jsx": ["DAMAGED_STOCK", "BERKURANG"], "ReturDetail.jsx": ["RETURN_RECORD", "MENAMBAH stok"], "PenyesuaianDetail.jsx": ["STOCK_ADJUSTMENT", "Pemisahan tugas"] };
+  for (const [f, kata] of Object.entries(halaman)) { const s = baca(`features/warehouse/dokumen/${f}`); assert.match(s, /r\.tampilan/, f); assert.match(s, /KartuAksiDokumen/, f); assert.match(s, /JejakDokumen/, f); assert.doesNotMatch(s, />\s*Edit\s*</, f); assert.doesNotMatch(s, /window\.confirm/, f); for (const k of kata) assert.ok(s.toLowerCase().includes(k.toLowerCase()), `${f}: ${k}`); }
+  const reg = baca("routes/pageRegistry.jsx"); for (const p of ["/warehouse/stock-count/:id", "/warehouse/replenishment/:id", "/warehouse/adjustments/damaged/:id", "/warehouse/adjustments/returns/:id", "/warehouse/adjustments/stock/:id"]) assert.ok(reg.includes(p), p);
+  const top = baca("components/Topbar.jsx"); for (const p of ["/warehouse/stock-count/", "/warehouse/replenishment/", "/warehouse/adjustments/"]) assert.ok(top.includes(`startsWith("${p}")`), p);
+  assert.match(baca("pages/warehouse/WarehouseAdjustments.jsx"), /sp\.get\("tab"\)/, "tautan kembali membuka sub-tab yang sesuai");
+});
+
+test("Restok: tautan penerimaan hanya menawarkan penerimaan yang memuat bahan permintaan; Restok tidak pernah menulis stok", () => {
+  const r = baca("features/warehouse/dokumen/RestokDetail.jsx");
+  assert.match(r, /l\.materialId === r\.materialId/); assert.match(r, /Stok TIDAK ditambah dari sini/); assert.match(r, /belum diatur/);
 });

@@ -1,103 +1,57 @@
 import React, { useCallback, useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { TrendingUp, Plus, RefreshCw, Download } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
-import { EmptyState } from "@/components/ui/empty-state.jsx";
-import {
-  TableWrap, Table, THead, TBody, TR, TH, TD, TableSkeletonRows,
-} from "@/components/ui/table.jsx";
-import { cn } from "@/lib/utils.js";
-import { cakupanBatasMinimum, kalimatCakupanBatasMinimum } from "@/features/warehouse/dokumen/dokumenLogic.js";
 import { exportToCSV } from "@/utils/export.js";
-import StatusBadge from "@/features/warehouse/components/StatusBadge.jsx";
 import ReplenishmentFormModal from "@/features/warehouse/components/ReplenishmentFormModal.jsx";
-import ReplenishmentDetailDrawer from "@/features/warehouse/components/ReplenishmentDetailDrawer.jsx";
-import { REPLENISHMENT_STATUS_REAL, REPLENISHMENT_SOURCE_REAL } from "@/features/warehouse/inventoryReal.js";
+import { UNIT_LABEL } from "@/features/warehouse/inventoryReal.js";
+import DaftarSederhana from "@/features/warehouse/dokumen/DaftarSederhana.jsx";
+import { useTahapFilter } from "@/features/warehouse/dokumen/useTahapFilter.js";
+import { PRIORITAS, SUMBER_RESTOK, TAHAP_FILTER_RESTOK, teksCari } from "@/features/warehouse/dokumen/labelDokumen.js";
+import { cakupanBatasMinimum, kalimatCakupanBatasMinimum, tanggalPendek, teksJumlah } from "@/features/warehouse/dokumen/dokumenLogic.js";
 
-// Replenishment — Warehouse Tahap 7. DATA NYATA.
-//
-// Saran (Suggested) DIHITUNG on-the-fly dari available ≤ reorderPoint,
-// TIDAK PERNAH disimpan sebagai baris — baru jadi ReplenishmentRequest
-// nyata begitu "Create Request" diklik. Tidak ada tab "Suggested" di
-// tabel bawah karena bukan status baris sungguhan; sarannya tampil
-// sebagai section terpisah di atas. Lihat schema.prisma.
-const TABS = [
-  { key: "",               label: "Semua" },
-  { key: "DRAFT",          label: "Draf" },
-  { key: "WAITING_APPROVAL",label: "Menunggu persetujuan" },
-  { key: "APPROVED",       label: "Disetujui" },
-  { key: "ORDERED",        label: "Sudah dipesan" },
-  { key: "COMPLETED",      label: "Selesai" },
-  { key: "REJECTED",       label: "Ditolak" },
-];
+// RESTOK — saran (dihitung dari batas minimum, tidak disimpan) + daftar permintaan restok (Draf → persetujuan → dipesan → selesai). Permintaan restok TIDAK PERNAH mengubah stok; selesai = ditautkan ke penerimaan barang.
+// Bahan tanpa batas minimum tidak pernah disarankan: "tidak ada saran" bukan bukti stok aman, dan halaman menyatakannya. Batas minimum diisi petugas berwenang di Stok & Lokasi (Ubah Item); kosong = "belum diatur".
+const satuan = (u) => UNIT_LABEL[u] || String(u || "").toLowerCase();
 
 export default function WarehouseReplenishment() {
-  const [suggestions, setSuggestions] = useState(null);
-  const [cakupan, setCakupan] = useState(null);
-  const [tab, setTab] = useState("");
-  const [rows, setRows] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
-  const [formOpen, setFormOpen] = useState(false);
-  const [prefill, setPrefill] = useState(null);
-  const [selectedId, setSelectedId] = useState(null);
+  const navigate = useNavigate();
+  const [suggestions, setSuggestions] = useState(null); const [cakupan, setCakupan] = useState(null);
+  const [tahap, setTahap] = useTahapFilter(); const [cari, setCari] = useState("");
+  const [rows, setRows] = useState(null); const [loading, setLoading] = useState(true); const [error, setError] = useState("");
+  const [formOpen, setFormOpen] = useState(false); const [prefill, setPrefill] = useState(null);
 
   const loadSuggestions = useCallback(() => {
     api.getReplenishmentSuggestions().then((d) => setSuggestions(d.suggestions)).catch(() => setSuggestions([]));
-    // Cakupan batas minimum: agar "tidak ada saran" tidak dibaca sebagai "stok aman" (bahan tanpa batas minimum tidak pernah disarankan).
     api.getStokLokasi().then((d) => setCakupan(cakupanBatasMinimum(d.rows ?? []))).catch(() => setCakupan(null));
   }, []);
   const load = useCallback(() => {
     setLoading(true); setError("");
-    api.getReplenishmentRequests({ status: tab || undefined })
-      .then((d) => setRows(d.requests)).catch((e) => setError(e.message)).finally(() => setLoading(false));
-  }, [tab]);
+    api.getReplenishmentRequests({}).then((d) => setRows(d.requests)).catch((e) => setError(e.message)).finally(() => setLoading(false));
+  }, []);
+  useEffect(() => { load(); loadSuggestions(); }, [load, loadSuggestions]);
 
-  useEffect(() => { load(); }, [load]);
-  useEffect(() => { loadSuggestions(); }, [loadSuggestions]);
-
-  function refreshSemua() { load(); loadSuggestions(); }
-  function buatDariSaran(s) { setPrefill(s); setFormOpen(true); }
-  function buatManual() { setPrefill(null); setFormOpen(true); }
-
+  const refreshSemua = () => { load(); loadSuggestions(); };
+  const buka = (r) => navigate(`/warehouse/replenishment/${r.id}`);
   function ekspor() {
     if (!rows || rows.length === 0) return;
     exportToCSV(rows.map((r) => ({
-      "Request ID": r.requestNumber,
-      Item: r.material.code,
-      "Current Stock": r.currentStockSnapshot,
-      "Minimum Stock": r.minimumStockSnapshot ?? "",
-      "Suggested Quantity": r.suggestedQty,
-      "Required Date": r.requiredDate || "",
-      Source: REPLENISHMENT_SOURCE_REAL[r.source]?.label,
-      Supplier: r.supplier || "",
-      Priority: r.priority,
-      Status: REPLENISHMENT_STATUS_REAL[r.status]?.label,
-    })), "replenishment-requests");
+      "No. permintaan": r.requestNumber, Bahan: r.material.code, "Saldo saat dibuat": r.currentStockSnapshot, "Batas minimum": r.minimumStockSnapshot ?? "belum diatur", "Jumlah diminta": r.suggestedQty, Dibutuhkan: r.requiredDate || "",
+      Sumber: SUMBER_RESTOK[r.source] ?? r.source, Pemasok: r.supplier || "", Prioritas: PRIORITAS[r.priority] ?? r.priority, Status: r.tampilan?.label ?? r.status,
+    })), "permintaan-restok");
   }
-
-  const kosong = !loading && rows && rows.length === 0;
 
   return (
     <PageContainer>
-      <PageHeader
-        title="Restok"
-        subtitle="Saran restok berdasarkan minimum stock, dan permintaan yang perlu ditinjau."
-        actions={
-          <>
-            <Button variant="ghost" size="sm" onClick={refreshSemua} disabled={loading}>
-              <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Muat Ulang
-            </Button>
-            <Button variant="secondary" size="sm" onClick={ekspor} disabled={!rows?.length}>
-              <Download size={14} /> Export
-            </Button>
-            <Button size="sm" onClick={buatManual}><Plus size={14} /> Ajukan Manual</Button>
-          </>
-        }
-      />
-
+      <PageHeader title="Restok" subtitle="Saran restok dari batas minimum dan permintaan restok — dari pengajuan sampai barang diterima."
+        actions={<>
+          <Button variant="ghost" size="sm" onClick={refreshSemua} disabled={loading}><RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Muat Ulang</Button>
+          <Button variant="secondary" size="sm" onClick={ekspor} disabled={!rows?.length}><Download size={14} /> Export</Button>
+          <Button size="sm" onClick={() => { setPrefill(null); setFormOpen(true); }}><Plus size={14} /> Ajukan Manual</Button>
+        </>} />
       <PageBody>
         <Card>
           <CardHeader>
@@ -107,77 +61,39 @@ export default function WarehouseReplenishment() {
           {suggestions === null ? (
             <div className="px-5 pb-5"><div className="h-16 animate-pulse rounded-btn bg-inset" /></div>
           ) : suggestions.length === 0 ? (
-            <div className="px-5 pb-5">
-              <p className="text-[12.5px] text-ink3" data-testid="saran-kosong">{kalimatCakupanBatasMinimum(cakupan) ?? "Tidak ada saran restok saat ini."}</p>
+            <div className="space-y-1 px-5 pb-5">
+              <p className="m-0 text-[12.5px] text-ink3" data-testid="saran-kosong">{kalimatCakupanBatasMinimum(cakupan) ?? "Tidak ada saran restok saat ini."}</p>
+              {cakupan && cakupan.belum > 0 && <Link to="/warehouse/inventory" className="text-[12.5px] font-semibold text-accent" data-testid="atur-batas-minimum">Atur batas minimum di Stok &amp; Lokasi (Ubah Item)</Link>}
             </div>
           ) : (
-            <ul className="divide-y divide-line">
+            <ul className="m-0 list-none divide-y divide-line p-0">
               {suggestions.map((s) => (
-                <li key={s.materialId} className="flex items-center gap-3 px-5 py-2.5">
+                <li key={s.materialId} className="flex items-center gap-3 px-5 py-2.5" data-testid="saran-baris">
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-[12.5px] font-semibold text-ink">{s.code} — {s.name}</p>
-                    <p className="text-[11px] text-ink3">
-                      Tersedia {s.available} / Batas minimum {s.reorderPoint}
-                      {s.reorderQty != null && ` · Saran jumlah ${s.reorderQty}`}
-                    </p>
+                    <p className="m-0 truncate text-[12.5px] font-semibold text-ink">{s.code} — {s.name}</p>
+                    <p className="m-0 text-[11px] text-ink3">Tersedia {teksJumlah(s.available)} / Batas minimum {teksJumlah(s.reorderPoint)}{s.reorderQty != null && ` · Saran jumlah ${teksJumlah(s.reorderQty)}`}</p>
                   </div>
-                  <Button size="sm" variant="secondary" onClick={() => buatDariSaran(s)}>Buat Permintaan</Button>
+                  <Button size="sm" variant="secondary" onClick={() => { setPrefill(s); setFormOpen(true); }} className="max-sm:min-h-11">Buat Permintaan</Button>
                 </li>
               ))}
             </ul>
           )}
         </Card>
 
-        <div role="tablist" aria-label="Saring status permintaan restok" className="flex flex-wrap gap-1 border-b border-line pb-2">
-          {TABS.map((t) => (
-            <button key={t.key} role="tab" aria-selected={tab === t.key} onClick={() => setTab(t.key)}
-              className={cn("rounded-chip px-3 py-1.5 text-[12.5px] font-semibold transition-colors",
-                tab === t.key ? "bg-accentbg text-accent" : "text-ink3 hover:bg-hovertint hover:text-ink2")}>
-              {t.label}
-            </button>
-          ))}
-          {rows && <span className="ml-auto self-center text-[11.5px] text-ink3">{rows.length} permintaan</span>}
-        </div>
-
-        {error && <div className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{error}</div>}
-
-        <Card className="overflow-hidden">
-          {kosong ? (
-            <EmptyState icon={TrendingUp} title="Belum ada Permintaan Restok" description="Buat dari saran di atas, atau ajukan manual."
-              action={<Button size="sm" onClick={buatManual}><Plus size={14} /> Ajukan Manual</Button>} />
-          ) : (
-            <TableWrap>
-              <Table>
-                <THead>
-                  <TR>
-                    <TH>No. Request</TH><TH>Item</TH><TH numeric>Saat Ini</TH><TH numeric>Minimum</TH>
-                    <TH numeric>Saran</TH><TH>Dibutuhkan</TH><TH>Sumber</TH><TH>Supplier</TH><TH>Status</TH>
-                  </TR>
-                </THead>
-                <TBody>
-                  {loading && <TableSkeletonRows rows={6} cols={9} />}
-                  {!loading && rows?.map((r) => (
-                    <TR key={r.id} clickable onClick={() => setSelectedId(r.id)}>
-                      <TD className="font-semibold text-ink">{r.requestNumber}</TD>
-                      <TD truncate>{r.material.code}</TD>
-                      <TD numeric className="text-ink3">{r.currentStockSnapshot}</TD>
-                      <TD numeric className="text-ink3">{r.minimumStockSnapshot ?? "—"}</TD>
-                      <TD numeric className="font-semibold text-ink">{r.suggestedQty}</TD>
-                      <TD className="whitespace-nowrap text-ink2">{r.requiredDate ? new Date(r.requiredDate).toLocaleDateString("id-ID", { day: "numeric", month: "short" }) : "—"}</TD>
-                      <TD className="whitespace-nowrap text-ink2">{REPLENISHMENT_SOURCE_REAL[r.source]?.label}</TD>
-                      <TD className="text-ink2">{r.supplier || "—"}</TD>
-                      <TD><StatusBadge map={REPLENISHMENT_STATUS_REAL} value={r.status} /></TD>
-                    </TR>
-                  ))}
-                </TBody>
-              </Table>
-            </TableWrap>
-          )}
-        </Card>
+        <DaftarSederhana filters={TAHAP_FILTER_RESTOK} rows={rows} loading={loading} error={error} tahap={tahap} onTahap={setTahap} cari={cari} onCari={setCari}
+          placeholder="Cari no., bahan, pemasok" labelCari="Cari permintaan restok" labelTab="Saring tahap permintaan restok" teks={teksCari.restok} nomor={(r) => r.requestNumber} onBuka={buka}
+          kolom={[
+            { label: "Permintaan", kelas: "whitespace-nowrap", isi: (r) => <><div className="font-semibold text-ink">{r.requestNumber}</div><div className="text-[11px] text-ink3">{r.requestedBy?.name ?? "—"} · {tanggalPendek(r.createdAt)}</div></> },
+            { label: "Bahan", isi: (r) => <><div className="font-medium text-ink">{r.material.code}</div><div className="text-[11px] text-ink3">{r.material.name}</div></> },
+            { label: "Jumlah diminta", numeric: true, isi: (r) => <span className="font-semibold text-ink">{teksJumlah(r.suggestedQty)} {satuan(r.material.unit)}</span> },
+            { label: "Saldo / minimum", numeric: true, isi: (r) => <span className="text-ink2">{teksJumlah(r.currentStockSnapshot)} / {r.minimumStockSnapshot == null ? "belum diatur" : teksJumlah(r.minimumStockSnapshot)}</span> },
+            { label: "Dibutuhkan", kelas: "whitespace-nowrap text-ink2", isi: (r) => tanggalPendek(r.requiredDate) },
+            { label: "Sumber", kelas: "text-ink2", isi: (r) => SUMBER_RESTOK[r.source] ?? r.source },
+          ]}
+          kartu={(r) => ({ judul: r.requestNumber, baris: [<><span className="font-medium text-ink">{r.material.code}</span> · {teksJumlah(r.suggestedQty)} {satuan(r.material.unit)}</>, `${r.requestedBy?.name ?? "—"} · ${tanggalPendek(r.createdAt)}${r.requiredDate ? ` · butuh ${tanggalPendek(r.requiredDate)}` : ""}`] })}
+          kosong={{ icon: TrendingUp, judul: "Belum ada Permintaan Restok", deskripsi: "Buat dari saran di atas, atau ajukan manual.", aksi: <Button size="sm" onClick={() => { setPrefill(null); setFormOpen(true); }}><Plus size={14} /> Ajukan Manual</Button> }} />
       </PageBody>
-
-      <ReplenishmentFormModal open={formOpen} prefill={prefill} onClose={() => setFormOpen(false)} onCreated={refreshSemua} />
-      <ReplenishmentDetailDrawer requestId={selectedId} onClose={() => setSelectedId(null)} onChanged={refreshSemua} />
+      <ReplenishmentFormModal open={formOpen} prefill={prefill} onClose={() => setFormOpen(false)} onCreated={(d) => { refreshSemua(); if (d?.id) navigate(`/warehouse/replenishment/${d.id}`); }} />
     </PageContainer>
   );
 }
