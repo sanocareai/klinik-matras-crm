@@ -351,7 +351,7 @@ function OrderCard({ order, onOpenChat, onOpenTimeline, onStatusChange, onStageC
       {punyaUnitPkr(order) && <DaftarUnitPkr pkr={order.penjualanKaryawan} onBuka={onBukaUnit} className="mt-2" />}
       <div className="mt-2 flex flex-col gap-1.5">
         <StatusSelect order={order} onChange={onStatusChange} className="w-full" />
-        <OrderMilestoneBadge milestone={order.milestone} />
+        <OrderMilestoneBadge milestone={order.milestone} order={order} />
         <PipelineStageSelect order={order} onChange={onStageChange} className="w-full" />
       </div>
 
@@ -1459,7 +1459,7 @@ export default function Orders() {
                       </td>
                       <td className="whitespace-nowrap px-3 py-2.5">
                         <StatusSelect order={o} onChange={handleStatusChange} />
-                        <OrderMilestoneBadge milestone={o.milestone} className="mt-1" />
+                        <OrderMilestoneBadge milestone={o.milestone} order={o} className="mt-1" />
                         {punyaUnitPkr(o) && statusTerpisah(o.penjualanKaryawan) && (
                           <p className="m-0 mt-1 space-y-0 font-sans text-[10.5px] leading-snug text-ink3" data-testid="status-terpisah-pkr">
                             <span className="block">{statusTerpisah(o.penjualanKaryawan).produksi}</span>

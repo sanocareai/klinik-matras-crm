@@ -5,6 +5,7 @@ import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { OrderMilestoneBadge } from "@/components/OrderMilestoneBadge.jsx";
+import { BadgeBayarPkr } from "@/features/finance/PkrOrderCrm.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import { WorkspaceHero } from "@/components/ui/workspace-hero.jsx";
@@ -401,7 +402,7 @@ export default function ArmadaOrders() {
                     <TD>{KATEGORI_LABELS[o.category] || o.category}</TD>
                     <TD onClick={(e) => e.stopPropagation()}>
                       <StatusSelect order={o} onChange={handleStatusChange} />
-                      <OrderMilestoneBadge milestone={o.milestone} className="mt-1" />
+                      <OrderMilestoneBadge milestone={o.milestone} order={o} className="mt-1" />
                     </TD>
                     <TD><ProduksiChip stage={o.productionStage} /></TD>
                     <TD>
@@ -425,11 +426,17 @@ export default function ArmadaOrders() {
                       )}
                     </TD>
                     <TD>
-                      <Badge variant={paymentStatusVariant(o.paymentStatus)}>
-                        {PAYMENT_STATUS_LABELS[o.paymentStatus] || o.paymentStatus}
-                      </Badge>
+                      {/* Order Penjualan Karyawan: pembayaran dicatat di Finance (PKR), bukan di Order — Order.paymentStatus memang selalu "Belum Bayar". Tampilkan status dari PKR (bila peran
+                          berizin) atau "Di Finance"; jangan menampilkan "Belum Bayar" palsu. */}
+                      {o.penjualanKaryawan ? (
+                        o.penjualanKaryawan.pembayaran ? <BadgeBayarPkr pkr={o.penjualanKaryawan} /> : <Badge variant="neutral" title="Pembayaran dicatat di Finance › Penjualan Karyawan">Di Finance</Badge>
+                      ) : (
+                        <Badge variant={paymentStatusVariant(o.paymentStatus)}>
+                          {PAYMENT_STATUS_LABELS[o.paymentStatus] || o.paymentStatus}
+                        </Badge>
+                      )}
                     </TD>
-                    <TD numeric>{formatRupiah(nilaiBersihOrder(o))}</TD>
+                    <TD numeric>{o.penjualanKaryawan ? <span className="font-normal text-ink3" title="Nominal dikelola di Finance › Penjualan Karyawan">di Finance</span> : formatRupiah(nilaiBersihOrder(o))}</TD>
                     <TD>{formatTanggalPendek(o.createdAt)}</TD>
                   </TR>
                 ))
