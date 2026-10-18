@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # RILIS "EXPORT EXCEL MULTI-UNIT": WEB + BACKEND, TANPA migrasi dan TANPA perubahan schema.prisma — workflow RELEASE-DIRECTORY di atas release aktif (BASE_SHA). FAIL-CLOSED.
-#   • Excel halaman Order: kolom "Jumlah Unit" + "Produk per Unit" dan sheet baru "Rincian Unit" (SATU baris per unit produksi) — order 3 kasur sejenis tidak lagi tampak "1 kasur".
+#   • Excel halaman Order: kolom "Jumlah Unit" + "Produk per Unit" dan sheet baru "Rekap per Unit" (SEMUA order; order N unit = N baris, daftar yang disalin admin produksi ke rekap bahan) — order 3 kasur sejenis tidak lagi tampak "1 kasur".
 #   • Excel Biaya Bahan (Finance): unit lain pada order multi-unit yang BELUM punya pemakaian bahan ikut tampil ("Belum ada pemakaian bahan", nilai kosong bukan Rp0) + kolom "Unit dalam Order".
 #   • Gate: preflight; backup + RESTORE rehearsal (kode baru terhadap salinan restore: export Biaya Bahan, parity SQL independen, tanpa tulis); build web di release dir;
 #     smoke baca-saja pasca-switch (izin, kolom baru, semua unit order tampil, daftar Order memuat unitBaris, tak ada jejak tulis).
@@ -20,8 +20,8 @@ DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 CAND_BRANCH="${CAND_BRANCH:-feat/export-order-unit}"
 # Berkas yang BOLEH berbeda dari baseline: EKSPLISIT path persis. Apa pun di luar daftar (termasuk backend/prisma) = berhenti.
 # Rilis kode-saja: tanpa migrasi, tanpa perubahan schema.prisma; OTA RN TIDAK diterbitkan.
-ALLOWED_RE='^(backend/src/services/finance/biayaBahan\.js|backend/src/services/finance/export/biaya-bahan\.js|backend/tests/integration/biayaBahanExportMultiUnit\.integration\.test\.js|backend/tests/integration/exportUnitReleaseSmoke\.integration\.test\.js|frontend/src/pages/Orders\.jsx|frontend/src/utils/exportOrdersStyled\.js|frontend/src/utils/orderUnitExport\.js|frontend/tests/orderUnitExport\.test\.js|scripts/release-export-unit\.sh)$'
-BACKEND_SRC_EXPECT="backend/src/services/finance/biayaBahan.js backend/src/services/finance/export/biaya-bahan.js"
+ALLOWED_RE='^(frontend/src/pages/Orders\.jsx|frontend/src/utils/exportOrdersStyled\.js|frontend/src/utils/orderUnitExport\.js|frontend/tests/orderUnitExport\.test\.js|scripts/release-export-unit\.sh)$'
+BACKEND_SRC_EXPECT=""
 FRONTEND_SRC_EXPECT="frontend/src/pages/Orders.jsx frontend/src/utils/exportOrdersStyled.js frontend/src/utils/orderUnitExport.js"
 PUBLIC_URL="https://app.sanomatrassehat.com"
 INTERNAL_URL="http://127.0.0.1:4000"
@@ -59,7 +59,7 @@ Rilis ini TANPA migrasi dan TANPA tulisan data bisnis: rollback KODE aman kapan 
    cd ${PREV_DIR:-<release-sebelumnya>}
    docker tag ${ROLLBACK_TAG:-<tag-rollback>} ${IMG_NAME:-klinik-matras-backend:latest}
    SANSS_PERSIST_ROOT=${PERSIST} docker compose -p ${PROJECT} -f docker-compose.yml -f docker-compose.release.yml up -d --no-deps --force-recreate backend
-Kode lama hanya kehilangan kolom Jumlah Unit, sheet Rincian Unit, dan baris unit tanpa pemakaian bahan di Excel; data tidak terpengaruh.
+Kode lama hanya kehilangan kolom Jumlah Unit, sheet Rekap per Unit, dan baris unit tanpa pemakaian bahan di Excel; data tidak terpengaruh.
 Rilis ini tidak menyentuh keputusan atribusi/koreksi dokumen; tidak ada guard rollback khusus.
 Pemulihan database penuh hanya bila terjadi kerusakan data: gzip -dc ${BACKUP_FILE:-<backup>} | psql ... (lihat checksum di atas).
 ─────────────────────────────────────────────────────────────────────────
@@ -237,7 +237,7 @@ NEW_INDEX="$(grep -o 'index-[A-Za-z0-9_-]*\.js' "$NEW_DIR/frontend/dist/index.ht
 MAPS_KEY="$(sed -n 's/^VITE_GOOGLE_MAPS_JS_KEY=//p' "$PERSIST/frontend/.env" | tr -d '\r"'"'"' ')"
 [ -n "$(grep -lF "$MAPS_KEY" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat VITE_GOOGLE_MAPS_JS_KEY"
 # Fitur rilis ini + fitur rilis sebelumnya (jangan sampai hilang dari bundel).
-for s1 in "Rincian Unit" "Jumlah Unit" "Produk per Unit"; do [ -n "$(grep -lF -- "$s1" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat teks fitur: ${s1}"; done
+for s1 in "Rekap per Unit" "Jumlah Unit" "Produk per Unit"; do [ -n "$(grep -lF -- "$s1" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat teks fitur: ${s1}"; done
 for s2 in "Koreksi Dokumen" "Pengakuan Pendapatan" "Atribusi Beban Divisi" "Mode rute Produksi" "Menunggu penentuan alur Produksi" "Konfirmasi kesiapan fisik" "Edit Data Customer" "Lengkapi Data Customer" "Riwayat Perubahan" "Customer & penerima" "Dijual oleh" "Buat Nota Kredit" "Nilai bersih" "Unit Produksi" "Item Penjualan & Pemenuhan" "Piutang & Refund" "Katalog Item PKR" "Kirim sebagian" "Penjualan Karyawan" "Koreksi Order" "Tambah Pesanan Customer" "Gabungkan Order Duplikat" "Histori dari order lama" "Barang yang dibawa"; do [ -n "$(grep -lF "$s2" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru kehilangan teks fitur lama: ${s2}"; done
 [ -z "$(grep -lF "Hitung Kas" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru memuat Hitung Kas (halamannya belum ada)"
 [ "$NEW_INDEX" != "$PREV_INDEX" ] || die "frontend berubah tetapi bundel baru identik dengan lama (tidak diharapkan)"
