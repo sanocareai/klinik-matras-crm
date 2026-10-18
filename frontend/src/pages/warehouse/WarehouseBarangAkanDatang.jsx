@@ -139,28 +139,13 @@ function DetailPO({ id, onClose, onChanged }) {
           </div>
           {po.notes && <p className="m-0 text-[12.5px] text-ink2">{po.notes}</p>}
           {po.status === "DIBATALKAN" && <p className="m-0 rounded-lg bg-redbg px-3 py-2 text-[12.5px] text-red">PO dibatalkan — {po.cancelReason}</p>}
-          <PanelKedatangan po={po} workspace="GUDANG" bolehTulis={po.status !== "DIBATALKAN"} onChanged={async () => { await muat(); await onChanged(); }} />
-          <div className="rounded-lg border border-line px-3 py-2.5" data-testid="dokumen-penerimaan-po">
-            <div className="text-[12px] font-semibold text-ink">Dokumen penerimaan untuk PO ini ({po.penerimaan.length})</div>
-            <p className="m-0 mt-0.5 text-[11.5px] text-ink2">Alur: PO disetujui → jadwal kedatangan → barang tiba → pemeriksaan → masuk stok. Dokumen yang hanya terjadwal belum berarti barang tiba dan belum memengaruhi stok.</p>
-            {po.penerimaan.length === 0 ? <p className="m-0 mt-1.5 text-[12px] text-ink3">Belum ada dokumen penerimaan.</p> : (
-              <ul className="m-0 mt-1.5 list-none space-y-1 p-0">
-                {po.penerimaan.map((r) => (
-                  <li key={r.id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[12.5px]" data-testid="dokumen-penerimaan" data-nomor={r.nomor}>
-                    <Link to={`/warehouse/goods-receipt/${r.id}`} className="font-semibold text-accent max-sm:min-h-11 max-sm:leading-[44px]">{r.nomor}</Link>
-                    <Badge variant={r.tampilan?.warna ?? "neutral"}>{r.tampilan?.label ?? r.statusLabel}</Badge>
-                    <span className="text-[11.5px] text-ink3">{r.tampilan?.pengaruhStok === "SUDAH" ? "sudah memengaruhi stok" : r.tampilan?.pengaruhStok === "TIDAK" ? "tidak memengaruhi stok" : "belum memengaruhi stok"}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {perluTindakan.length > 0 && (
-              <p className="m-0 mt-2 rounded-lg bg-inset px-3 py-2 text-[12.5px] text-ink2" data-testid="petunjuk-periksa">
-                Pemeriksaan (baik/ditolak) dan <strong>Simpan ke Stok</strong> dilakukan di halaman penerimaan, mis.{" "}
-                <Link to={`/warehouse/goods-receipt/${perluTindakan[0].id}`} className="font-semibold text-accent">{perluTindakan[0].nomor}</Link>. Stok baru bertambah saat Simpan ke Stok.
-              </p>
-            )}
-          </div>
+          <PanelKedatangan po={po} workspace="GUDANG" ringkas bolehTulis={po.status !== "DIBATALKAN"} ekstraPenerimaan={(r) => <Link to={`/warehouse/goods-receipt/${r.id}`} className="mt-1.5 inline-flex items-center gap-1 text-[12px] font-semibold text-accent max-sm:min-h-11" data-testid="buka-halaman-penerimaan">Buka halaman penerimaan {r.nomor} →</Link>} onChanged={async () => { await muat(); await onChanged(); }} />
+          {perluTindakan.length > 0 && (
+            <p className="m-0 rounded-lg bg-inset px-3 py-2 text-[12.5px] text-ink2" data-testid="petunjuk-periksa">
+              Pemeriksaan (baik/ditolak) dan <strong>Simpan ke Stok</strong> dilakukan di halaman penerimaan, mis.{" "}
+              <Link to={`/warehouse/goods-receipt/${perluTindakan[0].id}`} className="font-semibold text-accent">{perluTindakan[0].nomor}</Link>. Stok baru bertambah saat Simpan ke Stok.
+            </p>
+          )}
         </div>
       )}
     </Modal>
