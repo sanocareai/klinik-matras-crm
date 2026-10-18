@@ -14,7 +14,7 @@
 #
 # ROLLBACK KODE: aman kapan saja (tag image rollback-pre-uxg2-<sha8>); tidak ada perubahan database untuk dipulihkan. Dokumen yang diubah/dikembalikan/dibuat ulang lewat UI tetap utuh (status header + jejak aktivitas);
 #   kode lama tetap membaca dokumen itu dengan status lamanya. Pergerakan stok hasil "selisih ditemukan" adalah pergerakan sah (tetap di ledger). Peristiwa penyelesaian selisih/kembalikan hanya berupa jejak aktivitas (diabaikan kode lama).
-# (dibangkitkan oleh scripts/gen-release-ux-gudang-tahap2.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 88863c52aade…)
+# (dibangkitkan oleh scripts/gen-release-ux-gudang-tahap2.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 84c36f6049e7…)
 set -Eeuo pipefail
 umask 077
 
@@ -203,7 +203,7 @@ union all select 'retur', count(*), md5(coalesce(string_agg(to_jsonb(x)::text, '
 union all select 'penyesuaian', count(*), md5(coalesce(string_agg(to_jsonb(x)::text, '|' order by x.id),'')) from stock_adjustment_requests x where x.created_at < '$T0'::timestamp and x.updated_at < '$T0'::timestamp
 union all select 'reservasi_produksi_v2', count(*), md5(coalesce(string_agg(to_jsonb(x)::text, '|' order by x.id),'')) from material_reservations_v2 x where x.created_at < '$T0'::timestamp and x.updated_at < '$T0'::timestamp
 union all select 'reservasi_v1_per_bahan', count(*), md5(coalesce(string_agg(r.material_id::text || ':' || r.q::text, '|' order by r.material_id),'')) from (select l.material_id, sum(l.requested_qty) q from material_issue_lines l join material_issues i on i.id = l.material_issue_id where i.created_at < '$T0'::timestamp and i.updated_at < '$T0'::timestamp and i.production_plan_id is null and i.status::text in ('APPROVED','READY_TO_PICK','PICKED') group by l.material_id) r
-union all select 'valuasi_pergerakan', count(*), md5(coalesce(string_agg(to_jsonb(x)::text, '|' order by x.id),'')) from fin_stock_movement_valuations x where x.created_at < '$T0'::timestamp
+union all select 'valuasi_pergerakan', count(*), md5(coalesce(string_agg(to_jsonb(x)::text, '|' order by x.id),'')) from fin_stock_movement_valuations x where x.valued_at < '$T0'::timestamp
 union all select 'event_aktivitas', count(*), md5(coalesce(string_agg(to_jsonb(x)::text, '|' order by x.id),'')) from activity_events x where x.created_at < '$T0'::timestamp
 FPBEKU
 )"
