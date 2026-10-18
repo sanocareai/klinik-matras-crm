@@ -1,6 +1,7 @@
 // VITE_API_BASE kosong = relative URL (untuk web/PWA browser, pakai proxy Vite dev / same-origin prod)
 // VITE_API_BASE diisi = absolute URL (untuk Capacitor APK, perlu tahu alamat server produksi)
 import { demoGate, demoBlock } from "./features/production/demo/demoGate.js";
+import { bolehAdopsiTokenGeser } from "./lib/tokenGeser.js";
 const BASE = (import.meta.env.VITE_API_BASE || "") + "/api";
 const TIMEOUT_MS = 30000; // 30 detik — cegah request hang selamanya
 
@@ -27,9 +28,13 @@ function authHeaders() {
 // `tokenKirim` = token yang dibawa request itu SAAT DIKIRIM. Token geser hanya diterima bila token itu
 // MASIH token aktif: respons terlambat dari sesi lama (mis. 200 yang baru sampai setelah pengguna login
 // ulang) tidak boleh menimpa token sesi baru. Request tanpa token tidak pernah sah membawa token geser.
+//
+// Syarat kedua (lib/tokenGeser.js): token geser harus LEBIH BARU dari token aktif dan milik pengguna yang sama.
+// Respons 304 dari cache HTTP browser membawa header X-Refreshed-Token LAMA dari entri tersimpan; tanpa syarat ini
+// token itu menimpa token login baru dan memicu "Sesi Berakhir" berulang.
 function adoptRefreshedToken(res, tokenKirim = null) {
   const baru = res.headers.get("X-Refreshed-Token");
-  if (baru && tokenKirim && tokenKirim === bacaToken()) {
+  if (baru && tokenKirim && tokenKirim === bacaToken() && bolehAdopsiTokenGeser(tokenKirim, baru)) {
     try { localStorage.setItem("token", baru); } catch {}
   }
 }
