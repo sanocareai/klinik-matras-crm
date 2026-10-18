@@ -147,8 +147,13 @@ test("writer audit P6 gagal untuk: inspeksi diubah/dihapus, fit test/exception/c
   }
   const noFence = new Map(sources); noFence.set("src/routes/orders.js", sources.get("src/routes/orders.js").replaceAll("await assertOrderUnitsNotV2Owned(tx,", "await noop(tx,"));
   assert.ok(kinds(noFence).includes("ORDER_FENCE"), "menghapus pagar buka-kembali terdeteksi");
-  const noReconcile = new Map(sources); noReconcile.set("src/routes/orders.js", sources.get("src/routes/orders.js").replaceAll("await selaraskanProduksiDenganOrderInTx(tx,", "await noop(tx,"));
-  assert.ok(kinds(noReconcile).includes("ORDER_FENCE"), "menghapus penyelarasan Produksi saat batal/ubah status terdeteksi");
+  const noReconcile = new Map(sources); noReconcile.set("src/routes/orders.js", sources.get("src/routes/orders.js").replaceAll("await ubahStatusUnitInTx(tx,", "await noop(tx,"));
+  assert.ok(kinds(noReconcile).includes("ORDER_FENCE"), "menghapus pemanggilan fungsi domain status lintas workspace dari jalur Sales terdeteksi");
+  const DOMAIN = "src/services/statusUnitLintasWorkspace.js";
+  const noDomainSelaras = new Map(sources); noDomainSelaras.set(DOMAIN, sources.get(DOMAIN).replaceAll("await selaraskanProduksiDenganOrderInTx(tx,", "await noop(tx,"));
+  assert.ok(auditQcHandoffWriters(noDomainSelaras).findings.some((f) => f.kind === "ORDER_FENCE" && f.disposition === "DOMAIN_TANPA_SELARAS_PRODUKSI"), "fungsi domain tanpa penyelarasan Produksi terdeteksi");
+  const noDomainPenanda = new Map(sources); noDomainPenanda.set(DOMAIN, sources.get(DOMAIN).replaceAll("await tandaiRunDilepasKarenaDispatchInTx(tx,", "await noop(tx,"));
+  assert.ok(auditQcHandoffWriters(noDomainPenanda).findings.some((f) => f.kind === "ORDER_FENCE" && f.disposition === "DOMAIN_TANPA_PENANDA_RUN"), "fungsi domain tanpa penanda Run dilepas terdeteksi");
   const noFilter = new Map(sources); noFilter.set("src/routes/production.js", sources.get("src/routes/production.js").replace("productionRunsV2: { none: { origin: { not: null } } }", "x: 1"));
   assert.ok(kinds(noFilter).includes("QC_QUEUE_FILTER"));
   const noDefer = new Map(sources); noDefer.set("src/services/productionWorkshopExecutionCommandService.js", sources.get("src/services/productionWorkshopExecutionCommandService.js").replace("deferReady: true", "deferReady: false"));

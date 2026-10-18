@@ -818,3 +818,68 @@ test("Q5. KASUS RIKA PERSIS: unit IN_PRODUCTION masuk rute yang SUDAH SELESAI (A
   assert.equal(await hitungAktivitasDispatch(unit.id), 1);
   assert.equal(await unitStatus(unitLain.id), "DELIVERED");
 });
+
+// ──────────────────────────────── SATU JALUR STATUS LINTAS WORKSPACE (services/statusUnitLintasWorkspace.js) — Sales ⇄ Delivery ⇄ Produksi ────────────────────────────────
+const salesUbah = (adm, orderId, status, note = "Ubah dari Sales") => adm.api.patch(`/api/orders/${orderId}`, { status, statusOverrideNote: note });
+
+test("Q6. SALES Siap Kirim saat Run aktif: tepat SATU job pengiriman; ulang/klik ganda dan Route Planner memakai job yang sama; lalu berangkat → Terkirim lewat jalur Delivery tanpa job ganda", async () => {
+  const w = await world(); const adm = await admin(); const pl = await planner();
+  const { unit, run } = await rikaLike(w, { tanpaSaklar: true });
+  assert.equal((await salesUbah(adm, unit.orderId, "READY")).status, 200);
+  assert.equal(await unitStatus(unit.id), "READY_FOR_DELIVERY");
+  assert.equal((await jobDeliveryUnit(unit.id)).length, 1, "tepat satu job");
+  const [a, b] = await Promise.all([salesUbah(adm, unit.orderId, "READY"), salesUbah(adm, unit.orderId, "READY")]);
+  assert.ok([a.status, b.status].every((x) => [200, 409].includes(x)), JSON.stringify([a.body, b.body]));
+  assert.equal((await jobDeliveryUnit(unit.id)).length, 1, "klik ganda tidak menggandakan job");
+  assert.equal((await runFresh(run.id)).deliveryRelease.kind, "SALES_STATUS_CHANGE");
+  const dobel = await pl.api.post(`${ARM}/jobs`, { type: "DELIVERY", unitIds: [unit.id], scheduledDate: TGL });
+  assert.ok(dobel.status >= 400, "Route Planner tidak membuat job kedua untuk unit yang sudah punya job aktif");
+  assert.equal((await jobDeliveryUnit(unit.id)).length, 1);
+  const jobId = (await jobDeliveryUnit(unit.id))[0].jobId;
+  const atur = await pl.api.patch(`${ARM}/jobs/${jobId}`, { scheduledDate: TGL, driverId: w.driver.user.id });
+  assert.equal(atur.status, 200, JSON.stringify(atur.body));
+  await jalankanPengiriman(w, jobId, "q6");
+  assert.equal(await unitStatus(unit.id), "DELIVERED");
+  assert.equal((await testPrisma.job.findUniqueOrThrow({ where: { id: jobId } })).status, "COMPLETED");
+  // Aturan lama D-006 (tidak diubah): pilihan manual Sales di dropdown menyalakan statusLocked, sehingga sinkron otomatis tidak menimpa status order; Sales menutupnya sendiri lewat jalur resmi yang sama (Q7).
+  assert.equal((await testPrisma.order.findUniqueOrThrow({ where: { id: unit.orderId } })).status, "READY");
+  assert.equal((await jobDeliveryUnit(unit.id)).length, 1);
+  assert.equal((await runFresh(run.id)).status, "ACTIVE", "Run boleh ditutup administratif belakangan");
+});
+
+test("Q7. SALES Terkirim saat Run aktif memakai jalur resmi: unit/order/job/rute disinkronkan, Run dilepas (ORDER_DELIVERED) dengan pelaku, satu job, Run bisa ditutup administratif sesudahnya", async () => {
+  const w = await world(); const adm = await admin(); const pl = await planner();
+  const { unit, run } = await rikaLike(w, { tanpaSaklar: true });
+  const job = ok2(await pl.api.post(`${ARM}/jobs`, { type: "DELIVERY", unitIds: [unit.id], scheduledDate: TGL, driverId: w.driver.user.id }));
+  await testPrisma.order.update({ where: { id: unit.orderId }, data: { deliveryConfirmedDate: new Date(`${TGL}T00:00:00.000Z`) } }); // aturan Sales yang sudah ada: Terkirim butuh Tanggal Kirim Pasti (bukan aturan Produksi)
+  const res = await salesUbah(adm, unit.orderId, "DELIVERED", "Barang sudah diterima pelanggan");
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(await unitStatus(unit.id), "DELIVERED");
+  assert.equal((await testPrisma.order.findUniqueOrThrow({ where: { id: unit.orderId } })).status, "DELIVERED");
+  const j = await testPrisma.job.findUniqueOrThrow({ where: { id: job.id } });
+  assert.equal(j.status, "COMPLETED", "job pengiriman ikut selesai lewat jalur Delivery, bukan hanya label");
+  assert.equal((await jobDeliveryUnit(unit.id)).length, 1);
+  const r = await runFresh(run.id);
+  assert.equal(r.deliveryRelease.kind, "SALES_STATUS_CHANGE"); assert.equal(r.deliveryRelease.via, "ORDER_DELIVERED"); assert.equal(r.deliveryRelease.decidedBy.id, adm.user.id); assert.equal(r.status, "ACTIVE");
+  const rev = (await card(w, run.id)).revision;
+  const tutup = await w.lead.api.post(`${V2}/runs/${run.id}/confirm-finished-goods`, { expectedRevision: rev, unitCode: unit.unitCode, reason: "Tutup Run administratif; unit sudah terkirim", physicalVerified: true, workCenterId: w.wc }, key(`q7-tutup-${++seq}`));
+  assert.equal(tutup.status, 200, JSON.stringify(tutup.body));
+  assert.equal(await unitStatus(unit.id), "DELIVERED", "status unit tidak mundur");
+});
+
+test("Q8. ORDER MULTI-UNIT: batal menyelaraskan SEMUA unit (Run unit produksi dibatalkan); bila satu unit sudah berangkat, seluruh pembatalan ditolak berkode tanpa menulis apa pun", async () => {
+  const w = await world(); const adm = await admin();
+  const a = await rikaLike(w, { tanpaSaklar: true });
+  const u2 = await testPrisma.unit.create({ data: { unitCode: `${a.unit.unitCode}-B`, orderId: a.unit.orderId, seq: 2, status: "READY_FOR_DELIVERY" } });
+  const tolak = await testPrisma.unit.update({ where: { id: u2.id }, data: { status: "IN_TRANSIT_OUT" } });
+  const res = await salesUbah(adm, a.unit.orderId, "CANCELLED", "Batal sebagian sudah berangkat");
+  assert.equal(res.status, 409, JSON.stringify(res.body)); assert.equal(res.body.code, "UNIT_SUDAH_BERANGKAT"); assert.ok(res.body.pilihanKoreksi?.length >= 2);
+  assert.equal(await unitStatus(a.unit.id), "IN_PRODUCTION"); assert.equal(await unitStatus(tolak.id), "IN_TRANSIT_OUT"); assert.equal((await runFresh(a.run.id)).status, "ACTIVE");
+  assert.equal((await testPrisma.order.findUniqueOrThrow({ where: { id: a.unit.orderId } })).status !== "CANCELLED", true);
+  // fakta dikoreksi (unit kedua belum berangkat) → batal berhasil untuk semua unit
+  await testPrisma.unit.update({ where: { id: u2.id }, data: { status: "READY_FOR_DELIVERY" } });
+  const ok1 = await salesUbah(adm, a.unit.orderId, "CANCELLED", "Batal total");
+  assert.equal(ok1.status, 200, JSON.stringify(ok1.body));
+  assert.equal(await unitStatus(a.unit.id), "CANCELLED"); assert.equal(await unitStatus(u2.id), "CANCELLED"); assert.equal((await runFresh(a.run.id)).status, "CANCELLED");
+  assert.equal((await testPrisma.jobUnit.findMany({ where: { unitId: { in: [a.unit.id, u2.id] }, job: { type: "DELIVERY", status: { in: ["UNSCHEDULED", "SCHEDULED", "ASSIGNED", "EN_ROUTE", "ARRIVED"] } } } })).length, 0, "tidak ada job pengiriman aktif tersisa");
+});

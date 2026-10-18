@@ -11,7 +11,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { recordActivity, EVENT_TYPES } from "../lib/activityLog.js";
 import { lockRowForUpdate } from "./inventoryLedger.js";
 import { lockUnitOwnership } from "./unitV2Ownership.js";
-import { adminOverrideReadyForDeliveryInTx, isUnitPathDoneInTx, markUnitReadyForDeliveryInTx } from "./unitStageEngine.js";
+import { isUnitPathDoneInTx, markUnitReadyForDeliveryInTx } from "./unitStageEngine.js";
+import { ubahStatusUnitInTx, KE_STATUS, SUMBER_STATUS } from "./statusUnitLintasWorkspace.js";
 import { assertNoOpenRunException, assertRunConsistent, isDeliveryReleased, RUN_OWNED_STATUSES } from "./productionRunGuards.js";
 import { assertNoPendingReturnsInTx } from "./productionMaterialReturnService.js";
 import { assertPhasesReadyForHandoffDecision, assertRunPhasesTerminal, transitionPhases } from "./productionPhaseLifecycle.js";
@@ -608,7 +609,10 @@ export async function setUnitStorageLocationInTx(tx, unitId, locationCode) {
 // Run/tahap/operasi/bukti TIDAK diubah (hanya penanda override + rekam + revisi); tanpa QC/foto/custody/stok. Status order disinkronkan engine yang SAMA; saran job Delivery idempoten (job draf dipakai, tanpa job ganda).
 // `buildRecord({ orderStatusAfter })` membentuk rekam audit setelah status order hasil sinkron diketahui; penanda + rekam ditulis dalam SATU UPDATE (CHECK database pasangan kolom).
 export async function applyAdminOverrideReleaseInTx(tx, { run, unit, location, now = new Date(), revision, buildRecord }) {
-  await adminOverrideReadyForDeliveryInTx(tx, unit.id, { storageLocation: location.code }); // penulisan Unit + sinkron order + saran job = milik stage engine
+  // SATU jalur status lintas workspace (services/statusUnitLintasWorkspace.js): unit → READY_FOR_DELIVERY + lokasi pengambilan, order disinkronkan, tepat satu job pengiriman (job draf yang ada dipakai ulang).
+  // Penanda Run (kind ADMIN_OVERRIDE, rekam keputusan Admin) ditulis di bawah — sumber ADMIN_OVERRIDE tidak menandai Run sendiri.
+  const statusBaru = await ubahStatusUnitInTx(tx, { unitIds: [unit.id], ke: KE_STATUS.SIAP_KIRIM, aktor: null, sumber: SUMBER_STATUS.ADMIN_OVERRIDE, orderId: unit.orderId, lokasiPengambilan: location.code, sinkronOrder: true });
+  if (statusBaru.diubah.length === 0) throw custodyError(`Unit ${unit.unitCode ?? unit.id} tidak lagi berstatus yang bisa dilepas (sudah siap/berangkat/terkirim/batal)`, 409, "RELEASE_UNIT_STATUS_BERUBAH");
   const orderSesudah = await tx.order.findUnique({ where: { id: unit.orderId }, select: { status: true } });
   const rekam = buildRecord({ orderStatusAfter: orderSesudah?.status ?? null });
   await tx.productionRun.update({ where: { id: run.id }, data: { deliveryReleasedAt: now, deliveryRelease: rekam, revision } });

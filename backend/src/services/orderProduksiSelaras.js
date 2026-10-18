@@ -13,12 +13,13 @@ import { batalkanRunKarenaOrderInTx } from "./productionQcHandoffCommandService.
 import { batalkanIssueAktifKarenaOrderInTx } from "./productionMaterialIssueCommandService.js";
 import { batalkanPlanKarenaOrderInTx } from "./productionPlanningCommandService.js";
 import { tandaiRunDilepasKarenaDispatchInTx } from "./unitCustodyCommandService.js";
+import { createLeftoverReturnsInTx } from "./productionMaterialReturnService.js";
 
 export const AKSI_SELARAS = Object.freeze({ CANCEL: "CANCEL", READY: "READY", DELIVERED: "DELIVERED" });
 
-async function runBerjalanOrder(tx, orderId) {
+async function runBerjalanOrder(tx, orderId, unitIds = null) {
   return tx.productionRun.findMany({
-    where: { status: { in: [...RUN_OWNED_STATUSES] }, unit: { orderId } },
+    where: { status: { in: [...RUN_OWNED_STATUSES] }, unit: { orderId, ...(unitIds ? { id: { in: unitIds } } : {}) } },
     select: { id: true, unitId: true, status: true, currentPhase: true, revision: true, unit: { select: { id: true, unitCode: true, status: true } } },
     orderBy: { id: "asc" },
   });
@@ -29,9 +30,9 @@ async function runBerjalanOrder(tx, orderId) {
  * @param {{orderId:string, aksi:"CANCEL"|"READY"|"DELIVERED", actorId?:string|null, alasan?:string|null, orderStatusSebelum?:string|null}} p
  * @returns ringkasan { runDibatalkan, runDilepas, peringatan[] } — kosong bila tidak ada Run berjalan (perilaku V1 identik).
  */
-export async function selaraskanProduksiDenganOrderInTx(tx, { orderId, aksi, actorId = null, alasan = null, orderStatusSebelum = null }) {
-  const ringkasan = { runDibatalkan: [], runDilepas: [], peringatan: [] };
-  const runs = await runBerjalanOrder(tx, orderId);
+export async function selaraskanProduksiDenganOrderInTx(tx, { orderId, aksi, actorId = null, alasan = null, orderStatusSebelum = null, unitIds = null }) {
+  const ringkasan = { runDibatalkan: [], runDilepas: [], peringatan: [], returGudang: [] };
+  const runs = await runBerjalanOrder(tx, orderId, unitIds);
   if (runs.length === 0) return ringkasan;
   const orderStatusSesudah = aksi === AKSI_SELARAS.CANCEL ? "CANCELLED" : aksi;
   const sebab = String(alasan ?? "").trim() || (aksi === AKSI_SELARAS.CANCEL ? "Order dibatalkan di Sales" : `Order diubah ke ${orderStatusSesudah} di Sales`);
@@ -49,11 +50,20 @@ export async function selaraskanProduksiDenganOrderInTx(tx, { orderId, aksi, act
       }
       const rr = await batalkanRunKarenaOrderInTx(tx, { runId: run.id, actorId, reason: sebab });
       if (!rr.dibatalkan) continue;
+      // Bahan yang SUDAH diserahkan Gudang tidak dibalik otomatis (tanpa pergerakan stok), tetapi tindak lanjutnya dicatat di ANTREAN RETUR BAHAN Gudang yang sudah ada (baris PENDING per bahan, sisa = diserahkan − dipakai − waste − retur):
+      // Gudang menerima jumlah nyata (catatan wajib bila kurang) sehingga stok/HPP tercatat lewat jalur resmi. Pembatalan order tidak pernah menunggu koreksi stok.
+      let returBaru = [];
+      if (bahan.sudahDiserahkan.length > 0) {
+        const fullRun = { id: run.id, unitId: run.unitId, unit: { unitCode: run.unit.unitCode } };
+        await createLeftoverReturnsInTx(tx, { run: fullRun, actorId, commandId: null });
+        returBaru = (await tx.productionMaterialReturn.findMany({ where: { runId: run.id, status: "PENDING" }, select: { id: true, qty: true, material: { select: { code: true } } } })).map((r) => ({ id: r.id, code: r.material.code, qty: Number(r.qty) }));
+        ringkasan.returGudang.push(...returBaru);
+      }
       const bahanSudahDiserahkan = bahan.sudahDiserahkan.flatMap((i) => i.lines.map((l) => ({ issueNumber: i.issueNumber, code: l.code, name: l.name, unit: l.unit, qty: l.qty })));
       const meta = {
         aksi, unitCode: run.unit.unitCode, runId: run.id, runStatusBefore: rr.statusSebelum, runPhase: rr.fase, runRevisionBefore: rr.revisiSebelum, runRevisionAfter: rr.revision,
         unitStatusBefore: run.unit.status, orderStatusBefore: orderStatusSebelum, orderStatusAfter: orderStatusSesudah, reason: sebab,
-        planDibatalkan: plan.planDibatalkan, reservasiDilepas: plan.reservasiDilepas, issueDibatalkan: bahan.dibatalkan, bahanSudahDiserahkan,
+        planDibatalkan: plan.planDibatalkan, reservasiDilepas: plan.reservasiDilepas, issueDibatalkan: bahan.dibatalkan, bahanSudahDiserahkan, returGudangPending: returBaru.map((r) => `${r.code} ${r.qty}`),
       };
       await recordActivity(tx, { entityType: "unit", entityId: run.unitId, eventType: EVENT_TYPES.PRODUCTION_FOLLOWS_ORDER, actorId: actorId || null, metadata: meta });
       await recordActivity(tx, { entityType: "order", entityId: orderId, eventType: EVENT_TYPES.PRODUCTION_FOLLOWS_ORDER, actorId: actorId || null, metadata: meta });

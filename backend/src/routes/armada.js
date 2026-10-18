@@ -62,8 +62,8 @@ import { konfirmasiMuat, progresMuat, periksaGerbangSelesai, modeGerbangUnit, kl
 import { bacaSiapFisik, nilaiSiap, periksaUnitSiapKirim } from "../services/deliverySiapFisik.js";
 import { catatKesiapanFisik, KesiapanFisikError } from "../services/deliveryKesiapanFisik.js";
 import { tandaiJobOverrideAdmin } from "../services/deliveryOverrideAdmin.js";
-import { tandaiJobMenunggu, validasiPenempatanUnitProduksi, STATUS_PRODUKSI_BISA_DIKIRIM, STATUS_ORDER_SAH_PRODUKSI } from "../services/deliveryMenungguKonfirmasi.js";
-import { tandaiRunDilepasKarenaDispatchInTx } from "../services/unitCustodyCommandService.js";
+import { tandaiJobMenunggu, validasiPenempatanUnitProduksi, pastikanTidakAdaJobGanda, peringatanDataPengiriman, STATUS_PRODUKSI_BISA_DIKIRIM, STATUS_ORDER_SAH_PRODUKSI } from "../services/deliveryMenungguKonfirmasi.js";
+import { ubahStatusUnitInTx, KE_STATUS, SUMBER_STATUS } from "../services/statusUnitLintasWorkspace.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import {
   SETTLED_JOB_STATUSES,
@@ -4269,7 +4269,10 @@ armadaRouter.post("/jobs", requirePermission(P.JOB_WRITE), async (req, res) => {
     // dan unit yang sudah ada di job pengiriman aktif (job ganda) tetap ditolak. Flag lama `menungguKonfirmasi` diterima dan diabaikan (klien lama).
     // Order penjualan karyawan (PKR) dikecualikan: konfirmasi kesiapan FISIK miliknya (mode transisi) tetap satu-satunya jalur untuk unit yang belum ditandai siap Produksi.
     const unitProduksi = type === "DELIVERY" ? units.filter((u) => STATUS_PRODUKSI_BISA_DIKIRIM.includes(u.status) && !u.order?.penjualanKaryawanId) : [];
+    const idUnitProduksiAwal = new Set(unitProduksi.map((u) => u.id));
     if (unitProduksi.length > 0) await validasiPenempatanUnitProduksi(prisma, unitProduksi);
+    // Unit yang sudah siap kirim juga tidak boleh punya dua job pengiriman aktif (job draf dari Sales Siap Kirim / Admin override / konfirmasi dipakai ulang).
+    if (type === "DELIVERY") await pastikanTidakAdaJobGanda(prisma, units.filter((u) => !idUnitProduksiAwal.has(u.id)));
     const idUnitProduksi = new Set(unitProduksi.map((u) => u.id));
     const expectedStatus = type === "PICKUP" ? ["AWAITING_PICKUP"] : ["READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD"];
     // Pengiriman unit PKR yang belum ditandai siap Produksi: boleh bila kesiapan FISIK dikonfirmasi (mode transisi).
@@ -4337,7 +4340,8 @@ armadaRouter.post("/jobs", requirePermission(P.JOB_WRITE), async (req, res) => {
     // pengambilan sungguhan, kurang actionable dibanding "driver sudah
     // di jalan sekarang".
 
-    res.status(201).json(job);
+    // Data minimum pengiriman yang belum lengkap hanya PERINGATAN (tidak menahan penempatan).
+    res.status(201).json({ ...job, peringatan: peringatanDataPengiriman({ addressText, units }) });
   } catch (err) {
     handleErr(err, res);
   }
@@ -4994,13 +4998,8 @@ armadaRouter.post("/jobs/:id/start", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN
       // status unit (kasur masih di rumah customer, belum dipegang driver).
       if (job.type === "DELIVERY") {
         const jobUnits = await tx.jobUnit.findMany({ where: { jobId: job.id } });
-        // Unit yang masih diproduksi boleh berangkat (status produksi tidak menahan pengiriman): Run yang belum ditutup diberi penanda "dilepas untuk pengiriman" SEBELUM status unit berubah.
-        await tandaiRunDilepasKarenaDispatchInTx(tx, { unitIds: jobUnits.map((ju) => ju.unitId), jobId: job.id, actorId: req.user.id, via: "JOB_START" });
-        await tx.unit.updateMany({
-          where: { id: { in: jobUnits.map((ju) => ju.unitId) } },
-          data: { status: "IN_TRANSIT_OUT" },
-        });
-        await syncOrderStatusForUnits(tx, jobUnits.map((ju) => ju.unitId));
+        // SATU jalur status lintas workspace (services/statusUnitLintasWorkspace.js): unit → IN_TRANSIT_OUT, Run yang belum ditutup diberi penanda "dilepas untuk pengiriman" (status produksi tidak menahan pengiriman), order disinkronkan.
+        await ubahStatusUnitInTx(tx, { unitIds: jobUnits.map((ju) => ju.unitId), ke: KE_STATUS.BERANGKAT, aktor: req.user.id, sumber: SUMBER_STATUS.DELIVERY_JOB, jobId: job.id });
       }
       // Auto-Online (12 September 2026, keputusan owner: semi-otomatis —
       // Offline wajib manual, tapi Online boleh otomatis begitu driver
@@ -5730,15 +5729,16 @@ armadaRouter.post("/jobs/:id/complete", requireAnyPermission(P.JOB_WRITE, P.JOB_
         },
       });
       const jobUnits = await tx.jobUnit.findMany({ where: { jobId: job.id } });
-      // Pengiriman yang diselesaikan (termasuk input manual Admin untuk barang yang sudah terkirim) sementara Run unit belum ditutup: beri penanda "dilepas untuk pengiriman" sebelum unit DELIVERED.
-      if (job.type === "DELIVERY") await tandaiRunDilepasKarenaDispatchInTx(tx, { unitIds: jobUnits.map((ju) => ju.unitId), jobId: job.id, actorId: req.user.id, via: "JOB_COMPLETE" });
-      // Lihat catatan simplifikasi di kepala file: PICKUP selesai langsung ke
-      // RECEIVED (bukan IN_TRANSIT_IN dulu) — belum ada fitur scan intake
-      // gudang yang akan mengonsumsi status antara itu.
-      await tx.unit.updateMany({
-        where: { id: { in: jobUnits.map((ju) => ju.unitId) } },
-        data: { status: job.type === "PICKUP" ? "RECEIVED" : "DELIVERED" },
-      });
+      // PENGIRIMAN selesai (termasuk input manual Admin untuk barang yang sudah terkirim): SATU jalur status lintas workspace (unit → DELIVERED, Run yang belum ditutup diberi penanda dilepas, order disinkronkan).
+      // Lihat catatan simplifikasi di kepala file: PICKUP selesai langsung ke RECEIVED (bukan IN_TRANSIT_IN dulu) — belum ada fitur scan intake gudang yang akan mengonsumsi status antara itu.
+      if (job.type === "DELIVERY") {
+        await ubahStatusUnitInTx(tx, { unitIds: jobUnits.map((ju) => ju.unitId), ke: KE_STATUS.TERKIRIM, aktor: req.user.id, sumber: SUMBER_STATUS.DELIVERY_JOB, jobId: job.id, sinkronOrder: false });
+      } else {
+        await tx.unit.updateMany({
+          where: { id: { in: jobUnits.map((ju) => ju.unitId) } },
+          data: { status: "RECEIVED" },
+        });
+      }
       // Custody Gudang V2 (P1–P2): pickup selesai menawarkan unit ke Gudang. V1 tetap RECEIVED; tanpa writer V2 (flag OFF /
       // unit di luar cohort) tidak ada yang dibuat. Satu transaksi dengan mutasi V1 -> atomik.
       if (job.type === "PICKUP") {
@@ -5975,12 +5975,9 @@ armadaRouter.post("/jobs/:id/fail", requireAnyPermission(P.JOB_WRITE, P.JOB_OWN_
         const jobUnits = await tx.jobUnit.findMany({ where: { jobId: job.id } });
         // Unit yang benar-benar dibawa driver (IN_TRANSIT_OUT) kembali ke Gudang: tawarkan handoff RETURN TANPA menetapkan lokasi.
         const unitsDibawa = await tx.unit.findMany({ where: { id: { in: jobUnits.map((ju) => ju.unitId) }, status: "IN_TRANSIT_OUT" }, select: { id: true } });
-        await tx.unit.updateMany({
-          where: { id: { in: jobUnits.map((ju) => ju.unitId) }, status: "IN_TRANSIT_OUT" },
-          data: { status: "READY_FOR_DELIVERY" },
-        });
+        // SATU jalur status lintas workspace: unit yang dibawa driver kembali ke READY_FOR_DELIVERY, order disinkronkan.
+        await ubahStatusUnitInTx(tx, { unitIds: unitsDibawa.map((unit) => unit.id), ke: KE_STATUS.KEMBALI, aktor: req.user.id, sumber: SUMBER_STATUS.DELIVERY_JOB, jobId: job.id });
         await offerUnitCustody(tx, { direction: "RETURN", unitIds: unitsDibawa.map((unit) => unit.id), jobId: job.id, actorId: req.user.id });
-        await syncOrderStatusForUnits(tx, jobUnits.map((ju) => ju.unitId));
       }
       const routeJustCompleted = await syncRouteCompletionStatus(tx, job.routeId, { deferEvent: true });
       // Riwayat lengkap (9 September 2026, D-110) — lihat komentar panjang

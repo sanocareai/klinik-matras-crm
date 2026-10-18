@@ -94,9 +94,14 @@ test("rehearsal kode: satu-satunya tulisan (selaraskanProduksiDenganOrderInTx) t
   assert.ok(script.includes("fp-all-sebelum") && script.includes("fp-all-sesudah"), "sidik jari seluruh tabel sebelum = sesudah");
 });
 
-test("konsistensi aturan: order PKR tidak berubah; Sales memanggil penyelarasan di dua jalur (batal + dropdown); riwayat membaca bukti dengan filter DOC_ dan tidak menulis; buka-kembali tetap dipagari", () => {
+test("konsistensi aturan: order PKR tidak berubah; Sales mengubah status unit HANYA lewat fungsi domain tunggal di empat jalur (batal, dropdown CANCELLED/DELIVERED/READY, endpoint Batalkan Order) dan fungsi itu memanggil penyelarasan Produksi; riwayat membaca bukti dengan filter DOC_ dan tidak menulis; buka-kembali tetap dipagari", () => {
   const orders = baca("backend/src/routes/orders.js");
-  assert.equal([...orders.matchAll(/await selaraskanProduksiDenganOrderInTx\(tx,/g)].length, 2, "batal + dropdown");
+  assert.equal([...orders.matchAll(/await ubahStatusUnitInTx\(tx,/g)].length, 4, "batal (dropdown) + terkirim + siap kirim + endpoint Batalkan Order");
+  assert.equal([...orders.matchAll(/await selaraskanProduksiDenganOrderInTx\(tx,/g)].length, 0, "Sales tidak lagi memanggil penyelarasan langsung: semuanya lewat fungsi domain");
+  const domain = baca("backend/src/services/statusUnitLintasWorkspace.js");
+  assert.ok(/await selaraskanProduksiDenganOrderInTx\(tx,/.test(domain) && /await tandaiRunDilepasKarenaDispatchInTx\(tx,/.test(domain), "fungsi domain menyelaraskan Produksi dan menandai Run dilepas");
+  assert.ok([...baca("backend/src/routes/armada.js").matchAll(/await ubahStatusUnitInTx\(tx,/g)].length >= 3, "Delivery (berangkat, terkirim, gagal) memakai fungsi domain yang sama");
+  assert.ok(baca("backend/src/services/unitCustodyCommandService.js").includes("await ubahStatusUnitInTx(tx,"), "Admin override memakai fungsi domain yang sama");
   assert.ok(orders.includes("await assertOrderUnitsNotV2Owned(tx, order.id, \"Membuka kembali order untuk pengiriman\")") && orders.includes("await assertOrderUnitsNotV2Owned(tx, order.id, \"Membuka kembali order untuk pickup\")"), "pagar buka-kembali utuh");
   assert.ok(baca("backend/src/services/penjualanKaryawanOrder.js").includes("await assertOrderUnitsNotV2Owned(tx, order.id, \"Membatalkan penjualan karyawan\")"), "PKR tidak berubah");
   const riw = baca("backend/src/services/productionRiwayatService.js").replace(/\/\/.*$/gm, "");

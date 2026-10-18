@@ -738,7 +738,8 @@ function ringkasIkutOrder(m) {
     if (m.planDibatalkan) bagian.push(`rencana & ${m.reservasiDilepas ?? 0} reservasi bahan dilepas`);
     if ((m.issueDibatalkan || []).length) bagian.push(`permintaan bahan ${m.issueDibatalkan.join(", ")} dibatalkan`);
     const sudah = (m.bahanSudahDiserahkan || []).map((x) => `${x.code} ${x.qty} ${x.unit || ""}`.trim());
-    const peringatan = sudah.length ? `; PERHATIAN Gudang: bahan sudah diserahkan untuk unit ini (${sudah.join(", ")}) — kembalikan lewat Retur Bahan atau Penyesuaian` : "";
+    const retur = (m.returGudangPending || []).length ? `; tindak lanjut Gudang dicatat di Antrean Retur Bahan: ${m.returGudangPending.join(", ")} (terima jumlah nyata di Gudang)` : "";
+    const peringatan = sudah.length ? `; PERHATIAN Gudang: bahan sudah diserahkan untuk unit ini (${sudah.join(", ")}) — kembalikan lewat Retur Bahan atau Penyesuaian${retur}` : "";
     return `Order dibatalkan Sales${dari} — unit ${unit}: ${bagian.join("; ")}${m.reason ? ` — ${m.reason}` : ""}${peringatan}`;
   }
   return `Order diubah Sales ke ${m.orderStatusAfter || "—"}${dari} — unit ${unit}: Production Run ${m.runStatusBefore || "—"} tetap berjalan dan ditandai dilepas untuk pengiriman (bukan hasil pemeriksaan/QC); tutup administratif lewat Selesaikan Produksi${m.reason ? ` — ${m.reason}` : ""}`;
