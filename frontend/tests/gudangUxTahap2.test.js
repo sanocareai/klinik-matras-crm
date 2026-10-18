@@ -1,0 +1,98 @@
+// UX Gudang Tahap 2 (frontend) — Pengeluaran Material & Transfer Stok: logika murni + kontrak struktur layar (tanpa DOM). Status/aksi diputuskan SERVER (tampilan); tes backend: gudangUxTahap2.integration.test.js.
+import test from "node:test";
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  TAHAP_FILTER_MI, TAHAP_FILTER_ST, filterTahap, hitungPerTahap, teksCariMI, teksCariST, cocokCari, galatJumlah, dampakKeluar, dampakKirim, dampakTerima, adaSelisihTerima, adaKurangStok, kalimatKetersediaan, angka,
+} from "../src/features/warehouse/dokumen/dokumenLogic.js";
+
+const dir = path.dirname(fileURLToPath(import.meta.url));
+const baca = (rel) => fs.readFileSync(path.join(dir, "../src", rel), "utf8").replace(/\r\n/g, "\n");
+const mat = (code, name, unit = "PCS") => ({ code, name, unit });
+const mi = (id, status, lines = []) => ({ id, status, issueNumber: `MI-${id}`, department: "Produksi", lines });
+
+test("filter tahap MI: Draf / Menunggu / Disetujui & disiapkan (3 status) / Dikeluarkan / Dibatalkan; hitungan konsisten", () => {
+  const rows = ["DRAFT", "WAITING_APPROVAL", "APPROVED", "READY_TO_PICK", "PICKED", "ISSUED", "CANCELLED"].map((s) => mi(s, s));
+  assert.deepEqual(filterTahap(TAHAP_FILTER_MI, rows, "disiapkan").map((r) => r.status), ["APPROVED", "READY_TO_PICK", "PICKED"]);
+  assert.equal(filterTahap(TAHAP_FILTER_MI, rows, "draf").length, 1); assert.equal(filterTahap(TAHAP_FILTER_MI, rows, "").length, 7); assert.equal(filterTahap(TAHAP_FILTER_MI, rows, "tidak-ada").length, 7);
+  const h = hitungPerTahap(TAHAP_FILTER_MI, rows); assert.equal(h[""], 7); assert.equal(h.disiapkan, 3); assert.equal(h.selesai, 1); assert.equal(h.batal, 1);
+  // setiap status tepat satu tab (selain Semua) — tidak ada dokumen yang hilang dari hitungan
+  assert.equal(Object.entries(h).filter(([k]) => k).reduce((a, [, n]) => a + n, 0), 7);
+});
+
+test("filter tahap ST: Dalam perjalanan berdiri sendiri; Disetujui & disiapkan = APPROVED + PICKED", () => {
+  const rows = ["DRAFT", "WAITING_APPROVAL", "APPROVED", "PICKED", "IN_TRANSIT", "COMPLETED", "CANCELLED"].map((s) => ({ id: s, status: s }));
+  assert.deepEqual(filterTahap(TAHAP_FILTER_ST, rows, "jalan").map((r) => r.status), ["IN_TRANSIT"]);
+  assert.deepEqual(filterTahap(TAHAP_FILTER_ST, rows, "disiapkan").map((r) => r.status), ["APPROVED", "PICKED"]);
+  const h = hitungPerTahap(TAHAP_FILTER_ST, rows); assert.equal(Object.entries(h).filter(([k]) => k).reduce((a, [, n]) => a + n, 0), 7);
+});
+
+test("pencarian: nomor, bahan, unit/order/pelanggan, departemen, lokasi — semua kata harus cocok", () => {
+  const r = { issueNumber: "MI-181026-01", department: "Bengkel", sourceReference: "SO-77", requestedBy: { name: "Budi" }, unit: { unitCode: "U-001", order: { orderNumber: "ORD-9", customer: { name: "Ibu Sari" } } }, lines: [{ material: mat("BUSA-D18", "Busa Ocean D18") }] };
+  const t = teksCariMI(r);
+  for (const q of ["mi-181026", "busa", "u-001", "ord-9", "sari", "bengkel", "busa bengkel", "BUSA   d18"]) assert.ok(cocokCari(t, q), q);
+  assert.ok(!cocokCari(t, "kain")); assert.ok(!cocokCari(t, "busa kain")); assert.ok(cocokCari(t, "") && cocokCari(t, "   "));
+  const s = { transferNumber: "ST-1", sourceLocation: { code: "RM-A1" }, destinationLocation: { code: "FG-B2" }, lines: [{ material: mat("K1", "Kain") }] };
+  assert.ok(cocokCari(teksCariST(s), "rm-a1 fg-b2")); assert.ok(!cocokCari(teksCariST(s), "busa"));
+});
+
+test("galat isian jumlah: wajib, angka, > 0 (diterima boleh 0), koma desimal", () => {
+  const baris = [{ id: "a", material: mat("A", "A") }, { id: "b", material: mat("B", "B") }];
+  assert.match(galatJumlah(baris, { a: "1" }), /B wajib diisi/); assert.match(galatJumlah(baris, { a: "1", b: "x" }), /tidak valid/);
+  assert.match(galatJumlah(baris, { a: "1", b: "0" }), /lebih dari 0/); assert.match(galatJumlah(baris, { a: "1", b: "-2" }), /lebih dari 0/);
+  assert.equal(galatJumlah(baris, { a: "1", b: "0" }, { boleh0: true }), ""); assert.match(galatJumlah(baris, { a: "1", b: "-1" }, { boleh0: true }), /0 atau lebih/);
+  assert.equal(galatJumlah(baris, { a: "1,5", b: "2" }), ""); assert.equal(angka("1,5"), 1.5);
+});
+
+test("dampak stok: keluar (jumlah dioverride), kirim (saldo berkurang), terima (selisih TIDAK masuk saldo)", () => {
+  const ml = [{ id: "a", requestedQty: 10, material: mat("BUSA", "Busa") }];
+  assert.match(dampakKeluar(ml, {})[0], /BUSA: stok berkurang 10 PCS$/); assert.match(dampakKeluar(ml, { a: "8" })[0], /stok berkurang 8 PCS \(diminta 10\)/);
+  const tl = [{ id: "a", qtySent: 8, material: mat("BUSA", "Busa") }];
+  assert.match(dampakKirim(tl)[0], /saldo berkurang 8 PCS saat dikirim/);
+  assert.match(dampakTerima(tl, {})[0], /saldo bertambah 8 PCS$/); assert.match(dampakTerima(tl, { a: "7" })[0], /saldo bertambah 7 PCS — selisih 1 dari 8 yang dikirim TIDAK masuk saldo/); assert.match(dampakTerima(tl, { a: "9" })[0], /lebih 1/);
+  assert.equal(adaSelisihTerima(tl, {}), false); assert.equal(adaSelisihTerima(tl, { a: "7" }), true);
+});
+
+test("ketersediaan: peringatan hanya bila cukup === false; saldo belum diketahui dijujurkan", () => {
+  assert.equal(adaKurangStok([{ cukup: true }, { cukup: null }]), false); assert.equal(adaKurangStok([{ cukup: true }, { cukup: false }]), true);
+  assert.equal(kalimatKetersediaan(null), "Saldo belum diketahui"); assert.equal(kalimatKetersediaan({ saldo: null }), "Saldo belum diketahui");
+  assert.match(kalimatKetersediaan({ saldo: 50, dicadangLain: 45, tersedia: 5 }, "pcs"), /Saldo total 50 pcs · dicadangkan dokumen lain 45 pcs · tersedia 5 pcs/);
+});
+
+test("layar: halaman detail MI & ST memakai tampilan server, AksiDokumen, AlurPenerimaan, KartuJalurKoreksi, jejak; tanpa tombol Edit umum dan tanpa klaim saldo per lokasi", () => {
+  for (const f of ["features/warehouse/dokumen/MaterialIssueDetail.jsx", "features/warehouse/dokumen/TransferDetail.jsx"]) {
+    const s = baca(f);
+    assert.match(s, /AksiDokumen/, f); assert.match(s, /AlurPenerimaan/, f); assert.match(s, /KartuJalurKoreksi/, f); assert.match(s, /JejakDokumen/, f); assert.match(s, /TabelItemDokumen/, f);
+    assert.match(s, /\.tampilan/, `${f}: status dari server`); assert.match(s, /izin\?\.tulis === false/, `${f}: akun hanya-lihat`);
+    assert.match(s, /belum menyimpan saldo per lokasi/, `${f}: tidak menyajikan lokasi sebagai saldo per lokasi`);
+    assert.doesNotMatch(s, />\s*Edit\s*</, `${f}: tidak ada tombol Edit umum`); assert.doesNotMatch(s, /window\.confirm/, `${f}: konfirmasi dampak lewat panel, bukan confirm()`);
+  }
+  const m = baca("features/warehouse/dokumen/MaterialIssueDetail.jsx");
+  assert.match(m, /tipe="MATERIAL_ISSUE"/); assert.match(m, /api\.issueMaterialIssue/); assert.match(m, /api\.buatUlangMaterialIssue/); assert.match(m, /dampakKeluar/); assert.match(m, /KONFIRMASI_KELUAR/);
+  const t = baca("features/warehouse/dokumen/TransferDetail.jsx");
+  assert.match(t, /tipe="STOCK_TRANSFER"/); assert.match(t, /api\.dispatchStockTransfer/); assert.match(t, /api\.receiveStockTransfer/); assert.match(t, /api\.buatUlangStockTransfer/); assert.match(t, /dampakTerima/); assert.match(t, /TIDAK masuk saldo|tidak masuk saldo/i);
+});
+
+test("daftar: halaman, tab tahap berhitung, pencarian, kartu HP, ?buka= lama diarahkan ke halaman detail; drawer lama dihapus", () => {
+  for (const [f, rute] of [["pages/warehouse/WarehouseMaterialIssue.jsx", "/warehouse/material-issue/"], ["pages/warehouse/WarehouseTransfers.jsx", "/warehouse/transfers/"]]) {
+    const s = baca(f);
+    assert.match(s, /FilterTahapDokumen/, f); assert.match(s, /md:hidden/, `${f}: kartu HP`); assert.match(s, /hidden md:block/, `${f}: tabel desktop`); assert.ok(s.includes(rute), `${f}: ke halaman detail`);
+    assert.match(s, /sp\.get\("buka"\)/, `${f}: tautan lama`); assert.doesNotMatch(s, /DetailDrawer/, `${f}: tanpa drawer`);
+  }
+  assert.ok(!fs.existsSync(path.join(dir, "../src/features/warehouse/components/MaterialIssueDetailDrawer.jsx"))); assert.ok(!fs.existsSync(path.join(dir, "../src/features/warehouse/components/StockTransferDetailDrawer.jsx")));
+  const reg = baca("routes/pageRegistry.jsx"); assert.match(reg, /\/warehouse\/material-issue\/:id/); assert.match(reg, /\/warehouse\/transfers\/:id/);
+  assert.match(baca("lib/tabTitles.js"), /"material-issue": "Pengeluaran"/); assert.match(baca("components/Topbar.jsx"), /\/warehouse\/material-issue\/.*Detail/s);
+  for (const f of ["features/finance/JejakBiayaBahan.jsx", "features/warehouse/components/JejakPemakaianPenerimaan.jsx"]) assert.doesNotMatch(baca(f), /material-issue\?buka=/, `${f}: tautan langsung ke detail`);
+});
+
+test("form pembuatan mengembalikan dokumen baru ke pemanggil (diarahkan ke halaman detail)", () => {
+  assert.match(baca("features/warehouse/components/MaterialIssueFormModal.jsx"), /onCreated\(baru\)/); assert.match(baca("features/warehouse/components/StockTransferFormModal.jsx"), /onCreated\(baru\)/);
+});
+
+test("AksiDokumen mendukung ringkasan dampak, catatan, galat panel, bidang pilih/area; ikon aksi baru", () => {
+  const s = baca("features/warehouse/aksi/AksiDokumen.jsx");
+  assert.match(s, /panel\.ringkasan/); assert.match(s, /panel\.catatan/); assert.match(s, /panel\.galat/); assert.match(s, /b\.tipe === "pilih"/); assert.match(s, /b\.tipe === "area"/);
+  for (const k of ["KONFIRMASI_KELUAR", "KIRIM", "TERIMA", "BUAT_ULANG_TRANSFER"]) assert.ok(s.includes(k), k);
+});

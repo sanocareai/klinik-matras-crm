@@ -608,6 +608,7 @@ export const api = {
     request(`/inventory/material-issues/${id}/lines/${lineId}`, { method: "PATCH", body: JSON.stringify(data) }),
   issueMaterialIssue: (id, data = {}) => request(`/inventory/material-issues/${id}/issue`, { method: "POST", body: JSON.stringify(data) }),
   cancelMaterialIssue: (id, reason) => request(`/inventory/material-issues/${id}/cancel`, { method: "PATCH", body: JSON.stringify({ reason }) }),
+  buatUlangMaterialIssue: (id, alasan) => request(`/inventory/material-issues/${id}/buat-ulang`, { method: "POST", body: JSON.stringify({ alasan }) }),
 
   // Custody unit V2 (Production Workshop + Warehouse V2, P1–P2) — antrean serah-terima Delivery <-> Gudang.
   // Reader/writer diputuskan server (flag production_v2_reader/writer, fail-closed); items kosong bila belum aktif.
@@ -703,6 +704,7 @@ export const api = {
   dispatchStockTransfer: (id) => request(`/inventory/transfers/${id}/dispatch`, { method: "POST" }),
   receiveStockTransfer: (id, data = {}) => request(`/inventory/transfers/${id}/receive`, { method: "POST", body: JSON.stringify(data) }),
   cancelStockTransfer: (id, reason) => request(`/inventory/transfers/${id}/cancel`, { method: "PATCH", body: JSON.stringify({ reason }) }),
+  buatUlangStockTransfer: (id, alasan) => request(`/inventory/transfers/${id}/buat-ulang`, { method: "POST", body: JSON.stringify({ alasan }) }),
 
   // Stock Count / Stock Opname (Warehouse Tahap 5)
   getStockCounts: (params = {}) => {

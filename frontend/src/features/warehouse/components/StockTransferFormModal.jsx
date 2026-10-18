@@ -48,11 +48,11 @@ export default function StockTransferFormModal({ open, onClose, onCreated }) {
     setBusy(true);
     setErr("");
     try {
-      await api.createStockTransfer({
+      const baru = await api.createStockTransfer({
         transferType, sourceLocationId, destinationLocationId, notes: notes || undefined,
         lines: valid.map((l) => ({ materialId: l.materialId, qtySent: l.qtySent })),
       });
-      onCreated();
+      onCreated(baru);
       onClose();
     } catch (e2) {
       setErr(e2.message);

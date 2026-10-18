@@ -87,13 +87,13 @@ export default function MaterialIssueFormModal({ open, onClose, onCreated }) {
     setBusy(true);
     setErr("");
     try {
-      await api.createMaterialIssue({
+      const baru = await api.createMaterialIssue({
         sourceType, unitId: unitId || undefined,
         sourceReference: sourceReference || undefined, department: department || undefined,
         requiredDate: requiredDate || undefined, priority, notes: notes || undefined,
         lines: valid.map((l) => ({ materialId: l.materialId, requestedQty: l.requestedQty })),
       });
-      onCreated();
+      onCreated(baru);
       onClose();
     } catch (e2) {
       setErr(e2.message);

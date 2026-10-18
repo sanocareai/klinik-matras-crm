@@ -85,6 +85,8 @@ const WarehouseDashboard   = lazy(() => import("../pages/warehouse/WarehouseDash
 const WarehouseInventory   = lazy(() => import("../pages/warehouse/WarehouseInventory.jsx"));
 const WarehouseGoodsReceipt = lazy(() => import("../pages/warehouse/WarehouseGoodsReceipt.jsx"));
 const PenerimaanDetail = lazy(() => import("../features/warehouse/penerimaan/PenerimaanDetail.jsx"));
+const MaterialIssueDetail = lazy(() => import("../features/warehouse/dokumen/MaterialIssueDetail.jsx"));
+const TransferDetail = lazy(() => import("../features/warehouse/dokumen/TransferDetail.jsx"));
 const WarehouseBarangAkanDatang = lazy(() => import("../pages/warehouse/WarehouseBarangAkanDatang.jsx"));
 const WarehouseReturSupplier = lazy(() => import("../pages/warehouse/WarehouseReturSupplier.jsx"));
 const FinanceReturSupplier = lazy(() => import("../pages/finance/FinanceReturSupplier.jsx"));
@@ -275,7 +277,9 @@ const PAGES_DASAR = [
   { path: "/warehouse/finished-goods", render: () => <WarehouseFinishedGoods /> },
   { path: "/warehouse/material-pickup", render: () => <WarehouseMaterialPickup /> },
   { path: "/warehouse/material-issue", render: () => <WarehouseMaterialIssue /> },
+  { path: "/warehouse/material-issue/:id", render: () => <MaterialIssueDetail /> },
   { path: "/warehouse/transfers", render: () => <WarehouseTransfers /> },
+  { path: "/warehouse/transfers/:id", render: () => <TransferDetail /> },
   { path: "/warehouse/stock-count", render: () => <WarehouseStockCount /> },
   { path: "/warehouse/replenishment", render: () => <WarehouseReplenishment /> },
   { path: "/warehouse/adjustments", render: () => <WarehouseAdjustments /> },

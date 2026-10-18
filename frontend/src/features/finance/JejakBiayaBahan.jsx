@@ -129,7 +129,7 @@ function Pergerakan({ r, izinHarga }) {
         <span className="text-ink3">{wib(r.tanggal)}</span>
         <span className="font-semibold text-ink">{JENIS_BIAYA[r.jenisBiaya] || r.jenisBiaya}</span>
         <span className="tabular-nums">{teksQty(r.qty)} {r.satuan}</span>
-        {r.dokumen && <Link to={`/warehouse/material-issue?buka=${r.dokumen.materialIssueId}`} className="font-mono text-[11.5px] text-accent hover:underline">{r.dokumen.nomor}</Link>}
+        {r.dokumen && <Link to={`/warehouse/material-issue/${r.dokumen.materialIssueId}`} className="font-mono text-[11.5px] text-accent hover:underline">{r.dokumen.nomor}</Link>}
         <Badge variant={sb.variant}>{sb.label}</Badge>
         {fk && <Badge variant={fk.variant}>{fk.label}</Badge>}
         <span className={cn("ml-auto font-semibold tabular-nums", nilai.pasti ? "text-ink" : "text-orange")} data-testid="nilai-pergerakan">{nilai.teks}</span>
