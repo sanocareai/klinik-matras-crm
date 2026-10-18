@@ -1,6 +1,7 @@
 import React from "react";
 import { Badge } from "@/components/ui/badge.jsx";
 import { statusTone } from "@/features/production/productionLabels.js";
+import { milestoneRedundan } from "@/features/orders/milestoneLogic.js";
 
 // Status global (milestone) — SATU kosakata di Sales CRM, detail order, Pipeline, Delivery, Warehouse, Produksi, Unit 360, laporan. Nilai datang dari server (read-model berbasis bukti);
 // komponen ini hanya MEMFORMAT. Field status lama (Order.status) tetap ditampilkan/diedit oleh pemanggil — badge ini TAMBAHAN, bukan pengganti.
@@ -12,9 +13,9 @@ export function orderMilestoneText(m) {
   return m.summary || m.label;
 }
 
-export function OrderMilestoneBadge({ milestone, showAhead = true, className = "" }) {
+export function OrderMilestoneBadge({ milestone, order = null, showAhead = true, className = "" }) {
   const text = orderMilestoneText(milestone);
-  if (!text) return null;
+  if (!text || milestoneRedundan(order, milestone)) return null;
   return (
     <span className={`inline-flex flex-col items-start gap-0.5 ${className}`} data-testid="order-milestone" data-milestone-key={milestone.key || ""} data-mixed={milestone.mixed ? "1" : "0"}>
       <Badge variant={statusTone(milestone.key)} title="Status global — posisi unit yang paling tertinggal">{text}</Badge>

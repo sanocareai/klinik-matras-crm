@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { milestoneRedundan, STATUS_ORDER_LABEL } from "../src/features/orders/milestoneLogic.js";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const read = (...p) => fs.readFileSync(path.join(here, "..", "src", ...p), "utf8");
 
@@ -31,4 +32,32 @@ test("Unit 360: bagian Waktu alur menampilkan enam durasi dan 'Data waktu belum 
   const d = read("features", "production", "UnitOverviewDrawer.jsx");
   assert.match(d, /function WaktuAlur\(\{ timeline \}\)/); assert.match(d, /<WaktuAlur timeline=\{d\.timeline\} \/>/);
   assert.match(d, /timeline\.durations\.map/); assert.match(d, /x\.text/);
+});
+
+test("badge milestone yang hanya mengulang status order disembunyikan; yang menambah info tetap tampil (satu status, bukan dua)", () => {
+  assert.equal(milestoneRedundan({ status: "DELIVERED" }, { key: "TERKIRIM", label: "Terkirim", summary: "Terkirim · 3 unit" }), true, "kasus order Indra: Terkirim + Terkirim · 3 unit");
+  assert.equal(milestoneRedundan({ status: "READY" }, { key: "SIAP_KIRIM", label: "Siap Kirim" }), true);
+  assert.equal(milestoneRedundan({ status: "SHIPPING" }, { key: "DALAM_PENGIRIMAN", label: "Dalam Pengiriman" }), true);
+  assert.equal(milestoneRedundan({ status: "PROCESSING" }, { key: "DITERIMA_WORKSHOP", label: "Diterima di Workshop" }), false, "label beda = tambahan info");
+  assert.equal(milestoneRedundan({ status: "DELIVERED" }, { key: "TERKIRIM", label: "Terkirim", mixed: true }), false, "unit berbeda posisi tetap ditampilkan");
+  assert.equal(milestoneRedundan(null, { label: "Terkirim" }), false);
+  assert.equal(milestoneRedundan({ status: "DELIVERED" }, null), false);
+  assert.ok(read("components", "OrderMilestoneBadge.jsx").includes("milestoneRedundan(order, milestone)"));
+  const hitung = (isi, kunci) => isi.split(kunci).length - 1;
+  assert.equal(hitung(read("pages", "Orders.jsx"), "order={o} className") + hitung(read("pages", "Orders.jsx"), "milestone={order.milestone} order={order}"), 2);
+  assert.equal(hitung(read("components", "customer", "OrderSection.jsx"), "order={order} />") >= 1 && hitung(read("components", "customer", "OrderSection.jsx"), "order={o} showAhead"), 1);
+  assert.equal(hitung(read("pages", "armada", "ArmadaOrders.jsx"), "milestone={o.milestone} order={o}"), 1);
+});
+
+test("Delivery › Semua Order: order Penjualan Karyawan membaca pembayaran dari PKR (bukan Order.paymentStatus 'Belum Bayar'); nominal 'di Finance'", () => {
+  const a = read("pages", "armada", "ArmadaOrders.jsx");
+  assert.ok(a.includes("o.penjualanKaryawan.pembayaran ? <BadgeBayarPkr pkr={o.penjualanKaryawan} />"));
+  assert.ok(a.includes(">Di Finance</Badge>"));
+  assert.ok(a.includes(">di Finance</span> : formatRupiah"));
+});
+
+test("peta label status di milestoneLogic = ORDER_STATUS_LABELS di utils/format.js (paritas)", () => {
+  const fmt = fs.readFileSync(path.join(here, "..", "src", "utils", "format.js"), "utf8");
+  const blok = fmt.slice(fmt.indexOf("export const ORDER_STATUS_LABELS"), fmt.indexOf("};", fmt.indexOf("export const ORDER_STATUS_LABELS")));
+  for (const [k, v] of Object.entries(STATUS_ORDER_LABEL)) assert.ok(blok.includes(k + ': "' + v + '"'), k + " harus " + v);
 });
