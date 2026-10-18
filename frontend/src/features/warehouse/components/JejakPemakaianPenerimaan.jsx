@@ -52,7 +52,7 @@ export default function JejakPemakaianPenerimaan({ receiptId, status }) {
         <p className="m-0 text-[12px] text-ink2" data-testid="materialissue-pemakai">
           Material Issue yang memakai bahan ini:{" "}
           {d.materialIssue.map((m, i) => (
-            <span key={m.materialIssueId}>{i ? ", " : ""}<Link to={`/warehouse/material-issue?buka=${m.materialIssueId}`} className="font-mono text-accent hover:underline">{m.nomor}</Link>{m.unitCode ? ` (${m.unitCode}, ${teksQty(m.qty)})` : ""}</span>
+            <span key={m.materialIssueId}>{i ? ", " : ""}<Link to={`/warehouse/material-issue/${m.materialIssueId}`} className="font-mono text-accent hover:underline">{m.nomor}</Link>{m.unitCode ? ` (${m.unitCode}, ${teksQty(m.qty)})` : ""}</span>
           ))}
         </p>
       )}

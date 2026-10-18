@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils.js";
  * Tahap & indeks datang dari server (`tampilan.tahap`, `tampilan.tahapIndeks`) — layar hanya menampilkan. Dokumen yang berakhir (dibatalkan/ditolak) tidak menyorot langkah mana pun.
  * @param dariPO false → langkah pertama disebut "Penerimaan dibuat" (tanpa PO tidak ada PO yang disetujui).
  */
-export default function AlurPenerimaan({ tampilan, dariPO = true, className }) {
+export default function AlurPenerimaan({ tampilan, dariPO = true, className, label: namaAlur = "Alur penerimaan barang", testid = "alur-penerimaan" }) {
   const tahap = tampilan?.tahap ?? [];
   const aktif = tampilan?.tahapIndeks;
   if (!tahap.length) return null;
@@ -15,7 +15,7 @@ export default function AlurPenerimaan({ tampilan, dariPO = true, className }) {
     return <p className={cn("m-0 rounded-btn bg-inset px-3 py-2 text-[12px] text-ink2", className)} data-testid="alur-berhenti">Alur dihentikan: <strong>{tampilan.label}</strong>. Dokumen tetap tersimpan sebagai riwayat.</p>;
   }
   return (
-    <nav aria-label="Alur penerimaan barang" className={className} data-testid="alur-penerimaan" data-tahap-aktif={aktif}>
+    <nav aria-label={namaAlur} className={className} data-testid={testid} data-tahap-aktif={aktif}>
       <ol className="m-0 flex list-none flex-wrap items-center gap-x-1 gap-y-1.5 p-0">
         {tahap.map((t, i) => {
           const selesai = i < aktif; const kini = i === aktif;

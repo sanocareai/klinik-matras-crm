@@ -13,6 +13,8 @@ import { requirePermission, requireAnyPermission, hasPermission, PERMISSIONS as 
 import { prisma } from "../db.js";
 import { postStockMovement, lockRowForUpdate } from "../services/inventoryLedger.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
+import { tampilanPenyesuaian, untukIzin } from "../services/dokumenGudangLain.js";
+import { jejakDokumenGudang } from "../services/dokumenGudang.js";
 import { catatPerubahanDraf } from "../lib/jejakPerubahan.js";
 import { wajibUuid } from "../lib/uuidParam.js";
 import { pesanServerAman } from "../lib/galatServerAman.js";
@@ -60,7 +62,8 @@ stockAdjustmentRouter.get("/", requirePermission(P.INVENTORY_READ), async (req, 
       include: requestInclude,
       orderBy: [{ createdAt: "desc" }],
     });
-    res.json({ requests });
+    const bisaSetujui = hasPermission(req.user, P.INVENTORY_ADJUSTMENT_APPROVE);
+    res.json({ requests: requests.map((r) => ({ ...r, tampilan: tampilanPenyesuaian(r, { bisaSetujui, pemohonSama: r.requestedById === req.user.id }) })) });
   } catch (err) {
     handleErr(err, res);
   }
@@ -70,7 +73,10 @@ stockAdjustmentRouter.get("/:id", requirePermission(P.INVENTORY_READ), wajibUuid
   try {
     const request = await prisma.stockAdjustmentRequest.findUnique({ where: { id: req.params.id }, include: requestInclude });
     if (!request) return res.status(404).json({ error: "Adjustment request tidak ditemukan" });
-    res.json(request);
+    const tulis = hasPermission(req.user, P.INVENTORY_WRITE); const bisaSetujui = hasPermission(req.user, P.INVENTORY_ADJUSTMENT_APPROVE); const pemohonSama = request.requestedById === req.user.id;
+    // Penyetuju murni (mis. Finance) tidak punya izin tulis tetapi boleh menyetujui: hanya aksi SETUJUI yang ditawarkan kepadanya.
+    const t = tampilanPenyesuaian(request, { bisaSetujui, pemohonSama });
+    res.json({ ...request, tampilan: tulis ? t : { ...t, aksi: t.aksi.filter((a) => a.kode === "SETUJUI") }, izin: { tulis, bisaSetujui, pemohonSama }, jejak: await jejakDokumenGudang(prisma, { entityType: ENTITY_TYPES.STOCK_ADJUSTMENT, id: request.id, dibuatOleh: request.requestedBy?.name ?? null, dibuatPada: request.createdAt, jenis: "ADJ" }) });
   } catch (err) {
     handleErr(err, res);
   }

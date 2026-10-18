@@ -18,6 +18,15 @@ const RESOURCE_LABELS = {
   units: "Unit",
   // Halaman detail Penerimaan Barang (Tahap 1 UX Gudang): /warehouse/goods-receipt/<id> → tab "Penerimaan" (bukan "Goods Receipt").
   "goods-receipt": "Penerimaan",
+  // Tahap 2: /warehouse/material-issue/<id> dan /warehouse/transfers/<id> → tab bernama menu (bukan "Material Issue" / "Transfers").
+  "material-issue": "Pengeluaran",
+  transfers: "Transfer",
+  // Tahap 2 (pola sederhana): halaman detail Opname, Restok, Barang Rusak, Retur, Penyesuaian.
+  "stock-count": "Opname",
+  replenishment: "Restok",
+  damaged: "Barang Rusak",
+  returns: "Retur",
+  stock: "Penyesuaian",
 };
 
 // P9B.1 — segmen path yang tidak title-case rapi dengan aturan umum di bawah (huruf/angka bercampur, singkatan
@@ -67,7 +76,7 @@ export function titleFromPath(rawPath) {
   }
   const rawLast = seg.toLowerCase();
   // Tahap 1 UX Gudang: tab dua menu inti memakai nama menu di sidebar (bukan "Inventory" / "Goods Receipt").
-  if (divisionSeg === "warehouse" && parts.length === 1) { if (rawLast === "inventory") return "Stok & Lokasi"; if (rawLast === "goods-receipt") return "Penerimaan Barang"; }
+  if (divisionSeg === "warehouse" && parts.length === 1) { if (rawLast === "inventory") return "Stok & Lokasi"; if (rawLast === "goods-receipt") return "Penerimaan Barang"; if (rawLast === "material-issue") return "Pengeluaran Material"; if (rawLast === "transfers") return "Transfer Stok"; if (rawLast === "replenishment") return "Restok"; if (rawLast === "stock-count") return "Stock Opname"; if (rawLast === "adjustments") return "Barang Rusak & Retur"; }
   // Menu Gudang bernama "Beranda" (bukan Dashboard) agar tidak terkesan ada dua dashboard.
   if (divisionSeg === "warehouse" && rawLast === "dashboard") return "Gudang · Beranda";
   if (SEGMENT_LABEL_OVERRIDE[rawLast]) return SEGMENT_LABEL_OVERRIDE[rawLast];

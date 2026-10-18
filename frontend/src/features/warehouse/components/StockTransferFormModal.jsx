@@ -10,7 +10,8 @@ import { TRANSFER_TYPE_REAL } from "../inventoryReal.js";
 // menolaknya kalau sama.
 const BARIS_KOSONG = { materialId: "", qtySent: "" };
 
-export default function StockTransferFormModal({ open, onClose, onCreated }) {
+export default function StockTransferFormModal({ open, onClose, onCreated, dokumen = null, onSaved }) {
+  const ubah = !!dokumen; // mode UBAH ISI (Draf): simpan lewat PUT /:id/isi dengan revisi dokumen
   const [materials, setMaterials] = useState([]);
   const [locations, setLocations] = useState([]);
   const [transferType, setTransferType] = useState("BIN_TO_BIN");
@@ -23,11 +24,16 @@ export default function StockTransferFormModal({ open, onClose, onCreated }) {
 
   useEffect(() => {
     if (!open) return;
+    if (dokumen) {
+      setTransferType(dokumen.transferType); setSourceLocationId(dokumen.sourceLocationId); setDestinationLocationId(dokumen.destinationLocationId);
+      setNotes(dokumen.notes || ""); setLines(dokumen.lines.map((l) => ({ materialId: l.materialId, qtySent: String(l.qtySent) }))); setErr("");
+    } else {
     setTransferType("BIN_TO_BIN"); setSourceLocationId(""); setDestinationLocationId("");
     setNotes(""); setLines([{ ...BARIS_KOSONG }]); setErr("");
+    }
     api.getMaterials({ active: "true" }).then(setMaterials).catch(() => {});
     api.getStorageLocations().then((d) => setLocations(d.locations)).catch(() => {});
-  }, [open]);
+  }, [open, dokumen]);
 
   function setLine(i, patch) {
     setLines((ls) => ls.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
@@ -48,11 +54,15 @@ export default function StockTransferFormModal({ open, onClose, onCreated }) {
     setBusy(true);
     setErr("");
     try {
-      await api.createStockTransfer({
+      if (ubah) {
+        const hasil = await api.ubahIsiStockTransfer(dokumen.id, { revisi: dokumen.revisi, transferType, sourceLocationId, destinationLocationId, notes, lines: valid.map((l) => ({ materialId: l.materialId, qtySent: l.qtySent })) });
+        onSaved?.(hasil); onClose(); return;
+      }
+      const baru = await api.createStockTransfer({
         transferType, sourceLocationId, destinationLocationId, notes: notes || undefined,
         lines: valid.map((l) => ({ materialId: l.materialId, qtySent: l.qtySent })),
       });
-      onCreated();
+      onCreated(baru);
       onClose();
     } catch (e2) {
       setErr(e2.message);
@@ -62,7 +72,7 @@ export default function StockTransferFormModal({ open, onClose, onCreated }) {
   }
 
   return (
-    <Modal open={open} onOpenChange={(o) => (o ? null : onClose())} title="Stock Transfer Baru" className="w-[560px]">
+    <Modal open={open} onOpenChange={(o) => (o ? null : onClose())} title={ubah ? `Ubah isi ${dokumen.transferNumber}` : "Stock Transfer Baru"} className="w-[560px]">
       <form onSubmit={simpan} className="space-y-3">
         <div>
           <label htmlFor="tr-type" className="mb-1 block text-[11.5px] font-semibold text-ink2">Transfer Type *</label>
@@ -145,7 +155,7 @@ export default function StockTransferFormModal({ open, onClose, onCreated }) {
         <div className="flex justify-end gap-2 border-t border-line pt-3">
           <Button type="button" variant="ghost" size="sm" onClick={onClose}>Batal</Button>
           <Button type="submit" size="sm" disabled={busy}>
-            {busy && <Loader2 size={14} className="animate-spin" />} Buat Draft
+            {busy && <Loader2 size={14} className="animate-spin" />} {ubah ? "Simpan perubahan" : "Buat Draft"}
           </Button>
         </div>
       </form>

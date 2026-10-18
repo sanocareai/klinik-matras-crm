@@ -78,9 +78,9 @@ test("label jalur & status lengkap dan memakai varian lencana yang sah", () => {
 
 test("layar: setiap detail dokumen Gudang memuat kartu jalur koreksi; tidak ada tombol 'Edit' umum; Penerimaan membuka dialog koreksi dan alur resmi PO", () => {
   const kartu = {
-    "features/warehouse/components/GoodsReceiptDetailDrawer.jsx": 'tipe="GOODS_RECEIPT"', "features/warehouse/components/MaterialIssueDetailDrawer.jsx": 'tipe="MATERIAL_ISSUE"',
-    "features/warehouse/components/StockTransferDetailDrawer.jsx": 'tipe="STOCK_TRANSFER"', "features/warehouse/components/StockCountDetailDrawer.jsx": 'tipe="STOCK_COUNT"',
-    "features/warehouse/components/ReturnsTab.jsx": 'tipe="RETURN_RECORD"', "features/warehouse/components/DamagedStockTab.jsx": 'tipe="DAMAGED_STOCK"', "features/warehouse/components/AdjustmentsTab.jsx": 'tipe="STOCK_ADJUSTMENT"',
+    "features/warehouse/components/GoodsReceiptDetailDrawer.jsx": 'tipe="GOODS_RECEIPT"', "features/warehouse/dokumen/MaterialIssueDetail.jsx": 'tipe="MATERIAL_ISSUE"',
+    "features/warehouse/dokumen/TransferDetail.jsx": 'tipe="STOCK_TRANSFER"', "features/warehouse/dokumen/OpnameDetail.jsx": 'tipe="STOCK_COUNT"',
+    "features/warehouse/dokumen/ReturDetail.jsx": 'tipe="RETURN_RECORD"', "features/warehouse/dokumen/RusakDetail.jsx": 'tipe="DAMAGED_STOCK"', "features/warehouse/dokumen/PenyesuaianDetail.jsx": 'tipe="STOCK_ADJUSTMENT"',
   };
   for (const [f, t] of Object.entries(kartu)) { const s = baca(f); assert.match(s, /KartuJalurKoreksi/, f); assert.ok(s.includes(t), f); assert.doesNotMatch(s, />\s*Edit\s*</, `${f}: tidak boleh ada tombol Edit umum`); }
   const gr = baca("features/warehouse/components/GoodsReceiptDetailDrawer.jsx");
