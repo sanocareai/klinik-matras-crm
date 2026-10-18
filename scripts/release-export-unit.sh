@@ -20,7 +20,7 @@ DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 CAND_BRANCH="${CAND_BRANCH:-feat/export-order-unit}"
 # Berkas yang BOLEH berbeda dari baseline: EKSPLISIT path persis. Apa pun di luar daftar (termasuk backend/prisma) = berhenti.
 # Rilis kode-saja: tanpa migrasi, tanpa perubahan schema.prisma; OTA RN TIDAK diterbitkan.
-ALLOWED_RE='^(backend/src/services/finance/biayaBahan\.js|backend/src/services/finance/export/biaya-bahan\.js|backend/tests/integration/biayaBahanExportMultiUnit\.integration\.test\.js|frontend/src/pages/Orders\.jsx|frontend/src/utils/exportOrdersStyled\.js|frontend/src/utils/orderUnitExport\.js|frontend/tests/orderUnitExport\.test\.js|scripts/release-export-unit\.sh)$'
+ALLOWED_RE='^(backend/src/services/finance/biayaBahan\.js|backend/src/services/finance/export/biaya-bahan\.js|backend/tests/integration/biayaBahanExportMultiUnit\.integration\.test\.js|backend/tests/integration/exportUnitReleaseSmoke\.integration\.test\.js|frontend/src/pages/Orders\.jsx|frontend/src/utils/exportOrdersStyled\.js|frontend/src/utils/orderUnitExport\.js|frontend/tests/orderUnitExport\.test\.js|scripts/release-export-unit\.sh)$'
 BACKEND_SRC_EXPECT="backend/src/services/finance/biayaBahan.js backend/src/services/finance/export/biaya-bahan.js"
 FRONTEND_SRC_EXPECT="frontend/src/pages/Orders.jsx frontend/src/utils/exportOrdersStyled.js frontend/src/utils/orderUnitExport.js"
 PUBLIC_URL="https://app.sanomatrassehat.com"
