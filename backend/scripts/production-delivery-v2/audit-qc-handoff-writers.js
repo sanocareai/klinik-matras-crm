@@ -48,6 +48,7 @@ const FORBIDDEN_IN_P6 = [
 ];
 const REQUIRED_ENGINE_CALLS_P6 = ["recordQcFitTestInTx", "waiveQcGateInTx", "startStageInTx", "reopenStageBeforeQcInTx", "restoreUnitStatusInTx", "isUnitPathDoneInTx"];
 const REQUIRED_ORDER_FENCES = 4;
+const REQUIRED_ORDER_RECONCILE = 2;
 
 function walk(root) {
   const files = [];
@@ -98,8 +99,14 @@ export function auditQcHandoffWriters(files) {
     if (!new RegExp(`\\b${fn}\\(`).test(p6)) add(P6, 0, "P6_CANONICAL_PATH", `MISSING_${fn}`, false);
   }
   const orders = (files.get(ORDERS) || "").replace(/\r\n/g, "\n");
-  const orderFences = (orders.match(/await assertOrderUnitsNotV2Owned\(tx,/g) || []).length;
+  // INVARIAN (diubah 19 Okt 2026, keputusan Owner: Sales fleksibel tapi terintegrasi): setiap jalur order yang MENGUBAH unit (batalkan, dropdown CANCELLED/READY/DELIVERED, buka kembali pengiriman/pickup)
+  // tetap WAJIB menyentuh Production Run lewat salah satu dari dua cara: pagar keras (assertOrderUnitsNotV2Owned — buka kembali) ATAU penyelarasan Produksi/Gudang (selaraskanProduksiDenganOrderInTx — batalkan + dropdown).
+  // Total tetap >= 4 DAN penyelarasan >= 2 (menghapus salah satunya terdeteksi).
+  const pagarKeras = (orders.match(/await assertOrderUnitsNotV2Owned\(tx,/g) || []).length;
+  const selaras = (orders.match(/await selaraskanProduksiDenganOrderInTx\(tx,/g) || []).length;
+  const orderFences = pagarKeras + selaras;
   if (orderFences < REQUIRED_ORDER_FENCES) add(ORDERS, 0, "ORDER_FENCE", `FENCES_${orderFences}_LT_${REQUIRED_ORDER_FENCES}`, false);
+  if (selaras < REQUIRED_ORDER_RECONCILE) add(ORDERS, 0, "ORDER_FENCE", `RECONCILE_${selaras}_LT_${REQUIRED_ORDER_RECONCILE}`, false);
   const productionRoute = (files.get(PRODUCTION_ROUTE) || "").replace(/\r\n/g, "\n");
   if (!productionRoute.includes("productionRunsV2: { none: { origin: { not: null } } }")) add(PRODUCTION_ROUTE, 0, "QC_QUEUE_FILTER", "MISSING_V2_FILTER", false);
   const p5 = (files.get(P5) || "").replace(/\r\n/g, "\n");

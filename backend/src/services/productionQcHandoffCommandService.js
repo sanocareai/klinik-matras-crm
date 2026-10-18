@@ -470,7 +470,7 @@ async function loadRunLockedWithHandoffs(tx, runId) {
   return loadRunLocked(tx, runId);
 }
 
-async function cancelRunInTx(tx, { run, actor, reason, now }) {
+export async function cancelRunInTx(tx, { run, actor, reason, now }) {
   for (const op of run.operations.filter((o) => o.status === "ACTIVE" || o.status === "PAUSED")) {
     await tx.productionOperationRun.update({ where: { id: op.id }, data: { status: "SKIPPED", completedAt: now } });
   }
@@ -521,6 +521,22 @@ export async function cancelProductionRun(prisma, { runId, actorId, idempotencyK
     await finishCommand(tx, command, revision, response);
     return { replayed: false, ...response };
   });
+}
+
+// Order dibatalkan Sales: Run yang masih berjalan IKUT dibatalkan di transaksi order (fase/operasi ditutup, penawaran barang jadi yang masih OFFERED dibatalkan), tanpa command V2 dan tanpa gerbang
+// writer/drift — keputusan Sales atas order adalah sumber kebenaran. Exception OPEN pada Run itu ikut selesai. Mengembalikan keadaan Run SEBELUM dibatalkan untuk riwayat (siapa/kapan/sebelum–sesudah).
+export async function batalkanRunKarenaOrderInTx(tx, { runId, actorId = null, reason }) {
+  const pre = await tx.productionRun.findUnique({ where: { id: runId }, select: { unitId: true, status: true } });
+  if (!pre || ["COMPLETED", "CANCELLED"].includes(pre.status)) return { dibatalkan: false, statusSebelum: pre?.status ?? null };
+  await lockFinishedGoodsHandoffs(tx, pre.unitId);
+  const run = await loadRunLocked(tx, runId);
+  if (["COMPLETED", "CANCELLED"].includes(run.status)) return { dibatalkan: false, statusSebelum: run.status };
+  const now = new Date();
+  const statusSebelum = run.status; const fase = run.currentPhase ?? null; const revisiSebelum = run.revision;
+  const revision = await cancelRunInTx(tx, { run, actor: actorId || "SYSTEM", reason, now });
+  const open = await tx.productionRunException.findFirst({ where: { runId, status: "OPEN" } });
+  if (open) await tx.productionRunException.update({ where: { id: open.id }, data: { status: "RESOLVED", resolution: "CANCEL_RUN", resolutionNote: reason, resolvedById: actorId || null, resolvedAt: now, revision: open.revision + 1 } });
+  return { dibatalkan: true, statusSebelum, fase, revisiSebelum, revision, exceptionSelesai: open?.id ?? null };
 }
 
 // ---------------------------------------------------------------------------

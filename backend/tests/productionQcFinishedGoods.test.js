@@ -146,7 +146,9 @@ test("writer audit P6 gagal untuk: inspeksi diubah/dihapus, fit test/exception/c
     assert.ok(found.includes(expected), `${expected} harus terdeteksi: ${found.join(",")}`);
   }
   const noFence = new Map(sources); noFence.set("src/routes/orders.js", sources.get("src/routes/orders.js").replaceAll("await assertOrderUnitsNotV2Owned(tx,", "await noop(tx,"));
-  assert.ok(kinds(noFence).includes("ORDER_FENCE"));
+  assert.ok(kinds(noFence).includes("ORDER_FENCE"), "menghapus pagar buka-kembali terdeteksi");
+  const noReconcile = new Map(sources); noReconcile.set("src/routes/orders.js", sources.get("src/routes/orders.js").replaceAll("await selaraskanProduksiDenganOrderInTx(tx,", "await noop(tx,"));
+  assert.ok(kinds(noReconcile).includes("ORDER_FENCE"), "menghapus penyelarasan Produksi saat batal/ubah status terdeteksi");
   const noFilter = new Map(sources); noFilter.set("src/routes/production.js", sources.get("src/routes/production.js").replace("productionRunsV2: { none: { origin: { not: null } } }", "x: 1"));
   assert.ok(kinds(noFilter).includes("QC_QUEUE_FILTER"));
   const noDefer = new Map(sources); noDefer.set("src/services/productionWorkshopExecutionCommandService.js", sources.get("src/services/productionWorkshopExecutionCommandService.js").replace("deferReady: true", "deferReady: false"));

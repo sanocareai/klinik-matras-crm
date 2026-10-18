@@ -16,7 +16,7 @@
 //  - Batal sebelum PICKED: issue CANCELLED + reservasi dilepas (releaseReservationsInTx, plan kembali PLANNED).
 //  - Writer di balik flag production_v2_writer (cohort unitIds, fail-closed). TIDAK menyentuh ProductionRun/fase PROCESS.
 import { createHash } from "node:crypto";
-import { recordActivity, EVENT_TYPES } from "../lib/activityLog.js";
+import { recordActivity, EVENT_TYPES, ENTITY_TYPES } from "../lib/activityLog.js";
 import { LedgerError, lockRowForUpdate, postStockMovement } from "./inventoryLedger.js";
 import { postMaterialIssueCost } from "./finance/posting/inventory.js";
 import { JournalError } from "./finance/journal.js";
@@ -298,6 +298,48 @@ export async function cancelMaterialIssueBeforePick(prisma, { issueId, actorId, 
     await finishCommand(tx, command, revision, response);
     return { replayed: false, ...response };
   });
+}
+
+// ---------------------------------------------------------------------------
+// 3b. Order dibatalkan Sales: semua permintaan bahan Run itu yang BELUM diserahkan dibatalkan (reservasi dilepas) di transaksi order; yang SUDAH ISSUED tidak disentuh dan DILAPORKAN
+// supaya Gudang tahu bahan terlanjur keluar untuk unit yang dibatalkan (koreksi lewat Retur Bahan/Penyesuaian — tidak ada pergerakan stok otomatis di sini).
+// Tanpa command V2 dan tanpa gerbang drift: keputusan Sales atas order adalah sumber kebenaran. Setiap pembatalan tercatat di riwayat dokumen permintaan (Gudang) dan unit (Produksi) beserta pelakunya.
+// ---------------------------------------------------------------------------
+export async function batalkanIssueAktifKarenaOrderInTx(tx, { runId, actorId = null, reason }) {
+  const plans = await tx.productionRunPlan.findMany({ where: { runId, status: { not: "CANCELLED" } }, select: { id: true }, orderBy: { id: "asc" } });
+  const dibatalkan = []; const sudahDiserahkan = []; let reservasiDilepas = 0;
+  for (const { id: planId } of plans) {
+    await lockRowForUpdate(tx, "production_run_plans_v2", planId);
+    const issues = await tx.materialIssue.findMany({
+      where: { productionPlanId: planId, status: { not: "CANCELLED" } },
+      include: { unit: { select: { unitCode: true } }, lines: { include: { material: { select: { code: true, name: true, unit: true } } } } },
+      orderBy: { createdAt: "asc" },
+    });
+    for (const issue of issues) {
+      if (issue.status === "ISSUED") {
+        sudahDiserahkan.push({ issueNumber: issue.issueNumber, lines: issue.lines.map((l) => ({ code: l.material.code, name: l.material.name, unit: l.material.unit, qty: Number(l.issuedQty ?? l.requestedQty ?? 0) })) });
+        continue;
+      }
+      const plan = await tx.productionRunPlan.findUnique({
+        where: { id: planId },
+        include: { run: { select: { id: true, unitId: true, unit: { select: { unitCode: true } } } }, bomLines: { where: { status: "ACTIVE" } }, reservations: { where: { status: "ACTIVE" } } },
+      });
+      const now = new Date();
+      await tx.materialIssue.update({ where: { id: issue.id }, data: { status: "CANCELLED", cancelledById: actorId || null, cancelledAt: now, cancelReason: reason, revision: issue.revision + 1 } });
+      const lepas = issue.reworkInspectionId
+        ? await cancelSupplementalInTx(tx, { plan, inspectionId: issue.reworkInspectionId, actorId, reason: `Permintaan bahan tambahan ${issue.issueNumber} dibatalkan: ${reason}` })
+        : await releaseReservationsInTx(tx, { plan, actorId, commandId: null, reason: `Permintaan pengambilan bahan ${issue.issueNumber} dibatalkan: ${reason}` });
+      reservasiDilepas += Number(lepas?.releasedCount ?? 0);
+      dibatalkan.push(issue.issueNumber);
+      await recordActivity(tx, { entityType: ENTITY_TYPES.MATERIAL_ISSUE, entityId: issue.id, eventType: EVENT_TYPES.DOCUMENT_CANCELLED, actorId: actorId || null, metadata: { issueNumber: issue.issueNumber, reason, dariStatus: issue.status, via: "ORDER_CANCELLED" } });
+      await recordActivity(tx, { entityType: "unit", entityId: issue.unitId, eventType: EVENT_TYPES.PRODUCTION_MATERIAL_ISSUE_CANCELLED, actorId: actorId || null, metadata: { unitCode: issue.unit?.unitCode, issueNumber: issue.issueNumber, reason, via: "ORDER_CANCELLED" } });
+      await outbox(tx, {
+        eventType: "warehouse.material_issue.cancelled", aggregateId: issue.id, revision: issue.revision + 1, dedupeKey: `warehouse-material-issue-cancelled:${issue.id}:${issue.revision + 1}`,
+        payload: { issueId: issue.id, issueNumber: issue.issueNumber, planId, unitId: issue.unitId, reason, via: "ORDER_CANCELLED", occurredAt: now.toISOString(), actorId },
+      });
+    }
+  }
+  return { dibatalkan, sudahDiserahkan, reservasiDilepas };
 }
 
 // ---------------------------------------------------------------------------
