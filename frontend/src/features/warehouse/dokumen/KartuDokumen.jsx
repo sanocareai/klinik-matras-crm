@@ -61,9 +61,8 @@ export function KartuAksiDokumen({ tampilan: t, izin, spec, onJalankan, sibuk, v
   return (
     <Card className="space-y-2 p-4" data-testid="kartu-aksi">
       <h3 className="m-0 text-[11px] font-bold uppercase tracking-wide text-ink3">Yang bisa dilakukan sekarang</h3>
-      {aksi.length === 0
-        ? <p className="m-0 text-[12.5px] text-ink3" data-testid="tanpa-aksi">{izin?.tulis === false && !izin?.bisaSetujui ? `Akun Anda hanya dapat melihat ${namaDokumen} (tidak punya izin mengubahnya).` : <>Tidak ada aksi untuk {namaDokumen} sekarang. {t.penjelasan}</>}</p>
-        : <AksiDokumen aksi={aksi} spec={spec} onJalankan={onJalankan} sibuk={sibuk} ikutiVersi={versi} />}
+      {aksi.length === 0 && <p className="m-0 text-[12.5px] text-ink3" data-testid="tanpa-aksi">{izin?.tulis === false && !izin?.bisaSetujui ? `Akun Anda hanya dapat melihat ${namaDokumen} (tidak punya izin mengubahnya).` : <>Tidak ada aksi untuk {namaDokumen} sekarang. {t.penjelasan}</>}</p>}
+      <AksiDokumen aksi={aksi} spec={spec} onJalankan={onJalankan} sibuk={sibuk} ikutiVersi={versi} />
       {kaki && <p className="m-0 text-[11.5px] leading-snug text-ink3">{kaki}</p>}
     </Card>
   );

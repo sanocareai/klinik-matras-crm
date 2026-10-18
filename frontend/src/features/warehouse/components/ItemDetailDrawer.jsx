@@ -121,12 +121,12 @@ export default function ItemDetailDrawer({ item, onClose, onEdit, onChanged }) {
                 {item.serviceLine ? SERVICE_LINE_REAL[item.serviceLine]?.labelId : <span className="text-ink3">Lintas lini</span>}
               </Baris>
               <Baris label="Unit of Measure">{UNIT_LABEL[item.unit] || item.unit}</Baris>
-              <Baris label="Minimum Stock / Reorder Point">
+              <Baris label="Batas minimum (titik restok)">
                 {item.reorderPoint != null
                   ? formatQty(item.reorderPoint, item.unit)
-                  : <span className="text-ink3">Alert dimatikan</span>}
+                  : <span className="text-ink3">belum diatur</span>}
               </Baris>
-              <Baris label="Reorder Quantity">
+              <Baris label="Jumlah restok standar">
                 {item.reorderQty != null ? formatQty(item.reorderQty, item.unit) : <span className="text-ink3">—</span>}
               </Baris>
               <Baris label="Vendor Langganan">

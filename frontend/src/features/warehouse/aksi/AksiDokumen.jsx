@@ -17,12 +17,13 @@ export { galatPanel };
  */
 export default function AksiDokumen({ aksi = [], spec = {}, onJalankan, sibuk = false, className, ikutiVersi }) {
   const [buka, setBuka] = useState(null); const [nilai, setNilai] = useState({}); const [galat, setGalat] = useState(""); const [proses, setProses] = useState(false); const [sentuh, setSentuh] = useState(false);
-  useEffect(() => { setBuka(null); setGalat(""); setSentuh(false); }, [ikutiVersi]);
-  if (!aksi.length) return null;
+  // Dokumen dimuat ulang → panel ditutup. Pesan galat TIDAK dihapus di sini: pada konflik revisi, halaman dimuat ulang tepat sebelum galat ditampilkan (galat lama dibersihkan oleh aksi berikutnya).
+  useEffect(() => { setBuka(null); setSentuh(false); }, [ikutiVersi]);
+  if (!aksi.length && !galat) return null; // tetap terpasang selama ada pesan galat (mis. konflik: dokumen sudah selesai oleh pihak lain)
   const utama = aksi.find((a) => a.jenis === "maju")?.kode;
   const jalan = async (kode, v = {}) => {
     setProses(true); setGalat("");
-    try { await onJalankan(kode, v); setBuka(null); setNilai({}); } catch (e) { setGalat(e?.message || "Gagal menjalankan aksi"); } finally { setProses(false); }
+    try { await onJalankan(kode, v); setBuka(null); setNilai({}); } catch (e) { if (!e?.diam) setGalat(e?.message || "Gagal menjalankan aksi"); /* e.diam: pesan sudah ditampilkan halaman (banner konflik) */ } finally { setProses(false); }
   };
   const klik = (a) => {
     const s = spec[a.kode];

@@ -1,67 +1,52 @@
-# UX Gudang Tahap 2 — Pengeluaran Material & Transfer Stok (+ label Opname, Restok, Rusak & Retur)
+# UX Gudang Tahap 2 — Pengeluaran Material, Transfer Stok, Stock Opname, Restok, Barang Rusak & Retur
 
-Branch `feat/gudang-ux-tahap2` (dari baseline live `bcf8b770`, UX Tahap 1). **Belum dideploy.** Tanpa migrasi, tanpa perubahan dependensi, tanpa perubahan skema.
+Branch `feat/gudang-ux-tahap2` (dari baseline live `bcf8b770`, UX Tahap 1). **Belum dideploy.** Tanpa migrasi, tanpa perubahan skema, tanpa perubahan dependensi.
 Persetujuan rilis Tahap 1 tidak berlaku untuk Tahap 2.
 
 ## Cakupan per menu
 
-| Menu | Status Tahap 2 |
+| Menu | Bentuk |
 |---|---|
-| Pengeluaran Material | **Selesai (halaman detail + daftar baru).** Alur 6 langkah, dampak stok, ketersediaan per item, jumlah keluar, lokasi sumber, riwayat, jalur koreksi, buat ulang tertaut. |
-| Transfer Stok | **Selesai (halaman detail + daftar baru).** Kirim (saldo dikurangi) → Terima (selisih terlihat), riwayat, jalur koreksi, buat ulang tertaut. |
-| Stock Opname | Label tab berbahasa Indonesia saja. Drawer lama tetap (belum didesain ulang). |
-| Restok | Label tab Indonesia; kartu "Saran restok" memuat cakupan batas minimum (daftar kosong tidak lagi terbaca sebagai "stok aman"). Drawer lama tetap. |
-| Barang Rusak & Retur | Label tab Indonesia saja. Tab/drawer lama tetap. |
+| Pengeluaran Material | Halaman detail + daftar. Ubah isi Draf, tarik kembali / kembalikan untuk revisi, dampak stok, ketersediaan, buat ulang tertaut, jalur koreksi. |
+| Transfer Stok | Halaman detail + daftar. Ubah isi Draf, kembalikan untuk revisi, kirim → terima, **selisih**: penyebab wajib, perjalanan saldo, penyelesaian. |
+| Stock Opname | Halaman detail + daftar (menggantikan drawer). Aturan pemisahan tugas dan tanda pergerakan sesi tidak diubah; hanya dijelaskan dan aksi disaring sesuai hak akun. |
+| Restok | Halaman detail + daftar. Saran restok jujur (cakupan batas minimum). Tautan penerimaan hanya untuk penerimaan yang memuat bahan. Restok tidak pernah menulis stok. |
+| Barang Rusak · Retur · Penyesuaian | Halaman detail + daftar per sub-tab. Pilihan penyelesaian memuat dampak stoknya; Setujui hanya untuk penyetuju yang bukan pemohon. |
 
-Perbaikan lintas menu: filter tahap daftar **Penerimaan Barang (Tahap 1, sudah live)** tidak berfungsi di tab workspace — `setSearchParams` hanya mengubah URL, sedangkan tiap tab dirender dengan lokasi virtual. Diganti hook `useTahapFilter` (state lokal + `replaceActivePath`); berlaku untuk tiga daftar.
+Pola bersama: server mengirim `tampilan` (label, tahap, pengaruh stok, penjelasan, aksi), `izin`, `jejak`; layar hanya menampilkan. Komponen: `AksiDokumen` (panel inline dengan ringkasan dampak), `KartuDokumen`, `DaftarSederhana`, `JejakDokumen`, `KartuJalurKoreksi`.
 
-## Pengeluaran Material (MI)
+## Keputusan produk yang diterapkan
 
-Server mengirim `tampilan` (kode, label, tahap, pengaruh stok, penjelasan, aksi), `izin.tulis`, `ketersediaan` per baris, dan `jejak`. Layar tidak menebak status.
+1. **Draf boleh diubah** (bahan, jumlah, catatan; transfer juga lokasi): `PUT .../isi` dalam satu transaksi — kunci dokumen, cek revisi, validasi ulang (bahan ada/aktif, aturan unit/perlengkapan, lokasi), ganti baris, catat jejak, hitung ulang ketersediaan. Stok kurang tidak memblokir Draf (diperingatkan); pencadangan baru terjadi saat disetujui.
+2. **Tarik kembali / kembalikan untuk revisi** (`POST .../kembalikan`): Menunggu persetujuan, Disetujui, Siap diambil, Sudah diambil (MI) / Sudah diambil (ST) → Draf **selama belum dikeluarkan/dikirim**. Persetujuan lama gugur (approvedBy/At dikosongkan; tetap di riwayat), pencadangan stok dilepas (dihitung dari status). Dokumen yang sudah memengaruhi stok (Dikeluarkan, Dalam perjalanan, Selesai) tidak bisa dikembalikan.
+3. **Tanpa penyetuju kedua untuk transaksi rutin.** Aturan izin lama dipertahankan: siapa pun berizin tulis Gudang boleh menyetujui MI/ST, termasuk pembuatnya. Halaman menyatakannya (panel Setujui: "Anda juga pemohon…; belum ada penyetuju kedua untuk transaksi rutin") dan `izin.pemohonSama` tersedia. Pemohon ≠ penyetuju tetap berlaku untuk Penyesuaian Stok, Koreksi Gudang, dan selisih Opname.
+4. **Saldo per lokasi** tetap pekerjaan desain data tersendiri; layar menyatakan lokasi hanya catatan.
+5. **Batas minimum**: diisi petugas berwenang lewat Ubah Item di Stok & Lokasi (izin tulis Gudang); kosong = "belum diatur", tanpa angka buatan. Restok menjelaskan cakupannya dan menautkan ke pengaturan.
 
-| Status | Pengaruh stok | Aksi |
-|---|---|---|
-| Draf | Belum | Ajukan persetujuan · Ubah data · Batalkan |
-| Menunggu persetujuan | Belum | Setujui · Ubah data · Batalkan |
-| Disetujui | Dicadangkan | Siap diambil · Ubah data · Batalkan |
-| Siap diambil | Dicadangkan | Tandai sudah diambil · Simpan lokasi sumber · Ubah data · Batalkan |
-| Sudah diambil | Dicadangkan | **Konfirmasi keluar** (panel dampak stok; jumlah keluar per item) · Simpan lokasi · Ubah data · Batalkan |
-| Dikeluarkan | **Sudah berkurang** | Tidak ada. Salah input → kartu jalur koreksi resmi |
-| Dibatalkan | Tidak | Buat permintaan baru dari dokumen ini (tertaut, dokumen lama tidak diubah) |
-| Dikelola Produksi V2 | — | Tidak ada (milik alur Produksi) |
+## Retry, konflik, dan satu kali efek
+- `ulang:true` hanya untuk **pengulangan yang sama dan hasilnya sesuai**: issue/receive dibandingkan jumlah per baris dengan yang sudah dibukukan (receive 9 lalu 10 = **409 KONFLIK_PAYLOAD**, tanpa efek); cancel dibandingkan alasan; PATCH status hanya bila status sudah berlaku dan tidak ada perubahan lain; ubah isi hanya bila isi sama.
+- **Revisi** (`updatedAt`, dikirim sebagai `revisi`): aksi ubah/maju/batal/kembalikan dari tampilan basi → **409 REVISI_BASI**; halaman dimuat ulang dan pesan tetap terlihat. Ubah isi mewajibkan revisi.
+- Izin tetap diperiksa lebih dulu (hanya-lihat = 403 pada semua jalur, termasuk retry). Semua jalur memakai kunci baris dokumen (`lockRowForUpdate`); diuji paralel: receive berbeda serentak → satu menang, receive/issue sama serentak → satu efek, penyelesaian selisih serentak → satu menang, kembalikan vs setujui serentak → konsisten.
 
-## Transfer Stok (ST)
+## Selisih transfer (dispatch → receive)
+Aturan lama tidak diubah: kirim mengurangi saldo sebesar jumlah dikirim, terima menambah sebesar jumlah diterima, sehingga kekurangan sudah hilang dari saldo total. Yang ditambahkan:
+- **Penyebab wajib** saat jumlah diterima ≠ dikirim (kurang maupun lebih); tercatat di riwayat.
+- Kartu **Perjalanan saldo**: saldo sebelum kirim → dalam perjalanan (−dikirim) → sesudah terima (+diterima, +ditemukan) → saldo sekarang. Sebelum kirim dihitung dari ledger sebelum pergerakan kirim.
+- Kartu **Selisih**: dikirim, diterima, kurang, sisa belum diselesaikan, riwayat penyelesaian. Transfer berlabel "Selesai — ada selisih belum diselesaikan" (juga di daftar).
+- **Selesaikan selisih** (`POST .../selisih`, kunci permintaan idempoten): **Ditemukan** → satu pergerakan TRANSFER positif di tujuan; **Susut/hilang/rusak** → pengakuan tercatat tanpa pergerakan stok. Jumlah ≤ sisa; bertahap boleh. Tersimpan sebagai peristiwa aktivitas (tanpa skema).
+- **Bukan pemakaian produksi**: tidak ada ISSUE, tidak ada unit, tidak ada HPP/jurnal; diuji. Kelebihan diterima tidak membuka aksi (koreksi lewat jalur resmi).
+- Keterbatasan: kerugian susut/hilang **belum dijurnal otomatis** (keputusan Finance); Barang Rusak → Dibuang **tidak** dipakai untuk selisih karena akan mengurangi saldo dua kali.
 
-| Status | Pengaruh stok | Aksi |
-|---|---|---|
-| Draf | Belum | Ajukan · Ubah catatan · Batalkan |
-| Menunggu persetujuan | Belum | Setujui · Ubah catatan · Batalkan |
-| Disetujui | Belum | Tandai sudah diambil · Ubah catatan · Batalkan |
-| Sudah diambil | Belum | **Kirim barang** (saldo dikurangi) · Ubah catatan · Batalkan |
-| Dalam perjalanan | **Saldo sudah dikurangi** | **Terima barang** saja (tidak bisa dibatalkan) |
-| Selesai | Sudah | Tidak ada. Selisih diterima vs dikirim tampil; koreksi lewat jalur resmi |
-| Dibatalkan | Tidak | Buat transfer baru dari dokumen ini (tertaut) |
+## Perubahan kontrak API
+Retry `issue`/`dispatch`/`receive`/`cancel` yang sama → 200 + `ulang:true` (dulu 400) tanpa menulis ulang; payload berbeda → 409. Tiga tes lama disesuaikan (`documentFlows`, `biayaBahanKonkurensi`, `biayaBahanUnit`). Receive berselisih tanpa `alasanSelisih` → 400. Endpoint baru: `POST/PUT` ubah isi, kembalikan, selisih, buat-ulang; GET Opname/Restok/Rusak/Retur/Penyesuaian menambah `tampilan`/`izin`/`jejak`.
 
-Selisih jumlah diterima dari jumlah dikirim **tidak masuk saldo** (aturan lama, tidak diubah); sekarang dijelaskan sebelum konfirmasi.
-
-## Aturan bisnis yang TIDAK diubah
-Jumlah item tidak bisa diubah setelah dibuat (batalkan lalu buat baru); transfer hanya catatan yang bisa diubah; transisi maju satu langkah; siapa pun dengan izin tulis Gudang boleh menyetujui; issue/dispatch/receive satu-satunya penulis ledger.
-
-## Perubahan kontrak API (perlu dicatat)
-Retry/klik ganda pada `issue`, `dispatch`, `receive`, `cancel`, dan PATCH status yang sudah berlaku kini mengembalikan **200 + `ulang:true`** tanpa menulis ulang (sebelumnya 400). Invarian stok/valuasi/jurnal tetap diuji. Tiga tes lama yang mengunci kode 400 disesuaikan (`documentFlows`, `biayaBahanKonkurensi`, `biayaBahanUnit`). Endpoint baru: `POST /material-issues/:id/buat-ulang`, `POST /transfers/:id/buat-ulang` (alasan 3–300 karakter, idempoten).
-
-## Keputusan yang dibutuhkan sebelum diterapkan (TIDAK dikerjakan)
-1. **Ubah jumlah di Draf** — saat ini harus batal lalu buat ulang (kini dipermudah lewat "Buat ulang"). Mengizinkan ubah jumlah di Draf = perubahan aturan bisnis.
-2. **Tarik kembali ke Draf** dari Menunggu persetujuan / Disetujui (transisi mundur; melepas cadangan stok).
-3. **Pemisahan pemohon ≠ penyetuju** (kini siapa pun berizin tulis boleh menyetujui dokumen yang ia buat sendiri).
-4. **Saldo per lokasi** — sistem hanya menyimpan saldo total per bahan. Lokasi sumber/tujuan di MI/ST adalah catatan, dan layar menyatakan itu. Saldo per lokasi butuh rancangan data tersendiri (skema).
-5. **Batas minimum bahan** — Restok tidak punya saran untuk bahan tanpa batas minimum; Owner perlu memutuskan siapa mengisi dan kapan.
+## Perbaikan cacat yang ditemukan
+- Filter tahap daftar Penerimaan (Tahap 1, **sudah live**) tidak berfungsi di tab workspace: `setSearchParams` tidak sampai ke halaman (lokasi virtual). Diganti `useTahapFilter` + `replaceActivePath`; diverifikasi di tab workspace nyata (termasuk muat ulang).
+- Pesan konflik hilang bila dokumen sudah selesai (komponen aksi ikut hilang) — kini tetap terlihat.
+- `updatedAt` tidak naik pada perubahan baris saja → diset eksplisit (token revisi).
 
 ## Pekerjaan masih terbuka
-Opname, Restok (permintaan), Barang Rusak & Retur belum dibuatkan halaman detail/aksi/dampak seperti MI/ST; `GoodsReceiptDetailDrawer.jsx` belum dihapus; belum diuji di perangkat fisik; skrip rilis Tahap 2 belum dibuat (berhenti sebelum deploy).
+Belum diuji di perangkat fisik; `GoodsReceiptDetailDrawer.jsx` belum dihapus; kerugian susut/hilang belum dijurnal; saldo per lokasi; skrip rilis Tahap 2 belum dibuat (berhenti sebelum deploy).
 
 ## Pengujian
-- Backend integrasi baru `gudangUxTahap2.integration.test.js` (9 tes): tampilan/aksi per status, izin hanya-lihat, ketersediaan, idempotensi, buat ulang, dampak ledger, V2 tanpa aksi, pemakai lain `createMaterialIssue`.
-- Frontend `gudangUxTahap2.test.js` (12 tes).
-- QA browser interaktif (`pp/flows3.mjs`, DB terisolasi, bukan dokumen production): **138/138** pemeriksaan di 1440 px dan 390 px — alur penuh MI & ST, salah input, koreksi/batal/buat ulang, hak akses, refresh setelah tiap aksi, klik ganda, saldo & pergerakan di DB, daftar (tab berhitung, pencarian, kartu HP), tautan lama `?buka=`.
-- Screenshot sebelum/sesudah: `C:\tmp\km-gudang-iso\qa\t2\ba\` (24 berkas) dan alur: `C:\tmp\km-gudang-iso\qa\t2\`.
+Backend integrasi `gudangUxTahap2`, `gudangUxTahap2Revisi`, `gudangUxTahap2Lain`; frontend `gudangUxTahap2.test.js`; QA browser `pp/flows3.mjs` (MI/ST) dan `pp/flows4.mjs` (perilaku baru) di 1440 px dan 390 px dengan DB terisolasi. Screenshot: `C:\tmp\km-gudang-iso\qa\t2\` dan `qa\t2b\`.

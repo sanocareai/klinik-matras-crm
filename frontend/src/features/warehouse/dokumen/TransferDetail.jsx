@@ -29,7 +29,7 @@ const kunciBaru = () => `sel-${(globalThis.crypto?.randomUUID?.() ?? `${Date.now
 export default function TransferDetail() {
   const { id } = useParams(); const navigate = useNavigate();
   const [r, setR] = useState(null); const [galat, setGalat] = useState(""); const [memuat, setMemuat] = useState(true); const [sibuk, setSibuk] = useState(false);
-  const [terima, setTerima] = useState({}); const [versi, setVersi] = useState(0); const [editOpen, setEditOpen] = useState(false); const [kunciSelisih, setKunciSelisih] = useState(kunciBaru);
+  const [terima, setTerima] = useState({}); const [versi, setVersi] = useState(0); const [konflik, setKonflik] = useState(""); const [editOpen, setEditOpen] = useState(false); const [kunciSelisih, setKunciSelisih] = useState(kunciBaru);
 
   const muat = useCallback(async () => {
     setMemuat(true); setGalat("");
@@ -48,7 +48,7 @@ export default function TransferDetail() {
   const jalankan = async (kode, v = {}) => {
     if (kode === "UBAH_ISI") { setEditOpen(true); return; }
     if (kode === "TERIMA" && galatTerima) throw new Error(galatTerima);
-    setSibuk(true);
+    setKonflik(""); setSibuk(true);
     try {
       if (STATUS_MAJU[kode]) await api.updateStockTransfer(id, { status: STATUS_MAJU[kode], revisi: r.revisi });
       else if (kode === "KIRIM") await api.dispatchStockTransfer(id, { revisi: r.revisi });
@@ -60,7 +60,8 @@ export default function TransferDetail() {
       else if (kode === "BUAT_ULANG_TRANSFER") { const baru = await api.buatUlangStockTransfer(id, v.alasan); navigate(`/warehouse/transfers/${baru.id}`); return; }
       await muat();
     } catch (e) {
-      if (e.code === "REVISI_BASI" || e.code === "STATUS_TIDAK_SESUAI" || e.code === "KONFLIK_PAYLOAD") await muat(); // tampilkan keadaan terbaru; pesan galat tetap tampil di panel
+      if (e.code === "REVISI_BASI" || e.code === "STATUS_TIDAK_SESUAI" || e.code === "KONFLIK_PAYLOAD") await muat(); // tampilkan keadaan terbaru
+      if (["REVISI_BASI", "STATUS_TIDAK_SESUAI", "KONFLIK_PAYLOAD"].includes(e.code)) { setKonflik(e.message); throw Object.assign(new Error(e.message), { diam: true }); } // banner halaman tetap terlihat walau kartu aksi berpindah/hilang
       throw e;
     } finally { setSibuk(false); }
   };
@@ -105,9 +106,8 @@ export default function TransferDetail() {
   const kartuAksi = (
     <Card className="space-y-2 p-4" data-testid="kartu-aksi">
       <h3 className="m-0 text-[11px] font-bold uppercase tracking-wide text-ink3">Yang bisa dilakukan sekarang</h3>
-      {t.aksi.length === 0 ? <p className="m-0 text-[12.5px] text-ink3" data-testid="tanpa-aksi">{r.izin?.tulis === false ? "Akun Anda hanya dapat melihat dokumen ini (tidak punya izin mengubah transfer stok)." : <>Tidak ada aksi untuk dokumen ini. {t.penjelasan}</>}</p> : (
-        <AksiDokumen aksi={t.aksi} spec={SPEC} onJalankan={jalankan} sibuk={sibuk} ikutiVersi={versi} />
-      )}
+      {t.aksi.length === 0 && <p className="m-0 text-[12.5px] text-ink3" data-testid="tanpa-aksi">{r.izin?.tulis === false ? "Akun Anda hanya dapat melihat dokumen ini (tidak punya izin mengubah transfer stok)." : <>Tidak ada aksi untuk dokumen ini. {t.penjelasan}</>}</p>}
+      <AksiDokumen aksi={t.aksi} spec={SPEC} onJalankan={jalankan} sibuk={sibuk} ikutiVersi={versi} />
       <p className="m-0 text-[11.5px] leading-snug text-ink3">Lokasi asal dan tujuan adalah catatan perpindahan. Saldo stok dihitung total semua lokasi — sistem belum menyimpan saldo per lokasi.</p>
     </Card>
   );
@@ -139,6 +139,12 @@ export default function TransferDetail() {
           {r.notes && <p className="m-0 text-[12px] text-ink2" data-testid="catatan-dokumen">{r.notes}</p>}
         </Card>
 
+        {konflik && (
+          <div role="alert" className="flex items-start gap-2 rounded-btn border-l-[3px] border-red bg-redbg px-3 py-2.5 text-[12.5px] text-ink" data-testid="banner-konflik">
+            <span className="flex-1"><strong>Aksi tidak dijalankan.</strong> {konflik} Halaman sudah dimuat ulang dengan keadaan terbaru.</span>
+            <button type="button" onClick={() => setKonflik("")} className="shrink-0 text-[12px] font-semibold text-accent max-sm:min-h-11">Tutup</button>
+          </div>
+        )}
         {!bisaTerima && kartuAksi}
 
         <Card className="space-y-3 p-4">

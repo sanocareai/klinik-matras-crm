@@ -155,3 +155,15 @@ test("Restok: tautan penerimaan hanya menawarkan penerimaan yang memuat bahan pe
   const r = baca("features/warehouse/dokumen/RestokDetail.jsx");
   assert.match(r, /l\.materialId === r\.materialId/); assert.match(r, /Stok TIDAK ditambah dari sini/); assert.match(r, /belum diatur/);
 });
+
+test("AksiDokumen: muat ulang dokumen menutup panel tetapi tidak menghapus pesan galat konflik (pesan harus terlihat pengguna)", () => {
+  const s = baca("features/warehouse/aksi/AksiDokumen.jsx");
+  assert.match(s, /useEffect\(\(\) => \{ setBuka\(null\); setSentuh\(false\); \}, \[ikutiVersi\]\)/); assert.doesNotMatch(s, /setBuka\(null\); setGalat\(""\)/);
+});
+
+test("konflik di MI/ST: banner halaman yang stabil (kartu aksi berpindah posisi saat status berubah) — pesan tidak hilang; AksiDokumen tidak menggandakan pesan", () => {
+  for (const f of ["features/warehouse/dokumen/MaterialIssueDetail.jsx", "features/warehouse/dokumen/TransferDetail.jsx"]) {
+    const s = baca(f); assert.match(s, /data-testid="banner-konflik"/, f); assert.match(s, /diam: true/, f); assert.match(s, /setKonflik\(""\); setSibuk\(true\)/, f);
+  }
+  assert.match(baca("features/warehouse/aksi/AksiDokumen.jsx"), /if \(!e\?\.diam\) setGalat/);
+});

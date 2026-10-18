@@ -137,7 +137,7 @@ export default function ItemFormModal({ open, item, onClose, onSaved }) {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label htmlFor="wh-rop" className="mb-1 block text-[11.5px] font-semibold text-ink2">
-              Minimum Stock / Reorder Point
+              Batas minimum (titik restok)
             </label>
             <input
               id="wh-rop" type="number" step="any" min="0" value={form.reorderPoint} onChange={set("reorderPoint")}
@@ -146,7 +146,7 @@ export default function ItemFormModal({ open, item, onClose, onSaved }) {
             />
           </div>
           <div>
-            <label htmlFor="wh-roq" className="mb-1 block text-[11.5px] font-semibold text-ink2">Reorder Quantity</label>
+            <label htmlFor="wh-roq" className="mb-1 block text-[11.5px] font-semibold text-ink2">Jumlah restok standar</label>
             <input
               id="wh-roq" type="number" step="any" min="0" value={form.reorderQty} onChange={set("reorderQty")}
               placeholder="jumlah restok"
@@ -155,8 +155,8 @@ export default function ItemFormModal({ open, item, onClose, onSaved }) {
           </div>
         </div>
         <p className="text-[10.5px] leading-relaxed text-ink3">
-          Reorder point kosong berarti alert stok menipis <strong>dimatikan</strong> untuk
-          item ini — bukan "restok di angka nol".
+          Batas minimum kosong berarti <strong>belum diatur</strong>: item ini tidak pernah muncul sebagai saran Restok
+          (bukan "restok di angka nol"). Hanya petugas berwenang yang mengisinya; sistem tidak membuat angka sendiri.
         </p>
 
         {err && <p className="text-[12px] text-red">{err}</p>}
