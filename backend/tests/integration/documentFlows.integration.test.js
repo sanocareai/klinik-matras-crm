@@ -215,7 +215,7 @@ test("Stock Transfer: dispatch mengurangi saldo di asal, receive menambah saldo 
   assert.equal(movements.length, 2, "harus ADA DUA baris TRANSFER: negatif di asal, positif di tujuan");
 });
 
-test("Stock Transfer: dispatch KEDUA KALINYA ditolak (double posting)", async () => {
+test("Stock Transfer: dispatch KEDUA KALINYA tidak menulis ulang (idempoten, double posting dicegah)", async () => {
   const api = await client();
   const material = await createTestMaterial();
   await testPrisma.stockMovement.create({ data: { materialId: material.id, type: "RECEIPT", qty: 8 } });
@@ -235,7 +235,9 @@ test("Stock Transfer: dispatch KEDUA KALINYA ditolak (double posting)", async ()
   const first = await api.post(`/api/inventory/transfers/${trId}/dispatch`, {});
   assert.equal(first.status, 200);
   const second = await api.post(`/api/inventory/transfers/${trId}/dispatch`, {});
-  assert.equal(second.status, 400);
+  // UX Tahap 2: retry/klik ganda = hasil yang sama (200, ulang:true), BUKAN penulisan kedua — yang dijaga adalah saldo, bukan kode galat
+  assert.equal(second.status, 200);
+  assert.equal(second.body.ulang, true);
 
   const movements = await testPrisma.stockMovement.count({ where: { materialId: material.id, type: "TRANSFER" } });
   assert.equal(movements, 1, "dispatch kedua wajib tidak menulis apa pun");

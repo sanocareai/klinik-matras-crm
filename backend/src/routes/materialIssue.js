@@ -10,9 +10,10 @@
 
 import express from "express";
 import { requireAuth } from "../middleware/auth.js";
-import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
+import { requirePermission, hasPermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
-import { postStockMovement, lockRowForUpdate, RESERVED_STATUSES } from "../services/inventoryLedger.js";
+import { postStockMovement, lockRowForUpdate, computeStockSnapshot, RESERVED_STATUSES } from "../services/inventoryLedger.js";
+import { tampilanMaterialIssue, ketersediaanBaris, jejakDokumenGudang } from "../services/dokumenGudang.js";
 // D-180 — HPP (harga pokok bahan) masuk buku besar dari pergerakan stok
 // yang SUDAH ditulis di bawah. Tidak ada pergerakan stok baru yang dibuat
 // dari sisi finance. Material tanpa harga perolehan menghasilkan catatan
@@ -115,7 +116,7 @@ materialIssueRouter.get("/", requirePermission(P.INVENTORY_READ), async (req, re
       include: issueInclude,
       orderBy: [{ createdAt: "desc" }],
     });
-    res.json({ issues });
+    res.json({ issues: issues.map((i) => ({ ...i, tampilan: tampilanMaterialIssue(i) })) });
   } catch (err) {
     handleErr(err, res);
   }
@@ -125,7 +126,16 @@ materialIssueRouter.get("/:id", requirePermission(P.INVENTORY_READ), wajibUuid()
   try {
     const issue = await prisma.materialIssue.findUnique({ where: { id: req.params.id }, include: issueInclude });
     if (!issue) return res.status(404).json({ error: "Material issue tidak ditemukan" });
-    res.json(issue);
+    // UX Tahap 2: status/aksi dalam bahasa petugas (satu sumber: services/dokumenGudang.js), ketersediaan stok per baris (baca-saja), jejak ringan. Akun hanya-lihat tidak ditawari aksi (server tetap menolak 403).
+    const tulis = hasPermission(req.user, P.INVENTORY_WRITE);
+    const tampilan = tampilanMaterialIssue(issue);
+    const ids = new Set(issue.lines.map((l) => l.materialId));
+    const snapshot = (await computeStockSnapshot(prisma)).filter((x) => ids.has(x.materialId));
+    res.json({
+      ...issue, tampilan: tulis ? tampilan : { ...tampilan, aksi: [] }, izin: { tulis },
+      ketersediaan: ketersediaanBaris(snapshot, issue.lines, { dokumenMencadang: RESERVED_STATUSES.includes(issue.status) }),
+      jejak: await jejakDokumenGudang(prisma, { entityType: ENTITY_TYPES.MATERIAL_ISSUE, id: issue.id, dibuatOleh: issue.createdBy?.name ?? issue.requestedBy?.name ?? null, dibuatPada: issue.createdAt }),
+    });
   } catch (err) {
     handleErr(err, res);
   }
@@ -138,7 +148,7 @@ materialIssueRouter.get("/:id", requirePermission(P.INVENTORY_READ), wajibUuid()
 // services/orderCreation.js#createOrderForCustomer (D-115).
 export async function createMaterialIssue({
   sourceType, unitId, sourceReference, department, requiredDate, priority, notes, lines, complaintCaseId,
-}, userId) {
+}, userId, db = prisma) {
   if (!SOURCE_TYPES.includes(sourceType)) throw new IssueError("Source type tidak valid");
   if (requiresUnitLink(sourceType) && !unitId) {
     throw new IssueError("Unit produksi wajib dipilih untuk permintaan dari Work Order Produksi");
@@ -152,21 +162,21 @@ export async function createMaterialIssue({
   }
 
   if (unitId) {
-    const unit = await prisma.unit.findUnique({ where: { id: unitId }, select: { id: true } });
+    const unit = await db.unit.findUnique({ where: { id: unitId }, select: { id: true } });
     if (!unit) throw new IssueError("Unit produksi tidak ditemukan", 404);
   }
   // Permintaan bahan untuk unit/Work Order Produksi tidak boleh memuat "Perlengkapan Stok" (SKU Gudang-saja dari PO). Permintaan Gudang biasa tidak dibatasi.
   if (unitId || requiresUnitLink(sourceType)) {
-    const perlengkapan = await prisma.material.findMany({ where: { id: { in: lines.map((l) => l.materialId) }, kind: "PERLENGKAPAN_STOK" }, select: { code: true } });
+    const perlengkapan = await db.material.findMany({ where: { id: { in: lines.map((l) => l.materialId) }, kind: "PERLENGKAPAN_STOK" }, select: { code: true } });
     if (perlengkapan.length > 0) throw new IssueError(`${perlengkapan.map((m) => m.code).join(", ")} adalah Perlengkapan Stok (hanya Gudang) dan tidak bisa diminta sebagai bahan produksi`, 422);
   }
 
   const today = new Date();
   const startOfDay = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
-  const existing = await prisma.materialIssue.count({ where: { createdAt: { gte: startOfDay } } });
+  const existing = await db.materialIssue.count({ where: { createdAt: { gte: startOfDay } } });
   const issueNumber = `${generateIssueCode(today)}-${String(existing + 1).padStart(2, "0")}`;
 
-  return prisma.materialIssue.create({
+  return db.materialIssue.create({
     data: {
       issueNumber, sourceType,
       unitId: unitId || null,
@@ -247,7 +257,8 @@ materialIssueRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), wajibUui
       }
       if (notes !== undefined) data.notes = notes || null;
 
-      if (status) {
+      // Retry/klik ganda: status yang diminta SUDAH berlaku → bukan langkah baru (tidak ada galat, tidak ada catatan ganda)
+      if (status && status !== existing.status) {
         const currentIdx = FORWARD_FLOW.indexOf(existing.status);
         const nextIdx = FORWARD_FLOW.indexOf(status);
         if (nextIdx === -1) throw new IssueError("Status tidak valid");
@@ -266,14 +277,14 @@ materialIssueRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), wajibUui
 
       const updated = await tx.materialIssue.update({ where: { id: preCheck.id }, data, include: issueInclude });
       await catatPerubahanDraf(tx, { entityType: ENTITY_TYPES.MATERIAL_ISSUE, entityId: updated.id, actorId: req.user.id, nomor: updated.issueNumber, lama: existing, data });
-      if (status === "APPROVED") {
+      if (data.status === "APPROVED") {
         await recordActivity(tx, {
           entityType: ENTITY_TYPES.MATERIAL_ISSUE, entityId: updated.id,
           eventType: EVENT_TYPES.DOCUMENT_APPROVED, actorId: req.user.id,
           metadata: { issueNumber: updated.issueNumber },
         });
       }
-      return updated;
+      return { ...updated, ulang: !!(status && status === existing.status && Object.keys(data).length === 0) };
     });
     res.json(issue);
   } catch (err) {
@@ -335,6 +346,7 @@ materialIssueRouter.post("/:id/issue", requirePermission(P.INVENTORY_WRITE), waj
     const result = await prisma.$transaction(async (tx) => {
       await lockRowForUpdate(tx, "material_issues", preCheck.id);
       const issue = await tx.materialIssue.findUnique({ where: { id: preCheck.id }, include: issueInclude });
+      if (issue.status === "ISSUED") return { ...issue, ulang: true }; // klik ganda/retry: stok SUDAH ditulis sekali — tidak ditulis lagi
       if (issue.status !== "PICKED") {
         throw new IssueError("Hanya issue berstatus Picked yang bisa dikeluarkan");
       }
@@ -391,7 +403,8 @@ materialIssueRouter.patch("/:id/cancel", requirePermission(P.INVENTORY_WRITE), w
     const updated = await prisma.$transaction(async (tx) => {
       await lockRowForUpdate(tx, "material_issues", preCheck.id);
       const issue = await tx.materialIssue.findUnique({ where: { id: preCheck.id } });
-      if (issue.status === "ISSUED" || issue.status === "CANCELLED") {
+      if (issue.status === "CANCELLED") return { ...(await tx.materialIssue.findUnique({ where: { id: issue.id }, include: issueInclude })), ulang: true }; // retry: sudah dibatalkan
+      if (issue.status === "ISSUED") {
         throw new IssueError(`Issue berstatus ${issue.status} tidak bisa dibatalkan`);
       }
       const result = await tx.materialIssue.update({
@@ -407,6 +420,40 @@ materialIssueRouter.patch("/:id/cancel", requirePermission(P.INVENTORY_WRITE), w
       return result;
     });
     res.json(updated);
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// POST /api/inventory/material-issues/:id/buat-ulang { alasan }
+// Permintaan DIBATALKAN → dokumen BARU berstatus Draf (aturan pembuatan yang sama; permintaan lama TIDAK diubah/dihapus); kedua dokumen saling tertaut di jejak. Aman diulang (satu dokumen baru).
+// Aturan "batalkan lalu ajukan ulang" (jumlah tidak diubah diam-diam setelah dicadangkan) justru dipermudah, bukan dilonggarkan.
+materialIssueRouter.post("/:id/buat-ulang", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
+  try {
+    const alasan = String(req.body?.alasan ?? "").trim();
+    if (alasan.length < 3 || alasan.length > 300) throw new IssueError("Alasan wajib diisi (3–300 karakter)");
+    const hasil = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, "material_issues", req.params.id);
+      const lama = await tx.materialIssue.findUnique({ where: { id: req.params.id }, include: issueInclude });
+      if (!lama) throw new IssueError("Material issue tidak ditemukan", 404);
+      assertNotOwnedByV2(lama);
+      if (lama.status !== "CANCELLED") throw new IssueError(`Hanya permintaan yang Dibatalkan yang bisa dibuat ulang (sekarang: ${tampilanMaterialIssue(lama).label}).`, 409);
+      if (lama.sourceType === "COMPLAINT_REWORK") throw new IssueError("Permintaan ini berasal dari Kasus Komplain — buat ulang lewat kasusnya agar tautan komplain tetap benar.", 409);
+      const sudah = await tx.activityEvent.findFirst({ where: { entityType: ENTITY_TYPES.MATERIAL_ISSUE, entityId: lama.id, eventType: EVENT_TYPES.DOCUMENT_EDITED, metadata: { path: ["aksi"], equals: "DIBUAT_ULANG_MENJADI" } }, orderBy: { createdAt: "desc" } });
+      if (sudah?.metadata?.keId) {
+        const ada = await tx.materialIssue.findUnique({ where: { id: sudah.metadata.keId }, include: issueInclude });
+        if (ada && ada.status !== "CANCELLED") return { dok: ada, baru: false, lama };
+      }
+      const baru = await createMaterialIssue({
+        sourceType: lama.sourceType, unitId: lama.unitId, sourceReference: lama.sourceReference, department: lama.department, priority: lama.priority,
+        requiredDate: lama.requiredDate ? lama.requiredDate.toISOString().slice(0, 10) : undefined, notes: `Dibuat ulang dari ${lama.issueNumber}: ${alasan}`,
+        lines: lama.lines.map((l) => ({ materialId: l.materialId, requestedQty: l.requestedQty, sourceLocation: l.sourceLocation })),
+      }, req.user.id, tx);
+      await recordActivity(tx, { entityType: ENTITY_TYPES.MATERIAL_ISSUE, entityId: baru.id, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: req.user.id, metadata: { aksi: "DIBUAT_ULANG_DARI", nomor: baru.issueNumber, dariId: lama.id, dariNomor: lama.issueNumber, alasan } });
+      await recordActivity(tx, { entityType: ENTITY_TYPES.MATERIAL_ISSUE, entityId: lama.id, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: req.user.id, metadata: { aksi: "DIBUAT_ULANG_MENJADI", nomor: lama.issueNumber, keId: baru.id, keNomor: baru.issueNumber, alasan } });
+      return { dok: baru, baru: true, lama };
+    });
+    res.status(hasil.baru ? 201 : 200).json({ ...hasil.dok, tampilan: tampilanMaterialIssue(hasil.dok), dariId: hasil.lama.id, dariNomor: hasil.lama.issueNumber, ulang: !hasil.baru });
   } catch (err) {
     handleErr(err, res);
   }
