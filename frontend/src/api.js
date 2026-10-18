@@ -285,8 +285,8 @@ export const api = {
     }),
 
   // Armada — jadwal pickup & pengiriman (Sano Hub Phase 1)
-  // opts.termasukMenunggu: ikut kirim kandidat DRAF "Menunggu konfirmasi siap kirim" (unit yang masih dikerjakan Produksi) di `availableMenunggu`.
-  getArmadaBoard: (type, date, opts = {}) => request(`/armada/board?type=${type}${date ? `&date=${date}` : ""}${opts.termasukMenunggu ? "&termasukMenunggu=1" : ""}`),
+  // Unit yang masih dikerjakan Produksi sudah termasuk di `available` (status produksi tidak menahan pengiriman); `availableMenunggu` tetap ada (kosong) demi klien lama.
+  getArmadaBoard: (type, date) => request(`/armada/board?type=${type}${date ? `&date=${date}` : ""}`),
 
   // Daftar job berfilter untuk halaman "Jadwal & Penugasan" (Delivery Tahap 2).
   // TERPISAH dari getArmadaBoard — board menjawab "job tipe X tanggal Y +

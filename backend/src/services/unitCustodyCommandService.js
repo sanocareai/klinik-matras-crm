@@ -12,7 +12,7 @@ import { recordActivity, EVENT_TYPES } from "../lib/activityLog.js";
 import { lockRowForUpdate } from "./inventoryLedger.js";
 import { lockUnitOwnership } from "./unitV2Ownership.js";
 import { adminOverrideReadyForDeliveryInTx, isUnitPathDoneInTx, markUnitReadyForDeliveryInTx } from "./unitStageEngine.js";
-import { assertNoOpenRunException, assertRunConsistent, isDeliveryReleased } from "./productionRunGuards.js";
+import { assertNoOpenRunException, assertRunConsistent, isDeliveryReleased, RUN_OWNED_STATUSES } from "./productionRunGuards.js";
 import { assertNoPendingReturnsInTx } from "./productionMaterialReturnService.js";
 import { assertPhasesReadyForHandoffDecision, assertRunPhasesTerminal, transitionPhases } from "./productionPhaseLifecycle.js";
 import { defaultAdaptationPolicy, defaultQcGatePolicy, requireWorkshopDefaultLocation } from "./productionSettingsService.js";
@@ -614,6 +614,40 @@ export async function applyAdminOverrideReleaseInTx(tx, { run, unit, location, n
   await tx.productionRun.update({ where: { id: run.id }, data: { deliveryReleasedAt: now, deliveryRelease: rekam, revision } });
   const jobs = await tx.job.findMany({ where: { type: "DELIVERY", units: { some: { unitId: unit.id } } }, select: { id: true, status: true, routeId: true } });
   return { rekam, orderStatusAfter: orderSesudah?.status ?? null, jobs };
+}
+
+// DISPATCH SAAT PENCATATAN PRODUKSI BELUM SELESAI (keputusan Owner, 18 Okt 2026): status produksi tidak menahan pengiriman. Saat unit yang MASIH diproduksi (RECEIVED/IN_PRODUCTION) BENAR-BENAR berangkat
+// (mulai job) atau diselesaikan pengirimannya (selesai job, termasuk input manual Admin untuk barang yang sudah terkirim), Run-nya yang belum ditutup diberi penanda "dilepas untuk pengiriman" —
+// kolom yang SAMA dengan Admin override (delivery_released_at + delivery_release) tetapi kind "DISPATCH_ROUTE_PLANNER": bukan keputusan Admin dan bukan pemeriksaan/QC. Akibatnya status unit
+// IN_TRANSIT_OUT/DELIVERED bukan konflik V1, command tahap biasa pada Run itu berhenti (409 RUN_RELEASED_FOR_DELIVERY), dan Run dapat ditutup administratif (Selesaikan Produksi / Konfirmasi Barang Jadi)
+// tanpa menyentuh status unit/order/job. Tidak mengubah tahap/operasi/bukti, tanpa QC/foto/custody/stok. OWNERSHIP: penandaan Run milik service ini; pemanggil (armada) hanya memanggilnya di transaksi
+// yang SAMA dengan perubahan status unit dan HARUS memanggilnya SEBELUM status unit berubah. Idempoten: Run yang sudah dilepas dilewati.
+export async function tandaiRunDilepasKarenaDispatchInTx(tx, { unitIds, jobId = null, actorId = null, via, now = new Date() }) {
+  const ids = [...new Set((unitIds ?? []).filter(Boolean))];
+  if (ids.length === 0) return [];
+  const kandidat = await tx.productionRun.findMany({ where: { unitId: { in: ids }, status: { in: [...RUN_OWNED_STATUSES] }, deliveryReleasedAt: null }, select: { id: true } });
+  if (kandidat.length === 0) return [];
+  const pelaku = actorId ? await tx.user.findUnique({ where: { id: actorId }, select: { id: true, name: true } }) : null;
+  const dilepas = [];
+  for (const { id } of kandidat.sort((a, b) => String(a.id).localeCompare(String(b.id)))) {
+    await lockRowForUpdate(tx, "production_runs_v2", id);
+    const run = await tx.productionRun.findUnique({ where: { id }, include: { unit: { select: { id: true, unitCode: true, orderId: true, status: true } } } });
+    // Dinilai ulang SETELAH kunci: hanya Run non-terminal yang belum dilepas, dan hanya unit yang memang masih diproduksi saat berangkat.
+    if (!run || !RUN_OWNED_STATUSES.includes(run.status) || run.deliveryReleasedAt) continue;
+    if (!["RECEIVED", "IN_PRODUCTION"].includes(run.unit.status)) continue;
+    const revision = run.revision + 1;
+    const rekam = {
+      version: 2, kind: "DISPATCH_ROUTE_PLANNER", via, jobId, decidedAt: now.toISOString(), decidedBy: pelaku ? { id: pelaku.id, name: pelaku.name } : null,
+      unit: { id: run.unit.id, code: run.unit.unitCode, statusBefore: run.unit.status }, run: { status: run.status, phase: run.currentPhase ?? null, revisionBefore: run.revision },
+      note: "Unit berangkat/terkirim lewat Route Planner saat pencatatan produksi belum selesai; bukan hasil pemeriksaan/QC dan bukan keputusan override",
+    };
+    await tx.productionRun.update({ where: { id: run.id }, data: { deliveryReleasedAt: now, deliveryRelease: rekam, revision } });
+    const meta = { unitCode: run.unit.unitCode, via, jobId, runId: run.id, runStatus: run.status, runPhase: run.currentPhase ?? null, unitStatusBefore: run.unit.status };
+    await recordActivity(tx, { entityType: "unit", entityId: run.unit.id, eventType: EVENT_TYPES.PRODUCTION_DISPATCHED_BEFORE_DONE, actorId: actorId || null, metadata: meta });
+    await recordActivity(tx, { entityType: "order", entityId: run.unit.orderId, eventType: EVENT_TYPES.PRODUCTION_DISPATCHED_BEFORE_DONE, actorId: actorId || null, metadata: meta });
+    dilepas.push({ runId: run.id, unitId: run.unit.id, unitCode: run.unit.unitCode, revision });
+  }
+  return dilepas;
 }
 
 export async function completeAdaptationRunInTx(tx, { runId, actorId = null, now = new Date() }) {

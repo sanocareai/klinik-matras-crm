@@ -168,60 +168,55 @@ const hitung = async (unitId, runId) => ({
   qc: await testPrisma.qualityInspection.count({ where: { runId } }),
 });
 
-test("1. KASUS RIKA: unit IN_PRODUCTION BUKAN siap kirim — tidak ada di kandidat biasa, tidak bisa dijadwalkan biasa; muncul sebagai kandidat DRAF; ditempatkan sebagai job draf tanpa mengubah status/driver", async () => {
+test("1. KASUS RIKA (aturan 18 Okt 2026): unit IN_PRODUCTION tampil di kandidat biasa dan ditempatkan sebagai job BIASA (boleh driver) tanpa mengubah status unit/Run; tanpa bukti/QC/stok/custody; job ganda ditolak", async () => {
   const w = await world(); const pl = await planner();
   const { unit, run } = await rikaLike(w);
   const biasa = ok(await pl.api.get(`${ARM}/board?type=DELIVERY&date=${TGL}`));
-  assert.ok(!biasa.available.some((u) => u.id === unit.id), "kandidat biasa tidak memuat unit yang belum siap");
-  assert.deepEqual(biasa.availableMenunggu, [], "tanpa opt-in, kandidat menunggu tidak dikirim");
-  const tolakBiasa = await pl.api.post(`${ARM}/jobs`, { type: "DELIVERY", unitIds: [unit.id], scheduledDate: TGL });
-  assert.equal(tolakBiasa.status, 400); assert.match(tolakBiasa.body.error, /IN_PRODUCTION.*tidak bisa dijadwalkan/);
-
-  const kand = ok(await pl.api.get(`${ARM}/board?type=DELIVERY&date=${TGL}&termasukMenunggu=1`));
-  assert.ok(kand.availableMenunggu.some((u) => u.id === unit.id), "unit produksi aktif yang valid = kandidat draf");
-  assert.ok(!kand.available.some((u) => u.id === unit.id), "tetap BUKAN unit siap");
+  assert.ok(biasa.available.some((u) => u.id === unit.id), "unit produksi aktif tampil di kandidat biasa (status produksi tidak menahan)");
+  assert.deepEqual(biasa.availableMenunggu, [], "kandidat draf lama tidak dipakai lagi (dipertahankan kosong untuk klien lama)");
+  const lama = ok(await pl.api.get(`${ARM}/board?type=DELIVERY&date=${TGL}&termasukMenunggu=1`));
+  assert.deepEqual(lama.availableMenunggu, [], "klien lama yang masih meminta termasukMenunggu tidak error");
 
   const before = await hitung(unit.id, run.id);
-  const denganDriver = await pl.api.post(`${ARM}/jobs`, { type: "DELIVERY", unitIds: [unit.id], scheduledDate: TGL, menungguKonfirmasi: true, driverId: w.driver.user.id });
-  assert.equal(denganDriver.status, 400); assert.match(denganDriver.body.error, /tidak boleh diberi driver/);
-  const draf = await pl.api.post(`${ARM}/jobs`, { type: "DELIVERY", unitIds: [unit.id], scheduledDate: TGL, menungguKonfirmasi: true });
-  assert.equal(draf.status, 201, JSON.stringify(draf.body));
-  assert.equal(draf.body.driverId, null); assert.ok(["UNSCHEDULED", "SCHEDULED"].includes(draf.body.status), draf.body.status);
-  assert.equal(await unitStatus(unit.id), "IN_PRODUCTION", "status unit TIDAK berubah");
+  const job = await pl.api.post(`${ARM}/jobs`, { type: "DELIVERY", unitIds: [unit.id], scheduledDate: TGL, driverId: w.driver.user.id });
+  assert.equal(job.status, 201, JSON.stringify(job.body));
+  assert.equal(job.body.driverId, w.driver.user.id, "job biasa: boleh langsung diberi driver");
+  assert.equal(await unitStatus(unit.id), "IN_PRODUCTION", "status unit TIDAK berubah saat penempatan");
+  const runSesudah = await testPrisma.productionRun.findUniqueOrThrow({ where: { id: run.id } });
+  assert.equal(runSesudah.deliveryReleasedAt, null, "penempatan bukan pelepasan Run — pelepasan baru terjadi saat unit benar-benar berangkat");
   const after = await hitung(unit.id, run.id);
   assert.deepEqual({ ...after, jobDel: 0 }, { ...before, jobDel: 0 }, "tidak ada bukti/QC/stok/custody baru");
   assert.equal(after.jobDel, 1);
-  const ganda = await pl.api.post(`${ARM}/jobs`, { type: "DELIVERY", unitIds: [unit.id], scheduledDate: TGL, menungguKonfirmasi: true });
+  const ganda = await pl.api.post(`${ARM}/jobs`, { type: "DELIVERY", unitIds: [unit.id], scheduledDate: TGL });
   assert.equal(ganda.status, 409); assert.equal(ganda.body.code, "JOB_GANDA");
   assert.equal((await jobDeliveryUnit(unit.id)).length, 1);
   const b2 = ok(await pl.api.get(`${ARM}/board?type=DELIVERY&date=${TGL}`));
-  const j = b2.jobs.find((x) => x.id === draf.body.id);
-  assert.ok(j, "job draf tampil di papan");
-  assert.equal(j.labelMenunggu, "Menunggu konfirmasi siap kirim"); assert.deepEqual(j.menungguKonfirmasi.map((u) => u.unitCode), [unit.unitCode]);
+  const j = b2.jobs.find((x) => x.id === job.body.id);
+  assert.ok(j, "job tampil di papan");
+  assert.equal(j.labelMenunggu, "Produksi belum selesai", "penanda INFORMASI"); assert.deepEqual(j.menungguKonfirmasi.map((u) => u.unitCode), [unit.unitCode]);
+  assert.ok(!b2.available.some((u) => u.id === unit.id), "unit yang sudah punya job tidak lagi tersedia");
 });
 
-test("2. Dispatch DITOLAK selama menunggu: tidak bisa diberi driver, tidak bisa diterbitkan; boleh ditempatkan di rute DRAFT", async () => {
+test("2. Dispatch TIDAK ditahan status produksi: job unit IN_PRODUCTION boleh diberi driver, diletakkan di rute, rute diterbitkan, dan dijalankan — status unit mengikuti pengiriman", async () => {
   const w = await world(); const pl = await planner();
   const { unit } = await rikaLike(w);
-  const job = (await pl.api.post(`${ARM}/jobs`, { type: "DELIVERY", unitIds: [unit.id], scheduledDate: TGL, menungguKonfirmasi: true })).body;
+  const job = (await pl.api.post(`${ARM}/jobs`, { type: "DELIVERY", unitIds: [unit.id], scheduledDate: TGL })).body;
   const beri = await pl.api.patch(`${ARM}/jobs/${job.id}`, { driverId: w.driver.user.id });
-  assert.equal(beri.status, 409, JSON.stringify(beri.body)); assert.equal(beri.body.code, "MENUNGGU_KONFIRMASI_SIAP_KIRIM"); assert.match(beri.body.error, new RegExp(unit.unitCode));
-  assert.equal((await testPrisma.job.findUniqueOrThrow({ where: { id: job.id } })).driverId, null);
+  assert.equal(beri.status, 200, JSON.stringify(beri.body));
+  assert.equal((await testPrisma.job.findUniqueOrThrow({ where: { id: job.id } })).driverId, w.driver.user.id);
 
   const rute = ok2(await pl.api.post(`${ARM}/routes`, { date: TGL, driverId: w.driver.user.id }));
   const taruh = await pl.api.patch(`${ARM}/routes/${rute.id}/jobs`, { jobIds: [job.id] });
   assert.equal(taruh.status, 200, JSON.stringify(taruh.body));
   const r = ok(await pl.api.get(`${ARM}/routes/${rute.id}`));
-  assert.equal(r.jobs.find((x) => x.id === job.id).labelMenunggu, "Menunggu konfirmasi siap kirim");
+  assert.equal(r.jobs.find((x) => x.id === job.id).labelMenunggu, "Produksi belum selesai");
   const terbit = await pl.api.post(`${ARM}/routes/${rute.id}/publish`, {});
-  assert.equal(terbit.status, 409, JSON.stringify(terbit.body));
-  assert.equal(terbit.body.code, "MENUNGGU_KONFIRMASI_SIAP_KIRIM"); assert.deepEqual(terbit.body.menungguKonfirmasi.map((u) => u.unitCode), [unit.unitCode]);
-  const rute2 = await testPrisma.route.findUniqueOrThrow({ where: { id: rute.id } });
-  assert.equal(rute2.status, "DRAFT"); assert.equal(rute2.publishedAt, null);
-  // Menaruh job di rute DRAFT = perencanaan (driver app hanya melihat rute PUBLISHED); yang dijaga: tidak bisa diterbitkan dan tidak bisa DIJALANKAN selama menunggu.
-  const mulai = await pl.api.post(`${ARM}/jobs/${job.id}/start`, {}, key("kbj-start"));
-  assert.equal(mulai.status, 409, JSON.stringify(mulai.body)); assert.equal(mulai.body.code, "MENUNGGU_KONFIRMASI_SIAP_KIRIM");
-  assert.equal((await testPrisma.job.findUniqueOrThrow({ where: { id: job.id } })).status !== "EN_ROUTE", true);
+  assert.equal(terbit.status, 200, JSON.stringify(terbit.body));
+  assert.equal((await testPrisma.route.findUniqueOrThrow({ where: { id: rute.id } })).status, "PUBLISHED");
+  const mulai = await w.driver.api.post(`${ARM}/jobs/${job.id}/start`, {}, key("kbj-start"));
+  assert.equal(mulai.status, 200, JSON.stringify(mulai.body));
+  assert.equal((await testPrisma.job.findUniqueOrThrow({ where: { id: job.id } })).status, "EN_ROUTE");
+  assert.equal(await unitStatus(unit.id), "IN_TRANSIT_OUT", "unit berangkat walau produksinya belum selesai");
 });
 
 test("3. KONFIRMASI BARANG JADI: wajib alasan/kode unit/lokasi sah/verifikasi fisik; hanya petugas berwenang; jalur resmi tanpa bukti/QC/stok/custody palsu; job draf yang SAMA dipakai; publish lolos", async () => {
@@ -290,12 +285,15 @@ test("4. Penolakan: unit batal/terkirim/berangkat/sudah siap, order batal, job g
     const order = await testPrisma.order.create({ data: { customerId: customer.id, orderNumber: `KBJ-O-${++seq}`, value: 100, category: "LAYANAN", status: orderStatus } });
     return testPrisma.unit.create({ data: { unitCode: `KBJ-U-${++seq}`, orderId: order.id, seq: 1, status } });
   };
-  const draf = (u) => pl.api.post(`${ARM}/jobs`, { type: "DELIVERY", unitIds: [u.id], scheduledDate: TGL, menungguKonfirmasi: true });
-  for (const [st, kode] of [["CANCELLED", "UNIT_BATAL"], ["DELIVERED", "UNIT_SUDAH_BERANGKAT"], ["IN_TRANSIT_OUT", "UNIT_SUDAH_BERANGKAT"], ["READY_FOR_DELIVERY", "UNIT_SUDAH_SIAP"], ["AWAITING_PICKUP", "UNIT_BUKAN_PRODUKSI"]]) {
+  const draf = (u) => pl.api.post(`${ARM}/jobs`, { type: "DELIVERY", unitIds: [u.id], scheduledDate: TGL });
+  // Aturan 18 Okt 2026: batal/terkirim/sudah berangkat dan barang yang BELUM sampai di bengkel tetap ditolak (tidak ada job tercipta); unit yang sudah siap = job biasa (bukan kesalahan).
+  for (const st of ["CANCELLED", "DELIVERED", "IN_TRANSIT_OUT", "AWAITING_PICKUP"]) {
     const u = await mk(st); const r = await draf(u);
-    assert.equal(r.status, 409, `${st}: ${JSON.stringify(r.body)}`); assert.equal(r.body.code, kode, st);
+    assert.equal(r.status, 400, `${st}: ${JSON.stringify(r.body)}`); assert.match(r.body.error, new RegExp(`${st}.*tidak bisa dijadwalkan`), st);
     assert.equal(await testPrisma.jobUnit.count({ where: { unitId: u.id } }), 0);
   }
+  const siap = await mk("READY_FOR_DELIVERY", "READY");
+  assert.equal((await draf(siap)).status, 201, "unit yang sudah siap = job pengiriman biasa");
   const ob = await mk("IN_PRODUCTION", "CANCELLED");
   const r = await draf(ob); assert.equal(r.status, 409); assert.equal(r.body.code, "ORDER_TIDAK_SAH");
   const up = await mk("IN_PRODUCTION");
@@ -308,7 +306,7 @@ test("4. Penolakan: unit batal/terkirim/berangkat/sudah siap, order batal, job g
   assert.equal(res.status, 409, JSON.stringify(res.body)); assert.equal(res.body.code, "CONFIRM_FG_NOT_ADAPTATION");
 });
 
-test("5. PER UNIT pada order multi-unit: unit A dikonfirmasi, unit B belum — job tetap menunggu karena B; label menyebut B saja; publish ditolak sampai B siap", async () => {
+test("5. PER UNIT pada order multi-unit: unit A dikonfirmasi, unit B belum — penanda informasi menyebut B saja; publish TIDAK ditahan (aturan 18 Okt 2026)", async () => {
   const w = await world(); const pl = await planner();
   const { unit: a, run } = await rikaLike(w);
   const b = await testPrisma.unit.create({ data: { unitCode: `${a.unitCode}-B`, orderId: a.orderId, seq: 2, status: "IN_PRODUCTION" } });
@@ -322,9 +320,9 @@ test("5. PER UNIT pada order multi-unit: unit A dikonfirmasi, unit B belum — j
   assert.equal(await unitStatus(a.id), "READY_FOR_DELIVERY"); assert.equal(await unitStatus(b.id), "IN_PRODUCTION", "unit B tidak ikut berubah");
   assert.equal((await jobDeliveryUnit(a.id)).length, 1, "tidak ada job ganda untuk unit A"); assert.equal(await testPrisma.job.count({ where: { type: "DELIVERY" } }), 1);
   const r = ok(await pl.api.get(`${ARM}/routes/${rute.id}`));
-  assert.deepEqual(r.jobs.find((x) => x.id === draf.id).menungguKonfirmasi.map((u) => u.unitCode), [b.unitCode], "hanya B yang menunggu");
+  assert.deepEqual(r.jobs.find((x) => x.id === draf.id).menungguKonfirmasi.map((u) => u.unitCode), [b.unitCode], "penanda informasi hanya untuk B");
   const terbit = await pl.api.post(`${ARM}/routes/${rute.id}/publish`, {});
-  assert.equal(terbit.status, 409); assert.deepEqual(terbit.body.menungguKonfirmasi.map((u) => u.unitCode), [b.unitCode]);
+  assert.equal(terbit.status, 200, "aturan 18 Okt 2026: penanda produksi belum selesai tidak menahan penerbitan: " + JSON.stringify(terbit.body));
 });
 
 test("6. KONKURENSI: dua konfirmasi bersamaan untuk unit yang sama -> tepat satu berhasil; satu job, satu outbox completed, tanpa event ganda", async () => {
