@@ -15,6 +15,12 @@ const PR = "/api/production";
 let gagal = 0; const cek = (n, ok, d = "") => { if (!ok) gagal += 1; console.log(`${ok ? "PASS" : "FAIL"} ${n}${d !== "" ? " — " + String(d).slice(0, 240) : ""}`); };
 const sv = await startTestServer(buildTestApp()); const base = sv.baseUrl;
 
+// FASE smoke = BACA-SAJA murni: TIDAK membuat pengguna rehearsal atau baris apa pun di DB (pengguna dibuat hanya pada fase skenario, di klon).
+if (FASE === "smoke") { // smoke baca-saja (lib terpisah) terhadap server sementara
+  const kode = await new Promise((res) => { const c = spawn(process.execPath, ["/rh/smoke-order-produksi-adopsi.mjs"], { env: { ...process.env, SMOKE_BASE: base }, stdio: "inherit" }); c.on("exit", res); });
+  console.log(`RH_SMOKE kode=${kode}`); await sv.close(); process.exit(kode === 0 ? 0 : 1);
+}
+
 async function pengguna(nama, roles) {
   const email = `rh-${nama}@rehearsal.invalid`; let u = await prisma.user.findUnique({ where: { email } });
   if (!u) u = await prisma.user.create({ data: { name: `Rehearsal ${nama}`, email, passwordHash: "x", role: roles[0] } });
@@ -33,10 +39,6 @@ const efek = async () => ({
 });
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
-if (FASE === "smoke") { // smoke baca-saja (lib terpisah) terhadap server sementara
-  const kode = await new Promise((res) => { const c = spawn(process.execPath, ["/rh/smoke-order-produksi-adopsi.mjs"], { env: { ...process.env, SMOKE_BASE: base }, stdio: "inherit" }); c.on("exit", res); });
-  console.log(`RH_SMOKE kode=${kode}`); await sv.close(); process.exit(kode === 0 ? 0 : 1);
-}
 
 // ═════════ SKENARIO (menulis ke KLON DB rehearsal; dibuang di akhir) ═════════
 const jumlahUnit0 = await n("select count(*)::int n from units");

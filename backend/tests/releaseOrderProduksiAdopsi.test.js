@@ -149,6 +149,7 @@ test("smoke, skenario, dan kode-baru-terhadap-restore: smoke/kode BACA-SAJA; ske
   for (const s of ["tanpa token → 401", "IDEMPOTENCY_KEY_INVALID", "STATUS_KERJA_TIDAK_VALID", "smoke tidak menulis", "ekspor xlsx: 200", "akun hanya-lihat"]) assert.ok(smoke.includes(s), s);
   for (const s of ["KERJA_DIPEGANG_APLIKASI", "IDEMPOTENCY_KEY_REUSED", "Promise.all", "STATUS ORDER dari Produksi", "RIWAYAT_BERUBAH", "tepat satu pergerakan"]) assert.ok(sken.includes(s), s);
   assert.ok(script.includes("SMOKE_HASIL fail=0 skip="), "skrip menolak smoke tanpa ringkasan");
+  assert.ok(sken.indexOf('if (FASE === "smoke")') > 0 && sken.indexOf('if (FASE === "smoke")') < sken.indexOf("async function pengguna"), "fase smoke keluar SEBELUM pengguna rehearsal dibuat (smoke tidak menulis apa pun, termasuk tabel User)");
   assert.ok(sken.includes('startTestServer(buildTestApp())') && !/import\(["']\/app\/src\/index\.js/.test(sken), "server minimal tanpa cron/worker/WAHA");
 });
 

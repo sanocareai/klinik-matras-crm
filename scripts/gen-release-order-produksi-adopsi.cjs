@@ -93,7 +93,7 @@ function tesFilesDari() {
 function berkasBerbeda(base) {
   let ref = base, belumGabung = false;
   try { execFileSync("git", ["merge-base", "--is-ancestor", base, "HEAD"], { cwd: REPO, stdio: "ignore" }); } catch { ref = gitLines(["merge-base", "HEAD", base])[0]; belumGabung = true; }
-  const list = new Set([...gitLines(["diff", "--name-only", ref]), ...gitLines(["ls-files", "-o", "--exclude-standard"])]);
+  const list = new Set([...gitLines(["diff", "--name-only", ref]), ...gitLines(["ls-files", "-o", "--exclude-standard"]).filter((f) => !/^backend\/(data|uploads)\//.test(f))]); // artefak tes (foto/video uji) bukan bagian rilis
   return { list: [...list], ref, belumGabung };
 }
 
