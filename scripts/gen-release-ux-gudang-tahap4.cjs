@@ -29,7 +29,7 @@ const GUARD_UNCHANGED = [
   "backend/src/services/productionMaterialIssueCommandService.js", "backend/src/routes/productionPlanning.js",
 ];
 // Commit live yang wajib leluhur: UX Gudang Tahap 1 (bcf8b770), manifest Sofa/Divan (20606872), token geser (10294dcb), Koreksi Gudang (08d62e7d), Produksi override, Riwayat Referensi, bukti serah, manifest merk (229755d6), UX Gudang Tahap 2 (f293c587), pintu masuk Gudang (ca9bdea7), status bayar PKR Delivery (694f2184).
-const LIVE_ANCESTORS_REF = ["58cbc284", "bcf8b770", "20606872", "10294dcb", "08d62e7d", "799d3e93", "56b87721", "e5a32cd2", "229755d6", "f293c587", "ca9bdea7", "694f2184"];
+const LIVE_ANCESTORS_REF = ["57198ad6", "58cbc284", "bcf8b770", "20606872", "10294dcb", "08d62e7d", "799d3e93", "56b87721", "e5a32cd2", "229755d6", "f293c587", "ca9bdea7", "694f2184"];
 // Teks yang HARUS ada di dist baru (fitur Tahap 4) dan teks live lama yang tidak boleh hilang (Tahap 1–2, Koreksi, Produksi).
 const DIST_BARU = ["Perlu dikerjakan sekarang", "Terlambat atau tertahan", "Selesai terbaru", "Perlu Perhatian", "Definisi antrean ini", "Cari nomor, bahan, supplier, unit"];
 const DIST_LAMA = ["Belum dikelompokkan", "Kembalikan ke Pemeriksaan", "Riwayat status dan dokumen", "Diproses Finance", "Beranda Gudang", "Alasan revisi", "Penyebab selisih", "Selesaikan selisih", "Perjalanan saldo", "Sudah diproses sebelumnya", "Saran restok", "Yang bisa dilakukan sekarang", "Ajukan Koreksi Stok", "Konfirmasi Barang Jadi", "Selesaikan Produksi", "Rencana Produksi", "Tetapkan Siap Kirim (override)"];
