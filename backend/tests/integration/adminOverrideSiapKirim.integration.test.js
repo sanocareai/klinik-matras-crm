@@ -455,17 +455,24 @@ test("P9. Setelah dilepas unit boleh berangkat/terkirim: penutupan Run tetap adm
   assert.equal(sapu3.openedCount, 1, "pembatalan tetap konflik");
 });
 
-test("P10. Dropdown status Sales ke READY tetap ditolak untuk unit yang dipegang V2 — pesan menunjuk jalur pengecualian Admin; rilis pengecualian membuat order READY konsisten di Sales", async () => {
+test("P10. Dropdown status Sales ke READY DITERIMA (aturan 19 Okt 2026): Run dilepas otomatis (SALES_STATUS_CHANGE) dengan jejak pelaku; override Admin tetap membuat order READY konsisten di Sales", async () => {
   const w = await world(); const adm = await admin();
-  const { unit, run } = await rikaLike(w);
-  const tolak = await adm.api.patch(`/api/orders/${unit.orderId}`, { status: "READY", statusOverrideNote: "uji override Admin Sales" });
-  assert.equal(tolak.status, 409, JSON.stringify(tolak.body)); assert.match(tolak.body.error, /sedang dalam proses Production V2/);
-  assert.match(tolak.body.error, /masukkan unit itu ke Route Planner/);
-  assert.equal(await unitStatus(unit.id), "IN_PRODUCTION");
-  assert.equal((await release(w, adm, unit, run)).status, 200);
-  const order = await testPrisma.order.findUniqueOrThrow({ where: { id: unit.orderId }, include: { units: true } });
+  // jalur 1: dropdown Sales
+  const a = await rikaLike(w);
+  const res = await adm.api.patch(`/api/orders/${a.unit.orderId}`, { status: "READY", statusOverrideNote: "Barang sudah jadi di workshop" });
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(await unitStatus(a.unit.id), "READY_FOR_DELIVERY");
+  const runA = await runFresh(a.run.id);
+  assert.equal(runA.deliveryRelease.kind, "SALES_STATUS_CHANGE"); assert.equal(runA.deliveryRelease.via, "ORDER_READY"); assert.equal(runA.deliveryRelease.decidedBy.id, adm.user.id); assert.equal(runA.status, "ACTIVE");
+  assert.equal((await testPrisma.order.findUniqueOrThrow({ where: { id: a.unit.orderId } })).status, "READY");
+  assert.equal((await testPrisma.orderStatusTransition.count({ where: { orderId: a.unit.orderId, toStatus: "READY" } })), 1, "riwayat status order tercatat");
+  assert.equal(await testPrisma.activityEvent.count({ where: { entityType: "unit", entityId: a.unit.id, eventType: "PRODUCTION_FOLLOWS_ORDER", actorId: adm.user.id } }), 1, "jejak penyelarasan dengan pelaku");
+  // jalur 2: override Admin pada unit lain tetap berjalan seperti semula
+  const w2 = await world(); const b = await rikaLike(w2);
+  assert.equal((await release(w2, adm, b.unit, b.run)).status, 200);
+  const order = await testPrisma.order.findUniqueOrThrow({ where: { id: b.unit.orderId }, include: { units: true } });
   assert.equal(order.status, "READY"); assert.ok(order.units.every((u) => u.status === "READY_FOR_DELIVERY"));
-  assert.equal((await testPrisma.orderStatusTransition.count({ where: { orderId: unit.orderId, toStatus: "READY" } })), 1, "riwayat status order tercatat");
+  assert.equal((await runFresh(b.run.id)).deliveryRelease.kind, "ADMIN_OVERRIDE");
 });
 
 test("P11. Route Planner & app Driver: unit override tampil JUJUR — 'override Admin' + lokasi pengambilan, tanpa klaim pemeriksaan/QC; Driver hanya melihatnya setelah rute terbit", async () => {
@@ -810,4 +817,232 @@ test("Q5. KASUS RIKA PERSIS: unit IN_PRODUCTION masuk rute yang SUDAH SELESAI (A
   assert.equal(r.deliveryRelease.kind, "DISPATCH_ROUTE_PLANNER"); assert.equal(r.deliveryRelease.via, "JOB_COMPLETE"); assert.equal(r.status, "ACTIVE");
   assert.equal(await hitungAktivitasDispatch(unit.id), 1);
   assert.equal(await unitStatus(unitLain.id), "DELIVERED");
+});
+
+// ──────────────────────────────── SATU JALUR STATUS LINTAS WORKSPACE (services/statusUnitLintasWorkspace.js) — Sales ⇄ Delivery ⇄ Produksi ────────────────────────────────
+const salesUbah = (adm, orderId, status, note = "Ubah dari Sales") => adm.api.patch(`/api/orders/${orderId}`, { status, statusOverrideNote: note });
+
+test("Q6. SALES Siap Kirim saat Run aktif: tepat SATU job pengiriman; ulang/klik ganda dan Route Planner memakai job yang sama; lalu berangkat → Terkirim lewat jalur Delivery tanpa job ganda", async () => {
+  const w = await world(); const adm = await admin(); const pl = await planner();
+  const { unit, run } = await rikaLike(w, { tanpaSaklar: true });
+  assert.equal((await salesUbah(adm, unit.orderId, "READY")).status, 200);
+  assert.equal(await unitStatus(unit.id), "READY_FOR_DELIVERY");
+  assert.equal((await jobDeliveryUnit(unit.id)).length, 1, "tepat satu job");
+  const [a, b] = await Promise.all([salesUbah(adm, unit.orderId, "READY"), salesUbah(adm, unit.orderId, "READY")]);
+  assert.ok([a.status, b.status].every((x) => [200, 409].includes(x)), JSON.stringify([a.body, b.body]));
+  assert.equal((await jobDeliveryUnit(unit.id)).length, 1, "klik ganda tidak menggandakan job");
+  assert.equal((await runFresh(run.id)).deliveryRelease.kind, "SALES_STATUS_CHANGE");
+  const dobel = await pl.api.post(`${ARM}/jobs`, { type: "DELIVERY", unitIds: [unit.id], scheduledDate: TGL });
+  assert.ok(dobel.status >= 400, "Route Planner tidak membuat job kedua untuk unit yang sudah punya job aktif");
+  assert.equal((await jobDeliveryUnit(unit.id)).length, 1);
+  const jobId = (await jobDeliveryUnit(unit.id))[0].jobId;
+  const atur = await pl.api.patch(`${ARM}/jobs/${jobId}`, { scheduledDate: TGL, driverId: w.driver.user.id });
+  assert.equal(atur.status, 200, JSON.stringify(atur.body));
+  await jalankanPengiriman(w, jobId, "q6");
+  assert.equal(await unitStatus(unit.id), "DELIVERED");
+  assert.equal((await testPrisma.job.findUniqueOrThrow({ where: { id: jobId } })).status, "COMPLETED");
+  // Aturan lama D-006 (tidak diubah): pilihan manual Sales di dropdown menyalakan statusLocked, sehingga sinkron otomatis tidak menimpa status order; Sales menutupnya sendiri lewat jalur resmi yang sama (Q7).
+  assert.equal((await testPrisma.order.findUniqueOrThrow({ where: { id: unit.orderId } })).status, "READY");
+  assert.equal((await jobDeliveryUnit(unit.id)).length, 1);
+  assert.equal((await runFresh(run.id)).status, "ACTIVE", "Run boleh ditutup administratif belakangan");
+});
+
+test("Q7. SALES Terkirim saat Run aktif memakai jalur resmi: unit/order/job/rute disinkronkan, Run dilepas (ORDER_DELIVERED) dengan pelaku, satu job, Run bisa ditutup administratif sesudahnya", async () => {
+  const w = await world(); const adm = await admin(); const pl = await planner();
+  const { unit, run } = await rikaLike(w, { tanpaSaklar: true });
+  const job = ok2(await pl.api.post(`${ARM}/jobs`, { type: "DELIVERY", unitIds: [unit.id], scheduledDate: TGL, driverId: w.driver.user.id }));
+  await testPrisma.order.update({ where: { id: unit.orderId }, data: { deliveryConfirmedDate: new Date(`${TGL}T00:00:00.000Z`) } }); // aturan Sales yang sudah ada: Terkirim butuh Tanggal Kirim Pasti (bukan aturan Produksi)
+  const res = await salesUbah(adm, unit.orderId, "DELIVERED", "Barang sudah diterima pelanggan");
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(await unitStatus(unit.id), "DELIVERED");
+  assert.equal((await testPrisma.order.findUniqueOrThrow({ where: { id: unit.orderId } })).status, "DELIVERED");
+  const j = await testPrisma.job.findUniqueOrThrow({ where: { id: job.id } });
+  assert.equal(j.status, "COMPLETED", "job pengiriman ikut selesai lewat jalur Delivery, bukan hanya label");
+  assert.equal((await jobDeliveryUnit(unit.id)).length, 1);
+  const r = await runFresh(run.id);
+  assert.equal(r.deliveryRelease.kind, "SALES_STATUS_CHANGE"); assert.equal(r.deliveryRelease.via, "ORDER_DELIVERED"); assert.equal(r.deliveryRelease.decidedBy.id, adm.user.id); assert.equal(r.status, "ACTIVE");
+  const rev = (await card(w, run.id)).revision;
+  const tutup = await w.lead.api.post(`${V2}/runs/${run.id}/confirm-finished-goods`, { expectedRevision: rev, unitCode: unit.unitCode, reason: "Tutup Run administratif; unit sudah terkirim", physicalVerified: true, workCenterId: w.wc }, key(`q7-tutup-${++seq}`));
+  assert.equal(tutup.status, 200, JSON.stringify(tutup.body));
+  assert.equal(await unitStatus(unit.id), "DELIVERED", "status unit tidak mundur");
+});
+
+test("Q8. ORDER MULTI-UNIT: batal menyelaraskan SEMUA unit (Run unit produksi dibatalkan); bila satu unit sudah berangkat, seluruh pembatalan ditolak berkode tanpa menulis apa pun", async () => {
+  const w = await world(); const adm = await admin();
+  const a = await rikaLike(w, { tanpaSaklar: true });
+  const u2 = await testPrisma.unit.create({ data: { unitCode: `${a.unit.unitCode}-B`, orderId: a.unit.orderId, seq: 2, status: "READY_FOR_DELIVERY" } });
+  const tolak = await testPrisma.unit.update({ where: { id: u2.id }, data: { status: "IN_TRANSIT_OUT" } });
+  const res = await salesUbah(adm, a.unit.orderId, "CANCELLED", "Batal sebagian sudah berangkat");
+  assert.equal(res.status, 409, JSON.stringify(res.body)); assert.equal(res.body.code, "UNIT_SUDAH_BERANGKAT"); assert.ok(res.body.pilihanKoreksi?.length >= 2);
+  assert.equal(await unitStatus(a.unit.id), "IN_PRODUCTION"); assert.equal(await unitStatus(tolak.id), "IN_TRANSIT_OUT"); assert.equal((await runFresh(a.run.id)).status, "ACTIVE");
+  assert.equal((await testPrisma.order.findUniqueOrThrow({ where: { id: a.unit.orderId } })).status !== "CANCELLED", true);
+  // fakta dikoreksi (unit kedua belum berangkat) → batal berhasil untuk semua unit
+  await testPrisma.unit.update({ where: { id: u2.id }, data: { status: "READY_FOR_DELIVERY" } });
+  const ok1 = await salesUbah(adm, a.unit.orderId, "CANCELLED", "Batal total");
+  assert.equal(ok1.status, 200, JSON.stringify(ok1.body));
+  assert.equal(await unitStatus(a.unit.id), "CANCELLED"); assert.equal(await unitStatus(u2.id), "CANCELLED"); assert.equal((await runFresh(a.run.id)).status, "CANCELLED");
+  assert.equal((await testPrisma.jobUnit.findMany({ where: { unitId: { in: [a.unit.id, u2.id] }, job: { type: "DELIVERY", status: { in: ["UNSCHEDULED", "SCHEDULED", "ASSIGNED", "EN_ROUTE", "ARRIVED"] } } } })).length, 0, "tidak ada job pengiriman aktif tersisa");
+});
+
+// ──────────────────────────────── KOREKSI RIKA: pengiriman manual masuk rute yang SUDAH SELESAI (services/koreksiPengirimanRute.js) ────────────────────────────────
+async function duniaRika(w, { tanpaSaklar = true } = {}) {
+  const { unit, run } = await rikaLike(w, { tanpaSaklar });
+  const rute = await testPrisma.route.create({ data: { code: `RTE-K-${++seq}`, date: new Date("2026-10-16T00:00:00.000Z"), status: "COMPLETED", publishedAt: new Date(), completedAt: new Date("2026-10-16T07:13:14.000Z"), driverId: w.driver.user.id } });
+  const jobLain = [];
+  for (let i = 1; i <= 5; i += 1) {
+    const cust = await testPrisma.customer.create({ data: { name: `Cust ${++seq}` } });
+    const ord = await testPrisma.order.create({ data: { customerId: cust.id, orderNumber: `KOR-${++seq}`, value: 100, category: "LAYANAN", status: "DELIVERED" } });
+    const u = await testPrisma.unit.create({ data: { unitCode: `KOR-U-${++seq}`, orderId: ord.id, seq: 1, status: "DELIVERED" } });
+    const j = await testPrisma.job.create({ data: { type: "DELIVERY", orderId: ord.id, routeId: rute.id, driverId: w.driver.user.id, status: "COMPLETED", sequence: i, scheduledDate: rute.date, completedAt: new Date("2026-10-16T03:00:00.000Z") } });
+    await testPrisma.jobUnit.create({ data: { jobId: j.id, unitId: u.id } });
+    jobLain.push(j);
+  }
+  await testPrisma.order.update({ where: { id: unit.orderId }, data: { statusLocked: true, status: "PROCESSING" } });
+  return { w, unit, run, rute, jobLain };
+}
+const WAKTU = new Date("2026-10-16T05:30:00.000Z"); // 12.30 WIB pada tanggal rute
+const ALASAN = "Rika sudah terkirim bersama rute Bandung 16 Okt tetapi tidak masuk Route Planner karena pencatatan produksinya belum selesai";
+const fotoRute = async (rute, unitId, runId) => JSON.stringify({
+  rute: (await testPrisma.route.findUniqueOrThrow({ where: { id: rute.id } })).status,
+  eventRute: await testPrisma.deliveryExecutionEvent.count({ where: { routeId: rute.id, action: "ROUTE_COMPLETED" } }),
+  jobLain: (await testPrisma.job.findMany({ where: { routeId: rute.id }, orderBy: { sequence: "asc" } })).map((j) => `${j.sequence}:${j.status}:${j.completedAt?.toISOString()}:${j.updatedAt.toISOString()}`),
+  qc: await testPrisma.qualityInspection.count({ where: { runId } }), stok: await testPrisma.stockMovement.count({ where: { unitId } }),
+  fg: await testPrisma.unitCustodyHandoff.count({ where: { unitId, direction: "FINISHED_GOODS" } }), ev: await testPrisma.productionStepEvidence.count({ where: { runId } }),
+});
+
+test("Q9. KOREKSI RIKA — PRATINJAU baca-saja: menggambarkan kondisi, rencana tulis, dan dampak laporan rute tanpa mengubah apa pun", async () => {
+  const w = await world(); const d = await duniaRika(w);
+  const { pratinjauKoreksiPengirimanRute } = await import("../../src/services/koreksiPengirimanRute.js");
+  const sebelum = await fotoRute(d.rute, d.unit.id, d.run.id); const unitSebelum = await unitStatus(d.unit.id); const revSebelum = (await runFresh(d.run.id)).revision;
+  const p = await pratinjauKoreksiPengirimanRute(testPrisma, { unitCode: d.unit.unitCode, routeCode: d.rute.code, waktuTerkirim: WAKTU });
+  assert.equal(p.layak, true, JSON.stringify(p.rintangan)); assert.equal(p.sudahDiterapkan, false);
+  assert.equal(p.kondisiSekarang.unit.status, "IN_PRODUCTION"); assert.equal(p.kondisiSekarang.order.status, "PROCESSING"); assert.equal(p.kondisiSekarang.order.statusLocked, true);
+  assert.equal(p.kondisiSekarang.rute.status, "COMPLETED"); assert.equal(p.kondisiSekarang.rute.jumlahJob, 5);
+  assert.deepEqual(p.dampakLaporanRute.sebelum, { stop: 5, selesai: 5, unit: 5 }); assert.deepEqual(p.dampakLaporanRute.sesudah, { stop: 6, selesai: 6, unit: 6 });
+  assert.ok(p.rencanaTulis.length >= 5);
+  assert.equal(await fotoRute(d.rute, d.unit.id, d.run.id), sebelum); assert.equal(await unitStatus(d.unit.id), unitSebelum); assert.equal((await runFresh(d.run.id)).revision, revSebelum);
+  assert.equal((await jobDeliveryUnit(d.unit.id)).length, 0, "pratinjau tidak membuat job");
+});
+
+test("Q10. KOREKSI RIKA — PENERAPAN: 1 job di stop ke-6, unit Terkirim, Run dilepas (tidak ditutup), rute tetap Completed, job lain/QC/foto/stok/order tidak berubah, audit lengkap; ulang = tidak ada tulisan baru", async () => {
+  const w = await world(); const d = await duniaRika(w); const adm = await admin();
+  const { terapkanKoreksiPengirimanRuteInTx } = await import("../../src/services/koreksiPengirimanRute.js");
+  const sebelum = JSON.parse(await fotoRute(d.rute, d.unit.id, d.run.id));
+  const orderSebelum = await testPrisma.order.findUniqueOrThrow({ where: { id: d.unit.orderId } });
+  const hasil = await testPrisma.$transaction((tx) => terapkanKoreksiPengirimanRuteInTx(tx, { unitCode: d.unit.unitCode, routeCode: d.rute.code, aktorId: adm.user.id, waktuTerkirim: WAKTU, alasan: ALASAN }));
+  assert.equal(hasil.diterapkan, true); assert.equal(hasil.sequence, 6);
+  const jobs = await jobDeliveryUnit(d.unit.id); assert.equal(jobs.length, 1, "tepat satu job");
+  const j = jobs[0].job; assert.equal(j.routeId, d.rute.id); assert.equal(j.sequence, 6); assert.equal(j.status, "COMPLETED"); assert.equal(j.completedAt.toISOString(), WAKTU.toISOString());
+  assert.equal(j.driverId, d.rute.driverId); assert.deepEqual(j.proofPhotoUrls, [], "tidak ada foto bukti karangan"); assert.equal(j.arrivedAt, null, "tidak ada waktu tiba karangan"); assert.equal(j.podEditedById, adm.user.id); assert.match(j.podEditReason, /Rika/);
+  assert.equal(await unitStatus(d.unit.id), "DELIVERED");
+  const run = await runFresh(d.run.id);
+  assert.equal(run.status, "ACTIVE", "Run TIDAK ditutup"); assert.equal(run.deliveryRelease.kind, "DISPATCH_ROUTE_PLANNER"); assert.equal(run.deliveryRelease.via, "JOB_COMPLETE"); assert.equal(run.deliveryRelease.jobId, j.id); assert.equal(run.deliveryRelease.decidedBy.id, adm.user.id);
+  const sesudah = JSON.parse(await fotoRute(d.rute, d.unit.id, d.run.id));
+  assert.equal(sesudah.rute, "COMPLETED"); assert.equal(sesudah.eventRute, sebelum.eventRute, "tidak ada event rute selesai baru");
+  assert.deepEqual(sesudah.jobLain.slice(0, 5), sebelum.jobLain, "lima job lama tidak berubah sama sekali (termasuk updatedAt)");
+  assert.deepEqual({ qc: sesudah.qc, stok: sesudah.stok, fg: sesudah.fg, ev: sesudah.ev }, { qc: sebelum.qc, stok: sebelum.stok, fg: sebelum.fg, ev: sebelum.ev }, "tanpa QC/stok/custody/bukti Produksi palsu");
+  const orderSesudah = await testPrisma.order.findUniqueOrThrow({ where: { id: d.unit.orderId } });
+  assert.equal(orderSesudah.status, orderSebelum.status, "status order adalah keputusan Sales (terkunci manual), tidak ditimpa koreksi"); assert.equal(orderSesudah.statusLocked, true);
+  const ev = await testPrisma.deliveryExecutionEvent.findMany({ where: { jobId: j.id } });
+  assert.equal(ev.length, 1); assert.equal(ev[0].action, "JOB_COMPLETED"); assert.equal(ev[0].payload.manualCorrection, true); assert.equal(ev[0].actorId, adm.user.id); assert.equal(ev[0].source, "ADMIN_WEB");
+  const akt = await testPrisma.activityEvent.findMany({ where: { entityType: "unit", entityId: d.unit.id, eventType: "DELIVERY_MANUAL_RECORDED" } });
+  assert.equal(akt.length, 1); assert.equal(akt[0].actorId, adm.user.id); assert.equal(akt[0].metadata.reason, ALASAN);
+  assert.equal(await hitungAktivitasDispatch(d.unit.id), 1);
+  // ulang: idempoten
+  const ulang = await testPrisma.$transaction((tx) => terapkanKoreksiPengirimanRuteInTx(tx, { unitCode: d.unit.unitCode, routeCode: d.rute.code, aktorId: adm.user.id, waktuTerkirim: WAKTU, alasan: ALASAN }));
+  assert.equal(ulang.sudahDiterapkan, true); assert.equal(ulang.diterapkan, false);
+  assert.equal((await jobDeliveryUnit(d.unit.id)).length, 1); assert.equal(await testPrisma.deliveryExecutionEvent.count({ where: { jobId: j.id } }), 1); assert.equal(await hitungAktivitasDispatch(d.unit.id), 1);
+  // Sales kemudian mengubah order ke Terkirim lewat dropdown resmi: sah, tanpa job/event ganda
+  await testPrisma.order.update({ where: { id: d.unit.orderId }, data: { deliveryConfirmedDate: new Date("2026-10-16T00:00:00.000Z") } });
+  const sales = await salesUbah(adm, d.unit.orderId, "DELIVERED", "Rika sudah diterima pelanggan");
+  assert.equal(sales.status, 200, JSON.stringify(sales.body));
+  assert.equal((await testPrisma.order.findUniqueOrThrow({ where: { id: d.unit.orderId } })).status, "DELIVERED");
+  assert.equal((await jobDeliveryUnit(d.unit.id)).length, 1); assert.equal(await testPrisma.deliveryExecutionEvent.count({ where: { jobId: j.id } }), 1);
+});
+
+test("Q11. KOREKSI RIKA — KONKURENSI: dua penerapan bersamaan menghasilkan tepat satu job dan satu event", async () => {
+  const w = await world(); const d = await duniaRika(w); const adm = await admin();
+  const { terapkanKoreksiPengirimanRuteInTx } = await import("../../src/services/koreksiPengirimanRute.js");
+  const jalan = () => testPrisma.$transaction((tx) => terapkanKoreksiPengirimanRuteInTx(tx, { unitCode: d.unit.unitCode, routeCode: d.rute.code, aktorId: adm.user.id, waktuTerkirim: WAKTU, alasan: ALASAN })).then((r) => ({ ok: r }), (e) => ({ err: e }));
+  const hasil = await Promise.all([jalan(), jalan()]);
+  const diterapkan = hasil.filter((h) => h.ok?.diterapkan).length;
+  assert.equal(diterapkan, 1, JSON.stringify(hasil.map((h) => h.ok ?? h.err?.message)));
+  for (const h of hasil) if (h.err) assert.ok(/NOWAIT|lock|could not obtain/i.test(String(h.err.message)) || h.err.code, "penolakan karena kunci, bukan galat tak terduga");
+  assert.equal((await jobDeliveryUnit(d.unit.id)).length, 1); assert.equal(await testPrisma.deliveryExecutionEvent.count({ where: { routeId: d.rute.id, action: "JOB_COMPLETED", jobId: (await jobDeliveryUnit(d.unit.id))[0].jobId } }), 1);
+  assert.equal(await unitStatus(d.unit.id), "DELIVERED");
+});
+
+test("Q12. KOREKSI RIKA — PENOLAKAN: bukan Admin/Owner, alasan pendek, rute belum selesai, waktu di luar hari rute / masa depan, order dibatalkan, job aktif di rute lain — semuanya tanpa menulis apa pun", async () => {
+  const w = await world(); const d = await duniaRika(w); const adm = await admin(); const pl = await planner();
+  const { terapkanKoreksiPengirimanRuteInTx } = await import("../../src/services/koreksiPengirimanRute.js");
+  const dasar = { unitCode: d.unit.unitCode, routeCode: d.rute.code, aktorId: adm.user.id, waktuTerkirim: WAKTU, alasan: ALASAN };
+  const coba = (over) => testPrisma.$transaction((tx) => terapkanKoreksiPengirimanRuteInTx(tx, { ...dasar, ...over })).then(() => null, (e) => e);
+  const sebelum = await fotoRute(d.rute, d.unit.id, d.run.id);
+  assert.equal((await coba({ aktorId: pl.user.id }))?.code, "AKTOR_TIDAK_BERWENANG");
+  assert.equal((await coba({ alasan: "singkat" }))?.code, "ALASAN_WAJIB");
+  assert.equal((await coba({ waktuTerkirim: new Date("2026-10-15T05:00:00.000Z") }))?.code, "WAKTU_BUKAN_HARI_RUTE");
+  assert.equal((await coba({ waktuTerkirim: new Date(Date.now() + 86400000) }))?.code, "WAKTU_DI_MASA_DEPAN");
+  assert.equal((await coba({ unitCode: "TIDAK-ADA-1" }))?.code, "UNIT_TIDAK_ADA");
+  assert.equal((await coba({ routeCode: "RTE-TIDAK-ADA" }))?.code, "RUTE_TIDAK_ADA");
+  await testPrisma.route.update({ where: { id: d.rute.id }, data: { status: "PUBLISHED" } });
+  assert.equal((await coba({}))?.code, "RUTE_BELUM_SELESAI");
+  await testPrisma.route.update({ where: { id: d.rute.id }, data: { status: "COMPLETED" } });
+  await testPrisma.order.update({ where: { id: d.unit.orderId }, data: { status: "CANCELLED" } });
+  assert.equal((await coba({}))?.code, "ORDER_STATUS_TIDAK_SESUAI");
+  await testPrisma.order.update({ where: { id: d.unit.orderId }, data: { status: "PROCESSING" } });
+  const rute2 = await testPrisma.route.create({ data: { code: `RTE-K2-${++seq}`, date: new Date("2026-10-17T00:00:00.000Z"), status: "PUBLISHED", driverId: w.driver.user.id } });
+  const jobAktif = await testPrisma.job.create({ data: { type: "DELIVERY", orderId: d.unit.orderId, routeId: rute2.id, status: "ASSIGNED", sequence: 1, scheduledDate: rute2.date } });
+  await testPrisma.jobUnit.create({ data: { jobId: jobAktif.id, unitId: d.unit.id } });
+  assert.equal((await coba({}))?.code, "JOB_AKTIF_DI_RUTE_LAIN");
+  await testPrisma.jobUnit.deleteMany({ where: { jobId: jobAktif.id } }); await testPrisma.job.delete({ where: { id: jobAktif.id } }); await testPrisma.route.delete({ where: { id: rute2.id } });
+  assert.equal(await fotoRute(d.rute, d.unit.id, d.run.id), sebelum, "semua penolakan tidak menulis apa pun");
+  assert.equal(await unitStatus(d.unit.id), "IN_PRODUCTION"); assert.equal((await jobDeliveryUnit(d.unit.id)).length, 0);
+});
+
+test("Q13. KOREKSI RIKA — JOB DRAF dari Sales Siap Kirim dipakai ulang (tidak ada job kedua) dan dipindah ke rute selesai; rollback transaksi membatalkan semua", async () => {
+  const w = await world(); const d = await duniaRika(w); const adm = await admin();
+  const { terapkanKoreksiPengirimanRuteInTx } = await import("../../src/services/koreksiPengirimanRute.js");
+  assert.equal((await salesUbah(adm, d.unit.orderId, "READY")).status, 200);
+  const draf = await jobDeliveryUnit(d.unit.id); assert.equal(draf.length, 1); const jobId = draf[0].jobId;
+  assert.equal(await unitStatus(d.unit.id), "READY_FOR_DELIVERY");
+  const sebelum = await fotoRute(d.rute, d.unit.id, d.run.id);
+  class Batal extends Error {}
+  await testPrisma.$transaction(async (tx) => { await terapkanKoreksiPengirimanRuteInTx(tx, { unitCode: d.unit.unitCode, routeCode: d.rute.code, aktorId: adm.user.id, waktuTerkirim: WAKTU, alasan: ALASAN }); throw new Batal(); }).catch((e) => { if (!(e instanceof Batal)) throw e; });
+  assert.equal(await fotoRute(d.rute, d.unit.id, d.run.id), sebelum, "rollback tuntas"); assert.equal(await unitStatus(d.unit.id), "READY_FOR_DELIVERY"); assert.equal((await testPrisma.job.findUniqueOrThrow({ where: { id: jobId } })).status, "UNSCHEDULED");
+  const hasil = await testPrisma.$transaction((tx) => terapkanKoreksiPengirimanRuteInTx(tx, { unitCode: d.unit.unitCode, routeCode: d.rute.code, aktorId: adm.user.id, waktuTerkirim: WAKTU, alasan: ALASAN }));
+  assert.equal(hasil.jobDipakaiUlang, true); assert.equal(hasil.jobId, jobId);
+  const sesudah = await jobDeliveryUnit(d.unit.id); assert.equal(sesudah.length, 1, "tidak ada job kedua"); assert.equal(sesudah[0].job.routeId, d.rute.id); assert.equal(sesudah[0].job.status, "COMPLETED");
+  assert.equal(await unitStatus(d.unit.id), "DELIVERED");
+});
+
+test("Q14. KOREKSI RIKA — GUARD KEPEMILIKAN V2: rute yang dikelola writer Delivery V2 (cohort) atau pagar V1 aktif DITOLAK tanpa menulis; rute V1-saja (kasus Rika) tetap layak", async () => {
+  const w = await world(); const d = await duniaRika(w); const adm = await admin();
+  const { pratinjauKoreksiPengirimanRute, terapkanKoreksiPengirimanRuteInTx } = await import("../../src/services/koreksiPengirimanRute.js");
+  const { V2_FLAGS } = await import("../../src/services/v2FeatureFlags.js");
+  const dasar = { unitCode: d.unit.unitCode, routeCode: d.rute.code, aktorId: adm.user.id, waktuTerkirim: WAKTU, alasan: ALASAN };
+  const coba = () => testPrisma.$transaction((tx) => terapkanKoreksiPengirimanRuteInTx(tx, dasar)).then(() => null, (e) => e);
+  const setFlagV2 = (key, enabled, config = {}) => testPrisma.v2FeatureFlag.upsert({ where: { key }, create: { key, enabled, scope: "GLOBAL", config, reason: "uji guard koreksi" }, update: { enabled, config } });
+  const sebelum = await fotoRute(d.rute, d.unit.id, d.run.id);
+  // 1) cohort canary LAIN (seperti produksi: satu rute canary) — rute ini V1-saja -> layak
+  await setFlagV2(V2_FLAGS.DELIVERY_ROUTE_WRITER, true, { routeIds: ["557393f2-00f7-4458-b5cf-f01b751580b8"] });
+  await setFlagV2(V2_FLAGS.DELIVERY_EXECUTION_WRITER, true, { routeIds: ["557393f2-00f7-4458-b5cf-f01b751580b8"] });
+  assert.equal((await pratinjauKoreksiPengirimanRute(testPrisma, { unitCode: dasar.unitCode, routeCode: dasar.routeCode, waktuTerkirim: WAKTU })).layak, true, "rute di luar cohort tetap layak");
+  // 2) rute ini MASUK cohort V2 -> ditolak
+  await setFlagV2(V2_FLAGS.DELIVERY_ROUTE_WRITER, true, { routeIds: [d.rute.id] });
+  await setFlagV2(V2_FLAGS.DELIVERY_EXECUTION_WRITER, true, { routeIds: [d.rute.id] });
+  const p = await pratinjauKoreksiPengirimanRute(testPrisma, { unitCode: dasar.unitCode, routeCode: dasar.routeCode, waktuTerkirim: WAKTU });
+  assert.equal(p.layak, false); assert.ok(p.rintangan.some((r) => r.kode === "RUTE_DI_DELIVERY_V2"));
+  assert.equal((await coba())?.code, "RUTE_DI_DELIVERY_V2");
+  // 3) writer GLOBAL -> ditolak
+  await setFlagV2(V2_FLAGS.DELIVERY_ROUTE_WRITER, true, {}); await setFlagV2(V2_FLAGS.DELIVERY_EXECUTION_WRITER, true, {});
+  assert.equal((await coba())?.code, "RUTE_DI_DELIVERY_V2");
+  // 4) writer mati tetapi pagar V1 aktif -> ditolak
+  await setFlagV2(V2_FLAGS.DELIVERY_ROUTE_WRITER, false); await setFlagV2(V2_FLAGS.DELIVERY_EXECUTION_WRITER, false);
+  await setFlagV2(V2_FLAGS.DELIVERY_V1_WRITER_FENCE, true);
+  assert.equal((await coba())?.code, "DELIVERY_V1_DIPAGARI");
+  assert.equal(await fotoRute(d.rute, d.unit.id, d.run.id), sebelum, "semua penolakan tanpa tulisan"); assert.equal((await jobDeliveryUnit(d.unit.id)).length, 0);
+  // 5) pagar dibuka -> berhasil
+  await setFlagV2(V2_FLAGS.DELIVERY_V1_WRITER_FENCE, false);
+  assert.equal((await coba()), null);
+  assert.equal(await unitStatus(d.unit.id), "DELIVERED");
 });

@@ -24,6 +24,8 @@ const sourcePolicy = new Map([
   ["src/services/deliveryJobBatchCommandService.js", { disposition: "V2_COMMAND_OWNER", marker: "executeDeliveryJobBatchCommand" }],
   ["src/services/deliveryCrossBoundaryCommandService.js", { disposition: "V2_CROSS_BOUNDARY_COMMAND_OWNER", marker: "executeDeliveryCrossBoundaryCommand" }],
   ["src/services/deliveryJobCancellationService.js", { disposition: "V2_CANCELLATION_COMMAND_OWNER", marker: "cancelOrderDeliveryJobs" }],
+  // Koreksi pengiriman manual ke rute V1-saja yang sudah selesai (Rika, 19 Okt 2026): menulis job V1 langsung HANYA setelah memastikan rute tidak dikelola V2 (RUTE_DI_DELIVERY_V2) dan pagar V1 tidak aktif (DELIVERY_V1_DIPAGARI).
+  ["src/services/koreksiPengirimanRute.js", { disposition: "V1_ONLY_CORRECTION_GUARDED_NOT_V2_OWNED", marker: "RUTE_DI_DELIVERY_V2" }],
 ]);
 
 const indirectRepairScripts = new Set([

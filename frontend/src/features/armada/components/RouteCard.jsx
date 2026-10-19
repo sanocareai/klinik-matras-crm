@@ -7,8 +7,8 @@ import Avatar from "@/components/Avatar.jsx";
 import StatusBadge from "./StatusBadge.jsx";
 import { ROUTE_STATUS_REAL, effectiveRouteStatus } from "../vehicleStatus.js";
 import { ManifestChip } from "@/features/armada/components/ManifestBlock.jsx";
-import { customerOf, orderOf, mapsUrl, unitCountOf, jobAccentBarStyle, hasJobAccentBar, conversationIdOf, customerPhoneOf, salesPersonOf } from "../jobStatus.js";
-import { MenungguKonfirmasiBadge, OverrideAdminBadge, RentalBadge, ConfirmedTimeBadge, CityBadge, OrderStatusBadge, MapsLinkMissingBadge, SalesBadge, RevisionBadge, ComplaintBadge } from "./JobBadges.jsx";
+import { customerOf, orderOf, mapsUrl, unitCountOf, jobAccentBarStyle, hasJobAccentBar, conversationIdOf, customerPhoneOf, salesPersonOf, alamatBelumLengkap } from "../jobStatus.js";
+import { AlamatBelumLengkapBadge, MenungguKonfirmasiBadge, OverrideAdminBadge, RentalBadge, ConfirmedTimeBadge, CityBadge, OrderStatusBadge, MapsLinkMissingBadge, SalesBadge, RevisionBadge, ComplaintBadge } from "./JobBadges.jsx";
 import ExternalCourierBadge from "./ExternalCourierBadge.jsx";
 import { productSummary } from "@/features/inbox/components/CustomerPanel/orderSummary.js";
 import { formatTanggal } from "@/utils/formatDate.js";
@@ -650,6 +650,13 @@ export default function RouteCard({
           </p>
         )}
 
+        {/* Ringkasan rute (19 Okt 2026): stop pengiriman tanpa tujuan yang dapat dipakai pengemudi. PERINGATAN persisten, tidak menahan Terbitkan. */}
+        {route.status !== "COMPLETED" && route.status !== "CANCELLED" && jobs.filter(alamatBelumLengkap).length > 0 && (
+          <p className="rounded-btn bg-orangebg px-2 py-1 text-[10px] font-semibold text-orange" data-testid="rute-butuh-alamat">
+            ⚠ Rute butuh kelengkapan alamat — {jobs.filter(alamatBelumLengkap).length} stop belum punya alamat/koordinat/link Maps. Lengkapi sebelum pengemudi berangkat.
+          </p>
+        )}
+
         {/* Peringatan assignment tidak lengkap (22 September 2026, audit QA
             Route Planner) — SEBELUM ini satu-satunya petunjuk "belum bisa
             diterbitkan" cuma tooltip di tombol Terbitkan (disabled + title,
@@ -884,6 +891,7 @@ export default function RouteCard({
                         hasJobAccentBar di style={} atas. OrderStatusBadge
                         SATU-SATUNYA badge status teks di kartu ini. */}
                     <OrderStatusBadge job={j} />
+                    <AlamatBelumLengkapBadge job={j} />
                     <MenungguKonfirmasiBadge job={j} />
                     <OverrideAdminBadge job={j} />
                     <RentalBadge job={j} />

@@ -389,6 +389,9 @@ export function salesLocationUrl(job) {
   return job?.order?.locationUrl || job?.units?.[0]?.unit?.order?.locationUrl || null;
 }
 
+// Peringatan alamat belum lengkap: logika murni di alamatLengkap.js (dapat diuji tanpa alias '@/').
+export { alamatBelumLengkap } from "./alamatLengkap.js";
+
 // SATU link Maps, prioritas: koordinat hasil geocode > link sales mentah >
 // pencarian teks alamat.
 //

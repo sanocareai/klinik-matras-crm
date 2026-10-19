@@ -69,6 +69,15 @@ export function auditCustodyWriters(files) {
       }
     }
   }
+  // Sejak fungsi domain tunggal (services/statusUnitLintasWorkspace.js, 19 Okt 2026) jalur "unit kembali ke Gudang" (pengiriman gagal) menulis status lewat ubahStatusUnitInTx(... KE_STATUS.KEMBALI) di armada.js,
+  // bukan tx.unit.updateMany. Invarian TETAP: setiap perubahan status unit pickup/return di armada.js wajib diikuti offerUnitCustody(INBOUND/RETURN).
+  const armadaText = (files.get("src/routes/armada.js") ?? "").replace(/\r\n/g, "\n");
+  for (const match of armadaText.matchAll(/ubahStatusUnitInTx\(tx,[^\n]*ke:\s*KE_STATUS\.KEMBALI/g)) {
+    const line = lineOf(armadaText, match.index);
+    const after = armadaText.split("\n").slice(line - 1, line + 30).join("\n");
+    const hooked = /offerUnitCustody\(tx,\s*\{\s*direction:\s*"RETURN"/.test(after);
+    findings.push({ file: "src/routes/armada.js", line, kind: "UNIT_PATH_WRITER", operation: "ubahStatusUnitInTx(KEMBALI)", disposition: hooked ? "CUSTODY_HOOKED" : "PICKUP_RETURN_PATH_WITHOUT_CUSTODY", ok: hooked });
+  }
   const armada = findings.filter((item) => item.file === "src/routes/armada.js" && item.kind === "UNIT_PATH_WRITER");
   const hooks = armada.filter((item) => item.disposition === "CUSTODY_HOOKED").length;
   return { findings, armadaHooks: hooks };

@@ -31,11 +31,10 @@ import { renderInvoicePdf } from "../services/invoicePdf.js";
 import { buildWarrantyView, markWarrantySent, WARRANTY_YEARS_VALID } from "../services/warranty.js";
 import { renderWarrantyPdf } from "../services/warrantyPdf.js";
 import { createUnitsForOrder } from "../services/unitProvisioning.js";
-import { syncOrderStatus, selesaikanJobBelumJalan, selesaikanJobPengambilanTertinggal, bukaKembaliJobHasilKaskadeDelivered } from "../services/orderStatusSync.js";
+import { syncOrderStatus, selesaikanJobPengambilanTertinggal, bukaKembaliJobHasilKaskadeDelivered } from "../services/orderStatusSync.js";
 import { suggestDeliveryJob } from "../services/deliveryHandoff.js";
 import { ensurePickupJobForOrder } from "../services/armadaAutoJob.js";
 import { executeDeliveryCrossBoundaryCommand } from "../services/deliveryCrossBoundaryCommandService.js";
-import { cancelOrderDeliveryJobs } from "../services/deliveryJobCancellationService.js";
 import { hitungDiskonPromo, periksaBatasDiskon } from "../services/diskonPromo.js";
 import { blokirBilaOrderPkr } from "../services/pkrGuard.js";
 import { ringkasOrderPkr } from "../services/penjualanKaryawanOrder.js";
@@ -50,6 +49,7 @@ import { buildMessagePreview } from "../utils/messagePreview.js";
 import { emitNewMessage, emitConversationUpdate } from "../socket.js";
 import { maskAccountNumber } from "../utils/maskAccount.js";
 import { assertOrderUnitsNotV2Owned } from "../services/productionRunGuards.js";
+import { ubahStatusUnitInTx, KE_STATUS, SUMBER_STATUS } from "../services/statusUnitLintasWorkspace.js";
 import { atribusiOrderWhere } from "../services/salesOwner.js";
 import { loadOrderMilestones } from "../services/orderMilestoneService.js";
 import { pratinjauGabung, terapkanGabung, kandidatDuplikat, relasiGabungUntuk, OrderMergeError } from "../services/orderMerge.js";
@@ -361,11 +361,8 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
       if (!sebelum) {
         throw Object.assign(new Error("Order tidak ditemukan"), { statusCode: 404 });
       }
-      // Production V2 (P6): dropdown status yang MENGUBAH unit (CANCELLED/READY/DELIVERED) ditolak untuk unit cohort yang punya Production Run aktif
-      // — QC, handoff barang jadi, dan penutupan run hanya lewat command owner V2. Writer OFF / non-cohort / tanpa run: tidak ada efek (V1 identik).
-      if (["CANCELLED", "READY", "DELIVERED"].includes(status) && status !== sebelum.status) {
-        await assertOrderUnitsNotV2Owned(tx, req.params.id, `Mengubah status order ke ${status}`);
-      }
+      // Sales boleh membatalkan/menandai Siap Kirim/Terkirim walau Production Run unitnya masih berjalan (keputusan Owner, 19 Okt 2026): perubahan status unit/Run/job di bawah SEMUA lewat SATU fungsi domain
+      // (services/statusUnitLintasWorkspace.js) sehingga Produksi & Gudang diselaraskan di transaksi yang sama, dengan jejak pelaku. Tanpa Run berjalan: tidak ada efek tambahan (V1 identik).
       // Pembatalan: cek ulang pengaman DI BAWAH KUNCI — pemeriksaan di luar transaksi bisa kalah balapan dengan verifikasi/alokasi yang
       // baru selesai (cancel-vs-verify). Hasilnya sama dengan pemeriksaan awal kalau tidak ada yang berubah.
       if (status === "CANCELLED" && sebelum.status !== "CANCELLED") {
@@ -518,18 +515,10 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
         // fisik yang benar-benar akan janggal kalau order tiba-tiba
         // "selesai" padahal driver masih di jalan.
         if (status === "CANCELLED") {
-          await tx.unit.updateMany({
-            where: { orderId: updated.id, status: { not: "CANCELLED" } },
-            data: { status: "CANCELLED" },
-          });
-          // Semua Job aktif, termasuk draft, dipertahankan sebagai tombstone
-          // immutable. Projection V1 menjadi FAILED; publication/feed V2
-          // mencabut stop tanpa menghapus bukti atau referensi historis.
-          await cancelOrderDeliveryJobs(tx, {
-            orderId: updated.id,
-            actorId: req.user?.id || null,
-            reason: statusOverrideNote?.trim() || "Dibatalkan melalui perubahan status Sales",
-          });
+          // SATU jalur: unit CANCELLED, Run/tahap/operasi dihentikan, permintaan bahan belum diserahkan dibatalkan + reservasi dilepas, rencana dibatalkan, bahan yang SUDAH keluar masuk Antrean Retur Bahan Gudang (tanpa pergerakan stok otomatis),
+          // dan Job pengiriman yang belum berangkat dipertahankan sebagai tombstone immutable (projection V1 FAILED; publication/feed V2 mencabut stop tanpa menghapus bukti). Unit yang sudah berangkat/terkirim DITOLAK dengan pilihan koreksi.
+          const unitOrder = await tx.unit.findMany({ where: { orderId: updated.id }, select: { id: true } });
+          await ubahStatusUnitInTx(tx, { unitIds: unitOrder.map((u) => u.id), ke: KE_STATUS.BATAL, aktor: req.user?.id || null, sumber: SUMBER_STATUS.SALES, orderId: updated.id, alasan: statusOverrideNote?.trim() || "Dibatalkan melalui perubahan status Sales", orderStatusSebelum: sebelum.status, sinkronOrder: false, batalkanJobOrder: true });
           // Buku besar: order batal tidak boleh menyimpan piutang/pendapatan — balik jurnal pengakuannya (tidak ada pembayaran aktif; sudah dijaga checkCancelBlockers).
           await batalkanPengakuanPendapatan(tx, { orderId: updated.id, reason: statusOverrideNote?.trim() || "perubahan status Sales", userId: req.user?.id || null });
         } else if (status === "DELIVERED") {
@@ -547,10 +536,9 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
               { statusCode: 409 }
             );
           }
-          await tx.unit.updateMany({
-            where: { orderId: updated.id, status: { notIn: ["CANCELLED", "DELIVERED"] } },
-            data: { status: "DELIVERED" },
-          });
+          // SATU jalur: unit DELIVERED, Run yang belum ditutup dilepas (boleh ditutup administratif kemudian), job pengiriman + rute disinkronkan lewat jalur Delivery yang sama (selesaikanJobBelumJalan).
+          const unitOrderD = await tx.unit.findMany({ where: { orderId: updated.id }, select: { id: true } });
+          await ubahStatusUnitInTx(tx, { unitIds: unitOrderD.map((u) => u.id), ke: KE_STATUS.TERKIRIM, aktor: req.user?.id || null, sumber: SUMBER_STATUS.SALES, orderId: updated.id, alasan: statusOverrideNote, orderStatusSebelum: sebelum.status, sinkronOrder: false, selesaikanJobOrder: true });
           // Job yang belum jalan (UNSCHEDULED/SCHEDULED/ASSIGNED) di-SINKRON
           // jadi COMPLETED, BUKAN dihapus (koreksi 4 September 2026 — data
           // order/unit di sini sudah benar, statusnya saja yang belum
@@ -569,7 +557,6 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
           // tidak ada bukti foto — pekerjaan ini selesai di luar Armada) —
           // ini SENGAJA, supaya tetap tampil jujur sebagai "Belum Lengkap"
           // di verifikasi POD, bukan berpura-pura terdokumentasi penuh.
-          await selesaikanJobBelumJalan(tx, updated.id);
         } else if (status === "READY") {
           // BUG NYATA ditemukan+diperbaiki 6 September 2026 (laporan owner
           // — order Ichas RES-03092026-014: dorong status manual ke Siap
@@ -598,21 +585,9 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
           // (kasus Ichas — Order sempat "dicoba" DELIVERED lalu ditarik
           // balik ke READY), itu perlu dibetulkan manual per-kasus, bukan
           // ditimpa otomatis di sini.
-          const unitsPerluDisamakan = await tx.unit.findMany({
-            where: { orderId: updated.id, status: { notIn: ["CANCELLED", "DELIVERED", "READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD"] } },
-            select: { id: true },
-          });
-          if (unitsPerluDisamakan.length > 0) {
-            await tx.unit.updateMany({
-              where: { id: { in: unitsPerluDisamakan.map((u) => u.id) } },
-              data: { status: "READY_FOR_DELIVERY" },
-            });
-          }
-          const unitsSiapKirim = await tx.unit.findMany({
-            where: { orderId: updated.id, status: { in: ["READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD"] } },
-            select: { id: true },
-          });
-          for (const u of unitsSiapKirim) await suggestDeliveryJob(tx, u.id);
+          // SATU jalur: unit → READY_FOR_DELIVERY (yang sudah siap/berangkat/terkirim/batal dilewati, tidak dimundurkan), Run yang belum ditutup dilepas, dan TEPAT SATU job pengiriman per unit (job yang ada dipakai ulang; tidak pernah ganda).
+          const unitOrderR = await tx.unit.findMany({ where: { orderId: updated.id }, select: { id: true } });
+          await ubahStatusUnitInTx(tx, { unitIds: unitOrderR.map((u) => u.id), ke: KE_STATUS.SIAP_KIRIM, aktor: req.user?.id || null, sumber: SUMBER_STATUS.SALES, orderId: updated.id, alasan: statusOverrideNote, orderStatusSebelum: sebelum.status, sinkronOrder: false });
 
           // Job Pengambilan yang nyangkut (D-064 lanjutan lagi, 6 September
           // 2026 — lihat komentar lengkap di selesaikanJobPengambilanTertinggal)
@@ -735,7 +710,7 @@ orderRouter.patch("/:id", requirePermission(P.ORDER_WRITE), async (req, res) => 
 
     res.json(order);
   } catch (err) {
-    res.status(err.statusCode || 500).json({ error: err.message, ...(typeof err.code === "string" && /^[A-Z_]+$/.test(err.code) && { code: err.code }) });
+    res.status(err.statusCode || 500).json({ error: err.message, ...(typeof err.code === "string" && /^[A-Z_]+$/.test(err.code) && { code: err.code }), ...(Array.isArray(err.pilihanKoreksi) && err.pilihanKoreksi.length && { pilihanKoreksi: err.pilihanKoreksi }) });
   }
 });
 
@@ -2504,14 +2479,9 @@ async function checkCancelBlockers(orderId, db = prisma) {
     // yang sudah memuat order-nya sendiri.
     db.order.findUnique({ where: { id: orderId }, select: { groupId: true, group: { select: { id: true, source: true, anchorOrderId: true, lunasDiklaimPada: true } } } }),
   ]);
-  const inFlightUnits = units.filter(
-    (u) => u.currentStageId != null && u.status !== "CANCELLED" && u.status !== "DELIVERED"
-  );
-
+  // Keputusan Owner 19 Okt 2026: unit yang sudah/sedang dikerjakan bengkel BUKAN lagi penghalang pembatalan (Run, tahap, permintaan bahan, dan reservasi diselaraskan otomatis oleh fungsi domain
+  // services/statusUnitLintasWorkspace.js). Yang tetap menghalangi hanya fakta operasional yang tidak cocok — unit yang sudah berangkat/terkirim — dan itu ditolak fungsi domain dengan pilihan koreksi.
   const blockers = [];
-  if (inFlightUnits.length > 0) {
-    blockers.push(`${inFlightUnits.length} unit sudah mulai dikerjakan bengkel (${inFlightUnits.map((u) => u.unitCode).join(", ")})`);
-  }
   if (paymentCount > 0) blockers.push(`${paymentCount} pembayaran`);
   if (scopeRevisionCount > 0) blockers.push(`${scopeRevisionCount} revisi lingkup kerja`);
   if (alokasiAktifCount > 0) blockers.push(`${alokasiAktifCount} pembayaran gabungan/Resi yang sudah dialokasikan ke order ini (uangnya harus dipindahkan atau dikembalikan lewat Finance dulu — pembatalan sebagian Resi belum tersedia)`);
@@ -2580,20 +2550,11 @@ orderRouter.post("/:id/cancel", async (req, res) => {
       if (ulang.blockers.length > 0) {
         throw Object.assign(new Error(`Order tidak bisa dibatalkan otomatis karena sudah ada ${ulang.blockers.join(", ")} — butuh penanganan manual admin/Kendali, bukan sekadar salah input.`), { statusCode: 409 });
       }
-      await assertOrderUnitsNotV2Owned(tx, req.params.id, "Membatalkan order");
       // Audit invariants: unit-unit dibaca ULANG di bawah kunci (bukan `units` dari pemeriksaan di luar transaksi) — unit yang baru
       // dibuat/berubah di antara dua pemeriksaan tetap ikut dibatalkan, bukan tertinggal jadi "ghost unit".
-      if (ulang.units.length > 0) {
-        await tx.unit.updateMany({
-          where: { id: { in: ulang.units.map((u) => u.id) }, status: { not: "CANCELLED" } },
-          data: { status: "CANCELLED" },
-        });
-      }
-      await cancelOrderDeliveryJobs(tx, {
-        orderId: req.params.id,
-        actorId: req.user?.id || null,
-        reason: reason?.trim() || "Dibatalkan — salah input",
-      });
+      // SATU jalur domain (services/statusUnitLintasWorkspace.js): unit CANCELLED, Production Run/rencana/permintaan bahan diselaraskan (dibatalkan) dengan jejak pelaku, bahan yang sudah keluar masuk Antrean Retur Bahan Gudang,
+      // job pengiriman belum berangkat dibatalkan (tombstone). Unit yang sudah berangkat/terkirim DITOLAK dengan pilihan koreksi.
+      await ubahStatusUnitInTx(tx, { unitIds: ulang.units.map((u) => u.id), ke: KE_STATUS.BATAL, aktor: req.user?.id || null, sumber: SUMBER_STATUS.SALES, orderId: req.params.id, alasan: reason?.trim() || "Dibatalkan — salah input", orderStatusSebelum: order.status, sinkronOrder: false, batalkanJobOrder: true });
       const result = await tx.order.update({
         where: { id: req.params.id },
         data: {
@@ -2615,7 +2576,7 @@ orderRouter.post("/:id/cancel", async (req, res) => {
     res.json(updated);
   } catch (err) {
     console.error("cancel order error:", err);
-    res.status(err.statusCode || 500).json({ error: err.statusCode ? err.message : "Gagal membatalkan order" });
+    res.status(err.statusCode || 500).json({ error: err.statusCode ? err.message : "Gagal membatalkan order", ...(typeof err.code === "string" && /^[A-Z_]+$/.test(err.code) && { code: err.code }), ...(Array.isArray(err.pilihanKoreksi) && err.pilihanKoreksi.length && { pilihanKoreksi: err.pilihanKoreksi }) });
   }
 });
 

@@ -24,7 +24,14 @@ import { terapkanKoreksi } from "../../src/services/penjualanKaryawanKoreksi.js"
 let server;
 test.before(async () => { await truncateAll(); server = await startTestServer(buildTestApp()); });
 test.afterEach(async () => { await truncateAll(); });
-test.after(async () => { await truncateAll(); await server.close(); await testPrisma.$disconnect(); });
+test.after(async () => {
+  await truncateAll();
+  // Tes "produk yang dipetakan Admin ke layanan produksi" menyisipkan layanan UPG_UJI (sortOrder 0, TANPA modul tahap). service_catalog tidak ikut di-TRUNCATE, jadi tanpa baris ini layanan itu bocor ke berkas berikutnya pada DB yang sama
+  // dan tes yang memilih "layanan pertama menurut sortOrder" (QC/Workshop) mendapat layanan tanpa tahap MODULE. Terbukti 19 Okt 2026: pkrMultiItem lalu productionQcFinishedGoods/productionWorkshopExecution -> 4 kegagalan di baseline MAUPUN kandidat.
+  await testPrisma.pkrItemCategory.updateMany({ where: { productionService: { code: "UPG_UJI" } }, data: { productionServiceId: null } }).catch(() => {});
+  await testPrisma.serviceCatalog.deleteMany({ where: { code: "UPG_UJI" } }).catch(() => {});
+  await server.close(); await testPrisma.$disconnect();
+});
 
 const BASE = "/api/finance/penjualan-karyawan";
 const kunci = () => ({ "Idempotency-Key": `pkri-${randomUUID()}` });

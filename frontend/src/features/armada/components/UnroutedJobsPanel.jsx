@@ -10,7 +10,7 @@ import {
   customerOf, orderOf, unitCountOf, cityOf, mapsUrl, conversationIdOf, customerPhoneOf,
   jobAccentBarStyle, hasJobAccentBar, orderStatusOf, orderNumberOf, salesPersonOf,
 } from "../jobStatus.js";
-import { MenungguKonfirmasiBadge, OverrideAdminBadge, RentalBadge, ConfirmedTimeBadge, CityBadge, OrderStatusBadge, MapsLinkMissingBadge, SalesBadge, RevisionBadge, ComplaintBadge } from "./JobBadges.jsx";
+import { AlamatBelumLengkapBadge, MenungguKonfirmasiBadge, OverrideAdminBadge, RentalBadge, ConfirmedTimeBadge, CityBadge, OrderStatusBadge, MapsLinkMissingBadge, SalesBadge, RevisionBadge, ComplaintBadge } from "./JobBadges.jsx";
 import { productSummary } from "@/features/inbox/components/CustomerPanel/orderSummary.js";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
 import { ORDER_STATUS_LABELS } from "@/utils/format.js";
@@ -233,6 +233,7 @@ function JobRow({ j, draggingId, onDragStart, onDragEnd, onOpenJob, draftRoutes,
               Sinyal tipe job tetap ada lewat glow aksen kiri (hijau =
               Pengiriman). OrderStatusBadge SATU-SATUNYA badge status teks. */}
           <OrderStatusBadge job={j} />
+          <AlamatBelumLengkapBadge job={j} />
           <MenungguKonfirmasiBadge job={j} />
           <OverrideAdminBadge job={j} />
           <RentalBadge job={j} />

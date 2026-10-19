@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils.js";
 import {
   salesPersonOf, estimasiDurasiLabel, customerOf, customerPhoneOf,
   isRentalOrder, serviceLabelOf, produkLabelOf, cityOf, orderStatusOf, orderOf,
-  salesLocationUrl, ACTIVE_STATUSES,
+  salesLocationUrl, ACTIVE_STATUSES, alamatBelumLengkap,
 } from "../jobStatus.js";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
 import { ORDER_STATUS_LABELS, orderStatusVariant, waLinkFromPhone } from "@/utils/format.js";
@@ -436,6 +436,17 @@ export function MenungguKonfirmasiBadge({ job, className }) {
   return (
     <Badge variant="orange" className={cn("max-w-full whitespace-normal", className)} data-testid="badge-menunggu-konfirmasi" title={`Produksi unit belum selesai (tidak menahan pengiriman): ${unit.map((u) => u.unitCode).join(", ")}`}>
       <Hourglass size={11} aria-hidden="true" className="shrink-0" /> Produksi belum selesai · {kode}
+    </Badge>
+  );
+}
+
+// Alamat/tujuan pengiriman belum lengkap (19 Okt 2026): PERINGATAN, bukan gerbang — rute tetap bisa dijadwalkan, tetapi harus dilengkapi sebelum pengemudi berangkat bila memang tidak ada tujuan yang dapat dipakai.
+export function AlamatBelumLengkapBadge({ job, className }) {
+  if (!alamatBelumLengkap(job)) return null;
+  return (
+    <Badge variant="orange" className={cn("max-w-full whitespace-normal", className)} data-testid="badge-alamat-belum-lengkap"
+      title="Alamat, koordinat, dan link Maps belum ada. Penjadwalan tetap boleh, tetapi lengkapi tujuan sebelum pengemudi berangkat.">
+      <MapPinOff size={11} aria-hidden="true" className="shrink-0" /> Alamat belum lengkap — lengkapi sebelum berangkat
     </Badge>
   );
 }

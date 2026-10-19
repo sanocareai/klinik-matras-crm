@@ -915,6 +915,35 @@ export async function releaseMaterialReservations(prisma, { planId, actorId, ide
 }
 
 // ---------------------------------------------------------------------------
+// 5b. Order dibatalkan Sales: rencana aktif Run itu dibatalkan (reservasi dilepas, baris BOM dibatalkan) TANPA command V2 dan TANPA gerbang drift — keputusan Sales atas order adalah sumber kebenaran.
+// Dipanggil services/orderProduksiSelaras.js di TRANSAKSI order. Pemanggil memastikan tidak ada permintaan bahan berstatus ISSUED (bahan yang sudah diserahkan tidak boleh "dibatalkan"; dikoreksi lewat Retur Bahan).
+// ---------------------------------------------------------------------------
+export async function batalkanPlanKarenaOrderInTx(tx, { planId, actorId = null, reason }) {
+  await lockRowForUpdate(tx, "production_run_plans_v2", planId);
+  const plan = await tx.productionRunPlan.findUnique({
+    where: { id: planId },
+    include: { run: { select: { id: true, unitId: true, unit: { select: { unitCode: true } } } }, bomLines: { where: { status: "ACTIVE" } }, reservations: { where: { status: "ACTIVE" } } },
+  });
+  if (!plan || plan.status === "CANCELLED") return { planId, dibatalkan: false, reservasiDilepas: 0, barisBom: 0 };
+  const now = new Date();
+  for (const reservation of plan.reservations) {
+    await tx.materialReservation.update({ where: { id: reservation.id }, data: { status: "CANCELLED", releasedById: actorId || null, releasedAt: now, releaseReason: reason, revision: reservation.revision + 1 } });
+  }
+  for (const line of plan.bomLines) {
+    await tx.plannedBOMLine.update({ where: { id: line.id }, data: { status: "CANCELLED", supersededById: actorId || null, supersededAt: now, revision: line.revision + 1 } });
+  }
+  const revision = plan.revision + 1;
+  await tx.productionRunPlan.update({ where: { id: planId }, data: { status: "CANCELLED", revision, cancelledById: actorId || null, cancelledAt: now, cancelReason: reason } });
+  await outbox(tx, {
+    eventType: "production.plan.cancelled", aggregateType: "ProductionRunPlan", aggregateId: planId, revision,
+    dedupeKey: `production-plan-cancelled:${planId}:${revision}`,
+    payload: { planId, runId: plan.runId, unitId: plan.run.unitId, reason, revision, occurredAt: now.toISOString(), actorId, via: "ORDER_CANCELLED" },
+  });
+  await recordActivity(tx, { entityType: "unit", entityId: plan.run.unitId, eventType: EVENT_TYPES.PRODUCTION_PLAN_CANCELLED, actorId: actorId || null, metadata: { unitCode: plan.run.unit.unitCode, planId, reason, via: "ORDER_CANCELLED" } });
+  return { planId, dibatalkan: true, reservasiDilepas: plan.reservations.length, barisBom: plan.bomLines.length };
+}
+
+// ---------------------------------------------------------------------------
 // 6. Batalkan rencana (terminal) — melepas reservasi aktif dan membatalkan baris BOM aktif dalam transaksi yang sama.
 // ---------------------------------------------------------------------------
 export async function cancelProductionPlan(prisma, { planId, actorId, idempotencyKey, expectedRevision, reason }) {

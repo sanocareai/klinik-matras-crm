@@ -63,6 +63,32 @@ export async function tandaiJobMenunggu(db, jobs) {
 }
 
 /**
+ * Satu unit = paling banyak SATU job pengiriman aktif, APA PUN status unitnya (siap kirim atau masih diproduksi). Dipakai POST /jobs: Sales Siap Kirim / Admin override / konfirmasi sudah membuat job draf;
+ * Route Planner harus memakai job itu (bukan membuat kedua). Definisi "aktif" SAMA dengan papan (ACTIVE_JOB_STATUSES; RESCHEDULED tidak menahan karena job penggantinya dibuat baru).
+ */
+export async function pastikanTidakAdaJobGanda(db, units) {
+  const ada = await db.jobUnit.findMany({
+    where: { unitId: { in: units.map((u) => u.id) }, job: { type: "DELIVERY", status: { in: [...ACTIVE_JOB_STATUSES] } } },
+    select: { unitId: true, jobId: true },
+  });
+  if (!ada.length) return;
+  const peta = new Map(ada.map((a) => [a.unitId, a.jobId]));
+  const galat = units.filter((u) => peta.has(u.id)).map((u) => ({ unitCode: u.unitCode, kode: "JOB_GANDA", jobId: peta.get(u.id), pesan: `Unit ${u.unitCode} sudah ada di job pengiriman aktif` }));
+  throw new PenempatanUnitError(`Penempatan ditolak: ${galat.map((g) => g.pesan).join("; ")} — pakai job yang sudah ada`, 409, "JOB_GANDA", { galat });
+}
+
+/**
+ * Data minimum pengiriman yang belum lengkap = PERINGATAN, bukan penghalang (prinsip Owner 19 Okt 2026: kelengkapan pencatatan tidak boleh menahan Sales/Delivery; alamat bisa dilengkapi dispatcher kapan saja sebelum berangkat).
+ * Mengembalikan daftar peringatan (kosong bila lengkap). Dipakai POST /jobs dan boleh dipakai papan.
+ */
+export function peringatanDataPengiriman({ addressText = null, units = [] } = {}) {
+  const peringatan = [];
+  const adaTautan = units.some((u) => u?.order?.locationUrl);
+  if (!String(addressText ?? "").trim() && !adaTautan) peringatan.push({ kode: "ALAMAT_BELUM_ADA", pesan: "Alamat/tautan lokasi pengiriman belum diisi — lengkapi sebelum rute diterbitkan" });
+  return peringatan;
+}
+
+/**
  * Validasi penempatan unit yang MASIH DIPRODUKSI ke job pengiriman: order sah, unit tidak batal/terkirim/sudah berangkat, dan tidak sudah ada di job DELIVERY aktif (tidak ada job ganda).
  * Hanya untuk unit berstatus RECEIVED/IN_PRODUCTION (unit siap kirim mengikuti jalur biasa). Mengembalikan daftar unit yang divalidasi; melempar PenempatanUnitError dengan alasan per unit.
  */

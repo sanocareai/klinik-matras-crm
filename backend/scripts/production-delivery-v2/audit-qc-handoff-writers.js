@@ -30,7 +30,9 @@ const PRODUCTION_ROUTE = "src/routes/production.js";
 const PKR_ORDER_SERVICE = "src/services/penjualanKaryawanOrder.js";
 // penjualanKaryawanKoreksi.js (Finance, Okt 2026): Koreksi Item PKR membatalkan unit yang BELUM dijadwalkan/diproses; DIJAGA assertUnitNotV2Owned per unit (+ pemeriksaan unit terkunci) — keberadaan penjaga diperiksa di bawah.
 const PKR_KOREKSI_SERVICE = "src/services/penjualanKaryawanKoreksi.js";
-const KNOWN_UNIT_STATUS_WRITERS = new Set([ENGINE, ORDERS, "src/routes/armada.js", "src/services/orderStatusSync.js", "src/services/unitProvisioning.js", "src/services/complaintCase.js", PKR_ORDER_SERVICE, PKR_KOREKSI_SERVICE]);
+// Fungsi domain tunggal status lintas workspace (Sales/Delivery/Admin override): SATU-SATUNYA penulis status pengiriman/batal; keberadaan penyelarasan Produksi di dalamnya diperiksa di bawah.
+const DOMAIN_STATUS = "src/services/statusUnitLintasWorkspace.js";
+const KNOWN_UNIT_STATUS_WRITERS = new Set([ENGINE, ORDERS, DOMAIN_STATUS, "src/routes/armada.js", "src/services/orderStatusSync.js", "src/services/unitProvisioning.js", "src/services/complaintCase.js", PKR_ORDER_SERVICE, PKR_KOREKSI_SERVICE]);
 
 const writeRegex = (model) => new RegExp(String.raw`\.${model}\.${OPS}\s*\(`, "g");
 const RULES = [
@@ -47,7 +49,8 @@ const FORBIDDEN_IN_P6 = [
   ["postMaterialIssueCost", /\bpostMaterialIssueCost\b/], ["journal", /\bjournalEntry\b|\bpostJournal\b|\bbukukanPergerakan\b/],
 ];
 const REQUIRED_ENGINE_CALLS_P6 = ["recordQcFitTestInTx", "waiveQcGateInTx", "startStageInTx", "reopenStageBeforeQcInTx", "restoreUnitStatusInTx", "isUnitPathDoneInTx"];
-const REQUIRED_ORDER_FENCES = 4;
+const REQUIRED_ORDER_FENCES = 2; // pagar keras buka-kembali (pengiriman + pickup): TIDAK boleh tergantikan oleh pemanggilan fungsi domain
+const REQUIRED_ORDER_RECONCILE = 4; // jalur order yang mengubah status unit lewat fungsi domain: dropdown CANCELLED, DELIVERED, READY, dan endpoint Batalkan Order
 
 function walk(root) {
   const files = [];
@@ -98,8 +101,17 @@ export function auditQcHandoffWriters(files) {
     if (!new RegExp(`\\b${fn}\\(`).test(p6)) add(P6, 0, "P6_CANONICAL_PATH", `MISSING_${fn}`, false);
   }
   const orders = (files.get(ORDERS) || "").replace(/\r\n/g, "\n");
-  const orderFences = (orders.match(/await assertOrderUnitsNotV2Owned\(tx,/g) || []).length;
-  if (orderFences < REQUIRED_ORDER_FENCES) add(ORDERS, 0, "ORDER_FENCE", `FENCES_${orderFences}_LT_${REQUIRED_ORDER_FENCES}`, false);
+  // INVARIAN (diubah 19 Okt 2026, keputusan Owner: Sales fleksibel tapi terintegrasi): setiap jalur order yang MENGUBAH unit (batalkan, dropdown CANCELLED/READY/DELIVERED, buka kembali pengiriman/pickup)
+  // tetap WAJIB menyentuh Production Run lewat salah satu dari dua cara: pagar keras (assertOrderUnitsNotV2Owned — buka kembali) ATAU penyelarasan Produksi/Gudang (ubahStatusUnitInTx — fungsi domain tunggal yang memanggil selaraskanProduksiDenganOrderInTx: batalkan + dropdown).
+  // Pagar keras >= 2 (buka kembali) DAN pemanggilan fungsi domain >= 4 (batal, dropdown x3) — masing-masing diperiksa TERPISAH supaya yang satu tidak menutupi hilangnya yang lain.
+  const domain = (files.get(DOMAIN_STATUS) || "").replace(/\r\n/g, "\n");
+  if (!/await selaraskanProduksiDenganOrderInTx\(tx,/.test(domain)) add(DOMAIN_STATUS, 0, "ORDER_FENCE", "DOMAIN_TANPA_SELARAS_PRODUKSI", false);
+  if (!/await tandaiRunDilepasKarenaDispatchInTx\(tx,/.test(domain)) add(DOMAIN_STATUS, 0, "ORDER_FENCE", "DOMAIN_TANPA_PENANDA_RUN", false);
+  const pagarKeras = (orders.match(/await assertOrderUnitsNotV2Owned\(tx,/g) || []).length;
+  const selaras = (orders.match(/await ubahStatusUnitInTx\(tx,/g) || []).length;
+  const orderFences = pagarKeras + selaras;
+  if (pagarKeras < REQUIRED_ORDER_FENCES) add(ORDERS, 0, "ORDER_FENCE", `FENCES_${pagarKeras}_LT_${REQUIRED_ORDER_FENCES}`, false);
+  if (selaras < REQUIRED_ORDER_RECONCILE) add(ORDERS, 0, "ORDER_FENCE", `RECONCILE_${selaras}_LT_${REQUIRED_ORDER_RECONCILE}`, false);
   const productionRoute = (files.get(PRODUCTION_ROUTE) || "").replace(/\r\n/g, "\n");
   if (!productionRoute.includes("productionRunsV2: { none: { origin: { not: null } } }")) add(PRODUCTION_ROUTE, 0, "QC_QUEUE_FILTER", "MISSING_V2_FILTER", false);
   const p5 = (files.get(P5) || "").replace(/\r\n/g, "\n");
