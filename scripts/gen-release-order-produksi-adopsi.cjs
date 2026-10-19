@@ -38,9 +38,9 @@ const LIVE_ANCESTORS_REF = ["799d3e93", "56b87721", "e5a32cd2", "e47f37e2", "571
 const UJI_TOLAK = 12, UJI_LOLOS = 5; // harus cocok dengan blok uji perilaku di templat
 const DIST_BARU = ["Rencana · tidak mengurangi stok", "Aktual · mengurangi stok", "Catat status kerja", "Belum ada catatan pekerjaan"];
 const DIST_LAMA = ["Ajukan Koreksi Stok", "Koreksi Penerimaan", "Konfirmasi Barang Jadi", "Selesaikan Produksi", "Rencana Produksi", "Uang muka dialokasikan ke faktur", "Tetapkan Siap Kirim (override)", "Riwayat referensi dari file (bukan transaksi)", "Simpan ke Stok", "Barang Akan Datang"];
-// Tes integrasi terarah (rehearsal-penuh): pola nama berkas (backend/tests/integration) + jumlah tes yang HARUS lulus semuanya. TES_N_EXPECT = jumlah tes yang dilaporkan node 20 (image) pada rehearsal-penuh; node 24 lokal dapat menghitung berbeda.
-const TES_POLA = /^(production|unit|statusUnit|workshop|pkr|penjualanKaryawanOrderCrm|gudangStatus|gudangKoreksi|gudangPusat|deliveryUnitLoad|deliveryWriterCohort\.|deliveryCrossBoundary|ordersStatus|orderStatus|unitStatus|stok|material).*\.integration\.test\.js$/;
-const TES_N_EXPECT = 578;
+// Tes integrasi terarah (rehearsal-penuh): pola nama berkas (backend/tests/integration) + jumlah tes yang HARUS lulus semuanya. TES_N_EXPECT = 581: 580 tes terarah yang sudah dipakai sebagai gerbang regresi + 1 tes baru (A10); sama pada node 20 (image VPS) dan node 24 (lokal).
+const TES_POLA = /^(production|unit|statusUnit|workshop|pkr|penjualanKaryawanOrderCrm|gudangStatus|gudangKoreksi|gudangPusat|deliveryUnitLoad|deliveryWriterCohort|deliveryCrossBoundary|ordersStatus|orderStatus|unitStatus|stok|material).*\.integration\.test\.js$/;
+const TES_N_EXPECT = 581;
 
 const lf = (t) => t.replace(/\r\n/g, "\n");
 const must = (c, m) => { if (!c) throw new Error("templat/masukan tak cocok: " + m); };
