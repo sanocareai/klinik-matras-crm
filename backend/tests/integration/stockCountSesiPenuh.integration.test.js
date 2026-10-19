@@ -231,3 +231,39 @@ test("izin baca-saja: boleh melihat daftar, kerja, riwayat; tidak boleh menyimpa
   assert.equal((await simpan(w.A, s.id, [{ lineId: k.baris[0].id, revision: 1, countedQty: 5, alasan: "uji" }])).status, 409, "sesudah diserahkan: ubah angka lewat Hitung ulang");
   assert.equal((await w.A.patch(`${SC}/${s.id}/lines/${k.baris[0].id}`, { countedQty: 5 })).status, 409, "PATCH angka lama ditutup untuk sesi baru");
 });
+
+test("DOKUMEN RESMI saat sesi berjalan: Penerimaan (putaway) dan Material Issue yang diposting SESUDAH bahan dihitung tidak membuat selisih palsu dan tidak terhitung dua kali; sebelum dihitung ikut pembanding", async () => {
+  const w = await dunia(); const [mGR, mMI, mSebelum] = w.aktif.slice(0, 3); // masing-masing saldo ledger 100
+  const s = (await w.A.post(SC, { mode: "ITEMS", materialIds: [mGR.id, mMI.id, mSebelum.id], blindCount: true })).body; await mulai(w.A, s.id);
+  await testPrisma.stockCount.update({ where: { id: s.id }, data: { startedAt: new Date(Date.now() - 4 * 3600_000) } });
+  const k = await kerja(w, s.id); const L = Object.fromEntries(k.baris.map((b) => [b.materialId, b]));
+  const grResmi = async (materialId, qty) => {
+    const c = await w.A.post("/api/inventory/goods-receipts", { sourceType: "SUPPLIER_DELIVERY", supplier: "Supplier Tes", lines: [{ materialId, orderedQty: qty }] }); assert.equal(c.status, 201, JSON.stringify(c.body));
+    for (const status of ["SCHEDULED", "ARRIVED", "INSPECTION", "READY_FOR_PUTAWAY"]) assert.equal((await w.A.patch(`/api/inventory/goods-receipts/${c.body.id}`, { status })).status, 200);
+    await w.A.patch(`/api/inventory/goods-receipts/${c.body.id}/lines/${c.body.lines[0].id}`, { acceptedQty: qty }); const p = await w.A.post(`/api/inventory/goods-receipts/${c.body.id}/putaway`, {}); assert.equal(p.status, 200, JSON.stringify(p.body)); return c.body.id;
+  };
+  const miResmi = async (materialId, qty) => {
+    const { unit } = await (await import("./setup/fixtures.js")).createTestUnit();
+    const c = await w.A.post("/api/inventory/material-issues", { sourceType: "PRODUCTION_WORK_ORDER", unitId: unit.id, lines: [{ materialId, requestedQty: qty }] }); assert.equal(c.status, 201, JSON.stringify(c.body));
+    for (const status of ["WAITING_APPROVAL", "APPROVED", "READY_TO_PICK", "PICKED"]) assert.equal((await w.A.patch(`/api/inventory/material-issues/${c.body.id}`, { status })).status, 200);
+    const i = await w.A.post(`/api/inventory/material-issues/${c.body.id}/issue`, {}); assert.equal(i.status, 200, JSON.stringify(i.body)); return c.body.id;
+  };
+  // sebelum bahan dihitung (ditempatkan ≥ 30 menit sebelum waktu hitung lewat cap waktu): GR +10 pada mSebelum → fisik 110
+  const grSebelum = await grResmi(mSebelum.id, 10); await testPrisma.stockMovement.updateMany({ where: { goodsReceiptId: grSebelum }, data: { createdAt: new Date(Date.now() - 2 * 3600_000) } });
+  await simpan(w.A, s.id, [mGR, mMI, mSebelum].map((m) => ({ lineId: L[m.id].id, revision: 0, countedQty: m.id === mSebelum.id ? 110 : 100 })));
+  await testPrisma.stockCountLine.updateMany({ where: { stockCountId: s.id }, data: { countedAt: new Date(Date.now() - 3600_000) } }); // waktu acuan 1 jam lalu
+  // SESUDAH dihitung: GR resmi +20 pada mGR dan Material Issue resmi −6 pada mMI (cap waktu = sekarang > waktu hitung)
+  const gr = await grResmi(mGR.id, 20); const mi = await miResmi(mMI.id, 6);
+  assert.equal((await w.A.post(`${SC}/${s.id}/submit`, {})).status, 200);
+  const d = (await w.B.get(`${SC}/${s.id}`)).body; const T = Object.fromEntries(d.lines.map((l) => [l.materialId, l.tinjau]));
+  assert.equal(T[mGR.id].pembanding, 100); assert.equal(T[mGR.id].selisih, 0, "GR resmi sesudah hitung: tidak ada selisih palsu"); assert.equal(T[mGR.id].transaksi.setelahHitung[0].dokumen !== null, true, "transaksi relevan menyebut nomor dokumen");
+  assert.equal(T[mMI.id].pembanding, 100); assert.equal(T[mMI.id].selisih, 0, "Material Issue resmi sesudah hitung: tidak ada selisih palsu");
+  assert.equal(T[mSebelum.id].pembanding, 110, "GR sebelum waktu hitung ikut pembanding"); assert.equal(T[mSebelum.id].selisih, 0);
+  assert.equal((await w.C.post(`${SC}/${s.id}/periksa`, {})).status, 200);
+  const adj0 = await testPrisma.stockMovement.count({ where: { stockCountId: s.id } });
+  const sel = await w.O.post(`${SC}/${s.id}/complete`, {}); assert.equal(sel.status, 200, JSON.stringify(sel.body));
+  assert.equal(await testPrisma.stockMovement.count({ where: { stockCountId: s.id } }), adj0, "tanpa selisih → tidak ada penyesuaian");
+  const saldo = async (m) => Number((await testPrisma.stockMovement.aggregate({ where: { materialId: m }, _sum: { qty: true } }))._sum.qty);
+  assert.equal(await saldo(mGR.id), 120, "100 + GR 20 — tidak hilang, tidak ganda"); assert.equal(await saldo(mMI.id), 94, "100 − MI 6"); assert.equal(await saldo(mSebelum.id), 110);
+  assert.ok(gr && mi);
+});
