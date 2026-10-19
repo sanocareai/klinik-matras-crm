@@ -61,6 +61,7 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
   const paramDaftar = useMemo(() => parameterDaftar({ q: qDebounced || undefined, kerja: kerja ? [kerja] : [] }), [qDebounced, kerja]);
   const queryServer = useCallback((page) => ({ displayStatus: displayParam, ...paramDaftar, page: String(page), pageSize: String(PAGE_SIZE) }), [displayParam, paramDaftar]);
 
+  useEffect(() => { setEkspor({ sibuk: false, ok: "", galat: "" }); }, [displayParam, paramDaftar]); // pesan ekspor lama tidak boleh menempel setelah filter berubah
   const fetchPage = useCallback(async (page, { append }) => {
     const id = ++reqRef.current;
     setLoading(true); setError("");
