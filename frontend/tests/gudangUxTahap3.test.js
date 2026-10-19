@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { saringStok, daftarTampil, jangkauanCari, FILTER_JENIS, kunciJenis } from "../src/features/warehouse/stok/stokLogic.js";
 import { TAHAP_PIPELINE, TAHAP_TUTUP, filterTahap, hitungPerTahap, cocokCari, perluTindakan } from "../src/features/warehouse/penerimaan/penerimaanLogic.js";
-import { badgeItem, antreanDariBeranda, denganBadgeGudang, kelompokAktif, kelompokTerbuka, BADGE_ANTREAN } from "../src/lib/gudangNav.js";
+import { badgeItem, antreanDariBeranda, denganBadgeGudang, kelompokAktif, BADGE_ANTREAN } from "../src/lib/gudangNav.js";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const baca = (rel) => fs.readFileSync(path.join(dir, "../src", rel), "utf8").replace(/\r\n/g, "\n");
@@ -45,7 +45,7 @@ test("pipeline daftar Penerimaan: enam tahap berurutan + Dibatalkan/ditolak; hit
   assert.deepEqual(rows.filter(perluTindakan).map((r) => r.status), ["DRAFT", "ARRIVED", "INSPECTION", "READY_FOR_PUTAWAY"], "yang menunggu tindakan Gudang; Terjadwal (menunggu barang) bukan tindakan");
 });
 
-test("sidebar Gudang: badge dari antrean server hanya untuk pekerjaan yang butuh tindakan; satu kelompok terbuka; halaman aktif membuka induknya; kelompok terakhir diingat", () => {
+test("sidebar Gudang: badge dari antrean server hanya untuk pekerjaan yang butuh tindakan; halaman aktif membuka induknya", () => {
   const antrean = antreanDariBeranda({ tugas: [{ kode: "AKAN_DATANG", jumlah: 9 }, { kode: "PERLU_DICATAT_TIBA", jumlah: 2 }, { kode: "BELUM_MASUK_STOK", jumlah: 3 }, { kode: "PERMINTAAN_BAHAN", jumlah: 4 }, { kode: "SELISIH_MENUNGGU", jumlah: 0 }] });
   assert.deepEqual(antrean, { AKAN_DATANG: 9, PERLU_DICATAT_TIBA: 2, BELUM_MASUK_STOK: 3, PERMINTAAN_BAHAN: 4, SELISIH_MENUNGGU: 0 }); assert.equal(antreanDariBeranda(null), null);
   assert.equal(badgeItem("/warehouse/goods-receipt", antrean), 3); assert.equal(badgeItem("/warehouse/barang-akan-datang", antrean), 2); assert.equal(badgeItem("/warehouse/stock-count", antrean), null, "nol = tanpa badge");
@@ -54,11 +54,6 @@ test("sidebar Gudang: badge dari antrean server hanya untuk pekerjaan yang butuh
   const sections = [{ section: "Beranda", langsung: true, items: [{ to: "/warehouse/dashboard" }] }, { section: "Penerimaan", items: [{ to: "/warehouse/barang-akan-datang" }, { to: "/warehouse/goods-receipt" }] }, { section: "Stok", items: [{ to: "/warehouse/inventory" }] }];
   const b = denganBadgeGudang(sections, antrean); assert.equal(b[1].badgeKelompok, 5); assert.equal(b[2].badgeKelompok, 0); assert.equal(b[1].items[1].badgeN, 3);
   assert.equal(kelompokAktif(sections, "/warehouse/goods-receipt/abc"), "Penerimaan"); assert.equal(kelompokAktif(sections, "/warehouse/goods-receipts"), null, "bukan awalan segmen"); assert.equal(kelompokAktif(sections, "/komplain"), null);
-  assert.equal(kelompokTerbuka({ sections, pathname: "/warehouse/inventory" }), "Stok", "halaman aktif membuka induknya");
-  assert.equal(kelompokTerbuka({ sections, pathname: "/warehouse/dashboard", terakhir: "Penerimaan" }), "Penerimaan", "Beranda: kelompok terakhir diingat");
-  assert.equal(kelompokTerbuka({ sections, pathname: "/warehouse/dashboard", terakhir: "Beranda" }), null, "Beranda (langsung) tidak pernah 'terbuka'");
-  assert.equal(kelompokTerbuka({ sections, pathname: "/warehouse/inventory", dipilih: "Penerimaan" }), "Penerimaan", "pilihan pengguna menang atas halaman aktif");
-  assert.equal(kelompokTerbuka({ sections, pathname: "/warehouse/inventory", dipilih: "" }), null, "pengguna menutup semua");
 });
 
 test("jendela fokus: satu lapisan (Modal di dalamnya menjadi panel, bukan dialog kedua), rute-backed, hanya tab aktif, Esc menutup panel dulu", () => {

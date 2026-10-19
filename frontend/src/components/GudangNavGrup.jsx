@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { api } from "@/api.js";
 import { cn } from "@/lib/utils.js";
-import { antreanDariBeranda, bacaKelompokTerakhir, kelompokAktif, kelompokTerbuka, simpanKelompokTerakhir } from "@/lib/gudangNav.js";
+import { antreanDariBeranda, bacaKelompokTerbuka, balikKelompok, bukaKelompokAktif, kelompokAktif, kelompokTerbukaAwal, simpanKelompokTerbuka } from "@/lib/gudangNav.js";
 import SidebarNavSection from "./SidebarNavSection.jsx";
 
 // Angka antrean Gudang untuk badge menu (dari GET /inventory/beranda yang sama dengan Beranda Gudang): hanya dimuat saat workspace Gudang aktif, disegarkan tiap 90 dtk dan saat tab kembali terlihat.
@@ -19,18 +19,17 @@ export function useAntreanGudang(aktif) {
   return antrean;
 }
 
-// Sidebar Gudang: enam kelompok utama; menu rinci jadi anak yang dibuka per kelompok (satu kelompok terbuka sekaligus, yang berisi halaman aktif selalu terbuka, kelompok terakhir diingat).
+// Sidebar Gudang: enam kelompok utama; menu rinci jadi anak yang dibuka per kelompok. STATE TIAP KELOMPOK INDEPENDEN: klik judul hanya membuka/menutup kelompok itu (beberapa boleh terbuka bersamaan),
+// kelompok yang berisi halaman aktif otomatis terbuka saat halaman dimuat/berpindah (tanpa menutup yang lain), dan daftar kelompok terbuka diingat per perangkat (localStorage) sehingga bertahan saat pindah halaman dan refresh.
 // Mouse dan keyboard: tombol kelompok (Enter/Spasi), ↑/↓ memindahkan fokus antar menu, → membuka dan ← menutup kelompok yang difokus, Home/End ke menu pertama/terakhir.
 export default function GudangNavGrup({ sections, pathname, search, allVisibleItems, onNavigate, badgeCount }) {
-  const [dipilih, setDipilih] = useState(null); // null = ikuti halaman aktif / kelompok terakhir; "" = ditutup pengguna; nama = dibuka pengguna
-  const [terakhir, setTerakhir] = useState(() => bacaKelompokTerakhir());
+  const [terbuka, setTerbuka] = useState(() => kelompokTerbukaAwal({ sections, pathname, tersimpan: bacaKelompokTerbuka() }));
   const akar = useRef(null);
-  useEffect(() => { setDipilih(null); }, [pathname]); // berpindah halaman → kelompok halaman aktif terbuka lagi
-  const terbuka = kelompokTerbuka({ sections, pathname, dipilih, terakhir });
   const aktif = kelompokAktif(sections, pathname);
-  useEffect(() => { if (terbuka && terbuka !== terakhir) { setTerakhir(terbuka); simpanKelompokTerakhir(terbuka); } }, [terbuka]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { setTerbuka((t) => bukaKelompokAktif({ sections, pathname, terbuka: t })); }, [pathname]); // eslint-disable-line react-hooks/exhaustive-deps -- hanya saat berpindah halaman
+  useEffect(() => { simpanKelompokTerbuka(terbuka); }, [terbuka]);
 
-  const toggle = (nama) => setDipilih(terbuka === nama ? "" : nama);
+  const toggle = (nama) => setTerbuka((t) => balikKelompok(t, nama));
   const fokusan = () => [...(akar.current?.querySelectorAll("button[data-grup-kepala], a[href]") ?? [])].filter((el) => el.offsetParent !== null);
   const onKey = (e) => {
     const daftar = fokusan(); const i = daftar.indexOf(document.activeElement);
@@ -38,8 +37,8 @@ export default function GudangNavGrup({ sections, pathname, search, allVisibleIt
     else if (e.key === "Home") { e.preventDefault(); daftar[0]?.focus(); }
     else if (e.key === "End") { e.preventDefault(); daftar[daftar.length - 1]?.focus(); }
     else if ((e.key === "ArrowRight" || e.key === "ArrowLeft") && document.activeElement?.dataset?.grupKepala) {
-      const nama = document.activeElement.dataset.grupKepala; const buka = terbuka === nama;
-      if (e.key === "ArrowRight" && !buka) { e.preventDefault(); setDipilih(nama); } else if (e.key === "ArrowLeft" && buka) { e.preventDefault(); setDipilih(""); }
+      const nama = document.activeElement.dataset.grupKepala; const buka = terbuka.includes(nama);
+      if (e.key === "ArrowRight" && !buka) { e.preventDefault(); setTerbuka((t) => (t.includes(nama) ? t : [...t, nama])); } else if (e.key === "ArrowLeft" && buka) { e.preventDefault(); setTerbuka((t) => t.filter((n) => n !== nama)); }
     }
   };
 
@@ -49,7 +48,7 @@ export default function GudangNavGrup({ sections, pathname, search, allVisibleIt
         if (s.langsung) {
           return <div key={s.section} className="nav-section" data-testid={`grup-${s.section}`}><SidebarNavSection items={s.items} allDivisionItems={allVisibleItems} pathname={pathname} search={search} badgeCount={badgeCount} collapsed={false} onNavigate={onNavigate} /></div>;
         }
-        const buka = terbuka === s.section; const Ikon = s.Icon; const adaAktif = aktif === s.section; const idAnak = `grup-anak-${s.section}`;
+        const buka = terbuka.includes(s.section); const Ikon = s.Icon; const adaAktif = aktif === s.section; const idAnak = `grup-anak-${s.section}`;
         // Anak dikelompokkan ke segmen bila ada `subjudul` (konteks, mis. fitur milik Finance).
         const segmen = []; for (const it of s.items) { if (it.subjudul || segmen.length === 0) segmen.push({ judul: it.subjudul ?? null, items: [] }); segmen[segmen.length - 1].items.push(it); }
         return (

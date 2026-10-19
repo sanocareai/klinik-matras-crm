@@ -37,15 +37,31 @@ export function kelompokAktif(sections, pathname) {
 export function bacaKelompokTerakhir() { try { return localStorage.getItem(KEY) || null; } catch { return null; } }
 export function simpanKelompokTerakhir(nama) { try { if (nama) localStorage.setItem(KEY, nama); else localStorage.removeItem(KEY); } catch { /* preferensi tampilan saja */ } }
 
-/**
- * Kelompok yang terbuka. Urutan prioritas: pilihan pengguna di sesi ini (`dipilih`; "" = sengaja ditutup semua) → kelompok halaman aktif → kelompok terakhir yang diingat → tidak ada.
- * Kelompok langsung (Beranda) tidak punya anak sehingga tidak pernah "terbuka".
- */
-export function kelompokTerbuka({ sections, pathname, dipilih = null, terakhir = null }) {
-  const bisaBuka = (nama) => nama && sections.some((s) => s.section === nama && !s.langsung);
-  const aktif = kelompokAktif(sections, pathname);
-  if (dipilih === "") return null;
-  if (bisaBuka(dipilih)) return dipilih;
-  if (bisaBuka(aktif)) return aktif;
-  return bisaBuka(terakhir) ? terakhir : null;
+const KEY_TERBUKA = "sidebar-gudang-grup-terbuka";
+const bisaBuka = (sections, nama) => !!nama && sections.some((s) => s.section === nama && !s.langsung);
+
+/** Daftar kelompok yang diingat di perangkat ini (array nama) — null bila belum pernah disimpan. Migrasi: kunci lama (satu kelompok terakhir) dibaca sebagai satu kelompok terbuka. */
+export function bacaKelompokTerbuka() {
+  try {
+    const v = JSON.parse(localStorage.getItem(KEY_TERBUKA) ?? "null"); if (Array.isArray(v)) return v.filter((x) => typeof x === "string");
+    const lama = bacaKelompokTerakhir(); return lama ? [lama] : null;
+  } catch { return null; }
 }
+export function simpanKelompokTerbuka(daftar) { try { localStorage.setItem(KEY_TERBUKA, JSON.stringify([...daftar])); } catch { /* preferensi tampilan saja */ } }
+
+/**
+ * Kelompok yang terbuka — STATE TIAP KELOMPOK INDEPENDEN (beberapa boleh terbuka bersamaan). Keadaan awal = yang diingat di perangkat (hanya nama yang masih valid) ∪ kelompok halaman aktif
+ * (halaman aktif selalu terlihat). Kelompok langsung (Beranda) tidak punya anak sehingga tidak pernah "terbuka". Urutan hasil mengikuti urutan sidebar.
+ */
+export function kelompokTerbukaAwal({ sections, pathname, tersimpan = null }) {
+  const pilih = new Set((tersimpan ?? []).filter((n) => bisaBuka(sections, n)));
+  const aktif = kelompokAktif(sections, pathname); if (bisaBuka(sections, aktif)) pilih.add(aktif);
+  return sections.map((s) => s.section).filter((n) => pilih.has(n));
+}
+/** Berpindah halaman: kelompok halaman aktif DITAMBAHKAN (yang lain tidak ditutup). Mengembalikan array yang sama bila tidak ada perubahan. */
+export function bukaKelompokAktif({ sections, pathname, terbuka }) {
+  const aktif = kelompokAktif(sections, pathname);
+  return bisaBuka(sections, aktif) && !terbuka.includes(aktif) ? [...terbuka, aktif] : terbuka;
+}
+/** Klik judul kelompok: hanya membalik kelompok itu. */
+export const balikKelompok = (terbuka, nama) => (terbuka.includes(nama) ? terbuka.filter((n) => n !== nama) : [...terbuka, nama]);
