@@ -375,7 +375,7 @@ bk_run() {
 rehearsal_penuh_lanjutan() {
   say "Lanjutan rehearsal penuh: smoke baca-saja pada DB rehearsal, skenario pada KLON (status kerja manual, rencana vs aktual, idempotensi, status order lintas workspace, bukti aplikasi), guard rollback, TES INTEGRASI terarah (Postgres sekali-pakai); production tidak disentuh"
   local RH_DIR="$BK_DIR/rh"; mkdir -p "$RH_DIR"
-  cp "$WS/scripts/lib/rehearsal-skenario-order-produksi-adopsi.mjs" "$WS/scripts/lib/smoke-order-produksi-adopsi.mjs" "$RH_DIR/" || { reh_drop; die "pustaka skenario tidak ada di arsip kandidat"; }
+  cp "$WS/scripts/lib/rehearsal-skenario-order-produksi-adopsi.mjs" "$WS/scripts/lib/smoke-order-produksi-adopsi.mjs" "$WS/scripts/lib/rehearsal-kode-lama-order-produksi-adopsi.mjs" "$RH_DIR/" || { reh_drop; die "pustaka skenario tidak ada di arsip kandidat"; }
   local RH_JWT; RH_JWT="$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
   [ "${#RH_JWT}" -ge 32 ] || { reh_drop; die "gagal membangkitkan rahasia JWT rehearsal"; }
   # 1) smoke baca-saja terhadap data restore (DB rehearsal yang SUDAH dimigrasi): tidak ada tulisan; sidik jari tabel lama diperiksa lagi sesudahnya
@@ -404,6 +404,10 @@ rehearsal_penuh_lanjutan() {
   local G1; set +e; GUARD_DB="$KLON_DB" bash "$WS/scripts/rollback-guard-order-produksi-adopsi.sh" > "$BK_DIR/guard-klon.log" 2>&1; G1=$?; set -e
   [ "$G1" = "0" ] && grep -q 'GUARD LULUS' "$BK_DIR/guard-klon.log" && grep -Eq 'catatan status kerja=[1-9]' "$BK_DIR/guard-klon.log" || { cat "$BK_DIR/guard-klon.log"; reh_drop; die "guard rollback pada klon berisi data adopsi gagal (exit=${G1})"; }
   ok "guard rollback pada klon berisi data adopsi: LULUS (exit 0); $(sed -n 1p "$BK_DIR/guard-klon.log")"
+  # 3b) ROLLBACK KODE terbukti pada DATA: image LAMA (baseline live, tanpa kode adopsi) membaca KLON yang berisi data adopsi — bacaan lama tetap benar, stok tidak berubah, hapus unit berjejak tidak menghilangkan data
+  docker run --rm --network "$NET" -v "$RH_DIR:/rh:ro" -w /app -e JWT_SECRET="$RH_JWT" -e DATABASE_URL="$KLON_URL" -e TEST_DATABASE_URL="$KLON_URL" "$PREV_IMG_ID" node /rh/rehearsal-kode-lama-order-produksi-adopsi.mjs </dev/null > "$BK_DIR/rh-kode-lama.log" 2>&1 || { grep -E '^FAIL|Error' "$BK_DIR/rh-kode-lama.log" | head -n 10; tail -n 4 "$BK_DIR/rh-kode-lama.log"; dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d postgres -X -q -c "DROP DATABASE IF EXISTS \"${KLON_DB}\" WITH (FORCE)" </dev/null >/dev/null 2>&1 || true; reh_drop; die "rollback kode: image LAMA terhadap data adopsi GAGAL (log: $BK_DIR/rh-kode-lama.log)"; }
+  grep -q '^RH_KODE_LAMA gagal=0' "$BK_DIR/rh-kode-lama.log" && ! grep -q '^FAIL' "$BK_DIR/rh-kode-lama.log" && grep -q '^PASS image ini LAMA' "$BK_DIR/rh-kode-lama.log" || { tail -n 6 "$BK_DIR/rh-kode-lama.log"; reh_drop; die "rollback kode terhadap data adopsi tidak lulus penuh"; }
+  ok "rollback kode terbukti pada data: image LAMA ($(docker image inspect -f '{{.Id}}' "$PREV_IMG_ID" | cut -c8-19)) membaca klon berisi data adopsi — $(grep -c '^PASS' "$BK_DIR/rh-kode-lama.log") pemeriksaan lulus; $(grep '^INFO' "$BK_DIR/rh-kode-lama.log" | sed 's/^INFO //')"
   dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d postgres -X -q -c "DROP DATABASE IF EXISTS \"${KLON_DB}\" WITH (FORCE)" </dev/null >/dev/null 2>&1 || true
   # 4) TES INTEGRASI terarah di Postgres SEKALI-PAKAI (container sementara, tanpa volume, TIDAK memakai Postgres production): image kandidat, node 20 Linux, DB dibuat dari NOL oleh runDisposable
   #    (tes memuat TRUNCATE sehingga TIDAK dijalankan pada salinan data production; yang dijalankan pada data production = skenario klon di atas)
@@ -584,7 +588,7 @@ if [ "$REHEARSAL_PENUH" = "1" ]; then
   mkdir -p "$WS" || die "gagal membuat ${WS}"
   sg archive "$DEPLOY_SHA" | tar -x -C "$WS" --exclude='frontend/dist' || die "git archive gagal"
   [ ! -e "$WS/backend/.env" ] || die "backend/.env tidak boleh ada di arsip"
-  for f in backend/Dockerfile backend/package.json frontend/package.json scripts/rollback-guard-order-produksi-adopsi.sh scripts/lib/rehearsal-skenario-order-produksi-adopsi.mjs scripts/lib/smoke-order-produksi-adopsi.mjs docker-compose.yml docker-compose.release.yml; do [ -f "$WS/$f" ] || die "direktori kerja tidak lengkap: $f"; done
+  for f in backend/Dockerfile backend/package.json frontend/package.json scripts/rollback-guard-order-produksi-adopsi.sh scripts/lib/rehearsal-skenario-order-produksi-adopsi.mjs scripts/lib/smoke-order-produksi-adopsi.mjs scripts/lib/rehearsal-kode-lama-order-produksi-adopsi.mjs docker-compose.yml docker-compose.release.yml; do [ -f "$WS/$f" ] || die "direktori kerja tidak lengkap: $f"; done
   cp -a "$NM_SRC" "$WS/frontend/node_modules" || die "gagal menyalin node_modules frontend"
   install -m 600 "$PERSIST/frontend/.env" "$WS/frontend/.env" || die "gagal menyalin frontend/.env"
   ( cd "$WS/frontend" && npm run build ) > "$BK_DIR/build-frontend.log" 2>&1 || { rm -f "$WS/frontend/.env"; tail -n 25 "$BK_DIR/build-frontend.log"; die "build frontend gagal (production tidak berubah)"; }

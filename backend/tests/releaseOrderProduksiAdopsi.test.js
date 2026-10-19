@@ -156,6 +156,14 @@ test("smoke, skenario, dan kode-baru-terhadap-restore: smoke/kode BACA-SAJA; ske
   assert.ok(sken.includes('startTestServer(buildTestApp())') && !/import\(["']\/app\/src\/index\.js/.test(sken), "server minimal tanpa cron/worker/WAHA");
 });
 
+test("rollback kode terbukti pada data: image LAMA (baseline) membaca KLON berisi data adopsi; hanya bacaan + satu probe hapus pada klon; data utuh", () => {
+  const lama = baca("scripts/lib/rehearsal-kode-lama-order-produksi-adopsi.mjs");
+  for (const s of ["image ini LAMA: rute adopsi tidak ada (404)", "RH_KODE_LAMA gagal=", "kode lama: daftar Order Produksi tetap 200", "kode lama: bacaan tidak mengubah stok", "TETAP utuh", "klon berisi data adopsi"]) assert.ok(lama.includes(s), s);
+  assert.doesNotMatch(lama, /\.(create|update|upsert|createMany|updateMany|deleteMany|delete)\(/, "tanpa penulisan lewat Prisma");
+  assert.ok(script.includes('"$PREV_IMG_ID" node /rh/rehearsal-kode-lama-order-produksi-adopsi.mjs'), "dijalankan di image LAMA (PREV_IMG_ID), bukan image kandidat");
+  assert.ok(script.indexOf("rollback kode terbukti pada data") < script.indexOf('DROP DATABASE IF EXISTS \\"${KLON_DB}\\" WITH (FORCE)" </dev/null >/dev/null 2>&1 || true\n  # 4) TES INTEGRASI'), "dijalankan sebelum klon dibuang");
+});
+
 test("rollback guard: baca-saja, informasi (exit 0), TIDAK menghapus tabel/riwayat adopsi, menolak hanya bila tabel tidak ada", () => {
   const g = baca("scripts/rollback-guard-order-produksi-adopsi.sh");
   assert.doesNotMatch(g.replace(/^#.*$/gm, ""), /\b(DROP|DELETE|TRUNCATE|UPDATE|INSERT|ALTER)\b/i, "guard hanya membaca");
