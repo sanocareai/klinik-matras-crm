@@ -1,3 +1,58 @@
+# UX Gudang Tahap 4 — Pusat Kerja Harian dan Penanganan Masalah
+
+Branch `feat/gudang-ux-tahap4` (di atas Tahap 3 live `58cbc284`). **Belum deploy.** Tidak ada migrasi, tidak ada perubahan skema, tidak ada perubahan akuntansi. Semua endpoint baru **baca-saja**.
+
+## 1. Audit UX saat ini (sebelum Tahap 4)
+
+| Area | Keadaan sebelum | Masalah bagi petugas |
+|---|---|---|
+| Beranda Gudang | 5 kartu tugas dari `GET /inventory/beranda` (jumlah + 3 contoh, tautan ke daftar). | Tidak menjawab "dokumen mana, mengapa, tindakan apa, siapa berikutnya"; hanya 5 dari ±12 jenis pekerjaan; tidak ada selesai-terbaru, tidak ada pemisahan terlambat/tertahan; satu klik = pindah halaman daftar. |
+| Detail dokumen | Penerimaan = jendela fokus (Tahap 3), PO = jendela lokal di Barang Akan Datang. **Pengeluaran Material, Transfer, Stock Opname, Restok, Barang Rusak, Retur, Penyesuaian = halaman terpisah** (`/…/:id`, tautan "Kembali"). Koreksi Gudang = akordeon di tab. Retur Supplier = Modal bersama Finance. | Tiga pola berbeda; membuka dokumen menghilangkan daftar (filter/gulir) dan riwayat Back tidak konsisten. |
+| Masalah | Tidak ada tempat berisi masalah nyata: stok negatif, saldo belum diketahui, bahan belum dikelompokkan, batas minimum belum diatur, penerimaan tertahan, selisih transfer, dsb. tersebar di halaman masing-masing. | Petugas harus mencari sendiri; tidak jelas siapa pemilik tindakan dan seberapa luas dampaknya. |
+| Pencarian | Hanya pencarian per daftar. | Tidak bisa mencari nomor GR/PO/MI/transfer/Stock Count/Koreksi dari satu tempat. |
+| Komponen mati / tumpang tindih | `pages/Gudang.jsx` (563 baris, command center lama) tidak lagi diimpor siapa pun; `KoreksiDokumenTab` mode akordeon; rute detail terpisah. | Beban perawatan; lihat bagian 8. |
+| Mobile | Detail halaman penuh, bilah aksi ikut bergulir. | Aksi utama tidak selalu terjangkau. |
+
+**Volume data production (baca-saja, `SELECT` count dengan `default_transaction_read_only=on`, 19 Okt 2026):** goods_receipts 13 (COMPLETED 10, DRAFT 1, SCHEDULED 1, READY_FOR_PUTAWAY 1); stock_counts 1 (COMPLETED); material_issues, stock_transfers, warehouse_corrections, penyesuaian, restok, barang rusak, retur, retur supplier = 0; materials aktif 358 (nonaktif 15). Artinya produksi saat ini kecil — rancangan berbasis **kartu** dengan **pagination server (8 pertama + "Tampilkan lagi" 20 per halaman)** dipilih agar tetap benar pada 100+ dokumen (diuji, lihat bagian 6), bukan karena beban hari ini.
+
+**Bentrok scope:** tidak menyentuh berkas Produksi/Delivery sesi lain (`feat/status-lintas-workspace`, 77 berkas Produksi/Delivery); satu-satunya titik temu adalah pembacaan antrean Produksi V2 yang hanya aktif bila `resolveProductionReaderState` ≠ OFF (inert di production). Tidak menyentuh pembersihan disk VPS (tidak ada operasi VPS selain baca).
+
+## 2. Matriks antrean → alasan → aksi → pemilik
+
+Setiap kartu memuat: nomor dokumen, supplier/unit/bahan terkait, umur (sejak dokumen terakhir diubah — **bukan SLA**), status, **alasan muncul** (teks dari server), **satu tindakan utama** (hanya bila pengguna berizin dan sah untuk status saat ini), **pemilik tindakan** dan **pemilik berikutnya**. Definisi tertulis ikut di respons (`definisi`) dan tampil di tombol "Definisi antrean ini".
+
+| Antrean | Alasan muncul (contoh) | Tindakan utama (kode) | Pemilik → berikutnya |
+|---|---|---|---|
+| Dijadwalkan datang | "Draf belum dijadwalkan" / "Dijadwalkan datang <tgl>" / "Jadwal <tgl> sudah lewat N hari…" | Jadwalkan kedatangan (`JADWALKAN`) · Catat barang tiba (`CATAT_TIBA`/`TANDAI_TIBA`) | Gudang → Gudang |
+| Barang tiba — perlu diperiksa | "Barang sudah tercatat tiba…" / "Pemeriksaan belum lengkap: N dari M item…" (+ "Pemeriksaan sebelumnya dibatalkan — hasil baru wajib") | Periksa barang / Lengkapi hasil pemeriksaan / Nyatakan siap masuk stok (`MAJUKAN`, `ISI_PEMERIKSAAN`) | Gudang → Gudang |
+| Siap masuk stok | "Hasil pemeriksaan lengkap; stok bertambah saat Simpan ke Stok" / "…tidak ada jumlah baik — akan ditolak" | Simpan ke stok (`SIMPAN_KE_STOK`) | Gudang → Finance (bila ber-PO) |
+| Permintaan bahan | status + "Dibutuhkan <tgl> (lewat N hari)" + kekurangan saldo per bahan | Setujui / Siapkan / Serahkan / Konfirmasi keluar | Gudang → Gudang (Produksi bila sumber produksi) |
+| Transfer stok | status + selisih terbuka | Setujui / Tandai diambil / Kirim / Terima / Selesaikan selisih | Gudang |
+| Stock Count | "Terjadwal <tgl>" / "Sedang dihitung" / "Menunggu tinjauan selisih" | Mulai hitung / Serahkan hitungan / Tinjau & selesaikan | Gudang; tinjauan: penyetuju ≠ penghitung |
+| Koreksi & penyesuaian menunggu | "Menunggu keputusan penyetuju" / "Anda pemohon; keputusan harus dari penyetuju lain" | Putuskan / Posting — **hanya untuk penyetuju** | Owner/Finance; bagi non-penyetuju masuk "Menunggu workspace lain" |
+| Restok, barang rusak, retur | status masing-masing | Setujui, Tandai dipesan, Periksa, Selesaikan, Terima | Gudang / penyetuju |
+| Retur Supplier | "Draf — barang belum keluar" / "Barang sudah keluar; debit note belum dibuat" | Konfirmasi barang keluar | Gudang → Finance |
+| Produksi V2 (bahan, unit masuk, barang jadi, kekurangan, sisa bahan) | dari antrean Gudang Produksi V2 | dibuka di Antrean Produksi (aksi inline di sana) | Gudang → Produksi/Delivery — **hanya dihitung bila pembaca V2 aktif; inert di production** |
+
+### Definisi per antrean (sumber tabel, masuk, keluar, siapa boleh bertindak, dihitung per dokumen atau baris)
+
+| Kode | Judul | Sumber tabel | Masuk bila | Keluar bila | Yang bertindak | Dihitung per | Catatan |
+|---|---|---|---|---|---|---|---|
+| PENERIMAAN_AKAN_DATANG | Dijadwalkan datang | goods_receipts | Status Draf atau Terjadwal (barang belum dicatat tiba). | Barang dicatat tiba, atau penerimaan dibatalkan. | Gudang (izin tulis Inventory) | dokumen | Terlambat hanya bila jadwal penerimaan (atau estimasi PO bila jadwal kosong) sudah lewat. |
+| PENERIMAAN_PERIKSA | Barang tiba — perlu diperiksa | goods_receipts + goods_receipt_lines | Status Barang tiba atau Pemeriksaan (barang tercatat tiba, hasil belum lengkap untuk semua item). | Hasil lengkap lalu dinyatakan Siap masuk stok. | Gudang | dokumen | Dokumen kosong lama (tanpa jumlah apa pun) tidak dihitung. |
+| PENERIMAAN_SIAP_STOK | Siap masuk stok | goods_receipts | Status Siap masuk stok. | Simpan ke Stok (stok bertambah) atau dikembalikan ke Pemeriksaan. | Gudang; sesudahnya Finance mencatat faktur supplier. | dokumen |  |
+| PERMINTAAN_BAHAN | Permintaan bahan | material_issues (production_plan_id kosong) | Menunggu persetujuan, Disetujui, Siap diambil, atau Sudah diambil. | Dikeluarkan atau dibatalkan. | Gudang (izin tulis Inventory) | dokumen | Antrean bahan Produksi V2 dihitung terpisah (PRODUKSI_*). |
+| TRANSFER | Transfer stok | stock_transfers | Menunggu persetujuan, Disetujui, Sudah diambil, Dalam perjalanan, atau Selesai dengan selisih belum diselesaikan. | Selesai tanpa selisih terbuka, atau dibatalkan. | Gudang | dokumen |  |
+| STOCK_COUNT | Stock Count | stock_counts | Terjadwal (mulai hitung), Sedang dihitung, atau Menunggu tinjauan. | Selesai atau dibatalkan. | Gudang; selisih disetujui penyetuju yang bukan pembuat/penghitung. | dokumen |  |
+| KOREKSI_PENYESUAIAN | Koreksi & penyesuaian menunggu keputusan | warehouse_corrections + stock_adjustment_requests | Koreksi Menunggu persetujuan; penyesuaian Menunggu persetujuan atau Disetujui (belum diposting). | Diterapkan, ditolak, atau dibatalkan. | Penyetuju (izin persetujuan Inventory — Owner/Finance); pemohon tidak boleh menyetujui sendiri. | dokumen |  |
+| RESTOK_RUSAK_RETUR | Restok, barang rusak, dan retur | replenishment_requests + damaged_stock_records + return_records | Restok Menunggu persetujuan/Disetujui; barang rusak Dilaporkan/Diperiksa; retur Dibuat/Diterima/Diperiksa. | Selesai, ditolak, atau dibatalkan. | Gudang | dokumen |  |
+| RETUR_SUPPLIER | Retur Supplier | supplier_returns | Draf (barang belum keluar). | Barang keluar dikonfirmasi atau dibatalkan. | Gudang (konfirmasi barang keluar); sesudahnya Finance (debit note). | dokumen |  |
+| PRODUKSI_BAHAN | Bahan Produksi menunggu diserahkan | production plan + material issue V2 (hanya bila pembaca Produksi V2 aktif) | Kebutuhan bahan berstatus Menunggu disiapkan atau Siap diambil. | Sudah diserahkan. | Gudang; sesudahnya Produksi. | rencana produksi (unit) |  |
+| PRODUKSI_UNIT_MASUK | Unit dari Delivery menunggu diterima | unit_custody_handoffs_v2 (INBOUND, OFFERED) | Serah-terima ditawarkan. | Diterima atau ditolak. | Gudang | unit |  |
+| PRODUKSI_BARANG_JADI | Barang jadi menunggu diterima | unit_custody_handoffs_v2 (FINISHED_GOODS, OFFERED) | Serah-terima barang jadi ditawarkan Produksi. | Diterima (lokasi wajib) atau ditolak. | Gudang; sesudahnya Delivery. | unit |  |
+| PRODUKSI_KEKURANGAN | Kekurangan bahan dilaporkan Produksi | production_material_shortages_v2 (OPEN) | Laporan kekurangan terbuka. | Diselesaikan Gudang. | Gudang | laporan |  |
+| PRODUKSI_SISA_BAHAN | Sisa bahan menunggu diterima | pengembalian bahan V2 (PENDING) | Pengembalian bahan dari Produksi tertunda. | Diterima Gudang. | Gudang | pengembalian |  |
+
 
 ### Sebab terlambat / tertahan (dipisah menurut penyebab nyata)
 
@@ -33,7 +88,7 @@ Tiap masalah: **apa**, **dampak**, **cakupan** (Satu/beberapa bahan · Satu doku
 
 **Sebelum:** Beranda = 5 kartu angka; detail = halaman/akordeon/modal bercampur; masalah tersebar; tanpa pencarian lintas dokumen.
 
-**Sesudah:** satu pola. Daftar/Beranda/Perlu Perhatian tetap terpasang; dokumen terbuka sebagai **jendela fokus** (URL berubah dan bisa dibagikan; Esc/Tutup/Back mengembalikan konteks termasuk filter dan posisi gulir; satu lapisan — formulir/konfirmasi menjadi panel di jendela yang sama; bilah aksi tetap di dasar jendela).
+**Sesudah:** satu pola. Daftar/Beranda/Perlu Perhatian tetap terpasang; dokumen terbuka sebagai **jendela fokus** (URL berubah dan bisa dibagikan; Esc/Tutup/Back mengembalikan konteks termasuk filter dan posisi gulir; satu lapisan — formulir/konfirmasi menjadi panel di jendela yang sama; bilah aksi tetap di dasar jendela untuk Penerimaan, Pengeluaran Material, Transfer, Stock Opname, Restok, Barang Rusak, Retur, dan Penyesuaian; Koreksi Gudang dan PO menampilkan tombolnya di isi dokumen).
 
 Wireframe desktop (1440 px):
 
@@ -85,16 +140,16 @@ Wireframe HP (390 px): satu kolom; judul + pencarian + dua lencana ringkas + tau
 
 ## 6. Hasil QA
 
-DB terisolasi `km_qa_t4_test` (bukan production), 100+ dokumen: 100 penerimaan (60 dijadwalkan: 20 tanpa tanggal, 20 lewat jadwal, 10 hari ini, 10 depan; 15 tiba; 10 pemeriksaan; 5 siap stok; 10 penerimaan kosong lama yang **tidak** dihitung), 31 permintaan bahan, 15 transfer (3 selesai: 2 berselisih), 4 Stock Count, koreksi/penyesuaian/restok/rusak/retur/PO.
+DB terisolasi `km_qa_t4_test` (bukan production), 100+ dokumen: 101 penerimaan (60 dijadwalkan: 20 tanpa tanggal, 20 lewat jadwal, 10 hari ini, 10 depan; 15 tiba; 10 pemeriksaan; 5 siap stok; 10 penerimaan kosong lama yang **tidak** dihitung), 31 permintaan bahan, 15 transfer (3 selesai: 2 berselisih), 4 Stock Count, koreksi/penyesuaian/restok/rusak/retur/PO.
 
 | Pengujian | Desktop 1440 | HP 390 |
 |---|---|---|
-| `flows7.mjs` (browser nyata) | __DESKTOP__ | __HP__ |
+| `flows7.mjs` (browser nyata) | 103/103 lulus | 108/108 lulus |
 | Tes integrasi backend `gudangPusatKerja` (100+ dokumen, terlambat/tertahan nyata, izin, paginasi, Pusat Masalah, pencarian + tindakan cepat, tanpa jalur tulis) | 6/6 | — |
 | Tes frontend baru `gudangUxTahap4.test.js` | 11/11 | — |
 | Tes frontend lama yang mengunci struktur lama (diperbarui sesuai pola baru): UxTahap1/2/3, koreksiGudang, gudangPintuMasuk, returSupplierUI, poTerintegrasiUI, legacyProductionRoutes | lulus | — |
 | Suite frontend penuh | 1176 tes, 9 gagal = **9 gagal lama yang sama dengan baseline** (Unit 360 ×3, toIsoOrNull, gulir otomatis, shell onBack, view sintetis, Layar angka dari server, aktivasi Jadwalkan) | — |
-| Regresi integrasi backend (Gudang, Koreksi, Retur Supplier, Opname Cutover, Produksi MI/QC/antrean, Finance) | __REGRESI__ | — |
+| Regresi integrasi backend (Gudang, Koreksi, Retur Supplier, Opname Cutover, Produksi MI/QC/antrean, Finance) | 22 berkas, 222 tes, semua lulus | — |
 
 Yang dicakup `flows7.mjs`: struktur Beranda + hitungan = server; kartu memuat dokumen/status/alasan/umur/pemilik; definisi antrean; "terlambat" hanya bertanggal; konflik revisi "tidak dihitung"; jendela fokus dari kartu (URL, satu lapisan, Beranda tetap, Esc/Tutup/Back/Forward, gulir tetap); deep link semua 12 jenis; "Tampilkan lagi" 60/60 tanpa duplikat; tindakan cepat hanya membuka/menyorot (stok/movement/jurnal/status tidak berubah); pencarian lintas dokumen; Perlu Perhatian (cakupan, tanpa blocker global); 8 pola daftar+jendela; Back kembali ke daftar dengan filter utuh; akun baca-saja; perbedaan izin (Owner vs Gudang untuk koreksi); loading/galat/kosong/dokumen tidak ditemukan; dokumen sudah diproses pengguna lain (idempoten, keadaan terbaru tampil); klik ganda = satu perpindahan; bilah aksi tetap; keyboard angka; target sentuh HP; performa 100+ dokumen. Tangkapan layar: `C:\tmp\km-gudang-iso\qa\t4\{desktop,hp}\`.
 
@@ -102,7 +157,7 @@ Yang dicakup `flows7.mjs`: struktur Beranda + hitungan = server; kartu memuat do
 
 ## 7. Keputusan
 
-- **Kandidat:** `__SHA__` (branch `feat/gudang-ux-tahap4`, dasar live `58cbc284`; belum merge ke `main`, `main` masih `694f2184`).
+- **Kandidat:** `ujung branch `feat/gudang-ux-tahap4` (kode terakhir `d6824695`; commit sesudahnya hanya dokumen/pemformatan)` (branch `feat/gudang-ux-tahap4`, dasar live `58cbc284`; belum merge ke `main`, `main` masih `694f2184`).
 - **Keputusan: GO untuk rilis frontend+backend (code-only) setelah persetujuan Owner**, dengan syarat: (1) cek ulang live saat rilis (sesi lain bisa menggeser), (2) skrip rilis bergerbang dibangkitkan dari generator Tahap 3 terhadap baseline live saat itu, (3) disk VPS 4,3 GB (96%) di bawah gerbang 5 GB skrip rilis — perlu pembersihan aman atau pengecualian eksplisit. **NO-GO** bila baseline live bergeser ke berkas Gudang atau ada migrasi baru.
 - **Risiko residual:** Retur Supplier masih Modal; Antrean Produksi V2 belum terverifikasi dengan data nyata (reader OFF); belum ada uji perangkat fisik; hitungan Beranda membaca tabel dokumen aktif secara penuh (aman untuk volume sekarang; jika dokumen aktif melebihi ±2000 per tabel perlu indeks/ringkasan terhitung).
 
