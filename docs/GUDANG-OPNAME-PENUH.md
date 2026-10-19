@@ -132,11 +132,11 @@ DB terisolasi: 360 bahan aktif berjejak + 15 nonaktif (9 kelompok campur, 6 satu
 | Unit `opnameSesi` (klasifikasi tanpa jendela, pembanding, invarian saldo akhir, progres, cakupan, sinyal stok) | **6/6** |
 | Unit frontend `gudangOpnameSesi` (waktu tidak dikarang, perluWaktu, terapkanHasilMulai, teks tiga waktu, struktur) | **10/10** |
 | Tes rilis `releaseOpnamePenuh` (pin migrasi, pemindai + mutan, gerbang, rehearsal, uji perilaku, smoke baca-saja, guard) | **13/13** |
-| Regresi integrasi (36 berkas Gudang/Koreksi/stok/opname/cutover/Retur/Produksi/Finance) | @@REGRESI@@ |
-| Unit backend / frontend penuh | @@UNIT@@ |
+| Regresi integrasi (36 berkas Gudang/Koreksi/stok/opname/cutover/Retur/Produksi/Finance) | **37 berkas, 369 tes, 368 lulus, 1 gagal** — `financeFase1ResiInventory` ("kas masuk di buku"), **gagal identik pada baseline live `cb33a07d`** (bergantung tanggal), tidak terkait perubahan ini |
+| Unit backend / frontend penuh | Backend 1715 tes, 1707 lulus, 6 gagal — semuanya di luar area ini (COVERAGE TAB, compose staging ×2, pin skrip atribusi, audit P5, satu uji "skrip tersimpan identik" rilis UX Gudang yang **lulus bila dijalankan sendiri**: Tahap 1/2/3 = 8/9/9 lulus). Frontend 1206 tes, 1197 lulus, 9 gagal **lama yang sama dengan baseline** (Unit 360, shell onBack, toIsoOrNull, gulir otomatis, dll.) |
 | **Browser nyata, desktop 1440 px** (`flows10.mjs`) | **75/75** |
 | **Browser nyata, HP 390 px** | **61/61** |
-| Skrip rilis: sintaks bash; **32 mutan migrasi** ditolak di bash nyata; potongan SQL (sidik jari, struktur, uji perilaku, perkiraan cakupan) diuji ke Postgres lokal | @@SQL@@ |
+| Skrip rilis: sintaks bash; **32 mutan migrasi** ditolak di bash nyata; potongan SQL (sidik jari, struktur, uji perilaku, perkiraan cakupan) diuji ke Postgres lokal | sintaks bash valid; **32 mutan ditolak** di bash nyata; seluruh SQL skrip (16 sidik jari beku, struktur 3+12 kolom, 5 CHECK, uji perilaku **6 tolak + 4 sah**, perkiraan cakupan) **lulus di Postgres lokal** pada 237 tabel berisi data: sidik jari semua tabel lama identik sebelum = sesudah migrasi; **preflight terhadap live (cb33a07d) lulus penuh** (dampak: stock_counts 1 baris, stock_count_lines 106 baris; cakupan dilacak 279 | 79 tidak) |
 
 **Temuan QA yang diperbaiki:** pratinjau server menolak "ikutkan" tanpa alasan sehingga panel (dan kolom alasannya) hilang — pratinjau memakai alasan sementara, pembuatan sesi tetap wajib alasan asli; panel keputusan tetap tampil "0 menunggu" sesudah semuanya diputuskan; mutan pemindai pada skrip rilis tidak mengubah migrasi multi-baris (akan membuat rilis berhenti salah) — diganti; riwayat baris kini juga memuat entri waktu (harness disesuaikan).
 
