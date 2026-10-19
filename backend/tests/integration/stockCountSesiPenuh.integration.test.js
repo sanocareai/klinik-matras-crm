@@ -440,3 +440,84 @@ test("DOKUMEN RESMI saat sesi berjalan: Penerimaan (putaway) dan Material Issue 
   assert.equal(await saldoBahan(mGR.id), 120, "100 + GR 20 — tidak hilang, tidak ganda"); assert.equal(await saldoBahan(mMI.id), 94, "100 − MI 6"); assert.equal(await saldoBahan(mSebelum.id), 110);
   assert.ok(gr && mi);
 });
+
+test("KASUS 5 — pemeriksa sudah memutuskan SEMUA pergerakan, lalu ada GR dan Material Issue RESMI yang baru: Selesaikan WAJIB ditolak (tanpa keputusan bawaan, tanpa penyesuaian, tanpa saldo basi); setelah diputuskan baru boleh, tepat sekali", async () => {
+  const w = await dunia(); const [mA, mB, mC] = w.aktif.slice(0, 3).map((m) => m.id); // saldo ledger 100 masing-masing
+  const { s, L } = await sesiItems(w, [mA, mB, mC]); const O = menitLalu(40);
+  await gerak(mA, 20, new Date(O.getTime() + 5 * 60_000), "GR saat dihitung"); // SAAT_HITUNG pada mA
+  await simpan(w.A, s.id, [[mA, 100], [mB, 97], [mC, 100]].map(([m, q]) => ({ lineId: L[m].id, revision: 0, countedQty: q, observedAt: iso(O) })));
+  await w.A.patch(`${SC}/${s.id}/lines/${L[mB].id}`, { reason: "Selisih nyata uji kasus 5" });
+  assert.equal((await w.A.post(`${SC}/${s.id}/submit`, {})).status, 200); await periksaLalu(w, s.id);
+  // pemeriksa (C) memutuskan SEMUA pergerakan yang ada; tidak ada yang tersisa
+  const g0 = tinjauBahan(await detail(w.B, s.id), mA).transaksi.sejakPengamatan[0]; assert.equal(g0.kelas, "SAAT_HITUNG");
+  assert.equal((await tandai(w.C, s.id, g0.id, false)).status, 200);
+  let d = await detail(w.B, s.id); assert.equal(d.sesi.belumDitandai, 0, "semua pergerakan yang ada sudah diputuskan pemeriksa"); assert.equal(d.identitas.pemeriksa.length, 1, "pemeriksaan sudah ada dan sah");
+  // SESUDAH review: GR resmi baru pada mA dan Material Issue resmi baru pada mB
+  const grBaru = await grResmi(w, mA, 15); const miBaru = await miResmi(w, mB, 6); assert.ok(grBaru && miBaru);
+  const saldoSebelum = { mA: await saldoBahan(mA), mB: await saldoBahan(mB), mC: await saldoBahan(mC) }; assert.deepEqual(saldoSebelum, { mA: 135, mB: 94, mC: 100 });
+  const adj0 = await testPrisma.stockMovement.count({ where: { stockCountId: s.id } }); const mov0 = await jumlahMov();
+  const tolak = await w.O.post(`${SC}/${s.id}/complete`, {});
+  assert.equal(tolak.status, 409, JSON.stringify(tolak.body)); assert.equal(tolak.body.code, "PERGERAKAN_SESI_BELUM_DITANDAI"); assert.match(tolak.body.error, /2 pergerakan/);
+  assert.equal(await testPrisma.stockMovement.count({ where: { stockCountId: s.id } }), adj0, "tidak ada penyesuaian ditulis"); assert.equal(await jumlahMov(), mov0, "ledger tidak berubah sama sekali");
+  assert.equal((await testPrisma.stockCount.findUnique({ where: { id: s.id } })).status, "WAITING_REVIEW", "sesi tetap menunggu tinjauan");
+  assert.deepEqual({ mA: await saldoBahan(mA), mB: await saldoBahan(mB), mC: await saldoBahan(mC) }, saldoSebelum, "saldo tidak bergeser");
+  d = await detail(w.B, s.id); const baruA = tinjauBahan(d, mA).transaksi.sejakPengamatan.find((x) => x.id !== g0.id); const baruB = tinjauBahan(d, mB).transaksi.sejakPengamatan[0];
+  assert.equal(baruA.kelas, "BERTANGGAL_MUNDUR"); assert.equal(baruA.tanda, null, "GR baru TIDAK mendapat keputusan bawaan"); assert.equal(baruB.kelas, "SESUDAH_DISIMPAN"); assert.equal(baruB.tanda, null, "MI baru TIDAK mendapat keputusan bawaan");
+  assert.equal(d.sesi.belumDitandai, 2); assert.equal(tinjauBahan(d, mA).transaksi.sejakPengamatan.find((x) => x.id === g0.id).tanda, "BELUM_TERHITUNG", "keputusan lama tetap berlaku untuk pergerakan lama");
+  assert.equal(await testPrisma.activityEvent.count({ where: { entityId: s.id, eventType: "DOCUMENT_POSTED" } }), 0, "tidak ada audit posting dari percobaan yang ditolak");
+  // penolakan berulang tetap menolak (tidak menjadi lolos karena percobaan sebelumnya)
+  assert.equal((await w.O.post(`${SC}/${s.id}/complete`, {})).status, 409);
+  // pemeriksa memutuskan yang baru: GR (kelas mundur) satu per satu; MI (kelas aman) massal
+  assert.equal((await w.C.post(`${SC}/${s.id}/pergerakan/tanda-massal`, { tercermin: false })).body.ditandai, 1, "massal hanya menyentuh MI; GR bertanggal mundur tidak ikut");
+  assert.equal((await w.O.post(`${SC}/${s.id}/complete`, {})).status, 409, "GR bertanggal mundur masih menunggu keputusan");
+  assert.equal((await tandai(w.C, s.id, baruA.id, false)).status, 200);
+  const sel = await w.O.post(`${SC}/${s.id}/complete`, {}); assert.equal(sel.status, 200, JSON.stringify(sel.body));
+  const adj = await testPrisma.stockMovement.findMany({ where: { stockCountId: s.id } }); assert.equal(adj.length, 1, "tepat satu penyesuaian (hanya bahan berselisih)"); assert.equal(adj[0].materialId, mB); assert.equal(Number(adj[0].qty), -3);
+  assert.equal(await saldoBahan(mA), 135, "fisik 100 + GR 20 + GR 15 (keduanya belum terhitung di fisik)"); assert.equal(await saldoBahan(mB), 91, "fisik 97 − MI 6"); assert.equal(await saldoBahan(mC), 100);
+  assert.equal((await w.O.post(`${SC}/${s.id}/complete`, {})).body.ulang, true); assert.equal(await testPrisma.stockMovement.count({ where: { stockCountId: s.id } }), 1, "klik ganda Selesaikan tidak menggandakan penyesuaian");
+  const bukti = (await testPrisma.activityEvent.findFirst({ where: { entityId: s.id, eventType: "DOCUMENT_POSTED" } })).metadata.buktiPembanding;
+  assert.equal(bukti.find((x) => x.materialId === mA).pergerakan.length, 2); assert.ok(bukti.every((b) => b.pergerakan.every((p) => p.tanda === "BELUM_TERHITUNG")), "bukti audit memuat tiap pergerakan beserta keputusan pemeriksa");
+});
+
+test("KASUS 5b — pergerakan baru setelah review diputuskan 'sudah ikut terhitung': pembanding ikut, tanpa selisih palsu, tanpa hitung ganda", async () => {
+  const w = await dunia(); const [m] = w.aktif.slice(0, 1).map((x) => x.id);
+  const { s, L } = await sesiItems(w, [m]);
+  await simpan(w.A, s.id, [{ lineId: L[m].id, revision: 0, countedQty: 115, observedAt: iso(menitLalu(30)) }]); // fisik sudah memuat barang yang nanti baru diposting
+  assert.equal((await w.A.post(`${SC}/${s.id}/submit`, {})).status, 200); await periksaLalu(w, s.id);
+  assert.equal((await detail(w.B, s.id)).sesi.belumDitandai, 0);
+  const kemarin = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10); await grResmi(w, m, 15, { receivedDate: kemarin });
+  assert.equal((await w.O.post(`${SC}/${s.id}/complete`, {})).status, 409);
+  const g = tinjauBahan(await detail(w.B, s.id), m).transaksi.sejakPengamatan[0]; assert.equal(g.tanda, null);
+  assert.equal((await tandai(w.C, s.id, g.id, true)).status, 200);
+  const sel = await w.O.post(`${SC}/${s.id}/complete`, {}); assert.equal(sel.status, 200, JSON.stringify(sel.body));
+  assert.equal(await testPrisma.stockMovement.count({ where: { stockCountId: s.id } }), 0); assert.equal(await saldoBahan(m), 115, "fisik 115 = ledger 100 + GR 15 (tanpa keputusan 'sudah' akan menjadi 130)");
+});
+
+test("KASUS 6 — transaksi baru TEPAT saat Selesaikan (3 ronde, bahan berbeda): tidak ada saldo basi, tidak ada pergerakan terlewat; yang commit sebelum Selesaikan wajib diputuskan, yang menyusul bercap sesudah penyelesaian; tepat satu penyesuaian per bahan", async () => {
+  const w = await dunia(); const post = (m, q) => testPrisma.$transaction((tx) => postStockMovement(tx, { materialId: m, type: "RECEIPT", qty: q, note: "serentak dengan Selesaikan" }), { timeout: 30000 });
+  const hasil = [];
+  for (let r = 0; r < 3; r++) {
+    const ids = w.aktif.slice(10 + r * 3, 13 + r * 3).map((m) => m.id); const { s, L } = await sesiItems(w, ids);
+    await simpan(w.A, s.id, ids.map((m) => ({ lineId: L[m].id, revision: 0, countedQty: 98, observedAt: iso(menitLalu(30)) })));
+    for (const m of ids) await w.A.patch(`${SC}/${s.id}/lines/${L[m].id}`, { reason: "Selisih nyata uji serentak" });
+    assert.equal((await w.A.post(`${SC}/${s.id}/submit`, {})).status, 200); await periksaLalu(w, s.id); assert.equal((await detail(w.B, s.id)).sesi.belumDitandai, 0, "semua keputusan selesai SEBELUM transaksi baru");
+    const [rc] = await Promise.all([w.O.post(`${SC}/${s.id}/complete`, {}), post(ids[0], 3), post(ids[1], 4), post(ids[2], 5)]);
+    let putaran = 1;
+    if (rc.status === 409) { // transaksi baru commit sebelum Selesaikan membaca: wajib diputuskan, tidak boleh lolos
+      assert.equal(rc.body.code, "PERGERAKAN_SESI_BELUM_DITANDAI"); assert.equal(await testPrisma.stockMovement.count({ where: { stockCountId: s.id } }), 0, "penolakan tidak menulis penyesuaian");
+      const belum = (await detail(w.B, s.id)).sesi.belumDitandai; assert.ok(belum >= 1 && belum <= 3);
+      assert.equal((await w.C.post(`${SC}/${s.id}/pergerakan/tanda-massal`, { tercermin: false })).body.ditandai, belum);
+      // transaksi yang menyusul lagi (belum ada) — Selesaikan kedua harus lolos
+      const lagi = await w.O.post(`${SC}/${s.id}/complete`, {}); assert.equal(lagi.status, 200, JSON.stringify(lagi.body)); putaran = 2;
+    } else assert.equal(rc.status, 200, JSON.stringify(rc.body));
+    // INVARIAN: saldo akhir = fisik + posting; tepat satu penyesuaian −2 per bahan; tiap posting yang commit SEBELUM penyesuaian punya keputusan pemeriksa; tidak ada keputusan bawaan
+    const tambahan = [3, 4, 5]; for (let i = 0; i < 3; i++) assert.equal(await saldoBahan(ids[i]), 98 + tambahan[i], `ronde ${r} bahan ${i}`);
+    const adj = await testPrisma.stockMovement.findMany({ where: { stockCountId: s.id } }); assert.equal(adj.length, 3); assert.ok(adj.every((a) => Number(a.qty) === -2));
+    const tAdj = Math.min(...adj.map((a) => a.createdAt.getTime())); const posting = await testPrisma.stockMovement.findMany({ where: { materialId: { in: ids }, note: "serentak dengan Selesaikan" } }); assert.equal(posting.length, 3);
+    const tanda = (await testPrisma.activityEvent.findMany({ where: { entityId: s.id, eventType: "DOCUMENT_EDITED", metadata: { path: ["aksi"], equals: "PERGERAKAN_SESI_DITANDAI" } } })).map((e) => e.metadata.movementId);
+    for (const p of posting) { const sebelum = p.createdAt.getTime() < tAdj; if (sebelum) assert.ok(tanda.includes(p.id), `posting yang commit sebelum penyesuaian (ronde ${r}) wajib punya keputusan pemeriksa`); else assert.ok(!tanda.includes(p.id), "posting yang menyusul tidak mendapat keputusan bawaan"); }
+    assert.equal((await w.O.post(`${SC}/${s.id}/complete`, {})).body.ulang, true);
+    hasil.push(putaran);
+  }
+  assert.equal(hasil.length, 3, "tiga ronde selesai: " + hasil.join(","));
+});

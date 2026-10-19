@@ -12,11 +12,15 @@
 #   ssh ubuntu@43.133.152.6 'bash /tmp/op.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'      # baca-saja: produksi TIDAK diubah (tanpa backup, tanpa DB sementara)
 #   ssh ubuntu@43.133.152.6 'bash /tmp/op.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rehearsal-only'      # backup NYATA + restore ke DB sementara + migrasi (SQL dari git) + uji; TANPA build/release dir/migrasi produksi
 #   ssh ubuntu@43.133.152.6 'nohup bash /tmp/op.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/op.out 2>&1 < /dev/null &'
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/op.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rehearsal-penuh [--tahan-ui=40] > /tmp/op.out 2>&1 < /dev/null &'
+#        # REHEARSAL PENUH (tanpa deploy): backup NYATA + restore ke DB sementara + build web + image kandidat bertag rehearsal (TAG PRODUCTION TIDAK DISENTUH) + migrasi pada DB rehearsal + uji perilaku + sidik jari semua tabel
+#        # + smoke baca-saja + skenario model waktu/konkurensi/klik ganda/sesi penuh nyata + guard rollback — SEMUA terhadap DB rehearsal lewat server Express minimal (tanpa cron/WAHA/Socket.IO, JWT acak bukan production).
+#        # --tahan-ui=MENIT menahan DB rehearsal + server UI di 127.0.0.1:4311 (loopback VPS) untuk simulasi HP lewat terowongan SSH; berhenti setelah MENIT atau berkas rhctl/stop; DB lalu dihapus.
 #
 # ROLLBACK KODE: aman kapan saja SELAMA tidak ada sesi model baru yang terbuka (SCHEDULED / IN_PROGRESS / WAITING_REVIEW) — kode lama tidak mengenal sesi itu dan akan menulis penyesuaian keliru. Periksa dulu dengan
 #   scripts/rollback-guard-opname-penuh.sh (baca-saja). Rollback kode TIDAK menghapus kolom/riwayat hitung/penyesuaian yang sudah diposting (saldo ledger tetap benar); yang hilang hanya halaman kerja hitung dan aturan waktu.
 
-# (dibangkitkan oleh scripts/gen-release-opname-penuh.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 1842705df134…)
+# (dibangkitkan oleh scripts/gen-release-opname-penuh.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 955dea3b4723…)
 set -Eeuo pipefail
 umask 077
 
@@ -33,7 +37,7 @@ SCHEMA_DIFF_SHA="654870cbc97c951d406c63cf33d77b867b53dce56f1e20768b974ab14d2b119
 # Migrasi live terakhir yang HARUS sudah terpasang di produksi dan ada di kandidat (Produksi: admin override siap kirim). Bila lebih baru muncul di produksi, gabungkan baseline terbaru dulu.
 LIVE_MIG_TERAKHIR="20261220090000_gudang_koreksi_dokumen"
 # Berkas yang BOLEH berbeda dari baseline: EKSPLISIT path persis (+ skrip rilis ini + guard rollback). Apa pun di luar daftar = berhenti.
-ALLOWED_RE='^(backend/prisma/migrations/20261222090000_stock_count_sesi_penuh/migration\.sql|backend/prisma/schema\.prisma|backend/src/index\.js|backend/src/routes/stockCount\.js|backend/src/routes/stockCountSesi\.js|backend/src/services/dokumenGudangLain\.js|backend/src/services/opnameSesi\.js|backend/src/services/pergerakanSesiHitung\.js|backend/src/services/stokFisik\.js|backend/tests/integration/setup/testApp\.js|backend/tests/integration/stockCountSesiPenuh\.integration\.test\.js|backend/tests/opnameSesi\.test\.js|backend/tests/releaseKoreksiGudang\.test\.js|backend/tests/releaseOpnamePenuh\.test\.js|docs/GUDANG-OPNAME-PENUH\.md|frontend/src/api\.js|frontend/src/components/Topbar\.jsx|frontend/src/features/warehouse/dokumen/OpnameDetail\.jsx|frontend/src/features/warehouse/opname/BarisHitung\.jsx|frontend/src/features/warehouse/opname/BuatSesiOpname\.jsx|frontend/src/features/warehouse/opname/OpnameSesiTinjau\.jsx|frontend/src/features/warehouse/opname/PanelDiLuarCakupan\.jsx|frontend/src/features/warehouse/opname/opnameLogic\.js|frontend/src/lib/tabTitles\.js|frontend/src/pages/warehouse/WarehouseOpnameKerja\.jsx|frontend/src/pages/warehouse/WarehouseStockCount\.jsx|frontend/src/routes/pageRegistry\.jsx|frontend/tests/gudangOpnameSesi\.test\.js|scripts/gen-release-opname-penuh\.cjs|scripts/lib/rehearsal-kode-opname-penuh\.mjs|scripts/lib/scan-migrasi-opname-penuh\.mjs|scripts/lib/smoke-opname-penuh\.mjs|scripts/release-opname-penuh\.sh|scripts/rollback-guard-opname-penuh\.sh|scripts/templates/release-opname-penuh\.sh\.tpl)$'
+ALLOWED_RE='^(backend/prisma/migrations/20261222090000_stock_count_sesi_penuh/migration\.sql|backend/prisma/schema\.prisma|backend/src/index\.js|backend/src/routes/stockCount\.js|backend/src/routes/stockCountSesi\.js|backend/src/services/dokumenGudangLain\.js|backend/src/services/opnameSesi\.js|backend/src/services/pergerakanSesiHitung\.js|backend/src/services/stokFisik\.js|backend/tests/integration/setup/testApp\.js|backend/tests/integration/stockCountSesiPenuh\.integration\.test\.js|backend/tests/opnameSesi\.test\.js|backend/tests/releaseKoreksiGudang\.test\.js|backend/tests/releaseOpnamePenuh\.test\.js|docs/GUDANG-OPNAME-PENUH\.md|frontend/src/api\.js|frontend/src/components/Topbar\.jsx|frontend/src/features/warehouse/dokumen/OpnameDetail\.jsx|frontend/src/features/warehouse/opname/BarisHitung\.jsx|frontend/src/features/warehouse/opname/BuatSesiOpname\.jsx|frontend/src/features/warehouse/opname/OpnameSesiTinjau\.jsx|frontend/src/features/warehouse/opname/PanelDiLuarCakupan\.jsx|frontend/src/features/warehouse/opname/opnameLogic\.js|frontend/src/lib/tabTitles\.js|frontend/src/pages/warehouse/WarehouseOpnameKerja\.jsx|frontend/src/pages/warehouse/WarehouseStockCount\.jsx|frontend/src/routes/pageRegistry\.jsx|frontend/tests/gudangOpnameSesi\.test\.js|scripts/gen-release-opname-penuh\.cjs|scripts/lib/rehearsal-kode-opname-penuh\.mjs|scripts/lib/rehearsal-skenario-opname-penuh\.mjs|scripts/lib/scan-migrasi-opname-penuh\.mjs|scripts/lib/smoke-opname-penuh\.mjs|scripts/release-opname-penuh\.sh|scripts/rollback-guard-opname-penuh\.sh|scripts/templates/release-opname-penuh\.sh\.tpl)$'
 BACKEND_SRC_EXPECT="backend/src/index.js backend/src/routes/stockCount.js backend/src/routes/stockCountSesi.js backend/src/services/dokumenGudangLain.js backend/src/services/opnameSesi.js backend/src/services/pergerakanSesiHitung.js backend/src/services/stokFisik.js"
 FRONTEND_SRC_EXPECT="frontend/src/api.js frontend/src/components/Topbar.jsx frontend/src/features/warehouse/dokumen/OpnameDetail.jsx frontend/src/features/warehouse/opname/BarisHitung.jsx frontend/src/features/warehouse/opname/BuatSesiOpname.jsx frontend/src/features/warehouse/opname/OpnameSesiTinjau.jsx frontend/src/features/warehouse/opname/PanelDiLuarCakupan.jsx frontend/src/features/warehouse/opname/opnameLogic.js frontend/src/lib/tabTitles.js frontend/src/pages/warehouse/WarehouseOpnameKerja.jsx frontend/src/pages/warehouse/WarehouseStockCount.jsx frontend/src/routes/pageRegistry.jsx"
 # Perubahan live yang TIDAK boleh hilang: hotfix Stock Count harus ada di kandidat DAN baseline; berkas pelindung identik dengan baseline (rilis ini tidak menyentuhnya).
@@ -52,7 +56,13 @@ SRC="$HOME/release-src/klinik-matras.git"
 NEW_DIR="$RELEASES/$DEPLOY_SHORT"
 PREFLIGHT_ONLY=0
 REHEARSAL_ONLY=0
-for a in "$@"; do [ "$a" = "--preflight-only" ] && PREFLIGHT_ONLY=1; [ "$a" = "--rehearsal-only" ] && REHEARSAL_ONLY=1; done
+REHEARSAL_PENUH=0
+TAHAN_UI=0
+CAND_DIR="$NEW_DIR"   # sumber kode kandidat untuk rehearsal: release dir (rilis penuh) atau direktori kerja sementara (--rehearsal-penuh)
+for a in "$@"; do
+  [ "$a" = "--preflight-only" ] && PREFLIGHT_ONLY=1; [ "$a" = "--rehearsal-only" ] && REHEARSAL_ONLY=1; [ "$a" = "--rehearsal-penuh" ] && REHEARSAL_PENUH=1
+  case "$a" in --tahan-ui=*) TAHAN_UI="${a#--tahan-ui=}";; esac
+done
 TS="$(date +%Y%m%d_%H%M%S)"
 BK_DIR="$HOME/release-backups/opname-penuh-${DEPLOY_SHORT}-${TS}"
 PHASE="init"; BACKUP_FILE=""; ROLLBACK_TAG=""; PREV_DIR=""; PREV_IMG_ID=""; IMG_NAME=""
@@ -64,6 +74,20 @@ die()  { printf '\n\033[31mSTOP: %s\033[0m\n' "$*" >&2; exit 1; }
 sg()   { git --git-dir="$SRC" "$@"; }
 dcp()  { local d="$1"; shift; ( cd "$d" && SANSS_PERSIST_ROOT="$PERSIST" docker compose -p "$PROJECT" -f docker-compose.yml -f docker-compose.release.yml "$@" ); }
 psql_live() { dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 -X -q "$@" </dev/null; }
+
+[ "$((PREFLIGHT_ONLY + REHEARSAL_ONLY + REHEARSAL_PENUH))" -le 1 ] || die "pilih SATU mode saja (--preflight-only | --rehearsal-only | --rehearsal-penuh)"
+[[ "$TAHAN_UI" =~ ^[0-9]+$ ]] || die "--tahan-ui=MENIT harus angka"
+[ "$TAHAN_UI" = "0" ] || [ "$REHEARSAL_PENUH" = "1" ] || die "--tahan-ui hanya bersama --rehearsal-penuh"
+WS=""; REH_IMG=""; REH_DB=""; NET=""
+# Pembersih --rehearsal-penuh (dipanggil di trap EXIT, juga saat gagal): hapus container UI, direktori kerja, image bertag rehearsal (SATU tag itu saja), dan DB sementara bernama rehearsal_op_test_*. TIDAK menyentuh production.
+cleanup_penuh() {
+  [ "$REHEARSAL_PENUH" = "1" ] || return 0
+  docker rm -f "rh-op-ui-${TS}" >/dev/null 2>&1 || true
+  if [ -n "${WS:-}" ] && [[ "$WS" == "$HOME/release-rehearsal/op-"* ]]; then rm -rf -- "$WS" 2>/dev/null || sudo -n rm -rf -- "$WS" 2>/dev/null || true; fi
+  if [ -n "${REH_IMG:-}" ] && [[ "$REH_IMG" == *":rehearsal-op-"* ]]; then docker rmi "$REH_IMG" >/dev/null 2>&1 || true; fi
+  if [[ "${REH_DB:-}" =~ ^rehearsal_op_test_image_[0-9_]+$ ]] && [ -n "${PREV_DIR:-}" ]; then dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d postgres -X -q -c "DROP DATABASE IF EXISTS \"${REH_DB}\"" </dev/null >/dev/null 2>&1 || true; fi
+  return 0
+}
 
 rollback_instructions() {
   cat <<EOF
@@ -86,7 +110,7 @@ Pemulihan database penuh hanya bila terjadi kerusakan data: gzip -dc ${BACKUP_FI
 ─────────────────────────────────────────────────────────────────────────
 EOF
 }
-trap 'rc=$?; [ $rc -ne 0 ] && rollback_instructions; exit $rc' EXIT
+trap 'rc=$?; [ $rc -ne 0 ] && [ "$REHEARSAL_PENUH" = "0" ] && rollback_instructions; cleanup_penuh; exit $rc' EXIT
 
 PHASE="0-lingkungan"; say "0. Lingkungan dan kunci deploy"
 for c in git docker curl gzip sha256sum awk grep flock tar sed df node npm; do command -v "$c" >/dev/null 2>&1 || die "perintah '$c' tidak ada"; done
@@ -103,7 +127,7 @@ exec > >(tee -a "$BK_DIR/release.log") 2>&1
 [ -f "$PERSIST/backend/.env" ] && [ -f "$PERSIST/frontend/.env" ] || die "file .env persisten tidak lengkap"
 grep -Eq '^VITE_GOOGLE_MAPS_JS_KEY=.+' "$PERSIST/frontend/.env" || die "VITE_GOOGLE_MAPS_JS_KEY kosong (peta akan mati)"
 for d in frontend/dist-driver backend/uploads backend/data; do [ -d "$PERSIST/$d" ] || die "root persisten kurang: ${PERSIST}/${d}"; done
-if [ "$PREFLIGHT_ONLY" = "0" ] && [ "$REHEARSAL_ONLY" = "0" ]; then [ ! -e "$NEW_DIR" ] || die "release dir ${NEW_DIR} SUDAH ADA (tidak akan ditimpa)"; fi
+if [ "$PREFLIGHT_ONLY" = "0" ] && [ "$REHEARSAL_ONLY" = "0" ] && [ "$REHEARSAL_PENUH" = "0" ]; then [ ! -e "$NEW_DIR" ] || die "release dir ${NEW_DIR} SUDAH ADA (tidak akan ditimpa)"; fi
 
 PHASE="1-sumber"; say "1. Sumber kode, ancestry, batas perubahan, pin migrasi, pemindai DDL (+ uji negatif pemindai)"
 [ -d "$SRC" ] || git init -q --bare "$SRC"
@@ -367,11 +391,58 @@ mv "${BACKUP_FILE}.partial" "$BACKUP_FILE"
 ( cd "$(dirname "$BACKUP_FILE")" && sha256sum "$(basename "$BACKUP_FILE")" > "$(basename "$BACKUP_FILE").sha256" && sha256sum -c "$(basename "$BACKUP_FILE").sha256" >/dev/null ) || die "checksum backup gagal"
 ok "backup: ${BACKUP_FILE} ($(du -h "$BACKUP_FILE" | cut -f1)); sha256 $(cut -d' ' -f1 "${BACKUP_FILE}.sha256")"
 
-# ── REHEARSAL (satu fungsi, dipakai --rehearsal-only dan alur rilis penuh) ───────────────────────────────────────────────────────────────────────────
+# bk_run: menjalankan perintah di container backend. Rilis penuh = compose release dir (env production); --rehearsal-penuh = image bertag rehearsal TANPA env production (hanya variabel yang diberikan eksplisit).
+bk_run() {
+  local o=(); while [ "$1" != "--" ]; do o+=("$1"); shift; done; shift
+  if [ "$REHEARSAL_PENUH" = "1" ]; then docker run --rm -i --network "$NET" -w /app "${o[@]}" "$REH_IMG" "$@"
+  else dcp "$NEW_DIR" run --rm --no-deps -T "${o[@]}" backend "$@"; fi
+}
+# Lanjutan --rehearsal-penuh di DALAM rehearsal(): semuanya terhadap DB rehearsal yang SUDAH dimigrasi dan lolos sidik jari.
+rehearsal_penuh_lanjutan() {
+  say "Lanjutan rehearsal penuh: smoke baca-saja, skenario model waktu + konkurensi + klik ganda + sesi penuh nyata, guard rollback (DB rehearsal ${REH_DB}; production tidak disentuh)"
+  local RH_DIR="$BK_DIR/rh"; mkdir -p "$RH_DIR" "$BK_DIR/rhctl"
+  cp "$WS/scripts/lib/rehearsal-skenario-opname-penuh.mjs" "$WS/scripts/lib/smoke-opname-penuh.mjs" "$RH_DIR/" || { reh_drop; die "pustaka skenario tidak ada di arsip kandidat"; }
+  local RH_JWT; RH_JWT="$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+  [ "${#RH_JWT}" -ge 32 ] || { reh_drop; die "gagal membangkitkan rahasia JWT rehearsal"; }
+  local EXPECT_MASUK="${CAKUPAN_INFO%% | *}"; [[ "$EXPECT_MASUK" =~ ^[0-9]+$ ]] || { reh_drop; die "perkiraan cakupan preflight tidak terbaca"; }
+  rh_jalankan() { local fase="$1"; shift; docker run --rm --network "$NET" -v "$RH_DIR:/rh:ro" -w /app -e FASE="$fase" -e JWT_SECRET="$RH_JWT" -e DATABASE_URL="$REH_URL" -e TEST_DATABASE_URL="$REH_URL" "$@" "$REH_IMG" node /rh/rehearsal-skenario-opname-penuh.mjs </dev/null; }
+  # 1) smoke baca-saja terhadap data restore (sesi lama terbaca, pratinjau cakupan atas bahan nyata, tidak ada tulisan)
+  rh_jalankan smoke > "$BK_DIR/rh-smoke.log" 2>&1 || { grep -E 'FAIL|Error' "$BK_DIR/rh-smoke.log" | head -n 10; reh_drop; die "smoke baca-saja terhadap DB rehearsal GAGAL (log: $BK_DIR/rh-smoke.log)"; }
+  grep -q '^RH_SMOKE kode=0' "$BK_DIR/rh-smoke.log" && grep -q '^SMOKE_HASIL fail=0 skip=' "$BK_DIR/rh-smoke.log" || { tail -n 8 "$BK_DIR/rh-smoke.log"; reh_drop; die "smoke tidak mencetak ringkasan lulus"; }
+  grep -q 'sesi lama CC-' "$BK_DIR/rh-smoke.log" || { reh_drop; die "smoke tidak membuktikan sesi lama terbaca"; }
+  ok "smoke baca-saja terhadap DB rehearsal: $(grep -c '  PASS' "$BK_DIR/rh-smoke.log") pemeriksaan lulus, $(grep '^SMOKE_HASIL' "$BK_DIR/rh-smoke.log" | sed 's/SMOKE_HASIL //'); sesi lama terbaca"
+  # 2) skenario: waktu (tiga waktu, bertanggal mundur), PEMBUKTIAN pergerakan baru setelah review, konkurensi (kunci + serentak 3 ronde), klik ganda, sesi penuh nyata, sesi terbuka untuk guard
+  rh_jalankan skenario -e EXPECT_MASUK="$EXPECT_MASUK" > "$BK_DIR/rh-skenario.log" 2>&1 || { grep -E '^FAIL' "$BK_DIR/rh-skenario.log" | head -n 12; reh_drop; die "skenario rehearsal GAGAL (log: $BK_DIR/rh-skenario.log)"; }
+  grep -q '^RH_SKENARIO gagal=0' "$BK_DIR/rh-skenario.log" && ! grep -q '^FAIL' "$BK_DIR/rh-skenario.log" || { grep -E '^FAIL' "$BK_DIR/rh-skenario.log" | head -n 12; reh_drop; die "skenario rehearsal tidak lulus penuh"; }
+  local NPASS; NPASS="$(grep -c '^PASS' "$BK_DIR/rh-skenario.log")"; [ "$NPASS" -ge 45 ] || { reh_drop; die "skenario hanya ${NPASS} pemeriksaan lulus (minimal 45)"; }
+  for k in 'S3 Selesaikan DITOLAK' 'S3 tidak ada keputusan bawaan' 'S3 setelah diputuskan Selesaikan lulus' 'S4a Selesaikan MENUNGGU kunci' 'S4b ronde 2' 'S5 Selesaikan ganda' 'S6 Selesaikan sesi penuh lulus'; do grep -q "^PASS $k" "$BK_DIR/rh-skenario.log" || { reh_drop; die "pemeriksaan wajib tidak ada/lulus: $k"; }; done
+  ok "skenario rehearsal: ${NPASS} pemeriksaan lulus, 0 gagal — termasuk pergerakan BARU setelah review ditolak lalu lanjut, konkurensi (kunci + 3 ronde serentak), klik ganda, dan sesi penuh nyata atas data restore"
+  grep -E '^INFO' "$BK_DIR/rh-skenario.log" | sed 's/^/        /'
+  grep -E 'S6 (pratinjau|sesi penuh dibuat|360|[0-9]+ bahan disimpan|Selesaikan sesi penuh)' "$BK_DIR/rh-skenario.log" | sed 's/^PASS /        /' | cut -c1-220
+  # 3) guard rollback: sesi model baru terbuka → MENOLAK; setelah ditutup → LULUS
+  local G1 G2; set +e; GUARD_DB="$REH_DB" bash "$WS/scripts/rollback-guard-opname-penuh.sh" > "$BK_DIR/guard-menolak.log" 2>&1; G1=$?; set -e
+  [ "$G1" = "1" ] && grep -q 'GUARD MENOLAK' "$BK_DIR/guard-menolak.log" || { cat "$BK_DIR/guard-menolak.log"; reh_drop; die "guard rollback TIDAK menolak padahal ada sesi model baru terbuka (exit=${G1})"; }
+  rh_jalankan tutup > "$BK_DIR/rh-tutup.log" 2>&1 && grep -q '^RH_TUTUP gagal=0' "$BK_DIR/rh-tutup.log" || { cat "$BK_DIR/rh-tutup.log"; reh_drop; die "gagal menutup sesi terbuka untuk uji guard"; }
+  set +e; GUARD_DB="$REH_DB" bash "$WS/scripts/rollback-guard-opname-penuh.sh" > "$BK_DIR/guard-lulus.log" 2>&1; G2=$?; set -e
+  [ "$G2" = "0" ] && grep -q 'GUARD LULUS' "$BK_DIR/guard-lulus.log" || { cat "$BK_DIR/guard-lulus.log"; reh_drop; die "guard rollback TIDAK lulus setelah semua sesi ditutup (exit=${G2})"; }
+  ok "guard rollback: MENOLAK (exit 1) selama ada sesi model baru terbuka; LULUS (exit 0) setelah ditutup: $(sed -n 1p "$BK_DIR/guard-lulus.log")"
+  # 4) UI (opsional): server sementara + dist baru di loopback VPS untuk simulasi HP lewat terowongan SSH
+  if [ "$TAHAN_UI" != "0" ]; then
+    local UIN="rh-op-ui-${TS}"
+    docker run -d --name "$UIN" --network "$NET" -p 127.0.0.1:4311:4100 -v "$RH_DIR:/rh:ro" -v "$BK_DIR/rhctl:/rhctl" -v "$WS/frontend/dist:/dist:ro" -w /app -e FASE=ui -e RH_UI_MENIT="$TAHAN_UI" -e JWT_SECRET="$RH_JWT" -e DATABASE_URL="$REH_URL" -e TEST_DATABASE_URL="$REH_URL" "$REH_IMG" node /rh/rehearsal-skenario-opname-penuh.mjs >/dev/null || { reh_drop; die "gagal menyalakan server UI rehearsal"; }
+    local siap=0; for i in $(seq 1 45); do docker logs "$UIN" 2>&1 | grep -q '^RH_UI_SIAP' && curl -fsS --max-time 4 http://127.0.0.1:4311/__rh/tokens >/dev/null 2>&1 && { siap=1; break; }; sleep 2; done
+    [ "$siap" = "1" ] || { docker logs "$UIN" 2>&1 | tail -n 15; reh_drop; die "server UI rehearsal tidak siap"; }
+    say "UI_REHEARSAL_SIAP http://127.0.0.1:4311 (hanya loopback VPS; DB rehearsal ${REH_DB}). Dari laptop: ssh -N -L 4311:127.0.0.1:4311 ubuntu@43.133.152.6 — menunggu ${TAHAN_UI} menit atau berkas ${BK_DIR}/rhctl/stop"
+    until [ -e "$BK_DIR/rhctl/stop" ] || [ "$(docker inspect -f '{{.State.Running}}' "$UIN" 2>/dev/null)" != "true" ]; do sleep 5; done
+    docker rm -f "$UIN" >/dev/null 2>&1 || true; ok "server UI rehearsal dihentikan"
+  fi
+}
+
+# ── REHEARSAL (satu fungsi, dipakai --rehearsal-only, --rehearsal-penuh dan alur rilis penuh) ───────────────────────────────────────────────────────────────────────────
 # $1 = "git" (SQL migrasi dari git, diberi waktu per pernyataan) | "image" (prisma migrate deploy dari image baru + kode baru terhadap data restore)
 rehearsal() {
   local mode="$1"
-  REH_DB="rehearsal_op_${mode}_${TS}"
+  REH_DB="rehearsal_op_test_${mode}_${TS}"  # nama WAJIB memuat "test": pagar env.js skenario menolak DB lain
   dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d postgres -v ON_ERROR_STOP=1 -X -q -c "CREATE DATABASE \"${REH_DB}\"" </dev/null || die "gagal membuat DB rehearsal"
   reh_drop() { dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d postgres -X -q -c "DROP DATABASE IF EXISTS \"${REH_DB}\"" </dev/null >/dev/null 2>&1 || true; }
   RPSQL() { dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d "$REH_DB" -X -At -q -c "$1" </dev/null; }
@@ -415,12 +486,12 @@ rehearsal() {
     REH_PW="$(sed -n 's/^DATABASE_URL=\"\?postgresql:\/\/[^:]*:\([^@]*\)@.*/\1/p' "$PERSIST/backend/.env" | sed -n 1p)"
     [ -n "$REH_PW" ] || { reh_drop; die "tidak bisa membaca kata sandi DB dari .env untuk rehearsal"; }
     REH_URL="postgresql://${DB_USER}:${REH_PW}@postgres:5432/${REH_DB}"
-    REH_PEND="$(comm -23 <(ls -1 "$NEW_DIR/backend/prisma/migrations" | grep -E '^[0-9]{14}_' | LC_ALL=C sort) <(RPSQL "select migration_name from _prisma_migrations where finished_at is not null and rolled_back_at is null order by 1" | LC_ALL=C sort) || true)"
+    REH_PEND="$(comm -23 <(ls -1 "$CAND_DIR/backend/prisma/migrations" | grep -E '^[0-9]{14}_' | LC_ALL=C sort) <(RPSQL "select migration_name from _prisma_migrations where finished_at is not null and rolled_back_at is null order by 1" | LC_ALL=C sort) || true)"
     [ "$(printf '%s\n' "$REH_PEND" | tr -d ' ')" = "$(printf '%s\n' $MIG_LIST | LC_ALL=C sort | tr -d ' ')" ] || { reh_drop; die "migrasi pending pada DB rehearsal bukan tepat migrasi rilis ini: $(printf '%s' "$REH_PEND" | tr '\n' ' ')"; }
     T_A="$(date +%s%N)"
-    dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="$REH_URL" backend npx prisma migrate deploy </dev/null > "$BK_DIR/migrate-rehearsal-${mode}.log" 2>&1 || { tail -n 20 "$BK_DIR/migrate-rehearsal-${mode}.log"; reh_drop; die "migrate deploy di DB rehearsal GAGAL (produksi tidak disentuh)"; }
+    bk_run -e DATABASE_URL="$REH_URL" -- npx prisma migrate deploy </dev/null > "$BK_DIR/migrate-rehearsal-${mode}.log" 2>&1 || { tail -n 20 "$BK_DIR/migrate-rehearsal-${mode}.log"; reh_drop; die "migrate deploy di DB rehearsal GAGAL (produksi tidak disentuh)"; }
     T_B="$(date +%s%N)"
-    dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="$REH_URL" backend npx prisma migrate status </dev/null 2>&1 | grep -i 'up to date' >/dev/null || { reh_drop; die "migrate status rehearsal tidak 'up to date'"; }
+    bk_run -e DATABASE_URL="$REH_URL" -- npx prisma migrate status </dev/null 2>&1 | grep -i 'up to date' >/dev/null || { reh_drop; die "migrate status rehearsal tidak 'up to date'"; }
     ok "prisma migrate deploy pada DB rehearsal: $(( (T_B - T_A) / 1000000 )) ms (termasuk start container); status up to date"
   fi
   # 5) STRUKTUR: 15 kolom baru bertipe benar; semua baris lama memegang nilai bawaan (tanpa backfill); 5 CHECK tervalidasi; tidak ada tabel baru; skema + katalog objek lama identik
@@ -474,7 +545,7 @@ UJISQL
   ok "perilaku terbukti pada hasil restore: ${UJI_TOLAK} penolakan (model_version, scope_mode, origin, sumber waktu, waktu tanpa sumber, sumber tanpa waktu) dan ${UJI_LOLOS} operasi sah lolos; seluruh uji dibatalkan"
   # 7) Mode image: kode BARU terhadap data restore yang SUDAH dimigrasi (baca-saja)
   if [ "$mode" = "image" ]; then
-    dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="$REH_URL" -e EXPECT_AKTIF="$MAT_AKTIF" backend node --input-type=module - <<'REHNODE' > "$BK_DIR/rehearsal-kode-baru.log" 2>&1 || { cat "$BK_DIR/rehearsal-kode-baru.log"; reh_drop; die "pemeriksaan kode baru terhadap data restore GAGAL"; }
+    bk_run -e DATABASE_URL="$REH_URL" -e EXPECT_AKTIF="$MAT_AKTIF" -- node --input-type=module - <<'REHNODE' > "$BK_DIR/rehearsal-kode-baru.log" 2>&1 || { cat "$BK_DIR/rehearsal-kode-baru.log"; reh_drop; die "pemeriksaan kode baru terhadap data restore GAGAL"; }
 // Pemeriksaan KODE BARU terhadap data restore yang SUDAH dimigrasi (rehearsal mode image; BACA-SAJA — tidak ada tulisan). Dijalankan di container backend baru dengan DATABASE_URL = DB rehearsal dan EXPECT_AKTIF = jumlah bahan aktif di produksi.
 // Membuktikan: (1) semua sesi hitung lama tetap model 1 dan terbaca (termasuk sesi 106 bahan) oleh kode baru; (2) bahan aktif seluruhnya terklasifikasi: masuk Opname penuh (saldo dilacak fisik) atau tampil sebagai tidak dilacak
 // dengan alasan — tidak ada yang hilang diam-diam; (3) aturan waktu murni bekerja; (4) tidak ada tulisan (sesi, baris, pergerakan stok).
@@ -537,6 +608,7 @@ REHNODE
   [ "$(RPSQL "select md5(coalesce(string_agg(migration_name||':'||checksum, ',' order by migration_name),'')) from _prisma_migrations where migration_name <> '${MIG_LIST# }'")" = "$(cat "$BK_DIR/mig-hash-sebelum-${mode}.txt")" ] || { reh_drop; die "riwayat migrasi lama (checksum) BERUBAH"; }
   RPSQL "$FP_BEKU_SQL" | LC_ALL=C sort > "$BK_DIR/fp-reh-beku-sesudah-${mode}.txt" || { reh_drop; die "sidik jari beku sesudah gagal"; }
   cmp -s "$BK_DIR/data-sebelum.txt" "$BK_DIR/fp-reh-beku-sesudah-${mode}.txt" || { diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/fp-reh-beku-sesudah-${mode}.txt" || true; reh_drop; die "dokumen pembanding beku (stok, saldo, jurnal, PO, tagihan, pembayaran, Produksi) berubah oleh migrasi/uji"; }
+  if [ "$REHEARSAL_PENUH" = "1" ]; then rehearsal_penuh_lanjutan; fi
   reh_drop
   ok "rehearsal (${mode}) lulus: isi $(printf '%s\n' "$TABEL_LAMA" | grep -c .) tabel lama IDENTIK sebelum vs sesudah; saldo per bahan + jurnal + PO + tagihan + pembayaran + Produksi tidak berubah; DB sementara dihapus"
 }
@@ -547,6 +619,50 @@ if [ "$REHEARSAL_ONLY" = "1" ]; then
   rehearsal git
   say "Rehearsal selesai (--rehearsal-only): PRODUKSI TIDAK DIUBAH (tanpa build, tanpa release dir, tanpa migrasi produksi, tanpa switch). Backup: ${BACKUP_FILE}"
   trap - EXIT; exit 0
+fi
+
+if [ "$REHEARSAL_PENUH" = "1" ]; then
+  PHASE="3c-rehearsal-penuh"; say "3c. REHEARSAL PENUH: build web + image kandidat bertag rehearsal (tag production tidak disentuh), restore backup NYATA, migrasi pada DB rehearsal, skenario — production TIDAK diubah selain backup dan DB sementara"
+  WS="$HOME/release-rehearsal/op-${DEPLOY_SHORT}-${TS}"; CAND_DIR="$WS"; REH_IMG="${IMG_NAME%%:*}:rehearsal-op-${DEPLOY_SHORT}"
+  NET="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$(dcp "$PREV_DIR" ps -q postgres </dev/null)" | awk '{print $1}')"; [ -n "$NET" ] || die "jaringan docker postgres tidak terbaca"
+  [ "$(sg ls-remote origin "refs/heads/${CAND_BRANCH}" | cut -f1)" = "$DEPLOY_SHA" ] || die "kandidat berubah selama backup"
+  [ "$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$CID_OLD")" = "$PREV_DIR" ] || die "release aktif berubah selama backup"
+  mkdir -p "$WS" || die "gagal membuat ${WS}"
+  sg archive "$DEPLOY_SHA" | tar -x -C "$WS" --exclude='frontend/dist' || die "git archive gagal"
+  [ ! -e "$WS/backend/.env" ] || die "backend/.env tidak boleh ada di arsip"
+  for f in backend/Dockerfile backend/package.json frontend/package.json scripts/rollback-guard-opname-penuh.sh scripts/lib/rehearsal-skenario-opname-penuh.mjs scripts/lib/smoke-opname-penuh.mjs docker-compose.yml docker-compose.release.yml; do [ -f "$WS/$f" ] || die "direktori kerja tidak lengkap: $f"; done
+  cp -a "$NM_SRC" "$WS/frontend/node_modules" || die "gagal menyalin node_modules frontend"
+  install -m 600 "$PERSIST/frontend/.env" "$WS/frontend/.env" || die "gagal menyalin frontend/.env"
+  ( cd "$WS/frontend" && npm run build ) > "$BK_DIR/build-frontend.log" 2>&1 || { rm -f "$WS/frontend/.env"; tail -n 25 "$BK_DIR/build-frontend.log"; die "build frontend gagal (production tidak berubah)"; }
+  rm -f "$WS/frontend/.env"
+  RH_INDEX="$(grep -o 'index-[A-Za-z0-9_-]*\.js' "$WS/frontend/dist/index.html" | sed -n 1p)"; [ -n "$RH_INDEX" ] && [ -f "$WS/frontend/dist/assets/$RH_INDEX" ] || die "hasil build frontend tidak valid"
+  for s1 in "Kapan barang ini dihitung?" "Mulai hitung semua yang tampil" "Pergerakan sejak bahan dihitung" "Tekan tepat sebelum menghitung barangnya" "bahan aktif tidak dilacak"; do [ -n "$(grep -lF "$s1" "$WS"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist rehearsal TIDAK memuat teks fitur rilis ini: ${s1}"; done
+  for s2 in "Ajukan Koreksi Stok" "Koreksi Penerimaan" "Konfirmasi Barang Jadi" "Selesaikan Produksi" "Rencana Produksi" "Uang muka dialokasikan ke faktur" "Tetapkan Siap Kirim (override)" "Riwayat referensi dari file (bukan transaksi)" "Simpan ke Stok" "Barang Akan Datang"; do [ -n "$(grep -lF "$s2" "$WS"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist rehearsal KEHILANGAN teks fitur lama: ${s2}"; done
+  [ "$RH_INDEX" != "$PREV_INDEX" ] || die "frontend berubah tetapi bundel rehearsal identik dengan live"
+  ok "build web kandidat: ${RH_INDEX} (live ${PREV_INDEX}); teks fitur opname baru ada; teks fitur live lama tetap ada"
+  docker build -t "$REH_IMG" -f "$WS/backend/Dockerfile" "$WS/backend" > "$BK_DIR/build-rehearsal.log" 2>&1 </dev/null || { tail -n 25 "$BK_DIR/build-rehearsal.log"; die "build image rehearsal gagal (production tidak berubah)"; }
+  RH_IMG_ID="$(docker image inspect -f '{{.Id}}' "$REH_IMG")"; [ "$RH_IMG_ID" != "$PREV_IMG_ID" ] || die "image rehearsal identik dengan live"
+  [ "$(docker image inspect -f '{{.Id}}' "$IMG_NAME")" = "$PREV_IMG_ID" ] || die "tag image PRODUCTION berubah selama build — berhenti"
+  [ "$(docker inspect -f '{{.Image}}' "$CID_OLD")" = "$PREV_IMG_ID" ] || die "container aktif berubah saat build"
+  ok "image rehearsal ${REH_IMG} (${RH_IMG_ID:7:12}); tag production ${IMG_NAME} tetap ${PREV_IMG_ID:7:12}; container aktif tidak tersentuh"
+  PHASE="5b-rehearsal"; say "5b. REHEARSAL: restore backup NYATA ke DB sementara, migrasi dengan image kandidat, uji perilaku, kode baru terhadap data restore, sidik jari semua tabel lama, lalu skenario (DB production tidak disentuh)"
+  rehearsal image
+  cleanup_penuh
+  PHASE="3d-production-tidak-berubah"; say "3d. Verifikasi production TIDAK berubah oleh rehearsal"
+  [ "$(docker inspect -f '{{.Image}}' "$CID_OLD")" = "$PREV_IMG_ID" ] && [ "$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$CID_OLD")" = "$PREV_DIR" ] && [ "$(docker inspect -f '{{.RestartCount}}' "$CID_OLD")" = "0" ] && [ "$(docker inspect -f '{{.State.Running}}' "$CID_OLD")" = "true" ] || die "container production berubah"
+  curl -fsS --max-time 8 "${INTERNAL_URL}/api/health" | grep '"ok":true' >/dev/null || die "healthcheck internal setelah rehearsal gagal"
+  psql_live -At -c "select migration_name from _prisma_migrations where finished_at is not null and rolled_back_at is null order by 1" | LC_ALL=C sort -u > "$BK_DIR/applied-sesudah-rehearsal.txt"
+  cmp -s "$BK_DIR/applied-sebelum.txt" "$BK_DIR/applied-sesudah-rehearsal.txt" || die "daftar migrasi production berubah selama rehearsal"
+  [ "$(psql_live -At -c "select count(*) from information_schema.columns where table_schema='public' and table_name='stock_counts' and column_name='model_version'")" = "0" ] || die "kolom model_version muncul di production (rehearsal tidak boleh memigrasi production)"
+  psql_live -At -c "$FP_BEKU_SQL" | LC_ALL=C sort > "$BK_DIR/data-sesudah-rehearsal.txt" || die "sidik jari beku production sesudah rehearsal gagal"
+  diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/data-sesudah-rehearsal.txt" >/dev/null || { diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/data-sesudah-rehearsal.txt" || true; die "dokumen pembanding production BERUBAH selama rehearsal"; }
+  [ "$(psql_live -At -c "select count(*) from pg_database where datname like 'rehearsal_op_test_%'")" = "0" ] || die "DB rehearsal masih tersisa di server"
+  [ ! -e "$WS" ] || die "direktori kerja rehearsal masih ada"
+  [ -z "$(docker images -q "$REH_IMG")" ] || die "image rehearsal masih ada"
+  ok "production TIDAK berubah: container/image/release sama, 0 restart, migrasi sama (${MIG_SEBELUM}), 16 kelompok dokumen pembanding identik, tanpa kolom opname, DB rehearsal + direktori kerja + image rehearsal sudah dihapus; satu-satunya jejak: backup ${BACKUP_FILE}"
+  trap - EXIT
+  say "REHEARSAL PENUH SELESAI — production TIDAK diubah, tidak ada deploy, tidak ada sesi opname dibuat di production. Backup: ${BACKUP_FILE}. Log: ${BK_DIR}/release.log"
+  exit 0
 fi
 
 PHASE="4-release-dir"; say "4. Release dir ${NEW_DIR} (git archive; release aktif tidak disentuh)"
@@ -674,7 +790,7 @@ const jwt = require("jsonwebtoken");
 const { PrismaClient } = require("@prisma/client");
 const { PERMISSIONS: P, ROLE_PERMISSIONS } = await import((await import("node:url")).pathToFileURL("/app/src/constants/permissions.js").href);
 const prisma = new PrismaClient();
-const BASE = "http://127.0.0.1:4000";
+const BASE = process.env.SMOKE_BASE || "http://127.0.0.1:4000"; // rehearsal memakai server sementara; production = backend yang melayani
 let fail = 0; let dilewati = 0;
 const rec = (n, ok, d = "") => { if (!ok) fail++; console.log(`  ${ok ? "PASS" : "FAIL"}  ${n}${d ? " — " + d : ""}`); };
 const skip = (n, alasan) => { dilewati++; console.log(`  SKIP  ${n} — DILEWATI: ${alasan}`); };

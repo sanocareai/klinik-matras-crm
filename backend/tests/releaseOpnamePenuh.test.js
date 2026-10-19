@@ -115,7 +115,7 @@ test("rehearsal: restore bersih, identik dengan produksi, struktur 15 kolom + 5 
   assert.equal((script.match(/lolos := lolos \+ 1/g) ?? []).length, 4, "4 operasi sah");
   assert.ok(script.includes('[ "$UJI_TOLAK" = "6" ]') && script.includes('[ "$UJI_LOLOS" = "4" ]'), "hitungan yang diharapkan sama dengan isi blok uji");
   assert.ok(script.includes("FPB_N=16") && script.includes("'sesi_hitung'") && script.includes("'sesi_hitung_baris'"), "sidik jari beku mencakup sesi hitung lama dan barisnya (tanpa kolom baru)");
-  const iGit = script.indexOf("rehearsal git"), iImg = script.indexOf("rehearsal image"), iMig = script.indexOf('PHASE="6-migrate"'), iSw = script.indexOf('PHASE="7-switch"'), iSmoke = script.indexOf('PHASE="8b-smoke"');
+  const iGit = script.indexOf("rehearsal git"), iImg = script.lastIndexOf("rehearsal image"), iMig = script.indexOf('PHASE="6-migrate"'), iSw = script.indexOf('PHASE="7-switch"'), iSmoke = script.indexOf('PHASE="8b-smoke"');
   assert.ok(iGit > 0 && iImg > 0 && iMig > iImg && iSw > iMig && iSmoke > iSw, "urutan: rehearsal → migrate → switch → smoke");
   assert.ok(script.indexOf('PHASE="5-build-image"') < iImg, "rehearsal image memakai image baru");
   assert.ok(script.indexOf('if [ "$REHEARSAL_ONLY" = "1" ]') > script.indexOf('PHASE="3-backup"') && script.indexOf('if [ "$REHEARSAL_ONLY" = "1" ]') < script.indexOf('PHASE="4-release-dir"'), "--rehearsal-only: sesudah backup, sebelum release dir/build/migrasi/switch");
@@ -165,4 +165,38 @@ test("skrip tersimpan identik dengan hasil generator terhadap repo ini (bila rep
   assert.ok(tersimpan.includes(`SCAN_EXPECT='${pindai(migSql).stdout.trim()}'`), "hasil pemindai tersimpan = hasil nyata");
   assert.equal(sha(lf(tpl)).slice(0, 12), tersimpan.match(/templat sha256 ([0-9a-f]{12})…/)[1], "skrip dibangkitkan dari templat yang sekarang");
   if (punyaBash) assert.equal(spawnSync("bash", ["-n", path.join(root, "scripts/release-opname-penuh.sh")]).status, 0, "sintaks bash valid");
+});
+
+test("--rehearsal-penuh: mode terpisah, production tidak disentuh (tag image, migrasi, container), pembersih hanya untuk artefak rehearsal, tanpa env production, JWT acak", () => {
+  for (const x of ['REHEARSAL_PENUH=0', '--rehearsal-penuh', '--tahan-ui=*', 'pilih SATU mode saja', '--tahan-ui hanya bersama --rehearsal-penuh', 'cleanup_penuh()', 'rehearsal_penuh_lanjutan()', 'bk_run()',
+    'tag image PRODUCTION berubah selama build', 'container production berubah', 'daftar migrasi production berubah selama rehearsal', 'kolom model_version muncul di production', 'dokumen pembanding production BERUBAH selama rehearsal',
+    'DB rehearsal masih tersisa di server', 'REHEARSAL PENUH SELESAI — production TIDAK diubah']) assert.ok(script.includes(x), x);
+  // urutan: backup → rehearsal penuh → (keluar) sebelum release dir / migrate / switch production
+  const iBackup = script.indexOf('PHASE="3-backup"'), i3c = script.indexOf('PHASE="3c-rehearsal-penuh"'), iRel = script.indexOf('PHASE="4-release-dir"'), iExit = script.indexOf("REHEARSAL PENUH SELESAI");
+  assert.ok(iBackup > 0 && i3c > iBackup && iExit > i3c && iExit < iRel, "rehearsal penuh keluar SEBELUM release dir, build production, migrate, dan switch");
+  const blok = script.slice(i3c, iExit);
+  assert.doesNotMatch(blok, /migrate deploy|up -d|docker compose[^\n]* up|docker tag |--force-recreate/, "blok rehearsal penuh tidak memigrasi production, tidak menyalakan/men-tag container production");
+  assert.match(blok, /docker build -t "\$REH_IMG"/, "image dibangun dengan tag rehearsal sendiri");
+  assert.doesNotMatch(blok, /docker build -t "\$IMG_NAME"|dcp "\$NEW_DIR" build/, "tag production tidak pernah ditimpa");
+  // pembersih: hanya direktori kerja di ~/release-rehearsal/op-*, SATU tag rehearsal, dan DB rehearsal_op_test_image_*
+  const pembersih = script.match(/cleanup_penuh\(\) \{[\s\S]*?\n\}/)[0];
+  assert.match(pembersih, /\$HOME\/release-rehearsal\/op-/); assert.match(pembersih, /:rehearsal-op-/); assert.match(pembersih, /\^rehearsal_op_test_image_\[0-9_\]\+\$/); assert.doesNotMatch(pembersih, /rm -rf[^\n]*\$HOME"|docker system prune|docker rmi "\$IMG_NAME"/);
+  // container rehearsal tidak membawa env production
+  const lanjutan = script.match(/rehearsal_penuh_lanjutan\(\) \{[\s\S]*?\n\}\n/)[0]; const bk = script.match(/bk_run\(\) \{[\s\S]*?\n\}/)[0];
+  assert.doesNotMatch(lanjutan + bk, /--env-file|backend\/\.env|SANSS_PERSIST_ROOT=.*docker run/, "container rehearsal TIDAK memakai env production");
+  assert.match(lanjutan, /openssl rand -hex 32/, "JWT rehearsal acak, bukan rahasia production"); assert.doesNotMatch(lanjutan, /JWT_SECRET=\$\(.*\.env/);
+  assert.match(lanjutan, /-p 127\.0\.0\.1:4311:4100/, "UI hanya di loopback VPS");
+  for (const x of ["S3 Selesaikan DITOLAK", "S3 tidak ada keputusan bawaan", "S4a Selesaikan MENUNGGU kunci", "S4b ronde 2", "S5 Selesaikan ganda", "S6 Selesaikan sesi penuh lulus", "GUARD MENOLAK", "GUARD LULUS"]) assert.ok(lanjutan.includes(x), x);
+  assert.match(script, /rehearsal_op_test_\$\{mode\}_\$\{TS\}/, "nama DB rehearsal memuat 'test' (pagar skenario)");
+  if (punyaBash) assert.equal(spawnSync("bash", ["-n", path.join(root, "scripts/release-opname-penuh.sh")]).status, 0);
+});
+
+test("skenario rehearsal: hanya ke DB rehearsal (pagar nama), server Express minimal tanpa cron/WAHA, token UI tidak dicetak, pembuktian pergerakan baru setelah review ada", () => {
+  const sk = baca("scripts/lib/rehearsal-skenario-opname-penuh.mjs");
+  assert.match(sk, /tests\/integration\/setup\/env\.js/, "memakai pagar nama DB 'test'"); assert.doesNotMatch(sk, /import\(["'][^"']*src\/index\.js/, "tidak mengimpor app production utuh (cron/WAHA/Socket.IO)");
+  assert.match(sk, /buildTestApp/); assert.match(sk, /RH_UI_SIAP"\)/, "UI tidak mencetak token"); assert.doesNotMatch(sk, /console\.log\([^)]*token/i);
+  for (const x of ["S1 tiga waktu", "S2 mundur + MI", "S3 pergerakan baru setelah review", "S4a kunci", "S4b serentak", "S5 klik ganda", "S6 sesi penuh", "S7 sesi terbuka untuk guard", "PERGERAKAN_SESI_BELUM_DITANDAI", "tanda-massal", "complete"]) assert.ok(sk.includes(x), x);
+  assert.doesNotMatch(sk, /process\.env\.PRODUCTION|klinik_matras["']/, "tidak menyebut database production");
+  const guard = baca("scripts/rollback-guard-opname-penuh.sh"); assert.match(guard, /GUARD_DB:-klinik_matras/);
+  assert.match(baca("scripts/lib/smoke-opname-penuh.mjs"), /SMOKE_BASE/);
 });

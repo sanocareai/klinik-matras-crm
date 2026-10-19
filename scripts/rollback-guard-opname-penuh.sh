@@ -6,7 +6,7 @@
 #   Guard menolak (exit 1) selama ada sesi model baru yang terbuka — selesaikan atau batalkan dulu lewat Stock Opname. Sesi model baru yang sudah COMPLETED/CANCELLED tidak berbahaya (tidak bisa diubah lagi).
 #   Exit 0 = aman (tidak ada sesi model baru terbuka).
 set -Eeuo pipefail
-PROJECT="klinik-matras"; DB_USER="klinik"; DB_NAME="klinik_matras"
+PROJECT="klinik-matras"; DB_USER="klinik"; DB_NAME="${GUARD_DB:-klinik_matras}" # GUARD_DB hanya untuk rehearsal (DB sementara); tanpa itu = database production (baca-saja)
 PERSIST="${HOME}/klinik-matras"
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 dcp() { ( cd "$DIR" && SANSS_PERSIST_ROOT="$PERSIST" docker compose -p "$PROJECT" -f docker-compose.yml -f docker-compose.release.yml "$@" ); }

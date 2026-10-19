@@ -6,7 +6,7 @@ const jwt = require("jsonwebtoken");
 const { PrismaClient } = require("@prisma/client");
 const { PERMISSIONS: P, ROLE_PERMISSIONS } = await import((await import("node:url")).pathToFileURL("/app/src/constants/permissions.js").href);
 const prisma = new PrismaClient();
-const BASE = "http://127.0.0.1:4000";
+const BASE = process.env.SMOKE_BASE || "http://127.0.0.1:4000"; // rehearsal memakai server sementara; production = backend yang melayani
 let fail = 0; let dilewati = 0;
 const rec = (n, ok, d = "") => { if (!ok) fail++; console.log(`  ${ok ? "PASS" : "FAIL"}  ${n}${d ? " — " + d : ""}`); };
 const skip = (n, alasan) => { dilewati++; console.log(`  SKIP  ${n} — DILEWATI: ${alasan}`); };
