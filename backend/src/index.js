@@ -48,6 +48,7 @@ import { adminRouter }    from "./routes/admin.js";
 import { unitRouter }     from "./routes/units.js";
 import { morningPriorityRouter } from "./routes/morningPriority.js";
 import { productionRouter } from "./routes/production.js";
+import { productionAdopsiRouter } from "./routes/productionAdopsi.js";
 import { activityRouter } from "./routes/activity.js";
 import { armadaRouter }     from "./routes/armada.js";
 import { deliveryV2Router } from "./routes/deliveryV2.js";
@@ -254,6 +255,7 @@ app.use("/api/units",        jejakBahanUnitRouter); // jejak biaya bahan per uni
 app.use("/api/units",        unitRouter);
 app.use("/api/morning-priority-requests", morningPriorityRouter);
 app.use("/api/production",   productionRouter);
+app.use("/api/production",   productionAdopsiRouter); // adopsi Admin: panel unit, rencana bahan, status kerja manual, ekspor Excel
 app.use("/api/activity",     activityRouter);
 app.use("/api/complaints",   complaintsRouter);
 app.use("/api/armada",       armadaRouter);

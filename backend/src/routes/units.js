@@ -7,6 +7,7 @@ import express from "express";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { createHash } from "node:crypto";
 import multer from "multer";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, PERMISSIONS as P } from "../middleware/authorize.js";
@@ -630,9 +631,10 @@ unitRouter.get("/:id/materials", requirePermission(P.UNIT_READ), async (req, res
     const movements = await prisma.stockMovement.findMany({
       where: { unitId: req.params.id, type: { in: ["ISSUE", "RETURN", "WASTE"] } },
       select: {
-        id: true, type: true, qty: true, reason: true, note: true, createdAt: true,
+        id: true, type: true, qty: true, reason: true, note: true, createdAt: true, materialIssueId: true,
         material: { select: { id: true, code: true, name: true, unit: true } },
         createdBy: { select: { id: true, name: true } },
+        materialIssue: { select: { id: true, issueNumber: true } }, // dokumen sumber (Material Issue Gudang); null = dicatat langsung oleh Produksi
       },
       orderBy: { createdAt: "desc" },
     });
@@ -685,16 +687,38 @@ unitRouter.post("/:id/materials", requirePermission(P.UNIT_MATERIAL_WRITE), asyn
     const type = rawQty > 0 ? "ISSUE" : "RETURN";
     const ledgerQty = -rawQty;
 
-    const movement = await prisma.$transaction(async (tx) => {
-      await guardV1UnitWrite(tx, unit.id, { what: "pemakaian bahan", actorId: req.user.id }); // kunci unit -> kepemilikan -> tulis, satu transaksi
-      const mv = await postStockMovement(tx, {
-        materialId, type, qty: ledgerQty, unitId: unit.id,
-        note: note || null, createdById: req.user.id,
+    // IDEMPOTENSI (adopsi Admin, Okt 2026): header Idempotency-Key (12–128 karakter) membuat pencatatan pemakaian bahan terjadi TEPAT SEKALI walau diklik ulang, di-retry saat jaringan putus,
+    // atau dikirim dua kali bersamaan. Baris perintah (v2_commands, unik per pelaku+kunci) ditulis PERTAMA di transaksi yang sama dengan pergerakan stok: kiriman kedua menunggu lalu gagal P2002
+    // dan seluruh transaksinya dibatalkan (tidak ada pergerakan ganda). Tanpa header = perilaku lama (klien lama tidak berubah).
+    const kunci = String(req.get("Idempotency-Key") || "").trim();
+    if (kunci && (kunci.length < 12 || kunci.length > 128)) return res.status(400).json({ error: "Idempotency-Key harus 12–128 karakter", code: "IDEMPOTENCY_KEY_INVALID" });
+    const requestHash = createHash("sha256").update(JSON.stringify({ unitId: unit.id, materialId, qty: rawQty, note: note || null })).digest("hex");
+
+    let movement;
+    try {
+      movement = await prisma.$transaction(async (tx) => {
+        if (kunci) await tx.v2Command.create({ data: { domain: "PRODUCTION_V1", actorId: req.user.id, idempotencyKey: kunci, commandType: "UNIT_MATERIAL_USAGE_V1", aggregateType: "unit", aggregateId: unit.id, requestHash, status: "PROCESSING" } });
+        await guardV1UnitWrite(tx, unit.id, { what: "pemakaian bahan", actorId: req.user.id }); // kunci unit -> kepemilikan -> tulis, satu transaksi
+        const mv = await postStockMovement(tx, {
+          materialId, type, qty: ledgerQty, unitId: unit.id,
+          note: note || null, createdById: req.user.id,
+        });
+        // HPP: nilai pemakaian/koreksi dibukukan di transaksi yang sama (atau gap terlihat) — jalur ini dulu menulis stok tanpa jejak nilai sama sekali.
+        await bukukanNilaiPergerakanBaru(tx, mv, { userId: req.user.id });
+        if (kunci) await tx.v2Command.update({ where: { actorId_idempotencyKey: { actorId: req.user.id, idempotencyKey: kunci } }, data: { status: "APPLIED", response: { movementId: mv.id }, completedAt: new Date() } });
+        return mv;
       });
-      // HPP: nilai pemakaian/koreksi dibukukan di transaksi yang sama (atau gap terlihat) — jalur ini dulu menulis stok tanpa jejak nilai sama sekali.
-      await bukukanNilaiPergerakanBaru(tx, mv, { userId: req.user.id });
-      return mv;
-    });
+    } catch (e) {
+      if (kunci && e?.code === "P2002") {
+        const cmd = await prisma.v2Command.findUnique({ where: { actorId_idempotencyKey: { actorId: req.user.id, idempotencyKey: kunci } } });
+        if (cmd && cmd.requestHash !== requestHash) return res.status(409).json({ error: "Idempotency-Key ini sudah dipakai untuk isian yang berbeda", code: "IDEMPOTENCY_KEY_REUSED" });
+        const mvId = cmd?.response?.movementId;
+        const ada = mvId ? await prisma.stockMovement.findUnique({ where: { id: mvId } }) : null;
+        if (ada) { res.setHeader("Idempotent-Replay", "true"); return res.status(200).json(ada); }
+        return res.status(409).json({ error: "Permintaan yang sama sedang diproses; coba lagi sebentar", code: "IDEMPOTENCY_IN_PROGRESS" });
+      }
+      throw e;
+    }
     res.status(201).json(movement);
   } catch (err) {
     handleEngineError(err, res);

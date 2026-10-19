@@ -228,6 +228,8 @@ export const EVENT_TYPES = Object.freeze({
   // Admin override: unit ditetapkan Siap Kirim saat pencatatan produksi belum selesai (keputusan Admin/Owner; Run & tahap TIDAK ditutup, tanpa klaim pemeriksaan) — lihat productionStepCommandService.js#releaseUnitForDelivery.
   PRODUCTION_DELIVERY_RELEASED: "PRODUCTION_DELIVERY_RELEASED",
   PRODUCTION_FOLLOWS_ORDER: "PRODUCTION_FOLLOWS_ORDER", // order dibatalkan/ditandai Siap Kirim/Terkirim oleh Sales: Production Run + rencana + permintaan bahan diselaraskan otomatis (siapa, kapan, sebelum–sesudah)
+  PRODUCTION_STATUS_KERJA_MANUAL: "PRODUCTION_STATUS_KERJA_MANUAL", // Admin/Lead mencatat status kerja Produksi secara manual (adopsi Admin; tanpa tahap/QC/foto palsu)
+  PRODUCTION_RENCANA_BAHAN_DISIMPAN: "PRODUCTION_RENCANA_BAHAN_DISIMPAN", // rencana bahan per unit disimpan/direvisi (TIDAK mengurangi stok)
   DELIVERY_MANUAL_RECORDED: "DELIVERY_MANUAL_RECORDED", // koreksi: pengiriman yang sudah terjadi dicatat manual ke rute yang SUDAH selesai (services/koreksiPengirimanRute.js)
   PRODUCTION_DISPATCHED_BEFORE_DONE: "PRODUCTION_DISPATCHED_BEFORE_DONE", // unit berangkat/terkirim lewat Route Planner saat pencatatan produksi belum selesai (Run diberi penanda dilepas)
   PRODUCTION_ADAPTATION_APPLIED: "PRODUCTION_ADAPTATION_APPLIED",
@@ -519,6 +521,10 @@ export function formatActivitySentence(event) {
       return `Admin override: unit ${metadata.unitCode || "—"} ditetapkan Siap Kirim oleh ${metadata.deciderName || "Admin"} saat pencatatan produksi belum selesai (lokasi pengambilan ${metadata.locationCode || "—"}; ${metadata.unitStatusBefore || "—"} → ${metadata.unitStatusAfter || "—"}) — Run produksi belum ditutup. Alasan: ${metadata.reason || "—"}`;
     case EVENT_TYPES.PRODUCTION_FOLLOWS_ORDER:
       return ringkasIkutOrder(metadata);
+    case EVENT_TYPES.PRODUCTION_STATUS_KERJA_MANUAL:
+      return `Status kerja unit ${metadata.unitCode || "—"} dicatat manual oleh ${metadata.deciderName || "Admin"}: ${metadata.from ? `${metadata.from} → ` : ""}${metadata.to || "—"}${metadata.note ? ` (${metadata.note})` : ""}. Bukan hasil aplikasi Meja; tidak ada tahap, QC, foto, atau pemakaian bahan yang dibuat`;
+    case EVENT_TYPES.PRODUCTION_RENCANA_BAHAN_DISIMPAN:
+      return `Rencana bahan unit ${metadata.unitCode || "—"} disimpan oleh ${metadata.deciderName || "Admin"} (revisi ${metadata.revision ?? "—"}, ${metadata.jumlahPerubahan ?? 0} perubahan)${metadata.alasan ? `: ${metadata.alasan}` : ""}. Rencana tidak mengurangi stok`;
     case EVENT_TYPES.DELIVERY_MANUAL_RECORDED:
       return `Pengiriman unit ${metadata.unitCode || "—"} dicatat manual ke rute ${metadata.routeCode || "—"} (stop ke-${metadata.stopSequence ?? "—"}, ${metadata.jamKejadian === "tidak diketahui" ? `tanggal ${metadata.tanggalKejadian || "—"}, jam serah-terima tidak diketahui` : `jam ${metadata.waktuTerkirim || "—"}`}) oleh ${metadata.deciderName || "Admin"} sebagai KOREKSI DATA: ${metadata.reason || "—"}${Array.isArray(metadata.fotoBukti) && metadata.fotoBukti.length ? `; bukti kirim: ${metadata.fotoBukti.length} foto (lihat di job)` : "; tanpa foto bukti"}. Bukan hasil aksi driver; status tahap Produksi tidak diubah`;
     case EVENT_TYPES.PRODUCTION_DISPATCHED_BEFORE_DONE:

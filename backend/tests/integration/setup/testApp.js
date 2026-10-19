@@ -37,6 +37,7 @@ const { replenishmentRouter } = await import("../../../src/routes/replenishment.
 const { warehouseReportsRouter } = await import("../../../src/routes/warehouseReports.js");
 const { unitRouter } = await import("../../../src/routes/units.js");
 const { productionRouter } = await import("../../../src/routes/production.js");
+const { productionAdopsiRouter } = await import("../../../src/routes/productionAdopsi.js");
 const { morningPriorityRouter } = await import("../../../src/routes/morningPriority.js");
 const { financeRouter } = await import("../../../src/routes/finance.js");
 const { financeTxRouter } = await import("../../../src/routes/financeTransactions.js");
@@ -110,6 +111,7 @@ export function buildTestApp() {
   app.use("/api/units", jejakBahanUnitRouter);
   app.use("/api/units", unitRouter);
   app.use("/api/production", productionRouter); // P12B.5: work-orders (penanda sumber V1/V2)
+  app.use("/api/production", productionAdopsiRouter); // adopsi Admin: panel unit, rencana bahan, status kerja manual, ekspor Excel
   app.use("/api/morning-priority-requests", morningPriorityRouter);
   app.use("/api/inventory", inventoryRouter);
   app.use("/api/inventory/goods-receipts", jejakPenerimaanRouter);

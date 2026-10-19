@@ -39,6 +39,7 @@ import { wajibUuid } from "../lib/uuidParam.js";
 import { pesanServerAman } from "../lib/galatServerAman.js";
 const UNIT_STATUS_VALUES = Object.freeze(["AWAITING_PICKUP", "IN_TRANSIT_IN", "RECEIVED", "IN_PRODUCTION", "READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD", "IN_TRANSIT_OUT", "DELIVERED", "CANCELLED"]); // = enum UnitStatus (schema.prisma)
 import { loadOpenComplaintsByUnit } from "../services/productionComplaints.js";
+import { listWorkOrders } from "../services/productionOrderList.js";
 import { PKR_ORDER_SELECT, PKR_UNIT_ITEM_SELECT, rujukanPkrDariOrder, pesanPkrBelumLengkap } from "../services/pkrProduksiGuard.js";
 
 export const productionRouter = express.Router();
@@ -376,148 +377,11 @@ productionRouter.get("/orders/:orderId/documentation", requirePermission(P.UNIT_
 // UI menampilkannya apa adanya, bukan menebak.
 productionRouter.get("/work-orders", requirePermission(P.UNIT_READ), async (req, res) => {
   try {
-    const { status, serviceLine, q } = req.query;
-    // Simplifikasi slice 1 — paginasi + filter status tampilan di SERVER (sebelumnya berhenti di 500 unit). Tanpa page/pageSize: halaman 1 berukuran 100
-    // (bukan seluruh daftar) dan respons memuat total/hasMore supaya pemanggil tahu masih ada sisanya. displayStatus = Pengambilan|Diproses|Siap Kirim|Terkirim.
-    const pageSize = Math.min(Math.max(parseInt(req.query.pageSize, 10) || 100, 1), 200);
-    const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
-    // displayStatus boleh daftar dipisah koma (mis. PENGAMBILAN,DIPROSES,SIAP_KIRIM untuk "Aktif" = semua kecuali Terkirim).
-    const displayFilter = String(req.query.displayStatus || "").toUpperCase().split(",").filter((k) => k in DISPLAY_STATUS_UNIT_FILTER);
-    const displayUnitStatuses = displayFilter.length ? [...new Set(displayFilter.flatMap((k) => DISPLAY_STATUS_UNIT_FILTER[k]))] : null;
-    // Milestone global (Pengambilan · Diterima di Workshop · Diproses · Siap Kirim · Dalam Pengiriman · Terkirim [· Dibatalkan]) — filter BERBASIS BUKTI di server
-    // (lib/domain/workshopMilestone.js). Pickup selesai tanpa bukti terima tetap Pengambilan. Parameter lama displayStatus tidak berubah artinya.
-    const globalKeys = String(req.query.globalStatus || "").toUpperCase().split(",").filter((k) => k in GLOBAL_STATUS);
-    const globalWhere = globalKeys.length && !status ? unitWhereForGlobalStatuses(globalKeys) : null;
-    // statusIn = daftar status unit TERSIMPAN (mentah) dipisah koma — untuk pemanggil yang butuh himpunan teknis (mis. unit di luar papan = RECEIVED,IN_PRODUCTION).
-    const statusIn = String(req.query.statusIn || "").toUpperCase().split(",").filter((k) => UNIT_STATUS_VALUES.includes(k));
-    const where = {
-      ...(status && { status }),
-      ...(displayUnitStatuses && !status ? { status: { in: displayUnitStatuses } } : {}),
-      ...(statusIn.length && !status && !displayUnitStatuses ? { status: { in: statusIn } } : {}),
-      ...(globalWhere ? { AND: [globalWhere] } : {}),
-      ...(req.query.real === "1" ? { order: { status: { not: "CANCELLED" }, customer: { pipelineStage: { not: "SPAM" }, isInternalStaff: false } } } : {}),
-      ...(serviceLine && { serviceLine }),
-      ...(q?.trim() && {
-        OR: [
-          { unitCode: { contains: q.trim(), mode: "insensitive" } },
-          { order: { orderNumber: { contains: q.trim(), mode: "insensitive" } } },
-          { order: { customer: { name: { contains: q.trim(), mode: "insensitive" } } } },
-        ],
-      }),
-    };
-
-    const units = await prisma.unit.findMany({
-      where,
-      include: {
-        // defaultWorkCenter (Slice 4E/4O) — fallback tampilan kolom Work
-        // Center kalau tahap ini belum pernah ditugaskan eksplisit lewat
-        // StageAssignment. SATU JOIN dalam query yang SAMA, bukan query
-        // tambahan.
-        currentStage: {
-          select: {
-            id: true, code: true, labelId: true, phase: true, requiresQc: true,
-            defaultWorkCenter: { select: { id: true, code: true, name: true } },
-          },
-        },
-        service: { select: { id: true, code: true, labelId: true, serviceLine: true } },
-        order: {
-          select: {
-            id: true, orderNumber: true, status: true, ...PKR_ORDER_SELECT,
-            items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } }, // Layanan Sales (satu-satunya layanan yang ditampilkan)
-            customer: { select: { id: true, name: true } },
-          },
-        },
-        ...PKR_UNIT_ITEM_SELECT,
-      },
-      orderBy: [{ createdAt: "desc" }, { id: "asc" }],
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    });
-    const totalMatching = await prisma.unit.count({ where });
-
-    // productionStatus level-UNIT (Production Core Slice 1/2) — DUA query
-    // batch, lihat catatan di GET /board soal isReworkTarget TIDAK dihitung
-    // di endpoint list, dan kenapa ini TIDAK menjadi 1+N seiring jumlah unit.
-    const unitIds = units.map((u) => u.id);
-    const [lastLogByUnitId, blockerByUnitId, assignmentByUnitId] = await Promise.all([
-      loadLastCurrentStageLogs(units),
-      loadOpenBlockersByUnit(unitIds),
-      // Kolom Work Center/Assigned To (Slice 4O) — SATU query batch
-      // tambahan, TIDAK bertambah seiring jumlah unit.
-      loadCurrentStageAssignments(units),
-    ]);
-    // Sumber V1/V2 per unit (P12B.5): cohort reader yang SAMA dengan Unit 360 (production-v2). READ-ONLY — tidak membuat Run/backfill; reader OFF = semua V1.
-    const readerState = resolveProductionReaderState(await loadV2Flags(prisma));
-    const v2Units = readerState.mode === PRODUCTION_READER_MODE.OFF ? new Set() : new Set(readerState.unitIds);
-    const complaintsByUnit = await loadOpenComplaintsByUnit(prisma, units.map((u) => ({ id: u.id, orderId: u.orderId })));
-    // Bukti milestone per unit (batch; tanpa N+1) + jadwal aktif (meja) untuk sumbu "status jadwal".
-    const [milestoneEvidence, plannedRows] = await Promise.all([
-      loadMilestoneEvidence(prisma, unitIds),
-      unitIds.length ? prisma.productionRun.findMany({
-        where: { unitId: { in: unitIds }, status: { notIn: ["COMPLETED", "CANCELLED"] }, plan: { is: { stationCode: { not: null }, status: { not: "CANCELLED" } } } },
-        select: { unitId: true },
-      }) : [],
-    ]);
-    const scheduledUnitIds = new Set(plannedRows.map((r) => r.unitId));
-    const unitsWithStatus = units.map((u) => {
-      const prio = priorityDisplay({ stored: u.priority, complaintCases: complaintsByUnit.get(u.id) || [] });
-      const ev = milestoneEvidence.get(u.id) || { receivedBasis: null, started: false, pickupCompleted: false };
-      const milestone = milestoneOf({ unitStatus: u.status, ...ev, scheduled: scheduledUnitIds.has(u.id) });
-      const lastLog = lastLogByUnitId[u.id] || null;
-      const blocker = blockerByUnitId[u.id] || null;
-      const assignment = assignmentByUnitId[u.id] || null;
-      const productionStatus = deriveProductionStatus({
-        unit: u, lastLog, hasOpenBlocker: !!blocker, currentStageRequiresQc: !!u.currentStage?.requiresQc,
-      });
-      return {
-        ...u, inProductionV2: v2Units.has(u.id), productionStatus,
-        // Rujukan Penjualan Karyawan (null untuk order biasa): badge + nomor PKR + karyawan + kirim/ambil sendiri + "Perlu dilengkapi" — tidak bergantung flag V2.
-        penjualanKaryawan: rujukanPkrDariOrder(u.order, { unit: u }),
-        // Kosakata sederhana (slice 1): status order/unit, keberadaan fisik, prioritas Normal·Tinggi·Komplain (Komplain dari ComplaintCase resmi). Enum mentah tetap ada di atas.
-        orderStatusDisplay: displayStatusOfOrder(u.order?.status), unitStatusDisplay: displayStatusOfUnit(u.status),
-        presence: physicalPresenceOf({ unitStatus: u.status, runStatus: null, runOrigin: null, inboundAccepted: ev.receivedBasis === "CUSTODY", staffConfirmed: ev.receivedBasis === "STAFF_CONFIRMED" }),
-        // Milestone global berbasis bukti + dasar bukti + status jadwal (keempat sumbu dipisah). Menunggu bahan tidak dihitung di daftar ini (butuh BOM/Material Issue per Run) -> tidak ditebak.
-        globalStatus: milestone.globalStatus, receivedBasis: milestone.receivedBasis, receivedBasisLabel: milestone.receivedBasisLabel, scheduleStatus: milestone.scheduleStatus,
-        priorityDisplay: { key: prio.key, label: prio.label, rank: prio.rank, complaintCases: prio.complaintCases },
-        productionStatusReason: describeProductionStatus(productionStatus, lastLog, blocker),
-        // Work Center/Assigned To (Slice 4O) — dari StageAssignment tahap
-        // sekarang (batch, di atas), fallback ke defaultWorkCenter tahap
-        // (sudah ikut ter-JOIN di query unit di atas, BUKAN query baru)
-        // kalau belum pernah ditugaskan eksplisit — sama logika dengan
-        // resolveEffectiveWorkCenterId di lib/domain/productionRouting.js.
-        workCenter: assignment?.workCenter || u.currentStage?.defaultWorkCenter || null,
-        assignedOperator: assignment?.operator ? { id: assignment.operator.id, name: assignment.operator.user.name } : null,
-        // Kolom "Execution State"/"Elapsed" (Production Core Slice 3P) —
-        // SENGAJA dihitung dari `lastLog` yang SUDAH batch-loaded di atas
-        // (loadLastCurrentStageLogs, satu query untuk SELURUH daftar), BUKAN
-        // query/attempt-reconstruction per unit — itu tetap tugas Unit Detail
-        // (`getUnitStatus().execution`, lihat unitStageEngine.js). Yang
-        // ditampilkan di sini cuma "sejak kapan segmen SEKARANG dimulai"
-        // (currentSegmentStartedAt, null kalau tidak sedang berjalan) —
-        // frontend menghitung tickingnya sendiri lewat setInterval (spec
-        // "live timer TANPA per-second DB write"), bukan backend yang
-        // menghitung ulang tiap request.
-        executionState: lastLog ? deriveStageLogStatus(lastLog.action) : "NOT_STARTED",
-        currentSegmentStartedAt: EXECUTION_OPEN_WORK_ACTIONS.has(lastLog?.action) ? lastLog.createdAt : null,
-      };
-    });
-
-    // Hitungan per status untuk seluruh katalog (TIDAK ikut filter status —
-    // supaya angka di tab tidak berubah-ubah saat tab dipindah, pola yang
-    // sama dengan tab berhitung di halaman lain).
-    const statusCounts = await prisma.unit.groupBy({ by: ["status"], _count: { _all: true } });
-
-    res.json({
-      units: unitsWithStatus,
-      statusCounts: statusCounts.map((s) => ({ status: s.status, count: s._count._all })),
-      // Hitungan per status TAMPILAN (Pengambilan/Diproses/Siap Kirim/Terkirim) dari hitungan di atas — sumber sama, satu kosakata.
-      displayStatusCounts: displayStatusCountsOf(statusCounts.map((s) => ({ status: s.status, count: s._count._all }))),
-      // Hitungan per status GLOBAL (milestone) — dari bukti, bukan dari status tersimpan; urutan mengikuti GLOBAL_STATUS_FLOW (Dibatalkan tidak ikut).
-      globalStatusCounts: await countByGlobalStatus(prisma, {}),
-      globalStatusFlow: GLOBAL_STATUS_FLOW,
-      page, pageSize, total: totalMatching, hasMore: (page - 1) * pageSize + units.length < totalMatching,
-    });
+    // Filter + pengayaan baris dipindahkan ke services/productionOrderList.js (dipakai bersama ekspor Excel). Kontrak respons lama TIDAK berubah; kontrak tiga sumbu status ada di `adopsi` per baris.
+    // Tambahan filter: statusKerja=DIJADWALKAN,DIKERJAKAN,... (dihitung server, total tetap jujur).
+    res.json(await listWorkOrders(prisma, req.query));
   } catch (err) {
+    if (err?.statusCode && err?.code) return res.status(err.statusCode).json({ error: err.message, code: err.code });
     handleErr(err, res);
   }
 });

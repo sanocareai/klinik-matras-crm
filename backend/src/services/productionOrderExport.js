@@ -1,0 +1,129 @@
+// EXPORT EXCEL ORDER PRODUKSI (.xlsx sungguhan, bukan CSV berekstensi .xlsx). Baris-baris berasal dari listWorkOrders({semua:true}) = daftar yang SAMA dengan layar, jadi hasil ekspor persis mengikuti filter.
+// Sheet: Ringkasan Unit · Rencana Bahan · Pemakaian Aktual · Info Ekspor. Di sheet data: header baris 1 (dibekukan, AutoFilter), tanpa sel digabung, angka tetap numerik, tanggal/waktu WIB,
+// warna status mengikuti nada UI (hijau/biru/oranye/abu) DAN selalu disertai teks (tidak mengandalkan warna). Teks pengguna dinetralkan dari rumus Excel (netralkanRumus).
+import ExcelJS from "exceljs";
+import { WIB_OFFSET_MS } from "../utils/wib.js";
+import { netralkanRumus } from "./finance/export/excel.js";
+import { kelompokDariItemGroup, KELOMPOK_BELUM, LABEL_BELUM } from "../constants/kelompokBahan.js";
+import { stokLokasi } from "./stokLokasi.js";
+
+const FORMAT_TANGGAL = "dd/mm/yyyy"; const FORMAT_WAKTU = "dd/mm/yyyy hh:mm"; const FORMAT_ANGKA = "#,##0.####";
+const WARNA = Object.freeze({ // fill, teks — nada yang sama dengan badge UI
+  green: ["FFDCFCE7", "FF166534"], accent: ["FFDBEAFE", "FF1E40AF"], orange: ["FFFFEDD5", "FF9A3412"], red: ["FFFEE2E2", "FF991B1B"], neutral: ["FFF1F5F9", "FF475569"],
+});
+const HEADER_FILL = "FF1E2139";
+
+const teks = (v) => (v === null || v === undefined || v === "" ? null : netralkanRumus(String(v).slice(0, 32000)));
+const waktuWib = (v) => { if (!v) return null; const d = new Date(v); return Number.isNaN(d.getTime()) ? null : new Date(d.getTime() + WIB_OFFSET_MS); };
+const tanggalWib = (v) => { const w = waktuWib(v); return w ? new Date(Date.UTC(w.getUTCFullYear(), w.getUTCMonth(), w.getUTCDate())) : null; };
+const angka = (v) => { if (v === null || v === undefined || v === "") return null; const n = Number(v?.toString?.() ?? v); return Number.isFinite(n) ? n : null; };
+const stampWib = (d) => { const w = new Date(d.getTime() + WIB_OFFSET_MS).toISOString(); return { tanggal: w.slice(0, 10), jam: w.slice(11, 16) }; };
+
+export function namaBerkasEkspor(sekarang = new Date()) { const s = stampWib(sekarang); return `Order-Produksi-${s.tanggal.replaceAll("-", "")}-${s.jam.replace(":", "")}.xlsx`; }
+
+function sheetData(wb, nama, kolom, baris) {
+  const ws = wb.addWorksheet(nama, { views: [{ state: "frozen", ySplit: 1 }] });
+  ws.columns = kolom.map((k) => ({ header: k.header, key: k.key, width: k.lebar || 18 }));
+  const h = ws.getRow(1); h.height = 24;
+  h.eachCell((c) => { c.font = { bold: true, color: { argb: "FFFFFFFF" } }; c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEADER_FILL } }; c.alignment = { vertical: "middle", horizontal: "left", wrapText: true }; });
+  for (const b of baris) {
+    const r = ws.addRow({});
+    kolom.forEach((k, i) => {
+      const c = r.getCell(i + 1); const v = b[k.key];
+      if (k.tipe === "angka") { const n = angka(v); if (n !== null) { c.value = n; c.numFmt = FORMAT_ANGKA; c.alignment = { horizontal: "right" }; } }
+      else if (k.tipe === "tanggal") { const d = tanggalWib(v); if (d) { c.value = d; c.numFmt = FORMAT_TANGGAL; } }
+      else if (k.tipe === "waktu") { const d = waktuWib(v); if (d) { c.value = d; c.numFmt = FORMAT_WAKTU; } }
+      else { const t = teks(v); if (t !== null) { c.value = t; c.alignment = { vertical: "top", wrapText: !!k.bungkus }; } }
+      if (k.nada && b[k.nada]) { const [bg, fg] = WARNA[b[k.nada]] || WARNA.neutral; c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: bg } }; c.font = { color: { argb: fg }, bold: true }; }
+    });
+  }
+  if (kolom.length) ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: Math.max(1, baris.length + 1), column: kolom.length } };
+  return ws;
+}
+
+/** @returns {Promise<Buffer>} */
+export async function buatWorkbookOrderProduksi(prisma, { rows, unitIds, filter = {}, pengguna = null, sekarang = new Date() }) {
+  const unitById = new Map(rows.map((r) => [r.id, r]));
+  const ids = unitIds?.length ? unitIds : rows.map((r) => r.id);
+
+  // ── data tambahan (batch)
+  const [rencana, pergerakan] = await Promise.all([
+    ids.length ? prisma.productionUnitMaterialPlan.findMany({ where: { unitId: { in: ids } } }) : [],
+    ids.length ? prisma.stockMovement.findMany({
+      where: { unitId: { in: ids }, type: { in: ["ISSUE", "RETURN", "WASTE"] } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      select: { id: true, unitId: true, type: true, qty: true, note: true, reason: true, createdAt: true, material: { select: { id: true, code: true, name: true, unit: true } }, createdBy: { select: { name: true } }, materialIssue: { select: { issueNumber: true } } },
+    }) : [],
+  ]);
+  const matIds = [...new Set(rencana.flatMap((p) => p.lines.map((l) => l.materialId)))];
+  const bahan = matIds.length ? new Map((await prisma.material.findMany({ where: { id: { in: matIds } }, select: { id: true, code: true, name: true, unit: true, itemGroup: true } })).map((m) => [m.id, m])) : new Map();
+  const katalog = rencana.length ? new Map((await stokLokasi(prisma)).rows.map((r) => [r.materialId, r])) : new Map();
+  const jumlahBahanPerUnit = new Map(rencana.map((p) => [p.unitId, p.lines.length]));
+
+  const wb = new ExcelJS.Workbook(); wb.creator = "Klinik Matras — Order Produksi"; wb.created = sekarang;
+
+  // ── Sheet 1: Ringkasan Unit
+  const ringkas = rows.map((u) => ({
+    kodeOrder: u.order?.orderNumber, kodeUnit: u.unitCode, pelanggan: u.order?.customer?.name, layanan: (u.order?.items || []).map((i) => i.layananName).filter(Boolean).join("; "),
+    target: u.adopsi.targetSelesai?.at, pic: u.adopsi.pic?.nama, meja: u.adopsi.meja,
+    statusOrder: u.adopsi.statusOrder?.label, nadaOrder: u.adopsi.statusOrder?.key === "TERKIRIM" || u.adopsi.statusOrder?.key === "SIAP_KIRIM" ? "green" : u.status === "CANCELLED" ? "neutral" : u.adopsi.statusOrder?.key === "PENGAMBILAN" ? "neutral" : "accent",
+    posisi: u.adopsi.posisi?.label, nadaPosisi: u.adopsi.posisi?.tone, posisiDetail: u.adopsi.posisi?.detail,
+    kerja: u.adopsi.kerja?.label, nadaKerja: u.adopsi.kerja?.tone, sumberKerja: u.adopsi.kerja?.sourceLabel,
+    tindakan: u.adopsi.tindakan?.label, aktor: u.adopsi.tindakan?.aktor, prioritas: u.priorityDisplay?.label, bahanRencana: jumlahBahanPerUnit.get(u.id) ?? 0, aktualAda: u.adopsi.aktualBahanAda ? "Ya" : "Belum", diperbarui: u.updatedAt,
+  }));
+  sheetData(wb, "Ringkasan Unit", [
+    { key: "kodeOrder", header: "Kode Order", lebar: 20 }, { key: "kodeUnit", header: "Kode Unit", lebar: 24 }, { key: "pelanggan", header: "Pelanggan", lebar: 28 },
+    { key: "layanan", header: "Layanan (Sales)", lebar: 42, bungkus: true }, { key: "target", header: "Target Selesai", tipe: "tanggal", lebar: 15 }, { key: "pic", header: "PIC", lebar: 20 }, { key: "meja", header: "Meja", lebar: 12 },
+    { key: "statusOrder", header: "Status Order", lebar: 16, nada: "nadaOrder" }, { key: "posisi", header: "Posisi Unit", lebar: 38, nada: "nadaPosisi" }, { key: "posisiDetail", header: "Dasar Posisi Unit", lebar: 44, bungkus: true },
+    { key: "kerja", header: "Status Kerja", lebar: 18, nada: "nadaKerja" }, { key: "sumberKerja", header: "Sumber Status Kerja", lebar: 24 },
+    { key: "tindakan", header: "Tindakan Berikutnya", lebar: 40, bungkus: true }, { key: "aktor", header: "Pelaku Tindakan", lebar: 16 }, { key: "prioritas", header: "Prioritas", lebar: 12 },
+    { key: "bahanRencana", header: "Jumlah Bahan Direncanakan", tipe: "angka", lebar: 16 }, { key: "aktualAda", header: "Pemakaian Aktual Tercatat", lebar: 14 }, { key: "diperbarui", header: "Diperbarui (WIB)", tipe: "waktu", lebar: 18 },
+  ], ringkas);
+
+  // ── Sheet 2: Rencana Bahan
+  const barisRencana = [];
+  for (const p of rencana) {
+    const u = unitById.get(p.unitId); if (!u) continue;
+    for (const l of p.lines) {
+      const m = bahan.get(l.materialId); const k = katalog.get(l.materialId); const grup = kelompokDariItemGroup(m?.itemGroup);
+      const ada = k && k.saldo !== null;
+      barisRencana.push({ kodeUnit: u.unitCode, kodeOrder: u.order?.orderNumber, kelompok: grup.kode === KELOMPOK_BELUM ? LABEL_BELUM : grup.label, materialId: m?.code ?? l.materialId, nama: m?.name ?? "(bahan tidak ditemukan)", satuan: m?.unit, qty: l.qty,
+        ketersediaan: !k ? "Belum diketahui" : !ada ? "Belum diketahui (belum ada catatan stok)" : k.tersedia > 0 ? "Tersedia" : k.tersedia === 0 ? "Habis menurut pergerakan" : "Saldo minus — perlu dihitung fisik", nadaKet: !ada ? "neutral" : k.tersedia > 0 ? "green" : "orange", tersedia: ada ? k.tersedia : null, revisi: p.revision });
+    }
+  }
+  sheetData(wb, "Rencana Bahan", [
+    { key: "kodeUnit", header: "Kode Unit", lebar: 24 }, { key: "kodeOrder", header: "Kode Order", lebar: 20 }, { key: "kelompok", header: "Kelompok", lebar: 20 }, { key: "materialId", header: "Material ID", lebar: 22 },
+    { key: "nama", header: "Nama Bahan", lebar: 34 }, { key: "satuan", header: "Satuan", lebar: 10 }, { key: "qty", header: "Jumlah Rencana", tipe: "angka", lebar: 16 },
+    { key: "ketersediaan", header: "Status Ketersediaan", lebar: 34, nada: "nadaKet" }, { key: "tersedia", header: "Tersedia (angka)", tipe: "angka", lebar: 16 }, { key: "revisi", header: "Revisi Rencana", tipe: "angka", lebar: 12 },
+  ], barisRencana);
+
+  // ── Sheet 3: Pemakaian Aktual (kosong bila belum ada transaksi)
+  const barisAktual = pergerakan.filter((m) => unitById.has(m.unitId)).map((m) => {
+    const u = unitById.get(m.unitId);
+    const dok = m.materialIssue ? { jenis: "Material Issue Gudang", nomor: m.materialIssue.issueNumber } : { jenis: m.type === "WASTE" ? "Catatan sisa/rusak" : "Catat langsung (Produksi)", nomor: `MV-${m.id.slice(0, 8).toUpperCase()}` };
+    return { kodeUnit: u.unitCode, kodeOrder: u.order?.orderNumber, kode: m.material.code, nama: m.material.name, qty: -Number(m.qty), satuan: m.material.unit, tanggal: m.createdAt, pic: m.createdBy?.name, jenisDok: dok.jenis, nomorDok: dok.nomor, catatan: m.note ?? m.reason ?? null };
+  });
+  sheetData(wb, "Pemakaian Aktual", [
+    { key: "kodeUnit", header: "Kode Unit", lebar: 24 }, { key: "kodeOrder", header: "Kode Order", lebar: 20 }, { key: "kode", header: "Material ID", lebar: 22 }, { key: "nama", header: "Nama Bahan", lebar: 34 },
+    { key: "qty", header: "Jumlah Aktual", tipe: "angka", lebar: 14 }, { key: "satuan", header: "Satuan", lebar: 10 }, { key: "tanggal", header: "Tanggal (WIB)", tipe: "waktu", lebar: 18 }, { key: "pic", header: "PIC", lebar: 20 },
+    { key: "jenisDok", header: "Jenis Dokumen", lebar: 28 }, { key: "nomorDok", header: "Nomor Dokumen", lebar: 24 }, { key: "catatan", header: "Catatan", lebar: 36, bungkus: true },
+  ], barisAktual);
+
+  // ── Sheet 4: Info Ekspor (waktu ekspor + filter + arti kolom); tanpa sel digabung
+  const s = stampWib(sekarang);
+  const f = filter || {};
+  const info = [
+    ["Judul", "Order Produksi — ekspor Excel"], ["Diekspor (WIB)", `${s.tanggal} ${s.jam} WIB`], ["Diekspor oleh", pengguna || "—"], ["Zona waktu", "WIB (UTC+7)"],
+    ["Filter: pencarian", f.q || "Tanpa pencarian"], ["Filter: status order", (f.displayStatus || []).join(", ") || "Semua"], ["Filter: posisi/milestone", (f.globalStatus || []).join(", ") || "Semua"],
+    ["Filter: status kerja", (f.statusKerja || []).join(", ") || "Semua"], ["Filter: lingkup", f.scope || "Sesuai tab yang dipilih"],
+    ["Jumlah unit (Ringkasan Unit)", rows.length], ["Jumlah baris Rencana Bahan", barisRencana.length], ["Jumlah baris Pemakaian Aktual", barisAktual.length],
+    ["Arti Status Order", "Status yang dilihat Sales/Delivery (Pengambilan · Diproses · Siap Kirim · Terkirim · Dibatalkan)."],
+    ["Arti Posisi Unit", "Fakta fisik dari dokumen penjemputan, penerimaan workshop, dan pengiriman."],
+    ["Arti Status Kerja", "Status pekerjaan Produksi: dari aplikasi bila ada bukti, jika tidak catatan manual Admin, jika tidak mengikuti jadwal."],
+    ["Rencana vs Aktual", "Rencana Bahan TIDAK mengurangi stok. Pemakaian Aktual berisi transaksi stok resmi (Material Issue Gudang atau catat langsung)."],
+  ];
+  const wi = wb.addWorksheet("Info Ekspor"); wi.columns = [{ header: "Keterangan", key: "k", width: 34 }, { header: "Nilai", key: "v", width: 90 }];
+  wi.getRow(1).eachCell((c) => { c.font = { bold: true, color: { argb: "FFFFFFFF" } }; c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: HEADER_FILL } }; });
+  for (const [k, v] of info) { const r = wi.addRow({}); r.getCell(1).value = teks(k); r.getCell(1).font = { bold: true }; const c = r.getCell(2); if (typeof v === "number") c.value = v; else c.value = teks(v); c.alignment = { wrapText: true, vertical: "top" }; }
+  wi.views = [{ state: "frozen", ySplit: 1 }];
+  return Buffer.from(await wb.xlsx.writeBuffer());
+}

@@ -1851,6 +1851,9 @@ model Unit {
   // P9B.1 — foto identitas unit (fallback manual saja; foto pickup driver DIBACA LANGSUNG dari Job.proofPhotoUrls
   // via storage_key, tidak pernah disalin ke sini — lihat UnitPhoto di bawah).
   photos UnitPhoto[]
+  // Adopsi Admin (Okt 2026): status kerja manual (append-only) dan rencana bahan per unit — tidak mengurangi stok, tidak membuat tahap/QC/foto palsu.
+  workProgress ProductionUnitWorkProgress[]
+  materialPlan ProductionUnitMaterialPlan?
 
   @@unique([orderId, seq])
   @@index([orderId])
@@ -11286,4 +11289,49 @@ model WarehouseCorrection {
   @@index([docType, docId, requestedAt])
   @@index([status, requestedAt])
   @@map("warehouse_corrections")
+}
+
+/// ADOPSI ADMIN — status kerja Produksi yang DICATAT MANUAL oleh Admin/Lead (append-only; tidak pernah UPDATE/DELETE). Status kerja efektif = bukti aplikasi (log tahap V1 / operasi V2 non-lewati) bila ada,
+/// jika tidak entri manual terakhir (lib/domain/productionWorkStatus.js). Tidak membuat tahap, QC, foto, penerimaan Gudang, atau pemakaian bahan.
+model ProductionUnitWorkProgress {
+  id        String   @id @default(uuid()) @db.Uuid
+  unitId    String   @map("unit_id") @db.Uuid
+  unit      Unit     @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  status    String // BELUM_DIJADWALKAN | DIJADWALKAN | DIKERJAKAN | TERTUNDA | SELESAI
+  note      String?
+  actorId   String?  @map("actor_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([unitId, createdAt])
+  @@map("production_unit_work_progress")
+}
+
+/// ADOPSI ADMIN — RENCANA bahan per unit (bukan pemakaian). Satu rencana aktif per unit; setiap revisi disalin append-only ke production_unit_material_plan_revisions. TIDAK menulis stock_movements, reservasi, atau jurnal.
+model ProductionUnitMaterialPlan {
+  id          String   @id @default(uuid()) @db.Uuid
+  unitId      String   @unique @map("unit_id") @db.Uuid
+  unit        Unit     @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  revision    Int      @default(1)
+  lines       Json // [{ materialId, qty }]
+  createdById String?  @map("created_by_id")
+  updatedById String?  @map("updated_by_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @map("updated_at")
+  revisions   ProductionUnitMaterialPlanRevision[]
+
+  @@map("production_unit_material_plans")
+}
+
+model ProductionUnitMaterialPlanRevision {
+  id        String                     @id @default(uuid()) @db.Uuid
+  planId    String                     @map("plan_id") @db.Uuid
+  plan      ProductionUnitMaterialPlan @relation(fields: [planId], references: [id], onDelete: Restrict)
+  revision  Int
+  lines     Json
+  reason    String?
+  actorId   String?                    @map("actor_id")
+  createdAt DateTime                   @default(now()) @map("created_at")
+
+  @@unique([planId, revision])
+  @@map("production_unit_material_plan_revisions")
 }
