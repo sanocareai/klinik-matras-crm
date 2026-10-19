@@ -16,7 +16,7 @@
 #
 # ROLLBACK KODE: aman kapan saja (kode lama tidak membaca tabel baru). Periksa dulu dengan scripts/rollback-guard-order-produksi-adopsi.sh (baca-saja; hanya mencetak jumlah data adopsi). Rollback kode TIDAK menghapus tabel/riwayat;
 #   yang hilang hanya tampilan status kerja manual dan rencana bahan. Pemakaian aktual adalah transaksi stok biasa dan tetap berlaku.
-# (dibangkitkan oleh scripts/gen-release-order-produksi-adopsi.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 dea4b5de5486…)
+# (dibangkitkan oleh scripts/gen-release-order-produksi-adopsi.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 8394ec128ae1…)
 set -Eeuo pipefail
 umask 077
 
@@ -472,7 +472,8 @@ rehearsal_penuh_lanjutan() {
   docker run --rm --network "$NET" -w /app -e TZ=Asia/Jakarta -e JWT_SECRET="$RH_JWT" -e TEST_DB_SERVER_URL="postgresql://${DB_USER}:${PGPW}@${PGT}:5432/postgres" "$REH_IMG" node tests/integration/setup/runDisposable.js $TES_FILES </dev/null > "$BK_DIR/tes-integrasi.log" 2>&1
   local TES_RC=$?; set -e
   docker rm -f "$PGT" >/dev/null 2>&1 || true
-  local T_N T_PASS T_FAIL; T_N="$(sed -n 's/^ℹ tests \([0-9]*\)$/\1/p' "$BK_DIR/tes-integrasi.log" | tail -n 1)"; T_PASS="$(sed -n 's/^ℹ pass \([0-9]*\)$/\1/p' "$BK_DIR/tes-integrasi.log" | tail -n 1)"; T_FAIL="$(sed -n 's/^ℹ fail \([0-9]*\)$/\1/p' "$BK_DIR/tes-integrasi.log" | tail -n 1)"
+  # Pelapor tes bergantung versi node: node 20 (image) non-TTY = TAP ("# tests N"); node ≥ 22 = spec ("ℹ tests N"). Keduanya diterima.
+  local T_N T_PASS T_FAIL; T_N="$(sed -n -e 's/^ℹ tests \([0-9]*\)$/\1/p' -e 's/^# tests \([0-9]*\)$/\1/p' "$BK_DIR/tes-integrasi.log" | tail -n 1)"; T_PASS="$(sed -n -e 's/^ℹ pass \([0-9]*\)$/\1/p' -e 's/^# pass \([0-9]*\)$/\1/p' "$BK_DIR/tes-integrasi.log" | tail -n 1)"; T_FAIL="$(sed -n -e 's/^ℹ fail \([0-9]*\)$/\1/p' -e 's/^# fail \([0-9]*\)$/\1/p' "$BK_DIR/tes-integrasi.log" | tail -n 1)"
   if [ "$TES_RC" != "0" ] || [ "$T_FAIL" != "0" ] || [ "$T_N" != "$TES_N_EXPECT" ] || [ "$T_PASS" != "$TES_N_EXPECT" ]; then grep -E '^✖|^not ok' "$BK_DIR/tes-integrasi.log" | sort -u | head -n 15; tail -n 12 "$BK_DIR/tes-integrasi.log"; reh_drop; die "tes integrasi terarah TIDAK lulus penuh (exit=${TES_RC}, tests=${T_N:-?}, pass=${T_PASS:-?}, fail=${T_FAIL:-?}; diharapkan ${TES_N_EXPECT}/${TES_N_EXPECT}/0)"; fi
   ok "tes integrasi terarah: ${T_PASS}/${T_N} lulus, 0 gagal (image kandidat, DB dibuat dari nol, container sekali-pakai dihapus)"
 }
