@@ -86,8 +86,6 @@ Pemulihan database penuh hanya bila terjadi kerusakan data: gzip -dc ${BACKUP_FI
 ─────────────────────────────────────────────────────────────────────────
 EOF
 }
-EOF
-}
 trap 'rc=$?; [ $rc -ne 0 ] && rollback_instructions; exit $rc' EXIT
 
 PHASE="0-lingkungan"; say "0. Lingkungan dan kunci deploy"

@@ -1,128 +1,162 @@
-# Stock Opname Penuh — UX dan aturan waktu acuan
+# Stock Opname Penuh — model waktu opname, cakupan "saldo dilacak fisik", dan rilis
 
 Branch `feat/gudang-opname-penuh` (dari live `cb33a07d`). **Belum deploy. Tidak ada sesi opname dibuat di production. Data production hanya dibaca (SELECT, transaksi read-only).**
-Berbeda dari rilis UX sebelumnya: **kandidat ini membawa SATU migrasi aditif** (`20261222090000_stock_count_sesi_penuh`) — lihat bagian 6.
+Kandidat ini membawa **SATU migrasi aditif** (`20261222090000_stock_count_sesi_penuh`) dan **skrip rilis bergerbang** (`scripts/release-opname-penuh.sh`) — lihat bagian 7–8.
+
+> **Revisi ini menggantikan model waktu versi sebelumnya (`ef8acaf2`).** Masalahnya: `countedAt` = waktu angka *disimpan*, bukan waktu barang *dihitung*; dan penanda pergerakan memakai jendela tetap 30 menit yang bisa melewatkan transaksi relevan. Keduanya dibuang. Bagian 3 adalah satu-satunya definisi aturan waktu.
 
 ## 1. Audit kontrak Stock Count yang ada (sebelum diubah)
 
 | Hal | Perilaku lama | Akibat untuk opname penuh |
 |---|---|---|
-| Membuat sesi | `POST /inventory/stock-counts` dengan `lines:[{materialId}]` dari klien; modal "Jadwalkan Stock Count" menambah bahan satu per satu (Tambah Item → buka dropdown → pilih). | Menjadwalkan 358 bahan ≈ **1.077 interaksi**. Daftar Material ID dikirim klien, tidak ada pratinjau cakupan, tidak ada cakupan tersimpan. |
-| Saldo sistem | `systemQty` direkam **sekali untuk semua baris saat Mulai hitung**. | Sesi yang berjalan berhari-hari membandingkan fisik hari ke-3 dengan saldo hari ke-1 (basi). |
-| Transaksi selama sesi | `muatPergerakanSesi`: semua pergerakan sesudah `startedAt` **harus ditandai satu per satu** (sudah/belum masuk hitungan fisik); Selesaikan ditolak selama ada yang belum ditandai. | Pada sesi penuh berhari-hari jumlah pergerakan bisa ratusan; menandainya satu per satu tidak layak. |
-| Hasil hitung | `PATCH /:id/lines/:lineId` satu baris per permintaan, tanpa revisi, tanpa waktu/petugas per baris. | Dua petugas bisa saling menimpa diam-diam; tidak ada waktu acuan per bahan. |
-| Kosong vs 0 | Backend sudah membedakan `null` dan `0`. | Dipertahankan; UI baru menegaskan "kolom kosong = belum dihitung". |
-| Blind count | Saldo hanya disembunyikan **di layar**; respons server tetap membawa `systemQty` dan pergerakan sesi. | Penghitung bisa melihat saldo lewat respons API. Sekarang disaring di server (sesi baru). |
-| Selesaikan | Lock baris + cek status; pemanggilan kedua → 400. | Dibuat idempoten untuk sesi baru (`ulang:true`, tanpa penulisan kedua). |
-| Pemisahan tugas | Penyetuju ≠ pembuat/penugas/pengisi hitungan/pemberi tanda; Opname Penuh wajib diperiksa petugas lain. | **Tidak diubah.** |
+| Membuat sesi | `POST /inventory/stock-counts` dengan `lines:[{materialId}]` dari klien; modal menambah bahan satu per satu. | Menjadwalkan ±358 bahan ≈ **1.077 interaksi**; tidak ada pratinjau, tidak ada cakupan tersimpan. |
+| Saldo sistem | `systemQty` direkam **sekali untuk semua baris saat Mulai hitung**. | Sesi berhari-hari membandingkan fisik hari ke-3 dengan saldo hari ke-1. |
+| Transaksi selama sesi | Semua pergerakan sesudah `startedAt` **ditandai satu per satu**. | Pada sesi penuh jumlahnya bisa ratusan. |
+| Hasil hitung | `PATCH` satu baris per permintaan, tanpa revisi, tanpa waktu/petugas per baris. | Dua petugas bisa saling menimpa diam-diam; tidak ada waktu pengamatan per bahan. |
+| Blind count | Saldo hanya disembunyikan **di layar**. | Disaring di server untuk sesi baru. |
+| Selesaikan | Pemanggilan kedua → 400. | Idempoten untuk sesi baru (`ulang:true`). |
+| Pemisahan tugas | Penyetuju ≠ pembuat/penugas/pengisi/pemberi tanda; Opname Penuh wajib diperiksa petugas lain. | **Tidak diubah.** |
 
-## 2. Rancangan final
+**Fakta ledger yang menentukan desain (diuji, bukan diasumsikan):** `stock_movements.created_at` adalah waktu **INSERT** (diuji: ≈1,5 dtk setelah transaksi mulai), dan INSERT terjadi **di bawah kunci baris bahan** (`postStockMovement` → `lockMaterialBalance`). Jadi urutan posting per bahan monoton dan tidak butuh kolom/migrasi di tabel ledger. Ledger **tidak** punya tanggal kejadian sendiri; hanya sebagian dokumen punya (Penerimaan: tanggal tiba/tanggal terima; Material Issue, Transfer, dll. hanya waktu aksi).
+
+## 2. Rancangan final — membuat sesi dan halaman kerja
 
 ### 2.1 Membuat sesi (dialog "Jadwalkan Stock Opname")
-Tiga pilihan jelas (tanpa pilihan bawaan, supaya sesi penuh tidak terbuat tidak sengaja):
+Tiga pilihan (tanpa pilihan bawaan): **Opname penuh** (sekali pilih), **Per kelompok** (centang kelompok), **Cycle Count** (cari + centang, maks. 50). Pratinjau dari server, baca-saja, tampil sebelum tombol buat aktif: jumlah bahan masuk, bahan aktif, per kelompok, belum dikelompokkan, nonaktif, **bahan tidak dilacak + alasannya**, bahan tanpa catatan stok, saldo minus, per satuan. Hanya satu sesi penuh boleh berjalan (409 `SESI_PENUH_AKTIF`). Daftar Material ID diturunkan server dan **disimpan di sesi**; perubahan master sesudahnya tidak mengubah cakupan (bahan baru yang memenuhi kriteria tampil "di luar cakupan sesi": Tambahkan / Abaikan beralasan; Serahkan ditahan sampai diputuskan).
 
-1. **Opname penuh** — sekali pilih memasukkan seluruh bahan aktif. Opsi pengecualian per jenis (Bahan baku, Setengah jadi, Barang jadi, Habis pakai/non-inventory, Tanpa kategori); bawaan: **tidak ada yang dikecualikan**. Pengecualian per bahan tersedia di API (alasan wajib).
-2. **Per kelompok** — centang satu atau beberapa kelompok (Busa, Kain, Benang, Pegas, Kayu, Lem/Kimia, Aksesori, Lainnya, Belum dikelompokkan) dengan jumlah bahan aktif tiap kelompok.
-3. **Cycle Count** — cari kode/nama, centang bahan (maksimal 50; di atas itu diarahkan ke Per kelompok/Penuh).
+### 2.2 Cakupan Opname Penuh = bahan aktif yang saldonya DILACAK secara fisik
+Master bahan **tidak punya flag** "dilacak fisik" dan keputusan **tidak diambil dari nama kategori**. Dasarnya adalah **bukti** (`services/stokFisik.js`, satu fungsi, dipakai pratinjau, pembuatan sesi, "di luar cakupan", rehearsal, dan perkiraan di skrip rilis). Bahan aktif **dilacak** bila punya ≥ 1 jejak:
 
-**Pratinjau (dari server, baca-saja)** tampil sebelum tombol buat aktif: jumlah bahan masuk, bahan aktif total, per kelompok, **belum dikelompokkan (tetap ikut opname penuh)**, **nonaktif (tidak ikut)**, pengecualian, bahan tanpa catatan stok, bahan bersaldo minus, rincian per satuan, dan peringatan bila sudah ada sesi penuh aktif (hanya satu sesi penuh boleh berjalan: 409 `SESI_PENUH_AKTIF`).
+| Jejak | Arti |
+|---|---|
+| `CATATAN_LEDGER` | ada pergerakan di `stock_movements` |
+| `NILAI_REFERENSI` | ada nilai/harga referensi stok dari berkas stock opname Excel |
+| `TITIK_PESAN` | titik/jumlah pesan ulang diatur |
+| `JENIS_SKU` | didaftarkan lewat SKU baru sebagai item stok (`kind`) |
+| `DOKUMEN_GUDANG` | muncul di Penerimaan, Material Issue, Transfer, atau Riwayat Referensi |
+| `PERNAH_DIHITUNG` | pernah diberi angka hasil hitung pada sesi Stock Count yang tidak dibatalkan |
+| `BOM_PRODUKSI` | dipakai di BOM Produksi |
 
-**Cakupan disimpan di sesi:** server menurunkan daftar Material ID sendiri (klien tidak mengirim 358 ID) dan menyimpannya sebagai baris sesi + `scope_info` (parameter + ringkasan pratinjau). Perubahan master sesudahnya tidak mengubah cakupan.
+Bahan aktif **tanpa satu pun jejak** = **tidak dilacak**: tampil di pratinjau dengan alasan ("Tidak ada jejak stok: …"), **tidak ikut** bawaan, tetapi bisa **diikutkan per bahan dengan alasan wajib** (mis. "ada barangnya di rak C"; tombol buat tetap nonaktif sampai alasan diisi). Habis Pakai **ikut bila berjejak stok** dan tidak ikut bila tanpa jejak — kategori tidak menentukan (teruji: Habis Pakai berjejak ikut, Habis Pakai tanpa jejak tidak). Cycle Count boleh memilih bahan tak dilacak, dengan peringatan. Bahan nonaktif tidak pernah ikut. Bahan yang di tengah sesi memperoleh jejak (mis. ada pergerakan) muncul sebagai "di luar cakupan" untuk diputuskan.
 
-**Bahan baru saat sesi berjalan:** bahan aktif yang memenuhi kriteria sesi tetapi tidak ada di sesi tampil sebagai **"di luar cakupan sesi"** (panel di halaman hitung) dengan dua tindakan eksplisit: *Tambahkan ke sesi* (baris `origin = TAMBAHAN`) atau *Abaikan* (alasan wajib, tercatat). Penyerahan hitungan ditahan (409 `CAKUPAN_BELUM_DIPUTUSKAN`) sampai semuanya diputuskan. Bahan yang dinonaktifkan di tengah sesi tetap di sesi (ditandai Nonaktif).
+**Data production (dibaca read-only, 20 Okt 2026):** 358 bahan aktif → **279 dilacak**, **79 tidak dilacak** (77 Bahan Baku + 2 Barang Jadi); 137 punya catatan ledger; ketiga Habis Pakai aktif berjejak (ikut). **Artinya sesi penuh bawaan hari ini = 279 bahan, bukan 358** — 79 bahan master tidak punya catatan stok, nilai referensi, dokumen, BOM, maupun riwayat hitung. Daftar lengkapnya tampil di pratinjau; **Owner perlu menilainya sebelum 1 November** (bisa saja ada yang barangnya memang ada di rak dan harus diikutkan). Solusi permanen (flag eksplisit di master) bukan bagian rilis ini.
 
-### 2.2 Halaman kerja hitung (`/warehouse/stock-count/:id/hitung`)
-- Progres total (bar + teks) dan per kelompok (chip yang juga menyaring).
-- Tab **Belum dihitung / Sudah dihitung / Perlu diperiksa** (+ Dikeluarkan bila ada); pencarian kode/nama; petugas dan waktu hitung per bahan.
-- **Simpan bertahap** (tombol *Simpan perubahan* / *Simpan & berikutnya*): hanya mengirim baris yang berubah, sesi tidak diselesaikan, saldo tidak berubah. Baris belum disimpan ditandai "N belum disimpan"; peringatan sebelum menutup tab.
-- **Kolom kosong = belum dihitung; `0` hanya bila diketik.** Tidak ada isian otomatis dari saldo; halaman ini tidak membawa saldo sama sekali.
-- **Konflik dua petugas:** setiap baris punya `revision`. Simpan dengan revisi basi → `KONFLIK` per baris dengan angka terbaru + nama pengubah + waktu; petugas memilih *Pakai angka mereka* atau *Timpa* (alasan wajib). Tidak ada penimpaan diam-diam.
-- **Koreksi sebelum diserahkan:** mengubah angka yang sudah tersimpan wajib beralasan; riwayat angka lama → baru, pelaku, waktu, alasan (peristiwa aktivitas; tampil di "Riwayat"). Bahan yang dikoreksi masuk tab *Perlu diperiksa*; petugas juga bisa menandai manual. Sesudah diserahkan, mengubah angka hanya lewat *Hitung ulang* (alur pemeriksaan yang ada).
-- **HP (≤ 640 px):** satu kartu bahan (nama, kode, satuan, kolom jumlah besar, keyboard angka `inputmode=decimal`, font ≥ 16 px), bilah aksi tetap di dasar layar ("Sebelumnya", **"Simpan & berikutnya"**, "Lewati"), antrean dibekukan agar urutan tidak bergeser, mode *Daftar* sebagai alternatif.
-- *Serahkan hitungan* aktif hanya bila semua bahan (non-dikeluarkan) sudah dihitung; bahan yang memang tidak ada dikeluarkan dari sesi dengan alasan atau diisi 0.
-- Bahan boleh **dikeluarkan dari sesi** (alasan wajib, tercatat, bisa dikembalikan sebelum diserahkan).
+### 2.3 Halaman kerja hitung (`/warehouse/stock-count/:id/hitung`)
+- Progres total dan per kelompok; tab **Belum dihitung / Sudah dihitung / Tanpa waktu hitung** (muncul bila ada) **/ Perlu diperiksa** (+ Dikeluarkan); pencarian; simpan bertahap; kolom kosong = belum dihitung, `0` hanya bila diketik; konflik dua petugas lewat `revision` per baris; koreksi wajib alasan; HP satu kartu bahan + bilah aksi tetap.
+- **Aturan sederhana untuk petugas (HP dan desktop):**
+  1. Tekan **Mulai hitung** pada bahan **tepat sebelum menghitung barangnya** (desktop: juga **Mulai hitung semua yang tampil** untuk satu rak). Waktunya dicap server di bawah kunci bahan.
+  2. Terlanjur menghitung tanpa menekan? Saat **Simpan**, muncul pertanyaan **"Kapan barang ini dihitung?"** — *Baru saja dihitung* / *Pilih jam* / *Belum tahu — simpan tanpa waktu*. Tidak ada pilihan yang diisi diam-diam.
+  3. Salah waktu? **Ubah waktu** di baris bahan: wajib alasan, tercatat (siapa, kapan, lama → baru).
+  4. Mengoreksi angka: centang **Salah ketik — waktu hitung tidak berubah** (bawaan). Tidak dicentang = hitung ulang: ditanya waktu hitung barunya.
+- *Serahkan hitungan* aktif hanya bila semua bahan terisi **dan semua punya waktu hitung**.
 
-### 2.3 Halaman sesi dan tinjauan (jendela fokus)
-Cakupan tersimpan + progres + per kelompok. Untuk pemeriksa/penyetuju, per bahan: **jumlah fisik, waktu dan petugas hitung, saldo sistem sebanding PADA WAKTU ITU, ringkasan transaksi relevan selama sesi, dan selisih nyata**; alasan selisih (wajib) ditulis di sini; kotak cari untuk membuka bahan mana pun; filter "hanya berselisih / perlu diperiksa". Sesi lama (model 1) memakai tampilan lama dengan penanda "Sesi lama: cakupan N bahan dipilih manual — bukan sesi opname penuh baru".
+### 2.4 Halaman sesi dan tinjauan (jendela fokus)
+Per bahan: **Jumlah fisik · Dihitung (pengamatan) · Disimpan · Saldo sistem saat dihitung · Selisih**, lalu **seluruh pergerakan sejak bahan dihitung** (tiap baris: jenis, jumlah, dokumen, **waktu diposting**, tanggal kejadian dokumen bila ada, **kelas**, keputusan). Pemeriksa memutuskan per pergerakan *Sudah ikut terhitung di fisik* / *Belum ikut terhitung*, atau massal untuk kelas yang aman. Pencarian membuka bahan mana pun.
 
-## 3. Aturan waktu acuan (satu-satunya definisi)
+## 3. Model waktu opname (satu-satunya definisi)
 
-1. Setiap hasil hitung punya `countedAt` = **waktu server saat angka itu terakhir disimpan**. Angka fisik dianggap menggambarkan gudang pada saat itu.
-2. **Saldo sistem sebanding = Σ qty ledger bahan itu dengan `createdAt ≤ countedAt`** (di luar penyesuaian milik sesi ini). Dihitung dari ledger, tanpa snapshot awal.
-3. Transaksi **sesudah** `countedAt`: tidak masuk pembanding (fisik belum memuatnya), tetap utuh di ledger → **tidak ada selisih palsu dan tidak terhitung dua kali**.
-4. Transaksi **sebelum (`countedAt` − 30 menit)** dan sesudah sesi dimulai: sudah pasti ada di fisik → ikut pembanding otomatis, tanpa tanda.
-5. Transaksi **di jendela ragu** (30 menit terakhir sebelum `countedAt`, sesudah sesi dimulai): mungkin belum tercermin di fisik (barang masuk rak persis saat dihitung). **Hanya ini** yang perlu ditandai pemeriksa (*sudah/belum masuk hitungan fisik*), memakai mekanisme tanda yang ada; "belum" = dikeluarkan dari pembanding. Selesaikan ditolak (409 `PERGERAKAN_SESI_BELUM_DITANDAI`) selama ada yang belum ditandai — hanya bahan itu yang menahan, bukan seluruh sesi.
-6. Transaksi **sebelum sesi dimulai** sudah ada di ledger dan di fisik: ikut pembanding, tidak perlu tanda.
-7. **Penyesuaian = fisik − pembanding**, ditulis **sekali** saat Selesaikan. Saldo akhir = ledger saat itu + penyesuaian = fisik + transaksi sesudah `countedAt`.
-8. Mengubah angka (atau hitung ulang) menggeser `countedAt` bahan itu dan mereset tanda bahan itu serta pemeriksaan.
-9. **Tidak ada pembekuan transaksi Gudang**: GR, Material Issue, Transfer berjalan normal selama opname.
+### 3.1 Tiga waktu, disimpan dan ditampilkan terpisah
+| Waktu | Arti | Sumber |
+|---|---|---|
+| **Dihitung** (`observed_at`) | kapan barang diamati secara fisik | `MULAI` (tombol Mulai hitung, cap server di bawah kunci bahan) · `DINYATAKAN` (petugas menyatakan saat menyimpan / mengisi) · `DIKOREKSI` (diubah kemudian, wajib alasan) |
+| **Disimpan** (`saved_at`) | kapan angka masuk sistem | server |
+| **Diposting** (`stock_movements.created_at`) | kapan transaksi ledger diposting | ledger (tidak diubah) |
 
-Contoh teruji: bahan dengan ledger 100 dihitung 100; penerimaan resmi +20 terjadi sesudahnya → pembanding 100, selisih 0, saldo akhir 120. Bahan dengan penerimaan +5 sesaat sebelum dihitung dan fisik 100: ditandai "belum tercermin" → pembanding 100, selisih 0, ledger tetap 105 (pergerakan utuh); ditandai "sudah tercermin" → pembanding 105, selisih −5.
+**Waktu dihitung yang tidak diketahui = `NULL`, tidak pernah diturunkan dari waktu simpan.** Hitungan tanpa waktu dapat disimpan (ditandai "Waktu hitung belum diketahui"), tetapi **tidak bisa diserahkan atau diselesaikan** (409 `WAKTU_HITUNG_BELUM_DIKETAHUI`) dan tidak punya pembanding sampai waktunya dinyatakan/dikoreksi. Waktu yang dinyatakan wajib tidak di masa depan (toleransi 1 menit jam perangkat) dan tidak sebelum sesi dimulai. Perubahan waktu masuk jejak (`WAKTU_HITUNG_DICATAT`: lama → baru, sumber, pelaku, alasan), **mereset keputusan pergerakan bahan itu dan membatalkan pemeriksaan** yang sudah ada. Mengganti angka yang sudah tersimpan tanpa waktu baru dan tanpa "salah ketik" → waktu kembali tidak diketahui.
 
-> **Keputusan untuk Owner:** lebar jendela ragu (30 menit) adalah konstanta `JENDELA_RAGU_MENIT`; bisa diubah satu angka. Lebih sempit = lebih sedikit tanda, lebih besar risiko selisih semu bila petugas menyimpan angka lama setelah barang masuk.
+### 3.2 Pembanding dan pergerakan sejak pengamatan (tanpa jendela tetap)
+- Pergerakan yang **diposting sebelum `observed_at`** (`created_at <` strict) sudah ada saat barang dihitung → otomatis masuk pembanding. Tidak ada batas menit: transaksi 20 menit atau 5 jam sebelum pengamatan diperlakukan sama.
+- **SELURUH pergerakan bahan itu yang diposting pada/sesudah `observed_at` sampai penyelesaian ditandai** dan wajib diputuskan pemeriksa (*sudah* / *belum* ikut terhitung di fisik). Tiap tanda berkelas:
 
-## 4. Pemeriksaan dan penyelesaian
-- Pemeriksa ≠ penghitung/penugas (Opname Penuh wajib); penyetuju (Owner/Finance) ≠ pembuat/penugas/pengisi/pemberi tanda — **aturan lama, tidak diubah**. Catatan operasional: karena penanda pergerakan dan penulis alasan selisih dihitung sebagai "pengisi", keduanya dikerjakan **pemeriksa**, bukan penyetuju; bila penyetuju menulisnya, server menolak penyelesaian dengan pesan yang jelas.
-- Penyelesaian membuat dampak stok **tepat sekali** (kunci baris sesi + status; pemanggilan ulang → `ulang:true`, tanpa penulisan), dengan satu peristiwa audit `DOCUMENT_POSTED`.
-- Menyimpan hitungan, menutup layar, atau menyerahkan hitungan tidak mengubah saldo.
-- Sesi lama tidak pernah ditafsirkan ulang (lihat 6).
+| Kelas | Arti | Boleh massal? |
+|---|---|---|
+| `SERENTAK` | diposting tepat di milidetik pengamatan (urutan tidak pasti; tidak diputuskan diam-diam) | tidak |
+| `SAAT_HITUNG` | diposting antara pengamatan dan angka disimpan (barang sedang dihitung) | tidak |
+| `BERTANGGAL_MUNDUR` | diposting belakangan, tetapi **tanggal kejadian dokumen** (tanggal tiba/terima Penerimaan) pada atau sebelum hari pengamatan (WIB) → fisiknya mungkin sudah ada saat dihitung | tidak |
+| `SESUDAH_DISIMPAN` | diposting sesudah angka disimpan dan tidak bertanggal mundur | **ya** — hanya "belum ikut terhitung", per pergerakan tetap tercatat (pelaku + waktu) |
 
-## 5. Sebelum → sesudah
+- **pembanding = Σ ledger diposting sebelum pengamatan + Σ pergerakan yang diputuskan "sudah ikut terhitung"**. Pergerakan yang belum diputuskan **tidak** masuk pembanding secara diam-diam dan **menahan Selesaikan** (409 `PERGERAKAN_SESI_BELUM_DITANDAI`).
+- **Penyesuaian = fisik − pembanding**, ditulis **sekali** saat Selesaikan. **Saldo akhir = fisik + Σ pergerakan yang diputuskan "belum ikut terhitung"** (diuji sebagai invarian).
+- Bukti per bahan (tiga waktu, saldo sebelum pengamatan, tiap pergerakan beserta kelas dan keputusan) disimpan di peristiwa audit `DOCUMENT_POSTED`.
+- Tanggal kejadian hanya ada untuk Penerimaan; dokumen lain tidak punya tanggal kejadian sendiri sehingga mengikuti waktu posting. Catatan praktis: *Simpan ke Stok* mengisi tanggal terima = hari ini bila kosong, sehingga Penerimaan yang diposting di hari yang sama sesudah bahan dihitung selalu berkelas `BERTANGGAL_MUNDUR` (diputuskan satu per satu) — disengaja: Penerimaan adalah kasus "sudah di rak tetapi baru diposting".
 
+### 3.3 Pemeriksa, penyetuju, dan transaksi tetap berjalan
+- **Pemeriksa menyelesaikan tanda; penyetuju tetap orang berbeda.** Penanda, penulis alasan selisih, dan pengoreksi waktu dihitung sebagai "pengisi": mereka tidak bisa menjadi penyetuju selisih. Pemeriksa ≠ penghitung (Opname Penuh wajib). **Aturan pemisahan tugas tidak diubah.**
+- **Gudang tidak dibekukan.** Penerimaan/Material Issue/Transfer berjalan normal. Hanya saat **Selesaikan** (detik) semua bahan sesi dikunci berurutan id; pembanding dibaca **sesudah** kunci didapat. Transaksi yang commit lebih dulu terlihat (dan menahan sampai diputuskan); yang menunggu kunci bercap waktu sesudah penyelesaian dan tidak mengubah hasil. Tidak ada saldo basi.
+
+### 3.4 Kasus yang diuji (DB terisolasi)
+| Kasus | Hasil |
+|---|---|
+| Dihitung 10.00, angka disimpan 10.40 (jeda > 30 menit), GR diposting 10.05 | GR berkelas `SAAT_HITUNG`, **tidak masuk pembanding fisik 10.00**; tiga waktu terpisah; keputusan pemeriksa menentukan; transaksi 20 menit *sebelum* pengamatan tidak perlu ditandai |
+| Dihitung lalu Material Issue sesudahnya (resmi) | `SESUDAH_DISIMPAN`, diputuskan massal; saldo akhir = fisik + MI (juga untuk bahan berselisih) |
+| Dokumen diposting belakangan bertanggal mundur (GR bertanggal kemarin) | `BERTANGGAL_MUNDUR`, tanggal kejadian tampil, **tidak bisa massal**; "sudah ikut terhitung" mencegah hitung ganda (saldo = fisik; tanpa keputusan itu akan 140) |
+| Dua transaksi + Selesaikan bersamaan | Selesaikan **menunggu kunci**, tidak memakai saldo basi, menolak sampai pergerakan yang baru commit diputuskan; stres 4 posting + Selesaikan: saldo akhir = fisik + posting, **tepat satu penyesuaian per bahan** |
+| Klik ganda | Mulai hitung: `SUDAH_DIMULAI` (waktu tidak bergeser); Simpan: konflik revisi; tanda massal: 0 kedua kali; Selesaikan: `ulang:true`, satu audit |
+| Waktu tidak diketahui / koreksi | tidak dikarang; serah/selesai ditolak; masa depan & sebelum-sesi ditolak; alasan wajib; tanda direset; pemeriksaan batal |
+| Mulai hitung di bawah kunci | transaksi yang sedang diposting commit dulu → `SEBELUM_PENGAMATAN`; yang menyusul ditandai |
+| Tepat di milidetik pengamatan | `SERENTAK`, wajib diputuskan |
+
+## 4. Sebelum → sesudah
 | | Sebelum | Sesudah |
 |---|---|---|
-| Menjadwalkan seluruh bahan aktif (358) | ≈ **1.077 interaksi** (3 per bahan: Tambah Item, buka dropdown, pilih; + buka dialog, jenis, Jadwalkan) | **3 klik**: buka dialog, pilih Opname penuh, buat sesi (terukur di browser) |
-| Pratinjau cakupan | tidak ada | jumlah, kelompok, belum dikelompokkan, nonaktif, pengecualian |
-| Cakupan tersimpan | daftar dari klien | dari server, disimpan di sesi |
-| Mengisi hitungan | modal/tabel panjang, satu PATCH per baris | halaman kerja, simpan bertahap, kartu HP |
+| Menjadwalkan seluruh bahan aktif | ≈ **1.077 interaksi** | **3 klik** (terukur di browser) |
+| Waktu acuan hitung | tidak ada / waktu simpan | **tiga waktu terpisah**, waktu hitung dari petugas (Mulai hitung / dinyatakan / dikoreksi) |
+| Transaksi yang dianggap relevan | semua sejak mulai sesi, atau jendela 30 menit | **semua sejak bahan dihitung**, berkelas, diputuskan pemeriksa |
+| Cakupan Opname Penuh | semua aktif / pilihan manual | **bahan dilacak (bukti)**; tak dilacak tampil + alasan; bisa diikutkan |
 | Penimpaan antar petugas | diam-diam | konflik jelas per baris |
-| Saldo pembanding | snapshot hari pertama | ledger pada waktu hitung tiap bahan |
-| Transaksi selama sesi | tandai SEMUA | tandai hanya jendela ragu |
 | Blind count | disembunyikan di layar | disaring di server |
 
-Tangkapan layar sebelum/sesudah: `C:\tmp\km-gudang-iso\qa\opname-ba\` (desktop dan HP); seluruh QA: `C:\tmp\km-gudang-iso\qa\opname\{desktop,hp}\`.
+Tangkapan layar: `C:\tmp\km-gudang-iso\qa\opname\{desktop,hp}\` (dialog waktu, tanpa waktu, tinjauan, selesai); sebelum/sesudah UX awal: `C:\tmp\km-gudang-iso\qa\opname-ba\`.
 
-## 6. Dampak API, skema, dan sesi lama
+## 5. Dampak API dan skema
 
-**Skema (aditif):** `stock_counts` + `model_version` (default 1), `scope_mode`, `scope_info` (jsonb); `stock_count_lines` + `counted_at`, `counted_by_id`, `revision` (default 0), `needs_check` (default false), `excluded_reason/at/by_id`, `origin` (default `SESI`). Tiga CHECK ringan. **Tanpa backfill, tanpa indeks/constraint unik baru** (tidak ada risiko gagal pada data lama). Production saat dibaca: 1 sesi (`CC-01092026-BASELINE`, SELESAI, FULL_STOCK_OPNAME, **106 baris**, 0 duplikat), 358 bahan aktif / 15 nonaktif; migrasi terakhir `20261220090000`.
+**Skema (aditif, 1 migrasi, belum pernah dirilis sehingga direvisi di tempat):** `stock_counts` + `model_version` (NOT NULL DEFAULT 1), `scope_mode`, `scope_info`; `stock_count_lines` + `saved_at`, `counted_by_id`, **`observed_at`, `observed_source`, `observed_by_id`, `observed_recorded_at`**, `revision` (DEFAULT 0), `needs_check` (DEFAULT false), `excluded_reason/at/by_id`, `origin` (DEFAULT `SESI`); **5 CHECK ringan** (model_version ∈ {1,2}; scope_mode; origin; observed_source; `observed_at` dan `observed_source` NULL bersama-sama). Tanpa tabel/indeks/FK/trigger baru, tanpa backfill, **tanpa menyentuh `stock_movements`**; NOT NULL hanya dengan DEFAULT konstan (PostgreSQL ≥ 11: tanpa rewrite tabel). `counted_at` (versi lama) dihapus dan diganti `saved_at`.
 
-**API baru** (`routes/stockCountSesi.js`, dipasang sebelum router lama): `POST /scope-preview`, `GET /bahan`, `POST /` (bila body memuat `mode`; selain itu diteruskan ke endpoint lama), `GET /:id/kerja`, `PUT /:id/hasil`, `GET /:id/lines/:lineId/riwayat`, `POST /:id/lines/:lineId/keluarkan|kembalikan`, `POST /:id/cakupan`. **Berubah untuk sesi model 2:** `start` tidak lagi snapshot saldo; `PATCH /:id/lines/:lineId` menolak `countedQty` (409, pakai `PUT /hasil`); `submit` menahan bahan belum dihitung/di luar cakupan; `complete` memakai pembanding per waktu hitung dan idempoten; `GET /:id` menyaring saldo untuk blind count dan membawa `tinjau` per baris; `GET /` ringkas (tanpa ratusan baris). **Tidak berubah:** semua endpoint untuk sesi model 1, aturan pemisahan tugas, ledger/jurnal/cutover Finance.
+**API baru / berubah** (`routes/stockCountSesi.js` dan `routes/stockCount.js`):
+- baru: `POST /:id/lines/mulai` (cap waktu server di bawah kunci bahan, idempoten), `POST /:id/lines/:lineId/waktu` (koreksi beralasan), `POST /:id/pergerakan/tanda-massal` (hanya `tercermin:false`, hanya kelas `SESUDAH_DISIMPAN`), `GET /:id/lines/:lineId/riwayat` kini memuat entri angka **dan** waktu.
+- `PUT /:id/hasil`: item boleh membawa `observedAt` (dinyatakan) / `waktuTetap`; respons membawa `observedAt`, `savedAt`, `tanpaWaktu`; `GET /:id/kerja` membawa tiga waktu per baris.
+- `GET /:id` (tinjauan): per bahan `saldoSebelum`, `pembanding`, `selisih`, `waktuTidakDiketahui`, `transaksi.sejakPengamatan[]` (kelas, tanggal kejadian, dokumen, keputusan).
+- `scope-preview` / `POST /`: `ikutkanTakDilacak` + `ikutkanAlasan`; ringkasan memuat `dilacak`, `tidakDilacak{daftar, alasan}`, `dasarCakupan`, `peringatanItems`. `excludeJenis` tetap didukung API tetapi **tidak ada lagi di UI**.
+- `POST /:id/submit` dan `POST /:id/complete`: gerbang `WAKTU_HITUNG_BELUM_DIKETAHUI` dan keputusan pergerakan; `complete` membaca pembanding sesudah semua kunci bahan.
+- **Tidak berubah:** semua endpoint sesi model 1, ledger posting (`inventoryLedger.js`), pemisahan tugas (`inventorySegregation.js`), identitas hitung, jurnal/cutover Finance.
 
-**Sesi lama:** tetap `model_version = 1`: snapshot saat Mulai, tanda semua pergerakan, PATCH per baris, tampilan lama + penanda "Sesi lama … bukan sesi opname penuh baru". Daftar menampilkan "dipilih manual (sesi lama)". Sesi 106 bahan tidak menghalangi, tidak dihitung, dan tidak dianggap sebagai Opname penuh 1 November.
+**Sesi lama:** tetap `model_version = 1` (snapshot saat Mulai, tanda semua pergerakan, PATCH per baris, tampilan lama + penanda "Sesi lama … bukan sesi opname penuh baru"). Production: **1 sesi** (`CC-01092026-BASELINE`, COMPLETED, 106 baris) — tidak ditafsirkan ulang sebagai opname penuh 1 November.
 
-**Implikasi rilis:** karena ada migrasi, rilis ini **bukan** web-saja: butuh skrip rilis yang memeriksa migrasi (pola Koreksi Gudang), backup, dan rehearsal terhadap restore. Skrip itu **belum dibuat** (permintaan: berhenti sebelum deploy). Rollback kode aman (kolom baru diabaikan kode lama); rollback skema tidak diperlukan.
+## 6. Hasil pengujian (ulang pada DB terisolasi, bukan production)
 
-## 7. Hasil pengujian
-
-DB terisolasi (Postgres uji, **bukan production**), 360 bahan aktif + 15 nonaktif: 9 kelompok campur (Busa 100, Kain 80, Benang 40, Pegas 30, Aksesori 30, Lem 15, Lainnya 20, **belum dikelompokkan 45**), 6 satuan berbeda, **50 bahan tanpa catatan stok**, **10 bahan bersaldo minus**, 2 bahan Habis Pakai.
+DB terisolasi: 360 bahan aktif berjejak + 15 nonaktif (9 kelompok campur, 6 satuan, 50 tanpa catatan stok, 10 saldo minus) + bahan tak berjejak untuk uji cakupan.
 
 | Pengujian | Hasil |
 |---|---|
-| Integrasi baru `stockCountSesiPenuh` (cakupan & pratinjau, sesi penuh sekali pilih, 0 vs kosong, blind di server, dua petugas/revisi, **waktu acuan** sebelum/sesudah/jendela ragu, bahan baru di luar cakupan, sesi lama 106 bahan, izin baca-saja + 200 baris sekali simpan, **Penerimaan & Material Issue resmi saat sesi berjalan**, Selesaikan tepat sekali) | **11/11** |
-| Unit baru `opnameSesi` (klasifikasi waktu, pembanding, progres, cakupan) | **4/4** |
-| Regresi integrasi (Gudang, Koreksi, stok/opname/cutover/rekon, Retur Supplier, Produksi MI/QC/antrean, Finance persediaan/koreksi) | **36 berkas, 361 tes, 360 lulus, 1 gagal** — `financeFase1ResiInventory` ("kas masuk di buku"), **gagal identik pada baseline live `cb33a07d`** (bergantung tanggal; muncul setelah pergantian hari), tidak terkait perubahan ini |
-| Unit backend | 1699 tes, 1691 lulus, 6 gagal — semuanya berkas yang tidak disentuh (COVERAGE TAB, compose staging ×2, pin skrip atribusi, audit P5, serta uji skrip rilis/audit statis yang kadang gagal saat suite penuh dan **lulus bila dijalankan sendiri**). Satu tes rilis lama (Koreksi Gudang) memang diperbarui: tidak boleh lagi menganggap tidak ada migrasi sesudahnya |
-| Frontend | 1202 tes, 1193 lulus, 9 gagal **lama yang sama dengan baseline**; tes baru `gudangOpnameSesi` 6/6 |
-| **Browser nyata, desktop 1440 px** (`flows9.mjs`) | **59/59** |
-| **Browser nyata, HP 390 px** | **49/49** |
+| Integrasi `stockCountSesiPenuh` (18 tes: pratinjau, sesi penuh sekali pilih, 0 vs kosong, blind di server, dua petugas/revisi, **KASUS 1–4**, Mulai hitung di bawah kunci, waktu tidak diketahui + koreksi, tanda direset, serentak, **cakupan dilacak**, cakupan berubah, sesi lama 106 bahan, baca-saja + 200 baris, **Penerimaan & MI resmi**) | **18/18** |
+| Unit `opnameSesi` (klasifikasi tanpa jendela, pembanding, invarian saldo akhir, progres, cakupan, sinyal stok) | **6/6** |
+| Unit frontend `gudangOpnameSesi` (waktu tidak dikarang, perluWaktu, terapkanHasilMulai, teks tiga waktu, struktur) | **10/10** |
+| Tes rilis `releaseOpnamePenuh` (pin migrasi, pemindai + mutan, gerbang, rehearsal, uji perilaku, smoke baca-saja, guard) | **13/13** |
+| Regresi integrasi (36 berkas Gudang/Koreksi/stok/opname/cutover/Retur/Produksi/Finance) | @@REGRESI@@ |
+| Unit backend / frontend penuh | @@UNIT@@ |
+| **Browser nyata, desktop 1440 px** (`flows10.mjs`) | **75/75** |
+| **Browser nyata, HP 390 px** | **61/61** |
+| Skrip rilis: sintaks bash; **32 mutan migrasi** ditolak di bash nyata; potongan SQL (sidik jari, struktur, uji perilaku, perkiraan cakupan) diuji ke Postgres lokal | @@SQL@@ |
 
-Yang dicakup browser: tiga pilihan cakupan + pratinjau (per kelompok 140 bahan, Cycle Count lewat pencarian + checkbox 3 bahan, **opname penuh 360 bahan tepat 3 klik**); sesi penuh kedua ditolak; sesi lama tampil "dipilih manual (sesi lama)" dengan penanda; halaman sesi → Mulai hitung → halaman hitung; **0 eksplisit tersimpan 0, kolom kosong tetap belum dihitung**; simpan sebagian, keluar lalu lanjut (progres bertahan); koreksi tanpa alasan ditolak, dengan alasan masuk Perlu diperiksa; riwayat angka; tab, pencarian, filter kelompok, Enter pindah baris; **dua petugas** (konflik dengan nama + angka terbaru, Pakai angka mereka, Timpa beralasan, riwayat 3 entri); bahan baru → di luar cakupan → Tambahkan; bahan dikeluarkan; Serahkan dinonaktifkan sampai semua terisi; **transaksi sesudah dihitung tidak membuat selisih palsu**; selisih nyata; jendela ragu ditolak sampai ditandai; pemeriksa ≠ penyetuju; **penyelesaian tepat sekali (klik ganda = satu rangkaian penyesuaian)**; saldo akhir (fisik + transaksi sesudah hitung); akun baca-saja; HP: satu kartu bahan, keyboard angka (inputmode decimal, font 16 px, tinggi ≥ 44 px), "Simpan & berikutnya", Lewati, bilah aksi tetap, tanpa scroll horizontal. Tangkapan layar: `C:\tmp\km-gudang-iso\qa\opname\{desktop,hp}\`.
+**Temuan QA yang diperbaiki:** pratinjau server menolak "ikutkan" tanpa alasan sehingga panel (dan kolom alasannya) hilang — pratinjau memakai alasan sementara, pembuatan sesi tetap wajib alasan asli; panel keputusan tetap tampil "0 menunggu" sesudah semuanya diputuskan; mutan pemindai pada skrip rilis tidak mengubah migrasi multi-baris (akan membuat rilis berhenti salah) — diganti; riwayat baris kini juga memuat entri waktu (harness disesuaikan).
 
-**Temuan selama QA yang sudah diperbaiki:** ID pengguna bukan UUID (kolom pelaku diubah ke teks); progres per kelompok selalu "Belum dikelompokkan" karena `itemGroup` tidak ikut di query detail; baris hitung desktop terlalu tinggi (aksi sekunder dilipat di "Lainnya"); di HP tombol utama di bawah lipatan (dipindah ke bilah tetap di dasar layar); kotak cari ditambahkan di tinjauan agar pemeriksa bisa membuka bahan mana pun.
+**Batas pengujian yang jujur:** Chrome headless terhadap DB terisolasi; **belum di perangkat fisik**, **belum dengan petugas sungguhan**, belum dengan jaringan putus-sambung (tidak ada mode offline). `created_at` ledger berasal dari jam aplikasi (satu proses); selisih jam antar-proses (mis. saat tumpang-tindih rilis) bernilai milidetik dan, bila persis sama, ditangani sebagai `SERENTAK`. Rehearsal restore **di VPS belum dijalankan** (menulis backup + DB sementara di server production; menunggu izin) — logikanya diuji lokal seperti di atas.
 
-**Batas pengujian yang jujur:** Chrome headless terhadap DB terisolasi; **belum di perangkat fisik** (Android/iOS), **belum dengan petugas sungguhan**, belum dengan jaringan gudang yang putus-sambung (tidak ada mode offline: angka yang belum disimpan hanya ada di layar dan diberi peringatan sebelum menutup tab). Tidak ada sesi opname dibuat dan tidak ada tulisan ke production.
+## 7. Skrip rilis bergerbang (`scripts/release-opname-penuh.sh`)
+
+Diturunkan dari pola Koreksi Gudang: generator `scripts/gen-release-opname-penuh.cjs` + templat + pustaka (`scan-migrasi`, `rehearsal-kode`, `smoke`) + `rollback-guard-opname-penuh.sh`; **semua nilai bergantung commit dihitung dari git** (allowlist 35 berkas, pin sha256 migrasi, pin diff `schema.prisma`, hasil pemindai DDL, commit live wajib leluhur, berkas pelindung identik dengan live: ledger posting, pemisahan tugas, identitas hitung, jurnal, otorisasi, Penerimaan, Material Issue, opname cutover, Produksi override).
+
+Urutan: **(1)** gerbang sumber (ancestry, allowlist, pin migrasi, **pemindai DDL fail-closed + 32 mutan negatif**, tepat 1 migrasi pending, migrasi baseline tidak boleh berubah) → **(2)** audit production baca-saja + sidik jari (16 kelompok termasuk sesi hitung lama) + perkiraan cakupan → **(3)** backup + checksum → **(4)** build web + image → **(5)** REHEARSAL: restore **nyata** ke DB sementara, migrasi dengan image baru, struktur 15 kolom + 5 CHECK, uji perilaku (6 penolakan + 4 sah, dibatalkan), **kode baru terhadap data restore** (sesi 106 baris tetap terbaca; setiap bahan aktif terklasifikasi masuk/tidak dilacak), sidik jari SEMUA tabel sebelum = sesudah → **(6)** `migrate deploy` production SATU kali (backend lama tetap melayani) → **(7)** switch → **(8)** verifikasi + smoke baca-saja (izin, sesi lama terbaca, pratinjau cakupan atas bahan nyata, tidak ada tulisan). Mode `--preflight-only` (baca-saja penuh) dan `--rehearsal-only` (backup + DB sementara, tanpa build/migrasi/switch).
+
+**Rollback kode:** aman selama **tidak ada sesi model baru yang terbuka** (SCHEDULED / IN_PROGRESS / WAITING_REVIEW) — kode lama tidak mengenal sesi itu dan menulis penyesuaian keliru dari snapshot kosong. `rollback-guard-opname-penuh.sh` (baca-saja) menolak selama ada sesi terbuka. Rollback **tidak** menghapus kolom/hasil hitung/penyesuaian; migrasi aditif aman dibiarkan terpasang.
 
 ## 8. Komponen lama yang aman dihapus kemudian
-- `features/warehouse/components/StockCountFormModal.jsx` (modal lama; tidak lagi diimpor halaman daftar). Jangan dihapus sebelum tes kontrak yang membacanya diperbarui.
-- Jalur `lines:[…]` di `POST /inventory/stock-counts` tetap dipertahankan untuk kompatibilitas (dipakai skrip dan tes sesi lama).
-- **Jangan hapus:** `muatPergerakanSesi`/`selisihTersesuaikan` (dipakai sesi model 1 dan jendela ragu), `identitasHitung`, `opnameCutover`.
+- `features/warehouse/components/StockCountFormModal.jsx` (tidak lagi diimpor halaman daftar; jangan hapus sebelum tes kontrak yang membacanya diperbarui).
+- Jalur `lines:[…]` di `POST /inventory/stock-counts` tetap untuk kompatibilitas (skrip, tes sesi lama).
+- **Jangan hapus:** `muatPergerakanSesi`/`selisihTersesuaikan` (sesi model 1), `bacaTandaSesi`, `identitasHitung`, `opnameCutover`.
 
 ## 9. Keputusan
 - **Kandidat:** SHA ujung branch `feat/gudang-opname-penuh` (lihat laporan). Dasar: live `cb33a07d`.
-- **GO untuk dipakai pada opname 1 November — dengan syarat; NO-GO untuk rilis hari ini.** Alasan: kandidat membawa **migrasi** (tidak bisa memakai jalur web-saja) dan perubahan perilaku penyelesaian untuk sesi baru. Syarat sebelum rilis:
-  1. **Skrip rilis bergerbang dengan migrasi** (pola Koreksi Gudang: backup, pin migrasi, rehearsal terhadap restore backup nyata — termasuk memastikan sesi lama `CC-01092026-BASELINE` 106 baris tetap terbaca dan 358 bahan aktif membentuk sesi penuh 358 baris) — belum dibuat.
-  2. **Keputusan Owner:** lebar jendela ragu 30 menit; bahwa penanda pergerakan dan alasan selisih dikerjakan pemeriksa (aturan pemisahan tugas yang ada, tidak diubah); apakah Habis Pakai (non-inventory) dikecualikan dari opname penuh (bawaan: ikut).
-  3. **Latihan pada salinan data** (rehearsal/staging, bukan production): satu putaran dengan dua petugas di HP fisik. Jangan membuat sesi di production sebelum hari opname.
-  4. Cek ulang baseline live saat rilis; target rilis paling lambat sekitar 27 Oktober agar ada ≥ 3 hari latihan sebelum 1 November.
-- **NO-GO bila:** baseline live bergeser ke berkas Stock Count/ledger, ada migrasi lain yang bentrok urutan, atau rehearsal terhadap restore menunjukkan sesi lama tidak terbaca.
-- **Risiko residual:** tidak ada mode offline di HP; satu antrean kunci per sesi saat simpan (simpan 200 baris < 15 dtk di uji, jauh lebih cepat pada penggunaan nyata); lebar jendela ragu adalah kebijakan, bukan fakta data; hitungan desimal memakai pembulatan 4 angka seperti ledger.
+- **Keputusan GO/NO-GO:** lihat laporan akhir (ditulis setelah suite penuh dan preflight).
+- **Keputusan Owner yang tersisa:** (1) menilai **79 bahan tidak dilacak** (apakah ada yang harus diikutkan); (2) bahwa penanda pergerakan, alasan selisih, dan koreksi waktu dikerjakan **pemeriksa**, bukan penyetuju (pemisahan tugas yang ada); (3) kebijakan Penerimaan bertanggal mundur diputuskan satu per satu.
+- **Risiko residual:** tidak ada mode offline di HP; petugas yang menekan Mulai hitung *sesudah* menghitung menggeser pengamatan lebih lambat dari kenyataan (dilindungi: pemeriksa melihat jeda dihitung↔disimpan dan bisa mengoreksi beralasan); keputusan pemeriksa bergantung penilaian manusia (dicatat per pergerakan); 79 bahan tak berjejak bergantung keputusan Owner.
