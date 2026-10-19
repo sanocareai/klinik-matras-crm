@@ -101,3 +101,4 @@ test("sidebar: enam kelompok utama; fitur biaya Finance diberi konteks; Layout m
   assert.match(l, /divisionKey === "warehouse" && !onHub && !collapsed && !customizingNav/); assert.match(l, /<GudangNavGrup/);
   const g = baca("components/GudangNavGrup.jsx"); assert.match(g, /aria-expanded/); assert.match(g, /ArrowDown/); assert.match(g, /ArrowRight/); assert.match(g, /data-testid="badge-kelompok"/);
 });
+

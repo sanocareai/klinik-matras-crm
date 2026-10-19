@@ -63,7 +63,11 @@ async function jejakDokumen(id) {
   for (const e of ev) {
     const m = e.metadata ?? {}; const dari = m.sebelum?.status; const ke = m.sesudah?.status;
     const dasar = { id: e.id, waktu: e.createdAt, oleh: pelaku.get(e.actorId) ?? null, alasan: m.alasan ?? m.reason ?? null };
-    if (TEKS_JEJAK[m.aksi]) {
+    if (m.aksi === "KEMBALI_KE_TIBA" && m.hasilDibatalkan?.baris?.length) {
+      hasil.push({ ...dasar, aksi: m.aksi, teks: "Dikembalikan ke Barang tiba — hasil pemeriksaan lama dinyatakan TIDAK BERLAKU (arsip)", dari: labelStatus(dari), ke: labelStatus(ke), tautan: null, rincian: m.hasilDibatalkan.baris.map((b) => `Hasil lama (tidak berlaku) ${b.kode ?? ""}: baik ${b.diterimaBaik ?? "—"}, ditolak ${b.ditolak ?? "—"}${b.kondisi ? `, kondisi: ${b.kondisi}` : ""}`) });
+    } else if (m.aksi === "DRAF_DIUBAH" && String(m.bagian ?? "").startsWith("baris ") && (m.sesudah?.acceptedQty !== undefined || m.sesudah?.rejectedQty !== undefined)) {
+      hasil.push({ ...dasar, aksi: "HASIL_DIISI", teks: `Hasil pemeriksaan diisi (${String(m.bagian).replace("baris ", "")})`, dari: null, ke: null, tautan: null, rincian: [`baik ${m.sebelum?.acceptedQty ?? "—"} → ${m.sesudah?.acceptedQty ?? m.sebelum?.acceptedQty ?? "—"}; ditolak ${m.sebelum?.rejectedQty ?? "—"} → ${m.sesudah?.rejectedQty ?? m.sebelum?.rejectedQty ?? "—"}`] });
+    } else if (TEKS_JEJAK[m.aksi]) {
       const teks = m.aksi === "DIPULIHKAN" ? `Dipulihkan ke ${labelStatus(ke) ?? "Draf"}` : TEKS_JEJAK[m.aksi];
       hasil.push({ ...dasar, aksi: m.aksi, teks, dari: labelStatus(dari), ke: labelStatus(ke), tautan: m.dariId ? { id: m.dariId, nomor: m.dariNomor } : m.keId ? { id: m.keId, nomor: m.keNomor } : null });
     } else if (m.aksi === "DRAF_DIUBAH" && m.sesudah?.status) {
@@ -84,6 +88,12 @@ function cekRevisiGR(r, revisi) {
   if (revisi === undefined || revisi === null || revisi === "") return;
   if (String(revisi) !== tokenRevisi(r)) { const e = new ReceiptError("Dokumen ini sudah diubah pengguna lain (atau di layar lain) sejak Anda membukanya. Muat ulang, periksa statusnya, lalu ulangi.", 409); e.code = "REVISI_BASI"; throw e; }
 }
+/** Peristiwa pembatalan pemeriksaan TERAKHIR yang membawa hasil lama (superseded), atau null. */
+async function hasilDibatalkanTerakhir(db, id) {
+  const ev = await db.activityEvent.findFirst({ where: { entityType: ENTITY_TYPES.GOODS_RECEIPT, entityId: id, eventType: EVENT_TYPES.DOCUMENT_EDITED, metadata: { path: ["aksi"], equals: "KEMBALI_KE_TIBA" } }, orderBy: { createdAt: "desc" } });
+  return ev?.metadata?.hasilDibatalkan?.baris?.length ? ev : null;
+}
+const adaHasilDibatalkan = async (db, id) => !!(await hasilDibatalkanTerakhir(db, id));
 // Status terakhir yang aman untuk memulihkan dokumen Dibatalkan: status SEBELUM dibatalkan (Draf atau Terjadwal — keduanya belum pernah berisi barang); selain itu Draf.
 async function statusPulih(db, id) {
   const ev = await db.activityEvent.findFirst({ where: { entityType: ENTITY_TYPES.GOODS_RECEIPT, entityId: id, eventType: EVENT_TYPES.DOCUMENT_CANCELLED, metadata: { path: ["aksi"], equals: "JADWAL_DIBATALKAN" } }, orderBy: { createdAt: "desc" } });
@@ -146,7 +156,12 @@ goodsReceiptRouter.get("/:id", requirePermission(P.INVENTORY_READ), wajibUuid(),
     const tulis = hasPermission(req.user, P.INVENTORY_WRITE);
     const pulihKe = receipt.status === "REJECTED" && tidakPernahBerisi(receipt) ? await statusPulih(prisma, receipt.id) : null;
     const { tampilan, revisi } = tampil(receipt, { pulihKe });
-    res.json({ ...(await denganRingkasanPO(receipt)), tampilan: tulis ? tampilan : { ...tampilan, aksi: [], pipeline: { ...tampilan.pipeline, pindah: [] } }, revisi, izin: { tulis }, jejak: await jejakDokumen(receipt.id) });
+    let pemeriksaanSebelumnya = null;
+    if (["ARRIVED", "INSPECTION"].includes(receipt.status)) {
+      const ev = await hasilDibatalkanTerakhir(prisma, receipt.id);
+      if (ev) { const pel = await prisma.user.findUnique({ where: { id: ev.actorId ?? "" }, select: { name: true } }).catch(() => null); pemeriksaanSebelumnya = { waktu: ev.createdAt, oleh: pel?.name ?? null, alasan: ev.metadata.alasan ?? null, baris: ev.metadata.hasilDibatalkan.baris, sudahDiisiUlang: receipt.lines.every((l) => l.acceptedQty != null && l.rejectedQty != null) }; }
+    }
+    res.json({ ...(await denganRingkasanPO(receipt)), pemeriksaanSebelumnya, tampilan: tulis ? tampilan : { ...tampilan, aksi: [], pipeline: { ...tampilan.pipeline, pindah: [] } }, revisi, izin: { tulis }, jejak: await jejakDokumen(receipt.id) });
   } catch (err) {
     handleErr(err, res);
   }
@@ -250,6 +265,11 @@ goodsReceiptRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), wajibUuid
           throw new ReceiptError("Barang dari PO dinyatakan tiba lewat Catat Barang Tiba (Barang Akan Datang), bukan dengan mengganti status — tanggal tiba, jumlah datang, PIC/penerima, dan catatan wajib diisi.");
         }
         // Data wajib ditegakkan di gerbangnya masing-masing: tiba (PO) lewat Catat Barang Tiba, masuk stok lewat Simpan ke Stok (wajib ada jumlah baik; baik ≤ sisa PO) — tidak ada lompatan yang melewatinya.
+        // Pemeriksaan yang pernah DIBATALKAN (hasil lama tidak berlaku): sebelum Siap masuk stok, SETIAP item wajib punya hasil baru (jumlah baik dan ditolak) yang diisi atau dikonfirmasi pengguna.
+        if (status === "READY_FOR_PUTAWAY" && (await adaHasilDibatalkan(tx, existing.id))) {
+          const belum = existing.lines.filter((l) => l.acceptedQty == null || l.rejectedQty == null);
+          if (belum.length) { const e = new ReceiptError(`Pemeriksaan sebelumnya dibatalkan, jadi hasil lama tidak berlaku. Isi atau konfirmasi hasil pemeriksaan BARU (jumlah baik dan ditolak) untuk setiap item — masih kosong: ${belum.length} item.`, 409); e.code = "HASIL_PEMERIKSAAN_BARU_WAJIB"; throw e; }
+        }
         data.status = status;
       }
 
@@ -335,13 +355,21 @@ async function kembaliDraftTx(tx, r, userId, alasanMentah) {
   await recordActivity(tx, { entityType: ENTITY_TYPES.GOODS_RECEIPT, entityId: r.id, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: userId, metadata: { aksi: "KEMBALI_KE_DRAF", nomor: r.receiptNumber, sebelum: { status: "SCHEDULED" }, sesudah: { status: "DRAFT" }, alasan } });
   return u;
 }
-// Pemeriksaan → Barang tiba, Siap masuk stok → Pemeriksaan: hanya status; data pemeriksaan yang sudah diisi TIDAK dihapus. Ditolak bila sudah ada pergerakan stok.
+// Siap masuk stok → Pemeriksaan: hanya status; hasil pemeriksaan TETAP AKTIF (pengguna hanya membatalkan kesiapan posting, bukan pemeriksaannya).
+// Pemeriksaan → Barang tiba: pemeriksaan dibatalkan, jadi HASIL-nya dinyatakan TIDAK BERLAKU (superseded): nilai lama (jumlah baik, ditolak, kondisi) disalin utuh ke riwayat (peristiwa aktivitas, tidak dihapus) lalu dikosongkan
+// dari baris aktif — tidak ada jalan diam-diam bagi hasil lama untuk meloloskan dokumen ke Siap masuk stok. Pemeriksaan berikutnya wajib diisi/dikonfirmasi ulang (lihat gerbang di PATCH status). Bukti kedatangan (foto/berkas tiba) bukan hasil
+// pemeriksaan: tetap utuh. Ditolak bila sudah ada pergerakan stok.
 async function mundurPeriksaTx(tx, r, userId, ke, alasanMentah) {
   if ((await tx.stockMovement.count({ where: { goodsReceiptId: r.id } })) > 0) throw galat409("Penerimaan ini sudah punya pergerakan stok. Pakai Koreksi Gudang (dampaknya ditampilkan dulu), bukan perpindahan status.", "SUDAH_ADA_PERGERAKAN_STOK");
   const alasan = alasanPendek(alasanMentah, true);
-  const u = await tx.goodsReceipt.update({ where: { id: r.id }, data: { status: ke }, include: receiptInclude });
-  await recordActivity(tx, { entityType: ENTITY_TYPES.GOODS_RECEIPT, entityId: r.id, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: userId, metadata: { aksi: ke === "ARRIVED" ? "KEMBALI_KE_TIBA" : "KEMBALI_KE_PERIKSA", nomor: r.receiptNumber, sebelum: { status: r.status }, sesudah: { status: ke }, alasan } });
-  return u;
+  let hasilDibatalkan = null;
+  if (ke === "ARRIVED") {
+    const baris = r.lines.filter((l) => l.acceptedQty != null || l.rejectedQty != null || l.condition).map((l) => ({ lineId: l.id, kode: l.material?.code ?? null, nama: l.material?.name ?? null, diterimaBaik: l.acceptedQty ?? null, ditolak: l.rejectedQty ?? null, kondisi: l.condition ?? null }));
+    if (baris.length) { hasilDibatalkan = { status: "TIDAK_BERLAKU", baris }; await tx.goodsReceiptLine.updateMany({ where: { goodsReceiptId: r.id }, data: { acceptedQty: null, rejectedQty: null, condition: null } }); }
+  }
+  await tx.goodsReceipt.update({ where: { id: r.id }, data: { status: ke } });
+  await recordActivity(tx, { entityType: ENTITY_TYPES.GOODS_RECEIPT, entityId: r.id, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: userId, metadata: { aksi: ke === "ARRIVED" ? "KEMBALI_KE_TIBA" : "KEMBALI_KE_PERIKSA", nomor: r.receiptNumber, sebelum: { status: r.status }, sesudah: { status: ke }, alasan, ...(hasilDibatalkan && { hasilDibatalkan, catatan: "Hasil pemeriksaan sebelumnya dinyatakan TIDAK BERLAKU dan tersimpan di sini sebagai riwayat; pemeriksaan baru wajib diisi atau dikonfirmasi." }) } });
+  return tx.goodsReceipt.findUnique({ where: { id: r.id }, include: receiptInclude });
 }
 
 // POST /api/inventory/goods-receipts/:id/kembali-draft   { alasan, revisi? }

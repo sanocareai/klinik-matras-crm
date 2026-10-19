@@ -34,7 +34,7 @@ const SPEC = {
   TOLAK: { panel: { judul: "Tolak barang ini?", tombol: "Tolak penerimaan", peringatan: "Dipakai bila barang sudah tiba lalu ditolak seluruhnya. Tidak menambah stok.", bidang: [{ nama: "alasan", label: "Alasan penolakan", wajib: true, min: 3, maks: 300 }] } },
   BATALKAN_TIBA: { panel: { judul: "Barang sebenarnya belum tiba?", tombol: "Ya, kembalikan ke Terjadwal", peringatan: "Dari Barang tiba kembali ke Terjadwal. Catatan tiba yang salah tetap tersimpan di riwayat (tidak dihapus); stok dan jurnal tidak berubah. Hanya bisa selama belum ada hasil pemeriksaan, faktur, atau retur. Item yang tidak ikut tercatat tiba tidak kembali ke dokumen ini; buat jadwal baru dari PO untuk sisanya.", bidang: [{ nama: "alasan", label: "Alasan (wajib, tercatat di riwayat)", wajib: true, min: 3, maks: 300 }] } },
   PULIHKAN: { panel: { judul: "Pulihkan penerimaan ini?", tombol: "Ya, pulihkan", peringatan: "Dokumen aktif lagi di status terakhir yang aman sebelum dibatalkan (Draf atau Terjadwal) dengan nomor yang sama. Belum ada pengaruh ke stok, jadi aman. Riwayat pembatalan tetap tersimpan.", bidang: [{ nama: "alasan", label: "Alasan (wajib, tercatat di riwayat)", wajib: true, min: 3, maks: 300 }] } },
-  KEMBALI_TIBA: { panel: { judul: "Kembalikan ke Barang tiba?", tombol: "Ya, kembalikan ke Barang tiba", peringatan: "Dari Pemeriksaan kembali ke Barang tiba. Hasil pemeriksaan yang sudah diisi tidak dihapus. Stok dan jurnal tidak berubah. Siapa, kapan, dan alasan tersimpan di riwayat.", bidang: [{ nama: "alasan", label: "Alasan (wajib, tercatat di riwayat)", wajib: true, min: 3, maks: 300 }] } },
+  KEMBALI_TIBA: { panel: { judul: "Kembalikan ke Barang tiba?", tombol: "Ya, kembalikan ke Barang tiba", peringatan: "Dari Pemeriksaan kembali ke Barang tiba. Hasil pemeriksaan yang sudah diisi dinyatakan TIDAK BERLAKU: disimpan utuh sebagai arsip di riwayat (siapa, kapan, alasan), tidak dipakai otomatis, dan pemeriksaan baru wajib diisi atau dikonfirmasi sebelum Siap masuk stok. Stok dan jurnal tidak berubah; bukti kedatangan tetap utuh.", bidang: [{ nama: "alasan", label: "Alasan (wajib, tercatat di riwayat)", wajib: true, min: 3, maks: 300 }] } },
   KEMBALI_PERIKSA: { panel: { judul: "Kembalikan ke Pemeriksaan?", tombol: "Ya, kembalikan ke Pemeriksaan", peringatan: "Dari Siap masuk stok kembali ke Pemeriksaan, selama belum Simpan ke Stok. Jumlah yang sudah diisi tidak dihapus; stok dan jurnal tidak berubah. Siapa, kapan, dan alasan tersimpan di riwayat.", bidang: [{ nama: "alasan", label: "Alasan (wajib, tercatat di riwayat)", wajib: true, min: 3, maks: 300 }] } },
   BUAT_ULANG: { panel: { judul: "Buat penerimaan baru dari dokumen ini?", tombol: "Buat penerimaan baru", peringatan: "Dokumen ini tidak diubah dan tidak dihapus. Dibuat dokumen BARU berstatus Draf berisi sisa PO (atau item yang sama bila tanpa PO); kedua dokumen saling tertaut di riwayat.", bidang: [{ nama: "alasan", label: "Alasan membuat ulang", wajib: true, min: 3, maks: 300 }] } },
 };
@@ -90,7 +90,7 @@ export default function PenerimaanDetail({ id: idProp, onTutup, onBerubah, sarin
       else if (kode === "KOREKSI_PENERIMAAN") { setKoreksiGR(true); return; }
       await muat(); if (hasil?.ulang) setInfo("Perpindahan yang sama sudah dijalankan sebelumnya (klik ganda atau pengguna lain); hasilnya sama dan riwayat tidak bertambah.");
     } catch (e) {
-      if (["REVISI_BASI", "PERPINDAHAN_TIDAK_SAH", "SUDAH_ADA_HASIL_PEMERIKSAAN"].includes(e.code)) { await muat(); setKonflik(e.message); throw Object.assign(new Error(e.message), { diam: true }); } // banner halaman tetap terlihat walau kartu aksi berpindah
+      if (["REVISI_BASI", "PERPINDAHAN_TIDAK_SAH", "SUDAH_ADA_HASIL_PEMERIKSAAN", "HASIL_PEMERIKSAAN_BARU_WAJIB"].includes(e.code)) { await muat(); setKonflik(e.message); throw Object.assign(new Error(e.message), { diam: true }); } // banner halaman tetap terlihat walau kartu aksi berpindah
       throw e;
     } finally { setSibuk(false); }
   };
@@ -184,6 +184,19 @@ export default function PenerimaanDetail({ id: idProp, onTutup, onBerubah, sarin
           <p className="m-0 rounded-btn bg-inset px-3 py-2 text-[12px] text-ink2" data-testid="sumber-tanpa-po">Penerimaan ini <strong>tanpa PO</strong>: tidak ada pencocokan jumlah dan harga terhadap pesanan.</p>
         )}
 
+        {r.pemeriksaanSebelumnya && (
+          <div className="space-y-2 rounded-btn border-l-[3px] border-orange bg-orangebg px-3 py-2.5 text-[12.5px] text-ink2" data-testid="pemeriksaan-sebelumnya" role="note">
+            <p className="m-0 font-semibold text-ink">Pemeriksaan sebelumnya DIBATALKAN — hasilnya tidak berlaku</p>
+            <p className="m-0 text-[12px]">Dibatalkan oleh <strong>{r.pemeriksaanSebelumnya.oleh ?? "—"}</strong>, {waktuTeks(r.pemeriksaanSebelumnya.waktu)}. Alasan: {r.pemeriksaanSebelumnya.alasan ?? "—"}. Hasil lama tersimpan di riwayat sebagai arsip dan <strong>tidak dipakai otomatis</strong>: isi atau konfirmasi hasil pemeriksaan baru sebelum Siap masuk stok. Bukti kedatangan (foto/berkas tiba) tetap utuh.</p>
+            <ul className="m-0 list-none space-y-0.5 p-0 text-[12px]" data-testid="hasil-lama">
+              {r.pemeriksaanSebelumnya.baris.map((b) => <li key={b.lineId}><span className="rounded-chip bg-inset px-1.5 py-0.5 text-[10.5px] font-semibold text-ink3">Pemeriksaan sebelumnya · tidak berlaku</span> <strong>{b.kode}</strong>: baik {b.diterimaBaik ?? "—"} · ditolak {b.ditolak ?? "—"}{b.kondisi ? ` · ${b.kondisi}` : ""}</li>)}
+            </ul>
+            {bolehUbah && r.status === "INSPECTION" && !r.pemeriksaanSebelumnya.sudahDiisiUlang && (
+              <button type="button" onClick={() => setIsian((x) => ({ ...x, ...Object.fromEntries(r.pemeriksaanSebelumnya.baris.map((b) => [b.lineId, { ...(x[b.lineId] ?? {}), acceptedQty: b.diterimaBaik ?? "", rejectedQty: b.ditolak ?? "", ...(b.kondisi ? { condition: b.kondisi } : {}) }])) }))}
+                className="rounded-btn border border-border bg-surface px-2.5 py-1.5 text-[12px] font-semibold text-ink hover:bg-hovertint max-sm:min-h-11" data-testid="pakai-isian-awal">Pakai hasil lama sebagai isian awal (tinjau, lalu simpan)</button>
+            )}
+          </div>
+        )}
         <Card className="space-y-3 p-4">
           <h3 className="m-0 text-[11px] font-bold uppercase tracking-wide text-ink3">Per item — cocokkan pesanan, jadwal, kedatangan, dan stok</h3>
           <TabelPerItem rows={baris} editable={bisaPeriksa ? { tiba: tibaBisaDiisi } : null} nilai={isian} onUbah={(lineId, f, v) => setIsian((x) => ({ ...x, [lineId]: { ...x[lineId], [f]: v } }))} />
@@ -215,6 +228,7 @@ export default function PenerimaanDetail({ id: idProp, onTutup, onBerubah, sarin
                   {j.tautan && <> — <Link replace to={tautan(j.tautan.id)} className="font-semibold text-accent">{j.tautan.nomor}</Link></>}
                   <span className="text-ink3"> · {j.oleh ?? "—"} · {waktuTeks(j.waktu)}</span>
                   {j.alasan && <div className="text-[11.5px] text-ink2">Alasan: {j.alasan}</div>}
+                  {j.rincian?.map((t, n) => <div key={n} className="text-[11.5px] text-ink2" data-testid="jejak-rincian">{t}</div>)}
                 </li>
               ))}
             </ol>

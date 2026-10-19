@@ -73,8 +73,8 @@ Kebutuhan: dokumen yang salah diubah statusnya harus mudah dikembalikan atau dil
 | **Draf** | → Terjadwal | — | Batalkan |
 | **Terjadwal** | → Barang tiba (PO: lewat *Catat barang tiba*; tanpa PO: tandai tiba) | → **Draf** | Batalkan |
 | **Barang tiba** | → Pemeriksaan | → **Terjadwal** (hanya bila belum ada hasil pemeriksaan, faktur, retur, atau pengganti; bila ada, ditampilkan sebabnya) | Tolak barang |
-| **Pemeriksaan** | → Siap masuk stok | → **Barang tiba** (hasil yang sudah diisi tidak dihapus) | Tolak barang |
-| **Siap masuk stok** | → Sudah masuk stok (*Simpan ke Stok*) | → **Pemeriksaan** (selama belum Simpan ke Stok) | Tolak barang |
+| **Pemeriksaan** | → Siap masuk stok | → **Barang tiba** (pemeriksaan DIBATALKAN: hasil lama dinyatakan tidak berlaku, diarsipkan di riwayat, dan pemeriksaan baru wajib diisi/dikonfirmasi) | Tolak barang |
+| **Siap masuk stok** | → Sudah masuk stok (*Simpan ke Stok*) | → **Pemeriksaan** (selama belum Simpan ke Stok; hasil pemeriksaan TETAP aktif — hanya kesiapan posting yang dibatalkan) | Tolak barang |
 | **Sudah masuk stok** | — | **tidak ada** — hanya Koreksi Gudang (Koreksi Kedatangan / Koreksi penerimaan) | — |
 | **Dibatalkan** | — | **Pulihkan ke status terakhir yang aman** (Draf atau Terjadwal sebelum dibatalkan) atau **Buat penerimaan baru** (tertaut) | — |
 | **Ditolak** (barang pernah tiba) | — | hanya **Buat penerimaan baru** (tertaut) | — |
@@ -85,8 +85,15 @@ Aturan server (`routes/goodsReceipt.js`):
 - **Tanpa saklar fitur dan tanpa approval kedua**; izin tulis Inventory yang sama dengan aksi lain (akun hanya-baca: 403 dan kontrol tidak ditampilkan).
 - **Idempoten**: perpindahan ke status yang sudah berlaku → 200 `ulang:true` tanpa jejak ganda (klik ganda/retry aman); PATCH status yang sama juga 200 `ulang:true` (dulu 400).
 - **Terkunci per dokumen** (`lockRowForUpdate`, status dibaca ulang dalam transaksi) dan **revisi** (`updatedAt`): layar basi → 409 `REVISI_BASI` "Dokumen ini sudah diubah pengguna lain…"; dua pengguna bersamaan → tepat satu menang, yang lain 409/hasil sama.
-- **Data wajib tidak dilompati**: tiba untuk PO hanya lewat Catat Barang Tiba (tanggal, jumlah, penerima, catatan); masuk stok hanya lewat Simpan ke Stok (wajib ada jumlah baik; baik ≤ sisa PO). Perpindahan mundur tidak menghapus data pemeriksaan.
+- **Data wajib tidak dilompati**: tiba untuk PO hanya lewat Catat Barang Tiba (tanggal, jumlah, penerima, catatan); masuk stok hanya lewat Simpan ke Stok (wajib ada jumlah baik; baik ≤ sisa PO). Perpindahan mundur **Pemeriksaan → Barang tiba** membatalkan pemeriksaannya (lihat di bawah); Siap masuk stok → Pemeriksaan mempertahankan hasil.
 - Efek: **tidak ada pergerakan stok, jurnal, atau perubahan PO** pada perpindahan status mana pun sebelum posting (diuji dengan membandingkan stok/movement/jurnal/tagihan/jumlah PO dan jumlah baris sebelum–sesudah).
+
+### Pemeriksaan yang dikembalikan (hasil lama tidak berlaku)
+- **Pemeriksaan → Barang tiba**: nilai lama (jumlah baik, ditolak, kondisi) per item disalin utuh ke riwayat (peristiwa `KEMBALI_KE_TIBA` membawa `hasilDibatalkan`: pelaku, waktu, alasan, status asal → tujuan) dan **dikosongkan dari baris aktif** — hasil lama tidak bisa dipakai diam-diam. Riwayat dokumen menampilkan "Hasil pemeriksaan lama dinyatakan TIDAK BERLAKU (arsip)" + rincian; kartu "Pemeriksaan sebelumnya DIBATALKAN" tampil di jendela (berlabel "Pemeriksaan sebelumnya · tidak berlaku").
+- **Maju lagi ke Pemeriksaan → Siap masuk stok**: server menolak (409 `HASIL_PEMERIKSAAN_BARU_WAJIB`) selama masih ada item tanpa hasil baru (jumlah baik DAN ditolak). Pengguna mengisi hasil baru, atau memakai tombol "Pakai hasil lama sebagai isian awal" yang HANYA mengisi formulir (belum tersimpan) lalu menyimpannya sebagai konfirmasi. Riwayat mencatat tiap pengisian hasil (A diisi → A dibatalkan → B diisi).
+- **Siap masuk stok → Pemeriksaan**: hasil tetap aktif (hanya kesiapan posting dibatalkan).
+- Bukti kedatangan (tanggal/penerima/catatan/berkas tiba) bukan hasil pemeriksaan dan tidak disentuh. Penerimaan tidak punya foto pemeriksaan terpisah; bila kelak ada, arsip memakai mekanisme yang sama.
+- Terbukti (tes `PEMERIKSAAN DIKEMBALIKAN` dan QA browser B1–B11): hasil A → mundur → maju lagi → hasil A tidak dipakai (409) → hasil B → Siap; stok yang masuk = B (5), bukan A (4); tanpa movement/jurnal sebelum Simpan ke Stok; klik ganda → satu arsip; revisi basi → 409.
 
 ### Kasus Ocean (DB uji berbentuk data production; production tidak disentuh)
 Tes `backend/tests/integration/gudangStatusMundur.integration.test.js` dan QA browser `pp/flows6.mjs`: PT OCEAN CENTRA FURNINDO, satu PO dua baris (Busa Ocean D18 120/160), dua GR untuk PO yang sama. GR uji Draf → Terjadwal → Draf → Terjadwal diulang tiga siklus (API) dan dua siklus (UI 1440 px dan 390 px). Terbukti: kedua GR tetap dua dokumen dengan nomor sendiri; GR lain tidak berubah (status, jadwal, updatedAt, jumlah baris); jumlah baris, PO, stok, movement, jurnal, tagihan tidak berubah; riwayat memuat tiap perpindahan beserta pelaku/alasan.

@@ -100,10 +100,9 @@ test("MUNDUR berantai tanpa dampak: Siap → Pemeriksaan → Barang tiba → Ter
   let r = await mundur(w, g.id, "INSPECTION", "Jumlah baik masih perlu dicek"); assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(r.body.status, "INSPECTION");
   assert.equal((await mundur(w, g.id, "INSPECTION")).body.ulang, true, "klik ganda: hasil sama");
   r = await mundur(w, g.id, "ARRIVED", "Periksa ulang dari awal"); assert.equal(r.status, 200); assert.equal(r.body.status, "ARRIVED");
-  const sesudahBaris = await testPrisma.goodsReceiptLine.findUnique({ where: { id: baris.id } }); assert.deepEqual([Number(sesudahBaris.acceptedQty), Number(sesudahBaris.rejectedQty)], [4, 1], "data pemeriksaan tidak dibuang");
-  // ARRIVED → Terjadwal diblok selama ada hasil pemeriksaan (data tidak dibuang diam-diam)
-  r = await mundur(w, g.id, "SCHEDULED", "Salah klik"); assert.equal(r.status, 409); assert.equal(r.body.code, "SUDAH_ADA_HASIL_PEMERIKSAAN");
-  assert.equal((await w.g.patch(`${GR}/${g.id}/lines/${baris.id}`, { acceptedQty: null, rejectedQty: null })).status, 200);
+  // Pemeriksaan → Barang tiba MEMBATALKAN hasil: nilai lama diarsipkan (riwayat) dan dikosongkan dari baris aktif; Siap → Pemeriksaan tadi mempertahankan hasil.
+  const sesudahBaris = await testPrisma.goodsReceiptLine.findUnique({ where: { id: baris.id } }); assert.deepEqual([sesudahBaris.acceptedQty, sesudahBaris.rejectedQty], [null, null], "hasil lama tidak berlaku (tidak aktif)");
+  const arsip = (await detail(w, g.id)).jejak.find((x) => x.aksi === "KEMBALI_KE_TIBA"); assert.ok(arsip.rincian.some((t) => /baik 4, ditolak 1/.test(t)), "hasil lama tetap terbaca di riwayat");
   r = await mundur(w, g.id, "SCHEDULED", "Barang ternyata belum datang"); assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(r.body.status, "SCHEDULED");
   r = await mundur(w, g.id, "DRAFT", "Jadwal salah"); assert.equal(r.status, 200); assert.equal(r.body.status, "DRAFT");
   assert.deepEqual({ ...(await snap()), saldo: 0 }, { ...awal, saldo: 0 }, "tanpa movement/jurnal/PO berubah sepanjang mundur");
@@ -175,4 +174,51 @@ test("AKUN: baca-saja ditolak 403 pada semua jalur mundur/pulih; tidak ada perub
   for (const [m, u, b] of [["post", "mundur", { ke: "DRAFT", alasan: "uji" }], ["post", "kembali-draft", { alasan: "uji" }], ["post", "batalkan-tiba", { alasan: "uji" }], ["post", "pulihkan", { alasan: "uji" }], ["post", "batalkan-jadwal", { alasan: "uji" }]]) assert.equal((await w.p[m](`${GR}/${g.id}/${u}`, b)).status, 403, u);
   assert.equal((await w.p.patch(`${GR}/${g.id}`, { status: "ARRIVED" })).status, 403); assert.equal(await dok(g.id), awal);
   assert.ok((await w.g.patch(`${GR}/${g.id}`, { status: "ngawur" })).status >= 400);
+});
+
+test("PEMERIKSAAN DIKEMBALIKAN: hasil A diarsipkan (tidak berlaku), tidak dipakai diam-diam; wajib hasil B sebelum Siap masuk stok; riwayat A & B jelas; tanpa movement/jurnal sebelum Simpan ke Stok; klik ganda & revisi basi aman", async () => {
+  const w = await dunia(); const g = await manual(w); const awal = await snap();
+  for (const s of ["SCHEDULED", "ARRIVED", "INSPECTION"]) assert.equal((await maju(w, g.id, s)).status, 200, s);
+  const baris = (await detail(w, g.id)).lines[0]; const L = `${GR}/${g.id}/lines/${baris.id}`;
+  // 1. hasil A
+  assert.equal((await w.g.patch(L, { receivedQty: 5, acceptedQty: 4, rejectedQty: 1, condition: "Satu lembar sobek (A)" })).status, 200);
+  let d = await detail(w, g.id); assert.deepEqual([d.lines[0].acceptedQty, d.lines[0].rejectedQty, d.lines[0].condition], [4, 1, "Satu lembar sobek (A)"]);
+  assert.equal(d.pemeriksaanSebelumnya, null, "belum ada pemeriksaan yang dibatalkan");
+  // 2. Pemeriksaan → Barang tiba (klik ganda serentak + revisi basi)
+  const dua = await Promise.all([mundur(w, g.id, "ARRIVED", "Salah periksa, ulang", d.revisi), mundur(w, g.id, "ARRIVED", "Salah periksa, ulang", d.revisi)]);
+  assert.deepEqual(dua.map((x) => x.status), [200, 200]); assert.deepEqual(dua.map((x) => x.body.ulang).sort(), [false, true], "klik ganda: satu perubahan");
+  d = await detail(w, g.id); assert.equal(d.status, "ARRIVED");
+  const arsip = d.jejak.filter((x) => x.aksi === "KEMBALI_KE_TIBA"); assert.equal(arsip.length, 1, "tepat satu arsip walau klik ganda");
+  assert.ok(arsip[0].oleh && arsip[0].waktu && arsip[0].alasan === "Salah periksa, ulang", "siapa, kapan, alasan");
+  assert.match(arsip[0].teks, /TIDAK BERLAKU/); assert.ok(arsip[0].rincian.some((t) => /baik 4, ditolak 1, kondisi: Satu lembar sobek \(A\)/.test(t)), "hasil A + kondisi diarsipkan utuh");
+  // hasil A tidak aktif lagi dan ditandai tidak berlaku di detail
+  assert.deepEqual([d.lines[0].acceptedQty, d.lines[0].rejectedQty, d.lines[0].condition], [null, null, null]);
+  assert.equal(d.pemeriksaanSebelumnya.baris[0].diterimaBaik, 4); assert.equal(d.pemeriksaanSebelumnya.sudahDiisiUlang, false); assert.equal(d.pemeriksaanSebelumnya.alasan, "Salah periksa, ulang");
+  // 3. maju lagi ke Pemeriksaan
+  assert.equal((await maju(w, g.id, "INSPECTION", d.revisi)).status, 200); d = await detail(w, g.id); assert.equal(d.status, "INSPECTION");
+  // 4. hasil A TIDAK dipakai diam-diam: tidak bisa Siap masuk stok, tidak bisa Simpan ke Stok
+  let r = await maju(w, g.id, "READY_FOR_PUTAWAY", d.revisi); assert.equal(r.status, 409); assert.equal(r.body.code, "HASIL_PEMERIKSAAN_BARU_WAJIB"); assert.match(r.body.error, /tidak berlaku/);
+  assert.equal((await detail(w, g.id)).status, "INSPECTION");
+  // hanya sebagian terisi (baik tanpa ditolak) tetap tidak cukup
+  assert.equal((await w.g.patch(L, { acceptedQty: 5 })).status, 200); r = await maju(w, g.id, "READY_FOR_PUTAWAY"); assert.equal(r.body.code, "HASIL_PEMERIKSAAN_BARU_WAJIB", "jumlah ditolak belum diisi/dikonfirmasi");
+  assert.equal((await w.g.post(`${GR}/${g.id}/putaway`, { location: "RAK-A1" })).status >= 400, true, "tidak bisa disimpan ke stok dari Pemeriksaan");
+  // 5–6. hasil B diisi, baru boleh Siap masuk stok
+  assert.equal((await w.g.patch(L, { acceptedQty: 5, rejectedQty: 0, condition: "Utuh (B)" })).status, 200);
+  d = await detail(w, g.id); r = await maju(w, g.id, "READY_FOR_PUTAWAY", d.revisi); assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(r.body.status, "READY_FOR_PUTAWAY");
+  // 7. riwayat A dan B jelas
+  d = await detail(w, g.id); const aksi = d.jejak.map((x) => x.aksi);
+  const diisi = d.jejak.filter((x) => x.aksi === "HASIL_DIISI"); assert.ok(diisi.length >= 3, "hasil A diisi, lalu hasil B (baik, lalu ditolak/kondisi) tercatat"); assert.ok(diisi[0].rincian[0].includes("4"), "A tercatat"); assert.ok(diisi.some((x) => /5/.test(x.rincian[0])), "B tercatat");
+  assert.ok(aksi.indexOf("KEMBALI_KE_TIBA") > aksi.indexOf("HASIL_DIISI") && aksi.lastIndexOf("HASIL_DIISI") > aksi.indexOf("KEMBALI_KE_TIBA"), "urutan: A diisi → A dibatalkan → B diisi");
+  assert.equal(d.pemeriksaanSebelumnya, null, "tidak lagi ditampilkan sebagai tertunda setelah Siap masuk stok (arsip tetap di riwayat)");
+  // Siap → Pemeriksaan MEMPERTAHANKAN hasil B (hanya kesiapan posting yang dibatalkan)
+  r = await mundur(w, g.id, "INSPECTION", "Cek ulang kesiapan posting", d.revisi); assert.equal(r.status, 200); const keep = await testPrisma.goodsReceiptLine.findUnique({ where: { id: baris.id } }); assert.deepEqual([keep.acceptedQty, keep.rejectedQty, keep.condition], [5, 0, "Utuh (B)"], "hasil tetap aktif");
+  assert.equal(((await detail(w, g.id)).jejak.filter((x) => x.aksi === "KEMBALI_KE_PERIKSA")[0]).rincian, undefined, "tanpa pembatalan hasil");
+  assert.equal((await maju(w, g.id, "READY_FOR_PUTAWAY")).status, 200, "hasil B masih berlaku → langsung boleh Siap lagi");
+  // 8. tanpa movement/jurnal sebelum Simpan ke Stok
+  const sebelumPosting = await snap(); assert.equal(sebelumPosting.mov, awal.mov); assert.equal(sebelumPosting.jurnal, awal.jurnal);
+  // revisi basi pada langkah akhir: pengguna lain mengubah dulu
+  const layar = await detail(w, g.id); assert.equal((await w.g2.patch(`${GR}/${g.id}`, { notes: "diubah pihak lain" })).status, 200);
+  const basi = await mundur(w, g.id, "INSPECTION", "dari layar basi", layar.revisi); assert.equal(basi.status, 409); assert.equal(basi.body.code, "REVISI_BASI");
+  const put = await w.g.post(`${GR}/${g.id}/putaway`, { location: "RAK-A1" }); assert.equal(put.status, 200, JSON.stringify(put.body));
+  const akhir = await snap(); assert.equal(akhir.mov, awal.mov + 1, "satu movement hanya dari Simpan ke Stok"); assert.equal(akhir.saldo, awal.saldo + 5, "stok bertambah sebesar hasil B (5), bukan hasil A (4)");
 });

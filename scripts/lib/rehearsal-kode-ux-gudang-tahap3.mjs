@@ -82,6 +82,7 @@ const poGanda = await prisma.$queryRawUnsafe("select count(*)::int n from (selec
 console.log(`INFO  PO dengan lebih dari satu penerimaan: ${poGanda[0].n} (tetap dokumen terpisah; tidak diubah)`);
 const slk = await (await import("/app/src/services/stokLokasi.js")).stokLokasi(prisma);
 const aktifN = slk.rows.filter((x) => x.aktif).length; const jmlKel = slk.kelompok.kelompok.reduce((a, x) => a + x.total, 0); const jmlJenis = slk.kelompok.jenis.reduce((a, x) => a + x.total, 0); const belumN = slk.kelompok.kelompok.find((x) => x.kode === "BELUM")?.total ?? -1;
+{ const arsipN = await n("select count(*)::int n from activity_events where entity_type = 'goods_receipt'"); console.log(`INFO  riwayat aktivitas penerimaan yang sudah ada: ${arsipN} peristiwa (tidak diubah)`); }
 cek(`Stok & Lokasi: ${aktifN} bahan aktif — jumlah per kelompok (${jmlKel}) dan per jenis (${jmlJenis}) sama dengan jumlah bahan aktif (tidak ada yang hilang); belum dikelompokkan=${belumN}; setiap bahan punya kelompok`, aktifN === jmlKel && aktifN === jmlJenis && slk.rows.every((x) => !!x.kelompok?.kode));
 
 // ── Jejak: dibangun untuk semua dokumen tanpa galat ──

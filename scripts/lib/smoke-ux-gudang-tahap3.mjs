@@ -91,9 +91,9 @@ const GRP = "/api/inventory/goods-receipts";
   const lst = await api("GET", GRP, tW); const grl = lst.json?.receipts ?? [];
   rec(`Penerimaan Barang: daftar 200 dan setiap baris membawa pipeline (6 tahap), tindakan berikutnya, dan revisi — ${grl.length} dokumen`, lst.status === 200 && grl.every((r) => r.tampilan?.pipeline?.tahap?.length === 6 && typeof r.tampilan?.berikutnya === "string" && typeof r.revisi === "string"));
   for (const r of grl.slice(0, 25)) {
-    const x = await api("GET", `${GRP}/${r.id}`, tW); const okDetail = x.status === 200 && !!x.json?.tampilan?.pipeline && typeof x.json?.revisi === "string" && Array.isArray(x.json?.jejak) && x.json?.izin?.tulis === true;
+    const x = await api("GET", `${GRP}/${r.id}`, tW); const okDetail = x.status === 200 && !!x.json?.tampilan?.pipeline && typeof x.json?.revisi === "string" && Array.isArray(x.json?.jejak) && x.json?.izin?.tulis === true && "pemeriksaanSebelumnya" in (x.json ?? {});
     const posted = x.json?.status === "COMPLETED" ? (x.json?.tampilan?.pipeline?.pindah?.length === 0) : true;
-    rec(`Penerimaan ${r.receiptNumber}: detail 200 — pipeline, revisi, riwayat status, izin; terposting tanpa perpindahan`, okDetail && posted, `${x.status}`); n += 1;
+    rec(`Penerimaan ${r.receiptNumber}: detail 200 — pipeline, revisi, riwayat status, pemeriksaanSebelumnya, izin; terposting tanpa perpindahan`, okDetail && posted, `${x.status}`); n += 1;
     if (pembacaSaja && r === grl[0]) { const rb = await api("GET", `${GRP}/${r.id}`, tokenUntuk(pembacaSaja)); if (rb.status === 200) rec("akun hanya-baca: pipeline.pindah dan aksi kosong", rb.json?.izin?.tulis === false && rb.json?.tampilan?.pipeline?.pindah?.length === 0 && rb.json?.tampilan?.aksi?.length === 0); }
   }
   const sk = await api("GET", "/api/inventory/beranda/stok", tW); const kel = sk.json?.kelompok?.kelompok ?? []; const aktifN = (sk.json?.rows ?? []).filter((x) => x.aktif).length;
