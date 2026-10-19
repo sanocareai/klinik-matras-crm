@@ -6,7 +6,7 @@ import { MAX_BARIS_RENCANA, RencanaBahanError, normalisasiBarisRencana, sameLine
 
 const manual = (status, extra = {}) => ({ status, note: null, actor: { name: "Admin Uji" }, createdAt: new Date("2026-10-20T03:00:00Z"), ...extra });
 
-test("status kerja efektif: urutan sumber DIBATALKAN > bukti aplikasi > manual > status order > jadwal > belum dijadwalkan", () => {
+test("status kerja efektif: urutan sumber DIBATALKAN > bukti aplikasi > status order Siap Kirim ke atas > manual > jadwal > belum dijadwalkan", () => {
   assert.equal(effectiveWorkStatus({ unitStatus: "CANCELLED", appStarted: true, manual: manual("DIKERJAKAN") }).key, "DIBATALKAN");
   const app = effectiveWorkStatus({ unitStatus: "IN_PRODUCTION", productionStatus: "WAITING_QC", appStarted: true, manual: manual("SELESAI") });
   assert.equal(app.key, "MENUNGGU_QC"); assert.equal(app.source, WORK_SOURCE.APLIKASI, "bukti aplikasi MENANG atas catatan manual");
@@ -20,7 +20,9 @@ test("status kerja efektif: urutan sumber DIBATALKAN > bukti aplikasi > manual >
 
 test("catatan manual BELUM_DIJADWALKAN = mengosongkan; catatan manual mengalahkan status order hanya bila ada", () => {
   assert.equal(effectiveWorkStatus({ unitStatus: "RECEIVED", scheduled: true, manual: manual("BELUM_DIJADWALKAN") }).key, "DIJADWALKAN", "dikosongkan → kembali ke jadwal");
-  assert.equal(effectiveWorkStatus({ unitStatus: "READY_FOR_DELIVERY", manual: manual("DIKERJAKAN") }).key, "DIKERJAKAN", "catatan manual lebih spesifik daripada 'mengikuti status order'");
+  const siap = effectiveWorkStatus({ unitStatus: "READY_FOR_DELIVERY", manual: manual("DIKERJAKAN") });
+  assert.equal(siap.key, "SELESAI", "Siap Kirim = pekerjaan selesai; tidak boleh 'Dikerjakan' di samping 'Siap Kirim'"); assert.equal(siap.source, WORK_SOURCE.STATUS_ORDER); assert.match(siap.detail, /catatan manual sebelumnya tetap di riwayat/);
+  assert.equal(effectiveWorkStatus({ unitStatus: "RECEIVED", manual: manual("DIKERJAKAN") }).key, "DIKERJAKAN", "status order dimundurkan → catatan manual berlaku lagi");
 });
 
 test("satu unit tidak pernah punya dua status kerja: setiap kombinasi menghasilkan tepat satu nilai kamus", () => {

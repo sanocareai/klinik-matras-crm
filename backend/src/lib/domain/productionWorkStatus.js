@@ -8,7 +8,7 @@
 // Posisi "Sudah dijemput · belum diterima workshop", Status kerja "Belum dijadwalkan". Itu BUKAN tiga status yang bertentangan, melainkan tiga fakta berbeda.
 //
 // STATUS KERJA EFEKTIF — satu unit hanya punya SATU:
-//   urutan sumber: DIBATALKAN (unit batal) > BUKTI APLIKASI (log tahap V1 / operasi V2 non-lewati) > CATATAN MANUAL Admin terakhir > mengikuti status order (Siap Kirim ke atas = Selesai) > jadwal (rencana bermeja) > belum dijadwalkan.
+//   urutan sumber: DIBATALKAN (unit batal) > BUKTI APLIKASI (log tahap V1 / operasi V2 non-lewati) > status order Siap Kirim ke atas (= Selesai; catatan manual tidak boleh bertentangan dengan status order) > CATATAN MANUAL Admin terakhir > jadwal (rencana bermeja) > belum dijadwalkan.
 //   Admin TIDAK boleh mencatat status manual selagi bukti aplikasi ada (ditolak 409 KERJA_DIPEGANG_APLIKASI) — jadi catatan manual dan bukti aplikasi tidak pernah bersaing. Bila bukti aplikasi MUNCUL sesudah catatan manual,
 //   catatan terakhir tetap di riwayat dan ditandai "digantikan bukti aplikasi sejak <waktu>"; status efektif beralih ke bukti aplikasi. Catatan manual tidak pernah membuat tahap, QC, foto, penerimaan Gudang, atau pemakaian bahan.
 
@@ -60,11 +60,12 @@ export function effectiveWorkStatus({ unitStatus, productionStatus = null, appSt
     const key = APP_MAP[productionStatus] || "DIKERJAKAN";
     return out(key, WORK_SOURCE.APLIKASI, manualOut ? "Menggantikan catatan manual terakhir" : null);
   }
+  // Status order Siap Kirim (atau sesudahnya) = pekerjaan Produksi SUDAH selesai: tidak boleh tampil "Dikerjakan" di samping "Siap Kirim". Catatan manual tetap di riwayat; bila status order dimundurkan, catatan itu berlaku lagi.
+  if (COMPLETE_UNIT_STATUSES.has(unitStatus)) return out("SELESAI", WORK_SOURCE.STATUS_ORDER, manualOut ? "Mengikuti status order (Siap Kirim atau sesudahnya); catatan manual sebelumnya tetap di riwayat" : "Mengikuti status order (Siap Kirim atau sesudahnya)");
   if (manual && manual.status !== "BELUM_DIJADWALKAN" && MANUAL_STATUSES.includes(manual.status)) {
     const by = manualOut.by ? ` oleh ${manualOut.by}` : "";
     return out(manual.status, WORK_SOURCE.MANUAL, `Dicatat manual${by}${manualOut.at ? `, ${waktuWibText(manualOut.at)}` : ""}`);
   }
-  if (COMPLETE_UNIT_STATUSES.has(unitStatus)) return out("SELESAI", WORK_SOURCE.STATUS_ORDER, "Mengikuti status order (Siap Kirim atau sesudahnya)");
   return scheduled ? out("DIJADWALKAN", WORK_SOURCE.JADWAL, "Sudah punya meja di Rencana Produksi") : out("BELUM_DIJADWALKAN", WORK_SOURCE.JADWAL, null);
 }
 
