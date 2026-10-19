@@ -429,12 +429,12 @@ rehearsal_penuh_lanjutan() {
   set +e; tes_jalankan "$BK_DIR/tes-integrasi.log" $TES_FILES; local TES_RC=$?; set -e
   local T_N T_PASS T_FAIL; T_N="$(tes_angka "$BK_DIR/tes-integrasi.log" tests)"; T_PASS="$(tes_angka "$BK_DIR/tes-integrasi.log" pass)"; T_FAIL="$(tes_angka "$BK_DIR/tes-integrasi.log" fail)"
   [[ "$T_N" =~ ^[0-9]+$ ]] && [[ "$T_PASS" =~ ^[0-9]+$ ]] && [[ "$T_FAIL" =~ ^[0-9]+$ ]] || { tail -n 12 "$BK_DIR/tes-integrasi.log"; docker rm -f "$PGT" >/dev/null 2>&1 || true; reh_drop; die "ringkasan tes integrasi tidak terbaca (exit=${TES_RC}) — jangan anggap lulus"; }
-  [ "$T_N" = "$TES_N_EXPECT" ] || { grep -E '^✖|^not ok' "$BK_DIR/tes-integrasi.log" | sort -u | head -n 15; docker rm -f "$PGT" >/dev/null 2>&1 || true; reh_drop; die "jumlah tes ${T_N} != ${TES_N_EXPECT} yang dipatok (berkas gagal dimuat atau daftar berubah)"; }
+  [ "$T_N" = "$TES_N_EXPECT" ] || { { grep -E '^✖|^not ok' "$BK_DIR/tes-integrasi.log" | sort -u | head -n 15 || true; }; docker rm -f "$PGT" >/dev/null 2>&1 || true; reh_drop; die "jumlah tes ${T_N} != ${TES_N_EXPECT} yang dipatok (berkas gagal dimuat atau daftar berubah)"; }
   TES_ULANG_INFO="percobaan pertama bersih"
   if [ "$TES_RC" != "0" ] || [ "$T_FAIL" != "0" ] || [ "$T_PASS" != "$TES_N_EXPECT" ]; then
     # KEBIJAKAN FLAKY (eksplisit, SATU kali): kegagalan boleh dicoba ulang HANYA bila terbatas pada ≤ 3 berkas tes; berkas itu dijalankan ulang di DB baru dan HARUS lulus penuh. Kegagalan pertama + hasil ulang dilaporkan apa adanya.
-    local GAGAL_NAMA GAGAL_FILES NG; GAGAL_NAMA="$(grep -E '^not ok' "$BK_DIR/tes-integrasi.log" | sed 's/^not ok [0-9]* - //' | sort -u | cut -c1-140)"
-    GAGAL_FILES="$(grep -oE "location: '/app/tests/integration/[A-Za-z0-9]+\.integration\.test\.js" "$BK_DIR/tes-integrasi.log" | sed "s#location: '/app/#tests/#" | sort -u)"
+    local GAGAL_NAMA GAGAL_FILES NG; GAGAL_NAMA="$(grep -E '^not ok' "$BK_DIR/tes-integrasi.log" | sed 's/^not ok [0-9]* - //' | sort -u | cut -c1-140 || true)"
+    GAGAL_FILES="$(grep -oE "location: '/app/tests/integration/[A-Za-z0-9]+\.integration\.test\.js" "$BK_DIR/tes-integrasi.log" | sed "s#location: '/app/#tests/#" | sort -u || true)"
     NG="$(printf '%s\n' "$GAGAL_FILES" | grep -c . || true)"
     printf '%s\n' "$GAGAL_NAMA" | sed 's/^/        GAGAL percobaan pertama: /'
     { [ "$NG" -ge 1 ] && [ "$NG" -le 3 ] && [ "$T_FAIL" -le 3 ]; } || { tail -n 12 "$BK_DIR/tes-integrasi.log"; docker rm -f "$PGT" >/dev/null 2>&1 || true; reh_drop; die "tes integrasi terarah TIDAK lulus (exit=${TES_RC}, tests=${T_N}, pass=${T_PASS}, fail=${T_FAIL}, berkas gagal=${NG}); di luar batas kebijakan ulang"; }
@@ -442,7 +442,7 @@ rehearsal_penuh_lanjutan() {
     warn "tes integrasi: ${T_FAIL} gagal pada percobaan pertama di ${NG} berkas ($(printf '%s' "$GAGAL_FILES" | tr '\n' ' ')); mengulang HANYA berkas itu di DB baru (sekali)"
     set +e; tes_jalankan "$BK_DIR/tes-integrasi-ulang.log" $GAGAL_FILES; local ULANG_RC=$?; set -e
     local U_FAIL U_N; U_FAIL="$(tes_angka "$BK_DIR/tes-integrasi-ulang.log" fail)"; U_N="$(tes_angka "$BK_DIR/tes-integrasi-ulang.log" tests)"
-    if [ "$ULANG_RC" != "0" ] || [ "$U_FAIL" != "0" ] || ! [[ "$U_N" =~ ^[0-9]+$ ]] || [ "$U_N" -lt 1 ]; then grep -E '^✖|^not ok' "$BK_DIR/tes-integrasi-ulang.log" | sort -u | head -n 10; docker rm -f "$PGT" >/dev/null 2>&1 || true; reh_drop; die "tes integrasi GAGAL lagi pada percobaan ulang (${ULANG_RC}; fail=${U_FAIL:-?}) — bukan flaky; berhenti"; fi
+    if [ "$ULANG_RC" != "0" ] || [ "$U_FAIL" != "0" ] || ! [[ "$U_N" =~ ^[0-9]+$ ]] || [ "$U_N" -lt 1 ]; then { grep -E '^✖|^not ok' "$BK_DIR/tes-integrasi-ulang.log" | sort -u | head -n 10 || true; }; docker rm -f "$PGT" >/dev/null 2>&1 || true; reh_drop; die "tes integrasi GAGAL lagi pada percobaan ulang (${ULANG_RC}; fail=${U_FAIL:-?}) — bukan flaky; berhenti"; fi
     TES_ULANG_INFO="${T_FAIL} gagal pada percobaan pertama (${NG} berkas) lalu LULUS PENUH pada percobaan ulang (${U_N} tes di berkas itu)"
   fi
   docker rm -f "$PGT" >/dev/null 2>&1 || true
