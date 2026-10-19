@@ -63,8 +63,40 @@ Tahap 3 ini tidak membutuhkan migrasi: kelompok turunan sudah cukup untuk naviga
 Beranda · Penerimaan · Stok · Produksi · Kontrol · Laporan (`components/GudangNavGrup.jsx`, logika `lib/gudangNav.js`). Menu rinci jadi anak yang dibuka; **satu kelompok terbuka sekaligus**; kelompok berisi halaman aktif selalu terbuka; kelompok terakhir yang dibuka diingat per perangkat. Penerimaan: Barang Akan Datang, Penerimaan Barang, Retur Supplier · Stok: Stok & Lokasi, Pengeluaran Material, Transfer Stok, Restok · Produksi: Antrean Produksi, Penerimaan Unit, Permintaan Bahan, Terima Barang Jadi · Kontrol: Stock Opname, Barang Rusak & Retur, Kasus Komplain, + konteks **Diproses Finance** (Pengajuan Biaya, Laporan Biaya, Opname Cutover Persediaan — izin dan rute tidak berubah) · Laporan: Riwayat Pergerakan, KPI Gudang.
 Badge hanya untuk pekerjaan yang butuh tindakan (dari `GET /inventory/beranda`): Barang Akan Datang ← barang tiba yang perlu dicatat; Penerimaan Barang ← belum masuk stok; Pengeluaran Material ← permintaan bahan; Stock Opname ← selisih/koreksi menunggu. PO yang sekadar ditunggu BUKAN badge. Keyboard: ↑/↓ pindah fokus, → buka, ← tutup, Home/End, Enter/Spasi. Sidebar menyempit (72 px) tetap daftar ikon datar. Bookmark, tab tersimpan, dan permission tidak berubah.
 
+## 4. Fleksibilitas status Penerimaan Barang (lanjutan)
+
+Kebutuhan: dokumen yang salah diubah statusnya harus mudah dikembalikan atau dilanjutkan lagi, terutama GR yang baru dijadwalkan — selama belum memengaruhi stok atau jurnal.
+
+### Matriks status final (dari server: `tampilan.pipeline.pindah` + `tertahan`)
+| Dari | Maju | Mundur | Tutup |
+|---|---|---|---|
+| **Draf** | → Terjadwal | — | Batalkan |
+| **Terjadwal** | → Barang tiba (PO: lewat *Catat barang tiba*; tanpa PO: tandai tiba) | → **Draf** | Batalkan |
+| **Barang tiba** | → Pemeriksaan | → **Terjadwal** (hanya bila belum ada hasil pemeriksaan, faktur, retur, atau pengganti; bila ada, ditampilkan sebabnya) | Tolak barang |
+| **Pemeriksaan** | → Siap masuk stok | → **Barang tiba** (hasil yang sudah diisi tidak dihapus) | Tolak barang |
+| **Siap masuk stok** | → Sudah masuk stok (*Simpan ke Stok*) | → **Pemeriksaan** (selama belum Simpan ke Stok) | Tolak barang |
+| **Sudah masuk stok** | — | **tidak ada** — hanya Koreksi Gudang (Koreksi Kedatangan / Koreksi penerimaan) | — |
+| **Dibatalkan** | — | **Pulihkan ke status terakhir yang aman** (Draf atau Terjadwal sebelum dibatalkan) atau **Buat penerimaan baru** (tertaut) | — |
+| **Ditolak** (barang pernah tiba) | — | hanya **Buat penerimaan baru** (tertaut) | — |
+
+Aturan server (`routes/goodsReceipt.js`):
+- Satu pintu mundur: `POST /:id/mundur { ke, alasan, revisi? }` (+ `/kembali-draft`, `/batalkan-tiba`, `/pulihkan` yang tetap ada). Hanya **satu langkah** matriks; selain itu 409 `PERPINDAHAN_TIDAK_SAH` (tidak ada lompatan). Dari "Sudah masuk stok" → 409 dengan arahan Koreksi Gudang.
+- **Alasan wajib** (3–300 karakter) untuk setiap perpindahan mundur dan pemulihan; tercatat sebagai peristiwa aktivitas dengan pelaku, waktu, status asal → tujuan, dan alasan. Riwayat status (maju, mundur, catat tiba, batal, pulih, tolak, masuk stok) tampil di jendela detail ("Terjadwal → Draf", pelaku, alasan).
+- **Tanpa saklar fitur dan tanpa approval kedua**; izin tulis Inventory yang sama dengan aksi lain (akun hanya-baca: 403 dan kontrol tidak ditampilkan).
+- **Idempoten**: perpindahan ke status yang sudah berlaku → 200 `ulang:true` tanpa jejak ganda (klik ganda/retry aman); PATCH status yang sama juga 200 `ulang:true` (dulu 400).
+- **Terkunci per dokumen** (`lockRowForUpdate`, status dibaca ulang dalam transaksi) dan **revisi** (`updatedAt`): layar basi → 409 `REVISI_BASI` "Dokumen ini sudah diubah pengguna lain…"; dua pengguna bersamaan → tepat satu menang, yang lain 409/hasil sama.
+- **Data wajib tidak dilompati**: tiba untuk PO hanya lewat Catat Barang Tiba (tanggal, jumlah, penerima, catatan); masuk stok hanya lewat Simpan ke Stok (wajib ada jumlah baik; baik ≤ sisa PO). Perpindahan mundur tidak menghapus data pemeriksaan.
+- Efek: **tidak ada pergerakan stok, jurnal, atau perubahan PO** pada perpindahan status mana pun sebelum posting (diuji dengan membandingkan stok/movement/jurnal/tagihan/jumlah PO dan jumlah baris sebelum–sesudah).
+
+### Kasus Ocean (DB uji berbentuk data production; production tidak disentuh)
+Tes `backend/tests/integration/gudangStatusMundur.integration.test.js` dan QA browser `pp/flows6.mjs`: PT OCEAN CENTRA FURNINDO, satu PO dua baris (Busa Ocean D18 120/160), dua GR untuk PO yang sama. GR uji Draf → Terjadwal → Draf → Terjadwal diulang tiga siklus (API) dan dua siklus (UI 1440 px dan 390 px). Terbukti: kedua GR tetap dua dokumen dengan nomor sendiri; GR lain tidak berubah (status, jadwal, updatedAt, jumlah baris); jumlah baris, PO, stok, movement, jurnal, tagihan tidak berubah; riwayat memuat tiap perpindahan beserta pelaku/alasan.
+
+### Pembersihan disk VPS (19 Okt)
+Audit: `/` 99 GB, 88 GB terpakai (94%): `backend/uploads` 36 GB (data produksi, tidak disentuh), containerd/Docker 28 + 4 GB, backups 5,8 GB, releases 3,6 GB. Dihapus HANYA yang terbukti bukan data: image tanpa tag (dangling) yang tidak dipakai kontainer mana pun, build cache > 24 jam (724 MB tersisa yang baru), dan cache npm (`~/.npm`, 701 MB; cache murni). Tidak dihapus: backup, tag rollback, release aktif/sebelumnya, DB rehearsal milik sesi lain, uploads. Hasil: bebas 6,3 → 7,7 GB.
+
 ## Pengujian
 Backend integrasi `gudangUxTahap3` (3: kelompok dari itemGroup tanpa tebakan & tanpa tulis; pipeline + penolakan lompatan; dua GR satu PO), unit `kelompokBahan` (4); frontend `gudangUxTahap3.test.js` (8). QA browser `pp/flows5.mjs` 1440 px dan 390 px dengan DB terisolasi (`qa-server5.mjs`): Stok 18, Penerimaan 43, Barang Akan Datang 4, Sidebar 18 per viewport. Screenshot: `C:\\tmp\\km-gudang-iso\\qa\\t3\\{desktop,hp}\\` (sebelum: `qa\\masuk\\` dan layar Stok/Penerimaan live).
 
 ## Keterbatasan / pekerjaan terbuka
+Daftar keputusan kelompok per bahan (29 bahan aktif): `docs/gudang-kelompok-bahan-keputusan.csv` — kolom "kelompok_pilihan" dikosongkan, menunggu keputusan Owner; BUKAN syarat rilis.
 Kelompok masih turunan (belum disimpan); 29 bahan aktif menunggu keputusan manual; uji perangkat fisik belum; `GoodsReceiptDetailDrawer.jsx` masih ada (dipakai tautan lama, tak lagi dirutekan dari daftar); Retur Supplier dan halaman Gudang lain belum memakai jendela fokus (di luar cakupan).
