@@ -15,11 +15,12 @@
 #
 #   cat scripts/release-status-lintas-workspace.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/slw.sh'
 #   ssh ubuntu@43.133.152.6 'bash /tmp/slw.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'      # baca-saja: produksi TIDAK diubah
+#   ssh ubuntu@43.133.152.6 'bash /tmp/slw.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rehearsal-only'      # fase 0–5b (backup, build, REHEARSAL pada restore backup nyata di DB sementara) lalu BERHENTI: TIDAK switch, release dir percobaan + DB sementara dibersihkan, tag image dipulihkan
 #   ssh ubuntu@43.133.152.6 'nohup bash /tmp/slw.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/slw.out 2>&1 < /dev/null &'
 #
 # ROLLBACK KODE: aman kapan saja (tag image rollback-pre-slw-<sha8>); tidak ada perubahan database untuk dipulihkan. Order yang sudah dibatalkan/diubah Sales beserta Run/rencana/permintaan bahan yang diselaraskan TETAP
 #   sebagaimana tercatat (kode lama hanya kembali menolak perubahan baru selama Run berjalan). Periksa ringkasan dengan scripts/rollback-guard-status-lintas-workspace.sh (baca-saja, selalu informasi).
-# (dibangkitkan oleh scripts/gen-release-status-lintas-workspace.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 8b3cc62c6202…)
+# (dibangkitkan oleh scripts/gen-release-status-lintas-workspace.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 3e5926386a66…)
 set -Eeuo pipefail
 umask 077
 
@@ -46,8 +47,8 @@ RELEASES="$HOME/releases/klinik-matras"
 PERSIST="$HOME/klinik-matras"
 SRC="$HOME/release-src/klinik-matras.git"
 NEW_DIR="$RELEASES/$DEPLOY_SHORT"
-PREFLIGHT_ONLY=0
-for a in "$@"; do [ "$a" = "--preflight-only" ] && PREFLIGHT_ONLY=1; done
+PREFLIGHT_ONLY=0; REHEARSAL_ONLY=0; NEW_DIR_DIBUAT=0
+for a in "$@"; do [ "$a" = "--preflight-only" ] && PREFLIGHT_ONLY=1; [ "$a" = "--rehearsal-only" ] && REHEARSAL_ONLY=1; done
 TS="$(date +%Y%m%d_%H%M%S)"
 BK_DIR="$HOME/release-backups/status-lintas-workspace-${DEPLOY_SHORT}-${TS}"
 PHASE="init"; BACKUP_FILE=""; ROLLBACK_TAG=""; PREV_DIR=""; PREV_IMG_ID=""; IMG_NAME=""
@@ -233,7 +234,7 @@ ok "backup: ${BACKUP_FILE} ($(du -h "$BACKUP_FILE" | cut -f1)); sha256 $(cut -d'
 PHASE="4-release-dir"; say "4. Release dir ${NEW_DIR} (git archive; release aktif tidak disentuh)"
 [ "$(sg ls-remote origin "refs/heads/${CAND_BRANCH}" | cut -f1)" = "$DEPLOY_SHA" ] || die "kandidat berubah selama backup"
 [ "$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$CID_OLD")" = "$PREV_DIR" ] || die "release aktif berubah selama backup"
-mkdir "$NEW_DIR" || die "gagal membuat ${NEW_DIR}"
+mkdir "$NEW_DIR" || die "gagal membuat ${NEW_DIR}"; NEW_DIR_DIBUAT=1
 sg archive "$DEPLOY_SHA" | tar -x -C "$NEW_DIR" --exclude='frontend/dist' || die "git archive gagal"
 cp -a "$NM_SRC" "$NEW_DIR/frontend/node_modules" || die "gagal menyalin node_modules frontend"
 for f in docker-compose.yml docker-compose.release.yml backend/Dockerfile backend/package.json frontend/package.json; do [ -f "$NEW_DIR/$f" ] || die "release dir tidak lengkap: $f"; done
@@ -475,6 +476,18 @@ RPSQL "$FP_ALL" | LC_ALL=C sort > "$BK_DIR/fp-all-sesudah.txt" || { reh_drop; di
 cmp -s "$BK_DIR/fp-all-sebelum.txt" "$BK_DIR/fp-all-sesudah.txt" || { diff "$BK_DIR/fp-all-sebelum.txt" "$BK_DIR/fp-all-sesudah.txt" || true; reh_drop; die "pemeriksaan kode baru MENGUBAH isi tabel (harus baca-saja)"; }
 reh_drop
 ok "rehearsal kode lulus: isi $(printf '%s\n' "$TABEL_LAMA" | grep -c .) tabel IDENTIK sebelum vs sesudah; DB sementara dihapus"
+if [ "$REHEARSAL_ONLY" = "1" ]; then
+  say "Rehearsal selesai (--rehearsal-only): produksi TIDAK di-switch. Membersihkan percobaan (release dir, image baru, tag)."
+  # build menandai ulang tag image backend ke image BARU; pulihkan ke image yang sedang melayani lalu hapus image percobaan (container aktif tidak disentuh).
+  docker tag "$PREV_IMG_ID" "$IMG_NAME" || warn "gagal memulihkan tag ${IMG_NAME}"
+  [ "$(docker inspect -f '{{.Image}}' "$CID_OLD")" = "$PREV_IMG_ID" ] || die "container aktif berubah selama rehearsal"
+  [ "$(docker image inspect -f '{{.Id}}' "$IMG_NAME")" = "$PREV_IMG_ID" ] || die "tag ${IMG_NAME} tidak kembali ke image yang melayani"
+  docker rmi "$NEW_IMG_ID" >/dev/null 2>&1 || warn "image percobaan ${NEW_IMG_ID:7:12} tidak dihapus (mungkin dipakai)"
+  docker rmi "$ROLLBACK_TAG" >/dev/null 2>&1 || true
+  [ "$NEW_DIR_DIBUAT" = "1" ] && rm -rf -- "$NEW_DIR"
+  ok "bersih: tag ${IMG_NAME} = image yang melayani; release dir percobaan dihapus; backup tetap di ${BACKUP_FILE}"
+  trap - EXIT; exit 0
+fi
 
 PHASE="6-pra-switch"; say "6. Pemeriksaan sebelum switch (TANPA migrasi)"
 [ "$(sg ls-remote origin "refs/heads/${CAND_BRANCH}" | cut -f1)" = "$DEPLOY_SHA" ] || die "kandidat berubah sebelum switch"

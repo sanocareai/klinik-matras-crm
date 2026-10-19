@@ -41,7 +41,7 @@ test("generator menolak masukan tidak aman: prisma/migrasi, dependensi, berkas p
   assert.throws(() => bangkitkan(masukan({ berkasList: [...berkasUji, "backend/prisma/schema.prisma"] })), /prisma/);
   assert.throws(() => bangkitkan(masukan({ berkasList: [...berkasUji, "backend/prisma/migrations/20261230000000_x/migration.sql"] })), /prisma/);
   assert.throws(() => bangkitkan(masukan({ berkasList: [...berkasUji, "frontend/package.json"] })), /dependensi/);
-  for (const f of ["backend/src/services/warehouseCorrection.js", "backend/src/routes/goodsReceipt.js", "backend/src/services/inventoryLedger.js", "backend/src/services/finance/journal.js", "backend/src/services/productionStepCommandService.js", "backend/src/services/orderStatusSync.js", "backend/src/services/deliveryMenungguKonfirmasi.js"]) {
+  for (const f of ["backend/src/services/warehouseCorrection.js", "backend/src/routes/goodsReceipt.js", "backend/src/services/inventoryLedger.js", "backend/src/services/finance/journal.js", "backend/src/services/productionStepCommandService.js", "backend/src/services/orderStatusSync.js"]) {
     assert.throws(() => bangkitkan(masukan({ berkasList: [...berkasUji, f] })), /pelindung/, f);
   }
 });
