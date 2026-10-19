@@ -124,7 +124,7 @@ test("uji perilaku di templat: blok DO dibatalkan, sentinel tidak tertangkap pen
 
 test("rehearsal-penuh: build image BERTAG rehearsal (tag production utuh), skenario pada KLON, DB utama tidak berubah, guard, tes integrasi di Postgres sekali-pakai TANPA volume dan TANPA Postgres production, pembersihan", () => {
   const lanjut = script.match(/rehearsal_penuh_lanjutan\(\) \{[\s\S]*?\n\}\n/)[0];
-  for (const s of ["CREATE DATABASE \\\"${KLON_DB}\\\" TEMPLATE \\\"${REH_DB}\\\"", "DB rehearsal UTAMA tetap tidak berubah oleh skenario", "GUARD_DB=\"$KLON_DB\"", "runDisposable.js $TES_FILES", "--tmpfs /var/lib/postgresql/data", "docker rm -f \"$PGT\"", "TEST_DB_SERVER_URL=\"postgresql://${DB_USER}:${PGPW}@${PGT}:5432/postgres\"",
+  for (const s of ["CREATE DATABASE \\\"${KLON_DB}\\\" TEMPLATE \\\"${REH_DB}\\\"", "DB rehearsal UTAMA tetap tidak berubah oleh skenario", "GUARD_DB=\"$KLON_DB\"", "runDisposable.js $TES_FILES", "--tmpfs /var/lib/postgresql/data", "docker rm -f \"$PGT\"", "TEST_DB_SERVER_URL=\"postgresql://${DB_USER}:${PGPW}@${PGT}:5432/postgres?connection_limit=30\"",
     "tes integrasi terarah TIDAK lulus penuh", '[ "$T_N" != "$TES_N_EXPECT" ]', "sekali-pakai"]) assert.ok(lanjut.includes(s), s);
   const dockerTes = lanjut.split("\n").find((l) => l.includes("runDisposable.js"));
   const mount = [...dockerTes.matchAll(/ -v "([^"]+)"/g)].map((m) => m[1]);
