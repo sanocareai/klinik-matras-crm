@@ -305,6 +305,8 @@ const DIVISIONS = {
       {
         section: "Kontrol", grup: true, Icon: Scale,
         items: [
+          // Tahap 4 — Pusat Masalah: pengecualian nyata + dampak + pemilik tindakan + cakupan (bukan dashboard angka).
+          { to: "/warehouse/perlu-perhatian", label: "Perlu Perhatian", Icon: AlertTriangle },
           { to: "/warehouse/stock-count",   label: "Stock Opname",       Icon: Scale },
           { to: "/warehouse/adjustments",   label: "Barang Rusak & Retur", Icon: AlertTriangle },
           // Kasus Komplain (D-116) — Warehouse melihat kasus yang butuh Material Requirement; halaman dibaca lintas divisi.

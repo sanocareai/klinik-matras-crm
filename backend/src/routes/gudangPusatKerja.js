@@ -52,4 +52,4 @@ gudangPusatKerjaRouter.get("/tertahan/:kode", async (req, res) => {
 });
 gudangPusatKerjaRouter.get("/selesai", async (_req, res) => { try { res.json({ selesaiTerbaru: await selesai(prisma) }); } catch (e) { galat(e, res); } });
 gudangPusatKerjaRouter.get("/perhatian", async (req, res) => { try { res.json(await perluPerhatian(prisma, { user: req.user, batas: bulat(req.query.batas, 8, 1, 50) })); } catch (e) { galat(e, res); } });
-gudangPusatKerjaRouter.get("/cari", async (req, res) => { try { res.json(await cariGudang(prisma, { q: req.query.q, batas: bulat(req.query.batas, 6, 1, 20) })); } catch (e) { galat(e, res); } });
+gudangPusatKerjaRouter.get("/cari", async (req, res) => { try { res.json(await cariGudang(prisma, { q: req.query.q, batas: bulat(req.query.batas, 6, 1, 20), user: req.user })); } catch (e) { galat(e, res); } });

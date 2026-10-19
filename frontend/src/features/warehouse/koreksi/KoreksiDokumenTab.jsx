@@ -11,7 +11,7 @@ import { STATUS_KOREKSI, JENIS_KOREKSI, JENIS_OPERASI, barisPerubahan, bolehBata
 function pengguna() { try { return JSON.parse(localStorage.getItem("user")) || {}; } catch { return {}; } }
 const FILTER = [{ key: "PENDING_APPROVAL", label: "Menunggu persetujuan" }, { key: "", label: "Semua" }, { key: "POSTED", label: "Diterapkan" }, { key: "REJECTED", label: "Ditolak" }, { key: "CANCELLED", label: "Dibatalkan" }];
 
-function Detail({ k, aksi }) {
+export function Detail({ k, aksi }) {
   const u = pengguna(); const roles = u.roles || (u.role ? [u.role] : []);
   const [catatan, setCatatan] = useState(""); const [busy, setBusy] = useState(false); const [galat, setGalat] = useState("");
   const boleh = bolehMenyetujui(roles) && bolehSetujui(k, u.id); const batal = bolehBatal(k, u.id);
@@ -52,13 +52,13 @@ function Detail({ k, aksi }) {
   );
 }
 
-export default function KoreksiDokumenTab() {
+export default function KoreksiDokumenTab({ onBuka, versiDaftar = 0 }) {
   const [filter, setFilter] = useState("PENDING_APPROVAL"); const [data, setData] = useState({ total: 0, koreksi: [] }); const [memuat, setMemuat] = useState(true); const [galat, setGalat] = useState(""); const [buka, setBuka] = useState(null);
   const muat = useCallback(async () => {
     setMemuat(true); setGalat("");
     try { setData(await api.getDaftarKoreksiGudang({ status: filter })); } catch (e) { setGalat(e.message); } finally { setMemuat(false); }
   }, [filter]);
-  useEffect(() => { muat(); }, [muat]);
+  useEffect(() => { muat(); }, [muat, versiDaftar]);
   const jumlahMenunggu = useMemo(() => data.koreksi.filter((k) => k.status === "PENDING_APPROVAL").length, [data]);
   return (
     <div className="space-y-3" data-testid="tab-koreksi-dokumen">
@@ -78,13 +78,13 @@ export default function KoreksiDokumenTab() {
           {data.koreksi.map((k) => (
             <li key={k.id}>
               <Card className="p-0" data-testid="baris-koreksi-dokumen">
-                <button type="button" onClick={() => setBuka(buka === k.id ? null : k.id)} className="flex w-full flex-wrap items-center gap-2 px-3 py-2.5 text-left" aria-expanded={buka === k.id}>
+                <button type="button" onClick={() => (onBuka ? onBuka(k.id) : setBuka(buka === k.id ? null : k.id))} className="flex w-full flex-wrap items-center gap-2 px-3 py-2.5 text-left max-sm:min-h-11" aria-expanded={onBuka ? undefined : buka === k.id} data-testid="buka-koreksi">
                   <span className="text-[13px] font-semibold text-ink">{k.nomor}</span>
                   <Badge variant={STATUS_KOREKSI[k.status]?.warna ?? "neutral"}>{STATUS_KOREKSI[k.status]?.label ?? k.status}</Badge>
                   <span className="text-[12px] text-ink2">{k.nomorDokumen}</span>
                   <span className="text-[11px] text-ink3">{JENIS_KOREKSI[k.jenis] ?? k.jenis} · {k.pemohon?.name ?? "—"} · {new Date(k.diajukanPada).toLocaleString("id-ID")}</span>
                 </button>
-                {buka === k.id && <Detail k={k} aksi={muat} />}
+                {!onBuka && buka === k.id && <Detail k={k} aksi={muat} />}
               </Card>
             </li>
           ))}

@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
+import { useJendelaFokus } from "@/features/warehouse/dokumen/useJendelaFokus.js";
+import RestokDetail from "@/features/warehouse/dokumen/RestokDetail.jsx";
 import { TrendingUp, Plus, RefreshCw, Download } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
@@ -18,9 +20,10 @@ import { cakupanBatasMinimum, kalimatCakupanBatasMinimum, tanggalPendek, teksJum
 const satuan = (u) => UNIT_LABEL[u] || String(u || "").toLowerCase();
 
 export default function WarehouseReplenishment() {
-  const navigate = useNavigate();
+  const { id: bukaId } = useParams();
   const [suggestions, setSuggestions] = useState(null); const [cakupan, setCakupan] = useState(null);
-  const [tahap, setTahap] = useTahapFilter(); const [cari, setCari] = useState("");
+  const [tahap, setTahap] = useTahapFilter("/warehouse/replenishment");
+  const { buka: bukaJ, tutup } = useJendelaFokus("/warehouse/replenishment", { saringan: tahap ? `?tahap=${tahap}` : "" }); const [cari, setCari] = useState("");
   const [rows, setRows] = useState(null); const [loading, setLoading] = useState(true); const [error, setError] = useState("");
   const [formOpen, setFormOpen] = useState(false); const [prefill, setPrefill] = useState(null);
 
@@ -35,7 +38,7 @@ export default function WarehouseReplenishment() {
   useEffect(() => { load(); loadSuggestions(); }, [load, loadSuggestions]);
 
   const refreshSemua = () => { load(); loadSuggestions(); };
-  const buka = (r) => navigate(`/warehouse/replenishment/${r.id}`);
+  const buka = (r) => bukaJ(r.id);
   function ekspor() {
     if (!rows || rows.length === 0) return;
     exportToCSV(rows.map((r) => ({
@@ -93,7 +96,8 @@ export default function WarehouseReplenishment() {
           kartu={(r) => ({ judul: r.requestNumber, baris: [<><span className="font-medium text-ink">{r.material.code}</span> · {teksJumlah(r.suggestedQty)} {satuan(r.material.unit)}</>, `${r.requestedBy?.name ?? "—"} · ${tanggalPendek(r.createdAt)}${r.requiredDate ? ` · butuh ${tanggalPendek(r.requiredDate)}` : ""}`] })}
           kosong={{ icon: TrendingUp, judul: "Belum ada Permintaan Restok", deskripsi: "Buat dari saran di atas, atau ajukan manual.", aksi: <Button size="sm" onClick={() => { setPrefill(null); setFormOpen(true); }}><Plus size={14} /> Ajukan Manual</Button> }} />
       </PageBody>
-      <ReplenishmentFormModal open={formOpen} prefill={prefill} onClose={() => setFormOpen(false)} onCreated={(d) => { refreshSemua(); if (d?.id) navigate(`/warehouse/replenishment/${d.id}`); }} />
+      <ReplenishmentFormModal open={formOpen} prefill={prefill} onClose={() => setFormOpen(false)} onCreated={(d) => { refreshSemua(); if (d?.id) bukaJ(d.id); }} />
+      {bukaId && <RestokDetail key="fokus" id={bukaId} onTutup={tutup} onBerubah={refreshSemua} />}
     </PageContainer>
   );
 }

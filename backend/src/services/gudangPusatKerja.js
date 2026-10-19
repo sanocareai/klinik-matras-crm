@@ -75,6 +75,28 @@ const aksiUtama = (daftar, izin, perlu = "tulis") => {
   return { kode: a.kode, label: a.label };
 };
 
+const AKSI_MI = { WAITING_APPROVAL: { kode: "SETUJUI", label: "Setujui permintaan" }, APPROVED: { kode: "SIAPKAN", label: "Siapkan barang" }, READY_TO_PICK: { kode: "TANDAI_DIAMBIL", label: "Serahkan / tandai diambil" }, PICKED: { kode: "KONFIRMASI_KELUAR", label: "Konfirmasi keluar" } };
+const AKSI_ST = { WAITING_APPROVAL: { kode: "SETUJUI", label: "Setujui transfer" }, APPROVED: { kode: "TANDAI_DIAMBIL", label: "Tandai sudah diambil" }, PICKED: { kode: "KIRIM", label: "Kirim barang" }, IN_TRANSIT: { kode: "TERIMA", label: "Terima transfer" } };
+const AKSI_SC = { SCHEDULED: { kode: "MULAI_HITUNG", label: "Mulai hitung" }, IN_PROGRESS: { kode: "SERAHKAN_HITUNGAN", label: "Serahkan hitungan" }, WAITING_REVIEW: { kode: "SELESAIKAN_OPNAME", label: "Tinjau & selesaikan" } };
+
+/** Tindakan cepat di hasil pencarian — satu aksi maju yang sah untuk status dokumen SAAT INI dan hanya bila pengguna berizin; tombol hanya membuka jendela dokumen dengan aksi itu disorot/dibuka (tidak menulis apa pun). */
+function aksiCepat(jenis, row, izin) {
+  if (jenis === "penerimaan") {
+    const s = row.status;
+    if (s === "DRAFT") return aksiUtama([{ kode: "JADWALKAN", label: "Jadwalkan kedatangan", jenis: "maju" }], izin);
+    if (s === "SCHEDULED") return aksiUtama([{ kode: row.purchaseOrderId ? "CATAT_TIBA" : "TANDAI_TIBA", label: "Catat barang tiba", jenis: "maju" }], izin);
+    if (s === "ARRIVED") return aksiUtama([{ kode: "MAJUKAN", label: "Periksa barang", jenis: "maju" }], izin);
+    if (s === "INSPECTION") { const kurang = (row.lines ?? []).filter((l) => l.acceptedQty == null || l.rejectedQty == null).length; return aksiUtama([{ kode: kurang === 0 ? "MAJUKAN" : "ISI_PEMERIKSAAN", label: kurang === 0 ? "Nyatakan siap masuk stok" : "Lengkapi hasil pemeriksaan", jenis: "maju" }], izin); }
+    if (s === "READY_FOR_PUTAWAY") return aksiUtama([{ kode: "SIMPAN_KE_STOK", label: "Simpan ke stok", jenis: "maju" }], izin);
+    if (s === "COMPLETED") return aksiUtama([{ kode: "KOREKSI_PENERIMAAN", label: "Ajukan koreksi", jenis: "maju" }], izin);
+    return null;
+  }
+  if (jenis === "pengeluaran-material") return row.productionPlanId ? null : AKSI_MI[row.status] ? aksiUtama([{ ...AKSI_MI[row.status], jenis: "maju" }], izin) : null;
+  if (jenis === "transfer") return AKSI_ST[row.status] ? aksiUtama([{ ...AKSI_ST[row.status], jenis: "maju" }], izin) : null;
+  if (jenis === "opname") return AKSI_SC[row.status] ? aksiUtama([{ ...AKSI_SC[row.status], jenis: "maju" }], izin) : null;
+  return null;
+}
+
 const SEL_GR = {
   id: true, receiptNumber: true, status: true, supplier: true, expectedDate: true, arrivedDate: true, arrivalRevision: true, purchaseOrderId: true, updatedAt: true, createdAt: true,
   createdBy: { select: { name: true } }, purchaseOrder: { select: { poNumber: true, expectedDate: true, status: true } },
@@ -156,7 +178,6 @@ export async function pusatKerja(db, { user, hariIni = null, batas = 8, antreanP
   }
 
   // ── Permintaan bahan (alur biasa)
-  const AKSI_MI = { WAITING_APPROVAL: { kode: "SETUJUI", label: "Setujui permintaan" }, APPROVED: { kode: "SIAPKAN", label: "Siapkan barang" }, READY_TO_PICK: { kode: "TANDAI_DIAMBIL", label: "Serahkan / tandai diambil" }, PICKED: { kode: "KONFIRMASI_KELUAR", label: "Konfirmasi keluar" } };
   for (const m of mis) {
     const tp = tampilanMaterialIssue(m); const untuk = m.unit ? `${m.unit.unitCode} · ${m.unit.order?.customer?.name ?? ""}` : (m.department ?? "Gudang");
     const dibutuhkan = hariStr(m.requiredDate); const lewat = dibutuhkan && dibutuhkan < today ? selisihHari(today, dibutuhkan) : 0;
@@ -171,7 +192,6 @@ export async function pusatKerja(db, { user, hariIni = null, batas = 8, antreanP
 
   // ── Transfer
   const selisih = await selisihTerbukaDaftar(db, sts.filter((s) => s.status === "COMPLETED").map((s) => ({ ...s })));
-  const AKSI_ST = { WAITING_APPROVAL: { kode: "SETUJUI", label: "Setujui transfer" }, APPROVED: { kode: "TANDAI_DIAMBIL", label: "Tandai sudah diambil" }, PICKED: { kode: "KIRIM", label: "Kirim barang" }, IN_TRANSIT: { kode: "TERIMA", label: "Terima transfer" } };
   for (const t of sts) {
     const buka = t.status === "COMPLETED" ? Number(selisih?.get?.(t.id) ?? selisih?.[t.id] ?? 0) : 0;
     if (t.status === "COMPLETED" && !(buka > 0)) continue;
@@ -185,7 +205,6 @@ export async function pusatKerja(db, { user, hariIni = null, batas = 8, antreanP
   }
 
   // ── Stock Count
-  const AKSI_SC = { SCHEDULED: { kode: "MULAI_HITUNG", label: "Mulai hitung" }, IN_PROGRESS: { kode: "SERAHKAN_HITUNGAN", label: "Serahkan hitungan" }, WAITING_REVIEW: { kode: "SELESAIKAN_OPNAME", label: "Tinjau & selesaikan" } };
   for (const c of scs) {
     const tp = tampilanOpname(c, { adaSelisih: c.status === "WAITING_REVIEW", bisaMenyetujuiSelisih: izin.setujui });
     const jadwal = hariStr(c.scheduledDate); const lewat = c.status === "SCHEDULED" && jadwal && jadwal < today ? selisihHari(today, jadwal) : 0;
@@ -317,7 +336,8 @@ export async function perluPerhatian(db, { user, sekarang = new Date(), batas = 
 }
 
 /** Pencarian lintas dokumen Gudang (baca-saja). Minimal 2 karakter; hasil dikelompokkan per jenis, paling banyak `batas` per jenis. */
-export async function cariGudang(db, { q, batas = 6 }) {
+export async function cariGudang(db, { q, batas = 6, user = null }) {
+  const izin = user ? izinPengguna(user) : { baca: true, tulis: false, setujui: false };
   const kata = String(q ?? "").trim(); if (kata.length < 2) return { q: kata, kelompok: [], total: 0, pesan: "Ketik minimal 2 karakter." };
   const c = { contains: kata, mode: "insensitive" };
   const [gr, po, mat, mi, st, sc, kor, adj, rsp, rus, rtr, rep] = await Promise.all([
@@ -335,7 +355,7 @@ export async function cariGudang(db, { q, batas = 6 }) {
     db.replenishmentRequest.findMany({ where: { OR: [{ requestNumber: c }, { material: { OR: [{ code: c }, { name: c }] } }] }, select: { id: true, requestNumber: true, status: true, material: { select: { code: true } } }, take: batas }),
   ]);
   const kel = [];
-  const dorong = (jenis, arr, f) => { if (arr.length) kel.push({ jenis, label: JENIS[jenis].label, hasil: arr.map((x) => { const r = f(x); return { jenis, id: x.id, nomor: r.nomor, judul: r.judul ?? r.nomor, sub: r.sub ?? null, status: r.status ?? null, tautan: jenis === "bahan" ? `/warehouse/inventory?q=${encodeURIComponent(r.nomor)}` : tautanFokus(jenis, x.id) }; }) }); };
+  const dorong = (jenis, arr, f) => { if (arr.length) kel.push({ jenis, label: JENIS[jenis].label, hasil: arr.map((x) => { const r = f(x); return { jenis, id: x.id, nomor: r.nomor, judul: r.judul ?? r.nomor, sub: r.sub ?? null, status: r.status ?? null, aksi: aksiCepat(jenis, x, izin), tautan: jenis === "bahan" ? `/warehouse/inventory?q=${encodeURIComponent(r.nomor)}` : tautanFokus(jenis, x.id) }; }) }); };
   dorong("penerimaan", gr, (g) => ({ nomor: g.receiptNumber, sub: `${g.purchaseOrder?.poNumber ? `PO ${g.purchaseOrder.poNumber}` : "Tanpa PO"} · ${g.supplier ?? "—"}`, status: tampilanPenerimaan(g).label }));
   dorong("po", po, (p) => ({ nomor: p.poNumber, sub: p.supplier?.name, status: p.status }));
   dorong("bahan", mat, (m) => ({ nomor: m.code, judul: m.name, sub: m.active ? null : "nonaktif" }));

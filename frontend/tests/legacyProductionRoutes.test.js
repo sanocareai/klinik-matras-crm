@@ -54,7 +54,8 @@ test("isLegacyProductionRoute: true untuk rute lama, false untuk rute baru dan r
 
 test("setiap tujuan redirect adalah halaman nyata (terdaftar atau mandiri) dan TIDAK ada rute lama yang masih terdaftar sebagai halaman", () => {
   const reg = src("routes", "pageRegistry.jsx");
-  const registered = new Set([...reg.matchAll(/path: "([^"]+)"/g)].map((m) => m[1]));
+  // Parameter opsional (/:id?) menandai jendela fokus di atas halaman yang sama (Gudang Tahap 4); halaman dasarnya tetap terdaftar.
+  const registered = new Set([...reg.matchAll(/path: "([^"]+)"/g)].map((m) => m[1].replace(/(\/:[A-Za-z]+\?)+$/, "")));
   for (const [from, { to }] of Object.entries(LEGACY_PRODUCTION_REDIRECTS)) {
     assert.ok(registered.has(to.split("?")[0]), `tujuan ${to} (dari ${from}) harus terdaftar`);
     assert.ok(!registered.has(from), `rute lama ${from} tidak boleh lagi menjadi halaman`);

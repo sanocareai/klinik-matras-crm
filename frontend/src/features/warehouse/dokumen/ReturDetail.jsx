@@ -1,5 +1,4 @@
 import React from "react";
-import { useParams } from "react-router-dom";
 import { api } from "@/api.js";
 import KartuJalurKoreksi from "@/features/warehouse/koreksi/KartuJalurKoreksi.jsx";
 import { UNIT_LABEL } from "@/features/warehouse/inventoryReal.js";
@@ -11,9 +10,8 @@ import { teksJumlah, waktuTeks } from "./dokumenLogic.js";
 // DETAIL RETUR — halaman. Alur: Dicatat → Diterima → Diperiksa → Selesai. Hanya penyelesaian "Kembalikan ke tersedia" yang MENAMBAH stok (satu pergerakan RETURN); pilihan lain hanya dicatat.
 const satuan = (u) => UNIT_LABEL[u] || String(u || "").toLowerCase();
 
-export default function ReturDetail() {
-  const { id } = useParams();
-  const { r, galat, memuat, sibuk, setSibuk, versi, muat } = useDokumen(api.getReturnRecord, id);
+export default function ReturDetail({ id, onTutup, onBerubah }) {
+  const { r, galat, memuat, sibuk, setSibuk, versi, muat } = useDokumen(api.getReturnRecord, id, onBerubah);
   const jalankan = async (kode, v = {}) => {
     setSibuk(true);
     try {
@@ -25,7 +23,7 @@ export default function ReturDetail() {
       await muat();
     } catch (e) { await muat(); throw e; } finally { setSibuk(false); }
   };
-  if (!r) return <HalamanDokumen r={r} memuat={memuat} galat={galat} kembali={{ to: "/warehouse/adjustments?tab=returns", label: "Retur" }} nama="retur" />;
+  if (!r) return <HalamanDokumen r={r} memuat={memuat} galat={galat} onTutup={onTutup} nama="retur" />;
   const t = r.tampilan; const u = satuan(r.material?.unit);
   const SPEC = {
     PERIKSA_RETUR: { panel: { judul: "Mulai periksa barang retur?", tombol: "Mulai periksa", peringatan: "Belum memengaruhi stok. Hasil pemeriksaan boleh diisi sekarang atau nanti lewat Ubah data.", bidang: [{ nama: "catatan", label: "Catatan pemeriksaan (opsional)", tipe: "area", maks: 300 }] } },
@@ -42,7 +40,7 @@ export default function ReturDetail() {
     ...(selesai ? [{ label: "Penyelesaian", isi: res ? res.label.split(" — ")[0] : r.resolution, testid: "id-penyelesaian" }] : []),
   ];
   return (
-    <HalamanDokumen judul={r.returnNumber} subjudul={`${JENIS_RETUR[r.returnType] ?? r.returnType} · ${r.material?.code} · ${teksJumlah(r.qty)} ${u}`} kembali={{ to: "/warehouse/adjustments?tab=returns", label: "Retur" }} r={r} memuat={memuat} galat={galat} onMuat={muat} nama="retur">
+    <HalamanDokumen judul={r.returnNumber} subjudul={`${JENIS_RETUR[r.returnType] ?? r.returnType} · ${r.material?.code} · ${teksJumlah(r.qty)} ${u}`} onTutup={onTutup} r={r} memuat={memuat} galat={galat} onMuat={muat} nama="retur">
       <KartuStatusDokumen tampilan={t} identitas={identitas} alurLabel="Alur retur" catatan={[r.notes, r.inspectionNote && `Hasil pemeriksaan: ${r.inspectionNote}`].filter(Boolean).join(" — ") || undefined} />
       <KartuAksiDokumen tampilan={t} izin={r.izin} spec={SPEC} onJalankan={jalankan} sibuk={sibuk} versi={versi} namaDokumen="retur ini" />
       <KartuJalurKoreksi tipe="RETURN_RECORD" id={id} versi={`${r.status}-${versi}`} ringkas />

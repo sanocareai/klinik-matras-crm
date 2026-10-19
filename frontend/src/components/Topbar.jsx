@@ -86,6 +86,7 @@ const ROUTE_LABELS = {
   "/warehouse/inventory":       ["Gudang", "Stok & Lokasi"],
   "/warehouse/barang-akan-datang": ["Gudang", "Barang Akan Datang"],
   "/warehouse/retur-supplier": ["Gudang", "Retur Supplier"],
+  "/warehouse/perlu-perhatian": ["Gudang", "Perlu Perhatian"],
   "/finance/retur-supplier": ["Finance", "Retur & Debit Note"],
   "/warehouse/goods-receipt":   ["Gudang", "Penerimaan Barang"],
   "/warehouse/material-issue":  ["Gudang", "Pengeluaran Material"],
@@ -136,7 +137,7 @@ export default function Topbar({ onToggleMobileMenu, showMobileMenu = true, user
   // 2 Agustus 2026 remah "Main Hub" HARUS bisa diklik. `to` null = teks biasa.
   const crumbs = commandCenterTitle
     ? [{ text: "Main Hub", to: "/portal" }, { text: commandCenterTitle, to: null }]
-    : (labelFinance(pathname, search) || ROUTE_LABELS[pathname] || (pathname.startsWith("/warehouse/goods-receipt/") ? ["Gudang", "Penerimaan Barang", "Detail"] : null) || (pathname.startsWith("/warehouse/material-issue/") ? ["Gudang", "Pengeluaran Material", "Detail"] : null) || (pathname.startsWith("/warehouse/transfers/") ? ["Gudang", "Transfer Stok", "Detail"] : null) || (pathname.startsWith("/warehouse/stock-count/") ? ["Gudang", "Stock Opname", "Detail"] : null) || (pathname.startsWith("/warehouse/replenishment/") ? ["Gudang", "Restok", "Detail"] : null) || (pathname.startsWith("/warehouse/adjustments/") ? ["Gudang", "Barang Rusak & Retur", "Detail"] : null) || [pathname.replace("/", "")]).map((text, i, arr) => ({
+    : (labelFinance(pathname, search) || ROUTE_LABELS[pathname] || (pathname.startsWith("/warehouse/dashboard/") ? ["Gudang", "Beranda"] : null) || (pathname.startsWith("/warehouse/perlu-perhatian/") ? ["Gudang", "Perlu Perhatian"] : null) || (pathname.startsWith("/warehouse/retur-supplier/") ? ["Gudang", "Retur Supplier"] : null) || (pathname.startsWith("/warehouse/goods-receipt/") ? ["Gudang", "Penerimaan Barang", "Detail"] : null) || (pathname.startsWith("/warehouse/material-issue/") ? ["Gudang", "Pengeluaran Material", "Detail"] : null) || (pathname.startsWith("/warehouse/transfers/") ? ["Gudang", "Transfer Stok", "Detail"] : null) || (pathname.startsWith("/warehouse/stock-count/") ? ["Gudang", "Stock Opname", "Detail"] : null) || (pathname.startsWith("/warehouse/replenishment/") ? ["Gudang", "Restok", "Detail"] : null) || (pathname.startsWith("/warehouse/adjustments/") ? ["Gudang", "Barang Rusak & Retur", "Detail"] : null) || [pathname.replace("/", "")]).map((text, i, arr) => ({
         text,
         // Halaman di DALAM sebuah workspace: remah pertama jadi jalan pulang
         // ke Main Hub. Remah terakhir (halaman sekarang) tidak pernah link.

@@ -23,7 +23,8 @@ import {
 const kunciAksi = (p) => `${p}-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`}`;
 const Lencana = ({ peta, kode, className }) => <Badge variant={peta[kode]?.variant || "neutral"} className={className}>{peta[kode]?.label ?? kode}</Badge>;
 
-export default function ReturSupplierWorkspace({ workspace }) {
+// `bukaIdRute` + `bukaRute(id|null)` (opsional, dipakai Gudang — UX Gudang Tahap 4): detail retur dikendalikan RUTE (/warehouse/retur-supplier/:id) supaya URL bisa dibagikan dan Back/Tutup mengembalikan daftar. Finance tetap lokal.
+export default function ReturSupplierWorkspace({ workspace, bukaIdRute, bukaRute }) {
   const finance = workspace === "FINANCE";
   const A = useMemo(() => (finance
     ? { daftar: api.getReturFinance, detail: api.getReturFinanceDetail, kandidat: api.getKandidatReturFinance, pratinjau: api.pratinjauReturFinance, buat: api.buatReturFinance, batal: api.batalReturFinance, unggah: api.unggahBuktiReturFinance }
@@ -35,7 +36,10 @@ export default function ReturSupplierWorkspace({ workspace }) {
   const [loading, setLoading] = useState(true);
   const [galat, setGalat] = useState("");
   const [buat, setBuat] = useState(false);
-  const [bukaId, setBukaId] = useState(null);
+  const [bukaIdLokal, setBukaIdLokal] = useState(null);
+  const dikendalikanRute = typeof bukaRute === "function";
+  const bukaId = dikendalikanRute ? (bukaIdRute ?? null) : bukaIdLokal;
+  const setBukaId = dikendalikanRute ? bukaRute : setBukaIdLokal;
   const [dnId, setDnId] = useState(null);
   const [kreditId, setKreditId] = useState(null);
   const [batalPakai, setBatalPakai] = useState(null); // { kredit, aplikasi } — dialog pembatalan pemakaian saldo kredit (diaudit)

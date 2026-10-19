@@ -1,5 +1,4 @@
 import React from "react";
-import { useParams } from "react-router-dom";
 import { api } from "@/api.js";
 import KartuJalurKoreksi from "@/features/warehouse/koreksi/KartuJalurKoreksi.jsx";
 import { UNIT_LABEL } from "@/features/warehouse/inventoryReal.js";
@@ -12,9 +11,8 @@ import { teksJumlah, waktuTeks } from "./dokumenLogic.js";
 // Pilihan penyelesaian memuat dampak stoknya di labelnya, dan panel konfirmasi menyebut jumlah yang akan berkurang.
 const satuan = (u) => UNIT_LABEL[u] || String(u || "").toLowerCase();
 
-export default function RusakDetail() {
-  const { id } = useParams();
-  const { r, galat, memuat, sibuk, setSibuk, versi, muat } = useDokumen(api.getDamagedStockRecord, id);
+export default function RusakDetail({ id, onTutup, onBerubah }) {
+  const { r, galat, memuat, sibuk, setSibuk, versi, muat } = useDokumen(api.getDamagedStockRecord, id, onBerubah);
   const jalankan = async (kode, v = {}) => {
     setSibuk(true);
     try {
@@ -23,7 +21,7 @@ export default function RusakDetail() {
       await muat();
     } catch (e) { await muat(); throw e; } finally { setSibuk(false); }
   };
-  if (!r) return <HalamanDokumen r={r} memuat={memuat} galat={galat} kembali={{ to: "/warehouse/adjustments?tab=damaged", label: "Barang Rusak" }} nama="laporan barang rusak" />;
+  if (!r) return <HalamanDokumen r={r} memuat={memuat} galat={galat} onTutup={onTutup} nama="laporan barang rusak" />;
   const t = r.tampilan; const u = satuan(r.material?.unit);
   const SPEC = {
     SELESAIKAN: { panel: { judul: "Selesaikan penanganan barang rusak", tombol: "Simpan penyelesaian", peringatan: `Dibuang atau Retur ke supplier: stok BERKURANG ${teksJumlah(r.qty)} ${u} sekarang (satu pergerakan, tidak bisa dibatalkan dari sini; salah input lewat jalur koreksi resmi). Pilihan lain hanya dicatat.`,
@@ -36,7 +34,7 @@ export default function RusakDetail() {
     ...(selesai ? [{ label: "Penyelesaian", isi: res ? res.label.split(" — ")[0] : r.resolution, testid: "id-penyelesaian" }, { label: "Diselesaikan oleh", isi: r.resolvedBy?.name }, { label: "Diselesaikan", isi: waktuTeks(r.resolvedAt) }] : []),
   ];
   return (
-    <HalamanDokumen judul={r.recordNumber} subjudul={`${r.material?.code} · ${teksJumlah(r.qty)} ${u} · ${KATEGORI_RUSAK[r.damageCategory] ?? r.damageCategory}`} kembali={{ to: "/warehouse/adjustments?tab=damaged", label: "Barang Rusak" }} r={r} memuat={memuat} galat={galat} onMuat={muat} nama="laporan barang rusak">
+    <HalamanDokumen judul={r.recordNumber} subjudul={`${r.material?.code} · ${teksJumlah(r.qty)} ${u} · ${KATEGORI_RUSAK[r.damageCategory] ?? r.damageCategory}`} onTutup={onTutup} r={r} memuat={memuat} galat={galat} onMuat={muat} nama="laporan barang rusak">
       <KartuStatusDokumen tampilan={t} identitas={identitas} alurLabel="Alur penanganan barang rusak" catatan={[r.notes, r.resolutionNote && `Catatan penyelesaian: ${r.resolutionNote}`].filter(Boolean).join(" — ") || undefined} />
       <KartuAksiDokumen tampilan={t} izin={r.izin} spec={SPEC} onJalankan={jalankan} sibuk={sibuk} versi={versi} namaDokumen="laporan ini" kaki="Barang yang hilang di perjalanan transfer tidak diselesaikan lewat sini (saldonya sudah berkurang); lihat Selisih pada Transfer Stok." />
       <KartuJalurKoreksi tipe="DAMAGED_STOCK" id={id} versi={`${r.status}-${versi}`} ringkas />

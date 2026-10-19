@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Loader2, ArrowRight, Pencil, Undo2, Ban, ClipboardCheck, PackageCheck, XCircle, Truck, Save, RotateCcw } from "lucide-react";
 import { Button } from "@/components/ui/button.jsx";
 import { cn } from "@/lib/utils.js";
@@ -9,19 +10,26 @@ const IKON_KODE = { KEMBALI_DRAFT: Undo2, SIMPAN_KE_STOK: PackageCheck, TOLAK: X
 
 export { galatPanel };
 
+// Aksi yang hanya MEMBUKA formulir/panel (tidak menulis apa pun saat ditekan) — aman dibuka otomatis dari tautan `?aksi=`. Aksi lain hanya disorot supaya pengguna menekannya sendiri.
+const AKSI_BUKA_FORMULIR = ["CATAT_TIBA", "KOREKSI_KEDATANGAN", "KOREKSI_PENERIMAAN"];
+
 /**
  * Tombol aksi yang RELEVAN untuk status dokumen (daftar `aksi` dari server) — dipakai ulang oleh menu Gudang lain.
  * Tidak ada tombol Edit/Undo/Hapus umum: hanya aksi yang disebut server untuk status ini. Aksi dengan `panel` membuka isian kecil di tempat (tanpa modal): ubah jadwal, alasan batal/tolak.
  * @param spec  { [kode]: { panel?: { judul, bidang:[{nama,label,tipe,wajib,min,maks,awal}], tombol, peringatan? }, konfirmasi?: string } }
  * @param onJalankan async (kode, nilai) — melempar Error bila gagal (pesan ditampilkan di sini)
  */
-export default function AksiDokumen({ aksi = [], spec = {}, onJalankan, sibuk = false, className, ikutiVersi, picu = null }) {
-  const [buka, setBuka] = useState(null); const [nilai, setNilai] = useState({}); const [galat, setGalat] = useState(""); const [proses, setProses] = useState(false); const [sentuh, setSentuh] = useState(false);
+export default function AksiDokumen({ aksi = [], spec = {}, onJalankan, sibuk = false, className, ikutiVersi, picu: picuProp = null }) {
+  // UX Gudang Tahap 4 — tindakan cepat dari Beranda/pencarian: URL jendela membawa `?aksi=KODE`. Aksi itu HANYA dibuka bila sah untuk status dokumen saat ini dan punya panel isian/konfirmasi
+  // (tidak pernah dieksekusi langsung tanpa pengguna menekan tombol akhir); aksi tanpa panel hanya disorot. Server tetap menegakkan izin dan revisi.
+  const [sp] = useSearchParams(); const kodeUrl = sp.get("aksi");
+  const picu = React.useMemo(() => picuProp ?? (kodeUrl ? { kode: kodeUrl, n: `url:${kodeUrl}`, aman: true } : null), [picuProp, kodeUrl]);
+  const [sorot, setSorot] = useState(null); const [buka, setBuka] = useState(null); const [nilai, setNilai] = useState({}); const [galat, setGalat] = useState(""); const [proses, setProses] = useState(false); const [sentuh, setSentuh] = useState(false);
   // Dokumen dimuat ulang → panel ditutup. Pesan galat TIDAK dihapus di sini: pada konflik revisi, halaman dimuat ulang tepat sebelum galat ditampilkan (galat lama dibersihkan oleh aksi berikutnya).
   useEffect(() => { setBuka(null); setSentuh(false); }, [ikutiVersi]);
   // `picu` { kode, n }: kontrol status (dropdown) memilih salah satu aksi sah di atas — dijalankan lewat jalur yang SAMA dengan menekan tombolnya (panel isian, konfirmasi, dan syarat server tetap berlaku).
   const picuTerakhir = React.useRef(null);
-  useEffect(() => { if (!picu || picuTerakhir.current === picu.n) return; picuTerakhir.current = picu.n; const a = aksi.find((x) => x.kode === picu.kode); if (a) klikRef.current?.(a); }, [picu]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { if (!picu || picuTerakhir.current === picu.n) return; picuTerakhir.current = picu.n; const a = aksi.find((x) => x.kode === picu.kode); if (!a) return; if (picu.aman && !spec[a.kode]?.panel && !spec[a.kode]?.konfirmasi && !AKSI_BUKA_FORMULIR.includes(a.kode)) { setSorot(a.kode); setTimeout(() => { const el = document.querySelector(`[data-testid="aksi-${a.kode}"]`); el?.scrollIntoView?.({ block: "nearest" }); el?.focus(); }, 0); return; } klikRef.current?.(a); }, [picu]); // eslint-disable-line react-hooks/exhaustive-deps
   const klikRef = React.useRef(null);
   if (!aksi.length && !galat) return null; // tetap terpasang selama ada pesan galat (mis. konflik: dokumen sudah selesai oleh pihak lain)
   const utama = aksi.find((a) => a.jenis === "maju")?.kode;
@@ -30,6 +38,7 @@ export default function AksiDokumen({ aksi = [], spec = {}, onJalankan, sibuk = 
     try { await onJalankan(kode, v); setBuka(null); setNilai({}); } catch (e) { if (!e?.diam) setGalat(e?.message || "Gagal menjalankan aksi"); /* e.diam: pesan sudah ditampilkan halaman (banner konflik) */ } finally { setProses(false); }
   };
   const klik = (a) => {
+    setSorot(null);
     const s = spec[a.kode];
     if (s?.panel) { setBuka(buka === a.kode ? null : a.kode); setGalat(""); setSentuh(false); setNilai(Object.fromEntries((s.panel.bidang ?? []).map((b) => [b.nama, b.awal ?? ""]))); return; }
     if (s?.konfirmasi && !window.confirm(s.konfirmasi)) return;
@@ -47,7 +56,7 @@ export default function AksiDokumen({ aksi = [], spec = {}, onJalankan, sibuk = 
           const tipe = a.kode === utama ? "primary" : a.jenis === "batal" ? "ghost" : "secondary";
           return (
             <Button key={a.kode} size="sm" variant={tipe} disabled={disabled} onClick={() => klik(a)} data-testid={`aksi-${a.kode}`} aria-expanded={spec[a.kode]?.panel ? buka === a.kode : undefined}
-              className={cn("max-sm:min-h-11", a.jenis === "batal" && "text-red hover:bg-redbg", a.kode === utama && "sm:ml-auto")}>
+              className={cn("max-sm:min-h-11", a.jenis === "batal" && "text-red hover:bg-redbg", a.kode === utama && "sm:ml-auto", a.kode === sorot && "ring-2 ring-accent ring-offset-2")} data-sorot={a.kode === sorot ? "ya" : undefined}>
               {disabled && buka !== a.kode && proses ? <Loader2 size={14} className="animate-spin" /> : <Ikon size={14} />} {a.label}
             </Button>
           );

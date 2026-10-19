@@ -99,6 +99,6 @@ test("dialog koreksi: Idempotency-Key per percobaan, tombol simpan hanya setelah
   const t = baca("features/warehouse/koreksi/KoreksiDokumenTab.jsx");
   for (const a of ["setujuiKoreksiGudang", "tolakKoreksiGudang", "batalKoreksiGudang"]) assert.match(t, new RegExp(`api\\.${a}`), a);
   assert.match(t, /bolehMenyetujui\(roles\) && bolehSetujui\(k, u\.id\)/); assert.match(t, /alasanTidakBolehSetujui/);
-  const hal = baca("pages/warehouse/WarehouseAdjustments.jsx"); assert.match(hal, /value="koreksi">Koreksi Dokumen/); assert.match(hal, /<KoreksiDokumenTab \/>/);
+  const hal = baca("pages/warehouse/WarehouseAdjustments.jsx"); assert.match(hal, /value="koreksi">Koreksi Dokumen/); assert.match(hal, /<KoreksiDokumenTab onBuka=/); assert.match(hal, /<KoreksiFokus key="fokus"/);
   const api = baca("api.js"); assert.match(api, /ajukanKoreksiGR: \(id, data, key = mutationKey\("koreksi-gr"\)\)/); assert.match(api, /"Idempotency-Key": key/);
 });

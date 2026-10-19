@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useParams } from "react-router-dom";
+import { useJendelaFokus } from "@/features/warehouse/dokumen/useJendelaFokus.js";
+import OpnameDetail from "@/features/warehouse/dokumen/OpnameDetail.jsx";
 import { ClipboardCheck, Plus, RefreshCw } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
@@ -16,15 +18,16 @@ const hitungDiisi = (r) => r.lines.filter((l) => l.countedQty != null).length;
 const hitungSelisih = (r) => r.lines.filter((l) => l.systemQty != null && l.countedQty != null && Number(l.systemQty) !== Number(l.countedQty)).length;
 
 export default function WarehouseStockCount() {
-  const navigate = useNavigate();
-  const [tahap, setTahap] = useTahapFilter(); const [cari, setCari] = useState("");
+  const { id: bukaId } = useParams();
+  const [tahap, setTahap] = useTahapFilter("/warehouse/stock-count");
+  const { buka: bukaJ, tutup } = useJendelaFokus("/warehouse/stock-count", { saringan: tahap ? `?tahap=${tahap}` : "" }); const [cari, setCari] = useState("");
   const [rows, setRows] = useState(null); const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [formOpen, setFormOpen] = useState(false);
   const load = useCallback(() => {
     setLoading(true); setError("");
     api.getStockCounts({}).then((d) => setRows(d.counts)).catch((e) => setError(e.message)).finally(() => setLoading(false));
   }, []);
   useEffect(() => { load(); }, [load]);
-  const buka = (r) => navigate(`/warehouse/stock-count/${r.id}`);
+  const buka = (r) => bukaJ(r.id);
   const baru = <Button size="sm" onClick={() => setFormOpen(true)}><Plus size={14} /> Jadwalkan Hitungan</Button>;
 
   return (
@@ -45,7 +48,8 @@ export default function WarehouseStockCount() {
           kartu={(r) => ({ judul: r.countNumber, baris: [`${JENIS_HITUNG[r.countType] ?? r.countType} · ${r.lines.length} bahan`, `${r.assignedTo?.name ?? "belum ditugaskan"} · jadwal ${tanggalPendek(r.scheduledDate)}${hitungSelisih(r) ? ` · selisih ${hitungSelisih(r)} bahan` : ""}`] })}
           kosong={{ icon: ClipboardCheck, judul: "Belum ada Stock Opname", deskripsi: "Jadwalkan hitungan stok berkala untuk mulai.", aksi: baru }} />
       </PageBody>
-      <StockCountFormModal open={formOpen} onClose={() => setFormOpen(false)} onCreated={(d) => { load(); if (d?.id) navigate(`/warehouse/stock-count/${d.id}`); }} />
+      <StockCountFormModal open={formOpen} onClose={() => setFormOpen(false)} onCreated={(d) => { load(); if (d?.id) bukaJ(d.id); }} />
+      {bukaId && <OpnameDetail key="fokus" id={bukaId} onTutup={tutup} onBerubah={load} />}
     </PageContainer>
   );
 }

@@ -49,7 +49,7 @@ test("tidak ada pintu masuk alternatif: pageRegistry tak merutekan /gudang; Work
 
 test("halaman Beranda & Stok & Lokasi di sidebar adalah halaman baru; Beranda tidak mengklaim 'Stok aman' atau angka katalog", () => {
   const layout = baca("components/Layout.jsx"); assert.match(layout, /to: "\/warehouse\/dashboard", label: "Beranda"/); assert.match(layout, /to: "\/warehouse\/inventory", label: "Stok & Lokasi"/);
-  const reg = baca("routes/pageRegistry.jsx"); assert.match(reg, /path: "\/warehouse\/dashboard", render: \(\) => <WarehouseDashboard \/>/); assert.match(reg, /path: "\/warehouse\/inventory"/);
+  const reg = baca("routes/pageRegistry.jsx"); assert.match(reg, /path: "\/warehouse\/dashboard\/:jenis\?\/:id\?", render: \(\) => <WarehouseDashboard \/>/); assert.match(reg, /path: "\/warehouse\/inventory"/);
   const beranda = baca("pages/warehouse/WarehouseDashboard.jsx"); assert.doesNotMatch(beranda, /Stok aman|Warehouse command center|aktif di katalog/);
 });
 

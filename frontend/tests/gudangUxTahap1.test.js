@@ -101,14 +101,13 @@ test("Stok & Lokasi: saldo '—' (belum ada catatan) berbeda dari 0; minimum 'be
   assert.ok(FILTER_KEADAAN.some((f) => f.key === "BELUM_ADA_CATATAN") && FILTER_KEADAAN.some((f) => f.key === "NOL_TERHITUNG"));
 });
 
-test("Beranda: satu halaman tugas dari server, tanpa angka stok/KPI ala dashboard kedua; setiap kartu punya tautan", () => {
+test("Beranda (Tahap 4: Pusat Kerja): satu halaman kerja dari server, tanpa angka stok/KPI ala dashboard kedua; kartu membuka jendela fokus; Beranda lama tetap untuk badge sidebar", () => {
   const s = baca("pages/warehouse/WarehouseDashboard.jsx");
-  assert.match(s, /api\.getBerandaGudang\(\)/);
-  assert.match(s, /to=\{t\.tautan\}/);
+  assert.match(s, /api\.getPusatKerja\(\)/);
   assert.match(s, /Beranda Gudang/);
   assert.doesNotMatch(s, /KpiCard|warehouseMock|getWarehouseReportSummary|Akurasi Stok/);
-  for (const k of ["AKAN_DATANG", "PERLU_DICATAT_TIBA", "BELUM_MASUK_STOK"]) assert.match(s, new RegExp(k));
-  assert.match(s, /belum memengaruhi stok/);
+  for (const k of ["Perlu dikerjakan sekarang", "Terlambat atau tertahan", "Selesai terbaru"]) assert.ok(s.includes(k), k);
+  assert.match(baca("lib/gudangNav.js"), /antreanDariBeranda/, "badge sidebar tetap memakai /inventory/beranda");
 });
 
 test("Navigasi Gudang: dikelompokkan menurut alur, semua rute lama tetap ada, Dashboard → Beranda", () => {
@@ -188,7 +187,7 @@ test("Panel PO ringkas (HP): hanya Gudang; Finance tetap tampilan penuh; pengiri
   const panel = baca("features/kedatangan/PanelKedatangan.jsx");
   assert.match(panel, /ringkas = false/, "default = perilaku lama (Finance)");
   assert.doesNotMatch(baca("pages/finance/FinancePurchaseOrders.jsx").match(/<PanelKedatangan[\s\S]*?\/>/)[0], /ringkas/, "Finance tidak memakai mode ringkas");
-  assert.match(baca("pages/warehouse/WarehouseBarangAkanDatang.jsx"), /<PanelKedatangan po=\{po\} workspace="GUDANG" ringkas/);
+  assert.match(baca("features/kedatangan/DetailPOFokus.jsx"), /<PanelKedatangan po=\{po\} workspace="GUDANG" ringkas/);
   assert.match(panel, /\{!ringkas && tabel\}/); assert.match(panel, /\{ringkas && \([\s\S]{0,200}item-po-ringkas/);
   assert.ok(panel.indexOf("{!ringkas && tabel}") < panel.indexOf("data-testid=\"item-po-ringkas\""), "mode ringkas menaruh item SESUDAH pengiriman");
   for (const s of ["dijadwalkan-baris", "data-sel", "max-md:hidden", "Rincian lengkap", "isi-semua-sisa"]) assert.ok(panel.includes(s), s);
