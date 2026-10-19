@@ -176,7 +176,8 @@ ok "migrasi terpasang di produksi (${LIVE_MIG_JUMLAH}) = migrasi kandidat; 0 pen
 RUN_AKTIF_N="$(psql_live -At -c "select count(*) from production_runs_v2 where status in ('PENDING_ARRIVAL','ACTIVE','BLOCKED')")"; ORDER_BATAL_RUN_N="$(psql_live -At -c "select count(*) from \"Order\" o where o.status = 'CANCELLED' and exists (select 1 from units u join production_runs_v2 r on r.unit_id = u.id where u.order_id = o.id and r.status in ('PENDING_ARRIVAL','ACTIVE','BLOCKED'))")"
 SELARAS_N="$(psql_live -At -c "select count(*) from activity_events where event_type = 'PRODUCTION_FOLLOWS_ORDER'")"; UNIT_N="$(psql_live -At -c "select count(*) from units")"; ORDER_N="$(psql_live -At -c "select count(*) from \"Order\"")"
 [[ "$RUN_AKTIF_N" =~ ^[0-9]+$ ]] && [[ "$ORDER_BATAL_RUN_N" =~ ^[0-9]+$ ]] && [[ "$SELARAS_N" =~ ^[0-9]+$ ]] && [[ "$UNIT_N" =~ ^[0-9]+$ ]] && [[ "$ORDER_N" =~ ^[0-9]+$ ]] || die "audit awal bukan angka"
-[ "$SELARAS_N" = "0" ] || die "sudah ada ${SELARAS_N} jejak PRODUCTION_FOLLOWS_ORDER sebelum rilis — tidak diharapkan; periksa dulu"
+# Fitur penyelarasan sudah LIVE sejak 57198ad6: jejak PRODUCTION_FOLLOWS_ORDER dari perubahan Sales yang sah sudah ada. Angka ini hanya garis dasar; pemeriksaan pasca-rilis memperingatkan bila bertambah (rilis ini tidak membuatnya).
+ok "garis dasar jejak PRODUCTION_FOLLOWS_ORDER (sah, dari Sales) = ${SELARAS_N}"
 ok "keadaan: order=${ORDER_N}, unit=${UNIT_N}, Run berjalan=${RUN_AKTIF_N}, order BATAL yang Run-nya masih berjalan (akan bisa diselaraskan lewat aturan ini)=${ORDER_BATAL_RUN_N} (rilis ini tidak mengubah satu pun)"
 DB_BYTES="$(psql_live -At -c "select pg_database_size('${DB_NAME}')")"
 BASE_TIDAK_SEIMBANG="$(psql_live -At -c "select count(*)::int from (select e.id from fin_journal_entries e join fin_journal_lines l on l.entry_id = e.id group by e.id having sum(l.debit) <> sum(l.credit)) x")"
