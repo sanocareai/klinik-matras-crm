@@ -217,7 +217,9 @@ done
 [ -n "$NM_SRC" ] || die "tidak ada release dengan frontend/node_modules dan package.json identik"
 ok "node_modules build dari ${NM_SRC}"
 NM_KB="$(du -sk "$NM_SRC" | cut -f1)"; AVAIL_KB="$(df -Pk "$HOME" | awk 'NR==2{print $4}')"
-[ "$AVAIL_KB" -ge $(( NM_KB * 2 + DB_BYTES / 1024 * 3 + 3 * 1024 * 1024 )) ] || die "ruang disk kurang (tersedia ${AVAIL_KB} KB)"
+# --rehearsal-only hanya membangun image backend + restore DB sementara (tanpa salinan node_modules, build frontend, atau aset dist): gerbang disk lebih kecil. Rilis penuh tetap memakai gerbang penuh.
+if [ "$REHEARSAL_ONLY" = "1" ]; then DISK_BUTUH_KB=$(( DB_BYTES / 1024 * 3 + 2 * 1024 * 1024 )); else DISK_BUTUH_KB=$(( NM_KB * 2 + DB_BYTES / 1024 * 3 + 3 * 1024 * 1024 )); fi
+[ "$AVAIL_KB" -ge "$DISK_BUTUH_KB" ] || die "ruang disk kurang (tersedia ${AVAIL_KB} KB, butuh ${DISK_BUTUH_KB} KB)"
 ok "ruang disk cukup (tersedia ${AVAIL_KB} KB)"
 if [ "$PREFLIGHT_ONLY" = "1" ]; then say "Preflight selesai (--preflight-only): produksi TIDAK diubah"; trap - EXIT; exit 0; fi
 
@@ -236,7 +238,7 @@ PHASE="4-release-dir"; say "4. Release dir ${NEW_DIR} (git archive; release akti
 [ "$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$CID_OLD")" = "$PREV_DIR" ] || die "release aktif berubah selama backup"
 mkdir "$NEW_DIR" || die "gagal membuat ${NEW_DIR}"; NEW_DIR_DIBUAT=1
 sg archive "$DEPLOY_SHA" | tar -x -C "$NEW_DIR" --exclude='frontend/dist' || die "git archive gagal"
-cp -a "$NM_SRC" "$NEW_DIR/frontend/node_modules" || die "gagal menyalin node_modules frontend"
+if [ "$REHEARSAL_ONLY" = "0" ]; then cp -a "$NM_SRC" "$NEW_DIR/frontend/node_modules" || die "gagal menyalin node_modules frontend"; fi
 for f in docker-compose.yml docker-compose.release.yml backend/Dockerfile backend/package.json frontend/package.json; do [ -f "$NEW_DIR/$f" ] || die "release dir tidak lengkap: $f"; done
 [ ! -e "$NEW_DIR/backend/.env" ] || die "backend/.env tidak boleh ada di arsip"
 printf '%s\n' "$DEPLOY_SHORT" > "$NEW_DIR/.release-commit"
@@ -245,6 +247,7 @@ if grep -l $'\r' "$NEW_DIR/backend/Dockerfile" "$NEW_DIR/docker-compose.yml" "$N
 diff -q <(tr -d '\r' < "$PREV_DIR/docker-compose.release.yml") <(tr -d '\r' < "$NEW_DIR/docker-compose.release.yml") >/dev/null || die "docker-compose.release.yml berbeda dari release aktif"
 ok "release dir dibuat; compose identik"
 
+if [ "$REHEARSAL_ONLY" = "1" ]; then say "4b/4c dilewati (--rehearsal-only: hanya backend + restore DB; build frontend + teks dist divalidasi terpisah dan pasti diperiksa pada rilis penuh SEBELUM switch)"; else
 say "4b. Build frontend di release dir (dist BARU; dist aktif tidak disentuh)"
 install -m 600 "$PERSIST/frontend/.env" "$NEW_DIR/frontend/.env" || die "gagal menyalin frontend/.env"
 ( cd "$NEW_DIR/frontend" && npm run build ) > "$BK_DIR/build-frontend.log" 2>&1 || { rm -f "$NEW_DIR/frontend/.env"; tail -n 25 "$BK_DIR/build-frontend.log"; die "build frontend gagal (produksi tidak berubah)"; }
@@ -274,6 +277,7 @@ done
 find "$NEW_DIR/frontend/dist/assets" -type f -mtime +21 -delete
 ok "${n} aset lama dibawa ke dist baru; index.html baru tetap hanya merujuk aset baru"
 [ -n "$(grep -o 'index-[A-Za-z0-9_-]*\.js' "$NEW_DIR/frontend/dist/index.html" | sed -n 1p)" ] && [ -f "$NEW_DIR/frontend/dist/assets/$NEW_INDEX" ] || die "index/bundel baru rusak setelah membawa aset lama"
+fi
 
 PHASE="5-build-image"; say "5. Build image backend baru (backend lama tetap melayani)"
 ROLLBACK_TAG="${IMG_NAME%%:*}:rollback-pre-slw-${DEPLOY_SHORT}"
