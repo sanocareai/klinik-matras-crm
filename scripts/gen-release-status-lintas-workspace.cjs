@@ -29,7 +29,7 @@ const GUARD_UNCHANGED = [
 // Commit live yang wajib leluhur: Route Planner bebas status produksi (d66f36ad), Gudang UX T2 (f293c587), manifest barang (229755d6), Koreksi Gudang (08d62e7d), Produksi override (799d3e93), Riwayat Referensi (56b87721).
 const LIVE_ANCESTORS_REF = ["d66f36ad", "f293c587", "229755d6", "08d62e7d", "799d3e93", "56b87721", "442d5c13", "ca9bdea7", "694f2184", "58cbc284"];
 // Teks yang HARUS ada di dist baru (fitur rilis ini; belum ada di dist live) dan teks fitur live yang HARUS tetap ada.
-const DIST_BARU = ["pelaku tidak tercatat", "Sumber riwayat", "Status order bisa diubah (Batal, Siap Kirim, Terkirim)"];
+const DIST_BARU = ["Rute butuh kelengkapan alamat", "pelaku tidak tercatat", "Sumber riwayat", "Status order bisa diubah (Batal, Siap Kirim, Terkirim)"];
 const DIST_LAMA = ["Kelompok bahan", "Konfirmasi Barang Jadi", "Selesaikan Produksi", "Beranda Gudang", "Ajukan Koreksi Stok", "Tetapkan Siap Kirim", "Admin override: Siap Kirim", "Produksi unit ini belum selesai — tidak menahan pengiriman"];
 
 const lf = (t) => t.replace(/\r\n/g, "\n");
