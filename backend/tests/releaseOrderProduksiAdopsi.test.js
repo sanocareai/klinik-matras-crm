@@ -127,7 +127,10 @@ test("rehearsal-penuh: build image BERTAG rehearsal (tag production utuh), skena
   for (const s of ["CREATE DATABASE \\\"${KLON_DB}\\\" TEMPLATE \\\"${REH_DB}\\\"", "DB rehearsal UTAMA tetap tidak berubah oleh skenario", "GUARD_DB=\"$KLON_DB\"", "runDisposable.js $TES_FILES", "--tmpfs /var/lib/postgresql/data", "docker rm -f \"$PGT\"", "TEST_DB_SERVER_URL=\"postgresql://${DB_USER}:${PGPW}@${PGT}:5432/postgres\"",
     "tes integrasi terarah TIDAK lulus penuh", '[ "$T_N" != "$TES_N_EXPECT" ]', "sekali-pakai"]) assert.ok(lanjut.includes(s), s);
   const dockerTes = lanjut.split("\n").find((l) => l.includes("runDisposable.js"));
-  assert.ok(!/ -v |--env-file|--volume/.test(dockerTes), "tes integrasi tanpa volume dan tanpa env production (tidak menulis berkas ke data production)");
+  const mount = [...dockerTes.matchAll(/ -v "([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(mount, ["$WS/scripts:/scripts:ro", "$WS/frontend/src:/frontend/src:ro"], "satu-satunya mount = arsip kandidat READ-ONLY (scripts, frontend/src); tidak ada volume production");
+  assert.ok(!/--env-file|--volume|PERSIST|uploads|\/app\/data/.test(dockerTes), "tes integrasi tanpa env production dan tanpa data/uploads production (tidak menulis berkas ke data production)");
+  assert.ok(dockerTes.includes("connection_limit=30"), "kolam koneksi memadai untuk tes paralel");
   assert.ok(!/\$PREV_DIR.*runDisposable|dcp .*runDisposable/.test(lanjut), "tes tidak lewat compose production");
   assert.ok(script.includes('REH_IMG="${IMG_NAME%%:*}:rehearsal-opa-${DEPLOY_SHORT}"') && script.includes('[ "$(docker image inspect -f \'{{.Id}}\' "$IMG_NAME")" = "$PREV_IMG_ID" ] || die "tag image PRODUCTION berubah'));
   assert.ok(script.includes("production TIDAK berubah: container/image/release sama"), "verifikasi production tidak berubah sesudah rehearsal-penuh");

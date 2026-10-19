@@ -415,7 +415,9 @@ rehearsal_penuh_lanjutan() {
   [ "$siap" = "1" ] || { docker logs "$PGT" 2>&1 | tail -n 8; reh_drop; die "Postgres sekali-pakai tidak siap"; }
   for f in $TES_FILES; do [ -f "$WS/backend/$f" ] || { reh_drop; die "berkas tes pinned tidak ada di arsip kandidat: $f"; }; done
   set +e
-  docker run --rm --network "$NET" -w /app -e TZ=Asia/Jakarta -e JWT_SECRET="$RH_JWT" -e TEST_DB_SERVER_URL="postgresql://${DB_USER}:${PGPW}@${PGT}:5432/postgres" "$REH_IMG" node tests/integration/setup/runDisposable.js $TES_FILES </dev/null > "$BK_DIR/tes-integrasi.log" 2>&1
+  # Dua penyesuaian lingkungan (bukan pelonggaran gerbang): (1) sebagian tes membaca berkas repo di luar backend/ (scripts/, frontend/src) lewat ../../../ → dipasang READ-ONLY dari arsip kandidat (bukan data production);
+  # (2) kolam koneksi Prisma bawaan = 2×CPU+1 = 5 pada VPS 2 vCPU, terlalu kecil untuk tes paralel (P2024 → 503); connection_limit=30 menyamai kolam mesin pengembangan.
+  docker run --rm --network "$NET" -w /app -v "$WS/scripts:/scripts:ro" -v "$WS/frontend/src:/frontend/src:ro" -e TZ=Asia/Jakarta -e JWT_SECRET="$RH_JWT" -e TEST_DB_SERVER_URL="postgresql://${DB_USER}:${PGPW}@${PGT}:5432/postgres?connection_limit=30" "$REH_IMG" node tests/integration/setup/runDisposable.js $TES_FILES </dev/null > "$BK_DIR/tes-integrasi.log" 2>&1
   local TES_RC=$?; set -e
   docker rm -f "$PGT" >/dev/null 2>&1 || true
   # Pelapor tes bergantung versi node: node 20 (image) non-TTY = TAP ("# tests N"); node ≥ 22 = spec ("ℹ tests N"). Keduanya diterima.
