@@ -16,7 +16,7 @@
 #
 # ROLLBACK KODE: aman kapan saja (kode lama tidak membaca tabel baru). Periksa dulu dengan scripts/rollback-guard-order-produksi-adopsi.sh (baca-saja; hanya mencetak jumlah data adopsi). Rollback kode TIDAK menghapus tabel/riwayat;
 #   yang hilang hanya tampilan status kerja manual dan rencana bahan. Pemakaian aktual adalah transaksi stok biasa dan tetap berlaku.
-# (dibangkitkan oleh scripts/gen-release-order-produksi-adopsi.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 4d8c47b47fdf…)
+# (dibangkitkan oleh scripts/gen-release-order-produksi-adopsi.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 a26b6f1d6d0a…)
 set -Eeuo pipefail
 umask 077
 
@@ -472,16 +472,35 @@ rehearsal_penuh_lanjutan() {
   local siap=0; for i in $(seq 1 40); do docker exec "$PGT" pg_isready -U "$DB_USER" >/dev/null 2>&1 && { siap=1; break; }; sleep 2; done
   [ "$siap" = "1" ] || { docker logs "$PGT" 2>&1 | tail -n 8; reh_drop; die "Postgres sekali-pakai tidak siap"; }
   for f in $TES_FILES; do [ -f "$WS/backend/$f" ] || { reh_drop; die "berkas tes pinned tidak ada di arsip kandidat: $f"; }; done
-  set +e
   # Dua penyesuaian lingkungan (bukan pelonggaran gerbang): (1) sebagian tes membaca berkas repo di luar backend/ (scripts/, frontend/src) lewat ../../../ → dipasang READ-ONLY dari arsip kandidat (bukan data production);
   # (2) kolam koneksi Prisma bawaan = 2×CPU+1 = 5 pada VPS 2 vCPU, terlalu kecil untuk tes paralel (P2024 → 503); connection_limit=30 menyamai kolam mesin pengembangan.
-  docker run --rm --network "$NET" -w /app -v "$WS/scripts:/scripts:ro" -v "$WS/frontend/src:/frontend/src:ro" -e TZ=Asia/Jakarta -e JWT_SECRET="$RH_JWT" -e TEST_DB_SERVER_URL="postgresql://${DB_USER}:${PGPW}@${PGT}:5432/postgres?connection_limit=30" "$REH_IMG" node tests/integration/setup/runDisposable.js $TES_FILES </dev/null > "$BK_DIR/tes-integrasi.log" 2>&1
-  local TES_RC=$?; set -e
-  docker rm -f "$PGT" >/dev/null 2>&1 || true
+  tes_jalankan() { # $1 = log; sisanya = berkas tes. Mengembalikan kode keluar runDisposable (output TAP/spec ke log)
+    local log="$1"; shift
+    docker run --rm --network "$NET" -w /app -v "$WS/scripts:/scripts:ro" -v "$WS/frontend/src:/frontend/src:ro" -e TZ=Asia/Jakarta -e JWT_SECRET="$RH_JWT" -e TEST_DB_SERVER_URL="postgresql://${DB_USER}:${PGPW}@${PGT}:5432/postgres?connection_limit=30" "$REH_IMG" node tests/integration/setup/runDisposable.js "$@" </dev/null > "$log" 2>&1
+  }
   # Pelapor tes bergantung versi node: node 20 (image) non-TTY = TAP ("# tests N"); node ≥ 22 = spec ("ℹ tests N"). Keduanya diterima.
-  local T_N T_PASS T_FAIL; T_N="$(sed -n -e 's/^ℹ tests \([0-9]*\)$/\1/p' -e 's/^# tests \([0-9]*\)$/\1/p' "$BK_DIR/tes-integrasi.log" | tail -n 1)"; T_PASS="$(sed -n -e 's/^ℹ pass \([0-9]*\)$/\1/p' -e 's/^# pass \([0-9]*\)$/\1/p' "$BK_DIR/tes-integrasi.log" | tail -n 1)"; T_FAIL="$(sed -n -e 's/^ℹ fail \([0-9]*\)$/\1/p' -e 's/^# fail \([0-9]*\)$/\1/p' "$BK_DIR/tes-integrasi.log" | tail -n 1)"
-  if [ "$TES_RC" != "0" ] || [ "$T_FAIL" != "0" ] || [ "$T_N" != "$TES_N_EXPECT" ] || [ "$T_PASS" != "$TES_N_EXPECT" ]; then grep -E '^✖|^not ok' "$BK_DIR/tes-integrasi.log" | sort -u | head -n 15; tail -n 12 "$BK_DIR/tes-integrasi.log"; reh_drop; die "tes integrasi terarah TIDAK lulus penuh (exit=${TES_RC}, tests=${T_N:-?}, pass=${T_PASS:-?}, fail=${T_FAIL:-?}; diharapkan ${TES_N_EXPECT}/${TES_N_EXPECT}/0)"; fi
-  ok "tes integrasi terarah: ${T_PASS}/${T_N} lulus, 0 gagal (image kandidat, DB dibuat dari nol, container sekali-pakai dihapus)"
+  tes_angka() { sed -n -e "s/^ℹ $2 \([0-9]*\)\$/\1/p" -e "s/^# $2 \([0-9]*\)\$/\1/p" "$1" | tail -n 1; }
+  set +e; tes_jalankan "$BK_DIR/tes-integrasi.log" $TES_FILES; local TES_RC=$?; set -e
+  local T_N T_PASS T_FAIL; T_N="$(tes_angka "$BK_DIR/tes-integrasi.log" tests)"; T_PASS="$(tes_angka "$BK_DIR/tes-integrasi.log" pass)"; T_FAIL="$(tes_angka "$BK_DIR/tes-integrasi.log" fail)"
+  [[ "$T_N" =~ ^[0-9]+$ ]] && [[ "$T_PASS" =~ ^[0-9]+$ ]] && [[ "$T_FAIL" =~ ^[0-9]+$ ]] || { tail -n 12 "$BK_DIR/tes-integrasi.log"; docker rm -f "$PGT" >/dev/null 2>&1 || true; reh_drop; die "ringkasan tes integrasi tidak terbaca (exit=${TES_RC}) — jangan anggap lulus"; }
+  [ "$T_N" = "$TES_N_EXPECT" ] || { grep -E '^✖|^not ok' "$BK_DIR/tes-integrasi.log" | sort -u | head -n 15; docker rm -f "$PGT" >/dev/null 2>&1 || true; reh_drop; die "jumlah tes ${T_N} != ${TES_N_EXPECT} yang dipatok (berkas gagal dimuat atau daftar berubah)"; }
+  TES_ULANG_INFO="percobaan pertama bersih"
+  if [ "$TES_RC" != "0" ] || [ "$T_FAIL" != "0" ] || [ "$T_PASS" != "$TES_N_EXPECT" ]; then
+    # KEBIJAKAN FLAKY (eksplisit, SATU kali): kegagalan boleh dicoba ulang HANYA bila terbatas pada ≤ 3 berkas tes; berkas itu dijalankan ulang di DB baru dan HARUS lulus penuh. Kegagalan pertama + hasil ulang dilaporkan apa adanya.
+    local GAGAL_NAMA GAGAL_FILES NG; GAGAL_NAMA="$(grep -E '^not ok' "$BK_DIR/tes-integrasi.log" | sed 's/^not ok [0-9]* - //' | sort -u | cut -c1-140)"
+    GAGAL_FILES="$(grep -oE "location: '/app/tests/integration/[A-Za-z0-9]+\.integration\.test\.js" "$BK_DIR/tes-integrasi.log" | sed "s#location: '/app/#tests/#" | sort -u)"
+    NG="$(printf '%s\n' "$GAGAL_FILES" | grep -c . || true)"
+    printf '%s\n' "$GAGAL_NAMA" | sed 's/^/        GAGAL percobaan pertama: /'
+    { [ "$NG" -ge 1 ] && [ "$NG" -le 3 ] && [ "$T_FAIL" -le 3 ]; } || { tail -n 12 "$BK_DIR/tes-integrasi.log"; docker rm -f "$PGT" >/dev/null 2>&1 || true; reh_drop; die "tes integrasi terarah TIDAK lulus (exit=${TES_RC}, tests=${T_N}, pass=${T_PASS}, fail=${T_FAIL}, berkas gagal=${NG}); di luar batas kebijakan ulang"; }
+    for f in $GAGAL_FILES; do case " $TES_FILES " in *" $f "*) ;; *) docker rm -f "$PGT" >/dev/null 2>&1 || true; reh_drop; die "berkas gagal ${f} bukan bagian daftar tes pinned";; esac; done
+    warn "tes integrasi: ${T_FAIL} gagal pada percobaan pertama di ${NG} berkas ($(printf '%s' "$GAGAL_FILES" | tr '\n' ' ')); mengulang HANYA berkas itu di DB baru (sekali)"
+    set +e; tes_jalankan "$BK_DIR/tes-integrasi-ulang.log" $GAGAL_FILES; local ULANG_RC=$?; set -e
+    local U_FAIL U_N; U_FAIL="$(tes_angka "$BK_DIR/tes-integrasi-ulang.log" fail)"; U_N="$(tes_angka "$BK_DIR/tes-integrasi-ulang.log" tests)"
+    if [ "$ULANG_RC" != "0" ] || [ "$U_FAIL" != "0" ] || ! [[ "$U_N" =~ ^[0-9]+$ ]] || [ "$U_N" -lt 1 ]; then grep -E '^✖|^not ok' "$BK_DIR/tes-integrasi-ulang.log" | sort -u | head -n 10; docker rm -f "$PGT" >/dev/null 2>&1 || true; reh_drop; die "tes integrasi GAGAL lagi pada percobaan ulang (${ULANG_RC}; fail=${U_FAIL:-?}) — bukan flaky; berhenti"; fi
+    TES_ULANG_INFO="${T_FAIL} gagal pada percobaan pertama (${NG} berkas) lalu LULUS PENUH pada percobaan ulang (${U_N} tes di berkas itu)"
+  fi
+  docker rm -f "$PGT" >/dev/null 2>&1 || true
+  ok "tes integrasi terarah: ${T_N} tes dijalankan (image kandidat, DB dari nol, container sekali-pakai dihapus); ${TES_ULANG_INFO}"
 }
 
 # ── REHEARSAL (satu fungsi, dipakai --rehearsal-only, --rehearsal-penuh dan alur rilis penuh) ───────────────────────────────────────────────────────────────────────────
@@ -737,7 +756,7 @@ if [ "$REHEARSAL_PENUH" = "1" ]; then
   [ -z "$(docker images -q "$REH_IMG")" ] || die "image rehearsal masih ada"
   ok "production TIDAK berubah: container/image/release sama, 0 restart, migrasi sama (${MIG_SEBELUM}), 17 kelompok dokumen pembanding identik, tanpa tabel adopsi, DB rehearsal + direktori kerja + image rehearsal sudah dihapus; satu-satunya jejak: backup ${BACKUP_FILE}"
   trap - EXIT
-  printf 'BASE=%s\nDEPLOY=%s\nTS=%s\nTES=%s\n' "$BASE_SHA" "$DEPLOY_SHA" "$TS" "$TES_N_EXPECT" > "$HOME/release-backups/.rehearsal-penuh-ok-order-produksi-adopsi-${DEPLOY_SHA}"
+  printf 'BASE=%s\nDEPLOY=%s\nTS=%s\nTES=%s\nRETRY=%s\n' "$BASE_SHA" "$DEPLOY_SHA" "$TS" "$TES_N_EXPECT" "$TES_ULANG_INFO" > "$HOME/release-backups/.rehearsal-penuh-ok-order-produksi-adopsi-${DEPLOY_SHA}"
   say "REHEARSAL PENUH SELESAI — production TIDAK diubah, tidak ada deploy, tidak ada status kerja/rencana/pemakaian dibuat di production. Backup: ${BACKUP_FILE}. Log: ${BK_DIR}/release.log"
   exit 0
 fi

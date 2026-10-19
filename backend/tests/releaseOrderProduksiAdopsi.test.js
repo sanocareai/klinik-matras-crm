@@ -124,8 +124,10 @@ test("uji perilaku di templat: blok DO dibatalkan, sentinel tidak tertangkap pen
 
 test("rehearsal-penuh: build image BERTAG rehearsal (tag production utuh), skenario pada KLON, DB utama tidak berubah, guard, tes integrasi di Postgres sekali-pakai TANPA volume dan TANPA Postgres production, pembersihan", () => {
   const lanjut = script.match(/rehearsal_penuh_lanjutan\(\) \{[\s\S]*?\n\}\n/)[0];
-  for (const s of ["CREATE DATABASE \\\"${KLON_DB}\\\" TEMPLATE \\\"${REH_DB}\\\"", "DB rehearsal UTAMA tetap tidak berubah oleh skenario", "GUARD_DB=\"$KLON_DB\"", "runDisposable.js $TES_FILES", "--tmpfs /var/lib/postgresql/data", "docker rm -f \"$PGT\"", "TEST_DB_SERVER_URL=\"postgresql://${DB_USER}:${PGPW}@${PGT}:5432/postgres?connection_limit=30\"",
-    "tes integrasi terarah TIDAK lulus penuh", '[ "$T_N" != "$TES_N_EXPECT" ]', "sekali-pakai"]) assert.ok(lanjut.includes(s), s);
+  for (const s of ["CREATE DATABASE \\\"${KLON_DB}\\\" TEMPLATE \\\"${REH_DB}\\\"", "DB rehearsal UTAMA tetap tidak berubah oleh skenario", "GUARD_DB=\"$KLON_DB\"", "tes_jalankan \"$BK_DIR/tes-integrasi.log\" $TES_FILES", "node tests/integration/setup/runDisposable.js \"$@\"", "--tmpfs /var/lib/postgresql/data", "docker rm -f \"$PGT\"", "TEST_DB_SERVER_URL=\"postgresql://${DB_USER}:${PGPW}@${PGT}:5432/postgres?connection_limit=30\"",
+    "di luar batas kebijakan ulang", '[ "$T_N" = "$TES_N_EXPECT" ]', "sekali-pakai", "KEBIJAKAN FLAKY (eksplisit, SATU kali)", "tes integrasi GAGAL lagi pada percobaan ulang", "ringkasan tes integrasi tidak terbaca", "mengulang HANYA berkas itu di DB baru (sekali)"]) assert.ok(lanjut.includes(s), s);
+  assert.ok(lanjut.includes('[ "$NG" -le 3 ] && [ "$T_FAIL" -le 3 ]'), "ulang hanya bila kegagalan terbatas (≤ 3 berkas, ≤ 3 tes)");
+  assert.equal((lanjut.match(/tes_jalankan "\$BK_DIR/g) ?? []).length, 2, "tepat satu percobaan ulang (dua pemanggilan: pertama + ulang)");
   const dockerTes = lanjut.split("\n").find((l) => l.includes("runDisposable.js"));
   const mount = [...dockerTes.matchAll(/ -v "([^"]+)"/g)].map((m) => m[1]);
   assert.deepEqual(mount, ["$WS/scripts:/scripts:ro", "$WS/frontend/src:/frontend/src:ro"], "satu-satunya mount = arsip kandidat READ-ONLY (scripts, frontend/src); tidak ada volume production");
