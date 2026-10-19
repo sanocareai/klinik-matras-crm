@@ -15,10 +15,14 @@ export { galatPanel };
  * @param spec  { [kode]: { panel?: { judul, bidang:[{nama,label,tipe,wajib,min,maks,awal}], tombol, peringatan? }, konfirmasi?: string } }
  * @param onJalankan async (kode, nilai) — melempar Error bila gagal (pesan ditampilkan di sini)
  */
-export default function AksiDokumen({ aksi = [], spec = {}, onJalankan, sibuk = false, className, ikutiVersi }) {
+export default function AksiDokumen({ aksi = [], spec = {}, onJalankan, sibuk = false, className, ikutiVersi, picu = null }) {
   const [buka, setBuka] = useState(null); const [nilai, setNilai] = useState({}); const [galat, setGalat] = useState(""); const [proses, setProses] = useState(false); const [sentuh, setSentuh] = useState(false);
   // Dokumen dimuat ulang → panel ditutup. Pesan galat TIDAK dihapus di sini: pada konflik revisi, halaman dimuat ulang tepat sebelum galat ditampilkan (galat lama dibersihkan oleh aksi berikutnya).
   useEffect(() => { setBuka(null); setSentuh(false); }, [ikutiVersi]);
+  // `picu` { kode, n }: kontrol status (dropdown) memilih salah satu aksi sah di atas — dijalankan lewat jalur yang SAMA dengan menekan tombolnya (panel isian, konfirmasi, dan syarat server tetap berlaku).
+  const picuTerakhir = React.useRef(null);
+  useEffect(() => { if (!picu || picuTerakhir.current === picu.n) return; picuTerakhir.current = picu.n; const a = aksi.find((x) => x.kode === picu.kode); if (a) klikRef.current?.(a); }, [picu]); // eslint-disable-line react-hooks/exhaustive-deps
+  const klikRef = React.useRef(null);
   if (!aksi.length && !galat) return null; // tetap terpasang selama ada pesan galat (mis. konflik: dokumen sudah selesai oleh pihak lain)
   const utama = aksi.find((a) => a.jenis === "maju")?.kode;
   const jalan = async (kode, v = {}) => {
@@ -31,6 +35,7 @@ export default function AksiDokumen({ aksi = [], spec = {}, onJalankan, sibuk = 
     if (s?.konfirmasi && !window.confirm(s.konfirmasi)) return;
     jalan(a.kode);
   };
+  klikRef.current = klik;
   const panel = buka ? spec[buka]?.panel : null;
   const galatIni = panel ? (panel.galat || galatPanel(panel, nilai)) : "";
   const disabled = sibuk || proses;

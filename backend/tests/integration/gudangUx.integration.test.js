@@ -89,7 +89,7 @@ test("Terjadwal → ubah jadwal → kembali ke Draf → jadwalkan lagi → batal
   assert.equal((await w.g.patch(`${GR}/${gB.id}`, { status: "SCHEDULED" })).status, 200);
   // batalkan: alasan wajib & singkat
   assert.equal((await w.g.post(`${GR}/${gB.id}/batalkan-jadwal`, { alasan: "x" })).status, 400);
-  const ba = await w.g.post(`${GR}/${gB.id}/batalkan-jadwal`, { alasan: "Dokumen uji, tidak jadi" }); assert.equal(ba.status, 200, JSON.stringify(ba.body)); assert.equal(ba.body.status, "REJECTED"); assert.equal(ba.body.tampilan.kode, "DIBATALKAN"); assert.equal(ba.body.tampilan.label, "Dibatalkan"); assert.deepEqual(ba.body.tampilan.aksi.map((x) => x.kode), ["PULIHKAN"], "hanya jalan pulih, bukan jadwal ulang diam-diam"); assert.match(ba.body.notes, /Dibatalkan sebelum barang tiba: Dokumen uji, tidak jadi/);
+  const ba = await w.g.post(`${GR}/${gB.id}/batalkan-jadwal`, { alasan: "Dokumen uji, tidak jadi" }); assert.equal(ba.status, 200, JSON.stringify(ba.body)); assert.equal(ba.body.status, "REJECTED"); assert.equal(ba.body.tampilan.kode, "DIBATALKAN"); assert.equal(ba.body.tampilan.label, "Dibatalkan"); assert.deepEqual(ba.body.tampilan.aksi.map((x) => x.kode), ["PULIHKAN", "BUAT_ULANG"], "hanya jalan pulih (atau buat ulang tertaut), bukan jadwal ulang diam-diam"); assert.match(ba.body.notes, /Dibatalkan sebelum barang tiba: Dokumen uji, tidak jadi/);
   const ulang = await w.g.post(`${GR}/${gB.id}/batalkan-jadwal`, { alasan: "Dokumen uji, tidak jadi" }); assert.equal(ulang.status, 200); assert.equal(ulang.body.ulang, true);
   assert.equal((await testPrisma.activityEvent.count({ where: { entityId: gB.id, eventType: "DOCUMENT_CANCELLED" } })), 1, "satu jejak pembatalan");
   assert.equal((await w.g.patch(`${GR}/${gB.id}`, { status: "SCHEDULED" })).status, 400, "dokumen dibatalkan tidak bisa dijadwalkan lagi");
@@ -129,13 +129,14 @@ test("MATRIKS AKSI per status: hanya aksi yang relevan; sesudah masuk stok hanya
   assert.deepEqual(kode(await aksi((await dokPO("DRAFT")).id)), ["UBAH_JADWAL", "JADWALKAN", "BATALKAN_JADWAL"]);
   assert.deepEqual(kode(await aksi((await dokPO("SCHEDULED")).id)), ["UBAH_JADWAL", "CATAT_TIBA", "KEMBALI_DRAFT", "BATALKAN_JADWAL"]);
   assert.deepEqual(kode(await aksi((await dokNon("SCHEDULED")).id)), ["UBAH_JADWAL", "TANDAI_TIBA", "KEMBALI_DRAFT", "BATALKAN_JADWAL"], "tanpa PO: tandai tiba, bukan catat kedatangan PO");
-  for (const s of ["ARRIVED", "INSPECTION"]) assert.deepEqual(kode(await aksi((await dokPO(s)).id)), ["ISI_PEMERIKSAAN", "MAJUKAN", "KOREKSI_KEDATANGAN", "BATALKAN_TIBA", "TOLAK"], s);
-  assert.deepEqual(kode(await aksi((await dokPO("READY_FOR_PUTAWAY")).id)), ["SIMPAN_KE_STOK", "ISI_PEMERIKSAAN", "KOREKSI_KEDATANGAN", "BATALKAN_TIBA", "TOLAK"]);
-  assert.deepEqual(kode(await aksi((await dokNon("INSPECTION")).id)), ["ISI_PEMERIKSAAN", "MAJUKAN", "BATALKAN_TIBA", "TOLAK"], "tanpa PO tidak ada Koreksi Kedatangan");
+  assert.deepEqual(kode(await aksi((await dokPO("ARRIVED")).id)), ["ISI_PEMERIKSAAN", "MAJUKAN", "KOREKSI_KEDATANGAN", "BATALKAN_TIBA", "TOLAK"], "ARRIVED");
+  assert.deepEqual(kode(await aksi((await dokPO("INSPECTION")).id)), ["ISI_PEMERIKSAAN", "MAJUKAN", "KEMBALI_TIBA", "KOREKSI_KEDATANGAN", "BATALKAN_TIBA", "TOLAK"], "INSPECTION: boleh kembali ke Barang tiba (Tahap 3)");
+  assert.deepEqual(kode(await aksi((await dokPO("READY_FOR_PUTAWAY")).id)), ["SIMPAN_KE_STOK", "ISI_PEMERIKSAAN", "KEMBALI_PERIKSA", "KOREKSI_KEDATANGAN", "BATALKAN_TIBA", "TOLAK"]);
+  assert.deepEqual(kode(await aksi((await dokNon("INSPECTION")).id)), ["ISI_PEMERIKSAAN", "MAJUKAN", "KEMBALI_TIBA", "BATALKAN_TIBA", "TOLAK"], "tanpa PO tidak ada Koreksi Kedatangan");
   const selesaiPO = await aksi((await dokPO("COMPLETED")).id); assert.deepEqual(kode(selesaiPO), ["KOREKSI_KEDATANGAN"]); assert.equal(selesaiPO.pengaruhStok, "SUDAH"); assert.match(selesaiPO.penjelasan, /tidak dihapus/);
   const selesaiNon = await aksi((await dokNon("COMPLETED")).id); assert.deepEqual(kode(selesaiNon), ["KOREKSI_PENERIMAAN"]);
   assert.equal((await aksi((await dokNon("REJECTED")).id)).kode, "DITOLAK", "barang pernah tiba lalu ditolak = Ditolak");
-  assert.equal((await aksi((await dokPO("REJECTED")).id)).kode, "DIBATALKAN", "tidak pernah berisi = Dibatalkan"); assert.deepEqual(kode(await aksi((await dokPO("REJECTED")).id)), ["PULIHKAN"], "Dibatalkan: bisa dipulihkan ke Draf");
+  assert.equal((await aksi((await dokPO("REJECTED")).id)).kode, "DIBATALKAN", "tidak pernah berisi = Dibatalkan"); assert.deepEqual(kode(await aksi((await dokPO("REJECTED")).id)), ["PULIHKAN", "BUAT_ULANG"], "Dibatalkan: bisa dipulihkan ke Draf");
   assert.deepEqual(kode(await aksi((await dokNon("REJECTED")).id)), ["BUAT_ULANG"], "Ditolak (pernah berisi): dibuat ulang dengan tautan riwayat, tidak dipulihkan di tempat");
   for (const s of ["DRAFT", "SCHEDULED", "ARRIVED", "INSPECTION", "READY_FOR_PUTAWAY", "COMPLETED", "REJECTED"]) { const t = await aksi((await dokPO(s)).id); assert.ok(!t.aksi.some((a) => /undo|hapus|delete|reversal/i.test(`${a.kode} ${a.label}`)), `${s}: tidak ada Undo/Hapus`); assert.equal(t.tahap.length, 5); }
   // tahap alur PO → jadwal → tiba → periksa → stok
@@ -261,15 +262,15 @@ test("DIBATALKAN dapat dipulihkan ke Draf (belum berdampak); Ditolak tidak dipul
   // Dibatalkan → pulihkan
   const a = await grDariPO(w, po);
   assert.equal((await w.g.post(`${GR}/${a.id}/batalkan-jadwal`, { alasan: "uji coba Schedule" })).status, 200);
-  assert.deepEqual(await kodeAksi(w, a.id), ["PULIHKAN"]);
+  assert.deepEqual(await kodeAksi(w, a.id), ["PULIHKAN", "BUAT_ULANG"]);
   assert.equal((await w.s.post(`${GR}/${a.id}/pulihkan`, {})).status, 403);
-  const p = await w.g.post(`${GR}/${a.id}/pulihkan`, { alasan: "salah batal" }); assert.equal(p.status, 200, JSON.stringify(p.body)); assert.equal(p.body.status, "DRAFT");
-  assert.deepEqual(await kodeAksi(w, a.id), ["UBAH_JADWAL", "JADWALKAN", "BATALKAN_JADWAL"]);
+  const p = await w.g.post(`${GR}/${a.id}/pulihkan`, { alasan: "salah batal" }); assert.equal(p.status, 200, JSON.stringify(p.body)); assert.equal(p.body.status, "SCHEDULED", "dibatalkan dari Terjadwal → pulih ke status terakhir yang aman (Terjadwal)");
+  assert.deepEqual(await kodeAksi(w, a.id), ["UBAH_JADWAL", "CATAT_TIBA", "KEMBALI_DRAFT", "BATALKAN_JADWAL"], "Terjadwal setelah dipulihkan");
   assert.equal((await w.g.post(`${GR}/${a.id}/pulihkan`, {})).status, 200, "aman diulang");
-  const jejak = (await w.g.get(`${GR}/${a.id}`)).body.jejak.map((x) => x.aksi); assert.deepEqual(jejak, ["JADWAL_DIBATALKAN", "DIPULIHKAN"], "jejak lengkap, tidak ada yang dihapus");
+  const jejak = (await w.g.get(`${GR}/${a.id}`)).body.jejak.map((x) => x.aksi); assert.deepEqual(jejak.filter((x) => x !== "STATUS_MAJU"), ["JADWAL_DIBATALKAN", "DIPULIHKAN"], "jejak lengkap, tidak ada yang dihapus (riwayat status maju ikut tampil)");
   assert.equal((await snap()).mov, sebelumAwal.mov, "tanpa pergerakan stok");
   // Ditolak (pernah tiba) → tidak bisa dipulihkan; buat ulang
-  assert.equal((await w.g.patch(`${GR}/${a.id}`, { status: "SCHEDULED" })).status, 200);
+  assert.equal((await w.g.patch(`${GR}/${a.id}`, { status: "SCHEDULED" })).status, 200, "sudah Terjadwal: klik ganda aman");
   assert.equal((await tibaGudang(w, po, a)).status, 201);
   assert.equal((await w.g.patch(`${GR}/${a.id}/reject`, { reason: "salah tolak, ternyata utuh" })).status, 200);
   const dit = (await w.g.get(`${GR}/${a.id}`)).body; assert.equal(dit.tampilan.kode, "DITOLAK"); assert.deepEqual(dit.tampilan.aksi.map((x) => x.kode), ["BUAT_ULANG"]);

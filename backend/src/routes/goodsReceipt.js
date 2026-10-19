@@ -28,6 +28,7 @@ import { catatPerubahanDraf } from "../lib/jejakPerubahan.js";
 import { tampilanPenerimaan, penghalangBatalJadwal, penghalangBatalTiba, tidakPernahBerisi } from "../services/penerimaanStatus.js";
 import { nomorPenerimaanBaru, STATUS_PO_BISA_DITERIMA } from "../services/finance/kedatangan.js";
 import { wajibUuid } from "../lib/uuidParam.js";
+import { tokenRevisi } from "../services/dokumenGudangAksi.js";
 import { pesanServerAman } from "../lib/galatServerAman.js";
 
 export const goodsReceiptRouter = express.Router();
@@ -44,15 +45,59 @@ function handleErr(err, res) {
   return res.status(500).json({ error: pesanServerAman(err) });
 }
 
-// Jejak ringan dokumen (batal/pulihkan/kembali ke Draf/batalkan tiba/dibuat ulang) untuk halaman detail. Hanya baca.
-const TEKS_JEJAK = { KEMBALI_KE_DRAF: "Dikembalikan ke Draf", JADWAL_DIBATALKAN: "Penerimaan dibatalkan", DIPULIHKAN: "Dipulihkan ke Draf", TIBA_DIBATALKAN: "Catatan tiba dibatalkan (kembali Terjadwal)", DIBUAT_ULANG_DARI: "Dibuat ulang dari dokumen lama", DIBUAT_ULANG_MENJADI: "Dibuatkan penerimaan baru" };
+// Jejak dokumen (UX Tahap 3): RIWAYAT STATUS lengkap — maju, mundur, batal, pulih, tiba, tolak, masuk stok — beserta pelaku, waktu, status asal → tujuan, dan alasan. Hanya baca.
+const LABEL_STATUS = { DRAFT: "Draf", SCHEDULED: "Terjadwal", ARRIVED: "Barang tiba", INSPECTION: "Pemeriksaan", READY_FOR_PUTAWAY: "Siap masuk stok", COMPLETED: "Sudah masuk stok", REJECTED: "Dibatalkan / ditolak" };
+const labelStatus = (k) => LABEL_STATUS[k] ?? k ?? null;
+const TEKS_JEJAK = {
+  KEMBALI_KE_DRAF: "Dikembalikan ke Draf", JADWAL_DIBATALKAN: "Penerimaan dibatalkan", DIPULIHKAN: "Dipulihkan", TIBA_DIBATALKAN: "Catatan tiba dibatalkan (kembali Terjadwal)", DIBUAT_ULANG_DARI: "Dibuat ulang dari dokumen lama", DIBUAT_ULANG_MENJADI: "Dibuatkan penerimaan baru",
+  KEMBALI_KE_TIBA: "Dikembalikan ke Barang tiba", KEMBALI_KE_PERIKSA: "Dikembalikan ke Pemeriksaan",
+};
 async function jejakDokumen(id) {
-  const ev = await prisma.activityEvent.findMany({ where: { entityType: ENTITY_TYPES.GOODS_RECEIPT, entityId: id }, orderBy: { createdAt: "asc" }, take: 40 });
-  const pelaku = new Map((await prisma.user.findMany({ where: { id: { in: [...new Set(ev.map((e) => e.actorId).filter(Boolean))] } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
-  return ev.filter((e) => TEKS_JEJAK[e.metadata?.aksi]).map((e) => ({
-    id: e.id, waktu: e.createdAt, aksi: e.metadata.aksi, teks: TEKS_JEJAK[e.metadata.aksi], oleh: pelaku.get(e.actorId) ?? null, alasan: e.metadata.alasan ?? null,
-    tautan: e.metadata.dariId ? { id: e.metadata.dariId, nomor: e.metadata.dariNomor } : e.metadata.keId ? { id: e.metadata.keId, nomor: e.metadata.keNomor } : null,
-  }));
+  const [ev, kedatangan] = await Promise.all([
+    prisma.activityEvent.findMany({ where: { entityType: ENTITY_TYPES.GOODS_RECEIPT, entityId: id }, orderBy: { createdAt: "asc" }, take: 120 }),
+    prisma.goodsReceiptEvent.findMany({ where: { goodsReceiptId: id, type: "KEDATANGAN_DICATAT" }, orderBy: { createdAt: "asc" }, take: 10 }),
+  ]);
+  const aktor = [...new Set([...ev.map((e) => e.actorId), ...kedatangan.map((e) => e.actorId)].filter(Boolean))];
+  const pelaku = new Map((await prisma.user.findMany({ where: { id: { in: aktor } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
+  const hasil = [];
+  for (const e of ev) {
+    const m = e.metadata ?? {}; const dari = m.sebelum?.status; const ke = m.sesudah?.status;
+    const dasar = { id: e.id, waktu: e.createdAt, oleh: pelaku.get(e.actorId) ?? null, alasan: m.alasan ?? m.reason ?? null };
+    if (m.aksi === "KEMBALI_KE_TIBA" && m.hasilDibatalkan?.baris?.length) {
+      hasil.push({ ...dasar, aksi: m.aksi, teks: "Dikembalikan ke Barang tiba — hasil pemeriksaan lama dinyatakan TIDAK BERLAKU (arsip)", dari: labelStatus(dari), ke: labelStatus(ke), tautan: null, rincian: m.hasilDibatalkan.baris.map((b) => `Hasil lama (tidak berlaku) ${b.kode ?? ""}: baik ${b.diterimaBaik ?? "—"}, ditolak ${b.ditolak ?? "—"}${b.kondisi ? `, kondisi: ${b.kondisi}` : ""}`) });
+    } else if (m.aksi === "DRAF_DIUBAH" && String(m.bagian ?? "").startsWith("baris ") && (m.sesudah?.acceptedQty !== undefined || m.sesudah?.rejectedQty !== undefined)) {
+      hasil.push({ ...dasar, aksi: "HASIL_DIISI", teks: `Hasil pemeriksaan diisi (${String(m.bagian).replace("baris ", "")})`, dari: null, ke: null, tautan: null, rincian: [`baik ${m.sebelum?.acceptedQty ?? "—"} → ${m.sesudah?.acceptedQty ?? m.sebelum?.acceptedQty ?? "—"}; ditolak ${m.sebelum?.rejectedQty ?? "—"} → ${m.sesudah?.rejectedQty ?? m.sebelum?.rejectedQty ?? "—"}`] });
+    } else if (TEKS_JEJAK[m.aksi]) {
+      const teks = m.aksi === "DIPULIHKAN" ? `Dipulihkan ke ${labelStatus(ke) ?? "Draf"}` : TEKS_JEJAK[m.aksi];
+      hasil.push({ ...dasar, aksi: m.aksi, teks, dari: labelStatus(dari), ke: labelStatus(ke), tautan: m.dariId ? { id: m.dariId, nomor: m.dariNomor } : m.keId ? { id: m.keId, nomor: m.keNomor } : null });
+    } else if (m.aksi === "DRAF_DIUBAH" && m.sesudah?.status) {
+      hasil.push({ ...dasar, aksi: "STATUS_MAJU", teks: `Status diubah ke ${labelStatus(ke)}`, dari: labelStatus(dari), ke: labelStatus(ke), tautan: null });
+    } else if (e.eventType === EVENT_TYPES.DOCUMENT_POSTED) {
+      hasil.push({ ...dasar, aksi: "DISIMPAN_KE_STOK", teks: "Disimpan ke stok", dari: labelStatus("READY_FOR_PUTAWAY"), ke: labelStatus("COMPLETED"), tautan: null });
+    } else if (e.eventType === EVENT_TYPES.DOCUMENT_REJECTED) {
+      hasil.push({ ...dasar, aksi: "DITOLAK", teks: "Barang ditolak", dari: null, ke: "Ditolak", tautan: null });
+    }
+  }
+  for (const k of kedatangan) hasil.push({ id: k.id, waktu: k.createdAt, aksi: "TIBA_DICATAT", teks: "Barang dicatat tiba", oleh: pelaku.get(k.actorId) ?? null, alasan: null, dari: labelStatus("SCHEDULED"), ke: labelStatus("ARRIVED"), tautan: null });
+  return hasil.sort((a, b) => new Date(a.waktu) - new Date(b.waktu));
+}
+/** Tambahan respons: tampilan + token revisi (updatedAt) untuk deteksi dua pengguna bersamaan. */
+const tampil = (r, opsi = {}) => ({ tampilan: tampilanPenerimaan(opsi.pulihKe ? { ...r, pulihKe: opsi.pulihKe } : r), revisi: tokenRevisi(r) });
+/** Bila `revisi` dikirim dan tidak sama dengan revisi dokumen sekarang → 409 REVISI_BASI. Tanpa `revisi` = tidak diperiksa (pemanggil lama). */
+function cekRevisiGR(r, revisi) {
+  if (revisi === undefined || revisi === null || revisi === "") return;
+  if (String(revisi) !== tokenRevisi(r)) { const e = new ReceiptError("Dokumen ini sudah diubah pengguna lain (atau di layar lain) sejak Anda membukanya. Muat ulang, periksa statusnya, lalu ulangi.", 409); e.code = "REVISI_BASI"; throw e; }
+}
+/** Peristiwa pembatalan pemeriksaan TERAKHIR yang membawa hasil lama (superseded), atau null. */
+async function hasilDibatalkanTerakhir(db, id) {
+  const ev = await db.activityEvent.findFirst({ where: { entityType: ENTITY_TYPES.GOODS_RECEIPT, entityId: id, eventType: EVENT_TYPES.DOCUMENT_EDITED, metadata: { path: ["aksi"], equals: "KEMBALI_KE_TIBA" } }, orderBy: { createdAt: "desc" } });
+  return ev?.metadata?.hasilDibatalkan?.baris?.length ? ev : null;
+}
+const adaHasilDibatalkan = async (db, id) => !!(await hasilDibatalkanTerakhir(db, id));
+// Status terakhir yang aman untuk memulihkan dokumen Dibatalkan: status SEBELUM dibatalkan (Draf atau Terjadwal — keduanya belum pernah berisi barang); selain itu Draf.
+async function statusPulih(db, id) {
+  const ev = await db.activityEvent.findFirst({ where: { entityType: ENTITY_TYPES.GOODS_RECEIPT, entityId: id, eventType: EVENT_TYPES.DOCUMENT_CANCELLED, metadata: { path: ["aksi"], equals: "JADWAL_DIBATALKAN" } }, orderBy: { createdAt: "desc" } });
+  return ev?.metadata?.sebelum?.status === "SCHEDULED" ? "SCHEDULED" : "DRAFT";
 }
 
 const SOURCE_TYPES = [
@@ -97,7 +142,7 @@ goodsReceiptRouter.get("/", requirePermission(P.INVENTORY_READ), async (req, res
       include: receiptInclude,
       orderBy: [{ createdAt: "desc" }],
     });
-    res.json({ receipts: receipts.map((r) => ({ ...r, tampilan: tampilanPenerimaan(r) })) });
+    res.json({ receipts: receipts.map((r) => ({ ...r, ...tampil(r) })) });
   } catch (err) {
     handleErr(err, res);
   }
@@ -109,8 +154,14 @@ goodsReceiptRouter.get("/:id", requirePermission(P.INVENTORY_READ), wajibUuid(),
     if (!receipt) return res.status(404).json({ error: "Goods receipt tidak ditemukan" });
     // Akun tanpa izin tulis Inventory (hanya melihat) tidak ditawari aksi: server tetap menolak 403, tetapi layar tidak menampilkan tombol yang pasti gagal.
     const tulis = hasPermission(req.user, P.INVENTORY_WRITE);
-    const tampilan = tampilanPenerimaan(receipt);
-    res.json({ ...(await denganRingkasanPO(receipt)), tampilan: tulis ? tampilan : { ...tampilan, aksi: [] }, izin: { tulis }, jejak: await jejakDokumen(receipt.id) });
+    const pulihKe = receipt.status === "REJECTED" && tidakPernahBerisi(receipt) ? await statusPulih(prisma, receipt.id) : null;
+    const { tampilan, revisi } = tampil(receipt, { pulihKe });
+    let pemeriksaanSebelumnya = null;
+    if (["ARRIVED", "INSPECTION"].includes(receipt.status)) {
+      const ev = await hasilDibatalkanTerakhir(prisma, receipt.id);
+      if (ev) { const pel = await prisma.user.findUnique({ where: { id: ev.actorId ?? "" }, select: { name: true } }).catch(() => null); pemeriksaanSebelumnya = { waktu: ev.createdAt, oleh: pel?.name ?? null, alasan: ev.metadata.alasan ?? null, baris: ev.metadata.hasilDibatalkan.baris, sudahDiisiUlang: receipt.lines.every((l) => l.acceptedQty != null && l.rejectedQty != null) }; }
+    }
+    res.json({ ...(await denganRingkasanPO(receipt)), pemeriksaanSebelumnya, tampilan: tulis ? tampilan : { ...tampilan, aksi: [], pipeline: { ...tampilan.pipeline, pindah: [] } }, revisi, izin: { tulis }, jejak: await jejakDokumen(receipt.id) });
   } catch (err) {
     handleErr(err, res);
   }
@@ -173,54 +224,62 @@ goodsReceiptRouter.post("/", requirePermission(P.INVENTORY_WRITE), async (req, r
 });
 
 // PATCH /api/inventory/goods-receipts/:id
-// Header fields + transisi status MAJU satu langkah pada satu waktu.
-// { sourceReference?, supplier?, expectedDate?, receivedDate?, deliveryNote?, notes?, status? }
+// Header fields + transisi status MAJU satu langkah pada satu waktu. MUNDUR lewat POST /:id/mundur (alasan wajib, jejak lengkap).
+// { sourceReference?, supplier?, expectedDate?, receivedDate?, deliveryNote?, notes?, status?, revisi? }
+// Dikunci per dokumen (dua pengguna/dua klik tidak saling menimpa); status yang SAMA dengan sekarang = hasil sama (klik ganda aman, ulang:true); `revisi` basi = 409 REVISI_BASI.
 goodsReceiptRouter.patch("/:id", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
   try {
-    const existing = await prisma.goodsReceipt.findUnique({ where: { id: req.params.id } });
-    if (!existing) return res.status(404).json({ error: "Goods receipt tidak ditemukan" });
-    if (existing.status === "COMPLETED" || existing.status === "REJECTED") {
-      throw new ReceiptError(`Receipt berstatus ${existing.status} tidak bisa diubah lagi${existing.status === "COMPLETED" && existing.purchaseOrderId ? " dari sini — koreksi lewat Koreksi Kedatangan (Barang Akan Datang): wajib alasan, tercatat sebelum–sesudah, dan sesudah Simpan ke Stok memakai pembalik + pengganti bila terbukti aman" : ""}`);
-    }
-
-    const { sourceReference, supplier, expectedDate, receivedDate, deliveryNote, notes, status } = req.body;
-    // Penerimaan dari PO: supplier & referensi berasal dari PO dan tidak boleh diketik ulang (menjaga tautan PO ↔ penerimaan ↔ tagihan).
-    if (existing.purchaseOrderId) {
-      if (supplier !== undefined && (supplier || null) !== existing.supplier) throw new ReceiptError("Supplier penerimaan ini berasal dari PO dan tidak bisa diubah");
-      if (sourceReference !== undefined && (sourceReference || null) !== existing.sourceReference) throw new ReceiptError("Referensi penerimaan ini berasal dari PO dan tidak bisa diubah");
-    }
-    const data = {};
-    if (sourceReference !== undefined) data.sourceReference = sourceReference || null;
-    if (supplier !== undefined) data.supplier = supplier || null;
-    if (expectedDate !== undefined) data.expectedDate = expectedDate ? new Date(`${expectedDate}T00:00:00.000Z`) : null;
-    if (receivedDate !== undefined) data.receivedDate = receivedDate ? new Date(`${receivedDate}T00:00:00.000Z`) : null;
-    if (deliveryNote !== undefined) data.deliveryNote = deliveryNote || null;
-    if (notes !== undefined) data.notes = notes || null;
-
-    if (status) {
-      const currentIdx = FORWARD_FLOW.indexOf(existing.status);
-      const nextIdx = FORWARD_FLOW.indexOf(status);
-      if (nextIdx === -1) throw new ReceiptError("Status tidak valid");
-      if (nextIdx !== currentIdx + 1) {
-        throw new ReceiptError(`Tidak bisa langsung ke status ${status} dari ${existing.status} — harus berurutan`);
+    const { sourceReference, supplier, expectedDate, receivedDate, deliveryNote, notes, status, revisi } = req.body;
+    const hasil = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, "goods_receipts", req.params.id);
+      const existing = await tx.goodsReceipt.findUnique({ where: { id: req.params.id }, include: { lines: true } });
+      if (!existing) throw new ReceiptError("Goods receipt tidak ditemukan", 404);
+      const hanyaStatus = ![sourceReference, supplier, expectedDate, receivedDate, deliveryNote, notes].some((v) => v !== undefined);
+      if (status && status === existing.status && hanyaStatus) return { ...(await tx.goodsReceipt.findUnique({ where: { id: existing.id }, include: receiptInclude })), _ulang: true }; // klik ganda / ulang: hasil sama
+      if (existing.status === "COMPLETED" || existing.status === "REJECTED") {
+        throw new ReceiptError(`Receipt berstatus ${existing.status} tidak bisa diubah lagi${existing.status === "COMPLETED" && existing.purchaseOrderId ? " dari sini — koreksi lewat Koreksi Kedatangan (Barang Akan Datang): wajib alasan, tercatat sebelum–sesudah, dan sesudah Simpan ke Stok memakai pembalik + pengganti bila terbukti aman" : existing.status === "COMPLETED" ? " dari sini — koreksi lewat Koreksi penerimaan (Koreksi Gudang)" : ""}`);
       }
-      if (status === "COMPLETED") {
-        throw new ReceiptError("Status COMPLETED hanya ditetapkan lewat Simpan ke Stok (POST /:id/putaway)");
+      cekRevisiGR(existing, revisi);
+      // Penerimaan dari PO: supplier & referensi berasal dari PO dan tidak boleh diketik ulang (menjaga tautan PO ↔ penerimaan ↔ tagihan).
+      if (existing.purchaseOrderId) {
+        if (supplier !== undefined && (supplier || null) !== existing.supplier) throw new ReceiptError("Supplier penerimaan ini berasal dari PO dan tidak bisa diubah");
+        if (sourceReference !== undefined && (sourceReference || null) !== existing.sourceReference) throw new ReceiptError("Referensi penerimaan ini berasal dari PO dan tidak bisa diubah");
       }
-      // Penerimaan dari PO: "tiba" dicatat LEWAT Catat Barang Tiba (tanggal tiba, jumlah datang, PIC/penerima, catatan wajib; aktor/peran/workspace dari sesi) — dasar termin & audit.
-      if (status === "ARRIVED" && existing.purchaseOrderId && existing.arrivalRevision === 0) {
-        throw new ReceiptError("Barang dari PO dinyatakan tiba lewat Catat Barang Tiba (Barang Akan Datang), bukan dengan mengganti status — tanggal tiba, jumlah datang, PIC/penerima, dan catatan wajib diisi.");
-      }
-      data.status = status;
-    }
+      const data = {};
+      if (sourceReference !== undefined) data.sourceReference = sourceReference || null;
+      if (supplier !== undefined) data.supplier = supplier || null;
+      if (expectedDate !== undefined) data.expectedDate = expectedDate ? new Date(`${expectedDate}T00:00:00.000Z`) : null;
+      if (receivedDate !== undefined) data.receivedDate = receivedDate ? new Date(`${receivedDate}T00:00:00.000Z`) : null;
+      if (deliveryNote !== undefined) data.deliveryNote = deliveryNote || null;
+      if (notes !== undefined) data.notes = notes || null;
 
-    // Draf boleh diedit, tetapi SETIAP perubahan meninggalkan jejak sebelum–sesudah (siapa/kapan/apa).
-    const receipt = await prisma.$transaction(async (tx) => {
+      if (status) {
+        const currentIdx = FORWARD_FLOW.indexOf(existing.status);
+        const nextIdx = FORWARD_FLOW.indexOf(status);
+        if (nextIdx === -1) throw new ReceiptError("Status tidak valid");
+        if (nextIdx <= currentIdx) throw new ReceiptError(`Mundur dari ${labelStatus(existing.status)} ke ${labelStatus(status)} memakai aksi "Kembalikan" (alasan wajib dan tercatat), bukan dengan mengganti status.`, 400);
+        if (nextIdx !== currentIdx + 1) throw new ReceiptError(`Tidak bisa langsung ke status ${labelStatus(status)} dari ${labelStatus(existing.status)} — harus berurutan`);
+        if (status === "COMPLETED") throw new ReceiptError("Status COMPLETED hanya ditetapkan lewat Simpan ke Stok (POST /:id/putaway)");
+        // Penerimaan dari PO: "tiba" dicatat LEWAT Catat Barang Tiba (tanggal tiba, jumlah datang, PIC/penerima, catatan wajib; aktor/peran/workspace dari sesi) — dasar termin & audit.
+        if (status === "ARRIVED" && existing.purchaseOrderId && existing.arrivalRevision === 0) {
+          throw new ReceiptError("Barang dari PO dinyatakan tiba lewat Catat Barang Tiba (Barang Akan Datang), bukan dengan mengganti status — tanggal tiba, jumlah datang, PIC/penerima, dan catatan wajib diisi.");
+        }
+        // Data wajib ditegakkan di gerbangnya masing-masing: tiba (PO) lewat Catat Barang Tiba, masuk stok lewat Simpan ke Stok (wajib ada jumlah baik; baik ≤ sisa PO) — tidak ada lompatan yang melewatinya.
+        // Pemeriksaan yang pernah DIBATALKAN (hasil lama tidak berlaku): sebelum Siap masuk stok, SETIAP item wajib punya hasil baru (jumlah baik dan ditolak) yang diisi atau dikonfirmasi pengguna.
+        if (status === "READY_FOR_PUTAWAY" && (await adaHasilDibatalkan(tx, existing.id))) {
+          const belum = existing.lines.filter((l) => l.acceptedQty == null || l.rejectedQty == null);
+          if (belum.length) { const e = new ReceiptError(`Pemeriksaan sebelumnya dibatalkan, jadi hasil lama tidak berlaku. Isi atau konfirmasi hasil pemeriksaan BARU (jumlah baik dan ditolak) untuk setiap item — masih kosong: ${belum.length} item.`, 409); e.code = "HASIL_PEMERIKSAAN_BARU_WAJIB"; throw e; }
+        }
+        data.status = status;
+      }
+
+      // Draf boleh diedit, tetapi SETIAP perubahan meninggalkan jejak sebelum–sesudah (siapa/kapan/apa).
       const u = await tx.goodsReceipt.update({ where: { id: req.params.id }, data, include: receiptInclude });
       await catatPerubahanDraf(tx, { entityType: ENTITY_TYPES.GOODS_RECEIPT, entityId: u.id, actorId: req.user.id, nomor: u.receiptNumber, lama: existing, data });
       return u;
     });
-    res.json({ ...receipt, tampilan: tampilanPenerimaan(receipt) });
+    const { _ulang, ...dok } = hasil;
+    res.json({ ...dok, ...tampil(dok), ulang: !!_ulang });
   } catch (err) {
     handleErr(err, res);
   }
@@ -280,24 +339,76 @@ goodsReceiptRouter.patch("/:id/lines/:lineId", requirePermission(P.INVENTORY_WRI
   }
 });
 
-// POST /api/inventory/goods-receipts/:id/kembali-draft   { alasan? }
-// Jadwal yang SALAH dikembalikan ke Draf (hanya Terjadwal, barang belum dicatat tiba, belum ada jumlah/pergerakan stok). Tercatat sebelum–sesudah. Tidak menyentuh stok/PO/Finance.
+// ── Perpindahan MUNDUR (UX Tahap 3) ─────────────────────────────────────────────────────────────────────────────
+// Matriks (selama dokumen BELUM memengaruhi stok/jurnal; pengguna berizin tulis; tanpa saklar dan tanpa approval kedua):
+//   Terjadwal → Draf · Barang tiba → Terjadwal (belum ada hasil pemeriksaan/faktur/retur/pengganti) · Pemeriksaan → Barang tiba · Siap masuk stok → Pemeriksaan (belum Simpan ke Stok).
+// Setiap perpindahan mundur: alasan wajib, tercatat pelaku/waktu/status asal → tujuan/alasan, terkunci per dokumen, idempoten (status sudah di tujuan = hasil sama), dan memeriksa revisi.
+// Sesudah "Sudah masuk stok" TIDAK ada perpindahan langsung: pakai Koreksi Gudang (pergerakan stok dan jurnal tetap konsisten).
+const MUNDUR_KE = Object.freeze({ SCHEDULED: "DRAFT", ARRIVED: "SCHEDULED", INSPECTION: "ARRIVED", READY_FOR_PUTAWAY: "INSPECTION" });
+const SEBAB_KOREKSI = (r) => (r.status === "COMPLETED" ? " Sudah masuk stok: pakai Koreksi Gudang (movement dan jurnal dikoreksi lewat jalur resmi)." : r.status === "REJECTED" ? " Dokumen Dibatalkan/Ditolak: pakai Pulihkan atau Buat penerimaan baru." : "");
+
+async function kembaliDraftTx(tx, r, userId, alasanMentah) {
+  const halang = penghalangBatalJadwal(r, await tx.stockMovement.count({ where: { goodsReceiptId: r.id } }));
+  if (halang) { const e = new ReceiptError(halang.pesan, 409); e.code = halang.kode; throw e; }
+  const alasan = alasanPendek(alasanMentah, true);
+  const u = await tx.goodsReceipt.update({ where: { id: r.id }, data: { status: "DRAFT" }, include: receiptInclude });
+  await recordActivity(tx, { entityType: ENTITY_TYPES.GOODS_RECEIPT, entityId: r.id, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: userId, metadata: { aksi: "KEMBALI_KE_DRAF", nomor: r.receiptNumber, sebelum: { status: "SCHEDULED" }, sesudah: { status: "DRAFT" }, alasan } });
+  return u;
+}
+// Siap masuk stok → Pemeriksaan: hanya status; hasil pemeriksaan TETAP AKTIF (pengguna hanya membatalkan kesiapan posting, bukan pemeriksaannya).
+// Pemeriksaan → Barang tiba: pemeriksaan dibatalkan, jadi HASIL-nya dinyatakan TIDAK BERLAKU (superseded): nilai lama (jumlah baik, ditolak, kondisi) disalin utuh ke riwayat (peristiwa aktivitas, tidak dihapus) lalu dikosongkan
+// dari baris aktif — tidak ada jalan diam-diam bagi hasil lama untuk meloloskan dokumen ke Siap masuk stok. Pemeriksaan berikutnya wajib diisi/dikonfirmasi ulang (lihat gerbang di PATCH status). Bukti kedatangan (foto/berkas tiba) bukan hasil
+// pemeriksaan: tetap utuh. Ditolak bila sudah ada pergerakan stok.
+async function mundurPeriksaTx(tx, r, userId, ke, alasanMentah) {
+  if ((await tx.stockMovement.count({ where: { goodsReceiptId: r.id } })) > 0) throw galat409("Penerimaan ini sudah punya pergerakan stok. Pakai Koreksi Gudang (dampaknya ditampilkan dulu), bukan perpindahan status.", "SUDAH_ADA_PERGERAKAN_STOK");
+  const alasan = alasanPendek(alasanMentah, true);
+  let hasilDibatalkan = null;
+  if (ke === "ARRIVED") {
+    const baris = r.lines.filter((l) => l.acceptedQty != null || l.rejectedQty != null || l.condition).map((l) => ({ lineId: l.id, kode: l.material?.code ?? null, nama: l.material?.name ?? null, diterimaBaik: l.acceptedQty ?? null, ditolak: l.rejectedQty ?? null, kondisi: l.condition ?? null }));
+    if (baris.length) { hasilDibatalkan = { status: "TIDAK_BERLAKU", baris }; await tx.goodsReceiptLine.updateMany({ where: { goodsReceiptId: r.id }, data: { acceptedQty: null, rejectedQty: null, condition: null } }); }
+  }
+  await tx.goodsReceipt.update({ where: { id: r.id }, data: { status: ke } });
+  await recordActivity(tx, { entityType: ENTITY_TYPES.GOODS_RECEIPT, entityId: r.id, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: userId, metadata: { aksi: ke === "ARRIVED" ? "KEMBALI_KE_TIBA" : "KEMBALI_KE_PERIKSA", nomor: r.receiptNumber, sebelum: { status: r.status }, sesudah: { status: ke }, alasan, ...(hasilDibatalkan && { hasilDibatalkan, catatan: "Hasil pemeriksaan sebelumnya dinyatakan TIDAK BERLAKU dan tersimpan di sini sebagai riwayat; pemeriksaan baru wajib diisi atau dikonfirmasi." }) } });
+  return tx.goodsReceipt.findUnique({ where: { id: r.id }, include: receiptInclude });
+}
+
+// POST /api/inventory/goods-receipts/:id/kembali-draft   { alasan, revisi? }
+// Jadwal yang SALAH dikembalikan ke Draf (hanya Terjadwal, barang belum dicatat tiba, belum ada jumlah/pergerakan stok). Tercatat sebelum–sesudah + alasan. Tidak menyentuh stok/PO/Finance.
 goodsReceiptRouter.post("/:id/kembali-draft", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
   try {
-    const alasan = String(req.body?.alasan ?? "").trim().slice(0, 300);
     const hasil = await prisma.$transaction(async (tx) => {
       await lockRowForUpdate(tx, "goods_receipts", req.params.id);
       const r = await tx.goodsReceipt.findUnique({ where: { id: req.params.id }, include: receiptInclude });
       if (!r) throw new ReceiptError("Penerimaan tidak ditemukan", 404);
-      if (r.status === "DRAFT") return r; // sudah Draf: hasil sama (aman diulang)
+      if (r.status === "DRAFT") return { ...r, _ulang: true }; // sudah Draf: hasil sama (aman diulang)
       if (r.status !== "SCHEDULED") throw new ReceiptError(`Hanya penerimaan yang masih Terjadwal yang bisa dikembalikan ke Draf (sekarang: ${tampilanPenerimaan(r).label}).`, 409);
-      const halang = penghalangBatalJadwal(r, await tx.stockMovement.count({ where: { goodsReceiptId: r.id } }));
-      if (halang) { const e = new ReceiptError(halang.pesan, 409); e.code = halang.kode; throw e; }
-      const u = await tx.goodsReceipt.update({ where: { id: r.id }, data: { status: "DRAFT" }, include: receiptInclude });
-      await recordActivity(tx, { entityType: ENTITY_TYPES.GOODS_RECEIPT, entityId: r.id, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: req.user.id, metadata: { aksi: "KEMBALI_KE_DRAF", nomor: r.receiptNumber, sebelum: { status: "SCHEDULED" }, sesudah: { status: "DRAFT" }, alasan: alasan || null } });
-      return u;
+      cekRevisiGR(r, req.body?.revisi);
+      return kembaliDraftTx(tx, r, req.user.id, req.body?.alasan);
     });
-    res.json({ ...hasil, tampilan: tampilanPenerimaan(hasil) });
+    const { _ulang, ...dok } = hasil;
+    res.json({ ...dok, ...tampil(dok), ulang: !!_ulang });
+  } catch (err) { handleErr(err, res); }
+});
+
+// POST /api/inventory/goods-receipts/:id/mundur   { ke: "DRAFT"|"SCHEDULED"|"ARRIVED"|"INSPECTION", alasan, revisi? }
+// Satu pintu untuk SEMUA perpindahan mundur yang sah (lihat matriks di atas). Selain satu langkah mundur yang sah → 409 PERPINDAHAN_TIDAK_SAH (tidak ada lompatan).
+goodsReceiptRouter.post("/:id/mundur", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
+  try {
+    const ke = String(req.body?.ke ?? "");
+    if (!Object.values(MUNDUR_KE).includes(ke)) { const e = new ReceiptError("Tujuan mundur tidak valid (Draf, Terjadwal, Barang tiba, atau Pemeriksaan)", 400); e.code = "TUJUAN_TIDAK_VALID"; throw e; }
+    const hasil = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, "goods_receipts", req.params.id);
+      const r = await tx.goodsReceipt.findUnique({ where: { id: req.params.id }, include: receiptInclude });
+      if (!r) throw new ReceiptError("Penerimaan tidak ditemukan", 404);
+      if (r.status === ke) return { ...r, _ulang: true }; // sudah di tujuan: hasil sama
+      if (MUNDUR_KE[r.status] !== ke) throw galat409(`Dari ${labelStatus(r.status)} tidak bisa langsung kembali ke ${labelStatus(ke)}.${SEBAB_KOREKSI(r) || " Mundur dilakukan satu tahap demi satu tahap."}`, "PERPINDAHAN_TIDAK_SAH");
+      cekRevisiGR(r, req.body?.revisi);
+      if (ke === "DRAFT") return kembaliDraftTx(tx, r, req.user.id, req.body?.alasan);
+      if (ke === "SCHEDULED") return batalkanTibaTx(tx, r, req.user.id, alasanPendek(req.body?.alasan, true));
+      return mundurPeriksaTx(tx, r, req.user.id, ke, req.body?.alasan);
+    });
+    const { _ulang, ...dok } = hasil;
+    res.json({ ...dok, ...tampil(dok), ulang: !!_ulang });
   } catch (err) { handleErr(err, res); }
 });
 
@@ -323,7 +434,7 @@ goodsReceiptRouter.post("/:id/batalkan-jadwal", requirePermission(P.INVENTORY_WR
       return u;
     });
     const { _ulang, ...dok } = hasil;
-    res.json({ ...dok, ulang: !!_ulang, tampilan: tampilanPenerimaan(dok) });
+    res.json({ ...dok, ulang: !!_ulang, ...tampil(dok) });
   } catch (err) { handleErr(err, res); }
 });
 
@@ -340,28 +451,57 @@ const alasanPendek = (v, wajib) => {
 const statusFakturAktif = { notIn: ["DIBATALKAN", "DITOLAK"] };
 const galat409 = (pesan, kode) => { const e = new ReceiptError(pesan, 409); e.code = kode; return e; };
 
-// POST /api/inventory/goods-receipts/:id/pulihkan   { alasan? }
+// POST /api/inventory/goods-receipts/:id/pulihkan   { alasan, revisi? }
+// Dibatalkan (tidak pernah berisi barang) → status terakhir yang aman sebelum dibatalkan (Draf atau Terjadwal). Alasan wajib dan tercatat; aman diulang.
 goodsReceiptRouter.post("/:id/pulihkan", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
   try {
-    const alasan = alasanPendek(req.body?.alasan, false);
     const hasil = await prisma.$transaction(async (tx) => {
       await lockRowForUpdate(tx, "goods_receipts", req.params.id);
       const r = await tx.goodsReceipt.findUnique({ where: { id: req.params.id }, include: receiptInclude });
       if (!r) throw new ReceiptError("Penerimaan tidak ditemukan", 404);
-      if (r.status === "DRAFT") return r; // sudah Draf: hasil sama (aman diulang)
+      if (r.status === "DRAFT" || r.status === "SCHEDULED") return { ...r, _ulang: true }; // sudah dipulihkan: hasil sama (aman diulang)
       if (r.status !== "REJECTED") throw new ReceiptError(`Hanya penerimaan yang Dibatalkan yang bisa dipulihkan (sekarang: ${tampilanPenerimaan(r).label}).`, 409);
       if (!tidakPernahBerisi(r)) throw galat409("Penerimaan ini pernah berisi barang yang ditolak, jadi tidak dipulihkan di tempat. Buat penerimaan baru dari dokumen ini (riwayat saling tertaut).", "PERNAH_BERISI_BARANG");
       if ((await tx.stockMovement.count({ where: { goodsReceiptId: r.id } })) > 0) throw galat409("Penerimaan ini punya pergerakan stok — tidak dipulihkan.", "SUDAH_ADA_PERGERAKAN_STOK");
       if (r.purchaseOrder && !STATUS_PO_BISA_DITERIMA.includes(r.purchaseOrder.status)) throw galat409(`PO ${r.purchaseOrder.poNumber} berstatus ${r.purchaseOrder.status}, sudah tidak menerima barang. Dokumen tidak dipulihkan.`, "PO_TIDAK_BISA_DITERIMA");
-      const u = await tx.goodsReceipt.update({ where: { id: r.id }, data: { status: "DRAFT" }, include: receiptInclude });
-      await recordActivity(tx, { entityType: ENTITY_TYPES.GOODS_RECEIPT, entityId: r.id, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: req.user.id, metadata: { aksi: "DIPULIHKAN", nomor: r.receiptNumber, sebelum: { status: "REJECTED" }, sesudah: { status: "DRAFT" }, alasan: alasan || null } });
+      cekRevisiGR(r, req.body?.revisi);
+      const ke = await statusPulih(tx, r.id);
+      const alasan = alasanPendek(req.body?.alasan, true);
+      const u = await tx.goodsReceipt.update({ where: { id: r.id }, data: { status: ke }, include: receiptInclude });
+      await recordActivity(tx, { entityType: ENTITY_TYPES.GOODS_RECEIPT, entityId: r.id, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: req.user.id, metadata: { aksi: "DIPULIHKAN", nomor: r.receiptNumber, sebelum: { status: "REJECTED" }, sesudah: { status: ke }, alasan } });
       return u;
     });
-    res.json({ ...hasil, tampilan: tampilanPenerimaan(hasil) });
+    const { _ulang, ...dok } = hasil;
+    res.json({ ...dok, ...tampil(dok), ulang: !!_ulang });
   } catch (err) { handleErr(err, res); }
 });
 
-// POST /api/inventory/goods-receipts/:id/batalkan-tiba   { alasan }
+// POST /api/inventory/goods-receipts/:id/batalkan-tiba   { alasan, revisi? }
+// Barang tiba → Terjadwal (belum ada hasil pemeriksaan, stok, faktur, retur, pengganti). Catatan tiba lama tersimpan utuh di jejak.
+async function batalkanTibaTx(tx, r, userId, alasan) {
+  const idBaris = r.lines.map((l) => l.id);
+  const [pergerakan, fakturLangsung, fakturAlokasi, retur, pengganti] = await Promise.all([
+    tx.stockMovement.count({ where: { goodsReceiptId: r.id } }),
+    tx.finSupplierBill.count({ where: { goodsReceiptId: r.id, status: statusFakturAktif } }),
+    tx.finSupplierBillAllocation.count({ where: { goodsReceiptId: r.id, bill: { status: statusFakturAktif } } }),
+    tx.supplierReturnLine.count({ where: { goodsReceiptLineId: { in: idBaris }, supplierReturn: { status: { in: ["DRAFT", "KELUAR", "SELESAI"] } } } }),
+    tx.goodsReceiptLine.count({ where: { replacementForLineId: { in: idBaris }, goodsReceipt: { status: { not: "REJECTED" } } } }),
+  ]);
+  const halang = penghalangBatalTiba(r, { pergerakan, faktur: fakturLangsung + fakturAlokasi, retur, pengganti });
+  if (halang) throw galat409(`${halang.pesan} ${halang.langkah}`, halang.kode);
+  const sebelum = {
+    status: r.status, tanggalTiba: r.arrivedDate ? r.arrivedDate.toISOString().slice(0, 10) : null, penerima: r.arrivalReceiver, catatan: r.arrivalNote, suratJalan: r.deliveryNote ?? null,
+    bukti: r.arrivalProofUrls ?? [], revisi: r.arrivalRevision,
+    baris: r.lines.map((l) => ({ kode: l.material?.code ?? null, datang: l.receivedQty, pendamping: l.companionQty ?? null, penggantiDariBarisId: l.replacementForLineId ?? null })),
+  };
+  await tx.goodsReceipt.update({ where: { id: r.id }, data: { status: "SCHEDULED", arrivedDate: null, arrivalRecordedById: null, arrivalRecordedAt: null, arrivalActorRoles: null, arrivalWorkspace: null, arrivalReceiver: null, arrivalNote: null, arrivalProofUrls: [], arrivalRevision: 0 } });
+  await tx.goodsReceiptLine.updateMany({ where: { goodsReceiptId: r.id }, data: { receivedQty: null, acceptedQty: null, rejectedQty: null, companionQty: null, replacementForLineId: null } });
+  await recordActivity(tx, {
+    entityType: ENTITY_TYPES.GOODS_RECEIPT, entityId: r.id, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: userId,
+    metadata: { aksi: "TIBA_DIBATALKAN", nomor: r.receiptNumber, sebelum, sesudah: { status: "SCHEDULED" }, alasan, catatan: "Catatan tiba sebelumnya tersimpan utuh di sini dan di riwayat kedatangan (tidak dihapus). Item yang tidak ikut tercatat tiba saat itu tidak kembali ke dokumen ini; buat jadwal baru dari PO untuk sisanya." },
+  });
+  return tx.goodsReceipt.findUnique({ where: { id: r.id }, include: receiptInclude });
+}
 goodsReceiptRouter.post("/:id/batalkan-tiba", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
   try {
     const alasan = alasanPendek(req.body?.alasan, true);
@@ -369,34 +509,15 @@ goodsReceiptRouter.post("/:id/batalkan-tiba", requirePermission(P.INVENTORY_WRIT
       await lockRowForUpdate(tx, "goods_receipts", req.params.id);
       const r = await tx.goodsReceipt.findUnique({ where: { id: req.params.id }, include: receiptInclude });
       if (!r) throw new ReceiptError("Penerimaan tidak ditemukan", 404);
-      if (r.status === "SCHEDULED" && !r.arrivedDate && Number(r.arrivalRevision ?? 0) === 0) return r; // sudah kembali Terjadwal: hasil sama
+      if (r.status === "SCHEDULED" && !r.arrivedDate && Number(r.arrivalRevision ?? 0) === 0) return { ...r, _ulang: true }; // sudah kembali Terjadwal: hasil sama
       if (!["ARRIVED", "INSPECTION", "READY_FOR_PUTAWAY"].includes(r.status)) {
         throw new ReceiptError(`Catatan tiba hanya bisa dibatalkan saat penerimaan menunggu atau sedang diperiksa (sekarang: ${tampilanPenerimaan(r).label}).${r.status === "COMPLETED" ? " Sudah masuk stok: pakai Koreksi." : ""}`, 409);
       }
-      const idBaris = r.lines.map((l) => l.id);
-      const [pergerakan, fakturLangsung, fakturAlokasi, retur, pengganti] = await Promise.all([
-        tx.stockMovement.count({ where: { goodsReceiptId: r.id } }),
-        tx.finSupplierBill.count({ where: { goodsReceiptId: r.id, status: statusFakturAktif } }),
-        tx.finSupplierBillAllocation.count({ where: { goodsReceiptId: r.id, bill: { status: statusFakturAktif } } }),
-        tx.supplierReturnLine.count({ where: { goodsReceiptLineId: { in: idBaris }, supplierReturn: { status: { in: ["DRAFT", "KELUAR", "SELESAI"] } } } }),
-        tx.goodsReceiptLine.count({ where: { replacementForLineId: { in: idBaris }, goodsReceipt: { status: { not: "REJECTED" } } } }),
-      ]);
-      const halang = penghalangBatalTiba(r, { pergerakan, faktur: fakturLangsung + fakturAlokasi, retur, pengganti });
-      if (halang) throw galat409(`${halang.pesan} ${halang.langkah}`, halang.kode);
-      const sebelum = {
-        status: r.status, tanggalTiba: r.arrivedDate ? r.arrivedDate.toISOString().slice(0, 10) : null, penerima: r.arrivalReceiver, catatan: r.arrivalNote, suratJalan: r.deliveryNote ?? null,
-        bukti: r.arrivalProofUrls ?? [], revisi: r.arrivalRevision,
-        baris: r.lines.map((l) => ({ kode: l.material?.code ?? null, datang: l.receivedQty, pendamping: l.companionQty ?? null, penggantiDariBarisId: l.replacementForLineId ?? null })),
-      };
-      await tx.goodsReceipt.update({ where: { id: r.id }, data: { status: "SCHEDULED", arrivedDate: null, arrivalRecordedById: null, arrivalRecordedAt: null, arrivalActorRoles: null, arrivalWorkspace: null, arrivalReceiver: null, arrivalNote: null, arrivalProofUrls: [], arrivalRevision: 0 } });
-      await tx.goodsReceiptLine.updateMany({ where: { goodsReceiptId: r.id }, data: { receivedQty: null, acceptedQty: null, rejectedQty: null, companionQty: null, replacementForLineId: null } });
-      await recordActivity(tx, {
-        entityType: ENTITY_TYPES.GOODS_RECEIPT, entityId: r.id, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: req.user.id,
-        metadata: { aksi: "TIBA_DIBATALKAN", nomor: r.receiptNumber, sebelum, sesudah: { status: "SCHEDULED" }, alasan, catatan: "Catatan tiba sebelumnya tersimpan utuh di sini dan di riwayat kedatangan (tidak dihapus). Item yang tidak ikut tercatat tiba saat itu tidak kembali ke dokumen ini; buat jadwal baru dari PO untuk sisanya." },
-      });
-      return tx.goodsReceipt.findUnique({ where: { id: r.id }, include: receiptInclude });
+      cekRevisiGR(r, req.body?.revisi);
+      return batalkanTibaTx(tx, r, req.user.id, alasan);
     });
-    res.json({ ...hasil, tampilan: tampilanPenerimaan(hasil) });
+    const { _ulang, ...dok } = hasil;
+    res.json({ ...dok, ...tampil(dok), ulang: !!_ulang });
   } catch (err) { handleErr(err, res); }
 });
 

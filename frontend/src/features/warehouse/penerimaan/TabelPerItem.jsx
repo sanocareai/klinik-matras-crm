@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useMemo, useState } from "react";
+import { Search } from "lucide-react";
 import { cn } from "@/lib/utils.js";
 import { catatanBaris, kalimatBaris, teksAngka } from "./penerimaanLogic.js";
 
@@ -17,7 +18,11 @@ const KOLOM = [
  * @param editable  { tiba: bool } bila pemeriksaan boleh diisi: kolom Diterima baik/Ditolak berubah menjadi isian; Tiba hanya untuk baris tanpa PO
  * @param nilai     isian sementara { [lineId]: { acceptedQty, rejectedQty, receivedQty, condition } }
  */
-export default function TabelPerItem({ rows, editable = null, nilai = {}, onUbah = () => {}, className }) {
+export default function TabelPerItem({ rows: semua, editable = null, nilai = {}, onUbah = () => {}, className }) {
+  // Banyak item (PO besar): kotak cari, ringkasan, header tabel menempel saat digulir — supaya tetap ringkas dan mudah dibandingkan. Sedikit item: tampilan tidak berubah.
+  const [cari, setCari] = useState(""); const banyak = semua.length > 8;
+  const rows = useMemo(() => { const k = cari.trim().toLowerCase(); return !banyak || !k ? semua : semua.filter((b) => `${b.kode} ${b.nama}`.toLowerCase().includes(k)); }, [semua, cari, banyak]);
+  const adaCatatan = banyak ? semua.filter((b) => catatanBaris(b).length > 0).length : 0;
   const isi = (b, f, awal) => (nilai[b.id] && f in nilai[b.id] ? nilai[b.id][f] : awal ?? "");
   const input = (b, f, awal, aria, ro = false) => (
     <input type="number" inputMode="decimal" min="0" step="any" value={isi(b, f, awal)} disabled={ro} onChange={(e) => onUbah(b.id, f, e.target.value)} aria-label={`${aria} ${b.kode}`} data-testid={`isian-${f}-${b.kode}`}
@@ -25,9 +30,17 @@ export default function TabelPerItem({ rows, editable = null, nilai = {}, onUbah
   );
   return (
     <div className={className} data-testid="tabel-per-item">
-      <div className="hidden overflow-x-auto md:block">
+      {banyak && (
+        <div className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1.5" data-testid="ringkas-item">
+          <span className="text-[12px] text-ink2"><strong className="text-ink">{semua.length}</strong> item{adaCatatan > 0 && <> · <strong className="text-orange">{adaCatatan}</strong> perlu dicek</>}{cari && <> · {rows.length} cocok</>}</span>
+          <div className="relative min-w-[200px] flex-1 sm:max-w-xs"><Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink3" aria-hidden />
+            <input type="search" value={cari} onChange={(e) => setCari(e.target.value)} placeholder="Cari item di dokumen ini" aria-label="Cari item di dokumen ini" data-testid="cari-item" className="w-full rounded-btn border border-border bg-surface py-1.5 pl-8 pr-2 text-[12.5px] text-ink outline-none focus:border-accent max-sm:min-h-11" /></div>
+        </div>
+      )}
+      {banyak && rows.length === 0 && <p className="m-0 py-3 text-[12.5px] text-ink3" data-testid="item-tak-cocok">Tidak ada item yang cocok dengan “{cari}”.</p>}
+      <div className={cn("hidden overflow-x-auto md:block", banyak && "max-h-[44vh] overflow-y-auto")}>
         <table className="w-full border-collapse text-[12.5px]">
-          <thead>
+          <thead className={banyak ? "sticky top-0 z-[1] bg-surface" : undefined}>
             <tr className="border-b border-line text-left text-[10.5px] font-bold uppercase tracking-wide text-ink3">
               <th scope="col" className="py-1.5 pr-2">Item</th>
               {KOLOM.map((c) => <th key={c.k} scope="col" title={c.tip} className="px-1.5 py-1.5 text-right">{c.label}</th>)}

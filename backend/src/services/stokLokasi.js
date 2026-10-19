@@ -5,6 +5,7 @@
 //   • Lokasi: sistem TIDAK menyimpan saldo per lokasi. Yang ditampilkan "lokasi penerimaan terakhir" (lokasi pergerakan RECEIPT terbaru), bukan saldo di lokasi itu.
 // Sumber angka: SUM(qty) ledger stock_movements (computeStockSnapshot); reservasi dari Material Issue/reservasi Produksi. Baca-saja.
 import { computeStockSnapshot } from "./inventoryLedger.js";
+import { kelompokDariItemGroup, ringkasKelompok } from "../constants/kelompokBahan.js";
 
 export const KEADAAN = Object.freeze({
   ADA: "ADA", MENIPIS: "MENIPIS", TERPESAN_PENUH: "TERPESAN_PENUH", NOL_TERHITUNG: "NOL_TERHITUNG", MINUS: "MINUS", BELUM_ADA_CATATAN: "BELUM_ADA_CATATAN", NONAKTIF: "NONAKTIF",
@@ -47,11 +48,13 @@ export function ringkasStok(rows) {
 }
 
 export async function stokLokasi(db) {
-  const [dasar, jumlah, lokasi] = await Promise.all([
+  const [dasar, jumlah, lokasi, grup] = await Promise.all([
     computeStockSnapshot(db),
     db.$queryRaw`SELECT material_id AS "materialId", COUNT(*)::int AS n FROM stock_movements GROUP BY material_id`,
     db.$queryRaw`SELECT DISTINCT ON (material_id) material_id AS "materialId", location, created_at AS "waktu" FROM stock_movements WHERE type = 'RECEIPT' AND qty > 0 ORDER BY material_id, created_at DESC`,
+    db.material.findMany({ select: { id: true, itemGroup: true } }),
   ]);
+  const nGrup = new Map(grup.map((g) => [g.id, g.itemGroup ?? null]));
   const nJumlah = new Map(jumlah.map((x) => [x.materialId, x.n]));
   const nLokasi = new Map(lokasi.map((x) => [x.materialId, x]));
   const rows = dasar.map((r) => {
@@ -59,6 +62,7 @@ export async function stokLokasi(db) {
     const keadaan = keadaanStok({ active: r.active, balance: r.balance, available: r.available, reorderPoint: r.reorderPoint, jumlahPergerakan: n });
     return {
       materialId: r.materialId, kode: r.code, nama: r.name, satuan: r.unit, aktif: r.active, kategori: r.category, vendor: r.vendor ?? null,
+      itemGroup: nGrup.get(r.materialId) ?? null, kelompok: kelompokDariItemGroup(nGrup.get(r.materialId)), // turunan dari itemGroup (tabel eksplisit), bukan tebakan nama; tidak disimpan
       saldo: n > 0 ? r4(r.balance) : null, // null = belum diketahui (BUKAN nol)
       dipesan: n > 0 ? r4(r.reserved) : null, tersedia: n > 0 ? r4(r.available) : null,
       batasMinimum: r.reorderPoint ?? null, // null = belum diatur (BUKAN nol)
@@ -68,5 +72,5 @@ export async function stokLokasi(db) {
       catatanData: r.dataNote ?? null,
     };
   });
-  return { rows, ringkasan: ringkasStok(rows), catatan: "Saldo dihitung dari ledger pergerakan. Sistem tidak menyimpan saldo per lokasi; lokasi yang tampil adalah lokasi penerimaan terakhir." };
+  return { rows, ringkasan: ringkasStok(rows), kelompok: ringkasKelompok(rows), catatan: "Saldo dihitung dari ledger pergerakan. Sistem tidak menyimpan saldo per lokasi; lokasi yang tampil adalah lokasi penerimaan terakhir." };
 }

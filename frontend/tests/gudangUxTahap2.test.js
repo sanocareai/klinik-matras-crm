@@ -100,7 +100,10 @@ test("AksiDokumen mendukung ringkasan dampak, catatan, galat panel, bidang pilih
 test("filter tahap daftar Gudang memakai useTahapFilter (replaceActivePath), BUKAN setSearchParams — tab workspace memakai lokasi virtual sehingga perubahan query-saja tidak sampai ke halaman", () => {
   const hook = baca("features/warehouse/dokumen/useTahapFilter.js");
   assert.match(hook, /replaceActivePath/); assert.match(hook, /useState\(sp\.get\("tahap"\)/);
-  for (const f of ["pages/warehouse/WarehouseMaterialIssue.jsx", "pages/warehouse/WarehouseTransfers.jsx", "pages/warehouse/WarehouseGoodsReceipt.jsx"]) {
+  // Penerimaan (UX Tahap 3) memakai useFilterDaftar: tahap + pencarian di path tab aktif lewat replaceActivePath, dengan path DASAR daftar (tidak menulis ulang path jendela detail).
+  assert.match(baca("features/warehouse/dokumen/useFilterDaftar.js"), /replaceActivePath/);
+  assert.match(baca("pages/warehouse/WarehouseGoodsReceipt.jsx"), /useFilterDaftar\(PATH, KUNCI\)/); assert.doesNotMatch(baca("pages/warehouse/WarehouseGoodsReceipt.jsx"), /setSp\(/);
+  for (const f of ["pages/warehouse/WarehouseMaterialIssue.jsx", "pages/warehouse/WarehouseTransfers.jsx"]) {
     const s = baca(f);
     assert.match(s, /useTahapFilter\(\)/, f); assert.doesNotMatch(s, /setSp\(/, `${f}: tidak boleh memakai setSearchParams untuk filter`);
   }
