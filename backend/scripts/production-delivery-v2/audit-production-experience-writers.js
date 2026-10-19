@@ -46,8 +46,10 @@ const BIAYA_BAHAN = "src/services/finance/biayaBahan.js";
 const STOK_RESMI_PRATINJAU = "src/services/finance/stokResmi/pratinjau.js";
 // Riwayat lengkap unit (19 Okt 2026): TINJAUAN — pembaca BACA-SAJA bukti tahap V2 untuk tab Aktivitas (siapa mencatat, versi koreksi); wajib menyaring baris DOC_* dan tidak menulis apa pun.
 const RIWAYAT_SERVICE = "src/services/productionRiwayatService.js";
+// Adopsi Admin (Okt 2026): TINJAUAN — pembaca SQL BACA-SAJA hanya untuk menentukan 'sudah ada bukti aplikasi' (mengunci catatan manual); wajib menyaring baris DOC_* dan tidak menulis apa pun.
+const ADOPSI_SERVICE = "src/services/productionAdoptionService.js";
 const READER_ALLOW = new Set(["src/services/productionStepCommandService.js", MATERIAL_RETURN, DOC_SERVICE, REPORT_SERVICE, COMPONENT_SERVICE, BIAYA_BAHAN, STOK_RESMI_PRATINJAU, RIWAYAT_SERVICE]);
-const SQL_READER_ALLOW = new Set([MEDIA, DOC_SERVICE, COMPONENT_SERVICE]);
+const SQL_READER_ALLOW = new Set([MEDIA, DOC_SERVICE, COMPONENT_SERVICE, ADOPSI_SERVICE]);
 const READ_OPS = "(findMany|findFirst|findFirstOrThrow|findUnique|findUniqueOrThrow|count|aggregate|groupBy)";
 const DOC_READ = "src/services/productionDocumentationRead.js";
 const DOC_ROUTE = "src/routes/productionDocumentation.js";
@@ -112,6 +114,8 @@ export function auditProductionExperienceWriters(files) {
   const matReturn = stripComments((files.get(MATERIAL_RETURN) || "").replace(/\r\n/g, "\n"));
   if (matReturn && new RegExp(String.raw`\.productionStepEvidence\.${READ_OPS}`).test(matReturn) && !/startsWith:\s*"DOC_"/.test(matReturn)) add(MATERIAL_RETURN, null, "", "DOC_FILTER", "MISSING_DOC_FILTER_material_return", false);
   const riwayat = stripComments((files.get(RIWAYAT_SERVICE) || "").replace(/\r\n/g, "\n"));
+  const adopsiSvc = stripComments((files.get(ADOPSI_SERVICE) || "").replace(/\r\n/g, "\n"));
+  if (adopsiSvc && /production_step_evidence_v2/.test(adopsiSvc) && !/LEFT\(e\.step_code, 4\) <> 'DOC_'/.test(adopsiSvc)) add(ADOPSI_SERVICE, null, "", "DOC_FILTER", "MISSING_DOC_FILTER_adopsi", false);
   if (riwayat && new RegExp(String.raw`\.productionStepEvidence\.${READ_OPS}`).test(riwayat) && !/startsWith:\s*"DOC_"/.test(riwayat)) add(RIWAYAT_SERVICE, null, "", "DOC_FILTER", "MISSING_DOC_FILTER_riwayat", false);
   if (riwayat) for (const m of riwayat.matchAll(/\.\s*(create|createMany|update|updateMany|upsert|delete|deleteMany|\$executeRaw\w*)\s*\(/g)) add(RIWAYAT_SERVICE, m.index, riwayat, "RIWAYAT_FORBIDDEN_WRITE", `FORBIDDEN_${m[1]}`, false);
   const biaya = stripComments((files.get(BIAYA_BAHAN) || "").replace(/\r\n/g, "\n"));

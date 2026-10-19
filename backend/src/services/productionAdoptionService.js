@@ -32,7 +32,7 @@ export async function loadAppEvidence(db, unitIds) {
         WHERE r.unit_id = ANY(${ids}::uuid[]) AND o.started_at IS NOT NULL AND o.status::text <> 'SKIPPED'
       UNION ALL
       SELECT r.unit_id, e.created_at AS t FROM production_step_evidence_v2 e JOIN production_runs_v2 r ON r.id = e.run_id
-        WHERE r.unit_id = ANY(${ids}::uuid[]) AND COALESCE(e.payload->>'outcome', '') <> 'SKIPPED'
+        WHERE r.unit_id = ANY(${ids}::uuid[]) AND LEFT(e.step_code, 4) <> 'DOC_' AND COALESCE(e.payload->>'outcome', '') <> 'SKIPPED'
     ) x GROUP BY x.unit_id`;
   for (const r of rows) out.set(r.unitId, { started: true, firstEvidenceAt: r.firstAt });
   return out;

@@ -148,7 +148,8 @@ test("tidak ada enum/migrasi baru: UnitStatus & OrderStatus tidak berubah, RECEI
 
 test("wiring: backlog, /work-orders, Run view dan Unit 360 memakai milestone yang sama (satu sumber)", () => {
   assert.match(src("src/services/productionBacklog.js"), /loadMilestoneEvidence/);
-  assert.match(src("src/routes/production.js"), /unitWhereForGlobalStatuses[\s\S]*globalStatusCounts/);
+  assert.match(src("src/routes/production.js"), /listWorkOrders/); // handler /work-orders memanggil listWorkOrders (adopsi Admin); logika filter/hitungan ada di productionOrderList.js
+  assert.match(src("src/services/productionOrderList.js"), /unitWhereForGlobalStatuses[\s\S]*globalStatusCounts/);
   assert.match(src("src/services/productionExperienceReadService.js"), /export function milestoneOfRun/);
   const ov = src("src/services/productionUnitOverviewService.js");
   assert.equal((ov.match(/globalStatus: milestone\.globalStatus/g) || []).length, 2); // unit dengan Run + unit tanpa Run
