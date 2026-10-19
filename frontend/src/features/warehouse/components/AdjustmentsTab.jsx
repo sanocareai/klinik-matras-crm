@@ -99,6 +99,7 @@ export default function AdjustmentsTab() {
     api.getAdjustmentRequests({}).then((d) => setRows(d.requests)).catch((e) => setError(e.message)).finally(() => setLoading(false));
   }, []);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { window.addEventListener("gudang-dokumen-berubah", load); return () => window.removeEventListener("gudang-dokumen-berubah", load); }, [load]); // jendela fokus dokumen memberi kabar setelah aksi
   const baru = <Button size="sm" onClick={() => setFormOpen(true)}><Plus size={14} /> Ajukan Penyesuaian</Button>;
   return (
     <>

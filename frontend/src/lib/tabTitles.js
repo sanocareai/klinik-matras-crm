@@ -27,6 +27,9 @@ const RESOURCE_LABELS = {
   damaged: "Barang Rusak",
   returns: "Retur",
   stock: "Penyesuaian",
+  // Tahap 4: koreksi & retur supplier sebagai jendela fokus.
+  koreksi: "Koreksi",
+  "retur-supplier": "Retur Supplier",
 };
 
 // P9B.1 — segmen path yang tidak title-case rapi dengan aturan umum di bawah (huruf/angka bercampur, singkatan
@@ -69,6 +72,9 @@ export function titleFromPath(rawPath) {
   }
   const parts = base.split("/").filter(Boolean);
   const divisionSeg = parts[0];
+  // Tahap 4: jendela fokus di atas Beranda (/warehouse/dashboard/<jenis>/<id>) tetap bertab "Gudang · Beranda".
+  if (divisionSeg === "warehouse" && parts[1] === "dashboard") return "Gudang · Beranda";
+  if (divisionSeg === "warehouse" && parts[1] === "perlu-perhatian") return "Perlu Perhatian";
   let seg = parts.pop() || "portal";
   if (looksLikeId(seg) && parts.length > 0) {
     const resource = parts.pop();

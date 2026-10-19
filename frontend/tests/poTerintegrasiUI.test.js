@@ -103,7 +103,7 @@ test("ringkas kuantitas daftar: dibaca dari server (po.progres), tidak dihitung 
 
 test("pemasangan: halaman Gudang tanpa harga, menu & rute, Finance memakai panel yang sama, drawer penerimaan mengarahkan ke Catat Barang Tiba", () => {
   const g = baca("../src/pages/warehouse/WarehouseBarangAkanDatang.jsx");
-  assert.match(g, /api\.getBarangAkanDatang/); assert.match(g, /workspace="GUDANG"/);
+  assert.match(g, /api\.getBarangAkanDatang/); assert.match(baca("../src/features/kedatangan/DetailPOFokus.jsx"), /workspace="GUDANG"/);
   assert.doesNotMatch(g, /hargaSatuan|nilaiDipesan|totalDipesan|formatUang|Rp\b/, "Gudang tidak menampilkan harga/nilai");
   assert.match(baca("../src/routes/pageRegistry.jsx"), /"\/warehouse\/barang-akan-datang\/:id\?"/); // detail PO = jendela fokus berbasis rute
   assert.match(baca("../src/components/Layout.jsx"), /Barang Akan Datang/);

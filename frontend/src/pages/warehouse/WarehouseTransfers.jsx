@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useJendelaFokus } from "@/features/warehouse/dokumen/useJendelaFokus.js";
+import TransferDetail from "@/features/warehouse/dokumen/TransferDetail.jsx";
 import { ArrowLeftRight, Plus, RefreshCw } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
@@ -16,10 +18,11 @@ import { TAHAP_FILTER_ST, cocokCari, filterTahap, hitungPerTahap, tanggalPendek,
 // TRANSFER STOK — daftar perpindahan barang antar lokasi (Draf → persetujuan → diambil → dalam perjalanan → selesai). Dua langkah menulis stok: Kirim barang (saldo dikurangi) dan Terima barang (saldo bertambah).
 // Status "Dalam perjalanan" berarti saldo SUDAH berkurang di sistem tetapi barang belum diterima di tujuan. Detail dibuka sebagai halaman.
 export default function WarehouseTransfers() {
-  const navigate = useNavigate(); const [sp] = useSearchParams();
-  const [tahap, setTahap] = useTahapFilter(); const [cari, setCari] = useState("");
+  const navigate = useNavigate(); const [sp] = useSearchParams(); const { id: bukaId } = useParams();
+  const [tahap, setTahap] = useTahapFilter("/warehouse/transfers");
+  const { buka: bukaJ, tutup } = useJendelaFokus("/warehouse/transfers", { saringan: tahap ? `?tahap=${tahap}` : "" }); const [cari, setCari] = useState("");
   const [rows, setRows] = useState(null); const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [formOpen, setFormOpen] = useState(false);
-  const buka = (id) => navigate(`/warehouse/transfers/${id}`);
+  const buka = (id) => bukaJ(id);
   useEffect(() => { const id = sp.get("buka"); if (id) navigate(`/warehouse/transfers/${id}`, { replace: true }); }, []); // eslint-disable-line react-hooks/exhaustive-deps -- tautan dalam dibaca sekali saat halaman dibuka
 
   const load = useCallback(() => {
@@ -87,6 +90,7 @@ export default function WarehouseTransfers() {
         </Card>
       </PageBody>
       <StockTransferFormModal open={formOpen} onClose={() => setFormOpen(false)} onCreated={(d) => { load(); if (d?.id) buka(d.id); }} />
+      {bukaId && <TransferDetail key="fokus" id={bukaId} onTutup={tutup} onBerubah={load} />}
     </PageContainer>
   );
 }

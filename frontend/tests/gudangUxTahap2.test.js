@@ -105,7 +105,7 @@ test("filter tahap daftar Gudang memakai useTahapFilter (replaceActivePath), BUK
   assert.match(baca("pages/warehouse/WarehouseGoodsReceipt.jsx"), /useFilterDaftar\(PATH, KUNCI\)/); assert.doesNotMatch(baca("pages/warehouse/WarehouseGoodsReceipt.jsx"), /setSp\(/);
   for (const f of ["pages/warehouse/WarehouseMaterialIssue.jsx", "pages/warehouse/WarehouseTransfers.jsx"]) {
     const s = baca(f);
-    assert.match(s, /useTahapFilter\(\)/, f); assert.doesNotMatch(s, /setSp\(/, `${f}: tidak boleh memakai setSearchParams untuk filter`);
+    assert.match(s, /useTahapFilter\(/, f); assert.doesNotMatch(s, /setSp\(/, `${f}: tidak boleh memakai setSearchParams untuk filter`);
   }
 });
 
@@ -149,7 +149,7 @@ test("selisih transfer: penyebab wajib saat Terima berselisih; kartu saldo perja
 test("halaman detail Opname, Restok, Barang Rusak, Retur, Penyesuaian: status/aksi dari server, dampak stok di panel, tanpa tombol Edit umum, route & breadcrumb terdaftar", () => {
   const halaman = { "OpnameDetail.jsx": ["STOCK_COUNT", "SELESAIKAN_OPNAME", "blind"], "RestokDetail.jsx": ["HUBUNGKAN_PENERIMAAN", "tidak pernah"], "RusakDetail.jsx": ["DAMAGED_STOCK", "BERKURANG"], "ReturDetail.jsx": ["RETURN_RECORD", "MENAMBAH stok"], "PenyesuaianDetail.jsx": ["STOCK_ADJUSTMENT", "Pemisahan tugas"] };
   for (const [f, kata] of Object.entries(halaman)) { const s = baca(`features/warehouse/dokumen/${f}`); assert.match(s, /r\.tampilan/, f); assert.match(s, /KartuAksiDokumen/, f); assert.match(s, /JejakDokumen/, f); assert.doesNotMatch(s, />\s*Edit\s*</, f); assert.doesNotMatch(s, /window\.confirm/, f); for (const k of kata) assert.ok(s.toLowerCase().includes(k.toLowerCase()), `${f}: ${k}`); }
-  const reg = baca("routes/pageRegistry.jsx"); for (const p of ["/warehouse/stock-count/:id", "/warehouse/replenishment/:id", "/warehouse/adjustments/damaged/:id", "/warehouse/adjustments/returns/:id", "/warehouse/adjustments/stock/:id"]) assert.ok(reg.includes(p), p);
+  const reg = baca("routes/pageRegistry.jsx"); for (const p of ["/warehouse/stock-count/:id?", "/warehouse/replenishment/:id?", "/warehouse/adjustments/:jenis?/:id?"]) assert.ok(reg.includes(p), p);
   const top = baca("components/Topbar.jsx"); for (const p of ["/warehouse/stock-count/", "/warehouse/replenishment/", "/warehouse/adjustments/"]) assert.ok(top.includes(`startsWith("${p}")`), p);
   assert.match(baca("pages/warehouse/WarehouseAdjustments.jsx"), /sp\.get\("tab"\)/, "tautan kembali membuka sub-tab yang sesuai");
 });

@@ -1,8 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Loader2, Info } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Loader2, Info } from "lucide-react";
 import { api } from "@/api.js";
-import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
+import { FokusOverlay } from "@/components/ui/fokus-overlay.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -24,19 +24,19 @@ const satuan = (u) => UNIT_LABEL[u] || String(u || "").toLowerCase();
 const STATUS_MAJU = { AJUKAN: "WAITING_APPROVAL", SETUJUI: "APPROVED", SIAPKAN: "READY_TO_PICK", TANDAI_DIAMBIL: "PICKED" };
 const PRIORITAS_OPSI = Object.entries(ISSUE_PRIORITY_REAL).map(([nilai, v]) => ({ nilai, label: v.labelId }));
 
-export default function MaterialIssueDetail() {
-  const { id } = useParams(); const navigate = useNavigate();
+export default function MaterialIssueDetail({ id, onTutup, onBerubah }) {
+  const navigate = useNavigate(); const sudahMuat = useRef(false); const kabar = useRef(onBerubah); kabar.current = onBerubah;
   const [r, setR] = useState(null); const [galat, setGalat] = useState(""); const [memuat, setMemuat] = useState(true); const [sibuk, setSibuk] = useState(false);
   const [lokasi, setLokasi] = useState({}); const [keluar, setKeluar] = useState({}); const [versi, setVersi] = useState(0); const [konflik, setKonflik] = useState(""); const [info, setInfo] = useState(""); const [editOpen, setEditOpen] = useState(false);
 
   const muat = useCallback(async () => {
     setMemuat(true); setGalat("");
     try {
-      const d = await api.getMaterialIssue(id); setR(d); setLokasi({});
+      const d = await api.getMaterialIssue(id); setR(d); setLokasi({}); if (sudahMuat.current) kabar.current?.(); sudahMuat.current = true;
       setKeluar(Object.fromEntries(d.lines.map((l) => [l.id, String(l.requestedQty)])));
     } catch (e) { setGalat(e.message || "Gagal memuat permintaan"); } finally { setMemuat(false); setVersi((v) => v + 1); }
   }, [id]);
-  useEffect(() => { muat(); }, [muat]);
+  useEffect(() => { sudahMuat.current = false; muat(); }, [muat]);
 
   const t = r?.tampilan; const ket = useMemo(() => Object.fromEntries((r?.ketersediaan ?? []).map((k) => [k.lineId, k])), [r]);
   const kodeAksi = (t?.aksi ?? []).map((a) => a.kode);
@@ -65,9 +65,14 @@ export default function MaterialIssueDetail() {
     } finally { setSibuk(false); }
   };
 
-  if (memuat && !r) return <PageContainer><PageBody><p className="flex items-center gap-1.5 py-8 text-[13px] text-ink3"><Loader2 size={14} className="animate-spin" /> Memuat permintaan…</p></PageBody></PageContainer>;
-  if (galat && !r) return <PageContainer><PageBody><p role="alert" className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{galat}</p><Link to="/warehouse/material-issue" className="mt-3 inline-flex items-center gap-1 text-[12.5px] font-semibold text-accent"><ArrowLeft size={13} /> Kembali ke Pengeluaran Material</Link></PageBody></PageContainer>;
-  if (!r) return null;
+  if (!r) {
+    return (
+      <FokusOverlay open onClose={onTutup} title={memuat ? "Memuat permintaan…" : "Tidak dapat membuka permintaan"} testid="fokus-dokumen">
+        {memuat && <p className="flex items-center gap-1.5 py-8 text-[13px] text-ink3" data-testid="memuat-dokumen"><Loader2 size={14} className="animate-spin" /> Memuat permintaan…</p>}
+        {!memuat && galat && <div className="space-y-3"><p role="alert" className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red" data-testid="galat-dokumen">{galat}</p><div className="flex gap-2"><Button variant="ghost" size="sm" onClick={muat} className="max-sm:min-h-11" data-testid="coba-lagi">Coba lagi</Button><Button variant="ghost" size="sm" onClick={onTutup} className="max-sm:min-h-11">Tutup</Button></div></div>}
+      </FokusOverlay>
+    );
+  }
 
   const SPEC = {
     SETUJUI: { panel: { judul: "Setujui permintaan ini?", tombol: "Setujui & cadangkan stok", peringatan: "Jumlah yang diminta dicadangkan: saldo belum berkurang, tetapi tidak tersedia untuk permintaan lain. Jumlah tidak bisa diubah setelah ini.",
@@ -104,13 +109,8 @@ export default function MaterialIssueDetail() {
   );
 
   return (
-    <PageContainer>
-      <PageHeader
-        title={r.issueNumber}
-        subtitle={<span data-testid="identitas-ringkas">{ISSUE_SOURCE_REAL[r.sourceType]?.labelId ?? r.sourceType} · {r.department || unit}</span>}
-        actions={<Link to="/warehouse/material-issue" className="inline-flex items-center gap-1 text-[12.5px] font-semibold text-accent max-sm:min-h-11"><ArrowLeft size={13} /> Pengeluaran Material</Link>}
-      />
-      <PageBody>
+    <FokusOverlay open onClose={onTutup} title={r.issueNumber} subtitle={<span data-testid="identitas-ringkas">{ISSUE_SOURCE_REAL[r.sourceType]?.labelId ?? r.sourceType} · {r.department || unit}</span>} footer={kartuAksi} testid="fokus-dokumen">
+      <div className="flex flex-col gap-4">
         <Card className="space-y-3 p-4" data-testid="kartu-identitas">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant={BADGE[t.warna] ?? "neutral"} data-testid="status-dokumen" data-kode={t.kode}>{t.label}</Badge>
@@ -144,7 +144,6 @@ export default function MaterialIssueDetail() {
             <button type="button" onClick={() => setInfo("")} className="shrink-0 text-[12px] font-semibold text-accent max-sm:min-h-11">Tutup</button>
           </div>
         )}
-        {!bisaKeluar && !bisaLokasi && kartuAksi}
 
         <Card className="space-y-3 p-4">
           <h3 className="m-0 text-[11px] font-bold uppercase tracking-wide text-ink3">Item — diminta, stok tersedia, lokasi, jumlah keluar</h3>
@@ -152,14 +151,13 @@ export default function MaterialIssueDetail() {
           {bisaKeluar && galatKeluar && <p role="alert" className="m-0 text-[12px] text-red" data-testid="galat-isian">{galatKeluar}</p>}
         </Card>
 
-        {(bisaKeluar || bisaLokasi) && kartuAksi}
 
         <KartuJalurKoreksi tipe="MATERIAL_ISSUE" id={id} versi={`${r.status}-${versi}`} ringkas />
         <JejakDokumen jejak={r.jejak} basePath="/warehouse/material-issue" />
         {galat && <p role="alert" className="text-[12px] text-red">{galat}</p>}
         <Button variant="ghost" size="sm" onClick={muat} disabled={memuat} className="self-start max-sm:min-h-11" data-testid="muat-ulang">{memuat ? <Loader2 size={14} className="animate-spin" /> : null} Muat ulang</Button>
-      </PageBody>
+      </div>
       {editOpen && <MaterialIssueFormModal open dokumen={r} onClose={() => setEditOpen(false)} onSaved={(h) => { setEditOpen(false); muat(); void h; }} />}
-    </PageContainer>
+    </FokusOverlay>
   );
 }

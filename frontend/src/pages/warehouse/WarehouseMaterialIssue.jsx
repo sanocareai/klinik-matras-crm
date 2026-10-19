@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useJendelaFokus } from "@/features/warehouse/dokumen/useJendelaFokus.js";
+import MaterialIssueDetail from "@/features/warehouse/dokumen/MaterialIssueDetail.jsx";
 import { ClipboardList, Plus, RefreshCw } from "lucide-react";
 import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
@@ -19,10 +21,11 @@ import { TAHAP_FILTER_MI, cocokCari, filterTahap, hitungPerTahap, tanggalPendek,
 const untukApa = (r) => (r.unit ? <>{r.unit.unitCode}<span className="block text-[10.5px] text-ink3">{r.unit.order?.orderNumber} · {r.unit.order?.customer?.name}</span></> : (r.sourceReference || r.department || <span className="text-ink3">—</span>));
 
 export default function WarehouseMaterialIssue() {
-  const navigate = useNavigate(); const [sp] = useSearchParams();
-  const [tahap, setTahap] = useTahapFilter(); const [cari, setCari] = useState("");
+  const navigate = useNavigate(); const [sp] = useSearchParams(); const { id: bukaId } = useParams();
+  const [tahap, setTahap] = useTahapFilter("/warehouse/material-issue");
+  const { buka: bukaJ, tutup } = useJendelaFokus("/warehouse/material-issue", { saringan: tahap ? `?tahap=${tahap}` : "" }); const [cari, setCari] = useState("");
   const [rows, setRows] = useState(null); const [loading, setLoading] = useState(true); const [error, setError] = useState(""); const [formOpen, setFormOpen] = useState(false);
-  const buka = (id) => navigate(`/warehouse/material-issue/${id}`);
+  const buka = (id) => bukaJ(id);
   // Tautan lama "?buka=<id>" (mis. dari jejak biaya bahan) → langsung ke halaman detail.
   useEffect(() => { const id = sp.get("buka"); if (id) navigate(`/warehouse/material-issue/${id}`, { replace: true }); }, []); // eslint-disable-line react-hooks/exhaustive-deps -- tautan dalam dibaca sekali saat halaman dibuka
 
@@ -93,6 +96,7 @@ export default function WarehouseMaterialIssue() {
         </Card>
       </PageBody>
       <MaterialIssueFormModal open={formOpen} onClose={() => setFormOpen(false)} onCreated={(d) => { load(); if (d?.id) buka(d.id); }} />
+      {bukaId && <MaterialIssueDetail key="fokus" id={bukaId} onTutup={tutup} onBerubah={load} />}
     </PageContainer>
   );
 }

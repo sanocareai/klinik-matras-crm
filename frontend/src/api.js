@@ -740,6 +740,13 @@ export const api = {
   getKeadaanKoreksiGR: (id) => request(`/inventory/koreksi/goods-receipts/${id}/keadaan`),
   pratinjauKoreksiGR: (id, perubahan) => request(`/inventory/koreksi/goods-receipts/${id}/pratinjau`, { method: "POST", body: JSON.stringify({ perubahan }) }),
   ajukanKoreksiGR: (id, data, key = mutationKey("koreksi-gr")) => request(`/inventory/koreksi/goods-receipts/${id}/ajukan`, { method: "POST", headers: { "Idempotency-Key": key }, body: JSON.stringify(data) }),
+  // Pusat Kerja Gudang (UX Tahap 4) — semua baca-saja; definisi antrean ikut di respons.
+  getPusatKerja: (batas = 8) => request(`/inventory/pusat-kerja?batas=${batas}`),
+  getAntreanPusatKerja: (kode, { offset = 0, limit = 20 } = {}) => request(`/inventory/pusat-kerja/antrean/${encodeURIComponent(kode)}?offset=${offset}&limit=${limit}`),
+  getTertahanPusatKerja: (kode, { offset = 0, limit = 20 } = {}) => request(`/inventory/pusat-kerja/tertahan/${encodeURIComponent(kode)}?offset=${offset}&limit=${limit}`),
+  getPerluPerhatianGudang: (batas = 8) => request(`/inventory/pusat-kerja/perhatian?batas=${batas}`),
+  cariGudang: (q, batas = 6) => request(`/inventory/pusat-kerja/cari?q=${encodeURIComponent(q)}&batas=${batas}`),
+  getKoreksiGudang: (id) => request(`/inventory/koreksi/${id}`),
   getDaftarKoreksiGudang: (params = {}) => { const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== "" && v != null)).toString(); return request(`/inventory/koreksi${qs ? `?${qs}` : ""}`); },
   setujuiKoreksiGudang: (id, catatan) => request(`/inventory/koreksi/${id}/setujui`, { method: "POST", body: JSON.stringify({ catatan }) }),
   tolakKoreksiGudang: (id, catatan) => request(`/inventory/koreksi/${id}/tolak`, { method: "POST", body: JSON.stringify({ catatan }) }),

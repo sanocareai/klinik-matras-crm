@@ -1,5 +1,4 @@
 import React from "react";
-import { useParams } from "react-router-dom";
 import { api } from "@/api.js";
 import KartuJalurKoreksi from "@/features/warehouse/koreksi/KartuJalurKoreksi.jsx";
 import { UNIT_LABEL } from "@/features/warehouse/inventoryReal.js";
@@ -14,9 +13,8 @@ const satuan = (u) => UNIT_LABEL[u] || String(u || "").toLowerCase();
 const STATUS_MAJU = { AJUKAN: "WAITING_APPROVAL", SETUJUI: "APPROVED" };
 const tanda = (n) => `${n > 0 ? "+" : ""}${teksJumlah(n)}`;
 
-export default function PenyesuaianDetail() {
-  const { id } = useParams();
-  const { r, galat, memuat, sibuk, setSibuk, versi, muat } = useDokumen(api.getAdjustmentRequest, id);
+export default function PenyesuaianDetail({ id, onTutup, onBerubah }) {
+  const { r, galat, memuat, sibuk, setSibuk, versi, muat } = useDokumen(api.getAdjustmentRequest, id, onBerubah);
   const jalankan = async (kode, v = {}) => {
     setSibuk(true);
     try {
@@ -27,7 +25,7 @@ export default function PenyesuaianDetail() {
       await muat();
     } catch (e) { await muat(); throw e; } finally { setSibuk(false); }
   };
-  if (!r) return <HalamanDokumen r={r} memuat={memuat} galat={galat} kembali={{ to: "/warehouse/adjustments?tab=adjustments", label: "Penyesuaian Stok" }} nama="penyesuaian stok" />;
+  if (!r) return <HalamanDokumen r={r} memuat={memuat} galat={galat} onTutup={onTutup} nama="penyesuaian stok" />;
   const t = r.tampilan; const u = satuan(r.material?.unit); const perkiraan = Math.round((Number(r.beforeQty) + Number(r.adjustmentQty)) * 10000) / 10000;
   const SPEC = {
     SETUJUI: { panel: { judul: "Setujui penyesuaian ini?", tombol: "Setujui", peringatan: "Persetujuan belum mengubah stok; stok berubah saat diposting.", ringkasan: [`${r.material?.code}: ${tanda(Number(r.adjustmentQty))} ${u} (saldo saat dibuat ${teksJumlah(r.beforeQty)} → perkiraan ${teksJumlah(perkiraan)})`], judulRingkasan: "Yang akan diposting nanti", bidang: [] } },
@@ -42,9 +40,8 @@ export default function PenyesuaianDetail() {
     { label: "Alasan", isi: r.reason, lebar: true }, { label: "Disetujui oleh", isi: r.approvedBy?.name, testid: "id-penyetuju" }, { label: "Diposting oleh", isi: r.postedBy?.name }, { label: "Diposting", isi: r.postedAt ? waktuTeks(r.postedAt) : "—" },
   ];
   return (
-    <HalamanDokumen judul={r.adjustmentNumber} subjudul={`${JENIS_PENYESUAIAN[r.adjustmentType] ?? r.adjustmentType} · ${r.material?.code} · ${tanda(Number(r.adjustmentQty))} ${u}`} kembali={{ to: "/warehouse/adjustments?tab=adjustments", label: "Penyesuaian Stok" }} r={r} memuat={memuat} galat={galat} onMuat={muat} nama="penyesuaian stok">
+    <HalamanDokumen judul={r.adjustmentNumber} subjudul={`${JENIS_PENYESUAIAN[r.adjustmentType] ?? r.adjustmentType} · ${r.material?.code} · ${tanda(Number(r.adjustmentQty))} ${u}`} onTutup={onTutup} r={r} memuat={memuat} galat={galat} onMuat={muat} nama="penyesuaian stok" footer={<KartuAksiDokumen tampilan={t} izin={r.izin} spec={SPEC} onJalankan={jalankan} sibuk={sibuk} versi={versi} namaDokumen="penyesuaian ini" kaki="Pemisahan tugas: pemohon tidak boleh menyetujui dokumennya sendiri, dan penyetuju harus berperan Owner/Finance." />}>
       <KartuStatusDokumen tampilan={t} identitas={identitas} alurLabel="Alur penyesuaian stok" catatan={r.notes} />
-      <KartuAksiDokumen tampilan={t} izin={r.izin} spec={SPEC} onJalankan={jalankan} sibuk={sibuk} versi={versi} namaDokumen="penyesuaian ini" kaki="Pemisahan tugas: pemohon tidak boleh menyetujui dokumennya sendiri, dan penyetuju harus berperan Owner/Finance." />
       <KartuJalurKoreksi tipe="STOCK_ADJUSTMENT" id={id} versi={`${r.status}-${versi}`} ringkas />
       <JejakDokumen jejak={r.jejak} basePath="/warehouse/adjustments/stock" />
     </HalamanDokumen>

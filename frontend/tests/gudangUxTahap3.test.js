@@ -68,7 +68,7 @@ test("jendela fokus: satu lapisan (Modal di dalamnya menjadi panel, bukan dialog
   const pd = baca("features/warehouse/penerimaan/PenerimaanDetail.jsx"); assert.match(pd, /<FokusOverlay/); assert.doesNotMatch(pd, /PageContainer/); assert.match(pd, /<PipelineStatus/); assert.match(pd, /onTutup/);
   const list = baca("pages/warehouse/WarehouseGoodsReceipt.jsx"); assert.match(list, /useParams\(\)/); assert.match(list, /navigate\(-n\)/, "Back menutup jendela ke daftar"); assert.match(list, /<PenerimaanDetail key="fokus"/);
   assert.doesNotMatch(list, /openNewTab|window\.open/, "membuka jendela TIDAK membuat tab workspace baru");
-  const bad = baca("pages/warehouse/WarehouseBarangAkanDatang.jsx"); assert.match(bad, /<FokusOverlay/); assert.doesNotMatch(bad, /from "@\/components\/ui\/modal\.jsx"/); assert.match(bad, /useParams\(\)/);
+  const bad = baca("pages/warehouse/WarehouseBarangAkanDatang.jsx"); assert.match(baca("features/kedatangan/DetailPOFokus.jsx"), /<FokusOverlay/); assert.match(bad, /<DetailPO /); assert.doesNotMatch(bad, /from "@\/components\/ui\/modal\.jsx"/); assert.match(bad, /useParams\(\)/);
   const reg = baca("routes/pageRegistry.jsx"); assert.match(reg, /goods-receipt\/:id\?/); assert.match(reg, /barang-akan-datang\/:id\?/);
 });
 
@@ -96,7 +96,7 @@ test("sidebar: enam kelompok utama; fitur biaya Finance diberi konteks; Layout m
   const anak = (nama) => { const i = w.indexOf(`section: "${nama}"`); const j = w.indexOf("section:", i + 10); return [...w.slice(i, j < 0 ? undefined : j).matchAll(/label: "([^"]+)"/g)].map((m) => m[1]); };
   assert.deepEqual(anak("Penerimaan"), ["Barang Akan Datang", "Penerimaan Barang", "Retur Supplier"]); assert.deepEqual(anak("Stok"), ["Stok & Lokasi", "Pengeluaran Material", "Transfer Stok", "Restok"]);
   assert.deepEqual(anak("Produksi"), ["Antrean Produksi", "Penerimaan Unit", "Permintaan Bahan", "Terima Barang Jadi"]); assert.deepEqual(anak("Laporan"), ["Riwayat Pergerakan", "KPI Gudang"]);
-  assert.deepEqual(anak("Kontrol").slice(0, 3), ["Stock Opname", "Barang Rusak & Retur", "Kasus Komplain"]);
+  assert.deepEqual(anak("Kontrol").slice(0, 4), ["Perlu Perhatian", "Stock Opname", "Barang Rusak & Retur", "Kasus Komplain"]);
   assert.match(w, /subjudul: "Diproses Finance"/); assert.match(w, /bolehPeran: \["ADMIN", "OWNER", "FINANCE", "APPROVER", "WAREHOUSE"\]/, "pembatasan peran Pengajuan Biaya tetap");
   assert.match(l, /divisionKey === "warehouse" && !onHub && !collapsed && !customizingNav/); assert.match(l, /<GudangNavGrup/);
   const g = baca("components/GudangNavGrup.jsx"); assert.match(g, /aria-expanded/); assert.match(g, /ArrowDown/); assert.match(g, /ArrowRight/); assert.match(g, /data-testid="badge-kelompok"/);

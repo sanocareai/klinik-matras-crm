@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { api } from "@/api.js";
 import { UNIT_LABEL } from "@/features/warehouse/inventoryReal.js";
 import JejakDokumen from "./JejakDokumen.jsx";
@@ -13,9 +13,8 @@ const satuan = (u) => UNIT_LABEL[u] || String(u || "").toLowerCase();
 const STATUS_MAJU = { AJUKAN: "WAITING_APPROVAL", SETUJUI: "APPROVED", TANDAI_DIPESAN: "ORDERED" };
 const OPSI_PRIORITAS = Object.entries(PRIORITAS).map(([nilai, label]) => ({ nilai, label }));
 
-export default function RestokDetail() {
-  const { id } = useParams();
-  const { r, galat, memuat, sibuk, setSibuk, versi, muat } = useDokumen(api.getReplenishmentRequest, id);
+export default function RestokDetail({ id, onTutup, onBerubah }) {
+  const { r, galat, memuat, sibuk, setSibuk, versi, muat } = useDokumen(api.getReplenishmentRequest, id, onBerubah);
   const [kandidat, setKandidat] = useState(null);
   useEffect(() => {
     if (r?.status !== "ORDERED") { setKandidat(null); return; }
@@ -33,7 +32,7 @@ export default function RestokDetail() {
     } catch (e) { await muat(); throw e; } finally { setSibuk(false); }
   };
 
-  if (!r) return <HalamanDokumen r={r} memuat={memuat} galat={galat} kembali={{ to: "/warehouse/replenishment", label: "Restok" }} nama="permintaan restok" />;
+  if (!r) return <HalamanDokumen r={r} memuat={memuat} galat={galat} onTutup={onTutup} nama="permintaan restok" />;
   const t = r.tampilan; const u = satuan(r.material?.unit);
   const SPEC = {
     SETUJUI: { panel: { judul: "Setujui permintaan restok ini?", tombol: "Setujui", peringatan: "Persetujuan tidak mengubah stok. Pemesanan ke pemasok dilakukan di luar halaman ini (Finance/PO).", bidang: [] } },
@@ -53,9 +52,8 @@ export default function RestokDetail() {
     { label: "Penerimaan tertaut", isi: r.goodsReceipt ? <Link to={`/warehouse/goods-receipt/${r.goodsReceipt.id}`} className="font-semibold text-accent" data-testid="tautan-penerimaan">{r.goodsReceipt.receiptNumber}</Link> : "—", lebar: true },
   ];
   return (
-    <HalamanDokumen judul={r.requestNumber} subjudul={`${r.material?.code} · ${teksJumlah(r.suggestedQty)} ${u}`} kembali={{ to: "/warehouse/replenishment", label: "Restok" }} r={r} memuat={memuat} galat={galat} onMuat={muat} nama="permintaan restok">
+    <HalamanDokumen judul={r.requestNumber} subjudul={`${r.material?.code} · ${teksJumlah(r.suggestedQty)} ${u}`} onTutup={onTutup} r={r} memuat={memuat} galat={galat} onMuat={muat} nama="permintaan restok" footer={<KartuAksiDokumen tampilan={t} izin={r.izin} spec={SPEC} onJalankan={jalankan} sibuk={sibuk} versi={versi} namaDokumen="permintaan restok ini" kaki="Permintaan restok tidak pernah menambah atau mengurangi stok. Stok bertambah hanya lewat Penerimaan Barang." />}>
       <KartuStatusDokumen tampilan={t} identitas={identitas} alurLabel="Alur permintaan restok" catatan={r.notes} />
-      <KartuAksiDokumen tampilan={t} izin={r.izin} spec={SPEC} onJalankan={jalankan} sibuk={sibuk} versi={versi} namaDokumen="permintaan restok ini" kaki="Permintaan restok tidak pernah menambah atau mengurangi stok. Stok bertambah hanya lewat Penerimaan Barang." />
       <JejakDokumen jejak={r.jejak} basePath="/warehouse/replenishment" />
     </HalamanDokumen>
   );

@@ -94,6 +94,7 @@ export default function DamagedStockTab() {
     api.getDamagedStock({}).then((d) => setRows(d.records)).catch((e) => setError(e.message)).finally(() => setLoading(false));
   }, []);
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { window.addEventListener("gudang-dokumen-berubah", load); return () => window.removeEventListener("gudang-dokumen-berubah", load); }, [load]); // jendela fokus dokumen memberi kabar setelah aksi
   const baru = <Button size="sm" onClick={() => setFormOpen(true)}><Plus size={14} /> Laporkan Barang Rusak</Button>;
   return (
     <>

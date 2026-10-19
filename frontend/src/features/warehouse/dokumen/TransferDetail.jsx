@@ -1,8 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Loader2, Info } from "lucide-react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Loader2, Info } from "lucide-react";
 import { api } from "@/api.js";
-import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
+import { FokusOverlay } from "@/components/ui/fokus-overlay.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -26,19 +26,19 @@ const STATUS_MAJU = { AJUKAN: "WAITING_APPROVAL", SETUJUI: "APPROVED", TANDAI_DI
 const lokasiTeks = (l) => (l ? `${l.code}${l.zone ? ` (${l.zone})` : ""}` : "—");
 const kunciBaru = () => `sel-${(globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`)}`;
 
-export default function TransferDetail() {
-  const { id } = useParams(); const navigate = useNavigate();
+export default function TransferDetail({ id, onTutup, onBerubah }) {
+  const navigate = useNavigate(); const sudahMuat = useRef(false); const kabar = useRef(onBerubah); kabar.current = onBerubah;
   const [r, setR] = useState(null); const [galat, setGalat] = useState(""); const [memuat, setMemuat] = useState(true); const [sibuk, setSibuk] = useState(false);
   const [terima, setTerima] = useState({}); const [versi, setVersi] = useState(0); const [konflik, setKonflik] = useState(""); const [info, setInfo] = useState(""); const [editOpen, setEditOpen] = useState(false); const [kunciSelisih, setKunciSelisih] = useState(kunciBaru);
 
   const muat = useCallback(async () => {
     setMemuat(true); setGalat("");
     try {
-      const d = await api.getStockTransfer(id); setR(d);
+      const d = await api.getStockTransfer(id); setR(d); if (sudahMuat.current) kabar.current?.(); sudahMuat.current = true;
       setTerima(Object.fromEntries(d.lines.map((l) => [l.id, String(l.qtySent)])));
     } catch (e) { setGalat(e.message || "Gagal memuat transfer"); } finally { setMemuat(false); setVersi((v) => v + 1); }
   }, [id]);
-  useEffect(() => { muat(); }, [muat]);
+  useEffect(() => { sudahMuat.current = false; muat(); }, [muat]);
 
   const t = r?.tampilan; const ket = useMemo(() => Object.fromEntries((r?.ketersediaan ?? []).map((k) => [k.lineId, k])), [r]);
   const bisaTerima = (t?.aksi ?? []).some((a) => a.kode === "TERIMA");
@@ -66,9 +66,14 @@ export default function TransferDetail() {
     } finally { setSibuk(false); }
   };
 
-  if (memuat && !r) return <PageContainer><PageBody><p className="flex items-center gap-1.5 py-8 text-[13px] text-ink3"><Loader2 size={14} className="animate-spin" /> Memuat transfer…</p></PageBody></PageContainer>;
-  if (galat && !r) return <PageContainer><PageBody><p role="alert" className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red">{galat}</p><Link to="/warehouse/transfers" className="mt-3 inline-flex items-center gap-1 text-[12.5px] font-semibold text-accent"><ArrowLeft size={13} /> Kembali ke Transfer Stok</Link></PageBody></PageContainer>;
-  if (!r) return null;
+  if (!r) {
+    return (
+      <FokusOverlay open onClose={onTutup} title={memuat ? "Memuat transfer…" : "Tidak dapat membuka transfer"} testid="fokus-dokumen">
+        {memuat && <p className="flex items-center gap-1.5 py-8 text-[13px] text-ink3" data-testid="memuat-dokumen"><Loader2 size={14} className="animate-spin" /> Memuat transfer…</p>}
+        {!memuat && galat && <div className="space-y-3"><p role="alert" className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red" data-testid="galat-dokumen">{galat}</p><div className="flex gap-2"><Button variant="ghost" size="sm" onClick={muat} className="max-sm:min-h-11" data-testid="coba-lagi">Coba lagi</Button><Button variant="ghost" size="sm" onClick={onTutup} className="max-sm:min-h-11">Tutup</Button></div></div>}
+      </FokusOverlay>
+    );
+  }
 
   const OPSI_JENIS = [{ nilai: "", label: "Pilih penyelesaian…" }, { nilai: "DITEMUKAN", label: `Barang ditemukan / terlambat tiba — saldo total bahan bertambah (dicatat pada ${r.destinationLocation.code})` }, { nilai: "SUSUT", label: "Diakui susut / hilang / rusak — hanya tercatat, saldo tidak berubah, Finance belum mencatat" }];
   const SPEC = {
@@ -113,13 +118,8 @@ export default function TransferDetail() {
   );
 
   return (
-    <PageContainer>
-      <PageHeader
-        title={r.transferNumber}
-        subtitle={<span data-testid="identitas-ringkas">{r.sourceLocation.code} → {r.destinationLocation.code} · {TRANSFER_TYPE_REAL[r.transferType]?.labelId ?? r.transferType}</span>}
-        actions={<Link to="/warehouse/transfers" className="inline-flex items-center gap-1 text-[12.5px] font-semibold text-accent max-sm:min-h-11"><ArrowLeft size={13} /> Transfer Stok</Link>}
-      />
-      <PageBody>
+    <FokusOverlay open onClose={onTutup} title={r.transferNumber} subtitle={<span data-testid="identitas-ringkas">{r.sourceLocation.code} → {r.destinationLocation.code} · {TRANSFER_TYPE_REAL[r.transferType]?.labelId ?? r.transferType}</span>} footer={kartuAksi} testid="fokus-dokumen">
+      <div className="flex flex-col gap-4">
         <Card className="space-y-3 p-4" data-testid="kartu-identitas">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant={BADGE[t.warna] ?? "neutral"} data-testid="status-dokumen" data-kode={t.kode}>{t.label}</Badge>
@@ -151,7 +151,6 @@ export default function TransferDetail() {
             <button type="button" onClick={() => setInfo("")} className="shrink-0 text-[12px] font-semibold text-accent max-sm:min-h-11">Tutup</button>
           </div>
         )}
-        {!bisaTerima && kartuAksi}
 
         <Card className="space-y-3 p-4">
           <h3 className="m-0 text-[11px] font-bold uppercase tracking-wide text-ink3">Item — dikirim, stok tersedia, diterima</h3>
@@ -159,7 +158,6 @@ export default function TransferDetail() {
           {bisaTerima && galatTerima && <p role="alert" className="m-0 text-[12px] text-red" data-testid="galat-isian">{galatTerima}</p>}
         </Card>
 
-        {bisaTerima && kartuAksi}
 
         {perjalanan.length > 0 && (
           <Card className="space-y-2 p-4" data-testid="kartu-saldo-perjalanan">
@@ -206,8 +204,8 @@ export default function TransferDetail() {
         <JejakDokumen jejak={r.jejak} basePath="/warehouse/transfers" />
         {galat && <p role="alert" className="text-[12px] text-red">{galat}</p>}
         <Button variant="ghost" size="sm" onClick={muat} disabled={memuat} className="self-start max-sm:min-h-11" data-testid="muat-ulang">{memuat ? <Loader2 size={14} className="animate-spin" /> : null} Muat ulang</Button>
-      </PageBody>
+      </div>
       {editOpen && <StockTransferFormModal open dokumen={r} onClose={() => setEditOpen(false)} onSaved={() => { setEditOpen(false); muat(); }} />}
-    </PageContainer>
+    </FokusOverlay>
   );
 }
