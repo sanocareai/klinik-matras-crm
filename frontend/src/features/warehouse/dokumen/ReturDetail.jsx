@@ -40,9 +40,8 @@ export default function ReturDetail({ id, onTutup, onBerubah }) {
     ...(selesai ? [{ label: "Penyelesaian", isi: res ? res.label.split(" — ")[0] : r.resolution, testid: "id-penyelesaian" }] : []),
   ];
   return (
-    <HalamanDokumen judul={r.returnNumber} subjudul={`${JENIS_RETUR[r.returnType] ?? r.returnType} · ${r.material?.code} · ${teksJumlah(r.qty)} ${u}`} onTutup={onTutup} r={r} memuat={memuat} galat={galat} onMuat={muat} nama="retur">
+    <HalamanDokumen judul={r.returnNumber} subjudul={`${JENIS_RETUR[r.returnType] ?? r.returnType} · ${r.material?.code} · ${teksJumlah(r.qty)} ${u}`} onTutup={onTutup} r={r} memuat={memuat} galat={galat} onMuat={muat} nama="retur" footer={<KartuAksiDokumen tampilan={t} izin={r.izin} spec={SPEC} onJalankan={jalankan} sibuk={sibuk} versi={versi} namaDokumen="retur ini" />}>
       <KartuStatusDokumen tampilan={t} identitas={identitas} alurLabel="Alur retur" catatan={[r.notes, r.inspectionNote && `Hasil pemeriksaan: ${r.inspectionNote}`].filter(Boolean).join(" — ") || undefined} />
-      <KartuAksiDokumen tampilan={t} izin={r.izin} spec={SPEC} onJalankan={jalankan} sibuk={sibuk} versi={versi} namaDokumen="retur ini" />
       <KartuJalurKoreksi tipe="RETURN_RECORD" id={id} versi={`${r.status}-${versi}`} ringkas />
       <JejakDokumen jejak={r.jejak} basePath="/warehouse/adjustments/returns" />
     </HalamanDokumen>

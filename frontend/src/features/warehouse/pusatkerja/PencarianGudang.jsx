@@ -24,7 +24,7 @@ export default function PencarianGudang({ onBuka }) {
       <div className="relative">
         <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink3" aria-hidden />
         <input type="search" value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Escape") setQ(""); }} aria-label="Cari di Gudang" data-testid="cari-gudang"
-          placeholder="Cari nomor GR, PO, Stock Count, transfer, bahan, supplier, unit/order…" autoComplete="off"
+          placeholder="Cari nomor, bahan, supplier, unit…" autoComplete="off"
           className="h-10 w-full rounded-btn border border-line bg-surface pl-9 pr-9 text-[13px] text-ink placeholder:text-ink3 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent max-sm:h-11" />
         {q && <button type="button" onClick={() => setQ("")} aria-label="Hapus pencarian" className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-chip text-ink3 hover:bg-hovertint max-sm:h-9 max-sm:w-9"><X size={14} /></button>}
       </div>

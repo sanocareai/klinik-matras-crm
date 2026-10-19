@@ -54,7 +54,7 @@ export default function WarehousePerluPerhatian() {
                       <dd className="m-0"><ul className="m-0 list-none space-y-1 p-0">{m.tindakan.map((t) => <li key={t.label}><Link to={t.tautan} className="font-semibold text-accent max-sm:inline-flex max-sm:min-h-11 max-sm:items-center" data-testid="tindakan-masalah">{t.label}</Link></li>)}</ul></dd>
                     </dl>
                     {m.contoh.length > 0 && (
-                      <div>
+                      <div className="pt-1.5">
                         <p className="m-0 mb-1 text-[11px] font-bold uppercase tracking-wide text-ink3">Contoh ({m.contoh.length} dari {m.jumlah})</p>
                         <ul className="m-0 flex list-none flex-wrap gap-1.5 p-0">
                           {m.contoh.map((c) => <li key={`${c.jenis}:${c.id}`}><button type="button" onClick={() => buka(c)} className="rounded-chip bg-inset px-2.5 py-1 text-left text-[12px] text-ink hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent max-sm:min-h-11" data-testid="contoh-masalah">{c.teks}</button></li>)}

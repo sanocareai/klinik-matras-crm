@@ -109,7 +109,7 @@ export default function MaterialIssueDetail({ id, onTutup, onBerubah }) {
   );
 
   return (
-    <FokusOverlay open onClose={onTutup} title={r.issueNumber} subtitle={<span data-testid="identitas-ringkas">{ISSUE_SOURCE_REAL[r.sourceType]?.labelId ?? r.sourceType} · {r.department || unit}</span>} testid="fokus-dokumen">
+    <FokusOverlay open onClose={onTutup} title={r.issueNumber} subtitle={<span data-testid="identitas-ringkas">{ISSUE_SOURCE_REAL[r.sourceType]?.labelId ?? r.sourceType} · {r.department || unit}</span>} footer={kartuAksi} testid="fokus-dokumen">
       <div className="flex flex-col gap-4">
         <Card className="space-y-3 p-4" data-testid="kartu-identitas">
           <div className="flex flex-wrap items-center gap-2">
@@ -144,7 +144,6 @@ export default function MaterialIssueDetail({ id, onTutup, onBerubah }) {
             <button type="button" onClick={() => setInfo("")} className="shrink-0 text-[12px] font-semibold text-accent max-sm:min-h-11">Tutup</button>
           </div>
         )}
-        {!bisaKeluar && !bisaLokasi && kartuAksi}
 
         <Card className="space-y-3 p-4">
           <h3 className="m-0 text-[11px] font-bold uppercase tracking-wide text-ink3">Item — diminta, stok tersedia, lokasi, jumlah keluar</h3>
@@ -152,7 +151,6 @@ export default function MaterialIssueDetail({ id, onTutup, onBerubah }) {
           {bisaKeluar && galatKeluar && <p role="alert" className="m-0 text-[12px] text-red" data-testid="galat-isian">{galatKeluar}</p>}
         </Card>
 
-        {(bisaKeluar || bisaLokasi) && kartuAksi}
 
         <KartuJalurKoreksi tipe="MATERIAL_ISSUE" id={id} versi={`${r.status}-${versi}`} ringkas />
         <JejakDokumen jejak={r.jejak} basePath="/warehouse/material-issue" />

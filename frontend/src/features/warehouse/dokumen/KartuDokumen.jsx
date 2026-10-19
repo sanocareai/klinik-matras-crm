@@ -24,7 +24,7 @@ export function useDokumen(ambil, id, onBerubah) {
 }
 
 /** Kerangka JENDELA FOKUS (UX Gudang Tahap 4): judul, tombol Tutup, keadaan memuat/galat. `children` dirender hanya bila dokumen ada. Satu lapisan: Modal di dalamnya menjadi panel di jendela yang sama. */
-export function HalamanDokumen({ judul, subjudul, onTutup, r, memuat, galat, onMuat, nama = "dokumen", children }) {
+export function HalamanDokumen({ judul, subjudul, onTutup, r, memuat, galat, onMuat, nama = "dokumen", footer, children }) {
   if (!r) {
     return (
       <FokusOverlay open onClose={onTutup} title={memuat ? `Memuat ${nama}…` : `Tidak dapat membuka ${nama}`} testid="fokus-dokumen">
@@ -34,7 +34,7 @@ export function HalamanDokumen({ judul, subjudul, onTutup, r, memuat, galat, onM
     );
   }
   return (
-    <FokusOverlay open onClose={onTutup} title={judul} subtitle={<span data-testid="identitas-ringkas">{subjudul}</span>} testid="fokus-dokumen">
+    <FokusOverlay open onClose={onTutup} title={judul} subtitle={<span data-testid="identitas-ringkas">{subjudul}</span>} footer={footer} testid="fokus-dokumen">
       <div className="flex flex-col gap-4">
         {children}
         {galat && <p role="alert" className="text-[12px] text-red">{galat}</p>}

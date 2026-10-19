@@ -35,7 +35,7 @@ export default function WarehouseDashboard() {
     <PageContainer>
       <PageHeader
         title="Beranda Gudang"
-        subtitle="Pekerjaan yang perlu dikerjakan sekarang — dari dokumen nyata, lengkap dengan alasan dan pemilik tindakannya."
+        subtitle="Yang perlu dikerjakan sekarang, dengan alasan dan pemilik tindakannya."
         actions={<Button variant="ghost" size="sm" onClick={() => muat()} disabled={memuat} className="max-sm:min-h-11" data-testid="muat-ulang-beranda"><RefreshCw size={14} className={memuat ? "animate-spin" : ""} /> Muat Ulang</Button>}
       />
       <PageBody>

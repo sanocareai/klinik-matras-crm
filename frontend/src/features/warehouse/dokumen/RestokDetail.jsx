@@ -52,9 +52,8 @@ export default function RestokDetail({ id, onTutup, onBerubah }) {
     { label: "Penerimaan tertaut", isi: r.goodsReceipt ? <Link to={`/warehouse/goods-receipt/${r.goodsReceipt.id}`} className="font-semibold text-accent" data-testid="tautan-penerimaan">{r.goodsReceipt.receiptNumber}</Link> : "—", lebar: true },
   ];
   return (
-    <HalamanDokumen judul={r.requestNumber} subjudul={`${r.material?.code} · ${teksJumlah(r.suggestedQty)} ${u}`} onTutup={onTutup} r={r} memuat={memuat} galat={galat} onMuat={muat} nama="permintaan restok">
+    <HalamanDokumen judul={r.requestNumber} subjudul={`${r.material?.code} · ${teksJumlah(r.suggestedQty)} ${u}`} onTutup={onTutup} r={r} memuat={memuat} galat={galat} onMuat={muat} nama="permintaan restok" footer={<KartuAksiDokumen tampilan={t} izin={r.izin} spec={SPEC} onJalankan={jalankan} sibuk={sibuk} versi={versi} namaDokumen="permintaan restok ini" kaki="Permintaan restok tidak pernah menambah atau mengurangi stok. Stok bertambah hanya lewat Penerimaan Barang." />}>
       <KartuStatusDokumen tampilan={t} identitas={identitas} alurLabel="Alur permintaan restok" catatan={r.notes} />
-      <KartuAksiDokumen tampilan={t} izin={r.izin} spec={SPEC} onJalankan={jalankan} sibuk={sibuk} versi={versi} namaDokumen="permintaan restok ini" kaki="Permintaan restok tidak pernah menambah atau mengurangi stok. Stok bertambah hanya lewat Penerimaan Barang." />
       <JejakDokumen jejak={r.jejak} basePath="/warehouse/replenishment" />
     </HalamanDokumen>
   );

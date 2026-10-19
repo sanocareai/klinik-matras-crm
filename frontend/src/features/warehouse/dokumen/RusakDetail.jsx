@@ -34,9 +34,8 @@ export default function RusakDetail({ id, onTutup, onBerubah }) {
     ...(selesai ? [{ label: "Penyelesaian", isi: res ? res.label.split(" — ")[0] : r.resolution, testid: "id-penyelesaian" }, { label: "Diselesaikan oleh", isi: r.resolvedBy?.name }, { label: "Diselesaikan", isi: waktuTeks(r.resolvedAt) }] : []),
   ];
   return (
-    <HalamanDokumen judul={r.recordNumber} subjudul={`${r.material?.code} · ${teksJumlah(r.qty)} ${u} · ${KATEGORI_RUSAK[r.damageCategory] ?? r.damageCategory}`} onTutup={onTutup} r={r} memuat={memuat} galat={galat} onMuat={muat} nama="laporan barang rusak">
+    <HalamanDokumen judul={r.recordNumber} subjudul={`${r.material?.code} · ${teksJumlah(r.qty)} ${u} · ${KATEGORI_RUSAK[r.damageCategory] ?? r.damageCategory}`} onTutup={onTutup} r={r} memuat={memuat} galat={galat} onMuat={muat} nama="laporan barang rusak" footer={<KartuAksiDokumen tampilan={t} izin={r.izin} spec={SPEC} onJalankan={jalankan} sibuk={sibuk} versi={versi} namaDokumen="laporan ini" kaki="Barang yang hilang di perjalanan transfer tidak diselesaikan lewat sini (saldonya sudah berkurang); lihat Selisih pada Transfer Stok." />}>
       <KartuStatusDokumen tampilan={t} identitas={identitas} alurLabel="Alur penanganan barang rusak" catatan={[r.notes, r.resolutionNote && `Catatan penyelesaian: ${r.resolutionNote}`].filter(Boolean).join(" — ") || undefined} />
-      <KartuAksiDokumen tampilan={t} izin={r.izin} spec={SPEC} onJalankan={jalankan} sibuk={sibuk} versi={versi} namaDokumen="laporan ini" kaki="Barang yang hilang di perjalanan transfer tidak diselesaikan lewat sini (saldonya sudah berkurang); lihat Selisih pada Transfer Stok." />
       <KartuJalurKoreksi tipe="DAMAGED_STOCK" id={id} versi={`${r.status}-${versi}`} ringkas />
       <JejakDokumen jejak={r.jejak} basePath="/warehouse/adjustments/damaged" />
     </HalamanDokumen>

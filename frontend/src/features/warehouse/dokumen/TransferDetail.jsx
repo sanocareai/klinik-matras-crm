@@ -118,7 +118,7 @@ export default function TransferDetail({ id, onTutup, onBerubah }) {
   );
 
   return (
-    <FokusOverlay open onClose={onTutup} title={r.transferNumber} subtitle={<span data-testid="identitas-ringkas">{r.sourceLocation.code} → {r.destinationLocation.code} · {TRANSFER_TYPE_REAL[r.transferType]?.labelId ?? r.transferType}</span>} testid="fokus-dokumen">
+    <FokusOverlay open onClose={onTutup} title={r.transferNumber} subtitle={<span data-testid="identitas-ringkas">{r.sourceLocation.code} → {r.destinationLocation.code} · {TRANSFER_TYPE_REAL[r.transferType]?.labelId ?? r.transferType}</span>} footer={kartuAksi} testid="fokus-dokumen">
       <div className="flex flex-col gap-4">
         <Card className="space-y-3 p-4" data-testid="kartu-identitas">
           <div className="flex flex-wrap items-center gap-2">
@@ -151,7 +151,6 @@ export default function TransferDetail({ id, onTutup, onBerubah }) {
             <button type="button" onClick={() => setInfo("")} className="shrink-0 text-[12px] font-semibold text-accent max-sm:min-h-11">Tutup</button>
           </div>
         )}
-        {!bisaTerima && kartuAksi}
 
         <Card className="space-y-3 p-4">
           <h3 className="m-0 text-[11px] font-bold uppercase tracking-wide text-ink3">Item — dikirim, stok tersedia, diterima</h3>
@@ -159,7 +158,6 @@ export default function TransferDetail({ id, onTutup, onBerubah }) {
           {bisaTerima && galatTerima && <p role="alert" className="m-0 text-[12px] text-red" data-testid="galat-isian">{galatTerima}</p>}
         </Card>
 
-        {bisaTerima && kartuAksi}
 
         {perjalanan.length > 0 && (
           <Card className="space-y-2 p-4" data-testid="kartu-saldo-perjalanan">

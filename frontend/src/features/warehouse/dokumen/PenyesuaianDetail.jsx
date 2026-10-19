@@ -40,9 +40,8 @@ export default function PenyesuaianDetail({ id, onTutup, onBerubah }) {
     { label: "Alasan", isi: r.reason, lebar: true }, { label: "Disetujui oleh", isi: r.approvedBy?.name, testid: "id-penyetuju" }, { label: "Diposting oleh", isi: r.postedBy?.name }, { label: "Diposting", isi: r.postedAt ? waktuTeks(r.postedAt) : "—" },
   ];
   return (
-    <HalamanDokumen judul={r.adjustmentNumber} subjudul={`${JENIS_PENYESUAIAN[r.adjustmentType] ?? r.adjustmentType} · ${r.material?.code} · ${tanda(Number(r.adjustmentQty))} ${u}`} onTutup={onTutup} r={r} memuat={memuat} galat={galat} onMuat={muat} nama="penyesuaian stok">
+    <HalamanDokumen judul={r.adjustmentNumber} subjudul={`${JENIS_PENYESUAIAN[r.adjustmentType] ?? r.adjustmentType} · ${r.material?.code} · ${tanda(Number(r.adjustmentQty))} ${u}`} onTutup={onTutup} r={r} memuat={memuat} galat={galat} onMuat={muat} nama="penyesuaian stok" footer={<KartuAksiDokumen tampilan={t} izin={r.izin} spec={SPEC} onJalankan={jalankan} sibuk={sibuk} versi={versi} namaDokumen="penyesuaian ini" kaki="Pemisahan tugas: pemohon tidak boleh menyetujui dokumennya sendiri, dan penyetuju harus berperan Owner/Finance." />}>
       <KartuStatusDokumen tampilan={t} identitas={identitas} alurLabel="Alur penyesuaian stok" catatan={r.notes} />
-      <KartuAksiDokumen tampilan={t} izin={r.izin} spec={SPEC} onJalankan={jalankan} sibuk={sibuk} versi={versi} namaDokumen="penyesuaian ini" kaki="Pemisahan tugas: pemohon tidak boleh menyetujui dokumennya sendiri, dan penyetuju harus berperan Owner/Finance." />
       <KartuJalurKoreksi tipe="STOCK_ADJUSTMENT" id={id} versi={`${r.status}-${versi}`} ringkas />
       <JejakDokumen jejak={r.jejak} basePath="/warehouse/adjustments/stock" />
     </HalamanDokumen>
