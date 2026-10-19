@@ -720,6 +720,15 @@ export const api = {
   },
   getStockCount: (id) => request(`/inventory/stock-counts/${id}`),
   createStockCount: (data) => request("/inventory/stock-counts", { method: "POST", body: JSON.stringify(data) }),
+  // Stock Opname sesi model 2 (cakupan penuh/kelompok/cycle count, hasil hitung bertahap dengan revisi per baris)
+  pratinjauCakupanOpname: (data) => request("/inventory/stock-counts/scope-preview", { method: "POST", body: JSON.stringify(data) }),
+  getBahanOpname: ({ q = "", kelompok = "", limit = 50, offset = 0 } = {}) => request(`/inventory/stock-counts/bahan?q=${encodeURIComponent(q)}&kelompok=${encodeURIComponent(kelompok)}&limit=${limit}&offset=${offset}`),
+  getKerjaOpname: (id) => request(`/inventory/stock-counts/${id}/kerja`),
+  simpanHasilOpname: (id, items) => request(`/inventory/stock-counts/${id}/hasil`, { method: "PUT", body: JSON.stringify({ items }) }),
+  getRiwayatBarisOpname: (id, lineId) => request(`/inventory/stock-counts/${id}/lines/${lineId}/riwayat`),
+  keluarkanBarisOpname: (id, lineId, alasan) => request(`/inventory/stock-counts/${id}/lines/${lineId}/keluarkan`, { method: "POST", body: JSON.stringify({ alasan }) }),
+  kembalikanBarisOpname: (id, lineId) => request(`/inventory/stock-counts/${id}/lines/${lineId}/kembalikan`, { method: "POST", body: JSON.stringify({}) }),
+  putuskanCakupanOpname: (id, materialId, tindakan, alasan) => request(`/inventory/stock-counts/${id}/cakupan`, { method: "POST", body: JSON.stringify({ materialId, tindakan, alasan }) }),
   updateStockCount: (id, data) => request(`/inventory/stock-counts/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   updateStockCountLine: (id, lineId, data) =>
     request(`/inventory/stock-counts/${id}/lines/${lineId}`, { method: "PATCH", body: JSON.stringify(data) }),

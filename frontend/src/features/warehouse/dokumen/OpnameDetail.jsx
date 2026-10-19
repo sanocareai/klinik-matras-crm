@@ -11,6 +11,7 @@ import KolomJumlah from "./KolomJumlah.jsx";
 import { HalamanDokumen, KartuStatusDokumen, KartuAksiDokumen, useDokumen } from "./KartuDokumen.jsx";
 import { JENIS_HITUNG, METODE_HITUNG } from "./labelDokumen.js";
 import { angka, tanggalPendek, teksJumlah, waktuTeks } from "./dokumenLogic.js";
+import OpnameSesiTinjau from "@/features/warehouse/opname/OpnameSesiTinjau.jsx";
 
 // DETAIL STOCK OPNAME — halaman. Alur: Terjadwal → Mulai hitung (saldo sistem direkam) → isi hasil hitung → Serahkan → tinjau selisih → Selesaikan (satu penyesuaian per bahan berselisih). Aturan pemisahan tugas,
 // tanda pergerakan selama sesi, dan pemeriksaan hitungan (Opname Penuh) TIDAK diubah; halaman hanya menjelaskannya dan hanya menawarkan aksi yang boleh dilakukan akun ini (server tetap menolak yang tidak berhak).
@@ -48,6 +49,8 @@ export default function OpnameDetail({ id, onTutup, onBerubah }) {
   const simpanBaris = async () => { setSibuk(true); setGalatLokal(""); try { await simpanEdit(); await muat(); } catch (e) { setGalatLokal(e.message); } finally { setSibuk(false); } };
 
   if (!r) return <HalamanDokumen r={r} memuat={memuat} galat={galat} onTutup={onTutup} nama="stock opname" />;
+  // Sesi model 2 (opname penuh/per kelompok/cycle count baru): halaman sesi + halaman hitung terpisah. Sesi lama (model 1) tetap memakai tampilan di bawah.
+  if (r.modelVersion === 2) return <OpnameSesiTinjau r={r} id={id} onTutup={onTutup} galat={galat} memuat={memuat} muat={muat} sibuk={sibuk} setSibuk={setSibuk} versi={versi} />;
   const t = r.tampilan; const status = r.status; const blind = r.blindCount && status === "IN_PROGRESS"; const selesai = ["COMPLETED", "CANCELLED"].includes(status);
   const belumDitandai = r.sesi?.belumDitandai ?? 0;
   const berselisih = gabung.filter((l) => { const b = baris(l); return b.selisih !== null && b.selisih !== 0; });
