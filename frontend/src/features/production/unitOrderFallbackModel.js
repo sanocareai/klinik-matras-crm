@@ -22,8 +22,8 @@ export function unitFacts(t) {
     ["Order", u.order?.orderNumber],
     ["Pelanggan", u.order?.customer?.name],
     ["Kasur", [u.merk, formatUkuranLabel(u.ukuran)].filter(Boolean).join(" · ") || null],
-    ["Status unit", UNIT_STATUS_REAL[u.status]?.label || u.status],
-    ["Progres produksi", t?.productionStatus ? (PRODUCTION_STATUS_REAL[t.productionStatus]?.label || t.productionStatus) : null],
+    ["Status order", UNIT_STATUS_REAL[u.status]?.label || u.status], // sama dengan yang dilihat Sales/Delivery (bukan "status unit" yang ambigu)
+    ["Status kerja (dari aplikasi)", t?.productionStatus ? (PRODUCTION_STATUS_REAL[t.productionStatus]?.label || t.productionStatus) : null],
     ["Tahap sekarang", u.currentStage?.labelId],
     ["Update terakhir", u.updatedAt ? formatTanggal(u.updatedAt) : null],
   ];

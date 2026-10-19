@@ -34,7 +34,7 @@ export const IN_WORKSHOP_STATUSES = ["RECEIVED", "IN_PRODUCTION"];
 // di bawah (itu status SATU baris tahap) — tiga sumbu berbeda, JANGAN
 // digabung jadi satu badge.
 export const PRODUCTION_STATUS_REAL = {
-  NOT_STARTED: { label: "Belum Masuk Alur",  tone: "neutral" },
+  NOT_STARTED: { label: "Belum ada catatan pekerjaan", tone: "neutral" }, // dulu "Belum Masuk Alur" — menyesatkan: artinya belum ada log tahap, BUKAN unit di luar alur
   QUEUED:      { label: "Menunggu Dikerjakan", tone: "neutral" },
   IN_PROGRESS: { label: "Sedang Dikerjakan", tone: "accent" },
   PAUSED:      { label: "Dijeda",            tone: "orange" },

@@ -51,13 +51,13 @@ test("Backlog Rencana: tab Semua · Pengambilan · Diterima di Workshop · Dipro
   assert.doesNotMatch(card, /statusTone\(c\.unitStatus\?\.key\)/, "badge status tidak lagi memakai status tampilan lama");
 });
 
-test("Order Produksi: tab = milestone global (6), filter globalStatus di server, hitungan dari globalStatusCounts; himpunan V1 off-board memakai statusIn mentah", () => {
+test("Order Produksi: tab = Status order (displayStatus di server, hitungan displayStatusCounts); milestone global dipakai untuk Posisi; himpunan V1 off-board memakai statusIn mentah", () => {
   const wo = strip(read("pages", "bengkel", "ProductionWorkOrders.jsx"));
-  assert.match(wo, /GLOBAL_STATUS_TABS/); assert.doesNotMatch(wo, /DISPLAY_STATUS_TABS/);
-  assert.match(wo, /api\.getWorkOrders\(\{ globalStatus: displayParam/); assert.doesNotMatch(wo, /getWorkOrders\(\{ displayStatus:/);
-  assert.equal((wo.match(/globalStatusCounts/g) || []).length, 2);
-  assert.match(wo, /const ACTIVE_KEYS = GLOBAL_STATUS_ACTIVE_KEYS;/);
-  assert.match(wo, /data-testid="status-detail"/); assert.match(wo, /data-testid="schedule-status"/);
+  assert.match(wo, /DISPLAY_STATUS_TABS/); assert.doesNotMatch(wo, /GLOBAL_STATUS_TABS/, "tab saring = Status order, bukan milestone campuran");
+  assert.match(wo, /api\.getWorkOrders\(queryServer\(/); assert.match(wo, /displayStatus: displayParam/);
+  assert.equal((wo.match(/displayStatusCounts/g) || []).length, 2);
+  assert.match(wo, /const ACTIVE_KEYS = Object\.freeze\(\["PENGAMBILAN", "DIPROSES", "SIAP_KIRIM"\]\)/);
+  assert.match(wo, /data-testid="posisi-perhatian"/, "posisi yang perlu perhatian (mis. sudah dijemput · belum diterima workshop) tampil terpisah dari status order");
   const v1 = strip(read("features", "production", "v1Source.jsx"));
   assert.match(v1, /getWorkOrders\(\{ statusIn: "RECEIVED,IN_PRODUCTION", real: "1"/, "himpunan lama (unit tersimpan RECEIVED/IN_PRODUCTION) tetap persis sama");
 });

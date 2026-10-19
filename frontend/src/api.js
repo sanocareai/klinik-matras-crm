@@ -1038,8 +1038,35 @@ export const api = {
   // Bahan baku per unit (Production Tahap 5) — ledger stock_movements yang
   // sama dengan Gudang, tidak lewat alur dokumen MaterialIssue.
   getUnitMaterials: (unitId) => request(`/units/${unitId}/materials`),
-  addUnitMaterial: (unitId, { materialId, qty, note } = {}) =>
-    request(`/units/${unitId}/materials`, { method: "POST", body: JSON.stringify({ materialId, qty, note }) }),
+  // Idempotency-Key (opsional, 12–128 karakter): klik ganda / retry jaringan / dua permintaan bersamaan mencatat pemakaian TEPAT SEKALI (adopsi Admin).
+  addUnitMaterial: (unitId, { materialId, qty, note } = {}, idempotencyKey = null) =>
+    request(`/units/${unitId}/materials`, { method: "POST", ...(idempotencyKey ? { headers: { "Idempotency-Key": idempotencyKey } } : {}), body: JSON.stringify({ materialId, qty, note }) }),
+  // ── Order Produksi · adopsi Admin (tiga sumbu status, status kerja manual, rencana bahan, ekspor Excel)
+  getUnitAdopsi: (unitId) => request(`/production/units/${unitId}/adopsi`),
+  postStatusKerjaManual: (unitId, { status, note, expectedLatestId } = {}) =>
+    request(`/production/units/${unitId}/work-progress`, { method: "POST", body: JSON.stringify({ status, note, expectedLatestId: expectedLatestId ?? null }) }),
+  getKatalogBahanProduksi: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+    return request(`/production/material-catalog${qs ? `?${qs}` : ""}`);
+  },
+  putRencanaBahan: (unitId, { lines, expectedRevision, reason } = {}) =>
+    request(`/production/units/${unitId}/material-plan`, { method: "PUT", body: JSON.stringify({ lines, expectedRevision: expectedRevision ?? 0, reason: reason || undefined }) }),
+  // Ekspor daftar Order Produksi (.xlsx) dengan filter yang SAMA dengan daftar di layar (server membangun berkas; klien hanya mengunduh).
+  eksporOrderProduksiXlsx: async (params = {}) => {
+    const demo = demoBlock("Export"); if (demo) return demo;
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+    const tokenKirim = bacaToken();
+    const res = await fetch(`${BASE}/production/work-orders/export.xlsx${qs ? `?${qs}` : ""}`, { headers: { ...authHeaders() } });
+    adoptRefreshedToken(res, tokenKirim);
+    if (res.status === 401) { handleUnauthorized(tokenKirim); throw new Error("Sesi berakhir, silakan login kembali"); }
+    if (!res.ok) {
+      let msg = "Gagal mengekspor Order Produksi"; let code;
+      try { const j = await res.json(); msg = j.error || msg; code = j.code; } catch { /* respons bukan JSON */ }
+      throw Object.assign(new Error(msg), { status: res.status, code });
+    }
+    const cd = res.headers.get("Content-Disposition") || "";
+    return { blob: await res.blob(), namaFile: cd.match(/filename="([^"]+)"/)?.[1] || "Order-Produksi.xlsx" };
+  },
 
   // Conversations
   // Terima string status (cara lama, tetap didukung) ATAU objek

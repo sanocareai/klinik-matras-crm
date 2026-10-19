@@ -1,0 +1,155 @@
+// Order Produksi (adopsi Admin) — model MURNI untuk daftar, panel fokus, dan editor rencana bahan (diuji node --test, tanpa React/DOM).
+//
+// TIGA SUMBU STATUS yang dikirim server di `row.adopsi` (backend/src/lib/domain/productionWorkStatus.js) — klien TIDAK menurunkannya sendiri:
+//   Status order  → apa yang dilihat Sales/Delivery (Pengambilan · Diproses · Siap Kirim · Terkirim · Dibatalkan)
+//   Posisi unit   → fakta fisik dari dokumen (menunggu dijemput · sudah dijemput tetapi belum diterima workshop · di workshop · …)
+//   Status kerja  → pekerjaan Produksi (Belum dijadwalkan · Dijadwalkan · Dikerjakan · Tertunda · Menunggu QC · Dikerjakan ulang · Selesai)
+// Rencana bahan = RENCANA (tidak mengurangi stok). Pemakaian aktual = transaksi resmi Gudang/Produksi (mengurangi stok tepat sekali).
+
+export const KERJA_FILTER = Object.freeze([
+  { key: "BELUM_DIJADWALKAN", label: "Belum dijadwalkan" }, { key: "DIJADWALKAN", label: "Dijadwalkan" }, { key: "DIKERJAKAN", label: "Dikerjakan" },
+  { key: "TERTUNDA", label: "Tertunda" }, { key: "MENUNGGU_QC", label: "Menunggu QC" }, { key: "DIKERJAKAN_ULANG", label: "Dikerjakan ulang" }, { key: "SELESAI", label: "Selesai" },
+]);
+export const KERJA_FILTER_KEYS = Object.freeze(KERJA_FILTER.map((k) => k.key));
+
+/** Badge variant dari nada server (neutral|accent|orange|green|red). Nada tak dikenal → neutral. */
+export const nadaBadge = (tone) => (["neutral", "accent", "orange", "green", "red"].includes(tone) ? tone : "neutral");
+
+/** Ringkasan satu baris untuk daftar + panel. `ada` = server sudah mengirim kontrak tiga sumbu (payload lama → false, tampil jujur "—"). */
+export function ringkasAdopsi(row) {
+  const a = row?.adopsi;
+  if (!a?.kerja) return { ada: false, statusOrder: null, posisi: null, kerja: null, tindakan: null, target: null, pic: null, meja: null };
+  return { ada: true, statusOrder: a.statusOrder ?? null, posisi: a.posisi ?? null, kerja: a.kerja, tindakan: a.tindakan ?? null, target: a.targetSelesai ?? null, pic: a.pic ?? null, meja: a.meja ?? null };
+}
+
+/** Teks sumber status kerja untuk label kecil di bawah badge: hanya bila BUKAN jadwal biasa (manual/aplikasi/ikut status order). */
+export function sumberKerjaText(kerja) {
+  if (!kerja) return null;
+  if (kerja.source === "MANUAL") return kerja.detail || "Dicatat manual";
+  if (kerja.source === "APLIKASI") return "Dari aplikasi Produksi";
+  if (kerja.source === "STATUS_ORDER" && kerja.key !== "DIBATALKAN") return "Mengikuti status order";
+  return null;
+}
+
+/** Parameter ekspor/daftar dari state layar — SATU fungsi dipakai daftar dan ekspor supaya berkas persis sama dengan daftar yang difilter. */
+export function parameterDaftar({ globalStatus, q, kerja, scope } = {}) {
+  const out = {};
+  if (globalStatus) out.globalStatus = globalStatus;
+  if (q) out.q = q;
+  if (Array.isArray(kerja) && kerja.length) out.statusKerja = kerja.join(",");
+  if (scope) out.scope = scope;
+  return out;
+}
+
+/** Tanggal+jam WIB ringkas ("20 Okt 2026, 10.30") — tanpa bergantung zona perangkat. */
+export function waktuWib(iso) {
+  if (!iso) return "—";
+  const d = new Date(new Date(iso).getTime() + 7 * 3600 * 1000);
+  if (Number.isNaN(d.getTime())) return "—";
+  const bln = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"][d.getUTCMonth()];
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getUTCDate()} ${bln} ${d.getUTCFullYear()}, ${p(d.getUTCHours())}.${p(d.getUTCMinutes())} WIB`;
+}
+
+// ───────────────────────────── rencana bahan (editor) ─────────────────────────────
+export const MAX_BARIS = 200;
+
+/** Format angka jumlah bahan: maks 4 desimal, tanpa nol di ujung, koma desimal Indonesia. */
+export function formatJumlah(n) {
+  if (n === null || n === undefined || n === "") return "—";
+  const v = Math.round(Number(n) * 10000) / 10000;
+  if (!Number.isFinite(v)) return "—";
+  return v.toLocaleString("id-ID", { maximumFractionDigits: 4 });
+}
+/** Parse isian pengguna ("2,5" atau "2.5") → angka; kosong/tak valid → null. */
+export function parseJumlah(text) {
+  const t = String(text ?? "").trim().replace(/\s/g, "");
+  if (!t) return null;
+  const norm = t.includes(",") ? t.replace(/\./g, "").replace(",", ".") : t;
+  const v = Number(norm);
+  return Number.isFinite(v) ? v : null;
+}
+
+/** Ketersediaan bahan: saldo tidak diketahui TIDAK pernah tampil sebagai nol. */
+export function ketersediaanText(b) {
+  if (!b) return "Stok belum diketahui";
+  if (b.saldoDiketahui === false || b.tersedia === null || b.tersedia === undefined) return "Stok belum diketahui";
+  if (b.keadaan === "MINUS") return "Catatan stok minus — perlu dihitung fisik";
+  if (b.keadaan === "NOL_TERHITUNG") return "Habis menurut catatan";
+  if (b.keadaan === "TERPESAN_PENUH") return "Seluruhnya sudah dipesan";
+  return `Tersedia ${formatJumlah(b.tersedia)} ${b.satuan || ""}`.trim();
+}
+export const ketersediaanNada = (b) => (!b || b.saldoDiketahui === false || b.tersedia === null || b.tersedia === undefined ? "neutral" : Number(b.tersedia) <= 0 || b.keadaan === "MINUS" ? "red" : b.keadaan === "MENIPIS" || b.keadaan === "TERPESAN_PENUH" ? "orange" : "green");
+
+/** Baris editor dari baris rencana server atau dari baris katalog. */
+export function barisEditor(b, qty = "") {
+  return { materialId: b.materialId, kode: b.kode ?? null, nama: b.nama ?? "", satuan: b.satuan ?? "", kelompok: b.kelompok ?? { kode: "BELUM", label: "Belum dikelompokkan" }, qty: qty === "" ? "" : String(qty), tersedia: b.tersedia ?? null, saldoDiketahui: b.saldoDiketahui !== false && b.tersedia !== null && b.tersedia !== undefined, keadaan: b.keadaan ?? null };
+}
+export const dariRencana = (lines = []) => lines.map((l) => barisEditor(l, l.qty));
+
+export function tambahBaris(baris, bahan) {
+  if (baris.some((b) => b.materialId === bahan.materialId)) return baris; // tanpa duplikat
+  if (baris.length >= MAX_BARIS) return baris;
+  return [...baris, barisEditor(bahan, "")];
+}
+export const ubahJumlah = (baris, materialId, text) => baris.map((b) => (b.materialId === materialId ? { ...b, qty: text } : b));
+export const hapusBaris = (baris, materialId) => baris.filter((b) => b.materialId !== materialId);
+
+/** Validasi sisi klien (server tetap penentu): jumlah > 0, tidak duplikat, tidak kosong. Mengembalikan { ok, galat: {materialId: pesan}, umum } */
+export function validasiBaris(baris) {
+  const galat = {};
+  for (const b of baris) {
+    const v = parseJumlah(b.qty);
+    if (v === null) galat[b.materialId] = "Isi jumlah";
+    else if (v <= 0) galat[b.materialId] = "Jumlah harus lebih dari 0";
+  }
+  const umum = baris.length > MAX_BARIS ? `Maksimal ${MAX_BARIS} bahan per unit` : null;
+  return { ok: Object.keys(galat).length === 0 && !umum, galat, umum };
+}
+/** Badan PUT rencana (urutan baris tidak berarti). */
+export const badanRencana = (baris) => baris.map((b) => ({ materialId: b.materialId, qty: Math.round(parseJumlah(b.qty) * 10000) / 10000 }));
+
+/** Apakah isian berbeda dari rencana tersimpan (urutan tidak berarti). */
+export function adaPerubahan(baris, tersimpan = []) {
+  const peta = new Map(tersimpan.map((l) => [l.materialId, Number(l.qty)]));
+  if (baris.length !== peta.size) return true;
+  return baris.some((b) => !peta.has(b.materialId) || Math.round((parseJumlah(b.qty) ?? NaN) * 10000) !== Math.round(peta.get(b.materialId) * 10000));
+}
+
+/** Ringkasan pilihan yang menetap di layar: jumlah bahan, rincian per kelompok, dan peringatan satuan campur/stok kurang. */
+export function ringkasPilihan(baris) {
+  const per = new Map();
+  for (const b of baris) { const k = b.kelompok?.kode ?? "BELUM"; const o = per.get(k) ?? { kode: k, label: b.kelompok?.label ?? "Belum dikelompokkan", jumlah: 0 }; o.jumlah += 1; per.set(k, o); }
+  const kurang = baris.filter((b) => { const v = parseJumlah(b.qty); return b.saldoDiketahui && v !== null && b.tersedia !== null && v > Number(b.tersedia); });
+  const tidakDiketahui = baris.filter((b) => !b.saldoDiketahui).length;
+  return { jumlahBahan: baris.length, perKelompok: [...per.values()], melebihiStok: kurang.map((b) => b.materialId), jumlahStokTidakDiketahui: tidakDiketahui };
+}
+
+/** Kelompokkan baris untuk tampilan (urutan kelompok mengikuti kemunculan di katalog server bila diberikan). */
+export function kelompokkan(baris, urutan = []) {
+  const idx = new Map(urutan.map((k, i) => [k.kode, i]));
+  const peta = new Map();
+  for (const b of baris) { const k = b.kelompok?.kode ?? "BELUM"; if (!peta.has(k)) peta.set(k, { kode: k, label: b.kelompok?.label ?? "Belum dikelompokkan", baris: [] }); peta.get(k).baris.push(b); }
+  return [...peta.values()].sort((a, b) => (idx.get(a.kode) ?? 99) - (idx.get(b.kode) ?? 99));
+}
+
+// ───────────────────────────── pesan galat ─────────────────────────────
+/** Pesan tindakan berikutnya untuk galat adopsi. Server sudah berbahasa Indonesia; di sini hanya ditambah petunjuk apa yang harus dilakukan. */
+export function pesanGalatAdopsi(e) {
+  if (!e) return { teks: "", jenis: "galat", muatUlang: false };
+  const code = e.code || "";
+  if (code === "RIWAYAT_BERUBAH") return { teks: e.message || "Data sudah diubah orang lain.", jenis: "konflik", muatUlang: true, petunjuk: "Muat ulang untuk melihat versi terbaru, lalu terapkan perubahan Anda lagi bila masih perlu." };
+  if (code === "KERJA_DIPEGANG_APLIKASI") return { teks: e.message, jenis: "info", muatUlang: true, petunjuk: "Unit ini sudah dikerjakan lewat aplikasi Produksi, jadi status kerja mengikuti aplikasi." };
+  if (code === "UNIT_TIDAK_AKTIF") return { teks: e.message, jenis: "info", muatUlang: false };
+  if (code === "CATATAN_WAJIB") return { teks: e.message, jenis: "validasi", muatUlang: false, petunjuk: "Tulis alasan singkat (mis. menunggu kain dari supplier)." };
+  if (code === "IDEMPOTENCY_IN_PROGRESS") return { teks: "Permintaan yang sama sedang diproses.", jenis: "info", muatUlang: true, petunjuk: "Tunggu sebentar lalu muat ulang — jangan kirim ulang." };
+  if (e.status === 403) return { teks: "Akun Anda hanya bisa melihat bagian ini.", jenis: "izin", muatUlang: false };
+  if (e.status === 0 || /timeout|Failed to fetch|terputus/i.test(e.message || "")) return { teks: "Koneksi terputus. Isian Anda masih di layar.", jenis: "jaringan", muatUlang: false, petunjuk: "Coba lagi saat sinyal kembali — pencatatan yang sama tidak akan tersimpan dua kali." };
+  return { teks: e.message || "Terjadi kesalahan.", jenis: "galat", muatUlang: false };
+}
+
+/** Kunci idempotensi baru untuk SATU niat pengguna (dipakai ulang saat retry isian yang sama, diganti saat isian berubah). */
+export function kunciIdempoten(prefix = "op") {
+  const rnd = globalThis.crypto?.randomUUID ? globalThis.crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+  return `${prefix}-${rnd}`;
+}

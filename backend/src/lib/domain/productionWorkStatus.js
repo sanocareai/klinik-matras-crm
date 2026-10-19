@@ -33,6 +33,13 @@ const COMPLETE_UNIT_STATUSES = new Set(["READY_FOR_DELIVERY", "READY_ON_CUSTOMER
 const APP_MAP = Object.freeze({ IN_PROGRESS: "DIKERJAKAN", PAUSED: "TERTUNDA", BLOCKED: "TERTUNDA", WAITING_QC: "MENUNGGU_QC", REWORK: "DIKERJAKAN_ULANG", COMPLETED: "SELESAI", QUEUED: "DIKERJAKAN", NOT_STARTED: "DIKERJAKAN" });
 
 const pick = (key) => WORK_STATUS[key];
+const BULAN = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+/** "20 Okt 2026, 10.30 WIB" — WIB = UTC+7, tanpa bergantung zona server. */
+export function waktuWibText(v) {
+  if (!v) return null; const t = new Date(v).getTime(); if (Number.isNaN(t)) return null;
+  const d = new Date(t + 7 * 3600 * 1000); const p = (n) => String(n).padStart(2, "0");
+  return `${d.getUTCDate()} ${BULAN[d.getUTCMonth()]} ${d.getUTCFullYear()}, ${p(d.getUTCHours())}.${p(d.getUTCMinutes())} WIB`;
+}
 const iso = (v) => (v instanceof Date ? v.toISOString() : v ? new Date(v).toISOString() : null);
 
 /**
@@ -55,7 +62,7 @@ export function effectiveWorkStatus({ unitStatus, productionStatus = null, appSt
   }
   if (manual && manual.status !== "BELUM_DIJADWALKAN" && MANUAL_STATUSES.includes(manual.status)) {
     const by = manualOut.by ? ` oleh ${manualOut.by}` : "";
-    return out(manual.status, WORK_SOURCE.MANUAL, `Dicatat manual${by}${manualOut.at ? `, ${manualOut.at}` : ""}`);
+    return out(manual.status, WORK_SOURCE.MANUAL, `Dicatat manual${by}${manualOut.at ? `, ${waktuWibText(manualOut.at)}` : ""}`);
   }
   if (COMPLETE_UNIT_STATUSES.has(unitStatus)) return out("SELESAI", WORK_SOURCE.STATUS_ORDER, "Mengikuti status order (Siap Kirim atau sesudahnya)");
   return scheduled ? out("DIJADWALKAN", WORK_SOURCE.JADWAL, "Sudah punya meja di Rencana Produksi") : out("BELUM_DIJADWALKAN", WORK_SOURCE.JADWAL, null);

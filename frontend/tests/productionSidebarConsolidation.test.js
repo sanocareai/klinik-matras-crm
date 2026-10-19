@@ -160,7 +160,7 @@ test("KPI & Laporan: Ringkasan KPI dan Produksi memakai SATU dokumen ringkasan; 
 test("Order Produksi: scope aktif menyembunyikan Terkirim, riwayat hanya Terkirim, semua tanpa penyaringan; default lama tidak berubah", () => {
   const wo = src("pages", "bengkel", "ProductionWorkOrders.jsx");
   assert.match(wo, /if \(scope === "riwayat"\) return "TERKIRIM";/);
-  assert.match(wo, /scope === "aktif" \? GLOBAL_STATUS_TABS\.filter\(\(t\) => t\.key !== "TERKIRIM"\)/);
+  assert.match(wo, /scope === "aktif" \? DISPLAY_STATUS_TABS\.filter\(\(t\) => t\.key !== "TERKIRIM"\)/);
   assert.match(wo, /scope === "riwayat" \? \[\] :/);
   assert.match(wo, /export default function ProductionWorkOrders\(\{ initialStatus = "", scope = "", onScopeChange = null, headerExtra = null, unitId: unitIdProp, onUnitChange = null \} = \{\}\)/);
   const cc = src("pages", "ComplaintCases.jsx");

@@ -179,7 +179,7 @@ export async function explainProductionServiceForUnit(client, unit) {
   }
   const unmapped = [...new Set(items.filter((i) => !i.priceItem?.productionServiceId).map((i) => i.layananName).filter(Boolean))];
   return { ok: false, code: "MAPPING_NEEDED", fixBy: "ADMIN", salesServices: unmapped.length ? unmapped : names,
-    message: `Layanan Sales (${(unmapped.length ? unmapped : names).join(", ")}) belum dipetakan ke rute pengerjaan. Admin perlu memetakannya di Pengaturan Produksi › Alur Kerja.` };
+    message: `Layanan Sales (${(unmapped.length ? unmapped : names).join(", ")}) belum dipetakan ke rute pengerjaan, jadi daftar tahap kerja belum tersusun. Admin perlu memetakannya di Pengaturan Produksi › Alur Kerja. Status kerja, target, rencana bahan, dan pemakaian bahan tetap bisa dicatat di panel Order Produksi.` };
 }
 
 export async function resolveProductionServiceForUnit(client, unit) {
