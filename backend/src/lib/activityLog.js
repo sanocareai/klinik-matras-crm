@@ -520,7 +520,7 @@ export function formatActivitySentence(event) {
     case EVENT_TYPES.PRODUCTION_FOLLOWS_ORDER:
       return ringkasIkutOrder(metadata);
     case EVENT_TYPES.DELIVERY_MANUAL_RECORDED:
-      return `Pengiriman unit ${metadata.unitCode || "—"} dicatat manual ke rute ${metadata.routeCode || "—"} (stop ke-${metadata.stopSequence ?? "—"}) oleh ${metadata.deciderName || "Admin"} sebagai KOREKSI DATA: ${metadata.reason || "—"}. Bukan hasil aksi driver; status tahap Produksi tidak diubah`;
+      return `Pengiriman unit ${metadata.unitCode || "—"} dicatat manual ke rute ${metadata.routeCode || "—"} (stop ke-${metadata.stopSequence ?? "—"}, ${metadata.jamKejadian === "tidak diketahui" ? `tanggal ${metadata.tanggalKejadian || "—"}, jam serah-terima tidak diketahui` : `jam ${metadata.waktuTerkirim || "—"}`}) oleh ${metadata.deciderName || "Admin"} sebagai KOREKSI DATA: ${metadata.reason || "—"}${Array.isArray(metadata.fotoBukti) && metadata.fotoBukti.length ? `; bukti kirim: ${metadata.fotoBukti.length} foto (lihat di job)` : "; tanpa foto bukti"}. Bukan hasil aksi driver; status tahap Produksi tidak diubah`;
     case EVENT_TYPES.PRODUCTION_DISPATCHED_BEFORE_DONE:
       return `Unit ${metadata.unitCode || "—"} ${metadata.via === "JOB_COMPLETE" ? "diselesaikan pengirimannya" : "berangkat"} lewat Route Planner saat pencatatan produksi belum selesai (Run ${metadata.runStatus || "—"}, fase ${metadata.runPhase || "—"}); Run ditandai dilepas untuk pengiriman — bukan hasil pemeriksaan/QC`;
     case EVENT_TYPES.PRODUCTION_FINISHED_ADAPTATION:

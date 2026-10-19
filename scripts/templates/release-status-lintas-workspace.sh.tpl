@@ -176,7 +176,8 @@ ok "migrasi terpasang di produksi (${LIVE_MIG_JUMLAH}) = migrasi kandidat; 0 pen
 RUN_AKTIF_N="$(psql_live -At -c "select count(*) from production_runs_v2 where status in ('PENDING_ARRIVAL','ACTIVE','BLOCKED')")"; ORDER_BATAL_RUN_N="$(psql_live -At -c "select count(*) from \"Order\" o where o.status = 'CANCELLED' and exists (select 1 from units u join production_runs_v2 r on r.unit_id = u.id where u.order_id = o.id and r.status in ('PENDING_ARRIVAL','ACTIVE','BLOCKED'))")"
 SELARAS_N="$(psql_live -At -c "select count(*) from activity_events where event_type = 'PRODUCTION_FOLLOWS_ORDER'")"; UNIT_N="$(psql_live -At -c "select count(*) from units")"; ORDER_N="$(psql_live -At -c "select count(*) from \"Order\"")"
 [[ "$RUN_AKTIF_N" =~ ^[0-9]+$ ]] && [[ "$ORDER_BATAL_RUN_N" =~ ^[0-9]+$ ]] && [[ "$SELARAS_N" =~ ^[0-9]+$ ]] && [[ "$UNIT_N" =~ ^[0-9]+$ ]] && [[ "$ORDER_N" =~ ^[0-9]+$ ]] || die "audit awal bukan angka"
-[ "$SELARAS_N" = "0" ] || die "sudah ada ${SELARAS_N} jejak PRODUCTION_FOLLOWS_ORDER sebelum rilis — tidak diharapkan; periksa dulu"
+# Fitur penyelarasan sudah LIVE sejak 57198ad6: jejak PRODUCTION_FOLLOWS_ORDER dari perubahan Sales yang sah sudah ada. Angka ini hanya garis dasar; pemeriksaan pasca-rilis memperingatkan bila bertambah (rilis ini tidak membuatnya).
+ok "garis dasar jejak PRODUCTION_FOLLOWS_ORDER (sah, dari Sales) = ${SELARAS_N}"
 ok "keadaan: order=${ORDER_N}, unit=${UNIT_N}, Run berjalan=${RUN_AKTIF_N}, order BATAL yang Run-nya masih berjalan (akan bisa diselaraskan lewat aturan ini)=${ORDER_BATAL_RUN_N} (rilis ini tidak mengubah satu pun)"
 DB_BYTES="$(psql_live -At -c "select pg_database_size('${DB_NAME}')")"
 BASE_TIDAK_SEIMBANG="$(psql_live -At -c "select count(*)::int from (select e.id from fin_journal_entries e join fin_journal_lines l on l.entry_id = e.id group by e.id having sum(l.debit) <> sum(l.credit)) x")"
@@ -263,7 +264,8 @@ for s2 in @@DIST_LAMA@@; do
   [ -n "$(grep -lF "$s2" "$PREV_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "[skrip] teks lama '${s2}' tidak ada di dist release aktif — perbaiki daftar teks pembanding"
   [ -n "$(grep -lF "$s2" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru KEHILANGAN teks fitur lama: ${s2}"
 done
-[ "$NEW_INDEX" != "$PREV_INDEX" ] || die "frontend berubah tetapi bundel baru identik dengan lama (tidak diharapkan)"
+# Bila frontend/src TIDAK berubah (rilis hanya backend), bundel boleh identik dengan yang lama; bila berubah, bundel WAJIB berbeda.
+if [ -n "$FRONTEND_SRC_EXPECT" ]; then [ "$NEW_INDEX" != "$PREV_INDEX" ] || die "frontend berubah tetapi bundel baru identik dengan lama (tidak diharapkan)"; fi
 ok "dist baru ${NEW_INDEX} (lama ${PREV_INDEX}); teks fitur rilis ini ada; teks fitur live lama (Koreksi, Produksi, Gudang) tetap ada"
 
 PHASE="4c-aset-lama"; say "4c. Bawa aset ber-hash dari dist release aktif (tab terbuka saat deploy tetap bisa memuat chunk lama)"
@@ -375,7 +377,7 @@ SMOKE_SKIP="$(printf '%s' "$SMOKE_LINE" | sed -n 's/^SMOKE_HASIL fail=0 skip=\([
 if [ "$SMOKE_SKIP" != "0" ]; then warn "smoke test lulus dengan ${SMOKE_SKIP} pemeriksaan DILEWATI (SKIP): lihat ${BK_DIR}/smoke.log. Ini BUKAN PASS untuk pemeriksaan yang dilewati."
 else ok "smoke test lulus"; fi
 # PRATINJAU koreksi Rika dengan kode LIVE terhadap data produksi (BACA-SAJA: mode bawaan skrip tidak membuka transaksi tulis). Informasi untuk Owner; TIDAK menggagalkan rilis.
-dcp "$NEW_DIR" exec -T backend node scripts/koreksi-pengiriman-rute.js --unit=RES-03102026-018-U1 --rute=RTE-161026-02 --waktu=2026-10-16T05:30:00Z </dev/null > "$BK_DIR/pratinjau-rika.json" 2>"$BK_DIR/pratinjau-rika.err" || true
+dcp "$NEW_DIR" exec -T backend node scripts/koreksi-pengiriman-rute.js --unit=RES-03102026-018-U1 --rute=RTE-161026-02 --tanggal=2026-10-16 --foto=/app/uploads/1792112641064-27qruk2yfg3.jpg </dev/null > "$BK_DIR/pratinjau-rika.json" 2>"$BK_DIR/pratinjau-rika.err" || true
 if [ -s "$BK_DIR/pratinjau-rika.json" ]; then ok "pratinjau koreksi Rika (baca-saja) tersimpan: ${BK_DIR}/pratinjau-rika.json — layak=$(grep -o '"layak": *[a-z]*' "$BK_DIR/pratinjau-rika.json" | head -n 1 | sed 's/.*: *//') sudahDiterapkan=$(grep -o '"sudahDiterapkan": *[a-z]*' "$BK_DIR/pratinjau-rika.json" | head -n 1 | sed 's/.*: *//')"; else warn "pratinjau koreksi Rika tidak menghasilkan keluaran (lihat ${BK_DIR}/pratinjau-rika.err); koreksi Rika TIDAK dijalankan oleh rilis ini"; fi
 OLD_ONLY="$(sed -n 1p "$OLD_ASSETS" || true)"
 if [ -n "$OLD_ONLY" ]; then
