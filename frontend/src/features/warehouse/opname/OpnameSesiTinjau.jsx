@@ -22,14 +22,15 @@ const SPEC_TINJAU = {
 };
 
 export default function OpnameSesiTinjau({ r, id, onTutup, galat, memuat, muat, sibuk, setSibuk, versi }) {
-  const [galatLokal, setGalatLokal] = useState(""); const [menandai, setMenandai] = useState(null); const [hanyaSelisih, setHanyaSelisih] = useState(true); const [batas, setBatas] = useState(60); const [alasan, setAlasan] = useState({}); const [riwayat, setRiwayat] = useState(null);
+  const [galatLokal, setGalatLokal] = useState(""); const [menandai, setMenandai] = useState(null); const [hanyaSelisih, setHanyaSelisih] = useState(true); const [batas, setBatas] = useState(60); const [alasan, setAlasan] = useState({}); const [riwayat, setRiwayat] = useState(null); const [cari, setCari] = useState("");
   const t = r.tampilan; const status = r.status; const p = r.progres; const aktif = r.lines.filter((l) => !l.excludedAt); const tinjauAda = aktif.some((l) => l.tinjau);
   const info = r.scopeInfo?.ringkasan;
   const SPEC = { ...SPEC_TINJAU, UBAH: { panel: { judul: "Ubah jadwal & catatan", tombol: "Simpan", peringatan: "Perubahan tercatat. Cakupan bahan tidak berubah di sini.", bidang: [{ nama: "jadwal", label: "Tanggal jadwal", tipe: "date", awal: r.scheduledDate ? String(r.scheduledDate).slice(0, 10) : "" }, { nama: "notes", label: "Catatan", tipe: "area", maks: 500, awal: r.notes ?? "" }] } } };
   const baris = useMemo(() => aktif.map((l) => ({ l, tj: l.tinjau ?? null, selisih: l.tinjau?.selisih ?? null })), [aktif]);
   const berselisih = baris.filter((b) => b.tj?.berselisih);
   const ragu = baris.flatMap((b) => (b.tj?.transaksi.jendelaRagu ?? []).map((m) => ({ ...m, l: b.l })));
-  const tampil = (hanyaSelisih && tinjauAda ? baris.filter((b) => b.tj?.berselisih || b.l.perluPeriksa || (b.tj?.transaksi.belumDitandai ?? 0) > 0) : baris);
+  const kata = cari.trim().toLowerCase(); // pencarian menampilkan bahan mana pun (kode/nama), termasuk yang tidak berselisih
+  const tampil = kata ? baris.filter((b) => `${b.l.material.code} ${b.l.material.name}`.toLowerCase().includes(kata)) : (hanyaSelisih && tinjauAda ? baris.filter((b) => b.tj?.berselisih || b.l.perluPeriksa || (b.tj?.transaksi.belumDitandai ?? 0) > 0) : baris);
   const belumDitandai = r.sesi?.belumDitandai ?? 0; const tanpaAlasan = berselisih.filter((b) => !String(alasan[b.l.id] ?? b.l.reason ?? "").trim());
   const galatSelesai = belumDitandai > 0 ? `${belumDitandai} pergerakan di jendela ${r.jendelaRaguMenit} menit sebelum waktu hitung belum ditandai (sudah/belum tercermin di fisik).` : tanpaAlasan.length ? `Alasan wajib diisi untuk selisih pada ${tanpaAlasan.map((b) => b.l.material.code).join(", ")}.` : "";
 
@@ -37,7 +38,7 @@ export default function OpnameSesiTinjau({ r, id, onTutup, galat, memuat, muat, 
   const jalankan = async (kode, v = {}) => {
     setSibuk(true); setGalatLokal("");
     try {
-      if (["SERAHKAN_HITUNGAN", "SELESAIKAN_OPNAME"].includes(kode) && Object.keys(alasan).length) await simpanAlasan();
+      if (["SERAHKAN_HITUNGAN", "PERIKSA_HITUNGAN", "SELESAIKAN_OPNAME"].includes(kode) && Object.keys(alasan).length) await simpanAlasan();
       if (kode === "MULAI_HITUNG") await api.startStockCount(id);
       else if (kode === "SERAHKAN_HITUNGAN") await api.submitStockCount(id);
       else if (kode === "HITUNG_ULANG") await api.recountStockCount(id);
@@ -75,6 +76,7 @@ export default function OpnameSesiTinjau({ r, id, onTutup, galat, memuat, muat, 
       {tinjauAda && (
         <Card className="space-y-3 p-4" data-testid="kartu-tinjau">
           <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="m-0 text-[11px] font-bold uppercase tracking-wide text-ink3">Tinjau per bahan ({berselisih.length} berselisih)</h3>
+            <input type="search" value={cari} onChange={(e) => { setCari(e.target.value); setBatas(60); }} placeholder="Cari kode atau nama bahan…" aria-label="Cari bahan di tinjauan" data-testid="cari-tinjau" className="min-w-[160px] flex-1 rounded-btn border border-line bg-surface px-2.5 py-1.5 text-[12.5px] outline-none focus:border-accent max-sm:min-h-11 max-sm:text-[16px]" />
             <label className="inline-flex items-center gap-1.5 text-[12px] text-ink2 max-sm:min-h-11"><input type="checkbox" checked={hanyaSelisih} onChange={(e) => { setHanyaSelisih(e.target.checked); setBatas(60); }} data-testid="hanya-selisih" /> Hanya yang berselisih / perlu diperiksa</label></div>
           <p className="m-0 text-[11.5px] text-ink3">Saldo sistem = ledger sampai <b>waktu bahan itu dihitung</b>. Transaksi sesudah waktu hitung tidak ikut pembanding dan tetap utuh di ledger.</p>
           <ul className="m-0 list-none space-y-2 p-0" data-testid="daftar-tinjau">

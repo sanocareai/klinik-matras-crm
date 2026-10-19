@@ -48,7 +48,7 @@ const COUNT_TYPES = ["CYCLE_COUNT", "FULL_STOCK_OPNAME"];
 const COUNT_METHODS = ["BY_ITEM", "BY_CATEGORY", "BY_LOCATION", "BY_BATCH", "RANDOM_SAMPLING", "FULL_WAREHOUSE"];
 
 const countInclude = {
-  lines: { include: { material: { select: { id: true, code: true, name: true, unit: true } } } },
+  lines: { include: { material: { select: { id: true, code: true, name: true, unit: true, itemGroup: true, active: true } } } },
   assignedTo: { select: { id: true, name: true } },
   reviewedBy: { select: { id: true, name: true } },
   createdBy: { select: { id: true, name: true } },

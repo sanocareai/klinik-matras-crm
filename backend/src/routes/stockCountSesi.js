@@ -130,7 +130,7 @@ stockCountSesiRouter.get("/:id/kerja", requirePermission(P.INVENTORY_READ), waji
   try {
     const count = await muatSesiV2(prisma, req.params.id); wajibV2(count);
     const nama = await namaUser(prisma, count.lines.map((l) => l.countedById));
-    const baris = count.lines.map((l) => barisKerja(l, nama)).sort((a, b) => a.kelompokKode.localeCompare(b.kelompokKode) || a.kode.localeCompare(b.kode));
+    const baris = count.lines.map((l) => barisKerja(l, nama)).sort((a, b) => a.kode.localeCompare(b.kode)); // urut per kode; kelompok tersedia sebagai penyaring
     const bahan = await muatBahan(prisma);
     const diabaikan = new Set((await prisma.activityEvent.findMany({ where: { entityType: ENTITY_TYPES.STOCK_COUNT, entityId: count.id, eventType: EVENT_TYPES.DOCUMENT_EDITED }, select: { metadata: true } })).filter((e) => e.metadata?.aksi === AKSI_CAKUPAN_DIABAIKAN).map((e) => e.metadata.materialId));
     const luar = bahanDiLuarCakupan(bahan, count, diabaikan);

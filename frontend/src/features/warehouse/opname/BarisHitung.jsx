@@ -9,7 +9,7 @@ import { jamTeks, parseJumlah, sudahDihitung } from "./opnameLogic.js";
 
 export const satuan = (u) => UNIT_LABEL[u] || String(u || "").toLowerCase();
 export const teksSimpan = (b) => (sudahDihitung(b) ? String(b.counted) : "");
-const inputCls = "rounded-btn border border-line bg-surface px-2.5 py-2 text-[14px] text-ink outline-none focus:border-accent max-sm:min-h-11 max-sm:text-[16px]";
+const inputCls = "rounded-btn border border-border bg-surface px-2.5 py-2 text-[14px] text-ink outline-none focus:border-accent max-sm:min-h-11 max-sm:text-[16px]";
 
 /** Nilai yang tampil di kolom: draf bila ada, kalau tidak angka tersimpan. KOSONG tetap kosong (tidak pernah diisi dari saldo). */
 export const nilaiKolom = (b, draf) => (draf?.teks !== undefined ? draf.teks : teksSimpan(b));
@@ -42,10 +42,11 @@ export function RiwayatBaris({ countId, lineId }) {
 }
 
 /** Aksi sekunder satu bahan: riwayat, tandai ragu, keluarkan dari sesi (alasan wajib). */
-export function AksiLain({ countId, b, bisa, ragu, onRagu, onKeluar, onKembalikan }) {
-  const [riwayat, setRiwayat] = useState(false); const [keluar, setKeluar] = useState(false); const [alasan, setAlasan] = useState("");
-  return (
-    <div className="space-y-1.5">
+export function AksiLain({ countId, b, bisa, ragu, onRagu, onKeluar, onKembalikan, ringkas = false }) {
+  const [riwayat, setRiwayat] = useState(false); const [keluar, setKeluar] = useState(false); const [alasan, setAlasan] = useState(""); const [buka, setBuka] = useState(!ringkas);
+  // Daftar desktop memuat ratusan baris: aksi sekunder dilipat di balik "Lainnya" (satu tombol sebaris dengan petugas); kartu HP menampilkannya langsung.
+  const isi = (
+    <div className="w-full basis-full space-y-1.5">
       <div className="flex flex-wrap items-center gap-1.5">
         <Button size="sm" variant="ghost" onClick={() => setRiwayat((v) => !v)} className="max-sm:min-h-11" data-testid="lihat-riwayat"><History size={13} /> Riwayat</Button>
         {bisa && !b.excluded && <label className="inline-flex items-center gap-1.5 rounded-btn px-2 py-1.5 text-[12px] text-ink2 max-sm:min-h-11"><input type="checkbox" checked={ragu} onChange={(e) => onRagu(e.target.checked)} data-testid="tandai-ragu" /> Tandai perlu diperiksa</label>}
@@ -62,6 +63,8 @@ export function AksiLain({ countId, b, bisa, ragu, onRagu, onKeluar, onKembalika
       {b.excluded && <p className="m-0 text-[12px] text-ink3">Dikeluarkan: {b.excludedReason}</p>}
     </div>
   );
+  if (!ringkas) return isi;
+  return (<><Button size="sm" variant="ghost" onClick={() => setBuka((v) => !v)} className="ml-auto max-sm:min-h-11" data-testid="lainnya" aria-expanded={buka}>{buka ? "Tutup" : "Lainnya"}</Button>{buka && isi}</>);
 }
 
 /** Kolom angka: inputMode desktop/HP, kosong ≠ 0, Enter pindah ke bahan berikutnya. */

@@ -80,6 +80,7 @@ test("membuat sesi penuh SEKALI pilih: 360 baris tersimpan (Material ID), satu s
 test("0 eksplisit vs kosong: kosong = belum dihitung; nol hanya bila dikirim 0; progres per kelompok; simpan bertahap & lanjut; angka negatif/tidak valid ditolak; submit ditolak selama ada yang belum", async () => {
   const w = await dunia(); const s = await buatPenuh(w); await mulai(w.A, s.id); const mov0 = await jumlahMov();
   let k = await kerja(w, s.id); assert.equal(k.progres.dihitung, 0); assert.equal(k.progres.belum, 360);
+  const dp = (await w.A.get(`${SC}/${s.id}`)).body.progres; assert.equal(dp.perKelompok.find((x) => x.kode === "BUSA").total, 100, "detail: progres per kelompok dari itemGroup master"); assert.equal(dp.perKelompok.find((x) => x.kode === "BELUM").total, 45);
   const [b1, b2, b3] = k.baris;
   const r = (await simpan(w.A, s.id, [{ lineId: b1.id, revision: 0, countedQty: 0 }, { lineId: b2.id, revision: 0, countedQty: 12.5 }, { lineId: b3.id, revision: 0, countedQty: "" }])).body;
   assert.equal(r.hasil[0].status, "DISIMPAN"); assert.equal(r.hasil[0].counted, 0); assert.equal(r.hasil[1].counted, 12.5); assert.equal(r.hasil[2].status, "TIDAK_BERUBAH", "kolom kosong tetap belum dihitung");
