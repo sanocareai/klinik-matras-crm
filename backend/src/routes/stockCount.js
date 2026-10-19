@@ -20,7 +20,7 @@ import { lockMaterialBalance } from "../services/inventoryLedger.js";
 import { muatIdentitasHitung, AKSI_PERIKSA_HITUNGAN } from "../services/identitasHitung.js";
 import { tampilanOpname, untukIzin } from "../services/dokumenGudangLain.js";
 import { jejakDokumenGudang } from "../services/dokumenGudang.js";
-import { muatPembandingSesi, ringkasProgres, bahanDiLuarCakupan, muatBahan, AKSI_CAKUPAN_DIABAIKAN, JENDELA_RAGU_MENIT } from "../services/opnameSesi.js";
+import { muatPembandingSesi, ringkasProgres, bahanDiLuarCakupan, muatBahan, AKSI_CAKUPAN_DIABAIKAN, AKSI_WAKTU_HITUNG, KELAS_BOLEH_MASSAL } from "../services/opnameSesi.js";
 import { kelompokDariItemGroup } from "../constants/kelompokBahan.js";
 
 // Penanda pelaku di activity_events (eventType DOCUMENT_EDITED) — dipakai complete untuk memisahkan pengisi/penyerah hitungan dari penyetuju.
@@ -73,8 +73,8 @@ stockCountRouter.get("/", requirePermission(P.INVENTORY_READ), async (req, res) 
     // Sesi model 2 (opname penuh) bisa berisi ratusan baris: daftar hanya membawa ringkasan (jumlah + progres), detail lewat GET /:id atau /:id/kerja.
     res.json({
       counts: counts.map((c) => {
-        const ring = c.modelVersion === 2 ? ringkasProgres(c.lines.map((l) => ({ kelompokKode: "x", counted: l.countedQty == null ? null : 1, excluded: !!l.excludedAt, perluPeriksa: false }))) : null;
-        return { ...c, ...(c.modelVersion === 2 ? { lines: [], jumlahBahan: ring.total, progres: { total: ring.total, dihitung: ring.dihitung, belum: ring.belum } } : { jumlahBahan: c.lines.length }), tampilan: tampilanOpname(c) };
+        const ring = c.modelVersion === 2 ? ringkasProgres(c.lines.map((l) => ({ kelompokKode: "x", counted: l.countedQty == null ? null : 1, tanpaWaktu: l.countedQty != null && !l.observedAt, excluded: !!l.excludedAt, perluPeriksa: false }))) : null;
+        return { ...c, ...(c.modelVersion === 2 ? { lines: [], jumlahBahan: ring.total, progres: { total: ring.total, dihitung: ring.dihitung, belum: ring.belum, tanpaWaktu: ring.tanpaWaktu } } : { jumlahBahan: c.lines.length }), tampilan: tampilanOpname(c) };
       }),
     });
   } catch (err) {
@@ -94,28 +94,29 @@ stockCountRouter.get("/:id", requirePermission(P.INVENTORY_READ), wajibUuid(), a
     const identitas = await muatIdentitasHitung(prisma, count);
     // UX Tahap 2: status/aksi dalam bahasa petugas; aturan pemisahan tugas TIDAK diubah, hanya dijelaskan (izin.* memberi tahu layar mengapa suatu tombol tidak ada).
     const tulis = hasPermission(req.user, P.INVENTORY_WRITE); const bisaMenyetujuiSelisih = hasPermission(req.user, P.INVENTORY_ADJUSTMENT_APPROVE);
-    // Sesi model 2: waktu acuan per bahan, saldo sistem yang sebanding PADA WAKTU DIHITUNG, transaksi relevan, selisih nyata. Lihat services/opnameSesi.js.
+    // Sesi model 2: tiga waktu per bahan (pengamatan / disimpan / posting ledger), saldo sistem yang sebanding PADA WAKTU PENGAMATAN, SEMUA transaksi sejak pengamatan, selisih nyata. Lihat services/opnameSesi.js.
     let tinjau = null; let progres = null; let nama = new Map();
     if (v2) {
-      nama = new Map((await prisma.user.findMany({ where: { id: { in: [...new Set(count.lines.map((l) => l.countedById).filter(Boolean))] } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
-      progres = ringkasProgres(count.lines.map((l) => ({ kelompokKode: kelompokDariItemGroup(l.material.itemGroup).kode, counted: l.countedQty == null ? null : 1, excluded: !!l.excludedAt, perluPeriksa: !l.excludedAt && (l.needsCheck || l.revision >= 2) })));
+      nama = new Map((await prisma.user.findMany({ where: { id: { in: [...new Set(count.lines.flatMap((l) => [l.countedById, l.observedById]).filter(Boolean))] } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
+      progres = ringkasProgres(count.lines.map((l) => ({ kelompokKode: kelompokDariItemGroup(l.material.itemGroup).kode, counted: l.countedQty == null ? null : 1, tanpaWaktu: l.countedQty != null && !l.observedAt, excluded: !!l.excludedAt, perluPeriksa: !l.excludedAt && (l.needsCheck || l.revision >= 2) })));
       if (!sembunyikanSaldo) {
         const pb = await muatPembandingSesi(prisma, count, { sampai: count.completedAt || new Date() });
         tinjau = Object.fromEntries([...pb.perBaris].map(([lineId, h]) => [lineId, {
-          pembanding: h.pembanding, selisih: h.selisih, berselisih: h.berselisih,
-          transaksi: { sebelumHitung: h.sebelum.length, jendelaRagu: h.ragu.slice(0, 20), setelahHitung: h.setelah.slice(0, 20), setelahHitungJumlah: h.setelah.length, belumDitandai: h.belumDitandai.length },
+          pembanding: h.pembanding, selisih: h.selisih, berselisih: h.berselisih, saldoSebelum: h.saldoSebelum, waktuTidakDiketahui: h.waktuTidakDiketahui,
+          // SEMUA pergerakan sejak pengamatan (ditandai, berkelas, dengan tanggal kejadian dokumen bila ada); dipotong 100 per bahan untuk ukuran respons — jumlah penuh tetap dikirim.
+          transaksi: { sejakPengamatan: h.pergerakan.slice(0, 100), jumlah: h.pergerakan.length, belumDiputuskan: h.belumDiputuskan.length, sudahTercermin: h.sudahTercermin ?? 0, belumTercermin: h.belumTercermin ?? 0 },
         }]));
       }
     }
     const adaSelisih = v2 ? (!!tinjau && Object.values(tinjau).some((x) => x.berselisih)) : count.lines.some((l) => l.systemQty != null && l.countedQty != null && Number(l.countedQty) !== Number(l.systemQty));
     const bisaPeriksa = !(req.user.id === count.assignedToId || identitas.penghitung.some((p) => p.id === req.user.id));
-    const lines = v2 ? count.lines.map((l) => ({ ...l, systemQty: null, countedBy: l.countedById ? { id: l.countedById, nama: nama.get(l.countedById) ?? null } : null, perluPeriksa: !l.excludedAt && (l.needsCheck || l.revision >= 2), ...(tinjau && tinjau[l.id] ? { tinjau: tinjau[l.id] } : {}) })) : count.lines;
+    const lines = v2 ? count.lines.map((l) => ({ ...l, systemQty: null, countedBy: l.countedById ? { id: l.countedById, nama: nama.get(l.countedById) ?? null } : null, observedBy: l.observedById ? { id: l.observedById, nama: nama.get(l.observedById) ?? null } : null, waktuTidakDiketahui: !l.excludedAt && l.countedQty != null && !l.observedAt, perluPeriksa: !l.excludedAt && (l.needsCheck || l.revision >= 2), ...(tinjau && tinjau[l.id] ? { tinjau: tinjau[l.id] } : {}) })) : count.lines;
     res.json({
       ...count,
       lines,
-      ...(v2 ? { progres, jendelaRaguMenit: JENDELA_RAGU_MENIT, sembunyikanSaldo } : {}),
+      ...(v2 ? { progres, aturanWaktu: "PENGAMATAN_V1", sembunyikanSaldo } : {}),
       identitas,
-      sesi: { snapshotPada: count.startedAt, belumDitandai: v2 ? (tinjau ? Object.values(tinjau).reduce((s, x) => s + x.transaksi.belumDitandai, 0) : 0) : pergerakan.filter((p) => p.tanda === null).length, modelVersion: count.modelVersion },
+      sesi: { snapshotPada: count.startedAt, belumDitandai: v2 ? (tinjau ? Object.values(tinjau).reduce((s, x) => s + x.transaksi.belumDiputuskan, 0) : 0) : pergerakan.filter((p) => p.tanda === null).length, tanpaWaktu: v2 ? count.lines.filter((l) => !l.excludedAt && l.countedQty != null && !l.observedAt).length : 0, modelVersion: count.modelVersion },
       pergerakanSesi: v2 ? [] : pergerakan,
       tampilan: untukIzin(tampilanOpname(count, { adaSelisih, bisaMenyetujuiSelisih, bisaPeriksa }), tulis), izin: { tulis, bisaMenyetujuiSelisih, bisaPeriksa }, adaSelisih,
       jejak: await jejakDokumenGudang(prisma, { entityType: ENTITY_TYPES.STOCK_COUNT, id: count.id, dibuatOleh: count.createdBy?.name ?? null, dibuatPada: count.createdAt, jenis: "OPNAME" }),
@@ -200,7 +201,7 @@ stockCountRouter.post("/:id/start", requirePermission(P.INVENTORY_WRITE), wajibU
 
       // Kunci material (urut id) SEBELUM membaca saldo: pergerakan yang sedang diposting selesai dulu (masuk snapshot), yang menyusul menunggu sampai Start commit
       // sehingga bercap waktu SESUDAH startedAt (masuk daftar pergerakan sesi). Tanpa kunci, pergerakan di sela baca-saldo dan startedAt hilang dari keduanya.
-      // Sesi model 2: TIDAK ada snapshot awal. Pembanding dihitung dari ledger PADA WAKTU HITUNG tiap bahan (countedAt), jadi sesi yang berjalan berhari-hari tidak memakai saldo basi.
+      // Sesi model 2: TIDAK ada snapshot awal. Pembanding dihitung dari ledger PADA WAKTU PENGAMATAN tiap bahan (observedAt), jadi sesi yang berjalan berhari-hari tidak memakai saldo basi.
       if (count.modelVersion !== 2) {
         for (const id of [...new Set(count.lines.map((l) => l.materialId))].sort()) await lockMaterialBalance(tx, id);
         for (const line of count.lines) {
@@ -284,6 +285,8 @@ stockCountRouter.post("/:id/submit", requirePermission(P.INVENTORY_WRITE), wajib
     }
     if (count.modelVersion === 2) {
       if (aktifLines.length === 0) throw new CountError("Sesi tidak memuat bahan yang dihitung");
+      const tanpaWaktu = aktifLines.filter((l) => !l.observedAt);
+      if (tanpaWaktu.length > 0) { const e = new CountError(`${tanpaWaktu.length} bahan belum punya waktu hitung (kapan barang dihitung). Nyatakan waktunya dulu — sistem tidak mengarangnya dari waktu simpan.`, 409); e.code = "WAKTU_HITUNG_BELUM_DIKETAHUI"; throw e; }
       if (["FULL", "GROUP"].includes(count.scopeMode)) {
         const diabaikan = new Set((await prisma.activityEvent.findMany({ where: { entityType: ENTITY_TYPES.STOCK_COUNT, entityId: count.id, eventType: EVENT_TYPES.DOCUMENT_EDITED }, select: { metadata: true } })).filter((e2) => e2.metadata?.aksi === AKSI_CAKUPAN_DIABAIKAN).map((e2) => e2.metadata.materialId));
         const luar = bahanDiLuarCakupan(await muatBahan(prisma), count, diabaikan);
@@ -349,18 +352,22 @@ stockCountRouter.post("/:id/complete", requireAnyPermission(P.INVENTORY_WRITE, P
 
       // Kunci material (urut id) SEBELUM membaca pergerakan sesi, supaya tidak ada pergerakan menyelip antara pemeriksaan dan penulisan.
       for (const id of [...new Set(count.lines.map((l) => l.materialId))].sort()) await lockMaterialBalance(tx, id);
-      let pergerakan; let hasilBaris; let belumDitandai;
+      let pergerakan; let hasilBaris; let belumDitandai; let buktiPembanding = null;
       if (count.modelVersion === 2) {
-        // Waktu acuan per bahan (countedAt): pembanding = saldo ledger sampai countedAt − pergerakan jendela-ragu yang ditandai belum tercermin. Lihat services/opnameSesi.js.
+        // Pembanding per bahan dihitung dari waktu PENGAMATAN: saldo ledger yang diposting sebelum pengamatan + pergerakan sesudahnya yang diputuskan "sudah tercermin". Dihitung SESUDAH semua kunci bahan
+        // didapat di atas, jadi tidak ada pergerakan yang bisa menyelip: yang sudah commit terlihat (dan menghalangi bila belum diputuskan), yang menyusul bercap waktu sesudah penyelesaian. Lihat services/opnameSesi.js.
         const pb = await muatPembandingSesi(tx, count, { sampai: new Date() });
+        if (pb.tanpaWaktu.length > 0) { const e = new CountError(`${pb.tanpaWaktu.length} bahan belum punya waktu hitung (kapan barang dihitung). Nyatakan waktunya dulu — pembanding tidak bisa dihitung tanpa itu.`, 409); e.code = "WAKTU_HITUNG_BELUM_DIKETAHUI"; throw e; }
         pergerakan = pb.pergerakan; belumDitandai = pb.belumDitandai;
         hasilBaris = count.lines.filter((l) => !l.excludedAt).map((l) => { const h = pb.perBaris.get(l.id); return { lineId: l.id, materialId: l.materialId, pembanding: h?.pembanding ?? null, selisih: h?.selisih ?? 0, berselisih: !!h?.berselisih }; });
+        // Bukti per bahan untuk jejak audit: tiga waktu, saldo sebelum pengamatan, tiap pergerakan sejak pengamatan beserta kelas & keputusannya.
+        buktiPembanding = count.lines.filter((l) => !l.excludedAt).map((l) => { const h = pb.perBaris.get(l.id); return { lineId: l.id, materialId: l.materialId, observedAt: l.observedAt, savedAt: l.savedAt, counted: l.countedQty == null ? null : Number(l.countedQty), saldoSebelum: h?.saldoSebelum ?? null, pembanding: h?.pembanding ?? null, selisih: h?.selisih ?? null, pergerakan: (h?.pergerakan ?? []).map((x) => ({ id: x.id, qty: x.qty, at: x.at, kelas: x.kelas, tanda: x.tanda, tanggalKejadian: x.tanggalKejadian })) }; }).filter((b) => b.pergerakan.length > 0 || Math.abs(b.selisih ?? 0) > 1e-6);
       } else {
         ({ pergerakan } = await muatPergerakanSesi(tx, count, { sampai: new Date() }));
         ({ baris: hasilBaris, belumDitandai } = selisihTersesuaikan(count.lines, pergerakan));
       }
       if (belumDitandai.length > 0) {
-        const e = new CountError(`${belumDitandai.length} pergerakan selama sesi hitung belum ditandai (sudah/belum masuk hitungan fisik). Tandai satu per satu — sistem tidak menebak.`, 409);
+        const e = new CountError(`${belumDitandai.length} pergerakan sejak waktu hitung belum diputuskan (sudah/belum masuk hitungan fisik). Putuskan satu per satu — sistem tidak menebak.`, 409);
         e.code = "PERGERAKAN_SESI_BELUM_DITANDAI";
         throw e;
       }
@@ -389,7 +396,7 @@ stockCountRouter.post("/:id/complete", requireAnyPermission(P.INVENTORY_WRITE, P
           where: { entityType: ENTITY_TYPES.STOCK_COUNT, entityId: count.id, eventType: EVENT_TYPES.DOCUMENT_EDITED },
           select: { actorId: true, metadata: true },
         });
-        const pengisi = pelakuHitung.filter((e) => [AKSI_ISI_HITUNGAN, AKSI_SERAHKAN_HITUNGAN, AKSI_TANDA_PERGERAKAN].includes(e.metadata?.aksi)).map((e) => e.actorId);
+        const pengisi = pelakuHitung.filter((e) => [AKSI_ISI_HITUNGAN, AKSI_SERAHKAN_HITUNGAN, AKSI_TANDA_PERGERAKAN, AKSI_WAKTU_HITUNG].includes(e.metadata?.aksi)).map((e) => e.actorId);
         wajibBukanPihakPengaju(req.user, [count.createdById, count.assignedToId, ...pengisi], { label: "pembuat/penugas/pengisi hitungan" });
       }
 
@@ -409,7 +416,7 @@ stockCountRouter.post("/:id/complete", requireAnyPermission(P.INVENTORY_WRITE, P
       await recordActivity(tx, {
         entityType: ENTITY_TYPES.STOCK_COUNT, entityId: count.id,
         eventType: EVENT_TYPES.DOCUMENT_POSTED, actorId: req.user.id,
-        metadata: { countNumber: count.countNumber, varianceLines: berselisih.length, pergerakanSesi: pergerakan.length },
+        metadata: { countNumber: count.countNumber, varianceLines: berselisih.length, pergerakanSesi: pergerakan.length, ...(buktiPembanding ? { aturanWaktu: "PENGAMATAN_V1", buktiPembanding } : {}) },
       });
       return updated;
     });
@@ -458,6 +465,17 @@ stockCountRouter.post("/:id/pergerakan/:movementId/tanda", requirePermission(P.I
       const count = await tx.stockCount.findUnique({ where: { id: req.params.id }, include: countInclude });
       if (!count) throw new CountError("Stock count tidak ditemukan", 404);
       if (!["IN_PROGRESS", "WAITING_REVIEW"].includes(count.status)) throw new CountError(`Count berstatus ${count.status} tidak bisa menandai pergerakan`);
+      if (count.modelVersion === 2) {
+        const pb = await muatPembandingSesi(tx, count, { sampai: new Date() });
+        const p = pb.pergerakan.find((x) => x.id === req.params.movementId);
+        if (!p) throw new CountError("Pergerakan itu bukan bagian dari tanda sesi ini (diposting sebelum waktu hitung bahan, atau bahan belum punya waktu hitung)", 404);
+        await recordActivity(tx, {
+          entityType: ENTITY_TYPES.STOCK_COUNT, entityId: count.id, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: req.user.id,
+          metadata: { aksi: AKSI_TANDA_PERGERAKAN, countNumber: count.countNumber, movementId: p.id, materialId: p.materialId, kelas: p.kelas, tercermin: req.body.tercermin },
+        });
+        const pb2 = await muatPembandingSesi(tx, count, { sampai: new Date() });
+        return { v2: true, lineId: p.lineId, pergerakan: pb2.perBaris.get(p.lineId)?.pergerakan ?? [], belumDitandai: pb2.belumDitandai.length };
+      }
       const { pergerakan } = await muatPergerakanSesi(tx, count, { sampai: new Date() });
       if (!pergerakan.some((p) => p.id === req.params.movementId)) throw new CountError("Pergerakan itu bukan bagian dari sesi hitung ini", 404);
       await recordActivity(tx, {
@@ -466,7 +484,37 @@ stockCountRouter.post("/:id/pergerakan/:movementId/tanda", requirePermission(P.I
       });
       return (await muatPergerakanSesi(tx, count, { sampai: new Date() })).pergerakan;
     });
+    if (result.v2) return res.json({ lineId: result.lineId, pergerakan: result.pergerakan, belumDitandai: result.belumDitandai });
     res.json({ pergerakanSesi: result, belumDitandai: result.filter((p) => p.tanda === null).length });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// POST /api/inventory/stock-counts/:id/pergerakan/tanda-massal { tercermin: false, kelas?: "SESUDAH_DISIMPAN", materialId? }
+// Sesi model 2 saja. Memutuskan "BELUM tercermin di hitungan fisik" sekaligus untuk pergerakan yang diposting SESUDAH angka disimpan dan TIDAK bertanggal mundur (kelas paling rendah risikonya).
+// Kelas berisiko (SERENTAK, SAAT_HITUNG, BERTANGGAL_MUNDUR) dan keputusan "SUDAH tercermin" TIDAK bisa massal — wajib satu per satu. Tiap pergerakan tetap mendapat catatan tanda sendiri (pelaku + waktu).
+stockCountRouter.post("/:id/pergerakan/tanda-massal", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
+  try {
+    if (req.body?.tercermin !== false) { const e = new CountError("Tanda massal hanya untuk \"belum tercermin di hitungan fisik\". Pergerakan yang mungkin sudah ikut terhitung diputuskan satu per satu.", 400); e.code = "TANDA_MASSAL_HANYA_BELUM"; throw e; }
+    const kelas = req.body?.kelas ?? "SESUDAH_DISIMPAN";
+    if (!KELAS_BOLEH_MASSAL.includes(kelas)) { const e = new CountError("Kelas pergerakan ini berisiko dan harus diputuskan satu per satu.", 400); e.code = "KELAS_TIDAK_BOLEH_MASSAL"; throw e; }
+    const materialId = typeof req.body?.materialId === "string" ? req.body.materialId : null;
+    const result = await prisma.$transaction(async (tx) => {
+      await lockRowForUpdate(tx, "stock_counts", req.params.id);
+      const count = await tx.stockCount.findUnique({ where: { id: req.params.id }, include: countInclude });
+      if (!count) throw new CountError("Stock count tidak ditemukan", 404);
+      if (count.modelVersion !== 2) throw new CountError("Tanda massal hanya untuk sesi model baru", 409);
+      if (!["IN_PROGRESS", "WAITING_REVIEW"].includes(count.status)) throw new CountError(`Count berstatus ${count.status} tidak bisa menandai pergerakan`);
+      const pb = await muatPembandingSesi(tx, count, { sampai: new Date() });
+      const target = pb.belumDitandai.filter((p) => p.kelas === kelas && (!materialId || p.materialId === materialId));
+      if (target.length > 1000) throw new CountError("Terlalu banyak pergerakan sekaligus (maks. 1000). Filter per bahan.", 400);
+      for (const p of target) {
+        await recordActivity(tx, { entityType: ENTITY_TYPES.STOCK_COUNT, entityId: count.id, eventType: EVENT_TYPES.DOCUMENT_EDITED, actorId: req.user.id, metadata: { aksi: AKSI_TANDA_PERGERAKAN, countNumber: count.countNumber, movementId: p.id, materialId: p.materialId, kelas: p.kelas, tercermin: false, massal: true } });
+      }
+      return { ditandai: target.length, tersisa: pb.belumDitandai.length - target.length };
+    });
+    res.json(result);
   } catch (err) {
     handleErr(err, res);
   }

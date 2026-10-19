@@ -6068,9 +6068,14 @@ model StockCountLine {
   systemQty  Float? @map("system_qty") // snapshot SEKALI saat Start Count — bukan dihitung ulang
   countedQty Float? @map("counted_qty") // diisi staf saat hitung berjalan
 
-  // Sesi model 2: waktu & pelaku hitung terakhir per bahan (waktu acuan pembanding saldo), revisi untuk menolak penimpaan diam-diam, penanda "perlu diperiksa", dan pengeluaran dari cakupan dengan alasan.
-  countedAt     DateTime? @map("counted_at")
-  countedById   String?   @map("counted_by_id")
+  // Sesi model 2: TIGA WAKTU TERPISAH. observedAt = waktu pengamatan fisik (NULL = tidak diketahui; tidak pernah diturunkan dari savedAt), savedAt = waktu angka disimpan, waktu posting ledger = StockMovement.createdAt.
+  // observedSource: MULAI | DINYATAKAN | DIKOREKSI. Revisi untuk menolak penimpaan diam-diam, penanda "perlu diperiksa", dan pengeluaran dari cakupan dengan alasan.
+  savedAt            DateTime? @map("saved_at")
+  countedById        String?   @map("counted_by_id")
+  observedAt         DateTime? @map("observed_at")
+  observedSource     String?   @map("observed_source") @db.VarChar(10)
+  observedById       String?   @map("observed_by_id")
+  observedRecordedAt DateTime? @map("observed_recorded_at")
   revision      Int       @default(0)
   needsCheck    Boolean   @default(false) @map("needs_check")
   excludedReason String?  @map("excluded_reason")
