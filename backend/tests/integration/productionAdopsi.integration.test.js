@@ -320,3 +320,22 @@ test("B2. EKSPOR mengikuti FILTER daftar: pencarian, status order, status kerja;
   // paginasi daftar tidak mengubah total saat filter statusKerja
   const p1raw = await w.admin.api.get(`${P}/work-orders?statusKerja=BELUM_DIJADWALKAN,DIKERJAKAN,SELESAI&pageSize=1&page=2`); assert.equal(p1raw.status, 200); const p1 = p1raw.body; assert.equal(p1.total, 3); assert.equal(p1.units.length, 1); assert.equal(p1.hasMore, true);
 });
+
+test("A10. HAPUS order/unit: catatan status kerja atau rencana bahan = jejak operasional → ditolak 409 yang ramah (bukan 500 karena FK); unit bersih tetap bisa dihapus", async () => {
+  const w = await world();
+  const { unit: u, order } = await unit({ pickup: "selesai" });
+  const bersih = await unit({});
+  assert.equal((await w.admin.api.post(`${P}/units/${u.id}/work-progress`, { status: "DIKERJAKAN", expectedLatestId: null })).status, 201);
+  const hapusOrder = await w.admin.api.delete(`/api/orders/${order.id}`);
+  assert.equal(hapusOrder.status, 409, JSON.stringify(hapusOrder.body)); assert.match(hapusOrder.body.error, /jejak operasional/);
+  const hapusUnit = await w.admin.api.delete(`/api/orders/units/${u.id}`);
+  assert.equal(hapusUnit.status, 409, JSON.stringify(hapusUnit.body));
+  assert.ok(await testPrisma.unit.findUnique({ where: { id: u.id } }) && await testPrisma.order.findUnique({ where: { id: order.id } }), "data utuh");
+  // rencana bahan saja (tanpa status kerja) juga jejak
+  const m = await createTestMaterial({ name: "Busa Hapus", unit: "SHEET" }); await seedBalance(m.id, 5);
+  const dua = await unit({});
+  assert.equal((await w.admin.api.put(`${P}/units/${dua.unit.id}/material-plan`, { expectedRevision: 0, lines: [{ materialId: m.id, qty: 1 }] })).status, 200);
+  assert.equal((await w.admin.api.delete(`/api/orders/units/${dua.unit.id}`)).status, 409);
+  // unit tanpa jejak apa pun: perilaku lama utuh
+  const ok = await w.admin.api.delete(`/api/orders/units/${bersih.unit.id}`); assert.equal(ok.status, 200, JSON.stringify(ok.body));
+});
