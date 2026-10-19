@@ -263,7 +263,8 @@ for s2 in @@DIST_LAMA@@; do
   [ -n "$(grep -lF "$s2" "$PREV_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "[skrip] teks lama '${s2}' tidak ada di dist release aktif — perbaiki daftar teks pembanding"
   [ -n "$(grep -lF "$s2" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru KEHILANGAN teks fitur lama: ${s2}"
 done
-[ "$NEW_INDEX" != "$PREV_INDEX" ] || die "frontend berubah tetapi bundel baru identik dengan lama (tidak diharapkan)"
+# Bila frontend/src TIDAK berubah (rilis hanya backend), bundel boleh identik dengan yang lama; bila berubah, bundel WAJIB berbeda.
+if [ -n "$FRONTEND_SRC_EXPECT" ]; then [ "$NEW_INDEX" != "$PREV_INDEX" ] || die "frontend berubah tetapi bundel baru identik dengan lama (tidak diharapkan)"; fi
 ok "dist baru ${NEW_INDEX} (lama ${PREV_INDEX}); teks fitur rilis ini ada; teks fitur live lama (Koreksi, Produksi, Gudang) tetap ada"
 
 PHASE="4c-aset-lama"; say "4c. Bawa aset ber-hash dari dist release aktif (tab terbuka saat deploy tetap bisa memuat chunk lama)"

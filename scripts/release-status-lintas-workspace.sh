@@ -20,7 +20,7 @@
 #
 # ROLLBACK KODE: aman kapan saja (tag image rollback-pre-slw-<sha8>); tidak ada perubahan database untuk dipulihkan. Order yang sudah dibatalkan/diubah Sales beserta Run/rencana/permintaan bahan yang diselaraskan TETAP
 #   sebagaimana tercatat (kode lama hanya kembali menolak perubahan baru selama Run berjalan). Periksa ringkasan dengan scripts/rollback-guard-status-lintas-workspace.sh (baca-saja, selalu informasi).
-# (dibangkitkan oleh scripts/gen-release-status-lintas-workspace.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 9efc173fbda3…)
+# (dibangkitkan oleh scripts/gen-release-status-lintas-workspace.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 569980d69be6…)
 set -Eeuo pipefail
 umask 077
 
@@ -31,13 +31,13 @@ CAND_BRANCH="${CAND_BRANCH:-feat/status-lintas-workspace}"
 # Migrasi live terakhir (HARUS = migrasi terakhir di baseline, kandidat, dan produksi) dan jumlahnya: rilis ini tidak menambah/mengubah migrasi.
 LIVE_MIG_TERAKHIR="20261220090000_gudang_koreksi_dokumen"; LIVE_MIG_JUMLAH="260"
 # Berkas yang BOLEH berbeda dari baseline: EKSPLISIT path persis (+ skrip rilis ini + guard). Apa pun di luar daftar = berhenti.
-ALLOWED_RE='^(backend/scripts/koreksi-pengiriman-rute\.js|backend/scripts/production-delivery-v2/audit-custody-writers\.js|backend/scripts/production-delivery-v2/audit-delivery-writers\.js|backend/scripts/production-delivery-v2/audit-production-experience-writers\.js|backend/scripts/production-delivery-v2/audit-qc-handoff-writers\.js|backend/src/lib/activityLog\.js|backend/src/routes/armada\.js|backend/src/routes/orders\.js|backend/src/services/deliveryMenungguKonfirmasi\.js|backend/src/services/koreksiPengirimanRute\.js|backend/src/services/orderProduksiSelaras\.js|backend/src/services/productionMaterialIssueCommandService\.js|backend/src/services/productionPlanningCommandService\.js|backend/src/services/productionQcHandoffCommandService\.js|backend/src/services/productionRiwayatService\.js|backend/src/services/productionRunGuards\.js|backend/src/services/productionUnitOverviewService\.js|backend/src/services/statusUnitLintasWorkspace\.js|backend/src/services/unitCustodyCommandService\.js|backend/src/services/unitStageEngine\.js|backend/tests/integration/adminOverrideSiapKirim\.integration\.test\.js|backend/tests/integration/pkrMultiItem\.integration\.test\.js|backend/tests/integration/productionMaterialIssue\.integration\.test\.js|backend/tests/integration/productionQcFinishedGoods\.integration\.test\.js|backend/tests/integration/productionWorkshopExecution\.integration\.test\.js|backend/tests/productionExperience\.test\.js|backend/tests/productionQcFinishedGoods\.test\.js|backend/tests/releaseStatusLintasWorkspace\.test\.js|frontend/src/features/armada/alamatLengkap\.js|frontend/src/features/armada/components/JobBadges\.jsx|frontend/src/features/armada/components/RouteCard\.jsx|frontend/src/features/armada/components/UnroutedJobsPanel\.jsx|frontend/src/features/armada/jobStatus\.js|frontend/src/features/production/AdminOverrideSiapKirim\.jsx|frontend/src/features/production/UnitOverviewDrawer\.jsx|frontend/tests/alamatBelumLengkap\.test\.js|frontend/tests/unitOverviewDrawer\.test\.js|scripts/gen-release-status-lintas-workspace\.cjs|scripts/lib/rehearsal-kode-status-lintas-workspace\.mjs|scripts/lib/smoke-status-lintas-workspace\.mjs|scripts/release-status-lintas-workspace\.sh|scripts/rollback-guard-status-lintas-workspace\.sh|scripts/templates/release-status-lintas-workspace\.sh\.tpl)$'
-BACKEND_SRC_EXPECT="backend/src/lib/activityLog.js backend/src/routes/armada.js backend/src/routes/orders.js backend/src/services/deliveryMenungguKonfirmasi.js backend/src/services/koreksiPengirimanRute.js backend/src/services/orderProduksiSelaras.js backend/src/services/productionMaterialIssueCommandService.js backend/src/services/productionPlanningCommandService.js backend/src/services/productionQcHandoffCommandService.js backend/src/services/productionRiwayatService.js backend/src/services/productionRunGuards.js backend/src/services/productionUnitOverviewService.js backend/src/services/statusUnitLintasWorkspace.js backend/src/services/unitCustodyCommandService.js backend/src/services/unitStageEngine.js"
-FRONTEND_SRC_EXPECT="frontend/src/features/armada/alamatLengkap.js frontend/src/features/armada/components/JobBadges.jsx frontend/src/features/armada/components/RouteCard.jsx frontend/src/features/armada/components/UnroutedJobsPanel.jsx frontend/src/features/armada/jobStatus.js frontend/src/features/production/AdminOverrideSiapKirim.jsx frontend/src/features/production/UnitOverviewDrawer.jsx"
+ALLOWED_RE='^(backend/scripts/koreksi-pengiriman-rute\.js|backend/src/lib/activityLog\.js|backend/src/services/koreksiPengirimanRute\.js|backend/tests/integration/adminOverrideSiapKirim\.integration\.test\.js|scripts/gen-release-status-lintas-workspace\.cjs|scripts/lib/rehearsal-kode-status-lintas-workspace\.mjs|scripts/lib/smoke-status-lintas-workspace\.mjs|scripts/release-status-lintas-workspace\.sh|scripts/rollback-guard-status-lintas-workspace\.sh|scripts/templates/release-status-lintas-workspace\.sh\.tpl)$'
+BACKEND_SRC_EXPECT="backend/src/lib/activityLog.js backend/src/services/koreksiPengirimanRute.js"
+FRONTEND_SRC_EXPECT=""
 # Perubahan live yang TIDAK boleh hilang/berubah: hotfix Stock Count; berkas pelindung identik dengan baseline (Koreksi Gudang inti, jurnal, otorisasi, Produksi override, Stock Count).
 HOTFIX_STOCK_COUNT="b5268e1f7d8e1a15a251106dee0a136898ee5ce1"
 GUARD_UNCHANGED="backend/src/services/warehouseCorrection.js backend/src/routes/gudangKoreksi.js backend/src/services/inventoryLedger.js backend/src/routes/materialIssue.js backend/src/routes/stockAdjustment.js backend/src/routes/goodsReceipt.js backend/src/routes/returnRecord.js backend/src/routes/stockTransfer.js backend/src/routes/stockCount.js backend/src/services/opnameCutover.js backend/src/services/opnameMatriks.js backend/src/services/pergerakanSesiHitung.js backend/src/services/finance/journal.js backend/src/middleware/authorize.js backend/src/middleware/auth.js backend/src/constants/permissions.js backend/src/services/productionStepCommandService.js backend/src/services/orderStatusSync.js"
-LIVE_ANCESTORS="d66f36ad1972d5dbd9fa7248208bd212f0b8f474 f293c5879fdac10e5ef0e1bb8a1169ef9ce8bef6 229755d6eae125f82671d173898f71815d13f080 08d62e7d713b08fc9e0f1d898c37791352476b5b 799d3e93de192c604a14f1c11fe7436538689bb0 56b87721f84c1d16a2cd1655e40787e2b626cb0f 442d5c137e6017964f415ecf806f43f989b2de76 ca9bdea72a03df5794658fb485c6f3a79b360eee 694f21846f206edba5542e68ffe4c3ea98a47c24 58cbc284aa71038ce2694e4579282f5e5abf3a05"
+LIVE_ANCESTORS="d66f36ad1972d5dbd9fa7248208bd212f0b8f474 f293c5879fdac10e5ef0e1bb8a1169ef9ce8bef6 229755d6eae125f82671d173898f71815d13f080 08d62e7d713b08fc9e0f1d898c37791352476b5b 799d3e93de192c604a14f1c11fe7436538689bb0 56b87721f84c1d16a2cd1655e40787e2b626cb0f 442d5c137e6017964f415ecf806f43f989b2de76 ca9bdea72a03df5794658fb485c6f3a79b360eee 694f21846f206edba5542e68ffe4c3ea98a47c24 58cbc284aa71038ce2694e4579282f5e5abf3a05 57198ad687045519a12af14a3097ccf6b61e9054 e47f37e2d6690130525681863ff467682e30f3c4"
 PUBLIC_URL="https://app.sanomatrassehat.com"
 INTERNAL_URL="http://127.0.0.1:4000"
 REPO_URL="https://github.com/sanocareai/klinik-matras-crm.git"
@@ -259,11 +259,12 @@ MAPS_KEY="$(sed -n 's/^VITE_GOOGLE_MAPS_JS_KEY=//p' "$PERSIST/frontend/.env" | t
 for s1 in "Rute butuh kelengkapan alamat" "pelaku tidak tercatat" "Sumber riwayat" "Status order bisa diubah (Batal, Siap Kirim, Terkirim)"; do
   [ -n "$(grep -lF "$s1" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru TIDAK memuat teks fitur rilis ini: ${s1}"
 done
-for s2 in "Kelompok bahan" "Konfirmasi Barang Jadi" "Selesaikan Produksi" "Beranda Gudang" "Ajukan Koreksi Stok" "Tetapkan Siap Kirim" "Admin override: Siap Kirim" "Produksi unit ini belum selesai — tidak menahan pengiriman"; do
+for s2 in "Cari di Gudang" "Kelompok bahan" "Konfirmasi Barang Jadi" "Selesaikan Produksi" "Beranda Gudang" "Ajukan Koreksi Stok" "Tetapkan Siap Kirim" "Admin override: Siap Kirim" "Produksi unit ini belum selesai — tidak menahan pengiriman"; do
   [ -n "$(grep -lF "$s2" "$PREV_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "[skrip] teks lama '${s2}' tidak ada di dist release aktif — perbaiki daftar teks pembanding"
   [ -n "$(grep -lF "$s2" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru KEHILANGAN teks fitur lama: ${s2}"
 done
-[ "$NEW_INDEX" != "$PREV_INDEX" ] || die "frontend berubah tetapi bundel baru identik dengan lama (tidak diharapkan)"
+# Bila frontend/src TIDAK berubah (rilis hanya backend), bundel boleh identik dengan yang lama; bila berubah, bundel WAJIB berbeda.
+if [ -n "$FRONTEND_SRC_EXPECT" ]; then [ "$NEW_INDEX" != "$PREV_INDEX" ] || die "frontend berubah tetapi bundel baru identik dengan lama (tidak diharapkan)"; fi
 ok "dist baru ${NEW_INDEX} (lama ${PREV_INDEX}); teks fitur rilis ini ada; teks fitur live lama (Koreksi, Produksi, Gudang) tetap ada"
 
 PHASE="4c-aset-lama"; say "4c. Bawa aset ber-hash dari dist release aktif (tab terbuka saat deploy tetap bisa memuat chunk lama)"
@@ -432,23 +433,27 @@ if (unitTuntas.length === 0) cek("Konflik: tidak ada unit berangkat/terkirim di 
   cek("Konflik: BATAL pada unit berangkat/terkirim DITOLAK 409 berkode dengan pilihan koreksi", !!tolak && tolak.statusCode === 409 && /^UNIT_SUDAH_/.test(tolak.code) && Array.isArray(tolak.pilihanKoreksi) && tolak.pilihanKoreksi.length >= 2, tolak ? tolak.code : "tidak ditolak");
 }
 // 5. KOREKSI RIKA (RES-03102026-018-U1 → RTE-161026-02): pratinjau baca-saja + penerapan DI DALAM transaksi yang dibatalkan
-const WAKTU_RIKA = new Date("2026-10-16T05:30:00.000Z");
+const TANGGAL_RIKA = "2026-10-16"; // jam serah-terima tidak terbukti: hanya tanggal
+const FOTO_RIKA = "/app/uploads/1792112641064-27qruk2yfg3.jpg"; // foto helper di grup SANO DRIVETHRU (dibaca saja; rehearsal tidak menyalin berkas)
+const { periksaBerkasFoto } = await import("/app/src/services/koreksiPengirimanRute.js");
 const rika = await prisma.unit.findUnique({ where: { unitCode: "RES-03102026-018-U1" }, select: { id: true } });
 const rute = await prisma.route.findUnique({ where: { code: "RTE-161026-02" }, select: { id: true } });
 if (!rika || !rute) { console.log("INFO Rika: unit atau rute tidak ada di salinan"); console.log("REHEARSAL_RIKA status=tidak-ada"); } else {
-  const p = await pratinjauKoreksiPengirimanRute(prisma, { unitCode: "RES-03102026-018-U1", routeCode: "RTE-161026-02", waktuTerkirim: WAKTU_RIKA });
+  const p = await pratinjauKoreksiPengirimanRute(prisma, { unitCode: "RES-03102026-018-U1", routeCode: "RTE-161026-02", tanggalKejadian: TANGGAL_RIKA, foto: (await import("node:fs")).existsSync(FOTO_RIKA) ? { path: FOTO_RIKA } : null });
   console.log("INFO Rika kondisi: " + JSON.stringify(p.kondisiSekarang));
   if (p.sudahDiterapkan) { cek("Rika: koreksi SUDAH diterapkan sebelumnya (idempoten, tidak ada yang perlu ditulis)", true); console.log("REHEARSAL_RIKA status=sudah"); }
   else if (!p.layak) { console.log("INFO Rika rintangan: " + JSON.stringify(p.rintangan)); console.log("REHEARSAL_RIKA status=tidak-layak"); }
   else {
     const aktor = await prisma.user.findFirst({ where: { active: true, OR: [{ role: "OWNER" }, { role: "ADMIN" }, { roles: { some: { role: { in: ["OWNER", "ADMIN"] } } } }] }, select: { id: true } });
     if (!aktor) { cek("Rika: ada pengguna ADMIN/OWNER aktif untuk rehearsal", false); } else {
+      const f = (await import("node:fs")).existsSync(FOTO_RIKA) ? periksaBerkasFoto(FOTO_RIKA) : null;
+      const buktiRehearsal = f ? { urls: ["/media/job-photos/rehearsal-tidak-ditulis" + (f.ext)], sha256: f.sha256, ukuranByte: f.ukuranByte, mime: f.mime, sumber: FOTO_RIKA } : null;
       const sebelumRute = await prisma.job.findMany({ where: { routeId: rute.id }, orderBy: { sequence: "asc" }, select: { id: true, status: true, sequence: true, updatedAt: true } });
       let hasil = null; let galat = null; let dalam = null;
       try {
         await prisma.$transaction(async (tx) => {
-          hasil = await terapkanKoreksiPengirimanRuteInTx(tx, { unitCode: "RES-03102026-018-U1", routeCode: "RTE-161026-02", aktorId: aktor.id, waktuTerkirim: WAKTU_RIKA, alasan: "Rehearsal rilis: Rika sudah terkirim bersama rute Bandung tetapi tidak masuk Route Planner" });
-          const ulang = await terapkanKoreksiPengirimanRuteInTx(tx, { unitCode: "RES-03102026-018-U1", routeCode: "RTE-161026-02", aktorId: aktor.id, waktuTerkirim: WAKTU_RIKA, alasan: "Rehearsal rilis: Rika sudah terkirim bersama rute Bandung tetapi tidak masuk Route Planner" });
+          hasil = await terapkanKoreksiPengirimanRuteInTx(tx, { unitCode: "RES-03102026-018-U1", routeCode: "RTE-161026-02", aktorId: aktor.id, tanggalKejadian: TANGGAL_RIKA, bukti: buktiRehearsal, alasan: "Rehearsal rilis: Rika sudah terkirim bersama rute Bandung tetapi tidak masuk Route Planner" });
+          const ulang = await terapkanKoreksiPengirimanRuteInTx(tx, { unitCode: "RES-03102026-018-U1", routeCode: "RTE-161026-02", aktorId: aktor.id, tanggalKejadian: TANGGAL_RIKA, bukti: buktiRehearsal, alasan: "Rehearsal rilis: Rika sudah terkirim bersama rute Bandung tetapi tidak masuk Route Planner" });
           dalam = {
             ulangSudah: ulang.sudahDiterapkan === true,
             jobRute: await tx.job.findMany({ where: { routeId: rute.id }, orderBy: { sequence: "asc" }, select: { id: true, status: true, sequence: true, updatedAt: true } }),
@@ -463,7 +468,7 @@ if (!rika || !rute) { console.log("INFO Rika: unit atau rute tidak ada di salina
       } catch (e) { if (!(e instanceof Batal)) galat = e?.message || String(e); }
       const lamaUtuh = galat === null && sebelumRute.every((j) => { const k = dalam.jobRute.find((x) => x.id === j.id); return k && k.status === j.status && k.updatedAt.getTime() === j.updatedAt.getTime(); });
       cek("Rika (salinan DB): koreksi diterapkan di transaksi yang dibatalkan — 1 job baru di stop berikutnya, unit Terkirim, rute tetap Completed, Run tidak ditutup (penanda dilepas), job lama tidak berubah, ulang idempoten, tanpa QC baru",
-        galat === null && hasil?.diterapkan === true && dalam.ulangSudah && dalam.jobRute.length === sebelumRute.length + 1 && lamaUtuh && dalam.unit === "DELIVERED" && dalam.rute === "COMPLETED" && dalam.jobUnit === 1 && dalam.runMarker?.status !== "COMPLETED" && dalam.runMarker?.deliveryRelease?.kind === "DISPATCH_ROUTE_PLANNER",
+        galat === null && hasil?.diterapkan === true && dalam.ulangSudah && dalam.jobRute.length === sebelumRute.length + 1 && lamaUtuh && dalam.unit === "DELIVERED" && dalam.rute === "COMPLETED" && dalam.jobUnit === 1 && dalam.runMarker?.status !== "COMPLETED" && ["DISPATCH_ROUTE_PLANNER", "SALES_STATUS_CHANGE"].includes(dalam.runMarker?.deliveryRelease?.kind),
         galat ?? JSON.stringify({ hasil: hasil && { diterapkan: hasil.diterapkan, sequence: hasil.sequence }, dalam: dalam && { ...dalam, jobRute: dalam.jobRute.length } }));
       const sesudah = await prisma.job.count({ where: { routeId: rute.id } });
       cek("Rika (salinan DB): transaksi percobaan DIBATALKAN — jumlah job rute di salinan tidak berubah", sesudah === sebelumRute.length);
@@ -629,7 +634,7 @@ SMOKE_SKIP="$(printf '%s' "$SMOKE_LINE" | sed -n 's/^SMOKE_HASIL fail=0 skip=\([
 if [ "$SMOKE_SKIP" != "0" ]; then warn "smoke test lulus dengan ${SMOKE_SKIP} pemeriksaan DILEWATI (SKIP): lihat ${BK_DIR}/smoke.log. Ini BUKAN PASS untuk pemeriksaan yang dilewati."
 else ok "smoke test lulus"; fi
 # PRATINJAU koreksi Rika dengan kode LIVE terhadap data produksi (BACA-SAJA: mode bawaan skrip tidak membuka transaksi tulis). Informasi untuk Owner; TIDAK menggagalkan rilis.
-dcp "$NEW_DIR" exec -T backend node scripts/koreksi-pengiriman-rute.js --unit=RES-03102026-018-U1 --rute=RTE-161026-02 --waktu=2026-10-16T05:30:00Z </dev/null > "$BK_DIR/pratinjau-rika.json" 2>"$BK_DIR/pratinjau-rika.err" || true
+dcp "$NEW_DIR" exec -T backend node scripts/koreksi-pengiriman-rute.js --unit=RES-03102026-018-U1 --rute=RTE-161026-02 --tanggal=2026-10-16 --foto=/app/uploads/1792112641064-27qruk2yfg3.jpg </dev/null > "$BK_DIR/pratinjau-rika.json" 2>"$BK_DIR/pratinjau-rika.err" || true
 if [ -s "$BK_DIR/pratinjau-rika.json" ]; then ok "pratinjau koreksi Rika (baca-saja) tersimpan: ${BK_DIR}/pratinjau-rika.json — layak=$(grep -o '"layak": *[a-z]*' "$BK_DIR/pratinjau-rika.json" | head -n 1 | sed 's/.*: *//') sudahDiterapkan=$(grep -o '"sudahDiterapkan": *[a-z]*' "$BK_DIR/pratinjau-rika.json" | head -n 1 | sed 's/.*: *//')"; else warn "pratinjau koreksi Rika tidak menghasilkan keluaran (lihat ${BK_DIR}/pratinjau-rika.err); koreksi Rika TIDAK dijalankan oleh rilis ini"; fi
 OLD_ONLY="$(sed -n 1p "$OLD_ASSETS" || true)"
 if [ -n "$OLD_ONLY" ]; then
