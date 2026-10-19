@@ -94,7 +94,23 @@ Tangkapan layar sebelum/sesudah: `C:\tmp\km-gudang-iso\qa\opname-ba\` (desktop d
 
 ## 7. Hasil pengujian
 
-__HASIL_UJI__
+DB terisolasi (Postgres uji, **bukan production**), 360 bahan aktif + 15 nonaktif: 9 kelompok campur (Busa 100, Kain 80, Benang 40, Pegas 30, Aksesori 30, Lem 15, Lainnya 20, **belum dikelompokkan 45**), 6 satuan berbeda, **50 bahan tanpa catatan stok**, **10 bahan bersaldo minus**, 2 bahan Habis Pakai.
+
+| Pengujian | Hasil |
+|---|---|
+| Integrasi baru `stockCountSesiPenuh` (cakupan & pratinjau, sesi penuh sekali pilih, 0 vs kosong, blind di server, dua petugas/revisi, **waktu acuan** sebelum/sesudah/jendela ragu, bahan baru di luar cakupan, sesi lama 106 bahan, izin baca-saja + 200 baris sekali simpan, **Penerimaan & Material Issue resmi saat sesi berjalan**, Selesaikan tepat sekali) | **11/11** |
+| Unit baru `opnameSesi` (klasifikasi waktu, pembanding, progres, cakupan) | **4/4** |
+| Regresi integrasi (Gudang, Koreksi, stok/opname/cutover/rekon, Retur Supplier, Produksi MI/QC/antrean, Finance persediaan/koreksi) | **36 berkas, 361 tes, 360 lulus, 1 gagal** — `financeFase1ResiInventory` ("kas masuk di buku"), **gagal identik pada baseline live `cb33a07d`** (bergantung tanggal; muncul setelah pergantian hari), tidak terkait perubahan ini |
+| Unit backend | 1699 tes, 1691 lulus, 6 gagal — semuanya berkas yang tidak disentuh (COVERAGE TAB, compose staging ×2, pin skrip atribusi, audit P5, serta uji skrip rilis/audit statis yang kadang gagal saat suite penuh dan **lulus bila dijalankan sendiri**). Satu tes rilis lama (Koreksi Gudang) memang diperbarui: tidak boleh lagi menganggap tidak ada migrasi sesudahnya |
+| Frontend | 1202 tes, 1193 lulus, 9 gagal **lama yang sama dengan baseline**; tes baru `gudangOpnameSesi` 6/6 |
+| **Browser nyata, desktop 1440 px** (`flows9.mjs`) | **59/59** |
+| **Browser nyata, HP 390 px** | **49/49** |
+
+Yang dicakup browser: tiga pilihan cakupan + pratinjau (per kelompok 140 bahan, Cycle Count lewat pencarian + checkbox 3 bahan, **opname penuh 360 bahan tepat 3 klik**); sesi penuh kedua ditolak; sesi lama tampil "dipilih manual (sesi lama)" dengan penanda; halaman sesi → Mulai hitung → halaman hitung; **0 eksplisit tersimpan 0, kolom kosong tetap belum dihitung**; simpan sebagian, keluar lalu lanjut (progres bertahan); koreksi tanpa alasan ditolak, dengan alasan masuk Perlu diperiksa; riwayat angka; tab, pencarian, filter kelompok, Enter pindah baris; **dua petugas** (konflik dengan nama + angka terbaru, Pakai angka mereka, Timpa beralasan, riwayat 3 entri); bahan baru → di luar cakupan → Tambahkan; bahan dikeluarkan; Serahkan dinonaktifkan sampai semua terisi; **transaksi sesudah dihitung tidak membuat selisih palsu**; selisih nyata; jendela ragu ditolak sampai ditandai; pemeriksa ≠ penyetuju; **penyelesaian tepat sekali (klik ganda = satu rangkaian penyesuaian)**; saldo akhir (fisik + transaksi sesudah hitung); akun baca-saja; HP: satu kartu bahan, keyboard angka (inputmode decimal, font 16 px, tinggi ≥ 44 px), "Simpan & berikutnya", Lewati, bilah aksi tetap, tanpa scroll horizontal. Tangkapan layar: `C:\tmp\km-gudang-iso\qa\opname\{desktop,hp}\`.
+
+**Temuan selama QA yang sudah diperbaiki:** ID pengguna bukan UUID (kolom pelaku diubah ke teks); progres per kelompok selalu "Belum dikelompokkan" karena `itemGroup` tidak ikut di query detail; baris hitung desktop terlalu tinggi (aksi sekunder dilipat di "Lainnya"); di HP tombol utama di bawah lipatan (dipindah ke bilah tetap di dasar layar); kotak cari ditambahkan di tinjauan agar pemeriksa bisa membuka bahan mana pun.
+
+**Batas pengujian yang jujur:** Chrome headless terhadap DB terisolasi; **belum di perangkat fisik** (Android/iOS), **belum dengan petugas sungguhan**, belum dengan jaringan gudang yang putus-sambung (tidak ada mode offline: angka yang belum disimpan hanya ada di layar dan diberi peringatan sebelum menutup tab). Tidak ada sesi opname dibuat dan tidak ada tulisan ke production.
 
 ## 8. Komponen lama yang aman dihapus kemudian
 - `features/warehouse/components/StockCountFormModal.jsx` (modal lama; tidak lagi diimpor halaman daftar). Jangan dihapus sebelum tes kontrak yang membacanya diperbarui.
@@ -102,4 +118,11 @@ __HASIL_UJI__
 - **Jangan hapus:** `muatPergerakanSesi`/`selisihTersesuaikan` (dipakai sesi model 1 dan jendela ragu), `identitasHitung`, `opnameCutover`.
 
 ## 9. Keputusan
-__KEPUTUSAN__
+- **Kandidat:** SHA ujung branch `feat/gudang-opname-penuh` (lihat laporan). Dasar: live `cb33a07d`.
+- **GO untuk dipakai pada opname 1 November — dengan syarat; NO-GO untuk rilis hari ini.** Alasan: kandidat membawa **migrasi** (tidak bisa memakai jalur web-saja) dan perubahan perilaku penyelesaian untuk sesi baru. Syarat sebelum rilis:
+  1. **Skrip rilis bergerbang dengan migrasi** (pola Koreksi Gudang: backup, pin migrasi, rehearsal terhadap restore backup nyata — termasuk memastikan sesi lama `CC-01092026-BASELINE` 106 baris tetap terbaca dan 358 bahan aktif membentuk sesi penuh 358 baris) — belum dibuat.
+  2. **Keputusan Owner:** lebar jendela ragu 30 menit; bahwa penanda pergerakan dan alasan selisih dikerjakan pemeriksa (aturan pemisahan tugas yang ada, tidak diubah); apakah Habis Pakai (non-inventory) dikecualikan dari opname penuh (bawaan: ikut).
+  3. **Latihan pada salinan data** (rehearsal/staging, bukan production): satu putaran dengan dua petugas di HP fisik. Jangan membuat sesi di production sebelum hari opname.
+  4. Cek ulang baseline live saat rilis; target rilis paling lambat sekitar 27 Oktober agar ada ≥ 3 hari latihan sebelum 1 November.
+- **NO-GO bila:** baseline live bergeser ke berkas Stock Count/ledger, ada migrasi lain yang bentrok urutan, atau rehearsal terhadap restore menunjukkan sesi lama tidak terbaca.
+- **Risiko residual:** tidak ada mode offline di HP; satu antrean kunci per sesi saat simpan (simpan 200 baris < 15 dtk di uji, jauh lebih cepat pada penggunaan nyata); lebar jendela ragu adalah kebijakan, bukan fakta data; hitungan desimal memakai pembulatan 4 angka seperti ledger.
