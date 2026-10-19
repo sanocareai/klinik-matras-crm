@@ -1014,3 +1014,35 @@ test("Q13. KOREKSI RIKA — JOB DRAF dari Sales Siap Kirim dipakai ulang (tidak 
   const sesudah = await jobDeliveryUnit(d.unit.id); assert.equal(sesudah.length, 1, "tidak ada job kedua"); assert.equal(sesudah[0].job.routeId, d.rute.id); assert.equal(sesudah[0].job.status, "COMPLETED");
   assert.equal(await unitStatus(d.unit.id), "DELIVERED");
 });
+
+test("Q14. KOREKSI RIKA — GUARD KEPEMILIKAN V2: rute yang dikelola writer Delivery V2 (cohort) atau pagar V1 aktif DITOLAK tanpa menulis; rute V1-saja (kasus Rika) tetap layak", async () => {
+  const w = await world(); const d = await duniaRika(w); const adm = await admin();
+  const { pratinjauKoreksiPengirimanRute, terapkanKoreksiPengirimanRuteInTx } = await import("../../src/services/koreksiPengirimanRute.js");
+  const { V2_FLAGS } = await import("../../src/services/v2FeatureFlags.js");
+  const dasar = { unitCode: d.unit.unitCode, routeCode: d.rute.code, aktorId: adm.user.id, waktuTerkirim: WAKTU, alasan: ALASAN };
+  const coba = () => testPrisma.$transaction((tx) => terapkanKoreksiPengirimanRuteInTx(tx, dasar)).then(() => null, (e) => e);
+  const setFlagV2 = (key, enabled, config = {}) => testPrisma.v2FeatureFlag.upsert({ where: { key }, create: { key, enabled, scope: "GLOBAL", config, reason: "uji guard koreksi" }, update: { enabled, config } });
+  const sebelum = await fotoRute(d.rute, d.unit.id, d.run.id);
+  // 1) cohort canary LAIN (seperti produksi: satu rute canary) — rute ini V1-saja -> layak
+  await setFlagV2(V2_FLAGS.DELIVERY_ROUTE_WRITER, true, { routeIds: ["557393f2-00f7-4458-b5cf-f01b751580b8"] });
+  await setFlagV2(V2_FLAGS.DELIVERY_EXECUTION_WRITER, true, { routeIds: ["557393f2-00f7-4458-b5cf-f01b751580b8"] });
+  assert.equal((await pratinjauKoreksiPengirimanRute(testPrisma, { unitCode: dasar.unitCode, routeCode: dasar.routeCode, waktuTerkirim: WAKTU })).layak, true, "rute di luar cohort tetap layak");
+  // 2) rute ini MASUK cohort V2 -> ditolak
+  await setFlagV2(V2_FLAGS.DELIVERY_ROUTE_WRITER, true, { routeIds: [d.rute.id] });
+  await setFlagV2(V2_FLAGS.DELIVERY_EXECUTION_WRITER, true, { routeIds: [d.rute.id] });
+  const p = await pratinjauKoreksiPengirimanRute(testPrisma, { unitCode: dasar.unitCode, routeCode: dasar.routeCode, waktuTerkirim: WAKTU });
+  assert.equal(p.layak, false); assert.ok(p.rintangan.some((r) => r.kode === "RUTE_DI_DELIVERY_V2"));
+  assert.equal((await coba())?.code, "RUTE_DI_DELIVERY_V2");
+  // 3) writer GLOBAL -> ditolak
+  await setFlagV2(V2_FLAGS.DELIVERY_ROUTE_WRITER, true, {}); await setFlagV2(V2_FLAGS.DELIVERY_EXECUTION_WRITER, true, {});
+  assert.equal((await coba())?.code, "RUTE_DI_DELIVERY_V2");
+  // 4) writer mati tetapi pagar V1 aktif -> ditolak
+  await setFlagV2(V2_FLAGS.DELIVERY_ROUTE_WRITER, false); await setFlagV2(V2_FLAGS.DELIVERY_EXECUTION_WRITER, false);
+  await setFlagV2(V2_FLAGS.DELIVERY_V1_WRITER_FENCE, true);
+  assert.equal((await coba())?.code, "DELIVERY_V1_DIPAGARI");
+  assert.equal(await fotoRute(d.rute, d.unit.id, d.run.id), sebelum, "semua penolakan tanpa tulisan"); assert.equal((await jobDeliveryUnit(d.unit.id)).length, 0);
+  // 5) pagar dibuka -> berhasil
+  await setFlagV2(V2_FLAGS.DELIVERY_V1_WRITER_FENCE, false);
+  assert.equal((await coba()), null);
+  assert.equal(await unitStatus(d.unit.id), "DELIVERED");
+});

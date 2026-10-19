@@ -13,6 +13,7 @@ import { syncOrderStatusForUnits } from "./orderStatusSync.js";
 import { createExecutionEvent, lockRoute } from "./deliveryExecution.js";
 import { TIME_QUALITY } from "./deliveryTimeline.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
+import { V2_FLAGS, deliveryWriterDecision, loadV2Flags } from "./v2FeatureFlags.js";
 
 export class KoreksiRuteError extends Error {
   constructor(message, code = "KOREKSI_RUTE_DITOLAK", statusCode = 409, extra = null) { super(message); this.name = "KoreksiRuteError"; this.code = code; this.statusCode = statusCode; if (extra) this.extra = extra; }
@@ -29,13 +30,20 @@ async function muat(db, { unitCode, routeCode }) {
   const jobRute = await db.job.findMany({ where: { routeId: route.id }, orderBy: { sequence: "asc" }, select: { id: true, type: true, status: true, sequence: true, orderId: true, completedAt: true, units: { select: { unit: { select: { unitCode: true, status: true } } } } } });
   const jobUnit = await db.jobUnit.findMany({ where: { unitId: unit.id }, select: { job: { select: { id: true, type: true, status: true, routeId: true, sequence: true } } } });
   const runs = await db.productionRun.findMany({ where: { unitId: unit.id }, select: { id: true, status: true, currentPhase: true, revision: true, deliveryReleasedAt: true, deliveryRelease: true } });
-  return { unit, route, jobRute, jobUnit: jobUnit.map((j) => j.job), runs };
+  // Kepemilikan Delivery V2: rute yang dikelola writer V2 (cohort/GLOBAL) atau sudah punya state V2 TIDAK boleh ditulis langsung di sisi V1 — proyeksinya akan melenceng. Koreksi ini hanya untuk rute V1-saja.
+  const flags = await loadV2Flags(db);
+  const keputusan = await deliveryWriterDecision(db, flags, { routeId: route.id });
+  const stateV2 = await db.deliveryRouteState.findUnique({ where: { routeId: route.id }, select: { routeId: true } });
+  const v2 = { dikelola: keputusan.enabled === true || !!stateV2, pagarV1: flags[V2_FLAGS.DELIVERY_V1_WRITER_FENCE]?.enabled === true };
+  return { unit, route, jobRute, jobUnit: jobUnit.map((j) => j.job), runs, v2 };
 }
 
-function nilaiPreconditions({ unit, route, jobUnit }, waktuTerkirim) {
+function nilaiPreconditions({ unit, route, jobUnit, v2 }, waktuTerkirim) {
   const rintangan = [];
   const sudahDiRute = jobUnit.find((j) => j.type === "DELIVERY" && j.routeId === route.id && j.status === "COMPLETED");
   if (sudahDiRute && unit.status === "DELIVERED") return { rintangan, sudahDiterapkan: true, jobSudahAda: sudahDiRute };
+  if (v2.dikelola) rintangan.push({ kode: "RUTE_DI_DELIVERY_V2", pesan: `Rute ${route.code} dikelola Delivery V2 (writer/state V2); koreksi V1 langsung ditolak — gunakan command V2` });
+  if (v2.pagarV1) rintangan.push({ kode: "DELIVERY_V1_DIPAGARI", pesan: "Penulisan Delivery V1 sedang dipagari (final catch-up V2); tunggu pagar dibuka" });
   if (route.status !== "COMPLETED") rintangan.push({ kode: "RUTE_BELUM_SELESAI", pesan: `Rute ${route.code} berstatus ${route.status}; koreksi ini khusus rute yang sudah selesai (untuk rute berjalan pakai Route Planner biasa)` });
   if (!UNIT_BISA_DIKOREKSI.includes(unit.status)) rintangan.push({ kode: "UNIT_STATUS_TIDAK_SESUAI", pesan: `Unit ${unit.unitCode} berstatus ${unit.status}` });
   if (unit.order.penjualanKaryawanId) rintangan.push({ kode: "ORDER_PKR", pesan: "Order Penjualan Karyawan memakai konfirmasi kesiapan fisik sendiri; tidak dikoreksi lewat jalur ini" });
