@@ -1,8 +1,8 @@
-// Generator skrip rilis bergerbang "Sales fleksibel + riwayat lengkap Produksi/Gudang" (backend + web, TANPA migrasi). Hasil: scripts/release-order-fleksibel-riwayat.sh dari templat scripts/templates/release-order-fleksibel-riwayat.sh.tpl.
+// Generator skrip rilis bergerbang "Status lintas workspace": Sales fleksibel + Route Planner bebas status Produksi + riwayat lengkap, SATU fungsi domain (backend + web, TANPA migrasi). Hasil: scripts/release-status-lintas-workspace.sh dari templat scripts/templates/release-status-lintas-workspace.sh.tpl.
 // Semua nilai bergantung-commit (allowlist, daftar berkas backend/frontend, migrasi live terakhir + jumlahnya, commit live wajib leluhur, berkas pelindung) dihitung dari git terhadap --base. Tidak ada nilai manual.
 //
-//   node scripts/gen-release-order-fleksibel-riwayat.cjs --base <SHA_LIVE>          # bangkitkan ulang (base = commit release aktif)
-//   node scripts/gen-release-order-fleksibel-riwayat.cjs --base <SHA_LIVE> --check  # gagal (exit 1) bila skrip tersimpan berbeda dari hasil bangkitan ulang
+//   node scripts/gen-release-status-lintas-workspace.cjs --base <SHA_LIVE>          # bangkitkan ulang (base = commit release aktif)
+//   node scripts/gen-release-status-lintas-workspace.cjs --base <SHA_LIVE> --check  # gagal (exit 1) bila skrip tersimpan berbeda dari hasil bangkitan ulang
 //
 // WAJIB dibangkitkan ulang dari commit FINAL setelah baseline live digabung. Skrip rilis menolak berkas di luar allowlist dan menolak perubahan backend/prisma (tanpa migrasi).
 "use strict";
@@ -12,22 +12,22 @@ const crypto = require("crypto");
 const { execFileSync } = require("child_process");
 
 const REPO = path.resolve(__dirname, "..");
-const TPL = "scripts/templates/release-order-fleksibel-riwayat.sh.tpl";
-const OUT = "scripts/release-order-fleksibel-riwayat.sh";
-const LIB_REH = "scripts/lib/rehearsal-kode-order-fleksibel-riwayat.mjs";
-const LIB_SMOKE = "scripts/lib/smoke-order-fleksibel-riwayat.mjs";
-const GENERATOR = "scripts/gen-release-order-fleksibel-riwayat.cjs";
-const CAND_BRANCH = "feat/order-fleksibel-produksi";
-const FILE_TETAP = [OUT, LIB_REH, LIB_SMOKE, GENERATOR, TPL, "scripts/rollback-guard-order-fleksibel-riwayat.sh"];
+const TPL = "scripts/templates/release-status-lintas-workspace.sh.tpl";
+const OUT = "scripts/release-status-lintas-workspace.sh";
+const LIB_REH = "scripts/lib/rehearsal-kode-status-lintas-workspace.mjs";
+const LIB_SMOKE = "scripts/lib/smoke-status-lintas-workspace.mjs";
+const GENERATOR = "scripts/gen-release-status-lintas-workspace.cjs";
+const CAND_BRANCH = "feat/status-lintas-workspace";
+const FILE_TETAP = [OUT, LIB_REH, LIB_SMOKE, GENERATOR, TPL, "scripts/rollback-guard-status-lintas-workspace.sh"];
 // Berkas yang HARUS identik antara base dan kandidat: Koreksi Gudang/ledger/jurnal/otorisasi/izin/Stock Count/opname, penerimaan Gudang, perintah tahap Produksi (override), dan Route Planner (armada).
 const GUARD_UNCHANGED = [
   "backend/src/services/warehouseCorrection.js", "backend/src/routes/gudangKoreksi.js", "backend/src/services/inventoryLedger.js", "backend/src/routes/materialIssue.js", "backend/src/routes/stockAdjustment.js", "backend/src/routes/goodsReceipt.js", "backend/src/routes/returnRecord.js", "backend/src/routes/stockTransfer.js",
   "backend/src/routes/stockCount.js", "backend/src/services/opnameCutover.js", "backend/src/services/opnameMatriks.js", "backend/src/services/pergerakanSesiHitung.js",
   "backend/src/services/finance/journal.js", "backend/src/middleware/authorize.js", "backend/src/middleware/auth.js", "backend/src/constants/permissions.js",
-  "backend/src/services/productionStepCommandService.js", "backend/src/services/unitStageEngine.js", "backend/src/services/orderStatusSync.js", "backend/src/routes/armada.js", "backend/src/services/deliveryMenungguKonfirmasi.js",
+  "backend/src/services/productionStepCommandService.js", "backend/src/services/orderStatusSync.js", "backend/src/services/deliveryMenungguKonfirmasi.js",
 ];
 // Commit live yang wajib leluhur: Route Planner bebas status produksi (d66f36ad), Gudang UX T2 (f293c587), manifest barang (229755d6), Koreksi Gudang (08d62e7d), Produksi override (799d3e93), Riwayat Referensi (56b87721).
-const LIVE_ANCESTORS_REF = ["d66f36ad", "f293c587", "229755d6", "08d62e7d", "799d3e93", "56b87721"];
+const LIVE_ANCESTORS_REF = ["d66f36ad", "f293c587", "229755d6", "08d62e7d", "799d3e93", "56b87721", "442d5c13", "ca9bdea7", "694f2184"];
 // Teks yang HARUS ada di dist baru (fitur rilis ini; belum ada di dist live) dan teks fitur live yang HARUS tetap ada.
 const DIST_BARU = ["pelaku tidak tercatat", "Sumber riwayat", "Status order bisa diubah (Batal, Siap Kirim, Terkirim)"];
 const DIST_LAMA = ["Konfirmasi Barang Jadi", "Selesaikan Produksi", "Beranda Gudang", "Ajukan Koreksi Stok", "Tetapkan Siap Kirim", "Admin override: Siap Kirim", "Produksi unit ini belum selesai — tidak menahan pengiriman"];

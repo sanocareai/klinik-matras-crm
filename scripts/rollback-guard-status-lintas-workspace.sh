@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# RINGKASAN ROLLBACK KODE — "Sales fleksibel + riwayat lengkap" (baca-saja). Rollback kode SELALU aman: rilis ini tanpa migrasi dan tidak ada kode lama yang bergantung pada data baru.
+# RINGKASAN ROLLBACK KODE — "Status lintas workspace" (Sales fleksibel + Route Planner + riwayat + fungsi domain tunggal) (baca-saja). Rollback kode SELALU aman: rilis ini tanpa migrasi dan tidak ada kode lama yang bergantung pada data baru.
 # Yang berubah karena aturan baru (order dibatalkan/ditandai Siap Kirim/Terkirim oleh Sales dengan Run berjalan) TIDAK dibalik oleh rollback kode: Run/rencana/permintaan bahan yang sudah diselaraskan tetap
 # sebagaimana tercatat, dan jejak PRODUCTION_FOLLOWS_ORDER tetap di activity_events (kode lama menampilkannya sebagai jenis tak dikenal). Kode lama hanya kembali MENOLAK perubahan Sales berikutnya selama Run berjalan.
 # Skrip ini hanya melaporkan jumlahnya; exit 0 selalu (tidak ada syarat yang menolak rollback).
@@ -12,4 +12,7 @@ echo "Release aktif: $RELEASE_DIR"
 echo "  Jejak penyelarasan Sales->Produksi (PRODUCTION_FOLLOWS_ORDER) ... $(q "select count(*) from activity_events where event_type = 'PRODUCTION_FOLLOWS_ORDER'")"
 echo "  ... di antaranya pembatalan order ................................ $(q "select count(*) from activity_events where event_type = 'PRODUCTION_FOLLOWS_ORDER' and metadata->>'aksi' = 'CANCEL'")"
 echo "  Run dilepas karena status order (SALES_STATUS_CHANGE) ............ $(q "select count(*) from production_runs_v2 where delivery_release->>'kind' = 'SALES_STATUS_CHANGE'")"
-echo "AMAN: rollback KODE diperbolehkan (tanpa migrasi). Data yang sudah diselaraskan tidak dibalik oleh rollback."
+echo "  Antrean Retur Bahan Gudang PENDING dari pembatalan order ......... $(q "select count(*) from production_material_returns_v2 where status = 'PENDING'")"
+echo "  Koreksi pengiriman manual ke rute selesai (DELIVERY_MANUAL_RECORDED) $(q "select count(*) from activity_events where event_type = 'DELIVERY_MANUAL_RECORDED'")"
+echo "  Run dilepas karena dispatch Route Planner (DISPATCH_ROUTE_PLANNER) . $(q "select count(*) from production_runs_v2 where delivery_release->>'kind' = 'DISPATCH_ROUTE_PLANNER'")"
+echo "AMAN: rollback KODE diperbolehkan (tanpa migrasi). Data yang sudah diselaraskan/dikoreksi tidak dibalik oleh rollback."

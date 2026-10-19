@@ -86,7 +86,8 @@ export async function ubahStatusUnitInTx(tx, p) {
   if (tolak.length > 0) {
     const kode = tolak[0].kode;
     throw new StatusLintasError(
-      `Tidak bisa ${ke === KE_STATUS.BATAL ? "membatalkan" : "mengubah"} — unit ${tolak.map((t) => `${t.unitCode} ${t.pesan}`).join(", ")}.`,
+      // Pilihan tindakan koreksi ikut dalam pesan (layar Sales menampilkan `error`; daftar terstrukturnya tetap ada di `pilihanKoreksi`).
+      `Tidak bisa ${ke === KE_STATUS.BATAL ? "membatalkan" : "mengubah"} — unit ${tolak.map((t) => `${t.unitCode} ${t.pesan}`).join(", ")}. Yang bisa dilakukan: ${tolak[0].pilihan.map((p, i) => `(${i + 1}) ${p}`).join(" ")}`,
       409, kode, [...tolak[0].pilihan], { unitCodes: tolak.map((t) => t.unitCode) },
     );
   }

@@ -1,4 +1,4 @@
-// Smoke BACA-SAJA rilis "Sales fleksibel + riwayat lengkap" terhadap backend yang SUDAH melayani (dijalankan di container baru). Tidak membatalkan/mengubah order, Run, rencana, permintaan bahan, stok, jurnal, atau PO.
+// Smoke BACA-SAJA rilis "Status lintas workspace" terhadap backend yang SUDAH melayani (dijalankan di container baru). Tidak membatalkan/mengubah order, Run, rencana, permintaan bahan, stok, jurnal, atau PO.
 // Penolakan diuji hanya pada pintu yang gagal SEBELUM menyentuh data (tanpa token, tanpa izin, order tidak ada).
 import { createRequire } from "node:module";
 const require = createRequire(process.cwd() + "/");
@@ -37,6 +37,9 @@ const keadaan = async () => ({
   jejakSelaras: await hitung("select count(*)::int n from activity_events where event_type = 'PRODUCTION_FOLLOWS_ORDER'"),
   pergerakan: await hitung("select count(*)::int n from stock_movements"),
   transisiOrder: await hitung("select count(*)::int n from order_status_transitions"),
+  job: await hitung("select count(*)::int n from jobs"),
+  jobUnit: await hitung("select count(*)::int n from job_units"),
+  retur: await hitung("select count(*)::int n from production_material_returns_v2"),
 });
 const awal = await keadaan();
 
@@ -48,6 +51,11 @@ const patchTak = await api("PATCH", `/api/orders/${nol}`, tA, { status: "CANCELL
 rec("ubah status order yang tidak ada → 404 (tanpa menulis)", patchTak.status === 404, `${patchTak.status} ${patchTak.json?.error ?? ""}`);
 const batalTak = await api("POST", `/api/orders/${nol}/cancel`, tA, { reason: "uji smoke" });
 rec("batalkan order yang tidak ada → 404 (tanpa menulis)", batalTak.status === 404, `${batalTak.status} ${batalTak.json?.error ?? ""}`);
+
+// ── Route Planner: POST /jobs menolak sebelum menyentuh data (unit tidak ada / tanpa token) ──
+rec("buat job tanpa token → 401", (await api("POST", "/api/armada/jobs", null, { type: "DELIVERY", unitIds: [nol] })).status === 401);
+const jobTak = await api("POST", "/api/armada/jobs", tA, { type: "DELIVERY", unitIds: [nol], scheduledDate: "2099-01-01" });
+rec("buat job untuk unit yang tidak ada → 400 (tanpa menulis)", jobTak.status === 400, `${jobTak.status} ${jobTak.json?.error ?? ""}`);
 
 // ── Riwayat Unit 360: sumber + nama PIC pada unit nyata ──
 const unitRun = await prisma.$queryRawUnsafe("select u.id::text id, u.unit_code code from units u join production_runs_v2 r on r.unit_id = u.id order by r.created_at desc limit 5");
@@ -74,7 +82,7 @@ rec("Finance: daftar PO tetap 200", (await api("GET", "/api/finance/purchase-ord
 
 // ── Tidak ada tulisan oleh smoke ──
 const akhir = await keadaan();
-rec("smoke tidak menulis: status order/unit/Run/rencana/reservasi/permintaan bahan, jejak penyelarasan, pergerakan stok, dan transisi order tidak berubah", JSON.stringify(akhir) === JSON.stringify(awal), JSON.stringify({ awal, akhir }));
+rec("smoke tidak menulis: status order/unit/Run/rencana/reservasi/permintaan bahan, jejak penyelarasan, pergerakan stok, transisi order, job, job_units, dan antrean retur bahan tidak berubah", JSON.stringify(akhir) === JSON.stringify(awal), JSON.stringify({ awal, akhir }));
 await prisma.$disconnect();
 console.log("\nRINGKASAN smoke: " + fail + " gagal, " + dilewati + " dilewati (SKIP)");
 console.log("SMOKE_HASIL fail=" + fail + " skip=" + dilewati);

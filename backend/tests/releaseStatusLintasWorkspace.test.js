@@ -1,4 +1,4 @@
-// Tes generator + skrip rilis "Sales fleksibel + riwayat lengkap Produksi/Gudang" — TANPA menyentuh produksi, tanpa jaringan.
+// Tes generator + skrip rilis "Status lintas workspace" (Sales fleksibel + Route Planner + riwayat + fungsi domain tunggal + koreksi Rika) — TANPA menyentuh produksi, tanpa jaringan.
 // Mengunci: rilis TANPA migrasi/skema/dependensi, ancestry live (Gudang/Produksi/Finance wajib leluhur), berkas pelindung identik, urutan (preflight → backup → build → kode-baru-terhadap-restore → pra-switch → switch → smoke),
 // smoke BACA-SAJA, rehearsal menulis HANYA di dalam transaksi yang selalu dibatalkan, guard rollback, dan konsistensi aturan (order PKR dikecualikan) di skrip, rehearsal, smoke, dan guard.
 import test from "node:test";
@@ -11,14 +11,14 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const require = createRequire(import.meta.url);
-const { bangkitkan } = require(path.join(root, "scripts/gen-release-order-fleksibel-riwayat.cjs"));
+const { bangkitkan } = require(path.join(root, "scripts/gen-release-status-lintas-workspace.cjs"));
 const lf = (t) => t.replace(/\r\n/g, "\n");
 const baca = (rel) => lf(fs.readFileSync(path.join(root, rel), "utf8"));
 const punyaBash = spawnSync("bash", ["-c", "exit 0"]).status === 0;
 const berkasUji = ["backend/src/routes/orders.js", "backend/src/services/orderProduksiSelaras.js", "backend/src/services/productionRiwayatService.js", "frontend/src/features/production/UnitOverviewDrawer.jsx"];
 const masukan = (o = {}) => ({
-  tplSrc: baca("scripts/templates/release-order-fleksibel-riwayat.sh.tpl"), berkasList: berkasUji, liveMigTerakhir: "20261220090000_gudang_koreksi_dokumen", liveMigJumlah: 260,
-  liveAncestors: ["1".repeat(40), "2".repeat(40)], rehNode: baca("scripts/lib/rehearsal-kode-order-fleksibel-riwayat.mjs"), smokeNode: baca("scripts/lib/smoke-order-fleksibel-riwayat.mjs"), ...o,
+  tplSrc: baca("scripts/templates/release-status-lintas-workspace.sh.tpl"), berkasList: berkasUji, liveMigTerakhir: "20261220090000_gudang_koreksi_dokumen", liveMigJumlah: 260,
+  liveAncestors: ["1".repeat(40), "2".repeat(40)], rehNode: baca("scripts/lib/rehearsal-kode-status-lintas-workspace.mjs"), smokeNode: baca("scripts/lib/smoke-status-lintas-workspace.mjs"), ...o,
 });
 const { script, ringkasan } = bangkitkan(masukan());
 
@@ -31,8 +31,8 @@ test("generator: deterministik, tanpa placeholder tersisa, pin migrasi live = 26
 });
 
 test("skrip hasil bangkitan: sintaks bash valid", { skip: !punyaBash }, () => {
-  const tmp = fs.mkdtempSync(path.join(fs.realpathSync(process.env.TEMP || "/tmp"), "ofr-"));
-  const f = path.join(tmp, "ofr.sh"); fs.writeFileSync(f, script);
+  const tmp = fs.mkdtempSync(path.join(fs.realpathSync(process.env.TEMP || "/tmp"), "slw-"));
+  const f = path.join(tmp, "slw.sh"); fs.writeFileSync(f, script);
   const r = spawnSync("bash", ["-n", f], { encoding: "utf8" }); assert.equal(r.status, 0, r.stderr);
   fs.rmSync(tmp, { recursive: true, force: true });
 });
@@ -41,14 +41,14 @@ test("generator menolak masukan tidak aman: prisma/migrasi, dependensi, berkas p
   assert.throws(() => bangkitkan(masukan({ berkasList: [...berkasUji, "backend/prisma/schema.prisma"] })), /prisma/);
   assert.throws(() => bangkitkan(masukan({ berkasList: [...berkasUji, "backend/prisma/migrations/20261230000000_x/migration.sql"] })), /prisma/);
   assert.throws(() => bangkitkan(masukan({ berkasList: [...berkasUji, "frontend/package.json"] })), /dependensi/);
-  for (const f of ["backend/src/services/warehouseCorrection.js", "backend/src/routes/goodsReceipt.js", "backend/src/services/inventoryLedger.js", "backend/src/services/finance/journal.js", "backend/src/services/productionStepCommandService.js", "backend/src/services/unitStageEngine.js", "backend/src/services/orderStatusSync.js", "backend/src/routes/armada.js", "backend/src/services/deliveryMenungguKonfirmasi.js"]) {
+  for (const f of ["backend/src/services/warehouseCorrection.js", "backend/src/routes/goodsReceipt.js", "backend/src/services/inventoryLedger.js", "backend/src/services/finance/journal.js", "backend/src/services/productionStepCommandService.js", "backend/src/services/orderStatusSync.js", "backend/src/services/deliveryMenungguKonfirmasi.js"]) {
     assert.throws(() => bangkitkan(masukan({ berkasList: [...berkasUji, f] })), /pelindung/, f);
   }
 });
 
 test("allowlist: berkas rilis ini lolos; migrasi/schema/dist/berkas pelindung/package tidak", () => {
   const re = new RegExp(script.match(/^ALLOWED_RE='(.*)'$/m)[1]);
-  for (const f of [...berkasUji, "scripts/release-order-fleksibel-riwayat.sh", "scripts/rollback-guard-order-fleksibel-riwayat.sh"]) assert.ok(re.test(f), f);
+  for (const f of [...berkasUji, "scripts/release-status-lintas-workspace.sh", "scripts/rollback-guard-status-lintas-workspace.sh"]) assert.ok(re.test(f), f);
   for (const f of ["backend/prisma/schema.prisma", "backend/prisma/migrations/20261230000000_x/migration.sql", "frontend/dist/index.html", "backend/src/routes/goodsReceipt.js", "backend/package.json", "frontend/package-lock.json", "driver-mobile/src/App.js"]) assert.ok(!re.test(f), "harus ditolak: " + f);
 });
 
@@ -58,7 +58,8 @@ test("gerbang: ancestry live wajib leluhur, TANPA prisma/dependensi/Docker/drive
     "driver-mobile berubah — rilis ini tidak membawa app Driver"]) assert.ok(script.includes(s), "gerbang hilang: " + s);
   assert.doesNotMatch(script, /prisma migrate deploy/, "rilis ini TIDAK menjalankan migrate deploy");
   assert.ok(script.includes("npx prisma migrate status"), "hanya memeriksa status");
-  assert.match(script, /^GUARD_UNCHANGED=".*goodsReceipt\.js.*productionStepCommandService\.js.*armada\.js.*"$/m);
+  assert.match(script, /^GUARD_UNCHANGED=".*goodsReceipt\.js.*productionStepCommandService\.js.*"$/m);
+  assert.doesNotMatch(script.match(/^GUARD_UNCHANGED="(.*)"$/m)[1], /armada\.js|unitStageEngine\.js/, "armada.js dan unitStageEngine.js sengaja berubah di rilis ini (fungsi domain tunggal)");
 });
 
 test("urutan: preflight keluar sebelum backup; build image sebelum rehearsal kode; rehearsal kode sebelum pra-switch dan switch; smoke sesudah switch", () => {
@@ -70,7 +71,7 @@ test("urutan: preflight keluar sebelum backup; build image sebelum rehearsal kod
 });
 
 test("smoke: BACA-SAJA (tanpa create/update/delete/executeRaw; satu-satunya PATCH/POST adalah penolakan sebelum menyentuh data pada order yang TIDAK ADA) dan menolak ringkasan tidak lulus", () => {
-  const smoke = baca("scripts/lib/smoke-order-fleksibel-riwayat.mjs");
+  const smoke = baca("scripts/lib/smoke-status-lintas-workspace.mjs");
   assert.doesNotMatch(smoke.replace(/\/\/.*$/gm, ""), /\.(create|update|updateMany|delete|deleteMany|upsert|createMany|\$executeRaw\w*)\(/);
   const tulis = [...smoke.matchAll(/api\("(POST|PATCH)", `([^`]+)`/g)];
   assert.ok(tulis.length >= 4, "uji penolakan ada");
@@ -80,8 +81,8 @@ test("smoke: BACA-SAJA (tanpa create/update/delete/executeRaw; satu-satunya PATC
   assert.ok(script.includes("smoke test tidak mencetak ringkasan SMOKE_HASIL yang lulus"));
 });
 
-test("rehearsal kode: satu-satunya tulisan (selaraskanProduksiDenganOrderInTx) terjadi DI DALAM transaksi yang selalu dibatalkan; produksi tidak disentuh", () => {
-  const reh = baca("scripts/lib/rehearsal-kode-order-fleksibel-riwayat.mjs").replace(/\/\/.*$/gm, "");
+test("rehearsal kode: semua tulisan (penyelarasan, fungsi domain, koreksi Rika) terjadi DI DALAM transaksi yang selalu dibatalkan; produksi tidak disentuh", () => {
+  const reh = baca("scripts/lib/rehearsal-kode-status-lintas-workspace.mjs").replace(/\/\/.*$/gm, "");
   assert.doesNotMatch(reh, /\.(create|updateMany|delete|deleteMany|upsert|createMany|\$executeRaw\w*)\(/);
   const panggilan = [...reh.matchAll(/selaraskanProduksiDenganOrderInTx\(tx,/g)];
   assert.equal(panggilan.length, 3, "tiga percobaan (batal pada order nyata [per order], siap kirim, order tanpa Run)");
@@ -92,6 +93,28 @@ test("rehearsal kode: satu-satunya tulisan (selaraskanProduksiDenganOrderInTx) t
     assert.ok(reh.indexOf("prisma.$transaction(async (tx) =>", awal + 10) === -1 || reh.indexOf("prisma.$transaction(async (tx) =>", awal + 10) > batal, "tidak ada transaksi lain di antara pemanggilan dan pembatalan");
   }
   assert.ok(script.includes("fp-all-sebelum") && script.includes("fp-all-sesudah"), "sidik jari seluruh tabel sebelum = sesudah");
+  // fungsi domain + koreksi Rika: setiap pemanggilan penulis juga di dalam transaksi yang dibatalkan
+  for (const pola of [/ubahStatusUnitInTx\(tx,/g, /terapkanKoreksiPengirimanRuteInTx\(tx,/g]) {
+    const semua = [...reh.matchAll(pola)];
+    assert.ok(semua.length >= 1, String(pola));
+    for (const m of semua) {
+      const awal = reh.lastIndexOf("prisma.$transaction(async (tx) =>", m.index);
+      const batal = reh.indexOf("throw new Batal()", m.index);
+      assert.ok(awal >= 0 && batal > m.index, "di dalam transaksi yang dibatalkan: " + pola);
+    }
+  }
+  assert.match(reh, /REHEARSAL_RIKA status=/);
+});
+
+test("koreksi Rika: skrip CLI baca-saja secara bawaan; penerapan butuh --terapkan + konfirmasi persis + aktor + alasan; rilis TIDAK menerapkannya", () => {
+  const cli = baca("backend/scripts/koreksi-pengiriman-rute.js");
+  assert.match(cli, /if \(!args\.terapkan && !args\.rehearsal\)/, "mode bawaan = pratinjau");
+  assert.match(cli, /KONFIRMASI_SALAH/);
+  assert.ok(cli.includes("KOREKSI-"));
+  assert.ok(script.includes("koreksi-pengiriman-rute.js --unit=RES-03102026-018-U1 --rute=RTE-161026-02"), "rilis hanya memanggil pratinjau");
+  assert.ok(!/--terapkan/.test(script.replace(/#.*$/gm, "")), "rilis tidak pernah memanggil --terapkan");
+  const svc = baca("backend/src/services/koreksiPengirimanRute.js").replace(/\/\/.*$/gm, "");
+  assert.doesNotMatch(svc, /notify|sendWhats|broadcast/i, "koreksi tidak memanggil lapisan notifikasi");
 });
 
 test("konsistensi aturan: order PKR tidak berubah; Sales mengubah status unit HANYA lewat fungsi domain tunggal di empat jalur (batal, dropdown CANCELLED/DELIVERED/READY, endpoint Batalkan Order) dan fungsi itu memanggil penyelarasan Produksi; riwayat membaca bukti dengan filter DOC_ dan tidak menulis; buka-kembali tetap dipagari", () => {
@@ -110,18 +133,18 @@ test("konsistensi aturan: order PKR tidak berubah; Sales mengubah status unit HA
 });
 
 test("guard rollback: baca-saja dan selalu informasi (exit 0); script rilis menunjuknya", () => {
-  const guard = baca("scripts/rollback-guard-order-fleksibel-riwayat.sh");
+  const guard = baca("scripts/rollback-guard-status-lintas-workspace.sh");
   assert.match(guard, /default_transaction_read_only=on/);
   assert.match(guard, /PRODUCTION_FOLLOWS_ORDER/);
   assert.doesNotMatch(guard, /exit 1/, "rollback kode selalu aman: tidak ada syarat yang menolak");
   assert.doesNotMatch(guard.replace(/#.*$/gm, ""), /\b(insert|update|delete|truncate|drop|alter)\b/i);
-  assert.ok(script.includes("rollback-guard-order-fleksibel-riwayat.sh"));
+  assert.ok(script.includes("rollback-guard-status-lintas-workspace.sh"));
   assert.match(script, /tidak ada perubahan database untuk dipulihkan/i);
 });
 
-test("skrip tersimpan = hasil bangkitan ulang dari repo (bila sudah dibangkitkan)", { skip: !fs.existsSync(path.join(root, "scripts/release-order-fleksibel-riwayat.sh")) }, () => {
-  const tersimpan = baca("scripts/release-order-fleksibel-riwayat.sh");
-  assert.ok(tersimpan.includes("RILIS \"SALES FLEKSIBEL + RIWAYAT LENGKAP"));
+test("skrip tersimpan = hasil bangkitan ulang dari repo (bila sudah dibangkitkan)", { skip: !fs.existsSync(path.join(root, "scripts/release-status-lintas-workspace.sh")) }, () => {
+  const tersimpan = baca("scripts/release-status-lintas-workspace.sh");
+  assert.ok(tersimpan.includes("RILIS \"STATUS LINTAS WORKSPACE\""));
   assert.ok(!/@@[A-Z_]+@@/.test(tersimpan));
   assert.ok(!tersimpan.includes("\r"));
 });

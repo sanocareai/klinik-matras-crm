@@ -1,22 +1,25 @@
 #!/usr/bin/env bash
-# RILIS "SALES FLEKSIBEL + RIWAYAT LENGKAP PRODUKSI/GUDANG" — BACKEND + WEB, TANPA MIGRASI. FAIL-CLOSED. Workflow RELEASE-DIRECTORY di atas release aktif (BASE_SHA = release live saat ini).
+# RILIS "STATUS LINTAS WORKSPACE" (Sales fleksibel + Route Planner bebas status Produksi + riwayat lengkap + SATU fungsi domain) — BACKEND + WEB, TANPA MIGRASI. FAIL-CLOSED. Workflow RELEASE-DIRECTORY di atas release aktif (BASE_SHA = release live saat ini).
+#   SATU fungsi domain (services/statusUnitLintasWorkspace.js: ubahStatusUnitInTx) = satu-satunya jalur status unit lintas workspace; Sales (dropdown + Batalkan Order), Delivery (berangkat/terkirim/gagal), dan Admin override memanggilnya.
+#   Kelayakan Route Planner: unit & order sah, belum berangkat/terkirim/batal, tidak ada job pengiriman aktif ganda; status Produksi bukan syarat. PKR tetap aturan khusus.
+#   Koreksi Rika (RES-03102026-018-U1 → RTE-161026-02) TIDAK dijalankan oleh rilis ini: hanya PRATINJAU baca-saja (fase 8b) dan rehearsal pada salinan (fase 5b); penerapan = langkah terpisah atas persetujuan Owner (scripts koreksi-pengiriman-rute.js).
 #   Keputusan Owner 19 Okt 2026: Sales boleh membatalkan order / menandainya Siap Kirim / Terkirim walau unit masih punya Production Run yang berjalan; Produksi & Gudang DISELARASKAN otomatis di transaksi yang sama:
 #     • Batalkan  — Run dibatalkan (fase/operasi ditutup), permintaan bahan yang belum diserahkan dibatalkan + reservasi dilepas, rencana dibatalkan; bahan yang SUDAH diserahkan TIDAK dibalik otomatis (tanpa pergerakan stok)
-#                   dan dilaporkan di riwayat supaya Gudang mengembalikannya lewat Retur Bahan/Penyesuaian.
+#                   dan dicatat sebagai baris PENDING di Antrean Retur Bahan Gudang (Gudang menerima jumlah nyata lewat jalur resmi; pembatalan tidak menunggu koreksi stok).
 #     • Siap Kirim/Terkirim — Run tetap berjalan, ditandai "dilepas untuk pengiriman" (kind SALES_STATUS_CHANGE; bukan override Admin, bukan hasil pemeriksaan/QC).
 #   Riwayat: tab Aktivitas Unit 360 kini memuat SEMUA tindakan Produksi/Gudang/Sales/Pengiriman dengan NAMA PIC, waktu, dan rincian sebelum → sesudah (activity_events, bukti per versi, custody, QC, riwayat status order).
 #   Tanpa migrasi, tanpa saklar, tanpa perubahan skema/dependensi. Order penjualan karyawan (PKR) tidak berubah. Buka-kembali order untuk pengiriman/pickup tetap dipagari (V2).
-#   Produksi: smoke baca-saja + penolakan sebelum menyentuh data; rilis ini tidak membatalkan/mengubah order, Run, rencana, atau permintaan bahan apa pun.
+#   Produksi: smoke baca-saja + penolakan sebelum menyentuh data; rilis ini tidak membatalkan/mengubah order, Run, rencana, job, atau permintaan bahan apa pun.
 # URUTAN AMAN: (1) gerbang sumber (ancestry live, allowlist, TANPA prisma/dependensi, berkas pelindung identik) → (2) audit produksi baca-saja + sidik jari beku → (3) backup + checksum → (4) build web + image
-#              → (5b) kode BARU terhadap restore backup nyata (penyelarasan dicoba DI DALAM transaksi yang dibatalkan; sidik jari sebelum=sesudah) → (7) switch → (8) verifikasi + smoke baca-saja + sidik jari beku.
+#              → (5b) kode BARU terhadap restore backup nyata (fungsi domain + koreksi Rika dicoba DI DALAM transaksi yang dibatalkan; sidik jari sebelum=sesudah) → (7) switch → (8) verifikasi + smoke baca-saja + sidik jari beku.
 #
-#   cat scripts/release-order-fleksibel-riwayat.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/ofr.sh'
-#   ssh ubuntu@43.133.152.6 'bash /tmp/ofr.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'      # baca-saja: produksi TIDAK diubah
-#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/ofr.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/ofr.out 2>&1 < /dev/null &'
+#   cat scripts/release-status-lintas-workspace.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/slw.sh'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/slw.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'      # baca-saja: produksi TIDAK diubah
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/slw.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/slw.out 2>&1 < /dev/null &'
 #
-# ROLLBACK KODE: aman kapan saja (tag image rollback-pre-ofr-<sha8>); tidak ada perubahan database untuk dipulihkan. Order yang sudah dibatalkan/diubah Sales beserta Run/rencana/permintaan bahan yang diselaraskan TETAP
-#   sebagaimana tercatat (kode lama hanya kembali menolak perubahan baru selama Run berjalan). Periksa ringkasan dengan scripts/rollback-guard-order-fleksibel-riwayat.sh (baca-saja, selalu informasi).
-# (dibangkitkan oleh scripts/gen-release-order-fleksibel-riwayat.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 @@TEMPLATE_SHA@@)
+# ROLLBACK KODE: aman kapan saja (tag image rollback-pre-slw-<sha8>); tidak ada perubahan database untuk dipulihkan. Order yang sudah dibatalkan/diubah Sales beserta Run/rencana/permintaan bahan yang diselaraskan TETAP
+#   sebagaimana tercatat (kode lama hanya kembali menolak perubahan baru selama Run berjalan). Periksa ringkasan dengan scripts/rollback-guard-status-lintas-workspace.sh (baca-saja, selalu informasi).
+# (dibangkitkan oleh scripts/gen-release-status-lintas-workspace.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 @@TEMPLATE_SHA@@)
 set -Eeuo pipefail
 umask 077
 
@@ -46,7 +49,7 @@ NEW_DIR="$RELEASES/$DEPLOY_SHORT"
 PREFLIGHT_ONLY=0
 for a in "$@"; do [ "$a" = "--preflight-only" ] && PREFLIGHT_ONLY=1; done
 TS="$(date +%Y%m%d_%H%M%S)"
-BK_DIR="$HOME/release-backups/order-fleksibel-riwayat-${DEPLOY_SHORT}-${TS}"
+BK_DIR="$HOME/release-backups/status-lintas-workspace-${DEPLOY_SHORT}-${TS}"
 PHASE="init"; BACKUP_FILE=""; ROLLBACK_TAG=""; PREV_DIR=""; PREV_IMG_ID=""; IMG_NAME=""
 
 say()  { printf '\n\033[1m== %s\033[0m\n' "$*"; }
@@ -70,7 +73,7 @@ Rollback kode setelah switch (TANPA perubahan database; tidak ada yang dipulihka
    cd ${PREV_DIR:-<release-sebelumnya>}
    docker tag ${ROLLBACK_TAG:-<tag-rollback>} ${IMG_NAME:-klinik-matras-backend:latest}
    SANSS_PERSIST_ROOT=${PERSIST} docker compose -p ${PROJECT} -f docker-compose.yml -f docker-compose.release.yml up -d --no-deps --force-recreate backend
-Ringkasan (baca-saja): bash ${NEW_DIR}/scripts/rollback-guard-order-fleksibel-riwayat.sh — rollback kode selalu aman; data yang sudah diselaraskan tidak dibalik.
+Ringkasan (baca-saja): bash ${NEW_DIR}/scripts/rollback-guard-status-lintas-workspace.sh — rollback kode selalu aman; data yang sudah diselaraskan tidak dibalik.
 ─────────────────────────────────────────────────────────────────────────
 EOF
 }
@@ -82,8 +85,8 @@ for lf in /tmp/release-*.lock; do
   [ -e "$lf" ] || continue
   ( exec 8>"$lf"; flock -n 8 ) || die "deploy lain sedang berjalan (kunci ${lf} dipegang)"
 done
-exec 9>/tmp/release-order-fleksibel-riwayat.lock; flock -n 9 || die "rilis ini sudah berjalan"
-OTHER="$(pgrep -af 'release-[a-z0-9-]+\.sh|docker compose .*(up|build)|docker build|prisma migrate' | grep -v "ofr\.sh\|release-order-fleksibel-riwayat\|pgrep\|node src/index.js" | grep -v "$$" || true)"
+exec 9>/tmp/release-status-lintas-workspace.lock; flock -n 9 || die "rilis ini sudah berjalan"
+OTHER="$(pgrep -af 'release-[a-z0-9-]+\.sh|docker compose .*(up|build)|docker build|prisma migrate' | grep -v "slw\.sh\|release-status-lintas-workspace\|pgrep\|node src/index.js" | grep -v "$$" || true)"
 [ -z "$OTHER" ] || { printf '%s\n' "$OTHER" | sed 's/^/        /'; die "ada proses deploy/build/migrasi lain yang berjalan"; }
 ok "tidak ada deploy lain"
 mkdir -p "$BK_DIR" "$HOME/release-src" "$HOME/backups"
@@ -218,7 +221,7 @@ ok "ruang disk cukup (tersedia ${AVAIL_KB} KB)"
 if [ "$PREFLIGHT_ONLY" = "1" ]; then say "Preflight selesai (--preflight-only): produksi TIDAK diubah"; trap - EXIT; exit 0; fi
 
 PHASE="3-backup"; say "3. Backup produksi + checksum"
-BACKUP_FILE="$HOME/backups/pre-ofr-${DEPLOY_SHORT}-${TS}.sql.gz"
+BACKUP_FILE="$HOME/backups/pre-slw-${DEPLOY_SHORT}-${TS}.sql.gz"
 dcp "$PREV_DIR" exec -T postgres pg_dump -U "$DB_USER" "$DB_NAME" </dev/null | gzip > "${BACKUP_FILE}.partial" || die "pg_dump gagal"
 gzip -t "${BACKUP_FILE}.partial" || die "arsip backup rusak"
 gzip -dc "${BACKUP_FILE}.partial" | tail -n 5 | grep 'PostgreSQL database dump complete' >/dev/null || die "dump tidak lengkap"
@@ -272,7 +275,7 @@ ok "${n} aset lama dibawa ke dist baru; index.html baru tetap hanya merujuk aset
 [ -n "$(grep -o 'index-[A-Za-z0-9_-]*\.js' "$NEW_DIR/frontend/dist/index.html" | sed -n 1p)" ] && [ -f "$NEW_DIR/frontend/dist/assets/$NEW_INDEX" ] || die "index/bundel baru rusak setelah membawa aset lama"
 
 PHASE="5-build-image"; say "5. Build image backend baru (backend lama tetap melayani)"
-ROLLBACK_TAG="${IMG_NAME%%:*}:rollback-pre-ofr-${DEPLOY_SHORT}"
+ROLLBACK_TAG="${IMG_NAME%%:*}:rollback-pre-slw-${DEPLOY_SHORT}"
 docker tag "$PREV_IMG_ID" "$ROLLBACK_TAG" || die "gagal menandai image lama"; ok "image lama ditandai ${ROLLBACK_TAG}"
 dcp "$NEW_DIR" build backend > "$BK_DIR/build.log" 2>&1 </dev/null || { tail -n 25 "$BK_DIR/build.log"; die "build image gagal (backend lama tetap berjalan)"; }
 NEW_IMG_ID="$(docker image inspect -f '{{.Id}}' "$IMG_NAME")"
@@ -280,8 +283,8 @@ NEW_IMG_ID="$(docker image inspect -f '{{.Id}}' "$IMG_NAME")"
 [ "$(docker inspect -f '{{.Image}}' "$CID_OLD")" = "$PREV_IMG_ID" ] || die "container aktif berubah saat build"
 ok "image baru ${NEW_IMG_ID:7:12}; container aktif masih ${PREV_IMG_ID:7:12}"
 
-PHASE="5b-rehearsal-kode"; say "5b. Kode BARU terhadap restore backup NYATA: restore bersih; riwayat unit dihitung pada unit nyata; penyelarasan batal/Siap Kirim/Terkirim dicoba di dalam transaksi yang DIBATALKAN; sidik jari sebelum = sesudah; DB sementara dihapus"
-REH_DB="rehearsal_ofr_${TS}"
+PHASE="5b-rehearsal-kode"; say "5b. Kode BARU terhadap restore backup NYATA: restore bersih; riwayat unit dihitung pada unit nyata; fungsi domain (batal/Siap Kirim/Terkirim/konflik) dan koreksi Rika dicoba di dalam transaksi yang DIBATALKAN; sidik jari sebelum = sesudah; DB sementara dihapus"
+REH_DB="rehearsal_slw_${TS}"
 dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d postgres -v ON_ERROR_STOP=1 -X -q -c "CREATE DATABASE \"${REH_DB}\"" </dev/null || die "gagal membuat DB rehearsal"
 reh_drop() { dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d postgres -X -q -c "DROP DATABASE IF EXISTS \"${REH_DB}\"" </dev/null >/dev/null 2>&1 || true; }
 RPSQL() { dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d "$REH_DB" -X -At -q -c "$1" </dev/null; }
@@ -345,7 +348,7 @@ PSQLN() { dcp "$NEW_DIR" exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" -X -A
 [ "$(PSQLN "select count(*) from _prisma_migrations where finished_at is not null and rolled_back_at is null")" = "$LIVE_MIG_JUMLAH" ] || die "jumlah migrasi terpasang berubah"
 dcp "$NEW_DIR" run --rm --no-deps -T backend npx prisma migrate status </dev/null 2>&1 | grep -i 'up to date' >/dev/null || die "migrate status produksi tidak 'up to date'"
 ok "${LIVE_MIG_JUMLAH} migrasi terpasang tidak berubah; migrate status up to date"
-PHASE="8b-smoke"; say "8b. Smoke test baca-saja: riwayat Unit 360 (sumber + nama PIC), penolakan sebelum menyentuh data, tidak ada order/Run/rencana/bahan yang berubah, Route Planner/override/Koreksi tetap utuh"
+PHASE="8b-smoke"; say "8b. Smoke test baca-saja: riwayat Unit 360 (sumber + nama PIC), penolakan sebelum menyentuh data, tidak ada order/Run/rencana/bahan/job yang berubah, Route Planner/override/Koreksi tetap utuh; PRATINJAU koreksi Rika (baca-saja)"
 dcp "$NEW_DIR" exec -T backend node --input-type=module - <<'NODE' | tee "$BK_DIR/smoke.log" || die "smoke test GAGAL"
 @@SMOKE_NODE@@
 NODE
@@ -354,6 +357,9 @@ SMOKE_SKIP="$(printf '%s' "$SMOKE_LINE" | sed -n 's/^SMOKE_HASIL fail=0 skip=\([
 [ -n "$SMOKE_SKIP" ] || die "smoke test tidak mencetak ringkasan SMOKE_HASIL yang lulus (jangan anggap lulus)"
 if [ "$SMOKE_SKIP" != "0" ]; then warn "smoke test lulus dengan ${SMOKE_SKIP} pemeriksaan DILEWATI (SKIP): lihat ${BK_DIR}/smoke.log. Ini BUKAN PASS untuk pemeriksaan yang dilewati."
 else ok "smoke test lulus"; fi
+# PRATINJAU koreksi Rika dengan kode LIVE terhadap data produksi (BACA-SAJA: mode bawaan skrip tidak membuka transaksi tulis). Informasi untuk Owner; TIDAK menggagalkan rilis.
+dcp "$NEW_DIR" exec -T backend node scripts/koreksi-pengiriman-rute.js --unit=RES-03102026-018-U1 --rute=RTE-161026-02 --waktu=2026-10-16T05:30:00Z </dev/null > "$BK_DIR/pratinjau-rika.json" 2>"$BK_DIR/pratinjau-rika.err" || true
+if [ -s "$BK_DIR/pratinjau-rika.json" ]; then ok "pratinjau koreksi Rika (baca-saja) tersimpan: ${BK_DIR}/pratinjau-rika.json — layak=$(grep -o '"layak": *[a-z]*' "$BK_DIR/pratinjau-rika.json" | head -n 1 | sed 's/.*: *//') sudahDiterapkan=$(grep -o '"sudahDiterapkan": *[a-z]*' "$BK_DIR/pratinjau-rika.json" | head -n 1 | sed 's/.*: *//')"; else warn "pratinjau koreksi Rika tidak menghasilkan keluaran (lihat ${BK_DIR}/pratinjau-rika.err); koreksi Rika TIDAK dijalankan oleh rilis ini"; fi
 OLD_ONLY="$(sed -n 1p "$OLD_ASSETS" || true)"
 if [ -n "$OLD_ONLY" ]; then
   [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "${PUBLIC_URL}/assets/${OLD_ONLY}")" = "200" ] || die "aset lama /assets/${OLD_ONLY} tidak bisa diunduh (404)"
@@ -384,4 +390,4 @@ $(basename "$w")"; done
 ) || echo "  (pembersihan dilewati)"
 trap - EXIT
 say "SELESAI — rilis ${DEPLOY_SHORT} aktif. Backup: ${BACKUP_FILE}. Image rollback: ${ROLLBACK_TAG}. Log: ${BK_DIR}/release.log"
-say "CATATAN: rilis ini tidak membatalkan/mengubah order, Run, rencana, atau permintaan bahan. Uji nyata pertama oleh Sales/Admin pada order uji yang disepakati Owner (bukan PO Ocean production); cek tab Aktivitas Unit 360 sesudahnya."
+say "CATATAN: rilis ini tidak membatalkan/mengubah order, Run, rencana, job, atau permintaan bahan, dan TIDAK menjalankan koreksi Rika (pratinjau: ${BK_DIR}/pratinjau-rika.json). Penerapan koreksi Rika = langkah terpisah atas persetujuan Owner. Uji nyata pertama oleh Sales/Admin pada order uji yang disepakati Owner (bukan PO Ocean production); cek tab Aktivitas Unit 360 sesudahnya."
