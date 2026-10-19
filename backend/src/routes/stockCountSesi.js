@@ -147,7 +147,7 @@ stockCountSesiRouter.get("/:id/kerja", requirePermission(P.INVENTORY_READ), waji
   } catch (err) { galat(err, res); }
 });
 
-/// ── Waktu pengamatan: aturan bersama ───────────────────────────────────────────────────────────────────────────────────────────────
+// ── Waktu pengamatan: aturan bersama ───────────────────────────────────────────────────────────────────────────────────────────────
 // observedAt dinyatakan petugas harus: tanggal valid, tidak di masa depan (toleransi 1 menit jam perangkat), dan tidak sebelum sesi dimulai (barang yang dihitung sebelum sesi ada bukan bagian sesi ini).
 function periksaWaktuPengamatan(nilai, count, sekarang) {
   const d = new Date(nilai);

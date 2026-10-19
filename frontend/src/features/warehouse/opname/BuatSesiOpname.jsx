@@ -9,23 +9,25 @@ import { MODE_LABEL, MODE_DESKRIPSI } from "./opnameLogic.js";
 
 // BUAT SESI STOCK OPNAME (sesi model 2): tiga pilihan jelas — Opname penuh (sekali pilih), Per kelompok (centang kelompok), Cycle Count (cari + centang bahan, maks. 50).
 // Pratinjau cakupan SELALU tampil sebelum sesi dibuat (dari server, baca-saja). Daftar Material ID disimpan di sesi saat dibuat; perubahan master sesudahnya tidak mengubah cakupan.
-const JENIS = [["RAW_MATERIAL", "Bahan baku"], ["WIP", "Setengah jadi"], ["FINISHED_GOODS", "Barang jadi"], ["CONSUMABLE", "Habis pakai (non-inventory)"], ["NONE", "Tanpa kategori"]];
+// Opname penuh / per kelompok mengikutkan bahan aktif yang SALDONYA DILACAK secara fisik (ada jejak stok) — bukan ditebak dari nama kategori. Bahan tidak dilacak tampil dengan alasannya dan bisa diikutkan beralasan.
 const inputCls = "w-full rounded-btn border border-line bg-surface px-2.5 py-2 text-[13px] text-ink outline-none focus:border-accent max-sm:min-h-11";
 
 export default function BuatSesiOpname({ open, onClose, onCreated }) {
-  const [mode, setMode] = useState(""); const [groups, setGroups] = useState([]); const [excludeJenis, setExcludeJenis] = useState([]); const [pilihan, setPilihan] = useState(new Map());
+  const [mode, setMode] = useState(""); const [groups, setGroups] = useState([]); const [ikutkan, setIkutkan] = useState(new Set()); const [ikutkanAlasan, setIkutkanAlasan] = useState(""); const [pilihan, setPilihan] = useState(new Map());
   const [q, setQ] = useState(""); const [bahan, setBahan] = useState({ items: [], total: 0, kelompok: [] }); const [kelFilter, setKelFilter] = useState("");
   const [pratinjau, setPratinjau] = useState(null); const [memuat, setMemuat] = useState(false); const [galat, setGalat] = useState("");
   const [tgl, setTgl] = useState(""); const [blind, setBlind] = useState(true); const [catatan, setCatatan] = useState(""); const [mulai, setMulai] = useState(false); const [petugas, setPetugas] = useState(""); const [staf, setStaf] = useState([]);
   const [sibuk, setSibuk] = useState(false); const [semuaKel, setSemuaKel] = useState([]);
   const urut = useRef(0);
 
-  useEffect(() => { if (!open) return; setMode(""); setGroups([]); setExcludeJenis([]); setPilihan(new Map()); setQ(""); setPratinjau(null); setGalat(""); setTgl(""); setBlind(true); setCatatan(""); setMulai(false); setPetugas(""); setSibuk(false);
+  useEffect(() => { if (!open) return; setMode(""); setGroups([]); setIkutkan(new Set()); setIkutkanAlasan(""); setPilihan(new Map()); setQ(""); setPratinjau(null); setGalat(""); setTgl(""); setBlind(true); setCatatan(""); setMulai(false); setPetugas(""); setSibuk(false);
     api.getUsers().then(setStaf).catch(() => {});
     api.pratinjauCakupanOpname({ mode: "FULL" }).then((r) => setSemuaKel(r.ringkasan.perKelompok)).catch(() => {}); // jumlah bahan aktif per kelompok untuk kartu kelompok
   }, [open]);
 
-  const badan = useMemo(() => ({ mode, groups, excludeJenis, materialIds: [...pilihan.keys()] }), [mode, groups, excludeJenis, pilihan]);
+  // Pratinjau (baca-saja) tidak boleh hilang hanya karena alasan belum diketik: server menolak "ikutkan" tanpa alasan, jadi pratinjau memakai alasan sementara. Membuat sesi tetap WAJIB alasan asli (bisaBuat).
+  const alasanAsli = ikutkanAlasan.trim();
+  const badan = useMemo(() => ({ mode, groups, ...(ikutkan.size ? { ikutkanTakDilacak: [...ikutkan], ikutkanAlasan: alasanAsli.length >= 3 ? alasanAsli : "(alasan belum diisi)" } : {}), materialIds: [...pilihan.keys()] }), [mode, groups, ikutkan, alasanAsli, pilihan]);
   const lengkap = mode === "FULL" || (mode === "GROUP" && groups.length > 0) || (mode === "ITEMS" && pilihan.size > 0);
   useEffect(() => {
     if (!open || !lengkap) { setPratinjau(null); return undefined; }
@@ -43,15 +45,16 @@ export default function BuatSesiOpname({ open, onClose, onCreated }) {
   }, [open, mode, q, kelFilter]);
 
   const ubahGrup = (k) => setGroups((g) => (g.includes(k) ? g.filter((x) => x !== k) : [...g, k]));
-  const ubahJenis = (k) => setExcludeJenis((g) => (g.includes(k) ? g.filter((x) => x !== k) : [...g, k]));
+  const ubahIkutkan = (id) => setIkutkan((s0) => { const n = new Set(s0); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const alasanIkutkanKurang = ikutkan.size > 0 && ikutkanAlasan.trim().length < 3;
   const ubahBahan = (b) => setPilihan((p) => { const n = new Map(p); if (n.has(b.id)) n.delete(b.id); else if (n.size < (pratinjau?.batasCycleCount ?? 50)) n.set(b.id, b); return n; });
   const penuhAktif = pratinjau?.sesiPenuhAktif && mode === "FULL";
-  const bisaBuat = lengkap && !!pratinjau && !memuat && !sibuk && pratinjau.ringkasan.masuk > 0 && !penuhAktif;
+  const bisaBuat = lengkap && !!pratinjau && !memuat && !sibuk && pratinjau.ringkasan.masuk > 0 && !penuhAktif && !alasanIkutkanKurang;
 
   async function buat() {
     if (!bisaBuat) return; setSibuk(true); setGalat("");
     try {
-      const r = await api.createStockCount({ ...badan, scheduledDate: tgl || undefined, blindCount: blind, assignedToId: petugas || undefined, notes: catatan || undefined, langsungMulai: mulai });
+      const r = await api.createStockCount({ ...badan, ...(ikutkan.size ? { ikutkanAlasan: alasanAsli } : {}), scheduledDate: tgl || undefined, blindCount: blind, assignedToId: petugas || undefined, notes: catatan || undefined, langsungMulai: mulai });
       onCreated?.(r);
     } catch (e) { setGalat(e.message); setSibuk(false); }
   }
@@ -77,14 +80,6 @@ export default function BuatSesiOpname({ open, onClose, onCreated }) {
             ))}
           </div>
         </fieldset>
-
-        {mode === "FULL" && (
-          <fieldset className="m-0 space-y-1.5 border-0 p-0" data-testid="pengecualian-jenis">
-            <legend className="mb-1 text-[11px] font-bold uppercase tracking-wide text-ink3">Kecualikan jenis bahan (opsional)</legend>
-            <div className="flex flex-wrap gap-2">{JENIS.map(([k, l]) => <label key={k} className="inline-flex items-center gap-1.5 rounded-btn border border-line bg-surface px-2.5 py-1.5 text-[12.5px] text-ink max-sm:min-h-11"><input type="checkbox" checked={excludeJenis.includes(k)} onChange={() => ubahJenis(k)} /> {l}</label>)}</div>
-            <p className="m-0 text-[11.5px] text-ink3">Tanpa centang, SEMUA bahan aktif ikut — termasuk yang belum dikelompokkan.</p>
-          </fieldset>
-        )}
 
         {mode === "GROUP" && (
           <fieldset className="m-0 space-y-1.5 border-0 p-0" data-testid="pilih-kelompok">
@@ -129,6 +124,16 @@ export default function BuatSesiOpname({ open, onClose, onCreated }) {
                   {r.saldoMinus > 0 && <Badge variant="red">Saldo minus: {r.saldoMinus}</Badge>}
                 </div>
                 {r.mode !== "ITEMS" && <ul className="m-0 grid list-none grid-cols-2 gap-x-4 gap-y-0.5 p-0 text-[12px] text-ink2 sm:grid-cols-3" data-testid="pratinjau-kelompok">{r.perKelompok.filter((k) => k.masuk > 0).map((k) => <li key={k.kode} className="flex justify-between"><span>{k.label}</span><b className="text-ink">{k.masuk}</b></li>)}</ul>}
+                {r.dasarCakupan && <p className="m-0 text-[12px] text-ink2" data-testid="dasar-cakupan">{r.dasarCakupan}</p>}
+                {r.mode !== "ITEMS" && r.tidakDilacak.jumlah > 0 && (
+                  <details className="rounded-btn border border-line bg-surface px-3 py-1" data-testid="pratinjau-tak-dilacak" open={ikutkan.size > 0}>
+                    <summary className="flex min-h-11 cursor-pointer items-center text-[12.5px] font-semibold text-ink">{r.tidakDilacak.jumlah} bahan aktif tidak dilacak — {ikutkan.size ? `${ikutkan.size} diikutkan` : "tidak ikut sesi"}</summary>
+                    <p className="m-0 mb-1.5 text-[11.5px] text-ink3">{r.tidakDilacak.alasanUmum} Centang bila ternyata barangnya ada di rak.</p>
+                    <ul className="m-0 max-h-[30vh] list-none space-y-0.5 overflow-y-auto p-0">{r.tidakDilacak.daftar.map((x) => (
+                      <li key={x.materialId}><label className="flex cursor-pointer items-center gap-2 rounded-btn px-1.5 py-1 text-[12.5px] hover:bg-hovertint max-sm:min-h-11"><input type="checkbox" checked={ikutkan.has(x.materialId)} onChange={() => ubahIkutkan(x.materialId)} data-testid="centang-ikutkan" /><span className="font-semibold text-ink">{x.kode}</span><span className="min-w-0 flex-1 truncate text-ink2">{x.nama}</span></label></li>))}</ul>
+                    {ikutkan.size > 0 && <label className="mt-1.5 block pb-2 text-[12px] text-ink2">Alasan mengikutkan (wajib)<input value={ikutkanAlasan} onChange={(e) => setIkutkanAlasan(e.target.value)} placeholder="mis. ada barangnya di rak C" data-testid="alasan-ikutkan" className={cn(inputCls, "mt-1")} /></label>}
+                  </details>)}
+                {r.mode === "ITEMS" && r.peringatanItems?.length > 0 && <p role="status" className="m-0 text-[12px] text-orange" data-testid="peringatan-items">{r.peringatanItems.length} bahan pilihan tidak punya jejak stok ({r.peringatanItems.map((x) => x.kode).join(", ")}). Tetap boleh dihitung.</p>}
                 <p className="m-0 text-[11.5px] text-ink3">Daftar bahan disimpan di sesi saat dibuat; perubahan master sesudahnya tidak mengubah cakupan (bahan baru tampil sebagai “di luar cakupan sesi” untuk diputuskan).</p>
                 {penuhAktif && <p role="alert" className="m-0 flex items-start gap-1.5 text-[12.5px] font-semibold text-red" data-testid="sesi-penuh-aktif"><AlertTriangle size={14} className="mt-0.5 shrink-0" /> Sudah ada sesi Opname penuh berjalan ({pratinjau.sesiPenuhAktif.countNumber}). Selesaikan atau batalkan dulu.</p>}
                 {!penuhAktif && r.masuk > 0 && <p className="m-0 flex items-center gap-1.5 text-[12px] text-green"><CheckCircle2 size={13} aria-hidden /> Cakupan siap dibuat.</p>}

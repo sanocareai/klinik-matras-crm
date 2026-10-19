@@ -7,12 +7,13 @@ import { Card } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { cn } from "@/lib/utils.js";
-import { AksiLain, BannerKonflik, KolomHitung, LencanaStatus, nilaiKolom, satuan, teksPetugas } from "@/features/warehouse/opname/BarisHitung.jsx";
+import { AksiLain, BannerKonflik, DialogWaktuHitung, KolomHitung, LencanaStatus, PengamatanBaris, nilaiKolom, satuan, teksPetugas } from "@/features/warehouse/opname/BarisHitung.jsx";
 import PanelDiLuarCakupan from "@/features/warehouse/opname/PanelDiLuarCakupan.jsx";
-import { MODE_LABEL, TAB, bekukanAntrean, hitungTab, saringBaris, sudahDihitung, susunItemSimpan, teksProgres, terapkanHasilSimpan } from "@/features/warehouse/opname/opnameLogic.js";
+import { MODE_LABEL, TAB, bekukanAntrean, hitungTab, saringBaris, sudahDihitung, susunItemSimpan, teksProgres, terapkanHasilMulai, terapkanHasilSimpan } from "@/features/warehouse/opname/opnameLogic.js";
 
 // HALAMAN KERJA HITUNG (Stock Opname sesi model 2): progres total & per kelompok, tab Belum/Sudah dihitung/Perlu diperiksa, pencarian, simpan bertahap (sesi tidak diselesaikan, saldo tidak berubah),
 // konflik antar-petugas lewat revisi per baris. Desktop = daftar; HP = SATU kartu bahan + "Simpan & berikutnya". Kolom kosong = belum dihitung; 0 hanya bila diketik 0.
+// WAKTU HITUNG per bahan (bukan waktu simpan): tombol "Mulai hitung" dicap server tepat sebelum menghitung; terlanjur menghitung → ditanya "Kapan barang ini dihitung?" saat menyimpan; tidak pernah dikarang.
 const PATH = "/warehouse/stock-count";
 function useSempit(px = 640) {
   const [s, setS] = useState(() => typeof window !== "undefined" && window.matchMedia?.(`(max-width: ${px - 1}px)`).matches);
@@ -25,7 +26,9 @@ export default function WarehouseOpnameKerja() {
   const [data, setData] = useState(null); const [baris, setBaris] = useState([]); const [draf, setDraf] = useState({}); const [konflik, setKonflik] = useState({}); const [galatBaris, setGalatBaris] = useState({});
   const [tab, setTab] = useState("belum"); const [q, setQ] = useState(""); const [kelompok, setKelompok] = useState(""); const [memuat, setMemuat] = useState(true); const [galat, setGalat] = useState(""); const [sibuk, setSibuk] = useState(false);
   const [info, setInfo] = useState(""); const [batas, setBatas] = useState(100); const [mode, setMode] = useState("kartu"); const [antrean, setAntrean] = useState([]); const [pos, setPos] = useState(0);
-  const drafRef = useRef(draf); drafRef.current = draf; const kartuRef = useRef(null);
+  const drafRef = useRef(draf); drafRef.current = draf; const kartuRef = useRef(null); const [dialogWaktu, setDialogWaktu] = useState(null);
+  const mintaWaktu = (jumlah) => new Promise((resolve) => setDialogWaktu({ jumlah, resolve }));
+  const tutupDialog = (nilai) => { dialogWaktu?.resolve(nilai); setDialogWaktu(null); };
 
   const muat = useCallback(async (tenang = false) => {
     if (!tenang) setMemuat(true);
@@ -43,13 +46,19 @@ export default function WarehouseOpnameKerja() {
   const jumlahTab = useMemo(() => hitungTab(baris), [baris]);
   useEffect(() => { setAntrean(bekukanAntrean(baris, penyaring)); setPos(0); setBatas(100); }, [tab, q, kelompok, data?.dimuatPada]); // eslint-disable-line react-hooks/exhaustive-deps -- antrean dibekukan saat penyaring berubah / muat ulang
   const bisa = !!data?.bisaMenghitung;
+  const belumMulai = useMemo(() => tampil.filter((b) => !sudahDihitung(b) && !b.observedAt && !b.excluded), [tampil]);
   useEffect(() => { if (sempit && mode === "kartu") kartuRef.current?.scrollIntoView?.({ block: "start" }); }, [pos, antrean, mode, sempit]); // kartu bahan selalu di atas layar (tidak tertutup bilah aksi di dasar)
   const ubahDraf = (lineId, patch) => setDraf((d) => ({ ...d, [lineId]: { ...d[lineId], ...patch } }));
   const jumlahDraf = Object.keys(draf).length;
 
   async function simpan(lineIds = null) {
     const sumber = lineIds ? Object.fromEntries(Object.entries(draf).filter(([k]) => lineIds.includes(k))) : draf;
-    const { items, galat: g } = susunItemSimpan(baris, sumber);
+    let hasilSusun = susunItemSimpan(baris, sumber);
+    if (hasilSusun.perluWaktu.length) { // angka pertama tanpa "Mulai hitung", atau hitung ulang: tanyakan kapan barang dihitung (tidak dikarang dari waktu simpan)
+      const waktu = await mintaWaktu(hasilSusun.perluWaktu.length); if (!waktu) return { ok: false };
+      hasilSusun = susunItemSimpan(baris, sumber, { waktu });
+    }
+    const { items, galat: g } = hasilSusun;
     setGalatBaris(g); if (!items.length) { if (!Object.keys(g).length) setInfo("Tidak ada perubahan untuk disimpan."); return { ok: Object.keys(g).length === 0 }; }
     setSibuk(true); setGalat(""); setInfo("");
     try {
@@ -58,14 +67,19 @@ export default function WarehouseOpnameKerja() {
       setBaris(t.baris); setDraf(t.draf); setKonflik((k) => ({ ...k, ...t.konflik })); setGalatBaris((x) => ({ ...x, ...t.galatBaris }));
       setData((d) => ({ ...d, progres: { ...d.progres, ...r.progres, perKelompok: r.progres.perKelompok } }));
       const ok = r.hasil.filter((h) => h.status === "DISIMPAN").length; const kon = r.hasil.filter((h) => h.status === "KONFLIK").length;
-      setInfo(`${ok} bahan tersimpan${kon ? `, ${kon} bentrok dengan petugas lain` : ""}.`);
+      const tanpa = r.hasil.filter((h) => h.status === "DISIMPAN" && h.tanpaWaktu).length;
+      setInfo(`${ok} bahan tersimpan${kon ? `, ${kon} bentrok dengan petugas lain` : ""}${tanpa ? `; ${tanpa} belum punya waktu hitung (lengkapi sebelum diserahkan)` : ""}.`);
       return { ok: kon === 0 && Object.keys(t.galatBaris).length === 0 && Object.keys(g).length === 0 };
     } catch (e) { setGalat(e.message || "Gagal menyimpan"); return { ok: false }; } finally { setSibuk(false); }
   }
-  const pakaiMereka = (lineId) => { const s = konflik[lineId]; setBaris((bs) => bs.map((b) => (b.id === lineId ? { ...b, counted: s.counted, countedAt: s.countedAt, countedBy: s.oleh, revision: s.revision, perluPeriksa: s.revision >= 2 } : b))); setDraf((d) => { const n = { ...d }; delete n[lineId]; return n; }); setKonflik((k) => { const n = { ...k }; delete n[lineId]; return n; }); };
-  const timpa = (lineId) => { const s = konflik[lineId]; setBaris((bs) => bs.map((b) => (b.id === lineId ? { ...b, counted: s.counted, countedAt: s.countedAt, countedBy: s.oleh, revision: s.revision } : b))); setKonflik((k) => { const n = { ...k }; delete n[lineId]; return n; }); };
+  const pakaiMereka = (lineId) => { const s = konflik[lineId]; setBaris((bs) => bs.map((b) => (b.id === lineId ? { ...b, counted: s.counted, savedAt: s.savedAt, observedAt: s.observedAt ?? null, countedBy: s.oleh, revision: s.revision, perluPeriksa: s.revision >= 2 } : b))); setDraf((d) => { const n = { ...d }; delete n[lineId]; return n; }); setKonflik((k) => { const n = { ...k }; delete n[lineId]; return n; }); };
+  const timpa = (lineId) => { const s = konflik[lineId]; setBaris((bs) => bs.map((b) => (b.id === lineId ? { ...b, counted: s.counted, savedAt: s.savedAt, observedAt: s.observedAt ?? null, countedBy: s.oleh, revision: s.revision } : b))); setKonflik((k) => { const n = { ...k }; delete n[lineId]; return n; }); };
   const keluarkan = async (lineId, alasan) => { try { await api.keluarkanBarisOpname(id, lineId, alasan); await muat(true); } catch (e) { setGalat(e.message); } };
   const kembalikan = async (lineId) => { try { await api.kembalikanBarisOpname(id, lineId); await muat(true); } catch (e) { setGalat(e.message); } };
+  const mulaiBahan = async (lineIds) => {
+    setGalat("");
+    try { const r = await api.mulaiHitungBahanOpname(id, lineIds); const t = terapkanHasilMulai(baris, r.hasil); setBaris(t.baris); setGalatBaris((x) => ({ ...x, ...t.galatBaris })); setInfo(r.hasil.some((h) => h.status === "SUDAH_DIMULAI") ? "Sudah dimulai petugas lain: waktunya tidak digeser." : `${r.hasil.filter((h) => h.status === "DIMULAI").length} bahan dimulai dihitung.`); } catch (e) { setGalat(e.message || "Gagal memulai hitung"); }
+  };
   const mulaiHitung = async () => { setSibuk(true); try { await api.startStockCount(id); await muat(true); } catch (e) { setGalat(e.message); } finally { setSibuk(false); } };
   const serahkan = async () => { setSibuk(true); setGalat(""); try { if (jumlahDraf) { const r = await simpan(); if (!r.ok) return; } await api.submitStockCount(id); navigate(`${PATH}/${id}`); } catch (e) { setGalat(e.message); } finally { setSibuk(false); } };
   const fokusBerikut = (i) => { const el = document.querySelectorAll('[data-testid="kolom-hitung"]')[i + 1]; el?.focus(); };
@@ -73,7 +87,7 @@ export default function WarehouseOpnameKerja() {
   if (memuat && !data) return <PageContainer><PageBody><p className="flex items-center gap-1.5 py-8 text-[13px] text-ink3" aria-busy="true"><Loader2 size={14} className="animate-spin" /> Memuat sesi hitung…</p></PageBody></PageContainer>;
   if (!data) return <PageContainer><PageBody><p role="alert" className="rounded-btn bg-redbg px-3 py-2.5 text-[12.5px] text-red" data-testid="galat-kerja">{galat}</p><Link to={PATH} className="mt-3 inline-flex items-center gap-1 text-[12.5px] font-semibold text-accent"><ArrowLeft size={13} /> Kembali ke Stock Opname</Link></PageBody></PageContainer>;
 
-  const p = data.progres; const seluruh = !p.belum && p.total > 0; const kartuB = antrean[pos] ? baris.find((b) => b.id === antrean[pos]) : null;
+  const p = data.progres; const seluruh = !p.belum && p.total > 0 && !p.tanpaWaktu; const kartuB = antrean[pos] ? baris.find((b) => b.id === antrean[pos]) : null;
   const banner = data.status === "SCHEDULED" ? "Sesi belum dimulai." : data.status !== "IN_PROGRESS" ? `Sesi berstatus ${data.status === "WAITING_REVIEW" ? "Menunggu tinjauan" : data.status === "COMPLETED" ? "Selesai" : "Dibatalkan"}: hitungan tidak bisa diubah di sini.` : !data.izin.tulis ? "Akun Anda hanya dapat melihat hitungan (tidak punya izin menghitung)." : "";
 
   const barisUI = (b, i) => (
@@ -81,12 +95,17 @@ export default function WarehouseOpnameKerja() {
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
         <div className="min-w-0 flex-1 basis-56"><div className="text-[13.5px] font-semibold text-ink [overflow-wrap:anywhere]">{b.nama}</div><div className="flex flex-wrap items-center gap-x-2 text-[11.5px] text-ink3">{b.kode} · {b.kelompokLabel}<LencanaStatus b={b} /></div></div>
         {!b.excluded && <KolomHitung b={b} draf={draf[b.id]} bisa={bisa} onUbah={(pt) => ubahDraf(b.id, pt)} onEnter={() => fokusBerikut(i)} label={`Jumlah fisik ${b.kode}`} />}
-        <div className="basis-44 text-[11.5px] text-ink3" data-testid="petugas-baris">{teksPetugas(b)}</div>
+        <div className="basis-56 text-[11.5px] text-ink3" data-testid="petugas-baris">{teksPetugas(b)}</div>
         <AksiLain ringkas countId={id} b={b} bisa={bisa} ragu={draf[b.id]?.ragu ?? b.ditandaRagu} onRagu={(v) => ubahDraf(b.id, { ragu: v })} onKeluar={(a) => keluarkan(b.id, a)} onKembalikan={() => kembalikan(b.id)} />
       </div>
+      {!b.excluded && <div className="mt-1.5"><PengamatanBaris countId={id} b={b} bisa={bisa} onMulai={(lid) => mulaiBahan([lid])} onTersimpan={() => muat(true)} /></div>}
       {konflik[b.id] && <div className="mt-2"><BannerKonflik konflik={konflik[b.id]} onPakai={() => pakaiMereka(b.id)} onTimpa={() => timpa(b.id)} /></div>}
       {draf[b.id] && sudahDihitung(b) && draf[b.id].teks !== undefined && nilaiKolom(b, draf[b.id]) !== String(b.counted) && (
-        <label className="mt-2 block text-[12px] text-ink2">Alasan koreksi (wajib)<input value={draf[b.id].alasan ?? ""} onChange={(e) => ubahDraf(b.id, { alasan: e.target.value })} placeholder="mis. hitung ulang di rak B" data-testid="alasan-koreksi" className="mt-1 w-full rounded-btn border border-line bg-surface px-2.5 py-2 text-[13px] outline-none focus:border-accent max-sm:min-h-11" /></label>)}
+        <div className="mt-2 space-y-1.5">
+          <label className="block text-[12px] text-ink2">Alasan koreksi (wajib)<input value={draf[b.id].alasan ?? ""} onChange={(e) => ubahDraf(b.id, { alasan: e.target.value })} placeholder="mis. hitung ulang di rak B" data-testid="alasan-koreksi" className="mt-1 w-full rounded-btn border border-line bg-surface px-2.5 py-2 text-[13px] outline-none focus:border-accent max-sm:min-h-11" /></label>
+          <label className="inline-flex items-center gap-1.5 text-[12px] text-ink2 max-sm:min-h-11"><input type="checkbox" checked={draf[b.id].salahKetik !== false} onChange={(e) => ubahDraf(b.id, { salahKetik: e.target.checked })} data-testid="salah-ketik" /> Salah ketik — waktu hitung tidak berubah</label>
+          {draf[b.id].salahKetik === false && <p className="m-0 text-[11.5px] text-ink3">Hitung ulang: saat disimpan Anda akan ditanya kapan barang dihitung ulang.</p>}
+        </div>)}
       {galatBaris[b.id] && <p role="alert" className="m-0 mt-1.5 text-[12px] text-red" data-testid="galat-baris">{galatBaris[b.id]}</p>}
     </li>
   );
@@ -96,11 +115,15 @@ export default function WarehouseOpnameKerja() {
       <p className="m-0 text-[12px] font-semibold text-ink3" data-testid="posisi-kartu">{pos + 1} dari {antrean.length} di daftar ini</p>
       <div><h2 className="m-0 text-[18px] font-bold leading-snug text-ink [overflow-wrap:anywhere]" data-testid="nama-kartu">{kartuB.nama}</h2><p className="m-0 text-[13px] text-ink2">{kartuB.kode} · {kartuB.kelompokLabel} · satuan <b>{satuan(kartuB.satuan)}</b></p></div>
       <LencanaStatus b={kartuB} />
+      {!kartuB.excluded && <PengamatanBaris besar countId={id} b={kartuB} bisa={bisa} onMulai={(lid) => mulaiBahan([lid])} onTersimpan={() => muat(true)} />}
       {!kartuB.excluded && <KolomHitung b={kartuB} draf={draf[kartuB.id]} bisa={bisa} large autoFocus onUbah={(pt) => ubahDraf(kartuB.id, pt)} onEnter={async () => { const r = await simpan([kartuB.id]); if (r.ok) setPos((x) => Math.min(antrean.length, x + 1)); }} label={`Jumlah fisik ${kartuB.kode}`} />}
       <p className="m-0 text-[11.5px] text-ink3">{teksPetugas(kartuB)}. Kosongkan bila belum dihitung; ketik 0 bila memang tidak ada.</p>
       {konflik[kartuB.id] && <BannerKonflik konflik={konflik[kartuB.id]} onPakai={() => pakaiMereka(kartuB.id)} onTimpa={() => timpa(kartuB.id)} />}
       {draf[kartuB.id] && sudahDihitung(kartuB) && nilaiKolom(kartuB, draf[kartuB.id]) !== String(kartuB.counted) && (
-        <label className="block text-[12px] text-ink2">Alasan koreksi (wajib)<input value={draf[kartuB.id].alasan ?? ""} onChange={(e) => ubahDraf(kartuB.id, { alasan: e.target.value })} data-testid="alasan-koreksi" className="mt-1 w-full rounded-btn border border-line bg-surface px-2.5 py-2 text-[16px] outline-none focus:border-accent max-sm:min-h-11" /></label>)}
+        <div className="space-y-1.5">
+          <label className="block text-[12px] text-ink2">Alasan koreksi (wajib)<input value={draf[kartuB.id].alasan ?? ""} onChange={(e) => ubahDraf(kartuB.id, { alasan: e.target.value })} data-testid="alasan-koreksi" className="mt-1 w-full rounded-btn border border-line bg-surface px-2.5 py-2 text-[16px] outline-none focus:border-accent max-sm:min-h-11" /></label>
+          <label className="inline-flex min-h-11 items-center gap-1.5 text-[12px] text-ink2"><input type="checkbox" checked={draf[kartuB.id].salahKetik !== false} onChange={(e) => ubahDraf(kartuB.id, { salahKetik: e.target.checked })} data-testid="salah-ketik" /> Salah ketik — waktu hitung tidak berubah</label>
+        </div>)}
       {galatBaris[kartuB.id] && <p role="alert" className="m-0 text-[12px] text-red" data-testid="galat-baris">{galatBaris[kartuB.id]}</p>}
       {info && <p className="m-0 text-[12px] text-ink2" data-testid="info-simpan" role="status">{info}</p>}
       <AksiLain countId={id} b={kartuB} bisa={bisa} ragu={draf[kartuB.id]?.ragu ?? kartuB.ditandaRagu} onRagu={(v) => ubahDraf(kartuB.id, { ragu: v })} onKeluar={(a) => keluarkan(kartuB.id, a)} onKembalikan={() => kembalikan(kartuB.id)} />
@@ -135,7 +158,7 @@ export default function WarehouseOpnameKerja() {
 
         <div className="flex flex-wrap items-center gap-2">
           <div role="tablist" aria-label="Saring bahan" className="flex flex-wrap gap-1.5">
-            {TAB.filter((t) => t.kunci !== "keluar" || jumlahTab.keluar > 0).map((t) => <button key={t.kunci} role="tab" type="button" aria-selected={tab === t.kunci} onClick={() => setTab(t.kunci)} data-testid={`tab-${t.kunci}`} className={cn("rounded-btn px-3 py-1.5 text-[12.5px] font-semibold max-sm:min-h-11", tab === t.kunci ? "bg-accent text-white" : "bg-inset text-ink2 hover:bg-hovertint")}>{t.label} <span className="tabular-nums">{jumlahTab[t.kunci]}</span></button>)}
+            {TAB.filter((t) => (t.kunci !== "keluar" || jumlahTab.keluar > 0) && (t.kunci !== "waktu" || jumlahTab.waktu > 0)).map((t) => <button key={t.kunci} role="tab" type="button" aria-selected={tab === t.kunci} onClick={() => setTab(t.kunci)} data-testid={`tab-${t.kunci}`} className={cn("rounded-btn px-3 py-1.5 text-[12.5px] font-semibold max-sm:min-h-11", tab === t.kunci ? "bg-accent text-white" : "bg-inset text-ink2 hover:bg-hovertint")}>{t.label} <span className="tabular-nums">{jumlahTab[t.kunci]}</span></button>)}
           </div>
           <div className="relative min-w-[200px] flex-1"><Search size={14} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink3" aria-hidden /><input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari kode atau nama bahan…" aria-label="Cari bahan" data-testid="cari-kerja" className="w-full rounded-btn border border-line bg-surface py-2 pl-8 pr-2.5 text-[13px] outline-none focus:border-accent max-sm:min-h-11 max-sm:text-[16px]" /></div>
           {sempit && <div className="flex gap-1.5"><Button size="sm" variant={mode === "kartu" ? "primary" : "secondary"} onClick={() => setMode("kartu")} className="min-h-11" data-testid="mode-kartu">Kartu</Button><Button size="sm" variant={mode === "daftar" ? "primary" : "secondary"} onClick={() => setMode("daftar")} className="min-h-11" data-testid="mode-daftar">Daftar</Button></div>}
@@ -143,7 +166,8 @@ export default function WarehouseOpnameKerja() {
 
         {sempit && mode === "kartu" ? kartuHP : (
           <>
-            <p className="m-0 text-[12px] text-ink3" data-testid="jumlah-tampil">{tampil.length} bahan ditampilkan</p>
+            <div className="flex flex-wrap items-center gap-2"><p className="m-0 text-[12px] text-ink3" data-testid="jumlah-tampil">{tampil.length} bahan ditampilkan</p>
+              {bisa && tab === "belum" && belumMulai.length > 0 && <Button size="sm" variant="secondary" onClick={() => mulaiBahan(belumMulai.slice(0, 200).map((b) => b.id))} className="max-sm:min-h-11" data-testid="mulai-semua-tampil" title="Mencap waktu hitung sekarang untuk semua bahan yang tampil — tekan tepat sebelum mulai menghitung rak ini">Mulai hitung semua yang tampil ({Math.min(200, belumMulai.length)})</Button>}</div>
             {tampil.length === 0 ? <Card className="p-6 text-center text-[13px] text-ink3" data-testid="daftar-kosong">{tab === "belum" && !q && !kelompok ? "Semua bahan sudah dihitung. Serahkan hitungan di bawah." : "Tidak ada bahan yang cocok."}</Card>
               : <ul className="m-0 list-none space-y-2 p-0" data-testid="daftar-hitung">{tampil.slice(0, batas).map((b, i) => barisUI(b, i))}</ul>}
             {tampil.length > batas && <Button variant="secondary" onClick={() => setBatas((x) => x + 100)} className="max-sm:min-h-11" data-testid="tampilkan-lagi">Tampilkan lagi ({tampil.length - batas} lainnya)</Button>}
@@ -152,7 +176,7 @@ export default function WarehouseOpnameKerja() {
 
         {data.status === "IN_PROGRESS" && data.izin.tulis && (
           <Card className="flex flex-wrap items-center gap-3 p-4" data-testid="serahkan-kartu">
-            <div className="min-w-0 flex-1 basis-60 text-[12.5px] text-ink2">{seluruh ? "Semua bahan sudah dihitung. Hitungan siap diserahkan untuk diperiksa petugas lain dan ditinjau penyetuju." : `Masih ${p.belum} bahan belum dihitung. Hitungan baru bisa diserahkan bila semuanya terisi (atau bahan yang tidak ada dikeluarkan dari sesi dengan alasan).`}</div>
+            <div className="min-w-0 flex-1 basis-60 text-[12.5px] text-ink2">{seluruh ? "Semua bahan sudah dihitung. Hitungan siap diserahkan untuk diperiksa petugas lain dan ditinjau penyetuju." : p.belum > 0 ? `Masih ${p.belum} bahan belum dihitung. Hitungan baru bisa diserahkan bila semuanya terisi (atau bahan yang tidak ada dikeluarkan dari sesi dengan alasan).` : `${p.tanpaWaktu} bahan sudah ada angkanya tetapi waktu hitungnya belum diketahui. Lengkapi lewat tab "Tanpa waktu hitung" sebelum menyerahkan — waktu itu dipakai saat peninjauan.`}</div>
             <Button onClick={serahkan} disabled={!seluruh || sibuk} className="max-sm:min-h-11 max-sm:w-full" data-testid="serahkan-hitungan">{sibuk ? <Loader2 size={14} className="animate-spin" /> : null} Serahkan hitungan</Button>
           </Card>
         )}
@@ -168,6 +192,7 @@ export default function WarehouseOpnameKerja() {
           {bisa && <Button variant="ghost" onClick={() => setPos((x) => Math.min(antrean.length, x + 1))} className="mt-1 min-h-11 w-full" data-testid="lewati">Lewati (hitung nanti)</Button>}
         </div>
       )}
+      {dialogWaktu && <DialogWaktuHitung jumlah={dialogWaktu.jumlah} onPilih={tutupDialog} onBatal={() => tutupDialog(null)} />}
       {!(sempit && mode === "kartu") && (jumlahDraf > 0 || info) && (
         <div className="fixed inset-x-0 bottom-0 z-[60] border-t border-line bg-surface/95 px-4 py-2.5 backdrop-blur max-sm:pb-[max(0.625rem,env(safe-area-inset-bottom))]" data-testid="bilah-simpan" role="status">
           <div className="mx-auto flex max-w-[1100px] flex-wrap items-center gap-2">

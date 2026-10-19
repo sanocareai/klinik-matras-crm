@@ -739,6 +739,11 @@ export const api = {
   // Tanda eksplisit: tercermin=true (sudah masuk hitungan fisik) / false (belum). Tidak ada nilai bawaan.
   tandaiPergerakanSesi: (countId, movementId, tercermin) =>
     request(`/inventory/stock-counts/${countId}/pergerakan/${movementId}/tanda`, { method: "POST", body: JSON.stringify({ tercermin }) }),
+  // Waktu pengamatan fisik per bahan (tiga waktu terpisah: dihitung / disimpan / diposting). Mulai hitung dicap server; koreksi wajib alasan.
+  mulaiHitungBahanOpname: (id, lineIds) => request(`/inventory/stock-counts/${id}/lines/mulai`, { method: "POST", body: JSON.stringify({ lineIds }) }),
+  koreksiWaktuHitungOpname: (id, lineId, data) => request(`/inventory/stock-counts/${id}/lines/${lineId}/waktu`, { method: "POST", body: JSON.stringify(data) }),
+  // Putuskan massal "belum tercermin di hitungan fisik" hanya untuk pergerakan sesudah angka disimpan (kelas SESUDAH_DISIMPAN); kelas berisiko satu per satu.
+  tandaiMassalPergerakanOpname: (id, data) => request(`/inventory/stock-counts/${id}/pergerakan/tanda-massal`, { method: "POST", body: JSON.stringify(data) }),
   // Pemeriksa = akun LAIN yang memeriksa hasil hitung yang sudah diserahkan; identitas dari login, bukan nama ketikan.
   periksaHitungan: (countId, catatan) => request(`/inventory/stock-counts/${countId}/periksa`, { method: "POST", body: JSON.stringify({ catatan }) }),
   // Riwayat referensi historis dari file (catatan REFERENSI; bukan transaksi/saldo)
