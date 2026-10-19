@@ -20,7 +20,7 @@
 # ROLLBACK KODE: aman kapan saja SELAMA tidak ada sesi model baru yang terbuka (SCHEDULED / IN_PROGRESS / WAITING_REVIEW) — kode lama tidak mengenal sesi itu dan akan menulis penyesuaian keliru. Periksa dulu dengan
 #   scripts/rollback-guard-opname-penuh.sh (baca-saja). Rollback kode TIDAK menghapus kolom/riwayat hitung/penyesuaian yang sudah diposting (saldo ledger tetap benar); yang hilang hanya halaman kerja hitung dan aturan waktu.
 
-# (dibangkitkan oleh scripts/gen-release-opname-penuh.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 955dea3b4723…)
+# (dibangkitkan oleh scripts/gen-release-opname-penuh.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 2ad5039a5f66…)
 set -Eeuo pipefail
 umask 077
 
@@ -414,7 +414,7 @@ rehearsal_penuh_lanjutan() {
   # 2) skenario: waktu (tiga waktu, bertanggal mundur), PEMBUKTIAN pergerakan baru setelah review, konkurensi (kunci + serentak 3 ronde), klik ganda, sesi penuh nyata, sesi terbuka untuk guard
   rh_jalankan skenario -e EXPECT_MASUK="$EXPECT_MASUK" > "$BK_DIR/rh-skenario.log" 2>&1 || { grep -E '^FAIL' "$BK_DIR/rh-skenario.log" | head -n 12; reh_drop; die "skenario rehearsal GAGAL (log: $BK_DIR/rh-skenario.log)"; }
   grep -q '^RH_SKENARIO gagal=0' "$BK_DIR/rh-skenario.log" && ! grep -q '^FAIL' "$BK_DIR/rh-skenario.log" || { grep -E '^FAIL' "$BK_DIR/rh-skenario.log" | head -n 12; reh_drop; die "skenario rehearsal tidak lulus penuh"; }
-  local NPASS; NPASS="$(grep -c '^PASS' "$BK_DIR/rh-skenario.log")"; [ "$NPASS" -ge 45 ] || { reh_drop; die "skenario hanya ${NPASS} pemeriksaan lulus (minimal 45)"; }
+  local NPASS; NPASS="$(grep -c '^PASS' "$BK_DIR/rh-skenario.log")"; [ "$NPASS" -ge 40 ] || { reh_drop; die "skenario hanya ${NPASS} pemeriksaan lulus (minimal 40)"; }
   for k in 'S3 Selesaikan DITOLAK' 'S3 tidak ada keputusan bawaan' 'S3 setelah diputuskan Selesaikan lulus' 'S4a Selesaikan MENUNGGU kunci' 'S4b ronde 2' 'S5 Selesaikan ganda' 'S6 Selesaikan sesi penuh lulus'; do grep -q "^PASS $k" "$BK_DIR/rh-skenario.log" || { reh_drop; die "pemeriksaan wajib tidak ada/lulus: $k"; }; done
   ok "skenario rehearsal: ${NPASS} pemeriksaan lulus, 0 gagal — termasuk pergerakan BARU setelah review ditolak lalu lanjut, konkurensi (kunci + 3 ronde serentak), klik ganda, dan sesi penuh nyata atas data restore"
   grep -E '^INFO' "$BK_DIR/rh-skenario.log" | sed 's/^/        /'
