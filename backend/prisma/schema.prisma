@@ -6041,6 +6041,11 @@ model StockCount {
   createdById String? @map("created_by")
   createdBy   User?   @relation("StockCountCreator", fields: [createdById], references: [id], onDelete: SetNull)
 
+  // Sesi baru (Okt 2026): model_version 2 = cakupan disimpan saat dibuat (lines = daftar Material ID; scope_info = parameter + pratinjau), waktu hitung per bahan, revisi per baris. 1 = sesi lama (aturan lama, tidak ditafsirkan ulang).
+  modelVersion Int     @default(1) @map("model_version")
+  scopeMode    String? @map("scope_mode") @db.VarChar(10) // FULL | GROUP | ITEMS
+  scopeInfo    Json?   @map("scope_info")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -6062,6 +6067,16 @@ model StockCountLine {
 
   systemQty  Float? @map("system_qty") // snapshot SEKALI saat Start Count — bukan dihitung ulang
   countedQty Float? @map("counted_qty") // diisi staf saat hitung berjalan
+
+  // Sesi model 2: waktu & pelaku hitung terakhir per bahan (waktu acuan pembanding saldo), revisi untuk menolak penimpaan diam-diam, penanda "perlu diperiksa", dan pengeluaran dari cakupan dengan alasan.
+  countedAt     DateTime? @map("counted_at")
+  countedById   String?   @map("counted_by_id")
+  revision      Int       @default(0)
+  needsCheck    Boolean   @default(false) @map("needs_check")
+  excludedReason String?  @map("excluded_reason")
+  excludedAt    DateTime? @map("excluded_at")
+  excludedById  String?   @map("excluded_by_id")
+  origin        String    @default("SESI") @db.VarChar(10) // SESI | TAMBAHAN (bahan ditambahkan setelah sesi berjalan)
 
   // WAJIB diisi kalau ada selisih (divalidasi di route, sama pola dengan
   // WASTE/ADJUSTMENT di routes/inventory.js — selisih tanpa penjelasan

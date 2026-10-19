@@ -89,6 +89,7 @@ import { materialIssueRouter } from "./routes/materialIssue.js";
 import { complaintsRouter } from "./routes/complaints.js";
 import { stockTransferRouter } from "./routes/stockTransfer.js";
 import { stockCountRouter } from "./routes/stockCount.js";
+import { stockCountSesiRouter } from "./routes/stockCountSesi.js";
 import { riwayatReferensiRouter } from "./routes/riwayatReferensi.js";
 import { gudangKoreksiRouter } from "./routes/gudangKoreksi.js";
 import { gudangPusatKerjaRouter } from "./routes/gudangPusatKerja.js";
@@ -298,6 +299,7 @@ app.use("/api/finance/purchase-orders", purchaseOrderFinanceRouter);
 app.use("/api/finance/biaya-bahan", biayaBahanFinanceRouter);
 app.use("/api/inventory/material-issues", materialIssueRouter);
 app.use("/api/inventory/transfers", stockTransferRouter);
+app.use("/api/inventory/stock-counts", stockCountSesiRouter); // Stock Opname sesi model 2 (cakupan penuh/kelompok/cycle count, hasil hitung bertahap) — HARUS sebelum stockCountRouter
 app.use("/api/inventory/stock-counts", stockCountRouter);
 app.use("/api/inventory/pusat-kerja", gudangPusatKerjaRouter); // Pusat Kerja Gudang (Tahap 4): antrean kerja, tertahan, Pusat Masalah, pencarian — baca-saja
 app.use("/api/inventory/beranda", gudangBerandaRouter); // Beranda Gudang (perlu dikerjakan hari ini) + Stok & Lokasi yang jujur — baca-saja

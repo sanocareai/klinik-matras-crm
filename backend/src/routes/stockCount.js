@@ -20,6 +20,8 @@ import { lockMaterialBalance } from "../services/inventoryLedger.js";
 import { muatIdentitasHitung, AKSI_PERIKSA_HITUNGAN } from "../services/identitasHitung.js";
 import { tampilanOpname, untukIzin } from "../services/dokumenGudangLain.js";
 import { jejakDokumenGudang } from "../services/dokumenGudang.js";
+import { muatPembandingSesi, ringkasProgres, bahanDiLuarCakupan, muatBahan, AKSI_CAKUPAN_DIABAIKAN, JENDELA_RAGU_MENIT } from "../services/opnameSesi.js";
+import { kelompokDariItemGroup } from "../constants/kelompokBahan.js";
 
 // Penanda pelaku di activity_events (eventType DOCUMENT_EDITED) — dipakai complete untuk memisahkan pengisi/penyerah hitungan dari penyetuju.
 const AKSI_ISI_HITUNGAN = "HASIL_HITUNG_DIISI";
@@ -68,7 +70,13 @@ stockCountRouter.get("/", requirePermission(P.INVENTORY_READ), async (req, res) 
       include: countInclude,
       orderBy: [{ createdAt: "desc" }],
     });
-    res.json({ counts: counts.map((c) => ({ ...c, tampilan: tampilanOpname(c) })) });
+    // Sesi model 2 (opname penuh) bisa berisi ratusan baris: daftar hanya membawa ringkasan (jumlah + progres), detail lewat GET /:id atau /:id/kerja.
+    res.json({
+      counts: counts.map((c) => {
+        const ring = c.modelVersion === 2 ? ringkasProgres(c.lines.map((l) => ({ kelompokKode: "x", counted: l.countedQty == null ? null : 1, excluded: !!l.excludedAt, perluPeriksa: false }))) : null;
+        return { ...c, ...(c.modelVersion === 2 ? { lines: [], jumlahBahan: ring.total, progres: { total: ring.total, dihitung: ring.dihitung, belum: ring.belum } } : { jumlahBahan: c.lines.length }), tampilan: tampilanOpname(c) };
+      }),
+    });
   } catch (err) {
     handleErr(err, res);
   }
@@ -79,17 +87,36 @@ stockCountRouter.get("/:id", requirePermission(P.INVENTORY_READ), wajibUuid(), a
     const count = await prisma.stockCount.findUnique({ where: { id: req.params.id }, include: countInclude });
     if (!count) return res.status(404).json({ error: "Stock count tidak ditemukan" });
     // Snapshot saldo (systemQty per baris) + waktu mulai direkam saat Start; pergerakan ledger sesudahnya ditampilkan agar penghitung menandainya.
-    const { pergerakan } = await muatPergerakanSesi(prisma, count);
+    const v2 = count.modelVersion === 2;
+    // Blind count (sesi model 2): saldo sistem, pembanding, dan pergerakan sesi TIDAK dikirim ke penghitung sebelum hitungan diserahkan — disaring di server, bukan hanya disembunyikan layar.
+    const sembunyikanSaldo = v2 && count.blindCount && ["SCHEDULED", "IN_PROGRESS"].includes(count.status);
+    const { pergerakan } = v2 && sembunyikanSaldo ? { pergerakan: [] } : await muatPergerakanSesi(prisma, count);
     const identitas = await muatIdentitasHitung(prisma, count);
     // UX Tahap 2: status/aksi dalam bahasa petugas; aturan pemisahan tugas TIDAK diubah, hanya dijelaskan (izin.* memberi tahu layar mengapa suatu tombol tidak ada).
     const tulis = hasPermission(req.user, P.INVENTORY_WRITE); const bisaMenyetujuiSelisih = hasPermission(req.user, P.INVENTORY_ADJUSTMENT_APPROVE);
-    const adaSelisih = count.lines.some((l) => l.systemQty != null && l.countedQty != null && Number(l.countedQty) !== Number(l.systemQty));
+    // Sesi model 2: waktu acuan per bahan, saldo sistem yang sebanding PADA WAKTU DIHITUNG, transaksi relevan, selisih nyata. Lihat services/opnameSesi.js.
+    let tinjau = null; let progres = null; let nama = new Map();
+    if (v2) {
+      nama = new Map((await prisma.user.findMany({ where: { id: { in: [...new Set(count.lines.map((l) => l.countedById).filter(Boolean))] } }, select: { id: true, name: true } })).map((u) => [u.id, u.name]));
+      progres = ringkasProgres(count.lines.map((l) => ({ kelompokKode: kelompokDariItemGroup(l.material.itemGroup).kode, counted: l.countedQty == null ? null : 1, excluded: !!l.excludedAt, perluPeriksa: !l.excludedAt && (l.needsCheck || l.revision >= 2) })));
+      if (!sembunyikanSaldo) {
+        const pb = await muatPembandingSesi(prisma, count, { sampai: count.completedAt || new Date() });
+        tinjau = Object.fromEntries([...pb.perBaris].map(([lineId, h]) => [lineId, {
+          pembanding: h.pembanding, selisih: h.selisih, berselisih: h.berselisih,
+          transaksi: { sebelumHitung: h.sebelum.length, jendelaRagu: h.ragu.slice(0, 20), setelahHitung: h.setelah.slice(0, 20), setelahHitungJumlah: h.setelah.length, belumDitandai: h.belumDitandai.length },
+        }]));
+      }
+    }
+    const adaSelisih = v2 ? (!!tinjau && Object.values(tinjau).some((x) => x.berselisih)) : count.lines.some((l) => l.systemQty != null && l.countedQty != null && Number(l.countedQty) !== Number(l.systemQty));
     const bisaPeriksa = !(req.user.id === count.assignedToId || identitas.penghitung.some((p) => p.id === req.user.id));
+    const lines = v2 ? count.lines.map((l) => ({ ...l, systemQty: null, countedBy: l.countedById ? { id: l.countedById, nama: nama.get(l.countedById) ?? null } : null, perluPeriksa: !l.excludedAt && (l.needsCheck || l.revision >= 2), ...(tinjau && tinjau[l.id] ? { tinjau: tinjau[l.id] } : {}) })) : count.lines;
     res.json({
       ...count,
+      lines,
+      ...(v2 ? { progres, jendelaRaguMenit: JENDELA_RAGU_MENIT, sembunyikanSaldo } : {}),
       identitas,
-      sesi: { snapshotPada: count.startedAt, belumDitandai: pergerakan.filter((p) => p.tanda === null).length },
-      pergerakanSesi: pergerakan,
+      sesi: { snapshotPada: count.startedAt, belumDitandai: v2 ? (tinjau ? Object.values(tinjau).reduce((s, x) => s + x.transaksi.belumDitandai, 0) : 0) : pergerakan.filter((p) => p.tanda === null).length, modelVersion: count.modelVersion },
+      pergerakanSesi: v2 ? [] : pergerakan,
       tampilan: untukIzin(tampilanOpname(count, { adaSelisih, bisaMenyetujuiSelisih, bisaPeriksa }), tulis), izin: { tulis, bisaMenyetujuiSelisih, bisaPeriksa }, adaSelisih,
       jejak: await jejakDokumenGudang(prisma, { entityType: ENTITY_TYPES.STOCK_COUNT, id: count.id, dibuatOleh: count.createdBy?.name ?? null, dibuatPada: count.createdAt, jenis: "OPNAME" }),
     });
@@ -173,12 +200,15 @@ stockCountRouter.post("/:id/start", requirePermission(P.INVENTORY_WRITE), wajibU
 
       // Kunci material (urut id) SEBELUM membaca saldo: pergerakan yang sedang diposting selesai dulu (masuk snapshot), yang menyusul menunggu sampai Start commit
       // sehingga bercap waktu SESUDAH startedAt (masuk daftar pergerakan sesi). Tanpa kunci, pergerakan di sela baca-saldo dan startedAt hilang dari keduanya.
-      for (const id of [...new Set(count.lines.map((l) => l.materialId))].sort()) await lockMaterialBalance(tx, id);
-      for (const line of count.lines) {
-        const [{ balance }] = await tx.$queryRaw`
-          SELECT COALESCE(SUM(qty), 0)::float AS balance FROM stock_movements WHERE material_id = ${line.materialId}::uuid
-        `;
-        await tx.stockCountLine.update({ where: { id: line.id }, data: { systemQty: balance } });
+      // Sesi model 2: TIDAK ada snapshot awal. Pembanding dihitung dari ledger PADA WAKTU HITUNG tiap bahan (countedAt), jadi sesi yang berjalan berhari-hari tidak memakai saldo basi.
+      if (count.modelVersion !== 2) {
+        for (const id of [...new Set(count.lines.map((l) => l.materialId))].sort()) await lockMaterialBalance(tx, id);
+        for (const line of count.lines) {
+          const [{ balance }] = await tx.$queryRaw`
+            SELECT COALESCE(SUM(qty), 0)::float AS balance FROM stock_movements WHERE material_id = ${line.materialId}::uuid
+          `;
+          await tx.stockCountLine.update({ where: { id: line.id }, data: { systemQty: balance } });
+        }
       }
       return tx.stockCount.update({
         where: { id: count.id },
@@ -206,6 +236,7 @@ stockCountRouter.patch("/:id/lines/:lineId", requirePermission(P.INVENTORY_WRITE
     if (!line) return res.status(404).json({ error: "Baris item tidak ditemukan" });
 
     const { countedQty, reason, notes } = req.body;
+    if (count.modelVersion === 2 && countedQty !== undefined) throw new CountError("Sesi ini memakai halaman kerja hitung: simpan hasil lewat PUT /:id/hasil (revisi per baris). Untuk mengubah angka sesudah diserahkan gunakan Hitung ulang.", 409);
     const toNum = (v) => (v === undefined ? undefined : v === "" || v === null ? null : Number(v));
     const qtyBerubah = countedQty !== undefined && toNum(countedQty) !== (line.countedQty == null ? null : Number(line.countedQty));
     const updated = await prisma.$transaction(async (tx) => {
@@ -245,9 +276,19 @@ stockCountRouter.post("/:id/submit", requirePermission(P.INVENTORY_WRITE), wajib
     const count = await prisma.stockCount.findUnique({ where: { id: req.params.id }, include: countInclude });
     if (!count) return res.status(404).json({ error: "Stock count tidak ditemukan" });
     if (count.status !== "IN_PROGRESS") throw new CountError("Hanya count berstatus In Progress yang bisa disubmit");
-    const belumDihitung = count.lines.filter((l) => l.countedQty == null);
+    const aktifLines = count.modelVersion === 2 ? count.lines.filter((l) => !l.excludedAt) : count.lines;
+    const belumDihitung = aktifLines.filter((l) => l.countedQty == null);
     if (belumDihitung.length > 0) {
-      throw new CountError(`${belumDihitung.length} item belum diisi hasil hitungnya`);
+      const e = new CountError(`${belumDihitung.length} item belum diisi hasil hitungnya`);
+      e.code = "MASIH_ADA_BELUM_DIHITUNG"; throw e;
+    }
+    if (count.modelVersion === 2) {
+      if (aktifLines.length === 0) throw new CountError("Sesi tidak memuat bahan yang dihitung");
+      if (["FULL", "GROUP"].includes(count.scopeMode)) {
+        const diabaikan = new Set((await prisma.activityEvent.findMany({ where: { entityType: ENTITY_TYPES.STOCK_COUNT, entityId: count.id, eventType: EVENT_TYPES.DOCUMENT_EDITED }, select: { metadata: true } })).filter((e2) => e2.metadata?.aksi === AKSI_CAKUPAN_DIABAIKAN).map((e2) => e2.metadata.materialId));
+        const luar = bahanDiLuarCakupan(await muatBahan(prisma), count, diabaikan);
+        if (luar.length > 0) { const e = new CountError(`${luar.length} bahan baru berada di luar cakupan sesi dan belum diputuskan (tambahkan ke sesi atau abaikan dengan alasan).`, 409); e.code = "CAKUPAN_BELUM_DIPUTUSKAN"; throw e; }
+      }
     }
     const updated = await prisma.$transaction(async (tx) => {
       const u = await tx.stockCount.update({
@@ -303,12 +344,21 @@ stockCountRouter.post("/:id/complete", requireAnyPermission(P.INVENTORY_WRITE, P
     const result = await prisma.$transaction(async (tx) => {
       await lockRowForUpdate(tx, "stock_counts", preCheck.id);
       const count = await tx.stockCount.findUnique({ where: { id: preCheck.id }, include: countInclude });
+      if (count.status === "COMPLETED" && count.modelVersion === 2) return { ...count, ulang: true }; // idempoten: Selesaikan ulang pada sesi model 2 yang sudah selesai tidak menulis apa pun
       if (count.status !== "WAITING_REVIEW") throw new CountError("Hanya count berstatus Waiting Review yang bisa diselesaikan");
 
       // Kunci material (urut id) SEBELUM membaca pergerakan sesi, supaya tidak ada pergerakan menyelip antara pemeriksaan dan penulisan.
       for (const id of [...new Set(count.lines.map((l) => l.materialId))].sort()) await lockMaterialBalance(tx, id);
-      const { pergerakan } = await muatPergerakanSesi(tx, count, { sampai: new Date() });
-      const { baris: hasilBaris, belumDitandai } = selisihTersesuaikan(count.lines, pergerakan);
+      let pergerakan; let hasilBaris; let belumDitandai;
+      if (count.modelVersion === 2) {
+        // Waktu acuan per bahan (countedAt): pembanding = saldo ledger sampai countedAt − pergerakan jendela-ragu yang ditandai belum tercermin. Lihat services/opnameSesi.js.
+        const pb = await muatPembandingSesi(tx, count, { sampai: new Date() });
+        pergerakan = pb.pergerakan; belumDitandai = pb.belumDitandai;
+        hasilBaris = count.lines.filter((l) => !l.excludedAt).map((l) => { const h = pb.perBaris.get(l.id); return { lineId: l.id, materialId: l.materialId, pembanding: h?.pembanding ?? null, selisih: h?.selisih ?? 0, berselisih: !!h?.berselisih }; });
+      } else {
+        ({ pergerakan } = await muatPergerakanSesi(tx, count, { sampai: new Date() }));
+        ({ baris: hasilBaris, belumDitandai } = selisihTersesuaikan(count.lines, pergerakan));
+      }
       if (belumDitandai.length > 0) {
         const e = new CountError(`${belumDitandai.length} pergerakan selama sesi hitung belum ditandai (sudah/belum masuk hitungan fisik). Tandai satu per satu — sistem tidak menebak.`, 409);
         e.code = "PERGERAKAN_SESI_BELUM_DITANDAI";
@@ -325,7 +375,7 @@ stockCountRouter.post("/:id/complete", requireAnyPermission(P.INVENTORY_WRITE, P
         wajibBukanPihakPengaju(req.user, pemeriksaIds, { label: "pemeriksa hitungan" });
       }
       const selisihPerBaris = new Map(hasilBaris.map((h) => [h.lineId, h]));
-      const berselisih = count.lines.filter((l) => selisihPerBaris.get(l.id).berselisih);
+      const berselisih = count.lines.filter((l) => selisihPerBaris.get(l.id)?.berselisih);
       for (const l of berselisih) {
         if (!l.reason?.trim()) throw new CountError(`Alasan wajib diisi untuk selisih pada ${l.material.code}`);
       }
@@ -379,7 +429,7 @@ stockCountRouter.post("/:id/periksa", requirePermission(P.INVENTORY_WRITE), waji
       const count = await tx.stockCount.findUnique({ where: { id: req.params.id }, include: countInclude });
       if (!count) throw new CountError("Stock count tidak ditemukan", 404);
       if (count.status !== "WAITING_REVIEW") throw new CountError("Hanya hitungan yang sudah diserahkan (Waiting Review) yang bisa diperiksa");
-      if (count.lines.some((l) => l.countedQty == null)) throw new CountError("Masih ada item yang belum diisi hasil hitungnya");
+      if (count.lines.filter((l) => !l.excludedAt).some((l) => l.countedQty == null)) throw new CountError("Masih ada item yang belum diisi hasil hitungnya");
       const sebelum = await muatIdentitasHitung(tx, count);
       if (req.user.id === count.assignedToId || sebelum.penghitung.some((p) => p.id === req.user.id)) {
         const e = new CountError("Anda adalah penghitung/penugas hitungan ini — pemeriksa harus petugas lain", 403);
