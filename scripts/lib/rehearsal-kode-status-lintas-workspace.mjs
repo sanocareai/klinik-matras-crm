@@ -123,23 +123,27 @@ if (unitTuntas.length === 0) cek("Konflik: tidak ada unit berangkat/terkirim di 
   cek("Konflik: BATAL pada unit berangkat/terkirim DITOLAK 409 berkode dengan pilihan koreksi", !!tolak && tolak.statusCode === 409 && /^UNIT_SUDAH_/.test(tolak.code) && Array.isArray(tolak.pilihanKoreksi) && tolak.pilihanKoreksi.length >= 2, tolak ? tolak.code : "tidak ditolak");
 }
 // 5. KOREKSI RIKA (RES-03102026-018-U1 → RTE-161026-02): pratinjau baca-saja + penerapan DI DALAM transaksi yang dibatalkan
-const WAKTU_RIKA = new Date("2026-10-16T05:30:00.000Z");
+const TANGGAL_RIKA = "2026-10-16"; // jam serah-terima tidak terbukti: hanya tanggal
+const FOTO_RIKA = "/app/uploads/1792112641064-27qruk2yfg3.jpg"; // foto helper di grup SANO DRIVETHRU (dibaca saja; rehearsal tidak menyalin berkas)
+const { periksaBerkasFoto } = await import("/app/src/services/koreksiPengirimanRute.js");
 const rika = await prisma.unit.findUnique({ where: { unitCode: "RES-03102026-018-U1" }, select: { id: true } });
 const rute = await prisma.route.findUnique({ where: { code: "RTE-161026-02" }, select: { id: true } });
 if (!rika || !rute) { console.log("INFO Rika: unit atau rute tidak ada di salinan"); console.log("REHEARSAL_RIKA status=tidak-ada"); } else {
-  const p = await pratinjauKoreksiPengirimanRute(prisma, { unitCode: "RES-03102026-018-U1", routeCode: "RTE-161026-02", waktuTerkirim: WAKTU_RIKA });
+  const p = await pratinjauKoreksiPengirimanRute(prisma, { unitCode: "RES-03102026-018-U1", routeCode: "RTE-161026-02", tanggalKejadian: TANGGAL_RIKA, foto: (await import("node:fs")).existsSync(FOTO_RIKA) ? { path: FOTO_RIKA } : null });
   console.log("INFO Rika kondisi: " + JSON.stringify(p.kondisiSekarang));
   if (p.sudahDiterapkan) { cek("Rika: koreksi SUDAH diterapkan sebelumnya (idempoten, tidak ada yang perlu ditulis)", true); console.log("REHEARSAL_RIKA status=sudah"); }
   else if (!p.layak) { console.log("INFO Rika rintangan: " + JSON.stringify(p.rintangan)); console.log("REHEARSAL_RIKA status=tidak-layak"); }
   else {
     const aktor = await prisma.user.findFirst({ where: { active: true, OR: [{ role: "OWNER" }, { role: "ADMIN" }, { roles: { some: { role: { in: ["OWNER", "ADMIN"] } } } }] }, select: { id: true } });
     if (!aktor) { cek("Rika: ada pengguna ADMIN/OWNER aktif untuk rehearsal", false); } else {
+      const f = (await import("node:fs")).existsSync(FOTO_RIKA) ? periksaBerkasFoto(FOTO_RIKA) : null;
+      const buktiRehearsal = f ? { urls: ["/media/job-photos/rehearsal-tidak-ditulis" + (f.ext)], sha256: f.sha256, ukuranByte: f.ukuranByte, mime: f.mime, sumber: FOTO_RIKA } : null;
       const sebelumRute = await prisma.job.findMany({ where: { routeId: rute.id }, orderBy: { sequence: "asc" }, select: { id: true, status: true, sequence: true, updatedAt: true } });
       let hasil = null; let galat = null; let dalam = null;
       try {
         await prisma.$transaction(async (tx) => {
-          hasil = await terapkanKoreksiPengirimanRuteInTx(tx, { unitCode: "RES-03102026-018-U1", routeCode: "RTE-161026-02", aktorId: aktor.id, waktuTerkirim: WAKTU_RIKA, alasan: "Rehearsal rilis: Rika sudah terkirim bersama rute Bandung tetapi tidak masuk Route Planner" });
-          const ulang = await terapkanKoreksiPengirimanRuteInTx(tx, { unitCode: "RES-03102026-018-U1", routeCode: "RTE-161026-02", aktorId: aktor.id, waktuTerkirim: WAKTU_RIKA, alasan: "Rehearsal rilis: Rika sudah terkirim bersama rute Bandung tetapi tidak masuk Route Planner" });
+          hasil = await terapkanKoreksiPengirimanRuteInTx(tx, { unitCode: "RES-03102026-018-U1", routeCode: "RTE-161026-02", aktorId: aktor.id, tanggalKejadian: TANGGAL_RIKA, bukti: buktiRehearsal, alasan: "Rehearsal rilis: Rika sudah terkirim bersama rute Bandung tetapi tidak masuk Route Planner" });
+          const ulang = await terapkanKoreksiPengirimanRuteInTx(tx, { unitCode: "RES-03102026-018-U1", routeCode: "RTE-161026-02", aktorId: aktor.id, tanggalKejadian: TANGGAL_RIKA, bukti: buktiRehearsal, alasan: "Rehearsal rilis: Rika sudah terkirim bersama rute Bandung tetapi tidak masuk Route Planner" });
           dalam = {
             ulangSudah: ulang.sudahDiterapkan === true,
             jobRute: await tx.job.findMany({ where: { routeId: rute.id }, orderBy: { sequence: "asc" }, select: { id: true, status: true, sequence: true, updatedAt: true } }),
@@ -154,7 +158,7 @@ if (!rika || !rute) { console.log("INFO Rika: unit atau rute tidak ada di salina
       } catch (e) { if (!(e instanceof Batal)) galat = e?.message || String(e); }
       const lamaUtuh = galat === null && sebelumRute.every((j) => { const k = dalam.jobRute.find((x) => x.id === j.id); return k && k.status === j.status && k.updatedAt.getTime() === j.updatedAt.getTime(); });
       cek("Rika (salinan DB): koreksi diterapkan di transaksi yang dibatalkan — 1 job baru di stop berikutnya, unit Terkirim, rute tetap Completed, Run tidak ditutup (penanda dilepas), job lama tidak berubah, ulang idempoten, tanpa QC baru",
-        galat === null && hasil?.diterapkan === true && dalam.ulangSudah && dalam.jobRute.length === sebelumRute.length + 1 && lamaUtuh && dalam.unit === "DELIVERED" && dalam.rute === "COMPLETED" && dalam.jobUnit === 1 && dalam.runMarker?.status !== "COMPLETED" && dalam.runMarker?.deliveryRelease?.kind === "DISPATCH_ROUTE_PLANNER",
+        galat === null && hasil?.diterapkan === true && dalam.ulangSudah && dalam.jobRute.length === sebelumRute.length + 1 && lamaUtuh && dalam.unit === "DELIVERED" && dalam.rute === "COMPLETED" && dalam.jobUnit === 1 && dalam.runMarker?.status !== "COMPLETED" && ["DISPATCH_ROUTE_PLANNER", "SALES_STATUS_CHANGE"].includes(dalam.runMarker?.deliveryRelease?.kind),
         galat ?? JSON.stringify({ hasil: hasil && { diterapkan: hasil.diterapkan, sequence: hasil.sequence }, dalam: dalam && { ...dalam, jobRute: dalam.jobRute.length } }));
       const sesudah = await prisma.job.count({ where: { routeId: rute.id } });
       cek("Rika (salinan DB): transaksi percobaan DIBATALKAN — jumlah job rute di salinan tidak berubah", sesudah === sebelumRute.length);

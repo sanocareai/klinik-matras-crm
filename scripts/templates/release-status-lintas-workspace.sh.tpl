@@ -375,7 +375,7 @@ SMOKE_SKIP="$(printf '%s' "$SMOKE_LINE" | sed -n 's/^SMOKE_HASIL fail=0 skip=\([
 if [ "$SMOKE_SKIP" != "0" ]; then warn "smoke test lulus dengan ${SMOKE_SKIP} pemeriksaan DILEWATI (SKIP): lihat ${BK_DIR}/smoke.log. Ini BUKAN PASS untuk pemeriksaan yang dilewati."
 else ok "smoke test lulus"; fi
 # PRATINJAU koreksi Rika dengan kode LIVE terhadap data produksi (BACA-SAJA: mode bawaan skrip tidak membuka transaksi tulis). Informasi untuk Owner; TIDAK menggagalkan rilis.
-dcp "$NEW_DIR" exec -T backend node scripts/koreksi-pengiriman-rute.js --unit=RES-03102026-018-U1 --rute=RTE-161026-02 --waktu=2026-10-16T05:30:00Z </dev/null > "$BK_DIR/pratinjau-rika.json" 2>"$BK_DIR/pratinjau-rika.err" || true
+dcp "$NEW_DIR" exec -T backend node scripts/koreksi-pengiriman-rute.js --unit=RES-03102026-018-U1 --rute=RTE-161026-02 --tanggal=2026-10-16 --foto=/app/uploads/1792112641064-27qruk2yfg3.jpg </dev/null > "$BK_DIR/pratinjau-rika.json" 2>"$BK_DIR/pratinjau-rika.err" || true
 if [ -s "$BK_DIR/pratinjau-rika.json" ]; then ok "pratinjau koreksi Rika (baca-saja) tersimpan: ${BK_DIR}/pratinjau-rika.json — layak=$(grep -o '"layak": *[a-z]*' "$BK_DIR/pratinjau-rika.json" | head -n 1 | sed 's/.*: *//') sudahDiterapkan=$(grep -o '"sudahDiterapkan": *[a-z]*' "$BK_DIR/pratinjau-rika.json" | head -n 1 | sed 's/.*: *//')"; else warn "pratinjau koreksi Rika tidak menghasilkan keluaran (lihat ${BK_DIR}/pratinjau-rika.err); koreksi Rika TIDAK dijalankan oleh rilis ini"; fi
 OLD_ONLY="$(sed -n 1p "$OLD_ASSETS" || true)"
 if [ -n "$OLD_ONLY" ]; then

@@ -914,14 +914,14 @@ test("Q9. KOREKSI RIKA — PRATINJAU baca-saja: menggambarkan kondisi, rencana t
   const w = await world(); const d = await duniaRika(w);
   const { pratinjauKoreksiPengirimanRute } = await import("../../src/services/koreksiPengirimanRute.js");
   const sebelum = await fotoRute(d.rute, d.unit.id, d.run.id); const unitSebelum = await unitStatus(d.unit.id); const revSebelum = (await runFresh(d.run.id)).revision;
-  const p = await pratinjauKoreksiPengirimanRute(testPrisma, { unitCode: d.unit.unitCode, routeCode: d.rute.code, waktuTerkirim: WAKTU });
+  const fx = siapkanFoto("q9"); const p = await pratinjauKoreksiPengirimanRute(testPrisma, { unitCode: d.unit.unitCode, routeCode: d.rute.code, waktuTerkirim: WAKTU, foto: { path: fx.sumber }, jobPhotosDir: fx.tujuan });
   assert.equal(p.layak, true, JSON.stringify(p.rintangan)); assert.equal(p.sudahDiterapkan, false);
   assert.equal(p.kondisiSekarang.unit.status, "IN_PRODUCTION"); assert.equal(p.kondisiSekarang.order.status, "PROCESSING"); assert.equal(p.kondisiSekarang.order.statusLocked, true);
   assert.equal(p.kondisiSekarang.rute.status, "COMPLETED"); assert.equal(p.kondisiSekarang.rute.jumlahJob, 5);
   assert.deepEqual(p.dampakLaporanRute.sebelum, { stop: 5, selesai: 5, unit: 5 }); assert.deepEqual(p.dampakLaporanRute.sesudah, { stop: 6, selesai: 6, unit: 6 });
-  assert.ok(p.rencanaTulis.length >= 5);
+  assert.ok(p.recordAkanDitulis.length >= 5);
   assert.equal(await fotoRute(d.rute, d.unit.id, d.run.id), sebelum); assert.equal(await unitStatus(d.unit.id), unitSebelum); assert.equal((await runFresh(d.run.id)).revision, revSebelum);
-  assert.equal((await jobDeliveryUnit(d.unit.id)).length, 0, "pratinjau tidak membuat job");
+  assert.equal((await jobDeliveryUnit(d.unit.id)).length, 0, "pratinjau tidak membuat job"); assert.deepEqual(isiDir(fx.tujuan), [], "pratinjau tidak menulis berkas"); fsK.rmSync(fx.dir, { recursive: true, force: true });
 });
 
 test("Q10. KOREKSI RIKA — PENERAPAN: 1 job di stop ke-6, unit Terkirim, Run dilepas (tidak ditutup), rute tetap Completed, job lain/QC/foto/stok/order tidak berubah, audit lengkap; ulang = tidak ada tulisan baru", async () => {
@@ -1026,11 +1026,11 @@ test("Q14. KOREKSI RIKA — GUARD KEPEMILIKAN V2: rute yang dikelola writer Deli
   // 1) cohort canary LAIN (seperti produksi: satu rute canary) — rute ini V1-saja -> layak
   await setFlagV2(V2_FLAGS.DELIVERY_ROUTE_WRITER, true, { routeIds: ["557393f2-00f7-4458-b5cf-f01b751580b8"] });
   await setFlagV2(V2_FLAGS.DELIVERY_EXECUTION_WRITER, true, { routeIds: ["557393f2-00f7-4458-b5cf-f01b751580b8"] });
-  assert.equal((await pratinjauKoreksiPengirimanRute(testPrisma, { unitCode: dasar.unitCode, routeCode: dasar.routeCode, waktuTerkirim: WAKTU })).layak, true, "rute di luar cohort tetap layak");
+  const fy = siapkanFoto("q14"); const fotoY = { path: fy.sumber }; assert.equal((await pratinjauKoreksiPengirimanRute(testPrisma, { unitCode: dasar.unitCode, routeCode: dasar.routeCode, waktuTerkirim: WAKTU, foto: fotoY })).layak, true, "rute di luar cohort tetap layak");
   // 2) rute ini MASUK cohort V2 -> ditolak
   await setFlagV2(V2_FLAGS.DELIVERY_ROUTE_WRITER, true, { routeIds: [d.rute.id] });
   await setFlagV2(V2_FLAGS.DELIVERY_EXECUTION_WRITER, true, { routeIds: [d.rute.id] });
-  const p = await pratinjauKoreksiPengirimanRute(testPrisma, { unitCode: dasar.unitCode, routeCode: dasar.routeCode, waktuTerkirim: WAKTU });
+  const p = await pratinjauKoreksiPengirimanRute(testPrisma, { unitCode: dasar.unitCode, routeCode: dasar.routeCode, waktuTerkirim: WAKTU, foto: fotoY });
   assert.equal(p.layak, false); assert.ok(p.rintangan.some((r) => r.kode === "RUTE_DI_DELIVERY_V2"));
   assert.equal((await coba())?.code, "RUTE_DI_DELIVERY_V2");
   // 3) writer GLOBAL -> ditolak
@@ -1044,5 +1044,156 @@ test("Q14. KOREKSI RIKA — GUARD KEPEMILIKAN V2: rute yang dikelola writer Deli
   // 5) pagar dibuka -> berhasil
   await setFlagV2(V2_FLAGS.DELIVERY_V1_WRITER_FENCE, false);
   assert.equal((await coba()), null);
+  assert.equal(await unitStatus(d.unit.id), "DELIVERED"); fsK.rmSync(fy.dir, { recursive: true, force: true });
+});
+
+// ──────────────────────────────── KOREKSI RIKA — jalur lengkap dengan FOTO BUKTI + jam tidak diketahui (services/koreksiPengirimanRute.js: terapkanKoreksiPengirimanRute) ────────────────────────────────
+import fsK from "node:fs";
+import osK from "node:os";
+import pathK from "node:path";
+import cryptoK from "node:crypto";
+
+// JPEG minimal sah (SOI + APP0 JFIF + EOI) — isi berbeda per tes lewat komentar COM supaya checksum unik
+const jpegUji = (cap = "uji") => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00]), Buffer.from([0xff, 0xfe]), Buffer.from([0x00, cap.length + 2]), Buffer.from(cap), Buffer.from([0xff, 0xd9])]);
+function siapkanFoto(cap) {
+  const dir = fsK.mkdtempSync(pathK.join(osK.tmpdir(), "koreksi-foto-"));
+  const sumber = pathK.join(dir, "sumber.jpg"); const isi = jpegUji(cap); fsK.writeFileSync(sumber, isi);
+  const tujuan = pathK.join(dir, "job-photos"); fsK.mkdirSync(tujuan);
+  return { dir, sumber, tujuan, sha256: cryptoK.createHash("sha256").update(isi).digest("hex"), ukuran: isi.length };
+}
+const isiDir = (d) => fsK.readdirSync(d).sort();
+const TGL_RUTE = "2026-10-16";
+const masukanFoto = (d, f, adm, over = {}) => ({ unitCode: d.unit.unitCode, routeCode: d.rute.code, aktorId: adm.user.id, tanggalKejadian: TGL_RUTE, alasan: ALASAN, foto: { path: f.sumber, sha256: f.sha256, keterangan: "foto helper di grup SANO DRIVETHRU 16 Okt 08:04 WIB" }, jobPhotosDir: f.tujuan, catatanBukti: "waktu pelaporan, bukan jam serah-terima", ...over });
+// Keadaan Rika sebenarnya 19 Okt: Sales SUDAH menandai order Terkirim lewat alur resmi (unit DELIVERED, Run dilepas SALES_STATUS_CHANGE), tetapi tidak ada job pengiriman di rute.
+async function rikaSudahDitandaiSales(w, adm) {
+  const d = await duniaRika(w);
+  await testPrisma.order.update({ where: { id: d.unit.orderId }, data: { deliveryConfirmedDate: new Date(`${TGL_RUTE}T00:00:00.000Z`) } });
+  const res = await salesUbah(adm, d.unit.orderId, "DELIVERED", "Rika sudah terkirim");
+  assert.equal(res.status, 200, JSON.stringify(res.body));
+  assert.equal(await unitStatus(d.unit.id), "DELIVERED"); assert.equal((await jobDeliveryUnit(d.unit.id)).length, 0, "Sales tidak membuat job pengiriman");
+  assert.equal((await runFresh(d.run.id)).deliveryRelease.kind, "SALES_STATUS_CHANGE");
+  return d;
+}
+
+test("Q15. KOREKSI RIKA LENGKAP (tanggal saja + foto): job ke-6 tertaut unit/order/rute/driver, foto di direktori bukti dengan checksum, jam KOSONG (bukan karangan), unit/order tetap Terkirim, 5 job lama + PICKUP + rute + Run + stok/QC/jurnal tak berubah; ulang idempoten", async () => {
+  const w = await world(); const adm = await admin(); const f = siapkanFoto("q15");
+  const { terapkanKoreksiPengirimanRute } = await import("../../src/services/koreksiPengirimanRute.js");
+  const d = await rikaSudahDitandaiSales(w, adm);
+  const sebelum = JSON.parse(await fotoRute(d.rute, d.unit.id, d.run.id)); const run0 = await runFresh(d.run.id);
+  const order0 = await testPrisma.order.findUniqueOrThrow({ where: { id: d.unit.orderId } });
+  const jurnal0 = await testPrisma.finJournalEntry.count();
+  const pickup = await testPrisma.job.create({ data: { type: "PICKUP", orderId: d.unit.orderId, status: "COMPLETED", sequence: 4, scheduledDate: new Date("2026-10-09T00:00:00.000Z"), completedAt: new Date("2026-10-09T07:27:30.000Z"), proofPhotoUrls: ["/media/job-photos/pickup-asli.jpg"] } });
+  await testPrisma.jobUnit.create({ data: { jobId: pickup.id, unitId: d.unit.id } });
+  const pickup0 = await testPrisma.job.findUniqueOrThrow({ where: { id: pickup.id } });
+
+  const hasil = await terapkanKoreksiPengirimanRute(testPrisma, masukanFoto(d, f, adm));
+  assert.equal(hasil.diterapkan, true); assert.equal(hasil.sequence, 6);
+  const jobs = (await jobDeliveryUnit(d.unit.id)).map((x) => x.job); assert.equal(jobs.length, 1, "tepat satu job pengiriman");
+  const j = jobs[0];
+  assert.equal(j.type, "DELIVERY"); assert.equal(j.status, "COMPLETED"); assert.equal(j.routeId, d.rute.id); assert.equal(j.sequence, 6); assert.equal(j.orderId, d.unit.orderId);
+  assert.equal(j.driverId, d.rute.driverId); assert.equal(j.completedAt, null, "jam tidak diketahui: completedAt KOSONG, bukan jam karangan/jam pencatatan"); assert.equal(j.arrivedAt, null);
+  assert.equal(j.completedById, adm.user.id); assert.equal(j.podEditedById, adm.user.id); assert.ok(j.podEditedAt, "waktu pencatatan koreksi tersimpan terpisah");
+  assert.equal(j.proofPhotoUrls.length, 1); assert.match(j.proofPhotoUrls[0], new RegExp(`^/media/job-photos/${j.id}-\\d+-[a-z0-9]+\\.jpg$`), "pola nama sama dengan unggahan resmi");
+  const berkas = isiDir(f.tujuan); assert.equal(berkas.length, 1); assert.equal(`/media/job-photos/${berkas[0]}`, j.proofPhotoUrls[0]);
+  assert.equal(cryptoK.createHash("sha256").update(fsK.readFileSync(pathK.join(f.tujuan, berkas[0]))).digest("hex"), f.sha256, "isi berkas = foto asli (checksum sama)");
+  // event audit: bukan JOB_COMPLETED (supaya timeline tidak memakai waktu pencatatan sebagai waktu kejadian)
+  const ev = await testPrisma.deliveryExecutionEvent.findMany({ where: { jobId: j.id } });
+  assert.equal(ev.length, 1); assert.equal(ev[0].action, "JOB_COMPLETED_KOREKSI_TANPA_JAM"); assert.equal(ev[0].occurredAt, null); assert.equal(ev[0].timeQuality, "TANGGAL_SAJA");
+  assert.equal(ev[0].payload.buktiFoto.sha256, f.sha256); assert.equal(ev[0].payload.jamKejadian, "tidak diketahui"); assert.equal(ev[0].payload.tanggalKejadian, TGL_RUTE); assert.match(ev[0].payload.catatanBukti, /bukan jam serah-terima/);
+  assert.equal(await testPrisma.deliveryExecutionEvent.count({ where: { jobId: j.id, action: "JOB_COMPLETED" } }), 0);
+  // aktivitas unit + order dengan nama pelaku
+  for (const [tipe, id] of [["unit", d.unit.id], ["order", d.unit.orderId]]) {
+    const a = await testPrisma.activityEvent.findMany({ where: { entityType: tipe, entityId: id, eventType: "DELIVERY_MANUAL_RECORDED" } });
+    assert.equal(a.length, 1, tipe); assert.equal(a[0].actorId, adm.user.id); assert.equal(a[0].metadata.jamKejadian, "tidak diketahui"); assert.deepEqual(a[0].metadata.fotoBukti, j.proofPhotoUrls);
+  }
+  // status konsisten & tidak ada efek lain
   assert.equal(await unitStatus(d.unit.id), "DELIVERED");
+  const order1 = await testPrisma.order.findUniqueOrThrow({ where: { id: d.unit.orderId } }); assert.equal(order1.status, "DELIVERED"); assert.equal(order1.status, order0.status);
+  const run1 = await runFresh(d.run.id); assert.equal(run1.status, "ACTIVE", "Run tidak ditutup"); assert.equal(run1.deliveryRelease.kind, "SALES_STATUS_CHANGE", "penanda pelepasan Sales tidak ditimpa"); assert.equal(run1.revision, run0.revision);
+  const sesudah = JSON.parse(await fotoRute(d.rute, d.unit.id, d.run.id));
+  assert.equal(sesudah.rute, "COMPLETED"); assert.equal(sesudah.eventRute, sebelum.eventRute);
+  assert.deepEqual(sesudah.jobLain.slice(0, 5), sebelum.jobLain, "lima job lama identik (termasuk updatedAt)");
+  assert.deepEqual({ qc: sesudah.qc, stok: sesudah.stok, fg: sesudah.fg, ev: sesudah.ev }, { qc: sebelum.qc, stok: sebelum.stok, fg: sebelum.fg, ev: sebelum.ev });
+  assert.equal(await testPrisma.finJournalEntry.count(), jurnal0, "tanpa jurnal");
+  const pickup1 = await testPrisma.job.findUniqueOrThrow({ where: { id: pickup.id } }); assert.deepEqual({ ...pickup1, updatedAt: 0 }, { ...pickup0, updatedAt: 0 }, "job PICKUP lama utuh"); assert.equal(pickup1.updatedAt.getTime(), pickup0.updatedAt.getTime());
+  // ulang = tidak ada tulisan/berkas baru
+  const ulang = await terapkanKoreksiPengirimanRute(testPrisma, masukanFoto(d, f, adm));
+  assert.equal(ulang.sudahDiterapkan, true); assert.equal(ulang.diterapkan, false);
+  assert.deepEqual(isiDir(f.tujuan), berkas, "tidak ada berkas yatim saat diulang"); assert.equal((await jobDeliveryUnit(d.unit.id)).length, 1);
+  assert.equal(await testPrisma.deliveryExecutionEvent.count({ where: { routeId: d.rute.id, action: { in: ["JOB_COMPLETED", "JOB_COMPLETED_KOREKSI_TANPA_JAM"] }, jobId: j.id } }), 1);
+  fsK.rmSync(f.dir, { recursive: true, force: true });
+});
+
+test("Q16. KOREKSI RIKA — KEGAGALAN TIDAK MENINGGALKAN SETENGAH JADI: gagal di tengah transaksi (trigger DB) → berkas yang disalin dihapus lagi, tanpa job/event/aktivitas/status berubah; coba ulang berhasil", async () => {
+  const w = await world(); const adm = await admin(); const f = siapkanFoto("q16");
+  const { terapkanKoreksiPengirimanRute } = await import("../../src/services/koreksiPengirimanRute.js");
+  const d = await rikaSudahDitandaiSales(w, adm);
+  const sebelum = await fotoRute(d.rute, d.unit.id, d.run.id); const akt0 = await testPrisma.activityEvent.count();
+  await testPrisma.$executeRawUnsafe(`CREATE OR REPLACE FUNCTION tmp_gagal_koreksi() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'GAGAL_UJI_KOREKSI'; END; $$ LANGUAGE plpgsql`);
+  await testPrisma.$executeRawUnsafe(`CREATE TRIGGER tmp_gagal_koreksi BEFORE INSERT ON delivery_execution_events FOR EACH ROW WHEN (NEW.action = 'JOB_COMPLETED_KOREKSI_TANPA_JAM') EXECUTE FUNCTION tmp_gagal_koreksi()`);
+  try {
+    await assert.rejects(terapkanKoreksiPengirimanRute(testPrisma, masukanFoto(d, f, adm)), /GAGAL_UJI_KOREKSI/);
+    assert.deepEqual(isiDir(f.tujuan), [], "berkas yang disalin dibersihkan");
+    assert.equal((await jobDeliveryUnit(d.unit.id)).length, 0); assert.equal(await fotoRute(d.rute, d.unit.id, d.run.id), sebelum); assert.equal(await testPrisma.activityEvent.count(), akt0);
+    assert.equal(await unitStatus(d.unit.id), "DELIVERED");
+  } finally {
+    await testPrisma.$executeRawUnsafe(`DROP TRIGGER IF EXISTS tmp_gagal_koreksi ON delivery_execution_events`); await testPrisma.$executeRawUnsafe(`DROP FUNCTION IF EXISTS tmp_gagal_koreksi()`);
+  }
+  const ok = await terapkanKoreksiPengirimanRute(testPrisma, masukanFoto(d, f, adm));
+  assert.equal(ok.diterapkan, true); assert.equal((await jobDeliveryUnit(d.unit.id)).length, 1); assert.equal(isiDir(f.tujuan).length, 1);
+  fsK.rmSync(f.dir, { recursive: true, force: true });
+});
+
+test("Q17. KOREKSI RIKA — KONKURENSI dengan foto: dua penerapan bersamaan → satu job, satu event, SATU berkas (salinan kalah dibersihkan)", async () => {
+  const w = await world(); const adm = await admin(); const f = siapkanFoto("q17");
+  const { terapkanKoreksiPengirimanRute } = await import("../../src/services/koreksiPengirimanRute.js");
+  const d = await rikaSudahDitandaiSales(w, adm);
+  const jalan = () => terapkanKoreksiPengirimanRute(testPrisma, masukanFoto(d, f, adm)).then((r) => ({ ok: r }), (e) => ({ err: e }));
+  const hasil = await Promise.all([jalan(), jalan()]);
+  assert.equal(hasil.filter((h) => h.ok?.diterapkan).length, 1, JSON.stringify(hasil.map((h) => h.ok ?? h.err?.message)));
+  assert.equal((await jobDeliveryUnit(d.unit.id)).length, 1); assert.equal(isiDir(f.tujuan).length, 1, "tidak ada berkas yatim");
+  assert.equal(await testPrisma.deliveryExecutionEvent.count({ where: { routeId: d.rute.id, jobId: (await jobDeliveryUnit(d.unit.id))[0].jobId } }), 1);
+  fsK.rmSync(f.dir, { recursive: true, force: true });
+});
+
+test("Q18. KOREKSI RIKA — BUKTI & WAKTU DITOLAK tanpa menulis: foto hilang/bukan gambar/checksum salah/terlalu besar, tanpa foto, jam & tanggal sekaligus, tanggal bukan hari rute, tanpa waktu", async () => {
+  const w = await world(); const adm = await admin(); const f = siapkanFoto("q18");
+  const { terapkanKoreksiPengirimanRute, pratinjauKoreksiPengirimanRute } = await import("../../src/services/koreksiPengirimanRute.js");
+  const d = await rikaSudahDitandaiSales(w, adm); const sebelum = await fotoRute(d.rute, d.unit.id, d.run.id);
+  const coba = (over) => terapkanKoreksiPengirimanRute(testPrisma, masukanFoto(d, f, adm, over)).then(() => null, (e) => e);
+  const teks = pathK.join(f.dir, "bukan.jpg"); fsK.writeFileSync(teks, "ini bukan gambar");
+  const besar = pathK.join(f.dir, "besar.jpg"); fsK.writeFileSync(besar, Buffer.concat([jpegUji("b"), Buffer.alloc(8 * 1024 * 1024)]));
+  assert.equal((await coba({ foto: { path: pathK.join(f.dir, "tidak-ada.jpg") } }))?.code, "FOTO_TIDAK_ADA");
+  assert.equal((await coba({ foto: { path: teks } }))?.code, "FOTO_BUKAN_GAMBAR");
+  assert.equal((await coba({ foto: { path: f.sumber, sha256: "0".repeat(64) } }))?.code, "FOTO_CHECKSUM");
+  assert.equal((await coba({ foto: { path: besar } }))?.code, "FOTO_UKURAN");
+  assert.equal((await coba({ foto: null }))?.code, "FOTO_WAJIB");
+  assert.equal((await coba({ waktuTerkirim: new Date("2026-10-16T05:30:00.000Z") }))?.code, "WAKTU_GANDA");
+  assert.equal((await coba({ tanggalKejadian: "2026-10-15" }))?.code, "TANGGAL_BUKAN_HARI_RUTE");
+  assert.equal((await coba({ tanggalKejadian: null }))?.code, "WAKTU_WAJIB");
+  assert.deepEqual(isiDir(f.tujuan), [], "tidak ada berkas tertulis"); assert.equal(await fotoRute(d.rute, d.unit.id, d.run.id), sebelum); assert.equal((await jobDeliveryUnit(d.unit.id)).length, 0);
+  const p = await pratinjauKoreksiPengirimanRute(testPrisma, { unitCode: d.unit.unitCode, routeCode: d.rute.code, tanggalKejadian: TGL_RUTE, foto: { path: f.sumber, sha256: f.sha256 }, jobPhotosDir: f.tujuan });
+  assert.equal(p.layak, true, JSON.stringify(p.rintangan)); assert.equal(p.waktu.jenis, "TANGGAL_SAJA"); assert.equal(p.berkasAkanDitambah[0].sha256, f.sha256);
+  assert.ok(p.recordAkanDitulis.some((r) => r.tabel === "units" && r.aksi === "TIDAK DIUBAH"), "unit sudah Terkirim lewat Sales: tidak ditulis ulang");
+  assert.deepEqual(isiDir(f.tujuan), [], "pratinjau tidak menulis berkas");
+  fsK.rmSync(f.dir, { recursive: true, force: true });
+});
+
+test("Q19. KOREKSI RIKA — PEMBACA UI: detail job, detail rute, timeline rute, ringkasan unit membuka job tanpa jam; timeline menulis 'Tidak tersedia' (bukan waktu pencatatan); riwayat unit memuat kalimat koreksi (sumber PENGIRIMAN, nama pelaku, jam tidak diketahui, foto)", async () => {
+  const w = await world(); const adm = await admin(); const f = siapkanFoto("q19");
+  const { terapkanKoreksiPengirimanRute } = await import("../../src/services/koreksiPengirimanRute.js");
+  const d = await rikaSudahDitandaiSales(w, adm);
+  const hasil = await terapkanKoreksiPengirimanRute(testPrisma, masukanFoto(d, f, adm));
+  const jobRes = await adm.api.get(`${ARM}/jobs/${hasil.jobId}`); assert.equal(jobRes.status, 200, JSON.stringify(jobRes.body));
+  assert.equal(jobRes.body.status, "COMPLETED"); assert.deepEqual(jobRes.body.proofPhotoUrls, hasil.urls); assert.equal(jobRes.body.completedAt, null);
+  const ruteRes = await adm.api.get(`${ARM}/routes/${d.rute.id}`); assert.equal(ruteRes.status, 200, JSON.stringify(ruteRes.body));
+  assert.equal(ruteRes.body.jobs.length, 6); const stop = ruteRes.body.jobs.find((x) => x.id === hasil.jobId); assert.equal(stop.sequence, 6); assert.deepEqual(stop.proofPhotoUrls, hasil.urls);
+  const tl = await adm.api.get(`${ARM}/routes/${d.rute.id}/timeline`); assert.equal(tl.status, 200, JSON.stringify(tl.body));
+  const stopTl = JSON.stringify(tl.body).includes(hasil.jobId); assert.ok(stopTl, "stop Rika muncul di timeline rute");
+  const baris = (tl.body.stops ?? []).find((s) => s.jobId === hasil.jobId || s.id === hasil.jobId);
+  if (baris) assert.ok(!(baris.complete?.length), "tidak ada waktu selesai karangan: " + JSON.stringify(baris.complete));
+  const ov = await w.lead.api.get(`${V2}/units/${d.unit.id}/overview`); assert.equal(ov.status, 200, JSON.stringify(ov.body));
+  const k = ov.body.activity.find((a) => /dicatat manual ke rute/.test(a.label)); assert.ok(k, "riwayat unit memuat koreksi");
+  assert.equal(k.source, "PENGIRIMAN"); assert.equal(k.actor, adm.user.name); assert.match(k.label, /jam serah-terima tidak diketahui/); assert.match(k.label, /1 foto/);
+  fsK.rmSync(f.dir, { recursive: true, force: true });
 });
