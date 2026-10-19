@@ -24,7 +24,7 @@ const GUARD_UNCHANGED = [
   "backend/src/services/warehouseCorrection.js", "backend/src/routes/gudangKoreksi.js", "backend/src/services/inventoryLedger.js", "backend/src/routes/materialIssue.js", "backend/src/routes/stockAdjustment.js", "backend/src/routes/goodsReceipt.js", "backend/src/routes/returnRecord.js", "backend/src/routes/stockTransfer.js",
   "backend/src/routes/stockCount.js", "backend/src/services/opnameCutover.js", "backend/src/services/opnameMatriks.js", "backend/src/services/pergerakanSesiHitung.js",
   "backend/src/services/finance/journal.js", "backend/src/middleware/authorize.js", "backend/src/middleware/auth.js", "backend/src/constants/permissions.js",
-  "backend/src/services/productionStepCommandService.js", "backend/src/services/orderStatusSync.js", "backend/src/services/deliveryMenungguKonfirmasi.js",
+  "backend/src/services/productionStepCommandService.js", "backend/src/services/orderStatusSync.js",
 ];
 // Commit live yang wajib leluhur: Route Planner bebas status produksi (d66f36ad), Gudang UX T2 (f293c587), manifest barang (229755d6), Koreksi Gudang (08d62e7d), Produksi override (799d3e93), Riwayat Referensi (56b87721).
 const LIVE_ANCESTORS_REF = ["d66f36ad", "f293c587", "229755d6", "08d62e7d", "799d3e93", "56b87721", "442d5c13", "ca9bdea7", "694f2184"];
