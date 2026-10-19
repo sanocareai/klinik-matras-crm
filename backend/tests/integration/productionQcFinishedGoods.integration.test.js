@@ -45,7 +45,7 @@ async function world() {
   const rcvArea = await loc("RCV", "RECEIVING_AREA");
   const fgInactive = await loc("FGX", "FINISHED_GOODS_AREA", { active: false });
   const c = (u) => ({ ...u, api: makeClient(server.baseUrl, u.token) });
-  const service = await testPrisma.serviceCatalog.findFirstOrThrow({ orderBy: { sortOrder: "asc" } });
+  const service = await testPrisma.serviceCatalog.findFirstOrThrow({ where: { modules: { some: {} } }, orderBy: [{ sortOrder: "asc" }, { code: "asc" }] }); // layanan yang punya modul tahap (bukan sisa layanan uji berkas lain)
   return { op: c(lead), gudang: c(gudang), gudang2: c(gudang2), qc: c(qc), qc2: c(qc2), admin: c(admin), workCenter, wc: workCenter.id, operator, fgArea, rcvArea, fgInactive, service };
 }
 

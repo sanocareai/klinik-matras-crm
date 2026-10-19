@@ -70,7 +70,13 @@ export async function ubahStatusUnitInTx(tx, p) {
   if (!SUMBER_STATUS[sumber]) throw new Error(`sumber perubahan tidak dikenal: ${sumber}`);
   const ids = [...new Set((p.unitIds ?? []).filter(Boolean))].sort();
   const hasil = { ke, sumber, diubah: [], dilewati: [], run: { dibatalkan: [], dilepas: [], peringatan: [], returGudang: [] }, jobSiap: [] };
-  if (ids.length === 0) return hasil;
+  if (ids.length === 0) {
+    // Order tanpa unit (data lama / fixture) tetap punya job tingkat ORDER: pembatalan/penyelesaian job order TIDAK bergantung pada jumlah unit (kode lama menjalankannya tanpa syarat).
+    const orderKosong = orderId ?? null;
+    if (ke === KE_STATUS.BATAL && batalkanJobOrder && orderKosong) await cancelOrderDeliveryJobs(tx, { orderId: orderKosong, actorId: aktor, reason: String(alasan ?? "").trim() || "Dibatalkan" });
+    if (ke === KE_STATUS.TERKIRIM && selesaikanJobOrder && orderKosong) await selesaikanJobBelumJalan(tx, orderKosong);
+    return hasil;
+  }
 
   // Kunci unit (urutan tetap) — serial dengan command Produksi yang juga mengunci unit; status dibaca ULANG di bawah kunci.
   for (const id of ids) await lockRowForUpdate(tx, "units", id);
