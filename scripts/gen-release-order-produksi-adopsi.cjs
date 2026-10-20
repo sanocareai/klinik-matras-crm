@@ -38,9 +38,9 @@ const LIVE_ANCESTORS_REF = ["799d3e93", "56b87721", "e5a32cd2", "e47f37e2", "571
 const UJI_TOLAK = 12, UJI_LOLOS = 5; // harus cocok dengan blok uji perilaku di templat
 const DIST_BARU = ["Rencana · tidak mengurangi stok", "Aktual · mengurangi stok", "Catat status kerja", "Belum ada catatan pekerjaan"];
 const DIST_LAMA = ["Ajukan Koreksi Stok", "Koreksi Penerimaan", "Konfirmasi Barang Jadi", "Selesaikan Produksi", "Rencana Produksi", "Uang muka dialokasikan ke faktur", "Tetapkan Siap Kirim (override)", "Riwayat referensi dari file (bukan transaksi)", "Simpan ke Stok", "Barang Akan Datang"];
-// Tes integrasi terarah (rehearsal-penuh): pola nama berkas (backend/tests/integration) + jumlah tes yang HARUS lulus semuanya. TES_N_EXPECT = 584 pada 61 berkas: himpunan regresi terarah (580 pada penyaring lama, yang menghitung 2 berkas delivery cohort hanya sebagai entri berkas) + A10 + 3 tes delivery cohort yang kini terhitung penuh; node 20 (image VPS) = 584/584 lulus.
+// Tes integrasi terarah (rehearsal-penuh): pola nama berkas (backend/tests/integration) + jumlah tes yang HARUS lulus semuanya. TES_N_EXPECT = 611 pada 64 berkas (584 + 27 tes Opname/interaksi: opnameCutover, stockCountSesiPenuh, productionAdopsiOpname); sebelumnya 584 pada 61 berkas: himpunan regresi terarah (580 pada penyaring lama, yang menghitung 2 berkas delivery cohort hanya sebagai entri berkas) + A10 + 3 tes delivery cohort yang kini terhitung penuh; node 20 (image VPS) = 584/584 lulus.
 const TES_POLA = /^(production|unit|statusUnit|workshop|pkr|penjualanKaryawanOrderCrm|gudangStatus|gudangKoreksi|gudangPusat|stockCount|opname|deliveryUnitLoad|deliveryWriterCohort|deliveryCrossBoundary|ordersStatus|orderStatus|unitStatus|stok|material).*\.integration\.test\.js$/;
-const TES_N_EXPECT = 584;
+const TES_N_EXPECT = 611;
 
 const lf = (t) => t.replace(/\r\n/g, "\n");
 const must = (c, m) => { if (!c) throw new Error("templat/masukan tak cocok: " + m); };
