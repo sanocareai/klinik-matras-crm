@@ -33,7 +33,8 @@ test("migrasi: tepat satu nama migrasi Koreksi Gudang; terurut SETELAH migrasi P
   assert.equal(migName, "20261220090000_gudang_koreksi_dokumen");
   assert.ok(migName > "20261219090000_production_admin_override_siap_kirim", "harus sesudah migrasi live terakhir");
   const semua = fs.readdirSync(path.join(root, "backend/prisma/migrations")).filter((n) => /^\d{14}_/.test(n)).sort();
-  assert.equal(semua.filter((n) => n > "20261219090000_production_admin_override_siap_kirim" && n <= migName).join(","), migName, "tidak ada migrasi lain yang menyelip (yang MENGIKUTI boleh ada)");
+  // Migrasi Koreksi Gudang tetap yang PERTAMA sesudah migrasi Produksi override (tidak ada yang menyelip). Migrasi yang lebih baru boleh mengikuti (mis. 20261222090000 Stock Opname sesi penuh) — rilis ini sudah live.
+  assert.equal(semua.filter((n) => n > "20261219090000_production_admin_override_siap_kirim")[0], migName, "tidak ada migrasi lain yang menyelip sebelum migrasi Koreksi Gudang");
 });
 
 test("generator: pin sha256 isi migrasi (LF) tertanam; hasil bangkit deterministik", () => {

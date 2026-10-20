@@ -20,6 +20,7 @@ const { financeUtangRouter } = await import("../../../src/routes/financeUtang.js
 const { materialIssueRouter } = await import("../../../src/routes/materialIssue.js");
 const { stockTransferRouter } = await import("../../../src/routes/stockTransfer.js");
 const { stockCountRouter } = await import("../../../src/routes/stockCount.js");
+const { stockCountSesiRouter } = await import("../../../src/routes/stockCountSesi.js");
 const { riwayatReferensiRouter } = await import("../../../src/routes/riwayatReferensi.js");
 const { gudangKoreksiRouter } = await import("../../../src/routes/gudangKoreksi.js");
 const { gudangBerandaRouter } = await import("../../../src/routes/gudangBeranda.js");
@@ -122,6 +123,7 @@ export function buildTestApp() {
   app.use("/api/finance/retur-supplier", returSupplierFinanceRouter);
   app.use("/api/inventory/material-issues", materialIssueRouter);
   app.use("/api/inventory/transfers", stockTransferRouter);
+  app.use("/api/inventory/stock-counts", stockCountSesiRouter);
   app.use("/api/inventory/stock-counts", stockCountRouter);
   app.use("/api/inventory/pusat-kerja", gudangPusatKerjaRouter);
   app.use("/api/inventory/beranda", gudangBerandaRouter);

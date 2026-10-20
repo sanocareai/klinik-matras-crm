@@ -93,8 +93,12 @@ const IDX_OPNAME = { SCHEDULED: 0, IN_PROGRESS: 1, WAITING_REVIEW: 2, COMPLETED:
 export function tampilanOpname(c, ctx = {}) {
   const status = String(c?.status ?? ""); const d = bentuk(TAHAP_OPNAME, IDX_OPNAME, status); const ubah = { ...AKSI_LAIN.UBAH, label: "Ubah jadwal & catatan" }; const batal = AKSI_LAIN.BATALKAN;
   switch (status) {
-    case "SCHEDULED": return d("TERJADWAL", "Terjadwal — belum dihitung", "neutral", "Belum dihitung dan belum memengaruhi stok. Saat Mulai hitung, sistem merekam saldo sistem sebagai pembanding (disembunyikan bila blind count).", "BELUM", [AKSI_LAIN.MULAI_HITUNG, ubah, batal]);
-    case "IN_PROGRESS": return d("DIHITUNG", "Sedang dihitung", "accent", "Isi hasil hitung fisik tiap bahan, lalu serahkan hitungan. Belum memengaruhi stok.", "BELUM", [AKSI_LAIN.SERAHKAN_HITUNGAN, batal]);
+    case "SCHEDULED": return d("TERJADWAL", "Terjadwal — belum dihitung", "neutral", c?.modelVersion === 2
+      ? "Belum dihitung dan belum memengaruhi stok. Cakupan bahan sudah tersimpan di sesi. Saldo sistem pembanding diambil dari ledger pada WAKTU HITUNG tiap bahan (disembunyikan bila blind count)."
+      : "Belum dihitung dan belum memengaruhi stok. Saat Mulai hitung, sistem merekam saldo sistem sebagai pembanding (disembunyikan bila blind count).", "BELUM", [AKSI_LAIN.MULAI_HITUNG, ubah, batal]);
+    case "IN_PROGRESS": return d("DIHITUNG", "Sedang dihitung", "accent", c?.modelVersion === 2
+      ? "Isi hasil hitung fisik di halaman hitung; boleh disimpan bertahap dan dilanjutkan kapan saja. Kolom kosong berarti belum dihitung. Serahkan hitungan bila semua bahan sudah diisi. Belum memengaruhi stok."
+      : "Isi hasil hitung fisik tiap bahan, lalu serahkan hitungan. Belum memengaruhi stok.", "BELUM", [AKSI_LAIN.SERAHKAN_HITUNGAN, batal]);
     case "WAITING_REVIEW": {
       const aksi = [];
       if (c?.countType === "FULL_STOCK_OPNAME" && ctx.bisaPeriksa !== false) aksi.push(AKSI_LAIN.PERIKSA_HITUNGAN);

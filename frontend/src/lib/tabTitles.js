@@ -75,6 +75,7 @@ export function titleFromPath(rawPath) {
   // Tahap 4: jendela fokus di atas Beranda (/warehouse/dashboard/<jenis>/<id>) tetap bertab "Gudang · Beranda".
   if (divisionSeg === "warehouse" && parts[1] === "dashboard") return "Gudang · Beranda";
   if (divisionSeg === "warehouse" && parts[1] === "perlu-perhatian") return "Perlu Perhatian";
+  if (divisionSeg === "warehouse" && parts[1] === "stock-count" && parts[3] === "hitung") return "Hitung Opname";
   let seg = parts.pop() || "portal";
   if (looksLikeId(seg) && parts.length > 0) {
     const resource = parts.pop();

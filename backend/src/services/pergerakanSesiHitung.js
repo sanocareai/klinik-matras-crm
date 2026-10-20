@@ -16,6 +16,28 @@ export const AKSI_TANDA_DIRESET = "TANDA_DIRESET";
 const EPS = 1e-6;
 const r4 = (x) => Math.round(x * 10000) / 10000;
 
+/**
+ * Tanda pergerakan yang masih berlaku untuk satu sesi (dari activity_events). Reset (per bahan atau seluruh sesi) menghapus tanda SEBELUMNYA.
+ * Reset per bahan memakai materialId yang dicatat pada tanda itu sendiri (kolom `materialId` di metadata), dengan cadangan peta pergerakan→bahan untuk tanda lama —
+ * sehingga tanda untuk pergerakan yang kebetulan tidak sedang termuat tetap terhapus dan tidak "hidup kembali" saat pergerakan itu masuk daftar nanti.
+ */
+export async function bacaTandaSesi(db, countId, materialPerMov = new Map()) {
+  const events = await db.activityEvent.findMany({
+    where: { entityType: ENTITY_TYPES.STOCK_COUNT, entityId: countId, eventType: EVENT_TYPES.DOCUMENT_EDITED },
+    select: { actorId: true, metadata: true, createdAt: true }, orderBy: { createdAt: "asc" },
+  });
+  const tandaPerId = new Map();
+  for (const e of events) {
+    if (e.metadata?.aksi === AKSI_TANDA_DIRESET) {
+      for (const [mid, t] of [...tandaPerId]) if (!e.metadata.materialId || (t.materialId ?? materialPerMov.get(mid)) === e.metadata.materialId) tandaPerId.delete(mid);
+      continue;
+    }
+    if (e.metadata?.aksi !== AKSI_TANDA_PERGERAKAN || typeof e.metadata.movementId !== "string" || typeof e.metadata.tercermin !== "boolean") continue;
+    tandaPerId.set(e.metadata.movementId, { tercermin: e.metadata.tercermin, oleh: e.actorId, pada: e.createdAt, materialId: e.metadata.materialId ?? null });
+  }
+  return tandaPerId;
+}
+
 /** Pergerakan ledger pada material baris count setelah startedAt (sampai completedAt/sekarang), di luar ADJUSTMENT milik count ini. */
 export async function muatPergerakanSesi(db, count, { sampai = null } = {}) {
   if (!count.startedAt) return { pergerakan: [], tandaPerId: new Map() };
@@ -31,21 +53,8 @@ export async function muatPergerakanSesi(db, count, { sampai = null } = {}) {
     },
     orderBy: { createdAt: "asc" },
   });
-  const events = await db.activityEvent.findMany({
-    where: { entityType: ENTITY_TYPES.STOCK_COUNT, entityId: count.id, eventType: EVENT_TYPES.DOCUMENT_EDITED },
-    select: { actorId: true, metadata: true, createdAt: true }, orderBy: { createdAt: "asc" },
-  });
   const materialPerMov = new Map(rows.map((m) => [m.id, m.materialId]));
-  const tandaPerId = new Map();
-  for (const e of events) {
-    if (e.metadata?.aksi === AKSI_TANDA_DIRESET) {
-      // reset (semua material, atau satu material): tanda yang dibuat SEBELUM reset tidak berlaku lagi
-      for (const [mid] of [...tandaPerId]) if (!e.metadata.materialId || materialPerMov.get(mid) === e.metadata.materialId) tandaPerId.delete(mid);
-      continue;
-    }
-    if (e.metadata?.aksi !== AKSI_TANDA_PERGERAKAN || typeof e.metadata.movementId !== "string" || typeof e.metadata.tercermin !== "boolean") continue;
-    tandaPerId.set(e.metadata.movementId, { tercermin: e.metadata.tercermin, oleh: e.actorId, pada: e.createdAt });
-  }
+  const tandaPerId = await bacaTandaSesi(db, count.id, materialPerMov);
   const pergerakan = rows.map((m) => ({
     id: m.id, materialId: m.materialId, type: m.type, qty: Number(m.qty), at: m.createdAt, note: m.note, reason: m.reason, createdById: m.createdById,
     dokumen: m.goodsReceipt?.receiptNumber || m.materialIssue?.issueNumber || m.stockTransfer?.transferNumber || m.damagedStockRecord?.recordNumber

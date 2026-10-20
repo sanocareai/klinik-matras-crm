@@ -11,6 +11,7 @@ import KolomJumlah from "./KolomJumlah.jsx";
 import { HalamanDokumen, KartuStatusDokumen, KartuAksiDokumen, useDokumen } from "./KartuDokumen.jsx";
 import { JENIS_HITUNG, METODE_HITUNG } from "./labelDokumen.js";
 import { angka, tanggalPendek, teksJumlah, waktuTeks } from "./dokumenLogic.js";
+import OpnameSesiTinjau from "@/features/warehouse/opname/OpnameSesiTinjau.jsx";
 
 // DETAIL STOCK OPNAME — halaman. Alur: Terjadwal → Mulai hitung (saldo sistem direkam) → isi hasil hitung → Serahkan → tinjau selisih → Selesaikan (satu penyesuaian per bahan berselisih). Aturan pemisahan tugas,
 // tanda pergerakan selama sesi, dan pemeriksaan hitungan (Opname Penuh) TIDAK diubah; halaman hanya menjelaskannya dan hanya menawarkan aksi yang boleh dilakukan akun ini (server tetap menolak yang tidak berhak).
@@ -48,6 +49,8 @@ export default function OpnameDetail({ id, onTutup, onBerubah }) {
   const simpanBaris = async () => { setSibuk(true); setGalatLokal(""); try { await simpanEdit(); await muat(); } catch (e) { setGalatLokal(e.message); } finally { setSibuk(false); } };
 
   if (!r) return <HalamanDokumen r={r} memuat={memuat} galat={galat} onTutup={onTutup} nama="stock opname" />;
+  // Sesi model 2 (opname penuh/per kelompok/cycle count baru): halaman sesi + halaman hitung terpisah. Sesi lama (model 1) tetap memakai tampilan di bawah.
+  if (r.modelVersion === 2) return <OpnameSesiTinjau r={r} id={id} onTutup={onTutup} galat={galat} memuat={memuat} muat={muat} sibuk={sibuk} setSibuk={setSibuk} versi={versi} />;
   const t = r.tampilan; const status = r.status; const blind = r.blindCount && status === "IN_PROGRESS"; const selesai = ["COMPLETED", "CANCELLED"].includes(status);
   const belumDitandai = r.sesi?.belumDitandai ?? 0;
   const berselisih = gabung.filter((l) => { const b = baris(l); return b.selisih !== null && b.selisih !== 0; });
@@ -78,7 +81,7 @@ export default function OpnameDetail({ id, onTutup, onBerubah }) {
   ];
   return (
     <HalamanDokumen judul={r.countNumber} subjudul={`${JENIS_HITUNG[r.countType] ?? r.countType} · ${r.lines.length} bahan`} onTutup={onTutup} r={r} memuat={memuat} galat={galat} onMuat={muat} nama="stock opname" footer={<KartuAksiDokumen tampilan={t} izin={r.izin} spec={SPEC} onJalankan={jalankan} sibuk={sibuk} versi={versi} namaDokumen="opname ini" kaki="Pemisahan tugas: selisih hanya dibukukan penyetuju (Owner/Finance) yang bukan pembuat, penugas, atau pengisi hitungan; Opname Penuh juga wajib diperiksa petugas lain." />}>
-      <KartuStatusDokumen tampilan={t} identitas={identitas} alurLabel="Alur stock opname" catatan={r.notes} tambahan={blind ? <span className="inline-flex items-center gap-1 rounded-chip bg-accentbg px-2 py-1 text-[11px] text-accent"><EyeOff size={12} /> Blind count: saldo sistem disembunyikan sampai hitungan diserahkan</span> : null} />
+      <KartuStatusDokumen tampilan={t} identitas={identitas} alurLabel="Alur stock opname" catatan={r.notes} tambahan={<>{<span className="inline-flex items-center gap-1 rounded-chip bg-inset px-2 py-1 text-[11px] text-ink2" data-testid="penanda-sesi-lama">Sesi lama: cakupan {r.lines.length} bahan dipilih manual — bukan sesi opname penuh baru</span>}{blind ? <span className="inline-flex items-center gap-1 rounded-chip bg-accentbg px-2 py-1 text-[11px] text-accent"><EyeOff size={12} /> Blind count: saldo sistem disembunyikan sampai hitungan diserahkan</span> : null}</>} />
       <Card className="space-y-3 p-4">
         <h3 className="m-0 text-[11px] font-bold uppercase tracking-wide text-ink3">Bahan yang dihitung</h3>
         <TabelItemDokumen baris={itemBaris} />

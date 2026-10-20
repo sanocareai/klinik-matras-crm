@@ -93,6 +93,7 @@ const WarehouseFinishedGoods = lazy(() => import("../pages/warehouse/WarehouseFi
 const WarehouseMaterialIssue = lazy(() => import("../pages/warehouse/WarehouseMaterialIssue.jsx"));
 const WarehouseTransfers = lazy(() => import("../pages/warehouse/WarehouseTransfers.jsx"));
 const WarehouseStockCount = lazy(() => import("../pages/warehouse/WarehouseStockCount.jsx"));
+const WarehouseOpnameKerja = lazy(() => import("../pages/warehouse/WarehouseOpnameKerja.jsx"));
 const WarehouseAdjustments = lazy(() => import("../pages/warehouse/WarehouseAdjustments.jsx"));
 const WarehouseReplenishment = lazy(() => import("../pages/warehouse/WarehouseReplenishment.jsx"));
 const WarehouseReports = lazy(() => import("../pages/warehouse/WarehouseReports.jsx"));
@@ -276,6 +277,7 @@ const PAGES_DASAR = [
   // UX Gudang Tahap 4: detail dokumen = JENDELA FOKUS di atas daftarnya (rute /:id?), bukan halaman terpisah.
   { path: "/warehouse/material-issue/:id?", render: () => <WarehouseMaterialIssue /> },
   { path: "/warehouse/transfers/:id?", render: () => <WarehouseTransfers /> },
+  { path: "/warehouse/stock-count/:id/hitung", render: () => <WarehouseOpnameKerja /> },
   { path: "/warehouse/stock-count/:id?", render: () => <WarehouseStockCount /> },
   { path: "/warehouse/replenishment/:id?", render: () => <WarehouseReplenishment /> },
   { path: "/warehouse/adjustments/:jenis?/:id?", render: () => <WarehouseAdjustments /> },

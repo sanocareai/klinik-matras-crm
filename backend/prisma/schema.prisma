@@ -6044,6 +6044,11 @@ model StockCount {
   createdById String? @map("created_by")
   createdBy   User?   @relation("StockCountCreator", fields: [createdById], references: [id], onDelete: SetNull)
 
+  // Sesi baru (Okt 2026): model_version 2 = cakupan disimpan saat dibuat (lines = daftar Material ID; scope_info = parameter + pratinjau), waktu hitung per bahan, revisi per baris. 1 = sesi lama (aturan lama, tidak ditafsirkan ulang).
+  modelVersion Int     @default(1) @map("model_version")
+  scopeMode    String? @map("scope_mode") @db.VarChar(10) // FULL | GROUP | ITEMS
+  scopeInfo    Json?   @map("scope_info")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -6065,6 +6070,21 @@ model StockCountLine {
 
   systemQty  Float? @map("system_qty") // snapshot SEKALI saat Start Count — bukan dihitung ulang
   countedQty Float? @map("counted_qty") // diisi staf saat hitung berjalan
+
+  // Sesi model 2: TIGA WAKTU TERPISAH. observedAt = waktu pengamatan fisik (NULL = tidak diketahui; tidak pernah diturunkan dari savedAt), savedAt = waktu angka disimpan, waktu posting ledger = StockMovement.createdAt.
+  // observedSource: MULAI | DINYATAKAN | DIKOREKSI. Revisi untuk menolak penimpaan diam-diam, penanda "perlu diperiksa", dan pengeluaran dari cakupan dengan alasan.
+  savedAt            DateTime? @map("saved_at")
+  countedById        String?   @map("counted_by_id")
+  observedAt         DateTime? @map("observed_at")
+  observedSource     String?   @map("observed_source") @db.VarChar(10)
+  observedById       String?   @map("observed_by_id")
+  observedRecordedAt DateTime? @map("observed_recorded_at")
+  revision      Int       @default(0)
+  needsCheck    Boolean   @default(false) @map("needs_check")
+  excludedReason String?  @map("excluded_reason")
+  excludedAt    DateTime? @map("excluded_at")
+  excludedById  String?   @map("excluded_by_id")
+  origin        String    @default("SESI") @db.VarChar(10) // SESI | TAMBAHAN (bahan ditambahkan setelah sesi berjalan)
 
   // WAJIB diisi kalau ada selisih (divalidasi di route, sama pola dengan
   // WASTE/ADJUSTMENT di routes/inventory.js — selisih tanpa penjelasan

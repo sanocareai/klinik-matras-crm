@@ -720,6 +720,15 @@ export const api = {
   },
   getStockCount: (id) => request(`/inventory/stock-counts/${id}`),
   createStockCount: (data) => request("/inventory/stock-counts", { method: "POST", body: JSON.stringify(data) }),
+  // Stock Opname sesi model 2 (cakupan penuh/kelompok/cycle count, hasil hitung bertahap dengan revisi per baris)
+  pratinjauCakupanOpname: (data) => request("/inventory/stock-counts/scope-preview", { method: "POST", body: JSON.stringify(data) }),
+  getBahanOpname: ({ q = "", kelompok = "", limit = 50, offset = 0 } = {}) => request(`/inventory/stock-counts/bahan?q=${encodeURIComponent(q)}&kelompok=${encodeURIComponent(kelompok)}&limit=${limit}&offset=${offset}`),
+  getKerjaOpname: (id) => request(`/inventory/stock-counts/${id}/kerja`),
+  simpanHasilOpname: (id, items) => request(`/inventory/stock-counts/${id}/hasil`, { method: "PUT", body: JSON.stringify({ items }) }),
+  getRiwayatBarisOpname: (id, lineId) => request(`/inventory/stock-counts/${id}/lines/${lineId}/riwayat`),
+  keluarkanBarisOpname: (id, lineId, alasan) => request(`/inventory/stock-counts/${id}/lines/${lineId}/keluarkan`, { method: "POST", body: JSON.stringify({ alasan }) }),
+  kembalikanBarisOpname: (id, lineId) => request(`/inventory/stock-counts/${id}/lines/${lineId}/kembalikan`, { method: "POST", body: JSON.stringify({}) }),
+  putuskanCakupanOpname: (id, materialId, tindakan, alasan) => request(`/inventory/stock-counts/${id}/cakupan`, { method: "POST", body: JSON.stringify({ materialId, tindakan, alasan }) }),
   updateStockCount: (id, data) => request(`/inventory/stock-counts/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   updateStockCountLine: (id, lineId, data) =>
     request(`/inventory/stock-counts/${id}/lines/${lineId}`, { method: "PATCH", body: JSON.stringify(data) }),
@@ -730,6 +739,11 @@ export const api = {
   // Tanda eksplisit: tercermin=true (sudah masuk hitungan fisik) / false (belum). Tidak ada nilai bawaan.
   tandaiPergerakanSesi: (countId, movementId, tercermin) =>
     request(`/inventory/stock-counts/${countId}/pergerakan/${movementId}/tanda`, { method: "POST", body: JSON.stringify({ tercermin }) }),
+  // Waktu pengamatan fisik per bahan (tiga waktu terpisah: dihitung / disimpan / diposting). Mulai hitung dicap server; koreksi wajib alasan.
+  mulaiHitungBahanOpname: (id, lineIds) => request(`/inventory/stock-counts/${id}/lines/mulai`, { method: "POST", body: JSON.stringify({ lineIds }) }),
+  koreksiWaktuHitungOpname: (id, lineId, data) => request(`/inventory/stock-counts/${id}/lines/${lineId}/waktu`, { method: "POST", body: JSON.stringify(data) }),
+  // Putuskan massal "belum tercermin di hitungan fisik" hanya untuk pergerakan sesudah angka disimpan (kelas SESUDAH_DISIMPAN); kelas berisiko satu per satu.
+  tandaiMassalPergerakanOpname: (id, data) => request(`/inventory/stock-counts/${id}/pergerakan/tanda-massal`, { method: "POST", body: JSON.stringify(data) }),
   // Pemeriksa = akun LAIN yang memeriksa hasil hitung yang sudah diserahkan; identitas dari login, bukan nama ketikan.
   periksaHitungan: (countId, catatan) => request(`/inventory/stock-counts/${countId}/periksa`, { method: "POST", body: JSON.stringify({ catatan }) }),
   // Riwayat referensi historis dari file (catatan REFERENSI; bukan transaksi/saldo)
