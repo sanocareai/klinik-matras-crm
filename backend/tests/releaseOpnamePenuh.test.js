@@ -34,7 +34,9 @@ test("migrasi: tepat satu migrasi Stock Opname penuh; terurut SETELAH migrasi li
   assert.equal(migName, "20261222090000_stock_count_sesi_penuh");
   assert.ok(migName > LIVE_MIG, "harus sesudah migrasi live terakhir");
   const semua = fs.readdirSync(path.join(root, "backend/prisma/migrations")).filter((n) => /^\d{14}_/.test(n)).sort();
-  assert.equal(semua.filter((n) => n > LIVE_MIG)[0], migName, "tidak ada migrasi lain yang menyelip sebelum migrasi opname");
+  // Migrasi Opname sudah LIVE (abf2b75e). Satu-satunya migrasi yang boleh bernama di antara Koreksi dan Opname adalah Order Produksi adopsi Admin (20261221…, diterapkan di atas Opname dan dibuktikan aman: Prisma menerapkan migrasi pending berapa pun namanya).
+  const sela = semua.filter((n) => n > LIVE_MIG && n < migName);
+  assert.deepEqual(sela, ["20261221090000_production_adopsi_admin"].filter((n) => semua.includes(n)), "hanya migrasi Produksi adopsi yang boleh bernama di antara Koreksi dan Opname");
 });
 
 test("migrasi: aditif murni — hanya ALTER TABLE ADD COLUMN pada 2 tabel hitung dan 5 CHECK; tidak menyentuh ledger", () => {
