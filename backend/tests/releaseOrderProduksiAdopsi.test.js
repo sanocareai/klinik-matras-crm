@@ -95,7 +95,7 @@ test("skrip rilis: gerbang sumber — ancestry live, pin migrasi, pin diff schem
   for (const s of ['sg merge-base --is-ancestor "$BASE_SHA" "$DEPLOY_SHA"', 'sg merge-base --is-ancestor "$MAIN_SHA" "$DEPLOY_SHA"', 'for A in $LIVE_ANCESTORS', 'die "isi migrasi ${n} BERBEDA dari yang diaudit',
     "SCHEMA_DIFF_SHA", "migrasi pending terhadap live saat ini bukan TEPAT migrasi rilis ini", "produksi memiliki migrasi yang TIDAK ada di kandidat", "produksi memiliki migrasi LEBIH BARU dari",
     "ada migrasi baseline yang DIUBAH/DIHAPUS", "frontend/dist — dist dibangun saat rilis", "uji negatif pemindai", "for f in $GUARD_UNCHANGED"]) assert.ok(script.includes(s), s);
-  assert.ok(!script.includes("HOTFIX_STOCK_COUNT") && !/model_version|stock_count_lines|scope_mode/i.test(script), "tidak ada sisa pemeriksaan skema opname dari templat asal (baseline sudah memuat Opname; rilis ini tidak menyentuhnya)");
+  assert.ok(!script.includes("HOTFIX_STOCK_COUNT") && !/model_version|scope_mode|scope_info/i.test(script), "tidak ada sisa pemeriksaan skema opname dari templat asal (baseline sudah memuat Opname; rilis ini tidak menyentuhnya)");
   assert.match(script, /backend\/src\/services\/opnameSesi\.js.*backend\/src\/services\/pergerakanSesiHitung\.js/, "berkas Opname live dijaga identik");
   assert.match(script, /^LIVE_ANCESTORS="1{40} 2{40}"$/m); assert.match(script, /^LIVE_MIG_TERAKHIR="20261222090000_stock_count_sesi_penuh"$/m);
   assert.match(script, /^GUARD_UNCHANGED=".*backend\/src\/services\/inventoryLedger\.js.*backend\/src\/services\/statusUnitLintasWorkspace\.js.*"$/m);
