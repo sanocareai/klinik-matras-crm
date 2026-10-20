@@ -4,6 +4,7 @@
 #   hasil pemakaian aktual (itu transaksi stok resmi biasa; saldo ledger SUM(qty) tetap benar). Kode lama tidak mengenal tabel baru dan TIDAK membacanya — tidak ada kode lama yang salah membaca data baru.
 #   Yang hilang setelah rollback hanya tampilan: status kerja manual dan rencana bahan tidak terlihat lagi; Sales/Delivery tidak pernah terpengaruh (catatan manual tidak mengubah status order).
 #   Satu perbedaan perilaku: unit yang punya catatan/rencana tidak bisa dihapus lewat jalur hapus lama (FK RESTRICT; kode lama tidak tahu itu jejak) — hasilnya galat penolakan, bukan kehilangan data. Batalkan unit lewat status.
+#   Target rollback = release live sebelumnya (abf2b75e: Stock Opname penuh). Rilis ini TIDAK menyentuh Opname/stok: sesi Opname model baru yang terbuka (bila ada) tetap valid setelah rollback ke image itu — hanya dilaporkan sebagai informasi.
 #   Guard ini TIDAK menolak (tidak ada keadaan terbuka yang berbahaya bagi kode lama, tidak seperti sesi/antrean): exit 0 = aman, dengan ringkasan jumlah data baru sebagai informasi. Exit 1 hanya bila tabel baru tidak ada.
 set -Eeuo pipefail
 PROJECT="klinik-matras"; DB_USER="klinik"; DB_NAME="${GUARD_DB:-klinik_matras}" # GUARD_DB hanya untuk rehearsal (DB sementara); tanpa itu = database production (baca-saja)
@@ -19,6 +20,8 @@ REV="$(Q "select count(*) from production_unit_material_plan_revisions")"
 KUNCI="$(Q "select count(*) from v2_commands where domain = 'PRODUCTION_V1' and command_type = 'UNIT_MATERIAL_USAGE_V1'")"
 for v in "$PROG" "$UNIT_PROG" "$PLAN" "$REV" "$KUNCI"; do [[ "$v" =~ ^[0-9]+$ ]] || { echo "STOP: hitungan guard bukan angka ('$v')"; exit 2; }; done
 echo "Adopsi Admin: catatan status kerja=${PROG} (${UNIT_PROG} unit); rencana bahan=${PLAN} unit, revisi=${REV}; pencatatan pemakaian bahan beridempotensi=${KUNCI}"
+OPNAME_TERBUKA="$(Q "select count(*) from stock_counts where model_version = 2 and status in ('SCHEDULED','IN_PROGRESS','WAITING_REVIEW')" 2>/dev/null || echo "?")"
+echo "Info Stock Opname (tidak terkait rilis ini; image rollback abf2b75e mengenalnya): sesi model baru terbuka=${OPNAME_TERBUKA}"
 if [ "$PROG" != "0" ] || [ "$PLAN" != "0" ]; then
   echo "INFO: setelah rollback kode, ${PROG} catatan status kerja dan ${PLAN} rencana bahan TETAP di database (tidak dihapus) tetapi tidak tampil sampai kode ini dipasang lagi."
   echo "INFO: pergerakan stok pemakaian aktual adalah transaksi stok biasa dan TETAP berlaku (saldo tidak berubah oleh rollback). Jangan menghapus tabel/baris adopsi (riwayat append-only)."

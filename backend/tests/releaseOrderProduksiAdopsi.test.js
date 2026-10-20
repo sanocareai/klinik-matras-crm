@@ -26,7 +26,7 @@ const tpl = baca("scripts/templates/release-order-produksi-adopsi.sh.tpl");
 const TES = ["tests/integration/productionAdopsi.integration.test.js", "tests/integration/unitV1Actions.integration.test.js"];
 const masukan = (o = {}) => ({
   tplSrc: tpl, berkasList: ["backend/prisma/schema.prisma", migRel, "backend/src/routes/productionAdopsi.js", "frontend/src/features/production/OrderProduksiPanel.jsx"], migName, migSql,
-  schemaDiffSha: "a".repeat(64), scanJs: baca("scripts/lib/scan-migrasi-order-produksi-adopsi.mjs"), scanExpect: '{"total":12}', liveMigTerakhir: "20261220090000_gudang_koreksi_dokumen",
+  schemaDiffSha: "a".repeat(64), scanJs: baca("scripts/lib/scan-migrasi-order-produksi-adopsi.mjs"), scanExpect: '{"total":12}', liveMigTerakhir: "20261222090000_stock_count_sesi_penuh",
   liveAncestors: ["1".repeat(40), "2".repeat(40)], rehNode: baca("scripts/lib/rehearsal-kode-order-produksi-adopsi.mjs"), smokeNode: baca("scripts/lib/smoke-order-produksi-adopsi.mjs"), tesFiles: TES, ...o,
 });
 const { script, ringkasan } = bangkitkan(masukan());
@@ -95,8 +95,9 @@ test("skrip rilis: gerbang sumber — ancestry live, pin migrasi, pin diff schem
   for (const s of ['sg merge-base --is-ancestor "$BASE_SHA" "$DEPLOY_SHA"', 'sg merge-base --is-ancestor "$MAIN_SHA" "$DEPLOY_SHA"', 'for A in $LIVE_ANCESTORS', 'die "isi migrasi ${n} BERBEDA dari yang diaudit',
     "SCHEMA_DIFF_SHA", "migrasi pending terhadap live saat ini bukan TEPAT migrasi rilis ini", "produksi memiliki migrasi yang TIDAK ada di kandidat", "produksi memiliki migrasi LEBIH BARU dari",
     "ada migrasi baseline yang DIUBAH/DIHAPUS", "frontend/dist — dist dibangun saat rilis", "uji negatif pemindai", "for f in $GUARD_UNCHANGED"]) assert.ok(script.includes(s), s);
-  assert.ok(!script.includes("HOTFIX_STOCK_COUNT") && !/stock_count|opname/i.test(script.replace(/Stock Count/g, "")), "tidak ada sisa domain opname");
-  assert.match(script, /^LIVE_ANCESTORS="1{40} 2{40}"$/m); assert.match(script, /^LIVE_MIG_TERAKHIR="20261220090000_gudang_koreksi_dokumen"$/m);
+  assert.ok(!script.includes("HOTFIX_STOCK_COUNT") && !/model_version|stock_count_lines|scope_mode/i.test(script), "tidak ada sisa pemeriksaan skema opname dari templat asal (baseline sudah memuat Opname; rilis ini tidak menyentuhnya)");
+  assert.match(script, /backend\/src\/services\/opnameSesi\.js.*backend\/src\/services\/pergerakanSesiHitung\.js/, "berkas Opname live dijaga identik");
+  assert.match(script, /^LIVE_ANCESTORS="1{40} 2{40}"$/m); assert.match(script, /^LIVE_MIG_TERAKHIR="20261222090000_stock_count_sesi_penuh"$/m);
   assert.match(script, /^GUARD_UNCHANGED=".*backend\/src\/services\/inventoryLedger\.js.*backend\/src\/services\/statusUnitLintasWorkspace\.js.*"$/m);
 });
 
@@ -183,4 +184,13 @@ test("skrip tersimpan identik dengan hasil generator terhadap repo ini (bila rep
   assert.ok(tersimpan.includes(`SCAN_EXPECT='${pindai(migSql).stdout.trim()}'`), "hasil pemindai tersimpan = hasil nyata");
   assert.equal(sha(lf(tpl)).slice(0, 12), tersimpan.match(/templat sha256 ([0-9a-f]{12})…/)[1], "skrip dibangkitkan dari templat yang sekarang");
   if (punyaBash) assert.equal(spawnSync("bash", ["-n", path.join(root, "scripts/release-order-produksi-adopsi.sh")]).status, 0, "sintaks bash valid");
+});
+
+test("urutan migrasi lebih LAMA dari migrasi Opname yang sudah terpasang: diizinkan eksplisit (MIG_URUT_LAMA_OK), baseline terbaru dipatok, tidak boleh ada nama sama", () => {
+  assert.ok(migName < "20261222090000_stock_count_sesi_penuh", "migrasi Produksi bernama lebih lama dari migrasi Opname live");
+  assert.match(script, new RegExp(`^MIG_URUT_LAMA_OK="${migName}"$`, "m"));
+  for (const s of ['[ "$MIG_BASE_MAX" = "$LIVE_MIG_TERAKHIR" ] || die', "TIDAK tercantum di MIG_URUT_LAMA_OK", "bernama lebih LAMA dari ${MIG_BASE_MAX}; urutan tidak-berurutan sudah diaudit aman", "sudah ada di baseline", "TIDAK diubah/diganti-nama"]) assert.ok(script.includes(s) || script.includes(s.replace("TIDAK diubah/diganti-nama", "Migrasi yang sudah live TIDAK diubah/diganti-nama")), s);
+  // masukan tanpa daftar izin (migrasi lebih baru dari baseline) menghasilkan MIG_URUT_LAMA_OK kosong
+  assert.match(bangkitkan(masukan({ liveMigTerakhir: "20261220090000_gudang_koreksi_dokumen" })).script, /^MIG_URUT_LAMA_OK=""$/m);
+  const hapus = migSql; assert.ok(hapus.length > 0);
 });

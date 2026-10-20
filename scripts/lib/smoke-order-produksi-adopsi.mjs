@@ -33,7 +33,7 @@ const PR = "/api/production";
 const hitung = async (sql) => Number((await prisma.$queryRawUnsafe(sql))[0].n);
 const TULIS = {
   sm: "select count(*)::int n from stock_movements", cmd: "select count(*)::int n from v2_commands", prog: "select count(*)::int n from production_unit_work_progress", plan: "select count(*)::int n from production_unit_material_plans",
-  rev: "select count(*)::int n from production_unit_material_plan_revisions", job: "select count(*)::int n from jobs", run: "select count(*)::int n from production_runs_v2", qc: "select count(*)::int n from quality_inspections_v2", jur: "select count(*)::int n from fin_journal_entries",
+  rev: "select count(*)::int n from production_unit_material_plan_revisions", job: "select count(*)::int n from jobs", run: "select count(*)::int n from production_runs_v2", qc: "select count(*)::int n from quality_inspections_v2", jur: "select count(*)::int n from fin_journal_entries", sesi: "select count(*)::int n from stock_counts", sesiBaris: "select count(*)::int n from stock_count_lines",
 };
 const awal = {}; for (const [k, q] of Object.entries(TULIS)) awal[k] = await hitung(q);
 const nUnit = await hitung("select count(*)::int n from units");
@@ -89,6 +89,14 @@ if (mat && u1) {
   const s = await api("POST", `/api/units/${u1.id}/materials`, tA, { materialId: mat.id, qty: 1 }, { "Idempotency-Key": "pendek" });
   rec("pemakaian bahan dengan Idempotency-Key terlalu pendek → 400 IDEMPOTENCY_KEY_INVALID (tidak menulis stok)", s.status === 400 && s.json?.code === "IDEMPOTENCY_KEY_INVALID", `${s.status} ${s.json?.code}`);
 } else skip("kunci idempoten pendek", "tidak ada bahan aktif atau unit");
+// ── Stock Opname penuh (live abf2b75e) terbaca BERSAMA fitur ini: daftar sesi + pratinjau cakupan (baca-saja) ──
+const gudang = aktif.find((u) => punya(peran.get(u.id), P.INVENTORY_READ));
+if (gudang) {
+  const tg = tokenUntuk(gudang);
+  const sc = await api("GET", "/api/inventory/stock-counts", tg); rec("Opname: daftar sesi hitung terbaca → 200", sc.status === 200, String(sc.status));
+  const pv = await api("POST", "/api/inventory/stock-counts/scope-preview", tg, { mode: "FULL" });
+  rec("Opname: pratinjau cakupan penuh (baca-saja) → 200 dan memuat ringkasan bahan", pv.status === 200 && typeof pv.json?.ringkasan?.masuk === "number", `${pv.status} masuk=${pv.json?.ringkasan?.masuk}`);
+} else skip("Opname terbaca bersama", "tidak ada akun aktif berizin baca Inventory");
 // ── Jalur lama tidak rusak ──
 rec("Unit 360 / daftar unit lama tetap 200", (await api("GET", `${PR}/board`, tA)).status === 200);
 rec("daftar order (Sales) tetap 200", (await api("GET", "/api/orders?limit=5", tA)).status === 200);

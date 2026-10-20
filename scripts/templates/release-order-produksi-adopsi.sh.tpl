@@ -26,6 +26,8 @@ DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 CAND_BRANCH="${CAND_BRANCH:-@@CAND_BRANCH@@}"
 # Migrasi aditif yang SUDAH diaudit: nama:sha256 isi (LF). Perubahan sekecil apa pun = berhenti sampai diaudit ulang dan pin diperbarui.
 MIGS="@@MIG_NAME@@:@@MIG_SHA@@"
+# Migrasi yang BOLEH bernama lebih lama daripada migrasi baseline terbaru (diaudit mandiri; dibuktikan Prisma menerapkannya setelah migrasi yang lebih baru terpasang). Kosong = harus terurut setelah baseline.
+MIG_URUT_LAMA_OK="@@MIG_OOO@@"
 # Hasil pemindai DDL untuk migrasi di atas (jumlah per jenis pernyataan). Selisih = berhenti.
 SCAN_EXPECT='@@SCAN_EXPECT@@'
 # Diff schema.prisma antara baseline dan kandidat (U0, tanpa baris index dan tanpa nomor baris hunk) yang SUDAH diaudit: sha256. Selisih = berhenti.
@@ -242,11 +244,19 @@ for f in $GUARD_UNCHANGED; do
   [ "$(sg rev-parse "${BASE_SHA}:${f}")" = "$(sg rev-parse "${DEPLOY_SHA}:${f}")" ] || die "${f} berbeda antara baseline dan kandidat — rilis ini tidak boleh menyentuhnya (ledger, jurnal, otorisasi, status lintas workspace, Produksi V2, Delivery, Stock Count)"
 done
 ok "$(printf '%s\n' $GUARD_UNCHANGED | wc -w) berkas pelindung (ledger stok, jurnal Finance, otorisasi/izin, fungsi status lintas workspace, Produksi V2 tahap/QC, Delivery override, Stock Count) identik dengan baseline"
-# Urutan migrasi: nama migrasi rilis ini HARUS terurut SETELAH migrasi terbaru di baseline (Prisma menerapkan menurut nama).
+# Urutan migrasi: Prisma `migrate deploy` menerapkan SEMUA migrasi yang belum terpasang menurut nama dan TIDAK menolak migrasi baru yang bernama lebih LAMA daripada migrasi yang sudah terpasang (dibuktikan 20 Okt 2026: 261 migrasi live
+# → +20261221090000 di bawah 20261222090000 = "All migrations have been successfully applied", status up to date; dibuktikan lagi pada restore production di rehearsal). Migrasi yang sudah live TIDAK diubah/diganti-nama.
+# Syarat: bila nama migrasi rilis ini lebih lama dari migrasi baseline terbaru, ia WAJIB tercantum di MIG_URUT_LAMA_OK (sudah diaudit: mandiri, tidak bergantung pada migrasi yang lebih baru, hanya tabel baru), dan baseline terbaru = yang diaudit.
 MIG_BASE_MAX="$(sg ls-tree --name-only "$BASE_SHA" backend/prisma/migrations/ | sed 's|.*/||' | grep -E '^[0-9]{14}_' | LC_ALL=C sort | tail -n 1)"
 [ "$MIG_BASE_MAX" = "$LIVE_MIG_TERAKHIR" ] || die "migrasi terbaru di baseline (${MIG_BASE_MAX}) bukan yang diaudit (${LIVE_MIG_TERAKHIR}) — baseline bergeser; audit ulang"
-for e in $MIGS; do [[ "${e%%:*}" > "$MIG_BASE_MAX" ]] || die "migrasi ${e%%:*} tidak terurut SETELAH migrasi baseline terbaru (${MIG_BASE_MAX})"; done
-ok "urutan migrasi:${MIG_LIST} terurut setelah migrasi baseline terbaru (${MIG_BASE_MAX})"
+MIG_URUT_NOTE=""
+for e in $MIGS; do
+  n="${e%%:*}"
+  if [[ "$n" > "$MIG_BASE_MAX" ]]; then continue; fi
+  case " $MIG_URUT_LAMA_OK " in *" $n "*) MIG_URUT_NOTE="${MIG_URUT_NOTE} ${n} (bernama lebih LAMA dari ${MIG_BASE_MAX}; urutan tidak-berurutan sudah diaudit aman)";; *) die "migrasi ${n} bernama lebih lama dari migrasi baseline terbaru (${MIG_BASE_MAX}) dan TIDAK tercantum di MIG_URUT_LAMA_OK";; esac
+  ! sg ls-tree --name-only "$BASE_SHA" backend/prisma/migrations/ | sed 's|.*/||' | grep -Fx "$n" >/dev/null || die "migrasi ${n} sudah ada di baseline"
+done
+ok "urutan migrasi:${MIG_LIST} ${MIG_URUT_NOTE:-terurut setelah migrasi baseline terbaru (${MIG_BASE_MAX})}"
 ok "kandidat ${DEPLOY_SHORT} turunan baseline ${BASE_SHA:0:8} dan origin/main ${MAIN_SHA:0:8}; $(printf '%s\n' "$CHANGED" | wc -l) berkas dalam allowlist eksplisit"
 
 PHASE="2-audit-produksi"; say "2. Audit produksi aktif (baca-saja)"

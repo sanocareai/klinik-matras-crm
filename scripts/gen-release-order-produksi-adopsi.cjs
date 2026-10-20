@@ -27,19 +27,19 @@ const LIB_SKEN = "scripts/lib/rehearsal-skenario-order-produksi-adopsi.mjs";
 const LIB_LAMA = "scripts/lib/rehearsal-kode-lama-order-produksi-adopsi.mjs";
 const FILE_TETAP = [OUT, GUARD, LIB_SCAN, LIB_REH, LIB_SMOKE, LIB_SKEN, LIB_LAMA, GENERATOR, TPL];
 // Berkas yang HARUS identik antara base dan kandidat (rilis ini tidak boleh menyentuhnya): ledger stok (postStockMovement), pembaca stok per lokasi + kelompok bahan, jurnal Finance, otorisasi/izin, FUNGSI STATUS LINTAS WORKSPACE (satu-satunya jalur ubah status unit/order),
-// tahap/QC Produksi V2, Produksi override, Delivery override, Stock Count. (units.js, orders.js, production.js SENGAJA berubah di rilis ini — perubahannya diaudit lewat allowlist eksplisit dan tes.)
+// tahap/QC Produksi V2, Produksi override, Delivery override, Stock Count. (Stock Opname penuh live abf2b75e: stockCount*, opnameSesi, pergerakanSesiHitung, stokFisik, dokumenGudangLain dijaga identik). (units.js, orders.js, production.js SENGAJA berubah di rilis ini — perubahannya diaudit lewat allowlist eksplisit dan tes.)
 const GUARD_UNCHANGED = [
   "backend/src/services/inventoryLedger.js", "backend/src/services/stokLokasi.js", "backend/src/constants/kelompokBahan.js", "backend/src/services/statusUnitLintasWorkspace.js",
-  "backend/src/services/finance/journal.js", "backend/src/middleware/authorize.js", "backend/src/middleware/auth.js", "backend/src/constants/permissions.js", "backend/src/routes/stockCount.js",
+  "backend/src/services/finance/journal.js", "backend/src/middleware/authorize.js", "backend/src/middleware/auth.js", "backend/src/constants/permissions.js", "backend/src/routes/stockCount.js", "backend/src/routes/stockCountSesi.js", "backend/src/services/opnameSesi.js", "backend/src/services/pergerakanSesiHitung.js", "backend/src/services/stokFisik.js", "backend/src/services/dokumenGudangLain.js",
   "backend/src/services/adminOverrideSwitch.js", "backend/src/services/deliveryOverrideAdmin.js", "backend/src/services/productionStepCommandService.js", "backend/src/services/finance/kedatangan.js",
 ];
 // Commit live yang wajib leluhur kandidat: Produksi (admin override siap kirim), Gudang (Riwayat Referensi, Koreksi Gudang, UX Tahap 4, Sidebar), Finance (bukti serah). Diselesaikan ke SHA penuh.
-const LIVE_ANCESTORS_REF = ["799d3e93", "56b87721", "e5a32cd2", "e47f37e2", "57198ad6", "cb33a07d"];
+const LIVE_ANCESTORS_REF = ["799d3e93", "56b87721", "e5a32cd2", "e47f37e2", "57198ad6", "cb33a07d", "abf2b75e"];
 const UJI_TOLAK = 12, UJI_LOLOS = 5; // harus cocok dengan blok uji perilaku di templat
 const DIST_BARU = ["Rencana · tidak mengurangi stok", "Aktual · mengurangi stok", "Catat status kerja", "Belum ada catatan pekerjaan"];
 const DIST_LAMA = ["Ajukan Koreksi Stok", "Koreksi Penerimaan", "Konfirmasi Barang Jadi", "Selesaikan Produksi", "Rencana Produksi", "Uang muka dialokasikan ke faktur", "Tetapkan Siap Kirim (override)", "Riwayat referensi dari file (bukan transaksi)", "Simpan ke Stok", "Barang Akan Datang"];
 // Tes integrasi terarah (rehearsal-penuh): pola nama berkas (backend/tests/integration) + jumlah tes yang HARUS lulus semuanya. TES_N_EXPECT = 584 pada 61 berkas: himpunan regresi terarah (580 pada penyaring lama, yang menghitung 2 berkas delivery cohort hanya sebagai entri berkas) + A10 + 3 tes delivery cohort yang kini terhitung penuh; node 20 (image VPS) = 584/584 lulus.
-const TES_POLA = /^(production|unit|statusUnit|workshop|pkr|penjualanKaryawanOrderCrm|gudangStatus|gudangKoreksi|gudangPusat|deliveryUnitLoad|deliveryWriterCohort|deliveryCrossBoundary|ordersStatus|orderStatus|unitStatus|stok|material).*\.integration\.test\.js$/;
+const TES_POLA = /^(production|unit|statusUnit|workshop|pkr|penjualanKaryawanOrderCrm|gudangStatus|gudangKoreksi|gudangPusat|stockCount|opname|deliveryUnitLoad|deliveryWriterCohort|deliveryCrossBoundary|ordersStatus|orderStatus|unitStatus|stok|material).*\.integration\.test\.js$/;
 const TES_N_EXPECT = 584;
 
 const lf = (t) => t.replace(/\r\n/g, "\n");
@@ -67,6 +67,7 @@ function bangkitkan({ tplSrc, berkasList, migName, migSql, schemaDiffSha, scanJs
   isi("@@TEMPLATE_SHA@@", tplSha.slice(0, 12) + "…");
   isi("@@CAND_BRANCH@@", CAND_BRANCH);
   isi("@@MIG_NAME@@", migName);
+  isi("@@MIG_OOO@@", migName < liveMigTerakhir ? migName : "");
   isi("@@MIG_SHA@@", sha(lf(migSql)));
   isi("@@SCAN_EXPECT@@", scanExpect);
   isi("@@SCHEMA_DIFF_SHA@@", schemaDiffSha);
