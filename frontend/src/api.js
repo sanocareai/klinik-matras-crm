@@ -1066,6 +1066,10 @@ export const api = {
     const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
     return request(`/production/penerimaan-workshop/menunggu${qs ? `?${qs}` : ""}`);
   },
+  // Koreksi penerimaan (append-only): pratinjau dampak + kirim koreksi. jenis: LOCATION (lokasi salah) | NOT_RECEIVED (ternyata belum diterima fisik); expectedRevisi = versi yang dilihat pengguna.
+  getPratinjauKoreksiPenerimaan: (unitId) => request(`/production/units/${unitId}/penerimaan-workshop/koreksi`),
+  koreksiPenerimaanWorkshop: (unitId, { jenis, locationId, alasan, expectedRevisi } = {}, idempotencyKey = mutationKey("koreksi-terima")) =>
+    request(`/production/units/${unitId}/penerimaan-workshop/koreksi`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ jenis, locationId: locationId || undefined, alasan, expectedRevisi }) }),
   getPenerimaanWorkshopPilihan: () => request("/production/penerimaan-workshop/pilihan"),
   getKatalogBahanProduksi: (params = {}) => {
     const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();

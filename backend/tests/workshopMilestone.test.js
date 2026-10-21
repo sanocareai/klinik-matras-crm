@@ -118,11 +118,12 @@ test("where: Pengambilan = pickup berjalan ATAU (RECEIVED, belum dimulai, belum 
   assert.equal(unitWhereForGlobalStatuses(["SIAP_KIRIM", "TERKIRIM"]).OR.length, 2);
 });
 
-test("where: bukti terima hanya tiga command resmi; pickup selesai (jobUnit/status RECEIVED) TIDAK termasuk bukti", () => {
+test("where: bukti terima hanya empat command resmi (custody, konfirmasi petugas, penerimaan workshop yang belum dikoreksi, lahir di workshop); pickup selesai (jobUnit/status RECEIVED) TIDAK termasuk bukti", () => {
   const s = JSON.stringify(WHERE_RECEIVED);
   assert.match(s, /custodyHandoffs/); assert.match(s, /"direction":"INBOUND"/); assert.match(s, /"status":"ACCEPTED"/);
   assert.match(s, /WORKSHOP_BORN/); assert.match(s, /Kedatangan dikonfirmasi petugas \(tanpa custody\)/);
-  assert.doesNotMatch(s, /jobUnits|PICKUP|RECEIVED/);
+  assert.match(s, /workshopReceipts/); assert.match(s, /"kind":"NOT_RECEIVED"/, "penerimaan yang dikoreksi belum diterima tidak dihitung");
+  assert.doesNotMatch(s.replace(/NOT_RECEIVED/g, ""), /jobUnits|PICKUP|RECEIVED/);
   const st = JSON.stringify(WHERE_STARTED);
   assert.match(st, /IN_PRODUCTION/); assert.match(st, /stageLogs/); assert.match(st, /"SKIPPED"/);
 });

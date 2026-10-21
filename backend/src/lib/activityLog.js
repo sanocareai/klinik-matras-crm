@@ -199,6 +199,8 @@ export const EVENT_TYPES = Object.freeze({
   PRODUCTION_ARRIVAL_CONFIRMED_NO_CUSTODY: "PRODUCTION_ARRIVAL_CONFIRMED_NO_CUSTODY",
   // Penerimaan workshop oleh petugas (tanpa Run/aktivasi Produksi V2): pelaku, waktu, lokasi — catatan resmi unit_workshop_receipts.
   WORKSHOP_RECEIPT_RECORDED: "WORKSHOP_RECEIPT_RECORDED",
+  // Koreksi penerimaan workshop (lokasi salah / ternyata belum diterima fisik): nilai lama→baru, alasan, pelaku.
+  WORKSHOP_RECEIPT_CORRECTED: "WORKSHOP_RECEIPT_CORRECTED",
   // QC V2, rework, barang jadi, dan rekonsiliasi override V1 (P6). Detail (hasil, inspeksi, alasan) ada di metadata.
   PRODUCTION_QC_RECORDED: "PRODUCTION_QC_RECORDED",
   PRODUCTION_QC_WAIVED: "PRODUCTION_QC_WAIVED",
@@ -487,6 +489,10 @@ export function formatActivitySentence(event) {
       return `Kedatangan unit ${metadata.unitCode || "—"} di workshop dikonfirmasi petugas (lokasi ${metadata.locationCode || "—"}; tanpa serah-terima custody karena tidak ada pickup tercatat)`;
     case EVENT_TYPES.WORKSHOP_RECEIPT_RECORDED:
       return `Unit ${metadata.unitCode || "—"} diterima di workshop oleh petugas (lokasi ${metadata.locationCode || "—"}${metadata.note ? `; catatan: ${metadata.note}` : ""}) — tanpa mengaktifkan Produksi V2`;
+    case EVENT_TYPES.WORKSHOP_RECEIPT_CORRECTED:
+      return metadata.kind === "LOCATION"
+        ? `Penerimaan unit ${metadata.unitCode || "—"} dikoreksi: lokasi salah, dari ${metadata.fromCode || "—"} menjadi ${metadata.toCode || "—"} — ${metadata.reason || "tanpa alasan"}`
+        : `Penerimaan unit ${metadata.unitCode || "—"} dikoreksi: ternyata belum diterima fisik (semula ${metadata.fromCode || "—"}) — ${metadata.reason || "tanpa alasan"}`;
     case EVENT_TYPES.PRODUCTION_WORKSHOP_AWAITING_QC:
       return `Seluruh tahap workshop unit ${metadata.unitCode || "—"} selesai — menunggu QC`;
     case EVENT_TYPES.PRODUCTION_QC_RECORDED:

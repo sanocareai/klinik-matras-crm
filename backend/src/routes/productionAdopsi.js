@@ -19,7 +19,7 @@ import { loadRiwayatUnit } from "../services/productionRiwayatService.js";
 import { buatWorkbookOrderProduksi, namaBerkasEkspor } from "../services/productionOrderExport.js";
 import { MANUAL_STATUSES, WORK_STATUS, penghalangStatusOrder, tindakanBerikutnya } from "../lib/domain/productionWorkStatus.js";
 import { displayStatusOfOrder } from "../lib/domain/productionDisplay.js";
-import { PenerimaanError, ambilPenerimaanWorkshop, catatPenerimaanWorkshop, daftarMenungguPenerimaan } from "../services/unitWorkshopReceiptService.js";
+import { PenerimaanError, ambilPenerimaanWorkshop, catatPenerimaanWorkshop, daftarMenungguPenerimaan, koreksiPenerimaanWorkshop, pratinjauKoreksi } from "../services/unitWorkshopReceiptService.js";
 import { inspectWorkshopDefaultLocation } from "../services/productionSettingsService.js";
 import { listReceivingLocations } from "../services/unitCustodyCommandService.js";
 
@@ -41,6 +41,8 @@ const bolehUbah = (user) => ({
   rencanaBahan: hasPermission(user, P.UNIT_ROUTING_WRITE),
   pemakaianAktual: hasPermission(user, P.UNIT_MATERIAL_WRITE),
   catatPenerimaan: hasPermission(user, P.INVENTORY_WRITE) || hasPermission(user, P.UNIT_STAGE_WRITE), // penerimaan fisik di workshop (Gudang/Produksi/Admin) — bukan aktivasi Produksi V2
+  koreksiLokasiPenerimaan: hasPermission(user, P.INVENTORY_WRITE) || hasPermission(user, P.UNIT_STAGE_WRITE), // lokasi salah: siapa pun yang boleh mencatat
+  koreksiBelumDiterima: hasPermission(user, P.UNIT_ROUTING_WRITE), // "ternyata belum diterima fisik": Admin/Owner/Kepala Produksi saja (mata kedua atas catatan petugas)
 });
 const bolehCatatPenerimaan = requireAnyPermission(P.INVENTORY_WRITE, P.UNIT_STAGE_WRITE);
 
@@ -62,6 +64,7 @@ productionAdopsiRouter.get("/units/:id/adopsi", requirePermission(P.UNIT_READ), 
       prisma.productionRun.findFirst({ where: { unitId: unit.id }, orderBy: { createdAt: "desc" }, select: { id: true } }),
       ambilPenerimaanWorkshop(prisma, unit.id),
     ]);
+    const { penerimaan: penerimaanAktif, riwayat: riwayatPenerimaan } = penerimaan;
     const riwayat = (await loadRiwayatUnit(prisma, { unit: { id: unit.id, orderId: unit.orderId }, run })).slice(-60).reverse();
     // perbandingan rencana vs aktual per bahan (hanya bahan yang ada di salah satunya)
     const rencanaMap = new Map((rencana.plan?.lines ?? []).map((l) => [l.materialId, l]));
@@ -92,7 +95,7 @@ productionAdopsiRouter.get("/units/:id/adopsi", requirePermission(P.UNIT_READ), 
       },
       adopsi: { ...baris.adopsi, tindakan, orderSales, penghalang }, productionStatus: baris.productionStatus, presence: baris.presence, receivedBasisLabel: baris.receivedBasisLabel,
       kerjaManual: { riwayat: riwayatKerja, nilaiBoleh: MANUAL_STATUSES.map((k) => ({ key: k, label: WORK_STATUS[k].label })), terakhirId: riwayatKerja.length ? riwayatKerja[riwayatKerja.length - 1].id : null, dikunciAplikasi: !!bukti?.started },
-      penerimaan, rencanaBahan: rencana, pemakaianAktual: aktual, perbandingan, riwayat,
+      penerimaan: penerimaanAktif, riwayatPenerimaan, rencanaBahan: rencana, pemakaianAktual: aktual, perbandingan, riwayat,
       izin: bolehUbah(req.user),
     });
   } catch (err) { handleErr(err, res); }
@@ -110,6 +113,26 @@ productionAdopsiRouter.post("/units/:id/penerimaan-workshop", bolehCatatPenerima
   try {
     const hasil = await catatPenerimaanWorkshop(prisma, {
       unitId: req.params.id, actorId: req.user.id, locationId: req.body?.locationId || null, note: req.body?.note, fisikDiterima: req.body?.fisikDiterima === true,
+      idempotencyKey: req.get("Idempotency-Key") || null,
+    });
+    res.status(hasil.replayed ? 200 : 201).json(hasil);
+  } catch (err) { handleErr(err, res); }
+});
+
+// Pratinjau koreksi penerimaan: penerimaan berlaku + versi (revisi) + dampak yang sudah bergantung padanya + jenis koreksi mana yang boleh. Baca-saja.
+productionAdopsiRouter.get("/units/:id/penerimaan-workshop/koreksi", requirePermission(P.UNIT_READ), wajibUuid(), async (req, res) => {
+  try { res.json({ ...(await pratinjauKoreksi(prisma, req.params.id)), izin: { LOCATION: bolehUbah(req.user).koreksiLokasiPenerimaan, NOT_RECEIVED: bolehUbah(req.user).koreksiBelumDiterima } }); } catch (err) { handleErr(err, res); }
+});
+
+// Koreksi penerimaan (append-only; catatan asli tidak diubah). Izin per jenis: lokasi salah = pencatat penerimaan; belum diterima fisik = UNIT_ROUTING_WRITE.
+productionAdopsiRouter.post("/units/:id/penerimaan-workshop/koreksi", requireAnyPermission(P.INVENTORY_WRITE, P.UNIT_STAGE_WRITE, P.UNIT_ROUTING_WRITE), wajibUuid(), async (req, res) => {
+  try {
+    const jenis = req.body?.jenis;
+    const izin = bolehUbah(req.user);
+    if (jenis === "NOT_RECEIVED" && !izin.koreksiBelumDiterima) return res.status(403).json({ error: "Menyatakan unit \"belum diterima fisik\" hanya untuk Admin, Owner, atau Kepala Produksi. Minta mereka menyetujui koreksinya.", code: "KOREKSI_IZIN_DITOLAK" });
+    if (jenis === "LOCATION" && !izin.koreksiLokasiPenerimaan) return res.status(403).json({ error: "Akun Anda tidak boleh mengoreksi lokasi penerimaan.", code: "KOREKSI_IZIN_DITOLAK" });
+    const hasil = await koreksiPenerimaanWorkshop(prisma, {
+      unitId: req.params.id, actorId: req.user.id, jenis, locationId: req.body?.locationId || null, alasan: req.body?.alasan, expectedRevisi: req.body?.expectedRevisi,
       idempotencyKey: req.get("Idempotency-Key") || null,
     });
     res.status(hasil.replayed ? 200 : 201).json(hasil);

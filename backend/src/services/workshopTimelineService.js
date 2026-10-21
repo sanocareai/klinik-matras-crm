@@ -24,7 +24,7 @@ export async function loadWorkshopTimelines(client, unitIds) {
     client.jobUnit.findMany({ where: { unitId: { in: ids }, job: { type: "PICKUP", status: "COMPLETED" } }, select: { unitId: true, job: { select: { completedAt: true } } } }),
     client.jobUnit.findMany({ where: { unitId: { in: ids }, job: { type: "DELIVERY" } }, select: { unitId: true, job: { select: { id: true, status: true, completedAt: true } } } }),
     client.unitCustodyHandoff.findMany({ where: { unitId: { in: ids }, direction: { in: ["INBOUND", "FINISHED_GOODS"] } }, select: { unitId: true, direction: true, status: true, offeredAt: true, acceptedAt: true } }),
-    client.unitWorkshopReceipt.findMany({ where: { unitId: { in: ids } }, select: { unitId: true, receivedAt: true } }),
+    client.unitWorkshopReceipt.findMany({ where: { unitId: { in: ids }, corrections: { none: { kind: "NOT_RECEIVED" } } }, select: { unitId: true, receivedAt: true } }),
     client.productionRun.findMany({
       where: { unitId: { in: ids }, status: { not: "CANCELLED" } },
       select: {

@@ -8,8 +8,9 @@ import { cn } from "@/lib/utils.js";
 import { formatTanggal } from "@/utils/formatDate.js";
 import MaterialPlanEditor from "@/features/production/MaterialPlanEditor.jsx";
 import PenerimaanWorkshopModal from "@/features/production/PenerimaanWorkshopModal.jsx";
+import KoreksiPenerimaanModal from "@/features/production/KoreksiPenerimaanModal.jsx";
 import { statusOf } from "@/features/production/productionLabels.js";
-import { formatJumlah, kunciIdempoten, nadaBadge, parseJumlah, pesanGalatAdopsi, sumberKerjaText, waktuWib } from "@/features/production/orderProduksiModel.js";
+import { formatJumlah, kunciIdempoten, nadaBadge, parseJumlah, pesanGalatAdopsi, sumberKerjaText, teksKoreksi, waktuWib } from "@/features/production/orderProduksiModel.js";
 
 // Panel fokus Order Produksi (adopsi Admin) — urutan: ringkasan + SATU tindakan utama → status & target → rencana bahan → pemakaian aktual → riwayat → lanjutan (Unit 360).
 // Tiga status tampil terpisah dan berlabel (Status order · Posisi unit · Status kerja) — label teks, bukan hanya warna. Tahap/dokumentasi/biaya/QC tetap lengkap di Unit 360 (bagian "Lanjutan").
@@ -92,6 +93,7 @@ export default function OrderProduksiPanel({ unitId, onClose, onChanged, onBukaU
             <div className="space-y-4" data-testid="panel-ringkasan">
               <Status3 ad={ad} unitStatus={u.status} penerimaan={data.penerimaan} />
               <TindakanUtama data={data} aktif={aktif} onDone={sesudahUbah} onBukaUnit360={() => onBukaUnit360?.(unitId)} />
+              <KartuPenerimaan data={data} aktif={aktif} onDone={sesudahUbah} />
             </div>
 
             {/* 2 · Status & target */}
@@ -153,9 +155,11 @@ function TindakanUtama({ data, aktif, onDone, onBukaUnit360 }) {
     try { await api.updateOrder(u.order.id, { status: "READY", statusOverrideNote: "Diubah dari Order Produksi" }); setKonfirmasi(false); setHasil({ galat: null, ok: "Status order kini Siap Kirim — Sales dan Delivery melihat status yang sama." }); await onDone(); } catch (e) { setHasil({ galat: e, ok: "" }); } finally { setSibuk(false); }
   }
 
+  const diprosesRef = useRef(false);
   async function ubahKeDiproses() {
+    if (diprosesRef.current) return; diprosesRef.current = true;
     setSibuk(true); setHasil({ galat: null, ok: "" });
-    try { await api.updateOrder(u.order.id, { status: "PROCESSING", statusOverrideNote: catatanOrder.trim() }); setDiprosesBuka(false); setCatatanOrder(""); setHasil({ galat: null, ok: "Status order kini Diproses — Sales dan Delivery melihat status yang sama. Unit bisa dijadwalkan di Rencana Produksi." }); await onDone(); } catch (e) { setHasil({ galat: e, ok: "" }); } finally { setSibuk(false); }
+    try { await api.updateOrder(u.order.id, { status: "PROCESSING", statusOverrideNote: catatanOrder.trim() }); setDiprosesBuka(false); setCatatanOrder(""); setHasil({ galat: null, ok: "Status order kini Diproses — Sales dan Delivery melihat status yang sama. Unit bisa dijadwalkan di Rencana Produksi." }); await onDone(); } catch (e) { setHasil({ galat: e, ok: "" }); } finally { diprosesRef.current = false; setSibuk(false); }
   }
 
   let tombol = null;
@@ -176,7 +180,7 @@ function TindakanUtama({ data, aktif, onDone, onBukaUnit360 }) {
     <div className="rounded-card bg-inset px-4 py-3" data-testid="tindakan-utama">
       <p className="m-0 text-[11.5px] font-medium uppercase tracking-[0.05em] text-ink3">Tindakan berikutnya</p>
       <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-2">
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 max-sm:basis-full">
           <p className="m-0 text-[15px] font-semibold text-ink" data-testid="tindakan-label">{t.label || "—"}</p>
           <p className="m-0 text-[12.5px] text-ink3">{t.aktor && t.aktor !== "—" ? `Oleh ${t.aktor}` : ""}{t.detail ? `${t.aktor && t.aktor !== "—" ? " · " : ""}${t.detail}` : ""}</p>
         </div>
@@ -204,6 +208,44 @@ function TindakanUtama({ data, aktif, onDone, onBukaUnit360 }) {
       )}
       <Hasil hasil={hasil} onMuat={onDone} />
     </div>
+  );
+}
+
+// Catatan penerimaan di workshop + riwayat koreksinya (catatan asli tidak pernah dihapus) + tombol Koreksi. Tanpa istilah teknis: petugas hanya melihat siapa, kapan, di mana, dan apa yang pernah dikoreksi.
+function KartuPenerimaan({ data, aktif, onDone }) {
+  const { penerimaan: p, riwayatPenerimaan: riwayat = [], izin, unit: u } = data;
+  const [buka, setBuka] = useState(false);
+  const [ok, setOk] = useState("");
+  const batal = riwayat.filter((r) => !r.aktif);
+  if (!p && !batal.length) return null;
+  const boleh = !!p && aktif && (izin.koreksiLokasiPenerimaan || izin.koreksiBelumDiterima);
+  return (
+    <section aria-label="Penerimaan di workshop" className="rounded-card border border-line px-4 py-3" data-testid="kartu-penerimaan">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <p className="m-0 text-[11.5px] font-medium uppercase tracking-[0.05em] text-ink3">Penerimaan di workshop</p>
+        {p?.koreksi?.length > 0 && <Badge variant="orange">Sudah dikoreksi {p.koreksi.length}×</Badge>}
+      </div>
+      {p ? (
+        <>
+          <p className="m-0 mt-1 text-[13.5px] text-ink" data-testid="penerimaan-ringkas">Diterima oleh <b>{p.receivedBy?.name || "petugas"}</b> · {waktuWib(p.receivedAt)} · lokasi <b>{p.location?.code}</b>{p.note ? <span className="text-ink3"> — “{p.note}”</span> : null}</p>
+          {p.koreksi.length > 0 && (
+            <ul className="m-0 mt-2 list-none space-y-1 p-0 text-[12px] text-ink2" data-testid="penerimaan-koreksi">
+              {p.koreksi.map((k) => <li key={k.id}>{teksKoreksi(k)}</li>)}
+            </ul>
+          )}
+          {boleh && <Button variant="secondary" size="sm" className="mt-3 min-h-[44px]" data-testid="koreksi-buka" onClick={() => { setOk(""); setBuka(true); }}>Koreksi penerimaan</Button>}
+        </>
+      ) : (
+        <p className="m-0 mt-1 text-[13px] text-ink2" data-testid="penerimaan-dibatalkan">Belum ada penerimaan yang berlaku. Penerimaan sebelumnya dinyatakan <b>belum diterima fisik</b>.</p>
+      )}
+      {batal.length > 0 && (
+        <ul className="m-0 mt-2 list-none space-y-1 p-0 text-[12px] text-ink3" data-testid="penerimaan-lama">
+          {batal.map((r) => <li key={r.id}>Dulu dicatat diterima oleh {r.receivedBy?.name || "petugas"} · {waktuWib(r.receivedAt)} · {r.location?.code} — {r.koreksi.filter((k) => k.jenis === "NOT_RECEIVED").map(teksKoreksi).join(" ")}</li>)}
+        </ul>
+      )}
+      {ok && <p role="status" data-testid="koreksi-ok" className="m-0 mt-3 flex items-start gap-2 rounded-btn bg-greenbg px-3 py-2 text-[12.5px] text-green"><CheckCircle2 size={15} className="mt-0.5 shrink-0" aria-hidden />{ok}</p>}
+      {buka && <KoreksiPenerimaanModal unit={{ unitId: u.id, unitCode: u.unitCode }} onClose={() => setBuka(false)} onDone={async (pesan) => { setBuka(false); setOk(pesan); await onDone(); }} />}
+    </section>
   );
 }
 

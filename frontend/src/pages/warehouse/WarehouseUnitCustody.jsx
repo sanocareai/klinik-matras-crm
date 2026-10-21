@@ -183,7 +183,7 @@ export default function WarehouseUnitCustody() {
     <PageContainer>
       <PageHeader
         title="Antrean Penerimaan Unit"
-        subtitle="Serah-terima unit fisik antara Delivery dan Gudang (custody workshop produksi)."
+        subtitle="Unit yang sudah dijemput dan menunggu diterima di workshop produksi."
         actions={
           <Button variant="ghost" size="sm" onClick={load} disabled={loading}>
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Muat Ulang

@@ -184,7 +184,7 @@ async function buildNoRunOverview(prisma, unit, { canSeeValue }) {
   warnings.push({ code: "BELUM_ADA_RUN", text: "Unit belum masuk proses produksi (belum ada Production Run)" });
   // Milestone global tanpa Run: bukti terima = custody INBOUND ACCEPTED; "dimulai" = ada log tahap V1 (atau status tersimpan IN_PRODUCTION). Tidak ada tebakan dari pickup.
   const stageLogCount = await prisma.unitStageLog.count({ where: { unitId: unit.id } });
-  const receipt = await prisma.unitWorkshopReceipt.findUnique({ where: { unitId: unit.id }, select: { id: true } }); // penerimaan workshop petugas = bukti terima tanpa Run
+  const receipt = await prisma.unitWorkshopReceipt.findFirst({ where: { unitId: unit.id, corrections: { none: { kind: "NOT_RECEIVED" } } }, select: { id: true } }); // penerimaan workshop petugas = bukti terima tanpa Run
   const milestone = milestoneOf({
     unitStatus: unit.status, receivedBasis: receivedBasisOf({ inboundAccepted: pickup?.status === "ACCEPTED", workshopReceipt: !!receipt }),
     started: stageLogCount > 0, pickupCompleted: !!pickup.exists, scheduled: false,
@@ -308,7 +308,7 @@ async function getUnitOverviewDasar(prisma, unitId, { unitIds, canSeeValue = fal
   const indicators = indicatorsOf(run, ctx, materialStatus);
   const complaintsByUnit = await loadOpenComplaintsByUnit(prisma, [{ id: unitId, orderId: run.unit.orderId }]);
   const prio = priorityDisplay({ stored: run.plan?.priority ?? 0, complaintCases: complaintsByUnit.get(unitId) || [] });
-  const inboundAccepted = run.custodyHandoffs.some((h) => h.direction === "INBOUND" && h.status === "ACCEPTED") || arrivalConfirmedByStaff(run.phases) || !!run.unit.workshopReceipt;
+  const inboundAccepted = run.custodyHandoffs.some((h) => h.direction === "INBOUND" && h.status === "ACCEPTED") || arrivalConfirmedByStaff(run.phases) || (run.unit.workshopReceipts?.length ?? 0) > 0;
   const milestone = milestoneOfRun(run, ctx, warnings);
 
   const mediaOf = (stepNos) => ctx.evidence.filter((e) => stepNos.includes(e.stepNo))

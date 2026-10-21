@@ -26,11 +26,11 @@ export function ringkasAdopsi(row) {
 /** Dampak tindakan "Catat unit diterima" — dicetak di formulir SEBELUM tombol ditekan (apa yang dicatat, apa yang TIDAK terjadi). */
 export const DAMPAK_PENERIMAAN = Object.freeze({
   dicatat: ["Nama Anda, waktu sekarang, dan lokasi penerimaan sebagai catatan resmi unit ini.", "Status unit menjadi terlihat Diterima di Workshop di Produksi, Sales, dan Delivery."],
-  tidak: ["Tidak memasukkan unit ke Rencana Produksi dan tidak membuka Production Run.", "Tidak memetakan layanan, tidak membuat tahap, QC, atau foto, dan tidak mengurangi stok.", "Tidak mengubah status order Sales."],
+  tidak: ["Tidak memasukkan unit ke Rencana Produksi dan tidak membuka pekerjaan produksinya.", "Tidak memetakan layanan, tidak membuat tahap, QC, atau foto, dan tidak mengurangi stok.", "Tidak mengubah status order Sales."],
 });
 /** Dampak aktivasi Produksi V2 saat Jadwalkan — beda teks bila unit SUDAH dicatat diterima (kedatangan memakai catatan itu, tidak dicatat dua kali). */
 export function teksDampakAktivasi({ diterimaWorkshop = null } = {}) {
-  const awal = "Menyimpan jadwal akan menambahkan unit ini ke daftar unit Rencana Produksi (unit lain tidak berubah) dan membuka Production Run untuk unit ini";
+  const awal = "Menyimpan jadwal akan menambahkan unit ini ke daftar unit Rencana Produksi (unit lain tidak berubah) dan membuka pekerjaan produksinya";
   return diterimaWorkshop
     ? `${awal}. Unit sudah dicatat diterima di workshop (${diterimaWorkshop.label || "penerimaan tercatat"}), jadi kedatangannya memakai catatan itu — tidak dicatat dua kali dan Run langsung berjalan. Tercatat atas nama Anda.`
     : `${awal} (belum tiba di workshop — kedatangan tetap dicatat petugas lewat Terima Unit), lalu menjadwalkannya — satu langkah. Tercatat atas nama Anda.`;
@@ -39,6 +39,20 @@ export function teksDampakAktivasi({ diterimaWorkshop = null } = {}) {
 export const lokasiAwalPenerimaan = (pilihan) => pilihan?.bawaan?.id || "";
 /** Formulir penerimaan boleh dikirim: pernyataan fisik dicentang dan lokasi dipilih. */
 export const bolehKirimPenerimaan = ({ fisik, locationId, sibuk = false } = {}) => !sibuk && fisik === true && !!locationId;
+
+/** Jenis koreksi penerimaan — dua hal yang berbeda dan TIDAK boleh tertukar di layar. */
+export const JENIS_KOREKSI = Object.freeze([
+  { key: "LOCATION", label: "Lokasi salah", bantu: "Unit memang sudah diterima di workshop, tetapi lokasi yang dicatat keliru." },
+  { key: "NOT_RECEIVED", label: "Ternyata belum diterima fisik", bantu: "Unit sebenarnya belum sampai di workshop. Catatan penerimaan dinyatakan tidak berlaku dan unit kembali ke daftar menunggu diterima." },
+]);
+/** Koreksi boleh dikirim: jenis dipilih; lokasi dipilih bila jenisnya lokasi; alasan minimal 3 huruf; tidak sedang mengirim. */
+export const bolehKirimKoreksi = ({ jenis, locationId, alasan, sibuk = false } = {}) => !sibuk && (jenis === "LOCATION" ? !!locationId : jenis === "NOT_RECEIVED") && String(alasan ?? "").trim().length >= 3;
+/** Satu baris riwayat koreksi untuk petugas: "Lokasi salah: A → B · oleh X · 21 Okt 2026, 10.30 WIB — alasan". */
+export function teksKoreksi(k) {
+  if (!k) return "";
+  const isi = k.jenis === "LOCATION" ? `${k.lama?.code ?? "—"} → ${k.baru?.code ?? "—"}` : `catatan penerimaan (${k.lama?.code ?? "—"}) dinyatakan tidak berlaku`;
+  return `${k.jenisLabel || k.jenis}: ${isi} · oleh ${k.oleh?.name || "—"} · ${waktuWib(k.at)} — “${k.alasan}”`;
+}
 
 /** Teks sumber status kerja untuk label kecil di bawah badge: hanya bila BUKAN jadwal biasa (manual/aplikasi/ikut status order). */
 export function sumberKerjaText(kerja) {
@@ -158,6 +172,9 @@ export function pesanGalatAdopsi(e) {
   const code = e.code || "";
   if (code === "RIWAYAT_BERUBAH") return { teks: e.message || "Data sudah diubah orang lain.", jenis: "konflik", muatUlang: true, petunjuk: "Muat ulang untuk melihat versi terbaru, lalu terapkan perubahan Anda lagi bila masih perlu." };
   if (code === "KERJA_DIPEGANG_APLIKASI") return { teks: e.message, jenis: "info", muatUlang: true, petunjuk: "Unit ini sudah dikerjakan lewat aplikasi Produksi, jadi status kerja mengikuti aplikasi." };
+  if (code === "KOREKSI_REVISI_BASI") return { teks: e.message, jenis: "konflik", muatUlang: true, petunjuk: "Muat ulang untuk melihat koreksi terbaru, lalu putuskan lagi." };
+  if (code === "KOREKSI_PERLU_JALUR_RESMI") return { teks: e.message, jenis: "info", muatUlang: false, petunjuk: "Tidak ada yang diubah. Hubungi Kepala Produksi atau tim sistem." };
+  if (code === "PENERIMAAN_TIDAK_ADA") return { teks: e.message, jenis: "konflik", muatUlang: true };
   if (code === "UNIT_TIDAK_AKTIF") return { teks: e.message, jenis: "info", muatUlang: false };
   if (code === "CATATAN_WAJIB") return { teks: e.message, jenis: "validasi", muatUlang: false, petunjuk: "Tulis alasan singkat (mis. menunggu kain dari supplier)." };
   if (code === "IDEMPOTENCY_IN_PROGRESS") return { teks: "Permintaan yang sama sedang diproses.", jenis: "info", muatUlang: true, petunjuk: "Tunggu sebentar lalu muat ulang — jangan kirim ulang." };

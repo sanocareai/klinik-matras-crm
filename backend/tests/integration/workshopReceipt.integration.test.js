@@ -88,7 +88,7 @@ test("A1. pickup selesai → petugas Gudang mencatat penerimaan: catatan resmi (
   const ulang = await terima(w.gudang, k.unit); assert.equal(ulang.status, 200); assert.equal(ulang.body.replayed, true); assert.equal(ulang.body.alreadyReceived, true);
 
   assert.equal(await jmlReceipt(), 1, "klik ganda = satu catatan"); assert.equal(await jmlAktivitas(k.unit.id), 1); assert.equal(await jmlOutboxTiba(k.unit.id), 1);
-  const r = await testPrisma.unitWorkshopReceipt.findUniqueOrThrow({ where: { unitId: k.unit.id } });
+  const r = await testPrisma.unitWorkshopReceipt.findFirstOrThrow({ where: { unitId: k.unit.id } });
   assert.equal(r.receivedById, w.gudang.user.id); assert.equal(r.locationId, w.rcv.id); assert.equal(r.note, "Dua kasur, kondisi baik"); assert.ok(Math.abs(Date.now() - r.receivedAt.getTime()) < 60_000);
   assert.deepEqual(await efek(), sebelum, "tidak ada Run/operasi/tahap/QC/custody/stok/reservasi/job/bukti/rencana");
   assert.equal((await testPrisma.unit.findUniqueOrThrow({ where: { id: k.unit.id } })).storageLocation, w.rcv.code);
@@ -187,7 +187,7 @@ test("A6. aktivasi V2 SESUDAH penerimaan (ada pickup → custody): Run langsung 
   const k = await mkPilot({ orderStatus: "PROCESSING", locked: false }); const op = await mkOperator();
   await nyalakanCohortLain();
   assert.equal((await terima(w.gudang, k.unit)).status, 201);
-  const r = await testPrisma.unitWorkshopReceipt.findUniqueOrThrow({ where: { unitId: k.unit.id } });
+  const r = await testPrisma.unitWorkshopReceipt.findFirstOrThrow({ where: { unitId: k.unit.id } });
   const res = await w.admin.api.post(`${V2}/plans`, { unitId: k.unit.id, productionDate: "2026-10-22", stationCode: "TABLE_1", priority: 0, workCenterId: w.wc.id, operatorId: op.op.id, activateUnit: true }, idem("akt"));
   assert.equal(res.status, 201, JSON.stringify(res.body)); assert.equal(res.body.activated, true);
   const run = await testPrisma.productionRun.findFirstOrThrow({ where: { unitId: k.unit.id } });
@@ -232,8 +232,9 @@ test("A8. Run V2 sudah PENDING_ARRIVAL lebih dulu (aktivasi duluan): penerimaan 
 test("A9. riwayat append-only: catatan penerimaan tidak bisa diubah/dihapus lewat SQL; riwayat unit memuat peristiwa dengan pelaku", async () => {
   const k = await mkPilot();
   assert.equal((await terima(w.gudang, k.unit)).status, 201);
-  await assert.rejects(() => testPrisma.unitWorkshopReceipt.update({ where: { unitId: k.unit.id }, data: { note: "ubah" } }), /append-only/);
-  await assert.rejects(() => testPrisma.unitWorkshopReceipt.delete({ where: { unitId: k.unit.id } }), /append-only/);
+  const rc = await testPrisma.unitWorkshopReceipt.findFirstOrThrow({ where: { unitId: k.unit.id } });
+  await assert.rejects(() => testPrisma.unitWorkshopReceipt.update({ where: { id: rc.id }, data: { note: "ubah" } }), /append-only/);
+  await assert.rejects(() => testPrisma.unitWorkshopReceipt.delete({ where: { id: rc.id } }), /append-only/);
   const p = await panel(w.admin, k.unit);
   assert.ok(p.riwayat.some((r) => /diterima di workshop oleh petugas/i.test(r.label)), JSON.stringify(p.riwayat.map((r) => r.label)));
 });

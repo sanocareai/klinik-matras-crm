@@ -18,6 +18,7 @@ export default function PenerimaanWorkshopModal({ unit, onClose, onDone }) {
   const [sibuk, setSibuk] = useState(false);
   const [galat, setGalat] = useState(null);
   const kunciRef = useRef(null);
+  const dikirimRef = useRef(false); // penjaga klik ganda/tiga kali yang lebih cepat dari render ulang: SATU permintaan per niat
 
   useEffect(() => {
     let batal = false;
@@ -28,13 +29,14 @@ export default function PenerimaanWorkshopModal({ unit, onClose, onDone }) {
   }, []);
 
   async function kirim() {
-    if (!bolehKirimPenerimaan({ fisik, locationId, sibuk })) return;
+    if (dikirimRef.current || !bolehKirimPenerimaan({ fisik, locationId, sibuk })) return;
+    dikirimRef.current = true;
     kunciRef.current ??= kunciIdempoten("penerimaan");
     setSibuk(true); setGalat(null);
     try {
       const hasil = await api.catatPenerimaanWorkshop(unit.unitId, { fisikDiterima: true, locationId, note: catatan.trim() || undefined }, kunciRef.current);
       onDone?.(hasil.alreadyReceived ? `Unit ${unit.unitCode} sudah tercatat diterima sebelumnya — tidak ada catatan ganda.` : `Unit ${unit.unitCode} tercatat diterima di workshop.`);
-    } catch (e) { setGalat(e); } finally { setSibuk(false); }
+    } catch (e) { setGalat(e); } finally { dikirimRef.current = false; setSibuk(false); }
   }
 
   const g = galat ? pesanGalatAdopsi(galat) : null;
