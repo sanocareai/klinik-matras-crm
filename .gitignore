@@ -58,3 +58,6 @@ backend/data/qa-pv2-credentials.json
 
 # Capture atribusi CTWA Fase 0 (berkas observasi ter-sanitasi, retensi maks 7 hari)
 backend/data/ctwa-capture/
+
+# artefak tes integrasi (unggahan bukti uji) — jangan dikomit
+backend/data/production-evidence/
