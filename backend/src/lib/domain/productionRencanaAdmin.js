@@ -32,11 +32,17 @@ export function weekDays(startKey) { const s = mondayOf(startKey); return Array.
 export { addDays };
 
 /** Kapasitas jujur: slot per meja × jumlah meja (jumlah UNIT). Durasi kerja per unit belum tersedia → TIDAK ada estimasi jam. */
+// ATURAN HARI KERJA (satu definisi untuk kalender, validasi jadwal Admin, ringkasan minggu, dan ekspor): Senin–Sabtu = hari kerja rutin (kapasitas penuh); Minggu = LIBUR (kapasitas rutin 0).
+// Rencana Admin TIDAK bisa dijadwalkan pada hari libur (422). Unit yang sudah terjadwal di hari libur lewat jalur lain (rencana Meja/data lama) tetap TAMPIL, berlabel "di luar hari kerja", dan tidak dihitung sebagai kapasitas rutin.
+export const HARI_LIBUR = Object.freeze([0]); // getUTCDay(): 0 = Minggu
+export const dowOf = (key) => new Date(`${key}T00:00:00Z`).getUTCDay();
+export const isHariKerja = (key) => !HARI_LIBUR.includes(dowOf(key));
+export const HARI_KERJA_PER_MINGGU = 7 - HARI_LIBUR.length;
 export function kapasitasHari(config = BOARD_DEFAULTS) {
-  const mejaCount = config.stations.length;
+  const mejaCount = config.stations.length; const total = config.capacityPerStation * mejaCount;
   return {
-    perMeja: config.capacityPerStation, mejaCount, total: config.capacityPerStation * mejaCount, satuan: "unit", targetHarian: config.dailyTarget,
-    catatan: "Kapasitas dihitung dari jumlah unit per meja. Durasi kerja per unit belum tersedia, jadi tidak ada estimasi jam.",
+    perMeja: config.capacityPerStation, mejaCount, total, satuan: "unit", targetHarian: config.dailyTarget, hariKerjaPerMinggu: HARI_KERJA_PER_MINGGU, totalMinggu: total * HARI_KERJA_PER_MINGGU,
+    catatan: "Kapasitas dihitung dari jumlah unit per meja (Senin–Sabtu). Minggu libur: kapasitas rutin 0. Durasi kerja per unit belum tersedia, jadi tidak ada estimasi jam.",
   };
 }
 
@@ -46,6 +52,7 @@ export function normalizeJadwalInput(raw = {}, { config = BOARD_DEFAULTS, now = 
   if (!date) throw jadwalError("Tanggal jadwal tidak valid (format YYYY-MM-DD)", 400, "JADWAL_TANGGAL_INVALID");
   const key = formatProductionDate(date);
   if (key < todayWib(now)) throw jadwalError("Tanggal jadwal sudah lewat — pilih hari ini atau setelahnya.", 422, "JADWAL_TANGGAL_LEWAT", { today: todayWib(now) });
+  if (!isHariKerja(key)) throw jadwalError("Hari Minggu libur (bukan hari kerja rutin) — pilih Senin sampai Sabtu.", 422, "JADWAL_HARI_LIBUR", { date: key });
   const station = raw.stationCode == null || raw.stationCode === "" ? null : String(raw.stationCode);
   if (station != null && !config.stations.includes(station)) throw jadwalError(`Meja tidak dikenal (${station})`, 400, "JADWAL_MEJA_INVALID", { allowed: config.stations });
   let targetKey; // undefined = tidak diubah; null = hapus target; "YYYY-MM-DD" = set

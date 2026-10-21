@@ -49,9 +49,9 @@ test("nama berkas: Target-Produksi-DD-MMMM-YYYY.xlsx (bulan Indonesia); rentang 
   assert.doesNotMatch(D.exportFileName({ from: "2026-08-01" }), /[\\/:*?"<>|\s]/);
 });
 
-test("kolom: tepat 29 kolom berurutan sesuai kontrak (+ Tanggal Jadwal, Status Rencana, Status V2); Nilai Order hanya bila diminta", () => {
+test("kolom: tepat 29 kolom berurutan sesuai kontrak (+ Tanggal Jadwal, Status Rencana, Mode pelaksanaan); Nilai Order hanya bila diminta", () => {
   const h = D.EXPORT_COLUMNS.map((c) => c.header);
-  assert.deepEqual(h, ["No.", "Target", "Tanggal Jadwal", "Meja", "Urutan", "Prioritas", "Status", "Status Rencana", "Status V2", "Resi", "Kode Unit", "Customer", "Sales", "Layanan Sales", "Jenis Produk", "Jenis Kasur", "Merek", "Ukuran", "Berat Customer", "Keluhan/Catatan Sales", "Ganti Kain", "PIC Meja", "PIC Bahan", "PIC QC", "PIC Corner", "Status Bahan", "Tahap Sekarang", "Alasan Lewat Target", "Catatan Kepala Produksi"]);
+  assert.deepEqual(h, ["No.", "Target", "Tanggal Jadwal", "Meja", "Urutan", "Prioritas", "Status", "Status Rencana", "Mode pelaksanaan", "Resi", "Kode Unit", "Customer", "Sales", "Layanan Sales", "Jenis Produk", "Jenis Kasur", "Merek", "Ukuran", "Berat Customer", "Keluhan/Catatan Sales", "Ganti Kain", "PIC Meja", "PIC Bahan", "PIC QC", "PIC Corner", "Status Bahan", "Tahap Sekarang", "Alasan Lewat Target", "Catatan Kepala Produksi"]);
   assert.equal(D.columnsFor().length, 29); assert.equal(D.columnsFor({ includeValue: true }).at(-1).header, "Nilai Order");
   assert.equal(D.columnsFor({ includeValue: true }).at(-1).type, "rupiah");
 });

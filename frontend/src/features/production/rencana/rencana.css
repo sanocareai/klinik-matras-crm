@@ -1,0 +1,9 @@
+/* Rencana Produksi — penyesuaian kontras tema GELAP (WCAG AA 4.5:1) untuk pasangan warna yang di token dasar hanya ~3.6–4.4:1. Tema terang tidak diubah.
+   Hanya mempengaruhi komponen halaman ini (kelas rc-*); token desain global tidak disentuh. */
+[data-theme="dark"] .rc-cta { color: #04182f !important; font-weight: 600; }
+[data-theme="dark"] .rc-sek { color: #8fcaff !important; }
+[data-theme="dark"] .rc-b-accent { color: #8fcaff !important; }
+[data-theme="dark"] .rc-b-red { color: #ff9a92 !important; }
+[data-theme="dark"] .rc-tab-on { color: #04182f !important; }
+[data-theme="dark"] .rc-tab-on .rc-tab-count { background: rgba(255, 255, 255, 0.38) !important; color: #04182f !important; }
+.rc-tab-count { background: rgba(255, 255, 255, 0.22); }

@@ -5,7 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  SUMBER, TABS, aksiUtama, badgeBahan, bacaUrl, keputusanLepas, labelHari, labelMinggu, labelTanggal, mondayOf, pesanGagalJadwal, shiftKey, sisaMeja, slotBawaan, teksAktivasiV2, tulisUrl, validKey,
+  SUMBER, TABS, aksiUtama, isLibur, badgeBahan, bacaUrl, keputusanLepas, labelHari, labelMinggu, labelTanggal, mondayOf, pesanGagalJadwal, shiftKey, sisaMeja, slotBawaan, teksAktivasiV2, tulisUrl, validKey,
 } from "../src/features/production/rencana/rencanaModel.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -78,4 +78,25 @@ test("pengawatan: rute baru memakai kalender mingguan, Papan V2 lama tetap ada; 
   assert.match(akt, /activateUnit: true/); assert.match(akt, /aktivasi-paham/); assert.match(akt, /disabled=\{!bisa\}/);
   const kartu = src("features", "production", "rencana", "KartuUnit.jsx"); assert.match(kartu, /draggable=\{draggable \|\| undefined\}/); assert.match(kartu, /aria-label=\{`Tindakan lain untuk/);
   const modal = src("features", "production", "rencana", "JadwalModal.jsx"); assert.match(modal, /jadwalkanUnit/); assert.match(modal, /expectedRevision: revisi/); assert.match(modal, /kunci\.current = null/, "kunci idempotensi diganti hanya setelah sukses/revisi basi (klik ulang = kunci sama)");
+});
+
+test("kapasitas Minggu: Minggu libur (isLibur), slot bawaan melewati hari libur walau kosong; pesan galat hari libur", () => {
+  assert.equal(isLibur("2026-10-25"), true); assert.equal(isLibur("2026-10-24"), false); assert.equal(isLibur("bukan"), false);
+  const days = ["2026-10-24", "2026-10-25", "2026-10-26"].map((d) => ({ date: d, hariKerja: new Date(`${d}T00:00:00Z`).getUTCDay() !== 0, stations: ["TABLE_1"].map((code) => ({ code, count: 0, capacity: new Date(`${d}T00:00:00Z`).getUTCDay() === 0 ? 0 : 3 })) }));
+  days[0].stations[0].count = 3;
+  assert.deepEqual(slotBawaan({ today: "2026-10-24", days }), { date: "2026-10-26", station: "TABLE_1" }, "Sabtu penuh, Minggu libur dilewati → Senin");
+  assert.equal(sisaMeja({ days }, "2026-10-25", "TABLE_1"), 0, "meja hari libur tanpa tempat");
+  assert.match(pesanGagalJadwal({ code: "JADWAL_HARI_LIBUR" }), /Minggu libur/);
+});
+
+test("pengawatan: kepala ringkas untuk HP (menu tambahan memuat Muat ulang/Export/Papan Meja/Corner), tautan Papan Meja + Corner di desktop, papan lama punya tautan kembali; kontras gelap lewat rencana.css", () => {
+  const page = src("pages", "bengkel", "ProductionRencanaMinggu.jsx");
+  assert.match(page, /useSempit/); assert.match(page, /data-testid="header-mobile"/); assert.match(page, /MenuHalaman/);
+  for (const label of ["Muat ulang", "Export Excel", "Papan Meja (harian)", "Corner"]) assert.ok(page.includes(`label: "${label}"`), `menu HP: ${label}`);
+  assert.match(page, /tampilan=corner/); assert.match(page, /data-testid="link-corner"/); assert.match(page, /data-testid="link-papan-meja"/);
+  assert.match(page, /minggu\.ringkasan\.slotKerja/, "ringkasan minggu dari server (hari kerja saja)");
+  const lama = src("pages", "bengkel", "ProductionRencanaWorkspace.jsx"); assert.match(lama, /data-testid="link-jadwal-mingguan"/); assert.match(lama, /searchParams\.get\("tampilan"\) === "corner"/);
+  const css = src("features", "production", "rencana", "rencana.css"); for (const k of ["rc-cta", "rc-sek", "rc-b-accent", "rc-b-red", "rc-tab-on"]) assert.ok(css.includes(k), k); assert.match(css, /\[data-theme="dark"\]/);
+  const kal = src("features", "production", "rencana", "RencanaKalender.jsx"); assert.match(kal, /data-libur=/); assert.match(kal, /Libur/); assert.doesNotMatch(kal, /opacity-70/, "hari lampau tidak diredupkan (kontras)");
+  assert.match(src("features", "production", "rencana", "KartuUnit.jsx"), /createPortal/, "menu kartu lewat portal (tidak tertutup kartu lain)");
 });

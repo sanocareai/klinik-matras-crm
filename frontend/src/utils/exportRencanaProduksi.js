@@ -109,6 +109,8 @@ function formatBersyarat(ws, cols, n) {
   add(range("sumberJadwal"), { type: "cellIs", operator: "equal", formulae: ['"Rencana Admin"'], priority: 8, style: { font: tebal(WARNA.normalTeks), fill: cfFill(WARNA.normalBg) } });
   add(range("sumberJadwal"), { type: "cellIs", operator: "equal", formulae: ['"Pelaksanaan Meja"'], priority: 9, style: { font: tebal(WARNA.hijauTeks), fill: cfFill(WARNA.hijauBg) } });
   add(range("sumberJadwal"), { type: "cellIs", operator: "equal", formulae: ['"Belum dijadwalkan"'], priority: 10, style: { font: tebal(WARNA.abuTeks), fill: cfFill(WARNA.abuBg) } });
+  // Tanggal Jadwal pada hari Minggu (libur) = kuning. WEEKDAY(...,2)=7 → Minggu.
+  add(range("tanggal"), { type: "expression", formulae: [`AND(${cL("tanggal")}${first}<>"",WEEKDAY(${cL("tanggal")}${first},2)=7)`], priority: 11, style: { font: tebal(WARNA.kuningTeks), fill: cfFill(WARNA.kuningBg) } });
   // Zebra (prioritas terendah; ikut terurut/tersaring karena berbasis nomor baris tampil)
   add(`A${first}:${colLetter(cols.length)}${lastRow}`, { type: "expression", formulae: ["MOD(ROW(),2)=0"], priority: 50, style: { fill: cfFill(WARNA.zebra) } });
   for (const r of rules) ws.addConditionalFormatting(r);
@@ -125,7 +127,8 @@ function sheetKeterangan(wb, data) {
     ["Target", "Target selesai: target khusus kartu/unit bila ada; untuk rencana V2 tanpa target khusus = tanggal papan. Kosong untuk unit yang belum punya target."],
     ["Tanggal Jadwal", "Tanggal rencana produksi (bukan target selesai). Kosong untuk unit yang belum dijadwalkan."],
     ["Status Rencana", "Rencana Admin (biru) = hanya jadwal, TIDAK membuka Run/tahap/QC. Pelaksanaan Meja (hijau) = Run sudah dibuka. Belum dijadwalkan (abu)."],
-    ["Status V2", "Status pekerjaan V2: Menunggu unit tiba · Berjalan · Tertahan · Selesai; 'Belum diaktifkan (tanpa Run)' untuk unit yang belum memakai Produksi V2."],
+    ["Mode pelaksanaan", "Hanya jadwal (belum dibuka di Meja) = Rencana Admin. Untuk Pelaksanaan Meja: Menunggu unit tiba · Berjalan di Meja · Tertahan · Selesai. 'Belum dibuka di Meja' = unit belum dijadwalkan."],
+    ["Hari Minggu", "Minggu libur (bukan hari kerja rutin, kapasitas rutin 0). Tanggal jadwal pada hari Minggu disorot kuning; unitnya tetap ditampilkan."],
     ["Status", "Status global unit: Menunggu Dijemput · Pengambilan · Diterima di Workshop · Diproses · Siap Kirim · Dalam Pengiriman · Terkirim (dari bukti di server, bukan tebakan)."],
     ["Prioritas", "Komplain merah tua · Tinggi oranye · Normal biru."],
     ["Lewat Target", "Sel Target dan Alasan Lewat Target merah muda bila target efektif sudah terlewat."],

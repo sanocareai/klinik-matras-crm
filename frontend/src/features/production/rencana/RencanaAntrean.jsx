@@ -16,8 +16,8 @@ export default function RencanaAntrean({ antrean, loading, tab, onTab, q, onQ, s
       <div role="tablist" aria-label="Antrean menurut tindakan" className="flex flex-wrap gap-1.5">
         {TABS.map((t) => (
           <button key={t.key} type="button" role="tab" aria-selected={tab === t.key} data-testid={`tab-${t.key}`} title={t.hint} onClick={() => onTab(t.key)}
-            className={`inline-flex min-h-[36px] items-center gap-1.5 rounded-chip px-3 text-[12.5px] font-medium ${tab === t.key ? "bg-accent text-white" : "bg-inset text-ink2 hover:bg-hovertint"}`}>
-            {t.label}<span className={`rounded-full px-1.5 text-[11px] ${tab === t.key ? "bg-white/20" : "bg-surface"}`} data-testid={`hitung-${t.key}`}>{counts[t.key] ?? "–"}</span>
+            className={`inline-flex min-h-[36px] items-center gap-1.5 rounded-chip px-3 text-[12.5px] font-medium ${tab === t.key ? "rc-tab-on bg-accent text-white" : "bg-inset text-ink2 hover:bg-hovertint"}`}>
+            {t.label}<span className={`rounded-full px-1.5 text-[11px] ${tab === t.key ? "rc-tab-count" : "bg-surface"}`} data-testid={`hitung-${t.key}`}>{counts[t.key] ?? "–"}</span>
           </button>
         ))}
       </div>

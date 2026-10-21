@@ -63,21 +63,21 @@ export default function KartuUnit({ item, izin = {}, mode = "antrean", onAksi, o
           <span className="block truncate text-[12px] text-ink2">{(item.pekerjaan || []).join(" · ") || "Layanan belum tercatat"}{item.ukuran ? ` · ${item.ukuran}` : ""}</span>
         </button>
         <div className="mt-1 flex flex-wrap items-center gap-1">
-          {sumber && <Badge variant={sumber === "V2" ? "green" : "accent"} title={SUMBER[sumber]?.dampak} data-testid="kartu-sumber">{SUMBER[sumber]?.label}</Badge>}
+          {sumber && <Badge variant={sumber === "V2" ? "green" : "accent"} className={sumber === "V2" ? "" : "rc-b-accent"} title={SUMBER[sumber]?.dampak} data-testid="kartu-sumber">{SUMBER[sumber]?.label}</Badge>}
           {jadwal?.tanggal && mode === "antrean" && <Badge variant="neutral"><CalendarClock size={11} aria-hidden /> {labelHari(jadwal.tanggal)}{meja ? ` · ${meja}` : ""}</Badge>}
           {mode !== "antrean" && meja && <Badge variant="neutral">{meja}</Badge>}
           {item.targetSelesai && <Badge variant="neutral" title="Target selesai"><Target size={11} aria-hidden /> {labelHari(item.targetSelesai)}</Badge>}
           {item.pic && <Badge variant="neutral" title="PIC"><User size={11} aria-hidden /> {item.pic}</Badge>}
           <Badge variant={posisi.tone}>{posisi.text}</Badge>
-          <Badge variant={bahan.tone}>{bahan.text}</Badge>
-          {item.prioritas?.key && item.prioritas.key !== "NORMAL" && <Badge variant="red">{item.prioritas.label}</Badge>}
+          <Badge variant={bahan.tone} className={bahan.tone === "red" ? "rc-b-red" : ""}>{bahan.text}</Badge>
+          {item.prioritas?.key && item.prioritas.key !== "NORMAL" && <Badge variant="red" className="rc-b-red">{item.prioritas.label}</Badge>}
         </div>
         {mode === "antrean" && item.alasan && <p className="m-0 mt-1 line-clamp-2 text-[12px] text-ink3" data-testid="kartu-alasan">{item.alasan}</p>}
         {perhatian.length > 0 && <p className="m-0 mt-1 flex items-start gap-1 text-[12px] text-orange" data-testid="kartu-perhatian"><AlertTriangle size={12} className="mt-0.5 shrink-0" aria-hidden /> {perhatian.map((f) => f.text).join(" · ")}</p>}
       </div>
       <div className="flex shrink-0 flex-col items-end justify-between gap-1">
         <MenuLainnya item={item} izin={izin} onMenu={(k, it) => onAksi?.(k, it)} />
-        <Button size="sm" variant={aksi.kind === "JADWALKAN" ? "primary" : "secondary"} className="min-h-[36px] whitespace-nowrap" data-testid="kartu-aksi" data-kind={aksi.kind} onClick={() => onAksi?.(aksi.kind, item)}>{aksi.label}</Button>
+        <Button size="sm" variant={aksi.kind === "JADWALKAN" ? "primary" : "secondary"} className={`min-h-[36px] whitespace-nowrap ${aksi.kind === "JADWALKAN" ? "rc-cta" : "rc-sek"}`} data-testid="kartu-aksi" data-kind={aksi.kind} onClick={() => onAksi?.(aksi.kind, item)}>{aksi.label}</Button>
       </div>
     </article>
   );

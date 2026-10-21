@@ -6,7 +6,7 @@
 import { BOARD_DEFAULTS, assertStationCapacity } from "../lib/domain/productionBoard.js";
 import {
   ANTREAN_SORT, ANTREAN_TAB, ANTREAN_TABS, HARI, JADWAL_EVENT, JADWAL_STATUS, JADWAL_SUMBER, SUMBER_DAMPAK, SUMBER_LABEL, addDays, formatProductionDate, jadwalError, kapasitasHari,
-  mondayOf, normalizeJadwalInput, parseProductionDate, penghalangJadwal, stationLabel, tabAntrean, targetAtOf, targetKeyOf, todayWib, weekDays,
+  isHariKerja, mondayOf, normalizeJadwalInput, parseProductionDate, penghalangJadwal, stationLabel, tabAntrean, targetAtOf, targetKeyOf, todayWib, weekDays,
 } from "../lib/domain/productionRencanaAdmin.js";
 import { guardV1UnitWrite } from "./unitV2Ownership.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
@@ -284,19 +284,23 @@ export async function getMinggu(prisma, { start, config = BOARD_DEFAULTS, now = 
   const kap = kapasitasHari(config);
   const outDays = days.map((d) => {
     const hari = items.filter((i) => i.tanggal === d);
+    const kerja = isHariKerja(d);
     const stations = config.stations.map((code) => {
       const its = hari.filter((i) => i.meja === code);
-      return { code, label: stationLabel(code), count: its.length, capacity: config.capacityPerStation, pic: pics.get(`${d}|${code}`) ?? null };
+      return { code, label: stationLabel(code), count: its.length, capacity: kerja ? config.capacityPerStation : 0, pic: pics.get(`${d}|${code}`) ?? null };
     });
     const tanpaMeja = hari.filter((i) => !i.meja).length;
     const dow = new Date(`${d}T00:00:00Z`).getUTCDay();
     return {
-      date: d, hari: HARI[dow], isToday: d === today, isPast: d < today, isWeekend: dow === 0,
-      kapasitas: kap.total, terencana: hari.length, admin: hari.filter((i) => i.sumber === JADWAL_SUMBER.ADMIN).length, v2: hari.filter((i) => i.sumber === JADWAL_SUMBER.V2).length,
-      penuh: hari.length >= kap.total, targetSelesai: targetPerHari.get(d)?.size ?? 0, perhatian: hari.filter((i) => i.perhatian.length).length, tanpaMeja, stations,
+      date: d, hari: HARI[dow], isToday: d === today, isPast: d < today, isWeekend: dow === 0, hariKerja: kerja, libur: !kerja,
+      kapasitas: kerja ? kap.total : 0, terencana: hari.length, admin: hari.filter((i) => i.sumber === JADWAL_SUMBER.ADMIN).length, v2: hari.filter((i) => i.sumber === JADWAL_SUMBER.V2).length,
+      penuh: kerja && hari.length >= kap.total, targetSelesai: targetPerHari.get(d)?.size ?? 0, perhatian: hari.filter((i) => i.perhatian.length).length, tanpaMeja, stations,
     };
   });
-  return { start: startKey, end: to, today, kapasitas: kap, days: outDays };
+  // Ringkasan minggu KONSISTEN dengan sel hari: terencana dan slot dihitung pada hari kerja saja; unit di hari libur dilaporkan terpisah (tidak memberi kesan ada slot rutin).
+  const kerjaDays = outDays.filter((d) => d.hariKerja);
+  const ringkasan = { slotKerja: kap.totalMinggu, hariKerja: kerjaDays.length, terencanaKerja: kerjaDays.reduce((a, d) => a + d.terencana, 0), diLuarHariKerja: outDays.filter((d) => !d.hariKerja).reduce((a, d) => a + d.terencana, 0), perhatian: outDays.reduce((a, d) => a + d.perhatian, 0) };
+  return { start: startKey, end: to, today, kapasitas: kap, ringkasan, days: outDays };
 }
 
 /** Rincian satu hari: meja + daftar unit (Admin dan V2 pada satu kalender, label berbeda). Meja kosong tetap muncul ringkas (kapasitas tersisa). */
@@ -307,9 +311,10 @@ export async function getHari(prisma, { date, config = BOARD_DEFAULTS, now = new
   const fotos = await signUnitPhotoUrlsBulk(prisma, [...new Set(items.map((i) => i.unitId))]);
   for (const i of items) i.photoUrl = fotos.get(i.unitId) ?? null;
   const urut = (a, b) => (a.urutan ?? 1e9) - (b.urutan ?? 1e9) || (b.prioritas.key === "HIGH") - (a.prioritas.key === "HIGH") || a.unitCode.localeCompare(b.unitCode);
+  const kerja = isHariKerja(key);
   return {
-    date: key, today: todayWib(now), kapasitas: kapasitasHari(config),
-    stations: config.stations.map((code) => ({ code, label: stationLabel(code), capacity: config.capacityPerStation, pic: pics.get(`${key}|${code}`) ?? null, items: items.filter((i) => i.meja === code).sort(urut) })),
+    date: key, today: todayWib(now), kapasitas: kapasitasHari(config), hariKerja: kerja, libur: !kerja,
+    stations: config.stations.map((code) => ({ code, label: stationLabel(code), capacity: kerja ? config.capacityPerStation : 0, pic: pics.get(`${key}|${code}`) ?? null, items: items.filter((i) => i.meja === code).sort(urut) })),
     tanpaMeja: items.filter((i) => !i.meja).sort(urut),
   };
 }

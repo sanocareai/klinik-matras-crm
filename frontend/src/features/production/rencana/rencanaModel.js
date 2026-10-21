@@ -8,6 +8,7 @@ const DAY_MS = 86_400_000;
 export const shiftKey = (key, n) => new Date(new Date(`${key}T00:00:00Z`).getTime() + n * DAY_MS).toISOString().slice(0, 10);
 export const mondayOf = (key) => { const d = new Date(`${key}T00:00:00Z`).getUTCDay(); return shiftKey(key, d === 0 ? -6 : 1 - d); };
 export const todayWib = (now = new Date()) => new Date(now.getTime() + 7 * 3600_000).toISOString().slice(0, 10);
+export const isLibur = (key) => validKey(key) && new Date(`${key}T00:00:00Z`).getUTCDay() === 0; // Minggu = libur (satu aturan dengan server: lib/domain/productionRencanaAdmin.js HARI_LIBUR)
 export const validKey = (k) => typeof k === "string" && /^\d{4}-\d{2}-\d{2}$/.test(k) && !Number.isNaN(Date.parse(`${k}T00:00:00Z`));
 /** "2026-10-22" -> "Kam 22 Okt" */
 export function labelHari(key) { if (!validKey(key)) return "—"; const d = new Date(`${key}T00:00:00Z`); return `${HARI_PENDEK[d.getUTCDay()]} ${d.getUTCDate()} ${BULAN[d.getUTCMonth()]}`; }
@@ -47,7 +48,7 @@ export function sisaHari(minggu, date) { const d = minggu?.days?.find((x) => x.d
 export function slotBawaan(minggu, { fromKey = null, exclude = null } = {}) {
   const today = minggu?.today; const mulai = fromKey && fromKey > today ? fromKey : today;
   for (const d of minggu?.days || []) {
-    if (d.date < mulai || d.isWeekend) continue;
+    if (d.date < mulai || d.hariKerja === false || d.isWeekend) continue;
     const st = d.stations.find((s) => s.count - (exclude && exclude.date === d.date && exclude.station === s.code ? 1 : 0) < s.capacity);
     if (st) return { date: d.date, station: st.code };
   }
@@ -106,6 +107,7 @@ export function teksAktivasiV2({ diterima }) {
 }
 export function pesanGagalJadwal(e) {
   const c = e?.code || e?.body?.code;
+  if (c === "JADWAL_HARI_LIBUR") return "Hari Minggu libur (bukan hari kerja rutin). Pilih Senin sampai Sabtu.";
   if (c === "PLAN_STATION_FULL") return "Meja itu sudah penuh pada hari tersebut. Pilih meja atau hari lain.";
   if (c === "JADWAL_REVISI_BASI") return "Jadwal unit ini baru saja diubah orang lain. Daftar sudah dimuat ulang — periksa lalu coba lagi.";
   if (c === "JADWAL_UNIT_BERUBAH") return "Prioritas/target unit ini baru saja diubah orang lain. Muat ulang lalu coba lagi.";

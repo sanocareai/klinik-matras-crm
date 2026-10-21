@@ -16,7 +16,10 @@ import { addDays, mondayOf, todayWib } from "../../src/lib/domain/productionRenc
 
 const P = "/api/production"; const V2 = "/api/production-v2";
 let server; let seq = 0; let w; const notif = []; const hookAsli = custodyHooks.unitReceivedAtWorkshop;
-const HARI_INI = todayWib(); const H = (n) => addDays(HARI_INI, n);
+// Hari kerja = Senin–Sabtu (Minggu libur: Rencana Admin ditolak). H(n) = n hari KERJA dari hari kerja terdekat (Minggu dilewati) supaya tes tidak bergantung hari berjalannya.
+const dow = (k) => new Date(`${k}T00:00:00Z`).getUTCDay();
+const HARI_INI = (() => { let k = todayWib(); while (dow(k) === 0) k = addDays(k, 1); return k; })();
+const H = (n) => { let k = HARI_INI; let c = 0; const step = n >= 0 ? 1 : -1; while (c < Math.abs(n)) { k = addDays(k, step); if (dow(k) !== 0) c += 1; } return k; };
 
 test.before(async () => { await truncateAll(); server = await startTestServer(buildTestApp()); custodyHooks.unitReceivedAtWorkshop = (id) => { notif.push(id); }; });
 test.after(async () => { custodyHooks.unitReceivedAtWorkshop = hookAsli; await truncateAll(); await server.close(); await testPrisma.$disconnect(); });
@@ -199,7 +202,7 @@ test("R10. AKTIVASI V2 mengambil alih jadwal Admin: baris ADOPTED + event ADOPTE
   const sch = await testPrisma.productionUnitSchedule.findUniqueOrThrow({ where: { unitId: k.unit.id } });
   assert.equal(sch.status, "ADOPTED"); assert.ok(sch.adoptedPlanId); assert.equal(sch.revision, 2);
   const rw = (await w.admin.api.get(`${P}/units/${k.unit.id}/jadwal`)).body; assert.equal(rw.events.at(-1).kind, "ADOPTED"); assert.equal(rw.events.at(-1).undoable, false);
-  const m = await minggu(); assert.equal(m.days.find((d) => d.date === H(2)).terencana, 0, "jadwal Admin lama tidak tampil lagi"); const d3 = m.days.find((d) => d.date === H(3)); assert.equal(d3.terencana, 1); assert.equal(d3.v2, 1); assert.equal(d3.admin, 0);
+  const m = await minggu(w.admin, H(2)); assert.equal(m.days.find((d) => d.date === H(2)).terencana, 0, "jadwal Admin lama tidak tampil lagi"); const d3 = (await minggu(w.admin, H(3))).days.find((d) => d.date === H(3)); assert.equal(d3.terencana, 1); assert.equal(d3.v2, 1); assert.equal(d3.admin, 0);
   assert.equal(await testPrisma.productionRun.count({ where: { unitId: k.unit.id } }), 1, "Run hanya karena aktivasi V2 eksplisit");
 });
 
@@ -230,7 +233,7 @@ test("R12. IZIN: hanya-lihat (Sales/Gudang) boleh membaca kalender+antrean tetap
 test("R13. target selesai + prioritas memakai kolom Unit yang SAMA (satu sumber): hitungan target per hari, perubahan nilai di luar (CAS) ditolak, tidak ada salinan di tabel jadwal", async () => {
   const k = await mkUnit({ received: true });
   await jadwalkan(w.admin, k.unit, { productionDate: H(1), stationCode: "TABLE_1", targetDate: H(3) });
-  assert.equal((await minggu()).days.find((d) => d.date === H(3)).targetSelesai, 1);
+  assert.equal((await minggu(w.admin, H(3))).days.find((d) => d.date === H(3)).targetSelesai, 1);
   // orang lain mengubah target lewat jalur unit yang sama; form Admin yang basi (expectedUnit lama) ditolak
   const lama = (await testPrisma.unit.findUniqueOrThrow({ where: { id: k.unit.id } }));
   await testPrisma.unit.update({ where: { id: k.unit.id }, data: { productionDueAt: new Date(`${H(6)}T03:00:00Z`) } });
@@ -257,11 +260,11 @@ test("R15. EKSPOR Excel memuat Rencana Admin + pelaksanaan V2 pada satu tabel: t
   const e0 = await efek(); const s0 = await testPrisma.productionUnitScheduleEvent.count();
   const r = await w.admin.api.post(`${V2}/rencana/export`, { from: H(2), to: H(2), stations: [], includeUnscheduled: false });
   assert.equal(r.status, 200, JSON.stringify(r.body).slice(0, 200));
-  const kolom = r.body.columns.map((c) => c.key); for (const k of ["tanggal", "meja", "picMeja", "sumberJadwal", "statusV2", "target"]) assert.ok(kolom.includes(k), `kolom ${k}`);
+  const kolom = r.body.columns.map((c) => c.key); for (const k of ["tanggal", "meja", "picMeja", "sumberJadwal", "modePelaksanaan", "target"]) assert.ok(kolom.includes(k), `kolom ${k}`);
   const ra = r.body.rows.find((x) => x.unitCode === a.unit.unitCode); const rv = r.body.rows.find((x) => x.unitCode === v2.unit.unitCode);
   assert.ok(ra && rv, "kedua sumber ada pada satu tabel");
-  assert.equal(ra.sumberJadwal, "Rencana Admin"); assert.equal(ra.statusV2, "Belum diaktifkan (tanpa Run)"); assert.equal(ra.tanggal, H(2)); assert.equal(ra.meja, "Meja 2"); assert.equal(ra.target, H(4)); assert.equal(ra.prioritas, "Tinggi"); assert.equal(ra.picMeja, "Belum ada PIC");
-  assert.equal(rv.sumberJadwal, "Pelaksanaan Meja"); assert.match(rv.statusV2, /Berjalan|Menunggu unit tiba/); assert.equal(rv.tanggal, H(2)); assert.equal(rv.meja, "Meja 1");
+  assert.equal(ra.sumberJadwal, "Rencana Admin"); assert.equal(ra.modePelaksanaan, "Hanya jadwal (belum dibuka di Meja)"); assert.equal(ra.tanggal, H(2)); assert.equal(ra.meja, "Meja 2"); assert.equal(ra.target, H(4)); assert.equal(ra.prioritas, "Tinggi"); assert.equal(ra.picMeja, "Belum ada PIC");
+  assert.equal(rv.sumberJadwal, "Pelaksanaan Meja"); assert.match(rv.modePelaksanaan, /Berjalan di Meja|Menunggu unit tiba/); assert.equal(rv.tanggal, H(2)); assert.equal(rv.meja, "Meja 1");
   assert.equal(r.body.summary.rencanaAdmin, 1); assert.equal(r.body.summary.pelaksanaanV2, 1);
   assert.equal(typeof ra.no, "number"); assert.equal(typeof ra.urutan, "number", "urutan tetap angka, bukan teks");
   assert.deepEqual(await efek(), e0, "ekspor baca-saja"); assert.equal(await testPrisma.productionUnitScheduleEvent.count(), s0);
@@ -285,4 +288,25 @@ test("R16. integrasi Gudang: jadwal Admin tidak mengubah antrean 'Menunggu dicat
   assert.equal(await menunggu(), false);
   assert.equal((await antrean("TERJADWAL")).items.find((i) => i.unitId === k.unit.id).diterima, true);
   assert.equal((await jadwalkan(w.admin, k.unit, { productionDate: H(3), stationCode: "TABLE_2", expectedRevision: sebelum.revisi })).status, 201, "dijadwalkan ulang setelah diterima");
+});
+
+test("R17. KAPASITAS Minggu konsisten: Senin–Sabtu = 72 slot rutin; Minggu libur (kapasitas 0, Rencana Admin ditolak 422); unit di hari Minggu lewat jalur Meja tetap tampil dan dilaporkan TERPISAH dari slot rutin; ekspor menandainya", async () => {
+  const mingguDepan = (() => { let k = H(1); while (new Date(`${k}T00:00:00Z`).getUTCDay() !== 0) k = addDays(k, 1); return k; })();
+  const k = await mkUnit({ received: true });
+  const tolak = await jadwalkan(w.admin, k.unit, { productionDate: mingguDepan, stationCode: "TABLE_1" });
+  assert.equal(tolak.status, 422); assert.equal(tolak.body.code, "JADWAL_HARI_LIBUR"); assert.equal(await testPrisma.productionUnitSchedule.count(), 0, "ditolak sebelum menulis");
+  // unit lewat jalur Meja dijadwalkan pada hari Minggu (data lama/pengecualian): tampil, tidak dihitung sebagai slot rutin
+  const op = await mkOperator(); const v2 = await mkUnit({ received: true }); const lain = await mkUnit(); await setCohort(lain.unit.id);
+  assert.equal((await w.admin.api.post(`${V2}/plans`, { unitId: v2.unit.id, productionDate: mingguDepan, stationCode: "TABLE_1", priority: 0, workCenterId: w.wc.id, operatorId: op.op.id, activateUnit: true }, idem("v2min"))).status, 201);
+  const m = await minggu(w.admin, mingguDepan); const d = m.days.find((x) => x.date === mingguDepan);
+  assert.equal(m.kapasitas.totalMinggu, 72); assert.equal(m.ringkasan.slotKerja, 72); assert.equal(m.ringkasan.hariKerja, 6);
+  assert.equal(d.hariKerja, false); assert.equal(d.libur, true); assert.equal(d.kapasitas, 0); assert.equal(d.penuh, false); assert.equal(d.terencana, 1);
+  assert.ok(d.stations.every((s) => s.capacity === 0), "meja pada hari libur tanpa kapasitas rutin");
+  assert.equal(m.ringkasan.terencanaKerja, m.days.filter((x) => x.hariKerja).reduce((a, x) => a + x.terencana, 0)); assert.equal(m.ringkasan.diLuarHariKerja, 1);
+  assert.ok(m.days.filter((x) => x.hariKerja).every((x) => x.kapasitas === 12), "Senin–Sabtu 12 slot");
+  const h = await hari(mingguDepan); assert.equal(h.libur, true); assert.equal(h.stations.find((s) => s.code === "TABLE_1").items.length, 1, "unit di hari libur tetap tampil");
+  const ex = await w.admin.api.post(`${V2}/rencana/export`, { from: mingguDepan, to: mingguDepan, stations: [], includeUnscheduled: false });
+  assert.equal(ex.body.rows.find((x) => x.unitCode === v2.unit.unitCode).libur, true); assert.equal(ex.body.summary.diLuarHariKerja, 1);
+  // hari kerja biasa tidak terpengaruh
+  const senin = addDays(mingguDepan, 1); assert.equal((await jadwalkan(w.admin, k.unit, { productionDate: senin, stationCode: "TABLE_2" })).status, 201);
 });
