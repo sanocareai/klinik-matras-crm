@@ -98,7 +98,9 @@ const WarehouseAdjustments = lazy(() => import("../pages/warehouse/WarehouseAdju
 const WarehouseReplenishment = lazy(() => import("../pages/warehouse/WarehouseReplenishment.jsx"));
 const WarehouseReports = lazy(() => import("../pages/warehouse/WarehouseReports.jsx"));
 // P8 Production Experience V2 (inert bila reader V2 OFF). Aplikasi PIC Table/Corner & Andon TV adalah halaman MANDIRI (App.jsx STANDALONE_PAGES).
-const ProductionPlannerV2 = lazy(() => import("../pages/bengkel/ProductionPlannerV2.jsx"));
+const ProductionPlannerV2 = lazy(() => import("../pages/bengkel/ProductionPlannerV2.jsx")); // tampilan lama (tidak lagi dirute; dipertahankan untuk rujukan/rollback)
+const ProductionStatusPage = lazy(() => import("../pages/bengkel/ProductionStatusPage.jsx"));
+const ProductionUnitWorkspacePage = lazy(() => import("../pages/bengkel/ProductionUnitWorkspacePage.jsx"));
 const ProductionReportV2 = lazy(() => import("../pages/bengkel/ProductionReportV2.jsx"));
 // P11 — KPI Produksi & Gudang (baca-saja; reader V2 OFF -> pesan kosong, bukan error).
 const ProductionKpi = lazy(() => import("../pages/bengkel/ProductionKpi.jsx"));
@@ -260,7 +262,8 @@ const PAGES_DASAR = [
   // Jendela detail (UX Gudang Tahap 3) = rute yang SAMA dengan daftar (parameter :id opsional) supaya daftar tetap terpasang di belakang jendela.
   { path: "/warehouse/goods-receipt/:id?", render: () => <WarehouseGoodsReceipt /> },
   { path: "/warehouse/unit-custody", render: () => <WarehouseUnitCustody /> },
-  { path: "/bengkel/production-v2", render: () => <DemoPage><ProductionPlannerV2 /></DemoPage> },
+  { path: "/bengkel/production-v2", render: () => <DemoPage><ProductionStatusPage /></DemoPage> },
+  { path: "/bengkel/production-v2/unit/:unitId", render: () => <ProductionUnitWorkspacePage /> }, // Ruang Kerja Unit (menggantikan modal panjang)
   { path: "/bengkel/production-v2/laporan/:runId", render: () => <ProductionReportV2 /> },
   // P9B.1 — workspace penjadwalan baru, URL sendiri (bukan sub-path production-v2, supaya tidak butuh redirect/D-144).
   { path: "/bengkel/rencana-produksi", render: () => <DemoPage><ProductionRencanaWorkspace /></DemoPage> },

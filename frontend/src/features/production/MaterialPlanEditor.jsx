@@ -100,16 +100,18 @@ export default function MaterialPlanEditor({ unitId, rencana, bolehUbah, unitAkt
   function mulai() { setEdit(true); setSimpan({ sibuk: false, galat: null, sukses: "" }); setBaris(dariRencana(plan?.lines)); setAlasan(""); setCari(""); setKelompok(""); setTampilGalatIsian(false); }
   function batal() { setEdit(false); setBaris(dariRencana(plan?.lines)); setSimpan({ sibuk: false, galat: null, sukses: "" }); }
 
+  const kirimRef = useRef(false); // klik ganda lebih cepat dari render ulang: SATU permintaan per niat (permintaan kedua dengan revisi basi menimpa pesan sukses dengan galat tersembunyi)
   async function kirim() {
     setTampilGalatIsian(true);
-    if (!validasi.ok || (!berubah && !!plan)) return;
+    if (kirimRef.current || !validasi.ok || (!berubah && !!plan)) return;
+    kirimRef.current = true;
     setSimpan({ sibuk: true, galat: null, sukses: "" });
     try {
       const hasil = await api.putRencanaBahan(unitId, { lines: badanRencana(baris), expectedRevision: plan?.revision ?? 0, reason: alasan.trim() || undefined });
       setEdit(false);
       setSimpan({ sibuk: false, galat: null, sukses: hasil.disimpan === false ? "Tidak ada perubahan yang perlu disimpan." : `Rencana disimpan sebagai revisi ${hasil.rencana?.plan?.revision ?? ""}. Stok tidak berubah.`.replace("  ", " ") });
       onSaved?.(hasil.rencana);
-    } catch (e) { setSimpan({ sibuk: false, galat: e, sukses: "" }); }
+    } catch (e) { setSimpan({ sibuk: false, galat: e, sukses: "" }); } finally { kirimRef.current = false; }
   }
 
   const kosong = !plan || plan.lines.length === 0;

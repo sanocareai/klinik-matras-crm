@@ -400,3 +400,6 @@ function Riwayat({ daftar }) {
     </>
   );
 }
+
+// Dipakai ulang oleh Ruang Kerja Unit (features/production/workspace) — satu sumber tampilan untuk bagian yang sama.
+export { Kosong, Bagian, Status3, TindakanUtama, Hasil, StatusTarget, PemakaianAktual, Riwayat };
