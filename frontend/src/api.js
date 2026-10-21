@@ -1057,6 +1057,12 @@ export const api = {
     request(`/units/${unitId}/materials`, { method: "POST", ...(idempotencyKey ? { headers: { "Idempotency-Key": idempotencyKey } } : {}), body: JSON.stringify({ materialId, qty, note }) }),
   // ── Order Produksi · adopsi Admin (tiga sumbu status, status kerja manual, rencana bahan, ekspor Excel)
   getUnitAdopsi: (unitId) => request(`/production/units/${unitId}/adopsi`),
+  // Ruang Kerja Status Produksi: daftar kerja per ORDER (aktif/riwayat; cari/filter/urut/halaman di server) + header ruang kerja unit. Baca-saja.
+  getProductionWorkList: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== "")).toString();
+    return request(`/production/work-list${qs ? `?${qs}` : ""}`);
+  },
+  getUnitRuangKerja: (unitId) => request(`/production/units/${unitId}/ruang-kerja`),
   postStatusKerjaManual: (unitId, { status, note, expectedLatestId } = {}) =>
     request(`/production/units/${unitId}/work-progress`, { method: "POST", body: JSON.stringify({ status, note, expectedLatestId: expectedLatestId ?? null }) }),
   // Penerimaan workshop oleh petugas (Gudang/Produksi/Admin): catatan resmi pelaku+waktu+lokasi, TANPA mengaktifkan Produksi V2. Idempotency-Key dipakai server untuk jalur Run yang sudah menunggu kedatangan.

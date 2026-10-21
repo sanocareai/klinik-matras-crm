@@ -44,7 +44,7 @@ export function buildWorkOrderWhere(query = {}) {
   };
 }
 
-const UNIT_INCLUDE = {
+export const UNIT_INCLUDE = {
   currentStage: { select: { id: true, code: true, labelId: true, phase: true, requiresQc: true, defaultWorkCenter: { select: { id: true, code: true, name: true } } } },
   service: { select: { id: true, code: true, labelId: true, serviceLine: true } },
   order: {
