@@ -11,6 +11,12 @@ export const PIC_PENDING_LABEL = "Belum ditetapkan";
 export const NOT_REQUIRED_LABEL = "Tidak diperlukan";
 export const MATERIAL_BLOCKED_PREFIX = "Tertahan — ";
 export const LATE_PREFIX = "Lewat target";
+// Rencana Admin (jadwal tanpa Run) dan pelaksanaan V2 pada kalender yang sama: label sumber jadwal + status Run. Tanggal Jadwal = tanggal rencana (bukan target selesai).
+export const SUMBER_ADMIN_LABEL = "Rencana Admin";
+export const SUMBER_V2_LABEL = "Pelaksanaan Meja";
+export const SUMBER_BELUM_LABEL = "Belum dijadwalkan";
+export const V2_TANPA_RUN_LABEL = "Belum diaktifkan (tanpa Run)";
+export const RUN_STATUS_LABEL = Object.freeze({ PENDING_ARRIVAL: "Menunggu unit tiba", ACTIVE: "Berjalan", BLOCKED: "Tertahan", COMPLETED: "Selesai", CANCELLED: "Dibatalkan" });
 
 const MONTHS_ID = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
 const isKey = (s) => /^\d{4}-\d{2}-\d{2}$/.test(String(s || "")) && !Number.isNaN(Date.parse(`${s}T00:00:00.000Z`)) && new Date(`${s}T00:00:00.000Z`).toISOString().slice(0, 10) === s;
@@ -68,10 +74,13 @@ export function normalizeExportQuery(raw = {}, { today, stations: allowedStation
 export const EXPORT_COLUMNS = Object.freeze([
   { key: "no", header: "No.", type: "angka", width: 6 },
   { key: "target", header: "Target", type: "tanggal", width: 13 },
+  { key: "tanggal", header: "Tanggal Jadwal", type: "tanggal", width: 14 },
   { key: "meja", header: "Meja", type: "teks", width: 18 },
   { key: "urutan", header: "Urutan", type: "angka", width: 8 },
   { key: "prioritas", header: "Prioritas", type: "teks", width: 11 },
   { key: "status", header: "Status", type: "teks", width: 20, wrap: true },
+  { key: "sumberJadwal", header: "Status Rencana", type: "teks", width: 18 },
+  { key: "statusV2", header: "Status V2", type: "teks", width: 24, wrap: true },
   { key: "resi", header: "Resi", type: "teks", width: 22 },
   { key: "unitCode", header: "Kode Unit", type: "teks", width: 18 },
   { key: "customer", header: "Customer", type: "teks", width: 24, wrap: true },
@@ -155,6 +164,8 @@ export function exportRowOf({ view, extras = {}, todayKey, includeValue = false 
   const row = {
     runId: view.runId ?? null, unitId: view.unit?.id ?? null,
     target: scheduled || targetKey ? targetKey : null,
+    tanggal: plan?.productionDate ? formatProductionDate(plan.productionDate) : null,
+    sumberJadwal: scheduled ? SUMBER_V2_LABEL : SUMBER_BELUM_LABEL, statusV2: RUN_STATUS_LABEL[view.runStatus] || clean(view.runStatus) || "—",
     meja: scheduled ? stationLabel(plan.stationCode) : UNSCHEDULED_LABEL,
     stationCode: scheduled ? plan.stationCode : null,
     urutan: scheduled ? plan.stationSequence ?? null : null, // diganti nomor POSISI di Meja saat diurutkan (sortExportRows); seqManual = nomor manual sudah diatur Kepala Produksi
@@ -185,7 +196,7 @@ export function exportRowOfUnit({ unit, globalStatus = null, extras = {}, includ
   const { jenisProduk, jenisKasur } = productLabels(extras);
   const fabric = extras.gantiKain === true;
   const row = {
-    runId: null, unitId: unit.id, target: null, meja: UNSCHEDULED_LABEL, stationCode: null, urutan: null, seqManual: false, productionDate: null, targetStartAt: null,
+    runId: null, unitId: unit.id, target: null, tanggal: null, sumberJadwal: SUMBER_BELUM_LABEL, statusV2: V2_TANPA_RUN_LABEL, meja: UNSCHEDULED_LABEL, stationCode: null, urutan: null, seqManual: false, productionDate: null, targetStartAt: null,
     prioritas: extras.priorityLabel || "Normal", priorityKey: extras.priorityKey || "NORMAL", priorityRank: extras.priorityRank ?? 0,
     status: clean(globalStatus?.label || "—") + (globalStatus?.detail ? ` — ${clean(globalStatus.detail)}` : ""),
     resi: clean(extras.orderNumber) || "—", unitCode: clean(unit.unitCode) || "—", customer: clean(extras.customerName) || "—", sales: clean(extras.salesName) || "—",
@@ -199,6 +210,17 @@ export function exportRowOfUnit({ unit, globalStatus = null, extras = {}, includ
   return row;
 }
 
+/** Baris untuk unit yang dijadwalkan lewat RENCANA ADMIN (tanpa Run): tanggal + meja dari jadwal Admin, PIC = PIC bawaan meja pada tanggal itu, status V2 = belum diaktifkan. Target = target unit (bukan tanggal jadwal). */
+export function exportRowOfJadwalAdmin({ unit, jadwal, globalStatus = null, picNama = null, targetKey = null, extras = {}, includeValue = false }) {
+  const row = exportRowOfUnit({ unit, globalStatus, extras, includeValue });
+  const scheduled = !!jadwal.stationCode;
+  return {
+    ...row, target: targetKey, tanggal: formatProductionDate(jadwal.productionDate), sortDate: formatProductionDate(jadwal.productionDate), productionDate: jadwal.productionDate,
+    meja: scheduled ? stationLabel(jadwal.stationCode) : "Tanpa meja", stationCode: jadwal.stationCode ?? null, sumberJadwal: SUMBER_ADMIN_LABEL, statusV2: V2_TANPA_RUN_LABEL,
+    picMeja: scheduled ? (picNama || NO_PIC_LABEL) : "—",
+  };
+}
+
 // ---- Urutan -----------------------------------------------------------------------------------------------------------------------------------
 const stationNo = (code) => { const m = /^TABLE_(\d+)$/.exec(code || ""); return m ? Number(m[1]) : 999; };
 /** tanggal target -> Meja -> urutan manual di meja (nomor manual dulu, lalu prioritas); unit tanpa meja SETELAH unit terjadwal. */
@@ -206,7 +228,7 @@ export function compareExportRows(a, b) {
   const sa = !!a.stationCode; const sb = !!b.stationCode;
   if (sa !== sb) return sa ? -1 : 1;
   if (!sa && !sb) return (b.priorityRank - a.priorityRank) || String(a.unitCode).localeCompare(String(b.unitCode), "id", { numeric: true });
-  const ta = a.target || "9999-12-31"; const tb = b.target || "9999-12-31";
+  const ta = a.sortDate || a.target || "9999-12-31"; const tb = b.sortDate || b.target || "9999-12-31";
   if (ta !== tb) return ta < tb ? -1 : 1;
   const ma = stationNo(a.stationCode); const mb = stationNo(b.stationCode);
   if (ma !== mb) return ma - mb;
@@ -218,7 +240,7 @@ export function compareExportRows(a, b) {
  */
 export function assignStationPositions(rows) {
   const groups = new Map();
-  for (const r of rows) { if (!r.stationCode) continue; const k = `${r.productionDate || ""}|${r.stationCode}`; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); }
+  for (const r of rows) { if (!r.stationCode) continue; const k = `${r.productionDate ? formatProductionDate(r.productionDate) : ""}|${r.stationCode}`; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(r); }
   const pos = new Map();
   for (const list of groups.values()) {
     [...list].sort((a, b) => compareStationOrder({ stationSequence: a.seqManual ? a.urutan : null, priorityRank: a.priorityRank, targetStartAt: a.targetStartAt }, { stationSequence: b.seqManual ? b.urutan : null, priorityRank: b.priorityRank, targetStartAt: b.targetStartAt }) || String(a.unitCode).localeCompare(String(b.unitCode), "id", { numeric: true }))
@@ -236,6 +258,7 @@ export function summaryOf(rows, { stations = [] } = {}) {
     komplain: rows.filter((r) => r.priorityKey === "COMPLAINT").length, tinggi: rows.filter((r) => r.priorityKey === "HIGH").length,
     lewatTarget: rows.filter((r) => r.late).length,
     tanpaPic: rows.filter((r) => r.stationCode && r.picMeja === NO_PIC_LABEL).length, // hanya unit yang SUDAH di Meja tetapi belum punya PIC Meja
+    rencanaAdmin: rows.filter((r) => r.sumberJadwal === SUMBER_ADMIN_LABEL).length, pelaksanaanV2: rows.filter((r) => r.sumberJadwal === SUMBER_V2_LABEL).length,
   };
 }
 

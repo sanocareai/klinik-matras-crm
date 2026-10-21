@@ -421,7 +421,7 @@ function RencanaSummary({ counts, canOpen, onOpen }) {
 }
 
 export default function ProductionRencanaWorkspace() {
-  const [date, setDate] = useState(() => wibDate(0));
+  const [date, setDate] = useState(() => (/^d{4}-d{2}-d{2}$/.test(new URLSearchParams(window.location.search).get("date") || "") ? new URLSearchParams(window.location.search).get("date") : wibDate(0)));
   const dateInputRef = useRef(null);
   const [board, setBoard] = useState(null);
   const [cc, setCc] = useState(null);

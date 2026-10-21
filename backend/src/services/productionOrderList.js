@@ -64,17 +64,20 @@ export async function perkayaBarisUnit(prisma, units) {
   const readerState = resolveProductionReaderState(await loadV2Flags(prisma));
   const v2Units = readerState.mode === PRODUCTION_READER_MODE.OFF ? new Set() : new Set(readerState.unitIds);
   const complaintsByUnit = await loadOpenComplaintsByUnit(prisma, units.map((u) => ({ id: u.id, orderId: u.orderId })));
-  const [milestoneEvidence, plannedRows, appEvidence, manualByUnit, rencanaRows, aktualRows] = await Promise.all([
+  const [milestoneEvidence, plannedRows, appEvidence, manualByUnit, rencanaRows, aktualRows, adminJadwalRows] = await Promise.all([
     loadMilestoneEvidence(prisma, unitIds),
     unitIds.length ? prisma.productionRun.findMany({
       where: { unitId: { in: unitIds }, status: { notIn: ["COMPLETED", "CANCELLED"] }, plan: { is: { stationCode: { not: null }, status: { not: "CANCELLED" } } } },
-      select: { unitId: true, plan: { select: { stationCode: true, targetCompleteAt: true, operator: { select: { user: { select: { name: true } } } } } } },
+      select: { unitId: true, plan: { select: { stationCode: true, productionDate: true, targetCompleteAt: true, operator: { select: { user: { select: { name: true } } } } } } },
     }) : [],
     loadAppEvidence(prisma, unitIds),
     loadLatestManual(prisma, unitIds),
     unitIds.length ? prisma.productionUnitMaterialPlan.findMany({ where: { unitId: { in: unitIds } }, select: { unitId: true, revision: true } }) : [],
     unitIds.length ? prisma.stockMovement.groupBy({ by: ["unitId"], where: { unitId: { in: unitIds }, type: "ISSUE" }, _count: { _all: true } }) : [],
+    // Rencana Admin: jadwal tanggal+meja per unit TANPA Run (satu sumber; jadwal V2 dibaca dari rencana Run di atas)
+    unitIds.length ? prisma.productionUnitSchedule.findMany({ where: { unitId: { in: unitIds }, status: "ACTIVE" }, select: { unitId: true, productionDate: true, stationCode: true, revision: true } }) : [],
   ]);
+  const adminJadwalByUnit = new Map(adminJadwalRows.map((r) => [r.unitId, r]));
   const planByUnit = new Map(plannedRows.map((r) => [r.unitId, r.plan]));
   const rencanaUnit = new Set(rencanaRows.map((r) => r.unitId));
   const aktualUnit = new Set(aktualRows.map((r) => r.unitId));
@@ -110,7 +113,8 @@ export async function perkayaBarisUnit(prisma, units) {
         statusOrder: u.unitStatusDisplay ?? displayStatusOfUnit(u.status), statusOrderOrder: displayStatusOfOrder(u.order?.status),
         posisi, kerja, tindakan,
         targetSelesai: targetAt ? { at: targetAt, sumber: u.productionDueAt ? "UNIT" : "RENCANA" } : null,
-        pic: picNama ? { nama: picNama, sumber: assignment?.operator ? "TAHAP" : "RENCANA" } : null, meja: plan?.stationCode ?? null,
+        pic: picNama ? { nama: picNama, sumber: assignment?.operator ? "TAHAP" : "RENCANA" } : null, meja: plan?.stationCode ?? adminJadwalByUnit.get(u.id)?.stationCode ?? null,
+        jadwal: plan?.productionDate ? { sumber: "V2", tanggal: plan.productionDate.toISOString().slice(0, 10), meja: plan.stationCode ?? null, revisi: null } : adminJadwalByUnit.has(u.id) ? { sumber: "ADMIN", tanggal: adminJadwalByUnit.get(u.id).productionDate.toISOString().slice(0, 10), meja: adminJadwalByUnit.get(u.id).stationCode ?? null, revisi: adminJadwalByUnit.get(u.id).revision } : null,
         rencanaBahanAda: rencanaUnit.has(u.id), aktualBahanAda: aktualUnit.has(u.id), buktiAplikasi: bukti.started,
       },
     };

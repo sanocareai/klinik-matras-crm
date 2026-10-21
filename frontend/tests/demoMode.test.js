@@ -127,7 +127,7 @@ test("isi kartu: customer dummy, nomor order/resi, foto, layanan Sales, layanan 
 test("pagar kode: pembungkus 7 halaman + KPI gudang; api.js memanggil gerbang; admin-only; tidak ada penyimpanan lokal; dataset hanya lewat import() dinamis", () => {
   const reg = read("src/routes/pageRegistry.jsx");
   assert.match(reg, /path: "\/produksi\/dokumentasi", render: \(ctx\) => <DemoPage slotBar><ProductionDocumentation/, "P12D: Dokumentasi memakai kerangka aplikasi (bar Mode Latihan di tab Akun)");
-  for (const [route, comp] of [["/bengkel/kpi", "ProductionKpi"], ["/bengkel/production-v2", "ProductionStatusPage"], ["/bengkel/rencana-produksi", "ProductionRencanaWorkspace"], ["/bengkel/ringkasan", "ProductionRingkasan"], ["/bengkel/quality-control", "ProductionQcHub"], ["/warehouse/antrean-produksi", "WarehouseProductionQueue"]]) {
+  for (const [route, comp] of [["/bengkel/kpi", "ProductionKpi"], ["/bengkel/production-v2", "ProductionStatusPage"], ["/bengkel/rencana-produksi", "ProductionRencanaMinggu"], ["/bengkel/rencana-produksi/papan-v2", "ProductionRencanaWorkspace"], ["/bengkel/ringkasan", "ProductionRingkasan"], ["/bengkel/quality-control", "ProductionQcHub"], ["/warehouse/antrean-produksi", "WarehouseProductionQueue"]]) {
     assert.match(reg, new RegExp(`path: "${route}", render: \\(\\) => <DemoPage><${comp}`), route);
   }
   const api = read("src/api.js");

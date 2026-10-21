@@ -173,6 +173,8 @@ export const EVENT_TYPES = Object.freeze({
   // bahan Gudang. Detail (planId, workshop, material, dll) ada di metadata.
   PRODUCTION_PLAN_CREATED: "PRODUCTION_PLAN_CREATED",
   PRODUCTION_PLAN_ASSIGNED: "PRODUCTION_PLAN_ASSIGNED",
+  // Rencana Admin (Okt 2026): jadwal tanggal+meja per unit TANPA Run (tidak membuka Run/tahap/QC). Detail di metadata.
+  PRODUCTION_ADMIN_SCHEDULE_SET: "PRODUCTION_ADMIN_SCHEDULE_SET",
   PRODUCTION_PLAN_BOM_SET: "PRODUCTION_PLAN_BOM_SET",
   PRODUCTION_PLAN_MATERIAL_RESERVED: "PRODUCTION_PLAN_MATERIAL_RESERVED",
   PRODUCTION_PLAN_CANCELLED: "PRODUCTION_PLAN_CANCELLED",
@@ -459,6 +461,8 @@ export function formatActivitySentence(event) {
       return `Penawaran custody unit ${metadata.unitCode || "—"} dibatalkan (rollback writer)${metadata.reason ? ` — ${metadata.reason}` : ""}`;
     case EVENT_TYPES.PRODUCTION_PLAN_CREATED:
       return `Rencana produksi dibuat untuk unit ${metadata.unitCode || "—"}`;
+    case EVENT_TYPES.PRODUCTION_ADMIN_SCHEDULE_SET:
+      return metadata.kind === "UNSCHEDULED" ? `Jadwal unit ${metadata.unitCode || "—"} dikeluarkan dari Rencana Produksi` : metadata.kind === "ADOPTED" ? `Jadwal Admin unit ${metadata.unitCode || "—"} diambil alih rencana V2` : `Unit ${metadata.unitCode || "—"} dijadwalkan (Rencana Admin)${metadata.toDate ? ` ${metadata.toDate}` : ""}${metadata.toStation ? ` · ${metadata.toStation}` : ""}`;
     case EVENT_TYPES.PRODUCTION_PLAN_ASSIGNED:
       return `Rencana unit ${metadata.unitCode || "—"} ditetapkan ke workshop ${metadata.workCenterCode || "—"}`;
     case EVENT_TYPES.PRODUCTION_CORNER_OPERATOR_SET:

@@ -50,6 +50,7 @@ function Ringkasan({ data, ruang, aktif, onDone }) {
           <Fakta label="Kasur">{[u.merk, u.ukuran].filter(Boolean).join(" · ") || "—"}</Fakta>
           <Fakta label="Target selesai"><Badge variant={target.nada}>{target.teks}</Badge></Fakta>
           <Fakta label="PIC · meja">{ad.pic?.nama || "Belum ada"}{ad.meja ? ` · ${String(ad.meja).replace("TABLE_", "Meja ")}` : ""}</Fakta>
+          <Fakta label="Jadwal produksi">{ad.jadwal ? `${String(ad.jadwal.tanggal).slice(8)}/${String(ad.jadwal.tanggal).slice(5, 7)}${ad.jadwal.meja ? ` · ${String(ad.jadwal.meja).replace("TABLE_", "Meja ")}` : ""} (${ad.jadwal.sumber === "V2" ? "Pelaksanaan V2" : "Rencana Admin"})` : "Belum dijadwalkan"}</Fakta>
           <Fakta label="Tahap Meja">{meja.teks}</Fakta>
           <Fakta label="Bahan">{ad.aktualBahanAda ? "Pemakaian tercatat" : ad.rencanaBahanAda ? "Ada rencana, belum dipakai" : "Belum direncanakan"}</Fakta>
         </dl>

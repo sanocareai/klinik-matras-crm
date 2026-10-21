@@ -21,6 +21,7 @@
 //    Pengurangan fisik ada di Material Issue/PICKED, slice berikutnya (P4).
 //  - Command ini TIDAK PERNAH menyentuh ProductionRun.status/currentPhase atau ProductionPhaseRun — planning
 //    murni metadata pra-kerja; fase PROCESS baru dimulai lewat jalur produksi lain (di luar scope P3).
+import { adoptJadwalAdminInTx, slotOccupied } from "./productionJadwalCore.js";
 import { createHash } from "node:crypto";
 import { recordActivity, EVENT_TYPES } from "../lib/activityLog.js";
 import { WORK_LANES, hasLane, laneLabel } from "../lib/domain/productionLanes.js";
@@ -409,9 +410,8 @@ export async function scheduleProductionPlanInTx(tx, { planId, actorId, idempote
         // Kunci slot (tanggal, meja) lewat advisory lock transaksi: dua penjadwalan bersamaan ke slot yang sama diserialkan TANPA mengunci
         // baris plan lain (tidak ada siklus kunci dengan command yang mengunci plan-nya sendiri lebih dulu).
         await tx.$queryRawUnsafe("SELECT pg_advisory_xact_lock(hashtext($1))::text AS k", `production-station:${formatProductionDate(data.productionDate)}:${data.stationCode}`);
-        const occupied = await tx.productionRunPlan.count({
-          where: { id: { not: planId }, productionDate: data.productionDate, stationCode: data.stationCode, status: { not: "CANCELLED" } },
-        });
+        // Kapasitas BERSAMA: rencana V2 lain + jadwal Rencana Admin ACTIVE (unit lain) pada slot yang sama.
+        const occupied = await slotOccupied(tx, { productionDate: data.productionDate, stationCode: data.stationCode, excludePlanId: planId, excludeUnitId: plan.run.unitId });
         assertStationCapacity(occupied, config);
         // Slot sudah punya urutan MANUAL -> unit baru ditaruh di akhir (max+1); slot tanpa urutan manual -> NULL (urutan bawaan = prioritas).
         const top = await tx.productionRunPlan.aggregate({ where: { id: { not: planId }, productionDate: data.productionDate, stationCode: data.stationCode, status: { not: "CANCELLED" } }, _max: { stationSequence: true } });
@@ -431,6 +431,8 @@ export async function scheduleProductionPlanInTx(tx, { planId, actorId, idempote
     const command = await beginCommand(tx, { actor, idempotencyKey, commandType: "SCHEDULE_PLAN", aggregateType: "ProductionRunPlan", aggregateId: planId, requestHash, expectedRevision: revisionExpected });
     if (!data.unschedule) update.targetDate = nextTargetDate;
     const updated = await tx.productionRunPlan.update({ where: { id: planId }, data: { ...update, revision, commandId: command.id } });
+    // Rencana Admin unit ini (bila ada) diambil alih: sumber kebenaran tanggal/meja pindah ke rencana V2 — tidak ada dua jadwal untuk satu unit.
+    if (!data.unschedule) await adoptJadwalAdminInTx(tx, { unitId: plan.run.unitId, planId, actorId: actorId || null, unitCode: plan.run.unit.unitCode });
     const slotChanged = prevDateKey !== nextDateKey || (plan.stationCode || null) !== (updated.stationCode || null);
     const targetChanged = !data.unschedule && (plan.targetDate ? formatProductionDate(plan.targetDate) : null) !== (nextTargetDate ? formatProductionDate(nextTargetDate) : null);
     if (slotChanged || targetChanged) {

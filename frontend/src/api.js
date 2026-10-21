@@ -1057,6 +1057,14 @@ export const api = {
     request(`/units/${unitId}/materials`, { method: "POST", ...(idempotencyKey ? { headers: { "Idempotency-Key": idempotencyKey } } : {}), body: JSON.stringify({ materialId, qty, note }) }),
   // ── Order Produksi · adopsi Admin (tiga sumbu status, status kerja manual, rencana bahan, ekspor Excel)
   getUnitAdopsi: (unitId) => request(`/production/units/${unitId}/adopsi`),
+  // Rencana Admin (jadwal produksi per unit TANPA Run): kalender mingguan, rincian hari, antrean per tindakan, jadwal/keluarkan/undo + riwayat. Idempotency-Key per percobaan.
+  getRencanaMinggu: (start) => request(`/production/rencana/minggu${start ? `?start=${encodeURIComponent(start)}` : ""}`),
+  getRencanaHari: (date) => request(`/production/rencana/hari?date=${encodeURIComponent(date)}`),
+  getRencanaAntrean: ({ tab = "SIAP", q = "", sort = "PRIORITAS", page = 1, pageSize = 25 } = {}) => request(`/production/rencana/antrean?tab=${encodeURIComponent(tab)}&q=${encodeURIComponent(q)}&sort=${encodeURIComponent(sort)}&page=${page}&pageSize=${pageSize}`),
+  getJadwalUnit: (unitId) => request(`/production/units/${unitId}/jadwal`),
+  jadwalkanUnit: (unitId, body, idempotencyKey = mutationKey("jadwal")) => request(`/production/units/${unitId}/jadwal`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(body) }),
+  keluarkanJadwalUnit: (unitId, body, idempotencyKey = mutationKey("jadwal-keluar")) => request(`/production/units/${unitId}/jadwal/keluarkan`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(body) }),
+  undoJadwalUnit: (unitId, body, idempotencyKey = mutationKey("jadwal-undo")) => request(`/production/units/${unitId}/jadwal/undo`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(body) }),
   // Ruang Kerja Status Produksi: daftar kerja per ORDER (aktif/riwayat; cari/filter/urut/halaman di server) + header ruang kerja unit. Baca-saja.
   getProductionWorkList: (params = {}) => {
     const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== "")).toString();

@@ -48,6 +48,7 @@ function BarisUnit({ unit, onBuka }) {
         <div className="flex min-w-[140px] flex-col gap-1 text-[12.5px] text-ink2">
           <span className="flex items-center gap-1.5"><Clock3 size={13} className="text-ink3" aria-hidden /> <TargetBadge iso={unit.targetSelesai?.at} selesai={utama} /></span>
           <span className="text-ink3">PIC: <b className="font-medium text-ink2">{unit.pic?.nama || "belum ada"}</b></span>
+          {unit.jadwal && <span className="text-ink3" data-testid="unit-jadwal">Jadwal: <b className="font-medium text-ink2">{String(unit.jadwal.tanggal).slice(8)}/{String(unit.jadwal.tanggal).slice(5, 7)}{unit.jadwal.meja ? ` · ${String(unit.jadwal.meja).replace("TABLE_", "Meja ")}` : ""}</b> <span className="text-[11px]">({unit.jadwal.sumber === "V2" ? "V2" : "Rencana Admin"})</span></span>}
         </div>
         {unit.perhatian && <div className="min-w-[160px] max-w-[260px] flex-1"><Perhatian p={unit.perhatian} /></div>}
       </div>

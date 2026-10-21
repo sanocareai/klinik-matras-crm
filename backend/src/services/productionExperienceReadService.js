@@ -209,6 +209,7 @@ export function toRunView(run, ctx, { now = new Date(), photoUrl = null, complai
     orderStatus: displayStatusOfOrder(run.unit.order?.status) || null,
     unitStatus: displayStatusOfUnit(run.unit.status) || null,
     presence: physicalPresenceOf({ unitStatus: run.unit.status, runStatus: run.status, runOrigin: run.origin, inboundAccepted }),
+    runStatus: run.status, // status Run mentah (dipakai ekspor: Status V2)
     // Milestone global (Pengambilan · Diterima di Workshop · Diproses · Siap Kirim · Dalam Pengiriman · Terkirim) + dasar bukti + status jadwal — sumbu terpisah dari tahap (next/bucket).
     globalStatus: milestone.globalStatus, receivedBasis: milestone.receivedBasis, receivedBasisLabel: milestone.receivedBasisLabel, scheduleStatus: milestone.scheduleStatus,
     priority: { key: prio.key, label: prio.label, rank: prio.rank, complaintCases: prio.complaintCases },

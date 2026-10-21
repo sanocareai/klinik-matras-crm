@@ -50,6 +50,7 @@ import { morningPriorityRouter } from "./routes/morningPriority.js";
 import { productionRouter } from "./routes/production.js";
 import { productionAdopsiRouter } from "./routes/productionAdopsi.js";
 import { productionWorkspaceRouter } from "./routes/productionWorkspace.js";
+import { productionRencanaJadwalRouter } from "./routes/productionRencanaJadwal.js";
 import { activityRouter } from "./routes/activity.js";
 import { armadaRouter }     from "./routes/armada.js";
 import { deliveryV2Router } from "./routes/deliveryV2.js";
@@ -259,6 +260,7 @@ app.use("/api/morning-priority-requests", morningPriorityRouter);
 app.use("/api/production",   productionRouter);
 app.use("/api/production",   productionAdopsiRouter); // adopsi Admin: panel unit, rencana bahan, status kerja manual, ekspor Excel
 app.use("/api/production",   productionWorkspaceRouter); // Ruang Kerja Status Produksi: daftar kerja per order + header ruang kerja unit (baca-saja)
+app.use("/api/production",   productionRencanaJadwalRouter); // Rencana Admin: kalender mingguan + antrean + jadwal per unit TANPA Run
 app.use("/api/activity",     activityRouter);
 app.use("/api/complaints",   complaintsRouter);
 app.use("/api/armada",       armadaRouter);
