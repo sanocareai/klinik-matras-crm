@@ -1059,6 +1059,18 @@ export const api = {
   getUnitAdopsi: (unitId) => request(`/production/units/${unitId}/adopsi`),
   postStatusKerjaManual: (unitId, { status, note, expectedLatestId } = {}) =>
     request(`/production/units/${unitId}/work-progress`, { method: "POST", body: JSON.stringify({ status, note, expectedLatestId: expectedLatestId ?? null }) }),
+  // Penerimaan workshop oleh petugas (Gudang/Produksi/Admin): catatan resmi pelaku+waktu+lokasi, TANPA mengaktifkan Produksi V2. Idempotency-Key dipakai server untuk jalur Run yang sudah menunggu kedatangan.
+  catatPenerimaanWorkshop: (unitId, { fisikDiterima, locationId, note } = {}, idempotencyKey = mutationKey("penerimaan")) =>
+    request(`/production/units/${unitId}/penerimaan-workshop`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ fisikDiterima: fisikDiterima === true, locationId: locationId || undefined, note: note || undefined }) }),
+  getPenerimaanWorkshopMenunggu: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+    return request(`/production/penerimaan-workshop/menunggu${qs ? `?${qs}` : ""}`);
+  },
+  // Koreksi penerimaan (append-only): pratinjau dampak + kirim koreksi. jenis: LOCATION (lokasi salah) | NOT_RECEIVED (ternyata belum diterima fisik); expectedRevisi = versi yang dilihat pengguna.
+  getPratinjauKoreksiPenerimaan: (unitId) => request(`/production/units/${unitId}/penerimaan-workshop/koreksi`),
+  koreksiPenerimaanWorkshop: (unitId, { jenis, locationId, alasan, expectedRevisi } = {}, idempotencyKey = mutationKey("koreksi-terima")) =>
+    request(`/production/units/${unitId}/penerimaan-workshop/koreksi`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ jenis, locationId: locationId || undefined, alasan, expectedRevisi }) }),
+  getPenerimaanWorkshopPilihan: () => request("/production/penerimaan-workshop/pilihan"),
   getKatalogBahanProduksi: (params = {}) => {
     const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
     return request(`/production/material-catalog${qs ? `?${qs}` : ""}`);

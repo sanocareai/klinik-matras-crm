@@ -71,6 +71,7 @@ async function findOrCreateConversation(customerId) {
 // mesin kirim WA yang sudah teruji (find-or-create conversation, dedup
 // externalId, dst) supaya tidak menduplikasi logika itu di routes/armada.js.
 export async function sendCustomerText(customerId, text) {
+  if (ujiNotifikasi.transport && ujiNotifikasiBoleh()) return ujiNotifikasi.transport({ customerId, text }); // HANYA lingkungan uji: pesan ditangkap, tidak pernah dikirim ke WhatsApp
   const conversation = await findOrCreateConversation(customerId);
   if (!conversation?.customer?.phone) return; // tidak ada nomor — diam, bukan error keras
   const target = conversation.customer.phone;
@@ -115,9 +116,17 @@ function wrap(fn, label) {
 // (unit tuntas produksi), beda alur, tidak diminta dimatikan.
 const DELIVERY_NOTIF_AKTIF = false;
 
+// Pengait UJI (bukan konfigurasi): memungkinkan tes membuktikan perilaku flag OFF/ON dan isi pesan TANPA mengirim apa pun. Diabaikan sepenuhnya bila NODE_ENV=production —
+// jadi tidak ada jalur untuk menyalakan notifikasi atau membelokkan pengiriman di production selain mengubah konstanta di atas (keputusan Owner).
+export const ujiNotifikasi = { paksaAktif: null, transport: null };
+const ujiNotifikasiBoleh = () => process.env.NODE_ENV !== "production";
+const notifAktif = () => (ujiNotifikasiBoleh() && ujiNotifikasi.paksaAktif !== null ? !!ujiNotifikasi.paksaAktif : DELIVERY_NOTIF_AKTIF);
+/** Apakah notifikasi pelanggan dari Delivery/penerimaan sedang menyala (dibaca layar dampak koreksi). */
+export const notifikasiPelangganAktif = () => notifAktif();
+
 function wrapDelivery(fn, label) {
   return async (...args) => {
-    if (!DELIVERY_NOTIF_AKTIF) return; // diam total — lihat catatan flag di atas
+    if (!notifAktif()) return; // diam total — lihat catatan flag di atas
     try {
       await fn(...args);
     } catch (err) {
@@ -137,22 +146,29 @@ export const notifyDriverEnRoute = wrapDelivery(async (job, customerId, customer
   await sendCustomerText(customerId, text);
 }, "driverEnRoute");
 
-// 2. Unit sampai bengkel — dikirim HANYA oleh command penerimaan workshop yang sah ("Terima Unit di Workshop": custody INBOUND diterima atau konfirmasi kedatangan petugas),
-// SEKALI per transisi (lihat unitCustodyCommandService: pemanggil memastikan bukan replay). Pickup selesai (Job PICKUP COMPLETED) TIDAK PERNAH memicu pesan ini — unit baru
-// "dalam perjalanan/menunggu diterima", bukan "sudah sampai". Sebelum 12 Okt 2026 pemicunya salah: POST /armada/jobs/:id/complete.
-// NONAKTIF SEMENTARA — lihat DELIVERY_NOTIF_AKTIF di atas.
-export const notifyUnitReceived = wrapDelivery(async (orderNumber, customerId, customerName) => {
-  const text = `Halo ${customerName || ""}, kasur Anda (*${orderNumber}*) sudah sampai dengan selamat di bengkel Sano Care. Tim kami akan segera mulai pengerjaan.\n\nTerima kasih atas kepercayaannya.`;
+// 2. Unit DITERIMA di workshop — dikirim HANYA oleh command penerimaan workshop yang sah, SEKALI per unit per kejadian:
+//    • penerimaan petugas ("Catat diterima": unit_workshop_receipts, tanpa Run) — penerimaan ULANG sesudah koreksi "belum diterima" TIDAK mengirim pesan kedua;
+//    • "Terima Unit di Workshop" (custody INBOUND diterima / konfirmasi kedatangan petugas) — bila unit sudah punya penerimaan petugas, aktivasi V2 sesudahnya TIDAK mengirim lagi.
+//    Koreksi (lokasi salah / belum diterima) TIDAK mengirim pesan apa pun. Pickup selesai (Job PICKUP COMPLETED) TIDAK PERNAH memicu pesan ini — unit baru "dalam perjalanan/menunggu diterima".
+//    ISI pesan hanya menyatakan fakta: unit sudah DITERIMA di workshop. Tidak berjanji pengerjaan segera mulai dan tidak menyatakan kondisi ("dengan selamat" tidak pernah diperiksa petugas).
+//    Order berisi banyak unit: kode unit disebut agar pesan tiap unit tidak tampak sama. NONAKTIF SEMENTARA — lihat DELIVERY_NOTIF_AKTIF di atas.
+export const notifyUnitReceived = wrapDelivery(async (orderNumber, customerId, customerName, unitCode = null, { banyakUnit = false } = {}) => {
+  const rujukan = banyakUnit && unitCode ? `*${orderNumber}* (unit *${unitCode}*)` : `*${orderNumber}*`;
+  const text = `Halo ${customerName || ""}, kasur Anda ${rujukan} sudah kami terima di workshop Sano Care.
+
+Kami akan mengabari Anda untuk perkembangan berikutnya. Terima kasih atas kepercayaannya.`;
   await sendCustomerText(customerId, text);
 }, "unitReceived");
 
 /** Memuat order/pelanggan dari unitId lalu memanggil notifyUnitReceived. Best-effort (tidak pernah melempar). Tidak mengirim apa pun selagi DELIVERY_NOTIF_AKTIF=false. */
-export async function notifyUnitReceivedAtWorkshop(unitId) {
+export async function notifyUnitReceivedAtWorkshop(unitId, { basis = null } = {}) {
   try {
-    if (!DELIVERY_NOTIF_AKTIF || !unitId) return;
-    const unit = await prisma.unit.findUnique({ where: { id: unitId }, select: { order: { select: { orderNumber: true, customer: { select: { id: true, name: true } } } } } });
+    if (!notifAktif() || !unitId) return;
+    // Satu pesan per unit: bila unit sudah pernah punya penerimaan petugas (termasuk yang kemudian dikoreksi), pelanggan sudah diberi tahu — "Terima Unit" sesudahnya tidak mengirim lagi.
+    if (basis !== "WORKSHOP_RECEIPT" && await prisma.unitWorkshopReceipt.count({ where: { unitId } }) > 0) return;
+    const unit = await prisma.unit.findUnique({ where: { id: unitId }, select: { unitCode: true, order: { select: { orderNumber: true, customer: { select: { id: true, name: true } }, _count: { select: { units: true } } } } } });
     const o = unit?.order; if (!o?.customer) return;
-    await notifyUnitReceived(o.orderNumber, o.customer.id, o.customer.name);
+    await notifyUnitReceived(o.orderNumber, o.customer.id, o.customer.name, unit.unitCode, { banyakUnit: (o._count?.units ?? 1) > 1 });
   } catch (err) { console.error("[customerNotifications:unitReceivedAtWorkshop] gagal:", err.message); }
 }
 

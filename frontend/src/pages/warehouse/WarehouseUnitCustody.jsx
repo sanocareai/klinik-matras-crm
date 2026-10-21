@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { UnitGlobalStatusBadge } from "@/components/OrderMilestoneBadge.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
+import MenungguPenerimaanSection from "@/features/warehouse/MenungguPenerimaanSection.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { LOCATION_TYPE_REAL } from "@/features/warehouse/inventoryReal.js";
 import {
@@ -182,7 +183,7 @@ export default function WarehouseUnitCustody() {
     <PageContainer>
       <PageHeader
         title="Antrean Penerimaan Unit"
-        subtitle="Serah-terima unit fisik antara Delivery dan Gudang (custody workshop produksi)."
+        subtitle="Unit yang sudah dijemput dan menunggu diterima di workshop produksi."
         actions={
           <Button variant="ghost" size="sm" onClick={load} disabled={loading}>
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Muat Ulang
@@ -190,6 +191,7 @@ export default function WarehouseUnitCustody() {
         }
       />
       <PageBody>
+        <MenungguPenerimaanSection onChanged={load} />
         <div role="tablist" aria-label="Saring status custody" className="flex flex-wrap gap-1 border-b border-line pb-2">
           {CUSTODY_TABS.map((t) => (
             <button

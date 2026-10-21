@@ -1,10 +1,12 @@
 // Bukti milestone "Diterima di Workshop" — pemuat BATCH (tanpa N+1) dan fragmen `where` untuk filter/hitungan di SERVER. Aturan status ada di lib/domain/workshopMilestone.js.
-// BACA-SAJA: tidak menulis, tidak membuat bukti, tidak mengubah status tersimpan. Bukti = tiga command resmi (custody INBOUND ACCEPTED, konfirmasi petugas tanpa custody,
+// BACA-SAJA: tidak menulis, tidak membuat bukti, tidak mengubah status tersimpan. Bukti = command resmi (custody INBOUND ACCEPTED, konfirmasi petugas tanpa custody, penerimaan workshop petugas,
 // lahir di workshop) + fakta "dimulai" (operasi V2 non-lewati atau log tahap V1). Pickup selesai TIDAK pernah dihitung sebagai bukti terima.
 import { ARRIVAL_NO_CUSTODY_REASON } from "../lib/domain/productionDisplay.js";
 import { GLOBAL_STATUS_FLOW, globalStatusOf, receivedBasisOf } from "../lib/domain/workshopMilestone.js";
 
 const TERMINAL_RUN = ["COMPLETED", "CANCELLED"];
+/** Penerimaan workshop AKTIF = belum dikoreksi "unit ternyata belum diterima fisik" (koreksi lokasi tidak mengubah keaktifan). Catatan asli tidak pernah dihapus. */
+export const WHERE_RECEIPT_AKTIF = Object.freeze({ corrections: { none: { kind: "NOT_RECEIVED" } } });
 
 // ---- Fragmen where (Unit) -----------------------------------------------------------------------------------------------------------------
 /** Unit sudah DIMULAI produksinya: IN_PRODUCTION (diset engine tahap saat tahap pertama mulai), log tahap V1, atau operasi V2 non-SKIPPED pada Run non-terminal. */
@@ -19,6 +21,7 @@ export const WHERE_STARTED = Object.freeze({
 export const WHERE_RECEIVED = Object.freeze({
   OR: [
     { custodyHandoffs: { some: { direction: "INBOUND", status: "ACCEPTED" } } },
+    { workshopReceipts: { some: WHERE_RECEIPT_AKTIF } },
     { productionRunsV2: { some: { status: { notIn: TERMINAL_RUN }, OR: [{ origin: "WORKSHOP_BORN" }, { phases: { some: { phase: "INTAKE", reason: ARRIVAL_NO_CUSTODY_REASON } } }] } } },
   ],
 });
@@ -64,10 +67,11 @@ export function unitWhereForGlobalStatuses(keys = []) {
  */
 export async function loadMilestoneEvidence(client, unitIds) {
   const ids = [...new Set((unitIds || []).filter(Boolean))];
-  const out = new Map(ids.map((id) => [id, { inboundAccepted: false, staffConfirmed: false, bornInWorkshop: false, started: false, pickupCompleted: false, pickupInProgress: false }]));
+  const out = new Map(ids.map((id) => [id, { inboundAccepted: false, staffConfirmed: false, workshopReceipt: false, bornInWorkshop: false, started: false, pickupCompleted: false, pickupInProgress: false }]));
   if (!ids.length) return finalize(out);
-  const [handoffs, runs, logs, pickups] = await Promise.all([
+  const [handoffs, receipts, runs, logs, pickups] = await Promise.all([
     client.unitCustodyHandoff.findMany({ where: { unitId: { in: ids }, direction: "INBOUND", status: "ACCEPTED" }, select: { unitId: true } }),
+    client.unitWorkshopReceipt.findMany({ where: { unitId: { in: ids }, ...WHERE_RECEIPT_AKTIF }, select: { unitId: true } }),
     client.productionRun.findMany({
       where: { unitId: { in: ids }, status: { notIn: TERMINAL_RUN } },
       select: {
@@ -80,6 +84,7 @@ export async function loadMilestoneEvidence(client, unitIds) {
     client.jobUnit.findMany({ where: { unitId: { in: ids }, job: { type: "PICKUP", status: { in: ["COMPLETED", "EN_ROUTE", "ARRIVED"] } } }, select: { unitId: true, job: { select: { status: true } } } }),
   ]);
   for (const h of handoffs) out.get(h.unitId).inboundAccepted = true;
+  for (const r of receipts) out.get(r.unitId).workshopReceipt = true;
   for (const r of runs) {
     const e = out.get(r.unitId); if (!e) continue;
     if (r.origin === "WORKSHOP_BORN") e.bornInWorkshop = true;

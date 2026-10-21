@@ -1,7 +1,7 @@
 // Milestone global "Diterima di Workshop" — fungsi MURNI (tanpa DB; diuji node --test). Lihat docs/MILESTONE-DITERIMA-WORKSHOP.md.
 //
 // Prinsip: status global adalah TURUNAN dari fakta yang sudah tercatat. Tidak ada enum/kolom yang diubah, tidak ada histori yang ditulis ulang, tidak ada bukti kedatangan yang dibuat.
-// Pickup selesai (UnitStatus.RECEIVED diset saat pickup selesai) BUKAN bukti unit sudah diterima workshop; bukti hanya salah satu dari tiga command resmi (receivedBasisOf).
+// Pickup selesai (UnitStatus.RECEIVED diset saat pickup selesai) BUKAN bukti unit sudah diterima workshop; bukti hanya salah satu dari command resmi (custody, konfirmasi petugas, penerimaan workshop, lahir di workshop) (receivedBasisOf).
 //
 // Empat sumbu yang DIPISAH di read-model (jangan digabung jadi satu badge):
 //   1. status global     — globalStatusOf   (Pengambilan · Diterima di Workshop · Diproses · Siap Kirim · Dalam Pengiriman · Terkirim)
@@ -27,20 +27,23 @@ export const RECEIVED_BASIS = Object.freeze({
   CUSTODY: "CUSTODY", // Gudang/Produksi menerima handoff INBOUND (acceptUnitCustody) — "Terima Unit di Workshop"
   STAFF_CONFIRMED: "STAFF_CONFIRMED", // konfirmasi tiba petugas tanpa custody (confirmUnitArrival; unit tanpa pickup tercatat)
   BORN_IN_WORKSHOP: "BORN_IN_WORKSHOP", // unit BARU/SEWA didaftarkan lahir di workshop (registerWorkshopBornRun)
+  WORKSHOP_RECEIPT: "WORKSHOP_RECEIPT", // petugas mencatat penerimaan fisik di workshop (unit_workshop_receipts) — tanpa Run/aktivasi Produksi V2
 });
 export const RECEIVED_BASIS_LABEL = Object.freeze({
   CUSTODY: "Diterima petugas lewat custody",
   STAFF_CONFIRMED: "Kedatangan dikonfirmasi petugas",
   BORN_IN_WORKSHOP: "Dibuat langsung di workshop",
+  WORKSHOP_RECEIPT: "Penerimaan dicatat petugas",
 });
 
 export const LEGACY_NOT_CONFIRMED = "Konfirmasi workshop belum tercatat";
 export const PICKUP_DONE_WAITING_RECEIVE = "Pickup selesai — menunggu Terima Unit di Workshop";
 
-/** Dasar bukti terima dari fakta mentah; null = TIDAK ADA bukti (jangan ditebak). Prioritas: custody > konfirmasi petugas > lahir di workshop. */
-export function receivedBasisOf({ inboundAccepted = false, staffConfirmed = false, bornInWorkshop = false } = {}) {
+/** Dasar bukti terima dari fakta mentah; null = TIDAK ADA bukti (jangan ditebak). Prioritas: custody > konfirmasi petugas > penerimaan workshop > lahir di workshop. */
+export function receivedBasisOf({ inboundAccepted = false, staffConfirmed = false, workshopReceipt = false, bornInWorkshop = false } = {}) {
   if (inboundAccepted) return RECEIVED_BASIS.CUSTODY;
   if (staffConfirmed) return RECEIVED_BASIS.STAFF_CONFIRMED;
+  if (workshopReceipt) return RECEIVED_BASIS.WORKSHOP_RECEIPT;
   if (bornInWorkshop) return RECEIVED_BASIS.BORN_IN_WORKSHOP;
   return null;
 }

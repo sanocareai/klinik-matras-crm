@@ -36,6 +36,7 @@ export const RUN_VIEW_INCLUDE = {
     select: {
       id: true, unitCode: true, orderId: true, serviceId: true, status: true, currentStageId: true, merk: true, ukuran: true, workCategory: true, productLine: true, productType: true, ...PKR_UNIT_ITEM_SELECT,
       service: { select: { code: true, labelId: true } },
+      workshopReceipts: { where: { corrections: { none: { kind: "NOT_RECEIVED" } } }, select: { id: true, receivedAt: true }, take: 1 }, // penerimaan workshop petugas AKTIF (bukti terima tanpa Run)
       order: {
         select: {
           orderNumber: true, status: true, category: true, productType: true, beratBadan: true, notes: true, complaintCategory: true, customerPromiseDate: true,
@@ -171,6 +172,7 @@ export function milestoneOfRun(run, ctx, warnings = []) {
   const receivedBasis = receivedBasisOf({
     inboundAccepted: (run.custodyHandoffs || []).some((h) => h.direction === "INBOUND" && h.status === "ACCEPTED"),
     staffConfirmed: arrivalConfirmedByStaff(run.phases),
+    workshopReceipt: (run.unit?.workshopReceipts?.length ?? 0) > 0,
     bornInWorkshop: run.origin === "WORKSHOP_BORN",
   });
   const started = (run.operations || []).some((o) => o.status !== "SKIPPED") || (ctx.evidence || []).some((e) => !isSkippedEvidence(e));
@@ -190,7 +192,7 @@ export function toRunView(run, ctx, { now = new Date(), photoUrl = null, complai
   const next = ctx.next;
   const bucket = andonBucketOf({ next, started, buildTrack: !!ctx.state?.buildTrack });
   const prio = priorityDisplay({ stored: run.plan?.priority ?? 0, complaintCases: complaints });
-  const inboundAccepted = run.custodyHandoffs.some((h) => h.direction === "INBOUND" && h.status === "ACCEPTED") || arrivalConfirmedByStaff(run.phases);
+  const inboundAccepted = run.custodyHandoffs.some((h) => h.direction === "INBOUND" && h.status === "ACCEPTED") || arrivalConfirmedByStaff(run.phases) || (run.unit.workshopReceipts?.length ?? 0) > 0;
   const warnings = warningsOf(run, ctx, materialStatus);
   const milestone = milestoneOfRun(run, ctx, warnings);
   return {

@@ -29,10 +29,10 @@ export const CUSTODY_DIRECTION = Object.freeze({ INBOUND: "INBOUND", RETURN: "RE
  * Hook efek samping SETELAH transaksi commit (best-effort; tidak pernah menggagalkan command). Diganti di tes agar tidak ada pesan nyata.
  * unitReceivedAtWorkshop dipanggil TEPAT SEKALI per transisi penerimaan (bukan pada replay Idempotency-Key, bukan pada pickup selesai).
  */
-export const custodyHooks = { unitReceivedAtWorkshop: (unitId) => notifyUnitReceivedAtWorkshop(unitId) };
+export const custodyHooks = { unitReceivedAtWorkshop: (unitId, info = {}) => notifyUnitReceivedAtWorkshop(unitId, info) };
 function fireUnitReceived(result) {
   if (!result || result.replayed || !(result.direction === "INBOUND" || result.custody === false)) return;
-  Promise.resolve().then(() => custodyHooks.unitReceivedAtWorkshop(result.unitId)).catch((err) => console.error("[custody] hook unitReceivedAtWorkshop gagal:", err.message));
+  Promise.resolve().then(() => custodyHooks.unitReceivedAtWorkshop(result.unitId, { basis: result.custody === false ? "STAFF_CONFIRMED" : "CUSTODY" })).catch((err) => console.error("[custody] hook unitReceivedAtWorkshop gagal:", err.message));
 }
 const ACTIVE_STATUSES = ["OFFERED", "ACCEPTED"];
 const IDEMPOTENCY_KEY = /^[A-Za-z0-9._:-]{12,128}$/;
@@ -594,6 +594,64 @@ async function confirmArrivalWithoutCustody(prisma, { unitId, actorId, idempoten
   });
   fireUnitReceived(done);
   return done;
+}
+
+// PENERIMAAN WORKSHOP -> AKTIVASI V2 (tanpa mencatat tiba dua kali). Dipanggil SATU kali oleh openRencanaRunInTx di transaksi aktivasi/Jadwalkan, SESUDAH Run PENDING_ARRIVAL ada: bila petugas sudah
+// mencatat penerimaan fisik (unit_workshop_receipts), catatan itu DIPAKAI sebagai kedatangan — handoff INBOUND OFFERED diterima atas nama penerima asli pada waktu penerimaan asli (lokasi sama), atau
+// (tanpa pickup/custody) fase INTAKE ditandai konfirmasi petugas; Run PENDING_ARRIVAL -> ACTIVE lewat openProductionIntakeV2 yang SAMA. Tidak ada event "diterima di workshop" kedua (sudah ada dari
+// penerimaan) dan tidak ada notifikasi pelanggan kedua. Tanpa catatan penerimaan / tanpa Run PENDING_ARRIVAL: tidak melakukan apa pun (null) — "Unit Tiba" tetap tindakan petugas.
+export async function adoptWorkshopReceiptInTx(tx, { unitId }) {
+  const receipt = await tx.unitWorkshopReceipt.findFirst({ where: { unitId, corrections: { none: { kind: "NOT_RECEIVED" } } }, orderBy: { seq: "desc" }, include: { location: { select: { id: true, code: true } }, corrections: { where: { kind: "LOCATION" }, orderBy: { createdAt: "desc" }, take: 1 } } });
+  if (!receipt) return null;
+  // Lokasi efektif = koreksi lokasi terakhir (bila ada), bukan lokasi awal yang salah.
+  const lokasiEfektifId = receipt.corrections[0]?.newValue?.locationId ?? receipt.locationId;
+  const pending = await tx.productionRun.findFirst({ where: { unitId, status: "PENDING_ARRIVAL" }, select: { id: true } });
+  if (!pending) return null;
+  const penerima = receipt.receivedById;
+  const handoff = await tx.unitCustodyHandoff.findFirst({
+    where: { unitId, direction: "INBOUND", status: "OFFERED" }, orderBy: { offeredAt: "desc" },
+    include: { unit: { select: { unitCode: true, orderId: true } } },
+  });
+  const run = (await openProductionIntakeV2(tx, { unitId, actorId: penerima })).run;
+  if (handoff) {
+    const revision = handoff.revision + 1;
+    await tx.unitCustodyHandoff.update({
+      where: { id: handoff.id },
+      data: { status: "ACCEPTED", revision, acceptedById: penerima, acceptedAt: receipt.receivedAt, locationId: lokasiEfektifId, productionRunId: run.id },
+    });
+    await outbox(tx, {
+      eventType: "warehouse.custody.accepted", aggregateId: handoff.id, revision, dedupeKey: `warehouse-custody-accepted:${handoff.id}:${revision}`,
+      payload: { handoffId: handoff.id, unitId, orderId: handoff.unit.orderId, direction: "INBOUND", locationId: lokasiEfektifId, productionRunId: run.id, revision, occurredAt: receipt.receivedAt.toISOString(), actorId: penerima, fromWorkshopReceiptId: receipt.id },
+    });
+    await recordActivity(tx, {
+      entityType: "unit", entityId: unitId, eventType: EVENT_TYPES.CUSTODY_ACCEPTED, actorId: penerima,
+      metadata: { unitCode: handoff.unit.unitCode, direction: "INBOUND", handoffId: handoff.id, locationCode: receipt.corrections[0]?.newValue?.code ?? receipt.location.code, fromWorkshopReceiptId: receipt.id },
+    });
+  } else {
+    await transitionPhases(tx, run.id, [{ phase: "INTAKE", data: { reason: ARRIVAL_NO_CUSTODY_REASON } }]); // satu-satunya penulis fase (audit writer fase)
+  }
+  return { runId: run.id, viaCustody: !!handoff, receiptId: receipt.id };
+}
+
+// Handoff INBOUND yang diterima MEMAKAI catatan penerimaan workshop tertentu (lihat adoptWorkshopReceiptInTx; penandanya di payload outbox warehouse.custody.accepted). null = tidak ada.
+export async function handoffDariPenerimaanInTx(tx, receiptId) {
+  const ev = await tx.domainOutbox.findFirst({ where: { eventType: "warehouse.custody.accepted", payload: { path: ["fromWorkshopReceiptId"], equals: receiptId } }, select: { aggregateId: true } });
+  if (!ev) return null;
+  return tx.unitCustodyHandoff.findUnique({ where: { id: ev.aggregateId }, select: { id: true, unitId: true, status: true, revision: true, locationId: true, productionRunId: true } });
+}
+
+// KOREKSI LOKASI penerimaan yang sudah dipakai handoff: lokasi handoff ikut dikoreksi lewat penulis custody ini (revisi naik, event + audit) — bukan diubah diam-diam dari luar. Status handoff dan Run TIDAK berubah.
+export async function koreksiLokasiHandoffDariPenerimaanInTx(tx, { receiptId, newLocation, actorId, reason }) {
+  const handoff = await handoffDariPenerimaanInTx(tx, receiptId);
+  if (!handoff || handoff.status !== "ACCEPTED") return null;
+  assertLocationAllowed("INBOUND", newLocation);
+  const revision = handoff.revision + 1;
+  await tx.unitCustodyHandoff.update({ where: { id: handoff.id }, data: { locationId: newLocation.id, revision } });
+  await outbox(tx, {
+    eventType: "warehouse.custody.location-corrected", aggregateId: handoff.id, revision, dedupeKey: `warehouse-custody-location-corrected:${handoff.id}:${revision}`,
+    payload: { handoffId: handoff.id, unitId: handoff.unitId, fromLocationId: handoff.locationId, locationId: newLocation.id, revision, fromWorkshopReceiptId: receiptId, reason, occurredAt: new Date().toISOString(), actorId: actorId || null },
+  });
+  return { handoffId: handoff.id, revision };
 }
 
 // Slice 2 (flow adaptasi) — penutupan run TANPA custody barang jadi. OWNERSHIP: penutupan run (COMPLETED) dan pelepasan unit ke Delivery (READY_FOR_DELIVERY) tetap hanya milik service ini

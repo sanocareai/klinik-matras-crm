@@ -20,10 +20,11 @@ export async function loadWorkshopTimelines(client, unitIds) {
   const out = new Map();
   if (!ids.length) return out;
   const raw = new Map(ids.map((id) => [id, {}]));
-  const [pickupJobs, deliveryJobs, handoffs, runs, startLogs] = await Promise.all([
+  const [pickupJobs, deliveryJobs, handoffs, receipts, runs, startLogs] = await Promise.all([
     client.jobUnit.findMany({ where: { unitId: { in: ids }, job: { type: "PICKUP", status: "COMPLETED" } }, select: { unitId: true, job: { select: { completedAt: true } } } }),
     client.jobUnit.findMany({ where: { unitId: { in: ids }, job: { type: "DELIVERY" } }, select: { unitId: true, job: { select: { id: true, status: true, completedAt: true } } } }),
     client.unitCustodyHandoff.findMany({ where: { unitId: { in: ids }, direction: { in: ["INBOUND", "FINISHED_GOODS"] } }, select: { unitId: true, direction: true, status: true, offeredAt: true, acceptedAt: true } }),
+    client.unitWorkshopReceipt.findMany({ where: { unitId: { in: ids }, corrections: { none: { kind: "NOT_RECEIVED" } } }, select: { unitId: true, receivedAt: true } }),
     client.productionRun.findMany({
       where: { unitId: { in: ids }, status: { not: "CANCELLED" } },
       select: {
@@ -45,6 +46,7 @@ export async function loadWorkshopTimelines(client, unitIds) {
       if (h.status === "ACCEPTED") r.warehouseAcceptedAt = maxDate(r.warehouseAcceptedAt, h.acceptedAt);
     }
   }
+  for (const rc of receipts) { const r = raw.get(rc.unitId); r.receivedAt = minDate(r.receivedAt, rc.receivedAt); } // penerimaan workshop petugas
   for (const run of runs) {
     const r = raw.get(run.unitId);
     for (const op of run.operations) r.productionStartedAt = minDate(r.productionStartedAt, op.startedAt);
