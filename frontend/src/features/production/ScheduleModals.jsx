@@ -8,6 +8,7 @@ import { mejaLabel as stationLabel } from "@/features/production/unitCardModel.j
 import { priorityOf, rankOfView } from "@/features/production/productionLabels.js";
 import { cornerBodyOf, needsCornerChoice } from "@/features/production/unitCardModel.js";
 import { LANE, laneOptions, optionText } from "@/features/production/picLanes.js";
+import { teksDampakAktivasi } from "@/features/production/orderProduksiModel.js";
 
 // P9 UX Realignment — modal jadwal & konfirmasi kedatangan dipindah dari ProductionPlannerV2.jsx supaya dipakai BERSAMA
 // Status Produksi (jalan pintas dari Unit 360) dan Rencana Produksi (fallback tombol Jadwalkan/Pindahkan untuk drag-drop).
@@ -281,7 +282,7 @@ export function ScheduleModal({ target, board, date, refs, onClose, onDone, onRe
         {askActivate && (
           <div data-testid="schedule-activate" role="note" className="space-y-1.5 rounded-btn bg-orangebg px-3 py-2 sm:col-span-2">
             <p className="m-0 text-[12.5px] font-semibold text-orange">Unit ini belum diaktifkan untuk Rencana Produksi.</p>
-            <p className="m-0 text-[12px] text-ink2">Menyimpan jadwal akan menambahkan unit ini ke daftar unit Rencana Produksi (unit lain tidak berubah), membuka pekerjaan produksinya (belum tiba di workshop), lalu menjadwalkannya — satu langkah. Tercatat atas nama Anda.</p>
+            <p className="m-0 text-[12px] text-ink2">{teksDampakAktivasi({ diterimaWorkshop: target.diterimaWorkshop })}</p>
             <label className="flex items-start gap-2 text-[12.5px] text-ink"><input type="checkbox" data-testid="schedule-activate-ok" className="mt-0.5" checked={activateOk} onChange={(e) => setActivateOk(e.target.checked)} /> Ya, aktifkan unit ini dan jadwalkan.</label>
           </div>
         )}

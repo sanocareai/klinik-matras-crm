@@ -1854,6 +1854,8 @@ model Unit {
   // Adopsi Admin (Okt 2026): status kerja manual (append-only) dan rencana bahan per unit — tidak mengurangi stok, tidak membuat tahap/QC/foto palsu.
   workProgress ProductionUnitWorkProgress[]
   materialPlan ProductionUnitMaterialPlan?
+  // Penerimaan workshop oleh petugas (Okt 2026): catatan resmi tiba fisik TANPA Run/aktivasi V2; satu per unit, append-only.
+  workshopReceipt UnitWorkshopReceipt?
 
   @@unique([orderId, seq])
   @@index([orderId])
@@ -5859,6 +5861,7 @@ model StorageLocation {
   transfersTo         StockTransfer[]      @relation("TransferDestination")
   damagedStockRecords DamagedStockRecord[]
   custodyHandoffs     UnitCustodyHandoff[]
+  workshopReceipts    UnitWorkshopReceipt[]
 
   @@index([warehouseId])
   @@map("storage_locations")
@@ -11313,6 +11316,23 @@ model WarehouseCorrection {
 
 /// ADOPSI ADMIN — status kerja Produksi yang DICATAT MANUAL oleh Admin/Lead (append-only; tidak pernah UPDATE/DELETE). Status kerja efektif = bukti aplikasi (log tahap V1 / operasi V2 non-lewati) bila ada,
 /// jika tidak entri manual terakhir (lib/domain/productionWorkStatus.js). Tidak membuat tahap, QC, foto, penerimaan Gudang, atau pemakaian bahan.
+/// PENERIMAAN WORKSHOP — catatan resmi "unit diterima di workshop" oleh petugas (Gudang/Produksi/Admin) berdasarkan penerimaan fisik nyata. BUKAN Run/custody/tahap/QC; bukti ke-4 milestone Diterima di Workshop.
+/// UNIQUE(unit_id) = klik ganda menjadi satu catatan. Append-only (trigger). Tidak menulis stok/jurnal.
+model UnitWorkshopReceipt {
+  id           String          @id @default(uuid()) @db.Uuid
+  unitId       String          @unique @map("unit_id") @db.Uuid
+  unit         Unit            @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  locationId   String          @map("location_id") @db.Uuid
+  location     StorageLocation @relation(fields: [locationId], references: [id], onDelete: Restrict)
+  receivedAt   DateTime        @default(now()) @map("received_at")
+  receivedById String          @map("received_by_id")
+  note         String?
+  createdAt    DateTime        @default(now()) @map("created_at")
+
+  @@index([receivedAt])
+  @@map("unit_workshop_receipts")
+}
+
 model ProductionUnitWorkProgress {
   id        String   @id @default(uuid()) @db.Uuid
   unitId    String   @map("unit_id") @db.Uuid

@@ -21,7 +21,7 @@ import {
   V2_FLAGS, isProductionReaderEnabledFor, isProductionWriterEnabledFor, loadV2Flags, resolveProductionReaderState, resolveProductionWriterState,
 } from "./v2FeatureFlags.js";
 import { assertIdempotencyKey, createProductionPlanInTx, scheduleProductionPlanInTx } from "./productionPlanningCommandService.js";
-import { offerUnitCustody, openPendingArrivalIntakeV2InTx } from "./unitCustodyCommandService.js";
+import { adoptWorkshopReceiptInTx, offerUnitCustody, openPendingArrivalIntakeV2InTx } from "./unitCustodyCommandService.js";
 import { BORN_CATEGORIES, BORN_UNIT_STATUSES, registerWorkshopBornRunInTx } from "./productionWorkshopExecutionCommandService.js";
 import { confirmBuildCornerInTx, normalizeCornerInput } from "./productionBuildCommandService.js";
 import { WORK_LANES, hasLane, lanesOf } from "../lib/domain/productionLanes.js";
@@ -182,13 +182,16 @@ export async function planAndScheduleUnit(prisma, { unitId, actorId, idempotency
       workCenterId: input.workCenterId, operatorId: input.operatorId, cornerWorkCenterId: input.cornerWorkCenterId, cornerOperatorId: input.cornerOperatorId,
       ...(Object.prototype.hasOwnProperty.call(input, "targetDate") ? { targetDate: input.targetDate } : {}), rescheduleReason: input.rescheduleReason, rescheduleNote: input.rescheduleNote,
     });
+    // Petugas sudah mencatat penerimaan fisik sebelum Run dibuka: catatan itu DIPAKAI sebagai kedatangan (Run langsung ACTIVE, tanpa "Unit Tiba" kedua / event tiba kedua). Sesudah rencana ada:
+    // pembuatan rencana hanya menerima Run yang menunggu kedatangan (atau punya custody/lahir di workshop).
+    const dariPenerimaan = opened.origin === "WORKSHOP_BORN" ? null : await adoptWorkshopReceiptInTx(tx, { unitId });
     // Corner dikonfirmasi pada rencana: SATU transaksi dengan onboarding + jadwal. Bukan jalur pengerjaan (mis. Run lain/custody/SEWA) = ditolak (422/409), tidak diam-diam diabaikan.
     let cornerResult = null;
     if (corner) {
       if (opened.origin !== "WORKSHOP_BORN") throw rencanaError("Pilihan Corner hanya untuk pesanan BARU/custom yang dikerjakan langsung di workshop", 422, "RENCANA_CORNER_NOT_APPLICABLE");
       cornerResult = await confirmBuildCornerInTx(tx, { runId: opened.runId, choice: corner, actorId, idempotencyKey: `${idempotencyKey}:corner` });
     }
-    const response = { ...scheduled, runId: opened.runId, onboarded: opened.onboarded, viaCustody: opened.viaCustody, origin: opened.origin, created, ...(activation?.activated ? { activated: true } : {}), ...(cornerResult ? { corner: cornerResult.corner } : {}) };
+    const response = { ...scheduled, runId: opened.runId, onboarded: opened.onboarded, viaCustody: opened.viaCustody, origin: opened.origin, created, ...(dariPenerimaan ? { kedatanganDariPenerimaan: true } : {}), ...(activation?.activated ? { activated: true } : {}), ...(cornerResult ? { corner: cornerResult.corner } : {}) };
     await tx.v2Command.update({ where: { id: command.id }, data: { status: "APPLIED", appliedRevision: scheduled.revision, response, completedAt: new Date() } });
     return { ...response, replayed: false };
   }, { timeout: 20_000, maxWait: 10_000 });

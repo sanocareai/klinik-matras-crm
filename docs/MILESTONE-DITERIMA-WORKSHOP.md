@@ -8,7 +8,7 @@ Prinsip yang dijaga: **tidak ada enum/status tersimpan yang diubah, tidak ada hi
 | Status global | Bukti yang diwajibkan | Sumber fakta |
 |---|---|---|
 | **Pengambilan** | unit belum terbukti diterima workshop: pickup sedang berlangsung (`AWAITING_PICKUP`, `IN_TRANSIT_IN`) ATAU pickup selesai tetapi belum ada bukti terima | status unit + tidak adanya bukti terima |
-| **Diterima di Workshop** | petugas menekan "Terima Unit di Workshop": custody INBOUND `ACCEPTED` (`acceptUnitCustody`), atau konfirmasi tiba tanpa custody (`confirmUnitArrival`, fase INTAKE `reason` baku), atau unit lahir di workshop (`registerWorkshopBornRun`, `origin=WORKSHOP_BORN`) — DAN pekerjaan produksi belum dimulai | `unit_custody_handoffs_v2`, `production_phase_runs_v2`, `production_runs_v2.origin` |
+| **Diterima di Workshop** | petugas menekan "Terima Unit di Workshop": custody INBOUND `ACCEPTED` (`acceptUnitCustody`), atau konfirmasi tiba tanpa custody (`confirmUnitArrival`, fase INTAKE `reason` baku), atau **penerimaan workshop oleh petugas** (`catatPenerimaanWorkshop` → tabel `unit_workshop_receipts`, basis `WORKSHOP_RECEIPT`; tanpa Run/aktivasi V2), atau unit lahir di workshop (`registerWorkshopBornRun`, `origin=WORKSHOP_BORN`) — DAN pekerjaan produksi belum dimulai | `unit_custody_handoffs_v2`, `production_phase_runs_v2`, `production_runs_v2.origin` |
 | **Diproses** | pekerjaan produksi pertama benar-benar dimulai: ada operasi V2 non-SKIPPED, bukti langkah V2 non-lewati, atau log tahap V1 | `production_operation_runs_v2`, `production_step_evidence_v2`, `unit_stage_logs` |
 | **Siap Kirim** | `READY_FOR_DELIVERY` / `READY_ON_CUSTOMER_HOLD` (gerbang sistem: produksi selesai → retur sisa → Gudang menerima barang jadi); histori lama dipertahankan | status unit tersimpan |
 | **Dalam Pengiriman** | `IN_TRANSIT_OUT` (delivery ke customer sudah dimulai) | status unit tersimpan |
@@ -21,7 +21,7 @@ Dua keadaan tampilan khusus, **bukan tebakan**:
 
 ## 2. Empat sumbu read-model (dipisah, tidak digabung jadi satu badge)
 1. **Status global** (`globalStatus`): tabel di atas.
-2. **Keberadaan fisik/custody** (`presence`): sudah ada; ditambah `receivedBasis` (`CUSTODY` | `STAFF_CONFIRMED` | `BORN_IN_WORKSHOP` | `null`).
+2. **Keberadaan fisik/custody** (`presence`): sudah ada; ditambah `receivedBasis` (`CUSTODY` | `STAFF_CONFIRMED` | `WORKSHOP_RECEIPT` | `BORN_IN_WORKSHOP` | `null`).
 3. **Tahap produksi rinci** (`next`/`bucket`/langkah 1–12): tidak berubah artinya.
 4. **Status jadwal** (`scheduleStatus`): `BELUM_DIJADWALKAN` · `SUDAH_DIJADWALKAN` · `MENUNGGU_BAHAN` · `SIAP_DIKERJAKAN`. "Sudah dijadwalkan" TIDAK berarti Diproses.
 
@@ -95,3 +95,12 @@ Unit lahir di workshop tidak punya pickup → durasi 1 tidak tersedia (bukan dik
 - Bucket Sales "Diproses" (PENDING+PICKUP+PROCESSING) dan filter status order tidak diubah (keputusan produk); badge milestone ditambahkan di samping.
 - driver-mobile (app native, jalur OTA terpisah) belum memakai `orderMilestone`.
 - Kolom papan Pipeline tetap menurut `Order.status` tersimpan.
+
+## Penerimaan workshop oleh petugas (Okt 2026) — bukti ke-4, tanpa mengaktifkan Produksi V2
+Latar: unit order nyata yang pickup-nya selesai tetapi belum masuk cohort V2 (production hanya canary) tidak punya jalur resmi untuk dicatat diterima — penerimaan fisik terjadi di luar sistem. Perbaikannya BUKAN membuka V2, melainkan satu catatan resmi:
+- Tabel `unit_workshop_receipts` (aditif; UNIQUE `unit_id`; append-only lewat trigger; FK RESTRICT ke `units` dan `storage_locations`): pelaku, waktu, lokasi (area Receiving/WIP/Karantina aktif), catatan. TIDAK menulis Run, fase, tahap, QC, stok, jurnal, atau custody.
+- `POST /api/production/units/:id/penerimaan-workshop { fisikDiterima: true, locationId?, note? }` — izin INVENTORY_WRITE atau UNIT_STAGE_WRITE (Gudang, Produksi, ADMIN/OWNER). Wajib pernyataan fisik (boolean true); lokasi dipilih atau lokasi workshop bawaan Admin (409 berkode bila belum diatur). Unit harus sudah dijemput (RECEIVED/IN_PRODUCTION). Klik ganda/serentak = satu catatan (kunci baris unit + UNIQUE); bukti terima apa pun yang sudah ada menjawab 200 idempoten tanpa catatan kedua.
+- Run V2 sudah `PENDING_ARRIVAL` lebih dulu → didelegasikan ke `confirmUnitArrival` (jalur resmi; tidak ada catatan paralel).
+- Aktivasi/Jadwalkan SESUDAH penerimaan → `adoptWorkshopReceiptInTx` (satu-satunya penulis custody) memakai catatan sebagai kedatangan: handoff INBOUND OFFERED diterima atas nama penerima asli pada waktu penerimaan asli, atau fase INTAKE ditandai konfirmasi petugas (tanpa pickup). Tidak ada event `production.unit.received-workshop` kedua dan tidak ada notifikasi pelanggan kedua.
+- Notifikasi pelanggan "diterima di workshop" memakai hook yang sama dengan "Unit Tiba" (tepat sekali; tetap nonaktif selagi `DELIVERY_NOTIF_AKTIF=false`).
+- Panel Order Produksi: status ORDER Sales sebenarnya (`adopsi.orderSales`, bukan turunan status unit) + penghalang (`adopsi.penghalang`: dikunci manual / unit lain belum dijemput / belum disinkronkan) + aksi "Ubah ke Diproses" lewat `PATCH /api/orders/:id` yang sama dengan Sales (catatan wajib, hanya order itu, tanpa job/Run).

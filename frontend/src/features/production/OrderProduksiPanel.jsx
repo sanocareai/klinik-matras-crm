@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge.jsx";
 import { cn } from "@/lib/utils.js";
 import { formatTanggal } from "@/utils/formatDate.js";
 import MaterialPlanEditor from "@/features/production/MaterialPlanEditor.jsx";
+import PenerimaanWorkshopModal from "@/features/production/PenerimaanWorkshopModal.jsx";
 import { statusOf } from "@/features/production/productionLabels.js";
 import { formatJumlah, kunciIdempoten, nadaBadge, parseJumlah, pesanGalatAdopsi, sumberKerjaText, waktuWib } from "@/features/production/orderProduksiModel.js";
 
@@ -18,11 +19,14 @@ const PANEL_PROPS = { "data-testid": "order-produksi-panel" };
 const STATUS_ORDER_OPSI = Object.freeze([{ key: "PROCESSING", label: "Diproses" }, { key: "READY", label: "Siap Kirim" }]);
 const aktifUnit = (s) => !["CANCELLED", "DELIVERED"].includes(s);
 
-function Status3({ ad, unitStatus }) {
-  const order = statusOf({ status: unitStatus, unitStatusDisplay: ad.statusOrder }); // nada status order = peta yang sama dengan daftar/Sales
+function Status3({ ad, unitStatus, penerimaan }) {
+  // Status ORDER = status Sales sebenarnya (ad.orderSales) — bukan turunan status unit. Payload lama tanpa orderSales jatuh ke peta unit.
+  const order = ad.orderSales ?? statusOf({ status: unitStatus, unitStatusDisplay: ad.statusOrder });
+  const subOrder = ad.orderSales?.terkunci ? `Dikunci manual${ad.orderSales.pengunci?.nama ? ` oleh ${ad.orderSales.pengunci.nama}` : ""}${ad.orderSales.pengunci?.at ? `, ${waktuWib(ad.orderSales.pengunci.at)}` : ""}` : "Dilihat Sales & Delivery";
+  const subPosisi = penerimaan ? `Diterima ${penerimaan.receivedBy?.name ? `oleh ${penerimaan.receivedBy.name}` : "petugas"} · ${waktuWib(penerimaan.receivedAt)}${penerimaan.location?.code ? ` · ${penerimaan.location.code}` : ""}` : (ad.posisi?.detail || "Dari dokumen jemput/terima/kirim");
   const baris = [
-    { cap: "Status order", sub: "Dilihat Sales & Delivery", chip: order, key: "order" },
-    { cap: "Posisi unit", sub: ad.posisi?.detail || "Dari dokumen jemput/terima/kirim", chip: ad.posisi, key: "posisi" },
+    { cap: "Status order", sub: subOrder, chip: order, key: "order" },
+    { cap: "Posisi unit", sub: subPosisi, chip: ad.posisi, key: "posisi" },
     { cap: "Status kerja", sub: sumberKerjaText(ad.kerja) || "Pekerjaan di Produksi", chip: ad.kerja, key: "kerja" },
   ];
   return (
@@ -86,7 +90,7 @@ export default function OrderProduksiPanel({ unitId, onClose, onChanged, onBukaU
           <>
             {/* 1 · Ringkasan + satu tindakan utama */}
             <div className="space-y-4" data-testid="panel-ringkasan">
-              <Status3 ad={ad} unitStatus={u.status} />
+              <Status3 ad={ad} unitStatus={u.status} penerimaan={data.penerimaan} />
               <TindakanUtama data={data} aktif={aktif} onDone={sesudahUbah} onBukaUnit360={() => onBukaUnit360?.(unitId)} />
             </div>
 
@@ -133,6 +137,9 @@ function TindakanUtama({ data, aktif, onDone, onBukaUnit360 }) {
   const { adopsi: ad, izin, unit: u } = data;
   const t = ad.tindakan || {};
   const [konfirmasi, setKonfirmasi] = useState(false);
+  const [terimaBuka, setTerimaBuka] = useState(false);
+  const [diprosesBuka, setDiprosesBuka] = useState(false);
+  const [catatanOrder, setCatatanOrder] = useState("");
   const [sibuk, setSibuk] = useState(false);
   const [hasil, setHasil] = useState({ galat: null, ok: "" });
 
@@ -146,8 +153,15 @@ function TindakanUtama({ data, aktif, onDone, onBukaUnit360 }) {
     try { await api.updateOrder(u.order.id, { status: "READY", statusOverrideNote: "Diubah dari Order Produksi" }); setKonfirmasi(false); setHasil({ galat: null, ok: "Status order kini Siap Kirim — Sales dan Delivery melihat status yang sama." }); await onDone(); } catch (e) { setHasil({ galat: e, ok: "" }); } finally { setSibuk(false); }
   }
 
+  async function ubahKeDiproses() {
+    setSibuk(true); setHasil({ galat: null, ok: "" });
+    try { await api.updateOrder(u.order.id, { status: "PROCESSING", statusOverrideNote: catatanOrder.trim() }); setDiprosesBuka(false); setCatatanOrder(""); setHasil({ galat: null, ok: "Status order kini Diproses — Sales dan Delivery melihat status yang sama. Unit bisa dijadwalkan di Rencana Produksi." }); await onDone(); } catch (e) { setHasil({ galat: e, ok: "" }); } finally { setSibuk(false); }
+  }
+
   let tombol = null;
   switch (t.aksi) {
+    case "CONFIRM_ARRIVAL": tombol = izin.catatPenerimaan && aktif ? { label: "Catat unit diterima", onClick: () => setTerimaBuka(true) } : null; break;
+    case "UBAH_ORDER_DIPROSES": tombol = izin.statusOrder && aktif ? { label: "Ubah ke Diproses", onClick: () => setDiprosesBuka(true) } : null; break;
     case "START_WORK": tombol = izin.statusKerja && aktif && !data.kerjaManual.dikunciAplikasi ? { label: "Catat: Dikerjakan", onClick: () => catat("DIKERJAKAN") } : null; break;
     case "FINISH_WORK": tombol = izin.statusKerja && aktif && !data.kerjaManual.dikunciAplikasi ? { label: "Catat: Selesai", onClick: () => catat("SELESAI") } : { label: "Buka Unit 360", onClick: onBukaUnit360, sekunder: true }; break;
     case "MARK_READY": tombol = izin.statusOrder ? { label: "Tandai Siap Kirim", onClick: () => setKonfirmasi(true) } : null; break;
@@ -166,8 +180,21 @@ function TindakanUtama({ data, aktif, onDone, onBukaUnit360 }) {
           <p className="m-0 text-[15px] font-semibold text-ink" data-testid="tindakan-label">{t.label || "—"}</p>
           <p className="m-0 text-[12.5px] text-ink3">{t.aktor && t.aktor !== "—" ? `Oleh ${t.aktor}` : ""}{t.detail ? `${t.aktor && t.aktor !== "—" ? " · " : ""}${t.detail}` : ""}</p>
         </div>
-        {tombol && !konfirmasi && <Button variant={tombol.sekunder ? "secondary" : "primary"} className="min-h-[44px]" data-testid="tindakan-tombol" disabled={sibuk} onClick={tombol.onClick}>{sibuk ? "Menyimpan…" : tombol.label}</Button>}
+        {tombol && !konfirmasi && !diprosesBuka && <Button variant={tombol.sekunder ? "secondary" : "primary"} className="min-h-[44px]" data-testid="tindakan-tombol" disabled={sibuk} onClick={tombol.onClick}>{sibuk ? "Menyimpan…" : tombol.label}</Button>}
       </div>
+      {t.penghalang && t.aksi !== "UBAH_ORDER_DIPROSES" && (
+        <p role="note" data-testid="tindakan-penghalang" className="m-0 mt-2 flex items-start gap-2 rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-orange"><Info size={15} className="mt-0.5 shrink-0" aria-hidden />{t.penghalang.teks}</p>
+      )}
+      {terimaBuka && <PenerimaanWorkshopModal unit={{ unitId: u.id, unitCode: u.unitCode, orderNumber: u.order.orderNumber, customerName: u.order.customer?.name }} onClose={() => setTerimaBuka(false)} onDone={async (ok) => { setTerimaBuka(false); setHasil({ galat: null, ok }); await onDone(); }} />}
+      {diprosesBuka && (
+        <div role="group" aria-label="Konfirmasi ubah status order ke Diproses" className="mt-3 space-y-2 rounded-btn bg-surface px-3 py-3 text-[13px] text-ink2" data-testid="konfirmasi-diproses">
+          <p className="m-0 font-medium text-ink">Ubah status order {u.order.orderNumber} dari {data.adopsi.orderSales?.label || "Pengambilan"} menjadi Diproses?</p>
+          <p className="m-0">Perubahan ini lewat jalur status Sales yang sama: tercatat atas nama Anda dengan catatan di bawah, dan <b>hanya order ini</b> yang berubah. Tidak membuat job pengiriman atau Production Run.{u.order.jumlahUnit > 1 ? ` Order ini punya ${u.order.jumlahUnit} unit — status mengikuti aturan order.` : ""}</p>
+          <label className="block space-y-1"><span className="block text-[12px] font-medium text-ink3">Catatan perubahan (wajib)</span>
+            <input value={catatanOrder} onChange={(e) => setCatatanOrder(e.target.value)} maxLength={300} disabled={sibuk} data-testid="diproses-catatan" placeholder="Mis. unit sudah diterima di workshop" className="h-11 w-full rounded-btn border border-line bg-surface px-3 text-[14px] text-ink outline-none focus:border-accent focus-visible:ring-2 focus-visible:ring-accent/30" /></label>
+          <div className="flex flex-wrap justify-end gap-2"><Button variant="neutral" className="min-h-[44px]" onClick={() => setDiprosesBuka(false)} disabled={sibuk}>Batal</Button><Button className="min-h-[44px]" data-testid="diproses-ya" onClick={ubahKeDiproses} disabled={sibuk || catatanOrder.trim().length < 3}>{sibuk ? "Menyimpan…" : "Ya, ubah ke Diproses"}</Button></div>
+        </div>
+      )}
       {konfirmasi && (
         <div role="group" aria-label="Konfirmasi Siap Kirim" className="mt-3 rounded-btn bg-surface px-3 py-3 text-[13px] text-ink2" data-testid="konfirmasi-siap-kirim">
           <p className="m-0 font-medium text-ink">Ubah status order {u.order.orderNumber} menjadi Siap Kirim?</p>
@@ -260,6 +287,7 @@ function StatusTarget({ data, aktif, onDone }) {
         <div className="space-y-3">
           <p className="m-0 text-[13px] font-semibold text-ink">Status order</p>
           <p className="m-0 text-[12.5px] text-ink3">Sama dengan yang dilihat Sales dan Delivery — perubahan di sini berlaku di semua workspace.</p>
+          {ad.orderSales && <p className="m-0 text-[12.5px] text-ink2" data-testid="order-saat-ini">Status order saat ini: <b className="text-ink">{ad.orderSales.label}</b>{ad.orderSales.terkunci ? " (dikunci manual)" : ""}.</p>}
           <div className="flex items-end gap-2">
             <label className="block flex-1 space-y-1"><span className={label}>Ubah ke</span>
               <select value={orderPilih} onChange={(e) => setOrderPilih(e.target.value)} disabled={!izin.statusOrder || !aktif || !!sibuk} data-testid="order-pilih" className={field}>

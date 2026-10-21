@@ -2388,6 +2388,7 @@ orderRouter.delete("/:id", async (req, res) => {
           id: true,
           _count: { select: { stageLogs: true, jobUnits: true, qcFitTests: true, stockMovements: true, revisions: true, workProgress: true } },
           materialPlan: { select: { id: true } }, // adopsi Admin: rencana bahan = jejak operasional (FK Restrict + riwayat append-only, tidak boleh hilang lewat hapus)
+          workshopReceipt: { select: { id: true } }, // penerimaan workshop petugas = jejak operasional (FK Restrict + append-only)
         },
       }),
       prisma.job.count({ where: { orderId: req.params.id } }),
@@ -2396,7 +2397,7 @@ orderRouter.delete("/:id", async (req, res) => {
     ]);
 
     const unitFootprint = units.reduce((n, u) =>
-      n + u._count.stageLogs + u._count.jobUnits + u._count.qcFitTests + u._count.stockMovements + u._count.revisions + u._count.workProgress + (u.materialPlan ? 1 : 0), 0);
+      n + u._count.stageLogs + u._count.jobUnits + u._count.qcFitTests + u._count.stockMovements + u._count.revisions + u._count.workProgress + (u.materialPlan ? 1 : 0) + (u.workshopReceipt ? 1 : 0), 0);
 
     const blockers = [];
     if (unitFootprint > 0) blockers.push(`${unitFootprint} jejak operasional di unit (tahap produksi/QC/material/revisi)`);
@@ -2854,6 +2855,7 @@ orderRouter.delete("/units/:unitId", async (req, res) => {
       include: {
         _count: { select: { stageLogs: true, jobUnits: true, qcFitTests: true, stockMovements: true, workProgress: true } },
         materialPlan: { select: { id: true } },
+        workshopReceipt: { select: { id: true } },
       },
     });
     if (!unit) return res.status(404).json({ error: "Unit tidak ditemukan" });
@@ -2862,7 +2864,7 @@ orderRouter.delete("/units/:unitId", async (req, res) => {
     if (!guarded) return;
 
     const jejak = unit._count;
-    const total = jejak.stageLogs + jejak.jobUnits + jejak.qcFitTests + jejak.stockMovements + jejak.workProgress + (unit.materialPlan ? 1 : 0);
+    const total = jejak.stageLogs + jejak.jobUnits + jejak.qcFitTests + jejak.stockMovements + jejak.workProgress + (unit.materialPlan ? 1 : 0) + (unit.workshopReceipt ? 1 : 0);
     if (total > 0) {
       return res.status(409).json({
         error:

@@ -184,8 +184,9 @@ async function buildNoRunOverview(prisma, unit, { canSeeValue }) {
   warnings.push({ code: "BELUM_ADA_RUN", text: "Unit belum masuk proses produksi (belum ada Production Run)" });
   // Milestone global tanpa Run: bukti terima = custody INBOUND ACCEPTED; "dimulai" = ada log tahap V1 (atau status tersimpan IN_PRODUCTION). Tidak ada tebakan dari pickup.
   const stageLogCount = await prisma.unitStageLog.count({ where: { unitId: unit.id } });
+  const receipt = await prisma.unitWorkshopReceipt.findUnique({ where: { unitId: unit.id }, select: { id: true } }); // penerimaan workshop petugas = bukti terima tanpa Run
   const milestone = milestoneOf({
-    unitStatus: unit.status, receivedBasis: receivedBasisOf({ inboundAccepted: pickup?.status === "ACCEPTED" }),
+    unitStatus: unit.status, receivedBasis: receivedBasisOf({ inboundAccepted: pickup?.status === "ACCEPTED", workshopReceipt: !!receipt }),
     started: stageLogCount > 0, pickupCompleted: !!pickup.exists, scheduled: false,
   });
 
@@ -194,7 +195,7 @@ async function buildNoRunOverview(prisma, unit, { canSeeValue }) {
       unitId: unit.id, unitCode: unit.unitCode, orderId: unit.orderId, orderNumber: order?.orderNumber ?? null,
       merk: unit.merk, ukuran: unit.ukuran, status: unit.status, photoUrl,
       orderStatus: displayStatusOfOrder(order?.status) || null, unitStatus: displayStatusOfUnit(unit.status) || null,
-      presence: physicalPresenceOf({ unitStatus: unit.status, runStatus: null, runOrigin: null, inboundAccepted: pickup?.status === "ACCEPTED" }),
+      presence: physicalPresenceOf({ unitStatus: unit.status, runStatus: null, runOrigin: null, inboundAccepted: pickup?.status === "ACCEPTED", workshopReceipt: !!receipt }),
       globalStatus: milestone.globalStatus, receivedBasis: milestone.receivedBasis, receivedBasisLabel: milestone.receivedBasisLabel, scheduleStatus: milestone.scheduleStatus,
       priority: { key: prioNoRun.key, label: prioNoRun.label, rank: prioNoRun.rank, complaintCases: prioNoRun.complaintCases },
       target: { productionDate: null, priority: null, priorityLabel: prioNoRun.label, targetCompleteAt: null, late: false },
@@ -307,7 +308,7 @@ async function getUnitOverviewDasar(prisma, unitId, { unitIds, canSeeValue = fal
   const indicators = indicatorsOf(run, ctx, materialStatus);
   const complaintsByUnit = await loadOpenComplaintsByUnit(prisma, [{ id: unitId, orderId: run.unit.orderId }]);
   const prio = priorityDisplay({ stored: run.plan?.priority ?? 0, complaintCases: complaintsByUnit.get(unitId) || [] });
-  const inboundAccepted = run.custodyHandoffs.some((h) => h.direction === "INBOUND" && h.status === "ACCEPTED") || arrivalConfirmedByStaff(run.phases);
+  const inboundAccepted = run.custodyHandoffs.some((h) => h.direction === "INBOUND" && h.status === "ACCEPTED") || arrivalConfirmedByStaff(run.phases) || !!run.unit.workshopReceipt;
   const milestone = milestoneOfRun(run, ctx, warnings);
 
   const mediaOf = (stepNos) => ctx.evidence.filter((e) => stepNos.includes(e.stepNo))

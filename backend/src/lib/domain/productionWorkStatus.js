@@ -101,14 +101,36 @@ export function posisiUnitOf({ unitStatus, receivedBasis = null, receivedBasisLa
   }
 }
 
+// ───────────────────────────── PENGHALANG STATUS ORDER ─────────────────────────────
+/**
+ * Mengapa status ORDER Sales masih Pengambilan padahal pickup unit ini sudah selesai (unit RECEIVED/IN_PRODUCTION)? null = tidak ada penghalang.
+ * Jujur dan tidak otomatis: hanya MENJELASKAN penyebab dan menandai apakah akun berizin boleh mengubahnya lewat jalur status Sales yang sama (PATCH /api/orders/:id).
+ * @param {{ orderStatus:string, statusLocked?:boolean, unitStatus:string, unitLainBelumDijemput?:number, pengunci?:{nama?:string|null,at?:Date|string|null,note?:string|null}|null }} p
+ */
+export function penghalangStatusOrder({ orderStatus, statusLocked = false, unitStatus, unitLainBelumDijemput = 0, pengunci = null } = {}) {
+  if (!["PENDING", "PICKUP"].includes(orderStatus)) return null;
+  if (!["RECEIVED", "IN_PRODUCTION"].includes(unitStatus)) return null;
+  const dari = orderStatus === "PENDING" ? "Belum diambil" : "Pengambilan";
+  if (statusLocked) {
+    const siapa = pengunci?.nama ? ` oleh ${pengunci.nama}` : "";
+    const kapan = pengunci?.at ? `, ${waktuWibText(pengunci.at)}` : "";
+    const catatan = pengunci?.note ? ` (catatan: "${pengunci.note}")` : "";
+    return { kode: "ORDER_TERKUNCI_PENGAMBILAN", bolehUbahKeDiproses: true, teks: `Status order ${dari} dikunci manual${siapa}${kapan}${catatan}, jadi sistem tidak memindahkannya ke Diproses sendiri walau pickup unit ini sudah selesai.` };
+  }
+  if (unitLainBelumDijemput > 0) {
+    return { kode: "UNIT_LAIN_BELUM_DIJEMPUT", bolehUbahKeDiproses: false, teks: `Status order mengikuti unit yang paling tertinggal: ${unitLainBelumDijemput} unit lain di order ini belum selesai dijemput.` };
+  }
+  return { kode: "ORDER_BELUM_DISINKRONKAN", bolehUbahKeDiproses: true, teks: `Status order masih ${dari} padahal pickup unit ini sudah selesai dan tidak ada penguncian manual. Ubah ke Diproses agar unit muncul di Rencana Produksi.` };
+}
+
 // ───────────────────────────── TINDAKAN BERIKUTNYA ─────────────────────────────
-export const AKSI = Object.freeze({ NONE: "NONE", CONFIRM_ARRIVAL: "CONFIRM_ARRIVAL", SET_TARGET: "SET_TARGET", OPEN_PLAN: "OPEN_PLAN", PLAN_MATERIAL: "PLAN_MATERIAL", START_WORK: "START_WORK", RECORD_MATERIAL: "RECORD_MATERIAL", FINISH_WORK: "FINISH_WORK", RESOLVE_DELAY: "RESOLVE_DELAY", MARK_READY: "MARK_READY", WAIT: "WAIT" });
+export const AKSI = Object.freeze({ NONE: "NONE", CONFIRM_ARRIVAL: "CONFIRM_ARRIVAL", UBAH_ORDER_DIPROSES: "UBAH_ORDER_DIPROSES", SET_TARGET: "SET_TARGET", OPEN_PLAN: "OPEN_PLAN", PLAN_MATERIAL: "PLAN_MATERIAL", START_WORK: "START_WORK", RECORD_MATERIAL: "RECORD_MATERIAL", FINISH_WORK: "FINISH_WORK", RESOLVE_DELAY: "RESOLVE_DELAY", MARK_READY: "MARK_READY", WAIT: "WAIT" });
 /**
  * Satu tindakan berikutnya per unit (label + siapa pelakunya + jenis aksi untuk tombol utama). Murni dan deterministik.
  * @param {{ unitStatus:string, posisi:{key:string}, kerja:{key:string,source?:string}, adaTarget?:boolean, rencanaBahanAda?:boolean, aktualAda?:boolean }} p
  */
-export function tindakanBerikutnya({ unitStatus, posisi, kerja, adaTarget = false, rencanaBahanAda = false, aktualAda = false } = {}) {
-  const t = (aksi, label, aktor, detail = null) => ({ aksi, label, aktor, detail });
+export function tindakanBerikutnya({ unitStatus, posisi, kerja, adaTarget = false, rencanaBahanAda = false, aktualAda = false, penghalang = null } = {}) {
+  const t = (aksi, label, aktor, detail = null) => ({ aksi, label, aktor, detail, ...(penghalang ? { penghalang } : {}) });
   switch (unitStatus) {
     case "CANCELLED": return t(AKSI.NONE, "Tidak ada tindakan", "—", "Order/unit dibatalkan");
     case "DELIVERED": return t(AKSI.NONE, "Tidak ada tindakan", "—", "Sudah terkirim");
@@ -121,6 +143,8 @@ export function tindakanBerikutnya({ unitStatus, posisi, kerja, adaTarget = fals
   }
   const k = kerja?.key;
   if (posisi?.key === "SUDAH_DIJEMPUT") return t(AKSI.CONFIRM_ARRIVAL, "Konfirmasi unit diterima di workshop", "Gudang", "Pickup selesai, penerimaan belum tercatat");
+  // Unit sudah diterima, tetapi status ORDER Sales masih Pengambilan (mis. dikunci manual): Rencana Produksi hanya memuat order Diproses — jelaskan penyebabnya, tawarkan perubahan lewat jalur Sales.
+  if (penghalang?.bolehUbahKeDiproses) return t(AKSI.UBAH_ORDER_DIPROSES, "Ubah status order ke Diproses", "Admin", penghalang.teks);
   if (k === "TERTUNDA") return t(AKSI.RESOLVE_DELAY, "Selesaikan hambatan, lalu lanjutkan", "Admin / PIC");
   if (k === "MENUNGGU_QC") return t(AKSI.WAIT, "Menunggu keputusan QC", "QC");
   if (k === "DIKERJAKAN_ULANG") return t(AKSI.WAIT, "Pengerjaan ulang berjalan", "PIC Meja");

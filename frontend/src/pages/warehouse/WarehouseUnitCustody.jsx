@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { UnitGlobalStatusBadge } from "@/components/OrderMilestoneBadge.jsx";
 import { Modal } from "@/components/ui/modal.jsx";
+import MenungguPenerimaanSection from "@/features/warehouse/MenungguPenerimaanSection.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { LOCATION_TYPE_REAL } from "@/features/warehouse/inventoryReal.js";
 import {
@@ -190,6 +191,7 @@ export default function WarehouseUnitCustody() {
         }
       />
       <PageBody>
+        <MenungguPenerimaanSection onChanged={load} />
         <div role="tablist" aria-label="Saring status custody" className="flex flex-wrap gap-1 border-b border-line pb-2">
           {CUSTODY_TABS.map((t) => (
             <button

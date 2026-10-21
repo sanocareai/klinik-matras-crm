@@ -596,6 +596,41 @@ async function confirmArrivalWithoutCustody(prisma, { unitId, actorId, idempoten
   return done;
 }
 
+// PENERIMAAN WORKSHOP -> AKTIVASI V2 (tanpa mencatat tiba dua kali). Dipanggil SATU kali oleh openRencanaRunInTx di transaksi aktivasi/Jadwalkan, SESUDAH Run PENDING_ARRIVAL ada: bila petugas sudah
+// mencatat penerimaan fisik (unit_workshop_receipts), catatan itu DIPAKAI sebagai kedatangan — handoff INBOUND OFFERED diterima atas nama penerima asli pada waktu penerimaan asli (lokasi sama), atau
+// (tanpa pickup/custody) fase INTAKE ditandai konfirmasi petugas; Run PENDING_ARRIVAL -> ACTIVE lewat openProductionIntakeV2 yang SAMA. Tidak ada event "diterima di workshop" kedua (sudah ada dari
+// penerimaan) dan tidak ada notifikasi pelanggan kedua. Tanpa catatan penerimaan / tanpa Run PENDING_ARRIVAL: tidak melakukan apa pun (null) — "Unit Tiba" tetap tindakan petugas.
+export async function adoptWorkshopReceiptInTx(tx, { unitId }) {
+  const receipt = await tx.unitWorkshopReceipt.findUnique({ where: { unitId }, include: { location: { select: { id: true, code: true } } } });
+  if (!receipt) return null;
+  const pending = await tx.productionRun.findFirst({ where: { unitId, status: "PENDING_ARRIVAL" }, select: { id: true } });
+  if (!pending) return null;
+  const penerima = receipt.receivedById;
+  const handoff = await tx.unitCustodyHandoff.findFirst({
+    where: { unitId, direction: "INBOUND", status: "OFFERED" }, orderBy: { offeredAt: "desc" },
+    include: { unit: { select: { unitCode: true, orderId: true } } },
+  });
+  const run = (await openProductionIntakeV2(tx, { unitId, actorId: penerima })).run;
+  if (handoff) {
+    const revision = handoff.revision + 1;
+    await tx.unitCustodyHandoff.update({
+      where: { id: handoff.id },
+      data: { status: "ACCEPTED", revision, acceptedById: penerima, acceptedAt: receipt.receivedAt, locationId: receipt.locationId, productionRunId: run.id },
+    });
+    await outbox(tx, {
+      eventType: "warehouse.custody.accepted", aggregateId: handoff.id, revision, dedupeKey: `warehouse-custody-accepted:${handoff.id}:${revision}`,
+      payload: { handoffId: handoff.id, unitId, orderId: handoff.unit.orderId, direction: "INBOUND", locationId: receipt.locationId, productionRunId: run.id, revision, occurredAt: receipt.receivedAt.toISOString(), actorId: penerima, fromWorkshopReceiptId: receipt.id },
+    });
+    await recordActivity(tx, {
+      entityType: "unit", entityId: unitId, eventType: EVENT_TYPES.CUSTODY_ACCEPTED, actorId: penerima,
+      metadata: { unitCode: handoff.unit.unitCode, direction: "INBOUND", handoffId: handoff.id, locationCode: receipt.location.code, fromWorkshopReceiptId: receipt.id },
+    });
+  } else {
+    await transitionPhases(tx, run.id, [{ phase: "INTAKE", data: { reason: ARRIVAL_NO_CUSTODY_REASON } }]); // satu-satunya penulis fase (audit writer fase)
+  }
+  return { runId: run.id, viaCustody: !!handoff, receiptId: receipt.id };
+}
+
 // Slice 2 (flow adaptasi) — penutupan run TANPA custody barang jadi. OWNERSHIP: penutupan run (COMPLETED) dan pelepasan unit ke Delivery (READY_FOR_DELIVERY) tetap hanya milik service ini
 // (custody) dan P6; command adaptasi (productionStepCommandService/P5) hanya memanggil fungsi ini. Syarat keras: run berkebijakan ADAPTATION_V1, ACTIVE, tidak ada exception terbuka, semua fase terminal
 // (QC & HANDOFF berstatus NOT_APPLICABLE — bukan COMPLETED palsu), seluruh tahap jalur tuntas (markUnitReadyForDeliveryInTx). Tidak membuat custody ACCEPTED; saran job Delivery idempoten (tanpa job ganda).

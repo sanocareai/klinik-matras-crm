@@ -22,6 +22,24 @@ export function ringkasAdopsi(row) {
   return { ada: true, statusOrder: a.statusOrder ?? null, posisi: a.posisi ?? null, kerja: a.kerja, tindakan: a.tindakan ?? null, target: a.targetSelesai ?? null, pic: a.pic ?? null, meja: a.meja ?? null };
 }
 
+// ───────────────────────────── penerimaan workshop & status order ─────────────────────────────
+/** Dampak tindakan "Catat unit diterima" — dicetak di formulir SEBELUM tombol ditekan (apa yang dicatat, apa yang TIDAK terjadi). */
+export const DAMPAK_PENERIMAAN = Object.freeze({
+  dicatat: ["Nama Anda, waktu sekarang, dan lokasi penerimaan sebagai catatan resmi unit ini.", "Status unit menjadi terlihat Diterima di Workshop di Produksi, Sales, dan Delivery."],
+  tidak: ["Tidak memasukkan unit ke Rencana Produksi dan tidak membuka Production Run.", "Tidak memetakan layanan, tidak membuat tahap, QC, atau foto, dan tidak mengurangi stok.", "Tidak mengubah status order Sales."],
+});
+/** Dampak aktivasi Produksi V2 saat Jadwalkan — beda teks bila unit SUDAH dicatat diterima (kedatangan memakai catatan itu, tidak dicatat dua kali). */
+export function teksDampakAktivasi({ diterimaWorkshop = null } = {}) {
+  const awal = "Menyimpan jadwal akan menambahkan unit ini ke daftar unit Rencana Produksi (unit lain tidak berubah) dan membuka Production Run untuk unit ini";
+  return diterimaWorkshop
+    ? `${awal}. Unit sudah dicatat diterima di workshop (${diterimaWorkshop.label || "penerimaan tercatat"}), jadi kedatangannya memakai catatan itu — tidak dicatat dua kali dan Run langsung berjalan. Tercatat atas nama Anda.`
+    : `${awal} (belum tiba di workshop — kedatangan tetap dicatat petugas lewat Terima Unit), lalu menjadwalkannya — satu langkah. Tercatat atas nama Anda.`;
+}
+/** Lokasi awal formulir penerimaan: lokasi workshop bawaan Admin bila ada, selain itu kosong (petugas memilih; tidak menebak). */
+export const lokasiAwalPenerimaan = (pilihan) => pilihan?.bawaan?.id || "";
+/** Formulir penerimaan boleh dikirim: pernyataan fisik dicentang dan lokasi dipilih. */
+export const bolehKirimPenerimaan = ({ fisik, locationId, sibuk = false } = {}) => !sibuk && fisik === true && !!locationId;
+
 /** Teks sumber status kerja untuk label kecil di bawah badge: hanya bila BUKAN jadwal biasa (manual/aplikasi/ikut status order). */
 export function sumberKerjaText(kerja) {
   if (!kerja) return null;

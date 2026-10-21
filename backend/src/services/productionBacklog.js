@@ -164,7 +164,7 @@ export async function listBacklog(prisma, { cohortUnitIds = null, states = null,
         customer: { name: u.order?.customer?.name ?? null, orderNumber: u.order?.orderNumber ?? null, salesServices: (u.order?.items || []).map((i) => i.layananName).filter(Boolean), request: u.order?.notes ?? null },
         orderStatus: displayStatusOfOrder(u.order?.status), unitStatus: displayStatusOfUnit(u.status),
         globalStatus: milestone.globalStatus, receivedBasis: milestone.receivedBasis, receivedBasisLabel: milestone.receivedBasisLabel, scheduleStatus: milestone.scheduleStatus,
-        presence: physicalPresenceOf({ unitStatus: u.status, runStatus: run?.status ?? null, runOrigin: run?.origin ?? null, inboundAccepted: ev.receivedBasis === "CUSTODY" || !!run?.custodyHandoffs?.some((h) => h.direction === "INBOUND" && h.status === "ACCEPTED"), staffConfirmed: ev.receivedBasis === "STAFF_CONFIRMED" }),
+        presence: physicalPresenceOf({ unitStatus: u.status, runStatus: run?.status ?? null, runOrigin: run?.origin ?? null, inboundAccepted: ev.receivedBasis === "CUSTODY" || !!run?.custodyHandoffs?.some((h) => h.direction === "INBOUND" && h.status === "ACCEPTED"), staffConfirmed: ev.receivedBasis === "STAFF_CONFIRMED", workshopReceipt: ev.receivedBasis === "WORKSHOP_RECEIPT" }),
         priority: { key: prio.key, label: prio.label, rank: prio.rank, complaintCases: prio.complaintCases },
       },
     };

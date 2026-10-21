@@ -98,7 +98,7 @@ export async function perkayaBarisUnit(prisma, units) {
       ...u, inProductionV2: v2Units.has(u.id), productionStatus,
       penjualanKaryawan: rujukanPkrDariOrder(u.order, { unit: u }),
       orderStatusDisplay: displayStatusOfOrder(u.order?.status), unitStatusDisplay: displayStatusOfUnit(u.status),
-      presence: physicalPresenceOf({ unitStatus: u.status, runStatus: null, runOrigin: null, inboundAccepted: ev.receivedBasis === "CUSTODY", staffConfirmed: ev.receivedBasis === "STAFF_CONFIRMED" }),
+      presence: physicalPresenceOf({ unitStatus: u.status, runStatus: null, runOrigin: null, inboundAccepted: ev.receivedBasis === "CUSTODY", staffConfirmed: ev.receivedBasis === "STAFF_CONFIRMED", workshopReceipt: ev.receivedBasis === "WORKSHOP_RECEIPT" }),
       globalStatus: milestone.globalStatus, receivedBasis: milestone.receivedBasis, receivedBasisLabel: milestone.receivedBasisLabel, scheduleStatus: milestone.scheduleStatus,
       priorityDisplay: { key: prio.key, label: prio.label, rank: prio.rank, complaintCases: prio.complaintCases },
       productionStatusReason: describeProductionStatus(productionStatus, lastLog, blocker),

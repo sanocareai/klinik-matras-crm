@@ -1059,6 +1059,14 @@ export const api = {
   getUnitAdopsi: (unitId) => request(`/production/units/${unitId}/adopsi`),
   postStatusKerjaManual: (unitId, { status, note, expectedLatestId } = {}) =>
     request(`/production/units/${unitId}/work-progress`, { method: "POST", body: JSON.stringify({ status, note, expectedLatestId: expectedLatestId ?? null }) }),
+  // Penerimaan workshop oleh petugas (Gudang/Produksi/Admin): catatan resmi pelaku+waktu+lokasi, TANPA mengaktifkan Produksi V2. Idempotency-Key dipakai server untuk jalur Run yang sudah menunggu kedatangan.
+  catatPenerimaanWorkshop: (unitId, { fisikDiterima, locationId, note } = {}, idempotencyKey = mutationKey("penerimaan")) =>
+    request(`/production/units/${unitId}/penerimaan-workshop`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ fisikDiterima: fisikDiterima === true, locationId: locationId || undefined, note: note || undefined }) }),
+  getPenerimaanWorkshopMenunggu: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
+    return request(`/production/penerimaan-workshop/menunggu${qs ? `?${qs}` : ""}`);
+  },
+  getPenerimaanWorkshopPilihan: () => request("/production/penerimaan-workshop/pilihan"),
   getKatalogBahanProduksi: (params = {}) => {
     const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
     return request(`/production/material-catalog${qs ? `?${qs}` : ""}`);

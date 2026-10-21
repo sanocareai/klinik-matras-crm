@@ -78,6 +78,7 @@ export function viewOfOnboardCard(item) {
     unit: { id: c.unit.id, unitCode: c.unit.unitCode, merk: c.unit.merk ?? null, ukuran: c.unit.ukuran || teksUkuranDariNotes(c.customer?.request) || null, photoUrl: c.unit.photoUrl ?? null },
     customer: { name: c.customer?.name ?? null, orderNumber: c.customer?.orderNumber ?? null, salesServices: c.customer?.salesServices || [], request: c.customer?.request ?? null },
     priority: c.priority, unitStatus: c.unitStatus, orderStatus: c.orderStatus, presence: c.presence, bucket: null, next: null, progress: null,
+    diterimaWorkshop: c.receivedBasis ? { basis: c.receivedBasis, label: c.receivedBasisLabel ?? null } : null, // sudah ada bukti terima (mis. penerimaan petugas): aktivasi memakainya, tidak mencatat tiba dua kali
     activatable: !!item.rencana?.activatable, // belum diaktifkan tetapi boleh diaktifkan otomatis saat dijadwalkan (ADMIN/OWNER; server = otoritas)
     build: item.rencana?.build ?? null, // jalur Pengerjaan Pesanan: modal Jadwalkan menanyakan "Corner diperlukan?" (null = bukan jalur ini)
   };
