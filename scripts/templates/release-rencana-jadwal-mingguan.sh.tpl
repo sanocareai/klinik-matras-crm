@@ -395,7 +395,7 @@ ok "backup: ${BACKUP_FILE} ($(du -h "$BACKUP_FILE" | cut -f1)); sha256 $(cut -d'
 # bk_run: menjalankan perintah di container backend. Rilis penuh = compose release dir (env production); --rehearsal-penuh = image bertag rehearsal TANPA env production (hanya variabel yang diberikan eksplisit).
 bk_run() {
   local o=(); while [ "$1" != "--" ]; do o+=("$1"); shift; done; shift
-  if [ "$REHEARSAL_PENUH" = "1" ]; then docker run --rm -i --network "$NET" -w /app "${o[@]}" "$REH_IMG" "$@"
+  if [ "$REHEARSAL_PENUH" = "1" ]; then docker run --rm -i --network "$NET" -w /app -e JWT_SECRET="rehearsal-sekali-pakai-${TS:-x}" "${o[@]}" "$REH_IMG" "$@"
   else dcp "$NEW_DIR" run --rm --no-deps -T "${o[@]}" backend "$@"; fi
 }
 # Lanjutan --rehearsal-penuh di DALAM rehearsal(): semuanya terhadap DB rehearsal yang SUDAH dimigrasi dan lolos sidik jari.

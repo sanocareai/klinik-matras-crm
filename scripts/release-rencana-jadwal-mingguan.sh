@@ -16,7 +16,7 @@
 #
 # ROLLBACK KODE: aman kapan saja (kode lama tidak membaca tabel baru). Periksa dulu dengan scripts/rollback-guard-rencana-jadwal-mingguan.sh (baca-saja; hanya mencetak jumlah jadwal Admin). Rollback kode TIDAK menghapus tabel/riwayat;
 #   yang hilang hanya tampilan kalender mingguan, antrean per tindakan, dan riwayat/undo jadwal Admin. Unit yang sudah dijadwalkan Admin tampil kembali 'belum dijadwalkan' di layar lama (jadwalnya tetap tersimpan).
-# (dibangkitkan oleh scripts/gen-release-rencana-jadwal-mingguan.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 e9ac33328fee…)
+# (dibangkitkan oleh scripts/gen-release-rencana-jadwal-mingguan.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 a2ffb8379840…)
 set -Eeuo pipefail
 umask 077
 
@@ -462,7 +462,7 @@ ok "backup: ${BACKUP_FILE} ($(du -h "$BACKUP_FILE" | cut -f1)); sha256 $(cut -d'
 # bk_run: menjalankan perintah di container backend. Rilis penuh = compose release dir (env production); --rehearsal-penuh = image bertag rehearsal TANPA env production (hanya variabel yang diberikan eksplisit).
 bk_run() {
   local o=(); while [ "$1" != "--" ]; do o+=("$1"); shift; done; shift
-  if [ "$REHEARSAL_PENUH" = "1" ]; then docker run --rm -i --network "$NET" -w /app "${o[@]}" "$REH_IMG" "$@"
+  if [ "$REHEARSAL_PENUH" = "1" ]; then docker run --rm -i --network "$NET" -w /app -e JWT_SECRET="rehearsal-sekali-pakai-${TS:-x}" "${o[@]}" "$REH_IMG" "$@"
   else dcp "$NEW_DIR" run --rm --no-deps -T "${o[@]}" backend "$@"; fi
 }
 # Lanjutan --rehearsal-penuh di DALAM rehearsal(): semuanya terhadap DB rehearsal yang SUDAH dimigrasi dan lolos sidik jari.
