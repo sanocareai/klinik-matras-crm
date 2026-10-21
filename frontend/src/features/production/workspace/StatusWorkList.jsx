@@ -103,7 +103,7 @@ function BarisOrder({ order, terbuka, onToggle, onBuka, riwayat }) {
                 <p className="m-0 text-[14.5px] font-semibold text-ink" data-testid="tindakan-label">{tindakan.label}</p>
                 <p className="m-0 text-[12.5px] text-ink3">{[tindakan.aktor && tindakan.aktor !== "—" ? `Oleh ${tindakan.aktor}` : null, tindakan.detail].filter(Boolean).join(" · ")}</p>
               </div>
-              {aksiBisaDibuka && <Button type="button" className="min-h-[44px]" data-testid="tindakan-buka" onClick={() => onBuka(r.unitUtamaId, bagianUntukAksi(tindakan.aksi))}>{tindakan.aksi === "CONFIRM_ARRIVAL" ? "Lihat unit" : "Kerjakan"} <ArrowRight size={15} aria-hidden /></Button>}
+              {aksiBisaDibuka && <Button type="button" className="min-h-[44px]" data-testid="tindakan-buka" onClick={() => onBuka(r.unitUtamaId, ["BELUM_DITERIMA", "ORDER_MASIH_PENGAMBILAN"].includes(r.perhatian?.kode) ? "ringkasan" : bagianUntukAksi(tindakan.aksi))}>{tindakan.aksi === "CONFIRM_ARRIVAL" ? "Lihat unit" : "Kerjakan"} <ArrowRight size={15} aria-hidden /></Button>}
             </div>
           )}
           <ul className="m-0 list-none space-y-2 p-0 [&>li]:bg-inset" aria-label="Unit dalam order">

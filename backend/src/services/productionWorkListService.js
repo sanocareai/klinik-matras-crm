@@ -42,7 +42,7 @@ function bentukUnit(row, alur, now) {
   const a = row.adopsi;
   return {
     id: row.id, unitCode: row.unitCode, merk: row.merk ?? null, ukuran: row.ukuran ?? null, status: row.status, statusUnit: displayStatusOfUnit(row.status)?.label ?? null,
-    posisi: a.posisi, kerja: a.kerja, tindakan: tindakanTersedia(a, { unitStatus: row.status, alurMeja: alur }), targetSelesai: a.targetSelesai, pic: a.pic, meja: a.meja,
+    posisi: a.posisi, kerja: a.kerja, tindakan: tindakanTersedia(a), targetSelesai: a.targetSelesai, pic: a.pic, meja: a.meja,
     rencanaBahanAda: a.rencanaBahanAda, aktualBahanAda: a.aktualBahanAda, buktiAplikasi: a.buktiAplikasi,
     receivedBasisLabel: row.receivedBasisLabel ?? null, prioritas: row.priorityDisplay ? { key: row.priorityDisplay.key, label: row.priorityDisplay.label } : null,
     // Unit sudah Terkirim/Dibatalkan tetapi pekerjaan Meja-nya belum ditutup = data tidak konsisten: JANGAN tampil sebagai tahap aktif; tandai jujur agar ditinjau.

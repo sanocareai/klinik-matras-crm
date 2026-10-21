@@ -12,11 +12,8 @@ const unit = (over = {}) => ({
 
 test("perhatian utama: urutan alasan, tingkat, dan teks jujur dari fakta tercatat", () => {
   assert.equal(perhatianUnit(unit({ priorityDisplay: { key: "COMPLAINT" } }), { now: NOW }).kode, "KOMPLAIN");
-  const belum = perhatianUnit(unit({ alurMeja: { status: "PENDING_ARRIVAL" }, adopsi: { posisi: { key: "SUDAH_DIJEMPUT", label: "x" } } }), { now: NOW });
-  assert.deepEqual([belum.kode, belum.level], ["BELUM_DITERIMA", ATTENTION.HIGH], "mendesak hanya bila ada pekerjaan Meja yang menunggu kedatangan");
-  const ringan = perhatianUnit(unit({ adopsi: { posisi: { key: "SUDAH_DIJEMPUT", label: "x" } } }), { now: NOW });
-  assert.deepEqual([ringan.kode, ringan.level], ["BELUM_DITERIMA", ATTENTION.LOW], "tanpa alur Meja: catatan ringan, tidak menutupi alasan lain");
-  assert.equal(perhatianUnit(unit({ adopsi: { posisi: { key: "SUDAH_DIJEMPUT", label: "x" }, targetSelesai: null } }), { now: NOW }).kode, "BELUM_ADA_TARGET");
+  const belum = perhatianUnit(unit({ adopsi: { posisi: { key: "SUDAH_DIJEMPUT", label: "x" } } }), { now: NOW });
+  assert.deepEqual([belum.kode, belum.level], ["BELUM_DITERIMA", ATTENTION.HIGH], "dengan jalur penerimaan resmi, belum diterima selalu bisa ditindak (dengan atau tanpa alur Meja)");
   const tunda = perhatianUnit(unit({ adopsi: { kerja: { key: "TERTUNDA", label: "Tertunda", manual: { note: "kain belum datang" } } } }), { now: NOW });
   assert.equal(tunda.kode, "TERTUNDA"); assert.match(tunda.teks, /kain belum datang/);
   const lewat = perhatianUnit(unit({ adopsi: { targetSelesai: { at: "2026-10-19T10:00:00Z" } } }), { now: NOW });
@@ -42,7 +39,7 @@ test("lewat target: dihitung per hari WIB; selesai/terkirim/tanpa target tidak p
 
 test("rollup order: rincian (tanpa label campuran palsu), perhatian utama dari unit paling mendesak, target terdekat, PIC unik", () => {
   const a = unit({ id: "a", unitCode: "A", adopsi: { targetSelesai: { at: "2026-10-28T10:00:00Z" } } });
-  const b = unit({ id: "b", unitCode: "B", alurMeja: { status: "PENDING_ARRIVAL" }, adopsi: { posisi: { key: "SUDAH_DIJEMPUT", label: "Sudah dijemput · belum diterima workshop" }, targetSelesai: { at: "2026-10-25T10:00:00Z" }, pic: { nama: "Andi" }, tindakan: { aksi: "CONFIRM_ARRIVAL" } } });
+  const b = unit({ id: "b", unitCode: "B", adopsi: { posisi: { key: "SUDAH_DIJEMPUT", label: "Sudah dijemput · belum diterima workshop" }, targetSelesai: { at: "2026-10-25T10:00:00Z" }, pic: { nama: "Andi" }, tindakan: { aksi: "CONFIRM_ARRIVAL" } } });
   const c = unit({ id: "c", unitCode: "C", status: "DELIVERED" });
   const r = ringkasOrder([a, b, c], { now: NOW });
   assert.equal(r.jumlahUnit, 3); assert.equal(r.jumlahAktif, 2);
@@ -55,7 +52,7 @@ test("rollup order: rincian (tanpa label campuran palsu), perhatian utama dari u
 test("filter cepat + urutan: perlu tindakan, belum diterima, belum dijadwalkan, lewat target; urut perhatian lalu target lalu terbaru", () => {
   const mk = (id, over, dibuat) => { const u = unit({ id, unitCode: id, ...over }); return { orderId: id, dibuatAt: dibuat, pelanggan: { nama: id }, units: [u], ringkas: ringkasOrder([u], { now: NOW }) }; };
   const sehat = mk("sehat", {}, "2026-10-10T00:00:00Z");
-  const belum = mk("belum", { alurMeja: { status: "PENDING_ARRIVAL" }, adopsi: { posisi: { key: "SUDAH_DIJEMPUT", label: "x" } } }, "2026-10-11T00:00:00Z");
+  const belum = mk("belum", { adopsi: { posisi: { key: "SUDAH_DIJEMPUT", label: "x" } } }, "2026-10-11T00:00:00Z");
   const bjadwal = mk("bjadwal", { adopsi: { kerja: { key: "BELUM_DIJADWALKAN", label: "b" }, targetSelesai: { at: "2026-10-29T10:00:00Z" } } }, "2026-10-12T00:00:00Z");
   const lewat = mk("lewat", { adopsi: { kerja: { key: "DIKERJAKAN", label: "d" }, targetSelesai: { at: "2026-10-15T10:00:00Z" } } }, "2026-10-13T00:00:00Z");
   const semua = [sehat, belum, bjadwal, lewat];
@@ -68,11 +65,7 @@ test("filter cepat + urutan: perlu tindakan, belum diterima, belum dijadwalkan, 
   assert.equal(urutkanOrder(semua, "TARGET")[0].orderId, "lewat"); assert.equal(urutkanOrder(semua, "TERBARU")[0].orderId, "lewat"); assert.equal(urutkanOrder(semua, "PELANGGAN")[0].orderId, "belum");
 });
 
-test("tindakan tersedia: konfirmasi diterima hanya bila ada pekerjaan Meja menunggu kedatangan; selain itu diganti tindakan menurut status kerja", () => {
-  const ad = { tindakan: { aksi: "CONFIRM_ARRIVAL", label: "Konfirmasi unit diterima di workshop" }, kerja: { key: "TERTUNDA" }, targetSelesai: { at: "2026-10-30T00:00:00Z" }, rencanaBahanAda: false };
-  assert.equal(tindakanTersedia(ad, { unitStatus: "RECEIVED", alurMeja: { status: "PENDING_ARRIVAL" } }).aksi, "CONFIRM_ARRIVAL");
-  assert.equal(tindakanTersedia(ad, { unitStatus: "RECEIVED", alurMeja: null }).aksi, "RESOLVE_DELAY");
-  assert.equal(tindakanTersedia({ ...ad, kerja: { key: "BELUM_DIJADWALKAN" }, targetSelesai: null }, { unitStatus: "RECEIVED" }).aksi, "OPEN_PLAN");
-  assert.equal(tindakanTersedia({ tindakan: { aksi: "START_WORK" } }, { unitStatus: "RECEIVED" }).aksi, "START_WORK", "aksi lain tidak diubah");
-  assert.equal(tindakanTersedia({}, {}), null);
+test("tindakan tersedia: dipakai apa adanya dari server (Catat diterima adalah tindakan nyata dengan penerimaan resmi)", () => {
+  const ad = { tindakan: { aksi: "CONFIRM_ARRIVAL", label: "Konfirmasi unit diterima di workshop" } };
+  assert.equal(tindakanTersedia(ad).aksi, "CONFIRM_ARRIVAL"); assert.equal(tindakanTersedia({ tindakan: { aksi: "START_WORK" } }).aksi, "START_WORK"); assert.equal(tindakanTersedia({}), null);
 });

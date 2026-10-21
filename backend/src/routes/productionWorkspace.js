@@ -61,7 +61,7 @@ productionWorkspaceRouter.get("/units/:id/ruang-kerja", requirePermission(P.UNIT
     // Tindakan berikutnya yang benar-benar bisa dikerjakan di ruang kerja ini + perhatian utama (fakta tercatat) — sama dengan baris di Daftar kerja.
     const alurMeja = run && run.status !== "COMPLETED" && run.status !== "CANCELLED" ? { runId: run.id, status: run.status, statusLabel: RUN_STATUS_LABEL[run.status] ?? run.status, tahap: run.status === "PENDING_ARRIVAL" ? null : (PHASE_LABEL[run.currentPhase] ?? null) } : null;
     const baris = (await perkayaBarisUnit(prisma, [await prisma.unit.findUniqueOrThrow({ where: { id: unit.id }, include: UNIT_INCLUDE })]))[0];
-    const tindakan = tindakanTersedia(baris.adopsi, { unitStatus: unit.status, alurMeja });
+    const tindakan = tindakanTersedia(baris.adopsi);
     const perhatian = perhatianUnit({ ...baris, alurMeja }, {});
     const tampilOrder = displayStatusOfOrder(unit.order.status);
     res.set("Cache-Control", "no-store");

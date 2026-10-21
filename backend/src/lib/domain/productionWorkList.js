@@ -54,10 +54,7 @@ export function perhatianUnit(row, { now = new Date() } = {}) {
   const a = row.adopsi || {}; const kerja = a.kerja?.key; const posisi = a.posisi?.key; const orderStatus = row.order?.status;
   const hasil = (kode, level, teks) => ({ kode, level, teks });
   if (row.priorityDisplay?.key === "COMPLAINT") return hasil("KOMPLAIN", ATTENTION.HIGH, "Ada komplain terbuka untuk unit ini");
-  // Sudah dijemput tetapi belum tercatat diterima: MENDESAK hanya bila ada tombol yang bisa menyelesaikannya (pekerjaan di alur Meja menunggu kedatangan). Tanpa itu hanya catatan ringan —
-  // jangan menutupi alasan yang lebih penting dan jangan membuat hampir semua order tampak "mendesak".
-  const belumDiterima = posisi === "SUDAH_DIJEMPUT";
-  if (belumDiterima && row.alurMeja?.status === "PENDING_ARRIVAL") return hasil("BELUM_DITERIMA", ATTENTION.HIGH, "Menunggu diterima di workshop (alur Meja)");
+  if (posisi === "SUDAH_DIJEMPUT") return hasil("BELUM_DITERIMA", ATTENTION.HIGH, "Sudah dijemput, belum tercatat diterima di workshop");
   if (kerja === "TERTUNDA") return hasil("TERTUNDA", ATTENTION.HIGH, a.kerja?.manual?.note ? `Pekerjaan tertunda — ${a.kerja.manual.note}` : "Pekerjaan tertunda");
   if (lewatTarget(a.targetSelesai?.at, { now, kerjaKey: kerja, unitStatus: row.status })) return hasil("LEWAT_TARGET", ATTENTION.HIGH, `Lewat target ${tanggalWib(a.targetSelesai.at)}`);
   if (kerja === "MENUNGGU_QC") return hasil("MENUNGGU_QC", ATTENTION.MEDIUM, "Menunggu keputusan QC");
@@ -66,7 +63,6 @@ export function perhatianUnit(row, { now = new Date() } = {}) {
     return hasil("ORDER_MASIH_PENGAMBILAN", ATTENTION.MEDIUM, "Status order Sales masih Pengambilan padahal unit sudah dijemput");
   }
   if (!a.targetSelesai && ["RECEIVED", "IN_PRODUCTION"].includes(row.status) && kerja !== "SELESAI") return hasil("BELUM_ADA_TARGET", ATTENTION.MEDIUM, "Belum ada target selesai");
-  if (belumDiterima) return hasil("BELUM_DITERIMA", ATTENTION.LOW, "Belum tercatat diterima di workshop");
   if (kerja === "BELUM_DIJADWALKAN" && ["RECEIVED", "IN_PRODUCTION"].includes(row.status)) return hasil("BELUM_DIJADWALKAN", ATTENTION.LOW, "Belum dijadwalkan");
   return null;
 }
@@ -135,11 +131,9 @@ export function hitungFilter(orders, { now = new Date() } = {}) {
 }
 
 /**
- * Tindakan berikutnya yang BISA dikerjakan Admin dari ruang kerja ini. Aksi "Konfirmasi unit diterima di workshop" hanya punya tombol bila pekerjaan di alur Meja menunggu kedatangan (Terima Unit);
- * selain itu itu BUKAN tindakan Admin di sini → diganti tindakan berikutnya berdasarkan status kerja (tanpa menyimpulkan posisi), dan "belum tercatat diterima" tetap tampil sebagai catatan di perhatian.
+ * Tindakan berikutnya yang BISA dikerjakan dari ruang kerja. Sejak ada penerimaan workshop resmi (unit_workshop_receipts), "Catat diterima" bisa dikerjakan untuk setiap unit yang sudah dijemput —
+ * dengan atau tanpa pekerjaan di alur Meja — sehingga tindakan dari server dipakai apa adanya (izin dicek server/UI).
  */
-export function tindakanTersedia(adopsi, { unitStatus, alurMeja = null } = {}) {
-  const t = adopsi?.tindakan;
-  if (!t || t.aksi !== "CONFIRM_ARRIVAL" || alurMeja?.status === "PENDING_ARRIVAL") return t ?? null;
-  return tindakanBerikutnya({ unitStatus, posisi: { key: "DI_WORKSHOP_TANPA_BUKTI" }, kerja: adopsi.kerja, adaTarget: !!adopsi.targetSelesai, rencanaBahanAda: !!adopsi.rencanaBahanAda, aktualAda: !!adopsi.aktualBahanAda });
+export function tindakanTersedia(adopsi) {
+  return adopsi?.tindakan ?? null;
 }

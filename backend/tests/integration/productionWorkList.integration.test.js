@@ -77,8 +77,8 @@ test("W1. satu baris per order dengan unit di dalamnya; order selesai/terkirim t
   const od = cari(d, dua.order);
   assert.equal(od.statusOrder.label, "Pengambilan"); assert.equal(od.statusOrder.terkunci, true); assert.equal(od.statusOrder.mentah, "PICKUP");
   assert.equal(od.units.length, 2); assert.equal(od.ringkas.jumlahAktif, 2);
-  assert.equal(od.ringkas.perhatian.kode, "ORDER_MASIH_PENGAMBILAN", "tanpa alur Meja, \"belum diterima\" hanya catatan ringan — alasan yang lebih penting didahulukan"); assert.equal(od.ringkas.perhatian.unitCode, dua.units[0].unitCode); assert.equal(od.ringkas.tindakan.aksi, "OPEN_PLAN", "tanpa alur Meja, \"konfirmasi diterima\" bukan tindakan Admin di sini — diganti tindakan berdasarkan status kerja"); assert.equal(od.ringkas.unitUtamaId, dua.units[0].id);
-  assert.equal(od.units[0].tindakan.aksi, "OPEN_PLAN"); assert.equal(od.units[0].posisi.key, "SUDAH_DIJEMPUT", "posisi fisik tetap apa adanya");
+  assert.equal(od.ringkas.perhatian.kode, "BELUM_DITERIMA"); assert.equal(od.ringkas.perhatian.unitCode, dua.units[0].unitCode); assert.equal(od.ringkas.tindakan.aksi, "CONFIRM_ARRIVAL", "penerimaan resmi: Catat diterima adalah tindakan nyata walau tanpa alur Meja"); assert.equal(od.ringkas.unitUtamaId, dua.units[0].id);
+  assert.equal(od.units[0].tindakan.aksi, "CONFIRM_ARRIVAL"); assert.equal(od.units[0].posisi.key, "SUDAH_DIJEMPUT", "posisi fisik tetap apa adanya");
   assert.deepEqual(od.ringkas.posisi.map((p) => p.label).sort(), ["Menunggu dijemput", "Sudah dijemput · belum diterima workshop"]);
   const ou = od.units.find((u) => u.id === dua.units[1].id); assert.equal(ou.posisi.key, "MENUNGGU_DIJEMPUT"); assert.equal(ou.statusUnit, "Pengambilan");
 
@@ -147,7 +147,7 @@ test("W5. header ruang kerja unit: order Sales, unit lain, alur Meja, dan keters
   const polos = await mkOrder("Bu Polos", { status: "PICKUP", locked: true, units: [{ status: "RECEIVED", pickup: true }, { status: "AWAITING_PICKUP", pickup: false }] });
   const hp = (await w.admin.api.get(`${P}/units/${polos.unit.id}/ruang-kerja`)).body;
   assert.equal(hp.unit.unitCode, polos.unit.unitCode); assert.equal(hp.order.statusOrder.label, "Pengambilan"); assert.equal(hp.order.statusOrder.terkunci, true); assert.equal(hp.order.jumlahUnit, 2); assert.equal(hp.order.unitLain.length, 1);
-  assert.equal(hp.alurMeja, null); assert.equal(hp.tindakan.aksi, "OPEN_PLAN"); assert.equal(hp.perhatian.kode, "ORDER_MASIH_PENGAMBILAN"); assert.deepEqual([hp.dokumentasi.tersedia, hp.dokumentasi.bolehUnggah, hp.dokumentasi.runId], [false, false, null]); assert.match(hp.dokumentasi.alasan, /setelah unit masuk alur Meja/);
+  assert.equal(hp.alurMeja, null); assert.equal(hp.tindakan.aksi, "CONFIRM_ARRIVAL"); assert.equal(hp.perhatian.kode, "BELUM_DITERIMA"); assert.deepEqual([hp.dokumentasi.tersedia, hp.dokumentasi.bolehUnggah, hp.dokumentasi.runId], [false, false, null]); assert.match(hp.dokumentasi.alasan, /setelah unit masuk alur Meja/);
 
   const v2 = await mkOrder("Bu V2");
   await w.admin.api.post(`${V2}/plans`, { unitId: v2.unit.id, productionDate: "2026-10-22", stationCode: "TABLE_1", priority: 0, workCenterId: w.wc.id, operatorId: w.op.id, activateUnit: true }, idem("akt2"));

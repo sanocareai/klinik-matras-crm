@@ -81,7 +81,8 @@ test("pengawatan: rute daftar + ruang kerja unit; deep link lama dialihkan; URL 
   for (const k of ["aria-expanded={terbuka}", "aria-controls={idPanel}", "motion-reduce:", "motion-safe:animate", "getProductionWorkList", 'role="tablist" aria-label="Antrean"', "pintasan-${bagian}"]) assert.ok(daftar.includes(k), k);
   for (const k of ["pekerjaan", "bahan", "dokumentasi", "riwayat"]) assert.ok(daftar.includes(`bagian: "${k}"`), k);
   const ruang = src("features", "production", "workspace", "UnitWorkspace.jsx");
-  for (const k of ["sticky", 'role="tablist"', "ArrowRight", "judulRef.current.focus", "confirmProductionV2UnitArrival", "penjelasanTertahan"]) assert.ok(ruang.includes(k), k);
+  for (const k of ["sticky", 'role="tablist"', "ArrowRight", "judulRef.current.focus", "KartuPenerimaan", "TindakanUtama", "penjelasanTertahan"]) assert.ok(ruang.includes(k), k);
+  assert.ok(!ruang.includes("confirmProductionV2UnitArrival"), "penerimaan lewat satu jalur resmi (modal penerimaan), bukan tombol Terima Unit terpisah");
   const dok = src("features", "production", "workspace", "DokumentasiSection.jsx");
   assert.ok(dok.includes("submitProductionV2Documentation")); assert.ok(dok.includes("Tidak menyelesaikan tahap, tidak meluluskan QC, dan tidak membuat bukti serah ke Gudang")); assert.ok(dok.includes("kirimRef.current"));
   const marker = src("features", "production", "workspace", "StatusMarkers.jsx");

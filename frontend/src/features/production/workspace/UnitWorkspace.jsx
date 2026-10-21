@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, ExternalLink, Info, RefreshCw, Truck } from "lucide-react";
+import { ArrowLeft, ExternalLink, Info, RefreshCw } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api } from "@/api.js";
 import { Badge } from "@/components/ui/badge.jsx";
@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils.js";
 import { friendlyError } from "@/features/production/experience.js";
 import { unitDetailPath } from "@/lib/legacyProductionRoutes.js";
 import MaterialPlanEditor from "@/features/production/MaterialPlanEditor.jsx";
-import { Bagian, Kosong, PemakaianAktual, Riwayat, StatusTarget, TindakanUtama } from "@/features/production/OrderProduksiPanel.jsx";
+import { Bagian, Kosong, KartuPenerimaan, PemakaianAktual, Riwayat, StatusTarget, TindakanUtama } from "@/features/production/OrderProduksiPanel.jsx";
 import DokumentasiSection from "@/features/production/workspace/DokumentasiSection.jsx";
 import { EmpatStatus } from "@/features/production/workspace/StatusMarkers.jsx";
 import { BAGIAN, badgeTarget, teksTahapMeja } from "@/features/production/workspace/workListModel.js";
@@ -24,9 +24,6 @@ const aktifUnit = (s) => !["CANCELLED", "DELIVERED"].includes(s);
 /** Alasan jujur + jalur bila tindakan utama tidak punya tombol di sini (tidak ada tombol yang pasti gagal). */
 export function penjelasanTertahan(data, ruang) {
   const t = data?.adopsi?.tindakan; if (!t) return null;
-  if (t.aksi === "CONFIRM_ARRIVAL" && ruang?.alurMeja?.status !== "PENDING_ARRIVAL") {
-    return { teks: "Unit ini belum punya pekerjaan di alur Meja, jadi tidak ada tombol terima di sini. Penerimaan di workshop dicatat petugas setelah unit dijadwalkan di Rencana Produksi.", jalur: { label: "Buka Rencana Produksi", to: "/bengkel/rencana-produksi" } };
-  }
   if (t.aksi === "WAIT") return { teks: `Menunggu ${t.aktor && t.aktor !== "—" ? t.aktor : "pihak lain"}${t.detail ? ` — ${t.detail}` : ""}. Tidak ada yang perlu dikerjakan Admin sekarang.`, jalur: null };
   return null;
 }
@@ -35,20 +32,14 @@ function Fakta({ label, children }) {
   return <div className="min-w-0"><dt className="m-0 text-[11px] font-medium uppercase tracking-[0.05em] text-ink3">{label}</dt><dd className="m-0 mt-0.5 text-[13.5px] text-ink">{children}</dd></div>;
 }
 
-function Ringkasan({ data, ruang, aktif, onDone, onTerima, terimaSibuk }) {
+function Ringkasan({ data, ruang, aktif, onDone }) {
   const { adopsi: ad, unit: u } = data; const meja = teksTahapMeja(ruang?.alurMeja); const target = badgeTarget(ad.targetSelesai?.at);
   const tahan = penjelasanTertahan(data, ruang);
   return (
     <div className="grid gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]" data-testid="bagian-ringkasan">
       <div className="space-y-4">
         <TindakanUtama data={data} aktif={aktif} onDone={onDone} onBukaUnit360={() => {}} />
-        {ruang?.alurMeja?.status === "PENDING_ARRIVAL" && aktif && (
-          <div className="rounded-card border border-line px-4 py-3" data-testid="terima-unit">
-            <p className="m-0 text-[13.5px] font-semibold text-ink">Unit ini menunggu diterima di workshop</p>
-            <p className="m-0 mt-0.5 text-[12.5px] text-ink3">Mencatat kedatangan fisik unit (satu aksi, lokasi workshop bawaan Admin). Tahap Meja baru bisa dimulai setelah ini.</p>
-            <Button type="button" className="mt-2.5 min-h-[44px]" data-mutates disabled={terimaSibuk} onClick={onTerima}><Truck size={15} aria-hidden /> {terimaSibuk ? "Mencatat…" : "Terima Unit di Workshop"}</Button>
-          </div>
-        )}
+        <KartuPenerimaan data={data} aktif={aktif} onDone={onDone} />
         {tahan && (
           <p role="note" data-testid="tindakan-tertahan" className="m-0 flex items-start gap-2 rounded-btn bg-inset px-4 py-3 text-[13px] text-ink2"><Info size={15} className="mt-0.5 shrink-0 text-accent" aria-hidden /><span>{tahan.teks}{tahan.jalur && <> <Link to={tahan.jalur.to} className="font-semibold text-accent underline">{tahan.jalur.label}</Link></>}</span></p>
         )}
@@ -84,7 +75,7 @@ function Ringkasan({ data, ruang, aktif, onDone, onTerima, terimaSibuk }) {
 
 export default function UnitWorkspace({ unitId, bagian, onBagian, onKembali, onChanged }) {
   const [data, setData] = useState(null); const [ruang, setRuang] = useState(null); const [error, setError] = useState(null); const [memuat, setMemuat] = useState(false);
-  const [terimaSibuk, setTerimaSibuk] = useState(false); const [notice, setNotice] = useState(""); const reqRef = useRef(0); const judulRef = useRef(null);
+  const [notice, setNotice] = useState(""); const reqRef = useRef(0); const judulRef = useRef(null);
 
   const muat = useCallback(async () => {
     const id = ++reqRef.current; setMemuat(true); setError(null);
@@ -97,10 +88,6 @@ export default function UnitWorkspace({ unitId, bagian, onBagian, onKembali, onC
   useEffect(() => { if (data && judulRef.current) judulRef.current.focus?.({ preventScroll: true }); }, [!!data]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const sesudahUbah = useCallback(async () => { await muat(); onChanged?.(); }, [muat, onChanged]);
-  const terima = async () => {
-    if (terimaSibuk) return; setTerimaSibuk(true); setError(null);
-    try { await api.confirmProductionV2UnitArrival(unitId, {}); setNotice(`${data?.unit?.unitCode} tercatat tiba di workshop.`); await sesudahUbah(); } catch (e) { setError(Object.assign(e, { pesan: e.code?.startsWith("WORKSHOP_DEFAULT") ? e.message : friendlyError(e) })); } finally { setTerimaSibuk(false); }
-  };
   useEffect(() => { if (!notice) return undefined; const t = setTimeout(() => setNotice(""), 5000); return () => clearTimeout(t); }, [notice]);
 
   const u = data?.unit; const ad = data?.adopsi; const izin = data?.izin || {}; const aktif = !!u && aktifUnit(u.status);
@@ -145,7 +132,7 @@ export default function UnitWorkspace({ unitId, bagian, onBagian, onKembali, onC
 
       {data && ruang && (
         <div id={`panel-${bagian}`} role="tabpanel" aria-labelledby={`tab-${bagian}`} tabIndex={0} className="outline-none" data-testid={`panel-${bagian}`}>
-          {bagian === "ringkasan" && <Ringkasan data={data} ruang={ruang} aktif={aktif} onDone={sesudahUbah} onTerima={terima} terimaSibuk={terimaSibuk} />}
+          {bagian === "ringkasan" && <Ringkasan data={data} ruang={ruang} aktif={aktif} onDone={sesudahUbah} />}
           {bagian === "pekerjaan" && <div className="max-w-[1100px]"><StatusTarget data={data} aktif={aktif} onDone={sesudahUbah} /></div>}
           {bagian === "bahan" && (
             <div className="grid gap-6 xl:grid-cols-2" data-testid="bagian-bahan">
