@@ -74,7 +74,7 @@ export function konfirmasiKerja(status, unitCode = "") {
   return null;
 }
 /** Label tombol manual di bagian Pekerjaan menurut status yang dipilih (menyebut pernyataannya secara eksplisit). */
-export const labelCatatKerja = (status) => (status === "DIKERJAKAN" ? "Tandai sudah dikerjakan" : status === "SELESAI" ? "Tandai selesai" : "Catat status kerja");
+export const labelCatatKerja = (status) => (status === "DIKERJAKAN" ? "Tandai sudah dikerjakan" : status === "SELESAI" ? "Catat pekerjaan selesai" : "Catat status kerja");
 /** Sumber status kerja untuk label kecil: SATU kosakata dengan Excel (sourceLabel server). Jadwal biasa tidak ditampilkan sebagai sumber. */
 export function sumberKerjaPendek(kerja) {
   if (!kerja || kerja.source === "JADWAL" || (kerja.source === "STATUS_ORDER" && kerja.key === "DIBATALKAN")) return null;

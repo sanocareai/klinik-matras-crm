@@ -26,7 +26,7 @@ test("teks konfirmasi 'Sudah dikerjakan': menyatakan pekerjaan memang sudah dila
 });
 
 test("label tombol manual menyebut pernyataannya; tidak ada status antara 'Sedang dikerjakan' di mana pun di UI Produksi", () => {
-  assert.equal(labelCatatKerja("DIKERJAKAN"), "Tandai sudah dikerjakan"); assert.equal(labelCatatKerja("SELESAI"), "Tandai selesai");
+  assert.equal(labelCatatKerja("DIKERJAKAN"), "Tandai sudah dikerjakan"); assert.equal(labelCatatKerja("SELESAI"), "Catat pekerjaan selesai");
   assert.equal(labelCatatKerja("TERTUNDA"), "Catat status kerja"); assert.equal(labelCatatKerja("DIJADWALKAN"), "Catat status kerja");
   for (const f of [["features", "production", "OrderProduksiPanel.jsx"], ["features", "production", "orderProduksiModel.js"], ["features", "production", "workspace", "RingkasanUnit.jsx"], ["features", "production", "workspace", "StatusWorkList.jsx"]]) {
     assert.ok(!/Sedang dikerjakan/i.test(baca(...f)), f.join("/"));
@@ -55,8 +55,8 @@ test("OPEN_WORK membuka bagian Pekerjaan; START_WORK (yang dulu langsung mencata
 
 test("jalur tulis status kerja manual SELALU lewat konfirmasi dan dijaga klik ganda; tombol tidak langsung menyimpan 'Sudah dikerjakan'/'Selesai'", () => {
   const panel = baca("features", "production", "OrderProduksiPanel.jsx");
-  // tombol 'Tandai selesai' (tindakan utama) hanya membuka konfirmasi
-  assert.ok(panel.includes('{ label: "Tandai selesai", onClick: () => setKonfKerja("SELESAI") }'));
+  // tombol 'Catat pekerjaan selesai' (tindakan utama) hanya membuka konfirmasi
+  assert.ok(panel.includes('{ label: "Catat pekerjaan selesai", onClick: () => setKonfKerja("SELESAI") }'));
   assert.ok(panel.includes("onYa={() => catat(konfKerja)}"), "catat() hanya dipanggil dari tombol 'Ya' konfirmasi");
   // bagian Pekerjaan: pilihan Sudah dikerjakan/Selesai → konfirmasi; lainnya langsung
   assert.ok(panel.includes("onClick={() => (perluKonf ? setKonf(true) : simpanKerja())}"));
@@ -79,4 +79,12 @@ test("jalur tulis status kerja manual SELALU lewat konfirmasi dan dijaga klik ga
 test("daftar kerja menampilkan sumber status kerja secara terlihat per unit (bukan hanya tooltip)", () => {
   const list = baca("features", "production", "workspace", "StatusWorkList.jsx");
   assert.ok(list.includes('data-testid="unit-sumber-kerja"') && list.includes("sumberKerjaPendek(unit.kerja)"));
+});
+
+test("label 'selesai' tidak terkesan menyelesaikan QC/serah Gudang: 'Catat pekerjaan selesai'; konfirmasi menegaskan catatan administratif, bukan QC/Gudang/Siap Kirim", () => {
+  assert.equal(labelCatatKerja("SELESAI"), "Catat pekerjaan selesai");
+  const k = konfirmasiKerja("SELESAI", "U-9");
+  assert.match(k.isi, /catatan administratif/); assert.match(k.isi, /bukan hasil QC/); assert.match(k.isi, /bukan serah ke Gudang/); assert.match(k.isi, /bukan Siap Kirim/);
+  const panel = baca("features", "production", "OrderProduksiPanel.jsx");
+  assert.ok(!panel.includes('"Tandai selesai"') && !panel.includes("Tandai pekerjaan Selesai"), "label lama tidak tersisa");
 });

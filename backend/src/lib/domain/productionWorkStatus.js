@@ -160,7 +160,7 @@ export function tindakanBerikutnya({ unitStatus, posisi, kerja, adaTarget = fals
   if (k === "DIKERJAKAN_ULANG") return t(AKSI.WAIT, "Pengerjaan ulang berjalan", "PIC Meja");
   if (k === "SELESAI") return t(AKSI.MARK_READY, "Tandai Siap Kirim", "Admin", "Pekerjaan sudah selesai; status order masih Diproses");
   if (k === "DIKERJAKAN") return aktualAda || !rencanaBahanAda
-    ? t(AKSI.FINISH_WORK, "Tandai pekerjaan Selesai", "Admin / PIC", aktualAda ? "Bahan sudah dicatat" : null)
+    ? t(AKSI.FINISH_WORK, "Catat pekerjaan selesai", "Admin / PIC", aktualAda ? "Bahan sudah dicatat" : null)
     : t(AKSI.RECORD_MATERIAL, "Catat bahan yang benar-benar dipakai", "PIC Bahan", "Rencana bahan sudah ada, pemakaian aktual belum");
   // Target selesai dan rencana bahan OPSIONAL: tidak pernah menjadi langkah yang menahan unit berjadwal. Satu tindakan yang sama dengan atau tanpa keduanya; keduanya hanya disebut sebagai tambahan.
   // OPEN_WORK = MEMBUKA Ruang Kerja Unit (bagian Pekerjaan). Membuka halaman TIDAK mengubah status apa pun; "Sudah dikerjakan" baru tercatat lewat pemakaian bahan aktual (otomatis) atau tombol manual berkonfirmasi.

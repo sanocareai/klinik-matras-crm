@@ -195,7 +195,7 @@ function TindakanUtama({ data, aktif, onDone, onBukaUnit360, onBagian }) {
     case "UBAH_ORDER_DIPROSES": tombol = izin.statusOrder && aktif ? { label: "Ubah ke Diproses", onClick: () => setDiprosesBuka(true) } : null; break;
     // OPEN_WORK: hanya MEMBUKA bagian Pekerjaan (tidak mengubah status; tampil juga untuk akun hanya-lihat). Status kerja tidak pernah tercatat dari tombol ini.
     case "OPEN_WORK": tombol = { label: t.label || "Buka pekerjaan", onClick: () => (onBagian ? onBagian("pekerjaan") : ke("sec-status")) }; break;
-    case "FINISH_WORK": tombol = izin.statusKerja && aktif && !data.kerjaManual.dikunciAplikasi ? { label: "Tandai selesai", onClick: () => setKonfKerja("SELESAI") } : { label: "Buka Unit 360", onClick: onBukaUnit360, sekunder: true }; break;
+    case "FINISH_WORK": tombol = izin.statusKerja && aktif && !data.kerjaManual.dikunciAplikasi ? { label: "Catat pekerjaan selesai", onClick: () => setKonfKerja("SELESAI") } : { label: "Buka Unit 360", onClick: onBukaUnit360, sekunder: true }; break;
     case "MARK_READY": tombol = izin.statusOrder ? { label: "Tandai Siap Kirim", onClick: () => setKonfirmasi(true) } : null; break;
     case "PLAN_MATERIAL": tombol = izin.rencanaBahan ? { label: "Susun rencana bahan", onClick: () => ke("sec-rencana-wrap") } : null; break;
     case "SET_TARGET": case "OPEN_PLAN": tombol = izin.target ? { label: t.aksi === "SET_TARGET" ? "Tetapkan target" : "Atur status & target", onClick: () => ke("sec-status") } : null; break;
