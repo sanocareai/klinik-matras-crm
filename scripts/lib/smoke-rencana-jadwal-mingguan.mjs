@@ -34,7 +34,7 @@ const hitung = async (sql) => Number((await prisma.$queryRawUnsafe(sql))[0].n);
 const TULIS = {
   sm: "select count(*)::int n from stock_movements", cmd: "select count(*)::int n from v2_commands", jad: "select count(*)::int n from production_unit_schedules", ev: "select count(*)::int n from production_unit_schedule_events", plan: "select count(*)::int n from production_run_plans_v2",
   job: "select count(*)::int n from jobs", run: "select count(*)::int n from production_runs_v2", qc: "select count(*)::int n from quality_inspections_v2", jur: "select count(*)::int n from fin_journal_entries", rec: "select count(*)::int n from unit_workshop_receipts",
-  serah: "select count(*)::int n from unit_custody_handoffs_v2", act: "select count(*)::int n from activity_events", outbox: "select count(*)::int n from domain_outbox", unit: "select count(*)::int n from units", order: "select count(*)::int n from \"Order\"",
+  serah: "select count(*)::int n from unit_custody_handoffs_v2", act: "select count(*)::int n from activity_events", outbox: "select count(*)::int n from domain_outbox", komp: "select count(*)::int n from unit_component_reuse_entries", unit: "select count(*)::int n from units", order: "select count(*)::int n from \"Order\"",
 };
 const awal = {}; for (const [k, q] of Object.entries(TULIS)) awal[k] = await hitung(q);
 const nUnit = awal.unit;
@@ -79,6 +79,28 @@ const ex = await api("POST", "/api/production-v2/rencana/export", tA, { from: ha
 let exInfo = "";
 if (ex.status === 200) { const kolom = (ex.json?.columns ?? []).map((c) => c.key); exInfo = `${kolom.length} kolom; baris=${ex.json?.rows?.length}`; rec("ekspor xlsx: 200, kolom Tanggal Jadwal + Status Rencana + Mode pelaksanaan, data terbaca", kolom.length === 29 && ["tanggal", "sumberJadwal", "modePelaksanaan"].every((k) => kolom.includes(k)) && Array.isArray(ex.json?.rows), exInfo); } else rec("ekspor xlsx: 200", false, String(ex.status));
 void ExcelJS;
+
+// ── Komponen lama dari unit pelanggan (BUKAN stok): bacaan + penolakan yang terjadi SEBELUM menyentuh data ──
+const kompBody = { name: "Pegas bongkaran", qty: 1, uom: "PCS", condition: "bagus", outcome: "REUSED", workPart: "rangka" };
+rec("komponen lama: tanpa token → 401", (await api("GET", `${PR}/units/${nol}/komponen-lama`, null)).status === 401);
+rec("komponen lama: catat tanpa Idempotency-Key → 400 IDEMPOTENCY_KEY_INVALID (tidak menulis)", await (async () => { const r = await api("POST", `${PR}/units/${nol}/komponen-lama`, tA, kompBody); return r.status === 400 && r.json?.code === "IDEMPOTENCY_KEY_INVALID"; })());
+rec("komponen lama: jumlah 0 → 400 KOMPONEN_JUMLAH_INVALID (ditolak sebelum menyentuh data)", await (async () => { const r = await api("POST", `${PR}/units/${nol}/komponen-lama`, tA, { ...kompBody, qty: 0 }, { "Idempotency-Key": "smoke-komp-00000001" }); return r.status === 400 && r.json?.code === "KOMPONEN_JUMLAH_INVALID"; })());
+rec("komponen lama: unit tidak ada → 404 UNIT_TIDAK_ADA (tidak menulis)", await (async () => { const r = await api("POST", `${PR}/units/${nol}/komponen-lama`, tA, kompBody, { "Idempotency-Key": "smoke-komp-00000002" }); return r.status === 404 && r.json?.code === "UNIT_TIDAK_ADA"; })());
+rec("komponen lama: foto bukan alamat bukti resmi → 400 KOMPONEN_FOTO_INVALID", await (async () => { const r = await api("POST", `${PR}/units/${nol}/komponen-lama`, tA, { ...kompBody, photoUrls: ["https://evil.example/x.jpg"] }, { "Idempotency-Key": "smoke-komp-00000003" }); return r.status === 400 && r.json?.code === "KOMPONEN_FOTO_INVALID"; })());
+if (u1) {
+  const kl = await api("GET", `${PR}/units/${u1.unitId}/komponen-lama`, tA);
+  rec(`komponen lama unit ${u1.unitCode}: 200, asal 'Dari kasur pelanggan — kode unit', total terpisah, dampak stok 'Tidak ada'`, kl.status === 200 && Array.isArray(kl.json?.items) && kl.json?.asal === `Dari kasur pelanggan — ${u1.unitCode}` && !!kl.json?.total?.pemakaianKembali && /Tidak ada/.test(kl.json?.dampakStok ?? ""), String(kl.status));
+  const ad2 = await api("GET", `${PR}/units/${u1.unitId}/adopsi`, tA);
+  rec("panel unit memuat komponenLama (dua sumber terpisah: pemakaianAktual vs komponenLama)", ad2.status === 200 && !!ad2.json?.komponenLama && !!ad2.json?.pemakaianAktual, String(ad2.status));
+  const rk = await api("GET", `${PR}/units/${u1.unitId}/ruang-kerja`, tA);
+  rec("ruang kerja unit: detail order (kondisi pelanggan, catatan produksi, komplain) terbaca", rk.status === 200 && !!rk.json?.order?.detail?.kondisiPelanggan, String(rk.status));
+} else skip("komponen lama + ruang kerja unit nyata", "tidak ada unit aktif");
+const exo = await api("GET", `${PR}/work-orders/export.xlsx`, tA, undefined, {}, true);
+if (exo.status === 200) {
+  const wb = new ExcelJS.Workbook(); await wb.xlsx.load(exo.buf);
+  const kolomAkt = (wb.getWorksheet("Pemakaian Aktual")?.getRow(1).values ?? []).slice(1);
+  rec("ekspor Order Produksi: sheet Pemakaian Aktual memuat Sumber + Dampak Stok, sheet Komponen Lama ada dan dibedakan", kolomAkt.includes("Sumber") && kolomAkt.includes("Dampak Stok") && !!wb.getWorksheet("Komponen Lama"), `${kolomAkt.length} kolom aktual`);
+} else rec("ekspor Order Produksi (.xlsx): 200", false, String(exo.status));
 
 // ── Tidak ada tulisan ──
 for (const [k, q] of Object.entries(TULIS)) rec(`smoke tidak menulis: ${k} tetap ${awal[k]}`, (await hitung(q)) === awal[k]);

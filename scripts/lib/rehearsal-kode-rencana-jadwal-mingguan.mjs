@@ -5,13 +5,14 @@ const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 const { getMinggu, getHari, getAntrean, parseAntreanQuery } = await import("/app/src/services/productionRencanaJadwalService.js");
 const { isHariKerja } = await import("/app/src/lib/domain/productionRencanaAdmin.js");
+const { ambilKomponenLama } = await import("/app/src/services/productionComponentReuseService.js");
 let gagal = 0; const cek = (n, ok, d = "") => { if (!ok) gagal += 1; console.log((ok ? "PASS " : "FAIL ") + n + (d !== "" ? " — " + String(d).slice(0, 200) : "")); };
 const hitung = async (sql) => Number((await prisma.$queryRawUnsafe(sql))[0].n);
 const TABEL = { sm: "stock_movements", unit: "units", job: "jobs", run: "production_runs_v2", plan: "production_run_plans_v2", qc: "quality_inspections_v2", jur: "fin_journal_entries", cmd: "v2_commands", act: "activity_events", serah: "unit_custody_handoffs_v2", outbox: "domain_outbox", order: "\"Order\"", rec: "unit_workshop_receipts" };
 const snap = async () => Object.fromEntries(await Promise.all(Object.entries(TABEL).map(async ([k, t]) => [k, await hitung(`select count(*)::int n from ${t}`)])));
 const awal = await snap();
 cek("data restore memuat unit nyata", awal.unit > 0, "unit=" + awal.unit);
-for (const t of ["production_unit_schedules", "production_unit_schedule_events"]) cek(`tabel baru ${t} kosong (tanpa backfill)`, (await hitung(`select count(*)::int n from ${t}`)) === 0);
+for (const t of ["production_unit_schedules", "production_unit_schedule_events", "unit_component_reuse_entries"]) cek(`tabel baru ${t} kosong (tanpa backfill)`, (await hitung(`select count(*)::int n from ${t}`)) === 0);
 
 // ── Kalender minggu: aturan hari kerja + hitungan = database ──
 const hari = (n) => new Date(Date.now() + 7 * 3600_000 + n * 86_400_000).toISOString().slice(0, 10);
@@ -35,10 +36,18 @@ cek("Butuh keputusan selalu menyebut penyebab dan langkah berikutnya", keputusan
 const cari = sem.items[0]; if (cari) { const q = await getAntrean(prisma, { query: parseAntreanQuery({ tab: "SEMUA", q: cari.unitCode }) }); cek("pencarian kode unit menemukan unitnya", q.items.some((i) => i.unitId === cari.unitId)); }
 console.log(`INFO antrean: ${JSON.stringify(sem.counts)}; minggu ${mg.start}: terencana hari kerja=${mg.ringkasan.terencanaKerja}`);
 
+// ── komponen lama dari unit pelanggan: bacaan pada unit NYATA (kosong, tanpa galat) ──
+{
+  const unitNyata = await prisma.unit.findMany({ take: 5, orderBy: { createdAt: "desc" }, select: { id: true, unitCode: true } });
+  let semuaOk = unitNyata.length > 0;
+  for (const u of unitNyata) { const k = await ambilKomponenLama(prisma, u.id); semuaOk = semuaOk && k.items.length === 0 && k.total.pemakaianKembali.jumlahItem === 0 && k.asal === `Dari kasur pelanggan — ${u.unitCode}` && /Tidak ada/.test(k.dampakStok); }
+  cek("komponen lama: unit nyata terbaca kosong dengan asal 'Dari kasur pelanggan — kode unit' dan dampak stok 'Tidak ada'", semuaOk, `${unitNyata.length} unit`);
+}
+
 // ── tidak ada tulisan ──
 const akhir = await snap();
 for (const k of Object.keys(awal)) cek(`tidak ada tulisan: ${k} tetap ${awal[k]}`, akhir[k] === awal[k]);
-for (const t of ["production_unit_schedules", "production_unit_schedule_events"]) cek(`tidak ada tulisan: ${t} tetap kosong`, (await hitung(`select count(*)::int n from ${t}`)) === 0);
+for (const t of ["production_unit_schedules", "production_unit_schedule_events", "unit_component_reuse_entries"]) cek(`tidak ada tulisan: ${t} tetap kosong`, (await hitung(`select count(*)::int n from ${t}`)) === 0);
 await prisma.$disconnect();
 console.log("REHEARSAL_KODE_BARU gagal=" + gagal);
 process.exit(gagal ? 1 : 0);

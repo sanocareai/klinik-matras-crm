@@ -126,6 +126,26 @@ cek("SINTETIS: ekspor Excel memuat Rencana Admin + Pelaksanaan Meja pada satu ta
 // ── 10. keluarkan ──
 cek("SINTETIS: keluarkan dari jadwal = status CLEARED (riwayat tetap), tidak tampil di kalender", (await P(U.A, `${PR}/units/${K1.unit.id}/jadwal/keluarkan`, { expectedRevision: 1 }, idem("kel"))).status === 201 && (await prisma.productionUnitSchedule.findUnique({ where: { unitId: K1.unit.id } })).status === "CLEARED" && !(await G(U.A, `${PR}/rencana/hari?date=${HK(2)}`)).body.stations.flatMap((s) => s.items).some((i) => i.unitId === K1.unit.id));
 
+// ── 10b. komponen LAMA dari unit pelanggan (BUKAN stok) ──
+{
+  const KK = await mk("KK", { diterima: true }); const KX = await mk("KX", { diterima: true });
+  const body = { name: "Pegas bongkaran sisi kiri", qty: 12, uom: "PCS", condition: "Bagus", workPart: "Rangka pegas bawah", outcome: "REUSED" };
+  const kp = (u, b, k, m = "") => P(U.A, `${PR}/units/${u.unit.id}/komponen-lama${m}`, b, { "Idempotency-Key": k });
+  const eK0 = await efek(); const smK = await n("select count(*)::int n from stock_movements"); const saldoK = (await prisma.$queryRawUnsafe("select coalesce(sum(qty),0)::float8 s from stock_movements"))[0].s; const valK = await n("select count(*)::int n from fin_stock_movement_valuations");
+  const kunciK = `rh-rjm-komp-${RUN}-aaaaaaaa`; const k1 = await kp(KK, body, kunciK); const k1b = await kp(KK, body, kunciK);
+  cek("SINTETIS: komponen lama dari unit ini: 201, klik ganda (kunci sama) = SATU baris, kunci sama isian beda ditolak 409", k1.status === 201 && k1b.status === 200 && (await kp(KK, { ...body, qty: 99 }, kunciK)).status === 409 && (await n(`select count(*)::int n from unit_component_reuse_entries where unit_id = '${KK.unit.id}'`)) === 1, `${k1.status}/${k1b.status}`);
+  cek("SINTETIS: komponen lama TIDAK mengubah saldo, pergerakan stok, Material Issue, reservasi, jurnal, job, penilaian biaya, atau pesan", same(eK0, await efek()) && (await n("select count(*)::int n from stock_movements")) === smK && (await prisma.$queryRawUnsafe("select coalesce(sum(qty),0)::float8 s from stock_movements"))[0].s === saldoK && (await n("select count(*)::int n from fin_stock_movement_valuations")) === valK && pesan.length === 0);
+  const itemId = k1.body.item.itemId;
+  const kr = await kp(KK, { expectedVersion: 1, data: { ...body, qty: 10 }, reason: "Salah hitung, seharusnya 10" }, `rh-rjm-kor-${RUN}-aaaaaaaa`, `/${itemId}/koreksi`);
+  const kb = await kp(KK, { expectedVersion: 2, reason: "Ternyata tidak jadi dipakai" }, `rh-rjm-bat-${RUN}-aaaaaaaa`, `/${itemId}/batal`);
+  const bar = await prisma.$queryRawUnsafe(`select version, kind from unit_component_reuse_entries where item_id = '${itemId}' order by version`);
+  cek("SINTETIS: koreksi + batal berjejak: versi 1 CREATED → 2 CORRECTED → 3 VOIDED, riwayat tidak dihapus; koreksi dengan versi basi ditolak", kr.status === 201 && kb.status === 201 && JSON.stringify(bar.map((x) => [x.version, x.kind])) === JSON.stringify([[1, "CREATED"], [2, "CORRECTED"], [3, "VOIDED"]]) && (await kp(KK, { expectedVersion: 1, data: body, reason: "basi" }, `rh-rjm-basi-${RUN}-aaaaaaaa`, `/${itemId}/koreksi`)).status === 409);
+  const lintas = await kp(KX, { reason: "lintas unit", expectedVersion: 1 }, `rh-rjm-lin-${RUN}-aaaaaaaa`, `/${itemId}/batal`);
+  cek("SINTETIS: tanpa lintas unit — komponen unit lain tidak dapat diubah lewat unit ini (404) dan parameter unit asal tidak ada jalurnya", lintas.status === 404 && (await kp(KX, { ...body, unitAsalId: KK.unit.id, source: "OTHER_UNIT" }, `rh-rjm-asl-${RUN}-aaaaaaaa`)).status === 201 && (await n(`select count(*)::int n from unit_component_reuse_entries where unit_id = '${KX.unit.id}' and source = 'OWN_UNIT'`)) === 1);
+  cek("SINTETIS: dilepas tanpa dipakai (dibuang/dikembalikan/disimpan) bukan pemakaian; total terpisah dari bahan baru", await (async () => { const a = await kp(KX, { name: "Webbing rusak", qty: 3, uom: "METER", condition: "Robek", outcome: "DISCARDED" }, `rh-rjm-bwg-${RUN}-aaaaaaaa`); const g = (await G(U.A, `${PR}/units/${KX.unit.id}/komponen-lama`)).body; return a.status === 201 && g.total.pemakaianKembali.jumlahItem === 1 && g.total.dilepasTidakDipakai.dibuang === 1 && (await G(U.A, `${PR}/units/${KX.unit.id}/adopsi`)).body.pemakaianAktual.baris.length === 0; })());
+  cek("SINTETIS: akun hanya-lihat (Sales) membaca komponen lama tetapi tidak mencatat (403)", (await G(U.S, `${PR}/units/${KX.unit.id}/komponen-lama`)).status === 200 && (await P(U.S, `${PR}/units/${KX.unit.id}/komponen-lama`, body, { "Idempotency-Key": `rh-rjm-sal-${RUN}-aaaaaaaa` })).status === 403);
+}
+
 // ── 11. data NYATA (di klon): unit sungguhan dijadwalkan lalu dibatalkan; data lain tidak berubah ──
 const nyata = (await G(U.A, `${PR}/rencana/antrean?tab=SIAP&pageSize=100`)).body.items.find((i) => !String(i.unitCode).startsWith("RH-RJM") && !i.v2 && i.jalur === "ADMIN" && i.revisiJadwal === 0);
 if (nyata) {

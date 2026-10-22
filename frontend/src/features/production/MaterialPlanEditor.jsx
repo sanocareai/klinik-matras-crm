@@ -62,7 +62,7 @@ function Riwayat({ revisi }) {
   );
 }
 
-export default function MaterialPlanEditor({ unitId, rencana, bolehUbah, unitAktif = true, onSaved, onReload }) {
+export default function MaterialPlanEditor({ unitId, rencana, bolehUbah, unitAktif = true, onSaved, onReload, judul = "Rencana bahan", badgeTeks = "Rencana · tidak mengurangi stok", onEditChange }) {
   const plan = rencana?.plan ?? null;
   const [edit, setEdit] = useState(false);
   const [baris, setBaris] = useState(() => dariRencana(plan?.lines));
@@ -73,6 +73,7 @@ export default function MaterialPlanEditor({ unitId, rencana, bolehUbah, unitAkt
   const [simpan, setSimpan] = useState({ sibuk: false, galat: null, sukses: "" });
   const [tampilGalatIsian, setTampilGalatIsian] = useState(false);
   const reqRef = useRef(0);
+  useEffect(() => { onEditChange?.(edit); }, [edit]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Rencana tersimpan berubah dari luar (muat ulang) → isian editor dimulai dari versi itu, kecuali sedang menyunting.
   useEffect(() => { if (!edit) setBaris(dariRencana(plan?.lines)); }, [plan?.revision, plan?.lines, edit]);
@@ -119,8 +120,8 @@ export default function MaterialPlanEditor({ unitId, rencana, bolehUbah, unitAkt
   return (
     <section aria-labelledby="rencana-judul" data-testid="rencana-bahan" className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <h3 id="rencana-judul" className="m-0 text-[15px] font-semibold text-ink">Rencana bahan</h3>
-        <Badge variant="accent" title="Rencana tidak mengurangi stok. Pemakaian bahan sungguhan dicatat di bagian 'Pemakaian aktual'.">Rencana · tidak mengurangi stok</Badge>
+        <h3 id="rencana-judul" className="m-0 text-[15px] font-semibold text-ink">{judul}</h3>
+        <Badge variant="accent" title="Rencana tidak mengurangi stok. Pemakaian bahan sungguhan dicatat lewat Catat pemakaian aktual.">{badgeTeks}</Badge>
         {plan && <span className="text-[12px] text-ink3">Revisi {plan.revision} · {plan.updatedBy || "—"} · {waktuWib(plan.updatedAt)}</span>}
         {bolehUbah && unitAktif && !edit && <Button variant="secondary" size="sm" className="ml-auto min-h-[40px]" data-testid="rencana-ubah" onClick={mulai}>{kosong ? "Susun rencana bahan" : "Ubah rencana"}</Button>}
       </div>

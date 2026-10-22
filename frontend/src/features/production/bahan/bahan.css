@@ -1,0 +1,18 @@
+/* Bahan + Ringkasan Ruang Kerja Unit — penyesuaian kontras (WCAG AA 4.5:1) untuk pasangan warna yang di token dasar hanya ~3.2–4.4:1. Hanya kelas bh-* (komponen baru); token global tidak disentuh. */
+.bh-b-orange { color: #9a3412 !important; }
+.bh-b-accent { color: #1e40af !important; }
+.bh-ok { color: #166534; }
+.bh-warn { color: #9a3412; }
+.bh-bad { color: #991b1b; }
+[data-theme="dark"] .bh-b-orange { color: #ffb877 !important; }
+[data-theme="dark"] .bh-b-accent { color: #8fcaff !important; }
+[data-theme="dark"] .bh-ok { color: #86efac; }
+[data-theme="dark"] .bh-warn { color: #ffb877; }
+[data-theme="dark"] .bh-bad { color: #ff9a92; }
+[data-theme="dark"] .bh-pilih { color: #8fcaff !important; }
+[data-theme="dark"] .bh-chip-on { color: #04182f !important; font-weight: 600; }
+.bh-count { background: rgba(255, 255, 255, 0.22); border-radius: 9999px; padding: 0 6px; margin-left: 4px; font-size: 11.5px; }
+[data-theme="dark"] .bh-chip-on .bh-count { background: rgba(255, 255, 255, 0.4); color: #04182f !important; }
+.bh-b-red { color: #991b1b !important; }
+[data-theme="dark"] .bh-b-red { color: #ff9a92 !important; }
+[data-theme="dark"] .bh-cta { color: #04182f !important; font-weight: 600; }

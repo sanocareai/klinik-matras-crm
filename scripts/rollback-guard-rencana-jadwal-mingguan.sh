@@ -11,6 +11,7 @@
 #     - ADOPTED, rencana Meja pengambil-alih ada, milik unit yang sama, TIDAK dibatalkan → boleh (jadwalnya sudah data Pelaksanaan Meja biasa yang dikenal kode lama)
 #     - ADOPTED tetapi rencana Meja hilang/bukan milik unit itu/DIBATALKAN, atau status lain tak dikenal → TOLAK
 #     - CLEARED                           → boleh (jadwal sudah dikeluarkan; tidak ada yang tersembunyi dan kode lama tidak dapat menggandakannya)
+#   Komponen lama dari unit pelanggan (tabel unit_component_reuse_entries) TIDAK menghalangi rollback: bukan stok, tidak memengaruhi saldo/jurnal/biaya; hanya dicetak jumlahnya (tersembunyi di layar lama).
 #   Exit: 0 = LULUS, 1 = DITOLAK (pesan memuat jumlah, contoh unit terdampak, alasan), 2 = guard sendiri gagal membaca (anggap DITOLAK).
 #   Bila DITOLAK: jangan rollback kode. Pemulihan yang benar = PERBAIKAN MAJU (kode baru tetap terpasang) sampai semua jadwal Admin aktif diselesaikan, baru jalankan guard lagi. Guard ini tidak mengubah data apa pun.
 set -Eeuo pipefail
@@ -32,6 +33,10 @@ KELUAR="$(QR "select count(*) from production_unit_schedules where status = 'CLE
 EV="$(QR "select count(*) from production_unit_schedule_events")"
 for v in "$JAD" "$AKTIF" "$ADOPT" "$KELUAR" "$EV"; do [[ "$v" =~ ^[0-9]+$ ]] || { echo "GUARD DITOLAK: hitungan guard bukan angka ('$v'); anggap TIDAK aman."; exit 2; }; done
 echo "Jadwal Admin: jadwal Admin=${JAD} (${AKTIF} berlaku, ${ADOPT} diambil alih rencana Meja, ${KELUAR} dikeluarkan); riwayat jadwal=${EV}"
+# Komponen lama dari unit pelanggan (BUKAN stok): hanya informasi. Kode lama tidak membacanya; catatannya tetap tersimpan, tidak memengaruhi saldo/jurnal/biaya, dan tidak berbahaya bagi kode lama.
+KL="$(QR "select case when to_regclass('public.unit_component_reuse_entries') is null then 0 else (select count(*) from unit_component_reuse_entries) end")"
+[[ "$KL" =~ ^[0-9]+$ ]] || { echo "GUARD DITOLAK: hitungan komponen lama tidak terbaca ('$KL'); anggap TIDAK aman."; exit 2; }
+echo "Komponen lama dari unit pelanggan: catatan=${KL} (bukan stok; tersembunyi di layar lama setelah rollback, tidak memengaruhi saldo, jurnal, atau biaya)"
 # Baris yang MENGHALANGI rollback: ACTIVE; ADOPTED tanpa rencana Meja sah; status tak dikenal. Rencana Meja sah = ada, milik unit yang sama (lewat Run), bukan CANCELLED.
 BLOK_SQL="from production_unit_schedules s join units u on u.id = s.unit_id
   left join production_run_plans_v2 p on p.id = s.adopted_plan_id left join production_runs_v2 r on r.id = p.run_id

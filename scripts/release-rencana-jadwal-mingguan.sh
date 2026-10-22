@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# RILIS "RENCANA PRODUKSI — JADWAL MINGGUAN (Rencana Admin tanpa Run)" — BACKEND + WEB + 1 MIGRASI ADITIF (2 tabel baru kosong: jadwal Admin per unit + riwayat jadwal append-only). FAIL-CLOSED. Workflow RELEASE-DIRECTORY di atas release aktif (BASE_SHA).
+# RILIS "RENCANA PRODUKSI — JADWAL MINGGUAN (Rencana Admin tanpa Run) + BAHAN RUANG KERJA UNIT (Catat pemakaian aktual, komponen lama dari unit pelanggan, Ringkasan)" — BACKEND + WEB + 2 MIGRASI ADITIF (3 tabel baru kosong: jadwal Admin per unit + riwayat jadwal append-only + komponen lama append-only). FAIL-CLOSED. Workflow RELEASE-DIRECTORY di atas release aktif (BASE_SHA).
 #   Kode: kalender mingguan (Senin–Sabtu 72 slot, Minggu libur) + antrean per tindakan; Admin menjadwalkan unit TANPA mengaktifkan Pelaksanaan Meja (tidak membuka Run/tahap/QC/penerimaan/pemakaian bahan/stok/jurnal/pesan); kapasitas meja dihitung bersama rencana Meja;
 #   undo + riwayat; aktivasi Pelaksanaan Meja mengambil alih jadwal Admin (satu sumber kebenaran); ekspor Excel (Tanggal Jadwal, Status Rencana, Mode pelaksanaan). Target selesai + prioritas tetap di Unit, PIC meja dari PIC harian meja (tidak ada salinan).
-#   Migrasi: 2 CREATE TABLE baru (kosong) + 5 indeks (1 unik parsial) + 4 FK ON DELETE RESTRICT + 1 trigger append-only yang memakai fungsi production_adopsi_append_only() YANG SUDAH ADA live. Tidak ada ALTER TABLE pada tabel lama, tidak ada backfill, tidak ada perubahan data lama.
+#   Bahan: Catat pemakaian aktual tanpa Rencana wajib (bahan baru dari Gudang = jalur stok resmi tepat sekali; komponen lama dari unit ini = milik pelanggan, BUKAN stok: tanpa Material Issue/penerimaan/pergerakan/reservasi/jurnal/biaya), koreksi berjejak, Ringkasan Unit, ekspor Excel dua sumber.
+#   Migrasi: 3 CREATE TABLE baru (kosong) + 8 indeks (2 unik parsial) + 6 FK ON DELETE RESTRICT + 2 trigger append-only yang memakai fungsi production_adopsi_append_only() YANG SUDAH ADA live. Tidak ada ALTER TABLE pada tabel lama, tidak ada backfill, tidak ada perubahan data lama.
 #   Produksi: rilis ini TIDAK membuat jadwal, order, penerimaan, Run, serah-terima, pergerakan stok, jurnal, job, atau pesan pelanggan; smoke hanya baca + penolakan sebelum menyentuh data.
-# URUTAN AMAN: (1) gerbang sumber (ancestry, allowlist, pin sha256 migrasi, pemindai DDL + mutan negatif, tepat 1 migrasi pending) → (2) audit produksi baca-saja + sidik jari → (3) backup + restore nyata
+# URUTAN AMAN: (1) gerbang sumber (ancestry, allowlist, pin sha256 migrasi, pemindai DDL + mutan negatif, tepat 2 migrasi pending) → (2) audit produksi baca-saja + sidik jari → (3) backup + restore nyata
 #              → (4) build web + image → (5) REHEARSAL (restore nyata, migrasi dengan image baru, uji constraint/trigger/FK, kode baru terhadap data restore, sidik jari sebelum=sesudah)
 #              → (6) migrate deploy produksi SATU kali (backend lama tetap melayani) → (7) switch → (8) verifikasi + smoke baca-saja.
 #
@@ -17,7 +18,7 @@
 # ROLLBACK KODE: TIDAK otomatis aman. Kode lama tidak membaca tabel jadwal; selama masih ada jadwal Admin BERLAKU (ACTIVE) rollback kode berbahaya (jadwal tersembunyi + kode lama dapat membuat rencana Meja kedua). Jalankan dulu scripts/rollback-guard-rencana-jadwal-mingguan.sh (baca-saja):
 #   LULUS (exit 0) hanya bila tidak ada jadwal ACTIVE dan setiap jadwal ADOPTED terbukti punya rencana Meja sah; DITOLAK (exit 1) mencetak jumlah, contoh unit, dan alasan. Bila ditolak, pemulihan = PERBAIKAN MAJU (kode baru tetap terpasang) sampai jadwal itu diselesaikan, baru guard dijalankan lagi.
 #   Rollback kode (bila guard lulus) TIDAK menghapus tabel/riwayat; yang hilang hanya tampilan kalender mingguan, antrean per tindakan, dan riwayat/undo jadwal Admin.
-# (dibangkitkan oleh scripts/gen-release-rencana-jadwal-mingguan.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 8a36d59760b7…)
+# (dibangkitkan oleh scripts/gen-release-rencana-jadwal-mingguan.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 9d656390dbfd…)
 set -Eeuo pipefail
 umask 077
 
@@ -26,24 +27,24 @@ DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 2 harus SHA release aktif (baseline) 40 karakter" >&2; exit 1; }
 CAND_BRANCH="${CAND_BRANCH:-feat/rencana-produksi-jadwal-mingguan}"
 # Migrasi aditif yang SUDAH diaudit: nama:sha256 isi (LF). Perubahan sekecil apa pun = berhenti sampai diaudit ulang dan pin diperbarui.
-MIGS="20261224090000_production_unit_schedules:84301fa8e852ec19ec3dff5e9ba70c073b45131bbf392a6f7054f35fff0a368b"
+MIGS="20261224090000_production_unit_schedules:84301fa8e852ec19ec3dff5e9ba70c073b45131bbf392a6f7054f35fff0a368b 20261225090000_production_unit_component_reuse:4a9add08b3e076ad535dc44767160f9ea5a99ee437bade98a08b652e68068660"
 # Migrasi yang BOLEH bernama lebih lama daripada migrasi baseline terbaru (diaudit mandiri; dibuktikan Prisma menerapkannya setelah migrasi yang lebih baru terpasang). Kosong = harus terurut setelah baseline.
 MIG_URUT_LAMA_OK=""
 # Hasil pemindai DDL untuk migrasi di atas (jumlah per jenis pernyataan). Selisih = berhenti.
-SCAN_EXPECT='{"total":12,"create_table":2,"index":5,"fk":4,"trigger":1}'
+SCAN_EXPECT='{"total":19,"create_table":3,"index":8,"fk":6,"trigger":2}'
 # Diff schema.prisma antara baseline dan kandidat (U0, tanpa baris index dan tanpa nomor baris hunk) yang SUDAH diaudit: sha256. Selisih = berhenti.
 SCHEMA_DIFF_SHA="223823844688497c8a365f6feb1e7bc67e333c44f800528d36a2d9d479f1936f"
 # Migrasi live terakhir yang HARUS sudah terpasang di produksi dan ada di kandidat (Produksi: admin override siap kirim). Bila lebih baru muncul di produksi, gabungkan baseline terbaru dulu.
 LIVE_MIG_TERAKHIR="20261223090000_unit_workshop_receipts"
 # Berkas yang BOLEH berbeda dari baseline: EKSPLISIT path persis (+ skrip rilis ini + guard rollback). Apa pun di luar daftar = berhenti.
-ALLOWED_RE='^(backend/prisma/migrations/20261224090000_production_unit_schedules/migration\.sql|backend/prisma/schema\.prisma|backend/src/index\.js|backend/src/lib/activityLog\.js|backend/src/lib/domain/productionRencanaAdmin\.js|backend/src/lib/domain/productionRencanaExport\.js|backend/src/routes/productionRencanaJadwal\.js|backend/src/services/productionExperienceReadService\.js|backend/src/services/productionJadwalCore\.js|backend/src/services/productionOrderList\.js|backend/src/services/productionPlanningCommandService\.js|backend/src/services/productionRencanaExportService\.js|backend/src/services/productionRencanaJadwalService\.js|backend/src/services/productionWorkListService\.js|backend/tests/integration/rencanaAdminJadwal\.integration\.test\.js|backend/tests/integration/rencanaExportExcel\.integration\.test\.js|backend/tests/integration/setup/testApp\.js|backend/tests/releaseRencanaJadwalMingguan\.test\.js|frontend/src/api\.js|frontend/src/components/Topbar\.jsx|frontend/src/features/production/RencanaExportButton\.jsx|frontend/src/features/production/rencana/AktivasiV2Modal\.jsx|frontend/src/features/production/rencana/JadwalModal\.jsx|frontend/src/features/production/rencana/KartuUnit\.jsx|frontend/src/features/production/rencana/MenuHalaman\.jsx|frontend/src/features/production/rencana/RencanaAntrean\.jsx|frontend/src/features/production/rencana/RencanaKalender\.jsx|frontend/src/features/production/rencana/rencana\.css|frontend/src/features/production/rencana/rencanaModel\.js|frontend/src/features/production/rencana/useRencanaMinggu\.js|frontend/src/features/production/workspace/StatusWorkList\.jsx|frontend/src/features/production/workspace/UnitWorkspace\.jsx|frontend/src/pages/bengkel/ProductionRencanaMinggu\.jsx|frontend/src/pages/bengkel/ProductionRencanaWorkspace\.jsx|frontend/src/routes/pageRegistry\.jsx|frontend/src/utils/exportRencanaProduksi\.js|frontend/tests/demoMode\.test\.js|frontend/tests/exportRencanaProduksi\.test\.js|frontend/tests/rencanaMinggu\.test\.js|scripts/gen-release-rencana-jadwal-mingguan\.cjs|scripts/lib/rehearsal-guard-kode-lama-rencana-jadwal-mingguan\.mjs|scripts/lib/rehearsal-guard-rencana-jadwal-mingguan\.mjs|scripts/lib/rehearsal-kode-lama-rencana-jadwal-mingguan\.mjs|scripts/lib/rehearsal-kode-rencana-jadwal-mingguan\.mjs|scripts/lib/rehearsal-skenario-rencana-jadwal-mingguan\.mjs|scripts/lib/scan-migrasi-rencana-jadwal-mingguan\.mjs|scripts/lib/smoke-rencana-jadwal-mingguan\.mjs|scripts/release-rencana-jadwal-mingguan\.sh|scripts/rollback-guard-rencana-jadwal-mingguan\.sh|scripts/templates/release-rencana-jadwal-mingguan\.sh\.tpl)$'
-BACKEND_SRC_EXPECT="backend/src/index.js backend/src/lib/activityLog.js backend/src/lib/domain/productionRencanaAdmin.js backend/src/lib/domain/productionRencanaExport.js backend/src/routes/productionRencanaJadwal.js backend/src/services/productionExperienceReadService.js backend/src/services/productionJadwalCore.js backend/src/services/productionOrderList.js backend/src/services/productionPlanningCommandService.js backend/src/services/productionRencanaExportService.js backend/src/services/productionRencanaJadwalService.js backend/src/services/productionWorkListService.js"
-FRONTEND_SRC_EXPECT="frontend/src/api.js frontend/src/components/Topbar.jsx frontend/src/features/production/RencanaExportButton.jsx frontend/src/features/production/rencana/AktivasiV2Modal.jsx frontend/src/features/production/rencana/JadwalModal.jsx frontend/src/features/production/rencana/KartuUnit.jsx frontend/src/features/production/rencana/MenuHalaman.jsx frontend/src/features/production/rencana/RencanaAntrean.jsx frontend/src/features/production/rencana/RencanaKalender.jsx frontend/src/features/production/rencana/rencana.css frontend/src/features/production/rencana/rencanaModel.js frontend/src/features/production/rencana/useRencanaMinggu.js frontend/src/features/production/workspace/StatusWorkList.jsx frontend/src/features/production/workspace/UnitWorkspace.jsx frontend/src/pages/bengkel/ProductionRencanaMinggu.jsx frontend/src/pages/bengkel/ProductionRencanaWorkspace.jsx frontend/src/routes/pageRegistry.jsx frontend/src/utils/exportRencanaProduksi.js"
+ALLOWED_RE='^(backend/prisma/migrations/20261224090000_production_unit_schedules/migration\.sql|backend/prisma/migrations/20261225090000_production_unit_component_reuse/migration\.sql|backend/prisma/schema\.prisma|backend/src/index\.js|backend/src/lib/activityLog\.js|backend/src/lib/domain/productionRencanaAdmin\.js|backend/src/lib/domain/productionRencanaExport\.js|backend/src/routes/productionAdopsi\.js|backend/src/routes/productionComponentReuse\.js|backend/src/routes/productionRencanaJadwal\.js|backend/src/routes/productionWorkspace\.js|backend/src/routes/units\.js|backend/src/services/productionComponentReuseService\.js|backend/src/services/productionExperienceReadService\.js|backend/src/services/productionJadwalCore\.js|backend/src/services/productionOrderExport\.js|backend/src/services/productionOrderList\.js|backend/src/services/productionPlanningCommandService\.js|backend/src/services/productionRencanaExportService\.js|backend/src/services/productionRencanaJadwalService\.js|backend/src/services/productionWorkListService\.js|backend/tests/integration/komponenLamaDanPemakaianAktual\.integration\.test\.js|backend/tests/integration/productionAdopsi\.integration\.test\.js|backend/tests/integration/rencanaAdminJadwal\.integration\.test\.js|backend/tests/integration/rencanaExportExcel\.integration\.test\.js|backend/tests/integration/setup/testApp\.js|backend/tests/releaseRencanaJadwalMingguan\.test\.js|frontend/src/api\.js|frontend/src/components/Topbar\.jsx|frontend/src/features/production/MaterialPlanEditor\.jsx|frontend/src/features/production/OrderProduksiPanel\.jsx|frontend/src/features/production/RencanaExportButton\.jsx|frontend/src/features/production/bahan/BahanTab\.jsx|frontend/src/features/production/bahan/CatatBahanBaru\.jsx|frontend/src/features/production/bahan/FormKomponenLama\.jsx|frontend/src/features/production/bahan/KomponenLamaDaftar\.jsx|frontend/src/features/production/bahan/PemilihBahanKatalog\.jsx|frontend/src/features/production/bahan/RiwayatBahanBaru\.jsx|frontend/src/features/production/bahan/bahan\.css|frontend/src/features/production/bahan/bahanModel\.js|frontend/src/features/production/rencana/AktivasiV2Modal\.jsx|frontend/src/features/production/rencana/JadwalModal\.jsx|frontend/src/features/production/rencana/KartuUnit\.jsx|frontend/src/features/production/rencana/MenuHalaman\.jsx|frontend/src/features/production/rencana/RencanaAntrean\.jsx|frontend/src/features/production/rencana/RencanaKalender\.jsx|frontend/src/features/production/rencana/rencana\.css|frontend/src/features/production/rencana/rencanaModel\.js|frontend/src/features/production/rencana/useRencanaMinggu\.js|frontend/src/features/production/workspace/RingkasanUnit\.jsx|frontend/src/features/production/workspace/StatusWorkList\.jsx|frontend/src/features/production/workspace/UnitWorkspace\.jsx|frontend/src/pages/bengkel/ProductionRencanaMinggu\.jsx|frontend/src/pages/bengkel/ProductionRencanaWorkspace\.jsx|frontend/src/routes/pageRegistry\.jsx|frontend/src/utils/exportRencanaProduksi\.js|frontend/tests/bahanModel\.test\.js|frontend/tests/demoMode\.test\.js|frontend/tests/exportRencanaProduksi\.test\.js|frontend/tests/rencanaMinggu\.test\.js|frontend/tests/statusProduksiWorkspace\.test\.js|scripts/gen-release-rencana-jadwal-mingguan\.cjs|scripts/lib/rehearsal-guard-kode-lama-rencana-jadwal-mingguan\.mjs|scripts/lib/rehearsal-guard-rencana-jadwal-mingguan\.mjs|scripts/lib/rehearsal-kode-lama-rencana-jadwal-mingguan\.mjs|scripts/lib/rehearsal-kode-rencana-jadwal-mingguan\.mjs|scripts/lib/rehearsal-skenario-rencana-jadwal-mingguan\.mjs|scripts/lib/scan-migrasi-rencana-jadwal-mingguan\.mjs|scripts/lib/smoke-rencana-jadwal-mingguan\.mjs|scripts/release-rencana-jadwal-mingguan\.sh|scripts/rollback-guard-rencana-jadwal-mingguan\.sh|scripts/templates/release-rencana-jadwal-mingguan\.sh\.tpl)$'
+BACKEND_SRC_EXPECT="backend/src/index.js backend/src/lib/activityLog.js backend/src/lib/domain/productionRencanaAdmin.js backend/src/lib/domain/productionRencanaExport.js backend/src/routes/productionAdopsi.js backend/src/routes/productionComponentReuse.js backend/src/routes/productionRencanaJadwal.js backend/src/routes/productionWorkspace.js backend/src/routes/units.js backend/src/services/productionComponentReuseService.js backend/src/services/productionExperienceReadService.js backend/src/services/productionJadwalCore.js backend/src/services/productionOrderExport.js backend/src/services/productionOrderList.js backend/src/services/productionPlanningCommandService.js backend/src/services/productionRencanaExportService.js backend/src/services/productionRencanaJadwalService.js backend/src/services/productionWorkListService.js"
+FRONTEND_SRC_EXPECT="frontend/src/api.js frontend/src/components/Topbar.jsx frontend/src/features/production/MaterialPlanEditor.jsx frontend/src/features/production/OrderProduksiPanel.jsx frontend/src/features/production/RencanaExportButton.jsx frontend/src/features/production/bahan/BahanTab.jsx frontend/src/features/production/bahan/CatatBahanBaru.jsx frontend/src/features/production/bahan/FormKomponenLama.jsx frontend/src/features/production/bahan/KomponenLamaDaftar.jsx frontend/src/features/production/bahan/PemilihBahanKatalog.jsx frontend/src/features/production/bahan/RiwayatBahanBaru.jsx frontend/src/features/production/bahan/bahan.css frontend/src/features/production/bahan/bahanModel.js frontend/src/features/production/rencana/AktivasiV2Modal.jsx frontend/src/features/production/rencana/JadwalModal.jsx frontend/src/features/production/rencana/KartuUnit.jsx frontend/src/features/production/rencana/MenuHalaman.jsx frontend/src/features/production/rencana/RencanaAntrean.jsx frontend/src/features/production/rencana/RencanaKalender.jsx frontend/src/features/production/rencana/rencana.css frontend/src/features/production/rencana/rencanaModel.js frontend/src/features/production/rencana/useRencanaMinggu.js frontend/src/features/production/workspace/RingkasanUnit.jsx frontend/src/features/production/workspace/StatusWorkList.jsx frontend/src/features/production/workspace/UnitWorkspace.jsx frontend/src/pages/bengkel/ProductionRencanaMinggu.jsx frontend/src/pages/bengkel/ProductionRencanaWorkspace.jsx frontend/src/routes/pageRegistry.jsx frontend/src/utils/exportRencanaProduksi.js"
 # Berkas pelindung: identik dengan baseline (rilis ini tidak menyentuhnya).
 GUARD_UNCHANGED="backend/src/services/inventoryLedger.js backend/src/services/stokLokasi.js backend/src/constants/kelompokBahan.js backend/src/services/statusUnitLintasWorkspace.js backend/src/services/finance/journal.js backend/src/middleware/authorize.js backend/src/middleware/auth.js backend/src/constants/permissions.js backend/src/routes/stockCount.js backend/src/routes/stockCountSesi.js backend/src/services/opnameSesi.js backend/src/services/pergerakanSesiHitung.js backend/src/services/stokFisik.js backend/src/services/dokumenGudangLain.js backend/src/services/adminOverrideSwitch.js backend/src/services/deliveryOverrideAdmin.js backend/src/services/productionStepCommandService.js backend/src/services/finance/kedatangan.js"
 # Tes integrasi terarah (Produksi, unit, workshop, PKR/Sales, Gudang, Delivery) yang dijalankan di rehearsal-penuh pada Postgres sekali-pakai: berkas pinned + jumlah tes yang HARUS lulus semuanya.
-TES_FILES="tests/integration/productionAdopsi.integration.test.js tests/integration/productionAdopsiOpname.integration.test.js tests/integration/productionCommandCenter.integration.test.js tests/integration/productionExperience.integration.test.js tests/integration/productionPlanStationPicTarget.integration.test.js tests/integration/productionPlanning.integration.test.js tests/integration/productionWorkList.integration.test.js tests/integration/productionWorkshopExecution.integration.test.js tests/integration/rencanaAdminJadwal.integration.test.js tests/integration/rencanaAktivasiSaatJadwalkan.integration.test.js tests/integration/rencanaCorner.integration.test.js tests/integration/rencanaExportExcel.integration.test.js tests/integration/rencanaOrderNyata.integration.test.js tests/integration/rencanaPostPlansAudit.integration.test.js tests/integration/statusProduksiPenerimaan.integration.test.js tests/integration/workshopMilestone.integration.test.js tests/integration/workshopReceipt.integration.test.js tests/integration/workshopReceiptKoreksi.integration.test.js"
-TES_N_EXPECT="167"
+TES_FILES="tests/integration/pemakaianBahanLepas.integration.test.js tests/integration/productionAdopsi.integration.test.js tests/integration/productionAdopsiOpname.integration.test.js tests/integration/productionCommandCenter.integration.test.js tests/integration/productionExperience.integration.test.js tests/integration/productionPlanStationPicTarget.integration.test.js tests/integration/productionPlanning.integration.test.js tests/integration/productionWorkList.integration.test.js tests/integration/productionWorkshopExecution.integration.test.js tests/integration/rencanaAdminJadwal.integration.test.js tests/integration/rencanaAktivasiSaatJadwalkan.integration.test.js tests/integration/rencanaCorner.integration.test.js tests/integration/rencanaExportExcel.integration.test.js tests/integration/rencanaOrderNyata.integration.test.js tests/integration/rencanaPostPlansAudit.integration.test.js tests/integration/statusProduksiPenerimaan.integration.test.js tests/integration/unitV2Ownership.integration.test.js tests/integration/workshopMilestone.integration.test.js tests/integration/workshopReceipt.integration.test.js tests/integration/workshopReceiptKoreksi.integration.test.js"
+TES_N_EXPECT="205"
 # Commit Produksi (admin override siap kirim), Riwayat Referensi, dan bukti serah yang sudah live: HARUS leluhur kandidat (rilis tidak boleh menghilangkannya).
 LIVE_ANCESTORS="799d3e93de192c604a14f1c11fe7436538689bb0 56b87721f84c1d16a2cd1655e40787e2b626cb0f e5a32cd246b2233e9d05d9b2cbff733e4497725d e47f37e2d6690130525681863ff467682e30f3c4 57198ad687045519a12af14a3097ccf6b61e9054 cb33a07d4dc61652867960fdf6c528647f350611 abf2b75ed2a6ff456d903823917933da32e35d8e c332fcad1693868cea6d757f16e32ced620bd62a 661cf30fadea5c633d1467d01b14f3a94497c7e9"
 PUBLIC_URL="https://app.sanomatrassehat.com"
@@ -192,11 +193,11 @@ $s"
 done
 SCAN="$BK_DIR/scan-migrasi.mjs"
 cat > "$SCAN" <<'SCANJS'
-// Pemindai migrasi rilis "Rencana Produksi — jadwal mingguan" (1 migrasi ADITIF). FAIL-CLOSED: setiap pernyataan harus cocok PERSIS salah satu bentuk yang diaudit. Membaca SQL dari stdin (komentar baris "--" sudah dibuang pemanggil).
-//   • 2 CREATE TABLE baru (production_unit_schedules, production_unit_schedule_events) — masing-masing memuat CHECK yang diaudit.
-//   • 5 indeks HANYA pada tabel baru (satu unik parsial dengan klausa WHERE yang diaudit); 4 foreign key ON DELETE RESTRICT (ke units / production_run_plans_v2 / production_unit_schedules);
-//     1 trigger append-only HANYA pada production_unit_schedule_events yang memakai fungsi production_adopsi_append_only() YANG SUDAH ADA di produksi (migrasi 20261221090000) — migrasi ini TIDAK membuat atau mengubah fungsi.
-// Tidak ada ALTER TABLE pada tabel lama (units, production_run_plans_v2, dst), tidak ada DROP/DELETE/UPDATE/INSERT/TRUNCATE/GRANT/ALTER COLUMN/RENAME/CREATE TYPE/ADD VALUE/CREATE EXTENSION/CREATE FUNCTION.
+// Pemindai migrasi rilis "Rencana Produksi — jadwal mingguan + komponen lama" (2 migrasi ADITIF, dipindai bersama). FAIL-CLOSED: setiap pernyataan harus cocok PERSIS salah satu bentuk yang diaudit. Membaca SQL dari stdin (komentar baris "--" sudah dibuang pemanggil).
+//   • 3 CREATE TABLE baru (production_unit_schedules, production_unit_schedule_events, unit_component_reuse_entries) — masing-masing memuat CHECK yang diaudit.
+//   • 8 indeks HANYA pada tabel baru (dua unik parsial dengan klausa WHERE yang diaudit); 6 foreign key ON DELETE RESTRICT (ke units / production_run_plans_v2 / production_unit_schedules / materials);
+//     2 trigger append-only HANYA pada production_unit_schedule_events dan unit_component_reuse_entries yang memakai fungsi production_adopsi_append_only() YANG SUDAH ADA di produksi (migrasi 20261221090000) — migrasi ini TIDAK membuat atau mengubah fungsi.
+// Tidak ada ALTER TABLE pada tabel lama (units, materials, production_run_plans_v2, dst), tidak ada DROP/DELETE/UPDATE/INSERT/TRUNCATE/GRANT/ALTER COLUMN/RENAME/CREATE TYPE/ADD VALUE/CREATE EXTENSION/CREATE FUNCTION.
 // Isi migrasi juga dipatok sha256 di skrip rilis; pemindai ini adalah lapisan kedua (bentuk pernyataan), diuji dengan mutan negatif.
 import fs from "node:fs";
 const sql = fs.readFileSync(0, "utf8");
@@ -215,7 +216,7 @@ function pecah(t) {
   if (rapat(cur)) out.push(cur);
   return out.map(rapat).filter(Boolean);
 }
-const T_BARU = "(?:production_unit_schedules|production_unit_schedule_events)";
+const T_BARU = "(?:production_unit_schedules|production_unit_schedule_events|unit_component_reuse_entries)";
 // CHECK/constraint wajib ada di CREATE TABLE tertentu (hilangnya CHECK = migrasi berubah).
 const WAJIB_DI_TABEL = {
   production_unit_schedules: [
@@ -226,14 +227,26 @@ const WAJIB_DI_TABEL = {
   production_unit_schedule_events: [
     'CONSTRAINT "production_unit_schedule_events_kind_chk" CHECK ("kind" IN (\'SCHEDULED\',\'RESCHEDULED\',\'UNSCHEDULED\',\'TARGET_CHANGED\',\'UNDONE\',\'ADOPTED\'))',
   ],
+  unit_component_reuse_entries: [
+    'CONSTRAINT "unit_component_reuse_entries_kind_chk" CHECK ("kind" IN (\'CREATED\',\'CORRECTED\',\'VOIDED\'))',
+    'CONSTRAINT "unit_component_reuse_entries_version_chk" CHECK ("version" >= 1 AND (("kind" = \'CREATED\') = ("version" = 1)))',
+    'CONSTRAINT "unit_component_reuse_entries_source_chk" CHECK ("source" = \'OWN_UNIT\')',
+    'CONSTRAINT "unit_component_reuse_entries_outcome_chk" CHECK ("outcome" IN (\'REUSED\',\'RETURNED_TO_CUSTOMER\',\'KEPT_WITH_UNIT\',\'DISCARDED\'))',
+    'CONSTRAINT "unit_component_reuse_entries_qty_chk" CHECK ("qty" > 0)',
+    'CONSTRAINT "unit_component_reuse_entries_name_chk" CHECK (length(btrim("name")) >= 2)',
+    'CONSTRAINT "unit_component_reuse_entries_uom_chk" CHECK ("uom" ~ \'^[A-Z0-9]{1,12}$\')',
+    'CONSTRAINT "unit_component_reuse_entries_reason_chk" CHECK ("kind" = \'CREATED\' OR ("reason" IS NOT NULL AND length(btrim("reason")) >= 3))',
+    'CONSTRAINT "unit_component_reuse_entries_photos_chk" CHECK (jsonb_typeof("photo_urls") = \'array\')',
+  ],
 };
 // Indeks unik parsial: klausa WHERE wajib persis (dibuangnya WHERE mengubah makna: kunci idempotensi unik per unit hanya bila terisi).
-const WAJIB_WHERE = { production_unit_schedule_events_unit_id_idempotency_key_key: ' WHERE "idempotency_key" IS NOT NULL' };
+const WHERE_IDEM = ' WHERE "idempotency_key" IS NOT NULL';
+const WAJIB_WHERE = { production_unit_schedule_events_unit_id_idempotency_key_key: WHERE_IDEM, unit_component_reuse_entries_unit_id_idempotency_key_key: WHERE_IDEM };
 const BENTUK = [
   ["create_table", new RegExp(`^CREATE TABLE "${T_BARU}" \\(.*\\)$`)],
   ["index", new RegExp(`^CREATE (?:UNIQUE )?INDEX "[a-z0-9_]+" ON "${T_BARU}"\\("[a-z_]+"(?:, "[a-z_]+")*\\)(?: WHERE "idempotency_key" IS NOT NULL)?$`)],
-  ["fk", new RegExp(`^ALTER TABLE "${T_BARU}" ADD CONSTRAINT "[a-z0-9_]+_fkey" FOREIGN KEY \\("[a-z_]+"\\) REFERENCES "(?:units|production_run_plans_v2|production_unit_schedules)"\\("id"\\) ON DELETE RESTRICT ON UPDATE CASCADE$`)],
-  ["trigger", /^CREATE TRIGGER "production_unit_schedule_events_append_only_trg" BEFORE UPDATE OR DELETE ON "production_unit_schedule_events" FOR EACH ROW EXECUTE FUNCTION production_adopsi_append_only\(\)$/],
+  ["fk", new RegExp(`^ALTER TABLE "${T_BARU}" ADD CONSTRAINT "[a-z0-9_]+_fkey" FOREIGN KEY \\("[a-z_]+"\\) REFERENCES "(?:units|production_run_plans_v2|production_unit_schedules|materials)"\\("id"\\) ON DELETE RESTRICT ON UPDATE CASCADE$`)],
+  ["trigger", /^CREATE TRIGGER "(production_unit_schedule_events|unit_component_reuse_entries)_append_only_trg" BEFORE UPDATE OR DELETE ON "\1" FOR EACH ROW EXECUTE FUNCTION production_adopsi_append_only\(\)$/],
 ];
 // kata terlarang DI LUAR CREATE TABLE: perubahan/penghapusan data atau struktur lama, hak akses, ekstensi, fungsi
 const TERLARANG = /\b(DROP|TRUNCATE|DELETE\s+FROM|INSERT\s+INTO|UPDATE\s+["a-z_]+\s+SET|GRANT|REVOKE|RENAME|ALTER\s+COLUMN|ALTER\s+TYPE|CREATE\s+TYPE|ADD\s+VALUE|ADD\s+COLUMN|DISABLE|CREATE\s+EXTENSION|CREATE\s+(?:OR\s+REPLACE\s+)?FUNCTION|DEFAULT\s+[^,)]+)\b/i;
@@ -264,7 +277,7 @@ SCANJS
 sql_bersih() { grep -v '^[[:space:]]*--' | grep -v '^[[:space:]]*$'; }
 HASIL_SCAN="$(printf '%s\n' "$ALL_SQL" | sql_bersih | node "$SCAN")" || die "migrasi memuat pernyataan di luar daftar putih yang diaudit"
 [ "$HASIL_SCAN" = "$SCAN_EXPECT" ] || die "hitungan pernyataan migrasi BERBEDA dari yang diaudit: ${HASIL_SCAN}"
-ok "migrasi: DDL aditif (2 CREATE TABLE baru kosong, 5 indeks [1 unik parsial], 4 FK ON DELETE RESTRICT, 1 trigger append-only yang memakai fungsi production_adopsi_append_only() YANG SUDAH ADA live); tanpa ALTER pada tabel lama, tanpa DROP/DELETE/UPDATE/INSERT/ALTER COLUMN/RENAME/GRANT/EXTENSION/CREATE FUNCTION"
+ok "2 migrasi: DDL aditif (3 CREATE TABLE baru kosong, 8 indeks [2 unik parsial], 6 FK ON DELETE RESTRICT, 2 trigger append-only yang memakai fungsi production_adopsi_append_only() YANG SUDAH ADA live); tanpa ALTER pada tabel lama, tanpa DROP/DELETE/UPDATE/INSERT/ALTER COLUMN/RENAME/GRANT/EXTENSION/CREATE FUNCTION"
 # UJI NEGATIF PEMINDAI: setiap mutan HARUS ditolak (exit ≠ 0) atau menghasilkan hitungan ≠ SCAN_EXPECT. Mutan yang lolos = pemindai tidak bisa dipercaya → berhenti.
 NEG=0
 harus_ditolak() {
@@ -322,8 +335,22 @@ harus_ditolak "fungsi liar" "$(tambah_stmt 'CREATE FUNCTION "evil"() RETURNS tri
 harus_ditolak "fungsi append-only ditimpa" "$(tambah_stmt 'CREATE OR REPLACE FUNCTION production_adopsi_append_only() RETURNS TRIGGER AS $$ BEGIN RETURN NEW; END; $$ LANGUAGE plpgsql;')"
 harus_ditolak "trigger pada tabel lama" "$(tambah_stmt 'CREATE TRIGGER trg_evil BEFORE DELETE ON "units" FOR EACH ROW EXECUTE FUNCTION production_adopsi_append_only();')"
 harus_ditolak "pernyataan ganda" "$(tambah_stmt 'CREATE UNIQUE INDEX "production_unit_schedules_unit_id_key" ON "production_unit_schedules"("unit_id");')"
+harus_ditolak "DROP TABLE komponen lama" "$(tambah_stmt 'DROP TABLE "unit_component_reuse_entries";')"
+harus_ditolak "INSERT ke komponen lama (backfill)" "$(tambah_stmt "INSERT INTO \"unit_component_reuse_entries\" (id) VALUES ('x');")"
+harus_ditolak "ALTER TABLE materials (tabel lama)" "$(tambah_stmt 'ALTER TABLE "materials" ADD COLUMN "x" TEXT;')"
+harus_ditolak "CHECK sumber komponen dibuang" "$(printf '%s\n' "$ALL_SQL" | grep -v 'unit_component_reuse_entries_source_chk')"
+harus_ditolak "CHECK sumber dilonggarkan (lintas unit)" "$(printf '%s\n' "$ALL_SQL" | sed "s/\"source\" = 'OWN_UNIT'/\"source\" IN ('OWN_UNIT','OTHER_UNIT')/")"
+harus_ditolak "CHECK versi komponen dibuang" "$(printf '%s\n' "$ALL_SQL" | grep -v 'unit_component_reuse_entries_version_chk')"
+harus_ditolak "CHECK alasan koreksi dibuang" "$(printf '%s\n' "$ALL_SQL" | grep -v 'unit_component_reuse_entries_reason_chk')"
+harus_ditolak "CHECK jumlah dibuang" "$(printf '%s\n' "$ALL_SQL" | grep -v 'unit_component_reuse_entries_qty_chk')"
+harus_ditolak "CHECK hasil dilonggarkan" "$(printf '%s\n' "$ALL_SQL" | sed "s/'KEPT_WITH_UNIT','DISCARDED'/'KEPT_WITH_UNIT','DISCARDED','LIAR'/")"
+harus_ditolak "FK CASCADE komponen -> units" "$(printf '%s\n' "$ALL_SQL" | sed 's/unit_component_reuse_entries_unit_id_fkey" FOREIGN KEY ("unit_id") REFERENCES "units"("id") ON DELETE RESTRICT/unit_component_reuse_entries_unit_id_fkey" FOREIGN KEY ("unit_id") REFERENCES "units"("id") ON DELETE CASCADE/')"
+harus_ditolak "FK komponen -> materials SET NULL" "$(printf '%s\n' "$ALL_SQL" | sed 's/REFERENCES "materials"("id") ON DELETE RESTRICT/REFERENCES "materials"("id") ON DELETE SET NULL/')"
+harus_ditolak "trigger append-only komponen dibuang" "$(printf '%s\n' "$ALL_SQL" | grep -v 'unit_component_reuse_entries_append_only_trg')"
+harus_ditolak "trigger komponen dilonggarkan (hanya UPDATE)" "$(printf '%s\n' "$ALL_SQL" | sed 's/BEFORE UPDATE OR DELETE ON "unit_component_reuse_entries"/BEFORE UPDATE ON "unit_component_reuse_entries"/')"
+harus_ditolak "trigger append-only pada tabel liar" "$(tambah_stmt 'CREATE TRIGGER "x_trg" BEFORE UPDATE OR DELETE ON "materials" FOR EACH ROW EXECUTE FUNCTION production_adopsi_append_only();')"
 harus_ditolak "blok DO liar" "$(tambah_stmt 'DO $$ BEGIN DELETE FROM "units"; END $$;')"
-[ "$NEG" -ge 36 ] || die "uji negatif pemindai hanya ${NEG} mutan (minimal 36)"
+[ "$NEG" -ge 50 ] || die "uji negatif pemindai hanya ${NEG} mutan (minimal 50)"
 ok "uji negatif pemindai: ${NEG} mutan migrasi (DROP/UPDATE/DELETE/INSERT/TRUNCATE/ADD-DROP-ALTER-RENAME COLUMN/tabel-indeks-FK-trigger-fungsi liar/CASCADE/SET NULL/CHECK dibuang atau dilonggarkan/WHERE indeks parsial dibuang/trigger dibuang atau diganti fungsi/DISABLE/GRANT/REVOKE/EXTENSION/DO liar/pernyataan ganda) SEMUANYA ditolak"
 for f in $GUARD_UNCHANGED; do
   [ "$(sg rev-parse "${BASE_SHA}:${f}")" = "$(sg rev-parse "${DEPLOY_SHA}:${f}")" ] || die "${f} berbeda antara baseline dan kandidat — rilis ini tidak boleh menyentuhnya (ledger, jurnal, otorisasi, status lintas workspace, Produksi V2, Delivery, Stock Count)"
@@ -366,7 +393,7 @@ ok "health sehat; bundel publik = dist release aktif (${PREV_INDEX})"
 for T in units stock_movements materials v2_commands activity_events jobs production_runs_v2 production_operation_runs_v2 production_step_evidence_v2 unit_stage_logs quality_inspections_v2 unit_custody_handoffs_v2 material_issues material_reservations_v2 payments order_groups '"User"' user_roles fin_journal_entries fin_journal_lines goods_receipts; do
   [ "$(psql_live -At -c "select count(*) from pg_tables where schemaname='public' and tablename='${T//\"/}'")" = "1" ] || die "tabel $T belum ada di produksi (prasyarat)"
 done
-[ "$(psql_live -At -c "select count(*) from pg_tables where schemaname='public' and tablename in ('production_unit_schedules','production_unit_schedule_events')")" = "0" ] || die "tabel jadwal Admin SUDAH ada di produksi (tidak diharapkan)"
+[ "$(psql_live -At -c "select count(*) from pg_tables where schemaname='public' and tablename in ('production_unit_schedules','production_unit_schedule_events','unit_component_reuse_entries')")" = "0" ] || die "tabel jadwal Admin / komponen lama SUDAH ada di produksi (tidak diharapkan)"
 [ "$(psql_live -At -c "select count(*) from pg_proc where proname = 'production_adopsi_append_only'")" = "1" ] || die "fungsi production_adopsi_append_only HARUS sudah ada di produksi (dibuat migrasi 20261221090000; migrasi ini hanya memakainya)"
 [ "$(psql_live -At -c "select count(*) from pg_tables where schemaname='public' and tablename in ('units','production_run_plans_v2','production_unit_work_progress','unit_workshop_receipts')")" = "4" ] || die "tabel prasyarat (units, production_run_plans_v2, adopsi Admin, penerimaan workshop) tidak lengkap di produksi"
 for m in $MIG_LIST; do [ "$(psql_live -At -c "select count(*) from _prisma_migrations where migration_name='${m}'")" = "0" ] || die "migrasi ${m} SUDAH tercatat di produksi (tidak diharapkan)"; done
@@ -425,12 +452,12 @@ psql_live -At -c "$FP_BEKU_SQL" | LC_ALL=C sort > "$BK_DIR/data-sebelum.txt" || 
 [ "$(grep -c . "$BK_DIR/data-sebelum.txt")" = "$FPB_N" ] || die "sidik jari dokumen beku tidak ${FPB_N} baris"
 ok "dokumen pembanding dibekukan pada T0=${T0} UTC ($(awk -F'|' '{n+=$2} END{print n+0}' "$BK_DIR/data-sebelum.txt") baris di ${FPB_N} kelompok)"
 # Skema tabel LAMA (sidik jari kolom/tipe/nullable/default): tidak boleh berubah oleh migrasi (3 tabel baru dikecualikan).
-SKEMA_SQL="select md5(coalesce(string_agg(table_name||'.'||column_name||':'||data_type||':'||is_nullable||':'||coalesce(column_default,''), ',' order by table_name, ordinal_position), '')) from information_schema.columns where table_schema='public' and table_name not in ('production_unit_schedules','production_unit_schedule_events')"
+SKEMA_SQL="select md5(coalesce(string_agg(table_name||'.'||column_name||':'||data_type||':'||is_nullable||':'||coalesce(column_default,''), ',' order by table_name, ordinal_position), '')) from information_schema.columns where table_schema='public' and table_name not in ('production_unit_schedules','production_unit_schedule_events','unit_component_reuse_entries')"
 # Katalog objek (indeks, constraint, trigger) SEMUA tabel LAMA: tidak boleh berubah (objek rilis ini hanya ada pada 2 tabel baru).
 KATALOG_SQL="select md5(coalesce(string_agg(x, ',' order by x), '')) from (
- select 'idx:'||tablename||':'||indexname as x from pg_indexes where schemaname='public' and tablename not in ('production_unit_schedules','production_unit_schedule_events')
- union all select 'con:'||conrelid::regclass::text||':'||conname from pg_constraint where connamespace='public'::regnamespace and conrelid::regclass::text not in ('production_unit_schedules','production_unit_schedule_events')
- union all select 'trg:'||tgrelid::regclass::text||':'||tgname from pg_trigger where not tgisinternal and tgrelid::regclass::text not in ('production_unit_schedules','production_unit_schedule_events')) k"
+ select 'idx:'||tablename||':'||indexname as x from pg_indexes where schemaname='public' and tablename not in ('production_unit_schedules','production_unit_schedule_events','unit_component_reuse_entries')
+ union all select 'con:'||conrelid::regclass::text||':'||conname from pg_constraint where connamespace='public'::regnamespace and conrelid::regclass::text not in ('production_unit_schedules','production_unit_schedule_events','unit_component_reuse_entries')
+ union all select 'trg:'||tgrelid::regclass::text||':'||tgname from pg_trigger where not tgisinternal and tgrelid::regclass::text not in ('production_unit_schedules','production_unit_schedule_events','unit_component_reuse_entries')) k"
 
 say "2b. Sumber node_modules frontend (package.json identik dengan kandidat)"
 LOCK_NEW="$BK_DIR/pkg-baru.json"; sg show "${DEPLOY_SHA}:frontend/package.json" > "$LOCK_NEW"
@@ -484,7 +511,7 @@ rehearsal_penuh_lanjutan() {
   ok "smoke baca-saja terhadap DB rehearsal: $(grep -c '  PASS' "$BK_DIR/rh-smoke.log") pemeriksaan lulus, $(grep '^SMOKE_HASIL' "$BK_DIR/rh-smoke.log" | sed 's/SMOKE_HASIL //')"
   RPSQL "$FP_ALL" | LC_ALL=C sort > "$BK_DIR/fp-all-sesudah-smoke-${mode}.txt" || { reh_drop; die "sidik jari penuh sesudah smoke gagal"; }
   cmp -s "$BK_DIR/fp-all-sebelum-${mode}.txt" "$BK_DIR/fp-all-sesudah-smoke-${mode}.txt" || { diff "$BK_DIR/fp-all-sebelum-${mode}.txt" "$BK_DIR/fp-all-sesudah-smoke-${mode}.txt" || true; reh_drop; die "smoke baca-saja MENGUBAH isi tabel lama"; }
-  [ "$(RPSQL "select (select count(*) from production_unit_schedules) + (select count(*) from production_unit_schedule_events)")" = "0" ] || { reh_drop; die "smoke baca-saja menulis ke tabel jadwal"; }
+  [ "$(RPSQL "select (select count(*) from production_unit_schedules) + (select count(*) from production_unit_schedule_events) + (select count(*) from unit_component_reuse_entries)")" = "0" ] || { reh_drop; die "smoke baca-saja menulis ke tabel jadwal"; }
   ok "sesudah smoke: isi semua tabel lama IDENTIK dengan sebelum migrasi; tabel jadwal tetap kosong (read-only terbukti)"
   # 2) skenario menulis pada KLON DB rehearsal (CREATE DATABASE ... TEMPLATE); DB rehearsal utama tidak ikut berubah
   KLON_DB="rehearsal_rjm_test_klon_${TS}"
@@ -492,8 +519,8 @@ rehearsal_penuh_lanjutan() {
   local KLON_URL="postgresql://${DB_USER}:${REH_PW}@postgres:5432/${KLON_DB}"
   docker run --rm --network "$NET" -v "$RH_DIR:/rh:ro" -w /app -e FASE=skenario -e JWT_SECRET="$RH_JWT" -e DATABASE_URL="$KLON_URL" -e TEST_DATABASE_URL="$KLON_URL" "$REH_IMG" node /rh/rehearsal-skenario-rencana-jadwal-mingguan.mjs </dev/null > "$BK_DIR/rh-skenario.log" 2>&1 || { grep -E '^FAIL' "$BK_DIR/rh-skenario.log" | head -n 12; tail -n 5 "$BK_DIR/rh-skenario.log"; dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d postgres -X -q -c "DROP DATABASE IF EXISTS \"${KLON_DB}\" WITH (FORCE)" </dev/null >/dev/null 2>&1 || true; reh_drop; die "skenario rehearsal GAGAL (log: $BK_DIR/rh-skenario.log)"; }
   grep -q '^RH_SKENARIO gagal=0' "$BK_DIR/rh-skenario.log" && ! grep -q '^FAIL' "$BK_DIR/rh-skenario.log" || { grep -E '^FAIL' "$BK_DIR/rh-skenario.log" | head -n 12; reh_drop; die "skenario rehearsal tidak lulus penuh"; }
-  local NPASS; NPASS="$(grep -c '^PASS' "$BK_DIR/rh-skenario.log")"; [ "$NPASS" -ge 18 ] || { reh_drop; die "skenario hanya ${NPASS} pemeriksaan lulus (minimal 18)"; }
-  for k in 'SINTETIS: kalender minggu 72 slot' 'SINTETIS: hari Minggu ditolak' 'SINTETIS: jadwal Admin unit belum diterima' 'SINTETIS: jadwal Admin TIDAK membuka Run' 'SINTETIS: kalender menandai unit belum diterima' 'SINTETIS: klik ganda' 'SINTETIS: permintaan serentak' 'SINTETIS: pindah hari/meja memperbarui baris yang sama' 'SINTETIS: kapasitas meja penuh' 'SINTETIS: undo salah-pindah' 'SINTETIS: antrean per tindakan' 'SINTETIS: akun hanya-lihat' 'SINTETIS: aktivasi Meja mengambil alih' 'SINTETIS: unit yang sudah dikelola Meja ditolak' 'SINTETIS: ekspor Excel memuat' 'SINTETIS: keluarkan dari jadwal'; do grep -q "^PASS ${k}" "$BK_DIR/rh-skenario.log" || { reh_drop; die "pemeriksaan wajib tidak ada/lulus: $k"; }; done
+  local NPASS; NPASS="$(grep -c '^PASS' "$BK_DIR/rh-skenario.log")"; [ "$NPASS" -ge 24 ] || { reh_drop; die "skenario hanya ${NPASS} pemeriksaan lulus (minimal 24)"; }
+  for k in 'SINTETIS: kalender minggu 72 slot' 'SINTETIS: hari Minggu ditolak' 'SINTETIS: jadwal Admin unit belum diterima' 'SINTETIS: jadwal Admin TIDAK membuka Run' 'SINTETIS: kalender menandai unit belum diterima' 'SINTETIS: klik ganda' 'SINTETIS: permintaan serentak' 'SINTETIS: pindah hari/meja memperbarui baris yang sama' 'SINTETIS: kapasitas meja penuh' 'SINTETIS: undo salah-pindah' 'SINTETIS: antrean per tindakan' 'SINTETIS: akun hanya-lihat' 'SINTETIS: aktivasi Meja mengambil alih' 'SINTETIS: unit yang sudah dikelola Meja ditolak' 'SINTETIS: ekspor Excel memuat' 'SINTETIS: keluarkan dari jadwal' 'SINTETIS: komponen lama dari unit ini' 'SINTETIS: komponen lama TIDAK mengubah saldo' 'SINTETIS: koreksi + batal berjejak' 'SINTETIS: tanpa lintas unit' 'SINTETIS: dilepas tanpa dipakai' 'SINTETIS: akun hanya-lihat (Sales) membaca komponen lama'; do grep -q "^PASS ${k}" "$BK_DIR/rh-skenario.log" || { reh_drop; die "pemeriksaan wajib tidak ada/lulus: $k"; }; done
   ok "skenario rehearsal pada KLON data production: ${NPASS} pemeriksaan lulus, 0 gagal — jadwal Admin tanpa Run/stok/job/jurnal/penerimaan/outbox/pesan, klik ganda + serentak + revisi basi, pindah baris yang sama, meja penuh, Minggu libur, undo, aktivasi Meja mengambil alih (ADOPTED), ekspor Excel, izin hanya-lihat"
   grep -E '^INFO' "$BK_DIR/rh-skenario.log" | sed 's/^/        /'
   # DB rehearsal UTAMA tetap tidak berubah oleh skenario (skenario hanya menulis di klon)
@@ -648,8 +675,14 @@ rehearsal() {
     ok "prisma migrate deploy pada DB rehearsal: $(( (T_B - T_A) / 1000000 )) ms (termasuk start container); status up to date"
   fi
   # 5) STRUKTUR: 2 tabel baru KOSONG; 4 FK RESTRICT + 4 CHECK + 7 indeks (termasuk 2 pkey; 1 unik parsial) + 1 trigger append-only (fungsi lama, tidak diubah) terpasang dan tervalidasi; tabel lama identik (skema + katalog objek)
-  [ "$(RPSQL "select count(*) from pg_tables where schemaname='public' and tablename in ('production_unit_schedules','production_unit_schedule_events')")" = "2" ] || { reh_drop; die "2 tabel jadwal tidak terpasang"; }
-  [ "$(RPSQL "select (select count(*) from production_unit_schedules) + (select count(*) from production_unit_schedule_events)")" = "0" ] || { reh_drop; die "tabel jadwal TIDAK kosong setelah migrasi (backfill tidak diizinkan)"; }
+  [ "$(RPSQL "select count(*) from pg_tables where schemaname='public' and tablename in ('production_unit_schedules','production_unit_schedule_events','unit_component_reuse_entries')")" = "3" ] || { reh_drop; die "3 tabel baru (jadwal, riwayat jadwal, komponen lama) tidak terpasang"; }
+  [ "$(RPSQL "select (select count(*) from production_unit_schedules) + (select count(*) from production_unit_schedule_events) + (select count(*) from unit_component_reuse_entries)")" = "0" ] || { reh_drop; die "tabel baru TIDAK kosong setelah migrasi (backfill tidak diizinkan)"; }
+  [ "$(RPSQL "select count(*) from pg_constraint where conname in ('unit_component_reuse_entries_unit_id_fkey','unit_component_reuse_entries_material_id_fkey') and contype='f' and confdeltype='r' and convalidated")" = "2" ] || { reh_drop; die "2 FK komponen lama (unit, bahan katalog) ON DELETE RESTRICT tidak terpasang/tervalidasi"; }
+  [ "$(RPSQL "select count(*) from pg_constraint where conname in ('unit_component_reuse_entries_kind_chk','unit_component_reuse_entries_version_chk','unit_component_reuse_entries_source_chk','unit_component_reuse_entries_outcome_chk','unit_component_reuse_entries_qty_chk','unit_component_reuse_entries_name_chk','unit_component_reuse_entries_uom_chk','unit_component_reuse_entries_reason_chk','unit_component_reuse_entries_photos_chk') and contype='c' and convalidated")" = "9" ] || { reh_drop; die "9 CHECK komponen lama tidak terpasang/tervalidasi"; }
+  [ "$(RPSQL "select count(*) from pg_indexes where schemaname='public' and indexname in ('unit_component_reuse_entries_pkey','unit_component_reuse_entries_item_id_version_key','unit_component_reuse_entries_unit_id_created_at_idx','unit_component_reuse_entries_unit_id_idempotency_key_key')")" = "4" ] || { reh_drop; die "4 indeks komponen lama tidak terpasang"; }
+  [ "$(RPSQL "select count(*) from pg_indexes where schemaname='public' and indexname = 'unit_component_reuse_entries_unit_id_idempotency_key_key' and indexdef like '%UNIQUE%' and indexdef like '%WHERE%'")" = "1" ] || { reh_drop; die "indeks unik parsial kunci idempotensi komponen lama tidak terpasang"; }
+  [ "$(RPSQL "select count(*) from pg_indexes where schemaname='public' and indexname = 'unit_component_reuse_entries_item_id_version_key' and indexdef like '%UNIQUE%'")" = "1" ] || { reh_drop; die "versi unik per komponen (UNIQUE item_id, version) tidak terpasang"; }
+  [ "$(RPSQL "select count(*) from pg_trigger t join pg_proc p on p.oid = t.tgfoid where t.tgname = 'unit_component_reuse_entries_append_only_trg' and not t.tgisinternal and p.proname = 'production_adopsi_append_only'")" = "1" ] || { reh_drop; die "trigger append-only komponen lama (fungsi production_adopsi_append_only) tidak terpasang"; }
   [ "$(RPSQL "select count(*) from pg_constraint where conname in ('production_unit_schedules_unit_id_fkey','production_unit_schedules_adopted_plan_id_fkey','production_unit_schedule_events_schedule_id_fkey','production_unit_schedule_events_unit_id_fkey') and contype='f' and confdeltype='r' and convalidated")" = "4" ] || { reh_drop; die "4 FK ON DELETE RESTRICT tidak terpasang/tervalidasi"; }
   [ "$(RPSQL "select count(*) from pg_constraint where conname in ('production_unit_schedules_status_chk','production_unit_schedules_station_chk','production_unit_schedules_revision_chk','production_unit_schedule_events_kind_chk') and contype='c' and convalidated")" = "4" ] || { reh_drop; die "4 CHECK jadwal tidak terpasang/tervalidasi"; }
   [ "$(RPSQL "select count(*) from pg_indexes where schemaname='public' and indexname in ('production_unit_schedules_pkey','production_unit_schedules_unit_id_key','production_unit_schedules_production_date_station_code_idx','production_unit_schedule_events_pkey','production_unit_schedule_events_schedule_id_created_at_idx','production_unit_schedule_events_unit_id_created_at_idx','production_unit_schedule_events_unit_id_idempotency_key_key')")" = "7" ] || { reh_drop; die "7 indeks jadwal (2 pkey + 5 indeks) tidak terpasang"; }
@@ -657,20 +690,21 @@ rehearsal() {
   [ "$(RPSQL "select count(*) from pg_indexes where schemaname='public' and indexname = 'production_unit_schedules_unit_id_key' and indexdef like '%UNIQUE%'")" = "1" ] || { reh_drop; die "satu jadwal per unit (UNIQUE unit_id) tidak terpasang"; }
   [ "$(RPSQL "select count(*) from pg_trigger t join pg_proc p on p.oid = t.tgfoid where t.tgname = 'production_unit_schedule_events_append_only_trg' and not t.tgisinternal and p.proname = 'production_adopsi_append_only'")" = "1" ] || { reh_drop; die "trigger append-only riwayat (fungsi production_adopsi_append_only) tidak terpasang"; }
   [ "$(RPSQL "select count(*) from pg_trigger where tgrelid = 'production_unit_schedules'::regclass and not tgisinternal")" = "0" ] || { reh_drop; die "tabel jadwal (boleh diubah) memiliki trigger (tidak diharapkan)"; }
-  [ "$(RPSQL "select count(*) from pg_tables where schemaname='public'")" = "$(( N_TABEL_SEBELUM + 2 ))" ] || { reh_drop; die "migrasi MENAMBAH/MENGURANGI tabel selain 2 tabel jadwal"; }
+  [ "$(RPSQL "select count(*) from pg_tables where schemaname='public'")" = "$(( N_TABEL_SEBELUM + 3 ))" ] || { reh_drop; die "migrasi MENAMBAH/MENGURANGI tabel selain 3 tabel baru (jadwal, riwayat jadwal, komponen lama)"; }
   [ "$(RPSQL "$SKEMA_SQL")" = "$S_SEBELUM" ] || { reh_drop; die "migrasi MENGUBAH skema (kolom/tipe/nullable/default) tabel lama"; }
   [ "$(RPSQL "$KATALOG_SQL")" = "$K_SEBELUM" ] || { reh_drop; die "migrasi MENGUBAH indeks/constraint/trigger tabel lama"; }
-  ok "struktur: 2 tabel baru kosong; 4 FK RESTRICT + 4 CHECK + 7 indeks (1 unik parsial; satu jadwal per unit) + 1 trigger append-only (fungsi lama, tak diubah) tervalidasi; tabel lama (skema + indeks/constraint/trigger) identik; jumlah tabel ${N_TABEL_SEBELUM} → $(( N_TABEL_SEBELUM + 2 ))"
+  ok "struktur: 3 tabel baru kosong; jadwal: 4 FK RESTRICT + 4 CHECK + 7 indeks (1 unik parsial; satu jadwal per unit) + 1 trigger append-only; komponen lama: 2 FK RESTRICT + 9 CHECK (sumber dikunci unit ini) + 4 indeks (1 unik parsial; versi unik) + 1 trigger append-only; fungsi lama tak diubah; tabel lama (skema + indeks/constraint/trigger) identik; jumlah tabel ${N_TABEL_SEBELUM} → $(( N_TABEL_SEBELUM + 3 ))"
   # 6) UJI PERILAKU constraint/trigger/FK memakai baris NYATA hasil restore (dua unit + pengguna asli); SELURUHNYA dibatalkan (RAISE di akhir)
   cat > "$BK_DIR/uji-perilaku-${mode}.sql" <<'UJISQL'
 DO $t$
-DECLARE u uuid; u2 uuid; usr text; s1 uuid := gen_random_uuid(); s2 uuid := gen_random_uuid(); tolak int := 0; lolos int := 0;
+DECLARE u uuid; u2 uuid; m uuid; i1 uuid := gen_random_uuid(); i2 uuid := gen_random_uuid(); i3 uuid := gen_random_uuid(); i4 uuid := gen_random_uuid(); i5 uuid := gen_random_uuid(); usr text; s1 uuid := gen_random_uuid(); s2 uuid := gen_random_uuid(); tolak int := 0; lolos int := 0;
 BEGIN
   SELECT id INTO u FROM units ORDER BY created_at, id LIMIT 1;
   SELECT id INTO u2 FROM units ORDER BY created_at, id OFFSET 1 LIMIT 1;
   SELECT id INTO usr FROM "User" ORDER BY id LIMIT 1;
-  IF u IS NULL OR u2 IS NULL OR usr IS NULL THEN RAISE EXCEPTION 'DATA_CONTOH_KURANG'; END IF;
-  -- YANG SAH (6)
+  SELECT id INTO m FROM materials ORDER BY id LIMIT 1;
+  IF u IS NULL OR u2 IS NULL OR usr IS NULL OR m IS NULL THEN RAISE EXCEPTION 'DATA_CONTOH_KURANG'; END IF;
+  -- YANG SAH (jadwal 6)
   INSERT INTO production_unit_schedules (id, unit_id, production_date, station_code, created_by_id) VALUES (s1, u, DATE '2030-01-07', 'TABLE_1', usr); lolos := lolos + 1;
   UPDATE production_unit_schedules SET revision = 2, status = 'CLEARED', updated_at = now() WHERE id = s1; lolos := lolos + 1;
   UPDATE production_unit_schedules SET revision = 3, status = 'ACTIVE', station_code = NULL, updated_at = now() WHERE id = s1; lolos := lolos + 1;
@@ -709,6 +743,50 @@ BEGIN
   EXCEPTION WHEN foreign_key_violation THEN tolak := tolak + 1; END;
   BEGIN DELETE FROM production_unit_schedules WHERE id = s1; RAISE EXCEPTION USING ERRCODE = 'P0999', MESSAGE = 'TIDAK_DITOLAK_hapus_jadwal_beriwayat';
   EXCEPTION WHEN foreign_key_violation THEN tolak := tolak + 1; END;
+  -- KOMPONEN LAMA: YANG SAH (6)
+  INSERT INTO unit_component_reuse_entries (id, item_id, unit_id, version, kind, name, qty, uom, outcome, condition, work_part, actor_id) VALUES (gen_random_uuid(), i1, u, 1, 'CREATED', 'Pegas bongkaran', 12, 'PCS', 'REUSED', 'bagus', 'rangka bawah', usr); lolos := lolos + 1;
+  INSERT INTO unit_component_reuse_entries (id, item_id, unit_id, version, kind, name, qty, uom, outcome, material_id, photo_urls, actor_id) VALUES (gen_random_uuid(), i2, u, 1, 'CREATED', 'Busa lama', 1.5, 'SHEET', 'DISCARDED', m, '["/media/production-evidence/a.jpg"]'::jsonb, usr); lolos := lolos + 1;
+  INSERT INTO unit_component_reuse_entries (id, item_id, unit_id, version, kind, name, qty, uom, outcome, reason, actor_id) VALUES (gen_random_uuid(), i1, u, 2, 'CORRECTED', 'Pegas bongkaran', 10, 'PCS', 'REUSED', 'salah hitung', usr); lolos := lolos + 1;
+  INSERT INTO unit_component_reuse_entries (id, item_id, unit_id, version, kind, name, qty, uom, outcome, reason, actor_id) VALUES (gen_random_uuid(), i1, u, 3, 'VOIDED', 'Pegas bongkaran', 10, 'PCS', 'REUSED', 'salah input', usr); lolos := lolos + 1;
+  INSERT INTO unit_component_reuse_entries (id, item_id, unit_id, version, kind, name, qty, uom, outcome, idempotency_key, actor_id) VALUES (gen_random_uuid(), i3, u, 1, 'CREATED', 'Kain lama', 2, 'METER', 'KEPT_WITH_UNIT', 'kk1', usr); lolos := lolos + 1;
+  INSERT INTO unit_component_reuse_entries (id, item_id, unit_id, version, kind, name, qty, uom, outcome, idempotency_key, actor_id) VALUES (gen_random_uuid(), i4, u2, 1, 'CREATED', 'Kain lama', 2, 'METER', 'RETURNED_TO_CUSTOMER', 'kk1', usr); lolos := lolos + 1;
+  -- KOMPONEN LAMA: YANG HARUS DITOLAK (18)
+  BEGIN INSERT INTO unit_component_reuse_entries (id, item_id, unit_id, version, kind, name, qty, uom, outcome, actor_id) VALUES (gen_random_uuid(), i1, u, 1, 'CREATED', 'x lagi', 1, 'PCS', 'REUSED', usr); RAISE EXCEPTION USING ERRCODE = 'P0999', MESSAGE = 'TIDAK_DITOLAK_versi_ganda';
+  EXCEPTION WHEN unique_violation THEN tolak := tolak + 1; END;
+  BEGIN INSERT INTO unit_component_reuse_entries (id, item_id, unit_id, version, kind, name, qty, uom, outcome, actor_id) VALUES (gen_random_uuid(), i5, u, 1, 'LIAR', 'xx', 1, 'PCS', 'REUSED', usr); RAISE EXCEPTION USING ERRCODE = 'P0999', MESSAGE = 'TIDAK_DITOLAK_jenis_liar';
+  EXCEPTION WHEN check_violation THEN tolak := tolak + 1; END;
+  BEGIN INSERT INTO unit_component_reuse_entries (id, item_id, unit_id, version, kind, name, qty, uom, outcome, actor_id) VALUES (gen_random_uuid(), i5, u, 2, 'CREATED', 'xx', 1, 'PCS', 'REUSED', usr); RAISE EXCEPTION USING ERRCODE = 'P0999', MESSAGE = 'TIDAK_DITOLAK_dicatat_versi_dua';
+  EXCEPTION WHEN check_violation THEN tolak := tolak + 1; END;
+  BEGIN INSERT INTO unit_component_reuse_entries (id, item_id, unit_id, version, kind, name, qty, uom, outcome, reason, actor_id) VALUES (gen_random_uuid(), i5, u, 1, 'CORRECTED', 'xx', 1, 'PCS', 'REUSED', 'alasan', usr); RAISE EXCEPTION USING ERRCODE = 'P0999', MESSAGE = 'TIDAK_DITOLAK_koreksi_versi_satu';
+  EXCEPTION WHEN check_violation THEN tolak := tolak + 1; END;
+  BEGIN INSERT INTO unit_component_reuse_entries (id, item_id, unit_id, version, kind, source, name, qty, uom, outcome, actor_id) VALUES (gen_random_uuid(), i5, u, 1, 'CREATED', 'OTHER_UNIT', 'xx', 1, 'PCS', 'REUSED', usr); RAISE EXCEPTION USING ERRCODE = 'P0999', MESSAGE = 'TIDAK_DITOLAK_sumber_lintas_unit';
+  EXCEPTION WHEN check_violation THEN tolak := tolak + 1; END;
+  BEGIN INSERT INTO unit_component_reuse_entries (id, item_id, unit_id, version, kind, name, qty, uom, outcome, actor_id) VALUES (gen_random_uuid(), i5, u, 1, 'CREATED', 'xx', 1, 'PCS', 'LIAR', usr); RAISE EXCEPTION USING ERRCODE = 'P0999', MESSAGE = 'TIDAK_DITOLAK_hasil_liar';
+  EXCEPTION WHEN check_violation THEN tolak := tolak + 1; END;
+  BEGIN INSERT INTO unit_component_reuse_entries (id, item_id, unit_id, version, kind, name, qty, uom, outcome, actor_id) VALUES (gen_random_uuid(), i5, u, 1, 'CREATED', 'xx', 0, 'PCS', 'REUSED', usr); RAISE EXCEPTION USING ERRCODE = 'P0999', MESSAGE = 'TIDAK_DITOLAK_jumlah_nol';
+  EXCEPTION WHEN check_violation THEN tolak := tolak + 1; END;
+  BEGIN INSERT INTO unit_component_reuse_entries (id, item_id, unit_id, version, kind, name, qty, uom, outcome, actor_id) VALUES (gen_random_uuid(), i5, u, 1, 'CREATED', 'xx', -1, 'PCS', 'REUSED', usr); RAISE EXCEPTION USING ERRCODE = 'P0999', MESSAGE = 'TIDAK_DITOLAK_jumlah_negatif';
+  EXCEPTION WHEN check_violation THEN tolak := tolak + 1; END;
+  BEGIN INSERT INTO unit_component_reuse_entries (id, item_id, unit_id, version, kind, name, qty, uom, outcome, actor_id) VALUES (gen_random_uuid(), i5, u, 1, 'CREATED', 'x', 1, 'PCS', 'REUSED', usr); RAISE EXCEPTION USING ERRCODE = 'P0999', MESSAGE = 'TIDAK_DITOLAK_nama_terlalu_pendek';
+  EXCEPTION WHEN check_violation THEN tolak := tolak + 1; END;
+  BEGIN INSERT INTO unit_component_reuse_entries (id, item_id, unit_id, version, kind, name, qty, uom, outcome, actor_id) VALUES (gen_random_uuid(), i5, u, 1, 'CREATED', 'xx', 1, 'pcs', 'REUSED', usr); RAISE EXCEPTION USING ERRCODE = 'P0999', MESSAGE = 'TIDAK_DITOLAK_satuan_huruf_kecil';
+  EXCEPTION WHEN check_violation THEN tolak := tolak + 1; END;
+  BEGIN INSERT INTO unit_component_reuse_entries (id, item_id, unit_id, version, kind, name, qty, uom, outcome, actor_id) VALUES (gen_random_uuid(), i3, u, 2, 'CORRECTED', 'xx', 1, 'PCS', 'REUSED', usr); RAISE EXCEPTION USING ERRCODE = 'P0999', MESSAGE = 'TIDAK_DITOLAK_koreksi_tanpa_alasan';
+  EXCEPTION WHEN check_violation THEN tolak := tolak + 1; END;
+  BEGIN INSERT INTO unit_component_reuse_entries (id, item_id, unit_id, version, kind, name, qty, uom, outcome, photo_urls, actor_id) VALUES (gen_random_uuid(), i5, u, 1, 'CREATED', 'xx', 1, 'PCS', 'REUSED', '{}'::jsonb, usr); RAISE EXCEPTION USING ERRCODE = 'P0999', MESSAGE = 'TIDAK_DITOLAK_foto_bukan_larik';
+  EXCEPTION WHEN check_violation THEN tolak := tolak + 1; END;
+  BEGIN INSERT INTO unit_component_reuse_entries (id, item_id, unit_id, version, kind, name, qty, uom, outcome, actor_id) VALUES (gen_random_uuid(), i5, gen_random_uuid(), 1, 'CREATED', 'xx', 1, 'PCS', 'REUSED', usr); RAISE EXCEPTION USING ERRCODE = 'P0999', MESSAGE = 'TIDAK_DITOLAK_unit_tak_ada';
+  EXCEPTION WHEN foreign_key_violation THEN tolak := tolak + 1; END;
+  BEGIN INSERT INTO unit_component_reuse_entries (id, item_id, unit_id, version, kind, name, qty, uom, outcome, material_id, actor_id) VALUES (gen_random_uuid(), i5, u, 1, 'CREATED', 'xx', 1, 'PCS', 'REUSED', gen_random_uuid(), usr); RAISE EXCEPTION USING ERRCODE = 'P0999', MESSAGE = 'TIDAK_DITOLAK_bahan_katalog_tak_ada';
+  EXCEPTION WHEN foreign_key_violation THEN tolak := tolak + 1; END;
+  BEGIN INSERT INTO unit_component_reuse_entries (id, item_id, unit_id, version, kind, name, qty, uom, outcome, idempotency_key, actor_id) VALUES (gen_random_uuid(), i5, u, 1, 'CREATED', 'xx', 1, 'PCS', 'REUSED', 'kk1', usr); RAISE EXCEPTION USING ERRCODE = 'P0999', MESSAGE = 'TIDAK_DITOLAK_kunci_idempotensi_ganda';
+  EXCEPTION WHEN unique_violation THEN tolak := tolak + 1; END;
+  BEGIN UPDATE unit_component_reuse_entries SET qty = 99 WHERE item_id = i1; RAISE EXCEPTION USING ERRCODE = 'P0999', MESSAGE = 'TIDAK_DITOLAK_ubah_riwayat_komponen';
+  EXCEPTION WHEN sqlstate 'P0001' THEN tolak := tolak + 1; END;
+  BEGIN DELETE FROM unit_component_reuse_entries WHERE item_id = i1; RAISE EXCEPTION USING ERRCODE = 'P0999', MESSAGE = 'TIDAK_DITOLAK_hapus_riwayat_komponen';
+  EXCEPTION WHEN sqlstate 'P0001' THEN tolak := tolak + 1; END;
+  BEGIN DELETE FROM units WHERE id = u2; RAISE EXCEPTION USING ERRCODE = 'P0999', MESSAGE = 'TIDAK_DITOLAK_hapus_unit_berkomponen';
+  EXCEPTION WHEN foreign_key_violation THEN tolak := tolak + 1; END;
   RAISE EXCEPTION 'ROLLBACK_UJI tolak=% lolos=%', tolak, lolos;
 END $t$;
 UJISQL
@@ -719,9 +797,9 @@ UJISQL
   printf '%s\n' "$UJI_OUT" | grep -Eq 'TIDAK_DITOLAK' && { printf '%s\n' "$UJI_OUT"; reh_drop; die "perilaku constraint/trigger/FK SALAH (ada data yang seharusnya ditolak lolos)"; }
   UJI_TOLAK="$(printf '%s\n' "$UJI_OUT" | sed -n 's/.*ROLLBACK_UJI tolak=\([0-9]*\) lolos=\([0-9]*\).*/\1/p' | sed -n 1p)"
   UJI_LOLOS="$(printf '%s\n' "$UJI_OUT" | sed -n 's/.*ROLLBACK_UJI tolak=\([0-9]*\) lolos=\([0-9]*\).*/\2/p' | sed -n 1p)"
-  [ "$UJI_TOLAK" = "14" ] || { printf '%s\n' "$UJI_OUT"; reh_drop; die "uji perilaku: penolakan terbukti ${UJI_TOLAK:-?} (harus 14)"; }
-  [ "$UJI_LOLOS" = "6" ] || { printf '%s\n' "$UJI_OUT"; reh_drop; die "uji perilaku: data sah yang lolos ${UJI_LOLOS:-?} (harus 6)"; }
-  ok "perilaku terbukti pada hasil restore: ${UJI_TOLAK} penolakan (satu jadwal per unit, status/meja/revisi liar, FK unit/rencana/jadwal, jenis riwayat liar, kunci idempotensi ganda, trigger append-only ×2, RESTRICT hapus unit/jadwal) dan ${UJI_LOLOS} operasi sah lolos (jadwal boleh diubah; riwayat boleh ditambah); seluruh uji dibatalkan"
+  [ "$UJI_TOLAK" = "32" ] || { printf '%s\n' "$UJI_OUT"; reh_drop; die "uji perilaku: penolakan terbukti ${UJI_TOLAK:-?} (harus 32)"; }
+  [ "$UJI_LOLOS" = "12" ] || { printf '%s\n' "$UJI_OUT"; reh_drop; die "uji perilaku: data sah yang lolos ${UJI_LOLOS:-?} (harus 12)"; }
+  ok "perilaku terbukti pada hasil restore: ${UJI_TOLAK} penolakan (satu jadwal per unit, status/meja/revisi liar, FK unit/rencana/jadwal, jenis riwayat liar, kunci idempotensi ganda, trigger append-only ×2, RESTRICT hapus unit/jadwal) ditambah komponen lama (versi unik, jenis/versi/hasil/jumlah/satuan liar, SUMBER LINTAS UNIT, koreksi tanpa alasan, foto bukan larik, FK unit/bahan, kunci idempotensi ganda, ubah/hapus riwayat, hapus unit berkomponen) dan ${UJI_LOLOS} operasi sah lolos (jadwal boleh diubah; riwayat jadwal dan versi komponen boleh ditambah); seluruh uji dibatalkan"
   # 7) Mode image: kode BARU terhadap data restore yang SUDAH dimigrasi (baca-saja)
   if [ "$mode" = "image" ]; then
     bk_run -e DATABASE_URL="$REH_URL" -- node --input-type=module - <<'REHNODE' > "$BK_DIR/rehearsal-kode-baru.log" 2>&1 || { cat "$BK_DIR/rehearsal-kode-baru.log"; reh_drop; die "pemeriksaan kode baru terhadap data restore GAGAL"; }
@@ -732,13 +810,14 @@ const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 const { getMinggu, getHari, getAntrean, parseAntreanQuery } = await import("/app/src/services/productionRencanaJadwalService.js");
 const { isHariKerja } = await import("/app/src/lib/domain/productionRencanaAdmin.js");
+const { ambilKomponenLama } = await import("/app/src/services/productionComponentReuseService.js");
 let gagal = 0; const cek = (n, ok, d = "") => { if (!ok) gagal += 1; console.log((ok ? "PASS " : "FAIL ") + n + (d !== "" ? " — " + String(d).slice(0, 200) : "")); };
 const hitung = async (sql) => Number((await prisma.$queryRawUnsafe(sql))[0].n);
 const TABEL = { sm: "stock_movements", unit: "units", job: "jobs", run: "production_runs_v2", plan: "production_run_plans_v2", qc: "quality_inspections_v2", jur: "fin_journal_entries", cmd: "v2_commands", act: "activity_events", serah: "unit_custody_handoffs_v2", outbox: "domain_outbox", order: "\"Order\"", rec: "unit_workshop_receipts" };
 const snap = async () => Object.fromEntries(await Promise.all(Object.entries(TABEL).map(async ([k, t]) => [k, await hitung(`select count(*)::int n from ${t}`)])));
 const awal = await snap();
 cek("data restore memuat unit nyata", awal.unit > 0, "unit=" + awal.unit);
-for (const t of ["production_unit_schedules", "production_unit_schedule_events"]) cek(`tabel baru ${t} kosong (tanpa backfill)`, (await hitung(`select count(*)::int n from ${t}`)) === 0);
+for (const t of ["production_unit_schedules", "production_unit_schedule_events", "unit_component_reuse_entries"]) cek(`tabel baru ${t} kosong (tanpa backfill)`, (await hitung(`select count(*)::int n from ${t}`)) === 0);
 
 // ── Kalender minggu: aturan hari kerja + hitungan = database ──
 const hari = (n) => new Date(Date.now() + 7 * 3600_000 + n * 86_400_000).toISOString().slice(0, 10);
@@ -762,10 +841,18 @@ cek("Butuh keputusan selalu menyebut penyebab dan langkah berikutnya", keputusan
 const cari = sem.items[0]; if (cari) { const q = await getAntrean(prisma, { query: parseAntreanQuery({ tab: "SEMUA", q: cari.unitCode }) }); cek("pencarian kode unit menemukan unitnya", q.items.some((i) => i.unitId === cari.unitId)); }
 console.log(`INFO antrean: ${JSON.stringify(sem.counts)}; minggu ${mg.start}: terencana hari kerja=${mg.ringkasan.terencanaKerja}`);
 
+// ── komponen lama dari unit pelanggan: bacaan pada unit NYATA (kosong, tanpa galat) ──
+{
+  const unitNyata = await prisma.unit.findMany({ take: 5, orderBy: { createdAt: "desc" }, select: { id: true, unitCode: true } });
+  let semuaOk = unitNyata.length > 0;
+  for (const u of unitNyata) { const k = await ambilKomponenLama(prisma, u.id); semuaOk = semuaOk && k.items.length === 0 && k.total.pemakaianKembali.jumlahItem === 0 && k.asal === `Dari kasur pelanggan — ${u.unitCode}` && /Tidak ada/.test(k.dampakStok); }
+  cek("komponen lama: unit nyata terbaca kosong dengan asal 'Dari kasur pelanggan — kode unit' dan dampak stok 'Tidak ada'", semuaOk, `${unitNyata.length} unit`);
+}
+
 // ── tidak ada tulisan ──
 const akhir = await snap();
 for (const k of Object.keys(awal)) cek(`tidak ada tulisan: ${k} tetap ${awal[k]}`, akhir[k] === awal[k]);
-for (const t of ["production_unit_schedules", "production_unit_schedule_events"]) cek(`tidak ada tulisan: ${t} tetap kosong`, (await hitung(`select count(*)::int n from ${t}`)) === 0);
+for (const t of ["production_unit_schedules", "production_unit_schedule_events", "unit_component_reuse_entries"]) cek(`tidak ada tulisan: ${t} tetap kosong`, (await hitung(`select count(*)::int n from ${t}`)) === 0);
 await prisma.$disconnect();
 console.log("REHEARSAL_KODE_BARU gagal=" + gagal);
 process.exit(gagal ? 1 : 0);
@@ -777,9 +864,9 @@ REHNODE
   cmp -s "$BK_DIR/fp-all-sebelum-${mode}.txt" "$BK_DIR/fp-all-sesudah-${mode}.txt" || { diff "$BK_DIR/fp-all-sebelum-${mode}.txt" "$BK_DIR/fp-all-sesudah-${mode}.txt" || true; reh_drop; die "migrasi/uji rehearsal MENGUBAH isi tabel lama"; }
   [ "$(RPSQL "select md5(coalesce(string_agg(material_id::text||':'||q::text, '|' order by material_id),'')) from (select material_id, sum(qty) q from stock_movements group by material_id) s")" = "$SALDO_SEBELUM" ] || { reh_drop; die "saldo per bahan BERUBAH oleh migrasi/uji"; }
   [ "$(RPSQL "select count(*) from stock_movements")" = "$N_SM" ] || { reh_drop; die "jumlah pergerakan stok berubah"; }
-  [ "$(RPSQL "select (select count(*) from production_unit_schedules) + (select count(*) from production_unit_schedule_events)")" = "0" ] || { reh_drop; die "data uji rehearsal tidak dibatalkan (tabel jadwal tidak kosong)"; }
+  [ "$(RPSQL "select (select count(*) from production_unit_schedules) + (select count(*) from production_unit_schedule_events) + (select count(*) from unit_component_reuse_entries)")" = "0" ] || { reh_drop; die "data uji rehearsal tidak dibatalkan (tabel jadwal tidak kosong)"; }
   [ "$(RPSQL "select md5(pg_get_functiondef(p.oid)) from pg_proc p where p.proname = 'production_adopsi_append_only'")" = "$FN_SEBELUM" ] || { reh_drop; die "fungsi production_adopsi_append_only BERUBAH oleh migrasi (seharusnya dipakai apa adanya)"; }
-  [ "$(RPSQL "select md5(coalesce(string_agg(migration_name||':'||checksum, ',' order by migration_name),'')) from _prisma_migrations where migration_name <> '${MIG_LIST# }'")" = "$(cat "$BK_DIR/mig-hash-sebelum-${mode}.txt")" ] || { reh_drop; die "riwayat migrasi lama (checksum) BERUBAH"; }
+  [ "$(RPSQL "select md5(coalesce(string_agg(migration_name||':'||checksum, ',' order by migration_name),'')) from _prisma_migrations where migration_name not in ($(printf "'%s'," $MIG_LIST | sed 's/,$//'))")" = "$(cat "$BK_DIR/mig-hash-sebelum-${mode}.txt")" ] || { reh_drop; die "riwayat migrasi lama (checksum) BERUBAH"; }
   RPSQL "$FP_BEKU_SQL" | LC_ALL=C sort > "$BK_DIR/fp-reh-beku-sesudah-${mode}.txt" || { reh_drop; die "sidik jari beku sesudah gagal"; }
   cmp -s "$BK_DIR/data-sebelum.txt" "$BK_DIR/fp-reh-beku-sesudah-${mode}.txt" || { diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/fp-reh-beku-sesudah-${mode}.txt" || true; reh_drop; die "dokumen pembanding beku (stok, saldo, jurnal, PO, tagihan, pembayaran, Produksi) berubah oleh migrasi/uji"; }
   if [ "$REHEARSAL_PENUH" = "1" ]; then rehearsal_penuh_lanjutan; fi
@@ -810,7 +897,7 @@ if [ "$REHEARSAL_PENUH" = "1" ]; then
   ( cd "$WS/frontend" && npm run build ) > "$BK_DIR/build-frontend.log" 2>&1 || { rm -f "$WS/frontend/.env"; tail -n 25 "$BK_DIR/build-frontend.log"; die "build frontend gagal (production tidak berubah)"; }
   rm -f "$WS/frontend/.env"
   RH_INDEX="$(grep -o 'index-[A-Za-z0-9_-]*\.js' "$WS/frontend/dist/index.html" | sed -n 1p)"; [ -n "$RH_INDEX" ] && [ -f "$WS/frontend/dist/assets/$RH_INDEX" ] || die "hasil build frontend tidak valid"
-  for s1 in "Jadwal mingguan" "Pelaksanaan Meja" "Papan Meja" "Jadwalkan lebih awal" "Hari Minggu libur"; do [ -n "$(grep -lF "$s1" "$WS"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist rehearsal TIDAK memuat teks fitur rilis ini: ${s1}"; done
+  for s1 in "Jadwal mingguan" "Pelaksanaan Meja" "Papan Meja" "Jadwalkan lebih awal" "Hari Minggu libur" "Catat pemakaian aktual" "Komponen lama dari unit ini" "Bahan baru dari Gudang" "Gunakan sebagai isian awal"; do [ -n "$(grep -lF "$s1" "$WS"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist rehearsal TIDAK memuat teks fitur rilis ini: ${s1}"; done
   for s2 in "Ruang Kerja Unit" "Menunggu dicatat diterima" "Catat diterima" "Ternyata belum diterima fisik" "Muat ulang ruang kerja" "Rencana · tidak mengurangi stok" "Aktual · mengurangi stok" "Catat status kerja" "Belum ada catatan pekerjaan" "Ajukan Koreksi Stok" "Koreksi Penerimaan" "Konfirmasi Barang Jadi" "Selesaikan Produksi" "Rencana Produksi" "Uang muka dialokasikan ke faktur" "Tetapkan Siap Kirim (override)" "Riwayat referensi dari file (bukan transaksi)" "Simpan ke Stok" "Barang Akan Datang"; do [ -n "$(grep -lF "$s2" "$WS"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist rehearsal KEHILANGAN teks fitur lama: ${s2}"; done
   [ "$RH_INDEX" != "$PREV_INDEX" ] || die "frontend berubah tetapi bundel rehearsal identik dengan live"
   ok "build web kandidat: ${RH_INDEX} (live ${PREV_INDEX}); teks fitur Rencana Produksi (jadwal mingguan) baru ada; teks fitur live lama tetap ada"
@@ -827,7 +914,7 @@ if [ "$REHEARSAL_PENUH" = "1" ]; then
   curl -fsS --max-time 8 "${INTERNAL_URL}/api/health" | grep '"ok":true' >/dev/null || die "healthcheck internal setelah rehearsal gagal"
   psql_live -At -c "select migration_name from _prisma_migrations where finished_at is not null and rolled_back_at is null order by 1" | LC_ALL=C sort -u > "$BK_DIR/applied-sesudah-rehearsal.txt"
   cmp -s "$BK_DIR/applied-sebelum.txt" "$BK_DIR/applied-sesudah-rehearsal.txt" || die "daftar migrasi production berubah selama rehearsal"
-  [ "$(psql_live -At -c "select count(*) from pg_tables where schemaname='public' and tablename in ('production_unit_schedules','production_unit_schedule_events')")" = "0" ] || die "tabel jadwal muncul di production (rehearsal tidak boleh memigrasi production)"
+  [ "$(psql_live -At -c "select count(*) from pg_tables where schemaname='public' and tablename in ('production_unit_schedules','production_unit_schedule_events','unit_component_reuse_entries')")" = "0" ] || die "tabel jadwal muncul di production (rehearsal tidak boleh memigrasi production)"
   psql_live -At -c "$FP_BEKU_SQL" | LC_ALL=C sort > "$BK_DIR/data-sesudah-rehearsal.txt" || die "sidik jari beku production sesudah rehearsal gagal"
   diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/data-sesudah-rehearsal.txt" >/dev/null || { diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/data-sesudah-rehearsal.txt" || true; die "dokumen pembanding production BERUBAH selama rehearsal"; }
   [ "$(psql_live -At -c "select count(*) from pg_database where datname like 'rehearsal_rjm_test_%'")" = "0" ] || die "DB rehearsal masih tersisa di server"
@@ -863,7 +950,7 @@ NEW_INDEX="$(grep -o 'index-[A-Za-z0-9_-]*\.js' "$NEW_DIR/frontend/dist/index.ht
 MAPS_KEY="$(sed -n 's/^VITE_GOOGLE_MAPS_JS_KEY=//p' "$PERSIST/frontend/.env" | tr -d '\r"'"'"' ')"
 [ -n "$(grep -lF "$MAPS_KEY" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat VITE_GOOGLE_MAPS_JS_KEY"
 # Fitur rilis ini harus ada di bundel baru; fitur live sebelumnya (verifikasi ADA di dist release aktif dulu) tidak boleh hilang.
-for s1 in "Jadwal mingguan" "Pelaksanaan Meja" "Papan Meja" "Jadwalkan lebih awal" "Hari Minggu libur"; do
+for s1 in "Jadwal mingguan" "Pelaksanaan Meja" "Papan Meja" "Jadwalkan lebih awal" "Hari Minggu libur" "Catat pemakaian aktual" "Komponen lama dari unit ini" "Bahan baru dari Gudang" "Gunakan sebagai isian awal"; do
   [ -n "$(grep -lF "$s1" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru TIDAK memuat teks fitur rilis ini: ${s1}"
 done
 for s2 in "Ruang Kerja Unit" "Menunggu dicatat diterima" "Catat diterima" "Ternyata belum diterima fisik" "Muat ulang ruang kerja" "Rencana · tidak mengurangi stok" "Aktual · mengurangi stok" "Catat status kerja" "Belum ada catatan pekerjaan" "Ajukan Koreksi Stok" "Koreksi Penerimaan" "Konfirmasi Barang Jadi" "Selesaikan Produksi" "Rencana Produksi" "Uang muka dialokasikan ke faktur" "Tetapkan Siap Kirim (override)" "Riwayat referensi dari file (bukan transaksi)" "Simpan ke Stok" "Barang Akan Datang"; do
@@ -915,7 +1002,7 @@ dcp "$NEW_DIR" run --rm --no-deps -T backend npx prisma migrate deploy </dev/nul
 [ "$(psql_live -At -c "select count(*) from _prisma_migrations where finished_at is null and rolled_back_at is null")" = "0" ] || die "ada migrasi setengah jalan; JANGAN switch"
 [ "$(psql_live -At -c "select count(*) from _prisma_migrations where finished_at is not null and rolled_back_at is null")" = "$(( MIG_SEBELUM + 1 ))" ] || die "jumlah migrasi terpasang != sebelum + 1"
 for m in $MIG_LIST; do psql_live -At -c "select finished_at is not null from _prisma_migrations where migration_name='${m}'" | grep -Fx t >/dev/null || die "${m} tidak tercatat selesai"; done
-[ "$(psql_live -At -c "select (select count(*) from production_unit_schedules) + (select count(*) from production_unit_schedule_events)")" = "0" ] || die "tabel jadwal TIDAK kosong tepat setelah migrasi"
+[ "$(psql_live -At -c "select (select count(*) from production_unit_schedules) + (select count(*) from production_unit_schedule_events) + (select count(*) from unit_component_reuse_entries)")" = "0" ] || die "tabel jadwal TIDAK kosong tepat setelah migrasi"
 [ "$(psql_live -At -c "select count(*) from pg_constraint where conname in ('production_unit_schedules_unit_id_fkey','production_unit_schedules_adopted_plan_id_fkey','production_unit_schedule_events_schedule_id_fkey','production_unit_schedule_events_unit_id_fkey') and confdeltype='r' and convalidated")" = "4" ] || die "4 FK RESTRICT jadwal tidak terpasang/tervalidasi"
 [ "$(psql_live -At -c "select count(*) from pg_trigger t join pg_proc p on p.oid = t.tgfoid where t.tgname = 'production_unit_schedule_events_append_only_trg' and not t.tgisinternal and p.proname = 'production_adopsi_append_only'")" = "1" ] || die "trigger append-only riwayat jadwal tidak terpasang"
 [ "$(psql_live -At -c "$SKEMA_SQL")" = "$(cat "$BK_DIR/skema-prod-sebelum.txt")" ] || die "skema tabel lama BERUBAH oleh migrasi (jangan switch)"
@@ -951,8 +1038,8 @@ NBE_EXPECT="$(printf '%s\n' "$BACKEND_SRC_EXPECT" | wc -w)"
 [ "$NBE" = "$NBE_EXPECT" ] || die "berkas backend yang diverifikasi harus tepat ${NBE_EXPECT} (${NBE})"
 ok "${NBE} berkas backend di container = kandidat (byte-identik)"
 PSQLN() { dcp "$NEW_DIR" exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" -X -At -q -c "$1" </dev/null; }
-[ "$(PSQLN "select count(*) from pg_tables where schemaname='public' and tablename in ('production_unit_schedules','production_unit_schedule_events')")" = "2" ] || die "tabel jadwal tidak ada di produksi"
-[ "$(PSQLN "select (select count(*) from production_unit_schedules) + (select count(*) from production_unit_schedule_events)")" = "0" ] || die "ada jadwal tepat setelah switch (tidak ada yang boleh membuatnya)"
+[ "$(PSQLN "select count(*) from pg_tables where schemaname='public' and tablename in ('production_unit_schedules','production_unit_schedule_events','unit_component_reuse_entries')")" = "2" ] || die "tabel jadwal tidak ada di produksi"
+[ "$(PSQLN "select (select count(*) from production_unit_schedules) + (select count(*) from production_unit_schedule_events) + (select count(*) from unit_component_reuse_entries)")" = "0" ] || die "ada jadwal tepat setelah switch (tidak ada yang boleh membuatnya)"
 ok "objek rilis terpasang di produksi: 2 tabel jadwal (kosong)"
 dcp "$NEW_DIR" run --rm --no-deps -T backend npx prisma migrate status </dev/null 2>&1 | grep -i 'up to date' >/dev/null || die "migrate status produksi tidak 'up to date'"
 ok "migrate status up to date"
@@ -994,7 +1081,7 @@ const hitung = async (sql) => Number((await prisma.$queryRawUnsafe(sql))[0].n);
 const TULIS = {
   sm: "select count(*)::int n from stock_movements", cmd: "select count(*)::int n from v2_commands", jad: "select count(*)::int n from production_unit_schedules", ev: "select count(*)::int n from production_unit_schedule_events", plan: "select count(*)::int n from production_run_plans_v2",
   job: "select count(*)::int n from jobs", run: "select count(*)::int n from production_runs_v2", qc: "select count(*)::int n from quality_inspections_v2", jur: "select count(*)::int n from fin_journal_entries", rec: "select count(*)::int n from unit_workshop_receipts",
-  serah: "select count(*)::int n from unit_custody_handoffs_v2", act: "select count(*)::int n from activity_events", outbox: "select count(*)::int n from domain_outbox", unit: "select count(*)::int n from units", order: "select count(*)::int n from \"Order\"",
+  serah: "select count(*)::int n from unit_custody_handoffs_v2", act: "select count(*)::int n from activity_events", outbox: "select count(*)::int n from domain_outbox", komp: "select count(*)::int n from unit_component_reuse_entries", unit: "select count(*)::int n from units", order: "select count(*)::int n from \"Order\"",
 };
 const awal = {}; for (const [k, q] of Object.entries(TULIS)) awal[k] = await hitung(q);
 const nUnit = awal.unit;
@@ -1039,6 +1126,28 @@ const ex = await api("POST", "/api/production-v2/rencana/export", tA, { from: ha
 let exInfo = "";
 if (ex.status === 200) { const kolom = (ex.json?.columns ?? []).map((c) => c.key); exInfo = `${kolom.length} kolom; baris=${ex.json?.rows?.length}`; rec("ekspor xlsx: 200, kolom Tanggal Jadwal + Status Rencana + Mode pelaksanaan, data terbaca", kolom.length === 29 && ["tanggal", "sumberJadwal", "modePelaksanaan"].every((k) => kolom.includes(k)) && Array.isArray(ex.json?.rows), exInfo); } else rec("ekspor xlsx: 200", false, String(ex.status));
 void ExcelJS;
+
+// ── Komponen lama dari unit pelanggan (BUKAN stok): bacaan + penolakan yang terjadi SEBELUM menyentuh data ──
+const kompBody = { name: "Pegas bongkaran", qty: 1, uom: "PCS", condition: "bagus", outcome: "REUSED", workPart: "rangka" };
+rec("komponen lama: tanpa token → 401", (await api("GET", `${PR}/units/${nol}/komponen-lama`, null)).status === 401);
+rec("komponen lama: catat tanpa Idempotency-Key → 400 IDEMPOTENCY_KEY_INVALID (tidak menulis)", await (async () => { const r = await api("POST", `${PR}/units/${nol}/komponen-lama`, tA, kompBody); return r.status === 400 && r.json?.code === "IDEMPOTENCY_KEY_INVALID"; })());
+rec("komponen lama: jumlah 0 → 400 KOMPONEN_JUMLAH_INVALID (ditolak sebelum menyentuh data)", await (async () => { const r = await api("POST", `${PR}/units/${nol}/komponen-lama`, tA, { ...kompBody, qty: 0 }, { "Idempotency-Key": "smoke-komp-00000001" }); return r.status === 400 && r.json?.code === "KOMPONEN_JUMLAH_INVALID"; })());
+rec("komponen lama: unit tidak ada → 404 UNIT_TIDAK_ADA (tidak menulis)", await (async () => { const r = await api("POST", `${PR}/units/${nol}/komponen-lama`, tA, kompBody, { "Idempotency-Key": "smoke-komp-00000002" }); return r.status === 404 && r.json?.code === "UNIT_TIDAK_ADA"; })());
+rec("komponen lama: foto bukan alamat bukti resmi → 400 KOMPONEN_FOTO_INVALID", await (async () => { const r = await api("POST", `${PR}/units/${nol}/komponen-lama`, tA, { ...kompBody, photoUrls: ["https://evil.example/x.jpg"] }, { "Idempotency-Key": "smoke-komp-00000003" }); return r.status === 400 && r.json?.code === "KOMPONEN_FOTO_INVALID"; })());
+if (u1) {
+  const kl = await api("GET", `${PR}/units/${u1.unitId}/komponen-lama`, tA);
+  rec(`komponen lama unit ${u1.unitCode}: 200, asal 'Dari kasur pelanggan — kode unit', total terpisah, dampak stok 'Tidak ada'`, kl.status === 200 && Array.isArray(kl.json?.items) && kl.json?.asal === `Dari kasur pelanggan — ${u1.unitCode}` && !!kl.json?.total?.pemakaianKembali && /Tidak ada/.test(kl.json?.dampakStok ?? ""), String(kl.status));
+  const ad2 = await api("GET", `${PR}/units/${u1.unitId}/adopsi`, tA);
+  rec("panel unit memuat komponenLama (dua sumber terpisah: pemakaianAktual vs komponenLama)", ad2.status === 200 && !!ad2.json?.komponenLama && !!ad2.json?.pemakaianAktual, String(ad2.status));
+  const rk = await api("GET", `${PR}/units/${u1.unitId}/ruang-kerja`, tA);
+  rec("ruang kerja unit: detail order (kondisi pelanggan, catatan produksi, komplain) terbaca", rk.status === 200 && !!rk.json?.order?.detail?.kondisiPelanggan, String(rk.status));
+} else skip("komponen lama + ruang kerja unit nyata", "tidak ada unit aktif");
+const exo = await api("GET", `${PR}/work-orders/export.xlsx`, tA, undefined, {}, true);
+if (exo.status === 200) {
+  const wb = new ExcelJS.Workbook(); await wb.xlsx.load(exo.buf);
+  const kolomAkt = (wb.getWorksheet("Pemakaian Aktual")?.getRow(1).values ?? []).slice(1);
+  rec("ekspor Order Produksi: sheet Pemakaian Aktual memuat Sumber + Dampak Stok, sheet Komponen Lama ada dan dibedakan", kolomAkt.includes("Sumber") && kolomAkt.includes("Dampak Stok") && !!wb.getWorksheet("Komponen Lama"), `${kolomAkt.length} kolom aktual`);
+} else rec("ekspor Order Produksi (.xlsx): 200", false, String(exo.status));
 
 // ── Tidak ada tulisan ──
 for (const [k, q] of Object.entries(TULIS)) rec(`smoke tidak menulis: ${k} tetap ${awal[k]}`, (await hitung(q)) === awal[k]);

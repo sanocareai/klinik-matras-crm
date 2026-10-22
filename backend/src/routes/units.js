@@ -699,6 +699,12 @@ unitRouter.post("/:id/materials", requirePermission(P.UNIT_MATERIAL_WRITE), asyn
       movement = await prisma.$transaction(async (tx) => {
         if (kunci) await tx.v2Command.create({ data: { domain: "PRODUCTION_V1", actorId: req.user.id, idempotencyKey: kunci, commandType: "UNIT_MATERIAL_USAGE_V1", aggregateType: "unit", aggregateId: unit.id, requestHash, status: "PROCESSING" } });
         await guardV1UnitWrite(tx, unit.id, { what: "pemakaian bahan", actorId: req.user.id }); // kunci unit -> kepemilikan -> tulis, satu transaksi
+        // KOREKSI tidak boleh melebihi pemakaian bersih bahan itu pada unit ini (qty negatif = pengembalian ke stok): mencegah stok "muncul" dari koreksi berlebih. Pemakaian = ISSUE/RETURN/WASTE bertaut unit.
+        if (rawQty < 0) {
+          const net = await tx.stockMovement.aggregate({ where: { unitId: unit.id, materialId, type: { in: ["ISSUE", "RETURN", "WASTE"] } }, _sum: { qty: true } });
+          const dipakai = -Number(net._sum.qty ?? 0);
+          if (-rawQty > dipakai + 0.00005) { const e = new Error(`Koreksi ${-rawQty} melebihi pemakaian bersih bahan ini pada unit (${Math.max(dipakai, 0)}). Kurangi jumlah koreksi.`); e.statusCode = 409; e.code = "UNIT_KOREKSI_MELEBIHI_PEMAKAIAN"; throw e; }
+        }
         const mv = await postStockMovement(tx, {
           materialId, type, qty: ledgerQty, unitId: unit.id,
           note: note || null, createdById: req.user.id,

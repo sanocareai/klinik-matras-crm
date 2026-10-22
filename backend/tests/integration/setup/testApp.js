@@ -41,6 +41,7 @@ const { productionRouter } = await import("../../../src/routes/production.js");
 const { productionAdopsiRouter } = await import("../../../src/routes/productionAdopsi.js");
 const { productionWorkspaceRouter } = await import("../../../src/routes/productionWorkspace.js");
 const { productionRencanaJadwalRouter } = await import("../../../src/routes/productionRencanaJadwal.js");
+const { productionComponentReuseRouter } = await import("../../../src/routes/productionComponentReuse.js");
 const { morningPriorityRouter } = await import("../../../src/routes/morningPriority.js");
 const { financeRouter } = await import("../../../src/routes/finance.js");
 const { financeTxRouter } = await import("../../../src/routes/financeTransactions.js");
@@ -116,6 +117,7 @@ export function buildTestApp() {
   app.use("/api/production", productionRouter); // P12B.5: work-orders (penanda sumber V1/V2)
   app.use("/api/production", productionAdopsiRouter); // adopsi Admin: panel unit, rencana bahan, status kerja manual, ekspor Excel
   app.use("/api/production", productionWorkspaceRouter); // Ruang Kerja Status Produksi (baca-saja)
+  app.use("/api/production", productionComponentReuseRouter); // Komponen lama dari unit pelanggan
   app.use("/api/production", productionRencanaJadwalRouter); // Rencana Admin (kalender, antrean, jadwal per unit tanpa Run)
   app.use("/api/morning-priority-requests", morningPriorityRouter);
   app.use("/api/inventory", inventoryRouter);
