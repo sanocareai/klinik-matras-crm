@@ -141,7 +141,7 @@ test("uji perilaku di templat: blok DO dibatalkan, sentinel tidak tertangkap pen
 
 test("rehearsal-penuh: build image BERTAG rehearsal (tag production utuh), skenario pada KLON, DB utama tidak berubah, guard, tes integrasi di Postgres sekali-pakai TANPA volume dan TANPA Postgres production, pembersihan", () => {
   const lanjut = script.match(/rehearsal_penuh_lanjutan\(\) \{[\s\S]*?\n\}\n/)[0];
-  for (const s of ["CREATE DATABASE \\\"${KLON_DB}\\\" TEMPLATE \\\"${REH_DB}\\\"", "DB rehearsal UTAMA tetap tidak berubah oleh skenario", "GUARD_DB=\"$KLON_DB\"", "tes_jalankan \"$BK_DIR/tes-integrasi.log\" $TES_FILES", "node tests/integration/setup/runDisposable.js \"$@\"", "--tmpfs /var/lib/postgresql/data", "docker rm -f \"$PGT\"", "TEST_DB_SERVER_URL=\"postgresql://${DB_USER}:${PGPW}@${PGT}:5432/postgres?connection_limit=30\"",
+  for (const s of ["CREATE DATABASE \\\"${KLON_DB}\\\" TEMPLATE \\\"${REH_DB}\\\"", "DB rehearsal UTAMA tetap tidak berubah oleh skenario", "guard_ke \"$KLON_DB\"", "guard_ke \"$KLON_G\"", "tes_jalankan \"$BK_DIR/tes-integrasi.log\" $TES_FILES", "node tests/integration/setup/runDisposable.js \"$@\"", "--tmpfs /var/lib/postgresql/data", "docker rm -f \"$PGT\"", "TEST_DB_SERVER_URL=\"postgresql://${DB_USER}:${PGPW}@${PGT}:5432/postgres?connection_limit=30\"",
     "di luar batas kebijakan ulang", '[ "$T_N" = "$TES_N_EXPECT" ]', "sekali-pakai", "KEBIJAKAN FLAKY (eksplisit, SATU kali)", "tes integrasi GAGAL lagi pada percobaan ulang", "ringkasan tes integrasi tidak terbaca", "mengulang HANYA berkas itu di DB baru (sekali)"]) assert.ok(lanjut.includes(s), s);
   assert.ok(lanjut.includes('[ "$NG" -le 3 ] && [ "$T_FAIL" -le 3 ]'), "ulang hanya bila kegagalan terbatas (≤ 3 berkas, ≤ 3 tes)");
   for (const l of lanjut.split("\n").filter((x) => /grep -(oE|E) /.test(x) && /(tes-integrasi(-ulang)?\.log)/.test(x))) assert.ok(/\|\| true/.test(l), `grep pada log tes tanpa '|| true': ${l.slice(0, 90)}`);
@@ -184,13 +184,41 @@ test("rollback kode terbukti pada data: image LAMA (baseline) membaca KLON beris
   assert.ok(script.indexOf("rollback kode terbukti pada data") < script.indexOf('DROP DATABASE IF EXISTS \\"${KLON_DB}\\" WITH (FORCE)" </dev/null >/dev/null 2>&1 || true\n  # 4) TES INTEGRASI'), "dijalankan sebelum klon dibuang");
 });
 
-test("rollback guard: baca-saja, informasi (exit 0), TIDAK menghapus tabel/riwayat jadwal, menolak hanya bila tabel tidak ada", () => {
-  const g = baca("scripts/rollback-guard-rencana-jadwal-mingguan.sh");
-  assert.doesNotMatch(g.replace(/^#.*$/gm, ""), /\b(DROP|DELETE|TRUNCATE|UPDATE|INSERT|ALTER)\b/i, "guard hanya membaca");
-  assert.ok(g.includes("GUARD LULUS") && g.includes("exit 1") && g.includes("tidak dihapus") && g.includes("GUARD_DB") && g.includes("jadwal Admin="));
-  assert.ok(script.includes("rollback-guard-rencana-jadwal-mingguan.sh") && script.includes("TIDAK menghapus tabel jadwal"));
-  assert.doesNotMatch(script.match(/rollback_instructions\(\)[\s\S]*?\nEOF/)[0], /DROP TABLE|DROP COLUMN|DELETE FROM production_unit/);
+test("rollback guard: LULUS bila tak ada jadwal ACTIVE; DITOLAK bila ada (jumlah+contoh+alasan); ADOPTED hanya bila rencana Meja sah; bila ragu tolak; baca-saja", () => {
+  const g = baca("scripts/rollback-guard-rencana-jadwal-mingguan.sh"); const kode = g.replace(/^#.*$/gm, "");
+  assert.doesNotMatch(kode, /\b(DROP|DELETE|TRUNCATE|UPDATE|INSERT|ALTER|GRANT)\b/i, "guard hanya membaca");
+  assert.ok(g.includes("BEGIN READ ONLY"), "pembacaan dalam transaksi READ ONLY");
+  // aturan keputusan
+  for (const k of ["s.status = 'ACTIVE'", "s.status = 'ADOPTED' and (s.adopted_plan_id is null or p.id is null or r.unit_id is distinct from s.unit_id or p.status = 'CANCELLED')", "s.status not in ('ACTIVE','ADOPTED','CLEARED')", "limit 10"]) assert.ok(kode.includes(k), k);
+  assert.ok(kode.includes('"$ADA" = "0"') && /GUARD LULUS: tidak ada jadwal Admin yang bisa tersembunyi/.test(kode), "tabel belum ada = lulus");
+  assert.match(kode, /\[ "\$ADA" = "2" \] \|\| \{.*GUARD DITOLAK.*exit 1; \}/, "hanya satu tabel = tolak");
+  assert.match(kode, /if \[ "\$NBLOK" != "0" \]; then[\s\S]*?GUARD DITOLAK[\s\S]*?exit 1\nfi/, "penghalang = exit 1");
+  assert.ok(/exit 2/.test(kode) && (kode.match(/exit 2/g) ?? []).length >= 3, "hitungan tak terbaca = ditolak (exit 2)");
+  for (const k of ["Contoh unit terdampak", "ALASAN:", "TINDAKAN:", "PERBAIKAN MAJU", "jadwal Admin=${JAD}", "DIBATALKAN", "rencana Meja pengambil-alih bukan milik unit ini"]) assert.ok(kode.includes(k), k);
+  assert.doesNotMatch(g, /rollback kode aman\b(?!.*tidak)/i, "tidak menyebut rollback 'aman' hanya karena tabel ada");
+  assert.match(g.split("\n").slice(0, 20).join("\n"), /ACTIVE[\s\S]*tersembunyi[\s\S]*KEDUA/, "alasan penolakan terdokumentasi di kepala berkas");
+  // teks rollback di skrip rilis: jangan menyebut rollback kode 'aman' tanpa syarat guard; tunjuk perbaikan maju
+  assert.ok(!script.includes("ROLLBACK KODE: aman kapan saja") && !script.includes("dibiarkan terpasang pun aman bagi kode lama"));
+  const ins = script.match(/rollback_instructions\(\)[\s\S]*?\nEOF/)[0];
+  for (const k of ["LANGKAH WAJIB sebelum rollback KODE", "exit 1/2 (DITOLAK)", "PERBAIKAN MAJU", "HANYA setelah guard LULUS", "jadwal berlaku TIDAK aman"]) assert.ok(ins.includes(k), k);
+  assert.doesNotMatch(ins, /DROP TABLE|DROP COLUMN|DELETE FROM production_unit/);
+  assert.match(script, /^# ROLLBACK KODE: TIDAK otomatis aman\./m);
   if (punyaBash) assert.equal(spawnSync("bash", ["-n", path.join(root, "scripts/rollback-guard-rencana-jadwal-mingguan.sh")]).status, 0);
+});
+
+test("rehearsal guard: empat pembuktian terikat pada SHA (sebelum jadwal → lulus; satu jadwal → tolak tanpa ubah data; diambil alih/dibatalkan/dikeluarkan sesuai aturan; kode lama tidak menggandakan)", () => {
+  const lanjut = script.match(/rehearsal_penuh_lanjutan\(\) \{[\s\S]*?\n\}\n/)[0];
+  for (const k of ["PEMBUKTIAN 1 — sebelum jadwal Admin pertama: guard LULUS", "PEMBUKTIAN 2 — setelah satu jadwal Admin: guard DITOLAK", "PEMBUKTIAN 3 —", "PEMBUKTIAN 4 — kode LAMA", "guard rollback MENGUBAH data", "gfase g1", "gfase g2", "gfase g3", "gfase g3b", "gfase g4", "gfase g5", "INFO bahaya terbukti=ya", "TEMPLATE \\\"${REH_DB}\\\"", "rehearsal_rjm_test_klong_${TS}"]) assert.ok(lanjut.includes(k) || script.includes(k), k);
+  assert.ok(lanjut.includes('[ "$GX" = "0" ]') && lanjut.includes('[ "$GX" = "1" ]'));
+  assert.ok(script.includes('"$PREV_IMG_ID" node /rh/rehearsal-guard-kode-lama-rencana-jadwal-mingguan.mjs'), "pembuktian 4 dijalankan di image LAMA");
+  assert.ok(script.includes('rehearsal_rjm_test_klong_${TS}\\" WITH (FORCE)'), "klon guard dibersihkan (juga pada kegagalan)");
+  const gl = baca("scripts/lib/rehearsal-guard-rencana-jadwal-mingguan.mjs"), gk = baca("scripts/lib/rehearsal-guard-kode-lama-rencana-jadwal-mingguan.mjs");
+  for (const k of ['FASE === "g1"', 'FASE === "g2"', 'FASE === "g3"', 'FASE === "g3b"', 'FASE === "g4"', 'FASE === "g5"', "RH-GRD-", "ADOPTED", "CLEARED", "CANCELLED"]) assert.ok(gl.includes(k), k);
+  assert.doesNotMatch(gk, /prisma\.[a-zA-Z]+\.(create|update|upsert|createMany|updateMany|deleteMany|delete)\(/, "kode-lama menulis hanya lewat API lama");
+  for (const k of ["image ini LAMA", "unit X (ADOPTED", "unit Y (CLEARED)", "BAHAYA yang dicegah guard", "INFO bahaya terbukti="]) assert.ok(gk.includes(k), k);
+  assert.ok(script.includes("scripts/lib/rehearsal-guard-rencana-jadwal-mingguan.mjs scripts/lib/rehearsal-guard-kode-lama-rencana-jadwal-mingguan.mjs docker-compose.yml"), "pustaka guard wajib ada di arsip kandidat");
+  const re = new RegExp(script.match(/^ALLOWED_RE='(.*)'$/m)[1]);
+  assert.match("scripts/lib/rehearsal-guard-rencana-jadwal-mingguan.mjs", re); assert.match("scripts/lib/rehearsal-guard-kode-lama-rencana-jadwal-mingguan.mjs", re);
 });
 
 test("skrip tersimpan identik dengan hasil generator terhadap repo ini (bila repo lengkap)", { skip: !fs.existsSync(path.join(root, "scripts/release-rencana-jadwal-mingguan.sh")) }, () => {

@@ -25,7 +25,9 @@ const GENERATOR = "scripts/gen-release-rencana-jadwal-mingguan.cjs";
 const CAND_BRANCH = "feat/rencana-produksi-jadwal-mingguan";
 const LIB_SKEN = "scripts/lib/rehearsal-skenario-rencana-jadwal-mingguan.mjs";
 const LIB_LAMA = "scripts/lib/rehearsal-kode-lama-rencana-jadwal-mingguan.mjs";
-const FILE_TETAP = [OUT, GUARD, LIB_SCAN, LIB_REH, LIB_SMOKE, LIB_SKEN, LIB_LAMA, GENERATOR, TPL];
+const LIB_GUARD = "scripts/lib/rehearsal-guard-rencana-jadwal-mingguan.mjs"; // pembuktian aturan guard rollback (fase g1..g5) pada klon
+const LIB_GUARD_LAMA = "scripts/lib/rehearsal-guard-kode-lama-rencana-jadwal-mingguan.mjs"; // kode LAMA pada klon guard: bukti bahaya jadwal ACTIVE + keadaan yang diizinkan
+const FILE_TETAP = [OUT, GUARD, LIB_SCAN, LIB_REH, LIB_SMOKE, LIB_SKEN, LIB_LAMA, LIB_GUARD, LIB_GUARD_LAMA, GENERATOR, TPL];
 // Berkas yang HARUS identik antara base dan kandidat (rilis ini tidak boleh menyentuhnya): ledger stok (postStockMovement), pembaca stok per lokasi + kelompok bahan, jurnal Finance, otorisasi/izin, FUNGSI STATUS LINTAS WORKSPACE (satu-satunya jalur ubah status unit/order),
 // tahap/QC Produksi V2, Produksi override, Delivery override, Stock Count. (Stock Opname penuh live abf2b75e: stockCount*, opnameSesi, pergerakanSesiHitung, stokFisik, dokumenGudangLain dijaga identik). (orders.js, productionAdopsi.js, unitCustodyCommandService.js, customerNotifications.js SENGAJA berubah di rilis ini — diaudit lewat allowlist eksplisit dan tes.)
 const GUARD_UNCHANGED = [
