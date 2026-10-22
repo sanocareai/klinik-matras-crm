@@ -162,11 +162,8 @@ export function tindakanBerikutnya({ unitStatus, posisi, kerja, adaTarget = fals
   if (k === "DIKERJAKAN") return aktualAda || !rencanaBahanAda
     ? t(AKSI.FINISH_WORK, "Tandai pekerjaan Selesai", "Admin / PIC", aktualAda ? "Bahan sudah dicatat" : null)
     : t(AKSI.RECORD_MATERIAL, "Catat bahan yang benar-benar dipakai", "PIC Bahan", "Rencana bahan sudah ada, pemakaian aktual belum");
-  if (k === "DIJADWALKAN") {
-    if (!adaTarget) return t(AKSI.SET_TARGET, "Tetapkan target selesai", "Admin");
-    if (!rencanaBahanAda) return t(AKSI.PLAN_MATERIAL, "Susun rencana bahan", "Admin");
-    return t(AKSI.START_WORK, "Mulai pekerjaan", "Admin / PIC", "Catat pemakaian bahan / Sudah dikerjakan, atau mulai dari aplikasi Meja");
-  }
+  // Target selesai dan rencana bahan OPSIONAL: tidak pernah menjadi langkah yang menahan unit berjadwal. Satu tindakan yang sama dengan atau tanpa keduanya; keduanya hanya disebut sebagai tambahan.
+  if (k === "DIJADWALKAN") return t(AKSI.START_WORK, "Mulai pekerjaan", "Admin / PIC", "Catat pemakaian bahan (otomatis Sudah dikerjakan) atau mulai dari aplikasi Meja. Target selesai dan rencana bahan opsional — boleh ditambahkan kapan saja.");
   // BELUM_DIJADWALKAN (atau tidak dikenal)
-  return t(AKSI.OPEN_PLAN, adaTarget ? "Jadwalkan di Rencana Produksi" : "Tetapkan target dan jadwalkan", "Admin", "Boleh juga langsung catat pemakaian bahan (otomatis Sudah dikerjakan) atau status kerja, tanpa aplikasi Meja");
+  return t(AKSI.OPEN_PLAN, "Jadwalkan di Rencana Produksi", "Admin", "Target selesai opsional. Boleh juga langsung catat pemakaian bahan (otomatis Sudah dikerjakan) atau status kerja, tanpa aplikasi Meja");
 }

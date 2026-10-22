@@ -82,7 +82,7 @@ test("J2. jadwal Rencana Admin ACTIVE tanpa Meja/Run → 'Dijadwalkan' di Ringka
   assert.equal(k.key, "DIJADWALKAN"); assert.equal(k.label, "Dijadwalkan"); assert.equal(k.source, "JADWAL"); assert.equal(k.tanpaJadwal, false); assert.ok(!k.faktaJadwal, "tidak ada fakta 'tanpa jadwal'");
   assert.equal(ad.adopsi.jadwal.sumber, "ADMIN"); assert.equal(ad.adopsi.jadwal.tanggal, H(2)); assert.equal(ad.adopsi.jadwal.meja, "TABLE_1");
   assert.deepEqual({ baru: ad.adopsi.pemakaianBahan.baruCatatan, lama: ad.adopsi.pemakaianBahan.komponenLamaDipakaiKembali }, { baru: 0, lama: 0 }, "jadwal tidak mengaku ada pemakaian bahan");
-  assert.notEqual(ad.adopsi.tindakan.label, "Jadwalkan di Rencana Produksi"); assert.ok(!/Tetapkan target dan jadwalkan/.test(ad.adopsi.tindakan.label), "tidak lagi menyuruh menjadwalkan unit yang sudah terjadwal");
+  assert.notEqual(ad.adopsi.tindakan.label, "Jadwalkan di Rencana Produksi", "tidak lagi menyuruh menjadwalkan unit yang sudah terjadwal");
   assert.deepEqual(await daftar("DIJADWALKAN"), [u.id]); assert.deepEqual(await daftar("BELUM_DIJADWALKAN"), []); assert.deepEqual(await daftar("DIKERJAKAN"), []);
   const x = await barisExcel(u);
   assert.equal(x["Status Kerja (Administratif)"], "Dijadwalkan"); assert.equal(x["Sumber Status Kerja"], "Dari jadwal"); assert.ok(!x["Fakta Jadwal"], "Excel tanpa 'tanpa jadwal'");
@@ -137,4 +137,15 @@ test("J6. daftar kerja (work list) & panel memakai aturan yang sama: unit berjad
   const ant = (await w.admin.api.get(`${P}/rencana/antrean?tab=SEMUA`)).body; const baris = (id) => ant.items.find((i) => i.unitId === id);
   assert.ok(baris(sudah.id) && baris(belum.id), JSON.stringify(ant.counts));
   assert.notEqual(baris(sudah.id).tab, baris(belum.id).tab, "antrean memisahkan unit berjadwal dari yang belum (aturan antrean tetap konsisten dengan status kerja)");
+});
+
+test("J7. TINDAKAN BERIKUTNYA unit Dijadwalkan (sudah diterima di workshop): satu tindakan 'Mulai pekerjaan'; target selesai & rencana bahan OPSIONAL — tidak ada langkah wajib 'Tetapkan target'/'Susun rencana bahan', sama dengan atau tanpa keduanya", async () => {
+  const u = await mkUnit({ received: true }); assert.equal((await jadwalkan(u)).status, 201);
+  const tanpa = (await adopsi(u)).adopsi; assert.equal(tanpa.kerja.key, "DIJADWALKAN"); assert.equal(tanpa.targetSelesai?.at ?? null, null, "unit ini memang tanpa target");
+  assert.equal(tanpa.tindakan.aksi, "START_WORK"); assert.equal(tanpa.tindakan.label, "Mulai pekerjaan"); assert.match(tanpa.tindakan.detail, /Target selesai dan rencana bahan opsional/); assert.ok(!/wajib|harus/i.test(tanpa.tindakan.label + tanpa.tindakan.detail));
+  const m = await mat("KAIN-J7"); const put = await w.admin.api.put(`${P}/units/${u.id}/material-plan`, { lines: [{ materialId: m.id, qty: 2 }], expectedRevision: 0 }); assert.equal(put.status, 200);
+  const ada = await jadwalkan(u, { productionDate: H(3), expectedRevision: 1, targetDate: H(5) }); assert.equal(ada.status, 201, JSON.stringify(ada.body));
+  const dengan = (await adopsi(u)).adopsi; assert.ok(dengan.targetSelesai?.at, "kini ada target"); assert.equal(dengan.tindakan.aksi, "START_WORK"); assert.equal(dengan.tindakan.label, tanpa.tindakan.label);
+  const belum = await mkUnit({ received: true }); const bj = (await adopsi(belum)).adopsi.tindakan;
+  assert.equal(bj.label, "Jadwalkan di Rencana Produksi"); assert.match(bj.detail, /Target selesai opsional/);
 });

@@ -22,7 +22,7 @@ CAND_BRANCH="${CAND_BRANCH:-feat/rencana-produksi-jadwal-mingguan}"
 # Migrasi live terakhir (HARUS = migrasi terakhir di baseline, kandidat, dan produksi) dan jumlahnya: rilis ini tidak menambah/mengubah migrasi.
 LIVE_MIG_TERAKHIR="20261225090000_production_unit_component_reuse"; LIVE_MIG_JUMLAH="265"
 # Berkas yang BOLEH berbeda dari baseline: EKSPLISIT path persis (+ skrip rilis ini + guard). Apa pun di luar daftar = berhenti.
-ALLOWED_RE='^(backend/src/lib/domain/productionWorkStatus\.js|backend/src/services/productionOrderList\.js|backend/tests/integration/statusKerjaDariJadwal\.integration\.test\.js|backend/tests/releaseStatusKerjaJadwal\.test\.js|scripts/gen-release-status-kerja-jadwal\.cjs|scripts/lib/rehearsal-kode-status-kerja-jadwal\.mjs|scripts/lib/smoke-status-kerja-jadwal\.mjs|scripts/release-status-kerja-jadwal\.sh|scripts/templates/release-status-kerja-jadwal\.sh\.tpl)$'
+ALLOWED_RE='^(backend/src/lib/domain/productionWorkStatus\.js|backend/src/services/productionOrderList\.js|backend/tests/integration/statusKerjaDariJadwal\.integration\.test\.js|backend/tests/productionWorkStatus\.test\.js|backend/tests/releaseStatusKerjaJadwal\.test\.js|scripts/gen-release-status-kerja-jadwal\.cjs|scripts/lib/rehearsal-kode-status-kerja-jadwal\.mjs|scripts/lib/smoke-status-kerja-jadwal\.mjs|scripts/release-status-kerja-jadwal\.sh|scripts/templates/release-status-kerja-jadwal\.sh\.tpl)$'
 BACKEND_SRC_EXPECT="backend/src/lib/domain/productionWorkStatus.js backend/src/services/productionOrderList.js"
 FRONTEND_SRC_EXPECT=""
 # Perubahan live yang TIDAK boleh hilang/berubah: hotfix Stock Count; berkas pelindung identik dengan baseline (Koreksi Gudang inti, jurnal, otorisasi, Produksi override, Stock Count).

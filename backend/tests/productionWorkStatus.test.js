@@ -56,9 +56,12 @@ test("tindakan berikutnya: deterministik per keadaan dan menunjuk pelaku yang be
   assert.equal(t("AWAITING_PICKUP", "MENUNGGU_DIJEMPUT", "BELUM_DIJADWALKAN").aktor, "Delivery");
   assert.equal(t("RECEIVED", "SUDAH_DIJEMPUT", "BELUM_DIJADWALKAN").aksi, AKSI.CONFIRM_ARRIVAL);
   assert.equal(t("RECEIVED", "DI_WORKSHOP", "BELUM_DIJADWALKAN").aksi, AKSI.OPEN_PLAN);
-  assert.equal(t("RECEIVED", "DI_WORKSHOP", "DIJADWALKAN").aksi, AKSI.SET_TARGET);
-  assert.equal(t("RECEIVED", "DI_WORKSHOP", "DIJADWALKAN", { adaTarget: true }).aksi, AKSI.PLAN_MATERIAL);
-  assert.equal(t("RECEIVED", "DI_WORKSHOP", "DIJADWALKAN", { adaTarget: true, rencanaBahanAda: true }).aksi, AKSI.START_WORK);
+  // Target selesai & rencana bahan OPSIONAL: unit Dijadwalkan mendapat tindakan yang SAMA dengan atau tanpa keduanya (tidak pernah SET_TARGET/PLAN_MATERIAL), dan tidak memakai kata wajib.
+  for (const extra of [{}, { adaTarget: true }, { rencanaBahanAda: true }, { adaTarget: true, rencanaBahanAda: true }]) {
+    const x = t("RECEIVED", "DI_WORKSHOP", "DIJADWALKAN", extra);
+    assert.equal(x.aksi, AKSI.START_WORK, JSON.stringify(extra)); assert.equal(x.label, "Mulai pekerjaan"); assert.match(x.detail, /Target selesai dan rencana bahan opsional/); assert.ok(!/wajib|harus/i.test(x.label + x.detail));
+  }
+  for (const extra of [{}, { adaTarget: true }]) { const x = t("RECEIVED", "DI_WORKSHOP", "BELUM_DIJADWALKAN", extra); assert.equal(x.label, "Jadwalkan di Rencana Produksi"); assert.match(x.detail, /Target selesai opsional/); }
   assert.equal(t("RECEIVED", "DI_WORKSHOP", "DIKERJAKAN", { rencanaBahanAda: true }).aksi, AKSI.RECORD_MATERIAL);
   assert.equal(t("RECEIVED", "DI_WORKSHOP", "DIKERJAKAN", { rencanaBahanAda: true, aktualAda: true }).aksi, AKSI.FINISH_WORK);
   assert.equal(t("RECEIVED", "DI_WORKSHOP", "SELESAI").aksi, AKSI.MARK_READY);
