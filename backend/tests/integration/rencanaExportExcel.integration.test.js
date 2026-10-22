@@ -93,7 +93,7 @@ test("tanggal papan: hanya rencana tanggal itu; urut Meja → urutan manual; kol
   assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(r.body.readerMode, "COHORT");
   assert.deepEqual(codes(r.body), [B.unit.unitCode, A.unit.unitCode, C.unit.unitCode], "Meja 1 urutan manual (B=1, A=2), lalu Meja 2; unit besok tidak ikut");
   assert.ok(!codes(r.body).includes(D.unit.unitCode));
-  assert.equal(r.body.columns.length, 26); assert.equal(r.body.meta.fileName, `Target-Produksi-${new Date(`${DATE}T00:00:00Z`).getUTCDate().toString().padStart(2, "0")}-${["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"][new Date(`${DATE}T00:00:00Z`).getUTCMonth()]}-${DATE.slice(0, 4)}.xlsx`);
+  assert.equal(r.body.columns.length, 29); assert.equal(r.body.meta.fileName, `Target-Produksi-${new Date(`${DATE}T00:00:00Z`).getUTCDate().toString().padStart(2, "0")}-${["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"][new Date(`${DATE}T00:00:00Z`).getUTCMonth()]}-${DATE.slice(0, 4)}.xlsx`);
   assert.match(r.body.meta.generatedLabel, /^Data dibuat: \d{2} \w+ \d{4}, \d{2}\.\d{2} WIB$/); assert.equal(r.body.meta.includeValue, false);
   assert.deepEqual(r.body.rows.map((x) => x.no), [1, 2, 3]); assert.deepEqual(r.body.rows.map((x) => x.urutan), [1, 2, 1]); assert.deepEqual(r.body.rows.map((x) => x.seqManual), [true, true, false]);
   assert.equal(r.body.summary.total, 3); assert.deepEqual(r.body.summary.perStation.map((p) => p.count), [2, 1, 0, 0]); assert.equal(r.body.summary.tinggi, 1);

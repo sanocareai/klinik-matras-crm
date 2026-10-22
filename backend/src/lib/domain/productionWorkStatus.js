@@ -15,7 +15,7 @@
 export const WORK_STATUS = Object.freeze({
   BELUM_DIJADWALKAN: Object.freeze({ key: "BELUM_DIJADWALKAN", label: "Belum dijadwalkan", tone: "neutral" }),
   DIJADWALKAN: Object.freeze({ key: "DIJADWALKAN", label: "Dijadwalkan", tone: "accent" }),
-  DIKERJAKAN: Object.freeze({ key: "DIKERJAKAN", label: "Dikerjakan", tone: "accent" }),
+  DIKERJAKAN: Object.freeze({ key: "DIKERJAKAN", label: "Sudah dikerjakan", tone: "accent" }), // satu-satunya status "dikerjakan" (tanpa "Sedang dikerjakan"); BUKAN selesai QC / siap serah Gudang / siap kirim
   TERTUNDA: Object.freeze({ key: "TERTUNDA", label: "Tertunda", tone: "orange" }),
   MENUNGGU_QC: Object.freeze({ key: "MENUNGGU_QC", label: "Menunggu QC", tone: "orange" }),
   DIKERJAKAN_ULANG: Object.freeze({ key: "DIKERJAKAN_ULANG", label: "Dikerjakan ulang", tone: "orange" }),
@@ -24,9 +24,9 @@ export const WORK_STATUS = Object.freeze({
 });
 /** Nilai yang boleh dicatat manual oleh Admin/Lead (urutan = urutan tampil). */
 export const MANUAL_STATUSES = Object.freeze(["BELUM_DIJADWALKAN", "DIJADWALKAN", "DIKERJAKAN", "TERTUNDA", "SELESAI"]);
-export const WORK_SOURCE = Object.freeze({ APLIKASI: "APLIKASI", MANUAL: "MANUAL", STATUS_ORDER: "STATUS_ORDER", JADWAL: "JADWAL" });
+export const WORK_SOURCE = Object.freeze({ APLIKASI: "APLIKASI", MANUAL: "MANUAL", STATUS_ORDER: "STATUS_ORDER", JADWAL: "JADWAL", PEMAKAIAN_BAHAN: "PEMAKAIAN_BAHAN" });
 export const WORK_SOURCE_LABEL = Object.freeze({
-  APLIKASI: "Dari aplikasi Produksi", MANUAL: "Dicatat manual", STATUS_ORDER: "Mengikuti status order", JADWAL: "Dari jadwal",
+  APLIKASI: "Dari aplikasi Produksi", MANUAL: "Dicatat manual", STATUS_ORDER: "Mengikuti status order", JADWAL: "Dari jadwal", PEMAKAIAN_BAHAN: "Otomatis dari pemakaian bahan",
 });
 
 const COMPLETE_UNIT_STATUSES = new Set(["READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD", "IN_TRANSIT_OUT", "DELIVERED"]);
@@ -50,11 +50,15 @@ const iso = (v) => (v instanceof Date ? v.toISOString() : v ? new Date(v).toISOS
  * @param {boolean} [p.appStarted] ada bukti pekerjaan aplikasi (V1 log non-SKIP / V2 operasi atau bukti non-lewati)
  * @param {boolean} [p.scheduled] rencana punya meja
  * @param {{status:string,note?:string|null,actor?:{id?:string,name?:string|null}|null,createdAt:Date|string}|null} [p.manual] catatan manual TERAKHIR
+ * @param {{terakhirAt:Date|string,pertamaAt?:Date|string|null}|null} [p.pemakaian] pemakaian aktual yang BERHASIL tercatat: bahan baru (pergerakan ISSUE bertaut unit, termasuk lewat dokumen Gudang) atau komponen lama berhasil 'dipakai kembali'.
+ *   Rencana bahan, jadwal, dan komponen lama yang dikembalikan/disimpan/dibuang TIDAK dihitung. Koreksi/pengembalian/pembatalan TIDAK menghapusnya (baris asal tetap ada) — fakta historis 'pekerjaan pernah dilakukan' tidak hilang.
+ * @param {boolean} [p.punyaJadwal] ada jadwal (Rencana Admin atau rencana Meja) — hanya untuk fakta 'Dikerjakan tanpa jadwal'; TIDAK mengubah status (tidak ada jadwal fiktif)
  * @returns {{key,label,tone,source,sourceLabel,detail,manual:null|{status,by,at,note}}}
  */
-export function effectiveWorkStatus({ unitStatus, productionStatus = null, appStarted = false, scheduled = false, manual = null } = {}) {
+export function effectiveWorkStatus({ unitStatus, productionStatus = null, appStarted = false, scheduled = false, manual = null, pemakaian = null, punyaJadwal = null } = {}) {
   const manualOut = manual ? { status: manual.status, by: manual.actor?.name ?? null, at: iso(manual.createdAt), note: manual.note ?? null } : null;
-  const out = (key, source, detail = null) => ({ ...pick(key), source, sourceLabel: WORK_SOURCE_LABEL[source], detail, manual: manualOut });
+  const adaJadwal = punyaJadwal ?? scheduled;
+  const out = (key, source, detail = null) => ({ ...pick(key), source, sourceLabel: WORK_SOURCE_LABEL[source], detail, manual: manualOut, tanpaJadwal: key === "DIKERJAKAN" && !adaJadwal, faktaJadwal: key === "DIKERJAKAN" && !adaJadwal ? "Dikerjakan tanpa jadwal" : null });
   if (unitStatus === "CANCELLED") return out("DIBATALKAN", WORK_SOURCE.STATUS_ORDER, "Order/unit dibatalkan");
   if (appStarted) {
     const key = APP_MAP[productionStatus] || "DIKERJAKAN";
@@ -62,6 +66,12 @@ export function effectiveWorkStatus({ unitStatus, productionStatus = null, appSt
   }
   // Status order Siap Kirim (atau sesudahnya) = pekerjaan Produksi SUDAH selesai: tidak boleh tampil "Dikerjakan" di samping "Siap Kirim". Catatan manual tetap di riwayat; bila status order dimundurkan, catatan itu berlaku lagi.
   if (COMPLETE_UNIT_STATUSES.has(unitStatus)) return out("SELESAI", WORK_SOURCE.STATUS_ORDER, manualOut ? "Mengikuti status order (Siap Kirim atau sesudahnya); catatan manual sebelumnya tetap di riwayat" : "Mengikuti status order (Siap Kirim atau sesudahnya)");
+  // Pemakaian aktual berhasil tercatat → "Sudah dikerjakan" (status kerja administratif), tanpa syarat rencana/jadwal/Run/Meja/dokumentasi/QC. Catatan manual yang LEBIH BARU tetap berlaku (Admin boleh menunda/menandai selesai);
+  // SELESAI manual tidak diturunkan; DIKERJAKAN manual tetap atas nama pencatatnya (sumber Manual). Pemakaian BARU sesudah catatan manual (mis. Tertunda) menjadikan unit "Sudah dikerjakan" lagi.
+  const manualMs = manual ? new Date(manual.createdAt).getTime() : null; const pakaiMs = pemakaian?.terakhirAt ? new Date(pemakaian.terakhirAt).getTime() : null;
+  if (pakaiMs !== null && !Number.isNaN(pakaiMs) && !(manual && (manual.status === "SELESAI" || manual.status === "DIKERJAKAN")) && !(manualMs !== null && manual.status !== "BELUM_DIJADWALKAN" && manualMs >= pakaiMs)) {
+    return out("DIKERJAKAN", WORK_SOURCE.PEMAKAIAN_BAHAN, `Pemakaian bahan aktual tercatat${pemakaian.pertamaAt ? ` sejak ${waktuWibText(pemakaian.pertamaAt)}` : ""}; belum berarti selesai QC, siap serah Gudang, atau siap kirim`);
+  }
   if (manual && manual.status !== "BELUM_DIJADWALKAN" && MANUAL_STATUSES.includes(manual.status)) {
     const by = manualOut.by ? ` oleh ${manualOut.by}` : "";
     return out(manual.status, WORK_SOURCE.MANUAL, `Dicatat manual${by}${manualOut.at ? `, ${waktuWibText(manualOut.at)}` : ""}`);
@@ -155,8 +165,8 @@ export function tindakanBerikutnya({ unitStatus, posisi, kerja, adaTarget = fals
   if (k === "DIJADWALKAN") {
     if (!adaTarget) return t(AKSI.SET_TARGET, "Tetapkan target selesai", "Admin");
     if (!rencanaBahanAda) return t(AKSI.PLAN_MATERIAL, "Susun rencana bahan", "Admin");
-    return t(AKSI.START_WORK, "Mulai pekerjaan", "Admin / PIC", "Catat Dikerjakan atau mulai dari aplikasi Meja");
+    return t(AKSI.START_WORK, "Mulai pekerjaan", "Admin / PIC", "Catat pemakaian bahan / Sudah dikerjakan, atau mulai dari aplikasi Meja");
   }
   // BELUM_DIJADWALKAN (atau tidak dikenal)
-  return t(AKSI.OPEN_PLAN, adaTarget ? "Jadwalkan di Rencana Produksi" : "Tetapkan target dan jadwalkan", "Admin", "Boleh juga langsung catat Dikerjakan tanpa aplikasi Meja");
+  return t(AKSI.OPEN_PLAN, adaTarget ? "Jadwalkan di Rencana Produksi" : "Tetapkan target dan jadwalkan", "Admin", "Boleh juga langsung catat pemakaian bahan (otomatis Sudah dikerjakan) atau status kerja, tanpa aplikasi Meja");
 }

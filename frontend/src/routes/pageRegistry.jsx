@@ -108,6 +108,7 @@ const ProductionKpi = lazy(() => import("../pages/bengkel/ProductionKpi.jsx"));
 // P9B.1 — workspace penjadwalan BARU ("Rencana Produksi"), terpisah dari halaman status pipeline di atas
 // (ProductionPlannerV2, sekarang berjudul tampilan "Status Produksi" tapi URL-nya tetap production-v2).
 const ProductionRencanaWorkspace = lazy(() => import("../pages/bengkel/ProductionRencanaWorkspace.jsx"));
+const ProductionRencanaMinggu = lazy(() => import("../pages/bengkel/ProductionRencanaMinggu.jsx"));
 const WarehouseProductionQueue = lazy(() => import("../pages/warehouse/WarehouseProductionQueue.jsx"));
 const WorkerLane = lazy(() => import("../pages/produksi/WorkerLane.jsx"));
 const ProductionDocumentation = lazy(() => import("../pages/produksi/ProductionDocumentation.jsx"));
@@ -266,7 +267,8 @@ const PAGES_DASAR = [
   { path: "/bengkel/production-v2/unit/:unitId", render: () => <ProductionUnitWorkspacePage /> }, // Ruang Kerja Unit (menggantikan modal panjang)
   { path: "/bengkel/production-v2/laporan/:runId", render: () => <ProductionReportV2 /> },
   // P9B.1 — workspace penjadwalan baru, URL sendiri (bukan sub-path production-v2, supaya tidak butuh redirect/D-144).
-  { path: "/bengkel/rencana-produksi", render: () => <DemoPage><ProductionRencanaWorkspace /></DemoPage> },
+  { path: "/bengkel/rencana-produksi", render: () => <DemoPage><ProductionRencanaMinggu /></DemoPage> }, // jadwal mingguan (Rencana Admin tanpa Run + pelaksanaan V2 pada satu kalender)
+  { path: "/bengkel/rencana-produksi/papan-v2", render: () => <DemoPage><ProductionRencanaWorkspace /></DemoPage> }, // Papan V2 harian (PIC, Corner, BOM, reservasi)
   // P8.1 (UI & Navigation Consolidation) — rute BARU murni navigasi/layout.
   { path: "/bengkel/ringkasan", render: () => <DemoPage><ProductionRingkasan /></DemoPage> },
   { path: "/bengkel/quality-control", render: () => <DemoPage><ProductionQcHub /></DemoPage> },

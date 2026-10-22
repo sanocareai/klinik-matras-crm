@@ -14,7 +14,7 @@ export const FIRST_DATA_ROW = HEADER_ROW + 1;
 export const WARNA = Object.freeze({
   navy: "FF0F1B3D", offWhite: "FFF5F7FB", royal: "FF1457D9", garis: "FFD4DCEB", zebra: "FFEEF3FC", teks: "FF111827", teksLembut: "FF475569",
   komplain: "FF7F1D1D", tinggi: "FFEA580C", normalBg: "FFDBEAFE", normalTeks: "FF1E3A8A",
-  lewatBg: "FFFFD1DC", lewatTeks: "FF9F1239", kainBg: "FFFED7AA", kainTeks: "FF9A3412", kuningBg: "FFFEF08A", kuningTeks: "FF854D0E",
+  lewatBg: "FFFFD1DC", lewatTeks: "FF9F1239", hijauBg: "FFD1FAE5", hijauTeks: "FF065F46", abuBg: "FFE5E7EB", abuTeks: "FF374151", kainBg: "FFFED7AA", kainTeks: "FF9A3412", kuningBg: "FFFEF08A", kuningTeks: "FF854D0E",
 });
 
 const FONT = "Calibri";
@@ -105,6 +105,12 @@ function formatBersyarat(ws, cols, n) {
   add(picRef, { type: "expression", formulae: [`LEFT(${cL("picMeja")}${first},6)="Belum "`], priority: 6, style: { font: tebal(WARNA.kuningTeks), fill: cfFill(WARNA.kuningBg) } });
   // Bahan tertahan
   add(range("statusBahan"), { type: "expression", formulae: [`LEFT(${cL("statusBahan")}${first},8)="Tertahan"`], priority: 7, style: { font: tebal(WARNA.kuningTeks), fill: cfFill(WARNA.kuningBg) } });
+  // Status Rencana: Rencana Admin (biru, hanya jadwal) · Pelaksanaan V2 (hijau, Run berjalan) · Belum dijadwalkan (abu)
+  add(range("sumberJadwal"), { type: "cellIs", operator: "equal", formulae: ['"Rencana Admin"'], priority: 8, style: { font: tebal(WARNA.normalTeks), fill: cfFill(WARNA.normalBg) } });
+  add(range("sumberJadwal"), { type: "cellIs", operator: "equal", formulae: ['"Pelaksanaan Meja"'], priority: 9, style: { font: tebal(WARNA.hijauTeks), fill: cfFill(WARNA.hijauBg) } });
+  add(range("sumberJadwal"), { type: "cellIs", operator: "equal", formulae: ['"Belum dijadwalkan"'], priority: 10, style: { font: tebal(WARNA.abuTeks), fill: cfFill(WARNA.abuBg) } });
+  // Tanggal Jadwal pada hari Minggu (libur) = kuning. WEEKDAY(...,2)=7 → Minggu.
+  add(range("tanggal"), { type: "expression", formulae: [`AND(${cL("tanggal")}${first}<>"",WEEKDAY(${cL("tanggal")}${first},2)=7)`], priority: 11, style: { font: tebal(WARNA.kuningTeks), fill: cfFill(WARNA.kuningBg) } });
   // Zebra (prioritas terendah; ikut terurut/tersaring karena berbasis nomor baris tampil)
   add(`A${first}:${colLetter(cols.length)}${lastRow}`, { type: "expression", formulae: ["MOD(ROW(),2)=0"], priority: 50, style: { fill: cfFill(WARNA.zebra) } });
   for (const r of rules) ws.addConditionalFormatting(r);
@@ -118,7 +124,11 @@ function sheetKeterangan(wb, data) {
     ["Dibuat", data.meta.generatedLabel],
     ["Cakupan", `${data.meta.periodLabel} · ${data.meta.scopeLabel}`],
     ["Urutan", "Tanggal target → Meja → urutan di Meja. Kolom Urutan = posisi kartu di Meja seperti di papan: nomor manual hasil seret terbaru lebih dulu, lalu urutan bawaan (prioritas, lalu target mulai). Unit tanpa Meja tampil setelah unit terjadwal dengan label “Belum Dijadwalkan”."],
-    ["Target", "Target khusus kartu bila ada; bila tidak, tanggal papan. Kosong untuk unit yang belum dijadwalkan."],
+    ["Target", "Target selesai: target khusus kartu/unit bila ada; untuk rencana V2 tanpa target khusus = tanggal papan. Kosong untuk unit yang belum punya target."],
+    ["Tanggal Jadwal", "Tanggal rencana produksi (bukan target selesai). Kosong untuk unit yang belum dijadwalkan."],
+    ["Status Rencana", "Rencana Admin (biru) = hanya jadwal, TIDAK membuka Run/tahap/QC. Pelaksanaan Meja (hijau) = Run sudah dibuka. Belum dijadwalkan (abu)."],
+    ["Mode pelaksanaan", "Hanya jadwal (belum dibuka di Meja) = Rencana Admin. Untuk Pelaksanaan Meja: Menunggu unit tiba · Berjalan di Meja · Tertahan · Selesai. 'Belum dibuka di Meja' = unit belum dijadwalkan."],
+    ["Hari Minggu", "Minggu libur (bukan hari kerja rutin, kapasitas rutin 0). Tanggal jadwal pada hari Minggu disorot kuning; unitnya tetap ditampilkan."],
     ["Status", "Status global unit: Menunggu Dijemput · Pengambilan · Diterima di Workshop · Diproses · Siap Kirim · Dalam Pengiriman · Terkirim (dari bukti di server, bukan tebakan)."],
     ["Prioritas", "Komplain merah tua · Tinggi oranye · Normal biru."],
     ["Lewat Target", "Sel Target dan Alasan Lewat Target merah muda bila target efektif sudah terlewat."],

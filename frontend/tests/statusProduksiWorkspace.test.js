@@ -80,14 +80,15 @@ test("pengawatan: rute daftar + ruang kerja unit; deep link lama dialihkan; URL 
   const daftar = src("features", "production", "workspace", "StatusWorkList.jsx");
   for (const k of ["aria-expanded={terbuka}", "aria-controls={idPanel}", "motion-reduce:", "motion-safe:animate", "getProductionWorkList", 'role="tablist" aria-label="Antrean"', "pintasan-${bagian}"]) assert.ok(daftar.includes(k), k);
   for (const k of ["pekerjaan", "bahan", "dokumentasi", "riwayat"]) assert.ok(daftar.includes(`bagian: "${k}"`), k);
-  const ruang = src("features", "production", "workspace", "UnitWorkspace.jsx");
+  const ruang = [src("features", "production", "workspace", "UnitWorkspace.jsx"), src("features", "production", "workspace", "RingkasanUnit.jsx")].join("\n");
+  const bahanUi = ["BahanTab", "CatatBahanBaru", "FormKomponenLama", "KomponenLamaDaftar", "RiwayatBahanBaru", "PemilihBahanKatalog"].map((n) => src("features", "production", "bahan", `${n}.jsx`)).join("\n");
   for (const k of ["sticky", 'role="tablist"', "ArrowRight", "judulRef.current.focus", "KartuPenerimaan", "TindakanUtama", "penjelasanTertahan"]) assert.ok(ruang.includes(k), k);
   assert.ok(!ruang.includes("confirmProductionV2UnitArrival"), "penerimaan lewat satu jalur resmi (modal penerimaan), bukan tombol Terima Unit terpisah");
   const dok = src("features", "production", "workspace", "DokumentasiSection.jsx");
   assert.ok(dok.includes("submitProductionV2Documentation")); assert.ok(dok.includes("Tidak menyelesaikan tahap, tidak meluluskan QC, dan tidak membuat bukti serah ke Gudang")); assert.ok(dok.includes("kirimRef.current"));
   const marker = src("features", "production", "workspace", "StatusMarkers.jsx");
   for (const j of ["Order Sales", "Posisi", "Kerja", "Tahap Meja"]) assert.ok(marker.includes(`label: "${j}"`), j);
-  const layar = [daftar, ruang, dok, marker, hal].join("\n").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const layar = [daftar, ruang, bahanUi, dok, marker, hal].join("\n").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
   const teks = [...layar.matchAll(/>([^<>{}]{6,})</g)].map((m) => m[1]).concat([...layar.matchAll(/"([^"\n]{14,})"/g)].map((m) => m[1])).join(" ");
   assert.doesNotMatch(teks, /\b(Run|cohort|custody|handoff|Kerja V1)\b/i);
   assert.ok(src("api.js").includes("getProductionWorkList")); assert.ok(src("api.js").includes("getUnitRuangKerja")); assert.ok(src("components", "Topbar.jsx").includes("Ruang Kerja Unit"));

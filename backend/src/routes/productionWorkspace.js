@@ -27,6 +27,8 @@ productionWorkspaceRouter.get("/work-list", requirePermission(P.UNIT_READ), asyn
   try { res.set("Cache-Control", "no-store"); res.json(await listWorkList(prisma, req.query)); } catch (err) { handleErr(err, res); }
 });
 
+const KELUHAN_LABEL = Object.freeze({ KEPALA_PUSING: "Kepala pusing", SAKIT_PINGGANG: "Sakit pinggang", SAKIT_PUNGGUNG: "Sakit punggung", SAKIT_LEHER: "Sakit leher", BAHU: "Bahu", PEGAL_PEGAL: "Pegal-pegal", SARAF_KEJEPIT: "Saraf kejepit", SKOLIOSIS: "Skoliosis", LAINNYA: "Lainnya" });
+const tglKey = (d) => (d ? new Date(d).toISOString().slice(0, 10) : null);
 const PESAN_DOK = Object.freeze({
   BELUM_ALUR: "Dokumentasi per kategori tersedia setelah unit masuk alur Meja (Rencana Produksi). Sampai saat itu hanya foto identitas unit yang bisa diunggah.",
   PEMBACA_MATI: "Dokumentasi belum menyala untuk unit ini. Hubungi Kepala Produksi.",
@@ -41,7 +43,7 @@ productionWorkspaceRouter.get("/units/:id/ruang-kerja", requirePermission(P.UNIT
       where: { id: req.params.id },
       select: {
         id: true, unitCode: true, merk: true, ukuran: true, status: true, orderId: true,
-        order: { select: { id: true, orderNumber: true, status: true, statusLocked: true, customer: { select: { id: true, name: true } }, items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } }, units: { select: { id: true, unitCode: true, status: true }, orderBy: { seq: "asc" } } } },
+        order: { select: { id: true, orderNumber: true, status: true, statusLocked: true, healthStatus: true, complaintCategory: true, productionNote: true, hasComplaint: true, complaintDate: true, complaintDetail: true, complaintResolvedAt: true, customerPromiseDate: true, deliveryConfirmedDate: true, customer: { select: { id: true, name: true } }, items: { select: { layananName: true }, orderBy: { sortOrder: "asc" } }, units: { select: { id: true, unitCode: true, status: true }, orderBy: { seq: "asc" } } } },
       },
     });
     if (!unit) return res.status(404).json({ error: "Unit tidak ditemukan", code: "UNIT_TIDAK_ADA" });
@@ -71,6 +73,13 @@ productionWorkspaceRouter.get("/units/:id/ruang-kerja", requirePermission(P.UNIT
         id: unit.order.id, orderNumber: unit.order.orderNumber, pelanggan: unit.order.customer, layanan: unit.order.items.map((i) => i.layananName).filter(Boolean),
         statusOrder: { key: tampilOrder?.key ?? null, label: tampilOrder?.label ?? String(unit.order.status), mentah: unit.order.status, terkunci: !!unit.order.statusLocked },
         jumlahUnit: unit.order.units.length, unitLain: unit.order.units.filter((u) => u.id !== unit.id),
+        // Detail order untuk Produksi (informasi, baca-saja): kondisi pelanggan, catatan Sales untuk Produksi, komplain, janji. Dari kolom order yang sudah ada; tidak ditebak.
+        detail: {
+          kondisiPelanggan: unit.order.healthStatus === "SAKIT" ? { sakit: true, label: "Pelanggan sakit", keluhan: (unit.order.complaintCategory || []).map((k) => KELUHAN_LABEL[k] ?? k) } : unit.order.healthStatus === "TIDAK_SAKIT" ? { sakit: false, label: "Tidak sakit", keluhan: [] } : { sakit: null, label: "Belum diisi Sales", keluhan: [] },
+          catatanProduksi: unit.order.productionNote || null,
+          komplain: unit.order.hasComplaint ? { tanggal: tglKey(unit.order.complaintDate), rincian: unit.order.complaintDetail || null, selesai: !!unit.order.complaintResolvedAt } : null,
+          janjiPelanggan: tglKey(unit.order.customerPromiseDate), pengirimanDikonfirmasi: tglKey(unit.order.deliveryConfirmedDate),
+        },
       },
       alurMeja, tindakan, perhatian,
       dokumentasi,

@@ -262,10 +262,10 @@ test("B1. EKSPOR .xlsx: sheet, header beku + AutoFilter, tanpa sel digabung, ang
   await w.admin.api.put(`${P}/units/${a.unit.id}/material-plan`, { lines: [{ materialId: busa.id, qty: 4 }, { materialId: kain.id, qty: 2.5 }], expectedRevision: 0 });
   await w.worker.api.post(`/api/units/${a.unit.id}/materials`, { materialId: busa.id, qty: 1.25, note: "pakai" }, { "Idempotency-Key": ym("ekspor-pakai-0001") });
   const { wb } = await unduhXlsx(w.admin);
-  assert.deepEqual(wb.worksheets.map((s) => s.name), ["Ringkasan Unit", "Rencana Bahan", "Pemakaian Aktual", "Info Ekspor"]);
+  assert.deepEqual(wb.worksheets.map((s) => s.name), ["Ringkasan Unit", "Rencana Bahan", "Pemakaian Aktual", "Komponen Lama", "Info Ekspor"]);
   const ring = wb.getWorksheet("Ringkasan Unit"); const daftarData = await daftar(w);
   assert.equal(ring.rowCount - 1, daftarData.units.length, "baris = daftar"); assert.equal(ring.rowCount - 1, 3);
-  for (const ws of [ring, wb.getWorksheet("Rencana Bahan"), wb.getWorksheet("Pemakaian Aktual")]) {
+  for (const ws of [ring, wb.getWorksheet("Rencana Bahan"), wb.getWorksheet("Pemakaian Aktual"), wb.getWorksheet("Komponen Lama")]) {
     assert.equal(ws.views[0].state, "frozen"); assert.equal(ws.views[0].ySplit, 1, `${ws.name}: baris header dibekukan`);
     assert.ok(ws.autoFilter, `${ws.name}: AutoFilter`); const af = typeof ws.autoFilter === "string" ? ws.autoFilter : `${ws.autoFilter.from?.row}:${ws.autoFilter.to?.row}`; assert.ok(typeof ws.autoFilter === "string" ? /^A1:/.test(af) : af.startsWith("1:"), `${ws.name}: AutoFilter di baris header (${af})`);
     assert.equal(Object.keys(ws._merges ?? {}).length, 0, `${ws.name}: tidak ada sel digabung di area data`);
@@ -273,14 +273,14 @@ test("B1. EKSPOR .xlsx: sheet, header beku + AutoFilter, tanpa sel digabung, ang
   }
   // header ringkasan
   const headers = ring.getRow(1).values.slice(1);
-  for (const h of ["Kode Order", "Kode Unit", "Pelanggan", "Layanan (Sales)", "Target Selesai", "PIC", "Status Order", "Posisi Unit", "Status Kerja", "Tindakan Berikutnya", "Diperbarui (WIB)"]) assert.ok(headers.includes(h), h);
+  for (const h of ["Kode Order", "Kode Unit", "Pelanggan", "Layanan (Sales)", "Target Selesai", "PIC", "Status Order", "Posisi Unit", "Status Kerja (Administratif)", "Tindakan Berikutnya", "Diperbarui (WIB)"]) assert.ok(headers.includes(h), h);
   const cKode = kolomIndex(ring, "Kode Unit"); const rowA = Array.from({ length: ring.rowCount - 1 }, (_, i) => ring.getRow(i + 2)).find((r) => nilaiSel(r.getCell(cKode)) === a.unit.unitCode);
   // rumus dinetralkan (apostrof) — bukan rumus dan tidak dieksekusi
   const pel = rowA.getCell(kolomIndex(ring, "Pelanggan")); assert.equal(typeof nilaiSel(pel), "string"); assert.equal(nilaiSel(pel).startsWith("'="), true); assert.equal(pel.formula, undefined);
   assert.equal(nilaiSel(rowA.getCell(kolomIndex(ring, "Layanan (Sales)"))).startsWith("'+"), true);
   // tipe + warna + teks
   const so = rowA.getCell(kolomIndex(ring, "Status Order")); assert.equal(nilaiSel(so), "Diproses"); assert.equal(so.fill.fgColor.argb, "FFDBEAFE");
-  const kerja = rowA.getCell(kolomIndex(ring, "Status Kerja")); assert.equal(nilaiSel(kerja), "Dikerjakan"); assert.ok(kerja.fill?.fgColor?.argb, "warna status kerja ada, teks tetap ada");
+  const kerja = rowA.getCell(kolomIndex(ring, "Status Kerja (Administratif)")); assert.equal(nilaiSel(kerja), "Sudah dikerjakan"); assert.ok(kerja.fill?.fgColor?.argb, "warna status kerja ada, teks tetap ada");
   assert.match(nilaiSel(rowA.getCell(kolomIndex(ring, "Posisi Unit"))), /belum diterima workshop/);
   const br = rowA.getCell(kolomIndex(ring, "Jumlah Bahan Direncanakan")); assert.equal(typeof nilaiSel(br), "number"); assert.equal(nilaiSel(br), 2);
   const upd = rowA.getCell(kolomIndex(ring, "Diperbarui (WIB)")); assert.ok(nilaiSel(upd) instanceof Date); assert.equal(upd.numFmt, "dd/mm/yyyy hh:mm");

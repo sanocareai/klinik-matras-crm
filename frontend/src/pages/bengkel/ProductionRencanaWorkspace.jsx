@@ -421,7 +421,7 @@ function RencanaSummary({ counts, canOpen, onOpen }) {
 }
 
 export default function ProductionRencanaWorkspace() {
-  const [date, setDate] = useState(() => wibDate(0));
+  const [date, setDate] = useState(() => (/^d{4}-d{2}-d{2}$/.test(new URLSearchParams(window.location.search).get("date") || "") ? new URLSearchParams(window.location.search).get("date") : wibDate(0)));
   const dateInputRef = useRef(null);
   const [board, setBoard] = useState(null);
   const [cc, setCc] = useState(null);
@@ -663,6 +663,7 @@ export default function ProductionRencanaWorkspace() {
       <PageHeader title="Rencana Produksi" subtitle={`Jadwal harian per meja · ${fmtLong(date)}`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            <Link to="/bengkel/rencana-produksi" className="inline-flex min-h-[40px] items-center rounded-btn px-3 text-[13px] text-accent hover:bg-accentbg" data-testid="link-jadwal-mingguan">‹ Jadwal mingguan</Link>
             <div className="flex items-center rounded-btn bg-inset">
               <Button variant="neutral" size="icon" aria-label="Hari sebelumnya" className="min-h-[40px] min-w-[40px]" onClick={() => setDate((d) => shiftDate(d, -1))}><ChevronLeft size={16} /></Button>
               <button type="button" data-testid="date-button" onClick={() => { const el = dateInputRef.current; if (!el) return; if (typeof el.showPicker === "function") el.showPicker(); else el.click(); }} className="flex min-h-[40px] items-center gap-1.5 px-1 text-[13px] font-medium text-ink"><CalendarDays size={14} className="text-ink3" aria-hidden /> {fmtLong(date)}</button>

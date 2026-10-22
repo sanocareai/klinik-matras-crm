@@ -10,6 +10,8 @@ import express from "express";
 import { prisma } from "../db.js";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, requireAnyPermission, hasPermission, PERMISSIONS as P } from "../middleware/authorize.js";
+import { ambilKomponenLama } from "../services/productionComponentReuseService.js";
+import { signEvidenceUrl } from "./productionEvidenceMedia.js";
 import { wajibUuid } from "../lib/uuidParam.js";
 import { pesanServerAman } from "../lib/galatServerAman.js";
 import { listWorkOrders, perkayaBarisUnit } from "../services/productionOrderList.js";
@@ -65,7 +67,19 @@ productionAdopsiRouter.get("/units/:id/adopsi", requirePermission(P.UNIT_READ), 
       ambilPenerimaanWorkshop(prisma, unit.id),
     ]);
     const { penerimaan: penerimaanAktif, riwayat: riwayatPenerimaan } = penerimaan;
-    const riwayat = (await loadRiwayatUnit(prisma, { unit: { id: unit.id, orderId: unit.orderId }, run })).slice(-60).reverse();
+    const riwayatDasar = (await loadRiwayatUnit(prisma, { unit: { id: unit.id, orderId: unit.orderId }, run })).slice(-60).reverse();
+    // Komponen lama dari unit pelanggan (BUKAN stok): bagian terpisah di respons + masuk Riwayat dengan label sendiri
+    const komponenLama = await ambilKomponenLama(prisma, unit.id, { tandaiFoto: signEvidenceUrl });
+    const riwayatKomponen = komponenLama.riwayat.map((e) => ({ kind: "KOMPONEN_LAMA", sumber: "KOMPONEN_LAMA", at: e.at, actor: e.oleh, label: `Komponen lama dari unit ini (bukan stok) — ${e.kindLabel}: ${e.name} ${e.qty} ${e.uom} · ${e.outcomeLabel}${e.reason ? ` — ${e.reason}` : ""}` }));
+    // Pemakaian bahan BARU yang dicatat langsung (ledger resmi) masuk Riwayat dengan label sumber + dampak stok; baris dari Material Issue sudah punya peristiwa dokumennya sendiri.
+    const riwayatBahanBaru = aktual.baris.filter((b) => !b.dokumen.jenis.startsWith("Material Issue")).map((b) => ({ kind: "BAHAN_BARU", sumber: "BAHAN_BARU", at: b.tanggal, actor: b.pelaku, label: `Bahan baru dari Gudang (${b.qty < 0 ? "menambah" : "mengurangi"} stok) — ${b.nama} ${Math.abs(b.qty)} ${b.satuan} · ${b.dokumen.jenis} ${b.dokumen.nomor}` }));
+    // Peristiwa status kerja OTOMATIS: pemakaian aktual PERTAMA yang berhasil tercatat (bahan baru ISSUE atau komponen lama 'dipakai kembali'). Diturunkan dari fakta (tidak ada baris status terpisah) → tidak pernah ganda,
+    // dan koreksi/pembatalan tidak menghapusnya karena baris asal tetap ada.
+    const pakaiBaru = aktual.baris.filter((b) => b.tipe === "ISSUE").map((b) => ({ at: b.tanggal, oleh: b.pelaku, apa: `bahan baru ${b.nama} ${b.qty} ${b.satuan}` }));
+    const pakaiLama = komponenLama.riwayat.filter((e) => e.outcome === "REUSED" && ["CREATED", "CORRECTED"].includes(e.kind)).map((e) => ({ at: e.at, oleh: e.oleh, apa: `komponen lama ${e.name} ${e.qty} ${e.uom}` }));
+    const pertama = [...pakaiBaru, ...pakaiLama].sort((a, b) => new Date(a.at) - new Date(b.at))[0] ?? null;
+    const riwayatStatusOtomatis = pertama && unit.status !== "CANCELLED" ? [{ kind: "STATUS_KERJA_OTOMATIS", sumber: "PEMAKAIAN_BAHAN", at: pertama.at, actor: pertama.oleh, label: `Status kerja administratif → Sudah dikerjakan (otomatis dari pemakaian aktual pertama: ${pertama.apa})` }] : [];
+    const riwayat = [...riwayatDasar.filter((e) => !String(e.kind).includes("PRODUCTION_KOMPONEN_LAMA_DICATAT")), ...riwayatKomponen, ...riwayatBahanBaru, ...riwayatStatusOtomatis].sort((x, y) => new Date(y.at) - new Date(x.at)).slice(0, 100);
     // perbandingan rencana vs aktual per bahan (hanya bahan yang ada di salah satunya)
     const rencanaMap = new Map((rencana.plan?.lines ?? []).map((l) => [l.materialId, l]));
     const aktualMap = new Map(aktual.total.map((t) => [t.materialId, t]));
@@ -95,7 +109,7 @@ productionAdopsiRouter.get("/units/:id/adopsi", requirePermission(P.UNIT_READ), 
       },
       adopsi: { ...baris.adopsi, tindakan, orderSales, penghalang }, productionStatus: baris.productionStatus, presence: baris.presence, receivedBasisLabel: baris.receivedBasisLabel,
       kerjaManual: { riwayat: riwayatKerja, nilaiBoleh: MANUAL_STATUSES.map((k) => ({ key: k, label: WORK_STATUS[k].label })), terakhirId: riwayatKerja.length ? riwayatKerja[riwayatKerja.length - 1].id : null, dikunciAplikasi: !!bukti?.started },
-      penerimaan: penerimaanAktif, riwayatPenerimaan, rencanaBahan: rencana, pemakaianAktual: aktual, perbandingan, riwayat,
+      penerimaan: penerimaanAktif, riwayatPenerimaan, rencanaBahan: rencana, pemakaianAktual: aktual, komponenLama, perbandingan, riwayat,
       izin: bolehUbah(req.user),
     });
   } catch (err) { handleErr(err, res); }

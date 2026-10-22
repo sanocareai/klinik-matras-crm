@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import "@/features/production/bahan/bahan.css";
 import { AlertTriangle, CheckCircle2, ChevronRight, Info } from "lucide-react";
 import { api } from "@/api.js";
 import { Modal } from "@/components/ui/modal.jsx";
@@ -166,7 +167,7 @@ function TindakanUtama({ data, aktif, onDone, onBukaUnit360 }) {
   switch (t.aksi) {
     case "CONFIRM_ARRIVAL": tombol = izin.catatPenerimaan && aktif ? { label: "Catat unit diterima", onClick: () => setTerimaBuka(true) } : null; break;
     case "UBAH_ORDER_DIPROSES": tombol = izin.statusOrder && aktif ? { label: "Ubah ke Diproses", onClick: () => setDiprosesBuka(true) } : null; break;
-    case "START_WORK": tombol = izin.statusKerja && aktif && !data.kerjaManual.dikunciAplikasi ? { label: "Catat: Dikerjakan", onClick: () => catat("DIKERJAKAN") } : null; break;
+    case "START_WORK": tombol = izin.statusKerja && aktif && !data.kerjaManual.dikunciAplikasi ? { label: "Catat: Sudah dikerjakan", onClick: () => catat("DIKERJAKAN") } : null; break;
     case "FINISH_WORK": tombol = izin.statusKerja && aktif && !data.kerjaManual.dikunciAplikasi ? { label: "Catat: Selesai", onClick: () => catat("SELESAI") } : { label: "Buka Unit 360", onClick: onBukaUnit360, sekunder: true }; break;
     case "MARK_READY": tombol = izin.statusOrder ? { label: "Tandai Siap Kirim", onClick: () => setKonfirmasi(true) } : null; break;
     case "PLAN_MATERIAL": tombol = izin.rencanaBahan ? { label: "Susun rencana bahan", onClick: () => ke("sec-rencana-wrap") } : null; break;
@@ -184,7 +185,7 @@ function TindakanUtama({ data, aktif, onDone, onBukaUnit360 }) {
           <p className="m-0 text-[15px] font-semibold text-ink" data-testid="tindakan-label">{t.label || "—"}</p>
           <p className="m-0 text-[12.5px] text-ink3">{t.aktor && t.aktor !== "—" ? `Oleh ${t.aktor}` : ""}{t.detail ? `${t.aktor && t.aktor !== "—" ? " · " : ""}${t.detail}` : ""}</p>
         </div>
-        {tombol && !konfirmasi && !diprosesBuka && <Button variant={tombol.sekunder ? "secondary" : "primary"} className="min-h-[44px]" data-testid="tindakan-tombol" disabled={sibuk} onClick={tombol.onClick}>{sibuk ? "Menyimpan…" : tombol.label}</Button>}
+        {tombol && !konfirmasi && !diprosesBuka && <Button variant={tombol.sekunder ? "secondary" : "primary"} className="bh-cta min-h-[44px]" data-testid="tindakan-tombol" disabled={sibuk} onClick={tombol.onClick}>{sibuk ? "Menyimpan…" : tombol.label}</Button>}
       </div>
       {t.penghalang && t.aksi !== "UBAH_ORDER_DIPROSES" && (
         <p role="note" data-testid="tindakan-penghalang" className="m-0 mt-2 flex items-start gap-2 rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-orange"><Info size={15} className="mt-0.5 shrink-0" aria-hidden />{t.penghalang.teks}</p>
@@ -233,7 +234,7 @@ function KartuPenerimaan({ data, aktif, onDone }) {
               {p.koreksi.map((k) => <li key={k.id}>{teksKoreksi(k)}</li>)}
             </ul>
           )}
-          {boleh && <Button variant="secondary" size="sm" className="mt-3 min-h-[44px]" data-testid="koreksi-buka" onClick={() => { setOk(""); setBuka(true); }}>Koreksi penerimaan</Button>}
+          {boleh && <Button variant="secondary" size="sm" className="bh-pilih mt-3 min-h-[44px]" data-testid="koreksi-buka" onClick={() => { setOk(""); setBuka(true); }}>Koreksi penerimaan</Button>}
         </>
       ) : (
         <p className="m-0 mt-1 text-[13px] text-ink2" data-testid="penerimaan-dibatalkan">Belum ada penerimaan yang berlaku. Penerimaan sebelumnya dinyatakan <b>belum diterima fisik</b>.</p>

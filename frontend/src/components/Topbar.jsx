@@ -67,6 +67,7 @@ const ROUTE_LABELS = {
   "/bengkel/ringkasan":        ["Produksi", "Ringkasan"],
   "/bengkel/production-v2":    ["Produksi", "Status Produksi"],
   "/bengkel/rencana-produksi": ["Produksi", "Rencana Produksi"],
+  "/bengkel/rencana-produksi/papan-v2": ["Produksi", "Papan Meja"],
   "/bengkel/quality-control":  ["Produksi", "Quality Control"],
   "/bengkel/andon":            ["Produksi", "Andon TV"],
   "/bengkel/kpi":              ["Produksi", "KPI & Laporan"],

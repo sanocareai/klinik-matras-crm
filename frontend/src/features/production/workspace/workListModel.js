@@ -18,7 +18,7 @@ export const BAGIAN_KEYS = Object.freeze(BAGIAN.map((b) => b.key));
 
 export const FILTERS = Object.freeze([
   { key: "SEMUA", label: "Semua aktif" }, { key: "PERLU_TINDAKAN", label: "Perlu tindakan" }, { key: "BELUM_DITERIMA", label: "Belum diterima workshop" },
-  { key: "BELUM_DIJADWALKAN", label: "Belum dijadwalkan" }, { key: "DIKERJAKAN", label: "Dikerjakan" }, { key: "TERTAHAN", label: "Tertunda / menunggu" }, { key: "LEWAT_TARGET", label: "Lewat target" },
+  { key: "BELUM_DIJADWALKAN", label: "Belum dijadwalkan" }, { key: "DIKERJAKAN", label: "Sudah dikerjakan" }, { key: "TERTAHAN", label: "Tertunda / menunggu" }, { key: "LEWAT_TARGET", label: "Lewat target" },
 ]);
 export const SORTS = Object.freeze([
   { key: "PERHATIAN", label: "Paling perlu tindakan" }, { key: "TARGET", label: "Target terdekat" }, { key: "TERBARU", label: "Order terbaru" }, { key: "PELANGGAN", label: "Pelanggan A–Z" },

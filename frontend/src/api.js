@@ -1057,6 +1057,14 @@ export const api = {
     request(`/units/${unitId}/materials`, { method: "POST", ...(idempotencyKey ? { headers: { "Idempotency-Key": idempotencyKey } } : {}), body: JSON.stringify({ materialId, qty, note }) }),
   // ── Order Produksi · adopsi Admin (tiga sumbu status, status kerja manual, rencana bahan, ekspor Excel)
   getUnitAdopsi: (unitId) => request(`/production/units/${unitId}/adopsi`),
+  // Rencana Admin (jadwal produksi per unit TANPA Run): kalender mingguan, rincian hari, antrean per tindakan, jadwal/keluarkan/undo + riwayat. Idempotency-Key per percobaan.
+  getRencanaMinggu: (start) => request(`/production/rencana/minggu${start ? `?start=${encodeURIComponent(start)}` : ""}`),
+  getRencanaHari: (date) => request(`/production/rencana/hari?date=${encodeURIComponent(date)}`),
+  getRencanaAntrean: ({ tab = "SIAP", q = "", sort = "PRIORITAS", page = 1, pageSize = 25 } = {}) => request(`/production/rencana/antrean?tab=${encodeURIComponent(tab)}&q=${encodeURIComponent(q)}&sort=${encodeURIComponent(sort)}&page=${page}&pageSize=${pageSize}`),
+  getJadwalUnit: (unitId) => request(`/production/units/${unitId}/jadwal`),
+  jadwalkanUnit: (unitId, body, idempotencyKey = mutationKey("jadwal")) => request(`/production/units/${unitId}/jadwal`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(body) }),
+  keluarkanJadwalUnit: (unitId, body, idempotencyKey = mutationKey("jadwal-keluar")) => request(`/production/units/${unitId}/jadwal/keluarkan`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(body) }),
+  undoJadwalUnit: (unitId, body, idempotencyKey = mutationKey("jadwal-undo")) => request(`/production/units/${unitId}/jadwal/undo`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(body) }),
   // Ruang Kerja Status Produksi: daftar kerja per ORDER (aktif/riwayat; cari/filter/urut/halaman di server) + header ruang kerja unit. Baca-saja.
   getProductionWorkList: (params = {}) => {
     const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== "")).toString();
@@ -1077,6 +1085,12 @@ export const api = {
   koreksiPenerimaanWorkshop: (unitId, { jenis, locationId, alasan, expectedRevisi } = {}, idempotencyKey = mutationKey("koreksi-terima")) =>
     request(`/production/units/${unitId}/penerimaan-workshop/koreksi`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ jenis, locationId: locationId || undefined, alasan, expectedRevisi }) }),
   getPenerimaanWorkshopPilihan: () => request("/production/penerimaan-workshop/pilihan"),
+  // Komponen LAMA dari unit pelanggan (pemakaian kembali, BUKAN stok): catat/koreksi/batal berjejak + foto bukti. Idempotency-Key per niat.
+  getKomponenLama: (unitId) => request(`/production/units/${unitId}/komponen-lama`),
+  catatKomponenLama: (unitId, body, idempotencyKey = mutationKey("komp-lama")) => request(`/production/units/${unitId}/komponen-lama`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(body) }),
+  koreksiKomponenLama: (unitId, itemId, body, idempotencyKey = mutationKey("komp-koreksi")) => request(`/production/units/${unitId}/komponen-lama/${itemId}/koreksi`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(body) }),
+  batalKomponenLama: (unitId, itemId, body, idempotencyKey = mutationKey("komp-batal")) => request(`/production/units/${unitId}/komponen-lama/${itemId}/batal`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(body) }),
+  unggahFotoKomponenLama: (unitId, formData) => requestFormData(`/production/units/${unitId}/komponen-lama/foto`, formData),
   getKatalogBahanProduksi: (params = {}) => {
     const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
     return request(`/production/material-catalog${qs ? `?${qs}` : ""}`);

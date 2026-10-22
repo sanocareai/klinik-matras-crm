@@ -49,10 +49,10 @@ test("nama berkas: Target-Produksi-DD-MMMM-YYYY.xlsx (bulan Indonesia); rentang 
   assert.doesNotMatch(D.exportFileName({ from: "2026-08-01" }), /[\\/:*?"<>|\s]/);
 });
 
-test("kolom: tepat 26 kolom berurutan sesuai kontrak; Nilai Order hanya bila diminta", () => {
+test("kolom: tepat 29 kolom berurutan sesuai kontrak (+ Tanggal Jadwal, Status Rencana, Mode pelaksanaan); Nilai Order hanya bila diminta", () => {
   const h = D.EXPORT_COLUMNS.map((c) => c.header);
-  assert.deepEqual(h, ["No.", "Target", "Meja", "Urutan", "Prioritas", "Status", "Resi", "Kode Unit", "Customer", "Sales", "Layanan Sales", "Jenis Produk", "Jenis Kasur", "Merek", "Ukuran", "Berat Customer", "Keluhan/Catatan Sales", "Ganti Kain", "PIC Meja", "PIC Bahan", "PIC QC", "PIC Corner", "Status Bahan", "Tahap Sekarang", "Alasan Lewat Target", "Catatan Kepala Produksi"]);
-  assert.equal(D.columnsFor().length, 26); assert.equal(D.columnsFor({ includeValue: true }).at(-1).header, "Nilai Order");
+  assert.deepEqual(h, ["No.", "Target", "Tanggal Jadwal", "Meja", "Urutan", "Prioritas", "Status", "Status Rencana", "Mode pelaksanaan", "Resi", "Kode Unit", "Customer", "Sales", "Layanan Sales", "Jenis Produk", "Jenis Kasur", "Merek", "Ukuran", "Berat Customer", "Keluhan/Catatan Sales", "Ganti Kain", "PIC Meja", "PIC Bahan", "PIC QC", "PIC Corner", "Status Bahan", "Tahap Sekarang", "Alasan Lewat Target", "Catatan Kepala Produksi"]);
+  assert.equal(D.columnsFor().length, 29); assert.equal(D.columnsFor({ includeValue: true }).at(-1).header, "Nilai Order");
   assert.equal(D.columnsFor({ includeValue: true }).at(-1).type, "rupiah");
 });
 
@@ -139,7 +139,7 @@ test("workbook: Excel Table dengan filter aktif, panel beku tepat di bawah heade
   const ws = wb.getWorksheet(SHEET_NAME);
   assert.equal(ws.views[0].state, "frozen"); assert.equal(ws.views[0].ySplit, HEADER_ROW); assert.equal(HEADER_ROW, 7);
   const tableXml = await xml(/xl\/tables\/table\d+\.xml$/);
-  assert.match(tableXml, new RegExp(`name="${TABLE_NAME}"`)); assert.match(tableXml, /<autoFilter ref="A7:Z10"/); assert.match(tableXml, /headerRowCount="1"|<tableColumns count="26"/);
+  assert.match(tableXml, new RegExp(`name="${TABLE_NAME}"`)); assert.match(tableXml, /<autoFilter ref="A7:AC10"/); assert.match(tableXml, /headerRowCount="1"|<tableColumns count="26"/);
   assert.ok(files.some((f) => /xl\/tables\/table\d+\.xml$/.test(f)), "Excel Table (bukan sekadar autofilter)");
   const hdr = ws.getRow(HEADER_ROW).getCell(1);
   assert.equal(hdr.fill.fgColor.argb, WARNA.royal); assert.equal(hdr.font.color.argb, "FFFFFFFF"); assert.equal(hdr.font.bold, true);
@@ -155,10 +155,10 @@ test("workbook: tanggal bertipe Date + format yyyy-mm-dd (sortable), angka berti
   const ws = wb.getWorksheet(SHEET_NAME);
   const target = ws.getCell(FIRST_DATA_ROW, 2);
   assert.ok(target.value instanceof Date); assert.equal(target.value.toISOString().slice(0, 10), "2026-10-12"); assert.equal(target.numFmt, FORMAT_TANGGAL);
-  assert.equal(typeof ws.getCell(FIRST_DATA_ROW, 1).value, "number"); assert.equal(typeof ws.getCell(FIRST_DATA_ROW, 4).value, "number");
-  const berat = ws.getCell(FIRST_DATA_ROW, 16); assert.equal(typeof berat.value, "number"); assert.equal(berat.value, 72.5);
+  assert.equal(typeof ws.getCell(FIRST_DATA_ROW, 1).value, "number"); assert.equal(typeof ws.getCell(FIRST_DATA_ROW, 5).value, "number");
+  const berat = ws.getCell(FIRST_DATA_ROW, 19); assert.equal(typeof berat.value, "number"); assert.equal(berat.value, 72.5);
   assert.equal(ws.getCell(FIRST_DATA_ROW + 1, 2).value, null, "unit tanpa Meja: tanggal kosong, bukan teks");
-  assert.equal(ws.getCell(FIRST_DATA_ROW + 1, 3).value, "Belum Dijadwalkan");
+  assert.equal(ws.getCell(FIRST_DATA_ROW + 1, 3).value, null, "Tanggal Jadwal kosong untuk unit belum dijadwalkan"); assert.equal(ws.getCell(FIRST_DATA_ROW + 1, 4).value, "Belum Dijadwalkan");
   assert.deepEqual(cellValueOf({ type: "tanggal" }, "2026-10-12"), new Date(Date.UTC(2026, 9, 12))); assert.deepEqual(keTanggal("2026-10-12T05:00:00.000Z"), new Date(Date.UTC(2026, 9, 12))); assert.equal(cellValueOf({ type: "tanggal" }, null), null);
 });
 
@@ -166,10 +166,10 @@ test("workbook: Nilai Order numerik berformat Rupiah hanya bila disertakan", asy
   const r = D.exportRowOf({ view: view(1), todayKey: TODAY, includeValue: true, extras: { orderValue: 2_500_000 } });
   const { wb } = await roundTrip(dataOf([r], { includeValue: true }));
   const ws = wb.getWorksheet(SHEET_NAME);
-  const cell = ws.getCell(FIRST_DATA_ROW, 27);
-  assert.equal(ws.getRow(HEADER_ROW).getCell(27).value, "Nilai Order"); assert.equal(cell.value, 2_500_000); assert.equal(cell.numFmt, FORMAT_RUPIAH);
+  const cell = ws.getCell(FIRST_DATA_ROW, 30);
+  assert.equal(ws.getRow(HEADER_ROW).getCell(30).value, "Nilai Order"); assert.equal(cell.value, 2_500_000); assert.equal(cell.numFmt, FORMAT_RUPIAH);
   const noValue = (await roundTrip(dataOf([row(1)]))).wb.getWorksheet(SHEET_NAME);
-  assert.equal(noValue.columnCount <= 26, true); assert.equal(noValue.getRow(HEADER_ROW).getCell(27).value, null);
+  assert.equal(noValue.columnCount <= 29, true); assert.equal(noValue.getRow(HEADER_ROW).getCell(30).value, null);
 });
 
 test("workbook: format bersyarat — Komplain/Tinggi/Normal, Lewat Target, Ganti Kain, PIC kosong/bahan tertahan, zebra", async () => {
@@ -178,9 +178,9 @@ test("workbook: format bersyarat — Komplain/Tinggi/Normal, Lewat Target, Ganti
   const cf = [...sheet.matchAll(/<conditionalFormatting sqref="([^"]+)">([\s\S]*?)<\/conditionalFormatting>/g)];
   assert.ok(cf.length >= 8, `aturan format bersyarat: ${cf.length}`);
   const all = sheet.match(/<conditionalFormatting[\s\S]*<\/conditionalFormatting>/)[0];
-  for (const needle of ['"Komplain"', '"Tinggi"', '"Normal"', "Lewat target", '"Ya"', 'LEFT(S8,6)=&quot;Belum &quot;', "Tertahan", "MOD(ROW(),2)=0"]) assert.ok(all.includes(needle) || all.includes(needle.replace(/"/g, "&quot;")), `aturan: ${needle}`);
-  assert.ok(cf.some(([, ref]) => /^B8:B9 Y8:Y9$/.test(ref)), "Lewat Target menyorot Target + Alasan");
-  assert.ok(cf.some(([, ref]) => /^S8:V9$/.test(ref)), "PIC Meja..PIC Corner");
+  for (const needle of ['"Komplain"', '"Tinggi"', '"Normal"', "Lewat target", '"Ya"', 'LEFT(V8,6)=&quot;Belum &quot;', "Tertahan", "MOD(ROW(),2)=0"]) assert.ok(all.includes(needle) || all.includes(needle.replace(/"/g, "&quot;")), `aturan: ${needle}`);
+  assert.ok(cf.some(([, ref]) => /^B8:B9 AB8:AB9$/.test(ref)), "Lewat Target menyorot Target + Alasan");
+  assert.ok(cf.some(([, ref]) => /^V8:Y9$/.test(ref)), "PIC Meja..PIC Corner");
   for (const argb of [WARNA.komplain, WARNA.tinggi, WARNA.normalBg, WARNA.lewatBg, WARNA.kainBg, WARNA.kuningBg, WARNA.zebra]) assert.ok(styles.includes(argb), `warna ${argb} di dxf`);
 });
 
@@ -208,10 +208,10 @@ test("skala: >500 unit (1200) menghasilkan satu tabel utuh terurut dengan filter
   const ws = wb.getWorksheet(SHEET_NAME);
   assert.equal(data.summary.total, 1200); assert.equal(ws.getCell("A5").value, 1200);
   assert.equal(ws.getCell(FIRST_DATA_ROW + 1199, 1).value, 1200); assert.equal(ws.getCell(FIRST_DATA_ROW + 1200, 1).value, null);
-  assert.match(await xml(/xl\/tables\/table\d+\.xml$/), /<autoFilter ref="A7:Z1207"/);
+  assert.match(await xml(/xl\/tables\/table\d+\.xml$/), /<autoFilter ref="A7:AC1207"/);
   assert.ok(ms < 30000, `waktu ${ms}ms`);
   // urutan terjaga: target naik, lalu Meja, lalu urutan
-  const keys = []; for (let r = FIRST_DATA_ROW; r < FIRST_DATA_ROW + 1200; r += 1) keys.push([ws.getCell(r, 2).value?.toISOString().slice(0, 10), ws.getCell(r, 3).value, ws.getCell(r, 4).value ?? 99]);
+  const keys = []; for (let r = FIRST_DATA_ROW; r < FIRST_DATA_ROW + 1200; r += 1) keys.push([ws.getCell(r, 2).value?.toISOString().slice(0, 10), ws.getCell(r, 4).value, ws.getCell(r, 5).value ?? 99]);
   for (let i = 1; i < keys.length; i += 1) { const a = keys[i - 1]; const b = keys[i]; assert.ok(a[0] < b[0] || (a[0] === b[0] && (a[1] < b[1] || (a[1] === b[1] && a[2] <= b[2]))), `urutan baris ${i}`); }
 });
 

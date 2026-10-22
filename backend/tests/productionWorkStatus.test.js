@@ -89,3 +89,25 @@ test("rencana bahan: selisih TAMBAH/UBAH/HAPUS dan sameLines", () => {
   assert.equal(sameLines(a, [{ materialId: m2.id, qty: 5 }, { materialId: m1.id, qty: 2 }]), true, "urutan baris tidak berarti");
   assert.equal(sameLines(a, b), false);
 });
+
+test("pemakaian aktual berhasil tercatat → 'Sudah dikerjakan' tanpa syarat jadwal/rencana/Run; fakta 'Dikerjakan tanpa jadwal' tanpa jadwal fiktif; precedence benar", () => {
+  const pakai = { terakhirAt: "2026-10-22T05:00:00Z", pertamaAt: "2026-10-22T03:00:00Z" };
+  const a = effectiveWorkStatus({ unitStatus: "RECEIVED", pemakaian: pakai, punyaJadwal: false });
+  assert.equal(a.key, "DIKERJAKAN"); assert.equal(a.label, "Sudah dikerjakan"); assert.equal(a.source, WORK_SOURCE.PEMAKAIAN_BAHAN); assert.equal(a.sourceLabel, "Otomatis dari pemakaian bahan");
+  assert.equal(a.tanpaJadwal, true); assert.equal(a.faktaJadwal, "Dikerjakan tanpa jadwal"); assert.match(a.detail, /belum berarti selesai QC, siap serah Gudang, atau siap kirim/);
+  const b = effectiveWorkStatus({ unitStatus: "RECEIVED", pemakaian: pakai, punyaJadwal: true }); assert.equal(b.tanpaJadwal, false); assert.equal(b.faktaJadwal, null); assert.notEqual(b.key, "DIJADWALKAN", "status tetap Sudah dikerjakan");
+  assert.equal(effectiveWorkStatus({ unitStatus: "RECEIVED", scheduled: false }).key, "BELUM_DIJADWALKAN", "tanpa pemakaian (rencana saja) tidak mengubah status");
+  assert.equal(effectiveWorkStatus({ unitStatus: "RECEIVED", scheduled: true }).key, "DIJADWALKAN");
+  // catatan manual: yang LEBIH BARU menang; yang lebih lama dikalahkan pemakaian; SELESAI tidak diturunkan; BELUM_DIJADWALKAN diabaikan
+  const man = (status, at) => ({ status, createdAt: at, actor: { name: "Admin" } });
+  assert.equal(effectiveWorkStatus({ unitStatus: "RECEIVED", pemakaian: pakai, manual: man("TERTUNDA", "2026-10-22T04:00:00Z") }).key, "DIKERJAKAN", "pemakaian BARU sesudah Tertunda → Sudah dikerjakan lagi");
+  assert.equal(effectiveWorkStatus({ unitStatus: "RECEIVED", pemakaian: pakai, manual: man("TERTUNDA", "2026-10-22T06:00:00Z") }).key, "TERTUNDA", "Tertunda manual yang lebih baru tetap berlaku");
+  assert.equal(effectiveWorkStatus({ unitStatus: "RECEIVED", pemakaian: pakai, manual: man("SELESAI", "2026-10-22T01:00:00Z") }).key, "SELESAI", "SELESAI manual tidak diturunkan");
+  const mk = effectiveWorkStatus({ unitStatus: "RECEIVED", pemakaian: pakai, manual: man("DIKERJAKAN", "2026-10-22T01:00:00Z") }); assert.equal(mk.key, "DIKERJAKAN"); assert.equal(mk.source, WORK_SOURCE.MANUAL, "Sudah dikerjakan manual tetap atas nama pencatatnya"); assert.equal(mk.faktaJadwal, "Dikerjakan tanpa jadwal");
+  assert.equal(effectiveWorkStatus({ unitStatus: "RECEIVED", pemakaian: pakai, manual: man("BELUM_DIJADWALKAN", "2026-10-22T09:00:00Z") }).key, "DIKERJAKAN");
+  // sumber yang lebih kuat tetap mengalahkan: unit batal, bukti aplikasi, status order Siap Kirim ke atas
+  assert.equal(effectiveWorkStatus({ unitStatus: "CANCELLED", pemakaian: pakai }).key, "DIBATALKAN");
+  assert.equal(effectiveWorkStatus({ unitStatus: "RECEIVED", pemakaian: pakai, appStarted: true, productionStatus: "WAITING_QC" }).key, "MENUNGGU_QC");
+  assert.equal(effectiveWorkStatus({ unitStatus: "READY_FOR_DELIVERY", pemakaian: pakai }).key, "SELESAI");
+  assert.ok(!Object.values(WORK_STATUS).some((w) => /sedang/i.test(w.label)), "tidak ada status antara 'Sedang dikerjakan'");
+});

@@ -34,7 +34,7 @@ export default function RencanaExportButton({ date, stations = [], visibleRunIds
     try {
       const body = buildExportBody({ scope, date, from, to, mejaMode: visibleOnly ? "semua" : mejaMode, mejaSel, visibleOnly, includeUnscheduled: visibleOnly ? false : includeUnscheduled, includeValue: adminOwner && includeValue, visibleRunIds, visibleUnitIds });
       const data = await api.exportRencanaProduksi(body);
-      if (data.readerMode === "OFF") throw new Error("Rencana produksi belum diaktifkan — tidak ada data untuk diexport.");
+      // Rencana Admin (jadwal tanpa Run) tetap ikut walau Produksi V2 belum aktif: galat hanya bila memang tidak ada unit pada cakupan.
       if (!data.rows?.length) throw new Error("Tidak ada unit pada cakupan ini. Ubah tanggal, Meja, atau filter.");
       const { exportRencanaProduksi } = await import("@/utils/exportRencanaProduksi.js");
       const name = await exportRencanaProduksi(data);
