@@ -671,3 +671,45 @@ test("pembatalan paralel dua kali pada faktur PO yang sama: satu berhasil, satu 
   assert.equal(await saldoAkun("2-1100"), 0);
   assert.equal(await klaimUtuh(w, po, qty), false);
 });
+
+// ── REGRESI: nomor faktur pengisi "---" (kasus BILL-17102026-008, Toko Bersama) ─────────────────────────────────────────────────────
+test("nomor faktur pengisi '---' bukan nomor faktur: faktur kedua dari supplier yang sama (PO lain) TIDAK ditolak FAKTUR_GANDA; nomor sungguhan yang kembar tetap ditolak", async () => {
+  const w = await dunia();
+  const po1 = await poDisetujui(w, { qty: 4 });
+  await penerimaan(w, po1.id, { datang: 4, baik: 4 });
+  const po2 = await poDisetujui(w, { qty: 5 });
+  await penerimaan(w, po2.id, { datang: 5, baik: 5 });
+
+  const f1 = await buatFaktur(w, po1, { qty: 4, ref: "---" });
+  assert.equal(f1.status, 201, JSON.stringify(f1.body));
+  assert.equal((await setujui(w, f1.body.billId)).status, 200, "faktur pertama bernomor '---' disetujui");
+
+  const f2 = await buatFaktur(w, po2, { qty: 5, ref: "---" });
+  assert.equal(f2.status, 201, JSON.stringify(f2.body));
+  const r2 = await setujui(w, f2.body.billId);
+  assert.equal(r2.status, 200, "faktur kedua bernomor '---' (PO lain) tidak lagi dianggap duplikat: " + JSON.stringify(r2.body));
+  assert.equal(await testPrisma.finJournalEntry.count({ where: { source: "TAGIHAN_SUPPLIER", sourceId: f2.body.billId } }), 1);
+  assert.equal(await saldoAkun("2-1150"), 0, "GRNI kedua penerimaan tertutup");
+
+  // pengisi lain ("-", "--") sama; dan nomor SUNGGUHAN yang kembar tetap ditolak (perlindungan duplikat tidak melemah)
+  const po3 = await poDisetujui(w, { qty: 3 });
+  await penerimaan(w, po3.id, { datang: 3, baik: 3 });
+  const po4 = await poDisetujui(w, { qty: 2 });
+  await penerimaan(w, po4.id, { datang: 2, baik: 2 });
+  const a = await buatFaktur(w, po3, { qty: 3, ref: "INV-2026/777" });
+  assert.equal((await setujui(w, a.body.billId)).status, 200);
+  const b = await buatFaktur(w, po4, { qty: 2, ref: "inv-2026/777" });
+  const tolak = await setujui(w, b.body.billId);
+  assert.equal(tolak.status, 409); assert.equal(tolak.body.code, "FAKTUR_GANDA");
+  assert.match(tolak.body.error ?? tolak.body.message ?? JSON.stringify(tolak.body), /INV-2026\/777|inv-2026\/777/i);
+  assert.equal(await testPrisma.finJournalEntry.count({ where: { source: "TAGIHAN_SUPPLIER", sourceId: b.body.billId } }), 0, "penolakan tidak membuat jurnal");
+  assert.equal((await testPrisma.finSupplierBill.findUnique({ where: { id: b.body.billId } })).status, "MENUNGGU_APPROVAL");
+});
+
+test("nomorFakturBermakna: hanya teks dengan huruf/angka yang dianggap nomor faktur", async () => {
+  const { nomorFakturBermakna } = await import("../../src/services/finance/jenisTagihan.js");
+  for (const x of ["---", "-", "--", " ", "", "—", "___", "...", null, undefined]) assert.equal(nomorFakturBermakna(x), null, JSON.stringify(x));
+  assert.equal(nomorFakturBermakna("  FAK-1 "), "FAK-1");
+  assert.equal(nomorFakturBermakna("0"), "0");
+  assert.equal(nomorFakturBermakna("12-3"), "12-3");
+});

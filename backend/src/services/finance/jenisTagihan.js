@@ -40,6 +40,17 @@ const STATUS_MASUK_BUKU_PO = ["DISETUJUI", "DIBAYAR_SEBAGIAN", "LUNAS"];
 
 const norm = (t) => String(t || "").trim().toLowerCase().replace(/\s+/g, " ");
 
+/**
+ * Nomor faktur supplier yang BERMAKNA untuk pemeriksaan duplikat: teks yang memuat minimal satu huruf/angka. Isian pengisi seperti "-", "--", "---" (dipakai Finance saat supplier
+ * tidak memberi nomor, sementara kolomnya wajib) tidak mengidentifikasi faktur apa pun — memperlakukannya sebagai nomor akan menolak faktur kedua dari supplier yang sama dengan
+ * FAKTUR_GANDA padahal itu dokumen berbeda. Mengembalikan teks terpangkas, atau null bila tidak bermakna. Perlindungan duplikat lain (alokasi jumlah PO, tagihan mirip,
+ * penerimaan sudah ditagih) tetap berlaku.
+ */
+export function nomorFakturBermakna(ref) {
+  const t = String(ref ?? "").trim();
+  return /[\p{L}\p{N}]/u.test(t) ? t : null;
+}
+
 /** Bahan baku TANPA penerimaan hanya sah pada metode PERIODIK (tanggal tagihan sebelum cutover). Selain itu ditolak. */
 export async function pastikanPeriodikBerlaku(db, billDate) {
   const kebijakan = await ambilKebijakanPersediaan(db);
@@ -114,13 +125,14 @@ export async function pastikanAmanDisetujui(tx, bill, { lewatiPenerimaanBelumDit
   }
   await siapkanJenisTagihan(tx, bill); // aturan kategori tetap berlaku saat approve (kategori bisa dinonaktifkan sejak dibuat)
 
-  // Nomor faktur supplier yang sama tidak boleh ditagihkan dua kali.
-  if (bill.supplierRef?.trim()) {
+  // Nomor faktur supplier yang sama tidak boleh ditagihkan dua kali (isian pengisi "---" bukan nomor faktur — lihat nomorFakturBermakna).
+  const refBermakna = nomorFakturBermakna(bill.supplierRef);
+  if (refBermakna) {
     const dobel = await tx.finSupplierBill.findFirst({
-      where: { id: { not: bill.id }, supplierId: bill.supplierId, supplierRef: { equals: bill.supplierRef.trim(), mode: "insensitive" }, status: { in: STATUS_AKTIF } },
+      where: { id: { not: bill.id }, supplierId: bill.supplierId, supplierRef: { equals: refBermakna, mode: "insensitive" }, status: { in: STATUS_AKTIF } },
       select: { billNumber: true },
     });
-    if (dobel) throw new JenisTagihanError(`Faktur ${bill.supplierRef} dari supplier ini sudah tercatat di ${dobel.billNumber}`, 409, "FAKTUR_GANDA");
+    if (dobel) throw new JenisTagihanError(`Faktur ${refBermakna} dari supplier ini sudah tercatat di ${dobel.billNumber}. Bila ini faktur yang berbeda, ubah Nomor Faktur Supplier sesuai nomor di faktur/nota supplier; bila memang duplikat, tolak tagihan ini.`, 409, "FAKTUR_GANDA");
   }
 
   // Tagihan yang tampak mengulang tagihan lain yang SUDAH masuk buku besar (supplier & tanggal sama, uraian sama) tidak disetujui otomatis.
