@@ -54,7 +54,7 @@ export default function CatatBahanBaru({ data, unitId, izin = {}, onDone, onTutu
   const grup = kelompokkan(baris);
   return (
     <div className="space-y-4" data-testid="catat-bahan-baru">
-      <p className="m-0 flex items-start gap-2 rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-ink"><AlertTriangle size={15} className="bh-warn mt-0.5 shrink-0" aria-hidden /><span><b>{SUMBER.BARU.label}</b>: stok Gudang <b>berkurang</b> saat Anda konfirmasi, lewat Material Issue/pergerakan stok resmi, tepat sekali. Tidak perlu membuat Rencana lebih dulu.</span></p>
+      {!belumAda && <p className="m-0 flex items-start gap-2 rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-ink"><AlertTriangle size={15} className="bh-warn mt-0.5 shrink-0" aria-hidden /><span><b>{SUMBER.BARU.label}</b>: stok Gudang <b>berkurang</b> saat Anda konfirmasi, lewat Material Issue/pergerakan stok resmi, tepat sekali. Tidak perlu membuat Rencana lebih dulu.</span></p>}
 
       {!semuaSelesai && (
         <>
