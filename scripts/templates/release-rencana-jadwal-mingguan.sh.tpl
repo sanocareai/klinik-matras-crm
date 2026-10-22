@@ -179,7 +179,7 @@ PRISMA_CHANGED="$(printf '%s\n' "$CHANGED" | grep -E '^backend/prisma/' || true)
 # Migrasi yang sudah ada di baseline TIDAK boleh diubah/dihapus (yang sudah pernah diterapkan di produksi): hanya penambahan.
 [ -z "$(sg diff --name-status "$BASE_SHA" "$DEPLOY_SHA" -- backend/prisma/migrations | grep -v '^A' || true)" ] || die "ada migrasi baseline yang DIUBAH/DIHAPUS — dilarang"
 [ "$(sg diff -U0 --no-color "$BASE_SHA" "$DEPLOY_SHA" -- backend/prisma/schema.prisma | grep -v '^index ' | sed -E 's/^@@ [^@]*@@.*$/@@/' | { cat; echo; } | sha256sum | cut -d' ' -f1)" = "$SCHEMA_DIFF_SHA" ] || die "diff schema.prisma BERBEDA dari yang diaudit (pin SCHEMA_DIFF_SHA) — audit ulang lalu perbarui pin"
-ok "schema.prisma: diff identik dengan yang diaudit (aditif: 2 model baru ProductionUnitSchedule/ProductionUnitScheduleEvent + relasi balik pada Unit dan ProductionRunPlan)"
+ok "schema.prisma: diff identik dengan yang diaudit (aditif: 3 model baru ProductionUnitSchedule/ProductionUnitScheduleEvent/UnitComponentReuseEntry + relasi balik pada Unit, Material, dan ProductionRunPlan)"
 ALL_SQL=""
 for e in $MIGS; do
   n="${e%%:*}"; pin="${e##*:}"
@@ -333,7 +333,7 @@ UNIT_N="$(psql_live -At -c "select count(*) from units")"; SM_N="$(psql_live -At
 [[ "$UNIT_N" =~ ^[0-9]+$ ]] && [[ "$SM_N" =~ ^[0-9]+$ ]] && [[ "$MAT_N" =~ ^[0-9]+$ ]] || die "audit awal bukan angka"
 [ "$UNIT_N" -le 4900 ] || die "jumlah unit ${UNIT_N} mendekati batas ekspor Excel (5000) — tinjau batas BATAS_EKSPOR sebelum rilis"
 DB_BYTES="$(psql_live -At -c "select pg_database_size('${DB_NAME}')")"
-ok "dampak migrasi: units ${UNIT_N} baris; stock_movements ${SM_N}; materials ${MAT_N}; DB ${DB_BYTES} byte — hanya 2 tabel baru kosong (tabel lama tidak diubah); ekspor Excel memuat seluruh ${UNIT_N} unit (batas 5000)"
+ok "dampak migrasi: units ${UNIT_N} baris; stock_movements ${SM_N}; materials ${MAT_N}; DB ${DB_BYTES} byte — hanya 3 tabel baru kosong (tabel lama tidak diubah); ekspor Excel memuat seluruh ${UNIT_N} unit (batas 5000)"
 ADM_AKTIF="$(psql_live -At -c "select count(*) from \"User\" where active and (role::text in ('ADMIN','OWNER') or id in (select user_id from user_roles where role::text in ('ADMIN','OWNER')))")"
 LEAD_AKTIF="$(psql_live -At -c "select count(*) from \"User\" where active and (role::text = 'PRODUCTION_LEAD' or id in (select user_id from user_roles where role::text = 'PRODUCTION_LEAD'))")"
 PLAN_AKTIF="$(psql_live -At -c "select count(*) from production_run_plans_v2 where status::text <> 'CANCELLED' and production_date is not null")"
