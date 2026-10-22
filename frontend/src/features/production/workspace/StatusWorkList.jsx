@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { cn } from "@/lib/utils.js";
 import { friendlyError } from "@/features/production/experience.js";
+import { sumberKerjaPendek } from "@/features/production/orderProduksiModel.js";
 import { EmpatStatus, Penanda } from "@/features/production/workspace/StatusMarkers.jsx";
 import { FILTERS, SORTS, badgeTarget, bagianUntukAksi, nadaPerhatian, ringkasanKerja, ringkasanPosisi } from "@/features/production/workspace/workListModel.js";
 
@@ -43,6 +44,7 @@ function BarisUnit({ unit, onBuka }) {
           <p className="m-0 text-[13.5px] font-semibold text-ink">{unit.unitCode}{utama && <span className="ml-2 text-[11.5px] font-medium text-ink3">{unit.statusUnit}</span>}</p>
           <p className="m-0 text-[12px] text-ink3">{[unit.merk, unit.ukuran].filter(Boolean).join(" · ") || "—"}</p>
           <div className="mt-1.5"><EmpatStatus posisi={unit.posisi} kerja={unit.kerja} alurMeja={utama ? undefined : unit.alurMeja} padat /></div>
+          {sumberKerjaPendek(unit.kerja) && <p className="m-0 mt-1 text-[11.5px] text-ink3" data-testid="unit-sumber-kerja">Status kerja: {sumberKerjaPendek(unit.kerja)}</p>}
           {unit.anomali && <p className="m-0 mt-1.5 flex items-start gap-1.5 text-[12px] text-orange" data-testid="unit-anomali"><AlertTriangle size={13} className="mt-0.5 shrink-0" aria-hidden />{unit.anomali.teks}</p>}
         </div>
         <div className="flex min-w-[140px] flex-col gap-1 text-[12.5px] text-ink2">
@@ -104,7 +106,7 @@ function BarisOrder({ order, terbuka, onToggle, onBuka, riwayat }) {
                 <p className="m-0 text-[14.5px] font-semibold text-ink" data-testid="tindakan-label">{tindakan.label}</p>
                 <p className="m-0 text-[12.5px] text-ink3">{[tindakan.aktor && tindakan.aktor !== "—" ? `Oleh ${tindakan.aktor}` : null, tindakan.detail].filter(Boolean).join(" · ")}</p>
               </div>
-              {aksiBisaDibuka && <Button type="button" className="min-h-[44px]" data-testid="tindakan-buka" onClick={() => onBuka(r.unitUtamaId, ["BELUM_DITERIMA", "ORDER_MASIH_PENGAMBILAN"].includes(r.perhatian?.kode) ? "ringkasan" : bagianUntukAksi(tindakan.aksi))}>{tindakan.aksi === "CONFIRM_ARRIVAL" ? "Lihat unit" : "Kerjakan"} <ArrowRight size={15} aria-hidden /></Button>}
+              {aksiBisaDibuka && <Button type="button" className="min-h-[44px]" data-testid="tindakan-buka" onClick={() => onBuka(r.unitUtamaId, ["BELUM_DITERIMA", "ORDER_MASIH_PENGAMBILAN"].includes(r.perhatian?.kode) ? "ringkasan" : bagianUntukAksi(tindakan.aksi))}>{tindakan.aksi === "CONFIRM_ARRIVAL" ? "Lihat unit" : tindakan.aksi === "OPEN_WORK" ? "Buka pekerjaan" : "Kerjakan"} <ArrowRight size={15} aria-hidden /></Button>}
             </div>
           )}
           <ul className="m-0 list-none space-y-2 p-0 [&>li]:bg-inset" aria-label="Unit dalam order">

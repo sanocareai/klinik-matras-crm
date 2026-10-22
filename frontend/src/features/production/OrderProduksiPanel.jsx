@@ -11,7 +11,7 @@ import MaterialPlanEditor from "@/features/production/MaterialPlanEditor.jsx";
 import PenerimaanWorkshopModal from "@/features/production/PenerimaanWorkshopModal.jsx";
 import KoreksiPenerimaanModal from "@/features/production/KoreksiPenerimaanModal.jsx";
 import { statusOf } from "@/features/production/productionLabels.js";
-import { formatJumlah, kunciIdempoten, nadaBadge, parseJumlah, pesanGalatAdopsi, sumberKerjaText, teksKoreksi, waktuWib } from "@/features/production/orderProduksiModel.js";
+import { KERJA_PERLU_KONFIRMASI, formatJumlah, konfirmasiKerja, kunciIdempoten, labelCatatKerja, nadaBadge, parseJumlah, pesanGalatAdopsi, sumberKerjaText, teksKoreksi, waktuWib } from "@/features/production/orderProduksiModel.js";
 
 // Panel fokus Order Produksi (adopsi Admin) — urutan: ringkasan + SATU tindakan utama → status & target → rencana bahan → pemakaian aktual → riwayat → lanjutan (Unit 360).
 // Tiga status tampil terpisah dan berlabel (Status order · Posisi unit · Status kerja) — label teks, bukan hanya warna. Tahap/dokumentasi/biaya/QC tetap lengkap di Unit 360 (bagian "Lanjutan").
@@ -136,20 +136,46 @@ export default function OrderProduksiPanel({ unitId, onClose, onChanged, onBukaU
 }
 
 // ───────────────────────────── tindakan utama ─────────────────────────────
-function TindakanUtama({ data, aktif, onDone, onBukaUnit360 }) {
+/** Konfirmasi singkat SEBELUM menyimpan status kerja yang menyatakan pekerjaan sudah dilakukan. Tidak menyimpan apa pun sampai "Ya"; klik ganda diabaikan oleh pemanggil (sibuk). */
+export function KonfirmasiKerja({ status, unitCode, sibuk, onYa, onBatal }) {
+  const k = konfirmasiKerja(status, unitCode);
+  const ref = useRef(null);
+  // Di HP, banner/toolbar yang menempel di bawah layar bisa menutupi tombol Batal/Ya: gulirkan konfirmasi ke tengah layar saat muncul (HP dan desktop), tanpa mengambil fokus dari "Batal".
+  useEffect(() => {
+    const el = ref.current; if (!el) return;
+    const kurang = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    el.scrollIntoView({ block: "center", behavior: kurang ? "auto" : "smooth" });
+  }, [status]);
+  if (!k) return null;
+  return (
+    <div ref={ref} role="group" aria-label="Konfirmasi status kerja" className="mt-3 scroll-mb-24 space-y-2 rounded-btn bg-surface px-3 py-3 text-[13px] text-ink2" data-testid="konfirmasi-kerja">
+      <p className="m-0 font-medium text-ink" data-testid="konfirmasi-kerja-judul">{k.judul}</p>
+      <p className="m-0">{k.isi}</p>
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button variant="neutral" className="min-h-[44px]" data-testid="konfirmasi-kerja-batal" onClick={onBatal} disabled={sibuk}>Batal</Button>
+        <Button className="min-h-[44px]" data-testid="konfirmasi-kerja-ya" onClick={onYa} disabled={sibuk}>{sibuk ? "Menyimpan…" : k.ya}</Button>
+      </div>
+    </div>
+  );
+}
+
+function TindakanUtama({ data, aktif, onDone, onBukaUnit360, onBagian }) {
   const { adopsi: ad, izin, unit: u } = data;
   const t = ad.tindakan || {};
   const [konfirmasi, setKonfirmasi] = useState(false);
   const [terimaBuka, setTerimaBuka] = useState(false);
   const [diprosesBuka, setDiprosesBuka] = useState(false);
   const [catatanOrder, setCatatanOrder] = useState("");
+  const [konfKerja, setKonfKerja] = useState(null); // status kerja yang menunggu konfirmasi ("DIKERJAKAN" | "SELESAI")
+  const catatRef = useRef(false); // klik ganda: hanya satu permintaan
   const [sibuk, setSibuk] = useState(false);
   const [hasil, setHasil] = useState({ galat: null, ok: "" });
 
   const ke = (id) => { const el = document.getElementById(id); if (el) { el.scrollIntoView({ behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" }); el.querySelector?.("button, input, select")?.focus?.({ preventScroll: true }); } };
   async function catat(status) {
+    if (catatRef.current) return; catatRef.current = true;
     setSibuk(true); setHasil({ galat: null, ok: "" });
-    try { await api.postStatusKerjaManual(u.id, { status, expectedLatestId: data.kerjaManual.terakhirId }); setHasil({ galat: null, ok: `Status kerja dicatat: ${status === "DIKERJAKAN" ? "Dikerjakan" : "Selesai"}.` }); await onDone(); } catch (e) { setHasil({ galat: e, ok: "" }); } finally { setSibuk(false); }
+    try { await api.postStatusKerjaManual(u.id, { status, expectedLatestId: data.kerjaManual.terakhirId }); setKonfKerja(null); setHasil({ galat: null, ok: konfirmasiKerja(status, u.unitCode)?.sukses ?? "Status kerja dicatat." }); await onDone(); } catch (e) { setKonfKerja(null); setHasil({ galat: e, ok: "" }); } finally { setSibuk(false); catatRef.current = false; }
   }
   async function siapKirim() {
     setSibuk(true); setHasil({ galat: null, ok: "" });
@@ -167,8 +193,9 @@ function TindakanUtama({ data, aktif, onDone, onBukaUnit360 }) {
   switch (t.aksi) {
     case "CONFIRM_ARRIVAL": tombol = izin.catatPenerimaan && aktif ? { label: "Catat unit diterima", onClick: () => setTerimaBuka(true) } : null; break;
     case "UBAH_ORDER_DIPROSES": tombol = izin.statusOrder && aktif ? { label: "Ubah ke Diproses", onClick: () => setDiprosesBuka(true) } : null; break;
-    case "START_WORK": tombol = izin.statusKerja && aktif && !data.kerjaManual.dikunciAplikasi ? { label: "Catat: Sudah dikerjakan", onClick: () => catat("DIKERJAKAN") } : null; break;
-    case "FINISH_WORK": tombol = izin.statusKerja && aktif && !data.kerjaManual.dikunciAplikasi ? { label: "Catat: Selesai", onClick: () => catat("SELESAI") } : { label: "Buka Unit 360", onClick: onBukaUnit360, sekunder: true }; break;
+    // OPEN_WORK: hanya MEMBUKA bagian Pekerjaan (tidak mengubah status; tampil juga untuk akun hanya-lihat). Status kerja tidak pernah tercatat dari tombol ini.
+    case "OPEN_WORK": tombol = { label: t.label || "Buka pekerjaan", onClick: () => (onBagian ? onBagian("pekerjaan") : ke("sec-status")) }; break;
+    case "FINISH_WORK": tombol = izin.statusKerja && aktif && !data.kerjaManual.dikunciAplikasi ? { label: "Tandai selesai", onClick: () => setKonfKerja("SELESAI") } : { label: "Buka Unit 360", onClick: onBukaUnit360, sekunder: true }; break;
     case "MARK_READY": tombol = izin.statusOrder ? { label: "Tandai Siap Kirim", onClick: () => setKonfirmasi(true) } : null; break;
     case "PLAN_MATERIAL": tombol = izin.rencanaBahan ? { label: "Susun rencana bahan", onClick: () => ke("sec-rencana-wrap") } : null; break;
     case "SET_TARGET": case "OPEN_PLAN": tombol = izin.target ? { label: t.aksi === "SET_TARGET" ? "Tetapkan target" : "Atur status & target", onClick: () => ke("sec-status") } : null; break;
@@ -185,7 +212,7 @@ function TindakanUtama({ data, aktif, onDone, onBukaUnit360 }) {
           <p className="m-0 text-[15px] font-semibold text-ink" data-testid="tindakan-label">{t.label || "—"}</p>
           <p className="m-0 text-[12.5px] text-ink3">{t.aktor && t.aktor !== "—" ? `Oleh ${t.aktor}` : ""}{t.detail ? `${t.aktor && t.aktor !== "—" ? " · " : ""}${t.detail}` : ""}</p>
         </div>
-        {tombol && !konfirmasi && !diprosesBuka && <Button variant={tombol.sekunder ? "secondary" : "primary"} className="bh-cta min-h-[44px]" data-testid="tindakan-tombol" disabled={sibuk} onClick={tombol.onClick}>{sibuk ? "Menyimpan…" : tombol.label}</Button>}
+        {tombol && !konfirmasi && !diprosesBuka && !konfKerja && <Button variant={tombol.sekunder ? "secondary" : "primary"} className="bh-cta min-h-[44px]" data-testid="tindakan-tombol" disabled={sibuk} onClick={tombol.onClick}>{sibuk ? "Menyimpan…" : tombol.label}</Button>}
       </div>
       {t.penghalang && t.aksi !== "UBAH_ORDER_DIPROSES" && (
         <p role="note" data-testid="tindakan-penghalang" className="m-0 mt-2 flex items-start gap-2 rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-orange"><Info size={15} className="mt-0.5 shrink-0" aria-hidden />{t.penghalang.teks}</p>
@@ -200,6 +227,7 @@ function TindakanUtama({ data, aktif, onDone, onBukaUnit360 }) {
           <div className="flex flex-wrap justify-end gap-2"><Button variant="neutral" className="min-h-[44px]" onClick={() => setDiprosesBuka(false)} disabled={sibuk}>Batal</Button><Button className="min-h-[44px]" data-testid="diproses-ya" onClick={ubahKeDiproses} disabled={sibuk || catatanOrder.trim().length < 3}>{sibuk ? "Menyimpan…" : "Ya, ubah ke Diproses"}</Button></div>
         </div>
       )}
+      {konfKerja && <KonfirmasiKerja status={konfKerja} unitCode={u.unitCode} sibuk={sibuk} onYa={() => catat(konfKerja)} onBatal={() => setKonfKerja(null)} />}
       {konfirmasi && (
         <div role="group" aria-label="Konfirmasi Siap Kirim" className="mt-3 rounded-btn bg-surface px-3 py-3 text-[13px] text-ink2" data-testid="konfirmasi-siap-kirim">
           <p className="m-0 font-medium text-ink">Ubah status order {u.order.orderNumber} menjadi Siap Kirim?</p>
@@ -272,13 +300,17 @@ function StatusTarget({ data, aktif, onDone }) {
   const [targetTeks, setTargetTeks] = useState(() => (u.productionDueAt ? new Date(new Date(u.productionDueAt).getTime() + 7 * 3600000).toISOString().slice(0, 10) : ""));
   const [hKerja, setHKerja] = useState({ galat: null, ok: "" }); const [hOrder, setHOrder] = useState({ galat: null, ok: "" }); const [hTarget, setHTarget] = useState({ galat: null, ok: "" });
   const [sibuk, setSibuk] = useState("");
+  const [konf, setKonf] = useState(false); // konfirmasi sebelum menyimpan status yang menyatakan pekerjaan sudah dilakukan
+  const simpanRef = useRef(false); // klik ganda: hanya satu permintaan
   const kunci = km.dikunciAplikasi;
   const perluCatatan = kerja === "TERTUNDA";
 
   async function simpanKerja() {
+    if (simpanRef.current) return; simpanRef.current = true;
     setSibuk("kerja"); setHKerja({ galat: null, ok: "" });
-    try { const r = await api.postStatusKerjaManual(u.id, { status: kerja, note: catatan.trim() || undefined, expectedLatestId: km.terakhirId }); setHKerja({ galat: null, ok: r.dicatat ? "Status kerja dicatat manual. Tidak ada tahap, foto, QC, atau pemakaian bahan yang dibuat." : "Sudah sama dengan catatan terakhir — tidak ada yang berubah." }); setCatatan(""); await onDone(); } catch (e) { setHKerja({ galat: e, ok: "" }); } finally { setSibuk(""); }
+    try { const r = await api.postStatusKerjaManual(u.id, { status: kerja, note: catatan.trim() || undefined, expectedLatestId: km.terakhirId }); setKonf(false); setHKerja({ galat: null, ok: r.dicatat ? "Status kerja dicatat manual (bukan dari pemakaian bahan). Tidak ada stok, tahap, foto, QC, Run, atau jurnal yang dibuat." : "Sudah sama dengan catatan terakhir — tidak ada yang berubah." }); setCatatan(""); await onDone(); } catch (e) { setKonf(false); setHKerja({ galat: e, ok: "" }); } finally { setSibuk(""); simpanRef.current = false; }
   }
+  const perluKonf = KERJA_PERLU_KONFIRMASI.includes(kerja);
   async function simpanOrder() {
     setSibuk("order"); setHOrder({ galat: null, ok: "" });
     try { await api.updateOrder(u.order.id, { status: orderPilih, statusOverrideNote: "Diubah dari Order Produksi" }); setHOrder({ galat: null, ok: `Status order diubah ke ${STATUS_ORDER_OPSI.find((o) => o.key === orderPilih)?.label}. Sales dan Delivery melihat status yang sama.` }); await onDone(); } catch (e) { setHOrder({ galat: e, ok: "" }); } finally { setSibuk(""); }
@@ -303,18 +335,19 @@ function StatusTarget({ data, aktif, onDone }) {
           ? <Kosong>Unit ini sudah dikerjakan lewat aplikasi Produksi, jadi status kerja <b>mengikuti aplikasi</b> ({ad.kerja?.label}) dan tidak bisa dicatat manual.</Kosong>
           : (
             <>
-              <p className="m-0 text-[12.5px] text-ink3">Untuk Admin yang belum memakai aplikasi Meja. Hanya mencatat status — tidak membuat tahap, foto, QC, atau pemakaian bahan.</p>
+              <p className="m-0 text-[12.5px] text-ink3">Untuk Admin yang belum memakai aplikasi Meja. Pilih “Sudah dikerjakan” hanya bila pekerjaannya memang sudah dilakukan (boleh tanpa bahan baru). Hanya mencatat status — tidak membuat stok, tahap, foto, QC, Run, atau jurnal.</p>
               <label className="block space-y-1"><span className={label}>Catat status kerja</span>
-                <select value={kerja} onChange={(e) => setKerja(e.target.value)} disabled={!izin.statusKerja || !aktif || !!sibuk} data-testid="kerja-pilih" className={field}>
+                <select value={kerja} onChange={(e) => { setKerja(e.target.value); setKonf(false); }} disabled={!izin.statusKerja || !aktif || !!sibuk} data-testid="kerja-pilih" className={field}>
                   {km.nilaiBoleh.map((n) => <option key={n.key} value={n.key}>{n.label}</option>)}
                 </select></label>
               <label className="block space-y-1"><span className={label}>Catatan {perluCatatan ? "(wajib untuk Tertunda)" : "(opsional)"}</span>
                 <input value={catatan} onChange={(e) => setCatatan(e.target.value)} maxLength={500} disabled={!izin.statusKerja || !aktif || !!sibuk} data-testid="kerja-catatan" placeholder={perluCatatan ? "Mis. menunggu kain dari supplier" : "Tambahkan catatan singkat"} className={field} /></label>
               {izin.statusKerja && aktif
-                ? <Button className="min-h-[44px]" data-testid="kerja-simpan" disabled={!!sibuk || (perluCatatan && catatan.trim().length < 3)} onClick={simpanKerja}>{sibuk === "kerja" ? "Menyimpan…" : "Catat status kerja"}</Button>
+                ? <Button className="min-h-[44px]" data-testid="kerja-simpan" disabled={!!sibuk || konf || (perluCatatan && catatan.trim().length < 3)} onClick={() => (perluKonf ? setKonf(true) : simpanKerja())}>{sibuk === "kerja" ? "Menyimpan…" : labelCatatKerja(kerja)}</Button>
                 : <p className="m-0 text-[12.5px] text-ink3">{!aktif ? "Unit sudah selesai/dibatalkan." : "Akun Anda hanya bisa melihat."}</p>}
             </>
           )}
+        {konf && perluKonf && <KonfirmasiKerja status={kerja} unitCode={u.unitCode} sibuk={!!sibuk} onYa={simpanKerja} onBatal={() => setKonf(false)} />}
         <Hasil hasil={hKerja} onMuat={onDone} />
         {km.riwayat.length > 0 && (
           <ul className="m-0 list-none space-y-1 p-0 text-[12px] text-ink2" data-testid="kerja-riwayat">

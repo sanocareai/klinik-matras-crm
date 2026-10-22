@@ -13,6 +13,7 @@
 //     dalam praktik, perbaiki modelnya, jangan pindahkan ke luar transaksi)
 
 import { BLOCK_REASON_LABEL } from "./domain/productionExceptions.js";
+import { WORK_STATUS } from "./domain/productionWorkStatus.js";
 
 export const ENTITY_TYPES = Object.freeze({
   UNIT: "unit",
@@ -539,7 +540,7 @@ export function formatActivitySentence(event) {
     case EVENT_TYPES.PRODUCTION_FOLLOWS_ORDER:
       return ringkasIkutOrder(metadata);
     case EVENT_TYPES.PRODUCTION_STATUS_KERJA_MANUAL:
-      return `Status kerja unit ${metadata.unitCode || "—"} dicatat manual oleh ${metadata.deciderName || "Admin"}: ${metadata.from ? `${metadata.from} → ` : ""}${metadata.to || "—"}${metadata.note ? ` (${metadata.note})` : ""}. Bukan hasil aplikasi Meja; tidak ada tahap, QC, foto, atau pemakaian bahan yang dibuat`;
+      return `Status kerja unit ${metadata.unitCode || "—"} dicatat manual oleh ${metadata.deciderName || "Admin"}: ${metadata.from ? `${WORK_STATUS[metadata.from]?.label ?? metadata.from} → ` : ""}${WORK_STATUS[metadata.to]?.label ?? metadata.to ?? "—"}${metadata.note ? ` (${metadata.note})` : ""}. Catatan manual — bukan dari pemakaian bahan atau aplikasi Meja; tidak ada stok, tahap, QC, foto, Run, atau jurnal yang dibuat`;
     case EVENT_TYPES.PRODUCTION_RENCANA_BAHAN_DISIMPAN:
       return `Rencana bahan unit ${metadata.unitCode || "—"} disimpan oleh ${metadata.deciderName || "Admin"} (revisi ${metadata.revision ?? "—"}, ${metadata.jumlahPerubahan ?? 0} perubahan)${metadata.alasan ? `: ${metadata.alasan}` : ""}. Rencana tidak mengurangi stok`;
     case EVENT_TYPES.DELIVERY_MANUAL_RECORDED:

@@ -139,13 +139,95 @@ test("J6. daftar kerja (work list) & panel memakai aturan yang sama: unit berjad
   assert.notEqual(baris(sudah.id).tab, baris(belum.id).tab, "antrean memisahkan unit berjadwal dari yang belum (aturan antrean tetap konsisten dengan status kerja)");
 });
 
-test("J7. TINDAKAN BERIKUTNYA unit Dijadwalkan (sudah diterima di workshop): satu tindakan 'Mulai pekerjaan'; target selesai & rencana bahan OPSIONAL — tidak ada langkah wajib 'Tetapkan target'/'Susun rencana bahan', sama dengan atau tanpa keduanya", async () => {
+test("J7. TINDAKAN BERIKUTNYA unit Dijadwalkan (sudah diterima di workshop): satu tindakan 'Buka pekerjaan' (membuka halaman, tidak mengubah status); target selesai & rencana bahan OPSIONAL — tidak ada langkah wajib 'Tetapkan target'/'Susun rencana bahan', sama dengan atau tanpa keduanya", async () => {
   const u = await mkUnit({ received: true }); assert.equal((await jadwalkan(u)).status, 201);
   const tanpa = (await adopsi(u)).adopsi; assert.equal(tanpa.kerja.key, "DIJADWALKAN"); assert.equal(tanpa.targetSelesai?.at ?? null, null, "unit ini memang tanpa target");
-  assert.equal(tanpa.tindakan.aksi, "START_WORK"); assert.equal(tanpa.tindakan.label, "Mulai pekerjaan"); assert.match(tanpa.tindakan.detail, /Target selesai dan rencana bahan opsional/); assert.ok(!/wajib|harus/i.test(tanpa.tindakan.label + tanpa.tindakan.detail));
+  assert.equal(tanpa.tindakan.aksi, "OPEN_WORK"); assert.equal(tanpa.tindakan.label, "Buka pekerjaan"); assert.match(tanpa.tindakan.detail, /Membuka halaman tidak mengubah status/); assert.match(tanpa.tindakan.detail, /Target selesai dan rencana bahan opsional/); assert.ok(!/wajib|harus/i.test(tanpa.tindakan.label + tanpa.tindakan.detail));
   const m = await mat("KAIN-J7"); const put = await w.admin.api.put(`${P}/units/${u.id}/material-plan`, { lines: [{ materialId: m.id, qty: 2 }], expectedRevision: 0 }); assert.equal(put.status, 200);
   const ada = await jadwalkan(u, { productionDate: H(3), expectedRevision: 1, targetDate: H(5) }); assert.equal(ada.status, 201, JSON.stringify(ada.body));
-  const dengan = (await adopsi(u)).adopsi; assert.ok(dengan.targetSelesai?.at, "kini ada target"); assert.equal(dengan.tindakan.aksi, "START_WORK"); assert.equal(dengan.tindakan.label, tanpa.tindakan.label);
+  const dengan = (await adopsi(u)).adopsi; assert.ok(dengan.targetSelesai?.at, "kini ada target"); assert.equal(dengan.tindakan.aksi, "OPEN_WORK"); assert.equal(dengan.tindakan.label, tanpa.tindakan.label);
   const belum = await mkUnit({ received: true }); const bj = (await adopsi(belum)).adopsi.tindakan;
   assert.equal(bj.label, "Jadwalkan di Rencana Produksi"); assert.match(bj.detail, /Target selesai opsional/);
+});
+
+// ═══ UX STATUS KERJA JUJUR (22 Okt 2026): "Buka pekerjaan" hanya membuka; "Sudah dikerjakan" tercatat lewat pemakaian bahan (otomatis) atau tombol manual berkonfirmasi ═══
+const workList = async (q, filter = "SEMUA", klien = null) => { const r = await (klien ?? w.admin.api).get(`${P}/work-list?q=${encodeURIComponent(q)}&filter=${filter}&scope=aktif`); assert.equal(r.status, 200, JSON.stringify(r.body)); return r.body; };
+const unitDiList = (body, unit) => body.orders.flatMap((o) => o.units).find((x) => x.id === unit.id) ?? null;
+const catatManual = (unit, status, klien = null, extra = {}) => (klien ?? w.admin.api).post(`${P}/units/${unit.id}/work-progress`, { status, ...extra });
+const jejakUx = async () => ({ ...(await efek()), jurnal: await testPrisma.finJournalEntry.count() });
+
+test("K1. unit Dijadwalkan: tindakan 'Buka pekerjaan' (OPEN_WORK); membuka/menyegarkan halaman berkali-kali TIDAK mengubah status, riwayat, stok, Run, atau jurnal", async () => {
+  const u = await mkUnit({ received: true }); assert.equal((await jadwalkan(u)).status, 201);
+  const sebelum = await jejakUx();
+  for (let i = 0; i < 3; i++) { // kembali/refresh = baca ulang saja
+    const ad = (await adopsi(u)); assert.equal(ad.adopsi.tindakan.aksi, "OPEN_WORK"); assert.equal(ad.adopsi.tindakan.label, "Buka pekerjaan"); assert.equal(ad.adopsi.kerja.key, "DIJADWALKAN");
+    assert.deepEqual(ad.kerjaManual.riwayat, [], "tidak ada catatan manual dari membuka halaman");
+    await w.admin.api.get(`${P}/units/${u.id}/ruang-kerja`);
+  }
+  const li = unitDiList(await workList(u.unitCode), u); assert.ok(li, "unit di daftar kerja"); assert.equal(li.kerja.key, "DIJADWALKAN");
+  const ord = (await workList(u.unitCode)).orders[0]; assert.equal(ord.ringkas.tindakan.aksi, "OPEN_WORK"); assert.equal(ord.ringkas.tindakan.label, "Buka pekerjaan");
+  assert.deepEqual(await jejakUx(), sebelum, "membuka halaman tidak menulis apa pun");
+});
+
+test("K2. tanda manual 'Sudah dikerjakan' TANPA bahan baru (unit Dijadwalkan DAN belum dijadwalkan): hanya satu catatan status; tanpa stok, Run, QC, atau jurnal palsu; sumber = 'Dicatat manual'", async () => {
+  for (const jadwal of [true, false]) {
+    const u = await mkUnit({ received: true }); if (jadwal) assert.equal((await jadwalkan(u)).status, 201);
+    const sebelum = await jejakUx();
+    const r = await catatManual(u, "DIKERJAKAN"); assert.equal(r.status, 201, JSON.stringify(r.body)); assert.equal(r.body.dicatat, true);
+    const sesudah = await jejakUx();
+    assert.deepEqual({ ...sesudah, progres: undefined }, { ...sebelum, progres: undefined }, "hanya catatan status kerja yang bertambah");
+    assert.equal(sesudah.progres, sebelum.progres + 1);
+    const k = await kerja(u); assert.equal(k.key, "DIKERJAKAN"); assert.equal(k.label, "Sudah dikerjakan"); assert.equal(k.source, "MANUAL"); assert.equal(k.sourceLabel, "Dicatat manual");
+    assert.equal(k.tanpaJadwal, !jadwal);
+  }
+});
+
+test("K3. klik ganda / dua permintaan serentak 'Sudah dikerjakan': tepat SATU catatan; yang kedua tidak menulis", async () => {
+  const u = await mkUnit({ received: true });
+  const awal = (await adopsi(u)).kerjaManual.terakhirId;
+  const [a, b] = await Promise.all([catatManual(u, "DIKERJAKAN", null, { expectedLatestId: awal }), catatManual(u, "DIKERJAKAN", null, { expectedLatestId: awal })]);
+  assert.ok([a.status, b.status].every((s) => [200, 201, 409].includes(s)), JSON.stringify([a.body, b.body]));
+  assert.ok([a.status, b.status].includes(201), "satu berhasil");
+  assert.equal(await testPrisma.productionUnitWorkProgress.count({ where: { unitId: u.id } }), 1, "tepat satu catatan");
+  const lagi = await catatManual(u, "DIKERJAKAN"); assert.equal(lagi.status, 200); assert.equal(lagi.body.dicatat, false);
+  assert.equal(await testPrisma.productionUnitWorkProgress.count({ where: { unitId: u.id } }), 1);
+});
+
+test("K4. KONSISTEN setelah dicatat manual: Ringkasan, daftar kerja + filter, daftar unit + filter, Riwayat, dan Excel sama-sama 'Sudah dikerjakan' dengan sumber 'Dicatat manual'", async () => {
+  const u = await mkUnit({ received: true }); assert.equal((await jadwalkan(u)).status, 201);
+  assert.equal((await catatManual(u, "DIKERJAKAN", null, { note: "dikerjakan di workshop" })).status, 201);
+  const ad = await adopsi(u); assert.equal(ad.adopsi.kerja.key, "DIKERJAKAN"); assert.equal(ad.adopsi.kerja.source, "MANUAL");
+  const wl = await workList(u.unitCode, "DIKERJAKAN"); const li = unitDiList(wl, u); assert.ok(li, "ada di filter 'Sudah dikerjakan'"); assert.equal(li.kerja.label, "Sudah dikerjakan"); assert.equal(li.kerja.sourceLabel, "Dicatat manual");
+  assert.equal(unitDiList(await workList(u.unitCode, "BELUM_DIJADWALKAN"), u), null); assert.deepEqual(await daftar("DIKERJAKAN"), [u.id]); assert.deepEqual(await daftar("DIJADWALKAN"), []);
+  const x = await barisExcel(u); assert.equal(x["Status Kerja (Administratif)"], "Sudah dikerjakan"); assert.equal(x["Sumber Status Kerja"], "Dicatat manual");
+  assert.equal(ad.kerjaManual.riwayat.at(-1).label, "Sudah dikerjakan"); assert.equal(ad.kerjaManual.riwayat.at(-1).note, "dikerjakan di workshop");
+  const rw = ad.riwayat.find((e) => e.kind === "EVENT_PRODUCTION_STATUS_KERJA_MANUAL"); assert.ok(rw, "catatan manual tampil di Riwayat unit");
+  assert.match(rw.label, /dicatat manual oleh [^:]+: Sudah dikerjakan/); assert.match(rw.label, /dicatat manual/); assert.match(rw.label, /bukan dari pemakaian bahan/); assert.ok(!/DIKERJAKAN/.test(rw.label), "label, bukan kode mentah");
+});
+
+test("K5. pemakaian bahan aktual membuat status 'Sudah dikerjakan' OTOMATIS (sumber 'Otomatis dari pemakaian bahan') tanpa syarat rencana/jadwal/Meja/Corner/QC; konsisten di daftar, Excel, dan Riwayat", async () => {
+  const u = await mkUnit({ received: true }); const m = await mat("KAIN-K5");
+  assert.equal((await pakaiBaru(u, m, 1)).status, 201);
+  const ad = await adopsi(u); assert.equal(ad.adopsi.kerja.key, "DIKERJAKAN"); assert.equal(ad.adopsi.kerja.source, "PEMAKAIAN_BAHAN"); assert.equal(ad.adopsi.kerja.sourceLabel, "Otomatis dari pemakaian bahan");
+  assert.equal(unitDiList(await workList(u.unitCode, "DIKERJAKAN"), u).kerja.sourceLabel, "Otomatis dari pemakaian bahan");
+  assert.equal((await barisExcel(u))["Sumber Status Kerja"], "Otomatis dari pemakaian bahan");
+  assert.ok(ad.riwayat.some((e) => e.kind === "STATUS_KERJA_OTOMATIS" && e.sumber === "PEMAKAIAN_BAHAN"), "peristiwa otomatis ada di Riwayat");
+  assert.equal(await testPrisma.productionRun.count(), 0, "tanpa Run palsu"); assert.equal(await testPrisma.productionRunPlan.count(), 0, "tanpa rencana Meja palsu");
+});
+
+test("K6. akun HANYA-LIHAT (Sales): bisa membuka ruang kerja & melihat tindakan 'Buka pekerjaan', tetapi TIDAK bisa mencatat status kerja (403) dan tidak ada yang tertulis", async () => {
+  const sales = await createTestUser({ roles: ["SALES"] }); const lihat = makeClient(server.baseUrl, sales.token);
+  const u = await mkUnit({ received: true }); assert.equal((await jadwalkan(u)).status, 201);
+  const ad = (await lihat.get(`${P}/units/${u.id}/adopsi`)); assert.equal(ad.status, 200); assert.equal(ad.body.adopsi.tindakan.aksi, "OPEN_WORK"); assert.equal(ad.body.izin.statusKerja, false);
+  assert.equal((await lihat.get(`${P}/units/${u.id}/ruang-kerja`)).status, 200);
+  const sebelum = await jejakUx();
+  const tolak = await catatManual(u, "DIKERJAKAN", lihat); assert.equal(tolak.status, 403);
+  assert.deepEqual(await jejakUx(), sebelum); assert.equal((await kerja(u)).key, "DIJADWALKAN");
+});
+
+test("K7. tidak ada status antara 'Sedang dikerjakan'; nilai manual tetap {Belum dijadwalkan, Dijadwalkan, Sudah dikerjakan, Tertunda, Selesai}", async () => {
+  const u = await mkUnit({ received: true });
+  const ad = await adopsi(u); assert.deepEqual(ad.kerjaManual.nilaiBoleh.map((n) => n.key), ["BELUM_DIJADWALKAN", "DIJADWALKAN", "DIKERJAKAN", "TERTUNDA", "SELESAI"]);
+  assert.ok(!JSON.stringify(ad).includes("Sedang dikerjakan"), "tidak ada status 'Sedang dikerjakan'");
+  assert.equal((await catatManual(u, "SEDANG_DIKERJAKAN")).status, 400);
 });

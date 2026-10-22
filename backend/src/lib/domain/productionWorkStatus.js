@@ -134,7 +134,7 @@ export function penghalangStatusOrder({ orderStatus, statusLocked = false, unitS
 }
 
 // ───────────────────────────── TINDAKAN BERIKUTNYA ─────────────────────────────
-export const AKSI = Object.freeze({ NONE: "NONE", CONFIRM_ARRIVAL: "CONFIRM_ARRIVAL", UBAH_ORDER_DIPROSES: "UBAH_ORDER_DIPROSES", SET_TARGET: "SET_TARGET", OPEN_PLAN: "OPEN_PLAN", PLAN_MATERIAL: "PLAN_MATERIAL", START_WORK: "START_WORK", RECORD_MATERIAL: "RECORD_MATERIAL", FINISH_WORK: "FINISH_WORK", RESOLVE_DELAY: "RESOLVE_DELAY", MARK_READY: "MARK_READY", WAIT: "WAIT" });
+export const AKSI = Object.freeze({ NONE: "NONE", CONFIRM_ARRIVAL: "CONFIRM_ARRIVAL", UBAH_ORDER_DIPROSES: "UBAH_ORDER_DIPROSES", SET_TARGET: "SET_TARGET", OPEN_PLAN: "OPEN_PLAN", PLAN_MATERIAL: "PLAN_MATERIAL", OPEN_WORK: "OPEN_WORK", RECORD_MATERIAL: "RECORD_MATERIAL", FINISH_WORK: "FINISH_WORK", RESOLVE_DELAY: "RESOLVE_DELAY", MARK_READY: "MARK_READY", WAIT: "WAIT" });
 /**
  * Satu tindakan berikutnya per unit (label + siapa pelakunya + jenis aksi untuk tombol utama). Murni dan deterministik.
  * @param {{ unitStatus:string, posisi:{key:string}, kerja:{key:string,source?:string}, adaTarget?:boolean, rencanaBahanAda?:boolean, aktualAda?:boolean }} p
@@ -163,7 +163,8 @@ export function tindakanBerikutnya({ unitStatus, posisi, kerja, adaTarget = fals
     ? t(AKSI.FINISH_WORK, "Tandai pekerjaan Selesai", "Admin / PIC", aktualAda ? "Bahan sudah dicatat" : null)
     : t(AKSI.RECORD_MATERIAL, "Catat bahan yang benar-benar dipakai", "PIC Bahan", "Rencana bahan sudah ada, pemakaian aktual belum");
   // Target selesai dan rencana bahan OPSIONAL: tidak pernah menjadi langkah yang menahan unit berjadwal. Satu tindakan yang sama dengan atau tanpa keduanya; keduanya hanya disebut sebagai tambahan.
-  if (k === "DIJADWALKAN") return t(AKSI.START_WORK, "Mulai pekerjaan", "Admin / PIC", "Catat pemakaian bahan (otomatis Sudah dikerjakan) atau mulai dari aplikasi Meja. Target selesai dan rencana bahan opsional — boleh ditambahkan kapan saja.");
+  // OPEN_WORK = MEMBUKA Ruang Kerja Unit (bagian Pekerjaan). Membuka halaman TIDAK mengubah status apa pun; "Sudah dikerjakan" baru tercatat lewat pemakaian bahan aktual (otomatis) atau tombol manual berkonfirmasi.
+  if (k === "DIJADWALKAN") return t(AKSI.OPEN_WORK, "Buka pekerjaan", "Admin / PIC", "Membuka halaman tidak mengubah status. Sudah dikerjakan tercatat otomatis saat pemakaian bahan dicatat, atau tandai manual bila pekerjaan memang sudah dilakukan. Target selesai dan rencana bahan opsional.");
   // BELUM_DIJADWALKAN (atau tidak dikenal)
-  return t(AKSI.OPEN_PLAN, "Jadwalkan di Rencana Produksi", "Admin", "Target selesai opsional. Boleh juga langsung catat pemakaian bahan (otomatis Sudah dikerjakan) atau status kerja, tanpa aplikasi Meja");
+  return t(AKSI.OPEN_PLAN, "Jadwalkan di Rencana Produksi", "Admin", "Target selesai opsional. Boleh juga langsung catat pemakaian bahan (otomatis Sudah dikerjakan) atau tandai sudah dikerjakan secara manual bila pekerjaan memang sudah dilakukan, tanpa aplikasi Meja");
 }

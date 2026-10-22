@@ -122,7 +122,7 @@ export default function RingkasanUnit({ data, ruang, aktif, onDone, onBagian }) 
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] lg:items-start" data-testid="bagian-ringkasan">
       <div className="space-y-4 lg:col-start-1" data-testid="ringkasan-kiri-atas">
         <div className="space-y-3" data-testid="ringkasan-tindakan">
-          <TindakanUtama data={data} aktif={aktif} onDone={onDone} onBukaUnit360={() => {}} />
+          <TindakanUtama data={data} aktif={aktif} onDone={onDone} onBukaUnit360={() => {}} onBagian={onBagian} />
           <KartuPenerimaan data={data} aktif={aktif} onDone={onDone} />
           {tahan && <p role="note" data-testid="tindakan-tertahan" className="m-0 flex items-start gap-2 rounded-btn bg-inset px-4 py-3 text-[13px] text-ink2"><Info size={15} className="mt-0.5 shrink-0 text-accent" aria-hidden /><span>{tahan.teks}</span></p>}
         </div>

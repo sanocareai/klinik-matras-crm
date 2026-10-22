@@ -64,6 +64,23 @@ export function sumberKerjaText(kerja) {
   return null;
 }
 
+/** Status kerja manual yang MENYATAKAN pekerjaan sudah dilakukan: wajib konfirmasi singkat sebelum disimpan. Status lain (Belum dijadwalkan, Dijadwalkan, Tertunda) bukan pernyataan itu. */
+export const KERJA_PERLU_KONFIRMASI = Object.freeze(["DIKERJAKAN", "SELESAI"]);
+/** Teks konfirmasi (judul, isi, tombol ya) atau null bila status itu tidak perlu konfirmasi. Tidak membuat status baru; hanya memastikan Admin tidak salah mencatat. */
+export function konfirmasiKerja(status, unitCode = "") {
+  const unit = unitCode ? ` ${unitCode}` : "";
+  if (status === "DIKERJAKAN") return { judul: `Pekerjaan unit${unit} memang sudah dilakukan?`, isi: "Ini hanya catatan administratif atas nama Anda. Tidak membuat stok keluar, bahan, Production Run, QC, foto, atau jurnal. Bila ada bahan yang dipakai, catat di bagian Bahan — status otomatis menjadi Sudah dikerjakan.", ya: "Ya, sudah dikerjakan", sukses: "Dicatat manual: Sudah dikerjakan." };
+  if (status === "SELESAI") return { judul: `Pekerjaan unit${unit} memang sudah selesai?`, isi: "Ini hanya catatan administratif atas nama Anda; bukan hasil QC, bukan serah ke Gudang, dan bukan Siap Kirim. Tidak membuat stok, Production Run, QC, foto, atau jurnal.", ya: "Ya, sudah selesai", sukses: "Dicatat manual: Selesai." };
+  return null;
+}
+/** Label tombol manual di bagian Pekerjaan menurut status yang dipilih (menyebut pernyataannya secara eksplisit). */
+export const labelCatatKerja = (status) => (status === "DIKERJAKAN" ? "Tandai sudah dikerjakan" : status === "SELESAI" ? "Tandai selesai" : "Catat status kerja");
+/** Sumber status kerja untuk label kecil: SATU kosakata dengan Excel (sourceLabel server). Jadwal biasa tidak ditampilkan sebagai sumber. */
+export function sumberKerjaPendek(kerja) {
+  if (!kerja || kerja.source === "JADWAL" || (kerja.source === "STATUS_ORDER" && kerja.key === "DIBATALKAN")) return null;
+  return kerja.sourceLabel || null;
+}
+
 /** Parameter ekspor/daftar dari state layar — SATU fungsi dipakai daftar dan ekspor supaya berkas persis sama dengan daftar yang difilter. */
 export function parameterDaftar({ globalStatus, q, kerja, scope } = {}) {
   const out = {};

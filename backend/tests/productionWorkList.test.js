@@ -67,5 +67,5 @@ test("filter cepat + urutan: perlu tindakan, belum diterima, belum dijadwalkan, 
 
 test("tindakan tersedia: dipakai apa adanya dari server (Catat diterima adalah tindakan nyata dengan penerimaan resmi)", () => {
   const ad = { tindakan: { aksi: "CONFIRM_ARRIVAL", label: "Konfirmasi unit diterima di workshop" } };
-  assert.equal(tindakanTersedia(ad).aksi, "CONFIRM_ARRIVAL"); assert.equal(tindakanTersedia({ tindakan: { aksi: "START_WORK" } }).aksi, "START_WORK"); assert.equal(tindakanTersedia({}), null);
+  assert.equal(tindakanTersedia(ad).aksi, "CONFIRM_ARRIVAL"); assert.equal(tindakanTersedia({ tindakan: { aksi: "OPEN_WORK" } }).aksi, "OPEN_WORK"); assert.equal(tindakanTersedia({}), null);
 });

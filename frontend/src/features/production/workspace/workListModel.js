@@ -58,7 +58,7 @@ export function tulisKeadaan(state) {
 /** Aksi "tindakan berikutnya" server → bagian ruang kerja unit yang menanganinya. */
 export function bagianUntukAksi(aksi) {
   switch (aksi) {
-    case "SET_TARGET": case "OPEN_PLAN": case "START_WORK": case "FINISH_WORK": case "MARK_READY": case "RESOLVE_DELAY": return "pekerjaan";
+    case "SET_TARGET": case "OPEN_PLAN": case "OPEN_WORK": case "FINISH_WORK": case "MARK_READY": case "RESOLVE_DELAY": return "pekerjaan";
     case "PLAN_MATERIAL": case "RECORD_MATERIAL": return "bahan";
     default: return "ringkasan";
   }
