@@ -111,7 +111,7 @@ Rollback kode (HANYA setelah guard LULUS; tidak menghapus tabel jadwal, riwayat 
    cd ${PREV_DIR:-<release-sebelumnya>}
    docker tag ${ROLLBACK_TAG:-<tag-rollback>} ${IMG_NAME:-klinik-matras-backend:latest}
    SANSS_PERSIST_ROOT=${PERSIST} docker compose -p ${PROJECT} -f docker-compose.yml -f docker-compose.release.yml up -d --no-deps --force-recreate backend
-Migrasi bersifat ADITIF (2 tabel baru + 5 indeks + 4 FK + 1 trigger append-only): tabel dibiarkan terpasang setelah rollback kode. Jadwal Admin yang sudah selesai (ADOPTED sah / CLEARED) aman; jadwal berlaku TIDAK aman (lihat guard).
+Migrasi bersifat ADITIF (3 tabel baru + 8 indeks + 6 FK + 2 trigger append-only): tabel dibiarkan terpasang setelah rollback kode. Komponen lama dari unit pelanggan bukan stok (hanya tersembunyi di layar lama). Jadwal Admin yang sudah selesai (ADOPTED sah / CLEARED) aman; jadwal berlaku TIDAK aman (lihat guard).
 Pemulihan database penuh hanya bila terjadi kerusakan data: gzip -dc ${BACKUP_FILE:-<backup>} | psql ... (lihat checksum di atas) — MENGHAPUS semua perubahan sesudah backup (jadwal, riwayat, Run, transaksi stok); gunakan hanya atas keputusan Owner.
 ─────────────────────────────────────────────────────────────────────────
 EOF
