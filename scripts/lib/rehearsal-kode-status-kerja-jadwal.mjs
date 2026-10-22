@@ -3,7 +3,9 @@
 import { createRequire } from "node:module";
 const { PrismaClient } = createRequire(process.cwd() + "/")("@prisma/client");
 const prisma = new PrismaClient();
-const { perkayaBarisUnit, UNIT_INCLUDE } = await import("/app/src/services/productionOrderList.js");
+const { perkayaBarisUnit, UNIT_INCLUDE, listWorkOrders } = await import("/app/src/services/productionOrderList.js");
+const { buatWorkbookOrderProduksi } = await import("/app/src/services/productionOrderExport.js");
+const ExcelJS = createRequire(process.cwd() + "/")("exceljs");
 let gagal = 0; const cek = (n, ok, d = "") => { if (!ok) gagal += 1; console.log((ok ? "PASS " : "FAIL ") + n + (d !== "" ? " — " + String(d).slice(0, 240) : "")); };
 const hitung = async (sql) => Number((await prisma.$queryRawUnsafe(sql))[0].n);
 const baris = async (ids) => ids.length ? perkayaBarisUnit(prisma, await prisma.unit.findMany({ where: { id: { in: ids } }, include: UNIT_INCLUDE })) : [];
@@ -44,7 +46,25 @@ const adaAdmin = new Set(idAktif);
 cek(`Dari ${rAll.length} unit, 'Dijadwalkan dari jadwal' (${dariJadwal.length}) hanya untuk unit yang punya rencana Meja ATAU jadwal Admin ACTIVE`, dariJadwal.every((r) => planSemua.has(r.id) || adaAdmin.has(r.id)), dariJadwal.filter((r) => !planSemua.has(r.id) && !adaAdmin.has(r.id)).map((r) => r.unitCode).join(","));
 cek("Unit tanpa jadwal apa pun TIDAK pernah terbaca 'Dijadwalkan'", rAll.filter((r) => !planSemua.has(r.id) && !adaAdmin.has(r.id)).every((r) => r.adopsi.kerja.key !== "DIJADWALKAN" || r.adopsi.kerja.source !== "JADWAL"));
 
-// 4. Bukti tak ada tulisan sama sekali (sidik jari seluruh tabel dibandingkan oleh skrip rilis; di sini hitungan inti)
+// 4. Daftar + filter dan Excel Order Produksi (jalur yang sama dengan layar/ekspor) pada data restore
+const hanyaAdmin = rA.filter((r) => r.adopsi.kerja.key === "DIJADWALKAN" && r.adopsi.kerja.source === "JADWAL" && !planSemua.has(r.id));
+const daftarDij = await listWorkOrders(prisma, { statusKerja: "DIJADWALKAN" }, { semua: true });
+const idDij = new Set(daftarDij.units.map((x) => x.id));
+cek(`Daftar + filter 'Dijadwalkan' memuat semua ${hanyaAdmin.length} unit yang hanya berjadwal Admin`, hanyaAdmin.every((r) => idDij.has(r.id)), hanyaAdmin.filter((r) => !idDij.has(r.id)).map((r) => r.unitCode).join(","));
+const daftarBelum = await listWorkOrders(prisma, { statusKerja: "BELUM_DIJADWALKAN" }, { semua: true });
+cek("Daftar + filter 'Belum dijadwalkan' tidak memuat satu pun unit berjadwal Admin yang berstatus Dijadwalkan", daftarBelum.units.every((x) => !hanyaAdmin.some((r) => r.id === x.id)));
+if (hanyaAdmin.length) {
+  const buf = await buatWorkbookOrderProduksi(prisma, { rows: daftarDij.units, unitIds: daftarDij.units.map((x) => x.id), filter: daftarDij.filterDipakai, pengguna: "rehearsal baca-saja" });
+  const wb = new ExcelJS.Workbook(); await wb.xlsx.load(buf); const ws = wb.getWorksheet("Ringkasan Unit"); const head = ws.getRow(1).values.slice(1);
+  const iKode = head.indexOf("Kode Unit") + 1; const iStatus = head.indexOf("Status Kerja (Administratif)") + 1; const peta = new Map();
+  ws.eachRow((row, i) => { if (i > 1) peta.set(row.values[iKode], row.values[iStatus]); });
+  cek("Excel Order Produksi menuliskan 'Dijadwalkan' untuk setiap unit yang hanya berjadwal Admin", iKode > 0 && iStatus > 0 && hanyaAdmin.every((r) => peta.get(r.unitCode) === "Dijadwalkan"), hanyaAdmin.filter((r) => peta.get(r.unitCode) !== "Dijadwalkan").map((r) => `${r.unitCode}:${peta.get(r.unitCode)}`).join(" "));
+} else console.log("SKIP Excel: tidak ada unit yang hanya berjadwal Admin pada data restore");
+// 5. Tindakan berikutnya: unit Dijadwalkan tidak pernah disuruh menetapkan target / menyusun rencana bahan
+cek("Tindakan berikutnya unit Dijadwalkan: bukan SET_TARGET/PLAN_MATERIAL (target & rencana bahan opsional)", rAll.filter((r) => r.adopsi.kerja.key === "DIJADWALKAN").every((r) => !["SET_TARGET", "PLAN_MATERIAL"].includes(r.adopsi.tindakan?.aksi)), rAll.filter((r) => r.adopsi.kerja.key === "DIJADWALKAN" && ["SET_TARGET", "PLAN_MATERIAL"].includes(r.adopsi.tindakan?.aksi)).map((r) => r.unitCode).join(","));
+cek("Tindakan berikutnya unit belum dijadwalkan: tidak ada yang berlabel 'Tetapkan target dan jadwalkan'", rAll.filter((r) => r.adopsi.kerja.key === "BELUM_DIJADWALKAN").every((r) => r.adopsi.tindakan?.label !== "Tetapkan target dan jadwalkan"));
+
+// 6. Bukti tak ada tulisan sama sekali (sidik jari seluruh tabel dibandingkan oleh skrip rilis; di sini hitungan inti)
 cek("Tidak ada baris jadwal/riwayat jadwal baru dari pemeriksaan ini", true, `jadwal=${await hitung("select count(*)::int n from production_unit_schedules")}, riwayat=${await hitung("select count(*)::int n from production_unit_schedule_events")}`);
 await prisma.$disconnect();
 console.log("REHEARSAL_KODE_BARU gagal=" + gagal);

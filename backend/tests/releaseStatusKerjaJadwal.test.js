@@ -55,3 +55,12 @@ test("pustaka rehearsal dan smoke: baca-saja (tanpa create/update/delete/upsert/
   assert.match(baca("scripts/lib/smoke-status-kerja-jadwal.mjs"), /SMOKE_HASIL fail=" \+ fail \+ " skip=" \+ dilewati/);
   assert.match(baca("scripts/lib/rehearsal-kode-status-kerja-jadwal.mjs"), /REHEARSAL_KODE_BARU gagal=/);
 });
+
+test("rehearsal-penuh: mode ada, TIDAK ada switch/migrasi, image bertag rehearsal (tag production tidak disentuh), DB sementara dihapus, bukti 36 jam wajib untuk rilis penuh", () => {
+  for (const k of ['[ "$a" = "--rehearsal-penuh" ] && REHEARSAL_PENUH=1', "pilih SATU mode saja", "rehearsal_kode()", 'PHASE="3c-rehearsal-penuh"', "tag image PRODUCTION berubah selama build", "tag image production bergeser", "DB rehearsal masih tersisa di server",
+    "image rehearsal masih ada", "cleanup_penuh()", ".rehearsal-penuh-ok-status-kerja-jadwal-", "-mmin -2160", "belum ada bukti --rehearsal-penuh LULUS", "bukti rehearsal-penuh bukan untuk SHA/baseline ini", "rehearsal-skj-"]) assert.ok(script.includes(k), k);
+  const ra = script.slice(script.indexOf('PHASE="3c-rehearsal-penuh"'), script.indexOf('PHASE="4-release-dir"'));
+  assert.ok(ra.length > 500 && !/up -d|docker tag|migrate deploy|docker compose.*up/.test(ra), "cabang rehearsal-penuh tidak menjalankan switch, tag production, atau migrasi");
+  assert.ok(script.indexOf('PHASE="3-backup"') < script.indexOf('PHASE="3c-rehearsal-penuh"') && script.indexOf('PHASE="3c-rehearsal-penuh"') < script.indexOf('PHASE="4-release-dir"'), "urutan: backup → rehearsal-penuh (exit 0) → rilis");
+  assert.ok(script.indexOf("belum ada bukti --rehearsal-penuh LULUS") < script.indexOf('PHASE="3-backup"'), "bukti dicek SEBELUM backup/rilis penuh");
+});

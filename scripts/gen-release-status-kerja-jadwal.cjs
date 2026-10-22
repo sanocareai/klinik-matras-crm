@@ -28,7 +28,7 @@ const GUARD_UNCHANGED = [
   "backend/src/services/productionRencanaJadwalService.js", "backend/src/lib/domain/productionRencanaAdmin.js", "backend/src/services/productionOrderExport.js", "backend/src/services/productionWorkListService.js",
 ];
 // Commit live yang wajib leluhur: Rencana jadwal mingguan LIVE (fd38f6c2), Koreksi Gudang (08d62e7d), Produksi override (799d3e93), Riwayat Referensi (56b87721), bukti serah (e5a32cd2), UX Gudang Tahap 1/token geser (10294dcb), manifest Sofa/Divan (20606872).
-const LIVE_ANCESTORS_REF = ["fd38f6c2", "20606872", "10294dcb", "08d62e7d", "799d3e93", "56b87721", "e5a32cd2"];
+const LIVE_ANCESTORS_REF = ["d82e6e3d", "fd38f6c2", "20606872", "10294dcb", "08d62e7d", "799d3e93", "56b87721", "e5a32cd2"];
 const lf = (t) => t.replace(/\r\n/g, "\n");
 const must = (c, m) => { if (!c) throw new Error("templat/masukan tak cocok: " + m); };
 const sha = (t) => crypto.createHash("sha256").update(t).digest("hex");
