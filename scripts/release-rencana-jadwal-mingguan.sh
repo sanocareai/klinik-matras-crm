@@ -19,7 +19,7 @@
 # ROLLBACK KODE: TIDAK otomatis aman. Kode lama tidak membaca tabel jadwal; selama masih ada jadwal Admin BERLAKU (ACTIVE) rollback kode berbahaya (jadwal tersembunyi + kode lama dapat membuat rencana Meja kedua). Jalankan dulu scripts/rollback-guard-rencana-jadwal-mingguan.sh (baca-saja):
 #   LULUS (exit 0) hanya bila tidak ada jadwal ACTIVE dan setiap jadwal ADOPTED terbukti punya rencana Meja sah; DITOLAK (exit 1) mencetak jumlah, contoh unit, dan alasan. Bila ditolak, pemulihan = PERBAIKAN MAJU (kode baru tetap terpasang) sampai jadwal itu diselesaikan, baru guard dijalankan lagi.
 #   Rollback kode (bila guard lulus) TIDAK menghapus tabel/riwayat; yang hilang hanya tampilan kalender mingguan, antrean per tindakan, dan riwayat/undo jadwal Admin.
-# (dibangkitkan oleh scripts/gen-release-rencana-jadwal-mingguan.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 c5e7456d9d4b…)
+# (dibangkitkan oleh scripts/gen-release-rencana-jadwal-mingguan.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 b63d11634c49…)
 set -Eeuo pipefail
 umask 077
 
@@ -454,6 +454,7 @@ case "$PREV_DIR" in "$RELEASES"/*) ;; *) die "release aktif (${PREV_DIR}) bukan 
 PREV_COMMIT="$(tr -d '[:space:]' < "$PREV_DIR/.release-commit")"
 [ "$(sg rev-parse --verify -q "${PREV_COMMIT}^{commit}" || true)" = "$BASE_SHA" ] || die "release aktif (${PREV_COMMIT}) BUKAN baseline ${BASE_SHA:0:8}; produksi bergeser — berhenti"
 PREV_IMG_ID="$(docker inspect -f '{{.Image}}' "$CID_OLD")"; IMG_NAME="$(docker inspect -f '{{.Config.Image}}' "$CID_OLD")"
+[ "$(docker image inspect -f '{{.Id}}' "$IMG_NAME" 2>/dev/null)" = "$PREV_IMG_ID" ] || die "tag image ${IMG_NAME} TIDAK menunjuk image container aktif (${PREV_IMG_ID:7:12}); mungkin tersisa dari rilis yang terhenti sesudah build — pulihkan tag ke image container aktif dulu, lalu ulangi"
 ok "release aktif ${PREV_DIR} (commit ${PREV_COMMIT}); image ${IMG_NAME} (${PREV_IMG_ID:7:12})"
 curl -fsS --max-time 8 "${INTERNAL_URL}/api/health" | grep '"ok":true' >/dev/null || die "healthcheck internal sebelum rilis gagal"
 curl -fsS --max-time 15 "${PUBLIC_URL}/api/health" | grep '"ok":true' >/dev/null || die "healthcheck publik sebelum rilis gagal"

@@ -294,3 +294,8 @@ test("rehearsal: tiga jalur (segar | lanjut | pra); LANJUT wajib kedua jalur + b
   assert.ok(script.includes("local TAMBAH_TABEL=3; [ \"$sken\" = \"lanjut\" ] && TAMBAH_TABEL=0"), "jalur lanjut: tidak ada tabel yang ditambah");
   assert.match(script, /struktur_baru RPSQL gagal_reh/); assert.match(script, /struktur_baru LQ die/);
 });
+
+test("gerbang tag image: tag production HARUS menunjuk image container aktif (sisa rilis yang terhenti sesudah build = berhenti)", () => {
+  assert.ok(script.includes('tag image ${IMG_NAME} TIDAK menunjuk image container aktif'));
+  assert.ok(script.indexOf("TIDAK menunjuk image container aktif") < script.indexOf('PHASE="3-backup"'), "dicek di preflight sebelum backup/build");
+});

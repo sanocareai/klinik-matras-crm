@@ -375,6 +375,7 @@ case "$PREV_DIR" in "$RELEASES"/*) ;; *) die "release aktif (${PREV_DIR}) bukan 
 PREV_COMMIT="$(tr -d '[:space:]' < "$PREV_DIR/.release-commit")"
 [ "$(sg rev-parse --verify -q "${PREV_COMMIT}^{commit}" || true)" = "$BASE_SHA" ] || die "release aktif (${PREV_COMMIT}) BUKAN baseline ${BASE_SHA:0:8}; produksi bergeser — berhenti"
 PREV_IMG_ID="$(docker inspect -f '{{.Image}}' "$CID_OLD")"; IMG_NAME="$(docker inspect -f '{{.Config.Image}}' "$CID_OLD")"
+[ "$(docker image inspect -f '{{.Id}}' "$IMG_NAME" 2>/dev/null)" = "$PREV_IMG_ID" ] || die "tag image ${IMG_NAME} TIDAK menunjuk image container aktif (${PREV_IMG_ID:7:12}); mungkin tersisa dari rilis yang terhenti sesudah build — pulihkan tag ke image container aktif dulu, lalu ulangi"
 ok "release aktif ${PREV_DIR} (commit ${PREV_COMMIT}); image ${IMG_NAME} (${PREV_IMG_ID:7:12})"
 curl -fsS --max-time 8 "${INTERNAL_URL}/api/health" | grep '"ok":true' >/dev/null || die "healthcheck internal sebelum rilis gagal"
 curl -fsS --max-time 15 "${PUBLIC_URL}/api/health" | grep '"ok":true' >/dev/null || die "healthcheck publik sebelum rilis gagal"
