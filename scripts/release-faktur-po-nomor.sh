@@ -19,7 +19,7 @@ DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 CAND_BRANCH="${CAND_BRANCH:-fix/faktur-po-nomor-placeholder}"
 # Berkas yang BOLEH berbeda dari baseline: EKSPLISIT path persis. Apa pun di luar daftar (termasuk backend/prisma dan frontend/src) = berhenti.
 # Rilis BACKEND-SAJA: tanpa migrasi, tanpa perubahan schema.prisma, frontend TIDAK berubah (dist release aktif disalin apa adanya); OTA RN TIDAK diterbitkan.
-ALLOWED_RE='^(backend/src/services/finance/jenisTagihan\.js|backend/src/services/finance/koreksiLanjutan\.js|backend/tests/integration/purchaseOrderFaktur\.integration\.test\.js|scripts/release-faktur-po-nomor\.sh)$'
+ALLOWED_RE='^(backend/src/services/finance/jenisTagihan\.js|backend/src/services/finance/koreksiLanjutan\.js|backend/tests/integration/fakturPoNomorReleaseSmoke\.integration\.test\.js|backend/tests/integration/purchaseOrderFaktur\.integration\.test\.js|scripts/release-faktur-po-nomor\.sh)$'
 BACKEND_SRC_EXPECT="backend/src/services/finance/jenisTagihan.js backend/src/services/finance/koreksiLanjutan.js"
 FRONTEND_SRC_EXPECT=""
 PUBLIC_URL="https://app.sanomatrassehat.com"
