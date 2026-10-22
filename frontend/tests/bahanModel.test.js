@@ -98,3 +98,12 @@ test("pengawatan: tab Bahan = BahanTab (tindakan utama aktual, rencana terlipat,
   for (const k of ["cuplikan-bahan", "cuplikan-dokumentasi", "kondisi-pelanggan", "catatan-produksi", "komplain-order", "onBagian(\"bahan\")", "onBagian(\"dokumentasi\")", "getProductionV2DocDetail", "lg:row-span-2"]) assert.ok(ring.includes(k), k);
   const ws = src("features", "production", "workspace", "UnitWorkspace.jsx"); for (const k of ["RingkasanUnit", "BahanTab", "riwayat-dua-sumber"]) assert.ok(ws.includes(k), k);
 });
+
+test("Ringkasan Pekerjaan: empat fakta TERPISAH (status kerja administratif + sumber + 'Dikerjakan tanpa jadwal', jadwal, pemakaian bahan dua sumber, QC) dan catatan bukan-QC", async () => {
+  const { ringkasPekerjaan } = await import("../src/features/production/bahan/bahanModel.js");
+  const r = ringkasPekerjaan({ adopsi: { kerja: { key: "DIKERJAKAN", source: "PEMAKAIAN_BAHAN", faktaJadwal: "Dikerjakan tanpa jadwal" }, jadwal: null, pemakaianBahan: { baruCatatan: 2, komponenLamaDipakaiKembali: 1 } } });
+  assert.equal(r.sumber, "Otomatis dari pemakaian bahan"); assert.equal(r.faktaJadwal, "Dikerjakan tanpa jadwal"); assert.equal(r.jadwal, "Belum dijadwalkan"); assert.equal(r.pemakaian, "2 catatan bahan baru · 1 komponen lama dipakai kembali"); assert.equal(r.qc, "QC: belum ada hasil");
+  const k = ringkasPekerjaan({ adopsi: { kerja: { key: "MENUNGGU_QC", source: "APLIKASI" }, jadwal: { tanggal: "2026-10-24", meja: "TABLE_2", sumber: "ADMIN" }, pemakaianBahan: {} } });
+  assert.equal(k.pemakaian, "Belum ada pemakaian tercatat"); assert.equal(k.jadwal, "24/10 · Meja 2 (Rencana Admin)"); assert.equal(k.qc, "QC: menunggu keputusan"); assert.equal(k.faktaJadwal, null);
+  const ring = src("features", "production", "workspace", "RingkasanUnit.jsx"); for (const x of ["pekerjaan-fakta", "fakta-tanpa-jadwal", "pekerjaan-catatan-bukan-qc", "Status kerja (administratif)", "bukan hasil QC, bukan siap serah Gudang, dan bukan siap kirim"]) assert.ok(ring.includes(x), x);
+});

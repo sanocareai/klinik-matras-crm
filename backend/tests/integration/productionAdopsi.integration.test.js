@@ -273,14 +273,14 @@ test("B1. EKSPOR .xlsx: sheet, header beku + AutoFilter, tanpa sel digabung, ang
   }
   // header ringkasan
   const headers = ring.getRow(1).values.slice(1);
-  for (const h of ["Kode Order", "Kode Unit", "Pelanggan", "Layanan (Sales)", "Target Selesai", "PIC", "Status Order", "Posisi Unit", "Status Kerja", "Tindakan Berikutnya", "Diperbarui (WIB)"]) assert.ok(headers.includes(h), h);
+  for (const h of ["Kode Order", "Kode Unit", "Pelanggan", "Layanan (Sales)", "Target Selesai", "PIC", "Status Order", "Posisi Unit", "Status Kerja (Administratif)", "Tindakan Berikutnya", "Diperbarui (WIB)"]) assert.ok(headers.includes(h), h);
   const cKode = kolomIndex(ring, "Kode Unit"); const rowA = Array.from({ length: ring.rowCount - 1 }, (_, i) => ring.getRow(i + 2)).find((r) => nilaiSel(r.getCell(cKode)) === a.unit.unitCode);
   // rumus dinetralkan (apostrof) — bukan rumus dan tidak dieksekusi
   const pel = rowA.getCell(kolomIndex(ring, "Pelanggan")); assert.equal(typeof nilaiSel(pel), "string"); assert.equal(nilaiSel(pel).startsWith("'="), true); assert.equal(pel.formula, undefined);
   assert.equal(nilaiSel(rowA.getCell(kolomIndex(ring, "Layanan (Sales)"))).startsWith("'+"), true);
   // tipe + warna + teks
   const so = rowA.getCell(kolomIndex(ring, "Status Order")); assert.equal(nilaiSel(so), "Diproses"); assert.equal(so.fill.fgColor.argb, "FFDBEAFE");
-  const kerja = rowA.getCell(kolomIndex(ring, "Status Kerja")); assert.equal(nilaiSel(kerja), "Dikerjakan"); assert.ok(kerja.fill?.fgColor?.argb, "warna status kerja ada, teks tetap ada");
+  const kerja = rowA.getCell(kolomIndex(ring, "Status Kerja (Administratif)")); assert.equal(nilaiSel(kerja), "Sudah dikerjakan"); assert.ok(kerja.fill?.fgColor?.argb, "warna status kerja ada, teks tetap ada");
   assert.match(nilaiSel(rowA.getCell(kolomIndex(ring, "Posisi Unit"))), /belum diterima workshop/);
   const br = rowA.getCell(kolomIndex(ring, "Jumlah Bahan Direncanakan")); assert.equal(typeof nilaiSel(br), "number"); assert.equal(nilaiSel(br), 2);
   const upd = rowA.getCell(kolomIndex(ring, "Diperbarui (WIB)")); assert.ok(nilaiSel(upd) instanceof Date); assert.equal(upd.numFmt, "dd/mm/yyyy hh:mm");

@@ -167,7 +167,7 @@ function TindakanUtama({ data, aktif, onDone, onBukaUnit360 }) {
   switch (t.aksi) {
     case "CONFIRM_ARRIVAL": tombol = izin.catatPenerimaan && aktif ? { label: "Catat unit diterima", onClick: () => setTerimaBuka(true) } : null; break;
     case "UBAH_ORDER_DIPROSES": tombol = izin.statusOrder && aktif ? { label: "Ubah ke Diproses", onClick: () => setDiprosesBuka(true) } : null; break;
-    case "START_WORK": tombol = izin.statusKerja && aktif && !data.kerjaManual.dikunciAplikasi ? { label: "Catat: Dikerjakan", onClick: () => catat("DIKERJAKAN") } : null; break;
+    case "START_WORK": tombol = izin.statusKerja && aktif && !data.kerjaManual.dikunciAplikasi ? { label: "Catat: Sudah dikerjakan", onClick: () => catat("DIKERJAKAN") } : null; break;
     case "FINISH_WORK": tombol = izin.statusKerja && aktif && !data.kerjaManual.dikunciAplikasi ? { label: "Catat: Selesai", onClick: () => catat("SELESAI") } : { label: "Buka Unit 360", onClick: onBukaUnit360, sekunder: true }; break;
     case "MARK_READY": tombol = izin.statusOrder ? { label: "Tandai Siap Kirim", onClick: () => setKonfirmasi(true) } : null; break;
     case "PLAN_MATERIAL": tombol = izin.rencanaBahan ? { label: "Susun rencana bahan", onClick: () => ke("sec-rencana-wrap") } : null; break;

@@ -21,7 +21,7 @@ export const WORK_FILTERS = Object.freeze([
   { key: "PERLU_TINDAKAN", label: "Perlu tindakan" },
   { key: "BELUM_DITERIMA", label: "Belum diterima workshop" },
   { key: "BELUM_DIJADWALKAN", label: "Belum dijadwalkan" },
-  { key: "DIKERJAKAN", label: "Dikerjakan" },
+  { key: "DIKERJAKAN", label: "Sudah dikerjakan" },
   { key: "TERTAHAN", label: "Tertunda / menunggu" },
   { key: "LEWAT_TARGET", label: "Lewat target" },
 ]);

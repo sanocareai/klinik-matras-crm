@@ -69,13 +69,17 @@ export async function buatWorkbookOrderProduksi(prisma, { rows, unitIds, filter 
     statusOrder: u.adopsi.statusOrder?.label, nadaOrder: u.adopsi.statusOrder?.key === "TERKIRIM" || u.adopsi.statusOrder?.key === "SIAP_KIRIM" ? "green" : u.status === "CANCELLED" ? "neutral" : u.adopsi.statusOrder?.key === "PENGAMBILAN" ? "neutral" : "accent",
     posisi: u.adopsi.posisi?.label, nadaPosisi: u.adopsi.posisi?.tone, posisiDetail: u.adopsi.posisi?.detail,
     kerja: u.adopsi.kerja?.label, nadaKerja: u.adopsi.kerja?.tone, sumberKerja: u.adopsi.kerja?.sourceLabel,
+    jadwal: u.adopsi.jadwal ? `${u.adopsi.jadwal.tanggal}${u.adopsi.jadwal.meja ? ` · ${String(u.adopsi.jadwal.meja).replace("TABLE_", "Meja ")}` : ""} (${u.adopsi.jadwal.sumber === "V2" ? "Pelaksanaan Meja" : "Rencana Admin"})` : "Belum dijadwalkan", faktaJadwal: u.adopsi.kerja?.faktaJadwal ?? null,
+    pemakaianBaru: u.adopsi.pemakaianBahan?.baruCatatan ?? 0, pemakaianLama: u.adopsi.pemakaianBahan?.komponenLamaDipakaiKembali ?? 0,
+    qc: ({ WAITING_QC: "Menunggu QC", REWORK: "Dikerjakan ulang (hasil QC: tidak lulus)", COMPLETED: "Tahap selesai (lihat hasil QC di Unit 360)" })[u.productionStatus] ?? "Belum ada catatan QC",
     tindakan: u.adopsi.tindakan?.label, aktor: u.adopsi.tindakan?.aktor, prioritas: u.priorityDisplay?.label, bahanRencana: jumlahBahanPerUnit.get(u.id) ?? 0, aktualAda: u.adopsi.aktualBahanAda ? "Ya" : "Belum", diperbarui: u.updatedAt,
   }));
   sheetData(wb, "Ringkasan Unit", [
     { key: "kodeOrder", header: "Kode Order", lebar: 20 }, { key: "kodeUnit", header: "Kode Unit", lebar: 24 }, { key: "pelanggan", header: "Pelanggan", lebar: 28 },
     { key: "layanan", header: "Layanan (Sales)", lebar: 42, bungkus: true }, { key: "target", header: "Target Selesai", tipe: "tanggal", lebar: 15 }, { key: "pic", header: "PIC", lebar: 20 }, { key: "meja", header: "Meja", lebar: 12 },
     { key: "statusOrder", header: "Status Order", lebar: 16, nada: "nadaOrder" }, { key: "posisi", header: "Posisi Unit", lebar: 38, nada: "nadaPosisi" }, { key: "posisiDetail", header: "Dasar Posisi Unit", lebar: 44, bungkus: true },
-    { key: "kerja", header: "Status Kerja", lebar: 18, nada: "nadaKerja" }, { key: "sumberKerja", header: "Sumber Status Kerja", lebar: 24 },
+    { key: "kerja", header: "Status Kerja (Administratif)", lebar: 22, nada: "nadaKerja" }, { key: "sumberKerja", header: "Sumber Status Kerja", lebar: 28 }, { key: "jadwal", header: "Jadwal Produksi", lebar: 34 }, { key: "faktaJadwal", header: "Fakta Jadwal", lebar: 24 },
+    { key: "pemakaianBaru", header: "Pemakaian Bahan Baru (jumlah catatan)", tipe: "angka", lebar: 18 }, { key: "pemakaianLama", header: "Komponen Lama Dipakai Kembali (jumlah)", tipe: "angka", lebar: 20 }, { key: "qc", header: "Status QC (aplikasi)", lebar: 34 },
     { key: "tindakan", header: "Tindakan Berikutnya", lebar: 40, bungkus: true }, { key: "aktor", header: "Pelaku Tindakan", lebar: 16 }, { key: "prioritas", header: "Prioritas", lebar: 12 },
     { key: "bahanRencana", header: "Jumlah Bahan Direncanakan", tipe: "angka", lebar: 16 }, { key: "aktualAda", header: "Pemakaian Aktual Tercatat", lebar: 14 }, { key: "diperbarui", header: "Diperbarui (WIB)", tipe: "waktu", lebar: 18 },
   ], ringkas);
@@ -136,6 +140,7 @@ export async function buatWorkbookOrderProduksi(prisma, { rows, unitIds, filter 
     ["Arti Status Order", "Status yang dilihat Sales/Delivery (Pengambilan · Diproses · Siap Kirim · Terkirim · Dibatalkan)."],
     ["Arti Posisi Unit", "Fakta fisik dari dokumen penjemputan, penerimaan workshop, dan pengiriman."],
     ["Arti Status Kerja", "Status pekerjaan Produksi: dari aplikasi bila ada bukti, jika tidak catatan manual Admin, jika tidak mengikuti jadwal."],
+    ["Status kerja administratif", "Status Kerja (Administratif) = status pekerjaan menurut Produksi/Admin. \"Sudah dikerjakan\" otomatis muncul begitu ada pemakaian aktual yang berhasil tercatat (bahan baru dari Gudang atau komponen lama dipakai kembali), tanpa wajib jadwal/rencana/Run/Meja/dokumentasi/QC. Itu BUKAN selesai QC, siap serah Gudang, atau siap kirim — kolom Jadwal Produksi, Pemakaian Bahan, dan Status QC dipisah. Rencana bahan dan komponen yang dikembalikan/disimpan/dibuang tidak mengubah status kerja."],
     ["Dua sumber pemakaian", "Sheet Pemakaian Aktual = bahan baru dari Gudang (transaksi stok resmi, mengurangi stok). Sheet Komponen Lama = komponen bongkaran milik pelanggan yang dipakai kembali/dilepas: TIDAK memengaruhi stok, jurnal, atau biaya bahan baru. Total keduanya tidak dijumlahkan."],
     ["Rencana vs Aktual", "Rencana Bahan TIDAK mengurangi stok. Pemakaian Aktual berisi transaksi stok resmi (Material Issue Gudang atau catat langsung)."],
   ];

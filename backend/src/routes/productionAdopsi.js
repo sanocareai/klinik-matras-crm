@@ -73,7 +73,13 @@ productionAdopsiRouter.get("/units/:id/adopsi", requirePermission(P.UNIT_READ), 
     const riwayatKomponen = komponenLama.riwayat.map((e) => ({ kind: "KOMPONEN_LAMA", sumber: "KOMPONEN_LAMA", at: e.at, actor: e.oleh, label: `Komponen lama dari unit ini (bukan stok) — ${e.kindLabel}: ${e.name} ${e.qty} ${e.uom} · ${e.outcomeLabel}${e.reason ? ` — ${e.reason}` : ""}` }));
     // Pemakaian bahan BARU yang dicatat langsung (ledger resmi) masuk Riwayat dengan label sumber + dampak stok; baris dari Material Issue sudah punya peristiwa dokumennya sendiri.
     const riwayatBahanBaru = aktual.baris.filter((b) => !b.dokumen.jenis.startsWith("Material Issue")).map((b) => ({ kind: "BAHAN_BARU", sumber: "BAHAN_BARU", at: b.tanggal, actor: b.pelaku, label: `Bahan baru dari Gudang (${b.qty < 0 ? "menambah" : "mengurangi"} stok) — ${b.nama} ${Math.abs(b.qty)} ${b.satuan} · ${b.dokumen.jenis} ${b.dokumen.nomor}` }));
-    const riwayat = [...riwayatDasar.filter((e) => !String(e.kind).includes("PRODUCTION_KOMPONEN_LAMA_DICATAT")), ...riwayatKomponen, ...riwayatBahanBaru].sort((x, y) => new Date(y.at) - new Date(x.at)).slice(0, 100);
+    // Peristiwa status kerja OTOMATIS: pemakaian aktual PERTAMA yang berhasil tercatat (bahan baru ISSUE atau komponen lama 'dipakai kembali'). Diturunkan dari fakta (tidak ada baris status terpisah) → tidak pernah ganda,
+    // dan koreksi/pembatalan tidak menghapusnya karena baris asal tetap ada.
+    const pakaiBaru = aktual.baris.filter((b) => b.tipe === "ISSUE").map((b) => ({ at: b.tanggal, oleh: b.pelaku, apa: `bahan baru ${b.nama} ${b.qty} ${b.satuan}` }));
+    const pakaiLama = komponenLama.riwayat.filter((e) => e.outcome === "REUSED" && ["CREATED", "CORRECTED"].includes(e.kind)).map((e) => ({ at: e.at, oleh: e.oleh, apa: `komponen lama ${e.name} ${e.qty} ${e.uom}` }));
+    const pertama = [...pakaiBaru, ...pakaiLama].sort((a, b) => new Date(a.at) - new Date(b.at))[0] ?? null;
+    const riwayatStatusOtomatis = pertama && unit.status !== "CANCELLED" ? [{ kind: "STATUS_KERJA_OTOMATIS", sumber: "PEMAKAIAN_BAHAN", at: pertama.at, actor: pertama.oleh, label: `Status kerja administratif → Sudah dikerjakan (otomatis dari pemakaian aktual pertama: ${pertama.apa})` }] : [];
+    const riwayat = [...riwayatDasar.filter((e) => !String(e.kind).includes("PRODUCTION_KOMPONEN_LAMA_DICATAT")), ...riwayatKomponen, ...riwayatBahanBaru, ...riwayatStatusOtomatis].sort((x, y) => new Date(y.at) - new Date(x.at)).slice(0, 100);
     // perbandingan rencana vs aktual per bahan (hanya bahan yang ada di salah satunya)
     const rencanaMap = new Map((rencana.plan?.lines ?? []).map((l) => [l.materialId, l]));
     const aktualMap = new Map(aktual.total.map((t) => [t.materialId, t]));

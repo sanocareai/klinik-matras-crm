@@ -64,7 +64,7 @@ export async function perkayaBarisUnit(prisma, units) {
   const readerState = resolveProductionReaderState(await loadV2Flags(prisma));
   const v2Units = readerState.mode === PRODUCTION_READER_MODE.OFF ? new Set() : new Set(readerState.unitIds);
   const complaintsByUnit = await loadOpenComplaintsByUnit(prisma, units.map((u) => ({ id: u.id, orderId: u.orderId })));
-  const [milestoneEvidence, plannedRows, appEvidence, manualByUnit, rencanaRows, aktualRows, adminJadwalRows] = await Promise.all([
+  const [milestoneEvidence, plannedRows, appEvidence, manualByUnit, rencanaRows, aktualRows, adminJadwalRows, komponenPakaiRows] = await Promise.all([
     loadMilestoneEvidence(prisma, unitIds),
     unitIds.length ? prisma.productionRun.findMany({
       where: { unitId: { in: unitIds }, status: { notIn: ["COMPLETED", "CANCELLED"] }, plan: { is: { stationCode: { not: null }, status: { not: "CANCELLED" } } } },
@@ -73,14 +73,22 @@ export async function perkayaBarisUnit(prisma, units) {
     loadAppEvidence(prisma, unitIds),
     loadLatestManual(prisma, unitIds),
     unitIds.length ? prisma.productionUnitMaterialPlan.findMany({ where: { unitId: { in: unitIds } }, select: { unitId: true, revision: true } }) : [],
-    unitIds.length ? prisma.stockMovement.groupBy({ by: ["unitId"], where: { unitId: { in: unitIds }, type: "ISSUE" }, _count: { _all: true } }) : [],
+    unitIds.length ? prisma.stockMovement.groupBy({ by: ["unitId"], where: { unitId: { in: unitIds }, type: "ISSUE" }, _count: { _all: true }, _min: { createdAt: true }, _max: { createdAt: true } }) : [],
     // Rencana Admin: jadwal tanggal+meja per unit TANPA Run (satu sumber; jadwal V2 dibaca dari rencana Run di atas)
     unitIds.length ? prisma.productionUnitSchedule.findMany({ where: { unitId: { in: unitIds }, status: "ACTIVE" }, select: { unitId: true, productionDate: true, stationCode: true, revision: true } }) : [],
+    // Komponen lama yang pernah dicatat 'dipakai kembali' (CREATED/CORRECTED hasil REUSED; baris riwayat tidak dihapus, jadi fakta tidak hilang walau dikoreksi/dibatalkan)
+    unitIds.length ? prisma.unitComponentReuseEntry.findMany({ where: { unitId: { in: unitIds }, outcome: "REUSED", kind: { in: ["CREATED", "CORRECTED"] } }, select: { unitId: true, itemId: true, createdAt: true } }) : [],
   ]);
   const adminJadwalByUnit = new Map(adminJadwalRows.map((r) => [r.unitId, r]));
   const planByUnit = new Map(plannedRows.map((r) => [r.unitId, r.plan]));
   const rencanaUnit = new Set(rencanaRows.map((r) => r.unitId));
   const aktualUnit = new Set(aktualRows.map((r) => r.unitId));
+  // PEMAKAIAN AKTUAL yang berhasil tercatat (dua sumber TERPISAH): bahan baru = pergerakan ISSUE resmi; komponen lama = hasil 'dipakai kembali'. Dasar status kerja "Sudah dikerjakan".
+  const pemakaianByUnit = new Map();
+  const ambilP = (id) => { if (!pemakaianByUnit.has(id)) pemakaianByUnit.set(id, { baru: 0, lama: new Set(), pertamaAt: null, terakhirAt: null }); return pemakaianByUnit.get(id); };
+  const geser = (p, a, b) => { if (a && (!p.pertamaAt || a < p.pertamaAt)) p.pertamaAt = a; if (b && (!p.terakhirAt || b > p.terakhirAt)) p.terakhirAt = b; };
+  for (const r of aktualRows) { const p = ambilP(r.unitId); p.baru = r._count._all; geser(p, r._min.createdAt, r._max.createdAt); }
+  for (const r of komponenPakaiRows) { const p = ambilP(r.unitId); p.lama.add(r.itemId); geser(p, r.createdAt, r.createdAt); }
   return units.map((u) => {
     const prio = priorityDisplay({ stored: u.priority, complaintCases: complaintsByUnit.get(u.id) || [] });
     const ev = milestoneEvidence.get(u.id) || { receivedBasis: null, started: false, pickupCompleted: false };
@@ -91,7 +99,8 @@ export async function perkayaBarisUnit(prisma, units) {
     // ── tiga sumbu status (kontrak adopsi Admin)
     const bukti = appEvidence.get(u.id) || { started: false, firstEvidenceAt: null };
     const manual = manualByUnit.get(u.id) || null;
-    const kerja = effectiveWorkStatus({ unitStatus: u.status, productionStatus, appStarted: bukti.started, scheduled, manual });
+    const pakai = pemakaianByUnit.get(u.id) || null;
+    const kerja = effectiveWorkStatus({ unitStatus: u.status, productionStatus, appStarted: bukti.started, scheduled, manual, pemakaian: pakai ? { terakhirAt: pakai.terakhirAt, pertamaAt: pakai.pertamaAt } : null, punyaJadwal: scheduled || adminJadwalByUnit.has(u.id) });
     const posisi = posisiUnitOf({ unitStatus: u.status, receivedBasis: ev.receivedBasis, receivedBasisLabel: milestone.receivedBasisLabel, pickupCompleted: ev.pickupCompleted, pickupInProgress: ev.pickupInProgress, started: bukti.started || ev.started });
     const plan = planByUnit.get(u.id) || null;
     const targetAt = u.productionDueAt ?? plan?.targetCompleteAt ?? null;
@@ -116,6 +125,7 @@ export async function perkayaBarisUnit(prisma, units) {
         pic: picNama ? { nama: picNama, sumber: assignment?.operator ? "TAHAP" : "RENCANA" } : null, meja: plan?.stationCode ?? adminJadwalByUnit.get(u.id)?.stationCode ?? null,
         jadwal: plan?.productionDate ? { sumber: "V2", tanggal: plan.productionDate.toISOString().slice(0, 10), meja: plan.stationCode ?? null, revisi: null } : adminJadwalByUnit.has(u.id) ? { sumber: "ADMIN", tanggal: adminJadwalByUnit.get(u.id).productionDate.toISOString().slice(0, 10), meja: adminJadwalByUnit.get(u.id).stationCode ?? null, revisi: adminJadwalByUnit.get(u.id).revision } : null,
         rencanaBahanAda: rencanaUnit.has(u.id), aktualBahanAda: aktualUnit.has(u.id), buktiAplikasi: bukti.started,
+        pemakaianBahan: { baruCatatan: pakai?.baru ?? 0, komponenLamaDipakaiKembali: pakai?.lama.size ?? 0, pertamaAt: pakai?.pertamaAt ?? null, terakhirAt: pakai?.terakhirAt ?? null }, // dua sumber terpisah (tidak dijumlahkan)
       },
     };
   });

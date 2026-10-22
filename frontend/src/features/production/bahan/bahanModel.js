@@ -111,3 +111,14 @@ export function ringkasDokumentasi(dok, detail) {
     bolehUnggah: !!dok.bolehUnggah, catatan: "Dokumentasi bukan hasil QC: foto yang diunggah tidak meluluskan QC maupun menyelesaikan tahap.",
   };
 }
+
+/** Empat fakta Pekerjaan yang DIPISAH di Ringkasan: status kerja administratif (+ sumber + fakta tanpa jadwal), jadwal, pemakaian bahan (dua sumber), QC. */
+export function ringkasPekerjaan(data) {
+  const ad = data?.adopsi ?? {}; const k = ad.kerja ?? {}; const p = ad.pemakaianBahan ?? {};
+  const jadwal = ad.jadwal ? `${String(ad.jadwal.tanggal).slice(8)}/${String(ad.jadwal.tanggal).slice(5, 7)}${ad.jadwal.meja ? ` · ${String(ad.jadwal.meja).replace("TABLE_", "Meja ")}` : ""} (${ad.jadwal.sumber === "V2" ? "Pelaksanaan Meja" : "Rencana Admin"})` : "Belum dijadwalkan";
+  const baru = p.baruCatatan ?? 0; const lama = p.komponenLamaDipakaiKembali ?? 0;
+  const pemakaian = baru + lama === 0 ? "Belum ada pemakaian tercatat" : [baru ? `${baru} catatan bahan baru` : null, lama ? `${lama} komponen lama dipakai kembali` : null].filter(Boolean).join(" · ");
+  const sumber = k.source === "PEMAKAIAN_BAHAN" ? "Otomatis dari pemakaian bahan" : k.source === "MANUAL" ? "Dicatat manual" : k.source === "APLIKASI" ? "Dari aplikasi Produksi" : null;
+  const qc = k.key === "MENUNGGU_QC" ? "QC: menunggu keputusan" : k.key === "DIKERJAKAN_ULANG" ? "QC: pengerjaan ulang" : "QC: belum ada hasil";
+  return { jadwal, pemakaian, sumber, faktaJadwal: k.faktaJadwal ?? null, qc };
+}

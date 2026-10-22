@@ -8,7 +8,7 @@ import { unitDetailPath } from "@/lib/legacyProductionRoutes.js";
 import { KartuPenerimaan, TindakanUtama } from "@/features/production/OrderProduksiPanel.jsx";
 import { badgeTarget, teksTahapMeja } from "@/features/production/workspace/workListModel.js";
 import { formatJumlah, nadaBadge, waktuWib } from "@/features/production/orderProduksiModel.js";
-import { ringkasBahan, ringkasDokumentasi } from "@/features/production/bahan/bahanModel.js";
+import { ringkasBahan, ringkasDokumentasi, ringkasPekerjaan } from "@/features/production/bahan/bahanModel.js";
 import "@/features/production/bahan/bahan.css";
 import { formatTanggal } from "@/utils/formatDate.js";
 
@@ -117,7 +117,7 @@ function DetailOrder({ data, ruang }) {
 
 export default function RingkasanUnit({ data, ruang, aktif, onDone, onBagian }) {
   const { adopsi: ad } = data; const izin = data.izin || {}; const meja = teksTahapMeja(ruang?.alurMeja); const target = badgeTarget(ad.targetSelesai?.at); const tahan = penjelasanTertahan(data);
-  const layanan = ruang?.order?.layanan || [];
+  const layanan = ruang?.order?.layanan || []; const pk = ringkasPekerjaan(data);
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] lg:items-start" data-testid="bagian-ringkasan">
       <div className="space-y-4 lg:col-start-1" data-testid="ringkasan-kiri-atas">
@@ -128,13 +128,15 @@ export default function RingkasanUnit({ data, ruang, aktif, onDone, onBagian }) 
         </div>
         <Kartu judul="Pekerjaan" testid="ringkasan-pekerjaan" aksi={<Buka onClick={() => onBagian("pekerjaan")} testid="cuplikan-buka-pekerjaan">Ubah status & target</Buka>}>
           <p className="m-0 text-[14px] font-medium text-ink" data-testid="pekerjaan-layanan">{layanan.length ? layanan.join(" + ") : "Pekerjaan belum tercatat dari Sales"}</p>
-          <dl className="m-0 mt-2 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3">
-            <Fakta label="Status kerja"><Badge variant={nadaBadge(ad.kerja?.tone)} data-testid="pekerjaan-status">{ad.kerja?.label || "—"}</Badge></Fakta>
+          <dl className="m-0 mt-2 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3" data-testid="pekerjaan-fakta">
+            <Fakta label="Status kerja (administratif)"><Badge variant={nadaBadge(ad.kerja?.tone)} className={ad.kerja?.tone === "accent" ? "bh-b-accent" : ""} data-testid="pekerjaan-status">{ad.kerja?.label || "—"}</Badge>{pk.sumber && <span className="mt-0.5 block text-[11.5px] text-ink2" data-testid="pekerjaan-sumber">{pk.sumber}</span>}{pk.faktaJadwal && <span className="mt-0.5 block text-[12px] font-medium text-ink" data-testid="fakta-tanpa-jadwal">{pk.faktaJadwal}</span>}</Fakta>
+            <Fakta label="Jadwal produksi"><span data-testid="pekerjaan-jadwal">{pk.jadwal}</span></Fakta>
+            <Fakta label="Pemakaian bahan"><span data-testid="pekerjaan-pemakaian">{pk.pemakaian}</span></Fakta>
             <Fakta label="Target selesai"><Badge variant={target.nada}>{target.teks}</Badge></Fakta>
             <Fakta label="PIC · meja">{ad.pic?.nama || "Belum ada"}{ad.meja ? ` · ${String(ad.meja).replace("TABLE_", "Meja ")}` : ""}</Fakta>
-            <Fakta label="Jadwal produksi">{ad.jadwal ? `${String(ad.jadwal.tanggal).slice(8)}/${String(ad.jadwal.tanggal).slice(5, 7)}${ad.jadwal.meja ? ` · ${String(ad.jadwal.meja).replace("TABLE_", "Meja ")}` : ""} (${ad.jadwal.sumber === "V2" ? "Pelaksanaan Meja" : "Rencana Admin"})` : "Belum dijadwalkan"}</Fakta>
-            <Fakta label="Tahap Meja">{meja.teks}</Fakta>
+            <Fakta label="Tahap Meja · QC"><span data-testid="pekerjaan-qc">{meja.teks} · {pk.qc}</span></Fakta>
           </dl>
+          <p className="m-0 mt-2 text-[11.5px] text-ink2" data-testid="pekerjaan-catatan-bukan-qc">“Sudah dikerjakan” bukan hasil QC, bukan siap serah Gudang, dan bukan siap kirim. Jadwal, pemakaian bahan, dan QC dicatat terpisah.</p>
         </Kartu>
       </div>
       <div className="space-y-4 lg:col-start-2 lg:row-span-2 lg:row-start-1" data-testid="ringkasan-kanan"><DetailOrder data={data} ruang={ruang} /></div>

@@ -7,7 +7,7 @@
 // Rencana bahan = RENCANA (tidak mengurangi stok). Pemakaian aktual = transaksi resmi Gudang/Produksi (mengurangi stok tepat sekali).
 
 export const KERJA_FILTER = Object.freeze([
-  { key: "BELUM_DIJADWALKAN", label: "Belum dijadwalkan" }, { key: "DIJADWALKAN", label: "Dijadwalkan" }, { key: "DIKERJAKAN", label: "Dikerjakan" },
+  { key: "BELUM_DIJADWALKAN", label: "Belum dijadwalkan" }, { key: "DIJADWALKAN", label: "Dijadwalkan" }, { key: "DIKERJAKAN", label: "Sudah dikerjakan" },
   { key: "TERTUNDA", label: "Tertunda" }, { key: "MENUNGGU_QC", label: "Menunggu QC" }, { key: "DIKERJAKAN_ULANG", label: "Dikerjakan ulang" }, { key: "SELESAI", label: "Selesai" },
 ]);
 export const KERJA_FILTER_KEYS = Object.freeze(KERJA_FILTER.map((k) => k.key));
@@ -59,6 +59,7 @@ export function sumberKerjaText(kerja) {
   if (!kerja) return null;
   if (kerja.source === "MANUAL") return kerja.detail || "Dicatat manual";
   if (kerja.source === "APLIKASI") return "Dari aplikasi Produksi";
+  if (kerja.source === "PEMAKAIAN_BAHAN") return "Otomatis dari pemakaian bahan";
   if (kerja.source === "STATUS_ORDER" && kerja.key !== "DIBATALKAN") return "Mengikuti status order";
   return null;
 }

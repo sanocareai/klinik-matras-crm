@@ -93,12 +93,15 @@ if (u1) {
   const ad2 = await api("GET", `${PR}/units/${u1.unitId}/adopsi`, tA);
   rec("panel unit memuat komponenLama (dua sumber terpisah: pemakaianAktual vs komponenLama)", ad2.status === 200 && !!ad2.json?.komponenLama && !!ad2.json?.pemakaianAktual, String(ad2.status));
   const rk = await api("GET", `${PR}/units/${u1.unitId}/ruang-kerja`, tA);
+  rec("panel unit: status kerja memuat fakta jadwal (faktaJadwal) dan pemakaianBahan dua sumber", ad2.status === 200 && "faktaJadwal" in (ad2.json?.adopsi?.kerja ?? {}) && !!ad2.json?.adopsi?.pemakaianBahan, String(ad2.status));
   rec("ruang kerja unit: detail order (kondisi pelanggan, catatan produksi, komplain) terbaca", rk.status === 200 && !!rk.json?.order?.detail?.kondisiPelanggan, String(rk.status));
 } else skip("komponen lama + ruang kerja unit nyata", "tidak ada unit aktif");
 const exo = await api("GET", `${PR}/work-orders/export.xlsx`, tA, undefined, {}, true);
 if (exo.status === 200) {
   const wb = new ExcelJS.Workbook(); await wb.xlsx.load(exo.buf);
   const kolomAkt = (wb.getWorksheet("Pemakaian Aktual")?.getRow(1).values ?? []).slice(1);
+  const kolomRing = (wb.getWorksheet("Ringkasan Unit")?.getRow(1).values ?? []).slice(1);
+  rec("ekspor Order Produksi: Ringkasan Unit membedakan Status Kerja (Administratif), Jadwal Produksi, Fakta Jadwal, pemakaian bahan, dan Status QC", ["Status Kerja (Administratif)", "Jadwal Produksi", "Fakta Jadwal", "Pemakaian Bahan Baru (jumlah catatan)", "Komponen Lama Dipakai Kembali (jumlah)", "Status QC (aplikasi)"].every((h) => kolomRing.includes(h)), `${kolomRing.length} kolom ringkasan`);
   rec("ekspor Order Produksi: sheet Pemakaian Aktual memuat Sumber + Dampak Stok, sheet Komponen Lama ada dan dibedakan", kolomAkt.includes("Sumber") && kolomAkt.includes("Dampak Stok") && !!wb.getWorksheet("Komponen Lama"), `${kolomAkt.length} kolom aktual`);
 } else rec("ekspor Order Produksi (.xlsx): 200", false, String(exo.status));
 
