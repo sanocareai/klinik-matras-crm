@@ -22,7 +22,7 @@ import { toMoney, moneyToNumber } from "./money.js";
 import { toBookDate, reverseJournal, generateDocumentNumber } from "./journal.js";
 import { KoreksiError, snapshotJurnal, susunPratinjau, tautanJurnal, PratinjauKoreksi } from "./koreksiGate.js";
 import { saldoBukuRekening, pandanganCutoff } from "./rekonSnapshot.js";
-import { siapkanJenisTagihan, pastikanAmanDisetujui, JENIS_TAGIHAN } from "./jenisTagihan.js";
+import { siapkanJenisTagihan, pastikanAmanDisetujui, nomorFakturBermakna, JENIS_TAGIHAN } from "./jenisTagihan.js";
 import { postSupplierBill, KEY as SUPPLIER_KEY } from "./posting/supplier.js";
 import { postRefund, sisaBisaDirefund, pendapatanSudahDiakui, KEY as ORDER_KEY } from "./posting/orderRevenue.js";
 import { SYSTEM_KEYS, resolveAccount, AccountError } from "./accounts.js";
@@ -225,12 +225,13 @@ export async function editInfoTagihan(tx, { billId, body, alasan, userId, bolehO
       : { termType: null, termDays: null, termBasis: null, termSource: null, termOverrideReason: null, termSetById: userId, termSetAt: new Date() });
   }
   // Nomor faktur yang sama dari supplier yang sama tidak boleh ada di tagihan aktif lain (aturan yang sama saat disetujui).
-  if (after.supplierRef) {
+  const refBermakna = nomorFakturBermakna(after.supplierRef); // isian pengisi "---" bukan nomor faktur
+  if (refBermakna) {
     const dobel = await tx.finSupplierBill.findFirst({
-      where: { id: { not: b.id }, supplierId: b.supplierId, supplierRef: { equals: after.supplierRef, mode: "insensitive" }, status: { in: ["DRAFT", "MENUNGGU_APPROVAL", "DISETUJUI", "DIBAYAR_SEBAGIAN", "LUNAS"] } },
+      where: { id: { not: b.id }, supplierId: b.supplierId, supplierRef: { equals: refBermakna, mode: "insensitive" }, status: { in: ["DRAFT", "MENUNGGU_APPROVAL", "DISETUJUI", "DIBAYAR_SEBAGIAN", "LUNAS"] } },
       select: { billNumber: true },
     });
-    if (dobel) throw tolak(`Faktur ${after.supplierRef} dari supplier ini sudah tercatat di ${dobel.billNumber}.`, null, 409, "FAKTUR_GANDA");
+    if (dobel) throw tolak(`Faktur ${refBermakna} dari supplier ini sudah tercatat di ${dobel.billNumber}.`, null, 409, "FAKTUR_GANDA");
   }
   const updated = await tx.finSupplierBill.update({ where: { id: b.id }, data: perubahan });
   await recordActivity(tx, {
