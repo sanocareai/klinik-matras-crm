@@ -92,7 +92,9 @@ export async function perkayaBarisUnit(prisma, units) {
   return units.map((u) => {
     const prio = priorityDisplay({ stored: u.priority, complaintCases: complaintsByUnit.get(u.id) || [] });
     const ev = milestoneEvidence.get(u.id) || { receivedBasis: null, started: false, pickupCompleted: false };
-    const scheduled = planByUnit.has(u.id);
+    // DIJADWALKAN = ada jadwal AKTIF dari salah satu sumber: rencana Meja (Pelaksanaan Meja, punya meja+tanggal) ATAU Rencana Admin ACTIVE (tanpa Run). CLEARED tidak dihitung; ADOPTED dihitung lewat rencana Mejanya (planByUnit).
+    // SATU aturan ini dipakai status kerja, status jadwal (milestone), tindakan berikutnya, daftar/filter, panel unit, dan ekspor Order Produksi (ekspor Rencana sudah berlabel "Rencana Admin") — jadwal saja TIDAK pernah menjadi 'Sudah dikerjakan'.
+    const scheduled = planByUnit.has(u.id) || adminJadwalByUnit.has(u.id);
     const milestone = milestoneOf({ unitStatus: u.status, ...ev, scheduled });
     const lastLog = lastLogByUnitId[u.id] || null; const blocker = blockerByUnitId[u.id] || null; const assignment = assignmentByUnitId[u.id] || null;
     const productionStatus = deriveProductionStatus({ unit: u, lastLog, hasOpenBlocker: !!blocker, currentStageRequiresQc: !!u.currentStage?.requiresQc });

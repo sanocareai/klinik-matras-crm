@@ -76,7 +76,7 @@ export function effectiveWorkStatus({ unitStatus, productionStatus = null, appSt
     const by = manualOut.by ? ` oleh ${manualOut.by}` : "";
     return out(manual.status, WORK_SOURCE.MANUAL, `Dicatat manual${by}${manualOut.at ? `, ${waktuWibText(manualOut.at)}` : ""}`);
   }
-  return scheduled ? out("DIJADWALKAN", WORK_SOURCE.JADWAL, "Sudah punya meja di Rencana Produksi") : out("BELUM_DIJADWALKAN", WORK_SOURCE.JADWAL, null);
+  return scheduled ? out("DIJADWALKAN", WORK_SOURCE.JADWAL, "Sudah punya jadwal di Rencana Produksi") : out("BELUM_DIJADWALKAN", WORK_SOURCE.JADWAL, null);
 }
 
 /** Riwayat catatan manual (urut lama→baru). Catatan TERAKHIR sebelum bukti aplikasi pertama ditandai digantikan; tidak ada catatan manual setelah bukti (ditolak saat tulis). */
