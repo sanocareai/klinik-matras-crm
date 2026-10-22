@@ -13,7 +13,7 @@
 #   ssh ubuntu@43.133.152.6 'nohup bash /tmp/skj.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/skj.out 2>&1 < /dev/null &'
 #
 # ROLLBACK KODE: aman kapan saja (tidak ada perubahan database untuk dipulihkan).
-# (dibangkitkan oleh scripts/gen-release-status-kerja-jadwal.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 be624306acba…)
+# (dibangkitkan oleh scripts/gen-release-status-kerja-jadwal.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 f93be93c0019…)
 set -Eeuo pipefail
 umask 077
 
@@ -180,7 +180,7 @@ cmp -s <(printf '%s\n' "$CAND_MIGS") "$BK_DIR/applied-sebelum.txt" || { diff <(p
 ok "migrasi terpasang di produksi (${LIVE_MIG_JUMLAH}) = migrasi kandidat; 0 pending; terakhir = ${LIVE_MIG_TERAKHIR}"
 JAD_ACTIVE_N="$(psql_live -At -c "select count(*) from production_unit_schedules where status = 'ACTIVE'")"; JAD_CLEARED_N="$(psql_live -At -c "select count(*) from production_unit_schedules where status = 'CLEARED'")"; JAD_ADOPTED_N="$(psql_live -At -c "select count(*) from production_unit_schedules where status = 'ADOPTED'")"
 JAD_EV_N="$(psql_live -At -c "select count(*) from production_unit_schedule_events")"; UNIT_N="$(psql_live -At -c "select count(*) from units")"
-JAD_TANPA_PLAN_N="$(psql_live -At -c "select count(*) from production_unit_schedules s where s.status = 'ACTIVE' and not exists (select 1 from production_runs_v2 r join production_run_plans_v2 p on p.id = r.plan_id where r.unit_id = s.unit_id and r.status not in ('COMPLETED','CANCELLED') and p.station_code is not null and p.status <> 'CANCELLED')")"
+JAD_TANPA_PLAN_N="$(psql_live -At -c "select count(*) from production_unit_schedules s where s.status = 'ACTIVE' and not exists (select 1 from production_runs_v2 r join production_run_plans_v2 p on p.run_id = r.id where r.unit_id = s.unit_id and r.status not in ('COMPLETED','CANCELLED') and p.station_code is not null and p.status <> 'CANCELLED')")"
 [[ "$JAD_ACTIVE_N" =~ ^[0-9]+$ ]] && [[ "$JAD_CLEARED_N" =~ ^[0-9]+$ ]] && [[ "$JAD_ADOPTED_N" =~ ^[0-9]+$ ]] && [[ "$JAD_EV_N" =~ ^[0-9]+$ ]] && [[ "$UNIT_N" =~ ^[0-9]+$ ]] && [[ "$JAD_TANPA_PLAN_N" =~ ^[0-9]+$ ]] || die "audit awal bukan angka"
 ok "keadaan: unit=${UNIT_N}; jadwal Admin ACTIVE=${JAD_ACTIVE_N} (TANPA rencana Meja — yang berubah terbaca Dijadwalkan: ${JAD_TANPA_PLAN_N}), CLEARED=${JAD_CLEARED_N}, ADOPTED=${JAD_ADOPTED_N}, peristiwa=${JAD_EV_N} (rilis ini tidak mengubah satu pun)"
 DB_BYTES="$(psql_live -At -c "select pg_database_size('${DB_NAME}')")"
