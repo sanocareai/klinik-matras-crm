@@ -19,7 +19,7 @@
 # ROLLBACK KODE: TIDAK otomatis aman. Kode lama tidak membaca tabel jadwal; selama masih ada jadwal Admin BERLAKU (ACTIVE) rollback kode berbahaya (jadwal tersembunyi + kode lama dapat membuat rencana Meja kedua). Jalankan dulu scripts/rollback-guard-rencana-jadwal-mingguan.sh (baca-saja):
 #   LULUS (exit 0) hanya bila tidak ada jadwal ACTIVE dan setiap jadwal ADOPTED terbukti punya rencana Meja sah; DITOLAK (exit 1) mencetak jumlah, contoh unit, dan alasan. Bila ditolak, pemulihan = PERBAIKAN MAJU (kode baru tetap terpasang) sampai jadwal itu diselesaikan, baru guard dijalankan lagi.
 #   Rollback kode (bila guard lulus) TIDAK menghapus tabel/riwayat; yang hilang hanya tampilan kalender mingguan, antrean per tindakan, dan riwayat/undo jadwal Admin.
-# (dibangkitkan oleh scripts/gen-release-rencana-jadwal-mingguan.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 de6525eb57fb…)
+# (dibangkitkan oleh scripts/gen-release-rencana-jadwal-mingguan.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 c5e7456d9d4b…)
 set -Eeuo pipefail
 umask 077
 
@@ -29,6 +29,8 @@ DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 CAND_BRANCH="${CAND_BRANCH:-feat/rencana-produksi-jadwal-mingguan}"
 # Migrasi aditif yang SUDAH diaudit: nama:sha256 isi (LF). Perubahan sekecil apa pun = berhenti sampai diaudit ulang dan pin diperbarui.
 MIGS="20261224090000_production_unit_schedules:84301fa8e852ec19ec3dff5e9ba70c073b45131bbf392a6f7054f35fff0a368b 20261225090000_production_unit_component_reuse:4a9add08b3e076ad535dc44767160f9ea5a99ee437bade98a08b652e68068660"
+# Jumlah migrasi pada pohon kandidat (= jumlah migrasi terpasang di production SESUDAH rilis ini). Dipakai gerbang keadaan: LANJUT menuntut tepat jumlah ini terpasang.
+MIG_N_KANDIDAT="265"
 # Migrasi yang BOLEH bernama lebih lama daripada migrasi baseline terbaru (diaudit mandiri; dibuktikan Prisma menerapkannya setelah migrasi yang lebih baru terpasang). Kosong = harus terurut setelah baseline.
 MIG_URUT_LAMA_OK=""
 # Hasil pemindai DDL untuk migrasi di atas (jumlah per jenis pernyataan). Selisih = berhenti.
@@ -61,10 +63,11 @@ PREFLIGHT_ONLY=0
 REHEARSAL_ONLY=0
 REHEARSAL_PENUH=0
 TAHAN_UI=0
+BACKUP_PRA=""; SHA_PRA=""   # --backup-pra / --sha-pra: backup NYATA sebelum rilis (state 263) untuk jalur rehearsal "pra" saat production sudah LANJUT (265)
 CAND_DIR="$NEW_DIR"   # sumber kode kandidat untuk rehearsal: release dir (rilis penuh) atau direktori kerja sementara (--rehearsal-penuh)
 for a in "$@"; do
   [ "$a" = "--preflight-only" ] && PREFLIGHT_ONLY=1; [ "$a" = "--rehearsal-only" ] && REHEARSAL_ONLY=1; [ "$a" = "--rehearsal-penuh" ] && REHEARSAL_PENUH=1
-  case "$a" in --tahan-ui=*) TAHAN_UI="${a#--tahan-ui=}";; esac
+  case "$a" in --tahan-ui=*) TAHAN_UI="${a#--tahan-ui=}";; --backup-pra=*) BACKUP_PRA="${a#--backup-pra=}";; --sha-pra=*) SHA_PRA="${a#--sha-pra=}";; esac
 done
 TS="$(date +%Y%m%d_%H%M%S)"
 BK_DIR="$HOME/release-backups/rencana-jadwal-mingguan-${DEPLOY_SHORT}-${TS}"
@@ -76,11 +79,81 @@ warn() { printf '  \033[33mPERHATIAN\033[0m %s\n' "$*"; }
 die()  { printf '\n\033[31mSTOP: %s\033[0m\n' "$*" >&2; exit 1; }
 sg()   { git --git-dir="$SRC" "$@"; }
 dcp()  { local d="$1"; shift; ( cd "$d" && SANSS_PERSIST_ROOT="$PERSIST" docker compose -p "$PROJECT" -f docker-compose.yml -f docker-compose.release.yml "$@" ); }
+gagal_reh() { reh_drop; die "$@"; }
 psql_live() { dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 -X -q "$@" </dev/null; }
 
+# Struktur 3 tabel rilis (KOSONG; FK RESTRICT, CHECK, indeks [unik parsial], trigger append-only memakai fungsi lama) — SATU definisi dipakai production (keadaan LANJUT, sebelum switch) dan rehearsal.
+# $1 = fungsi pembaca SQL (menerima satu argumen SQL, mencetak hasil -At), $2 = fungsi kegagalan (menerima pesan).
+struktur_baru() {
+  local Q="$1" G="$2"
+  [ "$("$Q" "select count(*) from pg_tables where schemaname='public' and tablename in ('production_unit_schedules','production_unit_schedule_events','unit_component_reuse_entries')")" = "3" ] || "$G" "3 tabel baru (jadwal, riwayat jadwal, komponen lama) tidak terpasang"
+  [ "$("$Q" "select (select count(*) from production_unit_schedules) + (select count(*) from production_unit_schedule_events) + (select count(*) from unit_component_reuse_entries)")" = "0" ] || "$G" "tabel baru TIDAK kosong setelah migrasi (backfill tidak diizinkan)"
+  [ "$("$Q" "select count(*) from pg_constraint where conname in ('unit_component_reuse_entries_unit_id_fkey','unit_component_reuse_entries_material_id_fkey') and contype='f' and confdeltype='r' and convalidated")" = "2" ] || "$G" "2 FK komponen lama (unit, bahan katalog) ON DELETE RESTRICT tidak terpasang/tervalidasi"
+  [ "$("$Q" "select count(*) from pg_constraint where conname in ('unit_component_reuse_entries_kind_chk','unit_component_reuse_entries_version_chk','unit_component_reuse_entries_source_chk','unit_component_reuse_entries_outcome_chk','unit_component_reuse_entries_qty_chk','unit_component_reuse_entries_name_chk','unit_component_reuse_entries_uom_chk','unit_component_reuse_entries_reason_chk','unit_component_reuse_entries_photos_chk') and contype='c' and convalidated")" = "9" ] || "$G" "9 CHECK komponen lama tidak terpasang/tervalidasi"
+  [ "$("$Q" "select count(*) from pg_indexes where schemaname='public' and indexname in ('unit_component_reuse_entries_pkey','unit_component_reuse_entries_item_id_version_key','unit_component_reuse_entries_unit_id_created_at_idx','unit_component_reuse_entries_unit_id_idempotency_key_key')")" = "4" ] || "$G" "4 indeks komponen lama tidak terpasang"
+  [ "$("$Q" "select count(*) from pg_indexes where schemaname='public' and indexname = 'unit_component_reuse_entries_unit_id_idempotency_key_key' and indexdef like '%UNIQUE%' and indexdef like '%WHERE%'")" = "1" ] || "$G" "indeks unik parsial kunci idempotensi komponen lama tidak terpasang"
+  [ "$("$Q" "select count(*) from pg_indexes where schemaname='public' and indexname = 'unit_component_reuse_entries_item_id_version_key' and indexdef like '%UNIQUE%'")" = "1" ] || "$G" "versi unik per komponen (UNIQUE item_id, version) tidak terpasang"
+  [ "$("$Q" "select count(*) from pg_trigger t join pg_proc p on p.oid = t.tgfoid where t.tgname = 'unit_component_reuse_entries_append_only_trg' and not t.tgisinternal and p.proname = 'production_adopsi_append_only'")" = "1" ] || "$G" "trigger append-only komponen lama (fungsi production_adopsi_append_only) tidak terpasang"
+  [ "$("$Q" "select count(*) from pg_constraint where conname in ('production_unit_schedules_unit_id_fkey','production_unit_schedules_adopted_plan_id_fkey','production_unit_schedule_events_schedule_id_fkey','production_unit_schedule_events_unit_id_fkey') and contype='f' and confdeltype='r' and convalidated")" = "4" ] || "$G" "4 FK ON DELETE RESTRICT tidak terpasang/tervalidasi"
+  [ "$("$Q" "select count(*) from pg_constraint where conname in ('production_unit_schedules_status_chk','production_unit_schedules_station_chk','production_unit_schedules_revision_chk','production_unit_schedule_events_kind_chk') and contype='c' and convalidated")" = "4" ] || "$G" "4 CHECK jadwal tidak terpasang/tervalidasi"
+  [ "$("$Q" "select count(*) from pg_indexes where schemaname='public' and indexname in ('production_unit_schedules_pkey','production_unit_schedules_unit_id_key','production_unit_schedules_production_date_station_code_idx','production_unit_schedule_events_pkey','production_unit_schedule_events_schedule_id_created_at_idx','production_unit_schedule_events_unit_id_created_at_idx','production_unit_schedule_events_unit_id_idempotency_key_key')")" = "7" ] || "$G" "7 indeks jadwal (2 pkey + 5 indeks) tidak terpasang"
+  [ "$("$Q" "select count(*) from pg_indexes where schemaname='public' and indexname = 'production_unit_schedule_events_unit_id_idempotency_key_key' and indexdef like '%UNIQUE%' and indexdef like '%WHERE%'")" = "1" ] || "$G" "indeks unik parsial kunci idempotensi tidak terpasang"
+  [ "$("$Q" "select count(*) from pg_indexes where schemaname='public' and indexname = 'production_unit_schedules_unit_id_key' and indexdef like '%UNIQUE%'")" = "1" ] || "$G" "satu jadwal per unit (UNIQUE unit_id) tidak terpasang"
+  [ "$("$Q" "select count(*) from pg_trigger t join pg_proc p on p.oid = t.tgfoid where t.tgname = 'production_unit_schedule_events_append_only_trg' and not t.tgisinternal and p.proname = 'production_adopsi_append_only'")" = "1" ] || "$G" "trigger append-only riwayat (fungsi production_adopsi_append_only) tidak terpasang"
+  [ "$("$Q" "select count(*) from pg_trigger where tgrelid = 'production_unit_schedules'::regclass and not tgisinternal")" = "0" ] || "$G" "tabel jadwal (boleh diubah) memiliki trigger (tidak diharapkan)"
+}
+
+# <<TENTUKAN_KEADAAN
+# Klasifikasi KEADAAN production — murni (hanya membaca berkas/argumen), diuji di tes skrip. FAIL-CLOSED: selain dua keadaan yang dikenal = TOLAK (cetak "TOLAK: alasan", exit 1).
+#   SEGAR  = tidak ada tabel rilis, tidak ada migrasi rilis terpasang, terpasang tepat himpunan baseline, pending tepat migrasi rilis.
+#   LANJUT = rilis terhenti SESUDAH migrasi: 3 tabel rilis ada dan KOSONG, SEMUA migrasi rilis terpasang (selesai, tidak di-rollback, 1 langkah, checksum = isi berkas kandidat), terpasang tepat baseline + migrasi rilis, tidak ada pending.
+# Argumen: ntab nisi applied cand base kand csok  (applied/cand/base = berkas daftar nama migrasi terurut; kand = nama migrasi rilis dipisah spasi; csok = jumlah migrasi rilis yang selesai+checksum cocok)
+tentukan_keadaan() {
+  local ntab="$1" nisi="$2" applied="$3" cand="$4" base="$5" kand="$6" csok="$7" n=0 nk=0 m solo lama pend kandurut
+  for m in $kand; do n=$((n+1)); if grep -Fxq "$m" "$applied"; then nk=$((nk+1)); fi; done
+  kandurut="$(printf '%s\n' $kand | LC_ALL=C sort)"
+  solo="$(comm -13 "$cand" "$applied" || true)"
+  if [ -n "$solo" ]; then echo "TOLAK: production memiliki migrasi yang TIDAK ada di kandidat: $(printf '%s' "$solo" | tr '\n' ' ')"; return 1; fi
+  lama="$(grep -vxF -f <(printf '%s\n' $kand) "$applied" || true)"
+  if [ "$lama" != "$(cat "$base")" ]; then echo "TOLAK: migrasi terpasang (di luar migrasi rilis) BUKAN tepat himpunan baseline"; return 1; fi
+  pend="$(comm -23 "$cand" "$applied" || true)"
+  if [ "$ntab" = "0" ] && [ "$nk" = "0" ]; then
+    if [ "$pend" != "$kandurut" ]; then echo "TOLAK: migrasi pending bukan tepat migrasi rilis ini"; return 1; fi
+    echo SEGAR; return 0
+  fi
+  if [ "$ntab" = "3" ] && [ "$nk" = "$n" ] && [ "$n" -ge 1 ]; then
+    if [ -n "$pend" ]; then echo "TOLAK: masih ada migrasi pending ($(printf '%s' "$pend" | tr '\n' ' '))"; return 1; fi
+    if [ "$csok" != "$n" ]; then echo "TOLAK: status/checksum migrasi rilis tidak sesuai berkas kandidat (${csok} dari ${n} cocok)"; return 1; fi
+    if [ "$nisi" != "0" ]; then echo "TOLAK: tabel rilis TIDAK kosong (${nisi} baris)"; return 1; fi
+    echo LANJUT; return 0
+  fi
+  echo "TOLAK: keadaan campuran/tidak dikenal (tabel rilis=${ntab}, migrasi rilis terpasang=${nk} dari ${n})"; return 1
+}
+# TENTUKAN_KEADAAN>>
+
+LQ() { psql_live -At -c "$1"; }
+# Keadaan production SAAT INI (membaca production; menulis daftar ke $BK_DIR/applied-sebelum${1}.txt). Cetak SEGAR | LANJUT | "TOLAK: ..." (exit 1). Dipakai di preflight dan diulang sesaat sebelum migrasi/switch.
+keadaan_produksi() {
+  local sfx="$1" ntab nisi csok=0 e n pin raw row
+  psql_live -At -c "select migration_name from _prisma_migrations where finished_at is not null and rolled_back_at is null order by 1" | LC_ALL=C sort -u > "$BK_DIR/applied-sebelum${sfx}.txt" || { echo "TOLAK: gagal membaca migrasi terpasang"; return 1; }
+  sg ls-tree --name-only "$DEPLOY_SHA" backend/prisma/migrations/ | sed 's|.*/||' | grep -E '^[0-9]{14}_' | LC_ALL=C sort -u > "$BK_DIR/cand-pra.txt"
+  sg ls-tree --name-only "$BASE_SHA" backend/prisma/migrations/ | sed 's|.*/||' | grep -E '^[0-9]{14}_' | LC_ALL=C sort -u > "$BK_DIR/base-pra.txt"
+  ntab="$(psql_live -At -c "select count(*) from pg_tables where schemaname='public' and tablename in ('production_unit_schedules','production_unit_schedule_events','unit_component_reuse_entries')")"
+  [[ "$ntab" =~ ^[0-9]+$ ]] || { echo "TOLAK: hitungan tabel rilis bukan angka"; return 1; }
+  nisi=0; if [ "$ntab" = "3" ]; then nisi="$(psql_live -At -c "select (select count(*) from production_unit_schedules) + (select count(*) from production_unit_schedule_events) + (select count(*) from unit_component_reuse_entries)")"; fi
+  [[ "$nisi" =~ ^[0-9]+$ ]] || { echo "TOLAK: hitungan isi tabel rilis bukan angka"; return 1; }
+  for e in $MIGS; do
+    n="${e%%:*}"; raw="$(sg show "${DEPLOY_SHA}:backend/prisma/migrations/${n}/migration.sql" | sha256sum | cut -d' ' -f1)"
+    row="$(psql_live -At -c "select checksum||'|'||applied_steps_count::text||'|'||(finished_at is not null)::text||'|'||(rolled_back_at is null)::text from _prisma_migrations where migration_name='${n}'")"
+    [ "$row" = "${raw}|1|true|true" ] && csok=$((csok+1))
+  done
+  tentukan_keadaan "$ntab" "$nisi" "$BK_DIR/applied-sebelum${sfx}.txt" "$BK_DIR/cand-pra.txt" "$BK_DIR/base-pra.txt" "$MIG_LIST" "$csok"
+}
 [ "$((PREFLIGHT_ONLY + REHEARSAL_ONLY + REHEARSAL_PENUH))" -le 1 ] || die "pilih SATU mode saja (--preflight-only | --rehearsal-only | --rehearsal-penuh)"
 [[ "$TAHAN_UI" =~ ^[0-9]+$ ]] || die "--tahan-ui=MENIT harus angka"
 [ "$TAHAN_UI" = "0" ] || [ "$REHEARSAL_PENUH" = "1" ] || die "--tahan-ui hanya bersama --rehearsal-penuh"
+[ -z "$BACKUP_PRA$SHA_PRA" ] || [ "$REHEARSAL_ONLY$REHEARSAL_PENUH" != "00" ] || die "--backup-pra/--sha-pra hanya untuk --rehearsal-only atau --rehearsal-penuh"
+[ -z "$BACKUP_PRA" ] || [[ "$SHA_PRA" =~ ^[0-9a-f]{64}$ ]] || die "--backup-pra wajib disertai --sha-pra=<sha256 64 hex backup itu>"
 WS=""; REH_IMG=""; REH_DB=""; NET=""
 # Pembersih --rehearsal-penuh (dipanggil di trap EXIT, juga saat gagal): hapus container UI, direktori kerja, image bertag rehearsal (SATU tag itu saja), dan DB sementara bernama rehearsal_rjm_test_*. TIDAK menyentuh production.
 cleanup_penuh() {
@@ -90,7 +163,7 @@ cleanup_penuh() {
   if [ -n "${PREV_DIR:-}" ]; then dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d postgres -X -q -c "DROP DATABASE IF EXISTS \"rehearsal_rjm_test_klong_${TS}\" WITH (FORCE)" </dev/null >/dev/null 2>&1 || true; fi
   if [ -n "${WS:-}" ] && [[ "$WS" == "$HOME/release-rehearsal/rjm-"* ]]; then rm -rf -- "$WS" 2>/dev/null || sudo -n rm -rf -- "$WS" 2>/dev/null || true; fi
   if [ -n "${REH_IMG:-}" ] && [[ "$REH_IMG" == *":rehearsal-rjm-"* ]]; then docker rmi "$REH_IMG" >/dev/null 2>&1 || true; fi
-  if [[ "${REH_DB:-}" =~ ^rehearsal_rjm_test_image_[0-9_]+$ ]] && [ -n "${PREV_DIR:-}" ]; then dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d postgres -X -q -c "DROP DATABASE IF EXISTS \"${REH_DB}\"" </dev/null >/dev/null 2>&1 || true; fi
+  if [[ "${REH_DB:-}" =~ ^rehearsal_rjm_test_(image|git)(pra)?_[0-9_]+$ ]] && [ -n "${PREV_DIR:-}" ]; then dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d postgres -X -q -c "DROP DATABASE IF EXISTS \"${REH_DB}\"" </dev/null >/dev/null 2>&1 || true; fi
   return 0
 }
 
@@ -394,26 +467,28 @@ ok "health sehat; bundel publik = dist release aktif (${PREV_INDEX})"
 for T in units stock_movements materials v2_commands activity_events jobs production_runs_v2 production_operation_runs_v2 production_step_evidence_v2 unit_stage_logs quality_inspections_v2 unit_custody_handoffs_v2 material_issues material_reservations_v2 payments order_groups '"User"' user_roles fin_journal_entries fin_journal_lines goods_receipts; do
   [ "$(psql_live -At -c "select count(*) from pg_tables where schemaname='public' and tablename='${T//\"/}'")" = "1" ] || die "tabel $T belum ada di produksi (prasyarat)"
 done
-[ "$(psql_live -At -c "select count(*) from pg_tables where schemaname='public' and tablename in ('production_unit_schedules','production_unit_schedule_events','unit_component_reuse_entries')")" = "0" ] || die "tabel jadwal Admin / komponen lama SUDAH ada di produksi (tidak diharapkan)"
 [ "$(psql_live -At -c "select count(*) from pg_proc where proname = 'production_adopsi_append_only'")" = "1" ] || die "fungsi production_adopsi_append_only HARUS sudah ada di produksi (dibuat migrasi 20261221090000; migrasi ini hanya memakainya)"
 [ "$(psql_live -At -c "select count(*) from pg_tables where schemaname='public' and tablename in ('units','production_run_plans_v2','production_unit_work_progress','unit_workshop_receipts')")" = "4" ] || die "tabel prasyarat (units, production_run_plans_v2, adopsi Admin, penerimaan workshop) tidak lengkap di produksi"
-for m in $MIG_LIST; do [ "$(psql_live -At -c "select count(*) from _prisma_migrations where migration_name='${m}'")" = "0" ] || die "migrasi ${m} SUDAH tercatat di produksi (tidak diharapkan)"; done
-psql_live -At -c "select migration_name from _prisma_migrations where finished_at is not null and rolled_back_at is null order by 1" | LC_ALL=C sort -u > "$BK_DIR/applied-sebelum.txt" || die "gagal membaca migrasi terpasang"
+N_MIG="$(printf '%s\n' $MIG_LIST | grep -c .)"
+KEADAAN_TEKS="$(keadaan_produksi "")" || die "${KEADAAN_TEKS}"
+KEADAAN="$KEADAAN_TEKS"; case "$KEADAAN" in SEGAR|LANJUT) ;; *) die "keadaan production tidak dikenal: ${KEADAAN}";; esac
 grep -Fx "$LIVE_MIG_TERAKHIR" "$BK_DIR/applied-sebelum.txt" >/dev/null || die "migrasi live ${LIVE_MIG_TERAKHIR} belum terpasang di produksi — baseline bukan yang diharapkan"
-[ "$(LC_ALL=C sort "$BK_DIR/applied-sebelum.txt" | tail -n 1)" = "$LIVE_MIG_TERAKHIR" ] || die "produksi memiliki migrasi LEBIH BARU dari ${LIVE_MIG_TERAKHIR}: gabungkan baseline terbaru ke kandidat dulu"
-CAND_PRE="$(sg ls-tree --name-only "$DEPLOY_SHA" backend/prisma/migrations/ | sed 's|.*/||' | grep -E '^[0-9]{14}_' | LC_ALL=C sort -u)"
-SOLO_PROD_PRE="$(comm -13 <(printf '%s\n' "$CAND_PRE") "$BK_DIR/applied-sebelum.txt" || true)"
-[ -z "$SOLO_PROD_PRE" ] || die "produksi memiliki migrasi yang TIDAK ada di kandidat (gabungkan live terbaru ke kandidat dulu): $(printf '%s' "$SOLO_PROD_PRE" | tr '\n' ' ')"
-PEND_PRE="$(comm -23 <(printf '%s\n' "$CAND_PRE") "$BK_DIR/applied-sebelum.txt" || true)"
-[ "$(printf '%s\n' "$PEND_PRE" | tr -d ' ')" = "$(printf '%s\n' $MIG_LIST | LC_ALL=C sort | tr -d ' ')" ] || die "migrasi pending terhadap live saat ini bukan TEPAT migrasi rilis ini: $(printf '%s' "$PEND_PRE" | tr '\n' ' ')"
-MIG_SEBELUM="$(wc -l < "$BK_DIR/applied-sebelum.txt" | tr -d ' ')"
-ok "migrasi terpasang di produksi (${MIG_SEBELUM}) semuanya ada di kandidat; terakhir = ${LIVE_MIG_TERAKHIR}; pending terhadap live = tepat:${MIG_LIST}"
+MIG_SEBELUM="$(wc -l < "$BK_DIR/base-pra.txt" | tr -d ' ')"; MIG_TERPASANG="$(wc -l < "$BK_DIR/applied-sebelum.txt" | tr -d ' ')"
+[ "$(wc -l < "$BK_DIR/cand-pra.txt" | tr -d ' ')" = "$MIG_N_KANDIDAT" ] && [ "$MIG_N_KANDIDAT" = "$(( MIG_SEBELUM + N_MIG ))" ] || die "jumlah migrasi pohon kandidat ($(wc -l < "$BK_DIR/cand-pra.txt" | tr -d ' ')) bukan pin ${MIG_N_KANDIDAT} = baseline ${MIG_SEBELUM} + ${N_MIG}"
+if [ "$KEADAAN" = "SEGAR" ]; then
+  [ "$MIG_TERPASANG" = "$MIG_SEBELUM" ] || die "keadaan SEGAR tetapi migrasi terpasang ${MIG_TERPASANG} != baseline ${MIG_SEBELUM}"
+  ok "keadaan production: SEGAR — migrasi terpasang ${MIG_SEBELUM} (tepat baseline), tidak ada tabel rilis, pending = tepat:${MIG_LIST}"
+else
+  [ "$MIG_TERPASANG" = "$MIG_N_KANDIDAT" ] || die "keadaan LANJUT tetapi migrasi terpasang ${MIG_TERPASANG} != ${MIG_N_KANDIDAT}"
+  struktur_baru LQ die
+  ok "keadaan production: LANJUT — rilis sebelumnya terhenti SESUDAH migrasi: ${MIG_TERPASANG} migrasi terpasang (baseline ${MIG_SEBELUM} + ${N_MIG} migrasi rilis, selesai, checksum = isi berkas kandidat), 3 tabel rilis ada, KOSONG, struktur lengkap tervalidasi; migrasi TIDAK akan diulang"
+fi
 # Dampak migrasi: hanya 2 CREATE TABLE tabel baru kosong + FK ke units/production_run_plans_v2 (FK pada tabel kosong = tanpa validasi baris; tabel lama TIDAK disentuh sama sekali, tanpa kunci pada tabel aktif selain ACCESS SHARE pada units/production_run_plans_v2 saat FK dibuat).
 UNIT_N="$(psql_live -At -c "select count(*) from units")"; SM_N="$(psql_live -At -c "select count(*) from stock_movements")"; MAT_N="$(psql_live -At -c "select count(*) from materials")"
 [[ "$UNIT_N" =~ ^[0-9]+$ ]] && [[ "$SM_N" =~ ^[0-9]+$ ]] && [[ "$MAT_N" =~ ^[0-9]+$ ]] || die "audit awal bukan angka"
 [ "$UNIT_N" -le 4900 ] || die "jumlah unit ${UNIT_N} mendekati batas ekspor Excel (5000) — tinjau batas BATAS_EKSPOR sebelum rilis"
 DB_BYTES="$(psql_live -At -c "select pg_database_size('${DB_NAME}')")"
-ok "dampak migrasi: units ${UNIT_N} baris; stock_movements ${SM_N}; materials ${MAT_N}; DB ${DB_BYTES} byte — hanya 3 tabel baru kosong (tabel lama tidak diubah); ekspor Excel memuat seluruh ${UNIT_N} unit (batas 5000)"
+ok "dampak migrasi: units ${UNIT_N} baris; stock_movements ${SM_N}; materials ${MAT_N}; DB ${DB_BYTES} byte — hanya 3 tabel baru kosong (tabel lama tidak diubah; keadaan ${KEADAAN}); ekspor Excel memuat seluruh ${UNIT_N} unit (batas 5000)"
 ADM_AKTIF="$(psql_live -At -c "select count(*) from \"User\" where active and (role::text in ('ADMIN','OWNER') or id in (select user_id from user_roles where role::text in ('ADMIN','OWNER')))")"
 LEAD_AKTIF="$(psql_live -At -c "select count(*) from \"User\" where active and (role::text = 'PRODUCTION_LEAD' or id in (select user_id from user_roles where role::text = 'PRODUCTION_LEAD'))")"
 PLAN_AKTIF="$(psql_live -At -c "select count(*) from production_run_plans_v2 where status::text <> 'CANCELLED' and production_date is not null")"
@@ -478,6 +553,8 @@ if [ "$PREFLIGHT_ONLY" = "0" ] && [ "$REHEARSAL_ONLY" = "0" ] && [ "$REHEARSAL_P
   MARK="$HOME/release-backups/.rehearsal-penuh-ok-rencana-jadwal-mingguan-${DEPLOY_SHA}"
   [ -f "$MARK" ] || die "belum ada bukti --rehearsal-penuh LULUS untuk SHA ${DEPLOY_SHORT}: jalankan --rehearsal-penuh dulu"
   grep -qx "BASE=${BASE_SHA}" "$MARK" && grep -qx "DEPLOY=${DEPLOY_SHA}" "$MARK" || die "bukti rehearsal-penuh bukan untuk SHA/baseline ini — ulangi terhadap baseline live saat ini"
+  grep -qx "KEADAAN=${KEADAAN}" "$MARK" || die "bukti rehearsal-penuh dibuat untuk keadaan production lain (sekarang ${KEADAAN}) — ulangi rehearsal-penuh"
+  if [ "$KEADAAN" = "LANJUT" ]; then grep -qx "JALUR=lanjut+pra" "$MARK" || die "keadaan LANJUT menuntut bukti kedua jalur (lanjut + pra); bukti ini tidak lengkap"; fi
   [ -n "$(find "$MARK" -mmin -2160 2>/dev/null)" ] || die "bukti rehearsal-penuh lebih dari 36 jam — ulangi terhadap data production terbaru"
   ok "bukti --rehearsal-penuh LULUS untuk SHA ${DEPLOY_SHORT} + baseline ${BASE_SHA:0:8} ($(sed -n 4p "$MARK" | sed s/TES=/tes\ integrasi\ lulus:\ /))"
 fi
@@ -491,6 +568,17 @@ gzip -dc "${BACKUP_FILE}.partial" | tail -n 5 | grep 'PostgreSQL database dump c
 mv "${BACKUP_FILE}.partial" "$BACKUP_FILE"
 ( cd "$(dirname "$BACKUP_FILE")" && sha256sum "$(basename "$BACKUP_FILE")" > "$(basename "$BACKUP_FILE").sha256" && sha256sum -c "$(basename "$BACKUP_FILE").sha256" >/dev/null ) || die "checksum backup gagal"
 ok "backup: ${BACKUP_FILE} ($(du -h "$BACKUP_FILE" | cut -f1)); sha256 $(cut -d' ' -f1 "${BACKUP_FILE}.sha256")"
+if [ "$REHEARSAL_ONLY$REHEARSAL_PENUH" != "00" ] && [ "$KEADAAN" = "LANJUT" ]; then
+  [ -n "$BACKUP_PRA" ] || die "production sudah LANJUT (265): rehearsal wajib membuktikan JALUR PRA — sertakan --backup-pra=<backup NYATA sebelum rilis> --sha-pra=<sha256>"
+  [ -f "$BACKUP_PRA" ] || die "backup pra-rilis tidak ada: ${BACKUP_PRA}"
+  case "$BACKUP_PRA" in "$HOME"/backups/pre-rjm-*.sql.gz) ;; *) die "backup pra-rilis harus berada di $HOME/backups/pre-rjm-*.sql.gz";; esac
+  [ "$(sha256sum "$BACKUP_PRA" | cut -d' ' -f1)" = "$SHA_PRA" ] || die "sha256 backup pra-rilis TIDAK sama dengan --sha-pra"
+  [ ! -f "${BACKUP_PRA}.sha256" ] || [ "$(cut -d' ' -f1 "${BACKUP_PRA}.sha256")" = "$SHA_PRA" ] || die "berkas .sha256 backup pra-rilis berbeda dari --sha-pra"
+  gzip -t "$BACKUP_PRA" || die "arsip backup pra-rilis rusak"
+  gzip -dc "$BACKUP_PRA" | tail -n 5 | grep 'PostgreSQL database dump complete' >/dev/null || die "dump pra-rilis tidak lengkap"
+  [ "$BACKUP_PRA" != "$BACKUP_FILE" ] || die "backup pra-rilis tidak boleh backup yang baru diambil"
+  ok "backup pra-rilis terverifikasi: ${BACKUP_PRA} sha256 ${SHA_PRA:0:12}…"
+fi
 
 # bk_run: menjalankan perintah di container backend. Rilis penuh = compose release dir (env production); --rehearsal-penuh = image bertag rehearsal TANPA env production (hanya variabel yang diberikan eksplisit).
 bk_run() {
@@ -620,27 +708,47 @@ rehearsal_penuh_lanjutan() {
   ok "tes integrasi terarah: ${T_N} tes dijalankan (image kandidat, DB dari nol, container sekali-pakai dihapus); ${TES_ULANG_INFO}"
 }
 
+# Pemilih jalur: SEGAR → satu jalur (segar). LANJUT → jalur "lanjut" (restore keadaan production sekarang, 265; migrasi tidak diulang) DAN, pada mode rehearsal, jalur "pra" (backup nyata sebelum rilis, 263 → 265).
+rehearsal_jalur() { # $1 = git | image
+  if [ "$KEADAAN" = "SEGAR" ]; then rehearsal "$1" segar; return; fi
+  rehearsal "$1" lanjut
+  if [ "$REHEARSAL_ONLY$REHEARSAL_PENUH" != "00" ]; then rehearsal "$1" pra; fi
+}
 # ── REHEARSAL (satu fungsi, dipakai --rehearsal-only, --rehearsal-penuh dan alur rilis penuh) ───────────────────────────────────────────────────────────────────────────
 # $1 = "git" (SQL migrasi dari git, diberi waktu per pernyataan) | "image" (prisma migrate deploy dari image baru + kode baru terhadap data restore)
+# $2 = skenario: segar (production 263; restore backup baru → 263→265) | lanjut (production 265; restore backup baru: migrasi TIDAK diulang, tidak ada yang dilewati) | pra (production 265; restore backup NYATA sebelum rilis [--backup-pra] → 263→265)
 rehearsal() {
-  local mode="$1"
-  REH_DB="rehearsal_rjm_test_${mode}_${TS}"  # nama WAJIB memuat "test": pagar env.js skenario menolak DB lain
+  local jenis="$1" sken="${2:-segar}" sfxdb=""; [ "$sken" = "pra" ] && sfxdb="pra"
+  local mode="${jenis}-${sken}"  # akhiran berkas bukti
+  local RESTORE_SRC="$BACKUP_FILE"; [ "$sken" = "pra" ] && RESTORE_SRC="$BACKUP_PRA"
+  local REF_BEKU="$BK_DIR/data-sebelum.txt"
+  REH_DB="rehearsal_rjm_test_${jenis}${sfxdb}_${TS}"  # nama WAJIB memuat "test": pagar env.js skenario menolak DB lain
   dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d postgres -v ON_ERROR_STOP=1 -X -q -c "CREATE DATABASE \"${REH_DB}\"" </dev/null || die "gagal membuat DB rehearsal"
   reh_drop() { dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d postgres -X -q -c "DROP DATABASE IF EXISTS \"${REH_DB}\"" </dev/null >/dev/null 2>&1 || true; }
   RPSQL() { dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d "$REH_DB" -X -At -q -c "$1" </dev/null; }
   # 1) RESTORE bersih: exit code 0 dan tidak ada ERROR/FATAL/PANIC; WARNING dicatat dan dilaporkan.
-  set +e; gzip -dc "$BACKUP_FILE" | dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d "$REH_DB" -v ON_ERROR_STOP=0 -X -q > "$BK_DIR/restore-${mode}.log" 2>&1; RESTORE_RC=$?; set -e
+  set +e; gzip -dc "$RESTORE_SRC" | dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d "$REH_DB" -v ON_ERROR_STOP=0 -X -q > "$BK_DIR/restore-${mode}.log" 2>&1; RESTORE_RC=$?; set -e
   RESTORE_ERR="$(grep -ciE 'ERROR:|FATAL|PANIC' "$BK_DIR/restore-${mode}.log" || true)"
   RESTORE_WARN="$(grep -ciE 'WARNING' "$BK_DIR/restore-${mode}.log" || true)"
   [ "$RESTORE_RC" = "0" ] && [ "${RESTORE_ERR:-0}" = "0" ] || { grep -iE 'ERROR:|FATAL|PANIC' "$BK_DIR/restore-${mode}.log" | LC_ALL=C sort | uniq -c | head -n 10 | sed 's/^/        /'; reh_drop; die "restore ke DB sementara TIDAK bersih (exit=${RESTORE_RC}, error=${RESTORE_ERR}; log: $BK_DIR/restore-${mode}.log) — berhenti; produksi tidak berubah"; }
   if [ "${RESTORE_WARN:-0}" != "0" ]; then warn "restore menghasilkan ${RESTORE_WARN} WARNING (log: $BK_DIR/restore-${mode}.log):"; grep -i 'WARNING' "$BK_DIR/restore-${mode}.log" | LC_ALL=C sort | uniq -c | head -n 5 | sed 's/^/        /'; fi
   ok "restore bersih: exit=0, error=0, warning=${RESTORE_WARN:-0}"
-  # 2) Restore IDENTIK dengan dokumen beku produksi
-  psql_live -At -c "$FP_BEKU_SQL" | LC_ALL=C sort > "$BK_DIR/fp-prod-beku-${mode}.txt" || { reh_drop; die "sidik jari dokumen beku produksi gagal"; }
-  cmp -s "$BK_DIR/data-sebelum.txt" "$BK_DIR/fp-prod-beku-${mode}.txt" || { diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/fp-prod-beku-${mode}.txt" || true; reh_drop; die "dokumen pembanding beku BERUBAH selama backup (produksi)"; }
-  RPSQL "$FP_BEKU_SQL" | LC_ALL=C sort > "$BK_DIR/fp-reh-beku-${mode}.txt" || { reh_drop; die "sidik jari dokumen beku rehearsal gagal"; }
-  cmp -s "$BK_DIR/data-sebelum.txt" "$BK_DIR/fp-reh-beku-${mode}.txt" || { diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/fp-reh-beku-${mode}.txt" || true; reh_drop; die "hasil RESTORE berbeda dari dokumen beku produksi (backup/restore bermasalah)"; }
-  ok "restore nyata IDENTIK dengan produksi pada ${FPB_N} kelompok pembanding (pergerakan stok, saldo per bahan, GR + baris + event, jurnal, PO, tagihan, pembayaran, Produksi, aktivitas, sesi hitung lama + barisnya)"
+  # 2) Restore IDENTIK dengan dokumen beku produksi (segar/lanjut). Jalur PRA memakai backup NYATA sebelum rilis (data lebih lama dari production sekarang): dibuktikan KEADAAN-nya (tanpa objek rilis, tepat himpunan baseline), dan data dibandingkan sebelum vs sesudah migrasi.
+  if [ "$sken" = "pra" ]; then
+    [ "$(RPSQL "select count(*) from pg_tables where schemaname='public' and tablename in ('production_unit_schedules','production_unit_schedule_events','unit_component_reuse_entries')")" = "0" ] || gagal_reh "backup pra-rilis memuat tabel rilis (bukan keadaan sebelum rilis)"
+    RPSQL "select migration_name from _prisma_migrations where finished_at is not null and rolled_back_at is null order by 1" | LC_ALL=C sort -u > "$BK_DIR/applied-reh-${mode}.txt" || gagal_reh "gagal membaca migrasi backup pra-rilis"
+    cmp -s "$BK_DIR/applied-reh-${mode}.txt" "$BK_DIR/base-pra.txt" || gagal_reh "migrasi pada backup pra-rilis BUKAN tepat himpunan baseline (${MIG_SEBELUM})"
+    RPSQL "$FP_BEKU_SQL" | LC_ALL=C sort > "$BK_DIR/fp-reh-beku-${mode}.txt" || gagal_reh "sidik jari dokumen beku backup pra-rilis gagal"
+    REF_BEKU="$BK_DIR/fp-reh-beku-${mode}.txt"; [ "$(grep -c . "$REF_BEKU")" = "$FPB_N" ] || gagal_reh "sidik jari beku backup pra-rilis tidak ${FPB_N} baris"
+    ok "JALUR PRA: backup NYATA sebelum rilis (${BACKUP_PRA##*/}) dipulihkan bersih; keadaan = tepat ${MIG_SEBELUM} migrasi baseline, TANPA tabel rilis; sidik jari dokumen beku dicatat sebagai acuan sebelum-vs-sesudah"
+  else
+    # 2) Restore IDENTIK dengan dokumen beku produksi
+    psql_live -At -c "$FP_BEKU_SQL" | LC_ALL=C sort > "$BK_DIR/fp-prod-beku-${mode}.txt" || { reh_drop; die "sidik jari dokumen beku produksi gagal"; }
+    cmp -s "$BK_DIR/data-sebelum.txt" "$BK_DIR/fp-prod-beku-${mode}.txt" || { diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/fp-prod-beku-${mode}.txt" || true; reh_drop; die "dokumen pembanding beku BERUBAH selama backup (produksi)"; }
+    RPSQL "$FP_BEKU_SQL" | LC_ALL=C sort > "$BK_DIR/fp-reh-beku-${mode}.txt" || { reh_drop; die "sidik jari dokumen beku rehearsal gagal"; }
+    cmp -s "$BK_DIR/data-sebelum.txt" "$BK_DIR/fp-reh-beku-${mode}.txt" || { diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/fp-reh-beku-${mode}.txt" || true; reh_drop; die "hasil RESTORE berbeda dari dokumen beku produksi (backup/restore bermasalah)"; }
+    ok "restore nyata IDENTIK dengan produksi pada ${FPB_N} kelompok pembanding (pergerakan stok, saldo per bahan, GR + baris + event, jurnal, PO, tagihan, pembayaran, Produksi, aktivitas, sesi hitung lama + barisnya)"
+  fi
   # 3) Sidik jari PENUH semua tabel lama (baris penuh) + skema + katalog objek, SEBELUM migrasi
   TABEL_LAMA="$(RPSQL "select tablename from pg_tables where schemaname='public' and tablename <> '_prisma_migrations' order by 1")"
   [ "$(printf '%s\n' "$TABEL_LAMA" | grep -c .)" -ge 100 ] || { reh_drop; die "jumlah tabel lama di restore mencurigakan ($(printf '%s\n' "$TABEL_LAMA" | grep -c .))"; }
@@ -651,14 +759,18 @@ rehearsal() {
     FP_ALL="${FP_ALL:+${FP_ALL} union all }select '${t}', count(*), md5(coalesce(string_agg(md5(${expr}::text), '' order by md5(${expr}::text)),'')) from \"${t}\" x"
   done <<< "$TABEL_LAMA"
   RPSQL "$FP_ALL" | LC_ALL=C sort > "$BK_DIR/fp-all-sebelum-${mode}.txt" || { reh_drop; die "sidik jari penuh sebelum gagal"; }
-  RPSQL "select md5(coalesce(string_agg(migration_name||':'||checksum, ',' order by migration_name),'')) from _prisma_migrations" > "$BK_DIR/mig-hash-sebelum-${mode}.txt" || { reh_drop; die "sidik jari riwayat migrasi gagal"; }
+  MIG_IN="$(printf "'%s'," $MIG_LIST | sed 's/,$//')"
+  RPSQL "select md5(coalesce(string_agg(migration_name||':'||checksum, ',' order by migration_name),'')) from _prisma_migrations where migration_name not in (${MIG_IN})" > "$BK_DIR/mig-hash-sebelum-${mode}.txt" || { reh_drop; die "sidik jari riwayat migrasi gagal"; }
+  RPSQL "select md5(coalesce(string_agg(migration_name||':'||checksum||':'||applied_steps_count::text, ',' order by migration_name),'')) from _prisma_migrations where migration_name in (${MIG_IN})" > "$BK_DIR/mig-kand-sebelum-${mode}.txt" || { reh_drop; die "sidik jari migrasi rilis gagal"; }
   S_SEBELUM="$(RPSQL "$SKEMA_SQL")"; K_SEBELUM="$(RPSQL "$KATALOG_SQL")"; [ -n "$S_SEBELUM" ] && [ -n "$K_SEBELUM" ] || { reh_drop; die "sidik jari skema/katalog kosong"; }
   FN_SEBELUM="$(RPSQL "select md5(pg_get_functiondef(p.oid)) from pg_proc p where p.proname = 'production_adopsi_append_only'")"; [ -n "$FN_SEBELUM" ] || { reh_drop; die "fungsi production_adopsi_append_only tidak ada di restore (prasyarat migrasi 20261221090000)"; }
   SALDO_SEBELUM="$(RPSQL "select md5(coalesce(string_agg(material_id::text||':'||q::text, '|' order by material_id),'')) from (select material_id, sum(qty) q from stock_movements group by material_id) s")"
   N_SM="$(RPSQL "select count(*) from stock_movements")"; N_TABEL_SEBELUM="$(RPSQL "select count(*) from pg_tables where schemaname='public'")"
   ok "garis dasar rehearsal: $(printf '%s\n' "$TABEL_LAMA" | grep -c .) tabel lama disidik-jari; stock_movements=${N_SM} baris; saldo per bahan ${SALDO_SEBELUM:0:12}"
   # 4) Migrasi
-  if [ "$mode" = "git" ]; then
+  if [ "$jenis" = "git" ] && [ "$sken" = "lanjut" ]; then
+    ok "migrasi (git): keadaan LANJUT — tabel rilis sudah ada di backup; TIDAK ada migrasi yang diterapkan (tidak diulang, tidak dilewati)"
+  elif [ "$jenis" = "git" ]; then
     { printf '\\timing on\n'; for e in $MIGS; do sg show "${DEPLOY_SHA}:backend/prisma/migrations/${e%%:*}/migration.sql" | tr -d '\r'; done; } | dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d "$REH_DB" -v ON_ERROR_STOP=1 -X -q > "$BK_DIR/migrate-rehearsal-${mode}.log" 2>&1 || { tail -n 12 "$BK_DIR/migrate-rehearsal-${mode}.log"; reh_drop; die "migrasi pada DB rehearsal GAGAL (produksi tidak disentuh)"; }
     MAKS_MS="$(grep -o 'Time: [0-9.]*' "$BK_DIR/migrate-rehearsal-${mode}.log" | awk '{ if ($2+0 > m) m = $2+0 } END { printf "%.1f", m+0 }')"
     TOTAL_MS="$(grep -o 'Time: [0-9.]*' "$BK_DIR/migrate-rehearsal-${mode}.log" | awk '{ t += $2 } END { printf "%.1f", t+0 }')"
@@ -668,33 +780,31 @@ rehearsal() {
     [ -n "$REH_PW" ] || { reh_drop; die "tidak bisa membaca kata sandi DB dari .env untuk rehearsal"; }
     REH_URL="postgresql://${DB_USER}:${REH_PW}@postgres:5432/${REH_DB}"
     REH_PEND="$(comm -23 <(ls -1 "$CAND_DIR/backend/prisma/migrations" | grep -E '^[0-9]{14}_' | LC_ALL=C sort) <(RPSQL "select migration_name from _prisma_migrations where finished_at is not null and rolled_back_at is null order by 1" | LC_ALL=C sort) || true)"
-    [ "$(printf '%s\n' "$REH_PEND" | tr -d ' ')" = "$(printf '%s\n' $MIG_LIST | LC_ALL=C sort | tr -d ' ')" ] || { reh_drop; die "migrasi pending pada DB rehearsal bukan tepat migrasi rilis ini: $(printf '%s' "$REH_PEND" | tr '\n' ' ')"; }
+    if [ "$sken" = "lanjut" ]; then
+      [ -z "$(printf '%s' "$REH_PEND" | tr -d ' \n')" ] || { reh_drop; die "keadaan LANJUT: seharusnya TIDAK ada migrasi pending pada DB rehearsal: $(printf '%s' "$REH_PEND" | tr '\n' ' ')"; }
+      for e in $MIGS; do n="${e%%:*}"; [ "$(RPSQL "select checksum from _prisma_migrations where migration_name='${n}'")" = "$(sha256sum "$CAND_DIR/backend/prisma/migrations/${n}/migration.sql" | cut -d' ' -f1)" ] || { reh_drop; die "checksum migrasi ${n} di restore BERBEDA dari berkas kandidat"; }; done
+    else
+      [ "$(printf '%s\n' "$REH_PEND" | tr -d ' ')" = "$(printf '%s\n' $MIG_LIST | LC_ALL=C sort | tr -d ' ')" ] || { reh_drop; die "migrasi pending pada DB rehearsal bukan tepat migrasi rilis ini: $(printf '%s' "$REH_PEND" | tr '\n' ' ')"; }
+    fi
     T_A="$(date +%s%N)"
     bk_run -e DATABASE_URL="$REH_URL" -- npx prisma migrate deploy </dev/null > "$BK_DIR/migrate-rehearsal-${mode}.log" 2>&1 || { tail -n 20 "$BK_DIR/migrate-rehearsal-${mode}.log"; reh_drop; die "migrate deploy di DB rehearsal GAGAL (produksi tidak disentuh)"; }
     T_B="$(date +%s%N)"
+    if [ "$sken" = "lanjut" ]; then
+      grep -q 'No pending migrations' "$BK_DIR/migrate-rehearsal-${mode}.log" && ! grep -q 'Applying migration' "$BK_DIR/migrate-rehearsal-${mode}.log" || { tail -n 12 "$BK_DIR/migrate-rehearsal-${mode}.log"; reh_drop; die "keadaan LANJUT: migrate deploy MENERAPKAN sesuatu (seharusnya 'No pending migrations')"; }
+    else
+      [ "$(grep -c 'Applying migration' "$BK_DIR/migrate-rehearsal-${mode}.log")" = "$N_MIG" ] || { tail -n 12 "$BK_DIR/migrate-rehearsal-${mode}.log"; reh_drop; die "migrate deploy harus menerapkan TEPAT ${N_MIG} migrasi rilis"; }
+    fi
     bk_run -e DATABASE_URL="$REH_URL" -- npx prisma migrate status </dev/null 2>&1 | grep -i 'up to date' >/dev/null || { reh_drop; die "migrate status rehearsal tidak 'up to date'"; }
     ok "prisma migrate deploy pada DB rehearsal: $(( (T_B - T_A) / 1000000 )) ms (termasuk start container); status up to date"
   fi
+  [ "$(RPSQL "select count(*) from _prisma_migrations where finished_at is not null and rolled_back_at is null")" = "$MIG_N_KANDIDAT" ] || { reh_drop; die "sesudah migrasi (${mode}) jumlah migrasi terpasang != ${MIG_N_KANDIDAT}"; }
   # 5) STRUKTUR: 2 tabel baru KOSONG; 4 FK RESTRICT + 4 CHECK + 7 indeks (termasuk 2 pkey; 1 unik parsial) + 1 trigger append-only (fungsi lama, tidak diubah) terpasang dan tervalidasi; tabel lama identik (skema + katalog objek)
-  [ "$(RPSQL "select count(*) from pg_tables where schemaname='public' and tablename in ('production_unit_schedules','production_unit_schedule_events','unit_component_reuse_entries')")" = "3" ] || { reh_drop; die "3 tabel baru (jadwal, riwayat jadwal, komponen lama) tidak terpasang"; }
-  [ "$(RPSQL "select (select count(*) from production_unit_schedules) + (select count(*) from production_unit_schedule_events) + (select count(*) from unit_component_reuse_entries)")" = "0" ] || { reh_drop; die "tabel baru TIDAK kosong setelah migrasi (backfill tidak diizinkan)"; }
-  [ "$(RPSQL "select count(*) from pg_constraint where conname in ('unit_component_reuse_entries_unit_id_fkey','unit_component_reuse_entries_material_id_fkey') and contype='f' and confdeltype='r' and convalidated")" = "2" ] || { reh_drop; die "2 FK komponen lama (unit, bahan katalog) ON DELETE RESTRICT tidak terpasang/tervalidasi"; }
-  [ "$(RPSQL "select count(*) from pg_constraint where conname in ('unit_component_reuse_entries_kind_chk','unit_component_reuse_entries_version_chk','unit_component_reuse_entries_source_chk','unit_component_reuse_entries_outcome_chk','unit_component_reuse_entries_qty_chk','unit_component_reuse_entries_name_chk','unit_component_reuse_entries_uom_chk','unit_component_reuse_entries_reason_chk','unit_component_reuse_entries_photos_chk') and contype='c' and convalidated")" = "9" ] || { reh_drop; die "9 CHECK komponen lama tidak terpasang/tervalidasi"; }
-  [ "$(RPSQL "select count(*) from pg_indexes where schemaname='public' and indexname in ('unit_component_reuse_entries_pkey','unit_component_reuse_entries_item_id_version_key','unit_component_reuse_entries_unit_id_created_at_idx','unit_component_reuse_entries_unit_id_idempotency_key_key')")" = "4" ] || { reh_drop; die "4 indeks komponen lama tidak terpasang"; }
-  [ "$(RPSQL "select count(*) from pg_indexes where schemaname='public' and indexname = 'unit_component_reuse_entries_unit_id_idempotency_key_key' and indexdef like '%UNIQUE%' and indexdef like '%WHERE%'")" = "1" ] || { reh_drop; die "indeks unik parsial kunci idempotensi komponen lama tidak terpasang"; }
-  [ "$(RPSQL "select count(*) from pg_indexes where schemaname='public' and indexname = 'unit_component_reuse_entries_item_id_version_key' and indexdef like '%UNIQUE%'")" = "1" ] || { reh_drop; die "versi unik per komponen (UNIQUE item_id, version) tidak terpasang"; }
-  [ "$(RPSQL "select count(*) from pg_trigger t join pg_proc p on p.oid = t.tgfoid where t.tgname = 'unit_component_reuse_entries_append_only_trg' and not t.tgisinternal and p.proname = 'production_adopsi_append_only'")" = "1" ] || { reh_drop; die "trigger append-only komponen lama (fungsi production_adopsi_append_only) tidak terpasang"; }
-  [ "$(RPSQL "select count(*) from pg_constraint where conname in ('production_unit_schedules_unit_id_fkey','production_unit_schedules_adopted_plan_id_fkey','production_unit_schedule_events_schedule_id_fkey','production_unit_schedule_events_unit_id_fkey') and contype='f' and confdeltype='r' and convalidated")" = "4" ] || { reh_drop; die "4 FK ON DELETE RESTRICT tidak terpasang/tervalidasi"; }
-  [ "$(RPSQL "select count(*) from pg_constraint where conname in ('production_unit_schedules_status_chk','production_unit_schedules_station_chk','production_unit_schedules_revision_chk','production_unit_schedule_events_kind_chk') and contype='c' and convalidated")" = "4" ] || { reh_drop; die "4 CHECK jadwal tidak terpasang/tervalidasi"; }
-  [ "$(RPSQL "select count(*) from pg_indexes where schemaname='public' and indexname in ('production_unit_schedules_pkey','production_unit_schedules_unit_id_key','production_unit_schedules_production_date_station_code_idx','production_unit_schedule_events_pkey','production_unit_schedule_events_schedule_id_created_at_idx','production_unit_schedule_events_unit_id_created_at_idx','production_unit_schedule_events_unit_id_idempotency_key_key')")" = "7" ] || { reh_drop; die "7 indeks jadwal (2 pkey + 5 indeks) tidak terpasang"; }
-  [ "$(RPSQL "select count(*) from pg_indexes where schemaname='public' and indexname = 'production_unit_schedule_events_unit_id_idempotency_key_key' and indexdef like '%UNIQUE%' and indexdef like '%WHERE%'")" = "1" ] || { reh_drop; die "indeks unik parsial kunci idempotensi tidak terpasang"; }
-  [ "$(RPSQL "select count(*) from pg_indexes where schemaname='public' and indexname = 'production_unit_schedules_unit_id_key' and indexdef like '%UNIQUE%'")" = "1" ] || { reh_drop; die "satu jadwal per unit (UNIQUE unit_id) tidak terpasang"; }
-  [ "$(RPSQL "select count(*) from pg_trigger t join pg_proc p on p.oid = t.tgfoid where t.tgname = 'production_unit_schedule_events_append_only_trg' and not t.tgisinternal and p.proname = 'production_adopsi_append_only'")" = "1" ] || { reh_drop; die "trigger append-only riwayat (fungsi production_adopsi_append_only) tidak terpasang"; }
-  [ "$(RPSQL "select count(*) from pg_trigger where tgrelid = 'production_unit_schedules'::regclass and not tgisinternal")" = "0" ] || { reh_drop; die "tabel jadwal (boleh diubah) memiliki trigger (tidak diharapkan)"; }
-  [ "$(RPSQL "select count(*) from pg_tables where schemaname='public'")" = "$(( N_TABEL_SEBELUM + 3 ))" ] || { reh_drop; die "migrasi MENAMBAH/MENGURANGI tabel selain 3 tabel baru (jadwal, riwayat jadwal, komponen lama)"; }
+  struktur_baru RPSQL gagal_reh
+  local TAMBAH_TABEL=3; [ "$sken" = "lanjut" ] && TAMBAH_TABEL=0
+  [ "$(RPSQL "select count(*) from pg_tables where schemaname='public'")" = "$(( N_TABEL_SEBELUM + TAMBAH_TABEL ))" ] || { reh_drop; die "migrasi MENAMBAH/MENGURANGI tabel di luar yang diharapkan (jadwal, riwayat jadwal, komponen lama; tambahan ${TAMBAH_TABEL})"; }
   [ "$(RPSQL "$SKEMA_SQL")" = "$S_SEBELUM" ] || { reh_drop; die "migrasi MENGUBAH skema (kolom/tipe/nullable/default) tabel lama"; }
   [ "$(RPSQL "$KATALOG_SQL")" = "$K_SEBELUM" ] || { reh_drop; die "migrasi MENGUBAH indeks/constraint/trigger tabel lama"; }
-  ok "struktur: 3 tabel baru kosong; jadwal: 4 FK RESTRICT + 4 CHECK + 7 indeks (1 unik parsial; satu jadwal per unit) + 1 trigger append-only; komponen lama: 2 FK RESTRICT + 9 CHECK (sumber dikunci unit ini) + 4 indeks (1 unik parsial; versi unik) + 1 trigger append-only; fungsi lama tak diubah; tabel lama (skema + indeks/constraint/trigger) identik; jumlah tabel ${N_TABEL_SEBELUM} → $(( N_TABEL_SEBELUM + 3 ))"
+  ok "struktur: 3 tabel baru kosong; jadwal: 4 FK RESTRICT + 4 CHECK + 7 indeks (1 unik parsial; satu jadwal per unit) + 1 trigger append-only; komponen lama: 2 FK RESTRICT + 9 CHECK (sumber dikunci unit ini) + 4 indeks (1 unik parsial; versi unik) + 1 trigger append-only; fungsi lama tak diubah; tabel lama (skema + indeks/constraint/trigger) identik; jumlah tabel ${N_TABEL_SEBELUM} → $(( N_TABEL_SEBELUM + TAMBAH_TABEL )) (${sken})"
   # 6) UJI PERILAKU constraint/trigger/FK memakai baris NYATA hasil restore (dua unit + pengguna asli); SELURUHNYA dibatalkan (RAISE di akhir)
   cat > "$BK_DIR/uji-perilaku-${mode}.sql" <<'UJISQL'
 DO $t$
@@ -802,7 +912,7 @@ UJISQL
   [ "$UJI_LOLOS" = "12" ] || { printf '%s\n' "$UJI_OUT"; reh_drop; die "uji perilaku: data sah yang lolos ${UJI_LOLOS:-?} (harus 12)"; }
   ok "perilaku terbukti pada hasil restore: ${UJI_TOLAK} penolakan (satu jadwal per unit, status/meja/revisi liar, FK unit/rencana/jadwal, jenis riwayat liar, kunci idempotensi ganda, trigger append-only ×2, RESTRICT hapus unit/jadwal) ditambah komponen lama (versi unik, jenis/versi/hasil/jumlah/satuan liar, SUMBER LINTAS UNIT, koreksi tanpa alasan, foto bukan larik, FK unit/bahan, kunci idempotensi ganda, ubah/hapus riwayat, hapus unit berkomponen) dan ${UJI_LOLOS} operasi sah lolos (jadwal boleh diubah; riwayat jadwal dan versi komponen boleh ditambah); seluruh uji dibatalkan"
   # 7) Mode image: kode BARU terhadap data restore yang SUDAH dimigrasi (baca-saja)
-  if [ "$mode" = "image" ]; then
+  if [ "$jenis" = "image" ]; then
     bk_run -e DATABASE_URL="$REH_URL" -- node --input-type=module - <<'REHNODE' > "$BK_DIR/rehearsal-kode-baru.log" 2>&1 || { cat "$BK_DIR/rehearsal-kode-baru.log"; reh_drop; die "pemeriksaan kode baru terhadap data restore GAGAL"; }
 // Pemeriksaan KODE BARU terhadap data restore yang SUDAH dimigrasi (rehearsal mode image; BACA-SAJA — tidak ada tulisan). Dijalankan di container backend baru dengan DATABASE_URL = DB rehearsal.
 import { createRequire } from "node:module";
@@ -867,18 +977,23 @@ REHNODE
   [ "$(RPSQL "select count(*) from stock_movements")" = "$N_SM" ] || { reh_drop; die "jumlah pergerakan stok berubah"; }
   [ "$(RPSQL "select (select count(*) from production_unit_schedules) + (select count(*) from production_unit_schedule_events) + (select count(*) from unit_component_reuse_entries)")" = "0" ] || { reh_drop; die "data uji rehearsal tidak dibatalkan (tabel jadwal tidak kosong)"; }
   [ "$(RPSQL "select md5(pg_get_functiondef(p.oid)) from pg_proc p where p.proname = 'production_adopsi_append_only'")" = "$FN_SEBELUM" ] || { reh_drop; die "fungsi production_adopsi_append_only BERUBAH oleh migrasi (seharusnya dipakai apa adanya)"; }
-  [ "$(RPSQL "select md5(coalesce(string_agg(migration_name||':'||checksum, ',' order by migration_name),'')) from _prisma_migrations where migration_name not in ($(printf "'%s'," $MIG_LIST | sed 's/,$//'))")" = "$(cat "$BK_DIR/mig-hash-sebelum-${mode}.txt")" ] || { reh_drop; die "riwayat migrasi lama (checksum) BERUBAH"; }
+  [ "$(RPSQL "select md5(coalesce(string_agg(migration_name||':'||checksum, ',' order by migration_name),'')) from _prisma_migrations where migration_name not in (${MIG_IN})")" = "$(cat "$BK_DIR/mig-hash-sebelum-${mode}.txt")" ] || { reh_drop; die "riwayat migrasi lama (checksum) BERUBAH"; }
+  if [ "$sken" = "lanjut" ]; then
+    [ "$(RPSQL "select md5(coalesce(string_agg(migration_name||':'||checksum||':'||applied_steps_count::text, ',' order by migration_name),'')) from _prisma_migrations where migration_name in (${MIG_IN})")" = "$(cat "$BK_DIR/mig-kand-sebelum-${mode}.txt")" ] || { reh_drop; die "baris migrasi rilis BERUBAH (migrasi diulang/diubah) pada keadaan LANJUT"; }
+  else
+    [ "$(RPSQL "select count(*) from _prisma_migrations where migration_name in (${MIG_IN}) and finished_at is not null and rolled_back_at is null and applied_steps_count = 1")" = "$N_MIG" ] || { reh_drop; die "migrasi rilis tidak tercatat selesai tepat ${N_MIG} baris"; }
+  fi
   RPSQL "$FP_BEKU_SQL" | LC_ALL=C sort > "$BK_DIR/fp-reh-beku-sesudah-${mode}.txt" || { reh_drop; die "sidik jari beku sesudah gagal"; }
-  cmp -s "$BK_DIR/data-sebelum.txt" "$BK_DIR/fp-reh-beku-sesudah-${mode}.txt" || { diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/fp-reh-beku-sesudah-${mode}.txt" || true; reh_drop; die "dokumen pembanding beku (stok, saldo, jurnal, PO, tagihan, pembayaran, Produksi) berubah oleh migrasi/uji"; }
-  if [ "$REHEARSAL_PENUH" = "1" ]; then rehearsal_penuh_lanjutan; fi
+  cmp -s "$REF_BEKU" "$BK_DIR/fp-reh-beku-sesudah-${mode}.txt" || { diff "$REF_BEKU" "$BK_DIR/fp-reh-beku-sesudah-${mode}.txt" || true; reh_drop; die "dokumen pembanding beku (stok, saldo, jurnal, PO, tagihan, pembayaran, Produksi) berubah oleh migrasi/uji"; }
+  if [ "$REHEARSAL_PENUH" = "1" ] && [ "$sken" != "lanjut" ]; then rehearsal_penuh_lanjutan; fi
   reh_drop
-  ok "rehearsal (${mode}) lulus: isi $(printf '%s\n' "$TABEL_LAMA" | grep -c .) tabel lama IDENTIK sebelum vs sesudah; saldo per bahan + jurnal + PO + tagihan + pembayaran + Produksi tidak berubah; DB sementara dihapus"
+  ok "rehearsal (${jenis}, jalur ${sken}) lulus: isi $(printf '%s\n' "$TABEL_LAMA" | grep -c .) tabel lama IDENTIK sebelum vs sesudah; saldo per bahan + jurnal + PO + tagihan + pembayaran + Produksi tidak berubah; DB sementara dihapus"
 }
 
 if [ "$REHEARSAL_ONLY" = "1" ]; then
   # MODE --rehearsal-only: backup NYATA + restore ke DB sementara + migrasi (SQL dari git) + uji; TANPA build image, TANPA release dir, TANPA migrasi/switch produksi. DB sementara selalu dihapus.
   PHASE="3b-rehearsal-saja"; say "3b. REHEARSAL SAJA: restore backup NYATA ke DB sementara, migrasi (SQL dari git, bukan dari produksi), uji perilaku, bandingkan sidik jari (produksi tidak diubah)"
-  rehearsal git
+  rehearsal_jalur git
   say "Rehearsal selesai (--rehearsal-only): PRODUKSI TIDAK DIUBAH (tanpa build, tanpa release dir, tanpa migrasi produksi, tanpa switch). Backup: ${BACKUP_FILE}"
   trap - EXIT; exit 0
 fi
@@ -908,22 +1023,23 @@ if [ "$REHEARSAL_PENUH" = "1" ]; then
   [ "$(docker inspect -f '{{.Image}}' "$CID_OLD")" = "$PREV_IMG_ID" ] || die "container aktif berubah saat build"
   ok "image rehearsal ${REH_IMG} (${RH_IMG_ID:7:12}); tag production ${IMG_NAME} tetap ${PREV_IMG_ID:7:12}; container aktif tidak tersentuh"
   PHASE="5b-rehearsal"; say "5b. REHEARSAL: restore backup NYATA ke DB sementara, migrasi dengan image kandidat, uji perilaku, kode baru terhadap data restore, sidik jari semua tabel lama, lalu skenario (DB production tidak disentuh)"
-  rehearsal image
+  rehearsal_jalur image
   cleanup_penuh
   PHASE="3d-production-tidak-berubah"; say "3d. Verifikasi production TIDAK berubah oleh rehearsal"
   [ "$(docker inspect -f '{{.Image}}' "$CID_OLD")" = "$PREV_IMG_ID" ] && [ "$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$CID_OLD")" = "$PREV_DIR" ] && [ "$(docker inspect -f '{{.RestartCount}}' "$CID_OLD")" = "0" ] && [ "$(docker inspect -f '{{.State.Running}}' "$CID_OLD")" = "true" ] || die "container production berubah"
   curl -fsS --max-time 8 "${INTERNAL_URL}/api/health" | grep '"ok":true' >/dev/null || die "healthcheck internal setelah rehearsal gagal"
   psql_live -At -c "select migration_name from _prisma_migrations where finished_at is not null and rolled_back_at is null order by 1" | LC_ALL=C sort -u > "$BK_DIR/applied-sesudah-rehearsal.txt"
   cmp -s "$BK_DIR/applied-sebelum.txt" "$BK_DIR/applied-sesudah-rehearsal.txt" || die "daftar migrasi production berubah selama rehearsal"
-  [ "$(psql_live -At -c "select count(*) from pg_tables where schemaname='public' and tablename in ('production_unit_schedules','production_unit_schedule_events','unit_component_reuse_entries')")" = "0" ] || die "tabel jadwal muncul di production (rehearsal tidak boleh memigrasi production)"
+  [ "$(psql_live -At -c "select count(*) from pg_tables where schemaname='public' and tablename in ('production_unit_schedules','production_unit_schedule_events','unit_component_reuse_entries')")" = "$([ "$KEADAAN" = LANJUT ] && echo 3 || echo 0)" ] || die "jumlah tabel rilis di production berubah selama rehearsal"
+  [ "$(psql_live -At -c "select 1")" = "1" ] && KEADAAN_SESUDAH="$(keadaan_produksi "-sesudah-rehearsal")" && [ "$KEADAAN_SESUDAH" = "$KEADAAN" ] || die "keadaan production berubah selama rehearsal (${KEADAAN} → ${KEADAAN_SESUDAH:-?})"
   psql_live -At -c "$FP_BEKU_SQL" | LC_ALL=C sort > "$BK_DIR/data-sesudah-rehearsal.txt" || die "sidik jari beku production sesudah rehearsal gagal"
   diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/data-sesudah-rehearsal.txt" >/dev/null || { diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/data-sesudah-rehearsal.txt" || true; die "dokumen pembanding production BERUBAH selama rehearsal"; }
   [ "$(psql_live -At -c "select count(*) from pg_database where datname like 'rehearsal_rjm_test_%'")" = "0" ] || die "DB rehearsal masih tersisa di server"
   [ ! -e "$WS" ] || die "direktori kerja rehearsal masih ada"
   [ -z "$(docker images -q "$REH_IMG")" ] || die "image rehearsal masih ada"
-  ok "production TIDAK berubah: container/image/release sama, 0 restart, migrasi sama (${MIG_SEBELUM}), 17 kelompok dokumen pembanding identik, tanpa tabel jadwal, DB rehearsal + direktori kerja + image rehearsal sudah dihapus; satu-satunya jejak: backup ${BACKUP_FILE}"
+  ok "production TIDAK berubah: container/image/release sama, 0 restart, migrasi sama (${MIG_SEBELUM}), 17 kelompok dokumen pembanding identik, keadaan ${KEADAAN} tidak berubah, DB rehearsal + direktori kerja + image rehearsal sudah dihapus; satu-satunya jejak: backup ${BACKUP_FILE}"
   trap - EXIT
-  printf 'BASE=%s\nDEPLOY=%s\nTS=%s\nTES=%s\nRETRY=%s\n' "$BASE_SHA" "$DEPLOY_SHA" "$TS" "$TES_N_EXPECT" "$TES_ULANG_INFO" > "$HOME/release-backups/.rehearsal-penuh-ok-rencana-jadwal-mingguan-${DEPLOY_SHA}"
+  printf 'BASE=%s\nDEPLOY=%s\nTS=%s\nTES=%s\nRETRY=%s\nKEADAAN=%s\nJALUR=%s\n' "$BASE_SHA" "$DEPLOY_SHA" "$TS" "$TES_N_EXPECT" "$TES_ULANG_INFO" "$KEADAAN" "$([ "$KEADAAN" = LANJUT ] && echo lanjut+pra || echo segar)" > "$HOME/release-backups/.rehearsal-penuh-ok-rencana-jadwal-mingguan-${DEPLOY_SHA}"
   say "REHEARSAL PENUH SELESAI — production TIDAK diubah, tidak ada deploy, tidak ada jadwal/Run/pesan dibuat di production. Backup: ${BACKUP_FILE}. Log: ${BK_DIR}/release.log"
   exit 0
 fi
@@ -983,35 +1099,47 @@ NEW_IMG_ID="$(docker image inspect -f '{{.Id}}' "$IMG_NAME")"
 ok "image baru ${NEW_IMG_ID:7:12}; container aktif masih ${PREV_IMG_ID:7:12}"
 
 PHASE="5b-rehearsal"; say "5b. REHEARSAL: restore backup NYATA ke DB sementara, migrasi dengan image baru, uji perilaku, kode baru terhadap data restore, bandingkan sidik jari, hapus (DB produksi tidak disentuh)"
-rehearsal image
+rehearsal_jalur image
 
-PHASE="6-migrate"; say "6. Migrasi aditif (image baru; backend lama tetap melayani)"
+PHASE="6-migrate"; say "6. Migrasi aditif (image baru; backend lama tetap melayani) — keadaan ${KEADAAN}"
 [ "$(sg ls-remote origin "refs/heads/${CAND_BRANCH}" | cut -f1)" = "$DEPLOY_SHA" ] || die "kandidat berubah sebelum migrasi"
 [ "$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$CID_OLD")" = "$PREV_DIR" ] || die "release aktif berubah sebelum migrasi"
-psql_live -At -c "select migration_name from _prisma_migrations where finished_at is not null and rolled_back_at is null order by 1" | LC_ALL=C sort -u > "$BK_DIR/applied-sebelum2.txt" || die "gagal membaca migrasi terpasang"
+# Keadaan production diputuskan ULANG sesaat sebelum bertindak: harus sama dengan preflight (tidak ada sesi lain yang menerapkan/mengubah migrasi).
+KEADAAN2="$(keadaan_produksi "2")" || die "${KEADAAN2}"
+[ "$KEADAAN2" = "$KEADAAN" ] || die "keadaan production berubah sejak preflight (${KEADAAN} → ${KEADAAN2})"
 cmp -s "$BK_DIR/applied-sebelum.txt" "$BK_DIR/applied-sebelum2.txt" || die "daftar migrasi terpasang berubah selama persiapan (sesi lain menerapkan migrasi) — berhenti, ulangi preflight"
-for m in $MIG_LIST; do grep -Fx "$m" "$BK_DIR/applied-sebelum2.txt" >/dev/null && die "migrasi ${m} SUDAH terpasang sebelum rilis (tidak diharapkan)"; done
 SOLO_PROD="$(comm -13 <(ls -1 "$NEW_DIR/backend/prisma/migrations" | grep -E '^[0-9]{14}_' | LC_ALL=C sort) "$BK_DIR/applied-sebelum2.txt" || true)"
 [ -z "$SOLO_PROD" ] || die "produksi memiliki migrasi yang TIDAK ada di image baru: $(printf '%s' "$SOLO_PROD" | tr '\n' ' ')"
 PENDING="$(comm -23 <(ls -1 "$NEW_DIR/backend/prisma/migrations" | grep -E '^[0-9]{14}_' | LC_ALL=C sort) "$BK_DIR/applied-sebelum2.txt" || true)"
-[ "$(printf '%s\n' "$PENDING" | tr -d ' ')" = "$(printf '%s\n' $MIG_LIST | LC_ALL=C sort | tr -d ' ')" ] || die "migrasi pending bukan tepat migrasi rilis ini: $(printf '%s' "$PENDING" | tr '\n' ' ')"
+if [ "$KEADAAN" = "SEGAR" ]; then
+  [ "$(printf '%s\n' "$PENDING" | tr -d ' ')" = "$(printf '%s\n' $MIG_LIST | LC_ALL=C sort | tr -d ' ')" ] || die "migrasi pending bukan tepat migrasi rilis ini: $(printf '%s' "$PENDING" | tr '\n' ' ')"
+else
+  [ -z "$(printf '%s' "$PENDING" | tr -d ' \n')" ] || die "keadaan LANJUT: tidak boleh ada migrasi pending: $(printf '%s' "$PENDING" | tr '\n' ' ')"
+fi
 [ "$(docker inspect -f '{{.Image}}' "$CID_OLD")" = "$PREV_IMG_ID" ] || die "image container aktif berubah selama persiapan — JANGAN migrasi"
 psql_live -At -c "$FP_BEKU_SQL" | LC_ALL=C sort > "$BK_DIR/data-pra-migrasi.txt" || die "sidik jari beku pra-migrasi gagal"
 cmp -s "$BK_DIR/data-sebelum.txt" "$BK_DIR/data-pra-migrasi.txt" || { diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/data-pra-migrasi.txt" || true; die "dokumen pembanding beku BERUBAH sebelum migrasi"; }
 psql_live -At -c "$SKEMA_SQL" > "$BK_DIR/skema-prod-sebelum.txt" || die "sidik jari skema produksi sebelum gagal"
-dcp "$NEW_DIR" run --rm --no-deps -T backend npx prisma migrate deploy </dev/null || die "migrate deploy GAGAL; backend baru TIDAK dinyalakan (backend lama tetap melayani)"
+psql_live -At -c "select md5(coalesce(string_agg(migration_name||':'||checksum||':'||applied_steps_count::text, ',' order by migration_name),'')) from _prisma_migrations where migration_name in ($(printf "'%s'," $MIG_LIST | sed 's/,$//'))" > "$BK_DIR/mig-kand-prod-sebelum.txt" || die "sidik jari baris migrasi rilis gagal"
+if [ "$KEADAAN" = "SEGAR" ]; then
+  dcp "$NEW_DIR" run --rm --no-deps -T backend npx prisma migrate deploy </dev/null || die "migrate deploy GAGAL; backend baru TIDAK dinyalakan (backend lama tetap melayani)"
+else
+  # LANJUT: migrasi SUDAH terpasang dan terbukti (checksum, struktur, kosong). TIDAK menjalankan migrate deploy: hanya membaca status (tanpa penulisan).
+  dcp "$NEW_DIR" run --rm --no-deps -T backend npx prisma migrate status </dev/null 2>&1 | tee "$BK_DIR/migrate-status-lanjut.log" | grep -i 'up to date' >/dev/null || die "keadaan LANJUT: migrate status production tidak 'up to date'"
+  ! grep -qi 'have not yet been applied\|pending' "$BK_DIR/migrate-status-lanjut.log" || die "keadaan LANJUT: migrate status melaporkan migrasi pending"
+fi
 [ "$(psql_live -At -c "select count(*) from _prisma_migrations where finished_at is null and rolled_back_at is null")" = "0" ] || die "ada migrasi setengah jalan; JANGAN switch"
-[ "$(psql_live -At -c "select count(*) from _prisma_migrations where finished_at is not null and rolled_back_at is null")" = "$(( MIG_SEBELUM + 1 ))" ] || die "jumlah migrasi terpasang != sebelum + 1"
+[ "$(psql_live -At -c "select count(*) from _prisma_migrations where finished_at is not null and rolled_back_at is null")" = "$(( MIG_SEBELUM + N_MIG ))" ] || die "jumlah migrasi terpasang != baseline + ${N_MIG} ($(( MIG_SEBELUM + N_MIG )))"
 for m in $MIG_LIST; do psql_live -At -c "select finished_at is not null from _prisma_migrations where migration_name='${m}'" | grep -Fx t >/dev/null || die "${m} tidak tercatat selesai"; done
-[ "$(psql_live -At -c "select (select count(*) from production_unit_schedules) + (select count(*) from production_unit_schedule_events) + (select count(*) from unit_component_reuse_entries)")" = "0" ] || die "tabel jadwal TIDAK kosong tepat setelah migrasi"
-[ "$(psql_live -At -c "select count(*) from pg_constraint where conname in ('production_unit_schedules_unit_id_fkey','production_unit_schedules_adopted_plan_id_fkey','production_unit_schedule_events_schedule_id_fkey','production_unit_schedule_events_unit_id_fkey') and confdeltype='r' and convalidated")" = "4" ] || die "4 FK RESTRICT jadwal tidak terpasang/tervalidasi"
-[ "$(psql_live -At -c "select count(*) from pg_trigger t join pg_proc p on p.oid = t.tgfoid where t.tgname = 'production_unit_schedule_events_append_only_trg' and not t.tgisinternal and p.proname = 'production_adopsi_append_only'")" = "1" ] || die "trigger append-only riwayat jadwal tidak terpasang"
-[ "$(psql_live -At -c "$SKEMA_SQL")" = "$(cat "$BK_DIR/skema-prod-sebelum.txt")" ] || die "skema tabel lama BERUBAH oleh migrasi (jangan switch)"
-curl -fsS --max-time 8 "${INTERNAL_URL}/api/health" | grep '"ok":true' >/dev/null || die "backend lama tidak sehat setelah migrasi aditif"
-ok "1 migrasi diterapkan (${MIG_SEBELUM} → $(( MIG_SEBELUM + 1 ))); 2 tabel jadwal kosong; skema tabel lama identik; backend lama tetap sehat"
+[ "$(psql_live -At -c "select md5(coalesce(string_agg(migration_name||':'||checksum||':'||applied_steps_count::text, ',' order by migration_name),'')) from _prisma_migrations where migration_name in ($(printf "'%s'," $MIG_LIST | sed 's/,$//'))")" = "$(cat "$BK_DIR/mig-kand-prod-sebelum.txt")" ] || [ "$KEADAAN" = "SEGAR" ] || die "keadaan LANJUT: baris migrasi rilis BERUBAH (diulang/diubah)"
+struktur_baru LQ die
+[ "$(psql_live -At -c "$SKEMA_SQL")" = "$(cat "$BK_DIR/skema-prod-sebelum.txt")" ] || die "skema tabel lama BERUBAH (jangan switch)"
+curl -fsS --max-time 8 "${INTERNAL_URL}/api/health" | grep '"ok":true' >/dev/null || die "backend lama tidak sehat setelah tahap migrasi"
+if [ "$KEADAAN" = "SEGAR" ]; then ok "${N_MIG} migrasi diterapkan (${MIG_SEBELUM} → $(( MIG_SEBELUM + N_MIG ))); 3 tabel rilis kosong, struktur lengkap tervalidasi; skema tabel lama identik; backend lama tetap sehat"
+else ok "keadaan LANJUT: migrasi TIDAK diulang dan tidak ada yang dilewati — $(( MIG_SEBELUM + N_MIG )) migrasi terpasang (baris migrasi rilis identik sebelum/sesudah gerbang), 3 tabel rilis kosong, struktur lengkap tervalidasi, status up to date; backend lama tetap sehat"; fi
 psql_live -At -c "$FP_BEKU_SQL" | LC_ALL=C sort > "$BK_DIR/data-pasca-migrasi.txt" || die "sidik jari beku pasca-migrasi gagal"
-cmp -s "$BK_DIR/data-sebelum.txt" "$BK_DIR/data-pasca-migrasi.txt" || { diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/data-pasca-migrasi.txt" || true; die "dokumen pembanding beku BERUBAH oleh migrasi (jangan switch)"; }
-ok "pasca-migrasi sebelum switch: dokumen pembanding beku IDENTIK"
+cmp -s "$BK_DIR/data-sebelum.txt" "$BK_DIR/data-pasca-migrasi.txt" || { diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/data-pasca-migrasi.txt" || true; die "dokumen pembanding beku BERUBAH oleh tahap migrasi (jangan switch)"; }
+ok "pasca-tahap-migrasi sebelum switch: dokumen pembanding beku IDENTIK"
 
 PHASE="7-switch"; say "7. Switch backend ke release baru (SATU kali)"
 [ "$(sg ls-remote origin "refs/heads/${CAND_BRANCH}" | cut -f1)" = "$DEPLOY_SHA" ] || die "kandidat berubah sebelum switch"
@@ -1039,9 +1167,9 @@ NBE_EXPECT="$(printf '%s\n' "$BACKEND_SRC_EXPECT" | wc -w)"
 [ "$NBE" = "$NBE_EXPECT" ] || die "berkas backend yang diverifikasi harus tepat ${NBE_EXPECT} (${NBE})"
 ok "${NBE} berkas backend di container = kandidat (byte-identik)"
 PSQLN() { dcp "$NEW_DIR" exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" -X -At -q -c "$1" </dev/null; }
-[ "$(PSQLN "select count(*) from pg_tables where schemaname='public' and tablename in ('production_unit_schedules','production_unit_schedule_events','unit_component_reuse_entries')")" = "2" ] || die "tabel jadwal tidak ada di produksi"
+[ "$(PSQLN "select count(*) from pg_tables where schemaname='public' and tablename in ('production_unit_schedules','production_unit_schedule_events','unit_component_reuse_entries')")" = "3" ] || die "3 tabel rilis tidak ada di produksi"
 [ "$(PSQLN "select (select count(*) from production_unit_schedules) + (select count(*) from production_unit_schedule_events) + (select count(*) from unit_component_reuse_entries)")" = "0" ] || die "ada jadwal tepat setelah switch (tidak ada yang boleh membuatnya)"
-ok "objek rilis terpasang di produksi: 2 tabel jadwal (kosong)"
+ok "objek rilis terpasang di produksi: 3 tabel (jadwal, riwayat jadwal, komponen lama) — kosong"
 dcp "$NEW_DIR" run --rm --no-deps -T backend npx prisma migrate status </dev/null 2>&1 | grep -i 'up to date' >/dev/null || die "migrate status produksi tidak 'up to date'"
 ok "migrate status up to date"
 PHASE="8b-smoke"; say "8b. Smoke test baca-saja: izin, penolakan sebelum menyentuh data, daftar tiga status, panel unit nyata, katalog per kelompok, ekspor xlsx, pagar tulis; tidak ada tulisan"

@@ -29,7 +29,7 @@ const tpl = baca("scripts/templates/release-rencana-jadwal-mingguan.sh.tpl");
 const TES = ["tests/integration/rencanaAdminJadwal.integration.test.js", "tests/integration/rencanaExportExcel.integration.test.js"];
 const masukan = (o = {}) => ({
   tplSrc: tpl, berkasList: ["backend/prisma/schema.prisma", migRel, mig2Rel, mig2Rel, "backend/src/services/productionRencanaJadwalService.js", "frontend/src/features/production/rencana/JadwalModal.jsx"], migs,
-  schemaDiffSha: "a".repeat(64), scanJs: baca("scripts/lib/scan-migrasi-rencana-jadwal-mingguan.mjs"), scanExpect: '{"total":12}', liveMigTerakhir: "20261223090000_unit_workshop_receipts",
+  migNKandidat: semuaMig.filter((n) => /^\d{14}_/.test(n)).length, schemaDiffSha: "a".repeat(64), scanJs: baca("scripts/lib/scan-migrasi-rencana-jadwal-mingguan.mjs"), scanExpect: '{"total":12}', liveMigTerakhir: "20261223090000_unit_workshop_receipts",
   liveAncestors: ["1".repeat(40), "2".repeat(40)], rehNode: baca("scripts/lib/rehearsal-kode-rencana-jadwal-mingguan.mjs"), smokeNode: baca("scripts/lib/smoke-rencana-jadwal-mingguan.mjs"), tesFiles: TES, ...o,
 });
 const { script, ringkasan } = bangkitkan(masukan());
@@ -112,10 +112,10 @@ test("pemindai DDL: migrasi nyata lolos dengan hitungan yang tertanam; semua mut
 
 test("skrip rilis: gerbang sumber — ancestry live, pin migrasi, pin diff schema, tepat 1 pending, terpasang ⊆ kandidat, berkas pelindung, prasyarat fungsi append-only live", () => {
   for (const s of ['sg merge-base --is-ancestor "$BASE_SHA" "$DEPLOY_SHA"', 'sg merge-base --is-ancestor "$MAIN_SHA" "$DEPLOY_SHA"', 'for A in $LIVE_ANCESTORS', 'die "isi migrasi ${n} BERBEDA dari yang diaudit',
-    "SCHEMA_DIFF_SHA", "migrasi pending terhadap live saat ini bukan TEPAT migrasi rilis ini", "produksi memiliki migrasi yang TIDAK ada di kandidat", "produksi memiliki migrasi LEBIH BARU dari",
+    "SCHEMA_DIFF_SHA", "keadaan production tidak dikenal", "production memiliki migrasi yang TIDAK ada di kandidat", "BUKAN tepat himpunan baseline", "migrasi pending bukan tepat migrasi rilis ini",
     "ada migrasi baseline yang DIUBAH/DIHAPUS", "frontend/dist — dist dibangun saat rilis", "uji negatif pemindai", "for f in $GUARD_UNCHANGED"]) assert.ok(script.includes(s), s);
   assert.ok(script.includes(`pg_proc where proname = 'production_adopsi_append_only'")" = "1"`), "fungsi append-only WAJIB sudah ada di produksi (migrasi memakainya, tidak membuatnya)");
-  assert.ok(script.includes("tabel jadwal Admin / komponen lama SUDAH ada di produksi"));
+  assert.ok(script.includes("keadaan production: LANJUT — rilis sebelumnya terhenti SESUDAH migrasi") && script.includes("keadaan production: SEGAR"));
   assert.match(script, /backend\/src\/services\/opnameSesi\.js.*backend\/src\/services\/pergerakanSesiHitung\.js/, "berkas Opname live dijaga identik");
   assert.match(script, /^LIVE_ANCESTORS="1{40} 2{40}"$/m); assert.match(script, /^LIVE_MIG_TERAKHIR="20261223090000_unit_workshop_receipts"$/m);
   assert.match(script, /^GUARD_UNCHANGED=".*backend\/src\/services\/inventoryLedger\.js.*backend\/src\/services\/statusUnitLintasWorkspace\.js.*"$/m);
@@ -130,7 +130,7 @@ test("rehearsal: restore bersih, identik dengan produksi (17 kelompok), struktur
   assert.equal((script.match(/TIDAK_DITOLAK_/g) ?? []).length, 32, "32 penolakan (14 jadwal + 18 komponen lama)");
   assert.equal((script.match(/lolos := lolos \+ 1/g) ?? []).length, 12, "12 operasi sah (6 jadwal + 6 komponen lama)");
   assert.ok(script.includes('[ "$UJI_TOLAK" = "32" ]') && script.includes('[ "$UJI_LOLOS" = "12" ]'), "hitungan yang diharapkan sama dengan isi blok uji");
-  const iGit = script.indexOf("rehearsal git"), iImg = script.lastIndexOf("\nrehearsal image\n"), iMig = script.indexOf('PHASE="6-migrate"'), iSw = script.indexOf('PHASE="7-switch"'), iSmoke = script.indexOf('PHASE="8b-smoke"');
+  const iGit = script.indexOf("rehearsal_jalur git"), iImg = script.lastIndexOf("\nrehearsal_jalur image\n"), iMig = script.indexOf('PHASE="6-migrate"'), iSw = script.indexOf('PHASE="7-switch"'), iSmoke = script.indexOf('PHASE="8b-smoke"');
   assert.ok(iGit > 0 && iImg > 0 && iMig > iImg && iSw > iMig && iSmoke > iSw, "urutan: rehearsal → migrate → switch → smoke");
   assert.ok(script.indexOf('PHASE="5-build-image"') < iImg, "rehearsal image memakai image baru");
   assert.ok(script.indexOf('if [ "$REHEARSAL_ONLY" = "1" ]') > script.indexOf('PHASE="3-backup"') && script.indexOf('if [ "$REHEARSAL_ONLY" = "1" ]') < script.indexOf('PHASE="4-release-dir"'), "--rehearsal-only: sesudah backup, sebelum release dir/build/migrasi");
@@ -240,4 +240,57 @@ test("urutan migrasi: bernama SESUDAH migrasi live terbaru; baseline terbaru dip
   assert.ok(migName > "20261223090000_unit_workshop_receipts", "migrasi jadwal bernama setelah migrasi penerimaan live");
   for (const s of ['[ "$MIG_BASE_MAX" = "$LIVE_MIG_TERAKHIR" ] || die', "TIDAK tercantum di MIG_URUT_LAMA_OK", "bernama lebih LAMA dari ${MIG_BASE_MAX}; urutan tidak-berurutan sudah diaudit aman", "sudah ada di baseline"]) assert.ok(script.includes(s), s);
   assert.match(bangkitkan(masukan({ liveMigTerakhir: "20261230090000_lebih_baru" })).script, new RegExp(`^MIG_URUT_LAMA_OK="${migName} ${mig2Name}"$`, "m"));
+});
+
+// ───────────── KEADAAN production: SEGAR (263) vs LANJUT (265, rilis terhenti sesudah migrasi) ─────────────
+import os from "node:os";
+const klasifikasi = (() => {
+  const m = script.match(/# <<TENTUKAN_KEADAAN\n([\s\S]*?)\n# TENTUKAN_KEADAAN>>/); assert.ok(m, "fungsi tentukan_keadaan ada di skrip");
+  return m[1];
+})();
+function jalankanKeadaan({ ntab, nisi, applied, cand, base, kand, csok }) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "keadaan-")); const tulis = (n, a) => { const p = path.join(dir, n); fs.writeFileSync(p, a.length ? a.slice().sort().join("\n") + "\n" : ""); return p.replace(/\\/g, "/"); };
+  const A = tulis("a", applied), C = tulis("c", cand), B = tulis("b", base);
+  const r = spawnSync("bash", ["-c", klasifikasi + '\ntentukan_keadaan "$1" "$2" "$3" "$4" "$5" "$6" "$7"', "x", String(ntab), String(nisi), A, C, B, kand.join(" "), String(csok)], { encoding: "utf8" });
+  fs.rmSync(dir, { recursive: true, force: true }); return { kode: r.status, out: r.stdout.trim() };
+}
+const BASE = ["20261101_a", "20261102_b", "20261223090000_unit_workshop_receipts"]; const KAND = [migName, mig2Name]; const CAND = [...BASE, ...KAND];
+test("keadaan: SEGAR — baseline tepat, tanpa tabel rilis, pending tepat migrasi rilis", { skip: !punyaBash }, () => {
+  assert.deepEqual(jalankanKeadaan({ ntab: 0, nisi: 0, applied: BASE, cand: CAND, base: BASE, kand: KAND, csok: 0 }), { kode: 0, out: "SEGAR" });
+});
+test("keadaan: LANJUT — 265 terpasang (baseline + dua migrasi rilis ber-checksum sesuai), tiga tabel kosong", { skip: !punyaBash }, () => {
+  assert.deepEqual(jalankanKeadaan({ ntab: 3, nisi: 0, applied: CAND, cand: CAND, base: BASE, kand: KAND, csok: 2 }), { kode: 0, out: "LANJUT" });
+});
+test("keadaan: SEMUA selisih = TOLAK (berhenti): sebagian migrasi rilis, sebagian tabel, checksum salah, tabel berisi, migrasi asing, baseline berubah, pending tersisa", { skip: !punyaBash }, () => {
+  const tolak = (o, pola) => { const r = jalankanKeadaan(o); assert.equal(r.kode, 1, JSON.stringify(o)); assert.match(r.out, /^TOLAK: /); assert.match(r.out, pola); };
+  tolak({ ntab: 3, nisi: 0, applied: [...BASE, KAND[0]], cand: CAND, base: BASE, kand: KAND, csok: 1 }, /campuran/); // hanya satu migrasi rilis terpasang
+  tolak({ ntab: 2, nisi: 0, applied: CAND, cand: CAND, base: BASE, kand: KAND, csok: 2 }, /campuran/); // tabel parsial
+  tolak({ ntab: 1, nisi: 0, applied: BASE, cand: CAND, base: BASE, kand: KAND, csok: 0 }, /campuran/); // tabel ada tanpa migrasi tercatat
+  tolak({ ntab: 0, nisi: 0, applied: CAND, cand: CAND, base: BASE, kand: KAND, csok: 2 }, /campuran/); // migrasi tercatat tanpa tabel
+  tolak({ ntab: 3, nisi: 0, applied: CAND, cand: CAND, base: BASE, kand: KAND, csok: 1 }, /checksum/); // checksum/status satu migrasi tidak cocok
+  tolak({ ntab: 3, nisi: 0, applied: CAND, cand: CAND, base: BASE, kand: KAND, csok: 0 }, /checksum/);
+  tolak({ ntab: 3, nisi: 1, applied: CAND, cand: CAND, base: BASE, kand: KAND, csok: 2 }, /TIDAK kosong/); // sudah ada data
+  tolak({ ntab: 3, nisi: 7, applied: CAND, cand: CAND, base: BASE, kand: KAND, csok: 2 }, /TIDAK kosong/);
+  tolak({ ntab: 3, nisi: 0, applied: [...CAND, "20261230_asing"], cand: CAND, base: BASE, kand: KAND, csok: 2 }, /TIDAK ada di kandidat/); // migrasi asing di production
+  tolak({ ntab: 0, nisi: 0, applied: [...BASE, "20261230_asing"], cand: CAND, base: BASE, kand: KAND, csok: 0 }, /TIDAK ada di kandidat/);
+  tolak({ ntab: 0, nisi: 0, applied: BASE.slice(1), cand: CAND, base: BASE, kand: KAND, csok: 0 }, /baseline/); // baseline kekurangan satu
+  tolak({ ntab: 3, nisi: 0, applied: [...CAND.filter((x) => x !== BASE[0])], cand: CAND, base: BASE, kand: KAND, csok: 2 }, /baseline/);
+  tolak({ ntab: 0, nisi: 0, applied: BASE, cand: [...CAND, "20261231_baru"], base: BASE, kand: KAND, csok: 0 }, /pending bukan tepat/); // ada migrasi pending lain
+  tolak({ ntab: 3, nisi: 0, applied: CAND, cand: [...CAND, "20261231_baru"], base: BASE, kand: KAND, csok: 2 }, /pending/);
+});
+test("skrip: gerbang LANJUT/SEGAR terpasang di preflight, diputuskan ULANG sebelum migrasi, hitungan migrasi = baseline + N (bukan +1), migrate deploy TIDAK dijalankan pada LANJUT", () => {
+  assert.match(script, /^MIG_N_KANDIDAT="\d+"$/m);
+  assert.ok(!script.includes("sebelum + 1") && !/MIG_SEBELUM \+ 1\b/.test(script), "tidak ada hitungan +1 yang tertinggal");
+  for (const k of ['KEADAAN_TEKS="$(keadaan_produksi "")"', 'KEADAAN2="$(keadaan_produksi "2")"', "keadaan production berubah sejak preflight", "$(( MIG_SEBELUM + N_MIG ))", "keadaan LANJUT: migrasi TIDAK diulang dan tidak ada yang dilewati", "struktur_baru LQ die", "npx prisma migrate status", "npx prisma migrate deploy", "jumlah migrasi pohon kandidat"]) assert.ok(script.includes(k), k);
+  const p6 = script.slice(script.indexOf('PHASE="6-migrate"'), script.indexOf('PHASE="7-switch"'));
+  assert.match(p6, /if \[ "\$KEADAAN" = "SEGAR" \]; then\n  dcp "\$NEW_DIR" run --rm --no-deps -T backend npx prisma migrate deploy[^\n]*\nelse\n[^\n]*\n[^\n]*migrate status/, "migrate deploy hanya pada SEGAR; LANJUT hanya migrate status (baca-saja)");
+  assert.ok(script.includes('[ "$MIG_TERPASANG" = "$MIG_N_KANDIDAT" ]') && script.includes("migrasi TIDAK akan diulang"), "LANJUT menuntut tepat 265 terpasang");
+  assert.ok(script.includes('= "3" ] || die "3 tabel rilis tidak ada di produksi"'), "verifikasi pasca-switch menuntut 3 tabel (bukan 2)");
+});
+test("rehearsal: tiga jalur (segar | lanjut | pra); LANJUT wajib kedua jalur + backup pra terverifikasi (sha256); bukti memuat KEADAAN + JALUR dan dicek saat rilis", () => {
+  for (const k of ["rehearsal_jalur()", 'rehearsal "$1" lanjut', 'rehearsal "$1" pra', 'rehearsal "$1" segar', "JALUR PRA: backup NYATA sebelum rilis", "'No pending migrations'", "keadaan LANJUT: migrate deploy MENERAPKAN sesuatu", "checksum migrasi ${n} di restore BERBEDA dari berkas kandidat",
+    "--backup-pra", "--sha-pra", "sha256 backup pra-rilis TIDAK sama dengan --sha-pra", "backup pra-rilis tidak boleh backup yang baru diambil", 'KEADAAN=%s\\nJALUR=%s', 'grep -qx "JALUR=lanjut+pra"', 'grep -qx "KEADAAN=${KEADAAN}"', "baris migrasi rilis BERUBAH (migrasi diulang/diubah) pada keadaan LANJUT"]) assert.ok(script.includes(k), k);
+  assert.ok(script.includes('if [ "$REHEARSAL_PENUH" = "1" ] && [ "$sken" != "lanjut" ]; then rehearsal_penuh_lanjutan; fi'), "skenario+tes integrasi berjalan pada jalur segar/pra (jalur lanjut = proses restore + gerbang)");
+  assert.ok(script.includes("local TAMBAH_TABEL=3; [ \"$sken\" = \"lanjut\" ] && TAMBAH_TABEL=0"), "jalur lanjut: tidak ada tabel yang ditambah");
+  assert.match(script, /struktur_baru RPSQL gagal_reh/); assert.match(script, /struktur_baru LQ die/);
 });

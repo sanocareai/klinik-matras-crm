@@ -53,7 +53,7 @@ const esc = (f) => f.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const bashDq = (s) => `"${s.replace(/(["\\$`])/g, "\\$1")}"`;
 
 /** Murni: dari masukan → { script, ringkasan }. Tidak menyentuh git/disk. */
-function bangkitkan({ tplSrc, berkasList, migs, schemaDiffSha, scanJs, scanExpect, liveMigTerakhir, liveAncestors, rehNode, smokeNode, tesFiles = [] }) {
+function bangkitkan({ tplSrc, berkasList, migs, migNKandidat, schemaDiffSha, scanJs, scanExpect, liveMigTerakhir, liveAncestors, rehNode, smokeNode, tesFiles = [] }) {
   let s = lf(tplSrc);
   const isi = (k, v) => { must(s.includes(k), "placeholder " + k); s = s.split(k).join(v); };
   must(Array.isArray(migs) && migs.length >= 1, "daftar migrasi kosong");
@@ -70,6 +70,8 @@ function bangkitkan({ tplSrc, berkasList, migs, schemaDiffSha, scanJs, scanExpec
   const tplSha = sha(lf(tplSrc));
   isi("@@TEMPLATE_SHA@@", tplSha.slice(0, 12) + "…");
   isi("@@CAND_BRANCH@@", CAND_BRANCH);
+  must(Number.isInteger(migNKandidat) && migNKandidat >= migs.length, "jumlah migrasi pohon kandidat tidak valid");
+  isi("@@MIG_N_KANDIDAT@@", String(migNKandidat));
   isi("@@MIGS@@", migs.map((m) => `${m.name}:${sha(lf(m.sql))}`).join(" "));
   isi("@@MIG_OOO@@", migs.filter((m) => m.name < liveMigTerakhir).map((m) => m.name).join(" "));
   isi("@@SCAN_EXPECT@@", scanExpect);
@@ -123,7 +125,7 @@ function main() {
   const bersih = migs.map((m) => lf(m.sql).split("\n").filter((l) => !/^\s*--/.test(l) && l.trim() !== "").join("\n")).join("\n");
   const scanExpect = execFileSync(process.execPath, ["--input-type=module", "-e", scanJs.replace(/fs\.readFileSync\(0, "utf8"\)/, "process.env.SQL_UJI")], { cwd: REPO, encoding: "utf8", env: { ...process.env, SQL_UJI: bersih } }).trim();
   const hasil = bangkitkan({
-    tplSrc: fs.readFileSync(path.join(REPO, TPL), "utf8"), berkasList: list, migs, schemaDiffSha: schemaDiffSha(ref), scanJs, scanExpect, liveMigTerakhir: liveMig, liveAncestors,
+    tplSrc: fs.readFileSync(path.join(REPO, TPL), "utf8"), berkasList: list, migs, migNKandidat: gitLines(["ls-tree", "--name-only", "HEAD", "backend/prisma/migrations/"]).map((x) => x.replace(/.*\//, "")).filter((n) => /^\d{14}_/.test(n)).length, schemaDiffSha: schemaDiffSha(ref), scanJs, scanExpect, liveMigTerakhir: liveMig, liveAncestors,
     rehNode: fs.readFileSync(path.join(REPO, LIB_REH), "utf8"), smokeNode: fs.readFileSync(path.join(REPO, LIB_SMOKE), "utf8"),
     tesFiles: tesFilesDari(),
   });
