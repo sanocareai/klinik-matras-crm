@@ -8,8 +8,16 @@ export const SUMBER = Object.freeze({
   BARU: { key: "BARU", label: "Bahan baru dari Gudang", ringkas: "Mengurangi stok saat dikonfirmasi", dampak: "Mengurangi stok tepat sekali lewat Material Issue/pergerakan stok resmi." },
   LAMA: { key: "LAMA", label: "Komponen lama dari unit ini", ringkas: "Tidak memengaruhi stok", dampak: "Milik pelanggan: tidak membuat Material Issue, penerimaan Gudang, pergerakan stok, reservasi, atau biaya bahan baru." },
 });
-export const JUDUL_AKTUAL = "Pemakaian aktual (mengurangi stok saat dikonfirmasi)";
+export const JUDUL_AKTUAL = "Pemakaian aktual";
 export const JUDUL_RENCANA = "Rencana (opsional, belum mengurangi stok)";
+export const KELOMPOK_USULAN = Object.freeze([
+  { kode: "BUSA", label: "Busa" }, { kode: "KAIN", label: "Kain" }, { kode: "BENANG", label: "Benang" }, { kode: "PEGAS", label: "Pegas" },
+  { kode: "KAYU", label: "Kayu" }, { kode: "LEM_KIMIA", label: "Lem/Kimia" }, { kode: "AKSESORI", label: "Aksesori" }, { kode: "LAINNYA", label: "Lainnya" },
+]);
+export const ASAL_UMUM = Object.freeze(["Sisa bahan di meja produksi", "Dibeli sendiri / dari luar", "Pinjam dari tempat lain", "Milik pelanggan", "Belum diketahui"]);
+export const SUMBER_SEMENTARA = Object.freeze({ key: "SEMENTARA", label: "Pemakaian sementara", ringkas: "Perlu rekonsiliasi Gudang", dampak: "Fakta pemakaian bahan yang belum punya sumber stok resmi. BUKAN Material Issue: saldo, biaya bahan, dan jurnal tidak berubah sampai Gudang menyelesaikannya." });
+export const CATATAN_SEMENTARA = "Hanya mencatat fakta. Stok tidak berkurang, tidak ada biaya atau jurnal, dan bukan Material Issue. Gudang menyelesaikan sumber stoknya lewat jalur resmi.";
+export const DAMPAK_SEMENTARA = "Tetap dihitung sebagai bukti “Sudah dikerjakan” (sumber: Pemakaian sementara — perlu rekonsiliasi Gudang) dan muncul di Ringkasan, Riwayat, dan Excel (sheet Pemakaian Sementara). Bukan selesai QC.";
 export const asalKomponen = (kodeUnit) => `Dari kasur pelanggan — ${kodeUnit || "—"}`;
 
 export const HASIL_KOMPONEN = Object.freeze([
@@ -26,7 +34,8 @@ export function keadaanSaldo(b, qtyTeks) {
   if (b?.saldoDiketahui === false || b?.tersedia === null || b?.tersedia === undefined) return { status: "tidak_diketahui", nada: "orange", teks: "Stok belum diketahui. Pencatatan akan ditolak Gudang bila saldo tidak mencukupi; minta Gudang mencatat stok awal/opname lebih dulu.", blok: false };
   const tersedia = Number(b.tersedia);
   if (v !== null && v > tersedia + 0.00005) return { status: "kurang", nada: "red", teks: `Saldo Gudang ${formatJumlah(tersedia)} ${b.satuan || ""}, kurang ${formatJumlah(v - tersedia)}. Kurangi jumlah, atau minta Gudang menambah stok.`, blok: true, kurang: v - tersedia };
-  return { status: "cukup", nada: "green", teks: `Saldo Gudang ${formatJumlah(tersedia)} ${b.satuan || ""}`.trim(), blok: false };
+  const sisa = v !== null && v > 0 ? Math.round((tersedia - v) * 10000) / 10000 : null;
+  return { status: "cukup", nada: "green", teks: `Saldo Gudang ${formatJumlah(tersedia)} ${b.satuan || ""}`.trim(), sisaTeks: sisa !== null ? `Sisa setelah dicatat: ${formatJumlah(sisa)} ${b.satuan || ""}`.trim() : null, blok: false };
 }
 
 /** Baris isian aktual dari baris katalog. */
@@ -84,6 +93,14 @@ export function peringatanBahan(data) {
 }
 
 /** Cuplikan Bahan: dua sumber TERPISAH. */
+/** Ringkasan pemakaian SEMENTARA (bahan belum di katalog): terpisah dari bahan baru dan komponen lama; tidak pernah dijumlahkan. */
+export function ringkasSementara(data) {
+  const s = data?.pemakaianSementara ?? null; const items = s?.items ?? [];
+  const perlu = items.filter((i) => i.status === "PERLU_REKONSILIASI");
+  return { ada: items.length > 0, perlu: perlu.length, direkonsiliasi: items.filter((i) => i.status === "DIREKONSILIASI").length, dibatalkan: items.filter((i) => i.status === "DIBATALKAN").length, terakhir: perlu[0] ?? null };
+}
+
+/** Cuplikan Bahan: dua sumber TERPISAH (+ pemakaian sementara bila ada). */
 export function ringkasBahan(data) {
   const plan = data?.rencanaBahan?.plan ?? null; const aktual = data?.pemakaianAktual?.baris ?? []; const kl = data?.komponenLama ?? null;
   const terakhir = aktual[0] ?? null;
@@ -91,8 +108,9 @@ export function ringkasBahan(data) {
     rencana: plan ? { jumlahItem: plan.lines.length, revisi: plan.revision } : null,
     baru: { jumlahCatatan: aktual.length, jumlahBahan: (data?.pemakaianAktual?.total || []).length, terakhir: terakhir ? { nama: terakhir.nama, qty: terakhir.qty, satuan: terakhir.satuan, at: terakhir.tanggal, pelaku: terakhir.pelaku } : null },
     lama: kl ? { pemakaianKembali: kl.total.pemakaianKembali.jumlahItem, dilepas: kl.total.dilepasTidakDipakai.jumlahItem, terakhirAt: kl.total.terakhirAt, dibatalkan: kl.dibatalkan.length } : { pemakaianKembali: 0, dilepas: 0, terakhirAt: null, dibatalkan: 0 },
+    sementara: ringkasSementara(data),
     peringatan: peringatanBahan(data),
-    kosong: !plan && !aktual.length && !(kl?.items?.length),
+    kosong: !plan && !aktual.length && !(kl?.items?.length) && !(data?.pemakaianSementara?.items?.length),
   };
 }
 
@@ -116,9 +134,9 @@ export function ringkasDokumentasi(dok, detail) {
 export function ringkasPekerjaan(data) {
   const ad = data?.adopsi ?? {}; const k = ad.kerja ?? {}; const p = ad.pemakaianBahan ?? {};
   const jadwal = ad.jadwal ? `${String(ad.jadwal.tanggal).slice(8)}/${String(ad.jadwal.tanggal).slice(5, 7)}${ad.jadwal.meja ? ` · ${String(ad.jadwal.meja).replace("TABLE_", "Meja ")}` : ""} (${ad.jadwal.sumber === "V2" ? "Pelaksanaan Meja" : "Rencana Admin"})` : "Belum dijadwalkan";
-  const baru = p.baruCatatan ?? 0; const lama = p.komponenLamaDipakaiKembali ?? 0;
-  const pemakaian = baru + lama === 0 ? "Belum ada pemakaian tercatat" : [baru ? `${baru} catatan bahan baru` : null, lama ? `${lama} komponen lama dipakai kembali` : null].filter(Boolean).join(" · ");
-  const sumber = k.source === "PEMAKAIAN_BAHAN" ? "Otomatis dari pemakaian bahan" : k.source === "MANUAL" ? "Dicatat manual" : k.source === "APLIKASI" ? "Dari aplikasi Produksi" : null;
+  const baru = p.baruCatatan ?? 0; const lama = p.komponenLamaDipakaiKembali ?? 0; const sem = p.sementaraPerluRekonsiliasi ?? 0;
+  const pemakaian = baru + lama + sem === 0 ? "Belum ada pemakaian tercatat" : [baru ? `${baru} catatan bahan baru` : null, lama ? `${lama} komponen lama dipakai kembali` : null, sem ? `${sem} pemakaian sementara (perlu rekonsiliasi Gudang)` : null].filter(Boolean).join(" · ");
+  const sumber = k.source === "PEMAKAIAN_BAHAN" ? "Otomatis dari pemakaian bahan" : k.source === "PEMAKAIAN_SEMENTARA" ? "Pemakaian sementara — perlu rekonsiliasi Gudang" : k.source === "MANUAL" ? "Dicatat manual" : k.source === "APLIKASI" ? "Dari aplikasi Produksi" : null;
   const qc = k.key === "MENUNGGU_QC" ? "QC: menunggu keputusan" : k.key === "DIKERJAKAN_ULANG" ? "QC: pengerjaan ulang" : "QC: belum ada hasil";
   return { jadwal, pemakaian, sumber, faktaJadwal: k.faktaJadwal ?? null, qc };
 }

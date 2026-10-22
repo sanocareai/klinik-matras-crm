@@ -34,6 +34,7 @@ const TABLES_TO_TRUNCATE = [
   "stock_adjustment_requests", "replenishment_requests",
   "materials",
   "storage_locations", "warehouses",
+  "unit_provisional_usages", "material_proposals", // UX Bahan: pemakaian sementara + usulan bahan (FK ke units/materials/stock_movements)
   "production_unit_material_plan_revisions", "production_unit_material_plans", "production_unit_work_progress", // adopsi Admin: append-only/FK ke units; dikosongkan eksplisit antar tes
   "unit_component_entries_v2", // slice 3 — catatan komponen kanonis (append-only; FK ke units): kosongkan antar berkas tes
   "v2_feature_flags", // flag/cohort V2 (tanpa FK; baris kosong = OFF): dikosongkan agar flag yang dinyalakan satu berkas tidak bocor ke berkas berikutnya pada DB yang sama

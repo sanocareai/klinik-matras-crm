@@ -14,6 +14,7 @@ import {
   ShieldCheck,
   FileCheck,
   Scissors, Tv, Truck,
+  PackagePlus,
 } from "lucide-react";
 import { LayoutGroup } from "framer-motion";
 import { api } from "../api.js";
@@ -284,6 +285,8 @@ const DIVISIONS = {
         section: "Stok", grup: true, Icon: Package,
         items: [
           { to: "/warehouse/inventory", label: "Stok & Lokasi",     Icon: Package },
+          // Usulan bahan katalog dari Produksi + pemakaian sementara yang perlu rekonsiliasi (tidak mengubah saldo; stok baru hanya lewat penerimaan/pengeluaran resmi).
+          { to: "/warehouse/usulan-bahan", label: "Usulan Bahan", Icon: PackagePlus },
           { to: "/warehouse/material-issue", label: "Pengeluaran Material", Icon: ArrowUpFromLine },
           { to: "/warehouse/transfers",      label: "Transfer Stok",     Icon: ArrowLeftRight },
           { to: "/warehouse/replenishment", label: "Restok",             Icon: TrendingUp },

@@ -5,6 +5,14 @@
 //   GET  /units/:id/material-plan     rencana bahan + revisi
 //   PUT  /units/:id/material-plan     simpan/revisi rencana (UNIT_ROUTING_WRITE) — TIDAK mengurangi stok
 //   GET  /work-orders/export.xlsx     ekspor Excel (.xlsx sungguhan) dengan filter yang sama dengan daftar
+//   GET  /material-duplicates         periksa nama/kode kembar sebelum mengusulkan bahan (UNIT_MATERIAL_WRITE | INVENTORY_READ)
+//   POST /material-proposals          usulkan bahan katalog baru (UNIT_MATERIAL_WRITE) — HANYA baris usulan, bukan stok
+//   GET  /material-proposals          antrean usulan untuk Gudang (UNIT_MATERIAL_WRITE | INVENTORY_READ)
+//   POST /material-proposals/:id/decision   Gudang menyetujui / menggabung / menolak (INVENTORY_WRITE)
+//   POST /units/:id/provisional-usages      catat pemakaian sementara (bahan belum di katalog; BUKAN Material Issue) (UNIT_MATERIAL_WRITE)
+//   GET  /provisional-usages                antrean rekonsiliasi Gudang
+//   POST /provisional-usages/:id/cancel     batalkan salah input   |  GET .../candidates  pergerakan resmi yang bisa ditautkan
+//   POST /provisional-usages/:id/reconcile  Gudang: tautkan ke pengeluaran resmi / bukan stok Gudang (INVENTORY_WRITE) — tidak menulis stok
 // Perubahan status ORDER dari Produksi memakai endpoint Sales yang SAMA (PATCH /api/orders/:id, fungsi domain ubahStatusUnitInTx) — tidak ada jalur status kedua.
 import express from "express";
 import { prisma } from "../db.js";
@@ -17,6 +25,9 @@ import { pesanServerAman } from "../lib/galatServerAman.js";
 import { listWorkOrders, perkayaBarisUnit } from "../services/productionOrderList.js";
 import { AdopsiError, ambilPemakaianAktual, ambilRencanaBahan, catatStatusKerjaManual, katalogBahan, loadAppEvidence, riwayatKerjaUnit, simpanRencanaBahan } from "../services/productionAdoptionService.js";
 import { RencanaBahanError } from "../lib/domain/productionMaterialPlan.js";
+import { BahanUsulanError } from "../lib/domain/bahanUsulan.js";
+import { ajukanBahanBaru, cekKembarBahan, daftarUsulan, putuskanUsulan } from "../services/materialProposalService.js";
+import { ambilPemakaianSementaraUnit, batalkanPemakaianSementara, catatPemakaianSementara, daftarPemakaianSementara, kandidatPergerakan, rekonsiliasiPemakaianSementara } from "../services/unitProvisionalUsageService.js";
 import { loadRiwayatUnit } from "../services/productionRiwayatService.js";
 import { buatWorkbookOrderProduksi, namaBerkasEkspor } from "../services/productionOrderExport.js";
 import { MANUAL_STATUSES, WORK_STATUS, penghalangStatusOrder, tindakanBerikutnya } from "../lib/domain/productionWorkStatus.js";
@@ -29,7 +40,7 @@ export const productionAdopsiRouter = express.Router();
 productionAdopsiRouter.use(requireAuth);
 
 function handleErr(err, res) {
-  if (err instanceof AdopsiError || err instanceof RencanaBahanError || err instanceof PenerimaanError || (Number.isInteger(err?.statusCode) && err.code)) {
+  if (err instanceof AdopsiError || err instanceof RencanaBahanError || err instanceof BahanUsulanError || err instanceof PenerimaanError || (Number.isInteger(err?.statusCode) && err.code)) {
     return res.status(err.statusCode).json({ error: err.message, code: err.code, ...(err.extra ? { detail: err.extra } : {}) });
   }
   console.error("Produksi adopsi error:", err);
@@ -42,11 +53,15 @@ const bolehUbah = (user) => ({
   target: hasPermission(user, P.UNIT_ROUTING_WRITE),
   rencanaBahan: hasPermission(user, P.UNIT_ROUTING_WRITE),
   pemakaianAktual: hasPermission(user, P.UNIT_MATERIAL_WRITE),
+  usulBahan: hasPermission(user, P.UNIT_MATERIAL_WRITE), // tombol "Bahan belum ada?" — hanya mengajukan usulan (bukan stok)
+  catatPemakaianSementara: hasPermission(user, P.UNIT_MATERIAL_WRITE),
+  putuskanUsulan: hasPermission(user, P.INVENTORY_WRITE), // Gudang: setujui/gabung/tolak usulan + rekonsiliasi pemakaian sementara
   catatPenerimaan: hasPermission(user, P.INVENTORY_WRITE) || hasPermission(user, P.UNIT_STAGE_WRITE), // penerimaan fisik di workshop (Gudang/Produksi/Admin) — bukan aktivasi Produksi V2
   koreksiLokasiPenerimaan: hasPermission(user, P.INVENTORY_WRITE) || hasPermission(user, P.UNIT_STAGE_WRITE), // lokasi salah: siapa pun yang boleh mencatat
   koreksiBelumDiterima: hasPermission(user, P.UNIT_ROUTING_WRITE), // "ternyata belum diterima fisik": Admin/Owner/Kepala Produksi saja (mata kedua atas catatan petugas)
 });
 const bolehCatatPenerimaan = requireAnyPermission(P.INVENTORY_WRITE, P.UNIT_STAGE_WRITE);
+const bolehLihatUsulan = requireAnyPermission(P.UNIT_MATERIAL_WRITE, P.INVENTORY_READ, P.INVENTORY_WRITE);
 
 productionAdopsiRouter.get("/units/:id/adopsi", requirePermission(P.UNIT_READ), wajibUuid(), async (req, res) => {
   try {
@@ -61,10 +76,10 @@ productionAdopsiRouter.get("/units/:id/adopsi", requirePermission(P.UNIT_READ), 
     if (!unit) return res.status(404).json({ error: "Unit tidak ditemukan", code: "UNIT_TIDAK_ADA" });
     const [baris] = await perkayaBarisUnit(prisma, [unit]);
     const bukti = (await loadAppEvidence(prisma, [unit.id])).get(unit.id);
-    const [riwayatKerja, rencana, aktual, run, penerimaan] = await Promise.all([
+    const [riwayatKerja, rencana, aktual, run, penerimaan, sementara] = await Promise.all([
       riwayatKerjaUnit(prisma, unit.id, bukti?.firstEvidenceAt ?? null), ambilRencanaBahan(prisma, unit.id), ambilPemakaianAktual(prisma, unit.id),
       prisma.productionRun.findFirst({ where: { unitId: unit.id }, orderBy: { createdAt: "desc" }, select: { id: true } }),
-      ambilPenerimaanWorkshop(prisma, unit.id),
+      ambilPenerimaanWorkshop(prisma, unit.id), ambilPemakaianSementaraUnit(prisma, unit.id),
     ]);
     const { penerimaan: penerimaanAktif, riwayat: riwayatPenerimaan } = penerimaan;
     const riwayatDasar = (await loadRiwayatUnit(prisma, { unit: { id: unit.id, orderId: unit.orderId }, run })).slice(-60).reverse();
@@ -77,9 +92,16 @@ productionAdopsiRouter.get("/units/:id/adopsi", requirePermission(P.UNIT_READ), 
     // dan koreksi/pembatalan tidak menghapusnya karena baris asal tetap ada.
     const pakaiBaru = aktual.baris.filter((b) => b.tipe === "ISSUE").map((b) => ({ at: b.tanggal, oleh: b.pelaku, apa: `bahan baru ${b.nama} ${b.qty} ${b.satuan}` }));
     const pakaiLama = komponenLama.riwayat.filter((e) => e.outcome === "REUSED" && ["CREATED", "CORRECTED"].includes(e.kind)).map((e) => ({ at: e.at, oleh: e.oleh, apa: `komponen lama ${e.name} ${e.qty} ${e.uom}` }));
-    const pertama = [...pakaiBaru, ...pakaiLama].sort((a, b) => new Date(a.at) - new Date(b.at))[0] ?? null;
+    // Pemakaian SEMENTARA (bahan belum di katalog): dihitung sebagai bukti pekerjaan, tetapi dengan label sumber sendiri dan selalu ditandai perlu rekonsiliasi Gudang (bukan Material Issue; tanpa saldo/biaya/jurnal).
+    const pakaiSementara = sementara.items.filter((i) => i.status !== "DIBATALKAN").map((i) => ({ at: i.usedAt, oleh: i.oleh, apa: `pemakaian sementara ${i.name} ${i.qty} ${i.uom} (perlu rekonsiliasi Gudang)` }));
+    const riwayatSementara = sementara.items.flatMap((i) => [
+      { kind: "PEMAKAIAN_SEMENTARA", sumber: "PEMAKAIAN_SEMENTARA", at: i.recordedAt, actor: i.oleh, label: `Pemakaian sementara (perlu rekonsiliasi Gudang, bukan Material Issue; saldo tidak berubah) — ${i.name} ${i.qty} ${i.uom}${i.originNote ? ` · asal: ${i.originNote}` : ""}` },
+      ...(i.status === "DIREKONSILIASI" ? [{ kind: "PEMAKAIAN_SEMENTARA", sumber: "PEMAKAIAN_SEMENTARA", at: i.diselesaikanAt, actor: i.diselesaikanOleh, label: `Pemakaian sementara ${i.name} ${i.resolusi === "TAUTKAN_ISSUE" ? "ditautkan ke pengeluaran stok resmi (tidak membuat pergerakan baru)" : `dinyatakan bukan stok Gudang${i.catatanPenyelesaian ? ` — ${i.catatanPenyelesaian}` : ""}`}` }] : []),
+      ...(i.status === "DIBATALKAN" ? [{ kind: "PEMAKAIAN_SEMENTARA", sumber: "PEMAKAIAN_SEMENTARA", at: i.dibatalkanAt, actor: i.dibatalkanOleh, label: `Pemakaian sementara ${i.name} dibatalkan (salah input) — ${i.alasanBatal}` }] : []),
+    ]);
+    const pertama = [...pakaiBaru, ...pakaiLama, ...pakaiSementara].sort((a, b) => new Date(a.at) - new Date(b.at))[0] ?? null;
     const riwayatStatusOtomatis = pertama && unit.status !== "CANCELLED" ? [{ kind: "STATUS_KERJA_OTOMATIS", sumber: "PEMAKAIAN_BAHAN", at: pertama.at, actor: pertama.oleh, label: `Status kerja administratif → Sudah dikerjakan (otomatis dari pemakaian aktual pertama: ${pertama.apa})` }] : [];
-    const riwayat = [...riwayatDasar.filter((e) => !String(e.kind).includes("PRODUCTION_KOMPONEN_LAMA_DICATAT")), ...riwayatKomponen, ...riwayatBahanBaru, ...riwayatStatusOtomatis].sort((x, y) => new Date(y.at) - new Date(x.at)).slice(0, 100);
+    const riwayat = [...riwayatDasar.filter((e) => !String(e.kind).includes("PRODUCTION_KOMPONEN_LAMA_DICATAT")), ...riwayatKomponen, ...riwayatBahanBaru, ...riwayatSementara, ...riwayatStatusOtomatis].sort((x, y) => new Date(y.at) - new Date(x.at)).slice(0, 100);
     // perbandingan rencana vs aktual per bahan (hanya bahan yang ada di salah satunya)
     const rencanaMap = new Map((rencana.plan?.lines ?? []).map((l) => [l.materialId, l]));
     const aktualMap = new Map(aktual.total.map((t) => [t.materialId, t]));
@@ -109,7 +131,7 @@ productionAdopsiRouter.get("/units/:id/adopsi", requirePermission(P.UNIT_READ), 
       },
       adopsi: { ...baris.adopsi, tindakan, orderSales, penghalang }, productionStatus: baris.productionStatus, presence: baris.presence, receivedBasisLabel: baris.receivedBasisLabel,
       kerjaManual: { riwayat: riwayatKerja, nilaiBoleh: MANUAL_STATUSES.map((k) => ({ key: k, label: WORK_STATUS[k].label })), terakhirId: riwayatKerja.length ? riwayatKerja[riwayatKerja.length - 1].id : null, dikunciAplikasi: !!bukti?.started },
-      penerimaan: penerimaanAktif, riwayatPenerimaan, rencanaBahan: rencana, pemakaianAktual: aktual, komponenLama, perbandingan, riwayat,
+      penerimaan: penerimaanAktif, riwayatPenerimaan, rencanaBahan: rencana, pemakaianAktual: aktual, pemakaianSementara: sementara, komponenLama, perbandingan, riwayat,
       izin: bolehUbah(req.user),
     });
   } catch (err) { handleErr(err, res); }
@@ -179,6 +201,41 @@ productionAdopsiRouter.put("/units/:id/material-plan", requirePermission(P.UNIT_
     const hasil = await simpanRencanaBahan(prisma, { unitId: req.params.id, lines: req.body?.lines, expectedRevision: req.body?.expectedRevision ?? 0, reason: req.body?.reason, actorId: req.user.id });
     res.status(hasil.disimpan ? 200 : 200).json({ ...hasil, rencana: await ambilRencanaBahan(prisma, req.params.id) });
   } catch (err) { handleErr(err, res); }
+});
+
+// ───────────────────────── Usulan bahan katalog & pemakaian sementara (UX Bahan) ─────────────────────────
+productionAdopsiRouter.get("/material-duplicates", bolehLihatUsulan, async (req, res) => {
+  try { res.json(await cekKembarBahan(prisma, { name: req.query.name, code: req.query.code || null })); } catch (err) { handleErr(err, res); }
+});
+productionAdopsiRouter.post("/material-proposals", requirePermission(P.UNIT_MATERIAL_WRITE), async (req, res) => {
+  try {
+    const hasil = await ajukanBahanBaru(prisma, { input: req.body, actorId: req.user.id, konfirmasiBedaDariKandidat: req.body?.konfirmasiBeda === true });
+    res.status(hasil.replayed ? 200 : 201).json(hasil);
+  } catch (err) { handleErr(err, res); }
+});
+productionAdopsiRouter.get("/material-proposals", bolehLihatUsulan, async (req, res) => {
+  try { res.json({ ...(await daftarUsulan(prisma, { status: req.query.status || null, q: req.query.q, limit: req.query.limit })), izin: { putuskan: hasPermission(req.user, P.INVENTORY_WRITE) } }); } catch (err) { handleErr(err, res); }
+});
+productionAdopsiRouter.post("/material-proposals/:id/decision", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
+  try { const hasil = await putuskanUsulan(prisma, { proposalId: req.params.id, input: req.body, actorId: req.user.id }); res.status(hasil.replayed ? 200 : 201).json(hasil); } catch (err) { handleErr(err, res); }
+});
+productionAdopsiRouter.post("/units/:id/provisional-usages", requirePermission(P.UNIT_MATERIAL_WRITE), wajibUuid(), async (req, res) => {
+  try {
+    const hasil = await catatPemakaianSementara(prisma, { unitId: req.params.id, input: req.body, actorId: req.user.id, idempotencyKey: req.get("Idempotency-Key") || null });
+    res.status(hasil.replayed ? 200 : 201).json(hasil);
+  } catch (err) { handleErr(err, res); }
+});
+productionAdopsiRouter.get("/provisional-usages", bolehLihatUsulan, async (req, res) => {
+  try { res.json({ ...(await daftarPemakaianSementara(prisma, { status: req.query.status === "SEMUA" ? null : (req.query.status || "PERLU_REKONSILIASI"), q: req.query.q, limit: req.query.limit })), izin: { rekonsiliasi: hasPermission(req.user, P.INVENTORY_WRITE) } }); } catch (err) { handleErr(err, res); }
+});
+productionAdopsiRouter.post("/provisional-usages/:id/cancel", requirePermission(P.UNIT_MATERIAL_WRITE), wajibUuid(), async (req, res) => {
+  try { const hasil = await batalkanPemakaianSementara(prisma, { usageId: req.params.id, alasan: req.body?.alasan, actorId: req.user.id, bolehSemua: hasPermission(req.user, P.INVENTORY_WRITE) }); res.status(hasil.replayed ? 200 : 201).json(hasil); } catch (err) { handleErr(err, res); }
+});
+productionAdopsiRouter.get("/provisional-usages/:id/candidates", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
+  try { res.json(await kandidatPergerakan(prisma, req.params.id)); } catch (err) { handleErr(err, res); }
+});
+productionAdopsiRouter.post("/provisional-usages/:id/reconcile", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
+  try { const hasil = await rekonsiliasiPemakaianSementara(prisma, { usageId: req.params.id, input: req.body, actorId: req.user.id }); res.status(hasil.replayed ? 200 : 201).json(hasil); } catch (err) { handleErr(err, res); }
 });
 
 productionAdopsiRouter.get("/work-orders/export.xlsx", requirePermission(P.UNIT_READ), async (req, res) => {

@@ -24,9 +24,9 @@ export const WORK_STATUS = Object.freeze({
 });
 /** Nilai yang boleh dicatat manual oleh Admin/Lead (urutan = urutan tampil). */
 export const MANUAL_STATUSES = Object.freeze(["BELUM_DIJADWALKAN", "DIJADWALKAN", "DIKERJAKAN", "TERTUNDA", "SELESAI"]);
-export const WORK_SOURCE = Object.freeze({ APLIKASI: "APLIKASI", MANUAL: "MANUAL", STATUS_ORDER: "STATUS_ORDER", JADWAL: "JADWAL", PEMAKAIAN_BAHAN: "PEMAKAIAN_BAHAN" });
+export const WORK_SOURCE = Object.freeze({ APLIKASI: "APLIKASI", MANUAL: "MANUAL", STATUS_ORDER: "STATUS_ORDER", JADWAL: "JADWAL", PEMAKAIAN_BAHAN: "PEMAKAIAN_BAHAN", PEMAKAIAN_SEMENTARA: "PEMAKAIAN_SEMENTARA" });
 export const WORK_SOURCE_LABEL = Object.freeze({
-  APLIKASI: "Dari aplikasi Produksi", MANUAL: "Dicatat manual", STATUS_ORDER: "Mengikuti status order", JADWAL: "Dari jadwal", PEMAKAIAN_BAHAN: "Otomatis dari pemakaian bahan",
+  APLIKASI: "Dari aplikasi Produksi", MANUAL: "Dicatat manual", STATUS_ORDER: "Mengikuti status order", JADWAL: "Dari jadwal", PEMAKAIAN_BAHAN: "Otomatis dari pemakaian bahan", PEMAKAIAN_SEMENTARA: "Pemakaian sementara — perlu rekonsiliasi Gudang",
 });
 
 const COMPLETE_UNIT_STATUSES = new Set(["READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD", "IN_TRANSIT_OUT", "DELIVERED"]);
@@ -50,7 +50,8 @@ const iso = (v) => (v instanceof Date ? v.toISOString() : v ? new Date(v).toISOS
  * @param {boolean} [p.appStarted] ada bukti pekerjaan aplikasi (V1 log non-SKIP / V2 operasi atau bukti non-lewati)
  * @param {boolean} [p.scheduled] rencana punya meja
  * @param {{status:string,note?:string|null,actor?:{id?:string,name?:string|null}|null,createdAt:Date|string}|null} [p.manual] catatan manual TERAKHIR
- * @param {{terakhirAt:Date|string,pertamaAt?:Date|string|null}|null} [p.pemakaian] pemakaian aktual yang BERHASIL tercatat: bahan baru (pergerakan ISSUE bertaut unit, termasuk lewat dokumen Gudang) atau komponen lama berhasil 'dipakai kembali'.
+ * @param {{terakhirAt:Date|string,pertamaAt?:Date|string|null,hanyaSementara?:boolean}|null} [p.pemakaian] pemakaian aktual yang BERHASIL tercatat: bahan baru (pergerakan ISSUE bertaut unit, termasuk lewat dokumen Gudang) atau komponen lama berhasil 'dipakai kembali'.
+ *   hanyaSementara=true bila SATU-SATUNYA bukti pemakaian adalah catatan pemakaian sementara yang belum direkonsiliasi (bahan belum di katalog; BUKAN Material Issue) — tetap 'Sudah dikerjakan' tetapi bersumber 'Pemakaian sementara'.
  *   Rencana bahan, jadwal, dan komponen lama yang dikembalikan/disimpan/dibuang TIDAK dihitung. Koreksi/pengembalian/pembatalan TIDAK menghapusnya (baris asal tetap ada) — fakta historis 'pekerjaan pernah dilakukan' tidak hilang.
  * @param {boolean} [p.punyaJadwal] ada jadwal (Rencana Admin atau rencana Meja) — hanya untuk fakta 'Dikerjakan tanpa jadwal'; TIDAK mengubah status (tidak ada jadwal fiktif)
  * @returns {{key,label,tone,source,sourceLabel,detail,manual:null|{status,by,at,note}}}
@@ -70,6 +71,7 @@ export function effectiveWorkStatus({ unitStatus, productionStatus = null, appSt
   // SELESAI manual tidak diturunkan; DIKERJAKAN manual tetap atas nama pencatatnya (sumber Manual). Pemakaian BARU sesudah catatan manual (mis. Tertunda) menjadikan unit "Sudah dikerjakan" lagi.
   const manualMs = manual ? new Date(manual.createdAt).getTime() : null; const pakaiMs = pemakaian?.terakhirAt ? new Date(pemakaian.terakhirAt).getTime() : null;
   if (pakaiMs !== null && !Number.isNaN(pakaiMs) && !(manual && (manual.status === "SELESAI" || manual.status === "DIKERJAKAN")) && !(manualMs !== null && manual.status !== "BELUM_DIJADWALKAN" && manualMs >= pakaiMs)) {
+    if (pemakaian.hanyaSementara) return out("DIKERJAKAN", WORK_SOURCE.PEMAKAIAN_SEMENTARA, `Pemakaian sementara tercatat${pemakaian.pertamaAt ? ` sejak ${waktuWibText(pemakaian.pertamaAt)}` : ""} (bahan belum di katalog; bukan Material Issue, saldo belum berubah) — perlu rekonsiliasi Gudang; belum berarti selesai QC, siap serah Gudang, atau siap kirim`);
     return out("DIKERJAKAN", WORK_SOURCE.PEMAKAIAN_BAHAN, `Pemakaian bahan aktual tercatat${pemakaian.pertamaAt ? ` sejak ${waktuWibText(pemakaian.pertamaAt)}` : ""}; belum berarti selesai QC, siap serah Gudang, atau siap kirim`);
   }
   if (manual && manual.status !== "BELUM_DIJADWALKAN" && MANUAL_STATUSES.includes(manual.status)) {

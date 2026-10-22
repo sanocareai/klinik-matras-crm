@@ -47,13 +47,14 @@ export async function buatWorkbookOrderProduksi(prisma, { rows, unitIds, filter 
   const ids = unitIds?.length ? unitIds : rows.map((r) => r.id);
 
   // ── data tambahan (batch)
-  const [rencana, pergerakan, komponenRows] = await Promise.all([
+  const [rencana, pergerakan, komponenRows, sementaraRows] = await Promise.all([
     ids.length ? prisma.productionUnitMaterialPlan.findMany({ where: { unitId: { in: ids } } }) : [],
     ids.length ? prisma.stockMovement.findMany({
       where: { unitId: { in: ids }, type: { in: ["ISSUE", "RETURN", "WASTE"] } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       select: { id: true, unitId: true, type: true, qty: true, note: true, reason: true, createdAt: true, material: { select: { id: true, code: true, name: true, unit: true } }, createdBy: { select: { name: true } }, materialIssue: { select: { issueNumber: true } } },
     }) : [],
     ids.length ? prisma.unitComponentReuseEntry.findMany({ where: { unitId: { in: ids } }, orderBy: [{ createdAt: "asc" }, { version: "asc" }] }) : [],
+    ids.length ? prisma.unitProvisionalUsage.findMany({ where: { unitId: { in: ids } }, orderBy: [{ recordedAt: "asc" }, { id: "asc" }] }) : [],
   ]);
   const matIds = [...new Set(rencana.flatMap((p) => p.lines.map((l) => l.materialId)))];
   const bahan = matIds.length ? new Map((await prisma.material.findMany({ where: { id: { in: matIds } }, select: { id: true, code: true, name: true, unit: true, itemGroup: true } })).map((m) => [m.id, m])) : new Map();
@@ -70,7 +71,7 @@ export async function buatWorkbookOrderProduksi(prisma, { rows, unitIds, filter 
     posisi: u.adopsi.posisi?.label, nadaPosisi: u.adopsi.posisi?.tone, posisiDetail: u.adopsi.posisi?.detail,
     kerja: u.adopsi.kerja?.label, nadaKerja: u.adopsi.kerja?.tone, sumberKerja: u.adopsi.kerja?.sourceLabel,
     jadwal: u.adopsi.jadwal ? `${u.adopsi.jadwal.tanggal}${u.adopsi.jadwal.meja ? ` · ${String(u.adopsi.jadwal.meja).replace("TABLE_", "Meja ")}` : ""} (${u.adopsi.jadwal.sumber === "V2" ? "Pelaksanaan Meja" : "Rencana Admin"})` : "Belum dijadwalkan", faktaJadwal: u.adopsi.kerja?.faktaJadwal ?? null,
-    pemakaianBaru: u.adopsi.pemakaianBahan?.baruCatatan ?? 0, pemakaianLama: u.adopsi.pemakaianBahan?.komponenLamaDipakaiKembali ?? 0,
+    pemakaianBaru: u.adopsi.pemakaianBahan?.baruCatatan ?? 0, pemakaianLama: u.adopsi.pemakaianBahan?.komponenLamaDipakaiKembali ?? 0, pemakaianSementara: u.adopsi.pemakaianBahan?.sementaraPerluRekonsiliasi ?? 0,
     qc: ({ WAITING_QC: "Menunggu QC", REWORK: "Dikerjakan ulang (hasil QC: tidak lulus)", COMPLETED: "Tahap selesai (lihat hasil QC di Unit 360)" })[u.productionStatus] ?? "Belum ada catatan QC",
     tindakan: u.adopsi.tindakan?.label, aktor: u.adopsi.tindakan?.aktor, prioritas: u.priorityDisplay?.label, bahanRencana: jumlahBahanPerUnit.get(u.id) ?? 0, aktualAda: u.adopsi.aktualBahanAda ? "Ya" : "Belum", diperbarui: u.updatedAt,
   }));
@@ -79,7 +80,7 @@ export async function buatWorkbookOrderProduksi(prisma, { rows, unitIds, filter 
     { key: "layanan", header: "Layanan (Sales)", lebar: 42, bungkus: true }, { key: "target", header: "Target Selesai", tipe: "tanggal", lebar: 15 }, { key: "pic", header: "PIC", lebar: 20 }, { key: "meja", header: "Meja", lebar: 12 },
     { key: "statusOrder", header: "Status Order", lebar: 16, nada: "nadaOrder" }, { key: "posisi", header: "Posisi Unit", lebar: 38, nada: "nadaPosisi" }, { key: "posisiDetail", header: "Dasar Posisi Unit", lebar: 44, bungkus: true },
     { key: "kerja", header: "Status Kerja (Administratif)", lebar: 22, nada: "nadaKerja" }, { key: "sumberKerja", header: "Sumber Status Kerja", lebar: 28 }, { key: "jadwal", header: "Jadwal Produksi", lebar: 34 }, { key: "faktaJadwal", header: "Fakta Jadwal", lebar: 24 },
-    { key: "pemakaianBaru", header: "Pemakaian Bahan Baru (jumlah catatan)", tipe: "angka", lebar: 18 }, { key: "pemakaianLama", header: "Komponen Lama Dipakai Kembali (jumlah)", tipe: "angka", lebar: 20 }, { key: "qc", header: "Status QC (aplikasi)", lebar: 34 },
+    { key: "pemakaianBaru", header: "Pemakaian Bahan Baru (jumlah catatan)", tipe: "angka", lebar: 18 }, { key: "pemakaianLama", header: "Komponen Lama Dipakai Kembali (jumlah)", tipe: "angka", lebar: 20 }, { key: "pemakaianSementara", header: "Pemakaian Sementara — Perlu Rekonsiliasi Gudang (jumlah)", tipe: "angka", lebar: 24 }, { key: "qc", header: "Status QC (aplikasi)", lebar: 34 },
     { key: "tindakan", header: "Tindakan Berikutnya", lebar: 40, bungkus: true }, { key: "aktor", header: "Pelaku Tindakan", lebar: 16 }, { key: "prioritas", header: "Prioritas", lebar: 12 },
     { key: "bahanRencana", header: "Jumlah Bahan Direncanakan", tipe: "angka", lebar: 16 }, { key: "aktualAda", header: "Pemakaian Aktual Tercatat", lebar: 14 }, { key: "diperbarui", header: "Diperbarui (WIB)", tipe: "waktu", lebar: 18 },
   ], ringkas);
@@ -129,6 +130,21 @@ export async function buatWorkbookOrderProduksi(prisma, { rows, unitIds, filter 
     { key: "pic", header: "PIC", lebar: 20 }, { key: "tanggal", header: "Tanggal (WIB)", tipe: "waktu", lebar: 18 }, { key: "alasan", header: "Alasan Koreksi", lebar: 30, bungkus: true }, { key: "catatan", header: "Catatan", lebar: 30, bungkus: true }, { key: "foto", header: "Jumlah Foto", tipe: "angka", lebar: 12 },
   ], barisKomponen);
 
+  // ── Sheet: Pemakaian Sementara (bahan belum di katalog; BUKAN Material Issue; TIDAK mengurangi saldo): dipisah dari Pemakaian Aktual
+  const namaSem = new Map((sementaraRows.length ? await prisma.user.findMany({ where: { id: { in: [...new Set(sementaraRows.flatMap((r) => [r.recordedById, r.resolvedById, r.cancelledById].filter(Boolean)))] } }, select: { id: true, name: true } }) : []).map((u) => [u.id, u.name]));
+  const STATUS_SEM = { PERLU_REKONSILIASI: "Perlu rekonsiliasi Gudang", DIREKONSILIASI: "Sudah direkonsiliasi", DIBATALKAN: "Dibatalkan (salah input)" };
+  const RESOLUSI_SEM = { TAUTKAN_ISSUE: "Ditautkan ke pengeluaran stok resmi", TANPA_STOK: "Dinyatakan bukan stok Gudang" };
+  const barisSementara = sementaraRows.filter((r) => unitById.has(r.unitId)).map((r) => {
+    const u = unitById.get(r.unitId);
+    return { kodeUnit: u.unitCode, kodeOrder: u.order?.orderNumber, sumber: "Pemakaian sementara (bukan Material Issue)", dampakStok: "Tidak ada saldo/biaya/jurnal sampai Gudang menyelesaikan sumber stok", nama: r.name, qty: Number(r.qty), satuan: r.uom, asal: r.originNote, tanggalPakai: r.usedAt, pic: namaSem.get(r.recordedById), status: STATUS_SEM[r.status] ?? r.status, penyelesaian: r.resolution ? RESOLUSI_SEM[r.resolution] : null, diselesaikanOleh: r.resolvedById ? namaSem.get(r.resolvedById) : null, diselesaikanAt: r.resolvedAt, catatan: r.resolutionNote ?? r.note, alasanBatal: r.cancelReason };
+  });
+  sheetData(wb, "Pemakaian Sementara", [
+    { key: "kodeUnit", header: "Kode Unit", lebar: 24 }, { key: "kodeOrder", header: "Kode Order", lebar: 20 }, { key: "sumber", header: "Sumber", lebar: 34 }, { key: "dampakStok", header: "Dampak Stok", lebar: 44, bungkus: true },
+    { key: "nama", header: "Nama Bahan", lebar: 30 }, { key: "qty", header: "Jumlah", tipe: "angka", lebar: 12 }, { key: "satuan", header: "Satuan", lebar: 10 }, { key: "asal", header: "Asal Barang", lebar: 28, bungkus: true }, { key: "tanggalPakai", header: "Waktu Dipakai (WIB)", tipe: "waktu", lebar: 18 },
+    { key: "pic", header: "Dicatat Oleh", lebar: 20 }, { key: "status", header: "Status", lebar: 24 }, { key: "penyelesaian", header: "Cara Penyelesaian", lebar: 32 }, { key: "diselesaikanOleh", header: "Diselesaikan Oleh", lebar: 20 }, { key: "diselesaikanAt", header: "Diselesaikan (WIB)", tipe: "waktu", lebar: 18 },
+    { key: "catatan", header: "Catatan", lebar: 30, bungkus: true }, { key: "alasanBatal", header: "Alasan Pembatalan", lebar: 26, bungkus: true },
+  ], barisSementara);
+
   // ── Sheet 4: Info Ekspor (waktu ekspor + filter + arti kolom); tanpa sel digabung
   const s = stampWib(sekarang);
   const f = filter || {};
@@ -136,12 +152,13 @@ export async function buatWorkbookOrderProduksi(prisma, { rows, unitIds, filter 
     ["Judul", "Order Produksi — ekspor Excel"], ["Diekspor (WIB)", `${s.tanggal} ${s.jam} WIB`], ["Diekspor oleh", pengguna || "—"], ["Zona waktu", "WIB (UTC+7)"],
     ["Filter: pencarian", f.q || "Tanpa pencarian"], ["Filter: status order", (f.displayStatus || []).join(", ") || "Semua"], ["Filter: posisi/milestone", (f.globalStatus || []).join(", ") || "Semua"],
     ["Filter: status kerja", (f.statusKerja || []).join(", ") || "Semua"], ["Filter: lingkup", f.scope || "Sesuai tab yang dipilih"],
-    ["Jumlah unit (Ringkasan Unit)", rows.length], ["Jumlah baris Rencana Bahan", barisRencana.length], ["Jumlah baris Pemakaian Aktual", barisAktual.length], ["Jumlah baris Komponen Lama", barisKomponen.length],
+    ["Jumlah unit (Ringkasan Unit)", rows.length], ["Jumlah baris Rencana Bahan", barisRencana.length], ["Jumlah baris Pemakaian Aktual", barisAktual.length], ["Jumlah baris Komponen Lama", barisKomponen.length], ["Jumlah baris Pemakaian Sementara", barisSementara.length],
     ["Arti Status Order", "Status yang dilihat Sales/Delivery (Pengambilan · Diproses · Siap Kirim · Terkirim · Dibatalkan)."],
     ["Arti Posisi Unit", "Fakta fisik dari dokumen penjemputan, penerimaan workshop, dan pengiriman."],
     ["Arti Status Kerja", "Status pekerjaan Produksi: dari aplikasi bila ada bukti, jika tidak catatan manual Admin, jika tidak mengikuti jadwal."],
     ["Status kerja administratif", "Status Kerja (Administratif) = status pekerjaan menurut Produksi/Admin. \"Sudah dikerjakan\" otomatis muncul begitu ada pemakaian aktual yang berhasil tercatat (bahan baru dari Gudang atau komponen lama dipakai kembali), tanpa wajib jadwal/rencana/Run/Meja/dokumentasi/QC. Itu BUKAN selesai QC, siap serah Gudang, atau siap kirim — kolom Jadwal Produksi, Pemakaian Bahan, dan Status QC dipisah. Rencana bahan dan komponen yang dikembalikan/disimpan/dibuang tidak mengubah status kerja."],
     ["Dua sumber pemakaian", "Sheet Pemakaian Aktual = bahan baru dari Gudang (transaksi stok resmi, mengurangi stok). Sheet Komponen Lama = komponen bongkaran milik pelanggan yang dipakai kembali/dilepas: TIDAK memengaruhi stok, jurnal, atau biaya bahan baru. Total keduanya tidak dijumlahkan."],
+    ["Pemakaian sementara", "Sheet Pemakaian Sementara = fakta bahan yang sudah dipakai tetapi belum punya sumber stok resmi (bahan belum di katalog). BUKAN Material Issue: tidak mengurangi saldo, tidak ada biaya bahan, tidak ada jurnal. Tetap dihitung sebagai bukti \"Sudah dikerjakan\" dengan sumber \"Pemakaian sementara — perlu rekonsiliasi Gudang\" sampai Gudang menautkannya ke pengeluaran stok resmi atau menyatakannya bukan stok Gudang. Tidak dijumlahkan dengan Pemakaian Aktual."],
     ["Rencana vs Aktual", "Rencana Bahan TIDAK mengurangi stok. Pemakaian Aktual berisi transaksi stok resmi (Material Issue Gudang atau catat langsung)."],
   ];
   const wi = wb.addWorksheet("Info Ekspor"); wi.columns = [{ header: "Keterangan", key: "k", width: 34 }, { header: "Nilai", key: "v", width: 90 }];

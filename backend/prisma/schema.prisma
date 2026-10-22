@@ -1860,6 +1860,8 @@ model Unit {
   adminSchedule ProductionUnitSchedule?
   adminScheduleEvents ProductionUnitScheduleEvent[]
   componentReuseEntries UnitComponentReuseEntry[]
+  materialProposals MaterialProposal[]
+  provisionalUsages UnitProvisionalUsage[]
   workshopReceiptCorrections UnitWorkshopReceiptCorrection[]
 
   @@unique([orderId, seq])
@@ -5259,6 +5261,8 @@ enum MaterialCategory {
 
 model Material {
   componentReuseEntries UnitComponentReuseEntry[]
+  materialProposals MaterialProposal[]
+  provisionalUsages UnitProvisionalUsage[]
   supplierReturnLines SupplierReturnLine[]
   riwayatReferensi    StokRiwayatReferensi[]
   id          String       @id @default(uuid()) @db.Uuid
@@ -5361,6 +5365,7 @@ model Material {
 // infrastruktur refresh/cron tambahan. Revisit kalau volume sudah besar.
 model StockMovement {
   id         String   @id @default(uuid()) @db.Uuid
+  provisionalUsage UnitProvisionalUsage?
   materialId String   @map("material_id") @db.Uuid
   material   Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
 
@@ -11485,4 +11490,68 @@ model UnitComponentReuseEntry {
   @@unique([itemId, version])
   @@index([unitId, createdAt])
   @@map("unit_component_reuse_entries")
+}
+
+// ═══ USULAN BAHAN KATALOG & PEMAKAIAN SEMENTARA (Okt 2026, UX Bahan) — ADITIF ═══
+// USULAN BAHAN: Admin Produksi mengusulkan bahan yang belum ada di katalog. Hanya BARIS USULAN: TIDAK membuat Material, saldo, penerimaan, pergerakan stok, biaya, atau jurnal.
+// Gudang yang memutuskan (setujui → Material dibuat lewat keputusan Gudang · gabung ke bahan yang sudah ada · tolak). Satu usulan terbuka per nama (indeks unik parsial).
+model MaterialProposal {
+  id           String    @id @default(uuid()) @db.Uuid
+  name         String
+  nameKey      String    @map("name_key")
+  unit         String // satuan (kode MaterialUnit, mis. KG/METER/PCS) — dicek di aplikasi terhadap enum
+  kelompok     String // kode kelompok katalog (BUSA, KAIN, BENANG, PEGAS, KAYU, LEM_KIMIA, AKSESORI, LAINNYA)
+  itemGroup    String?   @map("item_group") // sub-jenis yang SUDAH dikenal katalog (membuat kelompok turunan benar); null = Gudang yang menentukan
+  description  String?
+  status       String    @default("MENUNGGU_GUDANG") // MENUNGGU_GUDANG | DISETUJUI | DIGABUNG | DITOLAK
+  requestedById String   @map("requested_by")
+  requestedAt  DateTime  @default(now()) @map("requested_at")
+  unitId       String?   @map("unit_id") @db.Uuid
+  unitContext  Unit?     @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  materialId   String?   @map("material_id") @db.Uuid
+  material     Material? @relation(fields: [materialId], references: [id], onDelete: Restrict)
+  decidedById  String?   @map("decided_by")
+  decidedAt    DateTime? @map("decided_at")
+  decisionNote String?   @map("decision_note")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  provisionalUsages UnitProvisionalUsage[]
+
+  @@index([status, requestedAt])
+  @@map("material_proposals")
+}
+
+// PEMAKAIAN SEMENTARA: fakta bahan yang SUDAH dipakai pada unit tetapi belum ada di katalog / belum punya sumber stok resmi. BUKAN Material Issue, BUKAN pergerakan stok, TIDAK mengurangi saldo,
+// TIDAK ada biaya/jurnal. Gudang menyelesaikannya lewat jalur resmi (Material Issue/pemakaian unit yang sudah ada) lalu MENAUTKAN hasilnya, atau menyatakan bukan stok Gudang. Kolom asal tidak pernah berubah (trigger).
+model UnitProvisionalUsage {
+  id             String    @id @default(uuid()) @db.Uuid
+  unitId         String    @map("unit_id") @db.Uuid
+  unit           Unit      @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  proposalId     String?   @map("proposal_id") @db.Uuid
+  proposal       MaterialProposal? @relation(fields: [proposalId], references: [id], onDelete: Restrict)
+  name           String
+  nameKey        String    @map("name_key")
+  qty            Decimal   @db.Decimal(14, 4)
+  uom            String
+  originNote     String?   @map("origin_note") // asal barang yang diketahui (sisa meja, beli sendiri, pinjam, dst.)
+  note           String?
+  usedAt         DateTime  @default(now()) @map("used_at")
+  recordedById   String    @map("recorded_by")
+  recordedAt     DateTime  @default(now()) @map("recorded_at")
+  status         String    @default("PERLU_REKONSILIASI") // PERLU_REKONSILIASI | DIREKONSILIASI | DIBATALKAN
+  resolution     String? // TAUTKAN_ISSUE | TANPA_STOK
+  materialId     String?   @map("material_id") @db.Uuid
+  material       Material? @relation(fields: [materialId], references: [id], onDelete: Restrict)
+  stockMovementId String?  @unique @map("stock_movement_id") @db.Uuid
+  stockMovement  StockMovement? @relation(fields: [stockMovementId], references: [id], onDelete: Restrict)
+  resolvedById   String?   @map("resolved_by")
+  resolvedAt     DateTime? @map("resolved_at")
+  resolutionNote String?   @map("resolution_note")
+  cancelledById  String?   @map("cancelled_by")
+  cancelledAt    DateTime? @map("cancelled_at")
+  cancelReason   String?   @map("cancel_reason")
+  idempotencyKey String?   @map("idempotency_key")
+
+  @@index([unitId, recordedAt])
+  @@index([status, recordedAt])
+  @@map("unit_provisional_usages")
 }

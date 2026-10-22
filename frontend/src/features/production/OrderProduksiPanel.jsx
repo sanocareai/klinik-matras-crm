@@ -8,10 +8,11 @@ import { Badge } from "@/components/ui/badge.jsx";
 import { cn } from "@/lib/utils.js";
 import { formatTanggal } from "@/utils/formatDate.js";
 import MaterialPlanEditor from "@/features/production/MaterialPlanEditor.jsx";
+import PemilihBahanKatalog from "@/features/production/bahan/PemilihBahanKatalog.jsx";
 import PenerimaanWorkshopModal from "@/features/production/PenerimaanWorkshopModal.jsx";
 import KoreksiPenerimaanModal from "@/features/production/KoreksiPenerimaanModal.jsx";
 import { statusOf } from "@/features/production/productionLabels.js";
-import { KERJA_PERLU_KONFIRMASI, formatJumlah, konfirmasiKerja, kunciIdempoten, labelCatatKerja, nadaBadge, parseJumlah, pesanGalatAdopsi, sumberKerjaText, teksKoreksi, waktuWib } from "@/features/production/orderProduksiModel.js";
+import { KERJA_PERLU_KONFIRMASI, formatJumlah, ketersediaanText, konfirmasiKerja, kunciIdempoten, labelCatatKerja, nadaBadge, parseJumlah, pesanGalatAdopsi, sumberKerjaText, teksKoreksi, waktuWib } from "@/features/production/orderProduksiModel.js";
 
 // Panel fokus Order Produksi (adopsi Admin) — urutan: ringkasan + SATU tindakan utama → status & target → rencana bahan → pemakaian aktual → riwayat → lanjutan (Unit 360).
 // Tiga status tampil terpisah dan berlabel (Status order · Posisi unit · Status kerja) — label teks, bukan hanya warna. Tahap/dokumentasi/biaya/QC tetap lengkap di Unit 360 (bagian "Lanjutan").
@@ -396,18 +397,10 @@ function StatusTarget({ data, aktif, onDone }) {
 function PemakaianAktual({ data, aktif, bolehCatat, onDone }) {
   const { pemakaianAktual: ak, perbandingan, unit: u } = data;
   const [form, setForm] = useState(false);
-  const [cari, setCari] = useState(""); const [hasilCari, setHasilCari] = useState([]);
   const [pilih, setPilih] = useState(null); const [qty, setQty] = useState(""); const [catatan, setCatatan] = useState("");
   const [sibuk, setSibuk] = useState(false); const [hasil, setHasil] = useState({ galat: null, ok: "" });
   const kunciRef = useRef(null); const isianRef = useRef("");
 
-  useEffect(() => {
-    if (!form) return undefined;
-    let batal = false; const t = setTimeout(async () => {
-      try { const d = await api.getKatalogBahanProduksi({ q: cari.trim() || undefined, limit: "8" }); if (!batal) setHasilCari(d.rows || []); } catch { if (!batal) setHasilCari([]); }
-    }, 250);
-    return () => { batal = true; clearTimeout(t); };
-  }, [form, cari]);
 
   // Satu niat = satu kunci: dipakai ulang bila isian sama (klik ulang/retry), diganti bila isian berubah → pencatatan TEPAT SEKALI.
   const sidik = `${pilih?.materialId}|${qty}|${catatan}`;
@@ -463,15 +456,12 @@ function PemakaianAktual({ data, aktif, bolehCatat, onDone }) {
           <p className="m-0 flex items-start gap-2 text-[12.5px] text-orange"><AlertTriangle size={15} className="mt-0.5 shrink-0" aria-hidden />Ini pemakaian sungguhan: <b>stok Gudang berkurang</b> sekarang. Untuk sekadar merencanakan, gunakan Rencana bahan.</p>
           {!pilih ? (
             <>
-              <input type="search" value={cari} onChange={(e) => setCari(e.target.value)} placeholder="Cari bahan (nama atau kode)…" aria-label="Cari bahan yang dipakai" data-testid="aktual-cari" className="h-11 w-full rounded-btn border border-line bg-surface px-3 text-[14px] text-ink outline-none focus:border-accent focus-visible:ring-2 focus-visible:ring-accent/30" />
-              <ul className="m-0 max-h-[200px] list-none divide-y divide-line overflow-y-auto rounded-btn bg-surface p-0">
-                {hasilCari.map((b) => <li key={b.materialId}><button type="button" onClick={() => setPilih(b)} className="flex min-h-[44px] w-full items-center gap-2 px-3 py-2 text-left outline-none hover:bg-hovertint focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/40"><span className="min-w-0 flex-1"><span className="block truncate text-[13px] font-medium text-ink">{b.nama}</span><span className="block text-[11.5px] text-ink3">{b.kode} · {b.kelompok?.label}</span></span><span className="text-[12px] text-ink3">{b.satuan}</span></button></li>)}
-                {!hasilCari.length && <li className="px-3 py-3 text-center text-[13px] text-ink3">Tidak ada bahan cocok.</li>}
-              </ul>
+              <PemilihBahanKatalog dipilihIds={new Set()} onTambah={(b) => setPilih(b)} tinggi={220} testid="aktual-pemilih" />
             </>
           ) : (
             <div className="space-y-2">
               <p className="m-0 text-[13px] font-medium text-ink">{pilih.nama} <button type="button" className="ml-1 text-[12px] font-normal text-accent underline-offset-2 hover:underline" onClick={() => setPilih(null)}>ganti</button></p>
+              <p className="m-0 text-[12px] text-ink2" data-testid="aktual-saldo-pilih">Satuan {pilih.satuan} · {ketersediaanText(pilih)}</p>
               <div className="flex gap-2">
                 <label className="flex-1"><span className="block text-[12px] text-ink3">Jumlah dipakai ({pilih.satuan})</span><input inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value)} data-testid="aktual-qty" className="h-11 w-full rounded-btn border border-line bg-surface px-3 text-right text-[14px] tabular-nums text-ink outline-none focus:border-accent focus-visible:ring-2 focus-visible:ring-accent/30" /></label>
                 <label className="flex-[2]"><span className="block text-[12px] text-ink3">Catatan (opsional)</span><input value={catatan} onChange={(e) => setCatatan(e.target.value)} maxLength={300} className="h-11 w-full rounded-btn border border-line bg-surface px-3 text-[14px] text-ink outline-none focus:border-accent focus-visible:ring-2 focus-visible:ring-accent/30" /></label>

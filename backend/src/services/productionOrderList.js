@@ -64,7 +64,7 @@ export async function perkayaBarisUnit(prisma, units) {
   const readerState = resolveProductionReaderState(await loadV2Flags(prisma));
   const v2Units = readerState.mode === PRODUCTION_READER_MODE.OFF ? new Set() : new Set(readerState.unitIds);
   const complaintsByUnit = await loadOpenComplaintsByUnit(prisma, units.map((u) => ({ id: u.id, orderId: u.orderId })));
-  const [milestoneEvidence, plannedRows, appEvidence, manualByUnit, rencanaRows, aktualRows, adminJadwalRows, komponenPakaiRows] = await Promise.all([
+  const [milestoneEvidence, plannedRows, appEvidence, manualByUnit, rencanaRows, aktualRows, adminJadwalRows, komponenPakaiRows, sementaraRows] = await Promise.all([
     loadMilestoneEvidence(prisma, unitIds),
     unitIds.length ? prisma.productionRun.findMany({
       where: { unitId: { in: unitIds }, status: { notIn: ["COMPLETED", "CANCELLED"] }, plan: { is: { stationCode: { not: null }, status: { not: "CANCELLED" } } } },
@@ -78,6 +78,8 @@ export async function perkayaBarisUnit(prisma, units) {
     unitIds.length ? prisma.productionUnitSchedule.findMany({ where: { unitId: { in: unitIds }, status: "ACTIVE" }, select: { unitId: true, productionDate: true, stationCode: true, revision: true } }) : [],
     // Komponen lama yang pernah dicatat 'dipakai kembali' (CREATED/CORRECTED hasil REUSED; baris riwayat tidak dihapus, jadi fakta tidak hilang walau dikoreksi/dibatalkan)
     unitIds.length ? prisma.unitComponentReuseEntry.findMany({ where: { unitId: { in: unitIds }, outcome: "REUSED", kind: { in: ["CREATED", "CORRECTED"] } }, select: { unitId: true, itemId: true, createdAt: true } }) : [],
+    // Pemakaian SEMENTARA (bahan belum di katalog; BUKAN Material Issue): fakta pekerjaan, dengan sumber sendiri. Yang dibatalkan (salah input) tidak dihitung.
+    unitIds.length ? prisma.unitProvisionalUsage.findMany({ where: { unitId: { in: unitIds }, status: { in: ["PERLU_REKONSILIASI", "DIREKONSILIASI"] } }, select: { unitId: true, status: true, usedAt: true, recordedAt: true } }) : [],
   ]);
   const adminJadwalByUnit = new Map(adminJadwalRows.map((r) => [r.unitId, r]));
   const planByUnit = new Map(plannedRows.map((r) => [r.unitId, r.plan]));
@@ -85,10 +87,11 @@ export async function perkayaBarisUnit(prisma, units) {
   const aktualUnit = new Set(aktualRows.map((r) => r.unitId));
   // PEMAKAIAN AKTUAL yang berhasil tercatat (dua sumber TERPISAH): bahan baru = pergerakan ISSUE resmi; komponen lama = hasil 'dipakai kembali'. Dasar status kerja "Sudah dikerjakan".
   const pemakaianByUnit = new Map();
-  const ambilP = (id) => { if (!pemakaianByUnit.has(id)) pemakaianByUnit.set(id, { baru: 0, lama: new Set(), pertamaAt: null, terakhirAt: null }); return pemakaianByUnit.get(id); };
+  const ambilP = (id) => { if (!pemakaianByUnit.has(id)) pemakaianByUnit.set(id, { baru: 0, lama: new Set(), sementaraPerlu: 0, sementaraSelesai: 0, pertamaAt: null, terakhirAt: null }); return pemakaianByUnit.get(id); };
   const geser = (p, a, b) => { if (a && (!p.pertamaAt || a < p.pertamaAt)) p.pertamaAt = a; if (b && (!p.terakhirAt || b > p.terakhirAt)) p.terakhirAt = b; };
   for (const r of aktualRows) { const p = ambilP(r.unitId); p.baru = r._count._all; geser(p, r._min.createdAt, r._max.createdAt); }
   for (const r of komponenPakaiRows) { const p = ambilP(r.unitId); p.lama.add(r.itemId); geser(p, r.createdAt, r.createdAt); }
+  for (const r of sementaraRows) { const p = ambilP(r.unitId); if (r.status === "PERLU_REKONSILIASI") p.sementaraPerlu++; else p.sementaraSelesai++; geser(p, r.usedAt, r.recordedAt); }
   return units.map((u) => {
     const prio = priorityDisplay({ stored: u.priority, complaintCases: complaintsByUnit.get(u.id) || [] });
     const ev = milestoneEvidence.get(u.id) || { receivedBasis: null, started: false, pickupCompleted: false };
@@ -102,12 +105,12 @@ export async function perkayaBarisUnit(prisma, units) {
     const bukti = appEvidence.get(u.id) || { started: false, firstEvidenceAt: null };
     const manual = manualByUnit.get(u.id) || null;
     const pakai = pemakaianByUnit.get(u.id) || null;
-    const kerja = effectiveWorkStatus({ unitStatus: u.status, productionStatus, appStarted: bukti.started, scheduled, manual, pemakaian: pakai ? { terakhirAt: pakai.terakhirAt, pertamaAt: pakai.pertamaAt } : null, punyaJadwal: scheduled || adminJadwalByUnit.has(u.id) });
+    const kerja = effectiveWorkStatus({ unitStatus: u.status, productionStatus, appStarted: bukti.started, scheduled, manual, pemakaian: pakai ? { terakhirAt: pakai.terakhirAt, pertamaAt: pakai.pertamaAt, hanyaSementara: pakai.sementaraPerlu > 0 && pakai.baru === 0 && pakai.lama.size === 0 && pakai.sementaraSelesai === 0 } : null, punyaJadwal: scheduled || adminJadwalByUnit.has(u.id) });
     const posisi = posisiUnitOf({ unitStatus: u.status, receivedBasis: ev.receivedBasis, receivedBasisLabel: milestone.receivedBasisLabel, pickupCompleted: ev.pickupCompleted, pickupInProgress: ev.pickupInProgress, started: bukti.started || ev.started });
     const plan = planByUnit.get(u.id) || null;
     const targetAt = u.productionDueAt ?? plan?.targetCompleteAt ?? null;
     const picNama = assignment?.operator?.user?.name ?? plan?.operator?.user?.name ?? null;
-    const tindakan = tindakanBerikutnya({ unitStatus: u.status, posisi, kerja, adaTarget: !!targetAt, rencanaBahanAda: rencanaUnit.has(u.id), aktualAda: aktualUnit.has(u.id) });
+    const tindakan = tindakanBerikutnya({ unitStatus: u.status, posisi, kerja, adaTarget: !!targetAt, rencanaBahanAda: rencanaUnit.has(u.id), aktualAda: aktualUnit.has(u.id) || (pakai?.sementaraPerlu ?? 0) + (pakai?.sementaraSelesai ?? 0) > 0 });
     return {
       ...u, inProductionV2: v2Units.has(u.id), productionStatus,
       penjualanKaryawan: rujukanPkrDariOrder(u.order, { unit: u }),
@@ -127,7 +130,7 @@ export async function perkayaBarisUnit(prisma, units) {
         pic: picNama ? { nama: picNama, sumber: assignment?.operator ? "TAHAP" : "RENCANA" } : null, meja: plan?.stationCode ?? adminJadwalByUnit.get(u.id)?.stationCode ?? null,
         jadwal: plan?.productionDate ? { sumber: "V2", tanggal: plan.productionDate.toISOString().slice(0, 10), meja: plan.stationCode ?? null, revisi: null } : adminJadwalByUnit.has(u.id) ? { sumber: "ADMIN", tanggal: adminJadwalByUnit.get(u.id).productionDate.toISOString().slice(0, 10), meja: adminJadwalByUnit.get(u.id).stationCode ?? null, revisi: adminJadwalByUnit.get(u.id).revision } : null,
         rencanaBahanAda: rencanaUnit.has(u.id), aktualBahanAda: aktualUnit.has(u.id), buktiAplikasi: bukti.started,
-        pemakaianBahan: { baruCatatan: pakai?.baru ?? 0, komponenLamaDipakaiKembali: pakai?.lama.size ?? 0, pertamaAt: pakai?.pertamaAt ?? null, terakhirAt: pakai?.terakhirAt ?? null }, // dua sumber terpisah (tidak dijumlahkan)
+        pemakaianBahan: { baruCatatan: pakai?.baru ?? 0, komponenLamaDipakaiKembali: pakai?.lama.size ?? 0, sementaraPerluRekonsiliasi: pakai?.sementaraPerlu ?? 0, sementaraSudahDirekonsiliasi: pakai?.sementaraSelesai ?? 0, pertamaAt: pakai?.pertamaAt ?? null, terakhirAt: pakai?.terakhirAt ?? null }, // dua sumber terpisah (tidak dijumlahkan)
       },
     };
   });

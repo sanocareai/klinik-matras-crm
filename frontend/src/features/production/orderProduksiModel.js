@@ -60,6 +60,7 @@ export function sumberKerjaText(kerja) {
   if (kerja.source === "MANUAL") return kerja.detail || "Dicatat manual";
   if (kerja.source === "APLIKASI") return "Dari aplikasi Produksi";
   if (kerja.source === "PEMAKAIAN_BAHAN") return "Otomatis dari pemakaian bahan";
+  if (kerja.source === "PEMAKAIAN_SEMENTARA") return "Pemakaian sementara — perlu rekonsiliasi Gudang";
   if (kerja.source === "STATUS_ORDER" && kerja.key !== "DIBATALKAN") return "Mengikuti status order";
   return null;
 }
