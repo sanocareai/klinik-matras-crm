@@ -11,7 +11,15 @@ export function useAntreanGudang(aktif) {
   useEffect(() => {
     if (!aktif) return undefined;
     let batal = false;
-    const muat = () => api.getBerandaGudang().then((b) => { if (!batal) setAntrean(antreanDariBeranda(b)); }).catch(() => { /* tanpa badge; akun tanpa izin baca Gudang tidak melihat angka */ });
+    // Usulan bahan + pemakaian sementara: dua hitungan ringan (limit 1) yang digabung ke peta antrean; gagal/ditolak izin = tanpa badge itu.
+    const muat = () => Promise.allSettled([api.getBerandaGudang(), api.getUsulanBahan({ limit: "1" }), api.getPemakaianSementara({ limit: "1" })]).then(([b, u, s]) => {
+      if (batal) return;
+      const dasar = b.status === "fulfilled" ? antreanDariBeranda(b.value) : null;
+      const tambahan = {};
+      if (u.status === "fulfilled") tambahan.USULAN_BAHAN = Number(u.value?.jumlah?.MENUNGGU_GUDANG) || 0;
+      if (s.status === "fulfilled") tambahan.SEMENTARA_REKON = Number(s.value?.jumlah?.PERLU_REKONSILIASI) || 0;
+      setAntrean(dasar || Object.keys(tambahan).length ? { ...(dasar || {}), ...tambahan } : null);
+    });
     muat(); const id = setInterval(muat, 90_000); const lihat = () => { if (document.visibilityState === "visible") muat(); };
     document.addEventListener("visibilitychange", lihat);
     return () => { batal = true; clearInterval(id); document.removeEventListener("visibilitychange", lihat); };

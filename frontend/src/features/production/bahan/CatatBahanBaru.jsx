@@ -6,16 +6,20 @@ import { cn } from "@/lib/utils.js";
 import { formatJumlah, hapusBaris, kunciIdempoten, kelompokkan, parseJumlah, pesanGalatAdopsi, ubahJumlah, waktuWib } from "@/features/production/orderProduksiModel.js";
 import { SUMBER, bolehKonfirmasiAktual, isianAwalDariRencana, keadaanSaldo, tambahAktual } from "@/features/production/bahan/bahanModel.js";
 import PemilihBahanKatalog from "@/features/production/bahan/PemilihBahanKatalog.jsx";
+import BahanBelumAda from "@/features/production/bahan/BahanBelumAda.jsx";
 
 // Bahan BARU dari Gudang — jalur stok resmi (POST /units/:id/materials): satu baris = satu pergerakan ISSUE, Idempotency-Key per niat (klik ganda/retry tidak menggandakan).
 // Tidak mewajibkan Rencana Bahan. "Gunakan rencana sebagai isian awal" hanya mengisi formulir (pengguna memeriksa dan mengubah jumlah); TIDAK memposting dan TIDAK mengurangi stok dari rencana.
 import "@/features/production/bahan/bahan.css";
 const NADA = { green: "bh-ok", orange: "bh-warn", red: "bh-bad" };
 
-export default function CatatBahanBaru({ data, unitId, onDone, onTutup }) {
+export default function CatatBahanBaru({ data, unitId, izin = {}, onDone, onTutup }) {
   const rencana = data.rencanaBahan?.plan ?? null; const total = data.pemakaianAktual?.total ?? [];
   const [baris, setBaris] = useState([]); const [catatan, setCatatan] = useState(""); const [status, setStatus] = useState({}); const [sibuk, setSibuk] = useState(false); const [infoRencana, setInfoRencana] = useState("");
   const kunciRef = useRef(new Map()); const kirimRef = useRef(false);
+  const [belumAda, setBelumAda] = useState(null); // null | { nama } — panel "Bahan belum ada?" (usulan; bukan stok). Baris yang sudah dipilih tetap ada.
+  const [awalCari, setAwalCari] = useState(""); const [versiPemilih, setVersiPemilih] = useState(0);
+  const bolehUsul = !!izin.usulBahan;
   const dipilihIds = useMemo(() => new Set(baris.map((b) => b.materialId)), [baris]);
   const boleh = bolehKonfirmasiAktual(baris, status);
   const semuaSelesai = baris.length > 0 && baris.every((b) => status[b.materialId]?.fase === "ok");
@@ -50,7 +54,7 @@ export default function CatatBahanBaru({ data, unitId, onDone, onTutup }) {
   const grup = kelompokkan(baris);
   return (
     <div className="space-y-4" data-testid="catat-bahan-baru">
-      <p className="m-0 flex items-start gap-2 rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-ink"><AlertTriangle size={15} className="bh-warn mt-0.5 shrink-0" aria-hidden /><span><b>{SUMBER.BARU.label}</b>: stok Gudang <b>berkurang</b> saat Anda konfirmasi, lewat Material Issue/pergerakan stok resmi, tepat sekali. Tidak perlu membuat Rencana lebih dulu.</span></p>
+      {!belumAda && <p className="m-0 flex items-start gap-2 rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-ink"><AlertTriangle size={15} className="bh-warn mt-0.5 shrink-0" aria-hidden /><span><b>{SUMBER.BARU.label}</b>: stok Gudang <b>berkurang</b> saat Anda konfirmasi, lewat Material Issue/pergerakan stok resmi, tepat sekali. Tidak perlu membuat Rencana lebih dulu.</span></p>}
 
       {!semuaSelesai && (
         <>
@@ -61,7 +65,12 @@ export default function CatatBahanBaru({ data, unitId, onDone, onTutup }) {
             </div>
           )}
           {infoRencana && <p role="status" data-testid="info-rencana" className="m-0 text-[12.5px] text-ink2">{infoRencana}</p>}
-          <PemilihBahanKatalog dipilihIds={dipilihIds} onTambah={(k) => setBaris((x) => tambahAktual(x, k))} disabled={sibuk} testid="aktual-pemilih" />
+          {belumAda ? (
+            <BahanBelumAda unitId={unitId} kodeUnit={data.unit?.unitCode} izin={izin} awalNama={belumAda.nama} onTutup={() => setBelumAda(null)} onDone={onDone}
+              onGunakanKatalog={(k) => { setAwalCari(k.nama); setVersiPemilih((v) => v + 1); setBelumAda(null); }} />
+          ) : (
+            <PemilihBahanKatalog key={versiPemilih} awalCari={awalCari} dipilihIds={dipilihIds} onTambah={(k) => setBaris((x) => tambahAktual(x, k))} disabled={sibuk} testid="aktual-pemilih" onBahanBelumAda={bolehUsul ? (nama) => setBelumAda({ nama }) : null} />
+          )}
         </>
       )}
 
@@ -86,7 +95,7 @@ export default function CatatBahanBaru({ data, unitId, onDone, onTutup }) {
                       {!terkunci && <button type="button" onClick={() => setBaris((x) => hapusBaris(x, b.materialId))} aria-label={`Hapus ${b.nama} dari daftar`} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-btn text-ink3 outline-none hover:bg-hovertint hover:text-red focus-visible:ring-2 focus-visible:ring-accent/40"><Trash2 size={16} aria-hidden /></button>}
                     </div>
                     {b.dariRencana && <p className="m-0 mt-1 text-[11.5px] text-ink3">Rencana {formatJumlah(b.dariRencana.rencana)}, sudah dipakai {formatJumlah(b.dariRencana.sudahDipakai)} {b.satuan}.</p>}
-                    {st?.fase !== "ok" && <p data-testid="aktual-saldo" data-status={ks.status} className={cn("m-0 mt-1 text-[12px]", NADA[ks.nada])}>{ks.teks}</p>}
+                    {st?.fase !== "ok" && <p data-testid="aktual-saldo" data-status={ks.status} className={cn("m-0 mt-1 text-[12px]", NADA[ks.nada])}>{ks.teks}{ks.sisaTeks ? <span data-testid="aktual-sisa"> · {ks.sisaTeks}</span> : null}</p>}
                     {st?.fase === "sibuk" && <p className="m-0 mt-1 text-[12px] text-ink3">Mencatat…</p>}
                     {st?.fase === "galat" && <p role="alert" data-testid="aktual-galat" className="m-0 mt-1 text-[12px] text-red">{pesanGalatAdopsi(st.galat).teks} Isian tetap di layar; coba lagi (tidak akan tercatat dua kali).</p>}
                     {st?.fase === "ok" && (
@@ -107,6 +116,9 @@ export default function CatatBahanBaru({ data, unitId, onDone, onTutup }) {
       {!semuaSelesai && baris.length > 0 && (
         <input value={catatan} onChange={(e) => setCatatan(e.target.value)} maxLength={300} disabled={sibuk} placeholder="Catatan untuk pemakaian ini (opsional)" aria-label="Catatan pemakaian" data-testid="aktual-catatan"
           className="h-11 w-full rounded-btn border border-line bg-surface px-3 text-[13.5px] text-ink outline-none placeholder:text-ink3 focus:border-accent focus-visible:ring-2 focus-visible:ring-accent/30" />
+      )}
+      {!semuaSelesai && baris.length > 0 && boleh.ok && (
+        <p className="m-0 rounded-btn bg-inset px-3 py-2 text-[12.5px] text-ink" data-testid="aktual-ringkasan-konfirmasi">Stok Gudang akan berkurang: {baris.filter((b) => status[b.materialId]?.fase !== "ok").map((b) => `${formatJumlah(parseJumlah(b.qty))} ${b.satuan} ${b.nama}`).join("; ")}.</p>
       )}
       {boleh.alasan && !semuaSelesai && <p className="m-0 text-[12px] text-red">{boleh.alasan}</p>}
       <div className="flex flex-wrap justify-end gap-2">

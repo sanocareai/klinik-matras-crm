@@ -14,7 +14,7 @@ const src = (...p) => fs.readFileSync(path.join(here, "..", "src", ...p), "utf8"
 const kat = (o = {}) => ({ materialId: "m1", kode: "KAIN-1", nama: "Kain Knit Abu", satuan: "METER", kelompok: { kode: "KAIN", label: "Kain" }, tersedia: 18, saldo: 18, saldoDiketahui: true, ...o });
 
 test("istilah wajib: judul aktual & rencana persis; dua sumber berlabel tegas", () => {
-  assert.equal(JUDUL_AKTUAL, "Pemakaian aktual (mengurangi stok saat dikonfirmasi)"); assert.equal(JUDUL_RENCANA, "Rencana (opsional, belum mengurangi stok)");
+  assert.equal(JUDUL_AKTUAL, "Pemakaian aktual"); assert.equal(JUDUL_RENCANA, "Rencana (opsional, belum mengurangi stok)");
   assert.equal(SUMBER.BARU.label, "Bahan baru dari Gudang"); assert.equal(SUMBER.LAMA.label, "Komponen lama dari unit ini");
   assert.match(SUMBER.LAMA.dampak, /tidak membuat Material Issue, penerimaan Gudang, pergerakan stok, reservasi, atau biaya bahan baru/); assert.equal(asalKomponen("RES-094-U1"), "Dari kasur pelanggan — RES-094-U1");
 });
@@ -83,7 +83,7 @@ test("Ringkasan Dokumentasi: jumlah, kategori, terbaru, status bukti yang diwaji
 
 test("pengawatan: tab Bahan = BahanTab (tindakan utama aktual, rencana terlipat, dua sumber, satu katalog); jalur stok resmi + kunci idempotensi; tanpa tombol hapus; API komponen lama", () => {
   const tab = src("features", "production", "bahan", "BahanTab.jsx"), baru = src("features", "production", "bahan", "CatatBahanBaru.jsx"), lama = src("features", "production", "bahan", "FormKomponenLama.jsx"), daftar = src("features", "production", "bahan", "KomponenLamaDaftar.jsx"), riw = src("features", "production", "bahan", "RiwayatBahanBaru.jsx");
-  for (const k of ["JUDUL_AKTUAL", "JUDUL_RENCANA", "Catat pemakaian aktual", 'role="radiogroup"', "sumber-baru".replace("-baru", "") , "rencanaEdit", "aria-expanded={rencanaBuka}", "SUMBER.BARU.label", "SUMBER.LAMA.label"]) assert.ok(tab.includes(k), k);
+  for (const k of ["JUDUL_AKTUAL", "JUDUL_RENCANA", "Catat bahan baru dari Gudang", "Catat komponen lama dari unit ini", 'role="radiogroup"', "sumber-baru".replace("-baru", "") , "rencanaEdit", "aria-expanded={rencanaBuka}", "SUMBER.BARU.label", "SUMBER.LAMA.label"]) assert.ok(tab.includes(k), k);
   assert.ok(tab.includes('data-testid={`sumber-${kunci}`}') && tab.includes('kunci="baru"') && tab.includes('kunci="lama"'));
   assert.ok(!tab.includes("MaterialPlanEditor") || tab.includes("rencanaBuka &&"), "editor rencana hanya dirender saat dibuka (satu katalog pada satu waktu)");
   for (const k of ["api.addUnitMaterial", "kunciIdempoten", "kirimRef.current", "isianAwalDariRencana", "gunakan-rencana", "belum ada yang dicatat", "api.getKatalogBahanProduksi"]) assert.ok(baru.includes(k), k);

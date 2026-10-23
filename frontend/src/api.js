@@ -1095,6 +1095,17 @@ export const api = {
     const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString();
     return request(`/production/material-catalog${qs ? `?${qs}` : ""}`);
   },
+  // ── UX Bahan: usulan bahan katalog ("Bahan belum ada?") + pemakaian SEMENTARA (bahan belum di katalog; BUKAN Material Issue, tidak mengurangi stok). Idempotency-Key per niat.
+  cekKembarBahan: (name, code = "") => request(`/production/material-duplicates?name=${encodeURIComponent(name || "")}${code ? `&code=${encodeURIComponent(code)}` : ""}`),
+  ajukanBahanBaru: (body, konfirmasiBeda = false) => request("/production/material-proposals", { method: "POST", body: JSON.stringify({ ...body, ...(konfirmasiBeda ? { konfirmasiBeda: true } : {}) }) }),
+  getUsulanBahan: (params = {}) => { const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString(); return request(`/production/material-proposals${qs ? `?${qs}` : ""}`); },
+  putuskanUsulanBahan: (id, body) => request(`/production/material-proposals/${id}/decision`, { method: "POST", body: JSON.stringify(body) }),
+  catatPemakaianSementara: (unitId, body, idempotencyKey = mutationKey("sementara")) => request(`/production/units/${unitId}/provisional-usages`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(body) }),
+  getPemakaianSementara: (params = {}) => { const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString(); return request(`/production/provisional-usages${qs ? `?${qs}` : ""}`); },
+  koreksiPemakaianSementara: (id, body, idempotencyKey = mutationKey("koreksi-sem")) => request(`/production/provisional-usages/${id}/correct`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(body) }),
+  batalPemakaianSementara: (id, alasan) => request(`/production/provisional-usages/${id}/cancel`, { method: "POST", body: JSON.stringify({ alasan }) }),
+  getKandidatPergerakanSementara: (id) => request(`/production/provisional-usages/${id}/candidates`),
+  rekonsiliasiPemakaianSementara: (id, body) => request(`/production/provisional-usages/${id}/reconcile`, { method: "POST", body: JSON.stringify(body) }),
   putRencanaBahan: (unitId, { lines, expectedRevision, reason } = {}) =>
     request(`/production/units/${unitId}/material-plan`, { method: "PUT", body: JSON.stringify({ lines, expectedRevision: expectedRevision ?? 0, reason: reason || undefined }) }),
   // Ekspor daftar Order Produksi (.xlsx) dengan filter yang SAMA dengan daftar di layar (server membangun berkas; klien hanya mengunduh).

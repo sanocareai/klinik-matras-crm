@@ -9,6 +9,7 @@ export const BADGE_ANTREAN = Object.freeze({
   "/warehouse/goods-receipt": ["BELUM_MASUK_STOK"], // sudah tiba, belum masuk stok
   "/warehouse/material-issue": ["PERMINTAAN_BAHAN"],
   "/warehouse/stock-count": ["SELISIH_MENUNGGU"],
+  "/warehouse/usulan-bahan": ["USULAN_BAHAN", "SEMENTARA_REKON"], // usulan menunggu keputusan + pemakaian sementara perlu rekonsiliasi (dimuat terpisah oleh useAntreanGudang)
 });
 
 /** `antrean` = { KODE: jumlah } atau null. Mengembalikan jumlah (>0) atau null. */

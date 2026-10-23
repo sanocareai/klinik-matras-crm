@@ -89,6 +89,7 @@ const WarehouseReturSupplier = lazy(() => import("../pages/warehouse/WarehouseRe
 const FinanceReturSupplier = lazy(() => import("../pages/finance/FinanceReturSupplier.jsx"));
 const WarehouseUnitCustody = lazy(() => import("../pages/warehouse/WarehouseUnitCustody.jsx"));
 const WarehouseMaterialPickup = lazy(() => import("../pages/warehouse/WarehouseMaterialPickup.jsx"));
+const WarehouseUsulanBahan = lazy(() => import("../pages/warehouse/WarehouseUsulanBahan.jsx"));
 const WarehouseFinishedGoods = lazy(() => import("../pages/warehouse/WarehouseFinishedGoods.jsx"));
 const WarehouseMaterialIssue = lazy(() => import("../pages/warehouse/WarehouseMaterialIssue.jsx"));
 const WarehouseTransfers = lazy(() => import("../pages/warehouse/WarehouseTransfers.jsx"));
@@ -279,6 +280,7 @@ const PAGES_DASAR = [
   { path: "/warehouse/antrean-produksi", render: () => <DemoPage><WarehouseProductionQueue /></DemoPage> },
   { path: "/warehouse/finished-goods", render: () => <WarehouseFinishedGoods /> },
   { path: "/warehouse/material-pickup", render: () => <WarehouseMaterialPickup /> },
+  { path: "/warehouse/usulan-bahan", render: () => <WarehouseUsulanBahan /> }, // usulan bahan katalog dari Produksi + pemakaian sementara (rekonsiliasi); tanpa perubahan saldo
   // UX Gudang Tahap 4: detail dokumen = JENDELA FOKUS di atas daftarnya (rute /:id?), bukan halaman terpisah.
   { path: "/warehouse/material-issue/:id?", render: () => <WarehouseMaterialIssue /> },
   { path: "/warehouse/transfers/:id?", render: () => <WarehouseTransfers /> },
