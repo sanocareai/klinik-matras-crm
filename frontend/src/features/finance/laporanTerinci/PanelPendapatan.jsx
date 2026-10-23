@@ -112,7 +112,8 @@ export function PanelPkr({ data }) {
                   <Badge variant={d.statusPemenuhan === "DISERAHKAN" ? "green" : d.statusPemenuhan === "DIBATALKAN" ? "neutral" : "orange"}>{LABEL_PEMENUHAN_PKR[d.statusPemenuhan] ?? d.statusPemenuhan}</Badge></span>
                 <span className="tabular-nums font-semibold"><Uang value={d.total} /></span>
               </div>
-              <p className="m-0 mt-0.5 text-ink3">Penjual {d.penjual} · dibayar <Uang value={d.dibayar} /> · sisa <Uang value={d.sisa} />{d.orderCrm ? ` · order ${d.orderCrm.nomor} (${d.orderCrm.status}, ${d.orderCrm.unit} unit)` : ""}</p>
+              <p className="m-0 mt-0.5 text-ink3">Penjual {d.penjual} · {d.status === "DIBATALKAN" ? <span data-testid="pkr-batal-tidak-ditagih" className="font-medium text-ink2">Dibatalkan — tidak ditagih</span> : <>dibayar <Uang value={d.dibayar} /> · sisa <Uang value={d.sisa} /></>}{d.orderCrm ? ` · order ${d.orderCrm.nomor} (${d.orderCrm.status}, ${d.orderCrm.unit} unit)` : ""}</p>
+              {d.status === "DIBATALKAN" && <p className="m-0 mt-0.5 text-[11.5px] text-ink3" data-testid="pkr-nilai-historis">Nilai historis (bukan tagihan): total <Uang value={d.total} /> · dibayar <Uang value={d.dibayar} /> · sisa sebelum dibatalkan <Uang value={d.sisa} /></p>}
               {d.catatan && <p className={`m-0 mt-0.5 ${d.statusPemenuhan === "DIBATALKAN" ? "text-ink3" : "text-orange"}`}>{d.catatan}</p>}
             </li>
           ))}

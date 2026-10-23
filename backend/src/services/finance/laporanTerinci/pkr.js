@@ -48,7 +48,10 @@ export async function hitungPkr(tx, { from, to, baris }) {
     const status = d.status !== "AKTIF" ? "DIBATALKAN" : !crm ? "TANPA_ORDER_CRM" : crm.status === "DELIVERED" ? "DISERAHKAN" : "BELUM_DISERAHKAN";
     return {
       nomor: d.nomor, tanggal: tgl(d.date), status: d.status, penjual: d.seller?.name ?? "", pembeli: d.buyerName,
+      // total/dibayar/sisa = NILAI HISTORIS dokumen (tidak diubah, tetap tersedia untuk audit). Yang BOLEH DITAGIH: dokumen dibatalkan tidak ditagih — sisaDitagih = 0 dan statusTagih menyatakannya.
       total: rp(toMoney(d.total)), dibayar: rp(dibayar), dibayarPeriode: rp(bayarPeriode), sisa: rp(toMoney(d.total).minus(dibayar)),
+      sisaDitagih: d.status !== "AKTIF" ? 0 : rp(toMoney(d.total).minus(dibayar)),
+      statusTagih: d.status !== "AKTIF" ? "Dibatalkan — tidak ditagih" : toMoney(d.total).minus(dibayar).lte(0) ? "Lunas" : "Ditagih",
       dalamPeriode, tanggalBatal: tanggalBatal ? tgl(tanggalBatal) : null, dibatalkanPadaPeriode, jurnalPendapatan: jurnalPer.get(d.id) ?? [],
       item: d.items.map((i) => `${i.quantity}× ${i.name}`).join("; "), pemenuhan: [...new Set(d.items.map((i) => i.fulfillment))].join(", "),
       orderCrm: crm ? { nomor: crm.orderNumber, status: crm.status, unit: crm._count.units, nilai: rp(toMoney(crm.value)) } : null,

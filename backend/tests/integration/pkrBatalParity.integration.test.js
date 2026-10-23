@@ -124,7 +124,16 @@ test("C. kartu = Σ akun = Σ jurnal = laporan PKR = Excel sampai sen; Laba Rugi
     assert.equal(jml(rin.baris.map((x) => x["Efek ke Laba Bersih (Rp)"])), d.kartu.find((k) => k.metrik === "laba_bersih").nilai, "Σ Excel rincian = laba bersih");
     const sheetPkr = bacaSheet(ex.wb, "PKR"); const dokExcel = sheetPkr.baris.filter((b) => /^PKR-/.test(String(b["No. PKR"])));
     assert.equal(dokExcel.length, d.pkr.dokumen.length, "Excel PKR = laporan PKR (jumlah dokumen)");
-    assert.equal(Object.keys(sheetPkr.baris[0]).at(-1), "Tanggal batal", "kolom baru di ujung kanan");
+    const kolomPkr = Object.keys(sheetPkr.baris[0]);
+    assert.deepEqual(kolomPkr.slice(-3), ["Tanggal batal", "Sisa ditagih (Rp)", "Status tagih"], "kolom baru di ujung kanan");
+    assert.deepEqual(kolomPkr.slice(0, 9), ["No. PKR", "Tanggal", "Status", "Penjual", "Pembeli", "Total (Rp)", "Dibayar (Rp)", "Dibayar periode (Rp)", "Sisa (Rp)"], "kolom lama tidak bergeser");
+    for (const x of d.pkr.dokumen) {
+      const baris = dokExcel.find((b) => b["No. PKR"] === x.nomor);
+      assert.equal(Number(baris["Sisa (Rp)"]), x.sisa, "Excel 'Sisa (Rp)' = nilai historis (tidak diubah)");
+      assert.equal(Number(baris["Sisa ditagih (Rp)"]), x.sisaDitagih); assert.equal(baris["Status tagih"], x.statusTagih);
+      if (x.status === "DIBATALKAN") { assert.equal(x.sisaDitagih, 0); assert.equal(x.statusTagih, "Dibatalkan — tidak ditagih"); assert.ok(x.sisa > 0, "nilai historis tetap tersedia"); assert.ok(x.total > 0); }
+      else assert.equal(x.sisaDitagih, x.sisa);
+    }
     for (const x of d.pkr.dokumen.filter((y) => y.dibatalkanPadaPeriode)) assert.ok(x.tanggalBatal && x.status === "DIBATALKAN");
   }
 });
@@ -162,4 +171,16 @@ test("F. regresi: tanpa PKR dibatalkan kontrol tetap cocok; periode kosong tetap
   await testPrisma.finPenjualanKaryawan.update({ where: { id: p2.id }, data: { status: "DIBATALKAN", cancelledAt: new Date("2026-10-15T05:00:00.000Z") } });
   const rusak = await bacaLaporanTerinci(testPrisma, { ...OKT, denganBaris: true });
   const k = rusak.kontrol.daftar.find((x) => x.kunci === "pkr_ledger_dokumen"); assert.equal(k.ok, false); assert.equal(k.selisih, 400_000, "ledger masih memuat 400.000 yang dokumennya batal tanpa pembalik");
+});
+
+test("G. dokumen PKR batal: 'Dibatalkan — tidak ditagih' (sisaDitagih 0) sementara nilai historis (total/dibayar/sisa) tetap; sisaPiutang ringkasan hanya dokumen AKTIF; data tidak berubah", async () => {
+  const w = await dunia(); const s = await skenario(w);
+  const sebelum = await hitungSnapshot();
+  const d = await bacaLaporanTerinci(testPrisma, { ...OKT, denganBaris: true });
+  const b = d.pkr.dokumen.find((x) => x.nomor === s.B.nomor); const c = d.pkr.dokumen.find((x) => x.nomor === s.C.nomor); const a = d.pkr.dokumen.find((x) => x.nomor === s.A.nomor);
+  for (const [x, total] of [[b, 1_300_000], [c, 2_000_000]]) { assert.equal(x.status, "DIBATALKAN"); assert.equal(x.statusTagih, "Dibatalkan — tidak ditagih"); assert.equal(x.sisaDitagih, 0); assert.equal(x.total, total); assert.equal(x.sisa, total, "nilai historis tidak diubah"); assert.equal(x.dibayar, 0); }
+  assert.equal(a.statusTagih, "Ditagih"); assert.equal(a.sisaDitagih, 3_000_000);
+  assert.equal(d.pkr.ringkasan.sisaPiutang, jml(d.pkr.dokumen.filter((x) => x.status === "AKTIF" && x.dalamPeriode).map((x) => x.sisaDitagih)), "sisa piutang = Σ sisa ditagih dokumen aktif");
+  assert.deepEqual(await hitungSnapshot(), sebelum, "tidak ada perubahan dokumen/jurnal");
+  const batal = await testPrisma.finPenjualanKaryawan.findUnique({ where: { id: s.B.id } }); assert.equal(Number(batal.total), 1_300_000); assert.equal(batal.status, "DIBATALKAN");
 });
