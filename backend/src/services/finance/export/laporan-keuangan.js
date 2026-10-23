@@ -9,6 +9,7 @@ import { bacaLaporanTerinci } from "../laporanTerinci/index.js";
 import { kontribusiMetrik, LABEL_METRIK, METRIK_DRILLDOWN } from "../laporanTerinci/baris.js";
 import { PESAN_MARGIN } from "../laporanTerinci/hpp.js";
 import { sumMoney, moneyToNumber } from "../money.js";
+import { PEMBALIK_BEBAN_BERSIH, PEMBALIK_RETUR_BERSIH, RUMUS_LABA, sifatBeban, sifatBarisBeban } from "../penandaBiaya.js";
 
 const KOLOM_KETERANGAN = { key: "keterangan", header: "Keterangan", tipe: "teks", lebar: 70 };
 const YA = (b) => (b ? "Ya" : "Tidak");
@@ -26,6 +27,8 @@ async function ambil(db, { periode, filter, filterLabel, bolehSensitif }) {
 
   const ringkasan = [
     ...d.kartu.map((k) => ({ uraian: k.label, nilai: k.nilai, jumlahBaris: k.jumlahBaris, status: k.cocok ? "Cocok dengan Σ baris jurnal" : "TIDAK COCOK", keterangan: k.metrik === "laba_kotor" ? `Margin ${R.marginKotor ?? "-"}% — ${d.margin.pesan}` : k.metrik === "laba_bersih" ? `Margin ${R.marginBersih ?? "-"}%` : "" })),
+    ...(R.pembalikBebanPokok < 0 ? [{ uraian: `Termasuk ${PEMBALIK_BEBAN_BERSIH.label.toLowerCase()} dalam Beban Pokok (HPP)`, nilai: R.pembalikBebanPokok, jumlahBaris: "", status: PEMBALIK_BEBAN_BERSIH.label, keterangan: `${PEMBALIK_BEBAN_BERSIH.penjelasan} ${RUMUS_LABA}` }] : []),
+    ...(R.pembalikBebanOperasional < 0 ? [{ uraian: `Termasuk ${PEMBALIK_BEBAN_BERSIH.label.toLowerCase()} dalam Beban Operasional`, nilai: R.pembalikBebanOperasional, jumlahBaris: "", status: PEMBALIK_BEBAN_BERSIH.label, keterangan: `${PEMBALIK_BEBAN_BERSIH.penjelasan} ${RUMUS_LABA}` }] : []),
     { uraian: "Pendapatan bruto", nilai: R.pendapatanBruto, jumlahBaris: "", status: "", keterangan: "Σ akun pendapatan saldo-normal kredit" },
     { uraian: "Retur & Potongan", nilai: R.retur, jumlahBaris: "", status: "", keterangan: "Akun kontra 4-2100" },
     { uraian: `STATUS MUTU MARGIN: ${PESAN_MARGIN[d.hpp.status]}`, nilai: "", jumlahBaris: "", status: d.hpp.final ? "Final" : d.hpp.status === "TIDAK_BERLAKU" ? "Tidak berlaku" : "Belum final", keterangan: d.hpp.alasan.join(" ") },
@@ -34,11 +37,11 @@ async function ambil(db, { periode, filter, filterLabel, bolehSensitif }) {
   ];
 
   const barisLR = [];
-  const tambah = (seksi, rows, tanda) => rows.forEach((a) => barisLR.push({ seksi, kode: a.kode, nama: a.nama, nilai: tanda * a.nilai }));
-  tambah("Pendapatan", d.akunPerMetrik.pendapatan.filter((a) => a.kode !== "4-2100"), 1);
-  tambah("Retur & Potongan", d.akunPerMetrik.pendapatan.filter((a) => a.kode === "4-2100"), -1); // efek retur negatif → tampil positif seperti layar
-  tambah("Beban Pokok", d.akunPerMetrik.hpp, 1);
-  tambah("Beban Operasional", d.akunPerMetrik.beban_operasional, 1);
+  const tambah = (seksi, rows, tanda, sifat) => rows.forEach((a) => barisLR.push({ seksi, kode: a.kode, nama: a.nama, nilai: tanda * a.nilai, sifat: sifat(tanda * a.nilai) }));
+  tambah("Pendapatan", d.akunPerMetrik.pendapatan.filter((a) => a.kode !== "4-2100"), 1, () => "Pendapatan");
+  tambah("Retur & Potongan", d.akunPerMetrik.pendapatan.filter((a) => a.kode === "4-2100"), -1, (v) => (v < 0 ? PEMBALIK_RETUR_BERSIH.label : "Retur & potongan")); // efek retur negatif → tampil positif seperti layar
+  tambah("Beban Pokok", d.akunPerMetrik.hpp, 1, sifatBeban); // biaya NETO bertanda: negatif = pembalik beban bersih
+  tambah("Beban Operasional", d.akunPerMetrik.beban_operasional, 1, sifatBeban);
 
   const jembatan = [
     ...d.jembatan.langkah.map((l) => ({ bagian: l.bagian === "SALES" ? "Sisi Sales" : "Sisi Buku Besar", langkah: l.subtotal ? `Subtotal — ${bersihLabel(l.label)}` : bersihLabel(l.label), order: l.jumlahOrder ?? "", nominal: l.nominal, temuan: l.temuan ? "Perlu diperiksa" : "", keterangan: l.keterangan })),
@@ -62,7 +65,7 @@ async function ambil(db, { periode, filter, filterLabel, bolehSensitif }) {
 
   const hppBaris = [
     { kelompok: "TERBUKUKAN (ikut laba)", uraian: "Total beban pokok terbukukan", nilai: d.hpp.terbukukan.total, keterangan: d.hpp.terbukukan.catatan },
-    ...d.hpp.terbukukan.akun.map((a) => ({ kelompok: "TERBUKUKAN (ikut laba)", uraian: `${a.kode} ${a.label}`, nilai: a.nilai, keterangan: `${a.nBaris} baris jurnal` })),
+    ...d.hpp.terbukukan.akun.map((a) => ({ kelompok: "TERBUKUKAN (ikut laba)", uraian: `${a.kode} ${a.label}`, nilai: a.nilai, keterangan: `${a.nBaris} baris jurnal${a.pembalikBebanBersih ? ` — ${PEMBALIK_BEBAN_BERSIH.label}: mengurangi HPP dan menaikkan laba kotor` : ""}` })),
     { kelompok: "TERBUKUKAN (ikut laba)", uraian: "  di antaranya pembalik periode sebelumnya", nilai: d.hpp.pembalikLintasPeriode.nilai, keterangan: d.hpp.pembalikLintasPeriode.pengaruh },
     { kelompok: "BELUM DAPAT DIBUKTIKAN (bukan Rp0)", uraian: "Unit terkirim tanpa catatan pemakaian bahan", nilai: d.hpp.tidakTerbukti.unitTanpaCatatanPemakaian, keterangan: "Jumlah unit; nominal biaya: tidak dapat dibuktikan (kosong, bukan Rp0)" },
     { kelompok: "BELUM DAPAT DIBUKTIKAN (bukan Rp0)", uraian: "Catatan pemakaian tanpa harga perolehan (periode)", nilai: d.hpp.tidakTerbukti.catatanPemakaianTanpaHarga, keterangan: d.hpp.tidakTerbukti.keterangan },
@@ -72,7 +75,7 @@ async function ambil(db, { periode, filter, filterLabel, bolehSensitif }) {
     { kelompok: "KONSUMSI BAHAN", uraian: "Unit terkirim / dengan pemakaian bernilai", nilai: d.hpp.konsumsiBahan.unitTerkirim, keterangan: `${d.hpp.konsumsiBahan.unitDenganPemakaianBernilai} unit punya pemakaian bernilai; ${d.hpp.konsumsiBahan.catatanPemakaianPeriode} catatan pemakaian pada periode` },
   ];
 
-  const divisiBaris = d.bebanDivisi.divisi.flatMap((v) => v.akun.map((a) => ({ divisi: v.label, kode: a.kode, akun: a.nama, jenis: a.tipe === "BEBAN_POKOK" ? "Beban pokok" : "Beban operasional", dokumen: a.nDokumen, baris: a.nBaris, nilai: a.nilai })));
+  const divisiBaris = d.bebanDivisi.divisi.flatMap((v) => v.akun.map((a) => ({ divisi: v.label, kode: a.kode, akun: a.nama, jenis: a.tipe === "BEBAN_POKOK" ? "Beban pokok" : "Beban operasional", dokumen: a.nDokumen, baris: a.nBaris, nilai: a.nilai, sifat: sifatBeban(a.nilai) })));
   const konflik = d.bebanDivisi.konflik.baris.map((k) => ({ jurnal: k.nomorJurnal, tanggal: k.tanggal, sumber: k.sumber, akun: `${k.akunKode} ${k.akunNama}`, dokumen: k.dokumen ?? "", nilai: k.nilai, terpilih: k.divisiTerpilihLabel, kandidat: k.kandidatLabel.join(" / "), tahap: k.tahap, aturan: k.aturan, deskripsi: k.deskripsi }));
   const gap = [
     ...d.gap.daftar.map((g) => ({ daftar: "Gap resmi", no: g.no, order: g.order?.nomor ?? g.sumberId, jenis: g.jenisLabel, kategori: g.order?.kategori ?? "", status: g.order ? `${g.order.status} / ${g.order.statusBayar}` : "", pelanggan: g.order?.pelanggan ?? "", nilai: g.order?.nilai ?? "", tanggalGap: g.tanggalGap, tanggalSerah: g.order?.tanggalSerah ?? "", pembayaran: g.order ? `${g.order.jumlahPembayaran} pembayaran, terverifikasi ${g.order.pembayaranTerverifikasi}` : "", akunSemestinya: g.akunSemestinya ?? "", dampak: `Pendapatan: ${g.dampak.pendapatan} Laba: ${g.dampak.labaRugi} Neraca: ${g.dampak.neraca}`, tindakan: g.tindakan, detailSistem: g.detailSistem })),
@@ -87,7 +90,7 @@ async function ambil(db, { periode, filter, filterLabel, bolehSensitif }) {
       && (!kata || [r.nomorJurnal, r.dokumen?.nomor, r.orderNomor, r.deskripsi, r.akunNama].some((t) => String(t ?? "").toLowerCase().includes(kata))));
   const rincian = pilih.map(({ r, k }) => ({
     nomorJurnal: r.nomorJurnal, tanggal: r.tanggal, sumber: r.sumber, status: r.status, akun: `${r.akunKode} ${r.akunNama}`, debit: r.debit, kredit: r.credit, kontribusi: k,
-    dokumen: r.dokumen?.nomor ?? "", order: r.orderNomor ?? "", membalik: r.membalik?.nomor ?? "", divisi: r.divisiLabel, tahapBukti: r.tahap, konflik: r.konflik.length ? "Bukti bertentangan" : "", deskripsi: r.deskripsi,
+    dokumen: r.dokumen?.nomor ?? "", order: r.orderNomor ?? "", membalik: r.membalik?.nomor ?? "", sifat: r.akunTipe === "BEBAN" || r.akunTipe === "BEBAN_POKOK" ? sifatBarisBeban(r.nilai) : "", divisi: r.divisiLabel, tahapBukti: r.tahap, konflik: r.konflik.length ? "Bukti bertentangan" : "", deskripsi: r.deskripsi,
   }));
   const totalRincian = moneyToNumber(sumMoney(pilih.map((x) => x.k)));
   const labelFilter = [metrik ? `Metrik: ${LABEL_METRIK[metrik]}` : null, filter.akun ? `Akun: ${filter.akun}` : null, filter.divisi ? `Divisi: ${filter.divisi}` : null, filter.sumber ? `Sumber: ${filter.sumber}` : null, kata ? `Cari: ${kata}` : null].filter(Boolean).join("; ");
@@ -98,7 +101,7 @@ async function ambil(db, { periode, filter, filterLabel, bolehSensitif }) {
     filterLabel: [filterLabel, labelFilter].filter(Boolean).join(" | ") || "Seluruh jurnal Laba Rugi pada periode",
     sheets: [
       { nama: "Ringkasan", judul: "Ringkasan Laporan Keuangan", kolom: [{ key: "uraian", header: "Uraian", tipe: "teks", lebar: 60 }, { key: "nilai", header: "Nilai (Rp)", tipe: "uang" }, { key: "jumlahBaris", header: "Baris jurnal", tipe: "angka" }, { key: "status", header: "Status", tipe: "teks", lebar: 28 }, KOLOM_KETERANGAN], baris: ringkasan, catatan: catatanUmum },
-      { nama: "Laba Rugi", judul: "Laba Rugi per Akun", kolom: [{ key: "seksi", header: "Seksi", tipe: "teks", lebar: 22 }, { key: "kode", header: "Kode", tipe: "teks", lebar: 10 }, { key: "nama", header: "Akun", tipe: "teks", lebar: 44 }, { key: "nilai", header: "Nilai (Rp)", tipe: "uang" }], baris: barisLR, catatan: [`Pendapatan Bersih ${R.pendapatanBersih}; Laba Kotor ${R.labaKotor}; Beban Operasional ${R.bebanOperasional}; Laba Bersih ${R.labaBersih} — sama dengan kartu layar.`, ...catatanUmum] },
+      { nama: "Laba Rugi", judul: "Laba Rugi per Akun", kolom: [{ key: "seksi", header: "Seksi", tipe: "teks", lebar: 22 }, { key: "kode", header: "Kode", tipe: "teks", lebar: 10 }, { key: "nama", header: "Akun", tipe: "teks", lebar: 44 }, { key: "nilai", header: "Nilai (Rp)", tipe: "uang" }, { key: "sifat", header: "Sifat", tipe: "teks", lebar: 30 }], baris: barisLR, catatan: [`Pendapatan Bersih ${R.pendapatanBersih}; Laba Kotor ${R.labaKotor}; Beban Operasional ${R.bebanOperasional}; Laba Bersih ${R.labaBersih} — sama dengan kartu layar.`, `Akun biaya ditampilkan sebagai biaya NETO bertanda (debit − kredit). Nilai negatif = ${PEMBALIK_BEBAN_BERSIH.label.toLowerCase()}: ${PEMBALIK_BEBAN_BERSIH.penjelasan}`, RUMUS_LABA, ...catatanUmum] },
       { nama: "Jembatan Pendapatan", judul: "Jembatan Omzet Sales (Lunas) → Pendapatan Bersih Finance", kolom: [{ key: "bagian", header: "Bagian", tipe: "teks", lebar: 18 }, { key: "langkah", header: "Langkah", tipe: "teks", lebar: 66 }, { key: "order", header: "Order/Jurnal", tipe: "angka" }, { key: "nominal", header: "Nominal (Rp)", tipe: "uang" }, { key: "temuan", header: "Penanda", tipe: "teks", lebar: 18 }, KOLOM_KETERANGAN], baris: jembatan, catatan: catatanUmum },
       { nama: "Rincian Order Jembatan", judul: "Order per Komponen Jembatan", kolom: [
         { key: "kelas", header: "Komponen", tipe: "teks", lebar: 34 }, { key: "nomor", header: "No. Order", tipe: "teks", lebar: 20 }, { key: "kategori", header: "Kategori", tipe: "teks" }, { key: "status", header: "Status", tipe: "teks" }, { key: "statusBayar", header: "Status bayar", tipe: "teks" },
@@ -113,7 +116,7 @@ async function ambil(db, { periode, filter, filterLabel, bolehSensitif }) {
         { key: "pemenuhan", header: "Status pemenuhan", tipe: "teks", lebar: 20 }, { key: "orderCrm", header: "Order CRM", tipe: "teks", lebar: 40 }, { key: "jurnal", header: "Jurnal pendapatan", tipe: "teks", lebar: 20 }, { key: "item", header: "Item", tipe: "teks", lebar: 44 }, KOLOM_KETERANGAN,
       ], baris: pkr, catatan: [d.pkr.kebijakan, `Pendapatan PKR di buku besar ${d.pkr.ringkasan.pendapatanLedger}; Σ total dokumen periode ${d.pkr.ringkasan.penjualanDokumen}; selisih ${d.pkr.ringkasan.selisih}.`] },
       { nama: "HPP", judul: "HPP, Biaya Tak Terbukti & Estimasi (dipisah)", kolom: [{ key: "kelompok", header: "Kelompok", tipe: "teks", lebar: 42 }, { key: "uraian", header: "Uraian", tipe: "teks", lebar: 60 }, { key: "nilai", header: "Nilai", tipe: "uang" }, KOLOM_KETERANGAN], baris: hppBaris, catatan: [`STATUS MARGIN: ${PESAN_MARGIN[d.hpp.status]}`, ...d.hpp.alasan, "Estimasi informatif dan biaya tak terbukti TIDAK masuk laba maupun jurnal.", ...catatanUmum] },
-      { nama: "Beban per Divisi", judul: "Beban per Divisi → Akun", kolom: [{ key: "divisi", header: "Divisi", tipe: "teks", lebar: 24 }, { key: "kode", header: "Kode", tipe: "teks", lebar: 10 }, { key: "akun", header: "Akun", tipe: "teks", lebar: 40 }, { key: "jenis", header: "Jenis", tipe: "teks", lebar: 20 }, { key: "dokumen", header: "Dokumen", tipe: "angka" }, { key: "baris", header: "Baris jurnal", tipe: "angka" }, { key: "nilai", header: "Nilai (Rp)", tipe: "uang" }], baris: divisiBaris, total: { label: "Total beban (= beban pokok + beban operasional ledger)", nilai: { nilai: d.bebanDivisi.totalDivisi } }, catatan: [`Belum teratribusi: ${d.bebanDivisi.belumTeratribusi.nominal} pada ${d.bebanDivisi.belumTeratribusi.jumlahBaris} baris.`] },
+      { nama: "Beban per Divisi", judul: "Beban per Divisi → Akun", kolom: [{ key: "divisi", header: "Divisi", tipe: "teks", lebar: 24 }, { key: "kode", header: "Kode", tipe: "teks", lebar: 10 }, { key: "akun", header: "Akun", tipe: "teks", lebar: 40 }, { key: "jenis", header: "Jenis", tipe: "teks", lebar: 20 }, { key: "dokumen", header: "Dokumen", tipe: "angka" }, { key: "baris", header: "Baris jurnal", tipe: "angka" }, { key: "nilai", header: "Nilai (Rp)", tipe: "uang" }, { key: "sifat", header: "Sifat", tipe: "teks", lebar: 26 }], baris: divisiBaris, total: { label: "Total beban (= beban pokok + beban operasional ledger)", nilai: { nilai: d.bebanDivisi.totalDivisi } }, catatan: [`Belum teratribusi: ${d.bebanDivisi.belumTeratribusi.nominal} pada ${d.bebanDivisi.belumTeratribusi.jumlahBaris} baris.`, `Nilai negatif = ${PEMBALIK_BEBAN_BERSIH.label.toLowerCase()} (mengurangi biaya dan menaikkan laba).`] },
       { nama: "Konflik Atribusi", judul: "Baris dengan Bukti Divisi Bertentangan", kolom: [{ key: "jurnal", header: "Jurnal", tipe: "teks", lebar: 20 }, { key: "tanggal", header: "Tanggal", tipe: "teks" }, { key: "sumber", header: "Sumber", tipe: "teks", lebar: 18 }, { key: "akun", header: "Akun", tipe: "teks", lebar: 34 }, { key: "dokumen", header: "Dokumen", tipe: "teks", lebar: 20 }, { key: "nilai", header: "Nilai (Rp)", tipe: "uang" }, { key: "terpilih", header: "Divisi terpilih", tipe: "teks", lebar: 20 }, { key: "kandidat", header: "Kandidat bertentangan", tipe: "teks", lebar: 30 }, { key: "tahap", header: "Tahap bukti", tipe: "teks" }, { key: "aturan", header: "Aturan", tipe: "teks", lebar: 44 }, { key: "deskripsi", header: "Deskripsi", tipe: "teks", lebar: 56 }], baris: konflik, total: { label: `Total ${d.bebanDivisi.konflik.jumlahBaris} baris konflik`, nilai: { nilai: d.bebanDivisi.konflik.nominal } }, catatan: [d.bebanDivisi.konflik.penjelasan] },
       { nama: "Gap Pembukuan", judul: "Daftar Pemeriksaan Gap Pembukuan", kolom: [
         { key: "daftar", header: "Daftar", tipe: "teks", lebar: 18 }, { key: "no", header: "No", tipe: "angka" }, { key: "order", header: "Order", tipe: "teks", lebar: 20 }, { key: "jenis", header: "Jenis", tipe: "teks", lebar: 40 }, { key: "kategori", header: "Kategori", tipe: "teks" }, { key: "status", header: "Status", tipe: "teks", lebar: 22 },
@@ -125,6 +128,7 @@ async function ambil(db, { periode, filter, filterLabel, bolehSensitif }) {
         { key: "debit", header: "Debit (Rp)", tipe: "uang" }, { key: "kredit", header: "Kredit (Rp)", tipe: "uang" }, { key: "kontribusi", header: metrik ? `Kontribusi ke ${LABEL_METRIK[metrik]} (Rp)` : "Efek ke Laba Bersih (Rp)", tipe: "uang" },
         { key: "dokumen", header: "Dokumen", tipe: "teks", lebar: 20 }, { key: "order", header: "Order", tipe: "teks", lebar: 20 }, { key: "membalik", header: "Membalik", tipe: "teks", lebar: 20 }, { key: "divisi", header: "Divisi", tipe: "teks", lebar: 22 },
         { key: "tahapBukti", header: "Tahap bukti", tipe: "teks" }, { key: "konflik", header: "Konflik", tipe: "teks", lebar: 18 }, { key: "deskripsi", header: "Deskripsi", tipe: "teks", lebar: 70 },
+        { key: "sifat", header: "Sifat baris", tipe: "teks", lebar: 26 }, // kolom BARU selalu di ujung kanan: posisi kolom lama tidak bergeser bagi pembaca otomatis
       ], baris: rincian, total: { label: metrik ? `Total ${LABEL_METRIK[metrik]}` : "Total efek ke Laba Bersih", nilai: { kontribusi: totalRincian } }, catatan: [labelFilter ? `Disaring: ${labelFilter}` : "Seluruh baris jurnal Laba Rugi periode ini.", "Total = Σ kolom Kontribusi; tanpa filter metrik/akun sama dengan Laba Bersih pada kartu."] },
     ],
   };

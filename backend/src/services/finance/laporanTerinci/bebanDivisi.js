@@ -31,7 +31,8 @@ export function hitungBebanDivisi(baris, ringkasan) {
       bebanPokok: rp(sumMoney(d.rows.filter((r) => r.akunTipe === "BEBAN_POKOK").map((r) => r.nilai))),
       total: rp(sumMoney(d.rows.map((r) => r.nilai))),
       nBaris: d.rows.length, nDokumen: new Set(d.rows.map((r) => r.dokumen?.nomor ?? r.nomorJurnal)).size, nKonflik: d.rows.filter((r) => r.konflik.length > 0).length,
-      akun: [...akun.values()].map((a) => ({ kode: a.kode, nama: a.nama, tipe: a.tipe, nilai: rp(sumMoney(a.nilai)), nBaris: a.nBaris, nDokumen: a.dokumen.size })).sort((x, y) => x.kode.localeCompare(y.kode)),
+      akun: [...akun.values()].map((a) => { const nilai = rp(sumMoney(a.nilai)); return { kode: a.kode, nama: a.nama, tipe: a.tipe, nilai, nBaris: a.nBaris, nDokumen: a.dokumen.size, ...(nilai < 0 ? { pembalikBebanBersih: true } : {}) }; }).sort((x, y) => x.kode.localeCompare(y.kode)),
+      pembalikBebanBersih: rp(sumMoney(d.rows.map((r) => r.nilai))) < 0, // total divisi (biaya neto) negatif = pembalik beban bersih
     };
   });
 

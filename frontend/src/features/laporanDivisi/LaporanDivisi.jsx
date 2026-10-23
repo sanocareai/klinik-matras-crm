@@ -12,6 +12,8 @@ import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
 import { formatRupiahShort } from "@/utils/format.js";
 import { formatTanggalPendek } from "@/utils/formatDate.js";
+import { KotakPembalik, LabelPembalik } from "@/features/finance/biayaNeto.jsx";
+import { PENANDA_CADANGAN } from "@/features/finance/biayaNetoLogic.js";
 import { HalamanFinance, KartuAngka, formatUang, PeriodePicker, periodeDefault, JudulKartu } from "@/features/finance/shared.jsx";
 import { KenapaBeda } from "@/features/finance/kontrak.jsx";
 
@@ -29,6 +31,8 @@ const RUTE_DOKUMEN = { pengeluaran: "/finance/expenses", pembelian: "/finance/pu
 const NAMA_MODUL = { pengeluaran: "Pengeluaran", pembelian: "Pembelian", "supplier-utang": "Supplier & Utang", "uang-muka": "Uang Muka", "armada-biaya": "Biaya Kendaraan", "ad-spend": "Belanja Iklan", "material-issue": "Material Issue", "stock-movement": "Pergerakan Stok", "stock-count": "Stock Opname", "goods-receipt": "Penerimaan Barang" };
 const bulanLabel = (b) => { try { return new Date(`${b}-01T00:00:00Z`).toLocaleDateString("id-ID", { month: "short", year: "2-digit", timeZone: "UTC" }); } catch { return b; } };
 const bulanIni = () => periodeDefault().from.slice(0, 7);
+// Aktual (beban diakui) bernilai NEGATIF = pembalik beban bersih: mengurangi biaya & menaikkan laba. Nominal tetap dalam kurung (formatUang) + label supaya tidak terbaca sebagai biaya biasa.
+const AktualBeban = ({ value }) => (Number(value) < 0 ? <span className="inline-flex flex-wrap items-center justify-end gap-1.5"><LabelPembalik />{formatUang(value)}</span> : formatUang(value));
 const rpBertanda = (n) => (n < 0 ? `−${formatUang(Math.abs(n))}` : formatUang(n));
 
 // Panel: permukaan "glass" Finance (sama dengan FilterBar) tanpa padding ganda Card p-6 + CardContent.
@@ -58,7 +62,7 @@ function BarisRincian({ judul, sub, aktual, kas, onClick, kanan }) {
         {sub && <span className="mt-0.5 block text-[12px] leading-snug text-ink3">{sub}</span>}
       </span>
       <span className="shrink-0 text-right text-[12.5px] tabular-nums text-ink2">
-        <span className="block font-semibold text-ink">{formatUang(aktual)}</span>
+        <span className="block font-semibold text-ink"><AktualBeban value={aktual} /></span>
         {kas != null && <span className="block text-ink3">Kas {formatUang(kas)}</span>}
         {kanan}
       </span>
@@ -76,7 +80,7 @@ function KartuDivisi({ d, onBuka }) {
         {d.alert && <Badge variant="red">Melebihi anggaran</Badge>}
       </div>
       <p className="mt-2 text-[12px] text-ink3">Aktual (Beban Diakui)</p>
-      <p className="text-[20px] font-bold tabular-nums text-ink">{formatUang(d.aktual)}</p>
+      <p className="text-[20px] font-bold tabular-nums text-ink"><AktualBeban value={d.aktual} /></p>
       <div className="mt-2 grid grid-cols-2 gap-2 text-[12px] text-ink2">
         <span>Kas keluar<b className="block tabular-nums text-ink">{formatUang(d.kasKeluar)}</b></span>
         <span>Komitmen<b className="block tabular-nums text-ink">{formatUang(d.komitmen.belumDibukukan + d.komitmen.dibukukanBelumDibayar)}</b></span>
@@ -241,11 +245,12 @@ export default function LaporanDivisi({ scopeTetap = null, judul = "Laporan Biay
           {sub === "ringkasan" && !divTunggal && (
             <>
               <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                <KartuAngka label="Aktual (Beban Diakui)" metrik="beban_diakui" value={formatUang(lap.ringkasan.aktual)} sub={`${lap.divisi.length} kelompok`} />
+                <KartuAngka label="Aktual (Beban Diakui)" metrik="beban_diakui" value={formatUang(lap.ringkasan.aktual)} sub={lap.ringkasan.aktual < 0 ? `${PENANDA_CADANGAN.pembalikBebanBersih.label} · ${lap.divisi.length} kelompok` : `${lap.divisi.length} kelompok`} />
                 <KartuAngka label="Kas Keluar" metrik="uang_keluar_kas" value={formatUang(lap.ringkasan.kasKeluar)} sub="Uang yang benar-benar keluar" />
                 <KartuAngka label="Komitmen" metrik="komitmen_belum_dibayar" value={formatUang(lap.ringkasan.komitmenBelumDibukukan + lap.ringkasan.komitmenDibukukanBelumDibayar)} sub="Belum beban / belum kas keluar" />
                 <KartuAngka label="Anggaran" metrik="anggaran_divisi" value={lap.ringkasan.anggaran == null ? "Belum ada anggaran" : formatUang(lap.ringkasan.anggaran)} sub={lap.ringkasan.divisiTanpaAnggaran > 0 ? `${lap.ringkasan.divisiTanpaAnggaran} divisi belum beranggaran` : undefined} />
               </div>
+              <KotakPembalik ada={lap.ringkasan.aktual < 0 || lap.divisi.some((d) => d.aktual < 0)} testid="kotak-pembalik-laporan-divisi" />
               <div>
                 <p className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-ink3">Perbandingan antar-divisi · sentuh untuk membuka</p>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -258,7 +263,7 @@ export default function LaporanDivisi({ scopeTetap = null, judul = "Laporan Biay
                     <Panel key={s} data-testid={`kartu-${s}`} className="space-y-1 py-4">
                       <p className="text-[14px] font-bold text-ink">{d.label}</p>
                       <p className="text-[12px] leading-snug text-ink2">{s === "SHARED" ? "Biaya kantor/administrasi umum yang tidak milik satu divisi. Tetap bersama sampai ada alokasi resmi." : "Biaya yang divisinya TIDAK terbukti dari dokumen sumber. Tidak pernah ditebak dari pembuat transaksi."}</p>
-                      <p className="text-[20px] font-bold tabular-nums text-ink">{formatUang(d.aktual)}</p>
+                      <p className="text-[20px] font-bold tabular-nums text-ink"><AktualBeban value={d.aktual} /></p>
                       <p className="text-[12px] text-ink3">Kas keluar {formatUang(d.kasKeluar)} · {d.nDokumen} dokumen</p>
                       <Button size="sm" variant="neutral" onClick={() => { setPilihan(s); setSub("dokumen"); }}>Lihat dokumen</Button>
                     </Panel>

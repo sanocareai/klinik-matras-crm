@@ -1311,6 +1311,7 @@ financeRouter.get("/dashboard", requirePermission(P.FINANCE_READ), async (req, r
       kasBank,
       totalKas,
       labaRugi: lr.ringkasan,
+      labaRugiPenanda: lr.penanda, // teks pembalik beban bersih (satu sumber dengan Laba Rugi/Excel)
       piutang: { total: piutang.total, ringkasan: piutang.ringkasan, teratas: piutang.baris.slice(0, 8), menungguVerifikasi: piutang.menungguVerifikasi },
       utang: { total: utang.total, ringkasan: utang.ringkasan, teratas: utang.baris.slice(0, 8) },
       antrean: {
