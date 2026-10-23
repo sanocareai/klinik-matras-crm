@@ -110,6 +110,11 @@ test("B. kartu = Σ akun = Σ jurnal = Excel sampai sen (Okt, Sep–Okt); kontro
     for (const k of d.kartu) { const baris = ring.baris.find((x) => x["Uraian"] === k.label); assert.ok(baris, k.label); assert.equal(Number(baris["Nilai (Rp)"]), k.nilai, `Excel Ringkasan ${k.label}`); }
     const rin = bacaSheet(ex.wb, "Rincian Jurnal"); assert.equal(rin.baris.length, d.baris.length);
     assert.equal(jml(rin.baris.map((x) => x["Efek ke Laba Bersih (Rp)"])), kartu.laba_bersih.nilai, "Excel Σ rincian jurnal = Laba Bersih");
+    // Kolom BARU ("Sifat") harus di ujung kanan: posisi kolom lama tidak bergeser bagi pembaca otomatis.
+    const kolomJurnal = Object.keys(rin.baris[0]);
+    assert.deepEqual(kolomJurnal.slice(0, 7), ["No. jurnal", "Tanggal buku", "Sumber", "Status", "Akun", "Debit (Rp)", "Kredit (Rp)"]);
+    assert.deepEqual([...kolomJurnal.slice(8, 15)], ["Dokumen", "Order", "Membalik", "Divisi", "Tahap bukti", "Konflik", "Deskripsi"], "kolom lama setelah Kontribusi tidak bergeser");
+    assert.equal(kolomJurnal.at(-1), "Sifat baris"); assert.equal(Object.keys(sheetLR.baris[0]).at(-1), "Sifat");
     // penanda pembalik di Excel
     if (per === OKT) {
       const baris5 = sheetLR.baris.find((x) => String(x["Kode"]) === "5-1300"); assert.match(String(baris5["Sifat"]), /Pembalik beban bersih/);

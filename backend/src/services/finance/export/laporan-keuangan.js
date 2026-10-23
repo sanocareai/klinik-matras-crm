@@ -126,8 +126,9 @@ async function ambil(db, { periode, filter, filterLabel, bolehSensitif }) {
       { nama: "Rincian Jurnal", judul: "Rincian Baris Jurnal Laba Rugi", kolom: [
         { key: "nomorJurnal", header: "No. jurnal", tipe: "teks", lebar: 20 }, { key: "tanggal", header: "Tanggal buku", tipe: "teks" }, { key: "sumber", header: "Sumber", tipe: "teks", lebar: 22 }, { key: "status", header: "Status", tipe: "teks" }, { key: "akun", header: "Akun", tipe: "teks", lebar: 38 },
         { key: "debit", header: "Debit (Rp)", tipe: "uang" }, { key: "kredit", header: "Kredit (Rp)", tipe: "uang" }, { key: "kontribusi", header: metrik ? `Kontribusi ke ${LABEL_METRIK[metrik]} (Rp)` : "Efek ke Laba Bersih (Rp)", tipe: "uang" },
-        { key: "dokumen", header: "Dokumen", tipe: "teks", lebar: 20 }, { key: "order", header: "Order", tipe: "teks", lebar: 20 }, { key: "membalik", header: "Membalik", tipe: "teks", lebar: 20 }, { key: "sifat", header: "Sifat baris", tipe: "teks", lebar: 26 }, { key: "divisi", header: "Divisi", tipe: "teks", lebar: 22 },
+        { key: "dokumen", header: "Dokumen", tipe: "teks", lebar: 20 }, { key: "order", header: "Order", tipe: "teks", lebar: 20 }, { key: "membalik", header: "Membalik", tipe: "teks", lebar: 20 }, { key: "divisi", header: "Divisi", tipe: "teks", lebar: 22 },
         { key: "tahapBukti", header: "Tahap bukti", tipe: "teks" }, { key: "konflik", header: "Konflik", tipe: "teks", lebar: 18 }, { key: "deskripsi", header: "Deskripsi", tipe: "teks", lebar: 70 },
+        { key: "sifat", header: "Sifat baris", tipe: "teks", lebar: 26 }, // kolom BARU selalu di ujung kanan: posisi kolom lama tidak bergeser bagi pembaca otomatis
       ], baris: rincian, total: { label: metrik ? `Total ${LABEL_METRIK[metrik]}` : "Total efek ke Laba Bersih", nilai: { kontribusi: totalRincian } }, catatan: [labelFilter ? `Disaring: ${labelFilter}` : "Seluruh baris jurnal Laba Rugi periode ini.", "Total = Σ kolom Kontribusi; tanpa filter metrik/akun sama dengan Laba Bersih pada kartu."] },
     ],
   };
