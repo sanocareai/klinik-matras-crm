@@ -53,9 +53,26 @@ test("bahan ADA di katalog tetapi dicatat sementara: alasan wajib + asal wajib; 
   const b = src("features", "production", "bahan", "BahanBelumAda.jsx"); const g = src("pages", "warehouse", "WarehouseUsulanBahan.jsx"); const d = src("features", "production", "bahan", "PemakaianSementaraDaftar.jsx"); const c = src("features", "production", "bahan", "PemakaianAktualBagian.jsx");
   for (const k of ["const wajibAlasan = bolehSementara && !!kandidatKatalog", "alasan-rekon", "Mengapa dicatat sementara, padahal bahan ini ada di katalog? (Gudang membaca ini)", "wajib — Gudang perlu tahu dari mana barang ini", "catatan-untuk-gudang", "Yang akan dibaca Gudang:", "note: catatanGudang || undefined", "originNote: asal.trim() || undefined", "alasanOk", "asalOk", "hasil-asal", "hasil-alasan"]) assert.ok(b.includes(k), k);
   // ATURAN SERVER: nama SAMA PERSIS dengan katalog ditolak (409) → UI memblokir dengan penjelasan; hanya nama MIRIP yang boleh dicatat sementara dengan alasan+asal wajib
-  for (const k of ["katalogSama", "blokKatalogSama", 'data-testid="katalog-sama-blok"', "Tidak bisa dicatat sementara", "server menolak pemakaian sementara dengan nama ini", '(k.tingkat ?? "SAMA") === "SAMA"', "!blokKatalogSama && usulanOk", 'const KODE_FINAL = ["BAHAN_ADA_DI_KATALOG", "USULAN_DITOLAK"]', 'data-testid="usulan-final"']) assert.ok(b.includes(k), k);
+  for (const k of ["katalogSama", "blokKatalogSama", 'data-testid="katalog-sama-blok"', "Tidak bisa dicatat sebagai bahan baru", "katalog-sama-ke-sementara", "onSementaraKatalog", '(k.tingkat ?? "SAMA") === "SAMA"', "!blokKatalogSama && usulanOk", 'const KODE_FINAL = ["BAHAN_ADA_DI_KATALOG", "USULAN_DITOLAK"]', 'data-testid="usulan-final"']) assert.ok(b.includes(k), k);
   assert.ok(!c.includes('alasan: "STOK_BELUM_TERCATAT"'), "tidak lagi mengarahkan stok-belum-diketahui ke pemakaian sementara bernama sama (pasti ditolak server)");
-  const cb = src("features", "production", "bahan", "CatatBahanBaru.jsx"); assert.ok(cb.includes("aktual-stok-tak-diketahui-jalur") && cb.includes("Yang saya pakai bukan bahan ini") && cb.includes("ditolak server"));
+  const cb = src("features", "production", "bahan", "CatatBahanBaru.jsx"); assert.ok(cb.includes("aktual-stok-tak-diketahui-jalur") && cb.includes("Yang saya pakai bukan bahan ini") && cb.includes("server menolak pencatatan resmi") && cb.includes("Catat sementara — stok belum diketahui") && cb.includes("aktual-ke-sementara-katalog"));
   for (const k of ['data-testid="sementara-asal-gudang"', "Asal barang:", "belum diisi oleh pencatat", 'data-testid="sementara-alasan-gudang"', "{r.note}"]) assert.ok(g.includes(k), k);
   assert.ok(d.includes('asal: {item.originNote || "belum diisi"}'));
+});
+
+test("UI 'Catat sementara — stok belum diketahui' (bahan KATALOG tanpa catatan stok): tertaut ke ID katalog, nama+satuan terkunci dari katalog, jumlah + asal + alasan wajib, status 'Perlu rekonsiliasi Gudang' sebelum dan sesudah, Idempotency-Key per niat; tanpa jalur stok", () => {
+  const f = src("features", "production", "bahan", "FormSementaraKatalog.jsx"); const m = src("features", "production", "bahan", "bahanModel.js"); const c = src("features", "production", "bahan", "CatatBahanBaru.jsx"); const p = src("features", "production", "bahan", "PemakaianAktualBagian.jsx");
+  for (const k of ["api.catatPemakaianSementara(unitId, { materialId: bahan.materialId, qty: jumlah, uom: bahan.satuan, originNote: asal.trim(), alasanPencatatan: teksAlasan, note: catatan.trim() || undefined }, kunciRef.current)", 'kunciIdempoten("sementara-katalog")', "if (sidikRef.current !== sidik)", "kirimRef.current",
+    "asal.trim().length >= 2 && teksAlasan.length >= 3", 'data-testid="katalog-bahan-terkunci"', 'data-testid="status-rekon-sebelum"', 'data-testid="status-rekon-sesudah"', "STATUS_REKON", "Catat sementara — stok belum diketahui", "katalog-ringkasan", "katalog-galat", "Gudang menindaklanjuti lewat jalur stok resmi"]) assert.ok(f.includes(k), k);
+  assert.ok(!f.includes("addUnitMaterial") && !f.includes("ajukanBahanBaru"), "bukan jalur stok dan bukan usulan");
+  assert.ok(!/name:\s*bahan\.nama/.test(f), "nama tidak dikirim dari klien (server memakai nama katalog)");
+  for (const k of ["ALASAN_KATALOG", "STOK_BELUM_TERCATAT", "SUDAH_DIPAKAI_DULU", "LAINNYA"]) assert.ok(m.includes(k), k);
+  assert.ok(c.includes("onPakaiSementara({ materialId: b.materialId, kode: b.kode, nama: b.nama, satuan: b.satuan, qty: b.qty })") && c.includes("izin.catatPemakaianSementara"), "tombol hanya untuk yang berizin catat sementara");
+  for (const k of ["FormSementaraKatalog", 'mode === "katalog" && bahanKat', "bukaKatalog", "onSementaraKatalog={bukaKatalog}", 'aktifKey={mode === "katalog" ? "gudang" : mode}']) assert.ok(p.includes(k), k);
+});
+
+test("daftar + Gudang + koreksi: catatan tertaut katalog ditandai 'Bahan katalog KODE · stok belum diketahui'; koreksi mengunci bahan+satuan dan mewajibkan asal; Gudang diberi langkah resmi", () => {
+  const d = src("features", "production", "bahan", "PemakaianSementaraDaftar.jsx"); const g = src("pages", "warehouse", "WarehouseUsulanBahan.jsx");
+  for (const k of ["const tertaut = !!item.tertautKatalog", "terkunci = !!item.proposalId || tertaut", "(!tertaut || asal.trim().length >= 2)", 'data-testid="sementara-tertaut-katalog"', "stok belum diketahui", "Bahan katalog tetap sama; asal barang wajib."]) assert.ok(d.includes(k), k);
+  for (const k of ['data-testid="sementara-tertaut-katalog-gudang"', "stok belum diketahui", "catat stok awal/opname dulu, lalu pengeluaran resmi ke unit, lalu tautkan"]) assert.ok(g.includes(k), k);
 });

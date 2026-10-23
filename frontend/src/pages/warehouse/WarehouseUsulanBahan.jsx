@@ -150,6 +150,7 @@ function TabSementara({ izinRekon }) {
             <Card className="space-y-1 p-4" data-testid="sementara-kartu" data-status={r.status}>
               <div className="flex flex-wrap items-center gap-2"><p className="m-0 text-[15px] font-bold text-ink">{r.name} — {formatJumlah(r.qty)} {r.uom}</p><Badge variant={NADA_SEMENTARA[r.status] || "neutral"}>{r.statusLabel}</Badge></div>
               <p className="m-0 text-[13px] text-ink2">Unit <Link to={unitDetailPath(r.unitId)} className="text-accent underline-offset-2 hover:underline">{r.unitCode}</Link>{r.orderNumber ? ` · order ${r.orderNumber}` : ""}</p>
+              {r.tertautKatalog && <p className="m-0 text-[13px] font-medium text-ink" data-testid="sementara-tertaut-katalog-gudang">Bahan katalog {r.bahanKatalog?.kode ?? ""} ({r.bahanKatalog?.nama ?? r.name}) — <span className="text-orange">stok belum diketahui</span>: catat stok awal/opname dulu, lalu pengeluaran resmi ke unit, lalu tautkan.</p>}
               <p className="m-0 text-[13px] text-ink" data-testid="sementara-asal-gudang"><b>Asal barang:</b> {r.originNote || "belum diisi oleh pencatat"}</p>
               {r.note && <p className="m-0 text-[13px] text-ink" data-testid="sementara-alasan-gudang">{r.note}</p>}
               <p className="m-0 text-[12px] text-ink3">Dicatat {r.oleh || "—"}, dipakai {waktuWib(r.usedAt)}{r.usulan ? ` · usulan bahan: ${r.usulan.status === "MENUNGGU_GUDANG" ? "menunggu keputusan" : r.usulan.status === "DITOLAK" ? "ditolak" : "sudah di katalog"}` : ""}</p>

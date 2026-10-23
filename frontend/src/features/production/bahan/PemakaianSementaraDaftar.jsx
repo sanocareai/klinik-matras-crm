@@ -16,9 +16,9 @@ const kolom = "h-11 w-full rounded-btn border border-line bg-surface px-3 text-[
 function FormKoreksi({ item, onBatal, onSelesai }) {
   const [qty, setQty] = useState(String(item.qty).replace(".", ",")); const [uom, setUom] = useState(item.uom); const [asal, setAsal] = useState(item.originNote || ""); const [catatan, setCatatan] = useState(item.note || ""); const [alasan, setAlasan] = useState("");
   const [sibuk, setSibuk] = useState(false); const [galat, setGalat] = useState(null); const kirimRef = useRef(false); const kunciRef = useRef(null); const sidikRef = useRef("");
-  const jumlah = parseJumlah(qty); const terkunci = !!item.proposalId;
+  const jumlah = parseJumlah(qty); const tertaut = !!item.tertautKatalog; const terkunci = !!item.proposalId || tertaut;
   const berubah = jumlah !== item.qty || uom !== item.uom || asal.trim() !== (item.originNote || "") || catatan.trim() !== (item.note || "");
-  const valid = jumlah !== null && jumlah > 0 && berubah && alasan.trim().length >= 3;
+  const valid = jumlah !== null && jumlah > 0 && berubah && alasan.trim().length >= 3 && (!tertaut || asal.trim().length >= 2);
   const sidik = `${jumlah}|${uom}|${asal.trim()}|${catatan.trim()}|${alasan.trim()}`;
   if (sidikRef.current !== sidik) { sidikRef.current = sidik; kunciRef.current = null; } // isian berubah = niat baru; isian sama (klik ulang/retry) = kunci sama
   async function kirim() {
@@ -28,7 +28,7 @@ function FormKoreksi({ item, onBatal, onSelesai }) {
   }
   return (
     <div className="mt-2 space-y-2 rounded-btn bg-surface px-3 py-3" data-testid="sementara-koreksi-form">
-      <p className="m-0 text-[12.5px] text-ink2">Koreksi membuat catatan BARU dan membatalkan yang lama (tetap tersimpan, dengan alasan). Stok tidak berubah. Nama bahan{terkunci ? " dan satuan" : ""} tidak diubah di sini.</p>
+      <p className="m-0 text-[12.5px] text-ink2">Koreksi membuat catatan BARU dan membatalkan yang lama (tetap tersimpan, dengan alasan). Stok tidak berubah. Nama bahan{terkunci ? " dan satuan" : ""} tidak diubah di sini.{tertaut ? " Bahan katalog tetap sama; asal barang wajib." : ""}</p>
       <div className="flex gap-2">
         <label className="flex-1"><span className="mb-1 block text-[12px] text-ink3">Jumlah dipakai</span><input inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value)} data-testid="koreksi-qty" className={cn(kolom, "text-right tabular-nums")} /></label>
         <label className="w-32"><span className="mb-1 block text-[12px] text-ink3">Satuan</span><select value={uom} onChange={(e) => setUom(e.target.value)} disabled={terkunci} className={cn(kolom, "pr-1")}>{SATUAN_KOMPONEN.map((s) => <option key={s} value={s}>{s}</option>)}</select></label>
@@ -58,6 +58,7 @@ function Baris({ item, bolehCatat, bolehGudang, aktif, onDone }) {
     <li className="px-3 py-2.5" data-testid="sementara-baris" data-status={item.status} data-dikoreksi={item.dikoreksi ? "1" : "0"}>
       <div className="flex flex-wrap items-start gap-x-2 gap-y-1">
         <span className="min-w-0 flex-1"><span className={cn("block text-[13px] font-medium text-ink", item.status === "DIBATALKAN" && "line-through decoration-ink3")}>{item.name}</span>
+          {item.tertautKatalog && <span className="block text-[12px] font-medium text-ink" data-testid="sementara-tertaut-katalog">Bahan katalog {item.bahanKatalog?.kode ?? ""} · stok belum diketahui</span>}
           <span className="block text-[12px] text-ink2">{formatJumlah(item.qty)} {item.uom} · asal: {item.originNote || "belum diisi"}{item.hasilKoreksi ? " · hasil koreksi" : ""}</span></span>
         <Badge variant={NADA[item.status] || "neutral"} className={perlu ? "bh-b-orange" : undefined} data-testid="sementara-status">{labelStatus}</Badge>
       </div>

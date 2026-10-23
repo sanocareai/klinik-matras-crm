@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge.jsx";
 import { cn } from "@/lib/utils.js";
 import CatatBahanBaru from "@/features/production/bahan/CatatBahanBaru.jsx";
 import BahanBelumAda from "@/features/production/bahan/BahanBelumAda.jsx";
+import FormSementaraKatalog from "@/features/production/bahan/FormSementaraKatalog.jsx";
 import FormKomponenLama from "@/features/production/bahan/FormKomponenLama.jsx";
 import KomponenLamaDaftar from "@/features/production/bahan/KomponenLamaDaftar.jsx";
 import PemakaianSementaraDaftar from "@/features/production/bahan/PemakaianSementaraDaftar.jsx";
@@ -38,12 +39,13 @@ const tulisTertinggal = (unitId, v) => { try { if (v) sessionStorage.setItem(kun
 export default function PemakaianAktualBagian({ unitId, data, izin, aktif, onDone, rencanaEdit = false, onMulai = null, tanpaJudul = false }) {
   const kodeUnit = data.unit.unitCode; const boleh = !!izin.pemakaianAktual && aktif;
   const bolehBelumAda = boleh && (!!izin.catatPemakaianSementara || !!izin.usulBahan);
-  const [mode, setMode] = useState(null); // null | "gudang" | "belum" | "lama"
+  const [mode, setMode] = useState(null); // null | "gudang" | "belum" | "lama" | "katalog"
   const [tertinggal, setTertinggalState] = useState(() => bacaTertinggal(unitId));
   const setTertinggal = (v) => { setTertinggalState(v); tulisTertinggal(unitId, v); };
   // Pemakaian sementara bertaut ke usulan itu sudah ada di server (mis. respons hilang padahal tersimpan, atau dicatat dari perangkat lain) → tidak ada lagi yang tertinggal.
   useEffect(() => { if (tertinggal && (data.pemakaianSementara?.items ?? []).some((i) => i.proposalId === tertinggal.usulan?.id)) setTertinggal(null); }, [data.pemakaianSementara, tertinggal?.usulan?.id]); // eslint-disable-line react-hooks/exhaustive-deps
-  const [awalCari, setAwalCari] = useState(""); const [awalBelum, setAwalBelum] = useState({ nama: "", satuan: "PCS", alasan: "" });
+  const [awalCari, setAwalCari] = useState(""); const [awalBelum, setAwalBelum] = useState({ nama: "", satuan: "PCS", alasan: "" }); const [bahanKat, setBahanKat] = useState(null); // bahan katalog (stok belum diketahui) yang dicatat sementara
+  const bukaKatalog = (b) => { setBahanKat(b); setMode("katalog"); onMulai?.("katalog"); };
   const kl = data.komponenLama ?? { items: [], dibatalkan: [] };
   const sementara = data.pemakaianSementara ?? { items: [], total: { perluRekonsiliasi: 0 } };
   const adaBaru = (data.pemakaianAktual?.baris ?? []).length > 0; const adaLama = kl.items.length + kl.dibatalkan.length > 0; const adaSementara = sementara.items.length > 0;
@@ -58,7 +60,7 @@ export default function PemakaianAktualBagian({ unitId, data, izin, aktif, onDon
 
       {boleh && (
         <div role="radiogroup" aria-label="Sumber pemakaian bahan" className="flex flex-col gap-2 md:flex-row" data-testid="aktual-sumber-tombol">
-          <KartuSumber aktifKey={mode} kunci="gudang" ikon={Package} disabled={rencanaEdit} alasan={rencanaEdit ? "Selesaikan atau batalkan penyusunan rencana dulu" : null} onPilih={pilih} />
+          <KartuSumber aktifKey={mode === "katalog" ? "gudang" : mode} kunci="gudang" ikon={Package} disabled={rencanaEdit} alasan={rencanaEdit ? "Selesaikan atau batalkan penyusunan rencana dulu" : null} onPilih={pilih} />
           <KartuSumber aktifKey={mode} kunci="belum" ikon={HelpCircle} disabled={rencanaEdit || !bolehBelumAda} alasan={rencanaEdit ? "Selesaikan atau batalkan penyusunan rencana dulu" : !bolehBelumAda ? "Akun Anda tidak boleh mencatat pemakaian sementara atau mengusulkan bahan" : null} onPilih={pilih} />
           <KartuSumber aktifKey={mode} kunci="lama" ikon={Recycle} disabled={rencanaEdit} alasan={rencanaEdit ? "Selesaikan atau batalkan penyusunan rencana dulu" : null} onPilih={pilih} />
         </div>
@@ -79,8 +81,9 @@ export default function PemakaianAktualBagian({ unitId, data, izin, aktif, onDon
       {boleh && mode && (
         <div className="space-y-3 rounded-card border border-line px-4 py-4" data-testid="panel-catat-aktual" data-mode={mode}>
           {mode === "lama" && <p className="m-0 text-[12.5px] text-ink2" data-testid="mode-teks">{KARTU_SUMBER.lama.teks} {asalKomponen(kodeUnit)}.</p>}
-          {mode === "gudang" && <CatatBahanBaru key={`gudang-${awalCari}`} onTertinggal={setTertinggal} data={data} unitId={unitId} izin={izin} awalCariAwal={awalCari} onDone={onDone} onTutup={tutup} onPakaiSementara={(b) => { setAwalBelum({ nama: "", satuan: SATUAN_LIST.includes(b.satuan) ? b.satuan : "PCS", alasan: "" }); setMode("belum"); }} />}
-          {mode === "belum" && <BahanBelumAda key={`belum-${awalBelum.nama}-${awalBelum.dariTertinggal ? "lanjut" : "baru"}`} awalNama={awalBelum.nama} awalSatuan={awalBelum.satuan} alasanAwal={awalBelum.alasan} tertinggalAwal={awalBelum.dariTertinggal ? tertinggal : null} onTertinggal={setTertinggal} unitId={unitId} kodeUnit={kodeUnit} izin={izin} onTutup={tutup} onDone={onDone} onGunakanKatalog={(k) => { setAwalCari(k.nama); setMode("gudang"); }} />}
+          {mode === "gudang" && <CatatBahanBaru key={`gudang-${awalCari}`} onTertinggal={setTertinggal} data={data} unitId={unitId} izin={izin} awalCariAwal={awalCari} onDone={onDone} onTutup={tutup} onPakaiSementara={bukaKatalog} onBukanBahanIni={(b) => { setAwalBelum({ nama: "", satuan: SATUAN_LIST.includes(b.satuan) ? b.satuan : "PCS", alasan: "" }); setMode("belum"); }} />}
+          {mode === "katalog" && bahanKat && <FormSementaraKatalog key={`katalog-${bahanKat.materialId}`} unitId={unitId} kodeUnit={kodeUnit} bahan={bahanKat} qtyAwal={bahanKat.qty ?? ""} onSelesai={onDone} onBatal={tutup} onBukanBahanIni={() => { setAwalBelum({ nama: "", satuan: SATUAN_LIST.includes(bahanKat.satuan) ? bahanKat.satuan : "PCS", alasan: "" }); setMode("belum"); }} />}
+          {mode === "belum" && <BahanBelumAda key={`belum-${awalBelum.nama}-${awalBelum.dariTertinggal ? "lanjut" : "baru"}`} awalNama={awalBelum.nama} awalSatuan={awalBelum.satuan} alasanAwal={awalBelum.alasan} tertinggalAwal={awalBelum.dariTertinggal ? tertinggal : null} onTertinggal={setTertinggal} unitId={unitId} kodeUnit={kodeUnit} izin={izin} onTutup={tutup} onDone={onDone} onSementaraKatalog={bukaKatalog} onGunakanKatalog={(k) => { setAwalCari(k.nama); setMode("gudang"); }} />}
           {mode === "lama" && <FormKomponenLama key="lama" unitId={unitId} kodeUnit={kodeUnit} meta={{ fotoMaks: 3 }} onSelesai={selesaiKomponen} onBatal={tutup} />}
         </div>
       )}

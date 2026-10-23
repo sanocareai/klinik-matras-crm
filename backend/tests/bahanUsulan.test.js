@@ -71,3 +71,30 @@ test("status kerja: bukti HANYA pemakaian sementara → Sudah dikerjakan bersumb
   const selesai = effectiveWorkStatus({ ...dasar, pemakaian: { ...dasar.pemakaian, hanyaSementara: true }, manual: { status: "SELESAI", createdAt: "2026-10-21T00:00:00Z", actor: { name: "X" } } });
   assert.equal(selesai.key, "SELESAI");
 });
+
+// ── pemakaian sementara tertaut bahan KATALOG (stok belum diketahui) ──
+import { AWAL_CATATAN_KATALOG, susunCatatanKatalog } from "../src/lib/domain/bahanUsulan.js";
+const MAT = "9e2e8a10-45b2-47ce-8ae7-cc3e3126e842";
+test("normalisasiPemakaianSementara bentuk katalog: materialId + asal WAJIB + alasan WAJIB; nama opsional (server memakai nama katalog); tidak boleh bersama usulan; hasil memuat materialId dan alasan", () => {
+  const ok = normalisasiPemakaianSementara({ materialId: MAT, qty: 3, uom: "sheet", originNote: "Sisa bahan di meja produksi", alasanPencatatan: "Stok bahan belum tercatat di Gudang" });
+  assert.equal(ok.materialId, MAT); assert.equal(ok.proposalId, null); assert.equal(ok.uom, "SHEET"); assert.equal(ok.qty, 3); assert.equal(ok.alasan, "Stok bahan belum tercatat di Gudang"); assert.equal(ok.originNote, "Sisa bahan di meja produksi");
+  const kode = (f) => { try { f(); return null; } catch (e) { return e.code; } };
+  assert.equal(kode(() => normalisasiPemakaianSementara({ materialId: MAT, qty: 3, uom: "SHEET", alasanPencatatan: "alasan cukup" })), "SEMENTARA_ASAL_WAJIB");
+  assert.equal(kode(() => normalisasiPemakaianSementara({ materialId: MAT, qty: 3, uom: "SHEET", originNote: "x", alasanPencatatan: "alasan cukup" })), "SEMENTARA_ASAL_WAJIB");
+  assert.equal(kode(() => normalisasiPemakaianSementara({ materialId: MAT, qty: 3, uom: "SHEET", originNote: "asal ok" })), "SEMENTARA_ALASAN_WAJIB");
+  assert.equal(kode(() => normalisasiPemakaianSementara({ materialId: MAT, qty: 3, uom: "SHEET", originNote: "asal ok", alasanPencatatan: "ya" })), "SEMENTARA_ALASAN_WAJIB");
+  assert.equal(kode(() => normalisasiPemakaianSementara({ materialId: MAT, proposalId: MAT, qty: 3, uom: "SHEET", originNote: "asal ok", alasanPencatatan: "alasan cukup" })), "SEMENTARA_SUMBER_GANDA");
+  assert.equal(kode(() => normalisasiPemakaianSementara({ materialId: "bukan-uuid", qty: 3, uom: "SHEET", originNote: "asal ok", alasanPencatatan: "alasan cukup" })), "ID_INVALID");
+  assert.equal(kode(() => normalisasiPemakaianSementara({ materialId: MAT, qty: 0, uom: "SHEET", originNote: "asal ok", alasanPencatatan: "alasan cukup" })), "SEMENTARA_JUMLAH_INVALID");
+  assert.equal(kode(() => normalisasiPemakaianSementara({ materialId: MAT, qty: 1, uom: "KARUNG", originNote: "asal ok", alasanPencatatan: "alasan cukup" })), "SEMENTARA_SATUAN_INVALID");
+});
+test("bentuk LAMA (tanpa materialId) tidak berubah: nama ≥ 3 huruf wajib; asal/alasan tidak diwajibkan; materialId null", () => {
+  const lama = normalisasiPemakaianSementara({ name: "Lem Kontak Impor 5L", qty: 2, uom: "CAN" }); assert.equal(lama.materialId, null); assert.equal(lama.alasan, null); assert.equal(lama.originNote, null);
+  assert.throws(() => normalisasiPemakaianSementara({ name: "ab", qty: 1, uom: "PCS" }), (e) => e.code === "SEMENTARA_NAMA_WAJIB");
+});
+test("susunCatatanKatalog: catatan baku deterministik (kunci idempoten stabil), memuat kode bahan + alasan + catatan; awalan = penanda tertaut katalog; maks 500", () => {
+  const a = susunCatatanKatalog({ kode: "BUSA-SKY", alasan: "Stok bahan belum tercatat." });
+  assert.equal(a, "Stok bahan belum diketahui (bahan katalog BUSA-SKY). Alasan: Stok bahan belum tercatat."); assert.ok(a.startsWith(AWAL_CATATAN_KATALOG));
+  assert.equal(susunCatatanKatalog({ kode: "BUSA-SKY", alasan: "Stok bahan belum tercatat.", catatan: "  untuk rangka  " }), "Stok bahan belum diketahui (bahan katalog BUSA-SKY). Alasan: Stok bahan belum tercatat. Catatan: untuk rangka");
+  assert.equal(susunCatatanKatalog({ kode: "X", alasan: "a b c" }), susunCatatanKatalog({ kode: "X", alasan: "a b c" })); assert.ok(susunCatatanKatalog({ kode: "X", alasan: "z".repeat(190), catatan: "y".repeat(900) }).length <= 500);
+});

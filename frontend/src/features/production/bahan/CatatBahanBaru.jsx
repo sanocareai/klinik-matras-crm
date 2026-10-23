@@ -13,7 +13,7 @@ import BahanBelumAda from "@/features/production/bahan/BahanBelumAda.jsx";
 import "@/features/production/bahan/bahan.css";
 const NADA = { green: "bh-ok", orange: "bh-warn", red: "bh-bad" };
 
-export default function CatatBahanBaru({ data, unitId, izin = {}, awalCariAwal = "", onDone, onTutup, onPakaiSementara = null, onTertinggal = null }) {
+export default function CatatBahanBaru({ data, unitId, izin = {}, awalCariAwal = "", onDone, onTutup, onPakaiSementara = null, onBukanBahanIni = null, onTertinggal = null }) {
   const rencana = data.rencanaBahan?.plan ?? null; const total = data.pemakaianAktual?.total ?? [];
   const [baris, setBaris] = useState([]); const [catatan, setCatatan] = useState(""); const [status, setStatus] = useState({}); const [sibuk, setSibuk] = useState(false); const [infoRencana, setInfoRencana] = useState("");
   const kunciRef = useRef(new Map()); const kirimRef = useRef(false);
@@ -104,10 +104,11 @@ export default function CatatBahanBaru({ data, unitId, izin = {}, awalCariAwal =
                     {st?.fase !== "ok" && <p className="m-0 mt-1 text-[12px] text-ink2" data-testid="aktual-dampak-stok">Satuan {b.satuan} · {ketersediaanText(b)} · Dampak stok: {ks.status === "tidak_diketahui" ? "tidak bisa dicatat (stok belum tercatat)" : parseJumlah(b.qty) > 0 ? `berkurang ${formatJumlah(parseJumlah(b.qty))} ${b.satuan} saat dikonfirmasi` : "berkurang sesuai jumlah yang Anda isi, saat dikonfirmasi"}</p>}
                     {b.dariRencana && <p className="m-0 mt-1 text-[11.5px] text-ink3">Rencana {formatJumlah(b.dariRencana.rencana)}, sudah dipakai {formatJumlah(b.dariRencana.sudahDipakai)} {b.satuan}.</p>}
                     {st?.fase !== "ok" && <p data-testid="aktual-saldo" data-status={ks.status} className={cn("m-0 mt-1 text-[12px]", NADA[ks.nada])}>{ks.teks}{ks.sisaTeks ? <span data-testid="aktual-sisa"> · {ks.sisaTeks}</span> : null}</p>}
-                    {st?.fase !== "ok" && ks.status === "tidak_diketahui" && onPakaiSementara && (
+                    {st?.fase !== "ok" && ks.status === "tidak_diketahui" && (onPakaiSementara || onBukanBahanIni) && (
                       <div className="mt-1 flex flex-wrap gap-2" data-testid="aktual-alternatif">
-                        <p className="m-0 basis-full text-[12px] text-ink2" data-testid="aktual-stok-tak-diketahui-jalur">Jalur resmi: minta Gudang mencatat stok awal/opname bahan ini (Stok &amp; Lokasi), lalu catat lagi lewat “Bahan dari Gudang”. Pemakaian sementara TIDAK bisa dipakai untuk bahan yang sudah ada di katalog dengan nama yang sama (ditolak server).</p>
-                        <Button variant="secondary" size="sm" className="min-h-[40px]" data-testid="aktual-ke-sementara" onClick={() => onPakaiSementara({ nama: "", satuan: b.satuan })}>Yang saya pakai bukan bahan ini</Button>
+                        <p className="m-0 basis-full text-[12px] text-ink2" data-testid="aktual-stok-tak-diketahui-jalur">Bahan ini ada di katalog tetapi <b>belum punya catatan stok</b>, jadi server menolak pencatatan resmi. Dua jalur: (1) <b>Catat sementara — stok belum diketahui</b>: fakta pemakaian dicatat sekarang, tertaut ke bahan ini, berstatus “Perlu rekonsiliasi Gudang” (stok, biaya, jurnal tidak berubah); atau (2) minta Gudang mencatat stok awal/opname lebih dulu, lalu catat lewat “Bahan dari Gudang”.</p>
+                        {onPakaiSementara && izin.catatPemakaianSementara && <Button className="bh-cta min-h-[40px]" size="sm" data-testid="aktual-ke-sementara-katalog" onClick={() => onPakaiSementara({ materialId: b.materialId, kode: b.kode, nama: b.nama, satuan: b.satuan, qty: b.qty })}>Catat sementara — stok belum diketahui</Button>}
+                        {onBukanBahanIni && <Button variant="secondary" size="sm" className="min-h-[40px]" data-testid="aktual-ke-sementara" onClick={() => onBukanBahanIni({ satuan: b.satuan })}>Yang saya pakai bukan bahan ini</Button>}
                       </div>
                     )}
                     {st?.fase === "sibuk" && <p className="m-0 mt-1 text-[12px] text-ink3">Mencatat…</p>}

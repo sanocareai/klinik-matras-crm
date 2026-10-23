@@ -83,11 +83,25 @@ const TOLERANSI_QTY = 0.0001;
 export const selisihQty = (a, b) => Math.round((Number(a) - Number(b)) * 10000) / 10000;
 export const qtySama = (a, b) => Math.abs(Number(a) - Number(b)) <= TOLERANSI_QTY;
 
-/** Murni: isian pemakaian sementara. `sekarang` bisa disuntik untuk tes. */
+/** Catatan baku untuk pemakaian sementara yang tertaut ke bahan KATALOG yang stoknya belum diketahui (dibaca Gudang). Deterministik: kunci idempoten dan replay stabil. Maks 500 karakter. */
+export function susunCatatanKatalog({ kode, alasan, catatan = "" }) {
+  const tambah = String(catatan ?? "").trim();
+  const dasar = `Stok bahan belum diketahui (bahan katalog ${kode}). Alasan: ${String(alasan).trim().replace(/[.\s]+$/, "")}.`;
+  return (tambah ? `${dasar} Catatan: ${tambah}` : dasar).slice(0, 500);
+}
+export const AWAL_CATATAN_KATALOG = "Stok bahan belum diketahui (bahan katalog ";
+
+/** Murni: isian pemakaian sementara. `sekarang` bisa disuntik untuk tes.
+ *  Dua bentuk (saling lepas): (a) BAHAN BELUM ADA DI KATALOG — nama bebas, opsional tertaut ke usulan; (b) BAHAN KATALOG YANG STOKNYA BELUM DIKETAHUI — `materialId` (nama/satuan diambil dari katalog oleh layanan), asal barang + alasan WAJIB. */
 export function normalisasiPemakaianSementara(raw, { sekarang = new Date() } = {}) {
   const d = raw && typeof raw === "object" ? raw : {};
   const proposalId = d.proposalId ? String(d.proposalId) : null; if (proposalId && !uuidValid(proposalId)) throw bad("Usulan bahan tidak valid.", "ID_INVALID");
-  const name = str(d.name, 120); if (name.length < 3) throw bad("Nama bahan wajib diisi (minimal 3 huruf).", "SEMENTARA_NAMA_WAJIB");
+  const materialId = d.materialId ? String(d.materialId) : null; if (materialId && !uuidValid(materialId)) throw bad("Bahan katalog tidak valid.", "ID_INVALID");
+  if (materialId && proposalId) throw bad("Pilih salah satu: bahan katalog ATAU usulan bahan.", "SEMENTARA_SUMBER_GANDA");
+  const alasan = str(d.alasanPencatatan, 200);
+  const name = materialId ? (str(d.name, 120) || "Bahan katalog") : str(d.name, 120); if (!materialId && name.length < 3) throw bad("Nama bahan wajib diisi (minimal 3 huruf).", "SEMENTARA_NAMA_WAJIB");
+  if (materialId && str(d.originNote, 300).length < 2) throw bad("Asal barang wajib diisi (dari mana bahan ini diperoleh).", "SEMENTARA_ASAL_WAJIB");
+  if (materialId && alasan.length < 3) throw bad("Alasan wajib diisi (minimal 3 huruf): mengapa dicatat sementara.", "SEMENTARA_ALASAN_WAJIB");
   const qty = Number(d.qty); if (!Number.isFinite(qty) || qty <= 0 || qty > 100000) throw bad("Jumlah yang dipakai harus lebih dari 0.", "SEMENTARA_JUMLAH_INVALID");
   const uom = String(d.uom ?? "").trim().toUpperCase(); if (!SATUAN.includes(uom)) throw bad("Satuan tidak dikenal.", "SEMENTARA_SATUAN_INVALID");
   const originNote = str(d.originNote, 300); const note = str(d.note, 500);
@@ -98,7 +112,7 @@ export function normalisasiPemakaianSementara(raw, { sekarang = new Date() } = {
     if (t.getTime() < sekarang.getTime() - 30 * 24 * 3600 * 1000) throw bad("Waktu pemakaian tidak boleh lebih dari 30 hari lalu.", "SEMENTARA_WAKTU_INVALID");
     usedAt = t;
   }
-  return { proposalId, name, nameKey: kunciNama(name), qty: Math.round(qty * 10000) / 10000, uom, originNote: originNote || null, note: note || null, usedAt };
+  return { proposalId, materialId, alasan: materialId ? alasan : null, name, nameKey: kunciNama(name), qty: Math.round(qty * 10000) / 10000, uom, originNote: originNote || null, note: note || null, usedAt };
 }
 
 /** Saran kode material dari nama + kelompok (Gudang boleh mengubah). Unik dicek oleh pemanggil terhadap daftar kode yang ada. */

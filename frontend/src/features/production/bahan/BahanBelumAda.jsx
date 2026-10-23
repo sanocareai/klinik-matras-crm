@@ -17,7 +17,7 @@ import "@/features/production/bahan/bahan.css";
 const KODE_FINAL = ["BAHAN_ADA_DI_KATALOG", "USULAN_DITOLAK"];
 const kolom = "h-11 w-full rounded-btn border border-line bg-surface px-3 text-[14px] text-ink outline-none placeholder:text-ink3 focus:border-accent focus-visible:ring-2 focus-visible:ring-accent/30";
 
-export default function BahanBelumAda({ unitId, kodeUnit, izin = {}, awalNama = "", awalSatuan = "PCS", alasanAwal = "", tertinggalAwal = null, onTertinggal = null, onTutup, onGunakanKatalog, onDone }) {
+export default function BahanBelumAda({ unitId, kodeUnit, izin = {}, awalNama = "", awalSatuan = "PCS", alasanAwal = "", tertinggalAwal = null, onTertinggal = null, onTutup, onGunakanKatalog, onSementaraKatalog = null, onDone }) {
   const bolehSementara = !!izin.catatPemakaianSementara; const bolehUsul = !!izin.usulBahan;
   const f0 = tertinggalAwal?.form ?? {};
   const [nama, setNama] = useState(f0.nama ?? awalNama); const [qty, setQty] = useState(f0.qty ?? ""); const [satuan, setSatuan] = useState(f0.satuan ?? awalSatuan); const [kelompok, setKelompok] = useState(f0.kelompok ?? "");
@@ -150,8 +150,9 @@ export default function BahanBelumAda({ unitId, kodeUnit, izin = {}, awalNama = 
 
       {blokKatalogSama && (
         <div role="alert" data-testid="katalog-sama-blok" className="space-y-1 rounded-btn bg-redbg px-3 py-2 text-[12.5px] text-red">
-          <p className="m-0"><b>Tidak bisa dicatat sementara:</b> “{katalogSama.nama}” sudah ada di katalog, jadi server menolak pemakaian sementara dengan nama ini. Catat lewat <b>Bahan dari Gudang</b> (tombol “Pakai bahan ini”) supaya saldo ikut tercatat.</p>
-          <p className="m-0">Bila stok bahan itu belum tercatat (“Stok belum diketahui”), pencatatan juga ditolak sampai Gudang mencatat stok awal/opname — minta Gudang lebih dulu. Bila bahan yang Anda pakai sebenarnya berbeda dari yang di katalog, ubah namanya agar tidak sama persis.</p>
+          <p className="m-0"><b>Tidak bisa dicatat sebagai bahan baru:</b> “{katalogSama.nama}” sudah ada di katalog, jadi nama ini tidak dipakai untuk catatan bahan belum-ada. Bila stoknya sudah tercatat, catat lewat <b>Bahan dari Gudang</b> (tombol “Pakai bahan ini”).</p>
+          <p className="m-0">Bila stok bahan itu <b>belum tercatat sama sekali</b>, pakai “Catat sementara — stok belum diketahui”: tertaut ke bahan katalog ini (server memastikan stoknya memang belum diketahui) dan berstatus “Perlu rekonsiliasi Gudang”. Bila bahan yang Anda pakai berbeda dari yang di katalog, ubah namanya agar tidak sama persis.</p>
+          {onSementaraKatalog && <Button className="bh-cta min-h-[44px]" data-testid="katalog-sama-ke-sementara" onClick={() => onSementaraKatalog({ materialId: katalogSama.materialId, kode: katalogSama.kode, nama: katalogSama.nama, satuan: katalogSama.satuan, qty: qty })}>Catat sementara — stok belum diketahui</Button>}
         </div>
       )}
       {wajibAlasan && (

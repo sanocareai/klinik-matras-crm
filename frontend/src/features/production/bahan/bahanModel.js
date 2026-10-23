@@ -22,6 +22,12 @@ export const ALASAN_SEMENTARA = Object.freeze([
   { key: "SUDAH_DIPAKAI_DULU", label: "Sudah terlanjur dipakai sebelum dikeluarkan lewat Gudang", teks: "bahan sudah terlanjur dipakai sebelum dikeluarkan lewat Gudang" },
   { key: "LAINNYA", label: "Alasan lain (tulis)", teks: null },
 ]);
+// Alasan untuk "Catat sementara — stok belum diketahui" (bahan KATALOG tanpa catatan stok). Teks dikirim apa adanya sebagai alasanPencatatan; server menyusun catatan baku untuk Gudang.
+export const ALASAN_KATALOG = Object.freeze([
+  { key: "STOK_BELUM_TERCATAT", label: "Stok bahan ini belum tercatat di Gudang; bahan sudah terlanjur dipakai", teks: "Stok bahan belum tercatat di Gudang; bahan sudah terlanjur dipakai pada unit ini" },
+  { key: "SUDAH_DIPAKAI_DULU", label: "Dipakai lebih dulu sebelum stok awal/opname dicatat Gudang", teks: "Dipakai lebih dulu sebelum stok awal atau opname dicatat Gudang" },
+  { key: "LAINNYA", label: "Alasan lain (tulis)", teks: null },
+]);
 /** Catatan yang dibaca Gudang pada pemakaian sementara: alasan rekonsiliasi + rujukan katalog/usulan + catatan pengguna. Deterministik (tidak memuat status usulan yang berubah-ubah) supaya Idempotency-Key retry stabil. Maks 500 karakter. */
 export function susunCatatanRekon({ kandidatKatalog = null, kandidatUsulan = null, alasan = "", alasanLain = "", catatan = "" } = {}) {
   let bagian;
@@ -57,7 +63,7 @@ export const SATUAN_KOMPONEN = Object.freeze(["PCS", "METER", "M3", "SHEET", "SP
 export function keadaanSaldo(b, qtyTeks) {
   const v = parseJumlah(qtyTeks);
   // "Belum diketahui" = bahan belum punya catatan stok sama sekali → saldo ledger 0 → pengurangan ditolak server ("Stok ... tidak cukup — tersedia 0"). Tidak ada gunanya mencoba: arahkan ke Gudang atau ke pemakaian sementara.
-  if (b?.saldoDiketahui === false || b?.tersedia === null || b?.tersedia === undefined) return { status: "tidak_diketahui", nada: "red", teks: "Stok belum diketahui: bahan ini belum punya catatan stok, jadi server akan MENOLAK pencatatan (tidak ada stok yang bisa dikurangi). Minta Gudang mencatat stok awal/opname lebih dulu, atau catat sebagai pemakaian sementara lewat “Bahan belum ada di katalog”.", blok: true, alternatif: "sementara" };
+  if (b?.saldoDiketahui === false || b?.tersedia === null || b?.tersedia === undefined) return { status: "tidak_diketahui", nada: "red", teks: "Stok belum diketahui: bahan ini belum punya catatan stok, jadi server akan MENOLAK pencatatan (tidak ada stok yang bisa dikurangi). Pilih “Catat sementara — stok belum diketahui” (perlu rekonsiliasi Gudang), atau minta Gudang mencatat stok awal/opname lebih dulu.", blok: true, alternatif: "sementara" };
   const tersedia = Number(b.tersedia);
   if (v !== null && v > tersedia + 0.00005) return { status: "kurang", nada: "red", teks: `Saldo Gudang ${formatJumlah(tersedia)} ${b.satuan || ""}, kurang ${formatJumlah(v - tersedia)}. Kurangi jumlah, atau minta Gudang menambah stok.`, blok: true, kurang: v - tersedia };
   const sisa = v !== null && v > 0 ? Math.round((tersedia - v) * 10000) / 10000 : null;
