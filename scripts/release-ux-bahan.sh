@@ -167,14 +167,14 @@ const FUNGSI = ["material_proposals_guard", "unit_provisional_usages_guard"];
 const tolak = (m) => { console.error("DITOLAK: " + m); process.exit(2); };
 
 const sql = fs.readFileSync(0, "utf8");
-// pecah per pernyataan; isi fungsi ($ ... $) dijaga utuh
+// pecah per pernyataan; isi fungsi ($$ ... $$) dijaga utuh
 const stmts = []; let buf = ""; let dalam = false;
 for (let i = 0; i < sql.length; i++) {
-  if (sql.startsWith("$", i)) { dalam = !dalam; buf += "$"; i++; continue; }
+  if (sql.startsWith("$$", i)) { dalam = !dalam; buf += "$$"; i++; continue; }
   const c = sql[i];
   if (c === ";" && !dalam) { if (buf.trim()) stmts.push(buf.trim()); buf = ""; } else buf += c;
 }
-if (dalam) tolak("blok $ tidak tertutup");
+if (dalam) tolak("blok $$ tidak tertutup");
 if (buf.trim()) tolak("pernyataan terakhir tanpa titik koma");
 
 const n = { create_table: 0, index: 0, index_unik: 0, index_parsial: 0, fk: 0, fungsi: 0, trigger: 0 };

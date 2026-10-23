@@ -58,3 +58,11 @@ test("guard rollback: baca-saja (transaksi READ ONLY), menolak bila ada usulan m
 test("skrip rilis lolos sintaks bash", () => {
   const r = spawnSync("bash", ["-n", path.join(repo, "scripts/release-ux-bahan.sh")], { encoding: "utf8" }); if (r.error) return; assert.equal(r.status, 0, r.stderr);
 });
+
+test("pustaka yang DITANAM di skrip rilis (pemindai, rehearsal, smoke) identik byte-per-byte dengan berkas lib (mis. '$$' tidak termakan saat membangkitkan)", () => {
+  const antara = (pembuka, penutup) => { const a = skrip.indexOf(pembuka); assert.ok(a > 0, pembuka); const mulai = skrip.indexOf("\n", a) + 1; const b = skrip.indexOf(`\n${penutup}\n`, mulai); assert.ok(b > 0, penutup); return skrip.slice(mulai, b); };
+  assert.equal(antara("cat > \"$SCAN\" <<'SCANJS'", "SCANJS").trimEnd(), baca("scripts/lib/scan-migrasi-ux-bahan.mjs").trimEnd());
+  assert.equal(antara("<<'REHNODE' > \"$BK_DIR/rehearsal-koreksi.log\" 2>&1", "REHNODE").trimEnd(), baca("scripts/lib/rehearsal-ux-bahan.mjs").trimEnd());
+  assert.equal(antara("<<'NODE' | tee \"$BK_DIR/smoke.log\"", "NODE").trimEnd(), baca("scripts/lib/smoke-ux-bahan.mjs").trimEnd());
+  assert.ok(skrip.includes('sql.startsWith("$$", i)'), "pemindai tertanam memuat penanda $$");
+});

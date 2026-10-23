@@ -67,7 +67,7 @@ function bangkitkan({ baseScript, blok, berkasList, mig, schemaSha, scanJs, scan
   // 2. variabel
   r('CAND_BRANCH="${CAND_BRANCH:-fix/status-kerja-buka-pekerjaan}"', `CAND_BRANCH="\${CAND_BRANCH:-${CAND_BRANCH}}"`);
   const L = s.split("\n"); const ia = L.findIndex((l) => l.startsWith("ALLOWED_RE=")); must(ia > 0, "ALLOWED_RE");
-  const vars = lf(blok.vars).replace("@@MIG_NAME@@", mig.name).replace("@@MIG_PIN@@", sha(lf(mig.sql))).replace("@@SCAN_EXPECT@@", scanExpect).replace("@@SCHEMA_DIFF_SHA@@", schemaSha)
+  const vars = lf(blok.vars).replace("@@MIG_NAME@@", () => mig.name).replace("@@MIG_PIN@@", () => sha(lf(mig.sql))).replace("@@SCAN_EXPECT@@", () => scanExpect).replace("@@SCHEMA_DIFF_SHA@@", () => schemaSha)
     .replace("@@IDX_BARU@@", ob.idx.join(" ")).replace("@@IDX_PARSIAL@@", ob.parsial.join(" ")).replace("@@CHK_BARU@@", ob.chk.join(" ")).replace("@@FK_BARU@@", ob.fk.join(" ")).replace("@@TRG_BARU@@", ob.trg.join(" ")).trimEnd();
   L[ia] = `ALLOWED_RE='^(${berkas.map(esc).join("|")})$'`; L[ia + 1] = `BACKEND_SRC_EXPECT="${be}"`; L[ia + 2] = `FRONTEND_SRC_EXPECT="${fe}"`; L.splice(ia + 3, 0, vars);
   s = L.join("\n");
@@ -79,7 +79,7 @@ function bangkitkan({ baseScript, blok, berkasList, mig, schemaSha, scanJs, scan
   r("Berhenti SEBELUM 'Switch backend' -> backend lama tidak pernah dimatikan; produksi tetap di release sebelumnya.", "Berhenti SEBELUM 'Switch backend' -> backend lama tidak pernah dimatikan; produksi tetap di release sebelumnya (bila sudah lewat tahap migrasi: 2 tabel baru KOSONG terpasang, tidak berbahaya).");
   // 5. gerbang prisma (menggantikan 'tanpa migrasi')
   r('say "1. Sumber kode, ancestry, batas perubahan, tanpa migrasi/schema"', 'say "1. Sumber kode, ancestry, batas perubahan, pin migrasi + diff schema, pemindai DDL (+ uji negatif pemindai)"');
-  potong("[ -z \"$(printf '%s\\n' \"$CHANGED\" | grep -E '^backend/prisma/' || true)\" ]", '\nPHASE="2-audit-produksi"', lf(blok["gate-prisma"]).replace("@@SCAN_JS@@", lf(scanJs).trimEnd()).trimEnd() + "\n");
+  potong("[ -z \"$(printf '%s\\n' \"$CHANGED\" | grep -E '^backend/prisma/' || true)\" ]", '\nPHASE="2-audit-produksi"', lf(blok["gate-prisma"]).replace("@@SCAN_JS@@", () => lf(scanJs).trimEnd()).trimEnd() + "\n");
   // 6. struktur + keadaan production
   r('ok "prasyarat: rilis ini tidak bergantung pada migrasi baru dan tidak menulis data bisnis"', lf(blok.struktur).trimEnd() + "\n" + lf(blok.keadaan).trimEnd());
   // 7. teks fitur di bundel web
