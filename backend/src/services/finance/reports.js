@@ -25,6 +25,7 @@ import { toMoney, sumMoney, ZERO, moneyToNumber } from "./money.js";
 import { SETTING_KEYS, getSettingRaw } from "./settings.js";
 import { bacaAgingUtang } from "./agingUtang.js";
 import { potonganNotaKreditPiutang } from "./notaKreditPiutang.js";
+import { PENANDA_PENYAJIAN } from "./penandaBiaya.js";
 
 // Tipe akun yang masuk LABA RUGI vs NERACA.
 const TIPE_LABA_RUGI = ["PENDAPATAN", "BEBAN_POKOK", "BEBAN"];
@@ -147,6 +148,11 @@ export async function neracaSaldo(db, { from, to }) {
       const kumulatif = saldoKumulatif.get(a.id) || { debit: ZERO, credit: ZERO };
       const pakai = TIPE_NERACA.includes(a.type) ? kumulatif : periode;
       const saldo = saldoNormal(a, pakai);
+      // Saldo terbalik (negatif menurut saldo normal) ditaruh di sisi yang SEBENARNYA dengan besar POSITIF — kolom klasik tidak memuat angka negatif.
+      // Mis. beban bersaldo kredit bersih → kolom Kredit; kas bersaldo kredit → kolom Kredit; akun kontra mengikuti saldo normalnya. `saldo` (bertanda menurut saldo normal) tetap ada untuk pemanggil lama.
+      const tidakNormal = saldo.isNegative();
+      const sisiSaldo = tidakNormal ? (a.normalBalance === "DEBIT" ? "KREDIT" : "DEBIT") : a.normalBalance;
+      const besar = saldo.abs();
       return {
         accountId: a.id,
         code: a.code,
@@ -156,9 +162,11 @@ export async function neracaSaldo(db, { from, to }) {
         mutasiDebit: moneyToNumber(periode.debit),
         mutasiKredit: moneyToNumber(periode.credit),
         // Kolom neraca saldo klasik: saldo akhir ditaruh di sisi normalnya.
-        saldoDebit: a.normalBalance === "DEBIT" ? moneyToNumber(saldo) : 0,
-        saldoKredit: a.normalBalance === "KREDIT" ? moneyToNumber(saldo) : 0,
+        saldoDebit: sisiSaldo === "DEBIT" ? moneyToNumber(besar) : 0,
+        saldoKredit: sisiSaldo === "KREDIT" ? moneyToNumber(besar) : 0,
         saldo: moneyToNumber(saldo),
+        sisiSaldo,
+        saldoTidakNormal: tidakNormal, // true = saldo berlawanan dengan saldo normal akun (mis. pembalik beban bersih, kas bersaldo kredit)
       };
     })
     .filter((b) => b.mutasiDebit !== 0 || b.mutasiKredit !== 0 || b.saldo !== 0);
@@ -195,11 +203,12 @@ export async function labaRugi(db, { from, to }) {
   for (const a of akun) {
     const nilai = saldoNormal(a, saldo.get(a.id));
     if (nilai.isZero()) continue;
-    kelompok[a.type].push({
-      accountId: a.id, code: a.code, name: a.name,
-      normalBalance: a.normalBalance,
-      nilai: moneyToNumber(nilai),
-    });
+    const baris = { accountId: a.id, code: a.code, name: a.name, normalBalance: a.normalBalance, nilai: moneyToNumber(nilai) };
+    // PEMBALIK BEBAN BERSIH: akun biaya (beban pokok/operasional) yang bersaldo KREDIT bersih pada periode — ia MENGURANGI total biaya dan MENAIKKAN laba.
+    // Angka `nilai` tetap saldo normal (debit − kredit → negatif); penanda ini hanya untuk penyajian (layar, Excel) agar tidak terbaca sebagai biaya biasa.
+    if (a.type !== "PENDAPATAN" && nilai.isNegative()) baris.pembalikBebanBersih = true;
+    if (a.type === "PENDAPATAN" && a.normalBalance === "DEBIT" && nilai.isNegative()) baris.pembalikReturBersih = true; // retur bersaldo kredit: menambah pendapatan
+    kelompok[a.type].push(baris);
   }
 
   // Akun KONTRA pendapatan (Retur & Potongan Penjualan) bersaldo normal
@@ -232,9 +241,13 @@ export async function labaRugi(db, { from, to }) {
       labaKotor: moneyToNumber(labaKotor),
       marginKotor: pendapatanBersih.isZero() ? null : moneyToNumber(labaKotor.dividedBy(pendapatanBersih).times(100)),
       bebanOperasional: moneyToNumber(bebanOperasional),
+      // Bagian dari beban di atas yang berupa pembalik beban bersih (Σ akun biaya bersaldo kredit; ≤ 0). Informasi penyajian — tidak mengubah total/laba.
+      pembalikBebanPokok: moneyToNumber(sumMoney(kelompok.BEBAN_POKOK.filter((r) => r.pembalikBebanBersih).map((r) => r.nilai))),
+      pembalikBebanOperasional: moneyToNumber(sumMoney(kelompok.BEBAN.filter((r) => r.pembalikBebanBersih).map((r) => r.nilai))),
       labaBersih: moneyToNumber(labaBersih),
       marginBersih: pendapatanBersih.isZero() ? null : moneyToNumber(labaBersih.dividedBy(pendapatanBersih).times(100)),
     },
+    penanda: PENANDA_PENYAJIAN, // teks pembalik beban bersih (layar, dashboard, grafik, Excel memakai teks yang sama)
     catatan: await catatanLaporan(db),
   };
 }

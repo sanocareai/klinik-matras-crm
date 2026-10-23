@@ -14,6 +14,8 @@ import {
 } from "@/features/finance/shared.jsx";
 import BuktiReview from "@/features/finance/BuktiReview.jsx";
 import { KenapaBeda, AuditKonsistensi } from "@/features/finance/kontrak.jsx";
+import { KotakPembalik, UangBiaya } from "@/features/finance/biayaNeto.jsx";
+import { penandaDari, ringkasPembalik } from "@/features/finance/biayaNetoLogic.js";
 import { hitungKualitasData, margin as hitungMargin, pisahkanPiutang, ringkasAging, LABEL_BANNER, LABEL_REKONSILIASI } from "@/features/finance/ringkasanKualitas.js";
 
 // Ringkasan Keuangan — urutan layar (atas → bawah):
@@ -136,11 +138,12 @@ export default function FinanceDashboard() {
                   <Baris label="Pendapatan tercatat" value={lr?.pendapatanBruto} />
                   {lr?.retur > 0 && <Baris label="Retur & potongan" value={-lr.retur} />}
                   <Baris label="Pendapatan bersih" value={lr?.pendapatanBersih} tebal />
-                  <Baris label="Beban pokok (HPP)" value={-(lr?.bebanPokok ?? 0)} />
+                  <BarisBiaya label="Beban pokok (HPP)" value={lr?.bebanPokok ?? 0} penanda={data?.labaRugiPenanda} />
                   <Baris label="Laba kotor" value={lr?.labaKotor} tebal />
-                  <Baris label="Beban operasional" value={-(lr?.bebanOperasional ?? 0)} />
+                  <BarisBiaya label="Beban operasional" value={lr?.bebanOperasional ?? 0} penanda={data?.labaRugiPenanda} />
                   <div className="border-t border-line pt-2"><Baris label="Laba bersih sementara" value={lr?.labaBersih} tebal besar /></div>
                 </dl>
+                <div className="mt-3"><KotakPembalik penanda={penandaDari({ penanda: data?.labaRugiPenanda })} ada={ringkasPembalik(lr).ada} testid="kotak-pembalik-dashboard" /></div>
                 <p className="mt-3 rounded-lg bg-inset px-3 py-2 text-[12px] leading-relaxed text-ink2" data-testid="catatan-margin">
                   {marginInfo?.tampil
                     ? <>Margin bersih {marginInfo.nilai.toFixed(1)}%.</>
@@ -487,6 +490,16 @@ function Metrik({ label, nilai, sub, tone }) {
       <p className="text-[12px] text-ink3">{label}</p>
       <p className={`mt-0.5 text-[18px] font-bold tabular-nums ${tone === "red" ? "text-red" : tone === "orange" ? "text-orange" : "text-ink"}`}>{nilai}</p>
       {sub && <p className="mt-0.5 text-[11px] leading-snug text-ink3">{sub}</p>}
+    </div>
+  );
+}
+
+/** Biaya neto: tampil apa adanya (positif = beban); negatif = pembalik beban bersih → kurung + label (mengurangi biaya, menaikkan laba). */
+function BarisBiaya({ label, value, penanda }) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <dt className="text-ink2">{label}</dt>
+      <dd><UangBiaya value={value} penanda={penandaDari({ penanda })} /></dd>
     </div>
   );
 }

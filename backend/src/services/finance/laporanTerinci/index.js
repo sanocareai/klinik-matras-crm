@@ -16,6 +16,7 @@ import { hitungJembatan } from "./jembatan.js";
 import { hitungHpp } from "./hpp.js";
 import { hitungBebanDivisi } from "./bebanDivisi.js";
 import { hitungPkr } from "./pkr.js";
+import { PENANDA_PENYAJIAN } from "../penandaBiaya.js";
 import { hitungGap } from "./gap.js";
 
 export class LaporanTerinciError extends Error {
@@ -40,7 +41,7 @@ async function cutoff(tx, { toStr }) {
   const terakhir = maks._max.date ? maks._max.date.toISOString().slice(0, 10) : null;
   return {
     diambilPada: sekarang.toISOString(), diambilPadaWib: formatWib(sekarang), tanggalBukuTerakhir: terakhir,
-    periodeMelewatiBuku: !!terakhir && toStr > terakhir, isolasi: "REPEATABLE READ (snapshot tunggal, baca-saja)",
+    periodeMelewatiBuku: !!terakhir && toStr > terakhir, isolasi: "REPEATABLE READ READ ONLY (snapshot tunggal; database menolak tulisan)",
     basisTanggal: "Tanggal buku jurnal (WIB); status jurnal POSTED + yang kemudian dibalik (REVERSED)",
   };
 }
@@ -66,15 +67,19 @@ function akunPerMetrik(baris) {
       const a = peta.get(r.akunKode) ?? { kode: r.akunKode, nama: r.akunNama, tipe: r.akunTipe, nilai: [], nBaris: 0, jurnal: new Set() };
       a.nilai.push(k); a.nBaris++; a.jurnal.add(r.entryId); peta.set(r.akunKode, a);
     }
-    out[m] = [...peta.values()].map((a) => ({ kode: a.kode, nama: a.nama, tipe: a.tipe, nilai: rp(sumMoney(a.nilai)), nBaris: a.nBaris, nJurnal: a.jurnal.size })).sort((x, y) => x.kode.localeCompare(y.kode));
+    out[m] = [...peta.values()].map((a) => { const nilai = rp(sumMoney(a.nilai)); return { kode: a.kode, nama: a.nama, tipe: a.tipe, nilai, nBaris: a.nBaris, nJurnal: a.jurnal.size, ...((a.tipe === "BEBAN" || a.tipe === "BEBAN_POKOK") && (m === "hpp" || m === "beban_operasional") && nilai < 0 ? { pembalikBebanBersih: true } : {}) }; }).sort((x, y) => x.kode.localeCompare(y.kode));
   }
   return out;
 }
 
-function susunKontrol({ ringkasan, kartu, jembatan, bebanDivisi, pkr, gap, catatan }) {
+function susunKontrol({ ringkasan, kartu, jembatan, bebanDivisi, pkr, gap, catatan, akunLR = null }) {
   const k = (kunci, label, kiri, kanan) => ({ kunci, label, kiri, kanan, selisih: rp(sumMoney([kiri]).minus(kanan)), ok: rp(sumMoney([kiri]).minus(kanan)) === 0 });
   const daftar = [
     ...kartu.map((c) => k(`kartu_${c.metrik}`, `Kartu ${c.label} = Σ baris jurnal`, c.nilai, c.totalBaris)),
+    ...(akunLR ? [
+      k("akun_beban_pokok", "Σ akun beban pokok (Laba Rugi) = Σ baris jurnal", akunLR.bebanPokok, kartu.find((c) => c.metrik === "hpp").totalBaris),
+      k("akun_beban_operasional", "Σ akun beban operasional (Laba Rugi) = Σ baris jurnal", akunLR.bebanOperasional, kartu.find((c) => c.metrik === "beban_operasional").totalBaris),
+    ] : []),
     k("jembatan_residual_sales", "Jembatan: residual sisi Sales", jembatan.residual.sales, 0),
     k("jembatan_residual_bruto", "Jembatan: residual pendapatan bruto", jembatan.residual.bruto, 0),
     k("jembatan_residual_retur", "Jembatan: residual retur", jembatan.residual.retur, 0),
@@ -86,10 +91,17 @@ function susunKontrol({ ringkasan, kartu, jembatan, bebanDivisi, pkr, gap, catat
   return { daftar, semuaOk: daftar.every((x) => x.ok), jumlahGagal: daftar.filter((x) => !x.ok).length };
 }
 
-async function jalankan(db, fn) {
-  if (typeof db.$transaction === "function") return db.$transaction(fn, OPSI_TX);
+/**
+ * Seluruh pembacaan laporan terinci berjalan di SATU transaksi REPEATABLE READ **READ ONLY**. "Baca-saja" bukan lagi sifat implementasi: database sendiri MENOLAK
+ * INSERT/UPDATE/DELETE/DDL di dalam transaksi ini (SQLSTATE 25006). `SET TRANSACTION READ ONLY` harus menjadi pernyataan PERTAMA setelah BEGIN (sebelum query apa pun).
+ */
+export async function jalankanBacaSaja(db, fn) {
+  if (typeof db.$transaction === "function") {
+    return db.$transaction(async (tx) => { await tx.$executeRawUnsafe("SET TRANSACTION READ ONLY"); return fn(tx); }, OPSI_TX);
+  }
   return fn(db);
 }
+const jalankan = jalankanBacaSaja;
 
 /**
  * Baca seluruh laporan terinci.
@@ -112,10 +124,11 @@ export async function bacaLaporanTerinci(db, { fromStr, toStr, bolehSensitif = f
       cutoff(tx, { toStr }),
     ]);
     const bebanDivisi = hitungBebanDivisi(baris, ringkasan);
-    const kontrol = susunKontrol({ ringkasan, kartu, jembatan, bebanDivisi, pkr, gap, catatan: lr.catatan });
+    const akunLR = { bebanPokok: rp(sumMoney(lr.bebanPokok.map((r) => r.nilai))), bebanOperasional: rp(sumMoney(lr.bebanOperasional.map((r) => r.nilai))) };
+    const kontrol = susunKontrol({ ringkasan, kartu, jembatan, bebanDivisi, pkr, gap, catatan: lr.catatan, akunLR });
     return {
       periode: { from: fromStr, to: toStr }, cutoff: ctf, catatan: lr.catatan,
-      ringkasan, kartu, akunPerMetrik: akunPerMetrik(baris),
+      ringkasan, penanda: PENANDA_PENYAJIAN, kartu, akunPerMetrik: akunPerMetrik(baris),
       margin: { nilai: ringkasan.marginKotor, status: hpp.status, pesan: hpp.pesan, final: hpp.final },
       jembatan, pkr, hpp, bebanDivisi, gap, kontrol,
       jumlahBaris: baris.length,
@@ -128,7 +141,8 @@ export async function bacaLaporanTerinci(db, { fromStr, toStr, bolehSensitif = f
  * Drilldown satu kartu: baris jurnal + pengelompokan, dengan total yang WAJIB sama dengan kartu.
  * @param opts { fromStr, toStr, metrik, akun?, divisi?, sumber?, q?, bolehSensitif? }
  */
-export async function drilldownMetrik(db, { fromStr, toStr, metrik, akun = null, divisi = null, sumber = null, q = null, bolehSensitif = false }) {
+export async function drilldownMetrik(db, { fromStr, toStr, metrik, akun = null, divisi = null, sumber = null, q = null, bolehSensitif = false, maksBaris = MAKS_BARIS_DRILLDOWN }) {
+  const batas = Math.min(Math.max(Number(maksBaris) || MAKS_BARIS_DRILLDOWN, 1), MAKS_BARIS_DRILLDOWN); // batas daftar yang DIKIRIM (tes boleh memperkecil; produksi memakai MAKS_BARIS_DRILLDOWN)
   if (!METRIK_DRILLDOWN.includes(metrik)) throw new LaporanTerinciError(`Metrik tidak dikenal. Pilihan: ${METRIK_DRILLDOWN.join(", ")}`, 400, "METRIK_TIDAK_DIKENAL");
   const { from, to } = periodeValid({ fromStr, toStr });
   return jalankan(db, async (tx) => {
@@ -147,13 +161,15 @@ export async function drilldownMetrik(db, { fromStr, toStr, metrik, akun = null,
       for (const { r, k } of milik) { const key = kunci(r); const g = m.get(key) ?? { kunci: key, label: label(r), nilai: [], nBaris: 0 }; g.nilai.push(k); g.nBaris++; m.set(key, g); }
       return [...m.values()].map((g) => ({ kunci: g.kunci, label: g.label, nilai: rp(sumMoney(g.nilai)), nBaris: g.nBaris }));
     };
-    const terpotong = tersaring.length > MAKS_BARIS_DRILLDOWN;
+    const terpotong = tersaring.length > batas;
     return {
       metrik, label: LABEL_METRIK[metrik], periode: { from: fromStr, to: toStr }, cutoff: ctf,
-      nilaiKartu, totalSemuaBaris: totalSemua, cocok: nilaiKartu === totalSemua,
+      nilaiKartu, totalSemuaBaris: totalSemua, jumlahSemua: milik.length, cocok: nilaiKartu === totalSemua, penanda: PENANDA_PENYAJIAN,
       filter: { akun, divisi, sumber, q: kata || null },
-      totalTersaring: rp(sumMoney(tersaring.map((x) => x.k))), jumlah: tersaring.length, terpotong,
-      baris: tersaring.slice(0, MAKS_BARIS_DRILLDOWN).map(({ r, k }) => ({ ...r, kontribusi: k })),
+      // totalTersaring + jumlah dihitung dari SELURUH baris yang lolos filter di server (bukan dari daftar yang dikirim); daftar `baris` dipotong di MAKS_BARIS_DRILLDOWN → `terpotong`.
+      totalTersaring: rp(sumMoney(tersaring.map((x) => x.k))), jumlah: tersaring.length, jumlahDitampilkan: Math.min(tersaring.length, batas), maksBaris: batas, terpotong,
+      sifatNilai: metrik === "hpp" || metrik === "beban_operasional" ? "BIAYA_NETO" : "EFEK_LABA",
+      baris: tersaring.slice(0, batas).map(({ r, k }) => ({ ...r, kontribusi: k })),
       grupAkun: kelompok((r) => r.akunKode, (r) => `${r.akunKode} ${r.akunNama}`).sort((a, b) => a.kunci.localeCompare(b.kunci)),
       grupDivisi: kelompok((r) => r.divisi, (r) => r.divisiLabel).sort((a, b) => Math.abs(b.nilai) - Math.abs(a.nilai)),
       grupSumber: kelompok((r) => r.sumber, (r) => r.sumber).sort((a, b) => Math.abs(b.nilai) - Math.abs(a.nilai)),

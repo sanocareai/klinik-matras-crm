@@ -14,6 +14,8 @@ import { PanelJembatan, PanelPkr } from "@/features/finance/laporanTerinci/Panel
 import { PanelHpp, PanelBeban } from "@/features/finance/laporanTerinci/PanelHppBeban.jsx";
 import { PanelGap } from "@/features/finance/laporanTerinci/PanelGap.jsx";
 import KoreksiDokumen from "@/features/finance/koreksiDokumen/KoreksiDokumen.jsx";
+import { KotakPembalik, UangBiaya } from "@/features/finance/biayaNeto.jsx";
+import { PENJELASAN_LABA_BERJALAN, barisGrafikLabaRugi, barisLabaRugi, labelSaldoTerbalik, penandaDari, pesanNeracaTakSeimbang, ringkasPembalik, subKartuBiaya } from "@/features/finance/biayaNetoLogic.js";
 import { SEKSI, penandaMutu, formatCutoff, ringkasKontrol, bodyExport, bisaDrilldown } from "@/features/finance/laporanTerinci/logic.js";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, CatatanLaporan, Penjelasan,
@@ -127,6 +129,7 @@ function LabaRugi({ d, terinci, onBuka, periode, onMuatUlang }) {
   const bisa = bisaDrilldown(terinci);
   const buka = (m) => (bisa ? () => onBuka(m) : undefined);
   const mutu = terinci ? penandaMutu(terinci.hpp) : null;
+  const penanda = penandaDari(d); const pembalik = ringkasPembalik(r);
   return (
     <>
       <div className="flex snap-x snap-mandatory gap-3 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:grid sm:grid-cols-2 sm:gap-4 sm:overflow-visible lg:grid-cols-3 min-[1400px]:grid-cols-5 [&>*]:max-sm:min-w-[78%] [&>*]:max-sm:shrink-0 [&>*]:max-sm:snap-start" data-testid="kartu-laba-rugi">
@@ -137,7 +140,7 @@ function LabaRugi({ d, terinci, onBuka, periode, onMuatUlang }) {
         />
         <KartuAngka
           label="Beban Pokok (HPP)" metrik="beban_pokok_terbukukan" value={formatUang(r.bebanPokok)} onClick={buka("hpp")}
-          sub={bisa ? "Klik untuk rincian" : undefined} info="Beban pokok yang benar-benar terbukukan di jurnal."
+          sub={[subKartuBiaya(pembalik.pokok, formatUang), bisa ? "Klik untuk rincian" : null].filter(Boolean).join(" · ") || undefined} info="Beban pokok yang benar-benar terbukukan di jurnal. Akun yang bersaldo kredit bersih (pembalik beban bersih) mengurangi angka ini dan menaikkan laba."
         />
         <KartuAngka
           label="Laba Kotor" metrik="laba_kotor" value={formatUang(r.labaKotor)} onClick={buka("laba_kotor")}
@@ -147,7 +150,7 @@ function LabaRugi({ d, terinci, onBuka, periode, onMuatUlang }) {
         />
         <KartuAngka
           label="Beban Operasional" metrik="beban_diakui" value={formatUang(r.bebanOperasional)} onClick={buka("beban_operasional")}
-          sub={bisa ? "Klik untuk rincian per akun/divisi" : undefined}
+          sub={[subKartuBiaya(pembalik.operasional, formatUang), bisa ? "Klik untuk rincian per akun/divisi" : null].filter(Boolean).join(" · ") || undefined}
           info="Biaya menjalankan bisnis di luar produksi langsung — gaji, sewa, listrik, dan sejenisnya."
         />
         <KartuAngka
@@ -182,23 +185,26 @@ function LabaRugi({ d, terinci, onBuka, periode, onMuatUlang }) {
         “Uang Muka Pelanggan” di Neraca.
       </Penjelasan>
 
-      <LabaRugiChart r={r} />
+      <LabaRugiChart r={r} penanda={penanda} />
 
       <Card className="overflow-hidden">
         <JudulKartu title="Laba Rugi" info="Disusun dari atas ke bawah: Pendapatan → dikurangi Beban Pokok → Laba Kotor → dikurangi Beban Operasional → Laba Bersih. Setiap baris bisa ditelusuri ke akun aslinya di Bagan Akun." />
         <TableWrap className="dh-table">
           <Table>
             <TBody>
-              <SeksiLR judul="PENDAPATAN" rows={d.pendapatan} />
-              {d.retur.length > 0 && <SeksiLR judul="RETUR & POTONGAN" rows={d.retur} negatif />}
+              <SeksiLR judul="PENDAPATAN" rows={d.pendapatan} jenis="pendapatan" penanda={penanda} />
+              {d.retur.length > 0 && <SeksiLR judul="RETUR & POTONGAN" rows={d.retur} jenis="retur" penanda={penanda} />}
               <BarisTotal label="Pendapatan Bersih" value={r.pendapatanBersih} />
-              <SeksiLR judul="BEBAN POKOK" rows={d.bebanPokok} negatif />
+              <SeksiLR judul="BEBAN POKOK (biaya neto)" rows={d.bebanPokok} jenis="beban" penanda={penanda} />
+              <BarisTotal label="Total Beban Pokok (neto)" value={r.bebanPokok} biaya penanda={penanda} />
               <BarisTotal label="Laba Kotor" value={r.labaKotor} />
-              <SeksiLR judul="BEBAN OPERASIONAL" rows={d.bebanOperasional} negatif />
+              <SeksiLR judul="BEBAN OPERASIONAL (biaya neto)" rows={d.bebanOperasional} jenis="beban" penanda={penanda} />
+              <BarisTotal label="Total Beban Operasional (neto)" value={r.bebanOperasional} biaya penanda={penanda} />
               <BarisTotal label="LABA BERSIH" value={r.labaBersih} besar />
             </TBody>
           </Table>
         </TableWrap>
+        <div className="px-4 pb-4 pt-3"><KotakPembalik penanda={penanda} ada={pembalik.ada} testid="kotak-pembalik-lr" /></div>
       </Card>
         </>
       )}
@@ -208,13 +214,9 @@ function LabaRugi({ d, terinci, onBuka, periode, onMuatUlang }) {
 
 const CHART_TOOLTIP_STYLE = { borderRadius: 12, border: "1px solid var(--hairline)", fontSize: 12, background: "var(--bg-surface)" };
 
-function LabaRugiChart({ r }) {
-  const rows = [
-    { name: "Pendapatan Bersih", value: r.pendapatanBersih, color: "var(--green)" },
-    { name: "Beban Pokok", value: r.bebanPokok, color: "var(--orange)" },
-    { name: "Beban Operasional", value: r.bebanOperasional, color: "var(--orange)" },
-    { name: "Laba Bersih", value: r.labaBersih, color: r.labaBersih < 0 ? "var(--red)" : "var(--accent)" },
-  ];
+function LabaRugiChart({ r, penanda }) {
+  const rows = barisGrafikLabaRugi(r, penanda); // beban = biaya neto bertanda; batang pembalik beban bersih berwarna hijau + label di tooltip
+  const adaPembalik = rows.some((x) => x.label);
   return (
     <Card>
       <JudulKartu title="Perbandingan Visual" description="Pendapatan, beban, dan laba bersih dalam satu tampilan." />
@@ -224,19 +226,20 @@ function LabaRugiChart({ r }) {
             <BarChart data={rows} layout="vertical" margin={{ top: 0, right: 24, left: 0, bottom: 0 }}>
               <XAxis type="number" hide />
               <YAxis type="category" dataKey="name" width={132} tick={{ fontSize: 11.5, fill: "var(--text-tertiary)" }} axisLine={false} tickLine={false} />
-              <Tooltip formatter={(v) => [formatRupiahShort(v), ""]} contentStyle={CHART_TOOLTIP_STYLE} />
+              <Tooltip formatter={(v, _n, p) => [v < 0 ? `(${formatRupiahShort(Math.abs(v))})${p?.payload?.label ? ` — ${p.payload.label}` : ""}` : formatRupiahShort(v), ""]} contentStyle={CHART_TOOLTIP_STYLE} />
               <Bar dataKey="value" radius={[0, 6, 6, 0]} maxBarSize={22}>
                 {rows.map((row, i) => <Cell key={i} fill={row.color} />)}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
         </div>
+        {adaPembalik && <p className="m-0 mt-2 text-[12px] text-ink2" data-testid="grafik-pembalik">Batang hijau pada beban = {penanda.pembalikBebanBersih.label.toLowerCase()} (nominal dalam kurung): mengurangi biaya dan menaikkan laba.</p>}
       </CardContent>
     </Card>
   );
 }
 
-function SeksiLR({ judul, rows, negatif }) {
+function SeksiLR({ judul, rows, jenis, penanda }) {
   return (
     <>
       <TR className="bg-inset">
@@ -244,25 +247,48 @@ function SeksiLR({ judul, rows, negatif }) {
       </TR>
       {rows.length === 0 ? (
         <TR><TD className="text-[13px] text-ink3" colSpan={2}>Tidak ada</TD></TR>
-      ) : rows.map((row) => (
-        <TR key={row.accountId}>
-          <TD>
-            <span className="font-mono text-[12px] text-ink3">{row.code}</span>
-            <span className="ml-2">{row.name}</span>
-          </TD>
-          <TD numeric><Uang value={negatif ? -row.nilai : row.nilai} /></TD>
-        </TR>
-      ))}
+      ) : rows.map((row) => {
+        const t = barisLabaRugi(row, jenis, penanda);
+        return (
+          <TR key={row.accountId}>
+            <TD>
+              <span className="font-mono text-[12px] text-ink3">{row.code}</span>
+              <span className="ml-2">{row.name}</span>
+            </TD>
+            <TD numeric>
+              <span className="inline-flex flex-wrap items-center justify-end gap-1.5">{t.label && <LabelPembalikInline teks={t.label} />}<Uang value={t.nilaiTampil} /></span>
+            </TD>
+          </TR>
+        );
+      })}
     </>
   );
 }
 
-function BarisTotal({ label, value, besar }) {
+function LabelPembalikInline({ teks }) { return <Badge variant="green" data-testid="label-pembalik">{teks}</Badge>; }
+
+function BarisTotal({ label, value, besar, biaya = false, penanda }) {
   return (
     <TR className="bg-inset/70">
       <TD className={besar ? "text-[14px] font-bold" : "font-bold"}>{label}</TD>
-      <TD numeric className={besar ? "text-[15px] font-bold" : "font-bold"}><Uang value={value} /></TD>
+      <TD numeric className={besar ? "text-[15px] font-bold" : "font-bold"}>{biaya ? <UangBiaya value={value} penanda={penanda} /> : <Uang value={value} />}</TD>
     </TR>
+  );
+}
+
+function PesanNeracaTakSeimbang({ selisih }) {
+  const p = pesanNeracaTakSeimbang(selisih, formatUang);
+  return (
+    <Card className="bg-redbg" data-testid="neraca-tak-seimbang">
+      <CardContent className="flex gap-3 py-4">
+        <AlertTriangle size={18} className="mt-0.5 shrink-0 text-red" />
+        <div>
+          <p className="text-[13px] font-bold text-ink">{p.judul}</p>
+          <p className="mt-1 text-[13px] text-ink2">{p.isi}</p>
+          <ul className="m-0 mt-1.5 list-disc space-y-0.5 pl-4 text-[12.5px] text-ink2">{p.langkah.map((l) => <li key={l}>{l}</li>)}</ul>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -286,27 +312,9 @@ function Neraca({ d }) {
 
       <KenapaBeda metrik={["piutang_usaha", "uang_muka_pelanggan", "persediaan_nilai", "utang_supplier", "kas_bank_buku"]} />
 
-      {!d.ringkasan.seimbang && (
-        <Card className="bg-redbg">
-          <CardContent className="flex gap-3 py-4">
-            <AlertTriangle size={18} className="mt-0.5 shrink-0 text-red" />
-            <div>
-              <p className="text-[13px] font-bold text-ink">Neraca tidak seimbang</p>
-              <p className="mt-1 text-[13px] text-ink2">
-                Selisih {formatUang(d.ringkasan.selisih)}. Ini bukan selisih pembulatan biasa — ada jurnal
-                timpang yang masuk ke database lewat jalur di luar aplikasi. Periksa Neraca Saldo untuk
-                menemukan akunnya.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {!d.ringkasan.seimbang && <PesanNeracaTakSeimbang selisih={d.ringkasan.selisih} />}
 
-      <Penjelasan>
-        Laba tahun berjalan dihitung langsung dari akun pendapatan &amp; beban sejak 1 Januari — tidak
-        bergantung pada proses tutup buku tahunan. Artinya neraca selalu seimbang tanpa perlu menjalankan
-        proses apa pun, dan tidak akan salah kalau tutup buku lupa dikerjakan.
-      </Penjelasan>
+      <Penjelasan>{PENJELASAN_LABA_BERJALAN}</Penjelasan>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <Card className="overflow-hidden">
@@ -542,6 +550,7 @@ function SeksiArus({ judul, rows, catatan }) {
 function NeracaSaldo({ d }) {
   return (
     <>
+      <Penjelasan>Saldo yang berlawanan dengan saldo normal akun (mis. beban atau kas bersaldo kredit) ditulis di kolom sisi yang sebenarnya dengan angka positif dan diberi penanda “Saldo terbalik” — bukan angka negatif di sisi normalnya.</Penjelasan>
       {!d.total.seimbang && (
         <Card className="bg-redbg">
           <CardContent className="flex gap-3 py-4">
@@ -581,7 +590,7 @@ function NeracaSaldo({ d }) {
               {d.baris.map((b) => (
                 <TR key={b.accountId}>
                   <TD sticky className="font-mono text-[12px]">{b.code}</TD>
-                  <TD truncate>{b.name}</TD>
+                  <TD><span className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5"><span className="min-w-0 break-words">{b.name}</span>{b.saldoTidakNormal && <Badge variant="orange" title={labelSaldoTerbalik(b)} data-testid="saldo-terbalik">Saldo terbalik</Badge>}</span></TD>
                   <TD><Badge variant="neutral">{LABEL_TIPE_AKUN[b.type] || b.type}</Badge></TD>
                   <TD hideBelow="wide" numeric><Uang value={b.mutasiDebit} nolSebagaiStrip sen /></TD>
                   <TD hideBelow="wide" numeric><Uang value={b.mutasiKredit} nolSebagaiStrip sen /></TD>

@@ -36,7 +36,7 @@ export async function hitungHpp(tx, { fromStr, toStr, baris }) {
   // 1. TERBUKUKAN
   const perAkun = new Map();
   for (const r of hppRows) { const a = perAkun.get(r.akunKode) ?? { kode: r.akunKode, nama: r.akunNama, label: LABEL_AKUN_HPP[r.akunKode] ?? r.akunNama, nilai: toMoney(0), nBaris: 0 }; a.nilai = a.nilai.plus(r.nilai); a.nBaris++; perAkun.set(r.akunKode, a); }
-  const terbukukanAkun = [...perAkun.values()].map((a) => ({ ...a, nilai: rp(a.nilai) })).sort((x, y) => x.kode.localeCompare(y.kode));
+  const terbukukanAkun = [...perAkun.values()].map((a) => { const nilai = rp(a.nilai); return { ...a, nilai, ...(nilai < 0 ? { pembalikBebanBersih: true } : {}) }; }).sort((x, y) => x.kode.localeCompare(y.kode));
   const terbukukanTotal = rp(sumMoney(hppRows.map((r) => r.nilai)));
   const pemakaianRows = hppRows.filter((r) => r.sumber === "PEMAKAIAN_BAHAN");
   const pemakaianTerbukukan = rp(sumMoney(pemakaianRows.map((r) => r.nilai)));
@@ -111,7 +111,9 @@ export async function hitungHpp(tx, { fromStr, toStr, baris }) {
 
   return {
     status, pesan: PESAN_MARGIN[status], final: status === STATUS_MARGIN.LENGKAP, alasan,
-    terbukukan: { total: terbukukanTotal, akun: terbukukanAkun, pemakaianBahanTerbukukan: pemakaianTerbukukan, pembelianBahanManual: bahanManual, catatan: "Pembelian bahan manual dibebankan saat dibeli; ini BUKAN HPP berbasis pemakaian." },
+    terbukukan: { total: terbukukanTotal, akun: terbukukanAkun, pemakaianBahanTerbukukan: pemakaianTerbukukan, pembelianBahanManual: bahanManual, catatan: "Pembelian bahan manual dibebankan saat dibeli; ini BUKAN HPP berbasis pemakaian.",
+      pembalikBebanBersih: rp(sumMoney(terbukukanAkun.filter((a) => a.pembalikBebanBersih).map((a) => a.nilai))),
+      keteranganPembalik: "Akun beban pokok bersaldo kredit bersih = pembalik beban bersih: mengurangi HPP dan menaikkan laba kotor." },
     pembalikLintasPeriode,
     konsumsiBahan: { unitTerkirim: nUnitTerkirim, unitDenganPemakaianBernilai: nBernilai, unitDenganCatatan: nAdaCatatan, unitTanpaCatatan, catatanPemakaianPeriode: issue.length, catatanTanpaHarga: issueTanpaHarga.length },
     tidakTerbukti: {

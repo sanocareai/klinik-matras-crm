@@ -6,6 +6,7 @@ import { bolehRinci, bolehSensitif } from "./akses.js";
 import { LABEL_DIVISI } from "./divisi.js";
 import { metrikUntukModulExport, metrik } from "../kontrakMetrik.js";
 import { labelPeriode, susunLabelFilter } from "../export/excel.js";
+import { PEMBALIK_BEBAN_BERSIH } from "../penandaBiaya.js";
 
 export const TAB_EXPORT = Object.freeze(["ringkasan", "kategori", "tren", "dokumen", "komitmen", "anggaran", "semua"]);
 const STATUS_ANGGARAN = (a) => (a == null ? "Belum ada anggaran" : "Ada anggaran");
@@ -15,43 +16,46 @@ const LABEL_MODUL = { pengeluaran: "Pengeluaran", pembelian: "Pembelian", "suppl
 
 const uang = (key, header, lebar) => ({ key, header, tipe: "uang", ...(lebar ? { lebar } : {}) });
 const teks = (key, header, lebar) => ({ key, header, tipe: "teks", ...(lebar ? { lebar } : {}) });
+// Aktual bernilai negatif = pembalik beban bersih (mengurangi biaya, menaikkan laba) — diberi label eksplisit di kolom Sifat; nilai & tanda angka TIDAK diubah.
+const sifat = (v) => (Number(v) < 0 ? PEMBALIK_BEBAN_BERSIH.label : "");
+const kolomSifat = teks("sifat", "Sifat Aktual", 24);
 const jml = (rows, k) => rows.reduce((a, r) => a + (Number(r[k]) || 0), 0);
 
 function sheetRingkasan(lap) {
   const baris = lap.divisi.map((d) => ({
     divisi: d.label, statusAnggaran: STATUS_ANGGARAN(d.anggaran), anggaran: d.anggaran, aktual: d.aktual, kasKeluar: d.kasKeluar,
     komitmenBelum: d.komitmen.belumDibukukan, komitmenBayar: d.komitmen.dibukukanBelumDibayar, sisa: d.sisaAnggaran, persen: d.persenTerpakai, proyeksi: d.proyeksi.nilai, dokumen: d.nDokumen,
-    peringatan: d.alert?.pesan ?? "",
+    peringatan: d.alert?.pesan ?? "", sifat: sifat(d.aktual),
   }));
   return {
     nama: "Ringkasan", judul: "Ringkasan Biaya per Divisi",
     kolom: [teks("divisi", "Divisi", 26), teks("statusAnggaran", "Status Anggaran", 20), uang("anggaran", "Anggaran (Rp)"), uang("aktual", "Aktual / Beban Diakui (Rp)"), uang("kasKeluar", "Kas Keluar (Rp)"),
       uang("komitmenBelum", "Komitmen Menunggu Persetujuan (Rp)"), uang("komitmenBayar", "Komitmen Dibukukan Belum Dibayar (Rp)"), uang("sisa", "Sisa Anggaran (Rp)"),
-      { key: "persen", header: "Terpakai (%)", tipe: "angka" }, uang("proyeksi", "Proyeksi Akhir Bulan (Rp)"), { key: "dokumen", header: "Jumlah Dokumen", tipe: "angka" }, teks("peringatan", "Peringatan", 40)],
+      { key: "persen", header: "Terpakai (%)", tipe: "angka" }, uang("proyeksi", "Proyeksi Akhir Bulan (Rp)"), { key: "dokumen", header: "Jumlah Dokumen", tipe: "angka" }, teks("peringatan", "Peringatan", 40), kolomSifat],
     baris,
     total: { label: "TOTAL", nilai: { aktual: jml(baris, "aktual"), kasKeluar: jml(baris, "kasKeluar"), komitmenBelum: jml(baris, "komitmenBelum"), komitmenBayar: jml(baris, "komitmenBayar"), dokumen: jml(baris, "dokumen") } },
-    catatan: ["Aktual (Beban Diakui), Kas Keluar, dan Komitmen adalah tiga konsep terpisah — satu transaksi sumber hanya berkontribusi sekali pada tiap konsep.", "Anggaran kosong = 'Belum ada anggaran' (bukan Rp0)."],
+    catatan: ["Aktual (Beban Diakui), Kas Keluar, dan Komitmen adalah tiga konsep terpisah — satu transaksi sumber hanya berkontribusi sekali pada tiap konsep.", "Anggaran kosong = 'Belum ada anggaran' (bukan Rp0).", `${PEMBALIK_BEBAN_BERSIH.label}: ${PEMBALIK_BEBAN_BERSIH.penjelasan}`],
   };
 }
 
 function sheetKelompok(lap) {
   const baris = lap.divisi.flatMap((d) => [
-    ...d.kelompok.map((g) => ({ divisi: d.label, kelompok: g.label, aktual: g.aktual, kasKeluar: g.kasKeluar, dokumen: g.nDokumen })),
-    ...(d.komponenLain.aktual !== 0 || d.komponenLain.kasKeluar !== 0 || d.komponenLain.daftar.length ? [{ divisi: d.label, kelompok: `Komponen lain${d.komponenLain.daftar.length ? ` (${d.komponenLain.daftar.join(", ")})` : ""}`, aktual: d.komponenLain.aktual, kasKeluar: d.komponenLain.kasKeluar, dokumen: 0 }] : []),
+    ...d.kelompok.map((g) => ({ divisi: d.label, kelompok: g.label, aktual: g.aktual, kasKeluar: g.kasKeluar, dokumen: g.nDokumen, sifat: sifat(g.aktual) })),
+    ...(d.komponenLain.aktual !== 0 || d.komponenLain.kasKeluar !== 0 || d.komponenLain.daftar.length ? [{ divisi: d.label, kelompok: `Komponen lain${d.komponenLain.daftar.length ? ` (${d.komponenLain.daftar.join(", ")})` : ""}`, aktual: d.komponenLain.aktual, kasKeluar: d.komponenLain.kasKeluar, dokumen: 0, sifat: sifat(d.komponenLain.aktual) }] : []),
   ]);
   return {
     nama: "Kelompok", judul: "Rincian Kelompok Biaya per Divisi",
-    kolom: [teks("divisi", "Divisi", 26), teks("kelompok", "Kelompok", 48), uang("aktual", "Aktual (Rp)"), uang("kasKeluar", "Kas Keluar (Rp)"), { key: "dokumen", header: "Jumlah Dokumen", tipe: "angka" }],
+    kolom: [teks("divisi", "Divisi", 26), teks("kelompok", "Kelompok", 48), uang("aktual", "Aktual (Rp)"), uang("kasKeluar", "Kas Keluar (Rp)"), { key: "dokumen", header: "Jumlah Dokumen", tipe: "angka" }, kolomSifat],
     baris, total: { label: "TOTAL", nilai: { aktual: jml(baris, "aktual"), kasKeluar: jml(baris, "kasKeluar"), dokumen: jml(baris, "dokumen") } },
     catatan: ["Kelompok bernilai nol tidak ditampilkan satu per satu; namanya tercantum pada 'Komponen lain'."],
   };
 }
 
 function sheetKategori(lap) {
-  const baris = lap.divisi.flatMap((d) => d.perKategori.map((k) => ({ divisi: d.label, kategori: k.nama, kode: k.kode, aktual: k.aktual, kasKeluar: k.kasKeluar, dokumen: k.nDokumen, anggaran: k.anggaran })));
+  const baris = lap.divisi.flatMap((d) => d.perKategori.map((k) => ({ divisi: d.label, kategori: k.nama, kode: k.kode, aktual: k.aktual, kasKeluar: k.kasKeluar, dokumen: k.nDokumen, anggaran: k.anggaran, sifat: sifat(k.aktual) })));
   return {
     nama: "Kategori", judul: "Rincian per Kategori",
-    kolom: [teks("divisi", "Divisi", 26), teks("kategori", "Kategori", 40), teks("kode", "Kode", 22), uang("aktual", "Aktual (Rp)"), uang("kasKeluar", "Kas Keluar (Rp)"), { key: "dokumen", header: "Jumlah Dokumen", tipe: "angka" }, uang("anggaran", "Anggaran Kategori (Rp)")],
+    kolom: [teks("divisi", "Divisi", 26), teks("kategori", "Kategori", 40), teks("kode", "Kode", 22), uang("aktual", "Aktual (Rp)"), uang("kasKeluar", "Kas Keluar (Rp)"), { key: "dokumen", header: "Jumlah Dokumen", tipe: "angka" }, uang("anggaran", "Anggaran Kategori (Rp)"), kolomSifat],
     baris, total: { label: "TOTAL", nilai: { aktual: jml(baris, "aktual"), kasKeluar: jml(baris, "kasKeluar"), dokumen: jml(baris, "dokumen") } },
     catatan: ["Rincian kategori hanya untuk Finance dan leader divisi."],
   };
