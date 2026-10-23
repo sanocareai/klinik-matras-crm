@@ -8,6 +8,13 @@ export const SUMBER = Object.freeze({
   BARU: { key: "BARU", label: "Bahan baru dari Gudang", ringkas: "Mengurangi stok saat dikonfirmasi", dampak: "Mengurangi stok tepat sekali lewat Material Issue/pergerakan stok resmi." },
   LAMA: { key: "LAMA", label: "Komponen lama dari unit ini", ringkas: "Tidak memengaruhi stok", dampak: "Milik pelanggan: tidak membuat Material Issue, penerimaan Gudang, pergerakan stok, reservasi, atau biaya bahan baru." },
 });
+// Tiga sumber pemakaian yang SELALU tampil sebagai kartu di area "Pemakaian aktual" (tanpa menggulir daftar). Judul kartu = istilah pengguna; SUMBER.* di atas tetap dipakai riwayat/Excel.
+export const KARTU_SUMBER = Object.freeze({
+  gudang: { key: "gudang", label: "Bahan dari Gudang", ringkas: "Mengurangi stok saat dikonfirmasi", teks: "Bahan yang ada di katalog Gudang. Stok berkurang tepat sekali lewat Material Issue/pergerakan stok resmi.", badge: "orange" },
+  belum: { key: "belum", label: "Bahan belum ada di katalog", ringkas: "Perlu rekonsiliasi Gudang", teks: "Catat faktanya sekarang dan usulkan ke Gudang. Stok, biaya, dan jurnal tidak berubah sampai Gudang menyelesaikannya.", badge: "orange" },
+  lama: { key: "lama", label: "Komponen lama dari kasur ini", ringkas: "Tidak memengaruhi stok", teks: "Milik pelanggan (bongkaran kasur ini): bukan stok, bukan Material Issue, tanpa biaya bahan baru.", badge: "accent" },
+});
+export const STATUS_REKON = "Perlu rekonsiliasi Gudang";
 export const JUDUL_AKTUAL = "Pemakaian aktual";
 export const JUDUL_RENCANA = "Rencana (opsional, belum mengurangi stok)";
 export const KELOMPOK_USULAN = Object.freeze([
@@ -31,7 +38,8 @@ export const SATUAN_KOMPONEN = Object.freeze(["PCS", "METER", "M3", "SHEET", "SP
 /** Keadaan saldo untuk SATU baris bahan baru: cukup / kurang (pasti ditolak Gudang) / tidak diketahui (server yang memutuskan). */
 export function keadaanSaldo(b, qtyTeks) {
   const v = parseJumlah(qtyTeks);
-  if (b?.saldoDiketahui === false || b?.tersedia === null || b?.tersedia === undefined) return { status: "tidak_diketahui", nada: "orange", teks: "Stok belum diketahui. Pencatatan akan ditolak Gudang bila saldo tidak mencukupi; minta Gudang mencatat stok awal/opname lebih dulu.", blok: false };
+  // "Belum diketahui" = bahan belum punya catatan stok sama sekali → saldo ledger 0 → pengurangan ditolak server ("Stok ... tidak cukup — tersedia 0"). Tidak ada gunanya mencoba: arahkan ke Gudang atau ke pemakaian sementara.
+  if (b?.saldoDiketahui === false || b?.tersedia === null || b?.tersedia === undefined) return { status: "tidak_diketahui", nada: "red", teks: "Stok belum diketahui: bahan ini belum punya catatan stok, jadi server akan MENOLAK pencatatan (tidak ada stok yang bisa dikurangi). Minta Gudang mencatat stok awal/opname lebih dulu, atau catat sebagai pemakaian sementara lewat “Bahan belum ada di katalog”.", blok: true, alternatif: "sementara" };
   const tersedia = Number(b.tersedia);
   if (v !== null && v > tersedia + 0.00005) return { status: "kurang", nada: "red", teks: `Saldo Gudang ${formatJumlah(tersedia)} ${b.satuan || ""}, kurang ${formatJumlah(v - tersedia)}. Kurangi jumlah, atau minta Gudang menambah stok.`, blok: true, kurang: v - tersedia };
   const sisa = v !== null && v > 0 ? Math.round((tersedia - v) * 10000) / 10000 : null;
@@ -55,14 +63,15 @@ export function isianAwalDariRencana(lines = [], aktualTotal = [], sudahAda = []
   return { baris: hasil, dilewati };
 }
 
-/** Bisa dikonfirmasi: ada baris, semua jumlah > 0, tidak ada yang pasti ditolak (saldo kurang). Baris tidak-diketahui boleh dicoba (server memutuskan). */
+/** Bisa dikonfirmasi: ada baris, semua jumlah > 0, tidak ada yang pasti ditolak server (saldo kurang atau stok belum diketahui = ledger 0). */
 export function bolehKonfirmasiAktual(baris, status = {}) {
   const tunggu = baris.filter((b) => status[b.materialId]?.fase !== "ok");
   if (!tunggu.length) return { ok: false, alasan: null };
   for (const b of tunggu) {
     const v = parseJumlah(b.qty);
     if (v === null || v <= 0) return { ok: false, alasan: "Isi jumlah > 0 untuk setiap bahan." };
-    if (keadaanSaldo(b, b.qty).blok) return { ok: false, alasan: `Saldo ${b.nama} tidak cukup.` };
+    const ks = keadaanSaldo(b, b.qty);
+    if (ks.blok) return { ok: false, alasan: ks.status === "tidak_diketahui" ? `Stok ${b.nama} belum diketahui — server pasti menolak. Ganti bahan, atau catat sebagai pemakaian sementara.` : `Saldo ${b.nama} tidak cukup.` };
   }
   return { ok: true, alasan: null };
 }

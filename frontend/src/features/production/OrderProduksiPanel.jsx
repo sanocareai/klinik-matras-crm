@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "@/features/production/bahan/bahan.css";
-import { AlertTriangle, CheckCircle2, ChevronRight, Info } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ChevronRight, Info, Package, ScrollText, SlidersHorizontal } from "lucide-react";
 import { api } from "@/api.js";
 import { Modal } from "@/components/ui/modal.jsx";
 import { Button } from "@/components/ui/button.jsx";
@@ -8,8 +8,7 @@ import { Badge } from "@/components/ui/badge.jsx";
 import { cn } from "@/lib/utils.js";
 import { formatTanggal } from "@/utils/formatDate.js";
 import MaterialPlanEditor from "@/features/production/MaterialPlanEditor.jsx";
-import PemilihBahanKatalog from "@/features/production/bahan/PemilihBahanKatalog.jsx";
-import PemakaianSementaraDaftar from "@/features/production/bahan/PemakaianSementaraDaftar.jsx";
+import PemakaianAktualBagian from "@/features/production/bahan/PemakaianAktualBagian.jsx";
 import PenerimaanWorkshopModal from "@/features/production/PenerimaanWorkshopModal.jsx";
 import KoreksiPenerimaanModal from "@/features/production/KoreksiPenerimaanModal.jsx";
 import { statusOf } from "@/features/production/productionLabels.js";
@@ -58,18 +57,29 @@ function Bagian({ id, judul, children, aksi }) {
   );
 }
 
-export default function OrderProduksiPanel({ unitId, onClose, onChanged, onBukaUnit360 }) {
+export default function OrderProduksiPanel({ unitId, fokus = null, onClose, onChanged, onBukaUnit360 }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [memuat, setMemuat] = useState(false);
   const reqRef = useRef(0);
+  // FOKUS BAHAN: masuk untuk mencatat bahan (tombol "Catat bahan" di daftar, atau "Pemakaian bahan" di bilah lompat) → Pemakaian aktual naik tepat di bawah ringkasan dan layar diarahkan ke sana;
+  // Status & target tetap bisa dicapai (bagian terlipat di bawahnya + bilah lompat). Tanpa fokus, urutan lama dipertahankan.
+  const [fokusLokal, setFokusLokal] = useState(false); const fokusSudahRef = useRef("");
+  const fokusBahan = fokus === "bahan" || fokusLokal;
 
   const muat = useCallback(async () => {
     if (!unitId) return;
     const id = ++reqRef.current; setMemuat(true); setError(null);
     try { const d = await api.getUnitAdopsi(unitId); if (id === reqRef.current) setData(d); } catch (e) { if (id === reqRef.current) setError(e); } finally { if (id === reqRef.current) setMemuat(false); }
   }, [unitId]);
-  useEffect(() => { setData(null); if (unitId) muat(); }, [unitId, muat]);
+  useEffect(() => { setData(null); setFokusLokal(false); fokusSudahRef.current = ""; if (unitId) muat(); }, [unitId, muat]);
+  useEffect(() => {
+    if (!fokusBahan || !data?.unit?.id || fokusSudahRef.current === data.unit.id) return undefined;
+    fokusSudahRef.current = data.unit.id;
+    const t = setTimeout(() => { const el = document.getElementById("sec-aktual"); if (el) { el.scrollIntoView({ behavior: "auto", block: "start" }); el.setAttribute("tabindex", "-1"); el.style.outline = "none"; el.focus({ preventScroll: true }); } }, 60);
+    return () => clearTimeout(t);
+  }, [fokusBahan, data?.unit?.id]);
+  const lompat = (id, { buka = false } = {}) => { const el = document.getElementById(id); if (!el) return; if (el.tagName === "DETAILS" || buka) { const d = el.closest("details") || el; if (d.tagName === "DETAILS") d.open = true; } el.scrollIntoView({ behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" }); };
 
   const izin = data?.izin || {};
   const u = data?.unit; const ad = data?.adopsi;
@@ -99,15 +109,27 @@ export default function OrderProduksiPanel({ unitId, onClose, onChanged, onBukaU
               <KartuPenerimaan data={data} aktif={aktif} onDone={sesudahUbah} />
             </div>
 
-            {/* 2 · Status & target */}
-            <Bagian id="sec-status" judul="Status & target">
-              <StatusTarget data={data} aktif={aktif} onDone={sesudahUbah} />
+            {/* Bilah lompat: semua bagian tetap terjangkau tanpa menggulir melewati bagian lain */}
+            <nav aria-label="Bagian panel" className="-mx-1 flex gap-1 overflow-x-auto px-1 pb-1" data-testid="panel-lompat">
+              <Button variant={fokusBahan ? undefined : "secondary"} size="sm" className="min-h-[44px] shrink-0" data-testid="lompat-bahan" aria-pressed={fokusBahan} onClick={() => { setFokusLokal(true); fokusSudahRef.current = ""; setTimeout(() => lompat("sec-aktual"), 60); }}><Package size={14} aria-hidden /> Pemakaian bahan</Button>
+              <Button variant="secondary" size="sm" className="min-h-[44px] shrink-0" data-testid="lompat-status" onClick={() => lompat("sec-status", { buka: true })}><SlidersHorizontal size={14} aria-hidden /> Status &amp; target</Button>
+              <Button variant="secondary" size="sm" className="min-h-[44px] shrink-0" data-testid="lompat-riwayat" onClick={() => lompat("sec-riwayat")}><ScrollText size={14} aria-hidden /> Riwayat</Button>
+            </nav>
+
+            {/* 2 · Status & target — di atas Pemakaian aktual (urutan biasa); bila fokus bahan: terlipat di bawah Pemakaian aktual */}
+            {!fokusBahan && <Bagian id="sec-status" judul="Status & target"><StatusTarget data={data} aktif={aktif} onDone={sesudahUbah} /></Bagian>}
+
+            {/* 3 · Pemakaian aktual — tiga sumber selalu terlihat. Bahan dari Gudang mengurangi stok; belum ada di katalog = pemakaian sementara + usulan (perlu rekonsiliasi Gudang); komponen lama tidak memengaruhi stok */}
+            <Bagian id="sec-aktual" judul="Pemakaian aktual">
+              <PemakaianAktual data={data} aktif={aktif} onDone={sesudahUbah} onMulai={() => { const d = document.getElementById("sec-rencana-wrap"); if (d?.tagName === "DETAILS") d.open = false; }} />
             </Bagian>
 
-            {/* 3 · Pemakaian aktual — di ATAS rencana. Bahan baru = transaksi resmi (mengurangi stok); komponen lama dan pemakaian sementara TIDAK mengurangi stok */}
-            <Bagian id="sec-aktual" judul="Pemakaian aktual" aksi={<Badge variant="orange" title="Bahan baru dari Gudang: setiap catatan mengurangi stok Gudang tepat sekali.">Aktual · mengurangi stok</Badge>}>
-              <PemakaianAktual data={data} aktif={aktif} bolehCatat={!!izin.pemakaianAktual} onDone={sesudahUbah} />
-            </Bagian>
+            {fokusBahan && (
+              <details className="border-t border-line pt-5" id="sec-status-lipat" data-testid="sec-status-lipat">
+                <summary className="min-h-[44px] cursor-pointer text-[14px] font-semibold text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/50">Status &amp; target · {ad.kerja?.label || "—"}{ad.targetSelesai?.at ? " · target diisi" : " · tanpa target"}</summary>
+                <div className="pt-3"><Bagian id="sec-status" judul="Status & target"><StatusTarget data={data} aktif={aktif} onDone={sesudahUbah} /></Bagian></div>
+              </details>
+            )}
 
             {/* 4 · Rencana bahan — opsional, TERTUTUP bawaan, di bawah pemakaian aktual */}
             <details className="border-t border-line pt-5" id="sec-rencana-wrap" data-testid="sec-rencana-lama">
@@ -396,30 +418,12 @@ function StatusTarget({ data, aktif, onDone }) {
 }
 
 // ───────────────────────────── pemakaian aktual ─────────────────────────────
-function PemakaianAktual({ data, aktif, bolehCatat, onDone }) {
-  const { pemakaianAktual: ak, perbandingan, unit: u } = data;
-  const [form, setForm] = useState(false);
-  const [pilih, setPilih] = useState(null); const [qty, setQty] = useState(""); const [catatan, setCatatan] = useState("");
-  const [sibuk, setSibuk] = useState(false); const [hasil, setHasil] = useState({ galat: null, ok: "" });
-  const kunciRef = useRef(null); const isianRef = useRef("");
-
-
-  // Satu niat = satu kunci: dipakai ulang bila isian sama (klik ulang/retry), diganti bila isian berubah → pencatatan TEPAT SEKALI.
-  const sidik = `${pilih?.materialId}|${qty}|${catatan}`;
-  if (isianRef.current !== sidik) { isianRef.current = sidik; kunciRef.current = null; }
-  async function catat() {
-    const v = parseJumlah(qty); if (!pilih || v === null || v === 0) return;
-    kunciRef.current ??= kunciIdempoten("pakai");
-    setSibuk(true); setHasil({ galat: null, ok: "" });
-    try {
-      await api.addUnitMaterial(u.id, { materialId: pilih.materialId, qty: v, note: catatan.trim() || undefined }, kunciRef.current);
-      setHasil({ galat: null, ok: `Tercatat: ${pilih.nama} ${formatJumlah(v)} ${pilih.satuan}. Stok berkurang.` }); setForm(false); setPilih(null); setQty(""); setCatatan(""); kunciRef.current = null;
-      await onDone();
-    } catch (e) { setHasil({ galat: e, ok: "" }); } finally { setSibuk(false); }
-  }
-
+// Perbandingan rencana vs aktual (bila ada rencana) + komponen BERSAMA PemakaianAktualBagian (tiga sumber selalu terlihat: Bahan dari Gudang · Bahan belum ada di katalog · Komponen lama dari kasur ini;
+// sama dengan tab Bahan Ruang Kerja Unit). Bahan dari Gudang = stok berkurang tepat sekali; belum ada di katalog = pemakaian sementara + usulan (perlu rekonsiliasi Gudang, stok/biaya/jurnal tidak berubah).
+function PemakaianAktual({ data, aktif, onDone, onMulai }) {
+  const { perbandingan, unit: u } = data;
   return (
-    <div className="space-y-3" data-testid="pemakaian-aktual">
+    <div className="space-y-4" data-testid="pemakaian-aktual">
       {perbandingan.length > 0 && (
         <div className="overflow-x-auto" data-testid="rencana-vs-aktual">
           <table className="w-full table-fixed border-collapse text-left text-[13px]">
@@ -437,49 +441,7 @@ function PemakaianAktual({ data, aktif, bolehCatat, onDone }) {
           </table>
         </div>
       )}
-      {ak.baris.length === 0
-        ? <Kosong>Belum ada pemakaian bahan tercatat untuk unit ini. Pemakaian dicatat lewat Material Issue Gudang atau catat langsung di sini.</Kosong>
-        : (
-          <ul className="m-0 list-none divide-y divide-line rounded-btn bg-inset p-0" data-testid="aktual-baris">
-            {ak.baris.slice(0, 8).map((b) => (
-              <li key={b.id} className="px-3 py-2 text-[12.5px]">
-                <div className="flex items-baseline gap-2"><span className="min-w-0 flex-1 truncate font-medium text-ink">{b.nama}</span><span className={cn("shrink-0 font-semibold tabular-nums", b.qty < 0 ? "text-green" : "text-ink")}>{b.qty < 0 ? "−" : ""}{formatJumlah(Math.abs(b.qty))} {b.satuan}</span></div>
-                <div className="text-ink3">{b.dokumen.jenis}{b.dokumen.nomor ? ` ${b.dokumen.nomor}` : ""} · {b.pelaku || "—"} · {waktuWib(b.tanggal)}{b.tipe === "RETURN" ? " · dikembalikan" : ""}</div>
-              </li>
-            ))}
-          </ul>
-        )}
-      {ak.baris.length > 8 && <p className="m-0 text-[12px] text-ink3">Menampilkan 8 dari {ak.baris.length} catatan terbaru. Lengkapnya ada di Unit 360 &gt; Bahan.</p>}
-      {(data.pemakaianSementara?.items?.length ?? 0) > 0 && (
-        <div className="space-y-2" data-testid="aktual-sementara">
-          <h4 className="m-0 flex flex-wrap items-center gap-2 text-[13px] font-semibold text-ink">Pemakaian sementara <Badge variant="orange" title="Bukan Material Issue; stok, biaya, dan jurnal belum berubah.">{data.pemakaianSementara.total.perluRekonsiliasi > 0 ? `${data.pemakaianSementara.total.perluRekonsiliasi} perlu rekonsiliasi Gudang` : "Perlu rekonsiliasi Gudang"}</Badge></h4>
-          <PemakaianSementaraDaftar data={data.pemakaianSementara} bolehCatat={!!data.izin?.catatPemakaianSementara} bolehGudang={!!data.izin?.putuskanUsulan} aktif={aktif} onDone={onDone} />
-        </div>
-      )}
-
-      {bolehCatat && aktif && !form && <Button variant="secondary" className="min-h-[44px]" data-testid="aktual-buka" onClick={() => { setForm(true); setHasil({ galat: null, ok: "" }); }}>Catat pemakaian bahan</Button>}
-      {!bolehCatat && <p className="m-0 text-[12.5px] text-ink3">Akun Anda hanya bisa melihat pemakaian.</p>}
-      {form && (
-        <div className="space-y-3 rounded-card bg-inset px-4 py-3" data-testid="aktual-form">
-          <p className="m-0 flex items-start gap-2 text-[12.5px] text-orange"><AlertTriangle size={15} className="mt-0.5 shrink-0" aria-hidden />Ini pemakaian sungguhan: <b>stok Gudang berkurang</b> sekarang. Untuk sekadar merencanakan, gunakan Rencana bahan.</p>
-          {!pilih ? (
-            <>
-              <PemilihBahanKatalog dipilihIds={new Set()} onTambah={(b) => setPilih(b)} tinggi={220} testid="aktual-pemilih" />
-            </>
-          ) : (
-            <div className="space-y-2">
-              <p className="m-0 text-[13px] font-medium text-ink">{pilih.nama} <button type="button" className="ml-1 text-[12px] font-normal text-accent underline-offset-2 hover:underline" onClick={() => setPilih(null)}>ganti</button></p>
-              <p className="m-0 text-[12px] text-ink2" data-testid="aktual-saldo-pilih">Satuan {pilih.satuan} · {ketersediaanText(pilih)}</p>
-              <div className="flex gap-2">
-                <label className="flex-1"><span className="block text-[12px] text-ink3">Jumlah dipakai ({pilih.satuan})</span><input inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value)} data-testid="aktual-qty" className="h-11 w-full rounded-btn border border-line bg-surface px-3 text-right text-[14px] tabular-nums text-ink outline-none focus:border-accent focus-visible:ring-2 focus-visible:ring-accent/30" /></label>
-                <label className="flex-[2]"><span className="block text-[12px] text-ink3">Catatan (opsional)</span><input value={catatan} onChange={(e) => setCatatan(e.target.value)} maxLength={300} className="h-11 w-full rounded-btn border border-line bg-surface px-3 text-[14px] text-ink outline-none focus:border-accent focus-visible:ring-2 focus-visible:ring-accent/30" /></label>
-              </div>
-            </div>
-          )}
-          <div className="flex justify-end gap-2"><Button variant="neutral" className="min-h-[44px]" onClick={() => { setForm(false); setPilih(null); }} disabled={sibuk}>Batal</Button><Button className="min-h-[44px]" data-testid="aktual-simpan" disabled={sibuk || !pilih || parseJumlah(qty) === null || parseJumlah(qty) === 0} onClick={catat}>{sibuk ? "Mencatat…" : "Catat & kurangi stok"}</Button></div>
-        </div>
-      )}
-      <Hasil hasil={hasil} onMuat={onDone} />
+      <PemakaianAktualBagian unitId={u.id} data={data} izin={data.izin || {}} aktif={aktif} onDone={onDone} onMulai={onMulai} tanpaJudul />
     </div>
   );
 }

@@ -22,7 +22,7 @@ test("istilah wajib: judul aktual & rencana persis; dua sumber berlabel tegas", 
 test("saldo: cukup / kurang (memblokir) / tidak diketahui (peringatan, server yang memutuskan) — tidak pernah tampil sebagai nol", () => {
   assert.equal(keadaanSaldo(kat(), "5").status, "cukup"); assert.equal(keadaanSaldo(kat(), "18").status, "cukup");
   const k = keadaanSaldo(kat({ tersedia: 1.5, saldo: 1.5 }), "5"); assert.equal(k.status, "kurang"); assert.equal(k.blok, true); assert.match(k.teks, /kurang 3,5/);
-  const t = keadaanSaldo(kat({ saldoDiketahui: false, tersedia: null, saldo: null }), "1"); assert.equal(t.status, "tidak_diketahui"); assert.equal(t.blok, false); assert.match(t.teks, /Stok belum diketahui/);
+  const t = keadaanSaldo(kat({ saldoDiketahui: false, tersedia: null, saldo: null }), "1"); assert.equal(t.status, "tidak_diketahui"); assert.equal(t.blok, true, "stok belum diketahui = ledger 0: server pasti menolak"); assert.equal(t.alternatif, "sementara"); assert.match(t.teks, /Stok belum diketahui/); assert.match(t.teks, /MENOLAK/);
   assert.doesNotMatch(t.teks, /\b0\b/);
 });
 
@@ -39,7 +39,7 @@ test("konfirmasi: butuh jumlah > 0 untuk SETIAP baris, tidak ada saldo kurang; b
   assert.equal(bolehKonfirmasiAktual([a]).ok, true); assert.equal(bolehKonfirmasiAktual([{ ...a, qty: "" }]).ok, false); assert.equal(bolehKonfirmasiAktual([{ ...a, qty: "0" }]).ok, false);
   assert.equal(bolehKonfirmasiAktual([{ ...a, qty: "99" }]).ok, false);
   assert.equal(bolehKonfirmasiAktual([{ ...a, qty: "99" }], { m1: { fase: "ok" } }).ok, false, "semua sudah tercatat: tidak ada yang perlu dikirim");
-  assert.equal(bolehKonfirmasiAktual([{ ...a, saldoDiketahui: false, tersedia: null }]).ok, true);
+  const tak = bolehKonfirmasiAktual([{ ...a, saldoDiketahui: false, tersedia: null }]); assert.equal(tak.ok, false, "stok belum diketahui tidak dikirim (pasti ditolak)"); assert.match(tak.alasan, /belum diketahui.*pemakaian sementara/);
   assert.equal(tambahAktual([a], kat()).length, 1, "tanpa duplikat");
 });
 
@@ -83,8 +83,10 @@ test("Ringkasan Dokumentasi: jumlah, kategori, terbaru, status bukti yang diwaji
 
 test("pengawatan: tab Bahan = BahanTab (tindakan utama aktual, rencana terlipat, dua sumber, satu katalog); jalur stok resmi + kunci idempotensi; tanpa tombol hapus; API komponen lama", () => {
   const tab = src("features", "production", "bahan", "BahanTab.jsx"), baru = src("features", "production", "bahan", "CatatBahanBaru.jsx"), lama = src("features", "production", "bahan", "FormKomponenLama.jsx"), daftar = src("features", "production", "bahan", "KomponenLamaDaftar.jsx"), riw = src("features", "production", "bahan", "RiwayatBahanBaru.jsx");
-  for (const k of ["JUDUL_AKTUAL", "JUDUL_RENCANA", "Catat bahan baru dari Gudang", "Catat komponen lama dari unit ini", 'role="radiogroup"', "sumber-baru".replace("-baru", "") , "rencanaEdit", "aria-expanded={rencanaBuka}", "SUMBER.BARU.label", "SUMBER.LAMA.label"]) assert.ok(tab.includes(k), k);
-  assert.ok(tab.includes('data-testid={`sumber-${kunci}`}') && tab.includes('kunci="baru"') && tab.includes('kunci="lama"'));
+  const bagian = src("features", "production", "bahan", "PemakaianAktualBagian.jsx");
+  for (const k of ["JUDUL_RENCANA", "rencanaEdit", "aria-expanded={rencanaBuka}", "PemakaianAktualBagian"]) assert.ok(tab.includes(k), k);
+  for (const k of ["JUDUL_AKTUAL", 'role="radiogroup"', "KARTU_SUMBER.gudang.label", "KARTU_SUMBER.belum.label", "KARTU_SUMBER.lama.label"]) assert.ok(bagian.includes(k), k);
+  assert.ok(bagian.includes('data-testid={`sumber-${kunci}`}') && bagian.includes('kunci="gudang"') && bagian.includes('kunci="belum"') && bagian.includes('kunci="lama"'));
   assert.ok(!tab.includes("MaterialPlanEditor") || tab.includes("rencanaBuka &&"), "editor rencana hanya dirender saat dibuka (satu katalog pada satu waktu)");
   for (const k of ["api.addUnitMaterial", "kunciIdempoten", "kirimRef.current", "isianAwalDariRencana", "gunakan-rencana", "belum ada yang dicatat", "api.getKatalogBahanProduksi"]) assert.ok(baru.includes(k), k);
   assert.ok(!baru.includes("putRencanaBahan"), "mencatat aktual tidak menulis rencana");

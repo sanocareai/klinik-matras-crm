@@ -1,9 +1,9 @@
 import React, { useMemo, useRef, useState } from "react";
-import { AlertTriangle, CheckCircle2, Trash2, Wand2 } from "lucide-react";
+import { AlertTriangle, ArrowLeftRight, CheckCircle2, Trash2, Wand2 } from "lucide-react";
 import { api } from "@/api.js";
 import { Button } from "@/components/ui/button.jsx";
 import { cn } from "@/lib/utils.js";
-import { formatJumlah, hapusBaris, kunciIdempoten, kelompokkan, parseJumlah, pesanGalatAdopsi, ubahJumlah, waktuWib } from "@/features/production/orderProduksiModel.js";
+import { formatJumlah, hapusBaris, kunciIdempoten, kelompokkan, ketersediaanText, parseJumlah, pesanGalatAdopsi, ubahJumlah, waktuWib } from "@/features/production/orderProduksiModel.js";
 import { SUMBER, bolehKonfirmasiAktual, isianAwalDariRencana, keadaanSaldo, tambahAktual } from "@/features/production/bahan/bahanModel.js";
 import PemilihBahanKatalog from "@/features/production/bahan/PemilihBahanKatalog.jsx";
 import BahanBelumAda from "@/features/production/bahan/BahanBelumAda.jsx";
@@ -13,12 +13,13 @@ import BahanBelumAda from "@/features/production/bahan/BahanBelumAda.jsx";
 import "@/features/production/bahan/bahan.css";
 const NADA = { green: "bh-ok", orange: "bh-warn", red: "bh-bad" };
 
-export default function CatatBahanBaru({ data, unitId, izin = {}, onDone, onTutup }) {
+export default function CatatBahanBaru({ data, unitId, izin = {}, awalCariAwal = "", onDone, onTutup, onPakaiSementara = null }) {
   const rencana = data.rencanaBahan?.plan ?? null; const total = data.pemakaianAktual?.total ?? [];
   const [baris, setBaris] = useState([]); const [catatan, setCatatan] = useState(""); const [status, setStatus] = useState({}); const [sibuk, setSibuk] = useState(false); const [infoRencana, setInfoRencana] = useState("");
   const kunciRef = useRef(new Map()); const kirimRef = useRef(false);
   const [belumAda, setBelumAda] = useState(null); // null | { nama } — panel "Bahan belum ada?" (usulan; bukan stok). Baris yang sudah dipilih tetap ada.
-  const [awalCari, setAwalCari] = useState(""); const [versiPemilih, setVersiPemilih] = useState(0);
+  const [awalCari, setAwalCari] = useState(awalCariAwal); const [versiPemilih, setVersiPemilih] = useState(0);
+  const pemilihRef = useRef(null);
   const bolehUsul = !!izin.usulBahan;
   const dipilihIds = useMemo(() => new Set(baris.map((b) => b.materialId)), [baris]);
   const boleh = bolehKonfirmasiAktual(baris, status);
@@ -51,6 +52,11 @@ export default function CatatBahanBaru({ data, unitId, izin = {}, onDone, onTutu
     await onDone?.();
   }
 
+  // "Ganti bahan": buang baris ini dan arahkan ke pemilih (kolom cari difokuskan) — tidak ada yang dicatat.
+  function gantiBahan(id) {
+    setBaris((x) => hapusBaris(x, id));
+    setTimeout(() => { const el = pemilihRef.current?.querySelector("input[type=search]"); if (el) { el.scrollIntoView?.({ block: "center" }); el.focus(); } }, 0);
+  }
   const grup = kelompokkan(baris);
   return (
     <div className="space-y-4" data-testid="catat-bahan-baru">
@@ -69,7 +75,7 @@ export default function CatatBahanBaru({ data, unitId, izin = {}, onDone, onTutu
             <BahanBelumAda unitId={unitId} kodeUnit={data.unit?.unitCode} izin={izin} awalNama={belumAda.nama} onTutup={() => setBelumAda(null)} onDone={onDone}
               onGunakanKatalog={(k) => { setAwalCari(k.nama); setVersiPemilih((v) => v + 1); setBelumAda(null); }} />
           ) : (
-            <PemilihBahanKatalog key={versiPemilih} awalCari={awalCari} dipilihIds={dipilihIds} onTambah={(k) => setBaris((x) => tambahAktual(x, k))} disabled={sibuk} testid="aktual-pemilih" onBahanBelumAda={bolehUsul ? (nama) => setBelumAda({ nama }) : null} />
+            <div ref={pemilihRef}><PemilihBahanKatalog key={versiPemilih} awalCari={awalCari} dipilihIds={dipilihIds} onTambah={(k) => setBaris((x) => tambahAktual(x, k))} disabled={sibuk} testid="aktual-pemilih" onBahanBelumAda={(bolehUsul || izin.catatPemakaianSementara) ? (nama) => setBelumAda({ nama }) : null} /></div>
           )}
         </>
       )}
@@ -92,10 +98,17 @@ export default function CatatBahanBaru({ data, unitId, izin = {}, onDone, onTutu
                         <input inputMode="decimal" value={b.qty} disabled={terkunci} onChange={(e) => setBaris((x) => ubahJumlah(x, b.materialId, e.target.value))} data-testid="aktual-qty" placeholder="0"
                           className="h-11 w-24 rounded-btn border border-line bg-surface px-2 text-right text-[14px] tabular-nums text-ink outline-none focus:border-accent focus-visible:ring-2 focus-visible:ring-accent/30 disabled:opacity-60" />
                         <span className="w-12 text-[12px] text-ink3" data-testid="aktual-satuan">{b.satuan}</span></label>
+                      {!terkunci && <Button variant="secondary" size="sm" className="min-h-[40px] shrink-0" data-testid="aktual-ganti" aria-label={`Ganti bahan ${b.nama}`} onClick={() => gantiBahan(b.materialId)}><ArrowLeftRight size={14} aria-hidden /> Ganti bahan</Button>}
                       {!terkunci && <button type="button" onClick={() => setBaris((x) => hapusBaris(x, b.materialId))} aria-label={`Hapus ${b.nama} dari daftar`} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-btn text-ink3 outline-none hover:bg-hovertint hover:text-red focus-visible:ring-2 focus-visible:ring-accent/40"><Trash2 size={16} aria-hidden /></button>}
                     </div>
+                    {st?.fase !== "ok" && <p className="m-0 mt-1 text-[12px] text-ink2" data-testid="aktual-dampak-stok">Satuan {b.satuan} · {ketersediaanText(b)} · Dampak stok: {ks.status === "tidak_diketahui" ? "tidak bisa dicatat (stok belum tercatat)" : parseJumlah(b.qty) > 0 ? `berkurang ${formatJumlah(parseJumlah(b.qty))} ${b.satuan} saat dikonfirmasi` : "berkurang sesuai jumlah yang Anda isi, saat dikonfirmasi"}</p>}
                     {b.dariRencana && <p className="m-0 mt-1 text-[11.5px] text-ink3">Rencana {formatJumlah(b.dariRencana.rencana)}, sudah dipakai {formatJumlah(b.dariRencana.sudahDipakai)} {b.satuan}.</p>}
                     {st?.fase !== "ok" && <p data-testid="aktual-saldo" data-status={ks.status} className={cn("m-0 mt-1 text-[12px]", NADA[ks.nada])}>{ks.teks}{ks.sisaTeks ? <span data-testid="aktual-sisa"> · {ks.sisaTeks}</span> : null}</p>}
+                    {st?.fase !== "ok" && ks.status === "tidak_diketahui" && onPakaiSementara && (
+                      <div className="mt-1 flex flex-wrap gap-2" data-testid="aktual-alternatif">
+                        <Button variant="secondary" size="sm" className="min-h-[40px]" data-testid="aktual-ke-sementara" onClick={() => onPakaiSementara({ nama: b.nama, satuan: b.satuan })}>Catat sebagai pemakaian sementara</Button>
+                      </div>
+                    )}
                     {st?.fase === "sibuk" && <p className="m-0 mt-1 text-[12px] text-ink3">Mencatat…</p>}
                     {st?.fase === "galat" && <p role="alert" data-testid="aktual-galat" className="m-0 mt-1 text-[12px] text-red">{pesanGalatAdopsi(st.galat).teks} Isian tetap di layar; coba lagi (tidak akan tercatat dua kali).</p>}
                     {st?.fase === "ok" && (

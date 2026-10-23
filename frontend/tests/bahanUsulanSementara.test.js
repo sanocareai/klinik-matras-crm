@@ -46,10 +46,32 @@ test("teks dampak: bukan Material Issue, stok/biaya/jurnal tidak berubah; tetap 
 
 test("BahanTab: Pemakaian aktual DI ATAS Rencana; rencana tertutup bawaan; satu kolom; dua tombol sumber; sementara terpisah", () => {
   const tab = src("features", "production", "bahan", "BahanTab.jsx");
-  assert.ok(tab.indexOf('data-testid="sec-aktual"') > 0 && tab.indexOf('data-testid="sec-aktual"') < tab.indexOf('data-testid="sec-rencana"'), "aktual sebelum rencana");
+  assert.ok(tab.indexOf("<PemakaianAktualBagian") > 0 && tab.indexOf("<PemakaianAktualBagian") < tab.indexOf('data-testid="sec-rencana"'), "aktual sebelum rencana");
   assert.ok(!tab.includes("xl:grid-cols"), "tidak lagi dua kolom berdampingan");
   assert.match(tab, /useState\(false\); const \[rencanaEdit/, "rencanaBuka = false (tertutup bawaan)");
-  for (const k of ["Catat bahan baru dari Gudang", "Catat komponen lama dari unit ini", 'data-testid="aktual-buka"', 'data-testid="aktual-buka-lama"', 'data-testid="sec-pemakaian-sementara"', "PemakaianSementaraDaftar", "izin={izin}"]) assert.ok(tab.includes(k), k);
+  assert.ok(tab.includes("izin={izin}") && tab.includes("data={data}"));
+  // tiga sumber = kartu di komponen bersama (drawer dan tab memakai komponen yang SAMA)
+  const bagian = src("features", "production", "bahan", "PemakaianAktualBagian.jsx");
+  for (const k of ['data-testid="aktual-sumber-tombol"', 'data-testid="sec-pemakaian-sementara"', "PemakaianSementaraDaftar", 'kunci="gudang"', 'kunci="belum"', 'kunci="lama"']) assert.ok(bagian.includes(k), k);
+});
+
+test("PemakaianAktualBagian: TIGA sumber selalu terlihat (kartu di luar panel formulir, tanpa menggulir daftar); 'belum ada' langsung membuka formulir pemakaian sementara + usulan; komponen lama; kartu dimatikan saat edit rencana atau tanpa izin", () => {
+  const b = src("features", "production", "bahan", "PemakaianAktualBagian.jsx"); const m = src("features", "production", "bahan", "bahanModel.js");
+  for (const k of ["Bahan dari Gudang", "Bahan belum ada di katalog", "Komponen lama dari kasur ini", "Perlu rekonsiliasi Gudang", "Mengurangi stok saat dikonfirmasi", "Tidak memengaruhi stok"]) assert.ok(m.includes(k), k);
+  // kartu dirender tanpa syarat mode (hanya izin+aktif), formulir di bawahnya bergantung mode
+  const iKartu = b.indexOf('data-testid="aktual-sumber-tombol"'); const iPanel = b.indexOf('data-testid="panel-catat-aktual"');
+  assert.ok(iKartu > 0 && iPanel > iKartu, "kartu sebelum panel formulir"); assert.match(b, /\{boleh && \(\s*<div role="radiogroup"/, "kartu tampil selama boleh (bukan hanya saat mode kosong)");
+  assert.match(b, /mode === "belum" && <BahanBelumAda/); assert.match(b, /mode === "gudang" && <CatatBahanBaru/); assert.match(b, /mode === "lama" && <FormKomponenLama/);
+  assert.match(b, /disabled=\{rencanaEdit\}/); assert.match(b, /disabled=\{rencanaEdit \|\| !bolehBelumAda\}/); assert.match(b, /bolehBelumAda = boleh && \(!!izin\.catatPemakaianSementara \|\| !!izin\.usulBahan\)/);
+  assert.match(b, /Akun Anda hanya bisa melihat pemakaian bahan/);
+  for (const k of ["sec-bahan-baru", "sec-pemakaian-sementara", "sec-komponen-lama"]) assert.ok(b.includes(k), "daftar per sumber tetap terpisah: " + k);
+  assert.ok(!b.includes("addUnitMaterial") && !b.includes("api.catatPemakaianSementara") && !b.includes("api.ajukanBahanBaru"), "komponen ini hanya merakit; jalur API ada di formulir masing-masing");
+});
+
+test("PemakaianAktualBagian dipakai drawer Order Produksi DAN tab Bahan (tidak ada salinan lama tanpa 'Bahan belum ada'); stok belum diketahui → arahkan ke pemakaian sementara", () => {
+  const p = src("features", "production", "OrderProduksiPanel.jsx"); const t = src("features", "production", "bahan", "BahanTab.jsx"); const c = src("features", "production", "bahan", "CatatBahanBaru.jsx");
+  assert.ok(p.includes("<PemakaianAktualBagian") && t.includes("<PemakaianAktualBagian")); assert.ok(!p.includes("PemilihBahanKatalog") && !p.includes("aktual-form"), "salinan lama di drawer sudah dibuang");
+  for (const k of ["aktual-ganti", "Ganti bahan", "aktual-dampak-stok", "Dampak stok", "aktual-ke-sementara", "Catat sebagai pemakaian sementara", "onPakaiSementara", "ketersediaanText"]) assert.ok(c.includes(k), k);
 });
 
 test("Pemilih bahan: kategori + kata kunci dikirim BERSAMA (cari di dalam kategori), kategori tetap aktif saat mencari, saldo+satuan per baris, tombol 'Bahan belum ada?'", () => {
@@ -62,13 +84,21 @@ test("Pemilih bahan: kategori + kata kunci dikirim BERSAMA (cari di dalam katego
 test("CatatBahanBaru: jalur stok resmi tetap; saldo→sisa + ringkasan SEBELUM konfirmasi; 'Bahan belum ada?' hanya bila izin usulBahan; baris terpilih tidak hilang saat panel dibuka", () => {
   const c = src("features", "production", "bahan", "CatatBahanBaru.jsx");
   for (const k of ["api.addUnitMaterial", "kunciIdempoten", "aktual-sisa", "aktual-ringkasan-konfirmasi", "Stok Gudang akan berkurang", "izin.usulBahan", "BahanBelumAda", "onGunakanKatalog"]) assert.ok(c.includes(k), k);
-  assert.ok(!c.includes("ajukanBahanBaru") && !c.includes("catatPemakaianSementara"), "usulan/sementara bukan bagian dari jalur stok");
+  assert.ok(!c.includes("api.ajukanBahanBaru") && !c.includes("api.catatPemakaianSementara"), "usulan/sementara bukan bagian dari jalur stok");
 });
 
 test("Bahan belum ada?: periksa kembar dulu, nama sama memblokir, mirip perlu konfirmasi, kategori/satuan wajib, usulan tidak menyentuh stok; pemakaian sementara hanya bila izin", () => {
   const b = src("features", "production", "bahan", "BahanBelumAda.jsx");
-  for (const k of ["api.cekKembarBahan", "api.ajukanBahanBaru", "kembar.adaSama", "bedaDariMirip", "Usulkan ke Gudang", "tidak menambah saldo, penerimaan, pergerakan stok, biaya, atau jurnal", "izin.catatPemakaianSementara", "kirimRef.current", "Menunggu Gudang".slice(0, 0)]) assert.ok(b.includes(k), k);
-  assert.ok(!b.includes("addUnitMaterial"), "usulan tidak lewat jalur stok");
+  for (const k of ["api.cekKembarBahan", "api.ajukanBahanBaru", "api.catatPemakaianSementara", "kembar.adaSama", "bedaDariMirip", "Usulkan ke Gudang", "tidak ada saldo, penerimaan, pergerakan stok, biaya, atau jurnal", "izin.catatPemakaianSementara", "izin.usulBahan", "kirimRef.current"]) assert.ok(b.includes(k), k);
+  assert.ok(!b.includes("addUnitMaterial"), "usulan/sementara tidak lewat jalur stok");
+});
+
+test("Bahan belum ada di katalog = SATU formulir (pemakaian sementara + usulan): status 'Perlu rekonsiliasi Gudang' SEBELUM konfirmasi dan SESUDAH tersimpan; usulan dulu lalu sementara bertaut; gagal di tengah tidak mengirim ulang usulan; nama yang sudah ada tidak memblokir sementara", () => {
+  const b = src("features", "production", "bahan", "BahanBelumAda.jsx");
+  for (const k of ["status-rekon-sebelum", "status-rekon-sesudah", "STATUS_REKON", "belum-ada-ringkasan", "Akan dicatat:", "usulan-centang", "usulkanEfektif", "proposalId: dibuat?.id || undefined", "if (usulkanEfektif && !dibuat)", "setUsulan(r.usulan)", "Hanya pemakaian yang masih dicoba", "kunciRef.current ??= kunciIdempoten(\"sementara\")", "if (sidikRef.current !== sidik)"]) assert.ok(b.includes(k), k);
+  assert.ok(b.indexOf("api.ajukanBahanBaru") < b.indexOf("api.catatPemakaianSementara"), "usulan lebih dulu, lalu pemakaian sementara bertaut");
+  assert.match(b, /const sudahAda = !usulan && kembar\.adaSama;/); assert.match(b, /valid = namaOk && usulanOk && sementaraOk && \(bolehSementara \|\| usulkanEfektif\)/, "nama yang sudah ada tidak memblokir pemakaian sementara");
+  assert.ok(!b.includes("addUnitMaterial") && !b.includes("Material Issue ke"), "tidak membuat Material Issue/stok");
 });
 
 test("FormPemakaianSementara: Idempotency-Key per niat (kunci diganti bila isian berubah), klik ganda dikunci, jalur API sementara — bukan jalur stok", () => {
@@ -101,9 +131,22 @@ test("koreksi & pembatalan beralasan: kunci idempoten per niat, alasan wajib, la
 
 test("drawer lama (OrderProduksiPanel): Pemakaian aktual DI ATAS Rencana; rencana terlipat bawaan dan dibuka oleh tindakan 'Susun rencana bahan'; pemakaian sementara tampil; pemilih bahan = pemilih bersama", () => {
   const p = src("features", "production", "OrderProduksiPanel.jsx");
-  const yAktual = p.indexOf('id="sec-aktual"'); const yRencana = p.indexOf('id="sec-rencana-wrap"');
+  const yAktual = p.indexOf('<Bagian id="sec-aktual"'); const yRencana = p.indexOf('id="sec-rencana-wrap"');
   assert.ok(yAktual > 0 && yRencana > yAktual, "aktual sebelum rencana");
   assert.match(p, /<details className="border-t border-line pt-5" id="sec-rencana-wrap"/); assert.ok(!/<details[^>]*\sopen[\s>=]/.test(p.slice(yRencana - 80, yRencana + 120)), "tertutup bawaan");
   assert.match(p, /if \(el\.tagName === "DETAILS"\) el\.open = true;/);
-  for (const k of ["PemilihBahanKatalog", "aktual-sementara", "PemakaianSementaraDaftar", "data.izin?.catatPemakaianSementara"]) assert.ok(p.includes(k), k);
+  for (const k of ["PemakaianAktualBagian", "tanpaJudul"]) assert.ok(p.includes(k), k);
+  const b = src("features", "production", "bahan", "PemakaianAktualBagian.jsx"); for (const k of ["PemakaianSementaraDaftar", "CatatBahanBaru", "BahanBelumAda", "FormKomponenLama"]) assert.ok(b.includes(k), k);
+});
+
+test("drawer Order Produksi: FOKUS BAHAN — masuk untuk mencatat bahan langsung ke Pemakaian aktual (tanpa melewati Status & target); Status & target tetap terjangkau (bilah lompat + bagian terlipat); tanpa fokus urutan lama", () => {
+  const p = src("features", "production", "OrderProduksiPanel.jsx"); const w = src("pages", "bengkel", "ProductionWorkOrders.jsx");
+  for (const k of ["fokus = null", 'fokus === "bahan" || fokusLokal', 'data-testid="panel-lompat"', 'data-testid="lompat-bahan"', 'data-testid="lompat-status"', 'data-testid="lompat-riwayat"', "!fokusBahan && <Bagian id=\"sec-status\"", "fokusBahan && (", 'data-testid="sec-status-lipat"', "fokusSudahRef", 'scrollIntoView({ behavior: "auto", block: "start" })']) assert.ok(p.includes(k), k);
+  assert.ok(p.indexOf('<Bagian id="sec-aktual"') < p.indexOf('id="sec-status-lipat"'), "fokus bahan: Pemakaian aktual SEBELUM Status & target (terlipat)");
+  assert.ok(p.indexOf('!fokusBahan && <Bagian id="sec-status"') < p.indexOf('<Bagian id="sec-aktual"'), "tanpa fokus: Status & target tetap sebelum Pemakaian aktual");
+  assert.match(p, /if \(el\.tagName === "DETAILS" \|\| buka\)/, "bilah lompat membuka bagian terlipat");
+  // daftar: tombol 'Catat bahan' per baris (desktop) dan per kartu (HP) membuka panel dengan fokus bahan; klik baris biasa tanpa fokus
+  for (const k of ['data-testid="catat-bahan-baris"', 'setFokusPanel("bahan")', "const bukaBahan", "const bukaPanel", "e.stopPropagation()", "unitAktif(u)"]) assert.ok(w.includes(k), k);
+  assert.equal((w.match(/data-testid="catat-bahan-baris"/g) || []).length, 2, "satu di tabel desktop, satu di kartu HP");
+  assert.match(w, /setFokusPanel\(null\); setDetailUnit\(u\)/, "klik baris biasa = tanpa fokus");
 });

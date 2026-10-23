@@ -46,7 +46,11 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
   const [localUnitId, setLocalUnitId] = useState(null);
   const [unit360Id, setUnit360Id] = useState(null);
   const openUnitId = onUnitChange ? (unitIdProp || null) : localUnitId;
+  const [fokusPanel, setFokusPanel] = useState(null); // "bahan" = masuk untuk mencatat bahan: panel langsung ke Pemakaian aktual (tanpa melewati Status & target)
   const setDetailUnit = (u) => (onUnitChange ? onUnitChange(u?.id || null) : setLocalUnitId(u?.id || null));
+  const bukaPanel = (u) => { setFokusPanel(null); setDetailUnit(u); };
+  const bukaBahan = (u) => { setFokusPanel("bahan"); setDetailUnit(u); };
+  const unitAktif = (u) => !["CANCELLED", "DELIVERED"].includes(u.status);
   const [ekspor, setEkspor] = useState({ sibuk: false, ok: "", galat: "" });
 
   useEffect(() => { const t = setTimeout(() => setQDebounced(cari.trim()), 300); return () => clearTimeout(t); }, [cari]);
@@ -198,7 +202,7 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
                       const st = statusOf(u); const pr = priorityOf(u); const a = ringkasAdopsi(u);
                       const perluPosisi = a.ada && a.posisi?.tone === "orange";
                       return (
-                        <TR key={u.id} clickable data-testid="order-row" data-unit-code={u.unitCode} data-priority={pr.key} onClick={() => setDetailUnit(u)}>
+                        <TR key={u.id} clickable data-testid="order-row" data-unit-code={u.unitCode} data-priority={pr.key} onClick={() => bukaPanel(u)}>
                           <TD sticky className="whitespace-nowrap">
                             <span className="font-semibold text-ink">{u.unitCode}</span>{pr.key !== "NORMAL" && <Badge variant={pr.tone} className="ml-1.5 align-middle" data-testid="priority-badge">{pr.label}</Badge>}
                             <span className="block text-[12px] text-ink3">{u.order?.orderNumber || "—"}</span>
@@ -221,6 +225,7 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
                           <TD data-testid="tindakan-berikutnya">
                             <span className="flex items-center gap-1 font-medium text-ink">{a.tindakan?.label || "—"}<ChevronRight size={14} className="shrink-0 text-ink3" aria-hidden /></span>
                             {a.tindakan?.aktor && a.tindakan.aktor !== "—" && <span className="block text-[12px] text-ink3">{a.tindakan.aktor}</span>}
+                            {unitAktif(u) && <Button variant="secondary" size="sm" className="mt-1.5 min-h-[36px]" data-testid="catat-bahan-baris" onClick={(e) => { e.stopPropagation(); bukaBahan(u); }}>Catat bahan</Button>}
                           </TD>
                         </TR>
                       );
@@ -237,7 +242,7 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
                     <li key={u.id}>
                       <button
                         type="button" data-testid="order-row" data-unit-code={u.unitCode} data-priority={pr.key}
-                        onClick={() => setDetailUnit(u)}
+                        onClick={() => bukaPanel(u)}
                         className="w-full px-4 py-3.5 text-left transition-colors hover:bg-hovertint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset motion-reduce:transition-none"
                       >
                         <div className="flex items-center gap-1.5">
@@ -263,6 +268,7 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
                           <span className="text-ink3">Berikutnya:</span> <span className="min-w-0 flex-1 truncate">{a.tindakan?.label || "—"}</span><ChevronRight size={14} className="shrink-0 text-ink3" aria-hidden />
                         </div>
                       </button>
+                      {unitAktif(u) && <div className="px-4 pb-3"><Button variant="secondary" size="sm" className="min-h-[44px] w-full" data-testid="catat-bahan-baris" onClick={() => bukaBahan(u)}>Catat bahan</Button></div>}
                     </li>
                   );
                 })}
@@ -280,7 +286,7 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
       </PageBody>
 
       {/* Klik baris → panel fokus Order Produksi. Tahap, dokumentasi, biaya & QC tetap lengkap di Unit 360 (tombol di bagian "Lanjutan"). */}
-      <OrderProduksiPanel unitId={openUnitId} onClose={() => setDetailUnit(null)} onChanged={reload} onBukaUnit360={(id) => { setDetailUnit(null); setUnit360Id(id); }} />
+      <OrderProduksiPanel unitId={openUnitId} fokus={fokusPanel} onClose={() => { setFokusPanel(null); setDetailUnit(null); }} onChanged={reload} onBukaUnit360={(id) => { setDetailUnit(null); setUnit360Id(id); }} />
       <UnitOverviewDrawer unitId={unit360Id} onClose={() => setUnit360Id(null)} onChanged={reload} />
     </PageContainer>
   );
