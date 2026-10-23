@@ -338,7 +338,7 @@ rehearsal_migrasi() {
   [ "$(RPSQL "select count(*) from pg_trigger where tgname='unit_provisional_usages_guard_trg' and not tgisinternal")" = "1" ] || { reh_drop; die "trigger penjaga tidak tepat satu setelah migrasi"; }
   RPSQL "$FP_ALL" | LC_ALL=C sort > "$BK_DIR/fp-all-pasca-migrasi.txt" || { reh_drop; die "sidik jari penuh pasca-migrasi gagal"; }
   cmp -s "$BK_DIR/fp-all-sebelum.txt" "$BK_DIR/fp-all-pasca-migrasi.txt" || { diff "$BK_DIR/fp-all-sebelum.txt" "$BK_DIR/fp-all-pasca-migrasi.txt" || true; reh_drop; die "migrasi MENGUBAH isi tabel (harus tidak menulis data)"; }
-  ok "migrasi pada salinan: ${MIG_NAME} diterapkan (${LIVE_MIG_JUMLAH} → $(( LIVE_MIG_JUMLAH + 1 ))); skema semua tabel IDENTIK; isi \$(printf '%s\n' "$TABEL_LAMA" | grep -c .) tabel IDENTIK; hanya isi fungsi penjaga berubah (${FUNC_PRA:0:8} → ${FUNC_REH:0:8})"
+  ok "migrasi pada salinan: ${MIG_NAME} diterapkan (${LIVE_MIG_JUMLAH} → $(( LIVE_MIG_JUMLAH + 1 ))); skema semua tabel IDENTIK; isi $(printf '%s\n' "$TABEL_LAMA" | grep -c .) tabel IDENTIK; hanya isi fungsi penjaga berubah (${FUNC_PRA:0:8} → ${FUNC_REH:0:8})"
   cat > "$BK_DIR/rehearsal-kode.mjs" <<'REHNODE'
 @@REH_NODE@@
 REHNODE

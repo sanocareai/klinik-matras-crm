@@ -16,7 +16,7 @@
 #
 # ROLLBACK: kode: pasang kembali image lama (tag rollback-pre-ubk-<sha8>) dan buat ulang container dari release sebelumnya; migrasi TIDAK perlu dibalik (hanya fungsi penjaga yang lebih ketat; tabel/kolom/data tidak berubah) dan aman untuk kode lama.
 #   Catatan tertaut katalog yang dibuat kode baru tampil sebagai pemakaian sementara biasa di UI lama; menautkannya ke bahan BERBEDA ditolak trigger.
-# (dibangkitkan oleh scripts/gen-release-ux-bahan-katalog.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 34a57fa299ac…)
+# (dibangkitkan oleh scripts/gen-release-ux-bahan-katalog.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 0df36492edff…)
 set -Eeuo pipefail
 umask 077
 
@@ -358,7 +358,7 @@ rehearsal_migrasi() {
   [ "$(RPSQL "select count(*) from pg_trigger where tgname='unit_provisional_usages_guard_trg' and not tgisinternal")" = "1" ] || { reh_drop; die "trigger penjaga tidak tepat satu setelah migrasi"; }
   RPSQL "$FP_ALL" | LC_ALL=C sort > "$BK_DIR/fp-all-pasca-migrasi.txt" || { reh_drop; die "sidik jari penuh pasca-migrasi gagal"; }
   cmp -s "$BK_DIR/fp-all-sebelum.txt" "$BK_DIR/fp-all-pasca-migrasi.txt" || { diff "$BK_DIR/fp-all-sebelum.txt" "$BK_DIR/fp-all-pasca-migrasi.txt" || true; reh_drop; die "migrasi MENGUBAH isi tabel (harus tidak menulis data)"; }
-  ok "migrasi pada salinan: ${MIG_NAME} diterapkan (${LIVE_MIG_JUMLAH} → $(( LIVE_MIG_JUMLAH + 1 ))); skema semua tabel IDENTIK; isi \$(printf '%s\n' "$TABEL_LAMA" | grep -c .) tabel IDENTIK; hanya isi fungsi penjaga berubah (${FUNC_PRA:0:8} → ${FUNC_REH:0:8})"
+  ok "migrasi pada salinan: ${MIG_NAME} diterapkan (${LIVE_MIG_JUMLAH} → $(( LIVE_MIG_JUMLAH + 1 ))); skema semua tabel IDENTIK; isi $(printf '%s\n' "$TABEL_LAMA" | grep -c .) tabel IDENTIK; hanya isi fungsi penjaga berubah (${FUNC_PRA:0:8} → ${FUNC_REH:0:8})"
   cat > "$BK_DIR/rehearsal-kode.mjs" <<'REHNODE'
 // Uji KODE BARU + migrasi "material_id catatan pemakaian sementara terkunci" pada SALINAN RESTORE backup nyata (DB sementara yang DIHAPUS skrip rilis; production tidak tersentuh).
 // Dijalankan di image kandidat dengan DATABASE_URL = DB rehearsal SESUDAH migrasi diterapkan dan sidik jari tabel lama terbukti identik. Boleh menulis (pada salinan): mencatat/koreksi/menolak pemakaian sementara bahan katalog
