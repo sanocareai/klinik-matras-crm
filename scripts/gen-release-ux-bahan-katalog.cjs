@@ -29,10 +29,10 @@ const GUARD_UNCHANGED = [
   "backend/src/services/productionMaterialIssueCommandService.js", "backend/src/routes/productionPlanning.js",
 ];
 // Commit live yang wajib leluhur: UX Gudang Tahap 1 (bcf8b770), manifest Sofa/Divan (20606872), token geser (10294dcb), Koreksi Gudang (08d62e7d), Produksi override, Riwayat Referensi, bukti serah, manifest merk (229755d6), UX Gudang Tahap 2 (f293c587), pintu masuk Gudang (ca9bdea7), status bayar PKR Delivery (694f2184).
-const LIVE_ANCESTORS_REF = ["0cd0262b", "4394c828", "1f79ddd2", "624f08d8", "d82e6e3d", "fd38f6c2", "96cced3f", "e47f37e2", "57198ad6", "58cbc284", "bcf8b770", "20606872", "10294dcb", "08d62e7d", "799d3e93", "56b87721", "e5a32cd2", "229755d6", "f293c587", "ca9bdea7", "694f2184"];
+const LIVE_ANCESTORS_REF = ["fa6beb86", "0cd0262b", "4394c828", "1f79ddd2", "624f08d8", "d82e6e3d", "fd38f6c2", "96cced3f", "e47f37e2", "57198ad6", "58cbc284", "bcf8b770", "20606872", "10294dcb", "08d62e7d", "799d3e93", "56b87721", "e5a32cd2", "229755d6", "f293c587", "ca9bdea7", "694f2184"];
 // Teks yang HARUS ada di dist baru (fitur rilis ini) dan teks fitur live yang tidak boleh hilang.
 const DIST_BARU = ["Bahan belum ada di katalog", "Catat sementara — stok belum diketahui", "Yang saya pakai bukan bahan ini", "Simpan pemakaian lagi", "Ada yang belum selesai", "Lihat bahan", "Tidak bisa dicatat sebagai bahan baru"];
-const DIST_LAMA = ["Perlu rekonsiliasi Gudang", "Konfirmasi & kurangi stok", "Rencana bahan (opsional, belum mengurangi stok)", "Usulkan ke Gudang", "Beranda Gudang", "Selesaikan Produksi", "Tetapkan Siap Kirim", "Pembalik beban bersih"];
+const DIST_LAMA = ["Perlu rekonsiliasi Gudang", "Konfirmasi & kurangi stok", "Rencana bahan (opsional, belum mengurangi stok)", "Usulkan ke Gudang", "Beranda Gudang", "Selesaikan Produksi", "Tetapkan Siap Kirim", "Pembalik beban bersih", "Dibatalkan — tidak ditagih"];
 
 const lf = (t) => t.replace(/\r\n/g, "\n");
 const must = (c, m) => { if (!c) throw new Error("templat/masukan tak cocok: " + m); };
