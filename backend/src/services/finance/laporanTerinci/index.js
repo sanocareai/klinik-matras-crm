@@ -85,7 +85,7 @@ function susunKontrol({ ringkasan, kartu, jembatan, bebanDivisi, pkr, gap, catat
     k("jembatan_residual_retur", "Jembatan: residual retur", jembatan.residual.retur, 0),
     k("jembatan_residual_bersih", "Jembatan: residual pendapatan bersih", jembatan.residual.bersih, 0),
     k("beban_divisi", "Σ beban per divisi = beban pokok + beban operasional", bebanDivisi.totalDivisi, bebanDivisi.totalLedger),
-    k("pkr_ledger_dokumen", "PKR: pendapatan 4-1250 = Σ total dokumen periode", pkr.ringkasan.pendapatanLedger, pkr.ringkasan.penjualanDokumen),
+    k("pkr_ledger_dokumen", "PKR: pendapatan 4-1250 (neto pembalik) = Σ dokumen dibuat − Σ dokumen dibatalkan pada periode (tanggal buku)", pkr.ringkasan.pendapatanLedger, pkr.ringkasan.penjualanDokumenBuku),
     k("gap_banner", "Daftar gap = banner \"transaksi belum dibukukan\"", gap.jumlahTerbuka, catatan.gapTerbuka),
   ];
   return { daftar, semuaOk: daftar.every((x) => x.ok), jumlahGagal: daftar.filter((x) => !x.ok).length };

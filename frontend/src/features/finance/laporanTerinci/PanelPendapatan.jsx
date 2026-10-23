@@ -97,7 +97,7 @@ export function PanelPkr({ data }) {
   return (
     <KartuPanel testid="panel-pkr" judul="Penjualan Karyawan (PKR) — terpisah dari order Sales" deskripsi="Dokumen PKR diakui saat dibuat (4-1250). Order CRM tertaut bernilai Rp0 dan tidak dijumlahkan lagi.">
       <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-        <KotakAngka label="Pendapatan PKR (buku besar)" nilai={formatUang(r.pendapatanLedger)} sub={`${r.jumlahDokumen} dokumen periode ini`} />
+        <KotakAngka label="Pendapatan PKR (buku besar, neto)" nilai={formatUang(r.pendapatanLedger)} sub={r.jumlahDibalik > 0 ? `${r.jumlahDokumen} dokumen aktif · termasuk pembalikan ${formatUang(r.dibalikDokumen)} (${r.jumlahDibalik} dokumen dibatalkan pada periode ini)` : `${r.jumlahDokumen} dokumen periode ini`} />
         <KotakAngka label="Dibayar pada periode" nilai={formatUang(r.pembayaranPeriode)} />
         <KotakAngka label="Sisa piutang karyawan" nilai={formatUang(r.sisaPiutang)} tone={r.sisaPiutang > 0 ? "orange" : undefined} />
         <KotakAngka label="Belum diserahkan / tanpa order" nilai={`${r.belumDiserahkan} / ${r.tanpaOrderCrm}`} sub={`${formatUang(r.nilaiBelumDiserahkan)} · ${formatUang(r.nilaiTanpaOrderCrm)}`} tone={r.belumDiserahkan + r.tanpaOrderCrm > 0 ? "orange" : undefined} />
@@ -113,7 +113,7 @@ export function PanelPkr({ data }) {
                 <span className="tabular-nums font-semibold"><Uang value={d.total} /></span>
               </div>
               <p className="m-0 mt-0.5 text-ink3">Penjual {d.penjual} · dibayar <Uang value={d.dibayar} /> · sisa <Uang value={d.sisa} />{d.orderCrm ? ` · order ${d.orderCrm.nomor} (${d.orderCrm.status}, ${d.orderCrm.unit} unit)` : ""}</p>
-              {d.catatan && <p className="m-0 mt-0.5 text-orange">{d.catatan}</p>}
+              {d.catatan && <p className={`m-0 mt-0.5 ${d.statusPemenuhan === "DIBATALKAN" ? "text-ink3" : "text-orange"}`}>{d.catatan}</p>}
             </li>
           ))}
         </ul>
