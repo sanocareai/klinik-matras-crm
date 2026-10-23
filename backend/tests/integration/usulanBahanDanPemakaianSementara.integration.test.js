@@ -248,3 +248,87 @@ test("B9. antrean Gudang: catatan lintas unit dengan unit/order; hanya pemegang 
   assert.equal((await w.a.get(`/api/production/provisional-usages/${q.body.rows[0].id}/candidates`)).status, 200);
   assert.deepEqual(await hitung(), e0);
 });
+
+// ───────── C. koreksi / pembatalan beralasan + audit; keputusan Admin
+const koreksi = (w, id, body, key = kunci("kor")) => w.a.post(`/api/production/provisional-usages/${id}/correct`, body, { "Idempotency-Key": key });
+const eventDi = (unitId, tipe) => testPrisma.activityEvent.findMany({ where: { entityType: "unit", entityId: unitId, eventType: tipe }, orderBy: { createdAt: "asc" } });
+
+test("C1. koreksi beralasan: catatan lama DIBATALKAN ('Dikoreksi: …') + catatan baru menunjuk ke yang lama; klik ganda = satu pengganti; tanpa efek stok/jurnal; audit dua sisi", async () => {
+  const w = await dunia(); const id = (await catat(w)).body.item.id; const e0 = await hitung();
+  assert.equal((await koreksi(w, id, { qty: 3 })).status, 400, "alasan wajib");
+  assert.equal((await koreksi(w, id, { alasan: "tidak ada perubahan", name: "Lem Kontak Impor 5L", qty: 2, uom: "CAN", originNote: "Dibeli sendiri / dari luar" })).status, 422);
+  const k = kunci("c1");
+  const hasil = await Promise.all([1, 2, 3].map(() => koreksi(w, id, { qty: 3, uom: "CAN", originNote: "Pinjam dari tempat lain", alasan: "Jumlah di meja ternyata 3 kaleng" }, k)));
+  assert.ok(hasil.every((r) => [200, 201].includes(r.status)), hasil.map((r) => `${r.status}:${r.body?.code ?? ""}`).join());
+  assert.equal(await testPrisma.unitProvisionalUsage.count(), 2, "lama + satu pengganti");
+  const lama = await testPrisma.unitProvisionalUsage.findUnique({ where: { id } }); const baru = await testPrisma.unitProvisionalUsage.findFirst({ where: { correctedFromId: id } });
+  assert.equal(lama.status, "DIBATALKAN"); assert.equal(lama.cancelReason, "Dikoreksi: Jumlah di meja ternyata 3 kaleng"); assert.equal(Number(lama.qty), 2, "baris lama tidak diubah"); assert.equal(Number(baru.qty), 3); assert.equal(baru.status, "PERLU_REKONSILIASI");
+  assert.deepEqual(await hitung(), e0, "koreksi tidak menyentuh stok/jurnal");
+  const ad = await adopsi(w); assert.equal(ad.pemakaianSementara.total.perluRekonsiliasi, 1); assert.equal(ad.pemakaianSementara.items.find((i) => i.id === id).dikoreksi, true); assert.equal(ad.pemakaianSementara.items.find((i) => i.id === baru.id).hasilKoreksi, true);
+  assert.ok(ad.riwayat.some((e) => /dikoreksi \(diganti catatan baru\)/.test(e.label)) && ad.riwayat.some((e) => /hasil koreksi/.test(e.label)));
+  assert.equal((await eventDi(w.unit.id, "PRODUCTION_PEMAKAIAN_SEMENTARA_DISELESAIKAN")).length, 1); assert.equal((await eventDi(w.unit.id, "PRODUCTION_PEMAKAIAN_SEMENTARA_DICATAT")).length, 2);
+  const koreksiLagi = await koreksi(w, id, { qty: 5, alasan: "mencoba mengoreksi yang sudah dibatalkan" }); assert.equal(koreksiLagi.status, 409);
+  assert.equal((await w.s.post(`/api/production/provisional-usages/${baru.id}/correct`, { qty: 4, alasan: "hanya lihat" }, { "Idempotency-Key": kunci("lihat") })).status, 403);
+  const beda = await koreksi(w, baru.id, { qty: 4, alasan: "isi beda" }, k); assert.equal(beda.status, 409); assert.equal(beda.body.code, "IDEMPOTENCY_KEY_REUSED");
+});
+
+test("C2. koreksi pada catatan terkait usulan: nama & satuan terkunci; yang sudah direkonsiliasi tidak bisa dikoreksi (batalkan lalu catat baru)", async () => {
+  const w = await dunia(); const p = (await ajukan(w, usul({ name: "Pita Tepi Biru", unit: "METER", kelompok: "AKSESORI" }))).body.usulan;
+  const id = (await catat(w, sem({ name: "Pita Tepi Biru", uom: "METER", qty: 5, proposalId: p.id }))).body.item.id;
+  const salah = await koreksi(w, id, { qty: 6, uom: "CAN", alasan: "mencoba mengganti satuan" }); assert.equal(salah.status, 400);
+  const ok = await koreksi(w, id, { name: "Nama Lain Sama Sekali", qty: 6, alasan: "jumlah salah hitung" }); assert.equal(ok.status, 201, JSON.stringify(ok.body)); assert.equal(ok.body.item.name, "Pita Tepi Biru", "nama mengikuti usulan");
+  const baruId = ok.body.item.id; await w.g.post(`/api/production/provisional-usages/${baruId}/reconcile`, { resolusi: "TANPA_STOK", catatan: "Dibeli operator di toko luar" });
+  const final = await koreksi(w, baruId, { qty: 7, alasan: "setelah direkonsiliasi" }); assert.equal(final.status, 409);
+});
+
+test("C3. pembatalan salah input TIDAK lagi menjadi bukti kerja: status kembali, daftar & Excel konsisten; koreksi memindahkan bukti ke catatan baru", async () => {
+  const w = await dunia();
+  const sebelum = await adopsi(w); const awalKey = sebelum.adopsi.kerja.key; assert.notEqual(awalKey, "DIKERJAKAN");
+  const id = (await catat(w)).body.item.id;
+  let ad = await adopsi(w); assert.equal(ad.adopsi.kerja.source, "PEMAKAIAN_SEMENTARA"); assert.ok(ad.riwayat.some((e) => e.kind === "STATUS_KERJA_OTOMATIS"));
+  const pilihKerja = async () => ((await w.a.get("/api/production/work-orders?scope=semua&limit=100")).body.units ?? []).find((u) => u.id === w.unit.id)?.adopsi?.kerja?.key;
+  const kerjaDaftar = await pilihKerja();
+  if (kerjaDaftar !== undefined) assert.equal(kerjaDaftar, "DIKERJAKAN");
+  const b = await w.a.post(`/api/production/provisional-usages/${id}/cancel`, { alasan: "Salah unit, bahan dipakai di unit lain" }); assert.equal(b.status, 201, JSON.stringify(b.body));
+  ad = await adopsi(w);
+  assert.equal(ad.adopsi.kerja.key, awalKey, "status kerja kembali seperti sebelum catatan"); assert.notEqual(ad.adopsi.kerja.source, "PEMAKAIAN_SEMENTARA");
+  assert.ok(!ad.riwayat.some((e) => e.kind === "STATUS_KERJA_OTOMATIS"), "tidak ada baris 'otomatis dari pemakaian' untuk catatan batal");
+  assert.equal(ad.adopsi.pemakaianBahan.sementaraPerluRekonsiliasi, 0); assert.notEqual(ad.adopsi.tindakan.aksi, "FINISH_WORK");
+  if (kerjaDaftar !== undefined) assert.equal(await pilihKerja(), awalKey, "daftar kerja ikut berubah");
+  const ex = await fetch(`${server.baseUrl}/api/production/work-orders/export.xlsx?scope=semua`, { headers: { Authorization: `Bearer ${(await createTestUser({ roles: ["ADMIN"] })).token}` } });
+  const wb = new ExcelJS.Workbook(); await wb.xlsx.load(Buffer.from(await ex.arrayBuffer())); const teks = []; wb.getWorksheet("Pemakaian Sementara").eachRow((r) => teks.push(r.values.join("|")));
+  assert.ok(teks.some((t) => /Dibatalkan \(salah input\)/.test(t)), "Excel menyimpan jejak pembatalan");
+  const id2 = (await catat(w, sem({ name: "Pita Tepi Hitam", uom: "METER" }))).body.item.id;
+  const kr = await koreksi(w, id2, { qty: 9, alasan: "jumlah salah" }); assert.equal(kr.status, 201);
+  ad = await adopsi(w); assert.equal(ad.adopsi.kerja.source, "PEMAKAIAN_SEMENTARA"); assert.equal(ad.adopsi.pemakaianBahan.sementaraPerluRekonsiliasi, 1);
+});
+
+test("C4. membatalkan catatan 'bukan stok Gudang' hanya oleh Gudang; yang ditautkan ke pergerakan resmi ditolak; riwayat penyelesaian terkunci di DB", async () => {
+  const w = await dunia(); const id = (await catat(w)).body.item.id;
+  await w.g.post(`/api/production/provisional-usages/${id}/reconcile`, { resolusi: "TANPA_STOK", catatan: "Dibeli operator di toko luar" });
+  const b = await w.g.post(`/api/production/provisional-usages/${id}/cancel`, { alasan: "Ternyata salah input unit" }); assert.equal(b.status, 201, JSON.stringify(b.body)); assert.equal(b.body.item.status, "DIBATALKAN");
+  const row = await testPrisma.unitProvisionalUsage.findUnique({ where: { id } }); assert.equal(row.resolution, "TANPA_STOK", "riwayat penyelesaian tetap");
+  await assert.rejects(() => testPrisma.unitProvisionalUsage.update({ where: { id }, data: { resolution: null } }), /baris final|tidak boleh/);
+  const ad = await adopsi(w); assert.notEqual(ad.adopsi.kerja.source, "PEMAKAIAN_SEMENTARA");
+  const p = (await ajukan(w, usul({ name: "Lem Biru Khusus", unit: "CAN", kelompok: "LEM_KIMIA" }))).body.usulan;
+  const id2 = (await catat(w, sem({ name: "Lem Biru Khusus", qty: 2, proposalId: p.id }))).body.item.id;
+  await w.g.post(`/api/production/material-proposals/${p.id}/decision`, { keputusan: "SETUJUI", kode: "LEM-BIRU-KHS" });
+  const mat = await testPrisma.material.findFirst({ where: { code: "LEM-BIRU-KHS" } }); await seedBalance(mat.id, 10);
+  const mv = await w.g.post(`/api/units/${w.unit.id}/materials`, { materialId: mat.id, qty: 2 }, { "Idempotency-Key": kunci("lem") });
+  assert.equal((await w.g.post(`/api/production/provisional-usages/${id2}/reconcile`, { resolusi: "TAUTKAN_ISSUE", stockMovementId: mv.body.id })).status, 201);
+  const tolak = await w.g.post(`/api/production/provisional-usages/${id2}/cancel`, { alasan: "mencoba membatalkan yang ditautkan" }); assert.equal(tolak.status, 409, JSON.stringify(tolak.body));
+});
+
+test("C5. Admin yang berizin memutuskan usulan lewat alur & audit yang SAMA dengan Gudang; membuat katalog tidak menambah saldo", async () => {
+  const w = await dunia(); const p = (await ajukan(w, usul({ name: "Busa Khusus Sudut", unit: "M3", kelompok: "BUSA" }))).body.usulan; const e0 = await hitung();
+  const oleh = await w.a.post(`/api/production/material-proposals/${p.id}/decision`, { keputusan: "SETUJUI", kode: "BUSA-KHS-SDT" }); assert.equal(oleh.status, 201, JSON.stringify(oleh.body));
+  assert.equal(oleh.body.usulan.diputuskanOleh, w.admin.name);
+  const e1 = await hitung(); assert.equal(e1.mat, e0.mat + 1); assert.equal(e1.sm, e0.sm); assert.equal(e1.gr, e0.gr); assert.equal(e1.jur, e0.jur);
+  const ev = await testPrisma.activityEvent.findMany({ where: { entityType: "material_proposal", entityId: p.id, eventType: "PRODUCTION_USULAN_BAHAN_DIPUTUSKAN" } });
+  assert.equal(ev.length, 1); assert.equal(ev[0].actorId, w.admin.id); assert.equal(ev[0].metadata.keputusan, "DISETUJUI");
+  const p2 = (await ajukan(w, usul({ name: "Busa Lain Lagi Sekali", unit: "M3", kelompok: "BUSA" }))).body.usulan;
+  const g = await w.g.post(`/api/production/material-proposals/${p2.id}/decision`, { keputusan: "SETUJUI", kode: "BUSA-LAIN-LGI" }); assert.equal(g.status, 201);
+  const ev2 = await testPrisma.activityEvent.findMany({ where: { entityType: "material_proposal", entityId: p2.id, eventType: "PRODUCTION_USULAN_BAHAN_DIPUTUSKAN" } });
+  assert.equal(ev2[0].eventType, ev[0].eventType, "event audit sama untuk Admin dan Gudang");
+  assert.equal((await w.s.post(`/api/production/material-proposals/${p2.id}/decision`, { keputusan: "TOLAK", catatan: "x y z" })).status, 403);
+});

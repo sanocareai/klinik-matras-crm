@@ -11,7 +11,7 @@
 //   POST /material-proposals/:id/decision   Gudang menyetujui / menggabung / menolak (INVENTORY_WRITE)
 //   POST /units/:id/provisional-usages      catat pemakaian sementara (bahan belum di katalog; BUKAN Material Issue) (UNIT_MATERIAL_WRITE)
 //   GET  /provisional-usages                antrean rekonsiliasi Gudang
-//   POST /provisional-usages/:id/cancel     batalkan salah input   |  GET .../candidates  pergerakan resmi yang bisa ditautkan
+//   POST /provisional-usages/:id/correct    koreksi beralasan (lama dibatalkan + baru menunjuk ke lama)  |  POST .../cancel  batalkan salah input   |  GET .../candidates  pergerakan resmi yang bisa ditautkan
 //   POST /provisional-usages/:id/reconcile  Gudang: tautkan ke pengeluaran resmi / bukan stok Gudang (INVENTORY_WRITE) — tidak menulis stok
 // Perubahan status ORDER dari Produksi memakai endpoint Sales yang SAMA (PATCH /api/orders/:id, fungsi domain ubahStatusUnitInTx) — tidak ada jalur status kedua.
 import express from "express";
@@ -27,7 +27,7 @@ import { AdopsiError, ambilPemakaianAktual, ambilRencanaBahan, catatStatusKerjaM
 import { RencanaBahanError } from "../lib/domain/productionMaterialPlan.js";
 import { BahanUsulanError } from "../lib/domain/bahanUsulan.js";
 import { ajukanBahanBaru, cekKembarBahan, daftarUsulan, putuskanUsulan } from "../services/materialProposalService.js";
-import { ambilPemakaianSementaraUnit, batalkanPemakaianSementara, catatPemakaianSementara, daftarPemakaianSementara, kandidatPergerakan, rekonsiliasiPemakaianSementara } from "../services/unitProvisionalUsageService.js";
+import { ambilPemakaianSementaraUnit, batalkanPemakaianSementara, catatPemakaianSementara, daftarPemakaianSementara, kandidatPergerakan, koreksiPemakaianSementara, rekonsiliasiPemakaianSementara } from "../services/unitProvisionalUsageService.js";
 import { loadRiwayatUnit } from "../services/productionRiwayatService.js";
 import { buatWorkbookOrderProduksi, namaBerkasEkspor } from "../services/productionOrderExport.js";
 import { MANUAL_STATUSES, WORK_STATUS, penghalangStatusOrder, tindakanBerikutnya } from "../lib/domain/productionWorkStatus.js";
@@ -95,9 +95,9 @@ productionAdopsiRouter.get("/units/:id/adopsi", requirePermission(P.UNIT_READ), 
     // Pemakaian SEMENTARA (bahan belum di katalog): dihitung sebagai bukti pekerjaan, tetapi dengan label sumber sendiri dan selalu ditandai perlu rekonsiliasi Gudang (bukan Material Issue; tanpa saldo/biaya/jurnal).
     const pakaiSementara = sementara.items.filter((i) => i.status !== "DIBATALKAN").map((i) => ({ at: i.usedAt, oleh: i.oleh, apa: `pemakaian sementara ${i.name} ${i.qty} ${i.uom} (perlu rekonsiliasi Gudang)` }));
     const riwayatSementara = sementara.items.flatMap((i) => [
-      { kind: "PEMAKAIAN_SEMENTARA", sumber: "PEMAKAIAN_SEMENTARA", at: i.recordedAt, actor: i.oleh, label: `Pemakaian sementara (perlu rekonsiliasi Gudang, bukan Material Issue; saldo tidak berubah) — ${i.name} ${i.qty} ${i.uom}${i.originNote ? ` · asal: ${i.originNote}` : ""}` },
+      { kind: "PEMAKAIAN_SEMENTARA", sumber: "PEMAKAIAN_SEMENTARA", at: i.recordedAt, actor: i.oleh, label: `Pemakaian sementara (perlu rekonsiliasi Gudang, bukan Material Issue; saldo tidak berubah) — ${i.name} ${i.qty} ${i.uom}${i.originNote ? ` · asal: ${i.originNote}` : ""}${i.hasilKoreksi ? " · hasil koreksi" : ""}` },
       ...(i.status === "DIREKONSILIASI" ? [{ kind: "PEMAKAIAN_SEMENTARA", sumber: "PEMAKAIAN_SEMENTARA", at: i.diselesaikanAt, actor: i.diselesaikanOleh, label: `Pemakaian sementara ${i.name} ${i.resolusi === "TAUTKAN_ISSUE" ? "ditautkan ke pengeluaran stok resmi (tidak membuat pergerakan baru)" : `dinyatakan bukan stok Gudang${i.catatanPenyelesaian ? ` — ${i.catatanPenyelesaian}` : ""}`}` }] : []),
-      ...(i.status === "DIBATALKAN" ? [{ kind: "PEMAKAIAN_SEMENTARA", sumber: "PEMAKAIAN_SEMENTARA", at: i.dibatalkanAt, actor: i.dibatalkanOleh, label: `Pemakaian sementara ${i.name} dibatalkan (salah input) — ${i.alasanBatal}` }] : []),
+      ...(i.status === "DIBATALKAN" ? [{ kind: "PEMAKAIAN_SEMENTARA", sumber: "PEMAKAIAN_SEMENTARA", at: i.dibatalkanAt, actor: i.dibatalkanOleh, label: i.dikoreksi ? `Pemakaian sementara ${i.name} dikoreksi (diganti catatan baru) — ${String(i.alasanBatal).replace(/^Dikoreksi:\s*/, "")}` : `Pemakaian sementara ${i.name} dibatalkan (salah input) — ${i.alasanBatal}` }] : []),
     ]);
     const pertama = [...pakaiBaru, ...pakaiLama, ...pakaiSementara].sort((a, b) => new Date(a.at) - new Date(b.at))[0] ?? null;
     const riwayatStatusOtomatis = pertama && unit.status !== "CANCELLED" ? [{ kind: "STATUS_KERJA_OTOMATIS", sumber: "PEMAKAIAN_BAHAN", at: pertama.at, actor: pertama.oleh, label: `Status kerja administratif → Sudah dikerjakan (otomatis dari pemakaian aktual pertama: ${pertama.apa})` }] : [];
@@ -230,6 +230,9 @@ productionAdopsiRouter.get("/provisional-usages", bolehLihatUsulan, async (req, 
 });
 productionAdopsiRouter.post("/provisional-usages/:id/cancel", requirePermission(P.UNIT_MATERIAL_WRITE), wajibUuid(), async (req, res) => {
   try { const hasil = await batalkanPemakaianSementara(prisma, { usageId: req.params.id, alasan: req.body?.alasan, actorId: req.user.id, bolehSemua: hasPermission(req.user, P.INVENTORY_WRITE) }); res.status(hasil.replayed ? 200 : 201).json(hasil); } catch (err) { handleErr(err, res); }
+});
+productionAdopsiRouter.post("/provisional-usages/:id/correct", requirePermission(P.UNIT_MATERIAL_WRITE), wajibUuid(), async (req, res) => {
+  try { const hasil = await koreksiPemakaianSementara(prisma, { usageId: req.params.id, input: req.body, alasan: req.body?.alasan, actorId: req.user.id, idempotencyKey: req.get("Idempotency-Key") || null }); res.status(hasil.replayed ? 200 : 201).json(hasil); } catch (err) { handleErr(err, res); }
 });
 productionAdopsiRouter.get("/provisional-usages/:id/candidates", requirePermission(P.INVENTORY_WRITE), wajibUuid(), async (req, res) => {
   try { res.json(await kandidatPergerakan(prisma, req.params.id)); } catch (err) { handleErr(err, res); }

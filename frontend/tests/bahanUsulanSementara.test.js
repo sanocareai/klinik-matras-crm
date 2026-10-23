@@ -91,3 +91,19 @@ test("halaman Gudang Usulan Bahan: rute, menu Stok, badge antrean, status jelas,
   for (const k of ["api.getUsulanBahan", "api.putuskanUsulanBahan", "api.getPemakaianSementara", "izinPutuskan", "izinRekon", "usulan-status", "Menunggu Gudang", "tanpa saldo awal", "Halaman ini tidak mengubah saldo stok"]) assert.ok(halaman.includes(k), k);
   assert.ok(!halaman.includes("addUnitMaterial") && !halaman.includes("createGoodsReceipt"));
 });
+
+test("koreksi & pembatalan beralasan: kunci idempoten per niat, alasan wajib, lama tetap tampil (dicoret) dan tidak lagi bukti kerja; Gudang boleh membatalkan 'bukan stok Gudang'", () => {
+  const d = src("features", "production", "bahan", "PemakaianSementaraDaftar.jsx"); const api = src("api.js");
+  for (const k of ["api.koreksiPemakaianSementara", "kunciIdempoten(\"koreksi-sem\")", "if (sidikRef.current !== sidik)", "kirimRef.current", "Alasan koreksi (wajib)", "alasan.trim().length >= 3", "sementara-koreksi-buka", "Tidak lagi dihitung sebagai bukti pekerjaan", "Dikoreksi (diganti catatan baru)", "bisaBatalSelesai", "line-through"]) assert.ok(d.includes(k), k);
+  assert.match(api, /koreksiPemakaianSementara: \(id, body, idempotencyKey = mutationKey\("koreksi-sem"\)\) => request\(`\/production\/provisional-usages\/\$\{id\}\/correct`/);
+  assert.ok(!d.includes("addUnitMaterial"), "koreksi bukan jalur stok");
+});
+
+test("drawer lama (OrderProduksiPanel): Pemakaian aktual DI ATAS Rencana; rencana terlipat bawaan dan dibuka oleh tindakan 'Susun rencana bahan'; pemakaian sementara tampil; pemilih bahan = pemilih bersama", () => {
+  const p = src("features", "production", "OrderProduksiPanel.jsx");
+  const yAktual = p.indexOf('id="sec-aktual"'); const yRencana = p.indexOf('id="sec-rencana-wrap"');
+  assert.ok(yAktual > 0 && yRencana > yAktual, "aktual sebelum rencana");
+  assert.match(p, /<details className="border-t border-line pt-5" id="sec-rencana-wrap"/); assert.ok(!/<details[^>]*\sopen[\s>=]/.test(p.slice(yRencana - 80, yRencana + 120)), "tertutup bawaan");
+  assert.match(p, /if \(el\.tagName === "DETAILS"\) el\.open = true;/);
+  for (const k of ["PemilihBahanKatalog", "aktual-sementara", "PemakaianSementaraDaftar", "data.izin?.catatPemakaianSementara"]) assert.ok(p.includes(k), k);
+});

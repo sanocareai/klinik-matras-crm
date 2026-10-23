@@ -22,6 +22,7 @@ const tampil = (r, nama, extra = {}) => ({
   proposalId: r.proposalId, resolusi: r.resolution, resolusiLabel: r.resolution ? RESOLUSI[r.resolution] : null, materialId: r.materialId, stockMovementId: r.stockMovementId,
   diselesaikanOleh: r.resolvedById ? nama.get(r.resolvedById) ?? null : null, diselesaikanAt: r.resolvedAt, catatanPenyelesaian: r.resolutionNote,
   dibatalkanOleh: r.cancelledById ? nama.get(r.cancelledById) ?? null : null, dibatalkanAt: r.cancelledAt, alasanBatal: r.cancelReason,
+  correctedFromId: r.correctedFromId ?? null, hasilKoreksi: !!r.correctedFromId, dikoreksi: r.status === "DIBATALKAN" && String(r.cancelReason ?? "").startsWith("Dikoreksi:"),
   dampakStok: "Tidak ada saldo/biaya/jurnal sampai Gudang menyelesaikan sumber stok lewat jalur resmi.", ...extra,
 });
 
@@ -63,6 +64,40 @@ export async function catatPemakaianSementara(prisma, { unitId, input, actorId, 
 }
 
 /** Batalkan catatan yang salah input (belum diselesaikan). Baris tetap ada (status DIBATALKAN + alasan). Pencatat atau pemegang hak Gudang (diputuskan route). */
+/** Koreksi (alasan wajib): catatan LAMA dibatalkan ('Dikoreksi: …') dan catatan BARU dibuat menunjuk ke yang lama — satu transaksi, baris lama tetap ada. Hanya yang masih 'Perlu rekonsiliasi'. Idempoten per (unit, kunci). */
+export async function koreksiPemakaianSementara(prisma, { usageId, input, alasan, actorId, idempotencyKey }) {
+  const kunci = kunciValid(idempotencyKey); const teks = typeof alasan === "string" ? alasan.trim().slice(0, 500) : "";
+  if (teks.length < 3) throw new BahanUsulanError("Alasan koreksi wajib diisi (minimal 3 karakter).", "KOREKSI_ALASAN_WAJIB", 400);
+  return prisma.$transaction(async (tx) => {
+    const awal = await tx.unitProvisionalUsage.findUnique({ where: { id: usageId }, select: { unitId: true } });
+    if (!awal) throw new BahanUsulanError("Catatan pemakaian sementara tidak ditemukan", "SEMENTARA_TIDAK_ADA", 404);
+    const unit = await unitAktif(tx, awal.unitId);
+    await lockRowForUpdate(tx, "unit_provisional_usages", usageId);
+    const r = await tx.unitProvisionalUsage.findUnique({ where: { id: usageId } });
+    const ada = await tx.unitProvisionalUsage.findFirst({ where: { unitId: r.unitId, idempotencyKey: kunci } });
+    if (ada) {
+      if (ada.correctedFromId !== usageId) throw new BahanUsulanError("Idempotency-Key ini sudah dipakai untuk isian yang berbeda.", "IDEMPOTENCY_KEY_REUSED", 409);
+      return { replayed: true, item: tampil(ada, await namaPelaku(tx, [ada.recordedById])), catatan: CATATAN_SEMENTARA };
+    }
+    if (r.status !== "PERLU_REKONSILIASI") throw new BahanUsulanError(`Catatan ini sudah ${STATUS_SEMENTARA[r.status]?.toLowerCase() ?? r.status}; tidak bisa dikoreksi. Batalkan lalu catat baru bila perlu.`, "SEMENTARA_SUDAH_FINAL", 409);
+    const d = normalisasiPemakaianSementara({ name: r.name, uom: r.uom, ...(input || {}), ...(r.proposalId ? { name: r.name, uom: r.uom, proposalId: r.proposalId } : {}), usedAt: input?.usedAt || undefined });
+    if (!input?.usedAt) d.usedAt = new Date(r.usedAt); // koreksi tidak menggeser waktu pakai bila tidak diubah
+    if (r.proposalId && (String(input?.uom ?? r.uom).toUpperCase() !== r.uom)) throw new BahanUsulanError(`Satuan harus sama dengan usulan (${r.uom}).`, "SEMENTARA_SATUAN_INVALID", 400);
+    if (d.name === r.name && d.qty === Number(r.qty) && d.uom === r.uom && (d.originNote ?? null) === (r.originNote ?? null) && (d.note ?? null) === (r.note ?? null) && d.usedAt.getTime() === new Date(r.usedAt).getTime()) throw new BahanUsulanError("Tidak ada perubahan dari catatan yang ada.", "KOREKSI_TIDAK_BERUBAH", 422);
+    if (!r.proposalId && d.nameKey !== r.nameKey) {
+      const katalog = (await tx.material.findMany({ where: { active: true }, select: { id: true, code: true, name: true, unit: true, active: true } })).map((m) => ({ id: m.id, kode: m.code, nama: m.name, satuan: m.unit, aktif: m.active }));
+      const kembar = cariKembar({ nama: d.name, bahan: katalog }).filter((k) => k.tingkat === "SAMA");
+      if (adaKembarSama(kembar)) throw new BahanUsulanError("Bahan dengan nama ini sudah ada di katalog. Catat lewat pemakaian aktual resmi supaya saldo ikut tercatat.", "BAHAN_ADA_DI_KATALOG", 409, { kandidat: kembar });
+    }
+    const baru = await tx.unitProvisionalUsage.create({ data: { unitId: r.unitId, proposalId: r.proposalId, name: d.name, nameKey: d.nameKey, qty: d.qty, uom: d.uom, originNote: d.originNote, note: d.note, usedAt: d.usedAt, recordedById: actorId, idempotencyKey: kunci, correctedFromId: r.id } });
+    await tx.unitProvisionalUsage.update({ where: { id: r.id }, data: { status: "DIBATALKAN", cancelledById: actorId, cancelledAt: new Date(), cancelReason: `Dikoreksi: ${teks}` } });
+    const nama = await namaPelaku(tx, [r.recordedById, actorId]);
+    await recordActivity(tx, { entityType: ENTITY_TYPES.UNIT, entityId: r.unitId, eventType: EVENT_TYPES.PRODUCTION_PEMAKAIAN_SEMENTARA_DISELESAIKAN, actorId, metadata: { unitCode: unit.unitCode, usageId: r.id, name: r.name, status: "DIBATALKAN", alasan: `Dikoreksi: ${teks}`, penggantiId: baru.id, deciderName: nama.get(actorId) ?? null } });
+    await recordActivity(tx, { entityType: ENTITY_TYPES.UNIT, entityId: r.unitId, eventType: EVENT_TYPES.PRODUCTION_PEMAKAIAN_SEMENTARA_DICATAT, actorId, metadata: { unitCode: unit.unitCode, orderId: unit.orderId, usageId: baru.id, name: d.name, qty: d.qty, uom: d.uom, originNote: d.originNote, koreksiDari: r.id, alasanKoreksi: teks, deciderName: nama.get(actorId) ?? null } });
+    return { replayed: false, item: tampil(baru, nama), lama: tampil({ ...r, status: "DIBATALKAN", cancelReason: `Dikoreksi: ${teks}`, cancelledById: actorId, cancelledAt: new Date() }, nama), catatan: CATATAN_SEMENTARA };
+  });
+}
+
 export async function batalkanPemakaianSementara(prisma, { usageId, alasan, actorId, bolehSemua = false }) {
   const teks = typeof alasan === "string" ? alasan.trim().slice(0, 500) : "";
   if (teks.length < 3) throw new BahanUsulanError("Alasan pembatalan wajib diisi (minimal 3 karakter).", "BATAL_ALASAN_WAJIB", 400);
@@ -71,8 +106,8 @@ export async function batalkanPemakaianSementara(prisma, { usageId, alasan, acto
     const r = await tx.unitProvisionalUsage.findUnique({ where: { id: usageId }, include: { unit: { select: { unitCode: true } } } });
     if (!r) throw new BahanUsulanError("Catatan pemakaian sementara tidak ditemukan", "SEMENTARA_TIDAK_ADA", 404);
     if (r.status === "DIBATALKAN" && r.cancelledById === actorId && r.cancelReason === teks) return { replayed: true, item: tampil(r, await namaPelaku(tx, [r.recordedById, r.cancelledById])) };
-    if (r.status !== "PERLU_REKONSILIASI") throw new BahanUsulanError(`Catatan ini sudah ${STATUS_SEMENTARA[r.status]?.toLowerCase() ?? r.status}; tidak bisa dibatalkan.`, "SEMENTARA_SUDAH_FINAL", 409);
-    if (!bolehSemua && r.recordedById !== actorId) throw new BahanUsulanError("Hanya pencatat atau Gudang yang boleh membatalkan catatan ini.", "SEMENTARA_BUKAN_PENCATAT", 403);
+    const bisaBatal = r.status === "PERLU_REKONSILIASI" || (r.status === "DIREKONSILIASI" && r.resolution === "TANPA_STOK" && bolehSemua); // yang ditautkan ke pergerakan resmi dikoreksi lewat jalur stok resmi, bukan dibatalkan di sini
+    if (!bisaBatal) throw new BahanUsulanError(r.status === "DIREKONSILIASI" ? (r.resolution === "TAUTKAN_ISSUE" ? "Catatan ini sudah ditautkan ke pengeluaran stok resmi. Koreksi lewat jalur stok resmi (Return Produksi), bukan di sini." : "Hanya Gudang yang boleh membatalkan catatan yang sudah dinyatakan bukan stok Gudang.") : `Catatan ini sudah ${STATUS_SEMENTARA[r.status]?.toLowerCase() ?? r.status}; tidak bisa dibatalkan.`, "SEMENTARA_SUDAH_FINAL", r.status === "DIREKONSILIASI" && r.resolution === "TANPA_STOK" ? 403 : 409);
     const baru = await tx.unitProvisionalUsage.update({ where: { id: usageId }, data: { status: "DIBATALKAN", cancelledById: actorId, cancelledAt: new Date(), cancelReason: teks } });
     const nama = await namaPelaku(tx, [r.recordedById, actorId]);
     await recordActivity(tx, { entityType: ENTITY_TYPES.UNIT, entityId: r.unitId, eventType: EVENT_TYPES.PRODUCTION_PEMAKAIAN_SEMENTARA_DISELESAIKAN, actorId, metadata: { unitCode: r.unit.unitCode, usageId: r.id, name: r.name, status: "DIBATALKAN", alasan: teks, deciderName: nama.get(actorId) ?? null } });

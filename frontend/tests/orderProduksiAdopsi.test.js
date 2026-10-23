@@ -105,8 +105,8 @@ test("daftar: kolom Status order · Status kerja · Target · PIC · Tindakan; f
   assert.doesNotMatch(WO, /transition-all|animate-bounce/); assert.match(WO, /motion-reduce:/);
 });
 
-test("panel: urutan ringkasan+tindakan → status&target → rencana bahan → pemakaian aktual → riwayat → lanjutan; tiga status berlabel; Rencana vs Aktual dibedakan tegas", () => {
-  const order = ["panel-ringkasan", "sec-status", "sec-rencana-wrap", "sec-aktual", "sec-riwayat", "panel-lanjutan"].map((k) => PANEL.indexOf(k));
+test("panel: urutan ringkasan+tindakan → status&target → pemakaian aktual → rencana bahan (opsional, terlipat) → riwayat → lanjutan; tiga status berlabel; Rencana vs Aktual dibedakan tegas", () => {
+  const order = ["panel-ringkasan", "sec-status", "sec-aktual", "sec-rencana-wrap", "sec-riwayat", "panel-lanjutan"].map((k) => PANEL.indexOf(k));
   assert.ok(order.every((x) => x > 0) && order.every((x, i) => i === 0 || x > order[i - 1]), `urutan bagian: ${order}`);
   for (const t of ["Status order", "Posisi unit", "Status kerja"]) assert.match(PANEL, new RegExp(t));
   assert.match(PANEL, /Aktual · mengurangi stok/); assert.match(EDITOR, /Rencana · tidak mengurangi stok/);

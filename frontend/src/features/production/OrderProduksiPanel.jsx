@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils.js";
 import { formatTanggal } from "@/utils/formatDate.js";
 import MaterialPlanEditor from "@/features/production/MaterialPlanEditor.jsx";
 import PemilihBahanKatalog from "@/features/production/bahan/PemilihBahanKatalog.jsx";
+import PemakaianSementaraDaftar from "@/features/production/bahan/PemakaianSementaraDaftar.jsx";
 import PenerimaanWorkshopModal from "@/features/production/PenerimaanWorkshopModal.jsx";
 import KoreksiPenerimaanModal from "@/features/production/KoreksiPenerimaanModal.jsx";
 import { statusOf } from "@/features/production/productionLabels.js";
@@ -103,15 +104,16 @@ export default function OrderProduksiPanel({ unitId, onClose, onChanged, onBukaU
               <StatusTarget data={data} aktif={aktif} onDone={sesudahUbah} />
             </Bagian>
 
-            {/* 3 · Rencana bahan */}
-            <div className="border-t border-line pt-5" id="sec-rencana-wrap">
-              <MaterialPlanEditor unitId={unitId} rencana={data.rencanaBahan} bolehUbah={!!izin.rencanaBahan} unitAktif={aktif} onSaved={() => sesudahUbah()} onReload={muat} />
-            </div>
-
-            {/* 4 · Pemakaian aktual — transaksi resmi, mengurangi stok */}
-            <Bagian id="sec-aktual" judul="Pemakaian aktual" aksi={<Badge variant="orange" title="Setiap catatan di sini mengurangi stok Gudang tepat sekali.">Aktual · mengurangi stok</Badge>}>
+            {/* 3 · Pemakaian aktual — di ATAS rencana. Bahan baru = transaksi resmi (mengurangi stok); komponen lama dan pemakaian sementara TIDAK mengurangi stok */}
+            <Bagian id="sec-aktual" judul="Pemakaian aktual" aksi={<Badge variant="orange" title="Bahan baru dari Gudang: setiap catatan mengurangi stok Gudang tepat sekali.">Aktual · mengurangi stok</Badge>}>
               <PemakaianAktual data={data} aktif={aktif} bolehCatat={!!izin.pemakaianAktual} onDone={sesudahUbah} />
             </Bagian>
+
+            {/* 4 · Rencana bahan — opsional, TERTUTUP bawaan, di bawah pemakaian aktual */}
+            <details className="border-t border-line pt-5" id="sec-rencana-wrap" data-testid="sec-rencana-lama">
+              <summary className="min-h-[44px] cursor-pointer text-[14px] font-semibold text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/50">Rencana bahan (opsional, belum mengurangi stok){data.rencanaBahan?.plan ? ` · ${data.rencanaBahan.plan.lines.length} bahan` : ""}</summary>
+              <div className="pt-3"><MaterialPlanEditor unitId={unitId} rencana={data.rencanaBahan} bolehUbah={!!izin.rencanaBahan} unitAktif={aktif} onSaved={() => sesudahUbah()} onReload={muat} /></div>
+            </details>
 
             {/* 5 · Riwayat */}
             <Bagian id="sec-riwayat" judul="Riwayat">
@@ -172,7 +174,7 @@ function TindakanUtama({ data, aktif, onDone, onBukaUnit360, onBagian }) {
   const [sibuk, setSibuk] = useState(false);
   const [hasil, setHasil] = useState({ galat: null, ok: "" });
 
-  const ke = (id) => { const el = document.getElementById(id); if (el) { el.scrollIntoView({ behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" }); el.querySelector?.("button, input, select")?.focus?.({ preventScroll: true }); } };
+  const ke = (id) => { const el = document.getElementById(id); if (el) { if (el.tagName === "DETAILS") el.open = true; /* rencana terlipat: buka dulu bila diminta lewat tindakan */ el.scrollIntoView({ behavior: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" }); el.querySelector?.("button, input, select")?.focus?.({ preventScroll: true }); } };
   async function catat(status) {
     if (catatRef.current) return; catatRef.current = true;
     setSibuk(true); setHasil({ galat: null, ok: "" });
@@ -448,6 +450,12 @@ function PemakaianAktual({ data, aktif, bolehCatat, onDone }) {
           </ul>
         )}
       {ak.baris.length > 8 && <p className="m-0 text-[12px] text-ink3">Menampilkan 8 dari {ak.baris.length} catatan terbaru. Lengkapnya ada di Unit 360 &gt; Bahan.</p>}
+      {(data.pemakaianSementara?.items?.length ?? 0) > 0 && (
+        <div className="space-y-2" data-testid="aktual-sementara">
+          <h4 className="m-0 flex flex-wrap items-center gap-2 text-[13px] font-semibold text-ink">Pemakaian sementara <Badge variant="orange" title="Bukan Material Issue; stok, biaya, dan jurnal belum berubah.">{data.pemakaianSementara.total.perluRekonsiliasi > 0 ? `${data.pemakaianSementara.total.perluRekonsiliasi} perlu rekonsiliasi Gudang` : "Perlu rekonsiliasi Gudang"}</Badge></h4>
+          <PemakaianSementaraDaftar data={data.pemakaianSementara} bolehCatat={!!data.izin?.catatPemakaianSementara} bolehGudang={!!data.izin?.putuskanUsulan} aktif={aktif} onDone={onDone} />
+        </div>
+      )}
 
       {bolehCatat && aktif && !form && <Button variant="secondary" className="min-h-[44px]" data-testid="aktual-buka" onClick={() => { setForm(true); setHasil({ galat: null, ok: "" }); }}>Catat pemakaian bahan</Button>}
       {!bolehCatat && <p className="m-0 text-[12.5px] text-ink3">Akun Anda hanya bisa melihat pemakaian.</p>}

@@ -1102,6 +1102,7 @@ export const api = {
   putuskanUsulanBahan: (id, body) => request(`/production/material-proposals/${id}/decision`, { method: "POST", body: JSON.stringify(body) }),
   catatPemakaianSementara: (unitId, body, idempotencyKey = mutationKey("sementara")) => request(`/production/units/${unitId}/provisional-usages`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(body) }),
   getPemakaianSementara: (params = {}) => { const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v)).toString(); return request(`/production/provisional-usages${qs ? `?${qs}` : ""}`); },
+  koreksiPemakaianSementara: (id, body, idempotencyKey = mutationKey("koreksi-sem")) => request(`/production/provisional-usages/${id}/correct`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(body) }),
   batalPemakaianSementara: (id, alasan) => request(`/production/provisional-usages/${id}/cancel`, { method: "POST", body: JSON.stringify({ alasan }) }),
   getKandidatPergerakanSementara: (id) => request(`/production/provisional-usages/${id}/candidates`),
   rekonsiliasiPemakaianSementara: (id, body) => request(`/production/provisional-usages/${id}/reconcile`, { method: "POST", body: JSON.stringify(body) }),
