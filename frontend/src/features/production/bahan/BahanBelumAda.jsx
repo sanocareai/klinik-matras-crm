@@ -4,23 +4,29 @@ import { api } from "@/api.js";
 import { Button } from "@/components/ui/button.jsx";
 import { cn } from "@/lib/utils.js";
 import { formatJumlah, kunciIdempoten, parseJumlah, pesanGalatAdopsi } from "@/features/production/orderProduksiModel.js";
-import { ASAL_UMUM, CATATAN_SEMENTARA, KELOMPOK_USULAN, SATUAN_KOMPONEN, STATUS_REKON } from "@/features/production/bahan/bahanModel.js";
+import { ALASAN_SEMENTARA, ASAL_UMUM, CATATAN_SEMENTARA, KELOMPOK_USULAN, SATUAN_KOMPONEN, STATUS_REKON, susunCatatanRekon } from "@/features/production/bahan/bahanModel.js";
 import "@/features/production/bahan/bahan.css";
 
 // "Bahan belum ada di katalog" — SATU formulir untuk dua jalur resmi yang sudah live:
 //   (a) Pemakaian sementara (POST /production/units/:id/provisional-usages): fakta bahan yang SUDAH dipakai; BUKAN Material Issue — stok, biaya, jurnal tidak berubah; status "Perlu rekonsiliasi Gudang".
 //   (b) Usulan bahan ke Gudang (POST /production/material-proposals): hanya baris usulan, tanpa saldo/penerimaan/pergerakan/biaya/jurnal; Gudang yang memutuskan dan memberi kode.
-// Urutan kirim: usulan dulu (bila dipilih), lalu pemakaian sementara bertaut ke usulan itu. Gagal di tengah → usulan yang sudah terkirim TIDAK dikirim ulang; hanya pemakaian yang dicoba lagi (Idempotency-Key per niat).
-// Status "Perlu rekonsiliasi Gudang" ditampilkan SEBELUM konfirmasi (ringkasan) dan SESUDAH tersimpan.
+// Urutan kirim: usulan dulu (bila dipilih), lalu pemakaian sementara bertaut ke usulan itu.
+// GAGAL DI TENGAH (usulan terkirim, pemakaian belum tersimpan): usulan TIDAK dikirim ulang; keadaan ini disimpan di induk (onTertinggal) berikut Idempotency-Key + isian, sehingga banner "usulan tertinggal" tetap tampil
+// (juga setelah formulir ditutup/refresh) dan "Simpan pemakaian lagi" memakai kunci yang SAMA (tidak menggandakan walau percobaan pertama sebenarnya berhasil di server).
+// Bahan yang namanya SUDAH ada di katalog tetapi dicatat sementara: asal barang WAJIB diisi dan alasan rekonsiliasi dipilih — keduanya ditulis ke catatan sehingga terbaca jelas oleh Gudang.
+const KODE_FINAL = ["BAHAN_ADA_DI_KATALOG", "USULAN_DITOLAK"];
 const kolom = "h-11 w-full rounded-btn border border-line bg-surface px-3 text-[14px] text-ink outline-none placeholder:text-ink3 focus:border-accent focus-visible:ring-2 focus-visible:ring-accent/30";
 
-export default function BahanBelumAda({ unitId, kodeUnit, izin = {}, awalNama = "", awalSatuan = "PCS", onTutup, onGunakanKatalog, onDone }) {
+export default function BahanBelumAda({ unitId, kodeUnit, izin = {}, awalNama = "", awalSatuan = "PCS", alasanAwal = "", tertinggalAwal = null, onTertinggal = null, onTutup, onGunakanKatalog, onDone }) {
   const bolehSementara = !!izin.catatPemakaianSementara; const bolehUsul = !!izin.usulBahan;
-  const [nama, setNama] = useState(awalNama); const [qty, setQty] = useState(""); const [satuan, setSatuan] = useState(awalSatuan); const [kelompok, setKelompok] = useState("");
-  const [asal, setAsal] = useState(""); const [catatan, setCatatan] = useState(""); const [usulkan, setUsulkan] = useState(bolehUsul);
+  const f0 = tertinggalAwal?.form ?? {};
+  const [nama, setNama] = useState(f0.nama ?? awalNama); const [qty, setQty] = useState(f0.qty ?? ""); const [satuan, setSatuan] = useState(f0.satuan ?? awalSatuan); const [kelompok, setKelompok] = useState(f0.kelompok ?? "");
+  const [asal, setAsal] = useState(f0.asal ?? ""); const [catatan, setCatatan] = useState(f0.catatan ?? ""); const [usulkan, setUsulkan] = useState(f0.usulkan ?? bolehUsul);
+  const [alasan, setAlasan] = useState(f0.alasan ?? alasanAwal); const [alasanLain, setAlasanLain] = useState(f0.alasanLain ?? "");
   const [kembar, setKembar] = useState({ kandidat: [], adaSama: false, adaMirip: false, memuat: false }); const [bedaDariMirip, setBedaDariMirip] = useState(false);
-  const [sibuk, setSibuk] = useState(false); const [galat, setGalat] = useState(null); const [usulan, setUsulan] = useState(null); const [hasil, setHasil] = useState(null);
-  const kirimRef = useRef(false); const reqRef = useRef(0); const kunciRef = useRef(null); const sidikRef = useRef("");
+  const [sibuk, setSibuk] = useState(false); const [galat, setGalat] = useState(null); const [usulan, setUsulan] = useState(tertinggalAwal?.usulan ?? null); const [hasil, setHasil] = useState(null);
+  const [langkah, setLangkah] = useState(null); // langkah yang gagal: "usulan" | "pemakaian"
+  const kirimRef = useRef(false); const reqRef = useRef(0); const kunciRef = useRef(tertinggalAwal?.kunci ?? null); const sidikRef = useRef(tertinggalAwal?.sidik ?? "");
 
   // periksa duplikasi saat mengetik (ditunda 350 ms); hasil basi dibuang. Setelah usulan terkirim, nama dikunci dan pemeriksaan dihentikan.
   useEffect(() => {
@@ -36,29 +42,53 @@ export default function BahanBelumAda({ unitId, kodeUnit, izin = {}, awalNama = 
   const jumlah = parseJumlah(qty);
   // Nama yang SUDAH ada di katalog/usulan terbuka: tidak diusulkan lagi (usulan dilewati otomatis), tetapi fakta pemakaian sementara tetap boleh dicatat (mis. bahan ada di katalog namun stoknya belum tercatat).
   const sudahAda = !usulan && kembar.adaSama;
+  // ATURAN SERVER (unitProvisionalUsageService): nama yang SAMA PERSIS dengan bahan katalog aktif DITOLAK (409 BAHAN_ADA_DI_KATALOG: "Catat lewat pemakaian aktual resmi supaya saldo ikut tercatat") — UI tidak menawarkan jalur yang pasti ditolak.
+  // Nama yang hanya MIRIP bahan katalog boleh dicatat sementara, tetapi alasan + asal WAJIB agar Gudang tahu mengapa tidak lewat katalog.
+  const katalogSama = !usulan ? (kembar.kandidat.find((k) => k.jenis === "KATALOG" && (k.tingkat ?? "SAMA") === "SAMA") ?? null) : null;
+  const blokKatalogSama = bolehSementara && !!katalogSama;
+  const kandidatKatalog = !usulan && !katalogSama ? (kembar.kandidat.find((k) => k.jenis === "KATALOG" && k.aktif !== false) ?? null) : null;
+  const kandidatUsulan = sudahAda && !katalogSama ? (kembar.kandidat.find((k) => k.jenis !== "KATALOG") ?? null) : null;
+  const wajibAlasan = bolehSementara && !!kandidatKatalog && !blokKatalogSama; // bahan MIRIP katalog tetapi dicatat sementara → Gudang perlu tahu mengapa
   const usulkanEfektif = usulkan && !sudahAda;
   const perluKonfirmasiMirip = usulkanEfektif && !usulan && kembar.adaMirip;
   const namaOk = nama.trim().length >= 3;
   const usulanOk = !usulkanEfektif || !!usulan || (!!kelompok && !!satuan && (!perluKonfirmasiMirip || bedaDariMirip));
   const sementaraOk = !bolehSementara || (jumlah !== null && jumlah > 0);
-  const valid = namaOk && usulanOk && sementaraOk && (bolehSementara || usulkanEfektif);
-  const sidik = `${nama.trim()}|${jumlah}|${satuan}|${asal.trim()}|${catatan.trim()}|${usulan?.id || ""}`;
+  const alasanOk = !wajibAlasan || (!!alasan && (alasan !== "LAINNYA" || alasanLain.trim().length >= 3));
+  const asalOk = !wajibAlasan || asal.trim().length >= 2;
+  const valid = namaOk && !blokKatalogSama && usulanOk && sementaraOk && alasanOk && asalOk && (bolehSementara || usulkanEfektif);
+  const catatanGudang = susunCatatanRekon({ kandidatKatalog, kandidatUsulan, alasan, alasanLain, catatan });
+  const sidik = `${nama.trim()}|${jumlah}|${satuan}|${asal.trim()}|${catatanGudang}|${usulan?.id || ""}`;
   if (sidikRef.current !== sidik) { sidikRef.current = sidik; kunciRef.current = null; } // isian berubah = niat baru; isian sama = kunci sama (klik ulang/retry)
+  const formSimpan = () => ({ nama, qty, satuan, kelompok, asal, catatan, usulkan, alasan, alasanLain });
 
   async function kirim() {
     if (kirimRef.current || !valid) return;
-    kirimRef.current = true; setSibuk(true); setGalat(null);
+    kirimRef.current = true; setSibuk(true); setGalat(null); setLangkah(null);
     let dibuat = usulan;
     try {
       if (usulkanEfektif && !dibuat) {
-        const r = await api.ajukanBahanBaru({ name: nama.trim(), unit: satuan, kelompok, description: catatan.trim() || undefined, unitId }, perluKonfirmasiMirip && bedaDariMirip);
-        dibuat = r.usulan; setUsulan(r.usulan);
+        try {
+          const r = await api.ajukanBahanBaru({ name: nama.trim(), unit: satuan, kelompok, description: catatan.trim() || undefined, unitId }, perluKonfirmasiMirip && bedaDariMirip);
+          dibuat = r.usulan; setUsulan(r.usulan);
+          onTertinggal?.({ usulan: r.usulan, form: formSimpan(), kunci: null, sidik: null }); // dari sini: usulan SUDAH ada di Gudang — tampilkan sebagai tertinggal sampai pemakaian tersimpan
+          if (bolehSementara) await onDone?.();
+        } catch (e) { setLangkah("usulan"); throw e; }
       }
       if (bolehSementara) {
+        const sidikBaru = `${nama.trim()}|${jumlah}|${dibuat?.unit ?? satuan}|${asal.trim()}|${catatanGudang}|${dibuat?.id || ""}`;
+        if (sidikRef.current !== sidikBaru) { sidikRef.current = sidikBaru; kunciRef.current = null; }
         kunciRef.current ??= kunciIdempoten("sementara");
-        const r = await api.catatPemakaianSementara(unitId, { name: (dibuat?.name ?? nama.trim()), qty: jumlah, uom: dibuat?.unit ?? satuan, originNote: asal.trim() || undefined, note: catatan.trim() || undefined, proposalId: dibuat?.id || undefined }, kunciRef.current);
-        setHasil({ sementara: r.item, usulan: dibuat });
-      } else setHasil({ sementara: null, usulan: dibuat });
+        try {
+          const r = await api.catatPemakaianSementara(unitId, { name: (dibuat?.name ?? nama.trim()), qty: jumlah, uom: dibuat?.unit ?? satuan, originNote: asal.trim() || undefined, note: catatanGudang || undefined, proposalId: dibuat?.id || undefined }, kunciRef.current);
+          setHasil({ sementara: r.item, usulan: dibuat }); onTertinggal?.(null);
+        } catch (e) {
+          setLangkah(KODE_FINAL.includes(e?.code) ? "final" : "pemakaian");
+          // Gudang sudah memutuskan usulan (disetujui/ditolak) saat pemakaian belum tersimpan → mengulang PASTI ditolak server: jangan simpan sebagai tertinggal, jelaskan jalur resminya.
+          if (dibuat) onTertinggal?.(KODE_FINAL.includes(e?.code) ? null : { usulan: dibuat, form: formSimpan(), kunci: kunciRef.current, sidik: sidikRef.current }); // simpan kunci: retry (juga setelah formulir ditutup) tidak menggandakan
+          throw e;
+        }
+      } else { setHasil({ sementara: null, usulan: dibuat }); onTertinggal?.(null); }
       await onDone?.();
     } catch (e) {
       setGalat(e);
@@ -73,6 +103,8 @@ export default function BahanBelumAda({ unitId, kodeUnit, izin = {}, awalNama = 
           <div role="status" data-testid="sementara-hasil" className="space-y-1 rounded-btn bg-greenbg px-3 py-3 text-[13px] text-green">
             <p className="m-0 flex items-start gap-2 font-medium"><CheckCircle2 size={15} className="mt-0.5 shrink-0" aria-hidden />Tercatat sebagai <b>Pemakaian sementara — {STATUS_REKON}</b>: {formatJumlah(hasil.sementara.qty)} {hasil.sementara.uom} {hasil.sementara.name}.</p>
             <p className="m-0 pl-6 text-ink2" data-testid="status-rekon-sesudah">Status: <b>{STATUS_REKON}</b>. Stok Gudang <b>tidak</b> berubah dan tidak ada Material Issue, biaya, atau jurnal. Gudang menyelesaikan sumber stoknya lewat jalur resmi.</p>
+            {hasil.sementara.originNote && <p className="m-0 pl-6 text-ink2" data-testid="hasil-asal">Asal barang untuk Gudang: {hasil.sementara.originNote}</p>}
+            {hasil.sementara.note && <p className="m-0 pl-6 text-ink2" data-testid="hasil-alasan">{hasil.sementara.note}</p>}
           </div>
         )}
         {hasil.usulan && (
@@ -90,6 +122,9 @@ export default function BahanBelumAda({ unitId, kodeUnit, izin = {}, awalNama = 
   ].filter(Boolean);
   return (
     <div className="space-y-3 rounded-card border border-line px-4 py-4" data-testid="bahan-belum-ada">
+      {usulan && bolehSementara && (
+        <p role="note" data-testid="usulan-tertinggal-form" className="m-0 flex items-start gap-2 rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-ink"><AlertTriangle size={15} className="bh-warn mt-0.5 shrink-0" aria-hidden /><span><b>Langkah 1 selesai:</b> usulan “{usulan.name}” sudah terkirim ke Gudang ({usulan.statusLabel}). <b>Langkah 2 belum selesai:</b> pemakaian sementara belum tersimpan. Tekan “Simpan pemakaian lagi” — usulan tidak akan dikirim ulang.</span></p>
+      )}
       {bolehSementara && (
         <p className="m-0 flex items-start gap-2 rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-ink" data-testid="status-rekon-sebelum"><AlertTriangle size={15} className="bh-warn mt-0.5 shrink-0" aria-hidden /><span>Status setelah disimpan: <b>{STATUS_REKON}</b> untuk unit {kodeUnit || "ini"}. {CATATAN_SEMENTARA} Tidak perlu membuat stok atau Material Issue.</span></p>
       )}
@@ -100,7 +135,7 @@ export default function BahanBelumAda({ unitId, kodeUnit, izin = {}, awalNama = 
       {kembar.memuat && <p className="m-0 flex items-center gap-1.5 text-[12px] text-ink3"><Search size={13} aria-hidden />Memeriksa nama yang sama…</p>}
       {kembar.kandidat.length > 0 && !usulan && (
         <div role="status" data-testid="usulan-kembar" className={cn("space-y-2 rounded-btn px-3 py-2", kembar.adaSama ? "bg-redbg" : "bg-orangebg")}>
-          <p className="m-0 text-[12.5px] font-semibold text-ink">{kembar.adaSama ? (bolehSementara ? "Sudah ada — tidak diusulkan lagi. Bila stoknya ada, lebih baik pakai bahan itu; bila belum ada stok, pemakaian tetap bisa dicatat sementara:" : "Sudah ada — tidak perlu diusulkan lagi:") : "Ada yang mirip. Periksa dulu:"}</p>
+          <p className="m-0 text-[12.5px] font-semibold text-ink">{kembar.adaSama ? (blokKatalogSama ? "Bahan ini SUDAH ADA di katalog Gudang:" : "Sudah ada — tidak perlu diusulkan lagi:") : bolehSementara && kandidatKatalog ? "Ada bahan katalog yang mirip. Bila itu bahan yang Anda pakai, pilih bahan itu. Bila berbeda, pemakaian boleh dicatat sementara (alasan dan asal wajib):" : "Ada yang mirip. Periksa dulu:"}</p>
           <ul className="m-0 list-none space-y-1 p-0">
             {kembar.kandidat.map((k, i) => (
               <li key={k.materialId || k.proposalId || i} className="flex flex-wrap items-center gap-2 text-[12.5px] text-ink">
@@ -113,6 +148,22 @@ export default function BahanBelumAda({ unitId, kodeUnit, izin = {}, awalNama = 
         </div>
       )}
 
+      {blokKatalogSama && (
+        <div role="alert" data-testid="katalog-sama-blok" className="space-y-1 rounded-btn bg-redbg px-3 py-2 text-[12.5px] text-red">
+          <p className="m-0"><b>Tidak bisa dicatat sementara:</b> “{katalogSama.nama}” sudah ada di katalog, jadi server menolak pemakaian sementara dengan nama ini. Catat lewat <b>Bahan dari Gudang</b> (tombol “Pakai bahan ini”) supaya saldo ikut tercatat.</p>
+          <p className="m-0">Bila stok bahan itu belum tercatat (“Stok belum diketahui”), pencatatan juga ditolak sampai Gudang mencatat stok awal/opname — minta Gudang lebih dulu. Bila bahan yang Anda pakai sebenarnya berbeda dari yang di katalog, ubah namanya agar tidak sama persis.</p>
+        </div>
+      )}
+      {wajibAlasan && (
+        <fieldset className="space-y-1 rounded-btn border border-line px-3 py-2" data-testid="alasan-rekon">
+          <legend className="px-1 text-[12.5px] font-semibold text-ink">Mengapa dicatat sementara, padahal bahan ini ada di katalog? (Gudang membaca ini)</legend>
+          {ALASAN_SEMENTARA.map((a) => (
+            <label key={a.key} className="flex min-h-[40px] items-center gap-2 text-[13px] text-ink"><input type="radio" name="alasan-rekon" value={a.key} checked={alasan === a.key} onChange={() => setAlasan(a.key)} data-testid={`alasan-${a.key}`} className="h-4 w-4 accent-[var(--accent,#2563eb)]" />{a.label}</label>
+          ))}
+          {alasan === "LAINNYA" && <input value={alasanLain} onChange={(e) => setAlasanLain(e.target.value)} maxLength={200} data-testid="alasan-lain" placeholder="Tulis alasannya (min. 3 huruf)" className={kolom} />}
+        </fieldset>
+      )}
+
       <div className="flex gap-2">
         {bolehSementara && <label className="flex-1"><span className="mb-1 block text-[12px] text-ink3">Jumlah dipakai</span>
           <input inputMode="decimal" value={qty} onChange={(e) => setQty(e.target.value)} data-testid="sementara-qty" placeholder="0" className={cn(kolom, "text-right tabular-nums")} /></label>}
@@ -122,7 +173,7 @@ export default function BahanBelumAda({ unitId, kodeUnit, izin = {}, awalNama = 
 
       {bolehSementara && (
         <div>
-          <span className="mb-1 block text-[12px] text-ink3">Asal barang (yang diketahui)</span>
+          <span className="mb-1 block text-[12px] text-ink3">Asal barang{wajibAlasan ? " (wajib — Gudang perlu tahu dari mana barang ini)" : " (yang diketahui)"}</span>
           <div className="mb-1 flex flex-wrap gap-1" role="group" aria-label="Asal barang">
             {ASAL_UMUM.map((a) => <button key={a} type="button" aria-pressed={asal === a} onClick={() => setAsal(asal === a ? "" : a)} className={cn("min-h-[40px] rounded-chip px-3 text-[12.5px] font-medium", asal === a ? "bh-chip-on bg-accent text-white" : "bg-inset text-ink hover:bg-hovertint")}>{a}</button>)}
           </div>
@@ -145,14 +196,22 @@ export default function BahanBelumAda({ unitId, kodeUnit, izin = {}, awalNama = 
         </div>
       )}
 
-      <input value={catatan} onChange={(e) => setCatatan(e.target.value)} maxLength={500} aria-label="Catatan (opsional)" data-testid="sementara-catatan" placeholder="Catatan atau keterangan (opsional): ukuran, merek, kegunaan" className={kolom} />
+      <input value={catatan} onChange={(e) => setCatatan(e.target.value)} maxLength={300} aria-label="Catatan (opsional)" data-testid="sementara-catatan" placeholder="Catatan atau keterangan (opsional): ukuran, merek, kegunaan" className={kolom} />
 
-      {!bolehSementara && sudahAda && <p role="alert" data-testid="usulan-sudah-ada" className="m-0 text-[12.5px] text-red">Bahan ini sudah ada, jadi tidak bisa diusulkan lagi. Pilih bahan itu dari “Bahan dari Gudang”.</p>}
+      {valid && bolehSementara && catatanGudang && <p className="m-0 rounded-btn bg-inset px-3 py-2 text-[12.5px] text-ink2" data-testid="catatan-untuk-gudang"><b>Yang akan dibaca Gudang:</b> asal: {asal.trim() || "belum diisi"} · {catatanGudang}</p>}
       {valid && ringkasan.length > 0 && <p className="m-0 rounded-btn bg-inset px-3 py-2 text-[12.5px] text-ink" data-testid="belum-ada-ringkasan"><b>Akan dicatat:</b> {ringkasan.join(" · ")}. Stok Gudang tidak berubah.</p>}
-      {g && <p role="alert" data-testid="usulan-galat" className="m-0 text-[12.5px] text-red">{g.teks} {usulan ? "Usulan sudah terkirim; hanya pemakaian yang diulang." : ""} {g.jenis === "jaringan" ? "Isian tetap di layar; coba lagi (tidak akan tercatat dua kali)." : ""}</p>}
+      {g && (
+        <div role="alert" data-testid="usulan-galat" className="space-y-1 rounded-btn bg-redbg px-3 py-2 text-[12.5px] text-red">
+          {langkah === "pemakaian" && usulan
+            ? <p className="m-0"><b>Usulan “{usulan.name}” SUDAH terkirim ke Gudang, tetapi pemakaian sementara BELUM tersimpan.</b> Penyebab: {g.teks} Tekan “Simpan pemakaian lagi” — usulan tidak dikirim ulang dan pemakaian tidak akan tercatat dua kali.</p>
+            : langkah === "final" && usulan
+            ? <p className="m-0" data-testid="usulan-final"><b>Usulan “{usulan.name}” sudah diputuskan Gudang, jadi pemakaian sementara tidak bisa disimpan lagi.</b> {g.teks} Bahan yang sudah masuk katalog dicatat lewat “Bahan dari Gudang”; bila usulan ditolak, hubungi Gudang atau catat bahan lain. Tidak ada yang tertinggal untuk dilanjutkan.</p>
+            : <p className="m-0">{langkah === "usulan" ? "Usulan belum terkirim (tidak ada yang tersimpan). " : ""}{g.teks} {g.jenis === "jaringan" ? "Isian tetap di layar; coba lagi (tidak akan tercatat dua kali)." : ""}</p>}
+        </div>
+      )}
       <div className="flex flex-wrap items-center justify-end gap-2">
-        <Button variant="neutral" className="min-h-[44px]" onClick={onTutup} disabled={sibuk}>Batal</Button>
-        <Button className="bh-cta min-h-[44px]" data-testid="usulan-kirim" disabled={sibuk || !valid} onClick={kirim}>{sibuk ? "Menyimpan…" : bolehSementara ? (usulkan && !usulan ? "Catat sementara & usulkan ke Gudang" : "Catat pemakaian sementara") : "Usulkan ke Gudang"}</Button>
+        <Button variant="neutral" className="min-h-[44px]" onClick={onTutup} disabled={sibuk}>{usulan ? "Tutup (lanjutkan nanti)" : "Batal"}</Button>
+        <Button className="bh-cta min-h-[44px]" data-testid="usulan-kirim" disabled={sibuk || !valid} onClick={kirim}>{sibuk ? "Menyimpan…" : bolehSementara ? (usulan ? "Simpan pemakaian lagi" : usulkanEfektif ? "Catat sementara & usulkan ke Gudang" : "Catat pemakaian sementara") : "Usulkan ke Gudang"}</Button>
       </div>
     </div>
   );

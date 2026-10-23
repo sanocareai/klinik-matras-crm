@@ -15,6 +15,24 @@ export const KARTU_SUMBER = Object.freeze({
   lama: { key: "lama", label: "Komponen lama dari kasur ini", ringkas: "Tidak memengaruhi stok", teks: "Milik pelanggan (bongkaran kasur ini): bukan stok, bukan Material Issue, tanpa biaya bahan baru.", badge: "accent" },
 });
 export const STATUS_REKON = "Perlu rekonsiliasi Gudang";
+// Bahan yang namanya SUDAH ada di katalog tetapi dicatat sebagai pemakaian sementara: alasan dipilih pengguna dan ditulis ke catatan agar Gudang tahu MENGAPA perlu rekonsiliasi.
+export const ALASAN_SEMENTARA = Object.freeze([
+  { key: "STOK_BELUM_TERCATAT", label: "Stok bahan ini belum tercatat di Gudang (saldo belum diketahui)", teks: "stok bahan ini belum tercatat di Gudang (saldo belum diketahui), sehingga pengeluaran resmi ditolak" },
+  { key: "STOK_TIDAK_CUKUP", label: "Saldo di sistem tidak cukup, tetapi bahan sudah terlanjur dipakai", teks: "saldo di sistem tidak cukup, tetapi bahan sudah terlanjur dipakai" },
+  { key: "SUDAH_DIPAKAI_DULU", label: "Sudah terlanjur dipakai sebelum dikeluarkan lewat Gudang", teks: "bahan sudah terlanjur dipakai sebelum dikeluarkan lewat Gudang" },
+  { key: "LAINNYA", label: "Alasan lain (tulis)", teks: null },
+]);
+/** Catatan yang dibaca Gudang pada pemakaian sementara: alasan rekonsiliasi + rujukan katalog/usulan + catatan pengguna. Deterministik (tidak memuat status usulan yang berubah-ubah) supaya Idempotency-Key retry stabil. Maks 500 karakter. */
+export function susunCatatanRekon({ kandidatKatalog = null, kandidatUsulan = null, alasan = "", alasanLain = "", catatan = "" } = {}) {
+  let bagian;
+  if (kandidatKatalog) {
+    const a = ALASAN_SEMENTARA.find((x) => x.key === alasan); const teks = alasan === "LAINNYA" ? String(alasanLain || "").trim() : a?.teks ?? "";
+    bagian = `Alasan rekonsiliasi: ${teks || "(alasan belum dipilih)"}. Bahan mirip di katalog: ${kandidatKatalog.nama}${kandidatKatalog.kode ? ` (${kandidatKatalog.kode})` : ""}.`;
+  } else if (kandidatUsulan) bagian = `Alasan rekonsiliasi: bahan belum ada di katalog; sudah ada usulan bahan terbuka dengan nama ini (${kandidatUsulan.nama}).`;
+  else bagian = "Alasan rekonsiliasi: bahan belum ada di katalog Gudang.";
+  const tambah = String(catatan || "").trim();
+  return (tambah ? `${bagian} Catatan: ${tambah}` : bagian).slice(0, 500);
+}
 export const JUDUL_AKTUAL = "Pemakaian aktual";
 export const JUDUL_RENCANA = "Rencana (opsional, belum mengurangi stok)";
 export const KELOMPOK_USULAN = Object.freeze([

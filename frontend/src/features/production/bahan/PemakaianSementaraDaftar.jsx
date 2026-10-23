@@ -58,7 +58,7 @@ function Baris({ item, bolehCatat, bolehGudang, aktif, onDone }) {
     <li className="px-3 py-2.5" data-testid="sementara-baris" data-status={item.status} data-dikoreksi={item.dikoreksi ? "1" : "0"}>
       <div className="flex flex-wrap items-start gap-x-2 gap-y-1">
         <span className="min-w-0 flex-1"><span className={cn("block text-[13px] font-medium text-ink", item.status === "DIBATALKAN" && "line-through decoration-ink3")}>{item.name}</span>
-          <span className="block text-[12px] text-ink2">{formatJumlah(item.qty)} {item.uom}{item.originNote ? ` · asal: ${item.originNote}` : ""}{item.hasilKoreksi ? " · hasil koreksi" : ""}</span></span>
+          <span className="block text-[12px] text-ink2">{formatJumlah(item.qty)} {item.uom} · asal: {item.originNote || "belum diisi"}{item.hasilKoreksi ? " · hasil koreksi" : ""}</span></span>
         <Badge variant={NADA[item.status] || "neutral"} className={perlu ? "bh-b-orange" : undefined} data-testid="sementara-status">{labelStatus}</Badge>
       </div>
       <p className="m-0 mt-0.5 text-[11.5px] text-ink3">Dicatat {item.oleh || "—"} · dipakai {waktuWib(item.usedAt)}{item.note ? ` · ${item.note}` : ""}</p>

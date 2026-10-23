@@ -10,6 +10,11 @@ export function rolesOf(user) {
   return user.role ? [user.role] : [];
 }
 
+// Peran yang BOLEH mencatat pemakaian bahan (izin unit:material:write) — cermin backend (constants/permissions.js ROLE_PERMISSIONS). Hanya untuk LABEL tombol di daftar ("Catat bahan" vs "Lihat bahan");
+// penegak tetap server (403). Dijaga tes frontend/tests/bahanDrawerRilis.test.js: daftar ini HARUS sama dengan peran ber-izin di backend.
+export const PERAN_CATAT_BAHAN = Object.freeze(["ADMIN", "OWNER", "PRODUCTION_WORKER", "PRODUCTION_LEAD", "WAREHOUSE"]);
+export const bisaCatatBahan = (user) => rolesOf(user).some((r) => PERAN_CATAT_BAHAN.includes(r));
+
 export function isAdminUser(user) {
   return rolesOf(user).includes("ADMIN");
 }

@@ -68,10 +68,10 @@ test("PemakaianAktualBagian: TIGA sumber selalu terlihat (kartu di luar panel fo
   assert.ok(!b.includes("addUnitMaterial") && !b.includes("api.catatPemakaianSementara") && !b.includes("api.ajukanBahanBaru"), "komponen ini hanya merakit; jalur API ada di formulir masing-masing");
 });
 
-test("PemakaianAktualBagian dipakai drawer Order Produksi DAN tab Bahan (tidak ada salinan lama tanpa 'Bahan belum ada'); stok belum diketahui → arahkan ke pemakaian sementara", () => {
+test("PemakaianAktualBagian dipakai drawer Order Produksi DAN tab Bahan (tidak ada salinan lama tanpa 'Bahan belum ada'); stok belum diketahui → jalur resmi dijelaskan", () => {
   const p = src("features", "production", "OrderProduksiPanel.jsx"); const t = src("features", "production", "bahan", "BahanTab.jsx"); const c = src("features", "production", "bahan", "CatatBahanBaru.jsx");
   assert.ok(p.includes("<PemakaianAktualBagian") && t.includes("<PemakaianAktualBagian")); assert.ok(!p.includes("PemilihBahanKatalog") && !p.includes("aktual-form"), "salinan lama di drawer sudah dibuang");
-  for (const k of ["aktual-ganti", "Ganti bahan", "aktual-dampak-stok", "Dampak stok", "aktual-ke-sementara", "Catat sebagai pemakaian sementara", "onPakaiSementara", "ketersediaanText"]) assert.ok(c.includes(k), k);
+  for (const k of ["aktual-ganti", "Ganti bahan", "aktual-dampak-stok", "Dampak stok", "aktual-ke-sementara", "Yang saya pakai bukan bahan ini", "onPakaiSementara", "ketersediaanText"]) assert.ok(c.includes(k), k);
 });
 
 test("Pemilih bahan: kategori + kata kunci dikirim BERSAMA (cari di dalam kategori), kategori tetap aktif saat mencari, saldo+satuan per baris, tombol 'Bahan belum ada?'", () => {
@@ -93,11 +93,11 @@ test("Bahan belum ada?: periksa kembar dulu, nama sama memblokir, mirip perlu ko
   assert.ok(!b.includes("addUnitMaterial"), "usulan/sementara tidak lewat jalur stok");
 });
 
-test("Bahan belum ada di katalog = SATU formulir (pemakaian sementara + usulan): status 'Perlu rekonsiliasi Gudang' SEBELUM konfirmasi dan SESUDAH tersimpan; usulan dulu lalu sementara bertaut; gagal di tengah tidak mengirim ulang usulan; nama yang sudah ada tidak memblokir sementara", () => {
+test("Bahan belum ada di katalog = SATU formulir (pemakaian sementara + usulan): status 'Perlu rekonsiliasi Gudang' SEBELUM konfirmasi dan SESUDAH tersimpan; usulan dulu lalu sementara bertaut; gagal di tengah tidak mengirim ulang usulan; nama SAMA PERSIS dengan katalog diblokir (server menolak), nama mirip boleh dengan alasan+asal wajib", () => {
   const b = src("features", "production", "bahan", "BahanBelumAda.jsx");
   for (const k of ["status-rekon-sebelum", "status-rekon-sesudah", "STATUS_REKON", "belum-ada-ringkasan", "Akan dicatat:", "usulan-centang", "usulkanEfektif", "proposalId: dibuat?.id || undefined", "if (usulkanEfektif && !dibuat)", "setUsulan(r.usulan)", "Hanya pemakaian yang masih dicoba", "kunciRef.current ??= kunciIdempoten(\"sementara\")", "if (sidikRef.current !== sidik)"]) assert.ok(b.includes(k), k);
   assert.ok(b.indexOf("api.ajukanBahanBaru") < b.indexOf("api.catatPemakaianSementara"), "usulan lebih dulu, lalu pemakaian sementara bertaut");
-  assert.match(b, /const sudahAda = !usulan && kembar\.adaSama;/); assert.match(b, /valid = namaOk && usulanOk && sementaraOk && \(bolehSementara \|\| usulkanEfektif\)/, "nama yang sudah ada tidak memblokir pemakaian sementara");
+  assert.match(b, /const sudahAda = !usulan && kembar\.adaSama;/); assert.match(b, /valid = namaOk && !blokKatalogSama && usulanOk && sementaraOk && alasanOk && asalOk && \(bolehSementara \|\| usulkanEfektif\)/, "nama sama persis dengan katalog diblokir; nama usulan terbuka/mirip tidak");
   assert.ok(!b.includes("addUnitMaterial") && !b.includes("Material Issue ke"), "tidak membuat Material Issue/stok");
 });
 

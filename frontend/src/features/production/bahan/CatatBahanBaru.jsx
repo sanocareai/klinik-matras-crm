@@ -13,7 +13,7 @@ import BahanBelumAda from "@/features/production/bahan/BahanBelumAda.jsx";
 import "@/features/production/bahan/bahan.css";
 const NADA = { green: "bh-ok", orange: "bh-warn", red: "bh-bad" };
 
-export default function CatatBahanBaru({ data, unitId, izin = {}, awalCariAwal = "", onDone, onTutup, onPakaiSementara = null }) {
+export default function CatatBahanBaru({ data, unitId, izin = {}, awalCariAwal = "", onDone, onTutup, onPakaiSementara = null, onTertinggal = null }) {
   const rencana = data.rencanaBahan?.plan ?? null; const total = data.pemakaianAktual?.total ?? [];
   const [baris, setBaris] = useState([]); const [catatan, setCatatan] = useState(""); const [status, setStatus] = useState({}); const [sibuk, setSibuk] = useState(false); const [infoRencana, setInfoRencana] = useState("");
   const kunciRef = useRef(new Map()); const kirimRef = useRef(false);
@@ -72,7 +72,7 @@ export default function CatatBahanBaru({ data, unitId, izin = {}, awalCariAwal =
           )}
           {infoRencana && <p role="status" data-testid="info-rencana" className="m-0 text-[12.5px] text-ink2">{infoRencana}</p>}
           {belumAda ? (
-            <BahanBelumAda unitId={unitId} kodeUnit={data.unit?.unitCode} izin={izin} awalNama={belumAda.nama} onTutup={() => setBelumAda(null)} onDone={onDone}
+            <BahanBelumAda unitId={unitId} kodeUnit={data.unit?.unitCode} izin={izin} awalNama={belumAda.nama} onTertinggal={onTertinggal} onTutup={() => setBelumAda(null)} onDone={onDone}
               onGunakanKatalog={(k) => { setAwalCari(k.nama); setVersiPemilih((v) => v + 1); setBelumAda(null); }} />
           ) : (
             <div ref={pemilihRef}><PemilihBahanKatalog key={versiPemilih} awalCari={awalCari} dipilihIds={dipilihIds} onTambah={(k) => setBaris((x) => tambahAktual(x, k))} disabled={sibuk} testid="aktual-pemilih" onBahanBelumAda={(bolehUsul || izin.catatPemakaianSementara) ? (nama) => setBelumAda({ nama }) : null} /></div>
@@ -106,7 +106,8 @@ export default function CatatBahanBaru({ data, unitId, izin = {}, awalCariAwal =
                     {st?.fase !== "ok" && <p data-testid="aktual-saldo" data-status={ks.status} className={cn("m-0 mt-1 text-[12px]", NADA[ks.nada])}>{ks.teks}{ks.sisaTeks ? <span data-testid="aktual-sisa"> · {ks.sisaTeks}</span> : null}</p>}
                     {st?.fase !== "ok" && ks.status === "tidak_diketahui" && onPakaiSementara && (
                       <div className="mt-1 flex flex-wrap gap-2" data-testid="aktual-alternatif">
-                        <Button variant="secondary" size="sm" className="min-h-[40px]" data-testid="aktual-ke-sementara" onClick={() => onPakaiSementara({ nama: b.nama, satuan: b.satuan })}>Catat sebagai pemakaian sementara</Button>
+                        <p className="m-0 basis-full text-[12px] text-ink2" data-testid="aktual-stok-tak-diketahui-jalur">Jalur resmi: minta Gudang mencatat stok awal/opname bahan ini (Stok &amp; Lokasi), lalu catat lagi lewat “Bahan dari Gudang”. Pemakaian sementara TIDAK bisa dipakai untuk bahan yang sudah ada di katalog dengan nama yang sama (ditolak server).</p>
+                        <Button variant="secondary" size="sm" className="min-h-[40px]" data-testid="aktual-ke-sementara" onClick={() => onPakaiSementara({ nama: "", satuan: b.satuan })}>Yang saya pakai bukan bahan ini</Button>
                       </div>
                     )}
                     {st?.fase === "sibuk" && <p className="m-0 mt-1 text-[12px] text-ink3">Mencatat…</p>}

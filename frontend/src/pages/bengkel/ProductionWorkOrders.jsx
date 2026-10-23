@@ -5,6 +5,8 @@ import { api } from "@/api.js";
 import { PageContainer, PageHeader, PageBody } from "@/components/ui/page.jsx";
 import { Card } from "@/components/ui/card.jsx";
 import { Button } from "@/components/ui/button.jsx";
+import { bisaCatatBahan } from "@/lib/roles.js";
+const bacaPengguna = () => { try { return JSON.parse(localStorage.getItem("user")); } catch { return null; } };
 import { Badge } from "@/components/ui/badge.jsx";
 import { EmptyState } from "@/components/ui/empty-state.jsx";
 import {
@@ -51,6 +53,8 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
   const bukaPanel = (u) => { setFokusPanel(null); setDetailUnit(u); };
   const bukaBahan = (u) => { setFokusPanel("bahan"); setDetailUnit(u); };
   const unitAktif = (u) => !["CANCELLED", "DELIVERED"].includes(u.status);
+  // Akun hanya-lihat tidak boleh melihat tombol yang berbunyi "Catat bahan": labelnya "Lihat bahan" (isi panel tetap sama; server menolak tulis).
+  const bisaCatat = bisaCatatBahan(bacaPengguna()); const labelBahan = bisaCatat ? "Catat bahan" : "Lihat bahan";
   const [ekspor, setEkspor] = useState({ sibuk: false, ok: "", galat: "" });
 
   useEffect(() => { const t = setTimeout(() => setQDebounced(cari.trim()), 300); return () => clearTimeout(t); }, [cari]);
@@ -225,7 +229,7 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
                           <TD data-testid="tindakan-berikutnya">
                             <span className="flex items-center gap-1 font-medium text-ink">{a.tindakan?.label || "—"}<ChevronRight size={14} className="shrink-0 text-ink3" aria-hidden /></span>
                             {a.tindakan?.aktor && a.tindakan.aktor !== "—" && <span className="block text-[12px] text-ink3">{a.tindakan.aktor}</span>}
-                            {unitAktif(u) && <Button variant="secondary" size="sm" className="mt-1.5 min-h-[36px]" data-testid="catat-bahan-baris" onClick={(e) => { e.stopPropagation(); bukaBahan(u); }}>Catat bahan</Button>}
+                            {unitAktif(u) && <Button variant="secondary" size="sm" className="mt-1.5 min-h-[36px]" data-testid="catat-bahan-baris" data-aksi={bisaCatat ? "catat" : "lihat"} onClick={(e) => { e.stopPropagation(); bukaBahan(u); }}>{labelBahan}</Button>}
                           </TD>
                         </TR>
                       );
@@ -268,7 +272,7 @@ export default function ProductionWorkOrders({ initialStatus = "", scope = "", o
                           <span className="text-ink3">Berikutnya:</span> <span className="min-w-0 flex-1 truncate">{a.tindakan?.label || "—"}</span><ChevronRight size={14} className="shrink-0 text-ink3" aria-hidden />
                         </div>
                       </button>
-                      {unitAktif(u) && <div className="px-4 pb-3"><Button variant="secondary" size="sm" className="min-h-[44px] w-full" data-testid="catat-bahan-baris" onClick={() => bukaBahan(u)}>Catat bahan</Button></div>}
+                      {unitAktif(u) && <div className="px-4 pb-3"><Button variant="secondary" size="sm" className="min-h-[44px] w-full" data-testid="catat-bahan-baris" data-aksi={bisaCatat ? "catat" : "lihat"} onClick={() => bukaBahan(u)}>{labelBahan}</Button></div>}
                     </li>
                   );
                 })}
