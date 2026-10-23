@@ -1,0 +1,11 @@
+LANGKAH WAJIB sebelum rollback KODE setelah migrasi/switch: jalankan GUARD (baca-saja)
+   bash ${NEW_DIR}/scripts/rollback-guard-ux-bahan.sh
+   - exit 0 (LULUS): tidak ada usulan menunggu dan tidak ada pemakaian sementara yang perlu rekonsiliasi. Baru boleh rollback kode (di bawah).
+   - exit 1/2 (DITOLAK): masih ada usulan menunggu / pemakaian sementara perlu rekonsiliasi (atau keadaan tidak jelas) — rollback kode TIDAK AMAN: antrean itu menjadi tak terlihat dan Gudang tidak lagi diingatkan.
+     Jalur pemulihan = PERBAIKAN MAJU (kode baru tetap terpasang): Gudang › Usulan Bahan — putuskan usulan; selesaikan/batalkan pemakaian sementara; lalu jalankan guard lagi. Pemulihan database (di bawah) hanya atas keputusan Owner.
+Rollback kode (HANYA setelah guard LULUS; tidak menghapus tabel, riwayat, maupun bahan yang dibuat dari usulan):
+   cd ${PREV_DIR:-<release-sebelumnya>}
+   docker tag ${ROLLBACK_TAG:-<tag-rollback>} ${IMG_NAME:-klinik-matras-backend:latest}
+   SANSS_PERSIST_ROOT=${PERSIST} docker compose -p ${PROJECT} -f docker-compose.yml -f docker-compose.release.yml up -d --no-deps --force-recreate backend
+Migrasi bersifat ADITIF (2 tabel baru + 7 indeks + 7 FK + 2 fungsi + 2 trigger): tabel dibiarkan terpasang setelah rollback kode. Tidak ada saldo, pergerakan stok, biaya, atau jurnal yang dibuat oleh fitur ini; hanya tampilan (usulan, pemakaian sementara, sumber status kerja) yang hilang dari layar lama.
+Pemulihan database penuh hanya bila terjadi kerusakan data: gzip -dc ${BACKUP_FILE:-<backup>} | psql ... (lihat checksum di atas) — MENGHAPUS semua perubahan sesudah backup (usulan, pemakaian sementara, transaksi); gunakan hanya atas keputusan Owner.

@@ -1,0 +1,19 @@
+# RILIS "UX BAHAN — usulan bahan katalog ('Bahan belum ada?') + pemakaian sementara + rekonsiliasi Gudang": WEB + BACKEND + 1 MIGRASI ADITIF (2 tabel baru kosong). RELEASE-DIRECTORY di atas release aktif (BASE_SHA). FAIL-CLOSED.
+#   Kode: Pemakaian aktual di atas Rencana (Ruang Kerja Unit + drawer Order Produksi lama); pemilih bahan per kategori katalog + cari di dalam kategori + saldo/satuan sebelum konfirmasi; "Bahan belum ada?" = usulan ke Gudang (HANYA baris usulan:
+#   tanpa Material, saldo, penerimaan, pergerakan, biaya, jurnal; Gudang/Admin berizin memutuskan: setujui → Material dibuat TANPA saldo awal / gabung / tolak); pemakaian SEMENTARA (bahan yang sudah terpakai tetapi belum punya sumber stok resmi:
+#   BUKAN Material Issue, tanpa saldo/biaya/jurnal; "Perlu rekonsiliasi Gudang"; boleh menjadi bukti "Sudah dikerjakan" dengan sumber khusus; koreksi/pembatalan beralasan + audit — catatan batal TIDAK lagi menjadi bukti kerja; rekonsiliasi
+#   HANYA menautkan pergerakan ISSUE resmi yang sudah ada atau menyatakan "bukan stok Gudang"); halaman Gudang › Usulan Bahan; sheet Excel "Pemakaian Sementara".
+#   Migrasi: 2 CREATE TABLE baru (kosong) + 7 indeks (2 unik parsial) + 7 FK ON DELETE RESTRICT + 2 fungsi penjaga + 2 trigger (anti-hapus, kolom asal terkunci, baris final). Tidak ada ALTER TABLE pada tabel lama, tidak ada backfill, tidak ada perubahan data lama.
+#   Produksi: rilis ini TIDAK membuat usulan, pemakaian sementara, bahan, pergerakan stok, jurnal, penerimaan, atau pesan pelanggan; smoke hanya baca + penolakan sebelum menyentuh data. Tidak ada transaksi QA.
+# URUTAN AMAN: (1) gerbang sumber (ancestry, allowlist, pin sha256 migrasi + diff schema, pemindai DDL + mutan negatif) → (2) audit produksi baca-saja + keadaan (SEGAR/LANJUT) + sidik jari → (3) backup + checksum → (4) build web + image
+#              → (5) REHEARSAL (restore NYATA, migrasi dengan image baru, struktur, kode baru terhadap data restore, sidik jari sebelum=sesudah) → (6) migrate deploy produksi SATU kali (backend lama tetap melayani) → (7) switch → (8) verifikasi + smoke baca-saja.
+#
+#   cat scripts/release-ux-bahan.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/ub1.sh'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/ub1.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'      # baca-saja: produksi TIDAK diubah
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/ub1.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rehearsal-only > /tmp/ub1r.out 2>&1 < /dev/null &'   # SEMUA gerbang sampai rehearsal pada restore nyata (migrasi diterapkan HANYA pada DB sementara); TANPA migrasi/switch produksi
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/ub1.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/ub1.out 2>&1 < /dev/null &'   # rilis penuh (hanya setelah persetujuan)
+#
+# ROLLBACK KODE: tabel baru bersifat ADITIF dan tidak memengaruhi stok/biaya/jurnal; kode lama mengabaikannya. TETAPI usulan MENUNGGU dan pemakaian sementara PERLU REKONSILIASI menjadi tak terlihat setelah rollback.
+#   Jalankan dulu scripts/rollback-guard-ux-bahan.sh (baca-saja): LULUS (exit 0) hanya bila tidak ada usulan menunggu dan tidak ada pemakaian sementara yang perlu rekonsiliasi; DITOLAK (exit 1) mencetak jumlah + contoh + tindakan.
+#   Bila ditolak, pemulihan = PERBAIKAN MAJU (kode baru tetap terpasang) sampai antrean selesai. Rollback kode (bila guard lulus) TIDAK menghapus tabel/riwayat; bahan yang sudah dibuat dari usulan tetap di katalog.
+# (dibangkitkan oleh scripts/gen-release-ux-bahan.cjs dari scripts/release-status-kerja-buka-pekerjaan.sh + scripts/templates/release-ux-bahan/*; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang)
