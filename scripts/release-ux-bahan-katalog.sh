@@ -16,7 +16,7 @@
 #
 # ROLLBACK: kode: pasang kembali image lama (tag rollback-pre-ubk-<sha8>) dan buat ulang container dari release sebelumnya; migrasi TIDAK perlu dibalik (hanya fungsi penjaga yang lebih ketat; tabel/kolom/data tidak berubah) dan aman untuk kode lama.
 #   Catatan tertaut katalog yang dibuat kode baru tampil sebagai pemakaian sementara biasa di UI lama; menautkannya ke bahan BERBEDA ditolak trigger.
-# (dibangkitkan oleh scripts/gen-release-ux-bahan-katalog.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 bd68ce2f31c3…)
+# (dibangkitkan oleh scripts/gen-release-ux-bahan-katalog.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 34a57fa299ac…)
 set -Eeuo pipefail
 umask 077
 
@@ -252,6 +252,11 @@ ok "keadaan production: ${KEADAAN} (baseline ${MIG_SEBELUM} migrasi; migrasi ril
 SKEMA_SQL="select md5(string_agg(x, '|' order by x)) from (select table_name||'.'||column_name||':'||data_type||':'||is_nullable||':'||coalesce(column_default,'') x from information_schema.columns where table_schema='public' union all select conrelid::regclass::text||':'||conname||':'||pg_get_constraintdef(oid) from pg_constraint where connamespace='public'::regnamespace union all select tablename||':'||indexname||':'||indexdef from pg_indexes where schemaname='public' union all select event_object_table||':'||trigger_name||':'||action_timing||':'||event_manipulation from information_schema.triggers where trigger_schema='public') s"
 FUNC_SQL="select md5(pg_get_functiondef('unit_provisional_usages_guard'::regproc))"
 SKEMA_PRA="$(psql_live -At -c "$SKEMA_SQL")"; [ -n "$SKEMA_PRA" ] || die "sidik jari skema produksi kosong"
+# Versi NORMAL untuk membandingkan production dengan salinan RESTORE: pg_dump/restore menampilkan ulang teks CHECK ... ANY (ARRAY[...]) secara berbeda (tanpa perubahan makna), jadi untuk constraint CHECK hanya nama yang dibandingkan.
+# Definisi CHECK tetap diperiksa PENUH: salinan sebelum vs sesudah migrasi (rendering sama), dan production sebelum vs sesudah (SKEMA_PRA).
+NORM_GANTI="case when contype='c' then 'CHECK' else pg_get_constraintdef(oid) end"; SKEMA_NORM_SQL="${SKEMA_SQL/pg_get_constraintdef(oid)/${NORM_GANTI}}"
+[ "$SKEMA_NORM_SQL" != "$SKEMA_SQL" ] || die "[skrip] sidik jari normal tidak terbentuk"
+SKEMA_NORM_PRA="$(psql_live -At -c "$SKEMA_NORM_SQL")"; [ -n "$SKEMA_NORM_PRA" ] || die "sidik jari skema (normal) produksi kosong"
 FUNC_PRA="$(psql_live -At -c "$FUNC_SQL")"; [[ "$FUNC_PRA" =~ ^[0-9a-f]{32}$ ]] || die "sidik jari fungsi penjaga tidak terbaca"
 ok "sidik jari skema (semua tabel/kolom/constraint/indeks/trigger) ${SKEMA_PRA:0:12}…; fungsi penjaga sebelum ${FUNC_PRA:0:12}…"
 KOREKSI_N="$(psql_live -At -c "select count(*) from warehouse_corrections")"; SM_N="$(psql_live -At -c "select count(*) from stock_movements")"; GR_N="$(psql_live -At -c "select count(*) from goods_receipts")"
@@ -331,7 +336,8 @@ rehearsal_migrasi() {
   ok "restore bersih: exit=0, error=0, warning=${RESTORE_WARN:-0}"
   RPSQL "$FP_BEKU_SQL" | LC_ALL=C sort > "$BK_DIR/fp-reh-beku.txt" || { reh_drop; die "sidik jari dokumen beku rehearsal gagal"; }
   cmp -s "$BK_DIR/data-sebelum.txt" "$BK_DIR/fp-reh-beku.txt" || { diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/fp-reh-beku.txt" || true; reh_drop; die "hasil RESTORE berbeda dari dokumen beku produksi"; }
-  [ "$(RPSQL "$SKEMA_SQL")" = "$SKEMA_PRA" ] || { reh_drop; die "skema hasil RESTORE berbeda dari skema produksi"; }
+  [ "$(RPSQL "$SKEMA_NORM_SQL")" = "$SKEMA_NORM_PRA" ] || { reh_drop; die "skema hasil RESTORE berbeda dari skema produksi"; }
+  SKEMA_REH_PRE="$(RPSQL "$SKEMA_SQL")"; [ -n "$SKEMA_REH_PRE" ] || { reh_drop; die "sidik jari skema salinan (sebelum migrasi) kosong"; }
   [ "$(RPSQL "$FUNC_SQL")" = "$FUNC_PRA" ] || { reh_drop; die "fungsi penjaga hasil RESTORE berbeda dari produksi"; }
   TABEL_LAMA="$(RPSQL "select tablename from pg_tables where schemaname='public' and tablename <> '_prisma_migrations' order by 1")"
   [ "$(printf '%s\n' "$TABEL_LAMA" | grep -c .)" -ge 100 ] || { reh_drop; die "jumlah tabel di restore mencurigakan"; }
@@ -347,7 +353,7 @@ rehearsal_migrasi() {
   grep -q "${MIG_NAME}" "$BK_DIR/migrate-rehearsal.log" || { reh_drop; die "migrate deploy pada salinan tidak menerapkan ${MIG_NAME}"; }
   [ "$(RPSQL "select count(*) from _prisma_migrations where finished_at is not null and rolled_back_at is null")" = "$(( LIVE_MIG_JUMLAH + 1 ))" ] || { reh_drop; die "jumlah migrasi pada salinan != baseline + 1"; }
   [ "$(RPSQL "select checksum from _prisma_migrations where migration_name='${MIG_NAME}'")" = "$RAW_SHA" ] || { reh_drop; die "checksum migrasi pada salinan BERBEDA dari berkas kandidat"; }
-  [ "$(RPSQL "$SKEMA_SQL")" = "$SKEMA_PRA" ] || { reh_drop; die "migrasi MENGUBAH skema tabel/kolom/constraint/indeks/trigger (hanya isi fungsi yang boleh berubah)"; }
+  [ "$(RPSQL "$SKEMA_SQL")" = "$SKEMA_REH_PRE" ] || { reh_drop; die "migrasi MENGUBAH skema tabel/kolom/constraint/indeks/trigger (hanya isi fungsi yang boleh berubah)"; }
   FUNC_REH="$(RPSQL "$FUNC_SQL")"; [[ "$FUNC_REH" =~ ^[0-9a-f]{32}$ ]] && [ "$FUNC_REH" != "$FUNC_PRA" ] || { reh_drop; die "isi fungsi penjaga tidak berubah/terbaca setelah migrasi"; }
   [ "$(RPSQL "select count(*) from pg_trigger where tgname='unit_provisional_usages_guard_trg' and not tgisinternal")" = "1" ] || { reh_drop; die "trigger penjaga tidak tepat satu setelah migrasi"; }
   RPSQL "$FP_ALL" | LC_ALL=C sort > "$BK_DIR/fp-all-pasca-migrasi.txt" || { reh_drop; die "sidik jari penuh pasca-migrasi gagal"; }

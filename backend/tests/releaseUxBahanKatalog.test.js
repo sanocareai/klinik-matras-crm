@@ -79,3 +79,11 @@ test("pustaka rehearsal dan smoke: rehearsal menulis HANYA pada salinan (dokumen
   assert.match(smoke, /SMOKE_HASIL fail=" \+ fail \+ " skip=" \+ dilewati/);
   assert.ok(script.includes("rehearsal-kode.mjs") && script.includes("REHEARSAL_KODE_BARU gagal=0") === false, "skrip memeriksa exit code uji aplikasi (bukan teks tetap)");
 });
+
+test("sidik jari skema: production vs salinan RESTORE memakai versi normal (CHECK hanya nama; pg_dump menampilkan ulang ANY(ARRAY)), definisi CHECK penuh dibandingkan sebelum vs sesudah migrasi", { skip: !punyaBash }, () => {
+  assert.ok(script.includes('NORM_GANTI="case when contype=\'c\' then \'CHECK\' else pg_get_constraintdef(oid) end"'));
+  assert.ok(script.includes('[ "$(RPSQL "$SKEMA_NORM_SQL")" = "$SKEMA_NORM_PRA" ]') && script.includes('SKEMA_REH_PRE="$(RPSQL "$SKEMA_SQL")"') && script.includes('[ "$(RPSQL "$SKEMA_SQL")" = "$SKEMA_REH_PRE" ]'));
+  assert.ok(!script.includes('[ "$(RPSQL "$SKEMA_SQL")" = "$SKEMA_PRA" ]'), "salinan restore tidak boleh dibandingkan dengan sidik jari penuh production");
+  const r = spawnSync("bash", ["-c", [script.split("\n").find((l) => l.startsWith("SKEMA_SQL=")), script.split("\n").find((l) => l.startsWith("NORM_GANTI=")), 'echo "$SKEMA_NORM_SQL"'].join("\n")], { encoding: "utf8" });
+  assert.ok(r.stdout.includes("case when contype='c' then 'CHECK' else pg_get_constraintdef(oid) end from pg_constraint") && !r.stdout.includes("pg_get_constraintdef(oid) from pg_constraint"), r.stdout.slice(0, 300) + r.stderr);
+});
