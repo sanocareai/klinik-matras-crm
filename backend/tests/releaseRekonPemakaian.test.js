@@ -63,7 +63,7 @@ test("rehearsal-penuh wajib sebelum rilis penuh (bukti 36 jam, SHA + baseline sa
   assert.match(script, /fungsi LAMA berubah setelah migrasi/); assert.match(script, /migrasi MENGUBAH skema tabel LAMA di luar 5 pernyataan yang diaudit/);
   assert.match(script, /\(to_jsonb\(x\) - 'origin_type' - 'origin_id'\)/, "sidik jari penyesuaian stok mengecualikan kolom baru");
   assert.ok(script.indexOf('PHASE="6-migrate"') < script.indexOf('PHASE="7-switch"') && script.indexOf('PHASE="7-switch"') < script.indexOf('PHASE="8b-smoke"'));
-  assert.match(script, /rollback-pre-rkp-/); assert.match(script, /migrasi TIDAK dibalik|Migrasi TIDAK perlu dibalik/);
+  assert.match(script, /rollback-pre-rkp-/); assert.match(script, /[Mm]igrasi (TIDAK perlu dibalik|tidak dibalik)/);
 });
 
 test("pemindai DDL: migrasi nyata lolos (4 CREATE TABLE, 5 pernyataan tabel lama persis); mutan DROP/UPDATE/DELETE/INSERT/ALTER/kolom NOT NULL/pagar longgar/FK CASCADE/fungsi liar/badan berbahaya/constraint audit hilang DITOLAK", () => {
