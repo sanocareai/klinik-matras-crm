@@ -179,3 +179,26 @@ test("S1. koreksi SALDO bahan tanpa sesi opname penuh: saldoBaru + asal tertaut;
   assert.equal(await saldo(w.kain.id), s0, "saldo tidak berubah saat permintaan dibuat");
   const buruk = await w.ca.post("/api/inventory/adjustments", { materialId: w.kain.id, adjustmentType: "DATA_CORRECTION", saldoBaru: 18, reason: "asal setengah", originType: "USAGE_NOTE" }); assert.equal(buruk.status, 400);
 });
+
+test("M1. bahan belum di katalog: master baru dibuat TANPA stok; catatan terpetakan otomatis HANYA bila nama persis; hasil 'belum ada catatan stok' (bukan nol)", async () => {
+  const w = await dunia({ csvExtra: [baris(7, "RES-02092026-802", "2 Sep 26", "Lain-lain", "TAG LABEL WOVEN REKON", "1,0", "PCS")] });
+  const n = await catatan(w.u2.id, "TAG LABEL WOVEN REKON"); assert.equal(n.state, "PERLU_DICEK"); assert.equal(n.materialId, null); assert.equal(n.flags[0].kode, "NAMA_TIDAK_DI_KATALOG");
+  const mv0 = await testPrisma.stockMovement.count();
+  const r = await w.ca.post("/api/inventory/materials", { code: "TAG-LABEL-WOVEN-REKON", name: "TAG LABEL WOVEN REKON", unit: "PCS" }); assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.equal(await testPrisma.stockMovement.count(), mv0, "membuat master TIDAK menambah stok");
+  const ev = await w.ca.post("/api/production/catatan-historis/evaluasi", {}); assert.equal(ev.status, 200);
+  const sesudah = await catatan(w.u2.id, "TAG LABEL WOVEN REKON"); assert.equal(sesudah.materialId, r.body.id); assert.equal(sesudah.state, "PERLU_DICEK"); assert.equal(sesudah.flags[0].kode, "TANPA_SALDO_PEMBUKA", "master baru = belum ada catatan stok, BUKAN saldo nol");
+  assert.equal(await testPrisma.stockMovement.count(), mv0);
+  assert.ok(await testPrisma.unitUsageNoteEvent.findFirst({ where: { noteId: n.id, kind: "DIEVALUASI" } }));
+});
+
+test("H1. rute catatan: baca per unit, koreksi lewat HTTP (Idempotency-Key wajib), izin baca saja tidak boleh menulis", async () => {
+  const w = await dunia(); const sales = await createTestUser({ roles: ["SALES"] }); const cs = makeClient(server.baseUrl, sales.token);
+  const g = await w.ca.get(`/api/production/units/${w.u1.id}/catatan-historis`); assert.equal(g.status, 200); assert.equal(g.body.ringkas.total, 2);
+  const n = await catatan(w.u1.id, "KAIN LAVA REKON");
+  const tanpaKunci = await w.ca.post(`/api/production/catatan-historis/${n.id}/koreksi`, { qty: 2.1, alasan: "konfirmasi 2,1 m" }); assert.equal(tanpaKunci.status, 428);
+  const k = kunciUji("h1"); const ok = await w.ca.post(`/api/production/catatan-historis/${n.id}/koreksi`, { qty: 2.1, alasan: "konfirmasi 2,1 m" }, { "Idempotency-Key": k }); assert.equal(ok.status, 201, JSON.stringify(ok.body));
+  const ulang = await w.ca.post(`/api/production/catatan-historis/${n.id}/koreksi`, { qty: 2.1, alasan: "konfirmasi 2,1 m" }, { "Idempotency-Key": k }); assert.equal(ulang.status, 200);
+  const dilarang = await cs.post(`/api/production/catatan-historis/${n.id}/koreksi`, { qty: 1, alasan: "coba tulis" }, { "Idempotency-Key": kunciUji("h2") }); assert.equal(dilarang.status, 403);
+  const lihat = await cs.get(`/api/production/units/${w.u1.id}/catatan-historis`); assert.equal(lihat.status, 200, "peran baca-saja boleh melihat");
+});

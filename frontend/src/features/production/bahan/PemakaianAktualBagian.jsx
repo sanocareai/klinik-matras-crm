@@ -10,6 +10,7 @@ import FormKomponenLama from "@/features/production/bahan/FormKomponenLama.jsx";
 import KomponenLamaDaftar from "@/features/production/bahan/KomponenLamaDaftar.jsx";
 import PemakaianSementaraDaftar from "@/features/production/bahan/PemakaianSementaraDaftar.jsx";
 import RiwayatBahanBaru from "@/features/production/bahan/RiwayatBahanBaru.jsx";
+import CatatanHistorisBagian from "@/features/production/bahan/CatatanHistorisBagian.jsx";
 import "@/features/production/bahan/bahan.css";
 import { DAMPAK_SEMENTARA, JUDUL_AKTUAL, KARTU_SUMBER, SATUAN_KOMPONEN as SATUAN_LIST, SUMBER_SEMENTARA, asalKomponen } from "@/features/production/bahan/bahanModel.js";
 
@@ -109,6 +110,8 @@ export default function PemakaianAktualBagian({ unitId, data, izin, aktif, onDon
         {adaLama ? <KomponenLamaDaftar unitId={unitId} kodeUnit={kodeUnit} data={kl} bolehUbah={!!izin.pemakaianAktual} aktif={aktif} meta={{ fotoMaks: 3 }} onDone={onDone} />
           : <p className="m-0 rounded-btn bg-inset px-3 py-2.5 text-[13px] text-ink" data-testid="komponen-lama-kosong">Belum ada komponen lama yang dipakai kembali atau dilepas. {boleh ? "Pilih “Komponen lama dari kasur ini” di atas." : ""}</p>}
       </div>
+
+      <CatatanHistorisBagian data={data} unitId={unitId} izin={izin} onDone={onDone} />
     </section>
   );
 }

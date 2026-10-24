@@ -57,6 +57,7 @@ function klasifikasi(items, ctx, garisWaktu, { sekarang = new Date() } = {}) {
     if (!m && KOMPONEN_LAMA_RE.test(i.rawName ?? "")) { hasil.set(i.key, { state: STATE.BUKAN_STOK, flags: [FLAG.KOMPONEN_LAMA()], linkKind: null, stockMovementId: null }); continue; }
     if (!i.orderFound) flags.push(FLAG.ORDER_TIDAK_ADA({ orderNumber: i.orderNumber }));
     else if (!i.unitId) flags.push(FLAG.UNIT_TIDAK_PASTI({ jumlahUnit: i.units.length }));
+    else if (i.units.find((u) => u.id === i.unitId)?.status === "CANCELLED") flags.push(FLAG.UNIT_DIBATALKAN({ unitCode: i.units.find((u) => u.id === i.unitId)?.unitCode }));
     if (i.qty === null || i.qty === undefined || !(Number(i.qty) > 0)) flags.push(FLAG.QTY_TIDAK_VALID({ rawQty: i.rawQty }));
     if (!i.usedAt) flags.push(FLAG.TANGGAL_TIDAK_VALID({ rawDate: i.rawDate }));
     if (!m) { const g = i.pemetaan; flags.push(g?.galat === "BAHAN_GANDA" ? FLAG.BAHAN_GANDA({ rawName: i.rawName, kandidat: g.kandidat }) : FLAG.NAMA_TIDAK_DI_KATALOG({ rawName: i.rawName, kandidat: g?.kandidat ?? [] })); }
@@ -228,10 +229,20 @@ export async function evaluasiUlang(prisma, { actorId = null, unitIds = null, se
   const dk = (n) => [n.orderNumber, normNama(n.rawName), normNama(n.rawSpec), n.rawQty, normNama(n.rawUom)].join("|");
   const hit = new Map(); for (const n of notes) { if (n.state === STATE.TIDAK_DIHITUNG) continue; hit.set(dk(n), (hit.get(dk(n)) ?? 0) + 1); } // baris yang sudah dikecualikan tidak lagi dihitung berulang
   const items = notes.map((n) => { const it = noteKeItem(n, ctx.orderBy.get(n.orderNumber)?.units ?? []); if ((hit.get(dk(n)) ?? 0) > 1) it.dupKey = dk(n); if (!n.materialId && n.rawName) it.pemetaan = petakanBahan({ nama: n.rawName, spek: n.rawSpec }, ctx.katalog); return it; });
+  // Bahan master BARU yang namanya persis sama dengan nama di berkas (dibuat Gudang tanpa stok) dipetakan otomatis — tanpa menebak: hanya NAMA/KODE PERSIS. Berjejak (peristiwa DIEVALUASI).
+  let berubah = 0; const detail = [];
+  for (const it of items) {
+    if (it.materialId || it.tetap || !it.pemetaan?.bahan) continue;
+    const n = notes.find((x) => x.id === it.id); const m = it.pemetaan.bahan;
+    await prisma.$transaction(async (tx) => {
+      await tx.unitUsageNote.update({ where: { id: n.id }, data: { materialId: m.id, mapVia: it.pemetaan.via, evaluatedAt: new Date() } });
+      await tx.unitUsageNoteEvent.create({ data: { noteId: n.id, kind: "DIEVALUASI", before: { materialId: null }, after: { materialId: m.id, kode: m.code, via: it.pemetaan.via }, reason: "Bahan kini ada di katalog dengan nama/kode persis sama", actorId } });
+    });
+    it.materialId = m.id; it.via = it.pemetaan.via; n.materialId = m.id; n.mapVia = it.pemetaan.via; berubah++; detail.push({ baris: n.sourceRow, dipetakanKe: m.code });
+  }
   const idMat = [...new Set([...items.map((i) => i.materialId), ...ctx.lama.map((m) => m.materialId)].filter(Boolean))];
   const gw = await muatGarisWaktu(prisma, idMat);
   const klas = klasifikasi(items, ctx, gw, { sekarang });
-  let berubah = 0; const detail = [];
   for (const n of notes) {
     if (FIXED.has(n.state)) continue;
     const h = klas.get(n.sourceKey); if (!h) continue;

@@ -1055,6 +1055,17 @@ export const api = {
   // Idempotency-Key (opsional, 12–128 karakter): klik ganda / retry jaringan / dua permintaan bersamaan mencatat pemakaian TEPAT SEKALI (adopsi Admin).
   addUnitMaterial: (unitId, { materialId, qty, note } = {}, idempotencyKey = null) =>
     request(`/units/${unitId}/materials`, { method: "POST", ...(idempotencyKey ? { headers: { "Idempotency-Key": idempotencyKey } } : {}), body: JSON.stringify({ materialId, qty, note }) }),
+  // ── Rekonsiliasi pemakaian: catatan historis (Excel Admin Sales), koreksi berjejak, posting terpadu. Semua tulis wajib Idempotency-Key.
+  getCatatanHistoris: (unitId) => request(`/production/units/${unitId}/catatan-historis`),
+  koreksiCatatanHistoris: (id, data, kunci) => request(`/production/catatan-historis/${id}/koreksi`, { method: "POST", headers: { "Idempotency-Key": kunci }, body: JSON.stringify(data) }),
+  konfirmasiCatatanHistoris: (id, data, kunci) => request(`/production/catatan-historis/${id}/konfirmasi`, { method: "POST", headers: { "Idempotency-Key": kunci }, body: JSON.stringify(data) }),
+  kecualikanCatatanHistoris: (id, data, kunci) => request(`/production/catatan-historis/${id}/kecualikan`, { method: "POST", headers: { "Idempotency-Key": kunci }, body: JSON.stringify(data) }),
+  pratinjauKoreksiPemakaian: (unitId, data) => request(`/production/units/${unitId}/koreksi-pemakaian/pratinjau`, { method: "POST", body: JSON.stringify(data) }),
+  ajukanKoreksiPemakaian: (unitId, data, kunci) => request(`/production/units/${unitId}/koreksi-pemakaian`, { method: "POST", headers: { "Idempotency-Key": kunci }, body: JSON.stringify(data) }),
+  daftarKoreksiPemakaian: (q = {}) => request(`/production/koreksi-pemakaian${Object.keys(q).length ? `?${new URLSearchParams(q)}` : ""}`),
+  setujuiKoreksiPemakaian: (id, data = {}) => request(`/production/koreksi-pemakaian/${id}/setujui`, { method: "POST", body: JSON.stringify(data) }),
+  tolakKoreksiPemakaian: (id, data) => request(`/production/koreksi-pemakaian/${id}/tolak`, { method: "POST", body: JSON.stringify(data) }),
+  batalKoreksiPemakaian: (id, data = {}) => request(`/production/koreksi-pemakaian/${id}/batal`, { method: "POST", body: JSON.stringify(data) }),
   // ── Order Produksi · adopsi Admin (tiga sumbu status, status kerja manual, rencana bahan, ekspor Excel)
   getUnitAdopsi: (unitId) => request(`/production/units/${unitId}/adopsi`),
   // Rencana Admin (jadwal produksi per unit TANPA Run): kalender mingguan, rincian hari, antrean per tindakan, jadwal/keluarkan/undo + riwayat. Idempotency-Key per percobaan.

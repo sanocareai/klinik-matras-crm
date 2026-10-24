@@ -149,3 +149,14 @@ test("C6. impor tidak mengubah ISSUE lama, saldo, atau tampilan 'Pemakaian aktua
   assert.deepEqual(sesudah.map((m) => [m.id, String(m.qty), m.createdAt.toISOString()]), sebelum.map((m) => [m.id, String(m.qty), m.createdAt.toISOString()]));
   assert.equal(w.m.busa.id !== undefined, true);
 });
+
+test("C7. pemakaian pada unit DIBATALKAN ditandai 'Perlu dicek' (tidak diam-diam dianggap wajar); unit DELIVERED tidak", async () => {
+  const kain = await createTestMaterial({ code: "T-KAIN7", name: "KAIN UJI BATAL", unit: "METER" }); await seedBalance(kain.id, 50, { createdAt: WIB("2026-09-01") });
+  const mk = async (no, status) => { const { order, unit } = await createTestUnit({ status }); await testPrisma.order.update({ where: { id: order.id }, data: { orderNumber: no } }); return unit; };
+  const uB = await mk("RES-04092026-904", "CANCELLED"); const uD = await mk("RES-04092026-905", "DELIVERED");
+  const csv2 = csv([baris(1, "RES-04092026-904", "4 Sep 26", "Bahan Lapisan", "KAIN UJI BATAL", "", "1,0", "METER"), baris(2, "RES-04092026-905", "4 Sep 26", "Bahan Lapisan", "KAIN UJI BATAL", "", "1,0", "METER")]);
+  await terapkanImpor(testPrisma, await rencanakanImpor(testPrisma, { csvText: csv2, namaBerkas: "batal.csv" }), {});
+  const b = await testPrisma.unitUsageNote.findFirst({ where: { unitId: uB.id } }); const d = await testPrisma.unitUsageNote.findFirst({ where: { unitId: uD.id } });
+  assert.equal(b.state, "PERLU_DICEK"); assert.deepEqual(flagKode(b), ["UNIT_DIBATALKAN"]); assert.match(b.flags[0].aksi, /retur/);
+  assert.equal(d.state, "SIAP_POSTING");
+});

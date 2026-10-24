@@ -1,3 +1,4 @@
+import { CatatanRingkas } from "@/features/production/bahan/CatatanHistorisBagian.jsx";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "@/features/production/bahan/bahan.css";
 import { AlertTriangle, CheckCircle2, ChevronRight, Info, Package, ScrollText, SlidersHorizontal } from "lucide-react";
@@ -107,6 +108,7 @@ export default function OrderProduksiPanel({ unitId, fokus = null, onClose, onCh
               <Status3 ad={ad} unitStatus={u.status} penerimaan={data.penerimaan} />
               <TindakanUtama data={data} aktif={aktif} onDone={sesudahUbah} onBukaUnit360={() => onBukaUnit360?.(unitId)} />
               <KartuPenerimaan data={data} aktif={aktif} onDone={sesudahUbah} />
+              <CatatanRingkas data={data} />
             </div>
 
             {/* Bilah lompat: semua bagian tetap terjangkau tanpa menggulir melewati bagian lain */}

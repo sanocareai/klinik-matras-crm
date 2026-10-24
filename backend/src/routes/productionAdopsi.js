@@ -30,6 +30,7 @@ import { ajukanBahanBaru, cekKembarBahan, daftarUsulan, putuskanUsulan } from ".
 import { ambilPemakaianSementaraUnit, batalkanPemakaianSementara, catatPemakaianSementara, daftarPemakaianSementara, kandidatPergerakan, koreksiPemakaianSementara, rekonsiliasiPemakaianSementara } from "../services/unitProvisionalUsageService.js";
 import { loadRiwayatUnit } from "../services/productionRiwayatService.js";
 import { ambilCatatanHistoris, riwayatCatatanUnit } from "../services/catatanPemakaianHistoris.js";
+import { riwayatKoreksiPemakaian } from "../services/koreksiPemakaian.js";
 import { bacaJejakUnit } from "../services/finance/biayaBahan.js";
 import { buatWorkbookOrderProduksi, namaBerkasEkspor } from "../services/productionOrderExport.js";
 import { MANUAL_STATUSES, WORK_STATUS, penghalangStatusOrder, tindakanBerikutnya } from "../lib/domain/productionWorkStatus.js";
@@ -50,6 +51,7 @@ function handleErr(err, res) {
 }
 
 const bolehUbah = (user) => ({
+  catatanHistoris: hasPermission(user, P.INVENTORY_WRITE) || hasPermission(user, P.UNIT_MATERIAL_WRITE), // koreksi catatan historis / ajukan koreksi pemakaian (penyetuju terpisah: inventory:adjustment_approve)
   statusOrder: hasPermission(user, P.ORDER_WRITE), // jalur Sales yang sama
   statusKerja: hasPermission(user, P.UNIT_ROUTING_WRITE),
   target: hasPermission(user, P.UNIT_ROUTING_WRITE),
@@ -84,14 +86,17 @@ productionAdopsiRouter.get("/units/:id/adopsi", requirePermission(P.UNIT_READ), 
       ambilPenerimaanWorkshop(prisma, unit.id), ambilPemakaianSementaraUnit(prisma, unit.id),
     ]);
     // Catatan pemakaian historis (Excel Admin Sales): tampil walau belum/tidak menjadi pengeluaran stok; TIDAK dijumlahkan ke "Pemakaian aktual" dan tidak mengubah status kerja.
-    const [catatanHistoris, riwayatHistoris, jejakBiaya] = await Promise.all([
-      ambilCatatanHistoris(prisma, unit.id), riwayatCatatanUnit(prisma, unit.id),
+    const [catatanHistoris, riwayatCatatan, riwayatKoreksi, jejakBiaya] = await Promise.all([
+      ambilCatatanHistoris(prisma, unit.id), riwayatCatatanUnit(prisma, unit.id), riwayatKoreksiPemakaian(prisma, unit.id),
       bacaJejakUnit(prisma, unit.id, { izinHarga: hasPermission(req.user, P.FINANCE_READ) }),
     ]);
+    const riwayatHistoris = [...riwayatCatatan, ...riwayatKoreksi];
+    // gap dikelompokkan per jenis (bukan satu baris per pergerakan) supaya terbaca
+    const gapRingkas = jejakBiaya ? [...new Map(jejakBiaya.belumFinal.filter((g) => g.jenis !== "FAKTUR_BELUM_ADA").map((g) => [g.jenis, { jenis: g.jenis, jumlah: 0, pesan: g.pesan }])).values()].map((g) => ({ ...g, jumlah: jejakBiaya.belumFinal.filter((x) => x.jenis === g.jenis).length })) : [];
     const hppBahan = jejakBiaya && {
       status: jejakBiaya.statusBiaya, parsial: jejakBiaya.ringkasan.parsial, final: !jejakBiaya.ringkasan.parsial && jejakBiaya.statusBiaya === "FINAL_MENURUT_HARGA_PO",
       nilaiTerhitung: jejakBiaya.ringkasan.biayaPersediaan?.nilai ?? null, lihatNilai: hasPermission(req.user, P.FINANCE_READ),
-      gap: jejakBiaya.belumFinal.filter((g) => g.jenis !== "FAKTUR_BELUM_ADA").map((g) => ({ jenis: g.jenis, pesan: g.pesan })),
+      gap: gapRingkas,
       catatan: jejakBiaya.ringkasan.parsial ? "Nilai di atas hanya bagian yang sudah pasti. Bukan HPP final — lihat gap." : null,
     };
     const { penerimaan: penerimaanAktif, riwayat: riwayatPenerimaan } = penerimaan;
