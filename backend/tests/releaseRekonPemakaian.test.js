@@ -113,12 +113,61 @@ test("pemeriksaan pasca-switch (pasca_cek, kode yang SAMA dipakai rehearsal dan 
   assert.match(script, /pemeriksaan pasca-switch LOLOS pada salinan SEBELUM migrasi/); assert.match(script, /pasca_cek RPSQL "\$SKEMA_REH_PRE" \|\| \{ reh_drop; die "pemeriksaan pasca-switch pada salinan baseline \+ 1 GAGAL/);
 });
 
-test("guard rollback baca-saja: tiga keadaan (KOSONG exit 0, ADA DATA exit 10, TERBUKA exit 20), transaksi READ ONLY, dipakai di rehearsal dan fase 8; menolak hanya bila koreksi pemakaian menunggu", () => {
+// ── guard rollback: perilaku dengan psql PALSU (tanpa database) ──
+import os from "node:os";
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "guard-rekon-"));
+function psqlPalsu(skenario) { // skenario: { pola: nilai } — kueri yang cocok pola pertama dijawab nilainya; lainnya 0; tabel baru = 4 kecuali tabelBaru
+  const esc = (p) => p.split("\\").join("\\\\").split('"').join('\\"').split("$").join("\\$").split("`").join("\\`");
+  const kasus = Object.entries(skenario).map(([p, v]) => `  *"${esc(p)}"*) echo ${v};;`).join("\n");
+  const f = path.join(tmp, `psql-${Math.random().toString(36).slice(2)}.sh`);
+  fs.writeFileSync(f, `#!/usr/bin/env bash\nsql="$(cat)"\ncase "$sql" in\n${kasus}\n  *information_schema.tables*) echo 4;;\n  *) echo 0;;\nesac\n`, { mode: 0o755 }); return f;
+}
+const SKEN = {
+  kosong: {},
+  catatan: { "origin = 'EXCEL'": 12, "from unit_usage_note_events": 12, "from usage_import_batches": 1 },
+  posting: { "origin = 'EXCEL'": 12, "link_kind = 'POSTING_HISTORIS'": 3, "state = 'DIPOSTING'": 3, "from usage_import_batches": 1 },
+  koreksiMenunggu: { "doc_type = 'UNIT_USAGE' and status = 'PENDING_APPROVAL'": 1, "doc_type = 'UNIT_USAGE'; commit": 1 },
+  hanyaKoreksiHarga: { "from fin_stock_movement_valuation_corrections": 2 },
+  hanyaPenyesuaianAsal: { "origin_type is not null": 1 },
+  tabelTidakLengkap: { "information_schema.tables": 0 },
+  bukanAngka: { "from usage_import_batches": "ERROR" },
+};
+const guardBash = (nama) => spawnSync("bash", [path.join(repo, "scripts/rollback-guard-rekon-pemakaian.sh")], { encoding: "utf8", env: { ...process.env, GUARD_PSQL: psqlPalsu(SKEN[nama]) } });
+const stubBin = path.join(tmp, "bin"); fs.mkdirSync(stubBin); fs.writeFileSync(path.join(stubBin, "docker"), "#!/usr/bin/env bash\nexit 0\n", { mode: 0o755 });
+const pemanggil = (nama, ...arg) => spawnSync("bash", [path.join(repo, "scripts/rollback-rekon-pemakaian.sh"), repo, "klinik-matras-backend:rollback-pre-rkp-uji", ...arg], { encoding: "utf8", env: { ...process.env, PATH: `${stubBin}${path.delimiter}${process.env.PATH}`, GUARD_PSQL: psqlPalsu(SKEN[nama]) } });
+
+test("guard rollback: HANYA tabel kosong (exit 0) yang boleh rollback; ada catatan/posting → DITOLAK (10); koreksi menunggu → DITOLAK (20); tabel tak lengkap → 1; bukan angka → 2; tak pernah menyebut 'rollback aman' pada keadaan berisi", { skip: !punyaBash }, () => {
+  const k = guardBash("kosong"); assert.equal(k.status, 0, k.stdout + k.stderr); assert.match(k.stdout, /KEADAAN: KOSONG/); assert.match(k.stdout, /rollback kode rutin BOLEH/);
+  for (const nama of ["catatan", "posting", "hanyaKoreksiHarga", "hanyaPenyesuaianAsal"]) {
+    const g = guardBash(nama); assert.equal(g.status, 10, `${nama}: ${g.stdout}${g.stderr}`); assert.match(g.stdout, /ROLLBACK RUTIN DITOLAK \(exit 10\)/); assert.match(g.stdout, /MENYEMBUNYIKAN/); assert.match(g.stdout, /PERBAIKAN MAJU/); assert.match(g.stdout, /KEPUTUSAN PEMULIHAN KHUSUS/);
+    assert.ok(!/rollback (kode )?(tetap )?aman|GUARD LULUS/i.test(g.stdout), `${nama}: keadaan berisi tidak boleh disebut aman/lulus`);
+  }
+  const p = guardBash("posting"); assert.match(p.stdout, /3 catatan sudah DIPOSTING menjadi 3 pergerakan stok/); assert.match(p.stdout, /TETAP berlaku/);
+  const c = guardBash("koreksiMenunggu"); assert.equal(c.status, 20, c.stdout + c.stderr); assert.match(c.stdout, /ROLLBACK RUTIN DITOLAK \(exit 20\)/); assert.match(c.stdout, /MENUNGGU persetujuan/);
+  assert.equal(guardBash("tabelTidakLengkap").status, 1); assert.equal(guardBash("bukanAngka").status, 2);
+});
+
+test("pemanggil rollback resmi menolak SEMUA exit guard selain 0 (exit 30, tanpa menjalankan apa pun, termasuk dengan --jalankan); hanya guard 0 yang menghasilkan rencana", { skip: !punyaBash }, () => {
+  const ok = pemanggil("kosong"); assert.equal(ok.status, 0, ok.stdout + ok.stderr); assert.match(ok.stdout, /RENCANA rollback kode \(guard KOSONG\)/); assert.match(ok.stdout, /rencana saja/);
+  for (const nama of ["catatan", "posting", "koreksiMenunggu", "hanyaKoreksiHarga", "hanyaPenyesuaianAsal", "tabelTidakLengkap", "bukanAngka"]) {
+    for (const mode of [[], ["--jalankan"]]) {
+      const r = pemanggil(nama, ...mode); assert.equal(r.status, 30, `${nama} ${mode}: ${r.stdout}${r.stderr}`); assert.match(r.stdout, /ROLLBACK RUTIN DITOLAK \(guard exit \d+\)/); assert.match(r.stdout, /perbaikan maju atau keputusan pemulihan khusus/); assert.ok(!/RENCANA rollback kode|docker tag/.test(r.stdout), `${nama}: tidak boleh ada rencana/perintah`);
+    }
+  }
+  assert.equal(spawnSync("bash", [path.join(repo, "scripts/rollback-rekon-pemakaian.sh")], { encoding: "utf8" }).status, 64, "tanpa argumen = galat pemakaian");
+});
+
+test("guard baca-saja: semua kueri dalam 'begin read only', tanpa DML/DDL di badan guard; mode --uji-baca-saja mencoba UPDATE dan menuntut penolakan; skrip rilis memakai guard di rehearsal (0 → 30 → 30 + sidik jari seluruh salinan) dan fase 8 (die bila bukan 0); instruksi rollback lewat pemanggil resmi", () => {
   const g = baca("scripts/rollback-guard-rekon-pemakaian.sh");
-  assert.match(g, /begin read only;/); assert.ok(!/\b(insert|update|delete|drop|truncate|alter)\b\s/i.test(g.split("\n").filter((l) => !l.startsWith("#") && !/echo|KEADAAN|GUARD/.test(l)).join("\n")), "guard tidak memuat DML/DDL");
-  for (const kode of ["exit 0", "exit 10", "exit 20", "exit 1", "exit 2"]) assert.ok(g.includes(kode), kode);
-  assert.match(g, /KOR_PENDING.*PENDING_APPROVAL/); assert.match(g, /GUARD MENOLAK \(exit 20\)/); assert.match(g, /KEADAAN: KOSONG/); assert.match(g, /KEADAAN: ADA DATA/);
-  assert.match(g, /fin_stock_movement_valuation_corrections/); assert.match(g, /origin_type is not null/); assert.match(g, /link_kind = 'POSTING_HISTORIS'/);
-  assert.match(script, /guard_reh 0/); assert.match(script, /guard_reh "\$GUARD_HARAP"/); assert.match(script, /guard_reh 10/); assert.match(script, /rollback-guard-rekon-pemakaian\.sh/);
-  const punya = spawnSync("bash", ["-n", path.join(repo, "scripts/rollback-guard-rekon-pemakaian.sh")], { encoding: "utf8" }); if (punyaBash) assert.equal(punya.status, 0, punya.stderr);
+  assert.match(g, /begin read only;/); assert.match(g, /--uji-baca-saja/); assert.match(g, /update _prisma_migrations set checksum = checksum where false/);
+  const kode = g.split("\n").filter((l) => !l.startsWith("#") && !/echo|exit \d/.test(l)).join("\n"); assert.ok(!/\b(insert into|delete from|drop |truncate|alter table|create table)\b/i.test(kode), "guard tidak memuat DML/DDL selain uji penolakan");
+  for (const kode2 of ["exit 0", "exit 10", "exit 20", "exit 1", "exit 2", "exit 3"]) assert.ok(g.includes(kode2), kode2);
+  assert.ok(!/GUARD LULUS DENGAN CATATAN|rollback kode aman/i.test(g), "tidak ada lagi 'lulus dengan catatan' / 'rollback kode aman'");
+  assert.match(script, /fp_penuh\(\)/); assert.match(script, /guard MENGUBAH data: sidik jari seluruh salinan berbeda/); assert.match(script, /--uji-baca-saja/);
+  assert.match(script, /guard_reh 0; caller_reh 0/); assert.match(script, /caller_reh 30/); assert.match(script, /guard_reh 10; caller_reh 30/);
+  const fase8 = script.slice(script.indexOf('PHASE="8b-smoke"'), script.indexOf('PHASE="9-pembersihan"'));
+  assert.match(fase8, /\[ "\$GUARD_RC" = "0" \] \|\| die "guard rollback exit/); assert.ok(!/10\|20\) warn/.test(fase8), "fase 8 tidak boleh memperlakukan exit 10/20 sebagai peringatan");
+  assert.match(script, /rollback-rekon-pemakaian\.sh \$\{PREV_DIR:-<release-sebelumnya>\}/); assert.ok(!/docker tag \$\{ROLLBACK_TAG/.test(script), "instruksi tidak lagi menyuruh docker tag manual");
+  assert.match(script, /PERBAIKAN MAJU atau KEPUTUSAN PEMULIHAN KHUSUS/);
+  const pem = baca("scripts/rollback-rekon-pemakaian.sh"); assert.match(pem, /\[ "\$RC" != "0" \]/); assert.match(pem, /exit 30/); assert.match(pem, /RC2/);
 });

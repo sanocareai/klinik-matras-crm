@@ -40,7 +40,7 @@ Invarian: nilai asli tak berubah; catatan tak dihapus; setiap perubahan ada peri
 4. Tindak lanjut lewat UI: koreksi catatan, konfirmasi baris berulang, kecualikan salinan ganda, ajukan koreksi pemakaian (disetujui orang lain), koreksi saldo (Stock Adjustment), buat master bahan baru (tanpa stok).
 5. `GET /api/production/posting-historis/rencana` → hash → Owner menyetujui → `POST .../jalankan {hashDisetujui, rujukan}` (izin `inventory:adjustment_approve`). `jurnalHPP` default **mati**.
 6. Pasca-posting: kueri baca-saja di `docs`/lampiran rilis (jumlah movement, tanpa duplikat, tanpa saldo negatif baru, valuasi beku, pelaku terisi, status unit tak berubah).
-Rollback: catatan tidak mengubah stok → cukup tidak dipakai. Posting yang sudah terjadi dikoreksi dengan **koreksi pemakaian** (pembalik bertaut asal), bukan dihapus.
+Rollback/pemulihan: lihat §10. Ringkas: rollback kode rutin hanya sah bila tabel rekonsiliasi KOSONG; begitu ada catatan/koreksi/posting kode lama menyembunyikannya, jadi rollback rutin DITOLAK dan pemulihannya perbaikan maju atau keputusan pemulihan khusus. Posting yang sudah terjadi dikoreksi dengan **koreksi pemakaian** (pembalik bertaut asal), bukan dihapus.
 
 ## 6. Keputusan terbuka
 * Jurnal HPP historis (tanggal Sep–Okt) atau cukup valuasi beku.
@@ -54,7 +54,7 @@ Rollback: catatan tidak mengubah stok → cukup tidak dipakai. Posting yang suda
 | **R2. Impor catatan** | `backend/scripts/import-pemakaian-historis.js` (dry-run → `--apply`) pada CSV final: menambah catatan "Perlu dicek"/"sudah di stok" TANPA efek stok. | Persetujuan terpisah, setelah R1 live dan terverifikasi |
 | **R3. Posting** | `GET /posting-historis/rencana` → hash → Owner menyetujui → `POST /posting-historis/jalankan`. `jurnalHPP` mati. | Persetujuan terpisah (hash + rujukan Owner) + jawaban Finance atas harga/jurnal |
 
-Prasyarat R1: rilis UX Bahan katalog (`693b8c52`, migrasi `20261227090000`) harus **sudah live** — skrip dibangkitkan dengan baseline itu dan berhenti bila release aktif bukan baseline-nya. Rollback R1: pasang kembali image lama; migrasi tidak dibalik (tabel kosong, tak dibaca kode lama).
+Prasyarat R1: rilis UX Bahan katalog (`693b8c52`, migrasi `20261227090000`) harus **sudah live** — skrip dibangkitkan dengan baseline itu dan berhenti bila release aktif bukan baseline-nya. Rollback R1: hanya lewat `scripts/rollback-rekon-pemakaian.sh` (guard baca-saja; hanya exit 0 = tabel kosong yang lolos) — lihat §10.
 
 Bukti yang dipakai sebelum meminta persetujuan R1: gerbang sumber lulus pada server (`--preflight-only`, baca-saja; berhenti tepat di gerbang prasyarat karena live masih `fa6beb86`); rehearsal pada **restore backup production terbaru (23 Okt 19:45 WIB)** dengan baseline 693b8c52 disimulasikan: 267 → 268 migrasi, skema/fungsi/isi 253 tabel lama identik, 30 kelompok sidik jari beku identik, tanpa drift `schema.prisma` pada objek rilis, `migrate deploy` kedua = no-op, antrean posting kosong, jalur tulis (impor mini → posting → koreksi → koreksi harga) lulus pada salinan; smoke baca-saja lulus (0 gagal).
 
@@ -67,3 +67,25 @@ Bukti yang dipakai sebelum meminta persetujuan R1: gerbang sumber lulus pada ser
 
 ## 9. Pertanyaan Finance
 Lihat `Pertanyaan-Finance-Biaya-Bahan-Historis-20261024.md`: 319 posting tanpa harga perolehan (42 bahan, 191 order) dan 254 ISSUE lama tanpa valuasi/jurnal/pelaku — pilihan perlakuan beserta dampaknya. Harga tidak diisi dan jurnal HPP historis tidak dibuat sebelum ada jawaban.
+
+## 10. Rollback dan pemulihan
+**Mengapa rollback tidak selalu aman.** Kode lama tidak mengenal tabel rekonsiliasi. Begitu tabel itu berisi sesuatu, kode lama *menyembunyikannya*: label "Perlu dicek", label "HPP bahan PARSIAL", catatan historis, koreksi pemakaian/saldo/harga beserta riwayatnya tidak tampil, sehingga pemakaian dan biaya bahan sebuah unit bisa tampak lengkap padahal tidak. Pergerakan stok hasil posting tetap berlaku di ledger (saldo tidak kembali oleh rollback). Maka rollback kode "rutin" hanya sah bila **tidak ada** yang akan tersembunyi.
+
+**Guard (baca-saja)** `scripts/rollback-guard-rekon-pemakaian.sh` — transaksi `READ ONLY` (mode `--uji-baca-saja` membuktikan PostgreSQL menolak tulis). Pemanggil WAJIB menolak setiap exit selain 0:
+
+| Exit | Keadaan | Arti |
+|---|---|---|
+| **0** | KOSONG: 4 tabel baru 0 baris, tak ada koreksi pemakaian, tak ada penyesuaian ber-asal | Rollback rutin **boleh** (tak ada yang tersembunyi). Migrasi tidak dibalik. |
+| **10** | ADA DATA: catatan/impor/koreksi/posting/penyesuaian ber-asal | **DITOLAK.** Kode lama menyembunyikan data itu. |
+| **20** | Ada koreksi pemakaian menunggu persetujuan (selain data lain) | **DITOLAK.** Kode lama tidak bisa menyetujuinya dengan benar. |
+| 1 | Tabel baru tidak lengkap (kode/migrasi belum terpasang) | Ditolak: rollback kode ini tidak berlaku. |
+| 2 | Hitungan bukan angka | Ditolak: jangan lanjut. |
+
+**Pemanggil resmi** `scripts/rollback-rekon-pemakaian.sh <release-sebelumnya> <tag-image> [--jalankan]`: menjalankan guard dan keluar **30** (ditolak, tanpa menjalankan apa pun) untuk semua exit guard selain 0; default hanya mencetak rencana; `--jalankan` memeriksa guard sekali lagi tepat sebelum memasang image lama. Fase 8 skrip rilis juga berhenti (`die`) bila guard bukan 0 tepat sesudah rilis. Skrip rilis tidak lagi menyuruh `docker tag` manual.
+
+**Pemulihan bila sudah ada data (guard 10/20)** — bukan rollback rutin:
+1. **Perbaikan maju**: pasang versi perbaikan dari kode ini (data tetap tampil dan dikoreksi lewat jalur resmi: koreksi catatan, koreksi pemakaian pembalik bertaut asal, koreksi harga).
+2. **Keputusan pemulihan khusus** oleh Owner + Finance + Gudang *setelah dampak data dinilai* (laporan guard memuat jumlah catatan, pergerakan stok hasil posting, koreksi, dan penyesuaian ber-asal), dengan prosedur tertulis tersendiri.
+Dalam kedua kasus: jangan menghapus tabel/baris (riwayat append-only) dan jangan memasang kode lama diam-diam.
+
+**Bukti pada rehearsal (salinan restore backup nyata, terikat SHA):** kosong → guard 0 dan pemanggil memberi rencana; ada catatan + posting + koreksi menunggu → guard 20 dan pemanggil 30; koreksi menunggu diselesaikan (catatan/posting tetap ada) → guard 10 dan pemanggil 30. Sidik jari SELURUH salinan (semua tabel) dihitung sebelum dan sesudah setiap guard/pemanggil dan harus identik.
