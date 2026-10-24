@@ -38,7 +38,7 @@ pemakaianKoreksiRouter.post("/catatan-historis/:id/kecualikan", tulisBahan, waji
   try { const h = await kecualikanCatatan(prisma, { noteId: req.params.id, alasan: req.body?.alasan, kunci: kunci(req), aktor: req.user }); res.status(h.ulang ? 200 : 201).json(h); } catch (e) { handleErr(e, res); }
 });
 pemakaianKoreksiRouter.post("/catatan-historis/evaluasi", tulisBahan, async (req, res) => {
-  try { res.json(await evaluasiUlang(prisma, { actorId: req.user.id, unitIds: Array.isArray(req.body?.unitIds) ? req.body.unitIds : null })); } catch (e) { handleErr(e, res); }
+  try { res.json(await evaluasiUlang(prisma, { actorId: req.user.id })); } catch (e) { handleErr(e, res); }
 });
 
 pemakaianKoreksiRouter.post("/units/:id/koreksi-pemakaian/pratinjau", tulisBahan, wajibUuid(), async (req, res) => {

@@ -219,11 +219,36 @@ const noteKeItem = (n, units) => ({
   key: n.sourceKey, origin: n.origin, orderNumber: n.orderNumber, orderFound: !!n.orderId, units, unitId: n.unitId, rawName: n.rawName, rawSpec: n.rawSpec, rawQty: n.rawQty, rawUom: n.rawUom, kategori: n.rawCategory,
   qty: n.qty === null ? null : Number(n.qty), uom: n.uom, usedAt: n.usedAt, materialId: n.materialId, via: n.mapVia, dupKey: null, tetap: FIXED.has(n.state) ? n.state : null, id: n.id, dikonfirmasi: Array.isArray(n.confirmedFlags) ? n.confirmedFlags : [],
 });
-/** Hitung ulang keadaan catatan yang belum final terhadap ledger SEKARANG. Menulis peristiwa DIEVALUASI hanya bila state/penanda berubah. Idempoten. */
-export async function evaluasiUlang(prisma, { actorId = null, unitIds = null, sekarang = new Date() } = {}) {
-  const notes = await prisma.unitUsageNote.findMany({ where: { origin: "EXCEL", ...(unitIds ? { unitId: { in: unitIds } } : {}) }, orderBy: { sourceRow: "asc" } });
+/** Kunci serialisasi evaluasi: SEMUA penulis keadaan catatan (posting, koreksi, konfirmasi, kecualikan, evaluasi manual) memegang kunci ini lebih dulu (SEBELUM kunci baris) — urutan kunci seragam, tanpa deadlock. */
+const KUNCI_EVALUASI = "km:catatan-pemakaian:evaluasi";
+export async function kunciEvaluasiCatatan(tx) {
+  if (!tx?.$executeRawUnsafe || typeof tx.$transaction === "function") throw new Error("kunciEvaluasiCatatan butuh klien transaksi Prisma (tx), bukan prisma singleton");
+  await tx.$executeRawUnsafe("SELECT pg_advisory_xact_lock(hashtext($1))", KUNCI_EVALUASI);
+}
+/**
+ * Hitung ulang keadaan catatan yang belum final terhadap ledger SEKARANG. Menulis peristiwa DIEVALUASI hanya bila state/penanda berubah. Idempoten.
+ *
+ * INVARIAN (perbaikan cacat "SIAP_POSTING palsu"): klasifikasi SELALU atas SELURUH catatan Excel + ledger, karena saldo bahan dibagi ke semua catatan siap secara berurutan (tanggal, order, bahan);
+ * mengevaluasi hanya sebagian unit membuat catatan unit lain yang berebut bahan yang sama tampak tidak ada, sehingga sisanya terlihat cukup (palsu). Karena itu `unitIds` TIDAK lagi membatasi
+ * perhitungan (parameter dipertahankan agar pemanggil lama tidak rusak).
+ * ATOMIK: dipanggil dengan `prisma` → membuka SATU transaksi (kunci evaluasi + semua tulisan, commit sekaligus). Dipanggil dengan `tx` → ikut transaksi pemanggil, sehingga keadaan yang terlihat setelah
+ * commit transaksi pemanggil (posting/koreksi) SELALU sudah benar — tidak ada jeda yang bisa dibaca pengguna atau dipakai posting berikutnya.
+ */
+export async function evaluasiUlang(db, opsi = {}) {
+  if (typeof db.$transaction === "function") return db.$transaction(async (tx) => { await kunciEvaluasiCatatan(tx); return evaluasiDi(tx, opsi); }, { timeout: 120_000, maxWait: 60_000 });
+  await kunciEvaluasiCatatan(db); // kunci sudah dipegang pemanggil → advisory xact lock bersifat re-entrant dalam satu sesi
+  return evaluasiDi(db, opsi);
+}
+/**
+ * AUDIT baca-saja: apa yang akan diubah evaluasi global terhadap keadaan SEKARANG? `berubah` = 0 berarti tidak ada keadaan palsu. Tanpa kunci dan tanpa tulisan; panggil di dalam transaksi RepeatableRead
+ * (`prisma.$transaction(fn, { isolationLevel: "RepeatableRead" })`) agar membaca SATU potret konsisten. Dipakai tes/rehearsal untuk membuktikan tidak ada jeda keadaan palsu.
+ */
+export async function periksaKeadaanCatatan(tx, opsi = {}) { return evaluasiDi(tx, { ...opsi, keringSaja: true }); }
+// eslint-disable-next-line no-unused-vars
+async function evaluasiDi(prisma, { actorId = null, unitIds: _abaikan = null, sekarang = new Date(), keringSaja = false } = {}) {
+  const notes = await prisma.unitUsageNote.findMany({ where: { origin: "EXCEL" }, orderBy: { sourceRow: "asc" } });
   if (!notes.length) return { diperiksa: 0, berubah: 0 };
-  const ledgerNotes = await prisma.unitUsageNote.findMany({ where: { origin: "LEDGER", state: STATE.PERLU_DICEK, ...(unitIds ? { unitId: { in: unitIds } } : {}) } });
+  const ledgerNotes = await prisma.unitUsageNote.findMany({ where: { origin: "LEDGER", state: STATE.PERLU_DICEK } });
   const ctx = await muatKonteks(prisma, { orderNumbers: [...new Set(notes.map((n) => n.orderNumber))], unitIds: ledgerNotes.map((l) => l.unitId).filter(Boolean) });
   // baris berulang dihitung dari nilai asli (tidak bergantung koreksi)
   const dk = (n) => [n.orderNumber, normNama(n.rawName), normNama(n.rawSpec), n.rawQty, normNama(n.rawUom)].join("|");
@@ -234,10 +259,8 @@ export async function evaluasiUlang(prisma, { actorId = null, unitIds = null, se
   for (const it of items) {
     if (it.materialId || it.tetap || !it.pemetaan?.bahan) continue;
     const n = notes.find((x) => x.id === it.id); const m = it.pemetaan.bahan;
-    await prisma.$transaction(async (tx) => {
-      await tx.unitUsageNote.update({ where: { id: n.id }, data: { materialId: m.id, mapVia: it.pemetaan.via, evaluatedAt: new Date() } });
-      await tx.unitUsageNoteEvent.create({ data: { noteId: n.id, kind: "DIEVALUASI", before: { materialId: null }, after: { materialId: m.id, kode: m.code, via: it.pemetaan.via }, reason: "Bahan kini ada di katalog dengan nama/kode persis sama", actorId } });
-    });
+    if (!keringSaja) await prisma.unitUsageNote.update({ where: { id: n.id }, data: { materialId: m.id, mapVia: it.pemetaan.via, evaluatedAt: new Date() } });
+    if (!keringSaja) await prisma.unitUsageNoteEvent.create({ data: { noteId: n.id, kind: "DIEVALUASI", before: { materialId: null }, after: { materialId: m.id, kode: m.code, via: it.pemetaan.via }, reason: "Bahan kini ada di katalog dengan nama/kode persis sama", actorId } });
     it.materialId = m.id; it.via = it.pemetaan.via; n.materialId = m.id; n.mapVia = it.pemetaan.via; berubah++; detail.push({ baris: n.sourceRow, dipetakanKe: m.code });
   }
   const idMat = [...new Set([...items.map((i) => i.materialId), ...ctx.lama.map((m) => m.materialId)].filter(Boolean))];
@@ -249,10 +272,8 @@ export async function evaluasiUlang(prisma, { actorId = null, unitIds = null, se
     const sama = h.state === n.state && stabil(h.flags.map((f) => [f.kode, f.data])) === stabil((n.flags ?? []).map((f) => [f.kode, f.data])) && (h.stockMovementId ?? null) === (n.stockMovementId ?? null);
     if (sama) continue;
     detail.push({ baris: n.sourceRow, dari: { state: n.state, flags: (n.flags ?? []).map((f) => f.kode) }, ke: { state: h.state, flags: h.flags.map((f) => f.kode) } });
-    await prisma.$transaction(async (tx) => {
-      await tx.unitUsageNote.update({ where: { id: n.id }, data: { state: h.state, flags: h.flags, linkKind: h.linkKind ?? n.linkKind, stockMovementId: n.stockMovementId ?? h.stockMovementId ?? null, evaluatedAt: new Date() } });
-      await tx.unitUsageNoteEvent.create({ data: { noteId: n.id, kind: "DIEVALUASI", before: { state: n.state, flags: (n.flags ?? []).map((f) => f.kode) }, after: { state: h.state, flags: h.flags.map((f) => f.kode) }, reason: "Evaluasi ulang terhadap ledger", actorId } });
-    });
+    if (!keringSaja) await prisma.unitUsageNote.update({ where: { id: n.id }, data: { state: h.state, flags: h.flags, linkKind: h.linkKind ?? n.linkKind, stockMovementId: n.stockMovementId ?? h.stockMovementId ?? null, evaluatedAt: new Date() } });
+    if (!keringSaja) await prisma.unitUsageNoteEvent.create({ data: { noteId: n.id, kind: "DIEVALUASI", before: { state: n.state, flags: (n.flags ?? []).map((f) => f.kode) }, after: { state: h.state, flags: h.flags.map((f) => f.kode) }, reason: "Evaluasi ulang terhadap ledger", actorId } });
     berubah++;
   }
   // Catatan LEDGER (pengeluaran stok lama tanpa pasangan): selesai bila pemakaiannya dikoreksi menjadi 0 atau kini punya pasangan di berkas.
@@ -262,10 +283,8 @@ export async function evaluasiUlang(prisma, { actorId = null, unitIds = null, se
     const habis = net(l.unitId, l.materialId) <= EPS;
     if (!habis && !adaPasangan) continue;
     const alasan = habis ? "Pemakaian bahan ini pada unit sudah dikoreksi menjadi 0" : "Pengeluaran stok ini kini punya pasangan di berkas (dinilai pada catatan Excel)";
-    await prisma.$transaction(async (tx) => {
-      await tx.unitUsageNote.update({ where: { id: l.id }, data: { state: STATE.DIKOREKSI, evaluatedAt: new Date() } });
-      await tx.unitUsageNoteEvent.create({ data: { noteId: l.id, kind: "DIEVALUASI", before: { state: l.state }, after: { state: STATE.DIKOREKSI }, reason: alasan, actorId } });
-    });
+    if (!keringSaja) await prisma.unitUsageNote.update({ where: { id: l.id }, data: { state: STATE.DIKOREKSI, evaluatedAt: new Date() } });
+    if (!keringSaja) await prisma.unitUsageNoteEvent.create({ data: { noteId: l.id, kind: "DIEVALUASI", before: { state: l.state }, after: { state: STATE.DIKOREKSI }, reason: alasan, actorId } });
     berubah++; detail.push({ ledger: l.id, ke: STATE.DIKOREKSI, alasan });
   }
   return { diperiksa: notes.length + ledgerNotes.length, berubah, detail };

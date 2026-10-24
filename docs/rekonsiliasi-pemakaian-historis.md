@@ -89,3 +89,19 @@ Lihat `Pertanyaan-Finance-Biaya-Bahan-Historis-20261024.md`: 319 posting tanpa h
 Dalam kedua kasus: jangan menghapus tabel/baris (riwayat append-only) dan jangan memasang kode lama diam-diam.
 
 **Bukti pada rehearsal (salinan restore backup nyata, terikat SHA):** kosong → guard 0 dan pemanggil memberi rencana; ada catatan + posting + koreksi menunggu → guard 20 dan pemanggil 30; koreksi menunggu diselesaikan (catatan/posting tetap ada) → guard 10 dan pemanggil 30. Sidik jari SELURUH salinan (semua tabel) dihitung sebelum dan sesudah setiap guard/pemanggil dan harus identik.
+
+## Evaluasi keadaan catatan: global, atomik, terserialisasi (perbaikan 25 Okt 2026)
+
+**Cacat (ditemukan saat rehearsal posting 24 Okt):** setelah `jalankanPosting`, evaluasi ulang hanya mengklasifikasi catatan unit yang baru diposting. Saldo bahan dibagi ke SEMUA catatan siap secara berurutan (tanggal, order, bahan), jadi catatan unit lain yang berebut bahan yang sama hilang dari hitungan dan sisa catatan tampak cukup stoknya → **SIAP_POSTING palsu** (5 catatan; rencana berikutnya 384 trx, yang benar 379). Evaluasi juga berjalan di luar transaksi posting/koreksi sehingga ada jeda keadaan yang terbaca pengguna.
+
+**Aturan sekarang:**
+1. `evaluasiUlang` SELALU mengklasifikasi seluruh catatan Excel + ledger (parameter `unitIds` diterima tetapi tidak membatasi hitungan).
+2. Semua penulis keadaan catatan (posting, koreksi catatan, konfirmasi, kecualikan, setujui koreksi pemakaian, evaluasi manual) mengambil kunci advisory `kunciEvaluasiCatatan(tx)` PERTAMA, lalu kunci baris — urutan seragam, tanpa deadlock.
+3. Evaluasi berjalan DI DALAM transaksi penulis yang sama → keadaan yang terlihat setelah commit sudah benar (titik tetap).
+4. `jalankanPosting` menyegarkan keadaan di dalam kunci SEBELUM memeriksa catatan (fail-closed: catatan yang tidak lagi siap gugur) dan sesudah posting.
+5. `periksaKeadaanCatatan(tx)` = audit baca-saja (`berubah` harus 0). Untuk tes/rehearsal/smoke; panggil di transaksi RepeatableRead.
+Evaluasi global manual (`POST …/evaluasi-ulang`) tetap ada tetapi bukan lagi bagian dari prosedur normal.
+
+**Batas yang jujur:** penulis di luar modul ini (penerimaan GR, pengeluaran stok biasa) tidak memanggil evaluasi; keadaan catatan bisa tertinggal sampai evaluasi berikutnya, tetapi posting tetap aman: ia menyegarkan keadaan di dalam kunci (catatan yang tidak lagi siap gugur, fail-closed) lalu menyimpan keadaan yang benar lewat evaluasi tersendiri, dan `postStockMovement` menolak saldo negatif.
+
+Tes: `tests/integration/evaluasiCatatanAtomik.integration.test.js` (E0–E8; E1/E3/E4/E5/E6 gagal pada kode lama; E8 = pasokan terpakai di luar modul → posting gugur lalu keadaan disembuhkan). Rilis kode-saja: `scripts/release-evaluasi-catatan.sh` (dibangkitkan oleh `scripts/gen-release-evaluasi-catatan.cjs`).

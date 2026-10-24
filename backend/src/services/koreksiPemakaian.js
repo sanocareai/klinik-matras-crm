@@ -12,7 +12,7 @@ import { MaterialUnit } from "@prisma/client";
 import { postStockMovement, lockRowForUpdate } from "./inventoryLedger.js";
 import { KoreksiError, STATUS, bentukKoreksi } from "./warehouseCorrection.js";
 import { dasarHargaRataRata } from "./finance/posting/inventory.js";
-import { evaluasiUlang } from "./catatanPemakaianHistoris.js";
+import { evaluasiUlang, kunciEvaluasiCatatan } from "./catatanPemakaianHistoris.js";
 import { STATE, koma } from "../lib/domain/pemakaianHistoris.js";
 
 const TIPE_DOK = "UNIT_USAGE";
@@ -37,6 +37,7 @@ async function muatCatatanTerkunci(tx, noteId) {
 export async function koreksiCatatan(prisma, { noteId, perubahan = {}, alasan, kunci, aktor, sekarang = new Date() }) {
   const reason = alasanWajib(alasan); const idem = kunciValid(kunci);
   const hasil = await prisma.$transaction(async (tx) => {
+    await kunciEvaluasiCatatan(tx); // kunci evaluasi lebih dulu (urutan kunci seragam), lalu baris
     const n = await muatCatatanTerkunci(tx, noteId);
     const ulang = await tx.unitUsageNoteEvent.findFirst({ where: { noteId, idempotencyKey: idem } });
     if (ulang) return { ulang: true, catatan: tampilCatatan(n), peristiwaId: ulang.id, unitId: n.unitId };
@@ -56,9 +57,9 @@ export async function koreksiCatatan(prisma, { noteId, perubahan = {}, alasan, k
     if (!berubah) throw new KoreksiError("Tidak ada perubahan dari catatan yang ada", 409, "TIDAK_ADA_PERUBAHAN");
     await tx.unitUsageNote.update({ where: { id: n.id }, data: { ...data, evaluatedAt: sekarang } });
     const ev = await tx.unitUsageNoteEvent.create({ data: { noteId: n.id, kind: "DIKOREKSI", before: sebelum, after: { ...sebelum, ...sesudah }, reason, actorId: aktor.id, idempotencyKey: idem } });
+    await evaluasiUlang(tx, { actorId: aktor.id, sekarang }); // keadaan benar pada akhir transaksi yang SAMA
     return { ulang: false, catatan: tampilCatatan(await tx.unitUsageNote.findUnique({ where: { id: n.id } })), peristiwaId: ev.id, unitId: n.unitId };
-  }, { timeout: 30_000, maxWait: 10_000 });
-  if (!hasil.ulang && hasil.unitId) await evaluasiUlang(prisma, { actorId: aktor.id, unitIds: [hasil.unitId], sekarang });
+  }, { timeout: 300_000, maxWait: 120_000 });
   return { ...hasil, catatan: tampilCatatan(await prisma.unitUsageNote.findUnique({ where: { id: noteId } })) };
 }
 /** Konfirmasi bahwa penanda tertentu memang wajar (mis. baris berulang sah). Penanda tidak lagi menahan; nilai asli tidak berubah. */
@@ -66,6 +67,7 @@ export async function konfirmasiCatatan(prisma, { noteId, kodePenanda, alasan, k
   const reason = alasanWajib(alasan); const idem = kunciValid(kunci);
   if (!FLAG_BOLEH_DIKONFIRMASI.has(kodePenanda)) throw new KoreksiError(`Penanda ${kodePenanda} tidak bisa sekadar dikonfirmasi — selesaikan lewat koreksi`, 400, "PENANDA_TIDAK_BISA_DIKONFIRMASI");
   const hasil = await prisma.$transaction(async (tx) => {
+    await kunciEvaluasiCatatan(tx);
     const n = await muatCatatanTerkunci(tx, noteId);
     const ulang = await tx.unitUsageNoteEvent.findFirst({ where: { noteId, idempotencyKey: idem } });
     if (ulang) return { ulang: true, unitId: n.unitId };
@@ -74,24 +76,25 @@ export async function konfirmasiCatatan(prisma, { noteId, kodePenanda, alasan, k
     if (sebelum.includes(kodePenanda)) throw new KoreksiError("Penanda ini sudah dikonfirmasi", 409, "SUDAH_DIKONFIRMASI");
     await tx.unitUsageNote.update({ where: { id: n.id }, data: { confirmedFlags: [...sebelum, kodePenanda], evaluatedAt: sekarang } });
     await tx.unitUsageNoteEvent.create({ data: { noteId: n.id, kind: "DIKOREKSI", before: { dikonfirmasi: sebelum }, after: { dikonfirmasi: [...sebelum, kodePenanda] }, reason, actorId: aktor.id, idempotencyKey: idem } });
+    await evaluasiUlang(tx, { actorId: aktor.id, sekarang });
     return { ulang: false, unitId: n.unitId };
-  }, { timeout: 30_000, maxWait: 10_000 });
-  if (!hasil.ulang && hasil.unitId) await evaluasiUlang(prisma, { actorId: aktor.id, unitIds: [hasil.unitId], sekarang });
+  }, { timeout: 300_000, maxWait: 120_000 });
   return { ...hasil, catatan: tampilCatatan(await prisma.unitUsageNote.findUnique({ where: { id: noteId } })) };
 }
 /** Kecualikan catatan dari perhitungan (mis. salinan ganda). Catatan TIDAK dihapus: keadaan TIDAK_DIHITUNG + peristiwa DIKECUALIKAN (alasan wajib). */
 export async function kecualikanCatatan(prisma, { noteId, alasan, kunci, aktor, sekarang = new Date() }) {
   const reason = alasanWajib(alasan); const idem = kunciValid(kunci);
   const hasil = await prisma.$transaction(async (tx) => {
+    await kunciEvaluasiCatatan(tx);
     const n = await muatCatatanTerkunci(tx, noteId);
     const ulang = await tx.unitUsageNoteEvent.findFirst({ where: { noteId, idempotencyKey: idem } });
     if (ulang) return { ulang: true, unitId: n.unitId };
     if (n.origin !== "EXCEL" || ![STATE.PERLU_DICEK, STATE.SIAP_POSTING].includes(n.state)) throw new KoreksiError(`Catatan berstatus ${n.state} tidak bisa dikecualikan`, 409, "STATUS_FINAL");
     await tx.unitUsageNote.update({ where: { id: n.id }, data: { state: STATE.TIDAK_DIHITUNG, evaluatedAt: sekarang } });
     await tx.unitUsageNoteEvent.create({ data: { noteId: n.id, kind: "DIKECUALIKAN", before: { state: n.state, flags: (n.flags ?? []).map((f) => f.kode) }, after: { state: STATE.TIDAK_DIHITUNG }, reason, actorId: aktor.id, idempotencyKey: idem } });
+    await evaluasiUlang(tx, { actorId: aktor.id, sekarang });
     return { ulang: false, unitId: n.unitId };
-  }, { timeout: 30_000, maxWait: 10_000 });
-  if (!hasil.ulang && hasil.unitId) await evaluasiUlang(prisma, { actorId: aktor.id, unitIds: [hasil.unitId], sekarang });
+  }, { timeout: 300_000, maxWait: 120_000 });
   return { ...hasil, catatan: tampilCatatan(await prisma.unitUsageNote.findUnique({ where: { id: noteId } })) };
 }
 
@@ -171,6 +174,7 @@ async function ambilKunciKoreksi(tx, id) {
 /** Setujui + terapkan. Penyetuju ≠ pemohon; keadaan pemakaian dihitung ULANG di dalam kunci dan token dicocokkan; invarian saldo ditegakkan oleh postStockMovement. */
 export async function setujuiKoreksiPemakaian(prisma, { koreksiId, aktor, catatan = null, sekarang = new Date() }) {
   const hasil = await prisma.$transaction(async (tx) => {
+    await kunciEvaluasiCatatan(tx); // kunci evaluasi → baris koreksi → unit → bahan (urutan seragam dengan posting)
     let k = await ambilKunciKoreksi(tx, koreksiId);
     if (k.status === STATUS.POSTED) return { koreksi: { ...bentukKoreksi(k), ulang: true }, unitId: k.docId, materialId: k.changes?.bahan?.id, baru: false };
     if (k.status !== STATUS.PENDING) throw new KoreksiError(`Koreksi berstatus ${k.status} tidak bisa disetujui`, 409, "STATUS_FINAL");
@@ -190,10 +194,10 @@ export async function setujuiKoreksiPemakaian(prisma, { koreksiId, aktor, catata
     // hubungan ke catatan historis unit+bahan: peristiwa DIKOREKSI (sebelum–sesudah, alasan, pelaku) pada setiap catatan yang belum final
     const catatan2 = await tx.unitUsageNote.findMany({ where: { unitId: k.docId, materialId, state: { in: [STATE.PERLU_DICEK, STATE.SIAP_POSTING, STATE.TERCATAT_DI_STOK] } }, select: { id: true } });
     for (const c of catatan2) await tx.unitUsageNoteEvent.create({ data: { noteId: c.id, kind: "DIKOREKSI", before: { pemakaianStok: r.bersihSebelum }, after: { pemakaianStok: r.bersihSesudah, koreksi: k.correctionNumber, pergerakanId: mv.id }, reason: k.reason, actorId: aktor.id } });
+    await evaluasiUlang(tx, { actorId: aktor.id, sekarang }); // ledger berubah → keadaan semua catatan benar pada akhir transaksi yang SAMA
     k = await tx.warehouseCorrection.findUnique({ where: { id: k.id }, include: sertakan });
     return { koreksi: { ...bentukKoreksi(k), ulang: false }, unitId: k.docId, materialId, baru: true };
-  }, { timeout: 30_000, maxWait: 10_000 });
-  if (hasil.baru) await evaluasiUlang(prisma, { actorId: aktor.id, unitIds: [hasil.unitId], sekarang });
+  }, { timeout: 300_000, maxWait: 120_000 });
   return hasil.koreksi;
 }
 async function akhiri(prisma, { koreksiId, aktor, catatan, sekarang, status, hanyaPemohon }) {

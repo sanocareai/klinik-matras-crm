@@ -10,7 +10,7 @@ import crypto from "node:crypto";
 import { postStockMovement, lockRowForUpdate } from "./inventoryLedger.js";
 import { bukukanNilaiPergerakanBaru } from "./finance/posting/inventory.js";
 import { KoreksiError } from "./warehouseCorrection.js";
-import { evaluasiUlang } from "./catatanPemakaianHistoris.js";
+import { evaluasiUlang, kunciEvaluasiCatatan } from "./catatanPemakaianHistoris.js";
 import { STATE, r4 } from "../lib/domain/pemakaianHistoris.js";
 
 export const AWAL_NOTE_POSTING = "Impor pemakaian historis Sep–Okt 2026";
@@ -54,7 +54,11 @@ export async function jalankanPosting(prisma, { persetujuan, aktor, jurnalHPP = 
   for (const [unitId, daftar] of perUnit) {
     try {
       const hasil = await prisma.$transaction(async (tx) => {
+        // URUTAN KUNCI SERAGAM: kunci evaluasi (serialisasi semua penulis keadaan catatan) → baris. Posting bersamaan menunggu giliran dan membaca ledger/keadaan yang SUDAH COMMIT.
+        await kunciEvaluasiCatatan(tx);
         await lockRowForUpdate(tx, "units", unitId);
+        // Segarkan keadaan terhadap ledger sekarang DI DALAM kunci: catatan yang tidak lagi siap (mis. pasokan terpakai posting/koreksi/pengeluaran lain) gugur di pemeriksaan di bawah — fail-closed.
+        await evaluasiUlang(tx, { actorId: aktor.id, sekarang });
         const ok = []; const lewat = [];
         for (const t of daftar) {
           for (const id of t.catatanIds) await lockRowForUpdate(tx, "unit_usage_notes", id);
@@ -78,14 +82,17 @@ export async function jalankanPosting(prisma, { persetujuan, aktor, jurnalHPP = 
           }
           ok.push({ kunci: t.kunci, pergerakanId: mv.id, qty: t.qty });
         }
+        // ATOMIK: keadaan semua catatan dihitung ulang (GLOBAL, bukan hanya unit ini) di transaksi yang SAMA dengan posting → tidak ada jeda keadaan palsu yang terbaca/dipakai.
+        if (ok.length) await evaluasiUlang(tx, { actorId: aktor.id, sekarang });
         return { ok, lewat };
-      }, { timeout: 120_000, maxWait: 20_000 });
+      }, { timeout: 300_000, maxWait: 120_000 });
       diposting.push(...hasil.ok.map((x) => ({ unitId, ...x }))); dilewati.push(...hasil.lewat.map((x) => ({ unitId, ...x })));
     } catch (e) {
       gagal.push({ unitId, order: daftar[0].orderNumber, kode: e.code ?? "GALAT", pesan: e.message });
+      // PENYEMBUHAN: transaksi unit yang gagal ikut membatalkan penyegaran keadaan di dalamnya. Bila gagal karena keadaan sudah bergeser (mis. pasokan terpakai di luar modul ini), simpan keadaan yang benar sekarang
+      // (transaksi evaluasi tersendiri, terkunci) agar catatan yang tidak lagi siap tidak tetap terbaca SIAP_POSTING. Upaya terbaik: kegagalan di sini tidak mengubah hasil.
+      try { await evaluasiUlang(prisma, { actorId: aktor.id, sekarang }); } catch { /* dilaporkan lewat gagal[] di atas; evaluasi berikutnya akan memperbaiki */ }
     }
   }
-  const unitSukses = [...new Set(diposting.map((d) => d.unitId))];
-  if (unitSukses.length) await evaluasiUlang(prisma, { actorId: aktor.id, unitIds: unitSukses, sekarang });
   return { hash: rencana.hash, diposting, dilewati, gagal };
 }
