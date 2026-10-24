@@ -94,7 +94,7 @@ test("migrasi disamakan dengan schema.prisma: unik biasa, nama FK dan indeks ses
 test("pemeriksaan pasca-switch (pasca_cek, kode yang SAMA dipakai rehearsal dan fase 8) membandingkan dengan baseline + 1: lulus pada 268, GAGAL pada 267 (baseline), 269, migrasi menggantung, checksum/fungsi/skema/struktur salah", { skip: !punyaBash }, () => {
   const awal = script.indexOf("pasca_cek() {"); assert.ok(awal > 0); const akhir = script.indexOf("\n}\n", awal); const fungsi = script.slice(awal, akhir + 3);
   const jalankan = (nilai) => {
-    const kode = `set -u\nLIVE_MIG_JUMLAH=267; MIG_NAME=mig_x; RAW_SHA=cks; FUNC_SQL=F; FUNC_PRA=fp; SKEMA_SQL=S; SKEMA_PRA=sp; STRUKTUR_SQL=T\nPASCA_GALAT=""\n${fungsi}\nQ() { case "$1" in *"finished_at is not null"*) echo "$N_SELESAI";; *"finished_at is null"*) echo "$N_GANTUNG";; *checksum*) echo "$CKS";; F) echo "$FP";; S) echo "$SP";; T) echo "$ST";; esac; }\npasca_cek Q; echo "RC=$? GALAT=$PASCA_GALAT"`;
+    const kode = `set -u\nLIVE_MIG_JUMLAH=267; MIG_NAME=mig_x; RAW_SHA=cks; FUNC_SQL=F; FUNC_PRA=fp; SKEMA_SQL=S; SKEMA_HARAP=sp; STRUKTUR_SQL=T\nPASCA_GALAT=""\n${fungsi}\nQ() { case "$1" in *"finished_at is not null"*) echo "$N_SELESAI";; *"finished_at is null"*) echo "$N_GANTUNG";; *checksum*) echo "$CKS";; F) echo "$FP";; S) echo "$SP";; T) echo "$ST";; esac; }\npasca_cek Q "$SKEMA_HARAP"; echo "RC=$? GALAT=$PASCA_GALAT"`;
     const r = spawnSync("bash", ["-c", kode], { encoding: "utf8", env: { ...process.env, N_SELESAI: "268", N_GANTUNG: "0", CKS: "cks", FP: "fp", SP: "sp", ST: "4|3|2|2", ...nilai } }); assert.equal(r.status, 0, r.stderr); return r.stdout.trim();
   };
   assert.equal(jalankan({}), "RC=0 GALAT=", "baseline + 1 = 268 lulus");
@@ -107,10 +107,10 @@ test("pemeriksaan pasca-switch (pasca_cek, kode yang SAMA dipakai rehearsal dan 
   assert.match(jalankan({ ST: "0|0|0|1" }), /^RC=1 GALAT=struktur baru 0\|0\|0\|1 bukan 4\|3\|2\|2/);
   // fase 8 memakainya (bukan pembanding terhadap baseline) dan tidak ada lagi pemeriksaan "jumlah migrasi = baseline" sesudah migrasi
   const fase8 = script.slice(script.indexOf('PHASE="8-verifikasi"'), script.indexOf('PHASE="8b-smoke"'));
-  assert.match(fase8, /pasca_cek PSQLN \|\| die/); assert.ok(!/= "\$LIVE_MIG_JUMLAH" \]/.test(fase8), "fase 8 tidak boleh membandingkan jumlah migrasi dengan baseline");
+  assert.match(fase8, /pasca_cek PSQLN "\$SKEMA_PRA" \|\| die/); assert.ok(!/= "\$LIVE_MIG_JUMLAH" \]/.test(fase8), "fase 8 tidak boleh membandingkan jumlah migrasi dengan baseline");
   assert.ok(!/die "jumlah migrasi terpasang berubah"/.test(script));
   // rehearsal: uji negatif sebelum migrasi + lulus pada baseline + 1
-  assert.match(script, /pemeriksaan pasca-switch LOLOS pada salinan SEBELUM migrasi/); assert.match(script, /pasca_cek RPSQL \|\| \{ reh_drop; die "pemeriksaan pasca-switch pada salinan baseline \+ 1 GAGAL/);
+  assert.match(script, /pemeriksaan pasca-switch LOLOS pada salinan SEBELUM migrasi/); assert.match(script, /pasca_cek RPSQL "\$SKEMA_REH_PRE" \|\| \{ reh_drop; die "pemeriksaan pasca-switch pada salinan baseline \+ 1 GAGAL/);
 });
 
 test("guard rollback baca-saja: tiga keadaan (KOSONG exit 0, ADA DATA exit 10, TERBUKA exit 20), transaksi READ ONLY, dipakai di rehearsal dan fase 8; menolak hanya bila koreksi pemakaian menunggu", () => {

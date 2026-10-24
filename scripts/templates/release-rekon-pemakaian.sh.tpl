@@ -323,16 +323,16 @@ NM_KB="$(du -sk "$NM_SRC" | cut -f1)"; AVAIL_KB="$(df -Pk "$HOME" | awk 'NR==2{p
 ok "ruang disk cukup (tersedia ${AVAIL_KB} KB)"
 if [ "$PREFLIGHT_ONLY" = "1" ]; then say "Preflight selesai (--preflight-only): produksi TIDAK diubah"; trap - EXIT; exit 0; fi
 
-# pasca_cek <fungsi-psql>: pemeriksaan DB sesudah migrasi (= keadaan baseline + 1). DIPAKAI SAMA oleh rehearsal (salinan restore) dan fase 8 (production sesudah switch) — satu kode, bukan dua salinan yang bisa berbeda.
+# pasca_cek <fungsi-psql> <sidik-jari-skema-lama-yang-diharapkan>: pemeriksaan DB sesudah migrasi (= keadaan baseline + 1). DIPAKAI SAMA oleh rehearsal (salinan restore) dan fase 8 (production sesudah switch) — satu kode, bukan dua salinan yang bisa berbeda.
 # Mengembalikan 0 bila lulus; 1 bila gagal dengan alasan di PASCA_GALAT. Bandingkan jumlah migrasi dengan baseline + 1 (BUKAN baseline: rilis prasyarat sebelumnya berhenti di fase 8 karena membandingkan dengan baseline setelah migrasi diterapkan).
 PASCA_GALAT=""
 pasca_cek() {
-  local Q="$1" n
+  local Q="$1" skema_harap="$2" n
   n="$($Q "select count(*) from _prisma_migrations where finished_at is not null and rolled_back_at is null")"; [ "$n" = "$(( LIVE_MIG_JUMLAH + 1 ))" ] || { PASCA_GALAT="jumlah migrasi terpasang ${n} != baseline + 1 ($(( LIVE_MIG_JUMLAH + 1 )))"; return 1; }
   n="$($Q "select count(*) from _prisma_migrations where finished_at is null and rolled_back_at is null")"; [ "$n" = "0" ] || { PASCA_GALAT="ada ${n} migrasi menggantung"; return 1; }
   n="$($Q "select checksum from _prisma_migrations where migration_name='${MIG_NAME}'")"; [ "$n" = "$RAW_SHA" ] || { PASCA_GALAT="checksum ${MIG_NAME} tidak cocok berkas kandidat"; return 1; }
   n="$($Q "$FUNC_SQL")"; [ "$n" = "$FUNC_PRA" ] || { PASCA_GALAT="fungsi lama berubah"; return 1; }
-  n="$($Q "$SKEMA_SQL")"; [ "$n" = "$SKEMA_PRA" ] || { PASCA_GALAT="skema tabel lama berubah"; return 1; }
+  n="$($Q "$SKEMA_SQL")"; [ "$n" = "$skema_harap" ] || { PASCA_GALAT="skema tabel lama berubah"; return 1; } # production: SKEMA_PRA (DB yang sama); salinan restore: SKEMA_REH_PRE (salinan itu sebelum migrasi — teks CHECK hasil restore dirender berbeda dari production)
   n="$($Q "$STRUKTUR_SQL")"; [ "$n" = "4|3|2|2" ] || { PASCA_GALAT="struktur baru ${n} bukan 4|3|2|2"; return 1; }
   PASCA_GALAT=""; return 0
 }
@@ -354,7 +354,7 @@ rehearsal_migrasi() {
   SKEMA_REH_PRE="$(RPSQL "$SKEMA_SQL")"; [ -n "$SKEMA_REH_PRE" ] || { reh_drop; die "sidik jari skema salinan (sebelum migrasi) kosong"; }
   [ "$(RPSQL "$FUNC_SQL")" = "$FUNC_PRA" ] || { reh_drop; die "fungsi hasil RESTORE berbeda dari produksi"; }
   [ "$(RPSQL "$STRUKTUR_SQL")" = "0|0|0|1" ] || { reh_drop; die "salinan RESTORE sudah memuat objek rilis ini (bukan keadaan sebelum migrasi)"; }
-  if pasca_cek RPSQL; then reh_drop; die "pemeriksaan pasca-switch LOLOS pada salinan SEBELUM migrasi (tidak membedakan keadaan baseline vs baseline + 1)"; fi
+  if pasca_cek RPSQL "$SKEMA_REH_PRE"; then reh_drop; die "pemeriksaan pasca-switch LOLOS pada salinan SEBELUM migrasi (tidak membedakan keadaan baseline vs baseline + 1)"; fi
   ok "uji negatif pemeriksaan pasca-switch: pada keadaan baseline (${LIVE_MIG_JUMLAH} migrasi) DITOLAK — ${PASCA_GALAT}"
   sg show "${DEPLOY_SHA}:scripts/rollback-guard-rekon-pemakaian.sh" | tr -d '\r' > "$BK_DIR/rollback-guard.sh" || { reh_drop; die "guard rollback tidak ada di kandidat"; }
   PGC_ID="$(dcp "$PREV_DIR" ps -q postgres </dev/null)"; [ -n "$PGC_ID" ] || { reh_drop; die "container postgres tidak terbaca"; }
@@ -385,7 +385,7 @@ rehearsal_migrasi() {
   RPSQL "$FP_ALL" | LC_ALL=C sort > "$BK_DIR/fp-all-pasca-migrasi.txt" || { reh_drop; die "sidik jari penuh pasca-migrasi gagal"; }
   cmp -s "$BK_DIR/fp-all-sebelum.txt" "$BK_DIR/fp-all-pasca-migrasi.txt" || { diff "$BK_DIR/fp-all-sebelum.txt" "$BK_DIR/fp-all-pasca-migrasi.txt" || true; reh_drop; die "migrasi MENGUBAH isi tabel (harus tidak menulis data)"; }
   ok "migrasi pada salinan: ${MIG_NAME} diterapkan (${LIVE_MIG_JUMLAH} → $(( LIVE_MIG_JUMLAH + 1 ))); skema tabel LAMA + fungsi lama IDENTIK; isi $(printf '%s\n' "$TABEL_LAMA" | grep -c .) tabel lama IDENTIK; 4 tabel baru + 3 trigger + 2 kolom + 2 constraint ada; semua KOSONG"
-  pasca_cek RPSQL || { reh_drop; die "pemeriksaan pasca-switch pada salinan baseline + 1 GAGAL: ${PASCA_GALAT}"; }
+  pasca_cek RPSQL "$SKEMA_REH_PRE" || { reh_drop; die "pemeriksaan pasca-switch pada salinan baseline + 1 GAGAL: ${PASCA_GALAT}"; }
   ok "pemeriksaan pasca-switch (kode yang SAMA dengan fase 8) LULUS pada salinan baseline + 1 ($(( LIVE_MIG_JUMLAH + 1 )) migrasi; fungsi lama, skema lama, struktur 4|3|2|2)"
   guard_reh 0; ok "guard rollback pada salinan baru dimigrasi = KOSONG (exit 0)"
   cat > "$BK_DIR/rehearsal-kode.mjs" <<'REHNODE'
@@ -582,7 +582,7 @@ NBE_EXPECT="$(printf '%s\n' "$BACKEND_SRC_EXPECT" | wc -w)"
 [ "$(docker inspect -f '{{.Image}}' "$CID_NEW")" = "$NEW_IMG_ID" ] || die "container berjalan bukan image baru"
 ok "${NBE} berkas backend di container = kandidat (byte-identik); image baru"
 PSQLN() { dcp "$NEW_DIR" exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" -X -At -q -c "$1" </dev/null; }
-pasca_cek PSQLN || die "pemeriksaan pasca-switch: ${PASCA_GALAT}"
+pasca_cek PSQLN "$SKEMA_PRA" || die "pemeriksaan pasca-switch: ${PASCA_GALAT}"
 [ "$(PSQLN "$FUNC_SQL")" = "$FUNC_MD5_MARK" ] || die "fungsi lama pasca-switch berbeda dari hasil rehearsal"
 dcp "$NEW_DIR" run --rm --no-deps -T backend npx prisma migrate status </dev/null 2>&1 | grep -i 'up to date' >/dev/null || die "migrate status produksi tidak 'up to date'"
 ok "$(( LIVE_MIG_JUMLAH + 1 )) migrasi terpasang (baseline + migrasi rilis); migrate status up to date"
