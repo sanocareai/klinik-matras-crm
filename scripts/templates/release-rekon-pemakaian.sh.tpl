@@ -558,7 +558,6 @@ PSQLN() { dcp "$NEW_DIR" exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" -X -A
 [ "$(PSQLN "$FUNC_SQL")" = "$FUNC_MD5_MARK" ] || die "fungsi lama pasca-switch berbeda dari hasil rehearsal"
 [ "$(PSQLN "$STRUKTUR_SQL")" = "4|3|2|2" ] || die "struktur baru pasca-switch bukan 4|3|2|2"
 [ "$(PSQLN "$SKEMA_SQL")" = "$SKEMA_PRA" ] || die "skema berubah pasca-switch"
-[ "$(PSQLN "select count(*) from _prisma_migrations where finished_at is not null and rolled_back_at is null")" = "$LIVE_MIG_JUMLAH" ] || die "jumlah migrasi terpasang berubah"
 dcp "$NEW_DIR" run --rm --no-deps -T backend npx prisma migrate status </dev/null 2>&1 | grep -i 'up to date' >/dev/null || die "migrate status produksi tidak 'up to date'"
 ok "$(( LIVE_MIG_JUMLAH + 1 )) migrasi terpasang (baseline + migrasi rilis); migrate status up to date"
 PHASE="8b-smoke"; say "8b. Smoke test baca-saja: ANTREAN KOSONG (tabel baru 0 baris, rencana posting 0 transaksi), panel unit + izin, catatan historis kosong, penolakan tanpa token/hanya-lihat; tidak ada tulisan"

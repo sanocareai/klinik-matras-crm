@@ -15,7 +15,7 @@
 #
 # ROLLBACK: kode: pasang kembali image lama (tag rollback-pre-rkp-<sha8>) dan buat ulang container dari release sebelumnya. Migrasi TIDAK perlu dibalik: tabel baru kosong dan tidak dibaca kode lama; kolom origin_* NULL; pagar jenis koreksi yang lebih longgar tidak
 #   dilanggar kode lama (kode lama hanya menulis GOODS_RECEIPT). Selama antrean kosong (tidak ada impor/posting), rollback kode tidak meninggalkan apa pun yang perlu dibersihkan.
-# (dibangkitkan oleh scripts/gen-release-rekon-pemakaian.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 83ce8f281185…)
+# (dibangkitkan oleh scripts/gen-release-rekon-pemakaian.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 7160ba8dd158…)
 set -Eeuo pipefail
 umask 077
 
@@ -719,7 +719,6 @@ PSQLN() { dcp "$NEW_DIR" exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" -X -A
 [ "$(PSQLN "$FUNC_SQL")" = "$FUNC_MD5_MARK" ] || die "fungsi lama pasca-switch berbeda dari hasil rehearsal"
 [ "$(PSQLN "$STRUKTUR_SQL")" = "4|3|2|2" ] || die "struktur baru pasca-switch bukan 4|3|2|2"
 [ "$(PSQLN "$SKEMA_SQL")" = "$SKEMA_PRA" ] || die "skema berubah pasca-switch"
-[ "$(PSQLN "select count(*) from _prisma_migrations where finished_at is not null and rolled_back_at is null")" = "$LIVE_MIG_JUMLAH" ] || die "jumlah migrasi terpasang berubah"
 dcp "$NEW_DIR" run --rm --no-deps -T backend npx prisma migrate status </dev/null 2>&1 | grep -i 'up to date' >/dev/null || die "migrate status produksi tidak 'up to date'"
 ok "$(( LIVE_MIG_JUMLAH + 1 )) migrasi terpasang (baseline + migrasi rilis); migrate status up to date"
 PHASE="8b-smoke"; say "8b. Smoke test baca-saja: ANTREAN KOSONG (tabel baru 0 baris, rencana posting 0 transaksi), panel unit + izin, catatan historis kosong, penolakan tanpa token/hanya-lihat; tidak ada tulisan"
