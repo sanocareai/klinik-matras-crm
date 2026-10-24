@@ -21,7 +21,7 @@ Keadaan hasil: PERLU_DICEK 2.155 · SIAP_POSTING 405 (klasifikasi saja) · TERCA
 **Aktor audit** = akun **ADMIN** aktif yang menjalankan impor (email + id harus cocok; gerbang menolak akun non-Admin, nonaktif, atau id berbeda). Peristiwa mencatat sumber "**Excel Admin Sales yang dikonfirmasi Owner**" dan **tidak** mengatasnamakan PIC pemakaian historis (PIC hanya tersimpan sebagai nilai asli baris).
 **Byte alat**: alat dijalankan DARI BERKAS (bukan stdin) di dalam container; ia menghitung sha256 dirinya sendiri dan menolak menulis bila ≠ `--sha-alat` ≠ `manifest.alat.sha256`. Hash yang sama tercetak di setiap mode (`ALAT_SHA256 …`) pada uji salinan dan pada eksekusi production.
 ```
-R=~/releases/klinik-matras/df00edb6; cd $R; I=~/impor-pemakaian        # berisi 4 berkas beku + SHA256SUMS
+R=~/releases/klinik-matras/df00edb6; cd $R; I=~/impor-pemakaian-v2        # berisi 4 berkas beku + SHA256SUMS
 ( cd $I && sha256sum -c SHA256SUMS )                                   # semua OK, atau BERHENTI
 DC() { SANSS_PERSIST_ROOT=$HOME/klinik-matras docker compose -p klinik-matras -f docker-compose.yml -f docker-compose.release.yml "$@"; }
 CID=$(DC ps -q backend); DC exec -T backend mkdir -p /tmp/impor/alat /tmp/impor/uji
