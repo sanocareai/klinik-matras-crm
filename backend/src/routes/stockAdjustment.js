@@ -86,16 +86,20 @@ stockAdjustmentRouter.get("/:id", requirePermission(P.INVENTORY_READ), wajibUuid
 // beforeQty DISNAPSHOT dari saldo ledger BERJALAN saat request dibuat.
 stockAdjustmentRouter.post("/", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
   try {
-    const { materialId, adjustmentType, adjustmentQty, reason, notes } = req.body;
+    const { materialId, adjustmentType, adjustmentQty, saldoBaru, reason, notes, originType, originId } = req.body;
     if (!materialId) throw new AdjustmentError("Item wajib dipilih");
     if (!ADJUSTMENT_TYPES.includes(adjustmentType)) throw new AdjustmentError("Adjustment type tidak valid");
-    const qty = Number(adjustmentQty);
-    if (!Number.isFinite(qty) || qty === 0) throw new AdjustmentError("Adjustment quantity wajib diisi dan tidak boleh nol");
     if (!reason?.trim()) throw new AdjustmentError("Alasan wajib diisi");
+    // ASAL koreksi (catatan/pemakaian/pergerakan yang memicu): keduanya terisi atau keduanya kosong; hanya penelusuran, tidak mengubah alur persetujuan.
+    if (Boolean(originType) !== Boolean(originId)) throw new AdjustmentError("originType dan originId harus diisi bersamaan");
+    if (originType && !["USAGE_NOTE", "UNIT_USAGE", "MOVEMENT"].includes(originType)) throw new AdjustmentError("originType tidak dikenal");
 
     const [{ balance }] = await prisma.$queryRaw`
       SELECT COALESCE(SUM(qty), 0)::float AS balance FROM stock_movements WHERE material_id = ${materialId}::uuid
     `;
+    // Koreksi saldo "langsung": cukup isi saldo yang BENAR (saldoBaru); selisihnya dihitung dari saldo ledger SAAT INI. Saldo tidak pernah ditimpa — tetap permintaan penyesuaian yang wajib disetujui orang lain.
+    const qty = (adjustmentQty === undefined || adjustmentQty === null || adjustmentQty === "") && saldoBaru !== undefined ? Math.round((Number(saldoBaru) - balance) * 10000) / 10000 : Number(adjustmentQty);
+    if (!Number.isFinite(qty) || qty === 0) throw new AdjustmentError("Adjustment quantity wajib diisi dan tidak boleh nol");
 
     const today = new Date();
     const startOfDay = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate()));
@@ -105,7 +109,7 @@ stockAdjustmentRouter.post("/", requirePermission(P.INVENTORY_WRITE), async (req
     const request = await prisma.stockAdjustmentRequest.create({
       data: {
         adjustmentNumber, adjustmentType, materialId, beforeQty: balance, adjustmentQty: qty,
-        reason: reason.trim(), notes: notes || null, requestedById: req.user.id,
+        reason: reason.trim(), notes: notes || null, requestedById: req.user.id, originType: originType || null, originId: originId ? String(originId) : null,
       },
       include: requestInclude,
     });

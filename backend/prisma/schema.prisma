@@ -5370,6 +5370,7 @@ model StockMovement {
   id         String   @id @default(uuid()) @db.Uuid
   provisionalUsage UnitProvisionalUsage?
   usageNotes       UnitUsageNote[]
+  valuationCorrections FinStockMovementValuationCorrection[]
   materialId String   @map("material_id") @db.Uuid
   material   Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
 
@@ -6323,6 +6324,9 @@ model StockAdjustmentRequest {
   postedAt      DateTime? @map("posted_at")
 
   notes     String?
+  // ASAL koreksi (mis. catatan pemakaian historis / pemakaian unit) — penelusuran "koreksi saldo ini dipicu apa". Keduanya terisi atau keduanya kosong.
+  originType String?  @map("origin_type")
+  originId   String?  @map("origin_id")
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -11620,6 +11624,7 @@ model UnitUsageNote {
 
   state       String   // TERCATAT_DI_STOK | PERLU_DICEK | SIAP_POSTING | DIPOSTING | BUKAN_STOK | TIDAK_DIHITUNG | DIKOREKSI
   flags       Json     @default("[]") // [{ kode, tingkat: BLOK|INFO, teks, aksi, data? }]
+  confirmedFlags Json  @default("[]") @map("confirmed_flags") // kode penanda yang sudah DIKONFIRMASI orang (mis. BARIS_BERULANG sah); tidak muncul lagi sebagai BLOK
   stockMovementId String? @map("stock_movement_id") @db.Uuid
   stockMovement   StockMovement? @relation(fields: [stockMovementId], references: [id], onDelete: Restrict)
   linkKind    String?  @map("link_kind") // ISSUE_LAMA_SAMA | ISSUE_LAMA_BEDA | POSTING_HISTORIS | ISSUE_TANPA_PASANGAN
@@ -11646,8 +11651,30 @@ model UnitUsageNoteEvent {
   after     Json?
   reason    String?
   actorId   String?  @map("actor_id")
+  idempotencyKey String? @map("idempotency_key")
   createdAt DateTime @default(now()) @map("created_at")
 
+  @@unique([noteId, idempotencyKey])
   @@index([noteId, createdAt])
   @@map("unit_usage_note_events")
+}
+
+// Koreksi harga/valuasi pergerakan (terpisah dari koreksi jumlah). Valuasi asli tetap; koreksi = baris baru append-only; valuasi efektif = koreksi terbaru.
+model FinStockMovementValuationCorrection {
+  id            String   @id @default(uuid()) @db.Uuid
+  movementId    String   @map("movement_id") @db.Uuid
+  movement      StockMovement @relation(fields: [movementId], references: [id], onDelete: Restrict)
+  materialId    String   @map("material_id") @db.Uuid
+  unitId        String   @map("unit_id") @db.Uuid
+  before        Json
+  after         Json
+  unitCostBasis Decimal  @map("unit_cost_basis") @db.Decimal(24, 8)
+  value         Decimal  @db.Decimal(18, 2)
+  reason        String
+  createdById   String?  @map("created_by")
+  idempotencyKey String  @unique @map("idempotency_key")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([movementId, createdAt])
+  @@map("fin_stock_movement_valuation_corrections")
 }

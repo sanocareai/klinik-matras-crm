@@ -29,6 +29,9 @@ export const NAMA_BELUM_FINAL = {
   ESTIMASI_HISTORIS: "Estimasi historis",
   RETUR_BELUM_DITERIMA: "Retur belum diterima Gudang",
   PRODUKSI_BELUM_SELESAI: "Produksi belum selesai",
+  CATATAN_BELUM_JADI_STOK: "Catatan pemakaian belum jadi pengeluaran stok",
+  PEMAKAIAN_PERLU_DICEK: "Pengeluaran stok perlu dicek",
+  JURNAL_PERLU_PENYESUAIAN: "Jurnal HPP perlu disesuaikan (harga dikoreksi)",
   ISSUE_BELUM_KELUAR: "Material Issue belum keluar",
   FAKTUR_BELUM_ADA: "Faktur supplier belum ada",
 };

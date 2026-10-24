@@ -49,6 +49,7 @@ import { unitRouter }     from "./routes/units.js";
 import { morningPriorityRouter } from "./routes/morningPriority.js";
 import { productionRouter } from "./routes/production.js";
 import { productionAdopsiRouter } from "./routes/productionAdopsi.js";
+import { pemakaianKoreksiRouter } from "./routes/pemakaianKoreksi.js";
 import { productionWorkspaceRouter } from "./routes/productionWorkspace.js";
 import { productionRencanaJadwalRouter } from "./routes/productionRencanaJadwal.js";
 import { productionComponentReuseRouter } from "./routes/productionComponentReuse.js";
@@ -259,6 +260,7 @@ app.use("/api/units",        jejakBahanUnitRouter); // jejak biaya bahan per uni
 app.use("/api/units",        unitRouter);
 app.use("/api/morning-priority-requests", morningPriorityRouter);
 app.use("/api/production",   productionRouter);
+app.use("/api/production",   pemakaianKoreksiRouter); // rekonsiliasi pemakaian: catatan historis, koreksi, posting terpadu (sebelum adopsi agar rute spesifik tidak tertangkap lebih dulu)
 app.use("/api/production",   productionAdopsiRouter); // adopsi Admin: panel unit, rencana bahan, status kerja manual, ekspor Excel
 app.use("/api/production",   productionWorkspaceRouter); // Ruang Kerja Status Produksi: daftar kerja per order + header ruang kerja unit (baca-saja)
 app.use("/api/production",   productionComponentReuseRouter); // Komponen lama dari unit pelanggan (pemakaian kembali, BUKAN stok)

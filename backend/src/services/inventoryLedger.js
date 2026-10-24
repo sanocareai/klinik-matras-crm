@@ -118,6 +118,9 @@ export async function postStockMovement(tx, {
   damagedStockRecordId, returnRecordId, stockAdjustmentRequestId,
   // Koreksi Dokumen Gudang (Okt 2026): pergerakan hasil koreksi bertaut ke dokumen koreksi dan ke pergerakan asal yang dikoreksi (asal TIDAK diubah).
   correctionId, correctsMovementId,
+  // Pergerakan HISTORIS (impor/koreksi atas kejadian lampau): cap waktu = tanggal kejadian, bukan waktu posting. Opsional; tanpa nilai ini perilaku TIDAK berubah (DB mengisi waktu sekarang).
+  // Invarian saldo tetap dihitung terhadap saldo SEKARANG di bawah kunci bahan; tanggal di masa depan ditolak.
+  createdAt,
 } = {}) {
   if (!tx?.stockMovement) {
     throw new Error("postStockMovement butuh `tx` (klien transaksi Prisma), bukan prisma singleton di luar transaksi");
@@ -126,6 +129,11 @@ export async function postStockMovement(tx, {
   if (!MOVEMENT_TYPES.includes(type)) throw new LedgerError(`Jenis movement tidak valid: ${type}`);
   const qtyNum = Number(qty);
   if (!Number.isFinite(qtyNum) || qtyNum === 0) throw new LedgerError("Jumlah movement wajib diisi dan tidak boleh nol");
+  if (createdAt !== undefined && createdAt !== null) {
+    const t = new Date(createdAt).getTime();
+    if (!Number.isFinite(t)) throw new LedgerError("Tanggal pergerakan tidak valid");
+    if (t > Date.now() + 60_000) throw new LedgerError("Tanggal pergerakan tidak boleh di masa depan");
+  }
 
   const balance = await lockMaterialBalance(tx, materialId);
   const resultBalance = balance + qtyNum;
@@ -163,6 +171,7 @@ export async function postStockMovement(tx, {
       stockAdjustmentRequestId: stockAdjustmentRequestId || null,
       correctionId: correctionId || null,
       correctsMovementId: correctsMovementId || null,
+      ...(createdAt ? { createdAt: new Date(createdAt) } : {}),
     },
     include: { material: { select: { code: true, name: true, unit: true } } },
   });

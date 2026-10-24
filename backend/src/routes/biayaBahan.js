@@ -8,6 +8,8 @@ import { requirePermission, requireAnyPermission, PERMISSIONS as P, hasPermissio
 import { prisma } from "../db.js";
 import { bacaJejakUnit, daftarUnitBiaya } from "../services/finance/biayaBahan.js";
 import { bacaJejakPO, bacaJejakPenerimaan } from "../services/finance/biayaBahanSumber.js";
+import { koreksiValuasiPergerakan, riwayatKoreksiValuasi } from "../services/finance/koreksiValuasi.js";
+import { KoreksiError } from "../services/warehouseCorrection.js";
 
 const POLA_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function galat(err, res) {
@@ -40,6 +42,22 @@ biayaBahanFinanceRouter.get("/unit/:id", requirePermission(P.FINANCE_READ), asyn
     const hasil = await bacaJejakUnit(prisma, req.params.id, { izinHarga: true });
     if (!hasil) return res.status(404).json({ error: "Unit tidak ditemukan" });
     res.json(hasil);
+  } catch (e) { galat(e, res); }
+});
+
+// KOREKSI HARGA pergerakan (terpisah dari koreksi jumlah). Valuasi asli tidak diubah; koreksi = baris baru (sebelum–sesudah, alasan, pelaku, waktu). Tidak menulis jurnal/stok.
+// POST /api/finance/biaya-bahan/pergerakan/:id/koreksi-harga { hargaBaru, alasan } + Idempotency-Key — izin finance:post.
+biayaBahanFinanceRouter.post("/pergerakan/:id/koreksi-harga", requirePermission(P.FINANCE_POST), async (req, res) => {
+  try {
+    if (!POLA_UUID.test(req.params.id)) return res.status(404).json({ error: "Pergerakan tidak ditemukan" });
+    const hasil = await koreksiValuasiPergerakan(prisma, { movementId: req.params.id, hargaBaru: req.body?.hargaBaru, alasan: req.body?.alasan, kunci: req.get("Idempotency-Key"), aktor: req.user });
+    res.status(hasil.ulang ? 200 : 201).json(hasil);
+  } catch (e) { if (e instanceof KoreksiError) return res.status(e.statusCode).json({ error: e.message, code: e.code }); galat(e, res); }
+});
+biayaBahanFinanceRouter.get("/pergerakan/:id/koreksi-harga", requirePermission(P.FINANCE_READ), async (req, res) => {
+  try {
+    if (!POLA_UUID.test(req.params.id)) return res.status(404).json({ error: "Pergerakan tidak ditemukan" });
+    res.json({ riwayat: await riwayatKoreksiValuasi(prisma, req.params.id) });
   } catch (e) { galat(e, res); }
 });
 

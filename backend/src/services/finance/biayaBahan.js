@@ -13,7 +13,7 @@
 import { dasarHargaRataRata } from "./posting/inventory.js";
 import { Decimal, ZERO, toMoney, moneyToNumber } from "./money.js";
 
-const JENIS_BIAYA = { ISSUE: "PEMAKAIAN", RETURN: "RETUR", WASTE: "SUSUT", ADJUSTMENT: "PENYESUAIAN" };
+export const JENIS_BIAYA = { ISSUE: "PEMAKAIAN", RETURN: "RETUR", WASTE: "SUSUT", ADJUSTMENT: "PENYESUAIAN" };
 export const TIPE_DINILAI = Object.keys(JENIS_BIAYA);
 const MAKS_SUMBER = 60;
 const STATUS_TAGIHAN_MASUK_BUKU = ["DISETUJUI", "DIBAYAR_SEBAGIAN", "LUNAS"];
@@ -204,11 +204,17 @@ export async function bacaJejakUnit(db, unitId, { izinHarga = false } = {}) {
   const sumberSemua = pergerakan.flatMap((m) => (m.valuation?.basis?.sumber ?? []));
   const lot = await selisihFakturPerLot(db, sumberSemua, [...new Set(pergerakan.map((m) => m.materialId))]);
 
+  // Koreksi harga (terpisah dari koreksi jumlah): valuasi efektif = koreksi terbaru; valuasi beku asli tidak berubah.
+  const koreksiHarga = db.finStockMovementValuationCorrection && pergerakan.length
+    ? new Map((await db.finStockMovementValuationCorrection.findMany({ where: { movementId: { in: pergerakan.map((m) => m.id) } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] })).map((k) => [k.movementId, k]))
+    : new Map();
+
   // ── baris pergerakan ──
   const sekarang = new Date();
   const baris = [];
   for (const m of pergerakan) {
-    const v = m.valuation;
+    const kor = koreksiHarga.get(m.id);
+    const v = kor ? { status: "DINILAI", value: kor.value, unitCostBasis: kor.unitCostBasis, basis: m.valuation?.basis ?? null } : m.valuation;
     const qty = d(m.qty);
     const mutlak = qty.abs();
     const jenis = JENIS_BIAYA[m.type];
@@ -233,7 +239,7 @@ export async function bacaJejakUnit(db, unitId, { izinHarga = false } = {}) {
     let selisihDiketahui = ZERO; let qtyFakturBelumAda = ZERO; let qtyTanpaPO = ZERO; const fakturLama = new Set(); const fakturDok = new Map();
     const sumber = basis?.sumber ?? [];
     const totalQtyDasar = d(basis?.totalQty ?? 0);
-    if (status === "DINILAI" && totalQtyDasar.greaterThan(0)) {
+    if (status === "DINILAI" && !kor && totalQtyDasar.greaterThan(0)) {
       for (const s of sumber) {
         const bobot = d(s.qty).dividedBy(totalQtyDasar);
         const qtyLot = mutlak.times(bobot);
@@ -248,7 +254,7 @@ export async function bacaJejakUnit(db, unitId, { izinHarga = false } = {}) {
     }
     const eps = d("0.00005");
     const tercakupQty = mutlak.minus(qtyTanpaPO).minus(qtyFakturBelumAda);
-    const statusFaktur = status !== "DINILAI" ? null
+    const statusFaktur = status !== "DINILAI" || kor ? null
       : qtyTanpaPO.greaterThanOrEqualTo(mutlak.minus(eps)) ? "TANPA_PO"
       : qtyTanpaPO.lessThan(eps) && qtyFakturBelumAda.lessThan(eps) ? "FAKTUR_LENGKAP"
       : qtyTanpaPO.lessThan(eps) && tercakupQty.lessThan(eps) ? "FAKTUR_BELUM_ADA"
@@ -267,7 +273,8 @@ export async function bacaJejakUnit(db, unitId, { izinHarga = false } = {}) {
       sumber: sumber.map((s) => ({ receiptNumber: s.receiptNumber ?? null, poNumber: s.poNumber ?? null, qty: Number(s.qty), unitCost: s.unitCost, goodsReceiptId: s.goodsReceiptId ?? null, purchaseOrderId: s.goodsReceiptId ? petaPO.get(s.goodsReceiptId) ?? null : null })),
       sumberDipangkas: basis?.sumberDipangkas ?? 0,
       asOfDasar: basis?.asOf ?? null,
-      faktur: status === "DINILAI" ? { status: statusFaktur, selisih: selisihDiketahui, qtyBelumAdaFaktur: qtyFakturBelumAda, qtyTanpaPO, fakturLama: [...fakturLama], dokumen: [...fakturDok.values()] } : null,
+      hargaManual: !!kor, koreksiHarga: kor ? { alasan: kor.reason, oleh: kor.createdById, waktu: kor.createdAt, hargaBaru: Number(kor.unitCostBasis) } : null,
+      faktur: status === "DINILAI" && !kor ? { status: statusFaktur, selisih: selisihDiketahui, qtyBelumAdaFaktur: qtyFakturBelumAda, qtyTanpaPO, fakturLama: [...fakturLama], dokumen: [...fakturDok.values()] } : null,
     });
   }
 
@@ -302,6 +309,7 @@ export async function bacaJejakUnit(db, unitId, { izinHarga = false } = {}) {
   let biaya = ZERO; let bruto = ZERO; let returTotal = ZERO; let adaDinilai = false; let susut = ZERO; let selisihFaktur = ZERO; let penyesuaian = ZERO;
   let estimasiBelumFinal = ZERO;
   for (const r of baris) {
+    if (r.hargaManual && r.jurnal === "TERBUKU") belumFinal.push({ jenis: "JURNAL_PERLU_PENYESUAIAN", movementId: r.movementId, kode: r.kode, pesan: `${r.kode}: harga dikoreksi setelah jurnal HPP terbit — jurnal perlu disesuaikan Finance (nilai di sini sudah memakai harga koreksi)` });
     if (r.status === "DINILAI") {
       adaDinilai = true;
       if (r.jenisBiaya === "SUSUT") susut = susut.plus(r.nilai);

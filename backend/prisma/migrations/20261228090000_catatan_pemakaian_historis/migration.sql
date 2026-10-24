@@ -49,6 +49,7 @@ CREATE TABLE "unit_usage_notes" (
   "map_via" TEXT,
   "state" TEXT NOT NULL,
   "flags" JSONB NOT NULL DEFAULT '[]',
+  "confirmed_flags" JSONB NOT NULL DEFAULT '[]',
   "stock_movement_id" UUID,
   "link_kind" TEXT,
   "evaluated_at" TIMESTAMP(3),
@@ -58,7 +59,7 @@ CREATE TABLE "unit_usage_notes" (
   CONSTRAINT "unit_usage_notes_origin_chk" CHECK ("origin" IN ('EXCEL','LEDGER')),
   CONSTRAINT "unit_usage_notes_state_chk" CHECK ("state" IN ('TERCATAT_DI_STOK','PERLU_DICEK','SIAP_POSTING','DIPOSTING','BUKAN_STOK','TIDAK_DIHITUNG','DIKOREKSI')),
   CONSTRAINT "unit_usage_notes_link_chk" CHECK ("link_kind" IS NULL OR "link_kind" IN ('ISSUE_LAMA_SAMA','ISSUE_LAMA_BEDA','POSTING_HISTORIS','ISSUE_TANPA_PASANGAN')),
-  CONSTRAINT "unit_usage_notes_flags_chk" CHECK (jsonb_typeof("flags") = 'array'),
+  CONSTRAINT "unit_usage_notes_flags_chk" CHECK (jsonb_typeof("flags") = 'array' AND jsonb_typeof("confirmed_flags") = 'array'),
   CONSTRAINT "unit_usage_notes_excel_chk" CHECK ("origin" <> 'EXCEL' OR ("source_row" IS NOT NULL AND "raw_row" IS NOT NULL)),
   CONSTRAINT "unit_usage_notes_ledger_chk" CHECK ("origin" <> 'LEDGER' OR "stock_movement_id" IS NOT NULL),
   CONSTRAINT "unit_usage_notes_posted_chk" CHECK ("state" <> 'DIPOSTING' OR ("stock_movement_id" IS NOT NULL AND "link_kind" = 'POSTING_HISTORIS')),
@@ -86,12 +87,14 @@ CREATE TABLE "unit_usage_note_events" (
   "after" JSONB,
   "reason" TEXT,
   "actor_id" TEXT,
+  "idempotency_key" TEXT,
   "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "unit_usage_note_events_pkey" PRIMARY KEY ("id"),
   CONSTRAINT "unit_usage_note_events_kind_chk" CHECK ("kind" IN ('IMPOR','DITAUTKAN','DIEVALUASI','DIKOREKSI','DIPOSTING','DIKECUALIKAN')),
   CONSTRAINT "unit_usage_note_events_reason_chk" CHECK ("kind" NOT IN ('DIKOREKSI','DIKECUALIKAN') OR ("reason" IS NOT NULL AND length(btrim("reason")) >= 3))
 );
 CREATE INDEX "unit_usage_note_events_note_id_created_at_idx" ON "unit_usage_note_events"("note_id", "created_at");
+CREATE UNIQUE INDEX "unit_usage_note_events_note_id_idempotency_key_key" ON "unit_usage_note_events"("note_id", "idempotency_key") WHERE "idempotency_key" IS NOT NULL;
 ALTER TABLE "unit_usage_note_events" ADD CONSTRAINT "unit_usage_note_events_note_id_fkey" FOREIGN KEY ("note_id") REFERENCES "unit_usage_notes"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- Penjaga catatan: tidak boleh dihapus; kolom asal (identitas + nilai asli berkas) tidak boleh berubah.
@@ -117,3 +120,41 @@ BEGIN
   RAISE EXCEPTION 'unit_usage_note_events append-only: tidak boleh diubah atau dihapus';
 END $$ LANGUAGE plpgsql;
 CREATE TRIGGER "unit_usage_note_events_guard_trg" BEFORE UPDATE OR DELETE ON "unit_usage_note_events" FOR EACH ROW EXECUTE FUNCTION unit_usage_note_events_guard();
+
+-- ── KOREKSI PEMAKAIAN PER ORDER (stok): memakai tabel koreksi Gudang yang SUDAH ada (warehouse_corrections) dengan jenis dokumen baru UNIT_USAGE.
+-- Pagar jenis dilonggarkan SATU hal: doc_type boleh GOODS_RECEIPT atau UNIT_USAGE. Kind/status/keputusan (pemohon ≠ penyetuju untuk koreksi stok), append-only, dan alasan ≥5 karakter TIDAK berubah.
+ALTER TABLE "warehouse_corrections" DROP CONSTRAINT "warehouse_corrections_jenis_chk";
+ALTER TABLE "warehouse_corrections" ADD CONSTRAINT "warehouse_corrections_jenis_chk" CHECK ("doc_type" IN ('GOODS_RECEIPT', 'UNIT_USAGE') AND "kind" IN ('METADATA', 'STOCK') AND "status" IN ('PENDING_APPROVAL', 'POSTED', 'REJECTED', 'CANCELLED'));
+
+-- ── KOREKSI HARGA/VALUASI TERPISAH dari koreksi jumlah. Valuasi asli (fin_stock_movement_valuations) TIDAK diubah; koreksi = baris baru (append-only) dengan sebelum–sesudah, alasan, pelaku, waktu.
+-- Valuasi efektif = koreksi terbaru bila ada. Koreksi harga TIDAK menulis jurnal; bila pergerakan sudah dijurnal, jejak biaya menandai "jurnal perlu penyesuaian" (keputusan Finance).
+CREATE TABLE "fin_stock_movement_valuation_corrections" (
+  "id" UUID NOT NULL,
+  "movement_id" UUID NOT NULL,
+  "material_id" UUID NOT NULL,
+  "unit_id" UUID NOT NULL,
+  "before" JSONB NOT NULL,
+  "after" JSONB NOT NULL,
+  "unit_cost_basis" DECIMAL(24,8) NOT NULL,
+  "value" DECIMAL(18,2) NOT NULL,
+  "reason" TEXT NOT NULL,
+  "created_by" TEXT,
+  "idempotency_key" TEXT NOT NULL,
+  "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT "fin_stock_movement_valuation_corrections_pkey" PRIMARY KEY ("id"),
+  CONSTRAINT "fin_smv_corr_reason_chk" CHECK (length(btrim("reason")) >= 5),
+  CONSTRAINT "fin_smv_corr_cost_chk" CHECK ("unit_cost_basis" >= 0)
+);
+CREATE UNIQUE INDEX "fin_stock_movement_valuation_corrections_idempotency_key_key" ON "fin_stock_movement_valuation_corrections"("idempotency_key");
+CREATE INDEX "fin_stock_movement_valuation_corrections_movement_id_created_at_idx" ON "fin_stock_movement_valuation_corrections"("movement_id", "created_at");
+ALTER TABLE "fin_stock_movement_valuation_corrections" ADD CONSTRAINT "fin_smv_corr_movement_fkey" FOREIGN KEY ("movement_id") REFERENCES "stock_movements"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+CREATE OR REPLACE FUNCTION fin_smv_corr_append_only() RETURNS trigger AS $$
+BEGIN
+  RAISE EXCEPTION 'fin_stock_movement_valuation_corrections append-only: tidak boleh diubah atau dihapus';
+END $$ LANGUAGE plpgsql;
+CREATE TRIGGER "fin_smv_corr_append_only_trg" BEFORE UPDATE OR DELETE ON "fin_stock_movement_valuation_corrections" FOR EACH ROW EXECUTE FUNCTION fin_smv_corr_append_only();
+
+-- ── KOREKSI SALDO BAHAN tanpa sesi opname penuh: memakai Stock Adjustment (review-gated) yang SUDAH ada. Hanya menambah penanda ASAL (transaksi/catatan yang memicu koreksi).
+ALTER TABLE "stock_adjustment_requests" ADD COLUMN "origin_type" TEXT;
+ALTER TABLE "stock_adjustment_requests" ADD COLUMN "origin_id" TEXT;
+ALTER TABLE "stock_adjustment_requests" ADD CONSTRAINT "stock_adjustment_requests_origin_chk" CHECK (("origin_type" IS NULL) = ("origin_id" IS NULL));

@@ -67,7 +67,9 @@ function klasifikasi(items, ctx, garisWaktu, { sekarang = new Date() } = {}) {
     }
     if ((dupHitung.get(i.dupKey) ?? 0) > 1) flags.push(FLAG.BARIS_BERULANG({ jumlah: dupHitung.get(i.dupKey) }));
     if (/komplain/i.test(i.kategori ?? "")) flags.push(FLAG.KATEGORI_KOMPLAIN());
-    hasil.set(i.key, { state: STATE.PERLU_DICEK, flags, linkKind: null, stockMovementId: null });
+    // penanda yang SUDAH dikonfirmasi orang (mis. baris berulang memang sah) tidak muncul lagi sebagai penahan
+    const konfirm = new Set(i.dikonfirmasi ?? []);
+    hasil.set(i.key, { state: STATE.PERLU_DICEK, flags: flags.filter((f) => !konfirm.has(f.kode)), linkKind: null, stockMovementId: null });
   }
   // 2) kelompok unit × bahan terhadap pergerakan stok yang ADA (ISSUE − RETURN bertaut unit)
   const kel = new Map();
@@ -214,16 +216,17 @@ export async function terapkanImpor(prisma, rencana, { actorId = null } = {}) {
 const stabil = (v) => JSON.stringify(v, (_k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((k) => [k, x[k]])) : x));
 const noteKeItem = (n, units) => ({
   key: n.sourceKey, origin: n.origin, orderNumber: n.orderNumber, orderFound: !!n.orderId, units, unitId: n.unitId, rawName: n.rawName, rawSpec: n.rawSpec, rawQty: n.rawQty, rawUom: n.rawUom, kategori: n.rawCategory,
-  qty: n.qty === null ? null : Number(n.qty), uom: n.uom, usedAt: n.usedAt, materialId: n.materialId, via: n.mapVia, dupKey: null, tetap: FIXED.has(n.state) ? n.state : null, id: n.id,
+  qty: n.qty === null ? null : Number(n.qty), uom: n.uom, usedAt: n.usedAt, materialId: n.materialId, via: n.mapVia, dupKey: null, tetap: FIXED.has(n.state) ? n.state : null, id: n.id, dikonfirmasi: Array.isArray(n.confirmedFlags) ? n.confirmedFlags : [],
 });
 /** Hitung ulang keadaan catatan yang belum final terhadap ledger SEKARANG. Menulis peristiwa DIEVALUASI hanya bila state/penanda berubah. Idempoten. */
 export async function evaluasiUlang(prisma, { actorId = null, unitIds = null, sekarang = new Date() } = {}) {
   const notes = await prisma.unitUsageNote.findMany({ where: { origin: "EXCEL", ...(unitIds ? { unitId: { in: unitIds } } : {}) }, orderBy: { sourceRow: "asc" } });
   if (!notes.length) return { diperiksa: 0, berubah: 0 };
-  const ctx = await muatKonteks(prisma, { orderNumbers: [...new Set(notes.map((n) => n.orderNumber))] });
+  const ledgerNotes = await prisma.unitUsageNote.findMany({ where: { origin: "LEDGER", state: STATE.PERLU_DICEK, ...(unitIds ? { unitId: { in: unitIds } } : {}) } });
+  const ctx = await muatKonteks(prisma, { orderNumbers: [...new Set(notes.map((n) => n.orderNumber))], unitIds: ledgerNotes.map((l) => l.unitId).filter(Boolean) });
   // baris berulang dihitung dari nilai asli (tidak bergantung koreksi)
   const dk = (n) => [n.orderNumber, normNama(n.rawName), normNama(n.rawSpec), n.rawQty, normNama(n.rawUom)].join("|");
-  const hit = new Map(); for (const n of notes) hit.set(dk(n), (hit.get(dk(n)) ?? 0) + 1);
+  const hit = new Map(); for (const n of notes) { if (n.state === STATE.TIDAK_DIHITUNG) continue; hit.set(dk(n), (hit.get(dk(n)) ?? 0) + 1); } // baris yang sudah dikecualikan tidak lagi dihitung berulang
   const items = notes.map((n) => { const it = noteKeItem(n, ctx.orderBy.get(n.orderNumber)?.units ?? []); if ((hit.get(dk(n)) ?? 0) > 1) it.dupKey = dk(n); if (!n.materialId && n.rawName) it.pemetaan = petakanBahan({ nama: n.rawName, spek: n.rawSpec }, ctx.katalog); return it; });
   const idMat = [...new Set([...items.map((i) => i.materialId), ...ctx.lama.map((m) => m.materialId)].filter(Boolean))];
   const gw = await muatGarisWaktu(prisma, idMat);
@@ -241,7 +244,20 @@ export async function evaluasiUlang(prisma, { actorId = null, unitIds = null, se
     });
     berubah++;
   }
-  return { diperiksa: notes.length, berubah, detail };
+  // Catatan LEDGER (pengeluaran stok lama tanpa pasangan): selesai bila pemakaiannya dikoreksi menjadi 0 atau kini punya pasangan di berkas.
+  const net = (u, m) => r4(-ctx.pakai.filter((x) => x.unitId === u && x.materialId === m).reduce((s, x) => s + Number(x.qty), 0));
+  for (const l of ledgerNotes) {
+    const adaPasangan = items.some((i) => i.unitId === l.unitId && i.materialId === l.materialId);
+    const habis = net(l.unitId, l.materialId) <= EPS;
+    if (!habis && !adaPasangan) continue;
+    const alasan = habis ? "Pemakaian bahan ini pada unit sudah dikoreksi menjadi 0" : "Pengeluaran stok ini kini punya pasangan di berkas (dinilai pada catatan Excel)";
+    await prisma.$transaction(async (tx) => {
+      await tx.unitUsageNote.update({ where: { id: l.id }, data: { state: STATE.DIKOREKSI, evaluatedAt: new Date() } });
+      await tx.unitUsageNoteEvent.create({ data: { noteId: l.id, kind: "DIEVALUASI", before: { state: l.state }, after: { state: STATE.DIKOREKSI }, reason: alasan, actorId } });
+    });
+    berubah++; detail.push({ ledger: l.id, ke: STATE.DIKOREKSI, alasan });
+  }
+  return { diperiksa: notes.length + ledgerNotes.length, berubah, detail };
 }
 
 // ───────────────────────────── bacaan untuk Produksi ─────────────────────────────

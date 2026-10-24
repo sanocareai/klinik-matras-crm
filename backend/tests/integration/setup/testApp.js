@@ -39,6 +39,7 @@ const { warehouseReportsRouter } = await import("../../../src/routes/warehouseRe
 const { unitRouter } = await import("../../../src/routes/units.js");
 const { productionRouter } = await import("../../../src/routes/production.js");
 const { productionAdopsiRouter } = await import("../../../src/routes/productionAdopsi.js");
+const { pemakaianKoreksiRouter } = await import("../../../src/routes/pemakaianKoreksi.js");
 const { productionWorkspaceRouter } = await import("../../../src/routes/productionWorkspace.js");
 const { productionRencanaJadwalRouter } = await import("../../../src/routes/productionRencanaJadwal.js");
 const { productionComponentReuseRouter } = await import("../../../src/routes/productionComponentReuse.js");
@@ -115,6 +116,7 @@ export function buildTestApp() {
   app.use("/api/units", jejakBahanUnitRouter);
   app.use("/api/units", unitRouter);
   app.use("/api/production", productionRouter); // P12B.5: work-orders (penanda sumber V1/V2)
+  app.use("/api/production", pemakaianKoreksiRouter); // rekonsiliasi pemakaian (catatan historis, koreksi, posting terpadu)
   app.use("/api/production", productionAdopsiRouter); // adopsi Admin: panel unit, rencana bahan, status kerja manual, ekspor Excel
   app.use("/api/production", productionWorkspaceRouter); // Ruang Kerja Status Produksi (baca-saja)
   app.use("/api/production", productionComponentReuseRouter); // Komponen lama dari unit pelanggan
