@@ -1,20 +1,21 @@
 # Impor catatan historis ke production — prosedur bergerbang (HANYA catatan)
 
-Status: **disiapkan, BELUM dijalankan di production.** Persetujuan impor diberikan terpisah setelah daftar final direview. Live saat disusun: `df00edb6` (268 migrasi, tabel rekonsiliasi kosong).
+Status: **disiapkan (VERSI 2 — CSV Admin Sales 24 Okt 2026 20:23), BELUM dijalankan di production.** Versi 1 (CSV 595.600 byte, hash rencana `3f036767…`) **digantikan dan tidak boleh dipakai**. Persetujuan impor diberikan terpisah setelah daftar final direview. Live saat disusun: `df00edb6` (268 migrasi, tabel rekonsiliasi kosong).
 Cakupan: memuat **catatan** (`unit_usage_notes` + peristiwa + 1 batch) dari dua CSV Admin Sales. **Di luar cakupan:** posting 384 transaksi, pengeluaran stok, koreksi saldo, valuasi, jurnal HPP. Impor tidak menulis `stock_movements`, `fin_*`, material issue, atau penyesuaian — dibuktikan pada salinan (sidik jari sebelum–sesudah).
 
 ## 1. Yang dibekukan
 | Berkas | sha256 |
 |---|---|
-| `Rekapitulasi Pemakaian Bahan SANO - 2026.xlsx - Pemakaian Bahan.csv` (595.600 byte) | `0230e650a0c4c8de631247bfef01c47c7fa533f12fb534e9eea840fef6b00d62` |
-| `… - Rekapitulasi Order.csv` (92.452 byte; hanya untuk analisis, tidak diimpor) | `26295f1603da3cdd9f670129b5463ee8f4b924f0fb3b6927d452438db9e7f57a` |
+| `Rekapitulasi Pemakaian Bahan SANO - 2026.xlsx - Pemakaian Bahan (1).csv` (613.895 byte; disalin ke VPS sebagai `pemakaian-bahan.csv`) | `a5073b39314449e268c2cd4fcadba2e32fa85601b42065b30dab2f3a808611c0` |
+| `… - Rekapitulasi Order.csv` (92.452 byte; berkas 23 Okt, TIDAK diperbarui; hanya untuk analisis, tidak diimpor) | `26295f1603da3cdd9f670129b5463ee8f4b924f0fb3b6927d452438db9e7f57a` |
 | `manifest-final.json` (hitungan, hash rencana, hash keadaan akhir, daftar order/kegagalan) | lihat `SHA256SUMS` |
 | `scripts/lib/impor-terkelola-pemakaian-historis.mjs` (alat; tidak ada di image live — disalin ke container sebagai berkas, **tanpa deploy**; byte diverifikasi sendiri) | lihat `SHA256SUMS` |
 Kunci idempoten tiap baris = hash isi baris + urutan kemunculan. Berkas yang sama = nol perubahan.
 
-## 2. Hitungan yang harus cocok (bukti pada data production terbaru 24 Okt)
-2.668 rekord − 12 baris pengisi `#N/A` = **2.656 catatan Excel** (83 berjumlah nol + 2.573 positif) + **29 referensi ISSUE lama** (catatan LEDGER, kategori terpisah) = **2.685**. Order: 304 di rekap → 303 berbaris → **302 tampil** (RES-03092026-018 hanya baris nol). 254 ISSUE lama = 225 berpasangan dengan baris Excel + 29 tanpa pasangan; **0 pergerakan stok baru**.
-Keadaan hasil: PERLU_DICEK 2.098 · SIAP_POSTING 386 (klasifikasi saja, tidak diposting) · TERCATAT_DI_STOK 73 · TIDAK_DIHITUNG 83 · BUKAN_STOK 16 (komponen lama) · LEDGER PERLU_DICEK 29.
+## 2. Hitungan yang harus cocok (bukti pada salinan production 24 Okt 13:56 UTC)
+2.784 rekord − 52 baris pengisi `#N/A` = **2.732 catatan Excel** (83 berjumlah nol + 2.649 positif) + **29 referensi ISSUE lama** (catatan LEDGER, kategori terpisah) = **2.761**. Order: 311 berbaris → **310 tampil** (RES-03092026-018 hanya baris nol). 254 ISSUE lama = 225 berpasangan dengan baris Excel + 29 tanpa pasangan; **0 pergerakan stok baru**.
+Dibanding versi 1: +76 baris (8 order baru), 306 baris LEM I-SR dikoreksi sumber (harga Rp 3.842 → Rp 49.950; qty disesuaikan), 30 label layanan, +40 baris pengisi #N/A. Satu baris LEM (No 2713, RES-16102026-081) tetap Rp 3.842 — dimuat apa adanya.
+Keadaan hasil: PERLU_DICEK 2.155 · SIAP_POSTING 405 (klasifikasi saja) · TERCATAT_DI_STOK 73 · TIDAK_DIHITUNG 83 · BUKAN_STOK 16 · LEDGER PERLU_DICEK 29. Seluruh isi 258 tabel production selain 3 tabel catatan **identik** sebelum vs sesudah impor percobaan.
 
 ## 3. Langkah (tiap langkah baca-saja kecuali **terapkan**)
 **Aktor audit** = akun **ADMIN** aktif yang menjalankan impor (email + id harus cocok; gerbang menolak akun non-Admin, nonaktif, atau id berbeda). Peristiwa mencatat sumber "**Excel Admin Sales yang dikonfirmasi Owner**" dan **tidak** mengatasnamakan PIC pemakaian historis (PIC hanya tersimpan sebagai nilai asli baris).
@@ -37,17 +38,17 @@ AK="--aktor-email=<email-admin> --aktor-id=<id-admin>"; SA="--sha-alat=<sha256-a
 2. **Pratinjau pada production** (baca-saja): `RUN --mode=pratinjau --csv=… --rekap=… --keluar=/tmp/impor/pratinjau-prod.json` → `hashRencana` HARUS = hash di manifest yang direview. Berbeda = data bergeser → berhenti, tinjau ulang, persetujuan baru.
 3. **Sebelum** (baca-saja): `RUN --mode=sebelum $A --potret=/tmp/impor/potret-sebelum.json` → semua PASS. Salin potret keluar: `docker cp $CID:/tmp/impor/potret-sebelum.json $I/`.
 4. **Terapkan** (SATU-SATUNYA langkah menulis; hanya setelah persetujuan impor): `RUNBG --mode=terapkan $A --potret=/tmp/impor/potret-sebelum.json --hash-disetujui=<hash rencana> $SA $AK; tail -f $I/terapkan.log`.
-   Gerbang menolak (exit 3, **tidak menulis apa pun**) bila: sha256 CSV ≠ manifest · hash disetujui kosong/salah · tabel rekonsiliasi tidak kosong · potret tidak ada · byte alat ≠ yang disetujui · aktor bukan Admin aktif yang disetujui · hash rencana yang dihitung ulang dari production ≠ manifest · hitungan ≠ 2.656 + 29. Lalu **satu transaksi** (±15 dtk pada salinan) membuat batch + 2.685 catatan + peristiwa, disusul evaluasi ulang idempoten.
+   Gerbang menolak (exit 3, **tidak menulis apa pun**) bila: sha256 CSV ≠ manifest · hash disetujui kosong/salah · tabel rekonsiliasi tidak kosong · potret tidak ada · byte alat ≠ yang disetujui · aktor bukan Admin aktif yang disetujui · hash rencana yang dihitung ulang dari production ≠ manifest · hitungan ≠ manifest (2.732 + 29). Lalu **satu transaksi** (±15 dtk pada salinan) membuat batch + 2.685 catatan + peristiwa, disusul evaluasi ulang idempoten.
 5. **Sesudah** (baca-saja): `RUN --mode=sesudah $A --potret=/tmp/impor/potret-sebelum.json $AK` → semua PASS: 1 batch (sha256 = CSV, dibuat aktor), 2.656 + 29, hash keadaan akhir = yang direview, semua peristiwa atas akun aktor dan menyebut sumber, tidak ada nama PIC di peristiwa, nilai asli = baris CSV, tidak ada DIPOSTING/koreksi/pergerakan baru, sidik jari pergerakan/valuasi/jurnal/koreksi/penyesuaian/material issue/bahan **identik**, 254 ISSUE utuh, impor ulang = 0 perubahan.
 6. Guard: `bash scripts/rollback-guard-rekon-pemakaian.sh` → **exit 10** (ADA DATA: rollback rutin DITOLAK — itu keadaan yang diharapkan sesudah impor).
-7. Smoke baca-saja Produksi/Gudang (daftar Order Produksi 200; panel unit menampilkan catatan; ekspor Excel memuat sheet "Catatan Historis"; rencana posting menunjukkan **384 SIAP_POSTING tanpa diposting**).
+7. Smoke baca-saja Produksi/Gudang (daftar Order Produksi 200; panel unit menampilkan catatan; ekspor Excel memuat sheet "Catatan Historis"; rencana posting menunjukkan **405 SIAP_POSTING tanpa diposting**).
 
 ## 4. Bila koneksi/proses terputus — pemulihan MAJU
 **Langkah pertama SELALU** `RUN --mode=status --manifest=/tmp/impor/manifest-final.json` (baca-saja; exit 0 = KOSONG, 10 = PENUH, 20 = lain). **Jangan menjalankan `terapkan` lagi sebelum status dibaca.**
 | Status | Arti | Langkah |
 |---|---|---|
 | **KOSONG** (exit 0) | Transaksi tidak ter-commit (gerbang menolak, koneksi putus di tengah transaksi, timeout 120 dtk, proses dimatikan, server restart): PostgreSQL membatalkan SELURUH transaksi — 0 batch, 0 catatan, 0 peristiwa (**diuji**: koneksi dimatikan paksa di tengah INSERT) | Jalankan `--mode=sebelum` (harus PASS), lalu **ulangi** `terapkan` dengan argumen yang sama → hasil identik (hash akhir sama; diuji). Jika gerbang menolak karena data bergeser: pratinjau ulang → persetujuan baru. |
-| **PENUH** (exit 10) | Transaksi ter-commit (2.656 + 29, 1 batch), tetapi proses terputus sebelum/di tengah evaluasi ulang atau sebelum `sesudah` (**diuji** dengan menghentikan proses tepat setelah commit) | **Jangan** `terapkan` (gerbang menolak: tabel tidak kosong). Jalankan `RUN --mode=lanjut $A $SA $AK` (hanya evaluasi ulang idempoten; menolak bila byte/aktor salah) lalu `--mode=sesudah`. |
+| **PENUH** (exit 10) | Transaksi ter-commit (2.732 + 29, 1 batch), tetapi proses terputus sebelum/di tengah evaluasi ulang atau sebelum `sesudah` (**diuji** dengan menghentikan proses tepat setelah commit) | **Jangan** `terapkan` (gerbang menolak: tabel tidak kosong). Jalankan `RUN --mode=lanjut $A $SA $AK` (hanya evaluasi ulang idempoten; menolak bila byte/aktor salah) lalu `--mode=sesudah`. |
 | **SEBAGIAN/LAIN** (exit 20) | Tidak terduga (transaksi satu-kesatuan seharusnya tidak sebagian) | **STOP.** Jangan ubah apa pun; laporkan hitungan yang tercetak. |
 | `sesudah` ada FAIL | Catatan ada | **Jangan** menghapus/rollback. Catatan append-only (trigger menolak ubah/hapus nilai asli dan hapus baris) dan **tidak mengubah stok**; dampak terbatas pada tampilan Produksi. Laporkan FAIL; perbaikan lewat jalur resmi (koreksi catatan/kecualikan), perbaikan maju kode, atau keputusan pemulihan khusus. |
 Koneksi SSH terputus saat `terapkan` berjalan: karena dijalankan lewat `RUNBG` (nohup) proses tetap berjalan; **tunggu ≥ 3 menit** (transaksi ±15 dtk, batas 120 dtk), baca `$I/terapkan.log`, lalu jalankan `status` — hasilnya KOSONG atau PENUH.
@@ -56,4 +57,4 @@ Koneksi SSH terputus saat `terapkan` berjalan: karena dijalankan lewat `RUNBG` (
 Begitu tabel berisi, `scripts/rollback-guard-rekon-pemakaian.sh` menjawab **exit 10 (ADA DATA)** dan `scripts/rollback-rekon-pemakaian.sh` **menolak** (exit 30): kode lama menyembunyikan "Perlu dicek", HPP PARSIAL, dan koreksi, sehingga pemakaian dan biaya bahan tampak lebih lengkap daripada kenyataan. Rollback kode rutin hanya sah selama tabel kosong. Pemulihan = **perbaikan maju** atau **keputusan pemulihan khusus** (Owner + Finance + Gudang) setelah dampak data dinilai. Karena itu rollback kode **harus dipertimbangkan sebelum** persetujuan impor, bukan sesudahnya.
 
 ## 6. Yang TIDAK dilakukan prosedur ini
-Posting 384 transaksi · pengeluaran stok · koreksi saldo/pemakaian/harga · jurnal HPP · pembuatan master bahan · perubahan status unit/order. Catatan "Perlu dicek" (2.098), bahan belum di katalog (334 baris, 33 nama), dan 29 referensi ISSUE lama tetap menunggu keputusan manusia lewat UI.
+Posting 384 transaksi · pengeluaran stok · koreksi saldo/pemakaian/harga · jurnal HPP · pembuatan master bahan · perubahan status unit/order. Catatan "Perlu dicek" (2.155), bahan belum di katalog (358 baris, 36 nama + 9 baris tanpa nama), dan 29 referensi ISSUE lama tetap menunggu keputusan manusia lewat UI.

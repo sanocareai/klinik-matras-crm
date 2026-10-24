@@ -27,7 +27,7 @@ test("gerbang 'terapkan' menolak tanpa menulis: sha256 CSV, hash disetujui, tabe
 test("fase 'sesudah' membuktikan: nilai asli = CSV, tanpa pergerakan/valuasi/jurnal baru (sidik jari sebelum T0), 254 ISSUE utuh, tanpa posting, impor ulang = nol; dokumen menjelaskan penolakan rollback dan pemulihan maju", () => {
   const blok = alat.slice(alat.indexOf('MODE === "sesudah"'));
   for (const s of ["nilai asli setiap catatan Excel = baris CSV", "sidik jari ${k} (data sebelum T0) identik", "254 ISSUE lama tetap 254", "tidak ada catatan DIPOSTING", "impor ulang berkas yang sama = NOL perubahan", "hash keadaan akhir tabel"]) assert.ok(blok.includes(s), s);
-  for (const s of ["exit 10 (ADA DATA)", "menolak", "perbaikan maju", "keputusan pemulihan khusus", "PostgreSQL membatalkan SELURUH transaksi", "--mode=lanjut", "0230e650a0c4c8de631247bfef01c47c7fa533f12fb534e9eea840fef6b00d62"]) assert.ok(doc.includes(s), s);
+  for (const s of ["exit 10 (ADA DATA)", "menolak", "perbaikan maju", "keputusan pemulihan khusus", "PostgreSQL membatalkan SELURUH transaksi", "--mode=lanjut", "a5073b39314449e268c2cd4fcadba2e32fa85601b42065b30dab2f3a808611c0"]) assert.ok(doc.includes(s), s);
 });
 
 test("aktor audit: akun ADMIN yang benar-benar menjalankan impor; sumber 'Excel Admin Sales yang dikonfirmasi Owner' di peristiwa; tidak mengatasnamakan PIC; byte alat diverifikasi sendiri; uji berhenti-setelah-commit hanya lewat env khusus", () => {
