@@ -94,7 +94,8 @@ CREATE TABLE "unit_usage_note_events" (
   CONSTRAINT "unit_usage_note_events_reason_chk" CHECK ("kind" NOT IN ('DIKOREKSI','DIKECUALIKAN') OR ("reason" IS NOT NULL AND length(btrim("reason")) >= 3))
 );
 CREATE INDEX "unit_usage_note_events_note_id_created_at_idx" ON "unit_usage_note_events"("note_id", "created_at");
-CREATE UNIQUE INDEX "unit_usage_note_events_note_id_idempotency_key_key" ON "unit_usage_note_events"("note_id", "idempotency_key") WHERE "idempotency_key" IS NOT NULL;
+-- Unik biasa (sama dengan @@unique di schema.prisma): NULL tidak dianggap sama di PostgreSQL, jadi peristiwa tanpa kunci tetap boleh banyak.
+CREATE UNIQUE INDEX "unit_usage_note_events_note_id_idempotency_key_key" ON "unit_usage_note_events"("note_id", "idempotency_key");
 ALTER TABLE "unit_usage_note_events" ADD CONSTRAINT "unit_usage_note_events_note_id_fkey" FOREIGN KEY ("note_id") REFERENCES "unit_usage_notes"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 -- Penjaga catatan: tidak boleh dihapus; kolom asal (identitas + nilai asli berkas) tidak boleh berubah.
@@ -146,8 +147,8 @@ CREATE TABLE "fin_stock_movement_valuation_corrections" (
   CONSTRAINT "fin_smv_corr_cost_chk" CHECK ("unit_cost_basis" >= 0)
 );
 CREATE UNIQUE INDEX "fin_stock_movement_valuation_corrections_idempotency_key_key" ON "fin_stock_movement_valuation_corrections"("idempotency_key");
-CREATE INDEX "fin_stock_movement_valuation_corrections_movement_id_created_at_idx" ON "fin_stock_movement_valuation_corrections"("movement_id", "created_at");
-ALTER TABLE "fin_stock_movement_valuation_corrections" ADD CONSTRAINT "fin_smv_corr_movement_fkey" FOREIGN KEY ("movement_id") REFERENCES "stock_movements"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+CREATE INDEX "fin_stock_movement_valuation_corrections_movement_id_create_idx" ON "fin_stock_movement_valuation_corrections"("movement_id", "created_at");
+ALTER TABLE "fin_stock_movement_valuation_corrections" ADD CONSTRAINT "fin_stock_movement_valuation_corrections_movement_id_fkey" FOREIGN KEY ("movement_id") REFERENCES "stock_movements"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 CREATE OR REPLACE FUNCTION fin_smv_corr_append_only() RETURNS trigger AS $$
 BEGIN
   RAISE EXCEPTION 'fin_stock_movement_valuation_corrections append-only: tidak boleh diubah atau dihapus';
