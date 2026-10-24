@@ -40,9 +40,9 @@ const e1 = await inti(); cek("bagian A tidak menulis apa pun (pergerakan, Materi
 cek("tabel baru tetap kosong setelah semua pemeriksaan bagian A", (await Promise.all(TABEL_BARU.map((t) => hitung(`select count(*)::int n from ${t}`)))).every((n) => n === 0));
 
 // ───────── B. jalur tulis pada SALINAN (impor mini → posting → koreksi → koreksi harga) ─────────
-const u = (await baris(`select u.id::text id, u.unit_code, o.order_number from units u join "Order" o on o.id = u.order_id where o.order_number ~ '^(RES|NEW)-[0-9]{8}-[0-9]+$' and u.status <> 'CANCELLED' and not exists (select 1 from stock_movements s where s.unit_id = u.id) and (select count(*) from units x where x.order_id = o.id) = 1 order by o.created_at desc limit 1`))[0];
+const u = (await baris(`select u.id::text id, u.unit_code, o."orderNumber" order_number from units u join "Order" o on o.id = u.order_id where o."orderNumber" ~ '^(RES|NEW)-[0-9]{8}-[0-9]+$' and u.status <> 'CANCELLED' and not exists (select 1 from stock_movements s where s.unit_id = u.id) and (select count(*) from units x where x.order_id = o.id) = 1 order by o."createdAt" desc limit 1`))[0];
 const m = (await baris(`select m.id::text id, m.code, m.name, m.unit::text unit from materials m where m.active and (m.kind is null or m.kind <> 'PERLENGKAPAN_STOK') and (select count(*) from materials y where upper(y.name) = upper(m.name)) = 1 and (select coalesce(sum(qty),0) from stock_movements s where s.material_id = m.id) >= 10 and exists (select 1 from stock_movements s where s.material_id = m.id and s.qty > 0 and s.created_at < '2026-10-01') and m.name !~ '[",]' order by m.code limit 1`))[0];
-const pelaku = await baris("select id::text id, name from \"User\" where active order by created_at limit 2");
+const pelaku = await baris("select id::text id, name from \"User\" where active order by \"createdAt\" limit 2");
 if (!u || !m || pelaku.length < 2) { lewati("jalur tulis pada salinan", `butuh unit tanpa pergerakan, bahan bersaldo, dan 2 pengguna aktif (unit=${!!u} bahan=${!!m} pengguna=${pelaku.length})`); }
 else {
   const A = pelaku[0]; const O = pelaku[1]; const NL = String.fromCharCode(10);
