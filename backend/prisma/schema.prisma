@@ -1430,6 +1430,7 @@ model Order {
   weightEntries     OrderWeightEntry[]
   statusTransitions OrderStatusTransition[]
   units             Unit[]
+  usageNotes        UnitUsageNote[]
   jobs              Job[]
   payments          Payment[]
   scopeRevisions    ScopeRevision[]
@@ -1862,6 +1863,7 @@ model Unit {
   componentReuseEntries UnitComponentReuseEntry[]
   materialProposals MaterialProposal[]
   provisionalUsages UnitProvisionalUsage[]
+  usageNotes        UnitUsageNote[]
   workshopReceiptCorrections UnitWorkshopReceiptCorrection[]
 
   @@unique([orderId, seq])
@@ -5263,6 +5265,7 @@ model Material {
   componentReuseEntries UnitComponentReuseEntry[]
   materialProposals MaterialProposal[]
   provisionalUsages UnitProvisionalUsage[]
+  usageNotes        UnitUsageNote[]
   supplierReturnLines SupplierReturnLine[]
   riwayatReferensi    StokRiwayatReferensi[]
   id          String       @id @default(uuid()) @db.Uuid
@@ -5366,6 +5369,7 @@ model Material {
 model StockMovement {
   id         String   @id @default(uuid()) @db.Uuid
   provisionalUsage UnitProvisionalUsage?
+  usageNotes       UnitUsageNote[]
   materialId String   @map("material_id") @db.Uuid
   material   Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
 
@@ -11558,4 +11562,92 @@ model UnitProvisionalUsage {
   @@index([unitId, recordedAt])
   @@index([status, recordedAt])
   @@map("unit_provisional_usages")
+}
+
+// ───────────────────────── CATATAN PEMAKAIAN HISTORIS (Okt 2026) ─────────────────────────
+// Catatan pemakaian bahan per order/unit dari sumber historis (Excel Admin Sales) agar SEMUA order yang punya baris bahan bisa menampilkannya di Produksi, termasuk yang belum (atau tidak) menjadi pengeluaran stok.
+// BUKAN pergerakan stok dan BUKAN Material Issue: tabel ini tidak mengurangi saldo, tidak membuat biaya, tidak menjurnal. Nilai asli dari berkas (raw_*) TIDAK PERNAH berubah (trigger DB);
+// angka janggal tidak diperbaiki otomatis — hanya diberi tanda "Perlu dicek". Setiap perubahan keadaan/tautan/koreksi selalu punya baris peristiwa (unit_usage_note_events, append-only).
+model UsageImportBatch {
+  id          String   @id @default(uuid()) @db.Uuid
+  sourceKind  String   @map("source_kind") // EXCEL_ADMIN_SALES_CSV
+  fileName    String   @map("file_name")
+  fileSha256  String   @map("file_sha256")
+  rowCount    Int      @map("row_count")
+  summary     Json     @default("{}")
+  createdById String?  @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+  notes       UnitUsageNote[]
+
+  @@unique([sourceKind, fileSha256])
+  @@map("usage_import_batches")
+}
+
+model UnitUsageNote {
+  id          String   @id @default(uuid()) @db.Uuid
+  batchId     String   @map("batch_id") @db.Uuid
+  batch       UsageImportBatch @relation(fields: [batchId], references: [id], onDelete: Restrict)
+  origin      String   // EXCEL | LEDGER (LEDGER = pergerakan ISSUE lama yang tidak punya pasangan di Excel; tanpa raw_*)
+  sourceKey   String   @unique @map("source_key") // kunci idempoten: hash isi baris + urutan kemunculan (EXCEL) atau movement:<id> (LEDGER)
+  sourceRow   Int?     @map("source_row")
+  orderNumber String   @map("order_number")
+  orderId     String?  @map("order_id")
+  order       Order?   @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  unitId      String?  @map("unit_id") @db.Uuid
+  unit        Unit?    @relation(fields: [unitId], references: [id], onDelete: Restrict)
+
+  // Nilai ASLI berkas — tidak pernah diubah (trigger).
+  rawName     String?  @map("raw_name")
+  rawSpec     String?  @map("raw_spec")
+  rawQty      String?  @map("raw_qty")
+  rawUom      String?  @map("raw_uom")
+  rawCategory String?  @map("raw_category")
+  rawDate     String?  @map("raw_date")
+  rawMonth    String?  @map("raw_month")
+  rawPic      String?  @map("raw_pic")
+  rawQc       String?  @map("raw_qc")
+  rawPrice    String?  @map("raw_price")
+  rawTotal    String?  @map("raw_total")
+  rawRow      Json?    @map("raw_row")
+
+  // Nilai TERURAI (efektif). Berubah hanya lewat koreksi/penautan berjejak (peristiwa).
+  qty         Decimal? @db.Decimal(14, 4)
+  uom         String?
+  usedAt      DateTime? @map("used_at")
+  materialId  String?  @map("material_id") @db.Uuid
+  material    Material? @relation(fields: [materialId], references: [id], onDelete: Restrict)
+  mapVia      String?  @map("map_via")
+
+  state       String   // TERCATAT_DI_STOK | PERLU_DICEK | SIAP_POSTING | DIPOSTING | BUKAN_STOK | TIDAK_DIHITUNG | DIKOREKSI
+  flags       Json     @default("[]") // [{ kode, tingkat: BLOK|INFO, teks, aksi, data? }]
+  stockMovementId String? @map("stock_movement_id") @db.Uuid
+  stockMovement   StockMovement? @relation(fields: [stockMovementId], references: [id], onDelete: Restrict)
+  linkKind    String?  @map("link_kind") // ISSUE_LAMA_SAMA | ISSUE_LAMA_BEDA | POSTING_HISTORIS | ISSUE_TANPA_PASANGAN
+  evaluatedAt DateTime? @map("evaluated_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  events      UnitUsageNoteEvent[]
+
+  @@index([unitId])
+  @@index([orderNumber])
+  @@index([state])
+  @@index([materialId])
+  @@index([batchId])
+  @@index([stockMovementId])
+  @@map("unit_usage_notes")
+}
+
+model UnitUsageNoteEvent {
+  id        String   @id @default(uuid()) @db.Uuid
+  noteId    String   @map("note_id") @db.Uuid
+  note      UnitUsageNote @relation(fields: [noteId], references: [id], onDelete: Restrict)
+  kind      String   // IMPOR | DITAUTKAN | DIEVALUASI | DIKOREKSI | DIPOSTING | DIKECUALIKAN
+  before    Json?
+  after     Json?
+  reason    String?
+  actorId   String?  @map("actor_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([noteId, createdAt])
+  @@map("unit_usage_note_events")
 }
