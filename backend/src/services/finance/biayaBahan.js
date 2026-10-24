@@ -327,6 +327,17 @@ export async function bacaJejakUnit(db, unitId, { izinHarga = false } = {}) {
     return { ...b, diserahkan: Number(b.diserahkan), dipakaiPIC: Number(b.dipakaiPIC), waste: Number(b.waste), retur: Number(b.retur), penyesuaian: Number(b.penyesuaian), returPending: Number(b.returPending), sisaDiUnit: Number(sisa) };
   });
 
+  // Catatan pemakaian historis (Excel Admin Sales) yang BELUM menjadi pengeluaran stok: biaya unit ini PARSIAL — bahan tersebut belum ikut dihitung. Nilai parsial tidak boleh tampil sebagai final.
+  const catatanTertahan = db.unitUsageNote
+    ? await db.unitUsageNote.findMany({ where: { unitId, state: { in: ["PERLU_DICEK", "SIAP_POSTING"] } }, select: { origin: true, state: true, rawName: true, material: { select: { code: true } } } })
+    : [];
+  const excelTertahan = catatanTertahan.filter((c) => c.origin === "EXCEL"); const ledgerDitanya = catatanTertahan.filter((c) => c.origin === "LEDGER");
+  if (excelTertahan.length) {
+    const perluDicek = excelTertahan.filter((c) => c.state === "PERLU_DICEK").length; const siap = excelTertahan.length - perluDicek;
+    belumFinal.push({ jenis: "CATATAN_BELUM_JADI_STOK", jumlah: excelTertahan.length, perluDicek, siapPosting: siap, bahan: [...new Set(excelTertahan.map((c) => c.material?.code ?? c.rawName))].slice(0, 12),
+      pesan: `${excelTertahan.length} catatan pemakaian (Excel Admin Sales) belum menjadi pengeluaran stok — ${perluDicek} perlu dicek, ${siap} siap diposting. Biaya bahan unit ini PARSIAL: bahan tersebut belum ikut dihitung.` });
+  }
+  if (ledgerDitanya.length) belumFinal.push({ jenis: "PEMAKAIAN_PERLU_DICEK", jumlah: ledgerDitanya.length, pesan: `${ledgerDitanya.length} pengeluaran stok lama tidak punya pasangan di Excel — nilai yang sudah terhitung untuk bahan tersebut perlu dicek.` });
   // Satu entri per (jenis, bahan) — bukan satu per pergerakan — supaya daftar tetap terbaca.
   const gabung = new Map();
   const PER_BAHAN = { FAKTUR_BELUM_ADA: (k, q, n) => `${k}: ${q} (dari ${n} pergerakan) masih menurut harga PO, faktur supplier belum disetujui — selisih harga faktur belum diketahui`, TANPA_HARGA: (k, q, n) => `${k}: ${n} pergerakan (${q}) belum punya harga perolehan — tidak dihitung (bukan Rp0)`, ESTIMASI_HISTORIS: (k, q, n) => `${k}: ${n} pergerakan (${q}) terjadi sebelum nilai dibekukan — hanya estimasi` };
@@ -359,6 +370,9 @@ export async function bacaJejakUnit(db, unitId, { izinHarga = false } = {}) {
       estimasiBelumFinal: baris.some((r) => r.status !== "DINILAI") ? estimasiBelumFinal : null,
       jumlahPergerakan: baris.length, jumlahTanpaHarga: baris.filter((r) => r.status === "TANPA_HARGA").length, jumlahEstimasiHistoris: baris.filter((r) => r.status === "ESTIMASI_HISTORIS").length,
       semuaTanpaNilai,
+      // PARSIAL = ada pemakaian/catatan/harga yang belum pasti; angka nilai TIDAK boleh ditampilkan sebagai final.
+      parsial: baris.length > 0 && statusBiaya !== "FINAL_MENURUT_HARGA_PO",
+      catatanHistoris: { tertahan: excelTertahan.length, perluDicek: excelTertahan.filter((c) => c.state === "PERLU_DICEK").length, pengeluaranDipertanyakan: ledgerDitanya.length },
     },
     belumFinal,
     bahan,

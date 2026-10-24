@@ -21,6 +21,7 @@ const stampWib = (d) => { const w = new Date(d.getTime() + WIB_OFFSET_MS).toISOS
 
 export function namaBerkasEkspor(sekarang = new Date()) { const s = stampWib(sekarang); return `Order-Produksi-${s.tanggal.replaceAll("-", "")}-${s.jam.replace(":", "")}.xlsx`; }
 
+const LABEL_STATE_CATATAN = { TERCATAT_DI_STOK: "Sudah tercatat di stok", PERLU_DICEK: "Perlu dicek", SIAP_POSTING: "Siap jadi pengeluaran stok", DIPOSTING: "Sudah jadi pengeluaran stok", BUKAN_STOK: "Bukan stok Gudang", DIKOREKSI: "Sudah dikoreksi" };
 function sheetData(wb, nama, kolom, baris) {
   const ws = wb.addWorksheet(nama, { views: [{ state: "frozen", ySplit: 1 }] });
   ws.columns = kolom.map((k) => ({ header: k.header, key: k.key, width: k.lebar || 18 }));
@@ -47,7 +48,7 @@ export async function buatWorkbookOrderProduksi(prisma, { rows, unitIds, filter 
   const ids = unitIds?.length ? unitIds : rows.map((r) => r.id);
 
   // ── data tambahan (batch)
-  const [rencana, pergerakan, komponenRows, sementaraRows] = await Promise.all([
+  const [rencana, pergerakan, komponenRows, sementaraRows, catatanRows] = await Promise.all([
     ids.length ? prisma.productionUnitMaterialPlan.findMany({ where: { unitId: { in: ids } } }) : [],
     ids.length ? prisma.stockMovement.findMany({
       where: { unitId: { in: ids }, type: { in: ["ISSUE", "RETURN", "WASTE"] } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }],
@@ -55,6 +56,8 @@ export async function buatWorkbookOrderProduksi(prisma, { rows, unitIds, filter 
     }) : [],
     ids.length ? prisma.unitComponentReuseEntry.findMany({ where: { unitId: { in: ids } }, orderBy: [{ createdAt: "asc" }, { version: "asc" }] }) : [],
     ids.length ? prisma.unitProvisionalUsage.findMany({ where: { unitId: { in: ids } }, include: { material: { select: { code: true, name: true } } }, orderBy: [{ recordedAt: "asc" }, { id: "asc" }] }) : [],
+    // Catatan pemakaian historis (Excel Admin Sales): nilai ASLI + keadaan + penanda "Perlu dicek"; terpisah dari Pemakaian Aktual (bukan transaksi stok).
+    ids.length ? prisma.unitUsageNote.findMany({ where: { unitId: { in: ids }, state: { not: "TIDAK_DIHITUNG" } }, orderBy: [{ orderNumber: "asc" }, { origin: "asc" }, { sourceRow: "asc" }], include: { material: { select: { code: true, name: true, unit: true } } } }) : [],
   ]);
   const matIds = [...new Set(rencana.flatMap((p) => p.lines.map((l) => l.materialId)))];
   const bahan = matIds.length ? new Map((await prisma.material.findMany({ where: { id: { in: matIds } }, select: { id: true, code: true, name: true, unit: true, itemGroup: true } })).map((m) => [m.id, m])) : new Map();
@@ -73,6 +76,7 @@ export async function buatWorkbookOrderProduksi(prisma, { rows, unitIds, filter 
     jadwal: u.adopsi.jadwal ? `${u.adopsi.jadwal.tanggal}${u.adopsi.jadwal.meja ? ` · ${String(u.adopsi.jadwal.meja).replace("TABLE_", "Meja ")}` : ""} (${u.adopsi.jadwal.sumber === "V2" ? "Pelaksanaan Meja" : "Rencana Admin"})` : "Belum dijadwalkan", faktaJadwal: u.adopsi.kerja?.faktaJadwal ?? null,
     pemakaianBaru: u.adopsi.pemakaianBahan?.baruCatatan ?? 0, pemakaianLama: u.adopsi.pemakaianBahan?.komponenLamaDipakaiKembali ?? 0, pemakaianSementara: u.adopsi.pemakaianBahan?.sementaraPerluRekonsiliasi ?? 0,
     qc: ({ WAITING_QC: "Menunggu QC", REWORK: "Dikerjakan ulang (hasil QC: tidak lulus)", COMPLETED: "Tahap selesai (lihat hasil QC di Unit 360)" })[u.productionStatus] ?? "Belum ada catatan QC",
+    catatanDicek: u.adopsi.catatanHistoris?.perluDicek ?? 0, catatanTotal: u.adopsi.catatanHistoris?.total ?? 0,
     tindakan: u.adopsi.tindakan?.label, aktor: u.adopsi.tindakan?.aktor, prioritas: u.priorityDisplay?.label, bahanRencana: jumlahBahanPerUnit.get(u.id) ?? 0, aktualAda: u.adopsi.aktualBahanAda ? "Ya" : "Belum", diperbarui: u.updatedAt,
   }));
   sheetData(wb, "Ringkasan Unit", [
@@ -82,6 +86,7 @@ export async function buatWorkbookOrderProduksi(prisma, { rows, unitIds, filter 
     { key: "kerja", header: "Status Kerja (Administratif)", lebar: 22, nada: "nadaKerja" }, { key: "sumberKerja", header: "Sumber Status Kerja", lebar: 28 }, { key: "jadwal", header: "Jadwal Produksi", lebar: 34 }, { key: "faktaJadwal", header: "Fakta Jadwal", lebar: 24 },
     { key: "pemakaianBaru", header: "Pemakaian Bahan Baru (jumlah catatan)", tipe: "angka", lebar: 18 }, { key: "pemakaianLama", header: "Komponen Lama Dipakai Kembali (jumlah)", tipe: "angka", lebar: 20 }, { key: "pemakaianSementara", header: "Pemakaian Sementara — Perlu Rekonsiliasi Gudang (jumlah)", tipe: "angka", lebar: 24 }, { key: "qc", header: "Status QC (aplikasi)", lebar: 34 },
     { key: "tindakan", header: "Tindakan Berikutnya", lebar: 40, bungkus: true }, { key: "aktor", header: "Pelaku Tindakan", lebar: 16 }, { key: "prioritas", header: "Prioritas", lebar: 12 },
+    { key: "catatanTotal", header: "Catatan Pemakaian Historis (jumlah)", tipe: "angka", lebar: 18 }, { key: "catatanDicek", header: "Catatan Historis Perlu Dicek (jumlah)", tipe: "angka", lebar: 18 },
     { key: "bahanRencana", header: "Jumlah Bahan Direncanakan", tipe: "angka", lebar: 16 }, { key: "aktualAda", header: "Pemakaian Aktual Tercatat", lebar: 14 }, { key: "diperbarui", header: "Diperbarui (WIB)", tipe: "waktu", lebar: 18 },
   ], ringkas);
 
@@ -146,6 +151,20 @@ export async function buatWorkbookOrderProduksi(prisma, { rows, unitIds, filter 
     { key: "catatan", header: "Catatan", lebar: 30, bungkus: true }, { key: "alasanBatal", header: "Alasan Pembatalan", lebar: 26, bungkus: true },
   ], barisSementara);
 
+  // ── Sheet: Catatan Historis (Excel Admin Sales) — nilai asli apa adanya; BUKAN transaksi stok; "Perlu dicek" = ada yang janggal + apa yang perlu dilakukan.
+  const barisCatatan = catatanRows.filter((r) => unitById.has(r.unitId)).map((r) => {
+    const u = unitById.get(r.unitId); const f = (r.flags ?? []).find((x) => x.tingkat === "BLOK");
+    return { kodeUnit: u.unitCode, kodeOrder: r.orderNumber, sumber: r.origin === "EXCEL" ? "Excel Admin Sales" : "Pengeluaran stok lama (tanpa pasangan Excel)", nama: r.rawName ?? r.material?.name ?? null, spek: r.rawSpec || null, kategori: r.rawCategory || null,
+      qtyAsli: r.rawQty ?? null, satuanAsli: r.rawUom ?? null, qty: r.qty === null ? null : Number(r.qty), satuan: r.uom ?? null, tanggal: r.usedAt, kodeBahan: r.material?.code ?? null, status: LABEL_STATE_CATATAN[r.state] ?? r.state, dicek: r.state === "PERLU_DICEK" ? "Ya" : "",
+      catatan: f ? `${f.teks} ${f.aksi}` : null, refMv: r.stockMovementId ? `MV-${r.stockMovementId.slice(0, 8).toUpperCase()}` : null, barisSumber: r.sourceRow ?? null };
+  });
+  sheetData(wb, "Catatan Historis", [
+    { key: "kodeUnit", header: "Kode Unit", lebar: 24 }, { key: "kodeOrder", header: "Kode Order", lebar: 20 }, { key: "sumber", header: "Sumber", lebar: 30 }, { key: "nama", header: "Nama Bahan (nilai asli)", lebar: 34 }, { key: "spek", header: "Spesifikasi", lebar: 24 }, { key: "kategori", header: "Kategori", lebar: 16 },
+    { key: "qtyAsli", header: "Jumlah Asli (teks)", lebar: 12 }, { key: "satuanAsli", header: "Satuan Asli", lebar: 10 }, { key: "qty", header: "Jumlah Terbaca", tipe: "angka", lebar: 12 }, { key: "satuan", header: "Satuan Gudang", lebar: 10 }, { key: "tanggal", header: "Tanggal (WIB)", tipe: "waktu", lebar: 18 },
+    { key: "kodeBahan", header: "Kode Bahan Katalog", lebar: 28 }, { key: "status", header: "Keadaan", lebar: 28 }, { key: "dicek", header: "Perlu Dicek", lebar: 10 }, { key: "catatan", header: "Catatan Singkat (apa yang janggal & tindakan)", lebar: 60, bungkus: true },
+    { key: "refMv", header: "Tertaut ke Pergerakan Stok", lebar: 20 }, { key: "barisSumber", header: "Baris Sumber", tipe: "angka", lebar: 10 },
+  ], barisCatatan);
+
   // ── Sheet 4: Info Ekspor (waktu ekspor + filter + arti kolom); tanpa sel digabung
   const s = stampWib(sekarang);
   const f = filter || {};
@@ -159,6 +178,7 @@ export async function buatWorkbookOrderProduksi(prisma, { rows, unitIds, filter 
     ["Arti Status Kerja", "Status pekerjaan Produksi: dari aplikasi bila ada bukti, jika tidak catatan manual Admin, jika tidak mengikuti jadwal."],
     ["Status kerja administratif", "Status Kerja (Administratif) = status pekerjaan menurut Produksi/Admin. \"Sudah dikerjakan\" otomatis muncul begitu ada pemakaian aktual yang berhasil tercatat (bahan baru dari Gudang atau komponen lama dipakai kembali), tanpa wajib jadwal/rencana/Run/Meja/dokumentasi/QC. Itu BUKAN selesai QC, siap serah Gudang, atau siap kirim — kolom Jadwal Produksi, Pemakaian Bahan, dan Status QC dipisah. Rencana bahan dan komponen yang dikembalikan/disimpan/dibuang tidak mengubah status kerja."],
     ["Dua sumber pemakaian", "Sheet Pemakaian Aktual = bahan baru dari Gudang (transaksi stok resmi, mengurangi stok). Sheet Komponen Lama = komponen bongkaran milik pelanggan yang dipakai kembali/dilepas: TIDAK memengaruhi stok, jurnal, atau biaya bahan baru. Total keduanya tidak dijumlahkan."],
+    ["Catatan historis", "Sheet Catatan Historis = catatan pemakaian bahan dari Excel Admin Sales, tampil apa adanya (jumlah/satuan asli). BUKAN transaksi stok: tidak mengurangi saldo, tidak ada biaya/jurnal. Yang sudah sama dengan pengeluaran stok ditautkan (tidak digandakan); yang janggal diberi label Perlu Dicek + catatan singkat."],
     ["Pemakaian sementara", "Sheet Pemakaian Sementara = fakta bahan yang sudah dipakai tetapi belum punya sumber stok resmi (bahan belum di katalog). BUKAN Material Issue: tidak mengurangi saldo, tidak ada biaya bahan, tidak ada jurnal. Tetap dihitung sebagai bukti \"Sudah dikerjakan\" dengan sumber \"Pemakaian sementara — perlu rekonsiliasi Gudang\" sampai Gudang menautkannya ke pengeluaran stok resmi atau menyatakannya bukan stok Gudang. Tidak dijumlahkan dengan Pemakaian Aktual."],
     ["Rencana vs Aktual", "Rencana Bahan TIDAK mengurangi stok. Pemakaian Aktual berisi transaksi stok resmi (Material Issue Gudang atau catat langsung)."],
   ];

@@ -29,6 +29,8 @@ import { BahanUsulanError } from "../lib/domain/bahanUsulan.js";
 import { ajukanBahanBaru, cekKembarBahan, daftarUsulan, putuskanUsulan } from "../services/materialProposalService.js";
 import { ambilPemakaianSementaraUnit, batalkanPemakaianSementara, catatPemakaianSementara, daftarPemakaianSementara, kandidatPergerakan, koreksiPemakaianSementara, rekonsiliasiPemakaianSementara } from "../services/unitProvisionalUsageService.js";
 import { loadRiwayatUnit } from "../services/productionRiwayatService.js";
+import { ambilCatatanHistoris, riwayatCatatanUnit } from "../services/catatanPemakaianHistoris.js";
+import { bacaJejakUnit } from "../services/finance/biayaBahan.js";
 import { buatWorkbookOrderProduksi, namaBerkasEkspor } from "../services/productionOrderExport.js";
 import { MANUAL_STATUSES, WORK_STATUS, penghalangStatusOrder, tindakanBerikutnya } from "../lib/domain/productionWorkStatus.js";
 import { displayStatusOfOrder } from "../lib/domain/productionDisplay.js";
@@ -81,6 +83,17 @@ productionAdopsiRouter.get("/units/:id/adopsi", requirePermission(P.UNIT_READ), 
       prisma.productionRun.findFirst({ where: { unitId: unit.id }, orderBy: { createdAt: "desc" }, select: { id: true } }),
       ambilPenerimaanWorkshop(prisma, unit.id), ambilPemakaianSementaraUnit(prisma, unit.id),
     ]);
+    // Catatan pemakaian historis (Excel Admin Sales): tampil walau belum/tidak menjadi pengeluaran stok; TIDAK dijumlahkan ke "Pemakaian aktual" dan tidak mengubah status kerja.
+    const [catatanHistoris, riwayatHistoris, jejakBiaya] = await Promise.all([
+      ambilCatatanHistoris(prisma, unit.id), riwayatCatatanUnit(prisma, unit.id),
+      bacaJejakUnit(prisma, unit.id, { izinHarga: hasPermission(req.user, P.FINANCE_READ) }),
+    ]);
+    const hppBahan = jejakBiaya && {
+      status: jejakBiaya.statusBiaya, parsial: jejakBiaya.ringkasan.parsial, final: !jejakBiaya.ringkasan.parsial && jejakBiaya.statusBiaya === "FINAL_MENURUT_HARGA_PO",
+      nilaiTerhitung: jejakBiaya.ringkasan.biayaPersediaan?.nilai ?? null, lihatNilai: hasPermission(req.user, P.FINANCE_READ),
+      gap: jejakBiaya.belumFinal.filter((g) => g.jenis !== "FAKTUR_BELUM_ADA").map((g) => ({ jenis: g.jenis, pesan: g.pesan })),
+      catatan: jejakBiaya.ringkasan.parsial ? "Nilai di atas hanya bagian yang sudah pasti. Bukan HPP final — lihat gap." : null,
+    };
     const { penerimaan: penerimaanAktif, riwayat: riwayatPenerimaan } = penerimaan;
     const riwayatDasar = (await loadRiwayatUnit(prisma, { unit: { id: unit.id, orderId: unit.orderId }, run })).slice(-60).reverse();
     // Komponen lama dari unit pelanggan (BUKAN stok): bagian terpisah di respons + masuk Riwayat dengan label sendiri
@@ -101,7 +114,7 @@ productionAdopsiRouter.get("/units/:id/adopsi", requirePermission(P.UNIT_READ), 
     ]);
     const pertama = [...pakaiBaru, ...pakaiLama, ...pakaiSementara].sort((a, b) => new Date(a.at) - new Date(b.at))[0] ?? null;
     const riwayatStatusOtomatis = pertama && unit.status !== "CANCELLED" ? [{ kind: "STATUS_KERJA_OTOMATIS", sumber: "PEMAKAIAN_BAHAN", at: pertama.at, actor: pertama.oleh, label: `Status kerja administratif → Sudah dikerjakan (otomatis dari pemakaian aktual pertama: ${pertama.apa})` }] : [];
-    const riwayat = [...riwayatDasar.filter((e) => !String(e.kind).includes("PRODUCTION_KOMPONEN_LAMA_DICATAT")), ...riwayatKomponen, ...riwayatBahanBaru, ...riwayatSementara, ...riwayatStatusOtomatis].sort((x, y) => new Date(y.at) - new Date(x.at)).slice(0, 100);
+    const riwayat = [...riwayatDasar.filter((e) => !String(e.kind).includes("PRODUCTION_KOMPONEN_LAMA_DICATAT")), ...riwayatKomponen, ...riwayatBahanBaru, ...riwayatSementara, ...riwayatHistoris, ...riwayatStatusOtomatis].sort((x, y) => new Date(y.at) - new Date(x.at)).slice(0, 100);
     // perbandingan rencana vs aktual per bahan (hanya bahan yang ada di salah satunya)
     const rencanaMap = new Map((rencana.plan?.lines ?? []).map((l) => [l.materialId, l]));
     const aktualMap = new Map(aktual.total.map((t) => [t.materialId, t]));
@@ -131,7 +144,7 @@ productionAdopsiRouter.get("/units/:id/adopsi", requirePermission(P.UNIT_READ), 
       },
       adopsi: { ...baris.adopsi, tindakan, orderSales, penghalang }, productionStatus: baris.productionStatus, presence: baris.presence, receivedBasisLabel: baris.receivedBasisLabel,
       kerjaManual: { riwayat: riwayatKerja, nilaiBoleh: MANUAL_STATUSES.map((k) => ({ key: k, label: WORK_STATUS[k].label })), terakhirId: riwayatKerja.length ? riwayatKerja[riwayatKerja.length - 1].id : null, dikunciAplikasi: !!bukti?.started },
-      penerimaan: penerimaanAktif, riwayatPenerimaan, rencanaBahan: rencana, pemakaianAktual: aktual, pemakaianSementara: sementara, komponenLama, perbandingan, riwayat,
+      penerimaan: penerimaanAktif, riwayatPenerimaan, rencanaBahan: rencana, pemakaianAktual: aktual, pemakaianSementara: sementara, catatanHistoris, hppBahan, komponenLama, perbandingan, riwayat,
       izin: bolehUbah(req.user),
     });
   } catch (err) { handleErr(err, res); }

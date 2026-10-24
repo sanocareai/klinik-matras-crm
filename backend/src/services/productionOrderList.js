@@ -1,6 +1,7 @@
 // Daftar ORDER PRODUKSI (GET /api/production/work-orders dan ekspor Excel) — SATU sumber untuk filter + pengayaan baris, supaya ekspor persis sama dengan daftar yang difilter.
 // Dipindahkan dari routes/production.js (isi tidak berubah) dan DITAMBAH kontrak tiga sumbu status (lib/domain/productionWorkStatus.js): status order · posisi unit · status kerja,
 // target selesai, PIC, tindakan berikutnya. Semua tambahan ADITIF (field baru di bawah `adopsi`); field lama tetap.
+import { ringkasCatatanUnits } from "./catatanPemakaianHistoris.js";
 import { loadLastCurrentStageLogs, loadOpenBlockersByUnit } from "./unitStageEngine.js";
 import { deriveProductionStatus, describeProductionStatus } from "../lib/domain/productionState.js";
 import { deriveStageLogStatus, OPEN_WORK_ACTIONS as EXECUTION_OPEN_WORK_ACTIONS } from "../lib/domain/stageExecution.js";
@@ -64,6 +65,7 @@ export async function perkayaBarisUnit(prisma, units) {
   const readerState = resolveProductionReaderState(await loadV2Flags(prisma));
   const v2Units = readerState.mode === PRODUCTION_READER_MODE.OFF ? new Set() : new Set(readerState.unitIds);
   const complaintsByUnit = await loadOpenComplaintsByUnit(prisma, units.map((u) => ({ id: u.id, orderId: u.orderId })));
+  const catatanHistorisByUnit = await ringkasCatatanUnits(prisma, unitIds); // catatan pemakaian historis (Excel): terpisah dari pemakaian aktual & status kerja
   const [milestoneEvidence, plannedRows, appEvidence, manualByUnit, rencanaRows, aktualRows, adminJadwalRows, komponenPakaiRows, sementaraRows] = await Promise.all([
     loadMilestoneEvidence(prisma, unitIds),
     unitIds.length ? prisma.productionRun.findMany({
@@ -130,6 +132,7 @@ export async function perkayaBarisUnit(prisma, units) {
         pic: picNama ? { nama: picNama, sumber: assignment?.operator ? "TAHAP" : "RENCANA" } : null, meja: plan?.stationCode ?? adminJadwalByUnit.get(u.id)?.stationCode ?? null,
         jadwal: plan?.productionDate ? { sumber: "V2", tanggal: plan.productionDate.toISOString().slice(0, 10), meja: plan.stationCode ?? null, revisi: null } : adminJadwalByUnit.has(u.id) ? { sumber: "ADMIN", tanggal: adminJadwalByUnit.get(u.id).productionDate.toISOString().slice(0, 10), meja: adminJadwalByUnit.get(u.id).stationCode ?? null, revisi: adminJadwalByUnit.get(u.id).revision } : null,
         rencanaBahanAda: rencanaUnit.has(u.id), aktualBahanAda: aktualUnit.has(u.id), buktiAplikasi: bukti.started,
+        catatanHistoris: catatanHistorisByUnit.get(u.id) ?? { total: 0, perluDicek: 0, siapPosting: 0, tercatatDiStok: 0, diposting: 0 },
         pemakaianBahan: { baruCatatan: pakai?.baru ?? 0, komponenLamaDipakaiKembali: pakai?.lama.size ?? 0, sementaraPerluRekonsiliasi: pakai?.sementaraPerlu ?? 0, sementaraSudahDirekonsiliasi: pakai?.sementaraSelesai ?? 0, pertamaAt: pakai?.pertamaAt ?? null, terakhirAt: pakai?.terakhirAt ?? null }, // dua sumber terpisah (tidak dijumlahkan)
       },
     };
