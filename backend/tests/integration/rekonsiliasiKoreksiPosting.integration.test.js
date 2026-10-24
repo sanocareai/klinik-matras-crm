@@ -98,7 +98,7 @@ test("K3. koreksi PEMAKAIAN per order: ajukan → penyetuju LAIN → pergerakan 
   await assert.rejects(() => setujuiKoreksiPemakaian(testPrisma, { koreksiId: c.id, aktor: w.B }), /sudah berubah/);
   await tolakKoreksiPemakaian(testPrisma, { koreksiId: c.id, aktor: w.B, catatan: "Basi, ajukan ulang" });
   // riwayat unit: diajukan + disetujui, sebelum–sesudah
-  const rw = await riwayatKoreksiPemakaian(testPrisma, w.u1.id); assert.ok(rw.some((e) => e.kind === "KOREKSI_PEMAKAIAN_POSTED" && e.actor === w.B.name)); assert.ok(rw.some((e) => /2\.1 → 1\.7/.test(e.label)));
+  const rw = await riwayatKoreksiPemakaian(testPrisma, w.u1.id); assert.ok(rw.some((e) => e.kind === "KOREKSI_PEMAKAIAN_POSTED" && e.actor === w.B.name)); assert.ok(rw.some((e) => /2,1 → 1,7/.test(e.label)));
 });
 
 test("K4. koreksi pemakaian NAIK ditolak bila saldo kurang; pembatalan oleh pemohon; hanya penyetuju (izin) lewat HTTP", async () => {

@@ -39,7 +39,7 @@ export function aksiCatatan(i, izin = {}) {
   const flags = (i.flags ?? []).map((f) => f.kode);
   if (i.origin === "EXCEL" && ["PERLU_DICEK", "SIAP_POSTING", "TERCATAT_DI_STOK"].includes(i.state)) a.push({ key: "koreksi", label: "Koreksi catatan" });
   if (i.origin === "EXCEL" && flags.some((k) => KODE_BISA_DIKONFIRMASI.includes(k)) && ["PERLU_DICEK", "SIAP_POSTING"].includes(i.state)) a.push({ key: "konfirmasi", label: "Konfirmasi wajar" });
-  if (i.origin === "EXCEL" && ["PERLU_DICEK", "SIAP_POSTING"].includes(i.state)) a.push({ key: "kecualikan", label: "Kecualikan (salinan ganda)" });
+  if (i.origin === "EXCEL" && ["PERLU_DICEK", "SIAP_POSTING"].includes(i.state)) a.push({ key: "kecualikan", label: "Kecualikan dari perhitungan" });
   if (i.bahan?.id && (flags.includes("ISSUE_LAMA_BERBEDA") || flags.includes("ISSUE_TANPA_PASANGAN"))) a.push({ key: "koreksiPemakaian", label: "Ajukan koreksi pemakaian" });
   return a;
 }

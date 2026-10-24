@@ -30,7 +30,7 @@ import { ajukanBahanBaru, cekKembarBahan, daftarUsulan, putuskanUsulan } from ".
 import { ambilPemakaianSementaraUnit, batalkanPemakaianSementara, catatPemakaianSementara, daftarPemakaianSementara, kandidatPergerakan, koreksiPemakaianSementara, rekonsiliasiPemakaianSementara } from "../services/unitProvisionalUsageService.js";
 import { loadRiwayatUnit } from "../services/productionRiwayatService.js";
 import { ambilCatatanHistoris, riwayatCatatanUnit } from "../services/catatanPemakaianHistoris.js";
-import { riwayatKoreksiPemakaian } from "../services/koreksiPemakaian.js";
+import { riwayatKoreksiPemakaian, daftarKoreksiPemakaian } from "../services/koreksiPemakaian.js";
 import { bacaJejakUnit } from "../services/finance/biayaBahan.js";
 import { buatWorkbookOrderProduksi, namaBerkasEkspor } from "../services/productionOrderExport.js";
 import { MANUAL_STATUSES, WORK_STATUS, penghalangStatusOrder, tindakanBerikutnya } from "../lib/domain/productionWorkStatus.js";
@@ -52,6 +52,7 @@ function handleErr(err, res) {
 
 const bolehUbah = (user) => ({
   catatanHistoris: hasPermission(user, P.INVENTORY_WRITE) || hasPermission(user, P.UNIT_MATERIAL_WRITE), // koreksi catatan historis / ajukan koreksi pemakaian (penyetuju terpisah: inventory:adjustment_approve)
+  koreksiSetuju: hasPermission(user, P.INVENTORY_ADJUSTMENT_APPROVE), // setujui/tolak koreksi pemakaian (pemohon tidak boleh menyetujui sendiri — dijaga server)
   statusOrder: hasPermission(user, P.ORDER_WRITE), // jalur Sales yang sama
   statusKerja: hasPermission(user, P.UNIT_ROUTING_WRITE),
   target: hasPermission(user, P.UNIT_ROUTING_WRITE),
@@ -86,8 +87,8 @@ productionAdopsiRouter.get("/units/:id/adopsi", requirePermission(P.UNIT_READ), 
       ambilPenerimaanWorkshop(prisma, unit.id), ambilPemakaianSementaraUnit(prisma, unit.id),
     ]);
     // Catatan pemakaian historis (Excel Admin Sales): tampil walau belum/tidak menjadi pengeluaran stok; TIDAK dijumlahkan ke "Pemakaian aktual" dan tidak mengubah status kerja.
-    const [catatanHistoris, riwayatCatatan, riwayatKoreksi, jejakBiaya] = await Promise.all([
-      ambilCatatanHistoris(prisma, unit.id), riwayatCatatanUnit(prisma, unit.id), riwayatKoreksiPemakaian(prisma, unit.id),
+    const [catatanHistoris, riwayatCatatan, riwayatKoreksi, koreksiMenunggu, jejakBiaya] = await Promise.all([
+      ambilCatatanHistoris(prisma, unit.id), riwayatCatatanUnit(prisma, unit.id), riwayatKoreksiPemakaian(prisma, unit.id), daftarKoreksiPemakaian(prisma, { status: "PENDING_APPROVAL", unitId: unit.id }),
       bacaJejakUnit(prisma, unit.id, { izinHarga: hasPermission(req.user, P.FINANCE_READ) }),
     ]);
     const riwayatHistoris = [...riwayatCatatan, ...riwayatKoreksi];
@@ -149,7 +150,7 @@ productionAdopsiRouter.get("/units/:id/adopsi", requirePermission(P.UNIT_READ), 
       },
       adopsi: { ...baris.adopsi, tindakan, orderSales, penghalang }, productionStatus: baris.productionStatus, presence: baris.presence, receivedBasisLabel: baris.receivedBasisLabel,
       kerjaManual: { riwayat: riwayatKerja, nilaiBoleh: MANUAL_STATUSES.map((k) => ({ key: k, label: WORK_STATUS[k].label })), terakhirId: riwayatKerja.length ? riwayatKerja[riwayatKerja.length - 1].id : null, dikunciAplikasi: !!bukti?.started },
-      penerimaan: penerimaanAktif, riwayatPenerimaan, rencanaBahan: rencana, pemakaianAktual: aktual, pemakaianSementara: sementara, catatanHistoris, hppBahan, komponenLama, perbandingan, riwayat,
+      penerimaan: penerimaanAktif, riwayatPenerimaan, rencanaBahan: rencana, pemakaianAktual: aktual, pemakaianSementara: sementara, catatanHistoris, koreksiMenunggu: koreksiMenunggu.map((k) => ({ ...k, milikSaya: k.pemohon?.id === req.user.id })), hppBahan, komponenLama, perbandingan, riwayat,
       izin: bolehUbah(req.user),
     });
   } catch (err) { handleErr(err, res); }

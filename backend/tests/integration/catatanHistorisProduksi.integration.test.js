@@ -71,3 +71,20 @@ test("P3. Daftar Order Produksi + ekspor Excel: ringkasan catatan, sheet 'Catata
   const aktual = []; wb.getWorksheet("Pemakaian Aktual").eachRow((r2, i) => { if (i > 1) aktual.push(r2.values); }); assert.equal(aktual.length, 1);
   const ring = wb.getWorksheet("Ringkasan Unit"); const hdr = ring.getRow(1).values.slice(1); assert.ok(hdr.includes("Catatan Historis Perlu Dicek (jumlah)"));
 });
+
+test("P3. Detail unit memuat koreksi pemakaian MENUNGGU (sebelum→sesudah, pemohon, milikSaya) dan izin.koreksiSetuju hanya untuk penyetuju; stok belum berubah", async () => {
+  const w = await dunia();
+  const { ajukanKoreksiPemakaian } = await import("../../src/services/koreksiPemakaian.js");
+  const gudang = await createTestUser({ roles: ["WAREHOUSE"] }); const owner = await createTestUser({ roles: ["OWNER"] });
+  const sebelum = Number((await testPrisma.stockMovement.aggregate({ _sum: { qty: true }, where: { materialId: w.kain.id } }))._sum.qty);
+  await ajukanKoreksiPemakaian(testPrisma, { unitId: w.unit.id, materialId: w.kain.id, qtyBaru: 1.2, alasan: "Excel terverifikasi 1,2 m", kunci: "kunci-uji-p3-0001", aktor: { id: gudang.user.id, name: gudang.user.name } });
+  const cg = makeClient(server.baseUrl, gudang.token); const co = makeClient(server.baseUrl, owner.token);
+  const rg = await cg.get(`/api/production/units/${w.unit.id}/adopsi`); assert.equal(rg.status, 200);
+  assert.equal(rg.body.koreksiMenunggu.length, 1); const k = rg.body.koreksiMenunggu[0];
+  assert.equal(k.perubahan.sebelum.pemakaianBersih, 1.7); assert.equal(k.perubahan.sesudah.pemakaianBersih, 1.2); assert.equal(k.milikSaya, true, "pemohon melihat tandanya");
+  assert.equal(rg.body.izin.koreksiSetuju, false, "Gudang boleh mengajukan tetapi tidak menyetujui");
+  const ro = await co.get(`/api/production/units/${w.unit.id}/adopsi`);
+  assert.equal(ro.body.koreksiMenunggu[0].milikSaya, false); assert.equal(ro.body.izin.koreksiSetuju, true);
+  const sesudah = Number((await testPrisma.stockMovement.aggregate({ _sum: { qty: true }, where: { materialId: w.kain.id } }))._sum.qty);
+  assert.equal(sesudah, sebelum, "mengajukan koreksi TIDAK mengubah stok");
+});

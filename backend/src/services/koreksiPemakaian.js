@@ -13,7 +13,7 @@ import { postStockMovement, lockRowForUpdate } from "./inventoryLedger.js";
 import { KoreksiError, STATUS, bentukKoreksi } from "./warehouseCorrection.js";
 import { dasarHargaRataRata } from "./finance/posting/inventory.js";
 import { evaluasiUlang } from "./catatanPemakaianHistoris.js";
-import { STATE } from "../lib/domain/pemakaianHistoris.js";
+import { STATE, koma } from "../lib/domain/pemakaianHistoris.js";
 
 const TIPE_DOK = "UNIT_USAGE";
 const EPS = 1e-6;
@@ -183,7 +183,7 @@ export async function setujuiKoreksiPemakaian(prisma, { koreksiId, aktor, catata
     const efektif = k.changes.tanggalEfektif ? new Date(k.changes.tanggalEfektif) : undefined;
     const mv = await postStockMovement(tx, {
       materialId, type: r.jenis, qty: r.delta > 0 ? -r.delta : Math.abs(r.delta), unitId: k.docId, correctionId: k.id, correctsMovementId: r.pergerakanAsal, createdAt: efektif,
-      reason: `Koreksi ${k.correctionNumber}: ${k.reason}`.slice(0, 480), note: `Koreksi pemakaian ${k.correctionNumber} atas ${r.unit.unitCode} (${r.bersihSebelum} → ${r.bersihSesudah} ${r.bahan.unit})`, createdById: aktor.id,
+      reason: `Koreksi ${k.correctionNumber}: ${k.reason}`.slice(0, 480), note: `Koreksi pemakaian ${k.correctionNumber} atas ${r.unit.unitCode} (${koma(r.bersihSebelum)} → ${koma(r.bersihSesudah)} ${r.bahan.unit})`, createdById: aktor.id,
     });
     const hasilPost = { pergerakanId: mv.id, jenis: r.jenis, selisih: r.delta, pemakaianSebelum: r.bersihSebelum, pemakaianSesudah: r.bersihSesudah, saldoSebelum: r.saldoSebelum, saldoSesudah: r.saldoSesudah };
     await tx.warehouseCorrection.update({ where: { id: k.id }, data: { status: STATUS.POSTED, decidedById: aktor.id, decidedAt: sekarang, decisionNote: catatan ? String(catatan).slice(0, 500) : null, result: hasilPost } });
@@ -219,7 +219,7 @@ export async function riwayatKoreksiPemakaian(db, unitId) {
   const rows = await db.warehouseCorrection.findMany({ where: { docType: TIPE_DOK, docId: unitId }, include: sertakan, orderBy: { requestedAt: "asc" } });
   const out = [];
   for (const k of rows) {
-    const c = k.changes ?? {}; const uraian = `${c.bahan?.nama ?? c.bahan?.kode ?? "bahan"}: ${c.sebelum?.pemakaianBersih} → ${c.sesudah?.pemakaianBersih} ${c.bahan?.satuan ?? ""}`.trim();
+    const c = k.changes ?? {}; const uraian = `${c.bahan?.nama ?? c.bahan?.kode ?? "bahan"}: ${koma(c.sebelum?.pemakaianBersih)} → ${koma(c.sesudah?.pemakaianBersih)} ${c.bahan?.satuan ?? ""}`.trim();
     out.push({ kind: "KOREKSI_PEMAKAIAN_DIAJUKAN", sumber: "KOREKSI_PEMAKAIAN", at: k.requestedAt, actor: k.requestedBy?.name ?? null, label: `Koreksi pemakaian ${k.correctionNumber} diajukan — ${uraian}. Alasan: ${k.reason}`, before: c.sebelum, after: c.sesudah });
     if (k.decidedAt) out.push({ kind: `KOREKSI_PEMAKAIAN_${k.status}`, sumber: "KOREKSI_PEMAKAIAN", at: k.decidedAt, actor: k.decidedBy?.name ?? null, label: `Koreksi pemakaian ${k.correctionNumber} ${k.status === "POSTED" ? "disetujui dan diterapkan" : k.status === "REJECTED" ? "ditolak" : "dibatalkan"}${k.decisionNote ? ` — ${k.decisionNote}` : ""}`, before: c.sebelum, after: k.status === "POSTED" ? c.sesudah : c.sebelum });
   }

@@ -8,6 +8,7 @@ import { kunciIdempoten } from "@/features/production/orderProduksiModel.js";
 import { JUDUL_CATATAN, KETERANGAN_CATATAN, NADA_STATE, SATUAN_KOREKSI, aksiCatatan, badgeHpp, kelompokkanCatatan, ringkasCatatan, teksNilai, validasiKoreksiCatatan, validasiKoreksiPemakaian } from "@/features/production/bahan/catatanHistorisModel.js";
 
 // CATATAN PEMAKAIAN HISTORIS — tampil di Bahan (tab Ruang Kerja & drawer Order Produksi). Nilai asli apa adanya; "Perlu dicek" + catatan singkat; koreksi berjejak (alasan wajib).
+const koma = (v) => String(v ?? "").replace(".", ",");
 const FIELD = "h-11 w-full rounded-btn border border-line bg-surface px-3 text-[14px] text-ink outline-none placeholder:text-ink3 focus:border-accent focus-visible:ring-2 focus-visible:ring-accent/30 disabled:opacity-60";
 const LABEL = "block text-[12px] font-medium text-ink3";
 
@@ -58,7 +59,7 @@ function FormAksi({ item, aksi, onSelesai, onBatal }) {
           <label className="block space-y-1"><span className={LABEL}>Pemakaian yang benar ({item.bahan?.satuan})</span><input value={f.qtyBaru} onChange={(e) => set("qtyBaru", e.target.value)} inputMode="decimal" className={FIELD} data-testid="cph-qty-baru" disabled={sibuk} /></label>
           <Button variant="secondary" size="sm" className="min-h-[40px]" onClick={lihat} disabled={sibuk} data-testid="cph-pratinjau">Lihat dampak</Button>
           {pratinjau && (
-            <p className="m-0 text-[12.5px] text-ink" data-testid="cph-dampak">Pemakaian {pratinjau.bersihSebelum} → {pratinjau.bersihSesudah} {item.bahan?.satuan}; stok {pratinjau.saldoSebelum} → {pratinjau.saldoSesudah}.{" "}
+            <p className="m-0 text-[12.5px] text-ink" data-testid="cph-dampak">Pemakaian {koma(pratinjau.bersihSebelum)} → {koma(pratinjau.bersihSesudah)} {item.bahan?.satuan}; stok {koma(pratinjau.saldoSebelum)} → {koma(pratinjau.saldoSesudah)}.{" "}
               {pratinjau.boleh ? (pratinjau.nilaiPerkiraan != null ? `Nilai perkiraan ${pratinjau.nilaiPerkiraan.toLocaleString("id-ID")} (bukan final).` : "Belum ada harga perolehan — nilai tidak dihitung (bukan Rp0).") : <b className="text-red">{pratinjau.penghalang?.[0]?.pesan}</b>}</p>
           )}
         </div>
@@ -103,9 +104,43 @@ export function CatatanRingkas({ data }) {
   );
 }
 
+/** Koreksi pemakaian yang menunggu persetujuan: sebelum → sesudah, alasan, pemohon. Penyetuju harus orang lain (dijaga server); stok baru berubah setelah disetujui. */
+function KoreksiMenunggu({ daftar, izin, onDone }) {
+  const [sibuk, setSibuk] = useState(""); const [galat, setGalat] = useState(""); const [tolak, setTolak] = useState(null); const [alasan, setAlasan] = useState("");
+  async function putus(k, jenis) {
+    setGalat(""); if (jenis === "tolak" && alasan.trim().length < 5) { setGalat("Alasan penolakan wajib diisi (min 5 karakter)."); return; }
+    setSibuk(k.id);
+    try { if (jenis === "setuju") await api.setujuiKoreksiPemakaian(k.id, {}); else await api.tolakKoreksiPemakaian(k.id, { catatan: alasan.trim() }); setTolak(null); setAlasan(""); await onDone?.(); }
+    catch (e) { setGalat(e.message || "Gagal menyimpan keputusan."); } finally { setSibuk(""); }
+  }
+  return (
+    <div className="space-y-2" data-testid="koreksi-menunggu">
+      <p className="m-0 text-[13px] font-semibold text-ink">Koreksi pemakaian menunggu persetujuan</p>
+      <ul className="m-0 list-none space-y-2 p-0">
+        {daftar.map((k) => {
+          const c = k.perubahan ?? {}; const sat = c.bahan?.satuan ?? "";
+          return (
+            <li key={k.id} className="rounded-card border border-line px-3 py-3" data-testid="koreksi-menunggu-baris">
+              <p className="m-0 text-[13.5px] font-medium text-ink">{c.bahan?.nama ?? c.bahan?.kode} <span className="font-normal text-ink3">· {k.nomor}</span></p>
+              <p className="m-0 text-[13px] tabular-nums text-ink" data-testid="koreksi-sebelum-sesudah">Pemakaian {String(c.sebelum?.pemakaianBersih).replace(".", ",")} → <b>{String(c.sesudah?.pemakaianBersih).replace(".", ",")}</b> {sat}</p>
+              <p className="m-0 text-[12px] text-ink3">Diajukan {k.pemohon?.name ?? "—"} · alasan: {k.alasan}</p>
+              {k.milikSaya && <p className="m-0 mt-1 text-[12px] text-ink2" data-testid="koreksi-tunggu-lain">Menunggu persetujuan penyetuju lain (pemohon tidak bisa menyetujui sendiri).</p>}
+              {!k.milikSaya && izin.koreksiSetuju && tolak !== k.id && <div className="mt-2 flex flex-wrap gap-2"><Button size="sm" className="min-h-[44px]" disabled={!!sibuk} data-testid="koreksi-setujui" onClick={() => putus(k, "setuju")}>{sibuk === k.id ? "Menyimpan…" : "Setujui & terapkan"}</Button><Button variant="secondary" size="sm" className="min-h-[44px]" disabled={!!sibuk} data-testid="koreksi-tolak-buka" onClick={() => { setTolak(k.id); setAlasan(""); setGalat(""); }}>Tolak</Button></div>}
+              {tolak === k.id && <div className="mt-2 space-y-2"><label className="block space-y-1"><span className={LABEL}>Alasan penolakan (wajib)</span><input value={alasan} onChange={(e) => setAlasan(e.target.value)} className={FIELD} data-testid="koreksi-tolak-alasan" /></label><div className="flex flex-wrap gap-2"><Button size="sm" className="min-h-[44px]" disabled={!!sibuk} data-testid="koreksi-tolak-ya" onClick={() => putus(k, "tolak")}>Tolak koreksi</Button><Button variant="neutral" size="sm" className="min-h-[44px]" onClick={() => setTolak(null)}>Batal</Button></div></div>}
+            </li>
+          );
+        })}
+      </ul>
+      {galat && <p role="alert" className="m-0 text-[12.5px] text-red" data-testid="koreksi-galat">{galat}</p>}
+    </div>
+  );
+}
+
 export default function CatatanHistorisBagian({ data, unitId, izin = {}, onDone }) {
   const ch = data?.catatanHistoris; const [buka, setBuka] = useState(true); const [lihatSudah, setLihatSudah] = useState(false);
-  if (!ch || ch.ringkas.total === 0) return null;
+  const menunggu = data?.koreksiMenunggu ?? [];
+  if ((!ch || ch.ringkas.total === 0) && menunggu.length === 0) return null;
+  if (!ch || ch.ringkas.total === 0) return <div className="space-y-2" data-testid="sec-catatan-historis"><KoreksiMenunggu daftar={menunggu} izin={izin} onDone={onDone} /></div>;
   const items = ch.items.map((i) => ({ ...i, unitId })); const g = kelompokkanCatatan(items); const hpp = badgeHpp(data.hppBahan);
   const izinLokal = { catatanHistoris: !!izin.catatanHistoris };
   return (
@@ -117,6 +152,7 @@ export default function CatatanHistorisBagian({ data, unitId, izin = {}, onDone 
       </button>
       {buka && (
         <div className="space-y-3">
+          {menunggu.length > 0 && <KoreksiMenunggu daftar={menunggu} izin={izin} onDone={onDone} />}
           <p className="m-0 text-[12px] text-ink3">{KETERANGAN_CATATAN}</p>
           {hpp && <p className="m-0 flex flex-wrap items-center gap-2 text-[12.5px] text-ink" data-testid="hpp-bahan"><Badge variant={hpp.tone}>{hpp.label}</Badge>{hpp.nilai != null && <span>Terhitung sejauh ini {hpp.nilai.toLocaleString("id-ID")}</span>}{hpp.detail && <span className="text-ink2">{hpp.detail}</span>}</p>}
           {g.perluDicek.length > 0 && <ul className="m-0 list-none space-y-2 p-0" data-testid="catatan-perlu-dicek">{g.perluDicek.map((i) => <Baris key={i.id} item={i} izin={izinLokal} onDone={onDone} />)}</ul>}

@@ -19,6 +19,7 @@ function FormModal({ open, onClose, onCreated }) {
   const [materialId, setMaterialId] = useState("");
   const [adjustmentType, setAdjustmentType] = useState("DATA_CORRECTION");
   const [adjustmentQty, setAdjustmentQty] = useState("");
+  const [mode, setMode] = useState("delta"); const [saldoBaru, setSaldoBaru] = useState("");
   const [reason, setReason] = useState("");
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
@@ -26,7 +27,7 @@ function FormModal({ open, onClose, onCreated }) {
 
   useEffect(() => {
     if (!open) return;
-    setMaterialId(""); setAdjustmentType("DATA_CORRECTION"); setAdjustmentQty("");
+    setMaterialId(""); setAdjustmentType("DATA_CORRECTION"); setAdjustmentQty(""); setMode("delta"); setSaldoBaru("");
     setReason(""); setNotes(""); setErr("");
     api.getMaterials({ active: "true" }).then(setMaterials).catch(() => {});
   }, [open]);
@@ -34,11 +35,12 @@ function FormModal({ open, onClose, onCreated }) {
   async function simpan(e) {
     e.preventDefault();
     if (!materialId) { setErr("Item wajib dipilih"); return; }
-    if (!Number(adjustmentQty)) { setErr("Adjustment quantity wajib diisi dan tidak boleh nol"); return; }
+    if (mode === "delta" && !Number(adjustmentQty)) { setErr("Adjustment quantity wajib diisi dan tidak boleh nol"); return; }
+    if (mode === "saldo" && (saldoBaru === "" || !Number.isFinite(Number(saldoBaru)) || Number(saldoBaru) < 0)) { setErr("Saldo yang benar wajib diisi (angka, tidak boleh minus)"); return; }
     if (!reason.trim()) { setErr("Alasan wajib diisi"); return; }
     setBusy(true); setErr("");
     try {
-      const baru = await api.createAdjustmentRequest({ materialId, adjustmentType, adjustmentQty, reason, notes: notes || undefined });
+      const baru = await api.createAdjustmentRequest({ materialId, adjustmentType, ...(mode === "saldo" ? { saldoBaru: Number(saldoBaru) } : { adjustmentQty }), reason, notes: notes || undefined });
       onCreated(baru); onClose();
     } catch (e2) { setErr(e2.message); } finally { setBusy(false); }
   }
@@ -63,10 +65,21 @@ function FormModal({ open, onClose, onCreated }) {
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-[11.5px] font-semibold text-ink2">Perubahan jumlah * (+/−)</label>
+            <div className="mb-1 flex gap-3 text-[11.5px] font-semibold text-ink2" role="radiogroup" aria-label="Cara mengisi koreksi">
+              <label className="flex items-center gap-1"><input type="radio" name="mode-koreksi" checked={mode === "delta"} onChange={() => setMode("delta")} data-testid="mode-delta" /> Perubahan (+/−)</label>
+              <label className="flex items-center gap-1"><input type="radio" name="mode-koreksi" checked={mode === "saldo"} onChange={() => setMode("saldo")} data-testid="mode-saldo" /> Saldo yang benar</label>
+            </div>
+            {mode === "saldo" ? (
+              <>
+                <input type="number" step="any" value={saldoBaru} onChange={(e) => setSaldoBaru(e.target.value)} placeholder="saldo yang seharusnya" data-testid="adj-saldo-baru"
+                  className="w-full rounded-btn border border-border bg-surface px-2.5 py-1.5 text-[12.5px] text-ink outline-none placeholder:text-ink3 focus:border-accent" />
+                <p className="m-0 mt-1 text-[11px] text-ink3">Selisih dihitung dari saldo saat ini. Saldo tidak ditimpa — tetap menunggu persetujuan orang lain, lalu tercatat sebagai penyesuaian.</p>
+              </>
+            ) : (
             <input type="number" step="any" value={adjustmentQty} onChange={(e) => setAdjustmentQty(e.target.value)}
               placeholder="mis. -3 atau 5"
               className="w-full rounded-btn border border-border bg-surface px-2.5 py-1.5 text-[12.5px] text-ink outline-none placeholder:text-ink3 focus:border-accent" />
+            )}
           </div>
         </div>
         <div>

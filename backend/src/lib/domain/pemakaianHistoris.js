@@ -41,6 +41,8 @@ export const awalHariWIB = (iso) => new Date(`${iso}T00:00:00+07:00`);
 export const normNama = (s) => String(s ?? "").toUpperCase().replace(/\s+/g, " ").trim();
 export const slugKode = (s) => normNama(s).replace(/[^A-Z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
 export const r4 = (v) => Math.round(Number(v) * 10000) / 10000;
+/** Angka untuk TEKS yang dibaca orang: koma desimal ala Indonesia (nilai tersimpan tetap angka biasa). */
+export const koma = (v) => String(v).replace(".", ",");
 
 const ALIAS_SATUAN = { PCS: "PCS", METER: "METER", M: "METER", MTR: "METER", LEMBAR: "SHEET", LBR: "SHEET", SHEET: "SHEET", ROLL: "ROLL", ROL: "ROLL", KG: "KG", PAK: "PACK", PACK: "PACK", BUNGKUS: "PACK", BKS: "PACK", KUBIK: "M3", M3: "M3", BATANG: "ROD", ROD: "ROD", PASANG: "PAIR", PAIR: "PAIR", BLEK: "CAN", KLG: "CAN", CAN: "CAN", BOX: "BOX", SPOOL: "SPOOL", GULUNG: "ROLL" };
 /** Satuan berkas → enum satuan Gudang (hanya alias baku; tidak ada konversi jumlah). */
@@ -120,9 +122,9 @@ export const FLAG = Object.freeze({
   QTY_TIDAK_VALID: ({ rawQty }) => ({ kode: "QTY_TIDAK_VALID", tingkat: "BLOK", data: { rawQty }, teks: `Jumlah "${rawQty}" tidak terbaca sebagai angka.`, aksi: "Perbaiki jumlah di sumber atau koreksi catatan ini dengan alasan." }),
   BARIS_BERULANG: ({ jumlah }) => ({ kode: "BARIS_BERULANG", tingkat: "BLOK", data: { jumlah }, teks: `Baris serupa muncul ${jumlah}× pada order ini (bahan, spesifikasi, jumlah sama).`, aksi: `Konfirmasi: memang dipakai ${jumlah}× (sah) atau salinan ganda?` }),
   ISSUE_LAMA_BERBEDA: ({ ledger, excel, satuan }) => ({ kode: "ISSUE_LAMA_BERBEDA", tingkat: "BLOK", data: { ledger, excel, selisih: r4(excel - ledger), satuan },
-    teks: `Stok mencatat ${ledger} ${satuan}, Excel ${excel} ${satuan} (selisih ${r4(excel - ledger)}).`, aksi: "Ajukan koreksi pemakaian per order bila Excel yang benar (nilai lama tetap tersimpan)." }),
+    teks: `Stok mencatat ${koma(ledger)} ${satuan}, Excel ${koma(excel)} ${satuan} (selisih ${koma(r4(excel - ledger))}).`, aksi: "Ajukan koreksi pemakaian per order bila Excel yang benar (nilai lama tetap tersimpan)." }),
   ISSUE_LAMA_SATUAN_BEDA: ({ ledger, rawQty, rawUom, masterUom }) => ({ kode: "ISSUE_LAMA_SATUAN_BEDA", tingkat: "BLOK", data: { ledger, rawQty, rawUom, masterUom },
-    teks: `Stok mencatat ${ledger} ${masterUom}; Excel menulis ${rawQty} ${rawUom}. Angka stok kemungkinan memakai satuan Excel, bukan ${masterUom}.`, aksi: "Butuh faktor satuan berbukti sebelum stok lama dikoreksi." }),
+    teks: `Stok mencatat ${koma(ledger)} ${masterUom}; Excel menulis ${rawQty} ${rawUom}. Angka stok kemungkinan memakai satuan Excel, bukan ${masterUom}.`, aksi: "Butuh faktor satuan berbukti sebelum stok lama dikoreksi." }),
   ISSUE_TANPA_PASANGAN: ({ qty, satuan, ordeAdaDiExcel }) => ({ kode: "ISSUE_TANPA_PASANGAN", tingkat: "BLOK", data: { qty, satuan, ordeAdaDiExcel },
     teks: ordeAdaDiExcel ? `Pengeluaran stok ${qty} ${satuan} ini tidak punya baris bahan yang sama di Excel untuk order ini.` : `Order ini tidak ada di Excel; pengeluaran stok ${qty} ${satuan} tidak punya catatan pembanding.`,
     aksi: ordeAdaDiExcel ? "Cek apakah bahan tertukar varian; ajukan koreksi/pembatalan pemakaian bila salah." : "Admin Produksi memastikan order ini memang memakai bahan tsb; bila tidak, ajukan pembatalan pemakaian." }),
