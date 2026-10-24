@@ -9,19 +9,35 @@
 // Lokal: SRC_ROOT=file:///C:/tmp/km-rekon-wt/backend/src/ dengan cwd=backend dan DATABASE_URL ke salinan.
 import fs from "node:fs";
 import crypto from "node:crypto";
+import { fileURLToPath } from "node:url";
 const SRC = process.env.SRC_ROOT || "/app/src/";
 const arg = (k) => { const a = process.argv.find((x) => x.startsWith(`--${k}=`)); return a ? a.slice(k.length + 3) : ""; };
 const MODE = arg("mode") || "pratinjau";
+// Sidik jari BYTE alat ini sendiri (hanya bila dijalankan sebagai berkas, bukan stdin). Mode menulis ('terapkan') dan 'lanjut' WAJIB berjalan dari berkas dengan sha256 = --sha-alat = manifest.alat.sha256.
+const ALAT_SHA = (() => { try { return crypto.createHash("sha256").update(fs.readFileSync(fileURLToPath(import.meta.url))).digest("hex"); } catch { return null; } })();
+const SUMBER_LABEL = "Excel Admin Sales yang dikonfirmasi Owner"; // dicatat di peristiwa; TIDAK mengatasnamakan PIC pemakaian historis
 const cat = await import(SRC + "services/catatanPemakaianHistoris.js");
 const dom = await import(SRC + "lib/domain/pemakaianHistoris.js");
 const { prisma } = await import(SRC + "db.js");
 const { STATE, parseCsv, bacaCsvPemakaian } = dom;
-const NAMA_BERKAS = "Rekapitulasi Pemakaian Bahan SANO - 2026 - Pemakaian Bahan.csv";
+const NAMA_BERKAS = `${SUMBER_LABEL} — Rekapitulasi Pemakaian Bahan SANO - 2026 (Pemakaian Bahan.csv)`; // masuk ke alasan peristiwa IMPOR: "Impor <label> baris N"
 const sha = (b) => crypto.createHash("sha256").update(b).digest("hex");
 const stabilJson = (v) => JSON.stringify(v, (_k, x) => (x && typeof x === "object" && !Array.isArray(x) ? Object.fromEntries(Object.keys(x).sort().map((k) => [k, x[k]])) : x));
 const hitung = async (q) => Number((await prisma.$queryRawUnsafe(q))[0].n);
 let gagal = 0; const cek = (n, ok, d = "") => { if (!ok) gagal += 1; console.log((ok ? "PASS " : "FAIL ") + n + (d !== "" ? " — " + String(d).slice(0, 300) : "")); };
 const iso = (d) => (d ? new Date(d).toISOString() : null);
+
+/** Aktor audit = akun ADMIN aktif yang benar-benar menjalankan impor; email DAN id harus cocok dengan yang disetujui. */
+async function ambilAktor() {
+  const email = arg("aktor-email"); const id = arg("aktor-id");
+  if (!email || !id) return { ok: false, alasan: "--aktor-email dan --aktor-id wajib" };
+  const u = await prisma.user.findUnique({ where: { email }, select: { id: true, name: true, email: true, role: true, active: true } });
+  if (!u) return { ok: false, alasan: "akun " + email + " tidak ditemukan" };
+  const roles = [u.role, ...(await prisma.userRole.findMany({ where: { userId: u.id }, select: { role: true } })).map((r) => r.role)];
+  const ok = u.active && u.id === id && roles.includes("ADMIN");
+  return { ok, u, roles, alasan: ok ? "" : (u.active ? (u.id !== id ? "id akun tidak cocok dengan yang disetujui" : "akun bukan ADMIN") : "akun nonaktif") };
+}
+const tampilAktor = (a) => (a.u ? a.u.name + " <" + a.u.email + "> id " + a.u.id + " peran " + a.roles.join(",") : a.alasan);
 
 function bacaMasukan() {
   const csvPath = arg("csv"); if (!csvPath) throw new Error("--csv wajib");
@@ -123,15 +139,29 @@ const tabelBaruIsi = async () => ({
 });
 
 async function main() {
+  console.log("ALAT_SHA256 " + (ALAT_SHA ?? "(stdin: tidak dapat dihitung)") + " mode=" + MODE);
   if (MODE === "pratinjau") {
     const { manifest } = await susunManifest(); const keluar = arg("keluar");
     if (keluar) fs.writeFileSync(keluar, JSON.stringify(manifest, null, 1)); else console.log(JSON.stringify(manifest, null, 1));
     const h = manifest.hitungan; console.log(`PRATINJAU: Excel ${h.catatanExcel} (nol ${h.berjumlahNol}, positif ${h.berjumlahPositif}) + LEDGER ${h.referensiIssueLama_LEDGER} = ${h.totalCatatan}; order tampil ${h.orderTampilDiProduksi}; hashRencana ${manifest.hashRencana}`); return;
   }
+  if (MODE === "status") { // BACA-SAJA: keadaan tabel untuk memutuskan langkah setelah koneksi/proses terputus
+    const isi = await tabelBaruIsi(); const excel = await hitung("select count(*)::int n from unit_usage_notes where origin = 'EXCEL'"); const ledger = await hitung("select count(*)::int n from unit_usage_notes where origin = 'LEDGER'");
+    const manifest = arg("manifest") ? JSON.parse(fs.readFileSync(arg("manifest"), "utf8")) : null; const h = manifest?.hitungan;
+    let k = "TIDAK_DIKENAL";
+    if (Object.values(isi).every((v) => v === 0)) k = "KOSONG";
+    else if (h && isi.batch === 1 && excel === h.catatanExcel && ledger === h.referensiIssueLama_LEDGER) k = "PENUH";
+    else k = "SEBAGIAN_ATAU_LAIN";
+    console.log("STATUS " + k + " " + JSON.stringify({ ...isi, excel, ledger }));
+    console.log(k === "KOSONG" ? "→ transaksi impor TIDAK ter-commit: aman mengulang 'sebelum' lalu 'terapkan' dengan argumen yang sama." : k === "PENUH" ? "→ transaksi impor ter-commit: JANGAN terapkan lagi. Jalankan --mode=lanjut lalu --mode=sesudah." : "→ STOP: keadaan tak terduga (impor satu transaksi seharusnya tidak sebagian). Jangan ubah apa pun; laporkan.");
+    process.exitCode = k === "KOSONG" ? 0 : k === "PENUH" ? 10 : 20; return;
+  }
   if (MODE === "lanjut") { // PEMULIHAN MAJU bila proses berhenti SETELAH transaksi impor berhasil tetapi sebelum evaluasi ulang selesai: hanya evaluasi ulang (idempoten) + hash akhir. TIDAK menulis catatan baru.
     const n = await hitung("select count(*)::int n from unit_usage_notes"); if (n === 0) { console.log("TIDAK ADA catatan: impor belum terjadi — jalankan alur normal (sebelum → terapkan), bukan 'lanjut'."); process.exitCode = 2; return; }
-    const email = arg("aktor-email"); const aktor = email ? await prisma.user.findUnique({ where: { email }, select: { id: true } }) : null;
-    const ev = await cat.evaluasiUlang(prisma, { actorId: aktor?.id ?? null }); console.log(`EVALUASI ULANG (lanjut): diperiksa ${ev.diperiksa}, berubah ${ev.berubah}`); const ha = await hashAkhir(); console.log(`HASH_AKHIR ${ha.hash} (${ha.n} catatan)`); return;
+    const aktor = await ambilAktor(); cek("aktor = akun Admin aktif yang disetujui", aktor.ok, tampilAktor(aktor));
+    cek("alat dijalankan dari berkas dengan sha256 = yang disetujui (--sha-alat)", !!ALAT_SHA && ALAT_SHA === arg("sha-alat"), String(ALAT_SHA).slice(0, 16));
+    if (gagal) { console.log("LANJUT DITOLAK — tidak ada yang ditulis."); process.exitCode = 3; return; }
+    const ev = await cat.evaluasiUlang(prisma, { actorId: aktor.u.id }); console.log(`EVALUASI ULANG (lanjut): diperiksa ${ev.diperiksa}, berubah ${ev.berubah}`); const ha = await hashAkhir(); console.log(`HASH_AKHIR ${ha.hash} (${ha.n} catatan)`); return;
   }
   if (MODE === "rekam-akhir") { // dijalankan HANYA pada salinan sesudah impor percobaan: menulis hash + distribusi keadaan AKHIR ke manifest final
     const manifest = JSON.parse(fs.readFileSync(arg("manifest"), "utf8")); const ha = await hashAkhir();
@@ -154,15 +184,17 @@ async function main() {
     cek("hash rencana yang disetujui = hash di manifest", !!setuju && setuju === manifest.hashRencana, setuju.slice(0, 16));
     const isi = await tabelBaruIsi(); cek("tabel rekonsiliasi masih KOSONG (impor belum pernah jalan)", Object.values(isi).every((v) => v === 0), JSON.stringify(isi));
     cek("potret 'sebelum' ada", !!arg("potret") && fs.existsSync(arg("potret")));
+    cek("alat dijalankan dari BERKAS dengan sha256 = --sha-alat = manifest.alat.sha256 (byte sama dengan yang diuji pada salinan)", !!ALAT_SHA && ALAT_SHA === arg("sha-alat") && ALAT_SHA === manifest.alat?.sha256, String(ALAT_SHA).slice(0, 16));
+    const aktor = await ambilAktor(); cek("aktor audit = akun ADMIN aktif yang disetujui (email + id cocok)", aktor.ok, tampilAktor(aktor));
     const { manifest: baru, rencana } = await susunManifest();
     cek("rencana dihitung ulang dari data production = manifest (hash sama)", baru.hashRencana === manifest.hashRencana, `${baru.hashRencana.slice(0, 16)} vs ${manifest.hashRencana.slice(0, 16)}`);
     cek("hitungan rencana = manifest (2.656 Excel + 29 LEDGER)", baru.hitungan.catatanExcel === manifest.hitungan.catatanExcel && baru.hitungan.referensiIssueLama_LEDGER === manifest.hitungan.referensiIssueLama_LEDGER);
     if (gagal) { console.log(`GATE DITOLAK (${gagal} pemeriksaan gagal) — TIDAK ada yang ditulis.`); process.exitCode = 3; return; }
-    const email = arg("aktor-email"); const aktor = email ? await prisma.user.findUnique({ where: { email }, select: { id: true } }) : null; if (email && !aktor) throw new Error(`pengguna ${email} tidak ditemukan`);
     const t = Date.now();
-    const hasil = await cat.terapkanImpor(prisma, rencana, { actorId: aktor?.id ?? null });
+    const hasil = await cat.terapkanImpor(prisma, rencana, { actorId: aktor.u.id });
     console.log(`TERAPKAN: batch ${hasil.batchBaru ? "baru" : "sudah ada"} ${hasil.batchId}; dibuat ${hasil.dibuat}, dilewati ${hasil.dilewati} (${Date.now() - t} ms, satu transaksi)`);
-    const ev = await cat.evaluasiUlang(prisma, { actorId: aktor?.id ?? null }); console.log(`EVALUASI ULANG: diperiksa ${ev.diperiksa}, berubah ${ev.berubah}`);
+    if (process.env.IMPOR_UJI_BERHENTI_SETELAH_COMMIT === "1") { console.log("UJI: proses sengaja dihentikan SETELAH commit (hanya untuk menguji pemulihan --mode=lanjut)"); process.exit(9); }
+    const ev = await cat.evaluasiUlang(prisma, { actorId: aktor.u.id }); console.log(`EVALUASI ULANG: diperiksa ${ev.diperiksa}, berubah ${ev.berubah}`);
     const ha = await hashAkhir(); console.log(`HASH_AKHIR ${ha.hash} (${ha.n} catatan)`); return;
   }
   if (MODE === "sesudah") {
@@ -174,6 +206,15 @@ async function main() {
     const ha = await hashAkhir(); const arq = manifest.hashAkhir; cek("hash keadaan akhir tabel = hash akhir yang direview (impor di salinan)", !arq || ha.hash === arq, `${ha.hash.slice(0, 16)} vs ${(arq ?? "-").slice(0, 16)}`);
     const states = await prisma.unitUsageNote.groupBy({ by: ["origin", "state"], _count: { _all: true } }); const peta = Object.fromEntries(states.map((s) => [`${s.origin}:${s.state}`, s._count._all]));
     if (manifest.stateAkhir) cek("distribusi keadaan akhir = manifest", stabilJson(peta) === stabilJson(manifest.stateAkhir), JSON.stringify(peta));
+    const ak = await ambilAktor(); cek("aktor sesudah impor = akun ADMIN aktif yang disetujui", ak.ok, tampilAktor(ak));
+    if (ak.u) {
+      cek("batch impor dibuat oleh akun aktor", batch.length === 1 && batch[0].createdById === ak.u.id);
+      const evs = await prisma.unitUsageNoteEvent.findMany({ select: { kind: true, reason: true, actorId: true } });
+      cek("SEMUA peristiwa (IMPOR, DITAUTKAN) dicatat atas akun aktor Admin", evs.length > 0 && evs.every((e) => e.actorId === ak.u.id), `${evs.length} peristiwa`);
+      cek(`setiap peristiwa IMPOR menyebut sumber "${SUMBER_LABEL}"`, evs.filter((e) => e.kind === "IMPOR").every((e) => String(e.reason).includes(SUMBER_LABEL)), (evs.find((e) => e.kind === "IMPOR")?.reason ?? "").slice(0, 120));
+      const pics = [...new Set((await prisma.unitUsageNote.findMany({ where: { origin: "EXCEL" }, select: { rawPic: true } })).map((n) => String(n.rawPic ?? "").trim().toLowerCase()).filter((p) => p.length > 2))];
+      cek("tidak ada peristiwa yang mengatasnamakan PIC pemakaian historis", !evs.some((e) => pics.some((p) => String(e.reason ?? "").toLowerCase().includes(p))), `${pics.length} nama PIC diperiksa`);
+    }
     const evImpor = await hitung("select count(*)::int n from unit_usage_note_events where kind = 'IMPOR'"); cek("setiap catatan punya peristiwa IMPOR", evImpor === excel + ledger, `${evImpor}`);
     cek("tidak ada catatan DIPOSTING dan tidak ada pergerakan hasil posting historis", await hitung("select count(*)::int n from unit_usage_notes where state = 'DIPOSTING'") === 0 && await hitung("select count(*)::int n from stock_movements where note like 'Impor pemakaian historis%'") === 0);
     cek("tidak ada koreksi pemakaian/harga/saldo ber-asal", Object.entries(await tabelBaruIsi()).filter(([k]) => ["koreksiHarga", "koreksiPemakaian", "penyesuaianAsal"].includes(k)).every(([, v]) => v === 0));
