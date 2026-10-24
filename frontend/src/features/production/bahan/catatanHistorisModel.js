@@ -41,8 +41,19 @@ export function aksiCatatan(i, izin = {}) {
   if (i.origin === "EXCEL" && flags.some((k) => KODE_BISA_DIKONFIRMASI.includes(k)) && ["PERLU_DICEK", "SIAP_POSTING"].includes(i.state)) a.push({ key: "konfirmasi", label: "Konfirmasi wajar" });
   if (i.origin === "EXCEL" && ["PERLU_DICEK", "SIAP_POSTING"].includes(i.state)) a.push({ key: "kecualikan", label: "Kecualikan dari perhitungan" });
   if (i.bahan?.id && (flags.includes("ISSUE_LAMA_BERBEDA") || flags.includes("ISSUE_TANPA_PASANGAN"))) a.push({ key: "koreksiPemakaian", label: "Ajukan koreksi pemakaian" });
+  // Saldo bahan salah (bukan jumlah pemakaian order ini): Penyesuaian Stok dengan ASAL = catatan ini; saldo tidak ditimpa, wajib disetujui orang lain.
+  if (i.bahan?.id && ["PERLU_DICEK", "SIAP_POSTING", "TERCATAT_DI_STOK", "DIPOSTING"].includes(i.state)) a.push({ key: "koreksiSaldo", label: "Koreksi saldo bahan" });
   return a;
 }
+/** Validasi koreksi saldo: saldo yang benar ≥ 0 (koma atau titik), alasan ≥ 5 karakter. */
+export function validasiKoreksiSaldo({ saldoBaru, alasan }) {
+  const s = Number(String(saldoBaru ?? "").trim().replace(",", "."));
+  if (String(saldoBaru ?? "").trim() === "" || !Number.isFinite(s) || s < 0) return { ok: false, galat: "Saldo yang benar harus angka 0 atau lebih." };
+  if (String(alasan ?? "").trim().length < 5) return { ok: false, galat: "Alasan wajib diisi (minimal 5 karakter)." };
+  return { ok: true, saldo: s };
+}
+export const NADA_KOREKSI_SALDO = Object.freeze({ DRAFT: "neutral", WAITING_APPROVAL: "orange", APPROVED: "accent", POSTED: "green", CANCELLED: "neutral" });
+export const LABEL_KOREKSI_SALDO = Object.freeze({ DRAFT: "Draf", WAITING_APPROVAL: "Menunggu persetujuan", APPROVED: "Disetujui (belum diposting)", POSTED: "Sudah diposting", CANCELLED: "Dibatalkan" });
 export function teksPenanda(f) { return `${f.teks} ${f.aksi}`.trim(); }
 /** HPP per order: PARSIAL bila ada gap — tidak pernah ditampilkan sebagai final. */
 export function badgeHpp(h) {

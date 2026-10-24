@@ -90,3 +90,35 @@ test("migrasi disamakan dengan schema.prisma: unik biasa, nama FK dan indeks ses
   assert.match(migSql, /"fin_stock_movement_valuation_corrections_movement_id_fkey"/); assert.match(migSql, /"fin_stock_movement_valuation_corrections_movement_id_create_idx"/);
   assert.ok(!/fin_smv_corr_movement_fkey|movement_id_created_at_idx/.test(migSql));
 });
+
+test("pemeriksaan pasca-switch (pasca_cek, kode yang SAMA dipakai rehearsal dan fase 8) membandingkan dengan baseline + 1: lulus pada 268, GAGAL pada 267 (baseline), 269, migrasi menggantung, checksum/fungsi/skema/struktur salah", { skip: !punyaBash }, () => {
+  const awal = script.indexOf("pasca_cek() {"); assert.ok(awal > 0); const akhir = script.indexOf("\n}\n", awal); const fungsi = script.slice(awal, akhir + 3);
+  const jalankan = (nilai) => {
+    const kode = `set -u\nLIVE_MIG_JUMLAH=267; MIG_NAME=mig_x; RAW_SHA=cks; FUNC_SQL=F; FUNC_PRA=fp; SKEMA_SQL=S; SKEMA_PRA=sp; STRUKTUR_SQL=T\nPASCA_GALAT=""\n${fungsi}\nQ() { case "$1" in *"finished_at is not null"*) echo "$N_SELESAI";; *"finished_at is null"*) echo "$N_GANTUNG";; *checksum*) echo "$CKS";; F) echo "$FP";; S) echo "$SP";; T) echo "$ST";; esac; }\npasca_cek Q; echo "RC=$? GALAT=$PASCA_GALAT"`;
+    const r = spawnSync("bash", ["-c", kode], { encoding: "utf8", env: { ...process.env, N_SELESAI: "268", N_GANTUNG: "0", CKS: "cks", FP: "fp", SP: "sp", ST: "4|3|2|2", ...nilai } }); assert.equal(r.status, 0, r.stderr); return r.stdout.trim();
+  };
+  assert.equal(jalankan({}), "RC=0 GALAT=", "baseline + 1 = 268 lulus");
+  assert.match(jalankan({ N_SELESAI: "267" }), /^RC=1 GALAT=jumlah migrasi terpasang 267 != baseline \+ 1 \(268\)/, "keadaan baseline (sebelum migrasi) ditolak — kebalikan dari cacat yang menghentikan rilis prasyarat");
+  assert.match(jalankan({ N_SELESAI: "269" }), /^RC=1 .*269/);
+  assert.match(jalankan({ N_GANTUNG: "1" }), /^RC=1 GALAT=ada 1 migrasi menggantung/);
+  assert.match(jalankan({ CKS: "lain" }), /^RC=1 GALAT=checksum/);
+  assert.match(jalankan({ FP: "x" }), /^RC=1 GALAT=fungsi lama berubah/);
+  assert.match(jalankan({ SP: "x" }), /^RC=1 GALAT=skema tabel lama berubah/);
+  assert.match(jalankan({ ST: "0|0|0|1" }), /^RC=1 GALAT=struktur baru 0\|0\|0\|1 bukan 4\|3\|2\|2/);
+  // fase 8 memakainya (bukan pembanding terhadap baseline) dan tidak ada lagi pemeriksaan "jumlah migrasi = baseline" sesudah migrasi
+  const fase8 = script.slice(script.indexOf('PHASE="8-verifikasi"'), script.indexOf('PHASE="8b-smoke"'));
+  assert.match(fase8, /pasca_cek PSQLN \|\| die/); assert.ok(!/= "\$LIVE_MIG_JUMLAH" \]/.test(fase8), "fase 8 tidak boleh membandingkan jumlah migrasi dengan baseline");
+  assert.ok(!/die "jumlah migrasi terpasang berubah"/.test(script));
+  // rehearsal: uji negatif sebelum migrasi + lulus pada baseline + 1
+  assert.match(script, /pemeriksaan pasca-switch LOLOS pada salinan SEBELUM migrasi/); assert.match(script, /pasca_cek RPSQL \|\| \{ reh_drop; die "pemeriksaan pasca-switch pada salinan baseline \+ 1 GAGAL/);
+});
+
+test("guard rollback baca-saja: tiga keadaan (KOSONG exit 0, ADA DATA exit 10, TERBUKA exit 20), transaksi READ ONLY, dipakai di rehearsal dan fase 8; menolak hanya bila koreksi pemakaian menunggu", () => {
+  const g = baca("scripts/rollback-guard-rekon-pemakaian.sh");
+  assert.match(g, /begin read only;/); assert.ok(!/\b(insert|update|delete|drop|truncate|alter)\b\s/i.test(g.split("\n").filter((l) => !l.startsWith("#") && !/echo|KEADAAN|GUARD/.test(l)).join("\n")), "guard tidak memuat DML/DDL");
+  for (const kode of ["exit 0", "exit 10", "exit 20", "exit 1", "exit 2"]) assert.ok(g.includes(kode), kode);
+  assert.match(g, /KOR_PENDING.*PENDING_APPROVAL/); assert.match(g, /GUARD MENOLAK \(exit 20\)/); assert.match(g, /KEADAAN: KOSONG/); assert.match(g, /KEADAAN: ADA DATA/);
+  assert.match(g, /fin_stock_movement_valuation_corrections/); assert.match(g, /origin_type is not null/); assert.match(g, /link_kind = 'POSTING_HISTORIS'/);
+  assert.match(script, /guard_reh 0/); assert.match(script, /guard_reh "\$GUARD_HARAP"/); assert.match(script, /guard_reh 10/); assert.match(script, /rollback-guard-rekon-pemakaian\.sh/);
+  const punya = spawnSync("bash", ["-n", path.join(repo, "scripts/rollback-guard-rekon-pemakaian.sh")], { encoding: "utf8" }); if (punyaBash) assert.equal(punya.status, 0, punya.stderr);
+});

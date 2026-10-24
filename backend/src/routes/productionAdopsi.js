@@ -31,6 +31,7 @@ import { ambilPemakaianSementaraUnit, batalkanPemakaianSementara, catatPemakaian
 import { loadRiwayatUnit } from "../services/productionRiwayatService.js";
 import { ambilCatatanHistoris, riwayatCatatanUnit } from "../services/catatanPemakaianHistoris.js";
 import { riwayatKoreksiPemakaian, daftarKoreksiPemakaian } from "../services/koreksiPemakaian.js";
+import { koreksiSaldoUnit, riwayatKoreksiSaldo } from "../services/asalKoreksiSaldo.js";
 import { bacaJejakUnit } from "../services/finance/biayaBahan.js";
 import { buatWorkbookOrderProduksi, namaBerkasEkspor } from "../services/productionOrderExport.js";
 import { MANUAL_STATUSES, WORK_STATUS, penghalangStatusOrder, tindakanBerikutnya } from "../lib/domain/productionWorkStatus.js";
@@ -87,11 +88,11 @@ productionAdopsiRouter.get("/units/:id/adopsi", requirePermission(P.UNIT_READ), 
       ambilPenerimaanWorkshop(prisma, unit.id), ambilPemakaianSementaraUnit(prisma, unit.id),
     ]);
     // Catatan pemakaian historis (Excel Admin Sales): tampil walau belum/tidak menjadi pengeluaran stok; TIDAK dijumlahkan ke "Pemakaian aktual" dan tidak mengubah status kerja.
-    const [catatanHistoris, riwayatCatatan, riwayatKoreksi, koreksiMenunggu, jejakBiaya] = await Promise.all([
-      ambilCatatanHistoris(prisma, unit.id), riwayatCatatanUnit(prisma, unit.id), riwayatKoreksiPemakaian(prisma, unit.id), daftarKoreksiPemakaian(prisma, { status: "PENDING_APPROVAL", unitId: unit.id }),
+    const [catatanHistoris, riwayatCatatan, riwayatKoreksi, koreksiMenunggu, koreksiSaldo, jejakBiaya] = await Promise.all([
+      ambilCatatanHistoris(prisma, unit.id), riwayatCatatanUnit(prisma, unit.id), riwayatKoreksiPemakaian(prisma, unit.id), daftarKoreksiPemakaian(prisma, { status: "PENDING_APPROVAL", unitId: unit.id }), koreksiSaldoUnit(prisma, unit.id),
       bacaJejakUnit(prisma, unit.id, { izinHarga: hasPermission(req.user, P.FINANCE_READ) }),
     ]);
-    const riwayatHistoris = [...riwayatCatatan, ...riwayatKoreksi];
+    const riwayatHistoris = [...riwayatCatatan, ...riwayatKoreksi, ...riwayatKoreksiSaldo(koreksiSaldo)];
     // gap dikelompokkan per jenis (bukan satu baris per pergerakan) supaya terbaca
     const gapRingkas = jejakBiaya ? [...new Map(jejakBiaya.belumFinal.filter((g) => g.jenis !== "FAKTUR_BELUM_ADA").map((g) => [g.jenis, { jenis: g.jenis, jumlah: 0, pesan: g.pesan }])).values()].map((g) => ({ ...g, jumlah: jejakBiaya.belumFinal.filter((x) => x.jenis === g.jenis).length })) : [];
     const hppBahan = jejakBiaya && {
@@ -150,7 +151,7 @@ productionAdopsiRouter.get("/units/:id/adopsi", requirePermission(P.UNIT_READ), 
       },
       adopsi: { ...baris.adopsi, tindakan, orderSales, penghalang }, productionStatus: baris.productionStatus, presence: baris.presence, receivedBasisLabel: baris.receivedBasisLabel,
       kerjaManual: { riwayat: riwayatKerja, nilaiBoleh: MANUAL_STATUSES.map((k) => ({ key: k, label: WORK_STATUS[k].label })), terakhirId: riwayatKerja.length ? riwayatKerja[riwayatKerja.length - 1].id : null, dikunciAplikasi: !!bukti?.started },
-      penerimaan: penerimaanAktif, riwayatPenerimaan, rencanaBahan: rencana, pemakaianAktual: aktual, pemakaianSementara: sementara, catatanHistoris, koreksiMenunggu: koreksiMenunggu.map((k) => ({ ...k, milikSaya: k.pemohon?.id === req.user.id })), hppBahan, komponenLama, perbandingan, riwayat,
+      penerimaan: penerimaanAktif, riwayatPenerimaan, rencanaBahan: rencana, pemakaianAktual: aktual, pemakaianSementara: sementara, catatanHistoris, koreksiSaldo, koreksiMenunggu: koreksiMenunggu.map((k) => ({ ...k, milikSaya: k.pemohon?.id === req.user.id })), hppBahan, komponenLama, perbandingan, riwayat,
       izin: bolehUbah(req.user),
     });
   } catch (err) { handleErr(err, res); }

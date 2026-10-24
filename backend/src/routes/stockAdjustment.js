@@ -19,6 +19,7 @@ import { catatPerubahanDraf } from "../lib/jejakPerubahan.js";
 import { wajibUuid } from "../lib/uuidParam.js";
 import { pesanServerAman } from "../lib/galatServerAman.js";
 import { wajibPenyetujuPenyesuaian, wajibBukanPihakPengaju } from "../services/inventorySegregation.js";
+import { ASAL_KOREKSI_TIPE, validasiAsalKoreksi, ringkasAsalKoreksi } from "../services/asalKoreksiSaldo.js";
 
 export const stockAdjustmentRouter = express.Router();
 stockAdjustmentRouter.use(requireAuth);
@@ -76,7 +77,7 @@ stockAdjustmentRouter.get("/:id", requirePermission(P.INVENTORY_READ), wajibUuid
     const tulis = hasPermission(req.user, P.INVENTORY_WRITE); const bisaSetujui = hasPermission(req.user, P.INVENTORY_ADJUSTMENT_APPROVE); const pemohonSama = request.requestedById === req.user.id;
     // Penyetuju murni (mis. Finance) tidak punya izin tulis tetapi boleh menyetujui: hanya aksi SETUJUI yang ditawarkan kepadanya.
     const t = tampilanPenyesuaian(request, { bisaSetujui, pemohonSama });
-    res.json({ ...request, tampilan: tulis ? t : { ...t, aksi: t.aksi.filter((a) => a.kode === "SETUJUI") }, izin: { tulis, bisaSetujui, pemohonSama }, jejak: await jejakDokumenGudang(prisma, { entityType: ENTITY_TYPES.STOCK_ADJUSTMENT, id: request.id, dibuatOleh: request.requestedBy?.name ?? null, dibuatPada: request.createdAt, jenis: "ADJ" }) });
+    res.json({ ...request, asal: await ringkasAsalKoreksi(prisma, request), tampilan: tulis ? t : { ...t, aksi: t.aksi.filter((a) => a.kode === "SETUJUI") }, izin: { tulis, bisaSetujui, pemohonSama }, jejak: await jejakDokumenGudang(prisma, { entityType: ENTITY_TYPES.STOCK_ADJUSTMENT, id: request.id, dibuatOleh: request.requestedBy?.name ?? null, dibuatPada: request.createdAt, jenis: "ADJ" }) });
   } catch (err) {
     handleErr(err, res);
   }
@@ -92,13 +93,18 @@ stockAdjustmentRouter.post("/", requirePermission(P.INVENTORY_WRITE), async (req
     if (!reason?.trim()) throw new AdjustmentError("Alasan wajib diisi");
     // ASAL koreksi (catatan/pemakaian/pergerakan yang memicu): keduanya terisi atau keduanya kosong; hanya penelusuran, tidak mengubah alur persetujuan.
     if (Boolean(originType) !== Boolean(originId)) throw new AdjustmentError("originType dan originId harus diisi bersamaan");
-    if (originType && !["USAGE_NOTE", "UNIT_USAGE", "MOVEMENT"].includes(originType)) throw new AdjustmentError("originType tidak dikenal");
+    if (originType && !ASAL_KOREKSI_TIPE.includes(originType)) throw new AdjustmentError("originType tidak dikenal");
+    if (originType) await validasiAsalKoreksi(prisma, { originType, originId, materialId }); // asal harus ada dan menyangkut bahan yang sama (AsalKoreksiError membawa statusCode)
 
     const [{ balance }] = await prisma.$queryRaw`
       SELECT COALESCE(SUM(qty), 0)::float AS balance FROM stock_movements WHERE material_id = ${materialId}::uuid
     `;
     // Koreksi saldo "langsung": cukup isi saldo yang BENAR (saldoBaru); selisihnya dihitung dari saldo ledger SAAT INI. Saldo tidak pernah ditimpa — tetap permintaan penyesuaian yang wajib disetujui orang lain.
     const qty = (adjustmentQty === undefined || adjustmentQty === null || adjustmentQty === "") && saldoBaru !== undefined ? Math.round((Number(saldoBaru) - balance) * 10000) / 10000 : Number(adjustmentQty);
+    if (saldoBaru !== undefined && (adjustmentQty === undefined || adjustmentQty === null || adjustmentQty === "")) {
+      if (!Number.isFinite(Number(saldoBaru)) || Number(saldoBaru) < 0) throw new AdjustmentError("Saldo yang benar harus angka 0 atau lebih");
+      if (qty === 0) throw new AdjustmentError("Saldo bahan di sistem sudah sama dengan saldo yang diisi; tidak ada selisih untuk dikoreksi", 409);
+    }
     if (!Number.isFinite(qty) || qty === 0) throw new AdjustmentError("Adjustment quantity wajib diisi dan tidak boleh nol");
 
     const today = new Date();

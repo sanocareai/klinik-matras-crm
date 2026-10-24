@@ -75,6 +75,7 @@ Rollback kode setelah switch (migrasi TIDAK dibalik: tabel baru kosong dan tak d
    cd ${PREV_DIR:-<release-sebelumnya>}
    docker tag ${ROLLBACK_TAG:-<tag-rollback>} ${IMG_NAME:-klinik-matras-backend:latest}
    SANSS_PERSIST_ROOT=${PERSIST} docker compose -p ${PROJECT} -f docker-compose.yml -f docker-compose.release.yml up -d --no-deps --force-recreate backend
+SEBELUM rollback jalankan (baca-saja): bash ${NEW_DIR:-<release-baru>}/scripts/rollback-guard-rekon-pemakaian.sh  (exit 0 = kosong, 10 = ada data tetapi aman, 20 = ada koreksi menunggu → selesaikan dulu).
 Bila SETELAH rilis sudah ada impor/posting/koreksi (tindakan data terpisah), rollback kode TIDAK menghapusnya: catatan, peristiwa, dan koreksi tetap utuh (tak tampil di UI lama); pergerakan stok hasil posting tetap sah di ledger. Selama antrean kosong tidak ada yang perlu dibersihkan.
 ─────────────────────────────────────────────────────────────────────────
 EOF
@@ -322,6 +323,19 @@ NM_KB="$(du -sk "$NM_SRC" | cut -f1)"; AVAIL_KB="$(df -Pk "$HOME" | awk 'NR==2{p
 ok "ruang disk cukup (tersedia ${AVAIL_KB} KB)"
 if [ "$PREFLIGHT_ONLY" = "1" ]; then say "Preflight selesai (--preflight-only): produksi TIDAK diubah"; trap - EXIT; exit 0; fi
 
+# pasca_cek <fungsi-psql>: pemeriksaan DB sesudah migrasi (= keadaan baseline + 1). DIPAKAI SAMA oleh rehearsal (salinan restore) dan fase 8 (production sesudah switch) — satu kode, bukan dua salinan yang bisa berbeda.
+# Mengembalikan 0 bila lulus; 1 bila gagal dengan alasan di PASCA_GALAT. Bandingkan jumlah migrasi dengan baseline + 1 (BUKAN baseline: rilis prasyarat sebelumnya berhenti di fase 8 karena membandingkan dengan baseline setelah migrasi diterapkan).
+PASCA_GALAT=""
+pasca_cek() {
+  local Q="$1" n
+  n="$($Q "select count(*) from _prisma_migrations where finished_at is not null and rolled_back_at is null")"; [ "$n" = "$(( LIVE_MIG_JUMLAH + 1 ))" ] || { PASCA_GALAT="jumlah migrasi terpasang ${n} != baseline + 1 ($(( LIVE_MIG_JUMLAH + 1 )))"; return 1; }
+  n="$($Q "select count(*) from _prisma_migrations where finished_at is null and rolled_back_at is null")"; [ "$n" = "0" ] || { PASCA_GALAT="ada ${n} migrasi menggantung"; return 1; }
+  n="$($Q "select checksum from _prisma_migrations where migration_name='${MIG_NAME}'")"; [ "$n" = "$RAW_SHA" ] || { PASCA_GALAT="checksum ${MIG_NAME} tidak cocok berkas kandidat"; return 1; }
+  n="$($Q "$FUNC_SQL")"; [ "$n" = "$FUNC_PRA" ] || { PASCA_GALAT="fungsi lama berubah"; return 1; }
+  n="$($Q "$SKEMA_SQL")"; [ "$n" = "$SKEMA_PRA" ] || { PASCA_GALAT="skema tabel lama berubah"; return 1; }
+  n="$($Q "$STRUKTUR_SQL")"; [ "$n" = "4|3|2|2" ] || { PASCA_GALAT="struktur baru ${n} bukan 4|3|2|2"; return 1; }
+  PASCA_GALAT=""; return 0
+}
 # rehearsal_migrasi <image>: restore backup NYATA ke DB sementara → sidik jari identik → MIGRASI rilis pada salinan (image yang diuji) → skema/data lama identik, hanya 4 tabel baru + 5 pernyataan terdaftar berubah → uji aplikasi pada salinan → DB sementara DIHAPUS (production tidak tersentuh).
 rehearsal_migrasi() {
   local IMG="$1"
@@ -340,6 +354,11 @@ rehearsal_migrasi() {
   SKEMA_REH_PRE="$(RPSQL "$SKEMA_SQL")"; [ -n "$SKEMA_REH_PRE" ] || { reh_drop; die "sidik jari skema salinan (sebelum migrasi) kosong"; }
   [ "$(RPSQL "$FUNC_SQL")" = "$FUNC_PRA" ] || { reh_drop; die "fungsi hasil RESTORE berbeda dari produksi"; }
   [ "$(RPSQL "$STRUKTUR_SQL")" = "0|0|0|1" ] || { reh_drop; die "salinan RESTORE sudah memuat objek rilis ini (bukan keadaan sebelum migrasi)"; }
+  if pasca_cek RPSQL; then reh_drop; die "pemeriksaan pasca-switch LOLOS pada salinan SEBELUM migrasi (tidak membedakan keadaan baseline vs baseline + 1)"; fi
+  ok "uji negatif pemeriksaan pasca-switch: pada keadaan baseline (${LIVE_MIG_JUMLAH} migrasi) DITOLAK — ${PASCA_GALAT}"
+  sg show "${DEPLOY_SHA}:scripts/rollback-guard-rekon-pemakaian.sh" | tr -d '\r' > "$BK_DIR/rollback-guard.sh" || { reh_drop; die "guard rollback tidak ada di kandidat"; }
+  PGC_ID="$(dcp "$PREV_DIR" ps -q postgres </dev/null)"; [ -n "$PGC_ID" ] || { reh_drop; die "container postgres tidak terbaca"; }
+  guard_reh() { local harap="$1" out rc; set +e; out="$(GUARD_PSQL="docker exec -i ${PGC_ID} psql -U ${DB_USER} -d ${REH_DB}" bash "$BK_DIR/rollback-guard.sh" 2>&1)"; rc=$?; set -e; printf '%s\n' "$out" | sed 's/^/        /'; [ "$rc" = "$harap" ] || { reh_drop; die "guard rollback: exit ${rc}, diharapkan ${harap}"; }; }
   TABEL_LAMA="$(RPSQL "select tablename from pg_tables where schemaname='public' and tablename <> '_prisma_migrations' order by 1")"
   [ "$(printf '%s\n' "$TABEL_LAMA" | grep -c .)" -ge 100 ] || { reh_drop; die "jumlah tabel di restore mencurigakan"; }
   FP_ALL=""
@@ -366,11 +385,20 @@ rehearsal_migrasi() {
   RPSQL "$FP_ALL" | LC_ALL=C sort > "$BK_DIR/fp-all-pasca-migrasi.txt" || { reh_drop; die "sidik jari penuh pasca-migrasi gagal"; }
   cmp -s "$BK_DIR/fp-all-sebelum.txt" "$BK_DIR/fp-all-pasca-migrasi.txt" || { diff "$BK_DIR/fp-all-sebelum.txt" "$BK_DIR/fp-all-pasca-migrasi.txt" || true; reh_drop; die "migrasi MENGUBAH isi tabel (harus tidak menulis data)"; }
   ok "migrasi pada salinan: ${MIG_NAME} diterapkan (${LIVE_MIG_JUMLAH} → $(( LIVE_MIG_JUMLAH + 1 ))); skema tabel LAMA + fungsi lama IDENTIK; isi $(printf '%s\n' "$TABEL_LAMA" | grep -c .) tabel lama IDENTIK; 4 tabel baru + 3 trigger + 2 kolom + 2 constraint ada; semua KOSONG"
+  pasca_cek RPSQL || { reh_drop; die "pemeriksaan pasca-switch pada salinan baseline + 1 GAGAL: ${PASCA_GALAT}"; }
+  ok "pemeriksaan pasca-switch (kode yang SAMA dengan fase 8) LULUS pada salinan baseline + 1 ($(( LIVE_MIG_JUMLAH + 1 )) migrasi; fungsi lama, skema lama, struktur 4|3|2|2)"
+  guard_reh 0; ok "guard rollback pada salinan baru dimigrasi = KOSONG (exit 0)"
   cat > "$BK_DIR/rehearsal-kode.mjs" <<'REHNODE'
 @@REH_NODE@@
 REHNODE
   docker run --rm -i --network "$REH_NET" -e DATABASE_URL="$URL" -e JWT_SECRET=rehearsal-tidak-dipakai "$IMG" node --input-type=module - < "$BK_DIR/rehearsal-kode.mjs" > "$BK_DIR/rehearsal-kode-baru.log" 2>&1 || { cat "$BK_DIR/rehearsal-kode-baru.log"; reh_drop; die "uji aplikasi pada salinan restore GAGAL"; }
-  ok "uji aplikasi pada salinan (kode BARU, data produksi nyata): $(tail -n 1 "$BK_DIR/rehearsal-kode-baru.log"); $(grep -c '^PASS' "$BK_DIR/rehearsal-kode-baru.log") pemeriksaan lulus"
+  ok "uji aplikasi pada salinan (kode BARU, data produksi nyata): $(grep 'REHEARSAL_KODE_BARU' "$BK_DIR/rehearsal-kode-baru.log" | tail -n 1); $(grep -c '^PASS' "$BK_DIR/rehearsal-kode-baru.log") pemeriksaan lulus"
+  GUARD_HARAP="$(sed -n 's/^GUARD_HARAP=//p' "$BK_DIR/rehearsal-kode-baru.log" | tail -n 1)"; [[ "$GUARD_HARAP" =~ ^(10|20)$ ]] || { reh_drop; die "uji aplikasi tidak melaporkan keadaan guard yang diharapkan"; }
+  guard_reh "$GUARD_HARAP"; ok "guard rollback sesudah jalur tulis pada salinan: exit $GUARD_HARAP ($([ "$GUARD_HARAP" = 20 ] && echo 'TERBUKA: ada koreksi pemakaian menunggu → rollback ditolak' || echo 'ADA DATA'))"
+  if [ "$GUARD_HARAP" = "20" ]; then
+    docker run --rm -i --network "$REH_NET" -e REH_FASE=selesaikan -e DATABASE_URL="$URL" -e JWT_SECRET=rehearsal-tidak-dipakai "$IMG" node --input-type=module - < "$BK_DIR/rehearsal-kode.mjs" > "$BK_DIR/rehearsal-selesaikan.log" 2>&1 || { cat "$BK_DIR/rehearsal-selesaikan.log"; reh_drop; die "menyelesaikan koreksi menunggu pada salinan GAGAL"; }
+    guard_reh 10; ok "guard rollback sesudah koreksi menunggu diselesaikan: exit 10 (ADA DATA; rollback kode aman)"
+  fi
   reh_drop
   [ "$(psql_live -At -c "select count(*) from pg_database where datname = '${REH_DB}'")" = "0" ] || die "DB rehearsal masih tersisa"
   ok "DB sementara dihapus; uji tulis dilakukan HANYA pada salinan"
@@ -554,10 +582,8 @@ NBE_EXPECT="$(printf '%s\n' "$BACKEND_SRC_EXPECT" | wc -w)"
 [ "$(docker inspect -f '{{.Image}}' "$CID_NEW")" = "$NEW_IMG_ID" ] || die "container berjalan bukan image baru"
 ok "${NBE} berkas backend di container = kandidat (byte-identik); image baru"
 PSQLN() { dcp "$NEW_DIR" exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" -X -At -q -c "$1" </dev/null; }
-[ "$(PSQLN "select count(*) from _prisma_migrations where finished_at is not null and rolled_back_at is null")" = "$(( LIVE_MIG_JUMLAH + 1 ))" ] || die "jumlah migrasi terpasang != baseline + 1"
+pasca_cek PSQLN || die "pemeriksaan pasca-switch: ${PASCA_GALAT}"
 [ "$(PSQLN "$FUNC_SQL")" = "$FUNC_MD5_MARK" ] || die "fungsi lama pasca-switch berbeda dari hasil rehearsal"
-[ "$(PSQLN "$STRUKTUR_SQL")" = "4|3|2|2" ] || die "struktur baru pasca-switch bukan 4|3|2|2"
-[ "$(PSQLN "$SKEMA_SQL")" = "$SKEMA_PRA" ] || die "skema berubah pasca-switch"
 dcp "$NEW_DIR" run --rm --no-deps -T backend npx prisma migrate status </dev/null 2>&1 | grep -i 'up to date' >/dev/null || die "migrate status produksi tidak 'up to date'"
 ok "$(( LIVE_MIG_JUMLAH + 1 )) migrasi terpasang (baseline + migrasi rilis); migrate status up to date"
 PHASE="8b-smoke"; say "8b. Smoke test baca-saja: ANTREAN KOSONG (tabel baru 0 baris, rencana posting 0 transaksi), panel unit + izin, catatan historis kosong, penolakan tanpa token/hanya-lihat; tidak ada tulisan"
@@ -569,6 +595,13 @@ SMOKE_SKIP="$(printf '%s' "$SMOKE_LINE" | sed -n 's/^SMOKE_HASIL fail=0 skip=\([
 [ -n "$SMOKE_SKIP" ] || die "smoke test tidak mencetak ringkasan SMOKE_HASIL yang lulus (jangan anggap lulus)"
 if [ "$SMOKE_SKIP" != "0" ]; then warn "smoke test lulus dengan ${SMOKE_SKIP} pemeriksaan DILEWATI (SKIP): lihat ${BK_DIR}/smoke.log. Ini BUKAN PASS untuk pemeriksaan yang dilewati."
 else ok "smoke test lulus"; fi
+set +e; GUARD_OUT="$(bash "$NEW_DIR/scripts/rollback-guard-rekon-pemakaian.sh" 2>&1)"; GUARD_RC=$?; set -e
+printf '%s\n' "$GUARD_OUT" | sed 's/^/        /'
+case "$GUARD_RC" in
+  0) ok "guard rollback (baca-saja) pada production: KOSONG — rollback kode tidak meninggalkan apa pun";;
+  10|20) warn "guard rollback melaporkan exit $GUARD_RC (ada data/koreksi menunggu — rilis ini tidak membuatnya; periksa aktivitas pengguna)";;
+  *) die "guard rollback gagal dijalankan (exit $GUARD_RC)";;
+esac
 OLD_ONLY="$(sed -n 1p "$OLD_ASSETS" || true)"
 if [ -n "$OLD_ONLY" ]; then
   [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "${PUBLIC_URL}/assets/${OLD_ONLY}")" = "200" ] || die "aset lama /assets/${OLD_ONLY} tidak bisa diunduh (404)"

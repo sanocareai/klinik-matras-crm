@@ -19,6 +19,16 @@ await import(S + "routes/pemakaianKoreksi.js"); // modul rute memuat tanpa galat
 const TABEL_BARU = ["usage_import_batches", "unit_usage_notes", "unit_usage_note_events", "fin_stock_movement_valuation_corrections"];
 const inti = async () => ({ sm: await hitung("select count(*)::int n from stock_movements"), mi: await hitung("select count(*)::int n from material_issues"), jur: await hitung("select count(*)::int n from fin_journal_entries"), val: await hitung("select count(*)::int n from fin_stock_movement_valuations"), mat: await hitung("select count(*)::int n from materials"), unit: await hitung("select count(*)::int n from units"), koreksi: await hitung("select count(*)::int n from warehouse_corrections") });
 
+// FASE "selesaikan": hanya menolak koreksi pemakaian yang menunggu (dibiarkan terbuka oleh uji utama untuk menguji guard rollback), lalu selesai.
+if (process.env.REH_FASE === "selesaikan") {
+  const pend = await prisma.warehouseCorrection.findMany({ where: { docType: "UNIT_USAGE", status: "PENDING_APPROVAL" }, select: { id: true } });
+  const penolak = (await baris("select id::text id, name from \"User\" where active order by \"createdAt\" offset 1 limit 1"))[0];
+  for (const k of pend) await kor.tolakKoreksiPemakaian(prisma, { koreksiId: k.id, aktor: penolak, catatan: "Rehearsal: menyelesaikan koreksi menunggu agar guard rollback diuji pada keadaan ADA DATA" });
+  cek(`koreksi menunggu diselesaikan (ditolak): ${pend.length}`, pend.length >= 1 && await hitung("select count(*)::int n from warehouse_corrections where doc_type = 'UNIT_USAGE' and status = 'PENDING_APPROVAL'") === 0);
+  await prisma.$disconnect(); console.log("REHEARSAL_KODE_BARU gagal=" + gagal + " skip=" + dilewati); process.exit(gagal ? 1 : 0);
+}
+let guardHarap = 10; // setelah jalur tulis ada data → guard exit 10; bila koreksi dibiarkan menunggu → 20
+
 // ───────── A. keadaan saat rilis (baca-saja) ─────────
 const mig = await baris("select migration_name from _prisma_migrations where migration_name like '%catatan_pemakaian_historis' and finished_at is not null and rolled_back_at is null");
 cek("migrasi catatan_pemakaian_historis tercatat selesai pada salinan", mig.length === 1, mig.map((m) => m.migration_name).join());
@@ -83,6 +93,8 @@ else {
     cek("koreksi harga memakai tabel terpisah; valuasi asli tidak diubah; tanpa jurnal otomatis", !!kv.koreksi && await hitung("select count(*)::int n from fin_stock_movement_valuation_corrections") === 1);
     let ubahKoreksi = null; try { await prisma.$executeRawUnsafe("update fin_stock_movement_valuation_corrections set reason = 'x'"); } catch (e) { ubahKoreksi = String(e.message); }
     cek("tabel koreksi harga append-only (UPDATE ditolak)", /append-only/.test(ubahKoreksi ?? ""));
+    const k2 = await kor.ajukanKoreksiPemakaian(prisma, { unitId: u.id, materialId: m.id, qtyBaru: 1.0, alasan: "Rehearsal: koreksi dibiarkan menunggu untuk menguji guard rollback", kunci: "rehearsal-kor-0002", aktor: A });
+    cek("koreksi pemakaian kedua dibiarkan MENUNGGU (uji guard rollback keadaan TERBUKA)", !!k2.id); guardHarap = 20;
     const neg = await hitung("select count(*)::int n from (select material_id from stock_movements group by material_id having sum(qty) < 0) x");
     const negAwal = await hitung(`select count(*)::int n from (select material_id from stock_movements where material_id <> '${m.id}' group by material_id having sum(qty) < 0) x`);
     cek("bahan contoh tidak menjadi minus akibat posting/koreksi", (await saldo()) >= 0, `bahan minus total=${neg}, selain contoh=${negAwal} (sudah ada sebelum rehearsal)`);
@@ -90,5 +102,6 @@ else {
   }
 }
 await prisma.$disconnect();
+console.log("GUARD_HARAP=" + guardHarap);
 console.log("REHEARSAL_KODE_BARU gagal=" + gagal + " skip=" + dilewati);
 process.exit(gagal ? 1 : 0);

@@ -88,3 +88,39 @@ test("P3. Detail unit memuat koreksi pemakaian MENUNGGU (sebelum→sesudah, pemo
   const sesudah = Number((await testPrisma.stockMovement.aggregate({ _sum: { qty: true }, where: { materialId: w.kain.id } }))._sum.qty);
   assert.equal(sesudah, sebelum, "mengajukan koreksi TIDAK mengubah stok");
 });
+
+test("P4. Koreksi saldo bahan menyimpan ASAL (catatan historis): divalidasi (ada + bahan sama), tampil di detail penyesuaian, di bagian 'Koreksi saldo' dan di Riwayat unit; saldo TIDAK berubah sebelum diposting", async () => {
+  const w = await dunia();
+  const note = await testPrisma.unitUsageNote.findFirst({ where: { unitId: w.unit.id, materialId: w.lem.id } }); assert.ok(note, "catatan LEM ada");
+  const saldoAwal = Number((await testPrisma.stockMovement.aggregate({ _sum: { qty: true }, where: { materialId: w.lem.id } }))._sum.qty);
+  const mintaSaldo = (b) => w.c.post("/api/inventory/adjustments", b);
+  // asal valid
+  const ok = await mintaSaldo({ materialId: w.lem.id, adjustmentType: "DATA_CORRECTION", saldoBaru: 3, reason: "Hitung fisik: lem sisa 3 kaleng", originType: "USAGE_NOTE", originId: note.id });
+  assert.equal(ok.status, 201, JSON.stringify(ok.body).slice(0, 200)); assert.equal(ok.body.originType, "USAGE_NOTE"); assert.equal(ok.body.originId, note.id);
+  assert.equal(ok.body.beforeQty + ok.body.adjustmentQty, 3, "saldo benar = 3; selisih dihitung dari saldo ledger saat ini");
+  // asal tidak valid ditolak (tanpa menulis)
+  const n0 = await testPrisma.stockAdjustmentRequest.count();
+  assert.equal((await mintaSaldo({ materialId: w.lem.id, adjustmentType: "DATA_CORRECTION", saldoBaru: 2, reason: "asal tak ada", originType: "USAGE_NOTE", originId: "00000000-0000-4000-8000-000000000001" })).status, 404);
+  assert.equal((await mintaSaldo({ materialId: w.kain.id, adjustmentType: "DATA_CORRECTION", saldoBaru: 2, reason: "bahan beda dari catatan", originType: "USAGE_NOTE", originId: note.id })).status, 409);
+  assert.equal((await mintaSaldo({ materialId: w.lem.id, adjustmentType: "DATA_CORRECTION", saldoBaru: 2, reason: "id bukan uuid", originType: "USAGE_NOTE", originId: "bukan-uuid" })).status, 400);
+  assert.equal((await mintaSaldo({ materialId: w.lem.id, adjustmentType: "DATA_CORRECTION", saldoBaru: 2, reason: "tipe asing", originType: "LAIN", originId: note.id })).status, 400);
+  assert.equal((await mintaSaldo({ materialId: w.lem.id, adjustmentType: "DATA_CORRECTION", saldoBaru: 2, reason: "tanpa pasangan", originType: "USAGE_NOTE" })).status, 400);
+  assert.equal(await testPrisma.stockAdjustmentRequest.count(), n0, "asal tidak valid tidak menulis apa pun");
+  // detail penyesuaian memuat asal + unit
+  const det = await w.c.get(`/api/inventory/adjustments/${ok.body.id}`); assert.equal(det.status, 200);
+  assert.equal(det.body.asal.tipe, "USAGE_NOTE"); assert.equal(det.body.asal.unitId, w.unit.id); assert.ok(det.body.asal.unitCode);
+  // panel unit: bagian koreksi saldo + Riwayat (sebelum–sesudah, alasan, asal, nomor)
+  const r = await w.c.get(`/api/production/units/${w.unit.id}/adopsi`); assert.equal(r.status, 200);
+  assert.equal(r.body.koreksiSaldo.length, 1); const k = r.body.koreksiSaldo[0];
+  assert.equal(k.nomor, ok.body.adjustmentNumber); assert.ok(["DRAFT", "WAITING_APPROVAL"].includes(k.status)); assert.equal(k.saldoSesudahPerkiraan, 3); assert.equal(k.asal.tipe, "USAGE_NOTE"); assert.equal(k.alasan, "Hitung fisik: lem sisa 3 kaleng");
+  const ev = r.body.riwayat.find((e) => e.kind === "KOREKSI_SALDO_DIAJUKAN"); assert.ok(ev, "Riwayat memuat koreksi saldo"); assert.match(ev.label, new RegExp(ok.body.adjustmentNumber)); assert.match(ev.label, /→ 3 /); assert.match(ev.label, /catatan pemakaian historis/); assert.match(ev.label, /Hitung fisik/);
+  // saldo ledger TIDAK berubah oleh pengajuan (tidak ditimpa)
+  assert.equal(Number((await testPrisma.stockMovement.aggregate({ _sum: { qty: true }, where: { materialId: w.lem.id } }))._sum.qty), saldoAwal);
+  const samaDenganSaldo = await mintaSaldo({ materialId: w.lem.id, adjustmentType: "DATA_CORRECTION", saldoBaru: saldoAwal, reason: "saldo sudah benar", originType: "USAGE_NOTE", originId: note.id }); assert.equal(samaDenganSaldo.status, 409); assert.match(samaDenganSaldo.body.error, /sudah sama/);
+  // koreksi saldo tanpa asal tetap berjalan seperti semula (kompatibel)
+  const polos = await mintaSaldo({ materialId: w.lem.id, adjustmentType: "DATA_CORRECTION", adjustmentQty: -1, reason: "tanpa asal, alur lama" }); assert.equal(polos.status, 201); assert.equal(polos.body.originType, null);
+  const r2 = await w.c.get(`/api/production/units/${w.unit.id}/adopsi`); assert.equal(r2.body.koreksiSaldo.length, 1, "yang tanpa asal tidak ikut");
+  // akun tanpa izin tulis: ditolak
+  const sales = await createTestUser({ roles: ["SALES"] }); const cs = makeClient(server.baseUrl, sales.token);
+  assert.equal((await cs.post("/api/inventory/adjustments", { materialId: w.lem.id, adjustmentType: "DATA_CORRECTION", saldoBaru: 1, reason: "tanpa izin", originType: "USAGE_NOTE", originId: note.id })).status, 403);
+});

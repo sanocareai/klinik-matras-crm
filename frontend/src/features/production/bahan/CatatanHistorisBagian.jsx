@@ -4,8 +4,9 @@ import { api } from "@/api.js";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { cn } from "@/lib/utils.js";
+import { Link } from "react-router-dom";
 import { kunciIdempoten } from "@/features/production/orderProduksiModel.js";
-import { JUDUL_CATATAN, KETERANGAN_CATATAN, NADA_STATE, SATUAN_KOREKSI, aksiCatatan, badgeHpp, kelompokkanCatatan, ringkasCatatan, teksNilai, validasiKoreksiCatatan, validasiKoreksiPemakaian } from "@/features/production/bahan/catatanHistorisModel.js";
+import { JUDUL_CATATAN, KETERANGAN_CATATAN, NADA_STATE, SATUAN_KOREKSI, aksiCatatan, badgeHpp, kelompokkanCatatan, ringkasCatatan, teksNilai, validasiKoreksiCatatan, validasiKoreksiPemakaian, validasiKoreksiSaldo, LABEL_KOREKSI_SALDO, NADA_KOREKSI_SALDO } from "@/features/production/bahan/catatanHistorisModel.js";
 
 // CATATAN PEMAKAIAN HISTORIS — tampil di Bahan (tab Ruang Kerja & drawer Order Produksi). Nilai asli apa adanya; "Perlu dicek" + catatan singkat; koreksi berjejak (alasan wajib).
 const koma = (v) => String(v ?? "").replace(".", ",");
@@ -13,7 +14,8 @@ const FIELD = "h-11 w-full rounded-btn border border-line bg-surface px-3 text-[
 const LABEL = "block text-[12px] font-medium text-ink3";
 
 function FormAksi({ item, aksi, onSelesai, onBatal }) {
-  const [f, setF] = useState({ qty: "", uom: item.satuan ?? "", alasan: "", qtyBaru: "" });
+  const [f, setF] = useState({ qty: "", uom: item.satuan ?? "", alasan: "", qtyBaru: "", saldoBaru: "" });
+  const [dibuat, setDibuat] = useState(null);
   const [galat, setGalat] = useState(""); const [ok, setOk] = useState(""); const [sibuk, setSibuk] = useState(false); const [pratinjau, setPratinjau] = useState(null);
   const kunciRef = useRef(null); const sigRef = useRef("");
   const sig = JSON.stringify([f, aksi]); if (sigRef.current !== sig) { sigRef.current = sig; kunciRef.current = null; }
@@ -37,6 +39,11 @@ function FormAksi({ item, aksi, onSelesai, onBatal }) {
       } else if (aksi === "kecualikan") {
         const v = validasiKoreksiCatatan({ alasan: f.alasan }); if (!v.ok) { setGalat(v.galat); return; }
         await api.kecualikanCatatanHistoris(item.id, { alasan: f.alasan.trim() }, kunciRef.current); setOk("Dikecualikan dari perhitungan (catatan tidak dihapus).");
+      } else if (aksi === "koreksiSaldo") {
+        const v = validasiKoreksiSaldo({ saldoBaru: f.saldoBaru, alasan: f.alasan }); if (!v.ok) { setGalat(v.galat); return; }
+        const r = await api.createAdjustmentRequest({ materialId: item.bahan.id, adjustmentType: "DATA_CORRECTION", saldoBaru: v.saldo, reason: f.alasan.trim(), originType: "USAGE_NOTE", originId: item.id });
+        setDibuat(r); setOk(`Diajukan sebagai ${r.adjustmentNumber}: saldo ${String(r.beforeQty).replace(".", ",")} → ${String(Math.round((Number(r.beforeQty) + Number(r.adjustmentQty)) * 10000) / 10000).replace(".", ",")} ${item.bahan?.satuan ?? ""}. Menunggu persetujuan orang lain; saldo belum berubah.`);
+        kunciRef.current = null; await onSelesai?.(true); return;
       } else if (aksi === "koreksiPemakaian") {
         const v = validasiKoreksiPemakaian({ qtyBaru: f.qtyBaru, alasan: f.alasan }); if (!v.ok) { setGalat(v.galat); return; }
         await api.ajukanKoreksiPemakaian(item.unitId, { materialId: item.bahan.id, qtyBaru: v.qty, alasan: f.alasan.trim() }, kunciRef.current); setOk("Diajukan. Menunggu persetujuan penyetuju lain (stok belum berubah).");
@@ -44,7 +51,7 @@ function FormAksi({ item, aksi, onSelesai, onBatal }) {
       kunciRef.current = null; await onSelesai?.();
     } catch (e) { setGalat(e.message || "Gagal menyimpan."); } finally { setSibuk(false); }
   }
-  const judul = { koreksi: "Koreksi catatan", konfirmasi: "Konfirmasi wajar", kecualikan: "Kecualikan catatan", koreksiPemakaian: "Ajukan koreksi pemakaian" }[aksi];
+  const judul = { koreksi: "Koreksi catatan", konfirmasi: "Konfirmasi wajar", kecualikan: "Kecualikan catatan", koreksiPemakaian: "Ajukan koreksi pemakaian", koreksiSaldo: "Koreksi saldo bahan" }[aksi];
   return (
     <div className="mt-2 space-y-3 rounded-btn bg-inset px-3 py-3" data-testid={`form-${aksi}`}>
       <p className="m-0 text-[13px] font-semibold text-ink">{judul}</p>
@@ -64,10 +71,17 @@ function FormAksi({ item, aksi, onSelesai, onBatal }) {
           )}
         </div>
       )}
+      {aksi === "koreksiSaldo" && (
+        <div className="space-y-2">
+          <p className="m-0 text-[12.5px] text-ink2">Untuk saldo <b>{item.bahan?.kode}</b> yang salah di Gudang (bukan jumlah pemakaian order ini). Isi saldo yang BENAR; selisihnya dihitung dari saldo saat diajukan. Saldo tidak ditimpa — menunggu persetujuan orang lain, asal koreksi = catatan ini.</p>
+          <label className="block space-y-1"><span className={LABEL}>Saldo yang benar ({item.bahan?.satuan})</span><input value={f.saldoBaru} onChange={(e) => set("saldoBaru", e.target.value)} inputMode="decimal" className={FIELD} data-testid="cph-saldo-baru" disabled={sibuk || !!dibuat} /></label>
+        </div>
+      )}
       <label className="block space-y-1"><span className={LABEL}>Alasan (wajib)</span><textarea value={f.alasan} onChange={(e) => set("alasan", e.target.value)} rows={2} maxLength={500} className={cn(FIELD, "h-auto py-2")} data-testid="cph-alasan" disabled={sibuk} /></label>
       {galat && <p role="alert" className="m-0 text-[12.5px] text-red" data-testid="cph-galat">{galat}</p>}
       {ok && <p className="m-0 text-[12.5px] text-ink" data-testid="cph-ok">{ok}</p>}
-      <div className="flex flex-wrap gap-2"><Button className="min-h-[44px]" onClick={kirim} disabled={sibuk} data-testid="cph-kirim">{sibuk ? "Menyimpan…" : "Simpan"}</Button><Button variant="neutral" className="min-h-[44px]" onClick={onBatal} disabled={sibuk}>Batal</Button></div>
+      {dibuat && <p className="m-0 text-[12.5px]"><Link to={`/warehouse/adjustments/stock/${dibuat.id}`} className="font-medium text-accent underline" data-testid="cph-buka-penyesuaian">Buka {dibuat.adjustmentNumber}</Link></p>}
+      <div className="flex flex-wrap gap-2"><Button className="min-h-[44px]" onClick={kirim} disabled={sibuk || !!dibuat} data-testid="cph-kirim">{sibuk ? "Menyimpan…" : "Simpan"}</Button><Button variant="neutral" className="min-h-[44px]" onClick={dibuat ? () => onSelesai?.() : onBatal} disabled={sibuk}>{dibuat ? "Tutup" : "Batal"}</Button></div>
     </div>
   );
 }
@@ -87,7 +101,7 @@ function Baris({ item, izin, onDone }) {
       {item.catatan && <p className="m-0 mt-1.5 flex items-start gap-1.5 text-[12.5px] text-ink" data-testid="catatan-singkat"><AlertTriangle size={14} className="mt-0.5 shrink-0 text-orange" aria-hidden /><span>{item.catatan}</span></p>}
       {item.pergerakan && <p className="m-0 mt-1 text-[12px] text-ink3">Tertaut ke pengeluaran stok {item.pergerakan.ref} (tidak digandakan).</p>}
       {daftarAksi.length > 0 && !aksi && <div className="mt-2 flex flex-wrap gap-2">{daftarAksi.map((a) => <Button key={a.key} variant="secondary" size="sm" className="min-h-[40px]" data-testid={`aksi-${a.key}`} onClick={() => setAksi(a.key)}>{a.label}</Button>)}</div>}
-      {aksi && <FormAksi item={item} aksi={aksi} onSelesai={async () => { setAksi(null); await onDone?.(); }} onBatal={() => setAksi(null)} />}
+      {aksi && <FormAksi item={item} aksi={aksi} onSelesai={async (tahan) => { if (!tahan) setAksi(null); await onDone?.(); }} onBatal={() => setAksi(null)} />}
     </li>
   );
 }
@@ -136,11 +150,30 @@ function KoreksiMenunggu({ daftar, izin, onDone }) {
   );
 }
 
+const NAMA_ASAL_SALDO = { USAGE_NOTE: "catatan pemakaian historis", UNIT_USAGE: "pemakaian unit ini", MOVEMENT: "pergerakan stok unit ini" };
+/** Koreksi saldo bahan yang asalnya menyangkut unit ini: nomor, sebelum→sesudah, status, tautan ke Penyesuaian Stok. */
+function KoreksiSaldoDaftar({ daftar }) {
+  return (
+    <div className="space-y-2" data-testid="koreksi-saldo">
+      <p className="m-0 text-[13px] font-semibold text-ink">Koreksi saldo bahan dari unit ini</p>
+      <ul className="m-0 list-none space-y-2 p-0">
+        {daftar.map((k) => (
+          <li key={k.id} className="rounded-card border border-line px-3 py-3" data-testid="koreksi-saldo-baris">
+            <div className="flex flex-wrap items-center gap-2"><Link to={`/warehouse/adjustments/stock/${k.id}`} className="text-[13.5px] font-medium text-accent underline">{k.nomor}</Link><Badge variant={NADA_KOREKSI_SALDO[k.status] ?? "neutral"}>{LABEL_KOREKSI_SALDO[k.status] ?? k.status}</Badge></div>
+            <p className="m-0 text-[13px] tabular-nums text-ink">{k.bahan.nama}: saldo {String(k.saldoSebelum).replace(".", ",")} → <b>{String(k.saldoSesudahPerkiraan).replace(".", ",")}</b> {k.bahan.satuan}</p>
+            <p className="m-0 text-[12px] text-ink3">Asal: {NAMA_ASAL_SALDO[k.asal.tipe] ?? k.asal.tipe} · diajukan {k.diajukanOleh ?? "—"} · alasan: {k.alasan}</p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export default function CatatanHistorisBagian({ data, unitId, izin = {}, onDone }) {
   const ch = data?.catatanHistoris; const [buka, setBuka] = useState(true); const [lihatSudah, setLihatSudah] = useState(false);
-  const menunggu = data?.koreksiMenunggu ?? [];
-  if ((!ch || ch.ringkas.total === 0) && menunggu.length === 0) return null;
-  if (!ch || ch.ringkas.total === 0) return <div className="space-y-2" data-testid="sec-catatan-historis"><KoreksiMenunggu daftar={menunggu} izin={izin} onDone={onDone} /></div>;
+  const menunggu = data?.koreksiMenunggu ?? []; const saldoK = data?.koreksiSaldo ?? [];
+  if ((!ch || ch.ringkas.total === 0) && menunggu.length === 0 && saldoK.length === 0) return null;
+  if (!ch || ch.ringkas.total === 0) return <div className="space-y-3" data-testid="sec-catatan-historis">{menunggu.length > 0 && <KoreksiMenunggu daftar={menunggu} izin={izin} onDone={onDone} />}{saldoK.length > 0 && <KoreksiSaldoDaftar daftar={saldoK} />}</div>;
   const items = ch.items.map((i) => ({ ...i, unitId })); const g = kelompokkanCatatan(items); const hpp = badgeHpp(data.hppBahan);
   const izinLokal = { catatanHistoris: !!izin.catatanHistoris };
   return (
@@ -153,6 +186,7 @@ export default function CatatanHistorisBagian({ data, unitId, izin = {}, onDone 
       {buka && (
         <div className="space-y-3">
           {menunggu.length > 0 && <KoreksiMenunggu daftar={menunggu} izin={izin} onDone={onDone} />}
+          {saldoK.length > 0 && <KoreksiSaldoDaftar daftar={saldoK} />}
           <p className="m-0 text-[12px] text-ink3">{KETERANGAN_CATATAN}</p>
           {hpp && <p className="m-0 flex flex-wrap items-center gap-2 text-[12.5px] text-ink" data-testid="hpp-bahan"><Badge variant={hpp.tone}>{hpp.label}</Badge>{hpp.nilai != null && <span>Terhitung sejauh ini {hpp.nilai.toLocaleString("id-ID")}</span>}{hpp.detail && <span className="text-ink2">{hpp.detail}</span>}</p>}
           {g.perluDicek.length > 0 && <ul className="m-0 list-none space-y-2 p-0" data-testid="catatan-perlu-dicek">{g.perluDicek.map((i) => <Baris key={i.id} item={i} izin={izinLokal} onDone={onDone} />)}</ul>}
