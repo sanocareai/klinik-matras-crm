@@ -142,7 +142,7 @@ for p in backend/package.json backend/package-lock.json backend/Dockerfile docke
   [ "$(sg rev-parse -q --verify "${BASE_SHA}:${p}" 2>/dev/null || echo tidak-ada)" = "$(sg rev-parse -q --verify "${DEPLOY_SHA}:${p}" 2>/dev/null || echo tidak-ada)" ] || die "${p} BERBEDA antara baseline dan kandidat — rilis ini tidak mengubah dependensi/Docker"
 done
 for pin in $DIFF_PINS; do
-  f="${pin%%:*}"; want="${pin##*:}"; have="$(sg diff "$BASE_SHA" "$DEPLOY_SHA" -- "$f" | tr -d '\r' | sha256sum | cut -d' ' -f1)"
+  f="${pin%%:*}"; want="${pin##*:}"; have="$(sg diff --no-abbrev --no-color --no-ext-diff "$BASE_SHA" "$DEPLOY_SHA" -- "$f" | tr -d '\r' | sha256sum | cut -d' ' -f1)"
   [ "$want" = "$have" ] || die "diff ${f} terhadap baseline BERBEDA dari yang diaudit (sha256 ${have:0:12}…) — audit ulang lalu bangkitkan skrip"
 done
 ok "dependensi, Dockerfile, dan compose IDENTIK; berkas prisma yang berubah = migrasi rilis + schema.prisma; diff ledger/penyesuaian stok = yang diaudit ($(printf '%s\n' $DIFF_PINS | wc -l) berkas dipatok)"

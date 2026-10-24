@@ -15,7 +15,7 @@
 #
 # ROLLBACK: kode: pasang kembali image lama (tag rollback-pre-rkp-<sha8>) dan buat ulang container dari release sebelumnya. Migrasi TIDAK perlu dibalik: tabel baru kosong dan tidak dibaca kode lama; kolom origin_* NULL; pagar jenis koreksi yang lebih longgar tidak
 #   dilanggar kode lama (kode lama hanya menulis GOODS_RECEIPT). Selama antrean kosong (tidak ada impor/posting), rollback kode tidak meninggalkan apa pun yang perlu dibersihkan.
-# (dibangkitkan oleh scripts/gen-release-rekon-pemakaian.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 a168dbf3fc36…)
+# (dibangkitkan oleh scripts/gen-release-rekon-pemakaian.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 6a1ab7c1a266…)
 set -Eeuo pipefail
 umask 077
 
@@ -142,7 +142,7 @@ for p in backend/package.json backend/package-lock.json backend/Dockerfile docke
   [ "$(sg rev-parse -q --verify "${BASE_SHA}:${p}" 2>/dev/null || echo tidak-ada)" = "$(sg rev-parse -q --verify "${DEPLOY_SHA}:${p}" 2>/dev/null || echo tidak-ada)" ] || die "${p} BERBEDA antara baseline dan kandidat — rilis ini tidak mengubah dependensi/Docker"
 done
 for pin in $DIFF_PINS; do
-  f="${pin%%:*}"; want="${pin##*:}"; have="$(sg diff "$BASE_SHA" "$DEPLOY_SHA" -- "$f" | tr -d '\r' | sha256sum | cut -d' ' -f1)"
+  f="${pin%%:*}"; want="${pin##*:}"; have="$(sg diff --no-abbrev --no-color --no-ext-diff "$BASE_SHA" "$DEPLOY_SHA" -- "$f" | tr -d '\r' | sha256sum | cut -d' ' -f1)"
   [ "$want" = "$have" ] || die "diff ${f} terhadap baseline BERBEDA dari yang diaudit (sha256 ${have:0:12}…) — audit ulang lalu bangkitkan skrip"
 done
 ok "dependensi, Dockerfile, dan compose IDENTIK; berkas prisma yang berubah = migrasi rilis + schema.prisma; diff ledger/penyesuaian stok = yang diaudit ($(printf '%s\n' $DIFF_PINS | wc -l) berkas dipatok)"
