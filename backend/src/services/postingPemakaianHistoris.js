@@ -10,7 +10,7 @@ import crypto from "node:crypto";
 import { postStockMovement, lockRowForUpdate } from "./inventoryLedger.js";
 import { bukukanNilaiPergerakanBaru } from "./finance/posting/inventory.js";
 import { KoreksiError } from "./warehouseCorrection.js";
-import { evaluasiUlang, kunciEvaluasiCatatan } from "./catatanPemakaianHistoris.js";
+import { evaluasiUlang, kunciEvaluasiCatatan, keadaanEfektif } from "./catatanPemakaianHistoris.js";
 import { STATE, r4 } from "../lib/domain/pemakaianHistoris.js";
 
 export const AWAL_NOTE_POSTING = "Impor pemakaian historis Sep–Okt 2026";
@@ -19,8 +19,13 @@ const wibTgl = (d) => new Date(new Date(d).getTime() + 7 * 3600_000).toISOString
 
 /** Rencana posting dari catatan SIAP_POSTING (baca-saja). Urutan = tanggal, order, bahan. Hash menutup isi rencana. */
 export async function rencanakanPosting(db, { unitIds = null } = {}) {
+  // Rencana memakai keadaan EFEKTIF (terhadap ledger sekarang), sama dengan yang dilihat pengguna: catatan tersimpan "siap" yang pasokannya sudah terpakai GR/pengeluaran lain TIDAK ikut,
+  // dan catatan tersimpan "perlu dicek" yang kini cukup stoknya ikut.
+  const kandidat = await db.unitUsageNote.findMany({ where: { origin: "EXCEL", state: { in: [STATE.SIAP_POSTING, STATE.PERLU_DICEK] }, ...(unitIds ? { unitId: { in: unitIds } } : {}) }, select: { id: true } });
+  const efektif = kandidat.length ? await keadaanEfektif(db) : new Map();
+  const idSiap = kandidat.filter((n) => efektif.get(n.id)?.state === STATE.SIAP_POSTING).map((n) => n.id);
   const notes = await db.unitUsageNote.findMany({
-    where: { origin: "EXCEL", state: STATE.SIAP_POSTING, ...(unitIds ? { unitId: { in: unitIds } } : {}) },
+    where: { id: { in: idSiap } },
     include: { material: { select: { id: true, code: true, name: true, unit: true } }, unit: { select: { id: true, unitCode: true, status: true } } }, orderBy: [{ orderNumber: "asc" }, { sourceRow: "asc" }],
   });
   const grup = new Map();
@@ -41,6 +46,54 @@ async function garisWaktuBahan(tx, materialId) {
 const minGaris = (l) => { let run = 0; let min = 0; for (const e of [...l].sort((a, b) => a.d.localeCompare(b.d) || b.q - a.q)) { run = r4(run + e.q); if (run < min) min = run; } return min; };
 
 /**
+ * Posting SATU unit (satu transaksi, semua-atau-tidak-sama-sekali) dari daftar transaksi rencana. Dipakai jalankanPosting (sinkron) dan pekerja batch latar.
+ * Tidak pernah melempar untuk kegagalan unit: mengembalikan { status: "DIPOSTING"|"DILEWATI"|"GAGAL", ok, lewat, kode, pesan }. Idempoten: pergerakan berkunci yang sudah ada hanya ditautkan.
+ */
+export async function postingSatuUnit(prisma, { unitId, daftar, persetujuan, aktor, jurnalHPP = false, sekarang = new Date() }) {
+  try {
+    const hasil = await prisma.$transaction(async (tx) => {
+    // URUTAN KUNCI SERAGAM: kunci evaluasi (serialisasi semua penulis keadaan catatan) → baris. Posting bersamaan menunggu giliran dan membaca ledger/keadaan yang SUDAH COMMIT.
+    await kunciEvaluasiCatatan(tx);
+    await lockRowForUpdate(tx, "units", unitId);
+    // Segarkan keadaan terhadap ledger sekarang DI DALAM kunci: catatan yang tidak lagi siap (mis. pasokan terpakai posting/koreksi/pengeluaran lain) gugur di pemeriksaan di bawah — fail-closed.
+    await evaluasiUlang(tx, { actorId: aktor.id, sekarang });
+    const ok = []; const lewat = [];
+    for (const t of daftar) {
+      for (const id of t.catatanIds) await lockRowForUpdate(tx, "unit_usage_notes", id);
+      const notes = await tx.unitUsageNote.findMany({ where: { id: { in: t.catatanIds } } });
+      // idempotensi / pemulihan: pergerakan dengan kunci ini sudah ada → tautkan saja, jangan tulis lagi
+      const ada = await tx.stockMovement.findFirst({ where: { unitId, materialId: t.materialId, note: { contains: `[${t.kunci}]` } }, select: { id: true } });
+      if (notes.every((n) => n.state === STATE.DIPOSTING) && ada) { lewat.push({ kunci: t.kunci, alasan: "SUDAH_DIPOSTING" }); continue; }
+      if (!notes.every((n) => n.state === STATE.SIAP_POSTING && !n.stockMovementId)) throw new KoreksiError(`Catatan ${t.kunci} tidak lagi siap posting`, 409, "CATATAN_BERUBAH");
+      let mv = ada;
+      if (!mv) {
+        // garis waktu: pemakaian bertanggal historis tidak boleh membuat saldo negatif di titik waktu mana pun
+        const L = await garisWaktuBahan(tx, t.materialId); const awal = minGaris(L);
+        if (minGaris([...L, { d: t.tanggal, q: -t.qty }]) < -1e-6 && awal >= -1e-6) throw new KoreksiError(`Saldo ${t.kodeBahan} akan negatif pada garis waktu (${t.tanggal}) — tidak diposting`, 409, "SALDO_GARIS_WAKTU", { kunci: t.kunci });
+        mv = await postStockMovement(tx, { materialId: t.materialId, type: "ISSUE", qty: -t.qty, unitId, createdAt: t.usedAt, createdById: aktor.id,
+          note: `${AWAL_NOTE_POSTING} [${t.kunci}] — order ${t.orderNumber}`, reason: `Persetujuan ${persetujuan.rujukan} oleh ${persetujuan.disetujuiOleh}` });
+        if (jurnalHPP) await bukukanNilaiPergerakanBaru(tx, mv, { userId: aktor.id });
+      }
+      for (const n of notes) {
+        await tx.unitUsageNote.update({ where: { id: n.id }, data: { state: STATE.DIPOSTING, stockMovementId: mv.id, linkKind: "POSTING_HISTORIS", flags: [], evaluatedAt: sekarang } });
+        await tx.unitUsageNoteEvent.create({ data: { noteId: n.id, kind: "DIPOSTING", before: { state: n.state }, after: { state: STATE.DIPOSTING, pergerakanId: mv.id, qty: t.qty, satuan: t.satuan, tanggal: t.tanggal, kunci: t.kunci }, reason: `Dijadikan pengeluaran stok — persetujuan ${persetujuan.rujukan} (${persetujuan.disetujuiOleh})`, actorId: aktor.id } });
+      }
+      ok.push({ kunci: t.kunci, pergerakanId: mv.id, qty: t.qty });
+    }
+    // ATOMIK: keadaan semua catatan dihitung ulang (GLOBAL, bukan hanya unit ini) di transaksi yang SAMA dengan posting → tidak ada jeda keadaan palsu yang terbaca/dipakai.
+    if (ok.length) await evaluasiUlang(tx, { actorId: aktor.id, sekarang });
+    return { ok, lewat };
+    }, { timeout: 300_000, maxWait: 120_000 });
+    return { status: hasil.ok.length ? "DIPOSTING" : "DILEWATI", ok: hasil.ok, lewat: hasil.lewat };
+  } catch (e) {
+    // PENYEMBUHAN: transaksi unit yang gagal ikut membatalkan penyegaran keadaan di dalamnya. Bila gagal karena keadaan sudah bergeser (mis. pasokan terpakai di luar modul ini), simpan keadaan yang benar sekarang
+    // (transaksi evaluasi tersendiri, terkunci) agar catatan yang tidak lagi siap tidak tetap terbaca SIAP_POSTING. Upaya terbaik: kegagalan di sini tidak mengubah hasil.
+    try { await evaluasiUlang(prisma, { actorId: aktor.id, sekarang }); } catch { /* evaluasi berikutnya akan memperbaiki */ }
+    return { status: "GAGAL", ok: [], lewat: [], kode: e.code ?? "GALAT", pesan: e.message };
+  }
+}
+
+/**
  * Jalankan rencana yang DISETUJUI. Per order satu transaksi. Mengembalikan { diposting, dilewati, gagal } — kegagalan satu order tidak membatalkan order lain.
  * @param persetujuan { hashDisetujui, rujukan (≥8 karakter, mis. nomor persetujuan Owner), disetujuiOleh }
  */
@@ -52,47 +105,9 @@ export async function jalankanPosting(prisma, { persetujuan, aktor, jurnalHPP = 
   const perUnit = new Map(); for (const t of rencana.transaksi) (perUnit.get(t.unitId) ?? perUnit.set(t.unitId, []).get(t.unitId)).push(t);
   const diposting = []; const dilewati = []; const gagal = [];
   for (const [unitId, daftar] of perUnit) {
-    try {
-      const hasil = await prisma.$transaction(async (tx) => {
-        // URUTAN KUNCI SERAGAM: kunci evaluasi (serialisasi semua penulis keadaan catatan) → baris. Posting bersamaan menunggu giliran dan membaca ledger/keadaan yang SUDAH COMMIT.
-        await kunciEvaluasiCatatan(tx);
-        await lockRowForUpdate(tx, "units", unitId);
-        // Segarkan keadaan terhadap ledger sekarang DI DALAM kunci: catatan yang tidak lagi siap (mis. pasokan terpakai posting/koreksi/pengeluaran lain) gugur di pemeriksaan di bawah — fail-closed.
-        await evaluasiUlang(tx, { actorId: aktor.id, sekarang });
-        const ok = []; const lewat = [];
-        for (const t of daftar) {
-          for (const id of t.catatanIds) await lockRowForUpdate(tx, "unit_usage_notes", id);
-          const notes = await tx.unitUsageNote.findMany({ where: { id: { in: t.catatanIds } } });
-          // idempotensi / pemulihan: pergerakan dengan kunci ini sudah ada → tautkan saja, jangan tulis lagi
-          const ada = await tx.stockMovement.findFirst({ where: { unitId, materialId: t.materialId, note: { contains: `[${t.kunci}]` } }, select: { id: true } });
-          if (notes.every((n) => n.state === STATE.DIPOSTING) && ada) { lewat.push({ kunci: t.kunci, alasan: "SUDAH_DIPOSTING" }); continue; }
-          if (!notes.every((n) => n.state === STATE.SIAP_POSTING && !n.stockMovementId)) throw new KoreksiError(`Catatan ${t.kunci} tidak lagi siap posting`, 409, "CATATAN_BERUBAH");
-          let mv = ada;
-          if (!mv) {
-            // garis waktu: pemakaian bertanggal historis tidak boleh membuat saldo negatif di titik waktu mana pun
-            const L = await garisWaktuBahan(tx, t.materialId); const awal = minGaris(L);
-            if (minGaris([...L, { d: t.tanggal, q: -t.qty }]) < -1e-6 && awal >= -1e-6) throw new KoreksiError(`Saldo ${t.kodeBahan} akan negatif pada garis waktu (${t.tanggal}) — tidak diposting`, 409, "SALDO_GARIS_WAKTU", { kunci: t.kunci });
-            mv = await postStockMovement(tx, { materialId: t.materialId, type: "ISSUE", qty: -t.qty, unitId, createdAt: t.usedAt, createdById: aktor.id,
-              note: `${AWAL_NOTE_POSTING} [${t.kunci}] — order ${t.orderNumber}`, reason: `Persetujuan ${persetujuan.rujukan} oleh ${persetujuan.disetujuiOleh}` });
-            if (jurnalHPP) await bukukanNilaiPergerakanBaru(tx, mv, { userId: aktor.id });
-          }
-          for (const n of notes) {
-            await tx.unitUsageNote.update({ where: { id: n.id }, data: { state: STATE.DIPOSTING, stockMovementId: mv.id, linkKind: "POSTING_HISTORIS", flags: [], evaluatedAt: sekarang } });
-            await tx.unitUsageNoteEvent.create({ data: { noteId: n.id, kind: "DIPOSTING", before: { state: n.state }, after: { state: STATE.DIPOSTING, pergerakanId: mv.id, qty: t.qty, satuan: t.satuan, tanggal: t.tanggal, kunci: t.kunci }, reason: `Dijadikan pengeluaran stok — persetujuan ${persetujuan.rujukan} (${persetujuan.disetujuiOleh})`, actorId: aktor.id } });
-          }
-          ok.push({ kunci: t.kunci, pergerakanId: mv.id, qty: t.qty });
-        }
-        // ATOMIK: keadaan semua catatan dihitung ulang (GLOBAL, bukan hanya unit ini) di transaksi yang SAMA dengan posting → tidak ada jeda keadaan palsu yang terbaca/dipakai.
-        if (ok.length) await evaluasiUlang(tx, { actorId: aktor.id, sekarang });
-        return { ok, lewat };
-      }, { timeout: 300_000, maxWait: 120_000 });
-      diposting.push(...hasil.ok.map((x) => ({ unitId, ...x }))); dilewati.push(...hasil.lewat.map((x) => ({ unitId, ...x })));
-    } catch (e) {
-      gagal.push({ unitId, order: daftar[0].orderNumber, kode: e.code ?? "GALAT", pesan: e.message });
-      // PENYEMBUHAN: transaksi unit yang gagal ikut membatalkan penyegaran keadaan di dalamnya. Bila gagal karena keadaan sudah bergeser (mis. pasokan terpakai di luar modul ini), simpan keadaan yang benar sekarang
-      // (transaksi evaluasi tersendiri, terkunci) agar catatan yang tidak lagi siap tidak tetap terbaca SIAP_POSTING. Upaya terbaik: kegagalan di sini tidak mengubah hasil.
-      try { await evaluasiUlang(prisma, { actorId: aktor.id, sekarang }); } catch { /* dilaporkan lewat gagal[] di atas; evaluasi berikutnya akan memperbaiki */ }
-    }
+    const h = await postingSatuUnit(prisma, { unitId, daftar, persetujuan, aktor, jurnalHPP, sekarang });
+    if (h.status === "GAGAL") gagal.push({ unitId, order: daftar[0].orderNumber, kode: h.kode, pesan: h.pesan });
+    else { diposting.push(...h.ok.map((x) => ({ unitId, ...x }))); dilewati.push(...h.lewat.map((x) => ({ unitId, ...x }))); }
   }
   return { hash: rencana.hash, diposting, dilewati, gagal };
 }

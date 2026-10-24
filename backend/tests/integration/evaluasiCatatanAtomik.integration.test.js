@@ -7,7 +7,7 @@ import assert from "node:assert/strict";
 import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestUser, createTestMaterial, createTestUnit, seedBalance } from "./setup/fixtures.js";
 import { rencanakanImpor, terapkanImpor, evaluasiUlang, periksaKeadaanCatatan } from "../../src/services/catatanPemakaianHistoris.js";
-import { rencanakanPosting, jalankanPosting } from "../../src/services/postingPemakaianHistoris.js";
+import { rencanakanPosting, jalankanPosting, postingSatuUnit } from "../../src/services/postingPemakaianHistoris.js";
 import { koreksiCatatan, kecualikanCatatan, ajukanKoreksiPemakaian, setujuiKoreksiPemakaian } from "../../src/services/koreksiPemakaian.js";
 
 test.before(async () => { await truncateAll(); });
@@ -123,15 +123,18 @@ test("E7. campuran serentak (posting ∥ koreksi catatan ∥ kecualikan): tanpa 
   assert.equal((await cat(w, w.uB, w.mx)).state, "TIDAK_DIHITUNG");
 });
 
-test("E8. pasokan terpakai DI LUAR modul ini (jalur ledger lain): posting basi gugur (fail-closed) DAN keadaan yang benar tersimpan tanpa evaluasi manual", async () => {
+test("E8. pasokan terpakai DI LUAR modul ini: rencana basi ditolak sejak awal; eksekusi dari daftar basi (balapan) gugur fail-closed DAN keadaan yang benar tersimpan tanpa evaluasi manual", async () => {
   const w = await dunia(); const p = await planUnit(w, w.uA); assert.equal(p.jumlah, 1);
   assert.equal((await keadaan(w)).A_MX, "SIAP_POSTING");
-  // pengeluaran stok biasa menghabiskan 8 dari 10 meter (menulis ledger langsung, tidak lewat evaluasi catatan) → catatan uA (6) tidak lagi cukup, tetapi masih terbaca SIAP di database
+  // pengeluaran stok biasa menghabiskan 8 dari 10 meter (menulis ledger langsung, tidak lewat evaluasi catatan) → catatan uA (6) tidak lagi cukup
   await testPrisma.stockMovement.create({ data: { materialId: w.mx.id, type: "ISSUE", qty: -8, note: "pengeluaran biasa di luar modul", createdAt: WIB("2026-09-02") } });
-  assert.equal((await keadaan(w)).A_MX, "SIAP_POSTING", "keadaan basi sebelum ada penulis modul yang menyegarkan");
-  const h = await jalankanPosting(testPrisma, { persetujuan: PERSETUJUAN(p.hash), aktor: w.B, unitIds: [w.uA.id] });
-  assert.equal(h.diposting.length, 0); assert.equal(h.gagal.length, 1); assert.equal(h.gagal[0].kode, "CATATAN_BERUBAH", JSON.stringify(h.gagal));
-  assert.equal(await saldo(w.mx.id), 2, "tidak ada pergerakan baru dari posting yang gugur");
+  assert.equal((await keadaan(w)).A_MX, "SIAP_POSTING", "keadaan TERSIMPAN basi sebelum ada penyegaran");
+  // (a) jalur normal: rencana dihitung dari keadaan EFEKTIF → hash lama ditolak, tidak ada pergerakan
+  await assert.rejects(() => jalankanPosting(testPrisma, { persetujuan: PERSETUJUAN(p.hash), aktor: w.B, unitIds: [w.uA.id] }), /BERBEDA dari yang disetujui/);
+  assert.equal(await saldo(w.mx.id), 2, "tidak ada pergerakan baru");
+  // (b) balapan: eksekusi memakai daftar yang dihitung SEBELUM stok berubah → fail-closed di dalam kunci
+  const h = await postingSatuUnit(testPrisma, { unitId: w.uA.id, daftar: p.transaksi, persetujuan: PERSETUJUAN(p.hash), aktor: w.B });
+  assert.equal(h.status, "GAGAL"); assert.equal(h.kode, "CATATAN_BERUBAH", JSON.stringify(h)); assert.equal(await saldo(w.mx.id), 2);
   assert.equal((await keadaan(w)).A_MX, "PERLU_DICEK", "keadaan benar SUDAH tersimpan (penyembuhan), tanpa evaluasi global manual");
   await titikTetap("E8");
 });

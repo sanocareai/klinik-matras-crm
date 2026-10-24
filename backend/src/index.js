@@ -9,6 +9,8 @@ import { thumbnailMiddleware } from "./middleware/thumbnails.js";
 import path from "path";
 import { fileURLToPath } from "url";
 import { initSocket } from "./socket.js";
+import { prisma as prismaPostingBatch } from "./db.js";
+import { pulihkanBatch as pulihkanPostingBatch } from "./services/postingBatchLatar.js";
 
 import { webhookRouter }    from "./routes/webhooks.js";
 import { productRouter }    from "./routes/products.js";
@@ -423,6 +425,8 @@ server.listen(PORT, () => {
   logStatusGptActions();
   logStatusMcpHub();
   if (!backgroundJobsEnabled()) { console.log("[staging] job latar & worker pengirim dimatikan"); return; }
+  // Posting batch historis yang terputus (proses mati di tengah jalan): teruskan dari unit yang belum selesai. Hanya batch yang SUDAH disetujui hash-nya; idempoten; tidak ada jaringan keluar.
+  { const t = setTimeout(() => { pulihkanPostingBatch(prismaPostingBatch).catch((e) => console.log("[posting-batch] pemulihan gagal:", e.message)); }, 15_000); t.unref?.(); }
   startReconciliationJob();
   startVideoCompressJob();
   startSlaAlertJob();

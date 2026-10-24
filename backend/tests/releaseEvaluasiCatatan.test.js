@@ -14,11 +14,11 @@ const script = baca("scripts/release-evaluasi-catatan.sh");
 const tpl = baca("scripts/templates/release-evaluasi-catatan.sh.tpl");
 const punyaBash = spawnSync("bash", ["-c", "true"]).status === 0;
 
-test("skrip rilis: tanpa placeholder tersisa, generator terpasang, tanpa sisa nama rilis lain, tepat empat berkas backend yang diaudit", () => {
+test("skrip rilis: tanpa placeholder tersisa, generator terpasang, tanpa sisa nama rilis lain, tepat sembilan berkas backend yang diaudit", () => {
   assert.ok(!/@@[A-Z_]+@@/.test(script), "placeholder tersisa");
   assert.match(script, /^LIVE_MIG_TERAKHIR="\d{14}_[a-z0-9_]+"; LIVE_MIG_JUMLAH="\d+"$/m);
   assert.match(script, /^FRONTEND_SRC_EXPECT=""$/m, "rilis ini tidak mengubah frontend");
-  assert.match(script, /^BACKEND_SRC_EXPECT="backend\/src\/routes\/pemakaianKoreksi\.js backend\/src\/services\/catatanPemakaianHistoris\.js backend\/src\/services\/koreksiPemakaian\.js backend\/src\/services\/postingPemakaianHistoris\.js"$/m);
+  assert.ok(script.split(String.fromCharCode(10)).includes('BACKEND_SRC_EXPECT="backend/src/index.js backend/src/routes/pemakaianKoreksi.js backend/src/services/catatanPemakaianHistoris.js backend/src/services/finance/biayaBahan.js backend/src/services/koreksiPemakaian.js backend/src/services/laporanRekonsiliasiPemakaian.js backend/src/services/postingBatchLatar.js backend/src/services/postingPemakaianHistoris.js backend/src/services/productionOrderExport.js"'), "tepat sembilan berkas backend yang diaudit");
   assert.ok(script.includes("scripts/gen-release-evaluasi-catatan.cjs"));
   assert.ok(!/\bskj\b|jadwal_admin|JAD_|status-kerja-jadwal|route-planner|\brpp\b/.test(script), "tidak ada sisa nama rilis lain");
 });

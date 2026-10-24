@@ -10,6 +10,7 @@
 //   5. Retur mengurangi biaya HANYA saat Gudang menerimanya (baris RETURN di ledger). Retur yang masih PENDING dilaporkan sebagai BELUM_FINAL.
 //   6. Catatan pemakaian PIC (production_step_evidence_v2.payload.materials) hanya DIBACA sebagai pembanding fisik; tidak pernah menjadi stok/jurnal kedua.
 //   7. Unit tidak menyimpan total biaya; semuanya dihitung dari ledger + pembekuan.
+import { terapkanKeadaanEfektif } from "../catatanPemakaianHistoris.js";
 import { dasarHargaRataRata } from "./posting/inventory.js";
 import { Decimal, ZERO, toMoney, moneyToNumber } from "./money.js";
 
@@ -336,8 +337,9 @@ export async function bacaJejakUnit(db, unitId, { izinHarga = false } = {}) {
   });
 
   // Catatan pemakaian historis (Excel Admin Sales) yang BELUM menjadi pengeluaran stok: biaya unit ini PARSIAL — bahan tersebut belum ikut dihitung. Nilai parsial tidak boleh tampil sebagai final.
+  // Keadaan EFEKTIF (terhadap ledger sekarang): angka "siap diposting" tidak boleh basi walau saldo diubah GR/pengeluaran biasa.
   const catatanTertahan = db.unitUsageNote
-    ? await db.unitUsageNote.findMany({ where: { unitId, state: { in: ["PERLU_DICEK", "SIAP_POSTING"] } }, select: { origin: true, state: true, rawName: true, material: { select: { code: true } } } })
+    ? await terapkanKeadaanEfektif(db, await db.unitUsageNote.findMany({ where: { unitId, state: { in: ["PERLU_DICEK", "SIAP_POSTING"] } }, select: { id: true, origin: true, state: true, rawName: true, material: { select: { code: true } } } }))
     : [];
   const excelTertahan = catatanTertahan.filter((c) => c.origin === "EXCEL"); const ledgerDitanya = catatanTertahan.filter((c) => c.origin === "LEDGER");
   if (excelTertahan.length) {

@@ -5,6 +5,7 @@
 //  • Semua order yang punya baris bahan di berkas menampilkan catatannya di Produksi, walau sebagian belum/tidak bisa menjadi pengeluaran stok. Catatan yang SUDAH sama dengan pengeluaran stok lama ditautkan (tidak digandakan).
 //  • Layanan ini TIDAK menulis stock_movements, Material Issue, saldo, biaya, atau jurnal. Perubahan keadaan selalu menulis peristiwa append-only (sebelum–sesudah, alasan, pelaku, waktu).
 //  • Impor ulang berkas yang sama = nol perubahan (kunci sumber = hash isi baris + urutan kemunculan).
+import crypto from "node:crypto";
 import {
   bacaCsvPemakaian, kunciSumber, sha256, angkaId, tanggalId, awalHariWIB, satuanBaku, petakanBahan, FLAG, STATE, SUMBER_EXCEL, flagMemblok, catatanSingkat,
   KOMPONEN_LAMA_RE, petunjukKemasanKg, normNama, r4, labelState,
@@ -239,6 +240,18 @@ export async function evaluasiUlang(db, opsi = {}) {
   await kunciEvaluasiCatatan(db); // kunci sudah dipegang pemanggil → advisory xact lock bersifat re-entrant dalam satu sesi
   return evaluasiDi(db, opsi);
 }
+/** Kolom catatan yang dipakai klasifikasi (tanpa raw_row/raw_date/raw_pic/raw_qc/raw_price/raw_total): membaca 2.7 rb baris jauh lebih ringan. */
+const KOLOM_EVALUASI = { id: true, sourceKey: true, sourceRow: true, origin: true, orderNumber: true, orderId: true, unitId: true, rawName: true, rawSpec: true, rawQty: true, rawUom: true, rawCategory: true, qty: true, uom: true, usedAt: true, materialId: true, mapVia: true, confirmedFlags: true, state: true, flags: true, stockMovementId: true, linkKind: true };
+/** Pemetaan nama→bahan memakai pencocokan kabur (±2 ms per nama); hasilnya murni fungsi dari (nama, spek, katalog) sehingga di-cache selama katalog sama. Tanpa cache ini 446 catatan tanpa bahan = ±900 ms per evaluasi. */
+let petaCache = { sig: null, peta: new Map() };
+const tandaKatalog = (katalog) => crypto.createHash("sha1").update(katalog.map((m) => [m.id, m.code, m.name, m.unit, m.active, m.kind].join("|")).join("\n")).digest("hex");
+function petakanBahanBerCache(katalog, sig, nama, spek) {
+  if (petaCache.sig !== sig) petaCache = { sig, peta: new Map() };
+  const k = `${nama ?? ""}\u0001${spek ?? ""}`;
+  if (!petaCache.peta.has(k)) petaCache.peta.set(k, petakanBahan({ nama, spek }, katalog));
+  return petaCache.peta.get(k);
+}
+
 /**
  * AUDIT baca-saja: apa yang akan diubah evaluasi global terhadap keadaan SEKARANG? `berubah` = 0 berarti tidak ada keadaan palsu. Tanpa kunci dan tanpa tulisan; panggil di dalam transaksi RepeatableRead
  * (`prisma.$transaction(fn, { isolationLevel: "RepeatableRead" })`) agar membaca SATU potret konsisten. Dipakai tes/rehearsal untuk membuktikan tidak ada jeda keadaan palsu.
@@ -246,14 +259,16 @@ export async function evaluasiUlang(db, opsi = {}) {
 export async function periksaKeadaanCatatan(tx, opsi = {}) { return evaluasiDi(tx, { ...opsi, keringSaja: true }); }
 // eslint-disable-next-line no-unused-vars
 async function evaluasiDi(prisma, { actorId = null, unitIds: _abaikan = null, sekarang = new Date(), keringSaja = false } = {}) {
-  const notes = await prisma.unitUsageNote.findMany({ where: { origin: "EXCEL" }, orderBy: { sourceRow: "asc" } });
-  if (!notes.length) return { diperiksa: 0, berubah: 0 };
+  const notes = await prisma.unitUsageNote.findMany({ where: { origin: "EXCEL" }, select: KOLOM_EVALUASI, orderBy: { sourceRow: "asc" } });
+  if (!notes.length) return { diperiksa: 0, berubah: 0, detail: [], efektif: new Map() };
+  const efektif = new Map();
   const ledgerNotes = await prisma.unitUsageNote.findMany({ where: { origin: "LEDGER", state: STATE.PERLU_DICEK } });
   const ctx = await muatKonteks(prisma, { orderNumbers: [...new Set(notes.map((n) => n.orderNumber))], unitIds: ledgerNotes.map((l) => l.unitId).filter(Boolean) });
   // baris berulang dihitung dari nilai asli (tidak bergantung koreksi)
   const dk = (n) => [n.orderNumber, normNama(n.rawName), normNama(n.rawSpec), n.rawQty, normNama(n.rawUom)].join("|");
   const hit = new Map(); for (const n of notes) { if (n.state === STATE.TIDAK_DIHITUNG) continue; hit.set(dk(n), (hit.get(dk(n)) ?? 0) + 1); } // baris yang sudah dikecualikan tidak lagi dihitung berulang
-  const items = notes.map((n) => { const it = noteKeItem(n, ctx.orderBy.get(n.orderNumber)?.units ?? []); if ((hit.get(dk(n)) ?? 0) > 1) it.dupKey = dk(n); if (!n.materialId && n.rawName) it.pemetaan = petakanBahan({ nama: n.rawName, spek: n.rawSpec }, ctx.katalog); return it; });
+  const sigKatalog = tandaKatalog(ctx.katalog);
+  const items = notes.map((n) => { const it = noteKeItem(n, ctx.orderBy.get(n.orderNumber)?.units ?? []); if ((hit.get(dk(n)) ?? 0) > 1) it.dupKey = dk(n); if (!n.materialId && n.rawName) it.pemetaan = petakanBahanBerCache(ctx.katalog, sigKatalog, n.rawName, n.rawSpec); return it; });
   // Bahan master BARU yang namanya persis sama dengan nama di berkas (dibuat Gudang tanpa stok) dipetakan otomatis — tanpa menebak: hanya NAMA/KODE PERSIS. Berjejak (peristiwa DIEVALUASI).
   let berubah = 0; const detail = [];
   for (const it of items) {
@@ -269,6 +284,7 @@ async function evaluasiDi(prisma, { actorId = null, unitIds: _abaikan = null, se
   for (const n of notes) {
     if (FIXED.has(n.state)) continue;
     const h = klas.get(n.sourceKey); if (!h) continue;
+    efektif.set(n.id, { state: h.state, flags: h.flags, stockMovementId: h.stockMovementId ?? n.stockMovementId ?? null, linkKind: h.linkKind ?? n.linkKind ?? null });
     const sama = h.state === n.state && stabil(h.flags.map((f) => [f.kode, f.data])) === stabil((n.flags ?? []).map((f) => [f.kode, f.data])) && (h.stockMovementId ?? null) === (n.stockMovementId ?? null);
     if (sama) continue;
     detail.push({ baris: n.sourceRow, dari: { state: n.state, flags: (n.flags ?? []).map((f) => f.kode) }, ke: { state: h.state, flags: h.flags.map((f) => f.kode) } });
@@ -287,7 +303,56 @@ async function evaluasiDi(prisma, { actorId = null, unitIds: _abaikan = null, se
     if (!keringSaja) await prisma.unitUsageNoteEvent.create({ data: { noteId: l.id, kind: "DIEVALUASI", before: { state: l.state }, after: { state: STATE.DIKOREKSI }, reason: alasan, actorId } });
     berubah++; detail.push({ ledger: l.id, ke: STATE.DIKOREKSI, alasan });
   }
-  return { diperiksa: notes.length + ledgerNotes.length, berubah, detail };
+  return { diperiksa: notes.length + ledgerNotes.length, berubah, detail, efektif };
+}
+
+// ───────────────────────────── keadaan EFEKTIF (pembaca) + penyegaran latar ─────────────────────────────
+/**
+ * Keadaan tersimpan bisa tertinggal bila penulis di LUAR modul ini (penerimaan GR, pengeluaran stok biasa) mengubah saldo. Semua PEMBACA (tampilan Produksi, ringkasan, rencana posting, ekspor, biaya bahan, laporan)
+ * dan mesin posting memakai keadaan EFEKTIF = klasifikasi terhadap ledger SEKARANG (fungsi yang sama dengan evaluasi tersimpan), jadi pengguna dan mesin selalu melihat hal yang sama tanpa evaluasi global manual.
+ * Biaya: satu cap ledger murah (±5 ms) per pembacaan; klasifikasi ulang (±0,4 dtk) hanya bila cap berubah, satu kali untuk semua pembaca serentak (single-flight). Penulis GR/pengeluaran biasa TIDAK disentuh sama sekali.
+ * Bila efektif ≠ tersimpan, penyegaran latar menyimpan keadaan yang benar (evaluasi bermutex, dari klien Prisma — tidak pernah dalam transaksi pembaca).
+ */
+async function capKeadaan(db) {
+  const [r] = await db.$queryRawUnsafe(`select m.c, m.s, m.t, m.e, n.c nc, n.u nu, k.c kc, k.u ku, (select count(*)::int from units where status::text = 'CANCELLED') uc, (select coalesce(max(updated_at)::text,'') from units) uu
+    from (select count(*)::int c, coalesce(sum(qty),0)::text s, coalesce(max(created_at)::text,'') t, coalesce(sum(extract(epoch from created_at)),0)::text e from stock_movements) m,
+         (select count(*)::int c, coalesce(max(updated_at)::text,'') u from unit_usage_notes) n,
+         (select count(*)::int c, md5(coalesce(string_agg(id::text || code || name || active::text || unit::text, ',' order by id),'')) u from materials) k`);
+  return JSON.stringify(r);
+}
+const kesegaran = { cap: null, map: null, pending: null, pendingCap: null, timer: null, jalan: null };
+export function resetKeadaanEfektif() { kesegaran.cap = null; kesegaran.map = null; kesegaran.pending = null; kesegaran.pendingCap = null; }
+function jadwalkanPenyegaran(prisma) {
+  if (kesegaran.timer || kesegaran.jalan) return;
+  kesegaran.timer = setTimeout(() => {
+    kesegaran.timer = null;
+    kesegaran.jalan = evaluasiUlang(prisma, { actorId: null }).catch(() => { /* dicoba lagi pada pembacaan/penulisan berikutnya */ }).finally(() => { kesegaran.jalan = null; });
+  }, 150);
+  kesegaran.timer.unref?.();
+}
+/** Untuk tes/operasi: tunggu penyegaran latar yang terjadwal/berjalan selesai. */
+export async function tungguPenyegaran() { for (let i = 0; i < 400 && (kesegaran.timer || kesegaran.jalan); i++) { if (kesegaran.jalan) await kesegaran.jalan; else await new Promise((r) => setTimeout(r, 25)); } }
+export async function keadaanEfektif(db) {
+  if (typeof db.$transaction !== "function") return (await evaluasiDi(db, { keringSaja: true })).efektif; // di dalam transaksi pemanggil: hitung langsung, tanpa cache
+  const cap = await capKeadaan(db);
+  if (kesegaran.cap === cap && kesegaran.map) return kesegaran.map;
+  if (kesegaran.pending && kesegaran.pendingCap === cap) return kesegaran.pending;
+  kesegaran.pendingCap = cap;
+  const kerja = db.$transaction(async (tx) => {
+    const cap2 = await capKeadaan(tx);
+    const r = await evaluasiDi(tx, { keringSaja: true });
+    return { cap2, map: r.efektif, beda: r.berubah };
+  }, { isolationLevel: "RepeatableRead", timeout: 120_000, maxWait: 60_000 }).then(({ cap2, map, beda }) => {
+    kesegaran.cap = cap2; kesegaran.map = map; if (beda > 0) jadwalkanPenyegaran(db); return map;
+  }).finally(() => { if (kesegaran.pending === kerja) { kesegaran.pending = null; kesegaran.pendingCap = null; } });
+  kesegaran.pending = kerja;
+  return kerja;
+}
+/** Salinan catatan dengan state/penanda EFEKTIF untuk catatan Excel yang belum final. Catatan final (DIPOSTING, BUKAN_STOK, TIDAK_DIHITUNG, DIKOREKSI) dan LEDGER tidak berubah. */
+export async function terapkanKeadaanEfektif(db, rows) {
+  if (!rows.some((n) => n.origin === "EXCEL" && !FIXED.has(n.state))) return rows;
+  const map = await keadaanEfektif(db);
+  return rows.map((n) => { const e = n.origin === "EXCEL" && !FIXED.has(n.state) ? map.get(n.id) : null; return e ? { ...n, state: e.state, flags: e.flags } : n; });
 }
 
 // ───────────────────────────── bacaan untuk Produksi ─────────────────────────────
@@ -301,7 +366,8 @@ const tampilNote = (n, mat, mv) => ({
 });
 /** Catatan historis satu unit untuk Bahan/Ringkasan/Riwayat/Excel. Nilai asli tampil apa adanya. Catatan jumlah 0 disembunyikan dari daftar (tetap dihitung di ringkasan). */
 export async function ambilCatatanHistoris(db, unitId) {
-  const rows = await db.unitUsageNote.findMany({ where: { unitId }, orderBy: [{ origin: "asc" }, { sourceRow: "asc" }, { createdAt: "asc" }], include: { material: { select: { id: true, code: true, name: true, unit: true } }, stockMovement: { select: { id: true, createdAt: true } } } });
+  let rows = await db.unitUsageNote.findMany({ where: { unitId }, orderBy: [{ origin: "asc" }, { sourceRow: "asc" }, { createdAt: "asc" }], include: { material: { select: { id: true, code: true, name: true, unit: true } }, stockMovement: { select: { id: true, createdAt: true } } } });
+  rows = await terapkanKeadaanEfektif(db, rows);
   const items = rows.filter((n) => n.state !== STATE.TIDAK_DIHITUNG).map((n) => tampilNote(n, n.material, n.stockMovement));
   const hitung = (s) => rows.filter((n) => n.state === s).length;
   const urutPrioritas = { PERLU_DICEK: 0, SIAP_POSTING: 1, DIPOSTING: 2, TERCATAT_DI_STOK: 3, DIKOREKSI: 4, BUKAN_STOK: 5 };
@@ -311,8 +377,8 @@ export async function ambilCatatanHistoris(db, unitId) {
 /** Ringkasan per unit untuk banyak unit sekaligus (daftar Order Produksi + Excel). */
 export async function ringkasCatatanUnits(db, unitIds) {
   const out = new Map(); if (!unitIds?.length) return out;
-  const g = await db.unitUsageNote.groupBy({ by: ["unitId", "state"], where: { unitId: { in: unitIds } }, _count: { _all: true } });
-  for (const r of g) { const o = out.get(r.unitId) ?? { total: 0, perluDicek: 0, siapPosting: 0, tercatatDiStok: 0, diposting: 0 }; o.total += r._count._all; if (r.state === "PERLU_DICEK") o.perluDicek = r._count._all; if (r.state === "SIAP_POSTING") o.siapPosting = r._count._all; if (r.state === "TERCATAT_DI_STOK") o.tercatatDiStok = r._count._all; if (r.state === "DIPOSTING") o.diposting = r._count._all; out.set(r.unitId, o); }
+  const rows = await terapkanKeadaanEfektif(db, await db.unitUsageNote.findMany({ where: { unitId: { in: unitIds } }, select: { id: true, unitId: true, state: true, origin: true } }));
+  for (const r of rows) { const o = out.get(r.unitId) ?? { total: 0, perluDicek: 0, siapPosting: 0, tercatatDiStok: 0, diposting: 0 }; o.total += 1; if (r.state === "PERLU_DICEK") o.perluDicek += 1; if (r.state === "SIAP_POSTING") o.siapPosting += 1; if (r.state === "TERCATAT_DI_STOK") o.tercatatDiStok += 1; if (r.state === "DIPOSTING") o.diposting += 1; out.set(r.unitId, o); }
   return out;
 }
 /** Peristiwa catatan untuk Riwayat Order Produksi (sebelum–sesudah dengan pelaku). Peristiwa IMPOR/DIEVALUASI diringkas, bukan satu per baris. */

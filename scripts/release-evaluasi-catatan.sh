@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# RILIS "EVALUASI CATATAN PEMAKAIAN HISTORIS: GLOBAL + ATOMIK + TERSERIALISASI" — KODE SAJA (backend), TANPA MIGRASI, TANPA FRONTEND, TANPA DATA. FAIL-CLOSED. Workflow RELEASE-DIRECTORY di atas release aktif (BASE_SHA = release live saat ini).
-#   Cacat: setelah posting, evaluasi ulang hanya melihat unit yang diposting; catatan unit itu yang berebut bahan dengan unit LAIN tampak cukup stoknya → SIAP_POSTING PALSU (24 Okt: 5 catatan; rencana berikutnya membengkak 379→384)
-#          dan baru hilang setelah evaluasi global manual. Evaluasi juga berjalan di luar transaksi posting/koreksi (jeda keadaan yang terbaca pengguna/dipakai posting berikutnya).
-#   Perbaikan: SATU evaluator yang SELALU global, memegang kunci advisory (urutan kunci seragam), dan berjalan DI DALAM transaksi posting/koreksi/konfirmasi/kecualikan yang sama; posting menyegarkan keadaan di dalam kunci sebelum memeriksa
-#          catatan (fail-closed: yang tidak lagi siap gugur). Tanpa evaluasi global manual. Tambahan: periksaKeadaanCatatan (audit kering baca-saja).
-#   TIDAK ADA migrasi, perubahan skema/dependensi, frontend, atau data yang diubah. Rilis ini TIDAK memposting, TIDAK mengoreksi stok, TIDAK membuat GR historis/jurnal.
+# RILIS "EVALUASI CATATAN PEMAKAIAN HISTORIS: GLOBAL + ATOMIK + EFEKTIF + BATCH LATAR" — KODE SAJA (backend), TANPA MIGRASI, TANPA FRONTEND, TANPA DATA. FAIL-CLOSED. Workflow RELEASE-DIRECTORY di atas release aktif (BASE_SHA = release live saat ini).
+#   Cacat 1: setelah posting, evaluasi hanya melihat unit yang diposting → SIAP_POSTING PALSU (24 Okt: 5 catatan; rencana berikutnya 384 trx, benar 379), dan evaluasi berjalan di luar transaksi posting/koreksi.
+#   Cacat 2: GR resmi / pengeluaran stok biasa mengubah saldo di luar modul catatan → catatan lain yang memakai bahan sama tampil SIAP_POSTING basi sampai evaluasi berikutnya.
+#   Perbaikan: evaluator SELALU global, terkunci (kunci advisory, urutan kunci seragam), berjalan DI DALAM transaksi posting/koreksi. Pembaca (tampilan Produksi, ringkasan, rencana posting, ekspor Excel, biaya bahan, laporan) dan mesin posting memakai
+#          keadaan EFEKTIF terhadap ledger sekarang (cap ledger murah; klasifikasi ulang hanya bila cap berubah) + penyegaran latar yang menyimpan keadaan benar; penulis GR/pengeluaran biasa TIDAK disentuh. Cache pemetaan bahan: evaluasi 1,3 dtk → 0,3 dtk.
+#          Posting batch besar di LATAR (API 202 + progres; id = hash rencana yang disetujui, idempoten; sewa pekerja + pulihan setelah putus; hentikan/lanjut) — peristiwa append-only di activity_events, tanpa tabel baru. Posting SATU order sinkron via unitIds.
+#   TIDAK ADA migrasi, perubahan skema/dependensi, frontend, atau data yang diubah. Rilis ini TIDAK memposting, TIDAK mengoreksi stok, TIDAK membuat GR historis/jurnal; batch hanya berjalan bila Owner menyetujui hash rencana.
 # URUTAN AMAN: (1) gerbang sumber (ancestry live, allowlist, TANPA prisma/dependensi/frontend, berkas pelindung identik) → (2) audit produksi baca-saja (terpasang == kandidat, 0 pending, tag image = image aktif) + sidik jari beku
 #              → (3) backup + checksum → (4) release dir (dist dipakai ulang) + image → (5b) kode BARU terhadap restore backup nyata (audit baca-saja: sidik jari seluruh tabel sebelum=sesudah; LALU simulasi tulis pada DB rehearsal yang dihapus)
 #              → (7) switch → (8) verifikasi + smoke baca-saja + sidik jari beku.
@@ -16,7 +17,7 @@
 #   ssh ubuntu@43.133.152.6 'nohup bash /tmp/evl.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/evl.out 2>&1 < /dev/null &'
 #
 # ROLLBACK KODE: aman kapan saja (tidak ada perubahan database untuk dipulihkan; image lama = release live yang SUDAH memuat tabel catatan).
-# (dibangkitkan oleh scripts/gen-release-evaluasi-catatan.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 25ec3d8982c2…)
+# (dibangkitkan oleh scripts/gen-release-evaluasi-catatan.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 c02a5e397981…)
 set -Eeuo pipefail
 umask 077
 
@@ -27,8 +28,8 @@ CAND_BRANCH="${CAND_BRANCH:-fix/evaluasi-catatan-atomik-global}"
 # Migrasi live terakhir (HARUS = migrasi terakhir di baseline, kandidat, dan produksi) dan jumlahnya: rilis ini tidak menambah/mengubah migrasi.
 LIVE_MIG_TERAKHIR="20261228090000_catatan_pemakaian_historis"; LIVE_MIG_JUMLAH="268"
 # Berkas yang BOLEH berbeda dari baseline: EKSPLISIT path persis (+ skrip rilis ini + guard). Apa pun di luar daftar = berhenti.
-ALLOWED_RE='^(backend/src/routes/pemakaianKoreksi\.js|backend/src/services/catatanPemakaianHistoris\.js|backend/src/services/koreksiPemakaian\.js|backend/src/services/postingPemakaianHistoris\.js|backend/tests/imporTerkelolaPemakaianHistoris\.test\.js|backend/tests/integration/evaluasiCatatanAtomik\.integration\.test\.js|backend/tests/releaseEvaluasiCatatan\.test\.js|docs/impor-catatan-historis-production\.md|docs/rekonsiliasi-pemakaian-historis\.md|scripts/gen-release-evaluasi-catatan\.cjs|scripts/lib/impor-terkelola-pemakaian-historis\.mjs|scripts/lib/rehearsal-kode-evaluasi-catatan\.mjs|scripts/lib/simulasi-evaluasi-catatan\.mjs|scripts/lib/smoke-evaluasi-catatan\.mjs|scripts/release-evaluasi-catatan\.sh|scripts/release-rekon-pemakaian\.sh|scripts/templates/release-evaluasi-catatan\.sh\.tpl)$'
-BACKEND_SRC_EXPECT="backend/src/routes/pemakaianKoreksi.js backend/src/services/catatanPemakaianHistoris.js backend/src/services/koreksiPemakaian.js backend/src/services/postingPemakaianHistoris.js"
+ALLOWED_RE='^(backend/src/index\.js|backend/src/routes/pemakaianKoreksi\.js|backend/src/services/catatanPemakaianHistoris\.js|backend/src/services/finance/biayaBahan\.js|backend/src/services/koreksiPemakaian\.js|backend/src/services/laporanRekonsiliasiPemakaian\.js|backend/src/services/postingBatchLatar\.js|backend/src/services/postingPemakaianHistoris\.js|backend/src/services/productionOrderExport\.js|backend/tests/imporTerkelolaPemakaianHistoris\.test\.js|backend/tests/integration/evaluasiCatatanAtomik\.integration\.test\.js|backend/tests/integration/evaluasiCatatanBasi\.integration\.test\.js|backend/tests/integration/postingBatchLatar\.integration\.test\.js|backend/tests/integration/rekonsiliasiKoreksiPosting\.integration\.test\.js|backend/tests/releaseEvaluasiCatatan\.test\.js|docs/impor-catatan-historis-production\.md|docs/rekonsiliasi-pemakaian-historis\.md|scripts/gen-release-evaluasi-catatan\.cjs|scripts/lib/impor-terkelola-pemakaian-historis\.mjs|scripts/lib/rehearsal-kode-evaluasi-catatan\.mjs|scripts/lib/simulasi-evaluasi-catatan\.mjs|scripts/lib/smoke-evaluasi-catatan\.mjs|scripts/release-evaluasi-catatan\.sh|scripts/release-rekon-pemakaian\.sh|scripts/templates/release-evaluasi-catatan\.sh\.tpl)$'
+BACKEND_SRC_EXPECT="backend/src/index.js backend/src/routes/pemakaianKoreksi.js backend/src/services/catatanPemakaianHistoris.js backend/src/services/finance/biayaBahan.js backend/src/services/koreksiPemakaian.js backend/src/services/laporanRekonsiliasiPemakaian.js backend/src/services/postingBatchLatar.js backend/src/services/postingPemakaianHistoris.js backend/src/services/productionOrderExport.js"
 FRONTEND_SRC_EXPECT=""
 # Perubahan live yang TIDAK boleh hilang/berubah: hotfix Stock Count; berkas pelindung identik dengan baseline (Koreksi Gudang inti, jurnal, otorisasi, Produksi override, Stock Count).
 HOTFIX_STOCK_COUNT="b5268e1f7d8e1a15a251106dee0a136898ee5ce1"
@@ -295,7 +296,9 @@ ok "audit baca-saja lulus: isi $(printf '%s\n' "$TABEL_LAMA" | grep -c .) tabel 
 import { createRequire } from "node:module";
 const { PrismaClient } = createRequire(process.cwd() + "/")("@prisma/client");
 const prisma = new PrismaClient();
-const { periksaKeadaanCatatan } = await import("/app/src/services/catatanPemakaianHistoris.js");
+const { periksaKeadaanCatatan, ambilCatatanHistoris, tungguPenyegaran } = await import("/app/src/services/catatanPemakaianHistoris.js");
+const { postStockMovement } = await import("/app/src/services/inventoryLedger.js");
+const { ajukanBatch, jalankanBatch, statusBatch } = await import("/app/src/services/postingBatchLatar.js");
 const { rencanakanPosting, jalankanPosting } = await import("/app/src/services/postingPemakaianHistoris.js");
 let gagal = 0; const cek = (n, ok, d = "") => { if (!ok) gagal += 1; console.log((ok ? "PASS " : "FAIL ") + n + (d !== "" ? " — " + String(d).slice(0, 260) : "")); };
 const hitung = async (sql) => Number((await prisma.$queryRawUnsafe(sql))[0].n);
@@ -333,6 +336,45 @@ cek("jurnal dan GL 1-1400 TIDAK berubah (kuantitas dulu, tanpa jurnal HPP)", s1.
 cek("tidak ada bahan baru yang menjadi negatif", s1.negatif <= s0.negatif, `${s0.negatif} → ${s1.negatif}`);
 const rb = await rencanakanPosting(prisma);
 cek("rencana berikutnya = rencana awal dikurangi yang sudah diposting (tidak memuat transaksi palsu)", rb.jumlah === plan0.jumlah - pA.jumlah - pB.jumlah, `${plan0.jumlah} → ${rb.jumlah}`);
+
+// ── B. saldo diubah DI LUAR modul catatan (pengeluaran stok biasa lewat ledger inti): pembaca langsung sesudah commit tidak boleh melihat SIAP_POSTING basi; UI = mesin; tersimpan menyusul tanpa evaluasi manual ──
+const sisa = await rencanakanPosting(prisma);
+const perBahan = new Map(); for (const t of sisa.transaksi) perBahan.set(t.materialId, (perBahan.get(t.materialId) ?? 0) + 1);
+const bahanUji = [...perBahan].sort((a, b) => b[1] - a[1])[0]?.[0];
+const saldoBahan = bahanUji ? Number((await prisma.$queryRawUnsafe("select coalesce(sum(qty),0)::float s from stock_movements where material_id = $1::uuid", bahanUji))[0].s) : 0;
+cek("ada bahan dengan saldo positif dan transaksi siap untuk uji perubahan di luar modul", !!bahanUji && saldoBahan > 0, bahanUji + " saldo " + saldoBahan);
+if (bahanUji && saldoBahan > 0) {
+  const trxBahan = sisa.transaksi.filter((t) => t.materialId === bahanUji);
+  await prisma.$transaction((tx) => postStockMovement(tx, { materialId: bahanUji, type: "ISSUE", qty: -saldoBahan, note: "simulasi: pengeluaran biasa di luar modul catatan", createdById: admin.id }), { timeout: 60_000 });
+  const rencanaSetelah = await rencanakanPosting(prisma);
+  cek("rencana mesin langsung sesudah commit TIDAK memuat transaksi bahan yang saldonya dihabiskan pengeluaran biasa", !rencanaSetelah.transaksi.some((t) => t.materialId === bahanUji), trxBahan.length + " trx sebelum");
+  const tampil = await ambilCatatanHistoris(prisma, trxBahan[0].unitId);
+  cek("tampilan unit (yang dilihat pengguna) langsung benar: tidak ada catatan bahan itu yang SIAP_POSTING", !tampil.items.some((i) => i.bahan?.id === bahanUji && i.origin === "EXCEL" && i.state === "SIAP_POSTING"), tampil.items.filter((i) => i.bahan?.id === bahanUji).map((i) => i.state).join(","));
+  await tungguPenyegaran();
+  const a2 = await prisma.$transaction((tx) => periksaKeadaanCatatan(tx), { isolationLevel: "RepeatableRead", timeout: 120_000 });
+  cek("keadaan TERSIMPAN menyusul tanpa evaluasi global manual (titik tetap)", a2.berubah === 0, "berubah=" + a2.berubah);
+}
+// ── C. batch di latar atas sebagian rencana: progres, selesai, tanpa pergerakan ganda, titik tetap ──
+const semuaSisa = await rencanakanPosting(prisma);
+const unitBatch = [...new Set(semuaSisa.transaksi.map((t) => t.unitId))].slice(0, 8);
+const rencanaBatch = unitBatch.length ? await rencanakanPosting(prisma, { unitIds: unitBatch }) : { jumlah: 0 };
+if (rencanaBatch.jumlah) {
+  const setuju = { hashDisetujui: rencanaBatch.hash, rujukan: "REHEARSAL-SANDBOX-bukan-production", disetujuiOleh: "simulasi rilis" };
+  const bt = await ajukanBatch(prisma, { persetujuan: setuju, aktor: { id: admin.id }, unitIds: unitBatch });
+  cek("mengajukan batch tidak memposting apa pun dan idempoten (batchId = hash rencana)", bt.baru === true && bt.status === "MENUNGGU" && bt.batchId === rencanaBatch.hash);
+  const gerakSblm = await hitung("select count(*)::int n from stock_movements"); const prog = [];
+  const rb = await jalankanBatch(prisma, bt.batchId, { setelahUnit: async () => { prog.push((await statusBatch(prisma, bt.batchId)).unitSelesai); } });
+  const sb = await statusBatch(prisma, bt.batchId);
+  cek("batch selesai di latar dengan progres naik per unit", ["SELESAI", "SELESAI_SEBAGIAN"].includes(rb.status) && prog.length === bt.totalUnit && prog.every((v, i) => v === i + 1), rb.status + "; progres " + prog.join(","));
+  const ulang = await jalankanBatch(prisma, bt.batchId); const ajukanLagi = await ajukanBatch(prisma, { persetujuan: setuju, aktor: { id: admin.id }, unitIds: unitBatch });
+  cek("jalankan ulang batch yang sama = nol tulisan; ajukan ulang = batch yang sama", ulang.dijalankan === false && ajukanLagi.baru === false);
+  const gerakKini = await hitung("select count(*)::int n from stock_movements");
+  cek("pergerakan bertambah tepat sebanyak transaksi yang diposting (tanpa ganda)", gerakKini - gerakSblm === sb.transaksiDiposting, "+" + (gerakKini - gerakSblm) + " vs " + sb.transaksiDiposting);
+  await tungguPenyegaran();
+  const a3 = await prisma.$transaction((tx) => periksaKeadaanCatatan(tx), { isolationLevel: "RepeatableRead", timeout: 120_000 });
+  cek("titik tetap sesudah batch", a3.berubah === 0, "berubah=" + a3.berubah);
+  const s2 = await S(); cek("jurnal dan GL 1-1400 tetap sesudah batch", s2.jurnal === s0.jurnal && s2.gl1400 === s0.gl1400);
+}
 console.log("SIMULASI_EVALUASI gagal=" + gagal);
 await prisma.$disconnect();
 process.exit(gagal ? 1 : 0);

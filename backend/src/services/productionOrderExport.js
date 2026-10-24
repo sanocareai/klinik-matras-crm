@@ -1,6 +1,7 @@
 // EXPORT EXCEL ORDER PRODUKSI (.xlsx sungguhan, bukan CSV berekstensi .xlsx). Baris-baris berasal dari listWorkOrders({semua:true}) = daftar yang SAMA dengan layar, jadi hasil ekspor persis mengikuti filter.
 // Sheet: Ringkasan Unit · Rencana Bahan · Pemakaian Aktual · Komponen Lama · Info Ekspor. Di sheet data: header baris 1 (dibekukan, AutoFilter), tanpa sel digabung, angka tetap numerik, tanggal/waktu WIB,
 // warna status mengikuti nada UI (hijau/biru/oranye/abu) DAN selalu disertai teks (tidak mengandalkan warna). Teks pengguna dinetralkan dari rumus Excel (netralkanRumus).
+import { terapkanKeadaanEfektif } from "./catatanPemakaianHistoris.js";
 import ExcelJS from "exceljs";
 import { WIB_OFFSET_MS } from "../utils/wib.js";
 import { netralkanRumus } from "./finance/export/excel.js";
@@ -57,7 +58,7 @@ export async function buatWorkbookOrderProduksi(prisma, { rows, unitIds, filter 
     ids.length ? prisma.unitComponentReuseEntry.findMany({ where: { unitId: { in: ids } }, orderBy: [{ createdAt: "asc" }, { version: "asc" }] }) : [],
     ids.length ? prisma.unitProvisionalUsage.findMany({ where: { unitId: { in: ids } }, include: { material: { select: { code: true, name: true } } }, orderBy: [{ recordedAt: "asc" }, { id: "asc" }] }) : [],
     // Catatan pemakaian historis (Excel Admin Sales): nilai ASLI + keadaan + penanda "Perlu dicek"; terpisah dari Pemakaian Aktual (bukan transaksi stok).
-    ids.length ? prisma.unitUsageNote.findMany({ where: { unitId: { in: ids }, state: { not: "TIDAK_DIHITUNG" } }, orderBy: [{ orderNumber: "asc" }, { origin: "asc" }, { sourceRow: "asc" }], include: { material: { select: { code: true, name: true, unit: true } } } }) : [],
+    ids.length ? prisma.unitUsageNote.findMany({ where: { unitId: { in: ids }, state: { not: "TIDAK_DIHITUNG" } }, orderBy: [{ orderNumber: "asc" }, { origin: "asc" }, { sourceRow: "asc" }], include: { material: { select: { code: true, name: true, unit: true } } } }).then((rows) => terapkanKeadaanEfektif(prisma, rows)) : [],
   ]);
   const matIds = [...new Set(rencana.flatMap((p) => p.lines.map((l) => l.materialId)))];
   const bahan = matIds.length ? new Map((await prisma.material.findMany({ where: { id: { in: matIds } }, select: { id: true, code: true, name: true, unit: true, itemGroup: true } })).map((m) => [m.id, m])) : new Map();

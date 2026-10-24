@@ -4,7 +4,9 @@
 import { createRequire } from "node:module";
 const { PrismaClient } = createRequire(process.cwd() + "/")("@prisma/client");
 const prisma = new PrismaClient();
-const { periksaKeadaanCatatan } = await import("/app/src/services/catatanPemakaianHistoris.js");
+const { periksaKeadaanCatatan, ambilCatatanHistoris, tungguPenyegaran } = await import("/app/src/services/catatanPemakaianHistoris.js");
+const { postStockMovement } = await import("/app/src/services/inventoryLedger.js");
+const { ajukanBatch, jalankanBatch, statusBatch } = await import("/app/src/services/postingBatchLatar.js");
 const { rencanakanPosting, jalankanPosting } = await import("/app/src/services/postingPemakaianHistoris.js");
 let gagal = 0; const cek = (n, ok, d = "") => { if (!ok) gagal += 1; console.log((ok ? "PASS " : "FAIL ") + n + (d !== "" ? " — " + String(d).slice(0, 260) : "")); };
 const hitung = async (sql) => Number((await prisma.$queryRawUnsafe(sql))[0].n);
@@ -42,6 +44,45 @@ cek("jurnal dan GL 1-1400 TIDAK berubah (kuantitas dulu, tanpa jurnal HPP)", s1.
 cek("tidak ada bahan baru yang menjadi negatif", s1.negatif <= s0.negatif, `${s0.negatif} → ${s1.negatif}`);
 const rb = await rencanakanPosting(prisma);
 cek("rencana berikutnya = rencana awal dikurangi yang sudah diposting (tidak memuat transaksi palsu)", rb.jumlah === plan0.jumlah - pA.jumlah - pB.jumlah, `${plan0.jumlah} → ${rb.jumlah}`);
+
+// ── B. saldo diubah DI LUAR modul catatan (pengeluaran stok biasa lewat ledger inti): pembaca langsung sesudah commit tidak boleh melihat SIAP_POSTING basi; UI = mesin; tersimpan menyusul tanpa evaluasi manual ──
+const sisa = await rencanakanPosting(prisma);
+const perBahan = new Map(); for (const t of sisa.transaksi) perBahan.set(t.materialId, (perBahan.get(t.materialId) ?? 0) + 1);
+const bahanUji = [...perBahan].sort((a, b) => b[1] - a[1])[0]?.[0];
+const saldoBahan = bahanUji ? Number((await prisma.$queryRawUnsafe("select coalesce(sum(qty),0)::float s from stock_movements where material_id = $1::uuid", bahanUji))[0].s) : 0;
+cek("ada bahan dengan saldo positif dan transaksi siap untuk uji perubahan di luar modul", !!bahanUji && saldoBahan > 0, bahanUji + " saldo " + saldoBahan);
+if (bahanUji && saldoBahan > 0) {
+  const trxBahan = sisa.transaksi.filter((t) => t.materialId === bahanUji);
+  await prisma.$transaction((tx) => postStockMovement(tx, { materialId: bahanUji, type: "ISSUE", qty: -saldoBahan, note: "simulasi: pengeluaran biasa di luar modul catatan", createdById: admin.id }), { timeout: 60_000 });
+  const rencanaSetelah = await rencanakanPosting(prisma);
+  cek("rencana mesin langsung sesudah commit TIDAK memuat transaksi bahan yang saldonya dihabiskan pengeluaran biasa", !rencanaSetelah.transaksi.some((t) => t.materialId === bahanUji), trxBahan.length + " trx sebelum");
+  const tampil = await ambilCatatanHistoris(prisma, trxBahan[0].unitId);
+  cek("tampilan unit (yang dilihat pengguna) langsung benar: tidak ada catatan bahan itu yang SIAP_POSTING", !tampil.items.some((i) => i.bahan?.id === bahanUji && i.origin === "EXCEL" && i.state === "SIAP_POSTING"), tampil.items.filter((i) => i.bahan?.id === bahanUji).map((i) => i.state).join(","));
+  await tungguPenyegaran();
+  const a2 = await prisma.$transaction((tx) => periksaKeadaanCatatan(tx), { isolationLevel: "RepeatableRead", timeout: 120_000 });
+  cek("keadaan TERSIMPAN menyusul tanpa evaluasi global manual (titik tetap)", a2.berubah === 0, "berubah=" + a2.berubah);
+}
+// ── C. batch di latar atas sebagian rencana: progres, selesai, tanpa pergerakan ganda, titik tetap ──
+const semuaSisa = await rencanakanPosting(prisma);
+const unitBatch = [...new Set(semuaSisa.transaksi.map((t) => t.unitId))].slice(0, 8);
+const rencanaBatch = unitBatch.length ? await rencanakanPosting(prisma, { unitIds: unitBatch }) : { jumlah: 0 };
+if (rencanaBatch.jumlah) {
+  const setuju = { hashDisetujui: rencanaBatch.hash, rujukan: "REHEARSAL-SANDBOX-bukan-production", disetujuiOleh: "simulasi rilis" };
+  const bt = await ajukanBatch(prisma, { persetujuan: setuju, aktor: { id: admin.id }, unitIds: unitBatch });
+  cek("mengajukan batch tidak memposting apa pun dan idempoten (batchId = hash rencana)", bt.baru === true && bt.status === "MENUNGGU" && bt.batchId === rencanaBatch.hash);
+  const gerakSblm = await hitung("select count(*)::int n from stock_movements"); const prog = [];
+  const rb = await jalankanBatch(prisma, bt.batchId, { setelahUnit: async () => { prog.push((await statusBatch(prisma, bt.batchId)).unitSelesai); } });
+  const sb = await statusBatch(prisma, bt.batchId);
+  cek("batch selesai di latar dengan progres naik per unit", ["SELESAI", "SELESAI_SEBAGIAN"].includes(rb.status) && prog.length === bt.totalUnit && prog.every((v, i) => v === i + 1), rb.status + "; progres " + prog.join(","));
+  const ulang = await jalankanBatch(prisma, bt.batchId); const ajukanLagi = await ajukanBatch(prisma, { persetujuan: setuju, aktor: { id: admin.id }, unitIds: unitBatch });
+  cek("jalankan ulang batch yang sama = nol tulisan; ajukan ulang = batch yang sama", ulang.dijalankan === false && ajukanLagi.baru === false);
+  const gerakKini = await hitung("select count(*)::int n from stock_movements");
+  cek("pergerakan bertambah tepat sebanyak transaksi yang diposting (tanpa ganda)", gerakKini - gerakSblm === sb.transaksiDiposting, "+" + (gerakKini - gerakSblm) + " vs " + sb.transaksiDiposting);
+  await tungguPenyegaran();
+  const a3 = await prisma.$transaction((tx) => periksaKeadaanCatatan(tx), { isolationLevel: "RepeatableRead", timeout: 120_000 });
+  cek("titik tetap sesudah batch", a3.berubah === 0, "berubah=" + a3.berubah);
+  const s2 = await S(); cek("jurnal dan GL 1-1400 tetap sesudah batch", s2.jurnal === s0.jurnal && s2.gl1400 === s0.gl1400);
+}
 console.log("SIMULASI_EVALUASI gagal=" + gagal);
 await prisma.$disconnect();
 process.exit(gagal ? 1 : 0);

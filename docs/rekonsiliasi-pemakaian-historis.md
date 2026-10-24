@@ -105,3 +105,20 @@ Evaluasi global manual (`POST …/evaluasi-ulang`) tetap ada tetapi bukan lagi b
 **Batas yang jujur:** penulis di luar modul ini (penerimaan GR, pengeluaran stok biasa) tidak memanggil evaluasi; keadaan catatan bisa tertinggal sampai evaluasi berikutnya, tetapi posting tetap aman: ia menyegarkan keadaan di dalam kunci (catatan yang tidak lagi siap gugur, fail-closed) lalu menyimpan keadaan yang benar lewat evaluasi tersendiri, dan `postStockMovement` menolak saldo negatif.
 
 Tes: `tests/integration/evaluasiCatatanAtomik.integration.test.js` (E0–E8; E1/E3/E4/E5/E6 gagal pada kode lama; E8 = pasokan terpakai di luar modul → posting gugur lalu keadaan disembuhkan). Rilis kode-saja: `scripts/release-evaluasi-catatan.sh` (dibangkitkan oleh `scripts/gen-release-evaluasi-catatan.cjs`).
+
+### Tahap 2 (25 Okt 2026): keadaan EFEKTIF untuk pembaca + posting batch di latar
+
+**Celah yang ditutup:** penulis di luar modul catatan (GR resmi, pengeluaran stok biasa — semuanya lewat `postStockMovement`) mengubah saldo tanpa memanggil evaluasi, sehingga catatan lain yang memakai bahan sama bisa tampil SIAP_POSTING basi.
+
+**Aturan:**
+1. Setiap PEMBACA (tampilan Produksi `ambilCatatanHistoris`, `ringkasCatatanUnits`, `rencanakanPosting`, ekspor Excel Order Produksi, jejak biaya bahan, laporan rekonsiliasi) memakai **keadaan efektif** = klasifikasi terhadap ledger SEKARANG (`keadaanEfektif` / `terapkanKeadaanEfektif`). Mesin posting memakai rencana yang sama, jadi UI dan mesin selalu konsisten.
+2. Biaya: cap ledger ±5 ms per pembacaan; klasifikasi ulang (±0,35 dtk pada 2.761 catatan) hanya bila cap berubah, satu kali untuk semua pembaca serentak (single-flight). Penulis GR/pengeluaran biasa TIDAK disentuh (nol tambahan kunci).
+3. Bila efektif ≠ tersimpan, **penyegaran latar** menyimpan keadaan yang benar (`evaluasiUlang` bermutex dari klien Prisma, tidak pernah di dalam transaksi pembaca). `tungguPenyegaran()` untuk tes.
+4. Cache pemetaan bahan (nama→bahan, kunci = tanda katalog) menurunkan evaluasi dari ±1,3 dtk menjadi ±0,3 dtk.
+
+**Posting besar di latar** (`services/postingBatchLatar.js`; tanpa tabel baru — peristiwa append-only di `activity_events`, entityType `posting_historis_batch`):
+- `POST /api/production/posting-historis/batch` {hashDisetujui, rujukan, unitIds?} → **202** + status; `GET …/batch/:id` = progres (unit selesai/total, trx diposting, gagal+kode, status MENUNGGU/BERJALAN/TERPUTUS/DIHENTIKAN/SELESAI/SELESAI_SEBAGIAN); `POST …/batch/:id/lanjut`; `POST …/batch/:id/hentikan`.
+- **Idempoten:** id batch = hash rencana yang disetujui; hash sama → batch yang sama (juga setelah selesai). Eksekusi per unit lewat `postingSatuUnit` (satu transaksi per order, kunci evaluasi, fail-closed); unit yang sudah diposting hanya ditautkan.
+- **Kelanjutan:** pekerja memegang sewa 90 dtk (diperbarui tiap unit); proses mati → sewa kedaluwarsa → `pulihkanBatch` saat boot (15 dtk setelah start, hanya bila job latar menyala) atau `POST …/lanjut`.
+- Rencana unit dibandingkan dengan salinan yang disetujui sebelum diposting; bergeser → unit itu gugur `RENCANA_BERUBAH` (batch berlanjut → SELESAI_SEBAGIAN). Jurnal HPP tidak dibuat kecuali diminta eksplisit saat mengajukan.
+- Posting SATU order tetap sinkron: `POST …/posting-historis/jalankan` dengan `unitIds` (rencana: `GET …/rencana?unitIds=`).

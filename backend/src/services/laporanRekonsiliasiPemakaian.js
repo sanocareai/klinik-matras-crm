@@ -1,5 +1,6 @@
 // LAPORAN REKONSILIASI PEMAKAIAN (baca-saja): kejanggalan per bahan & per order, yang bisa tampil segera vs menunggu koreksi, dampak stok dan HPP.
 // Semua angka berasal dari catatan historis + ledger SAAT INI; tidak menulis apa pun. Nilai HPP = rata-rata tertimbang sampai tanggal pemakaian (dasar yang sama dengan valuasi beku) — bukan angka final.
+import { terapkanKeadaanEfektif } from "./catatanPemakaianHistoris.js";
 import { dasarHargaRataRata } from "./finance/posting/inventory.js";
 import { rencanakanPosting } from "./postingPemakaianHistoris.js";
 import { STATE, r4 } from "../lib/domain/pemakaianHistoris.js";
@@ -9,7 +10,7 @@ const tambah = (o, k, v = 1) => { o[k] = (o[k] ?? 0) + v; return o; };
 const blok = (n) => (n.flags ?? []).filter((f) => f.tingkat === "BLOK");
 
 export async function susunLaporan(db) {
-  const notes = await db.unitUsageNote.findMany({ include: { material: { select: { id: true, code: true, name: true, unit: true } }, unit: { select: { unitCode: true, status: true } } }, orderBy: [{ orderNumber: "asc" }, { sourceRow: "asc" }] });
+  const notes = await terapkanKeadaanEfektif(db, await db.unitUsageNote.findMany({ include: { material: { select: { id: true, code: true, name: true, unit: true } }, unit: { select: { unitCode: true, status: true } } }, orderBy: [{ orderNumber: "asc" }, { sourceRow: "asc" }] }));
   const excel = notes.filter((n) => n.origin === "EXCEL"); const ledger = notes.filter((n) => n.origin === "LEDGER");
   const tampil = excel.filter((n) => n.state !== STATE.TIDAK_DIHITUNG);
 

@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# RILIS "EVALUASI CATATAN PEMAKAIAN HISTORIS: GLOBAL + ATOMIK + TERSERIALISASI" — KODE SAJA (backend), TANPA MIGRASI, TANPA FRONTEND, TANPA DATA. FAIL-CLOSED. Workflow RELEASE-DIRECTORY di atas release aktif (BASE_SHA = release live saat ini).
-#   Cacat: setelah posting, evaluasi ulang hanya melihat unit yang diposting; catatan unit itu yang berebut bahan dengan unit LAIN tampak cukup stoknya → SIAP_POSTING PALSU (24 Okt: 5 catatan; rencana berikutnya membengkak 379→384)
-#          dan baru hilang setelah evaluasi global manual. Evaluasi juga berjalan di luar transaksi posting/koreksi (jeda keadaan yang terbaca pengguna/dipakai posting berikutnya).
-#   Perbaikan: SATU evaluator yang SELALU global, memegang kunci advisory (urutan kunci seragam), dan berjalan DI DALAM transaksi posting/koreksi/konfirmasi/kecualikan yang sama; posting menyegarkan keadaan di dalam kunci sebelum memeriksa
-#          catatan (fail-closed: yang tidak lagi siap gugur). Tanpa evaluasi global manual. Tambahan: periksaKeadaanCatatan (audit kering baca-saja).
-#   TIDAK ADA migrasi, perubahan skema/dependensi, frontend, atau data yang diubah. Rilis ini TIDAK memposting, TIDAK mengoreksi stok, TIDAK membuat GR historis/jurnal.
+# RILIS "EVALUASI CATATAN PEMAKAIAN HISTORIS: GLOBAL + ATOMIK + EFEKTIF + BATCH LATAR" — KODE SAJA (backend), TANPA MIGRASI, TANPA FRONTEND, TANPA DATA. FAIL-CLOSED. Workflow RELEASE-DIRECTORY di atas release aktif (BASE_SHA = release live saat ini).
+#   Cacat 1: setelah posting, evaluasi hanya melihat unit yang diposting → SIAP_POSTING PALSU (24 Okt: 5 catatan; rencana berikutnya 384 trx, benar 379), dan evaluasi berjalan di luar transaksi posting/koreksi.
+#   Cacat 2: GR resmi / pengeluaran stok biasa mengubah saldo di luar modul catatan → catatan lain yang memakai bahan sama tampil SIAP_POSTING basi sampai evaluasi berikutnya.
+#   Perbaikan: evaluator SELALU global, terkunci (kunci advisory, urutan kunci seragam), berjalan DI DALAM transaksi posting/koreksi. Pembaca (tampilan Produksi, ringkasan, rencana posting, ekspor Excel, biaya bahan, laporan) dan mesin posting memakai
+#          keadaan EFEKTIF terhadap ledger sekarang (cap ledger murah; klasifikasi ulang hanya bila cap berubah) + penyegaran latar yang menyimpan keadaan benar; penulis GR/pengeluaran biasa TIDAK disentuh. Cache pemetaan bahan: evaluasi 1,3 dtk → 0,3 dtk.
+#          Posting batch besar di LATAR (API 202 + progres; id = hash rencana yang disetujui, idempoten; sewa pekerja + pulihan setelah putus; hentikan/lanjut) — peristiwa append-only di activity_events, tanpa tabel baru. Posting SATU order sinkron via unitIds.
+#   TIDAK ADA migrasi, perubahan skema/dependensi, frontend, atau data yang diubah. Rilis ini TIDAK memposting, TIDAK mengoreksi stok, TIDAK membuat GR historis/jurnal; batch hanya berjalan bila Owner menyetujui hash rencana.
 # URUTAN AMAN: (1) gerbang sumber (ancestry live, allowlist, TANPA prisma/dependensi/frontend, berkas pelindung identik) → (2) audit produksi baca-saja (terpasang == kandidat, 0 pending, tag image = image aktif) + sidik jari beku
 #              → (3) backup + checksum → (4) release dir (dist dipakai ulang) + image → (5b) kode BARU terhadap restore backup nyata (audit baca-saja: sidik jari seluruh tabel sebelum=sesudah; LALU simulasi tulis pada DB rehearsal yang dihapus)
 #              → (7) switch → (8) verifikasi + smoke baca-saja + sidik jari beku.

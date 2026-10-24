@@ -8,7 +8,7 @@ import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
 import { rencanakanImpor, terapkanImpor, ambilCatatanHistoris } from "../../src/services/catatanPemakaianHistoris.js";
 import { koreksiCatatan, konfirmasiCatatan, kecualikanCatatan, ajukanKoreksiPemakaian, setujuiKoreksiPemakaian, tolakKoreksiPemakaian, batalkanKoreksiPemakaian, pratinjauKoreksiPemakaian, riwayatKoreksiPemakaian } from "../../src/services/koreksiPemakaian.js";
-import { rencanakanPosting, jalankanPosting } from "../../src/services/postingPemakaianHistoris.js";
+import { rencanakanPosting, jalankanPosting, postingSatuUnit } from "../../src/services/postingPemakaianHistoris.js";
 import { koreksiValuasiPergerakan, valuasiEfektif } from "../../src/services/finance/koreksiValuasi.js";
 import { bacaJejakUnit } from "../../src/services/finance/biayaBahan.js";
 
@@ -124,7 +124,13 @@ test("P1. posting terpadu: hanya rencana yang disetujui; tanggal historis; pelak
   // saldo soft turun setelah rencana disetujui → u2 (butuh 2) gagal, u1 (butuh 1) tetap jalan: kegagalan satu order tidak membatalkan order lain; u2 atomik (kain-nya juga tidak terposting)
   await testPrisma.stockMovement.create({ data: { materialId: w.soft.id, type: "ADJUSTMENT", qty: -8.5, reason: "uji", note: "uji penyusutan saldo", createdAt: WIB("2026-09-01") } });
   const mv0 = await testPrisma.stockMovement.count();
-  const h = await jalankanPosting(testPrisma, { persetujuan: { hashDisetujui: rencana.hash, rujukan: "OWNER-2026-10-24", disetujuiOleh: "Owner Uji" }, aktor: w.B });
+  // Rencana kini dihitung dari keadaan EFEKTIF (ledger sekarang): rencana lama yang sudah basi ditolak sejak awal — tak ada yang diposting.
+  await assert.rejects(() => jalankanPosting(testPrisma, { persetujuan: { hashDisetujui: rencana.hash, rujukan: "OWNER-2026-10-24", disetujuiOleh: "Owner Uji" }, aktor: w.B }), /BERBEDA dari yang disetujui/);
+  assert.equal(await testPrisma.stockMovement.count(), mv0, "rencana basi ditolak: nol pergerakan");
+  // Balapan (saldo turun SETELAH rencana dihitung/dieksekusi): eksekusi per unit dari daftar lama — satu order gagal ATOMIK, order lain tetap jalan.
+  const perUnit = new Map(); for (const t of rencana.transaksi) (perUnit.get(t.unitId) ?? perUnit.set(t.unitId, []).get(t.unitId)).push(t);
+  const hasilUnit = []; for (const [unitId, daftar] of perUnit) hasilUnit.push({ daftar, h: await postingSatuUnit(testPrisma, { unitId, daftar, persetujuan: { hashDisetujui: rencana.hash, rujukan: "OWNER-2026-10-24", disetujuiOleh: "Owner Uji" }, aktor: w.B }) });
+  const h = { diposting: hasilUnit.flatMap((x) => (x.h.status === "DIPOSTING" ? x.h.ok : [])), gagal: hasilUnit.filter((x) => x.h.status === "GAGAL").map((x) => ({ order: x.daftar[0].orderNumber, kode: x.h.kode })) };
   assert.equal(h.diposting.length, 1); assert.equal(h.gagal.length, 1); assert.equal(h.gagal[0].order, "RES-02092026-802");
   assert.equal(await testPrisma.stockMovement.count(), mv0 + 1 + 0, "hanya satu pergerakan baru (u1 soft); u2 atomik: tidak ada yang terposting"); assert.equal(await saldo(w.kain.id), sKain);
   const mv = await testPrisma.stockMovement.findFirst({ where: { unitId: w.u1.id, materialId: w.soft.id, note: { contains: "PH2610:" } } });

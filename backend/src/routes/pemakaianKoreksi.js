@@ -13,6 +13,7 @@ import { pesanServerAman } from "../lib/galatServerAman.js";
 import { ambilCatatanHistoris, evaluasiUlang } from "../services/catatanPemakaianHistoris.js";
 import { koreksiCatatan, konfirmasiCatatan, kecualikanCatatan, pratinjauKoreksiPemakaian, ajukanKoreksiPemakaian, setujuiKoreksiPemakaian, tolakKoreksiPemakaian, batalkanKoreksiPemakaian, daftarKoreksiPemakaian } from "../services/koreksiPemakaian.js";
 import { rencanakanPosting, jalankanPosting } from "../services/postingPemakaianHistoris.js";
+import { ajukanBatch, mulaiBatch, statusBatch, lanjutkanBatch, hentikanBatch } from "../services/postingBatchLatar.js";
 
 export const pemakaianKoreksiRouter = express.Router();
 pemakaianKoreksiRouter.use(requireAuth);
@@ -60,9 +61,36 @@ pemakaianKoreksiRouter.post("/koreksi-pemakaian/:id/batal", tulisBahan, wajibUui
   try { res.json(await batalkanKoreksiPemakaian(prisma, { koreksiId: req.params.id, aktor: req.user, catatan: req.body?.catatan })); } catch (e) { handleErr(e, res); }
 });
 
-pemakaianKoreksiRouter.get("/posting-historis/rencana", requireAnyPermission(P.INVENTORY_ADJUSTMENT_APPROVE, P.INVENTORY_READ), async (_req, res) => {
-  try { const r = await rencanakanPosting(prisma); res.json({ hash: r.hash, jumlah: r.jumlah, orderUnik: r.orderUnik, transaksi: r.transaksi }); } catch (e) { handleErr(e, res); }
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** unitIds opsional (posting SATU order / sebagian): daftar UUID unit; kosong = seluruh rencana. */
+function bacaUnitIds(raw) {
+  if (raw === undefined || raw === null || raw === "") return null;
+  const arr = Array.isArray(raw) ? raw : String(raw).split(",");
+  const ids = arr.map((x) => String(x).trim()).filter(Boolean);
+  if (!ids.length || ids.length > 500 || !ids.every((x) => UUID_RE.test(x))) throw Object.assign(new Error("unitIds harus berisi 1–500 UUID unit"), { statusCode: 400, code: "UNIT_IDS_TIDAK_VALID" });
+  return ids;
+}
+pemakaianKoreksiRouter.get("/posting-historis/rencana", requireAnyPermission(P.INVENTORY_ADJUSTMENT_APPROVE, P.INVENTORY_READ), async (req, res) => {
+  try { const r = await rencanakanPosting(prisma, { unitIds: bacaUnitIds(req.query?.unitIds) }); res.json({ hash: r.hash, jumlah: r.jumlah, orderUnik: r.orderUnik, transaksi: r.transaksi }); } catch (e) { handleErr(e, res); }
 });
+// Sinkron: untuk SATU order / sebagian kecil (unitIds). Rencana besar (puluhan–ratusan order) lewat batch latar di bawah — jangan menahan satu permintaan layar belasan menit.
 pemakaianKoreksiRouter.post("/posting-historis/jalankan", requirePermission(P.INVENTORY_ADJUSTMENT_APPROVE), async (req, res) => {
-  try { res.json(await jalankanPosting(prisma, { persetujuan: { hashDisetujui: req.body?.hashDisetujui, rujukan: req.body?.rujukan, disetujuiOleh: req.user.name }, aktor: req.user, jurnalHPP: req.body?.jurnalHPP === true })); } catch (e) { handleErr(e, res); }
+  try { res.json(await jalankanPosting(prisma, { persetujuan: { hashDisetujui: req.body?.hashDisetujui, rujukan: req.body?.rujukan, disetujuiOleh: req.user.name }, aktor: req.user, jurnalHPP: req.body?.jurnalHPP === true, unitIds: bacaUnitIds(req.body?.unitIds) })); } catch (e) { handleErr(e, res); }
+});
+// Batch di latar: 202 + id (= hash rencana yang disetujui; idempoten). Progres lewat GET; kelanjutan setelah putus lewat pulihan saat boot atau POST …/lanjut.
+pemakaianKoreksiRouter.post("/posting-historis/batch", requirePermission(P.INVENTORY_ADJUSTMENT_APPROVE), async (req, res) => {
+  try {
+    const b = await ajukanBatch(prisma, { persetujuan: { hashDisetujui: req.body?.hashDisetujui, rujukan: req.body?.rujukan, disetujuiOleh: req.user.name }, aktor: req.user, jurnalHPP: req.body?.jurnalHPP === true, unitIds: bacaUnitIds(req.body?.unitIds) });
+    mulaiBatch(prisma, b.batchId); // tidak ditunggu
+    res.status(202).json(b);
+  } catch (e) { handleErr(e, res); }
+});
+pemakaianKoreksiRouter.get("/posting-historis/batch/:id", requireAnyPermission(P.INVENTORY_ADJUSTMENT_APPROVE, P.INVENTORY_READ), async (req, res) => {
+  try { res.json(await statusBatch(prisma, req.params.id)); } catch (e) { handleErr(e, res); }
+});
+pemakaianKoreksiRouter.post("/posting-historis/batch/:id/lanjut", requirePermission(P.INVENTORY_ADJUSTMENT_APPROVE), async (req, res) => {
+  try { res.status(202).json(await lanjutkanBatch(prisma, req.params.id, req.user)); } catch (e) { handleErr(e, res); }
+});
+pemakaianKoreksiRouter.post("/posting-historis/batch/:id/hentikan", requirePermission(P.INVENTORY_ADJUSTMENT_APPROVE), async (req, res) => {
+  try { res.json(await hentikanBatch(prisma, req.params.id, req.user)); } catch (e) { handleErr(e, res); }
 });
