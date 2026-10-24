@@ -770,7 +770,7 @@ if (unit) {
   rec("catatan historis unit (Admin) 200, kosong", ch.status === 200 && ch.json?.ringkas?.total === 0, `${ch.status}`);
   if (tS) { const as = await get(`/api/production/units/${unit.id}/adopsi`, tS); rec("panel unit (hanya-lihat/Sales): izin catatanHistoris=false dan koreksiSetuju=false (UI tanpa tombol aksi)", as.status === 200 && as.json?.izin?.catatanHistoris === false && as.json?.izin?.koreksiSetuju === false, `${as.status}`); } else skip("panel unit akun hanya-lihat", "tidak ada akun SALES murni");
 } else skip("panel unit", "tidak ada unit");
-const ex = await fetch(BASE + "/api/production/work-orders/export", { headers: { Authorization: "Bearer " + tA } }).catch(() => null);
+const ex = await fetch(BASE + "/api/production/work-orders/export.xlsx", { headers: { Authorization: "Bearer " + tA } }).catch(() => null);
 if (ex) rec("ekspor Excel Order Produksi (Admin) tetap 200", ex.status === 200, `${ex.status}`); else skip("ekspor Excel", "permintaan gagal");
 // ── penolakan di pintu (tidak menyentuh data) ──
 const Z = "00000000-0000-4000-8000-000000000000";
