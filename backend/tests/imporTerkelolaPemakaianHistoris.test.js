@@ -19,7 +19,7 @@ test("alat impor: tidak memuat jalur stok/valuasi/jurnal/posting; satu-satunya p
 
 test("gerbang 'terapkan' menolak tanpa menulis: sha256 CSV, hash disetujui, tabel kosong, potret sebelum, hash rencana dihitung ulang dari production, hitungan 2.656 + 29; exit 3 sebelum terapkanImpor", () => {
   const blok = alat.slice(alat.indexOf('MODE === "terapkan"'), alat.indexOf('MODE === "sesudah"'));
-  for (const s of ["alat dijalankan dari BERKAS dengan sha256 = --sha-alat = manifest.alat.sha256", "aktor audit = akun ADMIN aktif yang disetujui (email + id cocok)", "sha256 Pemakaian Bahan.csv = manifest", "hash rencana yang disetujui = hash di manifest", "tabel rekonsiliasi masih KOSONG", "potret 'sebelum' ada", "rencana dihitung ulang dari data production = manifest", "hitungan rencana = manifest (2.656 Excel + 29 LEDGER)", "GATE DITOLAK", "process.exitCode = 3"]) assert.ok(blok.includes(s), s);
+  for (const s of ["alat dijalankan dari BERKAS dengan sha256 = --sha-alat = manifest.alat.sha256", "aktor audit = akun ADMIN aktif yang disetujui (email + id cocok)", "sha256 Pemakaian Bahan.csv = manifest", "hash rencana yang disetujui = hash di manifest", "tabel rekonsiliasi masih KOSONG", "potret 'sebelum' ada", "rencana dihitung ulang dari data production = manifest", "hitungan rencana (catatan Excel + referensi LEDGER) = manifest", "GATE DITOLAK", "process.exitCode = 3"]) assert.ok(blok.includes(s), s);
   assert.ok(blok.indexOf("GATE DITOLAK") < blok.indexOf("cat.terapkanImpor("), "gerbang HARUS lebih dulu dari penulisan");
   assert.match(blok, /if \(gagal\) \{ console\.log\([\s\S]*?process\.exitCode = 3; return; \}/);
 });

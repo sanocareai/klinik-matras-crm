@@ -188,7 +188,7 @@ async function main() {
     const aktor = await ambilAktor(); cek("aktor audit = akun ADMIN aktif yang disetujui (email + id cocok)", aktor.ok, tampilAktor(aktor));
     const { manifest: baru, rencana } = await susunManifest();
     cek("rencana dihitung ulang dari data production = manifest (hash sama)", baru.hashRencana === manifest.hashRencana, `${baru.hashRencana.slice(0, 16)} vs ${manifest.hashRencana.slice(0, 16)}`);
-    cek("hitungan rencana = manifest (2.656 Excel + 29 LEDGER)", baru.hitungan.catatanExcel === manifest.hitungan.catatanExcel && baru.hitungan.referensiIssueLama_LEDGER === manifest.hitungan.referensiIssueLama_LEDGER);
+    cek("hitungan rencana (catatan Excel + referensi LEDGER) = manifest", baru.hitungan.catatanExcel === manifest.hitungan.catatanExcel && baru.hitungan.referensiIssueLama_LEDGER === manifest.hitungan.referensiIssueLama_LEDGER);
     if (gagal) { console.log(`GATE DITOLAK (${gagal} pemeriksaan gagal) — TIDAK ada yang ditulis.`); process.exitCode = 3; return; }
     const t = Date.now();
     const hasil = await cat.terapkanImpor(prisma, rencana, { actorId: aktor.u.id });
