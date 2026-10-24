@@ -19,7 +19,7 @@ const LIB_SMOKE = "scripts/lib/smoke-rekon-pemakaian.mjs"; const LIB_SCAN = "scr
 const GENERATOR = "scripts/gen-release-rekon-pemakaian.cjs";
 const CAND_BRANCH = "feat/rekon-pemakaian-historis";
 const PRASYARAT = "rilis UX Bahan katalog (fix/ux-bahan-drawer-pemakaian, commit 693b8c52, migrasi 20261227090000) HARUS sudah live; baseline (BASE_SHA) = commit release aktif itu";
-// Diff berkas yang menyentuh stok/penyesuaian terhadap baseline dipatok sha256-nya (diff --no-abbrev antar-commit; independen dari pengaturan abbrev repo).
+// Diff berkas yang menyentuh stok/penyesuaian terhadap baseline dipatok sha256-nya (diff --full-index antar-commit; independen dari pengaturan abbrev repo).
 const DIFF_PIN_FILES = ["backend/src/services/inventoryLedger.js", "backend/src/routes/stockAdjustment.js"];
 const FILE_TETAP = [OUT, LIB_REH, LIB_SMOKE, LIB_SCAN, GENERATOR, TPL];
 // Berkas yang HARUS identik antara base dan kandidat: inti Koreksi Gudang, ledger, jurnal/posting persediaan, otorisasi/izin, pemisahan tugas, Stock Count (opname) inti, command Produksi (rencana, material issue V2, step), override.
@@ -89,7 +89,7 @@ function main() {
   // pemindai dijalankan SAAT BANGKIT: hasilnya menjadi SCAN_EXPECT yang dipatok di skrip (komentar baris "--" dan baris kosong dibuang seperti di skrip rilis)
   const bersih = lf(mig.sql).split("\n").filter((l) => !/^\s*--/.test(l) && !/^\s*$/.test(l)).join("\n") + "\n";
   const scanExpect = execFileSync("node", [path.join(REPO, LIB_SCAN)], { input: bersih, encoding: "utf8" }).trim();
-  const diffPins = DIFF_PIN_FILES.map((f2) => [f2, sha(lf(git(["diff", "--no-abbrev", "--no-color", "--no-ext-diff", ref, "HEAD", "--", f2])))]);
+  const diffPins = DIFF_PIN_FILES.map((f2) => [f2, sha(lf(git(["diff", "--full-index", "--no-color", "--no-ext-diff", ref, "HEAD", "--", f2])))]);
   const liveAncestors = LIVE_ANCESTORS_REF.map((r2) => git(["rev-parse", "--verify", r2 + "^{commit}"]).trim());
   for (const a of liveAncestors) execFileSync("git", ["merge-base", "--is-ancestor", a, "HEAD"], { cwd: REPO });
   const hasil = bangkitkan({
