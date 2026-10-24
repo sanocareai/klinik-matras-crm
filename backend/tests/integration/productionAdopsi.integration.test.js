@@ -262,10 +262,10 @@ test("B1. EKSPOR .xlsx: sheet, header beku + AutoFilter, tanpa sel digabung, ang
   await w.admin.api.put(`${P}/units/${a.unit.id}/material-plan`, { lines: [{ materialId: busa.id, qty: 4 }, { materialId: kain.id, qty: 2.5 }], expectedRevision: 0 });
   await w.worker.api.post(`/api/units/${a.unit.id}/materials`, { materialId: busa.id, qty: 1.25, note: "pakai" }, { "Idempotency-Key": ym("ekspor-pakai-0001") });
   const { wb } = await unduhXlsx(w.admin);
-  assert.deepEqual(wb.worksheets.map((s) => s.name), ["Ringkasan Unit", "Rencana Bahan", "Pemakaian Aktual", "Komponen Lama", "Pemakaian Sementara", "Info Ekspor"]);
+  assert.deepEqual(wb.worksheets.map((s) => s.name), ["Ringkasan Unit", "Rencana Bahan", "Pemakaian Aktual", "Komponen Lama", "Pemakaian Sementara", "Catatan Historis", "Info Ekspor"]); // "Catatan Historis" (Excel Admin Sales) ditambahkan Okt 2026 — aditif, sheet lama tak berubah
   const ring = wb.getWorksheet("Ringkasan Unit"); const daftarData = await daftar(w);
   assert.equal(ring.rowCount - 1, daftarData.units.length, "baris = daftar"); assert.equal(ring.rowCount - 1, 3);
-  for (const ws of [ring, wb.getWorksheet("Rencana Bahan"), wb.getWorksheet("Pemakaian Aktual"), wb.getWorksheet("Komponen Lama"), wb.getWorksheet("Pemakaian Sementara")]) {
+  for (const ws of [ring, wb.getWorksheet("Rencana Bahan"), wb.getWorksheet("Pemakaian Aktual"), wb.getWorksheet("Komponen Lama"), wb.getWorksheet("Pemakaian Sementara"), wb.getWorksheet("Catatan Historis")]) {
     assert.equal(ws.views[0].state, "frozen"); assert.equal(ws.views[0].ySplit, 1, `${ws.name}: baris header dibekukan`);
     assert.ok(ws.autoFilter, `${ws.name}: AutoFilter`); const af = typeof ws.autoFilter === "string" ? ws.autoFilter : `${ws.autoFilter.from?.row}:${ws.autoFilter.to?.row}`; assert.ok(typeof ws.autoFilter === "string" ? /^A1:/.test(af) : af.startsWith("1:"), `${ws.name}: AutoFilter di baris header (${af})`);
     assert.equal(Object.keys(ws._merges ?? {}).length, 0, `${ws.name}: tidak ada sel digabung di area data`);

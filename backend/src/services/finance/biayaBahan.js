@@ -362,7 +362,7 @@ export async function bacaJejakUnit(db, unitId, { izinHarga = false } = {}) {
   belumFinal.length = 0; belumFinal.push(...belumFinalRingkas);
   const semuaTanpaNilai = baris.length > 0 && !adaDinilai;
   const keras = belumFinal.filter((x) => !["FAKTUR_BELUM_ADA"].includes(x.jenis));
-  const statusBiaya = baris.length === 0 ? "BELUM_ADA_PEMAKAIAN" : keras.length === 0 ? "FINAL_MENURUT_HARGA_PO" : "BELUM_FINAL";
+  const statusBiaya = baris.length === 0 && excelTertahan.length === 0 ? "BELUM_ADA_PEMAKAIAN" : keras.length === 0 ? "FINAL_MENURUT_HARGA_PO" : "BELUM_FINAL";
 
   const hasil = {
     unit: { id: unit.id, unitCode: unit.unitCode, orderNumber: unit.order?.orderNumber ?? null },
@@ -379,7 +379,7 @@ export async function bacaJejakUnit(db, unitId, { izinHarga = false } = {}) {
       jumlahPergerakan: baris.length, jumlahTanpaHarga: baris.filter((r) => r.status === "TANPA_HARGA").length, jumlahEstimasiHistoris: baris.filter((r) => r.status === "ESTIMASI_HISTORIS").length,
       semuaTanpaNilai,
       // PARSIAL = ada pemakaian/catatan/harga yang belum pasti; angka nilai TIDAK boleh ditampilkan sebagai final.
-      parsial: baris.length > 0 && statusBiaya !== "FINAL_MENURUT_HARGA_PO",
+      parsial: (baris.length > 0 || excelTertahan.length > 0) && statusBiaya !== "FINAL_MENURUT_HARGA_PO",
       catatanHistoris: { tertahan: excelTertahan.length, perluDicek: excelTertahan.filter((c) => c.state === "PERLU_DICEK").length, pengeluaranDipertanyakan: ledgerDitanya.length },
     },
     belumFinal,

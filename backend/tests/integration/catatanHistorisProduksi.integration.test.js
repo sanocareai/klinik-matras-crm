@@ -48,6 +48,16 @@ test("P2. HPP per order PARSIAL: menyebut gap, tidak ditampilkan sebagai final",
   assert.match(h.catatan, /Bukan HPP final/);
 });
 
+test("P4. unit yang HANYA punya catatan (belum ada pengeluaran stok) → HPP PARSIAL (bukan 'belum ada pemakaian', bukan Rp0)", async () => {
+  const w = await dunia();
+  const { order, unit } = await createTestUnit({ status: "DELIVERED" }); await testPrisma.order.update({ where: { id: order.id }, data: { orderNumber: "RES-02092026-778", status: "DELIVERED" } });
+  const csv2 = ["J", "D", HDR, baris(1, "RES-02092026-778", "Bahan Lapisan", "KAIN LAVA PROD", "2,0", "METER")].join("\n");
+  await terapkanImpor(testPrisma, await rencanakanImpor(testPrisma, { csvText: csv2, namaBerkas: "uji2.csv" }), {});
+  const r = await w.c.get(`/api/production/units/${unit.id}/adopsi`); assert.equal(r.status, 200);
+  assert.equal(r.body.hppBahan.parsial, true); assert.equal(r.body.hppBahan.final, false); assert.equal(r.body.hppBahan.status, "BELUM_FINAL");
+  assert.ok(r.body.hppBahan.gap.some((g) => g.jenis === "CATATAN_BELUM_JADI_STOK")); assert.equal(r.body.hppBahan.nilaiTerhitung, null, "tidak ada angka palsu");
+});
+
 test("P3. Daftar Order Produksi + ekspor Excel: ringkasan catatan, sheet 'Catatan Historis' dengan nilai asli, dan sheet Pemakaian Aktual tidak bertambah", async () => {
   const w = await dunia();
   const l = await w.c.get(`/api/production/work-orders?q=RES-01092026-777`); const row = (l.body.units ?? l.body.items ?? []).find((u) => u.id === w.unit.id);
