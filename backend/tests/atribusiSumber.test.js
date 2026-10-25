@@ -101,3 +101,17 @@ test("UNKNOWN pada kategori eksklusif sumber: LUNAS/DP tersimpan tanpa pembayara
   assert.deepEqual(m.eksklusif, { belumBayar: 1, dpSaatIni: 0, lunas: 1, tidakDiketahui: 2 }); assert.equal(m.eksklusif.belumBayar + m.eksklusif.dpSaatIni + m.eksklusif.lunas + m.eksklusif.tidakDiketahui, m.berOrder);
   const r = susunSumber({ parameter: param, hasil: h, biayaMeta: null, asOf: "x", hariIni: "2026-10-26" }); assert.equal(r.sumber.find((x) => x.id === "TIKTOK").kategoriEksklusif.jumlah, 4);
 });
+
+test("konsistensi persentase: setiap konversi (utama & non-spam, order & lunas) = pembilang ÷ penyebut × 100 dibulatkan 2 desimal; penyebut utama = lead, non-spam = lead sah", () => {
+  const cs = [...Array.from({ length: 1958 }, () => cust("META_ADS")), ...Array.from({ length: 407 }, () => cust("META_ADS", { pipelineStage: "SPAM" }))];
+  const meta = cs.slice(0, 1958); const os = meta.slice(0, 33).map((c) => ord(c.id));
+  const h = hitung(cs.slice(0, 1958 - 0), os);
+  const r = susunSumber({ parameter: param, hasil: h, biayaMeta: null, asOf: "x", hariIni: "2026-10-26" });
+  for (const s of r.sumber) {
+    for (const [k, penyebut] of [["konversiOrder", s.lead], ["konversiLunas", s.lead], ["konversiMembayar", s.lead], ["konversiOrderNonSpam", s.leadSah], ["konversiLunasNonSpam", s.leadSah]]) {
+      const x = s[k]; assert.equal(x.penyebut, penyebut, `${s.id}.${k} penyebut`);
+      assert.equal(x.nilai, penyebut > 0 ? Math.round((x.pembilang / penyebut) * 10000) / 100 : null, `${s.id}.${k} nilai`);
+    }
+  }
+  const m = r.sumber[0]; assert.deepEqual([m.konversiOrder.pembilang, m.konversiOrder.penyebut, m.konversiOrder.nilai], [33, 1958, 1.69]);
+});

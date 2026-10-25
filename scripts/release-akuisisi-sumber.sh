@@ -31,7 +31,7 @@ DEPLOY_SHORT="${DEPLOY_SHA:0:8}"; BASE_SHORT="${BASE_SHA:0:8}"; NEW_DIR="$RELEAS
 TS="$(date +%Y%m%d_%H%M%S)"; BK_DIR="$HOME/release-backups/${TAG_KODE}-${DEPLOY_SHORT}-${TS}"
 ROLLBACK_TAG="klinik-matras-backend:rollback-pre-${TAG_KODE}-${DEPLOY_SHORT}"
 
-ALLOWED_RE='^(backend/src/(services/attribution/(d7|sumber)\.js|routes/attributionAds\.js)|backend/tests/(atribusiD7|atribusiSumber|atribusiKompatD7|releaseAkuisisiSumber|releaseAtribusiKpiD7)\.test\.js|backend/tests/integration/(atribusiIklan|atribusiStatusCustomer)\.integration\.test\.js|frontend/src/(api\.js|pages/Laporan\.jsx|features/laporan/(akuisisiLogic\.js|components/(AkuisisiTab|IklanCampaignTab)\.jsx))|frontend/tests/akuisisiLogic\.test\.js|scripts/release-akuisisi-sumber\.sh)$'
+ALLOWED_RE='^(backend/src/(services/attribution/(d7|sumber)\.js|routes/attributionAds\.js)|backend/tests/(atribusiD7|atribusiSumber|atribusiKompatD7|releaseAkuisisiSumber|releaseAtribusiKpiD7|releaseUxGudangTahap2|releaseUxGudangTahap3)\.test\.js|backend/tests/integration/(atribusiIklan|atribusiStatusCustomer)\.integration\.test\.js|frontend/src/(api\.js|pages/Laporan\.jsx|features/laporan/(akuisisiLogic\.js|components/(AkuisisiTab|IklanCampaignTab)\.jsx))|frontend/tests/akuisisiLogic\.test\.js|scripts/release-akuisisi-sumber\.sh)$'
 BACKEND_SRC_EXPECT="backend/src/routes/attributionAds.js backend/src/services/attribution/d7.js backend/src/services/attribution/sumber.js"
 FRONTEND_SRC_EXPECT="frontend/src/api.js frontend/src/features/laporan/akuisisiLogic.js frontend/src/features/laporan/components/AkuisisiTab.jsx frontend/src/features/laporan/components/IklanCampaignTab.jsx frontend/src/pages/Laporan.jsx"
 declare -A PINS=(

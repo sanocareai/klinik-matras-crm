@@ -3,6 +3,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { spawnSync } from "node:child_process";
@@ -88,5 +89,5 @@ test("skrip tersimpan identik pada templat sekarang dan bersintaks bash valid", 
   const tersimpan = baca("scripts/release-ux-gudang-tahap3.sh");
   const sha = (t) => require("node:crypto").createHash("sha256").update(t).digest("hex");
   assert.equal(sha(baca("scripts/templates/release-ux-gudang-tahap3.sh.tpl")).slice(0, 12), tersimpan.match(/templat sha256 ([0-9a-f]{12})…/)[1]);
-  if (punyaBash) { const tmp = path.join(root, "scripts", ".cek-sintaks.sh"); fs.writeFileSync(tmp, tersimpan); try { assert.equal(spawnSync("bash", ["-n", tmp]).status, 0); } finally { fs.unlinkSync(tmp); } }
+  if (punyaBash) { const dirTmp = fs.mkdtempSync(path.join(os.tmpdir(), "cek-sintaks-")); const tmp = path.join(dirTmp, "rilis.sh"); try { fs.writeFileSync(tmp, tersimpan); assert.equal(spawnSync("bash", ["-n", tmp]).status, 0); } finally { fs.rmSync(dirTmp, { recursive: true, force: true }); } }
 });
