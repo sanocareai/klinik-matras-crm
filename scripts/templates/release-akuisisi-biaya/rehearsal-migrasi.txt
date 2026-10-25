@@ -1,0 +1,24 @@
+S_SEBELUM="$(RPSQL "$SKEMA_SQL")"; [ -n "$S_SEBELUM" ] || { reh_drop; die "sidik jari skema rehearsal kosong"; }
+[ "$S_SEBELUM" = "$SKEMA_PRA" ] || { reh_drop; die "skema tabel lama pada RESTORE berbeda dari produksi (backup/restore bermasalah)"; }
+RH_URL="postgresql://${DB_USER}:${REH_PW}@postgres:5432/${REH_DB}"
+if [ "$KEADAAN" = "SEGAR" ]; then
+  dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="$RH_URL" backend npx prisma migrate deploy </dev/null > "$BK_DIR/migrate-rehearsal.log" 2>&1 || { tail -n 20 "$BK_DIR/migrate-rehearsal.log"; reh_drop; die "migrate deploy di DB rehearsal GAGAL (produksi tidak disentuh)"; }
+  [ "$(grep -c 'Applying migration' "$BK_DIR/migrate-rehearsal.log")" = "1" ] || { tail -n 12 "$BK_DIR/migrate-rehearsal.log"; reh_drop; die "migrate deploy harus menerapkan TEPAT 1 migrasi rilis"; }
+else
+  dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="$RH_URL" backend npx prisma migrate deploy </dev/null > "$BK_DIR/migrate-rehearsal.log" 2>&1 || { tail -n 12 "$BK_DIR/migrate-rehearsal.log"; reh_drop; die "migrate deploy (LANJUT) di DB rehearsal GAGAL"; }
+  ! grep -q 'Applying migration' "$BK_DIR/migrate-rehearsal.log" || { reh_drop; die "keadaan LANJUT: migrate deploy MENERAPKAN sesuatu (seharusnya tidak ada yang pending)"; }
+fi
+dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="$RH_URL" backend npx prisma migrate status </dev/null 2>&1 | grep -i 'up to date' >/dev/null || { reh_drop; die "migrate status rehearsal (image baru) TIDAK 'up to date'"; }
+# idempotensi migrasi: menjalankan migrate deploy sekali lagi tidak menerapkan apa pun
+dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="$RH_URL" backend npx prisma migrate deploy </dev/null > "$BK_DIR/migrate-rehearsal-2.log" 2>&1 || { tail -n 12 "$BK_DIR/migrate-rehearsal-2.log"; reh_drop; die "migrate deploy ke-2 di DB rehearsal GAGAL"; }
+! grep -q 'Applying migration' "$BK_DIR/migrate-rehearsal-2.log" || { reh_drop; die "migrate deploy ke-2 MENERAPKAN sesuatu (migrasi tidak idempoten)"; }
+struktur_baru RPSQL gagal_reh
+[ "$(RPSQL "$SKEMA_SQL")" = "$S_SEBELUM" ] || { reh_drop; die "migrasi MENGUBAH skema (kolom/tipe/nullable/default) tabel lama"; }
+ok "image baru: migrasi rilis diterapkan pada DB rehearsal (hasil restore nyata) dan idempoten; 2 tabel kosong; 1 FK RESTRICT, 8 CHECK, 3 indeks (2 unik), trigger append-only tervalidasi; skema tabel lama IDENTIK"
+# UJI CONSTRAINT FUNGSIONAL pada DB rehearsal (semua dalam satu transaksi yang DIBATALKAN): setiap pelanggaran harus ditolak DB; entri/revisi sah diterima.
+dcp "$PREV_DIR" exec -T postgres psql -U "$DB_USER" -d "$REH_DB" -X -At -v ON_ERROR_STOP=0 > "$BK_DIR/constraint-rehearsal.log" 2>&1 <<'CONSTRAINTSQL' || { reh_drop; die "uji constraint fungsional tidak dapat dijalankan"; }
+@@CONSTRAINT_SQL@@
+CONSTRAINTSQL
+[ "$(grep -c 'NOTICE:  PASS' "$BK_DIR/constraint-rehearsal.log")" = "22" ] && ! grep -q 'NOTICE:  FAIL' "$BK_DIR/constraint-rehearsal.log" || { grep -E 'NOTICE:  (PASS|FAIL)' "$BK_DIR/constraint-rehearsal.log" | grep FAIL || true; reh_drop; die "uji constraint fungsional: harus 22 PASS dan 0 FAIL (lihat constraint-rehearsal.log)"; }
+[ "$(RPSQL "select (select count(*) from ad_source_spend_entries) + (select count(*) from ad_source_spend_revisions)")" = "0" ] || { reh_drop; die "uji constraint meninggalkan baris (transaksi harus dibatalkan)"; }
+ok "constraint fungsional: 22 PASS / 0 FAIL (sumber organik, jenis, status, nominal negatif, IDR, tanggal, HARIAN 2 tanggal, override non-META, kunci unik ganda, nomor revisi ganda, FK yatim, UPDATE/DELETE revisi, hapus entri berevisi ditolak); transaksi dibatalkan, tabel tetap kosong"

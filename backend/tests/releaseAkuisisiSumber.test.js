@@ -33,7 +33,27 @@ test("sintaks bash valid, LF, tanpa placeholder pin", { skip: !punyaBash }, () =
   assert.ok(!/__PIN_/.test(src));
 });
 
-test("pin sha256 cocok pohon kerja; backend/src = BACKEND_SRC_EXPECT", { skip: "skrip rilis Akuisisi 8e5437b6 sudah dipakai (live); sumber.js/attributionAds.js berubah di rilis berikutnya (biaya sumber) — pin runtime baru dipegang skrip rilis berikutnya" }, () => {
+// SKRIP HISTORIS (sudah dipakai; live 8e5437b6). Pin di dalamnya sengaja TIDAK lagi cocok dengan pohon kerja (sumber.js/attributionAds.js berubah di rilis biaya sumber, pin baru dipegang scripts/release-akuisisi-biaya.sh
+// dan dijaga backend/tests/releaseAkuisisiBiaya.test.js). Tes pengganti di bawah menjaga dua hal TANPA bergantung pada pohon kerja: (1) pin historis tetap cocok dengan isi berkas pada commit rilisnya (skrip tidak rusak/diubah diam-diam),
+// (2) skrip historis itu sendiri tidak diubah (sha256 berkasnya dikunci). Bila riwayat git tidak tersedia (klon dangkal) tes dilewati dengan alasan eksplisit.
+const COMMIT_HISTORIS = "8e5437b6";
+const gitShow = (rel) => spawnSync("git", ["show", `${COMMIT_HISTORIS}:${rel}`], { cwd: root, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
+const adaCommit = spawnSync("git", ["cat-file", "-e", `${COMMIT_HISTORIS}^{commit}`], { cwd: root }).status === 0;
+test("skrip historis: pin sha256-nya cocok dengan isi berkas PADA COMMIT RILISNYA (bukan pohon kerja)", { skip: adaCommit ? false : `commit ${COMMIT_HISTORIS} tidak ada di klon ini (riwayat dangkal)` }, () => {
+  const pins = [...src.matchAll(/\["(backend\/[^"]+)"\]="([0-9a-f]{64})"/g)];
+  assert.equal(pins.length, 3);
+  for (const m of pins) {
+    const r = gitShow(m[1]); assert.equal(r.status, 0, `${m[1]} tidak ada di ${COMMIT_HISTORIS}`);
+    assert.equal(sha(r.stdout.replace(/\r\n/g, "\n")), m[2], `pin historis ${m[1]} tidak cocok dengan commit ${COMMIT_HISTORIS}`);
+  }
+  const be = /BACKEND_SRC_EXPECT="([^"]+)"/.exec(src)[1].split(" ").sort();
+  for (const f of be) assert.ok(pins.some((m) => m[1] === f), "berkas backend/src historis yang berubah harus dipin: " + f);
+});
+test("skrip historis tidak diubah: isi scripts/release-akuisisi-sumber.sh sama dengan di commit rilisnya", { skip: adaCommit ? false : `commit ${COMMIT_HISTORIS} tidak ada di klon ini` }, () => {
+  const r = gitShow("scripts/release-akuisisi-sumber.sh"); assert.equal(r.status, 0);
+  assert.equal(sha(r.stdout.replace(/\r\n/g, "\n")), sha(src), "skrip rilis historis berubah — jangan edit skrip yang sudah dipakai; buat skrip baru");
+});
+test("(dilewati) pin terhadap pohon kerja — digantikan dua tes di atas", { skip: "pin runtime kandidat berikutnya dipegang scripts/release-akuisisi-biaya.sh (lihat releaseAkuisisiBiaya.test.js)" }, () => {
   const pins = [...src.matchAll(/\["(backend\/[^"]+)"\]="([0-9a-f]{64})"/g)];
   assert.equal(pins.length, 3);
   for (const m of pins) assert.equal(sha(lf(m[1])), m[2], `pin ${m[1]} basi`);

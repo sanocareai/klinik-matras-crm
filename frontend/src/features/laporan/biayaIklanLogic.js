@@ -1,6 +1,7 @@
 // Logika murni form "Kelola biaya iklan" (input manual biaya tingkat SUMBER). Cermin validasi server (backend/src/services/attribution/biayaSumber.js) agar kesalahan terlihat sebelum
 // mengirim — server TETAP memvalidasi ulang (sumber kebenaran). Tidak ada token/secret yang diminta atau disimpan di sini.
 import { tglValid, selisihHari, tambahHari } from "./periodeLaporan.js";
+import { rupiahPersis } from "./akuisisiLogic.js";
 
 export const SUMBER_FORM = [
   { id: "META", label: "Meta Ads" },
@@ -20,9 +21,10 @@ export function validasiForm(f, hariIni) {
   if (!tglValid(dari)) g.dari = "Tanggal wajib diisi (YYYY-MM-DD, WIB).";
   if (f.jenis === "TOTAL_RENTANG" && !tglValid(sampai)) g.sampai = "Tanggal akhir wajib diisi.";
   if (!g.dari && !g.sampai) {
-    if (dari > sampai) g.sampai = "Tanggal akhir tidak boleh sebelum tanggal mulai.";
-    else if (sampai >= hariIni) g.sampai = `Tanggal terakhir harus sebelum hari ini (${hariIni}); biaya hari berjalan belum final.`;
-    else if (selisihHari(dari, sampai) + 1 > MAKS_HARI_ENTRI) g.sampai = `Rentang paling lama ${MAKS_HARI_ENTRI} hari.`;
+    const kunci = f.jenis === "HARIAN" ? "dari" : "sampai";   // tab Harian hanya punya satu kolom tanggal: galat harus tampil di kolom yang terlihat
+    if (dari > sampai) g[kunci] = "Tanggal akhir tidak boleh sebelum tanggal mulai.";
+    else if (sampai >= hariIni) g[kunci] = `Tanggal terakhir harus sebelum hari ini (${hariIni}); biaya hari berjalan belum final.`;
+    else if (selisihHari(dari, sampai) + 1 > MAKS_HARI_ENTRI) g[kunci] = `Rentang paling lama ${MAKS_HARI_ENTRI} hari.`;
   }
   const n = String(f.nominal ?? "").trim();
   if (n === "") g.nominal = "Nominal wajib diisi (Rp0 harus dikonfirmasi; kosong ≠ Rp0).";
@@ -51,11 +53,18 @@ export function bodyBiaya(f, { dryRun }) {
 export const AKSI_TEKS = {
   BARU: "Entri baru akan dibuat", UBAH: "Entri yang ada akan diperbarui (revisi tercatat)", AKTIFKAN: "Entri yang dibatalkan akan diaktifkan kembali", TIDAK_BERUBAH: "Tidak ada perubahan (nilai sama — tidak ada revisi baru)", KONFLIK: "Tumpang tindih dengan entri aktif lain",
 };
+export const AKSI_SELESAI = { BARU: "Entri baru dibuat", UBAH: "Entri diperbarui (revisi tercatat)", AKTIFKAN: "Entri yang dibatalkan diaktifkan kembali (revisi tercatat)" };
+/** Kalimat hasil SESUDAH menyimpan (bentuk lampau); ringkasRencana = sebelum menyimpan (rencana). */
+export function ringkasHasil(r) {
+  if (!r) return null;
+  const rencana = ringkasRencana(r) || "";
+  return rencana.replace(AKSI_TEKS[r.aksi] || r.aksi, AKSI_SELESAI[r.aksi] || r.aksi);
+}
 export function ringkasRencana(r) {
   if (!r) return null;
   const rentang = r.dari === r.sampai ? r.dari : `${r.dari} s/d ${r.sampai}`;
-  const lama = r.perubahan?.nominalLama != null ? ` (sebelumnya Rp${Math.round(r.perubahan.nominalLama).toLocaleString("id-ID")})` : "";
-  return `${AKSI_TEKS[r.aksi] || r.aksi}: ${r.sumber} · ${r.jenis === "HARIAN" ? "harian" : "total rentang"} ${rentang} · Rp${Number(r.nominal).toLocaleString("id-ID")}${lama}${r.gantiDetailAd ? " · menggantikan detail Ad" : ""}.`;
+  const lama = r.perubahan?.nominalLama != null ? ` (sebelumnya ${rupiahPersis(r.perubahan.nominalLama)})` : "";
+  return `${AKSI_TEKS[r.aksi] || r.aksi}: ${r.sumber} · ${r.jenis === "HARIAN" ? "harian" : "total rentang"} ${rentang} · ${rupiahPersis(r.nominal)}${lama}${r.gantiDetailAd ? " · menggantikan detail Ad" : ""}.`;
 }
 
 /** Tanggal kemarin (batas atas input). */

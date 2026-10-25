@@ -3,8 +3,8 @@ import { AlertTriangle, History, Loader2, Pencil, Save, Eye, XCircle } from "luc
 import { api } from "@/api.js";
 import { Modal } from "@/components/ui/modal.jsx";
 import { cn } from "@/lib/utils.js";
-import { formKosong, validasiForm, bodyBiaya, ringkasRencana, SUMBER_FORM, kemarin, ringkasAsalBiaya, daftarPemilihan, ALASAN_TIDAK_DIPAKAI } from "../biayaIklanLogic.js";
-import { statusBiayaTeks, rupiah } from "../akuisisiLogic.js";
+import { formKosong, validasiForm, bodyBiaya, ringkasRencana, ringkasHasil, SUMBER_FORM, kemarin, ringkasAsalBiaya, daftarPemilihan, ALASAN_TIDAK_DIPAKAI } from "../biayaIklanLogic.js";
+import { statusBiayaTeks, rupiah, rupiahPersis } from "../akuisisiLogic.js";
 import { teksPeriode } from "../periodeLaporan.js";
 import { ImporSpend } from "./IklanBiayaPanel.jsx";
 
@@ -26,7 +26,7 @@ function Riwayat({ id }) {
   return (
     <ol className="space-y-1 text-[12px] text-ink2" aria-label="Riwayat perubahan">
       {d.map((r) => (
-        <li key={r.revisi}><b>#{r.revisi} {r.aksi}</b> · {waktu(r.waktu)} · {r.nominalLama != null ? `${rupiah(r.nominalLama)} → ` : ""}{rupiah(r.nominalBaru)}{r.statusLama && r.statusLama !== r.statusBaru ? ` · ${r.statusLama} → ${r.statusBaru}` : ""} · <span className="t-secondary">“{r.alasan}”</span></li>
+        <li key={r.revisi}><b>#{r.revisi} {r.aksi}</b> · {waktu(r.waktu)} · {r.nominalLama != null ? `${rupiahPersis(r.nominalLama)} → ` : ""}{rupiahPersis(r.nominalBaru)}{r.statusLama && r.statusLama !== r.statusBaru ? ` · ${r.statusLama} → ${r.statusBaru}` : ""} · <span className="t-secondary">“{r.alasan}”</span></li>
       ))}
     </ol>
   );
@@ -69,11 +69,11 @@ export default function KelolaBiayaIklan({ open, onOpenChange, periode, hariIni,
     try {
       const r = await api.simpanBiayaSumber(bodyBiaya(form, { dryRun }));
       if (dryRun) setRencana(r);
-      else { setRencana(null); setInfo(r.ditulis ? `Tersimpan: ${ringkasRencana(r)}` : "Tidak ada perubahan — nilai sama dengan entri yang sudah ada."); await muatDaftar(); onTersimpan?.(); setForm((f) => ({ ...f, nominal: "", alasan: "", konfirmasiNol: false, _sentuh: false })); }
+      else { setRencana(null); setInfo(r.ditulis ? `Tersimpan — ${ringkasHasil(r)}` : "Tidak ada perubahan — nilai sama dengan entri yang sudah ada."); await muatDaftar(); onTersimpan?.(); setForm((f) => ({ ...f, nominal: "", alasan: "", konfirmasiNol: false, _sentuh: false })); }
     } catch (e) {
       setRencana(null);
       const konflik = e?.detail?.konflik;
-      setGalat(e?.code === "BIAYA_KONFLIK" && konflik ? `${e.message}. Bentrok dengan: ${konflik.map((k) => `${k.jenis === "HARIAN" ? k.dari : `${k.dari}–${k.sampai}`} (${rupiah(k.nominal)})`).join("; ")}.` : (e?.message || "Gagal menyimpan"));
+      setGalat(e?.code === "BIAYA_KONFLIK" && konflik ? `${e.message}. Bentrok dengan: ${konflik.map((k) => `${k.jenis === "HARIAN" ? k.dari : `${k.dari}–${k.sampai}`} (${rupiahPersis(k.nominal)})`).join("; ")}.` : (e?.message || "Gagal menyimpan"));
     } finally { setSibuk(false); }
   }
   async function batalkan() {
@@ -178,7 +178,7 @@ export default function KelolaBiayaIklan({ open, onOpenChange, periode, hariIni,
                           <td className="py-1.5 pr-2">{NAMA_SUMBER[e.sourceId] || e.sourceId}{e.accountId ? <span className="t-secondary block">akun {e.accountId}</span> : null}</td>
                           <td className="py-1.5 pr-2">{e.kind === "HARIAN" ? "Harian" : "Total rentang"}{e.override ? <span className="t-secondary block">ganti detail Ad</span> : null}</td>
                           <td className="py-1.5 pr-2 tabular-nums">{e.dateFrom === e.dateTo ? e.dateFrom : `${e.dateFrom} – ${e.dateTo}`}</td>
-                          <td className="py-1.5 pr-2 text-right tabular-nums">{rupiah(e.amount)}</td>
+                          <td className="py-1.5 pr-2 text-right tabular-nums">{rupiahPersis(e.amount)}</td>
                           <td className="py-1.5 pr-2">{e.status === "AKTIF" ? "Aktif" : <span className="text-ink3">Dibatalkan</span>} <span className="t-secondary">rev {e.revision}</span></td>
                           <td className="py-1.5 text-right">
                             <span className="inline-flex gap-1">

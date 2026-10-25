@@ -1,0 +1,72 @@
+EXPECT_PRISMA="backend/prisma/migrations/${MIG_NAME}/migration.sql"$'\n'"backend/prisma/schema.prisma"
+PRISMA_CHANGED="$(printf '%s\n' "$CHANGED" | grep -E '^backend/prisma/' || true)"
+[ "$(printf '%s\n' "$PRISMA_CHANGED" | LC_ALL=C sort)" = "$(printf '%s\n' "$EXPECT_PRISMA" | LC_ALL=C sort)" ] || { printf '%s\n' "$PRISMA_CHANGED"; die "berkas prisma yang berubah HARUS tepat migrasi rilis ini (1 migrasi + schema.prisma yang diaudit)"; }
+# Migrasi yang sudah ada di baseline TIDAK boleh diubah/dihapus (yang sudah diterapkan di produksi): hanya penambahan.
+[ -z "$(sg diff --name-status "$BASE_SHA" "$DEPLOY_SHA" -- backend/prisma/migrations | grep -v '^A' || true)" ] || die "ada migrasi baseline yang DIUBAH/DIHAPUS — dilarang"
+[ "$(sg diff -U0 --no-color "$BASE_SHA" "$DEPLOY_SHA" -- backend/prisma/schema.prisma | grep -v '^index ' | sed -E 's/^@@ [^@]*@@.*$/@@/' | { cat; echo; } | sha256sum | cut -d' ' -f1)" = "$SCHEMA_DIFF_SHA" ] || die "diff schema.prisma BERBEDA dari yang diaudit (pin SCHEMA_DIFF_SHA) — audit ulang lalu perbarui pin"
+[ -z "$(sg diff -U0 --no-color "$BASE_SHA" "$DEPLOY_SHA" -- backend/prisma/schema.prisma | grep '^-' | grep -v '^---' || true)" ] || die "schema.prisma: ada baris DIHAPUS/DIUBAH (harus murni penambahan model baru)"
+ok "schema.prisma: diff identik dengan yang diaudit dan MURNI penambahan (model AdSourceSpendEntry + AdSourceSpendRevision; tabel AdSpend/meta_ad_daily_spend tidak disentuh)"
+[[ "$MIG_NAME" =~ ^[0-9]{14}_[a-z0-9_]+$ ]] || die "nama migrasi tidak valid: $MIG_NAME"
+ALL_SQL="$(sg show "${DEPLOY_SHA}:backend/prisma/migrations/${MIG_NAME}/migration.sql" | tr -d '\r')"
+h="$(printf '%s\n' "$ALL_SQL" | sha256sum | cut -d' ' -f1)"
+[ "$MIG_PIN" = "$h" ] || die "isi migrasi ${MIG_NAME} BERBEDA dari yang diaudit (sha256 ${h}) — audit ulang lalu perbarui pin"
+ok "migrasi ${MIG_NAME}: sha256 cocok pin (${h:0:12})"
+SCAN="$BK_DIR/scan-migrasi.mjs"
+cat > "$SCAN" <<'SCANJS'
+@@SCAN_JS@@
+SCANJS
+sql_bersih() { grep -v '^[[:space:]]*--' | grep -v '^[[:space:]]*$'; }
+HASIL_SCAN="$(printf '%s\n' "$ALL_SQL" | sql_bersih | node "$SCAN")" || die "migrasi memuat pernyataan di luar daftar putih yang diaudit"
+[ "$HASIL_SCAN" = "$SCAN_EXPECT" ] || die "hitungan pernyataan migrasi BERBEDA dari yang diaudit: ${HASIL_SCAN}"
+ok "migrasi: DDL aditif (2 CREATE TABLE baru kosong, 3 indeks [2 unik], 1 FK ON DELETE RESTRICT, 8 CHECK, 1 fungsi + 1 trigger append-only); tanpa ALTER pada tabel lama, tanpa DROP/DELETE/UPDATE/INSERT/RENAME/GRANT/EXTENSION"
+# UJI NEGATIF PEMINDAI: setiap mutan HARUS ditolak (exit ≠ 0) atau menghasilkan hitungan ≠ SCAN_EXPECT. Mutan yang lolos = pemindai tidak bisa dipercaya → berhenti.
+NEG=0
+harus_ditolak() {
+  local nama="$1" teks="$2" o
+  if o="$(printf '%s\n' "$teks" | sql_bersih | node "$SCAN" 2>/dev/null)" && [ "$o" = "$SCAN_EXPECT" ]; then die "uji negatif pemindai: mutan '${nama}' LOLOS (seharusnya ditolak)"; fi
+  NEG=$((NEG+1))
+}
+tambah_stmt() { printf '%s\n%s\n' "$ALL_SQL" "$1"; }
+harus_ditolak "DROP TABLE AdSpend (tabel lama)" "$(tambah_stmt 'DROP TABLE "AdSpend";')"
+harus_ditolak "DROP TABLE meta_ad_daily_spend" "$(tambah_stmt 'DROP TABLE "meta_ad_daily_spend";')"
+harus_ditolak "DROP TABLE tabel baru" "$(tambah_stmt 'DROP TABLE "ad_source_spend_revisions";')"
+harus_ditolak "UPDATE AdSpend (backfill/koreksi)" "$(tambah_stmt 'UPDATE "AdSpend" SET "amount" = 0;')"
+harus_ditolak "UPDATE meta_ad_daily_spend" "$(tambah_stmt 'UPDATE "meta_ad_daily_spend" SET "spend" = 0;')"
+harus_ditolak "DELETE FROM payments" "$(tambah_stmt 'DELETE FROM "payments";')"
+harus_ditolak "INSERT ke tabel baru (backfill)" "$(tambah_stmt "INSERT INTO \"ad_source_spend_entries\" (id) VALUES ('x');")"
+harus_ditolak "INSERT ... SELECT dari AdSpend (impor biaya produksi)" "$(tambah_stmt 'INSERT INTO "ad_source_spend_entries" SELECT * FROM "AdSpend";')"
+harus_ditolak "INSERT ke tabel lama" "$(tambah_stmt "INSERT INTO \"AdSpend\" (id) VALUES ('x');")"
+harus_ditolak "TRUNCATE" "$(tambah_stmt 'TRUNCATE "AdSpend";')"
+harus_ditolak "ADD COLUMN pada AdSpend" "$(tambah_stmt 'ALTER TABLE "AdSpend" ADD COLUMN "x" TEXT;')"
+harus_ditolak "ADD COLUMN pada tabel baru" "$(tambah_stmt 'ALTER TABLE "ad_source_spend_entries" ADD COLUMN "x" TEXT;')"
+harus_ditolak "DROP COLUMN" "$(tambah_stmt 'ALTER TABLE "AdSpend" DROP COLUMN "amount";')"
+harus_ditolak "RENAME COLUMN" "$(tambah_stmt 'ALTER TABLE "AdSpend" RENAME COLUMN "amount" TO "a";')"
+harus_ditolak "ALTER COLUMN tipe" "$(tambah_stmt 'ALTER TABLE "AdSpend" ALTER COLUMN "amount" TYPE BIGINT;')"
+harus_ditolak "tabel baru liar" "$(tambah_stmt 'CREATE TABLE "x" ("id" UUID NOT NULL, CONSTRAINT "x_pkey" PRIMARY KEY ("id"));')"
+harus_ditolak "salinan tabel lama (CREATE TABLE AS)" "$(tambah_stmt 'CREATE TABLE "ad_source_spend_copy" AS SELECT * FROM "AdSpend";')"
+harus_ditolak "indeks pada tabel lama" "$(tambah_stmt 'CREATE INDEX "x_idx" ON "AdSpend"("amount");')"
+harus_ditolak "indeks unik pada tabel lama" "$(tambah_stmt 'CREATE UNIQUE INDEX "x_uq" ON "meta_ad_daily_spend"("id");')"
+harus_ditolak "FK ke tabel lain" "$(printf '%s\n' "$ALL_SQL" | sed 's/REFERENCES "ad_source_spend_entries"("id")/REFERENCES "User"("id")/')"
+harus_ditolak "FK CASCADE (RESTRICT → CASCADE)" "$(printf '%s\n' "$ALL_SQL" | sed 's/ON DELETE RESTRICT/ON DELETE CASCADE/')"
+harus_ditolak "FK SET NULL" "$(printf '%s\n' "$ALL_SQL" | sed 's/ON DELETE RESTRICT/ON DELETE SET NULL/')"
+harus_ditolak "FK ditambah pada tabel lama" "$(tambah_stmt 'ALTER TABLE "payments" ADD CONSTRAINT "x_fkey" FOREIGN KEY ("id") REFERENCES "ad_source_spend_entries"("id") ON DELETE RESTRICT ON UPDATE CASCADE;')"
+harus_ditolak "trigger dibuang" "$(printf '%s\n' "$ALL_SQL" | grep -v 'CREATE TRIGGER')"
+harus_ditolak "trigger memakai fungsi lain" "$(printf '%s\n' "$ALL_SQL" | sed 's/EXECUTE FUNCTION "ad_source_spend_revisions_append_only"()/EXECUTE FUNCTION "evil_fn"()/')"
+harus_ditolak "trigger pada tabel lama" "$(tambah_stmt 'CREATE TRIGGER "x_trg" BEFORE UPDATE OR DELETE ON "AdSpend" FOR EACH ROW EXECUTE FUNCTION "ad_source_spend_revisions_append_only"();')"
+harus_ditolak "trigger pada tabel entri (menghambat pembaruan sah)" "$(tambah_stmt 'CREATE TRIGGER "x_trg" BEFORE UPDATE OR DELETE ON "ad_source_spend_entries" FOR EACH ROW EXECUTE FUNCTION "ad_source_spend_revisions_append_only"();')"
+harus_ditolak "trigger dilonggarkan (hanya UPDATE)" "$(printf '%s\n' "$ALL_SQL" | sed 's/BEFORE UPDATE OR DELETE ON "ad_source_spend_revisions"/BEFORE UPDATE ON "ad_source_spend_revisions"/')"
+harus_ditolak "DISABLE TRIGGER" "$(tambah_stmt 'ALTER TABLE "ad_source_spend_revisions" DISABLE TRIGGER ALL;')"
+harus_ditolak "DROP TRIGGER" "$(tambah_stmt 'DROP TRIGGER "ad_source_spend_revisions_no_update" ON "ad_source_spend_revisions";')"
+harus_ditolak "DROP CONSTRAINT" "$(tambah_stmt 'ALTER TABLE "ad_source_spend_entries" DROP CONSTRAINT "ad_source_spend_entries_amount_chk";')"
+harus_ditolak "salah satu CHECK dibuang (nominal tak lagi >= 0)" "$(printf '%s\n' "$ALL_SQL" | grep -v 'ad_source_spend_entries_amount_chk')"
+harus_ditolak "indeks unik kunci idempotensi dibuang" "$(printf '%s\n' "$ALL_SQL" | grep -v 'CREATE UNIQUE INDEX "ad_source_spend_entries_key"')"
+harus_ditolak "indeks unik dijadikan tidak unik" "$(printf '%s\n' "$ALL_SQL" | sed 's/CREATE UNIQUE INDEX "ad_source_spend_entries_key"/CREATE INDEX "ad_source_spend_entries_key"/')"
+harus_ditolak "fungsi liar" "$(tambah_stmt 'CREATE FUNCTION "evil"() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END; $$;')"
+harus_ditolak "fungsi di luar daftar (OR REPLACE fungsi lama)" "$(tambah_stmt 'CREATE OR REPLACE FUNCTION production_adopsi_append_only() RETURNS trigger AS $$ BEGIN RETURN NEW; END; $$ LANGUAGE plpgsql;')"
+harus_ditolak "badan fungsi memuat DROP" "$(printf '%s\n' "$ALL_SQL" | sed "s/RAISE EXCEPTION 'ad_source_spend_revisions bersifat append-only';/DROP TABLE \"AdSpend\";/")"
+harus_ditolak "badan fungsi dilonggarkan (RETURN NEW)" "$(printf '%s\n' "$ALL_SQL" | sed "s/RAISE EXCEPTION 'ad_source_spend_revisions bersifat append-only';/RETURN NEW;/")"
+harus_ditolak "CREATE EXTENSION" "$(tambah_stmt 'CREATE EXTENSION IF NOT EXISTS "pgcrypto";')"
+harus_ditolak "GRANT" "$(tambah_stmt 'GRANT ALL ON "ad_source_spend_entries" TO PUBLIC;')"
+harus_ditolak "REVOKE" "$(tambah_stmt 'REVOKE ALL ON "AdSpend" FROM PUBLIC;')"
+harus_ditolak "enum diubah" "$(tambah_stmt "ALTER TYPE \"LeadSource\" ADD VALUE IF NOT EXISTS 'LIAR';")"
+ok "uji negatif pemindai: ${NEG} mutan (DROP/UPDATE/DELETE/INSERT/TRUNCATE/ALTER lama/FK CASCADE+SET NULL/trigger/CHECK/indeks unik/fungsi liar/EXTENSION/GRANT) SEMUA ditolak"

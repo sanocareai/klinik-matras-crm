@@ -1,0 +1,18 @@
+# RILIS "AKUISISI — periode tunggal + biaya iklan tingkat SUMBER + navigasi sumber": WEB + BACKEND + 1 MIGRASI ADITIF (2 tabel baru kosong). RELEASE-DIRECTORY di atas release aktif (BASE_SHA). FAIL-CLOSED.
+#   Kode: tab Akuisisi & Iklan memakai SATU periode (filter global Laporan, state di URL ?tab&dari&sampai&sumber); /sumber memuat biaya per sumber ("Atribusi label CRM": biaya sumber ÷ kohort label CRM — BUKAN CPA campaign),
+#   nilai order vs pembayaran tercatat bersih, CPA lunas, Booked/Cash ROAS, total sumber berbayar, cutoff evaluasi; "Kelola biaya iklan" (input manual harian / total rentang / impor detail Ad; audit append-only; idempoten);
+#   prioritas biaya: override manual eksplisit > detail Ad (API > Windsor > CSV) > manual (hanya hari tanpa detail); detail Ad PARSIAL (manual > detail) = DETAIL_AD_SELISIH, KPI null; ekspor CSV; logo merek lokal.
+#   Migrasi: 2 CREATE TABLE baru (kosong) + 3 indeks (2 unik) + 1 FK ON DELETE RESTRICT + 8 CHECK + 1 fungsi + 1 trigger (revisi append-only). Tidak ada ALTER TABLE pada tabel lama, tidak ada backfill. Tabel AdSpend (Pengaturan Sales) TIDAK diubah (hanya dibaca).
+#   Produksi: rilis ini TIDAK mengimpor atau menulis biaya iklan apa pun, tidak mengubah campaign/budget Meta, leadSource, pembayaran, atau label customer. Smoke hanya baca + penolakan/dry-run sebelum menyentuh data.
+# URUTAN AMAN: (1) gerbang sumber (ancestry, allowlist, pin sha256 migrasi + diff schema, pemindai DDL + mutan negatif) → (2) audit produksi baca-saja + keadaan (SEGAR/LANJUT) + sidik jari → (3) backup + checksum → (4) build web + image
+#              → (5) REHEARSAL (restore NYATA, migrasi dengan image baru, struktur + uji constraint fungsional, kode baru terhadap data restore, kode LAMA terhadap DB bermigrasi, rekonsiliasi lama=baru, sidik jari sebelum=sesudah)
+#              → (6) migrate deploy produksi SATU kali (backend lama tetap melayani) → (7) switch → (8) verifikasi + smoke baca-saja (izin, periode/URL, rekonsiliasi, tanpa jejak tulis).
+#
+#   cat scripts/release-akuisisi-biaya.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/ab1.sh'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/ab1.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'      # baca-saja: produksi TIDAK diubah
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/ab1.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rehearsal-only > /tmp/ab1r.out 2>&1 < /dev/null &'   # SEMUA gerbang sampai rehearsal pada restore nyata (migrasi diterapkan HANYA pada DB sementara); TANPA migrasi/switch produksi
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/ab1.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/ab1.out 2>&1 < /dev/null &'   # rilis penuh (hanya setelah persetujuan)
+#
+# ROLLBACK KODE: tabel baru ADITIF dan tidak memengaruhi pembayaran/jurnal/stok; kode lama mengabaikannya (TERBUKTI pada rehearsal: image lama menghitung /sumber, /iklan, /d7 identik terhadap DB bermigrasi berisi entri biaya).
+#   Dampak rollback: entri biaya manual (bila sudah diinput) tetap tersimpan tetapi tidak terlihat oleh kode lama; KPI biaya per sumber hilang dari layar. Jalankan scripts/rollback-guard-akuisisi-biaya.sh (baca-saja) untuk melihat jumlah entri dan perintah ekspor sebelum rollback.
+# (dibangkitkan oleh scripts/gen-release-akuisisi-biaya.cjs dari scripts/release-status-kerja-buka-pekerjaan.sh + scripts/templates/release-akuisisi-biaya/*; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang)

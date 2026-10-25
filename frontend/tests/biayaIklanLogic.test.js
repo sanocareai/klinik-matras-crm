@@ -12,7 +12,7 @@ test("validasiForm: cermin aturan server — nominal, Rp0, tanggal, alasan, akun
   for (const [n, kunci] of [["", "nominal"], ["-1", "nominal"], ["1,5", "nominal"], ["1.500.000", "nominal"], ["1e6", "nominal"], ["abc", "nominal"], ["12.345", "nominal"]]) assert.ok(validasiForm(f({ nominal: n }), HARI_INI).galat[kunci], `nominal "${n}"`);
   assert.ok(validasiForm(f({ nominal: "0" }), HARI_INI).galat.nominal, "Rp0 butuh konfirmasi");
   assert.equal(validasiForm(f({ nominal: "0", konfirmasiNol: true }), HARI_INI).valid, true);
-  assert.ok(validasiForm(f({ dari: HARI_INI }), HARI_INI).galat.sampai, "hari berjalan ditolak");
+  assert.ok(validasiForm(f({ dari: HARI_INI }), HARI_INI).galat.dari, "hari berjalan ditolak (tampil di kolom Tanggal pada tab Harian)");
   assert.ok(validasiForm(f({ dari: "" }), HARI_INI).galat.dari);
   assert.ok(validasiForm(f({ jenis: "TOTAL_RENTANG", dari: "2026-10-10", sampai: "2026-10-05" }), HARI_INI).galat.sampai);
   assert.ok(validasiForm(f({ jenis: "TOTAL_RENTANG", dari: "2026-01-01", sampai: "2026-10-01" }), HARI_INI).galat.sampai, ">93 hari");
@@ -107,4 +107,17 @@ test("daftarPemilihan: sumber biaya + alasan dari server; peringatan (selisih/bl
   assert.equal(statusBiayaTeks("DETAIL_AD_SELISIH"), "Detail Ad mungkin parsial");
   const g = ringkasAsalBiaya({ hari: { adDetail: 1 }, selisihDetailManual: [{ manualLebihBesar: true }, { manualLebihBesar: false }] });
   assert.ok(g.some((x) => /1 entri manual lebih besar dari detail Ad/.test(x)));
+});
+
+test("uang input tampil PERSIS (sen tidak dibulatkan): rupiahPersis dipakai pratinjau, daftar, riwayat", async () => {
+  const { rupiahPersis } = await import("../src/features/laporan/akuisisiLogic.js");
+  assert.equal(rupiahPersis(150000), "Rp150.000"); assert.equal(rupiahPersis(175000.5), "Rp175.000,50"); assert.equal(rupiahPersis(0), "Rp0"); assert.equal(rupiahPersis(null), "—");
+  assert.match(ringkasRencana({ aksi: "UBAH", sumber: "TIKTOK", jenis: "HARIAN", dari: "2026-10-05", sampai: "2026-10-05", nominal: 175000.5, perubahan: { nominalLama: 150000 } }), /Rp175\.000,50 \(sebelumnya Rp150\.000\)/);
+});
+
+test("ringkasHasil: sesudah simpan memakai bentuk lampau (tidak 'akan dibuat')", async () => {
+  const { ringkasHasil } = await import("../src/features/laporan/biayaIklanLogic.js");
+  assert.match(ringkasHasil({ aksi: "BARU", sumber: "META", jenis: "HARIAN", dari: "2026-10-16", sampai: "2026-10-16", nominal: 99999999 }), /^Entri baru dibuat: META · harian 2026-10-16 · Rp99\.999\.999\.$/);
+  assert.match(ringkasHasil({ aksi: "UBAH", sumber: "TIKTOK", jenis: "HARIAN", dari: "2026-10-05", sampai: "2026-10-05", nominal: 175000.5, perubahan: { nominalLama: 150000 } }), /^Entri diperbarui \(revisi tercatat\): .*sebelumnya Rp150\.000/);
+  assert.equal(ringkasHasil(null), null);
 });

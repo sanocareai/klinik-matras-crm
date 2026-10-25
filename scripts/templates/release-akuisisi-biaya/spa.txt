@@ -1,0 +1,5 @@
+# URL laporan ber-state (?tab&dari&sampai&sumber) harus dilayani aplikasi web dengan bundel BARU (refresh / tautan / tombol Back membaca periode dari URL).
+URL_DEEP="${PUBLIC_URL}/laporan?tab=Akuisisi&dari=${PER_DARI}&sampai=${PER_SAMPAI}&sumber=TIKTOK"
+[ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$URL_DEEP")" = "200" ] || die "URL laporan ber-state tidak dilayani (200): ${URL_DEEP}"
+[ "$(curl -fsS --max-time 15 "$URL_DEEP" | grep -o 'index-[A-Za-z0-9_-]*\.js' | sed -n 1p)" = "$NEW_INDEX" ] || die "URL laporan ber-state melayani bundel BUKAN dist baru (${NEW_INDEX})"
+ok "URL laporan ber-state (tab/periode/sumber) dilayani dengan bundel baru ${NEW_INDEX}"

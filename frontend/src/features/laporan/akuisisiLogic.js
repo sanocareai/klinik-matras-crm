@@ -28,6 +28,8 @@ export function urutkan(sumber, metrikId = "berOrder") {
 export const angka = (n) => (n == null ? "—" : Number(n).toLocaleString("id-ID"));
 export const formatPersen = (n) => (n == null ? "—" : `${Number(n).toLocaleString("id-ID", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}%`);
 export const rupiah = (n) => (n == null ? "—" : "Rp" + Math.round(Number(n)).toLocaleString("id-ID"));
+/** Uang INPUT (entri biaya): tampil persis seperti yang disimpan — sen hanya bila ada (175000.5 → Rp175.000,50), tidak dibulatkan. */
+export const rupiahPersis = (n) => (n == null ? "—" : "Rp" + Number(n).toLocaleString("id-ID", { minimumFractionDigits: Number.isInteger(Number(n)) ? 0 : 2, maximumFractionDigits: 2 }));
 export const kali = (n) => (n == null ? "—" : Number(n).toLocaleString("id-ID", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "×");
 
 /** Nilai + denominator terlihat untuk satu metrik. */

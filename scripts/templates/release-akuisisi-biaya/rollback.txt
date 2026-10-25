@@ -1,0 +1,9 @@
+LANGKAH disarankan sebelum rollback KODE setelah migrasi/switch: jalankan GUARD (baca-saja)
+   bash ${NEW_DIR}/scripts/rollback-guard-akuisisi-biaya.sh
+   - Guard TIDAK memblokir (tabel biaya tidak memengaruhi pembayaran/jurnal/stok); ia mencetak jumlah entri biaya manual + revisi yang akan TIDAK TERLIHAT oleh kode lama dan perintah ekspor CSV untuk menyimpannya. exit 2 = guard gagal membaca (periksa dulu).
+Rollback kode (tidak menghapus tabel maupun entri; TERBUKTI aman pada rehearsal: kode lama menghitung /sumber, /iklan, /d7 identik terhadap DB bermigrasi berisi entri biaya):
+   cd ${PREV_DIR:-<release-sebelumnya>}
+   docker tag ${ROLLBACK_TAG:-<tag-rollback>} ${IMG_NAME:-klinik-matras-backend:latest}
+   SANSS_PERSIST_ROOT=${PERSIST} docker compose -p ${PROJECT} -f docker-compose.yml -f docker-compose.release.yml up -d --no-deps --force-recreate backend
+Migrasi bersifat ADITIF (2 tabel baru + 3 indeks + 1 FK + 8 CHECK + 1 fungsi + 1 trigger): tabel dibiarkan terpasang setelah rollback kode. Tidak ada pembayaran, jurnal, stok, label customer, atau spend per Ad yang dibuat/diubah oleh rilis ini; yang hilang dari layar hanya tampilan biaya per sumber, CPA/ROAS sumber, dan tombol Kelola biaya iklan.
+Pemulihan database penuh hanya bila terjadi kerusakan data: gzip -dc ${BACKUP_FILE:-<backup>} | psql ... (lihat checksum di atas) — MENGHAPUS semua perubahan sesudah backup (transaksi sah pengguna); gunakan hanya atas keputusan Owner.

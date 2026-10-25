@@ -1,0 +1,12 @@
+# KOMPATIBILITAS ROLLBACK KODE + REKONSILIASI LAMA=BARU: image LAMA (yang sedang melayani produksi) dijalankan terhadap salinan restore yang SUDAH bermigrasi dan berisi entri biaya uji (FIXTURE; hanya di DB sementara).
+# Kode lama harus menghitung /sumber persis seperti kode baru untuk semua angka non-biaya (lead, spam, ber-order, membayar, lunas, nilai order, uang) dan tidak melihat biaya manual.
+NET_PROD="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$CID_OLD" | awk '{print $1}')"
+[ -n "$NET_PROD" ] || { reh_drop; die "jaringan docker produksi tidak terbaca (uji kode lama)"; }
+docker run --rm -i --network "$NET_PROD" --env-file "$PERSIST/backend/.env" -e DATABASE_URL="$RH_URL" -e PER_DARI="$PER_DARI" -e PER_SAMPAI="$PER_SAMPAI" "$ROLLBACK_TAG" node --input-type=module - <<'LAMANODE' > "$BK_DIR/rehearsal-kode-lama.log" 2>&1 || { cat "$BK_DIR/rehearsal-kode-lama.log"; reh_drop; die "uji KODE LAMA terhadap DB bermigrasi GAGAL — rollback kode TIDAK terbukti aman (lihat rehearsal-kode-lama.log)"; }
+@@LAMA_JS@@
+LAMANODE
+AG_BARU="$(grep '^AGREGAT_BARU=' "$BK_DIR/rehearsal-koreksi.log" | tail -n 1 | sed 's/^AGREGAT_BARU=//')"
+AG_LAMA="$(grep '^AGREGAT_LAMA=' "$BK_DIR/rehearsal-kode-lama.log" | tail -n 1 | sed 's/^AGREGAT_LAMA=//')"
+[ -n "$AG_BARU" ] && [ -n "$AG_LAMA" ] || { reh_drop; die "agregat lama/baru tidak tercetak"; }
+[ "$AG_BARU" = "$AG_LAMA" ] || { printf 'baru: %s\nlama: %s\n' "$AG_BARU" "$AG_LAMA"; reh_drop; die "REKONSILIASI GAGAL: angka kode LAMA ≠ kode BARU pada data restore yang sama (lead/ber-order/membayar/lunas/nilai/uang per sumber)"; }
+ok "kode LAMA terhadap DB bermigrasi berisi entri biaya: $(grep -c '^OK' "$BK_DIR/rehearsal-kode-lama.log") pemeriksaan lulus; agregat per sumber IDENTIK dengan kode baru (rekonsiliasi lama=baru) → ROLLBACK KODE aman"
