@@ -31,7 +31,7 @@ DEPLOY_SHORT="${DEPLOY_SHA:0:8}"; BASE_SHORT="${BASE_SHA:0:8}"; NEW_DIR="$RELEAS
 TS="$(date +%Y%m%d_%H%M%S)"; BK_DIR="$HOME/release-backups/${TAG_KODE}-${DEPLOY_SHORT}-${TS}"
 ROLLBACK_TAG="klinik-matras-backend:rollback-pre-${TAG_KODE}-${DEPLOY_SHORT}"
 
-ALLOWED_RE='^(backend/src/services/attribution/(biayaKpi|iklanReport|spend)\.js|backend/tests/(atribusiSpendKpi|releaseAtribusiKpiKode|releaseAtribusiSpendLengkap)\.test\.js|docs/ATRIBUSI-SPEND-LENGKAP\.md|scripts/release-atribusi-spend-lengkap\.sh)$'
+ALLOWED_RE='^(backend/src/services/attribution/(biayaKpi|iklanReport|spend)\.js|backend/tests/(atribusiSpendKpi|releaseAtribusiKpiKode|releaseAtribusiSpendLengkap)\.test\.js|backend/tests/integration/atribusiIklan.integration.test.js|docs/ATRIBUSI-SPEND-LENGKAP\.md|scripts/release-atribusi-spend-lengkap\.sh)$'
 BACKEND_SRC_EXPECT="backend/src/services/attribution/biayaKpi.js backend/src/services/attribution/iklanReport.js backend/src/services/attribution/spend.js"
 FRONTEND_SRC_EXPECT=""
 declare -A PINS=(
