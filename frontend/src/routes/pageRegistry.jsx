@@ -31,6 +31,7 @@ const TrackingLinks = lazy(() => import("../pages/TrackingLinks.jsx"));
 const BroadcastSales = lazy(() => import("../pages/BroadcastSales.jsx"));
 const CoPilot       = lazy(() => import("../pages/CoPilot.jsx"));
 const Portal        = lazy(() => import("../pages/Portal.jsx"));
+const HubLaunch      = lazy(() => import("../pages/HubLaunch.jsx"));
 const DivisionPage  = lazy(() => import("../pages/DivisionPage.jsx"));
 const Notifications = lazy(() => import("../pages/Notifications.jsx"));
 const ProductionMaterialUsage = lazy(() => import("../pages/bengkel/ProductionMaterialUsage.jsx"));
@@ -200,6 +201,8 @@ export function RouteFallback() {
 const PAGES_DASAR = [
   { path: "/portal",      render: () => <Portal /> },
   { path: "/portal/:key", render: (ctx) => <DivisionPage user={ctx.user} /> },
+  // D-200 tahap 4 — halaman peluncuran Task & Meeting, lihat HubLaunch.jsx.
+  { path: "/hub/launch",  render: () => <HubLaunch /> },
   { path: "/bengkel/materials", render: () => <ProductionMaterialUsage /> },
   { path: "/bengkel/kpi", render: () => <DemoPage><ProductionKpi /></DemoPage> },
   { path: "/armada/dashboard", render: () => <ArmadaDashboard /> },

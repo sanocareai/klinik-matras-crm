@@ -233,6 +233,19 @@ export const api = {
   // sungguhan. JANGAN pernah pakai nama "getMe" lagi di file ini.
   getMyPortals: () => request("/auth/me"),
 
+  // D-200 tahap 4 — logout: satu-satunya pekerjaan NYATA (login web stateless,
+  // JWT tidak bisa dicabut di server) adalah memberi tahu Task & Meeting
+  // mencabut sesinya. Dipanggil best-effort — App.jsx#handleLogout TETAP
+  // menghapus token lokal walau panggilan ini gagal/timeout.
+  logout: () => request("/auth/logout", { method: "POST" }),
+
+  // Task & Meeting — dipanggil dari HubLaunch.jsx SETELAH mendarat lewat HUB
+  // GET /sso/start (yang mengirim state_hash & next lewat query string).
+  // Bearer JWT SANSS biasa (authHeaders() bawaan `request`) — bukan endpoint
+  // publik. stateHash WAJIB (anti login-CSRF, lihat docs/HUB-SSO.md).
+  postHubHandoff: ({ stateHash, next }) =>
+    request("/hub/handoff", { method: "POST", body: JSON.stringify({ stateHash, next }) }),
+
   // Bengkel — Papan Produksi Harian (Sano Hub Phase 1, D-014)
   getProductionBoard: (date) => request(`/production/board${date ? `?date=${date}` : ""}`),
   // Production Command Center (Production Core Slice 2E) — SATU endpoint
