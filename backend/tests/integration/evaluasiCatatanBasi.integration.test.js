@@ -8,6 +8,7 @@ import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestUser, createTestMaterial, createTestUnit, seedBalance } from "./setup/fixtures.js";
 import { rencanakanImpor, terapkanImpor, evaluasiUlang, periksaKeadaanCatatan, ambilCatatanHistoris, ringkasCatatanUnits, resetKeadaanEfektif, tungguPenyegaran } from "../../src/services/catatanPemakaianHistoris.js";
 import { rencanakanPosting, jalankanPosting } from "../../src/services/postingPemakaianHistoris.js";
+import { ringkasRencana } from "../../src/services/postingPersetujuanTerikat.js";
 import { koreksiCatatan } from "../../src/services/koreksiPemakaian.js";
 import { postStockMovement } from "../../src/services/inventoryLedger.js";
 
@@ -18,7 +19,8 @@ test.after(async () => { await truncateAll(); await testPrisma.$disconnect(); })
 const HDR = 'No,No. Resi / Order,Tgl Selesai,Bulan Selesai,Nama Pelanggan,Nama Sales,Ukuran Kasur,Jenis Layanan,Tgl Komplain,PIC Komplain,PIC / Teknisi,CORNER,Kategori Bahan,Nama Material / Bahan (SANO),Spesifikasi / Detail,Barang,Qty Pakai,Satuan,Harga Satuan (Rp),Total Biaya Bahan (Rp),"Total Penjualan\n(Rp)",Insentif PIC,Insentif Corner,Keterangan / QC';
 const baris = (no, order, tgl, kat, nama, qty, sat) => `${no},${order},${tgl},SEP,Pelanggan,Sales,200 x 160,Paket,,,RISDI,,${kat},${nama},,BAHAN,"${qty}",${sat},,,,,,QC OK`;
 const WIB = (iso) => new Date(`${iso}T00:00:00+07:00`);
-const PERSETUJUAN = (hash) => ({ hashDisetujui: hash, rujukan: "OWNER-2026-10-25", disetujuiOleh: "Owner Uji" });
+const terikatDari = (p, rujukan = "OWNER-2026-10-25") => { const r = ringkasRencana(p); return { hash: r.hash, unitIds: r.unitIds, daftarOrder: r.daftarOrder, jumlahOrder: r.jumlahOrder, jumlahTrx: r.jumlahTrx, rujukan }; };
+const PERSETUJUAN = (p) => (typeof p === "string" ? { hashDisetujui: p, rujukan: "OWNER-2026-10-25", disetujuiOleh: "Owner Uji", terikat: {} } : { hashDisetujui: p.hash, rujukan: "OWNER-2026-10-25", disetujuiOleh: "Owner Uji", terikat: terikatDari(p) });
 
 async function dunia() {
   resetKeadaanEfektif();
@@ -82,10 +84,10 @@ test("B3. posting berikutnya sesudah perubahan di luar modul: rencana basi ditol
   const planLama = await rencanakanPosting(testPrisma, { unitIds: [w.uA.id] });           // dihitung SEBELUM stok dikurangi
   assert.equal(planLama.jumlah, 1);
   await ledger(w, w.mx.id, "ISSUE", -5);
-  await assert.rejects(() => jalankanPosting(testPrisma, { persetujuan: PERSETUJUAN(planLama.hash), aktor: w.B, unitIds: [w.uA.id] }), /BERBEDA dari yang disetujui|tidak lagi siap/);
+  await assert.rejects(() => jalankanPosting(testPrisma, { persetujuan: PERSETUJUAN(planLama), aktor: w.B, unitIds: [w.uA.id] }), /BERBEDA dari yang disetujui|tidak lagi siap/);
   assert.equal(await testPrisma.stockMovement.count({ where: { unitId: w.uA.id, type: "ISSUE" } }), 0, "tidak ada pengeluaran dari catatan basi");
   const planB = await rencanakanPosting(testPrisma, { unitIds: [w.uB.id] }); assert.equal(planB.jumlah, 2, "uB-MY dan uB-MX (kini cukup) ada dalam rencana efektif");
-  const h = await jalankanPosting(testPrisma, { persetujuan: PERSETUJUAN(planB.hash), aktor: w.B, unitIds: [w.uB.id] });
+  const h = await jalankanPosting(testPrisma, { persetujuan: PERSETUJUAN(planB), aktor: w.B, unitIds: [w.uB.id] });
   assert.equal(h.diposting.length, 2); assert.equal(h.gagal.length, 0, JSON.stringify(h.gagal));
   const d = await dilihat(w); samaDenganMesin(d, await dipakaiMesin(w));
   assert.equal(d.A_MX, "PERLU_DICEK"); assert.equal(d.C_MX, "PERLU_DICEK"); await tungguPenyegaran(); assert.deepEqual(await tersimpan(w), d); await titikTetap("B3");
@@ -99,7 +101,7 @@ test("B4. klik ulang / baca berulang: stabil, tanpa penulisan tambahan; klik gan
   await tungguPenyegaran(); const ev = await testPrisma.unitUsageNoteEvent.count();
   await dilihat(w); await dilihat(w); await tungguPenyegaran(); assert.equal(await testPrisma.unitUsageNoteEvent.count(), ev, "pembacaan berulang tidak menulis peristiwa");
   const p = await rencanakanPosting(testPrisma, { unitIds: [w.uB.id] });
-  const rr = await Promise.allSettled([jalankanPosting(testPrisma, { persetujuan: PERSETUJUAN(p.hash), aktor: w.B, unitIds: [w.uB.id] }), jalankanPosting(testPrisma, { persetujuan: PERSETUJUAN(p.hash), aktor: w.B, unitIds: [w.uB.id] })]);
+  const rr = await Promise.allSettled([jalankanPosting(testPrisma, { persetujuan: PERSETUJUAN(p), aktor: w.B, unitIds: [w.uB.id] }), jalankanPosting(testPrisma, { persetujuan: PERSETUJUAN(p), aktor: w.B, unitIds: [w.uB.id] })]);
   assert.equal(await testPrisma.stockMovement.count({ where: { unitId: w.uB.id, type: "ISSUE" } }), 2, "tepat dua pergerakan (MY dan MX) walau klik ganda");
   assert.ok(rr.some((x) => x.status === "fulfilled" && x.value.diposting.length === 2));
   await tungguPenyegaran(); await titikTetap("B4");
@@ -112,7 +114,7 @@ test("B5. transaksi bersamaan: pengeluaran biasa ∥ GR ∥ posting ∥ koreksi 
   const waktu = async (f) => { const t = Date.now(); const v = await f(); return { ms: Date.now() - t, v }; };
   const hasil = await Promise.allSettled([
     waktu(() => ledger(w, w.mx.id, "ISSUE", -2)), waktu(() => ledger(w, w.my.id, "ISSUE", -3)), waktu(() => ledger(w, w.mx.id, "RECEIPT", 3)),
-    waktu(() => jalankanPosting(testPrisma, { persetujuan: PERSETUJUAN(p.hash), aktor: w.B, unitIds: [w.uC.id] })),
+    waktu(() => jalankanPosting(testPrisma, { persetujuan: PERSETUJUAN(p), aktor: w.B, unitIds: [w.uC.id] })),
     waktu(() => koreksiCatatan(testPrisma, { noteId: nC.id, perubahan: { qty: 3 }, alasan: "Admin Sales konfirmasi 3 meter", kunci: `uji-b5-${Date.now()}-aaaaaaaa`, aktor: w.A })),
   ]);
   jalan = false; await pembaca;

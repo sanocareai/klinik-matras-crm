@@ -9,6 +9,8 @@ import { makeClient } from "./setup/httpClient.js";
 import { rencanakanImpor, terapkanImpor, ambilCatatanHistoris } from "../../src/services/catatanPemakaianHistoris.js";
 import { koreksiCatatan, konfirmasiCatatan, kecualikanCatatan, ajukanKoreksiPemakaian, setujuiKoreksiPemakaian, tolakKoreksiPemakaian, batalkanKoreksiPemakaian, pratinjauKoreksiPemakaian, riwayatKoreksiPemakaian } from "../../src/services/koreksiPemakaian.js";
 import { rencanakanPosting, jalankanPosting, postingSatuUnit } from "../../src/services/postingPemakaianHistoris.js";
+import { ringkasRencana } from "../../src/services/postingPersetujuanTerikat.js";
+const terikatDari = (p, rujukan = "OWNER-2026-10-24") => { const r = ringkasRencana(p); return { hash: r.hash, unitIds: r.unitIds, daftarOrder: r.daftarOrder, jumlahOrder: r.jumlahOrder, jumlahTrx: r.jumlahTrx, rujukan }; };
 import { koreksiValuasiPergerakan, valuasiEfektif } from "../../src/services/finance/koreksiValuasi.js";
 import { bacaJejakUnit } from "../../src/services/finance/biayaBahan.js";
 
@@ -119,13 +121,13 @@ test("P1. posting terpadu: hanya rencana yang disetujui; tanggal historis; pelak
   const rencana = await rencanakanPosting(testPrisma); assert.equal(rencana.jumlah, 3); assert.deepEqual(rencana.transaksi.map((t) => t.kodeBahan), ["R-SOFT", "R-KAIN", "R-SOFT"]);
   assert.equal(rencana.transaksi[0].createdAtUTC, "2026-08-31T17:00:00.000Z");
   await assert.rejects(() => jalankanPosting(testPrisma, { persetujuan: { hashDisetujui: rencana.hash, rujukan: "", disetujuiOleh: "Owner" }, aktor: w.B }), /Posting butuh/);
-  await assert.rejects(() => jalankanPosting(testPrisma, { persetujuan: { hashDisetujui: "salah", rujukan: "OWNER-2026-10-24", disetujuiOleh: "Owner" }, aktor: w.B }), /BERBEDA dari yang disetujui/);
+  await assert.rejects(() => jalankanPosting(testPrisma, { persetujuan: { hashDisetujui: "salah", rujukan: "OWNER-2026-10-24", disetujuiOleh: "Owner", terikat: terikatDari(rencana) }, aktor: w.B }), /BERBEDA dari yang disetujui/);
   const sKain = await saldo(w.kain.id); const sSoft = await saldo(w.soft.id);
   // saldo soft turun setelah rencana disetujui → u2 (butuh 2) gagal, u1 (butuh 1) tetap jalan: kegagalan satu order tidak membatalkan order lain; u2 atomik (kain-nya juga tidak terposting)
   await testPrisma.stockMovement.create({ data: { materialId: w.soft.id, type: "ADJUSTMENT", qty: -8.5, reason: "uji", note: "uji penyusutan saldo", createdAt: WIB("2026-09-01") } });
   const mv0 = await testPrisma.stockMovement.count();
   // Rencana kini dihitung dari keadaan EFEKTIF (ledger sekarang): rencana lama yang sudah basi ditolak sejak awal — tak ada yang diposting.
-  await assert.rejects(() => jalankanPosting(testPrisma, { persetujuan: { hashDisetujui: rencana.hash, rujukan: "OWNER-2026-10-24", disetujuiOleh: "Owner Uji" }, aktor: w.B }), /BERBEDA dari yang disetujui/);
+  await assert.rejects(() => jalankanPosting(testPrisma, { persetujuan: { hashDisetujui: rencana.hash, rujukan: "OWNER-2026-10-24", disetujuiOleh: "Owner Uji", terikat: terikatDari(rencana) }, aktor: w.B }), /BERBEDA dari yang disetujui/);
   assert.equal(await testPrisma.stockMovement.count(), mv0, "rencana basi ditolak: nol pergerakan");
   // Balapan (saldo turun SETELAH rencana dihitung/dieksekusi): eksekusi per unit dari daftar lama — satu order gagal ATOMIK, order lain tetap jalan.
   const perUnit = new Map(); for (const t of rencana.transaksi) (perUnit.get(t.unitId) ?? perUnit.set(t.unitId, []).get(t.unitId)).push(t);
@@ -144,16 +146,16 @@ test("P1. posting terpadu: hanya rencana yang disetujui; tanggal historis; pelak
   assert.ok(ad.pemakaianAktual.baris.some((b) => b.kode === "R-SOFT" && b.qty === 1 && b.pelaku === w.B.name), JSON.stringify(ad.pemakaianAktual.baris.map((b) => b.kode)));
   assert.equal(ad.adopsi.kerja.key, "SELESAI"); assert.equal(ad.unit.status, "DELIVERED");
   // jalankan ulang rencana LAMA → ditolak (rencana berubah); rencana baru tidak memuat yang sudah terposting
-  await assert.rejects(() => jalankanPosting(testPrisma, { persetujuan: { hashDisetujui: rencana.hash, rujukan: "OWNER-2026-10-24", disetujuiOleh: "Owner Uji" }, aktor: w.B }), /BERBEDA/);
+  await assert.rejects(() => jalankanPosting(testPrisma, { persetujuan: { hashDisetujui: rencana.hash, rujukan: "OWNER-2026-10-24", disetujuiOleh: "Owner Uji", terikat: terikatDari(rencana) }, aktor: w.B }), /BERBEDA/);
   const baru = await rencanakanPosting(testPrisma); assert.ok(!baru.transaksi.some((t) => t.unitId === w.u1.id && t.kodeBahan === "R-SOFT"));
 });
 
 test("P2. posting penuh lalu jalan ulang = nol tulisan; 'Pemakaian aktual' bertambah tepat sekali per bahan", async () => {
   const w = await dunia();
-  const r1 = await rencanakanPosting(testPrisma); const h1 = await jalankanPosting(testPrisma, { persetujuan: { hashDisetujui: r1.hash, rujukan: "OWNER-2026-10-24", disetujuiOleh: "Owner Uji" }, aktor: w.B });
+  const r1 = await rencanakanPosting(testPrisma); const h1 = await jalankanPosting(testPrisma, { persetujuan: { hashDisetujui: r1.hash, rujukan: "OWNER-2026-10-24", disetujuiOleh: "Owner Uji", terikat: terikatDari(r1) }, aktor: w.B });
   assert.equal(h1.diposting.length, 3); assert.equal(h1.gagal.length, 0);
   const mv1 = await testPrisma.stockMovement.count(); const r2 = await rencanakanPosting(testPrisma); assert.equal(r2.jumlah, 0);
-  const h2 = await jalankanPosting(testPrisma, { persetujuan: { hashDisetujui: r2.hash, rujukan: "OWNER-2026-10-24", disetujuiOleh: "Owner Uji" }, aktor: w.B });
+  const h2 = await jalankanPosting(testPrisma, { persetujuan: { hashDisetujui: r2.hash, rujukan: "OWNER-2026-10-24", disetujuiOleh: "Owner Uji", terikat: terikatDari(r2) }, aktor: w.B });
   assert.equal(h2.diposting.length, 0); assert.equal(await testPrisma.stockMovement.count(), mv1);
   const aktual = (await w.ca.get(`/api/production/units/${w.u2.id}/adopsi`)).body.pemakaianAktual; assert.equal(aktual.baris.length, 2); assert.deepEqual(aktual.total.map((t) => t.dipakai).sort(), [2, 3]);
   const ch = await ambilCatatanHistoris(testPrisma, w.u2.id); assert.ok(ch.items.every((i) => i.state === "DIPOSTING")); assert.equal(ch.ringkas.diposting, 2);
@@ -161,7 +163,7 @@ test("P2. posting penuh lalu jalan ulang = nol tulisan; 'Pemakaian aktual' berta
 
 test("V1. koreksi HARGA terpisah: valuasi asli tetap; efektif = koreksi terbaru; berulang & idempoten; jejak biaya memakai harga koreksi; tanpa efek stok/jurnal", async () => {
   const w = await dunia(); const r = await rencanakanPosting(testPrisma);
-  await jalankanPosting(testPrisma, { persetujuan: { hashDisetujui: r.hash, rujukan: "OWNER-2026-10-24", disetujuiOleh: "Owner Uji" }, aktor: w.B });
+  await jalankanPosting(testPrisma, { persetujuan: { hashDisetujui: r.hash, rujukan: "OWNER-2026-10-24", disetujuiOleh: "Owner Uji", terikat: terikatDari(r) }, aktor: w.B });
   const mv = await testPrisma.stockMovement.findFirst({ where: { unitId: w.u2.id, materialId: w.kain.id, note: { contains: "PH2610:" } } });
   const asli = await testPrisma.finStockMovementValuation.findUnique({ where: { movementId: mv.id } }); assert.equal(Number(asli.value), 75000);
   const stok0 = await testPrisma.stockMovement.count(); const jur0 = await testPrisma.finJournalEntry.count();

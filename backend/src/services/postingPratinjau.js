@@ -4,6 +4,7 @@ import { dasarHargaRataRata } from "./finance/posting/inventory.js";
 import { rencanakanPosting } from "./postingPemakaianHistoris.js";
 import { terapkanKeadaanEfektif } from "./catatanPemakaianHistoris.js";
 import { r4 } from "../lib/domain/pemakaianHistoris.js";
+import { ringkasRencana } from "./postingPersetujuanTerikat.js";
 
 const memo = new Map(); // hash rencana → { t, janji } (30 dtk): SATU perhitungan harga untuk semua tab/pengguna serentak (single-flight; yang gagal dibuang)
 const TTL = 30_000;
@@ -50,7 +51,7 @@ async function hitungPratinjau(db, rencana) {
   const order = [...perOrder.values()].map((o) => ({ ...o, tertahan: o.tertahan ?? [], jumlahTertahan: (o.tertahan ?? []).length })).sort((a, b) => a.orderNumber.localeCompare(b.orderNumber));
   const parsial = tanpaHarga > 0 || tertahanTotal > 0;
   const hasil = {
-    hash: rencana.hash, jumlahTrx: rencana.jumlah, jumlahOrder: rencana.orderUnik, unitIds: unitList,
+    hash: rencana.hash, jumlahTrx: rencana.jumlah, jumlahOrder: rencana.orderUnik, unitIds: unitList, digestIsi: ringkasRencana(rencana).digestIsi,
     hpp: {
       status: parsial ? "PARSIAL" : "LENGKAP", hppBerbukti, trxTanpaHarga: tanpaHarga, catatanTertahan: tertahanTotal, jurnalDibuat: false,
       selisihBelumDijurnal: hppBerbukti,

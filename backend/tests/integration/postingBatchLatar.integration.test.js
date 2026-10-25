@@ -9,6 +9,7 @@ import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
 import { rencanakanImpor, terapkanImpor, evaluasiUlang, resetKeadaanEfektif, tungguPenyegaran } from "../../src/services/catatanPemakaianHistoris.js";
 import { rencanakanPosting, postingSatuUnit } from "../../src/services/postingPemakaianHistoris.js";
+import { ringkasRencana } from "../../src/services/postingPersetujuanTerikat.js";
 import { koreksiCatatan } from "../../src/services/koreksiPemakaian.js";
 import { ajukanBatch, jalankanBatch, mulaiBatch, tungguBatch, statusBatch, hentikanBatch, lanjutkanBatch, pulihkanBatch, ENTITAS_BATCH } from "../../src/services/postingBatchLatar.js";
 
@@ -20,7 +21,10 @@ test.after(async () => { await truncateAll(); await server.close(); await testPr
 const HDR = 'No,No. Resi / Order,Tgl Selesai,Bulan Selesai,Nama Pelanggan,Nama Sales,Ukuran Kasur,Jenis Layanan,Tgl Komplain,PIC Komplain,PIC / Teknisi,CORNER,Kategori Bahan,Nama Material / Bahan (SANO),Spesifikasi / Detail,Barang,Qty Pakai,Satuan,Harga Satuan (Rp),Total Biaya Bahan (Rp),"Total Penjualan\n(Rp)",Insentif PIC,Insentif Corner,Keterangan / QC';
 const baris = (no, order, tgl, kat, nama, qty, sat) => `${no},${order},${tgl},SEP,Pelanggan,Sales,200 x 160,Paket,,,RISDI,,${kat},${nama},,BAHAN,"${qty}",${sat},,,,,,QC OK`;
 const WIB = (iso) => new Date(`${iso}T00:00:00+07:00`);
-const PERSETUJUAN = (hash) => ({ hashDisetujui: hash, rujukan: "OWNER-2026-10-25", disetujuiOleh: "Owner Uji" });
+const terikatDari = (p, rujukan = "OWNER-2026-10-25") => { const r = ringkasRencana(p); return { hash: r.hash, unitIds: r.unitIds, daftarOrder: r.daftarOrder, jumlahOrder: r.jumlahOrder, jumlahTrx: r.jumlahTrx, rujukan }; };
+const PERSETUJUAN = (p) => (typeof p === "string" ? { hashDisetujui: p, rujukan: "OWNER-2026-10-25", disetujuiOleh: "Owner Uji", terikat: {} } : { hashDisetujui: p.hash, rujukan: "OWNER-2026-10-25", disetujuiOleh: "Owner Uji", terikat: terikatDari(p) });
+// persetujuan terikat untuk panggilan HTTP, dari badan GET /rencana (transaksi memuat unitId & orderNumber)
+const terikatHttp = (rb, rujukan = "OWNER-2026-10-25") => ({ hash: rb.hash, unitIds: [...new Set(rb.transaksi.map((t) => t.unitId))], daftarOrder: [...new Set(rb.transaksi.map((t) => t.orderNumber))], jumlahOrder: new Set(rb.transaksi.map((t) => t.orderNumber)).size, jumlahTrx: rb.transaksi.length, rujukan });
 let seq = 0;
 
 async function dunia() {
@@ -40,7 +44,7 @@ async function dunia() {
   return { admin, owner, A: { id: admin.user.id, name: admin.user.name }, B: { id: owner.user.id, name: owner.user.name }, mx, my, uA, uB, uC, ca: makeClient(server.baseUrl, admin.token), co: makeClient(server.baseUrl, owner.token) };
 }
 const issues = (unit) => testPrisma.stockMovement.count({ where: { unitId: unit.id, type: "ISSUE" } });
-const ajukan = async (w, extra = {}) => { const p = await rencanakanPosting(testPrisma); return { p, b: await ajukanBatch(testPrisma, { persetujuan: PERSETUJUAN(p.hash), aktor: w.B, ...extra }) }; };
+const ajukan = async (w, extra = {}) => { const p = await rencanakanPosting(testPrisma); return { p, b: await ajukanBatch(testPrisma, { persetujuan: PERSETUJUAN(p), aktor: w.B, ...extra }) }; };
 const titikTetap = async (l) => { const r = await evaluasiUlang(testPrisma, {}); assert.equal(r.berubah, 0, `${l}: ${r.berubah} perubahan`); };
 
 test("L1. batch selesai di latar: progres per unit, semua diposting sekali, titik tetap; ajukan tidak menjalankan apa pun", async () => {
@@ -57,7 +61,7 @@ test("L1. batch selesai di latar: progres per unit, semua diposting sekali, titi
 
 test("L2. idempoten: hash sama = batch sama; dua pekerja serentak = satu eksekusi; jalankan ulang batch selesai = nol tulisan", async () => {
   const w = await dunia(); const { p, b } = await ajukan(w);
-  const b2 = await ajukanBatch(testPrisma, { persetujuan: PERSETUJUAN(p.hash), aktor: w.B }); assert.equal(b2.baru, false); assert.equal(b2.batchId, b.batchId);
+  const b2 = await ajukanBatch(testPrisma, { persetujuan: PERSETUJUAN(p), aktor: w.B }); assert.equal(b2.baru, false); assert.equal(b2.batchId, b.batchId);
   assert.equal(await testPrisma.activityEvent.count({ where: { entityType: ENTITAS_BATCH, eventType: "BATCH_DIAJUKAN" } }), 1);
   const hasil = await Promise.all([jalankanBatch(testPrisma, b.batchId, { pekerja: "pekerja-1" }), jalankanBatch(testPrisma, b.batchId, { pekerja: "pekerja-2" })]);
   assert.equal(hasil.filter((x) => x.dijalankan).length, 1, "hanya satu pekerja yang berjalan"); assert.ok(hasil.some((x) => x.status === "BERJALAN" || x.dijalankan === false));
@@ -84,7 +88,7 @@ test("L4. putus SETELAH commit unit tetapi SEBELUM peristiwa progres: kelanjutan
   const w = await dunia(); const { p, b } = await ajukan(w);
   const spec = (await testPrisma.activityEvent.findFirst({ where: { entityType: ENTITAS_BATCH, eventType: "BATCH_DIAJUKAN" } })).metadata;
   const daftarA = spec.rencana.filter((t) => t.unitId === w.uA.id);
-  const h = await postingSatuUnit(testPrisma, { unitId: w.uA.id, daftar: daftarA, persetujuan: PERSETUJUAN(p.hash), aktor: w.B }); assert.equal(h.status, "DIPOSTING"); // commit terjadi, peristiwa BATCH_UNIT belum
+  const h = await postingSatuUnit(testPrisma, { unitId: w.uA.id, daftar: daftarA, persetujuan: PERSETUJUAN(p), aktor: w.B }); assert.equal(h.status, "DIPOSTING"); // commit terjadi, peristiwa BATCH_UNIT belum
   const r = await jalankanBatch(testPrisma, b.batchId); assert.equal(r.status, "SELESAI");
   const hu = (await testPrisma.activityEvent.findMany({ where: { entityType: ENTITAS_BATCH, eventType: "BATCH_UNIT" } })).find((e) => e.metadata.unitId === w.uA.id);
   assert.equal(hu.metadata.hasil, "DILEWATI"); assert.equal(await issues(w.uA), 1); await titikTetap("L4");
@@ -116,19 +120,20 @@ test("L6. hentikan lalu lanjutkan; pulihan saat boot meneruskan batch TERPUTUS",
 test("L7. API: batch 202 + polling progres sampai selesai; posting SATU order sinkron lewat unitIds; izin; hash salah ditolak", async () => {
   const w = await dunia();
   const rencana = await w.co.get(`/api/production/posting-historis/rencana`); assert.equal(rencana.status, 200);
-  const salah = await w.co.post(`/api/production/posting-historis/batch`, { hashDisetujui: "salah", rujukan: "OWNER-2026-10-25" }); assert.equal(salah.status, 409); assert.equal(salah.body.code, "RENCANA_BERUBAH");
+  const salah = await w.co.post(`/api/production/posting-historis/batch`, { hashDisetujui: "salah", rujukan: "OWNER-2026-10-25", persetujuanTerikat: terikatHttp(rencana.body) }); assert.equal(salah.status, 409); assert.equal(salah.body.code, "RENCANA_BERUBAH");
+  const tanpaTerikat = await w.co.post(`/api/production/posting-historis/batch`, { hashDisetujui: rencana.body.hash, rujukan: "OWNER-2026-10-25" }); assert.equal(tanpaTerikat.status, 403); assert.equal(tanpaTerikat.body.code, "PERSETUJUAN_TERIKAT_WAJIB", "klien lama tanpa persetujuan terikat ditolak");
   const tanpaIzin = await w.ca.post(`/api/production/posting-historis/batch`, { hashDisetujui: rencana.body.hash, rujukan: "OWNER-2026-10-25" }); assert.equal(tanpaIzin.status, 403, "ADMIN tanpa izin persetujuan");
   // SATU order sinkron
   const satu = await w.co.get(`/api/production/posting-historis/rencana?unitIds=${w.uA.id}`); assert.equal(satu.body.jumlah, 1);
-  const t0 = Date.now(); const j = await w.co.post(`/api/production/posting-historis/jalankan`, { hashDisetujui: satu.body.hash, rujukan: "OWNER-2026-10-25", unitIds: [w.uA.id] }); const ms = Date.now() - t0;
+  const t0 = Date.now(); const j = await w.co.post(`/api/production/posting-historis/jalankan`, { hashDisetujui: satu.body.hash, rujukan: "OWNER-2026-10-25", unitIds: [w.uA.id], persetujuanTerikat: terikatHttp(satu.body) }); const ms = Date.now() - t0;
   assert.equal(j.status, 200, JSON.stringify(j.body)); assert.equal(j.body.diposting.length, 1); assert.equal(await issues(w.uA), 1);
   const buruk = await w.co.post(`/api/production/posting-historis/jalankan`, { hashDisetujui: satu.body.hash, rujukan: "OWNER-2026-10-25", unitIds: ["bukan-uuid"] }); assert.equal(buruk.status, 400);
   // batch sisa rencana
   const sisa = await w.co.get(`/api/production/posting-historis/rencana`);
-  const a = await w.co.post(`/api/production/posting-historis/batch`, { hashDisetujui: sisa.body.hash, rujukan: "OWNER-2026-10-25" }); assert.equal(a.status, 202, JSON.stringify(a.body)); assert.equal(a.body.batchId, sisa.body.hash);
+  const a = await w.co.post(`/api/production/posting-historis/batch`, { hashDisetujui: sisa.body.hash, rujukan: "OWNER-2026-10-25", persetujuanTerikat: terikatHttp(sisa.body) }); assert.equal(a.status, 202, JSON.stringify(a.body)); assert.equal(a.body.batchId, sisa.body.hash);
   let st; for (let i = 0; i < 200; i++) { st = (await w.co.get(`/api/production/posting-historis/batch/${a.body.batchId}`)).body; if (["SELESAI", "SELESAI_SEBAGIAN"].includes(st.status)) break; await new Promise((r) => setTimeout(r, 100)); }
   assert.equal(st.status, "SELESAI", JSON.stringify(st)); assert.equal(st.unitSelesai, 2);
-  const ulang = await w.co.post(`/api/production/posting-historis/batch`, { hashDisetujui: sisa.body.hash, rujukan: "OWNER-2026-10-25" }); assert.equal(ulang.status, 202); assert.equal(ulang.body.baru, false, "ajukan ulang hash yang sama = batch yang sama");
+  const ulang = await w.co.post(`/api/production/posting-historis/batch`, { hashDisetujui: sisa.body.hash, rujukan: "OWNER-2026-10-25", persetujuanTerikat: terikatHttp(sisa.body) }); assert.equal(ulang.status, 202); assert.equal(ulang.body.baru, false, "ajukan ulang hash yang sama = batch yang sama");
   await tungguBatch(a.body.batchId); await tungguPenyegaran(); await titikTetap("L7");
   console.log(`   [L7] posting SATU order via API: ${ms} ms`);
 });

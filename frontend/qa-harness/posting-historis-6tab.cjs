@@ -1,3 +1,4 @@
+// CATATAN (persetujuan terikat, 25 Okt 2026): skrip ini ditulis SEBELUM dialog/API meminta persetujuan terikat (hash+daftar order+jumlah diketik, rujukan tidak lagi bertahan di draf). Untuk dijalankan lagi, isi bagian persetujuan seperti isiPersetujuan() di posting-historis-terikat.cjs dan kirim persetujuanTerikat pada POST batch/jalankan. Belum disesuaikan.
 // Dampak performa: 6 tab Chrome nyata membuka halaman Posting Pemakaian Historis saat batch berjalan (server + DB terisolasi). Mengukur permintaan/dtk, p50/p95 durasi (resource timing),
 // CPU/memori kontainer, polling tab yang tidak terlihat, dan memastikan batch tetap maju. Batch diajukan lewat API (hash rencana 90 order) agar tab hanya MENAMPILKAN.
 const puppeteer = require("puppeteer-core"); const { execFileSync } = require("child_process"); const fs = require("fs"); const path = require("path");

@@ -11,6 +11,7 @@ import crypto from "node:crypto";
 import { KoreksiError } from "./warehouseCorrection.js";
 import { kunciEvaluasiCatatan, terapkanKeadaanEfektif } from "./catatanPemakaianHistoris.js";
 import { rencanakanPosting, postingSatuUnit } from "./postingPemakaianHistoris.js";
+import { wajibPersetujuanTerikat } from "./postingPersetujuanTerikat.js";
 
 export const ENTITAS_BATCH = "posting_historis_batch";
 const SEWA_MS = 90_000;
@@ -93,18 +94,21 @@ export async function daftarBatch(db, { limit = 10 } = {}) {
 export async function ajukanBatch(prisma, { persetujuan, aktor, jurnalHPP = false, unitIds = null }) {
   if (!aktor?.id) throw new KoreksiError("Pelaku wajib ada", 400, "PELAKU_WAJIB");
   if (!persetujuan?.hashDisetujui || String(persetujuan.rujukan ?? "").trim().length < 8 || !persetujuan.disetujuiOleh) throw new KoreksiError("Batch posting butuh hash rencana yang disetujui, rujukan persetujuan Owner (≥8 karakter), dan nama penyetuju", 403, "PERSETUJUAN_WAJIB");
+  // PERSETUJUAN TERIKAT wajib ada pada setiap pengajuan (klien lama/tab basi tanpa itu ditolak sebelum menyentuh apa pun); kecocokan penuh diperiksa di bawah setelah rencana dihitung.
+  if (!persetujuan.terikat) throw new KoreksiError("Eksekusi posting butuh persetujuan terikat (hash, daftar unit & order, jumlah order & transaksi, rujukan). Muat ulang halaman Posting Pemakaian Historis dan ulangi dari dialog konfirmasi.", 403, "PERSETUJUAN_TERIKAT_WAJIB");
   // IDEMPOTENSI: batch dengan hash ini sudah ada (berjalan/selesai) → kembalikan batch itu; rencana saat ini boleh sudah berbeda karena batch itu sendiri sudah memposting.
-  if (/^[0-9a-f]{64}$/.test(persetujuan.hashDisetujui)) { const ada = ringkas(persetujuan.hashDisetujui, await bacaPeristiwa(prisma, persetujuan.hashDisetujui)); if (ada) return { ...ada, baru: false }; }
+  if (/^[0-9a-f]{64}$/.test(persetujuan.hashDisetujui) && String(persetujuan.terikat.hash ?? "").trim().toLowerCase() === persetujuan.hashDisetujui) { const ada = ringkas(persetujuan.hashDisetujui, await bacaPeristiwa(prisma, persetujuan.hashDisetujui)); if (ada) return { ...ada, baru: false }; }
   const rencana = await rencanakanPosting(prisma, { unitIds });
   if (rencana.hash !== persetujuan.hashDisetujui) throw new KoreksiError("Rencana posting saat ini BERBEDA dari yang disetujui — batch tidak dibuat. Minta persetujuan ulang atas daftar terbaru.", 409, "RENCANA_BERUBAH", { hashSekarang: rencana.hash });
   if (!rencana.jumlah) throw new KoreksiError("Rencana kosong — tidak ada yang diposting", 409, "RENCANA_KOSONG");
+  const terikat = await wajibPersetujuanTerikat(prisma, { rencana, persetujuan, aktor }); // selisih → ditolak di sini, SEBELUM batch dibuat
   const batchId = rencana.hash;
   const unitUrut = [...new Set(rencana.transaksi.map((t) => t.unitId))];
   const baru = await prisma.$transaction(async (tx) => {
     await kunciEvaluasiCatatan(tx);
     if (await tx.activityEvent.findFirst({ where: { entityType: ENTITAS_BATCH, entityId: batchId, eventType: "BATCH_DIAJUKAN" }, select: { id: true } })) return false;
     await tx.activityEvent.create({ data: { entityType: ENTITAS_BATCH, entityId: batchId, eventType: "BATCH_DIAJUKAN", actorType: "USER", actorId: aktor.id, metadata: {
-      hash: rencana.hash, rujukan: persetujuan.rujukan, disetujuiOleh: persetujuan.disetujuiOleh, aktorId: aktor.id, jurnalHPP: jurnalHPP === true, unitUrut,
+      hash: rencana.hash, rujukan: persetujuan.rujukan, disetujuiOleh: persetujuan.disetujuiOleh, aktorId: aktor.id, jurnalHPP: jurnalHPP === true, unitUrut, persetujuanTerikat: terikat,
       rencana: rencana.transaksi.map((t) => ({ kunci: t.kunci, unitId: t.unitId, orderNumber: t.orderNumber, materialId: t.materialId, kodeBahan: t.kodeBahan, satuan: t.satuan, qty: t.qty, tanggal: t.tanggal, usedAt: t.usedAt, createdAtUTC: t.createdAtUTC, catatanIds: t.catatanIds })),
     } } });
     return true;

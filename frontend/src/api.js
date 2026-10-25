@@ -115,7 +115,7 @@ async function request(path, options = {}) {
       let detail;
       // Backend mengirim `details` (jamak) — lihat routes/*.js handleErr(). `j.detail` (tunggal) dipertahankan
       // sebagai fallback bila kelak ada endpoint lama yang memakai ejaan itu; tidak ada yang mengirimnya saat ini.
-      try { const j = JSON.parse(text); msg = j.error || msg; code = j.code ?? j.kode; detail = j.details ?? j.detail; } catch {}
+      try { const j = JSON.parse(text); msg = j.error || msg; code = j.code ?? j.kode; detail = j.details ?? j.detail ?? j.penghalang; } catch {}
       // `.status` disertakan (bukan cuma pesan) supaya pemanggil bisa
       // membedakan "diblokir karena ada data terkait" (409) dari error lain
       // tanpa perlu cocokkan teks pesan (rapuh kalau pesannya diubah nanti).

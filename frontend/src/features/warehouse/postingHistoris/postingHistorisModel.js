@@ -126,6 +126,46 @@ export function unitTerpilih(semua, terpilih) {
   return semua.filter((id) => s.has(id));
 }
 
+// ── PERSETUJUAN TERIKAT (insiden 25 Okt 2026) ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+// Nilai persetujuan Owner (hash, daftar order, jumlah) DIKETIK/DITEMPEL dari keputusan di luar layar ini, bukan diambil dari pilihan di layar. Server membandingkan semuanya dengan rencana (409 bila selisih);
+// pemeriksaan di sini hanya agar tombol tidak ditekan sia-sia dan selisihnya terbaca sebelum dikirim.
+const POLA_ORDER = /\b[A-Za-z]{2,6}-\d{8}-\d{1,4}\b/g;
+export const normalHash = (t) => String(t ?? "").trim().toLowerCase();
+/** Nomor order unik (huruf besar, urut kemunculan) dari teks yang ditempel (daftar bebas: baris, koma, atau kalimat keputusan). */
+export function ambilNomorOrder(teks) { return [...new Set((String(teks ?? "").match(POLA_ORDER) ?? []).map((x) => x.toUpperCase()))]; }
+/** Syarat saldo opsional: satu per baris "KODE=angka" (atau "KODE: angka"), boleh diikuti satuan. */
+export function bacaSyaratSaldo(teks) {
+  const daftar = []; const galat = [];
+  for (const baris of String(teks ?? "").split(/\r?\n/).map((x) => x.trim()).filter(Boolean)) {
+    const m = baris.match(/^([A-Za-z0-9][A-Za-z0-9._-]*)\s*[=:]\s*(-?\d+(?:[.,]\d+)?)\s*(?:[A-Za-z]+)?$/);
+    if (!m) { galat.push(baris); continue; }
+    daftar.push({ kode: m[1], saldo: Number(m[2].replace(",", ".")) });
+  }
+  return { ok: galat.length === 0, daftar, galat };
+}
+const bulat = (t) => { const s = String(t ?? "").trim(); return /^\d+$/.test(s) ? Number(s) : null; };
+/** Bandingkan persetujuan yang diketik dengan manifest di layar. Mengembalikan daftar selisih (kosong = cocok). */
+export function periksaPersetujuanLayar({ manifest, hash, daftarOrder, jumlahOrder, jumlahTrx }) {
+  const beda = []; if (!manifest) return ["Manifest belum dimuat."];
+  const h = normalHash(hash);
+  if (!h) beda.push("Tempel hash persetujuan Owner (64 karakter).");
+  else if (!/^[0-9a-f]{64}$/.test(h)) beda.push("Hash persetujuan harus 64 karakter hex — tempel utuh dari keputusan Owner.");
+  else if (h !== manifest.hash) beda.push(`Hash persetujuan (${h.slice(0, 10)}…) BERBEDA dari manifest di layar (${manifest.hash.slice(0, 10)}…). Pilihan order tidak sama dengan yang disetujui.`);
+  const disetujui = new Set(daftarOrder ?? []); const dilayar = new Set((manifest.order ?? []).map((o) => o.orderNumber));
+  if (!disetujui.size) beda.push("Tempel daftar order yang disetujui Owner.");
+  const lebihLayar = [...dilayar].filter((x) => !disetujui.has(x)); const lebihSetuju = [...disetujui].filter((x) => !dilayar.has(x));
+  if (disetujui.size && lebihLayar.length) beda.push(`Order di layar yang TIDAK disetujui (${lebihLayar.length}): ${lebihLayar.slice(0, 6).join(", ")}${lebihLayar.length > 6 ? "…" : ""}`);
+  if (disetujui.size && lebihSetuju.length) beda.push(`Order disetujui yang TIDAK dipilih di layar (${lebihSetuju.length}): ${lebihSetuju.slice(0, 6).join(", ")}${lebihSetuju.length > 6 ? "…" : ""}`);
+  const jo = bulat(jumlahOrder); const jt = bulat(jumlahTrx);
+  if (jo === null) beda.push("Isi jumlah order yang disetujui."); else if (jo !== manifest.jumlahOrder) beda.push(`Jumlah order disetujui ${jo} ≠ manifest ${manifest.jumlahOrder}.`);
+  if (jt === null) beda.push("Isi jumlah transaksi yang disetujui."); else if (jt !== manifest.jumlahTrx) beda.push(`Jumlah transaksi disetujui ${jt} ≠ manifest ${manifest.jumlahTrx}.`);
+  return beda;
+}
+/** Badan persetujuanTerikat untuk server (nilai yang diketik Owner + unit yang benar-benar dipilih + digest isi dari manifest). */
+export function bangunPersetujuanTerikat({ manifest, hash, daftarOrder, jumlahOrder, jumlahTrx, rujukan, saldoSyarat }) {
+  return { hash: normalHash(hash), unitIds: manifest.unitIds, daftarOrder, jumlahOrder: bulat(jumlahOrder), jumlahTrx: bulat(jumlahTrx), rujukan: String(rujukan ?? "").trim(), digestIsi: manifest.digestIsi, ...(saldoSyarat?.length ? { saldoSyarat } : {}) };
+}
+
 /** Gabung kemajuan terbaru dengan yang lama saat koneksi putus: tampilkan yang terakhir diketahui, tandai basi. */
 export function gabungStatus(lama, baru) {
   if (!baru) return lama ? { ...lama, basi: true } : lama;
@@ -146,6 +186,8 @@ export function pesanGalat(e) {
   if (e.code === "RENCANA_BERUBAH") return "Manifest berubah sejak dimuat (stok/catatan bergeser). Muat ulang manifest lalu periksa lagi sebelum memulai.";
   if (e.code === "RENCANA_KOSONG") return "Tidak ada transaksi siap posting.";
   if (e.code === "PERSETUJUAN_WAJIB") return e.message || "Persetujuan tidak lengkap (hash, rujukan, dan nama penyetuju wajib).";
+  if (e.code === "PERSETUJUAN_TERIKAT_WAJIB") return "Halaman ini versi lama. Muat ulang (Ctrl+F5) lalu ulangi dari dialog konfirmasi. Tidak ada yang diposting.";
+  if (e.code === "PERSETUJUAN_TIDAK_COCOK") return `Persetujuan TIDAK COCOK dengan rencana — tidak ada yang diposting. ${(Array.isArray(e.detail) ? e.detail : []).slice(0, 4).join(" · ")}`;
   if (e.status === 403) return "Akun Anda tidak punya izin untuk aksi ini.";
   if (e.status === 0 || /timeout|Failed to fetch|terputus|NetworkError/i.test(e.message || "")) return "Koneksi terputus. Status terakhir tetap ditampilkan; mencoba lagi otomatis.";
   return e.message || "Terjadi kesalahan.";
