@@ -4,18 +4,25 @@ import { dasarHargaRataRata } from "./finance/posting/inventory.js";
 import { rencanakanPosting } from "./postingPemakaianHistoris.js";
 import { terapkanKeadaanEfektif } from "./catatanPemakaianHistoris.js";
 import { r4 } from "../lib/domain/pemakaianHistoris.js";
-import { ringkasRencana } from "./postingPersetujuanTerikat.js";
+import { ringkasRencana, saldoBahanRencana } from "./postingKonfirmasiManifest.js";
 
 const memo = new Map(); // hash rencana → { t, janji } (30 dtk): SATU perhitungan harga untuk semua tab/pengguna serentak (single-flight; yang gagal dibuang)
 const TTL = 30_000;
 
 export async function pratinjauPosting(db, { unitIds = null } = {}) {
   const rencana = await rencanakanPosting(db, { unitIds });
-  const ada = memo.get(rencana.hash); if (ada && Date.now() - ada.t < TTL) return ada.janji;
-  const janji = hitungPratinjau(db, rencana);
-  memo.set(rencana.hash, { t: Date.now(), janji }); if (memo.size > 20) memo.delete(memo.keys().next().value);
-  janji.catch(() => { if (memo.get(rencana.hash)?.janji === janji) memo.delete(rencana.hash); });
-  return janji;
+  const ada = memo.get(rencana.hash); let janji;
+  if (ada && Date.now() - ada.t < TTL) janji = ada.janji;
+  else {
+    janji = hitungPratinjau(db, rencana);
+    memo.set(rencana.hash, { t: Date.now(), janji }); if (memo.size > 20) memo.delete(memo.keys().next().value);
+    janji.catch(() => { if (memo.get(rencana.hash)?.janji === janji) memo.delete(rencana.hash); });
+  }
+  const dasar = await janji;
+  // SALDO SELALU SEGAR: memo hanya untuk perhitungan harga. Konfirmasi manifest membandingkan saldo yang ditinjau dengan ledger saat eksekusi — saldo basi dari memo akan membuat konfirmasi yang benar ditolak (atau lebih buruk, menyembunyikan pergeseran).
+  const saldo = new Map((await saldoBahanRencana(db, rencana)).map((x) => [x.kode, x.saldo]));
+  const bahan = dasar.bahan.map((b) => { const sekarang = saldo.get(b.kode) ?? b.saldoSekarang; return { ...b, saldoSekarang: sekarang, saldoSesudah: r4(sekarang - b.qty) }; });
+  return { ...dasar, bahan, dampakStok: { ...dasar.dampakStok, bahanNegatifSesudah: bahan.filter((b) => b.saldoSesudah < -1e-6).length } };
 }
 
 async function hitungPratinjau(db, rencana) {

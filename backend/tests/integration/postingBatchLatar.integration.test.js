@@ -9,7 +9,7 @@ import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
 import { rencanakanImpor, terapkanImpor, evaluasiUlang, resetKeadaanEfektif, tungguPenyegaran } from "../../src/services/catatanPemakaianHistoris.js";
 import { rencanakanPosting, postingSatuUnit } from "../../src/services/postingPemakaianHistoris.js";
-import { ringkasRencana } from "../../src/services/postingPersetujuanTerikat.js";
+import { ringkasRencana, saldoBahanRencana } from "../../src/services/postingKonfirmasiManifest.js";
 import { koreksiCatatan } from "../../src/services/koreksiPemakaian.js";
 import { ajukanBatch, jalankanBatch, mulaiBatch, tungguBatch, statusBatch, hentikanBatch, lanjutkanBatch, pulihkanBatch, ENTITAS_BATCH } from "../../src/services/postingBatchLatar.js";
 
@@ -21,10 +21,13 @@ test.after(async () => { await truncateAll(); await server.close(); await testPr
 const HDR = 'No,No. Resi / Order,Tgl Selesai,Bulan Selesai,Nama Pelanggan,Nama Sales,Ukuran Kasur,Jenis Layanan,Tgl Komplain,PIC Komplain,PIC / Teknisi,CORNER,Kategori Bahan,Nama Material / Bahan (SANO),Spesifikasi / Detail,Barang,Qty Pakai,Satuan,Harga Satuan (Rp),Total Biaya Bahan (Rp),"Total Penjualan\n(Rp)",Insentif PIC,Insentif Corner,Keterangan / QC';
 const baris = (no, order, tgl, kat, nama, qty, sat) => `${no},${order},${tgl},SEP,Pelanggan,Sales,200 x 160,Paket,,,RISDI,,${kat},${nama},,BAHAN,"${qty}",${sat},,,,,,QC OK`;
 const WIB = (iso) => new Date(`${iso}T00:00:00+07:00`);
-const terikatDari = (p, rujukan = "OWNER-2026-10-25") => { const r = ringkasRencana(p); return { hash: r.hash, unitIds: r.unitIds, daftarOrder: r.daftarOrder, jumlahOrder: r.jumlahOrder, jumlahTrx: r.jumlahTrx, rujukan }; };
-const PERSETUJUAN = (p) => (typeof p === "string" ? { hashDisetujui: p, rujukan: "OWNER-2026-10-25", disetujuiOleh: "Owner Uji", terikat: {} } : { hashDisetujui: p.hash, rujukan: "OWNER-2026-10-25", disetujuiOleh: "Owner Uji", terikat: terikatDari(p) });
+const konfirmasiDari = (p, rujukan = "OWNER-2026-10-25") => { const r = ringkasRencana(p); return { hash: r.hash, unitIds: r.unitIds, daftarOrder: r.daftarOrder, jumlahOrder: r.jumlahOrder, jumlahTrx: r.jumlahTrx, rujukan, isiTransaksi: r.isiTransaksi, saldoManifest: p.__saldo ?? [] }; };
+const rencanakan = async (db, o) => { const p = await rencanakanPosting(db, o); p.__saldo = await saldoBahanRencana(db, p); return p; }; // seperti UI: konfirmasi memuat saldo bahan yang ditinjau saat rencana dibuat
+const PERSETUJUAN = (p) => (typeof p === "string" ? { hashDisetujui: p, rujukan: "OWNER-2026-10-25", disetujuiOleh: "Owner Uji", konfirmasi: {} } : { hashDisetujui: p.hash, rujukan: "OWNER-2026-10-25", disetujuiOleh: "Owner Uji", konfirmasi: konfirmasiDari(p) });
 // persetujuan terikat untuk panggilan HTTP, dari badan GET /rencana (transaksi memuat unitId & orderNumber)
-const terikatHttp = (rb, rujukan = "OWNER-2026-10-25") => ({ hash: rb.hash, unitIds: [...new Set(rb.transaksi.map((t) => t.unitId))], daftarOrder: [...new Set(rb.transaksi.map((t) => t.orderNumber))], jumlahOrder: new Set(rb.transaksi.map((t) => t.orderNumber)).size, jumlahTrx: rb.transaksi.length, rujukan });
+// konfirmasi untuk panggilan HTTP, dibentuk dari pratinjau persis seperti UI (isi transaksi, saldo bahan, unit, hash)
+const praHttp = async (w, ids) => (await w.co.get(`/api/production/posting-historis/pratinjau${ids ? `?unitIds=${ids.join(",")}` : ""}`)).body;
+const konfirmasiPra = (pr, rujukan = "OWNER-2026-10-25") => ({ hash: pr.hash, unitIds: pr.unitIds, daftarOrder: pr.order.map((o) => o.orderNumber), jumlahOrder: pr.jumlahOrder, jumlahTrx: pr.jumlahTrx, rujukan, isiTransaksi: pr.order.flatMap((o) => o.trx.map((t) => ({ unitId: o.unitId, orderNumber: o.orderNumber, kodeBahan: t.kodeBahan, qty: t.qty, satuan: t.satuan, tanggal: t.tanggal }))), saldoManifest: pr.bahan.map((b) => ({ kode: b.kode, saldo: b.saldoSekarang })) });
 let seq = 0;
 
 async function dunia() {
@@ -41,10 +44,10 @@ async function dunia() {
     baris(4, "RES-05092026-903", "5 Sep 26", "Bahan Lapisan", "KAIN REBUTAN LATAR", "4,0", "METER")].join("\n");
   await terapkanImpor(testPrisma, await rencanakanImpor(testPrisma, { csvText: csv, namaBerkas: `latar${++seq}.csv` }), {});
   await evaluasiUlang(testPrisma, {});
-  return { admin, owner, A: { id: admin.user.id, name: admin.user.name }, B: { id: owner.user.id, name: owner.user.name }, mx, my, uA, uB, uC, ca: makeClient(server.baseUrl, admin.token), co: makeClient(server.baseUrl, owner.token) };
+  return { admin, owner, A: { id: admin.user.id, name: admin.user.name, roles: ["ADMIN"] }, B: { id: owner.user.id, name: owner.user.name, roles: ["OWNER"] }, mx, my, uA, uB, uC, ca: makeClient(server.baseUrl, admin.token), co: makeClient(server.baseUrl, owner.token) };
 }
 const issues = (unit) => testPrisma.stockMovement.count({ where: { unitId: unit.id, type: "ISSUE" } });
-const ajukan = async (w, extra = {}) => { const p = await rencanakanPosting(testPrisma); return { p, b: await ajukanBatch(testPrisma, { persetujuan: PERSETUJUAN(p), aktor: w.B, ...extra }) }; };
+const ajukan = async (w, extra = {}) => { const p = await rencanakan(testPrisma); return { p, b: await ajukanBatch(testPrisma, { persetujuan: PERSETUJUAN(p), aktor: w.B, ...extra }) }; };
 const titikTetap = async (l) => { const r = await evaluasiUlang(testPrisma, {}); assert.equal(r.berubah, 0, `${l}: ${r.berubah} perubahan`); };
 
 test("L1. batch selesai di latar: progres per unit, semua diposting sekali, titik tetap; ajukan tidak menjalankan apa pun", async () => {
@@ -120,20 +123,20 @@ test("L6. hentikan lalu lanjutkan; pulihan saat boot meneruskan batch TERPUTUS",
 test("L7. API: batch 202 + polling progres sampai selesai; posting SATU order sinkron lewat unitIds; izin; hash salah ditolak", async () => {
   const w = await dunia();
   const rencana = await w.co.get(`/api/production/posting-historis/rencana`); assert.equal(rencana.status, 200);
-  const salah = await w.co.post(`/api/production/posting-historis/batch`, { hashDisetujui: "salah", rujukan: "OWNER-2026-10-25", persetujuanTerikat: terikatHttp(rencana.body) }); assert.equal(salah.status, 409); assert.equal(salah.body.code, "RENCANA_BERUBAH");
-  const tanpaTerikat = await w.co.post(`/api/production/posting-historis/batch`, { hashDisetujui: rencana.body.hash, rujukan: "OWNER-2026-10-25" }); assert.equal(tanpaTerikat.status, 403); assert.equal(tanpaTerikat.body.code, "PERSETUJUAN_TERIKAT_WAJIB", "klien lama tanpa persetujuan terikat ditolak");
+  const salah = await w.co.post(`/api/production/posting-historis/batch`, { hashDisetujui: "salah", rujukan: "OWNER-2026-10-25", konfirmasiManifest: konfirmasiPra(await praHttp(w)) }); assert.equal(salah.status, 409); assert.equal(salah.body.code, "RENCANA_BERUBAH");
+  const tanpaTerikat = await w.co.post(`/api/production/posting-historis/batch`, { hashDisetujui: rencana.body.hash, rujukan: "OWNER-2026-10-25" }); assert.equal(tanpaTerikat.status, 403); assert.equal(tanpaTerikat.body.code, "KONFIRMASI_MANIFEST_WAJIB", "klien lama tanpa persetujuan terikat ditolak");
   const tanpaIzin = await w.ca.post(`/api/production/posting-historis/batch`, { hashDisetujui: rencana.body.hash, rujukan: "OWNER-2026-10-25" }); assert.equal(tanpaIzin.status, 403, "ADMIN tanpa izin persetujuan");
   // SATU order sinkron
   const satu = await w.co.get(`/api/production/posting-historis/rencana?unitIds=${w.uA.id}`); assert.equal(satu.body.jumlah, 1);
-  const t0 = Date.now(); const j = await w.co.post(`/api/production/posting-historis/jalankan`, { hashDisetujui: satu.body.hash, rujukan: "OWNER-2026-10-25", unitIds: [w.uA.id], persetujuanTerikat: terikatHttp(satu.body) }); const ms = Date.now() - t0;
+  const t0 = Date.now(); const j = await w.co.post(`/api/production/posting-historis/jalankan`, { hashDisetujui: satu.body.hash, rujukan: "OWNER-2026-10-25", unitIds: [w.uA.id], konfirmasiManifest: konfirmasiPra(await praHttp(w, [w.uA.id])) }); const ms = Date.now() - t0;
   assert.equal(j.status, 200, JSON.stringify(j.body)); assert.equal(j.body.diposting.length, 1); assert.equal(await issues(w.uA), 1);
   const buruk = await w.co.post(`/api/production/posting-historis/jalankan`, { hashDisetujui: satu.body.hash, rujukan: "OWNER-2026-10-25", unitIds: ["bukan-uuid"] }); assert.equal(buruk.status, 400);
   // batch sisa rencana
   const sisa = await w.co.get(`/api/production/posting-historis/rencana`);
-  const a = await w.co.post(`/api/production/posting-historis/batch`, { hashDisetujui: sisa.body.hash, rujukan: "OWNER-2026-10-25", persetujuanTerikat: terikatHttp(sisa.body) }); assert.equal(a.status, 202, JSON.stringify(a.body)); assert.equal(a.body.batchId, sisa.body.hash);
+  const a = await w.co.post(`/api/production/posting-historis/batch`, { hashDisetujui: sisa.body.hash, rujukan: "OWNER-2026-10-25", konfirmasiManifest: konfirmasiPra(await praHttp(w)) }); assert.equal(a.status, 202, JSON.stringify(a.body)); assert.equal(a.body.batchId, sisa.body.hash);
   let st; for (let i = 0; i < 200; i++) { st = (await w.co.get(`/api/production/posting-historis/batch/${a.body.batchId}`)).body; if (["SELESAI", "SELESAI_SEBAGIAN"].includes(st.status)) break; await new Promise((r) => setTimeout(r, 100)); }
   assert.equal(st.status, "SELESAI", JSON.stringify(st)); assert.equal(st.unitSelesai, 2);
-  const ulang = await w.co.post(`/api/production/posting-historis/batch`, { hashDisetujui: sisa.body.hash, rujukan: "OWNER-2026-10-25", persetujuanTerikat: terikatHttp(sisa.body) }); assert.equal(ulang.status, 202); assert.equal(ulang.body.baru, false, "ajukan ulang hash yang sama = batch yang sama");
+  const ulang = await w.co.post(`/api/production/posting-historis/batch`, { hashDisetujui: sisa.body.hash, rujukan: "OWNER-2026-10-25", konfirmasiManifest: konfirmasiPra(await praHttp(w)) }); assert.equal(ulang.status, 202); assert.equal(ulang.body.baru, false, "ajukan ulang hash yang sama = batch yang sama");
   await tungguBatch(a.body.batchId); await tungguPenyegaran(); await titikTetap("L7");
   console.log(`   [L7] posting SATU order via API: ${ms} ms`);
 });
@@ -142,7 +145,7 @@ test("L8. pratinjau manifest: dampak stok/HPP, tertahan + alasan, selisih belum 
   const w = await dunia();
   const mv0 = await testPrisma.stockMovement.count(); const ev0 = await testPrisma.unitUsageNoteEvent.count();
   const r = await w.co.get(`/api/production/posting-historis/pratinjau`); assert.equal(r.status, 200, JSON.stringify(r.body));
-  const p = await rencanakanPosting(testPrisma); assert.equal(r.body.hash, p.hash, "hash pratinjau = hash rencana yang dipakai mesin");
+  const p = await rencanakan(testPrisma); assert.equal(r.body.hash, p.hash, "hash pratinjau = hash rencana yang dipakai mesin");
   assert.equal(r.body.jumlahTrx, 3); assert.equal(r.body.jumlahOrder, 3);
   const mx = r.body.bahan.find((b) => b.kode === "L-MX"); assert.equal(mx.saldoSekarang, 10); assert.equal(mx.qty, 10); assert.equal(mx.saldoSesudah, 0, "uA 6 + uC 4 = seluruh pasokan");
   assert.equal(r.body.hpp.status, "PARSIAL", "uB-MX tertahan → HPP parsial"); assert.equal(r.body.hpp.jurnalDibuat, false);

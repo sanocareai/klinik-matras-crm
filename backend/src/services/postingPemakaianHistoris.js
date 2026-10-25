@@ -12,7 +12,7 @@ import { bukukanNilaiPergerakanBaru } from "./finance/posting/inventory.js";
 import { KoreksiError } from "./warehouseCorrection.js";
 import { evaluasiUlang, kunciEvaluasiCatatan, keadaanEfektif } from "./catatanPemakaianHistoris.js";
 import { STATE, r4 } from "../lib/domain/pemakaianHistoris.js";
-import { wajibPersetujuanTerikat } from "./postingPersetujuanTerikat.js";
+import { wajibKonfirmasiManifest, wajibOwnerMemulai, wajibAdaKonfirmasi } from "./postingKonfirmasiManifest.js";
 
 export const AWAL_NOTE_POSTING = "Impor pemakaian historis Sep–Okt 2026";
 const kunciPosting = (orderNumber, kodeBahan) => `PH2610:${orderNumber}:${kodeBahan}`;
@@ -96,15 +96,16 @@ export async function postingSatuUnit(prisma, { unitId, daftar, persetujuan, akt
 
 /**
  * Jalankan rencana yang DISETUJUI. Per order satu transaksi. Mengembalikan { diposting, dilewati, gagal } — kegagalan satu order tidak membatalkan order lain.
- * @param persetujuan { hashDisetujui, rujukan (≥8 karakter, mis. nomor persetujuan Owner), disetujuiOleh, terikat (wajib: lihat postingPersetujuanTerikat.js) }
+ * @param persetujuan { hashDisetujui, rujukan (≥8 karakter, mis. nomor persetujuan Owner), disetujuiOleh, konfirmasi (wajib: lihat postingKonfirmasiManifest.js) }
  */
 export async function jalankanPosting(prisma, { persetujuan, aktor, jurnalHPP = false, unitIds = null, sekarang = new Date() }) {
   if (!aktor?.id) throw new KoreksiError("Pelaku wajib ada", 400, "PELAKU_WAJIB");
+  await wajibOwnerMemulai(prisma, aktor); // SEMENTARA hanya akun Owner yang memulai
   if (!persetujuan?.hashDisetujui || String(persetujuan.rujukan ?? "").trim().length < 8 || !persetujuan.disetujuiOleh) throw new KoreksiError("Posting butuh hash rencana yang disetujui, rujukan persetujuan Owner (≥8 karakter), dan nama penyetuju", 403, "PERSETUJUAN_WAJIB");
-  if (!persetujuan.terikat) throw new KoreksiError("Eksekusi posting butuh persetujuan terikat (hash, daftar unit & order, jumlah order & transaksi, rujukan). Muat ulang halaman Posting Pemakaian Historis dan ulangi dari dialog konfirmasi.", 403, "PERSETUJUAN_TERIKAT_WAJIB");
+  await wajibAdaKonfirmasi(prisma, aktor, persetujuan);
   const rencana = await rencanakanPosting(prisma, { unitIds });
   if (rencana.hash !== persetujuan.hashDisetujui) throw new KoreksiError("Rencana posting saat ini BERBEDA dari yang disetujui — tidak dijalankan. Minta persetujuan ulang atas daftar terbaru.", 409, "RENCANA_BERUBAH", { hashSekarang: rencana.hash });
-  if (rencana.jumlah) await wajibPersetujuanTerikat(prisma, { rencana, persetujuan, aktor }); // selisih dengan persetujuan Owner → ditolak SEBELUM movement apa pun
+  if (rencana.jumlah) await wajibKonfirmasiManifest(prisma, { rencana, persetujuan, aktor }); // selisih dengan konfirmasi manifest → ditolak SEBELUM movement apa pun
   const perUnit = new Map(); for (const t of rencana.transaksi) (perUnit.get(t.unitId) ?? perUnit.set(t.unitId, []).get(t.unitId)).push(t);
   const diposting = []; const dilewati = []; const gagal = [];
   for (const [unitId, daftar] of perUnit) {

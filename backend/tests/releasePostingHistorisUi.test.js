@@ -1,4 +1,4 @@
-// Gerbang skrip rilis "UI Posting Pemakaian Historis" (backend baca/status + frontend, TANPA migrasi): skrip tersimpan diturunkan dari templat; sintaks bash lulus; gerbang kritis ada;
+// Gerbang skrip rilis "Konfirmasi manifest posting historis" (5 berkas backend + 3 frontend, TANPA migrasi): skrip tersimpan diturunkan dari templat; sintaks bash lulus; gerbang kritis ada;
 // build frontend + aset lama; evaluator/penulis live tidak berubah; skrip tidak memposting; pustaka rehearsal/smoke tidak menulis (smoke hanya mengirim POST tanpa izin yang HARUS ditolak 403).
 import test from "node:test";
 import assert from "node:assert/strict";
@@ -14,11 +14,11 @@ const script = baca("scripts/release-posting-historis-ui.sh");
 const tpl = baca("scripts/templates/release-posting-historis-ui.sh.tpl");
 const punyaBash = spawnSync("bash", ["-c", "true"]).status === 0;
 
-test("skrip rilis: tanpa placeholder, generator terpasang, tanpa sisa nama rilis lain, daftar berkas backend (1) dan frontend yang diaudit", () => {
+test("skrip rilis: tanpa placeholder, generator terpasang, tanpa sisa nama rilis lain, daftar berkas backend (5) dan frontend (3) yang diaudit", () => {
   assert.ok(!/@@[A-Z_]+@@/.test(script), "placeholder tersisa");
   assert.match(script, /^LIVE_MIG_TERAKHIR="\d{14}_[a-z0-9_]+"; LIVE_MIG_JUMLAH="\d+"$/m);
-  assert.ok(script.split("\n").includes('BACKEND_SRC_EXPECT="backend/src/services/postingBatchLatar.js"'), "tepat satu berkas backend (status HPP batch)");
-  const fe = script.split("\n").find((l) => l.startsWith("FRONTEND_SRC_EXPECT=")); assert.ok(fe && fe.includes("WarehousePostingHistoris.jsx") && fe.includes("postingHistorisModel.js"), "daftar frontend yang diaudit");
+  const be = script.split("\n").find((l) => l.startsWith("BACKEND_SRC_EXPECT=")); assert.equal(be, 'BACKEND_SRC_EXPECT="backend/src/routes/pemakaianKoreksi.js backend/src/services/postingBatchLatar.js backend/src/services/postingKonfirmasiManifest.js backend/src/services/postingPemakaianHistoris.js backend/src/services/postingPratinjau.js"', "tepat lima berkas backend yang diaudit");
+  const fe = script.split("\n").find((l) => l.startsWith("FRONTEND_SRC_EXPECT=")); assert.ok(fe && fe.includes("WarehousePostingHistoris.jsx") && fe.includes("postingHistorisModel.js") && fe.includes("frontend/src/api.js"), "daftar frontend yang diaudit");
   assert.ok(script.includes("scripts/gen-release-posting-historis-ui.cjs"));
   assert.ok(!/evaluasi-catatan|\bskj\b|\bevl\.sh|route-planner/.test(script.split(String.fromCharCode(10)).filter((l) => !l.startsWith("ALLOWED_RE=")).join(String.fromCharCode(10)).replace(/rehearsal_evl_/g, "").replace(/simulasi-evaluasi-catatan/g, "")), "tidak ada sisa nama rilis lain (pustaka simulasi dipakai ulang sengaja)");
 });
@@ -39,7 +39,8 @@ test("skrip rilis: gerbang kritis — tanpa migrasi/dependensi/Docker, baseline 
   assert.ok(!script.includes("prisma migrate deploy"), "rilis ini tidak menerapkan migrasi");
   assert.ok(!/INSERT INTO|UPDATE unit_usage_notes|DELETE FROM|jalankanPosting/i.test(script.replace(/<<'SIMNODE'[\s\S]*?\nSIMNODE\n/, "")), "skrip rilis (di luar simulasi pada salinan) tidak menulis catatan/stok dan tidak memposting");
   const guard = script.split("\n").find((l) => l.startsWith("GUARD_UNCHANGED="));
-  for (const f of ["catatanPemakaianHistoris.js", "postingPemakaianHistoris.js", "koreksiPemakaian.js", "finance/biayaBahan.js", "productionOrderExport.js", "laporanRekonsiliasiPemakaian.js", "backend/src/index.js", "inventoryLedger.js"]) assert.ok(guard.includes(f), `berkas pelindung: ${f}`);
+  assert.ok(!guard.includes("postingPemakaianHistoris.js"), "postingPemakaianHistoris.js sengaja berubah (pagar sebelum movement)");
+  for (const f of ["catatanPemakaianHistoris.js", "koreksiPemakaian.js", "finance/biayaBahan.js", "productionOrderExport.js", "laporanRekonsiliasiPemakaian.js", "backend/src/index.js", "inventoryLedger.js"]) assert.ok(guard.includes(f), `berkas pelindung: ${f}`);
   assert.ok(script.indexOf('PHASE="5b-rehearsal-kode"') < script.indexOf('PHASE="7-switch"'), "rehearsal pada restore SEBELUM switch");
   assert.ok(script.indexOf('PHASE="3-backup"') < script.indexOf('PHASE="7-switch"'), "backup SEBELUM switch");
 });
@@ -49,7 +50,7 @@ test("build frontend: node_modules identik dicari, dist baru diperiksa (Maps key
     "chunk halaman Posting Pemakaian Historis tidak ada di dist baru", 'PHASE="4c-aset-lama"', "aset lama (${ASET_LAMA_CONTOH}) tidak lagi terlayani", 'PHASE="4b-rehearsal-frontend"', "rute SPA /warehouse/posting-historis tidak 200", "chunk halaman baru tidak terlayani publik"]) assert.ok(script.includes(k), k);
   assert.ok((script.match(/bangun_frontend "\$/g) || []).length === 2, "dipanggil di rehearsal ($WS) dan rilis ($NEW_DIR)");
   assert.ok(script.indexOf("bangun_frontend() {") < script.indexOf('bangun_frontend "$WS"'), "fungsi didefinisikan sebelum dipakai");
-  for (const t of ["Pilih hanya yang tampil", "Kosongkan", "Posting Pemakaian Historis", "Mulai batch", "Hentikan setelah order ini"]) assert.ok(script.includes(`"${t}"`), `teks dist baru: ${t}`);
+  for (const t of ["Konfirmasi manifest oleh Owner", "Rujukan yang akan dicatat", "Order yang akan diposting", "bukan persetujuan Owner yang tercatat terpisah", "BELUM DIKETAHUI (bukan Rp0)", "Pilih hanya yang tampil", "Hentikan setelah order ini"]) assert.ok(script.includes(`"${t}"`), `teks dist baru: ${t}`);
   assert.ok(!script.includes('cp -a "$PREV_DIR/frontend/dist" "$NEW_DIR/frontend/dist"'), "dist TIDAK lagi disalin dari release aktif — dibangun baru");
   assert.ok(script.indexOf('PHASE="4c-aset-lama"') < script.indexOf('PHASE="5-build-image"'), "aset lama dibawa sebelum build image/switch");
 });

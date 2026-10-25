@@ -57,7 +57,7 @@ test("rute tulis posting/batch: izin persetujuan + gerbang hash; rute baca: izin
     assert.match(r.slice(i, i + 220), /requireAnyPermission\(P\.INVENTORY_ADJUSTMENT_APPROVE, P\.INVENTORY_READ\)/, `${rute} butuh izin baca`);
   }
   const b = fs.readFileSync(path.join(src, "services/postingBatchLatar.js"), "utf8");
-  assert.match(b, /export async function ajukanBatch[\s\S]*?PERSETUJUAN_WAJIB[\s\S]*?PERSETUJUAN_TERIKAT_WAJIB[\s\S]*?RENCANA_BERUBAH[\s\S]*?wajibPersetujuanTerikat[\s\S]*?prisma\.\$transaction/, "ajukan batch: persetujuan lengkap + terikat + hash dicocokkan dengan rencana efektif SEBELUM transaksi pembuat batch");
+  assert.match(b, /export async function ajukanBatch[\s\S]*?wajibOwnerMemulai[\s\S]*?PERSETUJUAN_WAJIB[\s\S]*?wajibAdaKonfirmasi[\s\S]*?RENCANA_BERUBAH[\s\S]*?wajibKonfirmasiManifest[\s\S]*?prisma\.\$transaction/, "ajukan batch: pagar Owner + konfirmasi manifest + hash dicocokkan dengan rencana efektif SEBELUM transaksi pembuat batch");
   const j = fs.readFileSync(path.join(src, "services/postingPemakaianHistoris.js"), "utf8");
-  assert.match(j, /export async function jalankanPosting[\s\S]*?RENCANA_BERUBAH[\s\S]*?wajibPersetujuanTerikat[\s\S]*?postingSatuUnit/, "jalankan sinkron: persetujuan terikat diperiksa SEBELUM movement pertama");
+  assert.match(j, /export async function jalankanPosting[\s\S]*?RENCANA_BERUBAH[\s\S]*?wajibKonfirmasiManifest[\s\S]*?postingSatuUnit/, "jalankan sinkron: persetujuan terikat diperiksa SEBELUM movement pertama");
 });

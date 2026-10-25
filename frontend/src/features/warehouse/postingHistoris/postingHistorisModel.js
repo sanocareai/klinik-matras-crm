@@ -2,10 +2,12 @@
 // Prinsip: SERVER yang memutuskan. UI hanya menampilkan manifest/dampak dari pratinjau, status batch dari server, dan mencegah tombol yang pasti ditolak.
 // Status batch adalah milik server — UI mana pun (tab lain, setelah refresh, setelah tab ditutup) menampilkan status yang SAMA lewat GET.
 
-export const ROLE_PENYETUJU_POSTING = Object.freeze(["OWNER", "FINANCE"]); // izin inventory:adjustment_approve (gerbang hash di server)
+export const ROLE_PENYETUJU_POSTING = Object.freeze(["OWNER", "FINANCE"]); // izin inventory:adjustment_approve: boleh MENGHENTIKAN/MELANJUTKAN batch yang sudah ada
+export const ROLE_PEMULAI_POSTING = Object.freeze(["OWNER"]); // SEMENTARA hanya Owner yang MEMULAI (Owner meninjau & mengonfirmasi manifest sendiri) — ditegakkan juga di server (403 HANYA_OWNER_MEMULAI)
 export const ROLE_PEMBACA_POSTING = Object.freeze(["ADMIN", "OWNER", "FINANCE"]);
 const punya = (roles, daftar) => Array.isArray(roles) && roles.some((r) => daftar.includes(r));
-export const bolehMulaiPosting = (roles) => punya(roles, ROLE_PENYETUJU_POSTING);
+export const bolehMulaiPosting = (roles) => punya(roles, ROLE_PEMULAI_POSTING);
+export const bolehKendaliBatch = (roles) => punya(roles, ROLE_PENYETUJU_POSTING);
 export const bolehLihatPosting = (roles) => punya(roles, ROLE_PEMBACA_POSTING);
 
 export const KUNCI_BATCH_AKTIF = "postingHistoris.batchAktif";
@@ -68,9 +70,9 @@ export function saringOrder(unit, filter) {
 
 /** Tombol yang boleh tampil menurut status batch + peran. `alasan` menjelaskan kenapa tombol tidak ada. */
 export function aksiBatch({ status, roles, sibuk = false }) {
-  const penyetuju = bolehMulaiPosting(roles);
+  const penyetuju = bolehKendaliBatch(roles);
   const r = { lanjut: false, hentikan: false, mulaiBaru: false, alasan: "" };
-  if (!penyetuju) { r.alasan = "Hanya akun dengan izin persetujuan penyesuaian stok (Owner/Finance) yang dapat memulai, menghentikan, atau melanjutkan batch. Anda dapat memantau progres."; return r; }
+  if (!penyetuju) { r.alasan = "Hanya Owner dan Finance yang dapat menghentikan atau melanjutkan batch (memulai: hanya Owner). Anda dapat memantau progres."; return r; }
   if (sibuk) return r;
   if (status === "BERJALAN" || status === "MENUNGGU") r.hentikan = true;
   if (status === "TERPUTUS" || status === "DIHENTIKAN") r.lanjut = true;
@@ -87,7 +89,7 @@ export function validasiRujukan(teks) {
 
 /** Syarat tombol "Mulai batch" aktif: manifest ada, tidak kosong, belum ada batch aktif, peran sah. */
 export function bolehTekanMulai({ pratinjau, batchAktif, roles, memuat }) {
-  if (!bolehMulaiPosting(roles)) return { ok: false, alasan: "Akun Anda tidak punya izin memulai posting." };
+  if (!bolehMulaiPosting(roles)) return { ok: false, alasan: "Sementara hanya akun Owner yang dapat memulai posting." };
   if (memuat) return { ok: false, alasan: "Memuat manifest…" };
   if (batchAktif && STATUS_AKTIF.includes(batchAktif.status)) return { ok: false, alasan: "Ada batch yang masih berjalan — pantau atau hentikan dulu." };
   if (!pratinjau || !pratinjau.jumlahTrx) return { ok: false, alasan: "Tidak ada transaksi siap posting." };
@@ -126,9 +128,11 @@ export function unitTerpilih(semua, terpilih) {
   return semua.filter((id) => s.has(id));
 }
 
-// ── PERSETUJUAN TERIKAT (insiden 25 Okt 2026) ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
-// Nilai persetujuan Owner (hash, daftar order, jumlah) DIKETIK/DITEMPEL dari keputusan di luar layar ini, bukan diambil dari pilihan di layar. Server membandingkan semuanya dengan rencana (409 bila selisih);
-// pemeriksaan di sini hanya agar tombol tidak ditekan sia-sia dan selisihnya terbaca sebelum dikirim.
+// ── KONFIRMASI MANIFEST (insiden 25 Okt 2026) ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+// BATAS KONTROL: nilai yang diketik di dialog (hash, daftar order, jumlah) adalah KONFIRMASI MANIFEST oleh Owner yang menjalankan — BUKAN bukti persetujuan Owner yang tercatat terpisah.
+// Sementara itu hanya akun Owner yang boleh memulai posting; Owner meninjau dan mengonfirmasi manifest sendiri. Server membandingkan konfirmasi dengan rencana (hash, ID unit, isi transaksi, saldo ditinjau) dan menolak selisih (409)
+// sebelum ada tulisan. Pemeriksaan di sini hanya agar tombol tidak ditekan sia-sia dan selisihnya terbaca.
+export const BATAS_KONTROL = "Konfirmasi manifest ini dilakukan oleh Owner yang menjalankan — bukan persetujuan Owner yang tercatat terpisah. Sementara hanya akun Owner yang dapat memulai posting; Finance dan Admin dapat memantau, dan Finance dapat menghentikan atau melanjutkan batch yang sudah ada.";
 const POLA_ORDER = /\b[A-Za-z]{2,6}-\d{8}-\d{1,4}\b/g;
 export const normalHash = (t) => String(t ?? "").trim().toLowerCase();
 /** Nomor order unik (huruf besar, urut kemunculan) dari teks yang ditempel (daftar bebas: baris, koma, atau kalimat keputusan). */
@@ -144,26 +148,33 @@ export function bacaSyaratSaldo(teks) {
   return { ok: galat.length === 0, daftar, galat };
 }
 const bulat = (t) => { const s = String(t ?? "").trim(); return /^\d+$/.test(s) ? Number(s) : null; };
-/** Bandingkan persetujuan yang diketik dengan manifest di layar. Mengembalikan daftar selisih (kosong = cocok). */
-export function periksaPersetujuanLayar({ manifest, hash, daftarOrder, jumlahOrder, jumlahTrx }) {
+const r4 = (n) => Math.round(Number(n) * 1e4) / 1e4;
+/** Isi transaksi lengkap persis seperti yang tampil di dialog (ID unit, order, bahan, kuantitas, satuan, tanggal). */
+export function isiTransaksiDari(manifest) {
+  return (manifest?.order ?? []).flatMap((o) => (o.trx ?? []).map((t) => ({ unitId: o.unitId, orderNumber: o.orderNumber, kodeBahan: t.kodeBahan, qty: r4(t.qty), satuan: t.satuan, tanggal: t.tanggal })));
+}
+/** Saldo bahan yang tampil di dialog (sebelum posting) — dikirim agar server menolak bila saldo bergeser sejak ditinjau. */
+export const saldoManifestDari = (manifest) => (manifest?.bahan ?? []).map((b) => ({ kode: b.kode, saldo: r4(b.saldoSekarang) }));
+/** Bandingkan konfirmasi yang diketik dengan manifest di layar. Mengembalikan daftar selisih (kosong = cocok). */
+export function periksaKonfirmasiLayar({ manifest, hash, daftarOrder, jumlahOrder, jumlahTrx }) {
   const beda = []; if (!manifest) return ["Manifest belum dimuat."];
   const h = normalHash(hash);
-  if (!h) beda.push("Tempel hash persetujuan Owner (64 karakter).");
-  else if (!/^[0-9a-f]{64}$/.test(h)) beda.push("Hash persetujuan harus 64 karakter hex — tempel utuh dari keputusan Owner.");
-  else if (h !== manifest.hash) beda.push(`Hash persetujuan (${h.slice(0, 10)}…) BERBEDA dari manifest di layar (${manifest.hash.slice(0, 10)}…). Pilihan order tidak sama dengan yang disetujui.`);
-  const disetujui = new Set(daftarOrder ?? []); const dilayar = new Set((manifest.order ?? []).map((o) => o.orderNumber));
-  if (!disetujui.size) beda.push("Tempel daftar order yang disetujui Owner.");
-  const lebihLayar = [...dilayar].filter((x) => !disetujui.has(x)); const lebihSetuju = [...disetujui].filter((x) => !dilayar.has(x));
-  if (disetujui.size && lebihLayar.length) beda.push(`Order di layar yang TIDAK disetujui (${lebihLayar.length}): ${lebihLayar.slice(0, 6).join(", ")}${lebihLayar.length > 6 ? "…" : ""}`);
-  if (disetujui.size && lebihSetuju.length) beda.push(`Order disetujui yang TIDAK dipilih di layar (${lebihSetuju.length}): ${lebihSetuju.slice(0, 6).join(", ")}${lebihSetuju.length > 6 ? "…" : ""}`);
+  if (!h) beda.push("Tempel hash manifest yang dimaksud (64 karakter).");
+  else if (!/^[0-9a-f]{64}$/.test(h)) beda.push("Hash harus 64 karakter hex — tempel utuh dari keputusan Owner.");
+  else if (h !== manifest.hash) beda.push(`Hash yang Anda ketik (${h.slice(0, 10)}…) BERBEDA dari manifest di layar (${manifest.hash.slice(0, 10)}…). Pilihan order tidak sama dengan yang dimaksud.`);
+  const dimaksud = new Set(daftarOrder ?? []); const dilayar = new Set((manifest.order ?? []).map((o) => o.orderNumber));
+  if (!dimaksud.size) beda.push("Tempel daftar order yang dimaksud.");
+  const lebihLayar = [...dilayar].filter((x) => !dimaksud.has(x)); const lebihDimaksud = [...dimaksud].filter((x) => !dilayar.has(x));
+  if (dimaksud.size && lebihLayar.length) beda.push(`Order di layar yang TIDAK ada di daftar Anda (${lebihLayar.length}): ${lebihLayar.slice(0, 6).join(", ")}${lebihLayar.length > 6 ? "…" : ""}`);
+  if (dimaksud.size && lebihDimaksud.length) beda.push(`Order di daftar Anda yang TIDAK dipilih di layar (${lebihDimaksud.length}): ${lebihDimaksud.slice(0, 6).join(", ")}${lebihDimaksud.length > 6 ? "…" : ""}`);
   const jo = bulat(jumlahOrder); const jt = bulat(jumlahTrx);
-  if (jo === null) beda.push("Isi jumlah order yang disetujui."); else if (jo !== manifest.jumlahOrder) beda.push(`Jumlah order disetujui ${jo} ≠ manifest ${manifest.jumlahOrder}.`);
-  if (jt === null) beda.push("Isi jumlah transaksi yang disetujui."); else if (jt !== manifest.jumlahTrx) beda.push(`Jumlah transaksi disetujui ${jt} ≠ manifest ${manifest.jumlahTrx}.`);
+  if (jo === null) beda.push("Isi jumlah order."); else if (jo !== manifest.jumlahOrder) beda.push(`Jumlah order yang Anda ketik ${jo} ≠ manifest ${manifest.jumlahOrder}.`);
+  if (jt === null) beda.push("Isi jumlah transaksi."); else if (jt !== manifest.jumlahTrx) beda.push(`Jumlah transaksi yang Anda ketik ${jt} ≠ manifest ${manifest.jumlahTrx}.`);
   return beda;
 }
-/** Badan persetujuanTerikat untuk server (nilai yang diketik Owner + unit yang benar-benar dipilih + digest isi dari manifest). */
-export function bangunPersetujuanTerikat({ manifest, hash, daftarOrder, jumlahOrder, jumlahTrx, rujukan, saldoSyarat }) {
-  return { hash: normalHash(hash), unitIds: manifest.unitIds, daftarOrder, jumlahOrder: bulat(jumlahOrder), jumlahTrx: bulat(jumlahTrx), rujukan: String(rujukan ?? "").trim(), digestIsi: manifest.digestIsi, ...(saldoSyarat?.length ? { saldoSyarat } : {}) };
+/** Badan konfirmasiManifest untuk server: nilai yang diketik + unit terpilih + isi transaksi lengkap + saldo yang ditinjau. */
+export function bangunKonfirmasiManifest({ manifest, hash, daftarOrder, jumlahOrder, jumlahTrx, rujukan, saldoSyarat }) {
+  return { hash: normalHash(hash), unitIds: manifest.unitIds, daftarOrder, jumlahOrder: bulat(jumlahOrder), jumlahTrx: bulat(jumlahTrx), rujukan: String(rujukan ?? "").trim(), isiTransaksi: isiTransaksiDari(manifest), saldoManifest: saldoManifestDari(manifest), digestIsi: manifest.digestIsi, ...(saldoSyarat?.length ? { saldoSyarat } : {}) };
 }
 
 /** Gabung kemajuan terbaru dengan yang lama saat koneksi putus: tampilkan yang terakhir diketahui, tandai basi. */
@@ -185,9 +196,10 @@ export function pesanGalat(e) {
   if (!e) return "";
   if (e.code === "RENCANA_BERUBAH") return "Manifest berubah sejak dimuat (stok/catatan bergeser). Muat ulang manifest lalu periksa lagi sebelum memulai.";
   if (e.code === "RENCANA_KOSONG") return "Tidak ada transaksi siap posting.";
-  if (e.code === "PERSETUJUAN_WAJIB") return e.message || "Persetujuan tidak lengkap (hash, rujukan, dan nama penyetuju wajib).";
-  if (e.code === "PERSETUJUAN_TERIKAT_WAJIB") return "Halaman ini versi lama. Muat ulang (Ctrl+F5) lalu ulangi dari dialog konfirmasi. Tidak ada yang diposting.";
-  if (e.code === "PERSETUJUAN_TIDAK_COCOK") return `Persetujuan TIDAK COCOK dengan rencana — tidak ada yang diposting. ${(Array.isArray(e.detail) ? e.detail : []).slice(0, 4).join(" · ")}`;
+  if (e.code === "PERSETUJUAN_WAJIB") return e.message || "Konfirmasi tidak lengkap (hash, rujukan, dan nama pelaksana wajib).";
+  if (e.code === "HANYA_OWNER_MEMULAI") return "Sementara hanya akun Owner yang dapat memulai posting. Tidak ada yang diposting.";
+  if (e.code === "KONFIRMASI_MANIFEST_WAJIB") return "Halaman ini versi lama. Muat ulang (Ctrl+F5) lalu ulangi dari dialog konfirmasi. Tidak ada yang diposting.";
+  if (e.code === "KONFIRMASI_MANIFEST_TIDAK_COCOK") return `Konfirmasi manifest TIDAK COCOK dengan rencana — tidak ada yang diposting. ${(Array.isArray(e.detail) ? e.detail : []).slice(0, 4).join(" · ")}`;
   if (e.status === 403) return "Akun Anda tidak punya izin untuk aksi ini.";
   if (e.status === 0 || /timeout|Failed to fetch|terputus|NetworkError/i.test(e.message || "")) return "Koneksi terputus. Status terakhir tetap ditampilkan; mencoba lagi otomatis.";
   return e.message || "Terjadi kesalahan.";

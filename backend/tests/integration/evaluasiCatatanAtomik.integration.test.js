@@ -8,7 +8,7 @@ import { testPrisma, truncateAll } from "./setup/testDb.js";
 import { createTestUser, createTestMaterial, createTestUnit, seedBalance } from "./setup/fixtures.js";
 import { rencanakanImpor, terapkanImpor, evaluasiUlang, periksaKeadaanCatatan } from "../../src/services/catatanPemakaianHistoris.js";
 import { rencanakanPosting, jalankanPosting, postingSatuUnit } from "../../src/services/postingPemakaianHistoris.js";
-import { ringkasRencana } from "../../src/services/postingPersetujuanTerikat.js";
+import { ringkasRencana, saldoBahanRencana } from "../../src/services/postingKonfirmasiManifest.js";
 import { koreksiCatatan, kecualikanCatatan, ajukanKoreksiPemakaian, setujuiKoreksiPemakaian } from "../../src/services/koreksiPemakaian.js";
 
 test.before(async () => { await truncateAll(); });
@@ -18,8 +18,9 @@ test.after(async () => { await truncateAll(); await testPrisma.$disconnect(); })
 const HDR = 'No,No. Resi / Order,Tgl Selesai,Bulan Selesai,Nama Pelanggan,Nama Sales,Ukuran Kasur,Jenis Layanan,Tgl Komplain,PIC Komplain,PIC / Teknisi,CORNER,Kategori Bahan,Nama Material / Bahan (SANO),Spesifikasi / Detail,Barang,Qty Pakai,Satuan,Harga Satuan (Rp),Total Biaya Bahan (Rp),"Total Penjualan\n(Rp)",Insentif PIC,Insentif Corner,Keterangan / QC';
 const baris = (no, order, tgl, kat, nama, qty, sat) => `${no},${order},${tgl},SEP,Pelanggan,Sales,200 x 160,Paket,,,RISDI,,${kat},${nama},,BAHAN,"${qty}",${sat},,,,,,QC OK`;
 const WIB = (iso) => new Date(`${iso}T00:00:00+07:00`);
-const terikatDari = (p, rujukan = "OWNER-2026-10-25") => { const r = ringkasRencana(p); return { hash: r.hash, unitIds: r.unitIds, daftarOrder: r.daftarOrder, jumlahOrder: r.jumlahOrder, jumlahTrx: r.jumlahTrx, rujukan }; };
-const PERSETUJUAN = (p) => (typeof p === "string" ? { hashDisetujui: p, rujukan: "OWNER-2026-10-25", disetujuiOleh: "Owner Uji", terikat: {} } : { hashDisetujui: p.hash, rujukan: "OWNER-2026-10-25", disetujuiOleh: "Owner Uji", terikat: terikatDari(p) });
+const konfirmasiDari = (p, rujukan = "OWNER-2026-10-25") => { const r = ringkasRencana(p); return { hash: r.hash, unitIds: r.unitIds, daftarOrder: r.daftarOrder, jumlahOrder: r.jumlahOrder, jumlahTrx: r.jumlahTrx, rujukan, isiTransaksi: r.isiTransaksi, saldoManifest: p.__saldo ?? [] }; };
+const rencanakan = async (db, o) => { const p = await rencanakanPosting(db, o); p.__saldo = await saldoBahanRencana(db, p); return p; }; // seperti UI: konfirmasi memuat saldo bahan yang ditinjau saat rencana dibuat
+const PERSETUJUAN = (p) => (typeof p === "string" ? { hashDisetujui: p, rujukan: "OWNER-2026-10-25", disetujuiOleh: "Owner Uji", konfirmasi: {} } : { hashDisetujui: p.hash, rujukan: "OWNER-2026-10-25", disetujuiOleh: "Owner Uji", konfirmasi: konfirmasiDari(p) });
 let seq = 0; const kunciUji = (t) => `uji-${t}-${Date.now().toString(36)}-${++seq}-aaaaaaaa`;
 
 async function dunia() {
@@ -35,7 +36,7 @@ async function dunia() {
     baris(4, "RES-05092026-903", "5 Sep 26", "Bahan Lapisan", "KAIN REBUTAN EVAL", "4,0", "METER")].join("\n");
   await terapkanImpor(testPrisma, await rencanakanImpor(testPrisma, { csvText: csv, namaBerkas: "eval.csv" }), {});
   await evaluasiUlang(testPrisma, {}); // keadaan awal yang benar
-  return { admin, owner, A: { id: admin.user.id, name: admin.user.name }, B: { id: owner.user.id, name: owner.user.name }, mx, my, uA, uB, uC };
+  return { admin, owner, A: { id: admin.user.id, name: admin.user.name, roles: ["ADMIN"] }, B: { id: owner.user.id, name: owner.user.name, roles: ["OWNER"] }, mx, my, uA, uB, uC };
 }
 const cat = (w, unit, mat) => testPrisma.unitUsageNote.findFirst({ where: { unitId: unit.id, materialId: mat.id, origin: "EXCEL" } });
 const keadaan = async (w) => Object.fromEntries(await Promise.all([["A_MX", w.uA, w.mx], ["B_MY", w.uB, w.my], ["B_MX", w.uB, w.mx], ["C_MX", w.uC, w.mx]].map(async ([k, u, m]) => [k, (await cat(w, u, m)).state])));
@@ -43,7 +44,7 @@ const saldo = async (id) => Number((await testPrisma.stockMovement.aggregate({ w
 const siapIds = async () => (await testPrisma.unitUsageNote.findMany({ where: { state: "SIAP_POSTING" }, select: { id: true } })).map((n) => n.id).sort().join(",");
 /** Titik tetap: evaluasi global tidak mengubah apa pun = tidak ada keadaan palsu di mana pun. */
 async function titikTetap(label) { const r = await evaluasiUlang(testPrisma, {}); assert.equal(r.berubah, 0, `${label}: evaluasi global masih mengubah ${r.berubah} catatan → ada keadaan palsu (${JSON.stringify(r.detail?.slice(0, 3))})`); }
-const planUnit = (w, ...unit) => rencanakanPosting(testPrisma, { unitIds: unit.map((u) => u.id) });
+const planUnit = (w, ...unit) => rencanakan(testPrisma, { unitIds: unit.map((u) => u.id) });
 
 test("E0. dunia uji: uA & uC lolos, uB-MX diblokir saldo tidak cukup, uB-MY sah", async () => {
   const w = await dunia(); const k = await keadaan(w);
@@ -57,7 +58,7 @@ test("E1. REGRESI: posting unit uB (transaksi sah MY) tidak boleh membuat catata
   const k = await keadaan(w); assert.equal(k.B_MX, "PERLU_DICEK", "catatan yang berebut bahan dengan unit lain tetap diblokir");
   assert.equal((await cat(w, w.uB, w.mx)).flags[0].kode, "SALDO_TIDAK_CUKUP");
   await titikTetap("E1 sesudah posting");
-  const rb = await rencanakanPosting(testPrisma); assert.ok(!rb.transaksi.some((t) => t.unitId === w.uB.id && t.kodeBahan === "E-MX"), "rencana berikutnya tidak memuat transaksi palsu");
+  const rb = await rencanakan(testPrisma); assert.ok(!rb.transaksi.some((t) => t.unitId === w.uB.id && t.kodeBahan === "E-MX"), "rencana berikutnya tidak memuat transaksi palsu");
 });
 
 test("E2. klik ulang: rencana lama ditolak; klik ganda serentak = tepat satu pergerakan; saldo tidak pernah negatif", async () => {

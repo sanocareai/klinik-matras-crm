@@ -15,10 +15,10 @@ const REPO = path.resolve(__dirname, "..");
 const TPL = "scripts/templates/release-posting-historis-ui.sh.tpl";
 const OUT = "scripts/release-posting-historis-ui.sh";
 const LIB_REH = "scripts/lib/rehearsal-kode-posting-ui.mjs";
-const LIB_SIM = "scripts/lib/simulasi-evaluasi-catatan.mjs"; // dipakai ulang tanpa perubahan (simulasi tulis pada DB rehearsal_evl_*)
+const LIB_SIM = "scripts/lib/simulasi-konfirmasi-manifest.mjs"; // simulasi tulis pada DB rehearsal_evl_*: Finance ditolak, replay insiden, saldo bergeser, klik ganda Owner, ulang berdampak berbeda
 const LIB_SMOKE = "scripts/lib/smoke-posting-ui.mjs";
 const GENERATOR = "scripts/gen-release-posting-historis-ui.cjs";
-const CAND_BRANCH = "feat/posting-historis-ui-pilih";
+const CAND_BRANCH = "fix/posting-historis-persetujuan-terikat";
 const FILE_TETAP = [OUT, LIB_REH, LIB_SIM, LIB_SMOKE, GENERATOR, TPL];
 // Berkas yang HARUS identik antara base dan kandidat: Koreksi Gudang/ledger/jurnal/otorisasi/izin/Stock Count/opname, perintah tahap Produksi (override), dan penerimaan Gudang.
 const GUARD_UNCHANGED = [
@@ -26,14 +26,14 @@ const GUARD_UNCHANGED = [
   "backend/src/routes/stockCount.js", "backend/src/services/opnameCutover.js", "backend/src/services/opnameMatriks.js", "backend/src/services/pergerakanSesiHitung.js", "backend/src/services/inventorySegregation.js",
   "backend/src/services/finance/journal.js", "backend/src/services/finance/posting/inventory.js", "backend/src/middleware/authorize.js", "backend/src/middleware/auth.js", "backend/src/constants/permissions.js",
   "backend/src/services/productionStepCommandService.js", "backend/src/services/unitStageEngine.js", "backend/src/services/orderStatusSync.js", "backend/src/lib/domain/pemakaianHistoris.js",
-  // evaluator/penulis catatan yang SUDAH live (cf99e746) — rilis UI tidak boleh mengubahnya
-  "backend/src/services/catatanPemakaianHistoris.js", "backend/src/services/postingPemakaianHistoris.js", "backend/src/services/koreksiPemakaian.js", "backend/src/services/finance/biayaBahan.js", "backend/src/services/productionOrderExport.js", "backend/src/services/laporanRekonsiliasiPemakaian.js", "backend/src/index.js",
+  // evaluator/penulis catatan yang SUDAH live (cf99e746) — rilis ini tidak boleh mengubahnya (postingPemakaianHistoris.js SENGAJA berubah: pagar Owner + konfirmasi manifest sebelum movement)
+  "backend/src/services/catatanPemakaianHistoris.js", "backend/src/services/koreksiPemakaian.js", "backend/src/services/finance/biayaBahan.js", "backend/src/services/productionOrderExport.js", "backend/src/services/laporanRekonsiliasiPemakaian.js", "backend/src/index.js",
 ];
 // Commit live yang wajib leluhur: Rencana jadwal mingguan LIVE (fd38f6c2), Koreksi Gudang (08d62e7d), Produksi override (799d3e93), Riwayat Referensi (56b87721), bukti serah (e5a32cd2), UX Gudang Tahap 1/token geser (10294dcb), manifest Sofa/Divan (20606872).
-const LIVE_ANCESTORS_REF = ["1cf94f8b", "cf99e746", "df00edb6", "693b8c52", "fa6beb86", "4394c828", "624f08d8", "d82e6e3d", "fd38f6c2", "e47f37e2", "58cbc284", "20606872", "10294dcb", "08d62e7d", "799d3e93", "56b87721", "e5a32cd2", "f293c587", "ca9bdea7"];
+const LIVE_ANCESTORS_REF = ["376c9594", "1cf94f8b", "cf99e746", "df00edb6", "693b8c52", "fa6beb86", "4394c828", "624f08d8", "d82e6e3d", "fd38f6c2", "e47f37e2", "58cbc284", "20606872", "10294dcb", "08d62e7d", "799d3e93", "56b87721", "e5a32cd2", "f293c587", "ca9bdea7"];
 // Teks yang HARUS ada di dist baru (fitur rilis ini) dan teks fitur live yang tidak boleh hilang.
-const DIST_BARU = ["Pilih hanya yang tampil", "Kosongkan", "Pilih minimal satu order", "Posting Pemakaian Historis", "Mulai batch"];
-const DIST_LAMA = ["Hentikan setelah order ini", "Manifest siap posting", "Catatan pemakaian historis", "Koreksi pemakaian menunggu persetujuan", "Usulan Bahan", "Perlu Perhatian", "Riwayat Pergerakan", "Stock Opname", "Pengeluaran Material"];
+const DIST_BARU = ["Konfirmasi manifest oleh Owner", "Rujukan yang akan dicatat", "Order yang akan diposting", "bukan persetujuan Owner yang tercatat terpisah", "BELUM DIKETAHUI (bukan Rp0)", "Saldo bahan yang Anda tinjau"];
+const DIST_LAMA = ["Pilih hanya yang tampil", "Kosongkan", "Pilih minimal satu order", "Posting Pemakaian Historis", "Mulai batch", "Hentikan setelah order ini", "Manifest siap posting", "Catatan pemakaian historis", "Koreksi pemakaian menunggu persetujuan", "Usulan Bahan", "Perlu Perhatian", "Riwayat Pergerakan", "Stock Opname", "Pengeluaran Material"];
 const lf = (t) => t.replace(/\r\n/g, "\n");
 const must = (c, m) => { if (!c) throw new Error("templat/masukan tak cocok: " + m); };
 const sha = (t) => crypto.createHash("sha256").update(t).digest("hex");

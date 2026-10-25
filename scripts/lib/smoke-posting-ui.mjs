@@ -52,7 +52,7 @@ else {
 if (admin) {
   const tk = jwt.sign({ id: admin.id, name: admin.name, role: admin.role, roles: peran.get(admin.id) }, process.env.JWT_SECRET, { expiresIn: "10m" });
   const pr = await api("GET", "/api/production/posting-historis/pratinjau", tk);
-  rec("GET pratinjau manifest 200 dengan hash, order, HPP", pr.status === 200 && /^[0-9a-f]{64}$/.test(pr.json?.hash ?? "") && pr.json?.hpp?.jurnalDibuat === false, `status=${pr.status} ${pr.json?.jumlahOrder} order / ${pr.json?.jumlahTrx} trx`);
+  rec("GET pratinjau manifest 200 dengan hash, digest isi, ID unit, isi transaksi, saldo bahan, HPP", pr.status === 200 && /^[0-9a-f]{64}$/.test(pr.json?.hash ?? "") && /^[0-9a-f]{64}$/.test(pr.json?.digestIsi ?? "") && pr.json?.hpp?.jurnalDibuat === false && (pr.json?.order ?? []).every((o) => o.unitId && (o.trx ?? []).every((t) => t.kodeBahan && t.satuan && t.tanggal)) && (pr.json?.bahan ?? []).every((b) => b.kode && Number.isFinite(b.saldoSekarang)), `status=${pr.status} ${pr.json?.jumlahOrder} order / ${pr.json?.jumlahTrx} trx`);
   const ls = await api("GET", "/api/production/posting-historis/batch", tk); rec("GET daftar batch 200", ls.status === 200 && Array.isArray(ls.json?.batch), `status=${ls.status}`);
   rec("GET batch yang tidak ada → 404", (await api("GET", `/api/production/posting-historis/batch/${"0".repeat(64)}`, tk)).status === 404);
   rec("tanpa token → 401 (pratinjau, daftar, batch)", (await api("GET", "/api/production/posting-historis/pratinjau", null)).status === 401 && (await api("GET", "/api/production/posting-historis/batch", null)).status === 401);

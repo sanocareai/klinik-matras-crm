@@ -3,7 +3,8 @@
 //   Catatan     : POST /catatan-historis/:id/{koreksi|konfirmasi|kecualikan}          (tanpa efek stok; Idempotency-Key wajib)
 //   Pemakaian   : POST /units/:id/koreksi-pemakaian[/pratinjau] · GET /koreksi-pemakaian · POST /koreksi-pemakaian/:id/{setujui|tolak|batal}   (efek stok; penyetuju ≠ pemohon)
 //   Posting     : GET  /posting-historis/rencana · POST /posting-historis/jalankan    (hanya rencana yang hash-nya disetujui; izin inventory:adjustment_approve)
-//                 jalankan & batch WAJIB membawa persetujuanTerikat (hash, unitIds, daftarOrder, jumlahOrder, jumlahTrx, rujukan[, saldoSyarat]) — selisih dengan rencana server → 409 PERSETUJUAN_TIDAK_COCOK sebelum apa pun dibuat
+//                 jalankan & batch: SEMENTARA hanya akun OWNER yang memulai (403 HANYA_OWNER_MEMULAI); WAJIB membawa konfirmasiManifest (hash, unitIds, isiTransaksi, saldoManifest, daftarOrder, jumlahOrder, jumlahTrx, rujukan[, saldoSyarat])
+//                 — selisih dengan rencana server → 409 KONFIRMASI_MANIFEST_TIDAK_COCOK sebelum apa pun dibuat. Konfirmasi manifest BUKAN bukti persetujuan Owner terpisah (lihat services/postingKonfirmasiManifest.js).
 //   Evaluasi    : POST /catatan-historis/evaluasi
 import express from "express";
 import { requireAuth } from "../middleware/auth.js";
@@ -63,11 +64,11 @@ pemakaianKoreksiRouter.post("/koreksi-pemakaian/:id/batal", tulisBahan, wajibUui
   try { res.json(await batalkanKoreksiPemakaian(prisma, { koreksiId: req.params.id, aktor: req.user, catatan: req.body?.catatan })); } catch (e) { handleErr(e, res); }
 });
 
-/** persetujuanTerikat dari badan permintaan: hanya bentuk datanya yang dinormalisasi; semua pembandingan ke rencana dilakukan di service (wajibPersetujuanTerikat). */
-function bacaTerikat(raw) {
+/** konfirmasiManifest dari badan permintaan: hanya bentuk datanya yang dinormalisasi; semua pembandingan ke rencana dilakukan di service (wajibKonfirmasiManifest). */
+function bacaKonfirmasi(raw) {
   if (raw === undefined || raw === null) return undefined;
-  if (typeof raw !== "object" || Array.isArray(raw)) throw Object.assign(new Error("persetujuanTerikat harus objek"), { statusCode: 400, code: "PERSETUJUAN_TERIKAT_TIDAK_VALID" });
-  return { hash: raw.hash, unitIds: raw.unitIds, daftarOrder: raw.daftarOrder, jumlahOrder: raw.jumlahOrder, jumlahTrx: raw.jumlahTrx, rujukan: raw.rujukan, digestIsi: raw.digestIsi, saldoSyarat: raw.saldoSyarat };
+  if (typeof raw !== "object" || Array.isArray(raw)) throw Object.assign(new Error("konfirmasiManifest harus objek"), { statusCode: 400, code: "KONFIRMASI_MANIFEST_TIDAK_VALID" });
+  return { hash: raw.hash, unitIds: raw.unitIds, daftarOrder: raw.daftarOrder, jumlahOrder: raw.jumlahOrder, jumlahTrx: raw.jumlahTrx, rujukan: raw.rujukan, isiTransaksi: raw.isiTransaksi, saldoManifest: raw.saldoManifest, digestIsi: raw.digestIsi, saldoSyarat: raw.saldoSyarat };
 }
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** unitIds opsional (posting SATU order / sebagian): daftar UUID unit; kosong = seluruh rencana. */
@@ -87,12 +88,12 @@ pemakaianKoreksiRouter.get("/posting-historis/pratinjau", requireAnyPermission(P
 });
 // Sinkron: untuk SATU order / sebagian kecil (unitIds). Rencana besar (puluhan–ratusan order) lewat batch latar di bawah — jangan menahan satu permintaan layar belasan menit.
 pemakaianKoreksiRouter.post("/posting-historis/jalankan", requirePermission(P.INVENTORY_ADJUSTMENT_APPROVE), async (req, res) => {
-  try { res.json(await jalankanPosting(prisma, { persetujuan: { hashDisetujui: req.body?.hashDisetujui, rujukan: req.body?.rujukan, disetujuiOleh: req.user.name, terikat: bacaTerikat(req.body?.persetujuanTerikat) }, aktor: req.user, jurnalHPP: req.body?.jurnalHPP === true, unitIds: bacaUnitIds(req.body?.unitIds) })); } catch (e) { handleErr(e, res); }
+  try { res.json(await jalankanPosting(prisma, { persetujuan: { hashDisetujui: req.body?.hashDisetujui, rujukan: req.body?.rujukan, disetujuiOleh: req.user.name, konfirmasi: bacaKonfirmasi(req.body?.konfirmasiManifest) }, aktor: req.user, jurnalHPP: req.body?.jurnalHPP === true, unitIds: bacaUnitIds(req.body?.unitIds) })); } catch (e) { handleErr(e, res); }
 });
 // Batch di latar: 202 + id (= hash rencana yang disetujui; idempoten). Progres lewat GET; kelanjutan setelah putus lewat pulihan saat boot atau POST …/lanjut.
 pemakaianKoreksiRouter.post("/posting-historis/batch", requirePermission(P.INVENTORY_ADJUSTMENT_APPROVE), async (req, res) => {
   try {
-    const b = await ajukanBatch(prisma, { persetujuan: { hashDisetujui: req.body?.hashDisetujui, rujukan: req.body?.rujukan, disetujuiOleh: req.user.name, terikat: bacaTerikat(req.body?.persetujuanTerikat) }, aktor: req.user, jurnalHPP: req.body?.jurnalHPP === true, unitIds: bacaUnitIds(req.body?.unitIds) });
+    const b = await ajukanBatch(prisma, { persetujuan: { hashDisetujui: req.body?.hashDisetujui, rujukan: req.body?.rujukan, disetujuiOleh: req.user.name, konfirmasi: bacaKonfirmasi(req.body?.konfirmasiManifest) }, aktor: req.user, jurnalHPP: req.body?.jurnalHPP === true, unitIds: bacaUnitIds(req.body?.unitIds) });
     mulaiBatch(prisma, b.batchId); // tidak ditunggu
     res.status(202).json(b);
   } catch (e) { handleErr(e, res); }

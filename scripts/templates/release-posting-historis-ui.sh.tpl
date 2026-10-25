@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# RILIS "UI POSTING PEMAKAIAN HISTORIS" — BACKEND (1 berkas: status HPP batch) + FRONTEND (halaman), TANPA MIGRASI, TANPA PERUBAHAN DATA. FAIL-CLOSED. Workflow RELEASE-DIRECTORY di atas release aktif (BASE_SHA = release live saat ini; generator dibangkitkan ulang per baseline).
-#   Pemolesan pilot (di atas UI live 1cf94f8b): 'Pilih hanya yang tampil' + 'Kosongkan' (satu order tanpa 209 klik), pratinjau pilihan di-debounce (tanpa badai permintaan), status HPP batch PARSIAL bila order masih punya catatan tertahan.
-#   Isi: halaman Gudang → Kontrol → Posting Pemakaian Historis (manifest + dampak stok/HPP, HPP PARSIAL + selisih belum dijurnal, Mulai dengan konfirmasi + rujukan Owner + pin hash, progres per order, alasan gagal, Hentikan/Lanjutkan; status = milik server, tetap terbaca
-#          setelah pindah tab/refresh/tutup tab) + API baca baru: pratinjau manifest, daftar batch, status batch ringan (tanpa membaca ulang rencana tiap polling).
-#   Tulis (mulai/lanjut/hentikan/jalankan) TIDAK diubah: izin persetujuan penyesuaian stok + gerbang hash rencana tetap di server. Rilis ini TIDAK memposting, TIDAK mengoreksi stok, TIDAK membuat GR historis/jurnal, TIDAK menjalankan batch.
+# RILIS "KONFIRMASI MANIFEST POSTING HISTORIS" (perbaikan insiden batch 13d80242, 25 Okt 2026) — BACKEND (5 berkas: pagar server) + FRONTEND (3 berkas: dialog), TANPA MIGRASI, TANPA PERUBAHAN DATA. FAIL-CLOSED. Workflow RELEASE-DIRECTORY di atas release aktif (BASE_SHA = release live saat ini; generator dibangkitkan dari commit final).
+#   Insiden: batch yang berjalan BUKAN manifest yang dimaksud Owner (13 transaksi / 5 order NEW-* vs 5 transaksi / 5 order RES-*); server hanya mencocokkan hash dengan pilihan klien sendiri.
+#   Perbaikan: (1) SEMENTARA hanya akun ber-role OWNER yang MEMULAI posting (batch & sinkron) — Owner meninjau dan mengonfirmasi manifest sendiri; Finance/Admin memantau, Finance boleh menghentikan/melanjutkan. (2) Eksekusi WAJIB membawa konfirmasi manifest: hash, ID unit, isi transaksi lengkap (order, bahan, kuantitas, satuan, tanggal),
+#          daftar order, jumlah, saldo bahan yang ditinjau, rujukan — dibandingkan server dengan rencana; selisih apa pun, saldo bergeser, tab/klien lama, atau percobaan ulang berdampak berbeda → ditolak (409/403) SEBELUM batch/movement, dengan jejak pelaku + peran (activity_events posting_historis_konfirmasi).
+#   BATAS KONTROL (jujur): konfirmasi manifest BUKAN bukti persetujuan Owner yang tercatat terpisah. Persetujuan dua orang (Owner terpisah dari pelaksana Finance) BELUM ada; UI dan laporan menyatakannya.
+#   Rilis ini TIDAK memposting, TIDAK mengoreksi stok, TIDAK membuat GR historis/jurnal, TIDAK menjalankan batch. Posting historis tetap BERHENTI sampai Owner menyetujui persetujuan baru.
 # URUTAN AMAN: (1) gerbang sumber (ancestry live, allowlist, TANPA prisma/dependensi/Docker, evaluator/penulis live identik, berkas pelindung identik) → (2) audit produksi baca-saja (terpasang == kandidat, 0 pending, tag image = image aktif) + sidik jari beku
 #              → (3) backup + checksum → (4) release dir + BUILD frontend (aset lama dibawa) + image → (5b) kode BARU terhadap restore backup nyata (audit baca-saja: sidik jari seluruh tabel sebelum=sesudah; LALU simulasi tulis pada DB rehearsal yang dihapus)
 #              → (7) switch → (8) verifikasi + smoke baca-saja + sidik jari beku.
@@ -72,7 +73,7 @@ Rollback kode setelah switch (TANPA perubahan database; tidak ada yang dipulihka
    cd ${PREV_DIR:-<release-sebelumnya>}
    docker tag ${ROLLBACK_TAG:-<tag-rollback>} ${IMG_NAME:-klinik-matras-backend:latest}
    SANSS_PERSIST_ROOT=${PERSIST} docker compose -p ${PROJECT} -f docker-compose.yml -f docker-compose.release.yml up -d --no-deps --force-recreate backend
-Rollback kode AMAN tanpa guard: rilis ini tidak mengubah database (tanpa migrasi, tanpa tulisan data). Image + dist lama = release live cf99e746 (evaluasi atomik tetap ada); rute baru hilang dan menu 'Posting Pemakaian Historis' tidak ada. Batch yang sedang berjalan (bila ada) tetap berjalan: ia milik pekerja server.
+Rollback kode AMAN tanpa guard: rilis ini tidak mengubah database (tanpa migrasi, tanpa tulisan data). Image + dist lama = release live 376c9594 (UI Posting Pemakaian Historis dengan pilih-hanya-yang-tampil); pagar konfirmasi manifest + Owner-saja hilang — jangan memposting memakai release lama tanpa persetujuan Owner baru. Batch yang sedang berjalan (bila ada) tetap berjalan: ia milik pekerja server.
 ─────────────────────────────────────────────────────────────────────────
 EOF
 }
@@ -465,4 +466,4 @@ $(basename "$w")"; done
 ) || echo "  (pembersihan dilewati)"
 trap - EXIT
 say "SELESAI — rilis ${DEPLOY_SHORT} aktif. Backup: ${BACKUP_FILE}. Image rollback: ${ROLLBACK_TAG}. Log: ${BK_DIR}/release.log"
-say "CATATAN: rilis ini UI + rute baca baru (tanpa migrasi, tanpa perubahan data, tanpa posting, tanpa menjalankan batch). Setelah SELESAI: memulai batch lewat UI TETAP butuh persetujuan Owner terpisah (hash rencana + rujukan); JANGAN memposting/mengoreksi/mulai batch sebagai uji di production."
+say "CATATAN: rilis ini pagar server + dialog (tanpa migrasi, tanpa perubahan data, tanpa posting, tanpa menjalankan batch). Setelah SELESAI: memulai batch HANYA oleh akun Owner dan TETAP butuh persetujuan Owner (hash penuh, daftar order, jumlah, rujukan); JANGAN memposting/mengoreksi/mulai batch sebagai uji di production."

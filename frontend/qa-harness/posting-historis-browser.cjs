@@ -1,4 +1,4 @@
-// CATATAN (persetujuan terikat, 25 Okt 2026): skrip ini ditulis SEBELUM dialog/API meminta persetujuan terikat (hash+daftar order+jumlah diketik, rujukan tidak lagi bertahan di draf). Untuk dijalankan lagi, isi bagian persetujuan seperti isiPersetujuan() di posting-historis-terikat.cjs dan kirim persetujuanTerikat pada POST batch/jalankan. Belum disesuaikan.
+// CATATAN (persetujuan terikat, 25 Okt 2026): skrip ini ditulis SEBELUM dialog/API meminta persetujuan terikat (hash+daftar order+jumlah diketik, rujukan tidak lagi bertahan di draf). Untuk dijalankan lagi, isi bagian persetujuan seperti isiPersetujuan() di posting-historis-terikat.cjs dan kirim konfirmasiManifest pada POST batch/jalankan. Belum disesuaikan.
 // QA browser NYATA (Chrome via puppeteer-core) untuk halaman Posting Pemakaian Historis, terhadap server + database TERISOLASI (restore sandbox; bukan production).
 // Skenario: dua tab, refresh, tutup tab lalu buka lagi, koneksi putus (offline), backend restart, klik ganda (satu tab dan dua tab serentak), koreksi order lain saat batch berjalan,
 // akun tanpa izin, tampilan HP, dan dampak performa dengan beberapa tab aktif.
