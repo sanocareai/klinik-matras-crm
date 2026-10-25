@@ -54,9 +54,19 @@ test("konfigurasi: valid → ready, baseUrl & hubInternalUrl dinormalkan ke orig
   assert.equal(hubSsoConfig({ ...okEnv, HUB_BASE_URL: "http://127.0.0.1:3100" }).ready, true);
 });
 
+// Same-domain embedding (Okt 2026) — HUB_BASE_URL/HUB_INTERNAL_URL boleh
+// punya path dasar sederhana (basePath Next.js HUB, mis. "/workspace"),
+// bukan cuma origin polos. Lihat BASE_PATH_PATTERN di hubSso.js.
+test("konfigurasi: HUB_BASE_URL/HUB_INTERNAL_URL dengan path dasar sederhana → ready, path dipertahankan", () => {
+  assert.equal(hubSsoConfig({ ...okEnv, HUB_BASE_URL: "https://app.sanomatrassehat.com/workspace" }).baseUrl, "https://app.sanomatrassehat.com/workspace");
+  assert.equal(hubSsoConfig({ ...okEnv, HUB_INTERNAL_URL: "http://127.0.0.1:3100/workspace" }).hubInternalUrl, "http://127.0.0.1:3100/workspace");
+  assert.equal(hubSsoConfig({ ...okEnv, HUB_BASE_URL: "https://app.sanomatrassehat.com/a/b" }).ready, true);
+});
+
 test("konfigurasi: HUB_BASE_URL cacat → tidak ready (enabled tapi ditolak)", () => {
   for (const bad of [undefined, "", "   ", "hub.example.com", "not a url", "http://hub.example.com", "ftp://hub.example.com",
-    "https://user:pw@hub.example.com", "https://hub.example.com/app", "https://hub.example.com/?x=1", "https://hub.example.com/#f", "javascript:alert(1)"]) {
+    "https://user:pw@hub.example.com", "https://hub.example.com/app/", "https://hub.example.com//app", "https://hub.example.com/app.x",
+    "https://hub.example.com/?x=1", "https://hub.example.com/app?x=1", "https://hub.example.com/#f", "javascript:alert(1)"]) {
     const c = hubSsoConfig({ ...okEnv, HUB_BASE_URL: bad });
     assert.equal(c.enabled, true, `enabled untuk ${bad}`);
     assert.equal(c.ready, false, `ready untuk ${JSON.stringify(bad)}`);
@@ -70,14 +80,14 @@ test("konfigurasi: HUB_BASE_URL cacat → tidak ready (enabled tapi ditolak)", (
 // postUrl); ini WAJIB privat, sama seperti SANSS_INTERNAL_URL di sisi HUB.
 test("konfigurasi: HUB_INTERNAL_URL cacat atau publik → tidak ready", () => {
   for (const bad of [undefined, "", "https://app.sanomatrassehat.com", "http://43.133.152.6:4000", "http://172.32.0.1:4000",
-    "http://127.0.0.1:4000/api", "http://u:p@127.0.0.1:4000", "not a url"]) {
+    "http://127.0.0.1:4000/api/", "http://127.0.0.1:4000/api?x=1", "http://u:p@127.0.0.1:4000", "not a url"]) {
     const c = hubSsoConfig({ ...okEnv, HUB_INTERNAL_URL: bad });
     assert.equal(c.ready, false, JSON.stringify(bad));
     assert.equal(c.hubInternalUrl, null);
   }
 });
 test("konfigurasi: HUB_INTERNAL_URL privat/loopback dalam berbagai bentuk → ready", () => {
-  for (const good of ["http://127.0.0.1:3100", "http://localhost:3100", "http://10.20.30.40:3100", "http://hub-service:3100"]) {
+  for (const good of ["http://127.0.0.1:3100", "http://localhost:3100", "http://10.20.30.40:3100", "http://hub-service:3100", "http://127.0.0.1:3100/workspace"]) {
     assert.equal(hubSsoConfig({ ...okEnv, HUB_INTERNAL_URL: good }).ready, true, good);
   }
 });

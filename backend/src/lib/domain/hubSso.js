@@ -19,6 +19,14 @@ export const HANDOFF_CODE_BYTES = 32;
 const CODE_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 /** SHA-256 heksadesimal dari `state` HUB — selalu 64 karakter hex kecil. */
 const STATE_HASH_PATTERN = /^[a-f0-9]{64}$/;
+/** Same-domain embedding (Okt 2026) — HUB_BASE_URL sekarang boleh punya path
+ * dasar (mis. "/workspace", HUB mount di origin yang SAMA dengan SANSS lewat
+ * basePath Next.js + reverse proxy), bukan cuma origin polos. Pola ini
+ * SENGAJA ketat — segmen alfanumerik sederhana saja, tanpa titik/encoded
+ * slash/trailing slash — supaya tidak ada ruang untuk trik path-traversal
+ * atau open-redirect lewat variabel ini; bukan pelemahan, perluasan yang
+ * tetap sama kerasnya terhadap bentuk liar apa pun. */
+const BASE_PATH_PATTERN = /^\/[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/;
 export const SERVICE_TOKEN_MIN_LENGTH = 32;
 /** Baris handoff lama dibersihkan setelah ini (jejak audit ada di activity_events, bukan di sini). */
 export const HANDOFF_RETENTION_MS = 24 * 3600 * 1000;
@@ -86,10 +94,17 @@ export function hubSsoConfig(env = process.env) {
         problems.push("HUB_BASE_URL harus https (http hanya untuk localhost)");
       } else if (u.username || u.password) {
         problems.push("HUB_BASE_URL tidak boleh memuat kredensial");
-      } else if ((u.pathname !== "/" && u.pathname !== "") || u.search || u.hash) {
-        problems.push("HUB_BASE_URL harus origin saja (tanpa path, query, atau fragment)");
+      } else if (u.search || u.hash) {
+        problems.push("HUB_BASE_URL tidak boleh memuat query atau fragment");
+      } else if (u.pathname !== "/" && u.pathname !== "" && !BASE_PATH_PATTERN.test(u.pathname)) {
+        problems.push("HUB_BASE_URL harus origin saja, atau origin + path dasar sederhana (mis. /workspace)");
       } else {
-        baseUrl = u.origin;
+        // Path dasar (mis. "/workspace") dipertahankan apa adanya — basePath
+        // Next.js HUB di origin yang sama dengan SANSS (same-domain
+        // embedding). Root ("/" atau "") tetap menghasilkan origin polos
+        // seperti sebelumnya, TIDAK diberi trailing slash tambahan.
+        const basePath = u.pathname === "/" ? "" : u.pathname;
+        baseUrl = `${u.origin}${basePath}`;
       }
     } catch {
       problems.push("HUB_BASE_URL bukan URL yang valid");
@@ -105,12 +120,20 @@ export function hubSsoConfig(env = process.env) {
       const u = new URL(rawInternal);
       if (u.username || u.password) {
         problems.push("HUB_INTERNAL_URL tidak boleh memuat kredensial");
-      } else if ((u.pathname !== "/" && u.pathname !== "") || u.search || u.hash) {
-        problems.push("HUB_INTERNAL_URL harus origin saja (tanpa path, query, atau fragment)");
+      } else if (u.search || u.hash) {
+        problems.push("HUB_INTERNAL_URL tidak boleh memuat query atau fragment");
+      } else if (u.pathname !== "/" && u.pathname !== "" && !BASE_PATH_PATTERN.test(u.pathname)) {
+        problems.push("HUB_INTERNAL_URL harus origin saja, atau origin + path dasar sederhana (mis. /workspace)");
       } else if (!isPrivateHost(u.hostname)) {
         problems.push("HUB_INTERNAL_URL harus alamat privat/loopback (panggilan revoke bersifat server-ke-server)");
       } else {
-        hubInternalUrl = u.origin;
+        // basePath Next.js HUB berlaku di proses itu sendiri, lepas dari
+        // jalur jaringan yang menjangkaunya (langsung ke port container pun
+        // tetap lewat router Next.js yang sama) — jadi /api/sso/revoke
+        // SUNGGUHAN ada di {origin}{basePath}/api/sso/revoke, bukan
+        // {origin}/api/sso/revoke, begitu HUB_BASE_URL (di atas) punya path.
+        const basePath = u.pathname === "/" ? "" : u.pathname;
+        hubInternalUrl = `${u.origin}${basePath}`;
       }
     } catch {
       problems.push("HUB_INTERNAL_URL bukan URL yang valid");
