@@ -11,6 +11,7 @@ import { formatTanggalPendek } from "@/utils/formatDate.js";
 import { formatDuration, formatRupiah, SOURCE_LABELS } from "@/utils/format.js";
 import { cn } from "@/lib/utils.js";
 import { compareLabel } from "@/lib/dateRange.js";
+import { sumberAkuisisiDariTraffic } from "../periodeLaporan.js";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import { FilterDropdown } from "@/components/ui/filter-dropdown.jsx";
 import KpiCard from "./KpiCard.jsx";
@@ -103,7 +104,7 @@ const LABEL_PLATFORM = {
   UNKNOWN: "—",
 };
 
-export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
+export default function TrafficTab({ traffic, sourceDetail, rangeParams, onBukaAkuisisi }) {
   const cmp = compareLabel(rangeParams);
   // Filter tanggal ikut dibawa ke halaman Pelanggan — tanpa ini, klik
   // "Google Ads" di laporan 30 hari membuka daftar SELURUH waktu, jadi
@@ -549,6 +550,7 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
           index={8}
           title="Sumber Lead"
           description="Klik sumber untuk membuka daftar kontaknya (filter tanggal ikut terbawa)"
+          actions={onBukaAkuisisi ? <button type="button" className="btn btn-ghost btn-sm" onClick={() => onBukaAkuisisi(null)}>Performa akuisisi per sumber <ArrowRight size={12} /></button> : null}
         >
           {/* Bar proporsi — satu batang utuh, tiap kanal satu segmen.
               Lebih cepat dibaca daripada deretan angka: mana yang dominan
@@ -606,8 +608,10 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
         <ChartCard
           index={9}
           title="Performa per Platform"
-          description="Biaya iklan (input manual) dibagi hasil, per platform — pilih satu untuk detail"
+          description="Biaya iklan (input manual, total bulanan) dibagi hasil, per platform — pilih satu untuk detail. Untuk biaya periode tepat + nilai order & pembayaran, buka Akuisisi."
           actions={
+            <>
+            {onBukaAkuisisi && <button type="button" className="btn btn-ghost btn-sm" onClick={() => onBukaAkuisisi(sumberAkuisisiDariTraffic(platformSel) || null)}>{platformSel && sumberAkuisisiDariTraffic(platformSel) ? "Detail di Akuisisi" : "Buka Akuisisi"} <ArrowRight size={12} /></button>}
             <FilterDropdown
               value={platformSel}
               onChange={setPlatformSel}
@@ -616,6 +620,7 @@ export default function TrafficTab({ traffic, sourceDetail, rangeParams }) {
               ariaLabel="Pilih platform di Performa per Platform"
               triggerClassName="h-7 text-[12px]"
             />
+            </>
           }
         >
           {loadingPerf ? (

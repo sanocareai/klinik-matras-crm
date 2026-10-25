@@ -15,6 +15,7 @@
 import { alasanBukanLead, jejakPembayaran } from "./cohort.js";
 import { ORDER_EXCLUDED_STATUS } from "./cohortDefinitions.js";
 import { nilaiBersih } from "../orderNilaiBersih.js";
+import { biayaKpiSumber, SUMBER_BERBIAYA } from "./biayaSumber.js";
 
 export const AMBANG_SAMPEL = 30;
 export const SUMBER = Object.freeze([
@@ -91,7 +92,7 @@ export function sorotan(daftar) {
 }
 
 /** Susun jawaban. `biayaMeta` = blok biaya atribusi-terbukti dari laporan iklan (null bila tidak dihitung). */
-export function susunSumber({ parameter, hasil, biayaMeta = null, provenMeta = null, asOf, mulaiHari = null, hariIni = null }) {
+export function susunSumber({ parameter, hasil, biayaMeta = null, provenMeta = null, biayaSumber = null, asOf, mulaiHari = null, hariIni = null }) {
   const daftar = SUMBER.map((s) => {
     const x = hasil.per.get(s.id);
     const konv = (a) => ({ nilai: pct(a, x.lead), pembilang: a, penyebut: x.lead, penyebutJenis: "TOTAL_LEAD_TERMASUK_SPAM" });
@@ -112,27 +113,54 @@ export function susunSumber({ parameter, hasil, biayaMeta = null, provenMeta = n
       buktiAtribusi: adaMeta
         ? { jenis: "ATRIBUSI_TERBUKTI_TERSEDIA", akuisisiTerbukti: provenMeta?.akuisisiTerbukti ?? null, catatan: "Hanya Meta yang punya touch CTWA terbukti; angka label CRM dan angka terbukti bisa berbeda. Rincian per campaign: tab Iklan (Campaign)." }
         : { jenis: "LABEL_CRM", akuisisiTerbukti: null, catatan: "Sumber hanya label CRM (tanpa bukti per klik dan tanpa data spend)." },
-      biaya: adaMeta && biayaMeta ? { dasar: "ATRIBUSI_TERBUKTI", status: biayaMeta.status, spend: biayaMeta.spend, cpa: biayaMeta.cpa, cpl: biayaMeta.cpl, bookedRoas: biayaMeta.bookedRoas, cashRoas: biayaMeta.cashRoas, alasanNull: biayaMeta.alasanNull ?? {}, costPerPlatformConversation: biayaMeta.costPerPlatformConversation ?? null }
-        : { dasar: adaMeta ? "BELUM_DIHITUNG" : "TIDAK_ADA_SUMBER_SPEND", status: adaMeta ? "BELUM_DIHITUNG" : "TIDAK_ADA_SUMBER_SPEND", spend: null, cpa: null, cpl: null, bookedRoas: null, cashRoas: null, alasanNull: { cpa: adaMeta ? "BELUM_DIHITUNG" : "TIDAK_ADA_SUMBER_SPEND", bookedRoas: adaMeta ? "BELUM_DIHITUNG" : "TIDAK_ADA_SUMBER_SPEND" } },
+      // BIAYA SUMBER (label CRM + biaya sumber pada rentang yang sama; BUKAN atribusi per klik). Campaign tetap membutuhkan touch/mapping terbukti (tab Iklan); pengaman campaign tidak disentuh.
+      biaya: (() => {
+        if (s.jenis === "ORGANIK") return biayaKpiSumber({ jenis: "ORGANIK" });
+        if (!biayaSumber) return { dasar: "ATRIBUSI_LABEL_CRM", status: "BELUM_DIHITUNG", spend: null, spendLengkap: false, sementara: false, alasanSementara: [], cpl: null, cpa: null, bookedRoas: null, cashRoas: null, alasanNull: { cpa: "BELUM_DIHITUNG", bookedRoas: "BELUM_DIHITUNG", cashRoas: "BELUM_DIHITUNG", cpl: "BELUM_DIHITUNG" }, cakupan: null };
+        const cak = biayaSumber.get(s.id);
+        if (s.jenis === "ORGANIK" || !cak) return biayaKpiSumber({ jenis: "ORGANIK" });
+        const k = biayaKpiSumber({ cakupan: cak.cakupan, jenis: s.jenis, lead: x.lead, leadSah: x.leadSah, lunas: x.lunas, nilaiOrder: rp(x.nilaiOrder), uangBersih: rp(x.uangBersih), ledger: { orderEligible: x.orderEligible, orderBerLedger: x.orderBerLedger }, hariIni, sampai: parameter.sampai });
+        return { ...k, entri: cak.entries.map((e) => ({ id: e.id, jenis: e.kind, dari: e.dateFrom, sampai: e.dateTo, akun: e.accountId || null, nominal: e.amount, gantiDetailAd: e.override, alasan: e.reason, revisi: e.revision })) };
+      })(),
+      biayaCampaignTerbukti: adaMeta && biayaMeta ? { dasar: "ATRIBUSI_TERBUKTI", status: biayaMeta.status, spend: biayaMeta.spend, cpa: biayaMeta.cpa, cpl: biayaMeta.cpl, bookedRoas: biayaMeta.bookedRoas, cashRoas: biayaMeta.cashRoas, alasanNull: biayaMeta.alasanNull ?? {}, catatan: "Hanya campaign dengan touch CTWA terbukti + mapping; lihat tab Iklan (Campaign)." } : null,
     };
   });
-  const total = daftar.reduce((a, s) => { for (const f of ["lead", "spam", "leadSah", "berOrder", "membayar", "lunas"]) a[f] += s[f]; a.uangLedger = rp(a.uangLedger + s.uang.uangLedger); a.nilaiOrderSaatIni = rp(a.nilaiOrderSaatIni + s.uang.nilaiOrderSaatIni); a.orderEligible += s.order.eligible; a.orderBerLedger += s.order.berLedger; return a; }, { lead: 0, spam: 0, leadSah: 0, berOrder: 0, membayar: 0, lunas: 0, uangLedger: 0, nilaiOrderSaatIni: 0, orderEligible: 0, orderBerLedger: 0 });
+  const total = daftar.reduce((a, s) => { for (const f of ["lead", "spam", "leadSah", "berOrder", "membayar", "lunas"]) a[f] += s[f]; a.uangLedger = rp(a.uangLedger + s.uang.uangLedger); a.uangBersih = rp(a.uangBersih + s.uang.uangBersih); a.nilaiOrderSaatIni = rp(a.nilaiOrderSaatIni + s.uang.nilaiOrderSaatIni); a.orderEligible += s.order.eligible; a.orderBerLedger += s.order.berLedger; return a; }, { lead: 0, spam: 0, leadSah: 0, berOrder: 0, membayar: 0, lunas: 0, uangLedger: 0, uangBersih: 0, nilaiOrderSaatIni: 0, orderEligible: 0, orderBerLedger: 0 });
+  // TOTAL SUMBER BERBAYAR (Meta + TikTok [+ Lainnya bila punya entri]): hanya dihitung bila SEMUA sumber wajib punya biaya lengkap pada rentang yang sama; selain itu null (tidak ada total semu).
+  const wajib = daftar.filter((s) => s.jenis === "IKLAN" || (s.jenis === "LAINNYA" && (s.biaya.entri || []).length > 0));
+  const berbayar = (() => {
+    const ids = wajib.map((x) => x.id); const lengkapSemua = wajib.length > 0 && wajib.every((x) => x.biaya.status === "LENGKAP");
+    const lunas = wajib.reduce((a, x) => a + x.lunas, 0), lead = wajib.reduce((a, x) => a + x.lead, 0), nilai = rp(wajib.reduce((a, x) => a + x.uang.nilaiOrderSaatIni, 0)), uang = rp(wajib.reduce((a, x) => a + x.uang.uangBersih, 0));
+    const spend = lengkapSemua ? rp(wajib.reduce((a, x) => a + (x.biaya.spend ?? 0), 0)) : null;
+    const belum = wajib.filter((x) => x.biaya.status !== "LENGKAP").map((x) => ({ id: x.id, status: x.biaya.status }));
+    const sementara = lengkapSemua && wajib.some((x) => x.biaya.sementara);
+    return { sumber: ids, lengkap: lengkapSemua, belumLengkap: belum, spend, sementara, lead, lunas, nilaiOrderSaatIni: nilai, uangBersih: uang,
+      cpa: lengkapSemua && lunas > 0 ? rp(spend / lunas) : null, bookedRoas: lengkapSemua && spend > 0 ? rp(nilai / spend) : null, cashRoas: lengkapSemua && spend > 0 ? rp(uang / spend) : null,
+      alasanNull: lengkapSemua ? (lunas > 0 ? (spend > 0 ? null : "SPEND_NOL") : "BELUM_ADA_KONVERSI") : "SPEND_TIDAK_LENGKAP_PADA_SUMBER_WAJIB", catatan: "Total hanya untuk sumber berbayar yang punya biaya lengkap; organik tidak punya biaya dialokasikan." };
+  })();
   const peringatan = [];
   const w = (kode, pesan, data) => peringatan.push({ kode, pesan, ...(data ? { data } : {}) });
   if (parameter.termasukHariBerjalan) w("HARI_BERJALAN", "Rentang mencakup hari ini: angka lead/order masih bertambah dan biaya per hasil sengaja kosong.");
   if (total.orderEligible > 0 && total.orderBerLedger < total.orderEligible) w("LEDGER_TIDAK_LENGKAP", `Hanya ${total.orderBerLedger} dari ${total.orderEligible} order yang punya pembayaran di ledger: "Customer membayar" adalah batas bawah, bukan total pasti.`, { orderBerLedger: total.orderBerLedger, orderEligible: total.orderEligible });
-  w("SUMBER_LABEL_CRM", "Sumber = label CRM. Hanya Meta yang punya atribusi per klik terbukti; TikTok, WhatsApp, Instagram, Website, dan Lainnya tanpa bukti per klik dan tanpa data spend.");
+  w("SUMBER_LABEL_CRM", "Sumber = label CRM. Hanya Meta yang punya atribusi per klik terbukti; sumber lain tanpa bukti per klik. CPA/ROAS sumber = biaya sumber ÷ hasil kohort label CRM ('Atribusi label CRM'), bukan CPA campaign.");
   if (mulaiHari && parameter.dari < mulaiHari) w("RENTANG_SEBELUM_ATRIBUSI", `Rentang dimulai sebelum atribusi per klik tersimpan (${mulaiHari} WIB): jumlah lead per label tetap valid, tetapi bukti atribusi Meta tidak mencakup seluruh rentang.`, { atribusiMulai: mulaiHari });
-  const sp = biayaMeta;
-  if (sp && sp.status && !["SIAP_DIEVALUASI", "BELUM_ADA_KONVERSI", "DATA_BELUM_MATANG"].includes(sp.status)) w("SPEND_BELUM_LENGKAP", "Spend Meta belum lengkap/sebanding untuk rentang ini — CPA dan ROAS belum dapat dinilai.", { statusBiaya: sp.status });
+  for (const x of wajib) {
+    const st = x.biaya.status;
+    if (st === "LENGKAP") continue;
+    const ket = { BELUM_DIISI: "belum diisi", SPEND_TIDAK_LENGKAP: "belum lengkap (ada hari tanpa data)", RENTANG_TIDAK_COCOK: "memakai total rentang yang tidak cocok dengan periode ini", HARI_BERJALAN_PARSIAL: "mencakup hari berjalan" }[st] || st;
+    w("SPEND_BELUM_LENGKAP", `Biaya ${x.label} ${ket} untuk rentang ini — CPA dan ROAS ${x.label} belum dapat dinilai.`, { sumber: x.id, statusBiaya: st, hariHilang: (x.biaya.cakupan?.hariHilang || []).slice(0, 31), hariRentangTidakCocok: (x.biaya.cakupan?.hariRentangTidakCocok || []).slice(0, 31) });
+  }
+  for (const x of daftar) if (x.biaya.sementara) w("BIAYA_SEMENTARA", `CPA/ROAS ${x.label} bersifat SEMENTARA: ${x.biaya.alasanSementara.join("; ")}.`, { sumber: x.id });
+  for (const x of daftar) if ((x.biaya.cakupan?.manualDiabaikanHari || []).length) w("MANUAL_DIABAIKAN", `Biaya manual ${x.label} diabaikan pada ${x.biaya.cakupan.manualDiabaikanHari.length} hari karena detail Ad sudah ada (tidak dijumlah ganda). Tandai 'ganti detail Ad' bila total manual yang benar.`, { sumber: x.id });
   if (bukanLeadAda(hasil)) w("BUKAN_LEAD_PEMASARAN", `${hasil.bukanLeadPemasaran} customer berlabel B2B/penjualan karyawan dikeluarkan dari semua sumber.`, { jumlah: hasil.bukanLeadPemasaran });
-  const statusSpend = !biayaMeta ? "BELUM_DIHITUNG" : biayaMeta.status;
+  const statusSpend = !biayaSumber ? "BELUM_DIHITUNG" : (daftar.find((x) => x.id === "META")?.biaya.status ?? "BELUM_DIHITUNG");
   return {
     versi: 1, dihitungPada: asOf instanceof Date ? asOf.toISOString() : asOf, zonaWaktu: "Asia/Jakarta",
     periode: { dari: parameter.dari, sampai: parameter.sampai, hariIni, termasukHariBerjalan: !!parameter.termasukHariBerjalan, bawaan: !!parameter.bawaan },
     status: { spend: statusSpend, ledger: { orderEligible: total.orderEligible, orderBerLedger: total.orderBerLedger, persen: pct(total.orderBerLedger, total.orderEligible) }, atribusi: { mulaiHari, metaAkuisisiTerbukti: provenMeta?.akuisisiTerbukti ?? null, metaLabelCrm: daftar[0].lead } },
-    total, pengecualianTotal: { spam: total.spam, internalStaff: daftar.reduce((a, s) => a + s.pengecualian.internalStaff, 0), profilKaryawan: daftar.reduce((a, s) => a + s.pengecualian.profilKaryawan, 0), dikeluarkanDariSemuaSumber: { total: hasil.bukanLeadPemasaran, perLabel: hasil.bukanLeadPerLabel || {}, catatan: "customer berlabel B2B_DIRECT / PENJUALAN_KARYAWAN bukan lead pemasaran: tidak masuk sumber mana pun" } }, sumber: daftar, sorotan: sorotan(daftar), metrik: Object.fromEntries(Object.entries(METRIK).map(([k, v]) => [k, v.label])), peringatan,
+    total: { ...total, berbayar }, pengecualianTotal: { spam: total.spam, internalStaff: daftar.reduce((a, s) => a + s.pengecualian.internalStaff, 0), profilKaryawan: daftar.reduce((a, s) => a + s.pengecualian.profilKaryawan, 0), dikeluarkanDariSemuaSumber: { total: hasil.bukanLeadPemasaran, perLabel: hasil.bukanLeadPerLabel || {}, catatan: "customer berlabel B2B_DIRECT / PENJUALAN_KARYAWAN bukan lead pemasaran: tidak masuk sumber mana pun" } }, sumber: daftar, sorotan: sorotan(daftar), metrik: Object.fromEntries(Object.entries(METRIK).map(([k, v]) => [k, v.label])), peringatan,
     definisi: { sumber: "Label CRM (Customer.leadSource), bukan bukti per klik.", konversi: "UTAMA: customer ber-order ÷ TOTAL lead (termasuk spam), konsisten dengan KPI Oktober. Metrik terpisah 'non-spam': customer ber-order ÷ lead sah. Pembilang dan penyebut ditampilkan.", ambang: `Sampel kecil = < ${AMBANG_SAMPEL} lead: aturan tampilan sementara, bukan uji signifikansi statistik dan bukan penentu pemenang pasti.`, overlap: "pernahDp, dpSaatIni, dan lunas tidak eksklusif; gunakan kategoriEksklusif untuk pembagian yang jumlahnya = ber-order.", ledger: "Pembayaran sah di ledger sistem; pembayaran di luar sistem tidak terlihat." },
+    cutoffEvaluasi: { waktuWib: new Date(new Date(asOf instanceof Date ? asOf : Date.now()).getTime() + 7 * 3600e3).toISOString().replace("T", " ").slice(0, 19) + " WIB", catatan: "Pembayaran dan status order dievaluasi sampai waktu ini (ledger sekarang). Lead terbaru belum punya waktu penuh untuk membayar." },
     batasan: ["Nilai order = nilai saat ini.", `Peringkat memakai metrik terpilih; sumber dengan < ${AMBANG_SAMPEL} lead diberi tanda sampel kecil dan tidak masuk sorotan konversi (aturan tampilan sementara; tidak ada klaim signifikansi statistik).`, "Spam dan staf ikut di penyebut konversi utama; lihat pengecualian per sumber dan konversi non-spam sebagai metrik terpisah."],
   };
 }
@@ -142,6 +170,7 @@ const bukanLeadAda = (h) => h.bukanLeadPemasaran > 0;
 import { startOfDayWIB, endOfDayExclusiveWIB } from "../../utils/wib.js";
 import { muatMasukanKohort } from "./cohortLoader.js";
 import { hitungLaporanIklan } from "./iklanReport.js";
+import { muatBiayaSumber } from "./biayaSumber.js";
 
 export async function hitungSumberPerforma(db, parameter, { now = new Date(), timeoutMs = 25_000, denganMeta = true } = {}) {
   const { dari, sampai, hariIni } = parameter;
@@ -156,5 +185,6 @@ export async function hitungSumberPerforma(db, parameter, { now = new Date(), ti
     provenMeta = { akuisisiTerbukti: lap.jumlahTeratribusi?.leadUnik ?? null };
     parameter = { ...parameter, termasukHariBerjalan: lap.periode?.termasukHariBerjalan === true };
   } else parameter = { ...parameter, termasukHariBerjalan: sampai >= hariIni };
-  return susunSumber({ parameter, hasil, biayaMeta, provenMeta, asOf: now, mulaiHari, hariIni });
+  const biayaSumber = denganMeta ? await muatBiayaSumber(db, { dari, sampai, hariIni }) : null;
+  return susunSumber({ parameter, hasil, biayaMeta, provenMeta, biayaSumber, asOf: now, mulaiHari, hariIni });
 }

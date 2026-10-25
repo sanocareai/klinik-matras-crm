@@ -15,11 +15,13 @@ import { hitungKesehatanCapture } from "../services/attribution/captureHealth.js
 import { hitungD7 } from "../services/attribution/d7.js";
 import { hitungSumberPerforma } from "../services/attribution/sumber.js";
 import { pasangRuteSpend } from "./attributionSpend.js";
+import { pasangRuteBiayaSumber } from "./attributionBiayaSumber.js";
 import { barisDariCsv, jalankanImpor, sidikJari, MAKS_BARIS_IMPOR } from "../services/attribution/adReferensi.js";
 
 export const attributionAdsRouter = express.Router();
 attributionAdsRouter.use(requireAuth, requireAdmin);
 pasangRuteSpend(attributionAdsRouter);   // Fase 3: /spend, /target, /monitor
+pasangRuteBiayaSumber(attributionAdsRouter);   // Okt 2026: /biaya-sumber (biaya iklan tingkat sumber, input manual)
 
 let sedangBerjalan = false;   // satu perhitungan laporan sekaligus per proses
 

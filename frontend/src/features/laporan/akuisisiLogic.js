@@ -46,7 +46,14 @@ export const ALASAN_LABEL = {
   BELUM_ADA_SPEND: "belum ada spend", SPEND_TIDAK_LENGKAP: "spend belum lengkap", HARI_BERJALAN_PARSIAL: "hari berjalan parsial", HARI_ATRIBUSI_PARSIAL: "hari atribusi parsial",
   SEBELUM_ATRIBUSI: "sebelum atribusi", BELUM_ADA_KONVERSI: "belum ada konversi", SPEND_NOL: "spend Rp0", TIDAK_ADA_SUMBER_SPEND: "tanpa data spend", BELUM_DIHITUNG: "belum dihitung",
   DATA_TERLAMBAT: "data spend terlambat", MAPPING_BELUM_ADA: "mapping belum ada",
+  BELUM_DIISI: "biaya belum diisi", RENTANG_TIDAK_COCOK: "total rentang tidak cocok", TIDAK_TERSEDIA_ORGANIK: "biaya tidak tersedia", TIDAK_ADA_BIAYA_DIALOKASIKAN: "biaya tidak tersedia",
+  SPEND_TIDAK_LENGKAP_PADA_SUMBER_WAJIB: "ada sumber berbayar yang biayanya belum lengkap",
 };
+export const STATUS_BIAYA_LABEL = {
+  LENGKAP: "Biaya lengkap", BELUM_DIISI: "Biaya belum diisi", SPEND_TIDAK_LENGKAP: "Biaya belum lengkap", RENTANG_TIDAK_COCOK: "Total rentang tidak cocok",
+  HARI_BERJALAN_PARSIAL: "Mencakup hari berjalan", TIDAK_TERSEDIA_ORGANIK: "Biaya tidak tersedia", BELUM_DIHITUNG: "Belum dihitung",
+};
+export const statusBiayaTeks = (st) => STATUS_BIAYA_LABEL[st] || (st ? String(st).toLowerCase().replace(/_/g, " ") : "—");
 export const alasanTeks = (kode) => (kode ? ALASAN_LABEL[kode] || String(kode).toLowerCase().replace(/_/g, " ") : null);
 
 /** Sel biaya (CPA/ROAS): null → "—" + alasan; tidak pernah nol palsu. */
@@ -64,14 +71,15 @@ export function penandaPerSumber(sorotan) {
   return m;
 }
 
-const URUT_PERINGATAN = ["SPEND_BELUM_LENGKAP", "HARI_BERJALAN", "LEDGER_TIDAK_LENGKAP", "RENTANG_SEBELUM_ATRIBUSI", "SUMBER_LABEL_CRM", "BUKAN_LEAD_PEMASARAN"];
+const URUT_PERINGATAN = ["SPEND_BELUM_LENGKAP", "HARI_BERJALAN", "BIAYA_SEMENTARA", "MANUAL_DIABAIKAN", "LEDGER_TIDAK_LENGKAP", "RENTANG_SEBELUM_ATRIBUSI", "SUMBER_LABEL_CRM", "BUKAN_LEAD_PEMASARAN"];
 export function peringatanUrut(lap) {
   return [...(lap?.peringatan || [])].sort((a, b) => (URUT_PERINGATAN.indexOf(a.kode) + 1 || 99) - (URUT_PERINGATAN.indexOf(b.kode) + 1 || 99));
 }
 export function bannerUtama(lap) {
   const p = peringatanUrut(lap).find((w) => ["SPEND_BELUM_LENGKAP", "HARI_BERJALAN"].includes(w.kode));
   if (!p) return null;
-  return p.kode === "SPEND_BELUM_LENGKAP" ? "Spend belum lengkap — CPA dan ROAS belum dapat dinilai." : "Rentang mencakup hari berjalan — biaya per hasil sengaja kosong.";
+  if (p.kode === "SPEND_BELUM_LENGKAP") return p.data?.sumber && p.pesan ? p.pesan : "Spend belum lengkap — CPA dan ROAS belum dapat dinilai.";
+  return "Rentang mencakup hari berjalan — biaya per hasil sengaja kosong.";
 }
 /** Status "customer membayar": angka hanya batas bawah bila ledger belum lengkap. */
 export function statusMembayar(lap) {
@@ -111,3 +119,68 @@ export function teksPengecualianTotal(lap) {
   return `Pengecualian: spam ${angka(p.spam)} · staf internal ${angka(p.internalStaff)} · profil karyawan ${angka(p.profilKaryawan)} · B2B/penjualan karyawan (di luar semua sumber) ${angka(d.total)}${rinci ? ` (${rinci})` : ""}`;
 }
 export const NOTA_AMBANG = "Sampel kecil = < 30 lead (aturan tampilan sementara). Ini bukan uji signifikansi statistik dan sorotan bukan pemenang pasti.";
+
+// ═══ BIAYA SUMBER, NILAI & PEMBAYARAN (kontrak server: sumber[].biaya, sumber[].uang, total.berbayar) ═══════════════════════════════════════════════════════════
+// Definisi (sama untuk kartu, tabel, detail, dan ekspor — semuanya membaca objek server yang sama):
+//   Nilai order        = Σ nilai order eligible kohort lead (nilai SAAT INI, bukan uang masuk).
+//   Pembayaran bersih  = pembayaran sah di ledger − refund disetujui (uang tercatat, BUKAN nilai order).
+//   Biaya iklan        = biaya SUMBER pada rentang yang sama (detail Ad / entri manual / total rentang), lengkap bila setiap hari terisi; selain itu null + alasan.
+//   CPA lunas          = biaya ÷ customer UNIK lunas-terbukti (kohort lead periode ini, dievaluasi sampai waktu cutoff). Dasar: "Atribusi label CRM" — BUKAN CPA campaign.
+//   Booked ROAS        = nilai order ÷ biaya.   Cash ROAS = pembayaran bersih ÷ biaya.   Keduanya terpisah; tidak pernah dicampur.
+export const DASAR_BIAYA_LABEL = "Atribusi label CRM";
+export const sumberBerbiaya = (s) => s?.jenis === "IKLAN" || s?.jenis === "LAINNYA";
+
+/** Sel biaya sumber: '—' + alasan; organik → 'biaya tidak tersedia' (bukan Rp0). */
+export function selBiayaSumber(s, kunci) {
+  const b = s?.biaya;
+  if (!b) return { teks: "—", alasan: null, kosong: true };
+  if (kunci === "spend") {
+    if (b.spend == null) return { teks: "—", alasan: alasanTeks(b.status) || null, kosong: true };
+    return { teks: rupiah(b.spend), alasan: b.status === "LENGKAP" ? null : statusBiayaTeks(b.status).toLowerCase(), kosong: false };
+  }
+  const c = selBiaya(b, kunci);
+  return { ...c, sementara: !c.kosong && b.sementara === true };
+}
+/** Sel untuk total sumber berbayar (alasanNull berupa teks tunggal). */
+export function selTotalBerbayar(t, kunci) {
+  const v = t?.[kunci];
+  if (v == null) return { teks: "—", alasan: alasanTeks(typeof t?.alasanNull === "string" ? t.alasanNull : null), kosong: true, sementara: false };
+  return { teks: kunci === "spend" || kunci === "cpa" ? rupiah(v) : kali(v), alasan: null, kosong: false, sementara: t.sementara === true };
+}
+export const sementaraTeks = (b) => (b?.sementara ? (b.alasanSementara || []).map((a) => String(a).split(":")[0].replace(/_/g, " ").toLowerCase()).join(", ") : null);
+
+/** Waktu cutoff evaluasi pembayaran (dari server, WIB). */
+export const teksCutoff = (lap) => lap?.cutoffEvaluasi?.waktuWib || null;
+
+/** Ringkasan 'berapa sumber berbayar sudah lengkap biayanya'. */
+export function ringkasBiayaBerbayar(lap) {
+  const b = lap?.total?.berbayar; if (!b) return null;
+  return { lengkap: b.lengkap === true, jumlah: (b.sumber || []).length, belum: (b.belumLengkap || []).map((x) => ({ id: x.id, status: x.status })) };
+}
+
+// ── EKSPOR CSV: kolom = apa yang tampil di layar; nilai null → sel kosong + kolom alasan (tidak pernah 0). ────────────────────────────────────────────────────
+const CSV_KOLOM = ["Sumber", "Dasar biaya", "Lead", "Spam", "Lead sah", "Ber-order", "Membayar", "Lunas", "Konversi ber-order % (÷ total lead termasuk spam)", "Pembilang", "Penyebut",
+  "Nilai order saat ini (Rp)", "Pembayaran tercatat bersih (Rp)", "Biaya iklan (Rp)", "Status biaya", "CPA lunas (Rp)", "Alasan CPA kosong", "Booked ROAS", "Cash ROAS", "Alasan ROAS kosong", "Sementara"];
+const cel = (v) => {
+  if (v == null) return "";
+  let t = String(v);
+  if (typeof v !== "number" && /^[=+\-@\t\r]/.test(t)) t = "'" + t;   // cegah formula injection di Excel
+  return /[",\n\r]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
+};
+export function buatCsvAkuisisi(lap) {
+  if (!lap) return "";
+  const p = lap.periode || {};
+  const meta = [["Periode lead masuk (WIB)", `${p.dari ?? ""} s/d ${p.sampai ?? ""}`], ["Evaluasi pembayaran sampai", teksCutoff(lap) || ""], ["Dasar sumber", "Label CRM (Customer.leadSource); CPA/ROAS = Atribusi label CRM, bukan CPA campaign"],
+    ["Definisi", "Nilai order = nilai order eligible saat ini; Pembayaran bersih = ledger - refund disetujui; CPA lunas = biaya sumber / customer unik lunas; null dikosongkan"]];
+  const baris = (lap.sumber || []).map((s) => {
+    const b = s.biaya || {};
+    return [s.label, b.dasar === "ATRIBUSI_LABEL_CRM" ? DASAR_BIAYA_LABEL : "", s.lead, s.spam, s.leadSah, s.berOrder, s.membayar, s.lunas, s.konversiOrder?.nilai, s.konversiOrder?.pembilang, s.konversiOrder?.penyebut,
+      s.uang?.nilaiOrderSaatIni, s.uang?.uangBersih, b.spend, statusBiayaTeks(b.status), b.cpa, b.cpa == null ? (alasanTeks(b.alasanNull?.cpa) || "") : "", b.bookedRoas, b.cashRoas,
+      b.cashRoas == null ? (alasanTeks(b.alasanNull?.cashRoas) || "") : "", b.sementara ? "ya" : ""];
+  });
+  const t = lap.total || {}; const bb = t.berbayar;
+  const total = ["TOTAL (semua sumber)", "", t.lead, t.spam, t.leadSah, t.berOrder, t.membayar, t.lunas, "", "", "", t.nilaiOrderSaatIni, t.uangBersih, "", "", "", "", "", "", "", ""];
+  const berbayar = bb ? ["TOTAL sumber berbayar", DASAR_BIAYA_LABEL, bb.lead, "", "", "", "", bb.lunas, "", "", "", bb.nilaiOrderSaatIni, bb.uangBersih, bb.spend, bb.lengkap ? "Biaya lengkap" : "Ada sumber belum lengkap", bb.cpa, bb.cpa == null ? (alasanTeks(bb.alasanNull) || "") : "", bb.bookedRoas, bb.cashRoas, bb.cashRoas == null ? (alasanTeks(bb.alasanNull) || "") : "", bb.sementara ? "ya" : ""] : null;
+  return [...meta.map((r) => r.map(cel).join(",")), "", CSV_KOLOM.map(cel).join(","), ...baris.map((r) => r.map(cel).join(",")), total.map(cel).join(","), ...(berbayar ? [berbayar.map(cel).join(",")] : [])].join("\r\n") + "\r\n";
+}
+export const namaBerkasCsv = (lap) => `akuisisi-${lap?.periode?.dari ?? "x"}_${lap?.periode?.sampai ?? "x"}.csv`;

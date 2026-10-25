@@ -1081,8 +1081,10 @@ test("SUMBER /sumber: RBAC, READ ONLY, parameter salah 400, angka = SQL independ
   assert.ok(meta.pernahDp + meta.lunas > meta.berOrder - 0, "pernahDp & lunas TIDAK eksklusif (overlap) — tidak boleh dijumlah");
   assert.equal(meta.order.eligible, 5); assert.equal(meta.uang.uangLedger, 8_750_000);
   assert.equal(j.sumber.length, 6); assert.deepEqual(j.sumber.filter((x) => x.id !== "META").map((x) => x.lead), [0, 0, 0, 0, 0]);
-  assert.deepEqual([meta.biaya.cpa, meta.biaya.cashRoas], [null, null]); assert.ok(["SPEND_TIDAK_LENGKAP", "BELUM_TERHUBUNG", "SEBELUM_ATRIBUSI", "DATA_TERLAMBAT", "MAPPING_BELUM_ADA", "BELUM_ADA_KONVERSI", "TANPA_SPEND_DI_RENTANG"].includes(meta.biaya.status), meta.biaya.status);
-  assert.equal(j.sumber.find((x) => x.id === "TIKTOK").biaya.status, "TIDAK_ADA_SUMBER_SPEND");
+  assert.deepEqual([meta.biaya.cpa, meta.biaya.cashRoas], [null, null]); assert.ok(["SPEND_TIDAK_LENGKAP", "BELUM_TERHUBUNG", "SEBELUM_ATRIBUSI", "DATA_TERLAMBAT", "MAPPING_BELUM_ADA", "BELUM_ADA_KONVERSI", "TANPA_SPEND_DI_RENTANG", "BELUM_DIISI", "RENTANG_TIDAK_COCOK", "HARI_BERJALAN_PARSIAL"].includes(meta.biaya.status), meta.biaya.status);
+  // biaya per SUMBER (Atribusi label CRM, 30 Okt 2026): tanpa input manual → BELUM_DIISI (bukan Rp0); organik → tidak tersedia; CPA/ROAS tetap null.
+  const tt = j.sumber.find((x) => x.id === "TIKTOK"); assert.deepEqual([tt.biaya.status, tt.biaya.dasar, tt.biaya.spend, tt.biaya.cpa, tt.biaya.cashRoas], ["BELUM_DIISI", "ATRIBUSI_LABEL_CRM", null, null, null]);
+  assert.equal(j.sumber.find((x) => x.id === "WHATSAPP").biaya.status, "TIDAK_TERSEDIA_ORGANIK"); assert.equal(j.total.berbayar.lengkap, false);
   assert.ok(j.pembanding && j.pembanding.sumber.length === 6 && j.pembanding.periode.sampai === "2026-09-24");
   assert.ok(j.sorotan.some((x) => x.id === "VOLUME" && x.sumberId === "META"));
   assert.deepEqual({ s: await testPrisma.metaAdDailySpend.count(), o: await testPrisma.order.count(), p: await testPrisma.payment.count(), t: await testPrisma.attributionTouch.count(), c: await testPrisma.customer.count() }, sebelum, "READ ONLY");

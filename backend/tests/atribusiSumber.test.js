@@ -43,13 +43,13 @@ test("order batal/pending/penjualan karyawan tidak dihitung ber-order; spam deng
   assert.deepEqual([t.berOrder, t.lunas, t.membayar, t.refund, t.uangBersih], [1, 0, 1, 400_000, 600_000], "satu-satunya order eligible punya refund → bukan lunas");
 });
 
-test("konversi: pembilang & penyebut ditampilkan; sampel kecil bila lead sah < ambang; biaya non-Meta null TIDAK_ADA_SUMBER_SPEND; Meta null bila biaya belum dihitung", () => {
+test("konversi: pembilang & penyebut ditampilkan; sampel kecil bila lead sah < ambang; biaya organik null TIDAK_TERSEDIA_ORGANIK; Meta null bila biaya belum dihitung", () => {
   const cs = Array.from({ length: AMBANG_SAMPEL }, () => cust("WHATSAPP_DIRECT")); const kecil = [cust("INSTAGRAM"), cust("INSTAGRAM")];
   const os = [ord(cs[0].id), ord(cs[1].id), ord(kecil[0].id)];
   const r = susunSumber({ parameter: param, hasil: hitung([...cs, ...kecil], os), biayaMeta: null, asOf: new Date("2026-10-26T00:00:00Z"), hariIni: "2026-10-26" });
   const wa = r.sumber.find((x) => x.id === "WHATSAPP"), ig = r.sumber.find((x) => x.id === "INSTAGRAM"), meta = r.sumber.find((x) => x.id === "META");
   assert.equal(wa.sampelKecil, false); assert.deepEqual(wa.konversiOrder, { nilai: 6.67, pembilang: 2, penyebut: 30, penyebutJenis: "TOTAL_LEAD_TERMASUK_SPAM" }); assert.equal(ig.sampelKecil, true);
-  assert.deepEqual([wa.biaya.cpa, wa.biaya.cashRoas, wa.biaya.status], [null, null, "TIDAK_ADA_SUMBER_SPEND"]); assert.equal(meta.biaya.status, "BELUM_DIHITUNG"); assert.equal(meta.biaya.cpa, null);
+  assert.deepEqual([wa.biaya.cpa, wa.biaya.cashRoas, wa.biaya.status], [null, null, "TIDAK_TERSEDIA_ORGANIK"]); assert.equal(meta.biaya.status, "BELUM_DIHITUNG"); assert.equal(meta.biaya.cpa, null);
   assert.equal(meta.konversiOrder.nilai, null, "tanpa lead sah → null, bukan 0%"); assert.equal(meta.konversiOrder.penyebut, 0);
   assert.ok(r.peringatan.some((p) => p.kode === "SUMBER_LABEL_CRM")); assert.ok(r.total.lead === 32);
 });
@@ -65,7 +65,7 @@ test("sorotan dihitung dari data, bukan hardcode: konversi tertinggi hanya di an
 
 test("peringatan: hari berjalan, ledger tidak lengkap (batas bawah), spend belum lengkap (dari status biaya Meta), rentang sebelum atribusi", () => {
   const a = cust("META_ADS"), o = ord(a.id);
-  const r = susunSumber({ parameter: { ...param, termasukHariBerjalan: true }, hasil: hitung([a], [o, ord(a.id)], [bayar(o.id, 1_000_000)]), biayaMeta: { status: "SPEND_TIDAK_LENGKAP", spend: 100, cpa: null, cpl: null, bookedRoas: null, cashRoas: null, alasanNull: { cpa: "SPEND_TIDAK_LENGKAP" } }, provenMeta: { akuisisiTerbukti: 1 }, asOf: "x", mulaiHari: "2026-10-16", hariIni: "2026-10-26" });
+  const r = susunSumber({ parameter: { ...param, termasukHariBerjalan: true }, hasil: hitung([a], [o, ord(a.id)], [bayar(o.id, 1_000_000)]), biayaSumber: new Map([["META", { cakupan: { status: "SPEND_TIDAK_LENGKAP", spend: 100, hariHilang: ["2026-10-03"], hariRentangTidakCocok: [], manualDiabaikanHari: [] }, entries: [] }]]), provenMeta: { akuisisiTerbukti: 1 }, asOf: "x", mulaiHari: "2026-10-16", hariIni: "2026-10-26" });
   const k = r.peringatan.map((p) => p.kode);
   for (const w of ["HARI_BERJALAN", "LEDGER_TIDAK_LENGKAP", "SPEND_BELUM_LENGKAP", "RENTANG_SEBELUM_ATRIBUSI"]) assert.ok(k.includes(w), w);
   const meta = r.sumber[0]; assert.equal(meta.biaya.cpa, null); assert.equal(meta.biaya.alasanNull.cpa, "SPEND_TIDAK_LENGKAP"); assert.equal(meta.biaya.spend, 100);

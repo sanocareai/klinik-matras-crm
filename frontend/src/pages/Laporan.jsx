@@ -1,9 +1,11 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Download, RefreshCw } from "lucide-react";
 import { api } from "../api.js";
 import DateRangePicker from "../components/DateRangePicker.jsx";
 import { STAGE_LABELS } from "../utils/format.js";
-import { makeRange, toApiParams, formatRangeText } from "../lib/dateRange.js";
+import { makeRange, makeCustomRange, toApiParams, formatRangeText } from "../lib/dateRange.js";
+import { bacaUrlLaporan, tulisUrlLaporan, samaRentang } from "@/features/laporan/periodeLaporan.js";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs.jsx";
 import { KpiRowSkeleton, ChartGridSkeleton } from "@/features/laporan/components/LaporanSkeleton.jsx";
 import RingkasanTab from "@/features/laporan/components/RingkasanTab.jsx";
@@ -33,11 +35,31 @@ const TABS = ["Ringkasan", "Sales", "Traffic", "Akuisisi", "Iklan", "Performa Ti
 const namaFile = (r) => (r?.from && r?.to ? `${r.from}-${r.to}` : "semua");
 
 export default function Laporan() {
-  const [tab, setTab] = useState("Ringkasan");
+  // SATU sumber state untuk tab, periode, dan detail sumber Akuisisi: URL (?tab&dari&sampai&sumber). Refresh, tombol Back, berpindah tab, dan membuka detail sumber tidak mengubah periode.
+  // Sebelumnya tab Akuisisi (30 hari) dan Iklan (7 hari) memegang rentang sendiri sehingga bisa berbeda dari filter global (bug 26 Okt 2026: global 1–26 Okt vs Akuisisi 26 Sep–25 Okt).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const dariUrl = useMemo(() => bacaUrlLaporan(searchParams, TABS), [searchParams]);
+  const tab = dariUrl.tab || "Ringkasan";
+  const sumberId = tab === "Akuisisi" ? dariUrl.sumber : null;
   // Default "Hari ini" (26 Agustus 2026, permintaan owner) — konsisten
   // dengan Dashboard yang sudah lama begini. Charts otomatis ikut per JAM
   // untuk rentang 1 hari (lihat seriesWindow() di routes/analytics.js).
-  const [range, setRange] = useState(() => makeRange("today"));
+  // rangeLokal menyimpan preset (label picker) dan kasus tanpa batas ('Semua'); bila URL membawa dari/sampai, URL yang menang.
+  const [rangeLokal, setRangeLokal] = useState(() => makeRange("today"));
+  const range = useMemo(() => {
+    if (!dariUrl.dari) return rangeLokal;
+    return samaRentang(rangeLokal, { from: dariUrl.dari, to: dariUrl.sampai }) ? rangeLokal : makeCustomRange(dariUrl.dari, dariUrl.sampai);
+  }, [dariUrl.dari, dariUrl.sampai, rangeLokal]);
+  const perbaruiUrl = useCallback((patch, { ganti = true } = {}) => {
+    setSearchParams(tulisUrlLaporan(searchParams, {
+      tab: patch.tab ?? tab, range: patch.range ?? range, sumber: patch.sumber === undefined ? sumberId : patch.sumber,
+    }), { replace: ganti });
+  }, [searchParams, setSearchParams, tab, range, sumberId]);
+  const setTab = useCallback((t) => perbaruiUrl({ tab: t, sumber: null }, { ganti: false }), [perbaruiUrl]);
+  const setRange = useCallback((r) => { setRangeLokal(r); perbaruiUrl({ range: r }); }, [perbaruiUrl]);
+  // Buka detail satu sumber di tab Akuisisi (dari kartu/tabel Akuisisi atau dari tab Traffic) — push, jadi tombol Back menutup detail; periode tetap sama.
+  const pilihSumber = useCallback((id) => perbaruiUrl({ tab: "Akuisisi", sumber: id || null }, { ganti: false }), [perbaruiUrl]);
+  const kembaliSumber = useCallback(() => perbaruiUrl({ sumber: null }, { ganti: false }), [perbaruiUrl]);
 
   const [overview, setOverview] = useState(null);
   const [summary, setSummary]   = useState(null);
@@ -183,7 +205,17 @@ export default function Laporan() {
         </TabsList>
 
         <div style={{ paddingTop: 24 }}>
-          {loading ? (
+          {tab === "Akuisisi" || tab === "Iklan" ? (
+            // Dua tab ini memuat datanya sendiri dengan periode global di atas; tidak ikut skeleton agar state tab (urutan, panel, drilldown) tidak hilang saat filter berubah.
+            <>
+              <TabsContent value="Akuisisi">
+                <AkuisisiTab range={range} onUbahRentang={setRange} sumberId={sumberId} onPilihSumber={pilihSumber} onKembaliSumber={kembaliSumber} onBukaIklan={() => setTab("Iklan")} />
+              </TabsContent>
+              <TabsContent value="Iklan">
+                <IklanCampaignTab range={range} onUbahRentang={setRange} />
+              </TabsContent>
+            </>
+          ) : loading ? (
             <div className="flex flex-col gap-5">
               <KpiRowSkeleton />
               <ChartGridSkeleton />
@@ -208,15 +240,7 @@ export default function Laporan() {
               </TabsContent>
 
               <TabsContent value="Traffic">
-                <TrafficTab traffic={traffic} sourceDetail={sourceDetail} rangeParams={toApiParams(range)} />
-              </TabsContent>
-
-              <TabsContent value="Akuisisi">
-                <AkuisisiTab onBukaIklan={() => setTab("Iklan")} />
-              </TabsContent>
-
-              <TabsContent value="Iklan">
-                <IklanCampaignTab />
+                <TrafficTab traffic={traffic} sourceDetail={sourceDetail} rangeParams={toApiParams(range)} onBukaAkuisisi={pilihSumber} />
               </TabsContent>
 
               <TabsContent value="Performa Tim">

@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ChevronRight, Loader2, RefreshCw } from "lucide-react";
 import { api } from "@/api.js";
-import DateRangePicker from "@/components/DateRangePicker.jsx";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import { Card, CardContent } from "@/components/ui/card.jsx";
-import { makeCustomRange, todayWIB, formatRangeText } from "@/lib/dateRange.js";
+import { todayWIB } from "@/lib/dateRange.js";
+import { periodeTab } from "../periodeLaporan.js";
+import BannerPeriode from "./BannerPeriode.jsx";
 import { formatRupiah } from "@/utils/format.js";
 import { cn } from "@/lib/utils.js";
 import { kueriIklan, drilldown, barisTabel, ringkasCakupan, peringatanUrut, statusBiayaLaporan, barisBiaya, jejak, formatPersen, UMUR, LEVELS, NADA_KELAS } from "../iklanCampaignLogic.js";
@@ -55,9 +56,10 @@ const TIP_BIAYA = {
   roasc: "Cash ROAS: pembayaran ledger valid dikurangi refund ÷ spend.",
 };
 
-export default function IklanCampaignTab() {
-  // bawaan = 7 HARI PENUH yang berakhir kemarin (hari berjalan spend/lead tidak sebanding → KPI CRM null); hari ini tetap bisa dipilih manual
-  const [range, setRange] = useState(() => { const k = todayWIB().subtract(1, "day"); return makeCustomRange(k.subtract(6, "day").format("YYYY-MM-DD"), k.format("YYYY-MM-DD")); });
+export default function IklanCampaignTab({ range, onUbahRentang }) {
+  // Periode = filter global Laporan (SATU state; sebelumnya tab ini punya rentang 7 hari sendiri yang bisa berbeda dari tab lain). Hari berjalan boleh, tetapi KPI biaya per hasil sengaja kosong.
+  const hariIni = useMemo(() => todayWIB().format("YYYY-MM-DD"), []);
+  const periode = useMemo(() => periodeTab(range, hariIni), [range, hariIni]);
   const [level, setLevel] = useState("campaign");
   const [jalur, setJalur] = useState({ campaignId: null, adSetId: null, nama: {} });
   const [umur, setUmur] = useState("semua");
@@ -68,6 +70,7 @@ export default function IklanCampaignTab() {
   const [panel, setPanel] = useState(null);   // null | "spend" | "target" | "monitor"
 
   const muat = useCallback(async () => {
+    if (!periode.ok) { setLap(null); setGalat(null); return; }
     setMemuat(true); setGalat(null);
     try {
       setLap(await api.getAtribusiIklan(kueriIklan({ range, level, campaignId: jalur.campaignId, adSetId: jalur.adSetId })));
@@ -75,7 +78,7 @@ export default function IklanCampaignTab() {
       setLap(null);
       setGalat(e?.status === 429 ? "Laporan sedang dihitung untuk permintaan lain — coba lagi sebentar." : (e?.message || "Gagal memuat laporan iklan."));
     } finally { setMemuat(false); }
-  }, [range, level, jalur.campaignId, jalur.adSetId]);
+  }, [range, periode.ok, level, jalur.campaignId, jalur.adSetId]);
   useEffect(() => { muat(); }, [muat]);
 
   const baris = useMemo(() => (lap?.grup || []).map((g) => ({ g, b: barisTabel(g, umur), c: barisBiaya(g) })), [lap, umur]);
@@ -98,14 +101,13 @@ export default function IklanCampaignTab() {
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="min-w-[220px]">
-          <p className="t-secondary text-[12.5px]">
-            Periode lead: <b>{formatRangeText(range)}</b> (tanggal customer dibuat, WIB, maks. 93 hari). Satu customer baru = satu campaign (touch iklan pertama yang terbukti).
-          </p>
+        <div className="min-w-[220px] flex-1">
+          <BannerPeriode periode={periode} hariIni={hariIni} onUbahRentang={onUbahRentang} cutoff={null} ringkas>
+            <p className="t-secondary text-[12px]">Periode memakai tanggal customer dibuat (WIB, maks. 93 hari). Satu customer baru = satu campaign (touch iklan pertama yang terbukti).</p>
+          </BannerPeriode>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button className="btn btn-ghost btn-sm" onClick={muat} disabled={memuat}><RefreshCw size={14} /> Refresh</button>
-          <DateRangePicker value={range} onChange={setRange} showCompare={false} allowAll={false} />
+          <button className="btn btn-ghost btn-sm" onClick={muat} disabled={memuat || !periode.ok}><RefreshCw size={14} /> Refresh</button>
         </div>
       </div>
 

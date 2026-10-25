@@ -1514,6 +1514,11 @@ export const api = {
   // Performa Akuisisi per sumber (ADMIN, baca-saja): label CRM per sumber + Meta atribusi terbukti/biaya. dari/sampai kosong = 30 hari penuh berakhir kemarin.
   getAtribusiSumber: (params) => request("/atribusi/iklan/sumber" + buildQuery(params)),
   // Fase 3 (Okt 2026): spend harian per Ad ID, target KPI, monitoring (ADMIN). Impor spend dryRun-default; sistem tidak mengubah iklan/budget.
+  // Biaya iklan tingkat SUMBER (ADMIN): input manual harian / total rentang (+ audit append-only). dryRun:true = hanya rencana. Tidak menyentuh spend per Ad, campaign, atau budget Meta.
+  getBiayaSumber: (params) => request("/atribusi/iklan/biaya-sumber" + buildQuery(params)),
+  simpanBiayaSumber: (data) => request("/atribusi/iklan/biaya-sumber", { method: "PUT", body: JSON.stringify(data) }),
+  batalkanBiayaSumber: (id, alasan) => request(`/atribusi/iklan/biaya-sumber/${encodeURIComponent(id)}/batalkan`, { method: "POST", body: JSON.stringify({ alasan }) }),
+  getRiwayatBiayaSumber: (id) => request(`/atribusi/iklan/biaya-sumber/${encodeURIComponent(id)}/riwayat`),
   getAtribusiSpend: (params) => request("/atribusi/iklan/spend" + buildQuery(params)),
   importAtribusiSpend: (data) => request("/atribusi/iklan/spend", { method: "POST", body: JSON.stringify(data) }),
   getAtribusiTarget: () => request("/atribusi/iklan/target"),
