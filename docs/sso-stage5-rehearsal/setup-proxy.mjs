@@ -66,6 +66,9 @@ http {
     # Simetris dgn DEPLOYMENT.md §6b (HUB) — blokir SANSS->HUB revoke dari publik.
     # Path SUNGGUHAN di balik basePath adalah /workspace/api/sso/revoke.
     location /workspace/api/sso/revoke { return 404; }
+    # Main Hub (Okt 2026) — simetris: SANSS->HUB summary juga server-ke-server
+    # murni, tidak pernah lewat proxy publik (lihat POST /api/sso/summary, HUB).
+    location /workspace/api/sso/summary { return 404; }
 
     # Lebih spesifik dari location / di bawah — nginx selalu memilih prefix
     # terpanjang yang cocok, jadi urutan penulisan di sini tidak penting,

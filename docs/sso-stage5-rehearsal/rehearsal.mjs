@@ -74,6 +74,10 @@ async function main() {
   check(r.status === 404, "proxy publik 8443 MEMBLOKIR (path /workspace) /api/sso/revoke -> 404", `status=${r.status}`);
   r = await fetch(`http://127.0.0.1:${A.HUB_PORT}/workspace/api/sso/revoke`, { method: "POST", headers: { "x-hub-service-token": A.SHARED_TOKEN, "content-type": "application/json" }, body: JSON.stringify({ sub: "x" }) });
   check(r.status === 200, "langsung ke backend (bypass proxy) /api/sso/revoke -> TETAP bisa", `status=${r.status}`);
+  r = await fetch(`${A.PUBLIC}/workspace/api/sso/summary`, { method: "POST", headers: { "x-hub-service-token": A.SHARED_TOKEN, "content-type": "application/json" }, body: JSON.stringify({ subs: ["x"] }) });
+  check(r.status === 404, "proxy publik 8443 MEMBLOKIR (path /workspace) /api/sso/summary -> 404", `status=${r.status}`);
+  r = await fetch(`http://127.0.0.1:${A.HUB_PORT}/workspace/api/sso/summary`, { method: "POST", headers: { "x-hub-service-token": A.SHARED_TOKEN, "content-type": "application/json" }, body: JSON.stringify({ subs: ["x"] }) });
+  check(r.status === 200, "langsung ke backend (bypass proxy) /api/sso/summary -> TETAP bisa", `status=${r.status}`);
 
   // ═══ 3. Playwright — browser SUNGGUHAN, TLS asli (cert self-signed diizinkan) ═══
   console.log("\n== Playwright: browser sungguhan ==");
@@ -302,6 +306,148 @@ async function main() {
     check(false, "7. Alur proyek/meeting/task gagal", `${e.message} — screenshot: ${shotPath} — url=${page.url()} — bad-resp: ${diagBadResp.slice(0, 5).join(" | ")}`);
   } finally {
     page.off("response", onDiagResp);
+  }
+
+  // ═══ 4b. Main Hub: dua leader berbeda + Owner ═══════════════════════════
+  // Part 4 (perubahan arah Main Hub, Okt 2026): dua leader BERBEDA BENTUK
+  // sengaja (lihat staging-seed.mjs) — leaderA punya HUB_ACCESS (ADMIN) dan
+  // benar-benar terhubung ke HUB dengan data nyata; leaderB TIDAK (SALES
+  // saja, seperti kebanyakan leader divisi sungguhan hari ini) — menguji
+  // jalur "connected:false" yang jujur, bukan data karangan. Owner memantau
+  // keduanya lewat Pantauan Leader; leaderA sendiri TIDAK BOLEH melihatnya.
+  console.log("\n== Main Hub: Pantauan Leader (dua leader + Owner) ==");
+  try {
+    const ctxLeaderA = await browser.newContext({ ignoreHTTPSErrors: true });
+    const pageLeaderA = await loginViaUI(ctxLeaderA, seed.leaderA.email, seed.password);
+    await pageLeaderA.goto(`${A.PUBLIC}/portal`, { waitUntil: "load" });
+    const hubCardLeaderA = pageLeaderA.locator('text="Task & Meeting"').first();
+    const leaderACardSeen = await hubCardLeaderA.waitFor({ state: "visible", timeout: 10000 }).then(() => true).catch(() => false);
+    if (leaderACardSeen) await Promise.all([pageLeaderA.waitForURL(`${A.PUBLIC}/workspace/meetings`, { timeout: 20000 }).catch(() => {}), hubCardLeaderA.click()]);
+    check(pageLeaderA.url() === `${A.PUBLIC}/workspace/meetings`, "12. leaderA (ADMIN) login -> identitas HUB dibuat (JIT)", pageLeaderA.url());
+
+    // Dua tugas NYATA (leaderA + Owner), lewat skrip di REPO HUB itu sendiri
+    // (bukan import("@prisma/client") lintas-repo dari sini — resolusi modul
+    // Node berdasar lokasi file yang mengimpor, bukan cwd, jadi itu akan
+    // menunjuk ke client PRISMA REPO YANG SALAH; lihat seed-leader-tasks.mjs
+    // untuk penjelasan lengkap). Jalur UI pembuatan task sendiri sudah
+    // dibuktikan di bagian 4 — ini cuma data fixture, cepat dan deterministik.
+    const leaderSeed = parseResult(sh("node", ["scripts/stage5-rehearsal/seed-leader-tasks.mjs", A.HUB_DB, A.HUB_WORKSPACE_ID, seed.leaderA.id, seed.owner.id], HUB_DIR));
+    check(leaderSeed?.ok === true, "12. identitas HUB leaderA ditemukan + tugas fixture dibuat (JIT provisioning nyata)", JSON.stringify(leaderSeed));
+    const ownerTaskTitle = leaderSeed?.ownerTaskTitle ?? null;
+
+    // leaderA sendiri: "Tugas Saya" menampilkan tugas MILIKNYA SENDIRI.
+    await pageLeaderA.goto(`${A.PUBLIC}/portal`, { waitUntil: "load" });
+    await pageLeaderA.waitForTimeout(1500);
+    const ownTaskVisible = await pageLeaderA.locator('text="Tugas Leader A (terlambat)"').count();
+    check(ownTaskVisible > 0, "12. leaderA: 'Tugas Saya' Main Hub menampilkan tugas miliknya sendiri (scope sendiri)");
+
+    // leaderA BUKAN Owner -> kartu "Pantauan Leader" tidak boleh tampil sama sekali.
+    const pantauanForLeaderA = await pageLeaderA.locator('text="Pantauan Leader"').count();
+    check(pantauanForLeaderA === 0, "12. leaderA (bukan Owner): kartu 'Pantauan Leader' TIDAK tampil (bukan error, memang tersembunyi)");
+
+    // MANIPULASI: leaderA memanggil endpoint leaders langsung dari browser -> 403, tidak membocorkan data leader lain.
+    const leaderAManipulate = await pageLeaderA.evaluate(async () => {
+      const token = localStorage.getItem("token");
+      const r = await fetch("/api/hub/summary/leaders", { headers: { authorization: `Bearer ${token}` } });
+      return { status: r.status, body: await r.json().catch(() => null) };
+    });
+    check(leaderAManipulate.status === 403, "12. MANIPULASI: leaderA memanggil /hub/summary/leaders langsung dari browser -> 403", JSON.stringify(leaderAManipulate).slice(0, 200));
+
+    // Owner: Pantauan Leader menampilkan KEDUA leader — leaderA dgn data nyata, leaderB jujur "Belum terhubung".
+    await page.goto(`${A.PUBLIC}/portal`, { waitUntil: "load" });
+    await page.waitForTimeout(1500);
+    const pantauanOwnerVisible = await page.locator('text="Pantauan Leader"').count();
+    check(pantauanOwnerVisible > 0, "12. Owner: kartu 'Pantauan Leader' TAMPIL (HUB_LEADER_MONITOR)");
+    const leaderANameVisible = await page.locator('text="Leader Produksi Staging S5"').count();
+    const leaderBNameVisible = await page.locator('text="Leader Gudang Staging S5"').count();
+    check(leaderANameVisible > 0 && leaderBNameVisible > 0, "12. Owner: Pantauan Leader menampilkan KEDUA leader (leaderA dan leaderB)");
+    const belumTerhubungVisible = await page.locator('text="Belum terhubung"').count();
+    check(belumTerhubungVisible > 0, "12. Owner: leaderB (tanpa HUB_ACCESS) ditampilkan jujur 'Belum terhubung', BUKAN data karangan");
+
+    // MANIPULASI divisi: ?division= hanya MEMPERSEMPIT, tidak pernah memperluas.
+    const divisionNarrow = await page.evaluate(async () => {
+      const token = localStorage.getItem("token");
+      const r = await fetch("/api/hub/summary/leaders?division=PRODUCTION", { headers: { authorization: `Bearer ${token}` } });
+      return { status: r.status, body: await r.json().catch(() => null) };
+    });
+    const narrowedNames = (divisionNarrow.body?.leaders || []).map((l) => l.name);
+    check(
+      divisionNarrow.status === 200 && narrowedNames.includes("Leader Produksi Staging S5") && !narrowedNames.includes("Leader Gudang Staging S5"),
+      "12. MANIPULASI: ?division=PRODUCTION mempersempit ke leaderA saja, TIDAK menyertakan leaderB",
+      JSON.stringify(narrowedNames),
+    );
+    const divisionGarbage = await page.evaluate(async () => {
+      const token = localStorage.getItem("token");
+      const r = await fetch("/api/hub/summary/leaders?division=' OR '1'='1", { headers: { authorization: `Bearer ${token}` } });
+      return { status: r.status, body: await r.json().catch(() => null) };
+    });
+    check(divisionGarbage.status === 200 && Array.isArray(divisionGarbage.body?.leaders), "12. MANIPULASI: ?division= nilai sampah/liar -> 200 wajar (diabaikan, bukan 500/leak)", JSON.stringify(divisionGarbage).slice(0, 150));
+
+    // Deep link: klik tugas leaderA di Main Hub Owner -> mendarat tepat di task itu di HUB, TANPA login ulang.
+    const leaderATaskRow = page.locator('text="Tugas Leader A (terlambat)"').first();
+    const deepLinkVisible = await leaderATaskRow.count();
+    if (deepLinkVisible > 0) {
+      await Promise.all([page.waitForURL(/\/workspace\/projects\/.+\/board\?task=/, { timeout: 15000 }).catch(() => {}), leaderATaskRow.click()]);
+      await page.waitForTimeout(1000);
+      check(/\/workspace\/projects\/.+\/board\?task=/.test(page.url()), "12. DEEP LINK: klik tugas leaderA di Pantauan Leader -> mendarat di task itu di HUB TANPA login ulang", page.url());
+      const taskPanelVisible = await page.locator('text="Tugas Leader A (terlambat)"').count();
+      check(taskPanelVisible > 0, "12. DEEP LINK: panel task yang benar terbuka di HUB (judul sama terlihat)");
+    } else {
+      check(false, "12. DEEP LINK: baris tugas leaderA tidak ditemukan di Pantauan Leader untuk diklik");
+    }
+
+    // PENCABUTAN AKSES: nonaktifkan leaderA -> hilang dari Pantauan Leader (bukan cuma dari login).
+    // PATCH /api/users/:id dijaga adminOnly, yang mengecek STRING ROLE
+    // "ADMIN" (rolesOf(req.user).includes("ADMIN")) — OWNER TIDAK otomatis
+    // lolos (rolesOf Owner = ["OWNER"], bukan "ADMIN"), jadi dipakai
+    // pageAdmin (adminActor), pola SAMA dengan skenario 9 di bawah. pageAdmin
+    // sedang di origin HUB sejak skenario 2 — balik ke SANSS dulu (gotcha
+    // yang sama persis sudah didokumentasikan di skenario 9).
+    await pageAdmin.goto(`${A.PUBLIC}/portal`, { waitUntil: "load" });
+    const deactivateStatus = await pageAdmin.evaluate(async (leaderAId) => {
+      const token = localStorage.getItem("token");
+      const r = await fetch(`/api/users/${leaderAId}`, { method: "PATCH", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ active: false }) });
+      return r.status;
+    }, seed.leaderA.id);
+    check(deactivateStatus === 200, "12. PENCABUTAN: PATCH /api/users/:id {active:false} untuk leaderA -> 200", `status=${deactivateStatus}`);
+    // DIAGNOSTIK — panggil API langsung (bukan DOM) supaya kalau ini gagal,
+    // jelas apakah backend masih mengirim leaderA (bug logika) atau backend
+    // sudah benar dan ini cuma caching/rendering di sisi klien.
+    const directApiCheck = await page.evaluate(async () => {
+      const token = localStorage.getItem("token");
+      const r = await fetch("/api/hub/summary/leaders", { headers: { authorization: `Bearer ${token}` }, cache: "no-store" });
+      return { status: r.status, body: await r.json().catch(() => null) };
+    });
+    console.log("   DIAGNOSTIK 12. /hub/summary/leaders langsung setelah nonaktif:", JSON.stringify(directApiCheck).slice(0, 500));
+    // `page` (Owner) masih di origin HUB sejak uji DEEP LINK di atas
+    // (/workspace/projects/.../board?task=...) — page.reload() di situ
+    // hanya me-reload board HUB, BUKAN Main Hub tempat Pantauan Leader
+    // dirender. Navigasi eksplisit balik ke /portal dulu (pola yang sama
+    // dipakai di seluruh skrip ini), baru itu "refresh" yang dimaksud.
+    await page.goto(`${A.PUBLIC}/portal`, { waitUntil: "load" });
+    await page.waitForTimeout(1500);
+    const leaderAStillVisible = await page.locator('text="Leader Produksi Staging S5"').count();
+    check(leaderAStillVisible === 0, "12. PENCABUTAN: leaderA nonaktif -> HILANG dari Pantauan Leader Owner setelah refresh");
+    // Kembalikan ke aktif supaya tidak mengotori baseline staging untuk rehearsal berikutnya.
+    await pageAdmin.evaluate(async (leaderAId) => {
+      const token = localStorage.getItem("token");
+      await fetch(`/api/users/${leaderAId}`, { method: "PATCH", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ active: true }) });
+    }, seed.leaderA.id);
+
+    // Rantai penuh -> Main Hub Owner, SETELAH REFRESH, TANPA login ulang.
+    if (ownerTaskTitle) {
+      await page.goto(`${A.PUBLIC}/portal`, { waitUntil: "load" });
+      await page.waitForTimeout(1500);
+      const ownerChainTaskVisible = await page.locator(`text="${ownerTaskTitle}"`).count();
+      check(ownerChainTaskVisible > 0, "12. RANTAI PENUH: tugas yang ditetapkan ke Owner muncul di 'Tugas Saya' Main Hub setelah refresh, tanpa login ulang");
+    }
+
+    await pageLeaderA.close();
+    await ctxLeaderA.close();
+  } catch (e) {
+    const shotPath = path.join(os.tmpdir(), "sso-rehearsal-mainhub-leaders-fail.png");
+    await page.screenshot({ path: shotPath, fullPage: true }).catch(() => {});
+    check(false, "12. Main Hub Pantauan Leader: skenario gagal", `${e.message} — screenshot: ${shotPath} — url=${page.url()}`);
   }
 
   // ═══ 5. Logout SANSS -> sesi HUB tercabut (browser nyata) ══════════════
