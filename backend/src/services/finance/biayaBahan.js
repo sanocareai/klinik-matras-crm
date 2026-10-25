@@ -12,6 +12,7 @@
 //   7. Unit tidak menyimpan total biaya; semuanya dihitung dari ledger + pembekuan.
 import { terapkanKeadaanEfektif } from "../catatanPemakaianHistoris.js";
 import { dasarHargaRataRata } from "./posting/inventory.js";
+import { statusBuktiGR, tentatifDariSumber } from "./nilaiResmi.js";
 import { Decimal, ZERO, toMoney, moneyToNumber } from "./money.js";
 
 export const JENIS_BIAYA = { ISSUE: "PEMAKAIAN", RETURN: "RETUR", WASTE: "SUSUT", ADJUSTMENT: "PENYESUAIAN" };
@@ -210,10 +211,12 @@ export async function bacaJejakUnit(db, unitId, { izinHarga = false } = {}) {
     ? new Map((await db.finStockMovementValuationCorrection.findMany({ where: { movementId: { in: pergerakan.map((m) => m.id) } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] })).map((k) => [k.movementId, k]))
     : new Map();
 
-  // HARGA TENTATIF: nilai beku yang dasar hargamu bersumber GR yang kedatangannya BELUM tercatat (tanggal tiba/penerima) tidak boleh tampil sebagai nilai yang didukung bukti. Ditandai otomatis dan hilang sendiri
-  // setelah kedatangan dicatat lewat alur penerimaan resmi (tanpa data tambahan). Koreksi harga yang diberi sertifikat TENTATIF (harga bukti) juga ditandai.
+  // TENTATIF: nilai (beku maupun hasil penetapan) yang dasar hargamu memuat GR yang bukti kedatangannya ATAU persetujuan harganya belum lengkap tidak boleh tampil sebagai "didukung bukti".
+  // Dihitung ulang tiap dibaca → berubah sendiri begitu kedatangan dicatat DAN harga disetujui (bukan sekadar tanggal tiba terisi). Lihat nilaiResmi.js#statusBuktiGR.
+  const koreksiIdGr = (k) => (k?.after?.dasar?.penerimaan ?? []).map((x) => x.goodsReceiptId).filter(Boolean);
   const idGrDasar = [...new Set(pergerakan.flatMap((m) => (m.valuation?.basis?.sumber ?? []).map((s) => s.goodsReceiptId)).filter(Boolean))];
-  const grBelumTerbukti = new Map(idGrDasar.length ? (await db.goodsReceipt.findMany({ where: { id: { in: idGrDasar }, arrivalRecordedAt: null }, select: { id: true, receiptNumber: true } })).map((g) => [g.id, g.receiptNumber]) : []);
+  const idGrKor = [...koreksiHarga.values()].flatMap(koreksiIdGr);
+  const petaGr = await statusBuktiGR(db, [...idGrDasar, ...idGrKor]);
 
   // ── baris pergerakan ──
   const sekarang = new Date();
@@ -281,11 +284,10 @@ export async function bacaJejakUnit(db, unitId, { izinHarga = false } = {}) {
       asOfDasar: basis?.asOf ?? null,
       tentatif: (() => {
         if (status !== "DINILAI") return null;
-        if (kor) return kor.tentative ? { sebab: "HARGA_BUKTI_TENTATIF", alasan: kor.tentativeReason ?? "Harga bukti bersertifikat tentatif" } : null;
-        const gr = [...new Set(sumber.filter((x) => x.goodsReceiptId && grBelumTerbukti.has(x.goodsReceiptId)).map((x) => grBelumTerbukti.get(x.goodsReceiptId)))];
-        return gr.length ? { sebab: "GR_KEDATANGAN_BELUM_TERBUKTI", alasan: `Harga bersumber ${gr.join(", ")} yang kedatangannya belum tercatat (tanggal tiba / penerima) — bukan nilai final`, gr } : null;
+        const ids = kor ? koreksiIdGr(kor) : sumber.map((x) => x.goodsReceiptId).filter(Boolean);
+        return tentatifDariSumber(ids, petaGr);
       })(),
-      hargaBukti: kor?.evidenceId ?? null,
+      penetapanNilai: kor?.settlementId ?? null,
       hargaManual: !!kor, koreksiHarga: kor ? { alasan: kor.reason, oleh: kor.createdById, waktu: kor.createdAt, hargaBaru: Number(kor.unitCostBasis) } : null,
       faktur: status === "DINILAI" && !kor ? { status: statusFaktur, selisih: selisihDiketahui, qtyBelumAdaFaktur: qtyFakturBelumAda, qtyTanpaPO, fakturLama: [...fakturLama], dokumen: [...fakturDok.values()] } : null,
     });

@@ -5262,7 +5262,7 @@ enum MaterialCategory {
 }
 
 model Material {
-  priceEvidence FinMaterialPriceEvidence[]
+  valueSettlements FinMaterialValueSettlement[]
   componentReuseEntries UnitComponentReuseEntry[]
   materialProposals MaterialProposal[]
   provisionalUsages UnitProvisionalUsage[]
@@ -11665,11 +11665,9 @@ model FinStockMovementValuationCorrection {
   id            String   @id @default(uuid()) @db.Uuid
   movementId    String   @map("movement_id") @db.Uuid
   movement      StockMovement @relation(fields: [movementId], references: [id], onDelete: Restrict)
-  // Harga bukti (Okt 2026): bila koreksi ini berasal dari pendaftaran harga bukti per bahan; tentatif = harga belum didukung bukti final (mis. GR belum terbukti).
-  evidenceId     String?  @map("evidence_id") @db.Uuid
-  evidence       FinMaterialPriceEvidence? @relation(fields: [evidenceId], references: [id], onDelete: Restrict)
-  tentative      Boolean  @default(false)
-  tentativeReason String? @map("tentative_reason")
+  // Penetapan nilai resmi (Okt 2026): koreksi ini berasal dari penetapan (penerapan nilai dari Persediaan Awal / GR), bukan harga ketikan.
+  settlementId   String?  @map("settlement_id") @db.Uuid
+  settlement     FinMaterialValueSettlement? @relation(fields: [settlementId], references: [id], onDelete: Restrict)
   materialId    String   @map("material_id") @db.Uuid
   unitId        String   @map("unit_id") @db.Uuid
   before        Json
@@ -11682,30 +11680,17 @@ model FinStockMovementValuationCorrection {
   createdAt     DateTime @default(now()) @map("created_at")
 
   @@index([movementId, createdAt])
-  @@index([evidenceId])
+  @@index([settlementId])
   @@map("fin_stock_movement_valuation_corrections")
 }
 
-// HARGA BUKTI BAHAN (Okt 2026) — register harga per bahan beserta sumber bukti, satuan, dan periode berlaku. TIDAK PERNAH dipakai otomatis: baru berlaku untuk pergerakan lama setelah DISETUJUI (orang kedua)
-// dan hanya lewat baris koreksi valuasi append-only (fin_stock_movement_valuation_corrections). Tidak menulis stok, catatan, maupun jurnal.
-model FinMaterialPriceEvidence {
+// PENETAPAN NILAI RESMI BAHAN (Okt 2026) — catatan PENERAPAN, bukan sumber harga (lihat komentar migrasi 20261229090000). Satu pengajuan aktif per bahan; dua orang; hash pratinjau.
+model FinMaterialValueSettlement {
   id            String   @id @default(uuid()) @db.Uuid
   materialId    String   @map("material_id") @db.Uuid
   material      Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
-  status        String   @default("DIAJUKAN") @db.VarChar(16) // DIAJUKAN | DISETUJUI | DITOLAK | DIBATALKAN | DIGANTI
-  priceInput    Decimal  @map("price_input") @db.Decimal(18, 4) // harga seperti tertulis pada bukti, per satuan bukti
-  inputUnit     String   @map("input_unit") @db.VarChar(30)
-  conversionFactor Decimal @default(1) @map("conversion_factor") @db.Decimal(18, 6) // 1 satuan bukti = faktor × satuan stok
-  unitCost      Decimal  @map("unit_cost") @db.Decimal(24, 8) // per SATUAN STOK = priceInput / conversionFactor (dihitung server)
-  sourceKind    String   @map("source_kind") @db.VarChar(24) // FAKTUR | NOTA_SUPPLIER | GR | PO | KESEPAKATAN | LAINNYA
-  sourceRef     String?  @map("source_ref")
-  sourceNote    String?  @map("source_note")
-  validFrom     DateTime @map("valid_from") @db.Date // tanggal WIB, inklusif
-  validTo       DateTime? @map("valid_to") @db.Date  // null = terbuka
-  certainty     String   @default("TERBUKTI") @db.VarChar(10) // TERBUKTI | TENTATIF
-  tentativeReason String? @map("tentative_reason")
-  goodsReceiptId String? @map("goods_receipt_id") @db.Uuid
-  replacesId    String?  @map("replaces_id") @db.Uuid
+  status        String   @default("DIAJUKAN") @db.VarChar(16)
+  scope         Json
   previewHash   String   @map("preview_hash")
   previewCount  Int      @map("preview_count")
   previewValue  Decimal  @map("preview_value") @db.Decimal(18, 2)
@@ -11719,5 +11704,5 @@ model FinMaterialPriceEvidence {
   corrections   FinStockMovementValuationCorrection[]
 
   @@index([materialId, status])
-  @@map("fin_material_price_evidence")
+  @@map("fin_material_value_settlements")
 }

@@ -162,17 +162,22 @@ test("P2. posting penuh lalu jalan ulang = nol tulisan; 'Pemakaian aktual' berta
   const ch = await ambilCatatanHistoris(testPrisma, w.u2.id); assert.ok(ch.items.every((i) => i.state === "DIPOSTING")); assert.equal(ch.ringkas.diposting, 2);
 });
 
-test("V1. koreksi HARGA terpisah: valuasi asli tetap; efektif = koreksi terbaru; berulang & idempoten; jejak biaya memakai harga koreksi; tanpa efek stok/jurnal", async () => {
+test("V1. koreksi HARGA manual hanya untuk pergerakan TANPA sumber nilai resmi; bila sumber resmi (penerimaan berharga) ada → ditolak SUMBER_RESMI_ADA (satu sumber nilai); mekanismenya append-only & idempoten", async () => {
   const w = await dunia(); const r = await rencanakan(testPrisma);
   await jalankanPosting(testPrisma, { persetujuan: { hashDisetujui: r.hash, rujukan: "OWNER-2026-10-24", disetujuiOleh: "Owner Uji", konfirmasi: konfirmasiDari(r) }, aktor: w.B });
-  const mv = await testPrisma.stockMovement.findFirst({ where: { unitId: w.u2.id, materialId: w.kain.id, note: { contains: "PH2610:" } } });
-  const asli = await testPrisma.finStockMovementValuation.findUnique({ where: { movementId: mv.id } }); assert.equal(Number(asli.value), 75000);
+  const mv0 = await testPrisma.stockMovement.findFirst({ where: { unitId: w.u2.id, materialId: w.kain.id, note: { contains: "PH2610:" } } });
+  const asli = await testPrisma.finStockMovementValuation.findUnique({ where: { movementId: mv0.id } }); assert.equal(Number(asli.value), 75000);
+  await assert.rejects(() => koreksiValuasiPergerakan(testPrisma, { movementId: mv0.id, hargaBaru: 30000, alasan: "Harga kain sebenarnya Rp30.000/m", kunci: kunciUji("v0"), aktor: w.B }), (e) => e.code === "SUMBER_RESMI_ADA" && e.statusCode === 409);
+  assert.equal(await testPrisma.finStockMovementValuationCorrection.count(), 0, "ditolak: tidak ada sumber nilai kedua");
+  // bahan TANPA penerimaan berharga → tidak ada sumber resmi → koreksi manual boleh (jalur lama utuh)
+  const kosong = await createTestMaterial({ code: "V1-TANPA-SUMBER", name: "BAHAN TANPA SUMBER", unit: "METER" });
+  await testPrisma.stockMovement.create({ data: { materialId: kosong.id, type: "RECEIPT", qty: 20, note: "seed tanpa harga", createdAt: WIB("2026-09-01") } });
+  const mv = await testPrisma.stockMovement.create({ data: { materialId: kosong.id, type: "ISSUE", qty: -3, unitId: w.u2.id, note: "pemakaian lama tanpa nilai", createdAt: WIB("2026-09-10") } });
   const stok0 = await testPrisma.stockMovement.count(); const jur0 = await testPrisma.finJournalEntry.count();
-  const k = kunciUji("v1"); const a = await koreksiValuasiPergerakan(testPrisma, { movementId: mv.id, hargaBaru: 30000, alasan: "Harga kain sebenarnya Rp30.000/m", kunci: k, aktor: w.B });
-  assert.equal(a.koreksi.nilaiBaru, 90000); assert.equal(a.koreksi.sebelum.value, "75000"); assert.equal(a.koreksi.sesudah.unitCostBasis, "30000"); assert.equal(a.jurnalPerluPenyesuaian, false);
-  assert.equal((await koreksiValuasiPergerakan(testPrisma, { movementId: mv.id, hargaBaru: 30000, alasan: "Harga kain sebenarnya Rp30.000/m", kunci: k, aktor: w.B })).ulang, true);
+  const k = kunciUji("v1"); const a = await koreksiValuasiPergerakan(testPrisma, { movementId: mv.id, hargaBaru: 30000, alasan: "Harga sebenarnya Rp30.000/m", kunci: k, aktor: w.B });
+  assert.equal(a.koreksi.nilaiBaru, 90000); assert.equal(a.koreksi.sesudah.unitCostBasis, "30000"); assert.equal(a.jurnalPerluPenyesuaian, false);
+  assert.equal((await koreksiValuasiPergerakan(testPrisma, { movementId: mv.id, hargaBaru: 30000, alasan: "Harga sebenarnya Rp30.000/m", kunci: k, aktor: w.B })).ulang, true);
   const b = await koreksiValuasiPergerakan(testPrisma, { movementId: mv.id, hargaBaru: 28000, alasan: "Koreksi kedua harga 28.000", kunci: kunciUji("v2"), aktor: w.B }); assert.equal(b.koreksi.sebelum.value, "90000", "sebelum = koreksi sebelumnya");
-  assert.equal(Number((await testPrisma.finStockMovementValuation.findUnique({ where: { movementId: mv.id } })).value), 75000, "valuasi asli TIDAK berubah");
   assert.equal((await valuasiEfektif(testPrisma, mv.id)).sumber, "KOREKSI"); assert.equal(Number((await valuasiEfektif(testPrisma, mv.id)).value), 84000);
   assert.equal(await testPrisma.stockMovement.count(), stok0); assert.equal(await testPrisma.finJournalEntry.count(), jur0);
   const j = await bacaJejakUnit(testPrisma, w.u2.id, { izinHarga: true }); const baris = j.bahan.flatMap((x) => x.pergerakan).find((x) => x.movementId === mv.id);

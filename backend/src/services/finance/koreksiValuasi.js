@@ -8,6 +8,7 @@ import { lockRowForUpdate } from "../inventoryLedger.js";
 import { KoreksiError } from "../warehouseCorrection.js";
 import { dasarHargaRataRata } from "./posting/inventory.js";
 import { JENIS_BIAYA } from "./biayaBahan.js";
+import { hargaResmi } from "./nilaiResmi.js";
 
 const alasanWajib = (a) => { const t = String(a ?? "").trim(); if (t.length < 5 || t.length > 500) throw new KoreksiError("Alasan koreksi harga wajib diisi (5–500 karakter)", 400, "ALASAN_WAJIB"); return t; };
 const kunciValid = (k) => { const t = String(k ?? ""); if (t.length < 8 || t.length > 120) throw new KoreksiError("Idempotency-Key wajib (8–120 karakter)", 428, "IDEMPOTENCY_KEY_REQUIRED"); return t; };
@@ -38,6 +39,9 @@ export async function koreksiValuasiPergerakan(prisma, { movementId, hargaBaru, 
       const mv = await tx.stockMovement.findUnique({ where: { id: movementId }, select: { id: true, type: true, qty: true, unitId: true, materialId: true, createdAt: true, material: { select: { code: true, unit: true } } } });
       if (!mv) throw new KoreksiError("Pergerakan stok tidak ditemukan", 404, "PERGERAKAN_TIDAK_ADA");
       if (!mv.unitId || !JENIS_BIAYA[mv.type]) throw new KoreksiError("Hanya pergerakan bertaut unit (pemakaian/retur/susut) yang punya valuasi untuk dikoreksi", 409, "BUKAN_PERGERAKAN_BERNILAI");
+      // SATU sumber nilai: bila sumber resmi (Persediaan Awal / GR berharga) memberi harga untuk pergerakan ini, harga ketikan manual DITOLAK — nilai ditetapkan lewat penetapan nilai resmi (Stok → Bahan tanpa harga).
+      const resmi = await hargaResmi(tx, mv.materialId, mv.createdAt);
+      if (resmi) throw new KoreksiError("Pergerakan ini punya sumber nilai resmi (Persediaan Awal / GR berharga). Harga manual tidak boleh menjadi sumber kedua — gunakan Stok → Bahan tanpa harga (penetapan nilai resmi).", 409, "SUMBER_RESMI_ADA");
       const sebelumEfektif = await valuasiEfektif(tx, movementId);
       let sebelum = sebelumEfektif;
       if (!sebelum) { const d = await dasarHargaRataRata(tx, mv.materialId, { asOf: mv.createdAt }); sebelum = { sumber: "ESTIMASI", status: "ESTIMASI_HISTORIS", unitCostBasis: d.harga ?? null, value: d.harga == null ? null : uang(new Decimal(String(mv.qty)).abs().times(d.harga).times(Number(mv.qty) < 0 ? 1 : -1)) }; }

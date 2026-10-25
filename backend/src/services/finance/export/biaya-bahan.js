@@ -39,7 +39,7 @@ async function ambil(db, { filter }) {
 
   const pergerakan = detail.flatMap((j) => j.bahan.flatMap((b) => b.pergerakan.map((r) => ({
     waktu: r.tanggal, unit: j.unit.unitCode, order: j.unit.orderNumber || "", kode: r.kode, bahan: r.nama, jenis: JENIS[r.jenisBiaya] || r.jenisBiaya,
-    qty: Math.abs(r.qty), satuan: r.satuan, harga: r.hargaDasar, nilai: r.nilai, status: (STATUS[r.status] || r.status) + (r.tentatif ? " — TENTATIF" : r.hargaBukti ? " (harga bukti)" : r.hargaManual ? " (harga koreksi)" : ""), ketHarga: r.tentatif?.alasan ?? (r.koreksiHarga?.alasan ?? ""),
+    qty: Math.abs(r.qty), satuan: r.satuan, harga: r.hargaDasar, nilai: r.nilai, status: (STATUS[r.status] || r.status) + (r.tentatif ? " — TENTATIF" : r.penetapanNilai ? " (nilai resmi)" : r.hargaManual ? " (harga koreksi)" : ""), ketHarga: r.tentatif?.alasan ?? (r.koreksiHarga?.alasan ?? ""),
     po: gabung(r.sumber.map((s) => s.poNumber)), penerimaan: gabung(r.sumber.map((s) => s.receiptNumber)), materialIssue: r.dokumen?.nomor || "",
     faktur: r.faktur ? (STATUS_FAKTUR[r.faktur.status] || r.faktur.status) : "", noFaktur: gabung((r.faktur?.dokumen ?? []).map((x) => x.nomor)),
     selisihFaktur: r.faktur?.selisih ?? null, oleh: r.oleh || "", catatan: r.catatan || "",
