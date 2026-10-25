@@ -139,6 +139,11 @@ const TABLES_TO_TRUNCATE = [
   "delivery_job_cancellations_v2", "delivery_job_states_v2", "delivery_route_states_v2",
   "v2_shadow_comparisons", "v2_migration_exceptions", "v2_migration_runs",
   "domain_outbox", "v2_commands",
+  // SSO Task & Meeting (D-200, hubSso.integration.test.js) — hub_handoffs.user_id
+  // FK ke "User" ON DELETE CASCADE sudah otomatis ikut ter-CASCADE saat "User"
+  // ditruncate (child dari tabel yang di daftar ini), disebut eksplisit demi
+  // konsistensi dokumentasi sama seperti baris-baris di atas.
+  "hub_handoffs",
   "user_roles", "User",
 ];
 
