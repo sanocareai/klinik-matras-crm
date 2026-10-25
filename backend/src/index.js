@@ -91,6 +91,7 @@ import { purchaseOrderFinanceRouter, purchaseOrderGudangRouter } from "./routes/
 import { barangAkanDatangRouter, receiptProofsDir } from "./routes/barangAkanDatang.js";
 import { returSupplierGudangRouter, returSupplierFinanceRouter } from "./routes/returSupplier.js";
 import { jejakBahanUnitRouter, biayaBahanFinanceRouter, jejakPenerimaanRouter } from "./routes/biayaBahan.js";
+import { hargaBerlakuRouter } from "./routes/hargaBerlaku.js";
 import { financeUtangRouter } from "./routes/financeUtang.js";
 import { materialIssueRouter } from "./routes/materialIssue.js";
 import { complaintsRouter } from "./routes/complaints.js";
@@ -309,6 +310,7 @@ app.use("/api/inventory/barang-akan-datang", barangAkanDatangRouter); // Gudang:
 app.use("/media/receipt-proofs", express.static(receiptProofsDir)); // foto surat jalan/bukti kedatangan (nama berkas acak)
 app.use("/api/finance/purchase-orders", purchaseOrderFinanceRouter);
 app.use("/api/finance/biaya-bahan", biayaBahanFinanceRouter);
+app.use("/api/finance/harga-berlaku", hargaBerlakuRouter); // HPP operasional (harga berlaku bahan) — terpisah dari nilai persediaan Finance
 app.use("/api/inventory/material-issues", materialIssueRouter);
 app.use("/api/inventory/transfers", stockTransferRouter);
 app.use("/api/inventory/stock-counts", stockCountSesiRouter); // Stock Opname sesi model 2 (cakupan penuh/kelompok/cycle count, hasil hitung bertahap) — HARUS sebelum stockCountRouter

@@ -10,6 +10,7 @@ import { bacaJejakUnit, daftarUnitBiaya } from "../services/finance/biayaBahan.j
 import { bacaJejakPO, bacaJejakPenerimaan } from "../services/finance/biayaBahanSumber.js";
 import { koreksiValuasiPergerakan, riwayatKoreksiValuasi } from "../services/finance/koreksiValuasi.js";
 import { KoreksiError } from "../services/warehouseCorrection.js";
+import { hppOperasionalUnit } from "../services/finance/hargaBerlaku.js";
 import { daftarBahanTanpaHarga, pratinjauPenetapan, ajukanPenetapan, setujuiPenetapan, tolakPenetapan, batalkanPenetapan, daftarPenetapan, bacaPenetapan, tanpaInternal } from "../services/finance/penetapanNilai.js";
 
 const POLA_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -24,9 +25,9 @@ jejakBahanUnitRouter.use(requireAuth);
 jejakBahanUnitRouter.get("/:id/jejak-bahan", requireAnyPermission(P.UNIT_MATERIAL_WRITE, P.INVENTORY_READ, P.FINANCE_READ), async (req, res) => {
   try {
     if (!POLA_UUID.test(req.params.id)) return res.status(404).json({ error: "Unit tidak ditemukan" });
-    const hasil = await bacaJejakUnit(prisma, req.params.id, { izinHarga: hasPermission(req.user, P.FINANCE_READ) });
+    const izin = hasPermission(req.user, P.FINANCE_READ); const hasil = await bacaJejakUnit(prisma, req.params.id, { izinHarga: izin });
     if (!hasil) return res.status(404).json({ error: "Unit tidak ditemukan" });
-    res.json(hasil);
+    res.json(izin ? { ...hasil, hppOperasional: await hppOperasionalUnit(prisma, req.params.id) } : hasil); // HPP operasional (harga berlaku) DIPISAH dari nilai persediaan Finance
   } catch (e) { galat(e, res); }
 });
 
@@ -42,7 +43,7 @@ biayaBahanFinanceRouter.get("/unit/:id", requirePermission(P.FINANCE_READ), asyn
     if (!POLA_UUID.test(req.params.id)) return res.status(404).json({ error: "Unit tidak ditemukan" });
     const hasil = await bacaJejakUnit(prisma, req.params.id, { izinHarga: true });
     if (!hasil) return res.status(404).json({ error: "Unit tidak ditemukan" });
-    res.json(hasil);
+    res.json({ ...hasil, hppOperasional: await hppOperasionalUnit(prisma, req.params.id) }); // dipisah dari nilai persediaan Finance
   } catch (e) { galat(e, res); }
 });
 

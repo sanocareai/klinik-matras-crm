@@ -2206,6 +2206,17 @@ export const api = {
   getBiayaBahanUnit: (unitId) => request(`/finance/biaya-bahan/unit/${unitId}`),
   getJejakBahanUnit: (unitId) => request(`/units/${unitId}/jejak-bahan`),
   getBiayaBahanPO: (poId) => request(`/finance/biaya-bahan/po/${poId}`),
+  // ── Harga Berlaku bahan = HPP OPERASIONAL (Okt 2026), diedit dari layar Stok. BUKAN nilai buku/HPP final Finance. Simpan wajib Idempotency-Key + hash pratinjau. ──
+  getHargaBerlaku: (materialId) => request(`/finance/harga-berlaku/bahan/${materialId}`),
+  getRiwayatHargaBerlaku: (materialId) => request(`/finance/harga-berlaku/bahan/${materialId}/riwayat`),
+  pratinjauHargaBerlaku: (data) => request("/finance/harga-berlaku/pratinjau", { method: "POST", body: JSON.stringify(data) }),
+  simpanHargaBerlaku: (data, key = mutationKey("harga-berlaku")) => request("/finance/harga-berlaku", { method: "POST", headers: { "Idempotency-Key": key }, body: JSON.stringify(data) }),
+  pratinjauPenerapanHarga: (data) => request("/finance/harga-berlaku/penerapan/pratinjau", { method: "POST", body: JSON.stringify(data) }),
+  ajukanPenerapanHarga: (data, key = mutationKey("penerapan-harga")) => request("/finance/harga-berlaku/penerapan", { method: "POST", headers: { "Idempotency-Key": key }, body: JSON.stringify(data) }),
+  daftarPenerapanHarga: (bahanId, status) => request(`/finance/harga-berlaku/penerapan${qsFinance({ bahanId, status })}`),
+  setujuiPenerapanHarga: (id, data) => request(`/finance/harga-berlaku/penerapan/${id}/setujui`, { method: "POST", body: JSON.stringify(data) }),
+  tolakPenerapanHarga: (id, data) => request(`/finance/harga-berlaku/penerapan/${id}/tolak`, { method: "POST", body: JSON.stringify(data) }),
+  batalkanPenerapanHarga: (id) => request(`/finance/harga-berlaku/penerapan/${id}/batalkan`, { method: "POST", body: JSON.stringify({}) }),
   getJejakPemakaianPenerimaan: (receiptId) => request(`/inventory/goods-receipts/${receiptId}/jejak-pemakaian`),
   // ── Retur Supplier & Debit Note (Okt 2026). Gudang: kondisi + pergerakan fisik, TANPA nilai. Finance: nilai, debit note, saldo kredit. Idempotency-Key wajib; tanpa PIN. ──
   getReturGudang: (params = {}) => request(`/inventory/retur-supplier${qsFinance(params)}`),

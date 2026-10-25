@@ -180,6 +180,9 @@ export async function postStockMovement(tx, {
   if (baris.unitId) {
     const { catatValuasiPergerakan } = await import("./finance/biayaBahan.js");
     await catatValuasiPergerakan(tx, baris);
+    // HPP operasional (Harga Berlaku Bahan): harga yang berlaku pada WAKTU PEMAKAIAN dibekukan di transaksi yang sama; terpisah dari valuasi Finance di atas.
+    const { catatBiayaOperasional } = await import("./finance/hargaBerlaku.js");
+    await catatBiayaOperasional(tx, baris);
   }
   return baris;
 }
