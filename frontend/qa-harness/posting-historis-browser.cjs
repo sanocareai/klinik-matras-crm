@@ -75,7 +75,7 @@ async function tungguBackend(ms = 60000) { const t = Date.now(); while (Date.now
     await klik(B, '[data-testid="btn-mulai"]'); await tunggu(B, '[data-testid="input-rujukan"]'); await B.type('[data-testid="input-rujukan"]', "OWNER-UJI-BROWSER-001"); await B.click('[data-testid="cek-periksa"]');
     await A.click('[data-testid="cek-periksa"]');
     const gerak0 = jumlahGerak(); const ajukan0 = batchDiajukan();
-    await Promise.all([A.click('[data-testid="konfirmasi-mulai"]'), A.click('[data-testid="konfirmasi-mulai"]').catch(() => {}), B.click('[data-testid="konfirmasi-mulai"]')]);
+    await Promise.all([A.$eval('[data-testid="konfirmasi-mulai"]', (e) => { e.click(); e.click(); }), B.$eval('[data-testid="konfirmasi-mulai"]', (e) => { e.click(); })]); // klik ganda dalam satu tab + tab kedua serentak
     await tunggu(A, '[data-testid="kartu-progres"]', 30000); await tunggu(B, '[data-testid="kartu-progres"]', 30000);
     const sA = await status(A); const sB = await status(B);
     ok("klik ganda + dua tab serentak: tepat SATU batch dan kedua tab melihat batch yang sama", batchDiajukan() - ajukan0 === 1 && sA.id && sA.id === sB.id, `batch ${sA.id?.slice(0, 10)} / ${sB.id?.slice(0, 10)}; POST A=${A.posts.length} B=${B.posts.length}`);
