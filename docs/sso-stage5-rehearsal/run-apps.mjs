@@ -115,7 +115,13 @@ function sanssEnv(overrides = {}) {
   };
 }
 export async function startSanss(overrides = {}) {
-  startProc("sanss", "node", ["src/index.js"], SANSS_DIR, sanssEnv(overrides));
+  // process.execPath (the absolute path to THIS node.exe), not the bare
+  // string "node" — without shell:true, Windows CreateProcess must resolve
+  // a bare command name by searching the CHILD's PATH, which has been seen
+  // to fail with ENOENT on this machine's loaded dev environment even
+  // though "node" resolves fine interactively (large inherited PATH/env
+  // block). An absolute path needs no such search.
+  startProc("sanss", process.execPath, ["src/index.js"], SANSS_DIR, sanssEnv(overrides));
   const ok = await waitReady(`http://127.0.0.1:${SANSS_PORT}/api/auth/login`, 30000);
   if (!ok) console.error("SANSS log:", procs.sanss.__log().slice(-2000));
   return ok;
@@ -151,7 +157,7 @@ function hubEnv(overrides = {}) {
   };
 }
 export async function startHub(overrides = {}) {
-  startProc("hub", "node", ["server.js"], `${HUB_DIR}\\.next\\standalone`, hubEnv(overrides));
+  startProc("hub", process.execPath, ["server.js"], `${HUB_DIR}\\.next\\standalone`, hubEnv(overrides));
   // /workspace, bukan "/" — basePath membuat setiap jalur TANPA prefiks ini 404.
   const ok = await waitReady(`http://127.0.0.1:${HUB_PORT}/workspace/login`, 45000);
   if (!ok) console.error("HUB log:", procs.hub.__log().slice(-2000));

@@ -195,16 +195,28 @@ async function main() {
   check(/tidak tersedia|hubungi admin|tidak bisa membuka/i.test(salesBodyText), "6. SALES: akses manual /hub/launch -> pesan Indonesia 'tidak tersedia', bukan crash", salesBodyText.slice(0, 150));
 
   // ═══ 4. Meeting -> decision -> action item -> task -> refresh (OWNER) ══
-  // TIDAK terkait same-domain/basePath (Bagian 1) — ini alur fungsional HUB
-  // sendiri (proyek/meeting/task), ditulis sebelum 43 commit perombakan UI
-  // HUB (shell baru, hierarki Space->Folder->List) yang sudah masuk ke
-  // branch ini. Dibungkus try/catch SENGAJA: kalau selector di sini basi
-  // (gap PRA-ADA, bukan regresi same-domain), itu tidak boleh menggagalkan
-  // seluruh rehearsal — skenario 5-10 di bawah (logout/revoke/kill-switch)
-  // tetap harus berjalan dan dilaporkan, karena ITU yang relevan untuk
-  // verifikasi same-domain ini. Laporkan gap ini terus-terang, jangan
+  // Sempat GAGAL berulang dengan gejala "klik 'New project' tidak membuka
+  // menu" dan sempat DIDUGA selector basi (43 commit perombakan UI HUB sejak
+  // skrip ini ditulis). BUKAN itu — root cause SUNGGUHAN, dikonfirmasi lewat
+  // probe standalone terpisah + full-page screenshot: `next build` standalone
+  // HUB TIDAK menyalin `.next/static`/`public` ke `.next/standalone` (langkah
+  // manual resmi Next.js yang mudah terlewat) — tanpa itu halaman RENDER
+  // (HTML/RSC-nya sendiri lengkap) tapi TIDAK interaktif sama sekali (semua
+  // chunk JS 404 diam-diam, klik tidak berbuat apa-apa, tanpa error yang
+  // kelihatan). Diperbaiki permanen di repo HUB: scripts/copy-standalone-
+  // assets.mjs + "postbuild" di package.json, supaya `npm run build` HUB
+  // TIDAK PERNAH lagi menghasilkan standalone build yang render-tapi-mati
+  // begini. Dikonfirmasi: 48/48 lulus setelah build HUB disegarkan dengan
+  // langkah itu. try/catch + listener di bawah DIPERTAHANKAN sebagai
+  // diagnostik umum (bukan lagi untuk membungkam gap yang sudah tidak ada) —
+  // kalau bagian ini pernah gagal lagi, laporkan terus-terang, jangan
   // dibungkam sebagai PASS.
   console.log("\n== Alur meeting -> keputusan -> action item -> task -> refresh ==");
+  const diagBadResp = [];
+  const onDiagResp = (r) => {
+    if (!r.ok()) diagBadResp.push(`${r.status()} ${r.url()}`);
+  };
+  page.on("response", onDiagResp);
   try {
     // Buat task butuh proyek (tombol "Buat task" disabled "Pilih proyek dulu"
     // sampai action item punya projectId) — workspace staging baru, 0 proyek.
@@ -286,7 +298,10 @@ async function main() {
   } catch (e) {
     const shotPath = path.join(os.tmpdir(), "sso-rehearsal-section4-fail.png");
     await page.screenshot({ path: shotPath, fullPage: true }).catch(() => {});
-    check(false, "7. GAP PRA-ADA (tidak terkait same-domain): alur proyek/meeting/task gagal", `${e.message} — screenshot: ${shotPath} — url=${page.url()}`);
+    console.log("   DIAGNOSTIK non-2xx responses selama bagian ini:", diagBadResp.slice(0, 20).join(" | ") || "(tidak ada)");
+    check(false, "7. Alur proyek/meeting/task gagal", `${e.message} — screenshot: ${shotPath} — url=${page.url()} — bad-resp: ${diagBadResp.slice(0, 5).join(" | ")}`);
+  } finally {
+    page.off("response", onDiagResp);
   }
 
   // ═══ 5. Logout SANSS -> sesi HUB tercabut (browser nyata) ══════════════
