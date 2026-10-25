@@ -103,6 +103,7 @@ function bangkitkan({ baseScript, blok, berkasList, mig, schemaSha, scanJs, scan
   const iCat = s.lastIndexOf('say "CATATAN:'); must(iCat > 0, "CATATAN");
   s = s.slice(0, iCat) + 'say "CATATAN: Rilis ini membawa fitur Harga Berlaku Bahan (HPP operasional, dipisah dari nilai persediaan Finance). Migrasi aditif: 3 tabel baru KOSONG. Tidak ada harga berlaku, biaya operasional, penerapan, pergerakan stok, jurnal, valuasi Finance, atau PSA/GR yang dibuat/diubah oleh rilis; harga production TIDAK diisi oleh rilis. Rollback kode: jalankan scripts/rollback-guard-harga-berlaku.sh dulu."\n';
   must(!/@@[A-Z_]+@@/.test(s), "placeholder tersisa");
+  s = lf(s); // checkout Windows (autocrlf) dapat membuat templat CRLF; keluaran SELALU LF (yang dikirim ke VPS dan di-commit)
   return { script: s, ringkasan: { berkas: berkas.length, backendSrc: berkas.filter((f) => f.startsWith("backend/src/")).length, frontendSrc: berkas.filter((f) => f.startsWith("frontend/src/")).length, mig: mig.name, migSha: sha(lf(mig.sql)).slice(0, 12), scanExpect, schemaSha: schemaSha.slice(0, 12), objek: { idx: ob.idx.length, parsial: ob.parsial.length, chk: ob.chk.length, fk: ob.fk.length, trg: ob.trg.length } } };
 }
 
