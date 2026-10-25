@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge.jsx";
 import { cn } from "@/lib/utils.js";
 import { api } from "@/api.js";
+import HppOperasionalKartu from "@/features/finance/HppOperasionalKartu.jsx";
 import { tanggalPendek } from "@/features/finance/shared.jsx";
 import {
   STATUS_BIAYA, STATUS_BARIS, JENIS_BIAYA, STATUS_FAKTUR, NAMA_BELUM_FINAL, teksQty, teksRupiah, selNilai, kartuTotal, teksSumber,
@@ -41,7 +42,7 @@ export default function JejakBiayaBahan({ unitId, sumber = "unit" }) {
       {d.izinHarga && (
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4" data-testid="kartu-ringkasan">
           <div className="rounded-btn bg-inset px-3 py-2">
-            <div className="text-[11px] text-ink3">{total.judul}</div>
+            <div className="text-[11px] text-ink3">{total.judul} <span className="font-semibold">(Finance — biaya perolehan PSA/GR)</span></div>
             <div className={cn("text-[15px] font-bold tabular-nums", total.pasti ? "text-ink" : "text-orange")} data-testid="total-biaya">{total.nilai}</div>
             <div className="text-[11.5px] text-ink2">{total.sub}</div>
             {d.ringkasan.totalBiaya != null && (
@@ -65,6 +66,8 @@ export default function JejakBiayaBahan({ unitId, sumber = "unit" }) {
           </div>
         </div>
       )}
+
+      {d.izinHarga && d.hppOperasional && <HppOperasionalKartu h={d.hppOperasional} />}
 
       {d.belumFinal.length > 0 && (
         <div className="rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-orange" data-testid="belum-final">

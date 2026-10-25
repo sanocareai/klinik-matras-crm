@@ -5262,6 +5262,9 @@ enum MaterialCategory {
 }
 
 model Material {
+  hargaBerlaku MaterialHargaBerlaku[]
+  biayaOperasional StockMovementBiayaOperasional[]
+  penerapanBiayaOperasional BiayaOperasionalPenerapan[]
   componentReuseEntries UnitComponentReuseEntry[]
   materialProposals MaterialProposal[]
   provisionalUsages UnitProvisionalUsage[]
@@ -5371,6 +5374,7 @@ model StockMovement {
   provisionalUsage UnitProvisionalUsage?
   usageNotes       UnitUsageNote[]
   valuationCorrections FinStockMovementValuationCorrection[]
+  biayaOperasional StockMovementBiayaOperasional[]
   materialId String   @map("material_id") @db.Uuid
   material   Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
 
@@ -11723,4 +11727,81 @@ model AdSourceSpendRevision {
 
   @@unique([entryId, revision], map: "ad_source_spend_revisions_entry_rev")
   @@map("ad_source_spend_revisions")
+
+// ── HARGA BERLAKU BAHAN (HPP OPERASIONAL; Okt 2026) ──────────────────────────────────────────────────────────────────────────────────────
+// BUKAN nilai buku/persediaan dan BUKAN HPP final Finance (itu tetap biaya perolehan PSA/GR: fin_stock_movement_valuations). Harga operasional per SATUAN STOK dengan waktu mulai berlaku; append-only (koreksi = baris baru).
+model MaterialHargaBerlaku {
+  id            String   @id @default(uuid()) @db.Uuid
+  materialId    String   @map("material_id") @db.Uuid
+  material      Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
+  jenis         String   @default("HARGA") @db.VarChar(10) // HARGA | KOREKSI (salah input; menggantikan baris correctsId tanpa menghapusnya)
+  unitPrice     Decimal  @map("unit_price") @db.Decimal(18, 4)
+  satuan        String   @db.VarChar(20)
+  effectiveFrom DateTime @map("effective_from")
+  previousPrice Decimal? @map("previous_price") @db.Decimal(18, 4)
+  correctsId    String?  @unique @map("corrects_id") @db.Uuid
+  corrects      MaterialHargaBerlaku?  @relation("KoreksiHargaBerlaku", fields: [correctsId], references: [id], onDelete: Restrict)
+  correctedBy   MaterialHargaBerlaku?  @relation("KoreksiHargaBerlaku")
+  reason        String
+  note          String?
+  evidenceNote  String?  @map("evidence_note")
+  createdById   String?  @map("created_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+  idempotencyKey String  @unique @map("idempotency_key")
+  biayaOperasional StockMovementBiayaOperasional[]
+
+  @@index([materialId, effectiveFrom])
+  @@map("material_harga_berlaku")
+}
+
+// Biaya operasional per pergerakan: DIBEKUKAN saat pemakaian diposting (harga yang berlaku pada waktu pemakaian), append-only; penerapan lama = baris baru yang disetujui.
+model StockMovementBiayaOperasional {
+  id            String   @id @default(uuid()) @db.Uuid
+  movementId    String   @map("movement_id") @db.Uuid
+  movement      StockMovement @relation(fields: [movementId], references: [id], onDelete: Restrict)
+  materialId    String   @map("material_id") @db.Uuid
+  material      Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
+  unitId        String   @map("unit_id") @db.Uuid
+  status        String   @db.VarChar(16) // DINILAI | TANPA_HARGA
+  qty           Decimal  @db.Decimal(14, 4)
+  unitCost      Decimal? @map("unit_cost") @db.Decimal(18, 4)
+  value         Decimal? @db.Decimal(18, 2)
+  priceId       String?  @map("price_id") @db.Uuid
+  price         MaterialHargaBerlaku? @relation(fields: [priceId], references: [id], onDelete: Restrict)
+  priceEffectiveFrom DateTime? @map("price_effective_from")
+  evidenceLabel String?  @map("evidence_label") @db.VarChar(30)
+  sumber        String   @db.VarChar(24) // BEKU_SAAT_POSTING | PENERAPAN_DISETUJUI
+  applicationId String?  @map("application_id") @db.Uuid
+  application   BiayaOperasionalPenerapan? @relation(fields: [applicationId], references: [id], onDelete: Restrict)
+  createdById   String?  @map("created_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([movementId, createdAt])
+  @@index([materialId])
+  @@index([applicationId])
+  @@map("stock_movement_biaya_operasional")
+}
+
+// Tindakan khusus: memberi harga berlaku ke pemakaian LAMA (belum dibekukan / dibekukan tanpa harga / tidak selaras). Dua orang, hash pratinjau, tidak otomatis, tidak menyentuh stok/ISSUE/jurnal/GL.
+model BiayaOperasionalPenerapan {
+  id            String   @id @default(uuid()) @db.Uuid
+  materialId    String   @map("material_id") @db.Uuid
+  material      Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
+  status        String   @default("DIAJUKAN") @db.VarChar(16)
+  scope         Json
+  reason        String
+  previewHash   String   @map("preview_hash")
+  previewCount  Int      @map("preview_count")
+  previewValue  Decimal  @map("preview_value") @db.Decimal(18, 2)
+  requestedById String?  @map("requested_by")
+  requestedAt   DateTime @default(now()) @map("requested_at")
+  decidedById   String?  @map("decided_by")
+  decidedAt     DateTime? @map("decided_at")
+  decisionNote  String?  @map("decision_note")
+  appliedCount  Int?     @map("applied_count")
+  idempotencyKey String  @unique @map("idempotency_key")
+  biayaOperasional StockMovementBiayaOperasional[]
+
+  @@index([materialId, status])
+  @@map("biaya_operasional_penerapan")
 }
