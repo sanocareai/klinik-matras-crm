@@ -191,8 +191,8 @@ export function hitungBiayaBaris({ baris, spend, konteks }) {
   if (!sumberTerhubung) status = STATUS_BIAYA.BELUM_TERHUBUNG;
   else if (tidakSebanding) status = STATUS_BIAYA[tidakSebanding];
   else if (unmappedAtauUnknown) status = STATUS_BIAYA.MAPPING_BELUM_ADA;
+  else if (kesegaran.terlambat) status = STATUS_BIAYA.DATA_TERLAMBAT;      // status 'terlambat' didahulukan (UI lama); KPI tetap null bila spendTidakLengkap (alasan SPEND_TIDAK_LENGKAP)
   else if (spendTidakLengkap) status = STATUS_BIAYA.SPEND_TIDAK_LENGKAP;
-  else if (kesegaran.terlambat) status = STATUS_BIAYA.DATA_TERLAMBAT;
   else if (S === null) status = STATUS_BIAYA.TANPA_SPEND_DI_RENTANG;
   else if (lead === 0) status = STATUS_BIAYA.BELUM_ADA_KONVERSI;
   else if (!matang) status = STATUS_BIAYA.DATA_BELUM_MATANG;

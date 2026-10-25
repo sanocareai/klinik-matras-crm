@@ -594,6 +594,17 @@ const SPEND_UJI = [
   ["2026-10-01", AD1, "500000"], ["2026-10-01", AD2, "100000"], ["2026-10-01", AD3, "300000"], ["2026-10-10", A4, "120000"],
 ];
 const TOTAL_UJI = 1_670_000;
+// Kelengkapan spend (Fase 3.2): KPI CRM hanya dihitung bila SETIAP hari WIB di rentang punya baris spend. Fixture di bawah sengaja jarang (30 Sep, 1 Okt, 10 Okt) —
+// tes yang mengukur CPL/CPA memakai pengisi Rp0 pada hari kosong (tidak mengubah total/percakapan), lalu dibersihkan.
+async function isiHariSpendKosong(dari, sampai) {
+  const imp = await testPrisma.metaSpendImport.findFirst(); const ada = new Set((await testPrisma.metaAdDailySpend.findMany({ select: { dateWib: true } })).map((r) => r.dateWib.toISOString().slice(0, 10)));
+  const ids = []; let n = 0;
+  for (let t = Date.parse(`${dari}T00:00:00Z`); t <= Date.parse(`${sampai}T00:00:00Z`); t += 86_400_000) {
+    const d = new Date(t).toISOString().slice(0, 10); if (ada.has(d)) continue;
+    ids.push((await testPrisma.metaAdDailySpend.create({ data: { dateWib: new Date(`${d}T00:00:00Z`), accountId: AKUN, campaignId: HIER[AD1][0], adSetId: HIER[AD1][1], adId: AD1, currency: "IDR", spend: 0, source: "ADS_MANAGER_CSV", importedAt: new Date(), importId: imp.id, rowChecksum: String(++n).padStart(64, "f") } })).id);
+  }
+  return () => testPrisma.metaAdDailySpend.deleteMany({ where: { id: { in: ids } } });
+}
 const spendPost = (body, o = {}) => api("POST", "/spend", { body, ...o });
 const bersihSpend = async () => {
   await testPrisma.metaAdSpendRevision.deleteMany({}); await testPrisma.metaAdDailySpend.deleteMany({}); await testPrisma.metaSpendImport.deleteMany({});
@@ -708,6 +719,7 @@ test("SPEND: sumber ganda untuk hari+Ad yang sama dipilih SATU menurut prioritas
 
 test("LAPORAN + spend: KPI per campaign dari spend/lead/closing/revenue; level ad = adset = campaign; spend-only tampil; SPEND_UNMAPPED; READ ONLY; privasi", async () => {
   await benihLaporan(); await pastikanReferensi();
+  const bersihkanPengisi = await isiHariSpendKosong("2026-09-25", "2026-10-10");
   // atribusi sudah "mulai" sebelum rentang uji (touch EXISTING lama, di luar rentang): rentang uji sebanding → KPI dihitung
   const awal = await testPrisma.customer.create({ data: { name: "Awal Atribusi", phone: "6285300000099", createdAt: T("2026-09-01T03:00:00Z"), leadSource: "META_ADS" } });
   await testPrisma.attributionTouch.create({ data: { customerId: awal.id, adId: AD1, touchAt: T("2026-09-20T03:00:00Z"), touchDateWib: T("2026-09-20T00:00:00Z"), mappingStatusAtTouch: "UNMAPPED", evidenceSource: "CTWA_AD", sourceType: "ad", customerStatusAtTouch: "EXISTING", customerBasisAtTouch: "RIWAYAT_PESAN", dedupeKey: "awal-atribusi-uji" } });
@@ -784,6 +796,7 @@ test("LAPORAN: data terlambat (rentang melewati spend terakhir) → DATA_TERLAMB
 });
 
 test("TARGET: default null; PUT valid mengisi; evaluasi baru muncul setelah target ada; nilai salah 400; GET menampilkan; tidak ada aksi pada iklan", async () => {
+  const bersihkanPengisi = await isiHariSpendKosong("2026-09-25", "2026-10-10");
   const g0 = await api("GET", "/target");
   assert.deepEqual([g0.json.diatur, Object.values(g0.json.target).every((v) => v === null)], [false, true]);
   assert.equal((await api("PUT", "/target", { body: { maxCpl: -5 } })).status, 400);
@@ -799,6 +812,7 @@ test("TARGET: default null; PUT valid mengisi; evaluasi baru muncul setelah targ
   assert.equal(g2.biaya.evaluasi.status, "DATA_KURANG", "1 lead < minimum 2");
   assert.equal(kunci(j, "UNMAPPED").biaya.evaluasi.status, "DATA_KURANG");
   assert.ok((await testPrisma.attributionKpiTarget.count()) === 1);
+  await bersihkanPengisi();
 });
 
 test("MONITOR: endpoint ADMIN, baca-saja; WAHA tak terjangkau = CRIT; agregat tanpa nomor/JID/chat/clid; state alarm dapat dibaca", async () => {
