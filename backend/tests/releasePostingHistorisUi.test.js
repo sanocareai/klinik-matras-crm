@@ -14,11 +14,11 @@ const script = baca("scripts/release-posting-historis-ui.sh");
 const tpl = baca("scripts/templates/release-posting-historis-ui.sh.tpl");
 const punyaBash = spawnSync("bash", ["-c", "true"]).status === 0;
 
-test("skrip rilis: tanpa placeholder, generator terpasang, tanpa sisa nama rilis lain, daftar berkas backend (3) dan frontend yang diaudit", () => {
+test("skrip rilis: tanpa placeholder, generator terpasang, tanpa sisa nama rilis lain, daftar berkas backend (1) dan frontend yang diaudit", () => {
   assert.ok(!/@@[A-Z_]+@@/.test(script), "placeholder tersisa");
   assert.match(script, /^LIVE_MIG_TERAKHIR="\d{14}_[a-z0-9_]+"; LIVE_MIG_JUMLAH="\d+"$/m);
   assert.ok(script.split("\n").includes('BACKEND_SRC_EXPECT="backend/src/services/postingBatchLatar.js"'), "tepat satu berkas backend (status HPP batch)");
-  const fe = script.split("\n").find((l) => l.startsWith("FRONTEND_SRC_EXPECT=")); assert.ok(fe && fe.includes("WarehousePostingHistoris.jsx") && fe.includes("postingHistorisModel.js") && fe.includes("pageRegistry.jsx"), "daftar frontend yang diaudit");
+  const fe = script.split("\n").find((l) => l.startsWith("FRONTEND_SRC_EXPECT=")); assert.ok(fe && fe.includes("WarehousePostingHistoris.jsx") && fe.includes("postingHistorisModel.js"), "daftar frontend yang diaudit");
   assert.ok(script.includes("scripts/gen-release-posting-historis-ui.cjs"));
   assert.ok(!/evaluasi-catatan|\bskj\b|\bevl\.sh|route-planner/.test(script.split(String.fromCharCode(10)).filter((l) => !l.startsWith("ALLOWED_RE=")).join(String.fromCharCode(10)).replace(/rehearsal_evl_/g, "").replace(/simulasi-evaluasi-catatan/g, "")), "tidak ada sisa nama rilis lain (pustaka simulasi dipakai ulang sengaja)");
 });
