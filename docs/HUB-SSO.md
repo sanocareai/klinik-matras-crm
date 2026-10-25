@@ -1,11 +1,14 @@
 # SSO Task & Meeting — kontrak sisi SANSS (D-200)
 
 **Status:** tahap 4 (state/nonce, siklus akses, kartu portal, revoke keluar)
-selesai di branch `feat/task-meeting-sso`, **mati secara default**
++ same-domain embedding + Main Hub (Tugas Saya/Pantauan Leader, Okt 2026)
+selesai di branch `feat/task-meeting-sso-current` (SANSS) /
+`feat/sanss-meeting-workspace` (HUB), **mati secara default**
 (`HUB_SSO_ENABLED=false`). Kedua flag (SANSS `HUB_SSO_ENABLED` dan HUB
-`SANSS_SSO_ENABLED`) harus menyala berbarengan sebelum kartu portal atau
-alur mana pun terlihat pengguna — salah satu mati berarti 404/`ready:false`
-bersih, **tanpa** jatuh ke Google login, dev bypass, atau auto-join.
+`SANSS_SSO_ENABLED`) harus menyala berbarengan sebelum kartu portal, widget
+Main Hub, atau alur mana pun terlihat pengguna — salah satu mati berarti
+404/`ready:false` bersih, **tanpa** jatuh ke Google login, dev bypass, atau
+auto-join. Belum pernah di-deploy ke production; belum di-merge ke `main`.
 
 Keputusan dasar: [D-200](sano-hub/DECISIONS.md) — SANO-HUB (Next.js + database
 sendiri) boleh berjalan terpisah; **SANSS tetap pemilik identitas dan
@@ -51,13 +54,65 @@ callback, tapi `state` adalah yang mengikat callback itu ke SESI BROWSER yang
 memulainya (HttpOnly, tidak bisa dibaca/disuntik dari halaman lain) — pagar
 terhadap login-CSRF, bukan terhadap pencurian kode.
 
+## Same-domain embedding (Okt 2026)
+
+Keputusan Owner: HUB tidak lagi berjalan di origin terpisah — HUB mount di
+`{SANSS origin}/workspace` lewat `basePath` Next.js (`next.config.ts`) +
+reverse proxy nginx, satu origin publik untuk keduanya (SANSS di `/`, HUB di
+`/workspace`). Ini **menggeser bentuk nilai** `HUB_BASE_URL`/`HUB_INTERNAL_URL`
+(sekarang origin + path dasar, bukan origin polos — lihat tabel di bawah),
+tapi **tidak mengubah kontrak SSO itu sendiri** sama sekali: handoff, state,
+exchange, introspect, revoke, dan summary (lihat di bawah) semuanya tetap
+persis seperti didokumentasikan di sini, hanya alamat dasarnya yang kini
+punya path.
+
+Tiga jebakan nyata yang ditemukan dan diperbaiki saat memasang ini (dicatat
+di sini supaya tidak terulang kalau topologi ini pernah disentuh lagi):
+
+1. **nginx exact-match WAJIB ada untuk `/workspace` tanpa garis miring,
+   SEBELUM blok prefix `/workspace/`** — pola prefix bergaris-miring-akhir
+   membuat nginx sendiri 301 `/workspace` → `/workspace/`, sementara basePath
+   Next.js (bawaan `trailingSlash:false`) 308 ke arah SEBALIKNYA —
+   `ERR_TOO_MANY_REDIRECTS` tanpa blok exact-match ini:
+   ```nginx
+   location = /workspace { proxy_pass http://host.docker.internal:<HUB_PORT>; proxy_set_header Host $host; proxy_set_header X-Forwarded-Proto https; proxy_set_header X-Forwarded-Host $http_host; proxy_set_header X-Real-IP $remote_addr; }
+   location /workspace/  { proxy_pass http://host.docker.internal:<HUB_PORT>; proxy_set_header Host $host; proxy_set_header X-Forwarded-Proto https; proxy_set_header X-Forwarded-Host $http_host; proxy_set_header X-Real-IP $remote_addr; }
+   ```
+2. **Auth.js (HUB) sendiri TIDAK diberi `basePath`** — hanya `next.config.ts`
+   yang punya `basePath: "/workspace"`. Next.js sudah memotong `/workspace`
+   dari request sebelum Route Handler mana pun (termasuk `[...nextauth]`)
+   melihatnya; menyetel `basePath` Auth.js juga membuat setiap aksinya
+   (`providers`, `session`, `signin`) 400 karena dua lapis basePath menumpuk.
+   `AUTH_URL`/`NEXTAUTH_URL`/`NEXT_PUBLIC_APP_URL` (HUB) tetap **origin
+   polos**, TANPA `/workspace` — threading path ke situ membuat Auth.js
+   mengira itu basePath-nya sendiri, bug yang sama lewat jalur lain.
+3. **Cookie sesi HUB diganti nama** (`sanohub.session-token` /
+   `__Secure-sanohub.session-token`, bukan default Auth.js
+   `authjs.session-token`) supaya tidak bentrok dengan cookie SANSS sendiri
+   di satu origin yang sama — `cookies.sessionToken` di `NextAuth()`
+   mengurusnya untuk `auth()`, TAPI kode lain yang membaca cookie session
+   secara manual (HUB: `server/auth.ts#resolveUserId`, untuk menemukan
+   `externalIdentityId` dan memutuskan perlu-tidaknya memanggil
+   `introspectGate`) harus ikut disinkronkan — lupa menyinkronkannya adalah
+   regresi keamanan NYATA yang pernah terjadi: gerbang introspeksi diam-diam
+   TIDAK PERNAH terpanggil untuk sesi SSO manapun (kill switch berhenti
+   menutup sesi aktif), lolos dari ketiga fast-suite HUB, hanya tertangkap
+   rehearsal browser sungguhan (lihat commit `ced11b8`, repo HUB).
+
+Standalone build Next.js (HUB) juga butuh `.next/static`/`public` disalin
+manual ke `.next/standalone` — langkah resmi Next.js yang mudah terlewat;
+tanpa itu halaman render tapi TIDAK interaktif (chunk JS 404 diam-diam, klik
+tidak berbuat apa-apa). Otomatis lewat `postbuild` (`npm run build` HUB,
+`scripts/copy-standalone-assets.mjs`) sejak commit `5a01b85` — tidak perlu
+langkah manual lagi.
+
 ## Konfigurasi (env backend)
 
 | Variabel | Arti |
 |---|---|
 | `HUB_SSO_ENABLED` | **Persis `"true"`** untuk menyalakan. Selain itu (kosong, `1`, `TRUE`, …) = mati → `/api/hub/*` menjawab **404**, tanpa tulis DB dan tanpa audit; kartu portal tidak pernah tampil. |
-| `HUB_BASE_URL` | Origin HUB. `https` (http hanya untuk localhost), tanpa path/query/fragment/kredensial. **Satu-satunya sumber** alamat tujuan (dan alamat kartu portal) — tidak pernah dari `Host`, `Origin`, atau body. |
-| `HUB_INTERNAL_URL` (tahap 4) | Alamat **PRIVAT** HUB (loopback/RFC1918/link-local/ULA/`*.localhost`/`host.docker.internal`/nama satu-label) — dipakai SANSS memanggil `POST {HUB_INTERNAL_URL}/api/sso/revoke` saat logout/nonaktifkan-user/cabut-peran. Domain/IP publik **ditolak** (panggilan ini server-ke-server, arahnya terbalik dari exchange/introspect/revoke di atas). |
+| `HUB_BASE_URL` | Origin HUB, **atau origin + path dasar sederhana** sejak same-domain embedding (Okt 2026) — mis. `https://app.sanomatrassehat.com/workspace`. `https` (http hanya untuk localhost), tanpa query/fragment/kredensial; path (kalau ada) hanya segmen alfanumerik sederhana (`^(/[A-Za-z0-9_-]+)+$`), bukan path bebas — sengaja ketat, bukan pelonggaran open-redirect. **Satu-satunya sumber** alamat tujuan (dan alamat kartu portal) — tidak pernah dari `Host`, `Origin`, atau body. |
+| `HUB_INTERNAL_URL` (tahap 4) | Alamat **PRIVAT** HUB (loopback/RFC1918/link-local/ULA/`*.localhost`/`host.docker.internal`/nama satu-label), **origin + path dasar yang sama** kalau HUB di-mount dengan basePath — dipakai SANSS memanggil `POST {HUB_INTERNAL_URL}/api/sso/revoke` dan `POST {HUB_INTERNAL_URL}/api/sso/summary` (lihat di bawah). Domain/IP publik **ditolak** (panggilan ini server-ke-server, arahnya terbalik dari exchange/introspect/revoke di atas). |
 | `HUB_SERVICE_TOKEN` | Rahasia server-ke-server, ≥ 32 karakter, **tidak boleh sama dengan `JWT_SECRET`**. Dipakai KEDUA ARAH — HUB→SANSS (exchange/introspect/revoke) DAN SANSS→HUB (`/api/sso/revoke`) — satu rahasia bersama. |
 
 Enabled tetapi konfigurasi cacat (termasuk `HUB_INTERNAL_URL` hilang/publik) ⇒
@@ -87,6 +142,29 @@ JWT hanya dipakai untuk tahu *siapa*, tidak pernah *boleh apa*.
 Menambah role lain di kemudian hari = menambah `P.HUB_ACCESS` (dan/atau
 `P.HUB_ADMIN`) pada role itu di `ROLE_PERMISSIONS` **beserta tes**; jangan cek
 role ad-hoc di route.
+
+### `HUB_LEADER_MONITOR` — Pantauan Leader, Main Hub (Okt 2026)
+
+Permission **terpisah**, default-deny, dipetakan **HANYA ke `OWNER`** (bukan
+`ADMIN_PERMS` — menambah role lain tidak diam-diam membukanya untuk ADMIN
+juga). Menggerbangi `GET /api/hub/summary/leaders` (lihat Endpoint) — Owner
+ingin memantau progres leader lintas divisi dari Main Hub, bukan setiap
+pemegang HUB_ADMIN otomatis boleh. Melebarkan ini ke role lain = satu baris
+di `ROLE_PERMISSIONS` **beserta tes** (lihat `tests/hubSummary.test.js`),
+BUKAN pelonggaran default `ADMIN_PERMS`.
+
+"Leader" yang dipantau memakai penandaan **yang sudah ada dan terbukti**
+(`UserDivision.isLeader`, C2.1 — dipakai juga oleh Laporan Divisi RINCI),
+**bukan** peran/role baru dan **bukan** "semua user dianggap leader". Admin/
+Owner menetapkannya eksplisit lewat Pengguna & Divisi; tanpa penetapan,
+Pantauan Leader kosong jujur ("Belum ada leader divisi yang ditetapkan"),
+bukan daftar kosong yang terlihat seperti galat.
+
+`HUB_ACCESS` tetap TIDAK diberikan otomatis ke seorang leader hanya karena
+`isLeader=true` — dua hal berbeda sama sekali (satu "siapa dipantau Owner",
+satu lagi "siapa boleh masuk HUB"). Seorang leader tanpa `HUB_ACCESS` tetap
+muncul di Pantauan Leader, berlabel jujur **"Belum terhubung"** (bukan data
+karangan), karena HUB tidak pernah punya identitasnya sama sekali.
 
 ## Endpoint
 
@@ -145,6 +223,39 @@ gagal — kalau HUB tidak terjangkau atau menolak, introspeksi berkala HUB
 (≤60 detik) tetap menutup sesinya, hanya lebih lambat. Sukses/gagal diaudit
 sebagai `HUB_REVOKE_NOTIFIED`/`HUB_REVOKE_NOTIFY_FAILED`.
 
+### `GET /api/hub/summary/me` — Main Hub, "Tugas Saya"/"Hasil Meeting" (Okt 2026)
+`Authorization: Bearer <JWT>`. Dipanggil browser (bukan server-ke-server) —
+backend yang memanggil HUB server-ke-server di baliknya; token layanan
+**tidak pernah** sampai ke respons ini. Status aktif + `hubRole` dibaca ulang
+dari DB (sama seperti `/api/hub/handoff`), BUKAN dari klaim JWT.
+
+| Hasil | Kondisi |
+|---|---|
+| `200 {connected, summary:{tasks,meetings}}` | berizin; `connected:false` kalau belum pernah membuka HUB sama sekali (identitas belum ada di sisi HUB) — `summary` tetap bentuk kosong yang valid, bukan `null` |
+| `403 HUB_SUMMARY_NO_PERMISSION` | tanpa `HUB_ACCESS` |
+| `403 HUB_SUMMARY_USER_INACTIVE` | nonaktif |
+| `503 HUB_SUMMARY_UNAVAILABLE` | SSO mati/tidak dikonfigurasi, atau HUB tidak terjangkau |
+
+### `GET /api/hub/summary/leaders?division=` — Main Hub, "Pantauan Leader" (Okt 2026)
+Sama pola di atas, digerbangi `HUB_LEADER_MONITOR` (lihat "Permission dan
+peran"). `?division=` **hanya mempersempit** set leader yang sudah dihitung
+dari DB (`UserDivision.isLeader=true`) — nilai di luar enum
+`DivisiKeanggotaan` diabaikan bersih (jadi "tanpa filter", bukan galat/leak).
+`200 {leaders:[{userId,name,divisions,connected,summary}]}`; `403`/`503`
+sama kode dengan `/summary/me` di atas.
+
+### `POST /api/sso/summary` — SANSS → HUB (Okt 2026, server-ke-server)
+Bukan endpoint SANSS — ini yang SANSS **panggil** ke
+`{HUB_INTERNAL_URL}/api/sso/summary` (`x-hub-service-token`), persis pola
+`/api/sso/revoke` di bawah, dari dua route di atas. Body
+`{ "subs": ["<userId>", …] }` (1–50 id). HUB me-resolve tiap `sub` ke
+identitas AKTIF di workspace resminya; `sub` yang tidak cocok **diam-diam
+dihilangkan** dari `results` (bukan galat) — sama posisi "tidak pernah
+membocorkan keberadaan akun" dengan `/internal/introspect`. Endpoint ini
+TIDAK memutuskan siapa boleh meminta ringkasan siapa — itu sepenuhnya
+tanggung jawab SANSS **sebelum** memanggilnya (lihat `HUB_LEADER_MONITOR` di
+atas); ia hanya menjawab "apakah `sub` ini orang nyata di sini".
+
 ### `POST /api/auth/logout` — tahap 4
 `Authorization: Bearer <JWT>`, tanpa body → **selalu** `200 {ok:true}`. Login
 web SANSS sengaja stateless (tidak ada tabel sesi web) — endpoint ini tidak
@@ -166,8 +277,13 @@ aman dipanggil dari frontend tanpa syarat (no-op kalau SSO mati).
   location /api/hub/internal/ { return 404; }
   ```
   pada `server` publik SANSS, sebelum blok `location /api/ { proxy_pass … }`
-  umum — persis simetris dengan `location /api/sso/revoke { return 404; }`
-  yang didokumentasikan di sisi HUB (`DEPLOYMENT.md` §6b).
+  umum — persis simetris dengan blok di sisi HUB (`DEPLOYMENT.md` §6b, repo
+  HUB), yang sejak same-domain embedding (Okt 2026) hidup di SATU `server`
+  publik yang sama dengan SANSS (bukan dua `server` terpisah lagi):
+  ```nginx
+  location /workspace/api/sso/revoke  { return 404; }
+  location /workspace/api/sso/summary { return 404; }
+  ```
 
 ## Allow-list tujuan
 
@@ -177,6 +293,15 @@ Kecocokan **persis**, tanpa query/fragment: `/`, `/dashboard`, `/my-tasks`,
 dengan `<id>` = `[A-Za-z0-9_-]{8,64}`. Divalidasi saat **dibuat dan saat ditukar**.
 Klien tidak pernah menentukan alamat redirect; HUB mendarat di `destination`
 yang dikembalikan `exchange`.
+
+**Satu pengecualian aditif** (Okt 2026, Main Hub): `/projects/<id>/board?task=<id>`
+— pola TERPISAH, bukan pelonggaran `board` di atas ke "query apa saja boleh".
+Dipakai tautan "lihat detail" di "Tugas Saya"/"Pantauan Leader" supaya klik
+mendarat langsung di panel task tertentu, bukan cuma board-nya. Setiap bentuk
+lain (view selain board, param tambahan, nama param beda huruf besar/kecil,
+id cacat, fragment) tetap jatuh ke default — lihat uji
+`tujuan: tautan task Main Hub` di kedua sisi (SANSS `hubSso.test.js`, HUB
+`verify-sso.ts`).
 
 ## Kartu portal "Task & Meeting"
 
@@ -229,17 +354,34 @@ kait nonaktifkan-pengguna/cabut-peran yang memanggil revoke. `/auth/login`,
 
 1. Deploy dengan `HUB_SSO_ENABLED=false` (perilaku produksi identik; hanya tabel/kolom baru yang muncul; `/api/auth/logout` sudah ada tapi no-op terhadap HUB).
 2. Jalankan migrasi (`prisma migrate deploy` — additive murni, aman dijalankan kapan saja, termasuk sebelum flag dinyalakan).
-3. **WAJIB** blokir `location /api/hub/internal/ { return 404; }` di nginx publik SEBELUM langkah berikutnya (lihat "Autentikasi server-ke-server" di atas).
-4. Isi `HUB_BASE_URL` + `HUB_INTERNAL_URL` (alamat privat HUB, mis. `http://127.0.0.1:3000` kalau HUB berjalan di host yang sama) + `HUB_SERVICE_TOKEN` (sama persis dengan `SANSS_SERVICE_TOKEN`/token layanan di sisi HUB).
-5. Smoke test dengan flag **tetap mati** dulu: `/api/hub/*` masih 404, `/api/auth/login` & `/api/auth/logout` masih berfungsi normal, kartu portal masih tersembunyi.
+3. **Konfigurasi nginx same-domain** (lihat "Same-domain embedding" di atas) — WAJIB SEBELUM langkah berikutnya:
+   - `location /api/hub/internal/ { return 404; }`
+   - `location /workspace/api/sso/revoke { return 404; }`
+   - `location /workspace/api/sso/summary { return 404; }`
+   - `location = /workspace { proxy_pass …HUB…; }` **SEBELUM** `location /workspace/ { proxy_pass …HUB…; }` (exact-match dulu, cegah loop redirect — lihat jebakan #1 di atas)
+4. Isi `HUB_BASE_URL` + `HUB_INTERNAL_URL` — origin + `/workspace` kalau HUB di-mount same-domain (mis. `https://app.sanomatrassehat.com/workspace` / `http://127.0.0.1:3000/workspace`) — + `HUB_SERVICE_TOKEN` (sama persis dengan `SANSS_SERVICE_TOKEN`/token layanan di sisi HUB).
+5. Smoke test dengan flag **tetap mati** dulu: `/api/hub/*` masih 404, `/api/auth/login` & `/api/auth/logout` masih berfungsi normal, kartu portal masih tersembunyi, `/workspace` HUB sendiri 404 (bukan loop redirect).
 6. Set `HUB_SSO_ENABLED=true` **hanya setelah** sisi HUB (`SANSS_SSO_ENABLED`) juga siap dinyalakan — salah satu mati saja sudah membuat alurnya menolak bersih di sisi manapun yang mati.
-7. **Rollback:** `HUB_SSO_ENABLED=false` (semua endpoint `/api/hub/*` 404 seketika, kartu portal langsung hilang dari respons login/`/me` berikutnya). Tabel/kolom
+7. **Main Hub (Tugas Saya/Pantauan Leader)** ikut flag yang sama, tanpa flag terpisah — begitu `HUB_SSO_ENABLED`+`SANSS_SSO_ENABLED` menyala, `/api/hub/summary/*` otomatis aktif untuk siapa pun yang sudah punya `HUB_ACCESS` (ringkasan milik sendiri). "Pantauan Leader" TETAP kosong untuk semua orang kecuali Owner secara eksplisit diberi `HUB_LEADER_MONITOR` di `ROLE_PERMISSIONS` (default saat ini: Owner-only, bukan per-user toggle) — dan tetap kosong-jujur sampai Admin/Owner menetapkan `UserDivision.isLeader=true` untuk leader yang dimaksud lewat Pengguna & Divisi; tidak ada data yang tampil tanpa penetapan eksplisit itu.
+8. **Rollback:** `HUB_SSO_ENABLED=false` (semua endpoint `/api/hub/*`, termasuk `/api/hub/summary/*`, 404 seketika; kartu portal dan widget Main Hub langsung hilang dari respons login/`/me`/Portal.jsx berikutnya). Tabel/kolom
    aditif dan aman ditinggal; kode yang belum terpakai kedaluwarsa sendiri dalam 60 detik; `/api/auth/logout` tetap 200 (berhenti memanggil HUB).
 
 ## Tes
 
 * Unit murni: `node --test tests/hubSso.test.js` (aturan konfigurasi, `isPrivateHost`, bentuk kode/state, pemetaan peran — tanpa DB/Express).
+* Unit murni (Main Hub): `node --test tests/hubSummary.test.js` — `HUB_LEADER_MONITOR` HANYA dipegang OWNER (dan bukan role lain mana pun, termasuk ADMIN), `normalizeDivisionFilter` (narrow-only, tidak pernah expand).
 * Integrasi (Postgres sekali-pakai, migrasi dari nol, HTTP sungguhan lewat router ASLI,
   termasuk HUB PALSU (server HTTP nyata di localhost) untuk membuktikan
   `notifyHubRevoke` benar-benar melakukan panggilan jaringan, bukan mock):
   `npm run test:integration:clean -- tests/integration/hubSso.integration.test.js`
+* Sisi HUB: `npm run verify:sso` / `npm run verify:prod-boot` (repo SANO-HUB)
+  — termasuk `POST /api/sso/summary` end-to-end (token/private-only/rate-limit,
+  data task/meeting nyata) dan regresi permanen gerbang introspeksi (lihat
+  jebakan #3 di "Same-domain embedding" di atas).
+* Rehearsal staging penuh, browser sungguhan, dua origin disatukan lewat nginx
+  TLS lokal (`docs/sso-stage5-rehearsal/`, repo ini): `node rehearsal.mjs` —
+  mencakup dua leader berbeda bentuk (satu terhubung ke HUB, satu belum)
+  + Owner: scope sendiri, Pantauan Leader, manipulasi `?division=`/akses
+  langsung tanpa izin, tautan task mendarat tepat tanpa login ulang,
+  pencabutan akses, dan rantai penuh meeting→keputusan→action item→task→
+  ringkasan Main Hub setelah refresh.
