@@ -32,8 +32,12 @@ if (!fs.existsSync(path.join(HUB_DIR, "package.json"))) {
 }
 export const SANSS_PORT = Number(process.env.STAGE5_SANSS_PORT || 41800); // backend langsung (internal)
 export const HUB_PORT = Number(process.env.STAGE5_HUB_PORT || 31800); // backend langsung (internal)
-export const SANSS_PUBLIC = process.env.STAGE5_SANSS_PUBLIC || "https://localhost:8443"; // lewat proxy+TLS
-export const HUB_PUBLIC = process.env.STAGE5_HUB_PUBLIC || "https://localhost:9443"; // lewat proxy+TLS
+// Same-domain embedding (Okt 2026) — SATU origin publik, bukan dua: HUB di
+// /workspace (basePath), SANSS di semua jalur lain, keduanya lewat proxy+TLS
+// yang SAMA (lihat setup-proxy.mjs). HUB_PUBLIC lama dihapus — jangan
+// tambahkan lagi; setiap kode yang perlu URL publik HUB memakai
+// `${PUBLIC}/workspace` secara eksplisit (lihat hubEnv/sanssEnv di bawah).
+export const PUBLIC = process.env.STAGE5_PUBLIC || "https://localhost:8443";
 export const SANSS_DB = process.env.STAGE5_SANSS_DB || "postgresql://klinik:KlinikMatras2026Aman@localhost:5432/klinik_matras_staging_s5";
 export const HUB_DB = process.env.STAGE5_HUB_DB || "postgresql://sano:sano_local_dev@127.0.0.1:5434/sano_hub_staging_s5?schema=public";
 // Diisi oleh run.mjs setelah tmp-staging-db.mjs migrate (HUB_WORKSPACE_ID
@@ -103,8 +107,8 @@ function sanssEnv(overrides = {}) {
     PORT: String(SANSS_PORT),
     JWT_SECRET,
     HUB_SSO_ENABLED: overrides.HUB_SSO_ENABLED ?? "false",
-    HUB_BASE_URL: HUB_PUBLIC, // publik — dipakai bikin postUrl ke browser
-    HUB_INTERNAL_URL: overrides.HUB_INTERNAL_URL ?? `http://127.0.0.1:${HUB_PORT}`, // langsung, BUKAN lewat nginx
+    HUB_BASE_URL: `${PUBLIC}/workspace`, // publik + basePath — dipakai bikin postUrl ke browser
+    HUB_INTERNAL_URL: overrides.HUB_INTERNAL_URL ?? `http://127.0.0.1:${HUB_PORT}/workspace`, // langsung, BUKAN lewat nginx; basePath tetap berlaku (next.config.ts)
     HUB_SERVICE_TOKEN: SHARED_TOKEN,
     WAHA_API_KEY: "",
     NODE_ENV: "production",
@@ -125,22 +129,31 @@ function hubEnv(overrides = {}) {
     HOSTNAME: "0.0.0.0",
     NODE_ENV: "production",
     AUTH_SECRET,
-    AUTH_URL: HUB_PUBLIC, // skema https literal — keputusan secure-cookie Auth.js (lihat Tahap 4)
-    NEXTAUTH_URL: HUB_PUBLIC,
-    NEXT_PUBLIC_APP_URL: HUB_PUBLIC,
+    // Harus origin POLOS, TANPA /workspace — dikonfirmasi lewat
+    // verify:prod-boot (HUB repo): Auth.js memperlakukan path pada AUTH_URL
+    // sebagai basePath Auth.js SENDIRI, yang balik membuat setiap aksi
+    // Auth.js (providers/session/signin) 400 karena Next.js SUDAH memotong
+    // /workspace dari request sebelum sampai ke Route Handler — dua lapis
+    // basePath yang tidak boleh ditumpuk. basePath Next.js (next.config.ts)
+    // sudah cukup; AUTH_URL tetap origin saja, skema https literal
+    // (keputusan secure-cookie Auth.js, lihat Tahap 4).
+    AUTH_URL: PUBLIC,
+    NEXTAUTH_URL: PUBLIC,
+    NEXT_PUBLIC_APP_URL: PUBLIC,
     HUB_WORKSPACE_ID,
     MOCK_INTEGRATIONS: "true",
     TOKEN_ENCRYPTION_KEY: TOKEN_ENC_KEY,
     DEV_AUTH_EMAIL: "",
     SANSS_SSO_ENABLED: overrides.SANSS_SSO_ENABLED ?? "false",
-    SANSS_INTERNAL_URL: `http://127.0.0.1:${SANSS_PORT}`, // langsung, BUKAN lewat nginx
+    SANSS_INTERNAL_URL: `http://127.0.0.1:${SANSS_PORT}`, // langsung, BUKAN lewat nginx; SANSS tanpa basePath, tetap origin saja
     SANSS_SERVICE_TOKEN: SHARED_TOKEN,
-    SANSS_PUBLIC_ORIGIN: SANSS_PUBLIC,
+    SANSS_PUBLIC_ORIGIN: PUBLIC,
   };
 }
 export async function startHub(overrides = {}) {
   startProc("hub", "node", ["server.js"], `${HUB_DIR}\\.next\\standalone`, hubEnv(overrides));
-  const ok = await waitReady(`http://127.0.0.1:${HUB_PORT}/`, 45000);
+  // /workspace, bukan "/" — basePath membuat setiap jalur TANPA prefiks ini 404.
+  const ok = await waitReady(`http://127.0.0.1:${HUB_PORT}/workspace/login`, 45000);
   if (!ok) console.error("HUB log:", procs.hub.__log().slice(-2000));
   return ok;
 }

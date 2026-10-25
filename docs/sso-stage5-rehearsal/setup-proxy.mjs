@@ -2,11 +2,16 @@
 // Idempoten — aman dipanggil berkali-kali; TANPA rahasia (sertifikat
 // self-signed dibuat lokal, bukan diunduh/ditanam).
 //
+// Same-domain embedding (Okt 2026) — SATU origin publik sekarang, bukan dua:
+// /workspace/* -> HUB (basePath Next.js, lihat next.config.ts HUB), semua
+// jalur lain -> SANSS, meniru persis topologi production yang diusulkan
+// (app.sanomatrassehat.com/workspace di belakang nginx yang sama).
+//
 // Pakai: node setup-proxy.mjs [up|down]
 //
 // Variabel bisa ditimpa lewat env (lihat run-apps.mjs untuk port/origin yang
 // HARUS cocok dengan ini): STAGE5_PROXY_DIR, STAGE5_SANSS_PORT,
-// STAGE5_HUB_PORT, STAGE5_SANSS_PROXY_PORT (publik 8443), STAGE5_HUB_PROXY_PORT (publik 9443).
+// STAGE5_HUB_PORT, STAGE5_PUBLIC_PORT (publik, default 8443).
 import { execFileSync, execSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
@@ -14,8 +19,7 @@ import path from "node:path";
 const PROXY_DIR = process.env.STAGE5_PROXY_DIR || "C:\\tmp\\stage5-proxy";
 const SANSS_PORT = process.env.STAGE5_SANSS_PORT || 41800;
 const HUB_PORT = process.env.STAGE5_HUB_PORT || 31800;
-const SANSS_PROXY_PORT = process.env.STAGE5_SANSS_PROXY_PORT || 8443;
-const HUB_PROXY_PORT = process.env.STAGE5_HUB_PROXY_PORT || 9443;
+const PUBLIC_PORT = process.env.STAGE5_PUBLIC_PORT || 8443;
 const CONTAINER = "stage5-nginx";
 
 const certsDir = path.join(PROXY_DIR, "certs");
@@ -44,9 +48,13 @@ http {
   default_type application/octet-stream;
   sendfile off;
 
-  # --- SANSS publik: https://localhost:${SANSS_PROXY_PORT} -> 127.0.0.1:${SANSS_PORT} ---
+  # --- Satu origin publik: https://localhost:${PUBLIC_PORT} ---
+  # /workspace/* -> HUB (basePath Next.js — diteruskan APA ADANYA, proxy_pass
+  # TANPA path di sini supaya nginx tidak memotong prefiksnya: Next.js
+  # sendiri yang mengharapkan /workspace tetap ada di URI masuk).
+  # Semua jalur lain -> SANSS, seperti sebelumnya.
   server {
-    listen ${SANSS_PROXY_PORT} ssl;
+    listen ${PUBLIC_PORT} ssl;
     server_name localhost;
     ssl_certificate     /etc/nginx/certs/stage5.crt;
     ssl_certificate_key /etc/nginx/certs/stage5.key;
@@ -55,9 +63,33 @@ http {
     # Panggilan sungguhan HUB->SANSS tetap jalan: HUB_INTERNAL_URL menunjuk
     # backend LANGSUNG (host.docker.internal:${SANSS_PORT}), bukan lewat proxy ini.
     location /api/hub/internal/ { return 404; }
+    # Simetris dgn DEPLOYMENT.md §6b (HUB) — blokir SANSS->HUB revoke dari publik.
+    # Path SUNGGUHAN di balik basePath adalah /workspace/api/sso/revoke.
+    location /workspace/api/sso/revoke { return 404; }
 
-    location / {
-      proxy_pass http://host.docker.internal:${SANSS_PORT};
+    # Lebih spesifik dari location / di bawah — nginx selalu memilih prefix
+    # terpanjang yang cocok, jadi urutan penulisan di sini tidak penting,
+    # tapi location /workspace tetap menang untuk apa pun di bawahnya.
+    #
+    # DUA location, bukan satu — ditemukan lewat ERR_TOO_MANY_REDIRECTS nyata
+    # di rehearsal: "location /workspace/ {...}" (dengan garis miring di akhir
+    # pola) membuat nginx SENDIRI otomatis 301 "/workspace" -> "/workspace/"
+    # (perilaku nginx yang terdokumentasi untuk location berpola trailing
+    # slash) — sementara Next.js (trailingSlash default false) 308
+    # "/workspace/" -> "/workspace" ke arah SEBALIKNYA. Dua redirect yang
+    # berlawanan arah = lingkaran tak putus. "location = /workspace" (exact
+    # match, TANPA garis miring) menyerap bentuk tanpa-slash SEBELUM nginx
+    # sempat menambahkan sendiri, sehingga Next.js menerimanya persis seperti
+    # yang sudah kanonik (tidak perlu redirect balik).
+    location = /workspace {
+      proxy_pass http://host.docker.internal:${HUB_PORT};
+      proxy_set_header Host $host;
+      proxy_set_header X-Forwarded-Proto https;
+      proxy_set_header X-Forwarded-Host $http_host;
+      proxy_set_header X-Real-IP $remote_addr;
+    }
+    location /workspace/ {
+      proxy_pass http://host.docker.internal:${HUB_PORT};
       proxy_set_header Host $host;
       proxy_set_header X-Forwarded-Proto https;
       # $http_host (BUKAN $host) — Next.js Server Actions (sisi HUB)
@@ -65,20 +97,9 @@ http {
       proxy_set_header X-Forwarded-Host $http_host;
       proxy_set_header X-Real-IP $remote_addr;
     }
-  }
-
-  # --- HUB publik: https://localhost:${HUB_PROXY_PORT} -> 127.0.0.1:${HUB_PORT} ---
-  server {
-    listen ${HUB_PROXY_PORT} ssl;
-    server_name localhost;
-    ssl_certificate     /etc/nginx/certs/stage5.crt;
-    ssl_certificate_key /etc/nginx/certs/stage5.key;
-
-    # Simetris dgn DEPLOYMENT.md §6b (HUB) — blokir SANSS->HUB revoke dari publik.
-    location /api/sso/revoke { return 404; }
 
     location / {
-      proxy_pass http://host.docker.internal:${HUB_PORT};
+      proxy_pass http://host.docker.internal:${SANSS_PORT};
       proxy_set_header Host $host;
       proxy_set_header X-Forwarded-Proto https;
       proxy_set_header X-Forwarded-Host $http_host;
@@ -104,8 +125,7 @@ http {
     "docker",
     [
       "run", "-d", "--name", CONTAINER,
-      "-p", `${SANSS_PROXY_PORT}:${SANSS_PROXY_PORT}`,
-      "-p", `${HUB_PROXY_PORT}:${HUB_PROXY_PORT}`,
+      "-p", `${PUBLIC_PORT}:${PUBLIC_PORT}`,
       "-v", `${confDir.replace(/\\/g, "/")}/nginx.conf:/etc/nginx/nginx.conf:ro`,
       "-v", `${certsDir.replace(/\\/g, "/")}:/etc/nginx/certs:ro`,
       "--add-host", "host.docker.internal:host-gateway",
@@ -113,7 +133,7 @@ http {
     ],
     { stdio: "inherit" },
   );
-  console.log(`${CONTAINER} dijalankan. Publik: https://localhost:${SANSS_PROXY_PORT} (SANSS), https://localhost:${HUB_PROXY_PORT} (HUB).`);
+  console.log(`${CONTAINER} dijalankan. Publik: https://localhost:${PUBLIC_PORT} (SANSS di /, HUB di /workspace).`);
 }
 
 function down() {
