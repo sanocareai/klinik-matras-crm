@@ -36,13 +36,14 @@ export function hariMatangTerakhir({ dari, sampai, now }) {
 /** Status order PADA waktu `t` dari riwayat transisi (asc). `riwayat=false` bila tidak ada riwayat sama sekali (status sekarang dipakai). */
 export function statusPada(order, transisi, t) {
   const tr = transisi || [];
-  if (!tr.length) return { status: order.status, riwayat: false };
+  // Tanpa riwayat: order yang statusnya tidak pernah berubah masih PENDING (bawaan). Status lain TANPA transisi = riwayat tidak tercatat → TIDAK DIKETAHUI (bukan ditebak dari status sekarang).
+  if (!tr.length) return order.status === "PENDING" ? { status: "PENDING", riwayat: false, tidakDiketahui: false } : { status: order.status, riwayat: false, tidakDiketahui: true };
   let s = tr[0].fromStatus;
   for (const x of tr) { if (ms(x.createdAt) <= t) s = x.toStatus; else break; }
-  return { status: s, riwayat: true };
+  return { status: s, riwayat: true, tidakDiketahui: false };
 }
 
-const kosongGrup = () => ({ leadUnik: 0, spam: 0, leadSah: 0, prospek: 0, prospekTanpaTanggal: 0, customerOrder: 0, customerPernahBayar: 0, customerDp: 0, orderDp: 0, customerLunas: 0, orderLunas: 0, orderEligible: 0, bookedValue: 0, uangLedger: 0, refund: 0, uangBersih: 0 });
+const kosongGrup = () => ({ leadUnik: 0, spam: 0, leadSah: 0, prospek: 0, prospekTanpaTanggal: 0, customerOrder: 0, customerPernahBayar: 0, customerDp: 0, orderDp: 0, customerLunas: 0, orderLunas: 0, orderEligible: 0, nilaiOrderSaatIni: 0, uangLedger: 0, refund: 0, uangBersih: 0, customerOrderStatusTidakDiketahui: 0, orderStatusTidakDiketahui: 0, kategoriEksklusif: { belumBayar: 0, dpSaatD7: 0, lunas: 0 } });
 
 /**
  * MURNI. Menyusun hasil D7.
@@ -65,8 +66,10 @@ export function susunD7(p) {
   const { now, dari, sampai, hariIni, mulaiHari = null, leadSemua = null, customers, akuisisi, touchLain = [], reaktivasiCustomer = 0, referensi, orders, transisi = new Map(), payments, refunds, gate = { enabled: false, since: null }, spend = null } = p;
   const matang = hariMatangTerakhir({ dari, sampai, now });
   const batasan = [
-    "Nilai order/tagihan memakai nilai bersih SAAT INI; nota kredit yang terbit sesudah D7 tidak direkonstruksi.",
-    "Order tanpa riwayat status (order_status_transitions) memakai status sekarang; jumlahnya dilaporkan di coverage.orderTanpaRiwayatStatus.",
+    "nilaiOrderSaatIni = nilai order/tagihan bersih SAAT INI (BUKAN nilai historis D7; nota kredit sesudah D7 tidak direkonstruksi). Jangan membacanya sebagai 'booked D7'.",
+    "Order dengan status selain PENDING tetapi tanpa riwayat transisi → status pada D7 TIDAK DIKETAHUI: tidak dihitung dan dilaporkan (orderStatusTidakDiketahui).",
+    "customerDp (pernah DP), customerLunas, dan customerPernahBayar TIDAK eksklusif (satu customer bisa DP lalu lunas); gunakan kategoriEksklusif (lunas > DP saat D7 > belum bayar) untuk pembagian saling lepas.",
+    "Tanggal pembayaran = waktu pencatatan di sistem, bukan tanggal uang diterima.",
     "Customer pernah membayar/DP/lunas dihitung dari pembayaran yang tercatat di ledger; pembayaran di luar sistem tidak terlihat.",
     "Prospek = penandaan manual sales yang BERTANGGAL (transisi stage); penandaan tanpa tanggal tidak dihitung di D7.",
   ];
@@ -108,11 +111,11 @@ export function susunD7(p) {
     x.leadSah++;
     const trProspek = (c.transitions || []).filter((t) => STAGE_PROSPEK_ATAU_LANJUT.includes(t.toStage));
     if (trProspek.some((t) => ms(t.createdAt) <= akhir)) x.prospek++; else if (!trProspek.length && STAGE_PROSPEK_ATAU_LANJUT.includes(c.pipelineStage)) x.prospekTanpaTanggal++;
-    let adaOrder = false, adaBayar = false, adaDp = false, adaLunas = false;
+    let adaOrder = false, adaBayar = false, adaDp = false, adaLunas = false, adaDpKini = false, adaTidakDiketahui = false;
     for (const o of ordersBy.get(c.id) || []) {
       if (o.penjualanKaryawanId || ms(o.createdAt) > akhir) continue;
       const sp = statusPada(o, transisi.get(o.id), akhir);
-      if (!sp.riwayat) cov.orderTanpaRiwayatStatus++;
+      if (sp.tidakDiketahui) { cov.orderTanpaRiwayatStatus++; x.orderStatusTidakDiketahui++; adaTidakDiketahui = true; continue; }   // riwayat status tidak tersedia: TIDAK dihitung sebagai order D7 (dan tidak ditebak)
       if (ORDER_EXCLUDED_STATUS.includes(sp.status)) { if (sp.status === "CANCELLED") { if (sp.riwayat) cov.orderBatalSebelumD7++; else cov.orderBatalTanpaRiwayat++; } continue; }
       if (o.status === "CANCELLED") cov.orderBatalSetelahD7TetapDihitung++;
       // pembayaran sah PADA akhir jendela
@@ -126,13 +129,16 @@ export function susunD7(p) {
       }
       const rf = (refundPer.get(o.id) || []).filter((r) => ms(r.approvedAt || r.date) <= akhir);
       const j = jejakPembayaran(kontribusi, o.tagihan != null ? o.tagihan : nilaiBersih(o), rf);
-      adaOrder = true; x.orderEligible++; cov.orderEligible++; x.bookedValue += rp(nilaiBersih(o));
+      adaOrder = true; x.orderEligible++; cov.orderEligible++; x.nilaiOrderSaatIni += rp(nilaiBersih(o));
       if (j.jumlahPembayaran > 0) { cov.orderDenganPembayaran++; adaBayar = true; }
       if (j.pernahDp) { adaDp = true; x.orderDp++; }
+      if (j.status === "DP") adaDpKini = true;
       if (j.status === "LUNAS") { adaLunas = true; x.orderLunas++; }
       x.uangLedger += j.kotor; x.refund += j.refund; x.uangBersih += j.bersih;
     }
-    if (adaOrder) x.customerOrder++; if (adaBayar) x.customerPernahBayar++; if (adaDp) x.customerDp++; if (adaLunas) x.customerLunas++;
+    if (adaOrder) { x.customerOrder++; if (adaLunas) x.kategoriEksklusif.lunas++; else if (adaDpKini) x.kategoriEksklusif.dpSaatD7++; else x.kategoriEksklusif.belumBayar++; }
+    if (adaTidakDiketahui) x.customerOrderStatusTidakDiketahui++;
+    if (adaBayar) x.customerPernahBayar++; if (adaDp) x.customerDp++; if (adaLunas) x.customerLunas++;
   }
 
   // ── SPEND pada hari-hari kohort yang sama ──
@@ -148,15 +154,15 @@ export function susunD7(p) {
     const lengkap = spendStatus === "LENGKAP"; const alasan = spendStatus === "BELUM_TERHUBUNG" ? "BELUM_ADA_SPEND" : lengkap ? null : spendStatus;
     const bagi = (a, b, alasanB) => (!lengkap ? { nilai: null, alasan } : !(b > 0) ? { nilai: null, alasan: alasanB } : { nilai: n2(a / b), alasan: null });
     const roas = (v) => (!lengkap ? { nilai: null, alasan } : S > 0 ? { nilai: n2(v / S), alasan: null } : { nilai: null, alasan: "SPEND_NOL" });
-    return { status: spendStatus, spend: spendStatus === "BELUM_TERHUBUNG" ? null : S, cpl: bagi(S, x.leadSah, "BELUM_ADA_KONVERSI"), biayaPerCustomerPernahBayar: bagi(S, x.customerPernahBayar, "BELUM_ADA_KONVERSI"), biayaPerCustomerDp: bagi(S, x.customerDp, "BELUM_ADA_KONVERSI"), cpaLunas: bagi(S, x.customerLunas, "BELUM_ADA_KONVERSI"), bookedRoas: roas(x.bookedValue), cashRoas: roas(x.uangBersih) };
+    return { status: spendStatus, spend: spendStatus === "BELUM_TERHUBUNG" ? null : S, cpl: bagi(S, x.leadSah, "BELUM_ADA_KONVERSI"), biayaPerCustomerPernahBayar: bagi(S, x.customerPernahBayar, "BELUM_ADA_KONVERSI"), biayaPerCustomerDp: bagi(S, x.customerDp, "BELUM_ADA_KONVERSI"), cpaLunas: bagi(S, x.customerLunas, "BELUM_ADA_KONVERSI"), roasNilaiOrderSaatIni: roas(x.nilaiOrderSaatIni), cashRoas: roas(x.uangBersih) };
   };
-  const grup = [...grupMap.values()].map((x) => { const S = spendPer.get(x.kunci)?.spend ?? 0; return { ...x, uangLedger: rp(x.uangLedger), refund: rp(x.refund), uangBersih: rp(x.uangBersih), bookedValue: rp(x.bookedValue), biaya: biayaDari(x, S) }; }).sort((a, b) => b.leadUnik - a.leadUnik || (a.kunci < b.kunci ? -1 : 1));
-  const total = kosongGrup(); for (const x of grup) for (const f of Object.keys(total)) total[f] = rp(total[f] + x[f]);
+  const grup = [...grupMap.values()].map((x) => { const S = spendPer.get(x.kunci)?.spend ?? 0; return { ...x, uangLedger: rp(x.uangLedger), refund: rp(x.refund), uangBersih: rp(x.uangBersih), nilaiOrderSaatIni: rp(x.nilaiOrderSaatIni), biaya: biayaDari(x, S) }; }).sort((a, b) => b.leadUnik - a.leadUnik || (a.kunci < b.kunci ? -1 : 1));
+  const total = kosongGrup(); for (const x of grup) for (const f of Object.keys(total)) { if (f === "kategoriEksklusif") { for (const k of Object.keys(total[f])) total[f][k] += x[f][k]; } else total[f] = rp(total[f] + x[f]); }
   const spendTotal = rp([...spendPer.values()].reduce((s, a) => s + a.spend, 0));
   const biayaTotal = biayaDari(total, spendTotal);
   const rekonsiliasi = { ok: grup.reduce((s, x) => s + x.leadUnik, 0) === kohort.length && total.leadUnik === kohort.length, kohortLead: kohort.length, sigmaGrup: grup.reduce((s, x) => s + x.leadUnik, 0), spendSigmaGrup: rp(grup.reduce((s, x) => s + (x.biaya.spend ?? 0), 0)), spendTotal };
   return {
-    ...base, status: "TERSEDIA", periode, grup, total: { ...total, biaya: biayaTotal }, rekonsiliasi,
+    ...base, status: "TERSEDIA", periode: { ...periode, hariAtribusiParsial: mulaiHari !== null && mulaiHari >= dari && mulaiHari <= matang, atribusiMulai: mulaiHari }, grup, total: { ...total, biaya: biayaTotal }, rekonsiliasi,
     unknown: { lead: unknownIds.size, catatan: "touch iklan tanpa bukti akuisisi; tidak masuk kohort" }, reaktivasi: { customerUnik: reaktivasiCustomer, catatan: "touch pada customer lama; tidak masuk kohort" },
     coverage: {
       atribusi: { ...bagianRentang, persenAkuisisiTerbukti: leadRentang ? n2((adaAkuisisi.size / leadRentang) * 100) : null, terpetakanCampaign: kohort.filter((c) => denganRef(akuisisi.get(c.id))).length, unmapped: kohort.filter((c) => !denganRef(akuisisi.get(c.id))).length },

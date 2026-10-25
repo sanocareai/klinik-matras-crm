@@ -4,7 +4,7 @@ import { api } from "@/api.js";
 import DateRangePicker from "@/components/DateRangePicker.jsx";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import { Card, CardContent } from "@/components/ui/card.jsx";
-import { makeRange, formatRangeText } from "@/lib/dateRange.js";
+import { makeCustomRange, todayWIB, formatRangeText } from "@/lib/dateRange.js";
 import { formatRupiah } from "@/utils/format.js";
 import { cn } from "@/lib/utils.js";
 import { kueriIklan, drilldown, barisTabel, ringkasCakupan, peringatanUrut, statusBiayaLaporan, barisBiaya, jejak, formatPersen, UMUR, LEVELS, NADA_KELAS } from "../iklanCampaignLogic.js";
@@ -56,7 +56,8 @@ const TIP_BIAYA = {
 };
 
 export default function IklanCampaignTab() {
-  const [range, setRange] = useState(() => makeRange("last_7_days"));
+  // bawaan = 7 HARI PENUH yang berakhir kemarin (hari berjalan spend/lead tidak sebanding → KPI CRM null); hari ini tetap bisa dipilih manual
+  const [range, setRange] = useState(() => { const k = todayWIB().subtract(1, "day"); return makeCustomRange(k.subtract(6, "day").format("YYYY-MM-DD"), k.format("YYYY-MM-DD")); });
   const [level, setLevel] = useState("campaign");
   const [jalur, setJalur] = useState({ campaignId: null, adSetId: null, nama: {} });
   const [umur, setUmur] = useState("semua");

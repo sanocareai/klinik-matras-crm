@@ -12,6 +12,7 @@ import PipelineTab from "@/features/laporan/components/PipelineTab.jsx";
 import SalesReportTab from "@/features/laporan/components/SalesReportTab.jsx";
 import TrafficTab from "@/features/laporan/components/TrafficTab.jsx";
 import IklanCampaignTab from "@/features/laporan/components/IklanCampaignTab.jsx";
+import AkuisisiTab from "@/features/laporan/components/AkuisisiTab.jsx";
 // Lazy — lihat catatan yang sama di Customers.jsx: workbook export (xlsx +
 // file-saver, ~285KB) dynamic-import di titik pakai, bukan static di atas.
 
@@ -24,7 +25,8 @@ import IklanCampaignTab from "@/features/laporan/components/IklanCampaignTab.jsx
 // owner) — laporan sales (fokus penjualan) jadi tab kedua yang paling sering
 // dibuka, bukan di ujung.
 // "Iklan" (Okt 2026): laporan CRM per campaign dari touch Ad ID (/api/atribusi/iklan); memuat datanya sendiri, tidak ikut rentang halaman ini.
-const TABS = ["Ringkasan", "Sales", "Traffic", "Iklan", "Performa Tim", "Pipeline"];
+// "Akuisisi" (Okt 2026): Performa Akuisisi per sumber (/api/atribusi/iklan/sumber); memuat datanya sendiri dengan SATU filter periode miliknya.
+const TABS = ["Ringkasan", "Sales", "Traffic", "Akuisisi", "Iklan", "Performa Tim", "Pipeline"];
 
 // Sufiks nama file export. Preset "Semua" tidak punya from/to, jadi jangan
 // sampai jadi "laporan-null-null.xlsx".
@@ -164,7 +166,7 @@ export default function Laporan() {
           <button className="btn btn-ghost btn-sm" onClick={loadData} disabled={loading}>
             <RefreshCw size={14} /> Refresh
           </button>
-          {tab !== "Iklan" && (
+          {tab !== "Iklan" && tab !== "Akuisisi" && (
             <button className="btn btn-ghost btn-sm" onClick={handleExport} disabled={loading || exporting}>
               <Download size={14} /> {exporting ? "Menyiapkan…" : `Export ${tab}`}
             </button>
@@ -207,6 +209,10 @@ export default function Laporan() {
 
               <TabsContent value="Traffic">
                 <TrafficTab traffic={traffic} sourceDetail={sourceDetail} rangeParams={toApiParams(range)} />
+              </TabsContent>
+
+              <TabsContent value="Akuisisi">
+                <AkuisisiTab onBukaIklan={() => setTab("Iklan")} />
               </TabsContent>
 
               <TabsContent value="Iklan">

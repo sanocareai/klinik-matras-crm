@@ -1511,6 +1511,8 @@ export const api = {
   getLeadSourceDetail: (params) => request("/analytics/lead-source-detail" + buildQuery(params)),
   // Atribusi iklan per campaign (ADMIN, baca-saja). dari/sampai kosong = 7 hari terakhir (bawaan server).
   getAtribusiIklan: (params) => request("/atribusi/iklan" + buildQuery(params)),
+  // Performa Akuisisi per sumber (ADMIN, baca-saja): label CRM per sumber + Meta atribusi terbukti/biaya. dari/sampai kosong = 30 hari penuh berakhir kemarin.
+  getAtribusiSumber: (params) => request("/atribusi/iklan/sumber" + buildQuery(params)),
   // Fase 3 (Okt 2026): spend harian per Ad ID, target KPI, monitoring (ADMIN). Impor spend dryRun-default; sistem tidak mengubah iklan/budget.
   getAtribusiSpend: (params) => request("/atribusi/iklan/spend" + buildQuery(params)),
   importAtribusiSpend: (data) => request("/atribusi/iklan/spend", { method: "POST", body: JSON.stringify(data) }),

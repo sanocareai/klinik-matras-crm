@@ -596,6 +596,12 @@ const SPEND_UJI = [
 const TOTAL_UJI = 1_670_000;
 // Kelengkapan spend (Fase 3.2): KPI CRM hanya dihitung bila SETIAP hari WIB di rentang punya baris spend. Fixture di bawah sengaja jarang (30 Sep, 1 Okt, 10 Okt) —
 // tes yang mengukur CPL/CPA memakai pengisi Rp0 pada hari kosong (tidak mengubah total/percakapan), lalu dibersihkan.
+// riwayat status untuk D7: satu transisi PENDING→status-sekarang pada saat order dibuat (D7 menolak menebak status dari order tanpa riwayat)
+async function riwayatStatusUji() {
+  await testPrisma.orderStatusTransition.deleteMany({});
+  const os = await testPrisma.order.findMany({ select: { id: true, status: true, createdAt: true } });
+  for (const o of os) if (o.status !== "PENDING") await testPrisma.orderStatusTransition.create({ data: { orderId: o.id, fromStatus: "PENDING", toStatus: o.status, createdAt: o.createdAt } });
+}
 async function isiHariSpendKosong(dari, sampai) {
   const imp = await testPrisma.metaSpendImport.findFirst(); const ada = new Set((await testPrisma.metaAdDailySpend.findMany({ select: { dateWib: true } })).map((r) => r.dateWib.toISOString().slice(0, 10)));
   const ids = []; let n = 0;
@@ -1005,6 +1011,11 @@ test("D7 /d7: RBAC (401/403), READ ONLY, histori dari ledger (batal sebelum D7 t
   assert.equal((await api("GET", `/d7?${P}`, { token: null })).status, 401);
   assert.equal((await api("GET", `/d7?${P}`, { token: tokenSales })).status, 403);
   const sebelum = { s: await testPrisma.metaAdDailySpend.count(), o: await testPrisma.order.count(), p: await testPrisma.payment.count(), t: await testPrisma.attributionTouch.count(), c: await testPrisma.customer.count() };
+  // tanpa riwayat status: order berstatus selain PENDING → TIDAK DIKETAHUI (tidak dihitung)
+  await testPrisma.orderStatusTransition.deleteMany({});
+  const tanpa = (await api("GET", `/d7?${P}`)).json;
+  assert.equal(tanpa.total.customerOrder, 0); assert.ok(tanpa.total.orderStatusTidakDiketahui >= 4, "order tanpa riwayat dilaporkan, bukan ditebak");
+  await riwayatStatusUji();
   const r = await api("GET", `/d7?${P}`); assert.equal(r.status, 200, r.teks.slice(0, 200));
   const j = r.json;
   assert.equal(j.status, "TERSEDIA"); assert.equal(j.rekonsiliasi.ok, true);
@@ -1028,7 +1039,7 @@ test("D7 /d7: RBAC (401/403), READ ONLY, histori dari ledger (batal sebelum D7 t
 });
 
 test("D7 dengan spend lengkap pada hari kohort: biaya per customer DP & CPA lunas dihitung dari spend hari kohort yang sama (bukan seluruh periode)", async () => {
-  await benihLaporan(); await pastikanReferensi(); await bersihSpend();
+  await benihLaporan(); await pastikanReferensi(); await bersihSpend(); await riwayatStatusUji();
   const imp = await testPrisma.metaSpendImport.create({ data: { source: "ADS_MANAGER_CSV", accountId: AKUN, contentSha256: "d".repeat(64), rowsTotal: 16, rowsAccepted: 16, rowsRejected: 0, rowsNew: 16, rowsUpdated: 0, rowsUnchanged: 0, spendTotal: 1_600_000 } });
   // atribusi sudah "mulai" sebelum rentang uji (touch EXISTING lama di luar rentang) → rentang sebanding
   const awal = await testPrisma.customer.create({ data: { name: "Awal Atribusi", phone: "6285300000098", createdAt: T("2026-09-01T03:00:00Z"), leadSource: "META_ADS" } });
@@ -1044,4 +1055,35 @@ test("D7 dengan spend lengkap pada hari kohort: biaya per customer DP & CPA luna
   assert.equal(g1.biaya.cpaLunas.nilai, 800_000, "1.600.000 / 2 customer lunas D7");
   assert.equal(g1.biaya.biayaPerCustomerDp.nilai, 800_000, "c1 dan c2 sama-sama pernah DP");
   await bersihSpend();
+});
+
+test("SUMBER /sumber: RBAC, READ ONLY, parameter salah 400, angka = SQL independen, ber-order/membayar/lunas dipisah (dedupe + overlap), biaya null tanpa spend lengkap, pembanding, tanpa PII", async () => {
+  await benihLaporan(); await pastikanReferensi(); await bersihSpend(); await riwayatStatusUji();
+  assert.equal((await api("GET", `/sumber?${P}`, { token: null })).status, 401);
+  assert.equal((await api("GET", `/sumber?${P}`, { token: tokenSales })).status, 403);
+  assert.equal((await api("GET", "/sumber?dari=2026-10-05")).status, 400, "hanya satu batas");
+  assert.equal((await api("GET", "/sumber?dari=2099-01-01&sampai=2099-01-02")).status, 400, "masa depan");
+  const sebelum = { s: await testPrisma.metaAdDailySpend.count(), o: await testPrisma.order.count(), p: await testPrisma.payment.count(), t: await testPrisma.attributionTouch.count(), c: await testPrisma.customer.count() };
+  const r = await api("GET", `/sumber?${P}&pembanding=1`); assert.equal(r.status, 200, r.teks.slice(0, 200));
+  const j = r.json; const meta = j.sumber.find((x) => x.id === "META");
+  // SQL independen
+  const lo = new Date("2026-09-24T17:00:00Z"), hi = new Date("2026-10-10T17:00:00Z");
+  const sqlLead = await testPrisma.customer.count({ where: { leadSource: "META_ADS", createdAt: { gte: lo, lt: hi } } });
+  const sqlSpam = await testPrisma.customer.count({ where: { leadSource: "META_ADS", pipelineStage: "SPAM", createdAt: { gte: lo, lt: hi } } });
+  assert.deepEqual([meta.lead, meta.spam, meta.leadSah], [sqlLead, sqlSpam, sqlLead - sqlSpam]);
+  assert.deepEqual([meta.berOrder, meta.membayar, meta.lunas], [4, 3, 2], "c1,c2,c3,c8 ber-order; c1,c2,c8 membayar; c1,c2 lunas ledger (c8 kurang Rp200 rb)");
+  assert.equal(meta.pernahDp, 3); assert.equal(meta.kategoriEksklusif.lunas + meta.kategoriEksklusif.dpSaatIni + meta.kategoriEksklusif.belumBayar, meta.berOrder, "pembagian saling lepas = ber-order");
+  assert.ok(meta.pernahDp + meta.lunas > meta.berOrder - 0, "pernahDp & lunas TIDAK eksklusif (overlap) — tidak boleh dijumlah");
+  assert.equal(meta.order.eligible, 5); assert.equal(meta.uang.uangLedger, 8_750_000);
+  assert.equal(j.sumber.length, 6); assert.deepEqual(j.sumber.filter((x) => x.id !== "META").map((x) => x.lead), [0, 0, 0, 0, 0]);
+  assert.deepEqual([meta.biaya.cpa, meta.biaya.cashRoas], [null, null]); assert.ok(["SPEND_TIDAK_LENGKAP", "BELUM_TERHUBUNG", "SEBELUM_ATRIBUSI", "DATA_TERLAMBAT", "MAPPING_BELUM_ADA", "BELUM_ADA_KONVERSI", "TANPA_SPEND_DI_RENTANG"].includes(meta.biaya.status), meta.biaya.status);
+  assert.equal(j.sumber.find((x) => x.id === "TIKTOK").biaya.status, "TIDAK_ADA_SUMBER_SPEND");
+  assert.ok(j.pembanding && j.pembanding.sumber.length === 6 && j.pembanding.periode.sampai === "2026-09-24");
+  assert.ok(j.sorotan.some((x) => x.id === "VOLUME" && x.sumberId === "META"));
+  assert.deepEqual({ s: await testPrisma.metaAdDailySpend.count(), o: await testPrisma.order.count(), p: await testPrisma.payment.count(), t: await testPrisma.attributionTouch.count(), c: await testPrisma.customer.count() }, sebelum, "READ ONLY");
+  for (const s of ["6285300", "Pelanggan Uji", CLID, TEXT_CANARY]) assert.ok(!r.teks.includes(s), `bocor: ${s}`);
+  assert.ok(!/"(phone|name|customerId|orderId|ctwaClid|messageId|token)"\s*:/.test(r.teks));
+  // default (tanpa parameter) = 30 hari PENUH berakhir kemarin
+  const d = (await api("GET", "/sumber")).json; const kemarin = new Date(Date.now() + 7 * 3600e3 - 86400e3).toISOString().slice(0, 10);
+  assert.equal(d.periode.bawaan, true); assert.equal(d.periode.sampai, kemarin);
 });

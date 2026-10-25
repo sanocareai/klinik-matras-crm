@@ -13,7 +13,9 @@ const cust = (id, o = {}) => ({ id, createdAt: LEAD, pipelineStage: "NEW", leadS
 const order = (id, customerId, o = {}) => ({ id, customerId, createdAt: hari(1), status: "CONFIRMED", value: 1_000_000, tagihan: 1_000_000, penjualanKaryawanId: null, ...o });
 const bayar = (id, orderId, amount, at, o = {}) => ({ id, orderId, amount, createdAt: at, cancelledAt: null, verifiedAt: null, alokasi: [], ...o });
 const dasar = (o = {}) => ({ now: NOW, dari: "2026-10-20", sampai: "2026-10-25", hariIni: "2026-10-30", mulaiHari: "2026-10-16", referensi: ref, orders: [], transisi: new Map(), payments: [], refunds: [], gate: { enabled: false, since: null }, spend: null, touchLain: [], akuisisi: new Map(), customers: [], ...o });
-const dengan = (customers, o = {}) => dasar({ customers, akuisisi: new Map(customers.map((c) => [c.id, AD])), leadSemua: customers.length, ...o });
+// riwayat status default: tiap order non-PENDING punya satu transisi PENDING→status pada saat dibuat (kecuali riwayat diberikan eksplisit)
+const transisiDefault = (orders, eksplisit = new Map()) => { const m = new Map(eksplisit); for (const o of orders || []) if (!m.has(o.id) && o.status !== "PENDING") m.set(o.id, [{ fromStatus: "PENDING", toStatus: o.status, createdAt: o.createdAt }]); return m; };
+const dengan = (customers, o = {}) => dasar({ customers, akuisisi: new Map(customers.map((c) => [c.id, AD])), leadSemua: customers.length, ...o, transisi: o.tanpaRiwayat ? (o.transisi ?? new Map()) : transisiDefault(o.orders, o.transisi) });
 const SPEND_LENGKAP = { terhubung: true, spendPerAd: [{ adId: AD, spend: 600_000 }], hariTersedia: ["2026-10-20", "2026-10-21", "2026-10-22"] };
 
 test("hariMatangTerakhir: hanya hari yang SELURUHNYA berumur ≥ 7 hari; tidak ada → null", () => {
@@ -26,10 +28,10 @@ test("hariMatangTerakhir: hanya hari yang SELURUHNYA berumur ≥ 7 hari; tidak a
 test("statusPada: dibaca dari riwayat transisi, bukan status sekarang; tanpa riwayat = status sekarang ditandai", () => {
   const o = { id: "o", status: "CANCELLED" };
   const tr = [{ fromStatus: "PENDING", toStatus: "PICKUP", createdAt: hari(1) }, { fromStatus: "PICKUP", toStatus: "CANCELLED", createdAt: hari(9) }];
-  assert.deepEqual(statusPada(o, tr, hari(0).getTime()), { status: "PENDING", riwayat: true });
-  assert.deepEqual(statusPada(o, tr, hari(5).getTime()), { status: "PICKUP", riwayat: true });
-  assert.deepEqual(statusPada(o, tr, hari(10).getTime()), { status: "CANCELLED", riwayat: true });
-  assert.deepEqual(statusPada(o, [], hari(5).getTime()), { status: "CANCELLED", riwayat: false });
+  assert.deepEqual(statusPada(o, tr, hari(0).getTime()), { status: "PENDING", riwayat: true, tidakDiketahui: false });
+  assert.deepEqual(statusPada(o, tr, hari(5).getTime()), { status: "PICKUP", riwayat: true, tidakDiketahui: false });
+  assert.deepEqual(statusPada(o, tr, hari(10).getTime()), { status: "CANCELLED", riwayat: true, tidakDiketahui: false });
+  assert.deepEqual(statusPada(o, [], hari(5).getTime()), { status: "CANCELLED", riwayat: false, tidakDiketahui: true });
 });
 
 test("BELUM_TERSEDIA bila tidak ada hari berumur 7 hari penuh; lead belum matang tidak dihitung (tanpa sensor)", () => {
@@ -108,14 +110,14 @@ test("biaya D7: spend pada hari kohort yang sama; lengkap → dihitung; hari hil
   const lengkap = susunD7(dengan(cs, { orders, payments, spend: SPEND_LENGKAP }));
   assert.equal(lengkap.coverage.spend.status, "LENGKAP");
   assert.equal(lengkap.total.biaya.cpaLunas.nilai, 600_000); assert.equal(lengkap.total.biaya.biayaPerCustomerPernahBayar.nilai, 300_000); assert.equal(lengkap.total.biaya.biayaPerCustomerDp.nilai, 600_000, "hanya b2 yang DP");
-  assert.equal(lengkap.total.biaya.bookedRoas.nilai, n(2_000_000 / 600_000)); assert.equal(lengkap.total.biaya.cashRoas.nilai, n(1_300_000 / 600_000));
+  assert.equal(lengkap.total.biaya.roasNilaiOrderSaatIni.nilai, n(2_000_000 / 600_000)); assert.equal(lengkap.total.biaya.cashRoas.nilai, n(1_300_000 / 600_000));
   const hilang = susunD7(dengan(cs, { orders, payments, spend: { ...SPEND_LENGKAP, hariTersedia: ["2026-10-20", "2026-10-22"] } }));
   assert.deepEqual(hilang.coverage.spend.hariHilang, ["2026-10-21"]); assert.equal(hilang.total.biaya.cpaLunas.nilai, null); assert.equal(hilang.total.biaya.cpaLunas.alasan, "SPEND_TIDAK_LENGKAP"); assert.equal(hilang.total.biaya.spend, 600_000, "spend tetap tampil");
   const awal = susunD7(dengan(cs, { orders, payments, spend: SPEND_LENGKAP, mulaiHari: "2026-10-20" })); assert.equal(awal.total.biaya.status, "HARI_ATRIBUSI_PARSIAL"); assert.equal(awal.total.biaya.cpaLunas.nilai, null);
   const sebelum = susunD7(dengan(cs, { orders, payments, spend: SPEND_LENGKAP, mulaiHari: "2026-10-22" })); assert.equal(sebelum.total.biaya.status, "SEBELUM_ATRIBUSI"); assert.equal(sebelum.total.biaya.cpaLunas.alasan, "SEBELUM_ATRIBUSI");
   const tanpa = susunD7(dengan(cs, { orders, payments, spend: null })); assert.equal(tanpa.total.biaya.status, "BELUM_TERHUBUNG"); assert.equal(tanpa.total.biaya.spend, null); assert.equal(tanpa.total.biaya.cpaLunas.alasan, "BELUM_ADA_SPEND");
   const nol = susunD7(dengan(cs, { orders, payments, spend: { ...SPEND_LENGKAP, spendPerAd: [{ adId: AD, spend: 0 }] } }));
-  assert.equal(nol.total.biaya.spend, 0, "Rp0 sah (baris spend ada) bukan hilang"); assert.equal(nol.total.biaya.cpaLunas.nilai, 0); assert.equal(nol.total.biaya.bookedRoas.nilai, null); assert.equal(nol.total.biaya.bookedRoas.alasan, "SPEND_NOL");
+  assert.equal(nol.total.biaya.spend, 0, "Rp0 sah (baris spend ada) bukan hilang"); assert.equal(nol.total.biaya.cpaLunas.nilai, 0); assert.equal(nol.total.biaya.roasNilaiOrderSaatIni.nilai, null); assert.equal(nol.total.biaya.roasNilaiOrderSaatIni.alasan, "SPEND_NOL");
 });
 
 test("spend UNMAPPED & campaign tanpa lead: baris tetap ada, Σ spend grup = total (rekonsiliasi)", () => {
@@ -140,4 +142,25 @@ test("dedupe customer: satu customer dengan dua order & dua pembayaran dihitung 
   const payments = [bayar("p1", "o1", 500_000, hari(2)), bayar("p2", "o2", 500_000, hari(3))];
   const r = susunD7(dengan(cs, { orders, payments }));
   assert.deepEqual([r.total.leadUnik, r.total.customerOrder, r.total.customerLunas, r.total.orderLunas, r.total.orderEligible], [1, 1, 1, 2, 2]);
+});
+
+test("histori TIDAK ada: order non-PENDING tanpa transisi → status D7 TIDAK DIKETAHUI (tidak dihitung, tidak ditebak dari status sekarang), dilaporkan; PENDING tanpa transisi tetap PENDING pasti", () => {
+  const cs = [cust("h1"), cust("h2")]; const orders = [order("o-h1", "h1", { status: "DELIVERED" }), order("o-h2", "h2", { status: "PENDING" })];
+  const payments = [bayar("p", "o-h1", 1_000_000, hari(2))];
+  const r = susunD7(dengan(cs, { orders, payments, tanpaRiwayat: true }));
+  assert.equal(r.total.customerOrder, 0, "tidak dihitung"); assert.equal(r.total.orderStatusTidakDiketahui, 1); assert.equal(r.total.customerOrderStatusTidakDiketahui, 1); assert.equal(r.coverage.ledger.orderTanpaRiwayatStatus, 1);
+  assert.equal(r.total.uangLedger, 0, "uang pada order berstatus tak diketahui tidak ikut");
+  assert.ok(r.batasan.some((b) => /TIDAK DIKETAHUI/.test(b)));
+  assert.deepEqual(statusPada({ status: "PENDING" }, [], 1), { status: "PENDING", riwayat: false, tidakDiketahui: false });
+  assert.equal(statusPada({ status: "CANCELLED" }, [], 1).tidakDiketahui, true);
+});
+
+test("label & overlap: nilai order saat ini BUKAN 'booked'; DP→lunas dalam D7 = customerDp 1 DAN customerLunas 1 (overlap) tetapi kategoriEksklusif menaruhnya hanya di 'lunas'; hari atribusi parsial ditandai", () => {
+  const cs = [cust("ov1"), cust("ov2")]; const orders = [order("o-ov1", "ov1"), order("o-ov2", "ov2")];
+  const payments = [bayar("a", "o-ov1", 300_000, hari(1)), bayar("b", "o-ov1", 700_000, hari(4)), bayar("c", "o-ov2", 400_000, hari(2))];
+  const r = susunD7(dengan(cs, { orders, payments, mulaiHari: "2026-10-20" }));
+  assert.deepEqual([r.total.customerDp, r.total.customerLunas], [2, 1], "pernah DP (ov1 & ov2) dan lunas (ov1) tumpang tindih");
+  assert.deepEqual(r.total.kategoriEksklusif, { belumBayar: 0, dpSaatD7: 1, lunas: 1 }); assert.equal(r.total.kategoriEksklusif.belumBayar + r.total.kategoriEksklusif.dpSaatD7 + r.total.kategoriEksklusif.lunas, r.total.customerOrder);
+  assert.ok("nilaiOrderSaatIni" in r.total && !("bookedValue" in r.total) && !("bookedRoas" in r.total.biaya)); assert.ok(r.batasan.some((b) => /BUKAN nilai historis D7/.test(b)));
+  assert.equal(r.periode.hariAtribusiParsial, true); assert.equal(susunD7(dengan(cs, { orders, payments, mulaiHari: "2026-10-10" })).periode.hariAtribusiParsial, false);
 });
