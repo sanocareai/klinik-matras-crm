@@ -402,9 +402,13 @@ test("spend rentang tidak lengkap: CPL/CPA/ROAS CRM null dengan alasan SPEND_TID
   const sebagian = kesegaranSpend({ terakhirTanggal: "2026-10-18", hariIni: "2026-10-25", dari: "2026-10-17", sampai: "2026-10-24", hariTersedia: ["2026-10-17", "2026-10-18"], adaDataDiRentang: true });
   terapkanBiaya(lap, { spendPerAd: sp, referensi: ref, kesegaran: sebagian, target: normalisasiTarget(null), hariIni: "2026-10-25", mulaiHari: "2026-10-01" });
   const g = lap.grup[0].biaya;
-  assert.equal(g.status, STATUS_BIAYA.SPEND_TIDAK_LENGKAP); assert.deepEqual([g.cpl, g.costPerQualifiedLead, g.costPerCustomerOrder, g.cpa, g.bookedRoas, g.cashRoas], [null, null, null, null, null, null]);
+  assert.equal(g.status, STATUS_BIAYA.DATA_TERLAMBAT, "tertinggal > 2 hari: status terlambat didahulukan, KPI tetap null"); assert.deepEqual([g.cpl, g.costPerQualifiedLead, g.costPerCustomerOrder, g.cpa, g.bookedRoas, g.cashRoas], [null, null, null, null, null, null]);
   assert.ok(Object.values(g.alasanNull).filter((a, i) => i < 6).every((a) => a === "SPEND_TIDAK_LENGKAP"), JSON.stringify(g.alasanNull)); assert.equal(g.spend, 600000); assert.equal(g.platformConversations, 20);
-  assert.equal(lap.biaya.cpl, null); assert.equal(lap.biaya.status, STATUS_BIAYA.SPEND_TIDAK_LENGKAP);
+  assert.equal(lap.biaya.cpl, null); assert.equal(lap.biaya.status, STATUS_BIAYA.DATA_TERLAMBAT);
+  // tidak terlambat (tertinggal <= 2 hari) tetapi ada hari hilang: status SPEND_TIDAK_LENGKAP, KPI null
+  const dekat = kesegaranSpend({ terakhirTanggal: "2026-10-18", hariIni: "2026-10-20", dari: "2026-10-17", sampai: "2026-10-19", hariTersedia: ["2026-10-17", "2026-10-18"], adaDataDiRentang: true });
+  const lapD = laporanDasar([baris()]); terapkanBiaya(lapD, { spendPerAd: sp, referensi: ref, kesegaran: dekat, target: normalisasiTarget(null), hariIni: "2026-10-20", mulaiHari: "2026-10-01" });
+  assert.deepEqual(dekat.hariHilang, ["2026-10-19"]); assert.equal(lapD.grup[0].biaya.status, STATUS_BIAYA.SPEND_TIDAK_LENGKAP); assert.equal(lapD.grup[0].biaya.cpl, null); assert.equal(lapD.grup[0].biaya.alasanNull.cpa, "SPEND_TIDAK_LENGKAP");
   const w = lap.peringatan.find((x) => x.kode === "SPEND_TIDAK_LENGKAP"); assert.ok(w && w.data.hariHilang.length === 6); assert.match(w.pesan, /Jumlah lead, customer ber-order, DP, dan lunas tetap ditampilkan/);
   // lengkap (8 hari terisi) -> dihitung
   const lengkap = kesegaranSpend({ terakhirTanggal: "2026-10-24", hariIni: "2026-10-25", dari: "2026-10-17", sampai: "2026-10-24", hariTersedia: ["2026-10-17", "2026-10-18", "2026-10-19", "2026-10-20", "2026-10-21", "2026-10-22", "2026-10-23", "2026-10-24"], adaDataDiRentang: true });
