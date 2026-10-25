@@ -41,7 +41,7 @@ export default function HppOperasionalKartu({ h }) {
             <div key={b.movementId} className="rounded-btn bg-surface px-2.5 py-1.5 text-[12px]">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1"><span className="text-ink3">{tanggalJam(b.tanggal)}</span><span className="font-semibold text-ink">{b.kode}</span><span className="tabular-nums">{Math.abs(b.qty)} {b.satuan}</span>
                 <Badge variant={b.status === "DIBEKUKAN" ? "green" : "orange"}>{STATUS_BARIS[b.status]}</Badge>{b.teksLabelBukti && <Badge variant={varianBukti(b.labelBukti)}>{b.teksLabelBukti}</Badge>}
-                <span className="ml-auto font-semibold tabular-nums text-ink">{b.nilai != null ? `${rpNilai(b.nilai)} (${rp(b.harga)}/${b.satuan})` : b.pratinjau ? `pratinjau ${rpNilai(b.pratinjau.nilai)}` : "tanpa harga"}</span></div>
+                <span className="basis-full text-[11.5px] text-ink3" data-testid="basis-harga">Dasar harga: {b.basisTeks}</span><span className="ml-auto font-semibold tabular-nums text-ink">{b.nilai != null ? `${rpNilai(b.nilai)} (${rp(b.harga)}/${b.satuan})` : b.pratinjau ? `pratinjau ${rpNilai(b.pratinjau.nilai)}` : "tanpa harga"}</span></div>
               {b.pratinjau && <div className="mt-0.5 text-[11.5px] text-orange">{b.pratinjau.ket}</div>}
               {b.sumber === "PENERAPAN_DISETUJUI" && <div className="mt-0.5 text-[11.5px] text-ink3">Diberi harga lewat penerapan khusus yang disetujui (bukan dibekukan saat posting).</div>}
             </div>

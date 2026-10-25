@@ -5,6 +5,8 @@ export const TEKS = Object.freeze({
   bukan: "Ini harga kerja untuk HPP operasional per satuan stok. Bukan nilai buku dan bukan HPP final Finance.",
   finance: "Nilai persediaan/jurnal Finance memakai biaya perolehan Persediaan Awal/GR dan tidak berubah karena harga ini.",
   aturanWaktu: "Dasar harga = waktu pemakaian aktual, bukan tanggal order dibuat. Pemakaian yang sudah dibekukan tidak berubah.",
+  aturanTanpaMundur: "Perubahan harga hanya berlaku mulai saat disimpan atau waktu mendatang — tidak boleh mundur. Salah input historis dibetulkan lewat Koreksi (tindakan khusus).",
+  izinLihat: "Anda hanya dapat melihat harga berlaku. Mengubah, mengoreksi, dan mengajukan penerapan khusus untuk peran Finance dan Owner; akun Admin tanpa peran itu belum diberi izin (menunggu keputusan Owner).",
   belumBukti: "Belum didukung bukti",
   adaCatatan: "Ada catatan bukti — belum diverifikasi Finance",
 });
@@ -48,20 +50,26 @@ export function bacaHarga(teks) {
   return Number(n) > 0 ? n : null;
 }
 
-/** Payload pratinjau/simpan. Satuan SELALU satuan stok bahan (tidak bisa diganti dari UI). */
-export function susunMasukan({ bahan, harga, mulaiLokal, alasan, catatanBukti, koreksiId = null }) {
+/** Payload pratinjau/simpan. Satuan SELALU satuan stok bahan (tidak bisa diganti dari UI). Mode "SEKARANG" = tanpa berlakuMulai (server memakai waktu simpan); "JADWAL" = waktu mendatang; koreksi selalu membawa waktu baris yang dikoreksi. */
+export function susunMasukan({ bahan, harga, mode = "SEKARANG", mulaiLokal, alasan, catatanBukti, koreksiId = null }) {
+  const bawaWaktu = koreksiId || mode === "JADWAL";
   return {
-    materialId: bahan.id, hargaBaru: bacaHarga(harga), satuan: bahan.satuan, berlakuMulai: dariInputLokal(mulaiLokal),
+    materialId: bahan.id, hargaBaru: bacaHarga(harga), satuan: bahan.satuan, ...(bawaWaktu ? { berlakuMulai: dariInputLokal(mulaiLokal) } : {}),
     alasan: String(alasan ?? "").trim(), catatanBukti: String(catatanBukti ?? "").trim() || undefined, ...(koreksiId ? { koreksiId } : {}),
   };
 }
 
 /** Validasi ringan sebelum minta pratinjau (server tetap memutuskan). Mengembalikan pesan per kolom. */
-export function periksaIsian({ harga, mulaiLokal, alasan }) {
+export function periksaIsian({ harga, mode = "SEKARANG", mulaiLokal, alasan, koreksi = false, sekarang = new Date() }) {
   const e = {};
   if (!bacaHarga(harga)) e.harga = "Isi harga lebih dari 0 (angka; desimal pakai koma atau titik).";
-  if (!dariInputLokal(mulaiLokal)) e.mulai = "Isi tanggal dan jam mulai berlaku.";
-  if (String(alasan ?? "").trim().length < 5) e.alasan = "Alasan wajib diisi (minimal 5 karakter).";
+  if (koreksi || mode === "JADWAL") {
+    const iso = dariInputLokal(mulaiLokal);
+    if (!iso) e.mulai = "Isi tanggal dan jam mulai berlaku.";
+    else if (!koreksi && new Date(iso) <= sekarang) e.mulai = "Waktu terjadwal harus di masa depan. Untuk berlaku mulai sekarang pilih “Saat disimpan”.";
+  }
+  const min = koreksi ? 10 : 5;
+  if (String(alasan ?? "").trim().length < min) e.alasan = `Alasan wajib diisi (minimal ${min} karakter${koreksi ? "; koreksi historis butuh alasan yang jelas" : ""}).`;
   return e;
 }
 
@@ -72,6 +80,10 @@ export const STATUS_RIWAYAT = Object.freeze({
   DIGANTI_KOREKSI: { teks: "Diganti koreksi (salah input)", varian: "orange" },
 });
 export const varianBukti = (label) => (label === "ADA_CATATAN_BUKTI" ? "accent" : "orange");
+export const BASIS_TEKS = Object.freeze({
+  WAKTU_PEMAKAIAN: "Harga berlaku saat pemakaian", WAKTU_WASTE: "Harga berlaku saat waste dicatat", WAKTU_PENYESUAIAN: "Harga berlaku saat penyesuaian",
+  HARGA_ISSUE_ASAL: "Harga operasional ISSUE asal (bukan harga saat retur)", WAKTU_RETUR_TANPA_ISSUE: "Harga berlaku saat retur — tidak tertaut ISSUE asal",
+});
 export const KELOMPOK_PENERAPAN_TEKS = Object.freeze({
   BELUM_DIBEKUKAN: "Pemakaian lama belum punya harga operasional",
   TANPA_HARGA_BERLAKU: "Dibekukan tanpa harga (saat itu belum ada harga berlaku)",
@@ -80,4 +92,5 @@ export const KELOMPOK_PENERAPAN_TEKS = Object.freeze({
 export const GAP_TEKS = Object.freeze({
   BELUM_ADA_HARGA_PADA_WAKTU_PEMAKAIAN: "Belum ada harga berlaku pada waktu pemakaian — tidak diberi harga rekaan",
   HARGA_BERLAKU_HILANG: "Harga beku ada tetapi harga berlaku saat itu hilang — tinjau manual",
+  ISSUE_ASAL_BELUM_BERHARGA: "Retur tertaut ISSUE asal yang belum punya harga operasional — beri harga ISSUE asal dulu",
 });

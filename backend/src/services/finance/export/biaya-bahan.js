@@ -55,7 +55,7 @@ async function ambil(db, { filter }) {
   const hppOp = operasional.flatMap(({ j, h }) => h.baris.map((r) => ({
     waktu: r.tanggal, unit: j.unit.unitCode, order: j.unit.orderNumber || "", kode: r.kode, bahan: r.nama, jenis: JENIS[r.jenisBiaya] || r.jenisBiaya, qty: Math.abs(r.qty), satuan: r.satuan,
     harga: r.harga ?? r.pratinjau?.harga ?? null, nilai: r.nilai, pratinjau: r.nilai == null ? (r.pratinjau?.nilai ?? null) : null, status: STATUS_OP[r.status] || r.status,
-    bukti: r.teksLabelBukti || r.pratinjau?.label || "", sumber: r.sumber === "PENERAPAN_DISETUJUI" ? "Penerapan khusus (disetujui)" : r.sumber === "BEKU_SAAT_POSTING" ? "Dibekukan saat pemakaian diposting" : "",
+    bukti: r.teksLabelBukti || r.pratinjau?.label || "", dasar: r.basisTeks || "", sumber: r.sumber === "PENERAPAN_DISETUJUI" ? "Penerapan khusus (disetujui)" : r.sumber === "BEKU_SAAT_POSTING" ? "Dibekukan saat pemakaian diposting" : "",
   }))).sort((a, b) => String(a.unit).localeCompare(String(b.unit)) || new Date(a.waktu) - new Date(b.waktu));
   const hppOpDinilai = hppOp.filter((r) => r.nilai != null && r.jenis !== JENIS.SUSUT);
   const returWaste = pergerakan.filter((r) => r.jenis === JENIS.RETUR || r.jenis === JENIS.SUSUT);
@@ -122,7 +122,7 @@ async function ambil(db, { filter }) {
           { key: "kode", header: "Kode Bahan", tipe: "teks", lebar: 16 }, { key: "bahan", header: "Bahan", tipe: "teks", lebar: 28 }, { key: "jenis", header: "Jenis", tipe: "teks", lebar: 20 },
           { key: "qty", header: "Jumlah", tipe: "angka" }, { key: "satuan", header: "Satuan", tipe: "teks", lebar: 9 }, { key: "harga", header: "Harga Berlaku (Rp/satuan)", tipe: "angka" },
           { key: "nilai", header: "HPP Operasional Dibekukan (Rp)", tipe: "uang" }, { key: "pratinjau", header: "Pratinjau (Rp, belum dibekukan)", tipe: "uang" }, { key: "status", header: "Status", tipe: "teks", lebar: 30 },
-          { key: "bukti", header: "Label Bukti Harga", tipe: "teks", lebar: 40 }, { key: "sumber", header: "Sumber Nilai", tipe: "teks", lebar: 32 },
+          { key: "dasar", header: "Dasar Harga (waktu pemakaian / waste / ISSUE asal)", tipe: "teks", lebar: 44 }, { key: "bukti", header: "Label Bukti Harga", tipe: "teks", lebar: 40 }, { key: "sumber", header: "Sumber Nilai", tipe: "teks", lebar: 32 },
         ],
         baris: hppOp,
         total: { label: `TOTAL HPP operasional dibekukan, tanpa waste (${hppOpDinilai.length} baris)`, nilai: { nilai: jumlah(hppOpDinilai, "nilai") } },

@@ -156,6 +156,11 @@ export const PERMISSIONS = {
   FINANCE_POST: "finance:post",
   // Menyetujui pengeluaran/tagihan/refund & memverifikasi pembayaran.
   FINANCE_APPROVE: "finance:approve",
+  // HARGA BERLAKU BAHAN (HPP operasional; Okt 2026) — izin EKSPLISIT, SENGAJA terpisah dari finance:post/approve (yang juga dipegang SEMUA akun ADMIN).
+  // Mengubah/mengoreksi harga berlaku dan mengajukan penerapan ke pemakaian lama: FINANCE + OWNER saja. Menyetujui penerapan (orang lain dari pengaju): FINANCE + OWNER saja.
+  // ADMIN murni TIDAK ikut sampai ada keputusan Owner (memperluas = menambah satu baris di ADMIN_PERMS, tanpa mengubah kode lain).
+  FINANCE_HARGA_BERLAKU_EDIT: "finance:harga_berlaku:edit",
+  FINANCE_HARGA_BERLAKU_APPROVE: "finance:harga_berlaku:approve",
   // Bagan akun, rekening kas/bank, kategori biaya, tutup/buka periode,
   // pengaturan finance, dan PEMBATALAN jurnal terposting lewat reversal.
   FINANCE_ADMIN: "finance:admin",
@@ -300,7 +305,7 @@ export const ROLE_PERMISSIONS = {
   // otomatis TIDAK kebagian tanpa perlu disentuh sama sekali. Permission-
   // nya = ADMIN penuh + B2B_READ/WRITE — role ini TIDAK PERNAH mengurangi
   // apa pun, cuma menambah.
-  OWNER: [...ADMIN_PERMS, P.B2B_READ, P.B2B_WRITE, P.INVENTORY_ADJUSTMENT_APPROVE],
+  OWNER: [...ADMIN_PERMS, P.B2B_READ, P.B2B_WRITE, P.INVENTORY_ADJUSTMENT_APPROVE, P.FINANCE_HARGA_BERLAKU_EDIT, P.FINANCE_HARGA_BERLAKU_APPROVE],
 
   SALES: [
     P.CUSTOMER_READ, P.CUSTOMER_WRITE, P.CUSTOMER_PII_READ,
@@ -461,6 +466,7 @@ export const ROLE_PERMISSIONS = {
     // di level permission, tinggal dipecah ke dua akun begitu timnya tumbuh,
     // tanpa perlu mengubah satu baris kode pun.
     P.FINANCE_READ, P.FINANCE_POST, P.FINANCE_APPROVE,
+    P.FINANCE_HARGA_BERLAKU_EDIT, P.FINANCE_HARGA_BERLAKU_APPROVE, // Harga Berlaku bahan (HPP operasional) — eksplisit; ADMIN tidak otomatis
     P.FINANCE_EXPENSE_SUBMIT,
     // Melihat nilai persediaan & dokumen gudang yang jadi dasar tagihan
     // supplier — BACA SAJA, finance tidak pernah menulis pergerakan stok.
