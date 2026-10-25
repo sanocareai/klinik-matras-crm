@@ -7,7 +7,7 @@ import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import { cn } from "@/lib/utils.js";
 import LogoSumber from "./LogoSumber.jsx";
 import { angka, formatPersen, rupiah, selBiayaSumber, statusBiayaTeks, sementaraTeks, teksPengecualian, BUKTI_LABEL, DASAR_BIAYA_LABEL, PENYEBUT_LABEL, selBiaya } from "../akuisisiLogic.js";
-import { ringkasAsalBiaya } from "../biayaIklanLogic.js";
+import { ringkasAsalBiaya, daftarPemilihan } from "../biayaIklanLogic.js";
 import { jalurRincian, LABEL_PELANGGAN, teksPeriode } from "../periodeLaporan.js";
 
 // Rincian SATU sumber. Membaca objek server yang sama dengan kartu/tabel/ekspor (satu definisi). Tidak ada tabel palsu: bagian yang tidak punya data diganti penjelasan.
@@ -85,6 +85,9 @@ export default function DetailSumberAkuisisi({ s, lap, periode, onKembali, onBuk
               <Baris k="CPA lunas" v={<Sel c={cpa} />} sub={cpa.alasan} tebal />
               <Baris k="Booked ROAS" v={<Sel c={booked} />} sub={booked.alasan} />
               <Baris k="Cash ROAS" v={<Sel c={cash} />} sub={cash.alasan} />
+              <ul aria-label="Sumber biaya yang dipakai dan alasannya" className="mt-1 space-y-0.5 text-[11.5px]">
+                {daftarPemilihan(b.cakupan).map((p) => <li key={p.kunci} className={p.peringatan ? "text-orange" : "t-secondary"}>{p.hari != null ? <b>{p.hari} hari · </b> : null}{p.teks}</li>)}
+              </ul>
               {sementara && <p className="mt-1 flex items-start gap-1.5 text-[12px] text-orange"><Info size={13} className="mt-0.5 shrink-0" /> SEMENTARA — {sementara}. Bukan CPA final.</p>}
               {(b.cakupan?.hariHilang || []).length > 0 && <p className="t-secondary mt-1 text-[11.5px]">Hari belum ada biaya: {b.cakupan.hariHilang.slice(0, 14).join(", ")}{b.cakupan.hariHilang.length > 14 ? ` … (+${b.cakupan.hariHilang.length - 14})` : ""}</p>}
               {(b.cakupan?.biayaBulananPengaturan || []).length > 0 && <p className="t-secondary mt-1 text-[11.5px]">Biaya bulanan Pengaturan Sales: {b.cakupan.biayaBulananPengaturan.map((x) => `${String(x.bulan).padStart(2, "0")}/${x.tahun} ${rupiah(x.nominal)}${x.dipakai ? " (dipakai)" : " (tidak dipakai)"}`).join("; ")}</p>}

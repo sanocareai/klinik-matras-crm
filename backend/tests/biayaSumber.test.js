@@ -87,7 +87,10 @@ test("Windsor/API detail Ad vs manual: tidak dijumlah ganda; detail Ad menang; o
   const ad = new Map([["2026-10-20", 50], ["2026-10-21", 60], ["2026-10-22", 70]]);
   const manual = hariRentang(dari, sampai).map((d) => E({ sourceId: "META", dateFrom: d, dateTo: d, amount: 1000 }));
   const a = hitungCakupan({ dari, sampai, hariIni: HARI_INI, entries: manual, adHarian: ad });
-  assert.deepEqual([a.status, a.spend, a.hari.adDetail, a.manualDiabaikanHari.length], ["LENGKAP", 180, 3, 3], "hanya detail Ad yang dihitung");
+  assert.deepEqual([a.status, a.spend, a.hari.adDetail], ["DETAIL_AD_SELISIH", 180, 3], "manual (1000) > detail (50..70): detail dianggap mungkin PARSIAL → bukan LENGKAP; tetap tidak dijumlah");
+  const kecil = hitungCakupan({ dari, sampai, hariIni: HARI_INI, entries: hariRentang(dari, sampai).map((d) => E({ sourceId: "META", dateFrom: d, dateTo: d, amount: 10 })), adHarian: ad });
+  assert.deepEqual([kecil.status, kecil.spend, kecil.manualDiabaikanHari.length], ["LENGKAP", 180, 3], "manual lebih KECIL dari detail: detail dipakai, hanya informasi");
+  assert.ok(kecil.pemilihan.some((p) => p.kode === "MANUAL_LEBIH_KECIL"));
   const ov = hitungCakupan({ dari, sampai, hariIni: HARI_INI, entries: manual.map((e) => ({ ...e, override: true })), adHarian: ad });
   assert.deepEqual([ov.status, ov.spend, ov.overrideMenggantikanDetailHari.length], ["LENGKAP", 3000, 3], "override: manual menggantikan detail, tidak ditambah");
   const campur = hitungCakupan({ dari, sampai, hariIni: HARI_INI, entries: [manual[2]], adHarian: new Map([["2026-10-20", 50], ["2026-10-21", 60]]) });
@@ -192,4 +195,84 @@ test("AdSpend bulanan (Pengaturan Sales) dibaca sebagai total rentang prioritas 
   assert.deepEqual([menang.cak.status, menang.cak.spend, menang.cak.hariHilang.length], ["SPEND_TIDAK_LENGKAP", 150000, 30], "hanya entri sumber; bulanan 31 jt TIDAK ikut");
   const tanpa = entriBulananSemu([{ source: "GOOGLE_ADS", sumberId: "LAINNYA", tahun: 2026, bulan: 8, amount: 5 }], { dari: "2026-09-01", sampai: "2026-09-02", entriNyata: [] });
   assert.equal(tanpa.semu.length, 1, "baris dikirim pemanggil; penyaringan bulan dilakukan query");
+});
+
+// ── AUDIT PRIORITAS BIAYA (review kandidat 3abce860) ─────────────────────────────────────────────────────────────────────────────────────────────────────────
+const M = (o) => E({ sourceId: "META", ...o });
+const kode = (c) => c.pemilihan.map((p) => p.kode);
+
+test("audit: detail Ad PARSIAL (hanya sebagian Ad) tidak boleh dianggap lengkap — pembanding manual lebih besar → DETAIL_AD_SELISIH, KPI null, alasan terbaca", () => {
+  const c = hitungCakupan({ dari: "2026-10-20", sampai: "2026-10-20", hariIni: HARI_INI, entries: [M({ amount: 2_000_000 })], adHarian: new Map([["2026-10-20", 500_000]]) });
+  assert.deepEqual([c.status, c.spend, c.spendLengkap], ["DETAIL_AD_SELISIH", 500_000, false]);
+  assert.deepEqual(c.selisihDetailManual.map((x) => [x.detail, x.manual, x.manualLebihBesar]), [[500_000, 2_000_000, true]]);
+  assert.match(c.pemilihan.find((p) => p.kode === "DETAIL_AD_SELISIH").alasan, /LEBIH BESAR.*PARSIAL.*ganti detail Ad/s);
+  const k = biayaKpiSumber({ cakupan: c, jenis: "IKLAN", lead: 10, leadSah: 9, lunas: 2, nilaiOrder: 1e6, uangBersih: 5e5, ledger: { orderEligible: 2, orderBerLedger: 2 }, hariIni: HARI_INI, sampai: "2026-10-20" });
+  assert.deepEqual([k.cpa, k.cpl, k.bookedRoas, k.cashRoas, k.alasanNull.cpa], [null, null, null, null, "DETAIL_AD_SELISIH"]);
+});
+
+test("audit: toleransi Rp1 — selisih pembulatan tidak memicu; Rp2 memicu", () => {
+  const cek = (man) => hitungCakupan({ dari: "2026-10-20", sampai: "2026-10-20", hariIni: HARI_INI, entries: [M({ amount: man })], adHarian: new Map([["2026-10-20", 1000]]) }).status;
+  assert.deepEqual([cek(1000), cek(1001), cek(1002), cek(999)], ["LENGKAP", "LENGKAP", "DETAIL_AD_SELISIH", "LENGKAP"]);
+});
+
+test("audit: detail Ad hanya sebagian HARI + entri harian untuk hari lain → campuran sah; jumlah tidak ganda; sumber tiap hari tercatat", () => {
+  const ad = new Map([["2026-10-20", 100], ["2026-10-21", 100]]); const src = new Map([["2026-10-20", ["WINDSOR_API"]], ["2026-10-21", ["ADS_MANAGER_CSV", "WINDSOR_API"]]]);
+  const c = hitungCakupan({ dari: "2026-10-20", sampai: "2026-10-23", hariIni: HARI_INI, entries: [M({ dateFrom: "2026-10-22", dateTo: "2026-10-22", amount: 70 }), M({ dateFrom: "2026-10-23", dateTo: "2026-10-23", amount: 80 })], adHarian: ad, adSumber: src });
+  assert.deepEqual([c.status, c.spend, c.hari.adDetail, c.hari.manualHarian], ["LENGKAP", 350, 2, 2]);
+  assert.deepEqual(c.asalDetailAd, { WINDSOR_API: 2, ADS_MANAGER_CSV: 1 });
+  assert.deepEqual(kode(c), ["AD_DETAIL", "MANUAL_HARIAN"]);
+  assert.match(c.pemilihan[0].alasan, /Windsor 2 hari.*CSV Ads Manager 1 hari.*diutamakan atas entri manual/s);
+  assert.match(c.pemilihan[1].alasan, /TIDAK punya detail Ad/);
+});
+
+test("audit: detail Ad sebagian hari tanpa manual → SPEND_TIDAK_LENGKAP (bukan lengkap) dan hari hilang terdaftar", () => {
+  const c = hitungCakupan({ dari: "2026-10-20", sampai: "2026-10-23", hariIni: HARI_INI, entries: [], adHarian: new Map([["2026-10-20", 1], ["2026-10-22", 1]]) });
+  assert.deepEqual([c.status, c.hariHilang], ["SPEND_TIDAK_LENGKAP", ["2026-10-21", "2026-10-23"]]);
+});
+
+test("audit: total rentang overlap dengan detail Ad SEBAGIAN hari → total ditolak seluruhnya (tidak dijumlah sebagian), alasan blok terbaca", () => {
+  const blok = M({ kind: "TOTAL_RENTANG", dateFrom: "2026-10-20", dateTo: "2026-10-22", amount: 6_000_000 });
+  const c = hitungCakupan({ dari: "2026-10-20", sampai: "2026-10-22", hariIni: HARI_INI, entries: [blok], adHarian: new Map([["2026-10-21", 1_000_000]]) });
+  assert.deepEqual([c.status, c.spend, c.hariHilang.length, c.blokDitolak.length], ["SPEND_TIDAK_LENGKAP", 1_000_000, 2, 1]);
+  assert.match(c.pemilihan.find((p) => p.kode === "BLOK_DITOLAK_DETAIL_SEBAGIAN").alasan, /1 dari 3 harinya sudah punya detail Ad.*tidak dihitung ganda/s);
+});
+
+test("audit: total rentang vs detail Ad LENGKAP di semua harinya: sama → LENGKAP (detail dipakai); manual lebih besar → DETAIL_AD_SELISIH", () => {
+  const ad = new Map([["2026-10-20", 1e6], ["2026-10-21", 1e6], ["2026-10-22", 1e6]]);
+  const pakai = (n) => hitungCakupan({ dari: "2026-10-20", sampai: "2026-10-22", hariIni: HARI_INI, entries: [M({ kind: "TOTAL_RENTANG", dateFrom: "2026-10-20", dateTo: "2026-10-22", amount: n })], adHarian: ad });
+  assert.deepEqual([pakai(3e6).status, pakai(3e6).spend], ["LENGKAP", 3e6]);
+  assert.deepEqual([pakai(6e6).status, pakai(6e6).spend, pakai(6e6).selisihDetailManual[0].jenis], ["DETAIL_AD_SELISIH", 3e6, "TOTAL_RENTANG"]);
+});
+
+test("audit: override menyelesaikan selisih; PENCABUTAN override mengembalikan ke detail Ad (dan memunculkan selisih lagi)", () => {
+  const ad = new Map([["2026-10-20", 500_000]]);
+  const hitung = (override) => hitungCakupan({ dari: "2026-10-20", sampai: "2026-10-20", hariIni: HARI_INI, entries: [M({ amount: 2_000_000, override })], adHarian: ad });
+  const dgOverride = hitung(true), dicabut = hitung(false);
+  assert.deepEqual([dgOverride.status, dgOverride.spend, kode(dgOverride)], ["LENGKAP", 2_000_000, ["MANUAL_OVERRIDE"]]);
+  assert.match(dgOverride.pemilihan[0].alasan, /pilihan sadar Admin/);
+  assert.deepEqual([dicabut.status, dicabut.spend], ["DETAIL_AD_SELISIH", 500_000]);
+});
+
+test("audit: override total rentang menggantikan detail Ad pada rentangnya; sub-rentang laporan → RENTANG_TIDAK_COCOK (tanpa prorata)", () => {
+  const ad = new Map([["2026-10-20", 1e5], ["2026-10-21", 1e5], ["2026-10-22", 1e5]]);
+  const blok = M({ kind: "TOTAL_RENTANG", dateFrom: "2026-10-20", dateTo: "2026-10-22", amount: 900_000, override: true });
+  const penuh = hitungCakupan({ dari: "2026-10-20", sampai: "2026-10-22", hariIni: HARI_INI, entries: [blok], adHarian: ad });
+  assert.deepEqual([penuh.status, penuh.spend, penuh.overrideMenggantikanDetailHari.length], ["LENGKAP", 900_000, 3]);
+  const sub = hitungCakupan({ dari: "2026-10-20", sampai: "2026-10-21", hariIni: HARI_INI, entries: [blok], adHarian: ad });
+  assert.deepEqual([sub.status, sub.spend], ["RENTANG_TIDAK_COCOK", null]);
+});
+
+test("audit: entri manual akun berbeda pada hari tanpa detail dijumlah (akun terpisah); total semua-akun yang menimpa entri akun = KONFLIK", () => {
+  const a = M({ dateFrom: "2026-10-20", dateTo: "2026-10-20", accountId: "111111", amount: 100 }), b = M({ dateFrom: "2026-10-20", dateTo: "2026-10-20", accountId: "222222", amount: 50 });
+  assert.equal(rencanakan({ sumber: "META", jenis: "HARIAN", dari: "2026-10-20", sampai: "2026-10-20", akun: "222222", nominal: 50, override: false }, [{ ...a }]).aksi, "BARU");
+  assert.equal(hitungCakupan({ dari: "2026-10-20", sampai: "2026-10-20", hariIni: HARI_INI, entries: [a, b] }).spend, 150);
+  assert.equal(rencanakan({ sumber: "META", jenis: "TOTAL_RENTANG", dari: "2026-10-19", sampai: "2026-10-21", akun: "", nominal: 1, override: false }, [a]).aksi, "KONFLIK");
+});
+
+test("audit: rencanakan — edit override (false→true) = UBAH pada entri yang SAMA; pencabutan (true→false) juga UBAH; nilai sama = TIDAK_BERUBAH", () => {
+  const i = { sumber: "META", jenis: "HARIAN", dari: "2026-10-20", sampai: "2026-10-20", akun: "", nominal: 100, override: true };
+  const ada = M({ amount: 100, override: false });
+  assert.equal(rencanakan(i, [ada]).aksi, "UBAH");
+  assert.equal(rencanakan({ ...i, override: false }, [{ ...ada, override: true }]).aksi, "UBAH");
+  assert.equal(rencanakan({ ...i, override: false }, [ada]).aksi, "TIDAK_BERUBAH");
 });

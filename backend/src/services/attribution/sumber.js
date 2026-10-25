@@ -147,7 +147,7 @@ export function susunSumber({ parameter, hasil, biayaMeta = null, provenMeta = n
   for (const x of wajib) {
     const st = x.biaya.status;
     if (st === "LENGKAP") continue;
-    const ket = { BELUM_DIISI: "belum diisi", SPEND_TIDAK_LENGKAP: "belum lengkap (ada hari tanpa data)", RENTANG_TIDAK_COCOK: "memakai total rentang yang tidak cocok dengan periode ini", HARI_BERJALAN_PARSIAL: "mencakup hari berjalan" }[st] || st;
+    const ket = { BELUM_DIISI: "belum diisi", DETAIL_AD_SELISIH: "tidak dianggap lengkap: entri manual lebih besar dari detail Ad (detail kemungkinan parsial)", SPEND_TIDAK_LENGKAP: "belum lengkap (ada hari tanpa data)", RENTANG_TIDAK_COCOK: "memakai total rentang yang tidak cocok dengan periode ini", HARI_BERJALAN_PARSIAL: "mencakup hari berjalan" }[st] || st;
     w("SPEND_BELUM_LENGKAP", `Biaya ${x.label} ${ket} untuk rentang ini — CPA dan ROAS ${x.label} belum dapat dinilai.`, { sumber: x.id, statusBiaya: st, hariHilang: (x.biaya.cakupan?.hariHilang || []).slice(0, 31), hariRentangTidakCocok: (x.biaya.cakupan?.hariRentangTidakCocok || []).slice(0, 31) });
   }
   for (const x of daftar) if (x.biaya.sementara) w("BIAYA_SEMENTARA", `CPA/ROAS ${x.label} bersifat SEMENTARA: ${x.biaya.alasanSementara.join("; ")}.`, { sumber: x.id });

@@ -46,11 +46,11 @@ export const ALASAN_LABEL = {
   BELUM_ADA_SPEND: "belum ada spend", SPEND_TIDAK_LENGKAP: "spend belum lengkap", HARI_BERJALAN_PARSIAL: "hari berjalan parsial", HARI_ATRIBUSI_PARSIAL: "hari atribusi parsial",
   SEBELUM_ATRIBUSI: "sebelum atribusi", BELUM_ADA_KONVERSI: "belum ada konversi", SPEND_NOL: "spend Rp0", TIDAK_ADA_SUMBER_SPEND: "tanpa data spend", BELUM_DIHITUNG: "belum dihitung",
   DATA_TERLAMBAT: "data spend terlambat", MAPPING_BELUM_ADA: "mapping belum ada",
-  BELUM_DIISI: "biaya belum diisi", RENTANG_TIDAK_COCOK: "total rentang tidak cocok", TIDAK_TERSEDIA_ORGANIK: "biaya tidak tersedia", TIDAK_ADA_BIAYA_DIALOKASIKAN: "biaya tidak tersedia",
+  BELUM_DIISI: "biaya belum diisi", RENTANG_TIDAK_COCOK: "total rentang tidak cocok", DETAIL_AD_SELISIH: "detail Ad mungkin parsial", TIDAK_TERSEDIA_ORGANIK: "biaya tidak tersedia", TIDAK_ADA_BIAYA_DIALOKASIKAN: "biaya tidak tersedia",
   SPEND_TIDAK_LENGKAP_PADA_SUMBER_WAJIB: "ada sumber berbayar yang biayanya belum lengkap",
 };
 export const STATUS_BIAYA_LABEL = {
-  LENGKAP: "Biaya lengkap", BELUM_DIISI: "Biaya belum diisi", SPEND_TIDAK_LENGKAP: "Biaya belum lengkap", RENTANG_TIDAK_COCOK: "Total rentang tidak cocok",
+  LENGKAP: "Biaya lengkap", BELUM_DIISI: "Biaya belum diisi", SPEND_TIDAK_LENGKAP: "Biaya belum lengkap", RENTANG_TIDAK_COCOK: "Total rentang tidak cocok", DETAIL_AD_SELISIH: "Detail Ad mungkin parsial",
   HARI_BERJALAN_PARSIAL: "Mencakup hari berjalan", TIDAK_TERSEDIA_ORGANIK: "Biaya tidak tersedia", BELUM_DIHITUNG: "Belum dihitung",
 };
 export const statusBiayaTeks = (st) => STATUS_BIAYA_LABEL[st] || (st ? String(st).toLowerCase().replace(/_/g, " ") : "—");

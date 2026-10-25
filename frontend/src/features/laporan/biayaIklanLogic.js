@@ -77,6 +77,13 @@ export function ringkasAsalBiaya(c) {
   if (c.hari?.override) o.push(`${c.hari.override} hari memakai manual yang mengganti detail Ad`);
   if ((c.hariHilang || []).length) o.push(`${c.hariHilang.length} hari belum ada data`);
   if ((c.hariRentangTidakCocok || []).length) o.push(`${c.hariRentangTidakCocok.length} hari tertutup total rentang yang tidak termuat penuh`);
+  if ((c.selisihDetailManual || []).some((x) => x.manualLebihBesar)) o.push(`${c.selisihDetailManual.filter((x) => x.manualLebihBesar).length} entri manual lebih besar dari detail Ad (detail mungkin parsial)`);
   if ((c.manualDiabaikanHari || []).length) o.push(`${c.manualDiabaikanHari.length} hari manual diabaikan (detail Ad ada)`);
   return o;
+}
+
+/** Daftar "sumber biaya yang dipakai + alasan pemilihan" dari server (cakupan.pemilihan). Peringatan (selisih/blok ditolak/hilang) diberi tanda agar bisa diberi warna. */
+const KODE_PERINGATAN = new Set(["DETAIL_AD_SELISIH", "BLOK_DITOLAK_DETAIL_SEBAGIAN", "HILANG", "RENTANG_TIDAK_COCOK"]);
+export function daftarPemilihan(c) {
+  return (c?.pemilihan || []).map((p, i) => ({ kunci: `${p.kode}-${i}`, kode: p.kode, teks: p.alasan, hari: p.hari ?? null, peringatan: KODE_PERINGATAN.has(p.kode) }));
 }

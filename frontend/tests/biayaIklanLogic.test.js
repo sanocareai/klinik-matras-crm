@@ -98,3 +98,13 @@ test("CSV ekspor = layar: periode, cutoff, dasar, nilai order ≠ pembayaran ber
   assert.equal(namaBerkasCsv(lap), "akuisisi-2026-10-01_2026-10-25.csv"); assert.equal(buatCsvAkuisisi(null), "");
   assert.ok(csv.endsWith("\r\n"));
 });
+
+test("daftarPemilihan: sumber biaya + alasan dari server; peringatan (selisih/blok ditolak/hilang) ditandai; status baru berlabel", async () => {
+  const { daftarPemilihan } = await import("../src/features/laporan/biayaIklanLogic.js");
+  const d = daftarPemilihan({ pemilihan: [{ kode: "AD_DETAIL", hari: 20, alasan: "Detail Ad dipakai (Windsor 20 hari)." }, { kode: "DETAIL_AD_SELISIH", alasan: "Manual LEBIH BESAR ..." }, { kode: "HILANG", hari: 2, alasan: "x" }] });
+  assert.deepEqual(d.map((x) => [x.kode, x.peringatan, x.hari]), [["AD_DETAIL", false, 20], ["DETAIL_AD_SELISIH", true, null], ["HILANG", true, 2]]);
+  assert.deepEqual(daftarPemilihan(null), []);
+  assert.equal(statusBiayaTeks("DETAIL_AD_SELISIH"), "Detail Ad mungkin parsial");
+  const g = ringkasAsalBiaya({ hari: { adDetail: 1 }, selisihDetailManual: [{ manualLebihBesar: true }, { manualLebihBesar: false }] });
+  assert.ok(g.some((x) => /1 entri manual lebih besar dari detail Ad/.test(x)));
+});

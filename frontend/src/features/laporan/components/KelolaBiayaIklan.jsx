@@ -3,7 +3,7 @@ import { AlertTriangle, History, Loader2, Pencil, Save, Eye, XCircle } from "luc
 import { api } from "@/api.js";
 import { Modal } from "@/components/ui/modal.jsx";
 import { cn } from "@/lib/utils.js";
-import { formKosong, validasiForm, bodyBiaya, ringkasRencana, SUMBER_FORM, kemarin, ringkasAsalBiaya, ALASAN_TIDAK_DIPAKAI } from "../biayaIklanLogic.js";
+import { formKosong, validasiForm, bodyBiaya, ringkasRencana, SUMBER_FORM, kemarin, ringkasAsalBiaya, daftarPemilihan, ALASAN_TIDAK_DIPAKAI } from "../biayaIklanLogic.js";
 import { statusBiayaTeks, rupiah } from "../akuisisiLogic.js";
 import { teksPeriode } from "../periodeLaporan.js";
 import { ImporSpend } from "./IklanBiayaPanel.jsx";
@@ -157,6 +157,9 @@ export default function KelolaBiayaIklan({ open, onOpenChange, periode, hariIni,
               <div key={sid} className="rounded-btn bg-inset p-2.5">
                 <p><b className="text-ink">{NAMA_SUMBER[sid] || sid}</b> — {statusBiayaTeks(c.status)}{c.spend != null ? ` · ${rupiah(c.spend)}` : ""}</p>
                 {ringkasAsalBiaya(c).length > 0 && <p className="t-secondary">{ringkasAsalBiaya(c).join(" · ")}</p>}
+                <ul aria-label="Sumber biaya yang dipakai dan alasannya" className="mt-1 space-y-0.5 text-[11.5px]">
+                  {daftarPemilihan(c).map((p) => <li key={p.kunci} className={p.peringatan ? "text-orange" : "t-secondary"}>{p.hari != null ? <b>{p.hari} hari · </b> : null}{p.teks}</li>)}
+                </ul>
                 {(c.hariHilang || []).length > 0 && <p className="t-secondary">Hari belum ada data: {c.hariHilang.slice(0, 12).join(", ")}{c.hariHilang.length > 12 ? ` … (+${c.hariHilang.length - 12})` : ""}</p>}
                 {(c.biayaBulananPengaturan || []).length > 0 && (
                   <p className="t-secondary">Biaya bulanan Pengaturan Sales: {c.biayaBulananPengaturan.map((b) => `${String(b.bulan).padStart(2, "0")}/${b.tahun} ${rupiah(b.nominal)} (${b.dipakai ? "dipakai" : ALASAN_TIDAK_DIPAKAI[b.alasan] || "tidak dipakai"})`).join("; ")}</p>

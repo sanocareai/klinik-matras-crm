@@ -79,8 +79,18 @@ export function rencanakan(i, semua) {
 /**
  * CAKUPAN biaya satu sumber pada rentang laporan. Murni.
  * entries: entri sumber itu (aktif/batal bebas; dibatalkan diabaikan). adHarian: Map(ymd → number) detail Ad level sumber (hanya META) atau null.
+ * adSumber (opsional): Map(ymd → string[]) asal baris detail (META_MARKETING_API / WINDSOR_API / ADS_MANAGER_CSV) — hanya untuk menjelaskan pilihan.
+ *
+ * PRIORITAS per hari (satu sumber angka per hari, TIDAK PERNAH dijumlah):
+ *   1. entri manual bertanda 'ganti detail Ad' (override eksplisit)      → MANUAL_OVERRIDE
+ *   2. detail Ad (API > Windsor > CSV per Ad)                             → AD_DETAIL
+ *   3. entri manual harian / total rentang (hanya hari TANPA detail Ad)   → MANUAL_HARIAN / MANUAL_BLOK
+ *   4. tidak ada                                                          → HILANG
+ * DETAIL AD PARSIAL: kelengkapan per-Ad tidak dapat dibuktikan dari data Ad saja. Bukti yang tersedia = pembanding manual: bila entri manual (tanpa override) pada hari/rentang yang
+ * punya detail Ad LEBIH BESAR dari jumlah detail Ad (selisih > Rp1), detail dianggap mungkin parsial → status DETAIL_AD_SELISIH (KPI null), BUKAN LENGKAP. Jalan keluar: impor detail
+ * yang kurang, batalkan entri manual yang keliru, atau tandai 'ganti detail Ad' (pilihan sadar Admin; alasan tercatat). Manual lebih KECIL dari detail → detail dipakai (hanya informasi).
  */
-export function hitungCakupan({ dari, sampai, hariIni, entries, adHarian = null }) {
+export function hitungCakupan({ dari, sampai, hariIni, entries, adHarian = null, adSumber = null }) {
   const kemarin = tambahHari(hariIni, -1);
   const akhirPenuh = sampai < hariIni ? sampai : kemarin;
   const hari = hariRentang(dari, akhirPenuh);
@@ -91,7 +101,7 @@ export function hitungCakupan({ dari, sampai, hariIni, entries, adHarian = null 
   const adAda = (d) => !!adHarian && adHarian.has(d);
   const blokAdaDetail = new Map(); for (const e of aktif) if (e.kind === "TOTAL_RENTANG") blokAdaDetail.set(e.id, hariRentang(e.dateFrom, e.dateTo).some(adAda));
   let spend = 0; let terisi = 0; const status = { adDetail: 0, manualHarian: 0, manualBlok: 0, override: 0 }; const hilang = []; const tidakCocok = []; const manualDiabaikan = []; const blokDipakai = new Set(); const entriTerpakai = new Set();
-  const detailAdHari = []; const hasilHari = {};
+  const detailAdHari = []; const hasilHari = {}; const asalDetail = {};
   for (const d of hari) {
     const cover = aktif.filter((e) => covers(e, d));
     const ov = cover.filter((e) => e.override);
@@ -101,6 +111,7 @@ export function hitungCakupan({ dari, sampai, hariIni, entries, adHarian = null 
       else { st = "MANUAL_OVERRIDE"; for (const e of ov) { entriTerpakai.add(e.id); if (e.kind === "HARIAN") spend += Number(e.amount); else if (!blokDipakai.has(e.id)) { blokDipakai.add(e.id); spend += Number(e.amount); } } if (adAda(d)) detailAdHari.push(d); status.override++; }
     } else if (adAda(d)) {
       st = "AD_DETAIL"; spend += Number(adHarian.get(d)); status.adDetail++; if (cover.length) manualDiabaikan.push(d);
+      for (const sr of (adSumber && adSumber.get(d)) || []) asalDetail[sr] = (asalDetail[sr] || 0) + 1;
     } else if (cover.length) {
       if (cover.some((e) => e.kind === "TOTAL_RENTANG" && !muat(e))) st = "RENTANG_TIDAK_COCOK";
       else {
@@ -112,16 +123,55 @@ export function hitungCakupan({ dari, sampai, hariIni, entries, adHarian = null 
     hasilHari[d] = st;
     if (st === "HILANG") hilang.push(d); else if (st === "RENTANG_TIDAK_COCOK") tidakCocok.push(d); else terisi++;
   }
+
+  // PEMBANDING detail Ad vs manual (tanpa override) — satu-satunya bukti kelengkapan detail per-Ad.
+  const selisih = []; const blokDitolak = [];
+  const toleransi = 1;
+  for (const e of aktif.filter((x) => !x.override)) {
+    const hs = hariRentang(e.dateFrom, e.dateTo).filter((d) => d >= dari && d <= akhirPenuh);
+    if (e.kind === "HARIAN") {
+      if (!adAda(e.dateFrom) || !hs.length) continue;
+      const det = Number(adHarian.get(e.dateFrom)), man = Number(e.amount);
+      selisih.push({ jenis: "HARIAN", dari: e.dateFrom, sampai: e.dateTo, detail: rp(det), manual: rp(man), entriId: e.id, manualLebihBesar: man - det > toleransi, manualLebihKecil: det - man > toleransi });
+    } else if (muat(e)) {
+      const semua = hariRentang(e.dateFrom, e.dateTo); const dgDetail = semua.filter(adAda);
+      if (dgDetail.length === 0) continue;
+      if (dgDetail.length === semua.length) {
+        const det = dgDetail.reduce((a, d) => a + Number(adHarian.get(d)), 0), man = Number(e.amount);
+        selisih.push({ jenis: "TOTAL_RENTANG", dari: e.dateFrom, sampai: e.dateTo, detail: rp(det), manual: rp(man), entriId: e.id, manualLebihBesar: man - det > toleransi, manualLebihKecil: det - man > toleransi });
+      } else {
+        blokDitolak.push({ entriId: e.id, dari: e.dateFrom, sampai: e.dateTo, nominal: rp(e.amount), hariDenganDetail: dgDetail.length, hariTotal: semua.length, alasan: "DETAIL_AD_SEBAGIAN_HARI" });
+      }
+    }
+  }
+  const selisihMasalah = selisih.filter((x) => x.manualLebihBesar);
+
   let statusBiaya;
   if (tidakCocok.length) statusBiaya = "RENTANG_TIDAK_COCOK";
+  else if (selisihMasalah.length) statusBiaya = "DETAIL_AD_SELISIH";
   else if (hilang.length && hilang.length === hari.length) statusBiaya = "BELUM_DIISI";
   else if (hilang.length) statusBiaya = "SPEND_TIDAK_LENGKAP";
   else if (termasukHariBerjalan) statusBiaya = "HARI_BERJALAN_PARSIAL";
   else statusBiaya = "LENGKAP";
+
+  // ALASAN PEMILIHAN: setiap angka yang masuk ke spend punya sumber + alasan yang dapat dibaca Admin.
+  const asalTeks = Object.entries(asalDetail).map(([k, v]) => `${{ META_MARKETING_API: "API Meta", WINDSOR_API: "Windsor", ADS_MANAGER_CSV: "CSV Ads Manager" }[k] || k} ${v} hari`).join(", ");
+  const pemilihan = [];
+  if (status.override) pemilihan.push({ kode: "MANUAL_OVERRIDE", hari: status.override, alasan: "Entri manual bertanda 'ganti detail Ad' dipakai menggantikan detail Ad (pilihan sadar Admin; alasan tercatat di riwayat). Detail Ad tidak dijumlahkan." });
+  if (status.adDetail) pemilihan.push({ kode: "AD_DETAIL", hari: status.adDetail, asal: asalDetail, alasan: `Detail Ad dipakai${asalTeks ? ` (${asalTeks})` : ""}: hari itu punya baris spend per Ad. Detail diutamakan atas entri manual; satu sumber angka per hari, tidak dijumlah.` });
+  if (status.manualHarian) pemilihan.push({ kode: "MANUAL_HARIAN", hari: status.manualHarian, alasan: "Entri harian manual dipakai karena hari itu TIDAK punya detail Ad." });
+  if (status.manualBlok) pemilihan.push({ kode: "MANUAL_BLOK", hari: status.manualBlok, alasan: "Total rentang manual dipakai (dihitung sekali, tidak diprorata) karena tidak ada hari dalam rentang itu yang punya detail Ad." });
+  for (const x of selisihMasalah) pemilihan.push({ kode: "DETAIL_AD_SELISIH", dari: x.dari, sampai: x.sampai, detail: x.detail, manual: x.manual, alasan: `Manual (${x.manual}) LEBIH BESAR dari detail Ad (${x.detail}) pada ${x.dari === x.sampai ? x.dari : x.dari + "–" + x.sampai}: detail Ad kemungkinan PARSIAL, sehingga biaya sumber tidak dianggap lengkap. Impor detail yang kurang, batalkan entri manual yang keliru, atau tandai 'ganti detail Ad'.` });
+  for (const x of selisih.filter((y) => y.manualLebihKecil)) pemilihan.push({ kode: "MANUAL_LEBIH_KECIL", dari: x.dari, sampai: x.sampai, detail: x.detail, manual: x.manual, alasan: `Manual (${x.manual}) lebih kecil dari detail Ad (${x.detail}) pada ${x.dari === x.sampai ? x.dari : x.dari + "–" + x.sampai}: detail Ad dipakai (informasi; periksa bila angka manual yang benar).` });
+  for (const x of blokDitolak) pemilihan.push({ kode: "BLOK_DITOLAK_DETAIL_SEBAGIAN", dari: x.dari, sampai: x.sampai, nominal: x.nominal, alasan: `Total rentang ${x.dari}–${x.sampai} (${x.nominal}) TIDAK dipakai: ${x.hariDenganDetail} dari ${x.hariTotal} harinya sudah punya detail Ad (agar tidak dihitung ganda). Hari tanpa detail tetap kosong sampai diisi harian/diimpor, atau tandai total itu 'ganti detail Ad'.` });
+  if (hilang.length) pemilihan.push({ kode: "HILANG", hari: hilang.length, alasan: "Tidak ada detail Ad maupun entri manual yang dapat dipakai pada hari-hari ini." });
+  if (tidakCocok.length) pemilihan.push({ kode: "RENTANG_TIDAK_COCOK", hari: tidakCocok.length, alasan: "Total rentang manual tidak termuat penuh oleh periode laporan; tidak diprorata, sehingga tidak dipakai." });
+
   return {
     status: statusBiaya, spend: terisi > 0 ? rp(spend) : null, spendLengkap: statusBiaya === "LENGKAP", termasukHariBerjalan, hariPenuh: hari.length,
     hari: status, hariHilang: hilang, hariRentangTidakCocok: tidakCocok, manualDiabaikanHari: manualDiabaikan, overrideMenggantikanDetailHari: detailAdHari,
-    entriTerpakai: [...entriTerpakai], aturan: "Detail Ad menang atas manual kecuali override eksplisit; total rentang hanya dipakai bila dimuat penuh oleh rentang laporan; tidak pernah dijumlah ganda.",
+    asalDetailAd: asalDetail, selisihDetailManual: selisih, blokDitolak, pemilihan,
+    entriTerpakai: [...entriTerpakai], aturan: "Prioritas per hari: override manual eksplisit > detail Ad (API > Windsor > CSV per Ad) > entri manual (hanya hari tanpa detail). Total rentang hanya dipakai bila dimuat penuh oleh rentang laporan. Tidak pernah dijumlah ganda; detail Ad parsial (manual > detail) tidak dianggap lengkap.",
   };
 }
 
@@ -201,16 +251,17 @@ export async function batalkanEntri(prisma, { id, alasan, aktor }) {
   }, { timeout: 20_000, maxWait: 5_000 });
 }
 
-/** Detail Ad level SUMBER META per hari (satu sumber per hari+akun+Ad menurut prioritas, sama dengan laporan campaign). READ ONLY. */
-export async function muatAdHarianMeta(db, { dari, sampai }) {
+/** Detail Ad level SUMBER META per hari (satu sumber per hari+akun+Ad menurut prioritas, sama dengan laporan campaign). READ ONLY. → { harian: Map(ymd→number), sumber: Map(ymd→string[]) } */
+export async function muatAdHarianMetaDetail(db, { dari, sampai }) {
   const rows = await db.$queryRaw`
     WITH terpilih AS (
-      SELECT DISTINCT ON (date_wib, account_id, ad_id) date_wib, spend FROM meta_ad_daily_spend
+      SELECT DISTINCT ON (date_wib, account_id, ad_id) date_wib, spend, source FROM meta_ad_daily_spend
        WHERE date_wib >= ${new Date(`${dari}T00:00:00Z`)} AND date_wib <= ${new Date(`${sampai}T00:00:00Z`)}
        ORDER BY date_wib, account_id, ad_id, CASE source WHEN 'META_MARKETING_API' THEN 1 WHEN 'WINDSOR_API' THEN 2 ELSE 3 END)
-    SELECT to_char(date_wib, 'YYYY-MM-DD') AS d, sum(spend)::text AS s FROM terpilih GROUP BY date_wib`;
-  return new Map(rows.map((r) => [r.d, Number(r.s)]));
+    SELECT to_char(date_wib, 'YYYY-MM-DD') AS d, sum(spend)::text AS s, array_agg(DISTINCT source) AS src FROM terpilih GROUP BY date_wib`;
+  return { harian: new Map(rows.map((r) => [r.d, Number(r.s)])), sumber: new Map(rows.map((r) => [r.d, r.src])) };
 }
+export async function muatAdHarianMeta(db, { dari, sampai }) { return (await muatAdHarianMetaDetail(db, { dari, sampai })).harian; }
 
 // ── Biaya bulanan Pengaturan Sales (AdSpend) — penyimpanan LAMA, grain bulan kalender, ikut jurnal Finance. DIBACA saja (prioritas terendah), tidak ada duplikasi/penulisan. ─────
 const PETA_ADSPEND = Object.freeze({ META_ADS: "META", TIKTOK_ADS: "TIKTOK", GOOGLE_ADS: "LAINNYA" });
@@ -244,13 +295,13 @@ export function entriBulananSemu(rows, { dari, sampai, entriNyata }) {
 /** Cakupan biaya semua sumber berbiaya pada rentang. READ ONLY. */
 export async function muatBiayaSumber(db, { dari, sampai, hariIni }) {
   const entries = await daftarEntri(db, { dari, sampai, termasukBatal: false });
-  const adHarian = await muatAdHarianMeta(db, { dari, sampai });
+  const { harian: adHarian, sumber: adSumber } = await muatAdHarianMetaDetail(db, { dari, sampai });
   const bulanan = await muatAdSpendBulanan(db, { dari, sampai });
   const { semu, diabaikan } = entriBulananSemu(bulanan, { dari, sampai, entriNyata: entries });
   const out = new Map();
   for (const s of SUMBER_BERBIAYA) {
     const nyata = entries.filter((e) => e.sourceId === s);
-    const cakupan = hitungCakupan({ dari, sampai, hariIni, entries: [...nyata, ...semu.filter((e) => e.sourceId === s)], adHarian: s === "META" ? adHarian : null });
+    const cakupan = hitungCakupan({ dari, sampai, hariIni, entries: [...nyata, ...semu.filter((e) => e.sourceId === s)], adHarian: s === "META" ? adHarian : null, adSumber: s === "META" ? adSumber : null });
     const dipakai = new Set(cakupan.entriTerpakai);
     const pengaturan = [
       ...semu.filter((e) => e.sourceId === s).map((e) => ({ id: e.id, tahun: Number(e.dateFrom.slice(0, 4)), bulan: Number(e.dateFrom.slice(5, 7)), nominal: e.amount, dipakai: dipakai.has(e.id), alasan: dipakai.has(e.id) ? null : (cakupan.hariRentangTidakCocok.some((d) => d >= e.dateFrom && d <= e.dateTo) ? "BULAN_TIDAK_PENUH_DALAM_RENTANG" : "DETAIL_AD_MENANG") })),

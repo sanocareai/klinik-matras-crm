@@ -145,7 +145,7 @@ test("Windsor/API detail Ad vs manual META: tidak dijumlah ganda (detail Ad mena
   const meta = (o) => ({ sumber: "META", jenis: "HARIAN", dari: "2026-08-01", nominal: "999999", alasan: "Angka Ads Manager (uji)", ...o });
   for (const d of ["2026-08-01", "2026-08-02", "2026-08-03"]) assert.equal((await api("PUT", "/biaya-sumber", { body: meta({ dari: d }) })).status, 201);
   let me = (await api("GET", "/sumber?dari=2026-08-01&sampai=2026-08-03")).json.sumber.find((x) => x.id === "META");
-  assert.deepEqual([me.biaya.status, me.biaya.spend], ["LENGKAP", 330000], "hanya detail Ad (100+110+120 rb); manual 999999×3 diabaikan");
+  assert.deepEqual([me.biaya.status, me.biaya.spend], ["DETAIL_AD_SELISIH", 330000], "manual 999999×3 > detail Ad (100+110+120 rb): detail tidak dianggap lengkap; tetap TIDAK dijumlah");
   assert.equal(me.biaya.cakupan.manualDiabaikanHari.length, 3);
   const cetak = (await api("GET", "/sumber?dari=2026-08-01&sampai=2026-08-03")).json;
   assert.ok(cetak.peringatan.some((p) => p.kode === "MANUAL_DIABAIKAN"));
@@ -178,4 +178,43 @@ test("AdSpend bulanan (Pengaturan Sales) ikut terbaca read-only: bulan penuh →
     assert.equal(tt.biaya.cakupan.biayaBulananPengaturan[0].alasan, "ADA_ENTRI_SUMBER_PADA_BULAN_INI");
     assert.equal(JSON.stringify(await testPrisma.adSpend.findMany({ orderBy: { id: "asc" } })), sebelum, "AdSpend tidak berubah");
   } finally { await testPrisma.adSpend.deleteMany({}); await bersih(); }
+});
+
+test("AUDIT prioritas lewat HTTP: detail Windsor parsial + manual lebih besar → DETAIL_AD_SELISIH (KPI null); override → LENGKAP memakai manual; edit nominal; PENCABUTAN override kembali ke detail; sumber & alasan pemilihan terbaca; total rentang overlap ditolak", async () => {
+  await bersih(); await testPrisma.metaAdDailySpend.deleteMany({});
+  for (const [d, s] of [["2026-08-01", 500000], ["2026-08-02", 600000]]) await testPrisma.metaAdDailySpend.create({ data: { dateWib: T(`${d}T00:00:00Z`), accountId: "1234567890", campaignId: "52690000000011", adSetId: "52690000000012", adId: "52690000000001", currency: "IDR", spend: s, source: "WINDSOR_API", importedAt: new Date(), importId: imp.id, rowChecksum: d.replace(/-/g, "").padEnd(64, "b") } });
+  const meta = async (dari = "2026-08-01", sampai = "2026-08-02") => (await api("GET", `/sumber?dari=${dari}&sampai=${sampai}`)).json.sumber.find((x) => x.id === "META");
+  const man = (o) => ({ sumber: "META", jenis: "HARIAN", dari: "2026-08-01", nominal: "2000000", alasan: "FIXTURE UJI: total Ads Manager", ...o });
+  // 1) detail saja (2 hari) → lengkap, asal = Windsor, alasan memilih detail
+  let m = await meta(); assert.deepEqual([m.biaya.status, m.biaya.spend], ["LENGKAP", 1_100_000]);
+  assert.deepEqual(m.biaya.cakupan.asalDetailAd, { WINDSOR_API: 2 }); assert.equal(m.biaya.cakupan.pemilihan[0].kode, "AD_DETAIL"); assert.match(m.biaya.cakupan.pemilihan[0].alasan, /Windsor 2 hari/);
+  // 2) manual 2 jt untuk 1 Agt (> detail 500 rb) → SELISIH, KPI null
+  const e = await api("PUT", "/biaya-sumber", { body: man() }); assert.equal(e.status, 201);
+  m = await meta(); assert.deepEqual([m.biaya.status, m.biaya.spend, m.biaya.cpa, m.biaya.cashRoas, m.biaya.alasanNull.cpa], ["DETAIL_AD_SELISIH", 1_100_000, null, null, "DETAIL_AD_SELISIH"]);
+  assert.equal(m.biaya.cakupan.selisihDetailManual[0].manualLebihBesar, true);
+  const pw = (await api("GET", "/sumber?dari=2026-08-01&sampai=2026-08-02")).json.peringatan.find((p) => p.kode === "SPEND_BELUM_LENGKAP" && p.data.sumber === "META"); assert.ok(pw && /mungkin parsial|tidak dianggap lengkap/i.test(pw.pesan), pw?.pesan);
+  assert.equal((await api("GET", "/sumber?dari=2026-08-01&sampai=2026-08-02")).json.total.berbayar.lengkap, false);
+  // 3) override (edit entri yang sama) → LENGKAP memakai manual 2 jt + hari 2 dari detail; revisi 2
+  const ov = await api("PUT", "/biaya-sumber", { body: man({ gantiDetailAd: true, alasan: "FIXTURE UJI: ganti detail Ad (Windsor parsial)" }) });
+  assert.deepEqual([ov.status, ov.json.aksi, ov.json.id, ov.json.revisi], [200, "UBAH", e.json.id, 2]);
+  m = await meta(); assert.deepEqual([m.biaya.status, m.biaya.spend], ["LENGKAP", 2_600_000]); assert.deepEqual(m.biaya.cakupan.pemilihan.map((p) => p.kode), ["MANUAL_OVERRIDE", "AD_DETAIL"]);
+  // 4) edit nominal manual saat override aktif
+  const ed = await api("PUT", "/biaya-sumber", { body: man({ gantiDetailAd: true, nominal: "2500000", alasan: "FIXTURE UJI: koreksi nominal" }) }); assert.deepEqual([ed.json.aksi, ed.json.revisi], ["UBAH", 3]);
+  m = await meta(); assert.equal(m.biaya.spend, 3_100_000);
+  // 5) pencabutan override (gantiDetailAd=false) → kembali ke detail; selisih muncul lagi
+  const cb = await api("PUT", "/biaya-sumber", { body: man({ nominal: "2500000", alasan: "FIXTURE UJI: cabut override" }) }); assert.deepEqual([cb.json.aksi, cb.json.revisi], ["UBAH", 4]);
+  m = await meta(); assert.deepEqual([m.biaya.status, m.biaya.spend], ["DETAIL_AD_SELISIH", 1_100_000]);
+  const rw = (await api("GET", `/biaya-sumber/${e.json.id}/riwayat`)).json.riwayat;
+  assert.deepEqual(rw.map((r) => [r.revisi, r.aksi, r.overrideLama, r.overrideBaru, r.nominalBaru]), [[1, "BUAT", null, false, 2_000_000], [2, "UBAH", false, true, 2_000_000], [3, "UBAH", true, true, 2_500_000], [4, "UBAH", true, false, 2_500_000]], "audit: nilai & override lama/baru tercatat tiap perubahan");
+  // 6) total rentang yang menimpa harian aktif → 409 (tidak overlap); setelah dibatalkan → blok ditolak oleh detail sebagian hari? (semua hari punya detail → bandingkan: 2.5jt > 1.1jt = selisih)
+  assert.equal((await api("PUT", "/biaya-sumber", { body: { sumber: "META", jenis: "TOTAL_RENTANG", dari: "2026-08-01", sampai: "2026-08-02", nominal: "1100000", alasan: "FIXTURE UJI: total" } })).status, 409);
+  await api("POST", `/biaya-sumber/${e.json.id}/batalkan`, { body: { alasan: "FIXTURE UJI: ganti jadi total rentang" } });
+  const tr = await api("PUT", "/biaya-sumber", { body: { sumber: "META", jenis: "TOTAL_RENTANG", dari: "2026-08-01", sampai: "2026-08-02", nominal: "1100000", alasan: "FIXTURE UJI: total sama dengan detail" } }); assert.equal(tr.status, 201);
+  m = await meta(); assert.deepEqual([m.biaya.status, m.biaya.spend], ["LENGKAP", 1_100_000], "total rentang = jumlah detail → tidak ada selisih, tidak ganda");
+  // 7) detail hanya SEBAGIAN hari di dalam total rentang → total ditolak (tidak dijumlah sebagian)
+  await testPrisma.metaAdDailySpend.deleteMany({ where: { dateWib: T("2026-08-02T00:00:00Z") } });
+  m = await meta(); assert.deepEqual([m.biaya.status, m.biaya.spend, m.biaya.cakupan.blokDitolak.length, m.biaya.cakupan.hariHilang], ["SPEND_TIDAK_LENGKAP", 500_000, 1, ["2026-08-02"]]);
+  assert.ok(m.biaya.cakupan.pemilihan.some((p) => p.kode === "BLOK_DITOLAK_DETAIL_SEBAGIAN"));
+  assert.equal(await testPrisma.metaAdDailySpend.count(), 1, "spend per Ad tidak disentuh oleh input manual");
+  await bersih();
 });
