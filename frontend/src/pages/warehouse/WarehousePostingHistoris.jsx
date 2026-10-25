@@ -10,7 +10,7 @@ import { EmptyState } from "@/components/ui/empty-state.jsx";
 import { rolesOf } from "@/lib/roles.js";
 import { BarisManifest, DaftarOrderBatch, KartuHpp, KartuProgres, Stat } from "@/features/warehouse/postingHistoris/PostingHistorisParts.jsx";
 import { useBatchPostingHistoris } from "@/features/warehouse/postingHistoris/useBatchPostingHistoris.js";
-import { KUNCI_DRAFT, STATUS_AKTIF, angka, aksiBatch, bolehLihatPosting, bolehMulaiPosting, bolehTekanMulai, labelStatusBatch, pesanGalat, rupiah, unitTerpilih, validasiRujukan } from "@/features/warehouse/postingHistoris/postingHistorisModel.js";
+import { KUNCI_DRAFT, STATUS_AKTIF, angka, aksiBatch, bolehLihatPosting, bolehMulaiPosting, bolehTekanMulai, labelStatusBatch, pilihHanyaTampil, pesanGalat, rupiah, unitTerpilih, validasiRujukan } from "@/features/warehouse/postingHistoris/postingHistorisModel.js";
 
 // POSTING PEMAKAIAN HISTORIS (Admin/Owner/Finance). Catatan Excel Admin Sales → pengeluaran stok resmi, hanya KUANTITAS (tanpa jurnal HPP).
 // Halaman ini: (1) pratinjau manifest + dampak stok/HPP + yang tertahan, (2) mulai batch dengan konfirmasi (hash manifest = pin persetujuan, rujukan Owner), (3) progres per order, alasan gagal, lanjut/hentikan.
@@ -47,10 +47,11 @@ export default function WarehousePostingHistoris() {
   useEffect(() => { if (boleh && !batch.memuat && !sedangAktif) muatPratinjau(); }, [boleh, batch.memuat, sedangAktif, statusBatch, muatPratinjau]);
   // bila hanya sebagian order dipilih: hash/dampak/HPP dihitung server untuk pilihan itu (bukan dikira-kira di browser)
   useEffect(() => {
-    if (!boleh || batch.memuat || sedangAktif || !pilih) { setPraSub({ memuat: false, data: null, galat: null }); return undefined; }
+    if (!boleh || batch.memuat || sedangAktif || !pilih || pilih.length === 0) { setPraSub({ memuat: false, data: null, galat: null }); return undefined; }
+    // DEBOUNCE 450 ms: mencentang/menghapus centang beruntun tidak boleh memicu puluhan perhitungan manifest di server; hanya pilihan TERAKHIR yang dihitung
     let batal = false; setPraSub((x) => ({ ...x, memuat: true, galat: null }));
-    api.pratinjauPostingHistoris(pilih.length ? pilih : undefined).then((d) => { if (!batal) setPraSub({ memuat: false, data: d, galat: null }); }).catch((e) => { if (!batal) setPraSub({ memuat: false, data: null, galat: e }); });
-    return () => { batal = true; };
+    const t = setTimeout(() => { api.pratinjauPostingHistoris(pilih).then((d) => { if (!batal) setPraSub({ memuat: false, data: d, galat: null }); }).catch((e) => { if (!batal) setPraSub({ memuat: false, data: null, galat: e }); }); }, 450);
+    return () => { batal = true; clearTimeout(t); };
   }, [boleh, batch.memuat, sedangAktif, pilih, statusBatch]);
 
   const semuaUnit = useMemo(() => pra.data?.order?.map((o) => o.unitId) ?? [], [pra.data]);
@@ -58,10 +59,12 @@ export default function WarehousePostingHistoris() {
   const terpilihSet = useMemo(() => new Set(pilih ?? semuaUnit), [pilih, semuaUnit]);
   function ubahPilihan(id, nilai) { const set = new Set(pilih ?? semuaUnit); if (nilai) set.add(id); else set.delete(id); setPilih(set.size >= semuaUnit.length ? null : [...set]); }
 
-  const p = pilih ? praSub.data : pra.data; // yang akan diposting
+  const kosong = !!pilih && pilih.length === 0; // tidak ada order dipilih
+  const p = kosong ? null : pilih ? praSub.data : pra.data; // yang akan diposting
   const v = p ?? pra.data; // tampilan: bila pilihan sedang dihitung ulang, tetap tampilkan yang terakhir (tombol Mulai dikunci lewat memuatP)
-  const memuatP = pilih ? praSub.memuat || (!praSub.data && !praSub.galat) : pra.memuat;
-  const syarat = bolehTekanMulai({ pratinjau: p, batchAktif: aktifSt, roles, memuat: memuatP });
+  const memuatP = kosong ? false : pilih ? praSub.memuat || (!praSub.data && !praSub.galat) : pra.memuat;
+  const syaratDasar = bolehTekanMulai({ pratinjau: p, batchAktif: aktifSt, roles, memuat: memuatP });
+  const syarat = kosong && syaratDasar.alasan === "Tidak ada transaksi siap posting." ? { ok: false, alasan: "Pilih minimal satu order." } : syaratDasar;
   const aksi = aksiBatch({ status: aktifSt?.status, roles, sibuk: batch.sibuk });
   const rj = validasiRujukan(rujukan);
 
@@ -126,7 +129,13 @@ export default function WarehousePostingHistoris() {
                   <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2">
                     <input value={cari} onChange={(e) => setCari(e.target.value)} placeholder="Cari nomor order…" aria-label="Cari order" data-testid="cari-order" className="h-10 min-w-0 flex-1 rounded-btn border border-line bg-surface px-3 text-[14px] text-ink outline-none focus:border-accent focus-visible:ring-2 focus-visible:ring-accent/30" />
                     {bolehMulaiPosting(roles) && <span className="text-[12px] text-ink3" data-testid="jumlah-terpilih">{jumlahTerpilih} dari {semuaUnit.length} order dipilih</span>}
-                    {bolehMulaiPosting(roles) && pilih && <Button variant="tertiary" onClick={() => setPilih(null)} data-testid="pilih-semua">Pilih semua</Button>}
+                    {bolehMulaiPosting(roles) && (
+                      <div className="flex flex-wrap gap-1">
+                        <Button variant="tertiary" className="min-h-[40px]" disabled={orders.length === 0} onClick={() => setPilih(pilihHanyaTampil(semuaUnit, orders.map((o) => o.unitId)))} data-testid="pilih-tampil" title="Pilih hanya order yang sedang tampil (hasil pencarian)">Pilih hanya yang tampil</Button>
+                        <Button variant="tertiary" className="min-h-[40px]" onClick={() => setPilih([])} data-testid="kosongkan">Kosongkan</Button>
+                        {pilih && <Button variant="tertiary" className="min-h-[40px]" onClick={() => setPilih(null)} data-testid="pilih-semua">Pilih semua</Button>}
+                      </div>
+                    )}
                   </div>
                   {orders.length === 0 ? <p className="m-0 px-3 py-4 text-[13px] text-ink3">{pra.data.jumlahTrx ? "Tidak ada order yang cocok." : "Tidak ada transaksi siap posting."}</p>
                     : <ul className="m-0 max-h-[480px] list-none overflow-y-auto p-0" data-testid="daftar-manifest">{orders.map((o) => <BarisManifest key={o.unitId} o={o} dipilih={terpilihSet.has(o.unitId)} onPilih={ubahPilihan} bolehPilih={bolehMulaiPosting(roles)} />)}</ul>}

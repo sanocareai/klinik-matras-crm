@@ -1,7 +1,7 @@
 // Model murni UI Posting Pemakaian Historis: izin, aksi per status, progres, HPP parsial, polling, galat.
 import test from "node:test";
 import assert from "node:assert/strict";
-import { aksiBatch, alasanGagal, bolehLihatPosting, bolehMulaiPosting, bolehTekanMulai, gabungStatus, intervalPolling, labelStatusBatch, pesanGalat, ringkasHpp, ringkasProgres, rupiah, saringOrder, unitTerpilih, validasiRujukan } from "../src/features/warehouse/postingHistoris/postingHistorisModel.js";
+import { pilihHanyaTampil, aksiBatch, alasanGagal, bolehLihatPosting, bolehMulaiPosting, bolehTekanMulai, gabungStatus, intervalPolling, labelStatusBatch, pesanGalat, ringkasHpp, ringkasProgres, rupiah, saringOrder, unitTerpilih, validasiRujukan } from "../src/features/warehouse/postingHistoris/postingHistorisModel.js";
 
 const unit = (status, o = {}) => ({ unitId: o.id ?? status, order: o.order ?? `O-${status}`, trx: 2, status, diposting: 0, kode: o.kode ?? null, pesan: o.pesan ?? null });
 test("izin: Admin boleh melihat tetapi tidak memulai; Owner/Finance memulai; peran lain tidak melihat", () => {
@@ -46,6 +46,13 @@ test("syarat tombol Mulai: izin, manifest ada, tidak ada batch aktif, tidak memb
 test("rujukan minimal 8 karakter; pilihan order: semua → null, sebagian → daftar", () => {
   assert.equal(validasiRujukan("pendek").ok, false); assert.equal(validasiRujukan("  OWNER-2026-10  ").nilai, "OWNER-2026-10");
   assert.equal(unitTerpilih(["a", "b", "c"], ["a", "b", "c"]), null); assert.deepEqual(unitTerpilih(["a", "b", "c"], ["a", "c"]), ["a", "c"]); assert.equal(unitTerpilih(["a"], []), null);
+});
+test("pilih hanya yang tampil: sebagian → daftar, semua → null (manifest penuh), tidak ada → kosong (tombol Mulai mati)", () => {
+  assert.deepEqual(pilihHanyaTampil(["a", "b", "c"], ["b"]), ["b"]); assert.equal(pilihHanyaTampil(["a", "b"], ["a", "b"]), null); assert.deepEqual(pilihHanyaTampil(["a", "b"], []), []); assert.deepEqual(pilihHanyaTampil(["a"], ["x"]), []);
+});
+test("HPP batch: PARSIAL bila order masih punya catatan tertahan walau transaksi batch bernilai", () => {
+  const h = ringkasHpp({ status: "PARSIAL", nilaiTercatat: 284000, belumDijurnal: 284000, trxTanpaHarga: 0, catatanTertahan: 7, jurnalDibuat: false });
+  assert.equal(h.label, "HPP PARSIAL"); assert.match(h.penjelasan, /7 catatan masih tertahan/); assert.equal(h.belumDijurnal, "Rp284.000");
 });
 test("polling: cepat saat aktif, lambat idle, berhenti saat tab tersembunyi, mundur eksponensial saat putus (maks 30 dtk)", () => {
   assert.equal(intervalPolling({ status: "BERJALAN", tersembunyi: false }), 2500); assert.equal(intervalPolling({ status: "SELESAI", tersembunyi: false }), 15000);

@@ -113,6 +113,12 @@ export function ringkasHpp(hpp) {
   };
 }
 
+/** Pilih HANYA order yang sedang tampil (hasil pencarian): semua tampil = seluruh manifest (null); tidak ada = kosong. */
+export function pilihHanyaTampil(semua, tampil) {
+  const t = (tampil ?? []).filter((id) => (semua ?? []).includes(id));
+  return t.length === 0 ? [] : t.length >= (semua ?? []).length ? null : t;
+}
+
 /** Pilihan order (checkbox) → daftar unitIds untuk pratinjau/mulai. null = seluruh manifest. */
 export function unitTerpilih(semua, terpilih) {
   const s = new Set(terpilih ?? []);

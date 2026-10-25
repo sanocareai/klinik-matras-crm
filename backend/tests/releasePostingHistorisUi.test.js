@@ -17,7 +17,7 @@ const punyaBash = spawnSync("bash", ["-c", "true"]).status === 0;
 test("skrip rilis: tanpa placeholder, generator terpasang, tanpa sisa nama rilis lain, daftar berkas backend (3) dan frontend yang diaudit", () => {
   assert.ok(!/@@[A-Z_]+@@/.test(script), "placeholder tersisa");
   assert.match(script, /^LIVE_MIG_TERAKHIR="\d{14}_[a-z0-9_]+"; LIVE_MIG_JUMLAH="\d+"$/m);
-  assert.ok(script.split("\n").includes('BACKEND_SRC_EXPECT="backend/src/routes/pemakaianKoreksi.js backend/src/services/postingBatchLatar.js backend/src/services/postingPratinjau.js"'), "tepat tiga berkas backend");
+  assert.ok(script.split("\n").includes('BACKEND_SRC_EXPECT="backend/src/services/postingBatchLatar.js"'), "tepat satu berkas backend (status HPP batch)");
   const fe = script.split("\n").find((l) => l.startsWith("FRONTEND_SRC_EXPECT=")); assert.ok(fe && fe.includes("WarehousePostingHistoris.jsx") && fe.includes("postingHistorisModel.js") && fe.includes("pageRegistry.jsx"), "daftar frontend yang diaudit");
   assert.ok(script.includes("scripts/gen-release-posting-historis-ui.cjs"));
   assert.ok(!/evaluasi-catatan|\bskj\b|\bevl\.sh|route-planner/.test(script.split(String.fromCharCode(10)).filter((l) => !l.startsWith("ALLOWED_RE=")).join(String.fromCharCode(10)).replace(/rehearsal_evl_/g, "").replace(/simulasi-evaluasi-catatan/g, "")), "tidak ada sisa nama rilis lain (pustaka simulasi dipakai ulang sengaja)");
@@ -49,7 +49,7 @@ test("build frontend: node_modules identik dicari, dist baru diperiksa (Maps key
     "chunk halaman Posting Pemakaian Historis tidak ada di dist baru", 'PHASE="4c-aset-lama"', "aset lama (${ASET_LAMA_CONTOH}) tidak lagi terlayani", 'PHASE="4b-rehearsal-frontend"', "rute SPA /warehouse/posting-historis tidak 200", "chunk halaman baru tidak terlayani publik"]) assert.ok(script.includes(k), k);
   assert.ok((script.match(/bangun_frontend "\$/g) || []).length === 2, "dipanggil di rehearsal ($WS) dan rilis ($NEW_DIR)");
   assert.ok(script.indexOf("bangun_frontend() {") < script.indexOf('bangun_frontend "$WS"'), "fungsi didefinisikan sebelum dipakai");
-  for (const t of ["Posting Pemakaian Historis", "Mulai batch", "Hentikan setelah order ini"]) assert.ok(script.includes(`"${t}"`), `teks dist baru: ${t}`);
+  for (const t of ["Pilih hanya yang tampil", "Kosongkan", "Posting Pemakaian Historis", "Mulai batch", "Hentikan setelah order ini"]) assert.ok(script.includes(`"${t}"`), `teks dist baru: ${t}`);
   assert.ok(!script.includes('cp -a "$PREV_DIR/frontend/dist" "$NEW_DIR/frontend/dist"'), "dist TIDAK lagi disalin dari release aktif — dibangun baru");
   assert.ok(script.indexOf('PHASE="4c-aset-lama"') < script.indexOf('PHASE="5-build-image"'), "aset lama dibawa sebelum build image/switch");
 });

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# RILIS "UI POSTING PEMAKAIAN HISTORIS" — BACKEND (3 berkas, hanya rute baca/status baru) + FRONTEND (halaman baru), TANPA MIGRASI, TANPA PERUBAHAN DATA. FAIL-CLOSED. Workflow RELEASE-DIRECTORY di atas release aktif (BASE_SHA = release live saat ini, yang SUDAH memuat evaluasi atomik cf99e746).
+# RILIS "UI POSTING PEMAKAIAN HISTORIS" — BACKEND (1 berkas: status HPP batch) + FRONTEND (halaman), TANPA MIGRASI, TANPA PERUBAHAN DATA. FAIL-CLOSED. Workflow RELEASE-DIRECTORY di atas release aktif (BASE_SHA = release live saat ini; generator dibangkitkan ulang per baseline).
+#   Pemolesan pilot (di atas UI live 1cf94f8b): 'Pilih hanya yang tampil' + 'Kosongkan' (satu order tanpa 209 klik), pratinjau pilihan di-debounce (tanpa badai permintaan), status HPP batch PARSIAL bila order masih punya catatan tertahan.
 #   Isi: halaman Gudang → Kontrol → Posting Pemakaian Historis (manifest + dampak stok/HPP, HPP PARSIAL + selisih belum dijurnal, Mulai dengan konfirmasi + rujukan Owner + pin hash, progres per order, alasan gagal, Hentikan/Lanjutkan; status = milik server, tetap terbaca
 #          setelah pindah tab/refresh/tutup tab) + API baca baru: pratinjau manifest, daftar batch, status batch ringan (tanpa membaca ulang rencana tiap polling).
 #   Tulis (mulai/lanjut/hentikan/jalankan) TIDAK diubah: izin persetujuan penyesuaian stok + gerbang hash rencana tetap di server. Rilis ini TIDAK memposting, TIDAK mengoreksi stok, TIDAK membuat GR historis/jurnal, TIDAK menjalankan batch.

@@ -9,7 +9,7 @@
 //  • KENDALI: hentikanBatch menulis BATCH_HENTI; pekerja berhenti sebelum unit berikutnya. Jurnal HPP tidak pernah dibuat di jalur ini kecuali diminta eksplisit saat mengajukan.
 import crypto from "node:crypto";
 import { KoreksiError } from "./warehouseCorrection.js";
-import { kunciEvaluasiCatatan } from "./catatanPemakaianHistoris.js";
+import { kunciEvaluasiCatatan, terapkanKeadaanEfektif } from "./catatanPemakaianHistoris.js";
 import { rencanakanPosting, postingSatuUnit } from "./postingPemakaianHistoris.js";
 
 export const ENTITAS_BATCH = "posting_historis_batch";
@@ -63,7 +63,9 @@ async function hppBatch(db, s) {
   if (!ids.length) return { nilaiTercatat: 0, trxDinilai: 0, trxTanpaHarga: 0, belumDijurnal: 0, jurnalDibuat: s.jurnalHPP === true, status: s.transaksiTotal ? "BELUM_ADA" : "—" };
   const [r] = await db.$queryRawUnsafe(`select count(*) filter (where v.status = 'DINILAI')::int dinilai, count(*) filter (where v.id is null or v.status <> 'DINILAI')::int tanpa, coalesce(sum(v.value) filter (where v.status = 'DINILAI'),0)::float nilai
     from stock_movements m left join fin_stock_movement_valuations v on v.movement_id = m.id where m.unit_id = any($1::uuid[]) and m.type = 'ISSUE' and m.note like 'Impor pemakaian historis Sep%'`, ids);
-  return { nilaiTercatat: Math.round(r.nilai), trxDinilai: r.dinilai, trxTanpaHarga: r.tanpa, belumDijurnal: s.jurnalHPP === true ? 0 : Math.round(r.nilai), jurnalDibuat: s.jurnalHPP === true, status: r.tanpa > 0 || s.unitGagal > 0 || s.unitSelesai < s.totalUnit ? "PARSIAL" : "LENGKAP" };
+  // PARSIAL juga bila order dalam batch MASIH punya catatan yang belum jadi stok (keadaan EFEKTIF): HPP bahan order itu belum lengkap walau transaksi batch bernilai
+  const sisa = (await terapkanKeadaanEfektif(db, await db.unitUsageNote.findMany({ where: { unitId: { in: s.unit.map((u) => u.unitId) }, origin: "EXCEL", state: "PERLU_DICEK" }, select: { id: true, origin: true, state: true } }))).filter((n) => n.state === "PERLU_DICEK").length;
+  return { nilaiTercatat: Math.round(r.nilai), trxDinilai: r.dinilai, trxTanpaHarga: r.tanpa, catatanTertahan: sisa, belumDijurnal: s.jurnalHPP === true ? 0 : Math.round(r.nilai), jurnalDibuat: s.jurnalHPP === true, status: r.tanpa > 0 || sisa > 0 || s.unitGagal > 0 || s.unitSelesai < s.totalUnit ? "PARSIAL" : "LENGKAP" };
 }
 export async function statusBatch(db, batchId, { hpp = false } = {}) {
   const s = ringkas(batchId, await bacaPeristiwa(db, batchId));

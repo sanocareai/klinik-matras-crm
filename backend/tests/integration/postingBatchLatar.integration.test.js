@@ -162,7 +162,7 @@ test("L9. status batch memuat daftar order + HPP; daftar batch menemukan batch b
   assert.deepEqual(s0.unit.map((u) => u.status), ["MENUNGGU", "MENUNGGU", "MENUNGGU"]); assert.deepEqual(s0.unit.map((u) => u.order), ["RES-03092026-901", "RES-04092026-902", "RES-05092026-903"]); assert.equal(s0.hpp.status, "BELUM_ADA");
   await jalankanBatch(testPrisma, b.batchId); await new Promise((r) => setTimeout(r, 800));
   const s1 = (await w.co.get(`/api/production/posting-historis/batch/${b.batchId}`)).body;
-  assert.deepEqual(s1.unit.map((u) => u.status), ["DIPOSTING", "DIPOSTING", "DIPOSTING"]); assert.equal(s1.hpp.trxDinilai, 3); assert.equal(s1.hpp.nilaiTercatat, 6 * 20000 + 1 * 50000 + 4 * 20000); assert.equal(s1.hpp.belumDijurnal, s1.hpp.nilaiTercatat); assert.equal(s1.hpp.jurnalDibuat, false);
+  assert.deepEqual(s1.unit.map((u) => u.status), ["DIPOSTING", "DIPOSTING", "DIPOSTING"]); assert.equal(s1.hpp.trxDinilai, 3); assert.equal(s1.hpp.status, "PARSIAL", "order uB masih punya catatan tertahan (uB-MX) → HPP PARSIAL walau transaksi batch bernilai"); assert.equal(s1.hpp.catatanTertahan, 1); assert.equal(s1.hpp.nilaiTercatat, 6 * 20000 + 1 * 50000 + 4 * 20000); assert.equal(s1.hpp.belumDijurnal, s1.hpp.nilaiTercatat); assert.equal(s1.hpp.jurnalDibuat, false);
   const polling = []; for (let i = 0; i < 5; i++) { const t = Date.now(); await w.co.get(`/api/production/posting-historis/batch/${b.batchId}`); polling.push(Date.now() - t); }
   assert.ok(Math.max(...polling) < 1500, `polling ringan: ${polling.join(",")} ms`);
   assert.equal((await w.co.get(`/api/production/posting-historis/batch/${"0".repeat(64)}`)).status, 404);
