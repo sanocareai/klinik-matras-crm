@@ -133,10 +133,11 @@ test("L7. API: batch 202 + polling progres sampai selesai; posting SATU order si
   const buruk = await w.co.post(`/api/production/posting-historis/jalankan`, { hashDisetujui: satu.body.hash, rujukan: "OWNER-2026-10-25", unitIds: ["bukan-uuid"] }); assert.equal(buruk.status, 400);
   // batch sisa rencana
   const sisa = await w.co.get(`/api/production/posting-historis/rencana`);
-  const a = await w.co.post(`/api/production/posting-historis/batch`, { hashDisetujui: sisa.body.hash, rujukan: "OWNER-2026-10-25", konfirmasiManifest: konfirmasiPra(await praHttp(w)) }); assert.equal(a.status, 202, JSON.stringify(a.body)); assert.equal(a.body.batchId, sisa.body.hash);
+  const konSisa = konfirmasiPra(await praHttp(w)); const a = await w.co.post(`/api/production/posting-historis/batch`, { hashDisetujui: sisa.body.hash, rujukan: "OWNER-2026-10-25", konfirmasiManifest: konSisa }); assert.equal(a.status, 202, JSON.stringify(a.body)); assert.equal(a.body.batchId, sisa.body.hash);
   let st; for (let i = 0; i < 200; i++) { st = (await w.co.get(`/api/production/posting-historis/batch/${a.body.batchId}`)).body; if (["SELESAI", "SELESAI_SEBAGIAN"].includes(st.status)) break; await new Promise((r) => setTimeout(r, 100)); }
   assert.equal(st.status, "SELESAI", JSON.stringify(st)); assert.equal(st.unitSelesai, 2);
-  const ulang = await w.co.post(`/api/production/posting-historis/batch`, { hashDisetujui: sisa.body.hash, rujukan: "OWNER-2026-10-25", konfirmasiManifest: konfirmasiPra(await praHttp(w)) }); assert.equal(ulang.status, 202); assert.equal(ulang.body.baru, false, "ajukan ulang hash yang sama = batch yang sama");
+  // klik ulang / tab lama membawa konfirmasi yang SAMA dengan yang diajukan (konfirmasi baru dari manifest sesudah batch = dampak berbeda dan ditolak: lihat K6)
+  const ulang = await w.co.post(`/api/production/posting-historis/batch`, { hashDisetujui: sisa.body.hash, rujukan: "OWNER-2026-10-25", konfirmasiManifest: konSisa }); assert.equal(ulang.status, 202); assert.equal(ulang.body.baru, false, "ajukan ulang hash yang sama = batch yang sama");
   await tungguBatch(a.body.batchId); await tungguPenyegaran(); await titikTetap("L7");
   console.log(`   [L7] posting SATU order via API: ${ms} ms`);
 });
