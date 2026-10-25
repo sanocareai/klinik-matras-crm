@@ -224,6 +224,19 @@ export const PERMISSIONS = {
   // memegang FINANCE_ADMIN dan PRODUCTION_SETTINGS_WRITE — "Finance Admin" dan "Production Admin" bukan peran terpisah di sistem ini). Peran biasa hanya MEMBACA/MEMILIH katalog
   // (finance:read di form PKR). SENGAJA bukan production_settings:write: katalog ini dipakai Finance dan Produksi, dan izin pengaturan Produksi tidak boleh jadi pintu belakang.
   PKR_CATALOG_MANAGE: "pkr_catalog:manage",
+
+  // --- Workspace Task & Meeting (D-200, 26 September 2026) ---------------
+  // Aplikasi SANO-HUB (Next.js + database sendiri) berjalan TERPISAH dari
+  // SANSS, tapi identitas & hak akses tetap milik SANSS: siapa yang boleh
+  // dibukakan pintunya diputuskan di sini, lewat SSO (docs/HUB-SSO.md).
+  // DEFAULT DENY — tidak ada role yang memegangnya kecuali disebut eksplisit
+  // di ROLE_PERMISSIONS. Pemetaan awal HANYA ADMIN/OWNER (OWNER mewarisi
+  // ADMIN_PERMS); melebarkan ke role lain = tambah baris di sini + tes, bukan
+  // cek role ad-hoc di route.
+  //   HUB_ACCESS — boleh menerima handoff & masuk workspace (peran HUB: MEMBER)
+  //   HUB_ADMIN  — dipetakan ke peran ADMIN di workspace itu (OWNER SANSS → OWNER)
+  HUB_ACCESS: "hub:access",
+  HUB_ADMIN: "hub:admin",
 };
 
 const P = PERMISSIONS;
@@ -294,6 +307,8 @@ const ADMIN_PERMS = [
   P.DELIVERY_CONTROL_ACCESS,
   // Katalog Item PKR (kategori, produk, pemetaan rute Produksi, komposisi bundel).
   P.PKR_CATALOG_MANAGE,
+  // D-200 — workspace Task & Meeting. Pemetaan awal HANYA ADMIN/OWNER.
+  P.HUB_ACCESS, P.HUB_ADMIN,
 ];
 
 export const ROLE_PERMISSIONS = {
