@@ -308,52 +308,124 @@ async function main() {
     page.off("response", onDiagResp);
   }
 
-  // ═══ 4b. Main Hub: dua leader berbeda + Owner ═══════════════════════════
-  // Part 4 (perubahan arah Main Hub, Okt 2026): dua leader BERBEDA BENTUK
-  // sengaja (lihat staging-seed.mjs) — leaderA punya HUB_ACCESS (ADMIN) dan
-  // benar-benar terhubung ke HUB dengan data nyata; leaderB TIDAK (SALES
-  // saja, seperti kebanyakan leader divisi sungguhan hari ini) — menguji
-  // jalur "connected:false" yang jujur, bukan data karangan. Owner memantau
-  // keduanya lewat Pantauan Leader; leaderA sendiri TIDAK BOLEH melihatnya.
-  console.log("\n== Main Hub: Pantauan Leader (dua leader + Owner) ==");
+  // ═══ 4b. Main Hub: dua leader MEMBER (grant eksplisit) + Owner ══════════
+  // Revisi Okt 2026 (keputusan Owner): leaderA DAN leaderB sekarang SAMA
+  // bentuknya — SALES (satu portal operasional) + HUB_MEMBER (grant
+  // eksplisit per-pengguna, lihat permissions.js), bukan lagi "satu ADMIN
+  // satu tanpa akses". Keduanya benar-benar login ke HUB dengan membership
+  // "MEMBER" (BUKAN "ADMIN" — dibuktikan langsung dari DB, bukan ditebak
+  // dari UI), dan punya task/meeting BERBEDA supaya isolasi scope-sendiri
+  // teruji sungguhan: leaderA tidak boleh pernah melihat judul milik
+  // leaderB di Main Hub-nya, dan sebaliknya.
+  //
+  // CATATAN JUJUR (keputusan eksplisit, bukan terlewat): HUB sendiri TIDAK
+  // PUNYA kontrol akses per-task/per-project sama sekali — SIAPA PUN anggota
+  // workspace (MEMBER/ADMIN/OWNER) bisa melihat DAN MENGUBAH task/meeting
+  // siapa pun begitu mereka benar-benar masuk ke HUB (desain asli HUB sejak
+  // awal, bukan sesuatu yang diubah di sini — lihat docs/HUB-SSO.md "Main
+  // Hub — onboarding leader"). Bagian ini TIDAK menguji "mutasi task pihak
+  // lain ditolak di dalam HUB" karena itu TIDAK BENAR hari ini dan
+  // membangunnya adalah proyek terpisah yang jauh lebih besar (keputusan
+  // Owner: dokumentasikan, jangan bangun sekarang). Yang DIUJI di sini
+  // adalah batas yang SUNGGUHAN ada: ringkasan Main Hub SANSS sendiri
+  // ("Tugas Saya"/"Hasil Meeting") hanya PERNAH menampilkan data milik
+  // pemiliknya — dikunci oleh identitas sesi, tidak menerima parameter id
+  // dari browser sama sekali, jadi tidak ada "ID" untuk dimanipulasi di
+  // lapisan itu.
+  console.log("\n== Main Hub: dua leader MEMBER (grant eksplisit) + Owner ==");
   try {
-    const ctxLeaderA = await browser.newContext({ ignoreHTTPSErrors: true });
-    const pageLeaderA = await loginViaUI(ctxLeaderA, seed.leaderA.email, seed.password);
+    // ── Routing: non-leader satu-portal TETAP auto-skip (regresi, bukan diubah) ──
+    const ctxPlainSales = await browser.newContext({ ignoreHTTPSErrors: true });
+    const pagePlainSales = await loginViaUI(ctxPlainSales, seed.sales.email, seed.password);
+    await pagePlainSales.goto(`${A.PUBLIC}/portal`, { waitUntil: "load" });
+    await pagePlainSales.waitForTimeout(1500);
+    check(pagePlainSales.url() !== `${A.PUBLIC}/portal`, "12. Non-leader (SALES biasa, tanpa HUB_MEMBER) satu-portal -> TETAP auto-skip, tidak mendarat di /portal", pagePlainSales.url());
+    await pagePlainSales.close();
+    await ctxPlainSales.close();
+
+    // ── Login leaderA & leaderB (keduanya SALES+HUB_MEMBER) ──────────────
+    async function loginLeader(email) {
+      const ctx = await browser.newContext({ ignoreHTTPSErrors: true });
+      const p = await loginViaUI(ctx, email, seed.password);
+      await p.goto(`${A.PUBLIC}/portal`, { waitUntil: "load" });
+      const hubCard = p.locator('text="Task & Meeting"').first();
+      const cardSeen = await hubCard.waitFor({ state: "visible", timeout: 10000 }).then(() => true).catch(() => false);
+      if (cardSeen) await Promise.all([p.waitForURL(`${A.PUBLIC}/workspace/meetings`, { timeout: 20000 }).catch(() => {}), hubCard.click()]);
+      return { ctx, page: p, landedInHub: p.url() === `${A.PUBLIC}/workspace/meetings` };
+    }
+    const leaderALogin = await loginLeader(seed.leaderA.email);
+    const pageLeaderA = leaderALogin.page;
+    check(leaderALogin.landedInHub, "12. leaderA (SALES+HUB_MEMBER) login -> identitas HUB dibuat (JIT)", pageLeaderA.url());
+    const leaderBLogin = await loginLeader(seed.leaderB.email);
+    const pageLeaderB = leaderBLogin.page;
+    check(leaderBLogin.landedInHub, "12. leaderB (SALES+HUB_MEMBER) login -> identitas HUB dibuat (JIT)", pageLeaderB.url());
+
+    // ── Routing: leader satu-portal TIDAK auto-skip, Main Hub-nya tampil ──
     await pageLeaderA.goto(`${A.PUBLIC}/portal`, { waitUntil: "load" });
-    const hubCardLeaderA = pageLeaderA.locator('text="Task & Meeting"').first();
-    const leaderACardSeen = await hubCardLeaderA.waitFor({ state: "visible", timeout: 10000 }).then(() => true).catch(() => false);
-    if (leaderACardSeen) await Promise.all([pageLeaderA.waitForURL(`${A.PUBLIC}/workspace/meetings`, { timeout: 20000 }).catch(() => {}), hubCardLeaderA.click()]);
-    check(pageLeaderA.url() === `${A.PUBLIC}/workspace/meetings`, "12. leaderA (ADMIN) login -> identitas HUB dibuat (JIT)", pageLeaderA.url());
+    await pageLeaderA.waitForTimeout(1000);
+    check(pageLeaderA.url() === `${A.PUBLIC}/portal`, "12. ROUTING: leaderA satu-portal-operasional TETAP mendarat di /portal (TIDAK auto-skip) karena HUB_ACCESS", pageLeaderA.url());
+    const leaderATugasSayaVisible = await pageLeaderA.locator('text="Tugas Saya"').count();
+    check(leaderATugasSayaVisible > 0, "12. ROUTING: widget Main Hub ('Tugas Saya') benar-benar tampil untuk leaderA satu-portal");
 
-    // Dua tugas NYATA (leaderA + Owner), lewat skrip di REPO HUB itu sendiri
-    // (bukan import("@prisma/client") lintas-repo dari sini — resolusi modul
-    // Node berdasar lokasi file yang mengimpor, bukan cwd, jadi itu akan
-    // menunjuk ke client PRISMA REPO YANG SALAH; lihat seed-leader-tasks.mjs
-    // untuk penjelasan lengkap). Jalur UI pembuatan task sendiri sudah
-    // dibuktikan di bagian 4 — ini cuma data fixture, cepat dan deterministik.
-    const leaderSeed = parseResult(sh("node", ["scripts/stage5-rehearsal/seed-leader-tasks.mjs", A.HUB_DB, A.HUB_WORKSPACE_ID, seed.leaderA.id, seed.owner.id], HUB_DIR));
-    check(leaderSeed?.ok === true, "12. identitas HUB leaderA ditemukan + tugas fixture dibuat (JIT provisioning nyata)", JSON.stringify(leaderSeed));
+    // Dua tugas + dua meeting NYATA, BERBEDA per leader, lewat skrip di REPO
+    // HUB itu sendiri (bukan import("@prisma/client") lintas-repo — lihat
+    // seed-leader-tasks.mjs untuk penjelasan lengkap kenapa).
+    const leaderSeed = parseResult(sh("node", ["scripts/stage5-rehearsal/seed-leader-tasks.mjs", A.HUB_DB, A.HUB_WORKSPACE_ID, seed.leaderA.id, seed.leaderB.id, seed.owner.id], HUB_DIR));
+    check(leaderSeed?.ok === true, "12. identitas HUB leaderA+leaderB ditemukan + tugas/meeting fixture dibuat (JIT provisioning nyata)", JSON.stringify(leaderSeed));
     const ownerTaskTitle = leaderSeed?.ownerTaskTitle ?? null;
+    check(leaderSeed?.leaderA?.membershipRole === "MEMBER", "12. MEMBERSHIP: leaderA punya WorkspaceMember.role = MEMBER di HUB (BUKAN ADMIN) — scope terbatas sesuai arahan Owner", JSON.stringify(leaderSeed?.leaderA));
+    check(leaderSeed?.leaderB?.membershipRole === "MEMBER", "12. MEMBERSHIP: leaderB punya WorkspaceMember.role = MEMBER di HUB (BUKAN ADMIN)", JSON.stringify(leaderSeed?.leaderB));
 
-    // leaderA sendiri: "Tugas Saya" menampilkan tugas MILIKNYA SENDIRI.
+    // ── Scope sendiri + isolasi lintas-leader (DOM dan body API langsung) ──
+    async function ownSummaryBody(p) {
+      return p.evaluate(async () => {
+        const token = localStorage.getItem("token");
+        const r = await fetch("/api/hub/summary/me", { headers: { authorization: `Bearer ${token}` }, cache: "no-store" });
+        return { status: r.status, body: await r.json().catch(() => null) };
+      });
+    }
     await pageLeaderA.goto(`${A.PUBLIC}/portal`, { waitUntil: "load" });
     await pageLeaderA.waitForTimeout(1500);
-    const ownTaskVisible = await pageLeaderA.locator('text="Tugas Leader A (terlambat)"').count();
-    check(ownTaskVisible > 0, "12. leaderA: 'Tugas Saya' Main Hub menampilkan tugas miliknya sendiri (scope sendiri)");
+    const leaderAOwnTaskVisible = await pageLeaderA.locator(`text="${leaderSeed?.leaderA?.taskTitle}"`).count();
+    check(leaderAOwnTaskVisible > 0, "12. leaderA: 'Tugas Saya' menampilkan tugas MILIKNYA SENDIRI", leaderSeed?.leaderA?.taskTitle);
+    const leaderASeesBTask = await pageLeaderA.locator(`text="${leaderSeed?.leaderB?.taskTitle}"`).count();
+    const leaderASeesBMeeting = await pageLeaderA.locator(`text="${leaderSeed?.leaderB?.meetingTitle}"`).count();
+    check(leaderASeesBTask === 0 && leaderASeesBMeeting === 0, "12. ISOLASI: leaderA TIDAK PERNAH melihat tugas/meeting milik leaderB di Main Hub-nya (DOM)");
+    const leaderAApiBody = await ownSummaryBody(pageLeaderA);
+    const leaderAApiStr = JSON.stringify(leaderAApiBody);
+    check(leaderAApiBody.status === 200 && !leaderAApiStr.includes(leaderSeed?.leaderB?.taskTitle) && !leaderAApiStr.includes(leaderSeed?.leaderB?.meetingTitle), "12. ISOLASI: GET /hub/summary/me milik leaderA tidak memuat judul milik leaderB (body API langsung, bukan cuma DOM)", leaderAApiStr.slice(0, 300));
 
-    // leaderA BUKAN Owner -> kartu "Pantauan Leader" tidak boleh tampil sama sekali.
+    await pageLeaderB.goto(`${A.PUBLIC}/portal`, { waitUntil: "load" });
+    await pageLeaderB.waitForTimeout(1500);
+    const leaderBOwnTaskVisible = await pageLeaderB.locator(`text="${leaderSeed?.leaderB?.taskTitle}"`).count();
+    check(leaderBOwnTaskVisible > 0, "12. leaderB: 'Tugas Saya' menampilkan tugas MILIKNYA SENDIRI", leaderSeed?.leaderB?.taskTitle);
+    const leaderBSeesATask = await pageLeaderB.locator(`text="${leaderSeed?.leaderA?.taskTitle}"`).count();
+    const leaderBSeesAMeeting = await pageLeaderB.locator(`text="${leaderSeed?.leaderA?.meetingTitle}"`).count();
+    check(leaderBSeesATask === 0 && leaderBSeesAMeeting === 0, "12. ISOLASI: leaderB TIDAK PERNAH melihat tugas/meeting milik leaderA di Main Hub-nya (DOM)");
+    const leaderBApiBody = await ownSummaryBody(pageLeaderB);
+    const leaderBApiStr = JSON.stringify(leaderBApiBody);
+    check(leaderBApiBody.status === 200 && !leaderBApiStr.includes(leaderSeed?.leaderA?.taskTitle) && !leaderBApiStr.includes(leaderSeed?.leaderA?.meetingTitle), "12. ISOLASI: GET /hub/summary/me milik leaderB tidak memuat judul milik leaderA (body API langsung)", leaderBApiStr.slice(0, 300));
+
+    // leaderA/leaderB: kartu "Pantauan Leader" tidak boleh tampil (keduanya MEMBER, bukan Owner).
     const pantauanForLeaderA = await pageLeaderA.locator('text="Pantauan Leader"').count();
-    check(pantauanForLeaderA === 0, "12. leaderA (bukan Owner): kartu 'Pantauan Leader' TIDAK tampil (bukan error, memang tersembunyi)");
+    check(pantauanForLeaderA === 0, "12. leaderA (MEMBER, bukan Owner): kartu 'Pantauan Leader' TIDAK tampil");
+    const pantauanForLeaderB = await pageLeaderB.locator('text="Pantauan Leader"').count();
+    check(pantauanForLeaderB === 0, "12. leaderB (MEMBER, bukan Owner): kartu 'Pantauan Leader' TIDAK tampil");
 
-    // MANIPULASI: leaderA memanggil endpoint leaders langsung dari browser -> 403, tidak membocorkan data leader lain.
-    const leaderAManipulate = await pageLeaderA.evaluate(async () => {
-      const token = localStorage.getItem("token");
-      const r = await fetch("/api/hub/summary/leaders", { headers: { authorization: `Bearer ${token}` } });
-      return { status: r.status, body: await r.json().catch(() => null) };
-    });
+    // MANIPULASI: KEDUA leader memanggil endpoint leaders langsung -> 403, tidak membocorkan data leader lain.
+    async function leadersManipulate(p) {
+      return p.evaluate(async () => {
+        const token = localStorage.getItem("token");
+        const r = await fetch("/api/hub/summary/leaders", { headers: { authorization: `Bearer ${token}` } });
+        return { status: r.status, body: await r.json().catch(() => null) };
+      });
+    }
+    const leaderAManipulate = await leadersManipulate(pageLeaderA);
     check(leaderAManipulate.status === 403, "12. MANIPULASI: leaderA memanggil /hub/summary/leaders langsung dari browser -> 403", JSON.stringify(leaderAManipulate).slice(0, 200));
+    const leaderBManipulate = await leadersManipulate(pageLeaderB);
+    check(leaderBManipulate.status === 403, "12. MANIPULASI: leaderB memanggil /hub/summary/leaders langsung dari browser -> 403", JSON.stringify(leaderBManipulate).slice(0, 200));
 
-    // Owner: Pantauan Leader menampilkan KEDUA leader — leaderA dgn data nyata, leaderB jujur "Belum terhubung".
+    // Owner: Pantauan Leader menampilkan KEDUA leader dengan DATA NYATA BERBEDA (keduanya sekarang punya HUB_ACCESS).
     await page.goto(`${A.PUBLIC}/portal`, { waitUntil: "load" });
     await page.waitForTimeout(1500);
     const pantauanOwnerVisible = await page.locator('text="Pantauan Leader"').count();
@@ -361,8 +433,9 @@ async function main() {
     const leaderANameVisible = await page.locator('text="Leader Produksi Staging S5"').count();
     const leaderBNameVisible = await page.locator('text="Leader Gudang Staging S5"').count();
     check(leaderANameVisible > 0 && leaderBNameVisible > 0, "12. Owner: Pantauan Leader menampilkan KEDUA leader (leaderA dan leaderB)");
-    const belumTerhubungVisible = await page.locator('text="Belum terhubung"').count();
-    check(belumTerhubungVisible > 0, "12. Owner: leaderB (tanpa HUB_ACCESS) ditampilkan jujur 'Belum terhubung', BUKAN data karangan");
+    const ownerSeesLeaderATask = await page.locator(`text="${leaderSeed?.leaderA?.taskTitle}"`).count();
+    const ownerSeesLeaderBTask = await page.locator(`text="${leaderSeed?.leaderB?.taskTitle}"`).count();
+    check(ownerSeesLeaderATask > 0 && ownerSeesLeaderBTask > 0, "12. Owner: Pantauan Leader menampilkan tugas NYATA BERBEDA milik leaderA dan leaderB (keduanya terhubung, bukan 'Belum terhubung')");
 
     // MANIPULASI divisi: ?division= hanya MEMPERSEMPIT, tidak pernah memperluas.
     const divisionNarrow = await page.evaluate(async () => {
@@ -384,14 +457,25 @@ async function main() {
     check(divisionGarbage.status === 200 && Array.isArray(divisionGarbage.body?.leaders), "12. MANIPULASI: ?division= nilai sampah/liar -> 200 wajar (diabaikan, bukan 500/leak)", JSON.stringify(divisionGarbage).slice(0, 150));
 
     // Deep link: klik tugas leaderA di Main Hub Owner -> mendarat tepat di task itu di HUB, TANPA login ulang.
-    const leaderATaskRow = page.locator('text="Tugas Leader A (terlambat)"').first();
+    const leaderATaskRow = page.locator(`text="${leaderSeed?.leaderA?.taskTitle}"`).first();
     const deepLinkVisible = await leaderATaskRow.count();
     if (deepLinkVisible > 0) {
       await Promise.all([page.waitForURL(/\/workspace\/projects\/.+\/board\?task=/, { timeout: 15000 }).catch(() => {}), leaderATaskRow.click()]);
       await page.waitForTimeout(1000);
       check(/\/workspace\/projects\/.+\/board\?task=/.test(page.url()), "12. DEEP LINK: klik tugas leaderA di Pantauan Leader -> mendarat di task itu di HUB TANPA login ulang", page.url());
-      const taskPanelVisible = await page.locator('text="Tugas Leader A (terlambat)"').count();
+      const taskPanelVisible = await page.locator(`text="${leaderSeed?.leaderA?.taskTitle}"`).count();
       check(taskPanelVisible > 0, "12. DEEP LINK: panel task yang benar terbuka di HUB (judul sama terlihat)");
+      // SENGAJA TIDAK diuji di sini: "task leaderB tidak muncul di halaman
+      // board ini sama sekali". leaderA dan leaderB berbagi SATU project
+      // ("Pantauan Leader S5") supaya fixture-nya sederhana — board HUB
+      // menampilkan SEMUA kartu di project itu untuk SIAPA PUN anggota
+      // workspace, sesuai desain HUB sendiri (lihat "Main Hub — onboarding
+      // leader" di docs/HUB-SSO.md: batas yang didokumentasikan, bukan
+      // dibangun, atas keputusan Owner). Sempat ditambahkan sebagai
+      // assertion di sini, lalu GAGAL (bukan bug — board memang menampilkan
+      // kartu leaderB di sana) dan dihapus, bukan "diperbaiki" dengan
+      // menyembunyikan data di HUB. Batas yang NYATA dan SUDAH diuji di
+      // atas: ringkasan Main Hub SANSS sendiri (ISOLASI, dua uji di atas).
     } else {
       check(false, "12. DEEP LINK: baris tugas leaderA tidak ditemukan di Pantauan Leader untuk diklik");
     }
@@ -443,7 +527,9 @@ async function main() {
     }
 
     await pageLeaderA.close();
-    await ctxLeaderA.close();
+    await leaderALogin.ctx.close();
+    await pageLeaderB.close();
+    await leaderBLogin.ctx.close();
   } catch (e) {
     const shotPath = path.join(os.tmpdir(), "sso-rehearsal-mainhub-leaders-fail.png");
     await page.screenshot({ path: shotPath, fullPage: true }).catch(() => {});

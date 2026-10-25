@@ -166,6 +166,62 @@ satu lagi "siapa boleh masuk HUB"). Seorang leader tanpa `HUB_ACCESS` tetap
 muncul di Pantauan Leader, berlabel jujur **"Belum terhubung"** (bukan data
 karangan), karena HUB tidak pernah punya identitasnya sama sekali.
 
+### Main Hub — onboarding leader (`HUB_MEMBER`, Okt 2026)
+
+Keputusan Owner (revisi kedua): leader boleh memakai Main Hub (Tugas Saya/
+Hasil Meeting) walau hanya punya SATU portal operasional, TANPA diberi akses
+ADMIN — lewat role BARU, `HUB_MEMBER`, satu-satunya permission di
+dalamnya `P.HUB_ACCESS` (lihat `constants/permissions.js`). `hubRoleFor`
+memetakannya ke peran HUB **"MEMBER"** (lihat tabel di atas: "punya
+HUB_ACCESS saja → MEMBER"), BUKAN "ADMIN".
+
+**Cara memberi akses seorang leader** (Admin/Owner, lewat Pengguna & Peran —
+`POST /users/:id/roles { role: "HUB_MEMBER" }`, sama pola dengan
+`LEADER_DRIVER`/`PRODUCTION_DOCUMENTER`): tambahkan role `HUB_MEMBER` ke
+akun orang itu, SELAIN role operasionalnya yang sudah ada (SALES,
+PRODUCTION_LEAD, dst — role aditif, D-010). Dua langkah **sengaja terpisah**
+dan TIDAK ADA jalan pintas yang menyatukannya:
+
+1. **`HUB_MEMBER`** (role) → boleh masuk HUB sama sekali, Main Hub
+   menampilkan "Tugas Saya"/"Hasil Meeting" miliknya.
+2. **`UserDivision.isLeader=true`** (C2.1, lewat Pengguna & Divisi) → MUNCUL
+   di Pantauan Leader Owner, kalau Owner juga punya `HUB_LEADER_MONITOR`.
+
+Seseorang bisa punya SALAH SATU tanpa yang lain (biasa dan sah): staf dengan
+`HUB_MEMBER` tapi bukan `isLeader` punya Main Hub pribadi, TIDAK pernah
+tampil di Pantauan Leader siapa pun. Leader dengan `isLeader=true` tapi
+TANPA `HUB_MEMBER` tampil "Belum terhubung" di Pantauan Leader Owner —
+belum punya akses HUB sama sekali. **Tidak ada pemberian otomatis**: jangan
+beri `HUB_MEMBER` ke seluruh role SALES atau ke seluruh baris
+`isLeader=true` sekaligus — berikan satu per satu, ke orang yang memang
+perlu.
+
+**Routing (kenapa tidak perlu ubah logika auto-skip Portal.jsx):** landing
+page SANSS melompati layar pemilih workspace untuk akun yang cuma punya
+SATU portal (PRD §4) — sebelum `HUB_MEMBER` ada, seorang leader dengan satu
+role operasional dan tanpa HUB_ACCESS APA PUN benar-benar hanya punya satu
+portal, jadi tidak pernah melihat Main Hub. Begitu `HUB_MEMBER` diberikan,
+`portalsWithHub(user)` (dipakai `/auth/me`) MENAMBAHKAN kartu "Task &
+Meeting" ke daftar portal orang itu — jadi daftarnya otomatis berisi DUA
+entri (portal operasional + hub), auto-skip (yang mengecek `portals.length
+=== 1`) tidak pernah terpicu, dan Portal.jsx (beserta widget Main Hub-nya)
+tampil seperti biasa. Tidak ada perubahan kode routing yang diperlukan —
+diverifikasi langsung lewat rehearsal (leader satu-portal mendarat di
+`/portal`, non-leader satu-portal tetap auto-skip seperti sebelumnya).
+
+**Batas yang JUJUR, bukan terlewat:** `HUB_MEMBER` membatasi apa yang
+TERLIHAT DARI MAIN HUB SANSS (ringkasan milik sendiri saja, tanpa Pantauan
+Leader). Begitu seorang `HUB_MEMBER` benar-benar MASUK ke HUB itu sendiri
+(klik kartu "Task & Meeting", bukan cuma lihat Main Hub), ia tunduk pada
+model otorisasi HUB SENDIRI — **workspace flat, tanpa kontrol akses per-
+task/per-project apa pun**: siapa pun anggota workspace (MEMBER/ADMIN/
+OWNER) bisa melihat DAN MENGUBAH task/meeting siapa pun di workspace yang
+sama. Ini desain ASLI HUB sejak sebelum Main Hub ada — `HUB_MEMBER` TIDAK
+mengubahnya, dan membangun kontrol akses per-task/per-project di dalam HUB
+adalah keputusan terpisah yang jauh lebih besar (bukan bagian dari
+perubahan ini — keputusan Owner eksplisit: dokumentasikan batas ini, jangan
+bangun sekarang).
+
 ## Endpoint
 
 Semua respons `Cache-Control: no-store`.
@@ -363,6 +419,7 @@ kait nonaktifkan-pengguna/cabut-peran yang memanggil revoke. `/auth/login`,
 5. Smoke test dengan flag **tetap mati** dulu: `/api/hub/*` masih 404, `/api/auth/login` & `/api/auth/logout` masih berfungsi normal, kartu portal masih tersembunyi, `/workspace` HUB sendiri 404 (bukan loop redirect).
 6. Set `HUB_SSO_ENABLED=true` **hanya setelah** sisi HUB (`SANSS_SSO_ENABLED`) juga siap dinyalakan — salah satu mati saja sudah membuat alurnya menolak bersih di sisi manapun yang mati.
 7. **Main Hub (Tugas Saya/Pantauan Leader)** ikut flag yang sama, tanpa flag terpisah — begitu `HUB_SSO_ENABLED`+`SANSS_SSO_ENABLED` menyala, `/api/hub/summary/*` otomatis aktif untuk siapa pun yang sudah punya `HUB_ACCESS` (ringkasan milik sendiri). "Pantauan Leader" TETAP kosong untuk semua orang kecuali Owner secara eksplisit diberi `HUB_LEADER_MONITOR` di `ROLE_PERMISSIONS` (default saat ini: Owner-only, bukan per-user toggle) — dan tetap kosong-jujur sampai Admin/Owner menetapkan `UserDivision.isLeader=true` untuk leader yang dimaksud lewat Pengguna & Divisi; tidak ada data yang tampil tanpa penetapan eksplisit itu.
+7a. **Migrasi `HUB_MEMBER`** (enum `Role`, aditif murni — lihat "Main Hub — onboarding leader" di atas) jalan sebagai bagian dari langkah 2, kapan saja, tanpa dampak sampai role itu benar-benar diberikan ke seseorang. Tidak ada pengguna yang mendapat `HUB_MEMBER` otomatis — Admin/Owner memberikannya satu per satu lewat Pengguna & Peran, kapan pun siap (tidak terikat urutan rollout ini).
 8. **Rollback:** `HUB_SSO_ENABLED=false` (semua endpoint `/api/hub/*`, termasuk `/api/hub/summary/*`, 404 seketika; kartu portal dan widget Main Hub langsung hilang dari respons login/`/me`/Portal.jsx berikutnya). Tabel/kolom
    aditif dan aman ditinggal; kode yang belum terpakai kedaluwarsa sendiri dalam 60 detik; `/api/auth/logout` tetap 200 (berhenti memanggil HUB).
 

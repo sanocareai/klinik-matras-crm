@@ -29,16 +29,20 @@ const adminActor = await mkUser("Admin Aktor Staging S5", "admin-actor-staging-s
 const adminTarget = await mkUser("Admin Target Staging S5", "admin-target-staging-s5@example.test", ["ADMIN"]);
 const sales = await mkUser("Sales Staging S5", "sales-staging-s5@example.test", ["SALES"]);
 
-// Main Hub — Pantauan Leader (Okt 2026). DUA leader dengan bentuk BERBEDA
-// sengaja, supaya rehearsal menguji kedua jalur nyata sekaligus:
-//   leaderA — ADMIN (punya HUB_ACCESS) -> akan benar-benar login ke HUB dan
-//             punya data nyata -> jalur "connected:true" dengan tugas asli.
-//   leaderB — SALES saja (TIDAK punya HUB_ACCESS, seperti kebanyakan leader
-//             divisi sungguhan saat ini) -> tidak pernah terhubung ke HUB ->
-//             jalur jujur "connected:false", bukan dikarang datanya.
-// Ditandai isLeader via UserDivision di bawah (C2.1) — BUKAN lewat role.
-const leaderA = await mkUser("Leader Produksi Staging S5", "leader-a-staging-s5@example.test", ["ADMIN"]);
-const leaderB = await mkUser("Leader Gudang Staging S5", "leader-b-staging-s5@example.test", ["SALES"]);
+// Main Hub — Pantauan Leader (Okt 2026, revisi grant eksplisit). DUA leader,
+// KEDUANYA sekarang punya HUB_ACCESS lewat role HUB_MEMBER (grant eksplisit
+// per-pengguna, BUKAN diwariskan dari role operasional atau dari
+// UserDivision.isLeader) — jadi KEDUANYA punya membership HUB "MEMBER"
+// (bukan "ADMIN"), dan KEDUANYA cuma punya SATU portal operasional (SALES ->
+// hanya "growth") supaya rehearsal bisa membuktikan leader satu-portal tetap
+// masuk Main Hub (bukan auto-skip). Data task/meeting masing-masing dibuat
+// BERBEDA di seed-leader-tasks.mjs (repo HUB) supaya isolasi "melihat data
+// sendiri" teruji sungguhan, bukan cuma satu orang terhubung satu tidak.
+// Ditandai isLeader via UserDivision di bawah (C2.1) — BUKAN lewat role, dan
+// SEPENUHNYA TERPISAH dari pemberian HUB_MEMBER (menjadi leader divisi tidak
+// otomatis memberi akses HUB, dan sebaliknya).
+const leaderA = await mkUser("Leader Produksi Staging S5", "leader-a-staging-s5@example.test", ["SALES", "HUB_MEMBER"]);
+const leaderB = await mkUser("Leader Gudang Staging S5", "leader-b-staging-s5@example.test", ["SALES", "HUB_MEMBER"]);
 for (const [user, division] of [[leaderA, "PRODUCTION"], [leaderB, "WAREHOUSE"]]) {
   await prisma.userDivision.upsert({
     where: { userId_division: { userId: user.id, division } },
