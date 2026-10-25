@@ -8,7 +8,7 @@ import { lockRowForUpdate } from "../inventoryLedger.js";
 import { KoreksiError } from "../warehouseCorrection.js";
 import { dasarHargaRataRata } from "./posting/inventory.js";
 import { JENIS_BIAYA } from "./biayaBahan.js";
-import { hargaResmi } from "./nilaiResmi.js";
+import { hitungResmi } from "./nilaiResmi.js";
 
 const alasanWajib = (a) => { const t = String(a ?? "").trim(); if (t.length < 5 || t.length > 500) throw new KoreksiError("Alasan koreksi harga wajib diisi (5–500 karakter)", 400, "ALASAN_WAJIB"); return t; };
 const kunciValid = (k) => { const t = String(k ?? ""); if (t.length < 8 || t.length > 120) throw new KoreksiError("Idempotency-Key wajib (8–120 karakter)", 428, "IDEMPOTENCY_KEY_REQUIRED"); return t; };
@@ -40,7 +40,8 @@ export async function koreksiValuasiPergerakan(prisma, { movementId, hargaBaru, 
       if (!mv) throw new KoreksiError("Pergerakan stok tidak ditemukan", 404, "PERGERAKAN_TIDAK_ADA");
       if (!mv.unitId || !JENIS_BIAYA[mv.type]) throw new KoreksiError("Hanya pergerakan bertaut unit (pemakaian/retur/susut) yang punya valuasi untuk dikoreksi", 409, "BUKAN_PERGERAKAN_BERNILAI");
       // SATU sumber nilai: bila sumber resmi (Persediaan Awal / GR berharga) memberi harga untuk pergerakan ini, harga ketikan manual DITOLAK — nilai ditetapkan lewat penetapan nilai resmi (Stok → Bahan tanpa harga).
-      const resmi = await hargaResmi(tx, mv.materialId, mv.createdAt);
+      const { hasil: resmi, gap } = await hitungResmi(tx, mv.materialId, mv.createdAt);
+      if (!resmi && ["TANPA_LAPISAN_BASELINE", "SALDO_30SEP_NEGATIF", "PSA_QTY_BEDA"].includes(gap)) throw new KoreksiError("Pergerakan ini GAP stok (tidak punya lapisan baseline, pemakaian melebihi baseline, atau kuantitas Persediaan Awal tidak sama dengan saldo 30 Sep). Harga rekaan tidak diizinkan — selesaikan stok/Persediaan Awal dulu.", 409, "GAP_STOK_PERLU_DIJELASKAN");
       if (resmi) throw new KoreksiError("Pergerakan ini punya sumber nilai resmi (Persediaan Awal / GR berharga). Harga manual tidak boleh menjadi sumber kedua — gunakan Stok → Bahan tanpa harga (penetapan nilai resmi).", 409, "SUMBER_RESMI_ADA");
       const sebelumEfektif = await valuasiEfektif(tx, movementId);
       let sebelum = sebelumEfektif;

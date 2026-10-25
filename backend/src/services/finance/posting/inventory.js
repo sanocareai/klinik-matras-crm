@@ -65,16 +65,18 @@ export async function hargaRataRata(tx, materialId, { asOf } = {}) {
  *   { harga: Decimal|null, totalQty, totalNilai, sumber: [{ receiptMovementId, goodsReceiptId, qty, unitCost }], opening: {qty, unitCost}|null, asOf }
  * Kuantitas dikalikan harga secara EKSAK (qty hingga 4 desimal sesuai ledger) — sebelumnya toMoney(qty) membulatkan qty ke 2 desimal lebih dulu.
  */
-export async function dasarHargaRataRata(tx, materialId, { asOf } = {}) {
+export async function dasarHargaRataRata(tx, materialId, { asOf, pembukaOverride = null } = {}) {
   // B3.6 — mulai cutover perpetual (setelah persediaan awal diposting) basis harga = baris stok opname material itu +
   // penerimaan SEJAK cutover. Penerimaan sebelum cutover sudah tercakup nilai stok opname, jadi tidak ikut dirata-rata.
   const k = await ambilKebijakanPersediaan(tx);
   const mulai = k.cutover ? awalCutover(k.cutover) : null;
   const aktif = mulai && (!asOf || asOf >= mulai) ? await pembukaAktif(tx, k.cutover) : null;
+  // C1 (nilai resmi bahan): PSA BELUM diposting tetapi sudah resmi (kuantitas = saldo 30 Sep) → lapisan pembuka yang SAMA dengan jalur jurnal (kuantitas baris PSA + penerimaan sejak cutover). Hanya bila diminta; perilaku jurnal bawaan tidak berubah.
+  const pakaiOverride = !aktif && !!pembukaOverride && !!mulai && (!asOf || asOf >= mulai);
   const receipts = await tx.stockMovement.findMany({
     where: {
       materialId, type: "RECEIPT", unitCost: { not: null },
-      ...((asOf || aktif) && { createdAt: { ...(asOf && { lte: asOf }), ...(aktif && { gte: mulai }) } }),
+      ...((asOf || aktif || pakaiOverride) && { createdAt: { ...(asOf && { lte: asOf }), ...((aktif || pakaiOverride) && { gte: mulai }) } }),
     },
     select: { id: true, qty: true, unitCost: true, unitCostExact: true, goodsReceiptId: true },
     orderBy: [{ createdAt: "asc" }, { id: "asc" }],
@@ -118,6 +120,8 @@ export async function dasarHargaRataRata(tx, materialId, { asOf } = {}) {
   if (aktif) {
     const awal = await tx.finInventoryOpeningLine.findUnique({ where: { openingId_materialId: { openingId: aktif.id, materialId } }, select: { qty: true, unitCost: true } });
     if (awal) { opening = { qty: awal.qty, unitCost: awal.unitCost }; receipts.push({ id: null, qty: awal.qty, unitCost: awal.unitCost, goodsReceiptId: null }); }
+  } else if (pakaiOverride) {
+    opening = { qty: pembukaOverride.qty, unitCost: pembukaOverride.unitCost }; receipts.push({ id: null, qty: pembukaOverride.qty, unitCost: pembukaOverride.unitCost, goodsReceiptId: null });
   }
   const berharga = receipts.filter((r) => Number(r.qty) > 0 && Number(r.unitCost) > 0);
   const kosong = { harga: null, totalQty: ZERO, totalNilai: ZERO, sumber: [], opening: null, asOf: asOf ?? null };

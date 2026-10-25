@@ -169,10 +169,14 @@ test("V1. koreksi HARGA manual hanya untuk pergerakan TANPA sumber nilai resmi; 
   const asli = await testPrisma.finStockMovementValuation.findUnique({ where: { movementId: mv0.id } }); assert.equal(Number(asli.value), 75000);
   await assert.rejects(() => koreksiValuasiPergerakan(testPrisma, { movementId: mv0.id, hargaBaru: 30000, alasan: "Harga kain sebenarnya Rp30.000/m", kunci: kunciUji("v0"), aktor: w.B }), (e) => e.code === "SUMBER_RESMI_ADA" && e.statusCode === 409);
   assert.equal(await testPrisma.finStockMovementValuationCorrection.count(), 0, "ditolak: tidak ada sumber nilai kedua");
-  // bahan TANPA penerimaan berharga → tidak ada sumber resmi → koreksi manual boleh (jalur lama utuh)
+  // GAP struktural (September, tanpa lapisan baseline): harga rekaan TIDAK diizinkan
+  const gapBahan = await createTestMaterial({ code: "V1-GAP-SEP", name: "BAHAN GAP SEP", unit: "METER" });
+  const mvGap = await testPrisma.stockMovement.create({ data: { materialId: gapBahan.id, type: "ISSUE", qty: -1, unitId: w.u2.id, note: "pemakaian September tanpa baseline", createdAt: WIB("2026-09-10") } });
+  await assert.rejects(() => koreksiValuasiPergerakan(testPrisma, { movementId: mvGap.id, hargaBaru: 1000, alasan: "harga rekaan untuk gap", kunci: kunciUji("gap"), aktor: w.B }), (e) => e.code === "GAP_STOK_PERLU_DIJELASKAN");
+  // bahan TANPA penerimaan berharga dan TANPA Persediaan Awal resmi (pemakaian Oktober) → tidak ada sumber resmi → koreksi manual boleh (jalur lama utuh)
   const kosong = await createTestMaterial({ code: "V1-TANPA-SUMBER", name: "BAHAN TANPA SUMBER", unit: "METER" });
   await testPrisma.stockMovement.create({ data: { materialId: kosong.id, type: "RECEIPT", qty: 20, note: "seed tanpa harga", createdAt: WIB("2026-09-01") } });
-  const mv = await testPrisma.stockMovement.create({ data: { materialId: kosong.id, type: "ISSUE", qty: -3, unitId: w.u2.id, note: "pemakaian lama tanpa nilai", createdAt: WIB("2026-09-10") } });
+  const mv = await testPrisma.stockMovement.create({ data: { materialId: kosong.id, type: "ISSUE", qty: -3, unitId: w.u2.id, note: "pemakaian lama tanpa nilai", createdAt: WIB("2026-10-10") } });
   const stok0 = await testPrisma.stockMovement.count(); const jur0 = await testPrisma.finJournalEntry.count();
   const k = kunciUji("v1"); const a = await koreksiValuasiPergerakan(testPrisma, { movementId: mv.id, hargaBaru: 30000, alasan: "Harga sebenarnya Rp30.000/m", kunci: k, aktor: w.B });
   assert.equal(a.koreksi.nilaiBaru, 90000); assert.equal(a.koreksi.sesudah.unitCostBasis, "30000"); assert.equal(a.jurnalPerluPenyesuaian, false);

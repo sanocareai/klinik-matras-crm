@@ -12,7 +12,7 @@ import { Decimal, toMoney } from "./money.js";
 import { lockRowForUpdate } from "../inventoryLedger.js";
 import { KoreksiError } from "../warehouseCorrection.js";
 import { TIPE_DINILAI } from "./biayaBahan.js";
-import { penyelesaiHarga, barisPembukaResmi, statusBuktiGR, tentatifDariSumber } from "./nilaiResmi.js";
+import { penyelesaiHarga, barisPembukaResmi, statusBuktiGR, tentatifDariSumber, GAP } from "./nilaiResmi.js";
 import { rencanakanPosting } from "../postingPemakaianHistoris.js";
 import { terapkanKeadaanEfektif } from "../catatanPemakaianHistoris.js";
 
@@ -50,15 +50,17 @@ export async function pratinjauPenetapan(db, { materialId, groups } = {}, { leng
       if (!h) { dikecualikan.push({ ...dasar, alasan: "SUMBER_RESMI_HILANG_PERLU_TINJAUAN", nilaiSekarang: Number(kor.value) }); continue; }
       if (D(kor.unitCostBasis).minus(h.harga).abs().lessThan("0.00000001")) { info.sudahSelaras++; continue; }
       hitungKel.SELARAS_ULANG++; if (!kelompok.includes("SELARAS_ULANG")) continue;
-      terapkan.push({ ...dasar, kelompok: "SELARAS_ULANG", harga: h.harga, nilaiSebelum: Number(kor.value), nilaiBaru: Number(nilaiDari(qty, h.harga)), h }); continue;
+      terapkan.push({ ...dasar, kelompok: "SELARAS_ULANG", harga: h.harga, nilaiSebelum: Number(kor.value), nilaiBaru: Number(nilaiDari(qty, h.harga)), tertunda: h.menungguPSADiposting, h }); continue;
     }
     if (p.valuation?.status === "DINILAI") { if (h && D(p.valuation.unitCostBasis).minus(h.harga).abs().greaterThan("0.005")) info.dinilaiBekuBedaDariResmi.push({ ...dasar, nilaiBeku: Number(p.valuation.value), hargaBeku: Number(p.valuation.unitCostBasis), hargaResmi: Number(h.harga.toDecimalPlaces(4)) }); dikecualikan.push({ ...dasar, alasan: "SUDAH_BERNILAI_BEKU", nilaiSekarang: Number(p.valuation.value) }); continue; }
     const kel = p.valuation?.status === "TANPA_HARGA" ? "DIPOSTING_TANPA_HARGA" : "ISSUE_LAMA"; hitungKel[kel]++;
     if (!kelompok.includes(kel)) continue;
-    if (!h) { tanpaSumber.push({ ...dasar, kelompok: kel }); continue; }
-    terapkan.push({ ...dasar, kelompok: kel, harga: h.harga, nilaiSebelum: null, nilaiBaru: Number(nilaiDari(qty, h.harga)), h });
+    if (!h) { const gap = selesai.gap(bahan.id, p.createdAt); tanpaSumber.push({ ...dasar, kelompok: kel, gap, gapKeterangan: GAP[gap] ?? "Belum ada sumber resmi (Persediaan Awal resmi atau penerimaan berharga) pada tanggal pemakaian" }); continue; }
+    terapkan.push({ ...dasar, kelompok: kel, harga: h.harga, nilaiSebelum: null, nilaiBaru: Number(nilaiDari(qty, h.harga)), tertunda: h.menungguPSADiposting, h });
   }
-  const total = terapkan.reduce((a, x) => a.plus(x.nilaiBaru), D(0));
+  const tulis = terapkan.filter((x) => !x.tertunda); // hanya yang bersumber PSA DIPOSTING (atau penerimaan saja) yang boleh ditulis; sisanya pratinjau
+  const total = terapkan.reduce((a, x) => a.plus(x.nilaiBaru), D(0)); const totalTulis = tulis.reduce((a, x) => a.plus(x.nilaiBaru), D(0));
+  const gapPer = {}; for (const t of tanpaSumber) gapPer[t.gap] = (gapPer[t.gap] ?? 0) + 1;
   const hasil = {
     bahan: { id: bahan.id, kode: bahan.code, nama: bahan.name, satuan: bahan.unit }, kelompokDipilih: kelompok,
     sumberResmi: { persediaanAwal: psa ? { nomor: psa.nomor, status: psa.status, harga: Number(psa.harga), sumberHarga: psa.sumberHarga, rujukan: psa.rujukanHarga } : null,
@@ -66,13 +68,13 @@ export async function pratinjauPenetapan(db, { materialId, groups } = {}, { leng
     kelompok1: { judul: KELOMPOK.DIPOSTING_TANPA_HARGA, tersedia: hitungKel.DIPOSTING_TANPA_HARGA, diterapkan: terapkan.filter((x) => x.kelompok === "DIPOSTING_TANPA_HARGA").length },
     kelompok2: { judul: KELOMPOK.ISSUE_LAMA, tersedia: hitungKel.ISSUE_LAMA, diterapkan: terapkan.filter((x) => x.kelompok === "ISSUE_LAMA").length },
     selarasUlang: { tersedia: hitungKel.SELARAS_ULANG, diterapkan: terapkan.filter((x) => x.kelompok === "SELARAS_ULANG").length, sudahSelaras: info.sudahSelaras },
-    penerapan: { jumlah: terapkan.length, nilai: Number(toMoney(total)), baris: terapkan.map(({ h, harga, ...x }) => ({ ...x, harga: Number(harga.toDecimalPlaces(8)), tentatif: h.tentatif, dasar: { pembuka: h.sumber.pembuka, gr: h.grIds } })) },
-    tanpaSumberResmi: { jumlah: tanpaSumber.length, baris: tanpaSumber, catatan: "Belum ada sumber resmi (Persediaan Awal berstatus DIPERIKSA/DIPOSTING atau penerimaan berharga) pada tanggal pemakaian — tetap TANPA_HARGA, bukan Rp0." },
+    penerapan: { jumlah: terapkan.length, nilai: Number(toMoney(total)), dapatDitulis: tulis.length, nilaiDapatDitulis: Number(toMoney(totalTulis)), menungguPSADiposting: terapkan.length - tulis.length, aturanTulis: "Nilai hanya DITULIS bila Persediaan Awal berstatus DIPOSTING (Paket A, menunggu keputusan Finance); DIPERIKSA hanya pratinjau.", baris: terapkan.map(({ h, harga, ...x }) => ({ ...x, harga: Number(harga.toDecimalPlaces(8)), tentatif: h.tentatif, dasar: { pembuka: h.sumber.pembuka, gr: h.grIds } })) },
+    tanpaSumberResmi: { jumlah: tanpaSumber.length, perGap: gapPer, baris: tanpaSumber, catatan: "Belum ada sumber resmi (Persediaan Awal berstatus DIPERIKSA/DIPOSTING atau penerimaan berharga) pada tanggal pemakaian — tetap TANPA_HARGA, bukan Rp0." },
     dikecualikan: { jumlah: dikecualikan.length, baris: dikecualikan },
     informasi: { dinilaiBekuBedaDariResmi: info.dinilaiBekuBedaDariResmi, koreksiManualBedaDariResmi: info.koreksiManualBedaDariResmi, catatan: "Nilai beku DINILAI dan koreksi harga manual lama tidak pernah diganti otomatis; bila berbeda dari nilai resmi hanya dilaporkan untuk keputusan Finance." },
   };
-  hasil.hash = crypto.createHash("sha256").update(JSON.stringify({ b: bahan.id, k: kelompok, rows: terapkan.map((x) => [x.movementId, x.harga.toDecimalPlaces(8).toString(), x.nilaiBaru]) })).digest("hex");
-  hasil._terapkan = terapkan; hasil._kelompok = kelompok;
+  hasil.hash = crypto.createHash("sha256").update(JSON.stringify({ b: bahan.id, k: kelompok, rows: tulis.map((x) => [x.movementId, x.harga.toDecimalPlaces(8).toString(), x.nilaiBaru]) })).digest("hex");
+  hasil._terapkan = tulis; hasil._kelompok = kelompok;
   if (!lengkap) return hasil;
 
   // ── dampak per order (kelompok 1+2+selaras): nilai resmi sebelum → sesudah; HPP tetap PARSIAL bila masih ada yang belum pasti ──
@@ -128,9 +130,10 @@ export async function ajukanPenetapan(prisma, masukan, { aktor, kunci }) {
   if (ada) { wajib(ada.materialId === masukan.materialId, "Idempotency-Key ini sudah dipakai untuk bahan lain", "KUNCI_DIPAKAI_LAIN", 409); return { ulang: true, ...tampil(ada) }; }
   const pra = await pratinjauPenetapan(prisma, masukan, { lengkap: false });
   wajib(String(masukan.hashPratinjau ?? "") === pra.hash, "Pratinjau yang Anda lihat sudah berbeda dari keadaan sekarang. Muat ulang pratinjau lalu ajukan lagi.", "PRATINJAU_BERUBAH", 409);
-  wajib(pra.penerapan.jumlah > 0, "Tidak ada transaksi yang akan ditetapkan nilainya — tidak ada yang diajukan", "TIDAK_ADA_TRANSAKSI", 409);
+  wajib(pra.penerapan.dapatDitulis > 0 || pra.penerapan.menungguPSADiposting === 0, "Nilai bersumber Persediaan Awal yang BELUM diposting — hanya pratinjau. Posting Persediaan Awal dulu (keputusan Finance), baru nilai dapat ditetapkan.", "PSA_BELUM_DIPOSTING", 409);
+  wajib(pra.penerapan.dapatDitulis > 0, "Tidak ada transaksi yang akan ditetapkan nilainya — tidak ada yang diajukan", "TIDAK_ADA_TRANSAKSI", 409);
   try {
-    const b = await prisma.finMaterialValueSettlement.create({ data: { materialId: masukan.materialId, scope: pra._kelompok, previewHash: pra.hash, previewCount: pra.penerapan.jumlah, previewValue: pra.penerapan.nilai.toString(), requestedById: aktor.id, idempotencyKey: idem } });
+    const b = await prisma.finMaterialValueSettlement.create({ data: { materialId: masukan.materialId, scope: pra._kelompok, previewHash: pra.hash, previewCount: pra.penerapan.dapatDitulis, previewValue: pra.penerapan.nilaiDapatDitulis.toString(), requestedById: aktor.id, idempotencyKey: idem } });
     return { ulang: false, ...tampil(b) };
   } catch (e) {
     if (e?.code === "P2002") { const s = await prisma.finMaterialValueSettlement.findUnique({ where: { idempotencyKey: idem } }); if (s) return { ulang: true, ...tampil(s) }; throw new KoreksiError("Sudah ada pengajuan penetapan yang menunggu untuk bahan ini — setujui, tolak, atau batalkan dulu (satu sumber nilai per bahan)", 409, "SATU_PENGAJUAN_AKTIF"); }
@@ -149,7 +152,7 @@ export async function setujuiPenetapan(prisma, { id, hashPratinjau, aktor, catat
     wajib(String(hashPratinjau ?? "") === b.previewHash, "Pratinjau yang Anda setujui berbeda dari yang diajukan", "PRATINJAU_BERBEDA", 409);
     await lockRowForUpdate(tx, "materials", b.materialId);
     const pra = await pratinjauPenetapan(tx, { materialId: b.materialId, groups: b.scope }, { lengkap: false });
-    wajib(pra.hash === b.previewHash, `Keadaan sudah bergeser sejak diajukan (transaksi/sumber resmi): pratinjau kini ${pra.penerapan.jumlah} transaksi / Rp${pra.penerapan.nilai}, diajukan ${b.previewCount} / Rp${Number(b.previewValue)}. Tolak lalu ajukan ulang.`, "PRATINJAU_BERUBAH", 409);
+    wajib(pra.hash === b.previewHash, `Keadaan sudah bergeser sejak diajukan (transaksi/sumber resmi): pratinjau kini ${pra.penerapan.dapatDitulis} transaksi / Rp${pra.penerapan.nilaiDapatDitulis}, diajukan ${b.previewCount} / Rp${Number(b.previewValue)}. Tolak lalu ajukan ulang.`, "PRATINJAU_BERUBAH", 409);
     let jurnalPerlu = 0;
     for (const x of pra._terapkan) {
       const kor0 = await tx.finStockMovementValuationCorrection.findFirst({ where: { movementId: x.movementId }, orderBy: [{ createdAt: "desc" }, { id: "desc" }] });
