@@ -719,10 +719,18 @@ test("SPEND: sumber ganda untuk hari+Ad yang sama dipilih SATU menurut prioritas
 
 test("LAPORAN + spend: KPI per campaign dari spend/lead/closing/revenue; level ad = adset = campaign; spend-only tampil; SPEND_UNMAPPED; READ ONLY; privasi", async () => {
   await benihLaporan(); await pastikanReferensi();
-  const bersihkanPengisi = await isiHariSpendKosong("2026-09-25", "2026-10-10");
   // atribusi sudah "mulai" sebelum rentang uji (touch EXISTING lama, di luar rentang): rentang uji sebanding → KPI dihitung
   const awal = await testPrisma.customer.create({ data: { name: "Awal Atribusi", phone: "6285300000099", createdAt: T("2026-09-01T03:00:00Z"), leadSource: "META_ADS" } });
   await testPrisma.attributionTouch.create({ data: { customerId: awal.id, adId: AD1, touchAt: T("2026-09-20T03:00:00Z"), touchDateWib: T("2026-09-20T00:00:00Z"), mappingStatusAtTouch: "UNMAPPED", evidenceSource: "CTWA_AD", sourceType: "ad", customerStatusAtTouch: "EXISTING", customerBasisAtTouch: "RIWAYAT_PESAN", dedupeKey: "awal-atribusi-uji" } });
+  // ── fixture jarang (spend hanya 30 Sep, 1 Okt, 10 Okt) → rentang TIDAK lengkap: spend & lead tampil, CPL/CPA/ROAS CRM null (SPEND_TIDAK_LENGKAP) ──
+  { const jr = (await api("GET", `/?${P}&level=campaign`)).json; const x = kunci(jr, CAMP1);
+    assert.equal(x.biaya.spend, 900000); assert.equal(x.lead.unik, 3, "lead tetap tampil");
+    assert.deepEqual([x.biaya.cpl, x.biaya.cpa, x.biaya.costPerCustomerOrder, x.biaya.bookedRoas, x.biaya.cashRoas], [null, null, null, null, null]);
+    assert.equal(x.biaya.alasanNull.cpl, "SPEND_TIDAK_LENGKAP"); assert.equal(x.biaya.alasanNull.cpa, "SPEND_TIDAK_LENGKAP");
+    assert.ok(["SPEND_TIDAK_LENGKAP", "DATA_TERLAMBAT"].includes(x.biaya.status), x.biaya.status);
+    assert.equal(jr.biaya.cpl, null); assert.equal(jr.biaya.cpa, null);
+    const w = jr.peringatan.find((y) => y.kode === "SPEND_TIDAK_LENGKAP"); assert.ok(w, "peringatan hari hilang"); assert.ok(w.data.hariHilang.includes("2026-09-25") && w.data.hariHilang.includes("2026-10-02") && !w.data.hariHilang.includes("2026-10-01")); }
+  const bersihkanPengisi = await isiHariSpendKosong("2026-09-25", "2026-10-10");
   const sebelum = { s: await testPrisma.metaAdDailySpend.count(), i: await testPrisma.metaSpendImport.count(), r: await testPrisma.metaAdSpendRevision.count(), o: await testPrisma.order.count(), p: await testPrisma.payment.count(), t: await testPrisma.attributionTouch.count() };
   const r = await api("GET", `/?${P}&level=campaign`);
   assert.equal(r.status, 200);
@@ -777,8 +785,8 @@ test("LAPORAN + spend: KPI per campaign dari spend/lead/closing/revenue; level a
   assert.deepEqual({ s: await testPrisma.metaAdDailySpend.count(), i: await testPrisma.metaSpendImport.count(), r: await testPrisma.metaAdSpendRevision.count(), o: await testPrisma.order.count(), p: await testPrisma.payment.count(), t: await testPrisma.attributionTouch.count() }, sebelum);
   for (const s of ["6285300", "Pelanggan Uji", CLID, TEXT_CANARY]) assert.ok(!r.teks.includes(s), `bocor: ${s}`);
   assert.ok(!/"(phone|name|customerId|orderId|ctwaClid|messageId|token)"\s*:/.test(r.teks));
+  await bersihkanPengisi();
 });
-
 test("LAPORAN: data terlambat (rentang melewati spend terakhir) → DATA_TERLAMBAT; tanpa spend di DB → BELUM_TERHUBUNG dan semua null (tanpa nol palsu)", async () => {
   const t = await api("GET", "/?dari=2026-09-25&sampai=2026-10-16&level=campaign");
   assert.equal(t.json.biaya.sumber.terlambat, true);
