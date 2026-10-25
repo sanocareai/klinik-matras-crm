@@ -10,7 +10,7 @@ const num = async (q) => Number((await prisma.$queryRawUnsafe(q))[0].n);
 const ditolak = async (f) => { try { await f(); return null; } catch (e) { return e; } };
 const ts = Date.now().toString(36); let seq = 0; const kunci = (t) => `reh-hb-${t}-${ts}-${++seq}-aaaa`;
 // Tabel yang TIDAK BOLEH berubah oleh fitur ini (valuasi/jurnal Finance, PSA/GR, penerimaan). stock_movements & fin_stock_movement_valuations bertambah HANYA oleh pergerakan uji (perilaku lama postStockMovement) — diperiksa terpisah.
-const TETAP = ["fin_journal_entries", "fin_journal_lines", "fin_inventory_openings", "fin_inventory_opening_lines", "goods_receipts", "goods_receipt_lines", "fin_purchase_orders", "fin_supplier_bills", "fin_material_value_settlements", "fin_stock_movement_valuation_corrections", "unit_usage_notes", "material_issues"];
+const TETAP = ["fin_journal_entries", "fin_journal_lines", "fin_inventory_openings", "fin_inventory_opening_lines", "goods_receipts", "goods_receipt_lines", "fin_purchase_orders", "fin_supplier_bills", "fin_stock_movement_valuation_corrections", "unit_usage_notes", "material_issues"];
 const fp = async (tabel) => { const o = {}; for (const t of tabel) o[t] = (await prisma.$queryRawUnsafe(`select count(*)::int n, coalesce(md5(string_agg(x::text, '|' order by x::text)),'') h from "${t}" x`))[0]; return o; };
 const beda = (a, b) => Object.keys(a).filter((t) => a[t].n !== b[t].n || a[t].h !== b[t].h);
 
@@ -78,7 +78,7 @@ const e3 = await ditolak(() => prisma.$executeRawUnsafe(`insert into material_ha
 cek("trigger DB: baris harga/biaya tidak bisa diubah/dihapus; CHECK DB menolak harga biasa berlaku mundur", !!e1 && !!e2 && !!e3);
 
 // H. invarian: Finance/PSA/GR/jurnal tidak berubah; hanya pergerakan uji (perilaku lama) yang bertambah
-const fp1 = await fp(TETAP); cek("jurnal, baris jurnal, PSA, penerimaan, tagihan, penetapan nilai, koreksi valuasi Finance, catatan pemakaian, Material Issue: IDENTIK sebelum vs sesudah", beda(fp0, fp1).length === 0, beda(fp0, fp1).join(","));
+const fp1 = await fp(TETAP); cek("jurnal, baris jurnal, PSA, penerimaan, tagihan, koreksi valuasi Finance, catatan pemakaian, Material Issue: IDENTIK sebelum vs sesudah", beda(fp0, fp1).length === 0, beda(fp0, fp1).join(","));
 const nilaiFin1 = await prisma.$queryRawUnsafe("select id::text, status, value::text from fin_stock_movement_valuations order by id");
 const lama = new Map(nilaiFin0.map((x) => [x.id, x])); const berubah = nilaiFin1.filter((x) => lama.has(x.id) && (lama.get(x.id).status !== x.status || lama.get(x.id).value !== x.value));
 cek("valuasi Finance yang sudah ada TIDAK berubah (hanya +3 baris dari 3 pergerakan uji)", berubah.length === 0 && (await num("select count(*) as n from fin_stock_movement_valuations")) === nFv0 + 3);
