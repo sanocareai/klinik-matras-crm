@@ -97,7 +97,7 @@ productionAdopsiRouter.get("/units/:id/adopsi", requirePermission(P.UNIT_READ), 
     const gapRingkas = jejakBiaya ? [...new Map(jejakBiaya.belumFinal.filter((g) => g.jenis !== "FAKTUR_BELUM_ADA").map((g) => [g.jenis, { jenis: g.jenis, jumlah: 0, pesan: g.pesan }])).values()].map((g) => ({ ...g, jumlah: jejakBiaya.belumFinal.filter((x) => x.jenis === g.jenis).length })) : [];
     const hppBahan = jejakBiaya && {
       status: jejakBiaya.statusBiaya, parsial: jejakBiaya.ringkasan.parsial, final: !jejakBiaya.ringkasan.parsial && jejakBiaya.statusBiaya === "FINAL_MENURUT_HARGA_PO",
-      nilaiTerhitung: jejakBiaya.ringkasan.biayaPersediaan?.nilai ?? null, lihatNilai: hasPermission(req.user, P.FINANCE_READ),
+      nilaiTerhitung: jejakBiaya.ringkasan.biayaPersediaan?.nilai ?? null, nilaiDidukungBukti: jejakBiaya.ringkasan.biayaPersediaan?.nilaiDidukungBukti ?? null, nilaiTentatif: jejakBiaya.ringkasan.biayaPersediaan?.nilaiTentatif ?? null, lihatNilai: hasPermission(req.user, P.FINANCE_READ),
       gap: gapRingkas,
       catatan: jejakBiaya.ringkasan.parsial ? "Nilai di atas hanya bagian yang sudah pasti. Bukan HPP final — lihat gap." : null,
     };

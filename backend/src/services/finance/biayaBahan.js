@@ -210,6 +210,11 @@ export async function bacaJejakUnit(db, unitId, { izinHarga = false } = {}) {
     ? new Map((await db.finStockMovementValuationCorrection.findMany({ where: { movementId: { in: pergerakan.map((m) => m.id) } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] })).map((k) => [k.movementId, k]))
     : new Map();
 
+  // HARGA TENTATIF: nilai beku yang dasar hargamu bersumber GR yang kedatangannya BELUM tercatat (tanggal tiba/penerima) tidak boleh tampil sebagai nilai yang didukung bukti. Ditandai otomatis dan hilang sendiri
+  // setelah kedatangan dicatat lewat alur penerimaan resmi (tanpa data tambahan). Koreksi harga yang diberi sertifikat TENTATIF (harga bukti) juga ditandai.
+  const idGrDasar = [...new Set(pergerakan.flatMap((m) => (m.valuation?.basis?.sumber ?? []).map((s) => s.goodsReceiptId)).filter(Boolean))];
+  const grBelumTerbukti = new Map(idGrDasar.length ? (await db.goodsReceipt.findMany({ where: { id: { in: idGrDasar }, arrivalRecordedAt: null }, select: { id: true, receiptNumber: true } })).map((g) => [g.id, g.receiptNumber]) : []);
+
   // ── baris pergerakan ──
   const sekarang = new Date();
   const baris = [];
@@ -274,6 +279,13 @@ export async function bacaJejakUnit(db, unitId, { izinHarga = false } = {}) {
       sumber: sumber.map((s) => ({ receiptNumber: s.receiptNumber ?? null, poNumber: s.poNumber ?? null, qty: Number(s.qty), unitCost: s.unitCost, goodsReceiptId: s.goodsReceiptId ?? null, purchaseOrderId: s.goodsReceiptId ? petaPO.get(s.goodsReceiptId) ?? null : null })),
       sumberDipangkas: basis?.sumberDipangkas ?? 0,
       asOfDasar: basis?.asOf ?? null,
+      tentatif: (() => {
+        if (status !== "DINILAI") return null;
+        if (kor) return kor.tentative ? { sebab: "HARGA_BUKTI_TENTATIF", alasan: kor.tentativeReason ?? "Harga bukti bersertifikat tentatif" } : null;
+        const gr = [...new Set(sumber.filter((x) => x.goodsReceiptId && grBelumTerbukti.has(x.goodsReceiptId)).map((x) => grBelumTerbukti.get(x.goodsReceiptId)))];
+        return gr.length ? { sebab: "GR_KEDATANGAN_BELUM_TERBUKTI", alasan: `Harga bersumber ${gr.join(", ")} yang kedatangannya belum tercatat (tanggal tiba / penerima) — bukan nilai final`, gr } : null;
+      })(),
+      hargaBukti: kor?.evidenceId ?? null,
       hargaManual: !!kor, koreksiHarga: kor ? { alasan: kor.reason, oleh: kor.createdById, waktu: kor.createdAt, hargaBaru: Number(kor.unitCostBasis) } : null,
       faktur: status === "DINILAI" && !kor ? { status: statusFaktur, selisih: selisihDiketahui, qtyBelumAdaFaktur: qtyFakturBelumAda, qtyTanpaPO, fakturLama: [...fakturLama], dokumen: [...fakturDok.values()] } : null,
     });
@@ -307,12 +319,13 @@ export async function bacaJejakUnit(db, unitId, { izinHarga = false } = {}) {
 
   // ── ringkasan & daftar belum final ──
   const belumFinal = [];
-  let biaya = ZERO; let bruto = ZERO; let returTotal = ZERO; let adaDinilai = false; let susut = ZERO; let selisihFaktur = ZERO; let penyesuaian = ZERO;
+  let nilaiTentatif = ZERO; let biaya = ZERO; let bruto = ZERO; let returTotal = ZERO; let adaDinilai = false; let susut = ZERO; let selisihFaktur = ZERO; let penyesuaian = ZERO;
   let estimasiBelumFinal = ZERO;
   for (const r of baris) {
     if (r.hargaManual && r.jurnal === "TERBUKU") belumFinal.push({ jenis: "JURNAL_PERLU_PENYESUAIAN", movementId: r.movementId, kode: r.kode, pesan: `${r.kode}: harga dikoreksi setelah jurnal HPP terbit — jurnal perlu disesuaikan Finance (nilai di sini sudah memakai harga koreksi)` });
     if (r.status === "DINILAI") {
       adaDinilai = true;
+      if (r.tentatif && r.jenisBiaya !== "SUSUT") { nilaiTentatif = nilaiTentatif.plus(r.nilai); belumFinal.push({ jenis: "HARGA_TENTATIF", movementId: r.movementId, kode: r.kode, pesan: `${r.kode}: harga tentatif — ${r.tentatif.alasan}`, qty: Math.abs(r.qty) }); }
       if (r.jenisBiaya === "SUSUT") susut = susut.plus(r.nilai);
       else if (r.jenisBiaya === "PENYESUAIAN") { penyesuaian = penyesuaian.plus(r.nilai); biaya = biaya.plus(r.nilai); }
       else { biaya = biaya.plus(r.nilai); if (r.jenisBiaya === "RETUR") returTotal = returTotal.minus(r.nilai); else bruto = bruto.plus(r.nilai); }
@@ -350,7 +363,7 @@ export async function bacaJejakUnit(db, unitId, { izinHarga = false } = {}) {
   if (ledgerDitanya.length) belumFinal.push({ jenis: "PEMAKAIAN_PERLU_DICEK", jumlah: ledgerDitanya.length, pesan: `${ledgerDitanya.length} pengeluaran stok lama tidak punya pasangan di Excel — nilai yang sudah terhitung untuk bahan tersebut perlu dicek.` });
   // Satu entri per (jenis, bahan) — bukan satu per pergerakan — supaya daftar tetap terbaca.
   const gabung = new Map();
-  const PER_BAHAN = { FAKTUR_BELUM_ADA: (k, q, n) => `${k}: ${q} (dari ${n} pergerakan) masih menurut harga PO, faktur supplier belum disetujui — selisih harga faktur belum diketahui`, TANPA_HARGA: (k, q, n) => `${k}: ${n} pergerakan (${q}) belum punya harga perolehan — tidak dihitung (bukan Rp0)`, ESTIMASI_HISTORIS: (k, q, n) => `${k}: ${n} pergerakan (${q}) terjadi sebelum nilai dibekukan — hanya estimasi` };
+  const PER_BAHAN = { FAKTUR_BELUM_ADA: (k, q, n) => `${k}: ${q} (dari ${n} pergerakan) masih menurut harga PO, faktur supplier belum disetujui — selisih harga faktur belum diketahui`, TANPA_HARGA: (k, q, n) => `${k}: ${n} pergerakan (${q}) belum punya harga perolehan — tidak dihitung (bukan Rp0)`, ESTIMASI_HISTORIS: (k, q, n) => `${k}: ${n} pergerakan (${q}) terjadi sebelum nilai dibekukan — hanya estimasi`, HARGA_TENTATIF: (k, q, n) => `${k}: ${n} pergerakan (${q}) bernilai dari harga TENTATIF (belum didukung bukti final; mis. GR belum terbukti kedatangannya) — nilai ini bukan final` };
   const belumFinalRingkas = [];
   for (const x of belumFinal) {
     if (!PER_BAHAN[x.jenis]) { belumFinalRingkas.push(x); continue; }
@@ -372,7 +385,7 @@ export async function bacaJejakUnit(db, unitId, { izinHarga = false } = {}) {
     statusBiaya,
     produksiSelesai,
     ringkasan: {
-      biayaPersediaan: { nilai: adaDinilai ? biaya : null, lengkap: adaDinilai && statusBiaya === "FINAL_MENURUT_HARGA_PO", sebagian: adaDinilai && statusBiaya !== "FINAL_MENURUT_HARGA_PO", dasar: "Harga PO/perolehan (rata-rata tertimbang) yang dibekukan saat pergerakan diposting" },
+      biayaPersediaan: { nilai: adaDinilai ? biaya : null, nilaiTentatif: adaDinilai ? nilaiTentatif : null, nilaiDidukungBukti: adaDinilai ? biaya.minus(nilaiTentatif) : null, lengkap: adaDinilai && statusBiaya === "FINAL_MENURUT_HARGA_PO", sebagian: adaDinilai && statusBiaya !== "FINAL_MENURUT_HARGA_PO", dasar: "Harga PO/perolehan (rata-rata tertimbang) yang dibekukan saat pergerakan diposting" },
       totalBiaya: adaDinilai ? bruto : null, totalRetur: adaDinilai ? returTotal : null, totalWaste: adaDinilai ? susut : null, nilaiBersih: adaDinilai ? biaya : null,
       nilaiSusut: adaDinilai ? susut : null,
       penyesuaian: penyesuaian,
@@ -398,7 +411,7 @@ function serialisasi(h) {
     ...h,
     ringkasan: {
       ...h.ringkasan,
-      biayaPersediaan: { ...h.ringkasan.biayaPersediaan, nilai: uang(h.ringkasan.biayaPersediaan.nilai) },
+      biayaPersediaan: { ...h.ringkasan.biayaPersediaan, nilai: uang(h.ringkasan.biayaPersediaan.nilai), nilaiTentatif: uang(h.ringkasan.biayaPersediaan.nilaiTentatif), nilaiDidukungBukti: uang(h.ringkasan.biayaPersediaan.nilaiDidukungBukti) },
       nilaiSusut: uang(h.ringkasan.nilaiSusut), penyesuaian: uang(h.ringkasan.penyesuaian),
       totalBiaya: uang(h.ringkasan.totalBiaya), totalRetur: uang(h.ringkasan.totalRetur), totalWaste: uang(h.ringkasan.totalWaste), nilaiBersih: uang(h.ringkasan.nilaiBersih),
       selisihHargaFaktur: { ...h.ringkasan.selisihHargaFaktur, nilai: uang(h.ringkasan.selisihHargaFaktur.nilai) },
@@ -417,7 +430,7 @@ function serialisasi(h) {
 function sembunyikanHarga(h) {
   return {
     ...h,
-    ringkasan: { ...h.ringkasan, biayaPersediaan: { nilai: null, lengkap: h.ringkasan.biayaPersediaan.lengkap, sebagian: h.ringkasan.biayaPersediaan.sebagian, dasar: null }, nilaiSusut: null, penyesuaian: null, selisihHargaFaktur: null, estimasiBelumFinal: null, totalBiaya: null, totalRetur: null, totalWaste: null, nilaiBersih: null },
+    ringkasan: { ...h.ringkasan, biayaPersediaan: { nilai: null, nilaiTentatif: null, nilaiDidukungBukti: null, lengkap: h.ringkasan.biayaPersediaan.lengkap, sebagian: h.ringkasan.biayaPersediaan.sebagian, dasar: null }, nilaiSusut: null, penyesuaian: null, selisihHargaFaktur: null, estimasiBelumFinal: null, totalBiaya: null, totalRetur: null, totalWaste: null, nilaiBersih: null },
     bahan: h.bahan.map((b) => ({
       ...b,
       pergerakan: b.pergerakan.map((r) => ({

@@ -39,7 +39,7 @@ async function ambil(db, { filter }) {
 
   const pergerakan = detail.flatMap((j) => j.bahan.flatMap((b) => b.pergerakan.map((r) => ({
     waktu: r.tanggal, unit: j.unit.unitCode, order: j.unit.orderNumber || "", kode: r.kode, bahan: r.nama, jenis: JENIS[r.jenisBiaya] || r.jenisBiaya,
-    qty: Math.abs(r.qty), satuan: r.satuan, harga: r.hargaDasar, nilai: r.nilai, status: STATUS[r.status] || r.status,
+    qty: Math.abs(r.qty), satuan: r.satuan, harga: r.hargaDasar, nilai: r.nilai, status: (STATUS[r.status] || r.status) + (r.tentatif ? " — TENTATIF" : r.hargaBukti ? " (harga bukti)" : r.hargaManual ? " (harga koreksi)" : ""), ketHarga: r.tentatif?.alasan ?? (r.koreksiHarga?.alasan ?? ""),
     po: gabung(r.sumber.map((s) => s.poNumber)), penerimaan: gabung(r.sumber.map((s) => s.receiptNumber)), materialIssue: r.dokumen?.nomor || "",
     faktur: r.faktur ? (STATUS_FAKTUR[r.faktur.status] || r.faktur.status) : "", noFaktur: gabung((r.faktur?.dokumen ?? []).map((x) => x.nomor)),
     selisihFaktur: r.faktur?.selisih ?? null, oleh: r.oleh || "", catatan: r.catatan || "",
@@ -60,6 +60,7 @@ async function ambil(db, { filter }) {
     { key: "po", header: "No. PO", tipe: "teks", lebar: 20 }, { key: "penerimaan", header: "No. Penerimaan", tipe: "teks", lebar: 22 }, { key: "materialIssue", header: "No. Material Issue", tipe: "teks", lebar: 22 },
     { key: "faktur", header: "Status Faktur", tipe: "teks", lebar: 18 }, { key: "noFaktur", header: "No. Faktur Supplier", tipe: "teks", lebar: 22 }, { key: "selisihFaktur", header: "Selisih Harga Faktur (Rp)", tipe: "uang" },
     { key: "oleh", header: "Dicatat Oleh", tipe: "teks", lebar: 18 }, { key: "catatan", header: "Catatan", tipe: "teks", lebar: 30 },
+    { key: "ketHarga", header: "Keterangan Harga (tentatif / bukti)", tipe: "teks", lebar: 40 },
   ];
   // Total biaya bersih = pemakaian − retur (+ penyesuaian); waste TIDAK ikut (dilaporkan terpisah) — sama dengan kartu "Biaya Bersih" di layar.
   const dinilai = pergerakan.filter((r) => r.status === STATUS.DINILAI && r.jenis !== JENIS.SUSUT);
