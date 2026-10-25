@@ -160,9 +160,14 @@ test("konsistensi pustaka: jumlah uji constraint (22) = skrip; rehearsal memerik
   assert.ok(/ROLLBACK;\s*$/.test(sql.trim()), "uji constraint harus dibatalkan (ROLLBACK)");
   const reh = lf("scripts/lib/rehearsal-akuisisi-biaya.mjs");
   for (const k of ["DETAIL_AD_SELISIH", "MANUAL_OVERRIDE", "TIDAK_BERUBAH", "AKTIFKAN", "=== 409", "AGREGAT_BARU", "ATRIBUSI_LABEL_CRM"]) assert.ok(reh.includes(k), `rehearsal tidak menguji ${k}`);
+  // bukti khusus permintaan Owner: harus tetap ada di gerbang rehearsal (H1 campaign, H2 detail parsial, H3 override, H4 tanpa jumlah ganda, H5 pemisahan, H6 CPA, H7 hari berjalan/tidak lengkap, H8 /d7)
+  for (const k of ["H1 /iklan (campaign)", "H2 total rentang pembanding 2×", "H3 override pada", "H3 pencabutan override", "H4 + manual harian", "H5 invarian pemisahan", "H6 CPA = biaya ÷ CUSTOMER UNIK", "H7 rentang memuat hari ini", "H7 biaya TIDAK lengkap", "H8 /d7", "HASH_IKLAN="]) assert.ok(reh.includes(k), `bukti khusus hilang: ${k}`);
+  const lamaTpl = lf("scripts/templates/release-akuisisi-biaya/rehearsal-lama.txt");
+  assert.match(lamaTpl, /HASH_IKLAN=/); assert.match(lamaTpl, /\/iklan \(campaign\) atau \/d7 BERBEDA antara kode LAMA dan BARU/);
+  assert.ok(lf("scripts/lib/rehearsal-kompat-lama-akuisisi-biaya.mjs").includes("HASH_IKLAN="));
   const guard = lf("scripts/rollback-guard-akuisisi-biaya.sh");
   assert.ok(!/\b(insert|update|delete|truncate|drop|alter)\b\s+(into|\w+\s+set|from|table)/i.test(guard.replace(/^\s*#.*$/gm, "")), "guard tidak boleh menulis");
   assert.match(guard, /BEGIN READ ONLY/);
   const lama = lf("scripts/lib/rehearsal-kompat-lama-akuisisi-biaya.mjs");
-  assert.match(lama, /AGREGAT_LAMA/); assert.ok(!/\.(create|update|delete|upsert)\(|executeRaw/.test(lama), "uji kode lama hanya membaca");
+  assert.match(lama, /AGREGAT_LAMA/); assert.ok(!/prisma\.\w+\.(create|update|delete|upsert)\(|executeRaw/.test(lama), "uji kode lama hanya membaca (tanpa tulis lewat prisma)");
 });

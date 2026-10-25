@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 const require = createRequire(process.cwd() + "/");
 const jwt = require("jsonwebtoken");
@@ -61,6 +62,12 @@ for (const [id, label] of [["META", "META_ADS"], ["TIKTOK", "TIKTOK_ADS"], ["WHA
 const jumlah = (k) => j0.sumber.reduce((a, x) => a + x[k], 0);
 cek("rekonsiliasi: jumlah per sumber = total (lead, spam, ber-order, membayar, lunas)", ["lead", "spam", "berOrder", "membayar", "lunas"].every((k) => jumlah(k) === j0.total[k]));
 const A0 = agregat(j0);
+// referensi laporan LAIN sebelum penulisan biaya apa pun (dibandingkan lagi di bagian H)
+const hapusVolatil = (o) => JSON.parse(JSON.stringify(o, (k, v) => (["dihitungPada", "waktuWib", "waktu"].includes(k) ? undefined : v)));
+const D7_DARI = hariDari(SAMPAI, SAMPAI).length ? new Date(Date.parse(SAMPAI + "T00:00:00Z") - 9 * 864e5).toISOString().slice(0, 10) : SAMPAI;
+const iklan0 = hapusVolatil((await call("GET", "/?level=campaign&dari=" + DARI + "&sampai=" + SAMPAI)).j);
+const d7_0 = hapusVolatil((await call("GET", "/d7?dari=" + D7_DARI + "&sampai=" + SAMPAI)).j);
+cek("referensi: /iklan (campaign) dan /d7 menjawab 200 sebelum penulisan biaya", !!iklan0 && !iklan0.error && !!d7_0 && !d7_0.error);
 
 // E. TikTok: isi setiap hari periode (FIXTURE) → LENGKAP; CPA = biaya ÷ customer lunas unik; idempoten; ubah; konflik; batal
 const hari = hariDari(DARI, SAMPAI); let dibuat = 0;
@@ -102,6 +109,83 @@ else {
   cek("manual = detail Ad → LENGKAP (tidak ada selisih), detail dipakai", d0.s === 200 && m4.biaya.status === "LENGKAP" && m4.biaya.spend === det);
 }
 
+// H. BUKTI KHUSUS (permintaan Owner): campaign tak terisi manual; detail parsial; cakupan override; tanpa jumlah ganda; pemisahan angka; definisi CPA; hari berjalan; /iklan & /d7 tak berubah
+const hariIni = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
+const putB = (o) => call("PUT", "/biaya-sumber", { body: { alasan: ALASAN + " (bukti khusus)", ...o } });
+const batal = (id) => call("POST", `/biaya-sumber/${id}/batalkan`, { body: { alasan: "FIXTURE UJI bukti khusus: dibatalkan" } });
+const sm = async (d, s) => (await ambil(d, s));
+const metaDi = async (d, s) => (await sm(d, s)).sumber.find((x) => x.id === "META");
+// H1. biaya sumber MANUAL tidak mengisi/melengkapi biaya CAMPAIGN: laporan /iklan (campaign) sebelum = sesudah semua penulisan; blok campaign di /sumber sama
+const iklan1 = hapusVolatil((await call("GET", `/?level=campaign&dari=${DARI}&sampai=${SAMPAI}`)).j);
+cek("H1 /iklan (campaign) SESUDAH semua penulisan biaya manual = SEBELUM (biaya campaign tidak terisi/terlengkapi oleh manual)", JSON.stringify(iklan0) === JSON.stringify(iklan1) && iklan1.biaya?.spendTotal === iklan0.biaya?.spendTotal, `status biaya campaign=${iklan1.biaya?.status}`);
+const jH1 = await ambil();
+cek("H1 blok campaign Meta di /sumber (biayaCampaignTerbukti) tidak berubah oleh biaya sumber; sedangkan biaya sumber (label CRM) memang bergerak", JSON.stringify(j0.sumber.find((x) => x.id === "META").biayaCampaignTerbukti) === JSON.stringify(jH1.sumber.find((x) => x.id === "META").biayaCampaignTerbukti) && jH1.sumber.find((x) => x.id === "META").biaya.dasar === "ATRIBUSI_LABEL_CRM");
+// H7 sebagian: /d7 tidak berubah
+const d7_1 = hapusVolatil((await call("GET", `/d7?dari=${D7_DARI}&sampai=${SAMPAI}`)).j);
+cek("H8 /d7 SESUDAH penulisan biaya = SEBELUM", JSON.stringify(d7_0) === JSON.stringify(d7_1) && d7_1 && !d7_1.error);
+console.log("HASH_IKLAN=" + createHash("sha256").update(JSON.stringify(iklan1)).digest("hex") + " HASH_D7=" + createHash("sha256").update(JSON.stringify(d7_1)).digest("hex"));
+// bersihkan sisa F supaya skenario H bebas konflik
+const semuaMeta = (await prisma.$queryRawUnsafe("select id::text id from ad_source_spend_entries where source_id='META' and status='AKTIF'")).map((r) => r.id);
+for (const id of semuaMeta) await batal(id);
+// H2. DETAIL PARSIAL tidak otomatis LENGKAP walau ADA BARIS SETIAP HARI
+const hariAd = (await prisma.$queryRawUnsafe(`select to_char(date_wib,'YYYY-MM-DD') d, sum(spend)::numeric s from meta_ad_daily_spend where date_wib < (now() at time zone 'Asia/Jakarta')::date group by date_wib order by date_wib`)).map((r) => ({ d: r.d, s: Number(r.s) }));
+let run = []; let terbaik = [];
+for (const h of hariAd) { if (run.length && Date.parse(h.d + "T00:00:00Z") - Date.parse(run[run.length - 1].d + "T00:00:00Z") === 864e5) run.push(h); else run = [h]; if (run.length > terbaik.length) terbaik = [...run]; }
+if (terbaik.length < 3) skip("H2/H3 detail Ad: butuh ≥ 3 hari berurutan berdetail Ad", "tidak ada di salinan restore");
+else {
+  const a = terbaik[0].d, b = terbaik[terbaik.length - 1].d, jumlah = terbaik.reduce((x, y) => x + y.s, 0);
+  const m0 = await metaDi(a, b);
+  cek(`H2 ${terbaik.length} hari ${a}..${b}: baris detail ADA di setiap hari → LENGKAP hanya karena benar-benar tanpa pembanding`, m0.biaya.status === "LENGKAP" && m0.biaya.cakupan.hari.adDetail === terbaik.length && Math.abs(m0.biaya.spend - jumlah) < 0.01);
+  const tr = await putB({ sumber: "META", jenis: "TOTAL_RENTANG", dari: a, sampai: b, nominal: String(Math.round(jumlah * 2)) });
+  const m1 = await metaDi(a, b);
+  cek("H2 total rentang pembanding 2× jumlah detail → status DETAIL_AD_SELISIH (BUKAN LENGKAP walau ada baris setiap hari); spend tetap = detail (tidak dijumlah); CPA/ROAS null", tr.s === 201 && m1.biaya.status === "DETAIL_AD_SELISIH" && m1.biaya.spendLengkap === false && Math.abs(m1.biaya.spend - jumlah) < 0.01 && m1.biaya.cpa === null && m1.biaya.cashRoas === null && m1.biaya.bookedRoas === null, m1.biaya.status);
+  await batal(tr.j.id);
+  const tr2 = await putB({ sumber: "META", jenis: "TOTAL_RENTANG", dari: a, sampai: b, nominal: String(jumlah) });
+  const m2 = await metaDi(a, b);
+  cek("H2 total rentang = jumlah detail → LENGKAP dengan spend = jumlah detail (satu kali, tidak 2×); kunci yang sama diaktifkan kembali, bukan entri ganda", tr2.j.aksi === "AKTIFKAN" && tr2.j.id === tr.j.id && m2.biaya.status === "LENGKAP" && Math.abs(m2.biaya.spend - jumlah) < 0.01, `${m2.biaya.spend} vs ${jumlah}`);
+  await batal(tr2.j.id);
+  // H3. OVERRIDE: hanya sumber/periode yang dipilih; alasan wajib; audit; dapat dicabut
+  const d1 = terbaik[1].d, d2 = terbaik[2].d, det1 = terbaik[1].s, det2 = terbaik[2].s;
+  const jTT0 = (await sm(d1, d1)).sumber.find((x) => x.id === "TIKTOK").biaya.status;
+  cek("H3 override tanpa alasan ditolak 400 ALASAN_WAJIB; override untuk TikTok ditolak 400 OVERRIDE_TIDAK_VALID", (await call("PUT", "/biaya-sumber", { body: { sumber: "META", jenis: "HARIAN", dari: d1, nominal: "5000000", gantiDetailAd: true, alasan: "" } })).j?.code === "ALASAN_WAJIB" && (await call("PUT", "/biaya-sumber", { body: { sumber: "TIKTOK", jenis: "HARIAN", dari: d1, nominal: "5", gantiDetailAd: true, alasan: ALASAN } })).j?.code === "OVERRIDE_TIDAK_VALID");
+  const ov = await putB({ sumber: "META", jenis: "HARIAN", dari: d1, nominal: String(Math.round(det1 * 3)), gantiDetailAd: true, alasan: "FIXTURE UJI bukti khusus: override hari " + d1 });
+  const mA = await metaDi(d1, d1), mB = await metaDi(d2, d2), mAB = await metaDi(d1, d2);
+  cek(`H3 override pada ${d1} saja: hari itu memakai manual; ${d2} (hari lain) tetap detail Ad; rentang gabungan = override + detail hari lain (tanpa jumlah ganda); TikTok tak terpengaruh`,
+    ov.s === 201 && mA.biaya.spend === Math.round(det1 * 3) && mA.biaya.cakupan.hari.override === 1 && Math.abs(mB.biaya.spend - det2) < 0.01 && mB.biaya.cakupan.hari.override === 0 && Math.abs(mAB.biaya.spend - (Math.round(det1 * 3) + det2)) < 0.01 && (await sm(d1, d1)).sumber.find((x) => x.id === "TIKTOK").biaya.status === jTT0);
+  const revOv = (await prisma.$queryRawUnsafe(`select r.new_override::text no, r.reason, r.changed_by_id cb from ad_source_spend_revisions r where r.entry_id = '${ov.j.id}'::uuid order by r.revision desc limit 1`))[0];
+  cek("H3 audit override: new_override=true, alasan tercatat, pengubah = ADMIN", revOv.no === "true" && /override hari/.test(revOv.reason) && revOv.cb === adm.id);
+  const cab = await putB({ sumber: "META", jenis: "HARIAN", dari: d1, nominal: String(Math.round(det1 * 3)), alasan: "FIXTURE UJI bukti khusus: cabut override" });
+  const mC = await metaDi(d1, d1);
+  const revCab = (await prisma.$queryRawUnsafe(`select r.prev_override::text po, r.new_override::text no from ad_source_spend_revisions r where r.entry_id = '${ov.j.id}'::uuid order by r.revision desc limit 1`))[0];
+  cek("H3 pencabutan override: kembali ke detail Ad (+ selisih terlihat); audit prev=true → new=false", cab.j.aksi === "UBAH" && mC.biaya.status === "DETAIL_AD_SELISIH" && Math.abs(mC.biaya.spend - det1) < 0.01 && revCab.po === "true" && revCab.no === "false");
+  await batal(ov.j.id);
+}
+// H4. biaya bulanan lama (AdSpend) + manual harian + detail Ad tidak dijumlah ganda
+const bulan = (await prisma.$queryRawUnsafe(`select year, month, amount from "AdSpend" where source::text = 'META_ADS' and amount > 0 and make_date(year, month, 1) + interval '1 month' <= (now() at time zone 'Asia/Jakarta')::date and not exists (select 1 from meta_ad_daily_spend d where d.date_wib >= make_date(year, month, 1) and d.date_wib < make_date(year, month, 1) + interval '1 month') order by year desc, month desc limit 1`))[0];
+if (!bulan) skip("H4 biaya bulanan lama + manual", "tidak ada AdSpend META bulan lampau di salinan restore");
+else {
+  const y = Number(bulan.year), mo = Number(bulan.month), awal = `${y}-${String(mo).padStart(2, "0")}-01`; const akhir = new Date(Date.UTC(y, mo, 0)).toISOString().slice(0, 10); const nominal = Number(bulan.amount);
+  const mm0 = await metaDi(awal, akhir);
+  cek(`H4 bulan ${awal}..${akhir} (tanpa detail Ad): hanya biaya bulanan lama (AdSpend Rp${nominal.toLocaleString("id-ID")}) → dipakai SEKALI sebagai total (tidak diprorata ke hari)`, mm0.biaya.status === "LENGKAP" && mm0.biaya.spend === nominal && mm0.biaya.cakupan.biayaBulananPengaturan.some((b) => b.dipakai), `${mm0.biaya.status} ${mm0.biaya.spend}`);
+  const mh = await putB({ sumber: "META", jenis: "HARIAN", dari: awal, nominal: "1000000" });
+  const mm1 = await metaDi(awal, akhir);
+  const bul = mm1.biaya.cakupan.biayaBulananPengaturan.find((b) => b.tahun === y && b.bulan === mo);
+  cek("H4 + manual harian pada bulan itu: biaya bulanan lama DIABAIKAN (bukan ditambah) → spend = manual saja (bukan bulanan + manual); status tidak lengkap", mh.s === 201 && bul && bul.dipakai === false && /ADA_ENTRI_SUMBER_PADA_BULAN_INI/.test(bul.alasan) && mm1.biaya.spend === 1000000 && mm1.biaya.status === "SPEND_TIDAK_LENGKAP", `${mm1.biaya.spend} (bulanan ${nominal})`);
+  await batal(mh.j.id);
+  cek("H4 entri manual dibatalkan → kembali ke biaya bulanan lama sekali (tanpa sisa ganda)", (await metaDi(awal, akhir)).biaya.spend === nominal);
+}
+// H7. hari berjalan & data tidak lengkap menahan KPI
+const sHB = await sm(SAMPAI, hariIni);
+cek("H7 rentang memuat hari ini: periode.termasukHariBerjalan, peringatan HARI_BERJALAN, dan CPA/Booked/Cash ROAS SEMUA sumber null walau entri biaya hari lampau ada", sHB.periode.termasukHariBerjalan === true && sHB.peringatan.some((p) => p.kode === "HARI_BERJALAN") && sHB.sumber.every((x) => x.biaya.cpa === null && x.biaya.bookedRoas === null && x.biaya.cashRoas === null) && sHB.total.berbayar.cpa === null);
+const idTT = (await prisma.$queryRawUnsafe(`select id::text id from ad_source_spend_entries where source_id='TIKTOK' and status='AKTIF' and date_from = '${hari[3]}'`))[0].id;
+await batal(idTT);
+const ttHilang = (await ambil()).sumber.find((x) => x.id === "TIKTOK");
+cek("H7 biaya TIDAK lengkap (satu hari TikTok dibatalkan): status SPEND_TIDAK_LENGKAP + hari hilang tercatat; spend ada tetapi CPA/CPL/Booked/Cash ROAS null; total berbayar null", ttHilang.biaya.status === "SPEND_TIDAK_LENGKAP" && ttHilang.biaya.cakupan.hariHilang.includes(hari[3]) && ttHilang.biaya.spend > 0 && ttHilang.biaya.cpa === null && ttHilang.biaya.cpl === null && ttHilang.biaya.bookedRoas === null && ttHilang.biaya.cashRoas === null && (await ambil()).total.berbayar.cpa === null);
+await putB({ sumber: "TIKTOK", jenis: "HARIAN", dari: hari[3], nominal: "150000", alasan: ALASAN + " (aktifkan lagi)" });
+// H5/H6. angka TERPISAH + definisi CPA (customer unik lunas)
+const jj = await ambil(); const t6 = jj.sumber.find((x) => x.id === "TIKTOK");
+cek("H5 invarian pemisahan: lunas ≤ membayar ≤ ber-order ≤ lead sah ≤ lead; kategori saling lepas = ber-order; uang bersih = ledger − refund; nilai order & uang adalah dua angka berbeda", jj.sumber.every((x) => x.lunas <= x.membayar && x.membayar <= x.berOrder && x.berOrder <= x.leadSah && x.leadSah <= x.lead && x.kategoriEksklusif.jumlah === x.berOrder && Math.abs(x.uang.uangBersih - (x.uang.uangLedger - x.uang.refund)) < 0.01) && jj.sumber.some((x) => x.uang.nilaiOrderSaatIni !== x.uang.uangBersih));
+cek(`H6 CPA = biaya ÷ CUSTOMER UNIK lunas (penyebut ${t6.biaya.penyebut?.customerLunas}), bukan jumlah order lunas (${t6.order.lunas}) / customer membayar (${t6.membayar}) / ber-order (${t6.berOrder})`, t6.biaya.penyebut.customerLunas === t6.lunas && (t6.biaya.status !== "LENGKAP" ? t6.biaya.cpa === null : (t6.lunas > 0 ? Math.abs(t6.biaya.cpa - t6.biaya.spend / t6.lunas) < 0.01 : t6.biaya.cpa === null)));
 // G. rekonsiliasi sesudah penulisan: hitungan & uang tidak berubah karena biaya; tabel lama tidak tersentuh
 const j3 = await ambil(); const A1 = agregat(j3);
 cek("rekonsiliasi: lead/ber-order/membayar/lunas/nilai/uang per sumber IDENTIK sebelum vs sesudah menulis biaya", JSON.stringify(A0) === JSON.stringify(A1));
