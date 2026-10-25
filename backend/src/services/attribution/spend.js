@@ -280,11 +280,12 @@ export async function muatSpendPerAd(tx, { dari, sampai }) {
   const [kes] = await tx.$queryRaw`
     SELECT (SELECT max(date_wib)::text FROM meta_ad_daily_spend) AS terakhir_tanggal,
            (SELECT max(created_at) FROM meta_spend_imports) AS terakhir_import,
-           (SELECT count(*)::int FROM meta_ad_daily_spend WHERE date_wib >= ${d1} AND date_wib <= ${d2}) AS baris_di_rentang`;
+           (SELECT count(*)::int FROM meta_ad_daily_spend WHERE date_wib >= ${d1} AND date_wib <= ${d2}) AS baris_di_rentang,
+           (SELECT coalesce(array_agg(DISTINCT date_wib::text ORDER BY date_wib::text), '{}') FROM meta_ad_daily_spend WHERE date_wib >= ${d1} AND date_wib <= ${d2}) AS hari_tersedia`;
   const num = (v) => (v === null || v === undefined ? null : Number(v));
   return {
     spendPerAd: baris.map((b) => ({ adId: b.ad_id, spend: bulat2(b.spend), impressions: num(b.impressions), linkClicks: num(b.link_clicks), platformConversations: num(b.konversasi), hariAdaSpend: b.hari })),
-    kesegaranMentah: { terakhirTanggal: kes.terakhir_tanggal ?? null, terakhirImportAt: kes.terakhir_import ? new Date(kes.terakhir_import).toISOString() : null, adaDataDiRentang: kes.baris_di_rentang > 0 },
+    kesegaranMentah: { terakhirTanggal: kes.terakhir_tanggal ?? null, terakhirImportAt: kes.terakhir_import ? new Date(kes.terakhir_import).toISOString() : null, adaDataDiRentang: kes.baris_di_rentang > 0, hariTersedia: kes.hari_tersedia ?? [] },
   };
 }
 
