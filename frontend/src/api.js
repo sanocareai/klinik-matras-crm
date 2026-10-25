@@ -246,6 +246,15 @@ export const api = {
   postHubHandoff: ({ stateHash, next }) =>
     request("/hub/handoff", { method: "POST", body: JSON.stringify({ stateHash, next }) }),
 
+  // Main Hub (Okt 2026) — ringkasan Task & Meeting untuk /portal. "Tugas
+  // Saya"/"Hasil Meeting" (milik sendiri) dan "Pantauan Leader" (lintas
+  // leader, Owner-only — 403 untuk yang lain, Portal.jsx menyembunyikan
+  // kartunya, bukan menampilkan galat). HUB mati/tidak dikonfigurasi → 503,
+  // ditangani sebagai status "tidak tersedia", bukan error yang menjatuhkan
+  // seluruh Portal.
+  getHubSummaryMe: () => request("/hub/summary/me"),
+  getHubSummaryLeaders: (division) => request(`/hub/summary/leaders${division ? `?division=${encodeURIComponent(division)}` : ""}`),
+
   // Bengkel — Papan Produksi Harian (Sano Hub Phase 1, D-014)
   getProductionBoard: (date) => request(`/production/board${date ? `?date=${date}` : ""}`),
   // Production Command Center (Production Core Slice 2E) — SATU endpoint
