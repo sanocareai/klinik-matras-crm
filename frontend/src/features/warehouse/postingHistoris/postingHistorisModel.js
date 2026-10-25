@@ -108,7 +108,7 @@ export function ringkasHpp(hpp) {
     nilai: rupiah(nilai), belumDijurnal: rupiah(belum), tanpaHarga: tanpa, tertahan: hpp.catatanTertahan ?? 0,
     penjelasan: parsial
       ? `${tanpa ? `${tanpa} transaksi belum punya harga; ` : ""}${hpp.catatanTertahan ? `${hpp.catatanTertahan} catatan masih tertahan; ` : ""}nilai ini BELUM final.`
-      : "Seluruh transaksi bernilai.",
+      : hpp.status === "BELUM_ADA" ? "Belum ada transaksi yang diposting, jadi belum ada nilai." : "Seluruh transaksi bernilai.",
     jurnal: hpp.jurnalDibuat ? "Jurnal HPP dibuat" : "Jurnal HPP TIDAK dibuat — selisih ini belum masuk buku besar",
   };
 }

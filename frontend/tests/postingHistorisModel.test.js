@@ -31,6 +31,7 @@ test("HPP: PARSIAL jika ada transaksi tanpa harga atau catatan tertahan; selisih
   assert.equal(h.label, "HPP PARSIAL"); assert.equal(h.nada, "orange"); assert.equal(h.belumDijurnal, "Rp2.346.600"); assert.match(h.penjelasan, /2 transaksi belum punya harga/); assert.match(h.penjelasan, /5 catatan masih tertahan/); assert.match(h.jurnal, /TIDAK dibuat/);
   assert.equal(ringkasHpp({ status: "LENGKAP", hppBerbukti: 100, selisihBelumDijurnal: 100 }).nada, "green"); assert.equal(ringkasHpp(null), null);
   assert.equal(ringkasHpp({ status: "BELUM_ADA", nilaiTercatat: 0, belumDijurnal: 0 }).label, "Belum ada nilai");
+  assert.match(ringkasHpp({ status: "BELUM_ADA", nilaiTercatat: 0, belumDijurnal: 0 }).penjelasan, /Belum ada transaksi yang diposting/, "tidak boleh menyatakan 'seluruh transaksi bernilai' saat belum ada posting");
 });
 test("syarat tombol Mulai: izin, manifest ada, tidak ada batch aktif, tidak membuat stok negatif", () => {
   const pra = { jumlahTrx: 3, dampakStok: { bahanNegatifSesudah: 0 } };

@@ -62,7 +62,12 @@ export function useBatchPostingHistoris({ aktif = true } = {}) {
   async function jalankan(fn) {
     if (aksiRef.current) return null; // klik ganda dalam tab ini
     aksiRef.current = true; setSibuk(true);
-    try { const hasil = await fn(); beritahu(hasil?.batchId); await ambil({ daftarJuga: true }); return hasil; }
+    try {
+      const hasil = await fn(); beritahu(hasil?.batchId); await ambil({ daftarJuga: true });
+      // status server berubah sesaat SETELAH balasan (pekerja baru menulis sewa): segarkan lagi cepat agar tombol/label tidak tertinggal 2,5 dtk
+      for (const ms of [700, 2000]) setTimeout(() => { if (hidup.current && !document.hidden) ambil(); }, ms);
+      return hasil;
+    }
     finally { aksiRef.current = false; setSibuk(false); }
   }
   const mulai = (data) => jalankan(() => api.mulaiBatchPostingHistoris(data));
