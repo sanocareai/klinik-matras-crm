@@ -167,9 +167,28 @@ test("tujuan: kosong/tak ada = '/'", () => {
 
 test("tujuan: halaman yang dikenal lolos persis apa adanya", () => {
   for (const ok of ["/", "/meetings", "/meetings/action-item-saya", "/my-tasks", "/inbox", "/dashboard", "/goals", "/dashboards",
-    "/meetings/cmui7f3rd00075wpzv6906lit", "/projects/cmrocu6kq000kf4wdbrrupgqt/board", "/projects/cmrocu6kq000kf4wdbrrupgqt/list"]) {
+    "/meetings/cmui7f3rd00075wpzv6906lit", "/projects/cmrocu6kq000kf4wdbrrupgqt/board", "/projects/cmrocu6kq000kf4wdbrrupgqt/list",
+    "/projects/cmrocu6kq000kf4wdbrrupgqt/board?task=cmui7f3rd00075wpzv6906lit"]) {
     assert.equal(resolveDestination(ok), ok, ok);
   }
+});
+
+test("tujuan: tautan task Main Hub — HANYA bentuk persis ?task=<id> di board, tidak dilonggarkan lebih jauh", () => {
+  const P = "cmrocu6kq000kf4wdbrrupgqt";
+  const T = "cmui7f3rd00075wpzv6906lit";
+  const evil = [
+    `/projects/${P}/list?task=${T}`, // view selain board
+    `/projects/${P}/calendar?task=${T}`,
+    `/projects/${P}/board?task=short`, // id task cacat (terlalu pendek)
+    `/projects/${P}/board?task=${T}&x=1`, // param tambahan
+    `/projects/${P}/board?task=${T}&task=${T}`, // diulang
+    `/projects/${P}/board?Task=${T}`, // nama param beda huruf besar/kecil
+    `/projects/${P}/board?task=${T}#frag`,
+    `/projects/${P}/board?task=https://evil.com`,
+    `/projects/${P}/board?task=`,
+    `/projects/${P}/board? task=${T}`,
+  ];
+  for (const e of evil) assert.equal(resolveDestination(e), null, JSON.stringify(e));
 });
 
 test("tujuan: SEMUA bentuk open-redirect dan jalur liar ditolak", () => {

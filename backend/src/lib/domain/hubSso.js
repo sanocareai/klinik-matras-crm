@@ -200,7 +200,9 @@ export function isInternalRequest(req) {
 // ─── Tujuan (allow-list) ────────────────────────────────────────────────────
 
 const ID = "[A-Za-z0-9_-]{8,64}";
-/** Halaman HUB yang boleh menjadi tujuan pendaratan. Tanpa query/fragment. */
+/** Halaman HUB yang boleh menjadi tujuan pendaratan. Tanpa query/fragment,
+ *  KECUALI satu pola eksplisit di bawah (tautan dalam Main Hub ke task
+ *  spesifik) — tidak ada pelonggaran generik ke "query apa saja boleh". */
 const EXACT_DESTINATIONS = new Set([
   "/", "/dashboard", "/my-tasks", "/inbox", "/goals", "/dashboards",
   "/meetings", "/meetings/action-item-saya",
@@ -208,14 +210,20 @@ const EXACT_DESTINATIONS = new Set([
 const DESTINATION_PATTERNS = [
   new RegExp(`^/meetings/${ID}$`),
   new RegExp(`^/projects/${ID}/(board|list|calendar|gantt|docs|forms|sprints)$`),
+  // Main Hub (Okt 2026) — tautan "Tugas Saya"/"Pantauan Leader" ke task
+  // tertentu, bentuk URL yang SAMA dipakai board/search/notifikasi HUB
+  // sendiri. Pola TERPISAH, bukan pelonggaran pola di atas ke "board boleh
+  // query apa saja" — hanya literal `?task=<id>` ini yang lolos.
+  new RegExp(`^/projects/${ID}/board\\?task=${ID}$`),
 ];
 
 /**
  * Tujuan pendaratan di HUB. Mengembalikan jalur kanonik, atau null bila tidak
  * lolos. Kosong/tak ada = "/" (default). Karena yang lolos hanya kecocokan
- * PERSIS dengan daftar di atas, semua bentuk open-redirect (`//evil.com`,
- * `/\\evil.com`, `https://…`, `javascript:`, `%2F%2F`, `..`, `?next=`, `#`,
- * spasi/kontrol) gugur tanpa perlu daftar larangan.
+ * PERSIS dengan daftar di atas (plus SATU pola `?task=` eksplisit), semua
+ * bentuk open-redirect (`//evil.com`, `/\\evil.com`, `https://…`,
+ * `javascript:`, `%2F%2F`, `..`, `?next=evil`, `#`, spasi/kontrol) tetap
+ * gugur tanpa perlu daftar larangan.
  */
 export function resolveDestination(input) {
   if (input === undefined || input === null || input === "") return "/";
