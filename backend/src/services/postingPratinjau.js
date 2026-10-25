@@ -5,12 +5,19 @@ import { rencanakanPosting } from "./postingPemakaianHistoris.js";
 import { terapkanKeadaanEfektif } from "./catatanPemakaianHistoris.js";
 import { r4 } from "../lib/domain/pemakaianHistoris.js";
 
-const memo = new Map(); // hash rencana → { t, hasil } (30 dtk): beberapa tab/pengguna membuka manifest yang sama tidak menghitung harga berulang
+const memo = new Map(); // hash rencana → { t, janji } (30 dtk): SATU perhitungan harga untuk semua tab/pengguna serentak (single-flight; yang gagal dibuang)
 const TTL = 30_000;
 
 export async function pratinjauPosting(db, { unitIds = null } = {}) {
   const rencana = await rencanakanPosting(db, { unitIds });
-  const ada = memo.get(rencana.hash); if (ada && Date.now() - ada.t < TTL) return ada.hasil;
+  const ada = memo.get(rencana.hash); if (ada && Date.now() - ada.t < TTL) return ada.janji;
+  const janji = hitungPratinjau(db, rencana);
+  memo.set(rencana.hash, { t: Date.now(), janji }); if (memo.size > 20) memo.delete(memo.keys().next().value);
+  janji.catch(() => { if (memo.get(rencana.hash)?.janji === janji) memo.delete(rencana.hash); });
+  return janji;
+}
+
+async function hitungPratinjau(db, rencana) {
 
   const cacheHarga = new Map(); // bahan|tanggal → harga
   const harga = async (t) => { const k = `${t.materialId}|${t.tanggal}`; if (!cacheHarga.has(k)) { const d = await dasarHargaRataRata(db, t.materialId, { asOf: new Date(t.usedAt) }); cacheHarga.set(k, d.harga == null ? null : Number(d.harga)); } return cacheHarga.get(k); };
@@ -52,6 +59,5 @@ export async function pratinjauPosting(db, { unitIds = null } = {}) {
     dampakStok: { bahan: bahan.length, bahanNegatifSesudah: bahan.filter((b) => b.saldoSesudah < -1e-6).length },
     bahan, order,
   };
-  memo.set(rencana.hash, { t: Date.now(), hasil }); if (memo.size > 20) memo.delete(memo.keys().next().value);
   return hasil;
 }

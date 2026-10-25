@@ -43,14 +43,15 @@ export default function WarehousePostingHistoris() {
   }, []);
   // pratinjau dimuat saat halaman dibuka, saat pilihan order berubah, dan saat batch selesai (rencana sisa berubah). Tidak dimuat ulang tiap polling.
   const statusBatch = aktifSt?.status;
-  useEffect(() => { if (boleh && !sedangAktif) muatPratinjau(); }, [boleh, sedangAktif, statusBatch, muatPratinjau]);
+  // pratinjau hanya dimuat SETELAH status batch diketahui dan tidak ada batch aktif (saat batch berjalan manifest tidak relevan dan mahal dihitung: beberapa tab tidak boleh memicunya)
+  useEffect(() => { if (boleh && !batch.memuat && !sedangAktif) muatPratinjau(); }, [boleh, batch.memuat, sedangAktif, statusBatch, muatPratinjau]);
   // bila hanya sebagian order dipilih: hash/dampak/HPP dihitung server untuk pilihan itu (bukan dikira-kira di browser)
   useEffect(() => {
-    if (!boleh || sedangAktif || !pilih) { setPraSub({ memuat: false, data: null, galat: null }); return undefined; }
+    if (!boleh || batch.memuat || sedangAktif || !pilih) { setPraSub({ memuat: false, data: null, galat: null }); return undefined; }
     let batal = false; setPraSub((x) => ({ ...x, memuat: true, galat: null }));
     api.pratinjauPostingHistoris(pilih.length ? pilih : undefined).then((d) => { if (!batal) setPraSub({ memuat: false, data: d, galat: null }); }).catch((e) => { if (!batal) setPraSub({ memuat: false, data: null, galat: e }); });
     return () => { batal = true; };
-  }, [boleh, sedangAktif, pilih, statusBatch]);
+  }, [boleh, batch.memuat, sedangAktif, pilih, statusBatch]);
 
   const semuaUnit = useMemo(() => pra.data?.order?.map((o) => o.unitId) ?? [], [pra.data]);
   const orders = useMemo(() => (pra.data?.order ?? []).filter((o) => !cari.trim() || o.orderNumber.toLowerCase().includes(cari.trim().toLowerCase())), [pra.data, cari]);

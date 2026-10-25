@@ -144,6 +144,8 @@ test("L8. pratinjau manifest: dampak stok/HPP, tertahan + alasan, selisih belum 
   assert.equal(r.body.hpp.hppBerbukti, 6 * 20000 + 1 * 50000 + 4 * 20000); assert.equal(r.body.hpp.selisihBelumDijurnal, r.body.hpp.hppBerbukti);
   const oB = r.body.order.find((o) => o.orderNumber === "RES-04092026-902"); assert.equal(oB.jumlahTertahan, 1); assert.match(oB.tertahan[0].alasan.join(" "), /Saldo tidak mencukupi/);
   assert.equal(await testPrisma.stockMovement.count(), mv0); assert.equal(await testPrisma.unitUsageNoteEvent.count(), ev0, "pratinjau tidak menulis");
+  // beberapa tab/pengguna serentak: semuanya 200 dengan hash sama (satu perhitungan bersama)
+  const serentak = await Promise.all([1, 2, 3, 4, 5].map(() => w.co.get(`/api/production/posting-historis/pratinjau`))); assert.ok(serentak.every((x) => x.status === 200 && x.body.hash === r.body.hash), "lima permintaan serentak konsisten");
   const sub = await w.co.get(`/api/production/posting-historis/pratinjau?unitIds=${w.uA.id}`); assert.equal(sub.body.jumlahTrx, 1); assert.notEqual(sub.body.hash, r.body.hash);
   assert.equal((await w.ca.get(`/api/production/posting-historis/pratinjau`)).status, 200, "ADMIN boleh membaca manifest");
   assert.equal((await w.ca.post(`/api/production/posting-historis/batch`, { hashDisetujui: r.body.hash, rujukan: "OWNER-2026-10-25" })).status, 403, "tetapi tidak boleh memulai");
