@@ -31,7 +31,7 @@ DEPLOY_SHORT="${DEPLOY_SHA:0:8}"; BASE_SHORT="${BASE_SHA:0:8}"; NEW_DIR="$RELEAS
 TS="$(date +%Y%m%d_%H%M%S)"; BK_DIR="$HOME/release-backups/${TAG_KODE}-${DEPLOY_SHORT}-${TS}"
 ROLLBACK_TAG="klinik-matras-backend:rollback-pre-${TAG_KODE}-${DEPLOY_SHORT}"
 
-ALLOWED_RE='^(backend/src/(services/attribution/(biayaKpi|iklanReport|spend|d7)\.js|routes/attributionAds\.js)|backend/tests/(atribusiSpendKpi|atribusiIklanReport|atribusiD7|releaseAtribusiKpiD7|releaseAtribusiKpiKode)\.test\.js|backend/tests/integration/atribusiIklan\.integration\.test\.js|frontend/src/features/laporan/iklanCampaignLogic\.js|frontend/tests/iklanCampaignLogic\.test\.js|docs/ATRIBUSI-KPI-D7\.md|scripts/release-atribusi-kpi-d7\.sh)$'
+ALLOWED_RE='^(backend/src/(services/attribution/(biayaKpi|iklanReport|spend|d7)\.js|routes/attributionAds\.js)|backend/tests/(atribusiSpendKpi|atribusiIklanReport|atribusiD7|releaseAtribusiKpiD7|releaseAtribusiKpiKode)\.test\.js|backend/tests/integration/(atribusiIklan|atribusiStatusCustomer)\.integration\.test\.js|frontend/src/features/laporan/iklanCampaignLogic\.js|frontend/tests/iklanCampaignLogic\.test\.js|docs/ATRIBUSI-KPI-D7\.md|scripts/release-atribusi-kpi-d7\.sh)$'
 BACKEND_SRC_EXPECT="backend/src/routes/attributionAds.js backend/src/services/attribution/biayaKpi.js backend/src/services/attribution/d7.js backend/src/services/attribution/iklanReport.js backend/src/services/attribution/spend.js"
 FRONTEND_SRC_EXPECT="frontend/src/features/laporan/iklanCampaignLogic.js"
 declare -A PINS=(
