@@ -43,7 +43,7 @@ export function statusPada(order, transisi, t) {
   return { status: s, riwayat: true, tidakDiketahui: false };
 }
 
-const kosongGrup = () => ({ leadUnik: 0, spam: 0, leadSah: 0, prospek: 0, prospekTanpaTanggal: 0, customerOrder: 0, customerPernahBayar: 0, customerDp: 0, orderDp: 0, customerLunas: 0, orderLunas: 0, orderEligible: 0, nilaiOrderSaatIni: 0, uangLedger: 0, refund: 0, uangBersih: 0, customerOrderStatusTidakDiketahui: 0, orderStatusTidakDiketahui: 0, kategoriEksklusif: { belumBayar: 0, dpSaatD7: 0, lunas: 0 } });
+const kosongGrup = () => ({ leadUnik: 0, spam: 0, leadSah: 0, prospek: 0, prospekTanpaTanggal: 0, customerOrder: 0, customerPernahBayar: 0, customerDp: 0, orderDp: 0, customerLunas: 0, orderLunas: 0, orderEligible: 0, nilaiOrderSaatIni: 0, uangLedger: 0, refund: 0, uangBersih: 0, customerOrderStatusTidakDiketahui: 0, orderStatusTidakDiketahui: 0, customerOrderSemua: 0, kategoriEksklusif: { belumBayar: 0, dpSaatD7: 0, lunas: 0, tidakDiketahui: 0 } });
 
 /**
  * MURNI. Menyusun hasil D7.
@@ -68,7 +68,8 @@ export function susunD7(p) {
   const batasan = [
     "nilaiOrderSaatIni = nilai order/tagihan bersih SAAT INI (BUKAN nilai historis D7; nota kredit sesudah D7 tidak direkonstruksi). Jangan membacanya sebagai 'booked D7'.",
     "Order dengan status selain PENDING tetapi tanpa riwayat transisi → status pada D7 TIDAK DIKETAHUI: tidak dihitung dan dilaporkan (orderStatusTidakDiketahui).",
-    "customerDp (pernah DP), customerLunas, dan customerPernahBayar TIDAK eksklusif (satu customer bisa DP lalu lunas); gunakan kategoriEksklusif (lunas > DP saat D7 > belum bayar) untuk pembagian saling lepas.",
+    "customerDp (pernah DP), customerLunas, dan customerPernahBayar TIDAK eksklusif (satu customer bisa DP lalu lunas); gunakan kategoriEksklusif (lunas > DP saat D7 > TIDAK DIKETAHUI > belum bayar) untuk pembagian saling lepas; jumlahnya = customerOrderSemua (customerOrder + customer yang hanya punya order berstatus tidak diketahui).",
+    "TIDAK DIKETAHUI = order dengan status pada D7 tidak dapat direkonstruksi, atau status bayar tersimpan LUNAS/DP tanpa pembayaran di ledger; tidak boleh dibaca 'belum bayar'.",
     "Tanggal pembayaran = waktu pencatatan di sistem, bukan tanggal uang diterima.",
     "Customer pernah membayar/DP/lunas dihitung dari pembayaran yang tercatat di ledger; pembayaran di luar sistem tidak terlihat.",
     "Prospek = penandaan manual sales yang BERTANGGAL (transisi stage); penandaan tanpa tanggal tidak dihitung di D7.",
@@ -98,7 +99,7 @@ export function susunD7(p) {
   const refundPer = new Map(); for (const r of refunds) if (r.status === "DISETUJUI") (refundPer.get(r.orderId) || refundPer.set(r.orderId, []).get(r.orderId)).push(r);
 
   const grupMap = new Map(); const g = (k, info) => grupMap.get(k) || grupMap.set(k, { kunci: k, ...info, ...kosongGrup() }).get(k);
-  const cov = { orderEligible: 0, orderDenganPembayaran: 0, orderTanpaRiwayatStatus: 0, paymentSetelahD7Diabaikan: 0, paymentDibatalkanSebelumD7: 0, paymentBatalSetelahD7TetapSah: 0, paymentBelumTerverifikasiPadaD7: 0, orderBatalSebelumD7: 0, orderBatalTanpaRiwayat: 0, orderBatalSetelahD7TetapDihitung: 0 };
+  const cov = { orderEligible: 0, orderDenganPembayaran: 0, orderTanpaRiwayatStatus: 0, paymentSetelahD7Diabaikan: 0, paymentDibatalkanSebelumD7: 0, paymentBatalSetelahD7TetapSah: 0, paymentBelumTerverifikasiPadaD7: 0, orderBatalSebelumD7: 0, orderBatalTanpaRiwayat: 0, orderBatalSetelahD7TetapDihitung: 0, orderStatusBayarTanpaLedger: 0 };
   const denganRef = (adId) => referensi.get(adId) || null;
 
   for (const c of kohort) {
@@ -111,7 +112,7 @@ export function susunD7(p) {
     x.leadSah++;
     const trProspek = (c.transitions || []).filter((t) => STAGE_PROSPEK_ATAU_LANJUT.includes(t.toStage));
     if (trProspek.some((t) => ms(t.createdAt) <= akhir)) x.prospek++; else if (!trProspek.length && STAGE_PROSPEK_ATAU_LANJUT.includes(c.pipelineStage)) x.prospekTanpaTanggal++;
-    let adaOrder = false, adaBayar = false, adaDp = false, adaLunas = false, adaDpKini = false, adaTidakDiketahui = false;
+    let adaOrder = false, adaBayar = false, adaDp = false, adaLunas = false, adaDpKini = false, adaTidakDiketahui = false, adaTanpaBukti = false;
     for (const o of ordersBy.get(c.id) || []) {
       if (o.penjualanKaryawanId || ms(o.createdAt) > akhir) continue;
       const sp = statusPada(o, transisi.get(o.id), akhir);
@@ -129,6 +130,8 @@ export function susunD7(p) {
       }
       const rf = (refundPer.get(o.id) || []).filter((r) => ms(r.approvedAt || r.date) <= akhir);
       const j = jejakPembayaran(kontribusi, o.tagihan != null ? o.tagihan : nilaiBersih(o), rf);
+      // histori pembayaran TIDAK CUKUP: status bayar tersimpan LUNAS/DP tetapi tidak ada satu pun pembayaran di ledger → kondisi saat D7 tidak dapat dibuktikan (bukan otomatis "belum bayar")
+      if (j.jumlahPembayaran === 0 && (o.paymentStatus === "LUNAS" || o.paymentStatus === "DP")) { adaTanpaBukti = true; cov.orderStatusBayarTanpaLedger++; }
       adaOrder = true; x.orderEligible++; cov.orderEligible++; x.nilaiOrderSaatIni += rp(nilaiBersih(o));
       if (j.jumlahPembayaran > 0) { cov.orderDenganPembayaran++; adaBayar = true; }
       if (j.pernahDp) { adaDp = true; x.orderDp++; }
@@ -136,7 +139,11 @@ export function susunD7(p) {
       if (j.status === "LUNAS") { adaLunas = true; x.orderLunas++; }
       x.uangLedger += j.kotor; x.refund += j.refund; x.uangBersih += j.bersih;
     }
-    if (adaOrder) { x.customerOrder++; if (adaLunas) x.kategoriEksklusif.lunas++; else if (adaDpKini) x.kategoriEksklusif.dpSaatD7++; else x.kategoriEksklusif.belumBayar++; }
+    if (adaOrder) x.customerOrder++;
+    if (adaOrder || adaTidakDiketahui) {   // kategori saling lepas: lunas > DP saat D7 > TIDAK DIKETAHUI > belum bayar; jumlah = customerOrderSemua
+      x.customerOrderSemua++;
+      if (adaLunas) x.kategoriEksklusif.lunas++; else if (adaDpKini) x.kategoriEksklusif.dpSaatD7++; else if (adaTanpaBukti || adaTidakDiketahui) x.kategoriEksklusif.tidakDiketahui++; else x.kategoriEksklusif.belumBayar++;
+    }
     if (adaTidakDiketahui) x.customerOrderStatusTidakDiketahui++;
     if (adaBayar) x.customerPernahBayar++; if (adaDp) x.customerDp++; if (adaLunas) x.customerLunas++;
   }
@@ -168,7 +175,7 @@ export function susunD7(p) {
       atribusi: { ...bagianRentang, persenAkuisisiTerbukti: leadRentang ? n2((adaAkuisisi.size / leadRentang) * 100) : null, terpetakanCampaign: kohort.filter((c) => denganRef(akuisisi.get(c.id))).length, unmapped: kohort.filter((c) => !denganRef(akuisisi.get(c.id))).length },
       belumMatang: { lead: belumMatang, catatan: `hari sesudah ${matang} belum berumur 7 hari penuh` },
       ledger: { orderEligible: cov.orderEligible, orderDenganPembayaran: cov.orderDenganPembayaran, persenOrderBerLedger: cov.orderEligible ? n2((cov.orderDenganPembayaran / cov.orderEligible) * 100) : null, orderTanpaRiwayatStatus: cov.orderTanpaRiwayatStatus },
-      histori: { paymentSetelahD7Diabaikan: cov.paymentSetelahD7Diabaikan, paymentDibatalkanSebelumD7: cov.paymentDibatalkanSebelumD7, paymentBatalSetelahD7TetapSah: cov.paymentBatalSetelahD7TetapSah, paymentBelumTerverifikasiPadaD7: cov.paymentBelumTerverifikasiPadaD7, orderBatalSebelumD7: cov.orderBatalSebelumD7, orderBatalTanpaRiwayat: cov.orderBatalTanpaRiwayat, orderBatalSetelahD7TetapDihitung: cov.orderBatalSetelahD7TetapDihitung },
+      histori: { paymentSetelahD7Diabaikan: cov.paymentSetelahD7Diabaikan, paymentDibatalkanSebelumD7: cov.paymentDibatalkanSebelumD7, paymentBatalSetelahD7TetapSah: cov.paymentBatalSetelahD7TetapSah, paymentBelumTerverifikasiPadaD7: cov.paymentBelumTerverifikasiPadaD7, orderBatalSebelumD7: cov.orderBatalSebelumD7, orderBatalTanpaRiwayat: cov.orderBatalTanpaRiwayat, orderStatusBayarTanpaLedger: cov.orderStatusBayarTanpaLedger, orderBatalSetelahD7TetapDihitung: cov.orderBatalSetelahD7TetapDihitung },
       spend: { status: spendStatus, hariKohort: hariKohort.length, hariHilang, spendTidakTerpetakan: spendUnmapped, catatan: "spend hanya pada hari-hari kohort yang sama dengan lead; null bila ada hari tanpa baris spend, sebelum/awal hari atribusi, atau belum terhubung" },
     },
   };

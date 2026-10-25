@@ -1021,6 +1021,7 @@ test("D7 /d7: RBAC (401/403), READ ONLY, histori dari ledger (batal sebelum D7 t
   assert.equal(j.status, "TERSEDIA"); assert.equal(j.rekonsiliasi.ok, true);
   const t = j.total;
   assert.deepEqual([t.leadUnik, t.spam, t.leadSah], [7, 1, 6]);
+  { const ke = t.kategoriEksklusif; assert.equal(ke.lunas + ke.dpSaatD7 + ke.tidakDiketahui + ke.belumBayar, t.customerOrderSemua, "kategori eksklusif (termasuk UNKNOWN) menjumlah tepat ke total"); assert.equal(ke.tidakDiketahui, 1, "c3: LUNAS tersimpan tanpa ledger = UNKNOWN, bukan belum bayar"); assert.ok(!("bookedValue" in t) && "nilaiOrderSaatIni" in t); }
   assert.equal(t.customerOrder, 4); assert.equal(t.customerPernahBayar, 3, "c1, c2, c8"); assert.equal(t.customerLunas, 2, "c1 (DP 30 Sep, lunas 5 Okt = dalam 7 hari) dan c2 (O2)");
   assert.equal(t.orderLunas, 2); assert.equal(t.customerDp, 3, "c1, c2 (O3), c8 (kurang Rp200 rb)");
   assert.equal(t.uangLedger, 4_000_000 + 2_000_000 + 750_000 + 2_000_000, "payment batal sebelum D7 (Rp500 rb) tidak dihitung");
@@ -1072,7 +1073,11 @@ test("SUMBER /sumber: RBAC, READ ONLY, parameter salah 400, angka = SQL independ
   const sqlSpam = await testPrisma.customer.count({ where: { leadSource: "META_ADS", pipelineStage: "SPAM", createdAt: { gte: lo, lt: hi } } });
   assert.deepEqual([meta.lead, meta.spam, meta.leadSah], [sqlLead, sqlSpam, sqlLead - sqlSpam]);
   assert.deepEqual([meta.berOrder, meta.membayar, meta.lunas], [4, 3, 2], "c1,c2,c3,c8 ber-order; c1,c2,c8 membayar; c1,c2 lunas ledger (c8 kurang Rp200 rb)");
-  assert.equal(meta.pernahDp, 3); assert.equal(meta.kategoriEksklusif.lunas + meta.kategoriEksklusif.dpSaatIni + meta.kategoriEksklusif.belumBayar, meta.berOrder, "pembagian saling lepas = ber-order");
+  assert.equal(meta.pernahDp, 3); const ke = meta.kategoriEksklusif; assert.equal(ke.lunas + ke.dpSaatIni + ke.tidakDiketahui + ke.belumBayar, meta.berOrder, "pembagian saling lepas (termasuk TIDAK DIKETAHUI) = ber-order");
+  assert.deepEqual([ke.lunas, ke.dpSaatIni, ke.tidakDiketahui, ke.belumBayar], [2, 1, 1, 0], "c3: LUNAS tersimpan TANPA ledger = tidak diketahui (bukan belum bayar); c8 DP; c1,c2 lunas");
+  assert.deepEqual([meta.konversiOrder.pembilang, meta.konversiOrder.penyebut, meta.konversiOrder.penyebutJenis], [4, sqlLead, "TOTAL_LEAD_TERMASUK_SPAM"], "konversi UTAMA ÷ total lead termasuk spam");
+  assert.deepEqual([meta.konversiOrderNonSpam.pembilang, meta.konversiOrderNonSpam.penyebut, meta.konversiOrderNonSpam.penyebutJenis], [4, sqlLead - sqlSpam, "LEAD_SAH_NON_SPAM"]);
+  assert.equal(meta.pengecualian.spam, sqlSpam); assert.ok("internalStaff" in meta.pengecualian && "profilKaryawan" in meta.pengecualian); assert.ok(j.pengecualianTotal.dikeluarkanDariSemuaSumber && j.definisi.ambang.includes("bukan uji signifikansi"));
   assert.ok(meta.pernahDp + meta.lunas > meta.berOrder - 0, "pernahDp & lunas TIDAK eksklusif (overlap) — tidak boleh dijumlah");
   assert.equal(meta.order.eligible, 5); assert.equal(meta.uang.uangLedger, 8_750_000);
   assert.equal(j.sumber.length, 6); assert.deepEqual(j.sumber.filter((x) => x.id !== "META").map((x) => x.lead), [0, 0, 0, 0, 0]);

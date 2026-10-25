@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/card.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { makeCustomRange, formatRangeText, todayWIB } from "@/lib/dateRange.js";
 import { cn } from "@/lib/utils.js";
-import { METRIK_URUT, urutkan, tampilMetrik, selBiaya, penandaPerSumber, bannerUtama, statusMembayar, peringatanUrut, delta, deltaTeks, angka, formatPersen, rupiah, BUKTI_LABEL } from "../akuisisiLogic.js";
+import { METRIK_URUT, urutkan, tampilMetrik, selBiaya, penandaPerSumber, bannerUtama, statusMembayar, peringatanUrut, delta, deltaTeks, angka, formatPersen, rupiah, BUKTI_LABEL, teksSorotan, teksPengecualian, teksPengecualianTotal, NOTA_AMBANG, PENYEBUT_LABEL } from "../akuisisiLogic.js";
 
 // ═══ PERFORMA AKUISISI (ADMIN) ════════════════════════════════════════════════════════════════════
 // Sumber: GET /api/atribusi/iklan/sumber (baca-saja). Sumber = LABEL CRM; hanya Meta punya atribusi terbukti + biaya. Klien tidak menghitung apa pun: ia menampilkan,
@@ -22,7 +22,7 @@ const TIP = {
   berOrder: "Customer unik dengan ≥ 1 order eligible (bukan batal/pending, bukan penjualan karyawan). Ber-order BUKAN berarti sudah membayar.",
   membayar: "Customer dengan ≥ 1 pembayaran sah di ledger. Batas bawah: pembayaran di luar sistem tidak terlihat.",
   lunas: "Customer dengan order yang ledger-nya menutup seluruh tagihan (setelah refund disetujui).",
-  konversi: "Customer ber-order ÷ lead sah. Pembilang dan penyebut ditampilkan; sumber dengan lead sah kecil diberi tanda 'Sampel kecil'.",
+  konversi: "UTAMA: customer ber-order ÷ TOTAL lead (termasuk spam), konsisten dengan KPI Oktober. Kolom 'non-spam' = ber-order ÷ lead sah (metrik terpisah). Pembilang dan penyebut ditampilkan. 'Sampel kecil' = < 30 lead — aturan tampilan sementara, bukan uji signifikansi.",
   cpa: "Spend ÷ customer lunas terbukti. Hanya Meta, dan hanya bila spend lengkap serta periode tidak memuat hari berjalan.",
   roas: "Nilai (uang ledger bersih) ÷ spend. Hanya Meta; null bila spend tidak memadai.",
   overlap: "Pernah DP, DP saat ini, dan lunas bisa tumpang tindih (customer DP lalu lunas). Jangan dijumlahkan; pakai pembagian saling lepas.",
@@ -60,10 +60,13 @@ function KartuSumber({ s, metrik, metrikLabel, penanda, delta: d, onBuka }) {
         </div>
         {((penanda || []).length > 0 || s.sampelKecil) && (
           <div className="flex flex-wrap items-center gap-1">
-            {(penanda || []).map((p) => <Badge key={p.id} variant="green" className="normal-case">{p.label.replace(/ (sampel.*)/, "")}</Badge>)}
+            {(penanda || []).map((p) => <Badge key={p.id} variant="green" className="normal-case" title={teksSorotan(p)}>{p.label}</Badge>)}
             {s.sampelKecil && <Badge variant="orange" className="normal-case">Sampel kecil</Badge>}
           </div>
         )}
+        {(penanda || []).filter((p) => p.jenis === "KONVERSI_BER_ORDER_PER_TOTAL_LEAD").map((p) => (
+          <p key={p.id} className="t-secondary text-[11px] leading-snug">Konversi ber-order {formatPersen(p.nilai)} = {angka(p.pembilang)} dari {angka(p.penyebut)} total lead (termasuk spam). Ambang {s.ambangSampel} lead = aturan tampilan sementara; bukan uji signifikansi, bukan pemenang pasti.</p>
+        ))}
         <div>
           <p className="t-secondary text-[12px]">{metrikLabel}</p>
           <span className={cn("text-[22px] font-semibold tabular-nums leading-tight sm:text-[26px]", t.kosong ? "text-ink3" : "text-ink")}>{t.utama}</span>
@@ -86,12 +89,15 @@ function Rincian({ s, onIklan }) {
         <ul className="space-y-0.5 text-ink2">
           <li>Pernah DP: <b>{angka(s.pernahDp)}</b> · DP saat ini: <b>{angka(s.dpSaatIni)}</b> · Lunas: <b>{angka(s.lunas)}</b></li>
           <li className="t-secondary">Tumpang tindih — jangan dijumlahkan.</li>
-          <li>Saling lepas: lunas <b>{angka(s.kategoriEksklusif?.lunas)}</b> · DP <b>{angka(s.kategoriEksklusif?.dpSaatIni)}</b> · belum bayar <b>{angka(s.kategoriEksklusif?.belumBayar)}</b> (= {angka(s.berOrder)} ber-order)</li>
+          <li>Saling lepas: lunas <b>{angka(s.kategoriEksklusif?.lunas)}</b> · DP <b>{angka(s.kategoriEksklusif?.dpSaatIni)}</b> · tidak diketahui <b>{angka(s.kategoriEksklusif?.tidakDiketahui)}</b> · belum bayar <b>{angka(s.kategoriEksklusif?.belumBayar)}</b> (= {angka(s.kategoriEksklusif?.jumlah)} dari {angka(s.berOrder)} ber-order)</li>
+          <li className="t-secondary">Tidak diketahui = status bayar tersimpan LUNAS/DP tanpa pembayaran di ledger; bukan 'belum bayar'.</li>
         </ul>
       </div>
       <div>
         <p className="mb-1 font-semibold text-ink">Order &amp; uang</p>
         <ul className="space-y-0.5 text-ink2">
+          <li>Konversi non-spam: <b>{formatPersen(s.konversiOrderNonSpam?.nilai)}</b> ({angka(s.konversiOrderNonSpam?.pembilang)} dari {angka(s.konversiOrderNonSpam?.penyebut)} {PENYEBUT_LABEL.LEAD_SAH_NON_SPAM})</li>
+          <li>{teksPengecualian(s)}</li>
           <li>Order eligible: <b>{angka(s.order?.eligible)}</b> · punya ledger: <b>{angka(s.order?.berLedger)}</b> ({formatPersen(s.order?.persenBerLedger)})</li>
           <li>Nilai order (saat ini): <b>{rupiah(s.uang?.nilaiOrderSaatIni)}</b></li>
           <li>Uang ledger bersih: <b>{rupiah(s.uang?.uangBersih)}</b></li>
@@ -187,10 +193,10 @@ export default function AkuisisiTab({ onBukaIklan }) {
             <div className="flex flex-wrap items-end justify-between gap-2">
               <div>
                 <h3 className="text-[16px] font-semibold text-ink">Peringkat sumber</h3>
-                <p className="t-secondary text-[12.5px]">Peringkat berdasarkan <b>{METRIK_URUT.find((m) => m.id === metrik)?.label?.toLowerCase()}</b>; sumber dengan sampel kecil tidak dibandingkan pada rasio.</p>
+                <p className="t-secondary text-[12.5px]">Peringkat berdasarkan <b>{METRIK_URUT.find((m) => m.id === metrik)?.label?.toLowerCase()}</b>; sumber dengan sampel kecil (&lt; 30 lead) tidak dibandingkan pada rasio.</p>
               </div>
-              <label className="inline-flex items-center gap-2 text-[12.5px] text-ink2">Urutkan
-                <select className="rounded-btn bg-inset px-2 py-1.5 text-[13px] text-ink" value={metrik} onChange={(e) => setMetrik(e.target.value)} aria-label="Urutkan peringkat menurut">
+              <label className="flex w-full min-w-0 items-center gap-2 text-[12.5px] text-ink2 sm:inline-flex sm:w-auto">Urutkan
+                <select className="min-w-0 max-w-full flex-1 rounded-btn bg-inset px-2 py-1.5 text-[13px] text-ink sm:flex-none" value={metrik} onChange={(e) => setMetrik(e.target.value)} aria-label="Urutkan peringkat menurut">
                   {METRIK_URUT.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
                 </select>
               </label>
@@ -198,13 +204,14 @@ export default function AkuisisiTab({ onBukaIklan }) {
 
             {/* desktop/tablet: tabel */}
             <Card className="hidden overflow-x-auto !p-0 md:block">
-              <table className="w-full min-w-[820px] border-collapse text-[13px]">
+              <table className="w-full min-w-[900px] border-collapse text-[13px]">
                 <thead>
                   <tr className="text-left text-[11px] uppercase tracking-wide text-ink3">
                     <th className="px-3 py-2">#</th><th className="px-3 py-2">Sumber</th>
                     <th className="px-3 py-2 text-right">Lead</th><th className="px-3 py-2 text-right">Spam</th><th className="px-3 py-2 text-right">Ber-order</th>
                     <th className="px-3 py-2 text-right">Membayar</th><th className="px-3 py-2 text-right">Lunas</th>
-                    <th className="px-3 py-2 text-right"><span className="inline-flex items-center gap-1">Konversi <InfoTooltip text={TIP.konversi} /></span></th>
+                    <th className="px-3 py-2 text-right"><span className="inline-flex items-center gap-1">Konversi ÷ lead <InfoTooltip text={TIP.konversi} /></span></th>
+                    <th className="px-3 py-2 text-right">Non-spam</th>
                     <th className="px-3 py-2 text-right"><span className="inline-flex items-center gap-1">CPA lunas <InfoTooltip text={TIP.cpa} /></span></th>
                     <th className="px-3 py-2 text-right"><span className="inline-flex items-center gap-1">ROAS <InfoTooltip text={TIP.roas} /></span></th>
                     <th className="px-3 py-2" />
@@ -223,12 +230,13 @@ export default function AkuisisiTab({ onBukaIklan }) {
                           <td className="px-3 py-2 text-right tabular-nums">{angka(s.berOrder)}</td>
                           <td className="px-3 py-2 text-right tabular-nums">{angka(s.membayar)}</td>
                           <td className="px-3 py-2 text-right tabular-nums">{angka(s.lunas)}</td>
-                          <td className="px-3 py-2 text-right tabular-nums" title={`${s.konversiOrder.pembilang} dari ${s.konversiOrder.penyebut} lead sah`}>{formatPersen(s.konversiOrder.nilai)}<span className="t-secondary block text-[10.5px]">{s.konversiOrder.pembilang}/{s.konversiOrder.penyebut}</span></td>
+                          <td className="px-3 py-2 text-right tabular-nums" title={`${s.konversiOrder.pembilang} dari ${s.konversiOrder.penyebut} total lead (termasuk spam)`}>{formatPersen(s.konversiOrder.nilai)}<span className="t-secondary block text-[10.5px]">{s.konversiOrder.pembilang}/{s.konversiOrder.penyebut}</span></td>
+                          <td className="px-3 py-2 text-right tabular-nums text-ink2" title={`${s.konversiOrderNonSpam.pembilang} dari ${s.konversiOrderNonSpam.penyebut} lead sah (non-spam)`}>{formatPersen(s.konversiOrderNonSpam.nilai)}<span className="t-secondary block text-[10.5px]">{s.konversiOrderNonSpam.pembilang}/{s.konversiOrderNonSpam.penyebut}</span></td>
                           <td className={cn("px-3 py-2 text-right tabular-nums", cpa.kosong && "text-ink3")}>{cpa.teks}{cpa.alasan && <span className="block text-[10.5px]">{cpa.alasan}</span>}</td>
                           <td className={cn("px-3 py-2 text-right tabular-nums", roas.kosong && "text-ink3")}>{roas.teks}{roas.alasan && <span className="block text-[10.5px]">{roas.alasan}</span>}</td>
                           <td className="px-3 py-2 text-ink3">{buka === s.id ? <ChevronDown size={16} /> : <ChevronRight size={16} />}</td>
                         </tr>
-                        {buka === s.id && <tr><td colSpan={11} className="px-3 pb-3"><Rincian s={s} onIklan={onBukaIklan} /></td></tr>}
+                        {buka === s.id && <tr><td colSpan={12} className="px-3 pb-3"><Rincian s={s} onIklan={onBukaIklan} /></td></tr>}
                       </React.Fragment>
                     );
                   })}
@@ -249,7 +257,7 @@ export default function AkuisisiTab({ onBukaIklan }) {
                       {buka === s.id ? <ChevronDown size={16} className="text-ink3" /> : <ChevronRight size={16} className="text-ink3" />}
                     </button>
                     <dl className="grid grid-cols-3 gap-x-2 gap-y-1 text-[12px]">
-                      {[["Lead", angka(s.lead)], ["Spam", formatPersen(s.spamPersen.nilai)], ["Ber-order", angka(s.berOrder)], ["Membayar", angka(s.membayar)], ["Lunas", angka(s.lunas)], ["Konversi", `${formatPersen(s.konversiOrder.nilai)} (${s.konversiOrder.pembilang}/${s.konversiOrder.penyebut})`]].map(([k, v]) => (
+                      {[["Lead", angka(s.lead)], ["Spam", formatPersen(s.spamPersen.nilai)], ["Ber-order", angka(s.berOrder)], ["Membayar", angka(s.membayar)], ["Lunas", angka(s.lunas)], ["Konversi ÷ lead", `${formatPersen(s.konversiOrder.nilai)} (${s.konversiOrder.pembilang}/${s.konversiOrder.penyebut})`], ["Non-spam", `${formatPersen(s.konversiOrderNonSpam.nilai)} (${s.konversiOrderNonSpam.pembilang}/${s.konversiOrderNonSpam.penyebut})`]].map(([k, v]) => (
                         <div key={k}><dt className="t-secondary">{k}</dt><dd className="font-medium tabular-nums text-ink">{v}</dd></div>
                       ))}
                       <div className="col-span-3"><dt className="t-secondary">CPA lunas</dt><dd className={cn("font-medium", cpa.kosong && "text-ink3")}>{cpa.teks}{cpa.alasan && <span className="t-secondary"> · {cpa.alasan}</span>}</dd></div>
@@ -262,6 +270,10 @@ export default function AkuisisiTab({ onBukaIklan }) {
             </div>
           </section>
 
+          <div className="t-secondary flex flex-col gap-1 text-[12.5px]">
+            <p>{teksPengecualianTotal(lap)}</p>
+            <p>{NOTA_AMBANG}</p>
+          </div>
           <p className="t-secondary flex items-center gap-2 text-[12.5px]"><Info size={14} className="text-accent" /> Ber-order ≠ lunas. Sumber = label CRM; nilai order = nilai saat ini; angka dihitung server dari data aktual. {lap.pembanding ? `Pembanding: ${lap.pembanding.periode.dari} s/d ${lap.pembanding.periode.sampai}.` : ""}</p>
         </>
       )}

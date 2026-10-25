@@ -6,21 +6,22 @@ export const METRIK_URUT = [
   { id: "lead", label: "Lead masuk", jenis: "hitung" },
   { id: "membayar", label: "Customer membayar", jenis: "hitung" },
   { id: "lunas", label: "Customer lunas", jenis: "hitung" },
-  { id: "konversiOrder", label: "Konversi ber-order", jenis: "rasio" },
-  { id: "konversiLunas", label: "Konversi lunas", jenis: "rasio" },
+  { id: "konversiOrder", label: "Konversi ber-order (÷ total lead, termasuk spam)", jenis: "rasio", nonSpam: false },
+  { id: "konversiOrderNonSpam", label: "Konversi ber-order non-spam (÷ lead sah)", jenis: "rasio", nonSpam: true },
+  { id: "konversiLunas", label: "Konversi lunas (÷ total lead, termasuk spam)", jenis: "rasio", nonSpam: false },
+  { id: "konversiLunasNonSpam", label: "Konversi lunas non-spam (÷ lead sah)", jenis: "rasio", nonSpam: true },
 ];
 export const METRIK_BY_ID = Object.fromEntries(METRIK_URUT.map((m) => [m.id, m]));
 
-const nilaiMetrik = (s, id) => {
-  if (id === "konversiOrder" || id === "konversiLunas") return s[id]?.nilai ?? null;
-  return s[id] ?? null;
-};
+const nilaiMetrik = (s, id) => (METRIK_BY_ID[id]?.jenis === "rasio" ? s[id]?.nilai ?? null : s[id] ?? null);
+export const PENYEBUT_LABEL = { TOTAL_LEAD_TERMASUK_SPAM: "total lead (termasuk spam)", LEAD_SAH_NON_SPAM: "lead sah (non-spam)" };
 
 /** Urutkan sumber menurut metrik terpilih (menurun). Rasio: sampel kecil dan nilai kosong selalu di bawah sumber yang layak; seri → lead terbanyak. Tidak mengubah array asal. */
 export function urutkan(sumber, metrikId = "berOrder") {
   const m = METRIK_BY_ID[metrikId] || METRIK_BY_ID.berOrder;
   const kunci = (s) => { const v = nilaiMetrik(s, m.id); return v === null ? -Infinity : v; };
-  const layak = (s) => (m.jenis === "rasio" ? !s.sampelKecil && nilaiMetrik(s, m.id) !== null : true);
+  const kecil = (s) => (m.nonSpam ? s.sampelKecilNonSpam : s.sampelKecil);
+  const layak = (s) => (m.jenis === "rasio" ? !kecil(s) && nilaiMetrik(s, m.id) !== null : true);
   return [...sumber].sort((a, b) => (layak(b) - layak(a)) || (kunci(b) - kunci(a)) || (b.lead - a.lead) || (a.id < b.id ? -1 : 1));
 }
 
@@ -34,11 +35,11 @@ export function tampilMetrik(s, metrikId) {
   const m = METRIK_BY_ID[metrikId] || METRIK_BY_ID.berOrder;
   if (m.jenis === "rasio") {
     const r = s[m.id];
-    if (!r || r.nilai === null) return { utama: "—", sub: r && r.penyebut === 0 ? "belum ada lead sah" : null, kosong: true };
-    return { utama: formatPersen(r.nilai), sub: `${angka(r.pembilang)} dari ${angka(r.penyebut)} lead sah`, kosong: false };
+    if (!r || r.nilai === null) return { utama: "—", sub: r && r.penyebut === 0 ? `belum ada ${PENYEBUT_LABEL[r.penyebutJenis] || "lead"}` : null, kosong: true };
+    return { utama: formatPersen(r.nilai), sub: `${angka(r.pembilang)} dari ${angka(r.penyebut)} ${PENYEBUT_LABEL[r.penyebutJenis] || "lead"}`, kosong: false };
   }
   const v = s[m.id];
-  return { utama: angka(v), sub: m.id === "lead" ? `${angka(s.leadSah)} sah · ${angka(s.spam)} spam` : `dari ${angka(s.leadSah)} lead sah`, kosong: v == null };
+  return { utama: angka(v), sub: m.id === "lead" ? `${angka(s.leadSah)} sah · ${angka(s.spam)} spam` : `dari ${angka(s.lead)} total lead (${angka(s.leadSah)} sah)`, kosong: v == null };
 }
 
 export const ALASAN_LABEL = {
@@ -91,3 +92,22 @@ export function delta(lap, id, kunci) {
 export const deltaTeks = (d) => (d == null ? null : d === 0 ? "sama" : `${d > 0 ? "+" : "−"}${Math.abs(d).toLocaleString("id-ID")}`);
 
 export const BUKTI_LABEL = { ATRIBUSI_TERBUKTI_TERSEDIA: "Label CRM + atribusi terbukti", LABEL_CRM: "Label CRM" };
+
+/** Teks lengkap sorotan konversi: nilai + pembilang/penyebut + jenis konversi + catatan ambang. Sorotan lain: label saja. */
+export function teksSorotan(p) {
+  if (!p) return "";
+  if (p.jenis === "KONVERSI_BER_ORDER_PER_TOTAL_LEAD") return `${p.label}: ${formatPersen(p.nilai)} (${angka(p.pembilang)} dari ${angka(p.penyebut)} ${p.jenisTeks?.split("÷ ")[1] || "total lead"}). ${p.catatan || ""}`.trim();
+  return p.label;
+}
+/** Ringkas pengecualian per sumber untuk ditampilkan eksplisit. */
+export function teksPengecualian(s) {
+  const p = s?.pengecualian; if (!p) return null;
+  return `Dikeluarkan dari lead sah: spam ${angka(p.spam)} · staf internal ${angka(p.internalStaff)} · profil karyawan ${angka(p.profilKaryawan)}`;
+}
+export function teksPengecualianTotal(lap) {
+  const p = lap?.pengecualianTotal; if (!p) return null;
+  const d = p.dikeluarkanDariSemuaSumber || { total: 0, perLabel: {} };
+  const rinci = Object.entries(d.perLabel || {}).map(([k, v]) => `${k.replace(/_/g, " ").toLowerCase()} ${angka(v)}`).join(" · ");
+  return `Pengecualian: spam ${angka(p.spam)} · staf internal ${angka(p.internalStaff)} · profil karyawan ${angka(p.profilKaryawan)} · B2B/penjualan karyawan (di luar semua sumber) ${angka(d.total)}${rinci ? ` (${rinci})` : ""}`;
+}
+export const NOTA_AMBANG = "Sampel kecil = < 30 lead (aturan tampilan sementara). Ini bukan uji signifikansi statistik dan sorotan bukan pemenang pasti.";

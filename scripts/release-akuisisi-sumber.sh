@@ -31,13 +31,13 @@ DEPLOY_SHORT="${DEPLOY_SHA:0:8}"; BASE_SHORT="${BASE_SHA:0:8}"; NEW_DIR="$RELEAS
 TS="$(date +%Y%m%d_%H%M%S)"; BK_DIR="$HOME/release-backups/${TAG_KODE}-${DEPLOY_SHORT}-${TS}"
 ROLLBACK_TAG="klinik-matras-backend:rollback-pre-${TAG_KODE}-${DEPLOY_SHORT}"
 
-ALLOWED_RE='^(backend/src/(services/attribution/(d7|sumber)\.js|routes/attributionAds\.js)|backend/tests/(atribusiD7|atribusiSumber|releaseAkuisisiSumber|releaseAtribusiKpiD7)\.test\.js|backend/tests/integration/(atribusiIklan|atribusiStatusCustomer)\.integration\.test\.js|frontend/src/(api\.js|pages/Laporan\.jsx|features/laporan/(akuisisiLogic\.js|components/(AkuisisiTab|IklanCampaignTab)\.jsx))|frontend/tests/akuisisiLogic\.test\.js|scripts/release-akuisisi-sumber\.sh)$'
+ALLOWED_RE='^(backend/src/(services/attribution/(d7|sumber)\.js|routes/attributionAds\.js)|backend/tests/(atribusiD7|atribusiSumber|atribusiKompatD7|releaseAkuisisiSumber|releaseAtribusiKpiD7)\.test\.js|backend/tests/integration/(atribusiIklan|atribusiStatusCustomer)\.integration\.test\.js|frontend/src/(api\.js|pages/Laporan\.jsx|features/laporan/(akuisisiLogic\.js|components/(AkuisisiTab|IklanCampaignTab)\.jsx))|frontend/tests/akuisisiLogic\.test\.js|scripts/release-akuisisi-sumber\.sh)$'
 BACKEND_SRC_EXPECT="backend/src/routes/attributionAds.js backend/src/services/attribution/d7.js backend/src/services/attribution/sumber.js"
 FRONTEND_SRC_EXPECT="frontend/src/api.js frontend/src/features/laporan/akuisisiLogic.js frontend/src/features/laporan/components/AkuisisiTab.jsx frontend/src/features/laporan/components/IklanCampaignTab.jsx frontend/src/pages/Laporan.jsx"
 declare -A PINS=(
   ["backend/src/routes/attributionAds.js"]="e9607377f241fa2660f5a6090c3fb11473d9df628e79f77c141bdcfd4c24417b"
-  ["backend/src/services/attribution/d7.js"]="227347e4ed501a5900e1ee3ff3eda3b51e35ffd3b50ccb179c5174ac3699a72f"
-  ["backend/src/services/attribution/sumber.js"]="dd8f2e970e552ab1c48d0b6a2a496a240b5c9fc9cbeb1b39504f45cce6d9bd8f"
+  ["backend/src/services/attribution/d7.js"]="3df765756bf1a17aa17e29b0f6f8da141c43eb7315c83423d77f71399d8c4af3"
+  ["backend/src/services/attribution/sumber.js"]="d2e1108aaff16c319e778554b0592062312948a4bd1f4e68bfc72139c9fa050f"
 )
 
 say()  { printf '\n\033[1m== %s\033[0m\n' "$*"; }

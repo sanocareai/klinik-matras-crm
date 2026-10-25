@@ -8,7 +8,10 @@
 //   berOrder     = leadSah dengan >= 1 order eligible (bukan batal/pending/penjualan karyawan).  nilai order = nilai order SAAT INI (bukan histori).
 //   membayar     = berOrder yang punya >= 1 pembayaran sah (ledger; batal/gerbang verifikasi sudah disaring).
 //   pernahDp / dpSaatIni / lunas = TIDAK eksklusif (customer bisa pernah DP lalu lunas). `kategoriEksklusif` memberi pembagian yang saling lepas (jumlahnya = berOrder).
-//   konversi     = berOrder / leadSah dengan pembilang dan penyebut ditampilkan (sampel kecil bila leadSah < AMBANG_SAMPEL).
+//   konversi UTAMA = berOrder ÷ TOTAL lead (termasuk spam) — konsisten dengan KPI Oktober (lead unik di laporan campaign memuat spam). Konversi NON-SPAM (berOrder ÷ leadSah) adalah metrik terpisah berlabel jelas.
+//   pengecualian = spam, staf internal, profil karyawan (per sumber) dan label B2B/penjualan karyawan (dikeluarkan dari semua sumber) — ditampilkan eksplisit, tidak disembunyikan.
+//   ambang       = AMBANG_SAMPEL (30) adalah ATURAN TAMPILAN SEMENTARA (sampel kecil), BUKAN uji signifikansi statistik dan BUKAN penentu pemenang pasti.
+//   kategoriEksklusif = lunas > DP saat ini > TIDAK DIKETAHUI > belum bayar. TIDAK DIKETAHUI = order eligible yang status bayar tersimpannya LUNAS/DP tetapi TANPA pembayaran di ledger (histori tidak cukup): tidak boleh dibaca "belum bayar".
 import { alasanBukanLead, jejakPembayaran } from "./cohort.js";
 import { ORDER_EXCLUDED_STATUS } from "./cohortDefinitions.js";
 import { nilaiBersih } from "../orderNilaiBersih.js";
@@ -39,7 +42,7 @@ const pct = (a, b) => (b > 0 ? Math.round((a / b) * 10000) / 100 : null);
 const petaLabel = new Map(); for (const s of SUMBER) for (const l of s.labelCrm) petaLabel.set(l, s.id);
 export const sumberDariLabel = (label) => (LABEL_BUKAN_LEAD.includes(label) ? null : petaLabel.get(label) ?? "LAINNYA");
 
-const kosong = () => ({ lead: 0, spam: 0, dikecualianLain: 0, leadSah: 0, berOrder: 0, membayar: 0, pernahDp: 0, dpSaatIni: 0, lunas: 0, eksklusif: { belumBayar: 0, dpSaatIni: 0, lunas: 0 }, orderEligible: 0, orderBerLedger: 0, orderDp: 0, orderLunas: 0, nilaiOrder: 0, uangLedger: 0, refund: 0, uangBersih: 0 });
+const kosong = () => ({ lead: 0, spam: 0, dikecualianLain: 0, internalStaff: 0, profilKaryawan: 0, leadSah: 0, berOrder: 0, membayar: 0, pernahDp: 0, dpSaatIni: 0, lunas: 0, eksklusif: { belumBayar: 0, dpSaatIni: 0, lunas: 0, tidakDiketahui: 0 }, orderEligible: 0, orderBerLedger: 0, orderDp: 0, orderLunas: 0, nilaiOrder: 0, uangLedger: 0, refund: 0, uangBersih: 0 });
 
 /**
  * MURNI. customers: {id, createdAt, pipelineStage, leadSource, isInternalStaff, staffUserId}; orders: {id, customerId, status, value, tagihan, penjualanKaryawanId};
@@ -47,13 +50,13 @@ const kosong = () => ({ lead: 0, spam: 0, dikecualianLain: 0, leadSah: 0, berOrd
  */
 export function hitungSumber({ customers, orders, kontribusi, refunds }) {
   const per = new Map(SUMBER.map((s) => [s.id, kosong()]));
-  const cust = new Map(); let bukanLeadPemasaran = 0;
+  const cust = new Map(); let bukanLeadPemasaran = 0; const bukanLeadPerLabel = {};
   for (const c of customers) {
     const sid = sumberDariLabel(c.leadSource);
-    if (!sid) { bukanLeadPemasaran++; continue; }
+    if (!sid) { bukanLeadPemasaran++; bukanLeadPerLabel[c.leadSource] = (bukanLeadPerLabel[c.leadSource] || 0) + 1; continue; }
     cust.set(c.id, { c, sid }); const x = per.get(sid); x.lead++;
     const alasan = alasanBukanLead(c);
-    if (alasan === "SPAM") x.spam++; else if (alasan) x.dikecualianLain++; else x.leadSah++;
+    if (alasan === "SPAM") x.spam++; else if (alasan) { x.dikecualianLain++; if (alasan === "INTERNAL_STAFF") x.internalStaff++; else if (alasan === "PROFIL_KARYAWAN") x.profilKaryawan++; } else x.leadSah++;
   }
   const kPer = new Map(); for (const k of kontribusi) (kPer.get(k.orderId) || kPer.set(k.orderId, []).get(k.orderId)).push(k);
   const rPer = new Map(); for (const r of refunds) if (r.status === "DISETUJUI") (rPer.get(r.orderId) || rPer.set(r.orderId, []).get(r.orderId)).push(r);
@@ -63,25 +66,27 @@ export function hitungSumber({ customers, orders, kontribusi, refunds }) {
     const x = per.get(e.sid); const j = jejakPembayaran(kPer.get(o.id) || [], o.tagihan != null ? o.tagihan : nilaiBersih(o), rPer.get(o.id) || []);
     x.orderEligible++; x.nilaiOrder += rp(nilaiBersih(o)); x.uangLedger += j.kotor; x.refund += j.refund; x.uangBersih += j.bersih;
     if (j.jumlahPembayaran > 0) x.orderBerLedger++; if (j.pernahDp) x.orderDp++; if (j.status === "LUNAS") x.orderLunas++;
-    const d = dedupe.get(o.customerId) || dedupe.set(o.customerId, { sid: e.sid, bayar: false, dp: false, dpKini: false, lunas: false }).get(o.customerId);
+    const d = dedupe.get(o.customerId) || dedupe.set(o.customerId, { sid: e.sid, bayar: false, dp: false, dpKini: false, lunas: false, tidakDiketahui: false }).get(o.customerId);
+    if (j.jumlahPembayaran === 0 && (o.paymentStatus === "LUNAS" || o.paymentStatus === "DP")) d.tidakDiketahui = true;   // status bayar tersimpan tanpa bukti ledger (histori tidak cukup)
     if (j.jumlahPembayaran > 0) d.bayar = true; if (j.pernahDp) d.dp = true; if (j.status === "DP") d.dpKini = true; if (j.status === "LUNAS") d.lunas = true;
   }
   for (const d of dedupe.values()) {
     const x = per.get(d.sid); x.berOrder++; if (d.bayar) x.membayar++; if (d.dp) x.pernahDp++; if (d.dpKini) x.dpSaatIni++; if (d.lunas) x.lunas++;
-    if (d.lunas) x.eksklusif.lunas++; else if (d.dpKini) x.eksklusif.dpSaatIni++; else x.eksklusif.belumBayar++;
+    if (d.lunas) x.eksklusif.lunas++; else if (d.dpKini) x.eksklusif.dpSaatIni++; else if (d.tidakDiketahui) x.eksklusif.tidakDiketahui++; else x.eksklusif.belumBayar++;
   }
-  return { per, bukanLeadPemasaran };
+  return { per, bukanLeadPemasaran, bukanLeadPerLabel };
 }
 
-/** Sorotan yang dihitung server dari data (bukan hardcode): setiap kategori memilih sumber tertinggi di antara yang memenuhi sampel minimum. */
+/** Sorotan yang dihitung server dari data (bukan hardcode). Konversi = ber-order ÷ TOTAL lead (termasuk spam); sampel minimum = AMBANG_SAMPEL lead (aturan tampilan sementara, bukan uji signifikansi). */
 export function sorotan(daftar) {
-  const layak = daftar.filter((s) => !s.sampelKecil && s.leadSah > 0);
+  const layak = daftar.filter((s) => !s.sampelKecil && s.lead > 0);
   const maks = (arr, f) => arr.reduce((b, s) => (b === null || f(s) > f(b) ? s : b), null);
   const out = [];
-  const vol = maks(daftar.filter((s) => s.lead > 0), (s) => s.lead); if (vol) out.push({ id: "VOLUME", label: "Volume lead terbesar", sumberId: vol.id, nilai: vol.lead, penyebut: null });
-  const bo = maks(daftar.filter((s) => s.berOrder > 0), (s) => s.berOrder); if (bo) out.push({ id: "ORDER_TERBANYAK", label: "Customer ber-order terbanyak", sumberId: bo.id, nilai: bo.berOrder, penyebut: null });
-  const ko = maks(layak.filter((s) => s.konversiOrder.nilai !== null && s.berOrder > 0), (s) => s.konversiOrder.nilai); if (ko) out.push({ id: "KONVERSI_ORDER", label: `Konversi ber-order tertinggi (sampel ≥ ${AMBANG_SAMPEL} lead sah)`, sumberId: ko.id, nilai: ko.konversiOrder.nilai, pembilang: ko.berOrder, penyebut: ko.leadSah });
-  const lu = maks(daftar.filter((s) => s.lunas > 0), (s) => s.lunas); if (lu) out.push({ id: "LUNAS_TERBANYAK", label: "Customer lunas (ledger) terbanyak", sumberId: lu.id, nilai: lu.lunas, penyebut: null });
+  const vol = maks(daftar.filter((s) => s.lead > 0), (s) => s.lead); if (vol) out.push({ id: "VOLUME", label: "Volume lead terbesar", jenis: "hitung", sumberId: vol.id, nilai: vol.lead, pembilang: null, penyebut: null });
+  const bo = maks(daftar.filter((s) => s.berOrder > 0), (s) => s.berOrder); if (bo) out.push({ id: "ORDER_TERBANYAK", label: "Customer ber-order terbanyak", jenis: "hitung", sumberId: bo.id, nilai: bo.berOrder, pembilang: null, penyebut: null });
+  const ko = maks(layak.filter((s) => s.konversiOrder.nilai !== null && s.berOrder > 0), (s) => s.konversiOrder.nilai);
+  if (ko) out.push({ id: "KONVERSI_ORDER", label: "Konversi ber-order tertinggi", jenis: "KONVERSI_BER_ORDER_PER_TOTAL_LEAD", jenisTeks: "customer ber-order ÷ total lead (termasuk spam)", sumberId: ko.id, nilai: ko.konversiOrder.nilai, pembilang: ko.berOrder, penyebut: ko.lead, catatan: `hanya di antara sumber dengan ≥ ${AMBANG_SAMPEL} lead (aturan tampilan sementara; bukan uji signifikansi; bukan pemenang pasti)` });
+  const lu = maks(daftar.filter((s) => s.lunas > 0), (s) => s.lunas); if (lu) out.push({ id: "LUNAS_TERBANYAK", label: "Customer lunas (ledger) terbanyak", jenis: "hitung", sumberId: lu.id, nilai: lu.lunas, pembilang: null, penyebut: null });
   return out;
 }
 
@@ -89,16 +94,19 @@ export function sorotan(daftar) {
 export function susunSumber({ parameter, hasil, biayaMeta = null, provenMeta = null, asOf, mulaiHari = null, hariIni = null }) {
   const daftar = SUMBER.map((s) => {
     const x = hasil.per.get(s.id);
-    const konv = (a) => ({ nilai: pct(a, x.leadSah), pembilang: a, penyebut: x.leadSah });
-    const sampelKecil = x.leadSah < AMBANG_SAMPEL;
+    const konv = (a) => ({ nilai: pct(a, x.lead), pembilang: a, penyebut: x.lead, penyebutJenis: "TOTAL_LEAD_TERMASUK_SPAM" });
+    const konvNonSpam = (a) => ({ nilai: pct(a, x.leadSah), pembilang: a, penyebut: x.leadSah, penyebutJenis: "LEAD_SAH_NON_SPAM" });
+    const sampelKecil = x.lead < AMBANG_SAMPEL; const sampelKecilNonSpam = x.leadSah < AMBANG_SAMPEL;
     const adaMeta = s.id === "META";
     return {
-      id: s.id, label: s.label, jenis: s.jenis, labelCrm: s.labelCrm, sampelKecil, ambangSampel: AMBANG_SAMPEL,
+      id: s.id, label: s.label, jenis: s.jenis, labelCrm: s.labelCrm, sampelKecil, sampelKecilNonSpam, ambangSampel: AMBANG_SAMPEL,
       lead: x.lead, spam: x.spam, spamPersen: { nilai: pct(x.spam, x.lead), pembilang: x.spam, penyebut: x.lead }, dikecualikanLain: x.dikecualianLain, leadSah: x.leadSah,
+      pengecualian: { spam: x.spam, internalStaff: x.internalStaff, profilKaryawan: x.profilKaryawan, jumlahDikeluarkanDariLeadSah: x.spam + x.dikecualianLain, catatan: "lead = semua customer berlabel sumber ini (termasuk spam dan staf); lead sah = lead dikurangi spam, staf internal, dan profil karyawan" },
       berOrder: x.berOrder, membayar: x.membayar, lunas: x.lunas,
       pernahDp: x.pernahDp, dpSaatIni: x.dpSaatIni,
-      kategoriEksklusif: { ...x.eksklusif, catatan: "saling lepas: lunas > DP saat ini > belum bayar; jumlahnya = customer ber-order. pernahDp/dpSaatIni/lunas di atas BOLEH overlap — jangan dijumlahkan." },
+      kategoriEksklusif: { ...x.eksklusif, jumlah: x.eksklusif.lunas + x.eksklusif.dpSaatIni + x.eksklusif.tidakDiketahui + x.eksklusif.belumBayar, catatan: "saling lepas (lunas > DP saat ini > TIDAK DIKETAHUI > belum bayar); jumlah = customer ber-order. 'Tidak diketahui' = status bayar tersimpan LUNAS/DP tetapi tanpa pembayaran di ledger — BUKAN 'belum bayar'. pernahDp/dpSaatIni/lunas di atas BOLEH overlap — jangan dijumlahkan." },
       konversiOrder: konv(x.berOrder), konversiMembayar: konv(x.membayar), konversiLunas: konv(x.lunas),
+      konversiOrderNonSpam: konvNonSpam(x.berOrder), konversiLunasNonSpam: konvNonSpam(x.lunas),
       order: { eligible: x.orderEligible, berLedger: x.orderBerLedger, persenBerLedger: pct(x.orderBerLedger, x.orderEligible), pernahDp: x.orderDp, lunas: x.orderLunas },
       uang: { nilaiOrderSaatIni: rp(x.nilaiOrder), uangLedger: rp(x.uangLedger), refund: rp(x.refund), uangBersih: rp(x.uangBersih), catatan: "nilai order = nilai SAAT INI, bukan histori; uang = pembayaran sah di ledger" },
       buktiAtribusi: adaMeta
@@ -123,9 +131,9 @@ export function susunSumber({ parameter, hasil, biayaMeta = null, provenMeta = n
     versi: 1, dihitungPada: asOf instanceof Date ? asOf.toISOString() : asOf, zonaWaktu: "Asia/Jakarta",
     periode: { dari: parameter.dari, sampai: parameter.sampai, hariIni, termasukHariBerjalan: !!parameter.termasukHariBerjalan, bawaan: !!parameter.bawaan },
     status: { spend: statusSpend, ledger: { orderEligible: total.orderEligible, orderBerLedger: total.orderBerLedger, persen: pct(total.orderBerLedger, total.orderEligible) }, atribusi: { mulaiHari, metaAkuisisiTerbukti: provenMeta?.akuisisiTerbukti ?? null, metaLabelCrm: daftar[0].lead } },
-    total, sumber: daftar, sorotan: sorotan(daftar), metrik: Object.fromEntries(Object.entries(METRIK).map(([k, v]) => [k, v.label])), peringatan,
-    definisi: { sumber: "Label CRM (Customer.leadSource), bukan bukti per klik.", konversi: "Customer ber-order ÷ lead sah (bukan spam); pembilang dan penyebut ditampilkan.", overlap: "pernahDp, dpSaatIni, dan lunas tidak eksklusif; gunakan kategoriEksklusif untuk pembagian yang jumlahnya = ber-order.", ledger: "Pembayaran sah di ledger sistem; pembayaran di luar sistem tidak terlihat." },
-    batasan: ["Nilai order = nilai saat ini.", "Peringkat memakai metrik terpilih; sumber dengan lead sah < ambang diberi tanda sampel kecil dan tidak masuk sorotan konversi."],
+    total, pengecualianTotal: { spam: total.spam, internalStaff: daftar.reduce((a, s) => a + s.pengecualian.internalStaff, 0), profilKaryawan: daftar.reduce((a, s) => a + s.pengecualian.profilKaryawan, 0), dikeluarkanDariSemuaSumber: { total: hasil.bukanLeadPemasaran, perLabel: hasil.bukanLeadPerLabel || {}, catatan: "customer berlabel B2B_DIRECT / PENJUALAN_KARYAWAN bukan lead pemasaran: tidak masuk sumber mana pun" } }, sumber: daftar, sorotan: sorotan(daftar), metrik: Object.fromEntries(Object.entries(METRIK).map(([k, v]) => [k, v.label])), peringatan,
+    definisi: { sumber: "Label CRM (Customer.leadSource), bukan bukti per klik.", konversi: "UTAMA: customer ber-order ÷ TOTAL lead (termasuk spam), konsisten dengan KPI Oktober. Metrik terpisah 'non-spam': customer ber-order ÷ lead sah. Pembilang dan penyebut ditampilkan.", ambang: `Sampel kecil = < ${AMBANG_SAMPEL} lead: aturan tampilan sementara, bukan uji signifikansi statistik dan bukan penentu pemenang pasti.`, overlap: "pernahDp, dpSaatIni, dan lunas tidak eksklusif; gunakan kategoriEksklusif untuk pembagian yang jumlahnya = ber-order.", ledger: "Pembayaran sah di ledger sistem; pembayaran di luar sistem tidak terlihat." },
+    batasan: ["Nilai order = nilai saat ini.", `Peringkat memakai metrik terpilih; sumber dengan < ${AMBANG_SAMPEL} lead diberi tanda sampel kecil dan tidak masuk sorotan konversi (aturan tampilan sementara; tidak ada klaim signifikansi statistik).`, "Spam dan staf ikut di penyebut konversi utama; lihat pengecualian per sumber dan konversi non-spam sebagai metrik terpisah."],
   };
 }
 const bukanLeadAda = (h) => h.bukanLeadPemasaran > 0;

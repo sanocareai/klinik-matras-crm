@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { urutkan, tampilMetrik, selBiaya, penandaPerSumber, bannerUtama, statusMembayar, delta, deltaTeks, peringatanUrut, formatPersen } from "../src/features/laporan/akuisisiLogic.js";
+import { urutkan, tampilMetrik, selBiaya, penandaPerSumber, bannerUtama, statusMembayar, delta, deltaTeks, peringatanUrut, formatPersen, teksSorotan, teksPengecualian, teksPengecualianTotal, NOTA_AMBANG, METRIK_URUT } from "../src/features/laporan/akuisisiLogic.js";
 
-const s = (id, o = {}) => ({ id, lead: 100, leadSah: 90, spam: 10, berOrder: 5, membayar: 2, lunas: 1, sampelKecil: false, konversiOrder: { nilai: 5.56, pembilang: 5, penyebut: 90 }, konversiLunas: { nilai: 1.11, pembilang: 1, penyebut: 90 }, ...o });
+const s = (id, o = {}) => ({ id, lead: 100, leadSah: 90, spam: 10, berOrder: 5, membayar: 2, lunas: 1, sampelKecil: false, sampelKecilNonSpam: false, konversiOrder: { nilai: 5, pembilang: 5, penyebut: 100, penyebutJenis: "TOTAL_LEAD_TERMASUK_SPAM" }, konversiOrderNonSpam: { nilai: 5.56, pembilang: 5, penyebut: 90, penyebutJenis: "LEAD_SAH_NON_SPAM" }, konversiLunas: { nilai: 1, pembilang: 1, penyebut: 100, penyebutJenis: "TOTAL_LEAD_TERMASUK_SPAM" }, konversiLunasNonSpam: { nilai: 1.11, pembilang: 1, penyebut: 90, penyebutJenis: "LEAD_SAH_NON_SPAM" }, ...o });
 
 test("urutkan: metrik hitung menurun; seri → lead terbanyak; tidak mengubah array asal", () => {
   const a = [s("A", { berOrder: 3 }), s("B", { berOrder: 9 }), s("C", { berOrder: 9, lead: 500 })]; const salinan = [...a];
@@ -18,9 +18,10 @@ test("urutkan rasio: sampel kecil dan nilai kosong SELALU di bawah sumber layak 
 });
 
 test("tampilMetrik: denominator selalu terlihat; kosong → '—' (bukan 0%)", () => {
-  assert.deepEqual(tampilMetrik(s("A"), "konversiOrder"), { utama: "5,56%", sub: "5 dari 90 lead sah", kosong: false });
-  assert.equal(tampilMetrik(s("A", { konversiOrder: { nilai: null, pembilang: 0, penyebut: 0 } }), "konversiOrder").utama, "—");
-  assert.equal(tampilMetrik(s("A"), "lead").sub, "90 sah · 10 spam"); assert.equal(tampilMetrik(s("A"), "berOrder").sub, "dari 90 lead sah");
+  assert.deepEqual(tampilMetrik(s("A"), "konversiOrder"), { utama: "5%", sub: "5 dari 100 total lead (termasuk spam)", kosong: false }, "konversi UTAMA = ÷ total lead termasuk spam");
+  assert.deepEqual(tampilMetrik(s("A"), "konversiOrderNonSpam"), { utama: "5,56%", sub: "5 dari 90 lead sah (non-spam)", kosong: false }, "non-spam = metrik terpisah berlabel");
+  assert.equal(tampilMetrik(s("A", { konversiOrder: { nilai: null, pembilang: 0, penyebut: 0, penyebutJenis: "TOTAL_LEAD_TERMASUK_SPAM" } }), "konversiOrder").utama, "—");
+  assert.equal(tampilMetrik(s("A"), "lead").sub, "90 sah · 10 spam"); assert.equal(tampilMetrik(s("A"), "berOrder").sub, "dari 100 total lead (90 sah)");
   assert.equal(formatPersen(0), "0%");
 });
 
@@ -47,4 +48,24 @@ test("delta pembanding: selisih absolut; tanpa pembanding/null → null", () => 
   const lap = { sumber: [{ id: "META", lead: 120 }], pembanding: { sumber: [{ id: "META", lead: 100 }] } };
   assert.equal(delta(lap, "META", "lead"), 20); assert.equal(deltaTeks(20), "+20"); assert.equal(deltaTeks(-3), "−3"); assert.equal(deltaTeks(0), "sama");
   assert.equal(delta({ sumber: [{ id: "META", lead: 1 }] }, "META", "lead"), null); assert.equal(deltaTeks(null), null);
+});
+
+test("metrik non-spam memakai ambang sampel non-spam sendiri; metrik utama memakai sampel total lead; daftar metrik memuat keduanya berlabel penyebut", () => {
+  const a = [s("A", { sampelKecil: false, sampelKecilNonSpam: true, konversiOrderNonSpam: { nilai: 40, pembilang: 8, penyebut: 20, penyebutJenis: "LEAD_SAH_NON_SPAM" } }), s("B", { konversiOrderNonSpam: { nilai: 3, pembilang: 3, penyebut: 100, penyebutJenis: "LEAD_SAH_NON_SPAM" } })];
+  assert.deepEqual(urutkan(a, "konversiOrderNonSpam").map((x) => x.id), ["B", "A"], "A: sampel non-spam kecil → di bawah walau 40%");
+  assert.deepEqual(urutkan(a, "konversiOrder").map((x) => x.id), ["A", "B"], "pada konversi utama sampel A cukup (lead 100); seri → urut id");
+  const label = METRIK_URUT.map((m) => m.label).join("|"); assert.match(label, /÷ total lead, termasuk spam/); assert.match(label, /non-spam \(÷ lead sah\)/);
+});
+
+test("teksSorotan: konversi menyebut nilai, pembilang, penyebut, jenis konversi, dan catatan ambang sementara (bukan signifikansi, bukan pemenang pasti); sorotan hitung = label saja", () => {
+  const p = { id: "KONVERSI_ORDER", label: "Konversi ber-order tertinggi", jenis: "KONVERSI_BER_ORDER_PER_TOTAL_LEAD", jenisTeks: "customer ber-order ÷ total lead (termasuk spam)", nilai: 13.95, pembilang: 6, penyebut: 43, catatan: "hanya di antara sumber dengan ≥ 30 lead (aturan tampilan sementara; bukan uji signifikansi; bukan pemenang pasti)" };
+  const t = teksSorotan(p); assert.match(t, /13,95%/); assert.match(t, /6 dari 43 total lead/); assert.match(t, /aturan tampilan sementara/); assert.match(t, /bukan pemenang pasti/);
+  assert.equal(teksSorotan({ id: "VOLUME", label: "Volume lead terbesar", jenis: "hitung" }), "Volume lead terbesar"); assert.match(NOTA_AMBANG, /bukan uji signifikansi statistik/);
+});
+
+test("pengecualian ditampilkan eksplisit per sumber dan total (B2B/penjualan karyawan di luar semua sumber)", () => {
+  assert.equal(teksPengecualian({ pengecualian: { spam: 10, internalStaff: 2, profilKaryawan: 1 } }), "Dikeluarkan dari lead sah: spam 10 · staf internal 2 · profil karyawan 1");
+  const t = teksPengecualianTotal({ pengecualianTotal: { spam: 476, internalStaff: 0, profilKaryawan: 3, dikeluarkanDariSemuaSumber: { total: 3, perLabel: { B2B_DIRECT: 2, PENJUALAN_KARYAWAN: 1 } } } });
+  assert.match(t, /spam 476/); assert.match(t, /profil karyawan 3/); assert.match(t, /B2B\/penjualan karyawan \(di luar semua sumber\) 3/); assert.match(t, /b2b direct 2/);
+  assert.equal(teksPengecualian({}), null);
 });
