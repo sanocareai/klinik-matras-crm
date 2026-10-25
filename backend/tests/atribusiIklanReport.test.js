@@ -384,10 +384,10 @@ test("drilldown: filter campaignId membatasi akuisisi, touch, dan rekonsiliasi; 
   assert.deepEqual(f.rentangLead.filter, { campaignId: CAMP1, adSetId: null });
 });
 
-test("parameter: dari & sampai kosong = 7 hari terakhir termasuk hari ini (bawaan); sebelah saja = 400; filter drilldown divalidasi", () => {
+test("parameter: dari & sampai kosong = 7 HARI PENUH yang berakhir kemarin (bawaan; hari berjalan dipisah); sebelah saja = 400; filter drilldown divalidasi", () => {
   const now = D("2026-10-13T05:00:00Z");
   const b = parseParameterIklan({}, now);
-  assert.deepEqual([b.dari, b.sampai, b.bawaan, b.filter], ["2026-10-07", "2026-10-13", true, null]);
+  assert.deepEqual([b.dari, b.sampai, b.bawaan, b.filter], ["2026-10-06", "2026-10-12", true, null]);
   assert.equal(parseParameterIklan({ dari: "2026-10-01", sampai: "2026-10-13" }, now).bawaan, false);
   for (const q of [{ dari: "2026-10-01" }, { sampai: "2026-10-13" }]) assert.throws(() => parseParameterIklan(q, now), (e) => e instanceof ParameterError && e.statusCode === 400);
   const ok = parseParameterIklan({ level: "ad", campaignId: "52694481763084", adSetId: "52694481763284" }, now);

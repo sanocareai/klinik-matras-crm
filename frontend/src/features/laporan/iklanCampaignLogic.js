@@ -123,9 +123,11 @@ export const STATUS_BIAYA_LABEL = {
   TANPA_SPEND_DI_RENTANG: { teks: "Tanpa spend di rentang", tip: "Tidak ada baris spend untuk entitas ini pada rentang yang dipilih.", nada: "netral" },
   SIAP_DIEVALUASI: { teks: "Siap dievaluasi", tip: "Spend, mapping, dan kematangan memenuhi syarat; evaluasi mengikuti target ADMIN bila diisi.", nada: "baik" },
   SEBELUM_ATRIBUSI: { teks: "Sebelum atribusi", tip: "Rentang dimulai sebelum atribusi touch tersimpan. Spend tampil untuk audit; CPL/CPA/ROAS CRM tidak dihitung dan 0 lead bukan performa nol.", nada: "peringatan" },
+  SPEND_TIDAK_LENGKAP: { teks: "Spend belum lengkap", tip: "Ada hari penuh di rentang yang belum punya data spend. CPL/CPA/ROAS CRM sengaja kosong sampai semua hari terisi; tanggal yang hilang ada di peringatan.", nada: "peringatan" },
+  HARI_BERJALAN_PARSIAL: { teks: "Hari berjalan parsial", tip: "Rentang mencakup hari ini: spend hari berjalan parsial sedangkan lead dihitung sampai sekarang, jadi biaya per hasil sengaja kosong. Pilih periode yang berakhir kemarin.", nada: "peringatan" },
   HARI_ATRIBUSI_PARSIAL: { teks: "Hari atribusi parsial", tip: "Rentang dimulai pada hari awal atribusi (touch baru ada sejak jam awal). Gunakan rentang yang dimulai hari berikutnya.", nada: "peringatan" },
 };
-export const ALASAN_NULL_LABEL = { BELUM_ADA_KONVERSI: "belum ada konversi", BELUM_ADA_SPEND: "belum ada spend", SPEND_NOL: "spend Rp0", SEBELUM_ATRIBUSI: "sebelum atribusi", HARI_ATRIBUSI_PARSIAL: "hari atribusi parsial" };
+export const ALASAN_NULL_LABEL = { BELUM_ADA_KONVERSI: "belum ada konversi", BELUM_ADA_SPEND: "belum ada spend", SPEND_NOL: "spend Rp0", SEBELUM_ATRIBUSI: "sebelum atribusi", HARI_ATRIBUSI_PARSIAL: "hari atribusi parsial", SPEND_TIDAK_LENGKAP: "spend belum lengkap", HARI_BERJALAN_PARSIAL: "hari berjalan parsial" };
 export const EVALUASI_LABEL = { DATA_KURANG: "Data kurang", PANTAU: "Pantau", BAIK: "Baik", PERLU_REVIEW: "Perlu review", TIDAK_DAPAT_DIEVALUASI_SEBELUM_ATRIBUSI: "Tidak dapat dievaluasi (sebelum atribusi)", TIDAK_DAPAT_DIEVALUASI_HARI_ATRIBUSI_PARSIAL: "Tidak dapat dievaluasi (hari atribusi parsial)" };
 
 /** Sel angka biaya: null tetap "—" dengan alasan; TIDAK ada nol palsu. */

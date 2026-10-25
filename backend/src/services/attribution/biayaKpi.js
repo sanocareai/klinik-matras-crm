@@ -22,6 +22,7 @@ export const STATUS_BIAYA = Object.freeze({
   DATA_TERLAMBAT: "DATA_TERLAMBAT",
   TANPA_SPEND_DI_RENTANG: "TANPA_SPEND_DI_RENTANG",
   SPEND_TIDAK_LENGKAP: "SPEND_TIDAK_LENGKAP",
+  HARI_BERJALAN_PARSIAL: "HARI_BERJALAN_PARSIAL",
   SIAP_DIEVALUASI: "SIAP_DIEVALUASI",
   // Rentang yang dimulai SEBELUM (atau pada hari parsial) awal atribusi: spend tercatat untuk audit, tetapi lead/closing berbasis touch belum sebanding.
   SEBELUM_ATRIBUSI: "SEBELUM_ATRIBUSI",
@@ -149,6 +150,9 @@ export function hitungBiayaBaris({ baris, spend, konteks }) {
   const { sumberTerhubung, kesegaran, target } = konteks;
   const tidakSebanding = sumberTerhubung ? (konteks.tidakSebanding ?? null) : null;
   const spendTidakLengkap = sumberTerhubung && !tidakSebanding && Array.isArray(kesegaran.hariHilang) && kesegaran.hariHilang.length > 0;
+  // HARI BERJALAN: spend hari ini masih parsial (dan bisa belum diimpor sama sekali) sedangkan lead dihitung sampai sekarang -> cakupan waktu tidak sebanding. KPI CRM null (BUKAN Rp0, BUKAN dibagi spend parsial).
+  // Periode penuh = rentang yang berakhir kemarin; hari ini dilihat sebagai rentang tersendiri. Perbandingan sementara tidak dilakukan karena kesetaraan jam spend vs lead tidak dapat dibuktikan.
+  const hariBerjalan = sumberTerhubung && !tidakSebanding && !spendTidakLengkap && kesegaran.termasukHariBerjalan === true;
   const lead = baris.lead?.unik ?? 0;
   const qualified = baris.pernahDitandaiProspek?.jumlah ?? 0;
   const custOrder = baris.customerDenganOrder ?? 0;
@@ -173,8 +177,8 @@ export function hitungBiayaBaris({ baris, spend, konteks }) {
   };
   for (const k of Object.keys(metrik)) if (metrik[k] !== null) alasan[k] = null;
   // spend rentang tidak lengkap (ada hari tanpa data): spend parsial ÷ lead seluruh rentang akan menyesatkan -> semua KPI berbasis CRM null dengan alasan eksplisit (spend & metrik platform tetap tampil untuk audit)
-  if (spendTidakLengkap) {
-    for (const k of Object.keys(metrik)) { metrik[k] = null; alasan[k === "cpaClosing" ? "cpa" : k] = "SPEND_TIDAK_LENGKAP"; }
+  if (spendTidakLengkap || hariBerjalan) {
+    for (const k of Object.keys(metrik)) { metrik[k] = null; alasan[k === "cpaClosing" ? "cpa" : k] = spendTidakLengkap ? "SPEND_TIDAK_LENGKAP" : "HARI_BERJALAN_PARSIAL"; }
   }
   // sebelum/awal atribusi: tidak ada CPL/CPA/ROAS berbasis CRM (denominator lead tanpa touch bukan "nol performa"); spend dan konversasi platform tetap tampil
   if (tidakSebanding) {
@@ -193,6 +197,7 @@ export function hitungBiayaBaris({ baris, spend, konteks }) {
   else if (unmappedAtauUnknown) status = STATUS_BIAYA.MAPPING_BELUM_ADA;
   else if (kesegaran.terlambat) status = STATUS_BIAYA.DATA_TERLAMBAT;      // status 'terlambat' didahulukan (UI lama); KPI tetap null bila spendTidakLengkap (alasan SPEND_TIDAK_LENGKAP)
   else if (spendTidakLengkap) status = STATUS_BIAYA.SPEND_TIDAK_LENGKAP;
+  else if (hariBerjalan) status = STATUS_BIAYA.HARI_BERJALAN_PARSIAL;
   else if (S === null) status = STATUS_BIAYA.TANPA_SPEND_DI_RENTANG;
   else if (lead === 0) status = STATUS_BIAYA.BELUM_ADA_KONVERSI;
   else if (!matang) status = STATUS_BIAYA.DATA_BELUM_MATANG;
@@ -314,6 +319,13 @@ export function terapkanBiaya(laporan, { spendPerAd, referensi, kesegaran, targe
   const sumNullable = (k) => { const v = [...perKunci.values()].map((a) => a[k]).filter((x) => x !== null && x !== undefined); return v.length ? v.reduce((p, c) => p + Number(c), 0) : null; };
   const bTotal = hitungBiayaBaris({ baris: totalBaris, spend: perKunci.size ? { spend: spendTotal, platformConversations: sumNullable("platformConversations"), impressions: sumNullable("impressions"), linkClicks: sumNullable("linkClicks"), hariAdaSpend: 0 } : null, konteks });
   const biayaLama = laporan.biaya || {};
+  laporan.periode = {
+    dari: laporan.rentangLead.dari, sampai: laporan.rentangLead.sampai, hariIni: hariIni ?? null,
+    termasukHariBerjalan: kesegaran.termasukHariBerjalan === true,
+    penuh: (hariIni && laporan.rentangLead.sampai >= hariIni) ? (laporan.rentangLead.dari < hariIni ? { dari: laporan.rentangLead.dari, sampai: new Date(Date.parse(`${hariIni}T00:00:00Z`) - 86_400_000).toISOString().slice(0, 10) } : null) : { dari: laporan.rentangLead.dari, sampai: laporan.rentangLead.sampai },
+    hariHilang: Array.isArray(kesegaran.hariHilang) ? kesegaran.hariHilang : null,
+    catatan: "Periode penuh = hari-hari lengkap (berakhir kemarin). Hari berjalan dipisah: KPI CRM-nya null karena spend dan lead tidak sebanding.",
+  };
   laporan.biaya = {
     ...(sumberTerhubung ? {} : { alasan: biayaLama.alasan, catatanAdSpendManual: biayaLama.catatanAdSpendManual, opsiIntegrasi: biayaLama.opsiIntegrasi, syarat: biayaLama.syarat, ekspor: biayaLama.ekspor }),
     penyebutCpa: biayaLama.penyebutCpa ?? "closingUtama.customerLunasTerbuktiLedger",
@@ -339,7 +351,7 @@ export function terapkanBiaya(laporan, { spendPerAd, referensi, kesegaran, targe
     if (tidakSebanding === "SEBELUM_ATRIBUSI") w("BIAYA_SEBELUM_ATRIBUSI", "Rentang dimulai sebelum atribusi tersimpan: spend dan percakapan platform ditampilkan untuk audit, tetapi CPL/CPA/ROAS berbasis CRM TIDAK dihitung dan lead 0 bukan performa nol (status evaluasi: TIDAK_DAPAT_DIEVALUASI_SEBELUM_ATRIBUSI).");
     if (tidakSebanding === "HARI_ATRIBUSI_PARSIAL") w("BIAYA_HARI_ATRIBUSI_PARSIAL", "Rentang dimulai pada hari awal atribusi (touch baru ada sejak jam awal): spend hari itu penuh sedangkan lead berbasis touch parsial. CPL/CPA/ROAS CRM tidak dihitung; gunakan rentang yang dimulai hari berikutnya.");
     if (Array.isArray(kesegaran.hariHilang) && kesegaran.hariHilang.length > 0 && !tidakSebanding) w("SPEND_TIDAK_LENGKAP", `Spend belum lengkap untuk rentang ini: ${kesegaran.hariHilang.length} hari tanpa data (${kesegaran.hariHilang.slice(0, 12).join(", ")}${kesegaran.hariHilang.length > 12 ? ", …" : ""}). Biaya per lead, CPA, dan ROAS sengaja null sampai semua hari terisi (impor dataset Windsor + control total). Jumlah lead, customer ber-order, DP, dan lunas tetap ditampilkan.`, { hariHilang: kesegaran.hariHilang });
-    if (kesegaran.termasukHariBerjalan) w("SPEND_HARI_BERJALAN_PARSIAL", "Rentang mencakup hari ini: spend hari berjalan masih parsial dan dapat berubah sampai hari berakhir; pisahkan hari ini dari hari-hari lengkap saat menilai.", { hariIni });
+    if (kesegaran.termasukHariBerjalan) w("SPEND_HARI_BERJALAN_PARSIAL", "Rentang mencakup hari ini: spend hari berjalan masih parsial (atau belum diimpor) sedangkan lead dihitung sampai sekarang, jadi CPL/CPA/ROAS CRM sengaja null (bukan Rp0). Gunakan periode penuh (berakhir kemarin); hari ini dilihat sebagai rentang tersendiri.", { hariIni });
     if (kesegaran.terlambat) w("SPEND_TERLAMBAT", `Spend terakhir tanggal ${kesegaran.terakhirTanggal} (tertinggal ${kesegaran.tertinggalHari} hari WIB); rentang meminta hari yang belum ada datanya.`, { terakhirTanggal: kesegaran.terakhirTanggal });
     if (spendTidakTerpetakan > 0) w("SPEND_UNMAPPED", `Ada spend Rp${spendTidakTerpetakan.toLocaleString("id-ID")} pada ${adIdTidakTerpetakan.size} Ad ID yang belum punya referensi Ad → Ad Set → Campaign (SPEND_UNMAPPED). Impor pemetaan untuk menutupnya.`, { adIds: adIdTidakTerpetakan.size, spend: spendTidakTerpetakan });
     if (laporan.biaya.status === STATUS_BIAYA.DATA_BELUM_MATANG) w("BIAYA_KOHORT_BELUM_MATANG", "Sebagian lead belum cukup umur: closing dan revenue masih bertambah. Jangan menilai CPA/ROAS sebelum matang.");

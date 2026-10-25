@@ -144,3 +144,10 @@ test("barisBiaya: biaya per percakapan platform + impresi/klik tampil juga sebel
   assert.equal(c.evaluasiTeks, "Tidak dapat dievaluasi (sebelum atribusi)");
   assert.equal(c.evaluasiNada, "netral");
 });
+
+test("barisBiaya: SPEND_TIDAK_LENGKAP & HARI_BERJALAN_PARSIAL berlabel jelas; KPI tetap '—' dengan alasan, tidak pernah nol palsu", () => {
+  for (const [st, teks, alasan] of [["SPEND_TIDAK_LENGKAP", "Spend belum lengkap", "spend belum lengkap"], ["HARI_BERJALAN_PARSIAL", "Hari berjalan parsial", "hari berjalan parsial"]]) {
+    const c = barisBiaya({ biaya: { status: st, spend: 700000, platformConversations: 20, cpl: null, cpa: null, bookedRoas: null, cashRoas: null, alasanNull: { cpl: st, cpa: st, bookedRoas: st, cashRoas: st }, evaluasi: { status: null } } });
+    assert.equal(c.statusTeks, teks); assert.equal(c.nada, "peringatan"); assert.deepEqual([c.cpl.teks, c.cpl.alasan, c.cpa.teks, c.cpa.alasan], ["—", alasan, "—", alasan]);
+  }
+});

@@ -999,3 +999,49 @@ test("BACKFILL 1–14 Okt (sintetis): dry-run/commit/ulang idempoten; Rp0 diteri
   assert.equal(semua.biaya.spendTotal, total);
   await bersihSpend();
 });
+
+test("D7 /d7: RBAC (401/403), READ ONLY, histori dari ledger (batal sebelum D7 tidak dihitung, DP→lunas dalam D7), rekonsiliasi, spend null bila hari kosong, UNMAPPED terpisah, tanpa PII", async () => {
+  await benihLaporan(); await pastikanReferensi(); await bersihSpend();
+  assert.equal((await api("GET", `/d7?${P}`, { token: null })).status, 401);
+  assert.equal((await api("GET", `/d7?${P}`, { token: tokenSales })).status, 403);
+  const sebelum = { s: await testPrisma.metaAdDailySpend.count(), o: await testPrisma.order.count(), p: await testPrisma.payment.count(), t: await testPrisma.attributionTouch.count(), c: await testPrisma.customer.count() };
+  const r = await api("GET", `/d7?${P}`); assert.equal(r.status, 200, r.teks.slice(0, 200));
+  const j = r.json;
+  assert.equal(j.status, "TERSEDIA"); assert.equal(j.rekonsiliasi.ok, true);
+  const t = j.total;
+  assert.deepEqual([t.leadUnik, t.spam, t.leadSah], [7, 1, 6]);
+  assert.equal(t.customerOrder, 4); assert.equal(t.customerPernahBayar, 3, "c1, c2, c8"); assert.equal(t.customerLunas, 2, "c1 (DP 30 Sep, lunas 5 Okt = dalam 7 hari) dan c2 (O2)");
+  assert.equal(t.orderLunas, 2); assert.equal(t.customerDp, 3, "c1, c2 (O3), c8 (kurang Rp200 rb)");
+  assert.equal(t.uangLedger, 4_000_000 + 2_000_000 + 750_000 + 2_000_000, "payment batal sebelum D7 (Rp500 rb) tidak dihitung");
+  assert.equal(j.coverage.histori.paymentDibatalkanSebelumD7, 1);
+  assert.ok(j.grup.some((g) => g.kunci === "UNMAPPED" && g.leadUnik >= 1), "Ad belum terpetakan terpisah dari campaign");
+  assert.ok(j.coverage.atribusi.persenAkuisisiTerbukti > 0);
+  // spend hanya 3 hari terisi → hari kohort lain hilang → biaya null
+  assert.equal(j.total.biaya.cpaLunas.nilai, null);
+  assert.ok(["SPEND_TIDAK_LENGKAP", "BELUM_TERHUBUNG"].includes(j.total.biaya.status));
+  assert.deepEqual({ s: await testPrisma.metaAdDailySpend.count(), o: await testPrisma.order.count(), p: await testPrisma.payment.count(), t: await testPrisma.attributionTouch.count(), c: await testPrisma.customer.count() }, sebelum, "READ ONLY");
+  for (const s of ["6285300", "Pelanggan Uji", CLID, TEXT_CANARY]) assert.ok(!r.teks.includes(s), `bocor: ${s}`);
+  assert.ok(!/"(phone|name|customerId|orderId|ctwaClid|messageId|token)"\s*:/.test(r.teks));
+  // rentang yang belum berumur 7 hari penuh → BELUM_TERSEDIA
+  const baru = await api("GET", `/d7?dari=${new Date(Date.now() + 7 * 3600e3 - 86400e3).toISOString().slice(0, 10)}&sampai=${new Date(Date.now() + 7 * 3600e3 - 86400e3).toISOString().slice(0, 10)}`);
+  assert.equal(baru.json.status, "BELUM_TERSEDIA");
+});
+
+test("D7 dengan spend lengkap pada hari kohort: biaya per customer DP & CPA lunas dihitung dari spend hari kohort yang sama (bukan seluruh periode)", async () => {
+  await benihLaporan(); await pastikanReferensi(); await bersihSpend();
+  const imp = await testPrisma.metaSpendImport.create({ data: { source: "ADS_MANAGER_CSV", accountId: AKUN, contentSha256: "d".repeat(64), rowsTotal: 16, rowsAccepted: 16, rowsRejected: 0, rowsNew: 16, rowsUpdated: 0, rowsUnchanged: 0, spendTotal: 1_600_000 } });
+  // atribusi sudah "mulai" sebelum rentang uji (touch EXISTING lama di luar rentang) → rentang sebanding
+  const awal = await testPrisma.customer.create({ data: { name: "Awal Atribusi", phone: "6285300000098", createdAt: T("2026-09-01T03:00:00Z"), leadSource: "META_ADS" } });
+  await testPrisma.attributionTouch.create({ data: { customerId: awal.id, adId: AD1, touchAt: T("2026-09-20T03:00:00Z"), touchDateWib: T("2026-09-20T00:00:00Z"), mappingStatusAtTouch: "UNMAPPED", evidenceSource: "CTWA_AD", sourceType: "ad", customerStatusAtTouch: "EXISTING", customerBasisAtTouch: "RIWAYAT_PESAN", dedupeKey: "awal-d7" } });
+  let n = 0;
+  for (let t = Date.parse("2026-09-25T00:00:00Z"); t <= Date.parse("2026-10-10T00:00:00Z"); t += 86_400_000) {
+    await testPrisma.metaAdDailySpend.create({ data: { dateWib: new Date(t), accountId: AKUN, campaignId: HIER[AD1][0], adSetId: HIER[AD1][1], adId: AD1, currency: "IDR", spend: 100_000, source: "ADS_MANAGER_CSV", importedAt: new Date(), importId: imp.id, rowChecksum: String(++n).padStart(64, "e") } });
+  }
+  const j = (await api("GET", `/d7?${P}`)).json;
+  assert.equal(j.coverage.spend.status, "LENGKAP"); assert.deepEqual(j.coverage.spend.hariHilang, []);
+  const g1 = j.grup.find((g) => g.kunci === CAMP1);
+  assert.equal(g1.biaya.spend, 1_600_000, "16 hari × 100 rb, hanya Ad campaign ini");
+  assert.equal(g1.biaya.cpaLunas.nilai, 800_000, "1.600.000 / 2 customer lunas D7");
+  assert.equal(g1.biaya.biayaPerCustomerDp.nilai, 800_000, "c1 dan c2 sama-sama pernah DP");
+  await bersihSpend();
+});

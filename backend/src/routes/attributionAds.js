@@ -12,6 +12,7 @@ import { prisma } from "../db.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
 import { parseParameterIklan, hitungLaporanIklan, eksporIdIklan, ParameterError } from "../services/attribution/iklanReport.js";
 import { hitungKesehatanCapture } from "../services/attribution/captureHealth.js";
+import { hitungD7 } from "../services/attribution/d7.js";
 import { pasangRuteSpend } from "./attributionSpend.js";
 import { barisDariCsv, jalankanImpor, sidikJari, MAKS_BARIS_IMPOR } from "../services/attribution/adReferensi.js";
 
@@ -37,6 +38,28 @@ attributionAdsRouter.get("/", async (req, res) => {
   } catch (err) {
     console.error("atribusi/iklan error:", err?.code || err?.name || "ERROR");   // tanpa pesan: galat Prisma bisa memuat nilai kueri
     return res.status(500).json({ error: "Gagal menghitung laporan atribusi iklan" });
+  } finally {
+    sedangBerjalan = false;
+  }
+});
+
+// D7: kohort dengan observasi 7 hari PENUH, dari histori (baca-saja). ?dari&sampai (kosong = bawaan periode penuh). Berbagi penjaga konkurensi dengan laporan utama.
+attributionAdsRouter.get("/d7", async (req, res) => {
+  let parameter;
+  try { parameter = parseParameterIklan({ dari: req.query.dari, sampai: req.query.sampai }); }
+  catch (err) {
+    if (err instanceof ParameterError) return res.status(400).json({ error: err.message, code: err.code });
+    throw err;
+  }
+  if (sedangBerjalan) return res.status(429).json({ error: "Laporan atribusi iklan sedang dihitung; coba lagi sebentar", code: "SEDANG_DIHITUNG" });
+  sedangBerjalan = true;
+  try {
+    const hasil = await hitungD7(prisma, { dari: parameter.dari, sampai: parameter.sampai, hariIni: parameter.hariIni });
+    res.set("Cache-Control", "no-store");
+    return res.json(hasil);
+  } catch (err) {
+    console.error("atribusi/iklan/d7 error:", err?.code || err?.name || "ERROR");
+    return res.status(500).json({ error: "Gagal menghitung D7 atribusi iklan" });
   } finally {
     sedangBerjalan = false;
   }

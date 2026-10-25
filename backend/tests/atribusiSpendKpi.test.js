@@ -421,3 +421,39 @@ test("spend rentang tidak lengkap: CPL/CPA/ROAS CRM null dengan alasan SPEND_TID
   const lap4 = laporanDasar([baris()]); terapkanBiaya(lap4, { spendPerAd: sp, referensi: ref, kesegaran: kesegaranSpend({ terakhirTanggal: "2026-10-24", hariIni: "2026-10-25", dari: "2026-10-24", sampai: "2026-10-25", hariTersedia: ["2026-10-24"], adaDataDiRentang: true }), target: normalisasiTarget(null), hariIni: "2026-10-25", mulaiHari: "2026-10-01" });
   assert.ok(lap4.peringatan.some((x) => x.kode === "SPEND_HARI_BERJALAN_PARSIAL")); assert.ok(!lap4.peringatan.some((x) => x.kode === "SPEND_TIDAK_LENGKAP"));
 });
+
+// ── hari berjalan & periode penuh (Fase 3.3) ──
+test("hari berjalan: rentang yang mencakup hari ini → CPL/CPA/ROAS CRM null (HARI_BERJALAN_PARSIAL), BUKAN Rp0 dan bukan spend parsial ÷ lead penuh; spend tetap tampil; periode.penuh berakhir kemarin", () => {
+  const ref = new Map([[AD1, { adId: AD1, adSetId: SET1, campaignId: CAMP1, campaignName: "C1" }]]);
+  const sp = [{ adId: AD1, spend: 700000, platformConversations: 20, hariAdaSpend: 3 }];
+  const lengkapSampaiHariIni = kesegaranSpend({ terakhirTanggal: "2026-10-25", hariIni: "2026-10-25", dari: "2026-10-23", sampai: "2026-10-25", hariTersedia: ["2026-10-23", "2026-10-24", "2026-10-25"], adaDataDiRentang: true });
+  assert.equal(lengkapSampaiHariIni.termasukHariBerjalan, true); assert.deepEqual(lengkapSampaiHariIni.hariHilang, []);
+  const lap = laporanDasar([baris()]); lap.rentangLead.dari = "2026-10-23"; lap.rentangLead.sampai = "2026-10-25";
+  terapkanBiaya(lap, { spendPerAd: sp, referensi: ref, kesegaran: lengkapSampaiHariIni, target: normalisasiTarget(null), hariIni: "2026-10-25", mulaiHari: "2026-10-01" });
+  const b = lap.grup[0].biaya;
+  assert.equal(b.status, STATUS_BIAYA.HARI_BERJALAN_PARSIAL); assert.deepEqual([b.cpl, b.costPerQualifiedLead, b.costPerCustomerOrder, b.cpa, b.bookedRoas, b.cashRoas], [null, null, null, null, null, null]);
+  assert.equal(b.alasanNull.cpa, "HARI_BERJALAN_PARSIAL"); assert.equal(b.spend, 700000);
+  assert.deepEqual(lap.periode.penuh, { dari: "2026-10-23", sampai: "2026-10-24" }); assert.equal(lap.periode.termasukHariBerjalan, true);
+  assert.ok(lap.peringatan.some((w) => w.kode === "SPEND_HARI_BERJALAN_PARSIAL"));
+  // hanya hari ini, tanpa spend sama sekali: null (bukan Rp0)
+  const lapH = laporanDasar([baris()]); lapH.rentangLead.dari = "2026-10-25"; lapH.rentangLead.sampai = "2026-10-25";
+  terapkanBiaya(lapH, { spendPerAd: [], referensi: ref, kesegaran: kesegaranSpend({ terakhirTanggal: "2026-10-24", hariIni: "2026-10-25", dari: "2026-10-25", sampai: "2026-10-25", hariTersedia: [], adaDataDiRentang: false }), target: normalisasiTarget(null), hariIni: "2026-10-25", mulaiHari: "2026-10-01" });
+  assert.equal(lapH.grup[0].biaya.spend, null); assert.equal(lapH.grup[0].biaya.cpa, null); assert.equal(lapH.grup[0].biaya.alasanNull.cpa, "HARI_BERJALAN_PARSIAL"); assert.equal(lapH.periode.penuh, null);
+  // periode penuh (berakhir kemarin, semua hari terisi) → dihitung
+  const lapP = laporanDasar([baris()]); lapP.rentangLead.dari = "2026-10-23"; lapP.rentangLead.sampai = "2026-10-24";
+  terapkanBiaya(lapP, { spendPerAd: sp, referensi: ref, kesegaran: kesegaranSpend({ terakhirTanggal: "2026-10-24", hariIni: "2026-10-25", dari: "2026-10-23", sampai: "2026-10-24", hariTersedia: ["2026-10-23", "2026-10-24"], adaDataDiRentang: true }), target: normalisasiTarget(null), hariIni: "2026-10-25", mulaiHari: "2026-10-01" });
+  assert.equal(lapP.grup[0].biaya.cpl, 70000); assert.deepEqual(lapP.periode.penuh, { dari: "2026-10-23", sampai: "2026-10-24" }); assert.ok(!lapP.peringatan.some((w) => w.kode === "SPEND_HARI_BERJALAN_PARSIAL"));
+});
+
+test("nol spend sah (baris Rp0 ada di semua hari) → CPL/CPA Rp0 dan ROAS null SPEND_NOL; bukan 'tidak lengkap'; hari hilang tetap null", () => {
+  const ref = new Map([[AD1, { adId: AD1, adSetId: SET1, campaignId: CAMP1, campaignName: "C1" }]]);
+  const lap = laporanDasar([baris()]); lap.rentangLead.dari = "2026-10-23"; lap.rentangLead.sampai = "2026-10-24";
+  terapkanBiaya(lap, { spendPerAd: [{ adId: AD1, spend: 0, hariAdaSpend: 2 }], referensi: ref, kesegaran: kesegaranSpend({ terakhirTanggal: "2026-10-24", hariIni: "2026-10-25", dari: "2026-10-23", sampai: "2026-10-24", hariTersedia: ["2026-10-23", "2026-10-24"], adaDataDiRentang: true }), target: normalisasiTarget(null), hariIni: "2026-10-25", mulaiHari: "2026-10-01" });
+  const b = lap.grup[0].biaya; assert.deepEqual([b.spend, b.cpl, b.cpa], [0, 0, 0]); assert.equal(b.bookedRoas, null); assert.equal(b.alasanNull.bookedRoas, "SPEND_NOL");
+});
+
+test("penyebut CPA = closing seluruh lead di rentang yang SAMA dengan spend; blok kematangan (subset matang) TIDAK pernah dipakai sebagai penyebut spend seluruh periode", () => {
+  const b = hitungBiayaBaris({ baris: baris({ kematangan: { hari7: { leadMatang: 3, customerLunasTerbuktiLedger: 3 }, hari30: { leadMatang: 9 }, hari60: { leadMatang: 9 } } }), spend: spend(1_000_000), konteks: kon() });
+  assert.equal(b.cpa, 1_000_000, "1 closing utama (semua lead), bukan 3 closing subset D7");
+  assert.equal(b.penyebut.closingUtama, 1);
+});

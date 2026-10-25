@@ -54,8 +54,9 @@ export function parseParameterIklan(query = {}, now = new Date()) {
   const hariIni = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
   if (!!query.dari !== !!query.sampai) throw new ParameterError(`Isi 'dari' DAN 'sampai' (YYYY-MM-DD, hari WIB), atau kosongkan keduanya untuk ${HARI_BAWAAN} hari terakhir`);
   const bawaan = !query.dari && !query.sampai;
-  const sampai = bawaan ? hariIni : String(query.sampai);
-  const dari = bawaan ? geserHari(hariIni, -(HARI_BAWAAN - 1)) : String(query.dari);
+  // BAWAAN = PERIODE PENUH: 7 hari lengkap yang berakhir KEMARIN (hari berjalan dipisah, lihat biayaKpi.js#hariBerjalan). Hari ini dipilih eksplisit lewat dari=sampai=hari ini.
+  const sampai = bawaan ? geserHari(hariIni, -1) : String(query.sampai);
+  const dari = bawaan ? geserHari(hariIni, -HARI_BAWAAN) : String(query.dari);
   if (!tglValid(sampai)) throw new ParameterError("Parameter 'sampai' harus YYYY-MM-DD (hari WIB)");
   if (!tglValid(dari)) throw new ParameterError("Parameter 'dari' harus YYYY-MM-DD (hari WIB)");
   if (dari > sampai) throw new ParameterError("'dari' tidak boleh sesudah 'sampai'");

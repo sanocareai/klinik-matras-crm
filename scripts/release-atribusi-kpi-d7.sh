@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Rilis KODE-SAJA "Fase 3.2 — spend rentang tidak lengkap: CPL/CPA/ROAS CRM null (SPEND_TIDAK_LENGKAP) + peringatan hari hilang/hari berjalan parsial": backend saja (web dipakai ulang), TANPA migrasi dan TANPA perubahan skema.
+# Rilis KODE-SAJA "Fase 3.3 — KPI periode penuh vs hari berjalan, spend tidak lengkap = null, kohort D7 (/d7)": backend + label web, TANPA migrasi dan TANPA perubahan skema.
 # Workflow RELEASE-DIRECTORY di atas release aktif (BASE_SHA). FAIL-CLOSED. Tidak menyentuh data: spend/target/touch/referensi TIDAK ditulis; .env TIDAK diubah; sinkronisasi spend tetap OFF.
 #
 # BERHENTI BILA  : baseline live berubah; disk < 5 GiB; backup gagal; berkas di luar allowlist; backend/prisma, package, Docker/compose, .env berubah; isi berkas runtime berbeda dari pin sha256;
 #                  ada migrasi pending; SPEND_SYNC_ENABLED=true; baris/total spend atau touch berubah selama rilis; respons memuat token/PII/reach; web/aset lama tidak sehat.
 #
-#   git bundle create /tmp/atri4.bundle <BASE_SHA>..<CAND_BRANCH> ; scp ke server
-#   cat scripts/release-atribusi-spend-lengkap.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/atri4.sh'
-#   ssh ubuntu@43.133.152.6 'BUNDLE=/tmp/atri4.bundle bash /tmp/atri4.sh <DEPLOY_SHA_40> <BASE_SHA_40> [--preflight-only]'
-#   ssh ubuntu@43.133.152.6 'bash /tmp/atri4.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rollback'     # kode kembali; tidak ada data yang dihapus
+#   git bundle create /tmp/atri5.bundle <BASE_SHA>..<CAND_BRANCH> ; scp ke server
+#   cat scripts/release-atribusi-kpi-d7.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/atri5.sh'
+#   ssh ubuntu@43.133.152.6 'BUNDLE=/tmp/atri5.bundle bash /tmp/atri5.sh <DEPLOY_SHA_40> <BASE_SHA_40> [--preflight-only]'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/atri5.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rollback'     # kode kembali; tidak ada data yang dihapus
 set -Eeuo pipefail
 umask 077
 
@@ -19,24 +19,26 @@ for a in "$@"; do case "$a" in --preflight-only) MODE=preflight;; --rollback) MO
 [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 2 harus SHA release aktif (baseline) 40 karakter" >&2; exit 1; }
 
 MIN_FREE_KB=$((5 * 1024 * 1024))
-CAND_BRANCH="${CAND_BRANCH:-rc/atribusi-spend-lengkap-on-live-29e54208}"
-CAND_REF="refs/remotes/origin/cand-atri4"
+CAND_BRANCH="${CAND_BRANCH:-rc/atribusi-kpi-d7-on-live-29e54208}"
+CAND_REF="refs/remotes/origin/cand-atri5"
 BUNDLE="${BUNDLE:-}"
 REPO_URL="https://github.com/sanocareai/klinik-matras-crm.git"
 PUBLIC_URL="https://app.sanomatrassehat.com"; INTERNAL_URL="http://127.0.0.1:4000"
 PROJECT="klinik-matras"; DB_USER="klinik"; DB_NAME="klinik_matras"
 RELEASES="$HOME/releases/klinik-matras"; PERSIST="$HOME/klinik-matras"; SRC="$HOME/release-src/klinik-matras.git"
-TAG_KODE="atri4"; FLAG_SYNC="SPEND_SYNC_ENABLED"; FLAG_CAPTURE="ATRIBUSI_TOUCH_CAPTURE_ENABLED"
+TAG_KODE="atri5"; FLAG_SYNC="SPEND_SYNC_ENABLED"; FLAG_CAPTURE="ATRIBUSI_TOUCH_CAPTURE_ENABLED"
 DEPLOY_SHORT="${DEPLOY_SHA:0:8}"; BASE_SHORT="${BASE_SHA:0:8}"; NEW_DIR="$RELEASES/$DEPLOY_SHORT"
 TS="$(date +%Y%m%d_%H%M%S)"; BK_DIR="$HOME/release-backups/${TAG_KODE}-${DEPLOY_SHORT}-${TS}"
 ROLLBACK_TAG="klinik-matras-backend:rollback-pre-${TAG_KODE}-${DEPLOY_SHORT}"
 
-ALLOWED_RE='^(backend/src/services/attribution/(biayaKpi|iklanReport|spend)\.js|backend/tests/(atribusiSpendKpi|releaseAtribusiKpiKode|releaseAtribusiSpendLengkap)\.test\.js|backend/tests/integration/atribusiIklan\.integration\.test\.js|docs/ATRIBUSI-SPEND-LENGKAP\.md|scripts/release-atribusi-spend-lengkap\.sh)$'
-BACKEND_SRC_EXPECT="backend/src/services/attribution/biayaKpi.js backend/src/services/attribution/iklanReport.js backend/src/services/attribution/spend.js"
-FRONTEND_SRC_EXPECT=""
+ALLOWED_RE='^(backend/src/(services/attribution/(biayaKpi|iklanReport|spend|d7)\.js|routes/attributionAds\.js)|backend/tests/(atribusiSpendKpi|atribusiIklanReport|atribusiD7|releaseAtribusiKpiD7|releaseAtribusiKpiKode)\.test\.js|backend/tests/integration/atribusiIklan\.integration\.test\.js|frontend/src/features/laporan/iklanCampaignLogic\.js|frontend/tests/iklanCampaignLogic\.test\.js|docs/ATRIBUSI-KPI-D7\.md|scripts/release-atribusi-kpi-d7\.sh)$'
+BACKEND_SRC_EXPECT="backend/src/routes/attributionAds.js backend/src/services/attribution/biayaKpi.js backend/src/services/attribution/d7.js backend/src/services/attribution/iklanReport.js backend/src/services/attribution/spend.js"
+FRONTEND_SRC_EXPECT="frontend/src/features/laporan/iklanCampaignLogic.js"
 declare -A PINS=(
-  ["backend/src/services/attribution/biayaKpi.js"]="458e70cd9e47d688dd34c9f68e2920815e2072eeb7e40c096cfe6c6bdf4c6088"
-  ["backend/src/services/attribution/iklanReport.js"]="50b410a541cf1b5cb43ce8710dfc8a5e2e30459bf4663805a7b31140e8511d8c"
+  ["backend/src/routes/attributionAds.js"]="bc0f194ee9aaf3fd4b788883887db28e105b41bab35450e2e5dd50ee936396f4"
+  ["backend/src/services/attribution/biayaKpi.js"]="74c58c111d40a3a73a3c1a0644e8a0608203d574f1154d447cd96f95ed691fe1"
+  ["backend/src/services/attribution/d7.js"]="4ed9701401fd384e1ba3b26350d72bc898289ed8af0da5b3ae952b156113349f"
+  ["backend/src/services/attribution/iklanReport.js"]="b1706829e26e7494e02d746f233003052a65e9f528d8fa976c848a0b8d596e93"
   ["backend/src/services/attribution/spend.js"]="671ed90a5ea0136ce513c1a01e9f73761ef51320162a0857049cb90f9fabe7f6"
 )
 
@@ -70,7 +72,7 @@ Release sebelumnya : ${PREV_DIR:-<belum terbaca>} (TIDAK dihapus/ditimpa)
 Image sebelumnya   : ${ROLLBACK_TAG}
 Backup + checksum  : ${BACKUP_FILE:-<belum dibuat>}
 Berhenti SEBELUM 'Switch' -> backend lama tidak pernah dimatikan. Rilis ini TANPA migrasi dan TANPA tulisan data.
-Setelah switch bermasalah:   bash /tmp/atri4.sh ${DEPLOY_SHA} ${BASE_SHA} --rollback
+Setelah switch bermasalah:   bash /tmp/atri5.sh ${DEPLOY_SHA} ${BASE_SHA} --rollback
 NB: bila build image sempat menggeser tag :latest dan rilis berhenti sebelum switch, kembalikan: docker tag ${ROLLBACK_TAG} ${IMG_NAME:-klinik-matras-backend:latest}
 ─────────────────────────────────────────────────────────────────────────
 EOF
@@ -115,17 +117,26 @@ const TERLARANG = /"(phone|name|customerId|messageId|orderId|ctwaClid|leadSource
     console.log("SB_SIGMA_GRUP=" + Math.round(j.grup.reduce((s, g) => s + (g.biaya.spend || 0), 0)));
     console.log("SB_REACH=" + (/reach/i.test(r.body) ? "ADA" : "tidak"));
   } else console.log("SB_DILEWATI=tidak ada spend sebelum hari atribusi");
-  // rentang yang memuat hari tanpa data spend (sesudah spend terakhir, sesudah hari atribusi mulai) -> semua KPI CRM null, alasan SPEND_TIDAK_LENGKAP
-  const maks = awalSpend[0].m; const kemarin = wib(-86400e3);
-  if (maks && mulai[0].d && maks < kemarin) {
-    const dr = new Date(Date.parse(maks + "T00:00:00Z") + 86400e3).toISOString().slice(0, 10);
-    if (dr > mulai[0].d) {
-      const r = await get(`${base}?dari=${dr}&sampai=${kemarin}&level=campaign`, tA); gabung += r.body; const j = JSON.parse(r.body);
-      console.log("GAP_STATUS=" + r.status); console.log("GAP_REKON=" + j.rekonsiliasi.ok); console.log("GAP_STATUS_BIAYA=" + j.biaya.status);
-      console.log("GAP_NULL=" + (j.biaya.cpl === null && j.biaya.cpa === null && j.biaya.bookedRoas === null && j.biaya.cashRoas === null && j.grup.every((g) => g.biaya.cpl === null && g.biaya.cpa === null && g.biaya.bookedRoas === null)));
-      console.log("GAP_PERINGATAN=" + j.peringatan.map((w) => w.kode).join(",")); console.log("GAP_ALASAN=" + j.biaya.alasanNull.cpa); console.log("GAP_RENTANG=" + dr + ".." + kemarin);
-    } else console.log("GAP_DILEWATI=tidak ada hari sesudah atribusi tanpa spend");
-  } else console.log("GAP_DILEWATI=spend sudah sampai kemarin");
+  // Fase 3.3: bawaan = periode penuh (berakhir kemarin); hari berjalan KPI null; rentang bolong KPI null; /d7 baca-saja dan tanpa PII
+  const wibHari = wib(0), kemarin = wib(-86400e3);
+  const rb = JSON.parse((await get(base + "?level=campaign", tA)).body); gabung += JSON.stringify(rb);
+  console.log("BAWAAN_SAMPAI=" + rb.rentangLead.sampai); console.log("BAWAAN_KEMARIN=" + (rb.rentangLead.sampai === kemarin));
+  const rh = await get(`${base}?dari=${wibHari}&sampai=${wibHari}&level=campaign`, tA); gabung += rh.body; const jh = JSON.parse(rh.body);
+  console.log("HARI_STATUS=" + rh.status); console.log("HARI_REKON=" + jh.rekonsiliasi.ok); console.log("HARI_BIAYA=" + jh.biaya.status);
+  console.log("HARI_NULL=" + (jh.biaya.cpl === null && jh.biaya.cpa === null && jh.biaya.bookedRoas === null && jh.biaya.cashRoas === null && jh.grup.every((g) => g.biaya.cpl === null && g.biaya.cpa === null && g.biaya.bookedRoas === null)));
+  console.log("HARI_PERIODE_PENUH=" + JSON.stringify(jh.periode?.penuh ?? "ADA_TAPI_NULL"));
+  const dd = await get(`${base}/d7?dari=${wib(-20 * 86400e3)}&sampai=${kemarin}`, tA); gabung += dd.body; const jd = JSON.parse(dd.body);
+  console.log("D7_STATUS=" + dd.status); console.log("D7_HASIL=" + jd.status); console.log("D7_REKON=" + (jd.status === "TERSEDIA" ? jd.rekonsiliasi.ok : "n/a")); console.log("D7_BATASAN=" + (Array.isArray(jd.batasan) && jd.batasan.length > 0));
+  console.log("D7_RBAC=" + (await get(`${base}/d7`, tS)).status + "," + (await get(`${base}/d7`)).status);
+  { const maks = awalSpend[0].m; const kmrn = wib(-86400e3);
+    if (maks && mulai[0].d && maks < kmrn) {
+      const dr = new Date(Date.parse(maks + "T00:00:00Z") + 86400e3).toISOString().slice(0, 10);
+      if (dr > mulai[0].d) { const r = await get(`${base}?dari=${dr}&sampai=${kmrn}&level=campaign`, tA); gabung += r.body; const j = JSON.parse(r.body);
+        console.log("GAP_STATUS=" + r.status); console.log("GAP_REKON=" + j.rekonsiliasi.ok); console.log("GAP_STATUS_BIAYA=" + j.biaya.status);
+        console.log("GAP_NULL=" + (j.biaya.cpl === null && j.biaya.cpa === null && j.biaya.bookedRoas === null && j.biaya.cashRoas === null && j.grup.every((g) => g.biaya.cpl === null && g.biaya.cpa === null && g.biaya.bookedRoas === null)));
+        console.log("GAP_PERINGATAN=" + j.peringatan.map((w) => w.kode).join(",")); console.log("GAP_ALASAN=" + j.biaya.alasanNull.cpa); console.log("GAP_RENTANG=" + dr + ".." + kmrn);
+      } else console.log("GAP_DILEWATI=tidak ada hari sesudah atribusi tanpa spend");
+    } else console.log("GAP_DILEWATI=spend sudah sampai kemarin"); }
   console.log("FORBIDDEN=" + (TERLARANG.exec(gabung) ? TERLARANG.exec(gabung)[1] : "none"));
   console.log("REACH_DI_LAPORAN=" + (/reach/i.test(gabung) ? "ADA" : "tidak"));
 })().catch((e) => { console.log("ERROR=" + String(e.message).slice(0, 120)); process.exit(4); });
@@ -165,11 +176,16 @@ verify_live() {
     ok "rentang $(val SPEND_MIN) (sebelum atribusi ${TOUCH_MULAI_HARI:-$(val TOUCH_MULAI)}): spend tampil Rp$(val SB_SPEND_TOTAL), CPL/CPA/ROAS null, evaluasi TIDAK_DAPAT_DIEVALUASI_SEBELUM_ATRIBUSI, peringatan: $(val SB_PERINGATAN)"
     [ "$(val SB_SPEND_TOTAL)" = "$(val SPEND_TOTAL_DB | sed 's/\.00$//')" ] || warn "spend total hari pertama ($(val SB_SPEND_TOTAL)) ≠ total DB ($(val SPEND_TOTAL_DB)) — wajar bila ada spend hari lain"
   else warn "$(val SB_DILEWATI)"; fi
+  [ "$(val BAWAAN_KEMARIN)" = "true" ] || die "bawaan laporan BUKAN periode penuh yang berakhir kemarin ($(val BAWAAN_SAMPAI))"; ok "bawaan laporan = periode penuh (berakhir $(val BAWAAN_SAMPAI))"
+  [ "$(val HARI_STATUS)" = "200" ] && [ "$(val HARI_REKON)" = "true" ] || die "laporan hari berjalan: status/rekonsiliasi tidak OK"
+  [ "$(val HARI_NULL)" = "true" ] && [ "$(val HARI_BIAYA)" != "SIAP_DIEVALUASI" ] || die "hari berjalan: CPL/CPA/ROAS CRM harus null ($(val HARI_BIAYA))"; ok "hari berjalan: KPI CRM null, status $(val HARI_BIAYA)"
+  [ "$(val D7_STATUS)" = "200" ] && { [ "$(val D7_HASIL)" = "BELUM_TERSEDIA" ] || { [ "$(val D7_HASIL)" = "TERSEDIA" ] && [ "$(val D7_REKON)" = "true" ]; }; } && [ "$(val D7_BATASAN)" = "true" ] || die "/d7 tidak OK ($(val D7_STATUS)/$(val D7_HASIL)/$(val D7_REKON))"
+  [ "$(val D7_RBAC)" = "403,401" ] || die "RBAC /d7 salah ($(val D7_RBAC); harus 403 SALES, 401 tanpa token)"; ok "/d7: 200, $(val D7_HASIL), rekonsiliasi $(val D7_REKON), RBAC 403/401"
   if [ -n "$(val GAP_STATUS)" ]; then
     [ "$(val GAP_STATUS)" = "200" ] && [ "$(val GAP_REKON)" = "true" ] || die "laporan rentang tanpa spend lengkap: status/rekonsiliasi tidak OK"
-    { [ "$(val GAP_STATUS_BIAYA)" = "SPEND_TIDAK_LENGKAP" ] || [ "$(val GAP_STATUS_BIAYA)" = "DATA_TERLAMBAT" ]; } && [ "$(val GAP_NULL)" = "true" ] && [ "$(val GAP_ALASAN)" = "SPEND_TIDAK_LENGKAP" ] || die "rentang dengan hari tanpa spend: CPL/CPA/ROAS CRM harus null dengan alasan SPEND_TIDAK_LENGKAP ($(val GAP_STATUS_BIAYA)/$(val GAP_NULL)/$(val GAP_ALASAN))"
+    { [ "$(val GAP_STATUS_BIAYA)" = "SPEND_TIDAK_LENGKAP" ] || [ "$(val GAP_STATUS_BIAYA)" = "DATA_TERLAMBAT" ]; } && [ "$(val GAP_NULL)" = "true" ] && [ "$(val GAP_ALASAN)" = "SPEND_TIDAK_LENGKAP" ] || die "rentang dengan hari tanpa spend: KPI CRM harus null alasan SPEND_TIDAK_LENGKAP ($(val GAP_STATUS_BIAYA)/$(val GAP_NULL)/$(val GAP_ALASAN))"
     printf '%s' "$(val GAP_PERINGATAN)" | grep -q 'SPEND_TIDAK_LENGKAP' || die "peringatan SPEND_TIDAK_LENGKAP tidak muncul ($(val GAP_PERINGATAN))"
-    ok "rentang $(val GAP_RENTANG) (hari tanpa spend): CPL/CPA/ROAS CRM null, alasan SPEND_TIDAK_LENGKAP, status $(val GAP_STATUS_BIAYA), peringatan: $(val GAP_PERINGATAN)"
+    ok "rentang $(val GAP_RENTANG): KPI CRM null, status $(val GAP_STATUS_BIAYA), peringatan: $(val GAP_PERINGATAN)"
   else warn "$(val GAP_DILEWATI)"; fi
   local sesudah; sesudah="$(psql_live -At -c "$estado_sql")"
   # touch BOLEH bertambah (capture aktif menerima pesan CTWA nyata selama rilis) tetapi tidak boleh berkurang; semua lainnya HARUS persis sama
@@ -188,8 +204,8 @@ if [ "$MODE" = "rollback" ]; then
   docker image inspect "$ROLLBACK_TAG" >/dev/null 2>&1 || die "image rollback ${ROLLBACK_TAG} tidak ada"
   CID="$(backend_cid)"; [ "$(printf '%s\n' "$CID" | grep -c .)" = "1" ] || die "harus tepat satu container backend"
   [ "$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$CID")" = "$NEW_DIR" ] || die "release aktif BUKAN ${DEPLOY_SHORT}; rollback tidak berlaku"
-  for lf in /tmp/release-*.lock; do [ -e "$lf" ] || continue; [ "$lf" = "/tmp/release-atribusi-spend-lengkap.lock" ] && continue; ( exec 8>"$lf"; flock -n 8 ) || die "deploy lain berjalan (${lf})"; done
-  exec 9>/tmp/release-atribusi-spend-lengkap.lock; flock -n 9 || die "rilis/rollback ini sudah berjalan"
+  for lf in /tmp/release-*.lock; do [ -e "$lf" ] || continue; [ "$lf" = "/tmp/release-atribusi-kpi-d7.lock" ] && continue; ( exec 8>"$lf"; flock -n 8 ) || die "deploy lain berjalan (${lf})"; done
+  exec 9>/tmp/release-atribusi-kpi-d7.lock; flock -n 9 || die "rilis/rollback ini sudah berjalan"
   ENV_B="$(env_sha)"; IMG_NAME="$(docker inspect -f '{{.Config.Image}}' "$CID")"
   docker tag "$ROLLBACK_TAG" "$IMG_NAME" || die "gagal menandai ulang image"
   dcp "$OLD_DIR" up -d --no-deps --force-recreate backend </dev/null >/dev/null 2>&1 || die "recreate (rollback) gagal"
@@ -204,8 +220,8 @@ fi
 PHASE="0-lingkungan"; say "0. Lingkungan dan kunci deploy"
 for c in git docker curl gzip sha256sum awk grep flock tar sed df find node npm; do command -v "$c" >/dev/null 2>&1 || die "perintah '$c' tidak ada"; done
 for lf in /tmp/release-*.lock; do [ -e "$lf" ] || continue; ( exec 8>"$lf"; flock -n 8 ) || die "deploy lain sedang berjalan (kunci ${lf} dipegang)"; done
-exec 9>/tmp/release-atribusi-spend-lengkap.lock; flock -n 9 || die "rilis ini sudah berjalan"
-OTHER="$(pgrep -af 'release-[a-z0-9-]+\.sh|docker compose .*(up|build)|docker build|prisma migrate' | grep -v "atri4\|release-atribusi-spend-lengkap\|pgrep\|node src/index.js" || true)"
+exec 9>/tmp/release-atribusi-kpi-d7.lock; flock -n 9 || die "rilis ini sudah berjalan"
+OTHER="$(pgrep -af 'release-[a-z0-9-]+\.sh|docker compose .*(up|build)|docker build|prisma migrate' | grep -v "atri5\|release-atribusi-kpi-d7\|pgrep\|node src/index.js" || true)"
 [ -z "$OTHER" ] || { printf '%s\n' "$OTHER" | sed 's/^/        /'; die "ada proses deploy/build/migrasi lain yang berjalan"; }
 ok "tidak ada deploy lain"
 mkdir -p "$BK_DIR" "$HOME/release-src" "$HOME/backups"; exec > >(tee -a "$BK_DIR/release.log") 2>&1
@@ -259,8 +275,12 @@ ENV_BEFORE="$(env_sha)"; CAPTURE_FLAG_BEFORE="$(container_env "$CID_OLD" "$FLAG_
 [ "$(container_env "$CID_OLD" "$FLAG_SYNC")" != "true" ] && ! printf '%s\n' "$(env_flag_text "$FLAG_SYNC")" | grep -Eq "^${FLAG_SYNC}=[\"']?true" || die "${FLAG_SYNC}=true di produksi"
 ESTADO_BEFORE="$(psql_live -At -c "$estado_sql")"; TOUCH_MULAI_HARI="$(psql_live -At -c "select to_char(min(touch_at) + interval '7 hours','YYYY-MM-DD') from attribution_touches")"
 ok "keadaan yang HARUS tetap: .env sha ${ENV_BEFORE:0:12}…; ${FLAG_CAPTURE}='${CAPTURE_FLAG_BEFORE:-<kosong>}'; spend|revisi|impor|touch|referensi|target = ${ESTADO_BEFORE}; atribusi mulai ${TOUCH_MULAI_HARI} WIB; ${FLAG_SYNC} OFF"
-DB_BYTES="$(psql_live -At -c "select pg_database_size('${DB_NAME}')")"
-[ "$(avail_kb)" -ge $(( DB_BYTES / 1024 * 3 + 3 * 1024 * 1024 )) ] || die "ruang disk kurang"; ok "ruang disk cukup (backup + image backend baru)"
+say "2b. node_modules frontend (package.json identik)"
+sg show "${DEPLOY_SHA}:frontend/package.json" > "$BK_DIR/pkg-baru.json"; NM_SRC=""
+for d in "$PREV_DIR" "$RELEASES"/*/; do d="${d%/}"; if [ -d "$d/frontend/node_modules" ] && [ -f "$d/frontend/package.json" ] && cmp -s <(tr -d '\r' < "$d/frontend/package.json") <(tr -d '\r' < "$BK_DIR/pkg-baru.json"); then NM_SRC="$d/frontend/node_modules"; break; fi; done
+[ -n "$NM_SRC" ] || die "tidak ada release dengan frontend/node_modules identik"
+DB_BYTES="$(psql_live -At -c "select pg_database_size('${DB_NAME}')")"; NM_KB="$(du -sk "$NM_SRC" | cut -f1)"
+[ "$(avail_kb)" -ge $(( NM_KB * 2 + DB_BYTES / 1024 * 3 + 3 * 1024 * 1024 )) ] || die "ruang disk kurang"; ok "ruang cukup (node_modules dari ${NM_SRC})"
 disk_gate "preflight"
 if [ "$MODE" = "preflight" ]; then say "Preflight selesai (--preflight-only): produksi TIDAK diubah"; trap - EXIT; exit 0; fi
 
@@ -277,6 +297,7 @@ PHASE="4-release-dir"; say "4. Release dir ${NEW_DIR}"
 [ "$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$CID_OLD")" = "$PREV_DIR" ] && [ "$(docker inspect -f '{{.Image}}' "$CID_OLD")" = "$PREV_IMG_ID" ] || die "release/image aktif berubah selama backup"
 mkdir "$NEW_DIR" || die "gagal membuat ${NEW_DIR}"
 sg archive "$DEPLOY_SHA" | tar -x -C "$NEW_DIR" --exclude='frontend/dist' || die "git archive gagal"
+cp -a "$NM_SRC" "$NEW_DIR/frontend/node_modules" || die "gagal menyalin node_modules"
 for f in docker-compose.yml docker-compose.release.yml backend/Dockerfile backend/package.json frontend/package.json; do [ -f "$NEW_DIR/$f" ] || die "release dir tidak lengkap: $f"; done
 [ ! -e "$NEW_DIR/backend/.env" ] || die "backend/.env tidak boleh ada di arsip"
 printf '%s\n' "$DEPLOY_SHORT" > "$NEW_DIR/.release-commit"
@@ -286,13 +307,22 @@ diff -q <(tr -d '\r' < "$PREV_DIR/docker-compose.yml") <(tr -d '\r' < "$NEW_DIR/
 diff -q <(tr -d '\r' < "$PREV_DIR/backend/package.json") <(tr -d '\r' < "$NEW_DIR/backend/package.json") >/dev/null || die "backend/package.json berbeda"
 [ "$(diff -rq --exclude=node_modules --exclude=dist --exclude=.env --exclude=.release-commit --exclude=tests --exclude=scripts "$PREV_DIR/backend/prisma" "$NEW_DIR/backend/prisma" | wc -l)" = "0" ] || die "backend/prisma berbeda dari release aktif"
 ok "release dir dibuat; compose, package.json, dan backend/prisma identik dengan release aktif"
-say "4b. Web: dist release aktif DIPAKAI ULANG (rilis ini tanpa perubahan frontend)"
-[ -d "$PREV_DIR/frontend/dist" ] && [ -f "$PREV_DIR/frontend/dist/index.html" ] || die "dist release aktif tidak ada"
-cp -a "$PREV_DIR/frontend/dist" "$NEW_DIR/frontend/dist" || die "gagal menyalin dist"
+say "4b. Build web (dist BARU)"
+install -m 600 "$PERSIST/frontend/.env" "$NEW_DIR/frontend/.env" || die "gagal menyalin frontend/.env"
+( cd "$NEW_DIR/frontend" && npm run build ) > "$BK_DIR/build-frontend.log" 2>&1 || { rm -f "$NEW_DIR/frontend/.env"; tail -n 25 "$BK_DIR/build-frontend.log"; die "build web gagal"; }
+rm -f "$NEW_DIR/frontend/.env"
 NEW_INDEX="$(grep -o 'index-[A-Za-z0-9_-]*\.js' "$NEW_DIR/frontend/dist/index.html" | sed -n 1p)"
-[ -n "$NEW_INDEX" ] && [ "$NEW_INDEX" = "$PREV_INDEX" ] && [ -f "$NEW_DIR/frontend/dist/assets/$NEW_INDEX" ] || die "dist salinan tidak valid"
-diff -rq "$PREV_DIR/frontend/dist" "$NEW_DIR/frontend/dist" >/dev/null || die "dist salinan berbeda dari release aktif"
-PHASE="4c-dist"; OLD_ASSETS="$BK_DIR/aset-lama.txt"; : > "$OLD_ASSETS"; ok "dist dipakai ulang (${NEW_INDEX}) identik dengan release aktif"
+[ -n "$NEW_INDEX" ] && [ -f "$NEW_DIR/frontend/dist/assets/$NEW_INDEX" ] || die "hasil build web tidak valid"; [ "$NEW_INDEX" != "$PREV_INDEX" ] || die "bundel baru identik dengan lama"
+MAPS_KEY="$(sed -n 's/^VITE_GOOGLE_MAPS_JS_KEY=//p' "$PERSIST/frontend/.env" | tr -d '\r"'"'"' ')"
+[ -n "$(grep -lF "$MAPS_KEY" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat VITE_GOOGLE_MAPS_JS_KEY"
+for s1 in "Biaya / konv. platform" "Tidak dapat dievaluasi (sebelum atribusi)" "Sebelum atribusi" "Spend belum lengkap" "Hari berjalan parsial"; do [ -n "$(grep -lF "$s1" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat teks baru: ${s1}"; done
+for s2 in "Impor spend harian (CSV Ads Manager)" "Target KPI (diisi Owner)" "Cost / qualified" "Atribusi tersimpan sejak" "Konfirmasi Barang Jadi" "Rencana Produksi" "Uang Muka"; do
+  [ -n "$(grep -lF "$s2" "$PREV_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "[skrip] teks lama '${s2}' tidak ada di dist aktif"
+  [ -n "$(grep -lF "$s2" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru KEHILANGAN teks fitur: ${s2}"
+done; ok "dist baru ${NEW_INDEX} (lama ${PREV_INDEX}); teks baru + 7 teks fitur lama ada"
+PHASE="4c-aset-lama"; OLD_ASSETS="$BK_DIR/aset-lama.txt"; : > "$OLD_ASSETS"; n=0
+for f in "$PREV_DIR"/frontend/dist/assets/*; do [ -f "$f" ] || continue; b="$(basename "$f")"; [ -e "$NEW_DIR/frontend/dist/assets/$b" ] && continue; cp -p "$f" "$NEW_DIR/frontend/dist/assets/$b" && { printf '%s\n' "$b" >> "$OLD_ASSETS"; n=$((n+1)); }; done
+find "$NEW_DIR/frontend/dist/assets" -type f -mtime +21 -delete; [ -f "$NEW_DIR/frontend/dist/assets/$NEW_INDEX" ] || die "bundel baru rusak"; ok "${n} aset lama dibawa"
 
 PHASE="5-build-image"; say "5. Build image backend baru (backend lama tetap melayani)"
 disk_gate "sebelum build"
@@ -321,7 +351,7 @@ ok "backend baru sehat (image ${NEW_IMG_ID:7:12}, release ${DEPLOY_SHORT}); swit
 PHASE="8-verifikasi"; say "8. Verifikasi pasca-rilis (baca-saja)"
 PREV_DIR="$NEW_DIR"; sleep 20
 [ "$(env_sha)" = "$ENV_BEFORE" ] || die ".env berubah setelah rilis"; ok ".env identik (sha ${ENV_BEFORE:0:12}…)"
-[ "$(curl -fsS --max-time 15 "${PUBLIC_URL}/" | grep -o 'index-[A-Za-z0-9_-]*\.js' | sed -n 1p)" = "$NEW_INDEX" ] || die "bundel web publik BUKAN dist baru"; ok "bundel web publik tetap ${NEW_INDEX} (dist dipakai ulang)"
+[ "$(curl -fsS --max-time 15 "${PUBLIC_URL}/" | grep -o 'index-[A-Za-z0-9_-]*\.js' | sed -n 1p)" = "$NEW_INDEX" ] || die "bundel web publik BUKAN dist baru"; ok "bundel web publik = dist baru ${NEW_INDEX}"
 OLD_ONLY="$(sed -n 1p "$OLD_ASSETS" || true)"
 if [ -n "$OLD_ONLY" ]; then [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "${PUBLIC_URL}/assets/${OLD_ONLY}")" = "200" ] || die "aset lama 404"; ok "aset lama masih 200"; fi
 [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "${PUBLIC_URL}/assets/tidak-ada-zz.js")" = "404" ] || die "aset yang tidak ada harus 404"; ok "aset yang tidak ada = 404"

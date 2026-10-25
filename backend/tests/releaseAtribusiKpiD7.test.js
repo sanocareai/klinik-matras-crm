@@ -1,4 +1,4 @@
-// Tes skrip rilis scripts/release-atribusi-spend-lengkap.sh (Fase 3.2, kode-saja, web dipakai ulang) — TANPA menyentuh produksi.
+// Tes skrip rilis scripts/release-atribusi-kpi-d7.sh (Fase 3.3, kode-saja + label web) — TANPA menyentuh produksi.
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -8,7 +8,7 @@ import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const scriptPath = path.join(root, "scripts/release-atribusi-spend-lengkap.sh");
+const scriptPath = path.join(root, "scripts/release-atribusi-kpi-d7.sh");
 const src = fs.readFileSync(scriptPath, "utf8").replace(/\r\n/g, "\n");
 const lf = (rel) => fs.readFileSync(path.join(root, rel), "utf8").replace(/\r\n/g, "\n");
 const sha = (t) => createHash("sha256").update(t).digest("hex");
@@ -33,9 +33,9 @@ test("sintaks bash valid, LF, tanpa placeholder pin", { skip: !punyaBash }, () =
   assert.ok(!/__PIN_/.test(src));
 });
 
-test("pin sha256 cocok pohon kerja; backend/src = BACKEND_SRC_EXPECT; frontend/src tidak berubah", () => {
+test("pin sha256 cocok pohon kerja; backend/src = BACKEND_SRC_EXPECT", () => {
   const pins = [...src.matchAll(/\["(backend\/[^"]+)"\]="([0-9a-f]{64})"/g)];
-  assert.equal(pins.length, 3); assert.ok(/FRONTEND_SRC_EXPECT=""/.test(src), "rilis ini tanpa perubahan frontend");
+  assert.equal(pins.length, 5);
   for (const m of pins) assert.equal(sha(lf(m[1])), m[2], `pin ${m[1]} basi`);
   const be = /BACKEND_SRC_EXPECT="([^"]+)"/.exec(src)[1].split(" ").sort();
   for (const f of be) assert.ok(pins.some((m) => m[1] === f), "berkas backend/src yang berubah harus dipin: " + f);
@@ -52,8 +52,8 @@ test("TANPA migrasi/skema, tanpa tulis data, tanpa env/flag, tanpa push/hapus, t
 
 test("allowlist: hanya berkas Fase 3.1; prisma/paket/compose/campaign automation/berkas lain ditolak", () => {
   const re = new RegExp(/ALLOWED_RE='([^']+)'/.exec(src)[1]);
-  for (const ok of ["backend/src/services/attribution/biayaKpi.js", "backend/src/services/attribution/spend.js", "backend/src/services/attribution/iklanReport.js", "backend/tests/atribusiSpendKpi.test.js", "backend/tests/releaseAtribusiKpiKode.test.js", "backend/tests/releaseAtribusiSpendLengkap.test.js", "backend/tests/integration/atribusiIklan.integration.test.js", "docs/ATRIBUSI-SPEND-LENGKAP.md", "scripts/release-atribusi-spend-lengkap.sh"]) assert.ok(re.test(ok), ok);
-  for (const no of ["backend/prisma/schema.prisma", "backend/prisma/migrations/20261202000000_x/migration.sql", "backend/package.json", "docker-compose.release.yml", "backend/src/index.js", "backend/src/routes/attributionAds.js", "backend/src/services/attribution/spendSyncMeta.js", "backend/src/services/attribution/monitor.js", "backend/src/services/attribution/cohort.js", "frontend/src/api.js", "frontend/src/features/laporan/components/IklanCampaignTab.jsx", "frontend/src/features/laporan/iklanCampaignLogic.js", "frontend/src/pages/Laporan.jsx", "backend/src/services/meta/campaignAutomation.js", "backend/.env"]) assert.ok(!re.test(no), no);
+  for (const ok of ["backend/src/services/attribution/biayaKpi.js", "backend/src/services/attribution/spend.js", "backend/src/services/attribution/iklanReport.js", "backend/src/services/attribution/d7.js", "backend/src/routes/attributionAds.js", "backend/tests/atribusiD7.test.js", "backend/tests/atribusiSpendKpi.test.js", "backend/tests/integration/atribusiIklan.integration.test.js", "frontend/src/features/laporan/iklanCampaignLogic.js", "frontend/tests/iklanCampaignLogic.test.js", "docs/ATRIBUSI-KPI-D7.md", "scripts/release-atribusi-kpi-d7.sh"]) assert.ok(re.test(ok), ok);
+  for (const no of ["backend/prisma/schema.prisma", "backend/prisma/migrations/20261202000000_x/migration.sql", "backend/package.json", "docker-compose.release.yml", "backend/src/index.js", "backend/src/services/attribution/spendSyncMeta.js", "backend/src/services/attribution/monitor.js", "backend/src/services/attribution/cohort.js", "frontend/src/api.js", "frontend/src/features/laporan/components/IklanBiayaPanel.jsx", "backend/src/index.js", "frontend/src/pages/Laporan.jsx", "backend/src/services/meta/campaignAutomation.js", "backend/.env"]) assert.ok(!re.test(no), no);
 });
 
 test("gerbang kunci ada: baseline, disk, backup, pin, himpunan migrasi sama, data tidak berubah, reach tidak tampil, rollback tanpa hapus data", () => {
