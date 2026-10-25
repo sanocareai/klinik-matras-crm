@@ -1,0 +1,39 @@
+
+# Struktur objek rilis (3 tabel KOSONG; 7 FK RESTRICT; CHECK; indeks [unik parsial]; 2 trigger append-only) — SATU definisi dipakai production (sebelum switch) dan rehearsal.
+# $1 = fungsi pembaca SQL (menerima satu argumen SQL, mencetak hasil -At), $2 = fungsi kegagalan (menerima pesan).
+in_list() { local o="" x; for x in $1; do o="${o:+$o,}'$x'"; done; printf '%s' "$o"; }
+struktur_baru() {
+  local Q="$1" G="$2" n
+  [ "$("$Q" "select count(*) from pg_tables where schemaname='public' and tablename in ($(in_list "$TBL_BARU"))")" = "3" ] || "$G" "3 tabel rilis (harga berlaku, biaya operasional, penerapan) tidak terpasang"
+  [ "$("$Q" "select (select count(*) from material_harga_berlaku) + (select count(*) from stock_movement_biaya_operasional) + (select count(*) from biaya_operasional_penerapan)")" = "0" ] || "$G" "tabel rilis TIDAK kosong setelah migrasi (backfill tidak diizinkan)"
+  n="$(printf '%s\n' $FK_BARU | grep -c .)"
+  [ "$("$Q" "select count(*) from pg_constraint where conname in ($(in_list "$FK_BARU")) and contype='f' and confdeltype='r' and convalidated")" = "$n" ] || "$G" "${n} FK ON DELETE RESTRICT tidak terpasang/tervalidasi"
+  n="$(printf '%s\n' $CHK_BARU | grep -c .)"
+  [ "$("$Q" "select count(*) from pg_constraint where conname in ($(in_list "$CHK_BARU")) and contype='c' and convalidated")" = "$n" ] || "$G" "${n} CHECK tidak terpasang/tervalidasi"
+  n="$(printf '%s\n' $IDX_BARU | grep -c .)"
+  [ "$("$Q" "select count(*) from pg_indexes where schemaname='public' and indexname in ($(in_list "$IDX_BARU"))")" = "$n" ] || "$G" "${n} indeks tidak terpasang"
+  n="$(printf '%s\n' $IDX_PARSIAL | grep -c .)"
+  [ "$("$Q" "select count(*) from pg_indexes where schemaname='public' and indexname in ($(in_list "$IDX_PARSIAL")) and indexdef like '%UNIQUE%' and indexdef like '%WHERE%'")" = "$n" ] || "$G" "${n} indeks unik PARSIAL (satu pengajuan aktif per bahan; satu pembekuan per pergerakan) tidak terpasang"
+  [ "$("$Q" "select count(*) from pg_trigger t join pg_proc p on p.oid = t.tgfoid where t.tgname in ($(in_list "$TRG_BARU")) and not t.tgisinternal and p.proname = 'harga_berlaku_append_only'")" = "2" ] || "$G" "2 trigger append-only (harga berlaku, biaya operasional) tidak terpasang pada tabelnya (baris final) tidak terpasang"
+}
+SKEMA_SQL="select md5(coalesce(string_agg(table_name||'.'||column_name||':'||data_type||':'||is_nullable||':'||coalesce(column_default,''), ',' order by table_name, ordinal_position), '')) from information_schema.columns where table_schema='public' and table_name not in ('material_harga_berlaku','stock_movement_biaya_operasional','biaya_operasional_penerapan')"
+
+# Klasifikasi KEADAAN production — murni, FAIL-CLOSED: selain dua keadaan yang dikenal = TOLAK.
+#   SEGAR  = tidak ada tabel rilis dan migrasi rilis belum terpasang; migrasi pending = tepat migrasi rilis.
+#   LANJUT = rilis terhenti SESUDAH migrasi: 3 tabel rilis ada dan KOSONG, migrasi rilis selesai (1 langkah, tidak di-rollback, checksum = berkas kandidat), tidak ada pending.
+# Argumen: ntab nisi mig_terpasang(0/1) csok(0/1) pending(teks)
+tentukan_keadaan() {
+  local ntab="$1" nisi="$2" terpasang="$3" csok="$4" pend="$5"
+  if [ "$ntab" = "0" ] && [ "$terpasang" = "0" ]; then
+    [ "$pend" = "$MIG_NAME" ] || { echo "TOLAK: migrasi pending bukan tepat migrasi rilis ini ($(printf '%s' "$pend" | tr '\n' ' '))"; return 1; }
+    echo SEGAR; return 0
+  fi
+  if [ "$ntab" = "3" ] && [ "$terpasang" = "1" ]; then
+    [ -z "$pend" ] || { echo "TOLAK: masih ada migrasi pending ($(printf '%s' "$pend" | tr '\n' ' '))"; return 1; }
+    [ "$csok" = "1" ] || { echo "TOLAK: status/checksum migrasi rilis tidak sesuai berkas kandidat"; return 1; }
+    [ "$nisi" = "0" ] || { echo "TOLAK: tabel rilis TIDAK kosong (${nisi} baris)"; return 1; }
+    echo LANJUT; return 0
+  fi
+  echo "TOLAK: keadaan campuran/tidak dikenal (tabel rilis=${ntab}, migrasi rilis terpasang=${terpasang})"; return 1
+}
+LQ() { psql_live -At -c "$1"; }
