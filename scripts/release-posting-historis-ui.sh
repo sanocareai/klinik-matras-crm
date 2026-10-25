@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# RILIS "UI POSTING PEMAKAIAN HISTORIS" — BACKEND (1 berkas: status HPP batch) + FRONTEND (halaman), TANPA MIGRASI, TANPA PERUBAHAN DATA. FAIL-CLOSED. Workflow RELEASE-DIRECTORY di atas release aktif (BASE_SHA = release live saat ini; generator dibangkitkan ulang per baseline).
-#   Pemolesan pilot (di atas UI live 1cf94f8b): 'Pilih hanya yang tampil' + 'Kosongkan' (satu order tanpa 209 klik), pratinjau pilihan di-debounce (tanpa badai permintaan), status HPP batch PARSIAL bila order masih punya catatan tertahan.
-#   Isi: halaman Gudang → Kontrol → Posting Pemakaian Historis (manifest + dampak stok/HPP, HPP PARSIAL + selisih belum dijurnal, Mulai dengan konfirmasi + rujukan Owner + pin hash, progres per order, alasan gagal, Hentikan/Lanjutkan; status = milik server, tetap terbaca
-#          setelah pindah tab/refresh/tutup tab) + API baca baru: pratinjau manifest, daftar batch, status batch ringan (tanpa membaca ulang rencana tiap polling).
-#   Tulis (mulai/lanjut/hentikan/jalankan) TIDAK diubah: izin persetujuan penyesuaian stok + gerbang hash rencana tetap di server. Rilis ini TIDAK memposting, TIDAK mengoreksi stok, TIDAK membuat GR historis/jurnal, TIDAK menjalankan batch.
+# RILIS "KONFIRMASI MANIFEST POSTING HISTORIS" (perbaikan insiden batch 13d80242, 25 Okt 2026) — BACKEND (5 berkas: pagar server) + FRONTEND (3 berkas: dialog), TANPA MIGRASI, TANPA PERUBAHAN DATA. FAIL-CLOSED. Workflow RELEASE-DIRECTORY di atas release aktif (BASE_SHA = release live saat ini; generator dibangkitkan dari commit final).
+#   Insiden: batch yang berjalan BUKAN manifest yang dimaksud Owner (13 transaksi / 5 order NEW-* vs 5 transaksi / 5 order RES-*); server hanya mencocokkan hash dengan pilihan klien sendiri.
+#   Perbaikan: (1) SEMENTARA hanya akun ber-role OWNER yang MEMULAI posting (batch & sinkron) — Owner meninjau dan mengonfirmasi manifest sendiri; Finance/Admin memantau, Finance boleh menghentikan/melanjutkan. (2) Eksekusi WAJIB membawa konfirmasi manifest: hash, ID unit, isi transaksi lengkap (order, bahan, kuantitas, satuan, tanggal),
+#          daftar order, jumlah, saldo bahan yang ditinjau, rujukan — dibandingkan server dengan rencana; selisih apa pun, saldo bergeser, tab/klien lama, atau percobaan ulang berdampak berbeda → ditolak (409/403) SEBELUM batch/movement, dengan jejak pelaku + peran (activity_events posting_historis_konfirmasi).
+#   BATAS KONTROL (jujur): konfirmasi manifest BUKAN bukti persetujuan Owner yang tercatat terpisah. Persetujuan dua orang (Owner terpisah dari pelaksana Finance) BELUM ada; UI dan laporan menyatakannya.
+#   Rilis ini TIDAK memposting, TIDAK mengoreksi stok, TIDAK membuat GR historis/jurnal, TIDAK menjalankan batch. Posting historis tetap BERHENTI sampai Owner menyetujui persetujuan baru.
 # URUTAN AMAN: (1) gerbang sumber (ancestry live, allowlist, TANPA prisma/dependensi/Docker, evaluator/penulis live identik, berkas pelindung identik) → (2) audit produksi baca-saja (terpasang == kandidat, 0 pending, tag image = image aktif) + sidik jari beku
 #              → (3) backup + checksum → (4) release dir + BUILD frontend (aset lama dibawa) + image → (5b) kode BARU terhadap restore backup nyata (audit baca-saja: sidik jari seluruh tabel sebelum=sesudah; LALU simulasi tulis pada DB rehearsal yang dihapus)
 #              → (7) switch → (8) verifikasi + smoke baca-saja + sidik jari beku.
@@ -15,24 +16,24 @@
 #   ssh ubuntu@43.133.152.6 'nohup bash /tmp/pui.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/pui.out 2>&1 < /dev/null &'
 #
 # ROLLBACK KODE: aman kapan saja (tidak ada perubahan database untuk dipulihkan; image lama = release live yang SUDAH memuat tabel catatan).
-# (dibangkitkan oleh scripts/gen-release-posting-historis-ui.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 e5431e8cf60c…)
+# (dibangkitkan oleh scripts/gen-release-posting-historis-ui.cjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang; templat sha256 0b7034ce8207…)
 set -Eeuo pipefail
 umask 077
 
 DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 [[ "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 1 harus SHA rilis 40 karakter" >&2; exit 1; }
 [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 2 harus SHA release aktif (baseline) 40 karakter" >&2; exit 1; }
-CAND_BRANCH="${CAND_BRANCH:-feat/posting-historis-ui-pilih}"
+CAND_BRANCH="${CAND_BRANCH:-fix/posting-historis-persetujuan-terikat}"
 # Migrasi live terakhir (HARUS = migrasi terakhir di baseline, kandidat, dan produksi) dan jumlahnya: rilis ini tidak menambah/mengubah migrasi.
 LIVE_MIG_TERAKHIR="20261228090000_catatan_pemakaian_historis"; LIVE_MIG_JUMLAH="268"
 # Berkas yang BOLEH berbeda dari baseline: EKSPLISIT path persis (+ skrip rilis ini + guard). Apa pun di luar daftar = berhenti.
-ALLOWED_RE='^(backend/src/services/postingBatchLatar\.js|backend/tests/integration/postingBatchLatar\.integration\.test\.js|backend/tests/releasePostingHistorisUi\.test\.js|frontend/src/features/warehouse/postingHistoris/postingHistorisModel\.js|frontend/src/pages/warehouse/WarehousePostingHistoris\.jsx|frontend/tests/postingHistorisModel\.test\.js|scripts/gen-release-posting-historis-ui\.cjs|scripts/lib/rehearsal-kode-posting-ui\.mjs|scripts/lib/simulasi-evaluasi-catatan\.mjs|scripts/lib/smoke-posting-ui\.mjs|scripts/release-posting-historis-ui\.sh|scripts/templates/release-posting-historis-ui\.sh\.tpl)$'
-BACKEND_SRC_EXPECT="backend/src/services/postingBatchLatar.js"
-FRONTEND_SRC_EXPECT="frontend/src/features/warehouse/postingHistoris/postingHistorisModel.js frontend/src/pages/warehouse/WarehousePostingHistoris.jsx"
+ALLOWED_RE='^(backend/src/routes/pemakaianKoreksi\.js|backend/src/services/postingBatchLatar\.js|backend/src/services/postingKonfirmasiManifest\.js|backend/src/services/postingPemakaianHistoris\.js|backend/src/services/postingPratinjau\.js|backend/tests/integration/evaluasiCatatanAtomik\.integration\.test\.js|backend/tests/integration/evaluasiCatatanBasi\.integration\.test\.js|backend/tests/integration/postingBatchLatar\.integration\.test\.js|backend/tests/integration/postingKonfirmasiManifest\.integration\.test\.js|backend/tests/integration/rekonsiliasiKoreksiPosting\.integration\.test\.js|backend/tests/pembacaKeadaanEfektif\.test\.js|backend/tests/postingKonfirmasiManifest\.test\.js|backend/tests/releasePostingHistorisUi\.test\.js|frontend/qa-harness/posting-historis-6tab\.cjs|frontend/qa-harness/posting-historis-browser\.cjs|frontend/qa-harness/posting-historis-konfirmasi\.cjs|frontend/qa-harness/posting-historis-pulih\.cjs|frontend/qa-harness/posting-historis-terarah\.cjs|frontend/src/api\.js|frontend/src/features/warehouse/postingHistoris/postingHistorisModel\.js|frontend/src/pages/warehouse/WarehousePostingHistoris\.jsx|frontend/tests/postingHistorisModel\.test\.js|scripts/gen-release-posting-historis-ui\.cjs|scripts/lib/rehearsal-kode-posting-ui\.mjs|scripts/lib/simulasi-konfirmasi-manifest\.mjs|scripts/lib/smoke-posting-ui\.mjs|scripts/release-posting-historis-ui\.sh|scripts/templates/release-posting-historis-ui\.sh\.tpl)$'
+BACKEND_SRC_EXPECT="backend/src/routes/pemakaianKoreksi.js backend/src/services/postingBatchLatar.js backend/src/services/postingKonfirmasiManifest.js backend/src/services/postingPemakaianHistoris.js backend/src/services/postingPratinjau.js"
+FRONTEND_SRC_EXPECT="frontend/src/api.js frontend/src/features/warehouse/postingHistoris/postingHistorisModel.js frontend/src/pages/warehouse/WarehousePostingHistoris.jsx"
 # Perubahan live yang TIDAK boleh hilang/berubah: hotfix Stock Count; berkas pelindung identik dengan baseline (Koreksi Gudang inti, jurnal, otorisasi, Produksi override, Stock Count).
 HOTFIX_STOCK_COUNT="b5268e1f7d8e1a15a251106dee0a136898ee5ce1"
-GUARD_UNCHANGED="backend/src/services/warehouseCorrection.js backend/src/routes/gudangKoreksi.js backend/src/services/inventoryLedger.js backend/src/routes/materialIssue.js backend/src/routes/stockAdjustment.js backend/src/routes/goodsReceipt.js backend/src/routes/returnRecord.js backend/src/routes/stockTransfer.js backend/src/routes/stockCount.js backend/src/services/opnameCutover.js backend/src/services/opnameMatriks.js backend/src/services/pergerakanSesiHitung.js backend/src/services/inventorySegregation.js backend/src/services/finance/journal.js backend/src/services/finance/posting/inventory.js backend/src/middleware/authorize.js backend/src/middleware/auth.js backend/src/constants/permissions.js backend/src/services/productionStepCommandService.js backend/src/services/unitStageEngine.js backend/src/services/orderStatusSync.js backend/src/lib/domain/pemakaianHistoris.js backend/src/services/catatanPemakaianHistoris.js backend/src/services/postingPemakaianHistoris.js backend/src/services/koreksiPemakaian.js backend/src/services/finance/biayaBahan.js backend/src/services/productionOrderExport.js backend/src/services/laporanRekonsiliasiPemakaian.js backend/src/index.js"
-LIVE_ANCESTORS="1cf94f8bc5eb7e8dfb83c8768cd03af75de3dff9 cf99e7460f74b24a27602ec1d7378a49b1369f06 df00edb69d382fa290c08c978cfb5b9a86881446 693b8c52d58b520c5e36111ccfaa511d8fcb0a0c fa6beb8608387c8107f730e48ac121aa6beef76e 4394c8288944a7116fbe5970c037d66a14e4ec12 624f08d8b5a77305a152e915e24f0023a2e35524 d82e6e3d9ced46b423be57ca0eab680f38953587 fd38f6c2382af914d1ebdd531a5dc430cff758c9 e47f37e2d6690130525681863ff467682e30f3c4 58cbc284aa71038ce2694e4579282f5e5abf3a05 20606872412290a0a80f563e605f7717bf57f3e0 10294dcbc45d7e13c737721ddaa34e38f5b2ee77 08d62e7d713b08fc9e0f1d898c37791352476b5b 799d3e93de192c604a14f1c11fe7436538689bb0 56b87721f84c1d16a2cd1655e40787e2b626cb0f e5a32cd246b2233e9d05d9b2cbff733e4497725d f293c5879fdac10e5ef0e1bb8a1169ef9ce8bef6 ca9bdea72a03df5794658fb485c6f3a79b360eee"
+GUARD_UNCHANGED="backend/src/services/warehouseCorrection.js backend/src/routes/gudangKoreksi.js backend/src/services/inventoryLedger.js backend/src/routes/materialIssue.js backend/src/routes/stockAdjustment.js backend/src/routes/goodsReceipt.js backend/src/routes/returnRecord.js backend/src/routes/stockTransfer.js backend/src/routes/stockCount.js backend/src/services/opnameCutover.js backend/src/services/opnameMatriks.js backend/src/services/pergerakanSesiHitung.js backend/src/services/inventorySegregation.js backend/src/services/finance/journal.js backend/src/services/finance/posting/inventory.js backend/src/middleware/authorize.js backend/src/middleware/auth.js backend/src/constants/permissions.js backend/src/services/productionStepCommandService.js backend/src/services/unitStageEngine.js backend/src/services/orderStatusSync.js backend/src/lib/domain/pemakaianHistoris.js backend/src/services/catatanPemakaianHistoris.js backend/src/services/koreksiPemakaian.js backend/src/services/finance/biayaBahan.js backend/src/services/productionOrderExport.js backend/src/services/laporanRekonsiliasiPemakaian.js backend/src/index.js"
+LIVE_ANCESTORS="376c9594889907aa1a5b6db94231045830d9a403 1cf94f8bc5eb7e8dfb83c8768cd03af75de3dff9 cf99e7460f74b24a27602ec1d7378a49b1369f06 df00edb69d382fa290c08c978cfb5b9a86881446 693b8c52d58b520c5e36111ccfaa511d8fcb0a0c fa6beb8608387c8107f730e48ac121aa6beef76e 4394c8288944a7116fbe5970c037d66a14e4ec12 624f08d8b5a77305a152e915e24f0023a2e35524 d82e6e3d9ced46b423be57ca0eab680f38953587 fd38f6c2382af914d1ebdd531a5dc430cff758c9 e47f37e2d6690130525681863ff467682e30f3c4 58cbc284aa71038ce2694e4579282f5e5abf3a05 20606872412290a0a80f563e605f7717bf57f3e0 10294dcbc45d7e13c737721ddaa34e38f5b2ee77 08d62e7d713b08fc9e0f1d898c37791352476b5b 799d3e93de192c604a14f1c11fe7436538689bb0 56b87721f84c1d16a2cd1655e40787e2b626cb0f e5a32cd246b2233e9d05d9b2cbff733e4497725d f293c5879fdac10e5ef0e1bb8a1169ef9ce8bef6 ca9bdea72a03df5794658fb485c6f3a79b360eee"
 PUBLIC_URL="https://app.sanomatrassehat.com"
 INTERNAL_URL="http://127.0.0.1:4000"
 REPO_URL="https://github.com/sanocareai/klinik-matras-crm.git"
@@ -72,7 +73,7 @@ Rollback kode setelah switch (TANPA perubahan database; tidak ada yang dipulihka
    cd ${PREV_DIR:-<release-sebelumnya>}
    docker tag ${ROLLBACK_TAG:-<tag-rollback>} ${IMG_NAME:-klinik-matras-backend:latest}
    SANSS_PERSIST_ROOT=${PERSIST} docker compose -p ${PROJECT} -f docker-compose.yml -f docker-compose.release.yml up -d --no-deps --force-recreate backend
-Rollback kode AMAN tanpa guard: rilis ini tidak mengubah database (tanpa migrasi, tanpa tulisan data). Image + dist lama = release live cf99e746 (evaluasi atomik tetap ada); rute baru hilang dan menu 'Posting Pemakaian Historis' tidak ada. Batch yang sedang berjalan (bila ada) tetap berjalan: ia milik pekerja server.
+Rollback kode AMAN tanpa guard: rilis ini tidak mengubah database (tanpa migrasi, tanpa tulisan data). Image + dist lama = release live 376c9594 (UI Posting Pemakaian Historis dengan pilih-hanya-yang-tampil); pagar konfirmasi manifest + Owner-saja hilang — jangan memposting memakai release lama tanpa persetujuan Owner baru. Batch yang sedang berjalan (bila ada) tetap berjalan: ia milik pekerja server.
 ─────────────────────────────────────────────────────────────────────────
 EOF
 }
@@ -239,8 +240,8 @@ bangun_frontend() {
   [ -n "$NEW_INDEX" ] && [ -f "$DIR/frontend/dist/assets/$NEW_INDEX" ] || die "hasil build frontend tidak valid"
   MAPS_KEY="$(sed -n 's/^VITE_GOOGLE_MAPS_JS_KEY=//p' "$PERSIST/frontend/.env" | tr -d '\r"'"'"' ')"
   [ -n "$(grep -lF "$MAPS_KEY" "$DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat VITE_GOOGLE_MAPS_JS_KEY"
-  for s1 in "Pilih hanya yang tampil" "Kosongkan" "Pilih minimal satu order" "Posting Pemakaian Historis" "Mulai batch"; do [ -n "$(grep -lF "$s1" "$DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru TIDAK memuat teks fitur rilis ini: ${s1}"; done
-  for s2 in "Hentikan setelah order ini" "Manifest siap posting" "Catatan pemakaian historis" "Koreksi pemakaian menunggu persetujuan" "Usulan Bahan" "Perlu Perhatian" "Riwayat Pergerakan" "Stock Opname" "Pengeluaran Material"; do
+  for s1 in "Konfirmasi manifest oleh Owner" "Rujukan yang akan dicatat" "Order yang akan diposting" "bukan persetujuan Owner yang tercatat terpisah" "BELUM DIKETAHUI (bukan Rp0)" "Saldo bahan yang Anda tinjau"; do [ -n "$(grep -lF "$s1" "$DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru TIDAK memuat teks fitur rilis ini: ${s1}"; done
+  for s2 in "Pilih hanya yang tampil" "Kosongkan" "Pilih minimal satu order" "Posting Pemakaian Historis" "Mulai batch" "Hentikan setelah order ini" "Manifest siap posting" "Catatan pemakaian historis" "Koreksi pemakaian menunggu persetujuan" "Usulan Bahan" "Perlu Perhatian" "Riwayat Pergerakan" "Stock Opname" "Pengeluaran Material"; do
     [ -n "$(grep -lF "$s2" "$PREV_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "[skrip] teks lama '${s2}' tidak ada di dist release aktif — perbaiki daftar teks pembanding"
     [ -n "$(grep -lF "$s2" "$DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru KEHILANGAN teks fitur lama: ${s2}"
   done
@@ -305,8 +306,19 @@ cek("transaksi rencana = kelompok unit × bahan dari catatan SIAP_POSTING", a.ju
 const pr = await pratinjauPosting(prisma);
 cek("pratinjau manifest: hash = hash rencana efektif dan jumlah sama", pr.hash === a.hash && pr.jumlahTrx === a.jumlah && pr.jumlahOrder === a.orderUnik, `${pr.jumlahOrder} order / ${pr.jumlahTrx} trx`);
 cek("pratinjau: HPP berbukti + selisih belum dijurnal terisi, status PARSIAL bila ada tanpa harga/tertahan, jurnal tidak dibuat", Number.isFinite(pr.hpp.hppBerbukti) && pr.hpp.selisihBelumDijurnal === pr.hpp.hppBerbukti && pr.hpp.jurnalDibuat === false && (pr.hpp.status === "PARSIAL") === (pr.hpp.trxTanpaHarga > 0 || pr.hpp.catatanTertahan > 0), `${pr.hpp.status} Rp${pr.hpp.hppBerbukti}`);
+cek("pratinjau memuat yang dibutuhkan konfirmasi manifest: digest isi, ID unit, isi transaksi (bahan, qty, satuan, tanggal), saldo bahan SEGAR dari ledger", /^[0-9a-f]{64}$/.test(pr.digestIsi ?? "") && pr.order.every((o) => o.unitId && o.trx.every((t) => t.kodeBahan && Number.isFinite(t.qty) && t.satuan && t.tanggal)) && pr.bahan.every((b) => b.kode && Number.isFinite(b.saldoSekarang)));
 cek("pratinjau: setiap order punya rincian transaksi dan dampak per bahan", pr.order.every((o) => o.trx.length > 0) && pr.bahan.length > 0 && pr.order.length === pr.jumlahOrder);
-cek("daftar batch dapat dibaca (production belum punya batch)", Array.isArray(await daftarBatch(prisma, { limit: 5 })));
+cek("daftar batch dapat dibaca", Array.isArray(await daftarBatch(prisma, { limit: 5 })));
+// 2c) pagar konfirmasi manifest (fungsi murni terhadap data nyata, TANPA menulis): konfirmasi dari pratinjau cocok; pilihan lain / jumlah lain ditolak; Finance ditolak sebelum menghitung
+const { wajibKonfirmasiManifest, ringkasRencana, saldoBahanRencana } = await import("/app/src/services/postingKonfirmasiManifest.js");
+const dbDiam = { activityEvent: { create: async () => {} }, material: prisma.material, stockMovement: prisma.stockMovement }; // penolakan tidak ditulis di sini
+const owner = { id: "rehearsal-owner", name: "Owner", roles: ["OWNER"] }; const finance = { id: "rehearsal-finance", name: "Finance", roles: ["FINANCE"] };
+const rr = ringkasRencana(a); const kon = { hash: rr.hash, unitIds: rr.unitIds, daftarOrder: rr.daftarOrder, jumlahOrder: rr.jumlahOrder, jumlahTrx: rr.jumlahTrx, rujukan: "REHEARSAL-CEK-12345", isiTransaksi: rr.isiTransaksi, saldoManifest: await saldoBahanRencana(prisma, a) };
+const setuju = (k, o = {}) => ({ hashDisetujui: a.hash, rujukan: "REHEARSAL-CEK-12345", disetujuiOleh: "rehearsal", konfirmasi: k, ...o });
+const coba = async (fn) => { try { await fn(); return "ok"; } catch (e) { return e.code; } };
+cek("pagar konfirmasi: konfirmasi yang benar dari data nyata diterima (Owner)", (await coba(() => wajibKonfirmasiManifest(dbDiam, { rencana: a, persetujuan: setuju(kon), aktor: owner }))) === "ok");
+cek("pagar konfirmasi: jumlah transaksi / isi transaksi / saldo ditinjau yang berbeda ditolak", (await coba(() => wajibKonfirmasiManifest(dbDiam, { rencana: a, persetujuan: setuju({ ...kon, jumlahTrx: kon.jumlahTrx + 1 }), aktor: owner }))) === "KONFIRMASI_MANIFEST_TIDAK_COCOK" && (await coba(() => wajibKonfirmasiManifest(dbDiam, { rencana: a, persetujuan: setuju({ ...kon, isiTransaksi: kon.isiTransaksi.slice(1) }), aktor: owner }))) === "KONFIRMASI_MANIFEST_TIDAK_COCOK" && (await coba(() => wajibKonfirmasiManifest(dbDiam, { rencana: a, persetujuan: setuju({ ...kon, saldoManifest: kon.saldoManifest.map((s) => ({ ...s, saldo: s.saldo + 1 })) }), aktor: owner }))) === "KONFIRMASI_MANIFEST_TIDAK_COCOK");
+cek("pagar konfirmasi: Finance tanpa Owner ditolak HANYA_OWNER_MEMULAI; tanpa konfirmasi ditolak KONFIRMASI_MANIFEST_WAJIB", (await coba(() => wajibKonfirmasiManifest(dbDiam, { rencana: a, persetujuan: setuju(kon), aktor: finance }))) === "HANYA_OWNER_MEMULAI" && (await coba(() => wajibKonfirmasiManifest(dbDiam, { rencana: a, persetujuan: setuju(undefined), aktor: owner }))) === "KONFIRMASI_MANIFEST_WAJIB");
 
 // 3) kunci evaluasi: pg_advisory_xact_lock tersedia dan re-entrant dalam satu transaksi (dipakai berlapis oleh posting → evaluasi); dilepas saat transaksi berakhir
 const ok3 = await prisma.$transaction(async (tx) => { await kunciEvaluasiCatatan(tx); await kunciEvaluasiCatatan(tx); return true; }, { timeout: 30_000 }).catch((e) => String(e.message).slice(0, 160));
@@ -327,91 +339,95 @@ ok "audit baca-saja lulus: isi $(printf '%s\n' "$TABEL_LAMA" | grep -c .) tabel 
 # SIMULASI TULIS — HANYA di DB rehearsal (salinan restore; dihapus sesudahnya). Pustaka menolak jalan bila nama DB bukan rehearsal_evl_*. Production tidak tersentuh.
 "${RUNNER[@]}" <<'SIMNODE' > "$BK_DIR/simulasi-evaluasi.log" 2>&1 || { cat "$BK_DIR/simulasi-evaluasi.log"; reh_drop; die "simulasi posting bersamaan terhadap data restore GAGAL"; }
 // SIMULASI TULIS pada DB REHEARSAL (salinan restore backup nyata; DIHAPUS sesudahnya) — BUKAN production. Dijalankan skrip rilis SETELAH sidik jari baca-saja lulus.
-// Membuktikan, dengan data nyata: posting beberapa unit secara bersamaan + klik ganda + pembaca yang mengaudit setiap potret konsisten → tidak pernah ada keadaan palsu, tidak ada deadlock, hasil titik tetap,
-// satu pergerakan per transaksi, jurnal/GL tidak berubah (jurnalHPP=false). Pagar keras: menolak jalan bila bukan DB bernama rehearsal_evl_*.
+// Membuktikan dengan data nyata alur KONFIRMASI MANIFEST: (1) Finance tidak dapat memulai; (2) replay insiden — pilihan berbeda dari yang dikonfirmasi ditolak sebelum batch/movement; (3) saldo bergeser setelah ditinjau ditolak;
+// (4) Owner dengan konfirmasi benar: klik ganda ×3 = satu batch, selesai tanpa gagal/duplikat, ulang dengan dampak berbeda ditolak; (5) jalur sinkron ditolak sebelum movement; (6) jurnal/GL tidak berubah; (7) jejak pelaku & peran tercatat.
+// Pagar keras: menolak jalan bila bukan DB bernama rehearsal_evl_*.
 import { createRequire } from "node:module";
 const { PrismaClient } = createRequire(process.cwd() + "/")("@prisma/client");
 const prisma = new PrismaClient();
-const { periksaKeadaanCatatan, ambilCatatanHistoris, tungguPenyegaran } = await import("/app/src/services/catatanPemakaianHistoris.js");
+const { periksaKeadaanCatatan, tungguPenyegaran } = await import("/app/src/services/catatanPemakaianHistoris.js");
 const { postStockMovement } = await import("/app/src/services/inventoryLedger.js");
 const { ajukanBatch, jalankanBatch, statusBatch } = await import("/app/src/services/postingBatchLatar.js");
 const { rencanakanPosting, jalankanPosting } = await import("/app/src/services/postingPemakaianHistoris.js");
+const { ringkasRencana, saldoBahanRencana, ENTITAS_KONFIRMASI } = await import("/app/src/services/postingKonfirmasiManifest.js");
 let gagal = 0; const cek = (n, ok, d = "") => { if (!ok) gagal += 1; console.log((ok ? "PASS " : "FAIL ") + n + (d !== "" ? " — " + String(d).slice(0, 260) : "")); };
 const hitung = async (sql) => Number((await prisma.$queryRawUnsafe(sql))[0].n);
 const dbNama = (await prisma.$queryRawUnsafe("select current_database() n"))[0].n;
-if (!/^rehearsal_evl_\d+_\d+$/.test(dbNama)) { console.log("FAIL pagar: simulasi tulis HANYA di DB rehearsal_evl_* (ini: " + dbNama + ")"); console.log("SIMULASI_EVALUASI gagal=1"); process.exit(1); }
+if (!/^rehearsal_evl_\d+_\d+$/.test(dbNama)) { console.log("FAIL pagar: simulasi tulis HANYA di DB rehearsal_evl_* (ini: " + dbNama + ")"); console.log("SIMULASI_KONFIRMASI gagal=1"); process.exit(1); }
 
-const admin = (await prisma.$queryRawUnsafe(`select id from "User" where email = 'admin@klinikmatras.com' limit 1`))[0];
-cek("akun Admin impor ada di data restore (aktor posting)", !!admin);
+const pengguna = await prisma.$queryRawUnsafe(`select u.id, u.name, coalesce((select array_agg(r.role::text order by r.role::text) from user_roles r where r.user_id = u.id), '{}') as peran from "User" u where u.active = true order by u.name`);
+const peranDari = (u) => [...new Set([...(u.peran ?? [])])];
+const ownerNyata = pengguna.filter((u) => peranDari(u).includes("OWNER")); const financeSaja = pengguna.filter((u) => peranDari(u).includes("FINANCE") && !peranDari(u).includes("OWNER"));
+cek("ada akun ber-role OWNER di data restore (pemulai yang sah)", ownerNyata.length >= 1, ownerNyata.map((u) => u.name).join(","));
+cek("ada akun Finance TANPA role Owner di data restore (tidak boleh memulai)", financeSaja.length >= 1, financeSaja.map((u) => u.name).join(","));
+const OWNER = { id: ownerNyata[0].id, name: ownerNyata[0].name, roles: peranDari(ownerNyata[0]) }; const FINANCE = { id: financeSaja[0].id, name: financeSaja[0].name, roles: peranDari(financeSaja[0]) };
 const S = async () => ({
-  gerak: await hitung("select count(*)::int n from stock_movements"), jurnal: await hitung("select count(*)::int n from fin_journal_entries"),
+  gerak: await hitung("select count(*)::int n from stock_movements"), jurnal: await hitung("select count(*)::int n from fin_journal_entries"), batch: await hitung("select count(*)::int n from activity_events where entity_type = 'posting_historis_batch' and event_type = 'BATCH_DIAJUKAN'"),
+  tolak: await hitung(`select count(*)::int n from activity_events where entity_type = '${ENTITAS_KONFIRMASI}'`), issue: await hitung("select count(*)::int n from stock_movements where note like 'Impor pemakaian historis Sep%'"),
   gl1400: Number((await prisma.$queryRawUnsafe(`select coalesce(sum(l.debit - l.credit),0)::float n from fin_journal_lines l join fin_accounts a on a.id = l.account_id where a.code = '1-1400'`))[0].n),
   negatif: await hitung("select count(*)::int n from (select material_id from stock_movements group by 1 having sum(qty) < -0.0001) x"),
-  siap: await hitung("select count(*)::int n from unit_usage_notes where state = 'SIAP_POSTING'"),
 });
-const plan0 = await rencanakanPosting(prisma);
-const unitKandidat = [...new Set(plan0.transaksi.map((t) => t.unitId))].slice(0, 3);
-cek("ada minimal 2 unit siap posting untuk disimulasikan", unitKandidat.length >= 2, unitKandidat.length);
-const A = unitKandidat.slice(0, 1); const B = unitKandidat.slice(1, 3);
-const pA = await rencanakanPosting(prisma, { unitIds: A }); const pB = await rencanakanPosting(prisma, { unitIds: B });
-const s0 = await S();
-let jalan = true; let potret = 0; let palsu = 0; let galatPembaca = 0;
-const pembaca = (async () => { while (jalan) { try { const r = await prisma.$transaction((tx) => periksaKeadaanCatatan(tx), { isolationLevel: "RepeatableRead", timeout: 120_000 }); potret++; palsu += r.berubah; } catch { galatPembaca++; } } })();
-const P = (hash, unitIds) => jalankanPosting(prisma, { persetujuan: { hashDisetujui: hash, rujukan: "REHEARSAL-SANDBOX-bukan-production", disetujuiOleh: "simulasi rilis" }, aktor: { id: admin.id }, unitIds });
-const r = await Promise.allSettled([P(pA.hash, A), P(pB.hash, B), P(pA.hash, A)]);
-jalan = false; await pembaca;
-cek("tiga pemanggilan serentak (dua proses + klik ganda) semuanya selesai tanpa galat/deadlock", r.every((x) => x.status === "fulfilled" && x.value.gagal.length === 0), JSON.stringify(r.map((x) => x.status === "fulfilled" ? [x.value.diposting.length, x.value.dilewati.length, x.value.gagal.length] : String(x.reason?.message).slice(0, 80))));
-const dipostingTotal = r.filter((x) => x.status === "fulfilled").reduce((n, x) => n + x.value.diposting.length, 0);
-cek("setiap transaksi rencana diposting TEPAT SEKALI (klik ganda tidak menggandakan)", dipostingTotal === pA.jumlah + pB.jumlah, `${dipostingTotal} vs ${pA.jumlah + pB.jumlah}`);
-cek("pembaca serentak mengaudit potret konsisten dan TIDAK menemukan keadaan palsu", potret > 0 && palsu === 0 && galatPembaca === 0, `potret=${potret} palsu=${palsu} galatPembaca=${galatPembaca}`);
-const akhir = await prisma.$transaction((tx) => periksaKeadaanCatatan(tx), { isolationLevel: "RepeatableRead", timeout: 120_000 });
-cek("keadaan akhir = titik tetap (evaluasi global tidak punya apa pun untuk diubah)", akhir.berubah === 0, `berubah=${akhir.berubah}`);
-const s1 = await S();
-cek("pergerakan stok bertambah tepat sebanyak transaksi", s1.gerak === s0.gerak + pA.jumlah + pB.jumlah, `${s0.gerak} → ${s1.gerak}`);
-cek("jurnal dan GL 1-1400 TIDAK berubah (kuantitas dulu, tanpa jurnal HPP)", s1.jurnal === s0.jurnal && s1.gl1400 === s0.gl1400, `jurnal ${s0.jurnal}→${s1.jurnal}; GL ${s0.gl1400}→${s1.gl1400}`);
-cek("tidak ada bahan baru yang menjadi negatif", s1.negatif <= s0.negatif, `${s0.negatif} → ${s1.negatif}`);
-const rb = await rencanakanPosting(prisma);
-cek("rencana berikutnya = rencana awal dikurangi yang sudah diposting (tidak memuat transaksi palsu)", rb.jumlah === plan0.jumlah - pA.jumlah - pB.jumlah, `${plan0.jumlah} → ${rb.jumlah}`);
+const rencana = async (unitIds) => { const p = await rencanakanPosting(prisma, { unitIds }); p.__saldo = await saldoBahanRencana(prisma, p); return p; };
+const konfirmasiDari = (p, rujukan = "REHEARSAL-KONFIRMASI-bukan-production") => { const r = ringkasRencana(p); return { hash: r.hash, unitIds: r.unitIds, daftarOrder: r.daftarOrder, jumlahOrder: r.jumlahOrder, jumlahTrx: r.jumlahTrx, rujukan, isiTransaksi: r.isiTransaksi, saldoManifest: p.__saldo }; };
+const persetujuan = (hashLayar, k, o = {}) => ({ hashDisetujui: hashLayar, rujukan: k.rujukan, disetujuiOleh: "simulasi rilis", konfirmasi: k, ...o });
+const coba = async (fn) => { try { return { ok: true, v: await fn() }; } catch (e) { return { ok: false, kode: e.code, pesan: e.message, penghalang: e.penghalang }; } };
 
-// ── B. saldo diubah DI LUAR modul catatan (pengeluaran stok biasa lewat ledger inti): pembaca langsung sesudah commit tidak boleh melihat SIAP_POSTING basi; UI = mesin; tersimpan menyusul tanpa evaluasi manual ──
-const sisa = await rencanakanPosting(prisma);
-const perBahan = new Map(); for (const t of sisa.transaksi) perBahan.set(t.materialId, (perBahan.get(t.materialId) ?? 0) + 1);
-const bahanUji = [...perBahan].sort((a, b) => b[1] - a[1])[0]?.[0];
-const saldoBahan = bahanUji ? Number((await prisma.$queryRawUnsafe("select coalesce(sum(qty),0)::float s from stock_movements where material_id = $1::uuid", bahanUji))[0].s) : 0;
-cek("ada bahan dengan saldo positif dan transaksi siap untuk uji perubahan di luar modul", !!bahanUji && saldoBahan > 0, bahanUji + " saldo " + saldoBahan);
-if (bahanUji && saldoBahan > 0) {
-  const trxBahan = sisa.transaksi.filter((t) => t.materialId === bahanUji);
-  await prisma.$transaction((tx) => postStockMovement(tx, { materialId: bahanUji, type: "ISSUE", qty: -saldoBahan, note: "simulasi: pengeluaran biasa di luar modul catatan", createdById: admin.id }), { timeout: 60_000 });
-  const rencanaSetelah = await rencanakanPosting(prisma);
-  cek("rencana mesin langsung sesudah commit TIDAK memuat transaksi bahan yang saldonya dihabiskan pengeluaran biasa", !rencanaSetelah.transaksi.some((t) => t.materialId === bahanUji), trxBahan.length + " trx sebelum");
-  const tampil = await ambilCatatanHistoris(prisma, trxBahan[0].unitId);
-  cek("tampilan unit (yang dilihat pengguna) langsung benar: tidak ada catatan bahan itu yang SIAP_POSTING", !tampil.items.some((i) => i.bahan?.id === bahanUji && i.origin === "EXCEL" && i.state === "SIAP_POSTING"), tampil.items.filter((i) => i.bahan?.id === bahanUji).map((i) => i.state).join(","));
-  await tungguPenyegaran();
-  const a2 = await prisma.$transaction((tx) => periksaKeadaanCatatan(tx), { isolationLevel: "RepeatableRead", timeout: 120_000 });
-  cek("keadaan TERSIMPAN menyusul tanpa evaluasi global manual (titik tetap)", a2.berubah === 0, "berubah=" + a2.berubah);
-}
-// ── C. batch di latar atas sebagian rencana: progres, selesai, tanpa pergerakan ganda, titik tetap ──
-const semuaSisa = await rencanakanPosting(prisma);
-const unitBatch = [...new Set(semuaSisa.transaksi.map((t) => t.unitId))].slice(0, 8);
-const rencanaBatch = unitBatch.length ? await rencanakanPosting(prisma, { unitIds: unitBatch }) : { jumlah: 0 };
-if (rencanaBatch.jumlah) {
-  const setuju = { hashDisetujui: rencanaBatch.hash, rujukan: "REHEARSAL-SANDBOX-bukan-production", disetujuiOleh: "simulasi rilis" };
-  const bt = await ajukanBatch(prisma, { persetujuan: setuju, aktor: { id: admin.id }, unitIds: unitBatch });
-  cek("mengajukan batch tidak memposting apa pun dan idempoten (batchId = hash rencana)", bt.baru === true && bt.status === "MENUNGGU" && bt.batchId === rencanaBatch.hash);
-  const gerakSblm = await hitung("select count(*)::int n from stock_movements"); const prog = [];
-  const rb = await jalankanBatch(prisma, bt.batchId, { setelahUnit: async () => { prog.push((await statusBatch(prisma, bt.batchId)).unitSelesai); } });
-  const sb = await statusBatch(prisma, bt.batchId);
-  cek("batch selesai di latar dengan progres naik per unit", ["SELESAI", "SELESAI_SEBAGIAN"].includes(rb.status) && prog.length === bt.totalUnit && prog.every((v, i) => v === i + 1), rb.status + "; progres " + prog.join(","));
-  const ulang = await jalankanBatch(prisma, bt.batchId); const ajukanLagi = await ajukanBatch(prisma, { persetujuan: setuju, aktor: { id: admin.id }, unitIds: unitBatch });
-  cek("jalankan ulang batch yang sama = nol tulisan; ajukan ulang = batch yang sama", ulang.dijalankan === false && ajukanLagi.baru === false);
-  const gerakKini = await hitung("select count(*)::int n from stock_movements");
-  cek("pergerakan bertambah tepat sebanyak transaksi yang diposting (tanpa ganda)", gerakKini - gerakSblm === sb.transaksiDiposting, "+" + (gerakKini - gerakSblm) + " vs " + sb.transaksiDiposting);
-  await tungguPenyegaran();
-  const a3 = await prisma.$transaction((tx) => periksaKeadaanCatatan(tx), { isolationLevel: "RepeatableRead", timeout: 120_000 });
-  cek("titik tetap sesudah batch", a3.berubah === 0, "berubah=" + a3.berubah);
-  const s2 = await S(); cek("jurnal dan GL 1-1400 tetap sesudah batch", s2.jurnal === s0.jurnal && s2.gl1400 === s0.gl1400);
-}
-console.log("SIMULASI_EVALUASI gagal=" + gagal);
+const plan0 = await rencanakanPosting(prisma);
+const semuaUnit = [...new Set(plan0.transaksi.map((t) => t.unitId))];
+cek("ada minimal 8 unit siap posting untuk disimulasikan", semuaUnit.length >= 8, semuaUnit.length);
+const [A, B, C, D, E] = [semuaUnit.slice(0, 2), semuaUnit.slice(2, 4), semuaUnit.slice(4, 5), semuaUnit.slice(5, 7), semuaUnit.slice(7, 8)];
+const s0 = await S();
+
+// 1) Finance (tanpa Owner) tidak dapat memulai — batch dan sinkron; dicatat dengan peran
+const pA = await rencana(A); const kA = konfirmasiDari(pA);
+const f1 = await coba(() => ajukanBatch(prisma, { persetujuan: persetujuan(pA.hash, kA), aktor: FINANCE, unitIds: A })); const f2 = await coba(() => jalankanPosting(prisma, { persetujuan: persetujuan(pA.hash, kA), aktor: FINANCE, unitIds: A }));
+const s1 = await S();
+cek("Finance tanpa role Owner: mulai batch dan jalankan sinkron ditolak HANYA_OWNER_MEMULAI", !f1.ok && f1.kode === "HANYA_OWNER_MEMULAI" && !f2.ok && f2.kode === "HANYA_OWNER_MEMULAI", `${f1.kode}/${f2.kode}`);
+cek("penolakan Finance: nol batch, nol movement, jurnal sama; 2 jejak tercatat dengan peran pelaku", s1.batch === s0.batch && s1.gerak === s0.gerak && s1.jurnal === s0.jurnal && s1.tolak === s0.tolak + 2, `${s0.tolak} → ${s1.tolak}`);
+const jejakF = (await prisma.$queryRawUnsafe(`select metadata from activity_events where entity_type = '${ENTITAS_KONFIRMASI}' and actor_id = $1 order by created_at desc limit 1`, FINANCE.id))[0]?.metadata;
+cek("jejak memuat jenis BUKAN_OWNER, peran, nama, mode kontrol", jejakF?.jenis === "BUKAN_OWNER" && Array.isArray(jejakF?.aktorRoles) && !jejakF.aktorRoles.includes("OWNER") && jejakF?.aktorNama === FINANCE.name && jejakF?.mode === "OWNER_MENINJAU_SENDIRI", JSON.stringify(jejakF)?.slice(0, 160));
+
+// 2) REPLAY INSIDEN: Owner mengonfirmasi manifest A, tetapi pilihan yang dikirim = B (jumlah order sama)
+const pB = await rencana(B); const r2 = await coba(() => ajukanBatch(prisma, { persetujuan: persetujuan(pB.hash, kA), aktor: OWNER, unitIds: B })); const r2b = await coba(() => jalankanPosting(prisma, { persetujuan: persetujuan(pB.hash, kA), aktor: OWNER, unitIds: B }));
+const s2 = await S();
+cek("replay insiden: pilihan berbeda dari yang dikonfirmasi (batch & sinkron) ditolak KONFIRMASI_MANIFEST_TIDAK_COCOK dengan selisih", !r2.ok && r2.kode === "KONFIRMASI_MANIFEST_TIDAK_COCOK" && !r2b.ok && r2b.kode === "KONFIRMASI_MANIFEST_TIDAK_COCOK" && (r2.penghalang ?? []).length >= 3, `${(r2.penghalang ?? []).length} selisih; ${A.length} vs ${B.length} unit; trx ${pA.jumlah} vs ${pB.jumlah}`);
+cek("replay insiden: nol batch, nol movement, jurnal sama; jejak pelaku Owner tercatat", s2.batch === s1.batch && s2.gerak === s1.gerak && s2.jurnal === s1.jurnal && s2.tolak === s1.tolak + 2);
+
+// 3) SALDO BERGESER setelah ditinjau (rencana tetap sama): penerimaan lain masuk pada bahan rencana
+const pC = await rencana(C); const kC = konfirmasiDari(pC); const bahanC = pC.transaksi[0].materialId;
+await prisma.$transaction((tx) => postStockMovement(tx, { materialId: bahanC, type: "ADJUSTMENT", qty: 1, note: "simulasi: saldo bergeser setelah manifest ditinjau", createdById: OWNER.id }), { timeout: 60_000 });
+const pC2 = await rencana(C); const sBaru = await S();
+const r3 = await coba(() => ajukanBatch(prisma, { persetujuan: persetujuan(pC2.hash, kC), aktor: OWNER, unitIds: C })); const s3 = await S();
+cek("rencana sama tetapi saldo bergeser: konfirmasi lama ditolak ('berubah sejak ditinjau'); nol batch/movement baru", pC2.hash === pC.hash && !r3.ok && r3.kode === "KONFIRMASI_MANIFEST_TIDAK_COCOK" && /berubah sejak ditinjau/.test((r3.penghalang ?? []).join(" ")) && s3.batch === sBaru.batch && s3.gerak === sBaru.gerak, (r3.penghalang ?? [])[0]);
+
+// 4) OWNER, konfirmasi benar: klik ganda ×3 → satu batch; selesai; ulang sama = nol tulisan; ulang dampak berbeda = ditolak
+const pD = await rencana(D); const kD = konfirmasiDari(pD); const aD = () => ajukanBatch(prisma, { persetujuan: persetujuan(pD.hash, kD), aktor: OWNER, unitIds: D });
+const klik = await Promise.allSettled([aD(), aD(), aD()]); const sD0 = await S();
+cek("klik ganda ×3 dengan konfirmasi benar: semua berhasil dan tepat SATU batch baru", klik.every((x) => x.status === "fulfilled") && klik.filter((x) => x.value?.baru).length === 1 && sD0.batch === s3.batch + 1, JSON.stringify(klik.map((x) => x.status === "fulfilled" ? x.value.baru : String(x.reason?.message).slice(0, 60))));
+const batchId = klik.find((x) => x.value?.baru).value.batchId; const hasil = await jalankanBatch(prisma, batchId); const stB = await statusBatch(prisma, batchId); const sD1 = await S();
+cek("batch selesai tanpa gagal; pergerakan = jumlah transaksi dikonfirmasi; tanpa duplikat", hasil.status === "SELESAI" && stB.unitGagal === 0 && sD1.gerak === sD0.gerak + pD.jumlah && stB.transaksiDiposting === pD.jumlah, `${hasil.status}; +${sD1.gerak - sD0.gerak} vs ${pD.jumlah}`);
+const ulang = await coba(() => aD()); const beda = await coba(() => ajukanBatch(prisma, { persetujuan: persetujuan(pD.hash, { ...kD, rujukan: "RUJUKAN-LAIN-BEDA-DAMPAK" }, { rujukan: "RUJUKAN-LAIN-BEDA-DAMPAK" }), aktor: OWNER, unitIds: D }));
+const beda2 = await coba(() => ajukanBatch(prisma, { persetujuan: persetujuan(pD.hash, { ...kD, saldoManifest: kD.saldoManifest.map((x) => ({ ...x, saldo: x.saldo + 7 })) }), aktor: OWNER, unitIds: D })); const sD2 = await S();
+cek("ulang dengan konfirmasi SAMA = batch yang sama (baru=false), nol tulisan", ulang.ok && ulang.v.baru === false && sD2.gerak === sD1.gerak && sD2.batch === sD1.batch);
+cek("ulang dengan DAMPAK BERBEDA (rujukan lain / saldo ditinjau lain) ditolak; nol tulisan; dicatat", !beda.ok && beda.kode === "KONFIRMASI_MANIFEST_TIDAK_COCOK" && !beda2.ok && beda2.kode === "KONFIRMASI_MANIFEST_TIDAK_COCOK" && sD2.gerak === sD1.gerak && sD2.tolak === sD1.tolak + 2, `${beda.kode}/${beda2.kode}`);
+const dia = (await prisma.$queryRawUnsafe(`select metadata from activity_events where entity_type = 'posting_historis_batch' and entity_id = $1 and event_type = 'BATCH_DIAJUKAN'`, batchId))[0]?.metadata?.konfirmasiManifest;
+cek("rekaman konfirmasi tersimpan: isi transaksi lengkap, saldo ditinjau, peran pelaku, mode kontrol", dia?.isiTransaksi?.length === pD.jumlah && dia?.saldoManifest?.length > 0 && dia?.aktorRoles?.includes("OWNER") && dia?.mode === "OWNER_MENINJAU_SENDIRI" && dia?.hash === pD.hash, JSON.stringify({ n: dia?.isiTransaksi?.length, roles: dia?.aktorRoles }));
+
+// 5) jalur sinkron: konfirmasi salah ditolak SEBELUM movement; benar berjalan
+const pE = await rencana(E); const kE = konfirmasiDari(pE); const sE0 = await S();
+const e1 = await coba(() => jalankanPosting(prisma, { persetujuan: persetujuan(pE.hash, { ...kE, jumlahTrx: kE.jumlahTrx + 1 }), aktor: OWNER, unitIds: E })); const sE1 = await S();
+cek("sinkron: konfirmasi salah ditolak sebelum movement", !e1.ok && e1.kode === "KONFIRMASI_MANIFEST_TIDAK_COCOK" && sE1.gerak === sE0.gerak);
+const e2 = await coba(() => jalankanPosting(prisma, { persetujuan: persetujuan(pE.hash, kE), aktor: OWNER, unitIds: E })); const sE2 = await S();
+cek("sinkron: konfirmasi benar memposting tepat sebanyak transaksi", e2.ok && e2.v.gagal.length === 0 && sE2.gerak === sE1.gerak + pE.jumlah, e2.ok ? `+${sE2.gerak - sE1.gerak}` : e2.pesan);
+
+// 6) invarian akhir
+await tungguPenyegaran();
+const akhir = await prisma.$transaction((tx) => periksaKeadaanCatatan(tx), { isolationLevel: "RepeatableRead", timeout: 120_000 }); const sx = await S();
+cek("keadaan akhir = titik tetap", akhir.berubah === 0, "berubah=" + akhir.berubah);
+cek("jurnal dan GL 1-1400 TIDAK berubah oleh seluruh simulasi (kuantitas dulu, tanpa jurnal HPP)", sx.jurnal === s0.jurnal && sx.gl1400 === s0.gl1400, `jurnal ${s0.jurnal}→${sx.jurnal}; GL ${s0.gl1400}→${sx.gl1400}`);
+cek("tidak ada bahan baru yang menjadi negatif", sx.negatif <= s0.negatif, `${s0.negatif} → ${sx.negatif}`);
+cek("hanya yang dikonfirmasi terposting: ISSUE bertambah = transaksi D + E", sx.issue === s0.issue + pD.jumlah + pE.jumlah, `+${sx.issue - s0.issue} vs ${pD.jumlah + pE.jumlah}`);
+console.log("SIMULASI_KONFIRMASI gagal=" + gagal);
 await prisma.$disconnect();
 process.exit(gagal ? 1 : 0);
 SIMNODE
@@ -618,7 +634,7 @@ else {
 if (admin) {
   const tk = jwt.sign({ id: admin.id, name: admin.name, role: admin.role, roles: peran.get(admin.id) }, process.env.JWT_SECRET, { expiresIn: "10m" });
   const pr = await api("GET", "/api/production/posting-historis/pratinjau", tk);
-  rec("GET pratinjau manifest 200 dengan hash, order, HPP", pr.status === 200 && /^[0-9a-f]{64}$/.test(pr.json?.hash ?? "") && pr.json?.hpp?.jurnalDibuat === false, `status=${pr.status} ${pr.json?.jumlahOrder} order / ${pr.json?.jumlahTrx} trx`);
+  rec("GET pratinjau manifest 200 dengan hash, digest isi, ID unit, isi transaksi, saldo bahan, HPP", pr.status === 200 && /^[0-9a-f]{64}$/.test(pr.json?.hash ?? "") && /^[0-9a-f]{64}$/.test(pr.json?.digestIsi ?? "") && pr.json?.hpp?.jurnalDibuat === false && (pr.json?.order ?? []).every((o) => o.unitId && (o.trx ?? []).every((t) => t.kodeBahan && t.satuan && t.tanggal)) && (pr.json?.bahan ?? []).every((b) => b.kode && Number.isFinite(b.saldoSekarang)), `status=${pr.status} ${pr.json?.jumlahOrder} order / ${pr.json?.jumlahTrx} trx`);
   const ls = await api("GET", "/api/production/posting-historis/batch", tk); rec("GET daftar batch 200", ls.status === 200 && Array.isArray(ls.json?.batch), `status=${ls.status}`);
   rec("GET batch yang tidak ada → 404", (await api("GET", `/api/production/posting-historis/batch/${"0".repeat(64)}`, tk)).status === 404);
   rec("tanpa token → 401 (pratinjau, daftar, batch)", (await api("GET", "/api/production/posting-historis/pratinjau", null)).status === 401 && (await api("GET", "/api/production/posting-historis/batch", null)).status === 401);
@@ -673,4 +689,4 @@ $(basename "$w")"; done
 ) || echo "  (pembersihan dilewati)"
 trap - EXIT
 say "SELESAI — rilis ${DEPLOY_SHORT} aktif. Backup: ${BACKUP_FILE}. Image rollback: ${ROLLBACK_TAG}. Log: ${BK_DIR}/release.log"
-say "CATATAN: rilis ini UI + rute baca baru (tanpa migrasi, tanpa perubahan data, tanpa posting, tanpa menjalankan batch). Setelah SELESAI: memulai batch lewat UI TETAP butuh persetujuan Owner terpisah (hash rencana + rujukan); JANGAN memposting/mengoreksi/mulai batch sebagai uji di production."
+say "CATATAN: rilis ini pagar server + dialog (tanpa migrasi, tanpa perubahan data, tanpa posting, tanpa menjalankan batch). Setelah SELESAI: memulai batch HANYA oleh akun Owner dan TETAP butuh persetujuan Owner (hash penuh, daftar order, jumlah, rujukan); JANGAN memposting/mengoreksi/mulai batch sebagai uji di production."
