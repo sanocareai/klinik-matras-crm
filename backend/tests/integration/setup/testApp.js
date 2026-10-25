@@ -16,6 +16,7 @@ const { purchaseOrderFinanceRouter, purchaseOrderGudangRouter } = await import("
 const { barangAkanDatangRouter } = await import("../../../src/routes/barangAkanDatang.js");
 const { returSupplierGudangRouter, returSupplierFinanceRouter } = await import("../../../src/routes/returSupplier.js");
 const { jejakBahanUnitRouter, biayaBahanFinanceRouter, jejakPenerimaanRouter } = await import("../../../src/routes/biayaBahan.js");
+const { hargaBerlakuRouter } = await import("../../../src/routes/hargaBerlaku.js");
 const { financeUtangRouter } = await import("../../../src/routes/financeUtang.js");
 const { materialIssueRouter } = await import("../../../src/routes/materialIssue.js");
 const { stockTransferRouter } = await import("../../../src/routes/stockTransfer.js");
@@ -165,6 +166,7 @@ export function buildTestApp() {
   app.use("/api/finance", financePenerimaanRouter);
   app.use("/api/finance/purchase-orders", purchaseOrderFinanceRouter);
   app.use("/api/finance/biaya-bahan", biayaBahanFinanceRouter);
+  app.use("/api/finance/harga-berlaku", hargaBerlakuRouter);
   app.use("/api/finance", financePersediaanAwalRouter);
   app.use("/api/finance", financeApprovalsRouter);
   app.use("/api/finance", financePemasukanRouter);
