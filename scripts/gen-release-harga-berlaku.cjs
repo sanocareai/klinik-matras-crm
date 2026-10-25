@@ -22,7 +22,7 @@ const LIB_SCAN = "scripts/lib/scan-migrasi-harga-berlaku.mjs", LIB_REH = "script
 const GUARD = "scripts/rollback-guard-harga-berlaku.sh", GENERATOR = "scripts/gen-release-harga-berlaku.cjs";
 const TPL_FILES = ["header", "vars", "struktur", "gate-prisma", "keadaan", "rehearsal-migrasi", "step6", "rollback"].map((n) => `${TPL_DIR}/${n}.txt`);
 const FILE_TETAP = [OUT, GUARD, GENERATOR, LIB_SCAN, LIB_REH, LIB_SMOKE, ...TPL_FILES];
-const CAND_BRANCH = "rc/bahan-harga-berlaku-on-live-8e5437b6";
+const CAND_BRANCH = "rc/harga-berlaku-on-live-8e5437b6";
 const DIST_BARU = ["Harga Berlaku (HPP operasional)", "Koreksi salah input historis", "Beri harga ke pemakaian lama", "HPP operasional (harga berlaku)", "Saat disimpan (sekarang)", "Belum didukung bukti"];
 const DIST_LAMA_TAMBAHAN = ["Buka pekerjaan", "Catat pekerjaan selesai", "Tandai sudah dikerjakan"];
 
