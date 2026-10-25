@@ -164,8 +164,12 @@ test("laporan per campaign + drilldown ad set → ad lewat HTTP: baris campaign 
   ] });
   const get = async (q) => (await (await fetch(`${server.baseUrl}/api/atribusi/iklan?${q}`, { headers: { Authorization: `Bearer ${token}` } })).json());
   const sebelum = { t: await testPrisma.attributionTouch.count(), c: await testPrisma.customer.count(), m: await testPrisma.message.count(), r: await testPrisma.metaAdReference.count() };
-  const camp = await get("level=campaign");                                    // tanpa dari/sampai = 7 hari bawaan
-  assert.equal(camp.rentangLead.bawaan, true);
+  // bawaan (tanpa dari/sampai) = 7 HARI PENUH yang berakhir KEMARIN; lead uji dibuat HARI INI → rentang eksplisit memuat hari ini
+  const wibTgl = (ms) => new Date(Date.now() + 7 * 3600e3 + ms).toISOString().slice(0, 10);
+  const bawaan = await get("level=campaign");
+  assert.equal(bawaan.rentangLead.bawaan, true); assert.equal(bawaan.rentangLead.sampai, wibTgl(-86400e3), "bawaan berakhir kemarin"); assert.equal(bawaan.rentangLead.dari, wibTgl(-7 * 86400e3));
+  const camp = await get(`level=campaign&dari=${wibTgl(-6 * 86400e3)}&sampai=${wibTgl(0)}`);   // 7 hari termasuk hari ini (eksplisit)
+  assert.equal(camp.rentangLead.bawaan, false);
   assert.equal(camp.rekonsiliasi.ok, true, JSON.stringify(camp.rekonsiliasi.cek.filter((c) => !c.ok)));
   const jumlahLead = camp.grup.reduce((s, g) => s + g.lead.unik, 0);
   assert.equal(jumlahLead, camp.jumlahTercakup.leadUnik, "Σ baris campaign + UNMAPPED + UNKNOWN = tercakup");
@@ -180,16 +184,16 @@ test("laporan per campaign + drilldown ad set → ad lewat HTTP: baris campaign 
   assert.equal(rm.akuisisiTerbukti + rm.touchTanpaBukti + rm.touchPadaCustomerSudahAda + rm.tanpaTouchIklan, rm.metaAdsCrmLeadBaru);
 
   const grupTerbesar = dipetakan.sort((a, b) => b.lead.unik - a.lead.unik)[0];
-  const adset = await get(`level=adset&campaignId=${grupTerbesar.campaign.id}`);
+  const adset = await get(`level=adset&dari=${wibTgl(-6 * 86400e3)}&sampai=${wibTgl(0)}&campaignId=${grupTerbesar.campaign.id}`);
   assert.ok(adset.grup.length >= 1 && adset.grup.every((g) => g.campaign.id === grupTerbesar.campaign.id));
   assert.equal(adset.jumlahTeratribusi.leadUnik, grupTerbesar.lead.unik, "drilldown ad set = angka campaign yang sama");
   assert.equal(adset.rekonsiliasi.ok, true);
   assert.equal(adset.cakupan, null);
-  const ad = await get(`level=ad&campaignId=${grupTerbesar.campaign.id}&adSetId=${adset.grup[0].adSet.id}`);
+  const ad = await get(`level=ad&dari=${wibTgl(-6 * 86400e3)}&sampai=${wibTgl(0)}&campaignId=${grupTerbesar.campaign.id}&adSetId=${adset.grup[0].adSet.id}`);
   assert.ok(ad.grup.every((g) => g.adSet.id === adset.grup[0].adSet.id));
   assert.equal(ad.jumlahTeratribusi.leadUnik, adset.grup[0].lead.unik);
   // filter yang tidak cocok → kosong (tidak ada tebakan), bukan galat
-  const kosong = await get("level=adset&campaignId=11111111111111");
+  const kosong = await get(`level=adset&dari=${wibTgl(-6 * 86400e3)}&sampai=${wibTgl(0)}&campaignId=11111111111111`);
   assert.equal(kosong.grup.length, 0);
   assert.equal(kosong.jumlahTeratribusi.leadUnik, 0);
   assert.equal((await fetch(`${server.baseUrl}/api/atribusi/iklan?level=campaign&campaignId=${grupTerbesar.campaign.id}`, { headers: { Authorization: `Bearer ${token}` } })).status, 400);
