@@ -35,7 +35,7 @@ ALLOWED_RE='^(backend/src/services/attribution/(biayaKpi|iklanReport|spend)\.js|
 BACKEND_SRC_EXPECT="backend/src/services/attribution/biayaKpi.js backend/src/services/attribution/iklanReport.js backend/src/services/attribution/spend.js"
 FRONTEND_SRC_EXPECT=""
 declare -A PINS=(
-  ["backend/src/services/attribution/biayaKpi.js"]="d426273656e02b501d1461e696a3a5d4f9eaa100a3fd7381e32445913b6d4d39"
+  ["backend/src/services/attribution/biayaKpi.js"]="458e70cd9e47d688dd34c9f68e2920815e2072eeb7e40c096cfe6c6bdf4c6088"
   ["backend/src/services/attribution/iklanReport.js"]="50b410a541cf1b5cb43ce8710dfc8a5e2e30459bf4663805a7b31140e8511d8c"
   ["backend/src/services/attribution/spend.js"]="671ed90a5ea0136ce513c1a01e9f73761ef51320162a0857049cb90f9fabe7f6"
 )
@@ -167,9 +167,9 @@ verify_live() {
   else warn "$(val SB_DILEWATI)"; fi
   if [ -n "$(val GAP_STATUS)" ]; then
     [ "$(val GAP_STATUS)" = "200" ] && [ "$(val GAP_REKON)" = "true" ] || die "laporan rentang tanpa spend lengkap: status/rekonsiliasi tidak OK"
-    [ "$(val GAP_STATUS_BIAYA)" = "SPEND_TIDAK_LENGKAP" ] && [ "$(val GAP_NULL)" = "true" ] && [ "$(val GAP_ALASAN)" = "SPEND_TIDAK_LENGKAP" ] || die "rentang dengan hari tanpa spend: CPL/CPA/ROAS CRM harus null dengan alasan SPEND_TIDAK_LENGKAP ($(val GAP_STATUS_BIAYA)/$(val GAP_NULL)/$(val GAP_ALASAN))"
+    { [ "$(val GAP_STATUS_BIAYA)" = "SPEND_TIDAK_LENGKAP" ] || [ "$(val GAP_STATUS_BIAYA)" = "DATA_TERLAMBAT" ]; } && [ "$(val GAP_NULL)" = "true" ] && [ "$(val GAP_ALASAN)" = "SPEND_TIDAK_LENGKAP" ] || die "rentang dengan hari tanpa spend: CPL/CPA/ROAS CRM harus null dengan alasan SPEND_TIDAK_LENGKAP ($(val GAP_STATUS_BIAYA)/$(val GAP_NULL)/$(val GAP_ALASAN))"
     printf '%s' "$(val GAP_PERINGATAN)" | grep -q 'SPEND_TIDAK_LENGKAP' || die "peringatan SPEND_TIDAK_LENGKAP tidak muncul ($(val GAP_PERINGATAN))"
-    ok "rentang $(val GAP_RENTANG) (hari tanpa spend): CPL/CPA/ROAS CRM null, status SPEND_TIDAK_LENGKAP, peringatan: $(val GAP_PERINGATAN)"
+    ok "rentang $(val GAP_RENTANG) (hari tanpa spend): CPL/CPA/ROAS CRM null, alasan SPEND_TIDAK_LENGKAP, status $(val GAP_STATUS_BIAYA), peringatan: $(val GAP_PERINGATAN)"
   else warn "$(val GAP_DILEWATI)"; fi
   local sesudah; sesudah="$(psql_live -At -c "$estado_sql")"
   # touch BOLEH bertambah (capture aktif menerima pesan CTWA nyata selama rilis) tetapi tidak boleh berkurang; semua lainnya HARUS persis sama
