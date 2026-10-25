@@ -26,9 +26,7 @@ CREATE TABLE "material_harga_berlaku" (
   CONSTRAINT "material_harga_berlaku_jenis_chk" CHECK ("jenis" IN ('HARGA','KOREKSI')),
   CONSTRAINT "material_harga_berlaku_harga_chk" CHECK ("unit_price" > 0),
   CONSTRAINT "material_harga_berlaku_alasan_chk" CHECK (length(btrim("reason")) >= 5),
-  CONSTRAINT "material_harga_berlaku_koreksi_chk" CHECK (("jenis" = 'KOREKSI') = ("corrects_id" IS NOT NULL)),
-  CONSTRAINT "material_harga_berlaku_material_id_fkey" FOREIGN KEY ("material_id") REFERENCES "materials"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
-  CONSTRAINT "material_harga_berlaku_corrects_id_fkey" FOREIGN KEY ("corrects_id") REFERENCES "material_harga_berlaku"("id") ON DELETE RESTRICT ON UPDATE CASCADE
+  CONSTRAINT "material_harga_berlaku_koreksi_chk" CHECK (("jenis" = 'KOREKSI') = ("corrects_id" IS NOT NULL))
 );
 CREATE UNIQUE INDEX "material_harga_berlaku_idempotency_key_key" ON "material_harga_berlaku"("idempotency_key");
 -- satu baris hanya boleh dikoreksi SEKALI (rantai koreksi: koreksi dari koreksi memakai baris terbaru)
@@ -53,8 +51,7 @@ CREATE TABLE "biaya_operasional_penerapan" (
   "idempotency_key" TEXT NOT NULL,
   CONSTRAINT "biaya_operasional_penerapan_pkey" PRIMARY KEY ("id"),
   CONSTRAINT "biaya_operasional_penerapan_status_chk" CHECK ("status" IN ('DIAJUKAN','DISETUJUI','DITOLAK','DIBATALKAN')),
-  CONSTRAINT "biaya_operasional_penerapan_alasan_chk" CHECK (length(btrim("reason")) >= 5),
-  CONSTRAINT "biaya_operasional_penerapan_material_id_fkey" FOREIGN KEY ("material_id") REFERENCES "materials"("id") ON DELETE RESTRICT ON UPDATE CASCADE
+  CONSTRAINT "biaya_operasional_penerapan_alasan_chk" CHECK (length(btrim("reason")) >= 5)
 );
 CREATE UNIQUE INDEX "biaya_operasional_penerapan_idempotency_key_key" ON "biaya_operasional_penerapan"("idempotency_key");
 CREATE INDEX "biaya_operasional_penerapan_material_id_status_idx" ON "biaya_operasional_penerapan"("material_id", "status");
@@ -82,16 +79,21 @@ CREATE TABLE "stock_movement_biaya_operasional" (
   CONSTRAINT "stock_movement_biaya_operasional_status_chk" CHECK ("status" IN ('DINILAI','TANPA_HARGA')),
   CONSTRAINT "stock_movement_biaya_operasional_basis_chk" CHECK ("basis_harga" IN ('WAKTU_PEMAKAIAN','WAKTU_WASTE','WAKTU_PENYESUAIAN','HARGA_ISSUE_ASAL','WAKTU_RETUR_TANPA_ISSUE')),
   CONSTRAINT "stock_movement_biaya_operasional_sumber_chk" CHECK ("sumber" IN ('BEKU_SAAT_POSTING','PENERAPAN_DISETUJUI')),
-  CONSTRAINT "stock_movement_biaya_operasional_nilai_chk" CHECK (("status" = 'DINILAI') = ("unit_cost" IS NOT NULL AND "value" IS NOT NULL AND "price_id" IS NOT NULL)),
-  CONSTRAINT "stock_movement_biaya_operasional_movement_id_fkey" FOREIGN KEY ("movement_id") REFERENCES "stock_movements"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
-  CONSTRAINT "stock_movement_biaya_operasional_material_id_fkey" FOREIGN KEY ("material_id") REFERENCES "materials"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
-  CONSTRAINT "stock_movement_biaya_operasional_price_id_fkey" FOREIGN KEY ("price_id") REFERENCES "material_harga_berlaku"("id") ON DELETE RESTRICT ON UPDATE CASCADE,
-  CONSTRAINT "stock_movement_biaya_operasional_application_id_fkey" FOREIGN KEY ("application_id") REFERENCES "biaya_operasional_penerapan"("id") ON DELETE RESTRICT ON UPDATE CASCADE
+  CONSTRAINT "stock_movement_biaya_operasional_nilai_chk" CHECK (("status" = 'DINILAI') = ("unit_cost" IS NOT NULL AND "value" IS NOT NULL AND "price_id" IS NOT NULL))
 );
 CREATE INDEX "stock_movement_biaya_operasional_movement_id_created_at_idx" ON "stock_movement_biaya_operasional"("movement_id", "created_at");
 CREATE INDEX "stock_movement_biaya_operasional_material_id_idx" ON "stock_movement_biaya_operasional"("material_id");
 CREATE INDEX "stock_movement_biaya_operasional_application_id_idx" ON "stock_movement_biaya_operasional"("application_id");
 CREATE UNIQUE INDEX "stock_movement_biaya_operasional_satu_beku" ON "stock_movement_biaya_operasional"("movement_id") WHERE "sumber" = 'BEKU_SAAT_POSTING';
+
+-- FK (semua ON DELETE RESTRICT; tabel lama hanya DIRUJUK, tidak diubah)
+ALTER TABLE "material_harga_berlaku" ADD CONSTRAINT "material_harga_berlaku_material_id_fkey" FOREIGN KEY ("material_id") REFERENCES "materials"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "material_harga_berlaku" ADD CONSTRAINT "material_harga_berlaku_corrects_id_fkey" FOREIGN KEY ("corrects_id") REFERENCES "material_harga_berlaku"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "biaya_operasional_penerapan" ADD CONSTRAINT "biaya_operasional_penerapan_material_id_fkey" FOREIGN KEY ("material_id") REFERENCES "materials"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "stock_movement_biaya_operasional" ADD CONSTRAINT "stock_movement_biaya_operasional_movement_id_fkey" FOREIGN KEY ("movement_id") REFERENCES "stock_movements"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "stock_movement_biaya_operasional" ADD CONSTRAINT "stock_movement_biaya_operasional_material_id_fkey" FOREIGN KEY ("material_id") REFERENCES "materials"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "stock_movement_biaya_operasional" ADD CONSTRAINT "stock_movement_biaya_operasional_price_id_fkey" FOREIGN KEY ("price_id") REFERENCES "material_harga_berlaku"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+ALTER TABLE "stock_movement_biaya_operasional" ADD CONSTRAINT "stock_movement_biaya_operasional_application_id_fkey" FOREIGN KEY ("application_id") REFERENCES "biaya_operasional_penerapan"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
 CREATE OR REPLACE FUNCTION harga_berlaku_append_only() RETURNS trigger AS $$
 BEGIN
