@@ -16,6 +16,8 @@ import { startOfDayWIB, endOfDayExclusiveWIB } from "../../utils/wib.js";
 import { muatMasukanKohort } from "./cohortLoader.js";
 import { muatSpendPerAd } from "./spend.js";
 import { getVerificationGate } from "../finance/settings.js";
+// order dari muatMasukanKohort sudah membawa value = nilaiBersih (nota kredit aktif); pemanggilan ini hanya mengembalikannya
+import { nilaiBersih } from "../orderNilaiBersih.js";
 
 export const D7_JAM = 7 * 24 * 3600 * 1000;
 const DAY = 86_400_000;
@@ -123,8 +125,8 @@ export function susunD7(p) {
         kontribusi.push(k);
       }
       const rf = (refundPer.get(o.id) || []).filter((r) => ms(r.approvedAt || r.date) <= akhir);
-      const j = jejakPembayaran(kontribusi, o.tagihan != null ? o.tagihan : o.value, rf);
-      adaOrder = true; x.orderEligible++; cov.orderEligible++; x.bookedValue += rp(o.value);
+      const j = jejakPembayaran(kontribusi, o.tagihan != null ? o.tagihan : nilaiBersih(o), rf);
+      adaOrder = true; x.orderEligible++; cov.orderEligible++; x.bookedValue += rp(nilaiBersih(o));
       if (j.jumlahPembayaran > 0) { cov.orderDenganPembayaran++; adaBayar = true; }
       if (j.pernahDp) { adaDp = true; x.orderDp++; }
       if (j.status === "LUNAS") { adaLunas = true; x.orderLunas++; }

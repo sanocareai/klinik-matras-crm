@@ -37,7 +37,7 @@ FRONTEND_SRC_EXPECT="frontend/src/features/laporan/iklanCampaignLogic.js"
 declare -A PINS=(
   ["backend/src/routes/attributionAds.js"]="bc0f194ee9aaf3fd4b788883887db28e105b41bab35450e2e5dd50ee936396f4"
   ["backend/src/services/attribution/biayaKpi.js"]="74c58c111d40a3a73a3c1a0644e8a0608203d574f1154d447cd96f95ed691fe1"
-  ["backend/src/services/attribution/d7.js"]="4ed9701401fd384e1ba3b26350d72bc898289ed8af0da5b3ae952b156113349f"
+  ["backend/src/services/attribution/d7.js"]="4cd7b81a00618f932e4a3daf50d90818b1c18795e6c2f08f0df78ea7abae9c3b"
   ["backend/src/services/attribution/iklanReport.js"]="b1706829e26e7494e02d746f233003052a65e9f528d8fa976c848a0b8d596e93"
   ["backend/src/services/attribution/spend.js"]="671ed90a5ea0136ce513c1a01e9f73761ef51320162a0857049cb90f9fabe7f6"
 )
