@@ -206,26 +206,30 @@ async function main() {
 
   const itemForm = page.locator('form:has(input[placeholder="Tambah action item…"])');
   const itemInput = itemForm.locator('input[placeholder="Tambah action item…"]');
-  await itemInput.fill("Action item: verifikasi task tercipta");
+  const ACTION_ITEM_TEXT = "Action item: verifikasi task tercipta";
+  await itemInput.fill(ACTION_ITEM_TEXT);
   await itemForm.locator('select[aria-label="Proyek"]').selectOption({ label: projectName });
   await itemForm.locator('button[type="submit"]').click();
-  // Sinyal KONKRET bahwa create sudah selesai diproses server (bukan cuma
-  // diklik): form action item mengosongkan input-nya sendiri setelah create
-  // berhasil. Menunggu INI dulu — lewat page.waitForFunction yang meng-query
-  // ULANG DOM dari selector string setiap polling (bukan elementHandle yang
-  // bisa jadi stale kalau daftar action item ikut rerender) — menghindari
-  // race di mana baris barunya baru dicari SEBELUM server selesai merespons.
-  // Bukan sleep: ini nunggu KONDISI, bukan durasi tetap.
-  await page.waitForFunction(
-    () => {
-      const el = document.querySelector('input[placeholder="Tambah action item…"]');
-      return !!el && el.value === "";
-    },
-    { timeout: 15000 },
-  ).catch(() => {});
-  const actionItemRow = page.locator(':has-text("verifikasi task tercipta")').first();
-  const itemVisible = await actionItemRow.waitFor({ state: "visible", timeout: 15000 }).then(() => true).catch(() => false);
-  check(itemVisible, "7. Action item tersimpan dan tampil (dengan proyek terpasang)");
+  // PENYEBAB ASLI (ditemukan lewat dump HTML nyata sesudah 2 kali tebakan
+  // selector teks gagal, bukan ditebak lagi): baris action item BUKAN teks
+  // statis — judulnya adalah VALUE sebuah <input aria-label="Judul action
+  // item">, controlled React, langsung bisa diedit di tempat. getByText/
+  // :has-text()/text= SEMUANYA mencocokkan textContent, dan sebuah <input>
+  // TIDAK PERNAH punya text child — jadi ketiganya selalu 0 match, apa pun
+  // perbaikan selector-nya, selama tetap mencari TEKS. Kondisi konkret yang
+  // benar: tunggu ada <input aria-label="Judul action item"> yang VALUE-nya
+  // memuat judul yang baru dibuat — lewat waitForFunction yang meng-query
+  // ulang DOM tiap polling (re-render tidak membuatnya stale). Bukan sleep;
+  // menunggu KONDISI nyata, dan honest — tidak ada swallow-lalu-cek-saja.
+  const itemCreated = await page
+    .waitForFunction(
+      ({ sel, text }) => Array.from(document.querySelectorAll(sel)).some((el) => el.value.includes(text)),
+      { sel: 'input[aria-label="Judul action item"]', text: ACTION_ITEM_TEXT },
+      { timeout: 15000 },
+    )
+    .then(() => true)
+    .catch(() => false);
+  check(itemCreated, "7. Action item tersimpan dan tampil (dengan proyek terpasang)");
 
   const buatTaskBtn = page.locator('button:has-text("Buat task")').first();
   const hasBuatTask = (await buatTaskBtn.count()) > 0;
