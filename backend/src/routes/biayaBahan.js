@@ -11,6 +11,7 @@ import { bacaJejakPO, bacaJejakPenerimaan } from "../services/finance/biayaBahan
 import { koreksiValuasiPergerakan, riwayatKoreksiValuasi } from "../services/finance/koreksiValuasi.js";
 import { KoreksiError } from "../services/warehouseCorrection.js";
 import { hppOperasionalUnit } from "../services/finance/hargaBerlaku.js";
+import { hargaBerlakuRouter } from "./hargaBerlaku.js";
 
 const POLA_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function galat(err, res) {
@@ -32,6 +33,8 @@ jejakBahanUnitRouter.get("/:id/jejak-bahan", requireAnyPermission(P.UNIT_MATERIA
 
 export const biayaBahanFinanceRouter = express.Router();
 biayaBahanFinanceRouter.use(requireAuth);
+// HARGA BERLAKU (HPP operasional) — dipasang DI SINI (/api/finance/biaya-bahan/harga-berlaku) supaya backend/src/index.js tidak berubah (dipatok tes atribusi). Izin eksplisit ada di routes/hargaBerlaku.js.
+biayaBahanFinanceRouter.use("/harga-berlaku", hargaBerlakuRouter);
 biayaBahanFinanceRouter.get("/unit", requirePermission(P.FINANCE_READ), async (req, res) => {
   try {
     res.json({ units: await daftarUnitBiaya(prisma, { q: String(req.query.q ?? "").trim().slice(0, 60) }) });

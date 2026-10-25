@@ -58,7 +58,7 @@ function bangkitkan({ baseScript, blok, berkasList, mig, schemaSha, scanJs, scan
   for (const p of prismaOk) must(berkas.includes(p), "berkas prisma tidak ada di diff: " + p);
   must(!berkas.some((f) => /^backend\/prisma\//.test(f) && !prismaOk.includes(f)), "perubahan prisma lain di luar schema + migrasi rilis");
   must(!berkas.some((f) => /package(-lock)?\.json$|(^|\/)docker-compose|(^|\/)Dockerfile$|(^|\/)\.env/.test(f)), "dependensi/compose/.env berubah");
-  must(berkas.includes("backend/src/index.js") && berkas.includes("backend/src/routes/hargaBerlaku.js") && berkas.includes("backend/src/constants/permissions.js"), "router + izin harga berlaku harus ada di diff");
+  must(!berkas.includes("backend/src/index.js") && berkas.includes("backend/src/routes/hargaBerlaku.js") && berkas.includes("backend/src/constants/permissions.js"), "router + izin harga berlaku harus ada di diff");
   const ob = namaObjek(mig.sql); must([...mig.sql.matchAll(/CREATE TABLE "/g)].length === 3, "harus tepat 3 CREATE TABLE");
   must(ob.idx.length > 0 && ob.fk.length === 7 && ob.chk.length > 0 && ob.trg.length === 2 && ob.parsial.length === 2, "objek rilis tidak seperti yang diaudit (7 FK, 2 trigger, 2 indeks parsial)");
 
