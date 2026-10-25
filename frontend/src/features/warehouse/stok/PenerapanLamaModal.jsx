@@ -82,7 +82,7 @@ export default function PenerapanLamaModal({ open, onClose, bahan, bolehUbah, bo
                       <tbody>{pra.penerapan.baris.map((x) => (
                         <tr key={x.movementId} className="border-t border-line">
                           <td className="px-2 py-1"><input type="checkbox" checked={terpilih.has(x.movementId)} onChange={() => setTerpilih((s) => { const n = new Set(s); n.has(x.movementId) ? n.delete(x.movementId) : n.add(x.movementId); return n; })} aria-label={`Pilih ${x.order ?? x.unit}`} /></td>
-                          <td className="px-2 py-1">{x.order ?? x.unit}</td><td className="px-2 py-1">{x.tanggal}</td><td className="px-2 py-1 text-right tabular-nums">{Math.abs(x.qty)} {x.satuan}</td>
+                          <td className="px-2 py-1">{x.order ?? x.unit}{x.tipe !== "ISSUE" ? <div className="text-[10.5px] text-ink3">{x.basisTeks}</div> : null}</td><td className="px-2 py-1">{x.tanggal}</td><td className="px-2 py-1 text-right tabular-nums">{Math.abs(x.qty)} {x.satuan}</td>
                           <td className="px-2 py-1 text-right tabular-nums">{rp(x.harga)}</td><td className="px-2 py-1 text-right tabular-nums">{x.nilaiSebelum != null ? <span className="mr-1 text-ink3 line-through">{rpNilai(x.nilaiSebelum)}</span> : null}{rpNilai(x.nilaiBaru)}</td></tr>))}</tbody></table>
                   </div>
                 )}

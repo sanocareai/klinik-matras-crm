@@ -11748,6 +11748,7 @@ model MaterialHargaBerlaku {
   createdById   String?  @map("created_by")
   createdAt     DateTime @default(now()) @map("created_at")
   idempotencyKey String  @unique @map("idempotency_key")
+  impact        Json?    // KOREKSI (tindakan khusus): ringkasan seluruh pemakaian terdampak saat dikoreksi
   biayaOperasional StockMovementBiayaOperasional[]
 
   @@index([materialId, effectiveFrom])
@@ -11771,6 +11772,8 @@ model StockMovementBiayaOperasional {
   priceEffectiveFrom DateTime? @map("price_effective_from")
   evidenceLabel String?  @map("evidence_label") @db.VarChar(30)
   sumber        String   @db.VarChar(24) // BEKU_SAAT_POSTING | PENERAPAN_DISETUJUI
+  basisHarga    String   @default("WAKTU_PEMAKAIAN") @map("basis_harga") @db.VarChar(30) // dari mana harga diambil: waktu pemakaian | waktu waste | harga ISSUE asal (retur) | ...
+  basisDetail   Json?    @map("basis_detail")
   applicationId String?  @map("application_id") @db.Uuid
   application   BiayaOperasionalPenerapan? @relation(fields: [applicationId], references: [id], onDelete: Restrict)
   createdById   String?  @map("created_by")

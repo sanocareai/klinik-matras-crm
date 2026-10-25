@@ -9,7 +9,7 @@ import { createTestUser, createTestMaterial, createTestUnit, seedBalance } from 
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
 import { postStockMovement } from "../../src/services/inventoryLedger.js";
-import { pratinjauUbahHarga, simpanHarga, hargaBerlakuPada, pratinjauPenerapan, ajukanPenerapan, setujuiPenerapan, hppOperasionalUnit, riwayatHarga, ringkasanBahan } from "../../src/services/finance/hargaBerlaku.js";
+import { pratinjauUbahHarga, simpanHarga, hargaBerlakuPada, pratinjauPenerapan, ajukanPenerapan, setujuiPenerapan, hppOperasionalUnit, riwayatHarga, ringkasanBahan, hargaUntukPergerakan, penyelesaiHargaBerlaku } from "../../src/services/finance/hargaBerlaku.js";
 
 let server;
 test.before(async () => { await truncateAll(); server = await startTestServer(buildTestApp()); });
@@ -29,7 +29,16 @@ async function dunia() {
   const mk = async () => (await createTestUnit()).unit;
   return { finA, finB, gudang, sales, a: c(finA), b: c(finB), g: c(gudang), s: c(sales), mat, mk };
 }
+const labelBukti = (bukti) => (String(bukti ?? "").trim() ? "ADA_CATATAN_BUKTI" : "BELUM_DIDUKUNG_BUKTI");
+// riwayat harga HISTORIS (dicatat saat itu, waktu catat = waktu berlaku): menirukan harga yang sudah ada sebelum aturan "tanpa tanggal mundur"; perubahan baru HARUS lewat service.
+async function seedHistoris(w, { harga, mulai, alasan, bukti }) {
+  const t = T(mulai); const aktif = await testPrisma.materialHargaBerlaku.findMany({ where: { materialId: w.mat.id }, orderBy: [{ effectiveFrom: "asc" }, { createdAt: "asc" }] });
+  const sebelum = [...aktif].filter((x) => x.effectiveFrom <= t).pop();
+  const b = await testPrisma.materialHargaBerlaku.create({ data: { materialId: w.mat.id, jenis: "HARGA", unitPrice: String(harga), satuan: "KG", effectiveFrom: t, createdAt: t, previousPrice: sebelum ? sebelum.unitPrice : null, reason: alasan, evidenceNote: String(bukti ?? "").trim() || null, createdById: w.finA.user.id, idempotencyKey: kunci("hist") } });
+  return { id: b.id, jenis: "HARGA", harga: Number(b.unitPrice), hargaLama: b.previousPrice == null ? null : Number(b.previousPrice), labelBukti: labelBukti(bukti), teksLabelBukti: bukti ? "Ada catatan bukti — belum diverifikasi Finance" : "Belum didukung bukti" };
+}
 const ubah = async (w, { harga, mulai, alasan = "Harga baru dari nota Okt 2026", bukti = "", aktor = w.finA.user, satuan = "KG", extra = {} }) => {
+  if (mulai && T(mulai).getTime() <= Date.now() && !extra.koreksiId) return seedHistoris(w, { harga, mulai, alasan, bukti });
   const m = { materialId: w.mat.id, hargaBaru: String(harga), satuan, berlakuMulai: mulai, alasan, catatanBukti: bukti, ...extra };
   const p = await pratinjauUbahHarga(testPrisma, m); return simpanHarga(testPrisma, { ...m, hashPratinjau: p.hash }, { aktor, kunci: kunci() });
 };
@@ -64,7 +73,7 @@ test("H1. harga berubah 16→20 Okt (nyata, dapat diposting) dan 26→30 Okt (te
 });
 
 test("H2. klik ganda & serentak: Idempotency-Key sama = SATU baris; kunci berbeda dengan pratinjau yang sama ditolak (PRATINJAU_BERUBAH); pratinjau wajib sebelum simpan", async () => {
-  const w = await dunia(); const m = { materialId: w.mat.id, hargaBaru: "100", satuan: "KG", berlakuMulai: "2026-10-26T00:00:00Z", alasan: "Harga pertama dari nota" };
+  const w = await dunia(); const m = { materialId: w.mat.id, hargaBaru: "100", satuan: "KG", alasan: "Harga pertama dari nota" }; // tanpa berlakuMulai = SAAT DISIMPAN
   const p = await pratinjauUbahHarga(testPrisma, m); const k = kunci("ganda");
   const hasil = await Promise.allSettled([1, 2, 3].map(() => simpanHarga(testPrisma, { ...m, hashPratinjau: p.hash }, { aktor: w.finA.user, kunci: k })));
   assert.ok(hasil.every((x) => x.status === "fulfilled"), JSON.stringify(hasil.filter((x) => x.status === "rejected").map((x) => x.reason?.message))); assert.equal(hasil.filter((x) => x.value.ulang === false).length, 1); assert.equal(await testPrisma.materialHargaBerlaku.count(), 1);
@@ -76,44 +85,48 @@ test("H2. klik ganda & serentak: Idempotency-Key sama = SATU baris; kunci berbed
 });
 
 test("H3. satuan berbeda & input salah ditolak: satuan ≠ satuan stok, Rp0, >4 desimal, alasan pendek, waktu tak wajar; tidak ada yang tersimpan", async () => {
-  const w = await dunia(); const dasar = { materialId: w.mat.id, hargaBaru: "100", satuan: "KG", berlakuMulai: "2026-10-26T00:00:00Z", alasan: "Alasan cukup panjang" };
+  const w = await dunia(); const dasar = { materialId: w.mat.id, hargaBaru: "100", satuan: "KG", alasan: "Alasan cukup panjang" };
   const tolak = async (patch, kode) => assert.rejects(() => pratinjauUbahHarga(testPrisma, { ...dasar, ...patch }), (e) => e.code === kode, kode);
   await tolak({ satuan: "PAK" }, "SATUAN_BEDA"); await tolak({ satuan: "" }, "SATUAN_BEDA"); await tolak({ hargaBaru: "0" }, "HARGA_TIDAK_VALID"); await tolak({ hargaBaru: "-5" }, "HARGA_TIDAK_VALID"); await tolak({ hargaBaru: "abc" }, "HARGA_TIDAK_VALID");
-  await tolak({ hargaBaru: "100.12345" }, "HARGA_DESIMAL_BERLEBIH"); await tolak({ alasan: "x" }, "ALASAN_WAJIB"); await tolak({ berlakuMulai: "bukan-tanggal" }, "WAKTU_TIDAK_VALID"); await tolak({ berlakuMulai: "2031-01-01T00:00:00Z" }, "WAKTU_TIDAK_WAJAR");
+  await tolak({ hargaBaru: "100.12345" }, "HARGA_DESIMAL_BERLEBIH"); await tolak({ alasan: "x" }, "ALASAN_WAJIB"); await tolak({ berlakuMulai: "bukan-tanggal" }, "WAKTU_TIDAK_VALID"); await tolak({ berlakuMulai: "2026-10-01T00:00:00Z" }, "WAKTU_MUNDUR"); await tolak({ berlakuMulai: new Date(Date.now() - 60_000).toISOString() }, "WAKTU_MUNDUR"); await tolak({ berlakuMulai: "2031-01-01T00:00:00Z" }, "WAKTU_TIDAK_WAJAR");
   assert.equal((await pratinjauUbahHarga(testPrisma, { ...dasar, satuan: "kg" })).satuan, "KG", "huruf kecil diterima, tetap satuan stok"); assert.equal(await testPrisma.materialHargaBerlaku.count(), 0);
   const pr = await pratinjauUbahHarga(testPrisma, { ...dasar, hargaBaru: "100.1234" }); assert.equal(pr.hargaBaru, 100.1234);
   await assert.rejects(() => testPrisma.$executeRawUnsafe(`insert into material_harga_berlaku (id, material_id, unit_price, satuan, effective_from, reason, idempotency_key) values (gen_random_uuid(), $1::uuid, 0, 'KG', now(), 'alasan uji', 'k-nol-uji-1')`, w.mat.id), /material_harga_berlaku_harga_chk|check/i, "DB menolak harga ≤ 0 juga");
+  await assert.rejects(() => testPrisma.$executeRawUnsafe(`insert into material_harga_berlaku (id, material_id, jenis, unit_price, satuan, effective_from, created_at, reason, idempotency_key) values (gen_random_uuid(), $1::uuid, 'HARGA', 10, 'KG', now() - interval '1 day', now(), 'mundur lewat SQL', 'k-mundur-uji-1')`, w.mat.id), /tanpa_mundur_chk|check/i, "DB menolak harga biasa yang berlaku mundur");
 });
 
-test("H4. harga kedua + koreksi salah input: append-only (trigger DB), pemakaian yang sudah dibekukan TIDAK ditimpa diam-diam; penerapan khusus dua orang menyelaraskan dengan baris baru", async () => {
+test("H4. KOREKSI salah input historis = tindakan khusus: alasan ≥10, pratinjau SELURUH pemakaian terdampak, konfirmasi wajib, append-only (trigger DB); nilai beku lama TIDAK ditimpa; penerapan dua orang menyelaraskan", async () => {
   const w = await dunia(); const u = await w.mk();
-  const a = await ubah(w, { harga: 100, mulai: "2026-10-16T00:00:00Z" }); const b = await ubah(w, { harga: 1200, mulai: "2026-10-20T00:00:00Z", alasan: "Harga baru (ternyata salah ketik nol)" }); // salah ketik: seharusnya 120
+  const a = await ubah(w, { harga: 100, mulai: "2026-10-16T00:00:00Z" }); const b = await ubah(w, { harga: 1200, mulai: "2026-10-20T00:00:00Z", alasan: "Harga baru (ternyata salah ketik nol)" }); // seharusnya 120
   const pakai = await keluar(w.mat.id, u.id, 3, "2026-10-21T03:00:00Z", w.finA.user.id); assert.equal(Number((await opRows(pakai.id))[0].unitCost), 1200);
+  const retur = await testPrisma.$transaction((tx) => postStockMovement(tx, { materialId: w.mat.id, type: "RETURN", qty: 1, unitId: u.id, reason: "uji", note: "retur sisa", createdAt: T("2026-10-22T03:00:00Z"), createdById: w.finA.user.id })); assert.equal(Number((await opRows(retur.id))[0].unitCost), 1200, "retur memakai harga ISSUE asal");
   const f0 = await snap();
-  // pratinjau koreksi menunjukkan pemakaian yang sudah dibekukan dengan harga salah
-  const mk = { materialId: w.mat.id, hargaBaru: "120", satuan: "KG", berlakuMulai: "2026-10-20T00:00:00Z", alasan: "Koreksi salah ketik 1200 menjadi 120", koreksiId: b.id };
-  const pr = await pratinjauUbahHarga(testPrisma, mk); assert.equal(pr.jenis, "KOREKSI"); assert.equal(pr.terkoreksi.pemakaianSudahDibekukanDenganHargaIni, 1); assert.equal(pr.terkoreksi.nilai, 3600); assert.match(pr.terkoreksi.ket, /TIDAK diubah diam-diam/);
-  const kor = await simpanHarga(testPrisma, { ...mk, hashPratinjau: pr.hash }, { aktor: w.finA.user, kunci: kunci("kor") }); assert.equal(kor.jenis, "KOREKSI");
-  await assert.rejects(() => pratinjauUbahHarga(testPrisma, { ...mk, hargaBaru: "121" }), (e) => e.code === "SUDAH_DIKOREKSI", "satu baris hanya dikoreksi sekali; koreksi lagi = koreksi baris terbaru");
-  // baris salah tetap ada (append-only) tetapi ditandai DIGANTI_KOREKSI; harga berlaku sekarang = hasil koreksi
+  const mk = { materialId: w.mat.id, hargaBaru: "120", satuan: "KG", berlakuMulai: "2026-10-20T00:00:00Z", alasan: "Koreksi salah ketik 1200 menjadi 120 (nota 20 Okt)", koreksiId: b.id };
+  await assert.rejects(() => pratinjauUbahHarga(testPrisma, { ...mk, alasan: "salah" }), (e) => e.code === "ALASAN_WAJIB", "koreksi butuh alasan ≥10 karakter");
+  await assert.rejects(() => pratinjauUbahHarga(testPrisma, { ...mk, berlakuMulai: undefined }), (e) => e.code === "WAKTU_TIDAK_VALID", "koreksi wajib menyebut waktu baris yang dikoreksi");
+  const pr = await pratinjauUbahHarga(testPrisma, mk); assert.equal(pr.jenis, "KOREKSI"); const dk = pr.dampakKoreksi; assert.equal(dk.wajibKonfirmasi, true);
+  assert.equal(dk.jumlah, 2, "SELURUH pemakaian terdampak: ISSUE 21 Okt + retur yang mengikutinya"); assert.equal(dk.dibekukanDenganHargaLama, 2); assert.equal(dk.nilaiBekuTerdampak, 2400, "ISSUE 3×1200 − retur 1×1200");
+  assert.equal(dk.baris.find((x) => x.tipe === "ISSUE").hargaBerlakuSebelum, 1200); assert.equal(dk.baris.find((x) => x.tipe === "ISSUE").hargaBerlakuSesudah, 120); assert.ok(dk.baris.find((x) => x.tipe === "RETURN").ikutIssueAsal); assert.match(pr.terkoreksi.ket, /TIDAK diubah diam-diam/);
+  assert.deepEqual(await snap(), f0, "pratinjau baca-saja");
+  await assert.rejects(() => simpanHarga(testPrisma, { ...mk, hashPratinjau: pr.hash }, { aktor: w.finA.user, kunci: kunci("kor") }), (e) => e.code === "KONFIRMASI_DAMPAK_WAJIB");
+  const kor = await simpanHarga(testPrisma, { ...mk, hashPratinjau: pr.hash, konfirmasiDampak: true }, { aktor: w.finA.user, kunci: kunci("kor") }); assert.equal(kor.jenis, "KOREKSI"); assert.equal(kor.dampak.jumlah, 2); assert.equal(kor.dampak.dikonfirmasiOleh, w.finA.user.id);
+  await assert.rejects(() => pratinjauUbahHarga(testPrisma, { ...mk, hargaBaru: "121" }), (e) => e.code === "SUDAH_DIKOREKSI", "satu baris hanya dikoreksi sekali; koreksi lagi = koreksi baris terbarunya");
   const rw = await riwayatHarga(testPrisma, w.mat.id); assert.equal(rw.length, 3); assert.equal(rw.find((x) => x.id === b.id).status, "DIGANTI_KOREKSI"); assert.equal(rw.find((x) => x.id === b.id).diperbaikiOleh, kor.id); assert.equal(Number((await hargaBerlakuPada(testPrisma, w.mat.id, T("2026-10-22T00:00:00Z"))).harga), 120);
   await assert.rejects(() => testPrisma.$executeRawUnsafe(`update material_harga_berlaku set unit_price = 1 where id = $1::uuid`, b.id), /append-only/i); await assert.rejects(() => testPrisma.$executeRawUnsafe(`delete from material_harga_berlaku where id = $1::uuid`, b.id), /append-only/i);
   await assert.rejects(() => testPrisma.$executeRawUnsafe(`update stock_movement_biaya_operasional set unit_cost = 1 where movement_id = $1::uuid`, pakai.id), /append-only/i);
-  // pemakaian yang sudah dibekukan TIDAK berubah otomatis
-  assert.equal(Number((await opRows(pakai.id))[0].unitCost), 1200); assert.equal((await opRows(pakai.id)).length, 1);
-  // pemakaian BARU memakai harga koreksi
+  // nilai beku TIDAK berubah otomatis
+  assert.equal(Number((await opRows(pakai.id))[0].unitCost), 1200); assert.equal((await opRows(pakai.id)).length, 1); assert.equal((await opRows(retur.id)).length, 1);
   const pakai2 = await keluar(w.mat.id, u.id, 1, "2026-10-24T03:00:00Z", w.finA.user.id); assert.equal(Number((await opRows(pakai2.id))[0].unitCost), 120);
-  // penerapan khusus: SELARAS_ULANG, pengaju ≠ penyetuju, hash, klik ulang
-  const pp = await pratinjauPenerapan(testPrisma, { materialId: w.mat.id, groups: ["SELARAS_ULANG"] }); assert.equal(pp.tersedia.SELARAS_ULANG, 1); assert.equal(pp.penerapan.jumlah, 1); assert.equal(pp.penerapan.baris[0].nilaiSebelum, 3600); assert.equal(pp.penerapan.baris[0].nilaiBaru, 360);
+  // penerapan khusus: SELARAS_ULANG — ISSUE dulu; retur mengikuti ISSUE asal setelah ISSUE selaras
+  const pp = await pratinjauPenerapan(testPrisma, { materialId: w.mat.id, groups: ["SELARAS_ULANG"] }); assert.equal(pp.penerapan.jumlah, 1, "hanya ISSUE; retur menunggu ISSUE asal selaras"); assert.equal(pp.penerapan.baris[0].nilaiSebelum, 3600); assert.equal(pp.penerapan.baris[0].nilaiBaru, 360);
   const aj = await ajukanPenerapan(testPrisma, { materialId: w.mat.id, groups: ["SELARAS_ULANG"], hashPratinjau: pp.hash, alasan: "Perbaiki pemakaian 21 Okt yang memakai harga salah 1200" }, { aktor: w.finA.user, kunci: kunci("app") });
   assert.equal((await opRows(pakai.id)).length, 1, "mengajukan tidak mengubah apa pun");
   await assert.rejects(() => setujuiPenerapan(testPrisma, { id: aj.id, hashPratinjau: pp.hash, aktor: w.finA.user }), (e) => e.code === "PEMOHON_SAMA" && e.statusCode === 403);
   const rs = await Promise.allSettled([1, 2, 3].map(() => setujuiPenerapan(testPrisma, { id: aj.id, hashPratinjau: pp.hash, aktor: w.finB.user })));
   assert.ok(rs.every((x) => x.status === "fulfilled") && rs.filter((x) => x.value.ulang === false).length === 1);
   const sesudah = await opRows(pakai.id); assert.equal(sesudah.length, 2, "baris beku asli TETAP + baris penerapan baru"); assert.equal(Number(sesudah[0].unitCost), 1200); assert.equal(Number(sesudah[1].unitCost), 120); assert.equal(sesudah[1].sumber, "PENERAPAN_DISETUJUI"); assert.equal(sesudah[1].applicationId, aj.id);
-  assert.equal((await pratinjauPenerapan(testPrisma, { materialId: w.mat.id, groups: ["SELARAS_ULANG"] })).penerapan.jumlah, 0, "sudah selaras");
-  const f1 = await snap(); assert.equal(f1.jurnal, f0.jurnal + 0); assert.equal(f1.baris, f0.baris); assert.equal(f1.kor, f0.kor); assert.equal(f1.valFinance.length >= 0, true); assert.ok(a.id);
-  const j = await hppOperasionalUnit(testPrisma, u.id); assert.equal(j.ringkasan.hppOperasionalDibekukan, 360 + 120, "nilai efektif = penerapan terbaru");
+  const pp2 = await pratinjauPenerapan(testPrisma, { materialId: w.mat.id, groups: ["SELARAS_ULANG"] }); assert.equal(pp2.penerapan.jumlah, 1, "sekarang retur mengikuti harga ISSUE asal yang sudah diselaraskan (120)"); assert.equal(pp2.penerapan.baris[0].tipe, "RETURN"); assert.equal(pp2.penerapan.baris[0].harga, 120); assert.equal(pp2.penerapan.baris[0].basis, "HARGA_ISSUE_ASAL");
+  const f1 = await snap(); assert.equal(f1.jurnal, f0.jurnal); assert.equal(f1.baris, f0.baris); assert.equal(f1.kor, f0.kor); assert.ok(a.id);
 });
 
 test("H5. pemakaian lama tanpa harga: tidak diberi harga otomatis; hanya lewat penerapan khusus dua orang; sebelum harga pertama = gap (tanpa harga rekaan); stok/ISSUE/jurnal/GL/valuasi Finance tidak berubah", async () => {
@@ -153,13 +166,14 @@ test("H6. pratinjau order yang belum memakai bahan: harga terbaru ditampilkan (b
 });
 
 test("H7. HTTP + izin + pemisahan angka: Gudang/Sales ditolak; Finance membaca/menyimpan; jejak bahan memuat dua angka TERPISAH berlabel (operasional vs Finance); penyetuju ≠ pengaju", async () => {
-  const w = await dunia(); const u = await w.mk(); const B = "/api/finance/harga-berlaku";
+  const w = await dunia(); const u = await w.mk(); const B = "/api/finance/harga-berlaku"; await seedHistoris(w, { harga: 100, mulai: "2026-10-16T00:00:00Z", alasan: "Harga awal operasional" });
   assert.equal((await w.g.get(`${B}/bahan/${w.mat.id}`)).status, 403); assert.equal((await w.s.get(`${B}/bahan/${w.mat.id}`)).status, 403); assert.equal((await w.g.post(`${B}/pratinjau`, { materialId: w.mat.id })).status, 403); assert.equal((await w.a.get(`${B}/bahan/bukan-uuid`)).status, 404);
-  const m = { materialId: w.mat.id, hargaBaru: "100", satuan: "KG", berlakuMulai: "2026-10-16T00:00:00Z", alasan: "Harga awal operasional" };
-  assert.equal((await w.a.post(`${B}/pratinjau`, { ...m, satuan: "PAK" })).body.code, "SATUAN_BEDA"); const pr = await w.a.post(`${B}/pratinjau`, m); assert.equal(pr.status, 200); assert.ok(!("_simpan" in pr.body)); assert.equal(pr.body.labelBukti, "BELUM_DIDUKUNG_BUKTI");
-  const k = kunci("http"); const s1 = await w.a.post(B, { ...m, hashPratinjau: pr.body.hash }, { "Idempotency-Key": k }); assert.equal(s1.status, 201, JSON.stringify(s1.body)); const s2 = await w.a.post(B, { ...m, hashPratinjau: pr.body.hash }, { "Idempotency-Key": k }); assert.ok([200, 201].includes(s2.status)); assert.equal(s2.body.id, s1.body.id, "klik ganda = baris yang sama"); assert.equal(await testPrisma.materialHargaBerlaku.count(), 1); assert.equal((await w.g.post(B, { ...m, hashPratinjau: pr.body.hash }, { "Idempotency-Key": kunci() })).status, 403);
+  const m = { materialId: w.mat.id, hargaBaru: "110", satuan: "KG", alasan: "Kenaikan harga kerja saat disimpan" };
+  assert.equal((await w.a.post(`${B}/pratinjau`, { ...m, satuan: "PAK" })).body.code, "SATUAN_BEDA"); const pr = await w.a.post(`${B}/pratinjau`, m); assert.equal(pr.status, 200); assert.ok(!("_simpan" in pr.body)); assert.equal(pr.body.labelBukti, "BELUM_DIDUKUNG_BUKTI"); assert.equal(pr.body.saatDisimpan, true); assert.equal(pr.body.berlakuMulai, null);
+  assert.equal((await w.a.post(`${B}/pratinjau`, { ...m, berlakuMulai: "2026-10-01T00:00:00Z" })).body.code, "WAKTU_MUNDUR"); assert.equal((await w.a.post(`${B}/pratinjau`, { ...m, berlakuMulai: "2026-10-01T00:00:00Z" })).status, 422);
+  const k = kunci("http"); const s1 = await w.a.post(B, { ...m, hashPratinjau: pr.body.hash }, { "Idempotency-Key": k }); assert.equal(s1.status, 201, JSON.stringify(s1.body)); const s2 = await w.a.post(B, { ...m, hashPratinjau: pr.body.hash }, { "Idempotency-Key": k }); assert.ok([200, 201].includes(s2.status)); assert.equal(s2.body.id, s1.body.id, "klik ganda = baris yang sama"); assert.equal(await testPrisma.materialHargaBerlaku.count(), 2); assert.equal((await w.g.post(B, { ...m, hashPratinjau: pr.body.hash }, { "Idempotency-Key": kunci() })).status, 403);
   assert.equal((await w.a.post(B, { ...m, hashPratinjau: pr.body.hash })).status, 428, "tanpa Idempotency-Key ditolak");
-  const ring = await w.a.get(`${B}/bahan/${w.mat.id}`); assert.equal(ring.body.hargaBerlaku.harga, 100); assert.equal(ring.body.bolehUbah, true); assert.match(ring.body.labelHarga, /bukan nilai buku dan bukan HPP final Finance/); assert.equal((await w.a.get(`${B}/bahan/${w.mat.id}/riwayat`)).body.riwayat.length, 1);
+  const ring = await w.a.get(`${B}/bahan/${w.mat.id}`); assert.equal(ring.body.hargaBerlaku.harga, 110); assert.equal(ring.body.bolehUbah, true); assert.equal(ring.body.bolehSetujui, true); assert.match(ring.body.izinTeks.ubah, /Finance dan Owner/); assert.match(ring.body.izinTeks.admin, /keputusan Owner/); assert.match(ring.body.labelHarga, /bukan nilai buku dan bukan HPP final Finance/); assert.equal((await w.a.get(`${B}/bahan/${w.mat.id}/riwayat`)).body.riwayat.length, 2);
   const pakai = await keluar(w.mat.id, u.id, 2, "2026-10-18T03:00:00Z", w.finA.user.id); assert.ok(pakai.id);
   const jejak = await w.a.get(`/api/units/${u.id}/jejak-bahan`); assert.equal(jejak.status, 200); assert.ok(jejak.body.hppOperasional && jejak.body.ringkasan); assert.equal(jejak.body.hppOperasional.ringkasan.hppOperasionalDibekukan, 200); assert.equal(jejak.body.ringkasan.biayaPersediaan.nilai, null, "nilai persediaan Finance TIDAK ikut harga berlaku (tanpa harga perolehan)");
   assert.ok(jejak.body.hppOperasional.peringatan.includes("BUKAN nilai persediaan/jurnal Finance"));
@@ -185,4 +199,54 @@ test("H8. export Excel: sheet 'HPP Operasional' TERPISAH berlabel BUKAN nilai pe
   const tot = op.find((r) => String(r[0] ?? "").startsWith("TOTAL")); assert.ok(tot); assert.equal(Number(tot.find((x) => typeof x === "number")), 200, "hanya yang dibekukan");
   assert.ok(op.some((r) => String(r.join("|")).includes("Belum dibekukan (pratinjau)")), "pemakaian lama tanpa baris biaya operasional ditandai belum dibekukan");
   const finance = baris("Rincian Pergerakan"); assert.ok(!finance.some((r) => String(r.join("|")).includes("HPP operasional")), "sheet Finance tidak memuat angka operasional"); assert.ok(lama.id);
+});
+
+const gerak = (w, type, qty, unitId, { at = null, correctsMovementId = null, reason = "uji" } = {}) => testPrisma.$transaction((tx) => postStockMovement(tx, { materialId: w.mat.id, type, qty, unitId, reason, note: `${type} uji`, createdById: w.finA.user.id, ...(at ? { createdAt: T(at) } : {}), ...(correctsMovementId ? { correctsMovementId } : {}) }));
+
+test("H9. aturan 1: perubahan harga biasa TIDAK boleh mundur (service + HTTP 422 + CHECK DB); 'saat disimpan' berlaku mulai waktu simpan, bukan waktu order/pemakaian lama; terjadwal berlaku ke depan", async () => {
+  const w = await dunia(); const u = await w.mk(); await seedHistoris(w, { harga: 100, mulai: "2026-10-16T00:00:00Z", alasan: "Harga awal operasional" });
+  const lama = await keluar(w.mat.id, u.id, 2, "2026-10-18T03:00:00Z", w.finA.user.id); assert.equal(Number((await opRows(lama.id))[0].unitCost), 100);
+  const m = { materialId: w.mat.id, hargaBaru: "130", satuan: "KG", alasan: "Kenaikan harga kerja" };
+  for (const mundur of ["2026-10-17T00:00:00Z", new Date(Date.now() - 5_000).toISOString()]) await assert.rejects(() => pratinjauUbahHarga(testPrisma, { ...m, berlakuMulai: mundur }), (e) => e.code === "WAKTU_MUNDUR" && e.statusCode === 422 && /Koreksi/.test(e.message));
+  assert.equal((await w.a.post("/api/finance/harga-berlaku/pratinjau", { ...m, berlakuMulai: "2026-10-17T00:00:00Z" })).status, 422);
+  const sebelum = Date.now(); const r = await ubah(w, { harga: 130, alasan: "Kenaikan harga kerja saat disimpan" }); const sesudah = Date.now(); assert.equal(r.hargaLama, 100);
+  const row = await testPrisma.materialHargaBerlaku.findUnique({ where: { id: r.id } }); assert.ok(row.effectiveFrom.getTime() >= sebelum - 1 && row.effectiveFrom.getTime() <= sesudah + 1, "berlaku mulai saat disimpan"); assert.equal(row.effectiveFrom.getTime(), row.createdAt.getTime(), "waktu berlaku = waktu simpan (tidak mundur, tidak maju)");
+  const baru = await gerak(w, "ISSUE", -1, u.id); assert.equal(Number((await opRows(baru.id))[0].unitCost), 130, "pemakaian sesudah disimpan = harga baru");
+  const susulan = await keluar(w.mat.id, u.id, 1, "2026-10-20T03:00:00Z", w.finA.user.id); assert.equal(Number((await opRows(susulan.id))[0].unitCost), 100, "pemakaian bertanggal sebelum waktu simpan tetap memakai harga yang berlaku saat itu");
+  assert.equal(Number((await opRows(lama.id))[0].unitCost), 100, "pemakaian lama tidak berubah");
+  const depan = new Date(Date.now() + 3 * 86400_000).toISOString(); const j = await ubah(w, { harga: 150, mulai: depan, alasan: "Naik terjadwal 3 hari lagi" }); const rj = await testPrisma.materialHargaBerlaku.findUnique({ where: { id: j.id } }); assert.ok(rj.effectiveFrom.getTime() > rj.createdAt.getTime(), "terjadwal ke depan");
+  assert.equal(Number((await hargaBerlakuPada(testPrisma, w.mat.id, new Date())).harga), 130, "sekarang masih 130"); assert.equal(Number((await hargaBerlakuPada(testPrisma, w.mat.id, new Date(Date.now() + 4 * 86400_000))).harga), 150);
+});
+
+test("H10. aturan 2: RETUR tertaut ISSUE memakai harga operasional ISSUE ASAL (harga berubah di antara ISSUE dan retur); WASTE memakai harga saat waste dicatat + sumber tampil; retur ISSUE tanpa harga tetap tanpa harga", async () => {
+  const w = await dunia(); const u1 = await w.mk(); const u2 = await w.mk(); const u3 = await w.mk(); const u4 = await w.mk();
+  const noPrice = await keluar(w.mat.id, u3.id, 2, "2026-10-05T03:00:00Z", w.finA.user.id); assert.equal((await opRows(noPrice.id))[0].status, "TANPA_HARGA");
+  await seedHistoris(w, { harga: 100, mulai: "2026-10-16T00:00:00Z", alasan: "Harga awal operasional" });
+  const issue1 = await keluar(w.mat.id, u1.id, 4, "2026-10-18T03:00:00Z", w.finA.user.id); assert.equal(Number((await opRows(issue1.id))[0].unitCost), 100);
+  await keluar(w.mat.id, u2.id, 2, "2026-10-18T04:00:00Z", w.finA.user.id);
+  await ubah(w, { harga: 150, alasan: "Kenaikan harga kerja — SESUDAH ISSUE, SEBELUM retur" });
+  const issueU2b = await gerak(w, "ISSUE", -2, u2.id); assert.equal(Number((await opRows(issueU2b.id))[0].unitCost), 150);
+  const r1 = await gerak(w, "RETURN", 1, u1.id); const o1 = (await opRows(r1.id))[0]; assert.equal(Number(o1.unitCost), 100, "harga ISSUE asal, BUKAN 150 yang berlaku saat retur"); assert.equal(Number(o1.value), -100); assert.equal(o1.basisHarga, "HARGA_ISSUE_ASAL"); assert.equal(o1.basisDetail[0].movementId, issue1.id);
+  // retur bertaut eksplisit (pembalik koreksi pemakaian: correctsMovementId) — diuji pada fungsi harga langsung karena baris ledger-nya butuh dokumen koreksi Gudang
+  const hb = await hargaUntukPergerakan(testPrisma, { type: "RETURN", materialId: w.mat.id, unitId: u4.id, createdAt: new Date(), correctsMovementId: issue1.id }, penyelesaiHargaBerlaku(testPrisma)); assert.equal(Number(hb.harga), 100); assert.equal(hb.basis, "HARGA_ISSUE_ASAL");
+  const r2 = await gerak(w, "RETURN", 1, u2.id); const o2 = (await opRows(r2.id))[0]; assert.equal(Number(o2.unitCost), 125, "rata-rata tertimbang ISSUE asal: 2@100 + 2@150"); assert.equal(o2.basisHarga, "HARGA_ISSUE_ASAL"); assert.equal(o2.basisDetail.length, 2);
+  const r3 = await gerak(w, "RETURN", 1, u3.id); const o3 = (await opRows(r3.id))[0]; assert.equal(o3.status, "TANPA_HARGA", "ISSUE asal tanpa harga → retur tanpa harga, bukan harga yang sedang berlaku"); assert.equal(o3.basisHarga, "HARGA_ISSUE_ASAL");
+  const pp = await pratinjauPenerapan(testPrisma, { materialId: w.mat.id, groups: ["TANPA_HARGA_BERLAKU"] }); const gapRetur = pp.gap.baris.find((x) => x.movementId === r3.id); assert.equal(gapRetur.gap, "ISSUE_ASAL_BELUM_BERHARGA"); assert.match(gapRetur.ket, /beri harga ISSUE asal dulu/);
+  const r4 = await gerak(w, "RETURN", 1, u4.id); const o4 = (await opRows(r4.id))[0]; assert.equal(Number(o4.unitCost), 150); assert.equal(o4.basisHarga, "WAKTU_RETUR_TANPA_ISSUE", "tanpa ISSUE asal: harga saat retur, ditandai");
+  const wst = await gerak(w, "WASTE", -1, u1.id, { reason: "potong salah" }); const ow = (await opRows(wst.id))[0]; assert.equal(Number(ow.unitCost), 150); assert.equal(Number(ow.value), 150); assert.equal(ow.basisHarga, "WAKTU_WASTE");
+  const hpp = await hppOperasionalUnit(testPrisma, u1.id); const bw = hpp.baris.find((x) => x.tipe === "WASTE"); assert.equal(bw.basis, "WAKTU_WASTE"); assert.match(bw.basisTeks, /saat waste dicatat/); const br = hpp.baris.find((x) => x.movementId === r1.id); assert.match(br.basisTeks, /ISSUE asal \(bukan harga saat retur\)/);
+  assert.equal(hpp.ringkasan.hppOperasionalDibekukan, 400 - 100, "ISSUE 4×100 − retur 1×100 (waste terpisah)"); assert.equal(hpp.ringkasan.susutOperasional, 150);
+  const aj = await pratinjauPenerapan(testPrisma, { materialId: w.mat.id, groups: ["TANPA_HARGA_BERLAKU"] }); assert.ok(aj.penerapan.baris.every((x) => x.tipe !== "RETURN"), "retur tidak ikut sebelum ISSUE asal berharga");
+});
+
+test("H11. izin eksplisit: ubah/koreksi/ajukan = finance:harga_berlaku:edit; setujui = :approve; ADMIN murni hanya melihat; FINANCE dan OWNER boleh; server mengirim bolehUbah/bolehSetujui + teks izin untuk UI", async () => {
+  const w = await dunia(); const admin = await createTestUser({ roles: ["ADMIN"] }); const owner = await createTestUser({ roles: ["OWNER"] }); const ca = makeClient(server.baseUrl, admin.token); const co = makeClient(server.baseUrl, owner.token); const B = "/api/finance/harga-berlaku";
+  const m = { materialId: w.mat.id, hargaBaru: "100", satuan: "KG", alasan: "Harga awal operasional" };
+  const ringA = await ca.get(`${B}/bahan/${w.mat.id}`); assert.equal(ringA.status, 200); assert.equal(ringA.body.bolehUbah, false); assert.equal(ringA.body.bolehSetujui, false); assert.match(ringA.body.izinTeks.admin, /hanya dapat melihat/);
+  const pr = await ca.post(`${B}/pratinjau`, m); assert.equal(pr.status, 200, "pratinjau = baca");
+  assert.equal((await ca.post(B, { ...m, hashPratinjau: pr.body.hash }, { "Idempotency-Key": kunci("adm") })).status, 403, "ADMIN murni tidak boleh menyimpan"); assert.equal((await ca.post(`${B}/penerapan`, { materialId: w.mat.id, hashPratinjau: "x", alasan: "uji admin" }, { "Idempotency-Key": kunci("adm") })).status, 403);
+  assert.equal((await ca.post(`${B}/penerapan/00000000-0000-0000-0000-000000000000/setujui`, { hashPratinjau: "x" })).status, 403); assert.equal(await testPrisma.materialHargaBerlaku.count(), 0);
+  const ok = await co.post(B, { ...m, hashPratinjau: pr.body.hash }, { "Idempotency-Key": kunci("own") }); assert.equal(ok.status, 201, JSON.stringify(ok.body));
+  const ringO = await co.get(`${B}/bahan/${w.mat.id}`); assert.equal(ringO.body.bolehUbah, true); assert.equal(ringO.body.bolehSetujui, true);
+  const pr2 = await w.a.post(`${B}/pratinjau`, { ...m, hargaBaru: "105" }); assert.equal((await w.a.post(B, { ...m, hargaBaru: "105", hashPratinjau: pr2.body.hash }, { "Idempotency-Key": kunci("fin") })).status, 201, "FINANCE boleh");
 });

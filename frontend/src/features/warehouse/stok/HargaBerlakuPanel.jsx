@@ -50,6 +50,8 @@ export default function HargaBerlakuPanel({ materialId }) {
         <p className="mt-1.5 text-[11px] text-ink3" data-testid="pembanding">Pembanding (bukan sumber harga):{d.pembanding.biayaPerolehanGRTerakhir ? ` biaya perolehan GR terakhir ${rp(d.pembanding.biayaPerolehanGRTerakhir.harga)}` : ""}{d.pembanding.referensiAgustus ? ` · referensi ${d.pembanding.referensiAgustus.bulan} ${rp(d.pembanding.referensiAgustus.harga)}` : ""}.</p>
       )}
 
+      <p className="mt-1.5 text-[11px] leading-relaxed text-ink3" data-testid="izin-teks">{d.bolehUbah ? `${d.izinTeks.ubah} ${TEKS.aturanTanpaMundur}` : TEKS.izinLihat}</p>
+
       <dl className="mt-2 grid grid-cols-1 gap-1 text-[12px] text-ink2" data-testid="dampak-ringkas">
         <div className="flex justify-between gap-3"><dt>Order belum memakai bahan ini</dt><dd className="font-semibold text-ink tabular-nums" data-testid="jumlah-order-terdampak">{dm.akanMemakai.order} order · {dm.akanMemakai.unit} unit</dd></div>
         <div className="flex justify-between gap-3"><dt>Pemakaian sudah dibekukan sejak harga berlaku</dt><dd className="font-semibold text-ink tabular-nums">{dm.sudahDibekukanSejakMulai.pemakaian} · {rpNilai(dm.sudahDibekukanSejakMulai.nilai)}</dd></div>
@@ -61,7 +63,7 @@ export default function HargaBerlakuPanel({ materialId }) {
       <div className="mt-3 flex flex-wrap gap-2">
         {d.bolehUbah && <Button size="sm" onClick={() => setModal({ jenis: "ubah" })} data-testid="tombol-ubah-harga"><Pencil size={13} /> Ubah harga</Button>}
         <Button size="sm" variant="secondary" onClick={() => setBukaRiwayat((v) => !v)} data-testid="tombol-riwayat-harga"><History size={13} /> Riwayat ({d.jumlahRiwayat})</Button>
-        {(dm.belumDibekukan.pemakaian > 0 || d.penerapanAktif) && <Button size="sm" variant="secondary" onClick={() => setModal({ jenis: "penerapan" })} data-testid="tombol-penerapan">Beri harga ke pemakaian lama{d.penerapanAktif ? " · ada pengajuan" : ""}</Button>}
+        {(dm.belumDibekukan.pemakaian > 0 || d.penerapanAktif) && (d.bolehUbah || d.bolehSetujui || d.penerapanAktif) && <Button size="sm" variant="secondary" onClick={() => setModal({ jenis: "penerapan" })} data-testid="tombol-penerapan">Beri harga ke pemakaian lama{d.penerapanAktif ? " · ada pengajuan" : ""}</Button>}
       </div>
 
       {bukaRiwayat && (
@@ -76,7 +78,7 @@ export default function HargaBerlakuPanel({ materialId }) {
                   {r.jenis === "KOREKSI" && <Badge variant="orange">Koreksi</Badge>}<Badge variant={st.varian}>{st.teks}</Badge><Badge variant={varianBukti(r.labelBukti)}>{r.teksLabelBukti}</Badge></div>
                 <div className="mt-0.5 text-ink3">Mulai {tanggalJam(r.berlakuMulai)} · {r.hargaLama != null ? `harga lama ${rp(r.hargaLama)} · ` : ""}dicatat {tanggalJam(r.dibuatPada)} oleh {r.dibuatOlehNama ?? "—"}</div>
                 <div className="text-ink2">Alasan: {r.alasan}{r.catatanBukti ? ` · bukti: ${r.catatanBukti}` : ""}</div>
-                {d.bolehUbah && r.status !== "DIGANTI_KOREKSI" && <button type="button" className="mt-1 text-[11.5px] font-medium text-accent hover:underline" onClick={() => setModal({ jenis: "koreksi", baris: r })} data-testid="koreksi-baris">Koreksi salah input</button>}
+                {d.bolehUbah && r.status !== "DIGANTI_KOREKSI" && <button type="button" className="mt-1 text-[11.5px] font-medium text-accent hover:underline" onClick={() => setModal({ jenis: "koreksi", baris: r })} data-testid="koreksi-baris">Koreksi salah input historis (tindakan khusus)</button>}
               </li>
             );
           })}
