@@ -36,12 +36,16 @@ export async function pratinjauPenetapan(db, { materialId, groups } = {}, { leng
     select: { id: true, type: true, qty: true, createdAt: true, unitId: true, note: true, unit: { select: { unitCode: true, order: { select: { orderNumber: true } } } }, valuation: { select: { status: true, value: true, unitCostBasis: true } },
       valuationCorrections: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1, select: { id: true, settlementId: true, unitCostBasis: true, value: true } } },
   });
-  const terapkan = []; const dikecualikan = []; const tanpaSumber = []; const info = { dinilaiBekuBedaDariResmi: [], sudahSelaras: 0 }; const hitungKel = { DIPOSTING_TANPA_HARGA: 0, ISSUE_LAMA: 0, SELARAS_ULANG: 0 };
+  const terapkan = []; const dikecualikan = []; const tanpaSumber = []; const info = { dinilaiBekuBedaDariResmi: [], koreksiManualBedaDariResmi: [], sudahSelaras: 0 }; const hitungKel = { DIPOSTING_TANPA_HARGA: 0, ISSUE_LAMA: 0, SELARAS_ULANG: 0 };
   for (const p of pergerakan) {
     const kor = p.valuationCorrections[0] ?? null; const qty = D(p.qty);
     const dasar = { movementId: p.id, tanggal: wibTgl(p.createdAt), order: p.unit?.order?.orderNumber ?? null, unit: p.unit?.unitCode ?? null, unitId: p.unitId, tipe: p.type, qty: Number(qty), satuan: bahan.unit, historis: String(p.note ?? "").startsWith("Impor pemakaian historis") };
-    if (kor && !kor.settlementId) { dikecualikan.push({ ...dasar, alasan: "SUDAH_DIKOREKSI_MANUAL" }); continue; }
     const h = await selesai(bahan.id, p.createdAt);
+    if (kor && !kor.settlementId) { // koreksi harga manual yang dibuat SAAT belum ada sumber resmi: tidak diganti diam-diam; selisih terhadap nilai resmi dilaporkan supaya Finance memutuskan (dua nilai untuk stok yang sama)
+      dikecualikan.push({ ...dasar, alasan: "SUDAH_DIKOREKSI_MANUAL", nilaiSekarang: Number(kor.value) });
+      if (h && D(kor.unitCostBasis).minus(h.harga).abs().greaterThan("0.005")) info.koreksiManualBedaDariResmi.push({ ...dasar, nilaiManual: Number(kor.value), hargaManual: Number(kor.unitCostBasis), hargaResmi: Number(h.harga.toDecimalPlaces(4)) });
+      continue;
+    }
     if (kor) { // sudah ditetapkan: selaras atau berubah?
       if (!h) { dikecualikan.push({ ...dasar, alasan: "SUMBER_RESMI_HILANG_PERLU_TINJAUAN", nilaiSekarang: Number(kor.value) }); continue; }
       if (D(kor.unitCostBasis).minus(h.harga).abs().lessThan("0.00000001")) { info.sudahSelaras++; continue; }
@@ -65,7 +69,7 @@ export async function pratinjauPenetapan(db, { materialId, groups } = {}, { leng
     penerapan: { jumlah: terapkan.length, nilai: Number(toMoney(total)), baris: terapkan.map(({ h, harga, ...x }) => ({ ...x, harga: Number(harga.toDecimalPlaces(8)), tentatif: h.tentatif, dasar: { pembuka: h.sumber.pembuka, gr: h.grIds } })) },
     tanpaSumberResmi: { jumlah: tanpaSumber.length, baris: tanpaSumber, catatan: "Belum ada sumber resmi (Persediaan Awal berstatus DIPERIKSA/DIPOSTING atau penerimaan berharga) pada tanggal pemakaian — tetap TANPA_HARGA, bukan Rp0." },
     dikecualikan: { jumlah: dikecualikan.length, baris: dikecualikan },
-    informasi: { dinilaiBekuBedaDariResmi: info.dinilaiBekuBedaDariResmi, catatan: "Nilai beku DINILAI tidak pernah diganti otomatis; bila berbeda dari nilai resmi hanya dilaporkan untuk keputusan Finance." },
+    informasi: { dinilaiBekuBedaDariResmi: info.dinilaiBekuBedaDariResmi, koreksiManualBedaDariResmi: info.koreksiManualBedaDariResmi, catatan: "Nilai beku DINILAI dan koreksi harga manual lama tidak pernah diganti otomatis; bila berbeda dari nilai resmi hanya dilaporkan untuk keputusan Finance." },
   };
   hasil.hash = crypto.createHash("sha256").update(JSON.stringify({ b: bahan.id, k: kelompok, rows: terapkan.map((x) => [x.movementId, x.harga.toDecimalPlaces(8).toString(), x.nilaiBaru]) })).digest("hex");
   hasil._terapkan = terapkan; hasil._kelompok = kelompok;
@@ -95,18 +99,21 @@ export async function pratinjauPenetapan(db, { materialId, groups } = {}, { leng
 
   // ── kelompok 3: catatan siap/tertahan yang BELUM menjadi ISSUE — PERKIRAAN saja ──
   const rencana = await rencanakanPosting(db); const siap = rencana.transaksi.filter((t) => t.materialId === bahan.id);
-  const perOrder3 = new Map(); let adaTanpa = 0;
-  for (const t of siap) { const h = await selesai(bahan.id, t.usedAt); const o = perOrder3.get(t.orderNumber) ?? { order: t.orderNumber, siap: 0, perkiraan: 0, tertahan: 0, tanpaSumber: 0 }; o.siap++; if (h) o.perkiraan = Number(toMoney(D(o.perkiraan).plus(nilaiDari(-Math.abs(t.qty), h.harga)))); else { o.tanpaSumber++; adaTanpa++; } perOrder3.set(t.orderNumber, o); }
+  const perOrder3 = new Map(); let adaTanpa = 0; let sudahAdaIssueLama = 0;
+  for (const t of siap) { const h = await selesai(bahan.id, t.usedAt); const o = perOrder3.get(t.orderNumber) ?? { order: t.orderNumber, siap: 0, perkiraan: 0, tertahan: 0, sudahAdaIssueLama: 0, tanpaSumber: 0 }; o.siap++; if (h) o.perkiraan = Number(toMoney(D(o.perkiraan).plus(nilaiDari(-Math.abs(t.qty), h.harga)))); else { o.tanpaSumber++; adaTanpa++; } perOrder3.set(t.orderNumber, o); }
   const notes = await db.unitUsageNote.findMany({ where: { materialId: bahan.id, origin: "EXCEL", state: "PERLU_DICEK" }, select: { id: true, origin: true, state: true, flags: true, qty: true, uom: true, usedAt: true, orderNumber: true } });
   const efektif = (await terapkanKeadaanEfektif(db, notes)).filter((n) => n.state === "PERLU_DICEK"); const sebab = new Map(); let tidakDiperkirakan = 0;
   for (const n of efektif) {
     const blok = (n.flags ?? []).find((f) => f.tingkat === "BLOK")?.kode ?? "(tanpa penanda)"; sebab.set(blok, (sebab.get(blok) ?? 0) + 1);
-    const o = perOrder3.get(n.orderNumber) ?? { order: n.orderNumber, siap: 0, perkiraan: 0, tertahan: 0, tanpaSumber: 0 };
-    o.tertahan++; const bisa = n.qty != null && Number(n.qty) > 0 && n.usedAt && String(n.uom ?? "").trim().toUpperCase() === String(bahan.unit).toUpperCase();
+    const o = perOrder3.get(n.orderNumber) ?? { order: n.orderNumber, siap: 0, perkiraan: 0, tertahan: 0, sudahAdaIssueLama: 0, tanpaSumber: 0 };
+    o.tertahan++;
+    // catatan yang berpasangan dengan ISSUE lama (jumlah/satuan beda) BUKAN pemakaian tambahan: ISSUE-nya sudah ada dan dinilai di kelompok 1/2 — tidak diperkirakan lagi agar tidak terhitung dua kali
+    if ((n.flags ?? []).some((f) => f.kode === "ISSUE_LAMA_BERBEDA" || f.kode === "ISSUE_LAMA_SATUAN_BEDA")) { o.sudahAdaIssueLama++; sudahAdaIssueLama++; perOrder3.set(n.orderNumber, o); continue; }
+    const bisa = n.qty != null && Number(n.qty) > 0 && n.usedAt && String(n.uom ?? "").trim().toUpperCase() === String(bahan.unit).toUpperCase();
     if (bisa) { const h = await selesai(bahan.id, n.usedAt); if (h) o.perkiraan = Number(toMoney(D(o.perkiraan).plus(nilaiDari(-Math.abs(Number(n.qty)), h.harga)))); else o.tanpaSumber++; } else tidakDiperkirakan++;
     perOrder3.set(n.orderNumber, o);
   }
-  hasil.kelompok3 = { judul: KELOMPOK_3, bukanHppResmi: true, transaksiSiap: siap.length, catatanTertahan: efektif.length, tertahanPerSebab: Object.fromEntries(sebab), tidakDapatDiperkirakan: tidakDiperkirakan, tanpaSumber: adaTanpa,
+  hasil.kelompok3 = { judul: KELOMPOK_3, bukanHppResmi: true, transaksiSiap: siap.length, catatanTertahan: efektif.length, tertahanPerSebab: Object.fromEntries(sebab), tidakDapatDiperkirakan: tidakDiperkirakan, sudahAdaIssueLama, tanpaSumber: adaTanpa,
     perkiraanTotal: Number(toMoney([...perOrder3.values()].reduce((a, o) => a.plus(o.perkiraan), D(0)))), perOrder: [...perOrder3.values()].sort((a, b) => String(a.order).localeCompare(String(b.order))),
     catatan: "PERKIRAAN dampak saja. Bukan HPP resmi, tidak diterapkan, tidak mengubah catatan, tidak membuka blokir (satuan, katalog, saldo, GR…), dan tidak otomatis ikut saat posting — transaksi yang diposting tetap dibekukan menurut aturan posting dan baru bisa ditetapkan lewat pratinjau ini sesudah menjadi ISSUE." };
   return hasil;

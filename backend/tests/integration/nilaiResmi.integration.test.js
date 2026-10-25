@@ -183,3 +183,16 @@ test("N9. daftar bahan tanpa harga + HTTP: kelompok 1/2/3 terpisah, sumber resmi
   const f1 = await snap(); assert.equal(f1.stok, f0.stok); assert.equal(f1.saldo, f0.saldo); assert.equal(f1.issue, f0.issue); assert.equal(f1.beku, f0.beku); assert.equal(f1.jurnal, f0.jurnal); assert.equal(f1.catatan, f0.catatan);
   assert.equal((await w.a.get(`${B}/bukan-uuid`)).status, 404);
 });
+
+test("N10. celah sisa: koreksi harga manual yang dibuat SAAT belum ada sumber resmi tidak diganti diam-diam; setelah Persediaan Awal resmi ada, selisihnya DILAPORKAN (dua nilai untuk stok yang sama terlihat, bukan tersembunyi)", async () => {
+  const w = await dunia();
+  const man = await koreksiValuasiPergerakan(testPrisma, { movementId: w.m.p.id, hargaBaru: 25000, alasan: "harga manual sebelum ada sumber resmi", kunci: kunci("man"), aktor: w.finA.user });
+  assert.equal(man.koreksi.nilaiBaru, 100000, "jalur lama hanya terbuka bila TIDAK ada sumber resmi");
+  await psa(w, rowsPSA(w, 6000, 24000)); const f0 = await snap();
+  const p = await pratinjauPenetapan(testPrisma, { materialId: w.pe.id });
+  assert.equal(p.penerapan.jumlah, 0, "nilai manual tidak ditimpa");
+  assert.equal(p.dikecualikan.baris[0].alasan, "SUDAH_DIKOREKSI_MANUAL"); assert.equal(p.dikecualikan.baris[0].nilaiSekarang, 100000);
+  assert.equal(p.informasi.koreksiManualBedaDariResmi.length, 1); assert.equal(p.informasi.koreksiManualBedaDariResmi[0].hargaManual, 25000); assert.equal(p.informasi.koreksiManualBedaDariResmi[0].hargaResmi, 24000); assert.equal(p.informasi.koreksiManualBedaDariResmi[0].nilaiManual, 100000);
+  await assert.rejects(() => ajukanPenetapan(testPrisma, { materialId: w.pe.id, hashPratinjau: p.hash }, { aktor: w.finA.user, kunci: kunci() }), (e) => e.code === "TIDAK_ADA_TRANSAKSI");
+  assert.deepEqual(await snap(), f0, "pratinjau baca-saja");
+});
