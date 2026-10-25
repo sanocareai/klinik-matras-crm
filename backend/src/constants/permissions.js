@@ -556,6 +556,35 @@ export const ROLE_PERMISSIONS = {
     // sendiri (tanpa INCENTIVE_SNAPSHOT_CREATE/REVIEW).
     P.INCENTIVE_SNAPSHOT_APPROVE, P.INCENTIVE_SNAPSHOT_READ,
   ],
+
+  // HUB_MEMBER — Main Hub, akses Task & Meeting eksplisit untuk leader (Okt
+  // 2026, keputusan Owner). SATU-SATUNYA permission: P.HUB_ACCESS. BUKAN
+  // P.HUB_ADMIN — hubRoleFor memetakan ini ke peran HUB "MEMBER", bukan
+  // "ADMIN" (lihat lib/domain/hubSso.js#hubRoleFor: OWNER→OWNER,
+  // HUB_ADMIN→ADMIN, HUB_ACCESS saja→MEMBER). Ini MEKANISME GRANT
+  // EKSPLISIT per-pengguna — pola yang SAMA dengan role aditif sempit lain
+  // di berkas ini (LEADER_DRIVER, PRODUCTION_DOCUMENTER): Admin/Owner
+  // menambahkannya SATU PER SATU lewat Pengguna & Peran (POST
+  // /users/:id/roles), BUKAN diwariskan otomatis dari role operasional
+  // (SALES, PRODUCTION_LEAD, dst.) atau dari UserDivision.isLeader — dua
+  // hal itu TETAP sepenuhnya terpisah dari HUB_ACCESS. Seorang leader yang
+  // ditandai isLeader=true tapi belum diberi HUB_MEMBER secara eksplisit
+  // TIDAK mendapat akses HUB sama sekali (tampil "Belum terhubung" di
+  // Pantauan Leader, bukan error).
+  //
+  // "Scope terbatas, bukan ADMIN" (instruksi Owner): begitu di DALAM HUB,
+  // peran "MEMBER" tunduk pada model otorisasi HUB SENDIRI — workspace
+  // flat, setiap anggota (MEMBER/ADMIN/OWNER) bisa melihat/mengubah task
+  // & meeting siapa pun di workspace yang sama (desain HUB sejak awal,
+  // bukan sesuatu yang diubah di sini — lihat docs/HUB-SSO.md "Main Hub —
+  // onboarding leader"). Yang BENAR-BENAR dibatasi oleh HUB_MEMBER (vs
+  // ADMIN_PERMS) adalah di SISI SANSS: Main Hub TIDAK menampilkan "Pantauan
+  // Leader" (itu P.HUB_LEADER_MONITOR, Owner-only, permission terpisah),
+  // dan ringkasan "Tugas Saya"/"Hasil Meeting" di Main Hub SANSS sendiri
+  // (bukan di dalam HUB) hanya pernah menampilkan data milik pengguna itu
+  // sendiri (dikunci oleh identitas sesi, tidak menerima parameter id dari
+  // browser sama sekali).
+  HUB_MEMBER: [P.HUB_ACCESS],
 };
 
 // Portal → role yang boleh masuk. Dipakai landing page untuk memilih kartu

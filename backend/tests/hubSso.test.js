@@ -254,18 +254,21 @@ test("permission HUB_ACCESS / HUB_ADMIN terdaftar", () => {
   assert.equal(P.HUB_ADMIN, "hub:admin");
 });
 
-test("pemetaan awal: HANYA ADMIN dan OWNER yang memegang HUB_ACCESS/HUB_ADMIN — semua role lain ditolak", () => {
+test("pemetaan awal: ADMIN, OWNER, dan HUB_MEMBER (grant eksplisit) yang memegang HUB_ACCESS — HANYA ADMIN/OWNER memegang HUB_ADMIN", () => {
   const holders = (perm) => Object.entries(ROLE_PERMISSIONS).filter(([, ps]) => ps.includes(perm)).map(([r]) => r).sort();
-  assert.deepEqual(holders(P.HUB_ACCESS), ["ADMIN", "OWNER"]);
-  assert.deepEqual(holders(P.HUB_ADMIN), ["ADMIN", "OWNER"]);
+  assert.deepEqual(holders(P.HUB_ACCESS), ["ADMIN", "HUB_MEMBER", "OWNER"]);
+  assert.deepEqual(holders(P.HUB_ADMIN), ["ADMIN", "OWNER"], "HUB_MEMBER TIDAK boleh ikut memegang HUB_ADMIN — scope terbatas, bukan admin");
 });
 
-test("hubRoleFor: OWNER→OWNER, ADMIN→ADMIN, SEMUA role lain (satu per satu) → null", () => {
+test("hubRoleFor: OWNER→OWNER, ADMIN→ADMIN, HUB_MEMBER→MEMBER, SEMUA role lain (satu per satu) → null", () => {
   assert.equal(hubRoleFor({ roles: ["OWNER"] }), "OWNER");
   assert.equal(hubRoleFor({ roles: ["ADMIN"] }), "ADMIN");
   assert.equal(hubRoleFor({ roles: ["ADMIN", "OWNER"] }), "OWNER");
   assert.equal(hubRoleFor({ role: "ADMIN" }), "ADMIN", "fallback role tunggal (token lama)");
-  for (const role of ALL_ROLES.filter((r) => r !== "ADMIN" && r !== "OWNER")) {
+  assert.equal(hubRoleFor({ roles: ["HUB_MEMBER"] }), "MEMBER", "grant eksplisit Main Hub -> peran HUB MEMBER, bukan ADMIN");
+  assert.equal(hubRoleFor({ role: "HUB_MEMBER" }), "MEMBER", "fallback role tunggal juga MEMBER");
+  assert.equal(hubRoleFor({ roles: ["SALES", "HUB_MEMBER"] }), "MEMBER", "aditif dengan role operasional biasa, tetap MEMBER (bukan diwarisi dari SALES)");
+  for (const role of ALL_ROLES.filter((r) => r !== "ADMIN" && r !== "OWNER" && r !== "HUB_MEMBER")) {
     assert.equal(hubRoleFor({ roles: [role] }), null, `role ${role}`);
     assert.equal(hubRoleFor({ role }), null, `role tunggal ${role}`);
   }

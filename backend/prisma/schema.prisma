@@ -53,6 +53,13 @@ enum Role {
   // P10B (Aplikasi Dokumentasi): petugas dokumentasi lantai produksi. Hanya UNIT_READ + PRODUCTION_DOCUMENTATION_WRITE
   // (tanpa UNIT_STAGE_WRITE/QC/harga/finance). Tidak ada pengguna yang diberi peran ini otomatis.
   PRODUCTION_DOCUMENTER
+  // Main Hub (Okt 2026, keputusan Owner): grant eksplisit akses Task &
+  // Meeting untuk leader, SATU permission saja (HUB_ACCESS, lihat
+  // permissions.js) — dipetakan ke peran HUB "MEMBER", bukan "ADMIN".
+  // Ditambahkan satu per satu lewat Pengguna & Peran; tidak ada pengguna
+  // yang diberi peran ini otomatis dari role operasional atau dari
+  // UserDivision.isLeader.
+  HUB_MEMBER
 }
 
 // Lini produk penentu katalog material, termin garansi, dan lead time (D-004).
