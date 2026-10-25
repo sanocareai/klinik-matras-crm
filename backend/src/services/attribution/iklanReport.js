@@ -546,7 +546,7 @@ export async function hitungLaporanIklan(db, parameter, { now = new Date(), time
     if (idsSpendBaru.length) for (const r of await tx.metaAdReference.findMany({ where: { adId: { in: idsSpendBaru } } })) referensi.set(r.adId, r);
     const targetRow = await tx.attributionKpiTarget.findUnique({ where: { id: 1 } });
     const hariIni = hariWIB(now);
-    const kesegaran = kesegaranSpend({ ...kesegaranMentah, hariIni, sampai: parameter.sampai });
+    const kesegaran = kesegaranSpend({ ...kesegaranMentah, hariIni, dari: parameter.dari, sampai: parameter.sampai });
     return terapkanBiaya(laporan, { spendPerAd, referensi, kesegaran, mulaiHari: agg._min.touchAt ? hariWIB(agg._min.touchAt) : null, target: normalisasiTarget(targetRow ? {
       maxCpl: targetRow.maxCpl, maxCostPerQualifiedLead: targetRow.maxCostPerQualifiedLead, maxCostPerCustomerOrder: targetRow.maxCostPerCustomerOrder, maxCpaClosing: targetRow.maxCpaClosing,
       minBookedRoas: targetRow.minBookedRoas, minCashRoas: targetRow.minCashRoas, minAcquisitionLeads: targetRow.minAcquisitionLeads, minClosings: targetRow.minClosings,
