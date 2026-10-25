@@ -237,6 +237,23 @@ export const PERMISSIONS = {
   //   HUB_ADMIN  — dipetakan ke peran ADMIN di workspace itu (OWNER SANSS → OWNER)
   HUB_ACCESS: "hub:access",
   HUB_ADMIN: "hub:admin",
+
+  // --- Main Hub: ringkasan Task & Meeting lintas leader (Okt 2026) -------
+  // Perubahan arah Owner: Main Hub SANSS jadi pusat task SELURUH leader,
+  // bukan cuma kartu pembuka HUB. "Tugas Saya"/"Hasil Meeting" di Main Hub
+  // adalah RINGKASAN MILIK SENDIRI — dipagari HUB_ACCESS yang SUDAH ada (kalau
+  // boleh masuk HUB, boleh lihat ringkasan tugas/meeting miliknya sendiri di
+  // Main Hub; itu strictly LEBIH SEMPIT daripada yang sudah ia lihat kalau
+  // membuka HUB langsung). TIDAK butuh permission baru untuk itu.
+  //
+  // "Pantauan Leader" (lintas leader/divisi) beda cerita — ini permission
+  // BARU, DEFAULT DENY, dan SENGAJA TIDAK masuk ADMIN_PERMS: instruksi Owner
+  // eksplisit "jangan otomatis buka ke semua leader di tahap ini (Owner-only
+  // dulu)" — jadi bahkan ADMIN biasa TIDAK memegangnya kecuali ditambahkan
+  // eksplisit nanti. Hanya dipetakan ke OWNER sendiri di bawah, terpisah dari
+  // ADMIN_PERMS, supaya pelebaran ke role lain kelak = satu baris + tes, BUKAN
+  // melebarkan ADMIN_PERMS (yang akan diam-diam ikut membuka ke ADMIN juga).
+  HUB_LEADER_MONITOR: "hub:leader_monitor",
 };
 
 const P = PERMISSIONS;
@@ -322,7 +339,10 @@ export const ROLE_PERMISSIONS = {
   // otomatis TIDAK kebagian tanpa perlu disentuh sama sekali. Permission-
   // nya = ADMIN penuh + B2B_READ/WRITE — role ini TIDAK PERNAH mengurangi
   // apa pun, cuma menambah.
-  OWNER: [...ADMIN_PERMS, P.B2B_READ, P.B2B_WRITE, P.INVENTORY_ADJUSTMENT_APPROVE, P.FINANCE_HARGA_BERLAKU_EDIT, P.FINANCE_HARGA_BERLAKU_APPROVE],
+  // HUB_LEADER_MONITOR (Pantauan Leader, Main Hub) Owner-only di sini SENGAJA
+  // — lihat catatan panjang di PERMISSIONS.HUB_LEADER_MONITOR. Menambahkannya
+  // ke ADMIN_PERMS akan diam-diam membukanya untuk ADMIN juga.
+  OWNER: [...ADMIN_PERMS, P.B2B_READ, P.B2B_WRITE, P.INVENTORY_ADJUSTMENT_APPROVE, P.FINANCE_HARGA_BERLAKU_EDIT, P.FINANCE_HARGA_BERLAKU_APPROVE, P.HUB_LEADER_MONITOR],
 
   SALES: [
     P.CUSTOMER_READ, P.CUSTOMER_WRITE, P.CUSTOMER_PII_READ,

@@ -373,6 +373,13 @@ export const EVENT_TYPES = Object.freeze({
   // memicunya (lihat services/hubSso.js#notifyHubRevoke).
   HUB_REVOKE_NOTIFIED: "HUB_REVOKE_NOTIFIED", // HUB mengonfirmasi pencabutan
   HUB_REVOKE_NOTIFY_FAILED: "HUB_REVOKE_NOTIFY_FAILED", // HUB tidak terjangkau/menolak — fallback: introspeksi HUB (≤60 dtk)
+
+  // Main Hub: ringkasan Task & Meeting lintas leader (Okt 2026). SENGAJA
+  // diaudit terpisah dari HUB_HANDOFF_* — ini bukan "masuk ke HUB", tapi
+  // "lihat ringkasan data milik ORANG LAIN dari Main Hub", yang lebih sensitif
+  // dan layak jejak sendiri (siapa membuka Pantauan Leader, kapan, filter apa).
+  HUB_SUMMARY_LEADER_VIEWED: "HUB_SUMMARY_LEADER_VIEWED", // Pantauan Leader dibuka (berhasil)
+  HUB_SUMMARY_DENIED: "HUB_SUMMARY_DENIED", // ringkasan ditolak (tanpa izin/nonaktif/HUB tidak siap)
 });
 
 /**
@@ -841,6 +848,10 @@ export function formatActivitySentence(event) {
       return `Task & Meeting dikonfirmasi mencabut sesi (${metadata.reason || "tanpa keterangan"})`;
     case EVENT_TYPES.HUB_REVOKE_NOTIFY_FAILED:
       return `Task & Meeting tidak terjangkau saat mencabut sesi (${metadata.reason || "tanpa keterangan"}) — menunggu introspeksi berikutnya`;
+    case EVENT_TYPES.HUB_SUMMARY_LEADER_VIEWED:
+      return `Pantauan Leader (Main Hub) dibuka — ${metadata.leaderCount ?? 0} leader${metadata.division ? `, divisi ${metadata.division}` : ""}`;
+    case EVENT_TYPES.HUB_SUMMARY_DENIED:
+      return `Ringkasan Task & Meeting (Main Hub) ditolak — ${metadata.reason || "tanpa keterangan"}`;
     default:
       // eventType yang belum dikenali modul ini (mis. ditambahkan slice
       // berikutnya) — tampilkan apa adanya alih-alih melempar error, supaya

@@ -25,6 +25,7 @@ import {
   issueHandoff,
   revokeHandoffs,
 } from "../services/hubSso.js";
+import { getLeaderMonitorSummary, getOwnSummary } from "../services/hubSummary.js";
 
 export const hubSsoRouter = express.Router();
 
@@ -97,6 +98,52 @@ hubSsoRouter.post("/handoff", requireAuth, handoffLimiter, async (req, res) => {
   } catch (err) {
     console.error("[hubSso] handoff gagal:", err.message);
     res.status(500).json({ error: "Gagal menyiapkan akses Task & Meeting" });
+  }
+});
+
+// ─── Main Hub: ringkasan Task & Meeting (Okt 2026) ─────────────────────────
+// Dipanggil oleh BROWSER pengguna yang SUDAH login di SANSS (requireAuth,
+// JWT biasa) — bukan jalur server-ke-server seperti /internal di bawah.
+// Backend ini yang memanggil HUB server-ke-server dengan token layanan;
+// token itu TIDAK PERNAH sampai ke respons di bawah. Lihat
+// services/hubSummary.js untuk kenapa izin dibaca ulang dari DB di sana,
+// bukan dari requireAuth/req.user langsung.
+
+const summaryLimiter = createLimiter({
+  windowMs: 60_000,
+  max: 30,
+  keyFn: (req) => (req.user?.id ? `hub-summary:${req.user.id}` : null),
+  message: "Terlalu sering memuat ringkasan Task & Meeting. Coba lagi sebentar lagi.",
+});
+
+hubSsoRouter.get("/summary/me", requireAuth, summaryLimiter, async (req, res) => {
+  try {
+    const result = await getOwnSummary({ userId: req.user.id });
+    if (!result.ok) {
+      const status = result.reason === "unavailable" ? 503 : 403;
+      return res.status(status).json({ error: "Ringkasan Task & Meeting tidak tersedia", code: `HUB_SUMMARY_${result.reason.toUpperCase()}` });
+    }
+    res.json({ connected: result.connected, summary: result.summary });
+  } catch (err) {
+    console.error("[hubSummary] /summary/me gagal:", err.message);
+    res.status(500).json({ error: "Gagal memuat ringkasan Task & Meeting" });
+  }
+});
+
+hubSsoRouter.get("/summary/leaders", requireAuth, summaryLimiter, async (req, res) => {
+  try {
+    // ?division= HANYA mempersempit set leader yang sudah ditetapkan Admin/
+    // Owner di DB (UserDivision.isLeader) — getLeaderMonitorSummary
+    // mengabaikan nilai yang tidak dikenal, tidak pernah memperluas apa pun.
+    const result = await getLeaderMonitorSummary({ userId: req.user.id, divisionFilter: req.query?.division, ip: clientIp(req) });
+    if (!result.ok) {
+      const status = result.reason === "unavailable" ? 503 : 403;
+      return res.status(status).json({ error: "Pantauan Leader tidak tersedia", code: `HUB_SUMMARY_${result.reason.toUpperCase()}` });
+    }
+    res.json({ leaders: result.leaders });
+  } catch (err) {
+    console.error("[hubSummary] /summary/leaders gagal:", err.message);
+    res.status(500).json({ error: "Gagal memuat Pantauan Leader" });
   }
 });
 
