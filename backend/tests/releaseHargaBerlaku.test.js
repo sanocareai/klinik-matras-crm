@@ -52,9 +52,10 @@ test("skrip rilis: gerbang berurutan; --rehearsal-only berhenti sebelum migrasi 
   assert.match(skrip, /keadaan_produksi\(\) \{/); assert.match(skrip, /KEADAAN2="\$\(keadaan_produksi "2"\)"/); assert.match(skrip, /struktur_baru RPSQL gagal_reh/); assert.match(skrip, /harus_ditolak "FK CASCADE/);
   assert.match(skrip, /rollback-guard-harga-berlaku\.sh/); assert.ok(!/status-kerja|rjm\.sh|ux-bahan|usulan/i.test(skrip.replace(/\n# \(dibangkitkan[^\n]*\n/, "\n").replace(/scripts\/release-status-kerja-buka-pekerjaan\.sh/g, "")), "tidak ada sisa nama rilis lain");
   const allow = skrip.match(/^ALLOWED_RE='(.*)'$/m)[1].split("\\.").join(".");
-  for (const harus of ["backend/src/services/finance/hargaBerlaku.js", "backend/src/routes/hargaBerlaku.js", "backend/src/constants/permissions.js", "backend/src/index.js", "backend/src/services/inventoryLedger.js", "backend/prisma/schema.prisma", `backend/prisma/migrations/${NAMA_MIG}/migration.sql`, "frontend/src/features/warehouse/stok/HargaBerlakuPanel.jsx"]) assert.ok(allow.includes(harus), harus);
+  for (const harus of ["backend/src/services/finance/hargaBerlaku.js", "backend/src/routes/hargaBerlaku.js", "backend/src/constants/permissions.js", "backend/src/routes/biayaBahan.js", "backend/src/services/inventoryLedger.js", "backend/prisma/schema.prisma", `backend/prisma/migrations/${NAMA_MIG}/migration.sql`, "frontend/src/features/warehouse/stok/HargaBerlakuPanel.jsx"]) assert.ok(allow.includes(harus), harus);
   for (const dilarang of ["nilaiResmi.js", "penetapanNilai.js", "persediaanAwal.js", "koreksiValuasi.js", "20261229090000_penetapan_nilai_bahan", "services/finance/biayaBahan.js"]) assert.ok(!allow.includes(dilarang), `jalur yang ditahan ikut terbawa: ${dilarang}`);
   assert.ok(!/backend\/prisma\/migrations\/2026122[0-9]/.test(allow), "tidak membawa migrasi lain");
+  assert.ok(!allow.includes("backend/src/index.js"), "index.js TIDAK berubah (dipatok tes atribusi); router dipasang lewat routes/biayaBahan.js");
 });
 
 test("izin eksplisit di kode: rute ubah/koreksi/ajukan memakai finance:harga_berlaku:edit, setujui/tolak :approve; ADMIN tidak otomatis", () => {

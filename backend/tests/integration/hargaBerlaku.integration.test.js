@@ -166,7 +166,7 @@ test("H6. pratinjau order yang belum memakai bahan: harga terbaru ditampilkan (b
 });
 
 test("H7. HTTP + izin + pemisahan angka: Gudang/Sales ditolak; Finance membaca/menyimpan; jejak bahan memuat dua angka TERPISAH berlabel (operasional vs Finance); penyetuju ≠ pengaju", async () => {
-  const w = await dunia(); const u = await w.mk(); const B = "/api/finance/harga-berlaku"; await seedHistoris(w, { harga: 100, mulai: "2026-10-16T00:00:00Z", alasan: "Harga awal operasional" });
+  const w = await dunia(); const u = await w.mk(); const B = "/api/finance/biaya-bahan/harga-berlaku"; await seedHistoris(w, { harga: 100, mulai: "2026-10-16T00:00:00Z", alasan: "Harga awal operasional" });
   assert.equal((await w.g.get(`${B}/bahan/${w.mat.id}`)).status, 403); assert.equal((await w.s.get(`${B}/bahan/${w.mat.id}`)).status, 403); assert.equal((await w.g.post(`${B}/pratinjau`, { materialId: w.mat.id })).status, 403); assert.equal((await w.a.get(`${B}/bahan/bukan-uuid`)).status, 404);
   const m = { materialId: w.mat.id, hargaBaru: "110", satuan: "KG", alasan: "Kenaikan harga kerja saat disimpan" };
   assert.equal((await w.a.post(`${B}/pratinjau`, { ...m, satuan: "PAK" })).body.code, "SATUAN_BEDA"); const pr = await w.a.post(`${B}/pratinjau`, m); assert.equal(pr.status, 200); assert.ok(!("_simpan" in pr.body)); assert.equal(pr.body.labelBukti, "BELUM_DIDUKUNG_BUKTI"); assert.equal(pr.body.saatDisimpan, true); assert.equal(pr.body.berlakuMulai, null);
@@ -208,7 +208,7 @@ test("H9. aturan 1: perubahan harga biasa TIDAK boleh mundur (service + HTTP 422
   const lama = await keluar(w.mat.id, u.id, 2, "2026-10-18T03:00:00Z", w.finA.user.id); assert.equal(Number((await opRows(lama.id))[0].unitCost), 100);
   const m = { materialId: w.mat.id, hargaBaru: "130", satuan: "KG", alasan: "Kenaikan harga kerja" };
   for (const mundur of ["2026-10-17T00:00:00Z", new Date(Date.now() - 5_000).toISOString()]) await assert.rejects(() => pratinjauUbahHarga(testPrisma, { ...m, berlakuMulai: mundur }), (e) => e.code === "WAKTU_MUNDUR" && e.statusCode === 422 && /Koreksi/.test(e.message));
-  assert.equal((await w.a.post("/api/finance/harga-berlaku/pratinjau", { ...m, berlakuMulai: "2026-10-17T00:00:00Z" })).status, 422);
+  assert.equal((await w.a.post("/api/finance/biaya-bahan/harga-berlaku/pratinjau", { ...m, berlakuMulai: "2026-10-17T00:00:00Z" })).status, 422);
   const sebelum = Date.now(); const r = await ubah(w, { harga: 130, alasan: "Kenaikan harga kerja saat disimpan" }); const sesudah = Date.now(); assert.equal(r.hargaLama, 100);
   const row = await testPrisma.materialHargaBerlaku.findUnique({ where: { id: r.id } }); assert.ok(row.effectiveFrom.getTime() >= sebelum - 1 && row.effectiveFrom.getTime() <= sesudah + 1, "berlaku mulai saat disimpan"); assert.equal(row.effectiveFrom.getTime(), row.createdAt.getTime(), "waktu berlaku = waktu simpan (tidak mundur, tidak maju)");
   const baru = await gerak(w, "ISSUE", -1, u.id); assert.equal(Number((await opRows(baru.id))[0].unitCost), 130, "pemakaian sesudah disimpan = harga baru");
@@ -240,7 +240,7 @@ test("H10. aturan 2: RETUR tertaut ISSUE memakai harga operasional ISSUE ASAL (h
 });
 
 test("H11. izin eksplisit: ubah/koreksi/ajukan = finance:harga_berlaku:edit; setujui = :approve; ADMIN murni hanya melihat; FINANCE dan OWNER boleh; server mengirim bolehUbah/bolehSetujui + teks izin untuk UI", async () => {
-  const w = await dunia(); const admin = await createTestUser({ roles: ["ADMIN"] }); const owner = await createTestUser({ roles: ["OWNER"] }); const ca = makeClient(server.baseUrl, admin.token); const co = makeClient(server.baseUrl, owner.token); const B = "/api/finance/harga-berlaku";
+  const w = await dunia(); const admin = await createTestUser({ roles: ["ADMIN"] }); const owner = await createTestUser({ roles: ["OWNER"] }); const ca = makeClient(server.baseUrl, admin.token); const co = makeClient(server.baseUrl, owner.token); const B = "/api/finance/biaya-bahan/harga-berlaku";
   const m = { materialId: w.mat.id, hargaBaru: "100", satuan: "KG", alasan: "Harga awal operasional" };
   const ringA = await ca.get(`${B}/bahan/${w.mat.id}`); assert.equal(ringA.status, 200); assert.equal(ringA.body.bolehUbah, false); assert.equal(ringA.body.bolehSetujui, false); assert.match(ringA.body.izinTeks.admin, /hanya dapat melihat/);
   const pr = await ca.post(`${B}/pratinjau`, m); assert.equal(pr.status, 200, "pratinjau = baca");

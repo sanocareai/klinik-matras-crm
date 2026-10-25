@@ -34,7 +34,7 @@ const sebelum = await fp();
 rec("kode berjalan: izin eksplisit harga berlaku ada; ADMIN murni tidak memegangnya", (ROLE_PERMISSIONS.FINANCE ?? []).includes("finance:harga_berlaku:edit") && (ROLE_PERMISSIONS.OWNER ?? []).includes("finance:harga_berlaku:approve") && !(ROLE_PERMISSIONS.ADMIN ?? []).includes("finance:harga_berlaku:edit"));
 rec("3 tabel rilis ada dan kosong (tidak ada yang mengisi harga saat rilis)", (await hitung("select (select count(*) from material_harga_berlaku) + (select count(*) from stock_movement_biaya_operasional) + (select count(*) from biaya_operasional_penerapan) as n")) === 0);
 const mat = (await prisma.material.findFirst({ where: { code: "SPANBON-75GRAM" }, select: { id: true, unit: true } })) ?? (await prisma.material.findFirst({ where: { active: true }, select: { id: true, unit: true } }));
-const R = "/api/finance/harga-berlaku"; const ID0 = "00000000-0000-4000-8000-000000000000";
+const R = "/api/finance/biaya-bahan/harga-berlaku"; const ID0 = "00000000-0000-4000-8000-000000000000";
 
 // izin: ditolak SEBELUM menyentuh data
 rec("ringkasan harga berlaku: tanpa token 401", (await get(`${R}/bahan/${mat.id}`, null)).status === 401);
