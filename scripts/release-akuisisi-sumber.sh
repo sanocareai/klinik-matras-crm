@@ -142,6 +142,13 @@ const TERLARANG = /"(phone|name|customerId|messageId|orderId|ctwaClid|leadSource
   console.log("SUM_LEAD_TOTAL=" + (js.sumber.reduce((a, x) => a + x.lead, 0) === js.total.lead));
   console.log("SUM_EKSKLUSIF=" + js.sumber.every((x) => x.kategoriEksklusif.belumBayar + x.kategoriEksklusif.dpSaatIni + x.kategoriEksklusif.lunas === x.berOrder));
   console.log("SUM_NONMETA_NULL=" + js.sumber.filter((x) => x.id !== "META").every((x) => x.biaya.cpa === null && x.biaya.cashRoas === null));
+  console.log("SUM_DENOM_UTAMA=" + js.sumber.every((x) => x.konversiOrder.penyebut === x.lead && x.konversiOrder.penyebutJenis === "TOTAL_LEAD_TERMASUK_SPAM" && x.konversiOrder.pembilang === x.berOrder));
+  console.log("SUM_DENOM_NONSPAM=" + js.sumber.every((x) => x.konversiOrderNonSpam.penyebut === x.leadSah && x.konversiOrderNonSpam.penyebutJenis === "LEAD_SAH_NON_SPAM"));
+  console.log("SUM_PERSEN=" + js.sumber.every((x) => x.konversiOrder.nilai === (x.lead > 0 ? Math.round((x.berOrder / x.lead) * 10000) / 100 : null) && x.konversiOrderNonSpam.nilai === (x.leadSah > 0 ? Math.round((x.berOrder / x.leadSah) * 10000) / 100 : null)));
+  console.log("SUM_UNKNOWN=" + js.sumber.every((x) => typeof x.kategoriEksklusif.tidakDiketahui === "number" && x.kategoriEksklusif.jumlah === x.berOrder));
+  console.log("SUM_SOROTAN=" + js.sorotan.filter((s) => s.id === "KONVERSI_ORDER").every((s) => s.penyebut > 0 && /total lead/.test(s.jenisTeks) && /bukan pemenang pasti/.test(s.catatan)));
+  console.log("SUM_META_BIAYA_NULL=" + (() => { const m = js.sumber.find((x) => x.id === "META"); return m.biaya.cpa === null || ["SIAP_DIEVALUASI"].includes(m.biaya.status); })());
+  console.log("SUM_PENGECUALIAN=" + (js.pengecualianTotal && typeof js.pengecualianTotal.spam === "number" && js.sumber.every((x) => x.pengecualian && "internalStaff" in x.pengecualian)));
   console.log("SUM_RBAC=" + (await get(`${base}/sumber`, tS)).status + "," + (await get(`${base}/sumber`)).status);
   const pb = await get(`${base}/sumber?dari=${wib(-40 * 86400e3)}&sampai=${kemarin}`, tA); const jb = JSON.parse(pb.body); gabung += pb.body;
   console.log("SUM_RENTANG_STATUS=" + pb.status + ":" + jb.status.spend);
@@ -197,6 +204,10 @@ verify_live() {
   else warn "$(val GAP_DILEWATI)"; fi
   [ "$(val SUM_STATUS)" = "200" ] && [ "$(val SUM_BAWAAN)" = "true" ] && [ "$(val SUM_ENAM)" = "true" ] || die "/sumber tidak OK ($(val SUM_STATUS)/$(val SUM_BAWAAN)/$(val SUM_ENAM))"
   [ "$(val SUM_LEAD_TOTAL)" = "true" ] && [ "$(val SUM_EKSKLUSIF)" = "true" ] && [ "$(val SUM_NONMETA_NULL)" = "true" ] || die "/sumber: rekonsiliasi/kategori eksklusif/biaya non-Meta tidak OK"
+  [ "$(val SUM_DENOM_UTAMA)" = "true" ] && [ "$(val SUM_DENOM_NONSPAM)" = "true" ] && [ "$(val SUM_PERSEN)" = "true" ] || die "/sumber: denominator/persentase konversi tidak konsisten (utama harus ÷ total lead termasuk spam; non-spam ÷ lead sah)"
+  [ "$(val SUM_UNKNOWN)" = "true" ] || die "/sumber: kategori eksklusif tidak memuat tidakDiketahui atau jumlah ≠ ber-order"
+  [ "$(val SUM_SOROTAN)" = "true" ] && [ "$(val SUM_PENGECUALIAN)" = "true" ] || die "/sumber: sorotan tanpa denominator/jenis/catatan atau pengecualian tidak eksplisit"
+  [ "$(val SUM_META_BIAYA_NULL)" = "true" ] || die "/sumber: CPA Meta tidak null padahal status biaya tidak siap"
   [ "$(val SUM_RBAC)" = "403,401" ] || die "RBAC /sumber salah ($(val SUM_RBAC))"; ok "/sumber: 200, bawaan 30 hari penuh, 6 sumber, Σ lead = total, kategori eksklusif = ber-order, biaya non-Meta null, RBAC 403/401; rentang 40 hari: $(val SUM_RENTANG_STATUS)"
   local sesudah; sesudah="$(psql_live -At -c "$estado_sql")"
   # touch BOLEH bertambah (capture aktif menerima pesan CTWA nyata selama rilis) tetapi tidak boleh berkurang; semua lainnya HARUS persis sama
