@@ -13,7 +13,8 @@ import { pesanServerAman } from "../lib/galatServerAman.js";
 import { ambilCatatanHistoris, evaluasiUlang } from "../services/catatanPemakaianHistoris.js";
 import { koreksiCatatan, konfirmasiCatatan, kecualikanCatatan, pratinjauKoreksiPemakaian, ajukanKoreksiPemakaian, setujuiKoreksiPemakaian, tolakKoreksiPemakaian, batalkanKoreksiPemakaian, daftarKoreksiPemakaian } from "../services/koreksiPemakaian.js";
 import { rencanakanPosting, jalankanPosting } from "../services/postingPemakaianHistoris.js";
-import { ajukanBatch, mulaiBatch, statusBatch, lanjutkanBatch, hentikanBatch } from "../services/postingBatchLatar.js";
+import { ajukanBatch, mulaiBatch, statusBatchBersama, daftarBatch, lanjutkanBatch, hentikanBatch } from "../services/postingBatchLatar.js";
+import { pratinjauPosting } from "../services/postingPratinjau.js";
 
 export const pemakaianKoreksiRouter = express.Router();
 pemakaianKoreksiRouter.use(requireAuth);
@@ -73,6 +74,10 @@ function bacaUnitIds(raw) {
 pemakaianKoreksiRouter.get("/posting-historis/rencana", requireAnyPermission(P.INVENTORY_ADJUSTMENT_APPROVE, P.INVENTORY_READ), async (req, res) => {
   try { const r = await rencanakanPosting(prisma, { unitIds: bacaUnitIds(req.query?.unitIds) }); res.json({ hash: r.hash, jumlah: r.jumlah, orderUnik: r.orderUnik, transaksi: r.transaksi }); } catch (e) { handleErr(e, res); }
 });
+// Pratinjau manifest + dampak (stok, HPP berbukti, tanpa harga, tertahan, selisih belum dijurnal). BACA-SAJA; hash = pin persetujuan untuk jalankan/batch.
+pemakaianKoreksiRouter.get("/posting-historis/pratinjau", requireAnyPermission(P.INVENTORY_ADJUSTMENT_APPROVE, P.INVENTORY_READ), async (req, res) => {
+  try { res.json(await pratinjauPosting(prisma, { unitIds: bacaUnitIds(req.query?.unitIds) })); } catch (e) { handleErr(e, res); }
+});
 // Sinkron: untuk SATU order / sebagian kecil (unitIds). Rencana besar (puluhan–ratusan order) lewat batch latar di bawah — jangan menahan satu permintaan layar belasan menit.
 pemakaianKoreksiRouter.post("/posting-historis/jalankan", requirePermission(P.INVENTORY_ADJUSTMENT_APPROVE), async (req, res) => {
   try { res.json(await jalankanPosting(prisma, { persetujuan: { hashDisetujui: req.body?.hashDisetujui, rujukan: req.body?.rujukan, disetujuiOleh: req.user.name }, aktor: req.user, jurnalHPP: req.body?.jurnalHPP === true, unitIds: bacaUnitIds(req.body?.unitIds) })); } catch (e) { handleErr(e, res); }
@@ -85,8 +90,11 @@ pemakaianKoreksiRouter.post("/posting-historis/batch", requirePermission(P.INVEN
     res.status(202).json(b);
   } catch (e) { handleErr(e, res); }
 });
+pemakaianKoreksiRouter.get("/posting-historis/batch", requireAnyPermission(P.INVENTORY_ADJUSTMENT_APPROVE, P.INVENTORY_READ), async (_req, res) => {
+  try { res.json({ batch: await daftarBatch(prisma, { limit: 10 }) }); } catch (e) { handleErr(e, res); }
+});
 pemakaianKoreksiRouter.get("/posting-historis/batch/:id", requireAnyPermission(P.INVENTORY_ADJUSTMENT_APPROVE, P.INVENTORY_READ), async (req, res) => {
-  try { res.json(await statusBatch(prisma, req.params.id)); } catch (e) { handleErr(e, res); }
+  try { res.json(await statusBatchBersama(prisma, req.params.id)); } catch (e) { handleErr(e, res); }
 });
 pemakaianKoreksiRouter.post("/posting-historis/batch/:id/lanjut", requirePermission(P.INVENTORY_ADJUSTMENT_APPROVE), async (req, res) => {
   try { res.status(202).json(await lanjutkanBatch(prisma, req.params.id, req.user)); } catch (e) { handleErr(e, res); }

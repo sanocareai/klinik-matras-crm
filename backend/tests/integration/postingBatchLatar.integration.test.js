@@ -132,3 +132,36 @@ test("L7. API: batch 202 + polling progres sampai selesai; posting SATU order si
   await tungguBatch(a.body.batchId); await tungguPenyegaran(); await titikTetap("L7");
   console.log(`   [L7] posting SATU order via API: ${ms} ms`);
 });
+
+test("L8. pratinjau manifest: dampak stok/HPP, tertahan + alasan, selisih belum dijurnal, hash = pin; baca-saja; izin baca vs tulis", async () => {
+  const w = await dunia();
+  const mv0 = await testPrisma.stockMovement.count(); const ev0 = await testPrisma.unitUsageNoteEvent.count();
+  const r = await w.co.get(`/api/production/posting-historis/pratinjau`); assert.equal(r.status, 200, JSON.stringify(r.body));
+  const p = await rencanakanPosting(testPrisma); assert.equal(r.body.hash, p.hash, "hash pratinjau = hash rencana yang dipakai mesin");
+  assert.equal(r.body.jumlahTrx, 3); assert.equal(r.body.jumlahOrder, 3);
+  const mx = r.body.bahan.find((b) => b.kode === "L-MX"); assert.equal(mx.saldoSekarang, 10); assert.equal(mx.qty, 10); assert.equal(mx.saldoSesudah, 0, "uA 6 + uC 4 = seluruh pasokan");
+  assert.equal(r.body.hpp.status, "PARSIAL", "uB-MX tertahan → HPP parsial"); assert.equal(r.body.hpp.jurnalDibuat, false);
+  assert.equal(r.body.hpp.hppBerbukti, 6 * 20000 + 1 * 50000 + 4 * 20000); assert.equal(r.body.hpp.selisihBelumDijurnal, r.body.hpp.hppBerbukti);
+  const oB = r.body.order.find((o) => o.orderNumber === "RES-04092026-902"); assert.equal(oB.jumlahTertahan, 1); assert.match(oB.tertahan[0].alasan.join(" "), /Saldo tidak mencukupi/);
+  assert.equal(await testPrisma.stockMovement.count(), mv0); assert.equal(await testPrisma.unitUsageNoteEvent.count(), ev0, "pratinjau tidak menulis");
+  const sub = await w.co.get(`/api/production/posting-historis/pratinjau?unitIds=${w.uA.id}`); assert.equal(sub.body.jumlahTrx, 1); assert.notEqual(sub.body.hash, r.body.hash);
+  assert.equal((await w.ca.get(`/api/production/posting-historis/pratinjau`)).status, 200, "ADMIN boleh membaca manifest");
+  assert.equal((await w.ca.post(`/api/production/posting-historis/batch`, { hashDisetujui: r.body.hash, rujukan: "OWNER-2026-10-25" })).status, 403, "tetapi tidak boleh memulai");
+  assert.equal((await w.ca.post(`/api/production/posting-historis/batch/${r.body.hash}/hentikan`, {})).status, 403);
+  assert.equal((await w.ca.post(`/api/production/posting-historis/batch/${r.body.hash}/lanjut`, {})).status, 403);
+  assert.equal((await w.ca.post(`/api/production/posting-historis/jalankan`, { hashDisetujui: r.body.hash, rujukan: "OWNER-2026-10-25" })).status, 403);
+  const tanpaToken = await fetch(`${server.baseUrl}/api/production/posting-historis/pratinjau`); assert.equal(tanpaToken.status, 401);
+});
+
+test("L9. status batch memuat daftar order + HPP; daftar batch menemukan batch berjalan; polling ringan (spec tidak dibaca ulang)", async () => {
+  const w = await dunia(); const { b } = await ajukan(w);
+  const daftar = await w.co.get(`/api/production/posting-historis/batch`); assert.equal(daftar.status, 200); assert.equal(daftar.body.batch.length, 1); assert.equal(daftar.body.batch[0].batchId, b.batchId); assert.equal(daftar.body.batch[0].status, "MENUNGGU"); assert.equal(daftar.body.batch[0].unit, undefined, "daftar ringkas tanpa daftar order");
+  const s0 = (await w.co.get(`/api/production/posting-historis/batch/${b.batchId}`)).body;
+  assert.deepEqual(s0.unit.map((u) => u.status), ["MENUNGGU", "MENUNGGU", "MENUNGGU"]); assert.deepEqual(s0.unit.map((u) => u.order), ["RES-03092026-901", "RES-04092026-902", "RES-05092026-903"]); assert.equal(s0.hpp.status, "BELUM_ADA");
+  await jalankanBatch(testPrisma, b.batchId); await new Promise((r) => setTimeout(r, 800));
+  const s1 = (await w.co.get(`/api/production/posting-historis/batch/${b.batchId}`)).body;
+  assert.deepEqual(s1.unit.map((u) => u.status), ["DIPOSTING", "DIPOSTING", "DIPOSTING"]); assert.equal(s1.hpp.trxDinilai, 3); assert.equal(s1.hpp.nilaiTercatat, 6 * 20000 + 1 * 50000 + 4 * 20000); assert.equal(s1.hpp.belumDijurnal, s1.hpp.nilaiTercatat); assert.equal(s1.hpp.jurnalDibuat, false);
+  const polling = []; for (let i = 0; i < 5; i++) { const t = Date.now(); await w.co.get(`/api/production/posting-historis/batch/${b.batchId}`); polling.push(Date.now() - t); }
+  assert.ok(Math.max(...polling) < 1500, `polling ringan: ${polling.join(",")} ms`);
+  assert.equal((await w.co.get(`/api/production/posting-historis/batch/${"0".repeat(64)}`)).status, 404);
+});

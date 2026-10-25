@@ -311,6 +311,8 @@ const DIVISIONS = {
           // Tahap 4 — Pusat Masalah: pengecualian nyata + dampak + pemilik tindakan + cakupan (bukan dashboard angka).
           { to: "/warehouse/perlu-perhatian", label: "Perlu Perhatian", Icon: AlertTriangle },
           { to: "/warehouse/stock-count",   label: "Stock Opname",       Icon: Scale },
+          // Posting catatan pemakaian historis (batch di server; progres tetap ada walau halaman ditutup). Server menegakkan izin; menu hanya untuk yang boleh membaca.
+          { to: "/warehouse/posting-historis", label: "Posting Pemakaian Historis", Icon: ClipboardCheck, bolehPeran: ["ADMIN", "OWNER", "FINANCE"] },
           { to: "/warehouse/adjustments",   label: "Barang Rusak & Retur", Icon: AlertTriangle },
           // Kasus Komplain (D-116) — Warehouse melihat kasus yang butuh Material Requirement; halaman dibaca lintas divisi.
           { to: "/komplain",                label: "Kasus Komplain",     Icon: AlertTriangle },

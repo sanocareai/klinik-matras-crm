@@ -18,7 +18,23 @@ const ID_PEKERJA = `p${process.pid}-${crypto.randomBytes(4).toString("hex")}`; /
 const aktif = new Map(); // batchId → Promise pekerja di PROSES INI (cegah dua pekerja dalam satu proses)
 const log = (...a) => { if (process.env.NODE_ENV !== "test") console.log("[posting-batch]", ...a); };
 
-const bacaPeristiwa = (db, batchId) => db.activityEvent.findMany({ where: { entityType: ENTITAS_BATCH, entityId: batchId }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] });
+// Peristiwa BATCH_DIAJUKAN memuat salinan rencana (±100 KB) dan TIDAK PERNAH berubah → di-cache per proses; polling status hanya membaca peristiwa ringan (lease/unit/selesai/henti).
+const diaCache = new Map();
+async function ambilDia(db, batchId) {
+  if (diaCache.has(batchId)) return diaCache.get(batchId);
+  const e = await db.activityEvent.findFirst({ where: { entityType: ENTITAS_BATCH, entityId: batchId, eventType: "BATCH_DIAJUKAN" } });
+  if (!e) return null;
+  const orderPer = new Map(); const trxPer = new Map();
+  for (const t of e.metadata.rencana) { orderPer.set(t.unitId, t.orderNumber); trxPer.set(t.unitId, (trxPer.get(t.unitId) ?? 0) + 1); }
+  e.turunan = { orderPer, trxPer };
+  diaCache.set(batchId, e); if (diaCache.size > 30) diaCache.delete(diaCache.keys().next().value);
+  return e;
+}
+async function bacaPeristiwa(db, batchId) {
+  const dia = await ambilDia(db, batchId);
+  const lain = await db.activityEvent.findMany({ where: { entityType: ENTITAS_BATCH, entityId: batchId, eventType: { not: "BATCH_DIAJUKAN" } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }] });
+  return dia ? [dia, ...lain] : lain;
+}
 function ringkas(batchId, ev) {
   const dia = ev.find((e) => e.eventType === "BATCH_DIAJUKAN");
   if (!dia) return null;
@@ -38,12 +54,37 @@ function ringkas(batchId, ev) {
     diajukanPada: dia.createdAt, terakhir: ev.at(-1)?.createdAt ?? null, selesaiPada: selesai?.createdAt ?? null,
     gagal: gagal.map((g) => ({ unitId: g.unitId, order: g.order, kode: g.kode, pesan: g.pesan })),
     unitBerikut: unitIds.filter((u) => !hasilUnit.has(u)).slice(0, 5),
+    unit: unitIds.map((u) => { const h = hasilUnit.get(u); return { unitId: u, order: dia.turunan?.orderPer.get(u) ?? h?.order ?? null, trx: dia.turunan?.trxPer.get(u) ?? null, status: h ? h.hasil : "MENUNGGU", diposting: h?.hasil === "DIPOSTING" ? h.jumlah : 0, kode: h?.kode ?? null, pesan: h?.pesan ?? null }; }),
   };
 }
-export async function statusBatch(db, batchId) {
+/** HPP batch dari valuasi beku pergerakan hasil posting: nilai tercatat, transaksi tanpa harga, dan selisih yang belum dijurnal (jurnal HPP tidak dibuat di jalur ini). */
+async function hppBatch(db, s) {
+  const ids = s.unit.filter((u) => u.diposting > 0 || u.status === "DILEWATI").map((u) => u.unitId);
+  if (!ids.length) return { nilaiTercatat: 0, trxDinilai: 0, trxTanpaHarga: 0, belumDijurnal: 0, jurnalDibuat: s.jurnalHPP === true, status: s.transaksiTotal ? "BELUM_ADA" : "—" };
+  const [r] = await db.$queryRawUnsafe(`select count(*) filter (where v.status = 'DINILAI')::int dinilai, count(*) filter (where v.id is null or v.status <> 'DINILAI')::int tanpa, coalesce(sum(v.value) filter (where v.status = 'DINILAI'),0)::float nilai
+    from stock_movements m left join fin_stock_movement_valuations v on v.movement_id = m.id where m.unit_id = any($1::uuid[]) and m.type = 'ISSUE' and m.note like 'Impor pemakaian historis Sep%'`, ids);
+  return { nilaiTercatat: Math.round(r.nilai), trxDinilai: r.dinilai, trxTanpaHarga: r.tanpa, belumDijurnal: s.jurnalHPP === true ? 0 : Math.round(r.nilai), jurnalDibuat: s.jurnalHPP === true, status: r.tanpa > 0 || s.unitGagal > 0 || s.unitSelesai < s.totalUnit ? "PARSIAL" : "LENGKAP" };
+}
+export async function statusBatch(db, batchId, { hpp = false } = {}) {
   const s = ringkas(batchId, await bacaPeristiwa(db, batchId));
   if (!s) throw new KoreksiError("Batch posting tidak ditemukan", 404, "BATCH_TIDAK_ADA");
+  if (hpp) s.hpp = await hppBatch(db, s);
   return s;
+}
+// Pembaca bersama untuk rute HTTP: beberapa tab/pengguna yang polling batch yang sama dalam 700 ms berbagi SATU pembacaan (tidak melipatgandakan beban database).
+const bersama = new Map();
+export function statusBatchBersama(db, batchId) {
+  const k = bersama.get(batchId); if (k && Date.now() - k.t < 700) return k.p;
+  const p = statusBatch(db, batchId, { hpp: true }); bersama.set(batchId, { t: Date.now(), p }); p.catch(() => bersama.delete(batchId));
+  if (bersama.size > 50) bersama.delete(bersama.keys().next().value);
+  return p;
+}
+/** Daftar batch terbaru (ringkas, tanpa daftar order) — dasar UI menemukan batch yang sedang berjalan setelah refresh/pindah tab/tutup tab. */
+export async function daftarBatch(db, { limit = 10 } = {}) {
+  const dias = await db.activityEvent.findMany({ where: { entityType: ENTITAS_BATCH, eventType: "BATCH_DIAJUKAN" }, select: { entityId: true }, orderBy: { createdAt: "desc" }, take: Math.min(Number(limit) || 10, 30) });
+  const out = [];
+  for (const { entityId } of dias) { const s = ringkas(entityId, await bacaPeristiwa(db, entityId)); if (s) { const { unit, ...ringan } = s; out.push(ringan); } }
+  return out;
 }
 
 /** Ajukan batch dari rencana yang DISETUJUI (hash). Idempoten: hash yang sama = batch yang sama. Tidak menjalankan apa pun — panggil mulaiBatch. */

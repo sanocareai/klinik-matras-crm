@@ -84,6 +84,7 @@ const ROUTE_LABELS = {
   "/warehouse/unit-custody":    ["Gudang", "Penerimaan Unit"],
   "/warehouse/material-pickup": ["Gudang", "Permintaan Bahan"],
   "/warehouse/usulan-bahan": ["Gudang", "Usulan Bahan"],
+  "/warehouse/posting-historis": ["Gudang", "Posting Pemakaian Historis"],
   "/warehouse/finished-goods":  ["Gudang", "Terima Barang Jadi"],
   "/warehouse/inventory":       ["Gudang", "Stok & Lokasi"],
   "/warehouse/barang-akan-datang": ["Gudang", "Barang Akan Datang"],

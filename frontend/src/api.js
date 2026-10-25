@@ -1066,6 +1066,13 @@ export const api = {
   setujuiKoreksiPemakaian: (id, data = {}) => request(`/production/koreksi-pemakaian/${id}/setujui`, { method: "POST", body: JSON.stringify(data) }),
   tolakKoreksiPemakaian: (id, data) => request(`/production/koreksi-pemakaian/${id}/tolak`, { method: "POST", body: JSON.stringify(data) }),
   batalKoreksiPemakaian: (id, data = {}) => request(`/production/koreksi-pemakaian/${id}/batal`, { method: "POST", body: JSON.stringify(data) }),
+  // Posting pemakaian historis (Admin/Owner/Finance): pratinjau manifest + dampak, batch di latar (progres dari server), lanjut/hentikan. Server menegakkan izin + gerbang hash.
+  pratinjauPostingHistoris: (unitIds) => request(`/production/posting-historis/pratinjau${unitIds?.length ? `?unitIds=${unitIds.join(",")}` : ""}`),
+  daftarBatchPostingHistoris: () => request("/production/posting-historis/batch"),
+  getBatchPostingHistoris: (id) => request(`/production/posting-historis/batch/${id}`),
+  mulaiBatchPostingHistoris: (data) => request("/production/posting-historis/batch", { method: "POST", body: JSON.stringify(data) }),
+  lanjutBatchPostingHistoris: (id) => request(`/production/posting-historis/batch/${id}/lanjut`, { method: "POST", body: JSON.stringify({}) }),
+  hentikanBatchPostingHistoris: (id) => request(`/production/posting-historis/batch/${id}/hentikan`, { method: "POST", body: JSON.stringify({}) }),
   // ── Order Produksi · adopsi Admin (tiga sumbu status, status kerja manual, rencana bahan, ekspor Excel)
   getUnitAdopsi: (unitId) => request(`/production/units/${unitId}/adopsi`),
   // Rencana Admin (jadwal produksi per unit TANPA Run): kalender mingguan, rincian hari, antrean per tindakan, jadwal/keluarkan/undo + riwayat. Idempotency-Key per percobaan.
