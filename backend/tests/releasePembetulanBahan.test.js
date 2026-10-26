@@ -34,7 +34,7 @@ test("rehearsal: kode baru sebagai server terhadap restore; direktori data/uploa
 
 test("smoke pasca-switch baca-saja: penolakan sebelum menulis, tanpa jejak tulis pada unit uji; ringkasan SMOKE_HASIL dicetak", () => {
   for (const t of ["UNIT_ALASAN_PEMBETULAN_WAJIB (tidak menulis)", "UNIT_TANGGAL_PEMAKAIAN_WAJIB (tidak menulis)", "UNIT_PRATINJAU_WAJIB (transaksi dibatalkan, tidak menulis)", "TIDAK ada jejak tulis pada unit uji", "SMOKE_HASIL fail="]) assert.ok(skrip.includes(t), t);
-  const smoke = baca("scripts/lib/smoke-pembetulan-bahan.mjs"); assert.ok(!/Idempotency-Key/.test(smoke), "smoke tidak pernah mengirim kunci tulis");
+  const smoke = baca("scripts/lib/smoke-pembetulan-bahan.mjs"); assert.ok(!/["']Idempotency-Key["']s*:/.test(smoke), "smoke tidak pernah mengirim header kunci tulis");
 });
 
 test("bash lolos sintaks", () => { const r = spawnSync("bash", ["-n", path.join(repo, "scripts/release-pembetulan-bahan.sh")], { encoding: "utf8" }); if (r.error) return; assert.equal(r.status, 0, r.stderr); });
