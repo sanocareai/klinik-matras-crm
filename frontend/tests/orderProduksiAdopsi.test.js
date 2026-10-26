@@ -141,7 +141,7 @@ test("editor rencana: pilih per kelompok ATAU cari seluruh katalog; ringkasan me
 
 test("api: fungsi baru terdaftar; Idempotency-Key opsional pada addUnitMaterial; ekspor mengunduh blob .xlsx dengan penanganan 401/galat", () => {
   for (const f of ["getUnitAdopsi", "postStatusKerjaManual", "getKatalogBahanProduksi", "putRencanaBahan", "eksporOrderProduksiXlsx"]) assert.match(API, new RegExp(`${f}:`));
-  assert.match(API, /addUnitMaterial: \(unitId, \{ materialId, qty, note \} = \{\}, idempotencyKey = null\)/); assert.match(API, /"Idempotency-Key": idempotencyKey/);
+  assert.match(API, /addUnitMaterial: \(unitId, \{ materialId, qty, note, alasanPembetulan \} = \{\}, idempotencyKey = null\)/); /* alasanPembetulan: opsional, hanya dikirim bila ada (unit selesai) */ assert.match(API, /"Idempotency-Key": idempotencyKey/);
   assert.match(API, /\/production\/work-orders\/export\.xlsx/);
 });
 

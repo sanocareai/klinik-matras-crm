@@ -256,6 +256,8 @@ export const EVENT_TYPES = Object.freeze({
   // Slice 3 — Catatan Komponen kanonis per unit (informasi; tidak mengubah stok/lifecycle).
   PRODUCTION_COMPONENT_RECORDED: "PRODUCTION_COMPONENT_RECORDED",
   PRODUCTION_COMPONENT_CORRECTED: "PRODUCTION_COMPONENT_CORRECTED",
+  // Pembetulan bahan pada unit yang SUDAH selesai/terkirim/dibatalkan (alasan wajib; lewat layanan pemakaian resmi): menambah/mengurangi pengeluaran stok bertaut unit.
+  PRODUCTION_PEMBETULAN_BAHAN_UNIT_SELESAI: "PRODUCTION_PEMBETULAN_BAHAN_UNIT_SELESAI",
   DOCUMENT_CANCELLED: "DOCUMENT_CANCELLED",
   DOCUMENT_POSTED: "DOCUMENT_POSTED", // ledger benar-benar tertulis (putaway/issue/dispatch/receive/complete/post)
 
@@ -582,6 +584,8 @@ export function formatActivitySentence(event) {
       return `Catatan komponen unit ${metadata.unitCode || "—"}: ${metadata.sectionLabel || metadata.section || "—"} dicatat (versi ${metadata.version ?? 1}${metadata.mediaCount ? `, ${metadata.mediaCount} foto` : ""})`;
     case EVENT_TYPES.PRODUCTION_COMPONENT_CORRECTED:
       return `Catatan komponen unit ${metadata.unitCode || "—"}: ${metadata.sectionLabel || metadata.section || "—"} dikoreksi (versi ${metadata.version ?? "—"}) — ${metadata.reason || "tanpa alasan"}`;
+    case EVENT_TYPES.PRODUCTION_PEMBETULAN_BAHAN_UNIT_SELESAI:
+      return `Pembetulan bahan unit ${metadata.unitCode || "—"} (sudah ${metadata.unitStatus === "CANCELLED" ? "dibatalkan" : "terkirim"}): ${metadata.tipe === "RETURN" ? "pengembalian" : "pengeluaran"} ${Math.abs(Number(metadata.qty ?? 0))} — ${metadata.alasan || "tanpa alasan"}`;
     case EVENT_TYPES.PRODUCTION_STEP_RECORDED:
       return `Tahap ${metadata.stepNo ?? "—"} (${metadata.stepLabel || "—"}) unit ${metadata.unitCode || "—"} tercatat${metadata.verdict ? ` — hasil ${metadata.verdict}` : ""}`;
     case EVENT_TYPES.PRODUCTION_MATERIAL_SHORTAGE_REPORTED:

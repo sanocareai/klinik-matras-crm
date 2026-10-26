@@ -13,7 +13,7 @@ import "@/features/production/bahan/bahan.css";
 // Server menolak bila stok bahan ternyata sudah diketahui (BAHAN_STOK_DIKETAHUI): pesan menjelaskan jalur resminya.
 const kolom = "h-11 w-full rounded-btn border border-line bg-surface px-3 text-[14px] text-ink outline-none placeholder:text-ink3 focus:border-accent focus-visible:ring-2 focus-visible:ring-accent/30";
 
-export default function FormSementaraKatalog({ unitId, kodeUnit, bahan, qtyAwal = "", onSelesai, onBatal, onBukanBahanIni = null }) {
+export default function FormSementaraKatalog({ unitId, kodeUnit, bahan, qtyAwal = "", onSelesai, onBatal, onBukanBahanIni = null, alasanPembetulan = "" }) { // alasanPembetulan: hanya untuk unit TERKIRIM (pembetulan; server mewajibkan)
   const [qty, setQty] = useState(qtyAwal); const [asal, setAsal] = useState(""); const [alasan, setAlasan] = useState(ALASAN_KATALOG[0].key); const [alasanLain, setAlasanLain] = useState(""); const [catatan, setCatatan] = useState("");
   const [sibuk, setSibuk] = useState(false); const [galat, setGalat] = useState(null); const [hasil, setHasil] = useState(null);
   const kunciRef = useRef(null); const sidikRef = useRef(""); const kirimRef = useRef(false);
@@ -28,7 +28,7 @@ export default function FormSementaraKatalog({ unitId, kodeUnit, bahan, qtyAwal 
     kirimRef.current = true; setSibuk(true); setGalat(null);
     kunciRef.current ??= kunciIdempoten("sementara-katalog");
     try {
-      const r = await api.catatPemakaianSementara(unitId, { materialId: bahan.materialId, qty: jumlah, uom: bahan.satuan, originNote: asal.trim(), alasanPencatatan: teksAlasan, note: catatan.trim() || undefined }, kunciRef.current);
+      const r = await api.catatPemakaianSementara(unitId, { materialId: bahan.materialId, qty: jumlah, uom: bahan.satuan, originNote: asal.trim(), alasanPencatatan: teksAlasan, note: catatan.trim() || undefined, ...(alasanPembetulan ? { alasanPembetulan } : {}) }, kunciRef.current);
       setHasil(r); await onSelesai?.();
     } catch (e) { setGalat(e); } finally { kirimRef.current = false; setSibuk(false); }
   }

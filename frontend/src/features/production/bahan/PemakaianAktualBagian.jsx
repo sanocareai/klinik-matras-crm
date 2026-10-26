@@ -11,6 +11,7 @@ import KomponenLamaDaftar from "@/features/production/bahan/KomponenLamaDaftar.j
 import PemakaianSementaraDaftar from "@/features/production/bahan/PemakaianSementaraDaftar.jsx";
 import RiwayatBahanBaru from "@/features/production/bahan/RiwayatBahanBaru.jsx";
 import CatatanHistorisBagian from "@/features/production/bahan/CatatanHistorisBagian.jsx";
+import PembetulanUnitSelesai from "@/features/production/bahan/PembetulanUnitSelesai.jsx";
 import "@/features/production/bahan/bahan.css";
 import { DAMPAK_SEMENTARA, JUDUL_AKTUAL, KARTU_SUMBER, SATUAN_KOMPONEN as SATUAN_LIST, SUMBER_SEMENTARA, asalKomponen } from "@/features/production/bahan/bahanModel.js";
 
@@ -77,7 +78,7 @@ export default function PemakaianAktualBagian({ unitId, data, izin, aktif, onDon
       )}
       {boleh && !mode && <p className="m-0 text-[12.5px] text-ink2" data-testid="aktual-petunjuk">Pilih sumber bahan yang dipakai. Tidak perlu rencana bahan lebih dulu.</p>}
       {!izin.pemakaianAktual && <p className="m-0 text-[12.5px] text-ink3" data-testid="aktual-hanya-lihat">Akun Anda hanya bisa melihat pemakaian bahan.</p>}
-      {izin.pemakaianAktual && !aktif && <p className="m-0 text-[12.5px] text-ink3">Unit sudah selesai/dibatalkan; pemakaian tidak dicatat lagi.</p>}
+      {izin.pemakaianAktual && !aktif && <PembetulanUnitSelesai unitId={unitId} kodeUnit={kodeUnit} status={data.unit.status} data={data} izin={izin} onDone={onDone} />}
 
       {boleh && mode && (
         <div className="space-y-3 rounded-card border border-line px-4 py-4" data-testid="panel-catat-aktual" data-mode={mode}>

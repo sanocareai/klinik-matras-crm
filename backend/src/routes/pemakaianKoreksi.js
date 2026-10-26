@@ -5,6 +5,7 @@
 //   Posting     : GET  /posting-historis/rencana · POST /posting-historis/jalankan    (hanya rencana yang hash-nya disetujui; izin inventory:adjustment_approve)
 //                 jalankan & batch: SEMENTARA hanya akun OWNER yang memulai (403 HANYA_OWNER_MEMULAI); WAJIB membawa konfirmasiManifest (hash, unitIds, isiTransaksi, saldoManifest, daftarOrder, jumlahOrder, jumlahTrx, rujukan[, saldoSyarat])
 //                 — selisih dengan rencana server → 409 KONFIRMASI_MANIFEST_TIDAK_COCOK sebelum apa pun dibuat. Konfirmasi manifest BUKAN bukti persetujuan Owner terpisah (lihat services/postingKonfirmasiManifest.js).
+//   Pembetulan  : POST /units/:id/pembetulan-bahan/pratinjau  (BACA-SAJA: dampak stok, jurnal/nilai Finance, HPP operasional sebelum konfirmasi; unit selesai/terkirim ikut)
 //   Evaluasi    : POST /catatan-historis/evaluasi
 import express from "express";
 import { requireAuth } from "../middleware/auth.js";
@@ -17,6 +18,7 @@ import { koreksiCatatan, konfirmasiCatatan, kecualikanCatatan, pratinjauKoreksiP
 import { rencanakanPosting, jalankanPosting } from "../services/postingPemakaianHistoris.js";
 import { ajukanBatch, mulaiBatch, statusBatchBersama, daftarBatch, lanjutkanBatch, hentikanBatch } from "../services/postingBatchLatar.js";
 import { pratinjauPosting } from "../services/postingPratinjau.js";
+import { pratinjauPembetulan } from "../services/pembetulanBahanUnit.js";
 
 export const pemakaianKoreksiRouter = express.Router();
 pemakaianKoreksiRouter.use(requireAuth);
@@ -45,6 +47,9 @@ pemakaianKoreksiRouter.post("/catatan-historis/evaluasi", tulisBahan, async (req
   try { res.json(await evaluasiUlang(prisma, { actorId: req.user.id })); } catch (e) { handleErr(e, res); }
 });
 
+pemakaianKoreksiRouter.post("/units/:id/pembetulan-bahan/pratinjau", tulisBahan, wajibUuid(), async (req, res) => {
+  try { res.json(await pratinjauPembetulan(prisma, req.user, { unitId: req.params.id, materialId: req.body?.materialId, jenis: req.body?.jenis, qty: req.body?.qty })); } catch (e) { handleErr(e, res); }
+});
 pemakaianKoreksiRouter.post("/units/:id/koreksi-pemakaian/pratinjau", tulisBahan, wajibUuid(), async (req, res) => {
   try { res.json(await pratinjauKoreksiPemakaian(prisma, { unitId: req.params.id, materialId: req.body?.materialId, qtyBaru: req.body?.qtyBaru })); } catch (e) { handleErr(e, res); }
 });

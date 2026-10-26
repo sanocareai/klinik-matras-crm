@@ -34,11 +34,14 @@ const tampil = (r, nama, extra = {}) => ({
   dampakStok: "Tidak ada saldo/biaya/jurnal sampai Gudang menyelesaikan sumber stok lewat jalur resmi.", ...extra,
 });
 
-async function unitAktif(tx, unitId) {
+// alasan = alasan pembetulan unit TERKIRIM (Okt 2026): memungkinkan mencatat pemakaian sementara pada unit DELIVERED dengan alasan wajib (5–500 karakter); unit DIBATALKAN tetap ditolak.
+async function unitAktif(tx, unitId, { alasan = "" } = {}) {
   await lockRowForUpdate(tx, "units", unitId);
   const unit = await tx.unit.findUnique({ where: { id: unitId }, select: { id: true, unitCode: true, status: true, orderId: true } });
   if (!unit) throw new BahanUsulanError("Unit tidak ditemukan", "UNIT_TIDAK_ADA", 404);
-  if (INACTIVE.includes(unit.status)) throw new BahanUsulanError(`Unit ${unit.unitCode} sudah ${unit.status === "CANCELLED" ? "dibatalkan" : "terkirim"}; pemakaian sementara tidak dicatat lagi.`, "UNIT_TIDAK_AKTIF", 409);
+  const alasanB = String(alasan ?? "").trim();
+  if (unit.status === "DELIVERED" && alasanB.length >= 5 && alasanB.length <= 500) return { ...unit, pembetulan: alasanB };
+  if (INACTIVE.includes(unit.status)) throw new BahanUsulanError(`Unit ${unit.unitCode} sudah ${unit.status === "CANCELLED" ? "dibatalkan" : "terkirim"}; pemakaian sementara tidak dicatat lagi${unit.status === "DELIVERED" ? " kecuali sebagai pembetulan dengan alasan (5–500 karakter)" : ""}.`, "UNIT_TIDAK_AKTIF", 409);
   return unit;
 }
 
@@ -46,7 +49,7 @@ async function unitAktif(tx, unitId) {
 export async function catatPemakaianSementara(prisma, { unitId, input, actorId, idempotencyKey }) {
   const kunci = kunciValid(idempotencyKey); const data = normalisasiPemakaianSementara(input);
   return prisma.$transaction(async (tx) => {
-    const unit = await unitAktif(tx, unitId);
+    const unit = await unitAktif(tx, unitId, { alasan: input?.alasanPembetulan });
     // Bentuk (b): bahan katalog, stok belum diketahui. Nama, satuan, dan catatan baku diturunkan dari KATALOG (bukan dari klien) supaya tertaut ke ID yang benar.
     let bahan = null;
     if (data.materialId) {
@@ -55,6 +58,7 @@ export async function catatPemakaianSementara(prisma, { unitId, input, actorId, 
       data.name = bahan.name; data.nameKey = kunciNama(bahan.name);
       data.note = susunCatatanKatalog({ kode: bahan.code, alasan: data.alasan, catatan: data.note ?? "" });
     }
+    if (unit.pembetulan) data.note = [`Pembetulan unit terkirim (${unit.unitCode}): ${unit.pembetulan}`, data.note].filter(Boolean).join(" | ").slice(0, 500);
     const ada = await tx.unitProvisionalUsage.findFirst({ where: { unitId, idempotencyKey: kunci }, include: { material: { select: { id: true, code: true, name: true, unit: true } } } });
     if (ada) {
       const sama = ada.name === data.name && Number(ada.qty) === data.qty && ada.uom === data.uom && (ada.originNote ?? null) === data.originNote && (ada.note ?? null) === data.note && (ada.proposalId ?? null) === data.proposalId && (ada.materialId ?? null) === data.materialId;
@@ -81,7 +85,7 @@ export async function catatPemakaianSementara(prisma, { unitId, input, actorId, 
     }
     const baris = await tx.unitProvisionalUsage.create({ data: { unitId, proposalId: data.proposalId, materialId: data.materialId, name: data.name, nameKey: data.nameKey, qty: data.qty, uom: data.uom, originNote: data.originNote, note: data.note, usedAt: data.usedAt, recordedById: actorId, idempotencyKey: kunci }, include: { material: { select: { id: true, code: true, name: true, unit: true } } } });
     const nama = await namaPelaku(tx, [actorId]);
-    await recordActivity(tx, { entityType: ENTITY_TYPES.UNIT, entityId: unitId, eventType: EVENT_TYPES.PRODUCTION_PEMAKAIAN_SEMENTARA_DICATAT, actorId, metadata: { unitCode: unit.unitCode, orderId: unit.orderId, usageId: baris.id, name: data.name, qty: data.qty, uom: data.uom, originNote: data.originNote, ...(bahan ? { materialId: bahan.id, kodeBahan: bahan.code, stokBelumDiketahui: true, alasan: data.alasan } : {}), deciderName: nama.get(actorId) ?? null } });
+    await recordActivity(tx, { entityType: ENTITY_TYPES.UNIT, entityId: unitId, eventType: EVENT_TYPES.PRODUCTION_PEMAKAIAN_SEMENTARA_DICATAT, actorId, metadata: { unitCode: unit.unitCode, orderId: unit.orderId, ...(unit.pembetulan ? { pembetulanUnitTerkirim: unit.pembetulan } : {}), usageId: baris.id, name: data.name, qty: data.qty, uom: data.uom, originNote: data.originNote, ...(bahan ? { materialId: bahan.id, kodeBahan: bahan.code, stokBelumDiketahui: true, alasan: data.alasan } : {}), deciderName: nama.get(actorId) ?? null } });
     return { replayed: false, item: tampil(baris, nama), catatan: CATATAN_SEMENTARA };
   });
 }
@@ -94,7 +98,7 @@ export async function koreksiPemakaianSementara(prisma, { usageId, input, alasan
   return prisma.$transaction(async (tx) => {
     const awal = await tx.unitProvisionalUsage.findUnique({ where: { id: usageId }, select: { unitId: true } });
     if (!awal) throw new BahanUsulanError("Catatan pemakaian sementara tidak ditemukan", "SEMENTARA_TIDAK_ADA", 404);
-    const unit = await unitAktif(tx, awal.unitId);
+    const unit = await unitAktif(tx, awal.unitId, { alasan: teks }); // unit terkirim: koreksi catatan sementara diizinkan karena alasan sudah wajib
     await lockRowForUpdate(tx, "unit_provisional_usages", usageId);
     const r = await tx.unitProvisionalUsage.findUnique({ where: { id: usageId } });
     const ada = await tx.unitProvisionalUsage.findFirst({ where: { unitId: r.unitId, idempotencyKey: kunci } });

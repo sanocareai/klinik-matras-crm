@@ -28,6 +28,7 @@ import { tryProvisionUnitRoute, changeUnitRoute, assignStage } from "../services
 import { postStockMovement } from "../services/inventoryLedger.js";
 import { bukukanNilaiPergerakanBaru } from "../services/finance/posting/inventory.js";
 import { guardV1UnitWrite, UnitConflictError, UUID_RE } from "../services/unitV2Ownership.js";
+import { alasanPembetulan, catatanPembetulan, unitSelesai } from "../services/pembetulanBahanUnit.js";
 import { priorityDisplay } from "../lib/domain/productionDisplay.js";
 import { loadOpenComplaintsByUnit } from "../services/productionComplaints.js";
 import { prisma } from "../db.js";
@@ -679,8 +680,10 @@ unitRouter.post("/:id/materials", requirePermission(P.UNIT_MATERIAL_WRITE), asyn
     if (!material) return res.status(404).json({ error: "Bahan tidak ditemukan" });
     if (!material.active) return res.status(400).json({ error: "Bahan ini sudah nonaktif" });
 
-    const unit = await prisma.unit.findUnique({ where: { id: req.params.id }, select: { id: true } });
+    const unit = await prisma.unit.findUnique({ where: { id: req.params.id }, select: { id: true, unitCode: true, status: true } });
     if (!unit) return res.status(404).json({ error: "Unit tidak ditemukan" });
+    // Unit selesai/terkirim/dibatalkan: pembetulan bahan diperbolehkan lewat jalur resmi ini TETAPI alasan wajib (body.alasanPembetulan) dan tercatat di catatan pergerakan + log aktivitas unit. Unit aktif: perilaku lama.
+    const alasanB = alasanPembetulan(unit.status, req.body.alasanPembetulan); const catatanB = catatanPembetulan(unit.status, unit.unitCode, alasanB, note || null);
 
     // rawQty > 0 → pemakaian tambahan (ISSUE, stok berkurang, ledger negatif).
     // rawQty < 0 → koreksi mengurangi (RETURN, stok bertambah, ledger positif).
@@ -692,7 +695,7 @@ unitRouter.post("/:id/materials", requirePermission(P.UNIT_MATERIAL_WRITE), asyn
     // dan seluruh transaksinya dibatalkan (tidak ada pergerakan ganda). Tanpa header = perilaku lama (klien lama tidak berubah).
     const kunci = String(req.get("Idempotency-Key") || "").trim();
     if (kunci && (kunci.length < 12 || kunci.length > 128)) return res.status(400).json({ error: "Idempotency-Key harus 12–128 karakter", code: "IDEMPOTENCY_KEY_INVALID" });
-    const requestHash = createHash("sha256").update(JSON.stringify({ unitId: unit.id, materialId, qty: rawQty, note: note || null })).digest("hex");
+    const requestHash = createHash("sha256").update(JSON.stringify({ unitId: unit.id, materialId, qty: rawQty, note: catatanB })).digest("hex");
 
     let movement;
     try {
@@ -707,8 +710,9 @@ unitRouter.post("/:id/materials", requirePermission(P.UNIT_MATERIAL_WRITE), asyn
         }
         const mv = await postStockMovement(tx, {
           materialId, type, qty: ledgerQty, unitId: unit.id,
-          note: note || null, createdById: req.user.id,
+          note: catatanB, createdById: req.user.id,
         });
+        if (unitSelesai(unit.status)) await recordActivity(tx, { entityType: ENTITY_TYPES.UNIT, entityId: unit.id, eventType: EVENT_TYPES.PRODUCTION_PEMBETULAN_BAHAN_UNIT_SELESAI, actorId: req.user.id, metadata: { unitCode: unit.unitCode, unitStatus: unit.status, jenis: "PEMBETULAN_BAHAN", movementId: mv.id, materialId, qty: ledgerQty, tipe: type, alasan: alasanB } });
         // HPP: nilai pemakaian/koreksi dibukukan di transaksi yang sama (atau gap terlihat) — jalur ini dulu menulis stok tanpa jejak nilai sama sekali.
         await bukukanNilaiPergerakanBaru(tx, mv, { userId: req.user.id });
         if (kunci) await tx.v2Command.update({ where: { actorId_idempotencyKey: { actorId: req.user.id, idempotencyKey: kunci } }, data: { status: "APPLIED", response: { movementId: mv.id }, completedAt: new Date() } });
