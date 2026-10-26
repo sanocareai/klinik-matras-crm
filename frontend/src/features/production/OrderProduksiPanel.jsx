@@ -420,29 +420,12 @@ function StatusTarget({ data, aktif, onDone }) {
 }
 
 // ───────────────────────────── pemakaian aktual ─────────────────────────────
-// Perbandingan rencana vs aktual (bila ada rencana) + komponen BERSAMA PemakaianAktualBagian (tiga sumber selalu terlihat: Bahan dari Gudang · Bahan belum ada di katalog · Komponen lama dari kasur ini;
+// Tombol "+ Tambah pemakaian" + tabel perbandingan rencana vs aktual dengan tombol "Edit" per bahan + komponen BERSAMA PemakaianAktualBagian (tiga sumber selalu terlihat: Bahan dari Gudang · Bahan belum ada di katalog · Komponen lama dari kasur ini;
 // sama dengan tab Bahan Ruang Kerja Unit). Bahan dari Gudang = stok berkurang tepat sekali; belum ada di katalog = pemakaian sementara + usulan (perlu rekonsiliasi Gudang, stok/biaya/jurnal tidak berubah).
 function PemakaianAktual({ data, aktif, onDone, onMulai }) {
-  const { perbandingan, unit: u } = data;
+  const { unit: u } = data;
   return (
     <div className="space-y-4" data-testid="pemakaian-aktual">
-      {perbandingan.length > 0 && (
-        <div className="overflow-x-auto" data-testid="rencana-vs-aktual">
-          <table className="w-full table-fixed border-collapse text-left text-[13px]">
-            <caption className="sr-only">Perbandingan rencana dan pemakaian aktual per bahan</caption>
-            <thead><tr className="text-[11.5px] uppercase tracking-[0.05em] text-ink3"><th scope="col" className="w-[44%] py-1 pr-2 font-medium">Bahan</th><th scope="col" className="px-2 py-1 text-right font-medium">Rencana</th><th scope="col" className="pl-2 py-1 text-right font-medium">Aktual</th></tr></thead>
-            <tbody className="divide-y divide-line">
-              {perbandingan.map((p) => (
-                <tr key={p.materialId}>
-                  <td className="py-2 pr-3"><span className="block font-medium text-ink">{p.nama}</span><span className="block text-[11.5px] text-ink3">{p.kode}</span></td>
-                  <td className="px-2 py-2 text-right tabular-nums text-ink2">{p.rencana === null ? <span className="text-ink3">tidak direncanakan</span> : `${formatJumlah(p.rencana)} ${p.satuan}`}</td>
-                  <td className={cn("pl-2 py-2 text-right tabular-nums font-semibold", p.rencana !== null && p.aktual > p.rencana ? "text-orange" : "text-ink")}>{formatJumlah(p.aktual)} {p.satuan}{p.rencana !== null && p.aktual > p.rencana ? <span className="block text-[11px] font-normal">melebihi rencana</span> : null}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
       <PemakaianAktualBagian unitId={u.id} data={data} izin={data.izin || {}} aktif={aktif} onDone={onDone} onMulai={onMulai} tanpaJudul />
     </div>
   );

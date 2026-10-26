@@ -14,6 +14,7 @@ import { KoreksiError, STATUS, bentukKoreksi } from "./warehouseCorrection.js";
 import { dasarHargaRataRata } from "./finance/posting/inventory.js";
 import { evaluasiUlang, kunciEvaluasiCatatan } from "./catatanPemakaianHistoris.js";
 import { STATE, koma } from "../lib/domain/pemakaianHistoris.js";
+import { tanggalDilaporkan } from "./pembetulanBahanUnit.js";
 
 const TIPE_DOK = "UNIT_USAGE";
 const EPS = 1e-6;
@@ -108,7 +109,7 @@ async function pemakaianBersih(db, unitId, materialId) {
 }
 async function rencanaKoreksi(db, { unitId, materialId, qtyBaru, kecualiKoreksiId = null }) {
   const penghalang = []; const qty = Number(qtyBaru);
-  const unit = await db.unit.findUnique({ where: { id: unitId }, select: { id: true, unitCode: true, status: true, order: { select: { orderNumber: true } } } });
+  const unit = await db.unit.findUnique({ where: { id: unitId }, select: { id: true, unitCode: true, status: true, createdAt: true, order: { select: { orderNumber: true } } } });
   if (!unit) throw new KoreksiError("Unit tidak ditemukan", 404, "UNIT_TIDAK_ADA");
   const m = await db.material.findUnique({ where: { id: materialId }, select: { id: true, code: true, name: true, unit: true } });
   if (!m) throw new KoreksiError("Bahan tidak ditemukan", 404, "BAHAN_TIDAK_ADA");
@@ -140,7 +141,7 @@ async function nomorKoreksi(tx, sekarang) {
 const sertakan = { requestedBy: { select: { id: true, name: true } }, decidedBy: { select: { id: true, name: true } }, movements: { select: { id: true, type: true, qty: true, materialId: true, location: true, correctsMovementId: true, createdAt: true }, orderBy: { createdAt: "asc" } } };
 
 /** Ajukan koreksi pemakaian per order. Menunggu persetujuan orang LAIN (izin inventory:adjustment_approve). Idempoten per Idempotency-Key. Satu koreksi tertunda per unit. */
-export async function ajukanKoreksiPemakaian(prisma, { unitId, materialId, qtyBaru, alasan, kunci, aktor, sekarang = new Date(), tanggalEfektif = null }) {
+export async function ajukanKoreksiPemakaian(prisma, { unitId, materialId, qtyBaru, alasan, kunci, aktor, sekarang = new Date(), tanggalEfektif = null, tanggalPemakaian = null }) {
   const reason = alasanWajib(alasan); const idem = kunciValid(kunci);
   const ada = await prisma.warehouseCorrection.findUnique({ where: { idempotencyKey: idem }, include: sertakan });
   if (ada) { if (ada.docId !== unitId || ada.docType !== TIPE_DOK) throw new KoreksiError("Idempotency-Key ini sudah dipakai untuk koreksi lain", 409, "KUNCI_DIPAKAI_DOKUMEN_LAIN"); return { ...bentukKoreksi(ada), ulang: true }; }
@@ -151,10 +152,12 @@ export async function ajukanKoreksiPemakaian(prisma, { unitId, materialId, qtyBa
       const r = await rencanaKoreksi(tx, { unitId, materialId, qtyBaru });
       if (r.tertunda > 0) throw new KoreksiError("Masih ada koreksi pemakaian yang menunggu persetujuan untuk unit ini", 409, "KOREKSI_TERTUNDA");
       if (!r.boleh) throw new KoreksiError(`Koreksi diblokir: ${r.penghalang[0].pesan}`, 409, r.penghalang[0].kode, { penghalang: r.penghalang });
+      // Tanggal pemakaian yang DILAPORKAN (opsional; dikirim layar Ubah pemakaian): dibawa ke catatan pergerakan saat disetujui sehingga Harga Berlaku HPP operasional mengikuti tanggal itu (aturan yang sama dengan pembetulan langsung).
+      const tglLapor = tanggalPemakaian ? tanggalDilaporkan(tanggalPemakaian, { unitDibuat: r.unit.createdAt, sekarang }).tanggal : null;
       const nomor = await nomorKoreksi(tx, sekarang);
       const k = await tx.warehouseCorrection.create({ data: {
         correctionNumber: nomor, docType: TIPE_DOK, docId: unitId, docNumber: r.unit.unitCode, kind: "STOCK", status: STATUS.PENDING, reason,
-        changes: { bahan: { id: r.bahan.id, kode: r.bahan.code, nama: r.bahan.name, satuan: r.bahan.unit }, order: r.unit.order?.orderNumber ?? null, sebelum: { pemakaianBersih: r.bersihSebelum, pergerakan: r.idPergerakan }, sesudah: { pemakaianBersih: r.bersihSesudah }, selisih: r.delta, jenisPergerakan: r.jenis, pergerakanAsal: r.pergerakanAsal, tanggalEfektif: efektif ? efektif.toISOString() : null },
+        changes: { bahan: { id: r.bahan.id, kode: r.bahan.code, nama: r.bahan.name, satuan: r.bahan.unit }, order: r.unit.order?.orderNumber ?? null, sebelum: { pemakaianBersih: r.bersihSebelum, pergerakan: r.idPergerakan }, sesudah: { pemakaianBersih: r.bersihSesudah }, selisih: r.delta, jenisPergerakan: r.jenis, pergerakanAsal: r.pergerakanAsal, tanggalEfektif: efektif ? efektif.toISOString() : null, tanggalPemakaian: tglLapor },
         preview: { saldoSebelum: r.saldoSebelum, saldoSesudah: r.saldoSesudah, nilaiPerkiraan: r.nilaiPerkiraan, hargaDasar: r.hargaDasar, catatan: "Nilai perkiraan memakai harga rata-rata tertimbang saat ini; nilai final dibekukan saat disetujui (koreksi harga terpisah)." },
         docToken: r.token, requestedById: aktor.id, requestedAt: sekarang, idempotencyKey: idem,
       }, include: sertakan });
@@ -187,7 +190,7 @@ export async function setujuiKoreksiPemakaian(prisma, { koreksiId, aktor, catata
     const efektif = k.changes.tanggalEfektif ? new Date(k.changes.tanggalEfektif) : undefined;
     const mv = await postStockMovement(tx, {
       materialId, type: r.jenis, qty: r.delta > 0 ? -r.delta : Math.abs(r.delta), unitId: k.docId, correctionId: k.id, correctsMovementId: r.pergerakanAsal, createdAt: efektif,
-      reason: `Koreksi ${k.correctionNumber}: ${k.reason}`.slice(0, 480), note: `Koreksi pemakaian ${k.correctionNumber} atas ${r.unit.unitCode} (${koma(r.bersihSebelum)} → ${koma(r.bersihSesudah)} ${r.bahan.unit})`, createdById: aktor.id,
+      reason: `Koreksi ${k.correctionNumber}: ${k.reason}`.slice(0, 480), note: `Koreksi pemakaian ${k.correctionNumber}${k.changes.tanggalPemakaian ? ` [dilaporkan ${k.changes.tanggalPemakaian}]` : ""} atas ${r.unit.unitCode} (${koma(r.bersihSebelum)} → ${koma(r.bersihSesudah)} ${r.bahan.unit})`, createdById: aktor.id,
     });
     const hasilPost = { pergerakanId: mv.id, jenis: r.jenis, selisih: r.delta, pemakaianSebelum: r.bersihSebelum, pemakaianSesudah: r.bersihSesudah, saldoSebelum: r.saldoSebelum, saldoSesudah: r.saldoSesudah };
     await tx.warehouseCorrection.update({ where: { id: k.id }, data: { status: STATUS.POSTED, decidedById: aktor.id, decidedAt: sekarang, decisionNote: catatan ? String(catatan).slice(0, 500) : null, result: hasilPost } });

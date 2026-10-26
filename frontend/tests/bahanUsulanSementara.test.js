@@ -60,9 +60,9 @@ test("PemakaianAktualBagian: TIGA sumber selalu terlihat (kartu di luar panel fo
   for (const k of ["Bahan dari Gudang", "Bahan belum ada di katalog", "Komponen lama dari kasur ini", "Perlu rekonsiliasi Gudang", "Mengurangi stok saat dikonfirmasi", "Tidak memengaruhi stok"]) assert.ok(m.includes(k), k);
   // kartu dirender tanpa syarat mode (hanya izin+aktif), formulir di bawahnya bergantung mode
   const iKartu = b.indexOf('data-testid="aktual-sumber-tombol"'); const iPanel = b.indexOf('data-testid="panel-catat-aktual"');
-  assert.ok(iKartu > 0 && iPanel > iKartu, "kartu sebelum panel formulir"); assert.match(b, /\{boleh && \(\s*<div role="radiogroup"/, "kartu tampil selama boleh (bukan hanya saat mode kosong)");
+  assert.ok(iKartu > 0 && iPanel > iKartu, "kartu sebelum panel formulir"); assert.match(b, /\{pilihanTampil && \(\s*<div role="radiogroup"/, "pilihan sumber tampil selama dibuka lewat '+ Tambah pemakaian' atau ada mode (bukan hanya saat mode kosong)");
   assert.match(b, /mode === "belum" && <BahanBelumAda/); assert.match(b, /mode === "gudang" && <CatatBahanBaru/); assert.match(b, /mode === "lama" && <FormKomponenLama/);
-  assert.match(b, /disabled=\{rencanaEdit\}/); assert.match(b, /disabled=\{rencanaEdit \|\| !bolehBelumAda\}/); assert.match(b, /bolehBelumAda = boleh && \(!!izin\.catatPemakaianSementara \|\| !!izin\.usulBahan\)/);
+  assert.match(b, /disabled=\{rencanaEdit\}/); assert.match(b, /disabled=\{rencanaEdit \|\| !bolehBelumAda\}/); assert.match(b, /bolehBelumAda = bolehTambah && \(!!izin\.catatPemakaianSementara \|\| !!izin\.usulBahan\)/);
   assert.match(b, /Akun Anda hanya bisa melihat pemakaian bahan/);
   for (const k of ["sec-bahan-baru", "sec-pemakaian-sementara", "sec-komponen-lama"]) assert.ok(b.includes(k), "daftar per sumber tetap terpisah: " + k);
   assert.ok(!b.includes("addUnitMaterial") && !b.includes("api.catatPemakaianSementara") && !b.includes("api.ajukanBahanBaru"), "komponen ini hanya merakit; jalur API ada di formulir masing-masing");

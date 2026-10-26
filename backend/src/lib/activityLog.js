@@ -258,6 +258,8 @@ export const EVENT_TYPES = Object.freeze({
   PRODUCTION_COMPONENT_CORRECTED: "PRODUCTION_COMPONENT_CORRECTED",
   // Pembetulan bahan pada unit yang SUDAH selesai/terkirim/dibatalkan (alasan wajib; lewat layanan pemakaian resmi): menambah/mengurangi pengeluaran stok bertaut unit.
   PRODUCTION_PEMBETULAN_BAHAN_UNIT_SELESAI: "PRODUCTION_PEMBETULAN_BAHAN_UNIT_SELESAI",
+  // Perubahan pemakaian per bahan dari tabel Pemakaian aktual (ubah jumlah / ganti bahan; atomik lewat pergerakan stok resmi; unit berjalan ATAU terkirim).
+  PRODUCTION_PERUBAHAN_PEMAKAIAN_BAHAN: "PRODUCTION_PERUBAHAN_PEMAKAIAN_BAHAN",
   DOCUMENT_CANCELLED: "DOCUMENT_CANCELLED",
   DOCUMENT_POSTED: "DOCUMENT_POSTED", // ledger benar-benar tertulis (putaway/issue/dispatch/receive/complete/post)
 
@@ -586,6 +588,8 @@ export function formatActivitySentence(event) {
       return `Catatan komponen unit ${metadata.unitCode || "—"}: ${metadata.sectionLabel || metadata.section || "—"} dikoreksi (versi ${metadata.version ?? "—"}) — ${metadata.reason || "tanpa alasan"}`;
     case EVENT_TYPES.PRODUCTION_PEMBETULAN_BAHAN_UNIT_SELESAI:
       return `Pembetulan bahan unit ${metadata.unitCode || "—"} (sudah ${metadata.unitStatus === "CANCELLED" ? "dibatalkan" : "terkirim"}): ${metadata.tipe === "RETURN" ? "pengembalian" : "pengeluaran"} ${Math.abs(Number(metadata.qty ?? 0))} — ${metadata.alasan || "tanpa alasan"}`;
+    case EVENT_TYPES.PRODUCTION_PERUBAHAN_PEMAKAIAN_BAHAN:
+      return `Perubahan pemakaian bahan unit ${metadata.unitCode || "—"}: ${metadata.mode === "GANTI_BAHAN" ? "ganti bahan" : "ubah jumlah"} (${(metadata.langkah ?? []).map((l) => `${l.jenis === "RETURN" ? "kembali" : "keluar"} ${Math.abs(Number(l.qty ?? 0))}`).join(", ")}) — ${metadata.alasan || "tanpa alasan"}`;
     case EVENT_TYPES.PRODUCTION_STEP_RECORDED:
       return `Tahap ${metadata.stepNo ?? "—"} (${metadata.stepLabel || "—"}) unit ${metadata.unitCode || "—"} tercatat${metadata.verdict ? ` — hasil ${metadata.verdict}` : ""}`;
     case EVENT_TYPES.PRODUCTION_MATERIAL_SHORTAGE_REPORTED:

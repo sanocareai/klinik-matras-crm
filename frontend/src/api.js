@@ -1063,6 +1063,8 @@ export const api = {
   konfirmasiCatatanHistoris: (id, data, kunci) => request(`/production/catatan-historis/${id}/konfirmasi`, { method: "POST", headers: { "Idempotency-Key": kunci }, body: JSON.stringify(data) }),
   kecualikanCatatanHistoris: (id, data, kunci) => request(`/production/catatan-historis/${id}/kecualikan`, { method: "POST", headers: { "Idempotency-Key": kunci }, body: JSON.stringify(data) }),
   pratinjauKoreksiPemakaian: (unitId, data) => request(`/production/units/${unitId}/koreksi-pemakaian/pratinjau`, { method: "POST", body: JSON.stringify(data) }),
+  pratinjauPerubahanPemakaian: (unitId, data) => request(`/production/units/${unitId}/perubahan-pemakaian/pratinjau`, { method: "POST", body: JSON.stringify(data) }),
+  perubahanPemakaian: (unitId, data, kunci) => request(`/production/units/${unitId}/perubahan-pemakaian`, { method: "POST", headers: { "Idempotency-Key": kunci }, body: JSON.stringify(data) }),
   ajukanKoreksiPemakaian: (unitId, data, kunci) => request(`/production/units/${unitId}/koreksi-pemakaian`, { method: "POST", headers: { "Idempotency-Key": kunci }, body: JSON.stringify(data) }),
   daftarKoreksiPemakaian: (q = {}) => request(`/production/koreksi-pemakaian${Object.keys(q).length ? `?${new URLSearchParams(q)}` : ""}`),
   setujuiKoreksiPemakaian: (id, data = {}) => request(`/production/koreksi-pemakaian/${id}/setujui`, { method: "POST", body: JSON.stringify(data) }),

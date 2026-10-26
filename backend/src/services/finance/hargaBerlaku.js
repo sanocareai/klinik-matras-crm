@@ -75,13 +75,14 @@ export function penyelesaiHargaBerlaku(db) {
 // ("Pembetulan unit terkirim (KODE) [dilaporkan YYYY-MM-DD]: …", ditulis server di jalur unit terkirim). Aturan batas: harga yang berlaku pada AWAL hari itu (00:00 WIB, inklusif) — harga yang baru mulai
 // berlaku di tengah hari itu TIDAK dipakai (ditandai di pratinjau). Belum ada harga pada batas itu → TANPA_HARGA/belum diketahui; TIDAK PERNAH memakai harga hari pencatatan. Waktu pencatatan
 // (stock_movements.created_at) dan tanggal jurnal Finance tidak berubah. Hanya ISSUE/RETURN; pergerakan lain memakai created_at seperti biasa.
-const POLA_DILAPORKAN = /^Pembetulan unit terkirim \(.+?\) \[dilaporkan (\d{4}-\d{2}-\d{2})\]: /;
+// catatan baku pembetulan langsung ATAU koreksi pemakaian berpersetujuan yang disetujui (tanggal dilaporkan dibawa dari pengajuan)
+const POLA_DILAPORKAN = /^(?:Pembetulan unit terkirim \(.+?\) \[dilaporkan (\d{4}-\d{2}-\d{2})\]: |Koreksi pemakaian \S+ \[dilaporkan (\d{4}-\d{2}-\d{2})\] atas )/;
 export const batasHargaTanggal = (tgl) => new Date(`${tgl}T00:00:00+07:00`);
 /** Tanggal (YYYY-MM-DD, WIB) yang menjadi dasar harga pergerakan ini, atau null bila dasarnya waktu pergerakan biasa. */
 export function tanggalDasarHarga(p) {
   if (!p || (p.type !== "ISSUE" && p.type !== "RETURN")) return null;
   const m = POLA_DILAPORKAN.exec(String(p.note ?? "")); if (!m) return null;
-  const t = batasHargaTanggal(m[1]); return Number.isFinite(t.getTime()) && wibTgl(t) === m[1] ? m[1] : null;
+  const tgl = m[1] ?? m[2]; const t = batasHargaTanggal(tgl); return Number.isFinite(t.getTime()) && wibTgl(t) === tgl ? tgl : null;
 }
 /** Waktu yang dipakai MEMILIH Harga Berlaku untuk pergerakan ini (satu aturan untuk posting, penerapan, koreksi harga, dan tampilan). */
 export const waktuDasarHarga = (p) => { const t = tanggalDasarHarga(p); return t ? batasHargaTanggal(t) : new Date(p.createdAt ?? Date.now()); };
