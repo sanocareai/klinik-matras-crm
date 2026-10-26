@@ -183,7 +183,34 @@ export async function ringkasanBahan(db, materialId) {
     pemisah: PEMISAH,
     pembanding: { catatan: "Pembanding saja — bukan sumber harga berlaku.", biayaPerolehanGRTerakhir: rcpt ? { harga: Number(rcpt.unit_cost), tanggal: rcpt.created_at } : null, referensiAgustus: bahan.referenceUnitCost != null ? { harga: Number(bahan.referenceUnitCost), bulan: bahan.referenceUnitCostMonth } : null },
     dampak, jumlahRiwayat: semua.length, penerapanAktif: aktifApp, izinTeks: IZIN_TEKS,
+    nilaiPersediaanFinance: await nilaiPersediaanFinanceBahan(db, materialId),
   };
+}
+
+/**
+ * NILAI PERSEDIAAN FINANCE per bahan (terpisah dari harga berlaku/HPP operasional): satu-satunya sumber per-bahan adalah baris Persediaan Awal yang sudah DIPOSTING Finance
+ * (qty fisik × biaya satuan pada tanggal cutover). Bukan saldo berjalan dan bukan harga kerja. Bila belum ada yang diposting: tersedia=false (jujur, bukan Rp0).
+ */
+export async function nilaiPersediaanFinanceBahan(db, materialId) {
+  const r = (await db.$queryRawUnsafe(`select o.number, o.cutover_date, o.posted_at, l.qty, l.unit, l.unit_cost, l.value from fin_inventory_opening_lines l join fin_inventory_openings o on o.id = l.opening_id
+      where l.material_id = $1::uuid and o.status = 'DIPOSTING' order by o.posted_at desc limit 1`, materialId))[0];
+  const nama = "Nilai persediaan Finance (Persediaan Awal terposting)";
+  if (!r) return { tersedia: false, nama, teks: "Belum ada nilai persediaan Finance untuk bahan ini: Persediaan Awal belum diposting atau tidak memuat bahan ini. Ini BUKAN Rp0." };
+  return { tersedia: true, nama, nomor: r.number, tanggalCutover: r.cutover_date, diposting: r.posted_at, qty: Number(r.qty), satuan: r.unit, biayaSatuan: Number(r.unit_cost), nilai: Number(r.value),
+    teks: "Snapshot pada tanggal cutover (qty hitung fisik × biaya perolehan). Bukan saldo berjalan, bukan Harga Berlaku, bukan HPP operasional." };
+}
+
+/** Harga berlaku SEKARANG semua bahan yang punya riwayat harga — untuk kolom daftar Stok & Lokasi (satu kueri, baca-saja). Bahan tanpa harga tidak muncul (UI: "Belum ada harga berlaku", bukan Rp0). */
+export async function ringkasanDaftar(db) {
+  const semua = await db.materialHargaBerlaku.findMany({ orderBy: [{ effectiveFrom: "asc" }, { createdAt: "asc" }, { id: "asc" }], include: { material: { select: { unit: true } } } });
+  const per = new Map(); for (const x of semua) { if (!per.has(x.materialId)) per.set(x.materialId, []); per.get(x.materialId).push(x); }
+  const sekarang = new Date(); const harga = {};
+  for (const [id, baris] of per) {
+    const diganti = new Set(baris.map((x) => x.correctsId).filter(Boolean)); const aktif = baris.filter((x) => !diganti.has(x.id));
+    const b = pilih(aktif, sekarang); const jadwal = aktif.find((x) => new Date(x.effectiveFrom) > sekarang);
+    if (b || jadwal) harga[id] = { harga: b ? Number(b.unitPrice) : null, satuan: baris[0].material.unit, berlakuMulai: b?.effectiveFrom ?? null, labelBukti: b ? labelDari(b) : null, teksLabelBukti: b ? LABEL_BUKTI[labelDari(b)] : null, terjadwal: jadwal ? { harga: Number(jadwal.unitPrice), berlakuMulai: jadwal.effectiveFrom } : null };
+  }
+  return { sekarang, harga, jumlah: Object.keys(harga).length, pemisah: PEMISAH, catatan: "Harga berlaku = HPP operasional per satuan stok (harga kerja), bukan nilai persediaan Finance." };
 }
 
 // ── pratinjau & simpan ──────────────────────────────────────────────────────────────────────────────

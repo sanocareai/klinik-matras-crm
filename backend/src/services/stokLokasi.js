@@ -6,6 +6,7 @@
 // Sumber angka: SUM(qty) ledger stock_movements (computeStockSnapshot); reservasi dari Material Issue/reservasi Produksi. Baca-saja.
 import { computeStockSnapshot } from "./inventoryLedger.js";
 import { kelompokDariItemGroup, ringkasKelompok } from "../constants/kelompokBahan.js";
+import { klasifikasiSaldo, nolTerverifikasiPer, LABEL_KEADAAN_SALDO } from "./keadaanSaldo.js";
 
 export const KEADAAN = Object.freeze({
   ADA: "ADA", MENIPIS: "MENIPIS", TERPESAN_PENUH: "TERPESAN_PENUH", NOL_TERHITUNG: "NOL_TERHITUNG", MINUS: "MINUS", BELUM_ADA_CATATAN: "BELUM_ADA_CATATAN", NONAKTIF: "NONAKTIF",
@@ -48,11 +49,12 @@ export function ringkasStok(rows) {
 }
 
 export async function stokLokasi(db) {
-  const [dasar, jumlah, lokasi, grup] = await Promise.all([
+  const [dasar, jumlah, lokasi, grup, verifikasi] = await Promise.all([
     computeStockSnapshot(db),
     db.$queryRaw`SELECT material_id AS "materialId", COUNT(*)::int AS n FROM stock_movements GROUP BY material_id`,
     db.$queryRaw`SELECT DISTINCT ON (material_id) material_id AS "materialId", location, created_at AS "waktu" FROM stock_movements WHERE type = 'RECEIPT' AND qty > 0 ORDER BY material_id, created_at DESC`,
     db.material.findMany({ select: { id: true, itemGroup: true } }),
+    nolTerverifikasiPer(db),
   ]);
   const nGrup = new Map(grup.map((g) => [g.id, g.itemGroup ?? null]));
   const nJumlah = new Map(jumlah.map((x) => [x.materialId, x.n]));
@@ -67,6 +69,8 @@ export async function stokLokasi(db) {
       dipesan: n > 0 ? r4(r.reserved) : null, tersedia: n > 0 ? r4(r.available) : null,
       batasMinimum: r.reorderPoint ?? null, // null = belum diatur (BUKAN nol)
       keadaan, keadaanLabel: LABEL_KEADAAN[keadaan],
+      // Pembeda saldo (Koreksi Saldo): belum ada catatan ≠ nol menurut pergerakan ≠ nol TERVERIFIKASI hitung fisik. nolTerverifikasi = bukti (Stock Count/koreksi resmi), bukan tebakan.
+      keadaanSaldo: klasifikasiSaldo({ jumlahPergerakan: n, saldo: r.balance, nolTerverifikasi: verifikasi.has(r.materialId) }), keadaanSaldoLabel: LABEL_KEADAAN_SALDO[klasifikasiSaldo({ jumlahPergerakan: n, saldo: r.balance, nolTerverifikasi: verifikasi.has(r.materialId) })], nolTerverifikasi: verifikasi.get(r.materialId) ?? null,
       lokasiTerakhir: lok ? { lokasi: lok.location, waktu: lok.waktu, catatan: "Lokasi penerimaan terakhir (bukan saldo per lokasi)" } : null,
       sumberAngka: n > 0 ? { jenis: "LEDGER", jumlahPergerakan: n, pergerakanTerakhir: r.lastMovementAt, teks: `Ledger pergerakan: ${n} pergerakan, terakhir ${r.lastMovementAt ? new Date(r.lastMovementAt).toISOString().slice(0, 10) : "—"}` } : { jenis: "BELUM_ADA", jumlahPergerakan: 0, pergerakanTerakhir: null, teks: "Belum ada pergerakan stok untuk bahan ini" },
       catatanData: r.dataNote ?? null,

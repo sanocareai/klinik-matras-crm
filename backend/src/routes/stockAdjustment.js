@@ -20,6 +20,7 @@ import { wajibUuid } from "../lib/uuidParam.js";
 import { pesanServerAman } from "../lib/galatServerAman.js";
 import { wajibPenyetujuPenyesuaian, wajibBukanPihakPengaju } from "../services/inventorySegregation.js";
 import { ASAL_KOREKSI_TIPE, validasiAsalKoreksi, ringkasAsalKoreksi } from "../services/asalKoreksiSaldo.js";
+import { KoreksiSaldoError, keadaanBahan, pratinjauKoreksi, ajukanKoreksi, riwayatKoreksiBahan, wajibSaldoBelumBergeser } from "../services/koreksiSaldoBahan.js";
 
 export const stockAdjustmentRouter = express.Router();
 stockAdjustmentRouter.use(requireAuth);
@@ -28,6 +29,7 @@ class AdjustmentError extends Error {
   constructor(message, statusCode = 400) { super(message); this.statusCode = statusCode; }
 }
 function handleErr(err, res) {
+  if (err instanceof KoreksiSaldoError) return res.status(err.statusCode).json({ error: err.message, code: err.code, ...(err.detail ? { detail: err.detail } : {}) });
   if (typeof err.statusCode === "number") return res.status(err.statusCode).json({ error: err.message });
   if (err.code === "P2002") return res.status(409).json({ error: "Nomor adjustment sudah dipakai" });
   if (err.code === "P2025") return res.status(404).json({ error: "Data tidak ditemukan" });
@@ -68,6 +70,20 @@ stockAdjustmentRouter.get("/", requirePermission(P.INVENTORY_READ), async (req, 
   } catch (err) {
     handleErr(err, res);
   }
+});
+
+// KOREKSI SALDO PER BAHAN (Stok & Lokasi): pratinjau baca-saja + pengajuan ke jalur resmi Penyesuaian Stok. Tidak menulis ledger; persetujuan orang lain + posting tetap di rute /:id di bawah.
+//   GET  /koreksi-saldo/bahan/:materialId  (inventory:read)  keadaan saldo, izin, riwayat koreksi bahan
+//   POST /koreksi-saldo/pratinjau          (inventory:read)  { materialId, jumlahFisik } -> saldo sebelum, jumlah baru, selisih, dampak stok, izin
+//   POST /koreksi-saldo/ajukan             (inventory:write) { materialId, jumlahFisik, saldoDilihat, alasan, catatan?, originType?, originId? } + header Idempotency-Key
+stockAdjustmentRouter.get("/koreksi-saldo/bahan/:materialId", requirePermission(P.INVENTORY_READ), async (req, res) => {
+  try { res.json({ ...(await keadaanBahan(prisma, req.user, req.params.materialId)), riwayat: await riwayatKoreksiBahan(prisma, req.params.materialId) }); } catch (err) { handleErr(err, res); }
+});
+stockAdjustmentRouter.post("/koreksi-saldo/pratinjau", requirePermission(P.INVENTORY_READ), async (req, res) => {
+  try { res.json(await pratinjauKoreksi(prisma, req.user, req.body ?? {})); } catch (err) { handleErr(err, res); }
+});
+stockAdjustmentRouter.post("/koreksi-saldo/ajukan", requirePermission(P.INVENTORY_WRITE), async (req, res) => {
+  try { const h = await ajukanKoreksi(prisma, req.user, req.body ?? {}, req.get("Idempotency-Key")); res.status(h.ulang ? 200 : 201).json(h); } catch (err) { handleErr(err, res); }
 });
 
 stockAdjustmentRouter.get("/:id", requirePermission(P.INVENTORY_READ), wajibUuid(), async (req, res) => {
@@ -160,6 +176,7 @@ stockAdjustmentRouter.patch("/:id", requireAnyPermission(P.INVENTORY_WRITE, P.IN
         }
         data.status = status;
         if (status === "APPROVED") {
+          await wajibSaldoBelumBergeser(tx, existing.id, existing.materialId); // koreksi saldo: saldo yang dilihat pengaju harus masih sama
           wajibPenyetujuPenyesuaian(req.user);
           wajibBukanPihakPengaju(req.user, [existing.requestedById], { label: "pemohon" });
           data.approvedById = req.user.id;
@@ -209,6 +226,7 @@ stockAdjustmentRouter.post("/:id/post", requirePermission(P.INVENTORY_WRITE), wa
         throw new AdjustmentError("Request tidak memiliki persetujuan orang lain — tidak dapat diposting", 403);
       }
 
+      await wajibSaldoBelumBergeser(tx, request.id, request.materialId); // koreksi saldo: tolak bila saldo sudah bergeser sejak diajukan
       await postStockMovement(tx, {
         materialId: request.materialId, type: "ADJUSTMENT", qty: request.adjustmentQty,
         reason: request.reason, note: `Stock Adjustment ${request.adjustmentNumber}`,

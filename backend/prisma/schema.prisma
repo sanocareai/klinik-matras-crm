@@ -5263,6 +5263,7 @@ enum MaterialCategory {
 
 model Material {
   hargaBerlaku MaterialHargaBerlaku[]
+  koreksiSaldo KoreksiSaldoBahan[]
   biayaOperasional StockMovementBiayaOperasional[]
   penerapanBiayaOperasional BiayaOperasionalPenerapan[]
   componentReuseEntries UnitComponentReuseEntry[]
@@ -6335,6 +6336,7 @@ model StockAdjustmentRequest {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   movements StockMovement[]
+  koreksiSaldo KoreksiSaldoBahan?
 
   @@index([status])
   @@map("stock_adjustment_requests")
@@ -11810,4 +11812,25 @@ model BiayaOperasionalPenerapan {
 
   @@index([materialId, status])
   @@map("biaya_operasional_penerapan")
+}
+
+// KOREKSI SALDO PER BAHAN dari Stok & Lokasi (Okt 2026) — KONTEKS pengajuan, append-only. Perubahan saldo tetap lewat Penyesuaian Stok (persetujuan orang lain + postStockMovement); lihat migrasi 20261231100000_koreksi_saldo_bahan.
+model KoreksiSaldoBahan {
+  id                   String   @id @default(uuid()) @db.Uuid
+  adjustmentRequestId  String   @unique @map("adjustment_request_id") @db.Uuid
+  adjustmentRequest    StockAdjustmentRequest @relation(fields: [adjustmentRequestId], references: [id], onDelete: Restrict)
+  materialId           String   @map("material_id") @db.Uuid
+  material             Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
+  satuan               String   @db.VarChar(20)
+  jumlahFisik          Decimal  @map("jumlah_fisik") @db.Decimal(14, 4)
+  saldoDilihat         Decimal  @map("saldo_dilihat") @db.Decimal(14, 4)
+  selisih              Decimal  @db.Decimal(14, 4)
+  keadaanAwal          String   @map("keadaan_awal") @db.VarChar(24) // BELUM_ADA_CATATAN | NOL_MENURUT_PERGERAKAN | NOL_TERVERIFIKASI | POSITIF | MINUS
+  jumlahPergerakanAwal Int      @map("jumlah_pergerakan_awal")
+  idempotencyKey       String   @unique @map("idempotency_key")
+  createdById          String?  @map("created_by")
+  createdAt            DateTime @default(now()) @map("created_at")
+
+  @@index([materialId, createdAt])
+  @@map("koreksi_saldo_bahan")
 }
