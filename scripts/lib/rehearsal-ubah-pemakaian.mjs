@@ -42,7 +42,7 @@ cek(`data uji tersedia: unit terkirim bersih ${unit?.kode}, bahan A ${matA?.kode
 const T = wib(unit.dibuat); const hariIni = wib(new Date()); const awalT = new Date(`${T}T00:00:00+07:00`);
 const PRA = (u) => `/api/production/units/${u}/perubahan-pemakaian/pratinjau`; const PASANG = (u) => `/api/production/units/${u}/perubahan-pemakaian`; const PRAB = (u) => `/api/production/units/${u}/pembetulan-bahan/pratinjau`; const POSTM = (u) => `/api/units/${u}/materials`;
 const hb = (mat, harga, mulai, k) => prisma.materialHargaBerlaku.create({ data: { materialId: mat.id, jenis: "HARGA", unitPrice: String(harga), satuan: mat.satuan, effectiveFrom: mulai, createdAt: mulai, reason: "REH: harga uji", idempotencyKey: kunci(k) } });
-const tetap = ["fin_inventory_openings", "goods_receipts", "fin_purchase_orders", "fin_supplier_bills", "fin_stock_movement_valuation_corrections", "unit_usage_notes", "koreksi_saldo_bahan", "stock_adjustment_requests", "material_issues", "unit_provisional_usages", "unit_component_reuse_entries"];
+const tetap = ["fin_inventory_openings", "goods_receipts", "fin_purchase_orders", "fin_supplier_bills", "fin_stock_movement_valuation_corrections", "unit_usage_notes", "koreksi_saldo_bahan", "stock_adjustment_requests", "unit_provisional_usages", "unit_component_reuse_entries"];
 const hitungTetap = async () => { const o = {}; for (const t of tetap) o[t] = await num(`select count(*)::int n from "${t}"`); return o; }; const tetap0 = await hitungTetap();
 
 // ── A. KOREKSI SALDO yang sudah live tetap utuh (dibaca SEBELUM uji tulis)
@@ -106,11 +106,17 @@ const sesuaiFin = hasilFin.every((h) => ["JURNAL", "TIDAK_DIJURNAL", "GAP_PERSED
 cek(`hasil Finance nyata = prediksi pratinjau per langkah (${hasilFin.join(" + ")}): jurnal baru ${dJur}, celah baru ${dGap}; HPP beku tepat 2 baris baru`, sesuaiFin && J3.hpp - S1.hpp === 2, `${dJur}/${dGap}/${J3.hpp - S1.hpp}`);
 
 // ── G. BAHAN ASAL MATERIAL ISSUE: tetap persetujuan / Return Produksi (data produksi nyata pada salinan restore)
-const mi = (await prisma.$queryRawUnsafe(`select s.unit_id::text uid, s.material_id::text mid, u.status::text st, u.created_at dibuat, u.unit_code kode, (select -coalesce(sum(w.qty),0)::float from stock_movements w where w.unit_id = s.unit_id and w.material_id = s.material_id and w.type::text in ('ISSUE','RETURN','WASTE')) bersih
+let mi = (await prisma.$queryRawUnsafe(`select s.unit_id::text uid, s.material_id::text mid, u.status::text st, u.created_at dibuat, u.unit_code kode, (select -coalesce(sum(w.qty),0)::float from stock_movements w where w.unit_id = s.unit_id and w.material_id = s.material_id and w.type::text in ('ISSUE','RETURN','WASTE')) bersih
     from stock_movements s join units u on u.id = s.unit_id where s.type::text = 'ISSUE' and s.material_issue_id is not null and u.status::text = 'DELIVERED'
       and not exists (select 1 from stock_movements w where w.unit_id = s.unit_id and w.material_id = s.material_id and w.type::text = 'WASTE') and not exists (select 1 from warehouse_corrections c where c.doc_id = u.id and c.status::text = 'PENDING_APPROVAL')
     group by s.unit_id, s.material_id, u.status, u.created_at, u.unit_code order by u.created_at desc limit 1`))[0];
-cek(`data nyata bahan asal Material Issue ditemukan pada salinan (unit ${mi?.kode}, status ${mi?.st})`, !!mi && mi.bersih > 1); if (mi && mi.bersih > 1) {
+let sintetis = false;
+if (!mi || !(mi.bersih > 1)) {
+  // Salinan restore tidak memuat unit terkirim dengan pengeluaran Material Issue: skenario dibangun PADA DB SEMENTARA ini (bahan C pada unit uji; dokumen Material Issue + pergerakan ISSUE bertaut) — bukan di production.
+  const matC = await pilihMat([matA.id, matB.id], 5); cek(`bahan C tersedia untuk skenario Material Issue sintetis: ${matC?.kode}`, !!matC);
+  if (matC) { const doc = await prisma.materialIssue.create({ data: { issueNumber: "MI-REH-" + Date.now().toString(36).toUpperCase(), sourceType: "MANUAL", status: "ISSUED", unitId: unit.id } }); await prisma.stockMovement.create({ data: { materialId: matC.id, type: "ISSUE", qty: -3, unitId: unit.id, materialIssueId: doc.id, note: "REH: pengeluaran dari dokumen Material Issue (sintetis pada DB rehearsal)" } }); mi = { uid: unit.id, mid: matC.id, st: "DELIVERED", dibuat: unit.dibuat, kode: unit.kode, bersih: 3 }; sintetis = true; }
+}
+cek(`bahan asal Material Issue tersedia untuk uji (${sintetis ? "dibangun pada DB rehearsal" : "data nyata salinan"}): unit ${mi?.kode}, status ${mi?.st}`, !!mi && mi.bersih > 1); if (mi && mi.bersih > 1) {
   const tM = mi.st === "DELIVERED" ? { tanggalPemakaian: wib(mi.dibuat) } : {}; const bU = { materialId: mi.mid, qtyBaru: Math.round((mi.bersih - 1) * 10000) / 10000, ...tM }; const JM = await jejak(mi.mid, matB.id);
   const pM = await H("POST", PRA(mi.uid), tA, bU); const lM = await H("POST", PASANG(mi.uid), tA, { ...bU, alasan: "REH: uji bahan asal Material Issue", dilihat: pM.body?.sidik }, kunci("mi"));
   const pgM = await H("POST", PRA(mi.uid), tA, { materialId: mi.mid, qtyBaru: 0, keMaterialId: matB.id, qtyKe: 1, ...tM });
