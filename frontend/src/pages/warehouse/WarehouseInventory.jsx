@@ -14,6 +14,7 @@ import ItemFormModal from "@/features/warehouse/components/ItemFormModal.jsx";
 import KelompokBahanNav from "@/features/warehouse/stok/KelompokBahanNav.jsx";
 import { useFilterDaftar } from "@/features/warehouse/dokumen/useFilterDaftar.js";
 import { CATEGORY_REAL } from "@/features/warehouse/inventoryReal.js";
+import { tampilHargaDaftar } from "@/features/warehouse/stok/koreksiSaldoLogic.js";
 import { FILTER_KEADAAN, FILTER_JENIS, saringStok, daftarTampil, jangkauanCari, teksBatasMinimum, warnaKeadaan, tampilSaldo, riwayatLokasi, kunciJenis } from "@/features/warehouse/stok/stokLogic.js";
 
 // STOK & LOKASI — mencari bahan dan membaca saldonya dengan jujur. Layar awal = NAVIGASI KELOMPOK BAHAN (Busa, Kain, Benang, Pegas, Kayu, Lem/Kimia, Aksesori, Lainnya, + yang belum dikelompokkan), pencarian,
@@ -28,15 +29,23 @@ function SaldoSel({ r, inline = false }) {
   const t = tampilSaldo(r);
   if (t.jenis === "BELUM_DIKETAHUI") return <span className="text-[11.5px] font-medium italic text-ink3">{t.teks}</span>;
   if (t.jenis === "MINUS") return <span className="font-bold text-red">{t.teks}<span className="ml-1 text-[10.5px] font-semibold uppercase">minus</span></span>;
-  if (t.jenis === "NOL") return <span className="font-semibold text-ink2">0<span className="ml-1 text-[10.5px] font-normal text-ink3">habis</span></span>;
+  if (t.jenis === "NOL_TERVERIFIKASI") return <span className="font-semibold text-ink2" data-testid="saldo-nol-terverifikasi">0<span className="ml-1 text-[10.5px] font-semibold text-green">terverifikasi</span></span>;
+  if (t.jenis === "NOL") return <span className="font-semibold text-ink2" data-testid="saldo-nol-pergerakan">0<span className="ml-1 text-[10.5px] font-normal text-ink3">{t.label ?? "habis"}</span></span>;
   return <span className={inline ? "font-semibold text-ink" : "font-semibold text-ink"}>{t.teks}</span>;
+}
+// Harga Berlaku (HPP operasional per satuan stok) dari fitur Harga Berlaku. Bahan tanpa harga: "Belum ada harga berlaku" — BUKAN Rp0. Bukan nilai persediaan Finance.
+function HargaSel({ peta, r }) {
+  const h = tampilHargaDaftar(peta, r.materialId);
+  if (!h) return null;
+  if (!h.ada) return <span className="text-[11.5px] italic text-ink3" data-testid="harga-daftar" data-ada="0">{h.teks}{h.sub && <span className="block not-italic">{h.sub}</span>}</span>;
+  return <span data-testid="harga-daftar" data-ada="1" title={`${h.label} — HPP operasional per satuan stok, bukan nilai persediaan Finance`}><span className="font-semibold text-ink">Rp{Number(h.harga).toLocaleString("id-ID", { maximumFractionDigits: 4 })}</span><span className="ml-0.5 text-[10.5px] text-ink3">/ {h.satuan}</span></span>;
 }
 const LabelKelompok = ({ r }) => (r.kelompok?.kode === "BELUM"
   ? <span className="rounded-chip bg-orangebg px-1.5 py-0.5 text-[10.5px] font-semibold text-orange" title={r.kelompok?.alasan} data-testid="kelompok-baris" data-kode="BELUM">Belum dikelompokkan</span>
   : <span className="rounded-chip bg-inset px-1.5 py-0.5 text-[10.5px] font-semibold text-ink2" data-testid="kelompok-baris" data-kode={r.kelompok?.kode}>{r.kelompok?.label ?? "—"}</span>);
 
 export default function WarehouseInventory() {
-  const [data, setData] = useState(null); const [stok, setStok] = useState(null);
+  const [data, setData] = useState(null); const [stok, setStok] = useState(null); const [harga, setHarga] = useState(null); // harga = null: tanpa izin Finance / gagal muat -> kolom harga disembunyikan
   const [loading, setLoading] = useState(true); const [error, setError] = useState("");
   const [f, ubahF, ubahBanyak] = useFilterDaftar(PATH, KUNCI);
   const { kelompok, jenis, q: cari, keadaan } = f; const nonaktif = f.nonaktif === "1"; const semua = f.semua === "1";
@@ -45,6 +54,7 @@ export default function WarehouseInventory() {
   const load = useCallback(() => {
     setLoading(true); setError("");
     Promise.all([api.getStokLokasi(), api.getStock()]).then(([a, b]) => { setData(a); setStok(new Map(b.map((x) => [x.materialId, x]))); }).catch((e) => setError(e.message)).finally(() => setLoading(false));
+    api.getRingkasanDaftarHargaBerlaku().then(setHarga).catch(() => setHarga(null)); // tanpa izin Finance -> kolom harga disembunyikan
   }, []);
   useEffect(() => { load(); }, [load]);
 
@@ -149,9 +159,9 @@ export default function WarehouseInventory() {
                 <>
                   <TableWrap className="hidden md:block">
                     <Table>
-                      <THead><TR><TH>Bahan</TH><TH>Kelompok</TH><TH numeric>Saldo</TH><TH numeric>Tersedia</TH><TH>Satuan</TH><TH numeric>Batas minimum</TH><TH title="Riwayat penerimaan, bukan lokasi stok saat ini">Riwayat penerimaan</TH><TH>Keadaan</TH></TR></THead>
+                      <THead><TR><TH>Bahan</TH><TH>Kelompok</TH><TH numeric>Saldo</TH><TH numeric>Tersedia</TH><TH>Satuan</TH>{harga && <TH numeric title="Harga Berlaku = HPP operasional per satuan stok, bukan nilai persediaan Finance">Harga berlaku</TH>}<TH numeric>Batas minimum</TH><TH title="Riwayat penerimaan, bukan lokasi stok saat ini">Riwayat penerimaan</TH><TH>Keadaan</TH></TR></THead>
                       <TBody>
-                        {loading && <TableSkeletonRows rows={8} cols={8} />}
+                        {loading && <TableSkeletonRows rows={8} cols={harga ? 9 : 8} />}
                         {!loading && terfilter?.map((r) => (
                           <TR key={r.materialId} clickable onClick={() => setSelected(stok?.get(r.materialId) ?? null)} data-testid="baris-stok" data-kode={r.kode} title={r.sumberAngka?.teks ?? "Belum ada catatan pergerakan stok untuk bahan ini"}>
                             <TD className="min-w-[220px]"><div className="font-semibold text-ink" data-testid="nama-bahan">{r.nama}</div><div className="text-[11px] text-ink3 [overflow-wrap:anywhere]">{r.kode}{r.kategori ? ` · ${CATEGORY_REAL[r.kategori]?.label}` : ""}</div></TD>
@@ -159,6 +169,7 @@ export default function WarehouseInventory() {
                             <TD numeric data-testid="sel-saldo" data-jenis={tampilSaldo(r).jenis} title={tampilSaldo(r).keterangan}><SaldoSel r={r} /></TD>
                             <TD numeric className="text-ink2">{r.tersedia === null ? "—" : r.tersedia}</TD>
                             <TD className="text-ink2">{String(r.satuan ?? "").toLowerCase()}</TD>
+                            {harga && <TD numeric data-testid="sel-harga"><HargaSel peta={harga} r={r} /></TD>}
                             <TD numeric className="text-ink3" data-testid="sel-minimum">{teksBatasMinimum(r)}</TD>
                             <TD className="whitespace-nowrap text-ink2" data-testid="sel-riwayat-lokasi">{riwayatLokasi(r) ? <span title="Dari riwayat penerimaan. Sistem tidak menyimpan saldo per lokasi, jadi ini bukan lokasi stok saat ini."><MapPin size={11} className="mr-0.5 inline text-ink3" aria-hidden />{riwayatLokasi(r).teks}</span> : <span className="text-ink3">tidak ada riwayat</span>}</TD>
                             <TD className="min-w-[140px]"><Badge variant={warnaKeadaan(r.keadaan)} className="h-auto whitespace-normal text-left leading-tight">{r.keadaanLabel}</Badge></TD>
@@ -176,6 +187,7 @@ export default function WarehouseInventory() {
                           <div className="mt-0.5 text-[13px] text-ink">{r.nama}</div>
                           <div className="mt-1"><Badge variant={warnaKeadaan(r.keadaan)} className="h-auto whitespace-normal text-left leading-tight">{r.keadaanLabel}</Badge></div>
                           <div className="mt-1 text-[11.5px] text-ink2">Saldo <SaldoSel r={r} inline /> · minimum {teksBatasMinimum(r)}</div>
+                          {harga && <div className="mt-0.5 text-[11.5px] text-ink2" data-testid="harga-mobile">Harga berlaku <HargaSel peta={harga} r={r} /></div>}
                           <div className="mt-0.5 text-[11px] text-ink3">{r.sumberAngka?.teks ?? "Belum ada catatan pergerakan stok"}</div>
                           {riwayatLokasi(r) && <div className="mt-0.5 text-[11px] text-ink3" data-testid="riwayat-lokasi">{riwayatLokasi(r).teks} — riwayat, bukan lokasi stok saat ini</div>}
                         </button>

@@ -802,6 +802,10 @@ export const api = {
   createAdjustmentRequest: (data) => request("/inventory/adjustments", { method: "POST", body: JSON.stringify(data) }),
   updateAdjustmentRequest: (id, data) => request(`/inventory/adjustments/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   postAdjustmentRequest: (id) => request(`/inventory/adjustments/${id}/post`, { method: "POST" }),
+  // ── Koreksi Saldo per bahan (Stok & Lokasi): pratinjau baca-saja + pengajuan ke Penyesuaian Stok resmi. Ajukan wajib Idempotency-Key + saldoDilihat dari pratinjau. ──
+  getKoreksiSaldoBahan: (materialId) => request(`/inventory/adjustments/koreksi-saldo/bahan/${materialId}`),
+  pratinjauKoreksiSaldo: (data) => request("/inventory/adjustments/koreksi-saldo/pratinjau", { method: "POST", body: JSON.stringify(data) }),
+  ajukanKoreksiSaldo: (data, key = mutationKey("koreksi-saldo")) => request("/inventory/adjustments/koreksi-saldo/ajukan", { method: "POST", headers: { "Idempotency-Key": key }, body: JSON.stringify(data) }),
   cancelAdjustmentRequest: (id, reason) => request(`/inventory/adjustments/${id}/cancel`, { method: "PATCH", body: JSON.stringify({ reason }) }),
 
   // Replenishment (Warehouse Tahap 7)
@@ -2217,6 +2221,7 @@ export const api = {
   getBiayaBahanPO: (poId) => request(`/finance/biaya-bahan/po/${poId}`),
   // ── Harga Berlaku bahan = HPP OPERASIONAL (Okt 2026), diedit dari layar Stok. BUKAN nilai buku/HPP final Finance. Simpan wajib Idempotency-Key + hash pratinjau. ──
   getHargaBerlaku: (materialId) => request(`/finance/biaya-bahan/harga-berlaku/bahan/${materialId}`),
+  getRingkasanDaftarHargaBerlaku: () => request("/finance/biaya-bahan/harga-berlaku/ringkasan-daftar"),
   getRiwayatHargaBerlaku: (materialId) => request(`/finance/biaya-bahan/harga-berlaku/bahan/${materialId}/riwayat`),
   pratinjauHargaBerlaku: (data) => request("/finance/biaya-bahan/harga-berlaku/pratinjau", { method: "POST", body: JSON.stringify(data) }),
   simpanHargaBerlaku: (data, key = mutationKey("harga-berlaku")) => request("/finance/biaya-bahan/harga-berlaku", { method: "POST", headers: { "Idempotency-Key": key }, body: JSON.stringify(data) }),

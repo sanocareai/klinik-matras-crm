@@ -1,3 +1,5 @@
+import { tampilSaldoKeadaan } from "./koreksiSaldoLogic.js";
+
 // Logika murni halaman Stok & Lokasi. Membedakan "belum ada catatan" (saldo null) dari nol, dan "batas minimum belum diatur" (null) dari 0.
 export const FILTER_KEADAAN = Object.freeze([
   { key: "", label: "Semua keadaan" },
@@ -62,6 +64,8 @@ export const kunciJenis = (kode) => (kode === "NONE" ? "none" : kode);
  * @returns {{jenis:"BELUM_DIKETAHUI"|"NOL"|"MINUS"|"ADA", teks:string, keterangan:string}}
  */
 export function tampilSaldo(r) {
+  // Server baru mengirim keadaanSaldo: tiga "nol" berbeda (belum ada catatan / nol menurut pergerakan / nol TERVERIFIKASI hitung fisik) tidak pernah digabung.
+  const dariServer = tampilSaldoKeadaan(r); if (dariServer) return dariServer;
   if (r.saldo === null || r.saldo === undefined) return { jenis: "BELUM_DIKETAHUI", teks: "belum diketahui", keterangan: "Belum ada catatan pergerakan stok — bukan berarti habis" };
   if (Number(r.saldo) < 0) return { jenis: "MINUS", teks: angka(r.saldo), keterangan: "Saldo minus — catatan perlu dihitung fisik dan dikoreksi resmi" };
   if (Number(r.saldo) === 0) return { jenis: "NOL", teks: "0", keterangan: "Nol menurut pergerakan stok" };

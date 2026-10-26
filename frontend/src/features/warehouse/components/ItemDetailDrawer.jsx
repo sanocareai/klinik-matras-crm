@@ -4,6 +4,7 @@ import { X, Pencil, Loader2, History, TriangleAlert } from "lucide-react";
 import { api } from "@/api.js";
 import RiwayatReferensiBahan from "./RiwayatReferensiBahan.jsx";
 import HargaBerlakuPanel from "../stok/HargaBerlakuPanel.jsx";
+import KoreksiSaldoPanel from "../stok/KoreksiSaldoPanel.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import StatusBadge from "./StatusBadge.jsx";
 import {
@@ -111,6 +112,8 @@ export default function ItemDetailDrawer({ item, onClose, onEdit, onChanged }) {
                 Available = On Hand − Reserved, tidak satu pun disimpan sebagai kolom.
               </p>
             </div>
+
+            <KoreksiSaldoPanel materialId={materialId} onChanged={onChanged} />
 
             <HargaBerlakuPanel materialId={materialId} />
 

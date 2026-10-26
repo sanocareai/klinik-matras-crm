@@ -31,7 +31,7 @@ const TABLES_TO_TRUNCATE = [
   "stock_transfer_lines", "stock_transfers",
   "goods_receipt_lines", "goods_receipts",
   "damaged_stock_records", "return_records",
-  "stock_adjustment_requests", "replenishment_requests",
+  "koreksi_saldo_bahan", "stock_adjustment_requests", "replenishment_requests",
   "materials",
   "storage_locations", "warehouses",
   "unit_usage_note_events", "unit_usage_notes", "usage_import_batches", // Catatan pemakaian historis: FK ke units/materials/stock_movements/Order (events append-only)

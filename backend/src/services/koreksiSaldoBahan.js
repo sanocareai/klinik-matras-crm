@@ -163,6 +163,19 @@ export async function wajibSaldoBelumBergeser(tx, requestId, materialId) {
   return h;
 }
 
+/** Konteks koreksi saldo untuk halaman detail Penyesuaian Stok (penyetuju harus melihat jumlah fisik yang dinyatakan, saldo yang dilihat pengaju, dan apakah saldo sudah bergeser). null bila bukan koreksi saldo. Baca-saja. */
+export async function konteksKoreksiRequest(db, requestId, status) {
+  const h = await db.koreksiSaldoBahan.findUnique({ where: { adjustmentRequestId: requestId } });
+  if (!h) return null;
+  const [{ saldo }] = await db.$queryRaw`SELECT COALESCE(SUM(qty), 0)::float AS saldo FROM stock_movements WHERE material_id = ${h.materialId}::uuid`;
+  const aktif = AKTIF.includes(status); const bergeser = aktif && Math.abs(r4(saldo) - Number(h.saldoDilihat)) > EPS;
+  return {
+    jumlahFisik: Number(h.jumlahFisik), saldoDilihat: Number(h.saldoDilihat), selisih: Number(h.selisih), satuan: h.satuan, keadaanAwal: h.keadaanAwal, keadaanAwalTeks: LABEL_KEADAAN_SALDO[h.keadaanAwal],
+    saldoSekarang: r4(saldo), kedaluwarsa: bergeser,
+    kedaluwarsaTeks: bergeser ? `Saldo sudah bergeser (dilihat ${Number(h.saldoDilihat)}, sekarang ${r4(saldo)}) — tidak dapat disetujui/diposting; batalkan dan ajukan ulang dari saldo terbaru.` : null,
+  };
+}
+
 /** Riwayat koreksi saldo satu bahan (baru → lama), termasuk yang masih menunggu, dibatalkan, dan KEDALUWARSA (saldo bergeser). Baca-saja. */
 export async function riwayatKoreksiBahan(db, materialId, { limit = 30 } = {}) {
   wajib(UUID.test(String(materialId ?? "")), "bahan tidak valid", "BAHAN_TIDAK_VALID");

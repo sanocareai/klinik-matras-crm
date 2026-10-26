@@ -50,6 +50,13 @@ export default function HargaBerlakuPanel({ materialId }) {
         <p className="mt-1.5 text-[11px] text-ink3" data-testid="pembanding">Pembanding (bukan sumber harga):{d.pembanding.biayaPerolehanGRTerakhir ? ` biaya perolehan GR terakhir ${rp(d.pembanding.biayaPerolehanGRTerakhir.harga)}` : ""}{d.pembanding.referensiAgustus ? ` · referensi ${d.pembanding.referensiAgustus.bulan} ${rp(d.pembanding.referensiAgustus.harga)}` : ""}.</p>
       )}
 
+      {d.nilaiPersediaanFinance && (
+        <p className="mt-1.5 text-[11px] leading-relaxed text-ink3" data-testid="nilai-persediaan-finance">
+          <b className="text-ink2">{d.nilaiPersediaanFinance.nama}:</b>{" "}
+          {d.nilaiPersediaanFinance.tersedia ? <>{rpNilai(d.nilaiPersediaanFinance.nilai)} ({d.nilaiPersediaanFinance.qty} {String(d.nilaiPersediaanFinance.satuan ?? "").toLowerCase()} × {rp(d.nilaiPersediaanFinance.biayaSatuan)}, {d.nilaiPersediaanFinance.nomor}). {d.nilaiPersediaanFinance.teks}</> : d.nilaiPersediaanFinance.teks}
+        </p>
+      )}
+
       <p className="mt-1.5 text-[11px] leading-relaxed text-ink3" data-testid="izin-teks">{d.bolehUbah ? `${d.izinTeks.ubah} ${TEKS.aturanTanpaMundur}` : TEKS.izinLihat}</p>
 
       <dl className="mt-2 grid grid-cols-1 gap-1 text-[12px] text-ink2" data-testid="dampak-ringkas">

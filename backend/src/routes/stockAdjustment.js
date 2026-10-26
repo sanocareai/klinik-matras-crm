@@ -20,7 +20,7 @@ import { wajibUuid } from "../lib/uuidParam.js";
 import { pesanServerAman } from "../lib/galatServerAman.js";
 import { wajibPenyetujuPenyesuaian, wajibBukanPihakPengaju } from "../services/inventorySegregation.js";
 import { ASAL_KOREKSI_TIPE, validasiAsalKoreksi, ringkasAsalKoreksi } from "../services/asalKoreksiSaldo.js";
-import { KoreksiSaldoError, keadaanBahan, pratinjauKoreksi, ajukanKoreksi, riwayatKoreksiBahan, wajibSaldoBelumBergeser } from "../services/koreksiSaldoBahan.js";
+import { KoreksiSaldoError, keadaanBahan, pratinjauKoreksi, ajukanKoreksi, riwayatKoreksiBahan, wajibSaldoBelumBergeser, konteksKoreksiRequest } from "../services/koreksiSaldoBahan.js";
 
 export const stockAdjustmentRouter = express.Router();
 stockAdjustmentRouter.use(requireAuth);
@@ -93,7 +93,7 @@ stockAdjustmentRouter.get("/:id", requirePermission(P.INVENTORY_READ), wajibUuid
     const tulis = hasPermission(req.user, P.INVENTORY_WRITE); const bisaSetujui = hasPermission(req.user, P.INVENTORY_ADJUSTMENT_APPROVE); const pemohonSama = request.requestedById === req.user.id;
     // Penyetuju murni (mis. Finance) tidak punya izin tulis tetapi boleh menyetujui: hanya aksi SETUJUI yang ditawarkan kepadanya.
     const t = tampilanPenyesuaian(request, { bisaSetujui, pemohonSama });
-    res.json({ ...request, asal: await ringkasAsalKoreksi(prisma, request), tampilan: tulis ? t : { ...t, aksi: t.aksi.filter((a) => a.kode === "SETUJUI") }, izin: { tulis, bisaSetujui, pemohonSama }, jejak: await jejakDokumenGudang(prisma, { entityType: ENTITY_TYPES.STOCK_ADJUSTMENT, id: request.id, dibuatOleh: request.requestedBy?.name ?? null, dibuatPada: request.createdAt, jenis: "ADJ" }) });
+    res.json({ ...request, koreksiSaldo: await konteksKoreksiRequest(prisma, request.id, request.status), asal: await ringkasAsalKoreksi(prisma, request), tampilan: tulis ? t : { ...t, aksi: t.aksi.filter((a) => a.kode === "SETUJUI") }, izin: { tulis, bisaSetujui, pemohonSama }, jejak: await jejakDokumenGudang(prisma, { entityType: ENTITY_TYPES.STOCK_ADJUSTMENT, id: request.id, dibuatOleh: request.requestedBy?.name ?? null, dibuatPada: request.createdAt, jenis: "ADJ" }) });
   } catch (err) {
     handleErr(err, res);
   }
@@ -176,9 +176,9 @@ stockAdjustmentRouter.patch("/:id", requireAnyPermission(P.INVENTORY_WRITE, P.IN
         }
         data.status = status;
         if (status === "APPROVED") {
-          await wajibSaldoBelumBergeser(tx, existing.id, existing.materialId); // koreksi saldo: saldo yang dilihat pengaju harus masih sama
           wajibPenyetujuPenyesuaian(req.user);
           wajibBukanPihakPengaju(req.user, [existing.requestedById], { label: "pemohon" });
+          await wajibSaldoBelumBergeser(tx, existing.id, existing.materialId); // koreksi saldo: saldo yang dilihat pengaju harus masih sama (setelah cek izin/pemisahan tugas)
           data.approvedById = req.user.id;
           data.approvedAt = new Date();
         }
