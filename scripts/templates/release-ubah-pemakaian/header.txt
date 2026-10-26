@@ -1,0 +1,16 @@
+# RILIS "TAMBAH PEMAKAIAN + EDIT PER BAHAN (ubah jumlah / ganti bahan) pada drawer Order Produksi": WEB + BACKEND, TANPA migrasi dan TANPA perubahan schema.prisma — RELEASE-DIRECTORY di atas release aktif (BASE_SHA). FAIL-CLOSED.
+#   • UX: tombol "+ Tambah pemakaian" tepat di atas tabel Pemakaian aktual, tombol "Edit" pada setiap baris bahan (unit berjalan DAN terkirim; unit dibatalkan tidak). Panel A/B diganti tiga pilihan sumber (Bahan Gudang, Bahan belum tercatat, Komponen lama).
+#   • Edit memakai HANYA jalur stok resmi: ubah jumlah = RETURN/ISSUE baru; ganti bahan = pengembalian bahan lama + pengeluaran bahan baru dalam SATU transaksi (atomik, idempoten; gagal di langkah kedua = tidak ada perubahan stok/valuasi/HPP/jurnal).
+#     Ledger tidak pernah ditimpa/dihapus. Alasan (5–500) wajib di server untuk semua tindakan Edit. Saldo, pemakaian bersih, dan dasar harga yang dilihat di pratinjau divalidasi server (409 bila bergeser).
+#   • Bahan ASAL MATERIAL ISSUE: apa pun status unit, perubahan jumlah = pengajuan berpersetujuan (koreksi pemakaian yang sudah ada; penyetuju ≠ pemohon), ganti bahan diblokir (lewat Gudang/Return Produksi), pengembalian langsung lewat jalur pembetulan ditolak.
+#   • Harga HPP: pengembalian = harga ISSUE asal; pengeluaran baru = harga pada TANGGAL pemakaian dilaporkan (unit terkirim) atau saat pencatatan (unit berjalan); belum ada harga pada tanggal itu = TANPA_HARGA.
+#   • Gate: preflight; backup + RESTORE rehearsal (kode baru berjalan sebagai SERVER terhadap salinan restore; semua skenario ditulis HANYA ke DB sementara; direktori data/uploads production TIDAK dipasang; Koreksi Saldo yang live dibuktikan utuh);
+#     build web di release dir; switch SATU kali; verifikasi; smoke baca-saja pasca-switch. Produksi: rilis ini TIDAK membuat pergerakan/koreksi/catatan apa pun; tidak ada transaksi QA.
+#
+#   cat scripts/release-ubah-pemakaian.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/ub1.sh'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/ub1.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/ub1.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rehearsal-only > /tmp/ub1r.out 2>&1 < /dev/null &'   # SEMUA gerbang sampai rehearsal pada restore nyata; TANPA switch
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/ub1.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/ub1.out 2>&1 < /dev/null &'   # rilis penuh (hanya setelah persetujuan)
+#
+# ROLLBACK: kode aman di-rollback kapan pun (tanpa migrasi, tanpa tabel baru). Perubahan pemakaian yang sudah dibuat (pergerakan RETURN/ISSUE bertaut unit, koreksi berpersetujuan) tetap sah sebagai data biasa.
+# (dibangkitkan oleh scripts/gen-release-ubah-pemakaian.cjs dari scripts/release-status-kerja-buka-pekerjaan.sh + scripts/templates/release-ubah-pemakaian/*; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang)

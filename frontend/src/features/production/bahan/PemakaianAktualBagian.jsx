@@ -155,7 +155,7 @@ export default function PemakaianAktualBagian({ unitId, data, izin, aktif, onDon
 
       <div className="space-y-2" data-testid="sec-bahan-baru">
         <h4 className="m-0 flex flex-wrap items-center gap-2 text-[13px] font-semibold text-ink">{KARTU_SUMBER.gudang.label} <Badge variant="orange" className="bh-b-orange" title={KARTU_SUMBER.gudang.teks}>{KARTU_SUMBER.gudang.ringkas}</Badge></h4>
-        {adaBaru ? <RiwayatBahanBaru unitId={unitId} data={data} />
+        {adaBaru ? <RiwayatBahanBaru unitId={unitId} data={data} bolehUbah={!!izin.pemakaianAktual} aktif={aktif} onDone={onDone} />
           : <p className="m-0 rounded-btn bg-inset px-3 py-2.5 text-[13px] text-ink" data-testid="bahan-baru-kosong">Belum ada pemakaian bahan dari Gudang. {bolehTambah ? "Pilih “+ Tambah pemakaian” di atas — tidak perlu rencana lebih dulu." : ""}</p>}
       </div>
 

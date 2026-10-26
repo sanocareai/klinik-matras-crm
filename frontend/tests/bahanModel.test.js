@@ -94,7 +94,8 @@ test("pengawatan: tab Bahan = BahanTab (tindakan utama aktual, rencana terlipat,
   assert.ok(!lama.includes("addUnitMaterial"), "komponen lama TIDAK lewat jalur stok");
   for (const k of ["api.batalKomponenLama", "Tidak dijumlahkan dengan bahan baru", "salah input, batalkan".replace("salah", "Salah")]) assert.ok(daftar.includes(k), k);
   assert.ok(!/hapus/i.test(daftar.replace(/^\s*\/\/.*$/gm, "").replace(/<[^>]+>/g, "").replace(/tidak dihapus/gi, "")), "tidak ada aksi hapus pada daftar komponen lama");
-  assert.ok(!riw.includes("addUnitMaterial") && !riw.includes("api."), "riwayat bahan baru hanya BACA: perubahan lewat tombol Edit pada tabel (EditPemakaianForm), baris lama tidak diedit atau dihapus");
+  for (const k of ["bahanDenganMI", "Material Issue Gudang", "koreksi-bahan-buka", "tidak diedit atau dihapus", "Koreksi atas", "-Math.round(v * 10000) / 10000"]) assert.ok(riw.includes(k), "tombol koreksi lama dipertahankan hanya untuk bahan campuran Material Issue: " + k);
+  assert.ok(riw.includes("bahanDenganMI.has(b.materialId)"), "tombol lama tidak tampil untuk bahan yang sudah punya padanan Edit langsung");
   const edit = src("features", "production", "bahan", "EditPemakaianForm.jsx"); const ubahModel = src("features", "production", "bahan", "perubahanModel.js");
   for (const k of ["api.perubahanPemakaian", "api.ajukanKoreksiPemakaian", "api.pratinjauPerubahanPemakaian", "kunciIdempoten", "kirimRef.current", "data-testid=\"edit-konfirmasi\""]) assert.ok(edit.includes(k), k);
   assert.ok(ubahModel.includes("Ajukan perubahan") && ubahModel.includes("menunggu persetujuan"), "jalur persetujuan berlabel jelas dan berstatus menunggu");

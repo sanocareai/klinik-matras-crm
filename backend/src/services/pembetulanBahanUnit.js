@@ -28,6 +28,10 @@ const rp = (n) => `Rp${Math.round(Number(n)).toLocaleString("id-ID")}`;
 const HARI = 24 * 3600 * 1000;
 const wibTgl = (d) => new Date(new Date(d).getTime() + 7 * 3600_000).toISOString().slice(0, 10);
 
+/** Bahan dari dokumen Material Issue Gudang: pengembaliannya lewat persetujuan / Return Produksi, bukan pengembalian langsung — berlaku untuk SEMUA status unit. */
+export const adaPengeluaranMaterialIssue = async (db, unitId, materialId) => (await db.stockMovement.count({ where: { unitId, materialId, type: "ISSUE", materialIssueId: { not: null } } })) > 0;
+export const PESAN_ASAL_MI = (kode) => `Bahan ${kode} dikeluarkan lewat dokumen Material Issue Gudang: pengembaliannya lewat persetujuan (Ubah pemakaian → Ajukan perubahan) atau Return Produksi Gudang, bukan pengembalian langsung.`;
+
 /** Pembetulan hanya untuk unit TERKIRIM. Unit dibatalkan sengaja tidak diperluas. */
 export const unitSelesai = (status) => status === "DELIVERED";
 export const JENIS_PRATINJAU = Object.freeze(["TAMBAH", "KURANGI", "CATATAN_SEMENTARA", "KOMPONEN_LAMA"]);
@@ -174,6 +178,8 @@ export async function pratinjauPembetulan(db, user, { unitId, materialId = null,
   const m = await db.material.findUnique({ where: { id: materialId }, select: { id: true, code: true, name: true, unit: true, active: true } });
   wajib(m, "Bahan tidak ditemukan", "BAHAN_TIDAK_ADA", 404);
   const leg = await legStok(db, { unit, m, jenis, q, tanggal: waktuDilaporkan.tanggal, sekarang, waktu });
+  // Pengembalian bahan ASAL Material Issue tidak boleh langsung hanya karena unit sudah terkirim: lewat persetujuan (Ubah pemakaian → Ajukan perubahan) atau Return Produksi Gudang.
+  if (jenis === "KURANGI" && await adaPengeluaranMaterialIssue(db, unitId, materialId)) leg.penghalang.push({ kode: "UNIT_ASAL_MATERIAL_ISSUE", pesan: PESAN_ASAL_MI(m.code) });
   return {
     unit: { id: unit.id, kode: unit.unitCode, status: unit.status, selesai: true, order: unit.order?.orderNumber ?? null },
     bahan: { id: m.id, kode: m.code, nama: m.name, satuan: m.unit }, jenis, qty: r4(q), tindakan, waktu,
@@ -236,6 +242,7 @@ export async function legStok(db, { unit, m, jenis, q, tanggal = null, sekarang 
  * (alasan + tanggal pemakaian dilaporkan divalidasi pemanggil sebelum transaksi lewat alasanPembetulan / tanggalDilaporkan.)
  */
 export async function periksaPembetulanLangsung(tx, { unitId, unitCode, orderId, materialId, rawQty, saldoDilihat, konfirmasiBukanGanda, tanggal, hppSidik }) {
+  if (rawQty < 0 && await adaPengeluaranMaterialIssue(tx, unitId, materialId)) { const mm = await tx.material.findUnique({ where: { id: materialId }, select: { code: true } }); wajib(false, PESAN_ASAL_MI(mm?.code ?? "bahan"), "UNIT_ASAL_MATERIAL_ISSUE", 409); }
   wajib(saldoDilihat !== undefined && saldoDilihat !== null && Number.isFinite(Number(saldoDilihat)), "Lihat dampak dulu: saldo yang Anda lihat di pratinjau wajib dikirim.", "UNIT_PRATINJAU_WAJIB", 400);
   const saldo = r4(await lockMaterialBalance(tx, materialId));
   wajib(Math.abs(saldo - r4(saldoDilihat)) <= 0.00005, `Saldo bahan sudah bergeser: pratinjau Anda memakai ${r4(saldoDilihat)}, saldo sekarang ${saldo}. Lihat dampak lagi dari saldo terbaru; tidak ada yang tersimpan.`, "UNIT_SALDO_BERGESER", 409, { saldoDilihat: r4(saldoDilihat), saldoSekarang: saldo });

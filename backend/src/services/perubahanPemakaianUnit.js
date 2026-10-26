@@ -65,14 +65,15 @@ export async function rencanaPerubahan(db, user, { unitId, materialId, qtyBaru, 
   const bolehLangsung = hasPermission(user, P.UNIT_MATERIAL_WRITE);
   const bolehAjukan = bolehLangsung || hasPermission(user, P.INVENTORY_WRITE);
   let jalur = "LANGSUNG";
-  if (mode === "UBAH_JUMLAH" && (ajukan === true || (!selesai && adaMI) || !bolehLangsung)) jalur = "AJUKAN";
+  if (mode === "UBAH_JUMLAH" && (ajukan === true || adaMI || !bolehLangsung)) jalur = "AJUKAN"; // bahan ASAL Material Issue selalu lewat persetujuan / Return Produksi, apa pun status unit
   if (mode === "GANTI_BAHAN") {
-    if (!selesai && adaMI) penghalang.push({ kode: "GANTI_BAHAN_DOKUMEN_GUDANG", pesan: `Bahan ${dari.code} dikeluarkan lewat dokumen Material Issue Gudang. Mengganti bahannya dilakukan lewat Gudang (Return Produksi); jumlahnya masih bisa diubah lewat “Ajukan perubahan”.` });
+    if (adaMI) penghalang.push({ kode: "GANTI_BAHAN_DOKUMEN_GUDANG", pesan: `Bahan ${dari.code} dikeluarkan lewat dokumen Material Issue Gudang. Mengganti bahannya dilakukan lewat Gudang (Return Produksi); jumlahnya masih bisa diubah lewat “Ajukan perubahan”.` });
     if (!bolehLangsung) penghalang.push({ kode: "TANPA_IZIN", pesan: "Akun Anda tidak boleh mengganti bahan secara langsung." });
   }
+  // Catatan sisa/rusak (WASTE) tidak punya padanan aman di layar ini (jalur lamanya = Gudang): jumlah/bahan yang memuat WASTE tidak diubah dari sini.
+  if (adaWaste) penghalang.push({ kode: "PERUBAHAN_ADA_SISA_RUSAK", pesan: "Pemakaian bahan ini mencakup catatan sisa/rusak (WASTE); perubahannya dilakukan lewat Gudang." });
   if (jalur === "AJUKAN") {
     wajib(bolehAjukan, "Akun Anda tidak boleh mengajukan perubahan pemakaian", "TANPA_IZIN", 403);
-    if (adaWaste) penghalang.push({ kode: "PERUBAHAN_ADA_SISA_RUSAK", pesan: "Pemakaian bahan ini mencakup catatan sisa/rusak; ajukan perubahan lewat Gudang." });
     if (tertunda > 0) penghalang.push({ kode: "KOREKSI_TERTUNDA", pesan: "Masih ada koreksi pemakaian yang menunggu persetujuan untuk unit ini. Selesaikan atau batalkan dulu." });
   }
 

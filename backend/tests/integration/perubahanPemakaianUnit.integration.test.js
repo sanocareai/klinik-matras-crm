@@ -169,3 +169,71 @@ test("U10. catatan berformat baku (pembetulan / koreksi disetujui) tidak bisa di
   }
   assert.equal(await jumlahMov(w), 0);
 });
+
+// ───────────────────────── Aturan tambahan (persetujuan Owner): alasan wajib di server, asal Material Issue, harga ISSUE asal ─────────────────────────
+const poolMI = async (w, mat, qty, { unitId = w.unit.id, nomor = `MI-UJI-${++seq}` } = {}) => { const mi = await testPrisma.materialIssue.create({ data: { issueNumber: nomor, sourceType: "MANUAL", status: "ISSUED" } }); return testPrisma.stockMovement.create({ data: { materialId: mat.id, type: "ISSUE", qty: -qty, unitId, materialIssueId: mi.id, note: "dari Material Issue" } }); };
+
+test("U11. ALASAN WAJIB ditegakkan server untuk SEMUA tindakan Edit (ubah jumlah, ganti bahan, unit berjalan dan terkirim, serta pengajuan); tidak ada yang tersimpan tanpa alasan", async () => {
+  for (const status of ["IN_PRODUCTION", "DELIVERED"]) {
+    const w = await dunia(); await pakai(w, w.A, 5); if (status === "DELIVERED") await w.selesaikan(); const tg = status === "DELIVERED" ? { tanggalPemakaian: tgl(3) } : {};
+    const u = { materialId: w.A.id, qtyBaru: 3, ...tg }; const g = { materialId: w.A.id, qtyBaru: 0, keMaterialId: w.B.id, qtyKe: 2, ...tg };
+    const pU = await lihat(w, u); const pG = await lihat(w, g); const n0 = await jumlahMov(w); const c0 = await testPrisma.v2Command.count({ where: { commandType: "UNIT_MATERIAL_EDIT_V1" } });
+    for (const alasan of [undefined, "", "    ", "abcd", "x".repeat(501)]) {
+      for (const [body, p] of [[u, pU], [g, pG]]) { const r = await terap(w, body, p, { alasan }); assert.equal(r.status, 400, `${status} alasan=${JSON.stringify(alasan)?.slice(0, 12)}`); assert.equal(r.body.code, "UNIT_ALASAN_PEMBETULAN_WAJIB"); }
+    }
+    assert.equal(await jumlahMov(w), n0, "tanpa alasan = tidak ada tulisan"); assert.equal(await testPrisma.v2Command.count({ where: { commandType: "UNIT_MATERIAL_EDIT_V1" } }), c0, "tanpa alasan = tidak ada perintah tersimpan");
+    assert.equal((await terap(w, u, pU, { alasan: "abcde" })).status, 201, "5 karakter = sah");
+  }
+  const w = await dunia(); await poolMI(w, w.A, 5); const aj = await w.a.post(`/api/production/units/${w.unit.id}/koreksi-pemakaian`, { materialId: w.A.id, qtyBaru: 3, alasan: "abcd" }, { "Idempotency-Key": kunci("aj") });
+  assert.equal(aj.status, 400); assert.equal(aj.body.code, "ALASAN_WAJIB"); assert.equal(await testPrisma.warehouseCorrection.count({ where: { docId: w.unit.id } }), 0);
+  assert.equal((await w.a.post(`/api/production/units/${w.unit.id}/koreksi-pemakaian`, { materialId: w.A.id, qtyBaru: 3 }, { "Idempotency-Key": kunci("aj") })).body.code, "ALASAN_WAJIB");
+});
+
+test("U12. BAHAN ASAL MATERIAL ISSUE tetap lewat persetujuan / Return Produksi di UNIT TERKIRIM: Edit = AJUKAN, penerapan langsung ditolak, ganti bahan diblokir, pengembalian langsung lewat jalur lama ditolak; unit berjalan tetap bisa koreksi langsung pengeluaran langsungnya", async () => {
+  const w = await dunia(); await poolMI(w, w.A, 5); await w.selesaikan(); const T = tgl(3); const n0 = await jumlahMov(w); const s0 = await saldo(w.A.id);
+  const p = await lihat(w, { materialId: w.A.id, qtyBaru: 3, tanggalPemakaian: T }); assert.equal(p.jalur, "AJUKAN", "terkirim pun tetap pengajuan"); assert.equal(p.dari.dokumenGudang, true); assert.equal(p.boleh, true);
+  const langsung = await terap(w, { materialId: w.A.id, qtyBaru: 3, tanggalPemakaian: T }, p); assert.equal(langsung.status, 409); assert.equal(langsung.body.code, "UNIT_PERLU_PERSETUJUAN");
+  const pg = await lihat(w, { materialId: w.A.id, qtyBaru: 0, keMaterialId: w.B.id, qtyKe: 2, tanggalPemakaian: T }); assert.equal(pg.boleh, false); assert.ok(pg.penghalang.some((h) => h.kode === "GANTI_BAHAN_DOKUMEN_GUDANG"));
+  const gl = await terap(w, { materialId: w.A.id, qtyBaru: 0, keMaterialId: w.B.id, qtyKe: 2, tanggalPemakaian: T }, pg); assert.equal(gl.status, 409); assert.equal(gl.body.code, "GANTI_BAHAN_DOKUMEN_GUDANG");
+  // jalur pembetulan lama (POST pengembalian) tidak boleh dipakai melewati persetujuan
+  const pk = await w.a.post(`/api/production/units/${w.unit.id}/pembetulan-bahan/pratinjau`, { materialId: w.A.id, jenis: "KURANGI", qty: 2, tanggalPemakaian: T }); assert.equal(pk.status, 200); assert.equal(pk.body.boleh, false); assert.ok(pk.body.penghalang.some((h) => h.kode === "UNIT_ASAL_MATERIAL_ISSUE"));
+  const ret = await w.a.post(`/api/units/${w.unit.id}/materials`, { materialId: w.A.id, qty: -2, alasanPembetulan: "Kelebihan catat (uji)", tanggalPemakaian: T, saldoDilihat: s0, hppSidik: pk.body.hppOperasional.sidik }, { "Idempotency-Key": kunci("ret") });
+  assert.equal(ret.status, 409); assert.equal(ret.body.code, "UNIT_ASAL_MATERIAL_ISSUE"); assert.equal(await jumlahMov(w), n0); assert.equal(await saldo(w.A.id), s0, "stok tidak berubah");
+  // pengajuan resmi tetap tersedia dan stok baru berubah setelah disetujui orang lain
+  const aj = await w.a.post(`/api/production/units/${w.unit.id}/koreksi-pemakaian`, { materialId: w.A.id, qtyBaru: 3, alasan: "Pemakaian sebenarnya 3", tanggalPemakaian: T }, { "Idempotency-Key": kunci("aj") }); assert.equal(aj.status, 201, JSON.stringify(aj.body)); assert.equal(await saldo(w.A.id), s0);
+  assert.equal((await w.f.post(`/api/production/koreksi-pemakaian/${aj.body.id}/setujui`, {})).status, 200); assert.equal(await saldo(w.A.id), s0 + 2);
+  // unit berjalan, bahan CAMPURAN (Material Issue + pengeluaran langsung): Edit = AJUKAN, tetapi koreksi langsung pengeluaran langsung (jalur lama) tetap tersedia
+  const w2 = await dunia(); await poolMI(w2, w2.A, 3); await pakai(w2, w2.A, 2);
+  assert.equal((await lihat(w2, { materialId: w2.A.id, qtyBaru: 4 })).jalur, "AJUKAN");
+  const lama = await w2.a.post(`/api/units/${w2.unit.id}/materials`, { materialId: w2.A.id, qty: -2, note: "Koreksi atas MV-xxxx: salah input" }, { "Idempotency-Key": kunci("lama") }); assert.equal(lama.status, 201, JSON.stringify(lama.body)); assert.equal(Number((await testPrisma.stockMovement.findUnique({ where: { id: lama.body.id } })).qty), 2);
+});
+
+test("U13. HARGA: pengembalian dan ganti bahan menjaga harga ISSUE ASAL; pengeluaran bahan baru memakai dasar harga yang benar (unit berjalan = saat pencatatan, unit terkirim = tanggal pemakaian dilaporkan)", async () => {
+  // unit berjalan
+  const w = await dunia(); await hargaDiTgl(w.A.id, 20000, new Date(Date.now() - 10 * HARI)); await hargaDiTgl(w.B.id, 12000, new Date(Date.now() - 10 * HARI), "hbB1");
+  const asal = await pakai(w, w.A, 5); assert.equal(Number((await op(asal.id)).unitCost), 20000);
+  await hargaDiTgl(w.A.id, 30000, new Date(Date.now() - 1 * HARI), "hbA2"); await hargaDiTgl(w.B.id, 18000, new Date(Date.now() - 1 * HARI), "hbB2"); // harga naik SESUDAH pemakaian asal
+  const body = { materialId: w.A.id, qtyBaru: 0, keMaterialId: w.B.id, qtyKe: 4 }; const p = await lihat(w, body);
+  assert.equal(p.langkah[0].jenis, "RETURN"); assert.equal(p.langkah[0].hppOperasional.basis, "HARGA_ISSUE_ASAL"); assert.equal(p.langkah[0].hppOperasional.harga, 20000, "pengembalian = harga ISSUE asal, bukan harga sekarang 30000");
+  assert.equal(p.langkah[1].hppOperasional.harga, 18000, "pengeluaran baru = harga berlaku saat pencatatan"); assert.equal(p.langkah[1].hppOperasional.tanggalDasar, null);
+  const ok = await terap(w, body, p); assert.equal(ok.status, 201, JSON.stringify(ok.body));
+  const oR = await op(ok.body.langkah[0].movementId); const oI = await op(ok.body.langkah[1].movementId);
+  assert.equal(oR.basisHarga, "HARGA_ISSUE_ASAL"); assert.equal(Number(oR.unitCost), 20000); assert.equal(Number(oR.value), -100000); assert.equal(oI.basisHarga, "WAKTU_PEMAKAIAN"); assert.equal(Number(oI.unitCost), 18000); assert.equal(Number(oI.value), 72000); assert.equal(oI.basisDetail, null);
+  // unit terkirim: ISSUE baru memakai harga pada TANGGAL dilaporkan; pengembalian tetap harga ISSUE asal
+  const w2 = await dunia(); await hargaDiTgl(w2.A.id, 20000, new Date(Date.now() - 10 * HARI)); await hargaDiTgl(w2.B.id, 12000, new Date(Date.now() - 10 * HARI), "hbB1"); await pakai(w2, w2.A, 5);
+  await hargaDiTgl(w2.A.id, 30000, new Date(Date.now() - 1 * HARI), "hbA2"); await hargaDiTgl(w2.B.id, 18000, new Date(Date.now() - 2 * HARI), "hbB2"); await w2.selesaikan();
+  const T = tgl(5); const b2 = { materialId: w2.A.id, qtyBaru: 0, keMaterialId: w2.B.id, qtyKe: 3, tanggalPemakaian: T }; const p2 = await lihat(w2, b2);
+  assert.equal(p2.langkah[0].hppOperasional.harga, 20000); assert.equal(p2.langkah[0].hppOperasional.basis, "HARGA_ISSUE_ASAL"); assert.equal(p2.langkah[1].hppOperasional.harga, 12000, "tanggal pemakaian 5 hari lalu: harga B sebelum kenaikan"); assert.equal(p2.langkah[1].hppOperasional.tanggalDasar, T);
+  const ok2 = await terap(w2, b2, p2); assert.equal(ok2.status, 201, JSON.stringify(ok2.body)); const o2R = await op(ok2.body.langkah[0].movementId); const o2I = await op(ok2.body.langkah[1].movementId);
+  assert.equal(Number(o2R.unitCost), 20000); assert.equal(o2R.basisHarga, "HARGA_ISSUE_ASAL"); assert.equal(Number(o2I.unitCost), 12000); assert.equal(o2I.basisDetail.dasarTanggal, T);
+  // tanggal tanpa harga untuk bahan pengganti = TANPA_HARGA (bukan harga hari pencatatan)
+  const w3 = await dunia(); await hargaDiTgl(w3.A.id, 20000, new Date(Date.now() - 10 * HARI)); await hargaDiTgl(w3.B.id, 18000, new Date(Date.now() - 2 * HARI), "hbB"); await pakai(w3, w3.A, 5); await w3.selesaikan();
+  const b3 = { materialId: w3.A.id, qtyBaru: 0, keMaterialId: w3.B.id, qtyKe: 3, tanggalPemakaian: tgl(5) }; const p3 = await lihat(w3, b3); assert.equal(p3.langkah[1].hppOperasional.status, "TANPA_HARGA"); const ok3 = await terap(w3, b3, p3); assert.equal(ok3.status, 201);
+  assert.equal((await op(ok3.body.langkah[1].movementId)).status, "TANPA_HARGA");
+});
+
+test("U14. catatan sisa/rusak (WASTE) tidak punya padanan aman di layar ini: Edit diblokir jelas (jalur Gudang)", async () => {
+  const w = await dunia(); await pakai(w, w.A, 5); await testPrisma.stockMovement.create({ data: { materialId: w.A.id, type: "WASTE", qty: -1, unitId: w.unit.id, note: "sisa rusak" } });
+  for (const body of [{ materialId: w.A.id, qtyBaru: 3 }, { materialId: w.A.id, qtyBaru: 0, keMaterialId: w.B.id, qtyKe: 1 }]) { const p = await w.a.post(PRA(w), body); assert.equal(p.status, 200); assert.equal(p.body.boleh, false); assert.ok(p.body.penghalang.some((h) => h.kode === "PERUBAHAN_ADA_SISA_RUSAK")); }
+  const n0 = await jumlahMov(w); const r = await terap(w, { materialId: w.A.id, qtyBaru: 3 }, (await w.a.post(PRA(w), { materialId: w.A.id, qtyBaru: 3 })).body); assert.equal(r.status, 409); assert.equal(r.body.code, "PERUBAHAN_ADA_SISA_RUSAK"); assert.equal(await jumlahMov(w), n0);
+});
