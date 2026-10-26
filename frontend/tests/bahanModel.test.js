@@ -94,7 +94,10 @@ test("pengawatan: tab Bahan = BahanTab (tindakan utama aktual, rencana terlipat,
   assert.ok(!lama.includes("addUnitMaterial"), "komponen lama TIDAK lewat jalur stok");
   for (const k of ["api.batalKomponenLama", "Tidak dijumlahkan dengan bahan baru", "salah input, batalkan".replace("salah", "Salah")]) assert.ok(daftar.includes(k), k);
   assert.ok(!/hapus/i.test(daftar.replace(/^\s*\/\/.*$/gm, "").replace(/<[^>]+>/g, "").replace(/tidak dihapus/gi, "")), "tidak ada aksi hapus pada daftar komponen lama");
-  for (const k of ["api.addUnitMaterial", "-Math.round(v * 10000) / 10000", "tidak diedit atau dihapus", "Koreksi atas"]) assert.ok(riw.includes(k), k);
+  assert.ok(!riw.includes("addUnitMaterial") && !riw.includes("api."), "riwayat bahan baru hanya BACA: perubahan lewat tombol Edit pada tabel (EditPemakaianForm), baris lama tidak diedit atau dihapus");
+  const edit = src("features", "production", "bahan", "EditPemakaianForm.jsx"); const ubahModel = src("features", "production", "bahan", "perubahanModel.js");
+  for (const k of ["api.perubahanPemakaian", "api.ajukanKoreksiPemakaian", "api.pratinjauPerubahanPemakaian", "kunciIdempoten", "kirimRef.current", "data-testid=\"edit-konfirmasi\""]) assert.ok(edit.includes(k), k);
+  assert.ok(ubahModel.includes("Ajukan perubahan") && ubahModel.includes("menunggu persetujuan"), "jalur persetujuan berlabel jelas dan berstatus menunggu");
   const api = src("api.js"); for (const k of ["getKomponenLama", "catatKomponenLama", "koreksiKomponenLama", "batalKomponenLama", "unggahFotoKomponenLama", "/komponen-lama"]) assert.ok(api.includes(k), k);
   const ring = src("features", "production", "workspace", "RingkasanUnit.jsx");
   for (const k of ["cuplikan-bahan", "cuplikan-dokumentasi", "kondisi-pelanggan", "catatan-produksi", "komplain-order", "onBagian(\"bahan\")", "onBagian(\"dokumentasi\")", "getProductionV2DocDetail", "lg:row-span-2"]) assert.ok(ring.includes(k), k);

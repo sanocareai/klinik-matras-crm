@@ -19,11 +19,12 @@ import { rencanakanPosting, jalankanPosting } from "../services/postingPemakaian
 import { ajukanBatch, mulaiBatch, statusBatchBersama, daftarBatch, lanjutkanBatch, hentikanBatch } from "../services/postingBatchLatar.js";
 import { pratinjauPosting } from "../services/postingPratinjau.js";
 import { pratinjauPembetulan } from "../services/pembetulanBahanUnit.js";
+import { pratinjauPerubahan, terapkanPerubahanPemakaian } from "../services/perubahanPemakaianUnit.js";
 
 export const pemakaianKoreksiRouter = express.Router();
 pemakaianKoreksiRouter.use(requireAuth);
 function handleErr(err, res) {
-  if (Number.isInteger(err?.statusCode) && err.code) return res.status(err.statusCode).json({ error: err.message, code: err.code, ...(err.penghalang ? { penghalang: err.penghalang } : {}) });
+  if (Number.isInteger(err?.statusCode) && err.code) return res.status(err.statusCode).json({ error: err.message, code: err.code, ...(err.penghalang ? { penghalang: err.penghalang } : {}), ...(err.detail ? { detail: err.detail } : {}) });
   if (err?.name === "LedgerError") return res.status(409).json({ error: err.message, code: "SALDO_TIDAK_CUKUP" });
   console.error("Rekonsiliasi pemakaian error:", err);
   return res.status(500).json({ error: pesanServerAman(err) });
@@ -50,11 +51,18 @@ pemakaianKoreksiRouter.post("/catatan-historis/evaluasi", tulisBahan, async (req
 pemakaianKoreksiRouter.post("/units/:id/pembetulan-bahan/pratinjau", tulisBahan, wajibUuid(), async (req, res) => {
   try { res.json(await pratinjauPembetulan(prisma, req.user, { unitId: req.params.id, materialId: req.body?.materialId, jenis: req.body?.jenis, qty: req.body?.qty, tanggalPemakaian: req.body?.tanggalPemakaian })); } catch (e) { handleErr(e, res); }
 });
+// Perubahan pemakaian per bahan (ubah jumlah / ganti bahan): pratinjau baca-saja + penerapan LANGSUNG atomik (Idempotency-Key wajib). Perubahan yang perlu persetujuan memakai koreksi-pemakaian di bawah.
+pemakaianKoreksiRouter.post("/units/:id/perubahan-pemakaian/pratinjau", tulisBahan, wajibUuid(), async (req, res) => {
+  try { res.json(await pratinjauPerubahan(prisma, req.user, { unitId: req.params.id, materialId: req.body?.materialId, qtyBaru: req.body?.qtyBaru, keMaterialId: req.body?.keMaterialId ?? null, qtyKe: req.body?.qtyKe ?? null, tanggalPemakaian: req.body?.tanggalPemakaian ?? null, ajukan: req.body?.ajukan === true })); } catch (e) { handleErr(e, res); }
+});
+pemakaianKoreksiRouter.post("/units/:id/perubahan-pemakaian", requirePermission(P.UNIT_MATERIAL_WRITE), wajibUuid(), async (req, res) => {
+  try { const h = await terapkanPerubahanPemakaian(prisma, req.user, { unitId: req.params.id, materialId: req.body?.materialId, qtyBaru: req.body?.qtyBaru, keMaterialId: req.body?.keMaterialId ?? null, qtyKe: req.body?.qtyKe ?? null, tanggalPemakaian: req.body?.tanggalPemakaian ?? null, alasan: req.body?.alasan, dilihat: req.body?.dilihat, konfirmasiBukanGanda: req.body?.konfirmasiBukanGanda === true }, { kunci: kunci(req) }); res.status(h.ulang ? 200 : 201).json(h); } catch (e) { handleErr(e, res); }
+});
 pemakaianKoreksiRouter.post("/units/:id/koreksi-pemakaian/pratinjau", tulisBahan, wajibUuid(), async (req, res) => {
   try { res.json(await pratinjauKoreksiPemakaian(prisma, { unitId: req.params.id, materialId: req.body?.materialId, qtyBaru: req.body?.qtyBaru })); } catch (e) { handleErr(e, res); }
 });
 pemakaianKoreksiRouter.post("/units/:id/koreksi-pemakaian", tulisBahan, wajibUuid(), async (req, res) => {
-  try { const h = await ajukanKoreksiPemakaian(prisma, { unitId: req.params.id, materialId: req.body?.materialId, qtyBaru: req.body?.qtyBaru, alasan: req.body?.alasan, kunci: kunci(req), aktor: req.user, tanggalEfektif: req.body?.tanggalEfektif }); res.status(h.ulang ? 200 : 201).json(h); } catch (e) { handleErr(e, res); }
+  try { const h = await ajukanKoreksiPemakaian(prisma, { unitId: req.params.id, materialId: req.body?.materialId, qtyBaru: req.body?.qtyBaru, alasan: req.body?.alasan, kunci: kunci(req), aktor: req.user, tanggalPemakaian: req.body?.tanggalPemakaian, tanggalEfektif: req.body?.tanggalEfektif }); res.status(h.ulang ? 200 : 201).json(h); } catch (e) { handleErr(e, res); }
 });
 pemakaianKoreksiRouter.get("/koreksi-pemakaian", requireAnyPermission(P.INVENTORY_READ, P.UNIT_MATERIAL_WRITE), async (req, res) => {
   try { res.json({ koreksi: await daftarKoreksiPemakaian(prisma, { status: req.query.status ? String(req.query.status) : null, unitId: req.query.unitId ? String(req.query.unitId) : null }) }); } catch (e) { handleErr(e, res); }
