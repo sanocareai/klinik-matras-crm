@@ -66,38 +66,28 @@ test("izin eksplisit di kode: rute ubah/koreksi/ajukan memakai finance:harga_ber
 });
 
 test("guard rollback: baca-saja (transaksi READ ONLY); LULUS hanya bila tabel tak ada ATAU ketiga tabel KOSONG; menolak rollback rutin bila ada riwayat harga, snapshot biaya operasional, atau penerapan; keadaan tak dikenal = tolak; bash lolos sintaks", () => {
-  assert.match(guard, /BEGIN READ ONLY/); assert.ok(!/(insert into|update [a-z_"]+ set|delete from|drop |truncate|alter table)/i.test(guard.replace(/
-#[^
-]*/g, "")), "guard tidak menulis");
+  assert.match(guard, /BEGIN READ ONLY/);
+  const tanpaKomentar = guard.replace(/\n#[^\n]*/g, "");
+  assert.ok(!/\b(insert into|update [a-z_"]+ set|delete from|drop |truncate|alter table)\b/i.test(tanpaKomentar), "guard tidak menulis");
   for (const t of ["GUARD DITOLAK", "GUARD LULUS", "exit 2", "exit 1", "exit 0", "hanya ${ADA} dari 3 tabel", "RUTIN TIDAK DIPERBOLEHKAN", "PERBAIKAN MAJU", "gagal-pembekuan", "GAGAL_PEMBEKUAN"]) assert.ok(guard.includes(t), t);
   // aturan LULUS: persis dua jalur (tabel belum ada; ketiga hitungan nol). Selain itu jatuh ke DITOLAK.
-  assert.match(guard, /if [ "$NH" = "0" ] && [ "$NB" = "0" ] && [ "$NP" = "0" ]; then/);
-  assert.ok(guard.indexOf('GUARD LULUS: fitur belum dipakai') < guard.indexOf("RUTIN TIDAK DIPERBOLEHKAN"), "LULUS hanya di cabang kosong; sisanya DITOLAK");
-  assert.ok(!/NPA" != "0" ]; thens*
-s*echo "GUARD DITOLAK[^
-]*
-[^
-]*
-[^
-]*
-[^
-]*exit 1s*
-fis*
-echo "GUARD LULUS: tidak ada penerapan/.test(guard), "aturan lama (hanya DIAJUKAN) sudah diganti");
+  assert.ok(guard.includes('if [ "$NH" = "0" ] && [ "$NB" = "0" ] && [ "$NP" = "0" ]; then'), "LULUS hanya bila riwayat harga, snapshot, dan penerapan semuanya nol");
+  assert.equal(guard.split("GUARD LULUS").length - 1, 2, "persis dua pesan LULUS (tabel belum ada; fitur belum dipakai)");
+  assert.ok(guard.indexOf("GUARD LULUS: fitur belum dipakai") < guard.indexOf("RUTIN TIDAK DIPERBOLEHKAN"), "cabang LULUS mendahului penolakan; sisanya DITOLAK");
+  assert.ok(!guard.includes("GUARD LULUS: tidak ada penerapan harga yang menunggu"), "aturan lama (hanya DIAJUKAN yang menolak) sudah diganti");
   for (const f of ["scripts/rollback-guard-harga-berlaku.sh", "scripts/release-harga-berlaku.sh"]) { const r = spawnSync("bash", ["-n", path.join(repo, f)], { encoding: "utf8" }); if (r.error) continue; assert.equal(r.status, 0, r.stderr); }
 });
 
 test("skrip rilis menguji guard secara NYATA: LULUS pada keadaan kosong (rehearsal + produksi pasca-switch) dan MENOLAK sesudah skenario terisi (riwayat, snapshot, penerapan, penanda gagal); skenario memaksa kegagalan hook di DB sementara", () => {
-  assert.match(skrip, /guard-kosong.log/); assert.match(skrip, /guard-menolak.log/); assert.match(skrip, /GUARD_DB="$REH_DB" bash "$NEW_DIR/scripts/rollback-guard-harga-berlaku.sh"/);
-  assert.match(skrip, /guard rollback TIDAK menolak/); assert.match(skrip, /guard rollback MENGUBAH data/); assert.match(skrip, /GUARD_PROD_RC/);
+  for (const t of ["guard-kosong.log", "guard-menolak.log", 'GUARD_DB="$REH_DB" bash "$NEW_DIR/scripts/rollback-guard-harga-berlaku.sh"', "guard rollback TIDAK menolak", "guard rollback MENGUBAH data", "GUARD_PROD_RC", "uji_paksa_gagal_trg", "PENANDA_PEMBEKUAN_GAGAL"]) assert.ok(skrip.includes(t), t);
   assert.ok(skrip.indexOf("guard-menolak.log") > skrip.indexOf("<<'REHNODE'") && skrip.indexOf("guard-menolak.log") < skrip.indexOf('ok "rehearsal lulus:'), "guard-menolak berjalan SESUDAH skenario dan SEBELUM DB rehearsal dihapus");
-  assert.match(skrip, /uji_paksa_gagal_trg/); assert.match(skrip, /PENANDA_PEMBEKUAN_GAGAL/); assert.match(skrip, /^rehearsal_/, "pemicu paksa hanya di DB rehearsal");
+  assert.ok(skrip.includes("/^rehearsal_/.test(namaDb)"), "pemicu paksa hanya dipasang di DB rehearsal");
 });
 
 test("penanda kegagalan pembekuan: hook mencatat GAGAL_PEMBEKUAN persisten dan melempar bila penandanya gagal (bukan lagi hanya console.error)", () => {
   const svc = baca("backend/src/services/finance/hargaBerlaku.js");
   const catat = svc.slice(svc.indexOf("export async function catatBiayaOperasional"), svc.indexOf("export async function daftarGagalPembekuan"));
-  assert.match(catat, /status: GAGAL, qty/); assert.match(catat, /sumber: "GAGAL_SAAT_POSTING"/); assert.match(catat, /throw new KoreksiError([^)]*503, "PENANDA_PEMBEKUAN_GAGAL")/);
-  assert.ok(catat.indexOf("throw new KoreksiError") > catat.indexOf("stockMovementBiayaOperasional.create({ data: { movementId: mov.id, materialId: mov.materialId, unitId: mov.unitId, status: GAGAL"), "lempar hanya bila penanda gagal disimpan");
-  assert.match(baca("backend/src/routes/hargaBerlaku.js"), //gagal-pembekuan", requirePermission(P.FINANCE_READ)/);
+  assert.ok(catat.includes("status: GAGAL, qty") && catat.includes('sumber: "GAGAL_SAAT_POSTING"') && catat.includes('503, "PENANDA_PEMBEKUAN_GAGAL"'));
+  assert.ok(catat.indexOf("throw new KoreksiError") > catat.indexOf("status: GAGAL, qty"), "lempar hanya bila penanda gagal disimpan");
+  assert.ok(baca("backend/src/routes/hargaBerlaku.js").includes('"/gagal-pembekuan", requirePermission(P.FINANCE_READ)'));
 });
