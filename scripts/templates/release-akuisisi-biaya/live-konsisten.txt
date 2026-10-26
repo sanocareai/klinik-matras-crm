@@ -6,7 +6,9 @@ IFS= read -r -d '' HASH_JS <<'HASHNODE' || true
 HASHNODE
 NET_LIVE="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$CID_NEW" | awk '{print $1}')"
 [ -n "$NET_LIVE" ] || die "jaringan docker produksi tidak terbaca (konsistensi live)"
-hash_lama() { printf '%s\n' "$HASH_JS" | docker run --rm -i --network "$NET_LIVE" --env-file "$PERSIST/backend/.env" -e PER_DARI="$PER_DARI_L" -e PER_SAMPAI="$PER_SAMPAI_L" "$ROLLBACK_TAG" node --input-type=module - 2>&1; }
+# DATABASE_URL eksplisit (docker --env-file mempertahankan tanda kutip di .env → Prisma menolak URL). Kata sandi dibaca seperti pada rehearsal; tidak dicetak.
+LIVE_URL="postgresql://${DB_USER}:${REH_PW}@postgres:5432/${DB_NAME}"
+hash_lama() { printf '%s\n' "$HASH_JS" | docker run --rm -i --network "$NET_LIVE" --env-file "$PERSIST/backend/.env" -e DATABASE_URL="$LIVE_URL" -e PER_DARI="$PER_DARI_L" -e PER_SAMPAI="$PER_SAMPAI_L" "$ROLLBACK_TAG" node --input-type=module - 2>&1; }
 hash_baru() { printf '%s\n' "$HASH_JS" | dcp "$NEW_DIR" exec -T -e PER_DARI="$PER_DARI_L" -e PER_SAMPAI="$PER_SAMPAI_L" backend node --input-type=module - 2>&1; }
 LIVE_SAMA=0
 for try in 1 2 3; do
