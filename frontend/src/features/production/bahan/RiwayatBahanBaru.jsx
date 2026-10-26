@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button.jsx";
 import { cn } from "@/lib/utils.js";
 import { formatJumlah, kunciIdempoten, parseJumlah, pesanGalatAdopsi, waktuWib } from "@/features/production/orderProduksiModel.js";
 import { batasKoreksi, jalurKoreksi } from "@/features/production/bahan/bahanModel.js";
+import { tglIndo } from "@/features/production/bahan/pembetulanModel.js";
 
 // Riwayat pemakaian BAHAN BARU (ledger resmi): siapa, kapan, bahan, jumlah, satuan, dokumen sumber, dampak pada stok. Koreksi = pengembalian BARU (movement baru) — baris asli tidak diedit/dihapus.
 function Koreksi({ unitId, baris, total, onSelesai, onTutup }) {
@@ -46,7 +47,7 @@ export default function RiwayatBahanBaru({ unitId, data, bolehUbah, aktif, onDon
           return (
             <li key={b.id} className="space-y-1 px-3 py-2 text-[12.5px]" data-testid="aktual-riwayat-baris">
               <div className="flex items-baseline gap-2"><span className="min-w-0 flex-1 truncate font-medium text-ink">{b.nama}</span><span className={cn("shrink-0 font-semibold tabular-nums", balik ? "text-green" : "text-ink")}>{balik ? "−" : ""}{formatJumlah(Math.abs(b.qty))} {b.satuan}</span></div>
-              <div className="text-ink3">{b.pelaku || "—"} · {waktuWib(b.tanggal)} · {b.dokumen.jenis}{b.dokumen.nomor ? ` ${b.dokumen.nomor}` : ""}</div>
+              <div className="text-ink3">{b.pelaku || "—"} · {b.dilaporkan ? "dicatat " : ""}{waktuWib(b.tanggal)}{b.dilaporkan ? <> · <b className="text-ink2" data-testid="aktual-dilaporkan">dilaporkan dipakai {tglIndo(b.dilaporkan)}</b></> : null} · {b.dokumen.jenis}{b.dokumen.nomor ? ` ${b.dokumen.nomor}` : ""}</div>
               <div className="flex flex-wrap items-center gap-1.5"><Badge variant={balik ? "green" : "orange"} className={balik ? "bh-ok" : "bh-b-orange"}>{balik ? "Menambah stok (koreksi)" : "Mengurangi stok"}</Badge>{b.catatan && <span className="text-ink3">{b.catatan}</span>}</div>
               {bolehUbah && aktif && jalur.jenis === "langsung" && buka !== b.id && <Button variant="neutral" size="sm" className="min-h-[40px]" onClick={() => setBuka(b.id)} data-testid="koreksi-bahan-buka"><Undo2 size={13} aria-hidden /> Salah input? Koreksi</Button>}
               {jalur.jenis === "gudang" && <p className="m-0 flex items-start gap-1.5 text-[11.5px] text-ink3"><Info size={12} className="mt-0.5 shrink-0" aria-hidden />{jalur.teks}</p>}

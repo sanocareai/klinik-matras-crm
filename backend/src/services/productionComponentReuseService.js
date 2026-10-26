@@ -4,6 +4,7 @@
 //   • tabel unit_component_reuse_entries append-only (versi): salah input = versi CORRECTED/VOIDED dengan alasan wajib, baris lama tetap;
 //   • sumber dikunci ke unit INI (DB CHECK source='OWN_UNIT'): komponen unit pelanggan lain tidak dapat dicatat lewat jalur ini.
 import crypto from "node:crypto";
+import { tanggalDilaporkan, catatanPembetulan } from "./pembetulanBahanUnit.js";
 import { lockRowForUpdate } from "./inventoryLedger.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import { EVIDENCE_URL_PREFIX } from "../lib/domain/productionSteps.js";
@@ -53,11 +54,14 @@ const sama = (a, b) => a.name === b.name && Number(a.qty) === Number(b.qty) && a
 
 function kunciValid(k) { if (!k || !IDEM_RE.test(String(k))) throw bad("Idempotency-Key wajib (12–128 karakter huruf/angka/._:-).", "IDEMPOTENCY_KEY_INVALID"); return String(k); }
 
-async function unitAktif(tx, unitId) {
+// alasan + tanggal = pembetulan unit TERKIRIM (Okt 2026): komponen lama (BUKAN stok) pada unit DELIVERED diterima dengan alasan wajib (5–500 karakter) DAN tanggal pemakaian yang dilaporkan; unit DIBATALKAN tetap ditolak.
+async function unitAktif(tx, unitId, { alasan = "", tanggal = "" } = {}) {
   await lockRowForUpdate(tx, "units", unitId);
-  const unit = await tx.unit.findUnique({ where: { id: unitId }, select: { id: true, unitCode: true, status: true, orderId: true } });
+  const unit = await tx.unit.findUnique({ where: { id: unitId }, select: { id: true, unitCode: true, status: true, orderId: true, createdAt: true } });
   if (!unit) throw new ReuseError("Unit tidak ditemukan", "UNIT_TIDAK_ADA", 404);
-  if (INACTIVE.includes(unit.status)) throw new ReuseError(`Unit ${unit.unitCode} sudah ${unit.status === "CANCELLED" ? "dibatalkan" : "terkirim"}; komponen lama tidak dicatat lagi.`, "UNIT_TIDAK_AKTIF");
+  const alasanB = String(alasan ?? "").trim();
+  if (unit.status === "DELIVERED" && alasanB.length >= 5 && alasanB.length <= 500) return { ...unit, pembetulan: alasanB, tglDilaporkan: tanggalDilaporkan(tanggal, { unitDibuat: unit.createdAt }) };
+  if (INACTIVE.includes(unit.status)) throw new ReuseError(`Unit ${unit.unitCode} sudah ${unit.status === "CANCELLED" ? "dibatalkan" : "terkirim"}; komponen lama tidak dicatat lagi${unit.status === "DELIVERED" ? " kecuali sebagai pembetulan dengan alasan (5–500 karakter) dan tanggal pemakaian" : ""}.`, "UNIT_TIDAK_AKTIF");
   return unit;
 }
 async function pastikanBahanAda(tx, materialId) { if (materialId && !(await tx.material.findUnique({ where: { id: materialId }, select: { id: true } }))) throw bad("Bahan katalog tidak ditemukan.", "KOMPONEN_BAHAN_TIDAK_ADA"); }
@@ -72,7 +76,8 @@ const tampil = (e, namaUser) => ({
 export async function catatKomponenLama(prisma, { unitId, input, actorId, idempotencyKey }) {
   const kunci = kunciValid(idempotencyKey); const data = normalisasiIsian(input);
   return prisma.$transaction(async (tx) => {
-    const unit = await unitAktif(tx, unitId);
+    const unit = await unitAktif(tx, unitId, { alasan: input?.alasanPembetulan, tanggal: input?.tanggalPemakaian });
+    if (unit.pembetulan) data.note = catatanPembetulan(unit.unitCode, unit.pembetulan, unit.tglDilaporkan.tanggal, data.note); // alasan + tanggal dilaporkan masuk ke catatan versi 1 (append-only); waktu pencatatan = createdAt
     const ada = await tx.unitComponentReuseEntry.findFirst({ where: { unitId, idempotencyKey: kunci } });
     if (ada) {
       if (ada.version !== 1 || !sama({ ...ada, qty: Number(ada.qty), photoUrls: ada.photoUrls }, data)) throw new ReuseError("Idempotency-Key ini sudah dipakai untuk isian yang berbeda.", "IDEMPOTENCY_KEY_REUSED");
@@ -81,7 +86,7 @@ export async function catatKomponenLama(prisma, { unitId, input, actorId, idempo
     await pastikanBahanAda(tx, data.materialId);
     const itemId = crypto.randomUUID();
     const row = await tx.unitComponentReuseEntry.create({ data: { itemId, unitId, version: 1, kind: "CREATED", ...data, photoUrls: data.photoUrls, idempotencyKey: kunci, actorId } });
-    await recordActivity(tx, { entityType: ENTITY_TYPES.UNIT, entityId: unitId, eventType: EVENT_TYPES.PRODUCTION_KOMPONEN_LAMA_DICATAT, actorId, metadata: { unitCode: unit.unitCode, kind: "CREATED", itemId, name: data.name, qty: data.qty, uom: data.uom, outcome: data.outcome } });
+    await recordActivity(tx, { entityType: ENTITY_TYPES.UNIT, entityId: unitId, eventType: EVENT_TYPES.PRODUCTION_KOMPONEN_LAMA_DICATAT, actorId, metadata: { unitCode: unit.unitCode, kind: "CREATED", itemId, name: data.name, qty: data.qty, uom: data.uom, outcome: data.outcome, ...(unit.pembetulan ? { pembetulanUnitTerkirim: unit.pembetulan, tanggalPemakaianDilaporkan: unit.tglDilaporkan.tanggal } : {}) } });
     return { replayed: false, item: tampil(row, new Map()) };
   });
 }

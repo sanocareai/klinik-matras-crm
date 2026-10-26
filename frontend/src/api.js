@@ -1053,8 +1053,8 @@ export const api = {
   // sama dengan Gudang, tidak lewat alur dokumen MaterialIssue.
   getUnitMaterials: (unitId) => request(`/units/${unitId}/materials`),
   // Idempotency-Key (opsional, 12–128 karakter): klik ganda / retry jaringan / dua permintaan bersamaan mencatat pemakaian TEPAT SEKALI (adopsi Admin).
-  addUnitMaterial: (unitId, { materialId, qty, note, alasanPembetulan } = {}, idempotencyKey = null) =>
-    request(`/units/${unitId}/materials`, { method: "POST", ...(idempotencyKey ? { headers: { "Idempotency-Key": idempotencyKey } } : {}), body: JSON.stringify({ materialId, qty, note, ...(alasanPembetulan ? { alasanPembetulan } : {}) }) }),
+  addUnitMaterial: (unitId, { materialId, qty, note, ...pembetulan } = {}, idempotencyKey = null) =>
+    request(`/units/${unitId}/materials`, { method: "POST", ...(idempotencyKey ? { headers: { "Idempotency-Key": idempotencyKey } } : {}), body: JSON.stringify({ materialId, qty, note, ...pembetulan }) }), // pembetulan unit terkirim: { alasanPembetulan, tanggalPemakaian, saldoDilihat, konfirmasiBukanGanda } — ditegakkan server
   // Pembetulan bahan unit selesai: pratinjau dampak (stok, jurnal/nilai Finance, HPP operasional) — BACA-SAJA.
   pratinjauPembetulanBahan: (unitId, data) => request(`/production/units/${unitId}/pembetulan-bahan/pratinjau`, { method: "POST", body: JSON.stringify(data) }),
   // ── Rekonsiliasi pemakaian: catatan historis (Excel Admin Sales), koreksi berjejak, posting terpadu. Semua tulis wajib Idempotency-Key.

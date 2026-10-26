@@ -4,6 +4,7 @@ import { api } from "@/api.js";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { formatJumlah, kunciIdempoten, waktuWib } from "@/features/production/orderProduksiModel.js";
+import { tglIndo, uraiDilaporkan } from "@/features/production/bahan/pembetulanModel.js";
 import { SUMBER, asalKomponen } from "@/features/production/bahan/bahanModel.js";
 import FormKomponenLama from "@/features/production/bahan/FormKomponenLama.jsx";
 
@@ -52,7 +53,7 @@ export default function KomponenLamaDaftar({ unitId, kodeUnit, data, bolehUbah, 
             </div>
             <div className="flex flex-wrap items-center gap-1.5 text-[12px]"><Badge variant={NADA_HASIL[it.outcome]}>{it.outcomeLabel}</Badge><Badge variant="neutral" className="text-ink" title={SUMBER.LAMA.dampak}>Bukan stok</Badge>{it.version > 1 && <Badge variant="orange">Dikoreksi · versi {it.version}</Badge>}</div>
             <p className="m-0 text-[12px] text-ink3">{asalKomponen(kodeUnit)} · kondisi: {it.condition}{it.workPart ? ` · dipakai di: ${it.workPart}` : ""}{it.note ? ` · ${it.note}` : ""}</p>
-            <p className="m-0 text-[12px] text-ink3">{it.oleh || "—"} · {waktuWib(it.at)}{it.reason ? ` · alasan koreksi: ${it.reason}` : ""}</p>
+            <p className="m-0 text-[12px] text-ink3">{it.oleh || "—"} · {uraiDilaporkan(it.note) ? "dicatat " : ""}{waktuWib(it.at)}{uraiDilaporkan(it.note) ? <> · <b className="text-ink2" data-testid="komponen-dilaporkan">dilaporkan dipakai {tglIndo(uraiDilaporkan(it.note))}</b></> : null}{it.reason ? ` · alasan koreksi: ${it.reason}` : ""}</p>
             {it.photos?.length > 0 && <ul className="m-0 flex list-none gap-1.5 p-0">{it.photos.map((p, i) => <li key={p.url}><a href={p.previewUrl || p.url} target="_blank" rel="noreferrer" aria-label={`Lihat foto bukti ${i + 1}`}><img src={p.previewUrl || p.url} alt={`Foto bukti ${it.name} ${i + 1}`} className="h-14 w-14 rounded-btn object-cover" loading="lazy" /></a></li>)}</ul>}
             {bolehUbah && aktif && mode?.itemId !== it.itemId && (
               <div className="flex flex-wrap gap-2">

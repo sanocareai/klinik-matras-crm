@@ -11,7 +11,7 @@ import { HASIL_KOMPONEN, SATUAN_KOMPONEN, SUMBER, asalKomponen } from "@/feature
 const FIELD = "h-11 w-full rounded-btn border border-line bg-surface px-3 text-[14px] text-ink outline-none placeholder:text-ink3 focus:border-accent focus-visible:ring-2 focus-visible:ring-accent/30 disabled:opacity-60";
 const LABEL = "block text-[12px] font-medium text-ink3";
 
-export default function FormKomponenLama({ unitId, kodeUnit, awal = null, versi = null, itemId = null, meta, onSelesai, onBatal }) {
+export default function FormKomponenLama({ unitId, kodeUnit, awal = null, versi = null, itemId = null, meta, onSelesai, onBatal, pembetulan = null }) { // pembetulan: { alasan, tanggal, siap } hanya untuk unit TERKIRIM (alasan + tanggal pemakaian dilaporkan wajib; dampak sudah dilihat)
   const koreksi = !!itemId;
   const [f, setF] = useState(() => ({ name: awal?.name ?? "", qty: awal ? String(awal.qty) : "", uom: awal?.uom ?? "PCS", condition: awal?.condition ?? "", workPart: awal?.workPart ?? "", outcome: awal?.outcome ?? "REUSED", note: awal?.note ?? "", materialId: awal?.materialId ?? null }));
   const [foto, setFoto] = useState(() => (awal?.photos ?? []).map((p) => ({ url: p.url, previewUrl: p.previewUrl }))); const [alasan, setAlasan] = useState("");
@@ -28,10 +28,10 @@ export default function FormKomponenLama({ unitId, kodeUnit, awal = null, versi 
     return () => { batal = true; clearTimeout(t); };
   }, [f.name, f.materialId]);
 
-  const sig = JSON.stringify([f, foto.map((p) => p.url), alasan, itemId, versi]);
+  const sig = JSON.stringify([f, foto.map((p) => p.url), alasan, itemId, versi, pembetulan?.alasan ?? null, pembetulan?.tanggal ?? null]);
   if (sigRef.current !== sig) { sigRef.current = sig; kunciRef.current = null; }
   const v = parseJumlah(f.qty);
-  const lengkap = f.name.trim().length >= 2 && v !== null && v > 0 && f.condition.trim().length >= 2 && (!dipakai || f.workPart.trim().length >= 2) && (!koreksi || alasan.trim().length >= 3);
+  const lengkap = (!pembetulan || pembetulan.siap) && f.name.trim().length >= 2 && v !== null && v > 0 && f.condition.trim().length >= 2 && (!dipakai || f.workPart.trim().length >= 2) && (!koreksi || alasan.trim().length >= 3);
 
   async function pilihFoto(e) {
     const files = [...(e.target.files || [])].slice(0, Math.max(0, (meta?.fotoMaks ?? 3) - foto.length)); if (!files.length) return;
@@ -43,11 +43,11 @@ export default function FormKomponenLama({ unitId, kodeUnit, awal = null, versi 
   async function kirim() {
     if (kirimRef.current || !lengkap) return;
     kirimRef.current = true; setSibuk(true); setGalat(""); setOk("");
-    const data = { name: f.name.trim(), qty: v, uom: f.uom, condition: f.condition.trim(), outcome: f.outcome, workPart: dipakai ? f.workPart.trim() : f.workPart.trim() || undefined, note: f.note.trim() || undefined, materialId: f.materialId || undefined, photoUrls: foto.map((p) => p.url) };
+    const data = { name: f.name.trim(), qty: v, uom: f.uom, condition: f.condition.trim(), outcome: f.outcome, workPart: dipakai ? f.workPart.trim() : f.workPart.trim() || undefined, note: f.note.trim() || undefined, materialId: f.materialId || undefined, photoUrls: foto.map((p) => p.url), ...(pembetulan ? { alasanPembetulan: pembetulan.alasan, tanggalPemakaian: pembetulan.tanggal } : {}) };
     try {
       kunciRef.current ??= kunciIdempoten("komp");
       const r = koreksi ? await api.koreksiKomponenLama(unitId, itemId, { expectedVersion: versi, data, reason: alasan.trim() }, kunciRef.current) : await api.catatKomponenLama(unitId, data, kunciRef.current);
-      setOk(koreksi ? "Koreksi tercatat sebagai versi baru. Catatan sebelumnya tetap ada di riwayat." : `Tercatat: ${data.name}. Bukan stok.`); kunciRef.current = null;
+      setOk(koreksi ? "Koreksi tercatat sebagai versi baru. Catatan sebelumnya tetap ada di riwayat." : `Tercatat: ${data.name}. Bukan stok.${pembetulan ? ` Dilaporkan dipakai ${pembetulan.tanggal}; waktu pencatatan = sekarang.` : ""}`); kunciRef.current = null;
       await onSelesai?.(r);
     } catch (e) { setGalat(e.code === "RIWAYAT_BERUBAH" ? `${e.message}` : e.message || "Gagal mencatat."); } finally { kirimRef.current = false; setSibuk(false); }
   }

@@ -1,0 +1,7 @@
+Rilis ini TANPA migrasi dan TANPA tulisan data bisnis oleh skripnya: rollback KODE aman kapan pun. Bila rollback setelah switch:
+   cd ${PREV_DIR:-<release-sebelumnya>}
+   docker tag ${ROLLBACK_TAG:-<tag-rollback>} ${IMG_NAME:-klinik-matras-backend:latest}
+   SANSS_PERSIST_ROOT=${PERSIST} docker compose -p ${PROJECT} -f docker-compose.yml -f docker-compose.release.yml up -d --no-deps --force-recreate backend
+Kode lama hanya kembali mengunci input bahan pada unit terkirim dan tidak lagi menegakkan alasan/tanggal dilaporkan; data yang sudah dibuat lewat pembetulan (pergerakan stok bertaut unit, catatan sementara, komponen lama, koreksi) tetap valid dan tidak dibalik.
+Rilis ini tidak menyentuh Harga Berlaku, Persediaan Awal, PSA/GR, atau jurnal; tidak ada guard rollback khusus.
+Pemulihan database penuh hanya bila terjadi kerusakan data: gzip -dc ${BACKUP_FILE:-<backup>} | psql ... (lihat checksum di atas) — MENGHAPUS semua perubahan sesudah backup; gunakan hanya atas keputusan Owner.

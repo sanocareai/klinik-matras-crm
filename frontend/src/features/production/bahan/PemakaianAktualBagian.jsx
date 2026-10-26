@@ -78,7 +78,8 @@ export default function PemakaianAktualBagian({ unitId, data, izin, aktif, onDon
       )}
       {boleh && !mode && <p className="m-0 text-[12.5px] text-ink2" data-testid="aktual-petunjuk">Pilih sumber bahan yang dipakai. Tidak perlu rencana bahan lebih dulu.</p>}
       {!izin.pemakaianAktual && <p className="m-0 text-[12.5px] text-ink3" data-testid="aktual-hanya-lihat">Akun Anda hanya bisa melihat pemakaian bahan.</p>}
-      {izin.pemakaianAktual && !aktif && <PembetulanUnitSelesai unitId={unitId} kodeUnit={kodeUnit} status={data.unit.status} data={data} izin={izin} onDone={onDone} />}
+      {izin.pemakaianAktual && !aktif && data.unit.status === "DELIVERED" && <PembetulanUnitSelesai unitId={unitId} kodeUnit={kodeUnit} status={data.unit.status} data={data} izin={izin} onDone={onDone} />}
+      {izin.pemakaianAktual && !aktif && data.unit.status !== "DELIVERED" && <p className="m-0 text-[12.5px] text-ink3" data-testid="unit-dibatalkan-terkunci">Unit sudah dibatalkan; pemakaian tidak dicatat lagi.</p>}
 
       {boleh && mode && (
         <div className="space-y-3 rounded-card border border-line px-4 py-4" data-testid="panel-catat-aktual" data-mode={mode}>

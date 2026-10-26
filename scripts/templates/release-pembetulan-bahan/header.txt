@@ -1,0 +1,16 @@
+# RILIS "PEMBETULAN BAHAN UNIT TERKIRIM (drawer Order Produksi)": WEB + BACKEND, TANPA migrasi dan TANPA perubahan schema.prisma — RELEASE-DIRECTORY di atas release aktif (BASE_SHA). FAIL-CLOSED.
+#   • Hanya unit TERKIRIM (DELIVERED); unit dibatalkan dan unit aktif TIDAK diperluas. Panel "Pembetulan bahan" menggantikan kalimat buntu "pemakaian tidak dicatat lagi" pada unit terkirim.
+#   • Layanan resmi yang sudah ada: pengeluaran/pengembalian stok (POST /units/:id/materials), koreksi jumlah berpersetujuan, pemakaian sementara, komponen lama (catatan TANPA stok). Posting Pemakaian Historis TIDAK dipakai.
+#   • Aturan server pada unit terkirim: ALASAN wajib, TANGGAL PEMAKAIAN yang dilaporkan wajib (terpisah dari waktu pencatatan), SALDO yang dilihat di pratinjau harus masih sama (409 bila bergeser), dan konfirmasi eksplisit bila ada pengeluaran yang MUNGKIN SUDAH TERCATAT
+#     (kandidat ditampilkan; tidak pernah disamakan/ditautkan otomatis). Pratinjau (baca-saja) menyatakan tegas: catatan saja vs PENGELUARAN/PENGEMBALIAN STOK baru, dampak stok, jurnal/celah Finance, HPP operasional. Dasar harga & tanggal jurnal = WAKTU PENCATATAN.
+#   • Gate: preflight; backup + RESTORE rehearsal (kode baru berjalan sebagai SERVER terhadap salinan restore; semua skenario pembetulan ditulis HANYA ke DB sementara; direktori data/uploads production TIDAK dipasang ke rehearsal); build web di release dir;
+#     smoke baca-saja pasca-switch (pratinjau, penolakan sebelum menulis, tanpa jejak tulis). Produksi: rilis ini TIDAK membuat catatan/pergerakan/koreksi apa pun; tidak ada transaksi QA.
+#
+#   cat scripts/release-pembetulan-bahan.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/pb1.sh'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/pb1.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/pb1.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rehearsal-only > /tmp/pb1r.out 2>&1 < /dev/null &'   # SEMUA gerbang sampai rehearsal pada restore nyata; TANPA switch
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/pb1.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/pb1.out 2>&1 < /dev/null &'   # rilis penuh (hanya setelah persetujuan)
+#
+# ROLLBACK: kode aman di-rollback kapan pun (tanpa migrasi, tanpa tabel baru). Data yang sudah dibuat lewat pembetulan (pergerakan stok bertaut unit, catatan sementara/komponen lama, koreksi) tetap sah sebagai data biasa;
+#   kode lama hanya kembali mengunci input pada unit terkirim. Tidak ada guard rollback khusus.
+# (dibangkitkan oleh scripts/gen-release-pembetulan-bahan.cjs dari scripts/release-status-kerja-buka-pekerjaan.sh + scripts/templates/release-pembetulan-bahan/*; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang)

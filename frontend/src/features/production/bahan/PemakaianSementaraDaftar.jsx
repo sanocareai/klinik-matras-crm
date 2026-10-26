@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { cn } from "@/lib/utils.js";
 import { formatJumlah, kunciIdempoten, parseJumlah, pesanGalatAdopsi, waktuWib } from "@/features/production/orderProduksiModel.js";
+import { tglIndo, uraiDilaporkan } from "@/features/production/bahan/pembetulanModel.js";
 import { ASAL_UMUM, SATUAN_KOMPONEN } from "@/features/production/bahan/bahanModel.js";
 import RekonsiliasiPanel from "@/features/production/bahan/RekonsiliasiPanel.jsx";
 import "@/features/production/bahan/bahan.css";
@@ -62,7 +63,7 @@ function Baris({ item, bolehCatat, bolehGudang, aktif, onDone }) {
           <span className="block text-[12px] text-ink2">{formatJumlah(item.qty)} {item.uom} · asal: {item.originNote || "belum diisi"}{item.hasilKoreksi ? " · hasil koreksi" : ""}</span></span>
         <Badge variant={NADA[item.status] || "neutral"} className={perlu ? "bh-b-orange" : undefined} data-testid="sementara-status">{labelStatus}</Badge>
       </div>
-      <p className="m-0 mt-0.5 text-[11.5px] text-ink3">Dicatat {item.oleh || "—"} · dipakai {waktuWib(item.usedAt)}{item.note ? ` · ${item.note}` : ""}</p>
+      <p className="m-0 mt-0.5 text-[11.5px] text-ink3">Dicatat {item.oleh || "—"}{uraiDilaporkan(item.note) ? <> {waktuWib(item.recordedAt)} · <b className="text-ink2" data-testid="sementara-dilaporkan">dilaporkan dipakai {tglIndo(uraiDilaporkan(item.note))}</b></> : <> · dipakai {waktuWib(item.usedAt)}</>}{item.note ? ` · ${item.note}` : ""}</p>
       {item.status === "DIREKONSILIASI" && <p className="m-0 mt-0.5 text-[12px] text-ink2" data-testid="sementara-selesai">{item.resolusiLabel} oleh {item.diselesaikanOleh || "—"}, {waktuWib(item.diselesaikanAt)}{item.catatanPenyelesaian ? ` — ${item.catatanPenyelesaian}` : ""}</p>}
       {item.status === "DIBATALKAN" && <p className="m-0 mt-0.5 text-[12px] text-ink2" data-testid="sementara-batal-info">{item.dikoreksi ? "Dikoreksi" : "Dibatalkan (salah input)"} oleh {item.dibatalkanOleh || "—"}, {waktuWib(item.dibatalkanAt)} — {String(item.alasanBatal || "").replace(/^Dikoreksi:\s*/, "")}. Tidak lagi dihitung sebagai bukti pekerjaan.</p>}
       {(perlu || bisaBatalSelesai) && !mode && (bolehCatat || bolehGudang) && aktif && (

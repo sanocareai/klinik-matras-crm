@@ -6,6 +6,7 @@
 //     (tidak punya satu pun pergerakan stok → pemakaian resmi pasti ditolak ledger "tersedia 0"). Itu dicatat lewat materialId (tertaut ke ID katalog, bukan nama): jumlah, satuan (= satuan katalog), asal barang, alasan, unit, pelaku, waktu.
 //     Bahan yang saldonya DIKETAHUI (termasuk tidak cukup/minus) tetap ditolak (BAHAN_STOK_DIKETAHUI): keputusan terpisah. Tetap bukan Material Issue/pergerakan/saldo/biaya/jurnal.
 import { lockRowForUpdate } from "./inventoryLedger.js";
+import { tanggalDilaporkan, catatanPembetulan } from "./pembetulanBahanUnit.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import { AWAL_CATATAN_KATALOG, BahanUsulanError, CATATAN_SEMENTARA, RESOLUSI, STATUS_SEMENTARA, adaKembarSama, cariKembar, kunciValid, normalisasiPemakaianSementara, normalisasiRekonsiliasi, qtySama, selisihQty, susunCatatanKatalog, kunciNama } from "../lib/domain/bahanUsulan.js";
 
@@ -34,13 +35,13 @@ const tampil = (r, nama, extra = {}) => ({
   dampakStok: "Tidak ada saldo/biaya/jurnal sampai Gudang menyelesaikan sumber stok lewat jalur resmi.", ...extra,
 });
 
-// alasan = alasan pembetulan unit TERKIRIM (Okt 2026): memungkinkan mencatat pemakaian sementara pada unit DELIVERED dengan alasan wajib (5–500 karakter); unit DIBATALKAN tetap ditolak.
-async function unitAktif(tx, unitId, { alasan = "" } = {}) {
+// alasan + tanggal = pembetulan unit TERKIRIM (Okt 2026): pemakaian sementara pada unit DELIVERED diterima dengan alasan wajib (5–500 karakter) DAN tanggal pemakaian yang dilaporkan; unit DIBATALKAN tetap ditolak.
+async function unitAktif(tx, unitId, { alasan = "", tanggal = "" } = {}) {
   await lockRowForUpdate(tx, "units", unitId);
-  const unit = await tx.unit.findUnique({ where: { id: unitId }, select: { id: true, unitCode: true, status: true, orderId: true } });
+  const unit = await tx.unit.findUnique({ where: { id: unitId }, select: { id: true, unitCode: true, status: true, orderId: true, createdAt: true } });
   if (!unit) throw new BahanUsulanError("Unit tidak ditemukan", "UNIT_TIDAK_ADA", 404);
   const alasanB = String(alasan ?? "").trim();
-  if (unit.status === "DELIVERED" && alasanB.length >= 5 && alasanB.length <= 500) return { ...unit, pembetulan: alasanB };
+  if (unit.status === "DELIVERED" && alasanB.length >= 5 && alasanB.length <= 500) return { ...unit, pembetulan: alasanB, tglDilaporkan: tanggalDilaporkan(tanggal, { unitDibuat: unit.createdAt }) };
   if (INACTIVE.includes(unit.status)) throw new BahanUsulanError(`Unit ${unit.unitCode} sudah ${unit.status === "CANCELLED" ? "dibatalkan" : "terkirim"}; pemakaian sementara tidak dicatat lagi${unit.status === "DELIVERED" ? " kecuali sebagai pembetulan dengan alasan (5–500 karakter)" : ""}.`, "UNIT_TIDAK_AKTIF", 409);
   return unit;
 }
@@ -49,7 +50,7 @@ async function unitAktif(tx, unitId, { alasan = "" } = {}) {
 export async function catatPemakaianSementara(prisma, { unitId, input, actorId, idempotencyKey }) {
   const kunci = kunciValid(idempotencyKey); const data = normalisasiPemakaianSementara(input);
   return prisma.$transaction(async (tx) => {
-    const unit = await unitAktif(tx, unitId, { alasan: input?.alasanPembetulan });
+    const unit = await unitAktif(tx, unitId, { alasan: input?.alasanPembetulan, tanggal: input?.tanggalPemakaian });
     // Bentuk (b): bahan katalog, stok belum diketahui. Nama, satuan, dan catatan baku diturunkan dari KATALOG (bukan dari klien) supaya tertaut ke ID yang benar.
     let bahan = null;
     if (data.materialId) {
@@ -58,7 +59,7 @@ export async function catatPemakaianSementara(prisma, { unitId, input, actorId, 
       data.name = bahan.name; data.nameKey = kunciNama(bahan.name);
       data.note = susunCatatanKatalog({ kode: bahan.code, alasan: data.alasan, catatan: data.note ?? "" });
     }
-    if (unit.pembetulan) data.note = [`Pembetulan unit terkirim (${unit.unitCode}): ${unit.pembetulan}`, data.note].filter(Boolean).join(" | ").slice(0, 500);
+    if (unit.pembetulan) { data.note = catatanPembetulan(unit.unitCode, unit.pembetulan, unit.tglDilaporkan.tanggal, data.note); data.usedAt = new Date(`${unit.tglDilaporkan.tanggal}T05:00:00Z`); } // usedAt = tanggal pemakaian yang DILAPORKAN (12:00 WIB); waktu pencatatan tetap createdAt
     const ada = await tx.unitProvisionalUsage.findFirst({ where: { unitId, idempotencyKey: kunci }, include: { material: { select: { id: true, code: true, name: true, unit: true } } } });
     if (ada) {
       const sama = ada.name === data.name && Number(ada.qty) === data.qty && ada.uom === data.uom && (ada.originNote ?? null) === data.originNote && (ada.note ?? null) === data.note && (ada.proposalId ?? null) === data.proposalId && (ada.materialId ?? null) === data.materialId;
@@ -85,7 +86,7 @@ export async function catatPemakaianSementara(prisma, { unitId, input, actorId, 
     }
     const baris = await tx.unitProvisionalUsage.create({ data: { unitId, proposalId: data.proposalId, materialId: data.materialId, name: data.name, nameKey: data.nameKey, qty: data.qty, uom: data.uom, originNote: data.originNote, note: data.note, usedAt: data.usedAt, recordedById: actorId, idempotencyKey: kunci }, include: { material: { select: { id: true, code: true, name: true, unit: true } } } });
     const nama = await namaPelaku(tx, [actorId]);
-    await recordActivity(tx, { entityType: ENTITY_TYPES.UNIT, entityId: unitId, eventType: EVENT_TYPES.PRODUCTION_PEMAKAIAN_SEMENTARA_DICATAT, actorId, metadata: { unitCode: unit.unitCode, orderId: unit.orderId, ...(unit.pembetulan ? { pembetulanUnitTerkirim: unit.pembetulan } : {}), usageId: baris.id, name: data.name, qty: data.qty, uom: data.uom, originNote: data.originNote, ...(bahan ? { materialId: bahan.id, kodeBahan: bahan.code, stokBelumDiketahui: true, alasan: data.alasan } : {}), deciderName: nama.get(actorId) ?? null } });
+    await recordActivity(tx, { entityType: ENTITY_TYPES.UNIT, entityId: unitId, eventType: EVENT_TYPES.PRODUCTION_PEMAKAIAN_SEMENTARA_DICATAT, actorId, metadata: { unitCode: unit.unitCode, orderId: unit.orderId, ...(unit.pembetulan ? { pembetulanUnitTerkirim: unit.pembetulan, tanggalPemakaianDilaporkan: unit.tglDilaporkan.tanggal } : {}), usageId: baris.id, name: data.name, qty: data.qty, uom: data.uom, originNote: data.originNote, ...(bahan ? { materialId: bahan.id, kodeBahan: bahan.code, stokBelumDiketahui: true, alasan: data.alasan } : {}), deciderName: nama.get(actorId) ?? null } });
     return { replayed: false, item: tampil(baris, nama), catatan: CATATAN_SEMENTARA };
   });
 }
@@ -98,7 +99,7 @@ export async function koreksiPemakaianSementara(prisma, { usageId, input, alasan
   return prisma.$transaction(async (tx) => {
     const awal = await tx.unitProvisionalUsage.findUnique({ where: { id: usageId }, select: { unitId: true } });
     if (!awal) throw new BahanUsulanError("Catatan pemakaian sementara tidak ditemukan", "SEMENTARA_TIDAK_ADA", 404);
-    const unit = await unitAktif(tx, awal.unitId, { alasan: teks }); // unit terkirim: koreksi catatan sementara diizinkan karena alasan sudah wajib
+    const unit = await unitAktif(tx, awal.unitId);
     await lockRowForUpdate(tx, "unit_provisional_usages", usageId);
     const r = await tx.unitProvisionalUsage.findUnique({ where: { id: usageId } });
     const ada = await tx.unitProvisionalUsage.findFirst({ where: { unitId: r.unitId, idempotencyKey: kunci } });

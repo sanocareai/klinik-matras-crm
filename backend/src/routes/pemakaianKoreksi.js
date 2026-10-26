@@ -48,7 +48,7 @@ pemakaianKoreksiRouter.post("/catatan-historis/evaluasi", tulisBahan, async (req
 });
 
 pemakaianKoreksiRouter.post("/units/:id/pembetulan-bahan/pratinjau", tulisBahan, wajibUuid(), async (req, res) => {
-  try { res.json(await pratinjauPembetulan(prisma, req.user, { unitId: req.params.id, materialId: req.body?.materialId, jenis: req.body?.jenis, qty: req.body?.qty })); } catch (e) { handleErr(e, res); }
+  try { res.json(await pratinjauPembetulan(prisma, req.user, { unitId: req.params.id, materialId: req.body?.materialId, jenis: req.body?.jenis, qty: req.body?.qty, tanggalPemakaian: req.body?.tanggalPemakaian })); } catch (e) { handleErr(e, res); }
 });
 pemakaianKoreksiRouter.post("/units/:id/koreksi-pemakaian/pratinjau", tulisBahan, wajibUuid(), async (req, res) => {
   try { res.json(await pratinjauKoreksiPemakaian(prisma, { unitId: req.params.id, materialId: req.body?.materialId, qtyBaru: req.body?.qtyBaru })); } catch (e) { handleErr(e, res); }

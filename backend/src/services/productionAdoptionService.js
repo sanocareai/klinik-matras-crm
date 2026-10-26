@@ -6,6 +6,7 @@
 //   • pemakaian AKTUAL dengan dokumen sumber dan pelaku (dibaca dari ledger stok resmi).
 // Tidak membuat tahap, QC, foto, penerimaan Gudang, atau pergerakan stok.
 import { MANUAL_STATUSES, WORK_STATUS, riwayatKerjaManual } from "../lib/domain/productionWorkStatus.js";
+import { uraiCatatanPembetulan } from "./pembetulanBahanUnit.js";
 import { RencanaBahanError, normalisasiBarisRencana, selisihRencana, sameLines } from "../lib/domain/productionMaterialPlan.js";
 import { kelompokDariItemGroup, KELOMPOK_BELUM, LABEL_BELUM, KELOMPOK, URUTAN_KELOMPOK } from "../constants/kelompokBahan.js";
 import { lockRowForUpdate } from "./inventoryLedger.js";
@@ -212,6 +213,8 @@ export async function ambilPemakaianAktual(db, unitId) {
       id: m.id, tanggal: m.createdAt, tipe: m.type, qty: -Number(m.qty), // positif = bahan dipakai; negatif = dikembalikan
       kode: m.material.code, nama: m.material.name, satuan: m.material.unit, materialId: m.material.id, kelompok: kelompokDariItemGroup(m.material.itemGroup),
       dokumen, pelaku: m.createdBy?.name ?? null, catatan: m.note ?? m.reason ?? null,
+      // Pembetulan unit terkirim: tanggal pemakaian yang DILAPORKAN (dari catatan baku) tampil terpisah dari waktu pencatatan (= tanggal). Null untuk pencatatan biasa.
+      dilaporkan: uraiCatatanPembetulan(m.note)?.dilaporkan ?? null,
     };
   });
   const total = new Map();

@@ -28,7 +28,7 @@ import { tryProvisionUnitRoute, changeUnitRoute, assignStage } from "../services
 import { postStockMovement } from "../services/inventoryLedger.js";
 import { bukukanNilaiPergerakanBaru } from "../services/finance/posting/inventory.js";
 import { guardV1UnitWrite, UnitConflictError, UUID_RE } from "../services/unitV2Ownership.js";
-import { alasanPembetulan, catatanPembetulan, unitSelesai } from "../services/pembetulanBahanUnit.js";
+import { alasanPembetulan, catatanPembetulan, tanggalDilaporkan, periksaPembetulanLangsung, unitSelesai } from "../services/pembetulanBahanUnit.js";
 import { priorityDisplay } from "../lib/domain/productionDisplay.js";
 import { loadOpenComplaintsByUnit } from "../services/productionComplaints.js";
 import { prisma } from "../db.js";
@@ -72,7 +72,7 @@ function handleEngineError(err, res) {
   // "stok tidak cukup") juga dijawab 400 yang jelas, bukan bocor ke 500
   // generik di bawah.
   if (typeof err.statusCode === "number") {
-    return res.status(err.statusCode).json({ error: err.message, ...(typeof err.code === "string" && /^UNIT_/.test(err.code) ? { code: err.code } : {}), ...(err.current ? { current: err.current } : {}) });
+    return res.status(err.statusCode).json({ error: err.message, ...(typeof err.code === "string" && /^UNIT_/.test(err.code) ? { code: err.code } : {}), ...(err.current ? { current: err.current } : {}), ...(err.detail && typeof err.code === "string" && /^UNIT_/.test(err.code) ? { detail: err.detail } : {}) });
   }
   // P2034 = konflik transaksi SERIALIZABLE (Production Core Slice 3I) — dua
   // perintah eksekusi (START/PAUSE/RESUME/COMPLETE) bersamaan pada tahap yang
@@ -680,10 +680,14 @@ unitRouter.post("/:id/materials", requirePermission(P.UNIT_MATERIAL_WRITE), asyn
     if (!material) return res.status(404).json({ error: "Bahan tidak ditemukan" });
     if (!material.active) return res.status(400).json({ error: "Bahan ini sudah nonaktif" });
 
-    const unit = await prisma.unit.findUnique({ where: { id: req.params.id }, select: { id: true, unitCode: true, status: true } });
+    const unit = await prisma.unit.findUnique({ where: { id: req.params.id }, select: { id: true, unitCode: true, status: true, orderId: true, createdAt: true } });
     if (!unit) return res.status(404).json({ error: "Unit tidak ditemukan" });
-    // Unit selesai/terkirim/dibatalkan: pembetulan bahan diperbolehkan lewat jalur resmi ini TETAPI alasan wajib (body.alasanPembetulan) dan tercatat di catatan pergerakan + log aktivitas unit. Unit aktif: perilaku lama.
-    const alasanB = alasanPembetulan(unit.status, req.body.alasanPembetulan); const catatanB = catatanPembetulan(unit.status, unit.unitCode, alasanB, note || null);
+    // Unit TERKIRIM (bukan dibatalkan): pembetulan bahan lewat jalur resmi ini TETAPI wajib: alasan (body.alasanPembetulan), tanggal pemakaian yang DILAPORKAN (body.tanggalPemakaian, terpisah dari waktu pencatatan),
+    // saldo yang dilihat di pratinjau (body.saldoDilihat) dan, bila ada pengeluaran yang mungkin sudah tercatat, konfirmasi eksplisit (body.konfirmasiBukanGanda). Semuanya dicatat di catatan pergerakan + log aktivitas unit. Unit lain: perilaku lama.
+    const pembetulan = unitSelesai(unit.status);
+    const alasanB = alasanPembetulan(unit.status, req.body.alasanPembetulan);
+    const tglB = pembetulan ? tanggalDilaporkan(req.body.tanggalPemakaian, { unitDibuat: unit.createdAt }) : null;
+    const catatanB = pembetulan ? catatanPembetulan(unit.unitCode, alasanB, tglB.tanggal, note || null) : (note || null);
 
     // rawQty > 0 → pemakaian tambahan (ISSUE, stok berkurang, ledger negatif).
     // rawQty < 0 → koreksi mengurangi (RETURN, stok bertambah, ledger positif).
@@ -695,7 +699,7 @@ unitRouter.post("/:id/materials", requirePermission(P.UNIT_MATERIAL_WRITE), asyn
     // dan seluruh transaksinya dibatalkan (tidak ada pergerakan ganda). Tanpa header = perilaku lama (klien lama tidak berubah).
     const kunci = String(req.get("Idempotency-Key") || "").trim();
     if (kunci && (kunci.length < 12 || kunci.length > 128)) return res.status(400).json({ error: "Idempotency-Key harus 12–128 karakter", code: "IDEMPOTENCY_KEY_INVALID" });
-    const requestHash = createHash("sha256").update(JSON.stringify({ unitId: unit.id, materialId, qty: rawQty, note: catatanB })).digest("hex");
+    const requestHash = createHash("sha256").update(JSON.stringify({ unitId: unit.id, materialId, qty: rawQty, note: catatanB, ...(pembetulan ? { saldoDilihat: req.body.saldoDilihat ?? null } : {}) })).digest("hex");
 
     let movement;
     try {
@@ -708,11 +712,12 @@ unitRouter.post("/:id/materials", requirePermission(P.UNIT_MATERIAL_WRITE), asyn
           const dipakai = -Number(net._sum.qty ?? 0);
           if (-rawQty > dipakai + 0.00005) { const e = new Error(`Koreksi ${-rawQty} melebihi pemakaian bersih bahan ini pada unit (${Math.max(dipakai, 0)}). Kurangi jumlah koreksi.`); e.statusCode = 409; e.code = "UNIT_KOREKSI_MELEBIHI_PEMAKAIAN"; throw e; }
         }
+        if (pembetulan) await periksaPembetulanLangsung(tx, { unitId: unit.id, orderId: unit.orderId, materialId, rawQty, saldoDilihat: req.body.saldoDilihat, konfirmasiBukanGanda: req.body.konfirmasiBukanGanda, tanggal: tglB.tanggal });
         const mv = await postStockMovement(tx, {
           materialId, type, qty: ledgerQty, unitId: unit.id,
           note: catatanB, createdById: req.user.id,
         });
-        if (unitSelesai(unit.status)) await recordActivity(tx, { entityType: ENTITY_TYPES.UNIT, entityId: unit.id, eventType: EVENT_TYPES.PRODUCTION_PEMBETULAN_BAHAN_UNIT_SELESAI, actorId: req.user.id, metadata: { unitCode: unit.unitCode, unitStatus: unit.status, jenis: "PEMBETULAN_BAHAN", movementId: mv.id, materialId, qty: ledgerQty, tipe: type, alasan: alasanB } });
+        if (pembetulan) await recordActivity(tx, { entityType: ENTITY_TYPES.UNIT, entityId: unit.id, eventType: EVENT_TYPES.PRODUCTION_PEMBETULAN_BAHAN_UNIT_SELESAI, actorId: req.user.id, metadata: { unitCode: unit.unitCode, unitStatus: unit.status, jenis: "PEMBETULAN_BAHAN", movementId: mv.id, materialId, qty: ledgerQty, tipe: type, alasan: alasanB, tanggalPemakaianDilaporkan: tglB.tanggal, terlambatHari: tglB.terlambatHari, dicatatPada: new Date().toISOString(), konfirmasiBukanGanda: req.body.konfirmasiBukanGanda === true } });
         // HPP: nilai pemakaian/koreksi dibukukan di transaksi yang sama (atau gap terlihat) — jalur ini dulu menulis stok tanpa jejak nilai sama sekali.
         await bukukanNilaiPergerakanBaru(tx, mv, { userId: req.user.id });
         if (kunci) await tx.v2Command.update({ where: { actorId_idempotencyKey: { actorId: req.user.id, idempotencyKey: kunci } }, data: { status: "APPLIED", response: { movementId: mv.id }, completedAt: new Date() } });
