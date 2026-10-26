@@ -88,7 +88,7 @@ cek("stok: hanya 3 pergerakan uji (ISSUE, RETURN, WASTE) yang bertambah; saldo b
 const namaDb = (await prisma.$queryRawUnsafe("select current_database() as n"))[0].n;
 if (!/^rehearsal_/.test(namaDb)) { cek("uji kegagalan paksa hanya pada DB rehearsal", false, namaDb); await prisma.$disconnect(); process.exit(1); }
 const pasangPemaksa = async (semua) => {
-  await prisma.$executeRawUnsafe(`CREATE OR REPLACE FUNCTION uji_paksa_gagal() RETURNS trigger AS $ BEGIN IF ${semua ? "true" : "NEW.status <> 'GAGAL_PEMBEKUAN'"} THEN RAISE EXCEPTION 'uji: pembekuan dipaksa gagal'; END IF; RETURN NEW; END $ LANGUAGE plpgsql`);
+  await prisma.$executeRawUnsafe(`CREATE OR REPLACE FUNCTION uji_paksa_gagal() RETURNS trigger AS $fn$ BEGIN IF ${semua ? "true" : "NEW.status <> 'GAGAL_PEMBEKUAN'"} THEN RAISE EXCEPTION 'uji: pembekuan dipaksa gagal'; END IF; RETURN NEW; END $fn$ LANGUAGE plpgsql`);
   await prisma.$executeRawUnsafe("DROP TRIGGER IF EXISTS uji_paksa_gagal_trg ON stock_movement_biaya_operasional");
   await prisma.$executeRawUnsafe("CREATE TRIGGER uji_paksa_gagal_trg BEFORE INSERT ON stock_movement_biaya_operasional FOR EACH ROW EXECUTE FUNCTION uji_paksa_gagal()");
 };
