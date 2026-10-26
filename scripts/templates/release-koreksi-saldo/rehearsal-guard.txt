@@ -1,0 +1,10 @@
+# Guard rollback SESUDAH skenario rehearsal (satu koreksi saldo SENGAJA dibiarkan menunggu persetujuan di DB sementara) → HARUS MENOLAK; baca-saja.
+GFP_SQL="select (select count(*) from koreksi_saldo_bahan)||'/'||(select count(*) from stock_adjustment_requests)||'/'||(select count(*) from stock_movements)"
+GFP0="$( { RPSQL "$FP_SQL" | LC_ALL=C sort; RPSQL "$GFP_SQL"; } | md5sum )"
+set +e; GUARD_OUT2="$(GUARD_DB="$REH_DB" bash "$NEW_DIR/scripts/rollback-guard-koreksi-saldo.sh" 2>&1)"; GUARD_RC2=$?; set -e
+printf '%s\n' "$GUARD_OUT2" > "$BK_DIR/guard-menolak.log"
+GFP1="$( { RPSQL "$FP_SQL" | LC_ALL=C sort; RPSQL "$GFP_SQL"; } | md5sum )"
+[ "$GUARD_RC2" = "1" ] || { printf '%s\n' "$GUARD_OUT2"; reh_drop; die "guard rollback TIDAK menolak (exit ${GUARD_RC2}) padahal ada koreksi saldo yang masih berjalan"; }
+for t in 'GUARD DITOLAK' 'RUTIN TIDAK DIPERBOLEHKAN' 'koreksi saldo yang masih berjalan' 'saldo bergeser' 'PEMULIHAN' 'Penyesuaian Stok'; do printf '%s' "$GUARD_OUT2" | grep -q -- "$t" || { printf '%s\n' "$GUARD_OUT2"; reh_drop; die "pesan guard tidak memuat: $t"; }; done
+[ "$GFP0" = "$GFP1" ] || { reh_drop; die "guard rollback MENGUBAH data (harus baca-saja)"; }
+ok "guard rollback sesudah ada koreksi saldo yang masih berjalan: MENOLAK (exit 1) dengan pesan pemulihan; data tidak berubah oleh guard"

@@ -62,15 +62,16 @@ export async function stokLokasi(db) {
   const rows = dasar.map((r) => {
     const n = nJumlah.get(r.materialId) ?? 0; const lok = nLokasi.get(r.materialId) ?? null;
     const keadaan = keadaanStok({ active: r.active, balance: r.balance, available: r.available, reorderPoint: r.reorderPoint, jumlahPergerakan: n });
+    const keadaanSaldo = klasifikasiSaldo({ jumlahPergerakan: n, saldo: r.balance, nolTerverifikasi: verifikasi.has(r.materialId) });
     return {
       materialId: r.materialId, kode: r.code, nama: r.name, satuan: r.unit, aktif: r.active, kategori: r.category, vendor: r.vendor ?? null,
       itemGroup: nGrup.get(r.materialId) ?? null, kelompok: kelompokDariItemGroup(nGrup.get(r.materialId)), // turunan dari itemGroup (tabel eksplisit), bukan tebakan nama; tidak disimpan
       saldo: n > 0 ? r4(r.balance) : null, // null = belum diketahui (BUKAN nol)
       dipesan: n > 0 ? r4(r.reserved) : null, tersedia: n > 0 ? r4(r.available) : null,
       batasMinimum: r.reorderPoint ?? null, // null = belum diatur (BUKAN nol)
-      keadaan, keadaanLabel: LABEL_KEADAAN[keadaan],
+      keadaan, keadaanLabel: keadaan === KEADAAN.NOL_TERHITUNG && keadaanSaldo === "NOL_TERVERIFIKASI" ? "Nol (terverifikasi hitung fisik)" : LABEL_KEADAAN[keadaan],
       // Pembeda saldo (Koreksi Saldo): belum ada catatan ≠ nol menurut pergerakan ≠ nol TERVERIFIKASI hitung fisik. nolTerverifikasi = bukti (Stock Count/koreksi resmi), bukan tebakan.
-      keadaanSaldo: klasifikasiSaldo({ jumlahPergerakan: n, saldo: r.balance, nolTerverifikasi: verifikasi.has(r.materialId) }), keadaanSaldoLabel: LABEL_KEADAAN_SALDO[klasifikasiSaldo({ jumlahPergerakan: n, saldo: r.balance, nolTerverifikasi: verifikasi.has(r.materialId) })], nolTerverifikasi: verifikasi.get(r.materialId) ?? null,
+      keadaanSaldo, keadaanSaldoLabel: LABEL_KEADAAN_SALDO[keadaanSaldo], nolTerverifikasi: verifikasi.get(r.materialId) ?? null,
       lokasiTerakhir: lok ? { lokasi: lok.location, waktu: lok.waktu, catatan: "Lokasi penerimaan terakhir (bukan saldo per lokasi)" } : null,
       sumberAngka: n > 0 ? { jenis: "LEDGER", jumlahPergerakan: n, pergerakanTerakhir: r.lastMovementAt, teks: `Ledger pergerakan: ${n} pergerakan, terakhir ${r.lastMovementAt ? new Date(r.lastMovementAt).toISOString().slice(0, 10) : "—"}` } : { jenis: "BELUM_ADA", jumlahPergerakan: 0, pergerakanTerakhir: null, teks: "Belum ada pergerakan stok untuk bahan ini" },
       catatanData: r.dataNote ?? null,

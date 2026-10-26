@@ -6,7 +6,7 @@ const BASE = process.env.BASE || "http://127.0.0.1:5190"; const API = process.en
 const PGC = process.env.PGC || "km-koreksi-saldo-pg"; const DB = process.env.DB || "km_koreksi_saldo_qa_test"; const CHROME = process.env.CHROME || "C:/Program Files/Google/Chrome/Application/chrome.exe";
 const T = JSON.parse(fs.readFileSync(path.join(OUT, "tokens.json"), "utf8")); const ID = JSON.parse(fs.readFileSync(path.join(OUT, "ids.json"), "utf8"));
 const SHOTS = path.join(OUT, "shots"); fs.mkdirSync(SHOTS, { recursive: true });
-const sql = (q) => execFileSync("docker", ["exec", PGC, "psql", "-U", "klinik", "-d", DB, "-At", "-c", q], { encoding: "utf8", env: { ...process.env, MSYS_NO_PATHCONV: "1" } }).trim();
+const sql = (q) => execFileSync(process.execPath, [path.join(__dirname, "qa-sql.cjs"), q], { encoding: "utf8", env: { ...process.env, QA_DB_URL: process.env.QA_DB_URL || `postgresql://klinik:klinik123@localhost:${process.env.PGPORT || 55442}/${DB}` } }).trim(); // lewat TCP, tanpa docker CLI
 const tidur = (ms) => new Promise((r) => setTimeout(r, ms));
 let gagal = 0; const hasil = [];
 const ok = (n, c, d = "") => { if (!c) gagal++; hasil.push({ n, ok: !!c, d: String(d).slice(0, 300) }); console.log(`${c ? "PASS" : "FAIL"}  ${n}${d ? " — " + String(d).slice(0, 240) : ""}`); };
@@ -131,7 +131,9 @@ const tanpaGulirMendatar = (page) => page.evaluate(() => document.documentElemen
     await klik(G, '[data-testid="tombol-koreksi-saldo"]'); await ketik(G, "#ks-jumlah", "2"); await ketik(G, "#ks-alasan", "Hitung fisik: sisa 2"); await klik(G, '[data-testid="lihat-pratinjau-koreksi"]'); await tunggu(G, '[data-testid="pratinjau-koreksi"]');
     sql("insert into stock_movements (id, material_id, type, qty, note) select gen_random_uuid(), id, 'RECEIPT', 1, 'penerimaan saat pratinjau terbuka' from materials where code='BUSA-QA-04'");
     await klik(G, '[data-testid="ajukan-koreksi"]'); await tunggu(G, '[data-testid="info-bergeser"]');
-    ok("saldo bergeser saat pratinjau: pesan jelas, pratinjau dimuat ulang (saldo 5, selisih -3), BELUM tersimpan", /bergeser/.test(await teks(G, '[data-testid="info-bergeser"]')) && /5/.test(await teks(G, '[data-testid="pra-saldo-sebelum"]')) && /-3/.test(await teks(G, '[data-testid="pra-selisih"]')) && nReq() === sebelumReq, `req ${sebelumReq}->${nReq()}`);
+    // Pesan tampil lebih dulu daripada pratinjau baru: tunggu pratinjau yang dimuat ulang (saldo 5) dan tombol aktif lagi.
+    await G.waitForFunction(() => /5/.test(document.querySelector('[data-testid="pra-saldo-sebelum"]')?.textContent ?? "") && !document.querySelector('[data-testid="ajukan-koreksi"]')?.disabled, { timeout: 15000 });
+    ok("saldo bergeser saat pratinjau: pesan jelas, pratinjau dimuat ulang (saldo 5, selisih -3), BELUM tersimpan", /berubah sejak pratinjau/.test(await teks(G, '[data-testid="info-bergeser"]')) && /5/.test(await teks(G, '[data-testid="pra-saldo-sebelum"]')) && /-3/.test(await teks(G, '[data-testid="pra-selisih"]')) && nReq() === sebelumReq, `req ${sebelumReq}->${nReq()}`);
     await foto(G, "10-saldo-bergeser-desktop");
     await klik(G, '[data-testid="ajukan-koreksi"]'); await tunggu(G, '[data-testid="hasil-koreksi"]');
     ok("setelah konfirmasi ulang dari saldo terbaru: tersimpan (selisih -3 terhadap saldo 5)", nReq() === sebelumReq + 1 && Number(sql("select selisih from koreksi_saldo_bahan order by created_at desc limit 1")) === -3);
@@ -142,7 +144,7 @@ const tanpaGulirMendatar = (page) => page.evaluate(() => document.documentElemen
     ok("drawer belum ada catatan: 'belum diketahui', bukan nol", (await G.$eval('[data-testid="keadaan-saldo"]', (e) => e.dataset.keadaan)) === "BELUM_ADA_CATATAN" && /BUKAN nol/.test(await teks(G, '[data-testid="teks-keadaan-saldo"]')));
     await klik(G, '[data-testid="tombol-koreksi-saldo"]'); await ketik(G, "#ks-jumlah", "0"); await ketik(G, "#ks-alasan", "Fisik memang kosong"); await klik(G, '[data-testid="lihat-pratinjau-koreksi"]'); await tunggu(G, '[data-testid="pratinjau-koreksi"]');
     ok("belum ada catatan + fisik 0: saldo 'belum diketahui', tidak ada selisih, Ajukan nonaktif", /belum diketahui/.test(await teks(G, '[data-testid="pra-saldo-sebelum"]')) && /tidak ada selisih/.test(await teks(G, '[data-testid="pra-selisih"]')) && (await G.$eval('[data-testid="ajukan-koreksi"]', (e) => e.disabled)));
-    await klik(G, "button.max-sm\\:min-h-11"); // Ubah isian
+    await G.evaluate(() => [...document.querySelectorAll("button")].find((x) => x.textContent.trim() === "Ubah isian")?.click()); // Ubah isian
     await ketik(G, "#ks-jumlah", "5"); await klik(G, '[data-testid="lihat-pratinjau-koreksi"]'); await tunggu(G, '[data-testid="pratinjau-koreksi"]');
     ok("belum ada catatan + fisik 5: peringatan 'catatan stok pertama'", /catatan stok pertamanya/.test(await teks(G, '[data-testid="pratinjau-koreksi"]')));
     await foto(G, "11-belum-ada-catatan-desktop"); await G.keyboard.press("Escape"); await tidur(300);
@@ -160,7 +162,7 @@ const tanpaGulirMendatar = (page) => page.evaluate(() => document.documentElemen
     await tunggu(H, 'button[data-testid="baris-stok"]'); await tidur(1000);
     ok("HP: daftar kartu tanpa gulir mendatar", await tanpaGulirMendatar(H));
     const kartu = await H.$$eval('button[data-testid="baris-stok"]', (bs) => Object.fromEntries(bs.map((b) => [b.dataset.kode, b.textContent.replace(/\s+/g, " ")])));
-    ok("HP: kartu menampilkan 'belum diketahui' dan '0 terverifikasi' berbeda", /belum diketahui/.test(kartu["BUSA-QA-KOSONG"] ?? "") && /terverifikasi/.test(kartu["KAIN-QA-NOL-VERIF"] ?? "") && /menurut pergerakan/.test(kartu["KAIN-QA-NOL-GERAK"] ?? ""), (kartu["KAIN-QA-NOL-VERIF"] ?? "").slice(0, 120));
+    ok("HP: kartu menampilkan 'belum diketahui' dan '0 terverifikasi' berbeda", /belum diketahui/.test(kartu["BUSA-QA-KOSONG"] ?? "") && /terverifikasi/.test(kartu["KAIN-QA-NOL-VERIF"] ?? "") && !/habis menurut pergerakan/.test(kartu["KAIN-QA-NOL-VERIF"] ?? "") && /menurut pergerakan/.test(kartu["KAIN-QA-NOL-GERAK"] ?? ""), (kartu["KAIN-QA-NOL-VERIF"] ?? "").slice(0, 120));
     await foto(H, "13-daftar-hp");
     await H.goto(`${BASE}/warehouse/inventory?q=BUSA-QA-06`, { waitUntil: "domcontentloaded" }); await tunggu(H, 'button[data-testid="baris-stok"][data-kode="BUSA-QA-06"]'); await H.click('button[data-testid="baris-stok"][data-kode="BUSA-QA-06"]'); await tunggu(H, '[data-testid="panel-koreksi-saldo"]');
     await foto(H, "14-drawer-hp");

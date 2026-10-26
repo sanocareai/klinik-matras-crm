@@ -1,0 +1,11 @@
+LANGKAH WAJIB sebelum rollback KODE setelah migrasi/switch: jalankan GUARD (baca-saja)
+   bash ${NEW_DIR}/scripts/rollback-guard-koreksi-saldo.sh
+   - exit 0 (LULUS): tidak ada koreksi saldo yang masih berjalan (Draf / Menunggu persetujuan / Disetujui). Baru boleh rollback kode (di bawah).
+   - exit 1/2 (DITOLAK): ada koreksi saldo yang masih berjalan, atau keadaan tidak jelas — rollback kode RUTIN TIDAK DIPERBOLEHKAN: kode lama tidak memiliki penjaga "saldo bergeser".
+     Jalur pemulihan: batalkan tiap permintaan lewat Gudang → Penyesuaian Stok (alasan wajib) lalu jalankan guard lagi; atau perbaikan maju (hotfix di atas kode baru). Rollback tetap hanya atas keputusan tertulis Owner di luar skrip ini.
+Rollback kode (HANYA setelah guard LULUS; tidak menghapus tabel maupun riwayat):
+   cd ${PREV_DIR:-<release-sebelumnya>}
+   docker tag ${ROLLBACK_TAG:-<tag-rollback>} ${IMG_NAME:-klinik-matras-backend:latest}
+   SANSS_PERSIST_ROOT=${PERSIST} docker compose -p ${PROJECT} -f docker-compose.yml -f docker-compose.release.yml up -d --no-deps --force-recreate backend
+Migrasi bersifat ADITIF (1 tabel baru + 3 indeks + 2 FK + 1 fungsi + 1 trigger): tabel dibiarkan terpasang setelah rollback kode. Rilis ini tidak membuat pergerakan stok, valuasi/jurnal Finance, maupun harga; Koreksi Saldo hanya MENGAJUKAN Penyesuaian Stok (stok berubah hanya bila disetujui orang lain dan diposting).
+Pemulihan database penuh hanya bila terjadi kerusakan data: gzip -dc ${BACKUP_FILE:-<backup>} | psql ... (lihat checksum di atas) — MENGHAPUS semua perubahan sesudah backup (pengajuan, persetujuan, posting, transaksi); gunakan hanya atas keputusan Owner.

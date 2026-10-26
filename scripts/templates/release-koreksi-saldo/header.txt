@@ -1,0 +1,22 @@
+# RILIS "KOREKSI SALDO PER BAHAN (dari Stok & Lokasi; lewat jalur resmi Penyesuaian Stok)": WEB + BACKEND + 1 MIGRASI ADITIF (1 tabel konteks baru, kosong). RELEASE-DIRECTORY di atas release aktif (BASE_SHA). FAIL-CLOSED.
+#   Kode: tombol "Koreksi saldo" di drawer bahan (Stok & Lokasi → cari bahan): isi JUMLAH FISIK yang benar + alasan wajib → PRATINJAU dari server (saldo sebelum/sesudah, selisih, Tersedia, dampak data, izin) → ajukan.
+#   JALUR RESMI: pengajuan = permintaan Penyesuaian Stok (stock_adjustment_requests, status Menunggu persetujuan). Persetujuan WAJIB orang lain berperan Owner/Finance (pengaju ≠ penyetuju); posting oleh pemegang inventory:write lewat postStockMovement
+#     (SATU-SATUNYA penulis ledger). Tidak ada penimpaan saldo. Stok TIDAK berubah saat diajukan maupun disetujui — hanya saat diposting (satu pergerakan ADJUSTMENT sebesar selisih).
+#   PENJAGA: saldo yang DILIHAT pengaju disimpan (koreksi_saldo_bahan, append-only); bila saldo ledger sudah bergeser, pengajuan/persetujuan/posting ditolak 409 SALDO_BERGESER dan permintaan ditandai kedaluwarsa di riwayat.
+#     Idempotency-Key mencegah klik ganda; satu koreksi aktif per bahan; pelaku/penyetuju/pemosting tercatat; riwayat koreksi per bahan.
+#   KEADAAN SALDO: "belum ada catatan" (saldo belum diketahui) ≠ "0 menurut pergerakan" ≠ "0 terverifikasi" (hitung fisik/koreksi resmi, tanpa pergerakan sesudahnya) ≠ positif ≠ minus — tidak pernah digabung.
+#   HARGA: kolom "Harga berlaku" per satuan stok di daftar Stok & Lokasi (dari fitur Harga Berlaku yang sudah live; bahan tanpa harga = "Belum ada harga berlaku", BUKAN Rp0; hanya untuk finance:read). Nilai persediaan Finance per bahan
+#     ditampilkan TERPISAH (Persediaan Awal terposting; tanpa itu = "belum ada", bukan Rp0). Rilis ini TIDAK mengubah Harga Berlaku, HPP operasional lama, valuasi/jurnal Finance, atau GL.
+#   Migrasi: 1 CREATE TABLE baru (kosong) + 3 indeks (2 unik) + 2 FK ON DELETE RESTRICT + 1 fungsi + 1 trigger append-only. Tidak ada ALTER TABLE pada tabel lama, tidak ada backfill.
+#   Produksi: rilis ini TIDAK mengajukan/menyetujui/memposting koreksi apa pun dan tidak menulis pergerakan stok/jurnal/valuasi; koreksi saldo production dilakukan manual oleh pengguna berizin SESUDAH rilis (di luar skrip ini). Smoke hanya baca + penolakan sebelum menyentuh data.
+# URUTAN AMAN: (1) gerbang sumber (ancestry, allowlist, pin sha256 migrasi + diff schema, pemindai DDL + mutan negatif) → (2) audit produksi baca-saja + keadaan (SEGAR/LANJUT) + sidik jari → (3) backup + checksum → (4) build web + image
+#              → (5) REHEARSAL (restore NYATA, migrasi dengan image baru, struktur, kode baru terhadap data restore, sidik jari sebelum=sesudah) → (6) migrate deploy produksi SATU kali (backend lama tetap melayani) → (7) switch → (8) verifikasi + smoke baca-saja.
+#
+#   cat scripts/release-koreksi-saldo.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/ks1.sh'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/ks1.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'      # baca-saja: produksi TIDAK diubah
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/ks1.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rehearsal-only > /tmp/ks1r.out 2>&1 < /dev/null &'   # SEMUA gerbang sampai rehearsal pada restore nyata (migrasi diterapkan HANYA pada DB sementara); TANPA migrasi/switch produksi
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/ks1.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/ks1.out 2>&1 < /dev/null &'   # rilis penuh (hanya setelah persetujuan)
+#
+# ROLLBACK KODE: tabel baru bersifat ADITIF dan tidak memengaruhi stok/biaya Finance/jurnal; kode lama mengabaikannya. Yang hilang setelah rollback: tombol/riwayat Koreksi Saldo dan penjaga "saldo bergeser" untuk permintaan yang masih berjalan.
+#   Jalankan dulu scripts/rollback-guard-koreksi-saldo.sh (baca-saja): LULUS (exit 0) hanya bila tidak ada koreksi saldo yang masih berjalan; DITOLAK (exit 1) bila ada (Draf/Menunggu persetujuan/Disetujui) — mencetak jumlah, contoh, dan jalur pemulihan. Rollback kode TIDAK menghapus tabel/riwayat.
+# (dibangkitkan oleh scripts/gen-release-koreksi-saldo.cjs dari scripts/release-status-kerja-buka-pekerjaan.sh + scripts/templates/release-koreksi-saldo/*; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang)

@@ -27,8 +27,8 @@ CREATE INDEX "koreksi_saldo_bahan_material_id_created_at_idx" ON "koreksi_saldo_
 ALTER TABLE "koreksi_saldo_bahan" ADD CONSTRAINT "koreksi_saldo_bahan_adjustment_request_id_fkey" FOREIGN KEY ("adjustment_request_id") REFERENCES "stock_adjustment_requests"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 ALTER TABLE "koreksi_saldo_bahan" ADD CONSTRAINT "koreksi_saldo_bahan_material_id_fkey" FOREIGN KEY ("material_id") REFERENCES "materials"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
 
-CREATE OR REPLACE FUNCTION koreksi_saldo_bahan_append_only() RETURNS trigger AS $fn$
+CREATE OR REPLACE FUNCTION koreksi_saldo_bahan_append_only() RETURNS trigger AS $$
 BEGIN
   RAISE EXCEPTION '% append-only: konteks pengajuan koreksi saldo tidak boleh diubah atau dihapus', TG_TABLE_NAME;
-END $fn$ LANGUAGE plpgsql;
+END $$ LANGUAGE plpgsql;
 CREATE TRIGGER "koreksi_saldo_bahan_append_only_trg" BEFORE UPDATE OR DELETE ON "koreksi_saldo_bahan" FOR EACH ROW EXECUTE FUNCTION koreksi_saldo_bahan_append_only();

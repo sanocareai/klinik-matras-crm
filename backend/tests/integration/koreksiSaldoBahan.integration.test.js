@@ -202,6 +202,7 @@ test("K10 nol TERVERIFIKASI: koreksi resmi ke 0 yang diposting membuktikan nol; 
   // Stok & Lokasi memuat pembeda yang sama
   const sl = (await w.gudang.c.get("/api/inventory/beranda/stok")).body.rows.find((r) => r.materialId === m.id);
   assert.equal(sl.keadaanSaldo, "NOL_TERVERIFIKASI"); assert.equal(sl.nolTerverifikasi.nomor, a.body.nomor);
+  assert.equal(sl.keadaanLabel, "Nol (terverifikasi hitung fisik)", "label keadaan tidak boleh bertentangan: nol terverifikasi tidak berlabel 'habis menurut pergerakan'");
   // pergerakan sesudah verifikasi (>60 dtk) mencabut bukti
   await testPrisma.stockMovement.create({ data: { materialId: m.id, type: "RECEIPT", qty: 2, note: "terima lagi", createdAt: new Date(Date.now() + 5 * 60_000) } });
   await testPrisma.stockMovement.create({ data: { materialId: m.id, type: "ISSUE", qty: -2, note: "pakai lagi", createdAt: new Date(Date.now() + 6 * 60_000) } });
