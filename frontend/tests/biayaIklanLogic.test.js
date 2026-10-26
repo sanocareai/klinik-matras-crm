@@ -46,7 +46,7 @@ test("ringkasAsalBiaya: asal angka terlihat (detail Ad / manual / total rentang 
 });
 
 const sumber = (id, jenis, o = {}) => ({ id, label: id, jenis, lead: 100, spam: 10, leadSah: 90, berOrder: 5, membayar: 3, lunas: 2, konversiOrder: { nilai: 5, pembilang: 5, penyebut: 100 }, uang: { nilaiOrderSaatIni: 5_000_000, uangBersih: 2_000_000 },
-  biaya: { dasar: "ATRIBUSI_LABEL_CRM", status: "LENGKAP", spend: 1_000_000, cpa: 500_000, cpl: 10_000, bookedRoas: 5, cashRoas: 2, alasanNull: {}, sementara: false, alasanSementara: [] }, ...o });
+  biaya: { dasar: "ATRIBUSI_LABEL_CRM", status: "LENGKAP", spend: 1_000_000, cpa: 500_000, cpl: 10_000, bookedRoas: 5, cashRoas: 2, alasanNull: {}, sementara: false, alasanSementara: [], cakupan: { verifikasi: { tingkat: "COCOK_TOTAL_KONTROL_INPUT", independen: false } } }, ...o });
 
 test("sel biaya: organik 'tidak tersedia' ≠ Rp0; null → '—' + alasan; sementara ditandai; Rp0 sah tetap Rp0", () => {
   const org = sumber("WHATSAPP", "ORGANIK", { biaya: { dasar: "ATRIBUSI_LABEL_CRM", status: "TIDAK_TERSEDIA_ORGANIK", spend: null, cpa: null, alasanNull: { cpa: "TIDAK_ADA_BIAYA_DIALOKASIKAN" } } });
@@ -90,7 +90,9 @@ test("CSV ekspor = layar: periode, cutoff, dasar, nilai order ≠ pembayaran ber
   const kepala = baris.findIndex((l) => l.startsWith("Sumber,")); assert.ok(kepala > 0);
   const kol = baris[kepala].split(",");
   assert.ok(kol.includes("Nilai order saat ini (Rp)") && kol.includes("Pembayaran tercatat bersih (Rp)"), "nilai order dan pembayaran tercatat TERPISAH");
-  const meta = baris[kepala + 1]; assert.match(meta, /^META,Atribusi label CRM,100,10,90,5,3,2,5,5,100,5000000,2000000,1000000,Biaya lengkap,500000,,5,2,,$/);
+  const meta = baris[kepala + 1]; assert.match(meta, /^META,Atribusi label CRM,100,10,90,5,3,2,5,5,100,5000000,2000000,1000000,Biaya terisi setiap hari,500000,,5,2,,,Cocok dengan total kontrol yang diinput — bukan verifikasi independen$/);
+  assert.ok(!/terverifikasi|Biaya lengkap/.test(csv), "label tidak boleh mengklaim verifikasi/kelengkapan terbukti");
+  assert.match(csv, /Terisi setiap hari; kelengkapan per-Ad tidak diverifikasi independen|Ada sumber belum lengkap/);
   const tt = baris[kepala + 2]; assert.ok(tt.startsWith("\"'=HYPERLINK(\"\"x\"\")\"") || tt.startsWith("'=HYPERLINK"), "formula injection dinetralkan"); assert.match(tt, /Biaya belum diisi,,biaya belum diisi,,,biaya belum diisi,/);
   const wa = baris[kepala + 3]; assert.ok(wa.startsWith('"WA, ""Langsung"""')); assert.match(wa, /Biaya tidak tersedia,,biaya tidak tersedia,,,biaya tidak tersedia,/);
   const total = baris.find((l) => l.startsWith("TOTAL (semua sumber)")); assert.match(total, /9000000,3500000/, "total memakai pembayaran BERSIH");

@@ -36,7 +36,7 @@ test("pemakai kontrak /sumber: hanya route (attributionAds.js), klien API (api.j
   for (const dir of ["backend/src/mcp", "backend/src/mcpHub"]) for (const p of semuaBerkas(path.join(root, dir), [".js"])) assert.ok(!POLA.test(baca(p)), `${rel(p)} tidak boleh memakai /sumber`);
   // skrip operasional: hanya smoke skrip rilis (historis + kandidat) yang memanggilnya (baca-saja)
   const skrip = semuaBerkas(path.join(root, "scripts"), [".sh", ".cjs", ".mjs", ".js"]).filter((p) => /\/sumber\?|iklan\/sumber/.test(baca(p))).map(rel).sort();
-  assert.deepEqual(skrip.filter((p) => !/^scripts\/(release-akuisisi-sumber\.sh|lib\/(smoke|rehearsal)-akuisisi-biaya\.mjs|release-akuisisi-biaya\.sh)$/.test(p)), [], "pemakai /sumber tak dikenal di scripts/");
+  assert.deepEqual(skrip.filter((p) => !/^scripts\/(release-akuisisi-sumber\.sh|lib\/(smoke|rehearsal|hash-live)-akuisisi-biaya\.mjs|release-akuisisi-biaya\.sh)$/.test(p)), [], "pemakai /sumber tak dikenal di scripts/");
 });
 
 test("kontrak berubah SENGAJA: 5 kunci campaign-saja pindah dari sumber[].biaya ke biayaCampaignTerbukti; kunci baru lengkap; tidak ada pemakai yang membaca kunci lama", () => {

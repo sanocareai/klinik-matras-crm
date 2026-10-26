@@ -21,7 +21,12 @@ const tA = await tokenUntuk(adm); const tS = sales ? await tokenUntuk(sales) : n
 const B = (k) => Number(process.env[k]);
 const req = async (method, path, token, body) => { const r = await fetch(BASE + path, { method, headers: { "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}) }, body: body ? JSON.stringify(body) : undefined }); let j = null; try { j = await r.clone().json(); } catch { /* bukan JSON */ } return { status: r.status, json: j, teks: await r.text().catch(() => "") }; };
 const get = (p, t) => req("GET", p, t);
-const TABEL = ["Customer", "Order", "payments", "AdSpend", "meta_ad_daily_spend", "meta_spend_imports", "attribution_touches", "fin_journal_entries", "fin_journal_lines", "stock_movements", "units", "ad_source_spend_entries", "ad_source_spend_revisions"];
+// PRODUKSI HIDUP: tabel yang bergerak karena lalu lintas (customer baru, order, pembayaran, touch, jurnal, stok) TIDAK boleh dibandingkan identik (gagal palsu). Dua kelompok:
+//  STRIK  = tabel yang HANYA boleh berubah oleh penulisan biaya/spend yang disengaja (tidak ada di rilis ini) → isi harus IDENTIK sebelum vs sesudah smoke;
+//  MONOTON = tabel yang boleh bertambah oleh lalu lintas sah tetapi TIDAK BOLEH BERKURANG (tidak ada yang terhapus/ter-rollback oleh smoke).
+const STRIK = ["AdSpend", "meta_ad_daily_spend", "meta_spend_imports", "ad_source_spend_entries", "ad_source_spend_revisions"];
+const MONOTON = ["Customer", "Order", "payments", "attribution_touches", "fin_journal_entries", "fin_journal_lines", "stock_movements", "units"];
+const TABEL = [...STRIK, ...MONOTON];
 const fp = async () => { const o = {}; for (const t of TABEL) o[t] = (await prisma.$queryRawUnsafe(`select count(*)::int n, coalesce(md5(string_agg(x::text, '|' order by x::text)),'') h from "${t}" x`))[0]; return o; };
 const sebelum = await fp();
 const hitung = async (q) => Number((await prisma.$queryRawUnsafe(q))[0].n);
@@ -77,8 +82,20 @@ rec("laporan iklan per campaign (tab Iklan) 200 dan memakai periode yang sama", 
 const d7 = await get(`/api/atribusi/iklan/d7?dari=${geser(hariIni, -9)}&sampai=${SAMPAI}`, tA);
 rec("D7 200 (kontrak tidak berubah)", d7.status === 200);
 // tak ada jejak tulis
-const sesudah = await fp(); const beda = TABEL.filter((t) => sebelum[t].n !== sesudah[t].n || sebelum[t].h !== sesudah[t].h);
-rec("TIDAK ada jejak tulis: Customer, Order, pembayaran, AdSpend, spend per Ad, touch, jurnal, stok, unit, dan 2 tabel biaya sama persis sebelum vs sesudah smoke", beda.length === 0, beda.join(",") || "identik");
+const sesudah = await fp(); const beda = STRIK.filter((t) => sebelum[t].n !== sesudah[t].n || sebelum[t].h !== sesudah[t].h); const berkurang = MONOTON.filter((t) => sesudah[t].n < sebelum[t].n);
+rec("lalu lintas produksi hidup: Customer, Order, pembayaran, touch, jurnal, stok, unit TIDAK BERKURANG selama smoke (boleh bertambah oleh pengguna sah)", berkurang.length === 0, berkurang.join(",") || "tidak ada yang berkurang");
+rec("TIDAK ada jejak tulis smoke: AdSpend, spend per Ad, impor spend, dan 2 tabel biaya sama persis sebelum vs sesudah smoke", beda.length === 0, beda.join(",") || "identik");
+// INBOX & CAPTURE (read-only): ADMIN dapat membuka inbox; monitor capture sehat; flag capture tidak berubah; bila ada inbound sesudah switch, tercatat oleh kode baru
+const inbox = await get("/api/conversations", tA);
+rec("inbox: GET /api/conversations (ADMIN) 200", inbox.status === 200, String(inbox.status));
+const mon = await get("/api/atribusi/iklan/monitor", tA); const ms = mon.json?.snapshot;
+rec("monitor capture (ADMIN) 200: snapshot inbound + touch ada; capture tidak melaporkan kegagalan/tertunda pada proses baru", mon.status === 200 && !!ms?.inbound && !!ms?.touch && ms.touch.gagal === 0 && ms.touch.gagalPulih === 0 && ms.touch.tertunda === 0, mon.status === 200 ? JSON.stringify({ captureAktif: ms?.touch?.captureAktif, gagal: ms?.touch?.gagal, tertunda: ms?.touch?.tertunda, total: ms?.touch?.total }) : String(mon.status));
+if (tS) rec("monitor capture: SALES 403", (await get("/api/atribusi/iklan/monitor", tS)).status === 403);
+const T0 = process.env.SWITCH_AT_ISO ? Date.parse(process.env.SWITCH_AT_ISO) : null;
+if (T0) {
+  let ada = false; for (let i = 0; i < 18 && !ada; i++) { const m2 = (await get("/api/atribusi/iklan/monitor", tA)).json?.snapshot; const t = m2?.inbound?.terakhirAt ? Date.parse(m2.inbound.terakhirAt) : 0; if (t > T0) ada = true; else await new Promise((r) => setTimeout(r, 10000)); }
+  if (ada) rec("inbound BARU sesudah switch tercatat oleh backend baru (inbox hidup)", true); else skip("inbound baru sesudah switch dalam 180 dtk", "tidak ada pesan masuk di jendela itu (bergantung lalu lintas); inbox & monitor tetap 200");
+}
 rec("jurnal tidak seimbang (sebelum rilis: " + B("BASE_TIDAK_SEIMBANG") + ", tidak bertambah)", (await hitung("select count(*)::int n from (select e.id from fin_journal_entries e join fin_journal_lines l on l.entry_id = e.id group by e.id having sum(l.debit) <> sum(l.credit)) x")) <= B("BASE_TIDAK_SEIMBANG"));
 rec("jumlah Order & Job tidak berkurang (sebelum: " + B("ORDER_N") + " / " + B("JOB_N") + ")", (await hitung('select count(*)::int n from "Order"')) >= B("ORDER_N") && (await hitung("select count(*)::int n from jobs")) >= B("JOB_N"));
 await prisma.$disconnect();

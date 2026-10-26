@@ -125,7 +125,7 @@ export function hitungCakupan({ dari, sampai, hariIni, entries, adHarian = null,
   }
 
   // PEMBANDING detail Ad vs manual (tanpa override) — satu-satunya bukti kelengkapan detail per-Ad.
-  const selisih = []; const blokDitolak = [];
+  const selisih = []; const blokDitolak = []; const hariDibandingkan = new Set();
   const toleransi = 1;
   for (const e of aktif.filter((x) => !x.override)) {
     const hs = hariRentang(e.dateFrom, e.dateTo).filter((d) => d >= dari && d <= akhirPenuh);
@@ -133,12 +133,14 @@ export function hitungCakupan({ dari, sampai, hariIni, entries, adHarian = null,
       if (!adAda(e.dateFrom) || !hs.length) continue;
       const det = Number(adHarian.get(e.dateFrom)), man = Number(e.amount);
       selisih.push({ jenis: "HARIAN", dari: e.dateFrom, sampai: e.dateTo, detail: rp(det), manual: rp(man), entriId: e.id, manualLebihBesar: man - det > toleransi, manualLebihKecil: det - man > toleransi });
+      hariDibandingkan.add(e.dateFrom);
     } else if (muat(e)) {
       const semua = hariRentang(e.dateFrom, e.dateTo); const dgDetail = semua.filter(adAda);
       if (dgDetail.length === 0) continue;
       if (dgDetail.length === semua.length) {
         const det = dgDetail.reduce((a, d) => a + Number(adHarian.get(d)), 0), man = Number(e.amount);
         selisih.push({ jenis: "TOTAL_RENTANG", dari: e.dateFrom, sampai: e.dateTo, detail: rp(det), manual: rp(man), entriId: e.id, manualLebihBesar: man - det > toleransi, manualLebihKecil: det - man > toleransi });
+        for (const d of dgDetail) hariDibandingkan.add(d);
       } else {
         blokDitolak.push({ entriId: e.id, dari: e.dateFrom, sampai: e.dateTo, nominal: rp(e.amount), hariDenganDetail: dgDetail.length, hariTotal: semua.length, alasan: "DETAIL_AD_SEBAGIAN_HARI" });
       }
@@ -167,8 +169,30 @@ export function hitungCakupan({ dari, sampai, hariIni, entries, adHarian = null,
   if (hilang.length) pemilihan.push({ kode: "HILANG", hari: hilang.length, alasan: "Tidak ada detail Ad maupun entri manual yang dapat dipakai pada hari-hari ini." });
   if (tidakCocok.length) pemilihan.push({ kode: "RENTANG_TIDAK_COCOK", hari: tidakCocok.length, alasan: "Total rentang manual tidak termuat penuh oleh periode laporan; tidak diprorata, sehingga tidak dipakai." });
 
+  // TINGKAT VERIFIKASI kelengkapan — JUJUR: 'LENGKAP' hanya berarti setiap hari dalam periode punya angka. Sistem TIDAK PERNAH mengklaim verifikasi independen:
+  //  • detail Ad tanpa pembanding = tidak ada total kontrol sama sekali (kelengkapan per-Ad tidak diketahui);
+  //  • pembanding = entri manual yang DIINPUT Admin. Bila cocok, itu 'cocok dengan total kontrol yang diinput'; sistem tidak dapat tahu apakah angka itu berasal dari sumber lain (Ads Manager) atau disalin dari detail Ad yang sama.
+  const hariDetailPeriode = hari.filter((d) => hasilHari[d] === "AD_DETAIL");
+  const nBanding = hariDetailPeriode.filter((d) => hariDibandingkan.has(d)).length;
+  let tingkat;
+  if (selisihMasalah.length) tingkat = "SELISIH";
+  else if (hariDetailPeriode.length === 0) tingkat = status.override ? "OVERRIDE_ADMIN" : (terisi > 0 ? "MANUAL_TANPA_DETAIL" : "TIDAK_ADA_DATA");
+  else if (nBanding === 0) tingkat = "TANPA_PEMBANDING";
+  else if (nBanding < hariDetailPeriode.length) tingkat = "SEBAGIAN_DIBANDINGKAN";
+  else tingkat = "COCOK_TOTAL_KONTROL_INPUT";
+  const CATATAN_VERIF = {
+    SELISIH: "Total kontrol yang diinput LEBIH BESAR dari detail Ad: detail kemungkinan parsial; biaya tidak dianggap lengkap.",
+    TANPA_PEMBANDING: "Terisi dari detail Ad TANPA total kontrol: kelengkapan per-Ad tidak diverifikasi (tidak ada pembanding).",
+    SEBAGIAN_DIBANDINGKAN: "Sebagian hari detail Ad dibandingkan dengan total kontrol yang diinput; hari lain tanpa pembanding. Tidak diverifikasi independen.",
+    COCOK_TOTAL_KONTROL_INPUT: "Detail Ad cocok dengan total kontrol yang diinput Admin. Ini BUKAN verifikasi independen: sistem tidak dapat memastikan total kontrol berasal dari sumber lain (mis. Ads Manager) dan bukan disalin dari detail yang sama.",
+    OVERRIDE_ADMIN: "Memakai angka manual pengganti detail Ad atas pilihan Admin; tidak ada pembanding otomatis.",
+    MANUAL_TANPA_DETAIL: "Memakai angka manual (tanpa detail Ad); dipercaya sebagaimana diinput, tidak diverifikasi.",
+    TIDAK_ADA_DATA: "Tidak ada angka biaya pada periode ini.",
+  };
+  const verifikasi = { tingkat, independen: false, hariDetail: hariDetailPeriode.length, hariDibandingkan: nBanding, catatan: CATATAN_VERIF[tingkat] };
+
   return {
-    status: statusBiaya, spend: terisi > 0 ? rp(spend) : null, spendLengkap: statusBiaya === "LENGKAP", termasukHariBerjalan, hariPenuh: hari.length,
+    status: statusBiaya, spend: terisi > 0 ? rp(spend) : null, spendLengkap: statusBiaya === "LENGKAP", verifikasi, termasukHariBerjalan, hariPenuh: hari.length,
     hari: status, hariHilang: hilang, hariRentangTidakCocok: tidakCocok, manualDiabaikanHari: manualDiabaikan, overrideMenggantikanDetailHari: detailAdHari,
     asalDetailAd: asalDetail, selisihDetailManual: selisih, blokDitolak, pemilihan,
     entriTerpakai: [...entriTerpakai], aturan: "Prioritas per hari: override manual eksplisit > detail Ad (API > Windsor > CSV per Ad) > entri manual (hanya hari tanpa detail). Total rentang hanya dipakai bila dimuat penuh oleh rentang laporan. Tidak pernah dijumlah ganda; detail Ad parsial (manual > detail) tidak dianggap lengkap.",

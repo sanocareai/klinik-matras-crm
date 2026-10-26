@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge.jsx";
 import InfoTooltip from "@/components/ui/info-tooltip.jsx";
 import { cn } from "@/lib/utils.js";
 import LogoSumber from "./LogoSumber.jsx";
-import { angka, formatPersen, rupiah, selBiayaSumber, statusBiayaTeks, sementaraTeks, teksPengecualian, BUKTI_LABEL, DASAR_BIAYA_LABEL, PENYEBUT_LABEL, selBiaya } from "../akuisisiLogic.js";
+import { verifikasiLabel, angka, formatPersen, rupiah, selBiayaSumber, statusBiayaTeks, sementaraTeks, teksPengecualian, BUKTI_LABEL, DASAR_BIAYA_LABEL, PENYEBUT_LABEL, selBiaya } from "../akuisisiLogic.js";
 import { ringkasAsalBiaya, daftarPemilihan } from "../biayaIklanLogic.js";
 import { jalurRincian, LABEL_PELANGGAN, teksPeriode } from "../periodeLaporan.js";
 
@@ -80,6 +80,7 @@ export default function DetailSumberAkuisisi({ s, lap, periode, onKembali, onBuk
           ) : (
             <>
               <Baris k="Status biaya" v={statusBiayaTeks(b.status)} sub={asal.join(" · ") || null} />
+              {b.cakupan?.verifikasi && <Baris k="Verifikasi kelengkapan" v={verifikasiLabel(b.cakupan.verifikasi)} sub={b.cakupan.verifikasi.catatan} />}
               <Baris k="Biaya iklan" v={<Sel c={spend} />} sub={spend.alasan} tebal />
               <Baris k="Biaya per lead" v={<Sel c={cpl} />} sub={cpl.alasan} />
               <Baris k="CPA lunas" v={<Sel c={cpa} />} sub={cpa.alasan} tebal />

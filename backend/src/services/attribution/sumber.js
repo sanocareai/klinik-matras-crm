@@ -151,6 +151,7 @@ export function susunSumber({ parameter, hasil, biayaMeta = null, provenMeta = n
     w("SPEND_BELUM_LENGKAP", `Biaya ${x.label} ${ket} untuk rentang ini — CPA dan ROAS ${x.label} belum dapat dinilai.`, { sumber: x.id, statusBiaya: st, hariHilang: (x.biaya.cakupan?.hariHilang || []).slice(0, 31), hariRentangTidakCocok: (x.biaya.cakupan?.hariRentangTidakCocok || []).slice(0, 31) });
   }
   for (const x of daftar) if (x.biaya.sementara) w("BIAYA_SEMENTARA", `CPA/ROAS ${x.label} bersifat SEMENTARA: ${x.biaya.alasanSementara.join("; ")}.`, { sumber: x.id });
+  for (const x of daftar) { const v = x.biaya.cakupan?.verifikasi; if (x.biaya.status === "LENGKAP" && v && v.tingkat !== "TIDAK_ADA_DATA") w("BIAYA_TIDAK_DIVERIFIKASI", `Biaya ${x.label} terisi setiap hari, bukan terverifikasi independen. ${v.catatan}`, { sumber: x.id, tingkat: v.tingkat }); }
   for (const x of daftar) if ((x.biaya.cakupan?.manualDiabaikanHari || []).length) w("MANUAL_DIABAIKAN", `Biaya manual ${x.label} diabaikan pada ${x.biaya.cakupan.manualDiabaikanHari.length} hari karena detail Ad sudah ada (tidak dijumlah ganda). Tandai 'ganti detail Ad' bila total manual yang benar.`, { sumber: x.id });
   if (bukanLeadAda(hasil)) w("BUKAN_LEAD_PEMASARAN", `${hasil.bukanLeadPemasaran} customer berlabel B2B/penjualan karyawan dikeluarkan dari semua sumber.`, { jumlah: hasil.bukanLeadPemasaran });
   const statusSpend = !biayaSumber ? "BELUM_DIHITUNG" : (daftar.find((x) => x.id === "META")?.biaya.status ?? "BELUM_DIHITUNG");

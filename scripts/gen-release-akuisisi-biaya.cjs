@@ -19,12 +19,12 @@ const BASE_SCRIPT = "scripts/release-status-kerja-buka-pekerjaan.sh";
 const OUT = "scripts/release-akuisisi-biaya.sh";
 const TPL_DIR = "scripts/templates/release-akuisisi-biaya";
 const LIB_SCAN = "scripts/lib/scan-migrasi-akuisisi-biaya.mjs", LIB_REH = "scripts/lib/rehearsal-akuisisi-biaya.mjs", LIB_SMOKE = "scripts/lib/smoke-akuisisi-biaya.mjs";
-const LIB_LAMA = "scripts/lib/rehearsal-kompat-lama-akuisisi-biaya.mjs", LIB_CONS = "scripts/lib/constraint-akuisisi-biaya.sql";
+const LIB_LAMA = "scripts/lib/rehearsal-kompat-lama-akuisisi-biaya.mjs", LIB_CONS = "scripts/lib/constraint-akuisisi-biaya.sql", LIB_HASH = "scripts/lib/hash-live-akuisisi-biaya.mjs";
 const GUARD = "scripts/rollback-guard-akuisisi-biaya.sh", GENERATOR = "scripts/gen-release-akuisisi-biaya.cjs";
-const TPL_FILES = ["header", "vars", "struktur", "gate-prisma", "keadaan", "rehearsal-migrasi", "rehearsal-lama", "step6", "spa", "rollback"].map((n) => `${TPL_DIR}/${n}.txt`);
-const FILE_TETAP = [OUT, GUARD, GENERATOR, LIB_SCAN, LIB_REH, LIB_SMOKE, LIB_LAMA, LIB_CONS, ...TPL_FILES];
+const TPL_FILES = ["header", "vars", "struktur", "gate-prisma", "keadaan", "rehearsal-migrasi", "rehearsal-lama", "step6", "live-konsisten", "spa", "rollback"].map((n) => `${TPL_DIR}/${n}.txt`);
+const FILE_TETAP = [OUT, GUARD, GENERATOR, LIB_SCAN, LIB_REH, LIB_SMOKE, LIB_LAMA, LIB_CONS, LIB_HASH, ...TPL_FILES];
 const CAND_BRANCH = "feat/akuisisi-biaya-navigasi";
-const DIST_BARU = ["Kelola biaya iklan", "Atribusi label CRM", "Impor detail Ad", "Total rentang", "Sumber biaya yang dipakai", "Detail Ad mungkin parsial"];
+const DIST_BARU = ["Kelola biaya iklan", "Atribusi label CRM", "Impor detail Ad", "Total rentang", "Sumber biaya yang dipakai", "Detail Ad mungkin parsial", "Biaya terisi setiap hari", "Verifikasi kelengkapan"];
 const DIST_LAMA_TAMBAHAN = ["Performa Akuisisi", "Customer ber-order", "Perbandingan sumber"];
 
 const PER_LINES = 'PER_SAMPAI="$(date -u -d "@$(( $(date +%s) + 25200 - 86400 ))" +%F)"; PER_DARI="$(date -u -d "@$(( $(date +%s) + 25200 - 86400 * 30 ))" +%F)"   # 30 hari PENUH berakhir kemarin (WIB)';
@@ -49,7 +49,7 @@ const namaObjek = (sql) => {
   return { idx: [...pkeys, ...idx], unik, chk: ambil(/CONSTRAINT "([a-z0-9_]+)" CHECK/g), fk: ambil(/CONSTRAINT "([a-z0-9_]+)" FOREIGN KEY/g), trg: ambil(/CREATE TRIGGER "([a-z0-9_]+)"/g) };
 };
 
-function bangkitkan({ baseScript, blok, berkasList, mig, schemaSha, scanJs, scanExpect, rehNode, smokeNode, lamaJs, constraintSql }) {
+function bangkitkan({ baseScript, blok, berkasList, mig, schemaSha, scanJs, scanExpect, rehNode, smokeNode, lamaJs, constraintSql, hashJs }) {
   let s = lf(baseScript);
   const r = (a, b) => { must(s.includes(a), "penanda: " + a.slice(0, 90)); s = s.split(a).join(b); };
   const potong = (awal, akhir, ganti) => { const i = s.indexOf(awal); const j = s.indexOf(akhir, i + awal.length); must(i >= 0 && j >= 0, `penanda: ${awal.slice(0, 60)} .. ${akhir.slice(0, 60)}`); s = s.slice(0, i) + ganti + s.slice(j); };
@@ -106,7 +106,14 @@ function bangkitkan({ baseScript, blok, berkasList, mig, schemaSha, scanJs, scan
   s = s.replace(ms[0], () => 'ok "smoke test lulus (izin 401/403, validasi + dryRun tanpa menulis, periode/parameter, kontrak, rekonsiliasi SQL independen, tabel biaya kosong, tanpa jejak tulis, invarian)"\n');
   const iCat = s.lastIndexOf('say "CATATAN:'); must(iCat > 0, "CATATAN");
   s = s.slice(0, iCat) + 'say "CATATAN: Rilis ini membawa Akuisisi: periode tunggal, biaya iklan tingkat sumber (input manual), navigasi sumber, logo. Migrasi aditif: 2 tabel baru KOSONG. TIDAK ada biaya iklan yang diimpor/ditulis oleh rilis; tidak ada perubahan campaign/budget Meta, pembayaran, jurnal, stok, atau label customer. Rollback kode: jalankan scripts/rollback-guard-akuisisi-biaya.sh dulu (informasi), lalu langkah rollback di atas."\n';
-  r('OLD_ONLY="$(sed -n 1p "$OLD_ASSETS" || true)"', lf(blok.spa).trimEnd() + '\nOLD_ONLY="$(sed -n 1p "$OLD_ASSETS" || true)"');
+  r('OLD_ONLY="$(sed -n 1p "$OLD_ASSETS" || true)"', lf(blok["live-konsisten"]).replace("@@HASH_JS@@", () => lf(hashJs).trimEnd()).trimEnd() + "\n" + lf(blok.spa).trimEnd() + '\nOLD_ONLY="$(sed -n 1p "$OLD_ASSETS" || true)"');
+  // env: sidik jari sebelum rilis (dibandingkan sesudah switch di blok live-konsisten)
+  r(`grep -Eq '^VITE_GOOGLE_MAPS_JS_KEY=.+' "$PERSIST/frontend/.env" || die "VITE_GOOGLE_MAPS_JS_KEY kosong (peta akan mati)"`, `grep -Eq '^VITE_GOOGLE_MAPS_JS_KEY=.+' "$PERSIST/frontend/.env" || die "VITE_GOOGLE_MAPS_JS_KEY kosong (peta akan mati)"\nENV_SHA_SEBELUM="$(sha256sum "$PERSIST/backend/.env" "$PERSIST/frontend/.env" | awk '{print $1}' | tr '\\n' ' ')"`);
+  // waktu switch (untuk smoke: inbound baru sesudah switch) + diteruskan ke smoke
+  r('PHASE="7-switch";', 'SWITCH_AT_ISO="$(date -u +%FT%TZ)"\nPHASE="7-switch";');
+  r('exec -T -e BASE_TIDAK_SEIMBANG=', 'exec -T -e SWITCH_AT_ISO="$SWITCH_AT_ISO" -e BASE_TIDAK_SEIMBANG=');
+  // CLEANUP RILIS LAMA DINONAKTIFKAN (permintaan Owner 26 Okt): tidak ada direktori/image/backup yang dihapus oleh langkah ini
+  potong("# Pembersihan release lama (setelah rilis TERBUKTI sehat).", '\ntrap - EXIT\nsay "SELESAI', '# Pembersihan release lama DINONAKTIFKAN untuk rilis ini: tidak ada direktori release, image, atau backup (milik sesi mana pun) yang dihapus oleh skrip ini.\nPHASE="9-tanpa-pembersihan"; say "9. Pembersihan release lama DINONAKTIFKAN (tidak ada release/image/backup yang dihapus)"');
   must(!/@@[A-Z_]+@@/.test(s), "placeholder tersisa");
   return { script: s, ringkasan: { berkas: berkas.length, backendSrc: berkas.filter((f) => f.startsWith("backend/src/")).length, frontendSrc: berkas.filter((f) => f.startsWith("frontend/src/")).length, mig: mig.name, migSha: sha(lf(mig.sql)).slice(0, 12), scanExpect, schemaSha: schemaSha.slice(0, 12), objek: { idx: ob.idx.length, unik: ob.unik.length, chk: ob.chk.length, fk: ob.fk.length, trg: ob.trg.length } } };
 }
@@ -131,7 +138,7 @@ function main() {
   const blok = Object.fromEntries(TPL_FILES.map((f) => [path.basename(f, ".txt"), fs.readFileSync(path.join(REPO, f), "utf8")]));
   const hasil = bangkitkan({
     baseScript: git(["show", `HEAD:${BASE_SCRIPT}`]), blok, berkasList: list, mig, schemaSha: schemaDiffSha(ref), scanJs, scanExpect,
-    rehNode: fs.readFileSync(path.join(REPO, LIB_REH), "utf8"), smokeNode: fs.readFileSync(path.join(REPO, LIB_SMOKE), "utf8"), lamaJs: fs.readFileSync(path.join(REPO, LIB_LAMA), "utf8"), constraintSql: fs.readFileSync(path.join(REPO, LIB_CONS), "utf8"),
+    rehNode: fs.readFileSync(path.join(REPO, LIB_REH), "utf8"), smokeNode: fs.readFileSync(path.join(REPO, LIB_SMOKE), "utf8"), lamaJs: fs.readFileSync(path.join(REPO, LIB_LAMA), "utf8"), hashJs: fs.readFileSync(path.join(REPO, LIB_HASH), "utf8"), constraintSql: fs.readFileSync(path.join(REPO, LIB_CONS), "utf8"),
   });
   const keluar = path.join(REPO, OUT);
   if (cek) {

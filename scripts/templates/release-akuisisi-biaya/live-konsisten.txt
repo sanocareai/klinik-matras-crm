@@ -1,0 +1,28 @@
+# KONSISTENSI LIVE (BACA-SAJA): laporan dihitung oleh kode LAMA (image rollback, DB produksi) dan kode BARU (container baru, DB yang sama) → agregat per sumber, /iklan (campaign), /d7, dan flag capture harus SAMA.
+# Periode = 30 hari penuh berakhir kemarin (stabil). Bila beda (mis. pembayaran masuk tepat di antara dua pembacaan), ulangi s/d 3×; tetap beda = berhenti (rollback kode).
+PER_SAMPAI_L="$(date -u -d "@$(( $(date +%s) + 25200 - 86400 ))" +%F)"; PER_DARI_L="$(date -u -d "@$(( $(date +%s) + 25200 - 86400 * 30 ))" +%F)"
+IFS= read -r -d '' HASH_JS <<'HASHNODE' || true
+@@HASH_JS@@
+HASHNODE
+NET_LIVE="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$CID_NEW" | awk '{print $1}')"
+[ -n "$NET_LIVE" ] || die "jaringan docker produksi tidak terbaca (konsistensi live)"
+hash_lama() { printf '%s\n' "$HASH_JS" | docker run --rm -i --network "$NET_LIVE" --env-file "$PERSIST/backend/.env" -e PER_DARI="$PER_DARI_L" -e PER_SAMPAI="$PER_SAMPAI_L" "$ROLLBACK_TAG" node --input-type=module - 2>&1; }
+hash_baru() { printf '%s\n' "$HASH_JS" | dcp "$NEW_DIR" exec -T -e PER_DARI="$PER_DARI_L" -e PER_SAMPAI="$PER_SAMPAI_L" backend node --input-type=module - 2>&1; }
+LIVE_SAMA=0
+for try in 1 2 3; do
+  HL="$(hash_lama)" || { printf '%s\n' "$HL" | tail -n 5; die "kode LAMA gagal menghitung laporan terhadap DB produksi (konsistensi live)"; }
+  HB="$(hash_baru)" || { printf '%s\n' "$HB" | tail -n 5; die "kode BARU gagal menghitung laporan (konsistensi live)"; }
+  printf '%s\n' "$HL" > "$BK_DIR/live-lama.log"; printf '%s\n' "$HB" > "$BK_DIR/live-baru.log"
+  if [ "$(printf '%s\n' "$HL" | grep -E '^(AGREGAT|HASH_IKLAN|HASH_D7)=')" = "$(printf '%s\n' "$HB" | grep -E '^(AGREGAT|HASH_IKLAN|HASH_D7)=')" ] && [ -n "$(printf '%s\n' "$HB" | grep '^HASH_IKLAN=')" ]; then LIVE_SAMA=1; break; fi
+  warn "percobaan ${try}: keluaran lama ≠ baru (mungkin data berubah di antara dua pembacaan); ulangi"; sleep 20
+done
+[ "$LIVE_SAMA" = "1" ] || { diff "$BK_DIR/live-lama.log" "$BK_DIR/live-baru.log" || true; die "KONSISTENSI LIVE GAGAL: agregat/ /iklan / /d7 / flag capture kode LAMA ≠ BARU pada DB produksi — rollback kode (jangan DROP tabel)"; }
+ok "konsistensi live: agregat per sumber, /iklan (campaign), dan /d7 IDENTIK antara kode LAMA dan BARU pada DB produksi (periode ${PER_DARI_L}..${PER_SAMPAI_L})"
+ML="$(printf '%s\n' "$HL" | grep '^MONITOR_CAPTURE=' | tail -n 1)"; MB="$(printf '%s\n' "$HB" | grep '^MONITOR_CAPTURE=' | tail -n 1)"
+if [[ "$ML" =~ ^MONITOR_CAPTURE=(true|false)$ ]] && [[ "$MB" =~ ^MONITOR_CAPTURE=(true|false)$ ]]; then
+  [ "$ML" = "$MB" ] || die "flag capture BERBEDA antara kode lama (${ML}) dan baru (${MB}) — env tidak boleh berubah"; ok "flag capture identik lama vs baru (${MB})"
+else warn "flag capture tidak dapat dibandingkan (lama: ${ML:-kosong}; baru: ${MB:-kosong})"; fi
+# ENV TIDAK BERUBAH
+ENV_SHA_SESUDAH="$(sha256sum "$PERSIST/backend/.env" "$PERSIST/frontend/.env" | awk '{print $1}' | tr '\n' ' ')"
+[ "$ENV_SHA_SEBELUM" = "$ENV_SHA_SESUDAH" ] || die "backend/.env atau frontend/.env BERUBAH selama rilis (sha256 berbeda)"
+ok "env (backend/.env + frontend/.env) IDENTIK sebelum vs sesudah rilis (sha256)"

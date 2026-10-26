@@ -4,7 +4,7 @@ import { api } from "@/api.js";
 import { Modal } from "@/components/ui/modal.jsx";
 import { cn } from "@/lib/utils.js";
 import { formKosong, validasiForm, bodyBiaya, ringkasRencana, ringkasHasil, SUMBER_FORM, kemarin, ringkasAsalBiaya, daftarPemilihan, ALASAN_TIDAK_DIPAKAI } from "../biayaIklanLogic.js";
-import { statusBiayaTeks, rupiah, rupiahPersis } from "../akuisisiLogic.js";
+import { statusBiayaTeks, rupiah, rupiahPersis, verifikasiLabel } from "../akuisisiLogic.js";
 import { teksPeriode } from "../periodeLaporan.js";
 import { ImporSpend } from "./IklanBiayaPanel.jsx";
 
@@ -157,6 +157,7 @@ export default function KelolaBiayaIklan({ open, onOpenChange, periode, hariIni,
               <div key={sid} className="rounded-btn bg-inset p-2.5">
                 <p><b className="text-ink">{NAMA_SUMBER[sid] || sid}</b> — {statusBiayaTeks(c.status)}{c.spend != null ? ` · ${rupiah(c.spend)}` : ""}</p>
                 {ringkasAsalBiaya(c).length > 0 && <p className="t-secondary">{ringkasAsalBiaya(c).join(" · ")}</p>}
+                {c.verifikasi && c.status !== "BELUM_DIISI" && <p className="t-secondary">Verifikasi: {verifikasiLabel(c.verifikasi)}</p>}
                 <ul aria-label="Sumber biaya yang dipakai dan alasannya" className="mt-1 space-y-0.5 text-[11.5px]">
                   {daftarPemilihan(c).map((p) => <li key={p.kunci} className={p.peringatan ? "text-orange" : "t-secondary"}>{p.hari != null ? <b>{p.hari} hari · </b> : null}{p.teks}</li>)}
                 </ul>

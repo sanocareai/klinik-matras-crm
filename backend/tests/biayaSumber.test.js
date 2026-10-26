@@ -276,3 +276,39 @@ test("audit: rencanakan — edit override (false→true) = UBAH pada entri yang 
   assert.equal(rencanakan({ ...i, override: false }, [{ ...ada, override: true }]).aksi, "UBAH");
   assert.equal(rencanakan({ ...i, override: false }, [ada]).aksi, "TIDAK_BERUBAH");
 });
+
+// ── KASUS SEPTEMBER + LABEL VERIFIKASI (permintaan Owner, 26 Okt) ───────────────────────────────────────────────────────────────────────────────────────────
+test("kasus September: biaya bulanan Rp42 jt → LENGKAP; diganti SATU entri harian Rp1 jt → periode sebulan SPEND_TIDAK_LENGKAP, spend Rp1 jt (bukan 43 jt), SEMUA CPL/CPA/Booked/Cash ROAS null, total berbayar null", () => {
+  const bulanan = [{ source: "META_ADS", sumberId: "META", tahun: 2026, bulan: 9, amount: 42_000_000 }];
+  const dari = "2026-09-01", sampai = "2026-09-30";
+  const a = entriBulananSemu(bulanan, { dari, sampai, entriNyata: [] });
+  const c0 = hitungCakupan({ dari, sampai, hariIni: HARI_INI, entries: a.semu });
+  assert.deepEqual([c0.status, c0.spend], ["LENGKAP", 42_000_000]);
+  const harian = E({ sourceId: "META", dateFrom: "2026-09-01", dateTo: "2026-09-01", amount: 1_000_000 });
+  const b = entriBulananSemu(bulanan, { dari, sampai, entriNyata: [harian] });
+  assert.equal(b.semu.length, 0, "bulanan DIABAIKAN begitu ada entri sumber pada bulan itu");
+  assert.equal(b.diabaikan[0].alasan, "ADA_ENTRI_SUMBER_PADA_BULAN_INI");
+  const c1 = hitungCakupan({ dari, sampai, hariIni: HARI_INI, entries: [harian, ...b.semu] });
+  assert.deepEqual([c1.status, c1.spend, c1.hariHilang.length, c1.spendLengkap], ["SPEND_TIDAK_LENGKAP", 1_000_000, 29, false]);
+  const k = biayaKpiSumber({ cakupan: c1, jenis: "IKLAN", lead: 500, leadSah: 400, lunas: 20, nilaiOrder: 9e7, uangBersih: 6e7, ledger: { orderEligible: 30, orderBerLedger: 30 }, hariIni: HARI_INI, sampai });
+  assert.deepEqual([k.cpl, k.cpa, k.bookedRoas, k.cashRoas], [null, null, null, null]);
+  assert.deepEqual([k.alasanNull.cpl, k.alasanNull.cpa, k.alasanNull.bookedRoas, k.alasanNull.cashRoas], Array(4).fill("SPEND_TIDAK_LENGKAP"));
+  assert.equal(k.spendLengkap, false);
+});
+
+test("label kelengkapan JUJUR: LENGKAP ≠ terverifikasi; 'independen' selalu false; tingkat mengikuti ada/tidaknya total kontrol input", () => {
+  const ad = new Map([["2026-10-20", 100], ["2026-10-21", 100]]);
+  const hit = (entries, o = {}) => hitungCakupan({ dari: "2026-10-20", sampai: "2026-10-21", hariIni: HARI_INI, entries, adHarian: ad, ...o });
+  const tanpa = hit([]); assert.deepEqual([tanpa.status, tanpa.verifikasi.tingkat, tanpa.verifikasi.independen], ["LENGKAP", "TANPA_PEMBANDING", false]);
+  assert.match(tanpa.verifikasi.catatan, /TANPA total kontrol.*tidak diverifikasi/);
+  const cocok = hit([M({ kind: "TOTAL_RENTANG", dateFrom: "2026-10-20", dateTo: "2026-10-21", amount: 200 })]);
+  assert.deepEqual([cocok.status, cocok.verifikasi.tingkat, cocok.verifikasi.independen, cocok.verifikasi.hariDibandingkan], ["LENGKAP", "COCOK_TOTAL_KONTROL_INPUT", false, 2]);
+  assert.match(cocok.verifikasi.catatan, /BUKAN verifikasi independen.*disalin dari detail yang sama/);
+  const sebagian = hit([M({ dateFrom: "2026-10-20", dateTo: "2026-10-20", amount: 100 })]);
+  assert.deepEqual([sebagian.verifikasi.tingkat, sebagian.verifikasi.hariDibandingkan, sebagian.verifikasi.hariDetail], ["SEBAGIAN_DIBANDINGKAN", 1, 2]);
+  const selisih = hit([M({ dateFrom: "2026-10-20", dateTo: "2026-10-20", amount: 900 })]); assert.deepEqual([selisih.status, selisih.verifikasi.tingkat], ["DETAIL_AD_SELISIH", "SELISIH"]);
+  const ov = hit([M({ dateFrom: "2026-10-20", dateTo: "2026-10-21", kind: "TOTAL_RENTANG", amount: 900, override: true })]); assert.equal(ov.verifikasi.tingkat, "OVERRIDE_ADMIN");
+  const manual = hitungCakupan({ dari: "2026-10-20", sampai: "2026-10-20", hariIni: HARI_INI, entries: [M({ amount: 5 })] }); assert.equal(manual.verifikasi.tingkat, "MANUAL_TANPA_DETAIL");
+  const kosong = hitungCakupan({ dari: "2026-10-20", sampai: "2026-10-20", hariIni: HARI_INI, entries: [] }); assert.equal(kosong.verifikasi.tingkat, "TIDAK_ADA_DATA");
+  for (const c of [tanpa, cocok, sebagian, selisih, ov, manual, kosong]) assert.equal(c.verifikasi.independen, false);
+});

@@ -114,7 +114,13 @@ test("TANPA tulis biaya produksi / env / flag / push / hapus / Meta / cron di ko
     [/SPEND_SYNC_ENABLED=(true|"true")/, "sync ON"], [/graph\.facebook\.com|api\.windsor\.ai/i, "panggilan Meta/Windsor"], [/curl[^\n]*(-X\s*POST|--data|-d\s)/i, "curl POST"], [/crontab/i, "cron"], [/\bprune\b/, "prune"],
   ]) assert.ok(!re.test(kode), `perintah terlarang: ${nama}`);
   const sudo = kode.split("\n").filter((l) => /\bsudo\b/.test(l));
-  assert.ok(sudo.length <= 1 && sudo.every((l) => l.includes('sudo -n rm -rf -- "$d"') && l.includes("HAPUS")), "sudo hanya untuk membersihkan direktori rilis LAMA (HAPUS) — bukan data");
+  assert.equal(sudo.length, 0, "tanpa sudo sama sekali (cleanup rilis lama dinonaktifkan)");
+  assert.ok(!/\bHAPUS=|rm -rf -- "\$d"|ls -1dt \*\//.test(kode), "langkah pembersihan release lama TIDAK boleh ada");
+  assert.match(src, /PHASE="9-tanpa-pembersihan"; say "9\. Pembersihan release lama DINONAKTIFKAN/);
+  // penghapusan yang tersisa hanya milik skrip ini sendiri: pulihkan_jejak (HANYA --rehearsal-only: image/tag/dir build sendiri), reh_drop (DB sementara sendiri), dist baru milik NEW_DIR
+  const hapus = kode.split("\n").filter((l) => /\brm\s+-rf?\b|docker rmi|-delete\b/.test(l));
+  for (const l of hapus) assert.ok(/NEW_DIR|NEW_IMG_ID|ROLLBACK_TAG|\.env"$|rm -f "\$NEW_DIR\/frontend\/\.env"/.test(l), `penghapusan di luar artefak milik skrip ini: ${l.trim().slice(0, 140)}`);
+  assert.match(kode, /pulihkan_jejak\(\) \{\n  \[ "\$\{REHEARSAL_ONLY:-0\}" = "1" \] \|\| return 0/, "pembersihan jejak hanya pada --rehearsal-only");
   const drops = kode.split("\n").filter((l) => /\bDROP\s+(TABLE|DATABASE|SCHEMA|COLUMN)\b/i.test(l));
   assert.equal(drops.length, 1, "satu-satunya DROP = menghapus DB rehearsal sementara");
   assert.match(drops[0], /^reh_drop\(\) .*DROP DATABASE IF EXISTS \\"\$\{REH_DB\}\\"/);
@@ -129,6 +135,11 @@ test("smoke produksi HANYA membaca: setiap PUT adalah penolakan validasi atau dr
   for (const l of put) assert.ok(/nominal: "-5"|INSTAGRAM|dari: hariIni|dryRun: true|\["PUT", "\/api\/atribusi\/iklan\/biaya-sumber"\]/.test(l), `PUT tidak aman di smoke: ${l.trim().slice(0, 140)}`);
   assert.ok(!/prisma\.\$executeRaw|\.create\(|\.update\(|\.delete\(|\.upsert\(/.test(smoke), "smoke tidak boleh menulis lewat prisma");
   assert.match(smoke, /sebelum\[t\]\.n !== sesudah\[t\]\.n/); assert.match(smoke, /ad_source_spend_entries/);
+  // produksi HIDUP: tabel yang bergerak karena lalu lintas tidak boleh dibandingkan identik (gagal palsu); hanya tidak boleh berkurang
+  assert.match(smoke, /const MONOTON = \["Customer", "Order", "payments"/); assert.ok(!/const STRIK = \[[^\]]*"(Customer|Order|payments|attribution_touches)"/.test(smoke), "tabel lalu lintas tidak boleh masuk daftar identik-ketat");
+  assert.match(smoke, /api\/conversations/); assert.match(smoke, /api\/atribusi\/iklan\/monitor/);
+  const hashLib = lf("scripts/lib/hash-live-akuisisi-biaya.mjs");
+  assert.ok(!/prisma\.\w+\.(create|update|delete|upsert)\(|executeRaw|method: "(PUT|POST|DELETE)"/.test(hashLib), "pustaka konsistensi live hanya membaca");
   for (const k of [...smoke.matchAll(/B\("([A-Z_]+)"\)/g)].map((m) => m[1])) assert.ok(new RegExp(`-e ${k}="\\$${k}"`).test(src), `smoke membutuhkan env ${k} yang tidak diteruskan skrip`);
   // lib rehearsal & kode-lama hanya menyentuh DB sementara (REH_DB / RH_URL), tidak pernah DB produksi
   const baris = src.split("\n").filter((l) => /REHNODE|LAMANODE/.test(l) && /(run|docker)/.test(l));
@@ -144,6 +155,7 @@ test("gerbang kunci ada & berurutan: baseline, disk, ancestry, allowlist, pin, b
     [/rehearsal MENGUBAH isi tabel/, "sidik jari rehearsal"], [/--rehearsal-only/, "rehearsal-only"], [/--preflight-only/, "preflight-only"], [/jumlah migrasi terpasang != baseline \+ 1/, "tepat 1 migrasi"],
     [/URL laporan ber-state tidak dilayani/, "deep-link periode/URL"], [/bundel web publik = dist baru/, "bundel publik"], [/rollback-guard-akuisisi-biaya\.sh/, "guard rollback"], [/docker tag \$\{ROLLBACK_TAG/, "perintah rollback kode"],
     [/dist baru tidak memuat teks fitur/, "teks fitur di dist"], [/RestartCount/, "stabil"],
+    [/KONSISTENSI LIVE GAGAL/, "konsistensi live lama=baru"], [/BERUBAH selama rilis \(sha256 berbeda\)/, "env tidak berubah"], [/ENV_SHA_SEBELUM=/, "sidik jari env sebelum"], [/SWITCH_AT_ISO=/, "waktu switch untuk cek inbound"],
   ]) assert.ok(re.test(src), `gerbang hilang: ${nama}`);
   const p = (x) => src.indexOf(x);
   const fase = ["PHASE=\"3-backup\"", "PHASE=\"5-build-image\"", "PHASE=\"5b-rehearsal\"", "PHASE=\"6-migrate\"", "PHASE=\"7-switch\"", "PHASE=\"8b-smoke\""].map(p);

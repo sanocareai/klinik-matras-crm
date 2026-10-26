@@ -67,6 +67,7 @@ const hapusVolatil = (o) => JSON.parse(JSON.stringify(o, (k, v) => (["dihitungPa
 const D7_DARI = hariDari(SAMPAI, SAMPAI).length ? new Date(Date.parse(SAMPAI + "T00:00:00Z") - 9 * 864e5).toISOString().slice(0, 10) : SAMPAI;
 const iklan0 = hapusVolatil((await call("GET", "/?level=campaign&dari=" + DARI + "&sampai=" + SAMPAI)).j);
 const d7_0 = hapusVolatil((await call("GET", "/d7?dari=" + D7_DARI + "&sampai=" + SAMPAI)).j);
+cek("referensi: setiap sumber 'LENGKAP' memuat tingkat verifikasi JUJUR (independen=false) dan peringatan BIAYA_TIDAK_DIVERIFIKASI bila ada yang LENGKAP", j0.sumber.filter((x) => x.jenis !== "ORGANIK").every((x) => x.biaya.cakupan && x.biaya.cakupan.verifikasi && x.biaya.cakupan.verifikasi.independen === false) && j0.sumber.filter((x) => x.biaya.status === "LENGKAP").every((x) => j0.peringatan.some((p) => p.kode === "BIAYA_TIDAK_DIVERIFIKASI" && p.data.sumber === x.id)));
 cek("referensi: /iklan (campaign) dan /d7 menjawab 200 sebelum penulisan biaya", !!iklan0 && !iklan0.error && !!d7_0 && !d7_0.error);
 
 // E. TikTok: isi setiap hari periode (FIXTURE) → LENGKAP; CPA = biaya ÷ customer lunas unik; idempoten; ubah; konflik; batal
@@ -135,14 +136,14 @@ if (terbaik.length < 3) skip("H2/H3 detail Ad: butuh ≥ 3 hari berurutan berdet
 else {
   const a = terbaik[0].d, b = terbaik[terbaik.length - 1].d, jumlah = terbaik.reduce((x, y) => x + y.s, 0);
   const m0 = await metaDi(a, b);
-  cek(`H2 ${terbaik.length} hari ${a}..${b}: baris detail ADA di setiap hari → LENGKAP hanya karena benar-benar tanpa pembanding`, m0.biaya.status === "LENGKAP" && m0.biaya.cakupan.hari.adDetail === terbaik.length && Math.abs(m0.biaya.spend - jumlah) < 0.01);
+  cek(`H2 ${terbaik.length} hari ${a}..${b}: baris detail ADA di setiap hari → LENGKAP hanya karena benar-benar tanpa pembanding`, m0.biaya.status === "LENGKAP" && m0.biaya.cakupan.hari.adDetail === terbaik.length && Math.abs(m0.biaya.spend - jumlah) < 0.01 && m0.biaya.cakupan.verifikasi.tingkat === "TANPA_PEMBANDING" && m0.biaya.cakupan.verifikasi.independen === false);
   const tr = await putB({ sumber: "META", jenis: "TOTAL_RENTANG", dari: a, sampai: b, nominal: String(Math.round(jumlah * 2)) });
   const m1 = await metaDi(a, b);
   cek("H2 total rentang pembanding 2× jumlah detail → status DETAIL_AD_SELISIH (BUKAN LENGKAP walau ada baris setiap hari); spend tetap = detail (tidak dijumlah); CPA/ROAS null", tr.s === 201 && m1.biaya.status === "DETAIL_AD_SELISIH" && m1.biaya.spendLengkap === false && Math.abs(m1.biaya.spend - jumlah) < 0.01 && m1.biaya.cpa === null && m1.biaya.cashRoas === null && m1.biaya.bookedRoas === null, m1.biaya.status);
   await batal(tr.j.id);
   const tr2 = await putB({ sumber: "META", jenis: "TOTAL_RENTANG", dari: a, sampai: b, nominal: String(jumlah) });
   const m2 = await metaDi(a, b);
-  cek("H2 total rentang = jumlah detail → LENGKAP dengan spend = jumlah detail (satu kali, tidak 2×); kunci yang sama diaktifkan kembali, bukan entri ganda", tr2.j.aksi === "AKTIFKAN" && tr2.j.id === tr.j.id && m2.biaya.status === "LENGKAP" && Math.abs(m2.biaya.spend - jumlah) < 0.01, `${m2.biaya.spend} vs ${jumlah}`);
+  cek("H2 total rentang = jumlah detail → LENGKAP dengan spend = jumlah detail (satu kali, tidak 2×); kunci yang sama diaktifkan kembali, bukan entri ganda", tr2.j.aksi === "AKTIFKAN" && tr2.j.id === tr.j.id && m2.biaya.cakupan.verifikasi.tingkat === "COCOK_TOTAL_KONTROL_INPUT" && m2.biaya.cakupan.verifikasi.independen === false && /BUKAN verifikasi independen/.test(m2.biaya.cakupan.verifikasi.catatan) && m2.biaya.status === "LENGKAP" && Math.abs(m2.biaya.spend - jumlah) < 0.01, `${m2.biaya.spend} vs ${jumlah}`);
   await batal(tr2.j.id);
   // H3. OVERRIDE: hanya sumber/periode yang dipilih; alasan wajib; audit; dapat dicabut
   const d1 = terbaik[1].d, d2 = terbaik[2].d, det1 = terbaik[1].s, det2 = terbaik[2].s;
@@ -171,6 +172,8 @@ else {
   const mm1 = await metaDi(awal, akhir);
   const bul = mm1.biaya.cakupan.biayaBulananPengaturan.find((b) => b.tahun === y && b.bulan === mo);
   cek("H4 + manual harian pada bulan itu: biaya bulanan lama DIABAIKAN (bukan ditambah) → spend = manual saja (bukan bulanan + manual); status tidak lengkap", mh.s === 201 && bul && bul.dipakai === false && /ADA_ENTRI_SUMBER_PADA_BULAN_INI/.test(bul.alasan) && mm1.biaya.spend === 1000000 && mm1.biaya.status === "SPEND_TIDAK_LENGKAP", `${mm1.biaya.spend} (bulanan ${nominal})`);
+  const jSep = await sm(awal, akhir);
+  cek("H4 KASUS SEPTEMBER: bulanan 42 jt diganti satu entri harian 1 jt → periode sebulan tetap SPEND_TIDAK_LENGKAP dan SELURUH CPL/CPA/Booked/Cash ROAS (semua sumber + total berbayar) null dengan alasan", jSep.sumber.every((x) => x.biaya.cpa === null && x.biaya.cpl === null && x.biaya.bookedRoas === null && x.biaya.cashRoas === null) && jSep.total.berbayar.cpa === null && jSep.total.berbayar.bookedRoas === null && jSep.total.berbayar.cashRoas === null && jSep.total.berbayar.lengkap === false && jSep.sumber.find((x) => x.id === "META").biaya.alasanNull.cpa === "SPEND_TIDAK_LENGKAP", JSON.stringify(jSep.sumber.map((x) => [x.id, x.biaya.status])));
   await batal(mh.j.id);
   cek("H4 entri manual dibatalkan → kembali ke biaya bulanan lama sekali (tanpa sisa ganda)", (await metaDi(awal, akhir)).biaya.spend === nominal);
 }

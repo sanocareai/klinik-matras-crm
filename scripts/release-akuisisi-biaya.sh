@@ -26,7 +26,7 @@ DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 CAND_BRANCH="${CAND_BRANCH:-feat/akuisisi-biaya-navigasi}"
 # Berkas yang BOLEH berbeda dari baseline: EKSPLISIT path persis. Apa pun di luar daftar (termasuk backend/prisma) = berhenti.
 # Rilis kode-saja: tanpa migrasi, tanpa perubahan schema.prisma; OTA RN TIDAK diterbitkan.
-ALLOWED_RE='^(backend/prisma/migrations/20261230090000_biaya_iklan_sumber_manual/migration\.sql|backend/prisma/schema\.prisma|backend/src/routes/attributionAds\.js|backend/src/routes/attributionBiayaSumber\.js|backend/src/services/attribution/biayaSumber\.js|backend/src/services/attribution/sumber\.js|backend/tests/atribusiSumber\.test\.js|backend/tests/atribusiSumberKontrak\.test\.js|backend/tests/biayaSumber\.test\.js|backend/tests/integration/atribusiIklan\.integration\.test\.js|backend/tests/integration/biayaSumber\.integration\.test\.js|backend/tests/releaseAkuisisiBiaya\.test\.js|backend/tests/releaseAkuisisiSumber\.test\.js|docs/ASET-LOGO-AKUISISI\.md|frontend/src/api\.js|frontend/src/features/laporan/akuisisiLogic\.js|frontend/src/features/laporan/biayaIklanLogic\.js|frontend/src/features/laporan/components/AkuisisiTab\.jsx|frontend/src/features/laporan/components/BannerPeriode\.jsx|frontend/src/features/laporan/components/DetailSumberAkuisisi\.jsx|frontend/src/features/laporan/components/IklanCampaignTab\.jsx|frontend/src/features/laporan/components/KelolaBiayaIklan\.jsx|frontend/src/features/laporan/components/LogoSumber\.jsx|frontend/src/features/laporan/components/TrafficTab\.jsx|frontend/src/features/laporan/periodeLaporan\.js|frontend/src/pages/Laporan\.jsx|frontend/tests/biayaIklanLogic\.test\.js|frontend/tests/periodeLaporan\.test\.js|scripts/gen-release-akuisisi-biaya\.cjs|scripts/lib/constraint-akuisisi-biaya\.sql|scripts/lib/rehearsal-akuisisi-biaya\.mjs|scripts/lib/rehearsal-kompat-lama-akuisisi-biaya\.mjs|scripts/lib/scan-migrasi-akuisisi-biaya\.mjs|scripts/lib/smoke-akuisisi-biaya\.mjs|scripts/release-akuisisi-biaya\.sh|scripts/rollback-guard-akuisisi-biaya\.sh|scripts/templates/release-akuisisi-biaya/gate-prisma\.txt|scripts/templates/release-akuisisi-biaya/header\.txt|scripts/templates/release-akuisisi-biaya/keadaan\.txt|scripts/templates/release-akuisisi-biaya/rehearsal-lama\.txt|scripts/templates/release-akuisisi-biaya/rehearsal-migrasi\.txt|scripts/templates/release-akuisisi-biaya/rollback\.txt|scripts/templates/release-akuisisi-biaya/spa\.txt|scripts/templates/release-akuisisi-biaya/step6\.txt|scripts/templates/release-akuisisi-biaya/struktur\.txt|scripts/templates/release-akuisisi-biaya/vars\.txt)$'
+ALLOWED_RE='^(backend/prisma/migrations/20261230090000_biaya_iklan_sumber_manual/migration\.sql|backend/prisma/schema\.prisma|backend/src/routes/attributionAds\.js|backend/src/routes/attributionBiayaSumber\.js|backend/src/services/attribution/biayaSumber\.js|backend/src/services/attribution/sumber\.js|backend/tests/atribusiSumber\.test\.js|backend/tests/atribusiSumberKontrak\.test\.js|backend/tests/biayaSumber\.test\.js|backend/tests/integration/atribusiIklan\.integration\.test\.js|backend/tests/integration/biayaSumber\.integration\.test\.js|backend/tests/releaseAkuisisiBiaya\.test\.js|backend/tests/releaseAkuisisiSumber\.test\.js|docs/ASET-LOGO-AKUISISI\.md|frontend/src/api\.js|frontend/src/features/laporan/akuisisiLogic\.js|frontend/src/features/laporan/biayaIklanLogic\.js|frontend/src/features/laporan/components/AkuisisiTab\.jsx|frontend/src/features/laporan/components/BannerPeriode\.jsx|frontend/src/features/laporan/components/DetailSumberAkuisisi\.jsx|frontend/src/features/laporan/components/IklanCampaignTab\.jsx|frontend/src/features/laporan/components/KelolaBiayaIklan\.jsx|frontend/src/features/laporan/components/LogoSumber\.jsx|frontend/src/features/laporan/components/TrafficTab\.jsx|frontend/src/features/laporan/periodeLaporan\.js|frontend/src/pages/Laporan\.jsx|frontend/tests/biayaIklanLogic\.test\.js|frontend/tests/periodeLaporan\.test\.js|scripts/gen-release-akuisisi-biaya\.cjs|scripts/lib/constraint-akuisisi-biaya\.sql|scripts/lib/hash-live-akuisisi-biaya\.mjs|scripts/lib/rehearsal-akuisisi-biaya\.mjs|scripts/lib/rehearsal-kompat-lama-akuisisi-biaya\.mjs|scripts/lib/scan-migrasi-akuisisi-biaya\.mjs|scripts/lib/smoke-akuisisi-biaya\.mjs|scripts/release-akuisisi-biaya\.sh|scripts/rollback-guard-akuisisi-biaya\.sh|scripts/templates/release-akuisisi-biaya/gate-prisma\.txt|scripts/templates/release-akuisisi-biaya/header\.txt|scripts/templates/release-akuisisi-biaya/keadaan\.txt|scripts/templates/release-akuisisi-biaya/live-konsisten\.txt|scripts/templates/release-akuisisi-biaya/rehearsal-lama\.txt|scripts/templates/release-akuisisi-biaya/rehearsal-migrasi\.txt|scripts/templates/release-akuisisi-biaya/rollback\.txt|scripts/templates/release-akuisisi-biaya/spa\.txt|scripts/templates/release-akuisisi-biaya/step6\.txt|scripts/templates/release-akuisisi-biaya/struktur\.txt|scripts/templates/release-akuisisi-biaya/vars\.txt)$'
 BACKEND_SRC_EXPECT="backend/src/routes/attributionAds.js backend/src/routes/attributionBiayaSumber.js backend/src/services/attribution/biayaSumber.js backend/src/services/attribution/sumber.js"
 FRONTEND_SRC_EXPECT="frontend/src/api.js frontend/src/features/laporan/akuisisiLogic.js frontend/src/features/laporan/biayaIklanLogic.js frontend/src/features/laporan/components/AkuisisiTab.jsx frontend/src/features/laporan/components/BannerPeriode.jsx frontend/src/features/laporan/components/DetailSumberAkuisisi.jsx frontend/src/features/laporan/components/IklanCampaignTab.jsx frontend/src/features/laporan/components/KelolaBiayaIklan.jsx frontend/src/features/laporan/components/LogoSumber.jsx frontend/src/features/laporan/components/TrafficTab.jsx frontend/src/features/laporan/periodeLaporan.js frontend/src/pages/Laporan.jsx"
 # Migrasi aditif yang SUDAH diaudit (nama + sha256 isi, LF). Perubahan sekecil apa pun = berhenti sampai diaudit ulang dan pin diperbarui.
@@ -112,6 +112,7 @@ mkdir -p "$BK_DIR" "$HOME/release-src" "$HOME/backups"
 exec > >(tee -a "$BK_DIR/release.log") 2>&1
 [ -f "$PERSIST/backend/.env" ] && [ -f "$PERSIST/frontend/.env" ] || die "file .env persisten tidak lengkap"
 grep -Eq '^VITE_GOOGLE_MAPS_JS_KEY=.+' "$PERSIST/frontend/.env" || die "VITE_GOOGLE_MAPS_JS_KEY kosong (peta akan mati)"
+ENV_SHA_SEBELUM="$(sha256sum "$PERSIST/backend/.env" "$PERSIST/frontend/.env" | awk '{print $1}' | tr '\n' ' ')"
 for d in frontend/dist-driver backend/uploads backend/data; do [ -d "$PERSIST/$d" ] || die "root persisten kurang: ${PERSIST}/${d}"; done
 [ ! -e "$NEW_DIR" ] || die "release dir ${NEW_DIR} SUDAH ADA (tidak akan ditimpa)"
 
@@ -454,7 +455,7 @@ NEW_INDEX="$(grep -o 'index-[A-Za-z0-9_-]*\.js' "$NEW_DIR/frontend/dist/index.ht
 MAPS_KEY="$(sed -n 's/^VITE_GOOGLE_MAPS_JS_KEY=//p' "$PERSIST/frontend/.env" | tr -d '\r"'"'"' ')"
 [ -n "$(grep -lF "$MAPS_KEY" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat VITE_GOOGLE_MAPS_JS_KEY"
 # Fitur rilis ini + fitur rilis sebelumnya (jangan sampai hilang dari bundel).
-for s1 in "Kelola biaya iklan" "Atribusi label CRM" "Impor detail Ad" "Total rentang" "Sumber biaya yang dipakai" "Detail Ad mungkin parsial"; do [ -n "$(grep -lF -- "$s1" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat teks fitur: ${s1}"; done
+for s1 in "Kelola biaya iklan" "Atribusi label CRM" "Impor detail Ad" "Total rentang" "Sumber biaya yang dipakai" "Detail Ad mungkin parsial" "Biaya terisi setiap hari" "Verifikasi kelengkapan"; do [ -n "$(grep -lF -- "$s1" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru tidak memuat teks fitur: ${s1}"; done
 for s2 in "Performa Akuisisi" "Customer ber-order" "Perbandingan sumber" "Koreksi Dokumen" "Pengakuan Pendapatan" "Rekap per Unit" "Pembayaran dicatat di Finance › Penjualan Karyawan" "Mode rute Produksi" "Menunggu penentuan alur Produksi" "Konfirmasi kesiapan fisik" "Edit Data Customer" "Lengkapi Data Customer" "Riwayat Perubahan" "Customer & penerima" "Dijual oleh" "Buat Nota Kredit" "Nilai bersih" "Unit Produksi" "Item Penjualan & Pemenuhan" "Piutang & Refund" "Katalog Item PKR" "Kirim sebagian" "Penjualan Karyawan" "Koreksi Order" "Tambah Pesanan Customer" "Gabungkan Order Duplikat" "Histori dari order lama" "Barang yang dibawa"; do [ -n "$(grep -lF "$s2" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru kehilangan teks fitur lama: ${s2}"; done
 # (pemeriksaan negatif 'Hitung Kas' dari rilis lama tidak relevan untuk rilis ini)
 
@@ -631,6 +632,7 @@ const hapusVolatil = (o) => JSON.parse(JSON.stringify(o, (k, v) => (["dihitungPa
 const D7_DARI = hariDari(SAMPAI, SAMPAI).length ? new Date(Date.parse(SAMPAI + "T00:00:00Z") - 9 * 864e5).toISOString().slice(0, 10) : SAMPAI;
 const iklan0 = hapusVolatil((await call("GET", "/?level=campaign&dari=" + DARI + "&sampai=" + SAMPAI)).j);
 const d7_0 = hapusVolatil((await call("GET", "/d7?dari=" + D7_DARI + "&sampai=" + SAMPAI)).j);
+cek("referensi: setiap sumber 'LENGKAP' memuat tingkat verifikasi JUJUR (independen=false) dan peringatan BIAYA_TIDAK_DIVERIFIKASI bila ada yang LENGKAP", j0.sumber.filter((x) => x.jenis !== "ORGANIK").every((x) => x.biaya.cakupan && x.biaya.cakupan.verifikasi && x.biaya.cakupan.verifikasi.independen === false) && j0.sumber.filter((x) => x.biaya.status === "LENGKAP").every((x) => j0.peringatan.some((p) => p.kode === "BIAYA_TIDAK_DIVERIFIKASI" && p.data.sumber === x.id)));
 cek("referensi: /iklan (campaign) dan /d7 menjawab 200 sebelum penulisan biaya", !!iklan0 && !iklan0.error && !!d7_0 && !d7_0.error);
 
 // E. TikTok: isi setiap hari periode (FIXTURE) → LENGKAP; CPA = biaya ÷ customer lunas unik; idempoten; ubah; konflik; batal
@@ -699,14 +701,14 @@ if (terbaik.length < 3) skip("H2/H3 detail Ad: butuh ≥ 3 hari berurutan berdet
 else {
   const a = terbaik[0].d, b = terbaik[terbaik.length - 1].d, jumlah = terbaik.reduce((x, y) => x + y.s, 0);
   const m0 = await metaDi(a, b);
-  cek(`H2 ${terbaik.length} hari ${a}..${b}: baris detail ADA di setiap hari → LENGKAP hanya karena benar-benar tanpa pembanding`, m0.biaya.status === "LENGKAP" && m0.biaya.cakupan.hari.adDetail === terbaik.length && Math.abs(m0.biaya.spend - jumlah) < 0.01);
+  cek(`H2 ${terbaik.length} hari ${a}..${b}: baris detail ADA di setiap hari → LENGKAP hanya karena benar-benar tanpa pembanding`, m0.biaya.status === "LENGKAP" && m0.biaya.cakupan.hari.adDetail === terbaik.length && Math.abs(m0.biaya.spend - jumlah) < 0.01 && m0.biaya.cakupan.verifikasi.tingkat === "TANPA_PEMBANDING" && m0.biaya.cakupan.verifikasi.independen === false);
   const tr = await putB({ sumber: "META", jenis: "TOTAL_RENTANG", dari: a, sampai: b, nominal: String(Math.round(jumlah * 2)) });
   const m1 = await metaDi(a, b);
   cek("H2 total rentang pembanding 2× jumlah detail → status DETAIL_AD_SELISIH (BUKAN LENGKAP walau ada baris setiap hari); spend tetap = detail (tidak dijumlah); CPA/ROAS null", tr.s === 201 && m1.biaya.status === "DETAIL_AD_SELISIH" && m1.biaya.spendLengkap === false && Math.abs(m1.biaya.spend - jumlah) < 0.01 && m1.biaya.cpa === null && m1.biaya.cashRoas === null && m1.biaya.bookedRoas === null, m1.biaya.status);
   await batal(tr.j.id);
   const tr2 = await putB({ sumber: "META", jenis: "TOTAL_RENTANG", dari: a, sampai: b, nominal: String(jumlah) });
   const m2 = await metaDi(a, b);
-  cek("H2 total rentang = jumlah detail → LENGKAP dengan spend = jumlah detail (satu kali, tidak 2×); kunci yang sama diaktifkan kembali, bukan entri ganda", tr2.j.aksi === "AKTIFKAN" && tr2.j.id === tr.j.id && m2.biaya.status === "LENGKAP" && Math.abs(m2.biaya.spend - jumlah) < 0.01, `${m2.biaya.spend} vs ${jumlah}`);
+  cek("H2 total rentang = jumlah detail → LENGKAP dengan spend = jumlah detail (satu kali, tidak 2×); kunci yang sama diaktifkan kembali, bukan entri ganda", tr2.j.aksi === "AKTIFKAN" && tr2.j.id === tr.j.id && m2.biaya.cakupan.verifikasi.tingkat === "COCOK_TOTAL_KONTROL_INPUT" && m2.biaya.cakupan.verifikasi.independen === false && /BUKAN verifikasi independen/.test(m2.biaya.cakupan.verifikasi.catatan) && m2.biaya.status === "LENGKAP" && Math.abs(m2.biaya.spend - jumlah) < 0.01, `${m2.biaya.spend} vs ${jumlah}`);
   await batal(tr2.j.id);
   // H3. OVERRIDE: hanya sumber/periode yang dipilih; alasan wajib; audit; dapat dicabut
   const d1 = terbaik[1].d, d2 = terbaik[2].d, det1 = terbaik[1].s, det2 = terbaik[2].s;
@@ -735,6 +737,8 @@ else {
   const mm1 = await metaDi(awal, akhir);
   const bul = mm1.biaya.cakupan.biayaBulananPengaturan.find((b) => b.tahun === y && b.bulan === mo);
   cek("H4 + manual harian pada bulan itu: biaya bulanan lama DIABAIKAN (bukan ditambah) → spend = manual saja (bukan bulanan + manual); status tidak lengkap", mh.s === 201 && bul && bul.dipakai === false && /ADA_ENTRI_SUMBER_PADA_BULAN_INI/.test(bul.alasan) && mm1.biaya.spend === 1000000 && mm1.biaya.status === "SPEND_TIDAK_LENGKAP", `${mm1.biaya.spend} (bulanan ${nominal})`);
+  const jSep = await sm(awal, akhir);
+  cek("H4 KASUS SEPTEMBER: bulanan 42 jt diganti satu entri harian 1 jt → periode sebulan tetap SPEND_TIDAK_LENGKAP dan SELURUH CPL/CPA/Booked/Cash ROAS (semua sumber + total berbayar) null dengan alasan", jSep.sumber.every((x) => x.biaya.cpa === null && x.biaya.cpl === null && x.biaya.bookedRoas === null && x.biaya.cashRoas === null) && jSep.total.berbayar.cpa === null && jSep.total.berbayar.bookedRoas === null && jSep.total.berbayar.cashRoas === null && jSep.total.berbayar.lengkap === false && jSep.sumber.find((x) => x.id === "META").biaya.alasanNull.cpa === "SPEND_TIDAK_LENGKAP", JSON.stringify(jSep.sumber.map((x) => [x.id, x.biaya.status])));
   await batal(mh.j.id);
   cek("H4 entri manual dibatalkan → kembali ke biaya bulanan lama sekali (tanpa sisa ganda)", (await metaDi(awal, akhir)).biaya.spend === nominal);
 }
@@ -855,6 +859,7 @@ psql_live -At -c "$FP_BEKU_SQL" | LC_ALL=C sort > "$BK_DIR/data-pasca-migrasi.tx
 cmp -s "$BK_DIR/data-sebelum.txt" "$BK_DIR/data-pasca-migrasi.txt" || { diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/data-pasca-migrasi.txt" || true; die "dokumen pembanding beku BERUBAH oleh tahap migrasi (jangan switch)"; }
 ok "pasca-tahap-migrasi sebelum switch: dokumen pembanding beku IDENTIK"
 
+SWITCH_AT_ISO="$(date -u +%FT%TZ)"
 PHASE="7-switch"; say "7. Switch backend ke release baru (SATU kali)"
 [ "$(sg ls-remote origin "refs/heads/${CAND_BRANCH}" | cut -f1)" = "$DEPLOY_SHA" ] || die "kandidat berubah sebelum switch"
 dcp "$NEW_DIR" up -d --no-deps backend </dev/null >/dev/null 2>&1 || die "docker compose up backend gagal"
@@ -888,7 +893,7 @@ ok "migrate status up to date"
 PHASE="8b-smoke"; say "8b. Smoke test baca-saja: izin (401/403), validasi + dryRun tanpa menulis, periode/parameter, kontrak /sumber, rekonsiliasi SQL independen, deep-link URL laporan; tabel biaya tetap kosong; tidak ada jejak tulis"
 # shellcheck disable=SC1090
 . "$BK_DIR/garis-dasar.env"
-dcp "$NEW_DIR" exec -T -e BASE_TIDAK_SEIMBANG="$BASE_TIDAK_SEIMBANG" -e BASE_GANDA="$BASE_GANDA" -e ORDER_N="$ORDER_N" -e JOB_N="$JOB_N" backend node --input-type=module - <<'NODE' | tee "$BK_DIR/smoke.log" || die "smoke test GAGAL"
+dcp "$NEW_DIR" exec -T -e SWITCH_AT_ISO="$SWITCH_AT_ISO" -e BASE_TIDAK_SEIMBANG="$BASE_TIDAK_SEIMBANG" -e BASE_GANDA="$BASE_GANDA" -e ORDER_N="$ORDER_N" -e JOB_N="$JOB_N" backend node --input-type=module - <<'NODE' | tee "$BK_DIR/smoke.log" || die "smoke test GAGAL"
 import { createRequire } from "node:module";
 const require = createRequire(process.cwd() + "/");
 const jwt = require("jsonwebtoken");
@@ -912,7 +917,12 @@ const tA = await tokenUntuk(adm); const tS = sales ? await tokenUntuk(sales) : n
 const B = (k) => Number(process.env[k]);
 const req = async (method, path, token, body) => { const r = await fetch(BASE + path, { method, headers: { "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}) }, body: body ? JSON.stringify(body) : undefined }); let j = null; try { j = await r.clone().json(); } catch { /* bukan JSON */ } return { status: r.status, json: j, teks: await r.text().catch(() => "") }; };
 const get = (p, t) => req("GET", p, t);
-const TABEL = ["Customer", "Order", "payments", "AdSpend", "meta_ad_daily_spend", "meta_spend_imports", "attribution_touches", "fin_journal_entries", "fin_journal_lines", "stock_movements", "units", "ad_source_spend_entries", "ad_source_spend_revisions"];
+// PRODUKSI HIDUP: tabel yang bergerak karena lalu lintas (customer baru, order, pembayaran, touch, jurnal, stok) TIDAK boleh dibandingkan identik (gagal palsu). Dua kelompok:
+//  STRIK  = tabel yang HANYA boleh berubah oleh penulisan biaya/spend yang disengaja (tidak ada di rilis ini) → isi harus IDENTIK sebelum vs sesudah smoke;
+//  MONOTON = tabel yang boleh bertambah oleh lalu lintas sah tetapi TIDAK BOLEH BERKURANG (tidak ada yang terhapus/ter-rollback oleh smoke).
+const STRIK = ["AdSpend", "meta_ad_daily_spend", "meta_spend_imports", "ad_source_spend_entries", "ad_source_spend_revisions"];
+const MONOTON = ["Customer", "Order", "payments", "attribution_touches", "fin_journal_entries", "fin_journal_lines", "stock_movements", "units"];
+const TABEL = [...STRIK, ...MONOTON];
 const fp = async () => { const o = {}; for (const t of TABEL) o[t] = (await prisma.$queryRawUnsafe(`select count(*)::int n, coalesce(md5(string_agg(x::text, '|' order by x::text)),'') h from "${t}" x`))[0]; return o; };
 const sebelum = await fp();
 const hitung = async (q) => Number((await prisma.$queryRawUnsafe(q))[0].n);
@@ -968,8 +978,20 @@ rec("laporan iklan per campaign (tab Iklan) 200 dan memakai periode yang sama", 
 const d7 = await get(`/api/atribusi/iklan/d7?dari=${geser(hariIni, -9)}&sampai=${SAMPAI}`, tA);
 rec("D7 200 (kontrak tidak berubah)", d7.status === 200);
 // tak ada jejak tulis
-const sesudah = await fp(); const beda = TABEL.filter((t) => sebelum[t].n !== sesudah[t].n || sebelum[t].h !== sesudah[t].h);
-rec("TIDAK ada jejak tulis: Customer, Order, pembayaran, AdSpend, spend per Ad, touch, jurnal, stok, unit, dan 2 tabel biaya sama persis sebelum vs sesudah smoke", beda.length === 0, beda.join(",") || "identik");
+const sesudah = await fp(); const beda = STRIK.filter((t) => sebelum[t].n !== sesudah[t].n || sebelum[t].h !== sesudah[t].h); const berkurang = MONOTON.filter((t) => sesudah[t].n < sebelum[t].n);
+rec("lalu lintas produksi hidup: Customer, Order, pembayaran, touch, jurnal, stok, unit TIDAK BERKURANG selama smoke (boleh bertambah oleh pengguna sah)", berkurang.length === 0, berkurang.join(",") || "tidak ada yang berkurang");
+rec("TIDAK ada jejak tulis smoke: AdSpend, spend per Ad, impor spend, dan 2 tabel biaya sama persis sebelum vs sesudah smoke", beda.length === 0, beda.join(",") || "identik");
+// INBOX & CAPTURE (read-only): ADMIN dapat membuka inbox; monitor capture sehat; flag capture tidak berubah; bila ada inbound sesudah switch, tercatat oleh kode baru
+const inbox = await get("/api/conversations", tA);
+rec("inbox: GET /api/conversations (ADMIN) 200", inbox.status === 200, String(inbox.status));
+const mon = await get("/api/atribusi/iklan/monitor", tA); const ms = mon.json?.snapshot;
+rec("monitor capture (ADMIN) 200: snapshot inbound + touch ada; capture tidak melaporkan kegagalan/tertunda pada proses baru", mon.status === 200 && !!ms?.inbound && !!ms?.touch && ms.touch.gagal === 0 && ms.touch.gagalPulih === 0 && ms.touch.tertunda === 0, mon.status === 200 ? JSON.stringify({ captureAktif: ms?.touch?.captureAktif, gagal: ms?.touch?.gagal, tertunda: ms?.touch?.tertunda, total: ms?.touch?.total }) : String(mon.status));
+if (tS) rec("monitor capture: SALES 403", (await get("/api/atribusi/iklan/monitor", tS)).status === 403);
+const T0 = process.env.SWITCH_AT_ISO ? Date.parse(process.env.SWITCH_AT_ISO) : null;
+if (T0) {
+  let ada = false; for (let i = 0; i < 18 && !ada; i++) { const m2 = (await get("/api/atribusi/iklan/monitor", tA)).json?.snapshot; const t = m2?.inbound?.terakhirAt ? Date.parse(m2.inbound.terakhirAt) : 0; if (t > T0) ada = true; else await new Promise((r) => setTimeout(r, 10000)); }
+  if (ada) rec("inbound BARU sesudah switch tercatat oleh backend baru (inbox hidup)", true); else skip("inbound baru sesudah switch dalam 180 dtk", "tidak ada pesan masuk di jendela itu (bergantung lalu lintas); inbox & monitor tetap 200");
+}
 rec("jurnal tidak seimbang (sebelum rilis: " + B("BASE_TIDAK_SEIMBANG") + ", tidak bertambah)", (await hitung("select count(*)::int n from (select e.id from fin_journal_entries e join fin_journal_lines l on l.entry_id = e.id group by e.id having sum(l.debit) <> sum(l.credit)) x")) <= B("BASE_TIDAK_SEIMBANG"));
 rec("jumlah Order & Job tidak berkurang (sebelum: " + B("ORDER_N") + " / " + B("JOB_N") + ")", (await hitung('select count(*)::int n from "Order"')) >= B("ORDER_N") && (await hitung("select count(*)::int n from jobs")) >= B("JOB_N"));
 await prisma.$disconnect();
@@ -985,6 +1007,61 @@ if [ "$SMOKE_SKIP" != "0" ]; then
 else
   ok "smoke test lulus (izin 401/403, validasi + dryRun tanpa menulis, periode/parameter, kontrak, rekonsiliasi SQL independen, tabel biaya kosong, tanpa jejak tulis, invarian)"
 fi
+# KONSISTENSI LIVE (BACA-SAJA): laporan dihitung oleh kode LAMA (image rollback, DB produksi) dan kode BARU (container baru, DB yang sama) → agregat per sumber, /iklan (campaign), /d7, dan flag capture harus SAMA.
+# Periode = 30 hari penuh berakhir kemarin (stabil). Bila beda (mis. pembayaran masuk tepat di antara dua pembacaan), ulangi s/d 3×; tetap beda = berhenti (rollback kode).
+PER_SAMPAI_L="$(date -u -d "@$(( $(date +%s) + 25200 - 86400 ))" +%F)"; PER_DARI_L="$(date -u -d "@$(( $(date +%s) + 25200 - 86400 * 30 ))" +%F)"
+IFS= read -r -d '' HASH_JS <<'HASHNODE' || true
+// BACA-SAJA. Dijalankan di image LAMA (rollback) dan di container BARU terhadap DB PRODUKSI yang sama: menghitung laporan lewat router asli masing-masing dengan sesi ADMIN sintetis (JWT dari JWT_SECRET lingkungan; tidak ada akun/kata sandi).
+// Keluaran: AGREGAT (lead/ber-order/membayar/lunas/nilai/uang per sumber), HASH_IKLAN + HASH_D7 (laporan per campaign dan D7), MONITOR_CAPTURE (flag capture). Skrip rilis membandingkan keluaran lama vs baru.
+import { createHash } from "node:crypto";
+import { createRequire } from "node:module";
+const require = createRequire(process.cwd() + "/");
+const jwt = require("jsonwebtoken"); const express = require("express");
+const { PrismaClient } = require("@prisma/client");
+const prisma = new PrismaClient();
+const DARI = process.env.PER_DARI, SAMPAI = process.env.PER_SAMPAI;
+const { attributionAdsRouter } = await import("/app/src/routes/attributionAds.js");
+let adm = null;
+for (const u of await prisma.user.findMany({ where: { active: true } })) { const rs = new Set([u.role, ...(await prisma.userRole.findMany({ where: { userId: u.id }, select: { role: true } })).map((r) => r.role)]); if (rs.has("ADMIN")) { adm = u; break; } }
+if (!adm) { console.log("GAGAL tidak ada akun ADMIN aktif"); process.exit(1); }
+const tok = jwt.sign({ id: adm.id, name: adm.name, role: adm.role, roles: ["ADMIN"] }, process.env.JWT_SECRET, { expiresIn: "5m" });
+const app = express(); app.use("/api/atribusi/iklan", attributionAdsRouter);
+const srv = await new Promise((r) => { const s = app.listen(0, "127.0.0.1", () => r(s)); }); const BASE = `http://127.0.0.1:${srv.address().port}/api/atribusi/iklan`;
+const ambil = async (p) => { const r = await fetch(BASE + p, { headers: { Authorization: "Bearer " + tok } }); let j = null; try { j = await r.json(); } catch { /* bukan JSON */ } return { s: r.status, j }; };
+const bersih = (o) => JSON.parse(JSON.stringify(o, (k, v) => (["dihitungPada", "waktuWib", "waktu"].includes(k) ? undefined : v)));
+const D7_DARI = new Date(Date.parse(SAMPAI + "T00:00:00Z") - 9 * 864e5).toISOString().slice(0, 10);
+const sm = await ambil(`/sumber?dari=${DARI}&sampai=${SAMPAI}`); const ik = await ambil(`/?level=campaign&dari=${DARI}&sampai=${SAMPAI}`); const d7 = await ambil(`/d7?dari=${D7_DARI}&sampai=${SAMPAI}`);
+if (sm.s !== 200 || ik.s !== 200 || d7.s !== 200) { console.log(`GAGAL status sumber=${sm.s} iklan=${ik.s} d7=${d7.s}`); process.exit(1); }
+const A = Object.fromEntries(sm.j.sumber.map((x) => [x.id, [x.lead, x.spam, x.leadSah, x.berOrder, x.membayar, x.lunas, x.pernahDp, x.dpSaatIni, x.uang.nilaiOrderSaatIni, x.uang.uangLedger, x.uang.refund, x.uang.uangBersih]]));
+console.log("AGREGAT=" + JSON.stringify(A));
+console.log("HASH_IKLAN=" + createHash("sha256").update(JSON.stringify(bersih(ik.j))).digest("hex"));
+console.log("HASH_D7=" + createHash("sha256").update(JSON.stringify(bersih(d7.j))).digest("hex"));
+const mon = await ambil("/monitor");
+console.log("MONITOR_CAPTURE=" + (mon.s === 200 ? String(mon.j?.snapshot?.touch?.captureAktif) : "tidak_tersedia(" + mon.s + ")"));
+await prisma.$disconnect(); srv.close(); process.exit(0);
+HASHNODE
+NET_LIVE="$(docker inspect -f '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}' "$CID_NEW" | awk '{print $1}')"
+[ -n "$NET_LIVE" ] || die "jaringan docker produksi tidak terbaca (konsistensi live)"
+hash_lama() { printf '%s\n' "$HASH_JS" | docker run --rm -i --network "$NET_LIVE" --env-file "$PERSIST/backend/.env" -e PER_DARI="$PER_DARI_L" -e PER_SAMPAI="$PER_SAMPAI_L" "$ROLLBACK_TAG" node --input-type=module - 2>&1; }
+hash_baru() { printf '%s\n' "$HASH_JS" | dcp "$NEW_DIR" exec -T -e PER_DARI="$PER_DARI_L" -e PER_SAMPAI="$PER_SAMPAI_L" backend node --input-type=module - 2>&1; }
+LIVE_SAMA=0
+for try in 1 2 3; do
+  HL="$(hash_lama)" || { printf '%s\n' "$HL" | tail -n 5; die "kode LAMA gagal menghitung laporan terhadap DB produksi (konsistensi live)"; }
+  HB="$(hash_baru)" || { printf '%s\n' "$HB" | tail -n 5; die "kode BARU gagal menghitung laporan (konsistensi live)"; }
+  printf '%s\n' "$HL" > "$BK_DIR/live-lama.log"; printf '%s\n' "$HB" > "$BK_DIR/live-baru.log"
+  if [ "$(printf '%s\n' "$HL" | grep -E '^(AGREGAT|HASH_IKLAN|HASH_D7)=')" = "$(printf '%s\n' "$HB" | grep -E '^(AGREGAT|HASH_IKLAN|HASH_D7)=')" ] && [ -n "$(printf '%s\n' "$HB" | grep '^HASH_IKLAN=')" ]; then LIVE_SAMA=1; break; fi
+  warn "percobaan ${try}: keluaran lama ≠ baru (mungkin data berubah di antara dua pembacaan); ulangi"; sleep 20
+done
+[ "$LIVE_SAMA" = "1" ] || { diff "$BK_DIR/live-lama.log" "$BK_DIR/live-baru.log" || true; die "KONSISTENSI LIVE GAGAL: agregat/ /iklan / /d7 / flag capture kode LAMA ≠ BARU pada DB produksi — rollback kode (jangan DROP tabel)"; }
+ok "konsistensi live: agregat per sumber, /iklan (campaign), dan /d7 IDENTIK antara kode LAMA dan BARU pada DB produksi (periode ${PER_DARI_L}..${PER_SAMPAI_L})"
+ML="$(printf '%s\n' "$HL" | grep '^MONITOR_CAPTURE=' | tail -n 1)"; MB="$(printf '%s\n' "$HB" | grep '^MONITOR_CAPTURE=' | tail -n 1)"
+if [[ "$ML" =~ ^MONITOR_CAPTURE=(true|false)$ ]] && [[ "$MB" =~ ^MONITOR_CAPTURE=(true|false)$ ]]; then
+  [ "$ML" = "$MB" ] || die "flag capture BERBEDA antara kode lama (${ML}) dan baru (${MB}) — env tidak boleh berubah"; ok "flag capture identik lama vs baru (${MB})"
+else warn "flag capture tidak dapat dibandingkan (lama: ${ML:-kosong}; baru: ${MB:-kosong})"; fi
+# ENV TIDAK BERUBAH
+ENV_SHA_SESUDAH="$(sha256sum "$PERSIST/backend/.env" "$PERSIST/frontend/.env" | awk '{print $1}' | tr '\n' ' ')"
+[ "$ENV_SHA_SEBELUM" = "$ENV_SHA_SESUDAH" ] || die "backend/.env atau frontend/.env BERUBAH selama rilis (sha256 berbeda)"
+ok "env (backend/.env + frontend/.env) IDENTIK sebelum vs sesudah rilis (sha256)"
 # URL laporan ber-state (?tab&dari&sampai&sumber) harus dilayani aplikasi web dengan bundel BARU (refresh / tautan / tombol Back membaca periode dari URL).
 URL_DEEP="${PUBLIC_URL}/laporan?tab=Akuisisi&dari=${PER_DARI}&sampai=${PER_SAMPAI}&sumber=TIKTOK"
 [ "$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$URL_DEEP")" = "200" ] || die "URL laporan ber-state tidak dilayani (200): ${URL_DEEP}"
@@ -1004,19 +1081,8 @@ ok "backend stabil: RestartCount=0 setelah 20 detik"
 dcp "$NEW_DIR" exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" -X -At -q -c "$FP_BEKU_SQL" </dev/null | LC_ALL=C sort > "$BK_DIR/data-sesudah.txt" || die "sidik jari dokumen beku sesudah gagal"
 diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/data-sesudah.txt" >/dev/null || { diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/data-sesudah.txt" || true; die "dokumen PEMBANDING (beku sebelum switch) BERUBAH selama rilis — periksa dengan backup"; }
 ok "dokumen pembanding beku (refund & pengeluaran final, baris jurnal, saldo per akun, pembayaran, PKR/unit final, muat, flag) IDENTIK sebelum vs sesudah rilis; transaksi sah yang muncul saat rilis tidak diperbandingkan"
-# Pembersihan release lama (setelah rilis TERBUKTI sehat). Dipertahankan: 4 terbaru (mtime), release baru, release sebelumnya, dan release yang dirujuk container berjalan. Kegagalan di sini TIDAK menggagalkan rilis.
-PHASE="9-pembersihan"; say "9. Pembersihan release lama (menyisakan 4 terbaru + yang dipakai container)"
-(
-  cd "$RELEASES" || exit 0
-  KEEP="$(ls -1dt */ | head -4 | tr -d /)
-$(basename "$NEW_DIR")
-$(basename "$PREV_DIR")"
-  for c in $(docker ps -q); do w="$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$c" 2>/dev/null)"; [ -n "$w" ] && KEEP="$KEEP
-$(basename "$w")"; done
-  HAPUS="$(ls -1d */ | tr -d / | grep -vxF -f <(echo "$KEEP" | sort -u) || true)"
-  n=0; for d in $HAPUS; do case "$d" in ""|"."|"..") continue;; esac; [ -d "$d" ] || continue; rm -rf -- "$d" 2>/dev/null || sudo -n rm -rf -- "$d" 2>/dev/null; n=$((n+1)); done
-  echo "  OK    release lama dihapus: $n folder; disk: $(df -h "$HOME" | awk 'NR==2{print $4" bebas"}')"
-) || echo "  (pembersihan dilewati)"
+# Pembersihan release lama DINONAKTIFKAN untuk rilis ini: tidak ada direktori release, image, atau backup (milik sesi mana pun) yang dihapus oleh skrip ini.
+PHASE="9-tanpa-pembersihan"; say "9. Pembersihan release lama DINONAKTIFKAN (tidak ada release/image/backup yang dihapus)"
 trap - EXIT
 say "SELESAI — rilis ${DEPLOY_SHORT} aktif. Backup: ${BACKUP_FILE}. Image rollback: ${ROLLBACK_TAG}. Log: ${BK_DIR}/release.log"
 say "CATATAN: Rilis ini membawa Akuisisi: periode tunggal, biaya iklan tingkat sumber (input manual), navigasi sumber, logo. Migrasi aditif: 2 tabel baru KOSONG. TIDAK ada biaya iklan yang diimpor/ditulis oleh rilis; tidak ada perubahan campaign/budget Meta, pembayaran, jurnal, stok, atau label customer. Rollback kode: jalankan scripts/rollback-guard-akuisisi-biaya.sh dulu (informasi), lalu langkah rollback di atas."

@@ -30,7 +30,7 @@ const TIP = {
   lunas: "Customer dengan order yang ledger-nya menutup seluruh tagihan (setelah refund disetujui).",
   nilai: "Σ nilai order eligible dari kohort lead periode ini (nilai SAAT INI). Bukan uang masuk.",
   bayar: "Pembayaran sah di ledger dikurangi refund disetujui, untuk kohort lead periode ini. Bukan nilai order.",
-  biaya: "Total biaya sumber berbayar pada periode yang sama. Hanya dihitung bila SEMUA sumber berbayar punya biaya lengkap (detail Ad, entri harian, atau total rentang); selain itu —.",
+  biaya: "Total biaya sumber berbayar pada periode yang sama. Hanya dihitung bila SEMUA sumber berbayar terisi SETIAP hari (detail Ad, entri harian, atau total rentang); selain itu —. 'Terisi setiap hari' BUKAN verifikasi independen: kelengkapan per-Ad hanya dapat dibandingkan dengan total kontrol yang diinput Admin.",
   cpa: "Biaya sumber ÷ customer UNIK lunas (kohort lead periode ini). Dasar: Atribusi label CRM — bukan CPA campaign. 'Sementara' bila ledger parsial atau kohort < 30 hari.",
   booked: "Booked ROAS = nilai order ÷ biaya. Belum tentu uang diterima.",
   cash: "Cash ROAS = pembayaran tercatat bersih ÷ biaya. Batas bawah bila ledger tidak lengkap.",

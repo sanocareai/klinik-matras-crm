@@ -52,9 +52,20 @@ export const ALASAN_LABEL = {
   SPEND_TIDAK_LENGKAP_PADA_SUMBER_WAJIB: "ada sumber berbayar yang biayanya belum lengkap",
 };
 export const STATUS_BIAYA_LABEL = {
-  LENGKAP: "Biaya lengkap", BELUM_DIISI: "Biaya belum diisi", SPEND_TIDAK_LENGKAP: "Biaya belum lengkap", RENTANG_TIDAK_COCOK: "Total rentang tidak cocok", DETAIL_AD_SELISIH: "Detail Ad mungkin parsial",
+  LENGKAP: "Biaya terisi setiap hari", BELUM_DIISI: "Biaya belum diisi", SPEND_TIDAK_LENGKAP: "Biaya belum lengkap", RENTANG_TIDAK_COCOK: "Total rentang tidak cocok", DETAIL_AD_SELISIH: "Detail Ad mungkin parsial",
   HARI_BERJALAN_PARSIAL: "Mencakup hari berjalan", TIDAK_TERSEDIA_ORGANIK: "Biaya tidak tersedia", BELUM_DIHITUNG: "Belum dihitung",
 };
+/** Tingkat verifikasi kelengkapan (dari server). 'Terisi setiap hari' BUKAN 'terverifikasi': sistem tidak pernah mengklaim verifikasi independen. */
+export const VERIFIKASI_LABEL = {
+  TANPA_PEMBANDING: "Tanpa total kontrol — per-Ad tidak diverifikasi",
+  SEBAGIAN_DIBANDINGKAN: "Sebagian dibandingkan dengan total kontrol input — tidak independen",
+  COCOK_TOTAL_KONTROL_INPUT: "Cocok dengan total kontrol yang diinput — bukan verifikasi independen",
+  SELISIH: "Selisih dengan total kontrol — detail kemungkinan parsial",
+  OVERRIDE_ADMIN: "Angka manual pengganti (pilihan Admin) — tanpa pembanding",
+  MANUAL_TANPA_DETAIL: "Angka manual — dipercaya apa adanya",
+  TIDAK_ADA_DATA: "Tidak ada data biaya",
+};
+export const verifikasiLabel = (v) => (v?.tingkat ? VERIFIKASI_LABEL[v.tingkat] || String(v.tingkat).toLowerCase().replace(/_/g, " ") : "");
 export const statusBiayaTeks = (st) => STATUS_BIAYA_LABEL[st] || (st ? String(st).toLowerCase().replace(/_/g, " ") : "—");
 export const alasanTeks = (kode) => (kode ? ALASAN_LABEL[kode] || String(kode).toLowerCase().replace(/_/g, " ") : null);
 
@@ -73,7 +84,7 @@ export function penandaPerSumber(sorotan) {
   return m;
 }
 
-const URUT_PERINGATAN = ["SPEND_BELUM_LENGKAP", "HARI_BERJALAN", "BIAYA_SEMENTARA", "MANUAL_DIABAIKAN", "LEDGER_TIDAK_LENGKAP", "RENTANG_SEBELUM_ATRIBUSI", "SUMBER_LABEL_CRM", "BUKAN_LEAD_PEMASARAN"];
+const URUT_PERINGATAN = ["SPEND_BELUM_LENGKAP", "HARI_BERJALAN", "BIAYA_SEMENTARA", "BIAYA_TIDAK_DIVERIFIKASI", "MANUAL_DIABAIKAN", "LEDGER_TIDAK_LENGKAP", "RENTANG_SEBELUM_ATRIBUSI", "SUMBER_LABEL_CRM", "BUKAN_LEAD_PEMASARAN"];
 export function peringatanUrut(lap) {
   return [...(lap?.peringatan || [])].sort((a, b) => (URUT_PERINGATAN.indexOf(a.kode) + 1 || 99) - (URUT_PERINGATAN.indexOf(b.kode) + 1 || 99));
 }
@@ -162,7 +173,7 @@ export function ringkasBiayaBerbayar(lap) {
 
 // ── EKSPOR CSV: kolom = apa yang tampil di layar; nilai null → sel kosong + kolom alasan (tidak pernah 0). ────────────────────────────────────────────────────
 const CSV_KOLOM = ["Sumber", "Dasar biaya", "Lead", "Spam", "Lead sah", "Ber-order", "Membayar", "Lunas", "Konversi ber-order % (÷ total lead termasuk spam)", "Pembilang", "Penyebut",
-  "Nilai order saat ini (Rp)", "Pembayaran tercatat bersih (Rp)", "Biaya iklan (Rp)", "Status biaya", "CPA lunas (Rp)", "Alasan CPA kosong", "Booked ROAS", "Cash ROAS", "Alasan ROAS kosong", "Sementara"];
+  "Nilai order saat ini (Rp)", "Pembayaran tercatat bersih (Rp)", "Biaya iklan (Rp)", "Status biaya", "CPA lunas (Rp)", "Alasan CPA kosong", "Booked ROAS", "Cash ROAS", "Alasan ROAS kosong", "Sementara", "Verifikasi biaya (bukan verifikasi independen)"];
 const cel = (v) => {
   if (v == null) return "";
   let t = String(v);
@@ -178,11 +189,11 @@ export function buatCsvAkuisisi(lap) {
     const b = s.biaya || {};
     return [s.label, b.dasar === "ATRIBUSI_LABEL_CRM" ? DASAR_BIAYA_LABEL : "", s.lead, s.spam, s.leadSah, s.berOrder, s.membayar, s.lunas, s.konversiOrder?.nilai, s.konversiOrder?.pembilang, s.konversiOrder?.penyebut,
       s.uang?.nilaiOrderSaatIni, s.uang?.uangBersih, b.spend, statusBiayaTeks(b.status), b.cpa, b.cpa == null ? (alasanTeks(b.alasanNull?.cpa) || "") : "", b.bookedRoas, b.cashRoas,
-      b.cashRoas == null ? (alasanTeks(b.alasanNull?.cashRoas) || "") : "", b.sementara ? "ya" : ""];
+      b.cashRoas == null ? (alasanTeks(b.alasanNull?.cashRoas) || "") : "", b.sementara ? "ya" : "", b.status === "LENGKAP" ? verifikasiLabel(b.cakupan?.verifikasi) : ""];
   });
   const t = lap.total || {}; const bb = t.berbayar;
-  const total = ["TOTAL (semua sumber)", "", t.lead, t.spam, t.leadSah, t.berOrder, t.membayar, t.lunas, "", "", "", t.nilaiOrderSaatIni, t.uangBersih, "", "", "", "", "", "", "", ""];
-  const berbayar = bb ? ["TOTAL sumber berbayar", DASAR_BIAYA_LABEL, bb.lead, "", "", "", "", bb.lunas, "", "", "", bb.nilaiOrderSaatIni, bb.uangBersih, bb.spend, bb.lengkap ? "Biaya lengkap" : "Ada sumber belum lengkap", bb.cpa, bb.cpa == null ? (alasanTeks(bb.alasanNull) || "") : "", bb.bookedRoas, bb.cashRoas, bb.cashRoas == null ? (alasanTeks(bb.alasanNull) || "") : "", bb.sementara ? "ya" : ""] : null;
+  const total = ["TOTAL (semua sumber)", "", t.lead, t.spam, t.leadSah, t.berOrder, t.membayar, t.lunas, "", "", "", t.nilaiOrderSaatIni, t.uangBersih, "", "", "", "", "", "", "", "", ""];
+  const berbayar = bb ? ["TOTAL sumber berbayar", DASAR_BIAYA_LABEL, bb.lead, "", "", "", "", bb.lunas, "", "", "", bb.nilaiOrderSaatIni, bb.uangBersih, bb.spend, bb.lengkap ? "Biaya terisi setiap hari" : "Ada sumber belum lengkap", bb.cpa, bb.cpa == null ? (alasanTeks(bb.alasanNull) || "") : "", bb.bookedRoas, bb.cashRoas, bb.cashRoas == null ? (alasanTeks(bb.alasanNull) || "") : "", bb.sementara ? "ya" : "", bb.lengkap ? "Terisi setiap hari; kelengkapan per-Ad tidak diverifikasi independen" : ""] : null;
   return [...meta.map((r) => r.map(cel).join(",")), "", CSV_KOLOM.map(cel).join(","), ...baris.map((r) => r.map(cel).join(",")), total.map(cel).join(","), ...(berbayar ? [berbayar.map(cel).join(",")] : [])].join("\r\n") + "\r\n";
 }
 export const namaBerkasCsv = (lap) => `akuisisi-${lap?.periode?.dari ?? "x"}_${lap?.periode?.sampai ?? "x"}.csv`;
