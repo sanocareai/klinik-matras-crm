@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 const require = createRequire(process.cwd() + "/");
 const jwt = require("jsonwebtoken");
 const { PrismaClient } = require("@prisma/client");
@@ -8,6 +8,7 @@ const { ROLE_PERMISSIONS, PERMISSIONS: P } = await import("/app/src/constants/pe
 let gagal = 0; let n = 0;
 const cek = (nama, ok, d = "") => { n += 1; if (!ok) gagal += 1; console.log(`${ok ? "OK   " : "GAGAL"} ${nama}${d ? " — " + String(d).slice(0, 220) : ""}`); };
 const num = async (q, ...a) => Number((await prisma.$queryRawUnsafe(q, ...a))[0].n);
+const SMOKE_SRC = "@@SMOKE_SRC@@"; // diganti generator dengan isi smoke-ubah-pemakaian.mjs
 const nm = process.env.REH_DB_NAME ?? (await prisma.$queryRawUnsafe("select current_database() as n"))[0].n;
 if (!/^rehearsal_/.test(nm)) { cek("uji Edit pemakaian hanya pada DB rehearsal", false, nm); await prisma.$disconnect(); process.exit(1); }
 // REHEARSAL "Tambah pemakaian + Edit per bahan": kode BARU dijalankan sebagai SERVER sungguhan (index.js, port 4101, tanpa job latar, variabel eksternal dinetralkan) terhadap SALINAN RESTORE production. Semua tulisan hanya di DB sementara ini.
@@ -131,6 +132,11 @@ cek(`bahan asal Material Issue tersedia untuk uji (${sintetis ? "dibangun pada D
 // ── H. Koreksi Saldo tetap utuh SESUDAH uji tulis + tabel yang tidak boleh berubah
 const ks1 = await H("GET", `${KS}/bahan/${matA.id}`, tO); const rh1 = await H("GET", "/api/finance/biaya-bahan/harga-berlaku/ringkasan-daftar", tO); const tetap1 = await hitungTetap(); const bedaTetap = tetap.filter((t) => tetap0[t] !== tetap1[t]);
 cek("Koreksi Saldo live tetap utuh sesudah uji tulis: keadaan bahan 200, ringkasan harga daftar 200, tabel koreksi saldo + permintaan penyesuaian stok tidak berubah; Persediaan Awal, penerimaan, PO, tagihan supplier, koreksi valuasi, Material Issue, catatan historis, pemakaian sementara, komponen lama: IDENTIK", ks1.status === 200 && rh1.status === 200 && bedaTetap.length === 0, bedaTetap.join(",") || "identik");
+// ── I. kode SMOKE pasca-switch yang sama dijalankan terhadap server rehearsal (restore nyata + kode baru): salah harapan terdeteksi SEBELUM deploy
+const tidakSeimbang = await num("select count(*)::int n from (select e.id from fin_journal_entries e join fin_journal_lines l on l.entry_id = e.id group by e.id having sum(l.debit) <> sum(l.credit)) x");
+const sp = spawnSync(process.execPath, ["--input-type=module", "-"], { input: SMOKE_SRC, cwd: "/app", encoding: "utf8", timeout: 240000, env: { ...process.env, SMOKE_BASE: BASE, BASE_TIDAK_SEIMBANG: String(tidakSeimbang), BASE_GANDA: "0", ORDER_N: String(await num('select count(*)::int n from "Order"')), JOB_N: String(await num("select count(*)::int n from jobs")) } });
+const smokeLine = (String(sp.stdout).match(/^SMOKE_HASIL .*$/m) ?? [""])[0]; const smokeGagal = String(sp.stdout).split("\n").filter((l) => /^\s+FAIL/.test(l)).join(" | ");
+cek("SMOKE pasca-switch (kode yang sama dengan fase 8b) lulus terhadap server rehearsal: 0 gagal", sp.status === 0 && /^SMOKE_HASIL fail=0 /.test(smokeLine), smokeLine + " " + smokeGagal + " " + String(sp.stderr).slice(-150));
 berhenti(); await prisma.$disconnect();
 console.log("PEMERIKSAAN=" + n + " gagal=" + gagal);
 process.exit(gagal === 0 ? 0 : 1);
