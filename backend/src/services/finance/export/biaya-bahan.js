@@ -51,7 +51,7 @@ async function ambil(db, { filter }) {
     status: STATUS[r.status] || r.status, estimasi: r.estimasi, alasan: r.status === "TANPA_HARGA" ? "Bahan belum punya harga perolehan saat diposting — tidak dihitung (bukan Rp0)" : "Terjadi sebelum nilai dibekukan — hanya estimasi, tidak masuk total pasti",
   }))));
 
-  const STATUS_OP = { DIBEKUKAN: "Dibekukan saat/oleh penerapan", DIBEKUKAN_TANPA_HARGA_BERLAKU: "Dibekukan tanpa harga berlaku", BELUM_DIBEKUKAN: "Belum dibekukan (pratinjau)" };
+  const STATUS_OP = { DIBEKUKAN: "Dibekukan saat/oleh penerapan", DIBEKUKAN_TANPA_HARGA_BERLAKU: "Dibekukan tanpa harga berlaku", BELUM_DIBEKUKAN: "Belum dibekukan (pratinjau)", GAGAL_PEMBEKUAN: "GAGAL membekukan harga saat diposting — perlu diperbaiki" };
   const hppOp = operasional.flatMap(({ j, h }) => h.baris.map((r) => ({
     waktu: r.tanggal, unit: j.unit.unitCode, order: j.unit.orderNumber || "", kode: r.kode, bahan: r.nama, jenis: JENIS[r.jenisBiaya] || r.jenisBiaya, qty: Math.abs(r.qty), satuan: r.satuan,
     harga: r.harga ?? r.pratinjau?.harga ?? null, nilai: r.nilai, pratinjau: r.nilai == null ? (r.pratinjau?.nilai ?? null) : null, status: STATUS_OP[r.status] || r.status,

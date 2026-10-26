@@ -1,0 +1,10 @@
+# Guard rollback SESUDAH skenario rehearsal (riwayat harga, snapshot biaya operasional, penerapan, dan satu penanda GAGAL_PEMBEKUAN belum diperbaiki ada di DB sementara) → HARUS MENOLAK; baca-saja.
+GFP_SQL="select (select count(*) from material_harga_berlaku)||'/'||(select count(*) from stock_movement_biaya_operasional)||'/'||(select count(*) from biaya_operasional_penerapan)||'/'||(select count(*) from stock_movements)"
+GFP0="$( { RPSQL "$FP_SQL" | LC_ALL=C sort; RPSQL "$GFP_SQL"; } | md5sum )"
+set +e; GUARD_OUT2="$(GUARD_DB="$REH_DB" bash "$NEW_DIR/scripts/rollback-guard-harga-berlaku.sh" 2>&1)"; GUARD_RC2=$?; set -e
+printf '%s\n' "$GUARD_OUT2" > "$BK_DIR/guard-menolak.log"
+GFP1="$( { RPSQL "$FP_SQL" | LC_ALL=C sort; RPSQL "$GFP_SQL"; } | md5sum )"
+[ "$GUARD_RC2" = "1" ] || { printf '%s\n' "$GUARD_OUT2"; reh_drop; die "guard rollback TIDAK menolak (exit ${GUARD_RC2}) padahal riwayat harga/snapshot/penerapan sudah ada"; }
+for t in 'GUARD DITOLAK' 'RUTIN TIDAK DIPERBOLEHKAN' 'riwayat harga berlaku' 'snapshot biaya operasional' 'pembekuan harga GAGAL' 'PERBAIKAN MAJU' 'gagal-pembekuan'; do printf '%s' "$GUARD_OUT2" | grep -q -- "$t" || { printf '%s\n' "$GUARD_OUT2"; reh_drop; die "pesan guard tidak memuat: $t"; }; done
+[ "$GFP0" = "$GFP1" ] || { reh_drop; die "guard rollback MENGUBAH data (harus baca-saja)"; }
+ok "guard rollback sesudah ada riwayat harga + snapshot + penerapan + penanda gagal: MENOLAK (exit 1) dengan pesan pemulihan (perbaikan maju); data tidak berubah oleh guard"

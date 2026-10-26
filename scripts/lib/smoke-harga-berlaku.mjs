@@ -54,6 +54,9 @@ if (tA) {
 const rf = await get(`${R}/bahan/${mat.id}`, tF);
 rec("FINANCE/OWNER: ringkasan 200, kosong (belum ada harga), bolehUbah=true", rf.status === 200 && rf.json?.hargaBerlaku === null && rf.json?.bolehUbah === true && rf.json?.bolehSetujui === true && /bukan nilai buku dan bukan HPP final Finance/.test(rf.json?.labelHarga ?? ""), String(rf.status));
 const rw = await get(`${R}/bahan/${mat.id}/riwayat`, tF); rec("riwayat 200 dan kosong", rw.status === 200 && (rw.json?.riwayat ?? []).length === 0);
+rec("daftar pembekuan gagal: tanpa token 401", (await get(`${R}/gagal-pembekuan`, null)).status === 401);
+if (tG) rec("daftar pembekuan gagal: Gudang 403", (await get(`${R}/gagal-pembekuan`, tG)).status === 403);
+const gp = await get(`${R}/gagal-pembekuan`, tF); rec("daftar pembekuan gagal (FINANCE/OWNER) 200 dan KOSONG — tidak ada pemakaian dengan pembekuan harga gagal", gp.status === 200 && gp.json?.jumlah === 0 && Array.isArray(gp.json?.baris), String(gp.status));
 const dasar = { materialId: mat.id, hargaBaru: "100", satuan: mat.unit, alasan: "smoke pratinjau (tidak disimpan)" };
 const pm = await post(`${R}/pratinjau`, tF, { ...dasar, berlakuMulai: "2026-10-01T00:00:00Z" });
 rec("pratinjau dengan tanggal MUNDUR ditolak 422 WAKTU_MUNDUR (tanpa menulis)", pm.status === 422 && pm.json?.code === "WAKTU_MUNDUR", `${pm.status} ${pm.json?.code}`);

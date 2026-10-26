@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge.jsx";
 import { TEKS, rp, rpNilai, tanggalJam, keInputLokal, periksaIsian, susunMasukan, varianBukti } from "./hargaBerlakuLogic.js";
 
 const TIPE_TEKS = { ISSUE: "Pemakaian", RETURN: "Retur", WASTE: "Waste", ADJUSTMENT: "Penyesuaian" };
-const BEKU_TEKS = { DIBEKUKAN: "sudah dibekukan", DIBEKUKAN_TANPA_HARGA: "dibekukan tanpa harga", BELUM_DIBEKUKAN: "belum dibekukan" };
+const BEKU_TEKS = { DIBEKUKAN: "sudah dibekukan", DIBEKUKAN_TANPA_HARGA: "dibekukan tanpa harga", BELUM_DIBEKUKAN: "belum dibekukan", GAGAL_PEMBEKUAN: "GAGAL dibekukan (perlu diperbaiki)" };
 
 // UBAH HARGA BERLAKU (atau KOREKSI salah input): isi harga baru, waktu berlaku, alasan, catatan/bukti opsional → PRATINJAU dari server → simpan.
 // Satu Idempotency-Key per pembukaan modal: klik ganda / ulang = satu baris. Hash pratinjau menjaga agar yang disimpan = yang dilihat.

@@ -2,6 +2,8 @@
 -- BUKAN nilai buku dan BUKAN HPP final Finance: biaya perolehan Finance tetap fin_stock_movement_valuations (PSA/GR). Dua angka itu disimpan di tabel berbeda dan tidak pernah saling menimpa.
 -- material_harga_berlaku          : riwayat harga operasional per SATUAN STOK dengan waktu mulai berlaku; append-only. Koreksi salah input = baris jenis KOREKSI yang menunjuk baris yang diganti (corrects_id) — baris lama tidak dihapus/diubah.
 -- stock_movement_biaya_operasional: biaya operasional per pergerakan; DIBEKUKAN saat pemakaian diposting (harga yang berlaku pada WAKTU PEMAKAIAN); append-only; satu baris BEKU_SAAT_POSTING per pergerakan.
+--                                   TANPA_HARGA = tidak ada harga berlaku pada waktu itu (keadaan sah). GAGAL_PEMBEKUAN = pembekuan itu SENDIRI gagal (penanda persisten GAGAL_SAAT_POSTING + alasan): dapat ditemukan dan diperbaiki lewat penerapan khusus;
+--                                   bila penanda gagal disimpan, transaksi stok ikut ditolak (kode: catatBiayaOperasional).
 -- biaya_operasional_penerapan     : tindakan khusus memberi harga berlaku ke pemakaian LAMA (dua orang, hash pratinjau, satu pengajuan aktif per bahan); hasilnya baris baru PENERAPAN_DISETUJUI.
 CREATE TABLE "material_harga_berlaku" (
   "id" UUID NOT NULL,
@@ -73,18 +75,24 @@ CREATE TABLE "stock_movement_biaya_operasional" (
   "basis_harga" VARCHAR(30) NOT NULL DEFAULT 'WAKTU_PEMAKAIAN',
   "basis_detail" JSONB,
   "application_id" UUID,
+  "gagal_kode" VARCHAR(60),
+  "gagal_alasan" TEXT,
   "created_by" TEXT,
   "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "stock_movement_biaya_operasional_pkey" PRIMARY KEY ("id"),
-  CONSTRAINT "stock_movement_biaya_operasional_status_chk" CHECK ("status" IN ('DINILAI','TANPA_HARGA')),
-  CONSTRAINT "stock_movement_biaya_operasional_basis_chk" CHECK ("basis_harga" IN ('WAKTU_PEMAKAIAN','WAKTU_WASTE','WAKTU_PENYESUAIAN','HARGA_ISSUE_ASAL','WAKTU_RETUR_TANPA_ISSUE')),
-  CONSTRAINT "stock_movement_biaya_operasional_sumber_chk" CHECK ("sumber" IN ('BEKU_SAAT_POSTING','PENERAPAN_DISETUJUI')),
-  CONSTRAINT "stock_movement_biaya_operasional_nilai_chk" CHECK (("status" = 'DINILAI') = ("unit_cost" IS NOT NULL AND "value" IS NOT NULL AND "price_id" IS NOT NULL))
+  CONSTRAINT "stock_movement_biaya_operasional_status_chk" CHECK ("status" IN ('DINILAI','TANPA_HARGA','GAGAL_PEMBEKUAN')),
+  CONSTRAINT "stock_movement_biaya_operasional_basis_chk" CHECK ("basis_harga" IN ('WAKTU_PEMAKAIAN','WAKTU_WASTE','WAKTU_PENYESUAIAN','HARGA_ISSUE_ASAL','WAKTU_RETUR_TANPA_ISSUE','TIDAK_DIKETAHUI')),
+  CONSTRAINT "stock_movement_biaya_operasional_sumber_chk" CHECK ("sumber" IN ('BEKU_SAAT_POSTING','PENERAPAN_DISETUJUI','GAGAL_SAAT_POSTING')),
+  CONSTRAINT "stock_movement_biaya_operasional_nilai_chk" CHECK (("status" = 'DINILAI') = ("unit_cost" IS NOT NULL AND "value" IS NOT NULL AND "price_id" IS NOT NULL)),
+  -- penanda kegagalan: status GAGAL_PEMBEKUAN <=> sumber GAGAL_SAAT_POSTING <=> alasan terisi <=> dasar harga TIDAK_DIKETAHUI (tidak pernah tercampur dengan TANPA_HARGA yang sah)
+  CONSTRAINT "stock_movement_biaya_operasional_gagal_chk" CHECK (("status" = 'GAGAL_PEMBEKUAN') = ("sumber" = 'GAGAL_SAAT_POSTING') AND ("status" = 'GAGAL_PEMBEKUAN') = ("gagal_alasan" IS NOT NULL AND length(btrim("gagal_alasan")) > 0) AND ("status" = 'GAGAL_PEMBEKUAN') = ("basis_harga" = 'TIDAK_DIKETAHUI'))
 );
 CREATE INDEX "stock_movement_biaya_operasional_movement_id_created_at_idx" ON "stock_movement_biaya_operasional"("movement_id", "created_at");
 CREATE INDEX "stock_movement_biaya_operasional_material_id_idx" ON "stock_movement_biaya_operasional"("material_id");
 CREATE INDEX "stock_movement_biaya_operasional_application_id_idx" ON "stock_movement_biaya_operasional"("application_id");
 CREATE UNIQUE INDEX "stock_movement_biaya_operasional_satu_beku" ON "stock_movement_biaya_operasional"("movement_id") WHERE "sumber" = 'BEKU_SAAT_POSTING';
+-- satu penanda kegagalan per pergerakan (pergerakan hanya diposting sekali)
+CREATE UNIQUE INDEX "stock_movement_biaya_operasional_satu_gagal" ON "stock_movement_biaya_operasional"("movement_id") WHERE "sumber" = 'GAGAL_SAAT_POSTING';
 
 -- FK (semua ON DELETE RESTRICT; tabel lama hanya DIRUJUK, tidak diubah)
 ALTER TABLE "material_harga_berlaku" ADD CONSTRAINT "material_harga_berlaku_material_id_fkey" FOREIGN KEY ("material_id") REFERENCES "materials"("id") ON DELETE RESTRICT ON UPDATE CASCADE;

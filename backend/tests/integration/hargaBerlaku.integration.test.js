@@ -9,7 +9,7 @@ import { createTestUser, createTestMaterial, createTestUnit, seedBalance } from 
 import { buildTestApp, startTestServer } from "./setup/testApp.js";
 import { makeClient } from "./setup/httpClient.js";
 import { postStockMovement } from "../../src/services/inventoryLedger.js";
-import { pratinjauUbahHarga, simpanHarga, hargaBerlakuPada, pratinjauPenerapan, ajukanPenerapan, setujuiPenerapan, hppOperasionalUnit, riwayatHarga, ringkasanBahan, hargaUntukPergerakan, penyelesaiHargaBerlaku } from "../../src/services/finance/hargaBerlaku.js";
+import { pratinjauUbahHarga, simpanHarga, hargaBerlakuPada, pratinjauPenerapan, ajukanPenerapan, setujuiPenerapan, hppOperasionalUnit, riwayatHarga, ringkasanBahan, hargaUntukPergerakan, penyelesaiHargaBerlaku, daftarGagalPembekuan } from "../../src/services/finance/hargaBerlaku.js";
 
 let server;
 test.before(async () => { await truncateAll(); server = await startTestServer(buildTestApp()); });
@@ -249,4 +249,58 @@ test("H11. izin eksplisit: ubah/koreksi/ajukan = finance:harga_berlaku:edit; set
   const ok = await co.post(B, { ...m, hashPratinjau: pr.body.hash }, { "Idempotency-Key": kunci("own") }); assert.equal(ok.status, 201, JSON.stringify(ok.body));
   const ringO = await co.get(`${B}/bahan/${w.mat.id}`); assert.equal(ringO.body.bolehUbah, true); assert.equal(ringO.body.bolehSetujui, true);
   const pr2 = await w.a.post(`${B}/pratinjau`, { ...m, hargaBaru: "105" }); assert.equal((await w.a.post(B, { ...m, hargaBaru: "105", hashPratinjau: pr2.body.hash }, { "Idempotency-Key": kunci("fin") })).status, 201, "FINANCE boleh");
+});
+
+// ── penanda kegagalan pembekuan (Owner 26 Okt: kegagalan hook tidak boleh meninggalkan pemakaian tanpa jejak) ───────────────────────────────────────────
+const pasangPemaksa = (semua) => testPrisma.$executeRawUnsafe(`CREATE OR REPLACE FUNCTION uji_paksa_gagal() RETURNS trigger AS $$ BEGIN IF ${semua ? "true" : "NEW.status <> 'GAGAL_PEMBEKUAN'"} THEN RAISE EXCEPTION 'uji: pembekuan dipaksa gagal'; END IF; RETURN NEW; END $$ LANGUAGE plpgsql`)
+  .then(() => testPrisma.$executeRawUnsafe("DROP TRIGGER IF EXISTS uji_paksa_gagal_trg ON stock_movement_biaya_operasional"))
+  .then(() => testPrisma.$executeRawUnsafe("CREATE TRIGGER uji_paksa_gagal_trg BEFORE INSERT ON stock_movement_biaya_operasional FOR EACH ROW EXECUTE FUNCTION uji_paksa_gagal()"));
+const lepasPemaksa = () => testPrisma.$executeRawUnsafe("DROP TRIGGER IF EXISTS uji_paksa_gagal_trg ON stock_movement_biaya_operasional");
+
+test("H12. hook gagal (dipaksa): perintah stok TETAP berhasil hanya karena kegagalan tercatat PERSISTEN (GAGAL_PEMBEKUAN ≠ TANPA_HARGA), dapat ditemukan (daftar + HTTP + ringkasan + jejak unit) dan diperbaiki lewat penerapan dua orang; CHECK DB menjaga pembedaan", async () => {
+  const w = await dunia(); const u1 = await w.mk(); const u2 = await w.mk();
+  const tanpaHarga = await keluar(w.mat.id, u1.id, 2, "2026-10-05T03:00:00Z", w.finA.user.id); // belum ada harga berlaku → TANPA_HARGA yang SAH (bukan kegagalan)
+  assert.equal((await opRows(tanpaHarga.id))[0].status, "TANPA_HARGA");
+  await ubah(w, { harga: 100, mulai: "2026-10-10T00:00:00Z" });
+  const stok0 = await testPrisma.stockMovement.count();
+  await pasangPemaksa(false);
+  let gagal;
+  try { gagal = await keluar(w.mat.id, u2.id, 3, "2026-10-12T03:00:00Z", w.finA.user.id); } finally { await lepasPemaksa(); }
+  assert.ok(gagal?.id, "perintah stok berhasil"); assert.equal(await testPrisma.stockMovement.count(), stok0 + 1, "pergerakan stok tersimpan");
+  const baris = await opRows(gagal.id); assert.equal(baris.length, 1); const m = baris[0];
+  assert.equal(m.status, "GAGAL_PEMBEKUAN"); assert.equal(m.sumber, "GAGAL_SAAT_POSTING"); assert.equal(m.basisHarga, "TIDAK_DIKETAHUI"); assert.equal(m.unitCost, null); assert.equal(m.value, null);
+  assert.match(m.gagalAlasan, /dipaksa gagal/); assert.ok(m.gagalKode); assert.notEqual(m.status, "TANPA_HARGA", "kegagalan TIDAK disamarkan sebagai 'tanpa harga berlaku'");
+  assert.equal(await testPrisma.stockMovementBiayaOperasional.count({ where: { sumber: "BEKU_SAAT_POSTING", movementId: gagal.id } }), 0);
+  const f0 = await snap(); // setelah pemakaian yang pembekuannya gagal: dari sini perbaikan TIDAK boleh mengubah stok/ISSUE/jurnal/GL/valuasi Finance
+  // ditemukan
+  const dft = await daftarGagalPembekuan(testPrisma); assert.equal(dft.jumlah, 1); assert.equal(dft.baris[0].movementId, gagal.id); assert.equal(dft.baris[0].kode, "BUSA-HB-UJI"); assert.match(dft.baris[0].alasan, /dipaksa gagal/);
+  const http = await w.a.get(`/api/finance/biaya-bahan/harga-berlaku/gagal-pembekuan`); assert.equal(http.status, 200); assert.equal(http.body.jumlah, 1); assert.equal((await w.g.get(`/api/finance/biaya-bahan/harga-berlaku/gagal-pembekuan`)).status, 403, "Gudang tidak boleh melihat harga");
+  const ring = await ringkasanBahan(testPrisma, w.mat.id); assert.equal(ring.dampak.gagalPembekuan.pemakaian, 1); assert.equal(ring.dampak.belumDibekukan.pemakaian, 1, "gagal dihitung sebagai belum dibekukan (dapat diperbaiki)");
+  const j2 = await hppOperasionalUnit(testPrisma, u2.id); assert.equal(j2.status, "PARSIAL"); assert.equal(j2.ringkasan.pemakaianGagalPembekuan, 1); assert.equal(j2.baris[0].status, "GAGAL_PEMBEKUAN"); assert.match(j2.baris[0].gagalAlasan, /dipaksa gagal/);
+  const j1 = await hppOperasionalUnit(testPrisma, u1.id); assert.equal(j1.baris[0].status, "DIBEKUKAN_TANPA_HARGA_BERLAKU"); assert.equal(j1.ringkasan.pemakaianGagalPembekuan, 0, "TANPA_HARGA sah tidak tercampur dengan kegagalan");
+  // CHECK DB: pembedaan tidak bisa dipalsukan
+  const dasar = { movementId: tanpaHarga.id, materialId: w.mat.id, unitId: u1.id, qty: "2" };
+  await assert.rejects(() => testPrisma.stockMovementBiayaOperasional.create({ data: { ...dasar, status: "TANPA_HARGA", sumber: "GAGAL_SAAT_POSTING", basisHarga: "TIDAK_DIKETAHUI", gagalAlasan: "x" } }), /gagal_chk|check/i);
+  await assert.rejects(() => testPrisma.stockMovementBiayaOperasional.create({ data: { ...dasar, status: "GAGAL_PEMBEKUAN", sumber: "GAGAL_SAAT_POSTING", basisHarga: "TIDAK_DIKETAHUI" } }), /gagal_chk|check/i, "penanda tanpa alasan ditolak");
+  await assert.rejects(() => testPrisma.stockMovementBiayaOperasional.create({ data: { ...dasar, movementId: gagal.id, materialId: w.mat.id, unitId: u2.id, status: "GAGAL_PEMBEKUAN", sumber: "GAGAL_SAAT_POSTING", basisHarga: "TIDAK_DIKETAHUI", gagalAlasan: "dobel" } }), /satu_gagal|unique/i, "satu penanda per pergerakan");
+  // perbaikan: pratinjau → ajukan → setujui orang lain; penanda tetap sebagai riwayat
+  const pr = await pratinjauPenerapan(testPrisma, { materialId: w.mat.id }); assert.equal(pr.tersedia.BELUM_DIBEKUKAN, 1); assert.equal(pr.penerapan.jumlah, 1); assert.equal(pr.penerapan.baris[0].movementId, gagal.id); assert.equal(pr.penerapan.baris[0].nilaiBaru, 300);
+  const aj = await ajukanPenerapan(testPrisma, { materialId: w.mat.id, hashPratinjau: pr.hash, alasan: "Perbaiki pemakaian yang pembekuan harganya gagal (hook dipaksa gagal di uji)" }, { aktor: w.finA.user, kunci: kunci("gagal") });
+  await assert.rejects(() => setujuiPenerapan(testPrisma, { id: aj.id, hashPratinjau: pr.hash, aktor: w.finA.user }), (e) => e.code === "PEMOHON_SAMA");
+  await setujuiPenerapan(testPrisma, { id: aj.id, hashPratinjau: pr.hash, aktor: w.finB.user });
+  const sesudah = await opRows(gagal.id); assert.equal(sesudah.length, 2, "penanda kegagalan TIDAK dihapus (append-only)"); assert.equal(sesudah[1].status, "DINILAI"); assert.equal(Number(sesudah[1].value), 300); assert.equal(sesudah[1].sumber, "PENERAPAN_DISETUJUI");
+  assert.equal((await daftarGagalPembekuan(testPrisma)).jumlah, 0, "sudah diperbaiki → tidak lagi dilaporkan sebagai gagal");
+  assert.deepEqual(await snap(), f0, "stok, ISSUE, jurnal, GL, valuasi Finance tidak berubah oleh perbaikan");
+});
+
+test("H13. penanda kegagalan SENDIRI gagal disimpan → transaksi stok DITOLAK (tidak ada pemakaian tanpa jejak): pergerakan, saldo, dan baris biaya operasional tidak tersimpan", async () => {
+  const w = await dunia(); const u = await w.mk(); await ubah(w, { harga: 100, mulai: "2026-10-10T00:00:00Z" });
+  const stok0 = await testPrisma.stockMovement.count(); const op0 = await testPrisma.stockMovementBiayaOperasional.count();
+  await pasangPemaksa(true);
+  try {
+    await assert.rejects(() => keluar(w.mat.id, u.id, 3, "2026-10-12T03:00:00Z", w.finA.user.id), (e) => e.code === "PENANDA_PEMBEKUAN_GAGAL" && e.statusCode === 503);
+  } finally { await lepasPemaksa(); }
+  assert.equal(await testPrisma.stockMovement.count(), stok0, "tidak ada pergerakan stok yang tersimpan"); assert.equal(await testPrisma.stockMovementBiayaOperasional.count(), op0);
+  const ok = await keluar(w.mat.id, u.id, 3, "2026-10-12T03:00:00Z", w.finA.user.id); assert.equal((await opRows(ok.id))[0].status, "DINILAI", "setelah pemicu uji dilepas, jalur normal membekukan seperti biasa");
+  assert.equal((await daftarGagalPembekuan(testPrisma)).jumlah, 0);
 });

@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const lf = (t) => t.replace(/\r\n/g, "\n");
 const baca = (rel) => lf(fs.readFileSync(path.join(repo, rel), "utf8"));
-const NAMA_MIG = "20261230090000_harga_berlaku_bahan";
+const NAMA_MIG = "20261231090000_harga_berlaku_bahan"; // sesudah 20261230090000_biaya_iklan_sumber_manual (live 59e027d6): urutan jelas, tanpa timestamp kembar
 const migSql = baca(`backend/prisma/migrations/${NAMA_MIG}/migration.sql`);
 const skrip = baca("scripts/release-harga-berlaku.sh");
 const guard = baca("scripts/rollback-guard-harga-berlaku.sh");
@@ -26,7 +26,7 @@ test("pin migrasi di skrip rilis = sha256 isi berkas migrasi (LF); nama migrasi 
 });
 
 test("migrasi: CHECK tanpa-mundur, koreksi wajib berdampak, harga > 0, trigger append-only pada kedua tabel riwayat", () => {
-  for (const s of ["material_harga_berlaku_tanpa_mundur_chk", "\"jenis\" = 'KOREKSI' OR \"effective_from\" >= \"created_at\"", "material_harga_berlaku_koreksi_dampak_chk", "material_harga_berlaku_harga_chk", "stock_movement_biaya_operasional_basis_chk", "stock_movement_biaya_operasional_satu_beku", "biaya_operasional_penerapan_satu_aktif"]) assert.ok(migSql.includes(s), s);
+  for (const s of ["material_harga_berlaku_tanpa_mundur_chk", "\"jenis\" = 'KOREKSI' OR \"effective_from\" >= \"created_at\"", "material_harga_berlaku_koreksi_dampak_chk", "material_harga_berlaku_harga_chk", "stock_movement_biaya_operasional_basis_chk", "stock_movement_biaya_operasional_satu_beku", "biaya_operasional_penerapan_satu_aktif", "stock_movement_biaya_operasional_gagal_chk", "stock_movement_biaya_operasional_satu_gagal", "GAGAL_PEMBEKUAN", "GAGAL_SAAT_POSTING", "TIDAK_DIKETAHUI"]) assert.ok(migSql.includes(s), s);
   assert.match(migSql, /CREATE TRIGGER "material_harga_berlaku_append_only_trg" BEFORE UPDATE OR DELETE ON "material_harga_berlaku"/); assert.match(migSql, /CREATE TRIGGER "stock_movement_biaya_operasional_append_only_trg" BEFORE UPDATE OR DELETE ON "stock_movement_biaya_operasional"/);
 });
 
@@ -65,8 +65,39 @@ test("izin eksplisit di kode: rute ubah/koreksi/ajukan memakai finance:harga_ber
   const admin = izin.slice(izin.indexOf("ADMIN_PERMS = ["), izin.indexOf("ADMIN_PERMS = [") + 12000).split("\n]")[0]; assert.ok(!/HARGA_BERLAKU/.test(admin), "ADMIN_PERMS tidak memuat izin harga berlaku");
 });
 
-test("guard rollback: baca-saja (transaksi READ ONLY), menolak bila ada penerapan menunggu, keadaan tak dikenal = tolak; bash lolos sintaks", () => {
-  assert.match(guard, /BEGIN READ ONLY/); assert.ok(!/\b(insert into|update [a-z_"]+ set|delete from|drop |truncate|alter table)\b/i.test(guard.replace(/\n#[^\n]*/g, "")), "guard tidak menulis");
-  for (const t of ["DIAJUKAN", "GUARD DITOLAK", "GUARD LULUS", "exit 2", "exit 1", "exit 0", "hanya ${ADA} dari 3 tabel"]) assert.ok(guard.includes(t), t);
+test("guard rollback: baca-saja (transaksi READ ONLY); LULUS hanya bila tabel tak ada ATAU ketiga tabel KOSONG; menolak rollback rutin bila ada riwayat harga, snapshot biaya operasional, atau penerapan; keadaan tak dikenal = tolak; bash lolos sintaks", () => {
+  assert.match(guard, /BEGIN READ ONLY/); assert.ok(!/(insert into|update [a-z_"]+ set|delete from|drop |truncate|alter table)/i.test(guard.replace(/
+#[^
+]*/g, "")), "guard tidak menulis");
+  for (const t of ["GUARD DITOLAK", "GUARD LULUS", "exit 2", "exit 1", "exit 0", "hanya ${ADA} dari 3 tabel", "RUTIN TIDAK DIPERBOLEHKAN", "PERBAIKAN MAJU", "gagal-pembekuan", "GAGAL_PEMBEKUAN"]) assert.ok(guard.includes(t), t);
+  // aturan LULUS: persis dua jalur (tabel belum ada; ketiga hitungan nol). Selain itu jatuh ke DITOLAK.
+  assert.match(guard, /if [ "$NH" = "0" ] && [ "$NB" = "0" ] && [ "$NP" = "0" ]; then/);
+  assert.ok(guard.indexOf('GUARD LULUS: fitur belum dipakai') < guard.indexOf("RUTIN TIDAK DIPERBOLEHKAN"), "LULUS hanya di cabang kosong; sisanya DITOLAK");
+  assert.ok(!/NPA" != "0" ]; thens*
+s*echo "GUARD DITOLAK[^
+]*
+[^
+]*
+[^
+]*
+[^
+]*exit 1s*
+fis*
+echo "GUARD LULUS: tidak ada penerapan/.test(guard), "aturan lama (hanya DIAJUKAN) sudah diganti");
   for (const f of ["scripts/rollback-guard-harga-berlaku.sh", "scripts/release-harga-berlaku.sh"]) { const r = spawnSync("bash", ["-n", path.join(repo, f)], { encoding: "utf8" }); if (r.error) continue; assert.equal(r.status, 0, r.stderr); }
+});
+
+test("skrip rilis menguji guard secara NYATA: LULUS pada keadaan kosong (rehearsal + produksi pasca-switch) dan MENOLAK sesudah skenario terisi (riwayat, snapshot, penerapan, penanda gagal); skenario memaksa kegagalan hook di DB sementara", () => {
+  assert.match(skrip, /guard-kosong.log/); assert.match(skrip, /guard-menolak.log/); assert.match(skrip, /GUARD_DB="$REH_DB" bash "$NEW_DIR/scripts/rollback-guard-harga-berlaku.sh"/);
+  assert.match(skrip, /guard rollback TIDAK menolak/); assert.match(skrip, /guard rollback MENGUBAH data/); assert.match(skrip, /GUARD_PROD_RC/);
+  assert.ok(skrip.indexOf("guard-menolak.log") > skrip.indexOf("<<'REHNODE'") && skrip.indexOf("guard-menolak.log") < skrip.indexOf('ok "rehearsal lulus:'), "guard-menolak berjalan SESUDAH skenario dan SEBELUM DB rehearsal dihapus");
+  assert.match(skrip, /uji_paksa_gagal_trg/); assert.match(skrip, /PENANDA_PEMBEKUAN_GAGAL/); assert.match(skrip, /^rehearsal_/, "pemicu paksa hanya di DB rehearsal");
+});
+
+test("penanda kegagalan pembekuan: hook mencatat GAGAL_PEMBEKUAN persisten dan melempar bila penandanya gagal (bukan lagi hanya console.error)", () => {
+  const svc = baca("backend/src/services/finance/hargaBerlaku.js");
+  const catat = svc.slice(svc.indexOf("export async function catatBiayaOperasional"), svc.indexOf("export async function daftarGagalPembekuan"));
+  assert.match(catat, /status: GAGAL, qty/); assert.match(catat, /sumber: "GAGAL_SAAT_POSTING"/); assert.match(catat, /throw new KoreksiError([^)]*503, "PENANDA_PEMBEKUAN_GAGAL")/);
+  assert.ok(catat.indexOf("throw new KoreksiError") > catat.indexOf("stockMovementBiayaOperasional.create({ data: { movementId: mov.id, materialId: mov.materialId, unitId: mov.unitId, status: GAGAL"), "lempar hanya bila penanda gagal disimpan");
+  assert.match(baca("backend/src/routes/hargaBerlaku.js"), //gagal-pembekuan", requirePermission(P.FINANCE_READ)/);
 });

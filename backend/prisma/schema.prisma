@@ -11727,6 +11727,7 @@ model AdSourceSpendRevision {
 
   @@unique([entryId, revision], map: "ad_source_spend_revisions_entry_rev")
   @@map("ad_source_spend_revisions")
+}
 
 // ── HARGA BERLAKU BAHAN (HPP OPERASIONAL; Okt 2026) ──────────────────────────────────────────────────────────────────────────────────────
 // BUKAN nilai buku/persediaan dan BUKAN HPP final Finance (itu tetap biaya perolehan PSA/GR: fin_stock_movement_valuations). Harga operasional per SATUAN STOK dengan waktu mulai berlaku; append-only (koreksi = baris baru).
@@ -11763,7 +11764,7 @@ model StockMovementBiayaOperasional {
   materialId    String   @map("material_id") @db.Uuid
   material      Material @relation(fields: [materialId], references: [id], onDelete: Restrict)
   unitId        String   @map("unit_id") @db.Uuid
-  status        String   @db.VarChar(16) // DINILAI | TANPA_HARGA
+  status        String   @db.VarChar(16) // DINILAI | TANPA_HARGA (tidak ada harga berlaku saat itu — sah) | GAGAL_PEMBEKUAN (pembekuan sendiri gagal — penanda persisten)
   qty           Decimal  @db.Decimal(14, 4)
   unitCost      Decimal? @map("unit_cost") @db.Decimal(18, 4)
   value         Decimal? @db.Decimal(18, 2)
@@ -11771,9 +11772,11 @@ model StockMovementBiayaOperasional {
   price         MaterialHargaBerlaku? @relation(fields: [priceId], references: [id], onDelete: Restrict)
   priceEffectiveFrom DateTime? @map("price_effective_from")
   evidenceLabel String?  @map("evidence_label") @db.VarChar(30)
-  sumber        String   @db.VarChar(24) // BEKU_SAAT_POSTING | PENERAPAN_DISETUJUI
+  sumber        String   @db.VarChar(24) // BEKU_SAAT_POSTING | PENERAPAN_DISETUJUI | GAGAL_SAAT_POSTING
   basisHarga    String   @default("WAKTU_PEMAKAIAN") @map("basis_harga") @db.VarChar(30) // dari mana harga diambil: waktu pemakaian | waktu waste | harga ISSUE asal (retur) | ...
   basisDetail   Json?    @map("basis_detail")
+  gagalKode     String?  @map("gagal_kode") @db.VarChar(60)
+  gagalAlasan   String?  @map("gagal_alasan")
   applicationId String?  @map("application_id") @db.Uuid
   application   BiayaOperasionalPenerapan? @relation(fields: [applicationId], references: [id], onDelete: Restrict)
   createdById   String?  @map("created_by")

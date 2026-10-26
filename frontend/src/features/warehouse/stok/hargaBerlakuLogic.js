@@ -83,6 +83,7 @@ export const varianBukti = (label) => (label === "ADA_CATATAN_BUKTI" ? "accent" 
 export const BASIS_TEKS = Object.freeze({
   WAKTU_PEMAKAIAN: "Harga berlaku saat pemakaian", WAKTU_WASTE: "Harga berlaku saat waste dicatat", WAKTU_PENYESUAIAN: "Harga berlaku saat penyesuaian",
   HARGA_ISSUE_ASAL: "Harga operasional ISSUE asal (bukan harga saat retur)", WAKTU_RETUR_TANPA_ISSUE: "Harga berlaku saat retur — tidak tertaut ISSUE asal",
+  TIDAK_DIKETAHUI: "Dasar harga tidak diketahui — pembekuan harga GAGAL saat diposting",
 });
 export const KELOMPOK_PENERAPAN_TEKS = Object.freeze({
   BELUM_DIBEKUKAN: "Pemakaian lama belum punya harga operasional",

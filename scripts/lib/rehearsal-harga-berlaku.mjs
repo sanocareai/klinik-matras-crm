@@ -83,6 +83,26 @@ const nilaiFin1 = await prisma.$queryRawUnsafe("select id::text, status, value::
 const lama = new Map(nilaiFin0.map((x) => [x.id, x])); const berubah = nilaiFin1.filter((x) => lama.has(x.id) && (lama.get(x.id).status !== x.status || lama.get(x.id).value !== x.value));
 cek("valuasi Finance yang sudah ada TIDAK berubah (hanya +3 baris dari 3 pergerakan uji)", berubah.length === 0 && (await num("select count(*) as n from fin_stock_movement_valuations")) === nFv0 + 3);
 cek("stok: hanya 3 pergerakan uji (ISSUE, RETURN, WASTE) yang bertambah; saldo bahan = saldo awal − 1 + 1 − 1", (await num("select count(*) as n from stock_movements")) === nSm0 + 3 && Math.abs((await num(`select coalesce(sum(qty),0)::float as n from stock_movements where material_id = '${mat.id}'`)) - (saldoMat - 1)) < 1e-6);
+// I. kegagalan hook DIPAKSA (pemicu uji HANYA di DB sementara rehearsal): perintah stok tetap berhasil karena kegagalan tercatat PERSISTEN dan dapat ditemukan; bila penandanya gagal disimpan, transaksi DITOLAK.
+//    Satu penanda kegagalan sengaja DIBIARKAN belum diperbaiki agar guard rollback (dijalankan sesudah skenario) terbukti menolak.
+const namaDb = (await prisma.$queryRawUnsafe("select current_database() as n"))[0].n;
+if (!/^rehearsal_/.test(namaDb)) { cek("uji kegagalan paksa hanya pada DB rehearsal", false, namaDb); await prisma.$disconnect(); process.exit(1); }
+const pasangPemaksa = async (semua) => {
+  await prisma.$executeRawUnsafe(`CREATE OR REPLACE FUNCTION uji_paksa_gagal() RETURNS trigger AS $ BEGIN IF ${semua ? "true" : "NEW.status <> 'GAGAL_PEMBEKUAN'"} THEN RAISE EXCEPTION 'uji: pembekuan dipaksa gagal'; END IF; RETURN NEW; END $ LANGUAGE plpgsql`);
+  await prisma.$executeRawUnsafe("DROP TRIGGER IF EXISTS uji_paksa_gagal_trg ON stock_movement_biaya_operasional");
+  await prisma.$executeRawUnsafe("CREATE TRIGGER uji_paksa_gagal_trg BEFORE INSERT ON stock_movement_biaya_operasional FOR EACH ROW EXECUTE FUNCTION uji_paksa_gagal()");
+};
+const lepasPemaksa = async () => { await prisma.$executeRawUnsafe("DROP TRIGGER IF EXISTS uji_paksa_gagal_trg ON stock_movement_biaya_operasional"); await prisma.$executeRawUnsafe("DROP FUNCTION IF EXISTS uji_paksa_gagal()"); };
+const smI = await num("select count(*) as n from stock_movements");
+let gg = null; await pasangPemaksa(false); try { gg = await gerak("ISSUE", -0.01, { reason: "rehearsal hook dipaksa gagal" }); } finally { await lepasPemaksa(); }
+const mkI = gg ? await prisma.stockMovementBiayaOperasional.findMany({ where: { movementId: gg.id } }) : [];
+cek("hook dipaksa gagal: perintah stok BERHASIL + penanda persisten GAGAL_PEMBEKUAN (bukan TANPA_HARGA) dengan alasan tercatat", !!gg && mkI.length === 1 && mkI[0].status === "GAGAL_PEMBEKUAN" && mkI[0].sumber === "GAGAL_SAAT_POSTING" && mkI[0].basisHarga === "TIDAK_DIKETAHUI" && /dipaksa gagal/.test(mkI[0].gagalAlasan ?? "") && (await num("select count(*) as n from stock_movements")) === smI + 1);
+const dftI = await H.daftarGagalPembekuan(prisma); cek("kegagalan dapat DITEMUKAN (daftarGagalPembekuan) untuk diperbaiki", dftI.jumlah === 1 && dftI.baris[0].movementId === gg?.id && dftI.baris[0].kode === mat.code);
+const smJ = await num("select count(*) as n from stock_movements"); const opJ = await num("select count(*) as n from stock_movement_biaya_operasional");
+let eI = null; await pasangPemaksa(true); try { eI = await ditolak(() => gerak("ISSUE", -0.01, { reason: "rehearsal penanda ikut gagal" })); } finally { await lepasPemaksa(); }
+cek("penanda kegagalan SENDIRI gagal disimpan → transaksi stok DITOLAK (PENANDA_PEMBEKUAN_GAGAL); pergerakan dan baris biaya tidak tersimpan", eI?.code === "PENANDA_PEMBEKUAN_GAGAL" && (await num("select count(*) as n from stock_movements")) === smJ && (await num("select count(*) as n from stock_movement_biaya_operasional")) === opJ, eI?.code);
+cek("pemicu uji dilepas dari DB rehearsal", (await num("select count(*) as n from pg_trigger where tgname = 'uji_paksa_gagal_trg'")) === 0);
+
 await prisma.$disconnect();
 console.log("PEMERIKSAAN=" + n + " gagal=" + gagal);
 process.exit(gagal === 0 ? 0 : 1);

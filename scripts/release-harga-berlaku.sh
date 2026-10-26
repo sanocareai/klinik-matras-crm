@@ -6,7 +6,8 @@
 #     bukan harga saat retur; WASTE memakai harga saat waste dicatat dan sumbernya ditampilkan. (3) pemakaian lama hanya diberi harga lewat penerapan khusus: pengaju ≠ penyetuju, hash pratinjau, tidak otomatis.
 #   IZIN EKSPLISIT: lihat = finance:read; ubah/koreksi/ajukan = finance:harga_berlaku:edit; setujui = finance:harga_berlaku:approve — dipegang peran FINANCE dan OWNER; akun ADMIN murni HANYA melihat sampai ada keputusan Owner.
 #   PEMISAHAN ANGKA: HPP operasional (harga berlaku) ≠ nilai persediaan/jurnal Finance (biaya perolehan PSA/GR). Kartu terpisah di Jejak Biaya Bahan, sheet Excel "HPP Operasional" terpisah; rilis ini TIDAK mengubah valuasi/jurnal Finance, stok, ISSUE, PSA, GR.
-#   Migrasi: 3 CREATE TABLE baru (kosong) + indeks (2 unik parsial) + 7 FK ON DELETE RESTRICT + 1 fungsi + 2 trigger append-only. Tidak ada ALTER TABLE pada tabel lama, tidak ada backfill. Hook di postStockMovement menulis baris biaya operasional (SAVEPOINT; tidak pernah menggagalkan Gudang).
+#   Migrasi: 3 CREATE TABLE baru (kosong) + indeks (3 unik parsial) + 7 FK ON DELETE RESTRICT + 1 fungsi + 2 trigger append-only. Tidak ada ALTER TABLE pada tabel lama, tidak ada backfill. Hook di postStockMovement menulis baris biaya operasional (SAVEPOINT; tidak pernah menggagalkan Gudang).
+#   PENANDA KEGAGALAN: bila pembekuan harga saat pemakaian diposting GAGAL, kegagalan dicatat PERSISTEN (status GAGAL_PEMBEKUAN, BEDA dari TANPA_HARGA = memang belum ada harga berlaku), dapat ditemukan (GET /gagal-pembekuan) dan diperbaiki lewat penerapan dua orang; bila penandanya sendiri gagal disimpan, transaksi stok DITOLAK.
 #   Produksi: rilis ini TIDAK mengisi harga, tidak membuat penerapan, tidak menulis pergerakan stok/jurnal/valuasi; harga production diisi manual oleh pengguna berizin SESUDAH rilis (di luar skrip ini). Smoke hanya baca + penolakan sebelum menyentuh data.
 # URUTAN AMAN: (1) gerbang sumber (ancestry, allowlist, pin sha256 migrasi + diff schema, pemindai DDL + mutan negatif) → (2) audit produksi baca-saja + keadaan (SEGAR/LANJUT) + sidik jari → (3) backup + checksum → (4) build web + image
 #              → (5) REHEARSAL (restore NYATA, migrasi dengan image baru, struktur, kode baru terhadap data restore, sidik jari sebelum=sesudah) → (6) migrate deploy produksi SATU kali (backend lama tetap melayani) → (7) switch → (8) verifikasi + smoke baca-saja.
@@ -18,7 +19,7 @@
 #
 # ROLLBACK KODE: tabel baru bersifat ADITIF dan tidak memengaruhi stok/biaya Finance/jurnal; kode lama mengabaikannya. Yang hilang dari layar setelah rollback: harga berlaku, HPP operasional, antrean penerapan. Pemakaian yang diposting SELAMA kode lama berjalan
 #   tidak dibekukan harga operasionalnya (akan tampil "belum dibekukan" setelah kode baru dipasang lagi dan hanya bisa diberi harga lewat penerapan khusus).
-#   Jalankan dulu scripts/rollback-guard-harga-berlaku.sh (baca-saja): LULUS (exit 0) hanya bila tidak ada penerapan yang MENUNGGU keputusan; DITOLAK (exit 1) mencetak jumlah + contoh + tindakan. Rollback kode TIDAK menghapus tabel/riwayat.
+#   Jalankan dulu scripts/rollback-guard-harga-berlaku.sh (baca-saja): LULUS (exit 0) hanya bila ketiga tabel rilis KOSONG (fitur belum dipakai); DITOLAK (exit 1) bila sudah ada riwayat harga, snapshot biaya operasional (termasuk penanda pembekuan GAGAL) atau penerapan — mencetak jumlah, contoh, dan jalur pemulihan (perbaikan maju). Rollback kode TIDAK menghapus tabel/riwayat.
 # (dibangkitkan oleh scripts/gen-release-harga-berlaku.cjs dari scripts/release-status-kerja-buka-pekerjaan.sh + scripts/templates/release-harga-berlaku/*; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang)
 set -Eeuo pipefail
 umask 077
@@ -29,21 +30,21 @@ DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 CAND_BRANCH="${CAND_BRANCH:-rc/harga-berlaku-on-live-8e5437b6}"
 # Berkas yang BOLEH berbeda dari baseline: EKSPLISIT path persis. Apa pun di luar daftar (termasuk backend/prisma) = berhenti.
 # Rilis kode-saja: tanpa migrasi, tanpa perubahan schema.prisma; OTA RN TIDAK diterbitkan.
-ALLOWED_RE='^(backend/prisma/migrations/20261230090000_harga_berlaku_bahan/migration\.sql|backend/prisma/schema\.prisma|backend/src/constants/permissions\.js|backend/src/routes/biayaBahan\.js|backend/src/routes/hargaBerlaku\.js|backend/src/services/finance/export/biaya-bahan\.js|backend/src/services/finance/hargaBerlaku\.js|backend/src/services/inventoryLedger\.js|backend/tests/integration/hargaBerlaku\.integration\.test\.js|backend/tests/releaseHargaBerlaku\.test\.js|frontend/src/api\.js|frontend/src/features/finance/HppOperasionalKartu\.jsx|frontend/src/features/finance/JejakBiayaBahan\.jsx|frontend/src/features/warehouse/components/ItemDetailDrawer\.jsx|frontend/src/features/warehouse/stok/HargaBerlakuPanel\.jsx|frontend/src/features/warehouse/stok/PenerapanLamaModal\.jsx|frontend/src/features/warehouse/stok/UbahHargaModal\.jsx|frontend/src/features/warehouse/stok/hargaBerlakuLogic\.js|frontend/tests/hargaBerlaku\.test\.js|scripts/gen-release-harga-berlaku\.cjs|scripts/lib/rehearsal-harga-berlaku\.mjs|scripts/lib/scan-migrasi-harga-berlaku\.mjs|scripts/lib/smoke-harga-berlaku\.mjs|scripts/release-harga-berlaku\.sh|scripts/rollback-guard-harga-berlaku\.sh|scripts/templates/release-harga-berlaku/gate-prisma\.txt|scripts/templates/release-harga-berlaku/header\.txt|scripts/templates/release-harga-berlaku/keadaan\.txt|scripts/templates/release-harga-berlaku/rehearsal-migrasi\.txt|scripts/templates/release-harga-berlaku/rollback\.txt|scripts/templates/release-harga-berlaku/step6\.txt|scripts/templates/release-harga-berlaku/struktur\.txt|scripts/templates/release-harga-berlaku/vars\.txt)$'
+ALLOWED_RE='^(backend/prisma/migrations/20261231090000_harga_berlaku_bahan/migration\.sql|backend/prisma/schema\.prisma|backend/src/constants/permissions\.js|backend/src/routes/biayaBahan\.js|backend/src/routes/hargaBerlaku\.js|backend/src/services/finance/export/biaya-bahan\.js|backend/src/services/finance/hargaBerlaku\.js|backend/src/services/inventoryLedger\.js|backend/tests/integration/hargaBerlaku\.integration\.test\.js|backend/tests/releaseHargaBerlaku\.test\.js|frontend/src/api\.js|frontend/src/features/finance/HppOperasionalKartu\.jsx|frontend/src/features/finance/JejakBiayaBahan\.jsx|frontend/src/features/warehouse/components/ItemDetailDrawer\.jsx|frontend/src/features/warehouse/stok/HargaBerlakuPanel\.jsx|frontend/src/features/warehouse/stok/PenerapanLamaModal\.jsx|frontend/src/features/warehouse/stok/UbahHargaModal\.jsx|frontend/src/features/warehouse/stok/hargaBerlakuLogic\.js|frontend/tests/hargaBerlaku\.test\.js|scripts/gen-release-harga-berlaku\.cjs|scripts/lib/rehearsal-harga-berlaku\.mjs|scripts/lib/scan-migrasi-harga-berlaku\.mjs|scripts/lib/smoke-harga-berlaku\.mjs|scripts/release-harga-berlaku\.sh|scripts/rollback-guard-harga-berlaku\.sh|scripts/templates/release-harga-berlaku/gate-prisma\.txt|scripts/templates/release-harga-berlaku/header\.txt|scripts/templates/release-harga-berlaku/keadaan\.txt|scripts/templates/release-harga-berlaku/rehearsal-guard\.txt|scripts/templates/release-harga-berlaku/rehearsal-migrasi\.txt|scripts/templates/release-harga-berlaku/rollback\.txt|scripts/templates/release-harga-berlaku/step6\.txt|scripts/templates/release-harga-berlaku/struktur\.txt|scripts/templates/release-harga-berlaku/vars\.txt)$'
 BACKEND_SRC_EXPECT="backend/src/constants/permissions.js backend/src/routes/biayaBahan.js backend/src/routes/hargaBerlaku.js backend/src/services/finance/export/biaya-bahan.js backend/src/services/finance/hargaBerlaku.js backend/src/services/inventoryLedger.js"
 FRONTEND_SRC_EXPECT="frontend/src/api.js frontend/src/features/finance/HppOperasionalKartu.jsx frontend/src/features/finance/JejakBiayaBahan.jsx frontend/src/features/warehouse/components/ItemDetailDrawer.jsx frontend/src/features/warehouse/stok/HargaBerlakuPanel.jsx frontend/src/features/warehouse/stok/PenerapanLamaModal.jsx frontend/src/features/warehouse/stok/UbahHargaModal.jsx frontend/src/features/warehouse/stok/hargaBerlakuLogic.js"
 # Migrasi aditif yang SUDAH diaudit (nama + sha256 isi, LF). Perubahan sekecil apa pun = berhenti sampai diaudit ulang dan pin diperbarui.
-MIG_NAME="20261230090000_harga_berlaku_bahan"
-MIG_PIN="dfc1394ccf6a51e0a0a73680f10bc7d902db8096ab14a7374c57235e117bcace"
+MIG_NAME="20261231090000_harga_berlaku_bahan"
+MIG_PIN="35b1e3823bd0503d650e1e6b435906db9f8570f24f897ddc81e8ea188355ea04"
 # Hasil pemindai DDL untuk migrasi di atas (jumlah per jenis pernyataan). Selisih = berhenti.
-SCAN_EXPECT='{"total":23,"create_table":3,"index":10,"index_unik":5,"index_parsial":2,"fk":7,"fungsi":1,"trigger":2}'
+SCAN_EXPECT='{"total":24,"create_table":3,"index":11,"index_unik":6,"index_parsial":3,"fk":7,"fungsi":1,"trigger":2}'
 # Diff schema.prisma antara baseline dan kandidat (U0, tanpa baris index dan tanpa nomor baris hunk) yang SUDAH diaudit: sha256. Selisih = berhenti.
-SCHEMA_DIFF_SHA="c2c1080e19acb8b8b72cc77706150f4081ce0924badfef1ca58ea93155b5aa2b"
+SCHEMA_DIFF_SHA="ddc003c1143ba0fc3d02b66d50cd2620bcff0989657b0af9336dd7293db3dbd3"
 # Objek rilis yang HARUS ada di database sesudah migrasi (nama persis; dibaca dari migrasi yang dipin).
 TBL_BARU="material_harga_berlaku stock_movement_biaya_operasional biaya_operasional_penerapan"
-IDX_BARU="material_harga_berlaku_pkey biaya_operasional_penerapan_pkey stock_movement_biaya_operasional_pkey material_harga_berlaku_idempotency_key_key material_harga_berlaku_corrects_id_key material_harga_berlaku_material_id_effective_from_idx biaya_operasional_penerapan_idempotency_key_key biaya_operasional_penerapan_material_id_status_idx biaya_operasional_penerapan_satu_aktif stock_movement_biaya_operasional_movement_id_created_at_idx stock_movement_biaya_operasional_material_id_idx stock_movement_biaya_operasional_application_id_idx stock_movement_biaya_operasional_satu_beku"
-IDX_PARSIAL="biaya_operasional_penerapan_satu_aktif stock_movement_biaya_operasional_satu_beku"
-CHK_BARU="material_harga_berlaku_tanpa_mundur_chk material_harga_berlaku_koreksi_dampak_chk material_harga_berlaku_jenis_chk material_harga_berlaku_harga_chk material_harga_berlaku_alasan_chk material_harga_berlaku_koreksi_chk biaya_operasional_penerapan_status_chk biaya_operasional_penerapan_alasan_chk stock_movement_biaya_operasional_status_chk stock_movement_biaya_operasional_basis_chk stock_movement_biaya_operasional_sumber_chk stock_movement_biaya_operasional_nilai_chk"
+IDX_BARU="material_harga_berlaku_pkey biaya_operasional_penerapan_pkey stock_movement_biaya_operasional_pkey material_harga_berlaku_idempotency_key_key material_harga_berlaku_corrects_id_key material_harga_berlaku_material_id_effective_from_idx biaya_operasional_penerapan_idempotency_key_key biaya_operasional_penerapan_material_id_status_idx biaya_operasional_penerapan_satu_aktif stock_movement_biaya_operasional_movement_id_created_at_idx stock_movement_biaya_operasional_material_id_idx stock_movement_biaya_operasional_application_id_idx stock_movement_biaya_operasional_satu_beku stock_movement_biaya_operasional_satu_gagal"
+IDX_PARSIAL="biaya_operasional_penerapan_satu_aktif stock_movement_biaya_operasional_satu_beku stock_movement_biaya_operasional_satu_gagal"
+CHK_BARU="material_harga_berlaku_tanpa_mundur_chk material_harga_berlaku_koreksi_dampak_chk material_harga_berlaku_jenis_chk material_harga_berlaku_harga_chk material_harga_berlaku_alasan_chk material_harga_berlaku_koreksi_chk biaya_operasional_penerapan_status_chk biaya_operasional_penerapan_alasan_chk stock_movement_biaya_operasional_status_chk stock_movement_biaya_operasional_basis_chk stock_movement_biaya_operasional_sumber_chk stock_movement_biaya_operasional_nilai_chk stock_movement_biaya_operasional_gagal_chk"
 FK_BARU="material_harga_berlaku_material_id_fkey material_harga_berlaku_corrects_id_fkey biaya_operasional_penerapan_material_id_fkey stock_movement_biaya_operasional_movement_id_fkey stock_movement_biaya_operasional_material_id_fkey stock_movement_biaya_operasional_price_id_fkey stock_movement_biaya_operasional_application_id_fkey"
 TRG_BARU="material_harga_berlaku_append_only_trg stock_movement_biaya_operasional_append_only_trg"
 PUBLIC_URL="https://app.sanomatrassehat.com"
@@ -81,14 +82,14 @@ Backup + checksum  : ${BACKUP_FILE:-<belum dibuat>}
 Berhenti SEBELUM 'Switch backend' -> backend lama tidak pernah dimatikan; produksi tetap di release sebelumnya (bila sudah lewat tahap migrasi: 3 tabel baru KOSONG terpasang, tidak berbahaya).
 LANGKAH WAJIB sebelum rollback KODE setelah migrasi/switch: jalankan GUARD (baca-saja)
    bash ${NEW_DIR}/scripts/rollback-guard-harga-berlaku.sh
-   - exit 0 (LULUS): tidak ada penerapan harga yang menunggu keputusan. Baru boleh rollback kode (di bawah).
-   - exit 1/2 (DITOLAK): masih ada pengajuan penerapan (DIAJUKAN) atau keadaan tidak jelas — rollback kode TIDAK AMAN: pengajuan itu menjadi tak terlihat dan tak bisa diputuskan.
-     Jalur pemulihan = PERBAIKAN MAJU (kode baru tetap terpasang): putuskan (setujui/tolak) atau batalkan pengajuan lewat Stok → bahan → "Beri harga ke pemakaian lama"; lalu jalankan guard lagi. Pemulihan database (di bawah) hanya atas keputusan Owner.
+   - exit 0 (LULUS): fitur belum dipakai — tabel rilis ada tetapi KOSONG (tanpa riwayat harga, snapshot biaya operasional, maupun penerapan). Baru boleh rollback kode (di bawah).
+   - exit 1/2 (DITOLAK): sudah ada riwayat harga, ATAU snapshot biaya operasional (termasuk penanda pembekuan GAGAL), ATAU penerapan (status apa pun), atau keadaan tidak jelas — rollback kode RUTIN TIDAK DIPERBOLEHKAN.
+     Jalur pemulihan = PERBAIKAN MAJU (kode baru tetap terpasang): rilis perbaikan di atas kode baru; putuskan/batalkan pengajuan penerapan lewat Stok → bahan → "Beri harga ke pemakaian lama"; perbaiki pembekuan gagal (GET /api/finance/biaya-bahan/harga-berlaku/gagal-pembekuan). Rollback tetap hanya atas keputusan tertulis Owner di luar skrip ini.
 Rollback kode (HANYA setelah guard LULUS; tidak menghapus tabel maupun riwayat):
    cd ${PREV_DIR:-<release-sebelumnya>}
    docker tag ${ROLLBACK_TAG:-<tag-rollback>} ${IMG_NAME:-klinik-matras-backend:latest}
    SANSS_PERSIST_ROOT=${PERSIST} docker compose -p ${PROJECT} -f docker-compose.yml -f docker-compose.release.yml up -d --no-deps --force-recreate backend
-Migrasi bersifat ADITIF (3 tabel baru + indeks + 7 FK + 1 fungsi + 2 trigger): tabel dibiarkan terpasang setelah rollback kode. Tidak ada saldo, pergerakan stok, valuasi/jurnal Finance yang dibuat oleh fitur ini; hanya tampilan harga berlaku/HPP operasional yang hilang dari layar.
+Migrasi bersifat ADITIF (3 tabel baru + indeks + 7 FK + 1 fungsi + 2 trigger): tabel dibiarkan terpasang setelah rollback kode. Tidak ada saldo, pergerakan stok, valuasi/jurnal Finance yang dibuat oleh fitur ini; yang hilang dari layar hanya harga berlaku/HPP operasional.
 Pemulihan database penuh hanya bila terjadi kerusakan data: gzip -dc ${BACKUP_FILE:-<backup>} | psql ... (lihat checksum di atas) — MENGHAPUS semua perubahan sesudah backup (harga berlaku, biaya operasional, transaksi); gunakan hanya atas keputusan Owner.
 ─────────────────────────────────────────────────────────────────────────
 EOF
@@ -222,7 +223,7 @@ SCANJS
 sql_bersih() { grep -v '^[[:space:]]*--' | grep -v '^[[:space:]]*$'; }
 HASIL_SCAN="$(printf '%s\n' "$ALL_SQL" | sql_bersih | node "$SCAN")" || die "migrasi memuat pernyataan di luar daftar putih yang diaudit"
 [ "$HASIL_SCAN" = "$SCAN_EXPECT" ] || die "hitungan pernyataan migrasi BERBEDA dari yang diaudit: ${HASIL_SCAN}"
-ok "migrasi: DDL aditif (3 CREATE TABLE baru kosong, indeks [2 unik parsial], 7 FK ON DELETE RESTRICT, 1 fungsi append-only + 2 trigger milik rilis ini); tanpa ALTER pada tabel lama, tanpa DROP/DELETE/UPDATE/INSERT/RENAME/GRANT/EXTENSION"
+ok "migrasi: DDL aditif (3 CREATE TABLE baru kosong, indeks [3 unik parsial], 7 FK ON DELETE RESTRICT, 1 fungsi append-only + 2 trigger milik rilis ini); tanpa ALTER pada tabel lama, tanpa DROP/DELETE/UPDATE/INSERT/RENAME/GRANT/EXTENSION"
 # UJI NEGATIF PEMINDAI: setiap mutan HARUS ditolak (exit ≠ 0) atau menghasilkan hitungan ≠ SCAN_EXPECT. Mutan yang lolos = pemindai tidak bisa dipercaya → berhenti.
 NEG=0
 harus_ditolak() {
@@ -516,7 +517,14 @@ fi
 dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="$RH_URL" backend npx prisma migrate status </dev/null 2>&1 | grep -i 'up to date' >/dev/null || { reh_drop; die "migrate status rehearsal (image baru) TIDAK 'up to date'"; }
 struktur_baru RPSQL gagal_reh
 [ "$(RPSQL "$SKEMA_SQL")" = "$S_SEBELUM" ] || { reh_drop; die "migrasi MENGUBAH skema (kolom/tipe/nullable/default) tabel lama"; }
-ok "image baru: migrasi rilis diterapkan pada DB rehearsal (hasil restore nyata); 3 tabel kosong; 7 FK RESTRICT, CHECK (termasuk tanpa-mundur), indeks (2 unik parsial), 2 trigger append-only tervalidasi; skema tabel lama IDENTIK"
+ok "image baru: migrasi rilis diterapkan pada DB rehearsal (hasil restore nyata); 3 tabel kosong; 7 FK RESTRICT, CHECK (termasuk tanpa-mundur), indeks (3 unik parsial), 2 trigger append-only tervalidasi; skema tabel lama IDENTIK"
+# Guard rollback pada keadaan KOSONG (migrasi terpasang, fitur belum dipakai) → LULUS; baca-saja.
+set +e; GUARD_OUT1="$(GUARD_DB="$REH_DB" bash "$NEW_DIR/scripts/rollback-guard-harga-berlaku.sh" 2>&1)"; GUARD_RC1=$?; set -e
+printf '%s
+' "$GUARD_OUT1" > "$BK_DIR/guard-kosong.log"
+{ [ "$GUARD_RC1" = "0" ] && printf '%s' "$GUARD_OUT1" | grep -q 'GUARD LULUS'; } || { printf '%s
+' "$GUARD_OUT1"; reh_drop; die "guard rollback TIDAK meluluskan keadaan kosong (migrasi terpasang, fitur belum dipakai)"; }
+ok "guard rollback pada keadaan kosong (tabel rilis ada, tanpa riwayat/snapshot/penerapan): LULUS"
 RPSQL "$FP_SQL" | LC_ALL=C sort > "$BK_DIR/fp-reh-sesudah.txt" || { reh_drop; die "sidik jari rehearsal sesudah gagal"; }
 cmp -s "$BK_DIR/fp-reh-sebelum.txt" "$BK_DIR/fp-reh-sesudah.txt" || { diff "$BK_DIR/fp-reh-sebelum.txt" "$BK_DIR/fp-reh-sesudah.txt" || true; reh_drop; die "rehearsal MENGUBAH isi tabel"; }
 # UJI APLIKASI pada SALINAN RESTORE (kode BARU, data produksi nyata, DB sementara): harga berlaku, tanpa mundur, koreksi berdampak, retur/waste, penerapan dua orang; stok/ISSUE/jurnal/GL/valuasi Finance tidak berubah. DB dihapus di akhir.
@@ -606,11 +614,41 @@ const nilaiFin1 = await prisma.$queryRawUnsafe("select id::text, status, value::
 const lama = new Map(nilaiFin0.map((x) => [x.id, x])); const berubah = nilaiFin1.filter((x) => lama.has(x.id) && (lama.get(x.id).status !== x.status || lama.get(x.id).value !== x.value));
 cek("valuasi Finance yang sudah ada TIDAK berubah (hanya +3 baris dari 3 pergerakan uji)", berubah.length === 0 && (await num("select count(*) as n from fin_stock_movement_valuations")) === nFv0 + 3);
 cek("stok: hanya 3 pergerakan uji (ISSUE, RETURN, WASTE) yang bertambah; saldo bahan = saldo awal − 1 + 1 − 1", (await num("select count(*) as n from stock_movements")) === nSm0 + 3 && Math.abs((await num(`select coalesce(sum(qty),0)::float as n from stock_movements where material_id = '${mat.id}'`)) - (saldoMat - 1)) < 1e-6);
+// I. kegagalan hook DIPAKSA (pemicu uji HANYA di DB sementara rehearsal): perintah stok tetap berhasil karena kegagalan tercatat PERSISTEN dan dapat ditemukan; bila penandanya gagal disimpan, transaksi DITOLAK.
+//    Satu penanda kegagalan sengaja DIBIARKAN belum diperbaiki agar guard rollback (dijalankan sesudah skenario) terbukti menolak.
+const namaDb = (await prisma.$queryRawUnsafe("select current_database() as n"))[0].n;
+if (!/^rehearsal_/.test(namaDb)) { cek("uji kegagalan paksa hanya pada DB rehearsal", false, namaDb); await prisma.$disconnect(); process.exit(1); }
+const pasangPemaksa = async (semua) => {
+  await prisma.$executeRawUnsafe(`CREATE OR REPLACE FUNCTION uji_paksa_gagal() RETURNS trigger AS $ BEGIN IF ${semua ? "true" : "NEW.status <> 'GAGAL_PEMBEKUAN'"} THEN RAISE EXCEPTION 'uji: pembekuan dipaksa gagal'; END IF; RETURN NEW; END $ LANGUAGE plpgsql`);
+  await prisma.$executeRawUnsafe("DROP TRIGGER IF EXISTS uji_paksa_gagal_trg ON stock_movement_biaya_operasional");
+  await prisma.$executeRawUnsafe("CREATE TRIGGER uji_paksa_gagal_trg BEFORE INSERT ON stock_movement_biaya_operasional FOR EACH ROW EXECUTE FUNCTION uji_paksa_gagal()");
+};
+const lepasPemaksa = async () => { await prisma.$executeRawUnsafe("DROP TRIGGER IF EXISTS uji_paksa_gagal_trg ON stock_movement_biaya_operasional"); await prisma.$executeRawUnsafe("DROP FUNCTION IF EXISTS uji_paksa_gagal()"); };
+const smI = await num("select count(*) as n from stock_movements");
+let gg = null; await pasangPemaksa(false); try { gg = await gerak("ISSUE", -0.01, { reason: "rehearsal hook dipaksa gagal" }); } finally { await lepasPemaksa(); }
+const mkI = gg ? await prisma.stockMovementBiayaOperasional.findMany({ where: { movementId: gg.id } }) : [];
+cek("hook dipaksa gagal: perintah stok BERHASIL + penanda persisten GAGAL_PEMBEKUAN (bukan TANPA_HARGA) dengan alasan tercatat", !!gg && mkI.length === 1 && mkI[0].status === "GAGAL_PEMBEKUAN" && mkI[0].sumber === "GAGAL_SAAT_POSTING" && mkI[0].basisHarga === "TIDAK_DIKETAHUI" && /dipaksa gagal/.test(mkI[0].gagalAlasan ?? "") && (await num("select count(*) as n from stock_movements")) === smI + 1);
+const dftI = await H.daftarGagalPembekuan(prisma); cek("kegagalan dapat DITEMUKAN (daftarGagalPembekuan) untuk diperbaiki", dftI.jumlah === 1 && dftI.baris[0].movementId === gg?.id && dftI.baris[0].kode === mat.code);
+const smJ = await num("select count(*) as n from stock_movements"); const opJ = await num("select count(*) as n from stock_movement_biaya_operasional");
+let eI = null; await pasangPemaksa(true); try { eI = await ditolak(() => gerak("ISSUE", -0.01, { reason: "rehearsal penanda ikut gagal" })); } finally { await lepasPemaksa(); }
+cek("penanda kegagalan SENDIRI gagal disimpan → transaksi stok DITOLAK (PENANDA_PEMBEKUAN_GAGAL); pergerakan dan baris biaya tidak tersimpan", eI?.code === "PENANDA_PEMBEKUAN_GAGAL" && (await num("select count(*) as n from stock_movements")) === smJ && (await num("select count(*) as n from stock_movement_biaya_operasional")) === opJ, eI?.code);
+cek("pemicu uji dilepas dari DB rehearsal", (await num("select count(*) as n from pg_trigger where tgname = 'uji_paksa_gagal_trg'")) === 0);
+
 await prisma.$disconnect();
 console.log("PEMERIKSAAN=" + n + " gagal=" + gagal);
 process.exit(gagal === 0 ? 0 : 1);
 REHNODE
 ok "uji aplikasi pada SALINAN RESTORE: $(grep -c '^OK' "$BK_DIR/rehearsal-koreksi.log") pemeriksaan lulus ($(grep -c '^SKIP' "$BK_DIR/rehearsal-koreksi.log") dilewati, alasan tercatat); $(tail -n 1 "$BK_DIR/rehearsal-koreksi.log")"
+# Guard rollback SESUDAH skenario rehearsal (riwayat harga, snapshot biaya operasional, penerapan, dan satu penanda GAGAL_PEMBEKUAN belum diperbaiki ada di DB sementara) → HARUS MENOLAK; baca-saja.
+GFP_SQL="select (select count(*) from material_harga_berlaku)||'/'||(select count(*) from stock_movement_biaya_operasional)||'/'||(select count(*) from biaya_operasional_penerapan)||'/'||(select count(*) from stock_movements)"
+GFP0="$( { RPSQL "$FP_SQL" | LC_ALL=C sort; RPSQL "$GFP_SQL"; } | md5sum )"
+set +e; GUARD_OUT2="$(GUARD_DB="$REH_DB" bash "$NEW_DIR/scripts/rollback-guard-harga-berlaku.sh" 2>&1)"; GUARD_RC2=$?; set -e
+printf '%s\n' "$GUARD_OUT2" > "$BK_DIR/guard-menolak.log"
+GFP1="$( { RPSQL "$FP_SQL" | LC_ALL=C sort; RPSQL "$GFP_SQL"; } | md5sum )"
+[ "$GUARD_RC2" = "1" ] || { printf '%s\n' "$GUARD_OUT2"; reh_drop; die "guard rollback TIDAK menolak (exit ${GUARD_RC2}) padahal riwayat harga/snapshot/penerapan sudah ada"; }
+for t in 'GUARD DITOLAK' 'RUTIN TIDAK DIPERBOLEHKAN' 'riwayat harga berlaku' 'snapshot biaya operasional' 'pembekuan harga GAGAL' 'PERBAIKAN MAJU' 'gagal-pembekuan'; do printf '%s' "$GUARD_OUT2" | grep -q -- "$t" || { printf '%s\n' "$GUARD_OUT2"; reh_drop; die "pesan guard tidak memuat: $t"; }; done
+[ "$GFP0" = "$GFP1" ] || { reh_drop; die "guard rollback MENGUBAH data (harus baca-saja)"; }
+ok "guard rollback sesudah ada riwayat harga + snapshot + penerapan + penanda gagal: MENOLAK (exit 1) dengan pesan pemulihan (perbaikan maju); data tidak berubah oleh guard"
 reh_drop
 ok "rehearsal lulus: isi ${FP_N} tabel lama IDENTIK sebelum vs sesudah migrasi; uji tulis (harga berlaku/koreksi/retur/waste/penerapan) dilakukan pada salinan lalu DB sementara dihapus"
 if [ "$REHEARSAL_ONLY" = "1" ]; then
@@ -679,7 +717,11 @@ NBE_EXPECT="$(printf '%s\n' "$BACKEND_SRC_EXPECT" | wc -w)"
 ok "${NBE} berkas backend di container = kandidat (byte-identik)"
 PSQLN() { dcp "$NEW_DIR" exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" -X -At -q -c "$1" </dev/null; }
 struktur_baru PSQLN die
-ok "objek rilis terpasang di produksi: 3 tabel (harga berlaku, biaya operasional, penerapan) — kosong; 7 FK RESTRICT, CHECK, indeks, 2 trigger append-only tervalidasi"
+ok "objek rilis terpasang di produksi: 3 tabel (harga berlaku, biaya operasional, penerapan) — kosong; 7 FK RESTRICT, CHECK, indeks (3 unik parsial), 2 trigger append-only tervalidasi"
+set +e; GUARD_PROD="$(bash "$NEW_DIR/scripts/rollback-guard-harga-berlaku.sh" 2>&1)"; GUARD_PROD_RC=$?; set -e
+printf '%s\n' "$GUARD_PROD" | sed 's/^/        guard: /'
+[ "$GUARD_PROD_RC" = "0" ] || die "guard rollback produksi pasca-switch tidak LULUS pada keadaan kosong (exit ${GUARD_PROD_RC})"
+ok "guard rollback (baca-saja) di produksi: LULUS karena fitur belum dipakai (3 tabel kosong); setelah harga/pemakaian terisi, guard akan MENOLAK rollback rutin"
 dcp "$NEW_DIR" run --rm --no-deps -T backend npx prisma migrate status </dev/null 2>&1 | grep -i 'up to date' >/dev/null || die "migrate status produksi tidak 'up to date'"
 ok "migrate status up to date"
 PHASE="8b-smoke"; say "8b. Smoke test baca-saja: izin (401/403, ADMIN murni hanya-lihat), ringkasan harga berlaku, riwayat, pratinjau (tanggal mundur ditolak), jejak unit, ekspor Excel; tabel rilis tetap kosong; tidak ada jejak tulis"
@@ -742,6 +784,9 @@ if (tA) {
 const rf = await get(`${R}/bahan/${mat.id}`, tF);
 rec("FINANCE/OWNER: ringkasan 200, kosong (belum ada harga), bolehUbah=true", rf.status === 200 && rf.json?.hargaBerlaku === null && rf.json?.bolehUbah === true && rf.json?.bolehSetujui === true && /bukan nilai buku dan bukan HPP final Finance/.test(rf.json?.labelHarga ?? ""), String(rf.status));
 const rw = await get(`${R}/bahan/${mat.id}/riwayat`, tF); rec("riwayat 200 dan kosong", rw.status === 200 && (rw.json?.riwayat ?? []).length === 0);
+rec("daftar pembekuan gagal: tanpa token 401", (await get(`${R}/gagal-pembekuan`, null)).status === 401);
+if (tG) rec("daftar pembekuan gagal: Gudang 403", (await get(`${R}/gagal-pembekuan`, tG)).status === 403);
+const gp = await get(`${R}/gagal-pembekuan`, tF); rec("daftar pembekuan gagal (FINANCE/OWNER) 200 dan KOSONG — tidak ada pemakaian dengan pembekuan harga gagal", gp.status === 200 && gp.json?.jumlah === 0 && Array.isArray(gp.json?.baris), String(gp.status));
 const dasar = { materialId: mat.id, hargaBaru: "100", satuan: mat.unit, alasan: "smoke pratinjau (tidak disimpan)" };
 const pm = await post(`${R}/pratinjau`, tF, { ...dasar, berlakuMulai: "2026-10-01T00:00:00Z" });
 rec("pratinjau dengan tanggal MUNDUR ditolak 422 WAKTU_MUNDUR (tanpa menulis)", pm.status === 422 && pm.json?.code === "WAKTU_MUNDUR", `${pm.status} ${pm.json?.code}`);

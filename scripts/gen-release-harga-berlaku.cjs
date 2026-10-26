@@ -20,13 +20,20 @@ const OUT = "scripts/release-harga-berlaku.sh";
 const TPL_DIR = "scripts/templates/release-harga-berlaku";
 const LIB_SCAN = "scripts/lib/scan-migrasi-harga-berlaku.mjs", LIB_REH = "scripts/lib/rehearsal-harga-berlaku.mjs", LIB_SMOKE = "scripts/lib/smoke-harga-berlaku.mjs";
 const GUARD = "scripts/rollback-guard-harga-berlaku.sh", GENERATOR = "scripts/gen-release-harga-berlaku.cjs";
-const TPL_FILES = ["header", "vars", "struktur", "gate-prisma", "keadaan", "rehearsal-migrasi", "step6", "rollback"].map((n) => `${TPL_DIR}/${n}.txt`);
+const TPL_FILES = ["header", "vars", "struktur", "gate-prisma", "keadaan", "rehearsal-migrasi", "rehearsal-guard", "step6", "rollback"].map((n) => `${TPL_DIR}/${n}.txt`);
 const FILE_TETAP = [OUT, GUARD, GENERATOR, LIB_SCAN, LIB_REH, LIB_SMOKE, ...TPL_FILES];
 const CAND_BRANCH = "rc/harga-berlaku-on-live-8e5437b6";
 const DIST_BARU = ["Harga Berlaku (HPP operasional)", "Koreksi salah input historis", "Beri harga ke pemakaian lama", "HPP operasional (harga berlaku)", "Saat disimpan (sekarang)", "Belum didukung bukti"];
 const DIST_LAMA_TAMBAHAN = ["Buka pekerjaan", "Catat pekerjaan selesai", "Tandai sudah dikerjakan"];
 
 const lf = (t) => t.replace(/\r\n/g, "\n");
+// Guard rollback pada production SESUDAH switch (baca-saja): fitur belum dipakai → tabel kosong → LULUS. Setelah harga/pemakaian terisi, guard menolak rollback rutin.
+const GUARD_PASCA = [
+  'set +e; GUARD_PROD="$(bash "$NEW_DIR/scripts/rollback-guard-harga-berlaku.sh" 2>&1)"; GUARD_PROD_RC=$?; set -e',
+  "printf '%s\\n' \"$GUARD_PROD\" | sed 's/^/        guard: /'",
+  '[ "$GUARD_PROD_RC" = "0" ] || die "guard rollback produksi pasca-switch tidak LULUS pada keadaan kosong (exit ${GUARD_PROD_RC})"',
+  'ok "guard rollback (baca-saja) di produksi: LULUS karena fitur belum dipakai (3 tabel kosong); setelah harga/pemakaian terisi, guard akan MENOLAK rollback rutin"',
+].join("\n");
 const must = (c, m) => { if (!c) throw new Error("templat/masukan tak cocok: " + m); };
 const sha = (t) => crypto.createHash("sha256").update(t).digest("hex");
 const git = (args) => execFileSync("git", args, { cwd: REPO, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
@@ -60,7 +67,7 @@ function bangkitkan({ baseScript, blok, berkasList, mig, schemaSha, scanJs, scan
   must(!berkas.some((f) => /package(-lock)?\.json$|(^|\/)docker-compose|(^|\/)Dockerfile$|(^|\/)\.env/.test(f)), "dependensi/compose/.env berubah");
   must(!berkas.includes("backend/src/index.js") && berkas.includes("backend/src/routes/hargaBerlaku.js") && berkas.includes("backend/src/constants/permissions.js"), "router + izin harga berlaku harus ada di diff");
   const ob = namaObjek(mig.sql); must([...mig.sql.matchAll(/CREATE TABLE "/g)].length === 3, "harus tepat 3 CREATE TABLE");
-  must(ob.idx.length > 0 && ob.fk.length === 7 && ob.chk.length > 0 && ob.trg.length === 2 && ob.parsial.length === 2, "objek rilis tidak seperti yang diaudit (7 FK, 2 trigger, 2 indeks parsial)");
+  must(ob.idx.length > 0 && ob.fk.length === 7 && ob.chk.length > 0 && ob.trg.length === 2 && ob.parsial.length === 3, "objek rilis tidak seperti yang diaudit (7 FK, 2 trigger, 3 indeks parsial)");
 
   // 1. header
   potong("# RILIS \"STATUS KERJA JUJUR", "set -Eeuo pipefail", blok.header);
@@ -90,10 +97,12 @@ function bangkitkan({ baseScript, blok, berkasList, mig, schemaSha, scanJs, scan
   potong("<<'REHNODE' > \"$BK_DIR/rehearsal-koreksi.log\"", "\nREHNODE\n", "<<'REHNODE' > \"$BK_DIR/rehearsal-koreksi.log\" 2>&1 || { cat \"$BK_DIR/rehearsal-koreksi.log\"; reh_drop; die \"uji Harga Berlaku terhadap salinan restore GAGAL (lihat rehearsal-koreksi.log)\"; }\n" + lf(rehNode).trimEnd());
   r("# UJI APLIKASI pada SALINAN RESTORE (kode BARU, data produksi nyata, DB sementara): membuka pekerjaan baca-saja; klik ganda manual = satu catatan; stok/Run/QC/jurnal/jadwal/target (termasuk unit Bendrya) tidak berubah. DB dihapus di akhir.", "# UJI APLIKASI pada SALINAN RESTORE (kode BARU, data produksi nyata, DB sementara): harga berlaku, tanpa mundur, koreksi berdampak, retur/waste, penerapan dua orang; stok/ISSUE/jurnal/GL/valuasi Finance tidak berubah. DB dihapus di akhir.");
   r('ok "rehearsal lulus: isi ${FP_N} tabel IDENTIK sebelum vs sesudah uji baca-saja; uji tulis manual dilakukan pada salinan lalu DB sementara dihapus"', 'ok "rehearsal lulus: isi ${FP_N} tabel lama IDENTIK sebelum vs sesudah migrasi; uji tulis (harga berlaku/koreksi/retur/waste/penerapan) dilakukan pada salinan lalu DB sementara dihapus"');
+  // 8c. guard rollback sesudah skenario (harus menolak) — sebelum DB sementara dihapus
+  { const tgt = "\nreh_drop\nok \"rehearsal lulus:"; must(s.split(tgt).length === 2, "penanda reh_drop akhir"); s = s.replace(tgt, () => "\n" + lf(blok["rehearsal-guard"]).trimEnd() + tgt); }
   // 9. migrasi produksi
   potong('PHASE="6-tanpa-migrasi"', '\nPHASE="7-switch"', lf(blok.step6).trimEnd() + "\n");
   // 10. verifikasi pasca-switch
-  r('ok "${NBE} berkas backend di container = kandidat (byte-identik)"', 'ok "${NBE} berkas backend di container = kandidat (byte-identik)"\nPSQLN() { dcp "$NEW_DIR" exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" -X -At -q -c "$1" </dev/null; }\nstruktur_baru PSQLN die\nok "objek rilis terpasang di produksi: 3 tabel (harga berlaku, biaya operasional, penerapan) — kosong; 7 FK RESTRICT, CHECK, indeks, 2 trigger append-only tervalidasi"');
+  r('ok "${NBE} berkas backend di container = kandidat (byte-identik)"', 'ok "${NBE} berkas backend di container = kandidat (byte-identik)"\nPSQLN() { dcp "$NEW_DIR" exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" -X -At -q -c "$1" </dev/null; }\nstruktur_baru PSQLN die\nok "objek rilis terpasang di produksi: 3 tabel (harga berlaku, biaya operasional, penerapan) — kosong; 7 FK RESTRICT, CHECK, indeks (3 unik parsial), 2 trigger append-only tervalidasi"\n' + GUARD_PASCA);
   // 11. smoke
   { const a = s.indexOf("<<'NODE' | tee"); const aLine = s.indexOf("\n", a) + 1; const b = s.indexOf("\nNODE\n", aLine); must(a > 0 && b > 0, "NODE smoke"); s = s.slice(0, aLine) + lf(smokeNode).trimEnd() + s.slice(b); }
   const m = s.match(/PHASE="8b-smoke"; say "[^\n]*\n/); must(m, "PHASE 8b");

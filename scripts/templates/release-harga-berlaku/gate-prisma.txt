@@ -17,7 +17,7 @@ SCANJS
 sql_bersih() { grep -v '^[[:space:]]*--' | grep -v '^[[:space:]]*$'; }
 HASIL_SCAN="$(printf '%s\n' "$ALL_SQL" | sql_bersih | node "$SCAN")" || die "migrasi memuat pernyataan di luar daftar putih yang diaudit"
 [ "$HASIL_SCAN" = "$SCAN_EXPECT" ] || die "hitungan pernyataan migrasi BERBEDA dari yang diaudit: ${HASIL_SCAN}"
-ok "migrasi: DDL aditif (3 CREATE TABLE baru kosong, indeks [2 unik parsial], 7 FK ON DELETE RESTRICT, 1 fungsi append-only + 2 trigger milik rilis ini); tanpa ALTER pada tabel lama, tanpa DROP/DELETE/UPDATE/INSERT/RENAME/GRANT/EXTENSION"
+ok "migrasi: DDL aditif (3 CREATE TABLE baru kosong, indeks [3 unik parsial], 7 FK ON DELETE RESTRICT, 1 fungsi append-only + 2 trigger milik rilis ini); tanpa ALTER pada tabel lama, tanpa DROP/DELETE/UPDATE/INSERT/RENAME/GRANT/EXTENSION"
 # UJI NEGATIF PEMINDAI: setiap mutan HARUS ditolak (exit ≠ 0) atau menghasilkan hitungan ≠ SCAN_EXPECT. Mutan yang lolos = pemindai tidak bisa dipercaya → berhenti.
 NEG=0
 harus_ditolak() {

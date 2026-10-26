@@ -56,6 +56,7 @@ export default function HargaBerlakuPanel({ materialId }) {
         <div className="flex justify-between gap-3"><dt>Order belum memakai bahan ini</dt><dd className="font-semibold text-ink tabular-nums" data-testid="jumlah-order-terdampak">{dm.akanMemakai.order} order · {dm.akanMemakai.unit} unit</dd></div>
         <div className="flex justify-between gap-3"><dt>Pemakaian sudah dibekukan sejak harga berlaku</dt><dd className="font-semibold text-ink tabular-nums">{dm.sudahDibekukanSejakMulai.pemakaian} · {rpNilai(dm.sudahDibekukanSejakMulai.nilai)}</dd></div>
         <div className="flex justify-between gap-3"><dt>Pemakaian lama tanpa harga operasional</dt><dd className="font-semibold text-ink tabular-nums">{dm.belumDibekukan.pemakaian} · {dm.belumDibekukan.unit} unit</dd></div>
+        {dm.gagalPembekuan?.pemakaian > 0 && <div className="flex justify-between gap-3 text-red" data-testid="gagal-pembekuan"><dt>Pembekuan harga GAGAL (tercatat; perlu diperbaiki)</dt><dd className="font-semibold tabular-nums">{dm.gagalPembekuan.pemakaian} pemakaian</dd></div>}
       </dl>
 
       {pesan && <p className="mt-2 text-[11.5px] text-green" role="status" data-testid="pesan-tersimpan">{pesan}</p>}

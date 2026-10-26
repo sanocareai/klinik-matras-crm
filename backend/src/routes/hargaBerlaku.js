@@ -2,13 +2,14 @@
 //   IZIN EKSPLISIT: lihat = finance:read · ubah/koreksi/ajukan penerapan/batalkan = finance:harga_berlaku:edit · setujui/tolak penerapan = finance:harga_berlaku:approve (FINANCE + OWNER; BUKAN semua ADMIN — keputusan Owner)
 //   GET  /bahan/:id (finance:read: ringkasan + bolehUbah) · GET /bahan/:id/riwayat · POST /pratinjau (finance:read) · POST / (finance:post, Idempotency-Key, hashPratinjau)
 //   Penerapan ke pemakaian LAMA (tindakan khusus, dua orang): POST /penerapan/pratinjau (finance:read) · POST /penerapan (finance:post) · GET /penerapan · GET /penerapan/:id ·
+//   GET  /gagal-pembekuan (finance:read; pemakaian yang pembekuan harganya GAGAL & belum diperbaiki — penanda persisten, ?bahanId=) 
 //   POST /penerapan/:id/setujui|tolak (finance:approve) · /batalkan (finance:post, pengaju) · GET /unit/:unitId (HPP operasional per unit)
 import express from "express";
 import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, PERMISSIONS as P, hasPermission } from "../middleware/authorize.js";
 import { prisma } from "../db.js";
 import { KoreksiError } from "../services/warehouseCorrection.js";
-import { ringkasanBahan, riwayatHarga, pratinjauUbahHarga, simpanHarga, tanpaInternal, pratinjauPenerapan, tanpaInternalPenerapan, ajukanPenerapan, setujuiPenerapan, tolakPenerapan, batalkanPenerapan, daftarPenerapan, bacaPenerapan, hppOperasionalUnit } from "../services/finance/hargaBerlaku.js";
+import { ringkasanBahan, riwayatHarga, pratinjauUbahHarga, simpanHarga, tanpaInternal, pratinjauPenerapan, tanpaInternalPenerapan, ajukanPenerapan, setujuiPenerapan, tolakPenerapan, batalkanPenerapan, daftarPenerapan, bacaPenerapan, hppOperasionalUnit, daftarGagalPembekuan } from "../services/finance/hargaBerlaku.js";
 
 const POLA_UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const err = (e, res) => { if (e instanceof KoreksiError) return res.status(e.statusCode).json({ error: e.message, code: e.code }); console.error("[harga-berlaku]", e); return res.status(500).json({ error: "Gagal memproses harga berlaku" }); };
@@ -30,4 +31,5 @@ hargaBerlakuRouter.post("/penerapan/:id/setujui", requirePermission(P.FINANCE_HA
 hargaBerlakuRouter.post("/penerapan/:id/tolak", requirePermission(P.FINANCE_HARGA_BERLAKU_APPROVE), async (req, res) => { try { if (!idOk(req.params.id, res)) return; res.json(await tolakPenerapan(prisma, { id: req.params.id, aktor: req.user, catatan: req.body?.catatan })); } catch (e) { err(e, res); } });
 hargaBerlakuRouter.post("/penerapan/:id/batalkan", requirePermission(P.FINANCE_HARGA_BERLAKU_EDIT), async (req, res) => { try { if (!idOk(req.params.id, res)) return; res.json(await batalkanPenerapan(prisma, { id: req.params.id, aktor: req.user, catatan: req.body?.catatan })); } catch (e) { err(e, res); } });
 
+hargaBerlakuRouter.get("/gagal-pembekuan", requirePermission(P.FINANCE_READ), async (req, res) => { try { res.json(await daftarGagalPembekuan(prisma, { bahanId: POLA_UUID.test(String(req.query.bahanId ?? "")) ? String(req.query.bahanId) : null })); } catch (e) { err(e, res); } });
 hargaBerlakuRouter.get("/unit/:unitId", requirePermission(P.FINANCE_READ), async (req, res) => { try { if (!idOk(req.params.unitId, res)) return; res.json(await hppOperasionalUnit(prisma, req.params.unitId)); } catch (e) { err(e, res); } });

@@ -30,6 +30,7 @@ export const PEMISAH = Object.freeze({
 export const BASIS_TEKS = Object.freeze({
   WAKTU_PEMAKAIAN: "Harga berlaku saat pemakaian", WAKTU_WASTE: "Harga berlaku saat waste dicatat", WAKTU_PENYESUAIAN: "Harga berlaku saat penyesuaian",
   HARGA_ISSUE_ASAL: "Harga operasional ISSUE asal (bukan harga saat retur)", WAKTU_RETUR_TANPA_ISSUE: "Harga berlaku saat retur — tidak tertaut ISSUE asal",
+  TIDAK_DIKETAHUI: "Dasar harga tidak diketahui — pembekuan harga GAGAL saat pemakaian diposting",
 });
 export const IZIN_TEKS = Object.freeze({
   ubah: "Yang boleh mengubah/mengoreksi harga dan mengajukan penerapan: peran Finance dan Owner (izin finance:harga_berlaku:edit).",
@@ -37,6 +38,7 @@ export const IZIN_TEKS = Object.freeze({
   admin: "Akun Admin tanpa peran Finance/Owner hanya dapat melihat — perluasan menunggu keputusan Owner.",
 });
 export const KELOMPOK_PENERAPAN = Object.freeze({ BELUM_DIBEKUKAN: "Pemakaian lama belum dibekukan harga operasionalnya", TANPA_HARGA_BERLAKU: "Dibekukan tanpa harga berlaku (saat itu belum ada harga)", SELARAS_ULANG: "Harga beku berbeda dari harga berlaku pada waktu pemakaian (mis. setelah koreksi)" });
+export const GAGAL = "GAGAL_PEMBEKUAN"; // penanda kegagalan pembekuan (BEDA dari TANPA_HARGA = memang tidak ada harga berlaku saat itu)
 const D = (v) => new Decimal(String(v ?? 0));
 const wajib = (c, m, kode, status = 400) => { if (!c) throw new KoreksiError(m, status, kode); };
 const kunciValid = (k) => { const t = String(k ?? ""); wajib(t.length >= 8 && t.length <= 120, "Idempotency-Key wajib (8–120 karakter)", "IDEMPOTENCY_KEY_REQUIRED", 428); return t; };
@@ -129,11 +131,12 @@ async function hitungDampak(db, materialId, mulai) {
         (select o.value from stock_movement_biaya_operasional o where o.movement_id = s.id order by o.created_at desc, o.id desc limit 1) val
       from stock_movements s where s.material_id = $1::uuid and s.unit_id is not null and s.type::text = any($2::text[]))
     select count(*) filter (where created_at >= $3 and st = 'DINILAI')::int beku_sejak, coalesce(sum(val) filter (where created_at >= $3 and st = 'DINILAI'),0)::float nilai_beku_sejak,
-           count(*) filter (where created_at >= $3 and st = 'TANPA_HARGA')::int beku_tanpa_harga_sejak, count(*) filter (where st is null)::int belum_dibekukan, count(*) filter (where st is null and created_at >= $3)::int belum_dibekukan_sejak,
-           count(distinct unit_id) filter (where st is null or st = 'TANPA_HARGA')::int unit_tanpa_harga_op from m`, materialId, TIPE_OP, mulai))[0];
+           count(*) filter (where created_at >= $3 and st = 'TANPA_HARGA')::int beku_tanpa_harga_sejak, count(*) filter (where st is null or st = 'GAGAL_PEMBEKUAN')::int belum_dibekukan, count(*) filter (where (st is null or st = 'GAGAL_PEMBEKUAN') and created_at >= $3)::int belum_dibekukan_sejak,
+           count(*) filter (where st = 'GAGAL_PEMBEKUAN')::int gagal_pembekuan, count(distinct unit_id) filter (where st is null or st = 'TANPA_HARGA' or st = 'GAGAL_PEMBEKUAN')::int unit_tanpa_harga_op from m`, materialId, TIPE_OP, mulai))[0];
   return { akanMemakai: { unit: belumMemakai.unit, order: belumMemakai.ord, ket: "Order yang belum memakai bahan ini (Material Issue belum keluar / catatan siap posting): akan dibekukan dengan harga yang berlaku pada waktu pemakaian aktual." },
     sudahDibekukanSejakMulai: { pemakaian: dipakai.beku_sejak, nilai: dipakai.nilai_beku_sejak, ket: "Pemakaian sejak waktu berlaku yang SUDAH dibekukan — TIDAK berubah karena harga baru." },
-    sudahDibekukanTanpaHargaSejakMulai: dipakai.beku_tanpa_harga_sejak, belumDibekukan: { pemakaian: dipakai.belum_dibekukan, sejakMulai: dipakai.belum_dibekukan_sejak, unit: dipakai.unit_tanpa_harga_op, ket: "Pemakaian lama yang belum punya harga operasional: hanya diberi harga lewat tindakan khusus berpersetujuan, tidak otomatis." } };
+    sudahDibekukanTanpaHargaSejakMulai: dipakai.beku_tanpa_harga_sejak, gagalPembekuan: { pemakaian: dipakai.gagal_pembekuan, ket: "Pembekuan harga GAGAL saat pemakaian diposting (tercatat persisten) — termasuk ‘belum dibekukan’; perbaiki lewat penerapan khusus." },
+    belumDibekukan: { pemakaian: dipakai.belum_dibekukan, sejakMulai: dipakai.belum_dibekukan_sejak, unit: dipakai.unit_tanpa_harga_op, ket: "Pemakaian lama yang belum punya harga operasional: hanya diberi harga lewat tindakan khusus berpersetujuan, tidak otomatis." } };
 }
 
 // ── ringkasan satu bahan (layar Stok) ────────────────────────────────────────────────────────────────
@@ -194,10 +197,10 @@ async function dampakKoreksi(db, bahan, { aktif, sasaran, hargaBaru, mulaiBaru, 
     if (!ikut) { const a = pilih(aktif, p.createdAt); const b = pilih(sesudah, p.createdAt); hSebelum = a ? Number(a.unitPrice) : null; hSesudah = b ? Number(b.unitPrice) : null; if (hSebelum === hSesudah) continue; }
     kena.add(p.id); const o = p.biayaOperasional[0] ?? null;
     baris.push({ movementId: p.id, order: p.unit?.order?.orderNumber ?? null, unit: p.unit?.unitCode ?? null, tanggal: wibTgl(p.createdAt), tipe: p.type, qty: Math.abs(Number(p.qty)), hargaBerlakuSebelum: hSebelum, hargaBerlakuSesudah: hSesudah, ikutIssueAsal: ikut,
-      keadaanBeku: !o ? "BELUM_DIBEKUKAN" : o.status === "DINILAI" ? "DIBEKUKAN" : "DIBEKUKAN_TANPA_HARGA", hargaBeku: o?.unitCost == null ? null : Number(o.unitCost), nilaiBeku: o?.value == null ? null : Number(o.value) });
+      keadaanBeku: !o ? "BELUM_DIBEKUKAN" : o.status === GAGAL ? "GAGAL_PEMBEKUAN" : o.status === "DINILAI" ? "DIBEKUKAN" : "DIBEKUKAN_TANPA_HARGA", hargaBeku: o?.unitCost == null ? null : Number(o.unitCost), nilaiBeku: o?.value == null ? null : Number(o.value) });
   }
   const dibekukan = baris.filter((x) => x.keadaanBeku === "DIBEKUKAN");
-  const ringkas = { jumlah: baris.length, dibekukanDenganHargaLama: dibekukan.length, nilaiBekuTerdampak: Number(toMoney(dibekukan.reduce((a, x) => a.plus(x.nilaiBeku ?? 0), D(0)))), belumDibekukan: baris.filter((x) => x.keadaanBeku === "BELUM_DIBEKUKAN").length, dibekukanTanpaHarga: baris.filter((x) => x.keadaanBeku === "DIBEKUKAN_TANPA_HARGA").length, dariWaktu: dari.toISOString(), digest: sha(baris.map((x) => [x.movementId, x.hargaBerlakuSesudah])) };
+  const ringkas = { jumlah: baris.length, dibekukanDenganHargaLama: dibekukan.length, nilaiBekuTerdampak: Number(toMoney(dibekukan.reduce((a, x) => a.plus(x.nilaiBeku ?? 0), D(0)))), belumDibekukan: baris.filter((x) => x.keadaanBeku === "BELUM_DIBEKUKAN" || x.keadaanBeku === "GAGAL_PEMBEKUAN").length, gagalPembekuan: baris.filter((x) => x.keadaanBeku === "GAGAL_PEMBEKUAN").length, dibekukanTanpaHarga: baris.filter((x) => x.keadaanBeku === "DIBEKUKAN_TANPA_HARGA").length, dariWaktu: dari.toISOString(), digest: sha(baris.map((x) => [x.movementId, x.hargaBerlakuSesudah])) };
   return { ringkas, baris, dipotong: baris.length > 300, ids: baris.map((x) => x.movementId) };
 }
 
@@ -277,10 +280,32 @@ export async function catatBiayaOperasional(tx, mov) {
     await tx.$executeRawUnsafe("RELEASE SAVEPOINT sp_biaya_operasional");
     return baris;
   } catch (e) {
+    // Kegagalan pembekuan TIDAK menggagalkan perintah Gudang HANYA bila kegagalan itu tercatat persisten (baris GAGAL_PEMBEKUAN: ditemukan lewat daftarGagalPembekuan, diperbaiki lewat penerapan khusus).
+    // Bila pemulihan savepoint atau penyimpanan penandanya sendiri gagal, kesalahan DILEMPAR → seluruh transaksi stok ditolak (tidak ada pemakaian tanpa jejak).
     await tx.$executeRawUnsafe("ROLLBACK TO SAVEPOINT sp_biaya_operasional"); await tx.$executeRawUnsafe("RELEASE SAVEPOINT sp_biaya_operasional");
-    console.error("[harga-berlaku] pembekuan biaya operasional gagal (perintah Gudang tetap berjalan):", mov.id, e?.message);
+    const kode = String(e?.code ?? e?.name ?? "ERROR").slice(0, 60); const alasan = String(e?.message ?? e ?? "").trim().slice(0, 500) || "tanpa pesan";
+    try {
+      await tx.$executeRawUnsafe("SAVEPOINT sp_biaya_operasional_gagal");
+      await tx.stockMovementBiayaOperasional.create({ data: { movementId: mov.id, materialId: mov.materialId, unitId: mov.unitId, status: GAGAL, qty: D(mov.qty).toString(), sumber: "GAGAL_SAAT_POSTING", basisHarga: "TIDAK_DIKETAHUI", gagalKode: kode, gagalAlasan: alasan, createdById: mov.createdById ?? null } });
+      await tx.$executeRawUnsafe("RELEASE SAVEPOINT sp_biaya_operasional_gagal");
+    } catch (e2) {
+      console.error("[harga-berlaku] pembekuan GAGAL dan penandanya GAGAL disimpan — transaksi stok ditolak:", mov.id, e?.message, "|", e2?.message);
+      throw new KoreksiError("Pemakaian tidak dapat diposting: pembekuan harga operasional gagal dan kegagalannya tidak dapat dicatat. Tidak ada yang tersimpan; coba lagi atau hubungi admin sistem.", 503, "PENANDA_PEMBEKUAN_GAGAL");
+    }
+    console.error("[harga-berlaku] pembekuan biaya operasional GAGAL — dicatat persisten (GAGAL_PEMBEKUAN) agar dapat diperbaiki; perintah Gudang tetap berjalan:", mov.id, kode, alasan);
     return null;
   }
+}
+
+/** Pemakaian yang pembekuannya GAGAL dan belum diperbaiki (baris terakhirnya masih penanda). Untuk ditemukan lalu diperbaiki lewat penerapan khusus (kelompok BELUM_DIBEKUKAN). Baca-saja. */
+export async function daftarGagalPembekuan(db, { bahanId = null, limit = 200 } = {}) {
+  const lim = Math.min(Math.max(Number(limit) || 200, 1), 1000);
+  const rows = await db.$queryRawUnsafe(`with t as (select distinct on (b.movement_id) b.movement_id, b.status, b.material_id, b.unit_id from stock_movement_biaya_operasional b
+        where exists (select 1 from stock_movement_biaya_operasional g where g.movement_id = b.movement_id and g.status = 'GAGAL_PEMBEKUAN') order by b.movement_id, b.created_at desc, b.id desc)
+      select t.movement_id::text "movementId", m.code kode, m.name nama, m.unit satuan, t.material_id::text "bahanId", u.unit_code unit, o."orderNumber" "order", s.type::text tipe, s.qty::float qty, s.created_at "waktuPemakaian", g.created_at "dicatatPada", g.gagal_kode "kodeGalat", g.gagal_alasan alasan
+      from t join stock_movement_biaya_operasional g on g.movement_id = t.movement_id and g.status = 'GAGAL_PEMBEKUAN' join stock_movements s on s.id = t.movement_id join materials m on m.id = t.material_id left join units u on u.id = t.unit_id left join "Order" o on o.id = u.order_id
+      where t.status = 'GAGAL_PEMBEKUAN' and ($1::uuid is null or t.material_id = $1::uuid) order by g.created_at limit $2`, bahanId, lim);
+  return { jumlah: rows.length, dipotong: rows.length >= lim, baris: rows, tindakan: "Perbaiki lewat Stok → bahan → “Beri harga ke pemakaian lama” (kelompok ‘belum dibekukan’; butuh pengaju dan penyetuju berbeda). Penanda kegagalan tetap tersimpan sebagai riwayat." };
 }
 
 
@@ -300,7 +325,7 @@ export async function pratinjauPenerapan(db, { materialId, groups, movementIds =
     const terakhir = p.biayaOperasional[0] ?? null; const h = await hargaUntukPergerakan(db, p, selesai); const qty = D(p.qty);
     const dasar = { movementId: p.id, tanggal: wibTgl(p.createdAt), waktu: p.createdAt, order: p.unit?.order?.orderNumber ?? null, unit: p.unit?.unitCode ?? null, unitId: p.unitId, tipe: p.type, qty: Number(qty), satuan: bahan.unit };
     let kel;
-    if (!terakhir) kel = "BELUM_DIBEKUKAN"; else if (terakhir.status === "TANPA_HARGA") kel = "TANPA_HARGA_BERLAKU";
+    if (!terakhir || terakhir.status === GAGAL) kel = "BELUM_DIBEKUKAN"; else if (terakhir.status === "TANPA_HARGA") kel = "TANPA_HARGA_BERLAKU";
     else if (!h.ada) { gap.push({ ...dasar, gap: "HARGA_BERLAKU_HILANG", ket: "Harga beku ada tetapi tidak ada harga berlaku pada waktu itu (setelah koreksi) — tinjau manual", nilaiSekarang: Number(terakhir.value) }); continue; }
     else if (D(terakhir.unitCost).equals(h.harga)) { sudahSelaras++; continue; } else kel = "SELARAS_ULANG";
     hitung[kel]++; if (!grup.includes(kel)) continue; if (pilihId && !pilihId.has(p.id)) continue;
@@ -317,7 +342,7 @@ export async function pratinjauPenerapan(db, { materialId, groups, movementIds =
   hasil._terapkan = terapkan; hasil._scope = { groups: grup, movementIds: pilihId ? [...pilihId].sort() : null, dari: d0?.toISOString() ?? null, sampai: d1?.toISOString() ?? null };
   if (!lengkap) return hasil;
   const unitIds = [...new Set(terapkan.map((x) => x.unitId))];
-  hasil.perOrder = unitIds.length ? (await db.$queryRawUnsafe(`select o."orderNumber" "order", u.unit_code unit, u.id::text "unitId", coalesce(sum(x.val) filter (where x.st = 'DINILAI' and s.type::text <> 'WASTE'),0)::float sebelum, count(*) filter (where x.st is null or x.st = 'TANPA_HARGA')::int tanpa_harga_op
+  hasil.perOrder = unitIds.length ? (await db.$queryRawUnsafe(`select o."orderNumber" "order", u.unit_code unit, u.id::text "unitId", coalesce(sum(x.val) filter (where x.st = 'DINILAI' and s.type::text <> 'WASTE'),0)::float sebelum, count(*) filter (where x.st is null or x.st = 'TANPA_HARGA' or x.st = 'GAGAL_PEMBEKUAN')::int tanpa_harga_op
       from stock_movements s join units u on u.id = s.unit_id join "Order" o on o.id = u.order_id left join lateral (select b.status st, b.value val from stock_movement_biaya_operasional b where b.movement_id = s.id order by b.created_at desc, b.id desc limit 1) x on true
       where s.unit_id = any($1::uuid[]) and s.type::text = any($2::text[]) group by o."orderNumber", u.unit_code, u.id order by 1`, unitIds, TIPE_OP)).map((r) => {
     const tambah = terapkan.filter((x) => x.unitId === r.unitId); const delta = tambah.reduce((a, x) => a.plus(x.nilaiBaru - (x.nilaiSebelum ?? 0)), D(0)); const sudah = tambah.filter((x) => x.kelompok !== "SELARAS_ULANG").length;
@@ -382,17 +407,17 @@ export async function hppOperasionalUnit(db, unitId) {
   const mv = await db.stockMovement.findMany({ where: { unitId, type: { in: TIPE_OP } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }],
     select: { id: true, type: true, qty: true, createdAt: true, materialId: true, unitId: true, correctsMovementId: true, material: { select: { code: true, name: true, unit: true } }, biayaOperasional: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1 } } });
   const selesai = penyelesaiHargaBerlaku(db); const sekarang = new Date();
-  const baris = []; let nilai = D(0); let susut = D(0); let pratinjauTambah = D(0); let nTanpa = 0; let nBelum = 0;
+  const baris = []; let nilai = D(0); let susut = D(0); let pratinjauTambah = D(0); let nTanpa = 0; let nBelum = 0; let nGagal = 0;
   for (const m of mv) {
-    const o = m.biayaOperasional[0] ?? null; const qty = D(m.qty); const jenis = JENIS_BIAYA_OP[m.type];
+    const o = m.biayaOperasional[0] ?? null; const gagal = o?.status === GAGAL; const qty = D(m.qty); const jenis = JENIS_BIAYA_OP[m.type];
     let status; let harga = null; let nilaiB = null; let label = null; let pratinjau = null; let sumber = null; let mulai = null; let basis = o?.basisHarga ?? BASIS_TIPE[m.type];
     if (o?.status === "DINILAI") { status = "DIBEKUKAN"; harga = Number(o.unitCost); nilaiB = Number(o.value); label = o.evidenceLabel; sumber = o.sumber; mulai = o.priceEffectiveFrom; if (m.type === "WASTE") susut = susut.plus(o.value); else nilai = nilai.plus(o.value); }
     else {
-      status = o ? "DIBEKUKAN_TANPA_HARGA_BERLAKU" : "BELUM_DIBEKUKAN"; if (o) nTanpa++; else nBelum++;
-      const hh = await hargaUntukPergerakan(db, m, selesai); basis = hh.basis; const h = hh.ada ? { harga: hh.harga, label: hh.label } : null;
+      status = gagal ? GAGAL : o ? "DIBEKUKAN_TANPA_HARGA_BERLAKU" : "BELUM_DIBEKUKAN"; if (gagal) nGagal++; else if (o) nTanpa++; else nBelum++;
+      const hh = await hargaUntukPergerakan(db, m, selesai); basis = gagal ? "TIDAK_DIKETAHUI" : hh.basis; const h = hh.ada ? { harga: hh.harga, label: hh.label } : null;
       if (h) { const mutlak = toMoney(qty.abs().times(h.harga)); const v = qty.isNegative() ? mutlak : mutlak.negated(); pratinjau = { harga: Number(h.harga), nilai: Number(v), label: h.label, ket: "Pratinjau pada harga berlaku saat pemakaian — belum dibekukan; diberi harga hanya lewat penerapan khusus." }; if (m.type !== "WASTE") pratinjauTambah = pratinjauTambah.plus(v); }
     }
-    baris.push({ movementId: m.id, tanggal: m.createdAt, jenisBiaya: jenis, tipe: m.type, kode: m.material.code, nama: m.material.name, satuan: m.material.unit, qty: Number(qty), status, harga, nilai: nilaiB, labelBukti: label, teksLabelBukti: label ? LABEL_BUKTI[label] : null, sumber, basis, basisTeks: BASIS_TEKS[basis] ?? basis, basisDetail: o?.basisDetail ?? null, hargaBerlakuMulai: mulai, pratinjau });
+    baris.push({ movementId: m.id, tanggal: m.createdAt, jenisBiaya: jenis, tipe: m.type, kode: m.material.code, nama: m.material.name, satuan: m.material.unit, qty: Number(qty), status, harga, nilai: nilaiB, labelBukti: label, teksLabelBukti: label ? LABEL_BUKTI[label] : null, sumber, basis, basisTeks: BASIS_TEKS[basis] ?? basis, basisDetail: o?.basisDetail ?? null, gagalAlasan: gagal ? o.gagalAlasan : null, hargaBerlakuMulai: mulai, pratinjau });
   }
   // bahan yang BELUM dipakai: Material Issue belum keluar + catatan siap posting → pratinjau harga terbaru
   const akan = await db.$queryRawUnsafe(`select m.id::text mid, m.code kode, m.name nama, m.unit satuan, sum(q.qty)::float qty, string_agg(distinct q.asal, ', ') asal from (
@@ -403,6 +428,6 @@ export async function hppOperasionalUnit(db, unitId) {
   for (const a of akan) { const h = await selesai(a.mid, sekarang); const v = h ? toMoney(D(a.qty).times(h.harga)) : null; const jadwal = (await barisAktif(db, a.mid)).aktif.find((x) => new Date(x.effectiveFrom) > sekarang); if (v) pratinjauAkan = pratinjauAkan.plus(v); belumMemakai.push({ kode: a.kode, nama: a.nama, satuan: a.satuan, qty: a.qty, asal: a.asal, hargaTerbaru: h ? Number(h.harga) : null, nilaiPratinjau: v ? Number(v) : null, labelBukti: h?.label ?? null, teksLabelBukti: h ? LABEL_BUKTI[h.label] : null, hargaTerjadwal: jadwal ? { harga: Number(jadwal.unitPrice), berlakuMulai: jadwal.effectiveFrom, ket: "Berlaku untuk pemakaian sejak waktu ini" } : null, ket: h ? "Pratinjau harga terbaru — dibekukan pada harga yang berlaku saat pemakaian diposting." : "Belum ada harga berlaku." }); }
   return { judul: "HPP operasional (harga berlaku)", pemisah: PEMISAH,
     peringatan: "Angka ini BUKAN nilai persediaan/jurnal Finance. Bila berbeda dari Nilai persediaan Finance, itu wajar: sumbernya berbeda (harga berlaku vs biaya perolehan PSA/GR).",
-    ringkasan: { hppOperasionalDibekukan: Number(toMoney(nilai)), susutOperasional: Number(toMoney(susut)), pemakaianTanpaHargaOperasional: nTanpa, pemakaianBelumDibekukan: nBelum, pratinjauPemakaianLama: Number(toMoney(pratinjauTambah)), pratinjauBelumMemakai: Number(toMoney(pratinjauAkan)) },
-    status: nTanpa + nBelum > 0 ? "PARSIAL" : mv.length ? "LENGKAP_MENURUT_HARGA_BERLAKU" : "BELUM_ADA_PEMAKAIAN", baris, belumMemakai };
+    ringkasan: { hppOperasionalDibekukan: Number(toMoney(nilai)), susutOperasional: Number(toMoney(susut)), pemakaianTanpaHargaOperasional: nTanpa, pemakaianBelumDibekukan: nBelum, pemakaianGagalPembekuan: nGagal, pratinjauPemakaianLama: Number(toMoney(pratinjauTambah)), pratinjauBelumMemakai: Number(toMoney(pratinjauAkan)) },
+    status: nTanpa + nBelum + nGagal > 0 ? "PARSIAL" : mv.length ? "LENGKAP_MENURUT_HARGA_BERLAKU" : "BELUM_ADA_PEMAKAIAN", baris, belumMemakai };
 }

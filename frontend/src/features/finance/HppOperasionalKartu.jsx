@@ -9,7 +9,7 @@ import { rp, rpNilai, tanggalJam, varianBukti } from "@/features/warehouse/stok/
 const STATUS = {
   PARSIAL: { teks: "Parsial", varian: "orange" }, LENGKAP_MENURUT_HARGA_BERLAKU: { teks: "Lengkap menurut harga berlaku", varian: "green" }, BELUM_ADA_PEMAKAIAN: { teks: "Belum ada pemakaian", varian: "neutral" },
 };
-const STATUS_BARIS = { DIBEKUKAN: "Dibekukan", DIBEKUKAN_TANPA_HARGA_BERLAKU: "Dibekukan tanpa harga", BELUM_DIBEKUKAN: "Belum dibekukan" };
+const STATUS_BARIS = { DIBEKUKAN: "Dibekukan", DIBEKUKAN_TANPA_HARGA_BERLAKU: "Dibekukan tanpa harga", BELUM_DIBEKUKAN: "Belum dibekukan", GAGAL_PEMBEKUAN: "GAGAL membekukan — perlu diperbaiki" };
 
 export default function HppOperasionalKartu({ h }) {
   const [buka, setBuka] = useState(false); const Ikon = buka ? ChevronDown : ChevronRight;
@@ -24,7 +24,7 @@ export default function HppOperasionalKartu({ h }) {
       <p className="mt-1 text-[11.5px] leading-relaxed text-ink2" data-testid="peringatan-hpp-operasional">{h.peringatan}</p>
       <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
         <div className="rounded-btn bg-inset px-3 py-2"><div className="text-[11px] text-ink3">HPP operasional dibekukan</div><div className="text-[15px] font-bold tabular-nums text-ink" data-testid="nilai-hpp-operasional">{nBeku > 0 ? rpNilai(r.hppOperasionalDibekukan) : "Belum ada"}</div><div className="text-[11.5px] text-ink2">{nBeku > 0 ? `${nBeku} pemakaian · harga berlaku × pemakaian aktual` : "Belum ada pemakaian yang dibekukan harganya"}</div></div>
-        <div className="rounded-btn bg-inset px-3 py-2"><div className="text-[11px] text-ink3">Pemakaian tanpa harga operasional</div><div className={cn("text-[15px] font-bold tabular-nums", r.pemakaianTanpaHargaOperasional + r.pemakaianBelumDibekukan > 0 ? "text-orange" : "text-ink")}>{r.pemakaianTanpaHargaOperasional + r.pemakaianBelumDibekukan}</div><div className="text-[11.5px] text-ink2">bukan Rp0; butuh penerapan berpersetujuan</div></div>
+        <div className="rounded-btn bg-inset px-3 py-2"><div className="text-[11px] text-ink3">Pemakaian tanpa harga operasional</div><div className={cn("text-[15px] font-bold tabular-nums", r.pemakaianTanpaHargaOperasional + r.pemakaianBelumDibekukan + (r.pemakaianGagalPembekuan ?? 0) > 0 ? "text-orange" : "text-ink")}>{r.pemakaianTanpaHargaOperasional + r.pemakaianBelumDibekukan + (r.pemakaianGagalPembekuan ?? 0)}</div><div className="text-[11.5px] text-ink2">bukan Rp0; butuh penerapan berpersetujuan</div></div>
         <div className="rounded-btn bg-inset px-3 py-2"><div className="text-[11px] text-ink3">Pratinjau belum memakai bahan</div><div className="text-[15px] font-bold tabular-nums text-ink">{h.belumMemakai.length > 0 ? rpNilai(r.pratinjauBelumMemakai) : "—"}</div><div className="text-[11.5px] text-ink2">harga terbaru; bukan nilai beku</div></div>
       </div>
       {h.belumMemakai.length > 0 && (
