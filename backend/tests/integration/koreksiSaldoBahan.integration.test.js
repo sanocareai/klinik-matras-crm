@@ -312,3 +312,27 @@ test("K19 nilai persediaan Finance per bahan terpisah dari Harga Berlaku: tanpa 
   const r = await w.fin.c.get(`/api/finance/biaya-bahan/harga-berlaku/bahan/${m.id}`); assert.equal(r.status, 200, JSON.stringify(r.body));
   assert.equal(r.body.nilaiPersediaanFinance.tersedia, false); assert.match(r.body.nilaiPersediaanFinance.teks, /BUKAN Rp0/);
 });
+
+test("K20 guard rollback: SETIAP kueri SQL di scripts/rollback-guard-koreksi-saldo.sh valid terhadap skema nyata (literal enum, nama tabel/kolom) dan hitungannya benar pada keadaan kosong, berjalan, diposting, dibatalkan", async () => {
+  const fs = await import("node:fs"); const path = await import("node:path"); const { fileURLToPath } = await import("node:url");
+  const guard = fs.readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../scripts/rollback-guard-koreksi-saldo.sh"), "utf8").replace(/\r\n/g, "\n");
+  const sqls = [...guard.matchAll(/\bQR? "(select [^"]+)"/g)].map((m) => m[1]);
+  assert.ok(sqls.length >= 6, `kueri guard ditemukan: ${sqls.length}`);
+  const jalankan = async () => { const o = []; for (const q of sqls) { const r = await testPrisma.$queryRawUnsafe(q.replace(/\$\{[^}]+\}/g, "x")); o.push(/^select count\(\*\)/.test(q) ? Number(Object.values(r[0])[0]) : r.length); } return o; }; // kueri contoh (bukan hitungan) cukup valid; nilainya jumlah baris
+  const nama = (q) => (q.match(/^select count\(\*\) from (\S+)/)?.[1] ?? q.slice(0, 40));
+  const kosong = await jalankan(); assert.ok(kosong.every((n) => Number.isFinite(n)), "semua hitungan angka");
+  const w = await dunia(); const m = await createTestMaterial(); await seedBalance(m.id, 10);
+  const a = await ajukanDariPratinjau(w.gudang.c, m.id, 7); assert.equal(a.status, 201);
+  const idxJalan = sqls.findIndex((q) => /status in \('DRAFT','WAITING_APPROVAL','APPROVED'\)/.test(q) && /^select count/.test(q));
+  assert.ok(idxJalan >= 0, "ada kueri hitung koreksi yang masih berjalan");
+  assert.equal((await jalankan())[idxJalan], 1, "satu koreksi berjalan terhitung -> guard akan DITOLAK");
+  assert.equal((await w.owner.c.patch(`/api/inventory/adjustments/${a.body.id}`, { status: "APPROVED" })).status, 200);
+  assert.equal((await jalankan())[idxJalan], 1, "Disetujui (belum diposting) masih berjalan");
+  assert.equal((await w.gudang.c.post(`/api/inventory/adjustments/${a.body.id}/post`, {})).status, 200);
+  const sesudahPost = await jalankan(); assert.equal(sesudahPost[idxJalan], 0, "sesudah diposting tidak lagi berjalan -> guard LULUS");
+  const idxPost = sqls.findIndex((q) => /status = 'POSTED'/.test(q)); assert.equal(sesudahPost[idxPost], 1);
+  const b = await createTestMaterial(); await seedBalance(b.id, 10); const ab = await ajukanDariPratinjau(w.gudang.c, b.id, 4);
+  assert.equal((await w.gudang.c.patch(`/api/inventory/adjustments/${ab.body.id}/cancel`, { reason: "uji guard" })).status, 200);
+  const sesudahBatal = await jalankan(); assert.equal(sesudahBatal[idxJalan], 0); const idxBatal = sqls.findIndex((q) => /status = 'CANCELLED'/.test(q)); assert.equal(sesudahBatal[idxBatal], 1);
+  const idxAsing = sqls.findIndex((q) => /not in \('DRAFT'/.test(q)); assert.equal(sesudahBatal[idxAsing], 0, `tidak ada status tak dikenal (${nama(sqls[idxAsing])})`);
+});

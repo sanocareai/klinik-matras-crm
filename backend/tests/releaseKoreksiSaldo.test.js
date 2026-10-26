@@ -85,6 +85,10 @@ test("guard rollback: baca-saja (transaksi READ ONLY); LULUS hanya bila tabel ta
   assert.ok(guard.includes('if [ "$NJ" = "0" ]; then'), "LULUS hanya bila tidak ada koreksi yang masih berjalan");
   assert.equal(guard.split("GUARD LULUS").length - 1, 2, "persis dua pesan LULUS (tabel belum ada; tidak ada koreksi berjalan)");
   assert.ok(guard.indexOf("GUARD LULUS: tidak ada koreksi saldo yang masih berjalan") < guard.indexOf("RUTIN TIDAK DIPERBOLEHKAN"), "cabang LULUS mendahului penolakan; sisanya DITOLAK");
+  // Pelajaran rehearsal 26 Okt: literal enum yang tidak ada ('REJECTED') membuat guard gagal di database nyata. Semua literal status di guard WAJIB anggota enum AdjustmentRequestStatus.
+  const enumStatus = baca("backend/prisma/schema.prisma").match(/enum AdjustmentRequestStatus \{([^}]*)\}/)[1].split("\n").map((x) => x.trim()).filter((x) => /^[A-Z_]+$/.test(x));
+  const literal = [...new Set([...tanpaKomentar.matchAll(/'([A-Z_]{4,})'/g)].map((m) => m[1]))];
+  assert.ok(literal.length >= 4 && literal.every((x) => enumStatus.includes(x)), `literal status di guard di luar enum: ${literal.filter((x) => !enumStatus.includes(x))}`);
   for (const f of ["scripts/rollback-guard-koreksi-saldo.sh", "scripts/release-koreksi-saldo.sh"]) { const r = spawnSync("bash", ["-n", path.join(repo, f)], { encoding: "utf8" }); if (r.error) continue; assert.equal(r.status, 0, r.stderr); }
 });
 

@@ -5,7 +5,7 @@
 #   TETAPI penjaga "saldo bergeser" (saldo yang dilihat pengaju harus sama saat disetujui dan diposting) tidak berlaku lagi — selisihnya bisa diposting pada saldo yang sudah berbeda.
 #   ATURAN (bila ragu, TOLAK):
 #     - tabel koreksi_saldo_bahan belum ada                                             → LULUS (migrasi belum terpasang: tidak ada yang tersembunyi)
-#     - tabel ada dan TIDAK ADA permintaan koreksi saldo yang masih berjalan           → LULUS (riwayat yang sudah POSTED/CANCELLED/REJECTED tetap tersimpan; tabel tidak dihapus)
+#     - tabel ada dan TIDAK ADA permintaan koreksi saldo yang masih berjalan           → LULUS (riwayat yang sudah POSTED/CANCELLED tetap tersimpan; tabel tidak dihapus)
 #     - ADA permintaan koreksi saldo yang masih berjalan                                → TOLAK (exit 1): batalkan dulu lewat Penyesuaian Stok (alasan wajib), lalu ulangi guard
 #   Exit: 0 = LULUS, 1 = DITOLAK (pesan memuat jumlah, contoh, alasan, pemulihan), 2 = guard sendiri gagal membaca (anggap DITOLAK). Guard ini tidak mengubah data apa pun (transaksi READ ONLY).
 set -Eeuo pipefail
@@ -22,10 +22,10 @@ if [ "$ADA" = "0" ]; then echo "Koreksi Saldo: tabel belum ada (migrasi belum te
 NT="$(QR "select count(*) from koreksi_saldo_bahan")"
 NJ="$(QR "select count(*) from koreksi_saldo_bahan k join stock_adjustment_requests r on r.id = k.adjustment_request_id where r.status in ('DRAFT','WAITING_APPROVAL','APPROVED')")"
 NP="$(QR "select count(*) from koreksi_saldo_bahan k join stock_adjustment_requests r on r.id = k.adjustment_request_id where r.status = 'POSTED'")"
-NX="$(QR "select count(*) from koreksi_saldo_bahan k join stock_adjustment_requests r on r.id = k.adjustment_request_id where r.status in ('CANCELLED','REJECTED')")"
-NASING="$(QR "select count(*) from koreksi_saldo_bahan k join stock_adjustment_requests r on r.id = k.adjustment_request_id where r.status not in ('DRAFT','WAITING_APPROVAL','APPROVED','POSTED','CANCELLED','REJECTED')")"
+NX="$(QR "select count(*) from koreksi_saldo_bahan k join stock_adjustment_requests r on r.id = k.adjustment_request_id where r.status = 'CANCELLED'")"
+NASING="$(QR "select count(*) from koreksi_saldo_bahan k join stock_adjustment_requests r on r.id = k.adjustment_request_id where r.status not in ('DRAFT','WAITING_APPROVAL','APPROVED','POSTED','CANCELLED')")"
 for v in "$NT" "$NJ" "$NP" "$NX" "$NASING"; do [[ "$v" =~ ^[0-9]+$ ]] || { echo "GUARD DITOLAK: hitungan guard bukan angka ('$v'); anggap TIDAK aman."; exit 2; }; done
-echo "Koreksi Saldo: konteks tercatat=${NT} (${NJ} masih berjalan, ${NP} sudah diposting ke stok, ${NX} dibatalkan/ditolak)"
+echo "Koreksi Saldo: konteks tercatat=${NT} (${NJ} masih berjalan, ${NP} sudah diposting ke stok, ${NX} dibatalkan)"
 echo "Data ini TIDAK memengaruhi stok, valuasi Finance, atau jurnal; yang berisiko pada rollback adalah hilangnya penjaga saldo bergeser untuk permintaan yang masih berjalan (lihat kepala skrip)."
 if [ "$NASING" != "0" ]; then echo "GUARD DITOLAK: ada status permintaan tidak dikenal (${NASING}); anggap TIDAK aman."; exit 1; fi
 if [ "$NJ" = "0" ]; then
