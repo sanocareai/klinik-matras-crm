@@ -70,6 +70,34 @@ export function penyelesaiHargaBerlaku(db) {
   return async (materialId, at) => { if (!c.has(materialId)) c.set(materialId, await barisAktif(db, materialId)); const r = pilih(c.get(materialId).aktif, new Date(at)); return r ? { harga: D(r.unitPrice), baris: r, label: labelDari(r) } : null; };
 }
 
+// ── dasar waktu harga untuk PEMBETULAN terlambat (unit terkirim) ───────────────────────────────────
+// Keputusan Owner: pembetulan yang dicatat belakangan memilih Harga Berlaku menurut TANGGAL PEMAKAIAN YANG DILAPORKAN (bukan hari pencatatan). Tanggal itu hidup di catatan baku pergerakan
+// ("Pembetulan unit terkirim (KODE) [dilaporkan YYYY-MM-DD]: …", ditulis server di jalur unit terkirim). Aturan batas: harga yang berlaku pada AWAL hari itu (00:00 WIB, inklusif) — harga yang baru mulai
+// berlaku di tengah hari itu TIDAK dipakai (ditandai di pratinjau). Belum ada harga pada batas itu → TANPA_HARGA/belum diketahui; TIDAK PERNAH memakai harga hari pencatatan. Waktu pencatatan
+// (stock_movements.created_at) dan tanggal jurnal Finance tidak berubah. Hanya ISSUE/RETURN; pergerakan lain memakai created_at seperti biasa.
+const POLA_DILAPORKAN = /^Pembetulan unit terkirim \(.+?\) \[dilaporkan (\d{4}-\d{2}-\d{2})\]: /;
+export const batasHargaTanggal = (tgl) => new Date(`${tgl}T00:00:00+07:00`);
+/** Tanggal (YYYY-MM-DD, WIB) yang menjadi dasar harga pergerakan ini, atau null bila dasarnya waktu pergerakan biasa. */
+export function tanggalDasarHarga(p) {
+  if (!p || (p.type !== "ISSUE" && p.type !== "RETURN")) return null;
+  const m = POLA_DILAPORKAN.exec(String(p.note ?? "")); if (!m) return null;
+  const t = batasHargaTanggal(m[1]); return Number.isFinite(t.getTime()) && wibTgl(t) === m[1] ? m[1] : null;
+}
+/** Waktu yang dipakai MEMILIH Harga Berlaku untuk pergerakan ini (satu aturan untuk posting, penerapan, koreksi harga, dan tampilan). */
+export const waktuDasarHarga = (p) => { const t = tanggalDasarHarga(p); return t ? batasHargaTanggal(t) : new Date(p.createdAt ?? Date.now()); };
+const detailTanggal = (tgl, p) => ({ dasarTanggal: tgl, aturan: "HARGA_PADA_AWAL_HARI_WIB", batasHarga: batasHargaTanggal(tgl).toISOString(), dicatatPada: p.createdAt ? new Date(p.createdAt).toISOString() : null });
+/** Harga berlaku yang MULAI berlaku di tengah hari (WIB) itu: tidak dipakai (batas = awal hari) tetapi ditampilkan sebagai peringatan di pratinjau. Baca-saja. */
+export async function hargaBerubahPadaHari(db, materialId, tgl) {
+  const { aktif } = await barisAktif(db, materialId); const a = batasHargaTanggal(tgl).getTime(); const b = a + 86_400_000;
+  return aktif.filter((x) => { const t = new Date(x.effectiveFrom).getTime(); return t > a && t < b; }).map((x) => ({ harga: Number(x.unitPrice), mulai: x.effectiveFrom }));
+}
+/** Teks dasar harga untuk tampilan/Excel: sama di Ringkasan, Riwayat, pratinjau, dan ekspor. */
+export function teksDasarHarga(basis, tgl) {
+  if (tgl && basis === "WAKTU_PEMAKAIAN") return `Harga berlaku pada tanggal pemakaian yang dilaporkan (${tgl}) — bukan hari pencatatan`;
+  if (tgl && basis === "WAKTU_RETUR_TANPA_ISSUE") return `Harga berlaku pada tanggal pemakaian yang dilaporkan (${tgl}) — retur tidak tertaut ISSUE asal`;
+  return BASIS_TEKS[basis] ?? basis;
+}
+
 const penyelesaiDariDaftar = (aktif) => (at) => { const r = pilih(aktif, new Date(at)); return r ? { harga: D(r.unitPrice), baris: r, label: labelDari(r) } : null; };
 const BASIS_TIPE = { ISSUE: "WAKTU_PEMAKAIAN", WASTE: "WAKTU_WASTE", ADJUSTMENT: "WAKTU_PENYESUAIAN", RETURN: "WAKTU_RETUR_TANPA_ISSUE" };
 async function opTerakhirPer(db, ids) {
@@ -89,7 +117,7 @@ async function asalRetur(db, p) {
  * Kembalian: { ada, harga(4 dp), priceId, priceEffectiveFrom, label, basis, detail } atau { ada:false, basis, gap, detail }.
  */
 export async function hargaUntukPergerakan(db, p, sel) {
-  const at = new Date(p.createdAt);
+  const tglDasar = tanggalDasarHarga(p); const at = waktuDasarHarga(p); // asal retur tetap dicari menurut waktu pencatatan (p.createdAt); hanya PEMILIHAN harga mengikuti tanggal dilaporkan
   if (p.type === "RETURN") {
     const asal = await asalRetur(db, p);
     if (asal.length) {
@@ -98,12 +126,12 @@ export async function hargaUntukPergerakan(db, p, sel) {
       if (detail.some((d) => d.unitCost == null)) return { ada: false, basis: "HARGA_ISSUE_ASAL", gap: "ISSUE_ASAL_BELUM_BERHARGA", detail };
       const totalQ = detail.reduce((a, d) => a.plus(d.qty), D(0)); const rata = detail.reduce((a, d) => a.plus(D(d.qty).times(d.unitCost)), D(0)).dividedBy(totalQ.isZero() ? 1 : totalQ).toDecimalPlaces(4);
       const utama = detail.reduce((m, d) => (d.qty > m.qty ? d : m), detail[0]);
-      return { ada: true, harga: rata, priceId: utama.priceId, priceEffectiveFrom: utama.priceEffectiveFrom, label: utama.label, basis: "HARGA_ISSUE_ASAL", detail };
+      return { ada: true, harga: rata, priceId: utama.priceId, priceEffectiveFrom: utama.priceEffectiveFrom, label: utama.label, basis: "HARGA_ISSUE_ASAL", detail, tanggalDasar: tglDasar };
     }
   }
-  const h = await sel(p.materialId, at); const basis = BASIS_TIPE[p.type] ?? "WAKTU_PEMAKAIAN";
-  if (!h) return { ada: false, basis, gap: "BELUM_ADA_HARGA_PADA_WAKTU_PEMAKAIAN", detail: null };
-  return { ada: true, harga: h.harga.toDecimalPlaces(4), priceId: h.baris.id, priceEffectiveFrom: h.baris.effectiveFrom, label: h.label, basis, detail: null };
+  const h = await sel(p.materialId, at); const basis = BASIS_TIPE[p.type] ?? "WAKTU_PEMAKAIAN"; const detail = tglDasar ? detailTanggal(tglDasar, p) : null;
+  if (!h) return { ada: false, basis, gap: "BELUM_ADA_HARGA_PADA_WAKTU_PEMAKAIAN", detail, tanggalDasar: tglDasar };
+  return { ada: true, harga: h.harga.toDecimalPlaces(4), priceId: h.baris.id, priceEffectiveFrom: h.baris.effectiveFrom, label: h.label, basis, detail, tanggalDasar: tglDasar };
 }
 
 const tampilBaris = (x, { diganti, aktifId, sekarang }) => ({
@@ -189,12 +217,12 @@ async function dampakKoreksi(db, bahan, { aktif, sasaran, hargaBaru, mulaiBaru, 
   const sesudah = [...dasar, maya].sort((a, b) => new Date(a.effectiveFrom) - new Date(b.effectiveFrom) || new Date(a.createdAt) - new Date(b.createdAt));
   const dari = new Date(Math.min(new Date(sasaran.effectiveFrom).getTime(), mulaiBaru.getTime()));
   const mv = await db.stockMovement.findMany({ where: { materialId: bahan.id, unitId: { not: null }, type: { in: TIPE_OP }, createdAt: { gte: dari } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-    select: { id: true, type: true, qty: true, createdAt: true, unitId: true, materialId: true, correctsMovementId: true, unit: { select: { unitCode: true, order: { select: { orderNumber: true } } } }, biayaOperasional: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1 } } });
+    select: { id: true, type: true, qty: true, createdAt: true, note: true, unitId: true, materialId: true, correctsMovementId: true, unit: { select: { unitCode: true, order: { select: { orderNumber: true } } } }, biayaOperasional: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1 } } });
   const kena = new Set(); const baris = [];
   for (const p of mv) {
     let hSebelum = null; let hSesudah = null; let ikut = false;
     if (p.type === "RETURN") { const asal = await asalRetur(db, p); if (asal.length) { if (!asal.some((x) => kena.has(x.id))) continue; ikut = true; } }
-    if (!ikut) { const a = pilih(aktif, p.createdAt); const b = pilih(sesudah, p.createdAt); hSebelum = a ? Number(a.unitPrice) : null; hSesudah = b ? Number(b.unitPrice) : null; if (hSebelum === hSesudah) continue; }
+    if (!ikut) { const wd = waktuDasarHarga(p); const a = pilih(aktif, wd); const b = pilih(sesudah, wd); hSebelum = a ? Number(a.unitPrice) : null; hSesudah = b ? Number(b.unitPrice) : null; if (hSebelum === hSesudah) continue; }
     kena.add(p.id); const o = p.biayaOperasional[0] ?? null;
     baris.push({ movementId: p.id, order: p.unit?.order?.orderNumber ?? null, unit: p.unit?.unitCode ?? null, tanggal: wibTgl(p.createdAt), tipe: p.type, qty: Math.abs(Number(p.qty)), hargaBerlakuSebelum: hSebelum, hargaBerlakuSesudah: hSesudah, ikutIssueAsal: ikut,
       keadaanBeku: !o ? "BELUM_DIBEKUKAN" : o.status === GAGAL ? "GAGAL_PEMBEKUAN" : o.status === "DINILAI" ? "DIBEKUKAN" : "DIBEKUKAN_TANPA_HARGA", hargaBeku: o?.unitCost == null ? null : Number(o.unitCost), nilaiBeku: o?.value == null ? null : Number(o.value) });
@@ -271,7 +299,7 @@ export async function catatBiayaOperasional(tx, mov) {
   if (typeof tx?.$executeRawUnsafe !== "function" || !tx?.stockMovementBiayaOperasional) return null;
   await tx.$executeRawUnsafe("SAVEPOINT sp_biaya_operasional");
   try {
-    const qty = D(mov.qty); const sel = penyelesaiHargaBerlaku(tx); const r = await hargaUntukPergerakan(tx, { id: mov.id, type: mov.type, materialId: mov.materialId, unitId: mov.unitId, createdAt: mov.createdAt ?? new Date(), correctsMovementId: mov.correctsMovementId ?? null }, sel);
+    const qty = D(mov.qty); const sel = penyelesaiHargaBerlaku(tx); const r = await hargaUntukPergerakan(tx, { id: mov.id, type: mov.type, materialId: mov.materialId, unitId: mov.unitId, createdAt: mov.createdAt ?? new Date(), correctsMovementId: mov.correctsMovementId ?? null, note: mov.note ?? null }, sel);
     const nilai = r.ada ? (qty.isNegative() ? toMoney(qty.abs().times(r.harga)) : toMoney(qty.abs().times(r.harga)).negated()) : null;
     const data = r.ada
       ? { status: "DINILAI", unitCost: r.harga.toString(), value: nilai.toString(), priceId: r.priceId, priceEffectiveFrom: r.priceEffectiveFrom, evidenceLabel: r.label }
@@ -319,19 +347,19 @@ export async function pratinjauPenerapan(db, { materialId, groups, movementIds =
   const d0 = dari ? new Date(dari) : null; const d1 = sampai ? new Date(sampai) : null; wajib(!(d0 && Number.isNaN(d0.getTime())) && !(d1 && Number.isNaN(d1.getTime())), "Rentang tanggal tidak valid", "RENTANG_TIDAK_VALID");
   const selesai = penyelesaiHargaBerlaku(db);
   const mv = await db.stockMovement.findMany({ where: { materialId: bahan.id, unitId: { not: null }, type: { in: TIPE_OP }, ...(d0 || d1 ? { createdAt: { ...(d0 ? { gte: d0 } : {}), ...(d1 ? { lte: d1 } : {}) } } : {}) }, orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-    select: { id: true, type: true, qty: true, createdAt: true, unitId: true, materialId: true, correctsMovementId: true, unit: { select: { unitCode: true, order: { select: { orderNumber: true } } } }, biayaOperasional: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1 } } });
+    select: { id: true, type: true, qty: true, createdAt: true, note: true, unitId: true, materialId: true, correctsMovementId: true, unit: { select: { unitCode: true, order: { select: { orderNumber: true } } } }, biayaOperasional: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1 } } });
   const terapkan = []; const gap = []; let sudahSelaras = 0; const hitung = { BELUM_DIBEKUKAN: 0, TANPA_HARGA_BERLAKU: 0, SELARAS_ULANG: 0 };
   for (const p of mv) {
     const terakhir = p.biayaOperasional[0] ?? null; const h = await hargaUntukPergerakan(db, p, selesai); const qty = D(p.qty);
-    const dasar = { movementId: p.id, tanggal: wibTgl(p.createdAt), waktu: p.createdAt, order: p.unit?.order?.orderNumber ?? null, unit: p.unit?.unitCode ?? null, unitId: p.unitId, tipe: p.type, qty: Number(qty), satuan: bahan.unit };
+    const dasar = { movementId: p.id, tanggal: wibTgl(p.createdAt), tanggalDasarHarga: tanggalDasarHarga(p), waktu: p.createdAt, order: p.unit?.order?.orderNumber ?? null, unit: p.unit?.unitCode ?? null, unitId: p.unitId, tipe: p.type, qty: Number(qty), satuan: bahan.unit };
     let kel;
     if (!terakhir || terakhir.status === GAGAL) kel = "BELUM_DIBEKUKAN"; else if (terakhir.status === "TANPA_HARGA") kel = "TANPA_HARGA_BERLAKU";
     else if (!h.ada) { gap.push({ ...dasar, gap: "HARGA_BERLAKU_HILANG", ket: "Harga beku ada tetapi tidak ada harga berlaku pada waktu itu (setelah koreksi) — tinjau manual", nilaiSekarang: Number(terakhir.value) }); continue; }
     else if (D(terakhir.unitCost).equals(h.harga)) { sudahSelaras++; continue; } else kel = "SELARAS_ULANG";
     hitung[kel]++; if (!grup.includes(kel)) continue; if (pilihId && !pilihId.has(p.id)) continue;
-    if (!h.ada) { gap.push({ ...dasar, kelompok: kel, basis: h.basis, basisTeks: BASIS_TEKS[h.basis], gap: h.gap, ket: h.gap === "ISSUE_ASAL_BELUM_BERHARGA" ? "Retur tertaut ISSUE asal yang belum punya harga operasional — beri harga ISSUE asal dulu (retur mengikuti, bukan memakai harga yang sedang berlaku)" : "Belum ada harga berlaku pada waktu pemakaian ini — tidak diberi harga rekaan" }); continue; }
+    if (!h.ada) { gap.push({ ...dasar, kelompok: kel, basis: h.basis, basisTeks: teksDasarHarga(h.basis, dasar.tanggalDasarHarga), gap: h.gap, ket: h.gap === "ISSUE_ASAL_BELUM_BERHARGA" ? "Retur tertaut ISSUE asal yang belum punya harga operasional — beri harga ISSUE asal dulu (retur mengikuti, bukan memakai harga yang sedang berlaku)" : "Belum ada harga berlaku pada waktu pemakaian ini — tidak diberi harga rekaan" }); continue; }
     const mutlak = toMoney(qty.abs().times(h.harga)); const nilai = qty.isNegative() ? mutlak : mutlak.negated();
-    terapkan.push({ ...dasar, kelompok: kel, harga: h.harga, nilaiBaru: Number(nilai), nilaiSebelum: terakhir?.value == null ? null : Number(terakhir.value), priceId: h.priceId, priceEffectiveFrom: h.priceEffectiveFrom, label: h.label, basis: h.basis, basisTeks: BASIS_TEKS[h.basis], basisDetail: h.detail, hargaBeku: terakhir?.unitCost == null ? null : Number(terakhir.unitCost) });
+    terapkan.push({ ...dasar, kelompok: kel, harga: h.harga, nilaiBaru: Number(nilai), nilaiSebelum: terakhir?.value == null ? null : Number(terakhir.value), priceId: h.priceId, priceEffectiveFrom: h.priceEffectiveFrom, label: h.label, basis: h.basis, basisTeks: teksDasarHarga(h.basis, dasar.tanggalDasarHarga), basisDetail: h.detail, hargaBeku: terakhir?.unitCost == null ? null : Number(terakhir.unitCost) });
   }
   const total = terapkan.reduce((a, x) => a.plus(x.nilaiBaru), D(0));
   const hasil = { bahan: { id: bahan.id, kode: bahan.code, nama: bahan.name, satuan: bahan.unit }, kelompokDipilih: grup, tersedia: hitung, sudahSelaras,
@@ -405,7 +433,7 @@ export async function bacaPenerapan(db, id) { const b = await db.biayaOperasiona
 
 export async function hppOperasionalUnit(db, unitId) {
   const mv = await db.stockMovement.findMany({ where: { unitId, type: { in: TIPE_OP } }, orderBy: [{ createdAt: "asc" }, { id: "asc" }],
-    select: { id: true, type: true, qty: true, createdAt: true, materialId: true, unitId: true, correctsMovementId: true, material: { select: { code: true, name: true, unit: true } }, biayaOperasional: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1 } } });
+    select: { id: true, type: true, qty: true, createdAt: true, note: true, materialId: true, unitId: true, correctsMovementId: true, material: { select: { code: true, name: true, unit: true } }, biayaOperasional: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1 } } });
   const selesai = penyelesaiHargaBerlaku(db); const sekarang = new Date();
   const baris = []; let nilai = D(0); let susut = D(0); let pratinjauTambah = D(0); let nTanpa = 0; let nBelum = 0; let nGagal = 0;
   for (const m of mv) {
@@ -417,7 +445,8 @@ export async function hppOperasionalUnit(db, unitId) {
       const hh = await hargaUntukPergerakan(db, m, selesai); basis = gagal ? "TIDAK_DIKETAHUI" : hh.basis; const h = hh.ada ? { harga: hh.harga, label: hh.label } : null;
       if (h) { const mutlak = toMoney(qty.abs().times(h.harga)); const v = qty.isNegative() ? mutlak : mutlak.negated(); pratinjau = { harga: Number(h.harga), nilai: Number(v), label: h.label, ket: "Pratinjau pada harga berlaku saat pemakaian — belum dibekukan; diberi harga hanya lewat penerapan khusus." }; if (m.type !== "WASTE") pratinjauTambah = pratinjauTambah.plus(v); }
     }
-    baris.push({ movementId: m.id, tanggal: m.createdAt, jenisBiaya: jenis, tipe: m.type, kode: m.material.code, nama: m.material.name, satuan: m.material.unit, qty: Number(qty), status, harga, nilai: nilaiB, labelBukti: label, teksLabelBukti: label ? LABEL_BUKTI[label] : null, sumber, basis, basisTeks: BASIS_TEKS[basis] ?? basis, basisDetail: o?.basisDetail ?? null, gagalAlasan: gagal ? o.gagalAlasan : null, hargaBerlakuMulai: mulai, pratinjau });
+    const tglDasar = tanggalDasarHarga(m);
+    baris.push({ movementId: m.id, tanggal: m.createdAt, waktuPencatatan: m.createdAt, tanggalDasarHarga: tglDasar, jenisBiaya: jenis, tipe: m.type, kode: m.material.code, nama: m.material.name, satuan: m.material.unit, qty: Number(qty), status, harga, nilai: nilaiB, labelBukti: label, teksLabelBukti: label ? LABEL_BUKTI[label] : null, sumber, basis, basisTeks: teksDasarHarga(basis, tglDasar), basisDetail: o?.basisDetail ?? null, gagalAlasan: gagal ? o.gagalAlasan : null, hargaBerlakuMulai: mulai, pratinjau });
   }
   // bahan yang BELUM dipakai: Material Issue belum keluar + catatan siap posting → pratinjau harga terbaru
   const akan = await db.$queryRawUnsafe(`select m.id::text mid, m.code kode, m.name nama, m.unit satuan, sum(q.qty)::float qty, string_agg(distinct q.asal, ', ') asal from (

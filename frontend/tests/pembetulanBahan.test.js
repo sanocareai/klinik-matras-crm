@@ -39,8 +39,8 @@ test("validasi: tanggal + alasan (min 5) wajib di semua jalur; jumlah > 0 untuk 
 });
 
 test("tubuh permintaan memuat alasan, tanggal dilaporkan, saldo yang dilihat; pengurangan = qty negatif; konfirmasi bukan-ganda hanya bila dicentang", () => {
-  const pra = { stok: { saldoDilihat: 100 } };
-  assert.deepEqual(tubuhPembetulan({ cara: "TAMBAH", bahan, qty: 3, alasan: " ok sekali ", tanggal: "2026-10-20", pra }), { materialId: "m1", qty: 3, alasanPembetulan: "ok sekali", tanggalPemakaian: "2026-10-20", saldoDilihat: 100 });
+  const pra = { stok: { saldoDilihat: 100 }, hppOperasional: { sidik: "2026-10-20|20000|p1|WAKTU_PEMAKAIAN" } };
+  assert.deepEqual(tubuhPembetulan({ cara: "TAMBAH", bahan, qty: 3, alasan: " ok sekali ", tanggal: "2026-10-20", pra }), { materialId: "m1", qty: 3, alasanPembetulan: "ok sekali", tanggalPemakaian: "2026-10-20", saldoDilihat: 100, hppSidik: "2026-10-20|20000|p1|WAKTU_PEMAKAIAN" });
   const k = tubuhPembetulan({ cara: "KURANGI", bahan, qty: 2, alasan: "kelebihan", tanggal: "2026-10-20", pra, sudahPeriksa: true }); assert.equal(k.qty, -2); assert.equal(k.konfirmasiBukanGanda, true);
 });
 
@@ -64,4 +64,10 @@ test("pratinjau: tindakan (catatan saja vs stok baru) dan waktu terpisah tampil;
   const d = daftarSudahTercatat(pra); assert.deepEqual(d.map((x) => x.id), ["t1", "k1"]); assert.equal(d[0].tertaut, true); assert.equal(d[1].tertaut, false); assert.equal(d[1].jenisTeks, "Pengeluaran bahan sama TANPA unit");
   const catatan = barisDampak({ tindakan: { judul: "Hanya MENAMBAH CATATAN", teks: "Stok tidak berubah.", menulisStok: false }, waktu: { teks: "w" }, stok: null, finance: { hasil: "TIDAK_ADA", teks: "Tidak ada nilai atau jurnal" }, hppOperasional: { teks: "HPP tidak berubah" } });
   assert.equal(catatan[0].tegas, false); assert.equal(catatan.find((x) => x.k === "stok").teks, "Tidak berubah (hanya catatan)."); assert.deepEqual(barisDampak(null), []); assert.deepEqual(daftarSudahTercatat(null), []);
+});
+test("dasar harga HPP operasional: tanggal pemakaian dilaporkan + harga (atau TANPA_HARGA) tampil sebagai baris tersendiri; tidak ada baris bila pratinjau tidak membawa tanggal dasar", () => {
+  const dasar = { tindakan: { judul: "Membuat PENGELUARAN STOK BARU", teks: "x", menulisStok: true }, waktu: { teks: "w" }, bahan: { satuan: "KG" }, stok: { saldoSebelum: 10, saldoSesudah: 9 }, pemakaianBersih: { sebelum: 0, sesudah: 1 }, finance: { hasil: "JURNAL", teks: "j" } };
+  const ada = barisDampak({ ...dasar, hppOperasional: { teks: "t", status: "DINILAI", harga: 20000, tanggalDasar: "2026-10-20" } }).find((x) => x.k === "dasarHarga"); assert.match(ada.teks, /2026-10-20/); assert.match(ada.teks, /20000/); assert.match(ada.teks, /harga hari pencatatan tidak dipakai/);
+  const tanpa = barisDampak({ ...dasar, hppOperasional: { teks: "t", status: "TANPA_HARGA", harga: null, tanggalDasar: "2026-10-20" } }).find((x) => x.k === "dasarHarga"); assert.match(tanpa.teks, /TANPA_HARGA \/ belum diketahui/); assert.ok(!/Rp0/.test(tanpa.teks));
+  assert.equal(barisDampak({ ...dasar, hppOperasional: { teks: "t" } }).find((x) => x.k === "dasarHarga"), undefined);
 });

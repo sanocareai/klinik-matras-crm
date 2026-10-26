@@ -83,7 +83,7 @@ productionAdopsiRouter.get("/units/:id/adopsi", requirePermission(P.UNIT_READ), 
     const [baris] = await perkayaBarisUnit(prisma, [unit]);
     const bukti = (await loadAppEvidence(prisma, [unit.id])).get(unit.id);
     const [riwayatKerja, rencana, aktual, run, penerimaan, sementara] = await Promise.all([
-      riwayatKerjaUnit(prisma, unit.id, bukti?.firstEvidenceAt ?? null), ambilRencanaBahan(prisma, unit.id), ambilPemakaianAktual(prisma, unit.id),
+      riwayatKerjaUnit(prisma, unit.id, bukti?.firstEvidenceAt ?? null), ambilRencanaBahan(prisma, unit.id), ambilPemakaianAktual(prisma, unit.id, { izinHarga: hasPermission(req.user, P.FINANCE_READ) || hasPermission(req.user, P.UNIT_MATERIAL_WRITE) }),
       prisma.productionRun.findFirst({ where: { unitId: unit.id }, orderBy: { createdAt: "desc" }, select: { id: true } }),
       ambilPenerimaanWorkshop(prisma, unit.id), ambilPemakaianSementaraUnit(prisma, unit.id),
     ]);

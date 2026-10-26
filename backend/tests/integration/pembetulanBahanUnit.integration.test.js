@@ -32,7 +32,15 @@ const snap = async () => ({
 });
 const saldo = async (id) => Number((await testPrisma.$queryRaw`SELECT COALESCE(SUM(qty),0)::float AS s FROM stock_movements WHERE material_id = ${id}::uuid`)[0].s);
 const PRA = (w) => `/api/production/units/${w.unit.id}/pembetulan-bahan/pratinjau`;
-const pasang = (w, body, k = kunci()) => w.a.post(`/api/units/${w.unit.id}/materials`, body, { "Idempotency-Key": k });
+// Pembetulan unit terkirim wajib membawa dasar harga dari pratinjau (hppSidik). Pembantu ini mengambilnya dari pratinjau sungguhan; kirim hppSidik eksplisit (termasuk null) untuk menguji penolakan.
+const pasang = async (w, body, k = kunci()) => {
+  let b = body;
+  if (b.hppSidik === undefined && b.saldoDilihat !== undefined && b.tanggalPemakaian && b.materialId && b.qty) {
+    const p = await w.a.post(PRA(w), { materialId: b.materialId, jenis: b.qty > 0 ? "TAMBAH" : "KURANGI", qty: Math.abs(b.qty), tanggalPemakaian: b.tanggalPemakaian });
+    if (p.status === 200) b = { ...b, hppSidik: p.body.hppOperasional?.sidik };
+  }
+  return w.a.post(`/api/units/${w.unit.id}/materials`, b, { "Idempotency-Key": k });
+};
 // isian lengkap untuk pembetulan langsung (alasan, tanggal dilaporkan, saldo yang dilihat di pratinjau)
 const lengkap = async (w, extra = {}) => ({ materialId: w.mat.id, alasanPembetulan: "Bahan terlewat dicatat saat produksi", tanggalPemakaian: tgl(3), saldoDilihat: await saldo(w.mat.id), ...extra });
 
@@ -50,6 +58,7 @@ test("P1. unit TERKIRIM: alasan, tanggal pemakaian dilaporkan, dan saldo yang di
   assert.equal(await saldo(w.mat.id), 97);
   const ev = await testPrisma.activityEvent.findFirst({ where: { entityId: w.unit.id, eventType: "PRODUCTION_PEMBETULAN_BAHAN_UNIT_SELESAI" } }); assert.ok(ev); assert.equal(ev.metadata.tanggalPemakaianDilaporkan, tgl(3)); assert.equal(ev.metadata.terlambatHari, 3); assert.ok(ev.metadata.dicatatPada); assert.equal(ev.actorId, w.admin.user.id);
   assert.equal(await testPrisma.stockMovementBiayaOperasional.count({ where: { movementId: mv.id } }), 1);
+  const op1 = await testPrisma.stockMovementBiayaOperasional.findFirst({ where: { movementId: mv.id } }); assert.equal(op1.status, "TANPA_HARGA", "belum ada Harga Berlaku sama sekali = tanpa harga, bukan Rp0"); assert.equal(op1.basisDetail.dasarTanggal, tgl(3));
   // tampil di data order: tanggal dilaporkan terpisah dari tanggal pencatatan
   const ad = await w.a.get(`/api/production/units/${w.unit.id}/adopsi`); assert.equal(ad.status, 200, JSON.stringify(ad.body).slice(0, 200));
   const baris = ad.body.pemakaianAktual.baris[0]; assert.equal(baris.dilaporkan, tgl(3)); assert.equal(wib(baris.tanggal), tgl(0));
@@ -75,13 +84,13 @@ test("P3. pratinjau: tindakan jelas (PENGELUARAN STOK BARU vs catatan saja), wak
   const w = await dunia(); const s0 = await snap();
   const p = await w.a.post(PRA(w), { materialId: w.mat.id, jenis: "TAMBAH", qty: 3, tanggalPemakaian: tgl(3) }); assert.equal(p.status, 200, JSON.stringify(p.body));
   assert.equal(p.body.tindakan.jenis, "PENGELUARAN_STOK_BARU"); assert.equal(p.body.tindakan.menulisStok, true); assert.match(p.body.tindakan.judul, /PENGELUARAN STOK BARU/); assert.match(p.body.tindakan.teks, /Bukan sekadar catatan/);
-  assert.equal(p.body.waktu.pemakaianDilaporkan, tgl(3)); assert.equal(p.body.waktu.terlambatHari, 3); assert.equal(p.body.waktu.dasarHargaDanJurnal, "WAKTU_PENCATATAN"); assert.match(p.body.waktu.teks, /BUKAN waktu pekerjaan/);
+  assert.equal(p.body.waktu.pemakaianDilaporkan, tgl(3)); assert.equal(p.body.waktu.terlambatHari, 3); assert.equal(p.body.waktu.dasarHargaOperasional, "TANGGAL_PEMAKAIAN_DILAPORKAN"); assert.equal(p.body.waktu.dasarJurnalFinance, "WAKTU_PENCATATAN"); assert.match(p.body.waktu.teks, /BUKAN waktu pekerjaan/);
   assert.equal(p.body.stok.saldoSebelum, 100); assert.equal(p.body.stok.saldoDilihat, 100); assert.equal(p.body.stok.saldoSesudah, 97); assert.equal(p.body.pemakaianBersih.sesudah, 3);
   assert.equal(p.body.finance.hasil, "GAP_PERSEDIAAN_AWAL", "default: cutover 2026-10-01 dan persediaan awal belum diposting (sama dengan production)"); assert.match(p.body.finance.teks, /TIDAK ada jurnal/);
-  assert.equal(p.body.hppOperasional.dibekukan, false); assert.match(p.body.hppOperasional.teks, /Belum ada Harga Berlaku/); assert.equal(p.body.boleh, true);
+  assert.equal(p.body.hppOperasional.dibekukan, false); assert.equal(p.body.hppOperasional.status, "TANPA_HARGA"); assert.match(p.body.hppOperasional.teks, /TANPA_HARGA \/ belum diketahui/); assert.equal(p.body.hppOperasional.tanggalDasar, tgl(3)); assert.equal(p.body.boleh, true);
   assert.deepEqual(await snap(), s0, "pratinjau tidak menulis apa pun");
-  const t = new Date(Date.now() - 3600_000); await testPrisma.materialHargaBerlaku.create({ data: { materialId: w.mat.id, jenis: "HARGA", unitPrice: "25000", satuan: "KG", effectiveFrom: t, createdAt: t, reason: "harga uji", idempotencyKey: kunci("hb") } });
-  const p2 = await w.a.post(PRA(w), { materialId: w.mat.id, jenis: "TAMBAH", qty: 3, tanggalPemakaian: tgl(3) }); assert.equal(p2.body.hppOperasional.nilai, 75000); assert.match(p2.body.hppOperasional.teks, /WAKTU PENCATATAN/);
+  const t = new Date(Date.now() - 10 * HARI); await testPrisma.materialHargaBerlaku.create({ data: { materialId: w.mat.id, jenis: "HARGA", unitPrice: "25000", satuan: "KG", effectiveFrom: t, createdAt: t, reason: "harga uji", idempotencyKey: kunci("hb") } });
+  const p2 = await w.a.post(PRA(w), { materialId: w.mat.id, jenis: "TAMBAH", qty: 3, tanggalPemakaian: tgl(3) }); assert.equal(p2.body.hppOperasional.nilai, 75000); assert.match(p2.body.hppOperasional.teks, /tanggal pemakaian yang dilaporkan/); assert.equal(p2.body.hppOperasional.harga, 25000); assert.equal(p2.body.hppOperasional.tanggalDasar, tgl(3));
   const k = await w.a.post(PRA(w), { jenis: "KOMPONEN_LAMA", tanggalPemakaian: tgl(1) }); assert.equal(k.status, 200); assert.equal(k.body.tindakan.jenis, "CATATAN_SAJA"); assert.equal(k.body.tindakan.menulisStok, false); assert.equal(k.body.stok, null); assert.match(k.body.dampak[1], /Stok Gudang tidak berubah/);
   const sm = await w.a.post(PRA(w), { jenis: "CATATAN_SEMENTARA", tanggalPemakaian: tgl(1) }); assert.equal(sm.body.tindakan.jenis, "CATATAN_SAJA"); assert.match(sm.body.tindakan.teks, /Perlu rekonsiliasi Gudang/);
   assert.equal((await w.a.post(PRA(w), { materialId: w.mat.id, jenis: "TAMBAH", qty: 3 })).body.code, "UNIT_TANGGAL_PEMAKAIAN_WAJIB", "pratinjau juga wajib tanggal dilaporkan");
@@ -209,4 +218,75 @@ test("P13. unit DIBATALKAN tidak diperluas: POST materials berperilaku seperti s
   const w = await dunia({ status: "CANCELLED" }); const ok = await pasang(w, { materialId: w.mat.id, qty: 1, note: "perilaku lama" });
   assert.equal(ok.status, 201, JSON.stringify(ok.body)); assert.equal((await testPrisma.stockMovement.findUnique({ where: { id: ok.body.id } })).note, "perilaku lama");
   assert.equal(await testPrisma.activityEvent.count({ where: { entityId: w.unit.id, eventType: "PRODUCTION_PEMBETULAN_BAHAN_UNIT_SELESAI" } }), 0);
+});
+
+// ───────────────────────── HPP operasional: dasar = TANGGAL PEMAKAIAN YANG DILAPORKAN (keputusan Owner) ─────────────────────────
+const hargaDiTgl = (matId, harga, mulai, k) => testPrisma.materialHargaBerlaku.create({ data: { materialId: matId, jenis: "HARGA", unitPrice: String(harga), satuan: "KG", effectiveFrom: mulai, createdAt: mulai, reason: "harga uji", idempotencyKey: kunci(k ?? "hb") } });
+const op = (movementId) => testPrisma.stockMovementBiayaOperasional.findFirst({ where: { movementId }, orderBy: { createdAt: "desc" } });
+const dataExcel = async (unitCode) => { const modul = (await import("../../src/services/finance/export/biaya-bahan.js")).default; const d = await modul.ambil(testPrisma, { filter: { q: unitCode } }); return d.sheets.find((x) => x.nama === "HPP Operasional").baris; };
+
+test("P14. pemakaian SEBELUM kenaikan harga yang dicatat SESUDAH kenaikan memakai harga lama; pratinjau = hasil tersimpan = jejak unit = Riwayat = Excel (tanggal dasar dan harga sama); harga hari pencatatan tidak dipakai", async () => {
+  const w = await dunia(); await hargaDiTgl(w.mat.id, 20000, new Date(Date.now() - 10 * HARI)); await hargaDiTgl(w.mat.id, 30000, new Date(Date.now() - 2 * HARI), "hb2");
+  const T = tgl(5); const p = await w.a.post(PRA(w), { materialId: w.mat.id, jenis: "TAMBAH", qty: 3, tanggalPemakaian: T });
+  assert.equal(p.body.hppOperasional.harga, 20000, "pratinjau: harga pada tanggal dilaporkan"); assert.equal(p.body.hppOperasional.nilai, 60000); assert.equal(p.body.hppOperasional.tanggalDasar, T); assert.match(p.body.hppOperasional.teks, /Harga hari pencatatan TIDAK dipakai/);
+  const ok = await pasang(w, { ...(await lengkap(w, { tanggalPemakaian: T })), qty: 3 }); assert.equal(ok.status, 201, JSON.stringify(ok.body));
+  const o = await op(ok.body.id); assert.equal(o.status, "DINILAI"); assert.equal(Number(o.unitCost), 20000, "tersimpan = pratinjau, BUKAN 30000 (harga hari pencatatan)"); assert.equal(Number(o.value), 60000); assert.equal(o.basisHarga, "WAKTU_PEMAKAIAN"); assert.equal(o.basisDetail.dasarTanggal, T); assert.ok(o.basisDetail.dicatatPada);
+  assert.equal(wib((await testPrisma.stockMovement.findUnique({ where: { id: ok.body.id } })).createdAt), tgl(0), "waktu pencatatan tetap terpisah");
+  const { hppOperasionalUnit } = await import("../../src/services/finance/hargaBerlaku.js"); const jejak = (await hppOperasionalUnit(testPrisma, w.unit.id)).baris[0];
+  assert.equal(jejak.harga, 20000); assert.equal(jejak.tanggalDasarHarga, T); assert.ok(jejak.basisTeks.includes(`tanggal pemakaian yang dilaporkan (${T})`)); assert.equal(wib(jejak.waktuPencatatan), tgl(0));
+  const ad = await w.a.get(`/api/production/units/${w.unit.id}/adopsi`); const riw = ad.body.pemakaianAktual.baris[0]; assert.equal(riw.hppOperasional.harga, 20000); assert.equal(riw.hppOperasional.tanggalDasar, T); assert.equal(riw.hppOperasional.dasarTeks, jejak.basisTeks);
+  const x = (await dataExcel(w.unit.unitCode))[0]; assert.equal(x.harga, 20000); assert.equal(x.dilaporkan, T); assert.equal(x.dasar, jejak.basisTeks); assert.equal(x.nilai, 60000);
+  // pemakaian sesudah kenaikan (tanggal dilaporkan = kemarin) memakai harga baru: aturan yang sama, tanggal berbeda
+  const p2 = await w.a.post(PRA(w), { materialId: w.mat.id, jenis: "TAMBAH", qty: 1, tanggalPemakaian: tgl(1) }); assert.equal(p2.body.hppOperasional.harga, 30000);
+});
+
+test("P15. tanggal pemakaian TANPA harga berlaku = TANPA_HARGA/belum diketahui (bukan harga hari pencatatan, bukan Rp0); penerapan khusus juga tidak menyodorkan harga hari pencatatan", async () => {
+  const w = await dunia(); await hargaDiTgl(w.mat.id, 30000, new Date(Date.now() - 2 * HARI)); const T = tgl(5);
+  const p = await w.a.post(PRA(w), { materialId: w.mat.id, jenis: "TAMBAH", qty: 2, tanggalPemakaian: T }); assert.equal(p.body.hppOperasional.status, "TANPA_HARGA"); assert.equal(p.body.hppOperasional.harga, null); assert.equal(p.body.hppOperasional.nilai, null); assert.match(p.body.hppOperasional.teks, /TANPA_HARGA \/ belum diketahui.*bukan harga hari pencatatan/);
+  const ok = await pasang(w, { ...(await lengkap(w, { tanggalPemakaian: T })), qty: 2 }); assert.equal(ok.status, 201, JSON.stringify(ok.body));
+  const o = await op(ok.body.id); assert.equal(o.status, "TANPA_HARGA"); assert.equal(o.unitCost, null); assert.equal(o.value, null); assert.equal(o.basisDetail.dasarTanggal, T);
+  const { hppOperasionalUnit, pratinjauPenerapan } = await import("../../src/services/finance/hargaBerlaku.js"); const jejak = (await hppOperasionalUnit(testPrisma, w.unit.id)).baris[0];
+  assert.equal(jejak.status, "DIBEKUKAN_TANPA_HARGA_BERLAKU"); assert.equal(jejak.pratinjau, null, "tidak ada pratinjau harga dari hari pencatatan"); assert.equal(jejak.harga, null);
+  const pen = await pratinjauPenerapan(testPrisma, { materialId: w.mat.id, groups: ["TANPA_HARGA_BERLAKU", "SELARAS_ULANG", "BELUM_DIBEKUKAN"] }, { lengkap: false });
+  assert.equal(pen.penerapan.jumlah, 0, "penerapan khusus tidak memberi harga hari pencatatan"); assert.equal(pen.gap.baris.length, 1); assert.equal(pen.gap.baris[0].tanggalDasarHarga, T);
+  const riw = (await w.a.get(`/api/production/units/${w.unit.id}/adopsi`)).body.pemakaianAktual.baris[0]; assert.equal(riw.hppOperasional.status, "TANPA_HARGA"); assert.equal(riw.hppOperasional.harga, null);
+  const x = (await dataExcel(w.unit.unitCode))[0]; assert.equal(x.nilai, null); assert.equal(x.pratinjau, null); assert.equal(x.dilaporkan, T);
+});
+
+test("P16. tanggal diubah SETELAH pratinjau (atau dasar harga tidak dikirim): ditolak, tidak ada yang tersimpan; pratinjau ulang berhasil", async () => {
+  const w = await dunia(); await hargaDiTgl(w.mat.id, 20000, new Date(Date.now() - 10 * HARI)); await hargaDiTgl(w.mat.id, 30000, new Date(Date.now() - 2 * HARI), "hb2");
+  const p = await w.a.post(PRA(w), { materialId: w.mat.id, jenis: "TAMBAH", qty: 1, tanggalPemakaian: tgl(5) }); const sidik = p.body.hppOperasional.sidik; const dilihat = p.body.stok.saldoDilihat;
+  const s0 = await snap(); const dasar = { materialId: w.mat.id, qty: 1, alasanPembetulan: "Terlewat dicatat", saldoDilihat: dilihat };
+  const ganti = await pasang(w, { ...dasar, tanggalPemakaian: tgl(1), hppSidik: sidik }); assert.equal(ganti.status, 409); assert.equal(ganti.body.code, "UNIT_DASAR_HARGA_BERGESER"); assert.deepEqual(await snap(), s0, "ditolak = tidak ada tulisan");
+  const tanpa = await pasang(w, { ...dasar, tanggalPemakaian: tgl(5), hppSidik: null }); assert.equal(tanpa.status, 400); assert.equal(tanpa.body.code, "UNIT_PRATINJAU_WAJIB");
+  const palsu = await pasang(w, { ...dasar, tanggalPemakaian: tgl(5), hppSidik: "x|y" }); assert.equal(palsu.status, 409); assert.deepEqual(await snap(), s0);
+  const p2 = await w.a.post(PRA(w), { materialId: w.mat.id, jenis: "TAMBAH", qty: 1, tanggalPemakaian: tgl(1) }); assert.equal(p2.body.hppOperasional.harga, 30000);
+  const ok = await pasang(w, { ...dasar, tanggalPemakaian: tgl(1), hppSidik: p2.body.hppOperasional.sidik, konfirmasiBukanGanda: true }); assert.equal(ok.status, 201, JSON.stringify(ok.body)); assert.equal(Number((await op(ok.body.id)).unitCost), 30000);
+  const w2 = await dunia(); await hargaDiTgl(w2.mat.id, 20000, new Date(Date.now() - 10 * HARI)); const q = await w2.a.post(PRA(w2), { materialId: w2.mat.id, jenis: "TAMBAH", qty: 1, tanggalPemakaian: tgl(5) });
+  await hargaDiTgl(w2.mat.id, 22000, new Date(Date.now() - 6 * HARI), "hb3"); // harga bergeser sebelum konfirmasi: dasar harga berbeda dari pratinjau
+  const g = await pasang(w2, { materialId: w2.mat.id, qty: 1, alasanPembetulan: "Terlewat dicatat", tanggalPemakaian: tgl(5), saldoDilihat: q.body.stok.saldoDilihat, hppSidik: q.body.hppOperasional.sidik }); assert.equal(g.status, 409); assert.equal(g.body.code, "UNIT_DASAR_HARGA_BERGESER");
+});
+
+test("P17. RETUR bertaut mengikuti harga ISSUE asal (bukan harga tanggal retur maupun hari pencatatan); ISSUE asal tanpa harga = retur tanpa harga", async () => {
+  const w = await dunia(); await hargaDiTgl(w.mat.id, 20000, new Date(Date.now() - 10 * HARI)); await hargaDiTgl(w.mat.id, 30000, new Date(Date.now() - 2 * HARI), "hb2");
+  const i = await pasang(w, { ...(await lengkap(w, { tanggalPemakaian: tgl(5) })), qty: 4 }); assert.equal(i.status, 201, JSON.stringify(i.body)); assert.equal(Number((await op(i.body.id)).unitCost), 20000);
+  const p = await w.a.post(PRA(w), { materialId: w.mat.id, jenis: "KURANGI", qty: 1, tanggalPemakaian: tgl(1) }); assert.equal(p.body.hppOperasional.harga, 20000, "retur tanggal 1 hari lalu: harga tanggal itu 30000, tetapi retur mengikuti ISSUE asal"); assert.equal(p.body.hppOperasional.basis, "HARGA_ISSUE_ASAL"); assert.match(p.body.hppOperasional.teks, /Retur mengikuti harga pengeluaran asal/);
+  const r = await pasang(w, { ...(await lengkap(w, { tanggalPemakaian: tgl(1), alasanPembetulan: "Kelebihan catat 1 kg" })), qty: -1 }); assert.equal(r.status, 201, JSON.stringify(r.body));
+  const o = await op(r.body.id); assert.equal(o.basisHarga, "HARGA_ISSUE_ASAL"); assert.equal(Number(o.unitCost), 20000); assert.equal(Number(o.value), -20000, "retur mengurangi HPP pada harga ISSUE asal");
+  const x = (await dataExcel(w.unit.unitCode)).find((b) => b.nilai === -20000); assert.ok(x, "Excel membawa retur dengan harga ISSUE asal"); assert.match(x.dasar, /ISSUE asal/);
+  // ISSUE asal tanpa harga (tanggal sebelum harga pertama) -> retur juga tanpa harga walau harga hari retur ada
+  const w2 = await dunia(); await hargaDiTgl(w2.mat.id, 30000, new Date(Date.now() - 2 * HARI));
+  const i2 = await pasang(w2, { ...(await lengkap(w2, { tanggalPemakaian: tgl(5) })), qty: 4 }); assert.equal((await op(i2.body.id)).status, "TANPA_HARGA");
+  const p2 = await w2.a.post(PRA(w2), { materialId: w2.mat.id, jenis: "KURANGI", qty: 1, tanggalPemakaian: tgl(1) }); assert.equal(p2.body.hppOperasional.status, "TANPA_HARGA"); assert.match(p2.body.hppOperasional.teks, /belum punya harga operasional/);
+  const r2 = await pasang(w2, { ...(await lengkap(w2, { tanggalPemakaian: tgl(1), alasanPembetulan: "Kelebihan catat" })), qty: -1 }); assert.equal(r2.status, 201); assert.equal((await op(r2.body.id)).status, "TANPA_HARGA");
+});
+
+test("P18. batas hari: harga yang mulai berlaku di TENGAH tanggal dilaporkan tidak dipakai (diperingatkan); unit AKTIF tetap memakai waktu pergerakan dan catatan berformat baku dari klien ditolak", async () => {
+  const w = await dunia(); const T = tgl(3); await hargaDiTgl(w.mat.id, 20000, new Date(Date.now() - 10 * HARI)); await hargaDiTgl(w.mat.id, 30000, new Date(`${T}T05:00:00Z`), "hb2"); // 12:00 WIB pada tanggal dilaporkan
+  const p = await w.a.post(PRA(w), { materialId: w.mat.id, jenis: "TAMBAH", qty: 1, tanggalPemakaian: T }); assert.equal(p.body.hppOperasional.harga, 20000); assert.match(p.body.hppOperasional.peringatan, /berubah pada/); assert.match(p.body.hppOperasional.peringatan, /12:00 WIB/);
+  await hargaDiTgl(w.mat.id, 25000, new Date(`${T}T00:00:00+07:00`), "hb3"); // tepat awal hari = berlaku (inklusif)
+  const p2 = await w.a.post(PRA(w), { materialId: w.mat.id, jenis: "TAMBAH", qty: 1, tanggalPemakaian: T }); assert.equal(p2.body.hppOperasional.harga, 25000, "harga yang mulai tepat di awal tanggal berlaku");
+  const ak = await dunia({ status: "IN_PRODUCTION" }); await hargaDiTgl(ak.mat.id, 20000, new Date(Date.now() - 10 * HARI)); await hargaDiTgl(ak.mat.id, 30000, new Date(Date.now() - 2 * HARI), "hb2");
+  const ok = await pasang(ak, { materialId: ak.mat.id, qty: 1, note: "pemakaian biasa" }); assert.equal(ok.status, 201, JSON.stringify(ok.body)); const o = await op(ok.body.id); assert.equal(Number(o.unitCost), 30000, "unit aktif: harga saat pemakaian dicatat"); assert.equal(o.basisDetail, null);
+  const palsu = await pasang(ak, { materialId: ak.mat.id, qty: 1, note: `Pembetulan unit terkirim (${ak.unit.unitCode}) [dilaporkan ${tgl(5)}]: palsu` }); assert.equal(palsu.status, 400); assert.equal(palsu.body.code, "CATATAN_FORMAT_RESERVED");
 });

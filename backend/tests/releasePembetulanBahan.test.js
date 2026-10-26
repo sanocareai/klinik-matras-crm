@@ -12,8 +12,8 @@ const skrip = baca("scripts/release-pembetulan-bahan.sh");
 
 test("kode-saja: allowlist tanpa prisma/index.js/permissions/dependensi; memuat layanan + panel + migrasi TIDAK ada; gerbang tanpa-migrasi dipertahankan", () => {
   const allow = skrip.match(/^ALLOWED_RE='(.*)'$/m)[1].split("\\.").join(".");
-  for (const harus of ["backend/src/services/pembetulanBahanUnit.js", "backend/src/routes/units.js", "backend/src/routes/pemakaianKoreksi.js", "backend/src/services/unitProvisionalUsageService.js", "backend/src/services/productionComponentReuseService.js", "frontend/src/features/production/bahan/PembetulanUnitSelesai.jsx", "frontend/src/features/production/bahan/pembetulanModel.js", "scripts/lib/rehearsal-pembetulan-bahan.mjs"]) assert.ok(allow.includes(harus), harus);
-  for (const dilarang of ["backend/prisma", "backend/src/index.js", "backend/src/constants/permissions.js", "package.json", "docker-compose", "Dockerfile", "hargaBerlaku.js", "koreksiSaldoBahan"]) assert.ok(!allow.includes(dilarang), `ikut terbawa: ${dilarang}`);
+  for (const harus of ["backend/src/services/pembetulanBahanUnit.js", "backend/src/routes/units.js", "backend/src/routes/pemakaianKoreksi.js", "backend/src/services/unitProvisionalUsageService.js", "backend/src/services/productionComponentReuseService.js", "frontend/src/features/production/bahan/PembetulanUnitSelesai.jsx", "frontend/src/features/production/bahan/pembetulanModel.js", "scripts/lib/rehearsal-pembetulan-bahan.mjs", "backend/src/services/finance/hargaBerlaku.js", "backend/src/services/finance/export/biaya-bahan.js", "backend/src/services/productionAdoptionService.js", "backend/src/routes/productionAdopsi.js", "frontend/src/features/production/bahan/RiwayatBahanBaru.jsx"]) assert.ok(allow.includes(harus), harus);
+  for (const dilarang of ["backend/prisma", "backend/src/index.js", "backend/src/constants/permissions.js", "package.json", "docker-compose", "Dockerfile", "koreksiSaldoBahan"]) assert.ok(!allow.includes(dilarang), `ikut terbawa: ${dilarang}`);
   assert.match(skrip, /rilis ini TANPA migrasi dan TANPA perubahan/); assert.match(skrip, /schema\.prisma\/migrations berbeda dari baseline/);
 });
 

@@ -28,7 +28,7 @@ import { tryProvisionUnitRoute, changeUnitRoute, assignStage } from "../services
 import { postStockMovement } from "../services/inventoryLedger.js";
 import { bukukanNilaiPergerakanBaru } from "../services/finance/posting/inventory.js";
 import { guardV1UnitWrite, UnitConflictError, UUID_RE } from "../services/unitV2Ownership.js";
-import { alasanPembetulan, catatanPembetulan, tanggalDilaporkan, periksaPembetulanLangsung, unitSelesai } from "../services/pembetulanBahanUnit.js";
+import { alasanPembetulan, catatanPembetulan, uraiCatatanPembetulan, tanggalDilaporkan, periksaPembetulanLangsung, unitSelesai } from "../services/pembetulanBahanUnit.js";
 import { priorityDisplay } from "../lib/domain/productionDisplay.js";
 import { loadOpenComplaintsByUnit } from "../services/productionComplaints.js";
 import { prisma } from "../db.js";
@@ -687,6 +687,8 @@ unitRouter.post("/:id/materials", requirePermission(P.UNIT_MATERIAL_WRITE), asyn
     const pembetulan = unitSelesai(unit.status);
     const alasanB = alasanPembetulan(unit.status, req.body.alasanPembetulan);
     const tglB = pembetulan ? tanggalDilaporkan(req.body.tanggalPemakaian, { unitDibuat: unit.createdAt }) : null;
+    // Catatan baku pembetulan menentukan DASAR HARGA HPP operasional (finance/hargaBerlaku.js: tanggalDasarHarga): hanya server yang boleh menuliskannya, dan hanya pada unit terkirim.
+    if (!pembetulan && uraiCatatanPembetulan(note)) return res.status(400).json({ error: "Catatan tidak boleh diawali format baku 'Pembetulan unit terkirim (…) [dilaporkan …]' — format itu hanya dibuat sistem untuk unit terkirim.", code: "CATATAN_FORMAT_RESERVED" });
     const catatanB = pembetulan ? catatanPembetulan(unit.unitCode, alasanB, tglB.tanggal, note || null) : (note || null);
 
     // rawQty > 0 → pemakaian tambahan (ISSUE, stok berkurang, ledger negatif).
@@ -712,12 +714,12 @@ unitRouter.post("/:id/materials", requirePermission(P.UNIT_MATERIAL_WRITE), asyn
           const dipakai = -Number(net._sum.qty ?? 0);
           if (-rawQty > dipakai + 0.00005) { const e = new Error(`Koreksi ${-rawQty} melebihi pemakaian bersih bahan ini pada unit (${Math.max(dipakai, 0)}). Kurangi jumlah koreksi.`); e.statusCode = 409; e.code = "UNIT_KOREKSI_MELEBIHI_PEMAKAIAN"; throw e; }
         }
-        if (pembetulan) await periksaPembetulanLangsung(tx, { unitId: unit.id, orderId: unit.orderId, materialId, rawQty, saldoDilihat: req.body.saldoDilihat, konfirmasiBukanGanda: req.body.konfirmasiBukanGanda, tanggal: tglB.tanggal });
+        if (pembetulan) await periksaPembetulanLangsung(tx, { unitId: unit.id, unitCode: unit.unitCode, hppSidik: req.body.hppSidik, orderId: unit.orderId, materialId, rawQty, saldoDilihat: req.body.saldoDilihat, konfirmasiBukanGanda: req.body.konfirmasiBukanGanda, tanggal: tglB.tanggal });
         const mv = await postStockMovement(tx, {
           materialId, type, qty: ledgerQty, unitId: unit.id,
           note: catatanB, createdById: req.user.id,
         });
-        if (pembetulan) await recordActivity(tx, { entityType: ENTITY_TYPES.UNIT, entityId: unit.id, eventType: EVENT_TYPES.PRODUCTION_PEMBETULAN_BAHAN_UNIT_SELESAI, actorId: req.user.id, metadata: { unitCode: unit.unitCode, unitStatus: unit.status, jenis: "PEMBETULAN_BAHAN", movementId: mv.id, materialId, qty: ledgerQty, tipe: type, alasan: alasanB, tanggalPemakaianDilaporkan: tglB.tanggal, terlambatHari: tglB.terlambatHari, dicatatPada: new Date().toISOString(), konfirmasiBukanGanda: req.body.konfirmasiBukanGanda === true } });
+        if (pembetulan) await recordActivity(tx, { entityType: ENTITY_TYPES.UNIT, entityId: unit.id, eventType: EVENT_TYPES.PRODUCTION_PEMBETULAN_BAHAN_UNIT_SELESAI, actorId: req.user.id, metadata: { unitCode: unit.unitCode, unitStatus: unit.status, jenis: "PEMBETULAN_BAHAN", movementId: mv.id, materialId, qty: ledgerQty, tipe: type, alasan: alasanB, tanggalPemakaianDilaporkan: tglB.tanggal, dasarHargaOperasional: "TANGGAL_PEMAKAIAN_DILAPORKAN", terlambatHari: tglB.terlambatHari, dicatatPada: new Date().toISOString(), konfirmasiBukanGanda: req.body.konfirmasiBukanGanda === true } });
         // HPP: nilai pemakaian/koreksi dibukukan di transaksi yang sama (atau gap terlihat) — jalur ini dulu menulis stok tanpa jejak nilai sama sekali.
         await bukukanNilaiPergerakanBaru(tx, mv, { userId: req.user.id });
         if (kunci) await tx.v2Command.update({ where: { actorId_idempotencyKey: { actorId: req.user.id, idempotencyKey: kunci } }, data: { status: "APPLIED", response: { movementId: mv.id }, completedAt: new Date() } });

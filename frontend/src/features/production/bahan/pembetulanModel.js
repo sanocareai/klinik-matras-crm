@@ -69,7 +69,9 @@ export function barisDampak(pra) {
     o.push({ k: "pemakaian", label: "Pemakaian bahan pada unit", teks: `${koma(pra.pemakaianBersih.sebelum)} → ${koma(pra.pemakaianBersih.sesudah)} ${pra.bahan.satuan}` });
   } else o.push({ k: "stok", label: "Stok", teks: "Tidak berubah (hanya catatan)." });
   o.push({ k: "finance", label: "Nilai & jurnal Finance", teks: pra.finance.teks, hasil: pra.finance.hasil });
-  o.push({ k: "hpp", label: "HPP operasional (Harga Berlaku)", teks: pra.hppOperasional.teks });
+  const h = pra.hppOperasional;
+  o.push({ k: "hpp", label: "HPP operasional (Harga Berlaku)", teks: h.teks });
+  if (h.tanggalDasar) o.push({ k: "dasarHarga", label: "Dasar harga", teks: `Tanggal pemakaian dilaporkan ${h.tanggalDasar} → ${h.status === "DINILAI" ? `harga ${koma(h.harga)} per ${pra.bahan?.satuan ?? "satuan"}` : "TANPA_HARGA / belum diketahui"}. Dicatat pada hari pencatatan (terpisah); harga hari pencatatan tidak dipakai.` });
   return o;
 }
 const NAMA_KANDIDAT = Object.freeze({
@@ -88,7 +90,7 @@ export const sidikIsian = ({ cara, bahan, qty, alasan, tanggal }) => JSON.string
 /** Tubuh permintaan POST /units/:id/materials (pengeluaran/pengembalian): alasan, tanggal dilaporkan, saldo yang dilihat, dan konfirmasi bukan-ganda dikirim ke server yang menegakkannya. */
 export function tubuhPembetulan({ cara, bahan, qty, alasan, tanggal, pra, sudahPeriksa = false }) {
   const jumlah = Math.round(Number(qty) * 10000) / 10000;
-  return { materialId: bahan.materialId, qty: cara === "KURANGI" ? -jumlah : jumlah, alasanPembetulan: String(alasan).trim(), tanggalPemakaian: tanggal, saldoDilihat: pra?.stok?.saldoDilihat, ...(sudahPeriksa ? { konfirmasiBukanGanda: true } : {}) };
+  return { materialId: bahan.materialId, qty: cara === "KURANGI" ? -jumlah : jumlah, alasanPembetulan: String(alasan).trim(), tanggalPemakaian: tanggal, saldoDilihat: pra?.stok?.saldoDilihat, hppSidik: pra?.hppOperasional?.sidik, ...(sudahPeriksa ? { konfirmasiBukanGanda: true } : {}) };
 }
 export const PESAN = Object.freeze({
   bukaSelesai: "Unit ini sudah terkirim. Pembetulan bahan tetap bisa dilakukan lewat layanan resmi yang sama. Alasan dan tanggal pemakaian wajib; setiap perubahan tersimpan di riwayat, dan baris lama tidak diubah.",

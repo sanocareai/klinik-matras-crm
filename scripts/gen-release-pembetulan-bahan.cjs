@@ -21,7 +21,7 @@ const TPL_FILES = ["header", "rollback"].map((n) => `${TPL_DIR}/${n}.txt`);
 const FILE_TETAP = [OUT, GENERATOR, LIB_REH, LIB_SMOKE, ...TPL_FILES];
 const CAND_BRANCH = "fix/pemakaian-drawer-order";
 // Teks ASCII di bundel web (esbuild menulis karakter non-ASCII sebagai \uXXXX, jadi hanya awalan ASCII yang dicari).
-const DIST_BARU = ["Pembetulan bahan", "Tambah pengeluaran bahan", "Kembalikan sebagian (pengembalian baru)", "Catat komponen lama", "Catat pemakaian sementara", "Lihat dampak", "dilaporkan dipakai"];
+const DIST_BARU = ["Pembetulan bahan", "Tambah pengeluaran bahan", "Kembalikan sebagian (pengembalian baru)", "Catat komponen lama", "Catat pemakaian sementara", "Lihat dampak", "dilaporkan dipakai", "TANPA_HARGA / belum diketahui", "harga hari pencatatan tidak dipakai"];
 const DIST_LAMA_TAMBAHAN = ["Buka pekerjaan", "Catat pekerjaan selesai", "Tandai sudah dikerjakan", "Harga Berlaku (HPP operasional)", "Koreksi salah input historis", "Beri harga ke pemakaian lama"];
 
 const lf = (t) => t.replace(/\r\n/g, "\n");

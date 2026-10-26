@@ -53,6 +53,7 @@ async function ambil(db, { filter }) {
 
   const STATUS_OP = { DIBEKUKAN: "Dibekukan saat/oleh penerapan", DIBEKUKAN_TANPA_HARGA_BERLAKU: "Dibekukan tanpa harga berlaku", BELUM_DIBEKUKAN: "Belum dibekukan (pratinjau)", GAGAL_PEMBEKUAN: "GAGAL membekukan harga saat diposting — perlu diperbaiki" };
   const hppOp = operasional.flatMap(({ j, h }) => h.baris.map((r) => ({
+    dilaporkan: r.tanggalDasarHarga || "",
     waktu: r.tanggal, unit: j.unit.unitCode, order: j.unit.orderNumber || "", kode: r.kode, bahan: r.nama, jenis: JENIS[r.jenisBiaya] || r.jenisBiaya, qty: Math.abs(r.qty), satuan: r.satuan,
     harga: r.harga ?? r.pratinjau?.harga ?? null, nilai: r.nilai, pratinjau: r.nilai == null ? (r.pratinjau?.nilai ?? null) : null, status: STATUS_OP[r.status] || r.status,
     bukti: r.teksLabelBukti || r.pratinjau?.label || "", dasar: r.basisTeks || "", sumber: r.sumber === "PENERAPAN_DISETUJUI" ? "Penerapan khusus (disetujui)" : r.sumber === "BEKU_SAAT_POSTING" ? "Dibekukan saat pemakaian diposting" : "",
@@ -118,7 +119,7 @@ async function ambil(db, { filter }) {
       {
         nama: "HPP Operasional", judul: "HPP Operasional (Harga Berlaku) — BUKAN nilai persediaan/jurnal Finance",
         kolom: [
-          { key: "waktu", header: "Waktu pemakaian (WIB)", tipe: "waktu" }, { key: "unit", header: "Unit", tipe: "teks", lebar: 16 }, { key: "order", header: "No. Order", tipe: "teks", lebar: 18 },
+          { key: "waktu", header: "Waktu pencatatan (WIB)", tipe: "waktu" }, { key: "dilaporkan", header: "Tanggal pemakaian dilaporkan (dasar harga, pembetulan)", tipe: "teks", lebar: 26 }, { key: "unit", header: "Unit", tipe: "teks", lebar: 16 }, { key: "order", header: "No. Order", tipe: "teks", lebar: 18 },
           { key: "kode", header: "Kode Bahan", tipe: "teks", lebar: 16 }, { key: "bahan", header: "Bahan", tipe: "teks", lebar: 28 }, { key: "jenis", header: "Jenis", tipe: "teks", lebar: 20 },
           { key: "qty", header: "Jumlah", tipe: "angka" }, { key: "satuan", header: "Satuan", tipe: "teks", lebar: 9 }, { key: "harga", header: "Harga Berlaku (Rp/satuan)", tipe: "angka" },
           { key: "nilai", header: "HPP Operasional Dibekukan (Rp)", tipe: "uang" }, { key: "pratinjau", header: "Pratinjau (Rp, belum dibekukan)", tipe: "uang" }, { key: "status", header: "Status", tipe: "teks", lebar: 30 },
@@ -127,7 +128,8 @@ async function ambil(db, { filter }) {
         baris: hppOp,
         total: { label: `TOTAL HPP operasional dibekukan, tanpa waste (${hppOpDinilai.length} baris)`, nilai: { nilai: jumlah(hppOpDinilai, "nilai") } },
         catatan: ["HPP OPERASIONAL = harga berlaku (harga kerja) × pemakaian aktual, dibekukan saat pemakaian diposting. BUKAN nilai buku dan BUKAN HPP final Finance; tidak sama dengan sheet Rincian Pergerakan (biaya perolehan PSA/GR) dan tidak berubah karena sheet itu.",
-          "Sel nilai kosong = belum dibekukan / tanpa harga berlaku (bukan Rp0). Kolom Pratinjau hanya informasi dan tidak dijumlahkan."],
+          "Sel nilai kosong = belum dibekukan / tanpa harga berlaku (bukan Rp0). Kolom Pratinjau hanya informasi dan tidak dijumlahkan.",
+          "Pembetulan terlambat (unit terkirim): harga dipilih menurut TANGGAL PEMAKAIAN YANG DILAPORKAN (kolom Tanggal pemakaian dilaporkan), bukan hari pencatatan; belum ada harga pada tanggal itu = tanpa harga. Waktu pencatatan ditampilkan terpisah."],
       },
     ],
   };

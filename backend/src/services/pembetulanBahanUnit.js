@@ -7,12 +7,13 @@
 //   • koreksi jumlah (butuh persetujuan)     -> POST /api/production/units/:id/koreksi-pemakaian (penyetuju ≠ pemohon)
 //   • koreksi catatan belum diposting        -> POST /api/production/catatan-historis/:id/koreksi (tanpa stok)
 // PRINSIP WAKTU: waktu pencatatan = saat konfirmasi (server). Tanggal pemakaian = yang DILAPORKAN pengguna (disimpan terpisah, tidak menggantikan waktu pencatatan).
-// Dasar harga HPP operasional dan tanggal jurnal Finance mengikuti WAKTU PENCATATAN (bukan tanggal pemakaian) — ditulis tegas di pratinjau.
+// KEPUTUSAN OWNER: dasar Harga Berlaku HPP operasional = TANGGAL PEMAKAIAN YANG DILAPORKAN (aturan batas di finance/hargaBerlaku.js: harga pada awal hari itu); belum ada harga pada tanggal itu = TANPA_HARGA (tidak pernah
+// memakai harga hari pencatatan); retur bertaut mengikuti harga ISSUE asal. Tanggal jurnal Finance TETAP mengikuti layanan resmi (hari pencatatan). Pratinjau memakai FUNGSI YANG SAMA dengan pembekuan hasil tersimpan.
 // PRINSIP GANDA: sistem hanya MENAMPILKAN pengeluaran yang sudah tertaut ke unit dan yang mungkin relevan; tidak pernah menyamakan atau menautkan otomatis tanpa bukti.
 import { computeStockSnapshot, lockMaterialBalance } from "./inventoryLedger.js";
 import { dasarHargaRataRata } from "./finance/posting/inventory.js";
 import { statusCutoverUntuk } from "./finance/persediaanAwal.js";
-import { hargaBerlakuPada } from "./finance/hargaBerlaku.js";
+import { hargaUntukPergerakan, penyelesaiHargaBerlaku, hargaBerubahPadaHari, batasHargaTanggal, teksDasarHarga } from "./finance/hargaBerlaku.js";
 import { hasPermission } from "../middleware/authorize.js";
 import { PERMISSIONS as P } from "../constants/permissions.js";
 
@@ -63,7 +64,30 @@ export function uraiCatatanPembetulan(note) {
   return m ? { unitCode: m[1], dilaporkan: m[2] } : null;
 }
 
-const TANDA_PERHATIAN = "Sistem TIDAK menyamakan atau menautkan otomatis. Periksa daftar ini; hanya Anda yang tahu apakah sebuah catatan itu pemakaian yang sama.";
+/**
+ * HPP operasional sebuah pembetulan: memakai hargaUntukPergerakan — fungsi yang SAMA yang membekukan hasil tersimpan (catatBiayaOperasional) — pada pergerakan semu dengan catatan baku yang sama,
+ * sehingga pratinjau, hasil tersimpan, Riwayat, dan Excel tidak mungkin berbeda dasar. `sidik` mengikat tanggal + harga + dasar; server membandingkannya saat konfirmasi (UNIT_DASAR_HARGA_BERGESER).
+ */
+export async function hppPembetulan(db, { unit, materialId, bahan, jenis, qty, tanggal, sekarang = new Date() }) {
+  const type = jenis === "TAMBAH" ? "ISSUE" : "RETURN";
+  const r = await hargaUntukPergerakan(db, { id: null, type, materialId, unitId: unit.id, createdAt: sekarang, correctsMovementId: null, note: catatanPembetulan(unit.unitCode, "pratinjau", tanggal) }, penyelesaiHargaBerlaku(db));
+  const batas = batasHargaTanggal(tanggal); const berubah = await hargaBerubahPadaHari(db, materialId, tanggal);
+  const dasar = { tanggalDasar: tanggal, batasHarga: batas.toISOString(), aturan: "Harga yang berlaku pada AWAL tanggal pemakaian (00:00 WIB). Harga hari pencatatan tidak dipakai.", dicatatPada: sekarang.toISOString() };
+  const peringatan = berubah.length ? `PERHATIAN: harga bahan ini berubah pada ${tanggal} (${berubah.map((x) => `${rp(x.harga)} mulai ${new Date(new Date(x.mulai).getTime() + 7 * 3600_000).toISOString().slice(11, 16)} WIB`).join("; ")}). Harga yang dipakai adalah harga pada awal hari itu; perubahan di tengah hari tidak dipakai.` : null;
+  const arah = jenis === "TAMBAH" ? "bertambah" : "berkurang";
+  const sidik = [tanggal, r.ada ? r.harga.toString() : "TANPA", r.priceId ?? "-", r.basis].join("|");
+  const dasarTeks = teksDasarHarga(r.basis, tanggal);
+  if (r.ada) {
+    const harga = Number(r.harga);
+    return { dibekukan: true, status: "DINILAI", harga, label: r.label, nilai: Math.round(qty * harga), basis: r.basis, dasarTeks, ...dasar, hargaMulaiBerlaku: r.priceEffectiveFrom ?? null, peringatan, sidik,
+      teks: `HPP operasional order ini ${arah} ${rp(qty * harga)} (${qty} ${bahan.unit} × ${rp(harga)}). Dasar: ${dasarTeks}.${r.basis === "HARGA_ISSUE_ASAL" ? " Retur mengikuti harga pengeluaran asal, bukan harga tanggal pemakaian atau hari pencatatan." : " Harga hari pencatatan TIDAK dipakai."}${peringatan ? ` ${peringatan}` : ""}` };
+  }
+  const sebab = r.gap === "ISSUE_ASAL_BELUM_BERHARGA" ? "Pengeluaran asal yang dikembalikan belum punya harga operasional, jadi retur ini juga tanpa harga (tidak memakai harga baru)." : `Belum ada Harga Berlaku untuk bahan ini pada tanggal pemakaian ${tanggal}.`;
+  return { dibekukan: false, status: "TANPA_HARGA", harga: null, label: null, nilai: null, basis: r.basis, dasarTeks, ...dasar, hargaMulaiBerlaku: null, peringatan, sidik,
+    teks: `TANPA_HARGA / belum diketahui. ${sebab} Pembetulan dibekukan TANPA harga operasional (bukan Rp0, dan bukan harga hari pencatatan); HPP operasional order tidak berubah.${peringatan ? ` ${peringatan}` : ""}` };
+}
+
+const TANDA_PERHATIAN ="Sistem TIDAK menyamakan atau menautkan otomatis. Periksa daftar ini; hanya Anda yang tahu apakah sebuah catatan itu pemakaian yang sama.";
 /**
  * Pengeluaran yang SUDAH tertaut ke unit untuk bahan ini + transaksi lain yang MUNGKIN relevan (belum tertaut ke unit ini). Baca-saja. Tidak ada penautan.
  * Kandidat: (a) pengeluaran bahan sama tanpa unit, ±7 hari dari tanggal dilaporkan; (b) pengeluaran bahan sama jumlah sama pada unit lain ±3 hari (kemungkinan salah unit);
@@ -122,8 +146,8 @@ export async function pratinjauPembetulan(db, user, { unitId, materialId = null,
   const waktuDilaporkan = tanggalDilaporkan(tanggalPemakaian, { unitDibuat: unit.createdAt, sekarang });
   const waktu = {
     pemakaianDilaporkan: waktuDilaporkan.tanggal, dicatatPada: sekarang.toISOString(), terlambatHari: waktuDilaporkan.terlambatHari,
-    teks: `Tanggal pemakaian yang Anda laporkan: ${waktuDilaporkan.tanggal}${waktuDilaporkan.terlambatHari > 0 ? ` (${waktuDilaporkan.terlambatHari} hari sebelum hari pencatatan)` : " (hari ini)"}. Waktu pencatatan sistem: saat Anda mengonfirmasi. Keduanya disimpan terpisah; waktu konfirmasi BUKAN waktu pekerjaan.`,
-    dasarHargaDanJurnal: "WAKTU_PENCATATAN",
+    teks: `Tanggal pemakaian yang Anda laporkan: ${waktuDilaporkan.tanggal}${waktuDilaporkan.terlambatHari > 0 ? ` (${waktuDilaporkan.terlambatHari} hari sebelum hari pencatatan)` : " (hari ini)"}. Waktu pencatatan sistem: saat Anda mengonfirmasi. Keduanya disimpan terpisah; waktu konfirmasi BUKAN waktu pekerjaan. Harga HPP operasional mengikuti tanggal pemakaian yang dilaporkan; tanggal jurnal Finance mengikuti hari pencatatan.`,
+    dasarHargaOperasional: "TANGGAL_PEMAKAIAN_DILAPORKAN", dasarJurnalFinance: "WAKTU_PENCATATAN",
   };
   const izin = { bolehMencatat: hasPermission(user, P.UNIT_MATERIAL_WRITE), bolehMengajukanKoreksiJumlah: hasPermission(user, P.INVENTORY_WRITE) || hasPermission(user, P.UNIT_MATERIAL_WRITE), penyetujuKoreksi: "Owner atau Finance (orang lain dari pemohon)" };
   const tindakan = TINDAKAN[jenis];
@@ -160,10 +184,7 @@ export async function pratinjauPembetulan(db, user, { unitId, materialId = null,
   else if (cut.status === "tunggu_pembuka") finance = { hasil: "GAP_PERSEDIAAN_AWAL", teks: "Persediaan awal (stok opname) belum diposting: TIDAK ada jurnal; lahir catatan celah PERSEDIAAN_AWAL_BELUM_DIPOSTING yang tampil di Finance dan dijurnal belakangan oleh Finance." };
   else if (hargaNum == null) finance = { hasil: "GAP_TANPA_HARGA", teks: "Bahan belum punya harga perolehan berbukti: TIDAK ada jurnal (bukan Rp0); lahir catatan celah TANPA_HARGA_PEROLEHAN di Finance." };
   else finance = { hasil: "JURNAL", nilai, hargaDasar: hargaNum, teks: `Jurnal HPP bertanggal HARI PENCATATAN (${wibTgl(sekarang)}, bukan tanggal pemakaian ${waktuDilaporkan.tanggal}) sebesar ${rp(nilai)} (${q} ${m.unit} × ${rp(hargaNum)}): ${jenis === "TAMBAH" ? "beban pokok bahan naik, persediaan turun" : "beban pokok bahan turun, persediaan naik"}.` };
-  const hb = await hargaBerlakuPada(db, materialId, sekarang);
-  const hpp = hb
-    ? { dibekukan: true, harga: Number(hb.harga), label: hb.label, nilai: Math.round(q * Number(hb.harga)), teks: `HPP operasional order ini ${jenis === "TAMBAH" ? "bertambah" : "berkurang"} ${rp(q * Number(hb.harga))} (${q} ${m.unit} × ${rp(hb.harga)}, harga berlaku pada WAKTU PENCATATAN — bukan harga saat unit dikerjakan).` }
-    : { dibekukan: false, harga: null, label: null, nilai: null, teks: "Belum ada Harga Berlaku untuk bahan ini: pembetulan dibekukan TANPA harga operasional (bukan Rp0); HPP operasional order tidak berubah." };
+  const hpp = await hppPembetulan(db, { unit, materialId, bahan: m, jenis, qty: q, tanggal: waktuDilaporkan.tanggal, sekarang });
   const sudahTercatat = await sudahTercatatUntuk(db, { unitId, materialId, qty: q, tanggal: waktuDilaporkan.tanggal, orderId: unit.orderId });
   const perluKonfirmasi = jenis === "TAMBAH" && sudahTercatat.ada;
   const dampak = [
@@ -189,10 +210,15 @@ export async function pratinjauPembetulan(db, user, { unitId, materialId = null,
  *   2. bila ada pengeluaran tertaut / kandidat yang mungkin sudah tercatat, pengeluaran BARU wajib membawa konfirmasiBukanGanda=true (409 UNIT_KEMUNGKINAN_GANDA bila tidak).
  * (alasan + tanggal pemakaian dilaporkan divalidasi pemanggil sebelum transaksi lewat alasanPembetulan / tanggalDilaporkan.)
  */
-export async function periksaPembetulanLangsung(tx, { unitId, orderId, materialId, rawQty, saldoDilihat, konfirmasiBukanGanda, tanggal }) {
+export async function periksaPembetulanLangsung(tx, { unitId, unitCode, orderId, materialId, rawQty, saldoDilihat, konfirmasiBukanGanda, tanggal, hppSidik }) {
   wajib(saldoDilihat !== undefined && saldoDilihat !== null && Number.isFinite(Number(saldoDilihat)), "Lihat dampak dulu: saldo yang Anda lihat di pratinjau wajib dikirim.", "UNIT_PRATINJAU_WAJIB", 400);
   const saldo = r4(await lockMaterialBalance(tx, materialId));
   wajib(Math.abs(saldo - r4(saldoDilihat)) <= 0.00005, `Saldo bahan sudah bergeser: pratinjau Anda memakai ${r4(saldoDilihat)}, saldo sekarang ${saldo}. Lihat dampak lagi dari saldo terbaru; tidak ada yang tersimpan.`, "UNIT_SALDO_BERGESER", 409, { saldoDilihat: r4(saldoDilihat), saldoSekarang: saldo });
+  // Dasar harga HPP operasional yang dilihat di pratinjau harus sama dengan yang akan dibekukan (tanggal dilaporkan + harga + dasar). Tanggal diubah setelah pratinjau, atau harga bergeser → ditolak, tidak ada yang tersimpan.
+  wajib(typeof hppSidik === "string" && hppSidik !== "", "Lihat dampak dulu: dasar harga HPP operasional dari pratinjau wajib dikirim.", "UNIT_PRATINJAU_WAJIB", 400);
+  const bahan = await tx.material.findUnique({ where: { id: materialId }, select: { unit: true } });
+  const hppSekarang = await hppPembetulan(tx, { unit: { id: unitId, unitCode }, materialId, bahan, jenis: rawQty > 0 ? "TAMBAH" : "KURANGI", qty: Math.abs(rawQty), tanggal, sekarang: new Date() });
+  wajib(hppSekarang.sidik === hppSidik, `Dasar harga HPP operasional berbeda dari pratinjau Anda (tanggal pemakaian atau harga berubah). Lihat dampak lagi; tidak ada yang tersimpan.`, "UNIT_DASAR_HARGA_BERGESER", 409, { dilihat: hppSidik, sekarang: hppSekarang.sidik });
   if (rawQty > 0) {
     const s = await sudahTercatatUntuk(tx, { unitId, materialId, qty: rawQty, tanggal, orderId });
     wajib(!s.ada || konfirmasiBukanGanda === true, `Ada ${s.tertaut.length} pengeluaran bahan ini yang sudah tertaut ke unit dan ${s.kemungkinan.length} transaksi yang mungkin sudah mencatat pemakaian yang sama. Periksa daftarnya, lalu konfirmasi bahwa ini pengeluaran BARU.`, "UNIT_KEMUNGKINAN_GANDA", 409, { tertaut: s.tertaut.length, kemungkinan: s.kemungkinan.length });

@@ -7,6 +7,7 @@
 // Tidak membuat tahap, QC, foto, penerimaan Gudang, atau pergerakan stok.
 import { MANUAL_STATUSES, WORK_STATUS, riwayatKerjaManual } from "../lib/domain/productionWorkStatus.js";
 import { uraiCatatanPembetulan } from "./pembetulanBahanUnit.js";
+import { teksDasarHarga } from "./finance/hargaBerlaku.js";
 import { RencanaBahanError, normalisasiBarisRencana, selisihRencana, sameLines } from "../lib/domain/productionMaterialPlan.js";
 import { kelompokDariItemGroup, KELOMPOK_BELUM, LABEL_BELUM, KELOMPOK, URUTAN_KELOMPOK } from "../constants/kelompokBahan.js";
 import { lockRowForUpdate } from "./inventoryLedger.js";
@@ -197,13 +198,14 @@ async function catatAktivitasRencana(tx, { unit, actorId, revision, perubahan, a
 
 // ───────────────────────────── pemakaian aktual ─────────────────────────────
 /** Pemakaian/penyerahan bahan yang SUDAH tercatat di ledger resmi untuk unit ini, dengan dokumen sumber + pelaku. Baca-saja. */
-export async function ambilPemakaianAktual(db, unitId) {
+export async function ambilPemakaianAktual(db, unitId, { izinHarga = false } = {}) {
   const mv = await db.stockMovement.findMany({
     where: { unitId, type: { in: ["ISSUE", "RETURN", "WASTE"] } },
     select: {
       id: true, type: true, qty: true, note: true, reason: true, createdAt: true, materialIssueId: true,
       material: { select: { id: true, code: true, name: true, unit: true, itemGroup: true } }, createdBy: { select: { id: true, name: true } },
       materialIssue: { select: { id: true, issueNumber: true } },
+      biayaOperasional: { orderBy: [{ createdAt: "desc" }, { id: "desc" }], take: 1 },
     },
     orderBy: { createdAt: "desc" },
   });
@@ -215,6 +217,12 @@ export async function ambilPemakaianAktual(db, unitId) {
       dokumen, pelaku: m.createdBy?.name ?? null, catatan: m.note ?? m.reason ?? null,
       // Pembetulan unit terkirim: tanggal pemakaian yang DILAPORKAN (dari catatan baku) tampil terpisah dari waktu pencatatan (= tanggal). Null untuk pencatatan biasa.
       dilaporkan: uraiCatatanPembetulan(m.note)?.dilaporkan ?? null,
+      // Dasar harga HPP operasional hasil pembekuan (sama dengan pratinjau, jejak biaya, dan Excel): hanya untuk pembetulan, supaya tanggal dilaporkan + harga yang dipakai terlihat di Riwayat.
+      hppOperasional: (() => {
+        const dil = uraiCatatanPembetulan(m.note)?.dilaporkan; if (!dil) return null; const o = m.biayaOperasional?.[0] ?? null;
+        if (!o) return { status: "BELUM_DIBEKUKAN", harga: null, nilai: null, tanggalDasar: dil, dasarTeks: "Harga operasional belum dibekukan" };
+        return { status: o.status === "DINILAI" ? "DINILAI" : o.status === "GAGAL_PEMBEKUAN" ? "GAGAL_PEMBEKUAN" : "TANPA_HARGA", harga: izinHarga && o.unitCost != null ? Number(o.unitCost) : null, nilai: izinHarga && o.value != null ? Number(o.value) : null, hargaTersembunyi: !izinHarga && o.unitCost != null, tanggalDasar: dil, dasarTeks: teksDasarHarga(o.basisHarga, dil) };
+      })(),
     };
   });
   const total = new Map();
