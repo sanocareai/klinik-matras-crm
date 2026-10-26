@@ -29,7 +29,7 @@ const dariMI = (await prisma.$queryRawUnsafe(`select s.unit_id::text uid, s.mate
 const unitB = (await prisma.$queryRawUnsafe(`select id::text id from units where status::text = 'CANCELLED' order by created_at desc limit 1`))[0];
 const sidik = async (uid) => ({
   mov: await hitung("select count(*)::int n from stock_movements where unit_id = $1::uuid", uid), hpp: await hitung("select count(*)::int n from stock_movement_biaya_operasional b join stock_movements s on s.id = b.movement_id where s.unit_id = $1::uuid", uid),
-  kor: await hitung("select count(*)::int n from warehouse_corrections where doc_id = $1::uuid", uid), akt: await hitung("select count(*)::int n from activity_events where entity_id = $1", uid), cmd: await hitung("select count(*)::int n from v2_commands where aggregate_id = $1::uuid", uid),
+  kor: await hitung("select count(*)::int n from warehouse_corrections where doc_id = $1::uuid", uid), akt: await hitung("select count(*)::int n from activity_events where entity_id = $1", uid), cmd: await hitung("select count(*)::int n from v2_commands where aggregate_id = $1", uid),
 });
 const hariIni = new Date(Date.now() + 7 * 3600_000).toISOString().slice(0, 10); const wib = (d) => new Date(new Date(d).getTime() + 7 * 3600_000).toISOString().slice(0, 10);
 const PRA = (u) => `/api/production/units/${u}/perubahan-pemakaian/pratinjau`; const PASANG = (u) => `/api/production/units/${u}/perubahan-pemakaian`;
