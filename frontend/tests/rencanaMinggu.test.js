@@ -5,7 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-  SUMBER, TABS, aksiUtama, isLibur, badgeBahan, bacaUrl, keputusanLepas, labelHari, labelMinggu, labelTanggal, mondayOf, pesanGagalJadwal, shiftKey, sisaMeja, slotBawaan, teksAktivasiV2, tulisUrl, validKey,
+  SUMBER, TABS, aksiUtama, isLibur, badgeBahan, bacaUrl, keputusanLepas, labelHari, labelMinggu, labelTanggal, mondayOf, pesanGagalJadwal, shiftKey, sisaMeja, slotBawaan, teksAktivasiV2, tulisUrl, validKey, keputusanLepasMeja, pilihanMeja, badgePosisi, alasanHariTidakBisa, TAB_BAWAAN,
 } from "../src/features/production/rencana/rencanaModel.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -32,31 +32,34 @@ test("slot bawaan: hari pertama (mulai hari ini, lewati Minggu dan hari penuh) +
 test("tindakan utama kartu: satu tombol; V2 = buka ruang kerja; hanya-lihat tidak dapat menjadwalkan; belum diterima = 'lebih awal'", () => {
   const izin = { jadwalkan: true };
   assert.equal(aksiUtama({ sumber: "V2" }, izin).kind, "BUKA"); assert.equal(aksiUtama({ jalur: "V2" }, izin).kind, "BUKA");
-  assert.equal(aksiUtama({ sumber: "ADMIN" }, izin).kind, "PINDAH"); assert.equal(aksiUtama({ jadwal: { sumber: "ADMIN" } }, izin).kind, "PINDAH");
-  assert.equal(aksiUtama({ diterima: true }, izin).label, "Jadwalkan"); assert.equal(aksiUtama({ diterima: false }, izin).label, "Jadwalkan lebih awal");
+  assert.deepEqual(aksiUtama({ sumber: "ADMIN" }, izin), { kind: "PILIH_MEJA", label: "Pindahkan" }); assert.equal(aksiUtama({ jadwal: { sumber: "ADMIN" } }, izin).label, "Pindahkan");
+  assert.deepEqual(aksiUtama({ diterima: true }, izin), { kind: "PILIH_MEJA", label: "Pilih meja" }); assert.deepEqual(aksiUtama({ diterima: false }, izin), { kind: "PILIH_MEJA", label: "Pilih meja" }, "unit belum tiba: aksi sama (cukup berlabel Belum tiba)");
   assert.equal(aksiUtama({ perluKeputusan: true }, izin).kind, "KEPUTUSAN");
   assert.equal(aksiUtama({ diterima: true }, {}).kind, "BUKA", "tanpa izin menjadwalkan: hanya membuka ruang kerja");
   assert.equal(aksiUtama({ sumber: "ADMIN" }, {}).kind, "BUKA");
 });
 
-test("seret-lepas: Admin pindah hari (meja sama bila ada tempat); V2 ditolak; hari sama diabaikan; tanpa tempat = formulir (tidak menebak)", () => {
+test("seret-lepas ke HARI: pindah langsung (meja sama bila ada tempat; tanpa meja = hanya tanggal); V2/lewat/Minggu/meja penuh ditolak dengan alasan; hari sama diabaikan; TANPA formulir", () => {
   const days = ["2026-10-22", "2026-10-23"].map((d) => day(d));
   const adm = { sumber: "ADMIN", unitId: "u1", jadwal: { sumber: "ADMIN", tanggal: "2026-10-22", meja: "TABLE_2" } };
   assert.deepEqual(keputusanLepas({ item: adm, targetDate: "2026-10-23", minggu: minggu(days) }), { aksi: "PINDAH", tanggal: "2026-10-23", meja: "TABLE_2" });
   assert.equal(keputusanLepas({ item: adm, targetDate: "2026-10-22", minggu: minggu(days) }).aksi, "ABAIKAN");
-  days[1].stations[1].count = 3; assert.deepEqual(keputusanLepas({ item: adm, targetDate: "2026-10-23", minggu: minggu(days) }), { aksi: "FORMULIR", tanggal: "2026-10-23" });
+  days[1].stations[1].count = 3; const penuh = keputusanLepas({ item: adm, targetDate: "2026-10-23", minggu: minggu(days) }); assert.equal(penuh.aksi, "TOLAK"); assert.match(penuh.pesan, /Meja 2 sudah penuh pada Jum 23 Okt/);
   assert.equal(keputusanLepas({ item: { sumber: "V2", unitId: "u2" }, targetDate: "2026-10-23", minggu: minggu(days) }).aksi, "TOLAK");
-  assert.equal(keputusanLepas({ item: { unitId: "u3", jadwal: null }, targetDate: "2026-10-23", minggu: minggu(days) }).aksi, "FORMULIR", "unit tanpa jadwal: buka formulir, tidak langsung menulis");
+  assert.deepEqual(keputusanLepas({ item: { unitId: "u3", jadwal: null }, targetDate: "2026-10-23", minggu: minggu(days) }), { aksi: "PINDAH", tanggal: "2026-10-23", meja: null }, "unit baru dari antrean: langsung hanya tanggal, tanpa formulir");
+  assert.match(keputusanLepas({ item: { unitId: "u3", jadwal: null }, targetDate: "2026-10-21", minggu: minggu(days) }).pesan, /sudah lewat/); assert.match(keputusanLepas({ item: { unitId: "u3", jadwal: null }, targetDate: "2026-10-25", minggu: minggu(days) }).pesan, /Minggu libur/);
+  assert.ok(!Object.values(keputusanLepas({ item: adm, targetDate: "2026-10-23", minggu: minggu(days) })).includes("FORMULIR"));
   assert.equal(keputusanLepas({ item: null, targetDate: "2026-10-23", minggu: minggu(days) }).aksi, "ABAIKAN");
 });
 
 test("URL: keadaan minggu/hari/tab/cari/urut ditulis hanya bila berbeda dari bawaan dan dibaca aman (nilai liar jatuh ke bawaan)", () => {
   const today = "2026-10-22";
-  assert.equal(tulisUrl({ start: "2026-10-19", hari: today, tab: "SIAP", q: "", sort: "PRIORITAS" }, { today }), "");
+  assert.equal(tulisUrl({ start: "2026-10-19", hari: today, tab: "BELUM", q: "", sort: "PRIORITAS" }, { today }), "");
   const s = tulisUrl({ start: "2026-10-26", hari: "2026-10-27", tab: "KEPUTUSAN", q: "Sari", sort: "TARGET" }, { today });
   assert.deepEqual(bacaUrl(s, { today }), { start: "2026-10-26", hari: "2026-10-27", tab: "KEPUTUSAN", q: "Sari", sort: "TARGET" });
-  assert.deepEqual(bacaUrl("?tab=LIAR&hari=bukan&sort=X&minggu=2026-99-99", { today }), { start: "2026-10-19", hari: today, tab: "SIAP", q: "", sort: "PRIORITAS" });
-  assert.equal(TABS.map((t) => t.key).join(), "SIAP,KEPUTUSAN,MENUNGGU_TIBA,TERJADWAL");
+  assert.deepEqual(bacaUrl("?tab=LIAR&hari=bukan&sort=X&minggu=2026-99-99", { today }), { start: "2026-10-19", hari: today, tab: "BELUM", q: "", sort: "PRIORITAS" }, "hari bawaan = hari ini; antrean bawaan = satu antrean Belum dijadwalkan");
+  assert.equal(TABS.map((t) => t.key).join(), "BELUM,TERJADWAL,KEPUTUSAN", "SATU antrean untuk unit layak (siap + menunggu tiba digabung)");
+  assert.equal(bacaUrl("?tab=SIAP", { today }).tab, "BELUM"); assert.equal(bacaUrl("?tab=MENUNGGU_TIBA", { today }).tab, "BELUM", "alamat tersimpan dari versi lama tetap berfungsi"); assert.equal(TAB_BAWAAN, "BELUM");
 });
 
 test("teks dampak: Rencana Admin = hanya jadwal; aktivasi V2 WAJIB menyebut Run dan alur Meja/QC dibuka; pesan galat ramah", () => {
@@ -64,7 +67,8 @@ test("teks dampak: Rencana Admin = hanya jadwal; aktivasi V2 WAJIB menyebut Run 
   for (const diterima of [true, false]) { const t = teksAktivasiV2({ diterima }); assert.match(t, /MEMBUKA Run/); assert.match(t, /Meja\/QC/); assert.match(t, /diambil alih rencana Meja/); }
   assert.match(teksAktivasiV2({ diterima: false }), /menunggu konfirmasi kedatangan/); assert.match(teksAktivasiV2({ diterima: true }), /langsung berjalan/);
   assert.match(pesanGagalJadwal({ code: "PLAN_STATION_FULL" }), /penuh/); assert.match(pesanGagalJadwal({ code: "JADWAL_REVISI_BASI" }), /baru saja diubah/); assert.match(pesanGagalJadwal({ code: "UNIT_V2_OWNED" }), /Papan Meja/);
-  assert.deepEqual([badgeBahan({ key: "LENGKAP" }).tone, badgeBahan({ key: "KURANG" }).tone, badgeBahan({ key: "TIDAK_ADA_RENCANA" }).tone], ["green", "red", "orange"]);
+  assert.deepEqual([badgeBahan({ key: "LENGKAP" }).tone, badgeBahan({ key: "KURANG" }).tone, badgeBahan({ key: "TIDAK_ADA_RENCANA" }).tone], ["green", "red", "neutral"], "rencana bahan OPSIONAL: tidak diwarnai peringatan");
+  assert.deepEqual(badgePosisi(false), { tone: "orange", text: "Belum tiba" }); assert.deepEqual(badgePosisi(true), { tone: "green", text: "Di workshop" });
 });
 
 test("pengawatan: rute baru memakai kalender mingguan, Papan V2 lama tetap ada; aktivasi berkonfirmasi terpisah; tidak ada panggilan Run/QC/penerimaan dari halaman ini; shell bertab", () => {
@@ -76,7 +80,7 @@ test("pengawatan: rute baru memakai kalender mingguan, Papan V2 lama tetap ada; 
   for (const dilarang of ["confirmProductionV2UnitArrival", "catatPenerimaanWorkshop", "postStatusKerjaManual", "putRencanaBahan", "planProductionV2Unit", "createProductionPlan"]) assert.ok(!page.includes(dilarang), `halaman jadwal tidak boleh memanggil ${dilarang}`);
   const akt = src("features", "production", "rencana", "AktivasiV2Modal.jsx");
   assert.match(akt, /activateUnit: true/); assert.match(akt, /aktivasi-paham/); assert.match(akt, /disabled=\{!bisa\}/);
-  const kartu = src("features", "production", "rencana", "KartuUnit.jsx"); assert.match(kartu, /draggable=\{draggable \|\| undefined\}/); assert.match(kartu, /aria-label=\{`Tindakan lain untuk/);
+  const kartu = src("features", "production", "rencana", "KartuUnit.jsx"); assert.match(kartu, /draggable=\{\(draggable && !pending\) \|\| undefined\}/); assert.match(kartu, /aria-label=\{`Tindakan lain untuk/);
   const modal = src("features", "production", "rencana", "JadwalModal.jsx"); assert.match(modal, /jadwalkanUnit/); assert.match(modal, /expectedRevision: revisi/); assert.match(modal, /kunci\.current = null/, "kunci idempotensi diganti hanya setelah sukses/revisi basi (klik ulang = kunci sama)");
 });
 
@@ -99,4 +103,35 @@ test("pengawatan: kepala ringkas untuk HP (menu tambahan memuat Muat ulang/Expor
   const css = src("features", "production", "rencana", "rencana.css"); for (const k of ["rc-cta", "rc-sek", "rc-b-accent", "rc-b-red", "rc-tab-on"]) assert.ok(css.includes(k), k); assert.match(css, /\[data-theme="dark"\]/);
   const kal = src("features", "production", "rencana", "RencanaKalender.jsx"); assert.match(kal, /data-libur=/); assert.match(kal, /Libur/); assert.doesNotMatch(kal, /opacity-70/, "hari lampau tidak diredupkan (kontras)");
   assert.match(src("features", "production", "rencana", "KartuUnit.jsx"), /createPortal/, "menu kartu lewat portal (tidak tertutup kartu lain)");
+});
+
+test("penempatan: keputusan lepas/pilih MEJA — satu unit, beberapa unit bersama (semua atau tidak sama sekali), hari lewat/Minggu, V2, sudah di meja itu", () => {
+  const days = ["2026-10-22", "2026-10-23", "2026-10-25"].map((d) => day(d)); const m = minggu(days);
+  const u = (id, jadwal = null, extra = {}) => ({ unitId: id, unitCode: id.toUpperCase(), jadwal, ...extra });
+  assert.deepEqual(keputusanLepasMeja({ items: [u("a")], date: "2026-10-22", meja: "TABLE_1", minggu: m }), { aksi: "SIMPAN", items: [u("a")], tanggal: "2026-10-22", meja: "TABLE_1" });
+  assert.equal(keputusanLepasMeja({ items: [u("a", { sumber: "ADMIN", tanggal: "2026-10-22", meja: "TABLE_1" })], date: "2026-10-22", meja: "TABLE_1", minggu: m }).aksi, "ABAIKAN", "sudah di meja itu");
+  days[0].stations[0].count = 2; // Meja 1 sisa 1
+  const dua = keputusanLepasMeja({ items: [u("a"), u("b")], date: "2026-10-22", meja: "TABLE_1", minggu: minggu(days) });
+  assert.equal(dua.aksi, "TOLAK"); assert.match(dua.pesan, /hanya punya 1 tempat kosong/); assert.match(dua.pesan, /Tidak ada yang disimpan/, "tidak setengah tersimpan: dijelaskan");
+  assert.equal(keputusanLepasMeja({ items: [u("a"), u("b")], date: "2026-10-22", meja: "TABLE_2", minggu: minggu(days) }).aksi, "SIMPAN", "meja lain muat dua unit");
+  days[0].stations[0].count = 3; assert.match(keputusanLepasMeja({ items: [u("a")], date: "2026-10-22", meja: "TABLE_1", minggu: minggu(days) }).pesan, /sudah penuh/);
+  assert.match(keputusanLepasMeja({ items: [u("a")], date: "2026-10-21", meja: "TABLE_1", minggu: m }).pesan, /sudah lewat/); assert.match(keputusanLepasMeja({ items: [u("a")], date: "2026-10-25", meja: "TABLE_1", minggu: m }).pesan, /Minggu libur/);
+  assert.match(keputusanLepasMeja({ items: [u("a", null, { sumber: "V2" })], date: "2026-10-22", meja: "TABLE_1", minggu: m }).pesan, /Papan Meja/);
+  assert.equal(keputusanLepasMeja({ items: [], date: "2026-10-22", meja: "TABLE_1", minggu: m }).aksi, "ABAIKAN");
+  assert.equal(alasanHariTidakBisa("2026-10-22", m), null);
+  const pil = pilihanMeja(minggu(days), "2026-10-22", { jumlah: 2 }); assert.deepEqual(pil.map((p) => [p.code, p.sisa, p.muat]), [["TABLE_1", 0, false], ["TABLE_2", 3, true], ["TABLE_3", 3, true], ["TABLE_4", 3, true]]);
+  assert.equal(pilihanMeja(minggu(days), "2026-10-22", { sudahDi: "TABLE_1" })[0].sisa, 1, "meja tempat unit sekarang berada dihitung lowong untuk dirinya");
+  assert.equal(pilihanMeja(minggu(days), "2026-12-01")[0].sisa, null, "hari di luar minggu termuat: server yang memutuskan");
+});
+
+test("pengawatan: seret/Pilih meja memakai SATU jalur simpan (jadwalkanUnit / jadwalkanBatch); indikator Menyimpan; Urungkan unit & batch; pemilih meja dapat diakses keyboard; tanpa modal pada seret-lepas", () => {
+  const page = src("pages", "bengkel", "ProductionRencanaMinggu.jsx");
+  assert.match(page, /api\.jadwalkanUnit/); assert.match(page, /api\.jadwalkanBatch/); assert.match(page, /api\.undoJadwalBatch/); assert.match(page, /api\.undoJadwalUnit/);
+  assert.match(page, /tone: "busy"/); assert.match(page, /Menyimpan/); assert.match(page, /pendingIds/); assert.match(page, /data-testid="seleksi-bar"/); assert.match(page, /PILIH_MEJA/);
+  const lepas = page.slice(page.indexOf("function lepasKeHari"), page.indexOf("const toggle"));
+  assert.doesNotMatch(lepas, /setModal/, "seret-lepas tidak membuka modal tanggal/target/PIC/rencana bahan");
+  const pm = src("features", "production", "rencana", "PilihMeja.jsx"); assert.match(pm, /role="dialog"/); assert.match(pm, /key === "Escape"/); assert.match(pm, /\.focus\(\)/, "fokus ke meja pertama saat dibuka"); assert.match(pm, /min-h-\[44px\]/, "target sentuh 44px"); assert.match(pm, /data-meja="AUTO"/);
+  const kartu = src("features", "production", "rencana", "KartuUnit.jsx"); assert.match(kartu, /data-testid="kartu-pilih"/); assert.match(kartu, /kartu-unit-order/); assert.match(kartu, /kartu-menyimpan/);
+  const api = src("api.js"); assert.match(api, /jadwalkanBatch:/); assert.match(api, /undoJadwalBatch:/);
+  assert.doesNotMatch(page, /\bhttps?:\/\//);
 });

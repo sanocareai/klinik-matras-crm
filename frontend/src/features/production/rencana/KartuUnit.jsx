@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { AlertTriangle, CalendarClock, GripVertical, MoreHorizontal, Target, User } from "lucide-react";
+import { AlertTriangle, CalendarClock, GripVertical, Loader2, MoreHorizontal, Target, User } from "lucide-react";
 import { Badge } from "@/components/ui/badge.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import { UnitPhotoThumb } from "@/features/production/UnitPhotoThumb.jsx";
@@ -23,6 +23,7 @@ function MenuLainnya({ item, izin, onMenu }) {
   }, [open]);
   const isi = [
     { k: "BUKA", t: "Buka ruang kerja unit" },
+    ...(izin.jadwalkan && item.sumber !== "V2" && item.jalur !== "V2" && !item.perluKeputusan ? [{ k: "ATUR", t: "Atur tanggal, target, prioritas…" }] : []),
     ...(item.sumber === "ADMIN" || item.jadwal?.sumber === "ADMIN" ? [{ k: "RIWAYAT", t: "Riwayat jadwal" }] : []),
     ...(izin.jadwalkan && (item.sumber === "ADMIN" || item.jadwal?.sumber === "ADMIN") ? [{ k: "KELUARKAN", t: "Keluarkan dari jadwal" }] : []),
     ...(izin.aktivasiV2 && item.sumber !== "V2" && item.jalur !== "V2" && !item.perluKeputusan ? [{ k: "AKTIVASI", t: "Aktifkan Pelaksanaan Meja…" }] : []),
@@ -39,7 +40,7 @@ function MenuLainnya({ item, izin, onMenu }) {
   );
 }
 
-export default function KartuUnit({ item, izin = {}, mode = "antrean", onAksi, onBuka, draggable = false, onDragStart, onDragEnd, dense = false }) {
+export default function KartuUnit({ item, izin = {}, mode = "antrean", onAksi, onBuka, draggable = false, onDragStart, onDragEnd, dense = false, selectable = false, selected = false, onToggleSelect, onPilihSemuaOrder, pending = false }) {
   const aksi = aksiUtama(item, izin);
   const bahan = badgeBahan(item.bahan); const posisi = badgePosisi(item.diterima, item.posisi?.label);
   const sumber = item.sumber || item.jadwal?.sumber || null;
@@ -48,10 +49,11 @@ export default function KartuUnit({ item, izin = {}, mode = "antrean", onAksi, o
   const perhatian = (item.perhatian || []).filter((f) => !String(f.code).startsWith("BAHAN")); // bahan sudah tampil sebagai badge berwarna
   return (
     <article
-      className={`group relative flex gap-2.5 rounded-card border bg-surface p-2.5 ${perhatian.length ? "border-orange/50" : "border-line"} ${draggable ? "cursor-grab active:cursor-grabbing" : ""}`}
-      data-testid="kartu-unit" data-unit={item.unitCode} data-sumber={sumber || ""} data-tab={item.tab || ""}
-      draggable={draggable || undefined} onDragStart={draggable ? (e) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", item.unitId); onDragStart?.(item); } : undefined} onDragEnd={draggable ? () => onDragEnd?.() : undefined}
+      className={`group relative flex gap-2.5 rounded-card border bg-surface p-2.5 ${selected ? "border-accent ring-1 ring-accent/50" : perhatian.length ? "border-orange/50" : "border-line"} ${draggable && !pending ? "cursor-grab active:cursor-grabbing" : ""} ${pending ? "opacity-60" : ""}`}
+      data-testid="kartu-unit" data-unit={item.unitCode} data-sumber={sumber || ""} data-tab={item.tab || ""} data-pending={pending ? "1" : "0"} data-selected={selected ? "1" : "0"} aria-busy={pending || undefined}
+      draggable={(draggable && !pending) || undefined} onDragStart={draggable ? (e) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", item.unitId); onDragStart?.(item); } : undefined} onDragEnd={draggable ? () => onDragEnd?.() : undefined}
     >
+      {selectable && <input type="checkbox" checked={selected} onChange={() => onToggleSelect?.(item)} disabled={pending} aria-label={`Pilih ${item.unitCode}`} data-testid="kartu-pilih" className="mt-1 h-5 w-5 shrink-0 accent-[var(--accent,#2563eb)]" />}
       {draggable && <GripVertical size={14} className="mt-1 shrink-0 text-ink3" aria-hidden />}
       {!dense && <UnitPhotoThumb photoUrl={item.photoUrl} size={40} />}
       <div className="min-w-0 flex-1">
@@ -63,6 +65,7 @@ export default function KartuUnit({ item, izin = {}, mode = "antrean", onAksi, o
           <span className="block truncate text-[12px] text-ink2">{(item.pekerjaan || []).join(" · ") || "Layanan belum tercatat"}{item.ukuran ? ` · ${item.ukuran}` : ""}</span>
         </button>
         <div className="mt-1 flex flex-wrap items-center gap-1">
+          {item.jumlahUnitOrder > 1 && <Badge variant="neutral" title={`Order ${item.orderNumber || ""} punya ${item.jumlahUnitOrder} unit aktif`} data-testid="kartu-unit-order">Unit {item.unitKe}/{item.jumlahUnitOrder}{item.orderNumber ? ` · ${item.orderNumber}` : ""}</Badge>}
           {sumber && <Badge variant={sumber === "V2" ? "green" : "accent"} className={sumber === "V2" ? "" : "rc-b-accent"} title={SUMBER[sumber]?.dampak} data-testid="kartu-sumber">{SUMBER[sumber]?.label}</Badge>}
           {jadwal?.tanggal && mode === "antrean" && <Badge variant="neutral"><CalendarClock size={11} aria-hidden /> {labelHari(jadwal.tanggal)}{meja ? ` · ${meja}` : ""}</Badge>}
           {mode !== "antrean" && meja && <Badge variant="neutral">{meja}</Badge>}
@@ -72,12 +75,14 @@ export default function KartuUnit({ item, izin = {}, mode = "antrean", onAksi, o
           <Badge variant={bahan.tone} className={bahan.tone === "red" ? "rc-b-red" : ""}>{bahan.text}</Badge>
           {item.prioritas?.key && item.prioritas.key !== "NORMAL" && <Badge variant="red" className="rc-b-red">{item.prioritas.label}</Badge>}
         </div>
+        {selectable && item.saudaraSiap?.length > 0 && <button type="button" className="mt-1 min-h-[32px] text-[12px] text-accent underline" data-testid="kartu-pilih-order" onClick={() => onPilihSemuaOrder?.(item)}>Pilih semua unit order ini ({item.saudaraSiap.length + 1})</button>}
         {mode === "antrean" && item.alasan && <p className="m-0 mt-1 line-clamp-2 text-[12px] text-ink3" data-testid="kartu-alasan">{item.alasan}</p>}
         {perhatian.length > 0 && <p className="m-0 mt-1 flex items-start gap-1 text-[12px] text-orange" data-testid="kartu-perhatian"><AlertTriangle size={12} className="mt-0.5 shrink-0" aria-hidden /> {perhatian.map((f) => f.text).join(" · ")}</p>}
       </div>
       <div className="flex shrink-0 flex-col items-end justify-between gap-1">
         <MenuLainnya item={item} izin={izin} onMenu={(k, it) => onAksi?.(k, it)} />
-        <Button size="sm" variant={aksi.kind === "JADWALKAN" ? "primary" : "secondary"} className={`min-h-[36px] whitespace-nowrap ${aksi.kind === "JADWALKAN" ? "rc-cta" : "rc-sek"}`} data-testid="kartu-aksi" data-kind={aksi.kind} onClick={() => onAksi?.(aksi.kind, item)}>{aksi.label}</Button>
+        {pending ? <span className="inline-flex min-h-[36px] items-center gap-1 text-[12px] text-ink3" role="status" data-testid="kartu-menyimpan"><Loader2 size={14} className="animate-spin" aria-hidden /> Menyimpan…</span>
+          : <Button size="sm" variant={aksi.kind === "PILIH_MEJA" && !item.jadwal && !item.sumber ? "primary" : "secondary"} className={`min-h-[36px] whitespace-nowrap ${aksi.kind === "PILIH_MEJA" && !item.jadwal && !item.sumber ? "rc-cta" : "rc-sek"}`} data-testid="kartu-aksi" data-kind={aksi.kind} onClick={(e) => onAksi?.(aksi.kind, item, e.currentTarget)}>{aksi.label}</Button>}
       </div>
     </article>
   );

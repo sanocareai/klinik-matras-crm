@@ -66,24 +66,25 @@ export function WeekStrip({ minggu, hari, onPilih, dragAktif, onLepas, loading, 
   );
 }
 
-function MejaBaris({ s, dragAktif, onLepasMeja, children }) {
-  const kosong = s.items.length === 0;
+function MejaBaris({ s, dragAktif, onLepasMeja, children, menyimpan = false }) {
+  const kosong = s.items.length === 0; const [atas, setAtas] = React.useState(false);
   return (
     <section
-      className={`rounded-card border ${kosong ? "border-dashed border-line bg-transparent" : "border-line bg-surface"} ${dragAktif ? "ring-1 ring-accent/40" : ""}`}
-      data-testid="meja-baris" data-meja={s.code} data-count={s.items.length}
-      onDragOver={dragAktif ? (e) => { e.preventDefault(); } : undefined} onDrop={dragAktif ? (e) => { e.preventDefault(); onLepasMeja?.(s.code); } : undefined}
+      className={`rounded-card border ${kosong ? "border-dashed border-line bg-transparent" : "border-line bg-surface"} ${dragAktif ? "ring-1 ring-accent/40" : ""} ${atas ? "bg-accentbg ring-2 ring-accent" : ""}`}
+      data-testid="meja-baris" data-meja={s.code} data-count={s.items.length} data-lepas={atas ? "1" : "0"} aria-busy={menyimpan || undefined}
+      onDragOver={dragAktif ? (e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; setAtas(true); } : undefined} onDragLeave={dragAktif ? () => setAtas(false) : undefined} onDrop={dragAktif ? (e) => { e.preventDefault(); setAtas(false); onLepasMeja?.(s.code); } : undefined}
     >
       <header className="flex flex-wrap items-center justify-between gap-2 px-3 py-1.5">
         <h3 className="m-0 text-[13px] font-semibold text-ink">{s.label} <span className={`font-normal ${s.capacity > 0 && s.items.length >= s.capacity ? "text-red" : "text-ink3"}`}>{s.capacity === 0 ? `· ${s.items.length} unit · tanpa kapasitas rutin (libur)` : `· ${s.items.length}/${s.capacity} unit`}</span></h3>
         <span className="min-w-0 text-[12px] text-ink3">{s.pic ? <>PIC {s.pic.nama}{s.pic.aktif === false ? " (nonaktif)" : ""}</> : "PIC belum ditetapkan"}{s.capacity === 0 ? "" : kosong ? ` · ${s.capacity} tempat kosong` : s.items.length < s.capacity ? ` · ${s.capacity - s.items.length} tempat kosong` : " · penuh"}</span>
       </header>
+      {dragAktif && <p className="m-0 px-3 pb-2 text-[12px] text-accent" data-testid="meja-lepas-petunjuk">{s.capacity === 0 ? "Hari libur — tidak bisa dijadwalkan." : `Lepas di sini untuk menjadwalkan ${s.label}.`}</p>}
       {!kosong && <div className="space-y-2 px-2 pb-2">{children}</div>}
     </section>
   );
 }
 
-export function DayPanel({ dayData, loading, izin, onAksi, onBuka, draggingItem, onDragStart, onDragEnd, onLepasMeja }) {
+export function DayPanel({ dayData, loading, izin, onAksi, onBuka, draggingItem, onDragStart, onDragEnd, onLepasMeja, pendingIds = new Set(), menyimpan = false }) {
   if (!dayData) return <div className="h-40 animate-pulse rounded-card bg-inset" aria-busy="true" />;
   const total = dayData.stations.reduce((a, s) => a + s.items.length, 0) + dayData.tanpaMeja.length;
   const dragAktif = !!draggingItem;
@@ -95,17 +96,17 @@ export function DayPanel({ dayData, loading, izin, onAksi, onBuka, draggingItem,
         <p className="m-0 flex items-center gap-1 text-[12px] text-ink3" data-testid="catatan-kapasitas"><Info size={12} aria-hidden /> {dayData.kapasitas.perMeja} unit per meja × {dayData.kapasitas.mejaCount} meja (Sen–Sab; Minggu libur). Durasi kerja belum tersedia, jadi kapasitas dihitung dari jumlah unit.</p>
       </header>
       {dayData.libur && <p className="m-0 rounded-card bg-orangebg px-3 py-2 text-[12.5px] text-orange" data-testid="hari-libur" role="note">Hari Minggu libur — bukan hari kerja rutin, kapasitas rutin 0 dan Rencana Admin tidak bisa dijadwalkan di sini.{total > 0 ? " Unit di bawah terjadwal lewat jalur lain dan ditampilkan apa adanya." : ""}</p>}
-      {total === 0 && <p className="m-0 rounded-card border border-dashed border-line px-3 py-3 text-[13px] text-ink3" data-testid="hari-kosong">Belum ada unit dijadwalkan pada hari ini. Pilih unit dari antrean lalu tekan Jadwalkan.</p>}
+      {total === 0 && <p className="m-0 rounded-card border border-dashed border-line px-3 py-3 text-[13px] text-ink3" data-testid="hari-kosong">Belum ada unit dijadwalkan pada hari ini. Seret unit dari antrean ke Meja 1–4, atau tekan Pilih meja pada kartu.</p>}
       <div className="space-y-2">
         {dayData.stations.map((s) => (
-          <MejaBaris key={s.code} s={s} dragAktif={dragAktif && !!izin.jadwalkan} onLepasMeja={onLepasMeja}>
-            {s.items.map((it) => <KartuUnit key={`${it.sumber}-${it.unitId}`} item={it} izin={izin} mode="hari" onAksi={onAksi} onBuka={onBuka} draggable={bolehSeret(it)} onDragStart={onDragStart} onDragEnd={onDragEnd} />)}
+          <MejaBaris key={s.code} s={s} dragAktif={dragAktif && !!izin.jadwalkan} onLepasMeja={onLepasMeja} menyimpan={menyimpan}>
+            {s.items.map((it) => <KartuUnit key={`${it.sumber}-${it.unitId}`} item={it} izin={izin} mode="hari" onAksi={onAksi} onBuka={onBuka} draggable={bolehSeret(it)} onDragStart={onDragStart} onDragEnd={onDragEnd} pending={pendingIds.has(it.unitId)} />)}
           </MejaBaris>
         ))}
         {dayData.tanpaMeja.length > 0 && (
           <section className="rounded-card border border-line bg-surface" data-testid="tanpa-meja">
             <h3 className="m-0 px-3 py-1.5 text-[13px] font-semibold text-ink">Tanpa meja <span className="font-normal text-ink3">· hanya tanggal, meja belum dipilih</span></h3>
-            <div className="space-y-2 px-2 pb-2">{dayData.tanpaMeja.map((it) => <KartuUnit key={`${it.sumber}-${it.unitId}`} item={it} izin={izin} mode="hari" onAksi={onAksi} onBuka={onBuka} draggable={bolehSeret(it)} onDragStart={onDragStart} onDragEnd={onDragEnd} />)}</div>
+            <div className="space-y-2 px-2 pb-2">{dayData.tanpaMeja.map((it) => <KartuUnit key={`${it.sumber}-${it.unitId}`} item={it} izin={izin} mode="hari" onAksi={onAksi} onBuka={onBuka} draggable={bolehSeret(it)} onDragStart={onDragStart} onDragEnd={onDragEnd} pending={pendingIds.has(it.unitId)} />)}</div>
           </section>
         )}
       </div>

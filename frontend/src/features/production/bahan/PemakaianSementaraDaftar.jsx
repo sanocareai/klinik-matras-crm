@@ -44,7 +44,7 @@ function FormKoreksi({ item, onBatal, onSelesai }) {
   );
 }
 
-function Baris({ item, bolehCatat, bolehGudang, aktif, onDone }) {
+export function BarisSementara({ item, bolehCatat, bolehGudang, aktif, onDone }) {
   const [mode, setMode] = useState(null); // null | "batal" | "koreksi" | "rekon"
   const [alasan, setAlasan] = useState(""); const [sibuk, setSibuk] = useState(false); const [galat, setGalat] = useState(null); const kirimRef = useRef(false);
   async function batalkan() {
@@ -91,7 +91,7 @@ function Baris({ item, bolehCatat, bolehGudang, aktif, onDone }) {
 export default function PemakaianSementaraDaftar({ data, bolehCatat, bolehGudang, aktif, onDone }) {
   return (
     <ul className="m-0 list-none divide-y divide-line rounded-btn bg-inset p-0" data-testid="sementara-daftar">
-      {data.items.map((it) => <Baris key={it.id} item={it} bolehCatat={bolehCatat} bolehGudang={bolehGudang} aktif={aktif} onDone={onDone} />)}
+      {data.items.map((it) => <BarisSementara key={it.id} item={it} bolehCatat={bolehCatat} bolehGudang={bolehGudang} aktif={aktif} onDone={onDone} />)}
     </ul>
   );
 }

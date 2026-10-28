@@ -6,6 +6,8 @@
 //   POST /units/:id/jadwal                         jadwalkan/pindahkan/ubah target-prioritas (Idempotency-Key, expectedRevision)        UNIT_ROUTING_WRITE
 //   POST /units/:id/jadwal/keluarkan               keluarkan dari jadwal                                                                UNIT_ROUTING_WRITE
 //   POST /units/:id/jadwal/undo                    batalkan perubahan terakhir bila belum ada dampak                                    UNIT_ROUTING_WRITE
+//   POST /rencana/jadwal-batch                     jadwalkan beberapa unit pada satu tanggal + satu meja (semua atau tidak sama sekali)   UNIT_ROUTING_WRITE
+//   POST /rencana/jadwal-batch/undo                urungkan hasil jadwal-batch (semua atau tidak sama sekali)                            UNIT_ROUTING_WRITE
 // TIDAK ada endpoint di sini yang membuat Run/tahap/QC/penerimaan/pemakaian bahan/stok/jurnal/pesan. Aktivasi V2 tetap lewat jalur Rencana V2 (konfirmasi terpisah).
 import express from "express";
 import { prisma } from "../db.js";
@@ -13,7 +15,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { requirePermission, hasPermission, PERMISSIONS as P } from "../middleware/authorize.js";
 import { wajibUuid } from "../lib/uuidParam.js";
 import { pesanServerAman } from "../lib/galatServerAman.js";
-import { batalkanJadwalInTx, getAntrean, getHari, getMinggu, jadwalkanUnitInTx, parseAntreanQuery, riwayatJadwal, undoJadwalInTx } from "../services/productionRencanaJadwalService.js";
+import { batalkanJadwalInTx, getAntrean, getHari, getMinggu, jadwalkanBatchInTx, jadwalkanUnitInTx, parseAntreanQuery, riwayatJadwal, undoBatchInTx, undoJadwalInTx } from "../services/productionRencanaJadwalService.js";
 import { kapasitasHari } from "../lib/domain/productionRencanaAdmin.js";
 import { BOARD_DEFAULTS } from "../lib/domain/productionBoard.js";
 
@@ -56,6 +58,19 @@ productionRencanaJadwalRouter.post("/units/:id/jadwal/keluarkan", requirePermiss
 productionRencanaJadwalRouter.post("/units/:id/jadwal/undo", requirePermission(P.UNIT_ROUTING_WRITE), wajibUuid(), async (req, res) => {
   try {
     const hasil = await prisma.$transaction((tx) => undoJadwalInTx(tx, { unitId: req.params.id, eventId: req.body?.eventId, actorId: req.user.id, idempotencyKey: kunci(req) }));
+    res.status(hasil.replayed ? 200 : 201).json(hasil);
+  } catch (err) { handleErr(err, res); }
+});
+productionRencanaJadwalRouter.post("/rencana/jadwal-batch", requirePermission(P.UNIT_ROUTING_WRITE), async (req, res) => {
+  try {
+    const b = req.body || {};
+    const hasil = await prisma.$transaction((tx) => jadwalkanBatchInTx(tx, { units: b.units, actorId: req.user.id, idempotencyKey: kunci(req), input: { productionDate: b.productionDate, stationCode: b.stationCode } }), { timeout: 20000 });
+    res.status(hasil.replayed ? 200 : 201).json(hasil);
+  } catch (err) { handleErr(err, res); }
+});
+productionRencanaJadwalRouter.post("/rencana/jadwal-batch/undo", requirePermission(P.UNIT_ROUTING_WRITE), async (req, res) => {
+  try {
+    const hasil = await prisma.$transaction((tx) => undoBatchInTx(tx, { items: req.body?.items, actorId: req.user.id, idempotencyKey: kunci(req) }), { timeout: 20000 });
     res.status(hasil.replayed ? 200 : 201).json(hasil);
   } catch (err) { handleErr(err, res); }
 });

@@ -40,6 +40,39 @@ export function susunCatatanRekon({ kandidatKatalog = null, kandidatUsulan = nul
   return (tambah ? `${bagian} Catatan: ${tambah}` : bagian).slice(0, 500);
 }
 export const JUDUL_AKTUAL = "Pemakaian aktual";
+// Label DAMPAK singkat pada tabel Pemakaian aktual (satu kata kunci per baris; penjelasan panjang ada di "Detail teknis" yang tertutup).
+export const DAMPAK = Object.freeze({
+  MENGURANGI_STOK: { key: "MENGURANGI_STOK", label: "Mengurangi stok", tone: "orange" },
+  TANPA_PENGELUARAN: { key: "TANPA_PENGELUARAN", label: "Tanpa pengeluaran stok", tone: "neutral" },
+  MENUNGGU_PERSETUJUAN: { key: "MENUNGGU_PERSETUJUAN", label: "Menunggu persetujuan", tone: "orange" },
+  BIAYA_BELUM_DIKETAHUI: { key: "BIAYA_BELUM_DIKETAHUI", label: "Biaya belum diketahui", tone: "neutral" },
+});
+/**
+ * Baris TABEL Pemakaian aktual (satu tabel untuk tiga sumber, tanpa menjumlahkan antar-sumber): Bahan Gudang (per bahan, pemakaian bersih > 0), pemakaian sementara (bahan belum tercatat; bukan yang dibatalkan),
+ * komponen lama. Baris yang dibatalkan/dikembalikan penuh tidak tampil di tabel — jejaknya ada di Riwayat (tertutup bawaan). Murni (tanpa React/DOM); angka dan status apa adanya dari server.
+ */
+export function barisTabelPemakaian(data, { menunggu = [] } = {}) {
+  const rows = []; const ledger = data?.pemakaianAktual?.baris ?? [];
+  const tanpaHarga = new Set(ledger.filter((b) => b.hppOperasional?.status === "TANPA_HARGA").map((b) => b.materialId));
+  for (const p of data?.perbandingan ?? []) {
+    if (!(Number(p.aktual) > 0)) continue;
+    const tunggu = menunggu.find((k) => k.perubahan?.bahan?.id === p.materialId) ?? null;
+    const chips = [DAMPAK.MENGURANGI_STOK];
+    if (tunggu) chips.push({ ...DAMPAK.MENUNGGU_PERSETUJUAN, detail: tunggu.nomor ?? null });
+    if (tanpaHarga.has(p.materialId)) chips.push(DAMPAK.BIAYA_BELUM_DIKETAHUI);
+    rows.push({ key: `g-${p.materialId}`, jenis: "gudang", materialId: p.materialId, nama: p.nama, kode: p.kode ?? null, qty: Number(p.aktual), satuan: p.satuan, chips, melebihi: p.rencana !== null && p.rencana !== undefined && Number(p.aktual) > Number(p.rencana), menunggu: tunggu });
+  }
+  for (const it of data?.pemakaianSementara?.items ?? []) {
+    if (it.status === "DIBATALKAN") continue;
+    const status = it.status === "PERLU_REKONSILIASI" ? { key: "PERLU_REKONSILIASI", label: STATUS_REKON, tone: "orange" } : { key: it.status, label: it.statusLabel || "Sudah direkonsiliasi", tone: "green" };
+    rows.push({ key: `s-${it.id}`, jenis: "sementara", itemId: it.id, nama: it.name, kode: it.tertautKatalog ? (it.bahanKatalog?.kode ?? null) : null, qty: Number(it.qty), satuan: it.uom, chips: [DAMPAK.TANPA_PENGELUARAN, status], asal: it.originNote || null, item: it });
+  }
+  for (const it of data?.komponenLama?.items ?? []) {
+    rows.push({ key: `k-${it.itemId}`, jenis: "lama", itemId: it.itemId, nama: it.name, kode: null, qty: Number(it.qty), satuan: it.uom, chips: [DAMPAK.TANPA_PENGELUARAN, { key: it.outcome, label: it.outcomeLabel, tone: "neutral" }], item: it });
+  }
+  return rows;
+}
+export const LABEL_JENIS_PEMAKAIAN = Object.freeze({ gudang: "Bahan Gudang", sementara: "Bahan belum tercatat", lama: "Komponen lama" });
 export const JUDUL_RENCANA = "Rencana (opsional, belum mengurangi stok)";
 export const KELOMPOK_USULAN = Object.freeze([
   { kode: "BUSA", label: "Busa" }, { kode: "KAIN", label: "Kain" }, { kode: "BENANG", label: "Benang" }, { kode: "PEGAS", label: "Pegas" },

@@ -1091,6 +1091,9 @@ export const api = {
   jadwalkanUnit: (unitId, body, idempotencyKey = mutationKey("jadwal")) => request(`/production/units/${unitId}/jadwal`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(body) }),
   keluarkanJadwalUnit: (unitId, body, idempotencyKey = mutationKey("jadwal-keluar")) => request(`/production/units/${unitId}/jadwal/keluarkan`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(body) }),
   undoJadwalUnit: (unitId, body, idempotencyKey = mutationKey("jadwal-undo")) => request(`/production/units/${unitId}/jadwal/undo`, { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(body) }),
+  // Beberapa unit sekaligus pada satu tanggal + satu meja (stationCode "AUTO" = meja pertama yang muat semuanya). SEMUA atau TIDAK SAMA SEKALI. body: { productionDate, stationCode, units:[{unitId, expectedRevision, expectedUnit}] }
+  jadwalkanBatch: (body, idempotencyKey = mutationKey("jbatch")) => request("/production/rencana/jadwal-batch", { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(body) }),
+  undoJadwalBatch: (body, idempotencyKey = mutationKey("jbatch-undo")) => request("/production/rencana/jadwal-batch/undo", { method: "POST", headers: { "Idempotency-Key": idempotencyKey }, body: JSON.stringify(body) }),
   // Ruang Kerja Status Produksi: daftar kerja per ORDER (aktif/riwayat; cari/filter/urut/halaman di server) + header ruang kerja unit. Baca-saja.
   getProductionWorkList: (params = {}) => {
     const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== "")).toString();

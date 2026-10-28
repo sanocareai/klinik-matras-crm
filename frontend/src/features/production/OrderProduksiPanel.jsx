@@ -139,10 +139,11 @@ export default function OrderProduksiPanel({ unitId, fokus = null, onClose, onCh
               <div className="pt-3"><MaterialPlanEditor unitId={unitId} rencana={data.rencanaBahan} bolehUbah={!!izin.rencanaBahan} unitAktif={aktif} onSaved={() => sesudahUbah()} onReload={muat} /></div>
             </details>
 
-            {/* 5 · Riwayat */}
-            <Bagian id="sec-riwayat" judul="Riwayat">
-              <Riwayat daftar={data.riwayat} />
-            </Bagian>
+            {/* 5 · Riwayat — TERTUTUP bawaan (jejak lengkap tetap satu ketukan; tombol lompat membukanya) */}
+            <details className="border-t border-line pt-5" id="sec-riwayat" data-testid="sec-riwayat-lipat">
+              <summary className="min-h-[44px] cursor-pointer text-[15px] font-semibold text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/50">Riwayat{data.riwayat?.length ? ` (${data.riwayat.length})` : ""}</summary>
+              <div className="pt-3"><Riwayat daftar={data.riwayat} /></div>
+            </details>
 
             {/* 6 · Lanjutan */}
             <details className="group border-t border-line pt-4" data-testid="panel-lanjutan">

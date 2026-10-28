@@ -4,7 +4,7 @@ import { api } from "@/api.js";
 import { Button } from "@/components/ui/button.jsx";
 import { cn } from "@/lib/utils.js";
 import { formatJumlah, hapusBaris, kunciIdempoten, kelompokkan, ketersediaanText, parseJumlah, pesanGalatAdopsi, ubahJumlah, waktuWib } from "@/features/production/orderProduksiModel.js";
-import { SUMBER, bolehKonfirmasiAktual, isianAwalDariRencana, keadaanSaldo, tambahAktual } from "@/features/production/bahan/bahanModel.js";
+import { bolehKonfirmasiAktual, isianAwalDariRencana, keadaanSaldo, tambahAktual } from "@/features/production/bahan/bahanModel.js";
 import PemilihBahanKatalog from "@/features/production/bahan/PemilihBahanKatalog.jsx";
 import BahanBelumAda from "@/features/production/bahan/BahanBelumAda.jsx";
 
@@ -60,7 +60,7 @@ export default function CatatBahanBaru({ data, unitId, izin = {}, awalCariAwal =
   const grup = kelompokkan(baris);
   return (
     <div className="space-y-4" data-testid="catat-bahan-baru">
-      {!belumAda && <p className="m-0 flex items-start gap-2 rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-ink"><AlertTriangle size={15} className="bh-warn mt-0.5 shrink-0" aria-hidden /><span><b>{SUMBER.BARU.label}</b>: stok Gudang <b>berkurang</b> saat Anda konfirmasi, lewat Material Issue/pergerakan stok resmi, tepat sekali. Tidak perlu membuat Rencana lebih dulu.</span></p>}
+      {!belumAda && <p className="m-0 flex items-start gap-2 rounded-btn bg-orangebg px-3 py-2 text-[12.5px] text-ink"><AlertTriangle size={15} className="bh-warn mt-0.5 shrink-0" aria-hidden /><span data-testid="dampak-stok-ringkas"><b>Mengurangi stok</b> saat dikonfirmasi — Material Issue resmi, tepat sekali.</span></p>}
 
       {!semuaSelesai && (
         <>
