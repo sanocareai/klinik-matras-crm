@@ -1,0 +1,14 @@
+# Teks yang HANYA ada di tampilan baru (tidak ada di dist aktif); label lama yang HARUS HILANG (ada di dist aktif, tidak boleh ada di dist baru); fitur live yang HARUS ada di KEDUANYA.
+for s0 in "Nilai Finance dan harga pembanding" "Pemakaian terdampak"; do
+  [ -z "$(grep -lF -- "$s0" "$PREV_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "[skrip] teks tampilan baru '${s0}' SUDAH ada di dist release aktif — perbaiki daftar pembanding"
+  [ -n "$(grep -lF -- "$s0" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru TIDAK memuat tampilan baru: ${s0}"
+done
+for s1 in "Stok Aman" "Stok Habis"; do
+  [ -n "$(grep -lF -- "$s1" "$PREV_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "[skrip] label lama '${s1}' tidak ada di dist release aktif — perbaiki daftar pembanding"
+  [ -z "$(grep -lF -- "$s1" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru MASIH memuat label lama: ${s1}"
+done
+for s2 in "Ada stok" "Stok belum diketahui" "Nol menurut pergerakan" "Saldo minus" "Belum diketahui" "Koreksi saldo" "Ubah harga" "Harga Berlaku (HPP operasional)" "Pilih meja" "Pilih semua unit order ini" "Belum dijadwalkan" "Tambah pemakaian" "Riwayat dan dokumen pemakaian" "Tanpa pengeluaran stok" "Beranda Gudang" "Pengeluaran Material" "Konfirmasi Barang Jadi"; do
+  [ -n "$(grep -lF -- "$s2" "$PREV_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "[skrip] teks lama '${s2}' tidak ada di dist release aktif — perbaiki daftar pembanding"
+  [ -n "$(grep -lF -- "$s2" "$NEW_DIR"/frontend/dist/assets/*.js 2>/dev/null | sed -n 1p)" ] || die "dist baru KEHILANGAN teks fitur: ${s2}"
+done
+ok "dist baru ${NEW_INDEX} (lama ${PREV_INDEX}): tampilan baru ada, label lama (Stok Aman/Stok Habis) hilang, 17 teks fitur live (penjadwalan, pemakaian, Koreksi Saldo, Harga Berlaku, Gudang) tetap ada"

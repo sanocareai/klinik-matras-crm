@@ -1,0 +1,17 @@
+# RILIS FRONTEND-SAJA "drawer bahan ringkas" (Stok & Lokasi) — TANPA backend, TANPA migrasi, TANPA schema, TANPA tulisan data, TANPA build image.
+# Isi: ItemDetailDrawer ringkas (Tersedia/Saldo/Dipesan), "Belum diketahui" (bukan 0 kg) untuk stok yang belum diketahui, label status "Ada stok"/"Saldo minus"/"Stok belum diketahui"/"Nol menurut pergerakan"
+# (label lama "Stok Aman"/"Stok Habis" dicabut), panel Koreksi Saldo + Harga Berlaku ringkas (ikon info, bagian terlipat, peringatan tindakan), ketentuan di formulir Koreksi saldo/Ubah harga.
+# Dibangun dari SUMBER GIT YANG DAPAT DILACAK (git archive SHA kandidat) — tanpa overlay/salinan berkas.
+# BASELINE = release aktif c518209e (penjadwalan langsung + pemakaian/Edit + Koreksi Saldo + Harga Berlaku + HOTFIX performa 152819175). backend/ harus IDENTIK dengan release aktif; image backend SAMA.
+# Workflow RELEASE-DIRECTORY di atas release aktif (BASE_SHA). FAIL-CLOSED. Dist web dibangun di release dir baru; backend DI-RECREATE dari release baru dengan IMAGE YANG SAMA
+# (dist di-bind-mount dari direktori release). .env tidak diubah (sha dibandingkan sebelum/sesudah). Tidak ada folder release/image/backup/volume yang dihapus.
+# GERBANG IDENTITAS KODE LIVE (isi, bukan marker): hash blob semua berkas terlacak baseline vs release aktif, berkas tambahan, container == folder release, identitas proses — di fase 3, sebelum switch, dan TEPAT sebelum switch.
+# BERHENTI BILA: kode live menyimpang dari baseline; ada deploy lain; disk < 5 GiB; berkas di luar allowlist; backend/, prisma, package, Docker/compose, .env, dist ikut berubah;
+#                bundel lama kehilangan teks fitur; dist baru masih memuat label lama / tidak memuat tampilan baru; hotfix performa hilang; image berubah setelah recreate; RestartCount != 0; .env atau hitungan data berubah.
+#
+#   cat scripts/release-drawer-bahan.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/drw.sh'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/drw.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'   # gerbang awal; produksi TIDAK diubah
+#   ssh ubuntu@43.133.152.6 'bash /tmp/drw.sh <DEPLOY_SHA_40> <BASE_SHA_40> --build-only'       # + release dir sementara, build dist terisolasi, semua pemeriksaan dist; release dir sementara dihapus; TANPA switch
+#   ssh ubuntu@43.133.152.6 'bash /tmp/drw.sh <DEPLOY_SHA_40> <BASE_SHA_40>'                    # rilis penuh (hanya setelah persetujuan)
+#   ssh ubuntu@43.133.152.6 'bash /tmp/drw.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rollback'         # kembali ke baseline (folder BASE, image SAMA yang memuat hotfix); tidak ada data yang dihapus
+# (dibangkitkan oleh scripts/gen-release-drawer-bahan.cjs dari scripts/release-gudang-pintu-masuk.sh + scripts/templates/release-drawer-bahan/* + blok gerbang di scripts/templates/release-penjadwalan-langsung/*; JANGAN edit manual)
