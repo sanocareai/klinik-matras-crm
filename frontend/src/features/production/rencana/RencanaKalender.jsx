@@ -76,9 +76,11 @@ function MejaBaris({ s, dragAktif, onLepasMeja, children, menyimpan = false }) {
     >
       <header className="flex flex-wrap items-center justify-between gap-2 px-3 py-1.5">
         <h3 className="m-0 text-[13px] font-semibold text-ink">{s.label} <span className={`font-normal ${s.capacity > 0 && s.items.length >= s.capacity ? "text-red" : "text-ink3"}`}>{s.capacity === 0 ? `· ${s.items.length} unit · tanpa kapasitas rutin (libur)` : `· ${s.items.length}/${s.capacity} unit`}</span></h3>
-        <span className="min-w-0 text-[12px] text-ink3">{s.pic ? <>PIC {s.pic.nama}{s.pic.aktif === false ? " (nonaktif)" : ""}</> : "PIC belum ditetapkan"}{s.capacity === 0 ? "" : kosong ? ` · ${s.capacity} tempat kosong` : s.items.length < s.capacity ? ` · ${s.capacity - s.items.length} tempat kosong` : " · penuh"}</span>
+        {/* Petunjuk lepas MENGGANTIKAN teks PIC di baris yang sama: tinggi baris tidak berubah saat seret dimulai, sehingga sasaran tidak melompat di bawah pointer. */}
+        {dragAktif
+          ? <span className="min-w-0 text-[12px] font-medium text-accent" data-testid="meja-lepas-petunjuk">{s.capacity === 0 ? "Hari libur — tidak bisa dijadwalkan." : `Lepas di sini untuk menjadwalkan ${s.label}.`}</span>
+          : <span className="min-w-0 text-[12px] text-ink3">{s.pic ? <>PIC {s.pic.nama}{s.pic.aktif === false ? " (nonaktif)" : ""}</> : "PIC belum ditetapkan"}{s.capacity === 0 ? "" : kosong ? ` · ${s.capacity} tempat kosong` : s.items.length < s.capacity ? ` · ${s.capacity - s.items.length} tempat kosong` : " · penuh"}</span>}
       </header>
-      {dragAktif && <p className="m-0 px-3 pb-2 text-[12px] text-accent" data-testid="meja-lepas-petunjuk">{s.capacity === 0 ? "Hari libur — tidak bisa dijadwalkan." : `Lepas di sini untuk menjadwalkan ${s.label}.`}</p>}
       {!kosong && <div className="space-y-2 px-2 pb-2">{children}</div>}
     </section>
   );

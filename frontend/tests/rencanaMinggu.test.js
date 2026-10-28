@@ -135,3 +135,13 @@ test("pengawatan: seret/Pilih meja memakai SATU jalur simpan (jadwalkanUnit / ja
   const api = src("api.js"); assert.match(api, /jadwalkanBatch:/); assert.match(api, /undoJadwalBatch:/);
   assert.doesNotMatch(page, /\bhttps?:\/\//);
 });
+
+test("pengawatan: petunjuk lepas menggantikan teks PIC di baris header — tidak menambah baris, sasaran tidak melompat saat seret dimulai", () => {
+  const k = src("features", "production", "rencana", "RencanaKalender.jsx");
+  const i = k.indexOf('data-testid="meja-lepas-petunjuk"');
+  assert.ok(i > 0, "petunjuk lepas ada");
+  const sebelum = k.slice(Math.max(0, i - 200), i);
+  assert.ok(/<span[^>]*$/.test(sebelum), "petunjuk berupa <span> di dalam header, bukan <p> baris baru");
+  assert.ok(!/<p[^>]*data-testid="meja-lepas-petunjuk"/.test(k), "tidak ada <p> petunjuk yang menambah tinggi baris");
+  assert.ok(k.includes("Lepas di sini untuk menjadwalkan"), "teks petunjuk tetap (dipakai gerbang bundel rilis)");
+});
