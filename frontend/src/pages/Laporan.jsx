@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useMemo } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useLocation, useSearchParams } from "react-router-dom";
+import { useTabs } from "@/lib/TabsContext.jsx";
 import { Download, RefreshCw } from "lucide-react";
 import { api } from "../api.js";
 import DateRangePicker from "../components/DateRangePicker.jsx";
@@ -34,6 +35,8 @@ const TABS = ["Ringkasan", "Sales", "Traffic", "Akuisisi", "Iklan", "Performa Ti
 // sampai jadi "laporan-null-null.xlsx".
 const namaFile = (r) => (r?.from && r?.to ? `${r.from}-${r.to}` : "semua");
 
+function useOptionalTabs() { try { return useTabs(); } catch { return null; } }
+
 export default function Laporan() {
   // SATU sumber state untuk tab, periode, dan detail sumber Akuisisi: URL (?tab&dari&sampai&sumber). Refresh, tombol Back, berpindah tab, dan membuka detail sumber tidak mengubah periode.
   // Sebelumnya tab Akuisisi (30 hari) dan Iklan (7 hari) memegang rentang sendiri sehingga bisa berbeda dari filter global (bug 26 Okt 2026: global 1–26 Okt vs Akuisisi 26 Sep–25 Okt).
@@ -50,11 +53,21 @@ export default function Laporan() {
     if (!dariUrl.dari) return rangeLokal;
     return samaRentang(rangeLokal, { from: dariUrl.dari, to: dariUrl.sampai }) ? rangeLokal : makeCustomRange(dariUrl.dari, dariUrl.sampai);
   }, [dariUrl.dari, dariUrl.sampai, rangeLokal]);
+  // Di dalam shell bertab, halaman membaca lokasi milik TAB (TabbedContent), bukan URL browser — setSearchParams saja tidak
+  // memperbarui path tab sehingga klik Sales/Traffic/Akuisisi/Iklan tidak berpindah (bug 28 Okt 2026). Pola sama dengan TabbedHub.
+  const tabsCtx = useOptionalTabs();
+  const location = useLocation();
   const perbaruiUrl = useCallback((patch, { ganti = true } = {}) => {
-    setSearchParams(tulisUrlLaporan(searchParams, {
+    const p = tulisUrlLaporan(searchParams, {
       tab: patch.tab ?? tab, range: patch.range ?? range, sumber: patch.sumber === undefined ? sumberId : patch.sumber,
-    }), { replace: ganti });
-  }, [searchParams, setSearchParams, tab, range, sumberId]);
+    });
+    if (tabsCtx?.replaceActivePath) {
+      const q = p.toString();
+      tabsCtx.replaceActivePath(location.pathname + (q ? `?${q}` : ""));
+    } else {
+      setSearchParams(p, { replace: ganti });
+    }
+  }, [searchParams, setSearchParams, tab, range, sumberId, tabsCtx, location.pathname]);
   const setTab = useCallback((t) => perbaruiUrl({ tab: t, sumber: null }, { ganti: false }), [perbaruiUrl]);
   const setRange = useCallback((r) => { setRangeLokal(r); perbaruiUrl({ range: r }); }, [perbaruiUrl]);
   // Buka detail satu sumber di tab Akuisisi (dari kartu/tabel Akuisisi atau dari tab Traffic) — push, jadi tombol Back menutup detail; periode tetap sama.

@@ -36,6 +36,7 @@ import { atribusiOrderWhere } from "../services/salesOwner.js";
 // NILAI BERSIH (Okt 2026): semua angka rupiah penjualan/komisi/target di file ini = Order.value − Nota Kredit aktif. JANGAN menjumlah Order.value mentah di sini —
 // pakai aggregateBersih/groupByBersih/NILAI_BERSIH_SQL/nilaiBersih (services/orderNilaiBersih.js). Dijaga tes nilaiBersihRegistry.test.js.
 import { aggregateBersih, groupByBersih, NILAI_BERSIH_SQL, PILIH_KREDIT, nilaiBersih } from "../services/orderNilaiBersih.js";
+import { cacheSingkat } from "../middleware/cacheSingkat.js";
 
 export const analyticsRouter = express.Router();
 analyticsRouter.use(requireAuth);
@@ -794,10 +795,11 @@ export async function computeSalesRow(u, ctx) {
     prisma.$queryRaw`
       SELECT COUNT(*)::int AS n
       FROM "Conversation" c
-      JOIN (
-        SELECT DISTINCT ON ("conversationId") "conversationId", direction, "createdAt"
-        FROM "Message" ORDER BY "conversationId", "createdAt" DESC
-      ) m ON m."conversationId" = c.id
+      JOIN LATERAL (
+        SELECT direction, "createdAt"
+        FROM "Message" WHERE "conversationId" = c.id
+        ORDER BY "createdAt" DESC LIMIT 1
+      ) m ON TRUE
       WHERE c."assignedToId" = ${u.id} AND c."type" = 'INDIVIDUAL'
         AND c.status != 'RESOLVED'
         AND c."createdAt" >= ${mulai} AND c."createdAt" < ${selesai}
@@ -1203,7 +1205,7 @@ export async function buildSalesReportContext({ from, to } = {}) {
   return { convWhere, mulai, selesai, from, to, adaDataTransisi, targetMap };
 }
 
-analyticsRouter.get("/sales-report", async (req, res) => {
+analyticsRouter.get("/sales-report", cacheSingkat(30_000), async (req, res) => {
   try {
     const { from, to } = req.query;
     const convWhere = { ...buildDateWhere(from, to), type: "INDIVIDUAL" };
@@ -1320,10 +1322,11 @@ analyticsRouter.get("/sales-report", async (req, res) => {
     const stalledNowRaw = await prisma.$queryRaw`
       SELECT COUNT(*)::int AS n
       FROM "Conversation" c
-      JOIN (
-        SELECT DISTINCT ON ("conversationId") "conversationId", direction, "createdAt"
-        FROM "Message" ORDER BY "conversationId", "createdAt" DESC
-      ) m ON m."conversationId" = c.id
+      JOIN LATERAL (
+        SELECT direction, "createdAt"
+        FROM "Message" WHERE "conversationId" = c.id
+        ORDER BY "createdAt" DESC LIMIT 1
+      ) m ON TRUE
       WHERE c."type" = 'INDIVIDUAL' AND c."assignedToId" IS NOT NULL
         AND c.status != 'RESOLVED'
         AND m.direction = 'INBOUND'

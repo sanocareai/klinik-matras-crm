@@ -236,11 +236,14 @@ conversationRouter.get("/counts", async (req, res) => {
     // arah pesan terakhirnya), jadi dihitung lewat DISTINCT ON per
     // percakapan atas pesan terbarunya — satu query, bukan N+1.
     prisma.$queryRaw`
-      SELECT COUNT(*)::int AS count FROM (
-        SELECT DISTINCT ON (m."conversationId") m.direction
-        FROM "Message" m
-        ORDER BY m."conversationId", m."createdAt" DESC
-      ) sub WHERE sub.direction = 'INBOUND'
+      SELECT COUNT(*)::int AS count
+      FROM "Conversation" c
+      JOIN LATERAL (
+        SELECT m.direction FROM "Message" m
+        WHERE m."conversationId" = c.id
+        ORDER BY m."createdAt" DESC LIMIT 1
+      ) sub ON TRUE
+      WHERE sub.direction = 'INBOUND'
     `,
     // Badge tab "Belum Diambil"/"Menggantung"/"Broadcast" (25 Agustus 2026,
     // paritas dengan web — lihat FilterTabs.jsx & mobile ChatListScreen.js).
@@ -256,10 +259,11 @@ conversationRouter.get("/counts", async (req, res) => {
     prisma.$queryRaw`
       SELECT COUNT(*)::int AS n
       FROM "Conversation" c
-      JOIN (
-        SELECT DISTINCT ON ("conversationId") "conversationId", direction, "createdAt"
-        FROM "Message" ORDER BY "conversationId", "createdAt" DESC
-      ) m ON m."conversationId" = c.id
+      JOIN LATERAL (
+        SELECT direction, "createdAt"
+        FROM "Message" WHERE "conversationId" = c.id
+        ORDER BY "createdAt" DESC LIMIT 1
+      ) m ON TRUE
       WHERE c."assignedToId" IS NOT NULL
         AND c.status != 'RESOLVED'
         AND m.direction = 'INBOUND'
@@ -524,11 +528,12 @@ conversationRouter.get("/", canReadConversation, async (req, res) => {
   // di bawah juga difilter di server, bukan cuma di client.
   if (unanswered === "true") {
     const rows = await prisma.$queryRaw`
-      SELECT sub."conversationId" AS id FROM (
-        SELECT DISTINCT ON (m."conversationId") m."conversationId", m.direction
-        FROM "Message" m
-        ORDER BY m."conversationId", m."createdAt" DESC
-      ) sub WHERE sub.direction = 'INBOUND'
+      SELECT c.id FROM "Conversation" c
+      JOIN LATERAL (
+        SELECT direction FROM "Message" WHERE "conversationId" = c.id
+        ORDER BY "createdAt" DESC LIMIT 1
+      ) sub ON TRUE
+      WHERE sub.direction = 'INBOUND'
     `;
     where.id = { in: rows.map((r) => r.id) };
   }
@@ -543,11 +548,12 @@ conversationRouter.get("/", canReadConversation, async (req, res) => {
   // tapi telat dibalas.
   if (stalled === "true") {
     const rows = await prisma.$queryRaw`
-      SELECT sub."conversationId" AS id FROM (
-        SELECT DISTINCT ON (m."conversationId") m."conversationId", m.direction, m."createdAt"
-        FROM "Message" m
-        ORDER BY m."conversationId", m."createdAt" DESC
-      ) sub WHERE sub.direction = 'INBOUND' AND sub."createdAt" < NOW() - INTERVAL '60 minutes'
+      SELECT c.id FROM "Conversation" c
+      JOIN LATERAL (
+        SELECT direction, "createdAt" FROM "Message" WHERE "conversationId" = c.id
+        ORDER BY "createdAt" DESC LIMIT 1
+      ) sub ON TRUE
+      WHERE sub.direction = 'INBOUND' AND sub."createdAt" < NOW() - INTERVAL '60 minutes'
     `;
     where.id = { in: rows.map((r) => r.id) };
     where.assignedToId = { not: null };
