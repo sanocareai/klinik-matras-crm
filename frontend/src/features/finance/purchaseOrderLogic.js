@@ -337,3 +337,35 @@ export function statusFaktur(ev) {
   }
   return { label: LABEL_STATUS_FAKTUR[ev.status] || ev.status, variant: ev.status === "DIBATALKAN" || ev.status === "DITOLAK" ? "neutral" : "accent" };
 }
+
+// ───────────── Barang mirip pada form PO: SAMA / varian BERBEDA / AMBIGU (hasil dari server; klien hanya menyusun masukan dan tampilan) ─────────────
+/** Barang baru LAIN pada form (selain baris `kecualiIndex`) untuk pratinjau satu barang: server membandingkannya seperti katalog. */
+export function barisLainDariForm(lines, kecualiIndex = -1) {
+  return (lines || []).map((l, i) => ({ l, i })).filter(({ l, i }) => i !== kecualiIndex && l.materialBaru && String(l.materialBaru.nama || "").trim() && l.materialBaru.satuanStok)
+    .map(({ l, i }) => ({ baris: i + 1, nama: String(l.materialBaru.nama).trim(), satuanStok: l.materialBaru.satuanStok, ...(String(l.materialBaru.spesifikasi || "").trim() && { spesifikasi: String(l.materialBaru.spesifikasi).trim() }), ...(String(l.materialBaru.kategori || "").trim() && { kategori: String(l.materialBaru.kategori).trim() }) }));
+}
+/** Semua barang baru pada form, berurutan, untuk pemeriksaan sekaligus sebelum simpan (urutan sama dengan penyimpanan di server). */
+export function barisBaruUntukCek(lines) {
+  return (lines || []).map((l, i) => ({ l, i })).filter(({ l }) => l.materialBaru && !galatMaterialBaru(l.materialBaru)).map(({ l, i }) => ({ baris: i + 1, materialBaru: bodyMaterialBaru(l.materialBaru) }));
+}
+export const KODE_MASALAH_SKU = Object.freeze(["SKU_DUPLIKAT_PASTI", "SKU_DUPLIKAT_DALAM_PO", "SKU_MIRIP_BUTUH_KONFIRMASI"]);
+/** Jenis masalah satu baris: PASTI_KATALOG (pakai material yang ada) | PASTI_PO (sama dengan baris lain di PO ini) | KONFIRMASI (ambigu, butuh keputusan). */
+export function jenisMasalah(m) {
+  if (!m) return null;
+  if (m.kode === "SKU_DUPLIKAT_DALAM_PO" || (m.pasti || []).some((c) => c.dariBarisPO)) return "PASTI_PO";
+  if (m.kode === "SKU_DUPLIKAT_PASTI" || (m.pasti || []).length > 0) return "PASTI_KATALOG";
+  return "KONFIRMASI";
+}
+/** Hasil cek-duplikat-po → { [nomorBaris]: masalah } hanya untuk baris yang tidak bisa disimpan apa adanya. */
+export function masalahDariCek(hasil) {
+  const out = {};
+  for (const r of hasil?.baris || []) if (r.diblokir || r.perluKonfirmasi) out[r.baris] = { baris: r.baris, kode: r.diblokir ? (r.dalamPO && !(r.pasti || []).some((c) => c.materialId) ? "SKU_DUPLIKAT_DALAM_PO" : "SKU_DUPLIKAT_PASTI") : "SKU_MIRIP_BUTUH_KONFIRMASI", pasti: r.pasti || [], mirip: r.mirip || [], pesan: null };
+  return out;
+}
+/** Galat simpan dari server → masalah pada baris tertentu (atau null bila bukan galat barang mirip). e.data = isi JSON respons. */
+export function masalahDariGalat(e) {
+  const d = e?.data; if (!e || !KODE_MASALAH_SKU.includes(e.code) || !d || !Number.isInteger(d.baris)) return null;
+  const kand = Array.isArray(d.kandidat) ? d.kandidat : [];
+  return { baris: d.baris, kode: e.code, pasti: e.code === "SKU_MIRIP_BUTUH_KONFIRMASI" ? [] : kand, mirip: e.code === "SKU_MIRIP_BUTUH_KONFIRMASI" ? kand : [], pesan: e.message, barisSama: d.barisSama ?? null };
+}
+export const teksPerbedaan = (p) => `${p.label}: ${p.baru} ≠ ${p.ada}`;
