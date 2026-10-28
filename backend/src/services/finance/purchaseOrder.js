@@ -13,7 +13,7 @@ import { lockRowForUpdate } from "../inventoryLedger.js";
 import { tentukanTerminPO, TerminError, labelTermin } from "./termin.js";
 import { Decimal } from "./money.js";
 import { validasiPendamping, pendampingPO, PendampingError } from "../../lib/domain/pendamping.js";
-import { buatSkuBaru, pastikanKatalog, catatHargaTerakhir, tautkanPoPertama, validasiFaktor, periksaKonversiBaris, SATUAN_VALID, SkuError } from "./skuBaru.js";
+import { buatSkuBaru, pastikanKatalog, catatHargaTerakhir, tautkanPoPertama, validasiFaktor, periksaKonversiBaris, SATUAN_VALID, SkuError, kunciAdvisoryNama } from "./skuBaru.js";
 import { DEFINISI_PROGRES, hitungProgresPO, ringkasProgresPO } from "./progresPO.js";
 
 export class PurchaseOrderError extends Error {
@@ -61,6 +61,12 @@ async function siapkanMasukan(tx, body, { bolehBuatSku = false, buatSku = false,
   const dipakai = new Set();
   const hasil = [];
   const skuBaru = [];
+  // Serialkan SEMUA nama barang baru di PO ini SEKALIGUS dalam urutan tetap (kunci kanonik terurut): dua pengguna yang menyimpan PO berisi barang yang sama dalam urutan berbeda tidak saling menunggu (tanpa deadlock),
+  // dan yang kedua melihat barang pertama sebagai duplikat pasti.
+  if (buatSku && bolehBuatSku) {
+    const kunciNama = [...new Set(lines.filter((l) => !l?.materialId && l?.materialBaru).map((l) => kunciAdvisoryNama(String(l.materialBaru?.nama ?? ""))))].sort();
+    for (const kn of kunciNama) await tx.$queryRawUnsafe("SELECT pg_advisory_xact_lock(hashtext($1))::text AS k", kn);
+  }
   for (const [i, l] of lines.entries()) {
     const no = i + 1;
     let material; let katalogMasukan = null; let satuanBeli; let faktor;
@@ -69,7 +75,17 @@ async function siapkanMasukan(tx, body, { bolehBuatSku = false, buatSku = false,
       if (!bolehBuatSku) throw gagal(`Baris ${no}: membuat barang baru dari PO membutuhkan izin Admin Finance. Pilih material yang sudah ada, atau minta Admin Finance.`, 403, "BUAT_SKU_BUTUH_ADMIN");
       let dibuat;
       try { dibuat = await buatSkuBaru(tx, { data: l.materialBaru, supplier, userId }); }
-      catch (e) { if (e instanceof SkuError) e.message = `Baris ${no}: ${e.message}`; throw e; }
+      catch (e) {
+        if (e instanceof SkuError) {
+          // Kandidat yang ternyata barang baru pada baris sebelumnya di PO ini diberi tanda baris (bukan kode SKU yang belum ada bagi pengguna); baris yang bermasalah ikut dikirim supaya UI menunjuk baris itu.
+          const dariPO = (c) => skuBaru.find((s) => s.materialId === c.materialId);
+          const kandidat = Array.isArray(e.extra?.kandidat) ? e.extra.kandidat.map((c) => (dariPO(c) ? { ...c, dariBarisPO: dariPO(c).baris } : c)) : undefined;
+          const sibling = e.code === "SKU_DUPLIKAT_PASTI" ? kandidat?.find((c) => c.dariBarisPO) : null;
+          if (sibling) throw new SkuError(`Baris ${no}: sama dengan baris ${sibling.dariBarisPO} yang juga barang baru pada PO ini. Hapus salah satu baris atau gabungkan jumlahnya menjadi satu baris.`, 409, "SKU_DUPLIKAT_DALAM_PO", { baris: no, barisSama: sibling.dariBarisPO, kandidat });
+          e.message = `Baris ${no}: ${e.message}`; e.extra = { ...(e.extra ?? {}), baris: no, ...(kandidat ? { kandidat } : {}) };
+        }
+        throw e;
+      }
       material = { id: dibuat.material.id, code: dibuat.material.code, name: dibuat.material.name, unit: dibuat.material.unit, active: true };
       katalogMasukan = dibuat.masukan; satuanBeli = dibuat.masukan.satuanBeli; faktor = dibuat.masukan.faktor;
       skuBaru.push({ materialId: material.id, kode: material.code, nama: material.name, jenis: dibuat.masukan.jenis, baris: no });
