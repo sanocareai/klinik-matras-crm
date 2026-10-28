@@ -1,0 +1,49 @@
+// LOGIKA MURNI tampilan ringkas drawer bahan (Stok & Lokasi) — diuji node --test tanpa React/DOM.
+// Hanya MENYUSUN tampilan dari data yang sudah dikirim layanan live (koreksi saldo, harga berlaku, item stok). Tidak ada angka stok/harga yang dihitung di sini
+// dan tidak ada aturan stok, harga, izin, persetujuan, atau audit yang diubah: yang berubah hanya apa yang tampil di awal dan apa yang dilipat.
+
+export const ISTILAH = Object.freeze({
+  tersedia: "Tersedia", saldo: "Saldo", dipesan: "Dipesan",
+  rumusStok: "Tersedia = Saldo − Dipesan. Saldo dihitung dari penjumlahan seluruh baris riwayat pergerakan stok (tidak disimpan sebagai kolom). Dipesan adalah bahan dari Material Issue yang sudah disetujui tetapi belum dikeluarkan.",
+});
+
+/** Peringatan yang butuh TINDAKAN pada stok. keadaan = keadaanSaldo dari layanan Koreksi Saldo; aktif = koreksi yang belum selesai (atau null). Nol menurut pergerakan hanya informasi, bukan peringatan. */
+export function peringatanStok({ keadaan, aktif = null } = {}) {
+  const out = [];
+  if (keadaan === "MINUS") out.push({ kode: "SALDO_MINUS", nada: "red", teks: "Saldo minus. Hitung fisik, lalu ajukan Koreksi saldo." });
+  if (keadaan === "BELUM_ADA_CATATAN") out.push({ kode: "STOK_BELUM_DIKETAHUI", nada: "orange", teks: "Stok belum diketahui: belum ada catatan pergerakan. Ini bukan nol." });
+  if (aktif) out.push({ kode: "KOREKSI_MENUNGGU", nada: "orange", teks: `Koreksi saldo ${aktif.nomor} ${String(aktif.statusTeks ?? "belum selesai").toLowerCase()}.`, nomor: aktif.nomor, id: aktif.id, kedaluwarsa: !!aktif.kedaluwarsa, tambahan: aktif.kedaluwarsa ? "Saldo sudah bergeser. Batalkan lalu ajukan ulang." : null });
+  return out;
+}
+
+/** Peringatan harga. h = hargaBerlaku (null bila belum ada); dampak = ringkasan dampak dari layanan. Belum ada harga TIDAK PERNAH ditulis sebagai Rp0. */
+export function peringatanHarga({ h, dampak = null } = {}) {
+  const out = [];
+  if (!h) out.push({ kode: "HARGA_BELUM_DIISI", nada: "orange", teks: "Pemakaian dicatat tanpa harga operasional (bukan Rp0)." });
+  if (dampak?.gagalPembekuan?.pemakaian > 0) out.push({ kode: "PEMBEKUAN_GAGAL", nada: "red", teks: `${dampak.gagalPembekuan.pemakaian} pembekuan harga gagal dan perlu diperbaiki.` });
+  return out;
+}
+
+/** Tampilan harga untuk kartu ringkas. rp = pemformat rupiah dari hargaBerlakuLogic (diteruskan agar modul ini tidak bergantung pada React). */
+export function ringkasHarga(h, satuan, rp) {
+  if (!h) return { ada: false, angka: "Belum diisi", satuan: null, label: null };
+  return { ada: true, angka: rp(h.harga), satuan: String(satuan ?? "").toLowerCase(), label: h.teksLabelBukti ?? null, labelBukti: h.labelBukti ?? null, sejak: h.berlakuMulai ?? null };
+}
+
+/** Rincian pemakaian terdampak: hanya baris BERNILAI (bukan nol). Bila semuanya nol → daftar kosong (tampilan memakai satu kalimat). nilai = pemformat rupiah. */
+export function barisDampakBermakna(dm, rpNilai) {
+  if (!dm) return [];
+  const out = [];
+  if (dm.akanMemakai?.order > 0) out.push({ k: "order", label: "Order belum memakai bahan ini", nilai: `${dm.akanMemakai.order} order · ${dm.akanMemakai.unit} unit` });
+  if (dm.sudahDibekukanSejakMulai?.pemakaian > 0) out.push({ k: "beku", label: "Pemakaian sudah dibekukan sejak harga berlaku", nilai: `${dm.sudahDibekukanSejakMulai.pemakaian} · ${rpNilai(dm.sudahDibekukanSejakMulai.nilai)}` });
+  if (dm.belumDibekukan?.pemakaian > 0) out.push({ k: "tanpa-harga", label: "Pemakaian lama tanpa harga operasional", nilai: `${dm.belumDibekukan.pemakaian} · ${dm.belumDibekukan.unit} unit` });
+  return out;
+}
+
+export const TEKS_DRAWER = Object.freeze({
+  dampakKosong: "Belum ada pemakaian yang terdampak harga bahan ini.",
+  aturanKoreksi: "Koreksi saldo tidak menimpa angka. Ini mengajukan Penyesuaian Stok resmi: stok baru berubah setelah disetujui ORANG LAIN (Owner atau Finance) lalu diposting oleh Gudang.",
+  bedaAngka: "Harga Berlaku adalah harga kerja untuk HPP operasional per satuan stok. Nilai persediaan Finance adalah angka terpisah (Persediaan Awal/GR) dan tidak berubah karena harga ini.",
+  catatanLokasi: "Lokasi rak/bin, batch dan lot, serta tanggal kedaluwarsa belum tersedia: kolomnya belum ada di database.",
+  referensi: "Harga dan nilai stok referensi adalah snapshot satu kali dari stock opname Excel (bulan di kurung; bila bulan diminta kosong, diambil bulan terdekat sebelumnya). Bukan angka hidup dan tidak berubah mengikuti transaksi.",
+});

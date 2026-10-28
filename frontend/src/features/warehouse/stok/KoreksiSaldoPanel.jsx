@@ -4,15 +4,19 @@ import { History, Loader2, Scale, TriangleAlert } from "lucide-react";
 import { api } from "@/api.js";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
+import { InfoToggleButton, InfoToggleIsi, useInfoToggle } from "@/components/ui/info-toggle.jsx";
 import KoreksiSaldoModal from "./KoreksiSaldoModal.jsx";
 import { STATUS_KOREKSI, KEADAAN_SALDO_UI, fmt, tanda } from "./koreksiSaldoLogic.js";
+import { TEKS_DRAWER, peringatanStok } from "./drawerBahanLogic.js";
 
 const tanggalJam = (v) => (v ? new Date(v).toLocaleString("id-ID", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—");
 
-// KOREKSI SALDO di drawer bahan (Stok & Lokasi): keadaan saldo yang jujur (belum diketahui ≠ 0 menurut pergerakan ≠ 0 terverifikasi), tombol Koreksi saldo (hanya yang berizin),
-// dan riwayat koreksi bahan ini (diajukan/disetujui/diposting oleh siapa, pergerakan yang tercipta, dan penanda KEDALUWARSA bila saldo bergeser).
-export default function KoreksiSaldoPanel({ materialId, bahan, onChanged }) {
+// KOREKSI SALDO di drawer bahan (Stok & Lokasi) — tampilan RINGKAS di dalam kartu Stok: peringatan yang butuh tindakan (saldo minus, stok belum diketahui, koreksi menunggu), tombol Koreksi saldo
+// (hanya yang berizin) dan Riwayat. Penjelasan aturan persetujuan + izin ada di ikon informasi; keadaan saldo yang jujur (belum diketahui ≠ 0 menurut pergerakan ≠ 0 terverifikasi) tidak berubah makna.
+// Layanan, izin, dan persetujuan sama dengan sebelumnya — hanya tata letak yang diringkas.
+export default function KoreksiSaldoPanel({ materialId, onChanged }) {
   const [d, setD] = useState(null); const [galat, setGalat] = useState(""); const [modal, setModal] = useState(false); const [bukaRiwayat, setBukaRiwayat] = useState(false);
+  const info = useInfoToggle();
   const muat = useCallback(() => { setGalat(""); return api.getKoreksiSaldoBahan(materialId).then(setD).catch((e) => setGalat(e.message)); }, [materialId]);
   useEffect(() => { setD(null); setBukaRiwayat(false); muat(); }, [materialId, muat]);
 
@@ -20,24 +24,28 @@ export default function KoreksiSaldoPanel({ materialId, bahan, onChanged }) {
   if (!d) return <p className="mt-3 flex items-center gap-1.5 text-[12px] text-ink3"><Loader2 size={12} className="animate-spin" /> Memuat keadaan saldo…</p>;
   const k = KEADAAN_SALDO_UI[d.keadaanSaldo]; const aktif = d.riwayat.find((r) => ["DRAFT", "WAITING_APPROVAL", "APPROVED"].includes(r.status));
   const satuan = String(d.bahan.satuan ?? "").toLowerCase();
+  const peringatan = peringatanStok({ keadaan: d.keadaanSaldo, aktif });
+  const infoNol = d.keadaanSaldo === "NOL_MENURUT_PERGERAKAN" || d.keadaanSaldo === "NOL_TERVERIFIKASI";
 
   return (
-    <section className="mt-4 rounded-btn border border-line p-3" aria-label="Koreksi saldo bahan" data-testid="panel-koreksi-saldo">
-      <div className="flex flex-wrap items-center gap-2">
-        <h4 className="m-0 flex items-center gap-1 text-[11px] font-bold uppercase tracking-wide text-ink3"><Scale size={12} aria-hidden /> Saldo &amp; koreksi</h4>
-        <Badge variant={k?.varian ?? "neutral"} data-testid="keadaan-saldo" data-keadaan={d.keadaanSaldo}>{k?.singkat ?? d.keadaanSaldo}</Badge>
-      </div>
-      <p className="mt-1.5 text-[12px] leading-relaxed text-ink2" data-testid="teks-keadaan-saldo">{d.keadaanTeks}{d.verifikasiNol ? ` (${d.verifikasiNol.nomor}, ${tanggalJam(d.verifikasiNol.waktu)})` : ""}</p>
-      {aktif && (
-        <p className="mt-2 rounded-btn bg-orangebg px-2.5 py-1.5 text-[11.5px] text-ink2" data-testid="koreksi-aktif">
-          Ada koreksi saldo yang belum selesai: <Link to={`/warehouse/adjustments/stock/${aktif.id}`} className="font-semibold text-accent hover:underline">{aktif.nomor}</Link> — {aktif.statusTeks}.{aktif.kedaluwarsa && <b className="text-red"> Saldo sudah bergeser — batalkan dan ajukan ulang.</b>}
+    <div className="mt-3 border-t border-line pt-3" aria-label="Koreksi saldo bahan" data-testid="panel-koreksi-saldo" data-keadaan={d.keadaanSaldo}>
+      {infoNol && <div className="mb-2"><Badge variant={k?.varian ?? "neutral"} data-testid="keadaan-saldo" data-keadaan={d.keadaanSaldo}>{k?.singkat ?? d.keadaanSaldo}</Badge></div>}
+      {peringatan.map((p) => (
+        <p key={p.kode} role="status" data-testid={`peringatan-${p.kode.toLowerCase().replace(/_/g, "-")}`} className={`mb-2 flex items-start gap-2 rounded-btn px-2.5 py-1.5 text-[12px] ${p.nada === "red" ? "bg-redbg text-red" : "bg-orangebg text-ink"}`}>
+          <TriangleAlert size={13} className={`mt-0.5 shrink-0 ${p.nada === "red" ? "text-red" : "text-orange"}`} aria-hidden />
+          <span>{p.kode === "KOREKSI_MENUNGGU" ? <>Koreksi saldo <Link to={`/warehouse/adjustments/stock/${p.id}`} className="font-semibold text-accent hover:underline" data-testid="koreksi-aktif-tautan">{p.nomor}</Link> {String(aktif?.statusTeks ?? "").toLowerCase()}.{p.tambahan && <b className="text-red"> {p.tambahan}</b>}</> : p.teks}</span>
         </p>
-      )}
-      <p className="mt-2 text-[11px] leading-relaxed text-ink3" data-testid="izin-koreksi">{d.izin.teks}</p>
-      <div className="mt-3 flex flex-wrap gap-2">
+      ))}
+      <div className="flex flex-wrap items-center gap-2">
         {d.izin.bolehMengajukan && <Button size="sm" onClick={() => setModal(true)} disabled={!!aktif} title={aktif ? "Selesaikan atau batalkan koreksi yang berjalan dulu" : undefined} className="max-sm:min-h-11" data-testid="tombol-koreksi-saldo"><Scale size={13} /> Koreksi saldo</Button>}
-        <Button size="sm" variant="secondary" onClick={() => setBukaRiwayat((v) => !v)} className="max-sm:min-h-11" data-testid="tombol-riwayat-koreksi"><History size={13} /> Riwayat koreksi ({d.riwayat.length})</Button>
+        <Button size="sm" variant="secondary" onClick={() => setBukaRiwayat((v) => !v)} aria-expanded={bukaRiwayat} className="max-sm:min-h-11" data-testid="tombol-riwayat-koreksi"><History size={13} /> Riwayat ({d.riwayat.length})</Button>
+        <InfoToggleButton info={info} label="aturan koreksi saldo" />
       </div>
+      <InfoToggleIsi info={info}>
+        <p className="m-0" data-testid="teks-keadaan-saldo">{d.keadaanTeks}{d.verifikasiNol ? ` (${d.verifikasiNol.nomor}, ${tanggalJam(d.verifikasiNol.waktu)})` : ""}</p>
+        <p className="m-0">{TEKS_DRAWER.aturanKoreksi}</p>
+        <p className="m-0" data-testid="izin-koreksi">{d.izin.teks}</p>
+      </InfoToggleIsi>
       {bukaRiwayat && (
         <ul className="mt-3 divide-y divide-line" data-testid="riwayat-koreksi">
           {d.riwayat.length === 0 && <li className="py-2 text-[12px] text-ink3">Belum ada koreksi saldo untuk bahan ini.</li>}
@@ -57,6 +65,6 @@ export default function KoreksiSaldoPanel({ materialId, bahan, onChanged }) {
         </ul>
       )}
       {modal && <KoreksiSaldoModal open onClose={() => { setModal(false); muat(); }} bahan={{ id: d.bahan.id, kode: d.bahan.kode, nama: d.bahan.nama, satuan: d.bahan.satuan }} onDiajukan={() => { muat(); onChanged?.(); }} />}
-    </section>
+    </div>
   );
 }

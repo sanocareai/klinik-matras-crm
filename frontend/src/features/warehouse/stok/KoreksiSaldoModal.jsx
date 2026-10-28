@@ -84,7 +84,7 @@ export default function KoreksiSaldoModal({ open, onClose, bahan, onDiajukan }) 
         </>
       )}>
       <div className="space-y-3" data-testid="modal-koreksi-saldo">
-        <p className="rounded-btn bg-inset px-3 py-2 text-[12px] leading-relaxed text-ink2" data-testid="catatan-jalur">{TEKS.jalur}</p>
+        <div className="space-y-1 rounded-btn bg-inset px-3 py-2 text-[12px] leading-relaxed text-ink2" data-testid="catatan-jalur"><p className="m-0">{TEKS.jalur}</p><p className="m-0" data-testid="catatan-tidak-disentuh">{TEKS.tidakDisentuh}</p></div>
         {info && <p role="status" className="flex items-start gap-2 rounded-btn bg-orangebg px-3 py-2 text-[12px] text-ink2" data-testid="info-bergeser"><TriangleAlert size={13} className="mt-0.5 shrink-0 text-orange" aria-hidden />{info}</p>}
         {!pra && (
           <>
