@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { AlertTriangle, CheckCircle2, HelpCircle, Hourglass, Package, Pencil, Plus, Recycle, X } from "lucide-react";
+import { AlertTriangle, CheckCircle2, HelpCircle, Hourglass, Package, Plus, Recycle, X } from "lucide-react";
 import { Button } from "@/components/ui/button.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
 import { cn } from "@/lib/utils.js";
@@ -12,11 +12,10 @@ import PemakaianSementaraDaftar from "@/features/production/bahan/PemakaianSemen
 import RiwayatBahanBaru from "@/features/production/bahan/RiwayatBahanBaru.jsx";
 import CatatanHistorisBagian from "@/features/production/bahan/CatatanHistorisBagian.jsx";
 import PembetulanUnitSelesai from "@/features/production/bahan/PembetulanUnitSelesai.jsx";
-import EditPemakaianForm from "@/features/production/bahan/EditPemakaianForm.jsx";
+import TabelPemakaian from "@/features/production/bahan/TabelPemakaian.jsx";
 import { DETAIL_TEKNIS, PILIHAN_SUMBER, pesanHasil } from "@/features/production/bahan/perubahanModel.js";
-import { formatJumlah } from "@/features/production/orderProduksiModel.js";
 import "@/features/production/bahan/bahan.css";
-import { DAMPAK_SEMENTARA, JUDUL_AKTUAL, KARTU_SUMBER, SATUAN_KOMPONEN as SATUAN_LIST, SUMBER_SEMENTARA, asalKomponen } from "@/features/production/bahan/bahanModel.js";
+import { JUDUL_AKTUAL, KARTU_SUMBER, SATUAN_KOMPONEN as SATUAN_LIST, SUMBER_SEMENTARA, asalKomponen, barisTabelPemakaian } from "@/features/production/bahan/bahanModel.js";
 
 // PEMAKAIAN AKTUAL — satu komponen untuk drawer Order Produksi DAN tab Bahan Ruang Kerja Unit (sebelumnya drawer punya salinan lama tanpa "Bahan belum ada").
 // TIGA sumber SELALU tampil sebagai kartu (tanpa menggulir daftar bahan): Bahan dari Gudang · Bahan belum ada di katalog · Komponen lama dari kasur ini.
@@ -58,15 +57,16 @@ export default function PemakaianAktualBagian({ unitId, data, izin, aktif, onDon
   const bukaKatalog = (b) => { setBahanKat(b); setMode("katalog"); onMulai?.("katalog"); };
   const kl = data.komponenLama ?? { items: [], dibatalkan: [] };
   const sementara = data.pemakaianSementara ?? { items: [], total: { perluRekonsiliasi: 0 } };
-  const perbandingan = data.perbandingan ?? []; const menunggu = data.koreksiMenunggu ?? [];
+  const menunggu = data.koreksiMenunggu ?? [];
   const adaBaru = (data.pemakaianAktual?.baris ?? []).length > 0; const adaLama = kl.items.length + kl.dibatalkan.length > 0; const adaSementara = sementara.items.length > 0;
+  const adaTabel = barisTabelPemakaian(data, { menunggu }).length > 0; const adaRiwayat = adaBaru || adaLama || adaSementara;
+  const jumlahRiwayat = (data.pemakaianAktual?.baris ?? []).length + sementara.items.length + kl.items.length + kl.dibatalkan.length;
   const pilih = (k) => { setMode(k); setEditId(null); setHasilEdit(null); setAwalCari(""); setAwalBelum({ nama: "", satuan: "PCS", alasan: "" }); if (k) onMulai?.(k); };
   const lanjutkanTertinggal = () => { setAwalCari(""); setAwalBelum({ nama: "", satuan: "PCS", alasan: "", dariTertinggal: true }); setMode("belum"); onMulai?.("belum"); };
   const tutup = () => { setMode(null); setTambahBuka(false); };
   const selesaiKomponen = async () => { setMode(null); setTambahBuka(false); await onDone(); };
   const bukaTambah = () => { setEditId(null); setHasilEdit(null); if (tambahBuka || mode) tutup(); else { setTambahBuka(true); onMulai?.("tambah"); } };
   const bukaEdit = (id) => { setMode(null); setTambahBuka(false); setHasilEdit(null); setEditId(id); onMulai?.("edit"); };
-  const menungguBahan = (id) => menunggu.find((k) => k.perubahan?.bahan?.id === id) ?? null;
   const pilihanTampil = bolehTambah && (tambahBuka || !!mode);
 
   return (
@@ -100,35 +100,9 @@ export default function PemakaianAktualBagian({ unitId, data, izin, aktif, onDon
           <button type="button" onClick={() => setHasilEdit(null)} aria-label="Tutup pesan" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-btn text-green outline-none focus-visible:ring-2 focus-visible:ring-accent/40"><X size={14} aria-hidden /></button></p>
       )}
 
-      {/* Tabel pemakaian per bahan: nilai lama + tombol Edit pada setiap baris (unit berjalan DAN terkirim) */}
-      {perbandingan.length > 0 && (
-        <div className="overflow-x-auto" data-testid="rencana-vs-aktual">
-          <table className="w-full table-fixed border-collapse text-left text-[13px]">
-            <caption className="sr-only">Perbandingan rencana dan pemakaian aktual per bahan</caption>
-            <thead><tr className="text-[11.5px] uppercase tracking-[0.05em] text-ink3"><th scope="col" className="w-[44%] py-1 pr-2 font-medium">Bahan</th><th scope="col" className="px-2 py-1 text-right font-medium">Rencana</th><th scope="col" className="pl-2 py-1 text-right font-medium">Aktual</th></tr></thead>
-            <tbody className="divide-y divide-line">
-              {perbandingan.map((p) => {
-                const tunggu = menungguBahan(p.materialId); const editing = editId === p.materialId;
-                return (
-                  <React.Fragment key={p.materialId}>
-                    <tr data-testid="aktual-tabel-baris" data-material-id={p.materialId}>
-                      <td className="py-2 pr-3"><span className="block font-medium text-ink">{p.nama}</span><span className="block text-[11.5px] text-ink3">{p.kode}</span>{tunggu && <Badge variant="orange" className="bh-b-orange mt-1" data-testid="edit-menunggu-badge">Menunggu persetujuan {tunggu.nomor}</Badge>}</td>
-                      <td className="px-2 py-2 text-right tabular-nums text-ink2">{p.rencana === null ? <span className="text-ink3">tidak direncanakan</span> : `${formatJumlah(p.rencana)} ${p.satuan}`}</td>
-                      <td className={cn("pl-2 py-2 text-right tabular-nums font-semibold", p.rencana !== null && p.aktual > p.rencana ? "text-orange" : "text-ink")}>{formatJumlah(p.aktual)} {p.satuan}{p.rencana !== null && p.aktual > p.rencana ? <span className="block text-[11px] font-normal">melebihi rencana</span> : null}
-                        {bolehTambah && !rencanaEdit && p.aktual > 0 && !editing && <Button variant="neutral" size="sm" className="ml-auto mt-1 flex min-h-[44px]" onClick={() => bukaEdit(p.materialId)} data-testid="edit-bahan" aria-label={`Edit pemakaian ${p.nama}`}><Pencil size={13} aria-hidden /> Edit</Button>}
-                      </td>
-                    </tr>
-                    {editing && (
-                      <tr><td colSpan={3} className="py-2"><EditPemakaianForm key={p.materialId} unitId={unitId} selesai={terkirim} baris={{ materialId: p.materialId, nama: p.nama, kode: p.kode, satuan: p.satuan, aktual: p.aktual }} izin={izin} menunggu={tunggu}
-                        onTutup={() => setEditId(null)} onSelesai={async (h) => { setEditId(null); setHasilEdit({ ...h, bahan: p.nama }); await onDone(); }} /></td></tr>
-                    )}
-                  </React.Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {/* TABEL pemakaian aktual (utama): tiga sumber dalam satu tabel, dampak singkat per baris, Edit per baris (unit berjalan DAN terkirim) */}
+      {adaTabel && <TabelPemakaian unitId={unitId} kodeUnit={kodeUnit} data={data} izin={izin} aktif={aktif} terkirim={terkirim} rencanaEdit={rencanaEdit} menunggu={menunggu} editId={editId} onEditGudang={bukaEdit} onTutupGudang={() => setEditId(null)} onHasilEdit={setHasilEdit} onDone={onDone} />}
+      {!adaTabel && !pilihanTampil && <p className="m-0 rounded-btn bg-inset px-3 py-2.5 text-[13px] text-ink" data-testid="aktual-kosong">Belum ada pemakaian tercatat.{bolehTambah ? " Tekan “+ Tambah pemakaian”; rencana bahan tidak wajib." : ""}</p>}
 
       {bolehTambah && mode && (
         <div className="space-y-3 rounded-card border border-line px-4 py-4" data-testid="panel-catat-aktual" data-mode={mode}>
@@ -153,27 +127,18 @@ export default function PemakaianAktualBagian({ unitId, data, izin, aktif, onDon
         </details>
       )}
 
-      <div className="space-y-2" data-testid="sec-bahan-baru">
-        <h4 className="m-0 flex flex-wrap items-center gap-2 text-[13px] font-semibold text-ink">{KARTU_SUMBER.gudang.label} <Badge variant="orange" className="bh-b-orange" title={KARTU_SUMBER.gudang.teks}>{KARTU_SUMBER.gudang.ringkas}</Badge></h4>
-        {adaBaru ? <RiwayatBahanBaru unitId={unitId} data={data} bolehUbah={!!izin.pemakaianAktual} aktif={aktif} onDone={onDone} />
-          : <p className="m-0 rounded-btn bg-inset px-3 py-2.5 text-[13px] text-ink" data-testid="bahan-baru-kosong">Belum ada pemakaian bahan dari Gudang. {bolehTambah ? "Pilih “+ Tambah pemakaian” di atas — tidak perlu rencana lebih dulu." : ""}</p>}
-      </div>
-
-      <div className="space-y-2" data-testid="sec-pemakaian-sementara">
-        <h4 className="m-0 flex flex-wrap items-center gap-2 text-[13px] font-semibold text-ink"><Hourglass size={14} className="text-ink3" aria-hidden />{KARTU_SUMBER.belum.label} <Badge variant="orange" className="bh-b-orange" title={SUMBER_SEMENTARA.dampak}>{sementara.total.perluRekonsiliasi > 0 ? `${sementara.total.perluRekonsiliasi} perlu rekonsiliasi Gudang` : KARTU_SUMBER.belum.ringkas}</Badge></h4>
-        {adaSementara ? (
-          <>
-            <p className="m-0 text-[12px] text-ink3">{DAMPAK_SEMENTARA}</p>
-            <PemakaianSementaraDaftar data={sementara} bolehCatat={!!izin.catatPemakaianSementara} bolehGudang={!!izin.putuskanUsulan} aktif={aktif} onDone={onDone} />
-          </>
-        ) : <p className="m-0 rounded-btn bg-inset px-3 py-2.5 text-[13px] text-ink" data-testid="sementara-kosong">Belum ada pemakaian bahan yang belum ada di katalog. {bolehBelumAda ? "Pilih “+ Tambah pemakaian” lalu “Bahan belum tercatat” untuk mencatatnya sekarang." : ""}</p>}
-      </div>
-
-      <div className="space-y-2" data-testid="sec-komponen-lama">
-        <h4 className="m-0 flex flex-wrap items-center gap-2 text-[13px] font-semibold text-ink">{KARTU_SUMBER.lama.label} <Badge variant="accent" className="bh-b-accent" title={KARTU_SUMBER.lama.teks}>{KARTU_SUMBER.lama.ringkas}</Badge></h4>
-        {adaLama ? <KomponenLamaDaftar unitId={unitId} kodeUnit={kodeUnit} data={kl} bolehUbah={!!izin.pemakaianAktual} aktif={aktif} meta={{ fotoMaks: 3 }} onDone={onDone} />
-          : <p className="m-0 rounded-btn bg-inset px-3 py-2.5 text-[13px] text-ink" data-testid="komponen-lama-kosong">Belum ada komponen lama yang dipakai kembali atau dilepas. {bolehTambah ? "Pilih “+ Tambah pemakaian” lalu “Komponen lama”." : ""}</p>}
-      </div>
+      {/* RIWAYAT dan dokumen pemakaian — TERTUTUP bawaan. Hanya sumber yang punya isi yang tampil (tidak ada blok kosong / penjelasan berulang). Jejak lengkap: dokumen sumber, pelaku, waktu, dampak saldo, HPP, yang dibatalkan/dikoreksi. */}
+      {adaRiwayat && (
+        <details className="rounded-card border border-line" data-testid="riwayat-pemakaian">
+          <summary className="flex min-h-[44px] cursor-pointer items-center px-4 text-[13.5px] font-medium text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/50">Riwayat dan dokumen pemakaian ({jumlahRiwayat})</summary>
+          <div className="space-y-4 px-4 pb-4 pt-1">
+            {adaBaru && <div className="space-y-2" data-testid="sec-bahan-baru"><h4 className="m-0 text-[13px] font-semibold text-ink">{KARTU_SUMBER.gudang.label}</h4><RiwayatBahanBaru unitId={unitId} data={data} bolehUbah={!!izin.pemakaianAktual} aktif={aktif} onDone={onDone} /></div>}
+            {adaSementara && <div className="space-y-2" data-testid="sec-pemakaian-sementara"><h4 className="m-0 flex flex-wrap items-center gap-2 text-[13px] font-semibold text-ink"><Hourglass size={14} className="text-ink3" aria-hidden />{KARTU_SUMBER.belum.label}{sementara.total.perluRekonsiliasi > 0 && <Badge variant="orange" className="bh-b-orange" title={SUMBER_SEMENTARA.dampak}>{sementara.total.perluRekonsiliasi} perlu rekonsiliasi Gudang</Badge>}</h4>
+              <PemakaianSementaraDaftar data={sementara} bolehCatat={!!izin.catatPemakaianSementara} bolehGudang={!!izin.putuskanUsulan} aktif={aktif} onDone={onDone} /></div>}
+            {adaLama && <div className="space-y-2" data-testid="sec-komponen-lama"><h4 className="m-0 text-[13px] font-semibold text-ink">{KARTU_SUMBER.lama.label}</h4><KomponenLamaDaftar unitId={unitId} kodeUnit={kodeUnit} data={kl} bolehUbah={!!izin.pemakaianAktual} aktif={aktif} meta={{ fotoMaks: 3 }} onDone={onDone} /></div>}
+          </div>
+        </details>
+      )}
 
       <CatatanHistorisBagian data={data} unitId={unitId} izin={izin} onDone={onDone} />
     </section>

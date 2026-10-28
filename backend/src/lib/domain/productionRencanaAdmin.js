@@ -10,7 +10,9 @@ import { BOARD_DEFAULTS, formatProductionDate, parseProductionDate, stationLabel
 
 export const JADWAL_STATUS = Object.freeze({ ACTIVE: "ACTIVE", CLEARED: "CLEARED", ADOPTED: "ADOPTED" });
 export const JADWAL_EVENT = Object.freeze({ SCHEDULED: "SCHEDULED", RESCHEDULED: "RESCHEDULED", UNSCHEDULED: "UNSCHEDULED", TARGET_CHANGED: "TARGET_CHANGED", UNDONE: "UNDONE", ADOPTED: "ADOPTED" });
-export const ANTREAN_TAB = Object.freeze({ SIAP: "SIAP", KEPUTUSAN: "KEPUTUSAN", MENUNGGU_TIBA: "MENUNGGU_TIBA", TERJADWAL: "TERJADWAL", SEMUA: "SEMUA" });
+// BELUM = SATU antrean untuk semua unit aktif yang layak dijadwalkan (SIAP + MENUNGGU_TIBA; unit belum tiba hanya diberi label). SIAP/MENUNGGU_TIBA tetap ada sebagai penyaring.
+export const ANTREAN_TAB = Object.freeze({ BELUM: "BELUM", SIAP: "SIAP", KEPUTUSAN: "KEPUTUSAN", MENUNGGU_TIBA: "MENUNGGU_TIBA", TERJADWAL: "TERJADWAL", SEMUA: "SEMUA" });
+export const ANTREAN_TAB_BELUM = Object.freeze(["SIAP", "MENUNGGU_TIBA"]);
 export const ANTREAN_TABS = Object.freeze(Object.values(ANTREAN_TAB));
 export const ANTREAN_SORT = Object.freeze({ PRIORITAS: "PRIORITAS", TARGET: "TARGET", TERLAMA: "TERLAMA" });
 export const PRIORITAS_UNIT = Object.freeze(["NORMAL", "HIGH"]);
@@ -99,13 +101,13 @@ export function tabAntrean({ terjadwal, penghalang, diterima }) {
 }
 
 /** Penghalang konkret untuk menjadwalkan (Admin). null = boleh. Urutan = prioritas penjelasan. */
-export function penghalangJadwal({ unitStatus, orderStatus, isInternal, customerStage, pkrKurang, v2Owned, runOutsideCohort }) {
+export function penghalangJadwal({ unitStatus, orderStatus, isInternal, customerStage, pkrKurang, v2Owned }) {
   if (isInternal || customerStage === "SPAM") return { code: "INTERNAL_OR_SPAM", message: "Pelanggan internal/spam — tidak masuk Rencana Produksi.", next: "Tidak ada tindakan.", fatal: true };
   if (unitStatus === "CANCELLED" || orderStatus === "CANCELLED") return { code: "UNIT_CANCELLED", message: "Order/unit dibatalkan — tidak dijadwalkan.", next: "Tidak ada tindakan.", fatal: true };
   if (["READY_FOR_DELIVERY", "READY_ON_CUSTOMER_HOLD", "IN_TRANSIT_OUT", "DELIVERED"].includes(unitStatus)) return { code: "UNIT_FINISHED", message: "Unit sudah Siap Kirim/Terkirim — tidak dijadwalkan.", next: "Lihat riwayatnya di Order Produksi.", fatal: true };
   if (pkrKurang?.kurang?.length) return { code: "PKR_PERLU_DILENGKAPI", message: `Order Penjualan Karyawan${pkrKurang.nomor ? ` ${pkrKurang.nomor}` : ""} belum lengkap: ${pkrKurang.kurang.join(", ")}.`, next: "Finance melengkapi spesifikasi di Penjualan Karyawan." };
   if (v2Owned) return { code: "UNIT_V2_OWNED", message: "Unit ini sudah dikelola Pelaksanaan Meja — jadwalnya diatur lewat rencana Meja.", next: "Atur lewat kartu Pelaksanaan Meja di kalender.", fatal: true };
-  if (runOutsideCohort) return { code: "RUN_OUTSIDE_COHORT", message: "Unit punya pekerjaan produksi lama di luar cohort V2 — pengambilalihan adalah keputusan Owner/tim sistem.", next: "Minta Owner memutuskan." };
+  // runOutsideCohort (Run lama di luar cohort V2) TIDAK lagi menghalangi jadwal Admin: menjadwalkan hanya menulis jadwal + riwayat, tidak menyentuh Run, tahap, atau riwayat lama. Adopsi Pelaksanaan Meja tetap keputusan terpisah.
   if (orderStatus && !["PROCESSING", "PICKUP"].includes(orderStatus)) return { code: "ORDER_BELUM_DIPROSES", message: "Order belum berstatus Diproses.", next: "Menunggu status order Diproses." };
   return null;
 }

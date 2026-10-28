@@ -5,10 +5,10 @@
 // BACAAN: kalender mingguan (hari + meja, rencana Admin dan V2 pada kalender yang sama) dan antrean kerja per tindakan.
 import { BOARD_DEFAULTS, assertStationCapacity } from "../lib/domain/productionBoard.js";
 import {
-  ANTREAN_SORT, ANTREAN_TAB, ANTREAN_TABS, HARI, JADWAL_EVENT, JADWAL_STATUS, JADWAL_SUMBER, SUMBER_DAMPAK, SUMBER_LABEL, addDays, formatProductionDate, jadwalError, kapasitasHari,
+  ANTREAN_SORT, ANTREAN_TAB, ANTREAN_TABS, ANTREAN_TAB_BELUM, HARI, JADWAL_EVENT, JADWAL_STATUS, JADWAL_SUMBER, SUMBER_DAMPAK, SUMBER_LABEL, addDays, formatProductionDate, jadwalError, kapasitasHari,
   isHariKerja, mondayOf, normalizeJadwalInput, parseProductionDate, penghalangJadwal, stationLabel, tabAntrean, targetAtOf, targetKeyOf, todayWib, weekDays,
 } from "../lib/domain/productionRencanaAdmin.js";
-import { guardV1UnitWrite } from "./unitV2Ownership.js";
+import { UnitV2OwnedError, isUnitV2ExecutionOwned, lockUnitOwnership } from "./unitV2Ownership.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import { PKR_ORDER_SELECT, PKR_UNIT_ITEM_SELECT, rujukanPkrDariOrder } from "./pkrProduksiGuard.js";
 import { statusOrderEfektif } from "../lib/domain/unitKategori.js";
@@ -26,6 +26,19 @@ import { INACTIVE_UNIT as INACTIVE_UNIT_CORE, adoptJadwalAdminInTx, lockSlot, sl
 export { adoptJadwalAdminInTx, slotOccupied };
 const dkey = (d) => formatProductionDate(d);
 
+/**
+ * Gerbang tulis jadwal Admin. BEDA dari guardV1UnitWrite: menjadwalkan TIDAK menyentuh Run/tahap/QC, jadi unit dengan Run lama di luar cohort (writer V2 mati untuk unit itu)
+ * boleh dijadwalkan TANPA penanda drift V1 pada Run-nya dan tanpa mengubah pekerjaan/riwayat lama. Yang ditolak hanya: unit dimiliki V2 (jadwal lewat rencana Meja) dan
+ * unit yang SUDAH punya jadwal bertanggal di rencana Meja (mencegah jadwal ganda untuk satu unit).
+ */
+async function guardJadwalAdmin(tx, unitId, { cekRencanaMeja = true } = {}) {
+  await lockUnitOwnership(tx, unitId);
+  if (await isUnitV2ExecutionOwned(tx, unitId)) throw new UnitV2OwnedError("jadwal produksi");
+  if (!cekRencanaMeja) return;
+  const plan = await tx.productionRunPlan.findFirst({ where: { run: { unitId, status: { notIn: TERMINAL_RUN } }, productionDate: { not: null }, status: { not: "CANCELLED" } }, select: { productionDate: true, stationCode: true } });
+  if (plan) throw jadwalError(`Unit ini sudah punya jadwal di rencana Meja (${dkey(plan.productionDate)}${plan.stationCode ? ` · ${stationLabel(plan.stationCode)}` : ""}). Ubah jadwalnya dari Papan Meja agar tidak ada jadwal ganda.`, 409, "JADWAL_SUDAH_DI_RENCANA_MEJA");
+}
+
 function assertKey(k) { if (typeof k !== "string" || !KEY_RE.test(k)) throw jadwalError("Idempotency-Key wajib (8–128 karakter: huruf, angka, . _ : -)", 400, "IDEMPOTENCY_KEY_INVALID"); }
 
 async function loadUnitForWrite(tx, unitId) {
@@ -34,7 +47,6 @@ async function loadUnitForWrite(tx, unitId) {
     select: {
       id: true, unitCode: true, status: true, priority: true, productionDueAt: true, ...PKR_UNIT_ITEM_SELECT,
       order: { select: { status: true, category: true, ...PKR_ORDER_SELECT, customer: { select: { pipelineStage: true, isInternalStaff: true } } } },
-      productionRunsV2: { where: { status: { notIn: TERMINAL_RUN } }, select: { id: true }, take: 1 },
     },
   });
   if (!u) throw jadwalError("Unit tidak ditemukan", 404, "JADWAL_UNIT_TIDAK_ADA");
@@ -45,7 +57,7 @@ function assertBolehDijadwalkan(u) {
   const pkr = rujukanPkrDariOrder(u.order, { unit: u });
   const h = penghalangJadwal({
     unitStatus: u.status, orderStatus: statusOrderEfektif(u.order, u), isInternal: !!u.order?.customer?.isInternalStaff, customerStage: u.order?.customer?.pipelineStage ?? null,
-    pkrKurang: pkr && !pkr.lengkap ? { nomor: pkr.nomor, kurang: pkr.kurang } : null, v2Owned: false, runOutsideCohort: u.productionRunsV2.length > 0,
+    pkrKurang: pkr && !pkr.lengkap ? { nomor: pkr.nomor, kurang: pkr.kurang } : null, v2Owned: false,
   });
   if (h) throw jadwalError(`${h.message} ${h.next}`, 422, `JADWAL_${h.code}`, { code: h.code });
 }
@@ -77,7 +89,7 @@ export async function jadwalkanUnitInTx(tx, { unitId, actorId, idempotencyKey, e
     if (dkey(replay.toDate) !== data.dateKey || (replay.toStation ?? null) !== data.stationCode) throw jadwalError("Idempotency-Key sama dipakai untuk isian berbeda", 409, "IDEMPOTENCY_KEY_REUSED");
     return { replayed: true, eventId: replay.id, kind: replay.kind, ...stateOf(cur) };
   }
-  await guardV1UnitWrite(tx, unitId, { what: "jadwal produksi", actorId, reject: true });
+  await guardJadwalAdmin(tx, unitId);
   const unit = await loadUnitForWrite(tx, unitId);
   assertBolehDijadwalkan(unit);
   const cur = await tx.productionUnitSchedule.findUnique({ where: { unitId } });
@@ -114,7 +126,7 @@ export async function batalkanJadwalInTx(tx, { unitId, actorId, idempotencyKey, 
   assertKey(idempotencyKey);
   const replay = await tx.productionUnitScheduleEvent.findFirst({ where: { unitId, idempotencyKey } });
   if (replay) return { replayed: true, eventId: replay.id, kind: replay.kind, ...stateOf(await tx.productionUnitSchedule.findUnique({ where: { unitId } })) };
-  await guardV1UnitWrite(tx, unitId, { what: "jadwal produksi", actorId, reject: true });
+  await guardJadwalAdmin(tx, unitId, { cekRencanaMeja: false });
   const cur = await tx.productionUnitSchedule.findUnique({ where: { unitId }, include: { unit: { select: { unitCode: true, priority: true, productionDueAt: true } } } });
   if (!cur || cur.status !== JADWAL_STATUS.ACTIVE) throw jadwalError("Unit ini tidak sedang dijadwalkan (Rencana Admin).", 409, "JADWAL_TIDAK_AKTIF");
   if (cur.revision !== expectedRevision) throw jadwalError("Jadwal unit ini sudah berubah — muat ulang lalu periksa lagi.", 409, "JADWAL_REVISI_BASI", { currentRevision: cur.revision });
@@ -133,7 +145,7 @@ export async function undoJadwalInTx(tx, { unitId, eventId, actorId, idempotency
   assertKey(idempotencyKey);
   const replay = await tx.productionUnitScheduleEvent.findFirst({ where: { unitId, idempotencyKey } });
   if (replay) return { replayed: true, eventId: replay.id, kind: replay.kind, ...stateOf(await tx.productionUnitSchedule.findUnique({ where: { unitId } })) };
-  await guardV1UnitWrite(tx, unitId, { what: "jadwal produksi", actorId, reject: true });
+  await guardJadwalAdmin(tx, unitId, { cekRencanaMeja: false });
   const cur = await tx.productionUnitSchedule.findUnique({ where: { unitId }, include: { unit: { select: { id: true, unitCode: true, priority: true, productionDueAt: true } } } });
   if (!cur) throw jadwalError("Unit ini belum pernah dijadwalkan.", 404, "JADWAL_TIDAK_ADA");
   const last = await tx.productionUnitScheduleEvent.findFirst({ where: { scheduleId: cur.id }, orderBy: [{ resultingRevision: "desc" }, { createdAt: "desc" }] });
@@ -163,6 +175,82 @@ export async function undoJadwalInTx(tx, { unitId, eventId, actorId, idempotency
   });
   await recordActivity(tx, { entityType: ENTITY_TYPES.UNIT, entityId: unitId, eventType: EVENT_TYPES.PRODUCTION_ADMIN_SCHEDULE_SET, actorId, metadata: { unitCode: cur.unit.unitCode, kind: "UNDONE", scheduleId: schedule.id, toDate: sebelumnya ? dkey(sebelumnya.date) : null, toStation: sebelumnya ? stationLabel(sebelumnya.station) : null } });
   return { replayed: false, eventId: ev.id, kind: JADWAL_EVENT.UNDONE, ...stateOf(schedule) };
+}
+
+const MAKS_BATCH = 20;
+const kunciTurunan = (dasar, i) => `${dasar}:${i}`;
+function assertKeyBatch(k) { assertKey(k); if (k.length > 100) throw jadwalError("Idempotency-Key terlalu panjang untuk penjadwalan beberapa unit (maks. 100 karakter)", 400, "IDEMPOTENCY_KEY_INVALID"); }
+
+/**
+ * Jadwalkan BEBERAPA unit sekaligus pada SATU tanggal dan SATU meja (penempatan bersama) — SEMUA ATAU TIDAK SAMA SEKALI (satu transaksi): bila kapasitas meja tidak cukup untuk seluruh
+ * unit, atau satu unit ditolak (revisi basi, dimiliki V2, selesai/batal, ...), TIDAK ADA yang tersimpan dan galat menyebut penyebabnya. stationCode "AUTO" = meja pertama yang masih muat SEMUA unit
+ * (bila tidak ada, ditolak dengan sisa tempat per meja). Tiap unit memakai jalur command tunggal yang sama (jadwalkanUnitInTx), jadi kapasitas bersama dengan rencana Meja, kunci slot,
+ * riwayat append-only, dan log aktivitas identik dengan penjadwalan satu unit. Idempoten: Idempotency-Key yang sama mengembalikan hasil semula.
+ */
+export async function jadwalkanBatchInTx(tx, { units, actorId, idempotencyKey, input = {}, config = BOARD_DEFAULTS, now = new Date() }) {
+  assertKeyBatch(idempotencyKey);
+  if (!Array.isArray(units) || units.length < 1 || units.length > MAKS_BATCH) throw jadwalError(`Pilih 1–${MAKS_BATCH} unit.`, 400, "JADWAL_BATCH_JUMLAH");
+  const ids = units.map((u) => u?.unitId); if (ids.some((id) => typeof id !== "string" || !id) || new Set(ids).size !== ids.length) throw jadwalError("Daftar unit tidak valid atau berisi unit ganda.", 400, "JADWAL_BATCH_UNIT_INVALID");
+  const auto = input.stationCode === "AUTO";
+  const data = normalizeJadwalInput({ productionDate: input.productionDate, stationCode: auto ? null : input.stationCode }, { config, now });
+  const kunci = units.map((_, i) => kunciTurunan(idempotencyKey, i));
+  const replays = await tx.productionUnitScheduleEvent.findMany({ where: { idempotencyKey: { in: kunci } }, select: { id: true, unitId: true, kind: true, idempotencyKey: true, toDate: true, toStation: true, resultingRevision: true } });
+  if (replays.length) {
+    const milikBatch = new Map(units.map((u, i) => [kunci[i], u.unitId]));
+    const salah = () => jadwalError("Idempotency-Key sama dipakai untuk isian berbeda", 409, "IDEMPOTENCY_KEY_REUSED");
+    if (replays.some((r) => milikBatch.get(r.idempotencyKey) !== r.unitId || dkey(r.toDate) !== data.dateKey || (!auto && (r.toStation ?? null) !== data.stationCode))) throw salah();
+    const tanpaEvent = units.filter((_, i) => !replays.some((r) => r.idempotencyKey === kunci[i])); // unit yang sudah di slot itu (tidak berubah) tidak menulis event
+    if (tanpaEvent.length && (await tx.productionUnitSchedule.count({ where: { unitId: { in: tanpaEvent.map((u) => u.unitId) }, status: JADWAL_STATUS.ACTIVE, productionDate: data.productionDate, stationCode: replays[0].toStation ?? null } })) !== tanpaEvent.length) throw salah();
+    return { replayed: true, productionDate: data.dateKey, stationCode: replays[0].toStation ?? null, hasil: units.map((u, i) => { const r = replays.find((x) => x.idempotencyKey === kunci[i]); return r ? { unitId: u.unitId, eventId: r.id, kind: r.kind, revision: r.resultingRevision } : { unitId: u.unitId, eventId: null, kind: null, noChange: true }; }) };
+  }
+  const kodeUnit = new Map((await tx.unit.findMany({ where: { id: { in: ids } }, select: { id: true, unitCode: true } })).map((u) => [u.id, u.unitCode]));
+  if (kodeUnit.size !== ids.length) throw jadwalError("Ada unit yang tidak ditemukan.", 404, "JADWAL_UNIT_TIDAK_ADA");
+  const sudahDi = async (code) => tx.productionUnitSchedule.count({ where: { unitId: { in: ids }, status: JADWAL_STATUS.ACTIVE, productionDate: data.productionDate, stationCode: code } });
+  let station = data.stationCode;
+  if (auto || station) {
+    const kandidat = auto ? [...config.stations] : [station];
+    for (const c of kandidat) await lockSlot(tx, data.dateKey, c); // urutan meja tetap → tanpa deadlock antar-transaksi
+    const sisaPer = {};
+    for (const c of kandidat) sisaPer[c] = config.capacityPerStation - ((await slotOccupied(tx, { productionDate: data.productionDate, stationCode: c })) - (await sudahDi(c)));
+    const butuh = units.length;
+    if (auto) {
+      station = kandidat.find((c) => sisaPer[c] >= butuh) ?? null;
+      if (!station) throw jadwalError(`Tidak ada satu meja dengan ${butuh} tempat kosong pada ${data.dateKey} (${kandidat.map((c) => `${stationLabel(c)}: ${Math.max(sisaPer[c], 0)}`).join(", ")}). Tidak ada yang disimpan — pilih lebih sedikit unit atau hari lain.`, 409, "PLAN_STATION_FULL", { butuh, sisa: sisaPer });
+    } else if (sisaPer[station] < butuh) {
+      throw jadwalError(`${stationLabel(station)} hanya punya ${Math.max(sisaPer[station], 0)} tempat kosong pada ${data.dateKey}, sedangkan ${butuh} unit dipilih. Tidak ada yang disimpan.`, 409, "PLAN_STATION_FULL", { butuh, sisa: sisaPer });
+    }
+  }
+  const hasil = [];
+  for (let i = 0; i < units.length; i += 1) {
+    const u = units[i];
+    try {
+      const r = await jadwalkanUnitInTx(tx, { unitId: u.unitId, actorId, idempotencyKey: kunci[i], expectedRevision: u.expectedRevision ?? 0, input: { productionDate: data.dateKey, stationCode: station }, expectedUnit: u.expectedUnit ?? null, config, now });
+      hasil.push({ unitId: u.unitId, eventId: r.eventId ?? null, kind: r.kind ?? null, revision: r.revision, noChange: !!r.noChange });
+    } catch (err) {
+      if (err?.statusCode && err?.code) throw Object.assign(new Error(`${kodeUnit.get(u.unitId) ?? "Unit"}: ${err.message} Tidak ada unit yang disimpan.`), { statusCode: err.statusCode, code: err.code, details: { ...(err.details || {}), unitId: u.unitId, unitCode: kodeUnit.get(u.unitId) ?? null } });
+      throw err;
+    }
+  }
+  return { replayed: false, productionDate: data.dateKey, stationCode: station ?? null, hasil };
+}
+
+/** Urungkan beberapa perubahan jadwal SEKALIGUS (hasil jadwalkanBatchInTx): semua atau tidak sama sekali. Tiap unit memakai aturan undo tunggal (hanya bila event itu masih yang TERAKHIR dan revisinya belum diubah siapa pun). */
+export async function undoBatchInTx(tx, { items, actorId, idempotencyKey, config = BOARD_DEFAULTS }) {
+  assertKeyBatch(idempotencyKey);
+  if (!Array.isArray(items) || items.length < 1 || items.length > MAKS_BATCH) throw jadwalError(`Pilih 1–${MAKS_BATCH} unit.`, 400, "JADWAL_BATCH_JUMLAH");
+  const ids = items.map((i) => i?.unitId); if (ids.some((id) => typeof id !== "string" || !id) || new Set(ids).size !== ids.length) throw jadwalError("Daftar unit tidak valid atau berisi unit ganda.", 400, "JADWAL_BATCH_UNIT_INVALID");
+  const kodeUnit = new Map((await tx.unit.findMany({ where: { id: { in: ids } }, select: { id: true, unitCode: true } })).map((u) => [u.id, u.unitCode]));
+  const hasil = [];
+  for (let i = 0; i < items.length; i += 1) {
+    try {
+      const r = await undoJadwalInTx(tx, { unitId: items[i].unitId, eventId: items[i].eventId, actorId, idempotencyKey: kunciTurunan(idempotencyKey, i), config });
+      hasil.push({ unitId: items[i].unitId, eventId: r.eventId, kind: r.kind, revision: r.revision });
+    } catch (err) {
+      if (err?.statusCode && err?.code) throw Object.assign(new Error(`${kodeUnit.get(items[i].unitId) ?? "Unit"}: ${err.message} Tidak ada perubahan yang diurungkan.`), { statusCode: err.statusCode, code: err.code, details: { ...(err.details || {}), unitId: items[i].unitId, unitCode: kodeUnit.get(items[i].unitId) ?? null } });
+      throw err;
+    }
+  }
+  return { replayed: hasil.every((h) => h.replayed), hasil };
 }
 
 export async function riwayatJadwal(client, unitId) {
@@ -347,6 +435,10 @@ export async function getAntrean(prisma, { query, config = BOARD_DEFAULTS, now =
     prisma.productionRun.findMany({ where: { unitId: { in: unitIds }, status: { notIn: TERMINAL_RUN } }, select: { unitId: true } }),
   ]);
   const runUnits = new Set(activeRuns.map((r) => r.unitId));
+  // Order beberapa unit: jumlah unit AKTIF per order (nomor urut "Unit 2 dari 3") — dari database, bukan dari halaman yang sedang tampil.
+  const orderIds = [...new Set(rows.map((r) => r.orderId).filter(Boolean))];
+  const saudara = orderIds.length ? await prisma.unit.findMany({ where: { orderId: { in: orderIds }, status: { notIn: INACTIVE_UNIT } }, select: { id: true, orderId: true, unitCode: true }, orderBy: { unitCode: "asc" } }) : [];
+  const saudaraPer = new Map(); for (const u of saudara) { if (!saudaraPer.has(u.orderId)) saudaraPer.set(u.orderId, []); saudaraPer.get(u.orderId).push(u); }
   const schedBy = new Map(schedules.map((s) => [s.unitId, s])); const planBy = new Map(plans.map((p) => [p.run.unitId, p]));
   const complaintRank = (r) => r.priorityDisplay?.rank ?? 0;
   const all = rows.map((r) => {
@@ -356,7 +448,7 @@ export async function getAntrean(prisma, { query, config = BOARD_DEFAULTS, now =
     const v2Owned = runUnits.has(r.id) && isProductionWriterEnabledFor(writerState, r.id); // dikelola V2: jadwal lewat rencana V2 (jalur V2)
     const terjadwal = !!sch || !!v2;
     const orderEf = statusOrderEfektif(r.order, r);
-    let pg = penghalangJadwal({ unitStatus: r.status, orderStatus: orderEf, isInternal: false, customerStage: null, pkrKurang: pkr && !pkr.lengkap ? { nomor: pkr.nomor, kurang: pkr.kurang } : null, v2Owned: false, runOutsideCohort: runUnits.has(r.id) && !v2Owned });
+    let pg = penghalangJadwal({ unitStatus: r.status, orderStatus: orderEf, isInternal: false, customerStage: null, pkrKurang: pkr && !pkr.lengkap ? { nomor: pkr.nomor, kurang: pkr.kurang } : null, v2Owned: false });
     if (!pg && diterima && orderEf === "PICKUP") pg = { code: "ORDER_MASIH_PENGAMBILAN", message: "Unit sudah diterima di workshop, tetapi status order masih Pengambilan.", next: "Ubah status order ke Diproses di Status Produksi, lalu jadwalkan." };
     const tabUnit = tabAntrean({ terjadwal, penghalang: pg, diterima });
     const jadwal = sch ? { sumber: JADWAL_SUMBER.ADMIN, tanggal: dkey(sch.productionDate), meja: sch.stationCode, revisi: sch.revision } : v2 ? { sumber: JADWAL_SUMBER.V2, tanggal: dkey(v2.productionDate), meja: v2.stationCode, revisi: null } : null;
@@ -368,11 +460,16 @@ export async function getAntrean(prisma, { query, config = BOARD_DEFAULTS, now =
       pekerjaan: (r.order?.items || []).map((i) => i.layananName).filter(Boolean), ukuran: r.ukuran ?? null, tab: tabUnit, alasan, tindakanBerikut: next,
       boleh: !terjadwal && (!pg || false), perluKeputusan: !!pg, posisi: { key: r.adopsi.posisi?.key, label: r.adopsi.posisi?.label }, diterima,
       orderStatus: r.orderStatusDisplay ?? null, targetSelesai: targetKey, prioritas: { ...r.priorityDisplay, key: r.priorityDisplay?.key }, pic: r.adopsi.pic?.nama ?? null, meja: r.adopsi.meja ?? null,
-      bahan: bahan.get(r.id), jadwal, jalur: v2Owned ? "V2" : "ADMIN", revisiJadwal: schAny?.revision ?? 0, v2: v2Owned || !!v2, unitCas: { priority: r.priority, productionDueAt: r.productionDueAt }, _rank: complaintRank(r), _created: new Date(r.createdAt).getTime(),
+      bahan: bahan.get(r.id), jadwal, jalur: v2Owned || v2 ? "V2" : "ADMIN",
+      jumlahUnitOrder: (saudaraPer.get(r.orderId) || []).length || 1, unitKe: Math.max((saudaraPer.get(r.orderId) || []).findIndex((u) => u.id === r.id) + 1, 1), revisiJadwal: schAny?.revision ?? 0, v2: v2Owned || !!v2, unitCas: { priority: r.priority, productionDueAt: r.productionDueAt }, _rank: complaintRank(r), _created: new Date(r.createdAt).getTime(),
     };
   });
-  const counts = Object.fromEntries(ANTREAN_TABS.map((t) => [t, t === ANTREAN_TAB.SEMUA ? all.length : all.filter((x) => x.tab === t).length]));
-  let list = tab === ANTREAN_TAB.SEMUA ? all : all.filter((x) => x.tab === tab);
+  const cocokTab = (x, t) => (t === ANTREAN_TAB.SEMUA ? true : t === ANTREAN_TAB.BELUM ? ANTREAN_TAB_BELUM.includes(x.tab) : x.tab === t);
+  const counts = Object.fromEntries(ANTREAN_TABS.map((t) => [t, all.filter((x) => cocokTab(x, t)).length]));
+  // Unit saudara (order yang sama) yang juga bisa dijadwalkan sekarang — untuk "pilih semua unit order ini" tanpa harus memuat semua halaman.
+  const siapPerOrder = new Map(); for (const x of all.filter((y) => y.boleh)) { if (!siapPerOrder.has(x.orderId)) siapPerOrder.set(x.orderId, []); siapPerOrder.get(x.orderId).push({ unitId: x.unitId, unitCode: x.unitCode, diterima: x.diterima, revisiJadwal: x.revisiJadwal, unitCas: x.unitCas }); }
+  for (const x of all) x.saudaraSiap = (siapPerOrder.get(x.orderId) || []).filter((u) => u.unitId !== x.unitId);
+  let list = all.filter((x) => cocokTab(x, tab));
   const byTarget = (a, b) => (a.targetSelesai ?? "9999") < (b.targetSelesai ?? "9999") ? -1 : (a.targetSelesai ?? "9999") > (b.targetSelesai ?? "9999") ? 1 : 0;
   list = list.sort(sort === ANTREAN_SORT.TARGET ? (a, b) => byTarget(a, b) || a._created - b._created : sort === ANTREAN_SORT.TERLAMA ? (a, b) => a._created - b._created : (a, b) => b._rank - a._rank || byTarget(a, b) || a._created - b._created);
   const total = list.length; const offset = (page - 1) * pageSize; const pageItems = list.slice(offset, offset + pageSize);

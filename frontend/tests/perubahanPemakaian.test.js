@@ -61,10 +61,11 @@ test("dampak: satu baris per langkah apa adanya dari server (pengembalian/pengel
 });
 
 test("pengawatan: tombol '+ Tambah pemakaian' tepat di atas tabel; tombol Edit per baris; unit terkirim ikut; jalur resmi + kunci idempotensi + tanpa hapus; label 'Ajukan perubahan'", () => {
-  const b = src("features", "production", "bahan", "PemakaianAktualBagian.jsx"); const e = src("features", "production", "bahan", "EditPemakaianForm.jsx"); const o = src("features", "production", "OrderProduksiPanel.jsx"); const api = src("api.js");
-  assert.ok(b.indexOf('data-testid="tambah-pemakaian"') > 0 && b.indexOf('data-testid="tambah-pemakaian"') < b.indexOf('data-testid="rencana-vs-aktual"'), "tombol tambah di atas tabel");
-  for (const k of ['data-testid="edit-bahan"', "aria-label={`Edit pemakaian ${p.nama}`}", "<EditPemakaianForm", "const terkirim = data.unit.status === \"DELIVERED\"", "bolehTambah = !!izin.pemakaianAktual && (aktif || terkirim)", "edit-menunggu-badge", "data-testid=\"edit-hasil\""]) assert.ok(b.includes(k), k);
-  assert.ok(!o.includes('data-testid="rencana-vs-aktual"') && o.includes("PemakaianAktualBagian"), "tabel dipindahkan ke komponen bersama (drawer dan Ruang Kerja memakai yang sama)");
+  const b = src("features", "production", "bahan", "PemakaianAktualBagian.jsx"); const tb = src("features", "production", "bahan", "TabelPemakaian.jsx"); const e = src("features", "production", "bahan", "EditPemakaianForm.jsx"); const o = src("features", "production", "OrderProduksiPanel.jsx"); const api = src("api.js");
+  assert.ok(b.indexOf('data-testid="tambah-pemakaian"') > 0 && b.indexOf('data-testid="tambah-pemakaian"') < b.indexOf("<TabelPemakaian"), "tombol tambah di atas tabel"); assert.ok(!b.includes("rencana-vs-aktual"), "tabel perbandingan rencana lama diganti tabel pemakaian aktual terpadu");
+  for (const k of ["const terkirim = data.unit.status === \"DELIVERED\"", "bolehTambah = !!izin.pemakaianAktual && (aktif || terkirim)", "data-testid=\"edit-hasil\"", "onEditGudang={bukaEdit}"]) assert.ok(b.includes(k), k);
+  for (const k of ['"edit-bahan"', "aria-label={`${label} pemakaian ${r.nama}`}", "<EditPemakaianForm", "dampak-${c.key}", "bolehGudang = !!izin.pemakaianAktual && (aktif || terkirim)"]) assert.ok(tb.includes(k), k);
+  assert.ok(!o.includes('data-testid="rencana-vs-aktual"') && !o.includes("tabel-pemakaian") && o.includes("PemakaianAktualBagian"), "tabel dipindahkan ke komponen bersama (drawer dan Ruang Kerja memakai yang sama)");
   for (const k of ["api.pratinjauPerubahanPemakaian", "api.perubahanPemakaian", "api.ajukanKoreksiPemakaian", "kunciIdempoten(\"ubah-pemakaian\")", "kirimRef.current", "Lihat dampak", "edit-ajukan", "edit-mode-${k.toLowerCase()}", "Ganti bahan"]) assert.ok(e.includes(k), k);
   assert.ok(!/hapus/i.test(e.replace(/^\s*\/\/.*$/gm, "").replace(/<[^>]+>/g, "").replace(/tidak (pernah )?(diedit atau )?dihapus/gi, "")), "tidak ada aksi hapus");
   for (const k of ["pratinjauPerubahanPemakaian", "/perubahan-pemakaian/pratinjau", "perubahanPemakaian", "Idempotency-Key"]) assert.ok(api.includes(k), k);

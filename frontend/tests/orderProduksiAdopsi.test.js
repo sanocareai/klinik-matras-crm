@@ -112,7 +112,7 @@ test("panel: urutan ringkasan+tindakan → status&target → pemakaian aktual �
   assert.match(EDITOR, /Rencana · tidak mengurangi stok/);
   // dampak stok dijelaskan PER SUMBER di komponen bersama (bukan satu lencana "mengurangi stok" untuk semuanya)
   const BAGIAN = strip(src("features", "production", "bahan", "PemakaianAktualBagian.jsx")); const BARU = strip(src("features", "production", "bahan", "CatatBahanBaru.jsx"));
-  assert.match(BAGIAN, /KARTU_SUMBER\.gudang/); assert.match(BARU, /stok Gudang <b>berkurang<\/b> saat Anda konfirmasi/); assert.match(BARU, /Konfirmasi & kurangi stok/);
+  assert.match(BAGIAN, /KARTU_SUMBER\.gudang/); assert.match(BARU, /<b>Mengurangi stok<\/b> saat dikonfirmasi/); assert.match(BARU, /Konfirmasi & kurangi stok/);
   assert.match(PANEL, /Buka Unit 360/, "akses data lama & Unit 360 dipertahankan");
   assert.match(PANEL, /Dicatat manual oleh \{r\.by/, "jejak 'Dicatat manual oleh [nama], [waktu]'");
 });
