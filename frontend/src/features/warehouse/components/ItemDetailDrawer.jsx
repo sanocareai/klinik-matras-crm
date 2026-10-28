@@ -3,7 +3,8 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { X, Pencil, Loader2, History, TriangleAlert } from "lucide-react";
 import { InfoToggleButton, InfoToggleIsi, useInfoToggle } from "@/components/ui/info-toggle.jsx";
 import Lipat from "../stok/Lipat.jsx";
-import { ISTILAH, TEKS_DRAWER } from "../stok/drawerBahanLogic.js";
+import { Badge } from "@/components/ui/badge.jsx";
+import { ISTILAH, TEKS_DRAWER, labelStatusStok } from "../stok/drawerBahanLogic.js";
 import { api } from "@/api.js";
 import RiwayatReferensiBahan from "./RiwayatReferensiBahan.jsx";
 import HargaBerlakuPanel from "../stok/HargaBerlakuPanel.jsx";
@@ -11,8 +12,8 @@ import KoreksiSaldoPanel from "../stok/KoreksiSaldoPanel.jsx";
 import { Button } from "@/components/ui/button.jsx";
 import StatusBadge from "./StatusBadge.jsx";
 import {
-  STOCK_STATUS_REAL, CATEGORY_REAL, SERVICE_LINE_REAL, MOVEMENT_LABEL_REAL,
-  UNIT_LABEL, formatQty, deriveStockStatusReal,
+  CATEGORY_REAL, SERVICE_LINE_REAL, MOVEMENT_LABEL_REAL,
+  UNIT_LABEL, formatQty,
 } from "../inventoryReal.js";
 import { formatRupiah } from "@/utils/format.js";
 
@@ -27,7 +28,7 @@ import { formatRupiah } from "@/utils/format.js";
 // tidak menampilkannya (pelajaran yang sama dengan checklist POD di Delivery).
 // Label berbahasa Indonesia untuk drawer (peta bersama tetap dwibahasa untuk daftar): teks tampil = labelId.
 const keIndonesia = (peta) => Object.fromEntries(Object.entries(peta).map(([k, v]) => [k, { ...v, label: v.labelId || v.label }]));
-const STATUS_STOK_ID = keIndonesia(STOCK_STATUS_REAL); const PERGERAKAN_ID = keIndonesia(MOVEMENT_LABEL_REAL);
+const PERGERAKAN_ID = keIndonesia(MOVEMENT_LABEL_REAL);
 const waktu = (s) => new Date(s).toLocaleString("id-ID", {
   day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit",
 });
@@ -47,6 +48,7 @@ export default function ItemDetailDrawer({ item, onClose, onEdit, onChanged }) {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const infoStok = useInfoToggle();
+  const [keadaan, setKeadaan] = useState(null); // keadaanSaldo dari panel Koreksi saldo → label status header yang membedakan belum diketahui / nol / minus
 
   const materialId = item?.materialId || item?.id;
 
@@ -62,7 +64,7 @@ export default function ItemDetailDrawer({ item, onClose, onEdit, onChanged }) {
 
   if (!item) return null;
 
-  const status = deriveStockStatusReal(item);
+  const status = labelStatusStok(item, keadaan);
   // Dua sumber vendor BEDA maksud — sengaja ditampilkan terpisah, bukan
   // ditimpa satu sama lain:
   //  - item.vendor: vendor LANGGANAN dari data referensi (snapshot import
@@ -103,7 +105,7 @@ export default function ItemDetailDrawer({ item, onClose, onEdit, onChanged }) {
               <Dialog.Title className="m-0 text-[15px] font-bold leading-snug text-ink" data-testid="drawer-nama">{item.name}</Dialog.Title>
               <p className="m-0 mt-0.5 truncate text-[11.5px] text-ink3" data-testid="drawer-kode-satuan">{item.code} · satuan {satuanTeks}</p>
             </div>
-            <StatusBadge map={STATUS_STOK_ID} value={status} className="mt-0.5 shrink-0" />
+            <Badge variant={status.tone} className="mt-0.5 shrink-0" data-testid="status-stok" data-status={status.key}>{status.label}</Badge>
             <Dialog.Close aria-label="Tutup" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-ink3 hover:bg-hovertint hover:text-ink max-sm:h-11 max-sm:w-11">
               <X size={16} />
             </Dialog.Close>
@@ -124,7 +126,7 @@ export default function ItemDetailDrawer({ item, onClose, onEdit, onChanged }) {
                 <div className="flex gap-1.5"><dt className="text-ink3">{ISTILAH.dipesan}</dt><dd className="m-0 font-semibold tabular-nums text-ink" data-testid="stok-dipesan">{formatQty(item.reserved, item.unit)}</dd></div>
               </dl>
               <InfoToggleIsi info={infoStok}><p className="m-0" data-testid="rumus-stok">{ISTILAH.rumusStok}</p></InfoToggleIsi>
-              <KoreksiSaldoPanel materialId={materialId} onChanged={onChanged} />
+              <KoreksiSaldoPanel materialId={materialId} onChanged={onChanged} onKeadaan={setKeadaan} />
             </section>
 
             <HargaBerlakuPanel materialId={materialId} />
