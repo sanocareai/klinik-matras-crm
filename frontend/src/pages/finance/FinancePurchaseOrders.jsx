@@ -16,6 +16,7 @@ import TerminFaktur from "@/features/finance/TerminFaktur.jsx";
 import { adalahAdminKeuangan } from "@/features/finance/matriksAksi.js";
 import { StatusEmpatPO, RiwayatPembayaranPO, PanelKelompokPO, PeringatanUangMukaPO, DaftarUangMukaPO, ModalBayarUangMuka, ModalTerapkanUangMuka } from "@/features/finance/UangMukaPO.jsx";
 import { TERMIN_AWAL, galatTermin, teksTermin } from "@/features/finance/terminLogic.js";
+import { barisLainDariForm, barisBaruUntukCek, masalahDariCek, masalahDariGalat, jenisMasalah, teksPerbedaan } from "@/features/finance/purchaseOrderLogic.js";
 import {
   HalamanFinance, Uang, formatUang, KartuAngka, JudulKartu, Penjelasan, TombolAksi, Pilihan, InputUang, tanggalPendek,
 } from "@/features/finance/shared.jsx";
@@ -240,9 +241,9 @@ function PemilihMaterial({ materials, value, nomor, namaCadangan, onPilih }) {
 }
 
 // Modal "Buat Barang Baru". Tidak menulis apa pun: hanya mengumpulkan data + memeriksa duplikat. SKU baru lahir saat draf PO disimpan (satu transaksi dengan PO-nya).
-function ModalBarangBaru({ awal, supplierId, supplierNama, onClose, onSimpan, onPakaiMaterial }) {
+function ModalBarangBaru({ awal, supplierId, supplierNama, barisLain = [], autoPeriksa = false, onClose, onSimpan, onPakaiMaterial, onBatalkanBaru }) {
   const [m, setM] = useState(() => ({ ...materialBaru0(), ...(awal || {}) }));
-  const [periksa, setPeriksa] = useState(null); // { pasti, mirip }
+  const [periksa, setPeriksa] = useState(null); // { pasti, mirip, berbeda }
   const [galat, setGalat] = useState("");
   const [sibuk, setSibuk] = useState(false);
   const set = (k, v) => { setM((s) => ({ ...s, [k]: v })); setPeriksa(null); };
@@ -252,18 +253,21 @@ function ModalBarangBaru({ awal, supplierId, supplierNama, onClose, onSimpan, on
   const perluKonfirmasi = !!periksa && periksa.pasti.length === 0 && periksa.mirip.length > 0;
   const alasanKurang = perluKonfirmasi && (!m.konfirmasiMirip || String(m.alasanMirip || "").trim().length < 5);
 
-  async function periksaDanPakai() {
+  async function periksaDanPakai(opsi) {
+    const otomatis = opsi?.otomatis === true; // pemeriksaan otomatis saat modal dibuka dari tanda masalah di baris: hanya menampilkan hasil, tidak pernah menyimpan
     setGalat("");
     if (periksa && periksa.pasti.length === 0 && (periksa.mirip.length === 0 || (m.konfirmasiMirip && !alasanKurang))) return onSimpan(m);
     setSibuk(true);
     try {
-      const r = await api.cekDuplikatSku({ supplierId, materialBaru: bodyMaterialBaru({ ...m, konfirmasiMirip: false }) });
-      setPeriksa({ pasti: r.pasti || [], mirip: r.mirip || [] });
-      if ((r.pasti || []).length === 0 && (r.mirip || []).length === 0) onSimpan(m);
+      const r = await api.cekDuplikatSku({ supplierId, materialBaru: bodyMaterialBaru({ ...m, konfirmasiMirip: false }), barisLain });
+      setPeriksa({ pasti: r.pasti || [], mirip: r.mirip || [], berbeda: r.berbeda || [] });
+      if (!otomatis && (r.pasti || []).length === 0 && (r.mirip || []).length === 0 && (r.berbeda || []).length === 0) onSimpan(m);
     } catch (e) { setGalat(e.message || "Gagal memeriksa duplikat"); } finally { setSibuk(false); }
   }
 
-  const label = periksa?.pasti.length ? "Barang sudah ada" : perluKonfirmasi ? "Lanjutkan sebagai barang baru" : "Periksa & pakai di PO";
+  const adaBerbeda = (periksa?.berbeda?.length ?? 0) > 0;
+  const label = periksa?.pasti.length ? "Barang sudah ada" : perluKonfirmasi ? "Lanjutkan sebagai barang baru" : periksa && adaBerbeda ? "Lanjutkan — ini varian baru" : "Periksa & pakai di PO";
+  useEffect(() => { if (autoPeriksa) periksaDanPakai({ otomatis: true }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <Modal
       open onOpenChange={(v) => !v && onClose()}
@@ -336,12 +340,14 @@ function ModalBarangBaru({ awal, supplierId, supplierNama, onClose, onSimpan, on
 
         {periksa?.pasti.length > 0 && (
           <div role="alert" data-testid="duplikat-pasti" className="rounded-lg bg-redbg px-3 py-2.5 text-[12.5px] text-red">
-            <p className="font-semibold">Barang ini sudah ada di master material — jangan buat SKU baru.</p>
-            <ul className="mt-1.5 list-none space-y-1 p-0">
+            <p className="font-semibold">Barang ini sudah ada — pakai yang sudah ada, jangan buat SKU baru.</p>
+            <ul className="mt-1.5 list-none space-y-1.5 p-0">
               {periksa.pasti.map((c) => (
-                <li key={c.materialId} className="flex flex-wrap items-center gap-2">
+                <li key={c.materialId || `baris-${c.dariBarisPO}`} className="flex flex-wrap items-center gap-2" data-testid="kandidat-pasti">
                   <span className="font-mono font-semibold">{c.kode}</span><span className="min-w-0 flex-1">{c.nama} · {labelSatuan(c.satuan)} <span className="opacity-80">({c.alasan})</span></span>
-                  <button type="button" onClick={() => onPakaiMaterial(c.materialId)} className="shrink-0 rounded-lg bg-surface px-2.5 py-1 text-[12px] font-semibold text-accent max-sm:min-h-11">Pakai material ini</button>
+                  {c.materialId
+                    ? <button type="button" onClick={() => onPakaiMaterial(c.materialId)} data-testid="pakai-material" className="shrink-0 rounded-lg bg-accent px-2.5 py-1 text-[12px] font-semibold text-white max-sm:min-h-11">Pakai material ini</button>
+                    : <button type="button" onClick={() => onBatalkanBaru?.()} data-testid="batalkan-baru" className="shrink-0 rounded-lg bg-surface px-2.5 py-1 text-[12px] font-semibold text-accent max-sm:min-h-11">Batalkan barang baru ini</button>}
                 </li>
               ))}
             </ul>
@@ -349,24 +355,62 @@ function ModalBarangBaru({ awal, supplierId, supplierNama, onClose, onSimpan, on
         )}
         {perluKonfirmasi && (
           <div role="alert" data-testid="duplikat-mirip" className="rounded-lg bg-orangebg px-3 py-2.5 text-[12.5px] text-orange">
-            <p className="font-semibold">Ada barang yang mirip. Periksa dulu agar tidak terjadi SKU ganda.</p>
-            <ul className="mt-1.5 list-none space-y-1 p-0">
+            <p className="font-semibold">Perlu keputusan Anda — belum bisa dipastikan sama atau berbeda.</p>
+            <ul className="mt-1.5 list-none space-y-1.5 p-0">
               {periksa.mirip.map((c) => (
-                <li key={c.materialId} className="flex flex-wrap items-center gap-2">
-                  <span className="font-mono font-semibold">{c.kode}</span><span className="min-w-0 flex-1">{c.nama} · {labelSatuan(c.satuan)} <span className="opacity-80">({c.alasan})</span></span>
-                  <button type="button" onClick={() => onPakaiMaterial(c.materialId)} className="shrink-0 rounded-lg bg-surface px-2.5 py-1 text-[12px] font-semibold text-accent max-sm:min-h-11">Pakai material ini</button>
+                <li key={c.materialId || `baris-${c.dariBarisPO}`} className="flex flex-wrap items-center gap-2" data-testid="kandidat-mirip">
+                  <span className="font-mono font-semibold">{c.kode}</span>
+                  <span className="min-w-0 flex-1">{c.nama} · {labelSatuan(c.satuan)}<span className="block text-[11.5px] opacity-90">{(c.belumJelas?.length ? c.belumJelas : [c.alasan]).join("; ")}</span></span>
+                  {c.materialId && <button type="button" onClick={() => onPakaiMaterial(c.materialId)} data-testid="pakai-material" className="shrink-0 rounded-lg bg-surface px-2.5 py-1 text-[12px] font-semibold text-accent max-sm:min-h-11">Pakai material ini</button>}
                 </li>
               ))}
             </ul>
             <label className="mt-2 flex items-start gap-2 text-ink">
-              <input type="checkbox" checked={!!m.konfirmasiMirip} onChange={(e) => setM((s) => ({ ...s, konfirmasiMirip: e.target.checked }))} className="mt-0.5" />
+              <input type="checkbox" checked={!!m.konfirmasiMirip} onChange={(e) => setM((s) => ({ ...s, konfirmasiMirip: e.target.checked }))} className="mt-0.5 max-sm:h-5 max-sm:w-5" />
               <span>Saya sudah memeriksa — ini memang barang yang berbeda.</span>
             </label>
-            {m.konfirmasiMirip && <div className="mt-1.5"><Input value={m.alasanMirip} onChange={(e) => setM((s) => ({ ...s, alasanMirip: e.target.value }))} placeholder="Alasan (wajib, min. 5 huruf), mis. beda ketebalan" aria-label="Alasan melanjutkan barang mirip" maxLength={300} /></div>}
+            {m.konfirmasiMirip && <div className="mt-1.5"><Input value={m.alasanMirip} onChange={(e) => setM((s) => ({ ...s, alasanMirip: e.target.value }))} placeholder="Alasan (wajib, min. 5 huruf), mis. ukuran lain" aria-label="Alasan melanjutkan barang mirip" maxLength={300} /></div>}
           </div>
+        )}
+        {adaBerbeda && (
+          <details data-testid="varian-serupa" open={periksa.pasti.length === 0 && periksa.mirip.length === 0} className="rounded-lg border border-line px-3 py-2 text-[12.5px] text-ink2">
+            <summary className="cursor-pointer font-semibold text-ink max-sm:flex max-sm:min-h-11 max-sm:items-center">Varian serupa yang sudah ada ({periksa.berbeda.length}) — berbeda jelas, tidak perlu konfirmasi atau alasan</summary>
+            <ul className="mt-1.5 list-none space-y-2 p-0">
+              {periksa.berbeda.map((c) => (
+                <li key={c.materialId || `baris-${c.dariBarisPO}`} data-testid="kandidat-berbeda">
+                  <div className="flex flex-wrap items-baseline gap-2"><span className="font-mono font-semibold text-ink">{c.kode}</span><span className="min-w-0 flex-1">{c.nama} · {labelSatuan(c.satuan)}</span></div>
+                  <div className="mt-0.5 flex flex-wrap gap-1.5">{(c.perbedaan || []).map((p) => <mark key={p.kunci} className="rounded-md bg-orangebg px-1.5 py-0.5 text-[11.5px] font-medium text-orange" data-testid="perbedaan">{teksPerbedaan(p)}</mark>)}</div>
+                </li>
+              ))}
+            </ul>
+          </details>
         )}
       </div>
     </Modal>
+  );
+}
+
+// Masalah barang mirip PADA BARIS: apa yang terjadi + tombol penyelesaian (pakai material yang ada / hapus baris / periksa & konfirmasi). Tidak pernah mengganti pilihan pengguna otomatis.
+function PanelMasalahBaris({ m, onPakai, onPeriksa, onHapus }) {
+  const jenis = jenisMasalah(m); const kandidat = jenis === "KONFIRMASI" ? m.mirip : m.pasti;
+  const judul = jenis === "PASTI_KATALOG" ? "Barang ini sudah ada di katalog — pakai yang sudah ada." : jenis === "PASTI_PO" ? `Sama dengan baris ${m.barisSama ?? kandidat.find((c) => c.dariBarisPO)?.dariBarisPO ?? "lain"} di PO ini — hapus salah satu atau gabungkan jumlahnya.` : "Perlu keputusan Anda — mirip, belum bisa dipastikan sama atau berbeda.";
+  return (
+    <div role="alert" data-testid="masalah-baris" data-jenis={jenis} className={cn("mt-2 rounded-lg px-3 py-2.5 text-[12.5px]", jenis === "KONFIRMASI" ? "bg-orangebg text-orange" : "bg-redbg text-red")}>
+      <p className="m-0 font-semibold">{judul}</p>
+      <ul className="mt-1 list-none space-y-1 p-0">
+        {kandidat.slice(0, 4).map((c) => (
+          <li key={c.materialId || `baris-${c.dariBarisPO}`} className="flex flex-wrap items-center gap-2">
+            <span className="font-mono font-semibold">{c.kode}</span><span className="min-w-0 flex-1">{c.nama}{c.belumJelas?.length ? <span className="block text-[11.5px] opacity-90">{c.belumJelas.join("; ")}</span> : null}</span>
+            {c.materialId && <button type="button" onClick={() => onPakai(c.materialId)} data-testid="masalah-pakai" className="shrink-0 rounded-lg bg-surface px-2.5 py-1 text-[12px] font-semibold text-accent max-sm:min-h-11">Pakai {c.kode}</button>}
+          </li>
+        ))}
+      </ul>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {jenis === "KONFIRMASI" && <button type="button" onClick={onPeriksa} data-testid="masalah-periksa" className="rounded-lg bg-surface px-3 py-1.5 text-[12px] font-semibold text-accent max-sm:min-h-11">Periksa &amp; konfirmasi barang baru</button>}
+        {jenis !== "KONFIRMASI" && <button type="button" onClick={onPeriksa} data-testid="masalah-ubah" className="rounded-lg bg-surface px-3 py-1.5 text-[12px] font-semibold text-ink2 max-sm:min-h-11">Ubah barang baru</button>}
+        {jenis === "PASTI_PO" && <button type="button" onClick={onHapus} data-testid="masalah-hapus" className="rounded-lg bg-surface px-3 py-1.5 text-[12px] font-semibold text-red max-sm:min-h-11">Hapus baris ini</button>}
+      </div>
+    </div>
   );
 }
 
@@ -378,9 +422,13 @@ function ModalPO({ kunci, po, onClose, onSaved }) {
   const [suppliers, setSuppliers] = useState([]);
   const [materials, setMaterials] = useState([]);
   const [galat, setGalat] = useState("");
-  const [barangBaru, setBarangBaru] = useState(null); // { baris, awal? } — modal Buat Barang Baru untuk baris ke-n
+  const [barangBaru, setBarangBaru] = useState(null); // { baris, awal?, autoPeriksa? } — modal Buat Barang Baru untuk baris ke-n
+  const [masalah, setMasalah] = useState({}); // { [nomorBaris]: masalah barang mirip } — tanda + aksi penyelesaian pada baris terkait
+  const barisRef = useRef({});
   const set = (k, v) => setF((s) => ({ ...s, [k]: v }));
-  const setBaris = (i, patch) => setF((s) => ({ ...s, lines: s.lines.map((l, idx) => (idx === i ? { ...l, ...patch } : l)) }));
+  const setBaris = (i, patch) => { setMasalah({}); setF((s) => ({ ...s, lines: s.lines.map((l, idx) => (idx === i ? { ...l, ...patch } : l)) })); };
+  const hapusBaris = (i) => { setMasalah({}); setF((s) => ({ ...s, lines: s.lines.length > 1 ? s.lines.filter((_, idx) => idx !== i) : s.lines })); };
+  const keBaris = (nomor) => setTimeout(() => barisRef.current[nomor]?.scrollIntoView?.({ block: "center", behavior: "smooth" }), 50);
 
   useEffect(() => {
     api.getFinanceSuppliers().then((r) => setSuppliers((r.suppliers || []).filter((s) => s.active !== false))).catch(() => {});
@@ -395,12 +443,25 @@ function ModalPO({ kunci, po, onClose, onSaved }) {
   const jumlahBaru = daftarBarangBaru(f.lines).length;
 
   async function simpan() {
-    setGalat("");
+    setGalat(""); setMasalah({});
     try {
       const body = bodyDariForm({ ...f, termin });
+      // Periksa SEMUA barang baru sekaligus (urutan sama dengan penyimpanan) supaya masalah tampil di baris terkait dengan aksi penyelesaian — bukan pesan galat di bawah.
+      const baruList = bolehBuatSku ? barisBaruUntukCek(f.lines) : [];
+      if (baruList.length > 0) {
+        let cek = null;
+        try { cek = await api.cekDuplikatPO({ supplierId: f.supplierId, barisBaru: baruList }); } catch { /* server tetap memvalidasi saat simpan */ }
+        const ms = cek ? masalahDariCek(cek) : {};
+        const nomor = Object.keys(ms).map(Number).sort((x, y) => x - y);
+        if (nomor.length > 0) { setMasalah(ms); setGalat(`${nomor.length} baris perlu diselesaikan dulu (baris ${nomor.join(", ")}) — lihat tanda dan tombol pada baris tersebut. PO belum disimpan.`); keBaris(nomor[0]); return; }
+      }
       const hasil = mengubah ? await api.updatePurchaseOrder(po.id, body) : await api.createPurchaseOrder(body, `po-${kunci}`);
       await onSaved(hasil.id);
-    } catch (e) { setGalat(e.message || "Gagal menyimpan PO"); }
+    } catch (e) {
+      const ms = masalahDariGalat(e);
+      if (ms) { setMasalah({ [ms.baris]: ms }); setGalat(`Baris ${ms.baris} perlu diselesaikan dulu — lihat tanda dan tombol pada baris tersebut. PO belum disimpan.`); keBaris(ms.baris); }
+      else setGalat(e.message || "Gagal menyimpan PO");
+    }
   }
 
   return (
@@ -452,7 +513,7 @@ function ModalPO({ kunci, po, onClose, onSaved }) {
               const kv = infoKonversi(l, unitStok);
               const satuanBeli = l.materialBaru ? (l.materialBaru.satuanBeli || l.materialBaru.satuanStok) : (l.satuanBeli || unitStok);
               return (
-                <div key={i} className="rounded-lg border border-line p-2.5" data-testid="baris-po">
+                <div key={i} ref={(el) => { barisRef.current[i + 1] = el; }} className={cn("rounded-lg border p-2.5", masalah[i + 1] ? "border-orange" : "border-line")} data-testid="baris-po" data-masalah={masalah[i + 1] ? jenisMasalah(masalah[i + 1]) : undefined}>
                   {l.materialBaru ? (
                     <div className="min-w-0 rounded-lg bg-surface px-3 py-2" data-testid="barang-baru">
                       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
@@ -536,12 +597,13 @@ function ModalPO({ kunci, po, onClose, onSaved }) {
                       {teksPratinjauPendamping(l.pendamping, l.qty, satuanBeli ? labelSatuan(satuanBeli) : "") && <p data-testid="pratinjau-pendamping" className="mt-1 text-[12px] font-medium text-accent">Tampil di PO: {teksPratinjauPendamping(l.pendamping, l.qty, satuanBeli ? labelSatuan(satuanBeli) : "")}</p>}
                     </details>
                   )}
+                  {masalah[i + 1] && <PanelMasalahBaris m={masalah[i + 1]} onPakai={(id) => setBaris(i, { materialId: id, materialBaru: null, satuanBeli: "", faktorKonversi: "" })} onPeriksa={() => setBarangBaru({ baris: i, awal: l.materialBaru, autoPeriksa: true })} onHapus={() => hapusBaris(i)} />}
                   <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
                     <span className="text-[12px] text-ink2">Subtotal <strong className="tabular-nums text-ink">{formatUang(subtotal(l))}</strong></span>
                     {setara && <span data-testid="setara" className="text-[12px] font-medium text-accent">{setara}</span>}
                     {g && (l.materialId || l.materialBaru) && <span className="min-w-0 basis-full truncate text-[11.5px] text-orange sm:basis-auto">{g}</span>}
                     <button
-                      type="button" onClick={() => set("lines", f.lines.length > 1 ? f.lines.filter((_, idx) => idx !== i) : f.lines)} disabled={f.lines.length === 1}
+                      type="button" onClick={() => hapusBaris(i)} disabled={f.lines.length === 1}
                       aria-label={`Hapus baris ${i + 1}`} className="ml-auto shrink-0 rounded-lg p-2 text-ink3 hover:bg-redbg hover:text-red disabled:opacity-30"
                     ><Trash2 size={14} /></button>
                   </div>
@@ -554,8 +616,8 @@ function ModalPO({ kunci, po, onClose, onSaved }) {
       </div>
       {barangBaru && (
         <ModalBarangBaru
-          awal={barangBaru.awal} supplierId={f.supplierId} supplierNama={namaSupplier}
-          onClose={() => setBarangBaru(null)}
+          awal={barangBaru.awal} supplierId={f.supplierId} supplierNama={namaSupplier} barisLain={barisLainDariForm(f.lines, barangBaru.baris)} autoPeriksa={!!barangBaru.autoPeriksa}
+          onClose={() => setBarangBaru(null)} onBatalkanBaru={() => { setBaris(barangBaru.baris, { materialBaru: null }); setBarangBaru(null); }}
           onSimpan={(mb) => { setBaris(barangBaru.baris, { materialId: "", materialBaru: mb, satuanBeli: "", faktorKonversi: "" }); setBarangBaru(null); }}
           onPakaiMaterial={(id) => { setBaris(barangBaru.baris, { materialId: id, materialBaru: null, satuanBeli: "", faktorKonversi: "" }); setBarangBaru(null); }}
         />

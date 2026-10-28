@@ -113,13 +113,14 @@ async function request(path, options = {}) {
       let msg = "Terjadi kesalahan";
       let code;
       let detail;
+      let dataGalat;
       // Backend mengirim `details` (jamak) — lihat routes/*.js handleErr(). `j.detail` (tunggal) dipertahankan
       // sebagai fallback bila kelak ada endpoint lama yang memakai ejaan itu; tidak ada yang mengirimnya saat ini.
-      try { const j = JSON.parse(text); msg = j.error || msg; code = j.code ?? j.kode; detail = j.details ?? j.detail ?? j.penghalang; } catch {}
+      try { const j = JSON.parse(text); msg = j.error || msg; code = j.code ?? j.kode; detail = j.details ?? j.detail ?? j.penghalang; if (j && typeof j === "object") dataGalat = j; } catch {}
       // `.status` disertakan (bukan cuma pesan) supaya pemanggil bisa
       // membedakan "diblokir karena ada data terkait" (409) dari error lain
       // tanpa perlu cocokkan teks pesan (rapuh kalau pesannya diubah nanti).
-      throw Object.assign(new Error(msg), { status: res.status, code, ...(detail ? { detail } : {}) });
+      throw Object.assign(new Error(msg), { status: res.status, code, ...(detail ? { detail } : {}), ...(dataGalat ? { data: dataGalat } : {}) });
     }
     return res.json();
   } catch (err) {
@@ -2189,6 +2190,7 @@ export const api = {
   batalkanPenerapanUangMuka: (id, reason, idempotencyKey) => request(`/finance/purchase-orders/uang-muka/penerapan/${id}/batal`, { method: "POST", body: JSON.stringify({ reason }), headers: { "Idempotency-Key": idempotencyKey } }),
   getUangMukaSupplierRingkasan: () => request("/finance/purchase-orders/uang-muka/ringkasan-supplier"),
   // SKU baru dari PO (hanya Admin Finance untuk cek-duplikat & perbaikan) + Katalog Supplier. SKU baru baru lahir saat draf PO disimpan.
+  cekDuplikatPO: (data) => request("/finance/purchase-orders/sku/cek-duplikat-po", { method: "POST", body: JSON.stringify(data) }),
   cekDuplikatSku: (data) => request("/finance/purchase-orders/sku/cek-duplikat", { method: "POST", body: JSON.stringify(data) }),
   getAsalSku: (materialId) => request(`/finance/purchase-orders/sku/${materialId}`),
   perbaikiSku: (materialId, data) => request(`/finance/purchase-orders/sku/${materialId}`, { method: "PATCH", body: JSON.stringify(data) }),
