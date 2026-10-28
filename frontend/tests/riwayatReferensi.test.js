@@ -40,7 +40,7 @@ test("UI: banner label, ringkasan, antrean, pratinjau sebelum simpan dengan hash
 test("per bahan: bagian terpisah dari Movement History, berlabel referensi", () => {
   const drawer = baca("../src/features/warehouse/components/ItemDetailDrawer.jsx");
   assert.match(drawer, /<RiwayatReferensiBahan materialId=\{materialId\} \/>/);
-  assert.ok(drawer.indexOf("Movement History") < drawer.indexOf("<RiwayatReferensiBahan"), "ditampilkan SESUDAH dan terpisah dari ledger");
+  assert.ok(drawer.indexOf("Riwayat pergerakan") < drawer.indexOf("<RiwayatReferensiBahan"), "ditampilkan SESUDAH dan terpisah dari ledger");
   assert.match(bahan, /Riwayat referensi dari file \(bukan transaksi\)/); assert.match(bahan, /data-testid="riwayat-referensi-bahan"/);
 });
 

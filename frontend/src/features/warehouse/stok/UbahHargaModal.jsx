@@ -81,7 +81,9 @@ export default function UbahHargaModal({ open, onClose, bahan, hargaSekarang, ko
             <Field label="Catatan / bukti (opsional)" htmlFor="hb-bukti" hint="Mis. nomor nota atau nama supplier. Boleh kosong — harga tetap tersimpan dengan label “Belum didukung bukti”.">
               <textarea id="hb-bukti" rows={2} value={bukti} onChange={ubahIsian(setBukti)} className="w-full rounded-lg bg-surface px-3 py-2 text-sm text-ink outline-none focus-visible:ring-2 focus-visible:ring-accent/40" data-testid="input-bukti" />
             </Field>
-            {hargaSekarang != null && <p className="text-[11.5px] text-ink3">Harga berlaku sekarang: <b className="text-ink2">{rp(hargaSekarang)}</b> / {bahan.satuan}</p>}
+            {hargaSekarang != null
+              ? <p className="text-[11.5px] text-ink3">Harga berlaku sekarang: <b className="text-ink2">{rp(hargaSekarang)}</b> / {bahan.satuan}</p>
+              : <p className="text-[11.5px] text-ink3" data-testid="belum-ada-harga-modal">Belum ada harga berlaku (belum diisi, bukan Rp0). Pemakaian yang diposting sebelum harga ini berlaku tetap tanpa harga operasional.</p>}
           </>
         )}
         {pra && <Pratinjau pra={pra} />}

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { FileText, Loader2 } from "lucide-react";
 import { api } from "@/api.js";
 import { Badge } from "@/components/ui/badge.jsx";
+import Lipat from "../stok/Lipat.jsx";
 import { LABEL_REFERENSI, STATUS_REFERENSI, ANTREAN_REFERENSI, teksJumlah, teksTanggal, teksSumber } from "../riwayatReferensiLogic.js";
 
 // Riwayat referensi dari file untuk SATU bahan — dipisah dari Movement History (ledger resmi). Bukan transaksi, bukan saldo.
@@ -16,7 +17,7 @@ export default function RiwayatReferensiBahan({ materialId }) {
   if (!data) return <p className="flex items-center gap-1.5 py-2 text-[11.5px] text-ink3"><Loader2 size={12} className="animate-spin" /> Memuat riwayat referensi…</p>;
   if (data.baris.length === 0) return null;
   return (
-    <div className="mt-4 rounded-md border border-orange/30 bg-orange/10 px-3 py-2" data-testid="riwayat-referensi-bahan">
+    <Lipat judul="Riwayat referensi dari file (bukan transaksi)" ringkas={`${data.baris.length} baris`} testid="lipat-riwayat-referensi"><div className="rounded-md border border-orange/30 bg-orange/10 px-3 py-2" data-testid="riwayat-referensi-bahan">
       <h4 className="mb-1 flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-orange"><FileText size={12} aria-hidden /> Riwayat referensi dari file (bukan transaksi)</h4>
       <p className="mb-2 text-[10.5px] leading-relaxed text-ink2">{LABEL_REFERENSI}</p>
       <ul className="divide-y divide-line">
@@ -31,6 +32,6 @@ export default function RiwayatReferensiBahan({ materialId }) {
           </li>
         ))}
       </ul>
-    </div>
+    </div></Lipat>
   );
 }
