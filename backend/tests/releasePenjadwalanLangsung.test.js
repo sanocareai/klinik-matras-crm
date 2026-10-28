@@ -40,3 +40,30 @@ test("smoke pasca-switch: BACA-SAJA — tanpa tulisan Prisma/SQL; POST hanya ke 
   for (const k of ["TIDAK ada jejak tulis", "401", "403", "JADWAL_TANGGAL_LEWAT", "JADWAL_HARI_LIBUR", "JADWAL_MEJA_INVALID", "SMOKE_HASIL fail="]) assert.ok(smoke.includes(k), k);
   assert.match(smoke, /production_runs_v2/, "nama tabel Run yang benar");
 });
+
+test("GERBANG KODE LIVE: isi kode (bukan marker) dibandingkan dengan snapshot baseline di fase 2, fase 6, dan tepat sebelum switch", () => {
+  assert.ok(script.includes("gerbang_kode_live()"), "fungsi gerbang ada");
+  for (const f of ["fase-2-audit", "fase-6-pra-switch", "fase-7-tepat-sebelum-switch"]) assert.ok(script.includes(`gerbang_kode_live "${f}"`), f);
+  // tidak lagi memercayai marker: marker hanya boleh baseline/leluhur baseline, bukan syarat kesamaan
+  assert.ok(!script.includes('= "$BASE_SHA" ] || die "release aktif (${PREV_COMMIT}) BUKAN baseline'), "pemeriksaan marker lama dihapus");
+  assert.ok(script.includes("merge-base --is-ancestor \"$mc\" \"$BASE_SHA\""), "marker = baseline atau leluhur");
+  for (const k of ["git hash-object --no-filters --stdin-paths", "beda-isi.txt", "TAMBAHAN:", "container-sha.txt", "dir-sha.txt", "PREV_STARTED"]) assert.ok(script.includes(k), k);
+  { const bs = String.fromCharCode(92); assert.ok(script.includes("tr -d '" + bs + "r' < \"$d/$p\" | git hash-object --stdin"), "normalisasi akhir baris hanya untuk membandingkan"); }
+  assert.ok(/berkas yang TIDAK ada di baseline/.test(script), "berkas tambahan menghentikan rilis");
+  assert.ok(/KODE LIVE menyimpang dari baseline/.test(script), "selisih isi menghentikan rilis");
+  // satu-satunya toleransi: akhir baris, dan hanya untuk berkas teks
+  assert.ok(script.includes("*.js|*.jsx|*.mjs|*.cjs|*.json"), "toleransi CR hanya untuk berkas teks");
+  assert.ok(script.includes("tidak_ada_deploy_lain_lagi") && script.includes('die "deploy lain mulai berjalan'), "pemeriksaan deploy lain diulang tepat sebelum switch");
+});
+
+test("HOTFIX: dipertahankan di build kandidat; rollback ke image live yang memuatnya; TIDAK ada penghapusan release/image/backup/volume", () => {
+  assert.ok(script.includes('[ "$(docker image inspect -f \'{{.Id}}\' "$ROLLBACK_TAG")" = "$PREV_IMG_ID" ]'), "tag rollback menunjuk image live");
+  assert.ok(script.includes("hotfix HILANG: cacheSingkat.js"), "verifikasi pasca-switch: cacheSingkat.js");
+  assert.ok(script.includes("JOIN LATERAL") && script.includes('cacheSingkat(30_000)'), "verifikasi pasca-switch: LATERAL + cache");
+  assert.ok(script.includes("snapshot baseline"), "4 berkas hotfix dibandingkan dengan snapshot baseline");
+  assert.ok(script.includes("LATERAL, baca-saja"), "performa dicatat");
+  const f9 = script.slice(script.indexOf('PHASE="9-pembersihan"'), script.indexOf('trap - EXIT\nsay "SELESAI'));
+  assert.ok(f9.includes("DINONAKTIFKAN") && !/rm -rf|docker rmi|docker volume|docker system|docker builder/.test(f9), "fase 9 tidak menghapus apa pun");
+  // seluruh skrip: rm -rf hanya untuk jejak sementara rehearsal/uji (BK_DIR, NEW_DIR milik rehearsal-only), tidak pernah release lama/backup/volume
+  assert.ok(!/rm -rf[^\n]*(RELEASES|PREV_DIR|backups|volume)/.test(script), "tidak menghapus release lama/backup/volume");
+});

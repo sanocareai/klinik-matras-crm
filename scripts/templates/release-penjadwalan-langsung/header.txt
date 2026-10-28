@@ -7,6 +7,9 @@
 #   • Pemakaian aktual (drawer Order Produksi + tab Bahan): SATU tabel untuk Bahan Gudang / Bahan belum tercatat / Komponen lama dengan label dampak singkat dan Edit per baris (formulir yang sudah ada: pratinjau dampak, izin, alasan, harga, persetujuan); Riwayat/Rencana/Detail teknis tertutup; blok kosong dihapus.
 #   • Gate: preflight; backup + RESTORE rehearsal (kode baru berjalan sebagai SERVER terhadap salinan restore; semua skenario — jadwal, batch, kapasitas, atomik, undo, Run lama, jadwal ganda, izin — ditulis HANYA ke DB sementara; direktori data/uploads production TIDAK dipasang);
 #     build web di release dir; switch SATU kali; verifikasi; smoke baca-saja pasca-switch. Produksi: rilis ini TIDAK membuat jadwal/Run/stok/jurnal apa pun; tidak ada transaksi QA.
+#   • BASELINE = hotfix performa yang SUDAH berjalan di live (commit 152819175 di atas 8527e9b8: query LATERAL pada Message di conversations.js/analytics.js, cacheSingkat(30 dtk) pada /sales-report, Laporan.jsx tab). Marker .release-commit live (8527e9b8) menyesatkan, jadi
+#     GERBANG IDENTITAS KODE LIVE membandingkan ISI kode (hash blob SEMUA berkas terlacak baseline, berkas tambahan, container == folder release, identitas proses) di fase 2, fase 6, dan TEPAT sebelum switch; selisih isi apa pun / berkas tambahan / proses berganti = berhenti sebelum switch.
+#   • Pembersihan release lama (fase 9) DINONAKTIFKAN pada rilis ini: tidak ada folder release/image rollback/backup/volume yang dihapus oleh skrip.
 #
 #   cat scripts/release-penjadwalan-langsung.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/pjl.sh'
 #   ssh ubuntu@43.133.152.6 'bash /tmp/pjl.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'

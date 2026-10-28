@@ -8,6 +8,9 @@
 #   • Pemakaian aktual (drawer Order Produksi + tab Bahan): SATU tabel untuk Bahan Gudang / Bahan belum tercatat / Komponen lama dengan label dampak singkat dan Edit per baris (formulir yang sudah ada: pratinjau dampak, izin, alasan, harga, persetujuan); Riwayat/Rencana/Detail teknis tertutup; blok kosong dihapus.
 #   • Gate: preflight; backup + RESTORE rehearsal (kode baru berjalan sebagai SERVER terhadap salinan restore; semua skenario — jadwal, batch, kapasitas, atomik, undo, Run lama, jadwal ganda, izin — ditulis HANYA ke DB sementara; direktori data/uploads production TIDAK dipasang);
 #     build web di release dir; switch SATU kali; verifikasi; smoke baca-saja pasca-switch. Produksi: rilis ini TIDAK membuat jadwal/Run/stok/jurnal apa pun; tidak ada transaksi QA.
+#   • BASELINE = hotfix performa yang SUDAH berjalan di live (commit 152819175 di atas 8527e9b8: query LATERAL pada Message di conversations.js/analytics.js, cacheSingkat(30 dtk) pada /sales-report, Laporan.jsx tab). Marker .release-commit live (8527e9b8) menyesatkan, jadi
+#     GERBANG IDENTITAS KODE LIVE membandingkan ISI kode (hash blob SEMUA berkas terlacak baseline, berkas tambahan, container == folder release, identitas proses) di fase 2, fase 6, dan TEPAT sebelum switch; selisih isi apa pun / berkas tambahan / proses berganti = berhenti sebelum switch.
+#   • Pembersihan release lama (fase 9) DINONAKTIFKAN pada rilis ini: tidak ada folder release/image rollback/backup/volume yang dihapus oleh skrip.
 #
 #   cat scripts/release-penjadwalan-langsung.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/pjl.sh'
 #   ssh ubuntu@43.133.152.6 'bash /tmp/pjl.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'
@@ -22,10 +25,10 @@ umask 077
 DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 [[ "$DEPLOY_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 1 harus SHA rilis 40 karakter" >&2; exit 1; }
 [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "STOP: argumen 2 harus SHA release aktif (baseline) 40 karakter" >&2; exit 1; }
-CAND_BRANCH="${CAND_BRANCH:-feat/rencana-penjadwalan-langsung}"
+CAND_BRANCH="${CAND_BRANCH:-feat/rencana-penjadwalan-langsung-on-hotfix}"
 # Berkas yang BOLEH berbeda dari baseline: EKSPLISIT path persis. Apa pun di luar daftar (termasuk backend/prisma) = berhenti.
 # Rilis kode-saja: tanpa migrasi, tanpa perubahan schema.prisma; OTA RN TIDAK diterbitkan.
-ALLOWED_RE='^(backend/src/lib/domain/productionRencanaAdmin\.js|backend/src/routes/productionRencanaJadwal\.js|backend/src/services/productionRencanaJadwalService\.js|backend/tests/integration/rencanaPenjadwalanLangsung\.integration\.test\.js|backend/tests/releasePenjadwalanLangsung\.test\.js|backend/tests/rencanaPenjadwalanLangsung\.test\.js|frontend/src/api\.js|frontend/src/features/production/OrderProduksiPanel\.jsx|frontend/src/features/production/bahan/CatatBahanBaru\.jsx|frontend/src/features/production/bahan/PemakaianAktualBagian\.jsx|frontend/src/features/production/bahan/PemakaianSementaraDaftar\.jsx|frontend/src/features/production/bahan/TabelPemakaian\.jsx|frontend/src/features/production/bahan/bahanModel\.js|frontend/src/features/production/rencana/KartuUnit\.jsx|frontend/src/features/production/rencana/PilihMeja\.jsx|frontend/src/features/production/rencana/RencanaAntrean\.jsx|frontend/src/features/production/rencana/RencanaKalender\.jsx|frontend/src/features/production/rencana/rencanaModel\.js|frontend/src/pages/bengkel/ProductionRencanaMinggu\.jsx|frontend/tests/orderProduksiAdopsi\.test\.js|frontend/tests/perubahanPemakaian\.test\.js|frontend/tests/rencanaMinggu\.test\.js|frontend/tests/tabelPemakaianAktual\.test\.js|scripts/gen-release-penjadwalan-langsung\.cjs|scripts/lib/rehearsal-penjadwalan-langsung\.mjs|scripts/lib/smoke-penjadwalan-langsung\.mjs|scripts/release-penjadwalan-langsung\.sh|scripts/templates/release-penjadwalan-langsung/header\.txt|scripts/templates/release-penjadwalan-langsung/rollback\.txt)$'
+ALLOWED_RE='^(backend/src/lib/domain/productionRencanaAdmin\.js|backend/src/routes/productionRencanaJadwal\.js|backend/src/services/productionRencanaJadwalService\.js|backend/tests/cacheSingkat\.test\.js|backend/tests/integration/hotfixPerfLive\.integration\.test\.js|backend/tests/integration/nilaiBersihLaporan\.integration\.test\.js|backend/tests/integration/rencanaPenjadwalanLangsung\.integration\.test\.js|backend/tests/releasePenjadwalanLangsung\.test\.js|backend/tests/rencanaPenjadwalanLangsung\.test\.js|frontend/src/api\.js|frontend/src/features/production/OrderProduksiPanel\.jsx|frontend/src/features/production/bahan/CatatBahanBaru\.jsx|frontend/src/features/production/bahan/PemakaianAktualBagian\.jsx|frontend/src/features/production/bahan/PemakaianSementaraDaftar\.jsx|frontend/src/features/production/bahan/TabelPemakaian\.jsx|frontend/src/features/production/bahan/bahanModel\.js|frontend/src/features/production/rencana/KartuUnit\.jsx|frontend/src/features/production/rencana/PilihMeja\.jsx|frontend/src/features/production/rencana/RencanaAntrean\.jsx|frontend/src/features/production/rencana/RencanaKalender\.jsx|frontend/src/features/production/rencana/rencanaModel\.js|frontend/src/pages/bengkel/ProductionRencanaMinggu\.jsx|frontend/tests/orderProduksiAdopsi\.test\.js|frontend/tests/perubahanPemakaian\.test\.js|frontend/tests/rencanaMinggu\.test\.js|frontend/tests/tabelPemakaianAktual\.test\.js|scripts/gen-release-penjadwalan-langsung\.cjs|scripts/lib/rehearsal-penjadwalan-langsung\.mjs|scripts/lib/smoke-penjadwalan-langsung\.mjs|scripts/release-penjadwalan-langsung\.sh|scripts/templates/release-penjadwalan-langsung/gerbang-kode-live\.txt|scripts/templates/release-penjadwalan-langsung/header\.txt|scripts/templates/release-penjadwalan-langsung/hitung-pasca\.txt|scripts/templates/release-penjadwalan-langsung/hitung-pra\.txt|scripts/templates/release-penjadwalan-langsung/rollback\.txt|scripts/templates/release-penjadwalan-langsung/verifikasi-hotfix\.txt)$'
 BACKEND_SRC_EXPECT="backend/src/lib/domain/productionRencanaAdmin.js backend/src/routes/productionRencanaJadwal.js backend/src/services/productionRencanaJadwalService.js"
 FRONTEND_SRC_EXPECT="frontend/src/api.js frontend/src/features/production/OrderProduksiPanel.jsx frontend/src/features/production/bahan/CatatBahanBaru.jsx frontend/src/features/production/bahan/PemakaianAktualBagian.jsx frontend/src/features/production/bahan/PemakaianSementaraDaftar.jsx frontend/src/features/production/bahan/TabelPemakaian.jsx frontend/src/features/production/bahan/bahanModel.js frontend/src/features/production/rencana/KartuUnit.jsx frontend/src/features/production/rencana/PilihMeja.jsx frontend/src/features/production/rencana/RencanaAntrean.jsx frontend/src/features/production/rencana/RencanaKalender.jsx frontend/src/features/production/rencana/rencanaModel.js frontend/src/pages/bengkel/ProductionRencanaMinggu.jsx"
 PUBLIC_URL="https://app.sanomatrassehat.com"
@@ -62,6 +65,7 @@ Image sebelumnya   : ${ROLLBACK_TAG:-<belum ditandai>}
 Backup + checksum  : ${BACKUP_FILE:-<belum dibuat>}
 Berhenti SEBELUM 'Switch backend' -> backend lama tidak pernah dimatikan; produksi tetap di release sebelumnya.
 Rilis ini TANPA migrasi dan TANPA tulisan data bisnis oleh skripnya: rollback KODE aman kapan pun. Bila rollback setelah switch:
+Tujuan rollback = image dan folder release LIVE SEBELUM rilis ini; keduanya MEMUAT hotfix performa (gerbang kode live membuktikan kode di container == folder == baseline disetujui) — rollback tidak membuang hotfix. Folder ${PREV_DIR} tidak dihapus.
    cd ${PREV_DIR:-<release-sebelumnya>}
    docker tag ${ROLLBACK_TAG:-<tag-rollback>} ${IMG_NAME:-klinik-matras-backend:latest}
    SANSS_PERSIST_ROOT=${PERSIST} docker compose -p ${PROJECT} -f docker-compose.yml -f docker-compose.release.yml up -d --no-deps --force-recreate backend
@@ -127,6 +131,79 @@ LUAR="$(printf '%s\n' "$CHANGED" | grep -Ev "$ALLOWED_RE" || true)"
 [ -z "$(sg diff --name-only "$BASE_SHA" "$DEPLOY_SHA" -- backend/prisma/schema.prisma backend/prisma/migrations)" ] || die "schema.prisma/migrations berbeda dari baseline"
 ok "tanpa migrasi, tanpa perubahan schema.prisma; kandidat ${DEPLOY_SHORT} turunan baseline ${BASE_SHA:0:8} dan origin/main ${MAIN_SHA:0:8}; $(printf '%s\n' "$CHANGED" | wc -l) berkas dalam allowlist eksplisit"
 
+# ── GERBANG IDENTITAS KODE LIVE (marker .release-commit SAJA TIDAK CUKUP) ─────────────────────────────────────────────────────────
+# Kejadian 28 Okt 2026: release aktif bc8b81ab bermarker 8527e9b8 tetapi memuat hotfix performa yang diterapkan langsung ke folder (tidak pernah dikomit);
+# rilis lewat git archive akan menimpanya diam-diam. Gerbang ini membandingkan ISI kode yang BENAR-BENAR berjalan dengan snapshot baseline yang
+# disetujui (pohon git BASE_SHA), bukan label:
+#   (a) setiap berkas terlacak baseline (kecuali frontend/dist) di release aktif harus sama (hash blob git). Selisih HANYA akhir baris (CRLF vs LF)
+#       dicatat terpisah; selisih isi apa pun = berhenti;
+#   (b) tidak boleh ada berkas tambahan di release aktif yang tidak ada di baseline (selain .release-commit, node_modules, uploads, frontend/dist);
+#   (c) kode backend DI DALAM container yang sedang berjalan harus identik dengan folder release aktifnya (src, prisma, scripts, tests, package*.json);
+#   (d) identitas proses tidak bergeser sejak audit awal (container, image, waktu mulai).
+# Marker hanya boleh = baseline atau LELUHUR baseline. Dijalankan di fase 2, sebelum switch (fase 6), dan sekali lagi TEPAT sebelum switch (fase 7).
+gerbang_kode_live() {
+  local label="$1" d="$PREV_DIR" tsv="$BK_DIR/base-tree.tsv" p oid mc total nbeda neol CID
+  mkdir -p "$BK_DIR"
+  mc="$(sg rev-parse --verify -q "${PREV_COMMIT}^{commit}" || true)"
+  [ -n "$mc" ] || die "[${label}] marker release aktif (${PREV_COMMIT}) tidak dikenal di repo sumber"
+  if [ "$mc" != "$BASE_SHA" ]; then sg merge-base --is-ancestor "$mc" "$BASE_SHA" || die "[${label}] marker ${PREV_COMMIT} BUKAN baseline/leluhur baseline ${BASE_SHA:0:8}; produksi bergeser — berhenti"; fi
+  # (a) isi berkas terlacak
+  sg -c core.quotepath=false ls-tree -r "$BASE_SHA" | awk -F'\t' '$1 ~ /^100[0-9]+ blob/ && $2 !~ /^frontend\/dist\// { split($1, a, " "); print a[3] "\t" $2 }' > "$tsv"
+  total="$(wc -l < "$tsv" | tr -d ' ')"; [ "$total" -gt 1000 ] || die "[${label}] daftar berkas baseline terlalu pendek (${total})"
+  p="$(cut -f2 "$tsv" | while IFS= read -r f; do [ -f "$d/$f" ] || printf '%s\n' "$f"; done | head -10)"
+  [ -z "$p" ] || { printf '%s\n' "$p" | sed 's/^/        HILANG: /'; die "[${label}] berkas baseline HILANG di release aktif ${d}"; }
+  ( cd "$d" && cut -f2 "$tsv" | git hash-object --no-filters --stdin-paths ) > "$BK_DIR/live-hash.txt"
+  [ "$(wc -l < "$BK_DIR/live-hash.txt" | tr -d ' ')" = "$total" ] || die "[${label}] jumlah hash live != jumlah berkas baseline"
+  paste "$tsv" "$BK_DIR/live-hash.txt" | awk -F'\t' '$1 != $3 { print $2 "\t" $1 }' > "$BK_DIR/beda-mentah.tsv"
+  nbeda="$(wc -l < "$BK_DIR/beda-mentah.tsv" | tr -d ' ')"
+  : > "$BK_DIR/beda-eol.txt"; : > "$BK_DIR/beda-isi.txt"
+  while IFS=$'\t' read -r p oid; do
+    case "$p" in
+      *.js|*.jsx|*.mjs|*.cjs|*.json|*.css|*.html|*.md|*.txt|*.sh|*.yml|*.yaml|*.sql|*.prisma|*.ts|*.tsx|*.svg)
+        if [ "$(tr -d '\r' < "$d/$p" | git hash-object --stdin)" = "$oid" ]; then printf '%s\n' "$p" >> "$BK_DIR/beda-eol.txt"; continue; fi;;
+    esac
+    printf '%s\n' "$p" >> "$BK_DIR/beda-isi.txt"
+  done < "$BK_DIR/beda-mentah.tsv"
+  neol="$(wc -l < "$BK_DIR/beda-eol.txt" | tr -d ' ')"
+  if [ -s "$BK_DIR/beda-isi.txt" ]; then head -20 "$BK_DIR/beda-isi.txt" | sed 's/^/        BEDA ISI: /'; die "[${label}] KODE LIVE menyimpang dari baseline ${BASE_SHA:0:8}: $(wc -l < "$BK_DIR/beda-isi.txt" | tr -d ' ') berkas berbeda isi — berhenti, JANGAN switch"; fi
+  # (b) berkas tambahan di release aktif
+  ( cd "$d" && find . -type f -not -path './frontend/dist/*' -not -path '*/node_modules/*' -not -path './backend/uploads/*' | sed 's|^\./||' | LC_ALL=C sort ) > "$BK_DIR/live-files.txt"
+  sg -c core.quotepath=false ls-tree -r --name-only "$BASE_SHA" | LC_ALL=C sort > "$BK_DIR/base-files.txt"
+  p="$(LC_ALL=C comm -13 "$BK_DIR/base-files.txt" "$BK_DIR/live-files.txt" | grep -vxF '.release-commit' || true)"
+  [ -z "$p" ] || { printf '%s\n' "$p" | head -20 | sed 's/^/        TAMBAHAN: /'; die "[${label}] release aktif memuat berkas yang TIDAK ada di baseline ${BASE_SHA:0:8} — berhenti"; }
+  # (c) container berjalan == folder release aktif
+  CID="$(docker ps -q --filter "label=com.docker.compose.project=${PROJECT}" --filter "label=com.docker.compose.service=backend")"
+  [ "$(printf '%s\n' "$CID" | grep -c .)" = "1" ] || die "[${label}] harus tepat satu container backend"
+  docker exec "$CID" sh -c 'cd /app && { for x in src prisma scripts tests; do [ -d "$x" ] && find "$x" -type f; done; } | LC_ALL=C sort | xargs sha256sum && sha256sum package.json package-lock.json' > "$BK_DIR/container-sha.txt" || die "[${label}] gagal membaca kode di dalam container"
+  ( cd "$d/backend" && { for x in src prisma scripts tests; do [ -d "$x" ] && find "$x" -type f; done; } | LC_ALL=C sort | xargs sha256sum && sha256sum package.json package-lock.json ) > "$BK_DIR/dir-sha.txt"
+  cmp -s "$BK_DIR/container-sha.txt" "$BK_DIR/dir-sha.txt" || { diff "$BK_DIR/container-sha.txt" "$BK_DIR/dir-sha.txt" | head -10 | sed 's/^/        /'; die "[${label}] kode di dalam container BERBEDA dari folder release aktif ${d}"; }
+  # (d) identitas proses tidak bergeser
+  [ "$CID" = "$CID_OLD" ] || die "[${label}] container backend berganti sejak audit awal"
+  [ "$(docker inspect -f '{{.Image}}' "$CID")" = "$PREV_IMG_ID" ] || die "[${label}] image container berubah sejak audit awal"
+  [ "$(docker inspect -f '{{.State.StartedAt}}' "$CID")" = "$PREV_STARTED" ] || die "[${label}] container dimulai ulang sejak audit awal"
+  [ "$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$CID")" = "$PREV_DIR" ] || die "[${label}] folder release aktif berubah sejak audit awal"
+  {
+    echo "gerbang=${label} waktu=$(date -u +%FT%TZ)"
+    echo "release aktif=${d} marker=${PREV_COMMIT} (-> ${mc}) image=${PREV_IMG_ID} container=${CID:0:12} mulai=${PREV_STARTED}"
+    echo "baseline disetujui=${BASE_SHA}"
+    echo "berkas terlacak dibandingkan=${total}; sama persis=$((total - nbeda)); beda akhir-baris saja=${neol}; beda isi=0; berkas tambahan=0"
+    echo "container == folder release: $(wc -l < "$BK_DIR/container-sha.txt" | tr -d ' ') berkas identik"
+    echo "-- berkas yang hanya beda akhir baris (CRLF di live, LF di baseline):"; cat "$BK_DIR/beda-eol.txt"
+  } >> "$BK_DIR/kode-live.txt"
+  ok "[${label}] kode live == baseline ${BASE_SHA:0:8}: ${total} berkas terlacak sama isi (${neol} hanya beda akhir baris), 0 berkas tambahan, container == folder release; marker ${PREV_COMMIT}"
+}
+# Tepat sebelum switch: pastikan tidak ada deploy/build/migrasi lain (mengulang pemeriksaan fase 0, kecuali kunci rilis ini sendiri).
+tidak_ada_deploy_lain_lagi() {
+  local lf OTHER
+  for lf in /tmp/release-*.lock; do
+    [ -e "$lf" ] || continue; [ "$lf" = "/tmp/release-penjadwalan-langsung.lock" ] && continue
+    ( exec 8>"$lf"; flock -n 8 ) || die "deploy lain mulai berjalan (kunci ${lf} dipegang) — berhenti sebelum switch"
+  done
+  OTHER="$(pgrep -af 'release-[a-z0-9-]+\.sh|docker compose .*(up|build)|docker build|prisma migrate' | grep -v "pjl\|release-penjadwalan-langsung\|pgrep\|node src/index.js" | grep -v "$$" || true)"
+  [ -z "$OTHER" ] || { printf '%s\n' "$OTHER" | sed 's/^/        /'; die "ada proses deploy/build/migrasi lain tepat sebelum switch — berhenti"; }
+  ok "tepat sebelum switch: tidak ada deploy/build/migrasi lain"
+}
+
 PHASE="2-audit-produksi"; say "2. Audit produksi aktif (baca-saja)"
 CID_OLD="$(docker ps -q --filter "label=com.docker.compose.project=${PROJECT}" --filter "label=com.docker.compose.service=backend")"
 [ "$(printf '%s\n' "$CID_OLD" | grep -c .)" = "1" ] || die "harus tepat satu container backend"
@@ -134,9 +211,11 @@ PREV_DIR="$(docker inspect -f '{{index .Config.Labels "com.docker.compose.projec
 case "$PREV_DIR" in "$RELEASES"/*) ;; *) die "release aktif (${PREV_DIR}) bukan di bawah ${RELEASES}";; esac
 [ -f "$PREV_DIR/.release-commit" ] && [ -f "$PREV_DIR/docker-compose.release.yml" ] || die "release aktif tidak lengkap"
 PREV_COMMIT="$(tr -d '[:space:]' < "$PREV_DIR/.release-commit")"
-[ "$(sg rev-parse --verify -q "${PREV_COMMIT}^{commit}" || true)" = "$BASE_SHA" ] || die "release aktif (${PREV_COMMIT}) BUKAN baseline ${BASE_SHA:0:8}; produksi bergeser — berhenti"
+# marker TIDAK dipakai sebagai bukti identitas: gerbang_kode_live (di atas) membandingkan ISI kode live dengan snapshot baseline
 PREV_IMG_ID="$(docker inspect -f '{{.Image}}' "$CID_OLD")"; IMG_NAME="$(docker inspect -f '{{.Config.Image}}' "$CID_OLD")"
-ok "release aktif ${PREV_DIR} (commit ${PREV_COMMIT}); image ${IMG_NAME} (${PREV_IMG_ID:7:12})"
+ok "release aktif ${PREV_DIR} (marker ${PREV_COMMIT}); image ${IMG_NAME} (${PREV_IMG_ID:7:12})"
+PREV_STARTED="$(docker inspect -f '{{.State.StartedAt}}' "$CID_OLD")"
+gerbang_kode_live "fase-2-audit"
 curl -fsS --max-time 8 "${INTERNAL_URL}/api/health" | grep '"ok":true' >/dev/null || die "healthcheck internal sebelum rilis gagal"
 curl -fsS --max-time 15 "${PUBLIC_URL}/api/health" | grep '"ok":true' >/dev/null || die "healthcheck publik sebelum rilis gagal"
 PUB_BEFORE="$(curl -fsS --max-time 15 "${PUBLIC_URL}/" | grep -o 'index-[A-Za-z0-9_-]*\.js' | sed -n 1p)"
@@ -274,6 +353,8 @@ ok "${n} aset lama dibawa ke dist baru; index.html baru tetap hanya merujuk aset
 PHASE="5-build-image"; say "5. Build image backend baru (backend lama tetap melayani)"
 ROLLBACK_TAG="${IMG_NAME%%:*}:rollback-pre-pjl-${DEPLOY_SHORT}"
 docker tag "$PREV_IMG_ID" "$ROLLBACK_TAG" || die "gagal menandai image lama"; ok "image lama ditandai ${ROLLBACK_TAG}"
+[ "$(docker image inspect -f '{{.Id}}' "$ROLLBACK_TAG")" = "$PREV_IMG_ID" ] || die "tag rollback tidak menunjuk image live"
+ok "tujuan rollback = image live ${PREV_IMG_ID:7:12} + folder ${PREV_DIR}: memuat hotfix performa (kode container == folder == baseline disetujui, terbukti gerbang kode live)"
 dcp "$NEW_DIR" build backend > "$BK_DIR/build.log" 2>&1 </dev/null || { tail -n 25 "$BK_DIR/build.log"; die "build image gagal (backend lama tetap berjalan)"; }
 NEW_IMG_ID="$(docker image inspect -f '{{.Id}}' "$IMG_NAME")"
 [ "$NEW_IMG_ID" != "$PREV_IMG_ID" ] || die "image baru identik dengan lama"
@@ -479,6 +560,9 @@ fi
 PHASE="6-tanpa-migrasi"; say "6. Tanpa migrasi: pastikan tidak ada yang pending (image baru; backend lama tetap melayani)"
 [ "$(sg ls-remote origin "refs/heads/${CAND_BRANCH}" | cut -f1)" = "$DEPLOY_SHA" ] || die "kandidat berubah sebelum switch"
 [ "$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$CID_OLD")" = "$PREV_DIR" ] || die "release aktif berubah sebelum switch"
+gerbang_kode_live "fase-6-pra-switch"
+COUNT_SQL="select 'schedules', count(*) from production_unit_schedules union all select 'schedule_events', count(*) from production_unit_schedule_events union all select 'run_plans_v2', count(*) from production_run_plans_v2 union all select 'runs_v2', count(*) from production_runs_v2 union all select 'stock_movements', count(*) from stock_movements union all select 'material_issues', count(*) from material_issues union all select 'material_issue_lines', count(*) from material_issue_lines union all select 'unit_provisional_usages', count(*) from unit_provisional_usages union all select 'harga_berlaku', count(*) from material_harga_berlaku union all select 'jurnal', count(*) from fin_journal_entries union all select 'jurnal_baris', count(*) from fin_journal_lines"
+psql_live -At -c "$COUNT_SQL" > "$BK_DIR/hitung-pra-switch.txt" || die "hitung baris pra-switch gagal"; ok "pra-switch: hitung baris jadwal/Run/stok/pemakaian/harga/jurnal dicatat"
 [ "$(psql_live -At -c "select count(*) from _prisma_migrations where finished_at is null and rolled_back_at is null")" = "0" ] || die "ada migrasi setengah jalan di produksi; JANGAN switch"
 dcp "$NEW_DIR" run --rm --no-deps -T backend npx prisma migrate status </dev/null 2>&1 | grep -i 'up to date' >/dev/null || die "migrate status produksi (image baru) TIDAK 'up to date' — rilis ini harus tanpa migrasi"
 ok "tidak ada migrasi pending; skema produksi sudah sesuai image baru"
@@ -487,6 +571,8 @@ diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/data-pra-switch.txt" >/dev/null || { di
 ok "pra-switch: dokumen pembanding beku identik"
 
 PHASE="7-switch"; say "7. Switch backend ke release baru (SATU kali)"
+tidak_ada_deploy_lain_lagi
+gerbang_kode_live "fase-7-tepat-sebelum-switch"
 [ "$(sg ls-remote origin "refs/heads/${CAND_BRANCH}" | cut -f1)" = "$DEPLOY_SHA" ] || die "kandidat berubah sebelum switch"
 dcp "$NEW_DIR" up -d --no-deps backend </dev/null >/dev/null 2>&1 || die "docker compose up backend gagal"
 UP=0; for i in $(seq 1 45); do curl -fsS --max-time 4 "${INTERNAL_URL}/api/health" >/dev/null 2>&1 && { UP=1; break; }; sleep 2; done
@@ -497,6 +583,20 @@ CID_NEW="$(docker ps -q --filter "label=com.docker.compose.project=${PROJECT}" -
 ok "backend baru sehat (image ${NEW_IMG_ID:7:12}, release ${DEPLOY_SHORT})"
 
 PHASE="8-verifikasi"; say "8. Verifikasi pasca-rilis (baca-saja)"
+# hotfix performa HARUS tetap ada: di container baru, di folder release baru, dan byte-identik dengan snapshot baseline untuk berkas yang tidak diubah kandidat
+docker exec "$CID_NEW" test -f /app/src/middleware/cacheSingkat.js || die "hotfix HILANG: cacheSingkat.js tidak ada di container baru"
+docker exec "$CID_NEW" sh -c 'grep -q "JOIN LATERAL" /app/src/routes/conversations.js && grep -q "JOIN LATERAL" /app/src/routes/analytics.js && grep -q "cacheSingkat(30_000)" /app/src/routes/analytics.js' || die "hotfix HILANG: query LATERAL / cacheSingkat tidak ada di container baru"
+grep -q useOptionalTabs "$NEW_DIR/frontend/src/pages/Laporan.jsx" || die "hotfix HILANG: Laporan.jsx baru tanpa perbaikan tab"
+for hf in backend/src/routes/analytics.js backend/src/routes/conversations.js backend/src/middleware/cacheSingkat.js frontend/src/pages/Laporan.jsx; do
+  [ "$(git hash-object --no-filters "$NEW_DIR/$hf")" = "$(sg rev-parse "${BASE_SHA}:${hf}")" ] || die "hotfix berubah/hilang: ${hf} di release baru != snapshot baseline"
+done
+ok "hotfix performa tetap ada (4 berkas == snapshot baseline; container baru memuat LATERAL + cacheSingkat)"
+# performa memadai: health beberapa kali + query LATERAL baca-saja pada produksi
+PERF_H="$(for i in 1 2 3 4 5; do curl -fsS -o /dev/null -w '%{time_total}\n' --max-time 10 "${INTERNAL_URL}/api/health"; done | tr '\n' ' ')"
+LAT_SQL='SELECT COUNT(*) FROM "Conversation" c JOIN LATERAL (SELECT direction FROM "Message" WHERE "conversationId" = c.id ORDER BY "createdAt" DESC LIMIT 1) m ON TRUE WHERE m.direction = '"'"'INBOUND'"'"
+T0=$(date +%s%N); psql_live -At -c "$LAT_SQL" >/dev/null || die "query LATERAL baca-saja gagal"; T1=$(date +%s%N)
+LAT_MS=$(( (T1 - T0) / 1000000 )); [ "$LAT_MS" -lt 15000 ] || die "query LATERAL lambat (${LAT_MS} ms)"
+ok "performa: health(detik)=${PERF_H}; query 'belum dibalas' (LATERAL, baca-saja) ${LAT_MS} ms"
 curl -fsS --max-time 15 "${PUBLIC_URL}/api/health" | grep '"ok":true' >/dev/null || die "healthcheck publik gagal"; ok "publik 200"
 [ "$(curl -fsS --max-time 15 "${PUBLIC_URL}/" | grep -o 'index-[A-Za-z0-9_-]*\.js' | sed -n 1p)" = "$NEW_INDEX" ] || die "bundel publik BUKAN dist baru (${NEW_INDEX})"; ok "bundel web publik = dist baru ${NEW_INDEX}"
 NBE=0
@@ -513,6 +613,9 @@ NBE_EXPECT="$(printf '%s\n' "$BACKEND_SRC_EXPECT" | wc -w)"
 ok "${NBE} berkas backend di container = kandidat (byte-identik)"
 dcp "$NEW_DIR" run --rm --no-deps -T backend npx prisma migrate status </dev/null 2>&1 | grep -i 'up to date' >/dev/null || die "migrate status produksi tidak 'up to date'"
 ok "migrate status up to date"
+# hitung baris pasca-switch vs pra-switch (informasi: pengguna sungguhan bisa menulis selama jendela rilis; skrip ini sendiri tidak menulis apa pun)
+psql_live -At -c "$COUNT_SQL" > "$BK_DIR/hitung-pasca-switch.txt" || die "hitung baris pasca-switch gagal"
+if diff "$BK_DIR/hitung-pra-switch.txt" "$BK_DIR/hitung-pasca-switch.txt" >/dev/null; then ok "hitung baris jadwal/Run/stok/pemakaian/harga/jurnal IDENTIK sebelum vs sesudah switch"; else warn "hitung baris berbeda sebelum vs sesudah switch (kemungkinan aktivitas pengguna sungguhan selama jendela rilis; skrip tidak menulis):"; diff "$BK_DIR/hitung-pra-switch.txt" "$BK_DIR/hitung-pasca-switch.txt" | sed 's/^/        /' || true; fi
 PHASE="8b-smoke"; say "8b. Smoke test baca-saja: kalender/hari/antrean (bentuk baru), izin (401/403) pada jadwal dan jadwal-batch, penolakan POST sebelum menulis (kunci/jumlah/bentuk), tanpa jejak tulis pada jadwal/Run/stok"
 # shellcheck disable=SC1090
 . "$BK_DIR/garis-dasar.env"
@@ -611,18 +714,8 @@ dcp "$NEW_DIR" exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" -X -At -q -c "$
 diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/data-sesudah.txt" >/dev/null || { diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/data-sesudah.txt" || true; die "dokumen PEMBANDING (beku sebelum switch) BERUBAH selama rilis — periksa dengan backup"; }
 ok "dokumen pembanding beku (refund & pengeluaran final, baris jurnal, saldo per akun, pembayaran, PKR/unit final, muat, flag) IDENTIK sebelum vs sesudah rilis; transaksi sah yang muncul saat rilis tidak diperbandingkan"
 # Pembersihan release lama (setelah rilis TERBUKTI sehat). Dipertahankan: 4 terbaru (mtime), release baru, release sebelumnya, dan release yang dirujuk container berjalan. Kegagalan di sini TIDAK menggagalkan rilis.
-PHASE="9-pembersihan"; say "9. Pembersihan release lama (menyisakan 4 terbaru + yang dipakai container)"
-(
-  cd "$RELEASES" || exit 0
-  KEEP="$(ls -1dt */ | head -4 | tr -d /)
-$(basename "$NEW_DIR")
-$(basename "$PREV_DIR")"
-  for c in $(docker ps -q); do w="$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$c" 2>/dev/null)"; [ -n "$w" ] && KEEP="$KEEP
-$(basename "$w")"; done
-  HAPUS="$(ls -1d */ | tr -d / | grep -vxF -f <(echo "$KEEP" | sort -u) || true)"
-  n=0; for d in $HAPUS; do case "$d" in ""|"."|"..") continue;; esac; [ -d "$d" ] || continue; rm -rf -- "$d" 2>/dev/null || sudo -n rm -rf -- "$d" 2>/dev/null; n=$((n+1)); done
-  echo "  OK    release lama dihapus: $n folder; disk: $(df -h "$HOME" | awk 'NR==2{print $4" bebas"}')"
-) || echo "  (pembersihan dilewati)"
+PHASE="9-pembersihan"; say "9. Pembersihan release lama DINONAKTIFKAN (instruksi Owner: folder hotfix dan release lama TIDAK dihapus)"
+ok "tidak ada folder release/image/backup/volume yang dihapus oleh skrip ini; disk: $(df -h "$HOME" | awk 'NR==2{print $4" bebas"}')"
 trap - EXIT
 say "SELESAI — rilis ${DEPLOY_SHORT} aktif. Backup: ${BACKUP_FILE}. Image rollback: ${ROLLBACK_TAG}. Log: ${BK_DIR}/release.log"
 say "CATATAN: Rilis ini membawa penjadwalan langsung Rencana Produksi (seret ke Meja / Pilih meja / beberapa unit; jadwal Admin resmi) dan tabel Pemakaian aktual terpadu. TANPA migrasi. Rilis TIDAK membuat jadwal, Run, tahap, QC, penerimaan, pergerakan stok, Material Issue, atau jurnal; perubahan nyata baru terjadi saat pengguna berizin memakainya."

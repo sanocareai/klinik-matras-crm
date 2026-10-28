@@ -17,9 +17,9 @@ const OUT = "scripts/release-penjadwalan-langsung.sh";
 const TPL_DIR = "scripts/templates/release-penjadwalan-langsung";
 const LIB_REH = "scripts/lib/rehearsal-penjadwalan-langsung.mjs", LIB_SMOKE = "scripts/lib/smoke-penjadwalan-langsung.mjs";
 const GENERATOR = "scripts/gen-release-penjadwalan-langsung.cjs";
-const TPL_FILES = ["header", "rollback"].map((n) => `${TPL_DIR}/${n}.txt`);
+const TPL_FILES = ["header", "rollback", "gerbang-kode-live", "verifikasi-hotfix", "hitung-pra", "hitung-pasca"].map((n) => `${TPL_DIR}/${n}.txt`);
 const FILE_TETAP = [OUT, GENERATOR, LIB_REH, LIB_SMOKE, ...TPL_FILES];
-const CAND_BRANCH = "feat/rencana-penjadwalan-langsung";
+const CAND_BRANCH = "feat/rencana-penjadwalan-langsung-on-hotfix";
 // Teks ASCII di bundel web (esbuild menulis karakter non-ASCII sebagai \uXXXX, jadi hanya awalan ASCII yang dicari).
 const DIST_BARU = ["Pilih meja", "Pilih semua unit order ini", "Belum dijadwalkan", "Belum tiba", "Lepas di sini untuk menjadwalkan", "Riwayat dan dokumen pemakaian", "Tanpa pengeluaran stok", "Mengurangi stok", "Biaya belum diketahui", "Menunggu persetujuan", "Hari Minggu libur"];
 const DIST_LAMA_TAMBAHAN = ["Tambah pemakaian", "Ganti bahan", "Ajukan perubahan", "Lihat dampak", "Konfirmasi & kurangi stok", "Harga Berlaku (HPP operasional)", "Bahan belum tercatat", "Detail teknis"];
@@ -74,6 +74,23 @@ function bangkitkan({ baseScript, blok, berkasList, rehNode, smokeNode }) {
   s = s.replace(ms[0], () => 'ok "smoke test lulus (bacaan jadwal bentuk baru, izin, penolakan sebelum menulis, tanpa jejak tulis, invarian)"\n');
   const iCat = s.lastIndexOf('say "CATATAN:'); must(iCat > 0, "CATATAN");
   s = s.slice(0, iCat) + 'say "CATATAN: Rilis ini membawa penjadwalan langsung Rencana Produksi (seret ke Meja / Pilih meja / beberapa unit; jadwal Admin resmi) dan tabel Pemakaian aktual terpadu. TANPA migrasi. Rilis TIDAK membuat jadwal, Run, tahap, QC, penerimaan, pergerakan stok, Material Issue, atau jurnal; perubahan nyata baru terjadi saat pengguna berizin memakainya."\n';
+  // ── GERBANG IDENTITAS KODE LIVE + hotfix baseline + tanpa pembersihan (rilis di atas baseline hotfix) ──
+  const PH2 = 'PHASE="2-audit-produksi"; say "2. Audit produksi aktif (baca-saja)"';
+  r(PH2, lf(blok["gerbang-kode-live"]).trimEnd() + '\n\n' + PH2);
+  r('[ "$(sg rev-parse --verify -q "${PREV_COMMIT}^{commit}" || true)" = "$BASE_SHA" ] || die "release aktif (${PREV_COMMIT}) BUKAN baseline ${BASE_SHA:0:8}; produksi bergeser — berhenti"', '# marker TIDAK dipakai sebagai bukti identitas: gerbang_kode_live (di atas) membandingkan ISI kode live dengan snapshot baseline');
+  const OKREL = 'ok "release aktif ${PREV_DIR} (commit ${PREV_COMMIT}); image ${IMG_NAME} (${PREV_IMG_ID:7:12})"';
+  r(OKREL, 'ok "release aktif ${PREV_DIR} (marker ${PREV_COMMIT}); image ${IMG_NAME} (${PREV_IMG_ID:7:12})"\nPREV_STARTED="$(docker inspect -f \'{{.State.StartedAt}}\' "$CID_OLD")"\ngerbang_kode_live "fase-2-audit"');
+  const TAGLINE = 'docker tag "$PREV_IMG_ID" "$ROLLBACK_TAG" || die "gagal menandai image lama"; ok "image lama ditandai ${ROLLBACK_TAG}"';
+  r(TAGLINE, TAGLINE + '\n[ "$(docker image inspect -f \'{{.Id}}\' "$ROLLBACK_TAG")" = "$PREV_IMG_ID" ] || die "tag rollback tidak menunjuk image live"\nok "tujuan rollback = image live ${PREV_IMG_ID:7:12} + folder ${PREV_DIR}: memuat hotfix performa (kode container == folder == baseline disetujui, terbukti gerbang kode live)"');
+  const SAMEDIR = '[ "$(docker inspect -f \'{{index .Config.Labels "com.docker.compose.project.working_dir"}}\' "$CID_OLD")" = "$PREV_DIR" ] || die "release aktif berubah sebelum switch"';
+  r(SAMEDIR, SAMEDIR + '\ngerbang_kode_live "fase-6-pra-switch"\n' + lf(blok["hitung-pra"]).trimEnd());
+  const PH7 = 'PHASE="7-switch"; say "7. Switch backend ke release baru (SATU kali)"';
+  r(PH7, PH7 + '\ntidak_ada_deploy_lain_lagi\ngerbang_kode_live "fase-7-tepat-sebelum-switch"');
+  const PH8 = 'PHASE="8-verifikasi"; say "8. Verifikasi pasca-rilis (baca-saja)"';
+  r(PH8, PH8 + '\n' + lf(blok["verifikasi-hotfix"]).trimEnd());
+  const m8b = s.match(/PHASE="8b-smoke"; say "[^\n]*\n/); must(m8b, 'PHASE 8b (hitung pasca)');
+  s = s.replace(m8b[0], () => lf(blok["hitung-pasca"]).trimEnd() + '\n' + m8b[0]);
+  potong('PHASE="9-pembersihan"; say', 'trap - EXIT\nsay "SELESAI', 'PHASE="9-pembersihan"; say "9. Pembersihan release lama DINONAKTIFKAN (instruksi Owner: folder hotfix dan release lama TIDAK dihapus)"\nok "tidak ada folder release/image/backup/volume yang dihapus oleh skrip ini; disk: $(df -h "$HOME" | awk \'NR==2{print $4" bebas"}\')"\n');
   must(!/@@[A-Z_]+@@/.test(s), "placeholder tersisa");
   s = lf(s);
   return { script: s, ringkasan: { berkas: berkas.length, backendSrc: berkas.filter((f) => f.startsWith("backend/src/")).length, frontendSrc: berkas.filter((f) => f.startsWith("frontend/src/")).length } };
