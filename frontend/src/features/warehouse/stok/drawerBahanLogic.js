@@ -40,6 +40,25 @@ export function barisDampakBermakna(dm, rpNilai) {
   return out;
 }
 
+/**
+ * Label status stok di header drawer. TIDAK ada kata "Aman": tidak ada aturan kecukupan yang dihitung dan diuji selain ambang titik restok.
+ * "Ada stok" = tersedia > 0 dan di atas titik restok (atau titik restok belum diatur); "Stok menipis" = tersedia <= titik restok (aturan yang memang dihitung).
+ * Empat keadaan yang TIDAK boleh tercampur dipertahankan: stok belum diketahui, nol (menurut pergerakan / terverifikasi), saldo minus, dan ada stok.
+ * keadaan = keadaanSaldo dari layanan Koreksi Saldo (null bila belum dimuat / tanpa izin).
+ */
+export function labelStatusStok(item, keadaan = null) {
+  if (!item?.active) return { key: "NONAKTIF", label: "Nonaktif", tone: "neutral" };
+  if (keadaan === "BELUM_ADA_CATATAN") return { key: "BELUM_DIKETAHUI", label: "Stok belum diketahui", tone: "neutral" };
+  if (keadaan === "MINUS") return { key: "MINUS", label: "Saldo minus", tone: "red" };
+  if (keadaan === "NOL_TERVERIFIKASI") return { key: "NOL_TERVERIFIKASI", label: "Nol terverifikasi", tone: "neutral" };
+  if (keadaan === "NOL_MENURUT_PERGERAKAN") return { key: "NOL_PERGERAKAN", label: "Nol menurut pergerakan", tone: "orange" };
+  const tersedia = Number(item.available ?? item.balance); const saldo = Number(item.balance);
+  if (tersedia > 0) return item.reorderPoint != null && tersedia <= Number(item.reorderPoint) ? { key: "MENIPIS", label: "Stok menipis", tone: "orange" } : { key: "ADA_STOK", label: "Ada stok", tone: "green" };
+  if (saldo > 0) return { key: "SEMUA_DIPESAN", label: "Semua dipesan", tone: "orange" };
+  if (saldo < 0) return { key: "MINUS", label: "Saldo minus", tone: "red" };
+  return { key: "TIDAK_TERSEDIA", label: "Tidak tersedia", tone: "neutral" };
+}
+
 export const TEKS_DRAWER = Object.freeze({
   dampakKosong: "Belum ada pemakaian yang terdampak harga bahan ini.",
   aturanKoreksi: "Koreksi saldo tidak menimpa angka. Ini mengajukan Penyesuaian Stok resmi: stok baru berubah setelah disetujui ORANG LAIN (Owner atau Finance) lalu diposting oleh Gudang.",

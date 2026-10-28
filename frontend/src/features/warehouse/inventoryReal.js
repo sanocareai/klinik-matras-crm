@@ -45,7 +45,7 @@ export const SERVICE_LINE_REAL = {
 // Status stok NYATA — HANYA empat. Semuanya bisa dihitung dari data yang
 // benar-benar ada (saldo ledger + reorderPoint + flag aktif).
 export const STOCK_STATUS_REAL = {
-  IN_STOCK:     { label: "In Stock",     labelId: "Stok Aman",    tone: "green" },
+  IN_STOCK:     { label: "In Stock",     labelId: "Ada stok",     tone: "green" },
   LOW_STOCK:    { label: "Low Stock",    labelId: "Stok Menipis", tone: "orange" },
   OUT_OF_STOCK: { label: "Out of Stock", labelId: "Stok Habis",   tone: "red" },
   INACTIVE:     { label: "Inactive",     labelId: "Nonaktif",     tone: "neutral" },

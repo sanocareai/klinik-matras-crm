@@ -77,3 +77,19 @@ test("ikon info: tombol sungguhan (keyboard), aria-expanded/aria-controls, targe
   assert.ok(!t.includes("createPortal") && !t.includes("onMouseEnter"), "tidak bergantung hover dan tidak di-portal");
   const l = src("features", "warehouse", "stok", "Lipat.jsx"); assert.match(l, /<details/); assert.match(l, /<summary/); assert.match(l, /sm:min-h-9/); assert.match(l, /min-h-11/);
 });
+
+test("label status stok: 'Ada stok' (bukan 'Aman'); stok belum diketahui, nol, minus, menipis, semua dipesan tetap dibedakan", async () => {
+  const { labelStatusStok } = await import("../src/features/warehouse/stok/drawerBahanLogic.js");
+  const it = (o) => ({ active: true, balance: 50, available: 50, reserved: 0, reorderPoint: null, ...o });
+  assert.deepEqual(labelStatusStok(it({})), { key: "ADA_STOK", label: "Ada stok", tone: "green" });
+  assert.equal(labelStatusStok(it({ reorderPoint: 10 })).label, "Ada stok"); assert.equal(labelStatusStok(it({ reorderPoint: 50 })).label, "Stok menipis", "aturan titik restok memang dihitung");
+  assert.equal(labelStatusStok(it({ balance: 0, available: 0 }), "BELUM_ADA_CATATAN").label, "Stok belum diketahui");
+  assert.equal(labelStatusStok(it({ balance: -4, available: -4 }), "MINUS").tone, "red"); assert.equal(labelStatusStok(it({ balance: -4, available: -4 })).label, "Saldo minus", "tanpa keadaan pun minus tetap minus");
+  assert.equal(labelStatusStok(it({ balance: 0, available: 0 }), "NOL_MENURUT_PERGERAKAN").label, "Nol menurut pergerakan"); assert.equal(labelStatusStok(it({ balance: 0, available: 0 }), "NOL_TERVERIFIKASI").label, "Nol terverifikasi");
+  assert.equal(labelStatusStok(it({ available: 0, reserved: 50 }), "POSITIF").label, "Semua dipesan"); assert.equal(labelStatusStok(it({ balance: 0, available: 0 })).label, "Tidak tersedia");
+  assert.equal(labelStatusStok(it({ active: false })).label, "Nonaktif");
+  const semua = ["POSITIF", "MINUS", "BELUM_ADA_CATATAN", "NOL_MENURUT_PERGERAKAN", "NOL_TERVERIFIKASI", null].flatMap((k) => [it({}), it({ balance: 0, available: 0 }), it({ balance: -1, available: -1 }), it({ reorderPoint: 60 })].map((x) => labelStatusStok(x, k).label));
+  assert.ok(semua.every((l) => !/aman/i.test(l)), "tidak ada label 'Aman'");
+  assert.match(src("features", "warehouse", "inventoryReal.js"), /IN_STOCK:\s+\{ label: "In Stock",\s+labelId: "Ada stok"/); assert.ok(!/Stok Aman/.test(src("features", "warehouse", "inventoryReal.js")));
+  const d = src("features", "warehouse", "components", "ItemDetailDrawer.jsx"); assert.match(d, /labelStatusStok\(item, keadaan\)/); assert.match(d, /onKeadaan=\{setKeadaan\}/); assert.match(src("features", "warehouse", "stok", "KoreksiSaldoPanel.jsx"), /onKeadaan\?\.\(d\?\.keadaanSaldo \?\? null\)/);
+});

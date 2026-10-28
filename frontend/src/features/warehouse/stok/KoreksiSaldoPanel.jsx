@@ -14,11 +14,12 @@ const tanggalJam = (v) => (v ? new Date(v).toLocaleString("id-ID", { day: "numer
 // KOREKSI SALDO di drawer bahan (Stok & Lokasi) — tampilan RINGKAS di dalam kartu Stok: peringatan yang butuh tindakan (saldo minus, stok belum diketahui, koreksi menunggu), tombol Koreksi saldo
 // (hanya yang berizin) dan Riwayat. Penjelasan aturan persetujuan + izin ada di ikon informasi; keadaan saldo yang jujur (belum diketahui ≠ 0 menurut pergerakan ≠ 0 terverifikasi) tidak berubah makna.
 // Layanan, izin, dan persetujuan sama dengan sebelumnya — hanya tata letak yang diringkas.
-export default function KoreksiSaldoPanel({ materialId, onChanged }) {
+export default function KoreksiSaldoPanel({ materialId, onChanged, onKeadaan = null }) {
   const [d, setD] = useState(null); const [galat, setGalat] = useState(""); const [modal, setModal] = useState(false); const [bukaRiwayat, setBukaRiwayat] = useState(false);
   const info = useInfoToggle();
   const muat = useCallback(() => { setGalat(""); return api.getKoreksiSaldoBahan(materialId).then(setD).catch((e) => setGalat(e.message)); }, [materialId]);
   useEffect(() => { setD(null); setBukaRiwayat(false); muat(); }, [materialId, muat]);
+  useEffect(() => { onKeadaan?.(d?.keadaanSaldo ?? null); }, [d?.keadaanSaldo]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (galat && !d) return <p role="alert" className="mt-3 rounded-btn bg-redbg px-3 py-2 text-[12px] text-red" data-testid="galat-panel-koreksi">{galat}</p>;
   if (!d) return <p className="mt-3 flex items-center gap-1.5 text-[12px] text-ink3"><Loader2 size={12} className="animate-spin" /> Memuat keadaan saldo…</p>;
