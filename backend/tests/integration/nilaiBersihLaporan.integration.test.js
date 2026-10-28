@@ -28,6 +28,7 @@ const kunci = () => ({ "Idempotency-Key": `nb-${randomUUID()}` });
 const wib = (d = new Date()) => new Date(d.getTime() + 7 * 3600e3).toISOString().slice(0, 10);
 const kemarin = () => wib(new Date(Date.now() - 86_400_000));
 const besok = () => wib(new Date(Date.now() + 86_400_000));
+let cacheBuster = 0;
 const PERIODE = () => `from=${kemarin()}&to=${besok()}`;
 let seq = 0;
 
@@ -85,7 +86,9 @@ const batalNota = async (w, id, orderId) => {
 /** Foto SELURUH permukaan: satu fungsi, dibandingkan antar keadaan. */
 async function potret(w, { orderId, customerId }) {
   const t = { token: w.admin.token };
-  const sr = (await raw("GET", `/api/analytics/sales-report?${PERIODE()}`, t)).body;
+  // cacheSingkat(30 dtk) pada /sales-report (hotfix perf): helper ini dipanggil SEBELUM dan SESUDAH data diubah di tes yang sama, jadi URL dibuat unik
+  // per panggilan agar tidak menerima cache panggilan sebelumnya. Perilaku cache sendiri dijaga di hotfixPerfLive.integration.test.js.
+  const sr = (await raw("GET", `/api/analytics/sales-report?${PERIODE()}&_=${++cacheBuster}`, t)).body;
   const baris = sr.rows.find((r) => r.userId === w.fadlan.user.id);
   const ld = (await raw("GET", `/api/analytics/sales-report/lunas-detail?userId=${w.fadlan.user.id}&${PERIODE()}`, t)).body;
   const ov = (await raw("GET", `/api/analytics/overview?${PERIODE()}`, t)).body;
