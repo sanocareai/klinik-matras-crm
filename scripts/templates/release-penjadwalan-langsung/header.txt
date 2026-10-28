@@ -1,0 +1,17 @@
+# RILIS "PENJADWALAN LANGSUNG (Rencana Produksi) + TABEL PEMAKAIAN AKTUAL TERPADU": WEB + BACKEND, TANPA migrasi dan TANPA perubahan schema.prisma — RELEASE-DIRECTORY di atas release aktif (BASE_SHA). FAIL-CLOSED.
+#   • Rencana Produksi: hari terpilih (bawaan hari ini) = tanggal jadwal; unit ditarik dari antrean LANGSUNG ke Meja 1–4 (atau "Pilih meja" untuk HP/keyboard) dan tersimpan sebagai jadwal Admin resmi TANPA modal tanggal/target/PIC/rencana bahan.
+#     Satu antrean "Belum dijadwalkan" (siap + menunggu tiba, label "Belum tiba"); order beberapa unit bernomor; pilih beberapa unit + penempatan BERSAMA di satu meja (POST /production/rencana/jadwal-batch, semua-atau-tidak-sama-sekali, "AUTO" = meja pertama yang muat semuanya;
+#     undo batch atomik). Kapasitas bersama dengan rencana Meja, kunci slot, idempotensi, revisi basi, dan Urungkan (hanya bila belum ada perubahan sesudahnya) tetap.
+#   • Penjadwalan HANYA menulis jadwal + riwayat jadwal + log aktivitas (+ prioritas/target bila diubah lewat formulir lanjutan): tidak membuka Run/tahap/QC/penerimaan, tidak mencatat pemakaian bahan/stok/Material Issue/jurnal, tidak mengubah status unit (unit selesai/batal ditolak).
+#   • Unit dengan Run LAMA di luar cohort kini boleh dijadwalkan Admin (gerbang tulis khusus jadwal: tanpa penanda drift V1 pada Run, Run/riwayat lama tidak disentuh); unit yang sudah terjadwal di rencana Meja ditolak (cegah jadwal ganda).
+#   • Pemakaian aktual (drawer Order Produksi + tab Bahan): SATU tabel untuk Bahan Gudang / Bahan belum tercatat / Komponen lama dengan label dampak singkat dan Edit per baris (formulir yang sudah ada: pratinjau dampak, izin, alasan, harga, persetujuan); Riwayat/Rencana/Detail teknis tertutup; blok kosong dihapus.
+#   • Gate: preflight; backup + RESTORE rehearsal (kode baru berjalan sebagai SERVER terhadap salinan restore; semua skenario — jadwal, batch, kapasitas, atomik, undo, Run lama, jadwal ganda, izin — ditulis HANYA ke DB sementara; direktori data/uploads production TIDAK dipasang);
+#     build web di release dir; switch SATU kali; verifikasi; smoke baca-saja pasca-switch. Produksi: rilis ini TIDAK membuat jadwal/Run/stok/jurnal apa pun; tidak ada transaksi QA.
+#
+#   cat scripts/release-penjadwalan-langsung.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/pjl.sh'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/pjl.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/pjl.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rehearsal-only > /tmp/pjlr.out 2>&1 < /dev/null &'   # SEMUA gerbang sampai rehearsal pada restore nyata; TANPA switch
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/pjl.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/pjl.out 2>&1 < /dev/null &'   # rilis penuh (hanya setelah persetujuan)
+#
+# ROLLBACK: kode aman di-rollback kapan pun (tanpa migrasi, tanpa tabel baru). Jadwal Admin yang dibuat lewat rilis ini tetap sah sebagai data biasa (tabel jadwal + riwayat tidak berubah bentuk); kode lama membacanya seperti jadwal Admin biasa.
+# (dibangkitkan oleh scripts/gen-release-penjadwalan-langsung.cjs dari scripts/release-status-kerja-buka-pekerjaan.sh + scripts/templates/release-penjadwalan-langsung/*; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang)

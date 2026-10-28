@@ -1,0 +1,8 @@
+Rilis ini TANPA migrasi dan TANPA tulisan data bisnis oleh skripnya: rollback KODE aman kapan pun. Bila rollback setelah switch:
+   cd ${PREV_DIR:-<release-sebelumnya>}
+   docker tag ${ROLLBACK_TAG:-<tag-rollback>} ${IMG_NAME:-klinik-matras-backend:latest}
+   SANSS_PERSIST_ROOT=${PERSIST} docker compose -p ${PROJECT} -f docker-compose.yml -f docker-compose.release.yml up -d --no-deps --force-recreate backend
+Kode lama kembali ke jadwal lewat formulir Jadwalkan (tanpa seret ke Meja, Pilih meja, atau penempatan beberapa unit) dan ke tabel Pemakaian aktual lama; jadwal Admin yang sudah dibuat tetap valid (satu baris per unit + riwayat append-only) dan terbaca kode lama.
+Unit dengan Run lama yang sudah dijadwalkan Admin: kode lama menampilkannya lagi di "Butuh keputusan" (tanpa mencabut jadwal); jadwal tidak dibalik otomatis. Pencabutan jadwal massal, bila diperlukan, adalah keputusan terpisah (tombol Keluarkan/Urungkan per unit).
+Rilis ini tidak menyentuh Run, tahap, QC, penerimaan, pemakaian bahan, stok, Material Issue, jurnal, Koreksi Saldo, atau Harga Berlaku.
+Pemulihan database penuh hanya bila terjadi kerusakan data: gzip -dc ${BACKUP_FILE:-<backup>} | psql ... (lihat checksum di atas) — MENGHAPUS semua perubahan sesudah backup; gunakan hanya atas keputusan Owner.
