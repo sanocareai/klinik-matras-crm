@@ -12,6 +12,7 @@ import { MaterialUnit } from "@prisma/client";
 import { Decimal } from "./money.js";
 import { lockRowForUpdate } from "../inventoryLedger.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../../lib/activityLog.js";
+import { klasifikasi, kunciKanonik } from "../../lib/domain/kemiripanBarang.js";
 
 export class SkuError extends Error {
   constructor(message, statusCode = 400, code = null, extra = null) { super(message); this.name = "SkuError"; this.statusCode = statusCode; if (code) this.code = code; if (extra) this.extra = extra; }
@@ -44,34 +45,54 @@ function jaccard(a, b) {
   return irisan / (a.size + b.size - irisan);
 }
 
-/** Cari material yang sama persis / mirip. Dibaca di dalam transaksi pemanggil (di bawah lock nama) supaya pembuatan paralel melihat hasil satu sama lain. */
-export async function cariKandidat(db, { nama, kategori = null, satuanStok, spesifikasi = null, kodeSupplier = null, supplierId = null }) {
+/**
+ * Cari material yang SAMA / BERBEDA (varian jelas) / AMBIGU. Dibaca di dalam transaksi pemanggil (di bawah lock nama kanonik) supaya pembuatan paralel melihat hasil satu sama lain.
+ *   pasti   — sama setelah normalisasi (ejaan, spasi, tanda ×/x, satuan ukuran cm/mm/m, urutan kata, kata satuan) dan satuan stok sama, atau kode supplier sama → DIBLOKIR; pakai material yang ada.
+ *   mirip   — AMBIGU: mirip tetapi tidak bisa dipastikan (atribut tertulis di satu sisi, ejaan hampir sama, urutan ukuran terbalik, satuan stok berbeda) → butuh konfirmasi + alasan.
+ *   berbeda — varian JELAS berbeda (ukuran, ketebalan, grade/density, angka spesifikasi, merek/jenis) → hanya informasi, TIDAK butuh konfirmasi.
+ * tambahan = baris barang baru lain pada form PO yang sama ([{ baris, nama, unit, specification, itemGroup }]) — diperlakukan seperti material (materialId null, kode "Baris N").
+ * semuaMaterial = daftar material yang sudah dimuat pemanggil (hindari baca ulang bila memeriksa banyak baris).
+ */
+export async function cariKandidat(db, { nama, kategori = null, satuanStok, spesifikasi = null, kodeSupplier = null, supplierId = null, tambahan = [], semuaMaterial = null }) {
   const norm = normalisasiNama(nama);
   const tokens = token(nama);
-  const semua = await db.material.findMany({ select: { id: true, code: true, name: true, unit: true, category: true, itemGroup: true, active: true, specification: true, kind: true } });
-  const pasti = []; const mirip = [];
+  const dasar = semuaMaterial ?? await db.material.findMany({ select: { id: true, code: true, name: true, unit: true, category: true, itemGroup: true, active: true, specification: true, kind: true } });
+  const semua = [...dasar, ...tambahan.map((t) => ({ id: null, code: `Baris ${t.baris}`, name: t.nama, unit: t.unit, itemGroup: t.itemGroup ?? null, active: true, specification: t.specification ?? null, dariBarisPO: t.baris }))];
+  const pasti = []; const mirip = []; const berbeda = [];
   const spekNorm = normalisasiNama(spesifikasi);
   for (const m of semua) {
     const nm = normalisasiNama(m.name);
-    const info = { materialId: m.id, kode: m.code, nama: m.name, satuan: m.unit, kategori: m.itemGroup ?? null, aktif: m.active, spesifikasi: m.specification ?? null };
-    if (nm === norm && m.unit === satuanStok) { pasti.push({ ...info, alasan: "Nama dan satuan stok sama persis" }); continue; }
+    const info = { materialId: m.id, kode: m.code, nama: m.name, satuan: m.unit, kategori: m.itemGroup ?? null, aktif: m.active, spesifikasi: m.specification ?? null, ...(m.dariBarisPO ? { dariBarisPO: m.dariBarisPO } : {}) };
     const sim = jaccard(tokens, token(m.name));
+    const kls = klasifikasi(nama, m.name, { spesifikasiBaru: spesifikasi, spesifikasiAda: m.specification, satuanSama: m.unit === satuanStok });
+    if (kls.jenis === "SAMA" || (nm === norm && m.unit === satuanStok)) { pasti.push({ ...info, alasan: nm === norm ? "Nama dan satuan stok sama persis" : "Sama setelah normalisasi ejaan, spasi, tanda ×, dan satuan ukuran" }); continue; }
+    if (kls.jenis === "BERBEDA") {
+      if (sim >= 0.5) berbeda.push({ ...info, jenis: "BERBEDA", sim, perbedaan: kls.perbedaan, alasan: `Varian berbeda: ${kls.perbedaan.map((p) => `${p.label.toLowerCase()} ${p.baru} ≠ ${p.ada}`).join("; ")}` });
+      continue;
+    }
     const memuat = norm.length >= 4 && nm.length >= 4 && (nm.includes(norm) || norm.includes(nm));
     const spekSama = !!spekNorm && !!m.specification && normalisasiNama(m.specification) === spekNorm;
     const kategoriSama = !!kategori && !!m.itemGroup && normalisasiNama(m.itemGroup) === normalisasiNama(kategori);
-    if (nm === norm) mirip.push({ ...info, alasan: `Nama sama tetapi satuan stok berbeda (${m.unit})` });
+    const bedaSatuan = kls.belumJelas.some((x) => /satuan stok berbeda/.test(x));
+    if (nm === norm || bedaSatuan) mirip.push({ ...info, jenis: "AMBIGU", belumJelas: ["Nama sama tetapi satuan stok berbeda"], alasan: `Nama sama tetapi satuan stok berbeda (${m.unit})` });
     else if (sim >= 0.6 || (memuat && (m.unit === satuanStok || kategoriSama)) || (spekSama && sim >= 0.34)) {
-      mirip.push({ ...info, alasan: spekSama ? "Spesifikasi sama dan nama mirip" : `Nama mirip (${Math.round(sim * 100)}%)${kategoriSama ? ", kategori sama" : ""}${m.unit === satuanStok ? ", satuan sama" : ""}` });
+      mirip.push({ ...info, jenis: "AMBIGU", belumJelas: kls.belumJelas, alasan: kls.belumJelas.length ? `Belum bisa dipastikan: ${kls.belumJelas.join("; ")}` : spekSama ? "Spesifikasi sama dan nama mirip" : `Nama mirip (${Math.round(sim * 100)}%)${kategoriSama ? ", kategori sama" : ""}${m.unit === satuanStok ? ", satuan sama" : ""}` });
     }
   }
   // Kode barang supplier yang sama pada supplier yang sama = barang yang sama.
   if (kodeSupplier && supplierId) {
     const kat = await db.finSupplierMaterial.findMany({ where: { supplierId, supplierSku: { equals: String(kodeSupplier).trim(), mode: "insensitive" } }, include: { material: { select: { id: true, code: true, name: true, unit: true, itemGroup: true, active: true, specification: true } } } });
-    for (const k of kat) if (!pasti.some((p) => p.materialId === k.materialId)) pasti.push({ materialId: k.material.id, kode: k.material.code, nama: k.material.name, satuan: k.material.unit, kategori: k.material.itemGroup ?? null, aktif: k.material.active, spesifikasi: k.material.specification ?? null, alasan: "Kode barang supplier yang sama sudah ada di Katalog Supplier ini" });
+    for (const k of kat) if (!pasti.some((p) => p.materialId === k.materialId)) pasti.push({ materialId: k.material.id, kode: k.material.code, nama: k.material.name, satuan: k.material.unit, kategori: k.material.itemGroup ?? null, aktif: k.material.active, spesifikasi: k.material.specification ?? null, alasan: "Kode barang supplier sama pada supplier ini" });
   }
-  const urut = (a, b) => a.kode.localeCompare(b.kode);
-  return { pasti: pasti.sort(urut).slice(0, 10), mirip: mirip.filter((m) => !pasti.some((p) => p.materialId === m.materialId)).sort(urut).slice(0, 10) };
+  const urut = (x, y) => String(x.kode).localeCompare(String(y.kode), "id", { numeric: true });
+  return {
+    pasti: pasti.sort(urut).slice(0, 10), mirip: mirip.filter((x) => !pasti.some((p) => p.materialId && p.materialId === x.materialId)).sort(urut).slice(0, 10),
+    berbeda: berbeda.sort((x, y) => y.sim - x.sim || urut(x, y)).slice(0, 6).map(({ sim, ...r }) => r),
+  };
 }
+
+/** Kunci advisory untuk nama barang: nama yang SAMA setelah normalisasi kanonik (ejaan/spasi/×/satuan ukuran/urutan kata) memakai kunci yang sama sehingga pembuatan paralel diserialkan. */
+export const kunciAdvisoryNama = (nama) => `sku-nama:${kunciKanonik(nama)}`;
 
 // ── Kode SKU ─────────────────────────────────────────────────────────────────────────────────────────
 
@@ -160,8 +181,8 @@ export function validasiMaterialBaru(b, { adaSupplier = true } = {}) {
 export async function buatSkuBaru(tx, { data, supplier, userId }) {
   const m = validasiMaterialBaru(data);
   // Serialkan pembuat dengan nama yang sama: dua permintaan paralel berurutan sehingga yang kedua melihat SKU pertama sebagai duplikat pasti.
-  await tx.$queryRawUnsafe("SELECT pg_advisory_xact_lock(hashtext($1))::text AS k", `sku-nama:${normalisasiNama(m.nama)}`);
-  const { pasti, mirip } = await cariKandidat(tx, { nama: m.nama, kategori: m.kategori, satuanStok: m.satuanStok, spesifikasi: m.spesifikasi, kodeSupplier: m.kodeSupplier, supplierId: supplier.id });
+  await tx.$queryRawUnsafe("SELECT pg_advisory_xact_lock(hashtext($1))::text AS k", kunciAdvisoryNama(m.nama));
+  const { pasti, mirip, berbeda } = await cariKandidat(tx, { nama: m.nama, kategori: m.kategori, satuanStok: m.satuanStok, spesifikasi: m.spesifikasi, kodeSupplier: m.kodeSupplier, supplierId: supplier.id });
   if (pasti.length > 0) {
     throw gagal(`Barang ini sudah ada di master material (${pasti[0].kode} — ${pasti[0].nama}). Pilih material yang ada, jangan buat SKU baru.`, 409, "SKU_DUPLIKAT_PASTI", { kandidat: pasti });
   }
@@ -180,7 +201,7 @@ export async function buatSkuBaru(tx, { data, supplier, userId }) {
   await tx.finMaterialSkuOrigin.create({
     data: {
       materialId: material.id, createdById: userId ?? null, firstSupplierId: supplier.id, normalizedName: normalisasiNama(m.nama),
-      initialData: { nama: m.nama, jenis: m.jenis, kategori: m.kategori, spesifikasi: m.spesifikasi, satuanStok: m.satuanStok, satuanBeli: m.satuanBeli, faktorKonversi: m.faktor.toString(), namaSupplier: m.namaSupplier, kodeSupplier: m.kodeSupplier, moq: m.moq?.toString() ?? null, estimasiKirimHari: m.leadTimeDays, lokasi: m.lokasi, catatan: m.catatan },
+      initialData: { varianSerupa: berbeda.map((x) => ({ kode: x.kode, nama: x.nama, perbedaan: x.perbedaan })), nama: m.nama, jenis: m.jenis, kategori: m.kategori, spesifikasi: m.spesifikasi, satuanStok: m.satuanStok, satuanBeli: m.satuanBeli, faktorKonversi: m.faktor.toString(), namaSupplier: m.namaSupplier, kodeSupplier: m.kodeSupplier, moq: m.moq?.toString() ?? null, estimasiKirimHari: m.leadTimeDays, lokasi: m.lokasi, catatan: m.catatan },
       duplicateCandidates: mirip.length ? mirip : null, duplicateOverrideReason: mirip.length ? m.alasanMirip : null,
     },
   });
@@ -260,15 +281,46 @@ export async function perbaikiSku(tx, { materialId, body, userId }) {
 
 // ── Baca: pratinjau duplikat, katalog supplier, asal SKU ─────────────────────────────────────────────
 
-/** Pratinjau sebelum Simpan PO (tanpa menulis apa pun): kandidat pasti/mirip + kode berikutnya yang kemungkinan dipakai (INFORMASI — kode final dibuat server saat PO tersimpan). */
-export async function pratinjauDuplikat(db, { supplierId, materialBaru }) {
+const bacaBarisLain = (arr) => {
+  if (arr === undefined || arr === null) return [];
+  if (!Array.isArray(arr) || arr.length > 100) throw gagal("Daftar baris lain tidak valid");
+  return arr.map((t, i) => {
+    const baris = Number(t?.baris); const nama = String(t?.nama ?? "").trim(); const unit = String(t?.satuanStok ?? "");
+    if (!Number.isInteger(baris) || baris < 1 || baris > 100 || !nama || !SATUAN_VALID.includes(unit)) throw gagal(`Baris lain #${i + 1} tidak valid`);
+    return { baris, nama: nama.slice(0, 200), unit, specification: t?.spesifikasi ? String(t.spesifikasi).slice(0, 500) : null, itemGroup: t?.kategori ? String(t.kategori).slice(0, 80) : null };
+  });
+};
+
+/** Pratinjau sebelum Simpan PO (tanpa menulis apa pun): kandidat pasti/mirip/berbeda + kode berikutnya yang kemungkinan dipakai (INFORMASI — kode final dibuat server saat PO tersimpan). barisLain = barang baru lain pada form yang sama. */
+export async function pratinjauDuplikat(db, { supplierId, materialBaru, barisLain }) {
   const b = materialBaru ?? {};
   if (JENIS_NON_STOK.test(String(b.jenis ?? ""))) throw gagal(PESAN_NON_STOK, 400, "BUKAN_BARANG_STOK");
   const nama = teks(b.nama, 200, "Nama barang", { wajib: true });
   const satuanStok = String(b.satuanStok ?? "");
   if (!SATUAN_VALID.includes(satuanStok)) throw gagal("Satuan stok tidak valid", 400, "SATUAN_TIDAK_VALID");
-  const { pasti, mirip } = await cariKandidat(db, { nama, kategori: teks(b.kategori, 80, "Kategori"), satuanStok, spesifikasi: teks(b.spesifikasi, 500, "Spesifikasi"), kodeSupplier: teks(b.kodeSupplier, 100, "Kode barang supplier"), supplierId: supplierId || null });
-  return { pasti, mirip, prefixKode: prefixDariNama(nama), bolehLanjut: pasti.length === 0, perluKonfirmasi: pasti.length === 0 && mirip.length > 0 };
+  const { pasti, mirip, berbeda } = await cariKandidat(db, { nama, kategori: teks(b.kategori, 80, "Kategori"), satuanStok, spesifikasi: teks(b.spesifikasi, 500, "Spesifikasi"), kodeSupplier: teks(b.kodeSupplier, 100, "Kode barang supplier"), supplierId: supplierId || null, tambahan: bacaBarisLain(barisLain) });
+  return { pasti, mirip, berbeda, prefixKode: prefixDariNama(nama), bolehLanjut: pasti.length === 0, perluKonfirmasi: pasti.length === 0 && mirip.length > 0 };
+}
+
+/**
+ * Periksa SEMUA barang baru pada satu PO sekaligus, dengan urutan yang sama seperti penyimpanan (baris ke-n dibandingkan dengan katalog + barang baru pada baris sebelumnya).
+ * Hasil per baris menjelaskan apa yang akan terjadi saat disimpan: pasti (diblokir), perlu konfirmasi (mirip belum dikonfirmasi), atau lanjut. Baca-saja.
+ */
+export async function cekDuplikatPO(db, { supplierId, barisBaru }) {
+  const daftar = Array.isArray(barisBaru) ? barisBaru : [];
+  if (daftar.length > 100) throw gagal("Satu PO maksimal 100 baris");
+  const semuaMaterial = await db.material.findMany({ select: { id: true, code: true, name: true, unit: true, category: true, itemGroup: true, active: true, specification: true, kind: true } });
+  const hasil = []; const sebelumnya = [];
+  for (const item of daftar) {
+    const baris = Number(item?.baris); const mb = item?.materialBaru ?? {};
+    const nama = teks(mb.nama, 200, "Nama barang", { wajib: true }); const satuanStok = String(mb.satuanStok ?? "");
+    if (!Number.isInteger(baris) || baris < 1 || !SATUAN_VALID.includes(satuanStok)) throw gagal(`Baris ${baris || "?"}: data barang baru tidak valid`);
+    const { pasti, mirip, berbeda } = await cariKandidat(db, { nama, kategori: teks(mb.kategori, 80, "Kategori"), satuanStok, spesifikasi: teks(mb.spesifikasi, 500, "Spesifikasi"), kodeSupplier: teks(mb.kodeSupplier, 100, "Kode barang supplier"), supplierId: supplierId || null, tambahan: sebelumnya, semuaMaterial });
+    const sudahKonfirmasi = mb.konfirmasiMirip === true && String(mb.alasanMirip ?? "").trim().length >= 5;
+    hasil.push({ baris, nama, pasti, mirip, berbeda, dalamPO: [...pasti, ...mirip].some((c) => c.dariBarisPO), diblokir: pasti.length > 0, perluKonfirmasi: pasti.length === 0 && mirip.length > 0 && !sudahKonfirmasi, sudahKonfirmasi: mirip.length > 0 && sudahKonfirmasi });
+    sebelumnya.push({ baris, nama, unit: satuanStok, specification: mb.spesifikasi ? String(mb.spesifikasi) : null, itemGroup: mb.kategori ? String(mb.kategori) : null });
+  }
+  return { baris: hasil, bolehSimpan: hasil.every((h) => !h.diblokir && !h.perluKonfirmasi) };
 }
 
 const bentukKatalog = (r) => ({

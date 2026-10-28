@@ -16,7 +16,7 @@ import { handleFinanceError } from "./finance.js";
 import { bentukPO, daftarPO, daftarRiwayat, buatPO, ubahDraf, setujuiPO, batalkanPO, revisiJumlah } from "../services/finance/purchaseOrder.js";
 import { bangunViewPO, namaBerkasPO } from "../services/finance/purchaseOrderDocument.js";
 import { renderPurchaseOrderPdf } from "../services/purchaseOrderPdf.js";
-import { pratinjauDuplikat, daftarKatalog, bacaAsalSku, perbaikiSku } from "../services/finance/skuBaru.js";
+import { pratinjauDuplikat, cekDuplikatPO, daftarKatalog, bacaAsalSku, perbaikiSku } from "../services/finance/skuBaru.js";
 import { daftarUangMuka, daftarPenerapan, ringkasUangMukaSupplier, ringkasanKeuanganPO, bayarUangMukaPO, kandidatUntukFaktur, terapkanKeFaktur, batalkanPenerapan } from "../services/finance/uangMukaSupplier.js";
 import { pandanganPenagihan, buatTagihanDariPO, ubahTagihanPO, evaluasiTagihanPO } from "../services/finance/purchaseOrderBill.js";
 
@@ -87,7 +87,11 @@ purchaseOrderFinanceRouter.post("/uang-muka/penerapan/:id/batal", requirePermiss
 // ── SKU baru dari PO + Katalog Supplier (rute statis SEBELUM /:id). Membuat/memperbaiki SKU = finance:admin; membaca katalog = finance:read.
 // Pratinjau TIDAK menulis apa pun (SKU baru baru lahir saat draf PO disimpan, atomik dengan PO-nya).
 purchaseOrderFinanceRouter.post("/sku/cek-duplikat", requirePermission(P.FINANCE_ADMIN), async (req, res) => {
-  try { res.json(await pratinjauDuplikat(prisma, { supplierId: req.body?.supplierId, materialBaru: req.body?.materialBaru })); } catch (e) { handleFinanceError(e, res); }
+  try { res.json(await pratinjauDuplikat(prisma, { supplierId: req.body?.supplierId, materialBaru: req.body?.materialBaru, barisLain: req.body?.barisLain })); } catch (e) { handleFinanceError(e, res); }
+});
+// Periksa SEMUA barang baru pada form PO sekaligus (urutan sama dengan penyimpanan): per baris pasti / perlu konfirmasi / berbeda. Baca-saja.
+purchaseOrderFinanceRouter.post("/sku/cek-duplikat-po", requirePermission(P.FINANCE_ADMIN), async (req, res) => {
+  try { res.json(await cekDuplikatPO(prisma, { supplierId: req.body?.supplierId, barisBaru: req.body?.barisBaru })); } catch (e) { handleFinanceError(e, res); }
 });
 purchaseOrderFinanceRouter.get("/sku/:materialId", requirePermission(P.FINANCE_READ), async (req, res) => {
   try {
