@@ -93,3 +93,11 @@ test("label status stok: 'Ada stok' (bukan 'Aman'); stok belum diketahui, nol, m
   assert.match(src("features", "warehouse", "inventoryReal.js"), /IN_STOCK:\s+\{ label: "In Stock",\s+labelId: "Ada stok"/); assert.ok(!/Stok Aman/.test(src("features", "warehouse", "inventoryReal.js")));
   const d = src("features", "warehouse", "components", "ItemDetailDrawer.jsx"); assert.match(d, /labelStatusStok\(item, keadaan\)/); assert.match(d, /onKeadaan=\{setKeadaan\}/); assert.match(src("features", "warehouse", "stok", "KoreksiSaldoPanel.jsx"), /onKeadaan\?\.\(d\?\.keadaanSaldo \?\? null\)/);
 });
+
+test("stok belum diketahui tidak tampil sebagai angka 0: 'Belum diketahui' menggantikan Tersedia dan Saldo; keadaan lain tetap angka", async () => {
+  const { teksAngkaStok } = await import("../src/features/warehouse/stok/drawerBahanLogic.js"); const f = (n) => `${n} kg`;
+  assert.equal(teksAngkaStok(0, "BELUM_ADA_CATATAN", f), "Belum diketahui");
+  for (const k of ["POSITIF", "MINUS", "NOL_MENURUT_PERGERAKAN", "NOL_TERVERIFIKASI", null]) assert.equal(teksAngkaStok(0, k, f), "0 kg", String(k));
+  assert.equal(teksAngkaStok(-4, "MINUS", f), "-4 kg");
+  const d = src("features", "warehouse", "components", "ItemDetailDrawer.jsx"); assert.match(d, /teksAngkaStok\(item\.available, keadaan,/); assert.match(d, /teksAngkaStok\(item\.balance, keadaan,/);
+});

@@ -4,7 +4,7 @@ import { X, Pencil, Loader2, History, TriangleAlert } from "lucide-react";
 import { InfoToggleButton, InfoToggleIsi, useInfoToggle } from "@/components/ui/info-toggle.jsx";
 import Lipat from "../stok/Lipat.jsx";
 import { Badge } from "@/components/ui/badge.jsx";
-import { ISTILAH, TEKS_DRAWER, labelStatusStok } from "../stok/drawerBahanLogic.js";
+import { ISTILAH, TEKS_DRAWER, labelStatusStok, teksAngkaStok } from "../stok/drawerBahanLogic.js";
 import { api } from "@/api.js";
 import RiwayatReferensiBahan from "./RiwayatReferensiBahan.jsx";
 import HargaBerlakuPanel from "../stok/HargaBerlakuPanel.jsx";
@@ -119,10 +119,10 @@ export default function ItemDetailDrawer({ item, onClose, onEdit, onChanged }) {
                 <InfoToggleButton info={infoStok} label="cara hitung stok" />
               </div>
               <div className="mt-0.5 text-[26px] font-extrabold leading-none tabular-nums text-ink" data-testid="stok-tersedia">
-                {formatQty(item.available, item.unit)}
+                {teksAngkaStok(item.available, keadaan, (n) => formatQty(n, item.unit))}
               </div>
               <dl className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px]">
-                <div className="flex gap-1.5"><dt className="text-ink3">{ISTILAH.saldo}</dt><dd className="m-0 font-semibold tabular-nums text-ink" data-testid="stok-saldo">{formatQty(item.balance, item.unit)}</dd></div>
+                <div className="flex gap-1.5"><dt className="text-ink3">{ISTILAH.saldo}</dt><dd className="m-0 font-semibold tabular-nums text-ink" data-testid="stok-saldo">{teksAngkaStok(item.balance, keadaan, (n) => formatQty(n, item.unit))}</dd></div>
                 <div className="flex gap-1.5"><dt className="text-ink3">{ISTILAH.dipesan}</dt><dd className="m-0 font-semibold tabular-nums text-ink" data-testid="stok-dipesan">{formatQty(item.reserved, item.unit)}</dd></div>
               </dl>
               <InfoToggleIsi info={infoStok}><p className="m-0" data-testid="rumus-stok">{ISTILAH.rumusStok}</p></InfoToggleIsi>

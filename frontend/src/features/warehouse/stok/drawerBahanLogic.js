@@ -40,6 +40,9 @@ export function barisDampakBermakna(dm, rpNilai) {
   return out;
 }
 
+/** Angka stok di kartu Stok: bila stok BELUM DIKETAHUI (belum ada catatan pergerakan) angka tidak boleh ditampilkan sebagai 0 — ditulis "Belum diketahui". format = pemformat jumlah+satuan. */
+export const teksAngkaStok = (nilai, keadaan, format) => (keadaan === "BELUM_ADA_CATATAN" ? "Belum diketahui" : format(nilai));
+
 /**
  * Label status stok di header drawer. TIDAK ada kata "Aman": tidak ada aturan kecukupan yang dihitung dan diuji selain ambang titik restok.
  * "Ada stok" = tersedia > 0 dan di atas titik restok (atau titik restok belum diatur); "Stok menipis" = tersedia <= titik restok (aturan yang memang dihitung).
