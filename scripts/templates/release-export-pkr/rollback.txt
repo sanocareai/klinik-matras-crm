@@ -1,0 +1,8 @@
+Rilis ini TANPA migrasi dan TANPA tulisan data bisnis oleh skripnya: rollback KODE aman kapan pun. Bila rollback setelah switch:
+Tujuan rollback = image dan folder release LIVE SEBELUM rilis ini; keduanya MEMUAT hotfix performa dan fitur live lain (gerbang kode live membuktikan kode di container == folder == baseline diset sebelum switch).
+   cd ${PREV_DIR:-<release-sebelumnya>}
+   docker tag ${ROLLBACK_TAG:-<tag-rollback>} ${IMG_NAME:-klinik-matras-backend:latest}
+   SANSS_PERSIST_ROOT=${PERSIST} docker compose -p ${PROJECT} -f docker-compose.yml -f docker-compose.release.yml up -d --no-deps --force-recreate backend
+Web (frontend/dist) dikembalikan bersama folder release sebelumnya. Kode lama tidak punya tombol dan endpoint Export Excel Penjualan Karyawan (halaman PKR kembali tanpa tombol export).
+Dokumen PKR, pembayaran, jurnal, order, dan stok tidak disentuh oleh rilis ini: tidak ada yang perlu dibalik. File Excel yang sudah diunduh pengguna tetap sah sebagai berkas biasa.
+Pemulihan database penuh hanya bila terjadi kerusakan data: gzip -dc ${BACKUP_FILE:-<backup>} | psql ... (lihat checksum di atas) — MENGHAPUS semua perubahan sesudah backup; gunakan hanya atas keputusan Owner.

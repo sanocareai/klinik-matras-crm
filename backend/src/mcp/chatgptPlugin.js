@@ -14,6 +14,7 @@ import { rolesOf } from "../middleware/authorize.js";
 import { registerReadOnlyTools } from "./tools.js";
 import { registerChatTools } from "./toolsChat.js";
 import { registerTrafficTools } from "./toolsTraffic.js";
+import { registerAtribusiIklanTools } from "./toolsAtribusiIklan.js";
 import { mcpRateLimit } from "./security.js";
 import { oauthConfigured, OAUTH_SCOPE, publicUrl, verifyAccessToken } from "./oauthCrypto.js";
 
@@ -42,6 +43,10 @@ export const CHATGPT_TOOL_CATALOG = Object.freeze([
   { name: "omnichannel_diagnosa_percakapan", canonical: "diagnosa_percakapan", active: false, division: "omnichannel", sensitivity: "message_audit" },
   { name: "sales_tren_traffic_lead", canonical: "tren_traffic_lead", active: true, division: "sales", sensitivity: "aggregate" },
   { name: "sales_performa_iklan", canonical: "performa_iklan", active: true, division: "sales", sensitivity: "aggregate" },
+  // Laporan Meta Ads (atribusi CTWA kausal; service yang sama dengan /api/atribusi/iklan): agregat + ID/nama iklan, tanpa data customer.
+  { name: "sales_performa_campaign_meta", canonical: "performa_campaign_meta", active: true, division: "sales", sensitivity: "aggregate" },
+  { name: "sales_rekap_harian_meta", canonical: "rekap_harian_meta", active: true, division: "sales", sensitivity: "aggregate" },
+  { name: "sales_kesehatan_atribusi_meta", canonical: "kesehatan_atribusi_meta", active: true, division: "sales", sensitivity: "aggregate" },
 ]);
 
 const ACTIVE_BY_CANONICAL = new Map(
@@ -134,11 +139,13 @@ function maskedFacade(server) {
 
 export function buatChatGptSalesServer() {
   const server = new McpServer(
-    { name: CHATGPT_MCP_SERVER_NAME, version: "1.0.0" },
+    { name: CHATGPT_MCP_SERVER_NAME, version: "1.1.0" },
     {
       instructions:
-        "Akses baca-saja ke agregat Sales CRM SANSS. Gunakan enam tool sales_ yang tersedia untuk " +
+        "Akses baca-saja ke agregat Sales CRM SANSS. Gunakan sembilan tool sales_ yang tersedia untuk " +
         "ringkasan penjualan, pipeline, sumber lead, traffic, iklan, dan katalog produk. " +
+        "Untuk menilai campaign/ad set/ad Meta pakai sales_performa_campaign_meta (atribusi CTWA kausal), sales_rekap_harian_meta, dan sales_kesehatan_atribusi_meta; " +
+        "sales_performa_iklan hanya ringkasan lama per sumber/URL kreatif, bukan atribusi campaign. " +
         "Data pelanggan serta isi percakapan tidak tersedia. PII selalu dimasking oleh server.",
     },
   );
@@ -146,6 +153,7 @@ export function buatChatGptSalesServer() {
   registerReadOnlyTools(facade);
   registerChatTools(facade);
   registerTrafficTools(facade);
+  registerAtribusiIklanTools(facade);
   return server;
 }
 

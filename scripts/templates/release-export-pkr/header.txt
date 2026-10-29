@@ -1,0 +1,19 @@
+# RILIS "EXPORT EXCEL PENJUALAN KARYAWAN" (Finance → Penjualan Karyawan → tombol Export Excel): WEB + BACKEND, TANPA migrasi dan TANPA perubahan schema.prisma — RELEASE-DIRECTORY di atas release aktif (BASE_SHA). FAIL-CLOSED.
+#   • Modul export baru `penjualan-karyawan` (POST /api/finance/export/penjualan-karyawan; izin finance:read, SAMA dengan daftar layar): sheet Daftar Penjualan, Per Karyawan, Pembayaran. Mengikuti periode, status, pencarian, dan karyawan yang dipilih
+#     di layar dan memuat SELURUH hasil filter (batas teknis 50.000 baris, ditolak 413 — tidak dipotong diam-diam); layar tetap memotong di 500 baris.
+#   • Angka sama dengan daftar layar (bentukPenjualan yang sama). TOTAL hanya menjumlahkan dokumen AKTIF; dokumen batal tampil sebagai riwayat "Dibatalkan — tidak ditagih" (sisa Rp0, nilai historis tetap) dan dirangkum terpisah;
+#     pembayaran batal berstatus Dibatalkan dan TIDAK masuk total pembayaran aktif. Label filter memakai NAMA karyawan. Kolom sensitif (Catatan Internal, Rekening) hanya untuk Finance Admin.
+#   • Kontrak metrik: dua definisi baru (pkr_nilai_penjualan, pkr_sisa_ditagih) ditautkan ke kartu layar; dokumen cakupan export diperbarui (21 modul).
+#   • Rilis ini TIDAK membuat atau mengubah dokumen PKR, pembayaran, jurnal, order, stok, atau data bisnis apa pun; export hanya membaca. Smoke pasca-switch tidak membuat transaksi percobaan.
+#   • Gate: preflight; backup + RESTORE rehearsal (kode baru berjalan sebagai SERVER terhadap salinan restore; 524 dokumen uji, dokumen dan pembayaran batal, filter, izin, tanpa jejak tulis — data uji hanya di salinan);
+#     build web di release dir; switch SATU kali; verifikasi; smoke baca-saja pasca-switch (angka Excel = hitungan langsung dari tabel = daftar layar; izin 401/403; data identik sebelum vs sesudah).
+#   • BASELINE = release aktif. GERBANG IDENTITAS KODE LIVE membandingkan ISI kode (hash blob SEMUA berkas terlacak baseline, berkas tambahan, identitas proses) di fase 2, fase 6, dan TEPAT sebelum switch; selisih isi apa pun /
+#     berkas tambahan / proses berganti = berhenti sebelum switch. Pembersihan release lama (fase 9) DINONAKTIFKAN: tidak ada folder release/image rollback/backup/volume yang dihapus oleh skrip.
+#
+#   cat scripts/release-export-pkr.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/xpk.sh'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/xpk.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/xpk.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rehearsal-only > /tmp/xpkr.out 2>&1 < /dev/null &'   # SEMUA gerbang sampai rehearsal pada restore nyata; TANPA switch
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/xpk.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/xpk.out 2>&1 < /dev/null &'   # rilis penuh
+#
+# ROLLBACK: kode aman di-rollback kapan pun (tanpa migrasi, tanpa tabel baru). Rollback hanya menghilangkan tombol/endpoint export PKR dan dua definisi metrik; tidak ada data yang berubah.
+# (dibangkitkan oleh scripts/gen-release-export-pkr.cjs dari scripts/release-penjadwalan-langsung.sh + scripts/templates/release-export-pkr/* + pustaka scripts/lib/{rehearsal,smoke}-export-pkr.mjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang)

@@ -14,6 +14,7 @@ import { parseParameterIklan, hitungLaporanIklan, eksporIdIklan, ParameterError 
 import { hitungKesehatanCapture } from "../services/attribution/captureHealth.js";
 import { hitungD7 } from "../services/attribution/d7.js";
 import { hitungSumberPerforma } from "../services/attribution/sumber.js";
+import { denganPenjaga, SedangDihitungError } from "../services/attribution/penjagaLaporan.js";
 import { pasangRuteSpend } from "./attributionSpend.js";
 import { pasangRuteBiayaSumber } from "./attributionBiayaSumber.js";
 import { barisDariCsv, jalankanImpor, sidikJari, MAKS_BARIS_IMPOR } from "../services/attribution/adReferensi.js";
@@ -23,7 +24,8 @@ attributionAdsRouter.use(requireAuth, requireAdmin);
 pasangRuteSpend(attributionAdsRouter);   // Fase 3: /spend, /target, /monitor
 pasangRuteBiayaSumber(attributionAdsRouter);   // Okt 2026: /biaya-sumber (biaya iklan tingkat sumber, input manual)
 
-let sedangBerjalan = false;   // satu perhitungan laporan sekaligus per proses
+// Satu perhitungan laporan sekaligus per proses — penjaga BERSAMA dengan tool MCP laporan Meta Ads (services/attribution/penjagaLaporan.js).
+const jawabSibuk = (res) => res.status(429).json({ error: "Laporan atribusi iklan sedang dihitung; coba lagi sebentar", code: "SEDANG_DIHITUNG" });
 
 attributionAdsRouter.get("/", async (req, res) => {
   let parameter;
@@ -32,17 +34,14 @@ attributionAdsRouter.get("/", async (req, res) => {
     if (err instanceof ParameterError) return res.status(400).json({ error: err.message, code: err.code });
     throw err;
   }
-  if (sedangBerjalan) return res.status(429).json({ error: "Laporan atribusi iklan sedang dihitung; coba lagi sebentar", code: "SEDANG_DIHITUNG" });
-  sedangBerjalan = true;
   try {
-    const laporan = await hitungLaporanIklan(prisma, parameter);
+    const laporan = await denganPenjaga(() => hitungLaporanIklan(prisma, parameter));
     res.set("Cache-Control", "no-store");
     return res.json(laporan);
   } catch (err) {
+    if (err instanceof SedangDihitungError) return jawabSibuk(res);
     console.error("atribusi/iklan error:", err?.code || err?.name || "ERROR");   // tanpa pesan: galat Prisma bisa memuat nilai kueri
     return res.status(500).json({ error: "Gagal menghitung laporan atribusi iklan" });
-  } finally {
-    sedangBerjalan = false;
   }
 });
 
@@ -54,17 +53,14 @@ attributionAdsRouter.get("/d7", async (req, res) => {
     if (err instanceof ParameterError) return res.status(400).json({ error: err.message, code: err.code });
     throw err;
   }
-  if (sedangBerjalan) return res.status(429).json({ error: "Laporan atribusi iklan sedang dihitung; coba lagi sebentar", code: "SEDANG_DIHITUNG" });
-  sedangBerjalan = true;
   try {
-    const hasil = await hitungD7(prisma, { dari: parameter.dari, sampai: parameter.sampai, hariIni: parameter.hariIni });
+    const hasil = await denganPenjaga(() => hitungD7(prisma, { dari: parameter.dari, sampai: parameter.sampai, hariIni: parameter.hariIni }));
     res.set("Cache-Control", "no-store");
     return res.json(hasil);
   } catch (err) {
+    if (err instanceof SedangDihitungError) return jawabSibuk(res);
     console.error("atribusi/iklan/d7 error:", err?.code || err?.name || "ERROR");
     return res.status(500).json({ error: "Gagal menghitung D7 atribusi iklan" });
-  } finally {
-    sedangBerjalan = false;
   }
 });
 
@@ -81,23 +77,23 @@ attributionAdsRouter.get("/sumber", async (req, res) => {
     if (err instanceof ParameterError) return res.status(400).json({ error: err.message, code: err.code });
     throw err;
   }
-  if (sedangBerjalan) return res.status(429).json({ error: "Laporan atribusi iklan sedang dihitung; coba lagi sebentar", code: "SEDANG_DIHITUNG" });
-  sedangBerjalan = true;
   try {
-    const hasil = await hitungSumberPerforma(prisma, parameter);
-    if (req.query.pembanding === "1" || req.query.pembanding === "true") {
-      const n = Math.round((Date.parse(`${parameter.sampai}T00:00:00Z`) - Date.parse(`${parameter.dari}T00:00:00Z`)) / 86_400_000) + 1;
-      const sampaiP = geserHari(parameter.dari, -1), dariP = geserHari(sampaiP, -(n - 1));
-      const p = await hitungSumberPerforma(prisma, { ...parameter, dari: dariP, sampai: sampaiP, bawaan: false }, { denganMeta: false });
-      hasil.pembanding = { periode: { dari: dariP, sampai: sampaiP }, sumber: p.sumber.map((x) => ({ id: x.id, lead: x.lead, leadSah: x.leadSah, berOrder: x.berOrder, membayar: x.membayar, lunas: x.lunas, konversiOrder: x.konversiOrder })), total: p.total, catatan: "periode sebelumnya dengan panjang yang sama; hanya hitungan (tanpa biaya)" };
-    }
+    const hasil = await denganPenjaga(async () => {
+      const h = await hitungSumberPerforma(prisma, parameter);
+      if (req.query.pembanding === "1" || req.query.pembanding === "true") {
+        const n = Math.round((Date.parse(`${parameter.sampai}T00:00:00Z`) - Date.parse(`${parameter.dari}T00:00:00Z`)) / 86_400_000) + 1;
+        const sampaiP = geserHari(parameter.dari, -1), dariP = geserHari(sampaiP, -(n - 1));
+        const p = await hitungSumberPerforma(prisma, { ...parameter, dari: dariP, sampai: sampaiP, bawaan: false }, { denganMeta: false });
+        h.pembanding = { periode: { dari: dariP, sampai: sampaiP }, sumber: p.sumber.map((x) => ({ id: x.id, lead: x.lead, leadSah: x.leadSah, berOrder: x.berOrder, membayar: x.membayar, lunas: x.lunas, konversiOrder: x.konversiOrder })), total: p.total, catatan: "periode sebelumnya dengan panjang yang sama; hanya hitungan (tanpa biaya)" };
+      }
+      return h;
+    });
     res.set("Cache-Control", "no-store");
     return res.json(hasil);
   } catch (err) {
+    if (err instanceof SedangDihitungError) return jawabSibuk(res);
     console.error("atribusi/iklan/sumber error:", err?.code || err?.name || "ERROR");
     return res.status(500).json({ error: "Gagal menghitung performa akuisisi per sumber" });
-  } finally {
-    sedangBerjalan = false;
   }
 });
 

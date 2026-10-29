@@ -1,0 +1,19 @@
+# RILIS "MCP LAPORAN META ADS" (konektor Claude + ChatGPT): BACKEND-SAJA, TANPA migrasi, TANPA perubahan schema.prisma, TANPA perubahan frontend/env — RELEASE-DIRECTORY di atas release aktif (BASE_SHA). FAIL-CLOSED.
+#   • Tiga tool MCP baca-saja (performa_campaign_meta, rekap_harian_meta, kesehatan_atribusi_meta) di /mcp dan (sebagai sales_*) di /mcp-chatgpt, memakai hitungLaporanIklan yang SAMA dengan GET /api/atribusi/iklan.
+#     Tidak ada tabel, tracking, atau rumus bisnis kedua; respons hanya agregat + ID/nama iklan (tanpa data customer). Tool lama performa_iklan tetap kompatibel.
+#   • Perubahan service lama bersifat ADITIF (customerPernahMembayar pada baris /iklan; penjaga satu-perhitungan-sekaligus dipindah ke modul bersama). allowlist EKSPLISIT di bawah = pin.
+#   • Gate: preflight; backup + RESTORE rehearsal (kode baru berjalan sebagai SERVER terhadap salinan restore; smoke lewat TIGA jalur auth — OAuth ChatGPT, OAuth Claude, token statis — dan hasil tool == endpoint;
+#     tidak ada baris berubah; direktori data/uploads production TIDAK dipasang); frontend/dist release aktif DIBAWA APA ADANYA (tidak dibangun ulang); switch SATU kali; verifikasi; smoke baca-saja pasca-switch
+#     dengan kode yang sama lewat jalur auth yang sebenarnya.
+#   • BASELINE = release aktif. GERBANG IDENTITAS KODE LIVE membandingkan ISI kode (hash blob SEMUA berkas terlacak baseline, berkas tambahan, container == folder release, identitas proses) di fase 2, fase 6,
+#     dan TEPAT sebelum switch; selisih isi apa pun / berkas tambahan / proses berganti = berhenti sebelum switch (perubahan sesi lain tidak pernah ditimpa diam-diam).
+#   • UJI LOKAL ≠ DISCOVERY KONEKTOR: skrip membuktikan kode server, auth, dan hasil. Bahwa claude.ai / ChatGPT melihat tool baru hanya terbukti SESUDAH rilis lewat refresh konektor (langkah manual, lihat CATATAN akhir).
+#   • Pembersihan release lama (fase 9) DINONAKTIFKAN pada rilis ini: tidak ada folder release/image rollback/backup/volume yang dihapus oleh skrip.
+#
+#   cat scripts/release-mcp-laporan-meta.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/mlm.sh'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/mlm.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/mlm.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rehearsal-only > /tmp/mlmr.out 2>&1 < /dev/null &'   # SEMUA gerbang sampai rehearsal pada restore nyata; TANPA switch
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/mlm.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/mlm.out 2>&1 < /dev/null &'   # rilis penuh (hanya setelah persetujuan)
+#
+# ROLLBACK: kode aman di-rollback kapan pun (tanpa migrasi, tanpa tabel baru, tanpa tulisan data). Setelah rollback daftar tool kembali ke versi lama; klien konektor perlu refresh lagi.
+# (dibangkitkan oleh scripts/gen-release-mcp-laporan-meta.cjs dari scripts/release-po-barang-mirip.sh + scripts/templates/release-mcp-laporan-meta/*; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang)

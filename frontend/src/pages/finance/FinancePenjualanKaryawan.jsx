@@ -17,6 +17,7 @@ import {
   Pilihan, InputUang, PeriodePicker, periodeDefault, tanggalPendek, PemilihBukti,
 } from "@/features/finance/shared.jsx";
 import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
+import TombolExportExcel from "@/features/finance/ExportExcel.jsx";
 import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
 import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
@@ -163,6 +164,7 @@ export default function FinancePenjualanKaryawan() {
       actions={(
         <>
           <PeriodePicker from={periode.from} to={periode.to} onChange={setPeriode} />
+          <TombolExportExcel modul="penjualan-karyawan" disabled={loading} onError={setPesan} ambilBody={() => ({ periode, filter: { status, q: qTunda.trim(), sellerId: fKaryawan } })} />
           <Button size="sm" onClick={() => setModalBaru(true)}><Plus size={14} /> Catat Penjualan</Button>
         </>
       )}
@@ -185,10 +187,10 @@ export default function FinancePenjualanKaryawan() {
       </Penjelasan>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <KartuAngka label="Nilai Penjualan" value={formatUang(ringkasan?.nilai ?? 0)} sub={`${ringkasan?.jumlah ?? 0} penjualan aktif, sepanjang waktu`} />
+        <KartuAngka label="Nilai Penjualan" metrik="pkr_nilai_penjualan" value={formatUang(ringkasan?.nilai ?? 0)} sub={`${ringkasan?.jumlah ?? 0} penjualan aktif, sepanjang waktu`} />
         <KartuAngka label="Sudah Dibayar" value={formatUang(ringkasan?.terbayar ?? 0)} sub="tunai, transfer, dan potong gaji" />
         <KartuAngka
-          label="Sisa Tagihan ke Karyawan" value={formatUang(ringkasan?.sisa ?? 0)} tone={(ringkasan?.sisa ?? 0) > 0 ? "orange" : "default"}
+          label="Sisa Tagihan ke Karyawan" metrik="pkr_sisa_ditagih" value={formatUang(ringkasan?.sisa ?? 0)} tone={(ringkasan?.sisa ?? 0) > 0 ? "orange" : "default"}
           sub="belum dibayar atau dipotong dari gaji"
           info="Bagian dari saldo akun Piutang Karyawan (1-1350) yang berasal dari penjualan karyawan. Kasbon tercatat terpisah di menu Kasbon pada akun yang sama."
         />

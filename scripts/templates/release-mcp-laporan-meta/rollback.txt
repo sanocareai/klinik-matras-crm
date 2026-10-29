@@ -1,0 +1,9 @@
+Rilis ini TANPA migrasi dan TANPA tulisan data oleh skripnya: rollback KODE aman kapan pun. Bila rollback setelah switch:
+Tujuan rollback = image dan folder release LIVE SEBELUM rilis ini (gerbang kode live membuktikan kode di container == folder == baseline disetujui). Folder ${PREV_DIR} tidak dihapus.
+   cd ${PREV_DIR:-<release-sebelumnya>}
+   docker tag ${ROLLBACK_TAG:-<tag-rollback>} ${IMG_NAME:-klinik-matras-backend:latest}
+   SANSS_PERSIST_ROOT=${PERSIST} docker compose -p ${PROJECT} -f docker-compose.yml -f docker-compose.release.yml up -d --no-deps --force-recreate backend
+frontend/dist tidak diubah oleh rilis ini (dibawa apa adanya), jadi tidak ada yang perlu dikembalikan di web.
+Setelah rollback: /mcp dan /mcp-chatgpt kembali ke daftar tool lama (tiga tool Meta hilang). Klien konektor (claude.ai, ChatGPT) menyimpan daftar tool per koneksi — lakukan refresh/sambung ulang lagi agar tool yang sudah tidak ada tidak tampil.
+Rilis ini tidak membuat atau mengubah data apa pun (tool baca-saja); tidak ada yang perlu dibalik di database.
+Pemulihan database penuh hanya bila terjadi kerusakan data: gzip -dc ${BACKUP_FILE:-<backup>} | psql ... (lihat checksum di atas) — MENGHAPUS semua perubahan sesudah backup; gunakan hanya atas keputusan Owner.

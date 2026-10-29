@@ -243,7 +243,7 @@ export function barisKosong({ level, kunci, ref }) {
     lead: { unik: 0, spam: 0, bukanSpam: 0, leadSah: 0, dikecualikan: { SPAM: 0, B2B_DIRECT: 0, INTERNAL_STAFF: 0, PROFIL_KARYAWAN: 0 } },
     closingUtama: { definisi: "customer dengan >= 1 order eligible lunas terbukti ledger", customerLunasTerbuktiLedger: 0, persenDariLeadSah: null, orderLunasTerbuktiLedger: 0, perBulanLunasPertama: {} },
     pernahDitandaiProspek: { berTanggal: 0, tanpaTanggal: 0, jumlah: 0 },
-    customerDenganOrder: 0, orderEligible: 0, orderPernahDp: 0, orderDpSaatIniLedger: 0, customerLunasMenurutCrm: 0, lunasMenurutCrm: nol,
+    customerDenganOrder: 0, orderEligible: 0, orderPernahDp: 0, orderDpSaatIniLedger: 0, customerLunasMenurutCrm: 0, customerPernahMembayar: 0, lunasMenurutCrm: nol,
     lunasTerbuktiLedger: { jumlah: 0, nilai: 0 }, buktiPelunasan: {}, bookedValue: 0, uangLedger: 0, refundDisetujui: 0, uangBersihLedger: 0,
     cakupanLedger: { orderBerLedger: 0, orderEligible: 0, persenOrderBerLedger: null },
     kematangan: { hari7: { leadMatang: 0 }, hari30: { leadMatang: 0 }, hari60: { leadMatang: 0 } },

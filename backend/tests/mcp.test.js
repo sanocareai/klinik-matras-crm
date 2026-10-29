@@ -172,7 +172,7 @@ test("GET /mcp dijawab 405 (stateless, tidak ada SSE server→klien)", async (t)
 // SEMUA file tool wajib ikut dipindai. Kalau menambah file toolsXxx.js baru,
 // TAMBAHKAN ke daftar ini — kalau lupa, file baru itu tidak terlindungi sama
 // sekali dan operasi tulis bisa lolos diam-diam ke Claude.
-const FILE_TOOL = ["tools.js", "toolsShared.js", "toolsChat.js", "toolsTraffic.js"];
+const FILE_TOOL = ["tools.js", "toolsShared.js", "toolsChat.js", "toolsTraffic.js", "toolsAtribusiIklan.js"];
 
 test("semua file tool MCP bebas operasi tulis Prisma & pengiriman WhatsApp", () => {
   const terlarang = [
