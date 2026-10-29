@@ -1,5 +1,5 @@
 import dayjs from "dayjs";
-import { toWIB, formatTanggal, formatTanggalPendek, formatJam } from "@/utils/formatDate.js";
+import { toWIB, formatTanggal, formatTanggalPendek, formatJam } from "../utils/formatDate.js"; // relatif (bukan alias @/) supaya model murni yang memakai skema tanggal ini dapat diuji node --test
 
 // ═══════════════════════════════════════════════════════════════════════════
 //  SKEMA RENTANG TANGGAL — SATU SUMBER KEBENARAN

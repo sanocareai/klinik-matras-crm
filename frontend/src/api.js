@@ -993,6 +993,20 @@ export const api = {
   getProductionReportDrill: (metric, qs = "") => request(`/production-v2/reports/drill/${encodeURIComponent(metric)}${qs ? `?${qs}` : ""}`),
   getProductionReportUnit: (runId, qs = "") => request(`/production-v2/reports/units/${encodeURIComponent(runId)}${qs ? `?${qs}` : ""}`),
   getProductionReportList: (path, qs = "") => request(`/production-v2/reports/${path}${qs ? `?${qs}` : ""}`),
+  // Laporan Produksi terpadu (4 tab) — BACA-SAJA; nominal hanya untuk finance:read (diputuskan server).
+  getLaporanMeta: () => request("/production-v2/laporan/meta"),
+  getLaporan: (tab, qs = "") => request(`/production-v2/laporan/${tab}${qs ? `?${qs}` : ""}`),
+  getLaporanOrder: (orderId, qs = "") => request(`/production-v2/laporan/biaya-order/${encodeURIComponent(orderId)}${qs ? `?${qs}` : ""}`),
+  exportLaporan: async (qs) => {
+    const demo = demoBlock("Export"); if (demo) return demo;
+    const tokenKirim = bacaToken();
+    const res = await fetch(`${BASE}/production-v2/laporan/export?${qs}`, { headers: { ...authHeaders() } });
+    adoptRefreshedToken(res, tokenKirim);
+    if (res.status === 401) { handleUnauthorized(tokenKirim); throw new Error("Sesi berakhir, silakan login kembali"); }
+    if (!res.ok) { let msg = "Gagal mengekspor laporan"; try { msg = (await res.json()).error || msg; } catch { /* bukan JSON */ } throw new Error(msg); }
+    const cd = res.headers.get("Content-Disposition") || "";
+    return { blob: await res.blob(), namaFile: cd.match(/filename="([^"]+)"/)?.[1] || "Laporan_Produksi.xlsx" };
+  },
   // Export = berkas (bukan JSON): server membangun Excel/PDF dari dokumen laporan yang sama dengan layar.
   exportProductionReport: async (qs) => {
     const demo = demoBlock("Export"); if (demo) return demo; // demo TIDAK pernah menghasilkan export production

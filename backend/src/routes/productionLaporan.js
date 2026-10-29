@@ -19,7 +19,8 @@ const caps = (u) => {
   const full = hasPermission(u, P.PRODUCTION_REPORT_READ);
   return { full, gudang: full || hasPermission(u, P.PRODUCTION_REPORT_WAREHOUSE), harga: hasPermission(u, P.FINANCE_READ), targetWrite: hasPermission(u, P.PRODUCTION_TARGET_WRITE), self: hasPermission(u, P.PRODUCTION_REPORT_SELF) };
 };
-const boleh = (c, tab) => (tab === "bahan-gudang" ? c.gudang : c.full);
+// Biaya per Order juga boleh dibuka pemegang finance:read (Finance): angkanya biaya; Ringkasan/Kinerja tetap hanya laporan penuh Produksi.
+const boleh = (c, tab) => (tab === "bahan-gudang" ? c.gudang : tab === "biaya-order" ? c.full || c.harga : c.full);
 const deny = (res) => res.status(403).json({ error: "Anda tidak punya akses ke laporan ini", code: "REPORT_FORBIDDEN" });
 function galat(err, res) {
   if (Number.isInteger(err?.statusCode)) return res.status(err.statusCode).json({ error: err.message, ...(err.code ? { code: err.code } : {}) });
@@ -31,10 +32,10 @@ const sorot = (o) => { const { unit, ...rest } = o; return { ...rest, unitKode: 
 
 productionLaporanRouter.get("/meta", (req, res) => {
   const c = caps(req.user);
-  if (!c.gudang && !c.self) return deny(res);
+  if (!c.gudang && !c.self && !c.harga) return deny(res);
   res.set("Cache-Control", "no-store");
   res.json({
-    capabilities: { ringkasan: c.full, biayaOrder: c.full, kinerja: c.full, bahanGudang: c.gudang, harga: c.harga, targetWrite: c.targetWrite, self: c.self },
+    capabilities: { ringkasan: c.full, biayaOrder: c.full || c.harga, kinerja: c.full, bahanGudang: c.gudang, harga: c.harga, targetWrite: c.targetWrite, self: c.self },
     definisi: DEFINISI, masalah: Object.fromEntries(Object.entries(MASALAH).map(([k, v]) => [k, { label: v.label, aksi: v.aksi }])),
     statusBiaya: Object.values(STATUS_BIAYA).map(({ key, label, tone }) => ({ key, label, tone })), dasarTanggal: DASAR_TANGGAL,
   });

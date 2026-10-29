@@ -64,7 +64,7 @@ test("tren & cakupan & reader OFF & kebocoran data sensitif", () => {
 });
 
 test("pagar kode halaman: baca-saja (tanpa metode tulis), semua angka dari server, rute+menu+judul terpasang, OPERASIONAL tetap 5 menu", () => {
-  const page = read("src/pages/bengkel/ProductionKpi.jsx"); const parts = read("src/features/production/ReportParts.jsx"); const model = read("src/features/production/reporting.js");
+  const page = read("src/pages/bengkel/ProductionKpi.jsx") + read("src/features/production/laporan/LaporanProduksi.jsx"); const parts = read("src/features/production/ReportParts.jsx"); const model = read("src/features/production/reporting.js");
   for (const src of [page, parts, model]) {
     assert.doesNotMatch(src, /method:\s*"(POST|PUT|PATCH|DELETE)"/, "laporan tidak menulis");
     assert.doesNotMatch(src, /\.(omzet|harga|payment|hpp|orderPrice|totalHarga)\b|api\.\w*(Payment|Finance|Harga)/i, "tidak membaca field/endpoint keuangan");
@@ -72,8 +72,8 @@ test("pagar kode halaman: baca-saja (tanpa metode tulis), semua angka dari serve
   const api = read("src/api.js"); const block = api.slice(api.indexOf("getProductionReportMeta"), api.indexOf("// P11.1 — target harian historis"));
   assert.doesNotMatch(block, /method:/, "klien API laporan hanya GET");
   assert.match(block, /exportProductionReport/);
-  assert.match(page, /UnitOverviewDrawer/, "drill-down ke Unit 360");
-  assert.match(page, /getProductionReportDrill/); assert.match(page, /warehouse\/units\//); assert.match(page, /stations\/\$\{/); assert.match(page, /operators\/\$\{/);
+  // Laporan Produksi terpadu (4 tab): drill-down = rincian order (Biaya per Order) + tombol Detail ke tab yang sama; drill-down kohort V2 lama dihapus dari halaman.
+  assert.match(read("src/features/production/laporan/TabBiaya.jsx"), /getLaporanOrder/);
   assert.match(parts, /data-testid="coverage-bar"/); assert.match(parts, /data-testid="export-buttons"/); assert.match(parts, /Data belum cukup/);
   const registry = read("src/routes/pageRegistry.jsx");
   assert.match(registry, /path: "\/bengkel\/kpi"/); assert.match(registry, /path: "\/warehouse\/kpi", render: \(\) => <DemoPage><ProductionKpi defaultTab="gudang" \/><\/DemoPage>/); assert.match(registry, /path: "\/produksi\/ringkasan-saya"/);
@@ -90,17 +90,17 @@ test("P11.1 target harian: kartu memakai deskripsi target historis dari server; 
   const ok = { effectiveFrom: "2026-10-11", targetUnits: "20", reason: "Tambah satu shift" };
   assert.equal(targetFormError(ok, meta), "");
   for (const bad of [{ effectiveFrom: "" }, { effectiveFrom: "2025-12-31" }, { targetUnits: "0" }, { targetUnits: "501" }, { targetUnits: "12.5" }, { targetUnits: "" }, { reason: "x" }, { reason: "   " }, { reason: "x".repeat(301) }]) assert.notEqual(targetFormError({ ...ok, ...bad }, meta), "", JSON.stringify(bad));
-  const panel = read("src/features/production/TargetPanel.jsx"); const api = read("src/api.js"); const page = read("src/pages/bengkel/ProductionKpi.jsx");
+  const panel = read("src/features/production/TargetPanel.jsx"); const api = read("src/api.js"); const page = read("src/features/production/laporan/LaporanProduksi.jsx");
   assert.match(panel, /canWrite && \(/, "formulir hanya untuk pemegang izin tulis"); assert.match(panel, /tidak dapat diubah atau dihapus/);
-  assert.match(page, /TargetPanel canWrite=\{!!meta\?\.capabilities\?\.targetWrite\}/);
+  assert.match(page, /TargetPanel canWrite=\{!!cap\?\.targetWrite\}/, "target dikelola dari aksi Pengaturan target (modal)");
   const posts = api.match(/production-v2\/[a-z/]*",\s*\{\s*method: "POST"/g) || [];
   assert.match(api, /setProductionTarget: \(data\) => request\("\/production-v2\/targets", \{ method: "POST"/); assert.ok(posts.length >= 1);
   assert.doesNotMatch(panel, /method: "(PUT|PATCH|DELETE)"/, "riwayat tidak bisa diubah/dihapus dari UI");
 });
 
 test("P12A: tab KPI memakai state lokal (klik tab bekerja di sistem tab dalam-app) dan panel hanya dirender bila jenis dokumen = jenis tab (tanpa crash saat data tab sebelumnya masih ada)", () => {
-  const page = read("src/pages/bengkel/ProductionKpi.jsx");
-  assert.match(page, /const \[tabKey, setTabKey\] = useState\(urlTab\)/); assert.match(page, /const setTab = \(key\) => \{ setTabKey\(key\);/);
-  assert.match(page, /doc\.kind === tab\?\.kind/);
-  assert.match(page, /doc\.pekerjaan && <MyPanel/);
+  const page = read("src/features/production/laporan/LaporanProduksi.jsx"); const legacy = read("src/pages/bengkel/ProductionKpi.jsx");
+  assert.match(page, /const \[tabKey, setTabKey\] = useState\(urlTab\)/); assert.match(page, /const pindahTab = \(key, ekstra = null\) => \{\s*setTabKey\(key\);/);
+  assert.match(page, /tabAktif\(tabKey, tabs\)/);
+  assert.match(legacy, /doc\?\.pekerjaan && <MyPanel/);
 });
