@@ -40,3 +40,13 @@ test("allowlist: hanya berkas rilis ini (export PKR, kontrak metrik, halaman PKR
   assert.ok(allow.includes("frontend/src/pages/finance/FinancePenjualanKaryawan"), "halaman PKR");
   assert.ok(!/backend\/prisma/.test(allow), "tanpa migrasi/schema"); assert.ok(!/package(-lock)?/.test(allow), "tanpa dependensi"); assert.ok(!allow.includes("backend/src/index"), "tanpa index.js");
 });
+
+test("COUNT_SQL: dievaluasi bash menghasilkan SQL utuh (tanda kutip nama tabel \"Order\" ter-escape) — cacat ini pernah lolos bash -n dan baru tertangkap gerbang VPS", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const baris = sh.split("\n").find((l) => l.startsWith("COUNT_SQL=")); assert.ok(baris, "baris COUNT_SQL ada");
+  const r = spawnSync("bash", ["-c", `${baris}\nprintf '%s' "$COUNT_SQL"`], { encoding: "utf8" });
+  if (r.error) return; // tanpa bash di lingkungan ini: tes dilewati (VPS selalu punya bash)
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stdout, /from "Order" union all/, "nama tabel Order berkutip utuh di SQL hasil evaluasi");
+  assert.ok(r.stdout.startsWith("select 'penjualan_karyawan'") && r.stdout.endsWith("from materials"), "SQL tidak terpotong");
+});

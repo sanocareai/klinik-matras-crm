@@ -32,7 +32,7 @@ const git = (args) => execFileSync("git", args, { cwd: REPO, encoding: "utf8", m
 const gitLines = (args) => git(args).split("\n").map((x) => x.trim()).filter(Boolean);
 const esc = (f) => f.replace(/[.+*?^${}()|[\]\\]/g, "\\$&");
 
-const COUNT_SQL = "select 'penjualan_karyawan', count(*) from fin_penjualan_karyawan union all select 'pkr_items', count(*) from fin_penjualan_karyawan_items union all select 'pkr_payments', count(*) from fin_penjualan_karyawan_payments union all select 'journal_entries', count(*) from fin_journal_entries union all select 'journal_lines', count(*) from fin_journal_lines union all select 'orders', count(*) from \"Order\" union all select 'stock_movements', count(*) from stock_movements union all select 'materials', count(*) from materials";
+const COUNT_SQL = "select 'penjualan_karyawan', count(*) from fin_penjualan_karyawan union all select 'pkr_items', count(*) from fin_penjualan_karyawan_items union all select 'pkr_payments', count(*) from fin_penjualan_karyawan_payments union all select 'journal_entries', count(*) from fin_journal_entries union all select 'journal_lines', count(*) from fin_journal_lines union all select 'orders', count(*) from \\\"Order\\\" union all select 'stock_movements', count(*) from stock_movements union all select 'materials', count(*) from materials";
 
 const UJI_PENANDA = "# UJI APLIKASI pada SALINAN RESTORE (kode BARU sebagai server, data produksi nyata, DB sementara): ";
 
