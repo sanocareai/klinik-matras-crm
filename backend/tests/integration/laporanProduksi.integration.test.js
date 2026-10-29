@@ -135,13 +135,17 @@ test("L8. KINERJA: unit selesai dihitung SEKALI meski berpindah meja; PIC dari r
   await testPrisma.productionUnitSchedule.create({ data: { unitId: us[0].id, productionDate: tglProduksi, stationCode: "TABLE_1" } });
   await testPrisma.productionUnitSchedule.update({ where: { unitId: us[0].id }, data: { stationCode: "TABLE_2" } }); // berpindah meja: tetap satu unit
   await testPrisma.productionUnitSchedule.create({ data: { unitId: us[1].id, productionDate: tglProduksi, stationCode: "TABLE_2" } });
+  // unit dengan BEBERAPA PIC (run awal + rework dengan PIC lain): total selesai tidak ganda
+  const opU1 = await createTestUser({ roles: ["PRODUCTION_WORKER"] }); const opU2 = await createTestUser({ roles: ["PRODUCTION_WORKER"] });
+  const op1 = await testPrisma.productionOperator.create({ data: { userId: opU1.user.id, workLanes: ["TABLE"] } }); const op2 = await testPrisma.productionOperator.create({ data: { userId: opU2.user.id, workLanes: ["TABLE"] } });
+  for (const op of [op1, op2]) { const run = await testPrisma.productionRun.create({ data: { unitId: us[2].id, kind: op === op1 ? "RESTORATION" : "REWORK", origin: "CUSTODY_PICKUP", status: op === op1 ? "COMPLETED" : "ACTIVE", currentPhase: "PROCESS", revision: 1 } }); await testPrisma.productionRunPlan.create({ data: { runId: run.id, status: "PLANNED", operatorId: op.id, stationCode: "TABLE_3", productionDate: new Date(`${hariIni()}T00:00:00.000Z`) } }); }
   const k = (await ambil(w, `/kinerja?${periodeHariIni()}`)).body;
   assert.equal(k.selesai.unit, 3);
   const jumlah = k.meja.baris.reduce((a, m) => a + m.selesai, 0) + k.meja.tidakTercatat.selesai; assert.equal(jumlah, k.selesai.unit, "Σ meja + Tidak tercatat = total selesai (tidak ganda)");
-  assert.equal(k.meja.baris.find((m) => m.kode === "TABLE_2").selesai, 2); assert.equal(k.meja.tidakTercatat.selesai, 1);
+  assert.equal(k.meja.baris.find((m) => m.kode === "TABLE_2").selesai, 2); assert.equal(k.meja.baris.find((m) => m.kode === "TABLE_3").selesai, 1, "unit dengan beberapa rencana dihitung SEKALI"); assert.equal(k.meja.tidakTercatat.selesai, 0);
   assert.equal(k.selesai.durasi.rataMenit, null, "durasi belum tersedia — bukan 0"); assert.equal(k.targetHistoris.tersedia, false); assert.match(k.targetHistoris.catatan, /belum tersedia/);
-  assert.equal(k.pic.baris.reduce((a, p) => a + p.selesai, 0), k.selesai.unit); assert.equal(k.pic.baris.find((p) => p.key === "__TIDAK_TERCATAT__").selesai, 3, "tidak ada PIC pada rencana ⇒ Tidak tercatat (pelaku posting bahan tidak dipakai)");
-  assert.equal(k.terjadwal.unit, 2); void bulan;
+  assert.equal(k.pic.baris.reduce((a, p) => a + p.selesai, 0), k.selesai.unit, "Σ PIC + Tidak tercatat = total (PIC ganda tidak menggandakan)"); assert.equal(k.pic.baris.find((p) => p.key === "__TIDAK_TERCATAT__").selesai, 2, `unit tanpa penetapan PIC ⇒ Tidak tercatat (pelaku posting bahan tidak dipakai) ${JSON.stringify(k.pic.baris.map((p) => [p.label, p.selesai]))}`);
+  assert.equal(k.terjadwal.unit, 3, "2 jadwal langsung + 1 rencana V2 (satu unit satu entri)"); void bulan;
 });
 
 test("L9. IZIN: Sales 403; Gudang hanya Bahan & Gudang dan TANPA nominal; Admin tanpa finance:read tanpa nominal; Finance melihat nominal; ekspor mengikuti izin", async () => {
@@ -153,7 +157,9 @@ test("L9. IZIN: Sales 403; Gudang hanya Bahan & Gudang dan TANPA nominal; Admin 
   const meta = (await w.a.get(`${base}/meta`)).body; assert.equal(meta.capabilities.biayaOrder, true);
   const adminRow = (await w.a.get(`${base}/biaya-order?${periodeHariIni()}`)).body; const finRow = (await w.f.get(`${base}/biaya-order?${periodeHariIni()}`));
   if (meta.capabilities.harga) assert.equal(adminRow.rows[0].nilaiDiketahui, 20000); else assert.equal(adminRow.rows[0].nilaiDiketahui, null);
-  void finRow;
+  // Finance (finance:read): hanya Biaya per Order — dengan nominal; Ringkasan/Kinerja ditolak
+  assert.equal(finRow.status, 200); assert.equal(finRow.body.rows[0].nilaiDiketahui, 20000); assert.equal((await w.f.get(`${base}/kinerja?${periodeHariIni()}`)).status, 403); assert.equal((await w.f.get(`${base}/ringkasan?${periodeHariIni()}`)).status, 403);
+  assert.deepEqual([(await w.f.get(`${base}/meta`)).body.capabilities.biayaOrder, (await w.f.get(`${base}/meta`)).body.capabilities.kinerja], [true, false]);
 });
 
 test("L10. LAYAR = GRAFIK = EXCEL: jumlah/filter/urut atas SELURUH hasil (bukan halaman 1); ekspor mengikuti tab, periode, filter", async () => {
@@ -168,6 +174,8 @@ test("L10. LAYAR = GRAFIK = EXCEL: jumlah/filter/urut atas SELURUH hasil (bukan 
   const wb = new ExcelJS.Workbook(); await wb.xlsx.load(x.buf);
   const ws = wb.getWorksheet("Biaya per Order"); assert.ok(ws, "sheet Biaya per Order"); let nBaris = 0; ws.eachRow((r, n) => { if (n >= 7 && String(sel(ws, n, 1) ?? "").startsWith("RES-LP-")) nBaris += 1; });
   assert.equal(nBaris, 7, "Excel memuat SEMUA order, bukan halaman pertama");
+  let totalExcel = null; ws.eachRow((r, n) => { if (String(sel(ws, n, 1) ?? "").startsWith("TOTAL")) totalExcel = sel(ws, n, 6); });
+  assert.equal(Number(totalExcel), semua.ringkas.nilaiDiketahui, "baris TOTAL Excel = total layar = Σ tabel");
   assert.ok(wb.getWorksheet("Cakupan dan Definisi"), "definisi + dasar tanggal ada di Excel");
 });
 
