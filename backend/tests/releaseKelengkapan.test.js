@@ -147,6 +147,14 @@ test("ISI TABEL: pembaca isi_n/isi_aktif/isi_fp/isi_ids mem-parse keluaran isi_t
   assert.ok(script.includes('SMOKE_DECL_N="$(isi_n "$ISI_SEBELUM_SWITCH")"') && script.includes("-e SMOKE_DECL_IDS=") && script.includes('-e REH_DECL_AWAL='), "isi tabel diteruskan ke smoke dan rehearsal");
 });
 
+test("UJI KUNCI: tidak ada 'wait' tanpa argumen (macet karena proses latar tee di skrip rilis)", () => {
+  const blokUji = script.slice(script.indexOf("uji_gerbang_kunci() {"), script.indexOf("uji_baseline_bergeser() {"));
+  assert.ok(blokUji.length > 500);
+  const kode = blokUji.split("\n").filter((l) => !l.trim().startsWith("#")).join("\n");
+  assert.ok(!/\bwait\s*(;|\|\||&&|$)/m.test(kode), "wait tanpa argumen");
+  assert.ok(blokUji.includes('wait "${PIDS[@]}"'));
+});
+
 test("UJI KUNCI TERISOLASI (Linux): kunci sendiri diterima, kunci lain/bernama-sama ditolak, dua proses tidak memasuki bagian kritis bersamaan — memuat blok yang SAMA dari skrip rilis", { skip: !(punyaBash && process.platform === "linux" && spawnSync("bash", ["-c", "command -v flock && command -v pgrep && command -v setsid"]).status === 0) }, () => {
   const r = spawnSync("bash", [path.join(repo, "scripts/lib/uji-kunci-kelengkapan.sh"), path.join(repo, "scripts/release-kelengkapan.sh")], { encoding: "utf8", timeout: 120000 });
   assert.equal(r.status, 0, r.stdout + r.stderr); assert.match(r.stdout, /SEMUA UJI KUNCI LULUS/);

@@ -13,5 +13,9 @@ FN="$(sed -n '/^uji_gerbang_kunci() {/,/^}/p' "$SKRIP")"
 . <(sed -n '/^# >>> KUNCI-DEPLOY/,/^# <<< KUNCI-DEPLOY/p' "$SKRIP")
 eval "$FN"
 export UJI_SELF="$SKRIP"
-uji_gerbang_kunci
+# Reproduksi kondisi skrip rilis: stdout lewat 'tee' (proses latar yang tidak pernah selesai) — 'wait' tanpa argumen akan MACET di sini, seperti yang terjadi di rehearsal 29 Okt. Batas waktu 90 detik.
+exec > >(cat)
+( sleep 100 & uji_gerbang_kunci ) & UJI=$!
+SEL=0; while kill -0 "$UJI" 2>/dev/null; do sleep 1; SEL=$((SEL+1)); [ "$SEL" -lt 90 ] || { kill -9 "$UJI" 2>/dev/null; pkill -P "$UJI" 2>/dev/null; die "uji kunci MACET (>90 dtk): kemungkinan 'wait' tanpa argumen"; }; done
+wait "$UJI" || die "uji kunci gagal"
 echo "SEMUA UJI KUNCI LULUS"
