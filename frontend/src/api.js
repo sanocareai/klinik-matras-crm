@@ -1472,6 +1472,7 @@ export const api = {
   // Delivery/Produksi/Warehouse/QC. Lihat backend/src/services/complaintCase.js.
   getComplaintCases: (params = {}) => request(`/complaints${buildQuery(params)}`),
   getComplaintCase: (id) => request(`/complaints/${id}`),
+  getComplaintSummary: (params = {}) => request(`/complaints/ringkasan${buildQuery(params)}`),
   createComplaintCase: (data) => request("/complaints", { method: "POST", body: JSON.stringify(data) }),
   updateComplaintCase: (id, data) => request(`/complaints/${id}`, { method: "PATCH", body: JSON.stringify(data) }),
   transitionComplaintStatus: (id, data) => request(`/complaints/${id}/status`, { method: "POST", body: JSON.stringify(data) }),

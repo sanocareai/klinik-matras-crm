@@ -90,19 +90,20 @@ export function formatComplaintActivitySentence(event) {
     case "COMPLAINT_CREATED":
       return `Kasus komplain dibuka — ${metadata.categoryLabel || CATEGORY_LABEL[metadata.category] || "—"}`;
     case "COMPLAINT_STATUS_CHANGED":
+      // Status rinci tetap disebut (jejak audit); catatan staf ditampilkan apa adanya.
       return metadata.note
-        ? `Status: ${STATUS_LABEL[metadata.from] || metadata.from || "—"} → ${STATUS_LABEL[metadata.to] || metadata.to || "—"} — ${metadata.note}`
-        : `Status: ${STATUS_LABEL[metadata.from] || metadata.from || "—"} → ${STATUS_LABEL[metadata.to] || metadata.to || "—"}`;
+        ? `Status berubah: ${STATUS_LABEL[metadata.from] || metadata.from || "—"} → ${STATUS_LABEL[metadata.to] || metadata.to || "—"} — ${metadata.note}`
+        : `Status berubah: ${STATUS_LABEL[metadata.from] || metadata.from || "—"} → ${STATUS_LABEL[metadata.to] || metadata.to || "—"}`;
     case "COMPLAINT_DELIVERY_TASK_CREATED":
-      return `Delivery Task dibuat — ${metadata.jobType === "DELIVERY" ? "Pengiriman ulang" : "Pengambilan/inspeksi"}`;
+      return `Tugas pengiriman dibuat — ${metadata.jobType === "DELIVERY" ? "kirim ulang ke pelanggan" : "pengambilan/pemeriksaan unit"}`;
     case "COMPLAINT_MATERIAL_REQUESTED":
-      return `Material Requirement diajukan ke Warehouse${metadata.issueNumber ? ` — ${metadata.issueNumber}` : ""}`;
+      return `Bahan diminta ke Warehouse${metadata.issueNumber ? ` — ${metadata.issueNumber}` : ""}`;
     case "COMPLAINT_QC_LINKED":
-      return `Hasil QC ditautkan — verdict ${metadata.verdict || "—"}`;
+      return `Hasil QC dikaitkan ke kasus — hasil: ${metadata.verdict || "—"}`;
     case "COMPLAINT_FOLLOW_UP_LOGGED":
-      return metadata.note ? `Follow-up ke customer — ${metadata.note}` : "Follow-up ke customer dicatat";
+      return metadata.note ? `Tindak lanjut ke pelanggan — ${metadata.note}` : "Tindak lanjut ke pelanggan dicatat";
     case "COMPLAINT_CUSTOMER_CONFIRMED":
-      return "Customer mengonfirmasi komplain SELESAI";
+      return "Pelanggan mengonfirmasi — kasus selesai";
     case "COMPLAINT_CANCELLED":
       return metadata.reason ? `Kasus dibatalkan — ${metadata.reason}` : "Kasus dibatalkan";
     default:

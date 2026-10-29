@@ -17,7 +17,7 @@ import { createMaterialIssue } from "./materialIssue.js";
 import { recordActivity, ENTITY_TYPES, EVENT_TYPES } from "../lib/activityLog.js";
 import { notifyComplaintCaseOwnerChanged } from "../services/pushNotifications.js";
 import {
-  ComplaintError, complaintCaseInclude,
+  ComplaintError, complaintCaseInclude, STATUS_LABEL,
   createComplaintCase, updateComplaintFields, transitionStatus,
   createDeliveryTask, linkQcFitTest, logFollowUp, confirmCustomer,
 } from "../services/complaintCase.js";
@@ -34,22 +34,69 @@ function handleErr(err, res) {
   return res.status(500).json({ error: "Server error: " + err.message });
 }
 
-// GET /api/complaints?orderId=&unitId=&status=&currentOwner=
+// Status yang sudah tutup (riwayat) vs aktif. SELESAI hanya bisa dicapai lewat /confirm-customer (gerbang konfirmasi customer tidak berubah).
+const STATUS_TUTUP = ["SELESAI", "DIBATALKAN"];
+const STATUS_VALID = Object.keys(STATUS_LABEL);
+export const BATAS_HALAMAN_MAKS = 300; // sama dengan batas lama; sekarang disertai total + hasMore supaya pemotongan TIDAK PERNAH diam-diam
+
+// Parameter daftar → { where, orderBy, take, skip }. Masukan tidak valid = 400 (bukan 500 dari Prisma). Aditif: pemanggil lama (orderId/unitId/status/currentOwner saja) berperilaku sama.
+export function bacaParamDaftar(q = {}) {
+  const { orderId, unitId, status, statuses, currentOwner, scope, q: kata } = q;
+  const daftar = [...(status ? [String(status)] : []), ...(statuses ? String(statuses).split(",").map((x) => x.trim()).filter(Boolean) : [])];
+  for (const st of daftar) if (!STATUS_VALID.includes(st)) throw new ComplaintError(`Status "${st}" tidak dikenal`);
+  if (scope !== undefined && scope !== "" && !["aktif", "riwayat"].includes(scope)) throw new ComplaintError('scope harus "aktif" atau "riwayat"');
+  const limit = q.limit === undefined || q.limit === "" ? BATAS_HALAMAN_MAKS : Number(q.limit);
+  const offset = q.offset === undefined || q.offset === "" ? 0 : Number(q.offset);
+  if (!Number.isInteger(limit) || limit < 1 || limit > BATAS_HALAMAN_MAKS) throw new ComplaintError(`limit harus bilangan bulat 1–${BATAS_HALAMAN_MAKS}`);
+  if (!Number.isInteger(offset) || offset < 0) throw new ComplaintError("offset harus bilangan bulat ≥ 0");
+  const AND = [];
+  if (daftar.length) AND.push({ status: { in: daftar } });
+  if (scope === "aktif") AND.push({ status: { notIn: STATUS_TUTUP } });
+  if (scope === "riwayat") AND.push({ status: { in: STATUS_TUTUP } });
+  const teks = String(kata ?? "").trim().slice(0, 80);
+  if (teks) AND.push({ OR: [
+    { caseNumber: { contains: teks, mode: "insensitive" } }, { description: { contains: teks, mode: "insensitive" } },
+    { order: { orderNumber: { contains: teks, mode: "insensitive" } } }, { order: { customer: { name: { contains: teks, mode: "insensitive" } } } },
+  ] });
+  return {
+    where: { ...(orderId && { orderId }), ...(unitId && { unitId }), ...(currentOwner && { currentOwner }), ...(AND.length && { AND }) },
+    // Aktif: yang paling mendesak dulu (enum urut RENDAH<SEDANG<TINGGI<KRITIS → desc = Kritis di atas), lalu terbaru. Lainnya: terbaru. id = tie-break supaya halaman berurutan stabil.
+    orderBy: scope === "aktif" ? [{ severity: "desc" }, { createdAt: "desc" }, { id: "asc" }] : [{ createdAt: "desc" }, { id: "asc" }],
+    take: limit, skip: offset, limit, offset,
+  };
+}
+
+// GET /api/complaints?orderId=&unitId=&status=&statuses=A,B&currentOwner=&scope=aktif|riwayat&q=&limit=&offset=
+// Respons: { cases, total, limit, offset, hasMore } — total = SELURUH hasil filter (bukan hanya halaman ini).
 complaintsRouter.get("/", requirePermission(P.COMPLAINT_READ), async (req, res) => {
   try {
-    const { orderId, unitId, status, currentOwner } = req.query;
-    const cases = await prisma.complaintCase.findMany({
-      where: {
-        ...(orderId && { orderId }),
-        ...(unitId && { unitId }),
-        ...(status && { status }),
-        ...(currentOwner && { currentOwner }),
-      },
-      include: complaintCaseInclude,
-      orderBy: { createdAt: "desc" },
-      take: 300,
-    });
-    res.json({ cases });
+    const { where, orderBy, take, skip, limit, offset } = bacaParamDaftar(req.query);
+    const [cases, total] = await Promise.all([
+      prisma.complaintCase.findMany({ where, include: complaintCaseInclude, orderBy, take, skip }),
+      prisma.complaintCase.count({ where }),
+    ]);
+    res.json({ cases, total, limit, offset, hasMore: offset + cases.length < total });
+  } catch (err) {
+    handleErr(err, res);
+  }
+});
+
+// GET /api/complaints/ringkasan — jumlah per status (seluruh kasus) + prioritas + lewat target. Untuk kartu angka & penghitung tahap; TIDAK bergantung pada halaman yang sudah dimuat.
+complaintsRouter.get("/ringkasan", requirePermission(P.COMPLAINT_READ), async (req, res) => {
+  try {
+    const { currentOwner } = req.query;
+    const dasar = currentOwner ? { currentOwner: String(currentOwner) } : {};
+    if (currentOwner && !["SALES", "DELIVERY", "PRODUCTION", "WAREHOUSE", "QC"].includes(String(currentOwner))) throw new ComplaintError("Divisi pemegang kasus tidak valid");
+    const aktif = { ...dasar, status: { notIn: STATUS_TUTUP } };
+    const [perStatus, prioritas, lewatTarget] = await Promise.all([
+      prisma.complaintCase.groupBy({ by: ["status"], where: dasar, _count: { _all: true } }),
+      prisma.complaintCase.count({ where: { ...aktif, severity: { in: ["TINGGI", "KRITIS"] } } }),
+      prisma.complaintCase.count({ where: { ...aktif, targetCompletionAt: { lt: new Date() } } }),
+    ]);
+    const hitung = Object.fromEntries(STATUS_VALID.map((st) => [st, 0]));
+    for (const g of perStatus) hitung[g.status] = g._count._all;
+    const jumlahAktif = STATUS_VALID.filter((st) => !STATUS_TUTUP.includes(st)).reduce((n, st) => n + hitung[st], 0);
+    res.json({ perStatus: hitung, aktif: jumlahAktif, riwayat: hitung.SELESAI + hitung.DIBATALKAN, selesai: hitung.SELESAI, dibatalkan: hitung.DIBATALKAN, prioritas, lewatTarget });
   } catch (err) {
     handleErr(err, res);
   }

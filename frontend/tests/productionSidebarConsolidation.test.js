@@ -164,7 +164,10 @@ test("Order Produksi: scope aktif menyembunyikan Terkirim, riwayat hanya Terkiri
   assert.match(wo, /scope === "riwayat" \? \[\] :/);
   assert.match(wo, /export default function ProductionWorkOrders\(\{ initialStatus = "", scope = "", onScopeChange = null, headerExtra = null, unitId: unitIdProp, onUnitChange = null \} = \{\}\)/);
   const cc = src("pages", "ComplaintCases.jsx");
-  assert.match(cc, /scope === "aktif" \? allCases\.filter\(\(c\) => !kasusTutup\(c\)\) : scope === "riwayat" \? allCases\.filter\(kasusTutup\) : allCases/);
+  // Redesign Okt 2026: penyaringan aktif/riwayat dipindah ke SERVER (scope dikirim) supaya daftar berhalaman jujur; hub tetap meneruskan scope="aktif"/"riwayat".
+  assert.match(cc, /export default function ComplaintCases\(\{ scope = "" \} = \{\}\)/);
+  assert.match(cc, /const \[tab, setTab\] = useState\(scope \|\| "aktif"\)/);
+  assert.match(cc, /\(\{ scope: tab, statuses: statusFilter,/);
   const pb = src("pages", "pengajuanBiaya", "PengajuanBiayaWorkspace.jsx");
   assert.match(pb, /view = "semua"/, "default Gudang/Marketing/Management/HR-GA tidak berubah");
 });
