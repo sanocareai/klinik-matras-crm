@@ -1,0 +1,19 @@
+# RILIS "REDESIGN KASUS KOMPLAIN" (menu Komplain + hub Komplain & Revisi Produksi): WEB + BACKEND, TANPA migrasi dan TANPA perubahan schema.prisma — RELEASE-DIRECTORY di atas release aktif (BASE_SHA). FAIL-CLOSED.
+#   • Tampilan 4 tahap (Terima & Periksa → Tentukan Solusi → Kerjakan & Kirim → Konfirmasi Pelanggan), satu aksi utama kontekstual + "Tindakan lainnya", drawer ringkas, istilah bahasa Indonesia natural,
+#     Aktif dan Riwayat dipisah, kasus selesai dalam mode baca. Perkiraan biaya penanganan dibedakan dari pengeluaran aktual Finance.
+#   • Backend (aditif): GET /api/complaints kini berhalaman (scope/statuses/q/limit/offset; respons tambahan total/limit/offset/hasMore; masukan tidak valid = 400, bukan 500) dan GET /api/complaints/ringkasan.
+#     Pemanggil lama tetap menerima { cases }. Daftar tidak lagi dipotong 300 kasus tanpa penanda.
+#   • TIDAK berubah: 15 status rinci, aturan transisi, izin lintas divisi, audit, dan gerbang konfirmasi pelanggan (SELESAI hanya lewat POST /complaints/:id/confirm-customer).
+#   • Rilis ini TIDAK membuat atau mengubah kasus komplain, aktivitas, job, order, jurnal, atau stok; smoke pasca-switch hanya membaca dan tidak membuat data percobaan.
+#   • Gate: preflight; backup + RESTORE rehearsal (kode baru berjalan sebagai SERVER terhadap salinan restore; kasus uji lebih dari 300, halaman, Aktif/Riwayat, ringkasan, filter, validasi, izin, tanpa jejak tulis — data uji hanya di salinan);
+#     build web di release dir; switch SATU kali; verifikasi; smoke baca-saja pasca-switch (angka API = hitungan langsung dari tabel; izin 401/403; data identik sebelum vs sesudah).
+#   • BASELINE = release aktif. GERBANG IDENTITAS KODE LIVE membandingkan ISI kode (hash blob SEMUA berkas terlacak baseline, berkas tambahan, identitas proses) di fase 2, fase 6, dan TEPAT sebelum switch; selisih isi apa pun /
+#     berkas tambahan / proses berganti = berhenti sebelum switch. Pembersihan release lama (fase 9) DINONAKTIFKAN: tidak ada folder release/image rollback/backup/volume yang dihapus oleh skrip.
+#
+#   cat scripts/release-komplain-redesign.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/kmp.sh'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/kmp.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/kmp.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rehearsal-only > /tmp/kmpr.out 2>&1 < /dev/null &'   # SEMUA gerbang sampai rehearsal pada restore nyata; TANPA switch
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/kmp.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/kmp.out 2>&1 < /dev/null &'   # rilis penuh
+#
+# ROLLBACK: kode aman di-rollback kapan pun (tanpa migrasi, tanpa tabel baru). Rollback hanya mengembalikan tampilan lama dan daftar lama (dipotong 300); tidak ada data yang berubah.
+# (dibangkitkan oleh scripts/gen-release-komplain-redesign.cjs dari scripts/release-penjadwalan-langsung.sh + scripts/templates/release-komplain-redesign/* + pustaka scripts/lib/{rehearsal,smoke}-komplain-redesign.mjs; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang)
