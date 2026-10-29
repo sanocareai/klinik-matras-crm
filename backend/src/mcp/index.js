@@ -39,11 +39,12 @@ import { oauthConfigured } from "./oauthCrypto.js";
 import { registerReadOnlyTools } from "./tools.js";
 import { registerChatTools } from "./toolsChat.js";
 import { registerTrafficTools } from "./toolsTraffic.js";
+import { registerAtribusiIklanTools } from "./toolsAtribusiIklan.js";
 
 export { wellKnownRouter, mcpOAuthRouter } from "./oauth.js";
 
 export const MCP_SERVER_NAME = "klinik-matras-crm";
-export const MCP_SERVER_VERSION = "1.0.0";
+export const MCP_SERVER_VERSION = "1.1.0";
 
 // Satu instance McpServer per request. Ini pola stateless yang dianjurkan SDK:
 // server & transport hidup selama satu request lalu ditutup, jadi tidak ada
@@ -71,7 +72,9 @@ export function buatServer() {
         "diagnosa_percakapan kalau ingin tahu APA YANG SALAH di satu percakapan; " +
         "audit_balasan_sales untuk memeriksa kepatuhan aturan lintas sales pada suatu periode; " +
         "kualitas_engagement untuk menilai pelanggan dari pola balas chatnya; " +
-        "tren_traffic_lead & performa_iklan untuk analisa akuisisi/iklan.\n" +
+        "tren_traffic_lead untuk tren lead masuk; performa_campaign_meta untuk hasil iklan Meta per campaign/ad set/ad (atribusi CTWA kausal: customer ber-order, " +
+        "membayar, lunas ledger, spend, CPA, ROAS); rekap_harian_meta untuk rekap harian + akumulasi; kesehatan_atribusi_meta untuk cakupan/kesehatan atribusi dan spend. " +
+        "performa_iklan (lama) hanya ringkasan per sumber lead & URL kreatif, BUKAN atribusi campaign — jangan dipakai untuk menilai campaign.\n" +
         "Beberapa tool punya batas jumlah data yang diperiksa dan mengembalikan field `terpotong`/" +
         "`adaLagi` — kalau bernilai true, JANGAN sajikan angkanya sebagai total; persempit rentang " +
         "tanggal atau ambil halaman berikutnya dulu.",
@@ -80,6 +83,7 @@ export function buatServer() {
   registerReadOnlyTools(server);
   registerChatTools(server);
   registerTrafficTools(server);
+  registerAtribusiIklanTools(server);
   return server;
 }
 

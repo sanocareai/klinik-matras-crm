@@ -128,7 +128,10 @@ export function registerTrafficTools(server) {
         "(aktif sejak 13 Agustus 2026), jadi cakupannya sebagian — lihat field cakupanCtwa di hasil. " +
         "`lead`/jumlah TERMASUK chat SPAM/junk (lihat spamRate per baris) — sengaja tidak dibuang " +
         "supaya iklan bertargeting buruk tetap kelihatan buruk, bukan tersembunyi di balik penyebut " +
-        "yang sudah disaring.",
+        "yang sudah disaring. " +
+        "BATASAN (LEGACY): tool ini mengelompokkan URL kreatif dari Customer.ctwaSourceUrl dan menghitung 'jadi order' dari orderCount > 0 — BUKAN atribusi kausal, tidak mengenal " +
+        "campaign/ad set, tidak membedakan customer baru vs lama, dan tidak melihat pembayaran/spend. Satu postingan dapat dipakai di banyak campaign. Untuk menilai campaign/ad set/ad " +
+        "pakai performa_campaign_meta (atribusi CTWA, customer ber-order/membayar/lunas ledger, spend, CPA, ROAS).",
       inputSchema: {
         dari: TANGGAL.optional().describe("Lead yang masuk sejak tanggal ini (WIB). Kosong = sepanjang waktu."),
         sampai: TANGGAL.optional().describe("Sampai tanggal ini (WIB, inklusif)."),

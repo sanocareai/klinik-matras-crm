@@ -131,10 +131,12 @@ function hitungClosingUtama({ customers, orders, kontribusi, refunds }) {
   const perCustomer = new Map();     // customerId -> hariLunas pertama (YYYY-MM-DD WIB)
   let orderLunas = 0;
   const custLunasCrm = new Set();    // customer dengan >= 1 order eligible berstatus LUNAS tersimpan (indikator operasional, BUKAN bukti uang)
+  const custBayar = new Set();       // customer dengan >= 1 pembayaran sah di ledger pada order eligible (pernah membayar; DP dan lunas termasuk; definisi sama dengan sumber.js/d7.js)
   for (const o of orders) {
     if (!leadSah.has(o.customerId) || o.penjualanKaryawanId || ORDER_EXCLUDED_STATUS.includes(o.status)) continue;
     if (o.paymentStatus === "LUNAS") custLunasCrm.add(o.customerId);
     const j = jejakPembayaran(kontribPerOrder.get(o.id) || [], o.tagihan != null ? o.tagihan : nilaiBersih(o), refundPerOrder.get(o.id) || []);
+    if (j.jumlahPembayaran > 0) custBayar.add(o.customerId);
     if (j.status !== "LUNAS") continue;
     orderLunas++;
     const hari = j.hariLunas;
@@ -143,7 +145,7 @@ function hitungClosingUtama({ customers, orders, kontribusi, refunds }) {
   }
   const perBulan = {};
   for (const hari of perCustomer.values()) { const b = hari.slice(0, 7); perBulan[b] = (perBulan[b] || 0) + 1; }
-  return { customerLunasTerbuktiLedger: perCustomer.size, orderLunasTerbuktiLedger: orderLunas, perBulanLunasPertama: perBulan, customerLunasMenurutCrm: custLunasCrm.size };
+  return { customerLunasTerbuktiLedger: perCustomer.size, orderLunasTerbuktiLedger: orderLunas, perBulanLunasPertama: perBulan, customerLunasMenurutCrm: custLunasCrm.size, customerPernahMembayar: custBayar.size };
 }
 
 /**
@@ -284,6 +286,7 @@ export function susunLaporanIklan({ parameter, asOf, leadBaru, touchAkuisisi, to
       orderPernahDp: t.orderPernahDp,
       orderDpSaatIniLedger: t.orderDpSaatIniLedger,
       customerLunasMenurutCrm: closing.customerLunasMenurutCrm,
+      customerPernahMembayar: closing.customerPernahMembayar,
       lunasMenurutCrm: { jumlah: t.lunasMenurutCrm.jumlah, nilai: t.lunasMenurutCrm.nilai, tanggalTidakPasti: t.lunasMenurutCrm.tanggalTidakPasti },
       lunasTerbuktiLedger: t.lunasTerbuktiLedger,
       buktiPelunasan: t.buktiPelunasan,
@@ -330,6 +333,8 @@ export function susunLaporanIklan({ parameter, asOf, leadBaru, touchAkuisisi, to
   tambah("lunas_crm_grup_vs_total", jumlahKunci(grup, (g) => g.lunasMenurutCrm.jumlah), tAll.lunasMenurutCrm.jumlah, "Σ lunas menurut CRM = gabungan");
   tambah("lunas_ledger_grup_vs_total", jumlahKunci(grup, (g) => g.lunasTerbuktiLedger.jumlah), tAll.lunasTerbuktiLedger.jumlah, "Σ lunas terbukti ledger = gabungan");
   tambah("closing_utama_grup_vs_total", jumlahKunci(grup, (g) => g.closingUtama.customerLunasTerbuktiLedger), closingAll.customerLunasTerbuktiLedger, "Σ closing utama (customer lunas terbukti ledger) grup = gabungan (customer tidak dihitung ganda)");
+  tambah("pernah_membayar_grup_vs_total", jumlahKunci(grup, (g) => g.customerPernahMembayar), closingAll.customerPernahMembayar, "Σ customer pernah membayar (>= 1 pembayaran ledger sah) grup = gabungan (customer tidak dihitung ganda)");
+  tambah("pernah_membayar_antara_lunas_dan_order", closingAll.customerLunasTerbuktiLedger <= closingAll.customerPernahMembayar && closingAll.customerPernahMembayar <= tAll.customerDenganOrder ? 1 : 0, 1, "customer lunas ledger <= customer pernah membayar <= customer dengan order");
   tambah("closing_utama_order_vs_kohort", closingAll.orderLunasTerbuktiLedger, tAll.lunasTerbuktiLedger.jumlah, "order lunas terbukti ledger di balik closing utama = lunasTerbuktiLedger kohort Fase 1 (definisi tunggal)");
   tambah("closing_utama_tidak_melebihi_customer_order", closingAll.customerLunasTerbuktiLedger <= tAll.customerDenganOrder ? 1 : 0, 1, "closing utama <= customer dengan order");
   tambah("uang_grup_vs_total", jumlahKunci(grup, (g) => g.uangLedger), tAll.uangLedger, "Σ uang ledger = gabungan (pembayaran tidak dihitung ganda)");
@@ -426,7 +431,7 @@ export function susunLaporanIklan({ parameter, asOf, leadBaru, touchAkuisisi, to
     grup: bersih,
     // HANYA akuisisi terbukti (campaign + UNMAPPED) — yang boleh dikreditkan; baris UNKNOWN tidak ikut.
     jumlahTeratribusi: {
-      leadUnik: akuisisi.size, leadSah: tPro.leads, customerLunasMenurutCrm: closingPro.customerLunasMenurutCrm,
+      leadUnik: akuisisi.size, leadSah: tPro.leads, customerLunasMenurutCrm: closingPro.customerLunasMenurutCrm, customerPernahMembayar: closingPro.customerPernahMembayar,
       closingUtama: { customerLunasTerbuktiLedger: closingPro.customerLunasTerbuktiLedger, orderLunasTerbuktiLedger: closingPro.orderLunasTerbuktiLedger, perBulanLunasPertama: closingPro.perBulanLunasPertama },
       customerDenganOrder: tPro.customerDenganOrder, orderEligible: tPro.orders,
       orderPernahDp: tPro.orderPernahDp, lunasMenurutCrm: tPro.lunasMenurutCrm.jumlah, lunasTerbuktiLedger: tPro.lunasTerbuktiLedger.jumlah,
