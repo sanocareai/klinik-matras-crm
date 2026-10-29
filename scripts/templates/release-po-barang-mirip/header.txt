@@ -1,0 +1,22 @@
+# RILIS "PO BARANG MIRIP" (Finance → Purchase Order Baru): WEB + BACKEND, TANPA migrasi dan TANPA perubahan schema.prisma — RELEASE-DIRECTORY di atas release aktif (BASE_SHA). FAIL-CLOSED.
+#   • Pencocokan barang baru terhadap katalog dibedakan tiga kelas (lib/domain/kemiripanBarang.js): SAMA (setelah normalisasi ejaan/spasi/×-x-*/cm-mm-m/urutan kata/kata satuan) = diblokir dan diarahkan ke katalog;
+#     BERBEDA JELAS (ukuran, ketebalan, grade/density, angka spesifikasi, merek/jenis berbeda pada kedua sisi) = hanya saran, TANPA konfirmasi/alasan paksaan; AMBIGU (atribut hanya tertulis di satu sisi, ejaan hampir sama, urutan ukuran terbalik,
+#     kata tambahan) = butuh keputusan pengguna (konfirmasi + alasan). Pilihan pengguna tidak pernah diganti otomatis.
+#   • Form PO memeriksa SEMUA barang baru sekaligus sebelum simpan (POST /finance/purchase-orders/sku/cek-duplikat-po, baca-saja, urutan sama dengan penyimpanan): masalah tampil PER BARIS dengan aksi (Pakai {kode} / Periksa & konfirmasi / Ubah / Hapus baris),
+#     bukan pesan galat di bawah. Duplikat antar-baris dalam satu PO ditunjuk (SKU_DUPLIKAT_DALAM_PO).
+#   • Server tetap penjaga akhir: nama kanonik diserialkan dengan advisory lock berurutan (dua pengguna menyimpan barang yang sama bersamaan, urutan baris berlawanan = satu menang, satu 409, tanpa deadlock); pembuatan SKU + katalog supplier + asal SKU + PO
+#     satu transaksi (gagal di mana pun = tidak ada material/PO setengah jadi); klik ganda diamankan middleware Idempotency-Key global yang sudah ada (tidak ada mekanisme idempotensi baru).
+#   • Rilis ini TIDAK membuat PO, material, katalog, stok, jurnal, atau Harga Berlaku apa pun; delapan material yang sudah ada (BUS-008..015) tidak dibuat ulang, diganti kode, digabung, atau dihapus (dibuktikan sidik isi barisnya di smoke dan rehearsal).
+#   • Gate: preflight; backup + RESTORE rehearsal (kode baru berjalan sebagai SERVER terhadap salinan restore; semua skenario tulis — delapan varian, klik ganda, ambigu, antar-baris, gagal-simpan, dua pengguna bersamaan, izin — ditulis HANYA ke DB sementara;
+#     direktori data/uploads production TIDAK dipasang); build web di release dir; switch SATU kali; verifikasi; smoke baca-saja pasca-switch (pratinjau cek-duplikat-po + penolakan sebelum menulis; tidak ada PO/material percobaan di production).
+#   • BASELINE = release aktif yang sudah memuat hotfix performa resmi (c518209e) dan drawer bahan ringkas (173058487). GERBANG IDENTITAS KODE LIVE membandingkan ISI kode (hash blob SEMUA berkas terlacak baseline, berkas tambahan, container == folder release,
+#     identitas proses) di fase 2, fase 6, dan TEPAT sebelum switch; selisih isi apa pun / berkas tambahan / proses berganti = berhenti sebelum switch.
+#   • Pembersihan release lama (fase 9) DINONAKTIFKAN pada rilis ini: tidak ada folder release/image rollback/backup/volume yang dihapus oleh skrip.
+#
+#   cat scripts/release-po-barang-mirip.sh | tr -d '\r' | ssh ubuntu@43.133.152.6 'cat > /tmp/pbm.sh'
+#   ssh ubuntu@43.133.152.6 'bash /tmp/pbm.sh <DEPLOY_SHA_40> <BASE_SHA_40> --preflight-only'
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/pbm.sh <DEPLOY_SHA_40> <BASE_SHA_40> --rehearsal-only > /tmp/pbmr.out 2>&1 < /dev/null &'   # SEMUA gerbang sampai rehearsal pada restore nyata; TANPA switch
+#   ssh ubuntu@43.133.152.6 'nohup bash /tmp/pbm.sh <DEPLOY_SHA_40> <BASE_SHA_40> > /tmp/pbm.out 2>&1 < /dev/null &'   # rilis penuh (hanya setelah persetujuan)
+#
+# ROLLBACK: kode aman di-rollback kapan pun (tanpa migrasi, tanpa tabel baru). Material/PO yang dibuat lewat rilis ini tetap sah sebagai data biasa; kode lama membacanya seperti SKU/PO biasa (kolom initialData.varianSerupa hanya informasi tambahan).
+# (dibangkitkan oleh scripts/gen-release-po-barang-mirip.cjs dari scripts/release-penjadwalan-langsung.sh + scripts/templates/release-po-barang-mirip/*; JANGAN edit manual — ubah templat/generator lalu bangkitkan ulang)

@@ -1,0 +1,9 @@
+Rilis ini TANPA migrasi dan TANPA tulisan data bisnis oleh skripnya: rollback KODE aman kapan pun. Bila rollback setelah switch:
+Tujuan rollback = image dan folder release LIVE SEBELUM rilis ini; keduanya MEMUAT hotfix performa dan drawer bahan ringkas (gerbang kode live membuktikan kode di container == folder == baseline disetujui) — rollback tidak membuang keduanya. Folder ${PREV_DIR} tidak dihapus.
+   cd ${PREV_DIR:-<release-sebelumnya>}
+   docker tag ${ROLLBACK_TAG:-<tag-rollback>} ${IMG_NAME:-klinik-matras-backend:latest}
+   SANSS_PERSIST_ROOT=${PERSIST} docker compose -p ${PROJECT} -f docker-compose.yml -f docker-compose.release.yml up -d --no-deps --force-recreate backend
+Web (frontend/dist) dikembalikan bersama folder release sebelumnya. Kode lama kembali ke pencocokan kemiripan nama saja (varian berbeda ukuran/ketebalan kembali dipaksa konfirmasi + alasan; galat duplikat antar-baris muncul saat simpan).
+PO dan material yang dibuat saat rilis ini aktif tetap sah (baris biasa; kode SKU, katalog supplier, dan asal SKU tidak berubah bentuk); tidak ada yang dihapus atau dibalik otomatis.
+Rilis ini tidak menyentuh stok, jurnal, utang, Harga Berlaku, Koreksi Saldo, Produksi, maupun delapan material BUS-008..015 yang sudah ada.
+Pemulihan database penuh hanya bila terjadi kerusakan data: gzip -dc ${BACKUP_FILE:-<backup>} | psql ... (lihat checksum di atas) — MENGHAPUS semua perubahan sesudah backup; gunakan hanya atas keputusan Owner.
