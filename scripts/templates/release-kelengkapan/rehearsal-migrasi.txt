@@ -10,12 +10,19 @@ else
 fi
 dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="$RH_URL" backend npx prisma migrate status </dev/null 2>&1 | grep -i 'up to date' >/dev/null || { reh_drop; die "migrate status rehearsal (image baru) TIDAK 'up to date'"; }
 struktur_baru RPSQL gagal_reh
+ISI_REH="$(isi_tabel_rilis RPSQL)" || { reh_drop; die "gagal membaca isi tabel pernyataan pada restore"; }
+if [ "$KEADAAN" = "SEGAR" ]; then [ "$(isi_n "$ISI_REH")" = "0" ] || { reh_drop; die "migrasi baru pada restore menghasilkan tabel BERISI ($(isi_n "$ISI_REH") baris): backfill dilarang"; }; else [ "$ISI_REH" = "$ISI_PRA" ] || { reh_drop; die "isi tabel pernyataan pada RESTORE ($(isi_n "$ISI_REH") baris, $(isi_fp "$ISI_REH" | cut -c1-12)) != production saat preflight ($(isi_n "$ISI_PRA") baris, $(isi_fp "$ISI_PRA" | cut -c1-12))"; }; fi
+AKTIF_REH="$(isi_aktif "$ISI_REH")"
 [ "$(RPSQL "$SKEMA_SQL")" = "$S_SEBELUM" ] || { reh_drop; die "migrasi MENGUBAH skema (kolom/tipe/nullable/default) tabel lama"; }
-ok "image baru: migrasi rilis diterapkan pada DB rehearsal (hasil restore nyata); tabel pernyataan kosong; 1 FK RESTRICT, 4 CHECK, 4 indeks (3 unik, 1 parsial) tervalidasi; tanpa trigger; skema tabel lama IDENTIK"
+ok "image baru: migrasi rilis $([ "$KEADAAN" = "SEGAR" ] && echo 'diterapkan' || echo 'SUDAH terpasang (tidak diterapkan ulang)') pada DB rehearsal (hasil restore nyata); isi tabel pernyataan pada restore DIBACA: $(isi_n "$ISI_REH") baris (${AKTIF_REH} aktif), $([ "$KEADAAN" = "SEGAR" ] && echo 'kosong' || echo 'sama persis dengan production saat preflight'); 1 FK RESTRICT, 4 CHECK, 4 indeks (3 unik, 1 parsial) tervalidasi; tanpa trigger; skema tabel lama IDENTIK"
 # Guard rollback pada keadaan KOSONG (migrasi terpasang, belum ada pernyataan) → LULUS; baca-saja.
-set +e; GUARD_OUT1="$(GUARD_DB="$REH_DB" bash "$NEW_DIR/scripts/rollback-guard-kelengkapan.sh" 2>&1)"; GUARD_RC1=$?; set -e
+set +e; mkdir -p "$BK_DIR/guard-awal"; GUARD_OUT1="$(GUARD_DB="$REH_DB" GUARD_OUT_DIR="$BK_DIR/guard-awal" bash "$NEW_DIR/scripts/rollback-guard-kelengkapan.sh" 2>&1)"; GUARD_RC1=$?; set -e
 printf '%s
 ' "$GUARD_OUT1" > "$BK_DIR/guard-kosong.log"
-{ [ "$GUARD_RC1" = "0" ] && printf '%s' "$GUARD_OUT1" | grep -q 'GUARD LULUS'; } || { printf '%s
-' "$GUARD_OUT1"; reh_drop; die "guard rollback TIDAK meluluskan keadaan kosong (migrasi terpasang, belum ada pernyataan)"; }
-ok "guard rollback pada keadaan kosong (tabel rilis ada, tanpa pernyataan): LULUS"
+if [ "$AKTIF_REH" = "0" ]; then
+  { [ "$GUARD_RC1" = "0" ] && printf '%s' "$GUARD_OUT1" | grep -q 'GUARD LULUS' && ! printf '%s' "$GUARD_OUT1" | grep -q 'DENGAN PERINGATAN'; } || { printf '%s\n' "$GUARD_OUT1"; reh_drop; die "guard rollback TIDAK meluluskan keadaan awal tanpa pernyataan aktif"; }
+  ok "guard rollback pada keadaan awal restore (tabel rilis ada, tanpa pernyataan aktif): LULUS"
+else
+  { [ "$GUARD_RC1" = "0" ] && printf '%s' "$GUARD_OUT1" | grep -q 'GUARD LULUS DENGAN PERINGATAN'; } || { printf '%s\n' "$GUARD_OUT1"; reh_drop; die "guard rollback TIDAK memberi PERINGATAN untuk ${AKTIF_REH} pernyataan aktif yang sudah ada pada restore"; }
+  ok "guard rollback pada keadaan awal restore (${AKTIF_REH} pernyataan aktif sudah ada): LULUS DENGAN PERINGATAN (sesuai; snapshot ditulis ke ${BK_DIR}/guard-awal)"
+fi

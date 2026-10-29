@@ -55,7 +55,8 @@ test("GERBANG KODE LIVE (isi, bukan marker) di fase audit, tepat sebelum migrasi
   for (const f of ["fase-2-audit", "fase-6-pra-migrasi", "fase-7-tepat-sebelum-switch"]) assert.ok(script.includes(`gerbang_kode_live "${f}"`), f);
   assert.ok(!script.includes('= "$BASE_SHA" ] || die "release aktif (${PREV_COMMIT}) BUKAN baseline'), "marker tidak lagi dipercaya");
   for (const k of ["git hash-object --no-filters --stdin-paths", "KODE LIVE menyimpang dari baseline", "TAMBAHAN:", "container-sha.txt", "PREV_STARTED"]) assert.ok(script.includes(k), k);
-  assert.ok(script.includes("tidak_ada_deploy_lain_lagi") && script.includes("/tmp/release-kelengkapan.lock"));
+  assert.ok(script.includes("tidak_ada_deploy_lain_lagi") && script.includes("release-kelengkapan.lock"));
+  assert.ok(!script.includes("\"$lf\" = \"/tmp/release-"), "kunci sendiri TIDAK boleh dilewati berdasarkan nama berkas");
 });
 
 test("REHEARSAL: restore backup NYATA; migrasi dengan image baru; WAKTU RESPONS (dingin/hangat/maks) daftar, hitungan, filter gabungan, pagination, ekspor, drawer; deteksi permintaan per unit; baca-saja; skenario tulis + pertentangan + bersamaan", () => {
@@ -73,7 +74,7 @@ test("GUARD ROLLBACK: dampak dinilai (hanya penglihatan, bukan data salah) → t
   assert.ok(script.includes("guard-peringatan.log") && script.includes("guard-kosong.log") && script.includes("rollback-guard-kelengkapan.sh"));
   assert.ok(script.includes('docker run --rm --network "${PROJECT}_default" -e DATABASE_URL="$RH_URL" "$ROLLBACK_TAG" sh -c \'cd /app && npx prisma migrate deploy\''), "image lama diuji start pada DB bermigrasi");
   assert.ok(script.includes("IMAGE LAMA gagal 'prisma migrate deploy'") && script.includes("image lama MENERAPKAN migrasi"));
-  assert.ok(script.includes('tag rollback tidak menunjuk image live') && script.includes("baseline e7883bc6"), "rollback ke image live yang memuat baseline");
+  assert.ok(script.includes('tag rollback tidak menunjuk image live') && script.includes("baseline ${BASE_SHA:0:8}"), "rollback ke image live yang memuat baseline");
 });
 
 test("TANPA PENGHAPUSAN: fase pembersihan dinonaktifkan; tidak ada rm/docker rmi/prune/volume terhadap release lama, image rollback, backup, volume (selain jejak sementara rehearsal-only)", () => {
@@ -83,8 +84,70 @@ test("TANPA PENGHAPUSAN: fase pembersihan dinonaktifkan; tidak ada rm/docker rmi
   assert.ok(!/rm -rf[^\n]*(RELEASES\b|PREV_DIR|backups|volume)/.test(script.replace('"${NEW_DIR#"$RELEASES"/}" != "${NEW_DIR}"', "")), "tidak menghapus release lama/backup");
 });
 
-test("PASCA-SWITCH: hotfix performa tetap ada; hitung baris sebelum/sesudah; smoke baca-saja (401/403, hitungan=daftar, penulisan ditolak sebelum menyentuh data, tabel rilis kosong, tanpa jejak tulis)", () => {
+test("PASCA-SWITCH: hotfix performa tetap ada; hitung baris sebelum/sesudah; smoke baca-saja (401/403, hitungan=daftar, penulisan ditolak sebelum menyentuh data, isi tabel rilis dibaca aktual dan tidak berubah, tanpa jejak tulis)", () => {
   assert.ok(script.includes("hotfix HILANG: cacheSingkat.js") && script.includes("hitung baris jadwal/Run/stok/pemakaian/harga/jurnal"));
-  for (const k of ["tanpa token = 401", "Idempotency-Key = 400", "403", "total filter di daftar = hitungan server", "tabel pernyataan ada dan KOSONG", "tidak ada jejak tulis"]) assert.ok(smoke.includes(k), `smoke memuat: ${k}`);
+  for (const k of ["tanpa token = 401", "Idempotency-Key = 400", "403", "total filter di daftar = hitungan server", "SMOKE_DECL_N", "tidak ada jejak tulis"]) assert.ok(smoke.includes(k), `smoke memuat: ${k}`);
   assert.ok(!/\.(create|update|delete|upsert)\(|\bINSERT INTO\b|\bUPDATE\b [a-z_"]+ SET/.test(smoke), "smoke tidak menulis langsung");
+});
+
+// ── PENGUNCIAN DEPLOY (berbasis kepemilikan proses), keadaan LANJUT dengan isi tabel aktual, urutan pra-switch ──
+const fungsi = (nama) => {
+  const L = script.split("\n"); const i = L.findIndex((l) => l.startsWith(`${nama}() {`)); assert.ok(i >= 0, `fungsi ${nama} ada di skrip`);
+  if (L[i].trimEnd().endsWith("}") && L[i].length > nama.length + 5) return L[i];
+  let j = i; while (j < L.length && L[j] !== "}") j++; assert.ok(j < L.length, `akhir fungsi ${nama}`);
+  return L.slice(i, j + 1).join("\n");
+};
+const bashJalan = (kode, env = {}) => spawnSync("bash", ["-c", kode], { encoding: "utf8", env: { ...process.env, ...env } });
+
+test("PENGUNCIAN: kunci bersama + kunci sendiri diambil ATOMIK sebelum memeriksa yang lain; kepemilikan dari proses (perangkat:inode fd 7/9), bukan nama; diperiksa di fase 0, sebelum migrasi, dan tepat sebelum switch", () => {
+  const f0 = script.indexOf("kunci_ambil   #"); const cek0 = script.indexOf("kunci_cek_lain || die \"deploy lain sedang berjalan", f0);
+  assert.ok(f0 > 0 && cek0 > f0, "kunci diambil SEBELUM kunci lain diperiksa (fase 0)");
+  assert.ok(script.includes("release-deploy-bersama.lock") && script.includes("exec 7>>") && script.includes("exec 9>>") && script.includes("/proc/$$/fd/$fd") && script.includes("stat -Lc '%d:%i'"), "kepemilikan = identitas berkas yang dibuka proses ini");
+  assert.ok(script.includes("exec 8<\"$lf\"; flock -n 8"), "probe kunci lain membuka read-only (tidak memotong isi)");
+  const fn = fungsi("tidak_ada_deploy_lain_lagi"); assert.ok(fn.includes("kunci_milik_sendiri") && fn.includes("kunci_cek_lain") && fn.includes("proses_lain"), "pemeriksaan ulang memakai kepemilikan");
+  const p6 = script.indexOf('gerbang_kode_live "fase-6-pra-migrasi"'); const mig = script.indexOf("migrate deploy GAGAL", p6);
+  assert.ok(script.slice(p6, mig).includes("tidak_ada_deploy_lain_lagi"), "dicek ulang sebelum migrasi");
+  const p7 = script.indexOf('PHASE="7-switch"'); const up = script.indexOf('up -d --no-deps backend', p7);
+  const antara = script.slice(p7, up);
+  assert.ok(antara.indexOf("tidak_ada_deploy_lain_lagi") > 0 && antara.indexOf("tidak_ada_deploy_lain_lagi") < antara.indexOf('gerbang_kode_live "fase-7-tepat-sebelum-switch"'), "kunci lalu gerbang kode live tepat sebelum switch");
+  assert.ok(antara.includes("kandidat berubah sebelum switch") && antara.includes("isi tabel pernyataan BERUBAH sejak preflight"), "kandidat dan isi tabel diperiksa tepat sebelum switch");
+});
+
+test("REHEARSAL menguji logika pra-switch yang sebelumnya gagal: uji kunci terisolasi + uji negatif baseline bergeser + gerbang fase 7 pada production nyata, SEBELUM berhenti/rehearsal-only", () => {
+  const u = script.indexOf('PHASE="5c-uji-pra-switch"'); const stop = script.indexOf('if [ "$REHEARSAL_ONLY" = "1" ]; then', u);
+  assert.ok(u > 0 && stop > u, "uji pra-switch sebelum berhenti pada rehearsal-only");
+  const blok = script.slice(u, stop);
+  for (const k of ["uji_gerbang_kunci", "uji_baseline_bergeser", "tidak_ada_deploy_lain_lagi", 'gerbang_kode_live "rehearsal-pra-switch"']) assert.ok(blok.includes(k), k);
+  for (const k of ["baseline-bergeser", "container-dimulai-ulang", "image-berganti", "BUKAN baseline/leluhur baseline", "dimulai ulang sejak audit awal", "image container berubah sejak audit awal"]) assert.ok(script.includes(k), k);
+});
+
+test("KEADAAN LANJUT: migrasi sudah terpasang (checksum+status+struktur) diterima walau tabel BERISI; isi dibaca aktual, tidak diasumsikan kosong; SEGAR/LANJUT lain ditolak (fail-closed)", { skip: !punyaBash }, () => {
+  const kode = `MIG_NAME=20261231110000_x\n${fungsi("tentukan_keadaan")}\n`;
+  const t = (...a) => { const r = bashJalan(`${kode}\ntentukan_keadaan "$@"`.replace('"$@"', a.map((x) => `'${x}'`).join(" "))); return { out: r.stdout.trim(), rc: r.status }; };
+  assert.deepEqual(t(0, 0, 0, 0, "20261231110000_x"), { out: "SEGAR", rc: 0 });
+  assert.deepEqual(t(1, 0, 1, 1, ""), { out: "LANJUT", rc: 0 }, "LANJUT dengan tabel kosong");
+  assert.deepEqual(t(1, 7, 1, 1, ""), { out: "LANJUT", rc: 0 }, "LANJUT dengan tabel berisi (pernyataan pengguna sah) TIDAK ditolak");
+  assert.match(t(1, 0, 1, 0, "").out, /^TOLAK: status\/checksum/, "checksum/status tidak sesuai");
+  assert.match(t(1, 0, 1, 1, "20261231120000_lain").out, /^TOLAK: masih ada migrasi pending/);
+  assert.match(t(1, "abc", 1, 1, "").out, /^TOLAK: isi tabel rilis tidak terbaca/, "isi tabel tak terbaca = tolak");
+  assert.match(t(1, 0, 0, 0, "").out, /^TOLAK: keadaan campuran/, "tabel ada tetapi migrasi tidak tercatat = campuran");
+  assert.match(t(0, 0, 1, 1, "").out, /^TOLAK: keadaan campuran/, "migrasi tercatat tetapi tabel tidak ada = campuran");
+  assert.match(t(0, 0, 0, 0, "20261231110000_x\n20261231120000_y").out, /^TOLAK: migrasi pending bukan tepat/);
+  assert.ok(!script.includes("tabel rilis TIDAK kosong (${nisi} baris)"), "tidak ada lagi penolakan karena tabel berisi pada LANJUT");
+});
+
+test("ISI TABEL: pembaca isi_n/isi_aktif/isi_fp/isi_ids mem-parse keluaran isi_tabel_rilis; ABSEN = 0; penyimpangan sesudah switch (baris hilang/berubah) dihentikan", { skip: !punyaBash }, () => {
+  const kode = ["isi_n", "isi_aktif", "isi_fp", "isi_ids"].map(fungsi).join("\n");
+  const j = (k) => bashJalan(`${kode}\n${k}`).stdout.trim();
+  assert.equal(j('isi_n "3|2|abcd1234|id1,id2,id3"'), "3"); assert.equal(j('isi_aktif "3|2|abcd1234|id1,id2,id3"'), "2");
+  assert.equal(j('isi_fp "3|2|abcd1234|id1,id2,id3"'), "abcd1234"); assert.equal(j('isi_ids "3|2|abcd1234|id1,id2,id3"'), "id1,id2,id3");
+  assert.equal(j('isi_n ABSEN'), "0"); assert.equal(j('isi_aktif ABSEN'), "0"); assert.equal(j('isi_fp ABSEN'), "-"); assert.equal(j('isi_ids "0|0|-|"'), "");
+  for (const k of ["baris pernyataan yang ada sebelum switch HILANG sesudah switch", "jumlah baris pernyataan BERKURANG sesudah switch", "isi tabel pernyataan BERUBAH oleh switch", "isi tabel pernyataan BERUBAH pada tahap LANJUT"]) assert.ok(script.includes(k), k);
+  assert.ok(script.includes('[ "$ISI_REH" = "$ISI_PRA" ]'), "restore rehearsal harus sama persis dengan isi production saat preflight (LANJUT)");
+  assert.ok(script.includes('SMOKE_DECL_N="$(isi_n "$ISI_SEBELUM_SWITCH")"') && script.includes("-e SMOKE_DECL_IDS=") && script.includes('-e REH_DECL_AWAL='), "isi tabel diteruskan ke smoke dan rehearsal");
+});
+
+test("UJI KUNCI TERISOLASI (Linux): kunci sendiri diterima, kunci lain/bernama-sama ditolak, dua proses tidak memasuki bagian kritis bersamaan — memuat blok yang SAMA dari skrip rilis", { skip: !(punyaBash && process.platform === "linux" && spawnSync("bash", ["-c", "command -v flock && command -v pgrep && command -v setsid"]).status === 0) }, () => {
+  const r = spawnSync("bash", [path.join(repo, "scripts/lib/uji-kunci-kelengkapan.sh"), path.join(repo, "scripts/release-kelengkapan.sh")], { encoding: "utf8", timeout: 120000 });
+  assert.equal(r.status, 0, r.stdout + r.stderr); assert.match(r.stdout, /SEMUA UJI KUNCI LULUS/);
 });

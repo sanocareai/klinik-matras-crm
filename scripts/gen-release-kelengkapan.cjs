@@ -19,9 +19,11 @@ const OUT = "scripts/release-kelengkapan.sh";
 const TPL_DIR = "scripts/templates/release-kelengkapan"; const TPL_P = "scripts/templates/release-penjadwalan-langsung";
 const LIB_SCAN = "scripts/lib/scan-migrasi-kelengkapan.mjs", LIB_REH = "scripts/lib/rehearsal-kelengkapan.mjs", LIB_SMOKE = "scripts/lib/smoke-kelengkapan.mjs";
 const GUARD = "scripts/rollback-guard-kelengkapan.sh", GENERATOR = "scripts/gen-release-kelengkapan.cjs";
-const TPL_FILES = ["header", "vars", "struktur", "gate-prisma", "keadaan", "rehearsal-migrasi", "rehearsal-guard", "step6", "rollback"].map((n) => `${TPL_DIR}/${n}.txt`);
+const TPL_FILES = ["header", "vars", "kunci", "uji-pra-switch", "fase0-kunci", "cek-ulang-kunci", "isi-pra-switch", "rehearsal-pra-switch", "isi-pasca-switch", "guard-pasca", "struktur", "gate-prisma", "keadaan", "rehearsal-migrasi", "rehearsal-guard", "step6", "rollback"].map((n) => `${TPL_DIR}/${n}.txt`);
 const TPL_GERBANG = ["gerbang-kode-live", "verifikasi-hotfix", "hitung-pra", "hitung-pasca"].map((n) => `${TPL_P}/${n}.txt`);
-const FILE_TETAP = [OUT, GUARD, GENERATOR, LIB_SCAN, LIB_REH, LIB_SMOKE, ...TPL_FILES];
+const LIB_KUNCI = "scripts/lib/gen-kunci-kelengkapan.cjs";
+const { terapkanKunci } = require("./lib/gen-kunci-kelengkapan.cjs");
+const FILE_TETAP = [OUT, GUARD, GENERATOR, LIB_SCAN, LIB_REH, LIB_SMOKE, LIB_KUNCI, ...TPL_FILES];
 const CAND_BRANCH = "feat/order-produksi-kelengkapan";
 const DIST_BARU = ["Bahan belum dicatat", "Bahan perlu dicek", "HPP belum lengkap", "Data order kurang", "Kelengkapan data", "Unit ini memang tanpa bahan baru", "Paling lama belum ditangani", "Tanggal order masuk (unit dibuat)"];
 const DIST_LAMA_TAMBAHAN = ["Buka pekerjaan", "Catat pekerjaan selesai", "Tandai sudah dikerjakan", "Harga Berlaku (HPP operasional)", "Koreksi salah input historis", "Ada stok", "Pilih meja", "Belum dijadwalkan", "Tambah pemakaian", "Koreksi saldo", "Konfirmasi Barang Jadi", "Pengeluaran Material"];
@@ -34,12 +36,6 @@ const UJI_TERISOLASI = [
   'ok "rehearsal terisolasi: direktori data/uploads/dist-driver production TIDAK dipasang (diganti direktori sementara kosong)"',
 ].join("\n");
 // Guard rollback pada production SESUDAH switch (baca-saja): belum ada pernyataan aktif → LULUS; sesudah ada pernyataan → LULUS DENGAN PERINGATAN + snapshot (rollback rutin tetap diperbolehkan).
-const GUARD_PASCA = [
-  'set +e; GUARD_PROD="$(GUARD_OUT_DIR="$BK_DIR" bash "$NEW_DIR/scripts/rollback-guard-kelengkapan.sh" 2>&1)"; GUARD_PROD_RC=$?; set -e',
-  "printf '%s\\n' \"$GUARD_PROD\" | sed 's/^/        guard: /'",
-  '[ "$GUARD_PROD_RC" = "0" ] || die "guard rollback produksi pasca-switch gagal (exit ${GUARD_PROD_RC})"',
-  'ok "guard rollback (baca-saja) di produksi: LULUS (belum ada pernyataan aktif saat rilis); sesudah ada pernyataan, guard memberi PERINGATAN + snapshot dan tetap mengizinkan rollback rutin"',
-].join("\n");
 const must = (c, m) => { if (!c) throw new Error("templat/masukan tak cocok: " + m); };
 const sha = (t) => crypto.createHash("sha256").update(t).digest("hex");
 const git = (args) => execFileSync("git", args, { cwd: REPO, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 });
@@ -109,15 +105,15 @@ function bangkitkan({ baseScript, blok, berkasList, mig, schemaSha, scanJs, scan
   // 9. migrasi produksi
   potong('PHASE="6-tanpa-migrasi"', '\nPHASE="7-switch"', lf(blok.step6).trimEnd() + "\n");
   // 10. verifikasi pasca-switch
-  r('ok "${NBE} berkas backend di container = kandidat (byte-identik)"', 'ok "${NBE} berkas backend di container = kandidat (byte-identik)"\nPSQLN() { dcp "$NEW_DIR" exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" -X -At -q -c "$1" </dev/null; }\nstruktur_baru PSQLN die\nok "objek rilis terpasang di produksi: tabel pernyataan — kosong; 1 FK RESTRICT, 4 CHECK, 4 indeks (3 unik, 1 parsial) tervalidasi; tanpa trigger"\n' + GUARD_PASCA);
+  r('ok "${NBE} berkas backend di container = kandidat (byte-identik)"', 'ok "${NBE} berkas backend di container = kandidat (byte-identik)"\nPSQLN() { dcp "$NEW_DIR" exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" -X -At -q -c "$1" </dev/null; }\nstruktur_baru PSQLN die\nok "objek rilis terpasang di produksi: struktur persis (1 FK RESTRICT, 4 CHECK, 4 indeks [3 unik, 1 parsial]) tervalidasi; tanpa trigger"\n' + lf(blok["isi-pasca-switch"]).trimEnd() + '\n' + lf(blok["guard-pasca"]).trimEnd());
   // 11. smoke
   { const a = s.indexOf("<<'NODE' | tee"); const aLine = s.indexOf("\n", a) + 1; const b = s.indexOf("\nNODE\n", aLine); must(a > 0 && b > 0, "NODE smoke"); s = s.slice(0, aLine) + lf(smokeNode).trimEnd() + s.slice(b); }
   const m = s.match(/PHASE="8b-smoke"; say "[^\n]*\n/); must(m, "PHASE 8b");
   s = s.replace(m[0], () => 'PHASE="8b-smoke"; say "8b. Smoke test baca-saja: izin (401/403), hitungan kelengkapan = total filter di daftar, filter gabungan + urut terlama, drawer = daftar, ekspor, periode terbalik 400, penulisan ditolak sebelum menyentuh data; tabel rilis tetap kosong; tidak ada jejak tulis"\n');
   const ms = s.match(/ok "smoke test lulus \([^\n]*\n/); must(ms, "ok smoke");
-  s = s.replace(ms[0], () => 'ok "smoke test lulus (izin, hitungan = daftar, filter, drawer, ekspor, penulisan ditolak, tabel rilis kosong, tanpa jejak tulis, invarian)"\n');
+  s = s.replace(ms[0], () => 'ok "smoke test lulus (izin, hitungan = daftar, filter, drawer, ekspor, penulisan ditolak, isi tabel rilis dibaca aktual dan tidak berubah, tanpa jejak tulis, invarian)"\n');
   const iCat = s.lastIndexOf('say "CATATAN:'); must(iCat > 0, "CATATAN");
-  s = s.slice(0, iCat) + 'say "CATATAN: Rilis ini membawa penyaring Kelengkapan Order Produksi (Bahan belum dicatat / perlu dicek / HPP belum lengkap / Data order kurang) + pernyataan tanpa bahan baru. Migrasi aditif: 1 tabel pernyataan KOSONG. Rilis TIDAK membuat pernyataan massal, stok, Material Issue, Run, jadwal, status, biaya, jurnal, atau harga. Rollback kode: jalankan scripts/rollback-guard-kelengkapan.sh dulu (peringatan + snapshot; rollback rutin diperbolehkan)."\n';
+  s = s.slice(0, iCat) + 'say "CATATAN: Rilis ini membawa penyaring Kelengkapan Order Produksi (Bahan belum dicatat / perlu dicek / HPP belum lengkap / Data order kurang) + pernyataan tanpa bahan baru. Migrasi aditif: 1 tabel pernyataan (isi dibaca aktual, tidak diasumsikan kosong). Rilis TIDAK membuat pernyataan massal, stok, Material Issue, Run, jadwal, status, biaya, jurnal, atau harga. Rollback kode: jalankan scripts/rollback-guard-kelengkapan.sh dulu (peringatan + snapshot; rollback rutin diperbolehkan)."\n';
   // ── GERBANG IDENTITAS KODE LIVE + hotfix tetap ada + hitung baris + tanpa pembersihan (rilis di atas baseline e7883bc6) ──
   const PH2 = 'PHASE="2-audit-produksi"; say "2. Audit produksi aktif (baca-saja)"';
   r(PH2, lf(blok["gerbang-kode-live"]).trimEnd() + '\n\n' + PH2);
@@ -135,6 +131,7 @@ function bangkitkan({ baseScript, blok, berkasList, mig, schemaSha, scanJs, scan
   s = s.replace(m8b[0], () => lf(blok["hitung-pasca"]).trimEnd() + '\n' + m8b[0]);
   potong('PHASE="9-pembersihan"; say', 'trap - EXIT\nsay "SELESAI', 'PHASE="9-pembersihan"; say "9. Pembersihan release lama DINONAKTIFKAN (folder hotfix dan release lama TIDAK dihapus)"\nok "tidak ada folder release/image/backup/volume yang dihapus oleh skrip ini; disk: $(df -h "$HOME" | awk \'NR==2{print $4" bebas"}\')"\n');
   s = s.split("rehearsal-koreksi.log").join("rehearsal-kelengkapan.log"); // sisa nama berkas log dari kerangka dasar
+  s = terapkanKunci(s, blok);
   must(!/@@[A-Z_]+@@/.test(s), "placeholder tersisa");
   s = lf(s); // checkout Windows (autocrlf) dapat membuat templat CRLF; keluaran SELALU LF (yang dikirim ke VPS dan di-commit)
   return { script: s, ringkasan: { berkas: berkas.length, backendSrc: berkas.filter((f) => f.startsWith("backend/src/")).length, frontendSrc: berkas.filter((f) => f.startsWith("frontend/src/")).length, mig: mig.name, migSha: sha(lf(mig.sql)).slice(0, 12), scanExpect, schemaSha: schemaSha.slice(0, 12), objek: { idx: ob.idx.length, parsial: ob.parsial.length, chk: ob.chk.length, fk: ob.fk.length, trg: ob.trg.length } } };

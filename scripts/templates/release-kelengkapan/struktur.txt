@@ -1,11 +1,10 @@
 
-# Struktur objek rilis (1 tabel KOSONG; 1 FK RESTRICT; 4 CHECK; 4 indeks termasuk primary key [3 unik, 1 parsial 'satu pernyataan AKTIF per unit']) — SATU definisi dipakai production (sebelum switch) dan rehearsal.
+# Struktur objek rilis (1 tabel; isi diverifikasi terpisah lewat isi_tabel_rilis, TIDAK diasumsikan kosong; 1 FK RESTRICT; 4 CHECK; 4 indeks termasuk primary key [3 unik, 1 parsial 'satu pernyataan AKTIF per unit']) — SATU definisi dipakai production (sebelum switch) dan rehearsal.
 # $1 = fungsi pembaca SQL (menerima satu argumen SQL, mencetak hasil -At), $2 = fungsi kegagalan (menerima pesan).
 in_list() { local o="" x; for x in $1; do o="${o:+$o,}'$x'"; done; printf '%s' "$o"; }
 struktur_baru() {
   local Q="$1" G="$2" n
   [ "$("$Q" "select count(*) from pg_tables where schemaname='public' and tablename in ($(in_list "$TBL_BARU"))")" = "1" ] || "$G" "tabel rilis (unit_material_declarations) tidak terpasang"
-  [ "$("$Q" "select count(*) from unit_material_declarations")" = "0" ] || "$G" "tabel rilis TIDAK kosong setelah migrasi (backfill/pernyataan massal tidak diizinkan)"
   n="$(printf '%s\n' $FK_BARU | grep -c .)"
   [ "$("$Q" "select count(*) from pg_constraint where conname in ($(in_list "$FK_BARU")) and contype='f' and confdeltype='r' and convalidated")" = "$n" ] || "$G" "${n} FK ON DELETE RESTRICT tidak terpasang/tervalidasi"
   n="$(printf '%s\n' $CHK_BARU | grep -c .)"
@@ -20,7 +19,7 @@ SKEMA_SQL="select md5(coalesce(string_agg(table_name||'.'||column_name||':'||dat
 
 # Klasifikasi KEADAAN production — murni, FAIL-CLOSED: selain dua keadaan yang dikenal = TOLAK.
 #   SEGAR  = tabel rilis belum ada dan migrasi rilis belum terpasang; migrasi pending = tepat migrasi rilis.
-#   LANJUT = rilis terhenti SESUDAH migrasi: tabel rilis ada dan KOSONG, migrasi rilis selesai (1 langkah, tidak di-rollback, checksum = berkas kandidat), tidak ada pending.
+#   LANJUT = migrasi rilis SUDAH terpasang: tabel rilis ada, migrasi rilis selesai (1 langkah, tidak di-rollback, checksum = berkas kandidat), tidak ada pending. Isi tabel boleh berapa saja (pernyataan pengguna sah); isinya DIBACA dan dicatat (isi_tabel_rilis), tidak diasumsikan kosong. Struktur persis divalidasi terpisah (struktur_baru).
 # Argumen: ntab nisi mig_terpasang(0/1) csok(0/1) pending(teks)
 tentukan_keadaan() {
   local ntab="$1" nisi="$2" terpasang="$3" csok="$4" pend="$5"
@@ -31,9 +30,19 @@ tentukan_keadaan() {
   if [ "$ntab" = "1" ] && [ "$terpasang" = "1" ]; then
     [ -z "$pend" ] || { echo "TOLAK: masih ada migrasi pending ($(printf '%s' "$pend" | tr '\n' ' '))"; return 1; }
     [ "$csok" = "1" ] || { echo "TOLAK: status/checksum migrasi rilis tidak sesuai berkas kandidat"; return 1; }
-    [ "$nisi" = "0" ] || { echo "TOLAK: tabel rilis TIDAK kosong (${nisi} baris)"; return 1; }
+    [[ "$nisi" =~ ^[0-9]+$ ]] || { echo "TOLAK: isi tabel rilis tidak terbaca (${nisi})"; return 1; }
     echo LANJUT; return 0
   fi
   echo "TOLAK: keadaan campuran/tidak dikenal (tabel rilis=${ntab}, migrasi rilis terpasang=${terpasang})"; return 1
 }
 LQ() { psql_live -At -c "$1"; }
+# Isi AKTUAL tabel rilis (dibaca, tidak diasumsikan): "ABSEN" bila tabel belum ada; selain itu "jumlah|aktif|sidik-jari-baris|daftar-id". $1 = fungsi pembaca SQL.
+isi_tabel_rilis() {
+  local Q="$1"
+  [ "$("$Q" "select count(*) from pg_tables where schemaname='public' and tablename='unit_material_declarations'")" = "1" ] || { echo ABSEN; return 0; }
+  "$Q" "select count(*)||'|'||count(*) filter (where t.status='ACTIVE')||'|'||coalesce(md5(string_agg(t::text, '~' order by t.id::text)), '-')||'|'||coalesce(string_agg(t.id::text, ',' order by t.id::text), '') from unit_material_declarations t"
+}
+isi_n() { case "$1" in ABSEN) echo 0;; *) echo "${1%%|*}";; esac; }
+isi_aktif() { case "$1" in ABSEN) echo 0;; *) local r="${1#*|}"; echo "${r%%|*}";; esac; }
+isi_fp() { case "$1" in ABSEN) echo -;; *) local r="${1#*|}"; r="${r#*|}"; echo "${r%%|*}";; esac; }
+isi_ids() { case "$1" in ABSEN) echo "";; *) echo "${1##*|}";; esac; }

@@ -29,7 +29,21 @@ const fp = async () => { const o = {}; for (const t of TABEL) o[t] = (await pris
 const sebelum = await fp();
 const evt0 = await hitung("select count(*) as n from activity_events");
 
-rec("tabel pernyataan ada dan KOSONG (tidak ada pernyataan massal/backfill saat rilis)", (await hitung("select count(*) as n from unit_material_declarations")) === 0);
+{
+  // Isi tabel pernyataan DIBACA aktual dan dibandingkan dengan keadaan sebelum switch (SMOKE_DECL_* dari skrip rilis); tidak diasumsikan kosong.
+  const nSkrg = await hitung("select count(*) as n from unit_material_declarations");
+  const n0 = process.env.SMOKE_DECL_N === undefined || process.env.SMOKE_DECL_N === "" ? null : Number(process.env.SMOKE_DECL_N);
+  const ids0 = (process.env.SMOKE_DECL_IDS || "").split(",").filter(Boolean);
+  if (n0 === null) skip("isi tabel pernyataan vs sebelum switch", "SMOKE_DECL_N tidak diberikan (uji lokal)");
+  else {
+    const hadir = ids0.length ? (await prisma.$queryRawUnsafe('select count(*)::int n from unit_material_declarations where id::text = any($1::text[])', ids0))[0].n : 0;
+    rec(`tabel pernyataan: ${n0} baris sebelum switch (dibaca aktual) — semuanya masih ada (${hadir}/${n0}); sekarang ${nSkrg} baris${nSkrg > n0 ? " (penambahan = pernyataan pengguna SESUDAH switch, bukan dari skrip rilis)" : ""}`, hadir === n0 && nSkrg >= n0);
+    if (nSkrg === n0 && process.env.SMOKE_DECL_FP) {
+      const fp = (await prisma.$queryRawUnsafe("select coalesce(md5(string_agg(t::text, '~' order by t.id::text)), '-') h from unit_material_declarations t"))[0].h;
+      rec("isi tabel pernyataan IDENTIK byte-per-baris dengan sebelum switch (rilis tidak mengubah/menghapus/mengisi)", fp === process.env.SMOKE_DECL_FP, fp.slice(0, 12));
+    }
+  }
+}
 rec("izin kode berjalan: pernyataan memakai izin Rute Unit (Admin/Owner/Kepala Produksi), bukan Sales", (ROLE_PERMISSIONS.ADMIN ?? []).includes("unit:routing:write") && !(ROLE_PERMISSIONS.SALES ?? []).includes("unit:routing:write"));
 // tanpa token
 for (const [m, p] of [["GET", "/api/production/work-orders/kelengkapan-hitung"], ["GET", "/api/production/work-orders?kelengkapan=BAHAN_BELUM_DICATAT"], ["GET", "/api/production/units/00000000-0000-4000-8000-000000000000/pernyataan-tanpa-bahan"]]) rec(`${m} ${p.split("?")[0]} tanpa token = 401`, (await get(p)).status === 401);
@@ -44,7 +58,7 @@ if (h.status === 200) {
   const g = await get(`/api/production/work-orders?${AKTIF}&kelengkapan=BAHAN_BELUM_DICATAT,BAHAN_PERLU_DICEK,HPP_BELUM_LENGKAP,DATA_ORDER_KURANG&pageSize=50&urut=terlama`, tA);
   rec(`filter gabungan + urut terlama dalam ${g.ms} ms: total = unit unik (${h.json.unik}), halaman ≤ 50`, g.status === 200 && g.json.total === h.json.unik && g.json.units.length <= 50);
   const satu = g.json?.units?.[0];
-  if (satu) { const d = await get(`/api/production/units/${satu.id}/adopsi`, tA); rec("drawer unit memuat klasifikasi yang SAMA dengan daftar + pernyataan (kosong)", d.status === 200 && JSON.stringify(d.json.adopsi.kelengkapan.keys) === JSON.stringify(satu.adopsi.kelengkapan.keys) && d.json.pernyataanTanpaBahan?.aktif === null && d.json.izin?.pernyataanTanpaBahan === true); }
+  if (satu) { const d = await get(`/api/production/units/${satu.id}/adopsi`, tA); rec("drawer unit memuat klasifikasi yang SAMA dengan daftar + pernyataan", d.status === 200 && JSON.stringify(d.json.adopsi.kelengkapan.keys) === JSON.stringify(satu.adopsi.kelengkapan.keys) && (d.json.pernyataanTanpaBahan?.aktif === null || typeof d.json.pernyataanTanpaBahan?.aktif === 'object') && d.json.izin?.pernyataanTanpaBahan === true); }
   else skip("drawer unit", "tidak ada unit berkekurangan pada lingkup Aktif");
   const x = await fetch(BASE + `/api/production/work-orders/export.xlsx?${AKTIF}&kelengkapan=HPP_BELUM_LENGKAP`, { headers: { Authorization: "Bearer " + tA } }); const b = Buffer.from(await x.arrayBuffer());
   rec(`ekspor Excel dengan filter kelengkapan terunduh (${b.length} byte, berkas xlsx)`, x.status === 200 && b.length > 1000 && b.slice(0, 2).toString() === "PK");

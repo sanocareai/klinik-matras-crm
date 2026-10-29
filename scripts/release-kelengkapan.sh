@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# RILIS "KELENGKAPAN ORDER PRODUKSI (penyaring Bahan belum dicatat / Bahan perlu dicek / HPP belum lengkap / Data order kurang + pernyataan tanpa bahan baru)": WEB + BACKEND + 1 MIGRASI ADITIF (1 tabel baru, KOSONG). RELEASE-DIRECTORY di atas release aktif (BASE_SHA). FAIL-CLOSED.
+# RILIS "KELENGKAPAN ORDER PRODUKSI (penyaring Bahan belum dicatat / Bahan perlu dicek / HPP belum lengkap / Data order kurang + pernyataan tanpa bahan baru)": WEB + BACKEND + 1 MIGRASI ADITIF (1 tabel baru; isi dibaca aktual, tidak diasumsikan kosong). RELEASE-DIRECTORY di atas release aktif (BASE_SHA). FAIL-CLOSED.
 #   Kode: chip penyaring di Order Produksi dengan jumlah dari SERVER (seluruh unit yang cocok, bukan halaman), periode (dasar: tanggal order masuk = unit dibuat) + urutan "paling lama belum ditangani", label ringkas per baris + ikon info + satu tombol "Lengkapi",
 #     bagian "Kelengkapan data" di drawer, kolom kelengkapan di Export Excel. SATU klasifikasi untuk daftar, drawer, filter/hitungan, dan ekspor (lib/domain/kelengkapanOrderProduksi.js). Membuka daftar/filter/drawer/ekspor TIDAK menulis apa pun.
 #   ATURAN: status RESMI unit/order Siap Kirim/Dikirim/Terkirim menjadi dasar pemeriksaan bahan walau status kerja tertinggal; data order tanpa aturan wajib = "Belum dinilai" (bukan lengkap); HPP = HPP OPERASIONAL (harga berlaku), bukan biaya Finance;
 #     target/PIC/rencana bahan opsional tidak dihitung kekurangan; pernyataan "tanpa bahan baru" tidak menyembunyikan masalah bila catatan bahan ditambahkan kemudian (dihitung saat dibaca → "Bahan perlu dicek: PERNYATAAN_BERTENTANGAN").
+#   PENGUNCIAN: kunci sendiri (release-kelengkapan.lock) + kunci deploy BERSAMA (release-deploy-bersama.lock) diambil ATOMIK sebelum memeriksa kunci lain; kepemilikan ditentukan oleh proses (perangkat:inode fd 7/9), BUKAN nama berkas. Diperiksa di fase 0, sebelum migrasi, dan tepat sebelum switch.
 #   Tulisan HANYA oleh pengguna berizin (UNIT_ROUTING_WRITE): pernyataan eksplisit "tanpa bahan baru" (alasan wajib, idempoten, satu aktif per unit, pencabutan tercatat, log aktivitas). TIDAK membuat stok, Material Issue, Run, jadwal, status, biaya, atau jurnal.
-#   Migrasi: 1 CREATE TABLE baru (kosong) + 3 indeks (2 unik, 1 parsial 'satu pernyataan AKTIF per unit') + 1 FK ON DELETE RESTRICT ke units. Tanpa ALTER pada tabel lama, tanpa backfill, TANPA pernyataan massal.
-#   BASELINE = release aktif e7883bc6 (PO barang mirip di atas drawer 17305848 di atas penjadwalan+hotfix c518209e). GERBANG IDENTITAS KODE LIVE membandingkan ISI kode (hash blob semua berkas terlacak baseline, berkas tambahan, container == folder release, identitas proses)
+#   Migrasi: 1 CREATE TABLE baru + 3 indeks (2 unik, 1 parsial 'satu pernyataan AKTIF per unit') + 1 FK ON DELETE RESTRICT ke units. Tanpa ALTER pada tabel lama, tanpa backfill, TANPA pernyataan massal. Keadaan SEGAR (migrasi belum terpasang) maupun LANJUT (sudah terpasang oleh percobaan sebelumnya: checksum, status, STRUKTUR persis; isi tabel DIBACA aktual, tidak diasumsikan kosong; tidak diterapkan ulang, tidak dihapus).
+#   BASELINE = release aktif yang disetujui Owner pada argumen --base (aed5d9c9: Export Excel PKR di atas PO barang mirip e7883bc6, drawer 17305848, penjadwalan+hotfix c518209e). GERBANG IDENTITAS KODE LIVE membandingkan ISI kode (hash blob semua berkas terlacak baseline, berkas tambahan, container == folder release, identitas proses)
 #     di fase audit, tepat sebelum migrasi, dan tepat sebelum switch; marker .release-commit bukan bukti. Pembersihan release lama (fase 9) DINONAKTIFKAN: tidak ada folder release/image rollback/backup/volume yang dihapus oleh skrip.
 # URUTAN AMAN: (1) gerbang sumber (ancestry, allowlist, pin sha256 migrasi + diff schema, pemindai DDL + mutan negatif) → (2) audit produksi baca-saja + keadaan (SEGAR/LANJUT) + gerbang kode live → (3) backup + checksum → (4) build web + image
 #              → (5) REHEARSAL (restore NYATA terbaru, migrasi dengan image baru, struktur, kode baru terhadap data restore: jumlah per kategori, WAKTU RESPONS + deteksi permintaan per unit, skenario tulis/pertentangan/bersamaan, guard rollback, image LAMA tetap bisa start) → (6) migrate deploy produksi SATU kali (backend lama tetap melayani) → (7) switch → (8) verifikasi + smoke
@@ -29,7 +30,7 @@ DEPLOY_SHA="${1:-}"; BASE_SHA="${2:-}"
 CAND_BRANCH="${CAND_BRANCH:-feat/order-produksi-kelengkapan}"
 # Berkas yang BOLEH berbeda dari baseline: EKSPLISIT path persis. Apa pun di luar daftar (termasuk backend/prisma) = berhenti.
 # Rilis kode-saja: tanpa migrasi, tanpa perubahan schema.prisma; OTA RN TIDAK diterbitkan.
-ALLOWED_RE='^(backend/prisma/migrations/20261231110000_pernyataan_tanpa_bahan/migration\.sql|backend/prisma/schema\.prisma|backend/src/lib/activityLog\.js|backend/src/lib/domain/kelengkapanOrderProduksi\.js|backend/src/routes/productionAdopsi\.js|backend/src/services/productionKelengkapan\.js|backend/src/services/productionOrderExport\.js|backend/src/services/productionOrderList\.js|backend/src/services/productionRencanaJadwalService\.js|backend/src/services/productionWorkListService\.js|backend/src/services/unitMaterialDeclarationService\.js|backend/tests/integration/kelengkapanOrderProduksi\.integration\.test\.js|backend/tests/integration/setup/testDb\.js|backend/tests/kelengkapanOrderProduksi\.test\.js|backend/tests/releaseKelengkapan\.test\.js|frontend/src/api\.js|frontend/src/features/production/KelengkapanBagian\.jsx|frontend/src/features/production/KelengkapanBaris\.jsx|frontend/src/features/production/KelengkapanFilter\.jsx|frontend/src/features/production/OrderProduksiPanel\.jsx|frontend/src/features/production/orderProduksiModel\.js|frontend/src/pages/bengkel/ProductionWorkOrders\.jsx|frontend/tests/kelengkapanOrderProduksi\.test\.js|frontend/tests/orderProduksiAdopsi\.test\.js|frontend/tests/orderProduksiDirectList\.test\.js|scripts/gen-release-kelengkapan\.cjs|scripts/lib/rehearsal-kelengkapan\.mjs|scripts/lib/scan-migrasi-kelengkapan\.mjs|scripts/lib/smoke-kelengkapan\.mjs|scripts/release-kelengkapan\.sh|scripts/rollback-guard-kelengkapan\.sh|scripts/templates/release-kelengkapan/gate-prisma\.txt|scripts/templates/release-kelengkapan/header\.txt|scripts/templates/release-kelengkapan/keadaan\.txt|scripts/templates/release-kelengkapan/rehearsal-guard\.txt|scripts/templates/release-kelengkapan/rehearsal-migrasi\.txt|scripts/templates/release-kelengkapan/rollback\.txt|scripts/templates/release-kelengkapan/step6\.txt|scripts/templates/release-kelengkapan/struktur\.txt|scripts/templates/release-kelengkapan/vars\.txt)$'
+ALLOWED_RE='^(backend/prisma/migrations/20261231110000_pernyataan_tanpa_bahan/migration\.sql|backend/prisma/schema\.prisma|backend/src/lib/activityLog\.js|backend/src/lib/domain/kelengkapanOrderProduksi\.js|backend/src/routes/productionAdopsi\.js|backend/src/services/productionKelengkapan\.js|backend/src/services/productionOrderExport\.js|backend/src/services/productionOrderList\.js|backend/src/services/productionRencanaJadwalService\.js|backend/src/services/productionWorkListService\.js|backend/src/services/unitMaterialDeclarationService\.js|backend/tests/integration/kelengkapanOrderProduksi\.integration\.test\.js|backend/tests/integration/setup/testDb\.js|backend/tests/kelengkapanOrderProduksi\.test\.js|backend/tests/releaseKelengkapan\.test\.js|frontend/src/api\.js|frontend/src/features/production/KelengkapanBagian\.jsx|frontend/src/features/production/KelengkapanBaris\.jsx|frontend/src/features/production/KelengkapanFilter\.jsx|frontend/src/features/production/OrderProduksiPanel\.jsx|frontend/src/features/production/orderProduksiModel\.js|frontend/src/pages/bengkel/ProductionWorkOrders\.jsx|frontend/tests/kelengkapanOrderProduksi\.test\.js|frontend/tests/orderProduksiAdopsi\.test\.js|frontend/tests/orderProduksiDirectList\.test\.js|scripts/gen-release-kelengkapan\.cjs|scripts/lib/gen-kunci-kelengkapan\.cjs|scripts/lib/rehearsal-kelengkapan\.mjs|scripts/lib/scan-migrasi-kelengkapan\.mjs|scripts/lib/smoke-kelengkapan\.mjs|scripts/lib/uji-kunci-kelengkapan\.sh|scripts/release-kelengkapan\.sh|scripts/rollback-guard-kelengkapan\.sh|scripts/templates/release-kelengkapan/cek-ulang-kunci\.txt|scripts/templates/release-kelengkapan/fase0-kunci\.txt|scripts/templates/release-kelengkapan/gate-prisma\.txt|scripts/templates/release-kelengkapan/guard-pasca\.txt|scripts/templates/release-kelengkapan/header\.txt|scripts/templates/release-kelengkapan/isi-pasca-switch\.txt|scripts/templates/release-kelengkapan/isi-pra-switch\.txt|scripts/templates/release-kelengkapan/keadaan\.txt|scripts/templates/release-kelengkapan/kunci\.txt|scripts/templates/release-kelengkapan/rehearsal-guard\.txt|scripts/templates/release-kelengkapan/rehearsal-migrasi\.txt|scripts/templates/release-kelengkapan/rehearsal-pra-switch\.txt|scripts/templates/release-kelengkapan/rollback\.txt|scripts/templates/release-kelengkapan/step6\.txt|scripts/templates/release-kelengkapan/struktur\.txt|scripts/templates/release-kelengkapan/uji-pra-switch\.txt|scripts/templates/release-kelengkapan/vars\.txt)$'
 BACKEND_SRC_EXPECT="backend/src/lib/activityLog.js backend/src/lib/domain/kelengkapanOrderProduksi.js backend/src/routes/productionAdopsi.js backend/src/services/productionKelengkapan.js backend/src/services/productionOrderExport.js backend/src/services/productionOrderList.js backend/src/services/productionRencanaJadwalService.js backend/src/services/productionWorkListService.js backend/src/services/unitMaterialDeclarationService.js"
 FRONTEND_SRC_EXPECT="frontend/src/api.js frontend/src/features/production/KelengkapanBagian.jsx frontend/src/features/production/KelengkapanBaris.jsx frontend/src/features/production/KelengkapanFilter.jsx frontend/src/features/production/OrderProduksiPanel.jsx frontend/src/features/production/orderProduksiModel.js frontend/src/pages/bengkel/ProductionWorkOrders.jsx"
 # Migrasi aditif yang SUDAH diaudit (nama + sha256 isi, LF). Perubahan sekecil apa pun = berhenti sampai diaudit ulang dan pin diperbarui.
@@ -88,8 +89,8 @@ Rollback kode (tidak menghapus tabel maupun riwayat; image LAMA terbukti tetap b
    cd ${PREV_DIR:-<release-sebelumnya>}
    docker tag ${ROLLBACK_TAG:-<tag-rollback>} ${IMG_NAME:-klinik-matras-backend:latest}
    SANSS_PERSIST_ROOT=${PERSIST} docker compose -p ${PROJECT} -f docker-compose.yml -f docker-compose.release.yml up -d --no-deps --force-recreate backend
-   Tujuan rollback = image dan folder release LIVE SEBELUM rilis ini (baseline e7883bc6 yang memuat hotfix performa, penjadwalan, drawer, PO barang mirip); gerbang kode live membuktikan kode container == folder == baseline.
-Migrasi bersifat ADITIF (1 tabel baru kosong + 3 indeks + 1 FK): tabel dibiarkan terpasang setelah rollback kode. Rilis ini tidak membuat pergerakan stok, Material Issue, Run, jadwal, status, biaya, jurnal, atau harga; satu-satunya tulisan baru adalah pernyataan eksplisit oleh pengguna berizin SESUDAH rilis.
+   Tujuan rollback = image dan folder release LIVE SEBELUM rilis ini (baseline ${BASE_SHA:0:8} yang memuat hotfix performa, penjadwalan, drawer, PO barang mirip, Export PKR); gerbang kode live membuktikan kode container == folder == baseline.
+Migrasi bersifat ADITIF (1 tabel + 3 indeks + 1 FK): tabel dibiarkan terpasang setelah rollback kode, berikut seluruh baris pernyataan yang ada (tidak dihapus). Rilis ini tidak membuat pergerakan stok, Material Issue, Run, jadwal, status, biaya, jurnal, atau harga; satu-satunya tulisan baru adalah pernyataan eksplisit oleh pengguna berizin SESUDAH rilis.
 Pemulihan database penuh hanya bila terjadi kerusakan data: gzip -dc ${BACKUP_FILE:-<backup>} | psql ... (lihat checksum di atas) — MENGHAPUS semua perubahan sesudah backup (pernyataan, transaksi, pesan); gunakan hanya atas keputusan Owner.
 ─────────────────────────────────────────────────────────────────────────
 EOF
@@ -104,16 +105,142 @@ pulihkan_jejak() {
 }
 trap 'rc=$?; pulihkan_jejak; [ $rc -ne 0 ] && rollback_instructions; exit $rc' EXIT
 
+# >>> KUNCI-DEPLOY (blok ini DIUJI TERISOLASI di rehearsal: dimuat ulang dari berkas skrip ini ke proses anak dengan LOCK_DIR sementara; production tidak disentuh)
+# Penguncian deploy. Kepemilikan kunci ditentukan oleh PROSES (berkas yang dibuka dan dikunci oleh proses ini: perangkat+inode fd 7/9), BUKAN oleh nama berkas.
+#   - kunci sendiri  : release-kelengkapan.lock  (fd 9) — satu instansi rilis ini.
+#   - kunci bersama  : release-deploy-bersama.lock (fd 7) — mutex deploy bersama; diambil ATOMIK (flock) SEBELUM memeriksa kunci lain, supaya dua proses yang mulai bersamaan tidak sama-sama lolos.
+# Berkas pemilik (*.owner, bukan *.lock) hanya untuk diagnosis (pid/waktu/SHA/token); keputusan "milik sendiri" TIDAK bergantung padanya.
+LOCK_DIR="${LOCK_DIR:-/tmp}"
+KUNCI_SENDIRI="${LOCK_DIR}/release-kelengkapan.lock"
+KUNCI_BERSAMA="${LOCK_DIR}/release-deploy-bersama.lock"
+KUNCI_LAIN=""
+kunci_ambil() {
+  KUNCI_TOKEN="pid=$$ mulai=$(date -u +%FT%TZ) sha=${DEPLOY_SHORT:-?} token=${RANDOM}${RANDOM}${RANDOM}"
+  mkdir -p "$LOCK_DIR"
+  exec 7>>"$KUNCI_BERSAMA"
+  flock -n 7 || die "kunci deploy BERSAMA (${KUNCI_BERSAMA}) dipegang proses lain ($(kunci_pemegang "$KUNCI_BERSAMA")) — deploy lain sedang berjalan"
+  exec 9>>"$KUNCI_SENDIRI"
+  flock -n 9 || die "rilis ini sudah berjalan ($(kunci_pemegang "$KUNCI_SENDIRI"))"
+  printf '%s\n' "$KUNCI_TOKEN" > "${KUNCI_BERSAMA%.lock}.owner"
+  printf '%s\n' "$KUNCI_TOKEN" > "${KUNCI_SENDIRI%.lock}.owner"
+}
+# Pemilik yang tercatat (diagnosis saja).
+kunci_pemegang() { local o="${1%.lock}.owner"; if [ -s "$o" ]; then head -c 200 "$o" | tr '\n' ' '; else printf 'pemilik tidak tercatat'; fi; }
+# 0 bila berkas $1 adalah berkas yang DIBUKA dan DIKUNCI proses ini (fd 7 atau 9): identitas = perangkat:inode, bukan nama.
+kunci_milik_sendiri() {
+  local lf="$1" fd
+  for fd in 7 9; do
+    [ -e "/proc/$$/fd/$fd" ] || continue
+    [ "$(stat -Lc '%d:%i' "$lf" 2>/dev/null)" = "$(stat -Lc '%d:%i' "/proc/$$/fd/$fd" 2>/dev/null)" ] && return 0
+  done
+  return 1
+}
+# 0 = tidak ada kunci rilis LAIN yang dipegang; 1 = ada (nama di KUNCI_LAIN). Kunci milik proses ini dilewati berdasarkan kepemilikan; berkas dibuka read-only supaya tidak memotong isinya.
+kunci_cek_lain() {
+  local lf
+  KUNCI_LAIN=""
+  for lf in "$LOCK_DIR"/release-*.lock; do
+    [ -e "$lf" ] || continue
+    kunci_milik_sendiri "$lf" && continue
+    if ! ( exec 8<"$lf"; flock -n 8 ); then KUNCI_LAIN="$lf"; return 1; fi
+  done
+  return 0
+}
+# Proses deploy/build/migrasi di luar pohon proses ini (leluhur: nohup/ssh/shell; keturunan: build/compose yang kita jalankan sendiri). Mencetak baris "PID perintah".
+proses_lain() {
+  local anc=" " p="$$" pid cmd q hit
+  while [ -n "$p" ] && [ "$p" -gt 1 ] 2>/dev/null; do anc="${anc}${p} "; p="$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')"; done
+  pgrep -af 'release-[a-z0-9-]+\.sh|docker compose .*(up|build)|docker build|prisma migrate' 2>/dev/null | while IFS= read -r baris; do
+    pid="${baris%% *}"; cmd="${baris#* }"
+    case "$cmd" in *pgrep*|*"node src/index.js"*) continue;; esac
+    case "$anc" in *" ${pid} "*) continue;; esac
+    q="$pid"; hit=0
+    while [ -n "$q" ] && [ "$q" -gt 1 ] 2>/dev/null; do [ "$q" = "$$" ] && { hit=1; break; }; q="$(ps -o ppid= -p "$q" 2>/dev/null | tr -d ' ')"; done
+    [ "$hit" = "1" ] || printf '%s\n' "$baris"
+  done
+}
+# <<< KUNCI-DEPLOY
+# UJI TERARAH FASE PRA-SWITCH — dijalankan di rehearsal (tanpa switch, tanpa menyentuh kunci production: LOCK_DIR sementara).
+#   (1) kunci sendiri diterima; kunci basi (tidak dipegang) tidak memblokir;
+#   (2) kunci rilis LAIN yang dipegang ditolak — termasuk kunci dengan NAMA YANG SAMA dengan kunci sendiri bila bukan milik proses ini (kepemilikan, bukan nama);
+#   (3) dua proses tidak bisa memasuki bagian kritis bersamaan (tepat satu masuk, satu ditolak; sesudah keluar, kunci bebas lagi);
+#   (4) proses deploy lain terdeteksi, sedangkan proses leluhur/keturunan sendiri tidak dianggap "lain";
+#   (5) baseline/identitas live yang bergeser MENGHENTIKAN switch (gerbang_kode_live yang SAMA dengan fase 7 dijalankan dengan keadaan yang dimutasi → harus berhenti).
+uji_gerbang_kunci() {
+  local SELF T HP res i n
+  SELF="${UJI_SELF:-$(readlink -f "${BASH_SOURCE[0]:-$0}")}"
+  T="$(mktemp -d /tmp/uji-kunci-XXXXXX)"; mkdir -p "$T/lock"
+  sed -n '/^# >>> KUNCI-DEPLOY/,/^# <<< KUNCI-DEPLOY/p' "$SELF" > "$T/kunci.sh"
+  [ "$(grep -c . "$T/kunci.sh")" -gt 40 ] || { rm -rf "$T"; die "uji kunci: blok KUNCI-DEPLOY tidak terbaca dari ${SELF}"; }
+  K() { LOCK_DIR="$T/lock" DEPLOY_SHORT=uji bash -c 'die() { echo "DIE: $*"; exit 9; }; . "$1"; eval "$2"' _ "$T/kunci.sh" "$1"; }
+  tunggu_berkas() { local k; for k in $(seq 1 50); do [ -e "$1" ] && return 0; sleep 0.1; done; return 1; }
+  gagal_uji() { [ -z "${HP:-}" ] || kill "$HP" 2>/dev/null || true; rm -rf "$T"; die "uji kunci: $*"; }
+  # (1) kunci sendiri diterima + kunci basi tidak memblokir
+  : > "$T/lock/release-basi.lock"
+  res="$(K 'kunci_ambil; kunci_cek_lain && echo SENDIRI-DITERIMA' 2>&1)" || gagal_uji "kunci sendiri DITOLAK: ${res}"
+  printf '%s' "$res" | grep -q 'SENDIRI-DITERIMA' || gagal_uji "kunci sendiri tidak diterima: ${res}"
+  # (2) kunci rilis lain ditolak
+  bash -c 'exec 8>>"$1"; flock -n 8; : > "$2"; exec sleep 25' _ "$T/lock/release-lain.lock" "$T/lain.siap" & HP=$!
+  tunggu_berkas "$T/lain.siap" || gagal_uji "pemegang kunci lain tidak siap"
+  res="$(K 'kunci_ambil; kunci_cek_lain; rc=$?; echo "RC=$rc LAIN=$KUNCI_LAIN"; exit $rc' 2>&1)" && gagal_uji "kunci rilis LAIN lolos: ${res}"
+  printf '%s' "$res" | grep -q 'RC=1 LAIN=.*release-lain.lock' || gagal_uji "kunci lain ditolak tetapi bukan karena release-lain.lock: ${res}"
+  kill "$HP" 2>/dev/null || true; wait "$HP" 2>/dev/null || true; HP=""
+  res="$(K 'kunci_ambil; kunci_cek_lain && echo SENDIRI-DITERIMA' 2>&1)" || gagal_uji "kunci tidak bebas lagi setelah pemegang lain berhenti: ${res}"
+  # (3) NAMA sama dengan kunci sendiri tetapi dipegang proses lain: tidak boleh dianggap milik sendiri
+  rm -f "$T/lain.siap"
+  bash -c 'exec 8>>"$1"; flock -n 8; : > "$2"; exec sleep 25' _ "$T/lock/release-kelengkapan.lock" "$T/lain.siap" & HP=$!
+  tunggu_berkas "$T/lain.siap" || gagal_uji "pemegang kunci bernama sama tidak siap"
+  res="$(K 'kunci_ambil' 2>&1)" && gagal_uji "instansi kedua rilis ini LOLOS saat kunci sendiri dipegang proses lain: ${res}"
+  printf '%s' "$res" | grep -q 'sudah berjalan' || gagal_uji "penolakan instansi kedua bukan 'sudah berjalan': ${res}"
+  res="$(K 'kunci_cek_lain; rc=$?; echo "RC=$rc LAIN=$KUNCI_LAIN"; exit $rc' 2>&1)" && gagal_uji "kunci ber-NAMA sendiri tetapi milik proses lain dilewati hanya karena namanya: ${res}"
+  printf '%s' "$res" | grep -q 'LAIN=.*release-kelengkapan.lock' || gagal_uji "kunci bernama sama tidak dilaporkan: ${res}"
+  kill "$HP" 2>/dev/null || true; wait "$HP" 2>/dev/null || true; HP=""
+  # (4) bagian kritis: dua proses bersamaan → tepat satu masuk
+  : > "$T/kritis.log"
+  for i in 1 2; do
+    ( while [ ! -e "$T/go" ]; do :; done; { K "kunci_ambil; echo masuk >> '$T/kritis.log'; sleep 3; echo keluar >> '$T/kritis.log'" > "$T/c$i.out" 2>&1; echo $? > "$T/c$i.rc"; } || true ) &
+  done
+  sleep 0.5; : > "$T/go"; wait
+  [ "$(grep -c '^masuk$' "$T/kritis.log")" = "1" ] && [ "$(grep -c '^keluar$' "$T/kritis.log")" = "1" ] || gagal_uji "bagian kritis dimasuki != 1 proses: $(tr '\n' ' ' < "$T/kritis.log")"
+  [ -s "$T/c1.rc" ] && [ -s "$T/c2.rc" ] || gagal_uji "salah satu proses bagian kritis tidak selesai"
+  [ "$(cat "$T"/c1.rc "$T"/c2.rc | grep -c '^0$')" = "1" ] && [ "$(cat "$T"/c1.out "$T"/c2.out | grep -c '^DIE:')" = "1" ] || gagal_uji "tepat satu proses harus ditolak: rc=$(cat "$T"/c1.rc "$T"/c2.rc | tr '
+' ' ')"
+  res="$(K 'kunci_ambil; echo BEBAS-LAGI' 2>&1)" || gagal_uji "kunci tidak bebas setelah proses keluar: ${res}"
+  # (5) deteksi proses deploy lain (yatim, di luar pohon proses ini); leluhur/keturunan sendiri tidak dihitung
+  ( setsid bash -c 'exec -a release-uji-lain.sh sleep 20' >/dev/null 2>&1 & )
+  sleep 1
+  n="$(proses_lain | grep -c 'release-uji-lain' || true)"; pkill -f 'release-uji-lain.sh 20' 2>/dev/null || true
+  [ "$n" -ge 1 ] || gagal_uji "proses deploy lain (release-uji-lain.sh) tidak terdeteksi"
+  ( exec -a release-uji-anak.sh sleep 20 ) & HP=$!
+  sleep 1
+  n="$(proses_lain | grep -c 'release-uji-anak' || true)"; kill "$HP" 2>/dev/null || true; wait "$HP" 2>/dev/null || true; HP=""
+  [ "$n" = "0" ] || gagal_uji "proses KETURUNAN sendiri dianggap deploy lain"
+  rm -rf "$T"
+  ok "uji pra-switch (terisolasi): kunci sendiri diterima; kunci basi tidak memblokir; kunci rilis lain ditolak; kunci ber-nama sama tetapi bukan milik proses ditolak; 2 proses bersamaan → 1 masuk, 1 ditolak, kunci bebas lagi; proses deploy lain terdeteksi"
+}
+# Baseline/identitas live bergeser harus MENGHENTIKAN switch: fungsi gerbang YANG SAMA dengan fase 7, dijalankan di subshell dengan keadaan dimutasi — harus berhenti (exit ≠ 0) dengan alasan yang benar.
+uji_baseline_bergeser() {
+  local nama mut pola log
+  for nama in "baseline-bergeser" "container-dimulai-ulang" "image-berganti"; do
+    case "$nama" in
+      baseline-bergeser)       mut='BASE_SHA="$(sg rev-parse "${BASE_SHA}^")"'; pola='BUKAN baseline/leluhur baseline';;
+      container-dimulai-ulang) mut='PREV_STARTED="1970-01-01T00:00:00Z"';         pola='dimulai ulang sejak audit awal';;
+      image-berganti)          mut='PREV_IMG_ID="sha256:0000000000000000"';       pola='image container berubah sejak audit awal';;
+    esac
+    log="$BK_DIR/uji-gerbang-${nama}.log"
+    if ( eval "$mut"; gerbang_kode_live "uji-negatif-${nama}" ) > "$log" 2>&1; then die "uji negatif: gerbang kode live MELOLOSKAN keadaan '${nama}' (switch tidak akan berhenti)"; fi
+    grep -q -- "$pola" "$log" || { tail -n 5 "$log"; die "uji negatif '${nama}': gerbang berhenti tetapi bukan karena '${pola}'"; }
+  done
+  ok "uji negatif gerbang pra-switch: baseline bergeser, container dimulai ulang, dan image berganti — SEMUA menghentikan switch (alasan sesuai)"
+}
+
 PHASE="0-lingkungan"; say "0. Lingkungan dan kunci deploy"
 for c in git docker curl gzip sha256sum awk grep flock tar sed df node npm; do command -v "$c" >/dev/null 2>&1 || die "perintah '$c' tidak ada"; done
-for lf in /tmp/release-*.lock; do
-  [ -e "$lf" ] || continue
-  ( exec 8>"$lf"; flock -n 8 ) || die "deploy lain sedang berjalan (kunci ${lf} dipegang)"
-done
-exec 9>/tmp/release-kelengkapan.lock; flock -n 9 || die "rilis ini sudah berjalan"
-OTHER="$(pgrep -af 'release-[a-z0-9-]+\.sh|docker compose .*(up|build)|docker build|prisma migrate' | grep -v "kl1\|release-kelengkapan\|pgrep\|node src/index.js" | grep -v "$$" || true)"  # 'node src/index.js' = perintah start container backend yang SEDANG melayani (bukan deploy)
+kunci_ambil   # kunci deploy BERSAMA + kunci sendiri, ATOMIK (flock), SEBELUM memeriksa yang lain
+kunci_cek_lain || die "deploy lain sedang berjalan (kunci ${KUNCI_LAIN} dipegang; $(kunci_pemegang "$KUNCI_LAIN"))"
+OTHER="$(proses_lain)"
 [ -z "$OTHER" ] || { printf '%s\n' "$OTHER" | sed 's/^/        /'; die "ada proses deploy/build/migrasi lain yang berjalan"; }
-ok "tidak ada deploy lain"
+ok "tidak ada deploy lain (kunci bersama + kunci sendiri dipegang proses ini; tidak ada kunci rilis lain yang dipegang; tidak ada proses deploy/build/migrasi lain)"
 mkdir -p "$BK_DIR" "$HOME/release-src" "$HOME/backups"
 exec > >(tee -a "$BK_DIR/release.log") 2>&1
 [ -f "$PERSIST/backend/.env" ] && [ -f "$PERSIST/frontend/.env" ] || die "file .env persisten tidak lengkap"
@@ -312,16 +439,14 @@ gerbang_kode_live() {
   } >> "$BK_DIR/kode-live.txt"
   ok "[${label}] kode live == baseline ${BASE_SHA:0:8}: ${total} berkas terlacak sama isi (${neol} hanya beda akhir baris), 0 berkas tambahan, container == folder release; marker ${PREV_COMMIT}"
 }
-# Tepat sebelum switch: pastikan tidak ada deploy/build/migrasi lain (mengulang pemeriksaan fase 0, kecuali kunci rilis ini sendiri).
+# Sebelum migrasi dan tepat sebelum switch: pastikan tidak ada deploy/build/migrasi lain. Kunci milik proses ini dikenali dari KEPEMILIKAN (perangkat:inode fd 7/9), bukan dari nama berkas; kunci rilis lain, dalam nama apa pun, ditolak.
 tidak_ada_deploy_lain_lagi() {
-  local lf OTHER
-  for lf in /tmp/release-*.lock; do
-    [ -e "$lf" ] || continue; [ "$lf" = "/tmp/release-penjadwalan-langsung.lock" ] && continue
-    ( exec 8>"$lf"; flock -n 8 ) || die "deploy lain mulai berjalan (kunci ${lf} dipegang) — berhenti sebelum switch"
-  done
-  OTHER="$(pgrep -af 'release-[a-z0-9-]+\.sh|docker compose .*(up|build)|docker build|prisma migrate' | grep -v "pjl\|release-penjadwalan-langsung\|pgrep\|node src/index.js" | grep -v "$$" || true)"
-  [ -z "$OTHER" ] || { printf '%s\n' "$OTHER" | sed 's/^/        /'; die "ada proses deploy/build/migrasi lain tepat sebelum switch — berhenti"; }
-  ok "tepat sebelum switch: tidak ada deploy/build/migrasi lain"
+  local OTHER
+  { kunci_milik_sendiri "$KUNCI_SENDIRI" && kunci_milik_sendiri "$KUNCI_BERSAMA"; } || die "kunci deploy milik proses ini HILANG/diganti (berkas kunci dihapus atau dibuat ulang) — berhenti"
+  kunci_cek_lain || die "deploy lain mulai berjalan (kunci ${KUNCI_LAIN} dipegang; $(kunci_pemegang "$KUNCI_LAIN")) — berhenti"
+  OTHER="$(proses_lain)"
+  [ -z "$OTHER" ] || { printf '%s\n' "$OTHER" | sed 's/^/        /'; die "ada proses deploy/build/migrasi lain berjalan — berhenti"; }
+  ok "[${PHASE}] tidak ada deploy/build/migrasi lain (kunci sendiri dikenali dari kepemilikan proses; tidak ada kunci rilis lain yang dipegang)"
 }
 
 PHASE="2-audit-produksi"; say "2. Audit produksi aktif (baca-saja)"
@@ -355,13 +480,12 @@ EVT_N="$(psql_live -At -c "select count(*) from delivery_execution_events")"
 for v in "$ORDER_N" "$JOB_N" "$PKR_N" "$EVT_N"; do [[ "$v" =~ ^[0-9]+$ ]] || die "audit awal bukan angka: '$v'"; done
 ok "prasyarat terpenuhi; order=${ORDER_N}, job=${JOB_N}, PKR=${PKR_N}, event Delivery=${EVT_N}"
 
-# Struktur objek rilis (1 tabel KOSONG; 1 FK RESTRICT; 4 CHECK; 4 indeks termasuk primary key [3 unik, 1 parsial 'satu pernyataan AKTIF per unit']) — SATU definisi dipakai production (sebelum switch) dan rehearsal.
+# Struktur objek rilis (1 tabel; isi diverifikasi terpisah lewat isi_tabel_rilis, TIDAK diasumsikan kosong; 1 FK RESTRICT; 4 CHECK; 4 indeks termasuk primary key [3 unik, 1 parsial 'satu pernyataan AKTIF per unit']) — SATU definisi dipakai production (sebelum switch) dan rehearsal.
 # $1 = fungsi pembaca SQL (menerima satu argumen SQL, mencetak hasil -At), $2 = fungsi kegagalan (menerima pesan).
 in_list() { local o="" x; for x in $1; do o="${o:+$o,}'$x'"; done; printf '%s' "$o"; }
 struktur_baru() {
   local Q="$1" G="$2" n
   [ "$("$Q" "select count(*) from pg_tables where schemaname='public' and tablename in ($(in_list "$TBL_BARU"))")" = "1" ] || "$G" "tabel rilis (unit_material_declarations) tidak terpasang"
-  [ "$("$Q" "select count(*) from unit_material_declarations")" = "0" ] || "$G" "tabel rilis TIDAK kosong setelah migrasi (backfill/pernyataan massal tidak diizinkan)"
   n="$(printf '%s\n' $FK_BARU | grep -c .)"
   [ "$("$Q" "select count(*) from pg_constraint where conname in ($(in_list "$FK_BARU")) and contype='f' and confdeltype='r' and convalidated")" = "$n" ] || "$G" "${n} FK ON DELETE RESTRICT tidak terpasang/tervalidasi"
   n="$(printf '%s\n' $CHK_BARU | grep -c .)"
@@ -376,7 +500,7 @@ SKEMA_SQL="select md5(coalesce(string_agg(table_name||'.'||column_name||':'||dat
 
 # Klasifikasi KEADAAN production — murni, FAIL-CLOSED: selain dua keadaan yang dikenal = TOLAK.
 #   SEGAR  = tabel rilis belum ada dan migrasi rilis belum terpasang; migrasi pending = tepat migrasi rilis.
-#   LANJUT = rilis terhenti SESUDAH migrasi: tabel rilis ada dan KOSONG, migrasi rilis selesai (1 langkah, tidak di-rollback, checksum = berkas kandidat), tidak ada pending.
+#   LANJUT = migrasi rilis SUDAH terpasang: tabel rilis ada, migrasi rilis selesai (1 langkah, tidak di-rollback, checksum = berkas kandidat), tidak ada pending. Isi tabel boleh berapa saja (pernyataan pengguna sah); isinya DIBACA dan dicatat (isi_tabel_rilis), tidak diasumsikan kosong. Struktur persis divalidasi terpisah (struktur_baru).
 # Argumen: ntab nisi mig_terpasang(0/1) csok(0/1) pending(teks)
 tentukan_keadaan() {
   local ntab="$1" nisi="$2" terpasang="$3" csok="$4" pend="$5"
@@ -387,12 +511,22 @@ tentukan_keadaan() {
   if [ "$ntab" = "1" ] && [ "$terpasang" = "1" ]; then
     [ -z "$pend" ] || { echo "TOLAK: masih ada migrasi pending ($(printf '%s' "$pend" | tr '\n' ' '))"; return 1; }
     [ "$csok" = "1" ] || { echo "TOLAK: status/checksum migrasi rilis tidak sesuai berkas kandidat"; return 1; }
-    [ "$nisi" = "0" ] || { echo "TOLAK: tabel rilis TIDAK kosong (${nisi} baris)"; return 1; }
+    [[ "$nisi" =~ ^[0-9]+$ ]] || { echo "TOLAK: isi tabel rilis tidak terbaca (${nisi})"; return 1; }
     echo LANJUT; return 0
   fi
   echo "TOLAK: keadaan campuran/tidak dikenal (tabel rilis=${ntab}, migrasi rilis terpasang=${terpasang})"; return 1
 }
 LQ() { psql_live -At -c "$1"; }
+# Isi AKTUAL tabel rilis (dibaca, tidak diasumsikan): "ABSEN" bila tabel belum ada; selain itu "jumlah|aktif|sidik-jari-baris|daftar-id". $1 = fungsi pembaca SQL.
+isi_tabel_rilis() {
+  local Q="$1"
+  [ "$("$Q" "select count(*) from pg_tables where schemaname='public' and tablename='unit_material_declarations'")" = "1" ] || { echo ABSEN; return 0; }
+  "$Q" "select count(*)||'|'||count(*) filter (where t.status='ACTIVE')||'|'||coalesce(md5(string_agg(t::text, '~' order by t.id::text)), '-')||'|'||coalesce(string_agg(t.id::text, ',' order by t.id::text), '') from unit_material_declarations t"
+}
+isi_n() { case "$1" in ABSEN) echo 0;; *) echo "${1%%|*}";; esac; }
+isi_aktif() { case "$1" in ABSEN) echo 0;; *) local r="${1#*|}"; echo "${r%%|*}";; esac; }
+isi_fp() { case "$1" in ABSEN) echo -;; *) local r="${1#*|}"; r="${r#*|}"; echo "${r%%|*}";; esac; }
+isi_ids() { case "$1" in ABSEN) echo "";; *) echo "${1##*|}";; esac; }
 # Keadaan production SAAT INI (membaca production; menulis daftar ke $BK_DIR/applied-sebelum${1}.txt). Cetak SEGAR | LANJUT | "TOLAK: ..." (exit 1). Dipakai di preflight dan diulang sesaat sebelum migrasi.
 keadaan_produksi() {
   local sfx="$1" ntab nisi=0 terpasang csok=0 raw row pend solo lama
@@ -417,7 +551,11 @@ keadaan_produksi() {
 KEADAAN="$(keadaan_produksi "")" || die "${KEADAAN}"
 [ "$KEADAAN" = "SEGAR" ] || [ "$KEADAAN" = "LANJUT" ] || die "keadaan production tidak dikenal: ${KEADAAN}"
 MIG_SEBELUM="$(grep -c . "$BK_DIR/base-pra.txt")"
-ok "keadaan production: ${KEADAAN} (baseline ${MIG_SEBELUM} migrasi terpasang; migrasi rilis ${MIG_NAME} $([ "$KEADAAN" = "SEGAR" ] && echo 'pending' || echo 'sudah terpasang, tabel kosong'))"
+ISI_PRA="$(isi_tabel_rilis LQ)" || die "gagal membaca isi tabel pernyataan"
+{ [ "$ISI_PRA" = "ABSEN" ] || [[ "$ISI_PRA" =~ ^[0-9]+\|[0-9]+\|[0-9a-f-]+\| ]]; } || die "isi tabel pernyataan tidak terbaca: ${ISI_PRA:0:80}"
+{ [ "$KEADAAN" = "SEGAR" ] && [ "$ISI_PRA" = "ABSEN" ]; } || { [ "$KEADAAN" = "LANJUT" ] && [ "$ISI_PRA" != "ABSEN" ]; } || die "keadaan ${KEADAAN} tidak cocok dengan tabel pernyataan (${ISI_PRA:0:40})"
+if [ "$KEADAAN" = "LANJUT" ]; then struktur_baru LQ die; fi
+ok "keadaan production: ${KEADAAN} (baseline ${MIG_SEBELUM} migrasi terpasang; migrasi rilis ${MIG_NAME} $([ "$KEADAAN" = "SEGAR" ] && echo 'pending' || echo "SUDAH terpasang: checksum, status, dan STRUKTUR cocok persis; isi tabel DIBACA: $(isi_n "$ISI_PRA") baris, $(isi_aktif "$ISI_PRA") aktif, sidik jari $(isi_fp "$ISI_PRA" | cut -c1-12)"))"
 SKEMA_PRA="$(psql_live -At -c "$SKEMA_SQL")"; [ -n "$SKEMA_PRA" ] || die "sidik jari skema produksi kosong"
 # GARIS DASAR invarian (dibandingkan sesudah rilis; yang dijaga = TIDAK BERTAMBAH oleh rilis ini).
 SQL_TIDAK_SEIMBANG="select count(*)::int from (select e.id from fin_journal_entries e join fin_journal_lines l on l.entry_id = e.id group by e.id having sum(l.debit) <> sum(l.credit)) x"
@@ -573,15 +711,22 @@ else
 fi
 dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="$RH_URL" backend npx prisma migrate status </dev/null 2>&1 | grep -i 'up to date' >/dev/null || { reh_drop; die "migrate status rehearsal (image baru) TIDAK 'up to date'"; }
 struktur_baru RPSQL gagal_reh
+ISI_REH="$(isi_tabel_rilis RPSQL)" || { reh_drop; die "gagal membaca isi tabel pernyataan pada restore"; }
+if [ "$KEADAAN" = "SEGAR" ]; then [ "$(isi_n "$ISI_REH")" = "0" ] || { reh_drop; die "migrasi baru pada restore menghasilkan tabel BERISI ($(isi_n "$ISI_REH") baris): backfill dilarang"; }; else [ "$ISI_REH" = "$ISI_PRA" ] || { reh_drop; die "isi tabel pernyataan pada RESTORE ($(isi_n "$ISI_REH") baris, $(isi_fp "$ISI_REH" | cut -c1-12)) != production saat preflight ($(isi_n "$ISI_PRA") baris, $(isi_fp "$ISI_PRA" | cut -c1-12))"; }; fi
+AKTIF_REH="$(isi_aktif "$ISI_REH")"
 [ "$(RPSQL "$SKEMA_SQL")" = "$S_SEBELUM" ] || { reh_drop; die "migrasi MENGUBAH skema (kolom/tipe/nullable/default) tabel lama"; }
-ok "image baru: migrasi rilis diterapkan pada DB rehearsal (hasil restore nyata); tabel pernyataan kosong; 1 FK RESTRICT, 4 CHECK, 4 indeks (3 unik, 1 parsial) tervalidasi; tanpa trigger; skema tabel lama IDENTIK"
+ok "image baru: migrasi rilis $([ "$KEADAAN" = "SEGAR" ] && echo 'diterapkan' || echo 'SUDAH terpasang (tidak diterapkan ulang)') pada DB rehearsal (hasil restore nyata); isi tabel pernyataan pada restore DIBACA: $(isi_n "$ISI_REH") baris (${AKTIF_REH} aktif), $([ "$KEADAAN" = "SEGAR" ] && echo 'kosong' || echo 'sama persis dengan production saat preflight'); 1 FK RESTRICT, 4 CHECK, 4 indeks (3 unik, 1 parsial) tervalidasi; tanpa trigger; skema tabel lama IDENTIK"
 # Guard rollback pada keadaan KOSONG (migrasi terpasang, belum ada pernyataan) → LULUS; baca-saja.
-set +e; GUARD_OUT1="$(GUARD_DB="$REH_DB" bash "$NEW_DIR/scripts/rollback-guard-kelengkapan.sh" 2>&1)"; GUARD_RC1=$?; set -e
+set +e; mkdir -p "$BK_DIR/guard-awal"; GUARD_OUT1="$(GUARD_DB="$REH_DB" GUARD_OUT_DIR="$BK_DIR/guard-awal" bash "$NEW_DIR/scripts/rollback-guard-kelengkapan.sh" 2>&1)"; GUARD_RC1=$?; set -e
 printf '%s
 ' "$GUARD_OUT1" > "$BK_DIR/guard-kosong.log"
-{ [ "$GUARD_RC1" = "0" ] && printf '%s' "$GUARD_OUT1" | grep -q 'GUARD LULUS'; } || { printf '%s
-' "$GUARD_OUT1"; reh_drop; die "guard rollback TIDAK meluluskan keadaan kosong (migrasi terpasang, belum ada pernyataan)"; }
-ok "guard rollback pada keadaan kosong (tabel rilis ada, tanpa pernyataan): LULUS"
+if [ "$AKTIF_REH" = "0" ]; then
+  { [ "$GUARD_RC1" = "0" ] && printf '%s' "$GUARD_OUT1" | grep -q 'GUARD LULUS' && ! printf '%s' "$GUARD_OUT1" | grep -q 'DENGAN PERINGATAN'; } || { printf '%s\n' "$GUARD_OUT1"; reh_drop; die "guard rollback TIDAK meluluskan keadaan awal tanpa pernyataan aktif"; }
+  ok "guard rollback pada keadaan awal restore (tabel rilis ada, tanpa pernyataan aktif): LULUS"
+else
+  { [ "$GUARD_RC1" = "0" ] && printf '%s' "$GUARD_OUT1" | grep -q 'GUARD LULUS DENGAN PERINGATAN'; } || { printf '%s\n' "$GUARD_OUT1"; reh_drop; die "guard rollback TIDAK memberi PERINGATAN untuk ${AKTIF_REH} pernyataan aktif yang sudah ada pada restore"; }
+  ok "guard rollback pada keadaan awal restore (${AKTIF_REH} pernyataan aktif sudah ada): LULUS DENGAN PERINGATAN (sesuai; snapshot ditulis ke ${BK_DIR}/guard-awal)"
+fi
 RPSQL "$FP_SQL" | LC_ALL=C sort > "$BK_DIR/fp-reh-sesudah.txt" || { reh_drop; die "sidik jari rehearsal sesudah gagal"; }
 cmp -s "$BK_DIR/fp-reh-sebelum.txt" "$BK_DIR/fp-reh-sesudah.txt" || { diff "$BK_DIR/fp-reh-sebelum.txt" "$BK_DIR/fp-reh-sesudah.txt" || true; reh_drop; die "rehearsal MENGUBAH isi tabel"; }
 # UJI APLIKASI pada SALINAN RESTORE (kode BARU sebagai server, data produksi nyata, DB sementara): jumlah per kategori, WAKTU RESPONS (daftar, hitungan, filter gabungan, pagination, ekspor, drawer) + deteksi permintaan per unit, skenario tulis (pernyataan, pertentangan, bersamaan, cabut); stok/Material Issue/jurnal/harga/jadwal/Run/status tidak berubah. DB dihapus di akhir.
@@ -589,7 +734,7 @@ mkdir -p "$BK_DIR/reh-data" "$BK_DIR/reh-uploads" "$BK_DIR/reh-dd"
 REH_VOL=(-v "$BK_DIR/reh-data:/app/data" -v "$BK_DIR/reh-uploads:/app/uploads" -v "$BK_DIR/reh-dd:/frontend/dist-driver")
 [ "$(dcp "$NEW_DIR" run --rm --no-deps -T "${REH_VOL[@]}" backend sh -c 'find /app/data /app/uploads /frontend/dist-driver -mindepth 1 | wc -l' </dev/null | tr -d '[:space:]')" = "0" ] || { reh_drop; die "rehearsal TIDAK terisolasi dari direktori data/uploads production (mount tidak tertimpa) — berhenti"; }
 ok "rehearsal terisolasi: direktori data/uploads/dist-driver production TIDAK dipasang (diganti direktori sementara kosong)"
-dcp "$NEW_DIR" run --rm --no-deps -T "${REH_VOL[@]}" -e DATABASE_URL="postgresql://${DB_USER}:${REH_PW}@postgres:5432/${REH_DB}" backend node --input-type=module - <<'REHNODE' > "$BK_DIR/rehearsal-kelengkapan.log" 2>&1 || { cat "$BK_DIR/rehearsal-kelengkapan.log"; reh_drop; die "uji Kelengkapan Order Produksi terhadap salinan restore GAGAL (lihat rehearsal-kelengkapan.log)"; }
+dcp "$NEW_DIR" run --rm --no-deps -T "${REH_VOL[@]}" -e DATABASE_URL="postgresql://${DB_USER}:${REH_PW}@postgres:5432/${REH_DB}" -e REH_DECL_AWAL="$(isi_n "$ISI_PRA")" backend node --input-type=module - <<'REHNODE' > "$BK_DIR/rehearsal-kelengkapan.log" 2>&1 || { cat "$BK_DIR/rehearsal-kelengkapan.log"; reh_drop; die "uji Kelengkapan Order Produksi terhadap salinan restore GAGAL (lihat rehearsal-kelengkapan.log)"; }
 import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -618,7 +763,8 @@ const fp = async (tabel) => { const o = {}; for (const t of tabel) o[t] = (await
 const beda = (a, b) => Object.keys(a).filter((t) => a[t].n !== b[t].n || a[t].h !== b[t].h);
 
 // ── A. struktur (kode baru terhadap hasil restore nyata + migrasi) ──
-cek("tabel pernyataan ada dan KOSONG setelah migrasi (tanpa backfill/pernyataan massal)", (await num("select count(*) as n from unit_material_declarations")) === 0);
+const declAwal = await num("select count(*) as n from unit_material_declarations");
+cek(`tabel pernyataan ada; isi awal pada restore DIBACA aktual = ${declAwal} baris (tidak diasumsikan kosong)${process.env.REH_DECL_AWAL === undefined ? "" : `; sama dengan production saat preflight (${process.env.REH_DECL_AWAL})`} — migrasi tidak mengisinya (tanpa backfill/pernyataan massal)`, process.env.REH_DECL_AWAL === undefined || declAwal === Number(process.env.REH_DECL_AWAL));
 const nUnit = await num('select count(*) as n from units'); const nUnitNonBatal = await num("select count(*) as n from units where status <> 'CANCELLED'");
 console.log(`INFO  salinan restore: ${nUnit} unit (${nUnitNonBatal} non-batal), ${await num("select count(*) as n from unit_usage_notes")} catatan historis, ${await num("select count(*) as n from stock_movements where type = 'ISSUE' and unit_id is not null")} ISSUE bertaut unit, ${await num("select count(*) as n from unit_provisional_usages")} pemakaian sementara`);
 
@@ -756,6 +902,14 @@ docker run --rm --network "${PROJECT}_default" -e DATABASE_URL="$RH_URL" "$ROLLB
 ok "guard rollback: LULUS DENGAN PERINGATAN (${SNAP_N} pernyataan aktif; snapshot ditulis; yang bertentangan disorot; rollback rutin diperbolehkan); data tidak berubah oleh guard; IMAGE LAMA tetap start (migrate deploy tanpa error, tanpa menerapkan apa pun)"
 reh_drop
 ok "rehearsal lulus: isi ${FP_N} tabel lama IDENTIK sebelum vs sesudah migrasi; uji tulis (pernyataan/pertentangan/bersamaan/cabut) dilakukan HANYA pada salinan lalu DB sementara dihapus"
+PHASE="5c-uji-pra-switch"; say "5c. Uji fase pra-switch (TANPA switch): kunci sendiri/lain, bagian kritis, baseline bergeser; lalu gerbang yang SAMA dengan fase 7 pada production nyata"
+uji_gerbang_kunci
+uji_baseline_bergeser
+tidak_ada_deploy_lain_lagi
+gerbang_kode_live "rehearsal-pra-switch"
+[ "$(sg ls-remote origin "refs/heads/${CAND_BRANCH}" | cut -f1)" = "$DEPLOY_SHA" ] || die "kandidat berubah selama rehearsal"
+[ "$(isi_tabel_rilis LQ)" = "$ISI_PRA" ] || die "isi tabel pernyataan production berubah selama rehearsal"
+ok "fase pra-switch teruji: kunci/bagian kritis/baseline bergeser (terisolasi) + gerbang fase 7 pada production nyata LULUS tanpa switch; isi tabel pernyataan tidak berubah"
 if [ "$REHEARSAL_ONLY" = "1" ]; then
   say "REHEARSAL-ONLY: semua gerbang sampai rehearsal pada restore backup nyata LULUS; berhenti SEBELUM switch (produksi tidak diubah)"
   pulihkan_jejak
@@ -771,11 +925,14 @@ PHASE="6-migrate"; say "6. Migrasi aditif (image baru; backend lama tetap melaya
 [ "$(sg ls-remote origin "refs/heads/${CAND_BRANCH}" | cut -f1)" = "$DEPLOY_SHA" ] || die "kandidat berubah sebelum migrasi"
 [ "$(docker inspect -f '{{index .Config.Labels "com.docker.compose.project.working_dir"}}' "$CID_OLD")" = "$PREV_DIR" ] || die "release aktif berubah sebelum migrasi"
 gerbang_kode_live "fase-6-pra-migrasi"
+tidak_ada_deploy_lain_lagi
 COUNT_SQL="select 'schedules', count(*) from production_unit_schedules union all select 'schedule_events', count(*) from production_unit_schedule_events union all select 'run_plans_v2', count(*) from production_run_plans_v2 union all select 'runs_v2', count(*) from production_runs_v2 union all select 'stock_movements', count(*) from stock_movements union all select 'material_issues', count(*) from material_issues union all select 'material_issue_lines', count(*) from material_issue_lines union all select 'unit_provisional_usages', count(*) from unit_provisional_usages union all select 'harga_berlaku', count(*) from material_harga_berlaku union all select 'jurnal', count(*) from fin_journal_entries union all select 'jurnal_baris', count(*) from fin_journal_lines"
 psql_live -At -c "$COUNT_SQL" > "$BK_DIR/hitung-pra-switch.txt" || die "hitung baris pra-switch gagal"; ok "pra-switch: hitung baris jadwal/Run/stok/pemakaian/harga/jurnal dicatat"
 # Keadaan production diputuskan ULANG sesaat sebelum bertindak: harus sama dengan preflight (tidak ada sesi lain yang menerapkan/mengubah migrasi).
 KEADAAN2="$(keadaan_produksi "2")" || die "${KEADAAN2}"
 [ "$KEADAAN2" = "$KEADAAN" ] || die "keadaan production berubah sejak preflight (${KEADAAN} → ${KEADAAN2})"
+ISI_PRA2="$(isi_tabel_rilis LQ)" || die "gagal membaca ulang isi tabel pernyataan"
+[ "$ISI_PRA2" = "$ISI_PRA" ] || die "isi tabel pernyataan BERUBAH sejak preflight ($(isi_n "$ISI_PRA") → $(isi_n "$ISI_PRA2") baris; sidik jari $(isi_fp "$ISI_PRA" | cut -c1-12) → $(isi_fp "$ISI_PRA2" | cut -c1-12)) — berhenti, ulangi preflight"
 cmp -s "$BK_DIR/applied-sebelum.txt" "$BK_DIR/applied-sebelum2.txt" || die "daftar migrasi terpasang berubah selama persiapan (sesi lain menerapkan migrasi) — berhenti, ulangi preflight"
 [ "$(docker inspect -f '{{.Image}}' "$CID_OLD")" = "$PREV_IMG_ID" ] || die "image container aktif berubah selama persiapan — JANGAN migrasi"
 psql_live -At -c "$FP_BEKU_SQL" | LC_ALL=C sort > "$BK_DIR/data-pra-migrasi.txt" || die "sidik jari beku pra-migrasi gagal"
@@ -784,16 +941,18 @@ cmp -s "$BK_DIR/data-sebelum.txt" "$BK_DIR/data-pra-migrasi.txt" || { diff "$BK_
 if [ "$KEADAAN" = "SEGAR" ]; then
   dcp "$NEW_DIR" run --rm --no-deps -T backend npx prisma migrate deploy </dev/null || die "migrate deploy GAGAL; backend baru TIDAK dinyalakan (backend lama tetap melayani)"
 else
-  # LANJUT: migrasi SUDAH terpasang dan terbukti (checksum, struktur, kosong). TIDAK menjalankan migrate deploy: hanya membaca status.
+  # LANJUT: migrasi SUDAH terpasang dan terbukti (checksum, status, struktur persis; isi tabel dibaca dan tidak berubah). TIDAK menjalankan migrate deploy, TIDAK menerapkan ulang, TIDAK menyentuh tabel: hanya membaca status.
   dcp "$NEW_DIR" run --rm --no-deps -T backend npx prisma migrate status </dev/null 2>&1 | tee "$BK_DIR/migrate-status-lanjut.log" | grep -i 'up to date' >/dev/null || die "keadaan LANJUT: migrate status production tidak 'up to date'"
 fi
 [ "$(psql_live -At -c "select count(*) from _prisma_migrations where finished_at is null and rolled_back_at is null")" = "0" ] || die "ada migrasi setengah jalan; JANGAN switch"
 [ "$(psql_live -At -c "select count(*) from _prisma_migrations where finished_at is not null and rolled_back_at is null")" = "$(( MIG_SEBELUM + 1 ))" ] || die "jumlah migrasi terpasang != baseline + 1 ($(( MIG_SEBELUM + 1 )))"
 psql_live -At -c "select finished_at is not null from _prisma_migrations where migration_name='${MIG_NAME}'" | grep -Fx t >/dev/null || die "${MIG_NAME} tidak tercatat selesai"
 struktur_baru LQ die
+ISI_PASCA_MIG="$(isi_tabel_rilis LQ)" || die "gagal membaca isi tabel pernyataan pasca-tahap migrasi"
+if [ "$KEADAAN" = "SEGAR" ]; then [ "$(isi_n "$ISI_PASCA_MIG")" = "0" ] || die "tabel rilis TIDAK kosong tepat setelah migrasi baru (backfill/pernyataan massal dilarang): $(isi_n "$ISI_PASCA_MIG") baris"; else [ "$ISI_PASCA_MIG" = "$ISI_PRA" ] || die "isi tabel pernyataan BERUBAH pada tahap LANJUT (seharusnya hanya dibaca)"; fi
 [ "$(psql_live -At -c "$SKEMA_SQL")" = "$SKEMA_PRA" ] || die "skema tabel lama BERUBAH oleh migrasi (jangan switch)"
 curl -fsS --max-time 8 "${INTERNAL_URL}/api/health" | grep '"ok":true' >/dev/null || die "backend lama tidak sehat setelah tahap migrasi"
-ok "migrasi diterapkan (${MIG_SEBELUM} → $(( MIG_SEBELUM + 1 ))); tabel pernyataan kosong, struktur lengkap tervalidasi; skema tabel lama identik; backend lama tetap sehat"
+ok "migrasi $([ "$KEADAAN" = "SEGAR" ] && echo "diterapkan (${MIG_SEBELUM} → $(( MIG_SEBELUM + 1 )))" || echo "SUDAH terpasang (${MIG_SEBELUM} + 1), TIDAK diterapkan ulang"); isi tabel pernyataan DIBACA: $(isi_n "$ISI_PASCA_MIG") baris ($(isi_aktif "$ISI_PASCA_MIG") aktif, sidik jari $(isi_fp "$ISI_PASCA_MIG" | cut -c1-12)); struktur lengkap tervalidasi; skema tabel lama identik; backend lama tetap sehat"
 psql_live -At -c "$FP_BEKU_SQL" | LC_ALL=C sort > "$BK_DIR/data-pasca-migrasi.txt" || die "sidik jari beku pasca-migrasi gagal"
 cmp -s "$BK_DIR/data-sebelum.txt" "$BK_DIR/data-pasca-migrasi.txt" || { diff "$BK_DIR/data-sebelum.txt" "$BK_DIR/data-pasca-migrasi.txt" || true; die "dokumen pembanding beku BERUBAH oleh tahap migrasi (jangan switch)"; }
 ok "pasca-tahap-migrasi sebelum switch: dokumen pembanding beku IDENTIK"
@@ -801,6 +960,9 @@ ok "pasca-tahap-migrasi sebelum switch: dokumen pembanding beku IDENTIK"
 PHASE="7-switch"; say "7. Switch backend ke release baru (SATU kali)"
 tidak_ada_deploy_lain_lagi
 gerbang_kode_live "fase-7-tepat-sebelum-switch"
+ISI_SEBELUM_SWITCH="$(isi_tabel_rilis LQ)" || die "gagal membaca isi tabel pernyataan tepat sebelum switch"
+[ "$ISI_SEBELUM_SWITCH" = "$ISI_PRA" ] || die "isi tabel pernyataan BERUBAH sejak preflight ($(isi_n "$ISI_PRA") → $(isi_n "$ISI_SEBELUM_SWITCH") baris) — berhenti sebelum switch"
+SMOKE_DECL_N="$(isi_n "$ISI_SEBELUM_SWITCH")"; SMOKE_DECL_FP="$(isi_fp "$ISI_SEBELUM_SWITCH")"; SMOKE_DECL_IDS="$(isi_ids "$ISI_SEBELUM_SWITCH")"
 [ "$(sg ls-remote origin "refs/heads/${CAND_BRANCH}" | cut -f1)" = "$DEPLOY_SHA" ] || die "kandidat berubah sebelum switch"
 dcp "$NEW_DIR" up -d --no-deps backend </dev/null >/dev/null 2>&1 || die "docker compose up backend gagal"
 UP=0; for i in $(seq 1 45); do curl -fsS --max-time 4 "${INTERNAL_URL}/api/health" >/dev/null 2>&1 && { UP=1; break; }; sleep 2; done
@@ -841,20 +1003,26 @@ NBE_EXPECT="$(printf '%s\n' "$BACKEND_SRC_EXPECT" | wc -w)"
 ok "${NBE} berkas backend di container = kandidat (byte-identik)"
 PSQLN() { dcp "$NEW_DIR" exec -T postgres psql -U "$DB_USER" -d "$DB_NAME" -X -At -q -c "$1" </dev/null; }
 struktur_baru PSQLN die
-ok "objek rilis terpasang di produksi: tabel pernyataan — kosong; 1 FK RESTRICT, 4 CHECK, 4 indeks (3 unik, 1 parsial) tervalidasi; tanpa trigger"
+ok "objek rilis terpasang di produksi: struktur persis (1 FK RESTRICT, 4 CHECK, 4 indeks [3 unik, 1 parsial]) tervalidasi; tanpa trigger"
+ISI_PASCA="$(isi_tabel_rilis PSQLN)" || die "gagal membaca isi tabel pernyataan sesudah switch"
+HADIR="$(PSQLN "select count(*) from unit_material_declarations where id::text = any(string_to_array('$(isi_ids "$ISI_SEBELUM_SWITCH")', ','))")"
+[ "$HADIR" = "$(isi_n "$ISI_SEBELUM_SWITCH")" ] || die "baris pernyataan yang ada sebelum switch HILANG sesudah switch (${HADIR}/$(isi_n "$ISI_SEBELUM_SWITCH"))"
+[ "$(isi_n "$ISI_PASCA")" -ge "$(isi_n "$ISI_SEBELUM_SWITCH")" ] || die "jumlah baris pernyataan BERKURANG sesudah switch"
+if [ "$(isi_n "$ISI_PASCA")" = "$(isi_n "$ISI_SEBELUM_SWITCH")" ]; then [ "$ISI_PASCA" = "$ISI_SEBELUM_SWITCH" ] || die "isi tabel pernyataan BERUBAH oleh switch (jumlah sama tetapi sidik jari berbeda)"; fi
+ok "isi tabel pernyataan DIBACA aktual: sebelum switch $(isi_n "$ISI_SEBELUM_SWITCH") baris ($(isi_aktif "$ISI_SEBELUM_SWITCH") aktif, sidik jari $(isi_fp "$ISI_SEBELUM_SWITCH" | cut -c1-12)); sesudah switch $(isi_n "$ISI_PASCA") baris; semua baris lama masih ada; $([ "$(isi_n "$ISI_PASCA")" = "$(isi_n "$ISI_SEBELUM_SWITCH")" ] && echo 'IDENTIK byte-per-baris' || echo 'penambahan hanya dari pengguna sesudah switch')"
 set +e; GUARD_PROD="$(GUARD_OUT_DIR="$BK_DIR" bash "$NEW_DIR/scripts/rollback-guard-kelengkapan.sh" 2>&1)"; GUARD_PROD_RC=$?; set -e
 printf '%s\n' "$GUARD_PROD" | sed 's/^/        guard: /'
 [ "$GUARD_PROD_RC" = "0" ] || die "guard rollback produksi pasca-switch gagal (exit ${GUARD_PROD_RC})"
-ok "guard rollback (baca-saja) di produksi: LULUS (belum ada pernyataan aktif saat rilis); sesudah ada pernyataan, guard memberi PERINGATAN + snapshot dan tetap mengizinkan rollback rutin"
+ok "guard rollback (baca-saja) di produksi: $(if printf '%s' "$GUARD_PROD" | grep -q 'DENGAN PERINGATAN'; then echo "LULUS DENGAN PERINGATAN (ada pernyataan aktif; snapshot ditulis di ${BK_DIR})"; else echo 'LULUS (tidak ada pernyataan aktif)'; fi); guard hanya MENILAI dan tidak pernah memicu rollback; keputusan pemulihan spesifik tetap meminta persetujuan Owner"
 dcp "$NEW_DIR" run --rm --no-deps -T backend npx prisma migrate status </dev/null 2>&1 | grep -i 'up to date' >/dev/null || die "migrate status produksi tidak 'up to date'"
 ok "migrate status up to date"
 # hitung baris pasca-switch vs pra-switch (informasi: pengguna sungguhan bisa menulis selama jendela rilis; skrip ini sendiri tidak menulis apa pun)
 psql_live -At -c "$COUNT_SQL" > "$BK_DIR/hitung-pasca-switch.txt" || die "hitung baris pasca-switch gagal"
 if diff "$BK_DIR/hitung-pra-switch.txt" "$BK_DIR/hitung-pasca-switch.txt" >/dev/null; then ok "hitung baris jadwal/Run/stok/pemakaian/harga/jurnal IDENTIK sebelum vs sesudah switch"; else warn "hitung baris berbeda sebelum vs sesudah switch (kemungkinan aktivitas pengguna sungguhan selama jendela rilis; skrip tidak menulis):"; diff "$BK_DIR/hitung-pra-switch.txt" "$BK_DIR/hitung-pasca-switch.txt" | sed 's/^/        /' || true; fi
-PHASE="8b-smoke"; say "8b. Smoke test baca-saja: izin (401/403), hitungan kelengkapan = total filter di daftar, filter gabungan + urut terlama, drawer = daftar, ekspor, periode terbalik 400, penulisan ditolak sebelum menyentuh data; tabel rilis tetap kosong; tidak ada jejak tulis"
+PHASE="8b-smoke"; say "8b. Smoke test baca-saja: izin (401/403), hitungan kelengkapan = total filter di daftar, filter gabungan + urut terlama, drawer = daftar, ekspor, periode terbalik 400, penulisan ditolak sebelum menyentuh data; isi tabel rilis dibaca aktual dan tidak berubah oleh rilis; tidak ada jejak tulis"
 # shellcheck disable=SC1090
 . "$BK_DIR/garis-dasar.env"
-dcp "$NEW_DIR" exec -T -e BASE_TIDAK_SEIMBANG="$BASE_TIDAK_SEIMBANG" -e BASE_GANDA="$BASE_GANDA" -e ORDER_N="$ORDER_N" -e JOB_N="$JOB_N" backend node --input-type=module - <<'NODE' | tee "$BK_DIR/smoke.log" || die "smoke test GAGAL"
+dcp "$NEW_DIR" exec -T -e BASE_TIDAK_SEIMBANG="$BASE_TIDAK_SEIMBANG" -e BASE_GANDA="$BASE_GANDA" -e ORDER_N="$ORDER_N" -e JOB_N="$JOB_N" -e SMOKE_DECL_N="$SMOKE_DECL_N" -e SMOKE_DECL_FP="$SMOKE_DECL_FP" -e SMOKE_DECL_IDS="$SMOKE_DECL_IDS" backend node --input-type=module - <<'NODE' | tee "$BK_DIR/smoke.log" || die "smoke test GAGAL"
 import { createRequire } from "node:module";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -886,7 +1054,21 @@ const fp = async () => { const o = {}; for (const t of TABEL) o[t] = (await pris
 const sebelum = await fp();
 const evt0 = await hitung("select count(*) as n from activity_events");
 
-rec("tabel pernyataan ada dan KOSONG (tidak ada pernyataan massal/backfill saat rilis)", (await hitung("select count(*) as n from unit_material_declarations")) === 0);
+{
+  // Isi tabel pernyataan DIBACA aktual dan dibandingkan dengan keadaan sebelum switch (SMOKE_DECL_* dari skrip rilis); tidak diasumsikan kosong.
+  const nSkrg = await hitung("select count(*) as n from unit_material_declarations");
+  const n0 = process.env.SMOKE_DECL_N === undefined || process.env.SMOKE_DECL_N === "" ? null : Number(process.env.SMOKE_DECL_N);
+  const ids0 = (process.env.SMOKE_DECL_IDS || "").split(",").filter(Boolean);
+  if (n0 === null) skip("isi tabel pernyataan vs sebelum switch", "SMOKE_DECL_N tidak diberikan (uji lokal)");
+  else {
+    const hadir = ids0.length ? (await prisma.$queryRawUnsafe('select count(*)::int n from unit_material_declarations where id::text = any($1::text[])', ids0))[0].n : 0;
+    rec(`tabel pernyataan: ${n0} baris sebelum switch (dibaca aktual) — semuanya masih ada (${hadir}/${n0}); sekarang ${nSkrg} baris${nSkrg > n0 ? " (penambahan = pernyataan pengguna SESUDAH switch, bukan dari skrip rilis)" : ""}`, hadir === n0 && nSkrg >= n0);
+    if (nSkrg === n0 && process.env.SMOKE_DECL_FP) {
+      const fp = (await prisma.$queryRawUnsafe("select coalesce(md5(string_agg(t::text, '~' order by t.id::text)), '-') h from unit_material_declarations t"))[0].h;
+      rec("isi tabel pernyataan IDENTIK byte-per-baris dengan sebelum switch (rilis tidak mengubah/menghapus/mengisi)", fp === process.env.SMOKE_DECL_FP, fp.slice(0, 12));
+    }
+  }
+}
 rec("izin kode berjalan: pernyataan memakai izin Rute Unit (Admin/Owner/Kepala Produksi), bukan Sales", (ROLE_PERMISSIONS.ADMIN ?? []).includes("unit:routing:write") && !(ROLE_PERMISSIONS.SALES ?? []).includes("unit:routing:write"));
 // tanpa token
 for (const [m, p] of [["GET", "/api/production/work-orders/kelengkapan-hitung"], ["GET", "/api/production/work-orders?kelengkapan=BAHAN_BELUM_DICATAT"], ["GET", "/api/production/units/00000000-0000-4000-8000-000000000000/pernyataan-tanpa-bahan"]]) rec(`${m} ${p.split("?")[0]} tanpa token = 401`, (await get(p)).status === 401);
@@ -901,7 +1083,7 @@ if (h.status === 200) {
   const g = await get(`/api/production/work-orders?${AKTIF}&kelengkapan=BAHAN_BELUM_DICATAT,BAHAN_PERLU_DICEK,HPP_BELUM_LENGKAP,DATA_ORDER_KURANG&pageSize=50&urut=terlama`, tA);
   rec(`filter gabungan + urut terlama dalam ${g.ms} ms: total = unit unik (${h.json.unik}), halaman ≤ 50`, g.status === 200 && g.json.total === h.json.unik && g.json.units.length <= 50);
   const satu = g.json?.units?.[0];
-  if (satu) { const d = await get(`/api/production/units/${satu.id}/adopsi`, tA); rec("drawer unit memuat klasifikasi yang SAMA dengan daftar + pernyataan (kosong)", d.status === 200 && JSON.stringify(d.json.adopsi.kelengkapan.keys) === JSON.stringify(satu.adopsi.kelengkapan.keys) && d.json.pernyataanTanpaBahan?.aktif === null && d.json.izin?.pernyataanTanpaBahan === true); }
+  if (satu) { const d = await get(`/api/production/units/${satu.id}/adopsi`, tA); rec("drawer unit memuat klasifikasi yang SAMA dengan daftar + pernyataan", d.status === 200 && JSON.stringify(d.json.adopsi.kelengkapan.keys) === JSON.stringify(satu.adopsi.kelengkapan.keys) && (d.json.pernyataanTanpaBahan?.aktif === null || typeof d.json.pernyataanTanpaBahan?.aktif === 'object') && d.json.izin?.pernyataanTanpaBahan === true); }
   else skip("drawer unit", "tidak ada unit berkekurangan pada lingkup Aktif");
   const x = await fetch(BASE + `/api/production/work-orders/export.xlsx?${AKTIF}&kelengkapan=HPP_BELUM_LENGKAP`, { headers: { Authorization: "Bearer " + tA } }); const b = Buffer.from(await x.arrayBuffer());
   rec(`ekspor Excel dengan filter kelengkapan terunduh (${b.length} byte, berkas xlsx)`, x.status === 200 && b.length > 1000 && b.slice(0, 2).toString() === "PK");
@@ -930,7 +1112,7 @@ SMOKE_SKIP="$(printf '%s' "$SMOKE_LINE" | sed -n 's/^SMOKE_HASIL fail=0 skip=\([
 if [ "$SMOKE_SKIP" != "0" ]; then
   warn "smoke test lulus dengan ${SMOKE_SKIP} pemeriksaan DILEWATI (SKIP): lihat alasan di ${BK_DIR}/smoke.log. Ini BUKAN PASS untuk pemeriksaan yang dilewati."
 else
-  ok "smoke test lulus (izin, hitungan = daftar, filter, drawer, ekspor, penulisan ditolak, tabel rilis kosong, tanpa jejak tulis, invarian)"
+  ok "smoke test lulus (izin, hitungan = daftar, filter, drawer, ekspor, penulisan ditolak, isi tabel rilis dibaca aktual dan tidak berubah, tanpa jejak tulis, invarian)"
 fi
 OLD_ONLY="$(sed -n 1p "$OLD_ASSETS" || true)"
 if [ -n "$OLD_ONLY" ]; then
@@ -951,4 +1133,4 @@ PHASE="9-pembersihan"; say "9. Pembersihan release lama DINONAKTIFKAN (folder ho
 ok "tidak ada folder release/image/backup/volume yang dihapus oleh skrip ini; disk: $(df -h "$HOME" | awk 'NR==2{print $4" bebas"}')"
 trap - EXIT
 say "SELESAI — rilis ${DEPLOY_SHORT} aktif. Backup: ${BACKUP_FILE}. Image rollback: ${ROLLBACK_TAG}. Log: ${BK_DIR}/release.log"
-say "CATATAN: Rilis ini membawa penyaring Kelengkapan Order Produksi (Bahan belum dicatat / perlu dicek / HPP belum lengkap / Data order kurang) + pernyataan tanpa bahan baru. Migrasi aditif: 1 tabel pernyataan KOSONG. Rilis TIDAK membuat pernyataan massal, stok, Material Issue, Run, jadwal, status, biaya, jurnal, atau harga. Rollback kode: jalankan scripts/rollback-guard-kelengkapan.sh dulu (peringatan + snapshot; rollback rutin diperbolehkan)."
+say "CATATAN: Rilis ini membawa penyaring Kelengkapan Order Produksi (Bahan belum dicatat / perlu dicek / HPP belum lengkap / Data order kurang) + pernyataan tanpa bahan baru. Migrasi aditif: 1 tabel pernyataan (isi dibaca aktual, tidak diasumsikan kosong). Rilis TIDAK membuat pernyataan massal, stok, Material Issue, Run, jadwal, status, biaya, jurnal, atau harga. Rollback kode: jalankan scripts/rollback-guard-kelengkapan.sh dulu (peringatan + snapshot; rollback rutin diperbolehkan)."

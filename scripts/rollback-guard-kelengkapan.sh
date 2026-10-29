@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # GUARD ROLLBACK KODE "Kelengkapan Order Produksi" (BACA-SAJA). Jalankan SEBELUM mengembalikan kode ke versi sebelum rilis ini.
-#   PENILAIAN DAMPAK: kode lama (e7883bc6) TIDAK mengenal tabel unit_material_declarations — tidak membaca dan tidak menulisnya. Tabel tetap ada (tidak dihapus) dan TIDAK memengaruhi stok, Material Issue,
+#   PENILAIAN DAMPAK: kode lama (baseline sebelum rilis ini) TIDAK mengenal tabel unit_material_declarations — tidak membaca dan tidak menulisnya. Tabel tetap ada (tidak dihapus) dan TIDAK memengaruhi stok, Material Issue,
 #   biaya, jurnal, harga, jadwal, Run, atau status unit/order. Dampak rollback hanya PENGLIHATAN: pernyataan "tanpa bahan baru" yang sudah tersimpan TIDAK TERLIHAT dan TIDAK DAPAT dicabut di kode lama,
 #   dan penanda "pernyataan bertentangan dengan catatan bahan" tidak dihitung selama kode lama berjalan. Karena kode lama pun tidak punya penyaring kelengkapan, tidak ada data yang SALAH — hanya informasi yang
 #   tertunda; dihitung ulang (read-time) begitu kode baru terpasang lagi. Karena itu guard ini TIDAK MEMBLOKIR (exit 0 bila terbaca), tetapi WAJIB: (a) mencetak jumlah + contoh, (b) mengekspor SNAPSHOT pernyataan aktif

@@ -1,0 +1,4 @@
+set +e; GUARD_PROD="$(GUARD_OUT_DIR="$BK_DIR" bash "$NEW_DIR/scripts/rollback-guard-kelengkapan.sh" 2>&1)"; GUARD_PROD_RC=$?; set -e
+printf '%s\n' "$GUARD_PROD" | sed 's/^/        guard: /'
+[ "$GUARD_PROD_RC" = "0" ] || die "guard rollback produksi pasca-switch gagal (exit ${GUARD_PROD_RC})"
+ok "guard rollback (baca-saja) di produksi: $(if printf '%s' "$GUARD_PROD" | grep -q 'DENGAN PERINGATAN'; then echo "LULUS DENGAN PERINGATAN (ada pernyataan aktif; snapshot ditulis di ${BK_DIR})"; else echo 'LULUS (tidak ada pernyataan aktif)'; fi); guard hanya MENILAI dan tidak pernah memicu rollback; keputusan pemulihan spesifik tetap meminta persetujuan Owner"

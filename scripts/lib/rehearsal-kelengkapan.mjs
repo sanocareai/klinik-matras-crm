@@ -26,7 +26,8 @@ const fp = async (tabel) => { const o = {}; for (const t of tabel) o[t] = (await
 const beda = (a, b) => Object.keys(a).filter((t) => a[t].n !== b[t].n || a[t].h !== b[t].h);
 
 // ── A. struktur (kode baru terhadap hasil restore nyata + migrasi) ──
-cek("tabel pernyataan ada dan KOSONG setelah migrasi (tanpa backfill/pernyataan massal)", (await num("select count(*) as n from unit_material_declarations")) === 0);
+const declAwal = await num("select count(*) as n from unit_material_declarations");
+cek(`tabel pernyataan ada; isi awal pada restore DIBACA aktual = ${declAwal} baris (tidak diasumsikan kosong)${process.env.REH_DECL_AWAL === undefined ? "" : `; sama dengan production saat preflight (${process.env.REH_DECL_AWAL})`} — migrasi tidak mengisinya (tanpa backfill/pernyataan massal)`, process.env.REH_DECL_AWAL === undefined || declAwal === Number(process.env.REH_DECL_AWAL));
 const nUnit = await num('select count(*) as n from units'); const nUnitNonBatal = await num("select count(*) as n from units where status <> 'CANCELLED'");
 console.log(`INFO  salinan restore: ${nUnit} unit (${nUnitNonBatal} non-batal), ${await num("select count(*) as n from unit_usage_notes")} catatan historis, ${await num("select count(*) as n from stock_movements where type = 'ISSUE' and unit_id is not null")} ISSUE bertaut unit, ${await num("select count(*) as n from unit_provisional_usages")} pemakaian sementara`);
 

@@ -22,5 +22,9 @@ keadaan_produksi() {
 KEADAAN="$(keadaan_produksi "")" || die "${KEADAAN}"
 [ "$KEADAAN" = "SEGAR" ] || [ "$KEADAAN" = "LANJUT" ] || die "keadaan production tidak dikenal: ${KEADAAN}"
 MIG_SEBELUM="$(grep -c . "$BK_DIR/base-pra.txt")"
-ok "keadaan production: ${KEADAAN} (baseline ${MIG_SEBELUM} migrasi terpasang; migrasi rilis ${MIG_NAME} $([ "$KEADAAN" = "SEGAR" ] && echo 'pending' || echo 'sudah terpasang, tabel kosong'))"
+ISI_PRA="$(isi_tabel_rilis LQ)" || die "gagal membaca isi tabel pernyataan"
+{ [ "$ISI_PRA" = "ABSEN" ] || [[ "$ISI_PRA" =~ ^[0-9]+\|[0-9]+\|[0-9a-f-]+\| ]]; } || die "isi tabel pernyataan tidak terbaca: ${ISI_PRA:0:80}"
+{ [ "$KEADAAN" = "SEGAR" ] && [ "$ISI_PRA" = "ABSEN" ]; } || { [ "$KEADAAN" = "LANJUT" ] && [ "$ISI_PRA" != "ABSEN" ]; } || die "keadaan ${KEADAAN} tidak cocok dengan tabel pernyataan (${ISI_PRA:0:40})"
+if [ "$KEADAAN" = "LANJUT" ]; then struktur_baru LQ die; fi
+ok "keadaan production: ${KEADAAN} (baseline ${MIG_SEBELUM} migrasi terpasang; migrasi rilis ${MIG_NAME} $([ "$KEADAAN" = "SEGAR" ] && echo 'pending' || echo "SUDAH terpasang: checksum, status, dan STRUKTUR cocok persis; isi tabel DIBACA: $(isi_n "$ISI_PRA") baris, $(isi_aktif "$ISI_PRA") aktif, sidik jari $(isi_fp "$ISI_PRA" | cut -c1-12)"))"
 SKEMA_PRA="$(psql_live -At -c "$SKEMA_SQL")"; [ -n "$SKEMA_PRA" ] || die "sidik jari skema produksi kosong"

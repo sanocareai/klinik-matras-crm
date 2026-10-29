@@ -1,0 +1,3 @@
+ISI_SEBELUM_SWITCH="$(isi_tabel_rilis LQ)" || die "gagal membaca isi tabel pernyataan tepat sebelum switch"
+[ "$ISI_SEBELUM_SWITCH" = "$ISI_PRA" ] || die "isi tabel pernyataan BERUBAH sejak preflight ($(isi_n "$ISI_PRA") → $(isi_n "$ISI_SEBELUM_SWITCH") baris) — berhenti sebelum switch"
+SMOKE_DECL_N="$(isi_n "$ISI_SEBELUM_SWITCH")"; SMOKE_DECL_FP="$(isi_fp "$ISI_SEBELUM_SWITCH")"; SMOKE_DECL_IDS="$(isi_ids "$ISI_SEBELUM_SWITCH")"

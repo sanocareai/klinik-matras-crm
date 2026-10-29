@@ -1,0 +1,55 @@
+# >>> KUNCI-DEPLOY (blok ini DIUJI TERISOLASI di rehearsal: dimuat ulang dari berkas skrip ini ke proses anak dengan LOCK_DIR sementara; production tidak disentuh)
+# Penguncian deploy. Kepemilikan kunci ditentukan oleh PROSES (berkas yang dibuka dan dikunci oleh proses ini: perangkat+inode fd 7/9), BUKAN oleh nama berkas.
+#   - kunci sendiri  : release-kelengkapan.lock  (fd 9) — satu instansi rilis ini.
+#   - kunci bersama  : release-deploy-bersama.lock (fd 7) — mutex deploy bersama; diambil ATOMIK (flock) SEBELUM memeriksa kunci lain, supaya dua proses yang mulai bersamaan tidak sama-sama lolos.
+# Berkas pemilik (*.owner, bukan *.lock) hanya untuk diagnosis (pid/waktu/SHA/token); keputusan "milik sendiri" TIDAK bergantung padanya.
+LOCK_DIR="${LOCK_DIR:-/tmp}"
+KUNCI_SENDIRI="${LOCK_DIR}/release-kelengkapan.lock"
+KUNCI_BERSAMA="${LOCK_DIR}/release-deploy-bersama.lock"
+KUNCI_LAIN=""
+kunci_ambil() {
+  KUNCI_TOKEN="pid=$$ mulai=$(date -u +%FT%TZ) sha=${DEPLOY_SHORT:-?} token=${RANDOM}${RANDOM}${RANDOM}"
+  mkdir -p "$LOCK_DIR"
+  exec 7>>"$KUNCI_BERSAMA"
+  flock -n 7 || die "kunci deploy BERSAMA (${KUNCI_BERSAMA}) dipegang proses lain ($(kunci_pemegang "$KUNCI_BERSAMA")) — deploy lain sedang berjalan"
+  exec 9>>"$KUNCI_SENDIRI"
+  flock -n 9 || die "rilis ini sudah berjalan ($(kunci_pemegang "$KUNCI_SENDIRI"))"
+  printf '%s\n' "$KUNCI_TOKEN" > "${KUNCI_BERSAMA%.lock}.owner"
+  printf '%s\n' "$KUNCI_TOKEN" > "${KUNCI_SENDIRI%.lock}.owner"
+}
+# Pemilik yang tercatat (diagnosis saja).
+kunci_pemegang() { local o="${1%.lock}.owner"; if [ -s "$o" ]; then head -c 200 "$o" | tr '\n' ' '; else printf 'pemilik tidak tercatat'; fi; }
+# 0 bila berkas $1 adalah berkas yang DIBUKA dan DIKUNCI proses ini (fd 7 atau 9): identitas = perangkat:inode, bukan nama.
+kunci_milik_sendiri() {
+  local lf="$1" fd
+  for fd in 7 9; do
+    [ -e "/proc/$$/fd/$fd" ] || continue
+    [ "$(stat -Lc '%d:%i' "$lf" 2>/dev/null)" = "$(stat -Lc '%d:%i' "/proc/$$/fd/$fd" 2>/dev/null)" ] && return 0
+  done
+  return 1
+}
+# 0 = tidak ada kunci rilis LAIN yang dipegang; 1 = ada (nama di KUNCI_LAIN). Kunci milik proses ini dilewati berdasarkan kepemilikan; berkas dibuka read-only supaya tidak memotong isinya.
+kunci_cek_lain() {
+  local lf
+  KUNCI_LAIN=""
+  for lf in "$LOCK_DIR"/release-*.lock; do
+    [ -e "$lf" ] || continue
+    kunci_milik_sendiri "$lf" && continue
+    if ! ( exec 8<"$lf"; flock -n 8 ); then KUNCI_LAIN="$lf"; return 1; fi
+  done
+  return 0
+}
+# Proses deploy/build/migrasi di luar pohon proses ini (leluhur: nohup/ssh/shell; keturunan: build/compose yang kita jalankan sendiri). Mencetak baris "PID perintah".
+proses_lain() {
+  local anc=" " p="$$" pid cmd q hit
+  while [ -n "$p" ] && [ "$p" -gt 1 ] 2>/dev/null; do anc="${anc}${p} "; p="$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')"; done
+  pgrep -af 'release-[a-z0-9-]+\.sh|docker compose .*(up|build)|docker build|prisma migrate' 2>/dev/null | while IFS= read -r baris; do
+    pid="${baris%% *}"; cmd="${baris#* }"
+    case "$cmd" in *pgrep*|*"node src/index.js"*) continue;; esac
+    case "$anc" in *" ${pid} "*) continue;; esac
+    q="$pid"; hit=0
+    while [ -n "$q" ] && [ "$q" -gt 1 ] 2>/dev/null; do [ "$q" = "$$" ] && { hit=1; break; }; q="$(ps -o ppid= -p "$q" 2>/dev/null | tr -d ' ')"; done
+    [ "$hit" = "1" ] || printf '%s\n' "$baris"
+  done
+}
+# <<< KUNCI-DEPLOY

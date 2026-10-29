@@ -1,0 +1,6 @@
+ISI_PASCA="$(isi_tabel_rilis PSQLN)" || die "gagal membaca isi tabel pernyataan sesudah switch"
+HADIR="$(PSQLN "select count(*) from unit_material_declarations where id::text = any(string_to_array('$(isi_ids "$ISI_SEBELUM_SWITCH")', ','))")"
+[ "$HADIR" = "$(isi_n "$ISI_SEBELUM_SWITCH")" ] || die "baris pernyataan yang ada sebelum switch HILANG sesudah switch (${HADIR}/$(isi_n "$ISI_SEBELUM_SWITCH"))"
+[ "$(isi_n "$ISI_PASCA")" -ge "$(isi_n "$ISI_SEBELUM_SWITCH")" ] || die "jumlah baris pernyataan BERKURANG sesudah switch"
+if [ "$(isi_n "$ISI_PASCA")" = "$(isi_n "$ISI_SEBELUM_SWITCH")" ]; then [ "$ISI_PASCA" = "$ISI_SEBELUM_SWITCH" ] || die "isi tabel pernyataan BERUBAH oleh switch (jumlah sama tetapi sidik jari berbeda)"; fi
+ok "isi tabel pernyataan DIBACA aktual: sebelum switch $(isi_n "$ISI_SEBELUM_SWITCH") baris ($(isi_aktif "$ISI_SEBELUM_SWITCH") aktif, sidik jari $(isi_fp "$ISI_SEBELUM_SWITCH" | cut -c1-12)); sesudah switch $(isi_n "$ISI_PASCA") baris; semua baris lama masih ada; $([ "$(isi_n "$ISI_PASCA")" = "$(isi_n "$ISI_SEBELUM_SWITCH")" ] && echo 'IDENTIK byte-per-baris' || echo 'penambahan hanya dari pengguna sesudah switch')"

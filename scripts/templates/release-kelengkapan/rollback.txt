@@ -7,6 +7,6 @@ Rollback kode (tidak menghapus tabel maupun riwayat; image LAMA terbukti tetap b
    cd ${PREV_DIR:-<release-sebelumnya>}
    docker tag ${ROLLBACK_TAG:-<tag-rollback>} ${IMG_NAME:-klinik-matras-backend:latest}
    SANSS_PERSIST_ROOT=${PERSIST} docker compose -p ${PROJECT} -f docker-compose.yml -f docker-compose.release.yml up -d --no-deps --force-recreate backend
-   Tujuan rollback = image dan folder release LIVE SEBELUM rilis ini (baseline e7883bc6 yang memuat hotfix performa, penjadwalan, drawer, PO barang mirip); gerbang kode live membuktikan kode container == folder == baseline.
-Migrasi bersifat ADITIF (1 tabel baru kosong + 3 indeks + 1 FK): tabel dibiarkan terpasang setelah rollback kode. Rilis ini tidak membuat pergerakan stok, Material Issue, Run, jadwal, status, biaya, jurnal, atau harga; satu-satunya tulisan baru adalah pernyataan eksplisit oleh pengguna berizin SESUDAH rilis.
+   Tujuan rollback = image dan folder release LIVE SEBELUM rilis ini (baseline ${BASE_SHA:0:8} yang memuat hotfix performa, penjadwalan, drawer, PO barang mirip, Export PKR); gerbang kode live membuktikan kode container == folder == baseline.
+Migrasi bersifat ADITIF (1 tabel + 3 indeks + 1 FK): tabel dibiarkan terpasang setelah rollback kode, berikut seluruh baris pernyataan yang ada (tidak dihapus). Rilis ini tidak membuat pergerakan stok, Material Issue, Run, jadwal, status, biaya, jurnal, atau harga; satu-satunya tulisan baru adalah pernyataan eksplisit oleh pengguna berizin SESUDAH rilis.
 Pemulihan database penuh hanya bila terjadi kerusakan data: gzip -dc ${BACKUP_FILE:-<backup>} | psql ... (lihat checksum di atas) — MENGHAPUS semua perubahan sesudah backup (pernyataan, transaksi, pesan); gunakan hanya atas keputusan Owner.
