@@ -228,6 +228,15 @@ export const METRIK = Object.freeze([
     ["Bagian pemakaian yang fakturnya sudah disetujui"], ["Bagian yang fakturnya belum ada (ditandai belum final)", "Biaya persediaan unit"],
     ["biaya_bahan_unit_bersih"], ["Biaya Bahan per Unit", "Detail PO (Jejak Biaya Bahan)"], ["biaya-bahan"]),
 
+  m("pkr_nilai_penjualan", "Nilai Penjualan Karyawan (Aktif)", "ASET",
+    "Total nilai dokumen penjualan karyawan yang masih aktif. Dokumen yang dibatalkan tidak dijumlahkan; nilainya tetap tersimpan sebagai riwayat. Layar menampilkan sepanjang waktu, Export mengikuti periode dan filter yang dipilih.",
+    "Σ total dokumen PKR berstatus aktif", "tabel fin_penjualan_karyawan", "aktif", "TGL_DOKUMEN",
+    ["Dokumen aktif: lunas, dibayar sebagian, belum dibayar"], ["Dokumen dibatalkan (tetap tampil sebagai riwayat, tidak ditagih)"], ["pkr_sisa_ditagih"], ["Penjualan Karyawan"], ["penjualan-karyawan"]),
+  m("pkr_sisa_ditagih", "Sisa Tagihan Penjualan Karyawan", "ASET",
+    "Bagian nilai penjualan karyawan aktif yang belum dibayar atau dipotong dari gaji. Pembayaran yang dibatalkan tidak mengurangi sisa; dokumen yang dibatalkan tidak ditagih (sisanya Rp0).",
+    "Σ (total − pembayaran aktif) dokumen PKR berstatus aktif", "tabel fin_penjualan_karyawan + pembayarannya", "aktif", "TGL_DOKUMEN",
+    ["Sisa dokumen aktif"], ["Dokumen dibatalkan", "Pembayaran yang dibatalkan"], ["pkr_nilai_penjualan", "kasbon_sisa"], ["Penjualan Karyawan"], ["penjualan-karyawan"]),
+
   // ═══ LAPORAN KEUANGAN ════════════════════════════════════════════════════════════════════════════════════════
   m("laba_bersih_sementara", "Laba Bersih Sementara", "LAPORAN",
     "Pendapatan bersih dikurangi HPP dan beban operasional menurut jurnal pada periode. 'Sementara' karena belum semua pengakuan/penyesuaian periode ditutup.",
