@@ -38,6 +38,7 @@ import { McpError } from "@modelcontextprotocol/sdk/types.js";
 
 import { requireMcpToken, mcpRateLimit, mcpAuthConfigured, mcpStaticTokenConfigured } from "./security.js";
 import { buatServer, MCP_SERVER_VERSION } from "./index.js";
+import { penjagaAksesLaporan } from "./penjagaAksesLaporan.js";
 
 // Satu pasang client<->server per panggilan (mirror pola stateless /mcp:
 // server baru tiap request, ditutup begitu selesai — tidak ada state yang
@@ -139,6 +140,8 @@ export const gptActionsRouter = express.Router();
 // beruntun ikut kena batas, bukan cuma yang tokennya sudah benar).
 gptActionsRouter.use(mcpRateLimit);
 gptActionsRouter.use(requireMcpToken);
+// Tiga tool laporan Meta Ads: token OAuth wajib milik user yang MASIH aktif dan ADMIN; token statis (kredensial mesin) tetap lolos seperti tool lain.
+gptActionsRouter.use(penjagaAksesLaporan);
 
 gptActionsRouter.get("/openapi.json", async (req, res) => {
   try {

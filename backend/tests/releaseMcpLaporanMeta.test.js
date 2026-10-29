@@ -70,8 +70,8 @@ test("allowlist = persis berkas kandidat; BACKEND_SRC_EXPECT cocok; prisma/paket
   assert.equal(nilai("BACKEND_SRC_EXPECT"), berubah.filter((f) => f.startsWith("backend/src/")).join(" "));
   assert.equal(nilai("FRONTEND_SRC_EXPECT"), "");
   assert.deepEqual(berubah.filter((f) => f.startsWith("backend/src/")), [
-    "backend/src/mcp/chatgptPlugin.js", "backend/src/mcp/index.js", "backend/src/mcp/toolsAtribusiIklan.js", "backend/src/mcp/toolsTraffic.js", "backend/src/routes/attributionAds.js",
-    "backend/src/services/attribution/biayaKpi.js", "backend/src/services/attribution/iklanReport.js", "backend/src/services/attribution/laporanMeta.js", "backend/src/services/attribution/penjagaLaporan.js"], "perubahan backend/src hanya 9 berkas yang diaudit");
+    "backend/src/mcp/chatgptPlugin.js", "backend/src/mcp/gptActions.js", "backend/src/mcp/index.js", "backend/src/mcp/penjagaAksesLaporan.js", "backend/src/mcp/toolsAtribusiIklan.js", "backend/src/mcp/toolsTraffic.js", "backend/src/routes/attributionAds.js",
+    "backend/src/services/attribution/biayaKpi.js", "backend/src/services/attribution/iklanReport.js", "backend/src/services/attribution/laporanMeta.js", "backend/src/services/attribution/penjagaLaporan.js"], "perubahan backend/src hanya 11 berkas yang diaudit");
   for (const no of ["backend/prisma/migrations/20261231000000_x/migration.sql", "backend/prisma/schema.prisma", "backend/package.json", "backend/package-lock.json", "frontend/package.json", "frontend/src/api.js", "docker-compose.release.yml", "docker-compose.yml", "backend/Dockerfile", "backend/.env",
     "backend/src/index.js", "backend/src/services/attribution/spend.js", "backend/src/services/attribution/d7.js", "backend/src/services/attribution/sumber.js", "backend/src/routes/settings.js", "backend/src/routes/analytics.js", "backend/src/routes/conversations.js",
     "backend/src/mcp/oauth.js", "backend/src/mcp/security.js", "scripts/release-po-barang-mirip.sh", "scripts/release-ux-bahan.sh", "frontend/dist/index.html", "backend/prisma/seed.js"]) assert.ok(!re.test(no), `harus DITOLAK: ${no}`);

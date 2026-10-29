@@ -35,6 +35,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 
 import { requireMcpToken, mcpRateLimit, mcpAuthConfigured, mcpStaticTokenConfigured, MCP_RATE_LIMIT } from "./security.js";
+import { penjagaAksesLaporan } from "./penjagaAksesLaporan.js";
 import { oauthConfigured } from "./oauthCrypto.js";
 import { registerReadOnlyTools } from "./tools.js";
 import { registerChatTools } from "./toolsChat.js";
@@ -94,6 +95,8 @@ export const mcpRouter = express.Router();
 // tokennya sudah benar.
 mcpRouter.use(mcpRateLimit);
 mcpRouter.use(requireMcpToken);
+// Tiga tool laporan Meta Ads: token OAuth wajib milik user yang MASIH aktif dan ADMIN (sama ketatnya dengan /api/atribusi/iklan); tool lain tidak terpengaruh.
+mcpRouter.use(penjagaAksesLaporan);
 
 mcpRouter.post("/", async (req, res) => {
   const server = buatServer();

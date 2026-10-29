@@ -22,7 +22,7 @@ const TPL_FILES = ["header", "rollback"].map((n) => `${TPL_DIR}/${n}.txt`);
 const FILE_TETAP = [OUT, GENERATOR, LIB_REH, LIB_SMOKE, ...TPL_FILES];
 const CAND_BRANCH = "feat/mcp-laporan-meta-ads";
 // Berkas backend/src yang HARUS ikut (rilis tanpa mereka = tool tidak ada / tidak terlihat oleh ChatGPT).
-const WAJIB_BACKEND = ["backend/src/mcp/toolsAtribusiIklan.js", "backend/src/mcp/index.js", "backend/src/mcp/chatgptPlugin.js", "backend/src/services/attribution/laporanMeta.js", "backend/src/services/attribution/penjagaLaporan.js", "backend/src/services/attribution/iklanReport.js"];
+const WAJIB_BACKEND = ["backend/src/mcp/toolsAtribusiIklan.js", "backend/src/mcp/penjagaAksesLaporan.js", "backend/src/mcp/gptActions.js", "backend/src/mcp/index.js", "backend/src/mcp/chatgptPlugin.js", "backend/src/services/attribution/laporanMeta.js", "backend/src/services/attribution/penjagaLaporan.js", "backend/src/services/attribution/iklanReport.js"];
 
 const lf = (t) => t.replace(/\r\n/g, "\n");
 const must = (c, m) => { if (!c) throw new Error("templat/masukan tak cocok: " + m); };

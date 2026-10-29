@@ -64,6 +64,27 @@ if (oauthConfigured()) {
   else skip("akun non-ADMIN ditolak di /mcp-chatgpt", "tidak ada akun non-ADMIN aktif");
 }
 
+// ── 1b. akses /gpt-actions dan penjaga ADMIN tiga tool laporan (diizinkan vs ditolak, jalur auth sebenarnya) ───────────────────────
+const TIGA = ["performa_campaign_meta", "rekap_harian_meta", "kesehatan_atribusi_meta"];
+const gpt = async (token, name, body = { dari: "2026-10-01", sampai: "2026-10-02" }) => { const r = await fetch(BASE + "/gpt-actions/tools/" + name, { method: "POST", headers: { "Content-Type": "application/json", ...(token ? { Authorization: "Bearer " + token } : {}) }, body: JSON.stringify(body) }); const t = await r.text(); return { status: r.status, teks: t }; };
+rec("/gpt-actions: tanpa token = 401", (await gpt(null, TIGA[0])).status === 401);
+rec("/gpt-actions: token ngawur = 401", (await gpt("token-ngawur-smoke", TIGA[0])).status === 401);
+rec("/gpt-actions: JWT sesi pengguna (bukan token MCP) = 401", (await gpt(await jwtUser(admin), TIGA[0])).status === 401);
+const stat0 = (process.env.MCP_API_TOKEN ?? "").trim();
+if (stat0) { for (const t of TIGA) rec(`/gpt-actions: token statis memanggil ${t} (200, tanpa data pribadi)`, await (async () => { const r = await gpt(stat0, t); return r.status === 200 && !/ctwaClid|customerId|phone|email/i.test(r.teks); })()); }
+else skip("/gpt-actions dengan token statis", "MCP_API_TOKEN tidak terisi di lingkungan ini");
+if (oauthConfigured()) {
+  const aud = (u, p) => signAccessToken({ userId: u.id, clientId: "smoke-baca-saja", resource: `${publicUrl()}${p}` });
+  rec("/gpt-actions: token OAuth audience /mcp-chatgpt ditolak (401)", (await gpt(aud(admin, "/mcp-chatgpt"), TIGA[0])).status === 401);
+  for (const t of TIGA) rec(`/gpt-actions: OAuth ADMIN aktif memanggil ${t} (200)`, (await gpt(aud(admin, "/mcp"), t)).status === 200);
+  if (biasa) {
+    for (const t of TIGA) {
+      rec(`/gpt-actions: OAuth akun NON-ADMIN ditolak untuk ${t} (403)`, (await gpt(aud(biasa, "/mcp"), t)).status === 403);
+      rec(`/mcp: OAuth akun NON-ADMIN ditolak untuk ${t} (403)`, (await rpc("/mcp", aud(biasa, "/mcp"), "tools/call", { name: t, arguments: {} })).status === 403);
+    }
+  } else skip("akun non-ADMIN ditolak untuk tiga tool di /mcp dan /gpt-actions", "tidak ada akun non-ADMIN aktif");
+}
+
 // ── 2. discovery: tools/list lewat jalur auth sebenarnya ───────────────────────────────────────────────────────────────────────────────────────────
 for (const jl of JALUR) {
   const init = await rpc(jl.jalur, jl.token, "initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "smoke-baca-saja", version: "1" } });

@@ -42,6 +42,17 @@ Halaman Laporan ──HTTP──▶ routes/attributionAds.js ──────�
 - Atribusi hanya untuk lead sesudah touch tersimpan (awal Okt 2026); tidak ada backfill.
 - `rekap_harian_meta` menjalankan satu perhitungan penuh per hari (28–290 ms di data live untuk 9 hari).
 
+## Akses (tiga tool laporan Meta)
+Laporan ini di REST (`/api/atribusi/iklan`) hanya untuk ADMIN. Aturan yang sama berlaku untuk tiga tool di semua jalur:
+
+| Jalur | Diizinkan | Ditolak |
+|---|---|---|
+| `/mcp` | token statis (kredensial mesin); OAuth ADMIN yang masih aktif | tanpa/palsu token, audience lain (401); OAuth user non-ADMIN, admin yang sudah diturunkan/dinonaktifkan/dihapus, gagal memuat user (403) |
+| `/gpt-actions` | sama seperti `/mcp` | sama seperti `/mcp` |
+| `/mcp-chatgpt` | OAuth ADMIN aktif saja (dimuat ulang tiap request) | semua selain itu |
+
+Penjaga: `src/mcp/penjagaAksesLaporan.js` (memuat ulang user dari DB untuk token OAuth, fail-closed; hanya aktif untuk tiga tool ini, tool lain tidak berubah). Tanpa penjaga, token OAuth berumur 1 jam dan refresh token tidak memeriksa ulang role, sehingga admin yang diturunkan masih bisa memanggil tool selama token ada. Bukti: `tests/integration/mcpLaporanMetaAkses.integration.test.js` (11 tes, termasuk uji mutasi tanpa penjaga yang gagal) dan 1b di smoke rilis.
+
 ## Rilis & reconnect
 
 Konektor yang dipakai:
