@@ -37,15 +37,15 @@ if (!sup) { rec("ada supplier di katalog", false); process.exit(1); }
 const mb = (nama) => ({ nama, kategori: "Busa", jenis: "BAHAN_PRODUKSI", spesifikasi: null, satuanBeli: "SHEET", satuanStok: "SHEET" });
 
 // ── pratinjau baca-saja pada katalog NYATA
-const nyata = await prisma.$queryRawUnsafe("select id::text id, code, name, unit from materials where active = true and code like 'BUS-%' and name ~ '[0-9]+ ?[xX×] ?[0-9]+' order by code limit 8");
+const nyata = await prisma.$queryRawUnsafe("select id::text id, code, name, unit from materials where active = true and code like 'BUS-%' and name ~ '[0-9]+ ?[xX×] ?[0-9]+' order by (code between 'BUS-008' and 'BUS-015') desc, code limit 8");
 if (nyata.length >= 1) {
   const pv = await post(CEK_PO, tA, { supplierId: sup, barisBaru: nyata.map((m, i) => ({ baris: i + 1, materialBaru: { ...mb(m.name), satuanStok: m.unit, satuanBeli: m.unit } })) });
   rec(`cek-duplikat-po (${nyata.length} nama material NYATA): 200 dan setiap baris menunjuk kode materialnya sendiri sebagai SAMA (diblokir, diarahkan ke katalog)`, pv.status === 200 && pv.json?.bolehSimpan === false && (pv.json?.baris ?? []).length === nyata.length && pv.json.baris.every((r, i) => r.diblokir === true && (r.pasti ?? []).some((c) => c.materialId === nyata[i].id)), `${pv.status} ${JSON.stringify((pv.json?.baris ?? []).map((r) => r.pasti?.[0]?.kode))}`.slice(0, 220));
-  const m = nyata[0]; const tebal = m.name.replace(/(\d+(?:[.,]\d+)?)\s*(cm|CM)\b(?!.*\d+\s*(cm|CM))/, "97 cm");
+  const m = nyata[0]; const tebal = m.name.replace(/(\d+(?:[.,]\d+)?\s*[xX×]\s*\d+(?:[.,]\d+)?\s*[xX×]\s*)\d+(?:[.,]\d+)?/, (_, depan) => depan + "97");
   if (tebal !== m.name) {
     const pb = await post(CEK_PO, tA, { supplierId: sup, barisBaru: [{ baris: 1, materialBaru: { ...mb(tebal), satuanStok: m.unit, satuanBeli: m.unit } }] });
     rec(`varian dengan ketebalan jelas berbeda ("${tebal}") TIDAK diblokir dan TIDAK butuh konfirmasi/alasan; ditampilkan sebagai saran serupa`, pb.status === 200 && pb.json?.bolehSimpan === true && pb.json.baris[0].diblokir === false && pb.json.baris[0].perluKonfirmasi === false && pb.json.baris[0].pasti.length === 0, `${pb.status} ${JSON.stringify(pb.json?.baris?.[0] ?? {}).slice(0, 160)}`);
-  } else skip("varian ketebalan berbeda dari nama nyata", "nama material nyata pertama tidak memuat ketebalan 'cm'");
+  } else skip("varian ketebalan berbeda dari nama nyata", "nama material nyata pertama tidak memuat ukuran tiga dimensi (PxLxT)");
 } else skip("pratinjau pada material nyata BUS-*", "tidak ada material BUS-* beraturan ukuran di katalog");
 const asing = await post(CEK_PO, tA, { supplierId: sup, barisBaru: [{ baris: 1, materialBaru: mb("ZZ UJI ASING 997X998X9 CM QQ") }, { baris: 2, materialBaru: mb("ZZ UJI ASING 997X998X9 cm qq") }] });
 rec("dua baris yang sama setelah normalisasi pada form yang sama: baris ke-2 ditunjuk sebagai duplikat dalam PO (SATU baris diblokir, baris ke-1 tidak)", asing.status === 200 && asing.json?.bolehSimpan === false && asing.json.baris[0].diblokir === false && asing.json.baris[1].diblokir === true && asing.json.baris[1].dalamPO === true, `${asing.status}`);

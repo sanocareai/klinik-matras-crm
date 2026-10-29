@@ -52,7 +52,11 @@ const sama = (x, y) => JSON.stringify(x) === JSON.stringify(y);
 const sidik = async (ids) => String((await prisma.$queryRawUnsafe("select coalesce(md5(string_agg(m::text, '|' order by m.id::text)), '-') as n from materials m where m.id::text = any($1::text[])", ids))[0].n);
 
 // ── A. material NYATA di salinan (BUS-008..015 bila ada): pratinjau menunjuk kode sendiri; PO yang mengulang namanya ditolak; isi barisnya tidak berubah sama sekali
-const nyata = await prisma.$queryRawUnsafe("select id::text id, code, name, unit from materials where active = true and code like 'BUS-%' and name ~ '[0-9]+ ?[xX×] ?[0-9]+' order by code limit 8");
+const nyata = await prisma.$queryRawUnsafe("select id::text id, code, name, unit from materials where active = true and code like 'BUS-%' and name ~ '[0-9]+ ?[xX×] ?[0-9]+' order by (code between 'BUS-008' and 'BUS-015') desc, code limit 8");
+// SEMUA baris material yang sudah ada sebelum uji (termasuk BUS-008..015 bila ada): isi lengkapnya harus identik setelah SELURUH uji selesai
+const semuaId = (await prisma.$queryRawUnsafe("select id::text id from materials")).map((r) => r.id); const sidikSemua0 = await sidik(semuaId);
+const bus815 = (await prisma.$queryRawUnsafe("select code from materials where code between 'BUS-008' and 'BUS-015' and code ~ '^BUS-0(0[89]|1[0-5])$' order by code")).map((r) => r.code);
+cek(`material BUS-008..BUS-015 di salinan restore: ${bus815.length ? bus815.join(", ") : "tidak ada"} (dijadikan sasaran uji bila ada)`, true);
 if (nyata.length >= 1) {
   const ids = nyata.map((m) => m.id); const s0 = await sidik(ids); const j0 = await jejak();
   const tulisUlang = nyata.map((m, i) => (i % 2 ? m.name.toLowerCase().replace(/\s*x\s*/g, " × ") : m.name.replace(/\s+/g, "  ")));
@@ -103,6 +107,9 @@ cek("dua pengguna bersamaan (urutan berlawanan): tepat satu 201 dan satu 409 SKU
 const jF0 = await jejak();
 const f401 = await H("POST", PO, null, po([baris(`${dasarNama} 230X200X3CM R58`)]), kunci("f1")); const f403 = await H("POST", PO, tN, po([baris(`${dasarNama} 230X200X3CM R58`)]), kunci("f2")); const c403 = await H("POST", CEK_PO, tN, { supplierId: sup.id, barisBaru: [] }); const c401 = await H("POST", CEK_PO, null, { supplierId: sup.id, barisBaru: [] });
 cek("izin: tanpa token 401; akun non-Admin 403 (simpan dan cek-duplikat-po); tidak ada tulisan", f401.status === 401 && f403.status === 403 && c403.status === 403 && c401.status === 401 && sama(await jejak(), jF0), `${f401.status}/${f403.status}/${c403.status}/${c401.status}`);
+
+// ── F2. setelah SELURUH uji tulis: tidak satu pun baris material yang sudah ada berubah, hilang, atau berganti kode (BUS-008..015 ikut)
+cek(`SETELAH seluruh uji: isi LENGKAP ${semuaId.length} baris material yang sudah ada identik (tidak dibuat ulang, diganti kode, digabung, diubah, atau dihapus; BUS-008..015: ${bus815.length ? bus815.join(", ") : "tidak ada di salinan"})`, (await sidik(semuaId)) === sidikSemua0 && (await num("select count(*)::int n from materials where id::text = any($1::text[])", semuaId)) === semuaId.length);
 
 // ── G. kode SMOKE pasca-switch yang sama dijalankan terhadap server rehearsal: salah harapan terdeteksi SEBELUM deploy
 const tidakSeimbang = await num("select count(*)::int n from (select e.id from fin_journal_entries e join fin_journal_lines l on l.entry_id = e.id group by e.id having sum(l.debit) <> sum(l.credit)) x");
