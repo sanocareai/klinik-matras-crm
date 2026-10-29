@@ -9,7 +9,44 @@ export const FILTER_KEADAAN = Object.freeze([
   { key: "NOL_TERHITUNG", label: "Nol menurut pergerakan" },
   { key: "MINUS", label: "Saldo minus" },
   { key: "BELUM_ADA_CATATAN", label: "Belum ada catatan stok" },
+  { key: "HABIS_ATAU_MINUS", label: "Saldo nol atau minus" },
 ]);
+const KEADAAN_HABIS_MINUS = new Set(["NOL_TERHITUNG", "MINUS"]);
+
+/** Saringan Harga Berlaku (HPP operasional). "Belum ada harga" = tidak ada harga yang SEDANG berlaku (bahan dengan harga terjadwal saja ikut, sama dengan tulisan di kolom Harga). Bukan Rp0. */
+export const FILTER_HARGA = Object.freeze([
+  { key: "", label: "Semua harga" },
+  { key: "BELUM", label: "Belum ada harga berlaku" },
+  { key: "ADA", label: "Sudah ada harga berlaku" },
+  { key: "TERJADWAL", label: "Ada harga terjadwal (belum berlaku)" },
+]);
+/** Saringan kelengkapan data bahan. Batas minimum null = belum diatur (BUKAN 0). */
+export const FILTER_LAIN = Object.freeze([
+  { key: "", label: "Semua kelengkapan" },
+  { key: "BATAS_BELUM", label: "Batas minimum belum diatur" },
+  { key: "BATAS_ADA", label: "Batas minimum sudah diatur" },
+  { key: "VENDOR_KOSONG", label: "Belum ada vendor" },
+  { key: "VENDOR_ADA", label: "Sudah ada vendor" },
+]);
+/** Harga sedang berlaku untuk bahan ini? (peta = ringkasan daftar Harga Berlaku). */
+const punyaHarga = (peta, id) => { const h = peta?.harga?.[id]; return h?.harga !== null && h?.harga !== undefined; };
+export const cocokHarga = (peta, id, key) => (!key || !peta ? true : key === "ADA" ? punyaHarga(peta, id) : key === "BELUM" ? !punyaHarga(peta, id) : key === "TERJADWAL" ? !!peta.harga?.[id]?.terjadwal : true);
+export const cocokLain = (r, key) => {
+  if (!key) return true;
+  const batas = r.batasMinimum !== null && r.batasMinimum !== undefined; const vendor = !!String(r.vendor ?? "").trim();
+  return key === "BATAS_BELUM" ? !batas : key === "BATAS_ADA" ? batas : key === "VENDOR_KOSONG" ? !vendor : key === "VENDOR_ADA" ? vendor : true;
+};
+/** Hitungan per opsi saringan atas bahan di cakupan dasar (aktif, kecuali nonaktif diminta), untuk label opsi "(n)". */
+export function hitungOpsiSaring(rows, { petaHarga = null, nonaktif = false } = {}) {
+  const dasar = rows.filter((r) => nonaktif || r.aktif); const satuan = new Map();
+  for (const r of dasar) { const u = String(r.satuan ?? "").trim(); if (u) satuan.set(u, (satuan.get(u) ?? 0) + 1); }
+  return {
+    harga: Object.fromEntries(FILTER_HARGA.filter((x) => x.key).map((x) => [x.key, dasar.filter((r) => cocokHarga(petaHarga, r.materialId, x.key)).length])),
+    lain: Object.fromEntries(FILTER_LAIN.filter((x) => x.key).map((x) => [x.key, dasar.filter((r) => cocokLain(r, x.key)).length])),
+    keadaan: Object.fromEntries(FILTER_KEADAAN.filter((x) => x.key).map((x) => [x.key, dasar.filter((r) => (x.key === "HABIS_ATAU_MINUS" ? KEADAAN_HABIS_MINUS.has(r.keadaan) : r.keadaan === x.key)).length])),
+    satuan: [...satuan].sort((a, b) => a[0].localeCompare(b[0])).map(([kode, n]) => ({ kode, n })),
+  };
+}
 
 const WARNA = { ADA: "green", MENIPIS: "orange", TERPESAN_PENUH: "orange", NOL_TERHITUNG: "neutral", MINUS: "red", BELUM_ADA_CATATAN: "neutral", NONAKTIF: "neutral" };
 export const warnaKeadaan = (k) => WARNA[k] ?? "neutral";
@@ -26,7 +63,7 @@ export const teksBatasMinimum = (r) => (r.batasMinimum === null || r.batasMinimu
  *  • kelompok  = kelompok bahan operasional (kode dari server: BUSA, KAIN, …, atau "BELUM" = belum dikelompokkan).
  *  • cari      = kode/nama/vendor. PENCARIAN MENCARI SELURUH BAHAN: bila ada kata kunci, kelompok dan jenis TIDAK menyaring (hasil menampilkan kelompoknya) — lihat `jangkauanCari`.
  */
-export function saringStok(rows, { tab = "", jenis = "", kelompok = "", cari = "", keadaan = "", nonaktif = false } = {}) {
+export function saringStok(rows, { tab = "", jenis = "", kelompok = "", cari = "", keadaan = "", nonaktif = false, harga = "", petaHarga = null, lain = "", satuan = "" } = {}) {
   const q = String(cari).trim().toLowerCase(); const j = jenis || tab; const mencari = !!q;
   return rows.filter((r) => {
     if (!nonaktif && !r.aktif) return false;
@@ -35,14 +72,17 @@ export function saringStok(rows, { tab = "", jenis = "", kelompok = "", cari = "
       if (j && j !== "none" && r.kategori !== j) return false;
       if (kelompok && (r.kelompok?.kode ?? "BELUM") !== kelompok) return false;
     }
-    if (keadaan && r.keadaan !== keadaan) return false;
+    if (keadaan && (keadaan === "HABIS_ATAU_MINUS" ? !KEADAAN_HABIS_MINUS.has(r.keadaan) : r.keadaan !== keadaan)) return false;
+    if (harga && !cocokHarga(petaHarga, r.materialId, harga)) return false;
+    if (!cocokLain(r, lain)) return false;
+    if (satuan && String(r.satuan ?? "").trim() !== satuan) return false;
     if (mencari && !`${r.kode} ${r.nama} ${r.vendor ?? ""} ${r.kelompok?.label ?? ""}`.toLowerCase().includes(q)) return false;
     return true;
   });
 }
 
 /** Apakah daftar ditampilkan: hanya bila pengguna memilih kelompok, menyaring keadaan, mencari, atau meminta semua. Layar awal = navigasi kelompok (bukan 358 baris). */
-export const daftarTampil = ({ kelompok = "", cari = "", keadaan = "", jenis = "", semua = "" } = {}) => !!(kelompok || String(cari).trim() || keadaan || jenis || semua);
+export const daftarTampil = ({ kelompok = "", cari = "", keadaan = "", jenis = "", semua = "", harga = "", lain = "", satuan = "" } = {}) => !!(kelompok || String(cari).trim() || keadaan || jenis || semua || harga || lain || satuan);
 /** Kata-kata untuk pengguna tentang cakupan hasil saat ini. */
 export function jangkauanCari({ kelompok = "", cari = "", labelKelompok = "" } = {}) {
   if (String(cari).trim()) return { mode: "cari", teks: kelompok ? `Mencari di semua kelompok (bukan hanya ${labelKelompok || "kelompok terpilih"}).` : "Mencari di semua kelompok." };

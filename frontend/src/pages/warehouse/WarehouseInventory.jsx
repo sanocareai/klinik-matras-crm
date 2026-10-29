@@ -15,7 +15,7 @@ import KelompokBahanNav from "@/features/warehouse/stok/KelompokBahanNav.jsx";
 import { useFilterDaftar } from "@/features/warehouse/dokumen/useFilterDaftar.js";
 import { CATEGORY_REAL } from "@/features/warehouse/inventoryReal.js";
 import { tampilHargaDaftar } from "@/features/warehouse/stok/koreksiSaldoLogic.js";
-import { FILTER_KEADAAN, FILTER_JENIS, saringStok, daftarTampil, jangkauanCari, teksBatasMinimum, warnaKeadaan, tampilSaldo, riwayatLokasi, kunciJenis } from "@/features/warehouse/stok/stokLogic.js";
+import { FILTER_KEADAAN, FILTER_JENIS, FILTER_HARGA, FILTER_LAIN, hitungOpsiSaring, saringStok, daftarTampil, jangkauanCari, teksBatasMinimum, warnaKeadaan, tampilSaldo, riwayatLokasi, kunciJenis } from "@/features/warehouse/stok/stokLogic.js";
 
 // STOK & LOKASI — mencari bahan dan membaca saldonya dengan jujur. Layar awal = NAVIGASI KELOMPOK BAHAN (Busa, Kain, Benang, Pegas, Kayu, Lem/Kimia, Aksesori, Lainnya, + yang belum dikelompokkan), pencarian,
 // dan kondisi yang butuh perhatian — bukan 358 baris. Memilih kelompok langsung membuka daftarnya; pencarian selalu mencari SELURUH bahan dan menampilkan kelompoknya. Keadaan disimpan di URL
@@ -23,7 +23,7 @@ import { FILTER_KEADAAN, FILTER_JENIS, saringStok, daftarTampil, jangkauanCari, 
 //  • "—"/"belum diketahui" pada Saldo = BELUM ADA CATATAN stok, bukan nol. "Batas minimum" kosong = belum diatur (bukan 0).
 //  • Sistem tidak menyimpan saldo per lokasi: kolom Riwayat penerimaan = lokasi penerimaan terakhir, bukan saldo di lokasi itu.
 const PATH = "/warehouse/inventory";
-const KUNCI = ["kelompok", "jenis", "q", "keadaan", "nonaktif", "semua"];
+const KUNCI = ["kelompok", "jenis", "q", "keadaan", "nonaktif", "semua", "harga", "lain", "satuan"];
 
 function SaldoSel({ r, inline = false }) {
   const t = tampilSaldo(r);
@@ -48,7 +48,7 @@ export default function WarehouseInventory() {
   const [data, setData] = useState(null); const [stok, setStok] = useState(null); const [harga, setHarga] = useState(null); // harga = null: tanpa izin Finance / gagal muat -> kolom harga disembunyikan
   const [loading, setLoading] = useState(true); const [error, setError] = useState("");
   const [f, ubahF, ubahBanyak] = useFilterDaftar(PATH, KUNCI);
-  const { kelompok, jenis, q: cari, keadaan } = f; const nonaktif = f.nonaktif === "1"; const semua = f.semua === "1";
+  const { kelompok, jenis, q: cari, keadaan } = f; const hargaF = f.harga; const lainF = f.lain; const satuanF = f.satuan; const nonaktif = f.nonaktif === "1"; const semua = f.semua === "1";
   const [selected, setSelected] = useState(null); const [formOpen, setFormOpen] = useState(false); const [editing, setEditing] = useState(null);
 
   const load = useCallback(() => {
@@ -58,15 +58,18 @@ export default function WarehouseInventory() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  const tampil = daftarTampil({ kelompok, cari, keadaan, jenis, semua: f.semua });
-  const terfilter = useMemo(() => (data ? saringStok(data.rows, { jenis, kelompok, cari, keadaan, nonaktif }) : null), [data, jenis, kelompok, cari, keadaan, nonaktif]);
+  const tampil = daftarTampil({ kelompok, cari, keadaan, jenis, semua: f.semua, harga: hargaF, lain: lainF, satuan: satuanF });
+  const terfilter = useMemo(() => (data ? saringStok(data.rows, { jenis, kelompok, cari, keadaan, nonaktif, harga: hargaF, petaHarga: harga, lain: lainF, satuan: satuanF }) : null), [data, jenis, kelompok, cari, keadaan, nonaktif, hargaF, harga, lainF, satuanF]);
+  const opsi = useMemo(() => (data ? hitungOpsiSaring(data.rows, { petaHarga: harga, nonaktif }) : null), [data, harga, nonaktif]);
+  const adaSaringan = !!(keadaan || hargaF || lainF || satuanF);
+  const hapusSaringan = () => ubahBanyak({ keadaan: "", harga: "", lain: "", satuan: "" });
   const ringkas = data?.ringkasan; const k = ringkas?.kesimpulan; const grup = data?.kelompok?.kelompok ?? []; const jenisN = data?.kelompok?.jenis ?? [];
   const labelKelompok = grup.find((g) => g.kode === kelompok)?.label ?? "";
   const cakupan = jangkauanCari({ kelompok, cari, labelKelompok });
   const kosong = !loading && tampil && terfilter && terfilter.length === 0;
-  const pilihKelompok = (kode) => ubahBanyak({ kelompok: kode, q: "", jenis: "", keadaan: "", semua: "" });
-  const pilihPerhatian = (patch) => ubahBanyak({ kelompok: "", jenis: "", q: "", keadaan: "", semua: "", ...patch });
-  const kembaliSemua = () => ubahBanyak({ kelompok: "", jenis: "", q: "", keadaan: "", nonaktif: "", semua: "" });
+  const pilihKelompok = (kode) => ubahBanyak({ kelompok: kode, q: "", jenis: "", keadaan: "", semua: "", harga: "", lain: "", satuan: "" });
+  const pilihPerhatian = (patch) => ubahBanyak({ kelompok: "", jenis: "", q: "", keadaan: "", semua: "", harga: "", lain: "", satuan: "", ...patch });
+  const kembaliSemua = () => ubahBanyak({ kelompok: "", jenis: "", q: "", keadaan: "", nonaktif: "", semua: "", harga: "", lain: "", satuan: "" });
   const belum = grup.find((g) => g.kode === "BELUM");
 
   return (
@@ -87,9 +90,24 @@ export default function WarehouseInventory() {
             <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink3" aria-hidden />
             <Input type="search" value={cari} onChange={(e) => ubahF("q", e.target.value)} placeholder="Cari bahan di semua kelompok: kode, nama, atau vendor" aria-label="Cari bahan" className="h-11 pl-9 text-[14px]" autoFocus data-testid="cari-bahan" />
           </div>
-          <select value={keadaan} onChange={(e) => ubahF("keadaan", e.target.value)} aria-label="Saring keadaan stok" data-testid="saring-keadaan" className="h-11 min-w-0 flex-1 rounded-btn sm:flex-none border border-border bg-surface px-2.5 text-[12.5px] text-ink outline-none focus:border-accent">
-            {FILTER_KEADAAN.map((x) => <option key={x.key} value={x.key}>{x.label}</option>)}
+          <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center" data-testid="saringan-daftar">
+          <select value={keadaan} onChange={(e) => ubahF("keadaan", e.target.value)} aria-label="Saring keadaan stok" data-testid="saring-keadaan" className="h-11 w-full min-w-0 rounded-btn sm:w-auto border border-border bg-surface px-2.5 text-[12.5px] text-ink outline-none focus:border-accent">
+            {FILTER_KEADAAN.map((x) => <option key={x.key} value={x.key}>{x.label}{x.key && opsi ? ` (${opsi.keadaan[x.key] ?? 0})` : ""}</option>)}
           </select>
+          {harga && (
+            <select value={hargaF} onChange={(e) => ubahF("harga", e.target.value)} aria-label="Saring harga berlaku" data-testid="saring-harga" className="h-11 w-full min-w-0 rounded-btn sm:w-auto border border-border bg-surface px-2.5 text-[12.5px] text-ink outline-none focus:border-accent">
+              {FILTER_HARGA.map((x) => <option key={x.key} value={x.key}>{x.label}{x.key && opsi ? ` (${opsi.harga[x.key] ?? 0})` : ""}</option>)}
+            </select>
+          )}
+          <select value={lainF} onChange={(e) => ubahF("lain", e.target.value)} aria-label="Saring kelengkapan data bahan" data-testid="saring-lain" className="h-11 w-full min-w-0 rounded-btn sm:w-auto border border-border bg-surface px-2.5 text-[12.5px] text-ink outline-none focus:border-accent">
+            {FILTER_LAIN.map((x) => <option key={x.key} value={x.key}>{x.label}{x.key && opsi ? ` (${opsi.lain[x.key] ?? 0})` : ""}</option>)}
+          </select>
+          <select value={satuanF} onChange={(e) => ubahF("satuan", e.target.value)} aria-label="Saring satuan stok" data-testid="saring-satuan" className="h-11 w-full min-w-0 rounded-btn sm:w-auto border border-border bg-surface px-2.5 text-[12.5px] text-ink outline-none focus:border-accent">
+            <option value="">Semua satuan</option>
+            {(opsi?.satuan ?? []).map((u) => <option key={u.kode} value={u.kode}>{u.kode} ({u.n})</option>)}
+          </select>
+          </div>
+          {adaSaringan && <button type="button" onClick={hapusSaringan} data-testid="atur-ulang-saringan" className="inline-flex h-11 items-center gap-1 rounded-btn px-2.5 text-[12px] font-semibold text-accent hover:bg-hovertint"><X size={12} aria-hidden /> Atur ulang saringan</button>}
           <label className="flex items-center gap-1.5 text-[12px] text-ink2 max-sm:min-h-11"><input type="checkbox" checked={nonaktif} onChange={(e) => ubahF("nonaktif", e.target.checked ? "1" : "")} data-testid="tampilkan-nonaktif" /> Tampilkan nonaktif</label>
         </div>
 
@@ -99,6 +117,8 @@ export default function WarehouseInventory() {
             <div className="flex flex-wrap gap-2" data-testid="perhatian">
               {ringkas.minus > 0 && <button type="button" onClick={() => pilihPerhatian({ keadaan: "MINUS" })} data-testid="perhatian-minus" className="inline-flex items-center gap-1.5 rounded-chip bg-redbg px-3 py-1.5 text-[12px] font-semibold text-red max-sm:min-h-11"><strong>{ringkas.minus}</strong> bersaldo minus<span className="max-sm:hidden"> — perlu dihitung fisik</span></button>}
               {ringkas.belumAdaCatatan > 0 && <button type="button" onClick={() => pilihPerhatian({ keadaan: "BELUM_ADA_CATATAN" })} data-testid="perhatian-belum" className="inline-flex items-center gap-1.5 rounded-chip bg-inset px-3 py-1.5 text-[12px] font-semibold text-ink2 max-sm:min-h-11"><strong>{ringkas.belumAdaCatatan}</strong> belum ada catatan<span className="max-sm:hidden"> stok (bukan berarti habis)</span></button>}
+              {harga && opsi && opsi.harga.BELUM > 0 && <button type="button" onClick={() => pilihPerhatian({ harga: "BELUM" })} data-testid="perhatian-harga" className="inline-flex items-center gap-1.5 rounded-chip bg-inset px-3 py-1.5 text-[12px] font-semibold text-ink2 max-sm:min-h-11"><strong>{opsi.harga.BELUM}</strong> belum ada harga berlaku</button>}
+              {harga && <button type="button" onClick={() => pilihPerhatian({ keadaan: "ADA", harga: "BELUM" })} data-testid="perhatian-ada-stok-tanpa-harga" className="inline-flex items-center gap-1.5 rounded-chip bg-orangebg px-3 py-1.5 text-[12px] font-semibold text-orange max-sm:min-h-11">Ada stok tetapi belum ada harga</button>}
               {belum && belum.total > 0 && <button type="button" onClick={() => pilihKelompok("BELUM")} data-testid="perhatian-kelompok" className="inline-flex items-center gap-1.5 rounded-chip bg-orangebg px-3 py-1.5 text-[12px] font-semibold text-orange max-sm:min-h-11"><strong>{belum.total}</strong> belum dikelompokkan</button>}
             </div>
             <details className="text-[11.5px] text-ink2" data-testid="rincian-ringkasan">
@@ -140,6 +160,9 @@ export default function WarehouseInventory() {
               <button type="button" onClick={kembaliSemua} data-testid="kembali-semua" className="inline-flex items-center gap-1 rounded-chip px-2 py-1 text-[12px] font-semibold text-accent hover:bg-hovertint max-sm:min-h-11">← Semua kelompok</button>
               <span className="inline-flex items-center gap-1 text-[12px] text-ink2" data-testid="cakupan" data-mode={cakupan.mode}><ChevronRight size={12} className="text-ink3" aria-hidden />{cakupan.teks}</span>
               {keadaan && <span className="inline-flex items-center gap-1 rounded-chip bg-inset px-2 py-1 text-[11.5px] font-semibold text-ink2">{FILTER_KEADAAN.find((x) => x.key === keadaan)?.label}<button type="button" aria-label="Hapus saringan keadaan" onClick={() => ubahF("keadaan", "")} className="ml-0.5 text-ink3 hover:text-ink"><X size={11} /></button></span>}
+              {hargaF && <span className="inline-flex items-center gap-1 rounded-chip bg-inset px-2 py-1 text-[11.5px] font-semibold text-ink2" data-testid="chip-harga">{FILTER_HARGA.find((x) => x.key === hargaF)?.label}<button type="button" aria-label="Hapus saringan harga" onClick={() => ubahF("harga", "")} className="ml-0.5 text-ink3 hover:text-ink"><X size={11} /></button></span>}
+              {lainF && <span className="inline-flex items-center gap-1 rounded-chip bg-inset px-2 py-1 text-[11.5px] font-semibold text-ink2" data-testid="chip-lain">{FILTER_LAIN.find((x) => x.key === lainF)?.label}<button type="button" aria-label="Hapus saringan kelengkapan" onClick={() => ubahF("lain", "")} className="ml-0.5 text-ink3 hover:text-ink"><X size={11} /></button></span>}
+              {satuanF && <span className="inline-flex items-center gap-1 rounded-chip bg-inset px-2 py-1 text-[11.5px] font-semibold text-ink2" data-testid="chip-satuan">Satuan {satuanF}<button type="button" aria-label="Hapus saringan satuan" onClick={() => ubahF("satuan", "")} className="ml-0.5 text-ink3 hover:text-ink"><X size={11} /></button></span>}
               {cari && <button type="button" onClick={() => ubahF("q", "")} data-testid="hapus-cari" className="inline-flex items-center gap-1 rounded-chip bg-inset px-2 py-1 text-[11.5px] font-semibold text-ink2 max-sm:min-h-11">“{cari}” <X size={11} aria-hidden /></button>}
               <span className="ml-auto flex items-center gap-2">
                 {!cari && <label className="flex items-center gap-1 text-[11.5px] text-ink3">Jenis
