@@ -1,0 +1,12 @@
+LANGKAH WAJIB sebelum rollback KODE setelah migrasi/switch: jalankan GUARD (baca-saja)
+   bash ${NEW_DIR}/scripts/rollback-guard-kelengkapan.sh
+   - exit 0 "GUARD LULUS": tidak ada pernyataan aktif; rollback kode rutin diperbolehkan.
+   - exit 0 "GUARD LULUS DENGAN PERINGATAN": ada pernyataan "tanpa bahan baru" aktif. Dampak HANYA penglihatan (kode lama tidak melihat/mencabutnya; tidak ada data yang salah). Guard menulis SNAPSHOT (berkas .tsv) dan menyorot yang bertentangan dengan catatan bahan; simpan snapshot. Rollback rutin diperbolehkan.
+   - exit 2 "GUARD DITOLAK": hitungan tidak terbaca/keadaan tidak dikenal — JANGAN rollback sebelum dijelaskan.
+Rollback kode (tidak menghapus tabel maupun riwayat; image LAMA terbukti tetap bisa start pada DB bermigrasi):
+   cd ${PREV_DIR:-<release-sebelumnya>}
+   docker tag ${ROLLBACK_TAG:-<tag-rollback>} ${IMG_NAME:-klinik-matras-backend:latest}
+   SANSS_PERSIST_ROOT=${PERSIST} docker compose -p ${PROJECT} -f docker-compose.yml -f docker-compose.release.yml up -d --no-deps --force-recreate backend
+   Tujuan rollback = image dan folder release LIVE SEBELUM rilis ini (baseline e7883bc6 yang memuat hotfix performa, penjadwalan, drawer, PO barang mirip); gerbang kode live membuktikan kode container == folder == baseline.
+Migrasi bersifat ADITIF (1 tabel baru kosong + 3 indeks + 1 FK): tabel dibiarkan terpasang setelah rollback kode. Rilis ini tidak membuat pergerakan stok, Material Issue, Run, jadwal, status, biaya, jurnal, atau harga; satu-satunya tulisan baru adalah pernyataan eksplisit oleh pengguna berizin SESUDAH rilis.
+Pemulihan database penuh hanya bila terjadi kerusakan data: gzip -dc ${BACKUP_FILE:-<backup>} | psql ... (lihat checksum di atas) — MENGHAPUS semua perubahan sesudah backup (pernyataan, transaksi, pesan); gunakan hanya atas keputusan Owner.

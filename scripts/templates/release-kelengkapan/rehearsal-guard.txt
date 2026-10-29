@@ -1,0 +1,17 @@
+# Guard rollback SESUDAH skenario rehearsal (pernyataan aktif, termasuk yang BERTENTANGAN, SENGAJA dibiarkan di DB sementara) → LULUS DENGAN PERINGATAN + snapshot; baca-saja.
+GFP_SQL="select (select count(*) from unit_material_declarations)||'/'||(select count(*) from stock_movements)||'/'||(select count(*) from unit_provisional_usages)"
+GFP0="$( { RPSQL "$FP_SQL" | LC_ALL=C sort; RPSQL "$GFP_SQL"; } | md5sum )"
+GUARD_DIR2="$BK_DIR/guard-snapshot"; mkdir -p "$GUARD_DIR2"
+set +e; GUARD_OUT2="$(GUARD_DB="$REH_DB" GUARD_OUT_DIR="$GUARD_DIR2" bash "$NEW_DIR/scripts/rollback-guard-kelengkapan.sh" 2>&1)"; GUARD_RC2=$?; set -e
+printf '%s\n' "$GUARD_OUT2" > "$BK_DIR/guard-peringatan.log"
+GFP1="$( { RPSQL "$FP_SQL" | LC_ALL=C sort; RPSQL "$GFP_SQL"; } | md5sum )"
+[ "$GUARD_RC2" = "0" ] || { printf '%s\n' "$GUARD_OUT2"; reh_drop; die "guard rollback gagal (exit ${GUARD_RC2}) pada keadaan yang seharusnya LULUS DENGAN PERINGATAN"; }
+for t in 'GUARD LULUS DENGAN PERINGATAN' 'TIDAK TERLIHAT' 'TIDAK DAPAT dicabut' 'BERTENTANGAN dengan catatan bahan' 'SNAPSHOT pernyataan aktif' 'rollback kode rutin DIPERBOLEHKAN'; do printf '%s' "$GUARD_OUT2" | grep -q -- "$t" || { printf '%s\n' "$GUARD_OUT2"; reh_drop; die "pesan guard tidak memuat: $t"; }; done
+SNAP_N="$(cat "$GUARD_DIR2"/pernyataan-tanpa-bahan-aktif-*.tsv 2>/dev/null | grep -c . || true)"
+[ "$SNAP_N" = "$(RPSQL "select count(*) from unit_material_declarations where status = 'ACTIVE'")" ] && [ "$SNAP_N" -ge 1 ] || { reh_drop; die "snapshot guard (${SNAP_N} baris) != jumlah pernyataan aktif pada DB sementara"; }
+[ "$GFP0" = "$GFP1" ] || { reh_drop; die "guard rollback MENGUBAH data (harus baca-saja)"; }
+# IMAGE LAMA (sebelum rilis) harus tetap bisa start pada DB yang sudah bermigrasi + berisi pernyataan: migrate deploy image lama tidak boleh gagal dan tidak boleh menerapkan apa pun.
+docker run --rm --network "${PROJECT}_default" -e DATABASE_URL="$RH_URL" "$ROLLBACK_TAG" sh -c 'cd /app && npx prisma migrate deploy' </dev/null > "$BK_DIR/image-lama-migrate.log" 2>&1 || { tail -n 15 "$BK_DIR/image-lama-migrate.log"; reh_drop; die "IMAGE LAMA gagal 'prisma migrate deploy' pada DB yang sudah bermigrasi — rollback kode akan gagal start"; }
+! grep -q 'Applying migration' "$BK_DIR/image-lama-migrate.log" || { reh_drop; die "image lama MENERAPKAN migrasi pada DB bermigrasi (tidak boleh)"; }
+[ "$(RPSQL "select count(*) from unit_material_declarations where status = 'ACTIVE'")" = "$SNAP_N" ] || { reh_drop; die "image lama mengubah pernyataan"; }
+ok "guard rollback: LULUS DENGAN PERINGATAN (${SNAP_N} pernyataan aktif; snapshot ditulis; yang bertentangan disorot; rollback rutin diperbolehkan); data tidak berubah oleh guard; IMAGE LAMA tetap start (migrate deploy tanpa error, tanpa menerapkan apa pun)"

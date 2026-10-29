@@ -1,0 +1,21 @@
+S_SEBELUM="$(RPSQL "$SKEMA_SQL")"; [ -n "$S_SEBELUM" ] || { reh_drop; die "sidik jari skema rehearsal kosong"; }
+[ "$S_SEBELUM" = "$SKEMA_PRA" ] || { reh_drop; die "skema tabel lama pada RESTORE berbeda dari produksi (backup/restore bermasalah)"; }
+RH_URL="postgresql://${DB_USER}:${REH_PW}@postgres:5432/${REH_DB}"
+if [ "$KEADAAN" = "SEGAR" ]; then
+  dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="$RH_URL" backend npx prisma migrate deploy </dev/null > "$BK_DIR/migrate-rehearsal.log" 2>&1 || { tail -n 20 "$BK_DIR/migrate-rehearsal.log"; reh_drop; die "migrate deploy di DB rehearsal GAGAL (produksi tidak disentuh)"; }
+  [ "$(grep -c 'Applying migration' "$BK_DIR/migrate-rehearsal.log")" = "1" ] || { tail -n 12 "$BK_DIR/migrate-rehearsal.log"; reh_drop; die "migrate deploy harus menerapkan TEPAT 1 migrasi rilis"; }
+else
+  dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="$RH_URL" backend npx prisma migrate deploy </dev/null > "$BK_DIR/migrate-rehearsal.log" 2>&1 || { tail -n 12 "$BK_DIR/migrate-rehearsal.log"; reh_drop; die "migrate deploy (LANJUT) di DB rehearsal GAGAL"; }
+  ! grep -q 'Applying migration' "$BK_DIR/migrate-rehearsal.log" || { reh_drop; die "keadaan LANJUT: migrate deploy MENERAPKAN sesuatu (seharusnya tidak ada yang pending)"; }
+fi
+dcp "$NEW_DIR" run --rm --no-deps -T -e DATABASE_URL="$RH_URL" backend npx prisma migrate status </dev/null 2>&1 | grep -i 'up to date' >/dev/null || { reh_drop; die "migrate status rehearsal (image baru) TIDAK 'up to date'"; }
+struktur_baru RPSQL gagal_reh
+[ "$(RPSQL "$SKEMA_SQL")" = "$S_SEBELUM" ] || { reh_drop; die "migrasi MENGUBAH skema (kolom/tipe/nullable/default) tabel lama"; }
+ok "image baru: migrasi rilis diterapkan pada DB rehearsal (hasil restore nyata); tabel pernyataan kosong; 1 FK RESTRICT, 4 CHECK, 4 indeks (3 unik, 1 parsial) tervalidasi; tanpa trigger; skema tabel lama IDENTIK"
+# Guard rollback pada keadaan KOSONG (migrasi terpasang, belum ada pernyataan) → LULUS; baca-saja.
+set +e; GUARD_OUT1="$(GUARD_DB="$REH_DB" bash "$NEW_DIR/scripts/rollback-guard-kelengkapan.sh" 2>&1)"; GUARD_RC1=$?; set -e
+printf '%s
+' "$GUARD_OUT1" > "$BK_DIR/guard-kosong.log"
+{ [ "$GUARD_RC1" = "0" ] && printf '%s' "$GUARD_OUT1" | grep -q 'GUARD LULUS'; } || { printf '%s
+' "$GUARD_OUT1"; reh_drop; die "guard rollback TIDAK meluluskan keadaan kosong (migrasi terpasang, belum ada pernyataan)"; }
+ok "guard rollback pada keadaan kosong (tabel rilis ada, tanpa pernyataan): LULUS"
