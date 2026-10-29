@@ -1,8 +1,66 @@
 # Laporan Pra-OTA — Perbaikan Driver App (lanjutan audit 29 Okt 2026)
 
-Status: **BELUM di-OTA/publish ke channel manapun.** Menunggu GO eksplisit
-owner. Tidak ada data/queue production yang diubah selama implementasi
-dan QA (lihat §6).
+Status: **GO diterima dari owner, sudah DI-PUBLISH ke channel `preview`
+SAJA** pada 2026-10-29T11:43:05Z. `production` TIDAK disentuh (dicek
+ulang setelah publish — tetap group `cf355b88-26c3-4d32-837b-1c31d9860fda`,
+commit `64c0bdc0`). Tidak ada data/queue production yang diubah selama
+implementasi, QA, maupun publish ini (lihat §6/§9).
+
+## 0. Update OTA yang baru di-publish
+
+- Branch EAS: `preview` (channel `preview`, ID `01a088d5-c43d-7d79-8128-a7afb65af01d`)
+- Update group baru: `b0e925b9-b855-4354-b5c2-15b5aca7f5b1` (android update ID `01a18778-8626-70b8-b03c-82747ffec140`)
+- Commit: `1cf38961f8e557a5ca340ba4357701b060e82839` (= HEAD `fix/driver-app-sync-queue-20261029` saat publish — diverifikasi cocok sebelum publish)
+- runtimeVersion: `1.0.0` — **cocok** dengan runtimeVersion APK Difa (lihat §5)
+- Platform: `android` saja (sesuai konvensi publish sebelumnya untuk app ini)
+- Dashboard: https://expo.dev/accounts/sanocare/projects/sano-driver/updates/b0e925b9-b855-4354-b5c2-15b5aca7f5b1
+
+### Rollback group (state SEBELUM publish ini, tercatat SEBELUM publish dijalankan)
+
+- Update group: `72f9694b-161b-4097-8b12-059aef066bab` (android update ID `01a13b89-f02b-7a7a-9e05-a10a8780833b`)
+- Commit: `40c8210de2908cd2bc0656a290c5d0c6e93db789`
+- runtimeVersion: `1.0.0`
+- **Perintah rollback:**
+  ```
+  cd driver-mobile
+  npx eas-cli channel:rollback preview --group 72f9694b-161b-4097-8b12-059aef066bab
+  ```
+  (atau republish ulang commit `40c8210d` ke branch `preview` bila
+  `channel:rollback` tidak tersedia di versi CLI yang terpasang — group
+  lama ini masih membawa bug lama/blank-spinner, jadi ini mengembalikan ke
+  status quo-ante, bukan ke kondisi "aman".)
+
+## 0a. Instruksi smoke test HP Difa
+
+1. Tutup aplikasi Sano Driver sepenuhnya di HP Difa, lalu buka ulang —
+   update OTA diambil saat app start/foreground (polling EAS Updates
+   bawaan Expo).
+2. Periksa tab Aktif: TIDAK boleh ada spinner permanen (begitu job
+   pernah berhasil dimuat sekali, spinner tidak boleh muncul lagi hanya
+   karena refetch berikutnya gagal).
+3. Matikan data/WiFi sebentar lalu nyalakan lagi: job yang sudah
+   tersimpan di cache harus tetap tampil selama offline, lalu
+   sinkron begitu online.
+4. Taruh app ke background lalu buka lagi (foreground): antrean harus
+   mencoba sinkronisasi otomatis (lihat indikator "Kirim Ulang"/jumlah
+   pending berkurang bila ada sinyal).
+5. Kalau ada item "Mulai Perjalanan" yang tersangkut karena Bukti
+   Kelengkapan belum lengkap: lengkapi checklist di menu Persiapan
+   Perjalanan, lalu pastikan item itu akhirnya terkirim sendiri (otomatis)
+   atau lewat tombol "Kirim Ulang" — BUKAN lagi pesan "Rute masih
+   berstatus PUBLISHED" yang menyesatkan.
+6. Pastikan foto/POD job yang sudah ada sebelumnya TIDAK hilang, dan
+   tidak ada job/antrean yang dobel setelah update.
+7. Pastikan tidak ada crash saat buka app, pindah tab, atau submit aksi.
+
+**Jika smoke test GAGAL (salah satu poin di atas tidak lolos):** jalankan
+perintah rollback di atas SEGERA, lalu laporkan baliknya ke sesi ini
+dengan bukti (screenshot/log) — JANGAN merge `fix/driver-app-sync-queue-20261029`
+ke `main` sampai smoke test lulus atau rollback sudah dijalankan.
+
+**Jika smoke test LULUS:** aman merge `fix/driver-app-sync-queue-20261029`
+ke `main` (tidak ada migrasi DB/backend, murni client) supaya fix ini
+tidak hilang di build/OTA berikutnya.
 
 ## 1. Branch dan SHA final
 
