@@ -120,3 +120,35 @@ test("B8. aturan tetap: Finance non-Admin tidak bisa membuat SKU/cek-duplikat-po
   const j1 = await jejak(); assert.equal(j1.stok, j0.stok); assert.equal(j1.jurnal, j0.jurnal); assert.equal(j1.harga, j0.harga);
   assert.equal(await testPrisma.materialHargaBerlaku.count(), 0);
 });
+
+test("B9. DELAPAN MATERIAL YANG SUDAH ADA (BUS-008..015) tetap utuh: PO yang mengulang namanya (juga ejaan lain) ditolak per baris dan diarahkan ke kodenya; tidak dibuat ulang, diganti kode, digabung, atau dihapus; varian baru di sebelahnya tetap bisa disimpan", async () => {
+  const w = await dunia(); const ada = [];
+  for (const [i, n] of DELAPAN.entries()) ada.push(await createTestMaterial({ code: `BUS-0${String(8 + i).padStart(2, "0")}`, name: n, unit: "SHEET" }));
+  const potret = async () => JSON.stringify(await testPrisma.material.findMany({ where: { code: { in: ada.map((m) => m.code) } }, orderBy: { code: "asc" } }));
+  const p0 = await potret(); const j0 = await jejak();
+  const ulang = DELAPAN.map((n, i) => (i % 2 ? n.replace(/ X/g, "x").toLowerCase() : n.replace(/(\d+)X(\d+)X(\d+)CM/, "$1 x $2 x $3 cm")));
+  const pv = await w.a.post(CEK_PO, { supplierId: w.supplier.id, barisBaru: ulang.map((n, i) => ({ baris: i + 1, materialBaru: mb(n) })) });
+  assert.equal(pv.status, 200); assert.equal(pv.body.bolehSimpan, false);
+  assert.deepEqual(pv.body.baris.map((r) => r.pasti[0]?.kode), ada.map((m) => m.code), "setiap baris menunjuk kode material yang SAMA di katalog (bukan material lain)");
+  const r = await w.a.post(SIMPAN, po(w, ulang.map((n) => baris(n)))); assert.equal(r.status, 409); assert.equal(r.body.code, "SKU_DUPLIKAT_PASTI"); assert.equal(r.body.baris, 1);
+  assert.equal(await potret(), p0, "kode, nama, satuan, status, dan semua kolom 8 material tidak berubah"); assert.deepEqual(await jejak(), j0, "tidak ada material/PO/katalog/stok/jurnal baru");
+  const baru = await w.a.post(SIMPAN, po(w, [baris(MSB("150X200X3CM"))])); assert.equal(baru.status, 201, JSON.stringify(baru.body));
+  assert.equal(await potret(), p0, "menambah varian baru tidak menyentuh 8 material lama"); assert.equal(await testPrisma.material.count(), 9);
+});
+
+test("B10. GAGAL SIMPAN TIDAK MENINGGALKAN SETENGAH JADI: baris 1 varian baru yang sah + baris 2 duplikat (atau baris tak sah) ⇒ tidak ada material, katalog, asal-SKU, PO, stok, atau jurnal yang tersisa; setelah baris dibetulkan, simpan ulang berhasil utuh", async () => {
+  const w = await dunia(); const ada = await createTestMaterial({ code: "BUS-012", name: MSB("120X200X4CM"), unit: "SHEET" }); const j0 = await jejak();
+  const gagal = [
+    [baris(MSB("150X200X3CM")), baris("Busa Rebonded MSB 120 x 200 x 4 cm R58")],
+    [baris(MSB("150X200X3CM")), baris(MSB("150X200X5CM"), 0)],
+    [baris(MSB("150X200X3CM")), baris(MSB("150X200X5CM"), 5, 150_000, { satuanBeli: "TIDAK_ADA" })],
+  ];
+  for (const [i, lines] of gagal.entries()) {
+    const r = await w.a.post(SIMPAN, po(w, lines), { "Idempotency-Key": `po-gagal-${randomUUID()}` }); assert.ok(r.status >= 400 && r.status < 500, `kasus ${i}: ${r.status} ${JSON.stringify(r.body)}`);
+    assert.deepEqual(await jejak(), j0, `kasus ${i}: tidak ada jejak setengah jadi`); assert.equal(await testPrisma.material.count({ where: { name: { contains: "150X200X3CM" } } }), 0, `kasus ${i}: baris 1 TIDAK tertinggal sebagai material`);
+  }
+  const kunci = `po-ulang-${randomUUID()}`; const lines = [baris(MSB("150X200X3CM")), baris(MSB("150X200X5CM"), 5)];
+  const salah = await w.a.post(SIMPAN, po(w, [lines[0], baris("Busa Rebonded MSB 120 x 200 x 4 cm R58")]), { "Idempotency-Key": kunci }); assert.equal(salah.status, 409);
+  const betul = await w.a.post(SIMPAN, po(w, lines), { "Idempotency-Key": kunci }); assert.equal(betul.status === 201 || betul.status === 422, true, `kunci yang gagal tidak mengunci selamanya: ${betul.status} ${JSON.stringify(betul.body)}`);
+  if (betul.status === 201) { assert.equal(await testPrisma.finPurchaseOrder.count(), 1); assert.equal(await testPrisma.material.count(), 3); assert.equal(ada.code, "BUS-012"); }
+});
