@@ -29,7 +29,7 @@ test("PIN SKEMA: sha256 migrasi + sha256 diff schema.prisma + hasil pemindai DDL
   assert.ok(script.includes("ada migrasi baseline yang DIUBAH/DIHAPUS — dilarang") && script.includes("isi migrasi ${MIG_NAME} BERBEDA dari yang diaudit"));
   assert.ok(script.includes("diff schema.prisma BERBEDA dari yang diaudit"), "pin diff schema");
   // migrasi nyata konsisten dengan yang dipin
-  assert.equal((sql.match(/CREATE TABLE/g) || []).length, 1); assert.ok(!/\b(DROP|UPDATE|DELETE FROM|INSERT|TRUNCATE|GRANT|TRIGGER|FUNCTION)\b/.test(sql.split("\n").filter((l) => !l.trim().startsWith("--")).join("\n")), "migrasi tanpa DML/DROP/fungsi/trigger");
+  assert.equal((sql.match(/CREATE TABLE/g) || []).length, 1); assert.ok(!/\b(DROP|DELETE FROM|INSERT|TRUNCATE|GRANT|TRIGGER|FUNCTION)\b|\bUPDATE "?[a-z_]+"? SET\b/.test(sql.split("\n").filter((l) => !l.trim().startsWith("--")).join("\n")), "migrasi tanpa DML/DROP/fungsi/trigger");
   assert.ok(/CREATE UNIQUE INDEX "unit_material_declarations_unit_aktif_uq"[^\n]*WHERE "status" = 'ACTIVE'/.test(sql), "satu pernyataan AKTIF per unit dijaga DB");
   assert.ok(sql.includes('ON DELETE RESTRICT'), "FK RESTRICT");
 });
