@@ -18,12 +18,13 @@ import { useTheme } from "../hooks/useTheme";
 import { useAuth } from "../context/AuthContext";
 import { useExecutionSync } from "../context/ExecutionSyncContext";
 import { checklistSiapBerangkat } from "../lib/prepChecklistStatus";
+import { pendingStatusInfo, discardConfirmText } from "../lib/executionCore";
 
 export default function RouteStartCard({ route, assignedCount, sampleJobId, onChanged }) {
   const theme = useTheme();
   const navigation = useNavigation();
   const { markOnlineLocally } = useAuth();
-  const { submit, queue, checkStatus, discard } = useExecutionSync();
+  const { submit, queue, checkStatus, retryItem, discard } = useExecutionSync();
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const [mode, setMode] = useState("idle"); // idle | starting
   const [photos, setPhotos] = useState([]);
@@ -31,6 +32,7 @@ export default function RouteStartCard({ route, assignedCount, sampleJobId, onCh
   const [err, setErr] = useState("");
   const [mapBusy, setMapBusy] = useState(false);
   const [checking, setChecking] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [checklistBusy, setChecklistBusy] = useState(false);
   const pending = queue.find((item) => item.routeId === route.id && item.action === "route-start");
 
@@ -143,14 +145,20 @@ export default function RouteStartCard({ route, assignedCount, sampleJobId, onCh
 
       {pending ? (
         <>
-          <Text style={styles.pendingText}>
-            {pending.blocked ? `Mulai rute ditolak: ${pending.lastError}` : "Mulai rute tersimpan — menunggu konfirmasi server"}
-          </Text>
+          {(() => {
+            const info = pendingStatusInfo(pending);
+            return (
+              <>
+                <Text style={[styles.pendingText, info.tone === "retrying" && { color: theme.ACCENT }]}>{info.title}</Text>
+                <Text style={styles.pendingDetail}>{info.detail}</Text>
+              </>
+            );
+          })()}
           {pending.blocked && (
             <View style={styles.btnRow}>
               <Pressable
                 style={[styles.secondaryBtn, { flex: 1 }]}
-                disabled={checking}
+                disabled={checking || retrying}
                 onPress={async () => {
                   setChecking(true);
                   try {
@@ -164,9 +172,30 @@ export default function RouteStartCard({ route, assignedCount, sampleJobId, onCh
                 <Text style={styles.secondaryBtnText}>{checking ? "Memeriksa…" : "Periksa Status Terbaru"}</Text>
               </Pressable>
               <Pressable
+                style={[styles.startBtn, { flex: 1 }]}
+                disabled={checking || retrying}
+                onPress={async () => {
+                  setRetrying(true);
+                  try {
+                    await retryItem(pending.idempotencyKey);
+                    onChanged();
+                  } finally {
+                    setRetrying(false);
+                  }
+                }}
+              >
+                {retrying ? <ActivityIndicator size="small" color="#FFFFFF" /> : <Text style={styles.startBtnText}>Kirim Ulang</Text>}
+              </Pressable>
+              <Pressable
                 style={[styles.startBtn, { flex: 1, backgroundColor: theme.RED }]}
-                disabled={checking}
-                onPress={() => discard(pending.idempotencyKey)}
+                disabled={checking || retrying}
+                onPress={() => {
+                  const { title, message } = discardConfirmText(pending);
+                  Alert.alert(title, message, [
+                    { text: "Batal", style: "cancel" },
+                    { text: "Ya, Batalkan", style: "destructive", onPress: () => discard(pending.idempotencyKey) },
+                  ]);
+                }}
               >
                 <Text style={styles.startBtnText}>Batalkan</Text>
               </Pressable>
@@ -237,6 +266,7 @@ function makeStyles(t) {
     btnRow: { flexDirection: "row", gap: 8 },
     err: { color: t.RED, fontSize: 12 },
     pendingText: { color: t.ORANGE, fontSize: 11.5, fontWeight: "700", marginTop: 10 },
+    pendingDetail: { color: t.INK2, fontSize: 11, marginTop: 2 },
     disabled: { opacity: 0.4 },
   });
 }

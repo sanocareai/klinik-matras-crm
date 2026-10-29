@@ -197,13 +197,20 @@ test("409 state-conflict dan status server TIDAK sesuai target -> blocked dengan
   assert.match(queue[0].lastError, /Gagal/);
 });
 
-test("409 gerbang Checklist Persiapan Perjalanan (CHECKLIST_BELUM_LENGKAP) saat route-start -> blocked dengan lastErrorCode terpreservasi (bukan cuma pesan teks)", async () => {
+// Regresi audit 29 Okt 2026 — SEBELUM fix ini, CHECKLIST_BELUM_LENGKAP
+// (409) jatuh ke klasifikasi "reconcile" generik: reconcileItem route-start
+// cuma mengecek Route.status, yang TIDAK PERNAH berubah selama checklist
+// belum diisi (penolakan terjadi SEBELUM Route.status di-update di server)
+// -> item BLOCKED SELAMANYA dengan pesan "masih PUBLISHED" yang menyesatkan,
+// walau checklist lalu dilengkapi. Fix: CHECKLIST_BELUM_LENGKAP -> "retry"
+// (lihat classifyExecutionError di executionCore.js), bukan "block"/"reconcile".
+test("checklist belum lengkap saat route-start -> tetap PENDING (retry otomatis), TIDAK blocked permanen", async () => {
   const api = createFakeApi({
     async startRoute() {
       throw Object.assign(new Error("Checklist persiapan belum lengkap: Bukti Kelengkapan (foto plastik/tali/tools, dll) — lengkapi dulu sebelum memulai perjalanan"), { status: 409, code: "CHECKLIST_BELUM_LENGKAP" });
     },
     async getMyJobs() {
-      return { jobs: [], routes: [{ id: "r1", status: "PUBLISHED" }] }; // belum berubah di server -> reconcile tidak bisa menyimpulkan "sudah selesai"
+      return { jobs: [], routes: [{ id: "r1", status: "PUBLISHED" }] };
     },
   });
   const q = makeQueue({ apiOverrides: api });
@@ -212,9 +219,165 @@ test("409 gerbang Checklist Persiapan Perjalanan (CHECKLIST_BELUM_LENGKAP) saat 
   assert.equal(result.synced, 0);
   const queue = await q.readExecutionQueue("u1");
   assert.equal(queue.length, 1);
+  assert.equal(queue[0].blocked, false, "checklist belum lengkap adalah kondisi SEMENTARA yang bisa berubah lewat tindakan driver sendiri — tidak boleh dikunci blocked");
+  assert.equal(queue[0].syncState, "RETRYING");
+  assert.equal(queue[0].lastErrorCode, "CHECKLIST_BELUM_LENGKAP");
+});
+
+test("checklist lalu dilengkapi -> retry route-start otomatis berikutnya sukses", async () => {
+  let checklistLengkap = false;
+  const api = createFakeApi({
+    async startRoute() {
+      if (!checklistLengkap) {
+        throw Object.assign(new Error("Checklist persiapan belum lengkap"), { status: 409, code: "CHECKLIST_BELUM_LENGKAP" });
+      }
+      return { started: 1 };
+    },
+    async getMyJobs() {
+      return { jobs: [], routes: [{ id: "r1", status: "PUBLISHED" }] };
+    },
+  });
+  const q = makeQueue({ apiOverrides: api });
+  await q.enqueueExecution({ userId: "u1", jobId: "j1", routeId: "r1", action: "route-start", payload: {}, photos: [] });
+  await q.flushExecutionQueue("u1");
+  let queue = await q.readExecutionQueue("u1");
+  assert.equal(queue[0].blocked, false);
+
+  // Driver melengkapi Bukti Kelengkapan lalu kembali ke app -> flush
+  // berikutnya (foreground/backoff) MENCOBA ULANG mutasi aslinya, bukan GET.
+  checklistLengkap = true;
+  const result2 = await q.flushExecutionQueue("u1");
+  assert.equal(result2.synced, 1);
+  queue = await q.readExecutionQueue("u1");
+  assert.equal(queue.length, 0, "route-start sukses setelah checklist lengkap -> item hilang dari antrean");
+});
+
+// Regresi audit 29 Okt 2026, target 1: "Route-start yang sudah tidak
+// relevan karena seluruh job telah diproses harus membersihkan dirinya" —
+// kalau checklist TIDAK PERNAH dilengkapi tapi semua job di rute sudah
+// diproses lewat jalur lain (device lain / admin), item route-start yang
+// stale harus auto-resolve saat reconcile, bukan nunggu MAX_RETRY_ATTEMPTS.
+test("route-start stale (checklist tak kunjung lengkap) tapi semua job di rute sudah diproses -> auto resolve saat reconcile, bukan blocked", async () => {
+  const api = createFakeApi({
+    async startRoute() {
+      throw Object.assign(new Error("Checklist persiapan belum lengkap"), { status: 409, code: "CHECKLIST_BELUM_LENGKAP" });
+    },
+    async getMyJobs() {
+      // Route.status TETAP "PUBLISHED" (gerbang checklist menolak sebelum
+      // update status) TAPI seluruh job di rute ini sudah COMPLETED lewat
+      // device/jalur lain -> aksi route-start sudah tidak bermakna lagi.
+      return {
+        jobs: [{ id: "j1", routeId: "r1", status: "COMPLETED" }, { id: "j2", routeId: "r1", status: "COMPLETED" }],
+        routes: [{ id: "r1", status: "PUBLISHED" }],
+      };
+    },
+  });
+  const q = makeQueue({ apiOverrides: api });
+  await q.enqueueExecution({ userId: "u1", jobId: "j1", routeId: "r1", action: "route-start", payload: {}, photos: [] });
+  await q.flushExecutionQueue("u1"); // habiskan 1 percobaan -> syncState RETRYING, belum blocked
+  let queue = await q.readExecutionQueue("u1");
+  assert.equal(queue.length, 1);
+
+  const check = await q.reconcileOne("u1", queue[0].idempotencyKey);
+  assert.equal(check.resolved, true, "tidak ada job ASSIGNED lagi di rute -> moot, auto-bersihkan diri");
+  queue = await q.readExecutionQueue("u1");
+  assert.equal(queue.length, 0);
+});
+
+test("route-start stale TAPI masih ada job ASSIGNED di rute -> tidak auto-resolve (belum moot)", async () => {
+  const api = createFakeApi({
+    async startRoute() {
+      throw Object.assign(new Error("Checklist persiapan belum lengkap"), { status: 409, code: "CHECKLIST_BELUM_LENGKAP" });
+    },
+    async getMyJobs() {
+      return {
+        jobs: [{ id: "j1", routeId: "r1", status: "ASSIGNED" }],
+        routes: [{ id: "r1", status: "PUBLISHED" }],
+      };
+    },
+  });
+  const q = makeQueue({ apiOverrides: api });
+  await q.enqueueExecution({ userId: "u1", jobId: "j1", routeId: "r1", action: "route-start", payload: {}, photos: [] });
+  await q.flushExecutionQueue("u1");
+  let queue = await q.readExecutionQueue("u1");
+  const check = await q.reconcileOne("u1", queue[0].idempotencyKey);
+  assert.equal(check.resolved, false);
+  queue = await q.readExecutionQueue("u1");
+  assert.equal(queue.length, 1);
+});
+
+// Regresi audit 29 Okt 2026, target 3: "Tombol Kirim Ulang harus benar-benar
+// melakukan aksi sesuai tipe queue, bukan hanya reconciliation GET".
+test("retryBlockedExecution: item blocked (403) dikirim ulang eksplisit -> benar-benar mengirim mutasi, bukan cuma GET", async () => {
+  let attempt = 0;
+  const api = createFakeApi({
+    async arriveArmadaJob() {
+      attempt += 1;
+      if (attempt === 1) throw Object.assign(new Error("Bukan job Anda"), { status: 403 });
+      return { id: "j1", status: "ARRIVED" };
+    },
+    async getMyJobs() {
+      return { jobs: [{ id: "j1", status: "ASSIGNED" }], routes: [] };
+    },
+  });
+  const q = makeQueue({ apiOverrides: api });
+  await q.enqueueExecution({ userId: "u1", jobId: "j1", action: "arrive", payload: {}, photos: [] });
+  await q.flushExecutionQueue("u1");
+  let queue = await q.readExecutionQueue("u1");
   assert.equal(queue[0].blocked, true);
-  assert.equal(queue[0].lastErrorCode, "CHECKLIST_BELUM_LENGKAP", "kode galat server dipertahankan — bukan cuma pesan teks yang bisa berubah kapan saja");
-  assert.match(queue[0].lastError, /Rute masih berstatus PUBLISHED/, "pesan ditampilkan tetap dari hasil reconcile (bukan pesan asli yang disalin)");
+
+  const outcome = await q.retryBlockedExecution("u1", queue[0].idempotencyKey);
+  assert.equal(outcome.resent, true, "harus benar-benar mengirim ulang mutasi (POST/PUT) — bukan cuma reconciliation GET");
+  assert.equal(outcome.resolved, true);
+  assert.equal(attempt, 2, "arriveArmadaJob dipanggil ulang (mutasi nyata), bukan cuma getMyJobs");
+  queue = await q.readExecutionQueue("u1");
+  assert.equal(queue.length, 0);
+});
+
+test("retryBlockedExecution: resend gagal lagi -> tetap blocked dengan alasan server terbaru, attempt tidak diam-diam tak terbatas", async () => {
+  const api = createFakeApi({
+    async arriveArmadaJob() {
+      throw Object.assign(new Error("Bukan job Anda"), { status: 403 });
+    },
+    async getMyJobs() {
+      return { jobs: [{ id: "j1", status: "ASSIGNED" }], routes: [] };
+    },
+  });
+  const q = makeQueue({ apiOverrides: api });
+  await q.enqueueExecution({ userId: "u1", jobId: "j1", action: "arrive", payload: {}, photos: [] });
+  await q.flushExecutionQueue("u1");
+  let queue = await q.readExecutionQueue("u1");
+  assert.equal(queue[0].blocked, true);
+
+  const outcome = await q.retryBlockedExecution("u1", queue[0].idempotencyKey);
+  assert.equal(outcome.resent, true);
+  assert.equal(outcome.resolved, false);
+  assert.match(outcome.reason, /Bukan job Anda/);
+  queue = await q.readExecutionQueue("u1");
+  assert.equal(queue.length, 1);
+  assert.equal(queue[0].blocked, true, "gagal lagi -> tetap blocked (visible), bukan diam-diam dibuang atau dicoba berulang tanpa jejak");
+});
+
+test("retryBlockedExecution: reconcile sendiri sudah membuktikan selesai -> resolved tanpa resend (hindari mutasi ganda)", async () => {
+  const api = createFakeApi({
+    async arriveArmadaJob() {
+      throw Object.assign(new Error("Bukan job Anda"), { status: 403 });
+    },
+    async getMyJobs() {
+      return { jobs: [{ id: "j1", status: "ARRIVED" }], routes: [] };
+    },
+  });
+  const q = makeQueue({ apiOverrides: api });
+  await q.enqueueExecution({ userId: "u1", jobId: "j1", action: "arrive", payload: {}, photos: [] });
+  await q.flushExecutionQueue("u1");
+  let queue = await q.readExecutionQueue("u1");
+  assert.equal(queue[0].blocked, true);
+
+  const outcome = await q.retryBlockedExecution("u1", queue[0].idempotencyKey);
+  assert.equal(outcome.resolved, true);
+  assert.equal(outcome.resent, false, "status server sudah ARRIVED -> cukup reconcile, tidak perlu kirim ulang mutasi");
+  queue = await q.readExecutionQueue("u1");
+  assert.equal(queue.length, 0);
 });
 
 test("item blocked bisa di-refresh (reconcileOne) dan di-discard, tidak mengunci job permanen", async () => {

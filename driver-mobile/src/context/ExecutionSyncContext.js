@@ -21,6 +21,7 @@ const {
   flushExecutionQueue,
   removeExecution,
   reconcileOne,
+  retryBlockedExecution,
   clearBlocked: clearBlockedQueue,
 } = createExecutionQueue({ storage: AsyncStorage, fs: FileSystem, api });
 
@@ -96,6 +97,39 @@ export function ExecutionSyncProvider({ children }) {
     return outcome;
   }, [userId]);
 
+  // "Kirim Ulang" EKSPLISIT per-item (audit 29 Okt 2026, poin 3) — BEDA
+  // dari checkStatus di atas: kalau verifikasi belum resolved, BENAR-BENAR
+  // mengirim ulang mutasi aslinya (lihat retryBlockedExecution di
+  // lib/executionQueue.js), bukan cuma mengecek. Dipakai tombol "Kirim
+  // Ulang" per-item saat item sudah blocked — checkStatus ("Periksa Status
+  // Terbaru") tetap tersedia terpisah untuk driver yang cuma mau tahu tanpa
+  // memicu percobaan baru.
+  const retryItem = useCallback(async (idempotencyKey) => {
+    if (!userId) return { resolved: false, verified: false, resent: false };
+    const outcome = await retryBlockedExecution(userId, idempotencyKey);
+    const latest = await readExecutionQueue(userId);
+    setQueue(latest);
+    if (outcome.resolved) queryClient.invalidateQueries({ queryKey: ["armada", "my-jobs"] });
+    return outcome;
+  }, [userId]);
+
+  // "Kirim Ulang" GLOBAL (strip pendingCount, JobListScreen) — SEBELUM ini
+  // sama persis dengan `flush` (flushExecutionQueue), yang untuk item
+  // SUDAH blocked cuma reconcile baca-saja (tidak mungkin menyelesaikan
+  // item checklist/konflik yang preconditionnya sudah berubah tanpa
+  // dikirim ulang). Audit 29 Okt 2026, poin 3: "Tombol Kirim Ulang harus
+  // benar-benar melakukan aksi sesuai tipe queue." Sekarang: resend EKSPLISIT
+  // tiap item yang sudah blocked dulu (driver menekan tombol bernama "Kirim
+  // Ulang" — niatnya jelas), baru lanjut flush biasa untuk sisa item pending.
+  const retryAll = useCallback(async () => {
+    if (!userId) return;
+    const current = await readExecutionQueue(userId);
+    for (const item of current.filter((it) => it.blocked)) {
+      await retryBlockedExecution(userId, item.idempotencyKey);
+    }
+    await flush();
+  }, [userId, flush]);
+
   // "Bersihkan antrean bermasalah" (Akun) — buang HANYA item blocked, item
   // pending yang masih sah tidak disentuh.
   const clearBlocked = useCallback(async () => {
@@ -112,12 +146,17 @@ export function ExecutionSyncProvider({ children }) {
     blockedCount: queue.filter((item) => item.blocked).length,
     pendingForJob: (jobId) => pendingForJob(queue, jobId),
     submit,
-    retry: flush,
+    // "Kirim Ulang" GLOBAL (strip pendingCount) — retryAll, BUKAN flush
+    // polos (lihat catatan di retryAll: untuk item yang sudah blocked,
+    // flush saja cuma reconcile baca-saja, retryAll benar-benar mengirim
+    // ulang).
+    retry: retryAll,
     discard,
     checkStatus,
+    retryItem,
     clearBlocked,
     connected,
-  }), [queue, submit, flush, discard, checkStatus, clearBlocked, connected]);
+  }), [queue, submit, retryAll, discard, checkStatus, retryItem, clearBlocked, connected]);
 
   return <ExecutionSyncContext.Provider value={value}>{children}</ExecutionSyncContext.Provider>;
 }

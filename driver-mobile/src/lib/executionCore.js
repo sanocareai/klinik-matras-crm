@@ -54,7 +54,7 @@ export function isJobActionSatisfied(action, status) {
   return false;
 }
 
-const ACTION_LABEL = { start: "Mulai", arrive: "Tiba", complete: "Selesai", fail: "Gagal", "unit-load": "Konfirmasi muat" };
+const ACTION_LABEL = { start: "Mulai", arrive: "Tiba", complete: "Selesai", fail: "Gagal", "unit-load": "Konfirmasi muat", "route-start": "Mulai Perjalanan" };
 
 // Alasan yang bisa dibaca manusia ketika status server TIDAK sesuai target
 // aksi — dipakai sebagai lastError item blocked. Selalu dari PERBANDINGAN
@@ -95,9 +95,71 @@ export function classifyExecutionError(error) {
   if (status === 409) {
     if (message.includes("sedang diproses di perangkat lain")) return { kind: "retry" };
     if (message.includes("Idempotency-Key sudah dipakai")) return { kind: "block", reason: message };
+    // Gerbang Checklist Persiapan Perjalanan (bawa balik dari fix 10 Oktober
+    // 2026, commit 64c0bdc0, branch fix/route-start-stale-block — TIDAK
+    // PERNAH sampai ke build produksi, lihat audit 29 Oktober 2026 di
+    // docs/release/audit-driver-queue-blank-20261029/README.md). SEBELUM
+    // ini jatuh ke "reconcile" generik: reconcileItem route-start cuma
+    // mengecek Route.status, yang TIDAK PERNAH berubah selama checklist
+    // belum diisi (penolakan terjadi SEBELUM Route.status di-update, lihat
+    // POST /routes/:id/start) — hasilnya item blocked SELAMANYA dengan
+    // pesan "masih PUBLISHED" yang menyesatkan. Precondisi ini SEPENUHNYA
+    // bisa berubah lewat tindakan driver sendiri (isi Bukti Kelengkapan
+    // lalu kembali ke app) — persis definisi "retry": antrean MENCOBA ULANG
+    // MUTASI aslinya (bukan GET reconcile) tiap kembali ke foreground/jeda
+    // backoff, sampai MAX_RETRY_ATTEMPTS — kalau checklist akhirnya diisi,
+    // percobaan berikutnya sukses TANPA driver perlu tahu detailnya.
+    if (error?.code === "CHECKLIST_BELUM_LENGKAP") return { kind: "retry" };
     return { kind: "reconcile" };
   }
   if (status === 403) return { kind: "block", reason: message };
   if (isRetryableExecutionError(error)) return { kind: "retry" };
   return { kind: "block", reason: message || "Gagal sinkronisasi" };
+}
+
+// Label status antrean yang JUJUR ke driver (audit 29 Okt 2026, poin 3:
+// "bedakan status pending, retrying, dan blocked", "tampilkan pesan
+// backend yang actionable") — SATU sumber dipakai JobCard & RouteStartCard
+// supaya kata-katanya konsisten, bukan ditulis ulang dua kali.
+// { tone: "pending"|"retrying"|"blocked", title, detail }
+export function pendingStatusInfo(item) {
+  if (!item) return null;
+  const aksi = ACTION_LABEL[item.action] || item.action;
+  if (item.blocked) {
+    return {
+      tone: "blocked",
+      title: `"${aksi}" perlu tindakan`,
+      // Pesan ASLI dari server (item.lastError) — bukan tebakan/generik.
+      detail: item.lastError || "Server menolak aksi ini — periksa status atau kirim ulang.",
+    };
+  }
+  if (item.syncState === "RETRYING" || (item.attempts ?? 0) > 0) {
+    return {
+      tone: "retrying",
+      title: `"${aksi}" sedang dicoba ulang otomatis (percobaan ke-${(item.attempts ?? 0) + 1})`,
+      detail: item.lastError || "Menunggu jaringan/server — tidak perlu tindakan, app mencoba lagi sendiri.",
+    };
+  }
+  return {
+    tone: "pending",
+    title: `"${aksi}" tersimpan di HP`,
+    detail: "Menunggu dikirim ke server begitu koneksi tersedia.",
+  };
+}
+
+// Teks konfirmasi pembatalan (audit 29 Okt 2026, poin 3: "jelaskan jenis
+// aksi yang dibatalkan dan lindungi POD/foto yang belum terkirim") —
+// SELALU sebut aksi apa yang dibatalkan secara eksplisit; kalau item ini
+// membawa foto yang BELUM terkirim (POD, bukti gagal, foto muatan), tegaskan
+// foto itu akan hilang dari HP dan tidak pernah sampai ke server — supaya
+// driver tidak membatalkan bukti serah terima tanpa sadar.
+export function discardConfirmText(item) {
+  const aksi = ACTION_LABEL[item?.action] || item?.action || "aksi ini";
+  const adaFoto = (item?.photos?.length ?? 0) > 0;
+  return {
+    title: `Batalkan "${aksi}"?`,
+    message: adaFoto
+      ? `Foto yang sudah diambil untuk "${aksi}" akan DIHAPUS dari HP ini dan TIDAK PERNAH terkirim ke server. Tindakan ini tidak bisa dibatalkan — pastikan Anda sudah tidak butuh foto itu lagi.`
+      : `"${aksi}" akan dibuang dari antrean dan tidak pernah dikirim ke server. Tindakan ini tidak bisa dibatalkan.`,
+  };
 }

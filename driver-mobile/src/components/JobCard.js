@@ -6,7 +6,7 @@
 // SENGAJA TIDAK ada (keputusan owner eksplisit, sama dengan web). Light/
 // dark ikut sistem HP (lihat src/theme.js).
 import React, { useMemo, useState } from "react";
-import { View, Text, Pressable, TextInput, StyleSheet, Linking } from "react-native";
+import { View, Text, Pressable, TextInput, StyleSheet, Linking, Alert } from "react-native";
 import { MapPin, Phone, Loader2, Home, AlertTriangle } from "lucide-react-native";
 import PhotoCapture from "./PhotoCapture";
 import PaymentSection from "./PaymentSection";
@@ -21,6 +21,7 @@ import { useTheme } from "../hooks/useTheme";
 import { useAuth } from "../context/AuthContext";
 import { useExecutionSync } from "../context/ExecutionSyncContext";
 import { getProofLocation } from "../lib/proofLocation";
+import { pendingStatusInfo, discardConfirmText } from "../lib/executionCore";
 
 const FAIL_REASONS_PICKUP = [
   { value: "Customer tidak ada di rumah", label: "Customer Tidak Ada" },
@@ -40,11 +41,12 @@ const FAIL_REASONS_DELIVERY = [
 export default function JobCard({ job, onChanged }) {
   const theme = useTheme();
   const { markOnlineLocally } = useAuth();
-  const { submit, checkStatus, discard, queue } = useExecutionSync();
+  const { submit, checkStatus, retryItem, discard, queue } = useExecutionSync();
   const gerbangAktif = useUnitLoadGate();
   const [alasanPengecualian, setAlasanPengecualian] = useState("");
   const [muatBusy, setMuatBusy] = useState(false);
   const [checking, setChecking] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const styles = useMemo(() => makeStyles(theme), [theme]);
   const STATUS_TONE = useMemo(() => ({
     ASSIGNED: theme.ACCENT, EN_ROUTE: theme.ACCENT, ARRIVED: theme.ACCENT,
@@ -235,10 +237,38 @@ export default function JobCard({ job, onChanged }) {
       <ManifestSection job={job} queue={queue} onKonfirmasi={konfirmasiMuat} busy={muatBusy} gerbangAktif={gerbangAktif} />
       {muatBlocked ? (
         <View style={[styles.complaintBanner, { backgroundColor: theme.ORANGE + "1A" }]}>
-          <Text style={[styles.complaintBannerText, { color: theme.ORANGE }]}>Konfirmasi muat ditolak server: {muatBlocked.lastError}</Text>
-          <Pressable style={[styles.dangerBtn, { marginTop: 8 }]} onPress={() => discard(muatBlocked.idempotencyKey)}>
-            <Text style={styles.primaryBtnText}>Buang &amp; Ulangi Konfirmasi</Text>
-          </Pressable>
+          <Text style={[styles.complaintBannerText, { color: theme.ORANGE }]}>{pendingStatusInfo(muatBlocked).title}</Text>
+          <Text style={[styles.detailLine, { marginTop: 2 }]}>{pendingStatusInfo(muatBlocked).detail}</Text>
+          <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+            <Pressable
+              style={[styles.primaryBtn, { flex: 1 }]}
+              disabled={retrying}
+              onPress={async () => {
+                setRetrying(true);
+                try {
+                  await retryItem(muatBlocked.idempotencyKey);
+                  onChanged();
+                } finally {
+                  setRetrying(false);
+                }
+              }}
+            >
+              <Text style={styles.primaryBtnText}>{retrying ? "Mengirim…" : "Kirim Ulang"}</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.dangerBtn, { flex: 1 }]}
+              disabled={retrying}
+              onPress={() => {
+                const { title, message } = discardConfirmText(muatBlocked);
+                Alert.alert(title, message, [
+                  { text: "Batal", style: "cancel" },
+                  { text: "Ya, Batalkan", style: "destructive", onPress: () => discard(muatBlocked.idempotencyKey) },
+                ]);
+              }}
+            >
+              <Text style={styles.primaryBtnText}>Buang &amp; Ulangi Konfirmasi</Text>
+            </Pressable>
+          </View>
         </View>
       ) : null}
 
@@ -249,39 +279,64 @@ export default function JobCard({ job, onChanged }) {
       {job.accessNotes ? <Text style={styles.detailLine}>Catatan lokasi: {job.accessNotes}</Text> : null}
 
       {pending ? (
-        <View style={[styles.complaintBanner, { backgroundColor: theme.ORANGE + "1A" }]}>
-          <Text style={[styles.complaintBannerText, { color: theme.ORANGE }]}>
-            {pending.blocked ? `Sinkronisasi perlu tindakan: ${pending.lastError}` : "Aksi tersimpan — menunggu konfirmasi server"}
+        <View style={[styles.complaintBanner, { backgroundColor: (pending.blocked ? theme.ORANGE : theme.INK3) + "1A" }]}>
+          <Text style={[styles.complaintBannerText, { color: pending.blocked ? theme.ORANGE : theme.INK2 }]}>
+            {pendingStatusInfo(pending).title}
           </Text>
+          <Text style={[styles.detailLine, { marginTop: 2 }]}>{pendingStatusInfo(pending).detail}</Text>
           {/* Item blocked TIDAK BOLEH mengunci job ini selamanya (audit
-              Slice 2, 23 September 2026, temuan HIGH) — dua jalan keluar
-              selalu tersedia di sini: cek ulang ke server, atau batalkan
-              dan mulai aksi baru dari awal. */}
+              Slice 2, 23 September 2026, temuan HIGH) — tiga jalan keluar
+              selalu tersedia di sini: cek ulang (baca-saja), kirim ulang
+              sungguhan (audit 29 Okt 2026, poin 3), atau batalkan dengan
+              konfirmasi yang jelas. */}
           {pending.blocked && (
-            <View style={styles.btnRow}>
+            <>
+              <View style={styles.btnRow}>
+                <Pressable
+                  style={[styles.secondaryBtn, { flex: 1, marginTop: 8 }]}
+                  disabled={checking || retrying}
+                  onPress={async () => {
+                    setChecking(true);
+                    try {
+                      await checkStatus(pending.idempotencyKey);
+                      onChanged();
+                    } finally {
+                      setChecking(false);
+                    }
+                  }}
+                >
+                  <Text style={styles.secondaryBtnText}>{checking ? "Memeriksa…" : "Periksa Status Terbaru"}</Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.primaryBtn, { flex: 1, marginTop: 8 }]}
+                  disabled={checking || retrying}
+                  onPress={async () => {
+                    setRetrying(true);
+                    try {
+                      await retryItem(pending.idempotencyKey);
+                      onChanged();
+                    } finally {
+                      setRetrying(false);
+                    }
+                  }}
+                >
+                  <Text style={styles.primaryBtnText}>{retrying ? "Mengirim…" : "Kirim Ulang"}</Text>
+                </Pressable>
+              </View>
               <Pressable
-                style={[styles.secondaryBtn, { flex: 1, marginTop: 8 }]}
-                disabled={checking}
-                onPress={async () => {
-                  setChecking(true);
-                  try {
-                    await checkStatus(pending.idempotencyKey);
-                    onChanged();
-                  } finally {
-                    setChecking(false);
-                  }
+                style={[styles.dangerBtn, { marginTop: 8 }]}
+                disabled={checking || retrying}
+                onPress={() => {
+                  const { title, message } = discardConfirmText(pending);
+                  Alert.alert(title, message, [
+                    { text: "Batal", style: "cancel" },
+                    { text: "Ya, Batalkan", style: "destructive", onPress: () => discard(pending.idempotencyKey) },
+                  ]);
                 }}
-              >
-                <Text style={styles.secondaryBtnText}>{checking ? "Memeriksa…" : "Periksa Status Terbaru"}</Text>
-              </Pressable>
-              <Pressable
-                style={[styles.dangerBtn, { flex: 1, marginTop: 8 }]}
-                disabled={checking}
-                onPress={() => discard(pending.idempotencyKey)}
               >
                 <Text style={styles.primaryBtnText}>Batalkan Antrean Ini</Text>
               </Pressable>
-            </View>
+            </>
           )}
         </View>
       ) : null}

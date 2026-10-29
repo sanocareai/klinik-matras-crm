@@ -257,12 +257,96 @@ export function createExecutionQueue({ storage, fs, api: client }) {
       const route = (snapshot?.routes || []).find((r) => r.id === item.routeId);
       if (!route) return { resolved: false, reason: "Rute tidak ditemukan di data terbaru — periksa manual di Route Planner." };
       if (isRouteStartSatisfied(route.status)) return { resolved: true };
+      // Tidak ada lagi job ASSIGNED di rute ini (bawa balik dari fix 10
+      // Oktober 2026, commit 64c0bdc0 — TIDAK PERNAH sampai ke build
+      // produksi, lihat audit 29 Oktober 2026). Audit nyata: item
+      // route-start tersangkut PERMANEN "masih PUBLISHED" walau job-jobnya
+      // sendiri sudah jalan normal satu-satu lewat jalur job lepas (POST
+      // /jobs/:id/start, yang memang tidak pernah butuh route-start sukses
+      // lebih dulu) — reconcile lama hanya cek Route.status, padahal syarat
+      // batch ini sebenarnya bergantung pada ADA TIDAKNYA job ASSIGNED,
+      // bukan status rute semata. j.routeId ada di snapshot V1 (GET
+      // /armada/my-jobs) MAUPUN V2 (tiap job snapshot membawa routeId flat,
+      // lihat services/driverSnapshotV2.js) — satu pengecekan untuk kedua
+      // jalur.
+      const masihAdaAssigned = (snapshot?.jobs || []).some(
+        (j) => j.routeId === item.routeId && j.status === "ASSIGNED"
+      );
+      if (!masihAdaAssigned) return { resolved: true };
       return { resolved: false, reason: `Rute masih berstatus ${route.status} di server — belum bisa dikonfirmasi otomatis.` };
     }
     const job = (snapshot?.jobs || []).find((j) => j.id === item.jobId);
     if (!job) return { resolved: false, reason: "Job tidak ditemukan di data terbaru (mungkin di luar rentang tanggal aktif) — periksa manual." };
     if (isJobActionSatisfied(item.action, job.status)) return { resolved: true };
     return { resolved: false, reason: jobActionSupersededReason(item.action, job.status) };
+  }
+
+  // Satu percobaan NYATA mengirim mutasi item (upload sisa foto + sendItem),
+  // dipakai flushExecutionQueue (loop otomatis, item BELUM blocked) MAUPUN
+  // retryBlockedExecution (tombol "Kirim Ulang" eksplisit pada item yang
+  // SUDAH blocked) — SATU tempat yang menentukan transisi status supaya
+  // kedua jalur selalu konsisten (audit 29 Okt 2026, poin 3). Memutasi
+  // `queue` di tempat (splice/assign by index) dan menulis ke storage
+  // sendiri; pemanggil tetap bertanggung jawab atas urutan loop-nya sendiri.
+  // outcome: "synced" | "retry-scheduled" (transien, coba lagi nanti,
+  // TIDAK blocked) | "blocked" (final — konflik/invalid, perlu tindakan).
+  async function attemptSend(userId, item, queue, index) {
+    try {
+      await uploadRemaining(userId, item, queue);
+      await sendItem(item);
+      await cleanupItem(item);
+      queue.splice(index, 1);
+      await writeQueue(userId, queue);
+      return { outcome: "synced" };
+    } catch (error) {
+      const verdict = classifyExecutionError(error);
+      if (verdict.kind === "retry") {
+        const attempts = item.attempts + 1;
+        const exhausted = attempts >= MAX_RETRY_ATTEMPTS;
+        queue[index] = {
+          ...item,
+          attempts,
+          lastError: exhausted ? `Percobaan otomatis dihentikan setelah ${MAX_RETRY_ATTEMPTS} kali: ${error.message || "Gagal sinkronisasi"}` : (error.message || "Gagal sinkronisasi"),
+          lastErrorCode: error.code || null,
+          blocked: exhausted,
+          // "RETRYING" (bukan tetap "PENDING") begitu percobaan PERTAMA
+          // gagal — bedakan "belum pernah dicoba" dari "sudah dicoba,
+          // gagal, akan dicoba lagi otomatis" supaya UI bisa jujur ke
+          // driver (audit 29 Okt 2026, poin 3: "bedakan status pending,
+          // retrying, dan blocked").
+          syncState: exhausted ? "RETRY_EXHAUSTED" : "RETRYING",
+        };
+        await writeQueue(userId, queue);
+        return { outcome: exhausted ? "blocked" : "retry-scheduled" };
+      }
+      if (verdict.kind === "reconcile") {
+        const outcome = await reconcileItem(item);
+        if (outcome.resolved) {
+          await cleanupItem(item);
+          queue.splice(index, 1);
+          await writeQueue(userId, queue);
+          return { outcome: "synced" };
+        }
+        if (outcome.reason == null) {
+          // Verifikasi sendiri gagal (mis. jaringan putus lagi tepat
+          // setelah respons 409 pertama) — bukan bukti aksi tidak valid,
+          // perlakukan seperti retry biasa, JANGAN blocked berdasarkan
+          // dugaan.
+          queue[index] = { ...item, attempts: item.attempts + 1, lastError: error.message || "Gagal sinkronisasi", blocked: false, syncState: "RETRYING" };
+          await writeQueue(userId, queue);
+          return { outcome: "retry-scheduled" };
+        }
+        queue[index] = { ...item, attempts: item.attempts + 1, blocked: true, syncState: "CONFLICT", lastError: outcome.reason, lastErrorCode: error.code || null };
+        await writeQueue(userId, queue);
+        return { outcome: "blocked" };
+      }
+      // kind === "block" — 403 otorisasi, tabrakan idempotency key, atau
+      // validasi 4xx: benar-benar tidak valid lagi, reconciliation status
+      // tidak relevan.
+      queue[index] = { ...item, attempts: item.attempts + 1, blocked: true, syncState: "CONFLICT", lastError: verdict.reason || error.message || "Gagal sinkronisasi", lastErrorCode: error.code || null };
+      await writeQueue(userId, queue);
+      return { outcome: "blocked" };
+    }
   }
 
   async function flushExecutionQueue(userId) {
@@ -275,11 +359,16 @@ export function createExecutionQueue({ storage, fs, api: client }) {
         const item = queue[index];
         if (item.blocked) {
           // Blocked bukan lagi status permanen (audit HIGH) — tiap flush
-          // (otomatis maupun tombol "Kirim Ulang") mencoba VERIFIKASI ulang
-          // ke server dulu (GET, tidak mengirim ulang mutasinya) sebelum
+          // OTOMATIS (bukan tombol "Kirim Ulang" eksplisit, lihat
+          // retryBlockedExecution di bawah) mencoba VERIFIKASI ulang ke
+          // server dulu (GET, TIDAK mengirim ulang mutasinya) sebelum
           // menyerah lagi. Kalau ternyata sudah tercapai (mis. dispatcher
           // membetulkan dari web), item ini beres sendiri tanpa driver
-          // perlu tahu detailnya.
+          // perlu tahu detailnya. SENGAJA tidak resend mutasi otomatis di
+          // sini (audit 29 Okt 2026, poin 3: "jangan izinkan retry berulang
+          // menghabiskan attempt secara tidak transparan") — resend NYATA
+          // untuk item yang sudah blocked hanya terjadi saat driver
+          // EKSPLISIT menekan "Kirim Ulang" per-item.
           const outcome = await reconcileItem(item);
           if (outcome.resolved) {
             await cleanupItem(item);
@@ -295,68 +384,64 @@ export function createExecutionQueue({ storage, fs, api: client }) {
           index += 1;
           continue;
         }
-        try {
-          await uploadRemaining(userId, item, queue);
-          await sendItem(item);
-          await cleanupItem(item);
-          queue.splice(index, 1);
+        const result = await attemptSend(userId, item, queue, index);
+        if (result.outcome === "synced") {
           synced += 1;
-          await writeQueue(userId, queue);
-        } catch (error) {
-          const verdict = classifyExecutionError(error);
-          if (verdict.kind === "retry") {
-            const attempts = item.attempts + 1;
-            const exhausted = attempts >= MAX_RETRY_ATTEMPTS;
-            queue[index] = {
-              ...item,
-              attempts,
-              lastError: exhausted ? `Percobaan otomatis dihentikan setelah ${MAX_RETRY_ATTEMPTS} kali: ${error.message || "Gagal sinkronisasi"}` : (error.message || "Gagal sinkronisasi"),
-              blocked: exhausted,
-              syncState: exhausted ? "RETRY_EXHAUSTED" : "PENDING",
-            };
-            await writeQueue(userId, queue);
-            // 401/token kedaluwarsa, jaringan, timeout, 5xx, atau lock
-            // sementara krn perangkat lain: hentikan batch di sini,
-            // pertahankan URUTAN antrean untuk percobaan berikutnya —
-            // item SETELAH ini mungkin bergantung urutan (mis. start lalu
-            // arrive job yang sama).
-            break;
-          }
-          if (verdict.kind === "reconcile") {
-            const outcome = await reconcileItem(item);
-            if (outcome.resolved) {
-              await cleanupItem(item);
-              queue.splice(index, 1);
-              synced += 1;
-              await writeQueue(userId, queue);
-              continue;
-            }
-            if (outcome.reason == null) {
-              // Verifikasi sendiri gagal (mis. jaringan putus lagi tepat
-              // setelah respons 409 pertama) — bukan bukti aksi tidak
-              // valid, perlakukan seperti retry biasa, JANGAN blocked
-              // berdasarkan dugaan.
-              queue[index] = { ...item, attempts: item.attempts + 1, lastError: error.message || "Gagal sinkronisasi", blocked: false, syncState: "PENDING" };
-              await writeQueue(userId, queue);
-              break;
-            }
-            queue[index] = { ...item, attempts: item.attempts + 1, blocked: true, syncState: "CONFLICT", lastError: outcome.reason, lastErrorCode: error.code || null };
-            await writeQueue(userId, queue);
-            // Konflik status utk item ini SUDAH final (blocked dengan
-            // alasan jelas) — bukan error transien yang butuh menghentikan
-            // seluruh batch, lanjut proses item lain.
-            index += 1;
-            continue;
-          }
-          // kind === "block" — 403 otorisasi, tabrakan idempotency key,
-          // atau validasi 4xx: benar-benar tidak valid lagi, reconciliation
-          // status tidak relevan.
-          queue[index] = { ...item, attempts: item.attempts + 1, blocked: true, syncState: "CONFLICT", lastError: verdict.reason || error.message || "Gagal sinkronisasi", lastErrorCode: error.code || null };
-          await writeQueue(userId, queue);
-          index += 1;
+          continue;
         }
+        if (result.outcome === "retry-scheduled") {
+          // 401/token kedaluwarsa, jaringan, timeout, 5xx, lock sementara
+          // perangkat lain, atau reconcile yang verifikasinya sendiri
+          // gagal: hentikan batch di sini, pertahankan URUTAN antrean
+          // untuk percobaan berikutnya — item SETELAH ini mungkin
+          // bergantung urutan (mis. start lalu arrive job yang sama).
+          break;
+        }
+        // "blocked" — konflik/invalid final untuk item ini, BUKAN error
+        // transien yang butuh menghentikan seluruh batch; lanjut proses
+        // item lain.
+        index += 1;
       }
       return { synced, pending: queue.length };
+    });
+  }
+
+  // "Kirim Ulang" EKSPLISIT pada item yang SUDAH blocked (tombol per-item
+  // JobCard/RouteStartCard) — BEDA dari flush otomatis di atas: verifikasi
+  // dulu (baca-saja), tapi kalau belum resolved, BENAR-BENAR mengirim ulang
+  // mutasi aslinya (bukan cuma mengecek). Audit 29 Okt 2026, poin 3:
+  // "Tombol 'Kirim Ulang' harus benar-benar melakukan aksi sesuai tipe
+  // queue, bukan hanya reconciliation GET yang tidak mungkin menyelesaikan
+  // item." Dipisah dari flush OTOMATIS secara sengaja — resend mutasi
+  // untuk item yang sudah menyerah (blocked) hanya pantas terjadi saat
+  // driver TAHU dan MEMINTA eksplisit (attempts bertambah secara
+  // transparan, terlihat di UI), bukan diam-diam di background.
+  async function retryBlockedExecution(userId, idempotencyKey) {
+    return withUserLock(userId, async () => {
+      const queue = await readExecutionQueue(userId);
+      const idx = queue.findIndex((entry) => entry.idempotencyKey === idempotencyKey);
+      if (idx === -1) return { resolved: true, verified: true, resent: false };
+      const item = queue[idx];
+      if (!item.blocked) return { resolved: false, verified: true, resent: false, reason: item.lastError };
+      const outcome = await reconcileItem(item);
+      if (outcome.resolved) {
+        await cleanupItem(item);
+        queue.splice(idx, 1);
+        await writeQueue(userId, queue);
+        return { resolved: true, verified: true, resent: false };
+      }
+      if (outcome.reason == null) {
+        // Verifikasi sendiri gagal (mis. offline lagi) — jangan kirim ulang
+        // buta-buta tanpa tahu status terkini; minta driver coba lagi nanti.
+        return { resolved: false, verified: false, resent: false, reason: item.lastError };
+      }
+      // Resend NYATA — item sementara diperlakukan sebagai "belum blocked"
+      // supaya attemptSend menjalankan jalur kirim biasa (upload+sendItem),
+      // bukan jalur reconcile lagi.
+      const result = await attemptSend(userId, { ...item, blocked: false }, queue, idx);
+      if (result.outcome === "synced") return { resolved: true, verified: true, resent: true };
+      const after = queue[idx];
+      return { resolved: false, verified: true, resent: true, reason: after?.lastError ?? outcome.reason, blocked: after?.blocked ?? true };
     });
   }
 
@@ -419,6 +504,7 @@ export function createExecutionQueue({ storage, fs, api: client }) {
     flushExecutionQueue,
     removeExecution,
     reconcileOne,
+    retryBlockedExecution,
     clearBlocked,
   };
 }
