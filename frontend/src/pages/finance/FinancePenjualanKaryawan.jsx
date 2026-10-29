@@ -17,6 +17,7 @@ import {
   Pilihan, InputUang, PeriodePicker, periodeDefault, tanggalPendek, PemilihBukti,
 } from "@/features/finance/shared.jsx";
 import FilterBar, { useTertunda } from "@/features/finance/FilterBar.jsx";
+import TombolExportExcel from "@/features/finance/ExportExcel.jsx";
 import { RowActions, AKSI_COL_WIDTH } from "@/features/finance/RowActions.jsx";
 import { CardList, RowCard } from "@/features/finance/cards.jsx";
 import { PanelDetail, klikBuka } from "@/features/finance/PanelDetail.jsx";
@@ -163,6 +164,7 @@ export default function FinancePenjualanKaryawan() {
       actions={(
         <>
           <PeriodePicker from={periode.from} to={periode.to} onChange={setPeriode} />
+          <TombolExportExcel modul="penjualan-karyawan" disabled={loading} onError={setPesan} ambilBody={() => ({ periode, filter: { status, q: qTunda.trim(), sellerId: fKaryawan } })} />
           <Button size="sm" onClick={() => setModalBaru(true)}><Plus size={14} /> Catat Penjualan</Button>
         </>
       )}
